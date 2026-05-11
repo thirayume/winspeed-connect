@@ -59,6 +59,10 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-status-confirmed: var(--status-confirmed);
+  --color-status-picking: var(--status-picking);
+  --color-status-shipped: var(--status-shipped);
+  --color-status-locked: var(--status-locked);
 }
 
 :root {
@@ -95,6 +99,10 @@
   --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
   --sidebar-border: oklch(0.929 0.013 255.508);
   --sidebar-ring: oklch(0.704 0.04 256.788);
+  --status-confirmed: oklch(0.55 0.18 250);
+  --status-picking: oklch(0.72 0.16 70);
+  --status-shipped: oklch(0.62 0.17 150);
+  --status-locked: oklch(0.62 0.22 20);
 }
 
 .dark {
