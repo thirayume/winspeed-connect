@@ -9,38 +9,96 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as StoreRouteImport } from './routes/store'
+import { Route as SalesRouteImport } from './routes/sales'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as StoreOutboundRouteImport } from './routes/store.outbound'
+import { Route as StoreInboundRouteImport } from './routes/store.inbound'
 
+const StoreRoute = StoreRouteImport.update({
+  id: '/store',
+  path: '/store',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SalesRoute = SalesRouteImport.update({
+  id: '/sales',
+  path: '/sales',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StoreOutboundRoute = StoreOutboundRouteImport.update({
+  id: '/outbound',
+  path: '/outbound',
+  getParentRoute: () => StoreRoute,
+} as any)
+const StoreInboundRoute = StoreInboundRouteImport.update({
+  id: '/inbound',
+  path: '/inbound',
+  getParentRoute: () => StoreRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/sales': typeof SalesRoute
+  '/store': typeof StoreRouteWithChildren
+  '/store/inbound': typeof StoreInboundRoute
+  '/store/outbound': typeof StoreOutboundRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/sales': typeof SalesRoute
+  '/store': typeof StoreRouteWithChildren
+  '/store/inbound': typeof StoreInboundRoute
+  '/store/outbound': typeof StoreOutboundRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/sales': typeof SalesRoute
+  '/store': typeof StoreRouteWithChildren
+  '/store/inbound': typeof StoreInboundRoute
+  '/store/outbound': typeof StoreOutboundRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/sales' | '/store' | '/store/inbound' | '/store/outbound'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/sales' | '/store' | '/store/inbound' | '/store/outbound'
+  id:
+    | '__root__'
+    | '/'
+    | '/sales'
+    | '/store'
+    | '/store/inbound'
+    | '/store/outbound'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SalesRoute: typeof SalesRoute
+  StoreRoute: typeof StoreRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/store': {
+      id: '/store'
+      path: '/store'
+      fullPath: '/store'
+      preLoaderRoute: typeof StoreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sales': {
+      id: '/sales'
+      path: '/sales'
+      fullPath: '/sales'
+      preLoaderRoute: typeof SalesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,12 +106,50 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/store/outbound': {
+      id: '/store/outbound'
+      path: '/outbound'
+      fullPath: '/store/outbound'
+      preLoaderRoute: typeof StoreOutboundRouteImport
+      parentRoute: typeof StoreRoute
+    }
+    '/store/inbound': {
+      id: '/store/inbound'
+      path: '/inbound'
+      fullPath: '/store/inbound'
+      preLoaderRoute: typeof StoreInboundRouteImport
+      parentRoute: typeof StoreRoute
+    }
   }
 }
 
+interface StoreRouteChildren {
+  StoreInboundRoute: typeof StoreInboundRoute
+  StoreOutboundRoute: typeof StoreOutboundRoute
+}
+
+const StoreRouteChildren: StoreRouteChildren = {
+  StoreInboundRoute: StoreInboundRoute,
+  StoreOutboundRoute: StoreOutboundRoute,
+}
+
+const StoreRouteWithChildren = StoreRoute._addFileChildren(StoreRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SalesRoute: SalesRoute,
+  StoreRoute: StoreRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
