@@ -101,16 +101,18 @@
 .slide-over-exit-active { transform: translateX(100%); transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1); }
 
 /* Custom scrollbar */
-.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar { width: 6px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: oklch(0.8 0 0); border-radius: 2px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: oklch(0.8 0 0); border-radius: 3px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: oklch(0.7 0 0); }
 
-/* Glass morphism header */
-.glass-header {
-  background: oklch(1 0 0 / 80%);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+/* No scrollbar utility */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Active/Selected card state for touch */
+.card-active {
+  background-color: var(--color-primary-foreground);
+  border-color: var(--color-primary);
+  transform: scale(1.01);
 }
-
-/* Tabular numbers for financial data */
-.tabular { font-variant-numeric: tabular-nums; }
