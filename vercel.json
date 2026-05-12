@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "npm run build --prefix WSSale-App",
+  "buildCommand": "npm run build",
   "outputDirectory": "WSSale-App/dist",
   "framework": "vite",
   "rewrites": [
