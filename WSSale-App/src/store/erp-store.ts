@@ -39,10 +39,13 @@ export const useErpStore = create<State & Actions>((set, get) => ({
     { CustID: "C002", CustName: "Globex Industries", CustAddr1: "456 Commerce St" },
     { CustID: "C003", CustName: "Initech Manufacturing", CustAddr1: "789 Software Blvd" },
     { CustID: "C004", CustName: "Stark Engineering", CustAddr1: "101 Stark Tower" },
+    { CustID: "C005", CustName: "Cyberdyne Systems", CustAddr1: "201 Future Way" },
+    { CustID: "C006", CustName: "Wayne Enterprises", CustAddr1: "1007 Mountain Dr" },
   ],
   vendors: [
     { VendorID: "V001", VendorName: "Nippon Steel Supply" },
     { VendorID: "V002", VendorName: "Pacific Components Ltd" },
+    { VendorID: "V003", VendorName: "Global Logistics Co" },
   ],
   items: [
     { GoodID: "G001", GoodName1: "Steel Pipe 2 inch", GoodPrice1: 1500, Unit: "PCS" },
@@ -50,13 +53,17 @@ export const useErpStore = create<State & Actions>((set, get) => ({
     { GoodID: "G003", GoodName1: "Galvanized Bolt M12", GoodPrice1: 25, Unit: "BOX" },
     { GoodID: "G004", GoodName1: "Copper Wire Roll", GoodPrice1: 8400, Unit: "ROL" },
     { GoodID: "G005", GoodName1: "Aluminum Bracket", GoodPrice1: 540, Unit: "PCS" },
+    { GoodID: "G006", GoodName1: "Hydraulic Pump X1", GoodPrice1: 12500, Unit: "UNIT" },
+    { GoodID: "G007", GoodName1: "Industrial Valve 4\"", GoodPrice1: 4200, Unit: "PCS" },
   ],
   soHeaders: [
-    { SOID: "1049", DocuNo: "SO6108-00001", CustID: "1001", DocuDate: "2018-08-24", Status: "Confirmed", TotalAmt: 17500 },
+    { SOID: "1049", DocuNo: "SO6108-00001", CustID: "C001", DocuDate: "2018-08-24", Status: "Confirmed", TotalAmt: 17500 },
     { SOID: "SO26-002", DocuNo: "SO6402-00002", CustID: "C002", DocuDate: today, Status: "Picking", TotalAmt: 16000 },
     { SOID: "SO26-003", DocuNo: "SO6402-00003", CustID: "C003", DocuDate: today, Status: "Draft", TotalAmt: 16800 },
     { SOID: "SO26-004", DocuNo: "SO6402-00004", CustID: "C001", DocuDate: yesterday, Status: "Shipped", TotalAmt: 27000 },
     { SOID: "SO26-005", DocuNo: "SO6402-00005", CustID: "C004", DocuDate: today, Status: "Confirmed", TotalAmt: 63100 },
+    { SOID: "SO26-006", DocuNo: "SO6402-00006", CustID: "C005", DocuDate: today, Status: "Draft", TotalAmt: 12500 },
+    { SOID: "SO26-007", DocuNo: "SO6402-00007", CustID: "C006", DocuDate: yesterday, Status: "Confirmed", TotalAmt: 42000 },
   ],
   soDetails: [
     { SOID: "1049", ListNo: 1, GoodID: "G001", GoodQty1: 10, GoodPrice1: 1500 },
@@ -67,14 +74,18 @@ export const useErpStore = create<State & Actions>((set, get) => ({
     { SOID: "SO26-005", ListNo: 1, GoodID: "G002", GoodQty1: 10, GoodPrice1: 3200 },
     { SOID: "SO26-005", ListNo: 2, GoodID: "G004", GoodQty1: 3, GoodPrice1: 8400 },
     { SOID: "SO26-005", ListNo: 3, GoodID: "G005", GoodQty1: 11, GoodPrice1: 536.3636 },
+    { SOID: "SO26-006", ListNo: 1, GoodID: "G006", GoodQty1: 1, GoodPrice1: 12500 },
+    { SOID: "SO26-007", ListNo: 1, GoodID: "G007", GoodQty1: 10, GoodPrice1: 4200 },
   ],
   poHeaders: [
     { POID: "PO26-001", DocuNo: "PO6402-00001", VendorID: "V001", DocuDate: today, Status: "Pending Receipt", TotalAmt: 280000 },
     { POID: "PO26-002", DocuNo: "PO6402-00002", VendorID: "V002", DocuDate: today, Status: "Pending Receipt", TotalAmt: 240000 },
+    { POID: "PO26-003", DocuNo: "PO6402-00003", VendorID: "V003", DocuDate: yesterday, Status: "Received", TotalAmt: 15000 },
   ],
   poDetails: [
     { POID: "PO26-001", ListNo: 1, GoodID: "G001", GoodQty1: 200, GoodPrice1: 1400 },
     { POID: "PO26-002", ListNo: 1, GoodID: "G004", GoodQty1: 30, GoodPrice1: 8000 },
+    { POID: "PO26-003", ListNo: 1, GoodID: "G003", GoodQty1: 600, GoodPrice1: 25 },
   ],
   unlockRequests: [],
 
@@ -96,6 +107,7 @@ export const useErpStore = create<State & Actions>((set, get) => ({
     const req: UnlockRequest = {
       id: `UR-${Date.now()}`,
       SOID: soid,
+      reason: "Mockup request for demo",
       createdAt: new Date().toISOString(),
       resolved: false,
     };
