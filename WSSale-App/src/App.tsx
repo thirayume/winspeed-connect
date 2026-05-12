@@ -139,9 +139,14 @@ function App() {
 
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">
-          {activePortal === 'sales' && <SalesPortal />}
-          {activePortal === 'store' && <StorePortal />}
-          {activePortal === 'reports' && <KPIReport />}
+          {activePortal === 'sales' ? (
+            <SalesPortal />
+          ) : (
+            <div className="h-full overflow-y-auto custom-scrollbar">
+              {activePortal === 'store' && <StorePortal />}
+              {activePortal === 'reports' && <KPIReport />}
+            </div>
+          )}
         </main>
       </div>
 
