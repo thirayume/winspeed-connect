@@ -78,7 +78,7 @@ export const SalesPortal = () => {
   const selectedSo = useMemo(() => orders.find(o => o.SOID === selectedSoId) || null, [orders, selectedSoId]);
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] h-screen flex flex-col overflow-hidden bg-slate-50/30">
+    <div className="mx-auto w-full max-w-[1600px] h-full flex flex-col overflow-hidden bg-slate-50/30">
       {/* Header */}
       <div className="px-6 py-6 border-b border-border bg-white shadow-sm z-10 flex flex-wrap items-center justify-between gap-4">
         <div>

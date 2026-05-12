@@ -13,7 +13,7 @@ function App() {
   const portalLabel = activePortal === 'sales' ? 'Sales Portal' : activePortal === 'store' ? 'Store / Warehouse' : 'KPI Reports';
 
   return (
-    <div className="flex min-h-screen w-full bg-background text-foreground">
+    <div className="flex h-screen w-full bg-background text-foreground overflow-hidden">
       {/* Desktop Sidebar */}
       <aside className={`hidden shrink-0 flex-col border-r border-border bg-sidebar md:flex transition-all duration-300 ${isSidebarCollapsed ? 'w-16' : 'w-60'}`}>
         <div className={`flex h-14 items-center border-b border-border transition-all ${isSidebarCollapsed ? 'justify-center' : 'gap-2.5 px-5'}`}>
@@ -138,7 +138,7 @@ function App() {
         </header>
 
         {/* Main Content */}
-        <main className="flex-1">
+        <main className="flex-1 overflow-hidden">
           {activePortal === 'sales' && <SalesPortal />}
           {activePortal === 'store' && <StorePortal />}
           {activePortal === 'reports' && <KPIReport />}
