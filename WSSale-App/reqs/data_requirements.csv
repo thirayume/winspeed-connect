@@ -1,0 +1,21 @@
+Entity,AppField,DBTable,DBColumn,DBType,Required,Notes
+Customer,CustID,EMCust,CustID,int,YES,Primary Key
+Customer,CustName,EMCust,CustName,varchar,YES,Display Name
+Item,GoodID,EMGood,GoodID,int,YES,Primary Key
+Item,GoodCode,EMGood,GoodCode,varchar,YES,SKU
+Item,GoodName,EMGood,GoodName1,varchar,YES,Description
+Item,GoodPrice1,EMGood,StandardSalePrce,money,YES,Base Price
+Item,StockQty,EMGood,StockQty,decimal,NO,Current Stock
+OrderHeader,SOID,SOHD,SOID,int,YES,Primary Key
+OrderHeader,DocuNo,SOHD,DocuNo,varchar,YES,Order #
+OrderHeader,CustID,SOHD,CustID,int,YES,Customer Link
+OrderHeader,DocuDate,SOHD,DocuDate,datetime,YES,Order Date
+OrderHeader,NetAmnt,SOHD,NetAmnt,money,YES,Total Amount
+OrderHeader,AppvFlag,SOHD,AppvFlag,char(1),YES,Confirmed Status
+OrderHeader,PkgStatus,SOHD,PkgStatus,char(1),YES,Picking Status
+OrderHeader,clearflag,SOHD,clearflag,char(1),YES,Shipped Status
+OrderDetail,SOID,SODT,SOID,int,YES,Header Link
+OrderDetail,ListNo,SODT,ListNo,smallint,YES,Line Seq
+OrderDetail,GoodID,SODT,GoodID,int,YES,Item Link
+OrderDetail,GoodQty1,SODT,GoodQty1,decimal,YES,Quantity
+OrderDetail,GoodPrice1,SODT,GoodPrice1,money,YES,Line Price

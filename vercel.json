@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build --prefix WSSale-App",
+  "outputDirectory": "WSSale-App/dist",
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

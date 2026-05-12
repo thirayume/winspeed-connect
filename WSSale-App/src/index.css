@@ -1,0 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+
+  --color-status-confirmed: var(--status-confirmed);
+  --color-status-picking: var(--status-picking);
+  --color-status-shipped: var(--status-shipped);
+  --color-status-locked: var(--status-locked);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.985 0.002 247);
+  --foreground: oklch(0.145 0.042 265);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0.042 265);
+  --primary: oklch(0.205 0.042 266);
+  --primary-foreground: oklch(0.985 0.003 248);
+  --secondary: oklch(0.965 0.007 248);
+  --secondary-foreground: oklch(0.205 0.042 266);
+  --muted: oklch(0.965 0.007 248);
+  --muted-foreground: oklch(0.556 0.046 257);
+  --accent: oklch(0.965 0.007 248);
+  --accent-foreground: oklch(0.205 0.042 266);
+  --destructive: oklch(0.577 0.245 27);
+  --border: oklch(0.922 0.013 256);
+  --input: oklch(0.922 0.013 256);
+  --ring: oklch(0.705 0.04 257);
+  --sidebar: oklch(0.985 0.003 248);
+  --sidebar-foreground: oklch(0.145 0.042 265);
+
+  --status-confirmed: oklch(0.55 0.18 250);
+  --status-picking: oklch(0.72 0.16 70);
+  --status-shipped: oklch(0.62 0.17 150);
+  --status-locked: oklch(0.62 0.22 20);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Portal card with hover lift effect */
+.portal-card {
+  background-color: var(--color-card);
+  color: var(--color-card-foreground);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  transition: all 0.2s ease;
+}
+.portal-card:hover {
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.06);
+}
+
+/* Mobile safe area padding */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .safe-bottom {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
+  }
+}
+
+/* Slide-over panel animation */
+.slide-over-enter { transform: translateX(100%); }
+.slide-over-enter-active { transform: translateX(0); transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); }
+.slide-over-exit-active { transform: translateX(100%); transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1); }
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: oklch(0.8 0 0); border-radius: 2px; }
+
+/* Glass morphism header */
+.glass-header {
+  background: oklch(1 0 0 / 80%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Tabular numbers for financial data */
+.tabular { font-variant-numeric: tabular-nums; }

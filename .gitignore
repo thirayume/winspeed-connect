@@ -1,4 +1,22 @@
-# Logs
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Testing
+coverage
+
+# Production
+dist
+dist-ssr
+.output
+.vercel
+
+# Misc
+.DS_Store
+*.pem
+
+# Debug
 logs
 *.log
 npm-debug.log*
@@ -7,26 +25,22 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-.output
-.vinxi
-.tanstack/**
-.nitro
-*.local
-
-# Wrangler / Cloudflare
-.wrangler/
-.dev.vars
+# Local env files
+.env*.local
+.env
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
-.DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# Project specific
+winspeed-connect/
+backend/node_modules/
+WSSale-App/node_modules/
+WSSale-App/dist/
