@@ -2,15 +2,10 @@
   "name": "winspeed-erp-root",
   "version": "1.0.0",
   "description": "Root management for Sales Order app",
-  "private": true,
-  "workspaces": [
-    "WSSale-App",
-    "backend"
-  ],
   "scripts": {
     "start:backend": "cd backend && node server.js",
     "start:frontend": "cd WSSale-App && npm run dev",
     "dev": "npx concurrently \"npm run start:backend\" \"npm run start:frontend\"",
-    "build": "npm run build --workspace=WSSale-App"
+    "build": "cd WSSale-App && npm install && npm run build"
   }
 }
