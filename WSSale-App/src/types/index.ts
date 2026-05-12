@@ -73,6 +73,7 @@ export type PODT = {
 export type UnlockRequest = {
   id: string;
   SOID: string;
+  reason?: string;
   createdAt: string;
   resolved: boolean;
 };

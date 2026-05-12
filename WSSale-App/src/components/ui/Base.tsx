@@ -6,8 +6,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export const Button = React.forwardRef<HTMLButtonElement, React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' }>(
-  ({ className, variant = 'primary', ...props }, ref) => {
+export const Button = React.forwardRef<HTMLButtonElement, React.ButtonHTMLAttributes<HTMLButtonElement> & { 
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger',
+  size?: 'sm' | 'md' | 'lg' | 'icon'
+}>(
+  ({ className, variant = 'primary', size = 'md', ...props }, ref) => {
     const variants = {
       primary: 'bg-slate-900 text-white hover:bg-slate-800 shadow-sm',
       secondary: 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50 shadow-sm',
@@ -16,12 +19,20 @@ export const Button = React.forwardRef<HTMLButtonElement, React.ButtonHTMLAttrib
       danger: 'bg-red-600 text-white hover:bg-red-700 shadow-sm',
     };
 
+    const sizes = {
+      sm: 'h-8 px-3 text-xs',
+      md: 'h-10 px-4 py-2 text-sm',
+      lg: 'h-12 px-8 text-base',
+      icon: 'h-10 w-10',
+    };
+
     return (
       <button
         ref={ref}
         className={cn(
-          'inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:pointer-events-none disabled:opacity-50',
+          'inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:pointer-events-none disabled:opacity-50',
           variants[variant],
+          sizes[size],
           className
         )}
         {...props}
