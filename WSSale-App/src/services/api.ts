@@ -60,10 +60,10 @@ export const fetchSalesOrders = async (params?: { page?: number, limit?: number,
                custName.toLowerCase().includes(q);
       });
     }
-    if (params?.customer) {
+    if (params?.customer && params.customer !== "") {
       filtered = filtered.filter(h => h.CustID === params.customer);
     }
-    if (params?.status) {
+    if (params?.status && params.status !== "") {
       filtered = filtered.filter(h => h.Status === params.status);
     }
 
