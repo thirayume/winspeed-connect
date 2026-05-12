@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Plus, Search, RefreshCw, ChevronRight, Filter, ChevronLeft, ChevronsLeft, ChevronsRight, Package, Calendar, User, DollarSign } from 'lucide-react';
 import { Button, Card, cn } from '../ui/Base';
 import { useErpStore } from '../../store/erp-store';
-import { fetchSalesOrders } from '../../services/api';
+import { fetchSalesOrders, fetchUnlockRequests } from '../../services/api';
 import { SOStatusBadge } from './SOStatusBadge';
 import { CreateSODialog } from './CreateSODialog';
 import { EditSODialog } from './EditSODialog';
@@ -30,6 +30,7 @@ export const SalesPortal = () => {
 
   const customers = useErpStore(s => s.customers);
   const unlockRequests = useErpStore(s => s.unlockRequests);
+  const setUnlockRequests = useErpStore(s => s.setUnlockRequests);
 
   // Debounce search input
   useEffect(() => {
@@ -43,22 +44,26 @@ export const SalesPortal = () => {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-        const result = await fetchSalesOrders({
-          page,
-          limit,
-          search: debouncedSearch,
-          customer: customerFilter,
-          status: statusFilter
-        });
-        setOrders(result.data || []);
-        setTotalOrders(result.total || 0);
+        const [ordersRes, requestsRes] = await Promise.all([
+          fetchSalesOrders({
+            page,
+            limit,
+            search: debouncedSearch,
+            customer: customerFilter,
+            status: statusFilter
+          }),
+          fetchUnlockRequests()
+        ]);
+        setOrders(ordersRes.data || []);
+        setTotalOrders(ordersRes.total || 0);
+        setUnlockRequests(requestsRes || []);
     } catch (err) {
         console.error("Failed to load data", err);
         setOrders([]);
         setTotalOrders(0);
     }
     setLoading(false);
-  }, [page, limit, debouncedSearch, customerFilter, statusFilter]);
+  }, [page, limit, debouncedSearch, customerFilter, statusFilter, setUnlockRequests]);
 
   useEffect(() => {
     loadData();
@@ -202,8 +207,10 @@ export const SalesPortal = () => {
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-2">
                         <span className="font-mono font-bold text-foreground text-sm tracking-tight">{order.SOID}</span>
-                        <SOStatusBadge status={order.Status} />
-                        {isUnlockPending && <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse" />}
+                        <SOStatusBadge 
+                          status={order.Status} 
+                          isUnlockRequested={!!unlockRequests.find(r => r.SOID === order.SOID && !r.resolved)} 
+                        />
                       </div>
                       <span className="font-black text-foreground tabular text-base text-primary">฿{order.TotalAmt?.toLocaleString()}</span>
                     </div>

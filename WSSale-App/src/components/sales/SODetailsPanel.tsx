@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Lock, Unlock } from 'lucide-react';
+import { X, Lock, Unlock, RefreshCw } from 'lucide-react';
 import { Button, cn } from '../ui/Base';
 import { SOStatusBadge } from './SOStatusBadge';
 import { useErpStore } from '../../store/erp-store';
@@ -108,7 +108,7 @@ export function SODetailsPanel({
         <div className="flex flex-col">
           <div className="flex items-center gap-3">
             <h2 className="text-xl font-semibold text-foreground">{so.SOID}</h2>
-            <SOStatusBadge status={so.Status} />
+            <SOStatusBadge status={so.Status} isUnlockRequested={!!pendingReq} />
           </div>
           <p className="text-sm text-muted-foreground mt-1">
             {so.DocuNo && `${so.DocuNo} · `}{so.CustName || customer?.CustName} · {so.DocuDate}
@@ -125,13 +125,24 @@ export function SODetailsPanel({
       </div>
 
       <div className="flex-1 space-y-6 p-6 overflow-y-auto custom-scrollbar">
-        {locked && (
+        {pendingReq ? (
+           <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm animate-in fade-in slide-in-from-top-2">
+            <RefreshCw className="mt-0.5 h-4 w-4 text-red-600 shrink-0 animate-spin" />
+            <div className="flex-1">
+              <div className="font-semibold text-red-900 uppercase text-[11px] tracking-widest">Awaiting Store Review</div>
+              <div className="text-xs text-red-700 mt-1">
+                You requested an unlock for: <span className="font-medium">"{pendingReq.reason}"</span>. 
+                Warehouse staff must approve this before you can edit.
+              </div>
+            </div>
+          </div>
+        ) : locked && (
           <div className="flex items-start gap-3 rounded-lg border border-[var(--color-status-locked)]/30 bg-[var(--color-status-locked)]/5 p-4 text-sm">
             <Lock className="mt-0.5 h-4 w-4 text-[var(--color-status-locked)] shrink-0" />
             <div className="flex-1">
-              <div className="font-semibold text-foreground">This SO is locked</div>
+              <div className="font-semibold text-foreground uppercase text-[11px] tracking-widest">This SO is locked</div>
               <div className="text-xs text-muted-foreground mt-1">
-                Editing and cancellation are disabled while warehouse is processing.
+                Warehouse is processing this order. Request an unlock if you need to make changes.
               </div>
             </div>
           </div>

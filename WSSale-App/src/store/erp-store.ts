@@ -27,6 +27,7 @@ type Actions = {
   setSOStatus: (soid: string, status: SOStatus) => void;
   addUnlockRequest: (soid: string) => UnlockRequest;
   resolveUnlockRequest: (id: string) => void;
+  setUnlockRequests: (reqs: UnlockRequest[]) => void;
   receivePO: (poid: string, lines?: { GoodID: string; GoodQty1: number }[]) => void;
 };
 
@@ -127,6 +128,7 @@ export const useErpStore = create<State & Actions>((set, get) => ({
       ),
     }));
   },
+  setUnlockRequests: (reqs) => set({ unlockRequests: reqs }),
 
   receivePO: (poid, lines) =>
     set((s) => {

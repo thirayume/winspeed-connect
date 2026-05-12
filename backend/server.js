@@ -342,6 +342,7 @@ app.get('/api/purchase-orders', async (req, res) => {
 let unlockRequests = [];
 
 app.get('/api/unlock-requests', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.json(unlockRequests);
 });
 

@@ -1,14 +1,32 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell } from 'lucide-react';
 import { SalesPortal } from './components/sales/SalesPortal';
 import { StorePortal } from './components/store/StorePortal';
 import { KPIReport } from './components/reports/KPIReport';
 import { useErpStore } from './store/erp-store';
+import { fetchUnlockRequests } from './services/api';
 
 function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [activePortal, setActivePortal] = useState<'sales' | 'store' | 'reports'>('sales');
+  const setUnlockRequests = useErpStore(s => s.setUnlockRequests);
   const pendingUnlocks = useErpStore(s => s.unlockRequests.filter(r => !r.resolved).length);
+
+  // Background poller for unlock requests to keep UI "Live"
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const reqs = await fetchUnlockRequests();
+        setUnlockRequests(reqs);
+      } catch (e) {
+        console.error("Polling failed", e);
+      }
+    };
+    
+    poll(); // Initial fetch
+    const timer = setInterval(poll, 5000); // Every 5 seconds
+    return () => clearInterval(timer);
+  }, [setUnlockRequests]);
 
   const portalLabel = activePortal === 'sales' ? 'Sales Portal' : activePortal === 'store' ? 'Store / Warehouse' : 'KPI Reports';
 

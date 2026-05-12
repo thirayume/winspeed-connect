@@ -169,6 +169,12 @@ export const updateSO = async (SOID: string, payload: any): Promise<{ success: b
   return response.json();
 };
 
+export const fetchUnlockRequests = async (): Promise<UnlockRequest[]> => {
+  if (USE_MOCKUP) return delay(useErpStore.getState().unlockRequests, 300);
+  const response = await fetch(`${API_BASE_URL}/unlock-requests?_t=${Date.now()}`, { cache: 'no-store' });
+  return response.json();
+};
+
 export const requestUnlock = async (SOID: string, reason?: string): Promise<UnlockRequest> => {
   if (USE_MOCKUP) {
     const req = useErpStore.getState().addUnlockRequest(SOID);
@@ -177,7 +183,8 @@ export const requestUnlock = async (SOID: string, reason?: string): Promise<Unlo
   const response = await fetch(`${API_BASE_URL}/unlock-requests`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ SOID, reason })
+    body: JSON.stringify({ SOID, reason }),
+    cache: 'no-store'
   });
   if (!response.ok) throw new Error("Failed to request unlock");
   return response.json();
@@ -188,7 +195,10 @@ export const resolveUnlockRequest = async (id: string): Promise<{ ok: true }> =>
     useErpStore.getState().resolveUnlockRequest(id);
     return delay({ ok: true });
   }
-  const response = await fetch(`${API_BASE_URL}/unlock-requests/${id}`, { method: 'PUT' });
+  const response = await fetch(`${API_BASE_URL}/unlock-requests/${id}`, { 
+    method: 'PUT',
+    cache: 'no-store'
+  });
   if (!response.ok) throw new Error("Failed to resolve unlock request");
   return response.json();
 };

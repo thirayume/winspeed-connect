@@ -25,7 +25,7 @@ export function CreateSODialog({ isOpen, onClose, onCreated }: { isOpen: boolean
     setLines(prev => {
       const existing = prev.find(l => l.GoodID === item.GoodID);
       if (existing) {
-        return prev.map(l => l.GoodID === item.GoodID ? { ...l, GoodQty1: l.GoodQty1 + 1 } : l);
+        return prev.map(l => l.GoodID === item.GoodID ? { ...l, GoodQty1: Number(l.GoodQty1) + 1 } : l);
       }
       return [{ 
         GoodID: item.GoodID, 
@@ -41,7 +41,7 @@ export function CreateSODialog({ isOpen, onClose, onCreated }: { isOpen: boolean
       handleRemoveLine(goodId);
       return;
     }
-    setLines(prev => prev.map(l => l.GoodID === goodId ? { ...l, GoodQty1: qty } : l));
+    setLines(prev => prev.map(l => l.GoodID === goodId ? { ...l, GoodQty1: Number(qty) } : l));
   };
 
   const handleRemoveLine = (goodId: string) => {

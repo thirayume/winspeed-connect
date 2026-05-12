@@ -33,8 +33,8 @@ export function EditSODialog({
         setRequestedDate(so.RequestedDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10));
         setLines(so.lines.map(l => ({
           GoodID: l.GoodID,
-          GoodQty1: l.GoodQty1,
-          GoodPrice1: l.GoodPrice1,
+          GoodQty1: Number(l.GoodQty1) || 0,
+          GoodPrice1: Number(l.GoodPrice1) || 0,
           ListNo: l.ListNo
         })));
       }
@@ -45,7 +45,7 @@ export function EditSODialog({
     setLines(prev => {
       const existing = prev.find(l => l.GoodID === item.GoodID);
       if (existing) {
-        return prev.map(l => l.GoodID === item.GoodID ? { ...l, GoodQty1: l.GoodQty1 + 1 } : l);
+        return prev.map(l => l.GoodID === item.GoodID ? { ...l, GoodQty1: Number(l.GoodQty1) + 1 } : l);
       }
       return [{ 
         GoodID: item.GoodID, 
@@ -61,7 +61,7 @@ export function EditSODialog({
       handleRemoveLine(goodId);
       return;
     }
-    setLines(prev => prev.map(l => l.GoodID === goodId ? { ...l, GoodQty1: qty } : l));
+    setLines(prev => prev.map(l => l.GoodID === goodId ? { ...l, GoodQty1: Number(qty) } : l));
   };
 
   const handleRemoveLine = (goodId: string) => {

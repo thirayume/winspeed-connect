@@ -2,7 +2,15 @@ import React from 'react';
 import { Badge } from '../ui/Base';
 import type { SOStatus } from '../../types';
 
-export const SOStatusBadge = ({ status }: { status: SOStatus }) => {
+export const SOStatusBadge = ({ status, isUnlockRequested }: { status: SOStatus, isUnlockRequested?: boolean }) => {
+  if (isUnlockRequested) {
+    return (
+      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-black border bg-red-600 text-white border-red-700 shadow-sm animate-pulse">
+        AWAITING REVIEW
+      </span>
+    );
+  }
+
   const getBadgeStyle = () => {
     switch (status) {
       case 'Draft':
@@ -19,7 +27,7 @@ export const SOStatusBadge = ({ status }: { status: SOStatus }) => {
   };
 
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold border ${getBadgeStyle()}`}>
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-black border uppercase tracking-tighter ${getBadgeStyle()}`}>
       {status}
     </span>
   );

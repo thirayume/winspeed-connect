@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Truck, RefreshCw } from 'lucide-react';
 import { cn } from '../ui/Base';
-import { fetchSalesOrders, fetchPurchaseOrders } from '../../services/api';
+import { fetchSalesOrders, fetchPurchaseOrders, fetchUnlockRequests } from '../../services/api';
 import { PickingQueue } from './PickingQueue';
 import { ReceivingQueue } from './ReceivingQueue';
+import { useErpStore } from '../../store/erp-store';
 import type { SOWithDetails, POWithDetails } from '../../types';
 
 export const StorePortal = () => {
@@ -11,16 +12,21 @@ export const StorePortal = () => {
   const [soOrders, setSoOrders] = useState<SOWithDetails[]>([]);
   const [poOrders, setPoOrders] = useState<POWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  
+  const setUnlockRequests = useErpStore(s => s.setUnlockRequests);
 
   const loadData = async () => {
     setLoading(true);
     try {
-        const [sosRes, pos] = await Promise.all([
-          fetchSalesOrders({ limit: 100 }), // Fetch more for the queue
-          fetchPurchaseOrders()
+        const [sosRes, pos, requests] = await Promise.all([
+          fetchSalesOrders({ limit: 200 }), // Increased limit for better filtering
+          fetchPurchaseOrders(),
+          fetchUnlockRequests()
         ]);
         setSoOrders(sosRes.data || []);
         setPoOrders(pos || []);
+        setUnlockRequests(requests || []);
     } catch(e) {
         console.error(e);
         setSoOrders([]);
@@ -33,15 +39,42 @@ export const StorePortal = () => {
     loadData();
   }, []);
 
-  const outboundOrders = soOrders.filter(o => ['Confirmed', 'Picking'].includes(o.Status));
+  const filteredSOs = soOrders.filter(o => {
+    const matchesStatus = ['Confirmed', 'Picking'].includes(o.Status);
+    const matchesSearch = o.SOID.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          (o.CustName && o.CustName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                          (o.CustID && o.CustID.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesStatus && matchesSearch;
+  });
+
   const inboundOrders = poOrders.filter(p => p.Status === 'Pending Receipt');
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-8 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight text-foreground">Store & Warehouse</h2>
-          <p className="text-sm text-muted-foreground mt-1">Processing inbound receipts and outbound picking queues.</p>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tight text-foreground">Store & Warehouse</h2>
+            <p className="text-sm text-muted-foreground mt-1">Processing inbound receipts and outbound picking queues.</p>
+          </div>
+          
+          <div className="relative flex-1 sm:w-64">
+            <input 
+              type="text"
+              placeholder="Search SO ID or Customer..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-11 pl-4 pr-10 rounded-xl border border-border bg-white shadow-sm focus:ring-2 focus:ring-primary/10 outline-none text-sm"
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
         
         <div className="flex bg-slate-100 p-1 rounded-xl w-full sm:w-auto">
@@ -54,12 +87,12 @@ export const StorePortal = () => {
           >
             <Package size={16} />
             Outbound
-            {outboundOrders.length > 0 && (
+            {filteredSOs.length > 0 && (
               <span className={cn(
                 "ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold",
                 activeTab === 'outbound' ? "bg-slate-100 text-slate-700" : "bg-slate-200/50 text-slate-500"
               )}>
-                {outboundOrders.length}
+                {filteredSOs.length}
               </span>
             )}
           </button>
@@ -90,7 +123,7 @@ export const StorePortal = () => {
            <p className="text-sm text-muted-foreground font-medium">Synchronizing with ERP...</p>
          </div>
       ) : activeTab === 'outbound' ? (
-        <PickingQueue orders={outboundOrders} onUpdate={loadData} />
+        <PickingQueue orders={filteredSOs} onUpdate={loadData} />
       ) : (
         <ReceivingQueue orders={inboundOrders} onUpdate={loadData} />
       )}
