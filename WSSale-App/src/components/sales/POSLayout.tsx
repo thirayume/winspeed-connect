@@ -10,7 +10,8 @@ import {
   Package,
   CircleCheck,
   TrendingUp,
-  Clock
+  Clock,
+  X
 } from 'lucide-react';
 import { Button, Card, Badge, cn } from '../ui/Base';
 import type { EMGood, SOLine } from '../types';
@@ -72,8 +73,13 @@ export const POSLayout = ({
               placeholder="Search items by name or ID..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+              className="w-full pl-10 pr-8 py-2.5 rounded-xl border border-border bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
             />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                <X size={14} />
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
