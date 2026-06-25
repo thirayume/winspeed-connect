@@ -1,0 +1,52 @@
+child_table,child_col,parent_table,parent_col,verified,หมายเหตุ
+SODT,SOID,SOHD,SOID,Y,orphan=0 จาก query จริง
+SOInvDT,SOInvID,SOInvHD,SOInvID,Y,orphan=0
+SOPickingDT,PickingID,SOPickingHD,PickingID,Y,convention match
+SOPickingDT,SOID,SOHD,SOID,Y,convention match
+ARBillDT,ARBillID,ARBillHD,ARBillID,Y,convention match
+ARBillDT,SOInvID,SOInvHD,SOInvID,Y,convention match
+GLDT,GLID,GLHD,GLID,Y,orphan=0
+ICPriceDT,DocuID,ICPriceHD,DocuID,N,ทั้งสองตารางว่าง (0 rows)
+SOHD,CustID,EMCust,CustID,Y,convention (ARID=CustID ยืนยันใน CLAUDE.md)
+SOHD,EmpID,EMEmp,EmpID,Y,convention match
+SOHD,BrchID,EMBrch,BrchID,Y,orphan=0 (SOInvHD.BrchID verified)
+SOHD,CreditID,EMCreditTerm,CreditID,Y,orphan=0
+SOHD,SaleAreaID,EMSaleArea,SaleAreaID,Y,convention match
+SOHD,TranspID,EMTransp,TranspID,Y,convention match
+SOInvHD,CustID,EMCust,CustID,Y,orphan=0
+SOInvHD,EmpID,EMEmp,EmpID,Y,convention match
+SOInvHD,BrchID,EMBrch,BrchID,Y,orphan=0
+SOInvHD,CreditID,EMCreditTerm,CreditID,Y,convention match
+SOInvHD,SaleAreaID,EMSaleArea,SaleAreaID,Y,convention match
+SOInvHD,TranspID,EMTransp,TranspID,Y,convention match
+SOInvHD,ARID,EMCust,CustID,Y,ARID=CustID ทุกแถว (ยืนยันใน CLAUDE.md)
+SOInvHD,PostID,GLHD,FromID,Y,join ผ่าน DocuNo ยืนยันแล้ว (ทิศทางกลับ)
+SOInvDT,GoodID,EMGood,GoodID,Y,orphan(non-null)=0; NULL 224571/471641 rows=service lines
+SOInvDT,InveID,EMInve,InveID,Y,convention match
+SOInvDT,LocaID,EMLoca,LocaID,Y,convention match
+SOPickingHD,CustID,EMCust,CustID,Y,convention match
+SOPickingHD,EmpID,EMEmp,EmpID,Y,convention match
+SOPickingHD,BrchID,EMBrch,BrchID,Y,convention match
+SOPickingHD,InveID,EMInve,InveID,Y,convention match
+SOPickingDT,GoodID,EMGood,GoodID,Y,convention match
+SOPickingDT,GoodUnitID,EMGoodUnit,GoodUnitID,Y,convention match
+ARBillHD,CustID,EMCust,CustID,Y,orphan=0
+ARBillHD,EmpID,EMEmp,EmpID,Y,convention match
+ARBillHD,BrchID,EMBrch,BrchID,Y,convention match
+ARBillHD,CreditID,EMCreditTerm,CreditID,Y,convention match
+GLDT,AccID,EMAcc,AccID,Y,orphan=0
+GLDT,JourID,EMAccJour,JourID,Y,convention match
+GLDT,BrchID,EMBrch,BrchID,Y,convention match
+GLHD,BrchID,EMBrch,BrchID,Y,convention match
+GLHD,EmpID,EMEmp,EmpID,Y,convention match
+GLHD,JourID,EMAccJour,JourID,Y,convention match
+ICStock,GoodID,EMGood,GoodID,Y,orphan=0
+ICStock,InveID,EMInve,InveID,Y,convention match
+ICStock,LocaID,EMLoca,LocaID,Y,convention match
+ICStock,BrchID,EMBrch,BrchID,Y,convention match
+EMCust,AccID,EMAcc,AccID,Y,convention match
+EMCust,BrchID,EMBrch,BrchID,Y,convention match
+EMCust,SaleAreaID,EMSaleArea,SaleAreaID,Y,convention match
+EMInve,BrchID,EMBrch,BrchID,Y,convention match
+EMInve,EmpID,EMEmp,EmpID,Y,convention match
+EMLoca,InveID,EMInve,InveID,Y,convention match (parent key)

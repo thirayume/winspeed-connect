@@ -1,0 +1,7395 @@
+{
+ "customers": [
+  {
+   "CustID": "1004",
+   "CustName": " ส. โชคเจริญวัฒนา",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "1065",
+   "CustName": "31 เคมีเกษตร",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "3001",
+   "CustName": "44 ฟาร์มดีเวล็อปเมนต์ จำกัด",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "109001",
+   "CustName": "BANGKOK SUBMARINE CO.,LTD. HEAD OFFICE",
+   "Tel": "ID:0115560022127",
+   "Mobile": null
+  },
+  {
+   "CustID": "27009",
+   "CustName": "K L N Y IMPORT CO., LTD.",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "104067",
+   "CustName": "SAMSUNG C&T (THAILAND) CO.,LTD.",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "26010",
+   "CustName": "STKH IMPORT & EXPORT CO.,LTD.",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "104022",
+   "CustName": "ก.ไก่ การเกษตร สาขา2",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "1094",
+   "CustName": "กรเดชพืชผล",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "105007",
+   "CustName": "กฤษณามาร์เก็ตติ้ง จำกัด ID:0105537091266",
+   "Tel": "081-866-0654",
+   "Mobile": null
+  },
+  {
+   "CustID": "1060",
+   "CustName": "กลิ่นจันทเกษตร",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "14009",
+   "CustName": "กลุ่มเกษตรทำนาทุ่งกระเต็น",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "23011",
+   "CustName": "กลุ่มชาวนารุ่งเรือง",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "104014",
+   "CustName": "กลุ่มชาวไร่น้ำเค็ม",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "18006",
+   "CustName": "กลุ่มชาวไร่น้ำจืด",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "23106",
+   "CustName": "กลุ่มส้มเมืองลอง",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "3012",
+   "CustName": "กลุ่มออมทรัพย์เกษตรผสมผสาน",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "23031",
+   "CustName": "กองทุนหมู่บ้านคึมหญ้านาง",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "26007",
+   "CustName": "กัปตัน มารีน จำกัด",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "23093",
+   "CustName": "การยางแห่งประเทศไทย",
+   "Tel": "Tax ID.0994001057192",
+   "Mobile": null
+  },
+  {
+   "CustID": "1159",
+   "CustName": "กาฬสินธุ์ออโต้เซลล์ จำกัด",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "1077",
+   "CustName": "กำพลอาหารสัตว์",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "1116",
+   "CustName": "กิ่งไผ่พืชผล",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "17014",
+   "CustName": "กิจเจริญ",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "1121",
+   "CustName": "กิจพัฒนา 2017",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "1024",
+   "CustName": "กิจเสรีเคมีเกษตร",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "1022",
+   "CustName": "กิตติเกษตร จำกัด",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "26000",
+   "CustName": "กิตติพันธ์ โชตน์ภาวินันท์",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "1029",
+   "CustName": "กิตติลักษณ์การเกษตร จำกัด",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "1014",
+   "CustName": "กู๊ดมาร์ค จำกัด",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "1184",
+   "CustName": "เกตุการเกษตร",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "104055",
+   "CustName": "เกษตรก้าวเจริญ จำกัด",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "104028",
+   "CustName": "เกษตรกิจ จำกัด  Tax ID No.0375564001025",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "17010",
+   "CustName": "เกษตรเจ้าคุณ",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "1175",
+   "CustName": "เกษตรชุมแสง",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "1071",
+   "CustName": "เกษตรทิพย์ เฟอร์ทิไลเซอร์ จำกัด",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "23042",
+   "CustName": "เกษตรนาโน",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "1068",
+   "CustName": "เกษตรพัฒนา",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "104004",
+   "CustName": "เกษตรไพบูลย์ 2020",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "1172",
+   "CustName": "เกษตรไพบูลย์1991",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "104090",
+   "CustName": "เกษตรไพศาล เทรดดิ้ง จำกัด",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "104075",
+   "CustName": "เกษตรไพศาล มหาสารคาม จำกัด",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "104060",
+   "CustName": "เกษตรรุ่งเรืองราษีไศล",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "104087",
+   "CustName": "เกษตรรุ่งโรจน์ จำกัด",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "23021",
+   "CustName": "เกษตรเรืองเจริญ ",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "27007",
+   "CustName": "เกษตรสิทธี จำกัด",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "1169",
+   "CustName": "เกษตรแสนขัน จำกัด",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "104092",
+   "CustName": "เกษตรหน้าวัด",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "112001",
+   "CustName": "เกษร ดีบรรเจิด",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "104086",
+   "CustName": "เกียรติวาริน",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "23102",
+   "CustName": "แกรนด์การเกษตร",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "23023",
+   "CustName": "โก๋เคมีเกษตร",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "104053",
+   "CustName": "โกรว์ ซัคเซส อกริคัลเจอร์ จำกัด",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "3016",
+   "CustName": "โกรว์ซัคเซส จำกัด",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "1151",
+   "CustName": "โกสุมเคมีเกษตร",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "104033",
+   "CustName": "ไก่เกษตร 2022 จำกัด",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "23051",
+   "CustName": "ขวัญข้าวปลูก",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "1149",
+   "CustName": "ข้าวทองพยัคฆ์ จำกัด",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7145",
+   "CustName": "คณสมชาย เกิดมงคล",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "1019",
+   "CustName": "คลองตันเพื่อนเกษตร",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "1198",
+   "CustName": "คลองหินการเกษตร",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "1210",
+   "CustName": "คลินิกเกษตรพัทลุง 1998",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7029",
+   "CustName": "คุณกมลวรรณ การีวรรณ",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7084",
+   "CustName": "คุณกรกนก สุขบาง",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7071",
+   "CustName": "คุณกสิณ กังวาล",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7094",
+   "CustName": "คุณการุณ สุจิน",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7043",
+   "CustName": "คุณกำชัย ทองมงคล",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7014",
+   "CustName": "คุณกำพล รัตนโชค",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "10003",
+   "CustName": "คุณกิ่งแก้ว มีชัย",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "7004",
+   "CustName": "คุณกิตติพร เจริญสุขชัย",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7010",
+   "CustName": "คุณกิติ แก้วทวี",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7003",
+   "CustName": "คุณกิติพงษ์ ทรัพย์ทวี",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "14010",
+   "CustName": "คุณกิติศักดิ์ บุญรักษ์",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "7144",
+   "CustName": "คุณกิมเต็ก เบญจธรรม",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "23074",
+   "CustName": "คุณเก่ง  มั่งมี",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "7132",
+   "CustName": "คุณเกษม ภักดี",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7103",
+   "CustName": "คุณขวัญเมือง พัฒนากร",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7078",
+   "CustName": "คุณเขษม ขจร",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "7096",
+   "CustName": "คุณคงเดช คงเสรี",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "104088",
+   "CustName": "คุณคณิน  เกิดแก้ว",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "7062",
+   "CustName": "คุณคนางค์ เกิดแก้ว",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7120",
+   "CustName": "คุณคำดี จงเจริญ",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "7039",
+   "CustName": "คุณจรัล จันทร",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "23005",
+   "CustName": "คุณจอมทอง    ก้าวคง",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "23044",
+   "CustName": "คุณจักรพรรดิ์  นิเวชศักดิ์",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "16002",
+   "CustName": "คุณจันทิมา    แก้วมณี",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "7095",
+   "CustName": "คุณจันทิรา บุญเลิศ",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7131",
+   "CustName": "คุณจำลอง กิตติ",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "23014",
+   "CustName": "คุณจิดาภา      ผ่องอำพัน",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "7100",
+   "CustName": "คุณจินตนา จิตโสภา",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7044",
+   "CustName": "คุณจิรายุ แจกันเพชร",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "3017",
+   "CustName": "คุณจุมพล คุณากร",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "7018",
+   "CustName": "คุณเจริญ กิจเสรี",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "7134",
+   "CustName": "คุณเจริญ พรไพริน",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7150",
+   "CustName": "คุณเจริญ มากทวี",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "104081",
+   "CustName": "คุณเจริญทรัพย์  บุญมาก",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "7149",
+   "CustName": "คุณชนะกิจ ค้าเจริญ",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "7099",
+   "CustName": "คุณชมพูนุท ด่านรักษา",
+   "Tel": null,
+   "Mobile": null
+  },
+  {
+   "CustID": "7090",
+   "CustName": "คุณชล ธนบดี",
+   "Tel": "",
+   "Mobile": null
+  },
+  {
+   "CustID": "7086",
+   "CustName": "คุณชัยวุฒิ ชูชัย",
+   "Tel": "",
+   "Mobile": null
+  }
+ ],
+ "goods": [
+  {
+   "GoodID": "25061",
+   "GoodCode": "1-10033000BBTEP",
+   "GoodName": "กระสอบ 10-3-30 เชิงผสม ตราปุ๋ยเทพ",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1068",
+   "GoodCode": "3-DOLOMI0000000",
+   "GoodName": "DOLOMITE",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1069",
+   "GoodCode": "3-MG00000000000",
+   "GoodName": "MAGNESIUM SULPHATE",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "23000",
+   "GoodCode": "3-MG00000000BUL",
+   "GoodName": "MAGNESIUM  Bulk",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "23014",
+   "GoodCode": "3-MG00000000CAR",
+   "GoodName": "MAGNESIUM ตรา รถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1070",
+   "GoodCode": "3-S000000000000",
+   "GoodName": "กำมะถัน",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "3009",
+   "GoodCode": "5-0000240000BUL",
+   "GoodName": "0-0-24 เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "22002",
+   "GoodCode": "5-0000300000BUL",
+   "GoodName": "0-0-30  เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1073",
+   "GoodCode": "5-0000600100BUL",
+   "GoodName": "0-0-60 (ผง)  เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1074",
+   "GoodCode": "5-0000600200BUL",
+   "GoodName": "0-0-60 (เม็ด)  เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "22000",
+   "GoodCode": "5-0000600200BUL1",
+   "GoodName": "0-0-60 (เม็ด) (กระสอบจัมโบ้)",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "22001",
+   "GoodCode": "5-0000600200BUL2",
+   "GoodName": "0-0-60 (เม็ด) เทกอง (SQM)",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25046",
+   "GoodCode": "5-0000600200BUL3",
+   "GoodName": "0-0-60 (เม็ด) เทกอง (3)",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "5001",
+   "GoodCode": "5-0020000000BUL",
+   "GoodName": "0-20-0  เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1076",
+   "GoodCode": "5-0740000000BUL",
+   "GoodName": "7-40-0 เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "18000",
+   "GoodCode": "5-0810000000BUL",
+   "GoodName": "8-10-0  เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "23011",
+   "GoodCode": "5-1040000000BUL",
+   "GoodName": "10-40-0 เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1077",
+   "GoodCode": "5-15151500CPBUL",
+   "GoodName": "15-15-15 เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1078",
+   "GoodCode": "5-1616080000BUL",
+   "GoodName": "16-16-8 เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1079",
+   "GoodCode": "5-1620000000BUL",
+   "GoodName": "16-20-0 เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "8001",
+   "GoodCode": "5-1620000000BUL(1)",
+   "GoodName": "16-20-0 Bulk (ปุ๋ยชื้น)",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "23007",
+   "GoodCode": "5-1620000000BUL(2)",
+   "GoodName": "16-20-0  Bulk (ปุ๋ยเปียก)",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25056",
+   "GoodCode": "5-1620000000BUL(S)",
+   "GoodName": "16-20-0+12S เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25067",
+   "GoodCode": "5-1620000013BUL(S)",
+   "GoodName": "16-20-0+13S เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "19001",
+   "GoodCode": "5-1644000000BUL",
+   "GoodName": "16-44-0  เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1080",
+   "GoodCode": "5-1646000000BUL",
+   "GoodName": "16-46-0 เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1081",
+   "GoodCode": "5-164600000BUL1",
+   "GoodName": "16-46-0(18-46-0) เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1082",
+   "GoodCode": "5-1820000000BUL",
+   "GoodName": "18-20-0 เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1083",
+   "GoodCode": "5-1846000000BUL",
+   "GoodName": "18-46-0 เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "23008",
+   "GoodCode": "5-1846000001BUL",
+   "GoodName": "18-46-0 เทกอง (1)",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "3007",
+   "GoodCode": "5-2100000000BUL",
+   "GoodName": "21-0-0  เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1085",
+   "GoodCode": "5-2500000000BUL",
+   "GoodName": "25-0-0 เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1086",
+   "GoodCode": "5-3000000000BUL",
+   "GoodName": "30-0-0 เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1087",
+   "GoodCode": "5-4600000600BUL",
+   "GoodName": "46-0-0  (โฟม)  เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25054",
+   "GoodCode": "5-4600000600BUL(1)",
+   "GoodName": "46-0-0  (โฟม)  เทกอง (ปุ๋ยเปียก)",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25047",
+   "GoodCode": "5-4600000600BUL(3)",
+   "GoodName": "46-0-0  (โฟม)  เทกอง (3)",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25050",
+   "GoodCode": "5-4600000600BUL(4)",
+   "GoodName": "46-0-0 (โฟม) เทกอง (4)",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25057",
+   "GoodCode": "5-4600000600BUL(5)",
+   "GoodName": "46-0-0 (โฟม) เทกอง (5)",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1088",
+   "GoodCode": "5-FI00000000BUL",
+   "GoodName": "ฟิลเลอร์ (เม็ดอินทรีย์ดำ) เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "23006",
+   "GoodCode": "5-FI00000000BUL(1)",
+   "GoodName": "ฟิลเลอร์ (เม็ดดำ) กระสอบใช้แล้ว",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1089",
+   "GoodCode": "5-FI00000000UBA",
+   "GoodName": "ฟิลเลอร์ (ตัวเติม) กระสอบใช้แล้ว",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "12000",
+   "GoodCode": "5-FI00000000WHI",
+   "GoodName": "ฟิลเลอร์ เม็ดขาว เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25058",
+   "GoodCode": "5-FI00000000WHI(1)",
+   "GoodName": "ฟิลเลอร์ เม็ดขาว เทกอง (1)",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1090",
+   "GoodCode": "5-GC00000000BUL",
+   "GoodName": "กรีนแคล เทกอง",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1091",
+   "GoodCode": "7-03033300BBCAR",
+   "GoodName": "3-3-33 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1092",
+   "GoodCode": "7-08242400BBCAR",
+   "GoodName": "8-24-24 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25028",
+   "GoodCode": "7-08242400BBCEE",
+   "GoodName": "8-24-24 เชิงผสม ตรารูปตัว C",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25082",
+   "GoodCode": "7-09050900BBCAR",
+   "GoodName": "9-5-9 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1093",
+   "GoodCode": "7-10003000BBCAR",
+   "GoodName": "10-0-30 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "8000",
+   "GoodCode": "7-10032700BBWBA",
+   "GoodName": "10-3-27  เชิงผสม  กระสอบขาว",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25059",
+   "GoodCode": "7-10033000BBTEP",
+   "GoodName": "10-3-30 เชิงผสม ตราปุ๋ยเทพ",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "23049",
+   "GoodCode": "7-10044300BBTEP",
+   "GoodName": "10-4-43  เชิงผสม  ตราปุ๋ยเทพ",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25083",
+   "GoodCode": "7-10050500BBCAR",
+   "GoodName": "10-5-5 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25085",
+   "GoodCode": "7-12030500BBCAR",
+   "GoodName": "12-3-5 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "23042",
+   "GoodCode": "7-12042600BBCAR",
+   "GoodName": "12-4-26 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1094",
+   "GoodCode": "7-12044000BBCAR",
+   "GoodName": "12-4-40 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1095",
+   "GoodCode": "7-12241200BBCAR",
+   "GoodName": "12-24-12+2MGO เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1096",
+   "GoodCode": "7-12241200BBCEE",
+   "GoodName": "12-24-12+2MGO เชิงผสม ตรารูปตัว C",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1097",
+   "GoodCode": "7-13032100BBCAR",
+   "GoodName": "13-3-21 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25003",
+   "GoodCode": "7-13032300BBTEP",
+   "GoodName": "13-3-23 เชิงผสม ตรา ปุ๋ยเทพ",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1098",
+   "GoodCode": "7-13032700BBCAR",
+   "GoodName": "13-3-27 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1099",
+   "GoodCode": "7-13063200BBCAR",
+   "GoodName": "13-6-32 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1100",
+   "GoodCode": "7-1308353BBBCAR",
+   "GoodName": "13-8-35+0.3B เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1101",
+   "GoodCode": "7-13132100BBCAR",
+   "GoodName": "13-13-21 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25052",
+   "GoodCode": "7-14030300BBTEP",
+   "GoodName": "14-3-3 เชิงผสม ตรา ปุ๋ยเทพ",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1102",
+   "GoodCode": "7-14040900BBCAR",
+   "GoodName": "14-4-9 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1103",
+   "GoodCode": "7-14042400BBCAR",
+   "GoodName": "14-4-24 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1104",
+   "GoodCode": "7-14073500BBCAR",
+   "GoodName": "14-7-35 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25030",
+   "GoodCode": "7-14073500BBCAR(1)",
+   "GoodName": "14-7-35 เชิงผสม ตรารถเกษตร (เขมร)",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "23020",
+   "GoodCode": "7-14073500BBCEE",
+   "GoodName": "14-7-35 เชิงผสม ตรารูปตัว C",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1105",
+   "GoodCode": "7-14103200BBCAR",
+   "GoodName": "14-10-32 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1106",
+   "GoodCode": "7-14142400BBCAR",
+   "GoodName": "14-14-24 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1107",
+   "GoodCode": "7-14142400BBCEE",
+   "GoodName": "14-14-24 เชิงผสม ตรารูปตัว C",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25023",
+   "GoodCode": "7-15030300BBCAR",
+   "GoodName": "15-3-3 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1108",
+   "GoodCode": "7-15052000BBCAR",
+   "GoodName": "15-5-20+2MGO เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25010",
+   "GoodCode": "7-15052000BBCEE",
+   "GoodName": "15-5-20 เชิงผสม ตรารูปตัว C",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1109",
+   "GoodCode": "7-15052000BBGOP",
+   "GoodName": "15-5-20+2MGO เชิงผสม ตราโกลด์พอยท์",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25042",
+   "GoodCode": "7-15052000BBTEP",
+   "GoodName": "15-5-20 เชิงผสม ตราปุ๋ยเทพ",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25072",
+   "GoodCode": "7-15052500BBTEP",
+   "GoodName": "15-5-25 เชิงผสม ตราปุ๋ยเทพ",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1110",
+   "GoodCode": "7-15053000BBCAR",
+   "GoodName": "15-5-30 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1111",
+   "GoodCode": "7-15053500BBCAR",
+   "GoodName": "15-5-35 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1112",
+   "GoodCode": "7-15071800BBCAR",
+   "GoodName": "15-7-18 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1113",
+   "GoodCode": "7-15071800BBCEE",
+   "GoodName": "15-7-18 เชิงผสม ตรารูปตัว C",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "20004",
+   "GoodCode": "7-15082000BBCAR",
+   "GoodName": "15-8-20  เชิงผสม  ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25074",
+   "GoodCode": "7-15103000BBCAR",
+   "GoodName": "15-10-30 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25076",
+   "GoodCode": "7-15103000BBTEP",
+   "GoodName": "15-10-30 เชิงผสม ตราปุ๋ยเทพ",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1114",
+   "GoodCode": "7-15151500BBCAR",
+   "GoodName": "15-15-15 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "23029",
+   "GoodCode": "7-15151500BBCAR(1)",
+   "GoodName": "15-15-15  เชิงผสม  ตรารถเกษตร (เขมร)",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25033",
+   "GoodCode": "7-15151500BBCEE",
+   "GoodName": "15-15-15 เชิงผสม ตรารูปตัว C",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25020",
+   "GoodCode": "7-16030800BBCAR",
+   "GoodName": "16-3-8 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1115",
+   "GoodCode": "7-16040400BBCAR",
+   "GoodName": "16-4-4 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25084",
+   "GoodCode": "7-16040600BBCAR",
+   "GoodName": "16-4-6 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1116",
+   "GoodCode": "7-16040800BBCAR",
+   "GoodName": "16-4-8 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1117",
+   "GoodCode": "7-16080400BBCAR",
+   "GoodName": "16-8-4 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1118",
+   "GoodCode": "7-16080800BBCAR",
+   "GoodName": "16-8-8 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "25043",
+   "GoodCode": "7-16080800BBTEP",
+   "GoodName": "16-8-8 เชิงผสม ตราปุ๋ยเทพ",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1119",
+   "GoodCode": "7-16111400BBCAR",
+   "GoodName": "16-11-14 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1120",
+   "GoodCode": "7-16120800BBCAR",
+   "GoodName": "16-12-8 เชิงผสม ตรารถเกษต",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1121",
+   "GoodCode": "7-16160800BBCAR",
+   "GoodName": "16-16-8 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  },
+  {
+   "GoodID": "1122",
+   "GoodCode": "7-16200000BBCAR",
+   "GoodName": "16-20-0 เชิงผสม ตรารถเกษตร",
+   "BagPerTon": 20,
+   "WeightKgPerBag": 50
+  }
+ ],
+ "employees": [
+  {
+   "EmpID": "1000",
+   "EmpCode": "EMP-00001",
+   "EmpName": "ไพศาล",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1001",
+   "EmpCode": "EMP-00002",
+   "EmpName": "เกษร  ดีบรรเจิด",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1002",
+   "EmpCode": "EMP-00003",
+   "EmpName": "พรพรรณ  จิตวัฒนฤทธิ์",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1003",
+   "EmpCode": "EMP-00004",
+   "EmpName": "ชนกชญา  น้อยกันสี",
+   "EmpNameEng": "",
+   "IsActive": 0
+  },
+  {
+   "EmpID": "1004",
+   "EmpCode": "EMP-00005",
+   "EmpName": "ณชลนิภา  รอดแตง",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1005",
+   "EmpCode": "EMP-00006",
+   "EmpName": "ธนิภา  คำเสียงใส",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1006",
+   "EmpCode": "EMP-00007",
+   "EmpName": "ชนิดาภา  ไกรแก้ว",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1007",
+   "EmpCode": "EMP-00008",
+   "EmpName": "รุ่งนิรันดร์",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1008",
+   "EmpCode": "EMP-00009",
+   "EmpName": "สุราชัย  โพธิ์ทอง",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1009",
+   "EmpCode": "EMP-00010",
+   "EmpName": "มณีรัตน์  แซ่ตั้ง",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1010",
+   "EmpCode": "EMP-00011",
+   "EmpName": "มนฑิตา  สาดแฟง",
+   "EmpNameEng": "",
+   "IsActive": 0
+  },
+  {
+   "EmpID": "1011",
+   "EmpCode": "EMP-00012",
+   "EmpName": "เมตตา  นาคจันทร์",
+   "EmpNameEng": "metta  nakjan",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1012",
+   "EmpCode": "EMP-00013",
+   "EmpName": "รัตติญา  ศรีอุบล",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1013",
+   "EmpCode": "EMP-00014",
+   "EmpName": "ชนิดาภา  พ่วงศิริ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1014",
+   "EmpCode": "EMP-00015",
+   "EmpName": "วุฒิ  เสถียรถิระกุล",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1015",
+   "EmpCode": "EMP-00016",
+   "EmpName": "เกศ  อัศวทองกุล",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1016",
+   "EmpCode": "EMP-00017",
+   "EmpName": "รุ่งพล",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1017",
+   "EmpCode": "EMP-00018",
+   "EmpName": "ปิยนุช  พลหินกอง",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1018",
+   "EmpCode": "EMP-00019",
+   "EmpName": "สุรชัย",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1019",
+   "EmpCode": "EMP-00020",
+   "EmpName": "วัชระ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1020",
+   "EmpCode": "EMP-00021",
+   "EmpName": "จักรพงษ์",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1021",
+   "EmpCode": "EMP-00022",
+   "EmpName": "ณธกร ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1022",
+   "EmpCode": "EMP-00023",
+   "EmpName": "กิติวัตร",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1023",
+   "EmpCode": "EMP-00024",
+   "EmpName": "บุญฤทธิ์",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1024",
+   "EmpCode": "EMP-00025",
+   "EmpName": "บุญเยี่ยม",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1025",
+   "EmpCode": "EMP-00026",
+   "EmpName": "สมศักดิ์",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1026",
+   "EmpCode": "EMP-00027",
+   "EmpName": "ศรายุทธ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1027",
+   "EmpCode": "EMP-00028",
+   "EmpName": "สุธีร์  ขุนไชยการ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1028",
+   "EmpCode": "EMP-00029",
+   "EmpName": "ปกรณ์",
+   "EmpNameEng": "",
+   "IsActive": 0
+  },
+  {
+   "EmpID": "1029",
+   "EmpCode": "EMP-00030",
+   "EmpName": "สุรินทร์",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "1030",
+   "EmpCode": "EMP-00031",
+   "EmpName": "ฎิรัชฏิกานศิ์ ",
+   "EmpNameEng": "",
+   "IsActive": 0
+  },
+  {
+   "EmpID": "2000",
+   "EmpCode": "EMP-00032",
+   "EmpName": "ไพโรจน์",
+   "EmpNameEng": "",
+   "IsActive": 0
+  },
+  {
+   "EmpID": "3000",
+   "EmpCode": "EMP-00033",
+   "EmpName": "ภัคเกษม",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "3001",
+   "EmpCode": "EMP-00034",
+   "EmpName": "เดโช",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "4000",
+   "EmpCode": "EMP-00035",
+   "EmpName": "ชูชาติ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "4001",
+   "EmpCode": "EMP-00036",
+   "EmpName": "มนัส",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "5000",
+   "EmpCode": "EMP-00037",
+   "EmpName": "สมะแอน",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "6000",
+   "EmpCode": "EMP-00038",
+   "EmpName": "นันทพัทธ์ ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "7000",
+   "EmpCode": "EMP-00039",
+   "EmpName": "เกศรินทร์",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "7001",
+   "EmpCode": "EMP-00040",
+   "EmpName": "ณัฐพล",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "7002",
+   "EmpCode": "EMP-00041",
+   "EmpName": "ชัยชนะ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "7004",
+   "EmpCode": "EMP-00042",
+   "EmpName": "ต้นฉัตร ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "8001",
+   "EmpCode": "EMP-00043",
+   "EmpName": "พิลาพร ศรีงาม",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "8002",
+   "EmpCode": "EMP-00044",
+   "EmpName": "จิตติมา เปลี่ยวปลอด",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "8003",
+   "EmpCode": "EMP-00045",
+   "EmpName": "อัจจิมา กริ่มใจ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "8000",
+   "EmpCode": "EMP-00046",
+   "EmpName": "เบญจพร พิมพินิจ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "8004",
+   "EmpCode": "EMP-00047",
+   "EmpName": "วัชริน ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "8005",
+   "EmpCode": "EMP-00048",
+   "EmpName": "วรรณยุดา",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "8006",
+   "EmpCode": "EMP-00049",
+   "EmpName": "เยาวเรศ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "8007",
+   "EmpCode": "EMP-00050",
+   "EmpName": "ศิริพร",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "8008",
+   "EmpCode": "EMP-00051",
+   "EmpName": "ปิยะพันธ์",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "8009",
+   "EmpCode": "EMP-00052",
+   "EmpName": "ธานิศ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "8010",
+   "EmpCode": "EMP-00053",
+   "EmpName": "ชนะชัย",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "9000",
+   "EmpCode": "EMP-00054",
+   "EmpName": "มลฑาทิพย์ เขียวดำ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "9001",
+   "EmpCode": "EMP-00055",
+   "EmpName": "ดวงดาว ครจอหอ",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "9002",
+   "EmpCode": "EMP-00056",
+   "EmpName": "ชณที",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "9003",
+   "EmpCode": "EMP-00057",
+   "EmpName": "ภาณุวัฒน์",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "9004",
+   "EmpCode": "EMP-00058",
+   "EmpName": "พีรวัฒน์",
+   "EmpNameEng": "",
+   "IsActive": 1
+  },
+  {
+   "EmpID": "7003",
+   "EmpCode": "EMP-0021.1",
+   "EmpName": "Chakkrapong",
+   "EmpNameEng": "",
+   "IsActive": 1
+  }
+ ],
+ "prices": [
+  {
+   "GoodID": "1093",
+   "GoodPriceNet": "17200"
+  },
+  {
+   "GoodID": "1094",
+   "GoodPriceNet": "18400"
+  },
+  {
+   "GoodID": "1097",
+   "GoodPriceNet": "14200"
+  },
+  {
+   "GoodID": "1098",
+   "GoodPriceNet": "16400"
+  },
+  {
+   "GoodID": "1100",
+   "GoodPriceNet": "18400"
+  },
+  {
+   "GoodID": "1101",
+   "GoodPriceNet": "20200"
+  },
+  {
+   "GoodID": "1102",
+   "GoodPriceNet": "13200"
+  },
+  {
+   "GoodID": "1103",
+   "GoodPriceNet": "16200"
+  },
+  {
+   "GoodID": "1104",
+   "GoodPriceNet": "18400"
+  },
+  {
+   "GoodID": "1108",
+   "GoodPriceNet": "17000"
+  },
+  {
+   "GoodID": "1111",
+   "GoodPriceNet": "18500"
+  },
+  {
+   "GoodID": "1112",
+   "GoodPriceNet": "16600"
+  },
+  {
+   "GoodID": "1114",
+   "GoodPriceNet": "19200"
+  },
+  {
+   "GoodID": "1118",
+   "GoodPriceNet": "14300"
+  },
+  {
+   "GoodID": "1121",
+   "GoodPriceNet": "18000"
+  },
+  {
+   "GoodID": "1122",
+   "GoodPriceNet": "14700"
+  },
+  {
+   "GoodID": "1123",
+   "GoodPriceNet": "12800"
+  },
+  {
+   "GoodID": "1126",
+   "GoodPriceNet": "13500"
+  },
+  {
+   "GoodID": "1128",
+   "GoodPriceNet": "14800"
+  },
+  {
+   "GoodID": "1134",
+   "GoodPriceNet": "14700"
+  },
+  {
+   "GoodID": "1135",
+   "GoodPriceNet": "20500"
+  },
+  {
+   "GoodID": "1137",
+   "GoodPriceNet": "18000"
+  },
+  {
+   "GoodID": "1138",
+   "GoodPriceNet": "19300"
+  },
+  {
+   "GoodID": "1142",
+   "GoodPriceNet": "20600"
+  },
+  {
+   "GoodID": "1146",
+   "GoodPriceNet": "19500"
+  },
+  {
+   "GoodID": "1147",
+   "GoodPriceNet": "21500"
+  },
+  {
+   "GoodID": "1148",
+   "GoodPriceNet": "23300"
+  },
+  {
+   "GoodID": "1149",
+   "GoodPriceNet": "21200"
+  },
+  {
+   "GoodID": "1151",
+   "GoodPriceNet": "14200"
+  },
+  {
+   "GoodID": "1156",
+   "GoodPriceNet": "13200"
+  },
+  {
+   "GoodID": "1159",
+   "GoodPriceNet": "14500"
+  },
+  {
+   "GoodID": "1161",
+   "GoodPriceNet": "25000"
+  },
+  {
+   "GoodID": "1165",
+   "GoodPriceNet": "16000"
+  },
+  {
+   "GoodID": "1169",
+   "GoodPriceNet": "4000"
+  },
+  {
+   "GoodID": "3008",
+   "GoodPriceNet": "8200"
+  },
+  {
+   "GoodID": "5003",
+   "GoodPriceNet": "12800"
+  },
+  {
+   "GoodID": "20003",
+   "GoodPriceNet": "26200"
+  },
+  {
+   "GoodID": "20004",
+   "GoodPriceNet": "18300"
+  },
+  {
+   "GoodID": "23002",
+   "GoodPriceNet": "20800"
+  },
+  {
+   "GoodID": "23010",
+   "GoodPriceNet": "30500"
+  },
+  {
+   "GoodID": "23019",
+   "GoodPriceNet": "20500"
+  },
+  {
+   "GoodID": "23022",
+   "GoodPriceNet": "15500"
+  },
+  {
+   "GoodID": "23034",
+   "GoodPriceNet": "7000"
+  },
+  {
+   "GoodID": "23041",
+   "GoodPriceNet": "15000"
+  },
+  {
+   "GoodID": "23042",
+   "GoodPriceNet": "17200"
+  },
+  {
+   "GoodID": "23043",
+   "GoodPriceNet": "24000"
+  },
+  {
+   "GoodID": "23047",
+   "GoodPriceNet": "14600"
+  },
+  {
+   "GoodID": "23048",
+   "GoodPriceNet": "14700"
+  },
+  {
+   "GoodID": "23049",
+   "GoodPriceNet": "27300"
+  },
+  {
+   "GoodID": "25001",
+   "GoodPriceNet": "13500"
+  },
+  {
+   "GoodID": "25003",
+   "GoodPriceNet": "14300"
+  },
+  {
+   "GoodID": "25006",
+   "GoodPriceNet": "18200"
+  },
+  {
+   "GoodID": "25007",
+   "GoodPriceNet": "22100"
+  },
+  {
+   "GoodID": "25009",
+   "GoodPriceNet": "16000"
+  },
+  {
+   "GoodID": "25015",
+   "GoodPriceNet": "13200"
+  },
+  {
+   "GoodID": "25016",
+   "GoodPriceNet": "25000"
+  },
+  {
+   "GoodID": "25018",
+   "GoodPriceNet": "16400"
+  },
+  {
+   "GoodID": "25020",
+   "GoodPriceNet": "13300"
+  },
+  {
+   "GoodID": "25023",
+   "GoodPriceNet": "10600"
+  },
+  {
+   "GoodID": "25035",
+   "GoodPriceNet": "14800"
+  },
+  {
+   "GoodID": "25042",
+   "GoodPriceNet": "16800"
+  },
+  {
+   "GoodID": "25043",
+   "GoodPriceNet": "14300"
+  },
+  {
+   "GoodID": "25044",
+   "GoodPriceNet": "12800"
+  },
+  {
+   "GoodID": "25045",
+   "GoodPriceNet": "14500"
+  },
+  {
+   "GoodID": "25049",
+   "GoodPriceNet": "15300"
+  },
+  {
+   "GoodID": "25052",
+   "GoodPriceNet": "10200"
+  },
+  {
+   "GoodID": "25059",
+   "GoodPriceNet": "16600"
+  },
+  {
+   "GoodID": "25060",
+   "GoodPriceNet": "20400"
+  },
+  {
+   "GoodID": "25065",
+   "GoodPriceNet": "15800"
+  },
+  {
+   "GoodID": "25066",
+   "GoodPriceNet": "14800"
+  },
+  {
+   "GoodID": "25069",
+   "GoodPriceNet": "8200"
+  },
+  {
+   "GoodID": "25072",
+   "GoodPriceNet": "18200"
+  },
+  {
+   "GoodID": "25073",
+   "GoodPriceNet": "22000"
+  }
+ ],
+ "giveaway": {
+  "regions": [
+   {
+    "Region": "ภาคกลาง",
+    "EmpCode": "EMP-00034",
+    "EmpId": "3001",
+    "EmpName": "เดโช",
+    "TotalBudget": 20000,
+    "TotalWithdrawn": 513,
+    "TotalRemaining": 19487,
+    "ItemCount": 8,
+    "OverCount": 2
+   },
+   {
+    "Region": "ภาคตะวันออก",
+    "EmpCode": "EMP-00027",
+    "EmpId": "1026",
+    "EmpName": "ศรายุทธ",
+    "TotalBudget": 16000,
+    "TotalWithdrawn": 150,
+    "TotalRemaining": 15850,
+    "ItemCount": 7,
+    "OverCount": 0
+   },
+   {
+    "Region": "ภาคใต้",
+    "EmpCode": "EMP-00037",
+    "EmpId": "5000",
+    "EmpName": "สมะแอน",
+    "TotalBudget": 12270,
+    "TotalWithdrawn": 180,
+    "TotalRemaining": 12090,
+    "ItemCount": 4,
+    "OverCount": 0
+   },
+   {
+    "Region": "ภาคปุ๋ยเทพ 1",
+    "EmpCode": "EMP-00053",
+    "EmpId": "8010",
+    "EmpName": "ชนะชัย",
+    "TotalBudget": 12000,
+    "TotalWithdrawn": 2511,
+    "TotalRemaining": 9489,
+    "ItemCount": 5,
+    "OverCount": 1
+   },
+   {
+    "Region": "ภาคปุ๋ยเทพ 2",
+    "EmpCode": "EMP-00024",
+    "EmpId": "1023",
+    "EmpName": "บุญฤทธิ์",
+    "TotalBudget": 17818,
+    "TotalWithdrawn": 382,
+    "TotalRemaining": 17436,
+    "ItemCount": 7,
+    "OverCount": 1
+   },
+   {
+    "Region": "ภาคเหนือ",
+    "EmpCode": "EMP-00035",
+    "EmpId": "4000",
+    "EmpName": "ชูชาติ",
+    "TotalBudget": 13000,
+    "TotalWithdrawn": 2377,
+    "TotalRemaining": 10623,
+    "ItemCount": 9,
+    "OverCount": 5
+   },
+   {
+    "Region": "ภาคอีสานกลาง",
+    "EmpCode": "EMP-00036",
+    "EmpId": "4001",
+    "EmpName": "มนัส",
+    "TotalBudget": 28000,
+    "TotalWithdrawn": 1321,
+    "TotalRemaining": 26679,
+    "ItemCount": 8,
+    "OverCount": 1
+   },
+   {
+    "Region": "ภาคอีสานบน",
+    "EmpCode": "EMP-00041",
+    "EmpId": "7002",
+    "EmpName": "ชัยชนะ",
+    "TotalBudget": 12000,
+    "TotalWithdrawn": 2979,
+    "TotalRemaining": 9021,
+    "ItemCount": 7,
+    "OverCount": 2
+   },
+   {
+    "Region": "ภาคอีสานล่าง",
+    "EmpCode": "EMP-00042",
+    "EmpId": "7004",
+    "EmpName": "ต้นฉัตร ",
+    "TotalBudget": 27500,
+    "TotalWithdrawn": 7115.5,
+    "TotalRemaining": 20384.5,
+    "ItemCount": 10,
+    "OverCount": 3
+   }
+  ],
+  "budgetLines": {
+   "ภาคกลาง": [
+    {
+     "Id": 10,
+     "SalesUserId": null,
+     "EmpId": "3001",
+     "EmpCode": "EMP-00034",
+     "Region": "ภาคกลาง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "13-3-21",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 17,
+     "SalesUserId": null,
+     "EmpId": "3001",
+     "EmpCode": "EMP-00034",
+     "Region": "ภาคกลาง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "18-4-5",
+     "BudgetQty": 0,
+     "WithdrawnQty": 100,
+     "RemainingQty": -100
+    },
+    {
+     "Id": 11,
+     "SalesUserId": null,
+     "EmpId": "3001",
+     "EmpCode": "EMP-00034",
+     "Region": "ภาคกลาง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "18-8-8",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 12,
+     "SalesUserId": null,
+     "EmpId": "3001",
+     "EmpCode": "EMP-00034",
+     "Region": "ภาคกลาง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "20-8-8",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 13,
+     "SalesUserId": null,
+     "EmpId": "3001",
+     "EmpCode": "EMP-00034",
+     "Region": "ภาคกลาง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "30-0-0",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 14,
+     "SalesUserId": null,
+     "EmpId": "3001",
+     "EmpCode": "EMP-00034",
+     "Region": "ภาคกลาง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "40-0-0",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 16,
+     "SalesUserId": null,
+     "EmpId": "3001",
+     "EmpCode": "EMP-00034",
+     "Region": "ภาคกลาง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "แบนเนอร์ตรารถเกษตร",
+     "BudgetQty": 0,
+     "WithdrawnQty": 6,
+     "RemainingQty": -6
+    },
+    {
+     "Id": 15,
+     "SalesUserId": null,
+     "EmpId": "3001",
+     "EmpCode": "EMP-00034",
+     "Region": "ภาคกลาง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "BudgetQty": 5000,
+     "WithdrawnQty": 407,
+     "RemainingQty": 4593
+    }
+   ],
+   "ภาคตะวันออก": [
+    {
+     "Id": 18,
+     "SalesUserId": null,
+     "EmpId": "1026",
+     "EmpCode": "EMP-00027",
+     "Region": "ภาคตะวันออก",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "13-3-23",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 21,
+     "SalesUserId": null,
+     "EmpId": "1026",
+     "EmpCode": "EMP-00027",
+     "Region": "ภาคตะวันออก",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "20-5-3",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 22,
+     "SalesUserId": null,
+     "EmpId": "1026",
+     "EmpCode": "EMP-00027",
+     "Region": "ภาคตะวันออก",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "20-8-8",
+     "BudgetQty": 1000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 1000
+    },
+    {
+     "Id": 19,
+     "SalesUserId": null,
+     "EmpId": "1026",
+     "EmpCode": "EMP-00027",
+     "Region": "ภาคตะวันออก",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "14-7-35",
+     "BudgetQty": 1000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 1000
+    },
+    {
+     "Id": 20,
+     "SalesUserId": null,
+     "EmpId": "1026",
+     "EmpCode": "EMP-00027",
+     "Region": "ภาคตะวันออก",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "18-4-5",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 23,
+     "SalesUserId": null,
+     "EmpId": "1026",
+     "EmpCode": "EMP-00027",
+     "Region": "ภาคตะวันออก",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "30-0-0",
+     "BudgetQty": 1000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 1000
+    },
+    {
+     "Id": 24,
+     "SalesUserId": null,
+     "EmpId": "1026",
+     "EmpCode": "EMP-00027",
+     "Region": "ภาคตะวันออก",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "BudgetQty": 4000,
+     "WithdrawnQty": 150,
+     "RemainingQty": 3850
+    }
+   ],
+   "ภาคใต้": [
+    {
+     "Id": 33,
+     "SalesUserId": null,
+     "EmpId": "5000",
+     "EmpCode": "EMP-00037",
+     "Region": "ภาคใต้",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "14-7-35",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 35,
+     "SalesUserId": null,
+     "EmpId": "5000",
+     "EmpCode": "EMP-00037",
+     "Region": "ภาคใต้",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "15-10-30",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 34,
+     "SalesUserId": null,
+     "EmpId": "5000",
+     "EmpCode": "EMP-00037",
+     "Region": "ภาคใต้",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "15-5-20",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 36,
+     "SalesUserId": null,
+     "EmpId": "5000",
+     "EmpCode": "EMP-00037",
+     "Region": "ภาคใต้",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "BudgetQty": 3270,
+     "WithdrawnQty": 180,
+     "RemainingQty": 3090
+    }
+   ],
+   "ภาคปุ๋ยเทพ 1": [
+    {
+     "Id": 54,
+     "SalesUserId": null,
+     "EmpId": "8010",
+     "EmpCode": "EMP-00053",
+     "Region": "ภาคปุ๋ยเทพ 1",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "13-3-23",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 2000,
+     "RemainingQty": 1000
+    },
+    {
+     "Id": 55,
+     "SalesUserId": null,
+     "EmpId": "8010",
+     "EmpCode": "EMP-00053",
+     "Region": "ภาคปุ๋ยเทพ 1",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "15-5-25",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 56,
+     "SalesUserId": null,
+     "EmpId": "8010",
+     "EmpCode": "EMP-00053",
+     "Region": "ภาคปุ๋ยเทพ 1",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "20-5-3",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 58,
+     "SalesUserId": null,
+     "EmpId": "8010",
+     "EmpCode": "EMP-00053",
+     "Region": "ภาคปุ๋ยเทพ 1",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "แบนเนอร์ ปุ๋ยเทพ",
+     "BudgetQty": 0,
+     "WithdrawnQty": 11,
+     "RemainingQty": -11
+    },
+    {
+     "Id": 57,
+     "SalesUserId": null,
+     "EmpId": "8010",
+     "EmpCode": "EMP-00053",
+     "Region": "ภาคปุ๋ยเทพ 1",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 500,
+     "RemainingQty": 2500
+    }
+   ],
+   "ภาคปุ๋ยเทพ 2": [
+    {
+     "Id": 59,
+     "SalesUserId": null,
+     "EmpId": "1023",
+     "EmpCode": "EMP-00024",
+     "Region": "ภาคปุ๋ยเทพ 2",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "13-3-23",
+     "BudgetQty": 2818,
+     "WithdrawnQty": 100,
+     "RemainingQty": 2718
+    },
+    {
+     "Id": 61,
+     "SalesUserId": null,
+     "EmpId": "1023",
+     "EmpCode": "EMP-00024",
+     "Region": "ภาคปุ๋ยเทพ 2",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "15-10-30",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 60,
+     "SalesUserId": null,
+     "EmpId": "1023",
+     "EmpCode": "EMP-00024",
+     "Region": "ภาคปุ๋ยเทพ 2",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "15-5-25",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 62,
+     "SalesUserId": null,
+     "EmpId": "1023",
+     "EmpCode": "EMP-00024",
+     "Region": "ภาคปุ๋ยเทพ 2",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "20-5-3",
+     "BudgetQty": 2000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 2000
+    },
+    {
+     "Id": 63,
+     "SalesUserId": null,
+     "EmpId": "1023",
+     "EmpCode": "EMP-00024",
+     "Region": "ภาคปุ๋ยเทพ 2",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "20-8-8",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 100,
+     "RemainingQty": 2900
+    },
+    {
+     "Id": 65,
+     "SalesUserId": null,
+     "EmpId": "1023",
+     "EmpCode": "EMP-00024",
+     "Region": "ภาคปุ๋ยเทพ 2",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "แบนเนอร์ ปุ๋ยเทพ",
+     "BudgetQty": 0,
+     "WithdrawnQty": 2,
+     "RemainingQty": -2
+    },
+    {
+     "Id": 64,
+     "SalesUserId": null,
+     "EmpId": "1023",
+     "EmpCode": "EMP-00024",
+     "Region": "ภาคปุ๋ยเทพ 2",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "BudgetQty": 4000,
+     "WithdrawnQty": 180,
+     "RemainingQty": 3820
+    }
+   ],
+   "ภาคเหนือ": [
+    {
+     "Id": 5,
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "15-3-3",
+     "BudgetQty": 0,
+     "WithdrawnQty": 100,
+     "RemainingQty": -100
+    },
+    {
+     "Id": 1,
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "16-8-8",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 100,
+     "RemainingQty": 2900
+    },
+    {
+     "Id": 6,
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "18-4-5",
+     "BudgetQty": 0,
+     "WithdrawnQty": 300,
+     "RemainingQty": -300
+    },
+    {
+     "Id": 7,
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "18-8-8",
+     "BudgetQty": 0,
+     "WithdrawnQty": 300,
+     "RemainingQty": -300
+    },
+    {
+     "Id": 2,
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "20-8-8",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 100,
+     "RemainingQty": 2900
+    },
+    {
+     "Id": 3,
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "30-0-0",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 8,
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "40-0-0",
+     "BudgetQty": 0,
+     "WithdrawnQty": 100,
+     "RemainingQty": -100
+    },
+    {
+     "Id": 9,
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "แบนเนอร์ รถเกษตร",
+     "BudgetQty": 0,
+     "WithdrawnQty": 2,
+     "RemainingQty": -2
+    },
+    {
+     "Id": 4,
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "BudgetQty": 4000,
+     "WithdrawnQty": 1375,
+     "RemainingQty": 2625
+    }
+   ],
+   "ภาคอีสานกลาง": [
+    {
+     "Id": 29,
+     "SalesUserId": 6,
+     "EmpId": "4001",
+     "EmpCode": "EMP-00036",
+     "Region": "ภาคอีสานกลาง",
+     "PeriodYear": 2569,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "20-8-8",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 25,
+     "SalesUserId": 6,
+     "EmpId": "4001",
+     "EmpCode": "EMP-00036",
+     "Region": "ภาคอีสานกลาง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "15-3-3",
+     "BudgetQty": 2000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 2000
+    },
+    {
+     "Id": 26,
+     "SalesUserId": 6,
+     "EmpId": "4001",
+     "EmpCode": "EMP-00036",
+     "Region": "ภาคอีสานกลาง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "15-7-18",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 27,
+     "SalesUserId": 6,
+     "EmpId": "4001",
+     "EmpCode": "EMP-00036",
+     "Region": "ภาคอีสานกลาง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "16-8-8",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 100,
+     "RemainingQty": 2900
+    },
+    {
+     "Id": 28,
+     "SalesUserId": 6,
+     "EmpId": "4001",
+     "EmpCode": "EMP-00036",
+     "Region": "ภาคอีสานกลาง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "18-4-5",
+     "BudgetQty": 2000,
+     "WithdrawnQty": 200,
+     "RemainingQty": 1800
+    },
+    {
+     "Id": 30,
+     "SalesUserId": 6,
+     "EmpId": "4001",
+     "EmpCode": "EMP-00036",
+     "Region": "ภาคอีสานกลาง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "22-6-4",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 32,
+     "SalesUserId": 6,
+     "EmpId": "4001",
+     "EmpCode": "EMP-00036",
+     "Region": "ภาคอีสานกลาง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "แบนเนอร์ตรารถเกษตร",
+     "BudgetQty": 0,
+     "WithdrawnQty": 1,
+     "RemainingQty": -1
+    },
+    {
+     "Id": 31,
+     "SalesUserId": 6,
+     "EmpId": "4001",
+     "EmpCode": "EMP-00036",
+     "Region": "ภาคอีสานกลาง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "BudgetQty": 12000,
+     "WithdrawnQty": 1020,
+     "RemainingQty": 10980
+    }
+   ],
+   "ภาคอีสานบน": [
+    {
+     "Id": 37,
+     "SalesUserId": null,
+     "EmpId": "7002",
+     "EmpCode": "EMP-00041",
+     "Region": "ภาคอีสานบน",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "15-3-3",
+     "BudgetQty": 1000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 1000
+    },
+    {
+     "Id": 38,
+     "SalesUserId": null,
+     "EmpId": "7002",
+     "EmpCode": "EMP-00041",
+     "Region": "ภาคอีสานบน",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "15-7-18",
+     "BudgetQty": 1000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 1000
+    },
+    {
+     "Id": 39,
+     "SalesUserId": null,
+     "EmpId": "7002",
+     "EmpCode": "EMP-00041",
+     "Region": "ภาคอีสานบน",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "20-5-5",
+     "BudgetQty": 1000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 1000
+    },
+    {
+     "Id": 40,
+     "SalesUserId": null,
+     "EmpId": "7002",
+     "EmpCode": "EMP-00041",
+     "Region": "ภาคอีสานบน",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "29-5-18",
+     "BudgetQty": 2000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 2000
+    },
+    {
+     "Id": 42,
+     "SalesUserId": null,
+     "EmpId": "7002",
+     "EmpCode": "EMP-00041",
+     "Region": "ภาคอีสานบน",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "กระเป๋าใบใหญ่",
+     "BudgetQty": 0,
+     "WithdrawnQty": 100,
+     "RemainingQty": -100
+    },
+    {
+     "Id": 43,
+     "SalesUserId": null,
+     "EmpId": "7002",
+     "EmpCode": "EMP-00041",
+     "Region": "ภาคอีสานบน",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "โบว์ชัวส์ ยางพารา",
+     "BudgetQty": 0,
+     "WithdrawnQty": 1500,
+     "RemainingQty": -1500
+    },
+    {
+     "Id": 41,
+     "SalesUserId": null,
+     "EmpId": "7002",
+     "EmpCode": "EMP-00041",
+     "Region": "ภาคอีสานบน",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "BudgetQty": 7000,
+     "WithdrawnQty": 1379,
+     "RemainingQty": 5621
+    }
+   ],
+   "ภาคอีสานล่าง": [
+    {
+     "Id": 44,
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "13-3-21",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 51,
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "15-3-3",
+     "BudgetQty": 0,
+     "WithdrawnQty": 500,
+     "RemainingQty": -500
+    },
+    {
+     "Id": 52,
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "15-7-18",
+     "BudgetQty": 0,
+     "WithdrawnQty": 200,
+     "RemainingQty": -200
+    },
+    {
+     "Id": 45,
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "16-8-8",
+     "BudgetQty": 2000,
+     "WithdrawnQty": 1800,
+     "RemainingQty": 200
+    },
+    {
+     "Id": 46,
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "18-4-5",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 800,
+     "RemainingQty": 2200
+    },
+    {
+     "Id": 47,
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "19-6-6",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 48,
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "20-5-5",
+     "BudgetQty": 3000,
+     "WithdrawnQty": 0,
+     "RemainingQty": 3000
+    },
+    {
+     "Id": 49,
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "29-5-18",
+     "BudgetQty": 1000,
+     "WithdrawnQty": 400,
+     "RemainingQty": 600
+    },
+    {
+     "Id": 53,
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "แบนเนอร์ตรารถเกษตร",
+     "BudgetQty": 0,
+     "WithdrawnQty": 3,
+     "RemainingQty": -3
+    },
+    {
+     "Id": 50,
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "BudgetQty": 12500,
+     "WithdrawnQty": 3412.5,
+     "RemainingQty": 9087.5
+    }
+   ]
+  },
+  "withdrawals": {
+   "ภาคกลาง": [
+    {
+     "Id": "58",
+     "SalesUserId": null,
+     "EmpId": "3001",
+     "EmpCode": "EMP-00034",
+     "Region": "ภาคกลาง",
+     "PeriodYear": 2569,
+     "IssueMonth": 6,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 5,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "APP",
+     "CreatedAt": "2026-06-23T11:49:11.487Z"
+    },
+    {
+     "Id": "16",
+     "SalesUserId": null,
+     "EmpId": "3001",
+     "EmpCode": "EMP-00034",
+     "Region": "ภาคกลาง",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 106,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.833Z"
+    },
+    {
+     "Id": "15",
+     "SalesUserId": null,
+     "EmpId": "3001",
+     "EmpCode": "EMP-00034",
+     "Region": "ภาคกลาง",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "16-8-8",
+     "Qty": 100,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.830Z"
+    },
+    {
+     "Id": "14",
+     "SalesUserId": null,
+     "EmpId": "3001",
+     "EmpCode": "EMP-00034",
+     "Region": "ภาคกลาง",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "18-4-5",
+     "Qty": 100,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.830Z"
+    },
+    {
+     "Id": "13",
+     "SalesUserId": null,
+     "EmpId": "3001",
+     "EmpCode": "EMP-00034",
+     "Region": "ภาคกลาง",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "แบนเนอร์ตรารถเกษตร",
+     "Qty": 6,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.827Z"
+    },
+    {
+     "Id": "12",
+     "SalesUserId": null,
+     "EmpId": "3001",
+     "EmpCode": "EMP-00034",
+     "Region": "ภาคกลาง",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 196,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.823Z"
+    },
+    {
+     "Id": "11",
+     "SalesUserId": null,
+     "EmpId": "3001",
+     "EmpCode": "EMP-00034",
+     "Region": "ภาคกลาง",
+     "PeriodYear": 2569,
+     "IssueMonth": 2,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 100,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.823Z"
+    }
+   ],
+   "ภาคตะวันออก": [
+    {
+     "Id": "17",
+     "SalesUserId": null,
+     "EmpId": "1026",
+     "EmpCode": "EMP-00027",
+     "Region": "ภาคตะวันออก",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 150,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.850Z"
+    }
+   ],
+   "ภาคใต้": [
+    {
+     "Id": "26",
+     "SalesUserId": null,
+     "EmpId": "5000",
+     "EmpCode": "EMP-00037",
+     "Region": "ภาคใต้",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 30,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.900Z"
+    },
+    {
+     "Id": "25",
+     "SalesUserId": null,
+     "EmpId": "5000",
+     "EmpCode": "EMP-00037",
+     "Region": "ภาคใต้",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 90,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.900Z"
+    },
+    {
+     "Id": "24",
+     "SalesUserId": null,
+     "EmpId": "5000",
+     "EmpCode": "EMP-00037",
+     "Region": "ภาคใต้",
+     "PeriodYear": 2569,
+     "IssueMonth": 2,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 60,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.900Z"
+    }
+   ],
+   "ภาคปุ๋ยเทพ 1": [
+    {
+     "Id": "51",
+     "SalesUserId": null,
+     "EmpId": "8010",
+     "EmpCode": "EMP-00053",
+     "Region": "ภาคปุ๋ยเทพ 1",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 500,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.983Z"
+    },
+    {
+     "Id": "50",
+     "SalesUserId": null,
+     "EmpId": "8010",
+     "EmpCode": "EMP-00053",
+     "Region": "ภาคปุ๋ยเทพ 1",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "13-3-23",
+     "Qty": 1100,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.983Z"
+    },
+    {
+     "Id": "49",
+     "SalesUserId": null,
+     "EmpId": "8010",
+     "EmpCode": "EMP-00053",
+     "Region": "ภาคปุ๋ยเทพ 1",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "แบนเนอร์ ปุ๋ยเทพ",
+     "Qty": 1,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.983Z"
+    },
+    {
+     "Id": "48",
+     "SalesUserId": null,
+     "EmpId": "8010",
+     "EmpCode": "EMP-00053",
+     "Region": "ภาคปุ๋ยเทพ 1",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "แบนเนอร์ ปุ๋ยเทพ",
+     "Qty": 10,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.983Z"
+    },
+    {
+     "Id": "47",
+     "SalesUserId": null,
+     "EmpId": "8010",
+     "EmpCode": "EMP-00053",
+     "Region": "ภาคปุ๋ยเทพ 1",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "13-3-23",
+     "Qty": 900,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.980Z"
+    }
+   ],
+   "ภาคปุ๋ยเทพ 2": [
+    {
+     "Id": "57",
+     "SalesUserId": null,
+     "EmpId": "1023",
+     "EmpCode": "EMP-00024",
+     "Region": "ภาคปุ๋ยเทพ 2",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "13-3-23",
+     "Qty": 100,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:27.000Z"
+    },
+    {
+     "Id": "56",
+     "SalesUserId": null,
+     "EmpId": "1023",
+     "EmpCode": "EMP-00024",
+     "Region": "ภาคปุ๋ยเทพ 2",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 100,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:27.000Z"
+    },
+    {
+     "Id": "55",
+     "SalesUserId": null,
+     "EmpId": "1023",
+     "EmpCode": "EMP-00024",
+     "Region": "ภาคปุ๋ยเทพ 2",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "20-8-8",
+     "Qty": 100,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.997Z"
+    },
+    {
+     "Id": "54",
+     "SalesUserId": null,
+     "EmpId": "1023",
+     "EmpCode": "EMP-00024",
+     "Region": "ภาคปุ๋ยเทพ 2",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 60,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.997Z"
+    },
+    {
+     "Id": "53",
+     "SalesUserId": null,
+     "EmpId": "1023",
+     "EmpCode": "EMP-00024",
+     "Region": "ภาคปุ๋ยเทพ 2",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "แบนเนอร์ ปุ๋ยเทพ",
+     "Qty": 2,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.997Z"
+    },
+    {
+     "Id": "52",
+     "SalesUserId": null,
+     "EmpId": "1023",
+     "EmpCode": "EMP-00024",
+     "Region": "ภาคปุ๋ยเทพ 2",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "ปุ๋ยเทพ",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 20,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.997Z"
+    }
+   ],
+   "ภาคเหนือ": [
+    {
+     "Id": "10",
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "แบนเนอร์ รถเกษตร",
+     "Qty": 2,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.800Z"
+    },
+    {
+     "Id": "9",
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 420,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.797Z"
+    },
+    {
+     "Id": "8",
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "40-0-0",
+     "Qty": 100,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.797Z"
+    },
+    {
+     "Id": "7",
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "20-8-8",
+     "Qty": 100,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.797Z"
+    },
+    {
+     "Id": "6",
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "18-8-8",
+     "Qty": 300,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.793Z"
+    },
+    {
+     "Id": "5",
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "18-4-5",
+     "Qty": 300,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.793Z"
+    },
+    {
+     "Id": "4",
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "16-8-8",
+     "Qty": 100,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.793Z"
+    },
+    {
+     "Id": "3",
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "15-3-3",
+     "Qty": 100,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.790Z"
+    },
+    {
+     "Id": "2",
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 630,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.790Z"
+    },
+    {
+     "Id": "1",
+     "SalesUserId": 2,
+     "EmpId": "4000",
+     "EmpCode": "EMP-00035",
+     "Region": "ภาคเหนือ",
+     "PeriodYear": 2569,
+     "IssueMonth": 2,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 325,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.787Z"
+    }
+   ],
+   "ภาคอีสานกลาง": [
+    {
+     "Id": "23",
+     "SalesUserId": 6,
+     "EmpId": "4001",
+     "EmpCode": "EMP-00036",
+     "Region": "ภาคอีสานกลาง",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 30,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.883Z"
+    },
+    {
+     "Id": "22",
+     "SalesUserId": 6,
+     "EmpId": "4001",
+     "EmpCode": "EMP-00036",
+     "Region": "ภาคอีสานกลาง",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "แบนเนอร์ตรารถเกษตร",
+     "Qty": 1,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.880Z"
+    },
+    {
+     "Id": "21",
+     "SalesUserId": 6,
+     "EmpId": "4001",
+     "EmpCode": "EMP-00036",
+     "Region": "ภาคอีสานกลาง",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 500,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.877Z"
+    },
+    {
+     "Id": "20",
+     "SalesUserId": 6,
+     "EmpId": "4001",
+     "EmpCode": "EMP-00036",
+     "Region": "ภาคอีสานกลาง",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "18-4-5",
+     "Qty": 200,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.877Z"
+    },
+    {
+     "Id": "19",
+     "SalesUserId": 6,
+     "EmpId": "4001",
+     "EmpCode": "EMP-00036",
+     "Region": "ภาคอีสานกลาง",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "16-8-8",
+     "Qty": 100,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.877Z"
+    },
+    {
+     "Id": "18",
+     "SalesUserId": 6,
+     "EmpId": "4001",
+     "EmpCode": "EMP-00036",
+     "Region": "ภาคอีสานกลาง",
+     "PeriodYear": 2569,
+     "IssueMonth": 2,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 490,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.873Z"
+    }
+   ],
+   "ภาคอีสานบน": [
+    {
+     "Id": "32",
+     "SalesUserId": null,
+     "EmpId": "7002",
+     "EmpCode": "EMP-00041",
+     "Region": "ภาคอีสานบน",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 474,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.933Z"
+    },
+    {
+     "Id": "31",
+     "SalesUserId": null,
+     "EmpId": "7002",
+     "EmpCode": "EMP-00041",
+     "Region": "ภาคอีสานบน",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "โบว์ชัวส์ ยางพารา",
+     "Qty": 1500,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.930Z"
+    },
+    {
+     "Id": "30",
+     "SalesUserId": null,
+     "EmpId": "7002",
+     "EmpCode": "EMP-00041",
+     "Region": "ภาคอีสานบน",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "แบนเนอร์",
+     "Qty": 20,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.927Z"
+    },
+    {
+     "Id": "29",
+     "SalesUserId": null,
+     "EmpId": "7002",
+     "EmpCode": "EMP-00041",
+     "Region": "ภาคอีสานบน",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 722,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.923Z"
+    },
+    {
+     "Id": "28",
+     "SalesUserId": null,
+     "EmpId": "7002",
+     "EmpCode": "EMP-00041",
+     "Region": "ภาคอีสานบน",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "กระเป๋าใบใหญ่",
+     "Qty": 100,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.923Z"
+    },
+    {
+     "Id": "27",
+     "SalesUserId": null,
+     "EmpId": "7002",
+     "EmpCode": "EMP-00041",
+     "Region": "ภาคอีสานบน",
+     "PeriodYear": 2569,
+     "IssueMonth": 2,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 183,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.920Z"
+    }
+   ],
+   "ภาคอีสานล่าง": [
+    {
+     "Id": "46",
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 1010,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.973Z"
+    },
+    {
+     "Id": "45",
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "29-5-18",
+     "Qty": 200,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.973Z"
+    },
+    {
+     "Id": "44",
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "18-4-5",
+     "Qty": 300,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.970Z"
+    },
+    {
+     "Id": "43",
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "16-8-8",
+     "Qty": 900,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.970Z"
+    },
+    {
+     "Id": "42",
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "15-7-18",
+     "Qty": 100,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.970Z"
+    },
+    {
+     "Id": "41",
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "IssueMonth": 4,
+     "Brand": "รถเกษตร",
+     "ItemName": "15-3-3",
+     "Qty": 200,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.970Z"
+    },
+    {
+     "Id": "40",
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "แบนเนอร์ตรารถเกษตร",
+     "Qty": 3,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.967Z"
+    },
+    {
+     "Id": "39",
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 1962.5,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.963Z"
+    },
+    {
+     "Id": "38",
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "29-5-18",
+     "Qty": 200,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.963Z"
+    },
+    {
+     "Id": "37",
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "18-4-5",
+     "Qty": 500,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.960Z"
+    },
+    {
+     "Id": "36",
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "16-8-8",
+     "Qty": 900,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.960Z"
+    },
+    {
+     "Id": "35",
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "15-7-18",
+     "Qty": 100,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.960Z"
+    },
+    {
+     "Id": "34",
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "IssueMonth": 3,
+     "Brand": "รถเกษตร",
+     "ItemName": "15-3-3",
+     "Qty": 300,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.957Z"
+    },
+    {
+     "Id": "33",
+     "SalesUserId": null,
+     "EmpId": "7004",
+     "EmpCode": "EMP-00042",
+     "Region": "ภาคอีสานล่าง",
+     "PeriodYear": 2569,
+     "IssueMonth": 2,
+     "Brand": "รถเกษตร",
+     "ItemName": "เสื้อยืดแขนยาว",
+     "Qty": 440,
+     "CustId": null,
+     "SoId": null,
+     "Note": null,
+     "Source": "IMPORT",
+     "CreatedAt": "2026-06-23T11:28:26.953Z"
+    }
+   ]
+  },
+  "items": [
+   {
+    "Id": "12",
+    "Brand": "ปุ๋ยเทพ",
+    "ItemName": "13-3-23",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "29",
+    "Brand": "ปุ๋ยเทพ",
+    "ItemName": "15-10-30",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "26",
+    "Brand": "ปุ๋ยเทพ",
+    "ItemName": "15-5-25",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "14",
+    "Brand": "ปุ๋ยเทพ",
+    "ItemName": "20-5-3",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "15",
+    "Brand": "ปุ๋ยเทพ",
+    "ItemName": "20-8-8",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "28",
+    "Brand": "ปุ๋ยเทพ",
+    "ItemName": "แบนเนอร์ ปุ๋ยเทพ",
+    "ItemType": "BANNER"
+   },
+   {
+    "Id": "27",
+    "Brand": "ปุ๋ยเทพ",
+    "ItemName": "เสื้อยืดแขนยาว",
+    "ItemType": "SHIRT"
+   },
+   {
+    "Id": "10",
+    "Brand": "รถเกษตร",
+    "ItemName": "13-3-21",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "13",
+    "Brand": "รถเกษตร",
+    "ItemName": "14-7-35",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "19",
+    "Brand": "รถเกษตร",
+    "ItemName": "15-10-30",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "5",
+    "Brand": "รถเกษตร",
+    "ItemName": "15-3-3",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "18",
+    "Brand": "รถเกษตร",
+    "ItemName": "15-5-20",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "16",
+    "Brand": "รถเกษตร",
+    "ItemName": "15-7-18",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "1",
+    "Brand": "รถเกษตร",
+    "ItemName": "16-8-8",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "6",
+    "Brand": "รถเกษตร",
+    "ItemName": "18-4-5",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "7",
+    "Brand": "รถเกษตร",
+    "ItemName": "18-8-8",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "25",
+    "Brand": "รถเกษตร",
+    "ItemName": "19-6-6",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "20",
+    "Brand": "รถเกษตร",
+    "ItemName": "20-5-5",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "2",
+    "Brand": "รถเกษตร",
+    "ItemName": "20-8-8",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "17",
+    "Brand": "รถเกษตร",
+    "ItemName": "22-6-4",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "21",
+    "Brand": "รถเกษตร",
+    "ItemName": "29-5-18",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "3",
+    "Brand": "รถเกษตร",
+    "ItemName": "30-0-0",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "8",
+    "Brand": "รถเกษตร",
+    "ItemName": "40-0-0",
+    "ItemType": "BAG"
+   },
+   {
+    "Id": "22",
+    "Brand": "รถเกษตร",
+    "ItemName": "กระเป๋าใบใหญ่",
+    "ItemType": "OTHER"
+   },
+   {
+    "Id": "24",
+    "Brand": "รถเกษตร",
+    "ItemName": "แบนเนอร์",
+    "ItemType": "BANNER"
+   },
+   {
+    "Id": "9",
+    "Brand": "รถเกษตร",
+    "ItemName": "แบนเนอร์ รถเกษตร",
+    "ItemType": "BANNER"
+   },
+   {
+    "Id": "11",
+    "Brand": "รถเกษตร",
+    "ItemName": "แบนเนอร์ตรารถเกษตร",
+    "ItemType": "BANNER"
+   },
+   {
+    "Id": "23",
+    "Brand": "รถเกษตร",
+    "ItemName": "โบว์ชัวส์ ยางพารา",
+    "ItemType": "OTHER"
+   },
+   {
+    "Id": "4",
+    "Brand": "รถเกษตร",
+    "ItemName": "เสื้อยืดแขนยาว",
+    "ItemType": "SHIRT"
+   }
+  ]
+ },
+ "users": [
+  {
+   "Id": "5",
+   "Username": "acct1",
+   "DisplayName": "บัญชี 1",
+   "Role": "ACCOUNTING",
+   "EmpId": null,
+   "IsActive": true,
+   "EmpCode": null,
+   "EmpName": null
+  },
+  {
+   "Id": "1",
+   "Username": "admin",
+   "DisplayName": "ผู้ดูแลระบบ",
+   "Role": "ADMIN",
+   "EmpId": null,
+   "IsActive": true,
+   "EmpCode": null,
+   "EmpName": null
+  },
+  {
+   "Id": "2",
+   "Username": "sales1",
+   "DisplayName": "พนักงานขาย 1",
+   "Role": "SALES",
+   "EmpId": "4000",
+   "IsActive": true,
+   "EmpCode": "EMP-00035",
+   "EmpName": "ชูชาติ"
+  },
+  {
+   "Id": "4",
+   "Username": "warehouse1",
+   "DisplayName": "พนักงานคลัง 1",
+   "Role": "WAREHOUSE",
+   "EmpId": null,
+   "IsActive": true,
+   "EmpCode": null,
+   "EmpName": null
+  },
+  {
+   "Id": "6",
+   "Username": "sales2",
+   "DisplayName": "มนัส (พนักงานขาย)",
+   "Role": "SALES",
+   "EmpId": "4001",
+   "IsActive": true,
+   "EmpCode": "EMP-00036",
+   "EmpName": "มนัส"
+  },
+  {
+   "Id": "3",
+   "Username": "surachai",
+   "DisplayName": "สุรชัย (อนุมัติปลดล็อก)",
+   "Role": "APPROVER",
+   "EmpId": null,
+   "IsActive": true,
+   "EmpCode": null,
+   "EmpName": null
+  }
+ ],
+ "salesOrders": [
+  {
+   "id": 1,
+   "wfRef": "WF69I-000001",
+   "soPrefix": "I",
+   "custId": "14010",
+   "custName": "คุณกิติศักดิ์ บุญรักษ์",
+   "status": "DRAFT",
+   "truckPlate": null,
+   "controlTicketNo": null,
+   "salesUserId": "1000",
+   "salesName": "ไพศาล",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-15T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "8001",
+     "goodCode": "5-1620000000BUL(1)",
+     "goodName": "16-20-0 Bulk (ปุ๋ยชื้น)",
+     "qtyTon": 8,
+     "qtyBag": 160,
+     "pricePerTon": 16500,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 500,
+     "rebateAmount": 4000,
+     "lineAmount": 132000
+    },
+    {
+     "lineNum": 2,
+     "goodId": "25056",
+     "goodCode": "5-1620000000BUL(S)",
+     "goodName": "16-20-0+12S เทกอง",
+     "qtyTon": 9,
+     "qtyBag": 180,
+     "pricePerTon": 16300,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 300,
+     "rebateAmount": 2700,
+     "lineAmount": 146700
+    },
+    {
+     "lineNum": 3,
+     "goodId": "1088",
+     "goodCode": "5-FI00000000BUL",
+     "goodName": "ฟิลเลอร์ (เม็ดอินทรีย์ดำ) เทกอง",
+     "qtyTon": 5,
+     "qtyBag": 100,
+     "pricePerTon": 16000,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 80000
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "wfRef": "WF69I-000002",
+   "soPrefix": "I",
+   "custId": "104087",
+   "custName": "เกษตรรุ่งโรจน์ จำกัด",
+   "status": "IMPORTED",
+   "truckPlate": "67-4139/83",
+   "controlTicketNo": "AI68-07451",
+   "salesUserId": "1001",
+   "salesName": "เกษร  ดีบรรเจิด",
+   "importedDocuNo": "N69001437",
+   "createdAt": "2026-06-22T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "23014",
+     "goodCode": "3-MG00000000CAR",
+     "goodName": "MAGNESIUM ตรา รถเกษตร",
+     "qtyTon": 28,
+     "qtyBag": 560,
+     "pricePerTon": 16500,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 500,
+     "rebateAmount": 14000,
+     "lineAmount": 462000
+    },
+    {
+     "lineNum": 2,
+     "goodId": "25028",
+     "goodCode": "7-08242400BBCEE",
+     "goodName": "8-24-24 เชิงผสม ตรารูปตัว C",
+     "qtyTon": 24,
+     "qtyBag": 480,
+     "pricePerTon": 16000,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 384000
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "wfRef": "WF69I-000003",
+   "soPrefix": "I",
+   "custId": "3017",
+   "custName": "คุณจุมพล คุณากร",
+   "status": "DRAFT",
+   "truckPlate": "67-4763/79",
+   "controlTicketNo": null,
+   "salesUserId": "1000",
+   "salesName": "ไพศาล",
+   "importedDocuNo": null,
+   "createdAt": "2026-05-09T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1102",
+     "goodCode": "7-14040900BBCAR",
+     "goodName": "14-4-9 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 20,
+     "qtyBag": 400,
+     "pricePerTon": "13200500",
+     "netPricePerTon": "13200",
+     "isGiveaway": false,
+     "rebatePerTon": 13187300,
+     "rebateAmount": 263746000,
+     "lineAmount": 264010000
+    },
+    {
+     "lineNum": 2,
+     "goodId": "1094",
+     "goodCode": "7-12044000BBCAR",
+     "goodName": "12-4-40 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 17,
+     "qtyBag": 340,
+     "pricePerTon": "18400300",
+     "netPricePerTon": "18400",
+     "isGiveaway": false,
+     "rebatePerTon": 18381900,
+     "rebateAmount": 312492300,
+     "lineAmount": 312805100
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "wfRef": "WF69I-000004",
+   "soPrefix": "I",
+   "custId": "1169",
+   "custName": "เกษตรแสนขัน จำกัด",
+   "status": "DRAFT",
+   "truckPlate": "73-2655/72",
+   "controlTicketNo": null,
+   "salesUserId": "1003",
+   "salesName": "ชนกชญา  น้อยกันสี",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-05T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "18000",
+     "goodCode": "5-0810000000BUL",
+     "goodName": "8-10-0  เทกอง",
+     "qtyTon": 2,
+     "qtyBag": 40,
+     "pricePerTon": 16500,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 500,
+     "rebateAmount": 1000,
+     "lineAmount": 33000
+    },
+    {
+     "lineNum": 2,
+     "goodId": "1089",
+     "goodCode": "5-FI00000000UBA",
+     "goodName": "ฟิลเลอร์ (ตัวเติม) กระสอบใช้แล้ว",
+     "qtyTon": 8,
+     "qtyBag": 160,
+     "pricePerTon": 15800,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 126400
+    },
+    {
+     "lineNum": 3,
+     "goodId": "25057",
+     "goodCode": "5-4600000600BUL(5)",
+     "goodName": "46-0-0 (โฟม) เทกอง (5)",
+     "qtyTon": 1,
+     "qtyBag": 20,
+     "pricePerTon": 16500,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 500,
+     "rebateAmount": 500,
+     "lineAmount": 16500
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "wfRef": "WF69I-000005",
+   "soPrefix": "I",
+   "custId": "7145",
+   "custName": "คณสมชาย เกิดมงคล",
+   "status": "IMPORTED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-01448",
+   "salesUserId": "1003",
+   "salesName": "ชนกชญา  น้อยกันสี",
+   "importedDocuNo": "N69003043",
+   "createdAt": "2026-06-01T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "25030",
+     "goodCode": "7-14073500BBCAR(1)",
+     "goodName": "14-7-35 เชิงผสม ตรารถเกษตร (เขมร)",
+     "qtyTon": 8,
+     "qtyBag": 160,
+     "pricePerTon": 16000,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 128000
+    },
+    {
+     "lineNum": 2,
+     "goodId": "1109",
+     "goodCode": "7-15052000BBGOP",
+     "goodName": "15-5-20+2MGO เชิงผสม ตราโกลด์พอยท์",
+     "qtyTon": 14,
+     "qtyBag": 280,
+     "pricePerTon": 16300,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 300,
+     "rebateAmount": 4200,
+     "lineAmount": 228200
+    },
+    {
+     "lineNum": 3,
+     "goodId": "20004",
+     "goodCode": "7-15082000BBCAR",
+     "goodName": "15-8-20  เชิงผสม  ตรารถเกษตร",
+     "qtyTon": 23,
+     "qtyBag": 460,
+     "pricePerTon": "183000",
+     "netPricePerTon": "18300",
+     "isGiveaway": false,
+     "rebatePerTon": 164700,
+     "rebateAmount": 3788100,
+     "lineAmount": 4209000
+    }
+   ]
+  },
+  {
+   "id": 6,
+   "wfRef": "WF69I-000006",
+   "soPrefix": "I",
+   "custId": "18006",
+   "custName": "กลุ่มชาวไร่น้ำจืด",
+   "status": "DRAFT",
+   "truckPlate": "68-7332/63",
+   "controlTicketNo": null,
+   "salesUserId": "1005",
+   "salesName": "ธนิภา  คำเสียงใส",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-06T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "22000",
+     "goodCode": "5-0000600200BUL1",
+     "goodName": "0-0-60 (เม็ด) (กระสอบจัมโบ้)",
+     "qtyTon": 22,
+     "qtyBag": 440,
+     "pricePerTon": 16000,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 352000
+    }
+   ]
+  },
+  {
+   "id": 7,
+   "wfRef": "WF69I-000007",
+   "soPrefix": "I",
+   "custId": "1175",
+   "custName": "เกษตรชุมแสง",
+   "status": "IMPORTED",
+   "truckPlate": "80-6576/94",
+   "controlTicketNo": "AI68-05179",
+   "salesUserId": "1003",
+   "salesName": "ชนกชญา  น้อยกันสี",
+   "importedDocuNo": "N69089545",
+   "createdAt": "2026-05-30T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1081",
+     "goodCode": "5-164600000BUL1",
+     "goodName": "16-46-0(18-46-0) เทกอง",
+     "qtyTon": 9,
+     "qtyBag": 180,
+     "pricePerTon": 16500,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 500,
+     "rebateAmount": 4500,
+     "lineAmount": 148500
+    },
+    {
+     "lineNum": 2,
+     "goodId": "1088",
+     "goodCode": "5-FI00000000BUL",
+     "goodName": "ฟิลเลอร์ (เม็ดอินทรีย์ดำ) เทกอง",
+     "qtyTon": 25,
+     "qtyBag": 500,
+     "pricePerTon": 16000,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 400000
+    }
+   ]
+  },
+  {
+   "id": 8,
+   "wfRef": "WF69I-000008",
+   "soPrefix": "I",
+   "custId": "104090",
+   "custName": "เกษตรไพศาล เทรดดิ้ง จำกัด",
+   "status": "PICKING",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-03641",
+   "salesUserId": "1000",
+   "salesName": "ไพศาล",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-04T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "3007",
+     "goodCode": "5-2100000000BUL",
+     "goodName": "21-0-0  เทกอง",
+     "qtyTon": 13,
+     "qtyBag": 260,
+     "pricePerTon": 16500,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 500,
+     "rebateAmount": 6500,
+     "lineAmount": 214500
+    },
+    {
+     "lineNum": 2,
+     "goodId": "25085",
+     "goodCode": "7-12030500BBCAR",
+     "goodName": "12-3-5 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 16,
+     "qtyBag": 320,
+     "pricePerTon": 16500,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 500,
+     "rebateAmount": 8000,
+     "lineAmount": 264000
+    }
+   ]
+  },
+  {
+   "id": 9,
+   "wfRef": "WF69I-000009",
+   "soPrefix": "I",
+   "custId": "104081",
+   "custName": "คุณเจริญทรัพย์  บุญมาก",
+   "status": "SHIPPED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-09126",
+   "salesUserId": "1002",
+   "salesName": "พรพรรณ  จิตวัฒนฤทธิ์",
+   "importedDocuNo": null,
+   "createdAt": "2026-05-10T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1083",
+     "goodCode": "5-1846000000BUL",
+     "goodName": "18-46-0 เทกอง",
+     "qtyTon": 29,
+     "qtyBag": 580,
+     "pricePerTon": 16000,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 464000
+    },
+    {
+     "lineNum": 2,
+     "goodId": "25052",
+     "goodCode": "7-14030300BBTEP",
+     "goodName": "14-3-3 เชิงผสม ตรา ปุ๋ยเทพ",
+     "qtyTon": 13,
+     "qtyBag": 260,
+     "pricePerTon": "10200500",
+     "netPricePerTon": "10200",
+     "isGiveaway": false,
+     "rebatePerTon": 10190300,
+     "rebateAmount": 132473900,
+     "lineAmount": 132606500
+    },
+    {
+     "lineNum": 3,
+     "goodId": "25067",
+     "goodCode": "5-1620000013BUL(S)",
+     "goodName": "16-20-0+13S เทกอง",
+     "qtyTon": 29,
+     "qtyBag": 580,
+     "pricePerTon": 15800,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 458200
+    }
+   ]
+  },
+  {
+   "id": 10,
+   "wfRef": "WF69I-000010",
+   "soPrefix": "I",
+   "custId": "1169",
+   "custName": "เกษตรแสนขัน จำกัด",
+   "status": "SHIPPED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-01460",
+   "salesUserId": "1005",
+   "salesName": "ธนิภา  คำเสียงใส",
+   "importedDocuNo": null,
+   "createdAt": "2026-04-27T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "23014",
+     "goodCode": "3-MG00000000CAR",
+     "goodName": "MAGNESIUM ตรา รถเกษตร",
+     "qtyTon": 30,
+     "qtyBag": 600,
+     "pricePerTon": 16300,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 300,
+     "rebateAmount": 9000,
+     "lineAmount": 489000
+    }
+   ]
+  },
+  {
+   "id": 11,
+   "wfRef": "WF69I-000011",
+   "soPrefix": "I",
+   "custId": "104028",
+   "custName": "เกษตรกิจ จำกัด  Tax ID No.0375564001025",
+   "status": "CONFIRMED",
+   "truckPlate": "74-2079/80",
+   "controlTicketNo": "AI68-04633",
+   "salesUserId": "1002",
+   "salesName": "พรพรรณ  จิตวัฒนฤทธิ์",
+   "importedDocuNo": null,
+   "createdAt": "2026-05-24T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "12000",
+     "goodCode": "5-FI00000000WHI",
+     "goodName": "ฟิลเลอร์ เม็ดขาว เทกอง",
+     "qtyTon": 13,
+     "qtyBag": 260,
+     "pricePerTon": 15800,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 205400
+    },
+    {
+     "lineNum": 2,
+     "goodId": "25030",
+     "goodCode": "7-14073500BBCAR(1)",
+     "goodName": "14-7-35 เชิงผสม ตรารถเกษตร (เขมร)",
+     "qtyTon": 18,
+     "qtyBag": 360,
+     "pricePerTon": 16300,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 300,
+     "rebateAmount": 5400,
+     "lineAmount": 293400
+    },
+    {
+     "lineNum": 3,
+     "goodId": "1106",
+     "goodCode": "7-14142400BBCAR",
+     "goodName": "14-14-24 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 10,
+     "qtyBag": 200,
+     "pricePerTon": 15800,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 158000
+    }
+   ]
+  },
+  {
+   "id": 12,
+   "wfRef": "WF69I-000012",
+   "soPrefix": "I",
+   "custId": "7120",
+   "custName": "คุณคำดี จงเจริญ",
+   "status": "IMPORTED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-04797",
+   "salesUserId": "1000",
+   "salesName": "ไพศาล",
+   "importedDocuNo": "N69078247",
+   "createdAt": "2026-06-11T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1104",
+     "goodCode": "7-14073500BBCAR",
+     "goodName": "14-7-35 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 21,
+     "qtyBag": 420,
+     "pricePerTon": "18400100",
+     "netPricePerTon": "18400",
+     "isGiveaway": false,
+     "rebatePerTon": 18381700,
+     "rebateAmount": 386015700,
+     "lineAmount": 386402100
+    },
+    {
+     "lineNum": 2,
+     "goodId": "25072",
+     "goodCode": "7-15052500BBTEP",
+     "goodName": "15-5-25 เชิงผสม ตราปุ๋ยเทพ",
+     "qtyTon": 4,
+     "qtyBag": 80,
+     "pricePerTon": "182000",
+     "netPricePerTon": "18200",
+     "isGiveaway": false,
+     "rebatePerTon": 163800,
+     "rebateAmount": 655200,
+     "lineAmount": 728000
+    }
+   ]
+  },
+  {
+   "id": 13,
+   "wfRef": "WF69I-000013",
+   "soPrefix": "I",
+   "custId": "1029",
+   "custName": "กิตติลักษณ์การเกษตร จำกัด",
+   "status": "IMPORTED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-08222",
+   "salesUserId": "1003",
+   "salesName": "ชนกชญา  น้อยกันสี",
+   "importedDocuNo": "N69067132",
+   "createdAt": "2026-06-12T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1104",
+     "goodCode": "7-14073500BBCAR",
+     "goodName": "14-7-35 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 12,
+     "qtyBag": 240,
+     "pricePerTon": "18400300",
+     "netPricePerTon": "18400",
+     "isGiveaway": false,
+     "rebatePerTon": 18381900,
+     "rebateAmount": 220582800,
+     "lineAmount": 220803600
+    }
+   ]
+  },
+  {
+   "id": 14,
+   "wfRef": "WF69I-000014",
+   "soPrefix": "I",
+   "custId": "7103",
+   "custName": "คุณขวัญเมือง พัฒนากร",
+   "status": "CONFIRMED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-06926",
+   "salesUserId": "1001",
+   "salesName": "เกษร  ดีบรรเจิด",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-15T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1114",
+     "goodCode": "7-15151500BBCAR",
+     "goodName": "15-15-15 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 4,
+     "qtyBag": 80,
+     "pricePerTon": "192000",
+     "netPricePerTon": "19200",
+     "isGiveaway": false,
+     "rebatePerTon": 172800,
+     "rebateAmount": 691200,
+     "lineAmount": 768000
+    }
+   ]
+  },
+  {
+   "id": 15,
+   "wfRef": "WF69I-000015",
+   "soPrefix": "I",
+   "custId": "10003",
+   "custName": "คุณกิ่งแก้ว มีชัย",
+   "status": "DRAFT",
+   "truckPlate": null,
+   "controlTicketNo": null,
+   "salesUserId": "1003",
+   "salesName": "ชนกชญา  น้อยกันสี",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-06T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1115",
+     "goodCode": "7-16040400BBCAR",
+     "goodName": "16-4-4 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 11,
+     "qtyBag": 220,
+     "pricePerTon": 16500,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 500,
+     "rebateAmount": 5500,
+     "lineAmount": 181500
+    }
+   ]
+  },
+  {
+   "id": 16,
+   "wfRef": "WF69I-000016",
+   "soPrefix": "I",
+   "custId": "1029",
+   "custName": "กิตติลักษณ์การเกษตร จำกัด",
+   "status": "DRAFT",
+   "truckPlate": "81-1941/64",
+   "controlTicketNo": null,
+   "salesUserId": "1001",
+   "salesName": "เกษร  ดีบรรเจิด",
+   "importedDocuNo": null,
+   "createdAt": "2026-05-20T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "25082",
+     "goodCode": "7-09050900BBCAR",
+     "goodName": "9-5-9 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 17,
+     "qtyBag": 340,
+     "pricePerTon": 16000,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 272000
+    },
+    {
+     "lineNum": 2,
+     "goodId": "25057",
+     "goodCode": "5-4600000600BUL(5)",
+     "goodName": "46-0-0 (โฟม) เทกอง (5)",
+     "qtyTon": 16,
+     "qtyBag": 320,
+     "pricePerTon": 16000,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 256000
+    },
+    {
+     "lineNum": 3,
+     "goodId": "1108",
+     "goodCode": "7-15052000BBCAR",
+     "goodName": "15-5-20+2MGO เชิงผสม ตรารถเกษตร",
+     "qtyTon": 26,
+     "qtyBag": 520,
+     "pricePerTon": "17000-200",
+     "netPricePerTon": "17000",
+     "isGiveaway": false,
+     "rebatePerTon": null,
+     "rebateAmount": null,
+     "lineAmount": null
+    }
+   ]
+  },
+  {
+   "id": 17,
+   "wfRef": "WF69I-000017",
+   "soPrefix": "I",
+   "custId": "7149",
+   "custName": "คุณชนะกิจ ค้าเจริญ",
+   "status": "CANCELLED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-01979",
+   "salesUserId": "1001",
+   "salesName": "เกษร  ดีบรรเจิด",
+   "importedDocuNo": null,
+   "createdAt": "2026-05-20T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "23042",
+     "goodCode": "7-12042600BBCAR",
+     "goodName": "12-4-26 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 18,
+     "qtyBag": 360,
+     "pricePerTon": "172000",
+     "netPricePerTon": "17200",
+     "isGiveaway": false,
+     "rebatePerTon": 154800,
+     "rebateAmount": 2786400,
+     "lineAmount": 3096000
+    }
+   ]
+  },
+  {
+   "id": 18,
+   "wfRef": "WF69I-000018",
+   "soPrefix": "I",
+   "custId": "7043",
+   "custName": "คุณกำชัย ทองมงคล",
+   "status": "CONFIRMED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-08489",
+   "salesUserId": "1002",
+   "salesName": "พรพรรณ  จิตวัฒนฤทธิ์",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-22T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1108",
+     "goodCode": "7-15052000BBCAR",
+     "goodName": "15-5-20+2MGO เชิงผสม ตรารถเกษตร",
+     "qtyTon": 12,
+     "qtyBag": 240,
+     "pricePerTon": "17000300",
+     "netPricePerTon": "17000",
+     "isGiveaway": false,
+     "rebatePerTon": 16983300,
+     "rebateAmount": 203799600,
+     "lineAmount": 204003600
+    },
+    {
+     "lineNum": 2,
+     "goodId": "23007",
+     "goodCode": "5-1620000000BUL(2)",
+     "goodName": "16-20-0  Bulk (ปุ๋ยเปียก)",
+     "qtyTon": 9,
+     "qtyBag": 180,
+     "pricePerTon": 16500,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 500,
+     "rebateAmount": 4500,
+     "lineAmount": 148500
+    }
+   ]
+  },
+  {
+   "id": 19,
+   "wfRef": "WF69I-000019",
+   "soPrefix": "I",
+   "custId": "104053",
+   "custName": "โกรว์ ซัคเซส อกริคัลเจอร์ จำกัด",
+   "status": "SHIPPED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-07221",
+   "salesUserId": "1003",
+   "salesName": "ชนกชญา  น้อยกันสี",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-22T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "25082",
+     "goodCode": "7-09050900BBCAR",
+     "goodName": "9-5-9 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 25,
+     "qtyBag": 500,
+     "pricePerTon": 16500,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 500,
+     "rebateAmount": 12500,
+     "lineAmount": 412500
+    }
+   ]
+  },
+  {
+   "id": 20,
+   "wfRef": "WF69I-000020",
+   "soPrefix": "I",
+   "custId": "1151",
+   "custName": "โกสุมเคมีเกษตร",
+   "status": "PICKING",
+   "truckPlate": "66-6266/89",
+   "controlTicketNo": "AI68-04627",
+   "salesUserId": "1003",
+   "salesName": "ชนกชญา  น้อยกันสี",
+   "importedDocuNo": null,
+   "createdAt": "2026-04-27T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1088",
+     "goodCode": "5-FI00000000BUL",
+     "goodName": "ฟิลเลอร์ (เม็ดอินทรีย์ดำ) เทกอง",
+     "qtyTon": 6,
+     "qtyBag": 120,
+     "pricePerTon": 16000,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 96000
+    }
+   ]
+  },
+  {
+   "id": 21,
+   "wfRef": "WF69I-000021",
+   "soPrefix": "I",
+   "custId": "1198",
+   "custName": "คลองหินการเกษตร",
+   "status": "IMPORTED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-02597",
+   "salesUserId": "1001",
+   "salesName": "เกษร  ดีบรรเจิด",
+   "importedDocuNo": "N69047999",
+   "createdAt": "2026-05-27T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1115",
+     "goodCode": "7-16040400BBCAR",
+     "goodName": "16-4-4 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 18,
+     "qtyBag": 360,
+     "pricePerTon": 16100,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 100,
+     "rebateAmount": 1800,
+     "lineAmount": 289800
+    }
+   ]
+  },
+  {
+   "id": 22,
+   "wfRef": "WF69I-000022",
+   "soPrefix": "I",
+   "custId": "7120",
+   "custName": "คุณคำดี จงเจริญ",
+   "status": "CONFIRMED",
+   "truckPlate": "69-5958/85",
+   "controlTicketNo": "AI68-07079",
+   "salesUserId": "1001",
+   "salesName": "เกษร  ดีบรรเจิด",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-02T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "25030",
+     "goodCode": "7-14073500BBCAR(1)",
+     "goodName": "14-7-35 เชิงผสม ตรารถเกษตร (เขมร)",
+     "qtyTon": 14,
+     "qtyBag": 280,
+     "pricePerTon": 15800,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 221200
+    },
+    {
+     "lineNum": 2,
+     "goodId": "18000",
+     "goodCode": "5-0810000000BUL",
+     "goodName": "8-10-0  เทกอง",
+     "qtyTon": 8,
+     "qtyBag": 160,
+     "pricePerTon": 16500,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 500,
+     "rebateAmount": 4000,
+     "lineAmount": 132000
+    }
+   ]
+  },
+  {
+   "id": 23,
+   "wfRef": "WF69I-000023",
+   "soPrefix": "I",
+   "custId": "1004",
+   "custName": " ส. โชคเจริญวัฒนา",
+   "status": "DRAFT",
+   "truckPlate": "75-9397/62",
+   "controlTicketNo": null,
+   "salesUserId": "1002",
+   "salesName": "พรพรรณ  จิตวัฒนฤทธิ์",
+   "importedDocuNo": null,
+   "createdAt": "2026-05-23T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "22002",
+     "goodCode": "5-0000300000BUL",
+     "goodName": "0-0-30  เทกอง",
+     "qtyTon": 17,
+     "qtyBag": 340,
+     "pricePerTon": 15800,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 268600
+    }
+   ]
+  },
+  {
+   "id": 24,
+   "wfRef": "WF69I-000024",
+   "soPrefix": "I",
+   "custId": "26007",
+   "custName": "กัปตัน มารีน จำกัด",
+   "status": "IMPORTED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-01684",
+   "salesUserId": "1004",
+   "salesName": "ณชลนิภา  รอดแตง",
+   "importedDocuNo": "N69029481",
+   "createdAt": "2026-06-12T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1121",
+     "goodCode": "7-16160800BBCAR",
+     "goodName": "16-16-8 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 27,
+     "qtyBag": 540,
+     "pricePerTon": "18000300",
+     "netPricePerTon": "18000",
+     "isGiveaway": false,
+     "rebatePerTon": 17982300,
+     "rebateAmount": 485522100,
+     "lineAmount": 486008100
+    },
+    {
+     "lineNum": 2,
+     "goodId": "22001",
+     "goodCode": "5-0000600200BUL2",
+     "goodName": "0-0-60 (เม็ด) เทกอง (SQM)",
+     "qtyTon": 7,
+     "qtyBag": 140,
+     "pricePerTon": 16100,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 100,
+     "rebateAmount": 700,
+     "lineAmount": 112700
+    },
+    {
+     "lineNum": 3,
+     "goodId": "1113",
+     "goodCode": "7-15071800BBCEE",
+     "goodName": "15-7-18 เชิงผสม ตรารูปตัว C",
+     "qtyTon": 30,
+     "qtyBag": 600,
+     "pricePerTon": 16000,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 480000
+    }
+   ]
+  },
+  {
+   "id": 25,
+   "wfRef": "WF69I-000025",
+   "soPrefix": "I",
+   "custId": "7096",
+   "custName": "คุณคงเดช คงเสรี",
+   "status": "CONFIRMED",
+   "truckPlate": "71-6778/77",
+   "controlTicketNo": "AI68-08139",
+   "salesUserId": "1002",
+   "salesName": "พรพรรณ  จิตวัฒนฤทธิ์",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-07T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "25030",
+     "goodCode": "7-14073500BBCAR(1)",
+     "goodName": "14-7-35 เชิงผสม ตรารถเกษตร (เขมร)",
+     "qtyTon": 4,
+     "qtyBag": 80,
+     "pricePerTon": 16500,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 500,
+     "rebateAmount": 2000,
+     "lineAmount": 66000
+    }
+   ]
+  },
+  {
+   "id": 26,
+   "wfRef": "WF69I-000026",
+   "soPrefix": "I",
+   "custId": "104092",
+   "custName": "เกษตรหน้าวัด",
+   "status": "CONFIRMED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-06768",
+   "salesUserId": "1004",
+   "salesName": "ณชลนิภา  รอดแตง",
+   "importedDocuNo": null,
+   "createdAt": "2026-05-21T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "25061",
+     "goodCode": "1-10033000BBTEP",
+     "goodName": "กระสอบ 10-3-30 เชิงผสม ตราปุ๋ยเทพ",
+     "qtyTon": 27,
+     "qtyBag": 540,
+     "pricePerTon": 16300,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 300,
+     "rebateAmount": 8100,
+     "lineAmount": 440100
+    }
+   ]
+  },
+  {
+   "id": 27,
+   "wfRef": "WF69I-000027",
+   "soPrefix": "I",
+   "custId": "23093",
+   "custName": "การยางแห่งประเทศไทย",
+   "status": "CANCELLED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-09127",
+   "salesUserId": "1002",
+   "salesName": "พรพรรณ  จิตวัฒนฤทธิ์",
+   "importedDocuNo": null,
+   "createdAt": "2026-05-25T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1111",
+     "goodCode": "7-15053500BBCAR",
+     "goodName": "15-5-35 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 15,
+     "qtyBag": 300,
+     "pricePerTon": "18500300",
+     "netPricePerTon": "18500",
+     "isGiveaway": false,
+     "rebatePerTon": 18481800,
+     "rebateAmount": 277227000,
+     "lineAmount": 277504500
+    },
+    {
+     "lineNum": 2,
+     "goodId": "1117",
+     "goodCode": "7-16080400BBCAR",
+     "goodName": "16-8-4 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 3,
+     "qtyBag": 60,
+     "pricePerTon": 15800,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 47400
+    }
+   ]
+  },
+  {
+   "id": 28,
+   "wfRef": "WF69I-000028",
+   "soPrefix": "I",
+   "custId": "1159",
+   "custName": "กาฬสินธุ์ออโต้เซลล์ จำกัด",
+   "status": "CANCELLED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-07965",
+   "salesUserId": "1004",
+   "salesName": "ณชลนิภา  รอดแตง",
+   "importedDocuNo": null,
+   "createdAt": "2026-05-13T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1109",
+     "goodCode": "7-15052000BBGOP",
+     "goodName": "15-5-20+2MGO เชิงผสม ตราโกลด์พอยท์",
+     "qtyTon": 10,
+     "qtyBag": 200,
+     "pricePerTon": 16300,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 300,
+     "rebateAmount": 3000,
+     "lineAmount": 163000
+    },
+    {
+     "lineNum": 2,
+     "goodId": "1094",
+     "goodCode": "7-12044000BBCAR",
+     "goodName": "12-4-40 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 9,
+     "qtyBag": 180,
+     "pricePerTon": "184000",
+     "netPricePerTon": "18400",
+     "isGiveaway": false,
+     "rebatePerTon": 165600,
+     "rebateAmount": 1490400,
+     "lineAmount": 1656000
+    },
+    {
+     "lineNum": 3,
+     "goodId": "1070",
+     "goodCode": "3-S000000000000",
+     "goodName": "กำมะถัน",
+     "qtyTon": 9,
+     "qtyBag": 180,
+     "pricePerTon": 16300,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 300,
+     "rebateAmount": 2700,
+     "lineAmount": 146700
+    }
+   ]
+  },
+  {
+   "id": 29,
+   "wfRef": "WF69I-000029",
+   "soPrefix": "I",
+   "custId": "104088",
+   "custName": "คุณคณิน  เกิดแก้ว",
+   "status": "CANCELLED",
+   "truckPlate": "82-6199/61",
+   "controlTicketNo": "AI68-01426",
+   "salesUserId": "1002",
+   "salesName": "พรพรรณ  จิตวัฒนฤทธิ์",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-03T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1078",
+     "goodCode": "5-1616080000BUL",
+     "goodName": "16-16-8 เทกอง",
+     "qtyTon": 10,
+     "qtyBag": 200,
+     "pricePerTon": 16000,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 160000
+    }
+   ]
+  },
+  {
+   "id": 30,
+   "wfRef": "WF69I-000030",
+   "soPrefix": "I",
+   "custId": "7144",
+   "custName": "คุณกิมเต็ก เบญจธรรม",
+   "status": "CANCELLED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-04695",
+   "salesUserId": "1003",
+   "salesName": "ชนกชญา  น้อยกันสี",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-14T14:06:45.609Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1070",
+     "goodCode": "3-S000000000000",
+     "goodName": "กำมะถัน",
+     "qtyTon": 15,
+     "qtyBag": 300,
+     "pricePerTon": 16000,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 240000
+    },
+    {
+     "lineNum": 2,
+     "goodId": "23007",
+     "goodCode": "5-1620000000BUL(2)",
+     "goodName": "16-20-0  Bulk (ปุ๋ยเปียก)",
+     "qtyTon": 3,
+     "qtyBag": 60,
+     "pricePerTon": 16100,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 100,
+     "rebateAmount": 300,
+     "lineAmount": 48300
+    }
+   ]
+  },
+  {
+   "id": 31,
+   "wfRef": "WF69I-000031",
+   "soPrefix": "I",
+   "custId": "1019",
+   "custName": "คลองตันเพื่อนเกษตร",
+   "status": "CANCELLED",
+   "truckPlate": "77-2299/75",
+   "controlTicketNo": "AI68-01220",
+   "salesUserId": "1005",
+   "salesName": "ธนิภา  คำเสียงใส",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-13T14:06:45.610Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1101",
+     "goodCode": "7-13132100BBCAR",
+     "goodName": "13-13-21 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 19,
+     "qtyBag": 380,
+     "pricePerTon": "20200300",
+     "netPricePerTon": "20200",
+     "isGiveaway": false,
+     "rebatePerTon": 20180100,
+     "rebateAmount": 383421900,
+     "lineAmount": 383805700
+    },
+    {
+     "lineNum": 2,
+     "goodId": "1088",
+     "goodCode": "5-FI00000000BUL",
+     "goodName": "ฟิลเลอร์ (เม็ดอินทรีย์ดำ) เทกอง",
+     "qtyTon": 8,
+     "qtyBag": 160,
+     "pricePerTon": 16300,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 300,
+     "rebateAmount": 2400,
+     "lineAmount": 130400
+    },
+    {
+     "lineNum": 3,
+     "goodId": "22001",
+     "goodCode": "5-0000600200BUL2",
+     "goodName": "0-0-60 (เม็ด) เทกอง (SQM)",
+     "qtyTon": 7,
+     "qtyBag": 140,
+     "pricePerTon": 16100,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 100,
+     "rebateAmount": 700,
+     "lineAmount": 112700
+    }
+   ]
+  },
+  {
+   "id": 32,
+   "wfRef": "WF69I-000032",
+   "soPrefix": "I",
+   "custId": "7086",
+   "custName": "คุณชัยวุฒิ ชูชัย",
+   "status": "SHIPPED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-00489",
+   "salesUserId": "1000",
+   "salesName": "ไพศาล",
+   "importedDocuNo": null,
+   "createdAt": "2026-05-15T14:06:45.610Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1068",
+     "goodCode": "3-DOLOMI0000000",
+     "goodName": "DOLOMITE",
+     "qtyTon": 4,
+     "qtyBag": 80,
+     "pricePerTon": 15800,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 63200
+    },
+    {
+     "lineNum": 2,
+     "goodId": "25043",
+     "goodCode": "7-16080800BBTEP",
+     "goodName": "16-8-8 เชิงผสม ตราปุ๋ยเทพ",
+     "qtyTon": 23,
+     "qtyBag": 460,
+     "pricePerTon": "14300-200",
+     "netPricePerTon": "14300",
+     "isGiveaway": false,
+     "rebatePerTon": null,
+     "rebateAmount": null,
+     "lineAmount": null
+    }
+   ]
+  },
+  {
+   "id": 33,
+   "wfRef": "WF69I-000033",
+   "soPrefix": "I",
+   "custId": "104086",
+   "custName": "เกียรติวาริน",
+   "status": "PICKING",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-07192",
+   "salesUserId": "1001",
+   "salesName": "เกษร  ดีบรรเจิด",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-07T14:06:45.610Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "18000",
+     "goodCode": "5-0810000000BUL",
+     "goodName": "8-10-0  เทกอง",
+     "qtyTon": 10,
+     "qtyBag": 200,
+     "pricePerTon": 16100,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 100,
+     "rebateAmount": 1000,
+     "lineAmount": 161000
+    },
+    {
+     "lineNum": 2,
+     "goodId": "1118",
+     "goodCode": "7-16080800BBCAR",
+     "goodName": "16-8-8 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 2,
+     "qtyBag": 40,
+     "pricePerTon": "14300500",
+     "netPricePerTon": "14300",
+     "isGiveaway": false,
+     "rebatePerTon": 14286200,
+     "rebateAmount": 28572400,
+     "lineAmount": 28601000
+    }
+   ]
+  },
+  {
+   "id": 34,
+   "wfRef": "WF69I-000034",
+   "soPrefix": "I",
+   "custId": "104092",
+   "custName": "เกษตรหน้าวัด",
+   "status": "CONFIRMED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-00827",
+   "salesUserId": "1003",
+   "salesName": "ชนกชญา  น้อยกันสี",
+   "importedDocuNo": null,
+   "createdAt": "2026-05-15T14:06:45.610Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "25023",
+     "goodCode": "7-15030300BBCAR",
+     "goodName": "15-3-3 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 27,
+     "qtyBag": 540,
+     "pricePerTon": "10600100",
+     "netPricePerTon": "10600",
+     "isGiveaway": false,
+     "rebatePerTon": 10589500,
+     "rebateAmount": 285916500,
+     "lineAmount": 286202700
+    },
+    {
+     "lineNum": 2,
+     "goodId": "1096",
+     "goodCode": "7-12241200BBCEE",
+     "goodName": "12-24-12+2MGO เชิงผสม ตรารูปตัว C",
+     "qtyTon": 20,
+     "qtyBag": 400,
+     "pricePerTon": 15800,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 316000
+    }
+   ]
+  },
+  {
+   "id": 35,
+   "wfRef": "WF69I-000035",
+   "soPrefix": "I",
+   "custId": "23014",
+   "custName": "คุณจิดาภา      ผ่องอำพัน",
+   "status": "DRAFT",
+   "truckPlate": null,
+   "controlTicketNo": null,
+   "salesUserId": "1000",
+   "salesName": "ไพศาล",
+   "importedDocuNo": null,
+   "createdAt": "2026-05-19T14:06:45.610Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "5001",
+     "goodCode": "5-0020000000BUL",
+     "goodName": "0-20-0  เทกอง",
+     "qtyTon": 2,
+     "qtyBag": 40,
+     "pricePerTon": 16000,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 32000
+    }
+   ]
+  },
+  {
+   "id": 36,
+   "wfRef": "WF69I-000036",
+   "soPrefix": "I",
+   "custId": "7120",
+   "custName": "คุณคำดี จงเจริญ",
+   "status": "CANCELLED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-01559",
+   "salesUserId": "1004",
+   "salesName": "ณชลนิภา  รอดแตง",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-07T14:06:45.610Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1101",
+     "goodCode": "7-13132100BBCAR",
+     "goodName": "13-13-21 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 8,
+     "qtyBag": 160,
+     "pricePerTon": "20200300",
+     "netPricePerTon": "20200",
+     "isGiveaway": false,
+     "rebatePerTon": 20180100,
+     "rebateAmount": 161440800,
+     "lineAmount": 161602400
+    },
+    {
+     "lineNum": 2,
+     "goodId": "25030",
+     "goodCode": "7-14073500BBCAR(1)",
+     "goodName": "14-7-35 เชิงผสม ตรารถเกษตร (เขมร)",
+     "qtyTon": 21,
+     "qtyBag": 420,
+     "pricePerTon": 16500,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 500,
+     "rebateAmount": 10500,
+     "lineAmount": 346500
+    }
+   ]
+  },
+  {
+   "id": 37,
+   "wfRef": "WF69I-000037",
+   "soPrefix": "I",
+   "custId": "7029",
+   "custName": "คุณกมลวรรณ การีวรรณ",
+   "status": "PICKING",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-00326",
+   "salesUserId": "1003",
+   "salesName": "ชนกชญา  น้อยกันสี",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-19T14:06:45.610Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "23008",
+     "goodCode": "5-1846000001BUL",
+     "goodName": "18-46-0 เทกอง (1)",
+     "qtyTon": 23,
+     "qtyBag": 460,
+     "pricePerTon": 16300,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 300,
+     "rebateAmount": 6900,
+     "lineAmount": 374900
+    },
+    {
+     "lineNum": 2,
+     "goodId": "5001",
+     "goodCode": "5-0020000000BUL",
+     "goodName": "0-20-0  เทกอง",
+     "qtyTon": 17,
+     "qtyBag": 340,
+     "pricePerTon": 16000,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 272000
+    },
+    {
+     "lineNum": 3,
+     "goodId": "1098",
+     "goodCode": "7-13032700BBCAR",
+     "goodName": "13-3-27 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 3,
+     "qtyBag": 60,
+     "pricePerTon": "16400100",
+     "netPricePerTon": "16400",
+     "isGiveaway": false,
+     "rebatePerTon": 16383700,
+     "rebateAmount": 49151100,
+     "lineAmount": 49200300
+    }
+   ]
+  },
+  {
+   "id": 38,
+   "wfRef": "WF69I-000038",
+   "soPrefix": "I",
+   "custId": "1121",
+   "custName": "กิจพัฒนา 2017",
+   "status": "SHIPPED",
+   "truckPlate": "71-9185/81",
+   "controlTicketNo": "AI68-06225",
+   "salesUserId": "1003",
+   "salesName": "ชนกชญา  น้อยกันสี",
+   "importedDocuNo": null,
+   "createdAt": "2026-06-01T14:06:45.610Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "23000",
+     "goodCode": "3-MG00000000BUL",
+     "goodName": "MAGNESIUM  Bulk",
+     "qtyTon": 29,
+     "qtyBag": 580,
+     "pricePerTon": 16500,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 500,
+     "rebateAmount": 14500,
+     "lineAmount": 478500
+    },
+    {
+     "lineNum": 2,
+     "goodId": "1118",
+     "goodCode": "7-16080800BBCAR",
+     "goodName": "16-8-8 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 2,
+     "qtyBag": 40,
+     "pricePerTon": "14300100",
+     "netPricePerTon": "14300",
+     "isGiveaway": false,
+     "rebatePerTon": 14285800,
+     "rebateAmount": 28571600,
+     "lineAmount": 28600200
+    }
+   ]
+  },
+  {
+   "id": 39,
+   "wfRef": "WF69I-000039",
+   "soPrefix": "I",
+   "custId": "1014",
+   "custName": "กู๊ดมาร์ค จำกัด",
+   "status": "CONFIRMED",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-01228",
+   "salesUserId": "1005",
+   "salesName": "ธนิภา  คำเสียงใส",
+   "importedDocuNo": null,
+   "createdAt": "2026-05-26T14:06:45.610Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "1094",
+     "goodCode": "7-12044000BBCAR",
+     "goodName": "12-4-40 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 4,
+     "qtyBag": 80,
+     "pricePerTon": "18400300",
+     "netPricePerTon": "18400",
+     "isGiveaway": false,
+     "rebatePerTon": 18381900,
+     "rebateAmount": 73527600,
+     "lineAmount": 73601200
+    },
+    {
+     "lineNum": 2,
+     "goodId": "5001",
+     "goodCode": "5-0020000000BUL",
+     "goodName": "0-20-0  เทกอง",
+     "qtyTon": 4,
+     "qtyBag": 80,
+     "pricePerTon": 15800,
+     "netPricePerTon": 16000,
+     "isGiveaway": false,
+     "rebatePerTon": 0,
+     "rebateAmount": 0,
+     "lineAmount": 63200
+    }
+   ]
+  },
+  {
+   "id": 40,
+   "wfRef": "WF69I-000040",
+   "soPrefix": "I",
+   "custId": "7029",
+   "custName": "คุณกมลวรรณ การีวรรณ",
+   "status": "PICKING",
+   "truckPlate": null,
+   "controlTicketNo": "AI68-05009",
+   "salesUserId": "1003",
+   "salesName": "ชนกชญา  น้อยกันสี",
+   "importedDocuNo": null,
+   "createdAt": "2026-04-30T14:06:45.610Z",
+   "lines": [
+    {
+     "lineNum": 1,
+     "goodId": "25020",
+     "goodCode": "7-16030800BBCAR",
+     "goodName": "16-3-8 เชิงผสม ตรารถเกษตร",
+     "qtyTon": 27,
+     "qtyBag": 540,
+     "pricePerTon": "13300500",
+     "netPricePerTon": "13300",
+     "isGiveaway": false,
+     "rebatePerTon": 13287200,
+     "rebateAmount": 358754400,
+     "lineAmount": 359113500
+    }
+   ]
+  }
+ ],
+ "soStats": {
+  "byStatus": {
+   "DRAFT": 8,
+   "IMPORTED": 7,
+   "PICKING": 5,
+   "SHIPPED": 5,
+   "CONFIRMED": 8,
+   "CANCELLED": 7
+  },
+  "total": 40
+ },
+ "aging": [
+  {
+   "CustName": "เกษตรแสนขัน จำกัด",
+   "GoodCode": "3-MG00000000CAR",
+   "QtyTon": 30,
+   "DaysOpen": 57,
+   "Status": "SHIPPED",
+   "WfRef": "WF69I-000010",
+   "SoId": 10
+  },
+  {
+   "CustName": "โกสุมเคมีเกษตร",
+   "GoodCode": "5-FI00000000BUL",
+   "QtyTon": 6,
+   "DaysOpen": 57,
+   "Status": "PICKING",
+   "WfRef": "WF69I-000020",
+   "SoId": 20
+  },
+  {
+   "CustName": "คุณกมลวรรณ การีวรรณ",
+   "GoodCode": "7-16030800BBCAR",
+   "QtyTon": 27,
+   "DaysOpen": 54,
+   "Status": "PICKING",
+   "WfRef": "WF69I-000040",
+   "SoId": 40
+  },
+  {
+   "CustName": "คุณจุมพล คุณากร",
+   "GoodCode": "7-14040900BBCAR",
+   "QtyTon": 37,
+   "DaysOpen": 45,
+   "Status": "DRAFT",
+   "WfRef": "WF69I-000003",
+   "SoId": 3
+  },
+  {
+   "CustName": "คุณเจริญทรัพย์  บุญมาก",
+   "GoodCode": "5-1846000000BUL",
+   "QtyTon": 71,
+   "DaysOpen": 44,
+   "Status": "SHIPPED",
+   "WfRef": "WF69I-000009",
+   "SoId": 9
+  },
+  {
+   "CustName": "คุณชัยวุฒิ ชูชัย",
+   "GoodCode": "3-DOLOMI0000000",
+   "QtyTon": 27,
+   "DaysOpen": 39,
+   "Status": "SHIPPED",
+   "WfRef": "WF69I-000032",
+   "SoId": 32
+  },
+  {
+   "CustName": "เกษตรหน้าวัด",
+   "GoodCode": "7-15030300BBCAR",
+   "QtyTon": 47,
+   "DaysOpen": 39,
+   "Status": "CONFIRMED",
+   "WfRef": "WF69I-000034",
+   "SoId": 34
+  },
+  {
+   "CustName": "คุณจิดาภา      ผ่องอำพัน",
+   "GoodCode": "5-0020000000BUL",
+   "QtyTon": 2,
+   "DaysOpen": 35,
+   "Status": "DRAFT",
+   "WfRef": "WF69I-000035",
+   "SoId": 35
+  },
+  {
+   "CustName": "กิตติลักษณ์การเกษตร จำกัด",
+   "GoodCode": "7-09050900BBCAR",
+   "QtyTon": 59,
+   "DaysOpen": 34,
+   "Status": "DRAFT",
+   "WfRef": "WF69I-000016",
+   "SoId": 16
+  },
+  {
+   "CustName": "เกษตรหน้าวัด",
+   "GoodCode": "1-10033000BBTEP",
+   "QtyTon": 27,
+   "DaysOpen": 33,
+   "Status": "CONFIRMED",
+   "WfRef": "WF69I-000026",
+   "SoId": 26
+  },
+  {
+   "CustName": " ส. โชคเจริญวัฒนา",
+   "GoodCode": "5-0000300000BUL",
+   "QtyTon": 17,
+   "DaysOpen": 31,
+   "Status": "DRAFT",
+   "WfRef": "WF69I-000023",
+   "SoId": 23
+  },
+  {
+   "CustName": "เกษตรกิจ จำกัด  Tax ID No.0375564001025",
+   "GoodCode": "5-FI00000000WHI",
+   "QtyTon": 41,
+   "DaysOpen": 30,
+   "Status": "CONFIRMED",
+   "WfRef": "WF69I-000011",
+   "SoId": 11
+  },
+  {
+   "CustName": "กู๊ดมาร์ค จำกัด",
+   "GoodCode": "7-12044000BBCAR",
+   "QtyTon": 8,
+   "DaysOpen": 28,
+   "Status": "CONFIRMED",
+   "WfRef": "WF69I-000039",
+   "SoId": 39
+  },
+  {
+   "CustName": "กิจพัฒนา 2017",
+   "GoodCode": "3-MG00000000BUL",
+   "QtyTon": 31,
+   "DaysOpen": 22,
+   "Status": "SHIPPED",
+   "WfRef": "WF69I-000038",
+   "SoId": 38
+  },
+  {
+   "CustName": "คุณคำดี จงเจริญ",
+   "GoodCode": "7-14073500BBCAR(1)",
+   "QtyTon": 22,
+   "DaysOpen": 21,
+   "Status": "CONFIRMED",
+   "WfRef": "WF69I-000022",
+   "SoId": 22
+  },
+  {
+   "CustName": "เกษตรไพศาล เทรดดิ้ง จำกัด",
+   "GoodCode": "5-2100000000BUL",
+   "QtyTon": 29,
+   "DaysOpen": 19,
+   "Status": "PICKING",
+   "WfRef": "WF69I-000008",
+   "SoId": 8
+  },
+  {
+   "CustName": "เกษตรแสนขัน จำกัด",
+   "GoodCode": "5-0810000000BUL",
+   "QtyTon": 11,
+   "DaysOpen": 18,
+   "Status": "DRAFT",
+   "WfRef": "WF69I-000004",
+   "SoId": 4
+  },
+  {
+   "CustName": "กลุ่มชาวไร่น้ำจืด",
+   "GoodCode": "5-0000600200BUL1",
+   "QtyTon": 22,
+   "DaysOpen": 17,
+   "Status": "DRAFT",
+   "WfRef": "WF69I-000006",
+   "SoId": 6
+  },
+  {
+   "CustName": "คุณกิ่งแก้ว มีชัย",
+   "GoodCode": "7-16040400BBCAR",
+   "QtyTon": 11,
+   "DaysOpen": 17,
+   "Status": "DRAFT",
+   "WfRef": "WF69I-000015",
+   "SoId": 15
+  },
+  {
+   "CustName": "คุณคงเดช คงเสรี",
+   "GoodCode": "7-14073500BBCAR(1)",
+   "QtyTon": 4,
+   "DaysOpen": 16,
+   "Status": "CONFIRMED",
+   "WfRef": "WF69I-000025",
+   "SoId": 25
+  },
+  {
+   "CustName": "เกียรติวาริน",
+   "GoodCode": "5-0810000000BUL",
+   "QtyTon": 12,
+   "DaysOpen": 16,
+   "Status": "PICKING",
+   "WfRef": "WF69I-000033",
+   "SoId": 33
+  },
+  {
+   "CustName": "คุณกิติศักดิ์ บุญรักษ์",
+   "GoodCode": "5-1620000000BUL(1)",
+   "QtyTon": 22,
+   "DaysOpen": 8,
+   "Status": "DRAFT",
+   "WfRef": "WF69I-000001",
+   "SoId": 1
+  },
+  {
+   "CustName": "คุณขวัญเมือง พัฒนากร",
+   "GoodCode": "7-15151500BBCAR",
+   "QtyTon": 4,
+   "DaysOpen": 8,
+   "Status": "CONFIRMED",
+   "WfRef": "WF69I-000014",
+   "SoId": 14
+  },
+  {
+   "CustName": "คุณกมลวรรณ การีวรรณ",
+   "GoodCode": "5-1846000001BUL",
+   "QtyTon": 43,
+   "DaysOpen": 4,
+   "Status": "PICKING",
+   "WfRef": "WF69I-000037",
+   "SoId": 37
+  },
+  {
+   "CustName": "คุณกำชัย ทองมงคล",
+   "GoodCode": "7-15052000BBCAR",
+   "QtyTon": 21,
+   "DaysOpen": 1,
+   "Status": "CONFIRMED",
+   "WfRef": "WF69I-000018",
+   "SoId": 18
+  },
+  {
+   "CustName": "โกรว์ ซัคเซส อกริคัลเจอร์ จำกัด",
+   "GoodCode": "7-09050900BBCAR",
+   "QtyTon": 25,
+   "DaysOpen": 1,
+   "Status": "SHIPPED",
+   "WfRef": "WF69I-000019",
+   "SoId": 19
+  }
+ ],
+ "paperBoard": {
+  "stages": [
+   "DRAFT",
+   "CONFIRMED",
+   "PICKING",
+   "SHIPPED",
+   "IMPORTED"
+  ],
+  "board": {
+   "DRAFT": [
+    {
+     "id": 1,
+     "wfRef": "WF69I-000001",
+     "custName": "คุณกิติศักดิ์ บุญรักษ์",
+     "status": "DRAFT",
+     "truckPlate": null,
+     "controlTicketNo": null,
+     "importedDocuNo": null,
+     "createdAt": "2026-06-15T14:06:45.609Z",
+     "salesName": "ไพศาล",
+     "qtyTon": 22,
+     "lineCnt": 3,
+     "daysOpen": 8
+    },
+    {
+     "id": 3,
+     "wfRef": "WF69I-000003",
+     "custName": "คุณจุมพล คุณากร",
+     "status": "DRAFT",
+     "truckPlate": "67-4763/79",
+     "controlTicketNo": null,
+     "importedDocuNo": null,
+     "createdAt": "2026-05-09T14:06:45.609Z",
+     "salesName": "ไพศาล",
+     "qtyTon": 37,
+     "lineCnt": 2,
+     "daysOpen": 45
+    },
+    {
+     "id": 4,
+     "wfRef": "WF69I-000004",
+     "custName": "เกษตรแสนขัน จำกัด",
+     "status": "DRAFT",
+     "truckPlate": "73-2655/72",
+     "controlTicketNo": null,
+     "importedDocuNo": null,
+     "createdAt": "2026-06-05T14:06:45.609Z",
+     "salesName": "ชนกชญา  น้อยกันสี",
+     "qtyTon": 11,
+     "lineCnt": 3,
+     "daysOpen": 18
+    },
+    {
+     "id": 6,
+     "wfRef": "WF69I-000006",
+     "custName": "กลุ่มชาวไร่น้ำจืด",
+     "status": "DRAFT",
+     "truckPlate": "68-7332/63",
+     "controlTicketNo": null,
+     "importedDocuNo": null,
+     "createdAt": "2026-06-06T14:06:45.609Z",
+     "salesName": "ธนิภา  คำเสียงใส",
+     "qtyTon": 22,
+     "lineCnt": 1,
+     "daysOpen": 17
+    },
+    {
+     "id": 15,
+     "wfRef": "WF69I-000015",
+     "custName": "คุณกิ่งแก้ว มีชัย",
+     "status": "DRAFT",
+     "truckPlate": null,
+     "controlTicketNo": null,
+     "importedDocuNo": null,
+     "createdAt": "2026-06-06T14:06:45.609Z",
+     "salesName": "ชนกชญา  น้อยกันสี",
+     "qtyTon": 11,
+     "lineCnt": 1,
+     "daysOpen": 17
+    },
+    {
+     "id": 16,
+     "wfRef": "WF69I-000016",
+     "custName": "กิตติลักษณ์การเกษตร จำกัด",
+     "status": "DRAFT",
+     "truckPlate": "81-1941/64",
+     "controlTicketNo": null,
+     "importedDocuNo": null,
+     "createdAt": "2026-05-20T14:06:45.609Z",
+     "salesName": "เกษร  ดีบรรเจิด",
+     "qtyTon": 59,
+     "lineCnt": 3,
+     "daysOpen": 34
+    },
+    {
+     "id": 23,
+     "wfRef": "WF69I-000023",
+     "custName": " ส. โชคเจริญวัฒนา",
+     "status": "DRAFT",
+     "truckPlate": "75-9397/62",
+     "controlTicketNo": null,
+     "importedDocuNo": null,
+     "createdAt": "2026-05-23T14:06:45.609Z",
+     "salesName": "พรพรรณ  จิตวัฒนฤทธิ์",
+     "qtyTon": 17,
+     "lineCnt": 1,
+     "daysOpen": 31
+    },
+    {
+     "id": 35,
+     "wfRef": "WF69I-000035",
+     "custName": "คุณจิดาภา      ผ่องอำพัน",
+     "status": "DRAFT",
+     "truckPlate": null,
+     "controlTicketNo": null,
+     "importedDocuNo": null,
+     "createdAt": "2026-05-19T14:06:45.610Z",
+     "salesName": "ไพศาล",
+     "qtyTon": 2,
+     "lineCnt": 1,
+     "daysOpen": 35
+    }
+   ],
+   "CONFIRMED": [
+    {
+     "id": 11,
+     "wfRef": "WF69I-000011",
+     "custName": "เกษตรกิจ จำกัด  Tax ID No.0375564001025",
+     "status": "CONFIRMED",
+     "truckPlate": "74-2079/80",
+     "controlTicketNo": "AI68-04633",
+     "importedDocuNo": null,
+     "createdAt": "2026-05-24T14:06:45.609Z",
+     "salesName": "พรพรรณ  จิตวัฒนฤทธิ์",
+     "qtyTon": 41,
+     "lineCnt": 3,
+     "daysOpen": 30
+    },
+    {
+     "id": 14,
+     "wfRef": "WF69I-000014",
+     "custName": "คุณขวัญเมือง พัฒนากร",
+     "status": "CONFIRMED",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-06926",
+     "importedDocuNo": null,
+     "createdAt": "2026-06-15T14:06:45.609Z",
+     "salesName": "เกษร  ดีบรรเจิด",
+     "qtyTon": 4,
+     "lineCnt": 1,
+     "daysOpen": 8
+    },
+    {
+     "id": 18,
+     "wfRef": "WF69I-000018",
+     "custName": "คุณกำชัย ทองมงคล",
+     "status": "CONFIRMED",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-08489",
+     "importedDocuNo": null,
+     "createdAt": "2026-06-22T14:06:45.609Z",
+     "salesName": "พรพรรณ  จิตวัฒนฤทธิ์",
+     "qtyTon": 21,
+     "lineCnt": 2,
+     "daysOpen": 1
+    },
+    {
+     "id": 22,
+     "wfRef": "WF69I-000022",
+     "custName": "คุณคำดี จงเจริญ",
+     "status": "CONFIRMED",
+     "truckPlate": "69-5958/85",
+     "controlTicketNo": "AI68-07079",
+     "importedDocuNo": null,
+     "createdAt": "2026-06-02T14:06:45.609Z",
+     "salesName": "เกษร  ดีบรรเจิด",
+     "qtyTon": 22,
+     "lineCnt": 2,
+     "daysOpen": 21
+    },
+    {
+     "id": 25,
+     "wfRef": "WF69I-000025",
+     "custName": "คุณคงเดช คงเสรี",
+     "status": "CONFIRMED",
+     "truckPlate": "71-6778/77",
+     "controlTicketNo": "AI68-08139",
+     "importedDocuNo": null,
+     "createdAt": "2026-06-07T14:06:45.609Z",
+     "salesName": "พรพรรณ  จิตวัฒนฤทธิ์",
+     "qtyTon": 4,
+     "lineCnt": 1,
+     "daysOpen": 16
+    },
+    {
+     "id": 26,
+     "wfRef": "WF69I-000026",
+     "custName": "เกษตรหน้าวัด",
+     "status": "CONFIRMED",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-06768",
+     "importedDocuNo": null,
+     "createdAt": "2026-05-21T14:06:45.609Z",
+     "salesName": "ณชลนิภา  รอดแตง",
+     "qtyTon": 27,
+     "lineCnt": 1,
+     "daysOpen": 33
+    },
+    {
+     "id": 34,
+     "wfRef": "WF69I-000034",
+     "custName": "เกษตรหน้าวัด",
+     "status": "CONFIRMED",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-00827",
+     "importedDocuNo": null,
+     "createdAt": "2026-05-15T14:06:45.610Z",
+     "salesName": "ชนกชญา  น้อยกันสี",
+     "qtyTon": 47,
+     "lineCnt": 2,
+     "daysOpen": 39
+    },
+    {
+     "id": 39,
+     "wfRef": "WF69I-000039",
+     "custName": "กู๊ดมาร์ค จำกัด",
+     "status": "CONFIRMED",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-01228",
+     "importedDocuNo": null,
+     "createdAt": "2026-05-26T14:06:45.610Z",
+     "salesName": "ธนิภา  คำเสียงใส",
+     "qtyTon": 8,
+     "lineCnt": 2,
+     "daysOpen": 28
+    }
+   ],
+   "PICKING": [
+    {
+     "id": 8,
+     "wfRef": "WF69I-000008",
+     "custName": "เกษตรไพศาล เทรดดิ้ง จำกัด",
+     "status": "PICKING",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-03641",
+     "importedDocuNo": null,
+     "createdAt": "2026-06-04T14:06:45.609Z",
+     "salesName": "ไพศาล",
+     "qtyTon": 29,
+     "lineCnt": 2,
+     "daysOpen": 19
+    },
+    {
+     "id": 20,
+     "wfRef": "WF69I-000020",
+     "custName": "โกสุมเคมีเกษตร",
+     "status": "PICKING",
+     "truckPlate": "66-6266/89",
+     "controlTicketNo": "AI68-04627",
+     "importedDocuNo": null,
+     "createdAt": "2026-04-27T14:06:45.609Z",
+     "salesName": "ชนกชญา  น้อยกันสี",
+     "qtyTon": 6,
+     "lineCnt": 1,
+     "daysOpen": 57
+    },
+    {
+     "id": 33,
+     "wfRef": "WF69I-000033",
+     "custName": "เกียรติวาริน",
+     "status": "PICKING",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-07192",
+     "importedDocuNo": null,
+     "createdAt": "2026-06-07T14:06:45.610Z",
+     "salesName": "เกษร  ดีบรรเจิด",
+     "qtyTon": 12,
+     "lineCnt": 2,
+     "daysOpen": 16
+    },
+    {
+     "id": 37,
+     "wfRef": "WF69I-000037",
+     "custName": "คุณกมลวรรณ การีวรรณ",
+     "status": "PICKING",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-00326",
+     "importedDocuNo": null,
+     "createdAt": "2026-06-19T14:06:45.610Z",
+     "salesName": "ชนกชญา  น้อยกันสี",
+     "qtyTon": 43,
+     "lineCnt": 3,
+     "daysOpen": 4
+    },
+    {
+     "id": 40,
+     "wfRef": "WF69I-000040",
+     "custName": "คุณกมลวรรณ การีวรรณ",
+     "status": "PICKING",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-05009",
+     "importedDocuNo": null,
+     "createdAt": "2026-04-30T14:06:45.610Z",
+     "salesName": "ชนกชญา  น้อยกันสี",
+     "qtyTon": 27,
+     "lineCnt": 1,
+     "daysOpen": 54
+    }
+   ],
+   "SHIPPED": [
+    {
+     "id": 9,
+     "wfRef": "WF69I-000009",
+     "custName": "คุณเจริญทรัพย์  บุญมาก",
+     "status": "SHIPPED",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-09126",
+     "importedDocuNo": null,
+     "createdAt": "2026-05-10T14:06:45.609Z",
+     "salesName": "พรพรรณ  จิตวัฒนฤทธิ์",
+     "qtyTon": 71,
+     "lineCnt": 3,
+     "daysOpen": 44
+    },
+    {
+     "id": 10,
+     "wfRef": "WF69I-000010",
+     "custName": "เกษตรแสนขัน จำกัด",
+     "status": "SHIPPED",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-01460",
+     "importedDocuNo": null,
+     "createdAt": "2026-04-27T14:06:45.609Z",
+     "salesName": "ธนิภา  คำเสียงใส",
+     "qtyTon": 30,
+     "lineCnt": 1,
+     "daysOpen": 57
+    },
+    {
+     "id": 19,
+     "wfRef": "WF69I-000019",
+     "custName": "โกรว์ ซัคเซส อกริคัลเจอร์ จำกัด",
+     "status": "SHIPPED",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-07221",
+     "importedDocuNo": null,
+     "createdAt": "2026-06-22T14:06:45.609Z",
+     "salesName": "ชนกชญา  น้อยกันสี",
+     "qtyTon": 25,
+     "lineCnt": 1,
+     "daysOpen": 1
+    },
+    {
+     "id": 32,
+     "wfRef": "WF69I-000032",
+     "custName": "คุณชัยวุฒิ ชูชัย",
+     "status": "SHIPPED",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-00489",
+     "importedDocuNo": null,
+     "createdAt": "2026-05-15T14:06:45.610Z",
+     "salesName": "ไพศาล",
+     "qtyTon": 27,
+     "lineCnt": 2,
+     "daysOpen": 39
+    },
+    {
+     "id": 38,
+     "wfRef": "WF69I-000038",
+     "custName": "กิจพัฒนา 2017",
+     "status": "SHIPPED",
+     "truckPlate": "71-9185/81",
+     "controlTicketNo": "AI68-06225",
+     "importedDocuNo": null,
+     "createdAt": "2026-06-01T14:06:45.610Z",
+     "salesName": "ชนกชญา  น้อยกันสี",
+     "qtyTon": 31,
+     "lineCnt": 2,
+     "daysOpen": 22
+    }
+   ],
+   "IMPORTED": [
+    {
+     "id": 2,
+     "wfRef": "WF69I-000002",
+     "custName": "เกษตรรุ่งโรจน์ จำกัด",
+     "status": "IMPORTED",
+     "truckPlate": "67-4139/83",
+     "controlTicketNo": "AI68-07451",
+     "importedDocuNo": "N69001437",
+     "createdAt": "2026-06-22T14:06:45.609Z",
+     "salesName": "เกษร  ดีบรรเจิด",
+     "qtyTon": 52,
+     "lineCnt": 2,
+     "daysOpen": 1
+    },
+    {
+     "id": 5,
+     "wfRef": "WF69I-000005",
+     "custName": "คณสมชาย เกิดมงคล",
+     "status": "IMPORTED",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-01448",
+     "importedDocuNo": "N69003043",
+     "createdAt": "2026-06-01T14:06:45.609Z",
+     "salesName": "ชนกชญา  น้อยกันสี",
+     "qtyTon": 45,
+     "lineCnt": 3,
+     "daysOpen": 22
+    },
+    {
+     "id": 7,
+     "wfRef": "WF69I-000007",
+     "custName": "เกษตรชุมแสง",
+     "status": "IMPORTED",
+     "truckPlate": "80-6576/94",
+     "controlTicketNo": "AI68-05179",
+     "importedDocuNo": "N69089545",
+     "createdAt": "2026-05-30T14:06:45.609Z",
+     "salesName": "ชนกชญา  น้อยกันสี",
+     "qtyTon": 34,
+     "lineCnt": 2,
+     "daysOpen": 24
+    },
+    {
+     "id": 12,
+     "wfRef": "WF69I-000012",
+     "custName": "คุณคำดี จงเจริญ",
+     "status": "IMPORTED",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-04797",
+     "importedDocuNo": "N69078247",
+     "createdAt": "2026-06-11T14:06:45.609Z",
+     "salesName": "ไพศาล",
+     "qtyTon": 25,
+     "lineCnt": 2,
+     "daysOpen": 12
+    },
+    {
+     "id": 13,
+     "wfRef": "WF69I-000013",
+     "custName": "กิตติลักษณ์การเกษตร จำกัด",
+     "status": "IMPORTED",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-08222",
+     "importedDocuNo": "N69067132",
+     "createdAt": "2026-06-12T14:06:45.609Z",
+     "salesName": "ชนกชญา  น้อยกันสี",
+     "qtyTon": 12,
+     "lineCnt": 1,
+     "daysOpen": 11
+    },
+    {
+     "id": 21,
+     "wfRef": "WF69I-000021",
+     "custName": "คลองหินการเกษตร",
+     "status": "IMPORTED",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-02597",
+     "importedDocuNo": "N69047999",
+     "createdAt": "2026-05-27T14:06:45.609Z",
+     "salesName": "เกษร  ดีบรรเจิด",
+     "qtyTon": 18,
+     "lineCnt": 1,
+     "daysOpen": 27
+    },
+    {
+     "id": 24,
+     "wfRef": "WF69I-000024",
+     "custName": "กัปตัน มารีน จำกัด",
+     "status": "IMPORTED",
+     "truckPlate": null,
+     "controlTicketNo": "AI68-01684",
+     "importedDocuNo": "N69029481",
+     "createdAt": "2026-06-12T14:06:45.609Z",
+     "salesName": "ณชลนิภา  รอดแตง",
+     "qtyTon": 64,
+     "lineCnt": 3,
+     "daysOpen": 11
+    }
+   ]
+  }
+ },
+ "rebate": {
+  "pools": [
+   {
+    "Id": 3,
+    "SalesUserId": "1000",
+    "SalesName": "ไพศาล",
+    "PeriodYear": 2569,
+    "PeriodMonth": 6,
+    "AccruedAmt": 386685400,
+    "ClaimedAmt": 0,
+    "AllocatedAmt": 0
+   },
+   {
+    "Id": 1,
+    "SalesUserId": "1001",
+    "SalesName": "เกษร  ดีบรรเจิด",
+    "PeriodYear": 2569,
+    "PeriodMonth": 6,
+    "AccruedAmt": 29284400,
+    "ClaimedAmt": 0,
+    "AllocatedAmt": 0
+   },
+   {
+    "Id": 4,
+    "SalesUserId": "1002",
+    "SalesName": "พรพรรณ  จิตวัฒนฤทธิ์",
+    "PeriodYear": 2569,
+    "PeriodMonth": 6,
+    "AccruedAmt": 336285400,
+    "ClaimedAmt": 0,
+    "AllocatedAmt": 0
+   },
+   {
+    "Id": 2,
+    "SalesUserId": "1003",
+    "SalesName": "ชนกชญา  น้อยกันสี",
+    "PeriodYear": 2569,
+    "PeriodMonth": 6,
+    "AccruedAmt": 946807100,
+    "ClaimedAmt": 0,
+    "AllocatedAmt": 0
+   },
+   {
+    "Id": 6,
+    "SalesUserId": "1004",
+    "SalesName": "ณชลนิภา  รอดแตง",
+    "PeriodYear": 2569,
+    "PeriodMonth": 6,
+    "AccruedAmt": 485530900,
+    "ClaimedAmt": 0,
+    "AllocatedAmt": 0
+   },
+   {
+    "Id": 5,
+    "SalesUserId": "1005",
+    "SalesName": "ธนิภา  คำเสียงใส",
+    "PeriodYear": 2569,
+    "PeriodMonth": 6,
+    "AccruedAmt": 73536600,
+    "ClaimedAmt": 0,
+    "AllocatedAmt": 0
+   }
+  ],
+  "ledger": [
+   {
+    "Id": 1,
+    "PoolId": 1,
+    "SoId": 2,
+    "CustId": "104087",
+    "GoodCode": "3-MG00000000CAR",
+    "QtyTon": 28,
+    "PricePerTon": 16500,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 500,
+    "RebateAmount": 14000,
+    "RemainingAmt": 14000,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-22T14:06:45.609Z"
+   },
+   {
+    "Id": 2,
+    "PoolId": 2,
+    "SoId": 5,
+    "CustId": "7145",
+    "GoodCode": "7-15052000BBGOP",
+    "QtyTon": 14,
+    "PricePerTon": 16300,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 300,
+    "RebateAmount": 4200,
+    "RemainingAmt": 4200,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-01T14:06:45.609Z"
+   },
+   {
+    "Id": 3,
+    "PoolId": 2,
+    "SoId": 5,
+    "CustId": "7145",
+    "GoodCode": "7-15082000BBCAR",
+    "QtyTon": 23,
+    "PricePerTon": "183000",
+    "NetPricePerTon": "18300",
+    "RebatePerTon": 164700,
+    "RebateAmount": 3788100,
+    "RemainingAmt": 3788100,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-01T14:06:45.609Z"
+   },
+   {
+    "Id": 4,
+    "PoolId": 2,
+    "SoId": 7,
+    "CustId": "1175",
+    "GoodCode": "5-164600000BUL1",
+    "QtyTon": 9,
+    "PricePerTon": 16500,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 500,
+    "RebateAmount": 4500,
+    "RemainingAmt": 4500,
+    "Status": "PENDING",
+    "CreatedAt": "2026-05-30T14:06:45.609Z"
+   },
+   {
+    "Id": 5,
+    "PoolId": 3,
+    "SoId": 8,
+    "CustId": "104090",
+    "GoodCode": "5-2100000000BUL",
+    "QtyTon": 13,
+    "PricePerTon": 16500,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 500,
+    "RebateAmount": 6500,
+    "RemainingAmt": 6500,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-04T14:06:45.609Z"
+   },
+   {
+    "Id": 6,
+    "PoolId": 3,
+    "SoId": 8,
+    "CustId": "104090",
+    "GoodCode": "7-12030500BBCAR",
+    "QtyTon": 16,
+    "PricePerTon": 16500,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 500,
+    "RebateAmount": 8000,
+    "RemainingAmt": 8000,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-04T14:06:45.609Z"
+   },
+   {
+    "Id": 7,
+    "PoolId": 4,
+    "SoId": 9,
+    "CustId": "104081",
+    "GoodCode": "7-14030300BBTEP",
+    "QtyTon": 13,
+    "PricePerTon": "10200500",
+    "NetPricePerTon": "10200",
+    "RebatePerTon": 10190300,
+    "RebateAmount": 132473900,
+    "RemainingAmt": 132473900,
+    "Status": "PENDING",
+    "CreatedAt": "2026-05-10T14:06:45.609Z"
+   },
+   {
+    "Id": 8,
+    "PoolId": 5,
+    "SoId": 10,
+    "CustId": "1169",
+    "GoodCode": "3-MG00000000CAR",
+    "QtyTon": 30,
+    "PricePerTon": 16300,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 300,
+    "RebateAmount": 9000,
+    "RemainingAmt": 9000,
+    "Status": "PENDING",
+    "CreatedAt": "2026-04-27T14:06:45.609Z"
+   },
+   {
+    "Id": 9,
+    "PoolId": 4,
+    "SoId": 11,
+    "CustId": "104028",
+    "GoodCode": "7-14073500BBCAR(1)",
+    "QtyTon": 18,
+    "PricePerTon": 16300,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 300,
+    "RebateAmount": 5400,
+    "RemainingAmt": 5400,
+    "Status": "PENDING",
+    "CreatedAt": "2026-05-24T14:06:45.609Z"
+   },
+   {
+    "Id": 10,
+    "PoolId": 3,
+    "SoId": 12,
+    "CustId": "7120",
+    "GoodCode": "7-14073500BBCAR",
+    "QtyTon": 21,
+    "PricePerTon": "18400100",
+    "NetPricePerTon": "18400",
+    "RebatePerTon": 18381700,
+    "RebateAmount": 386015700,
+    "RemainingAmt": 386015700,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-11T14:06:45.609Z"
+   },
+   {
+    "Id": 11,
+    "PoolId": 3,
+    "SoId": 12,
+    "CustId": "7120",
+    "GoodCode": "7-15052500BBTEP",
+    "QtyTon": 4,
+    "PricePerTon": "182000",
+    "NetPricePerTon": "18200",
+    "RebatePerTon": 163800,
+    "RebateAmount": 655200,
+    "RemainingAmt": 655200,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-11T14:06:45.609Z"
+   },
+   {
+    "Id": 12,
+    "PoolId": 2,
+    "SoId": 13,
+    "CustId": "1029",
+    "GoodCode": "7-14073500BBCAR",
+    "QtyTon": 12,
+    "PricePerTon": "18400300",
+    "NetPricePerTon": "18400",
+    "RebatePerTon": 18381900,
+    "RebateAmount": 220582800,
+    "RemainingAmt": 220582800,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-12T14:06:45.609Z"
+   },
+   {
+    "Id": 13,
+    "PoolId": 1,
+    "SoId": 14,
+    "CustId": "7103",
+    "GoodCode": "7-15151500BBCAR",
+    "QtyTon": 4,
+    "PricePerTon": "192000",
+    "NetPricePerTon": "19200",
+    "RebatePerTon": 172800,
+    "RebateAmount": 691200,
+    "RemainingAmt": 691200,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-15T14:06:45.609Z"
+   },
+   {
+    "Id": 14,
+    "PoolId": 4,
+    "SoId": 18,
+    "CustId": "7043",
+    "GoodCode": "7-15052000BBCAR",
+    "QtyTon": 12,
+    "PricePerTon": "17000300",
+    "NetPricePerTon": "17000",
+    "RebatePerTon": 16983300,
+    "RebateAmount": 203799600,
+    "RemainingAmt": 203799600,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-22T14:06:45.609Z"
+   },
+   {
+    "Id": 15,
+    "PoolId": 4,
+    "SoId": 18,
+    "CustId": "7043",
+    "GoodCode": "5-1620000000BUL(2)",
+    "QtyTon": 9,
+    "PricePerTon": 16500,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 500,
+    "RebateAmount": 4500,
+    "RemainingAmt": 4500,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-22T14:06:45.609Z"
+   },
+   {
+    "Id": 16,
+    "PoolId": 2,
+    "SoId": 19,
+    "CustId": "104053",
+    "GoodCode": "7-09050900BBCAR",
+    "QtyTon": 25,
+    "PricePerTon": 16500,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 500,
+    "RebateAmount": 12500,
+    "RemainingAmt": 12500,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-22T14:06:45.609Z"
+   },
+   {
+    "Id": 17,
+    "PoolId": 1,
+    "SoId": 21,
+    "CustId": "1198",
+    "GoodCode": "7-16040400BBCAR",
+    "QtyTon": 18,
+    "PricePerTon": 16100,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 100,
+    "RebateAmount": 1800,
+    "RemainingAmt": 1800,
+    "Status": "PENDING",
+    "CreatedAt": "2026-05-27T14:06:45.609Z"
+   },
+   {
+    "Id": 18,
+    "PoolId": 1,
+    "SoId": 22,
+    "CustId": "7120",
+    "GoodCode": "5-0810000000BUL",
+    "QtyTon": 8,
+    "PricePerTon": 16500,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 500,
+    "RebateAmount": 4000,
+    "RemainingAmt": 4000,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-02T14:06:45.609Z"
+   },
+   {
+    "Id": 19,
+    "PoolId": 6,
+    "SoId": 24,
+    "CustId": "26007",
+    "GoodCode": "7-16160800BBCAR",
+    "QtyTon": 27,
+    "PricePerTon": "18000300",
+    "NetPricePerTon": "18000",
+    "RebatePerTon": 17982300,
+    "RebateAmount": 485522100,
+    "RemainingAmt": 485522100,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-12T14:06:45.609Z"
+   },
+   {
+    "Id": 20,
+    "PoolId": 6,
+    "SoId": 24,
+    "CustId": "26007",
+    "GoodCode": "5-0000600200BUL2",
+    "QtyTon": 7,
+    "PricePerTon": 16100,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 100,
+    "RebateAmount": 700,
+    "RemainingAmt": 700,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-12T14:06:45.609Z"
+   },
+   {
+    "Id": 21,
+    "PoolId": 4,
+    "SoId": 25,
+    "CustId": "7096",
+    "GoodCode": "7-14073500BBCAR(1)",
+    "QtyTon": 4,
+    "PricePerTon": 16500,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 500,
+    "RebateAmount": 2000,
+    "RemainingAmt": 2000,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-07T14:06:45.609Z"
+   },
+   {
+    "Id": 22,
+    "PoolId": 6,
+    "SoId": 26,
+    "CustId": "104092",
+    "GoodCode": "1-10033000BBTEP",
+    "QtyTon": 27,
+    "PricePerTon": 16300,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 300,
+    "RebateAmount": 8100,
+    "RemainingAmt": 8100,
+    "Status": "PENDING",
+    "CreatedAt": "2026-05-21T14:06:45.609Z"
+   },
+   {
+    "Id": 23,
+    "PoolId": 1,
+    "SoId": 33,
+    "CustId": "104086",
+    "GoodCode": "5-0810000000BUL",
+    "QtyTon": 10,
+    "PricePerTon": 16100,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 100,
+    "RebateAmount": 1000,
+    "RemainingAmt": 1000,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-07T14:06:45.610Z"
+   },
+   {
+    "Id": 24,
+    "PoolId": 1,
+    "SoId": 33,
+    "CustId": "104086",
+    "GoodCode": "7-16080800BBCAR",
+    "QtyTon": 2,
+    "PricePerTon": "14300500",
+    "NetPricePerTon": "14300",
+    "RebatePerTon": 14286200,
+    "RebateAmount": 28572400,
+    "RemainingAmt": 28572400,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-07T14:06:45.610Z"
+   },
+   {
+    "Id": 25,
+    "PoolId": 2,
+    "SoId": 34,
+    "CustId": "104092",
+    "GoodCode": "7-15030300BBCAR",
+    "QtyTon": 27,
+    "PricePerTon": "10600100",
+    "NetPricePerTon": "10600",
+    "RebatePerTon": 10589500,
+    "RebateAmount": 285916500,
+    "RemainingAmt": 285916500,
+    "Status": "PENDING",
+    "CreatedAt": "2026-05-15T14:06:45.610Z"
+   },
+   {
+    "Id": 26,
+    "PoolId": 2,
+    "SoId": 37,
+    "CustId": "7029",
+    "GoodCode": "5-1846000001BUL",
+    "QtyTon": 23,
+    "PricePerTon": 16300,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 300,
+    "RebateAmount": 6900,
+    "RemainingAmt": 6900,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-19T14:06:45.610Z"
+   },
+   {
+    "Id": 27,
+    "PoolId": 2,
+    "SoId": 37,
+    "CustId": "7029",
+    "GoodCode": "7-13032700BBCAR",
+    "QtyTon": 3,
+    "PricePerTon": "16400100",
+    "NetPricePerTon": "16400",
+    "RebatePerTon": 16383700,
+    "RebateAmount": 49151100,
+    "RemainingAmt": 49151100,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-19T14:06:45.610Z"
+   },
+   {
+    "Id": 28,
+    "PoolId": 2,
+    "SoId": 38,
+    "CustId": "1121",
+    "GoodCode": "3-MG00000000BUL",
+    "QtyTon": 29,
+    "PricePerTon": 16500,
+    "NetPricePerTon": 16000,
+    "RebatePerTon": 500,
+    "RebateAmount": 14500,
+    "RemainingAmt": 14500,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-01T14:06:45.610Z"
+   },
+   {
+    "Id": 29,
+    "PoolId": 2,
+    "SoId": 38,
+    "CustId": "1121",
+    "GoodCode": "7-16080800BBCAR",
+    "QtyTon": 2,
+    "PricePerTon": "14300100",
+    "NetPricePerTon": "14300",
+    "RebatePerTon": 14285800,
+    "RebateAmount": 28571600,
+    "RemainingAmt": 28571600,
+    "Status": "PENDING",
+    "CreatedAt": "2026-06-01T14:06:45.610Z"
+   },
+   {
+    "Id": 30,
+    "PoolId": 5,
+    "SoId": 39,
+    "CustId": "1014",
+    "GoodCode": "7-12044000BBCAR",
+    "QtyTon": 4,
+    "PricePerTon": "18400300",
+    "NetPricePerTon": "18400",
+    "RebatePerTon": 18381900,
+    "RebateAmount": 73527600,
+    "RemainingAmt": 73527600,
+    "Status": "PENDING",
+    "CreatedAt": "2026-05-26T14:06:45.610Z"
+   },
+   {
+    "Id": 31,
+    "PoolId": 2,
+    "SoId": 40,
+    "CustId": "7029",
+    "GoodCode": "7-16030800BBCAR",
+    "QtyTon": 27,
+    "PricePerTon": "13300500",
+    "NetPricePerTon": "13300",
+    "RebatePerTon": 13287200,
+    "RebateAmount": 358754400,
+    "RemainingAmt": 358754400,
+    "Status": "PENDING",
+    "CreatedAt": "2026-04-30T14:06:45.610Z"
+   }
+  ],
+  "claims": [],
+  "summary": [
+   {
+    "SalesName": "ไพศาล",
+    "TotalAccrued": 386685400,
+    "TotalClaimed": 0,
+    "TotalAvailable": 386685400,
+    "TotalAllocated": 0
+   },
+   {
+    "SalesName": "เกษร  ดีบรรเจิด",
+    "TotalAccrued": 29284400,
+    "TotalClaimed": 0,
+    "TotalAvailable": 29284400,
+    "TotalAllocated": 0
+   },
+   {
+    "SalesName": "พรพรรณ  จิตวัฒนฤทธิ์",
+    "TotalAccrued": 336285400,
+    "TotalClaimed": 0,
+    "TotalAvailable": 336285400,
+    "TotalAllocated": 0
+   },
+   {
+    "SalesName": "ชนกชญา  น้อยกันสี",
+    "TotalAccrued": 946807100,
+    "TotalClaimed": 0,
+    "TotalAvailable": 946807100,
+    "TotalAllocated": 0
+   },
+   {
+    "SalesName": "ณชลนิภา  รอดแตง",
+    "TotalAccrued": 485530900,
+    "TotalClaimed": 0,
+    "TotalAvailable": 485530900,
+    "TotalAllocated": 0
+   },
+   {
+    "SalesName": "ธนิภา  คำเสียงใส",
+    "TotalAccrued": 73536600,
+    "TotalClaimed": 0,
+    "TotalAvailable": 73536600,
+    "TotalAllocated": 0
+   }
+  ]
+ },
+ "quotations": [
+  {
+   "Id": 1,
+   "QuoteNo": "QT69-000001",
+   "CustId": "1198",
+   "CustName": "คลองหินการเกษตร",
+   "Status": "ACCEPTED",
+   "SalesName": "ณชลนิภา  รอดแตง",
+   "CreatedAt": "2026-05-24T14:06:45.611Z",
+   "lines": [
+    {
+     "Id": 1,
+     "LineNum": 1,
+     "GoodId": "25085",
+     "GoodCode": "7-12030500BBCAR",
+     "GoodName": "12-3-5 เชิงผสม ตรารถเกษตร",
+     "QtyTon": 18,
+     "PricePerTon": 16500,
+     "NetPricePerTon": 16000
+    }
+   ]
+  },
+  {
+   "Id": 2,
+   "QuoteNo": "QT69-000002",
+   "CustId": "23023",
+   "CustName": "โก๋เคมีเกษตร",
+   "Status": "CONVERTED",
+   "SalesName": "เกษร  ดีบรรเจิด",
+   "CreatedAt": "2026-06-20T14:06:45.611Z",
+   "lines": [
+    {
+     "Id": 2,
+     "LineNum": 1,
+     "GoodId": "25047",
+     "GoodCode": "5-4600000600BUL(3)",
+     "GoodName": "46-0-0  (โฟม)  เทกอง (3)",
+     "QtyTon": 14,
+     "PricePerTon": 16200,
+     "NetPricePerTon": 16000
+    }
+   ]
+  },
+  {
+   "Id": 3,
+   "QuoteNo": "QT69-000003",
+   "CustId": "1022",
+   "CustName": "กิตติเกษตร จำกัด",
+   "Status": "SENT",
+   "SalesName": "ชนกชญา  น้อยกันสี",
+   "CreatedAt": "2026-06-22T14:06:45.611Z",
+   "lines": [
+    {
+     "Id": 3,
+     "LineNum": 1,
+     "GoodId": "1116",
+     "GoodCode": "7-16040800BBCAR",
+     "GoodName": "16-4-8 เชิงผสม ตรารถเกษตร",
+     "QtyTon": 4,
+     "PricePerTon": 16000,
+     "NetPricePerTon": 16000
+    }
+   ]
+  },
+  {
+   "Id": 4,
+   "QuoteNo": "QT69-000004",
+   "CustId": "26010",
+   "CustName": "STKH IMPORT & EXPORT CO.,LTD.",
+   "Status": "ACCEPTED",
+   "SalesName": "พรพรรณ  จิตวัฒนฤทธิ์",
+   "CreatedAt": "2026-06-11T14:06:45.611Z",
+   "lines": [
+    {
+     "Id": 4,
+     "LineNum": 1,
+     "GoodId": "25083",
+     "GoodCode": "7-10050500BBCAR",
+     "GoodName": "10-5-5 เชิงผสม ตรารถเกษตร",
+     "QtyTon": 6,
+     "PricePerTon": 16500,
+     "NetPricePerTon": 16000
+    }
+   ]
+  },
+  {
+   "Id": 5,
+   "QuoteNo": "QT69-000005",
+   "CustId": "7096",
+   "CustName": "คุณคงเดช คงเสรี",
+   "Status": "CONVERTED",
+   "SalesName": "ชนกชญา  น้อยกันสี",
+   "CreatedAt": "2026-06-22T14:06:45.611Z",
+   "lines": [
+    {
+     "Id": 5,
+     "LineNum": 1,
+     "GoodId": "1099",
+     "GoodCode": "7-13063200BBCAR",
+     "GoodName": "13-6-32 เชิงผสม ตรารถเกษตร",
+     "QtyTon": 6,
+     "PricePerTon": 16000,
+     "NetPricePerTon": 16000
+    }
+   ]
+  },
+  {
+   "Id": 6,
+   "QuoteNo": "QT69-000006",
+   "CustId": "17010",
+   "CustName": "เกษตรเจ้าคุณ",
+   "Status": "DRAFT",
+   "SalesName": "ชนกชญา  น้อยกันสี",
+   "CreatedAt": "2026-05-31T14:06:45.611Z",
+   "lines": [
+    {
+     "Id": 6,
+     "LineNum": 1,
+     "GoodId": "1087",
+     "GoodCode": "5-4600000600BUL",
+     "GoodName": "46-0-0  (โฟม)  เทกอง",
+     "QtyTon": 2,
+     "PricePerTon": 16000,
+     "NetPricePerTon": 16000
+    }
+   ]
+  },
+  {
+   "Id": 7,
+   "QuoteNo": "QT69-000007",
+   "CustId": "7014",
+   "CustName": "คุณกำพล รัตนโชค",
+   "Status": "ACCEPTED",
+   "SalesName": "ชนกชญา  น้อยกันสี",
+   "CreatedAt": "2026-06-02T14:06:45.611Z",
+   "lines": [
+    {
+     "Id": 7,
+     "LineNum": 1,
+     "GoodId": "25054",
+     "GoodCode": "5-4600000600BUL(1)",
+     "GoodName": "46-0-0  (โฟม)  เทกอง (ปุ๋ยเปียก)",
+     "QtyTon": 4,
+     "PricePerTon": 16200,
+     "NetPricePerTon": 16000
+    }
+   ]
+  },
+  {
+   "Id": 8,
+   "QuoteNo": "QT69-000008",
+   "CustId": "7029",
+   "CustName": "คุณกมลวรรณ การีวรรณ",
+   "Status": "DRAFT",
+   "SalesName": "ไพศาล",
+   "CreatedAt": "2026-06-22T14:06:45.611Z",
+   "lines": [
+    {
+     "Id": 8,
+     "LineNum": 1,
+     "GoodId": "22000",
+     "GoodCode": "5-0000600200BUL1",
+     "GoodName": "0-0-60 (เม็ด) (กระสอบจัมโบ้)",
+     "QtyTon": 18,
+     "PricePerTon": 16000,
+     "NetPricePerTon": 16000
+    }
+   ]
+  }
+ ]
+}

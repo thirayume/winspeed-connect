@@ -1,0 +1,167 @@
+SOFTWARE REQUIREMENTS SPECIFICATION
+ระบบจัดการสั่งขายปุ๋ยและส่วนลดรีเบท
+Sales Order & Rebate Management System
+บริษัท เวิลด์ เฟอท จำกัด  /  WORLD FERT CO., LTD.
+Tax ID: 0105531024397
+© 2026 World Fert Co., Ltd. All Rights Reserved.
+# Document Control
+## Revision History
+## Open Decisions (รอยืนยันจากลูกค้า)
+# Executive Summary
+บริษัท เวิลด์ เฟอท จำกัด เป็นผู้ผลิตและจำหน่ายปุ๋ยเคมีภายใต้แบรนด์ “รถเกษตร” และ “ปุ๋ยเทพ” สำนักงานใหญ่ที่เยาวราช โรงงานผลิตที่พระนครศรีอยุธยา ปัจจุบันใช้ Prosoft WINSpeed v9.0 เป็น ERP หลัก ขายปุ๋ยเป็นสูตรต่างๆ บรรจุกระสอบละ 50 กก. และจำหน่ายแบบขายส่งเป็นรถบรรทุก (หน่วยตัน)
+เอกสาร v3.0 นี้ ตรวจสอบทุกข้อสมมุติกับข้อมูลจริงในฐานข้อมูล (dbwins_worldfert9 — 669 ตาราง, 282,087 ใบกำกับ, ข้อมูลปี 2555–2568) เพื่อให้การออกแบบระบบใหม่บน schema wf สอดคล้องกับโครงสร้างและการไหลของเอกสารที่ WINSpeed ใช้งานจริง โดยตัดเนื้อหาเชิงพาณิชย์ (งบประมาณ/MA) ออก เพื่อเน้นการออกแบบ
+## สรุปขอบเขต (Scope Summary)
+# 1. บทนำ (Introduction)
+## 1.1 วัตถุประสงค์ของเอกสาร (Purpose)
+เอกสาร SRS ฉบับนี้ระบุความต้องการทางธุรกิจ Functional และ Non-Functional Requirements ของระบบจัดการสั่งขายปุ๋ยและส่วนลดรีเบท ที่พัฒนาเชื่อมต่อ Prosoft WINSpeed v9.0 ของบริษัท เวิลด์ เฟอท จำกัด ตามมาตรฐาน IEEE 29148-2018 — v3.0 เพิ่มหมวดการออกแบบที่อ้างอิงโครงสร้างข้อมูลจริง
+## 1.2 ขอบเขตของเอกสาร (Scope)
+เอกสารนี้ครอบคลุม Phase 1 มุ่งกระบวนการฝั่งขายและบริหารส่วนลด (Rebate) รวมโมดูลใหม่ตามหลักฐานภาคสนาม โดยไม่รวม Gate Pass, TruckScale และสายการผลิต ซึ่งแยกเสนอ Phase ถัดไป
+In Scope (อยู่ในขอบเขต)
+Sales Order State Machine (Draft → Confirmed → Picking → Shipped) + audit ทุก transition
+Rebate Management — Accrual ต่อรายการ (ราคาขาย-ราคา NET/ตัน), Pool ตามสูตร×ภาค×เดือน, ตัด FIFO, Claim 2 ประเภท (คืนรีเบท/คืนส่วนต่าง)
+Price Book — ราคา NET รายเดือนต่อสูตร (ฐานคำนวณ Rebate) อ้างอิง EMSetPriceDT
+Giveaway / Promotion Item — เลือกของแถม (เสื้อ/กระเป๋า/กระสอบเปล่า) + งบและสต็อกตามภาค→Sales→รายการ
+Control Ticket (ชุดตั๋วคุม) — บันทึก/ติดตามยอดคงเหลือ + รายงานเฉพาะชุด
+Mother/Baby Load Sequencing — ระบุลำดับโหลดรถพ่วงแม่-ลูกตามที่ลูกค้าแจ้ง
+Counter-Sales Verification Gate — ตรวจซ้ำคำสั่งซื้อก่อนส่งโรงงาน
+Paper Trail Tracking — เอกสาร 4 สี + QR Code + Kanban dashboard
+Unlock Request Flow — แจ้งเตือน real-time ระหว่าง Sales และคลัง
+Prosoft WINSpeed Integration — อ่าน master (read-only), เขียน Invoice เมื่อ Shipped
+Reporting & Dashboard, Role-Based Access Control
+Out of Scope (อยู่นอกขอบเขต)
+Gate Pass & Vehicle Tracking (Phase 2)
+TruckScale Integration & Multi-trip Loading รถวน 3 รอบ (Phase 2)
+LINE LIFF Mobile App เต็มรูป (Phase 2)
+Production Line Management & MRP (Phase 3)
+Lot Tracking & Expiry Date (Phase 3)
+การปรับแก้ Schema ของ Prosoft WINSpeed (ห้ามแตะ — เขียนเฉพาะ schema wf)
+## 1.3 คำนิยาม คำย่อ และคำศัพท์เฉพาะ
+## 1.4 เอกสารอ้างอิง (References)
+IEEE Std 29148-2018; ISO/IEC 25010:2011 (SQuaRE)
+Prosoft WINSpeed v9.0 — Database Schema (669 ตาราง, schema dump)
+หลักฐานข้อมูลจริง — query บน dbwins_worldfert9 (wf_reader, read-only) มิ.ย. 2569
+ใบสั่งจอง World Fert — I69-01539, K69-01448; ใบสั่งสินค้า/Order Form L62452
+เอกสารคืนรีเบท — RBD68-019 (รวม 55,800 บาท)
+แบบขออนุมัติรายการส่งเสริมการขาย — เลขที่ 12/2568, 14/2568, 15/2568; ราคา NET รายเดือน เม.ย. 2568
+สรุปการเบิกเสื้อ-กระเป๋ารายภาค ปี 2569 (เหนือ/กลาง/ตะวันออก/ใต้)
+## 1.5 ผู้มีส่วนได้ส่วนเสีย (Stakeholders)
+# 2. ภาพรวมของระบบ (Overall Description)
+## 2.1 มุมมองของผลิตภัณฑ์ (Product Perspective)
+ระบบเป็น Web Application (tablet-first สำหรับ iPad 768–1024px) ที่ทำงานเป็น “Layer เพิ่มเติม” บน Prosoft WINSpeed v9.0 โดยไม่แตะ Schema ของ WINSpeed — ใช้ฐานข้อมูล SQL Server เดียวกัน (dbwins_worldfert9) โดยสร้าง schema wf สำหรับข้อมูลใหม่ (Rebate Plan/Pool/Ledger, Price Book, Giveaway, Control Ticket, Audit, Paper Trail) อยู่คู่กับ dbo จึง JOIN ข้าม schema ได้โดยตรง ไม่ต้อง sync หรือ cache · เน้นความเรียบง่าย: ไม่ใช้ PostgreSQL/Redis/Queue ใดๆ
+## 2.2 ฟังก์ชันหลักของระบบ (Product Functions)
+## 2.3 ประเภทผู้ใช้และคุณลักษณะ
+## 2.4 ข้อจำกัดในการออกแบบและการพัฒนา
+Technical / Business Constraints (สรุปสำคัญ)
+WINSpeed DB = MS SQL Server (legacy) — ห้ามแก้ schema และห้ามเขียนตารางบัญชี dbo เด็ดขาด; อ่านผ่าน View, ส่งข้อมูลเข้าผ่าน WINSpeed Import (WINSpeed post บัญชีเอง)
+Server สนญ. เยาวราช ต้องเปิด external access ให้โรงงานอยุธยาเข้าถึง (encrypted/VPN)
+SO Number แยกตาม Sales/พื้นที่ (เช่น I69-XXXXX, K69-XXXXX) รันต่อเนื่องห้ามข้าม
+Rebate Pool รวมห้ามเกินงบที่อนุมัติ; Giveaway เบิกเกินงบ “ติดลบได้” แต่ต้องเตือน (ตามพฤติกรรมจริง)
+Stock: ICStock ของ WINSpeed ว่าง (0 rows) — ระบบใหม่ต้องจัด stock ใน schema wf เอง; ก่อนยืนยัน Shipped ต้องยืนยันออเดอร์ที่จ่ายออก + น้ำหนักรถ
+Audit immutable — แก้โดยเพิ่ม reversal entry เท่านั้น; ลงบัญชีตาม chart of account ของ WINSpeed
+PDPA: ข้อมูลลูกค้า/พนักงานเข้ารหัส + retention policy
+# 3. บริบทธุรกิจและความต้องการ (Business Context)
+## 3.1 ข้อความปัญหาทางธุรกิจ
+บริษัทฯ เผชิญความท้าทายในกระบวนการขายและการบริหารส่วนลด (Rebate) ที่กระทบประสิทธิภาพ ความถูกต้องของบัญชี และความพึงพอใจของลูกค้า การพึ่งกระบวนการ manual และเอกสารกระดาษทำให้เกิดข้อผิดพลาด เอกสารสูญหาย และล่าช้า — โดยเฉพาะ Rebate ที่ตั้งเป็นผลต่างราคา NET ต่อตัน แต่ตัดจ่าย FIFO ระดับก้อนรวม จึงแจกแจงต้นทางรายการไม่ได้
+3.2.1 กระบวนการขายปัจจุบัน (As-Is)
+Sales ส่ง order ทางไลน์ให้ Counter Sales
+Counter Sales พิมพ์ใบสั่งจองใน WINSpeed พร้อมแจ้งเลขทะเบียนรถ ส่งโรงงาน
+ยามรับบัตรประชาชน + ออกใบอนุญาตนำรถเข้า-ออก ส่งให้ส่วนจ่ายสินค้า
+ส่วนจ่ายสินค้าคีย์ใบสั่งจองลง Truck Scale พิมพ์ตั๋วให้รับของจากสายพาน/คลัง/bulk
+คนรถนำรถเบาชั่งน้ำหนัก → รับของตามจุด (หลายชนิดวนหลายรอบ) → ชั่งรถรวมของ
+ฝ่ายชั่งพิมพ์ใบจ่ายสินค้า 4 สี (ขาว/ฟ้าเก็บ, ชมพูลูกค้า, เหลือง รปภ.) คนรถเซ็นรับทั้งชุด
+ลูกค้ารับสินค้า Sales ตามชำระ และขอเบิก Rebate (Accounting ตรวจทีละบิล)
+3.2.2 Pain Points ที่ระบุได้ (10 ข้อ)
+3.2.3 ตัวอย่างผลกระทบจริง — Rebate (RBD68-019)
+เอกสาร RBD68-019 (รวม 55,800 บาท) เป็นการขออนุมัติเคลียร์รายการส่งเสริมการขาย โดย “คืนรีเบท = ราคาขาย − ราคาสุทธิ (NET)” ต่อตัน อ้างอิงหลายอินวอยซ์ (I68-xxxxx) แล้วตัดจากกองรวม:
+## 3.3 สภาพในอนาคต (To-Be)
+Sales ส่ง order เข้าระบบ (web/ไลน์) → ระบบสร้าง SO; Counter Sales ตรวจซ้ำแล้ว confirm + พิมพ์ 4 สี พร้อม QR
+ระบุลำดับโหลดแม่-ลูก และของแถม (เห็นสต็อก/งบ) ในใบเดียว ไม่ต้องเขียนปนทะเบียนรถ
+Rebate ตั้ง accrual อัตโนมัติต่อรายการเมื่อ Confirmed (อิง Price Book NET) — Sales เห็น Pool คงเหลือทันที
+เคลียร์/เบิก FIFO ในระบบ พร้อมสายอนุมัติ 4 ชั้น และ trace กลับต้นทางได้ 100%
+ก่อน Shipped ยืนยันออเดอร์ที่จ่ายออก + น้ำหนักรถ → สร้างไฟล์ import ส่งเข้า WINSpeed (WINSpeed ออกใบกำกับ/GL เอง ถูกต้อง 100%)
+# 4. การไหลของเอกสารและสถานะ (Document Flow & State)
+หมวดนี้เป็นเนื้อหาใหม่ใน v3.0 — ทุกค่าและ join key ยืนยันจากการ query ข้อมูลจริง บน dbwins_worldfert9 เพื่อให้การออกแบบ State Machine และการเขียนกลับ WINSpeed ถูกต้องตามที่ระบบใช้งานจริง
+## 4.1 DocuType Reference (ยืนยันจากข้อมูลจริง)
+## 4.2 Document Chain & Join Keys
+ลำดับเอกสารจริง: ใบจอง (103) → เข้าชั่ง/ตั๋วคุม (AppvDocuNo) → ใบสั่งขาย (104) → ใบกำกับ (107/202) → GL (501) / ใบวางบิล (203) → รับชำระ (ARReceHD)
+## 4.3 ตั๋วคุม / เข้าชั่ง-ชั่งออก (Weigh-Control Flow)
+สำคัญ: ไม่มีตารางแยกสำหรับ “ตั๋วคุม” ใน WINSpeed — เลขตั๋วคุม (prefix 'AI') เป็น approval number เก็บใน SOHD.AppvDocuNo และสถานะคุมด้วย SOHD.AppvFlag
+## 4.4 GL Flow (สายบัญชี)
+ใบกำกับขายเชื่อ (107, PostGL='Y') → GLHD (DocuType=501 ทุกแถว, FromFlag=107) → GLDT → ผังบัญชี EMAcc
+## 4.5 Scenarios การไหลของข้อมูล (8 กรณี)
+# 5. ความต้องการเชิงฟังก์ชัน (Functional Requirements)
+ใช้รหัส FR-XXX และระดับความสำคัญตาม RFC 2119 (MUST / SHOULD / MAY) — เครื่องหมาย ✦ คือแก้ไข/ตรวจสอบกับข้อมูลจริงใน v3.0
+## 5.1 โมดูล Sales Order Management
+## 5.2 โมดูล Rebate Management (Accrual + FIFO)
+## 5.3 โมดูล Giveaway & Control Ticket
+## 5.4 โมดูล Unlock / Paper Trail / WINSpeed (สรุป)
+## 5.5 กฎอนุมัติเฉพาะ & Dashboard (ยืนยันกับทีมขาย)
+เพิ่มเติมจากเอกสาร field requirements ของทีม (WF Sales Comment, ปัญหา/ความต้องการ) — ยืนยันแล้วว่า framework FR ครอบคลุม ส่วนนี้คือรายละเอียดเฉพาะที่ต้อง implement
+FR-006/007 ✦ — Approval Levels เฉพาะกรณี
+FR-017 ✦ — Real-time Dashboard (Sales)
+ตั๋วคงค้าง + aging: >30 วัน = สีเหลือง, >45 วัน = สีแดง (SOHD 103 รอชั่ง)
+สถานะรถ 3 สถานะ: มาถึง-รอคิว / กำลังรับสินค้า / รถออกจากโรงงาน (timestamp จากเครื่องชั่ง → wf.WeighTicket)
+สต๊อก FG (StockFlag='Y', 193 รายการ) + ของแถม (GoodGroupID NULL) + กระสอบ (GoodGroupID=1000) — real-time
+Historical autocomplete: พิมพ์ทะเบียน 'ก' → dropdown ทะเบียนที่เคยเข้า; สูตรที่ไม่เคยซื้อ → สีแดง
+Rebate คงเหลือ (ดูอย่างเดียว) + เลือกรับสินค้าจาก 'โม่' หรือ 'สต๊อก'
+# 6. External Interface Requirements
+## 6.1 UI/UX
+Tablet-First (iPad 768–1024px) เป็นหลัก; touch-friendly ปุ่ม ≥48×48px
+Card-based + Modal detail; รองรับภาษาไทยเป็นหลัก (font Prompt)
+Status color: Draft=เทา, Confirmed=ทอง, Picking=เทอราคอตต้า, Shipped=เขียวเสจ, Cancelled=แดง
+## 6.2 Software Interfaces — Prosoft WINSpeed v9.0 (แก้ไขตามข้อมูลจริง)
+## 6.3 WINSpeed Import — รูปแบบไฟล์จริง (SO Export/Import)
+ยืนยันจากคู่มือ Prosoft (Export-Import Document.pdf) + WINSpeed UI จริง: ส่งใบสั่งขายเข้า WINSpeed ผ่านเมนู SO Export/Import (screen w_importexport_so) ด้วยไฟล์ Tab-delimited TXT แยก Header + Detail ในโฟลเดอร์ YYYYMMDD
+SOHD.TXT — Header (1 บรรทัด/ใบสั่งขาย)
+SODT.TXT — Detail (1 บรรทัด/รายการสินค้า)
+รายละเอียดคอลัมน์ครบถ้วน: ดู wf/out/winspeed_import_spec.md
+# 7. ความต้องการเชิงคุณภาพ (Non-Functional Requirements)
+# 8. ความต้องการด้านข้อมูล (Data Requirements)
+## 8.1 Logical Data Model — schema wf (Entity หลัก)
+Domain: Sales Order
+Domain: Rebate
+Domain: Giveaway & Control Ticket
+Domain: Paper Trail / System
+## 8.2 ความสัมพันธ์สำคัญ (สรุป)
+SalesOrder 1:N SalesOrderLine / Audit / UnlockRequest / WeighTicket / PaperCopy(=4 สี) / GiveawayIssue / ControlTicketIssue
+RebatePlan 1:N RebatePool (ต่อ Sales); RebatePool 1:N RebateLedger; SalesOrderLine 1:N RebateLedger
+RebateLedger N:1 RebateClaim (ผ่าน RebateClaimLine, แยก returnType)
+PriceBook ↔ RebatePlan (NET price อ้างอิงตามสูตร/เดือน); GiveawayBudget 1:N GiveawayIssue; ControlTicket 1:N ControlTicketIssue
+## 8.3 หน่วยและราคา (ข้อเท็จจริงจากข้อมูลจริง)
+## 8.4 Data Migration
+ไม่ migrate transaction เก่าจาก WS (start fresh) — master อ่านด้วย JOIN ตรงไป dbo (ไม่ copy/cache)
+Import 1 ครั้ง: User accounts (CSV), Rebate Plan/Price Book ปัจจุบัน (Excel), งบของแถมรายภาค (จาก XLS สรุปเบิก)
+schema wf สร้างใน DB เดียวกันกับ dbo (dbwins_worldfert9) ด้วย login wf_owner
+# 9. สถาปัตยกรรมระบบ (เน้นความเรียบง่าย)
+2-tier เรียบง่าย: React SPA (tablet-first) → NestJS API → SQL Server เดียว (dbwins_worldfert9: schema wf read-write + dbo read-only) — ไม่มี PostgreSQL / Redis / Message Queue / Background worker. wf กับ dbo อยู่ฐานข้อมูลเดียวกัน จึง JOIN ข้าม schema ได้ตรง ไม่ต้อง sync/cache
+## 9.1 การแบ่ง Phase (ขอบเขตการออกแบบ)
+# 10. ความเสี่ยงสำคัญ (Risk — สรุป)
+# 11. เกณฑ์การตรวจรับงาน (Acceptance — สรุป)
+# 12. แผนภาพระบบ (Diagrams)
+ไฟล์ต้นฉบับแก้ไขได้: WorldFert_Diagrams_v4.drawio (เปิดด้วย diagrams.net / drawio) — 8 หน้า
+## 12.1 Swimlane AS-IS — กระบวนการขายปัจจุบัน (Manual + WINSpeed)
+## 12.2 Swimlane TO-BE — WS-Sale-App + WINSpeed (Non-Invasive)
+## 12.3 Workflow — สายเอกสาร + DocuType + Join Keys
+## 12.4 Work Process — SO State Machine (DRAFT→CONFIRMED→PICKING→SHIPPED)
+## 12.5 DFD — Context (Lv0) & Level 1
+## 12.6 ER Diagram — schema wf (+ dbo read-only refs)
+## 12.7 UML Use Case Diagram
+## 12.8 UML Class Diagram (Domain model)
+# 13. การออกแบบ UI/UX (ทุกหน้า)
+Tech Stack: React + Vite + TypeScript + Tailwind + shadcn/ui (tablet-first). Mockup HTML แก้ไขได้ใน ui_mockups/*.html
+## 13.1 หน้าเข้าสู่ระบบ (Login) — JWT + RBAC
+## 13.2 Dashboard — ตั๋วคงค้าง aging, สถานะรถ, Rebate, สต๊อก (real-time)
+## 13.3 ใบสั่งขาย (SO) — แม่/ลูก, ของแถม, ทะเบียนรถ, Rebate preview
+## 13.4 ใบเสนอราคา — ราคากลาง + แจ้งเตือนต่ำกว่า set price
+## 13.5 Rebate Pool — Ledger + FIFO trace
+## 13.6 Rebate Claim — 2 ประเภท → CN (109)
+## 13.7 ของแถม — งบ/สต๊อก + เตือนเบิกเกิน
+## 13.8 ชุดตั๋วคุม — ยอดคงเหลือ + โหมดรับ
+## 13.9 Paper Trail — Kanban 5 คอลัมน์ + QR
+## 13.10 อนุมัติ/Unlock — ตามกฎเฉพาะ (สุรชัย/รุ่งนิรันดร์/3 ผจก.)
+## 13.11 รายงาน & Dashboard (export Excel/PDF)
+## 13.12 ผู้ใช้ & สิทธิ์ (RBAC 7 บทบาท)
+# 14. Traceability — Requirement ↔ FR
+ยืนยันว่า FR ครอบคลุมความต้องการของทีมครบ (เทียบ Requirements/, WS Comment, drawio)
+— จบเอกสาร / End of Document —
+Software Requirements Specification | World Fert Co., Ltd. | v4.0 (Production) | 10 มิ.ย. 2569

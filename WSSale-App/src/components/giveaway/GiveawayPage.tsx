@@ -1,0 +1,262 @@
+import { useEffect, useState, useCallback } from 'react';
+import { Gift, RefreshCw, Plus, X, AlertTriangle, Package } from 'lucide-react';
+import {
+  fetchGiveawayRegions, fetchGiveawayBudgetLines, fetchGiveawayWithdrawals,
+  fetchGiveawayItems, createGiveawayWithdrawal,
+} from '../../services/api';
+import { useAuthStore } from '../../store/auth-store';
+import type { GiveawayRegion, GiveawayBudgetLine, GiveawayWithdrawal, GiveawayItem } from '../../types';
+
+const TH_MONTHS = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const TYPE_LABEL: Record<string, string> = { BAG: 'กระเป๋า(สูตร)', SHIRT: 'เสื้อ', BANNER: 'แบนเนอร์', OTHER: 'อื่นๆ' };
+
+export function GiveawayPage() {
+  const role = useAuthStore(s => s.user?.role);
+  const canWithdraw = role === 'SALES' || role === 'COUNTER_SALES' || role === 'ADMIN';
+  const [regions, setRegions]   = useState<GiveawayRegion[]>([]);
+  const [selected, setSelected] = useState<GiveawayRegion | null>(null);
+  const [lines, setLines]       = useState<GiveawayBudgetLine[]>([]);
+  const [log, setLog]           = useState<GiveawayWithdrawal[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [tab, setTab]           = useState<'budget' | 'log'>('budget');
+  const [showWd, setShowWd]     = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setRegions(await fetchGiveawayRegions()); }
+    catch (e) { console.error(e); }
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const openRegion = useCallback(async (r: GiveawayRegion) => {
+    setSelected(r);
+    try {
+      const [bl, wl] = await Promise.all([fetchGiveawayBudgetLines(r.Region), fetchGiveawayWithdrawals(r.Region)]);
+      setLines(bl); setLog(wl);
+    } catch (e) { console.error(e); setLines([]); setLog([]); }
+  }, []);
+
+  return (
+    <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
+      <div className="px-6 py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
+            <Gift size={26} /> ของแถม (Giveaway)
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">งบส่งเสริมการขายรายภาค ปี 2569 · จำนวนชิ้น ต่อ ตรา × รายการ</p>
+        </div>
+        <button onClick={load} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white">
+          <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-hidden flex">
+        {/* Region list */}
+        <div className="w-full lg:max-w-xs border-r border-gray-200 overflow-y-auto p-4">
+          <h2 className="text-xs font-bold uppercase text-gray-400 mb-3">ภาค / พนักงาน</h2>
+          {regions.length === 0 ? (
+            <p className="text-xs text-gray-400 py-6 text-center">ไม่มีข้อมูล</p>
+          ) : Object.entries(
+            regions.reduce((acc, r) => {
+              if (!acc[r.Region]) acc[r.Region] = [];
+              acc[r.Region].push(r);
+              return acc;
+            }, {} as Record<string, GiveawayRegion[]>)
+          ).map(([regionName, items]) => (
+            <div key={regionName} className="mb-4">
+              <h3 className="text-[11px] font-black uppercase text-gray-400 mb-2 tracking-wider px-1 border-l-2 border-gray-300 pl-2">{regionName}</h3>
+              <div className="space-y-2">
+                {items.map(r => {
+                  const isSel = selected?.Region === r.Region && selected?.EmpCode === r.EmpCode;
+                  const pct = r.TotalBudget ? (r.TotalWithdrawn / r.TotalBudget) * 100 : 0;
+                  const empDisplay = r.EmpName || r.EmpCode || 'ไม่ระบุพนักงาน';
+                  
+                  return (
+                    <div key={`${r.Region}-${r.EmpCode}`} onClick={() => openRegion(r)}
+                      className={`p-3 rounded-xl border cursor-pointer transition-all ${isSel ? 'border-blue-700 bg-blue-50 shadow-md' : 'border-gray-100 bg-white hover:border-blue-300'}`}>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-sm font-bold text-[#0C447C]">{empDisplay}</span>
+                        {r.OverCount > 0 && (
+                          <span 
+                            title={`เกิน ${r.OverCount} รายการ รวม ${Number(r.OverQty || 0).toLocaleString()} ชิ้น`}
+                            className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 font-bold"
+                          >
+                            เกิน {Number(r.OverQty || 0).toLocaleString()} ชิ้น
+                          </span>
+                        )}
+                      </div>
+                      <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden mb-1 mt-2">
+                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, pct)}%`, background: r.OverCount > 0 ? '#EF4444' : '#0C447C' }} />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-gray-500 mt-1">
+                        <span>เบิก {Number(r.TotalWithdrawn).toLocaleString()} / {Number(r.TotalBudget).toLocaleString()}</span>
+                        <span>{r.ItemCount} รายการ</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Detail */}
+        <div className="hidden lg:flex flex-1 flex-col overflow-hidden bg-white">
+          {selected ? (
+            <>
+              <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setTab('budget')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${tab==='budget'?'text-white':'text-gray-500 hover:bg-gray-100'}`} style={tab==='budget'?{background:'#0C447C'}:{}}>งบ + คงเหลือ</button>
+                  <button onClick={() => setTab('log')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${tab==='log'?'text-white':'text-gray-500 hover:bg-gray-100'}`} style={tab==='log'?{background:'#0C447C'}:{}}>ประวัติเบิก ({log.length})</button>
+                </div>
+                {canWithdraw && (
+                  <button onClick={() => setShowWd(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-xs font-semibold" style={{ background: '#0C447C' }}>
+                    <Plus size={14} /> บันทึกการเบิก
+                  </button>
+                )}
+              </div>
+              <div className="flex-1 overflow-y-auto p-4">
+                {tab === 'budget' ? (
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-gray-400 border-b border-gray-100">
+                        <th className="text-left py-2">ตรา</th>
+                        <th className="text-left py-2">รายการ</th>
+                        <th className="text-right py-2">งบ</th>
+                        <th className="text-right py-2">เบิกแล้ว</th>
+                        <th className="text-right py-2">คงเหลือ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {lines.map(l => {
+                        const over = Number(l.RemainingQty) < 0;
+                        return (
+                          <tr key={l.Id} className={over ? 'bg-red-50/40' : ''}>
+                            <td className="py-2 text-gray-500">{l.Brand}</td>
+                            <td className="py-2 text-gray-700">{l.ItemName}</td>
+                            <td className="py-2 text-right tabular-nums text-gray-600">{Number(l.BudgetQty).toLocaleString()}</td>
+                            <td className="py-2 text-right tabular-nums text-gray-600">{Number(l.WithdrawnQty).toLocaleString()}</td>
+                            <td className={`py-2 text-right tabular-nums font-bold ${over ? 'text-red-600' : 'text-green-600'}`}>{Number(l.RemainingQty).toLocaleString()}</td>
+                          </tr>
+                        );
+                      })}
+                      {lines.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-gray-300">ไม่มีงบ</td></tr>}
+                    </tbody>
+                  </table>
+                ) : (
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-gray-400 border-b border-gray-100">
+                        <th className="text-left py-2">เดือน</th>
+                        <th className="text-left py-2">ตรา</th>
+                        <th className="text-left py-2">รายการ</th>
+                        <th className="text-right py-2">จ่ายออก</th>
+                        <th className="text-center py-2">ที่มา</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {log.map(w => (
+                        <tr key={w.Id}>
+                          <td className="py-2 text-gray-500">{w.IssueMonth ? TH_MONTHS[w.IssueMonth] : '-'}</td>
+                          <td className="py-2 text-gray-500">{w.Brand}</td>
+                          <td className="py-2 text-gray-700">{w.ItemName}</td>
+                          <td className="py-2 text-right tabular-nums text-gray-700">{Number(w.Qty).toLocaleString()}</td>
+                          <td className="py-2 text-center">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${w.Source==='IMPORT'?'bg-gray-100 text-gray-500':'bg-blue-50 text-blue-700'}`}>{w.Source}</span>
+                          </td>
+                        </tr>
+                      ))}
+                      {log.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-gray-300">ยังไม่มีการเบิก</td></tr>}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-gray-300">
+              <Package size={56} className="mb-3" />
+              <p className="text-sm">เลือกภาคเพื่อดูงบของแถม</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {showWd && selected && (
+        <WithdrawDialog region={selected.Region} onClose={() => setShowWd(false)}
+          onDone={() => { setShowWd(false); load(); openRegion(selected); }} />
+      )}
+    </div>
+  );
+}
+
+function WithdrawDialog({ region, onClose, onDone }: { region: string; onClose: () => void; onDone: () => void }) {
+  const [items, setItems] = useState<GiveawayItem[]>([]);
+  const [brand, setBrand] = useState('');
+  const [itemName, setItemName] = useState('');
+  const [qty, setQty]     = useState(1);
+  const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const [busy, setBusy]   = useState(false);
+  const [err, setErr]     = useState('');
+
+  useEffect(() => { fetchGiveawayItems().then(setItems).catch(() => {}); }, []);
+  const brands = Array.from(new Set(items.map(i => i.Brand)));
+  const itemsForBrand = items.filter(i => i.Brand === brand);
+
+  async function submit() {
+    if (!brand || !itemName || qty < 1) { setErr('เลือกตรา รายการ และจำนวน'); return; }
+    setBusy(true); setErr('');
+    try {
+      const res = await createGiveawayWithdrawal({ region, brand, itemName, qty, issueMonth: month });
+      if (res.isOverBudget) alert(`⚠ เกินงบ! คงเหลือ ${res.status?.RemainingQty}`);
+      onDone();
+    } catch (e: unknown) { setErr((e as Error).message || 'ผิดพลาด'); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: '#0C447C' }}><Gift size={18} /> บันทึกการเบิก — {region}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="space-y-3 text-sm">
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1">ตรา *</label>
+            <select value={brand} onChange={e => { setBrand(e.target.value); setItemName(''); }} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              <option value="">-- เลือก --</option>
+              {brands.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1">รายการ *</label>
+            <select value={itemName} onChange={e => setItemName(e.target.value)} disabled={!brand} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50">
+              <option value="">-- เลือก --</option>
+              {itemsForBrand.map(i => <option key={i.Id} value={i.ItemName}>{i.ItemName} ({TYPE_LABEL[i.ItemType]})</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">จำนวน (ชิ้น) *</label>
+              <input type="number" min={1} value={qty} onChange={e => setQty(parseInt(e.target.value) || 0)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">เดือน</label>
+              <select value={month} onChange={e => setMonth(parseInt(e.target.value))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                {TH_MONTHS.map((m, i) => i > 0 ? <option key={i} value={i}>{m}</option> : null)}
+              </select>
+            </div>
+          </div>
+          {err && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{err}</p>}
+          <button disabled={busy} onClick={submit} className="w-full py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50" style={{ background: '#0C447C' }}>
+            {busy ? 'กำลังบันทึก...' : 'บันทึกการเบิก'}
+          </button>
+          <div className="flex items-center gap-2 text-[11px] text-gray-400">
+            <AlertTriangle size={12} /> หากเบิกเกินงบ ระบบจะเตือนแต่ยังบันทึก (คงเหลือติดลบ)
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

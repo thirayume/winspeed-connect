@@ -3,9 +3,13 @@
   "version": "1.0.0",
   "description": "Root management for Sales Order app",
   "scripts": {
-    "start:backend": "cd backend && node server.js",
+    "start:backend": "cd backend && nodemon server.js",
     "start:frontend": "cd WSSale-App && npm run dev",
-    "dev": "npx concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "dev": "concurrently -n API,WEB -c blue,green \"npm run start:backend\" \"npm run start:frontend\"",
     "build": "cd WSSale-App && npm install && npm run build"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3",
+    "nodemon": "^3.1.14"
   }
 }

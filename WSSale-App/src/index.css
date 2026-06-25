@@ -1,8 +1,28 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-sans: "Prompt", "Inter", system-ui, -apple-system, sans-serif;
+
+  /* Typography Scale Overrides for Tablet / 40yo readability */
+  --text-xs: 0.875rem;
+  --text-xs--line-height: 1.25rem;
+  
+  --text-sm: 1rem;
+  --text-sm--line-height: 1.5rem;
+  
+  --text-base: 1.125rem;
+  --text-base--line-height: 1.75rem;
+
+  --text-lg: 1.25rem;
+  --text-lg--line-height: 1.75rem;
+
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 2rem;
+
+  --text-2xl: 1.875rem;
+  --text-2xl--line-height: 2.25rem;
+
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
