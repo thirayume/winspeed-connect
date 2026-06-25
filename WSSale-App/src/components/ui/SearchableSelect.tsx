@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, ChevronDown, Check } from 'lucide-react';
+import { Search, ChevronDown, Check, X } from 'lucide-react';
 import { cn } from './Base';
 
 interface Option {
@@ -62,11 +62,16 @@ export function SearchableSelect({ options, value, onChange, placeholder = "Sele
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={14} />
                 <input 
                   autoFocus
-                  className="w-full bg-white border border-border rounded-md py-1.5 pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  className="w-full bg-white border border-border rounded-md py-1.5 pl-8 pr-8 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="Type to search..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+                {search && (
+                  <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    <X size={14} />
+                  </button>
+                )}
               </div>
             </div>
             <div className="max-h-60 overflow-y-auto p-1 custom-scrollbar">
