@@ -1,102 +1,201 @@
 import { useEffect, useState, useCallback } from 'react';
-import { FileCheck, RefreshCw, FolderOpen, Coins } from 'lucide-react';
+import { FileCheck, RefreshCw, Coins, Package, ChevronLeft, ChevronRight, Info, CheckCircle } from 'lucide-react';
 import {
-  fetchSalesOrders, syncImported, fetchRebateClaims, approveRebateClaim,
+  fetchRebateClaims, approveRebateClaim,
 } from '../../services/api';
 import { useSocketEvent } from '../../hooks/useSocket';
-import type { SalesOrder, RebateClaim } from '../../types';
+import type { RebateClaim } from '../../types';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+
+type ShippedRow = {
+  Id: number;
+  WfRef: string;
+  CustName: string;
+  DocuDate: string;
+  DocuStatus: string;
+  TotalTon: number;
+  LineCount: number;
+  TruckPlate: string;
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  'Y': 'ชำระแล้ว',
+  'N': 'ค้างชำระ',
+  'P': 'บางส่วน',
+  'C': 'ยกเลิก',
+};
+const STATUS_COLOR: Record<string, string> = {
+  'Y': 'bg-green-100 text-green-700',
+  'N': 'bg-blue-100 text-blue-700',
+  'P': 'bg-yellow-100 text-yellow-700',
+  'C': 'bg-red-100 text-red-500',
+};
+
+function today() {
+  return new Date().toISOString().substring(0, 10);
+}
 
 export function AccountingPage() {
-  const [shipped, setShipped] = useState<SalesOrder[]>([]);
+  const [shipped, setShipped] = useState<ShippedRow[]>([]);
   const [claims, setClaims]   = useState<RebateClaim[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId]   = useState<number | null>(null);
+  const [date, setDate]       = useState(today());
 
-  const load = useCallback(async () => {
+  const getToken = () => localStorage.getItem('wf_token') || '';
+
+  const load = useCallback(async (d = date) => {
     setLoading(true);
     try {
-      const [s, c] = await Promise.all([
-        fetchSalesOrders({ status: 'SHIPPED', limit: 100 }),
+      const [shippedRes, claimsRes] = await Promise.all([
+        fetch(`${API_BASE}/so/shipped-today?date=${d}`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        }).then(r => r.json()),
         fetchRebateClaims('PENDING'),
       ]);
-      setShipped(s.data || []);
-      setClaims(c);
+      setShipped(shippedRes || []);
+      setClaims(claimsRes);
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, []);
-  useEffect(() => { load(); }, [load]);
+  }, [date]);
 
-  // Listen for real-time updates
-  useSocketEvent('so_updated', () => {
-    console.log('[Socket] so_updated event received. Refreshing AccountingPage...');
-    load();
-  });
+  useEffect(() => { load(date); }, []);
 
-  async function doSync(so: SalesOrder) {
-    const docuNo = prompt(`กรอกเลขใบกำกับ WINSpeed (DocuNo) สำหรับ ${so.wfRef}:`);
-    if (!docuNo) return;
-    setBusyId(so.id!);
-    try { await syncImported(so.id!, docuNo); await load(); }
-    catch (e: unknown) { alert((e as Error).message); }
-    finally { setBusyId(null); }
-  }
+  useSocketEvent('so_updated', () => { load(date); });
 
   async function doApprove(claim: RebateClaim) {
-    const cn = prompt(`กรอกเลข CN (Credit Note 109) จาก WINSpeed สำหรับเคลม ฿${Number(claim.ClaimAmt).toLocaleString()}:`);
+    const cn = prompt(`กรอกเลข CN (Credit Note 109) จาก WINSpeed สำหรับเคลม ฿${Number(claim.ClaimAmt).toLocaleString()}:\n(เว้นว่างได้ ถ้าออก CN ในภายหลัง)`);
     if (cn === null) return;
     setBusyId(claim.Id);
-    try { await approveRebateClaim(claim.Id, cn || undefined); await load(); }
+    try { await approveRebateClaim(claim.Id, cn || undefined); await load(date); }
     catch (e: unknown) { alert((e as Error).message); }
     finally { setBusyId(null); }
   }
+
+  const totalTon  = shipped.reduce((s, r) => s + (Number(r.TotalTon) || 0), 0);
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
+      {/* Header */}
       <div className="px-6 py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
-            <FileCheck size={26} /> บัญชี / Sync WINSpeed
+            <FileCheck size={26} /> บัญชี / Winspeed
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">ยืนยัน DocuNo ใบกำกับ · อนุมัติเคลมรีเบท → CN (109)</p>
+          <p className="text-sm text-gray-500 mt-0.5">ออกของวันนี้ · อนุมัติเคลมรีเบท → CN</p>
         </div>
-        <button onClick={load} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white">
-          <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={date}
+            onChange={e => { setDate(e.target.value); load(e.target.value); }}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+          />
+          <button onClick={() => load(date)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
+            <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* SHIPPED → sync DocuNo */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-          <h2 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-            <FolderOpen size={16} /> ใบสั่งขายที่ส่งออกแล้ว (รอ Import เข้า WINSpeed)
-          </h2>
-          {shipped.length === 0 ? (
-            <p className="text-xs text-gray-400 py-6 text-center">ไม่มีรายการรอ sync</p>
+        {/* Auto-sync notice */}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3">
+          <Info size={18} className="text-blue-500 mt-0.5 shrink-0" />
+          <div className="text-sm text-blue-700">
+            <strong>Real-time Sync:</strong> เอกสารทั้งหมดที่สร้างจาก App จะถูก Sync เข้า Winspeed โดยอัตโนมัติเมื่อกด "ยืนยัน" (Confirm) —
+            ไม่ต้องดำเนินการใดๆ เพิ่มเติม เนื่องจาก App และ Winspeed ใช้ฐานข้อมูลเดียวกัน
+          </div>
+        </div>
+
+        {/* Summary cards */}
+        <div className="grid grid-cols-3 gap-4">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-green-50 text-green-600 flex items-center justify-center">
+              <CheckCircle size={20} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-400">ออกของวันนี้</div>
+              <div className="text-2xl font-bold text-gray-800">{shipped.length}</div>
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+              <Package size={20} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-400">รวมตัน</div>
+              <div className="text-2xl font-bold text-gray-800">{totalTon.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center">
+              <Coins size={20} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-400">เคลมรีเบทรออนุมัติ</div>
+              <div className="text-2xl font-bold text-gray-800">{claims.length}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Shipped today */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+              <CheckCircle size={16} className="text-green-500" />
+              ออกของวันที่ {date} (จาก Winspeed)
+            </h2>
+            <span className="text-xs text-gray-400">{shipped.length} เอกสาร</span>
+          </div>
+          {loading ? (
+            <div className="py-12 flex justify-center">
+              <RefreshCw size={24} className="animate-spin text-gray-300" />
+            </div>
+          ) : shipped.length === 0 ? (
+            <p className="text-xs text-gray-400 py-8 text-center">ไม่มีเอกสารออกในวันที่เลือก</p>
           ) : (
-            <div className="space-y-2">
-              {shipped.map(so => (
-                <div key={so.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 bg-gray-50">
-                  <div className="flex-1 min-w-0">
-                    <span className="font-mono text-xs font-bold text-gray-700">{so.wfRef}</span>
-                    <span className="ml-2 text-xs text-gray-500">{so.custName}</span>
-                    {so.importFilePath && (
-                      <div className="text-[10px] text-gray-400 truncate mt-0.5">📁 {so.importFilePath}</div>
-                    )}
-                  </div>
-                  <button disabled={busyId === so.id} onClick={() => doSync(so)}
-                    className="px-3 py-1.5 rounded-lg text-white text-xs font-semibold disabled:opacity-50" style={{ background: '#059669' }}>
-                    กรอก DocuNo → IMPORTED
-                  </button>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                  <tr>
+                    <th className="px-4 py-3 text-left">#</th>
+                    <th className="px-4 py-3 text-left">เลขเอกสาร</th>
+                    <th className="px-4 py-3 text-left">ลูกค้า</th>
+                    <th className="px-4 py-3 text-right">ตัน</th>
+                    <th className="px-4 py-3 text-center">รายการ</th>
+                    <th className="px-4 py-3 text-left">รถ</th>
+                    <th className="px-4 py-3 text-center">สถานะ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {shipped.map((row, i) => (
+                    <tr key={row.Id} className="hover:bg-gray-50/50">
+                      <td className="px-4 py-2.5 text-xs text-gray-400">{i + 1}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs font-semibold text-[#0C447C]">{row.WfRef}</td>
+                      <td className="px-4 py-2.5 text-gray-700 max-w-[180px] truncate" title={row.CustName}>{row.CustName}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-gray-700">
+                        {Number(row.TotalTon).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-4 py-2.5 text-center text-gray-500">{row.LineCount}</td>
+                      <td className="px-4 py-2.5 text-xs text-gray-500">{row.TruckPlate || '-'}</td>
+                      <td className="px-4 py-2.5 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[row.DocuStatus] || 'bg-gray-100 text-gray-500'}`}>
+                          {STATUS_LABEL[row.DocuStatus] || row.DocuStatus}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
 
-        {/* Pending rebate claims → approve with CN */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
+        {/* Rebate claims */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <h2 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-            <Coins size={16} /> เคลมรีเบทรออนุมัติ
+            <Coins size={16} className="text-orange-500" /> เคลมรีเบทรออนุมัติ
           </h2>
           {claims.length === 0 ? (
             <p className="text-xs text-gray-400 py-6 text-center">ไม่มีเคลมรออนุมัติ</p>
@@ -105,13 +204,19 @@ export function AccountingPage() {
               {claims.map(c => (
                 <div key={c.Id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 bg-gray-50">
                   <div className="flex-1">
-                    <span className="text-sm font-bold text-gray-700">฿{Number(c.ClaimAmt).toLocaleString('th-TH',{maximumFractionDigits:0})}</span>
+                    <span className="text-sm font-bold text-gray-700">
+                      ฿{Number(c.ClaimAmt).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                    </span>
                     <span className="ml-2 text-xs text-gray-500">{c.SalesName}</span>
                     {c.Note && <span className="ml-2 text-[10px] text-gray-400">{c.Note}</span>}
                   </div>
-                  <button disabled={busyId === c.Id} onClick={() => doApprove(c)}
-                    className="px-3 py-1.5 rounded-lg text-white text-xs font-semibold disabled:opacity-50" style={{ background: '#0C447C' }}>
-                    อนุมัติ + CN
+                  <button
+                    disabled={busyId === c.Id}
+                    onClick={() => doApprove(c)}
+                    className="px-3 py-1.5 rounded-lg text-white text-xs font-semibold disabled:opacity-50"
+                    style={{ background: '#0C447C' }}
+                  >
+                    {busyId === c.Id ? <RefreshCw size={14} className="animate-spin" /> : 'อนุมัติ + CN'}
                   </button>
                 </div>
               ))}
