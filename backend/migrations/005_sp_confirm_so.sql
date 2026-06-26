@@ -15,12 +15,13 @@ BEGIN
     DECLARE @WfRef NVARCHAR(30), @SoPrefix NVARCHAR(5), @CustId NVARCHAR(20), @CustName NVARCHAR(200);
     DECLARE @TruckPlate NVARCHAR(30), @ControlTicketNo NVARCHAR(20), @DeliveryDate DATE, @Remark NVARCHAR(500);
     DECLARE @SalesUserId INT, @ImportFilePath NVARCHAR(500), @CreatedAt DATETIME2;
+    DECLARE @RebateDiscountAmt DECIMAL(12,2);
 
     SELECT 
         @WfRef = WfRef, @SoPrefix = SoPrefix, @CustId = CustId, @CustName = CustName,
         @TruckPlate = TruckPlate, @ControlTicketNo = ControlTicketNo, @DeliveryDate = DeliveryDate,
         @Remark = Remark, @SalesUserId = SalesUserId, @ImportFilePath = ImportFilePath,
-        @CreatedAt = CreatedAt
+        @CreatedAt = CreatedAt, @RebateDiscountAmt = RebateDiscountAmt
     FROM wf.SalesOrder
     WHERE Id = @SoId AND Status = 'DRAFT';
 
@@ -50,6 +51,7 @@ BEGIN
         -- 3. INSERT INTO dbo.SOHD
         DECLARE @TotalAmnt DECIMAL(18,2);
         SELECT @TotalAmnt = SUM(QtyTon * PricePerTon) FROM wf.SalesOrderLine WHERE SoId = @SoId;
+        SET @TotalAmnt = @TotalAmnt - ISNULL(@RebateDiscountAmt, 0);
 
         INSERT INTO dbo.SOHD (
             SOID, DocuNo, CustID, DocuDate, NetAmnt, AppvFlag, PkgStatus, clearflag, EmpID, BrchID,
@@ -77,10 +79,10 @@ BEGIN
 
         -- 5. INSERT INTO wf.SalesOrderExt
         INSERT INTO wf.SalesOrderExt (
-            SOID, WfRef, SoPrefix, SalesUserId, ControlTicketNo, DeliveryDate, ImportFilePath, CreatedAt, UpdatedAt
+            SOID, WfRef, SoPrefix, SalesUserId, ControlTicketNo, DeliveryDate, ImportFilePath, CreatedAt, UpdatedAt, RebateDiscountAmt
         )
         VALUES (
-            @NewSoid, @WfRef, @SoPrefix, @SalesUserId, @ControlTicketNo, @DeliveryDate, @ImportFilePath, @CreatedAt, GETUTCDATE()
+            @NewSoid, @WfRef, @SoPrefix, @SalesUserId, @ControlTicketNo, @DeliveryDate, @ImportFilePath, @CreatedAt, GETUTCDATE(), ISNULL(@RebateDiscountAmt, 0)
         );
 
         -- 6. INSERT INTO wf.SalesOrderLineExt
