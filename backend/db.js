@@ -49,6 +49,8 @@ function remoteConfig() {
       server,
       port,
       database: DB,
+      requestTimeout:    30000,
+      connectionTimeout: 15000,
       options: { encrypt: true, trustServerCertificate: true },
       pool: { max: 10, min: 0, idleTimeoutMillis: 30000 }
     };
