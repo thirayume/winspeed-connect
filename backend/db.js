@@ -62,6 +62,9 @@ function makeTarget(target) {
   // ⚠ ต้องสร้าง config แยก object ต่อ pool — msnodesqlv8 mutate config (แชร์ object → pool ที่ 2 hang)
   const readerPool = new sql.ConnectionPool(cfgFn());
   const ownerPool  = new sql.ConnectionPool(cfgFn());
+  // Handle pool-level errors so they don't become uncaught exceptions that corrupt process state
+  readerPool.on('error', (e) => console.error(`[DB] readerPool (${target}) error:`, e.message));
+  ownerPool.on('error',  (e) => console.error(`[DB] ownerPool (${target}) error:`, e.message));
   const ready = Promise.all([readerPool.connect(), ownerPool.connect()])
     .then(() => { console.log(`✓ DB pools connected — ${target}`); })
     .catch(e => { console.error(`✗ DB ${target} connect failed:`, e.message); throw e; });
