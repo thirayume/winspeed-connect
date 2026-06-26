@@ -9,7 +9,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 
 router.use(requireAuth);
 
-const YEAR = (q) => Number(q) || 2569;
+const YEAR = (q) => Number(q) || new Date().getFullYear();
 
 // GET /api/giveaway/regions?year= — สรุปต่อภาค (พนักงาน)
 router.get('/regions', async (req, res) => {

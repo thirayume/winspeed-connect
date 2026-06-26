@@ -135,6 +135,18 @@ export const fetchInvoices = (params?: { custId?: string; dateFrom?: string; dat
 
 export const fetchAgingOrders = (bust = false) => req<AgingRow[]>(`/master/aging${bust ? '?bust=1' : ''}`);
 
+export const searchAgingOrders = (params: {
+  q?: string; status?: string; page?: number; pageSize?: number; dateFrom?: string;
+}) => {
+  const qs = new URLSearchParams();
+  if (params.q)        qs.set('q',        params.q);
+  if (params.status)   qs.set('status',   params.status);
+  if (params.page)     qs.set('page',     String(params.page));
+  if (params.pageSize) qs.set('pageSize', String(params.pageSize));
+  if (params.dateFrom) qs.set('dateFrom', params.dateFrom);
+  return req<PaginatedResult<AgingRow>>(`/master/aging/search?${qs}`);
+};
+
 // ── Sales Orders ──────────────────────────────────────────────
 export const fetchSalesOrders = (params?: {
   status?: string; custId?: string; search?: string; page?: number; limit?: number; silent?: boolean;
