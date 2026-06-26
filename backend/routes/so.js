@@ -146,69 +146,93 @@ router.get('/:id', async (req, res) => {
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
 
-// ── POST /api/so — Create DRAFT ──────────────────────────────
+// ── POST /api/so — Create DRAFT (Supports Single or Grouped Multi-Bill) ──
 router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res) => {
   try {
-    const { soPrefix, custId, custName, truckPlate, controlTicketNo, deliveryDate, remark, lines, salesUserId: impersonatedId } = req.body;
-    if (!custId || !lines?.length) return res.status(400).json({ message: 'custId และ lines จำเป็น' });
-    if (!['I', 'K', 'AI'].includes(soPrefix)) return res.status(400).json({ message: 'soPrefix ต้องเป็น I / K / AI' });
+    const orders = Array.isArray(req.body) ? req.body : [req.body];
+    if (orders.length === 0) return res.status(400).json({ message: 'ไม่มีข้อมูลคำสั่งซื้อ' });
 
-    // price deviation check
-    const devLine = lines.find(l => !l.isGiveaway && (Number(l.pricePerTon) < Number(l.netPricePerTon) - 500));
-    const needsApproval = !!devLine;
+    for (const order of orders) {
+      if (!order.custId || !order.lines?.length) return res.status(400).json({ message: 'custId และ lines จำเป็น' });
+      if (!['I', 'K', 'AI'].includes(order.soPrefix)) return res.status(400).json({ message: 'soPrefix ต้องเป็น I / K / AI' });
+    }
 
-    // generate WfRef
-    const seqR = await wfQuery(`SELECT NEXT VALUE FOR wf.WfRefSeq AS Seq`);
-    const seq = String(seqR.recordset[0].Seq).padStart(6, '0');
-    const yy = (new Date().getFullYear() + 543 - 2500).toString().slice(-2);
-    const wfRef = `WF${yy}${soPrefix}-${seq}`;
+    const createdIds = [];
+    const createdRefs = [];
+    let anyNeedsApproval = false;
 
-    const result = await wfTransaction(async tx => {
-      const soReq = tx.request();
-      soReq.input('wfRef',            sql.NVarChar(30),  wfRef);
-      soReq.input('soPrefix',         sql.NVarChar(5),   soPrefix);
-      soReq.input('custId',           sql.NVarChar(20),  custId);
-      soReq.input('custName',         sql.NVarChar(200), custName || '');
-      soReq.input('truckPlate',       sql.NVarChar(30),  truckPlate || null);
-      soReq.input('controlTicketNo',  sql.NVarChar(20),  controlTicketNo || null);
-      soReq.input('deliveryDate',     sql.Date,          deliveryDate ? new Date(deliveryDate) : null);
-      soReq.input('remark',           sql.NVarChar(500), remark || null);
-      const actualSalesUserId = (req.user.role === 'ADMIN' && impersonatedId) ? Number(impersonatedId) : req.user.sub;
-      soReq.input('salesUserId',      sql.Int,           actualSalesUserId);
-      soReq.input('needsApproval',    sql.Bit,           needsApproval ? 1 : 0);
+    await wfTransaction(async tx => {
+      for (const order of orders) {
+        const { soPrefix, custId, custName, truckPlate, controlTicketNo, deliveryDate, remark, lines, salesUserId: impersonatedId } = order;
 
-      const soR = await soReq.query(`
-        INSERT INTO wf.SalesOrder
-          (WfRef, SoPrefix, CustId, CustName, TruckPlate, ControlTicketNo, DeliveryDate, Remark, SalesUserId, Status)
-          OUTPUT inserted.Id
-        VALUES (@wfRef, @soPrefix, @custId, @custName, @truckPlate, @controlTicketNo, @deliveryDate, @remark, @salesUserId, 'DRAFT')
-      `);
-      const soId = soR.recordset[0].Id;
+        // price deviation check
+        const devLine = lines.find(l => !l.isGiveaway && (Number(l.pricePerTon) < Number(l.netPricePerTon) - 500));
+        const needsApproval = !!devLine;
+        if (needsApproval) anyNeedsApproval = true;
 
-      for (let i = 0; i < lines.length; i++) {
-        const l = lines[i];
-        const lr = tx.request();
-        lr.input('soId',           sql.Int,          soId);
-        lr.input('lineNum',        sql.Int,          i + 1);
-        lr.input('goodId',         sql.NVarChar(20), l.goodId);
-        lr.input('goodName',       sql.NVarChar(200), l.goodName || '');
-        lr.input('goodCode',       sql.NVarChar(50), l.goodCode || '');
-        lr.input('qtyTon',         sql.Decimal(12,3), Number(l.qtyTon));
-        lr.input('qtyBag',         sql.Int,           Number(l.qtyBag) || Math.round(l.qtyTon * 20));
-        lr.input('pricePerTon',    sql.Decimal(12,2), Number(l.pricePerTon));
-        lr.input('netPricePerTon', sql.Decimal(12,2), Number(l.netPricePerTon) || 0);
-        lr.input('isGiveaway',     sql.Bit,           l.isGiveaway ? 1 : 0);
-        await lr.query(`
-          INSERT INTO wf.SalesOrderLine
-            (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, PricePerTon, NetPricePerTon, IsGiveaway)
-          VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @pricePerTon, @netPricePerTon, @isGiveaway)
+        // generate WfRef
+        const seqR = await tx.request().query(`SELECT NEXT VALUE FOR wf.WfRefSeq AS Seq`);
+        const seq = String(seqR.recordset[0].Seq).padStart(6, '0');
+        const yy = (new Date().getFullYear() + 543 - 2500).toString().slice(-2);
+        const wfRef = `WF${yy}${soPrefix}-${seq}`;
+
+        const soReq = tx.request();
+        soReq.input('wfRef',            sql.NVarChar(30),  wfRef);
+        soReq.input('soPrefix',         sql.NVarChar(5),   soPrefix);
+        soReq.input('custId',           sql.NVarChar(20),  custId);
+        soReq.input('custName',         sql.NVarChar(200), custName || '');
+        soReq.input('truckPlate',       sql.NVarChar(30),  truckPlate || null);
+        soReq.input('controlTicketNo',  sql.NVarChar(20),  controlTicketNo || null);
+        soReq.input('deliveryDate',     sql.Date,          deliveryDate ? new Date(deliveryDate) : null);
+        soReq.input('remark',           sql.NVarChar(500), remark || null);
+        const actualSalesUserId = (req.user.role === 'ADMIN' && impersonatedId) ? Number(impersonatedId) : req.user.sub;
+        soReq.input('salesUserId',      sql.Int,           actualSalesUserId);
+
+        const soR = await soReq.query(`
+          INSERT INTO wf.SalesOrder
+            (WfRef, SoPrefix, CustId, CustName, TruckPlate, ControlTicketNo, DeliveryDate, Remark, SalesUserId, Status)
+            OUTPUT inserted.Id
+          VALUES (@wfRef, @soPrefix, @custId, @custName, @truckPlate, @controlTicketNo, @deliveryDate, @remark, @salesUserId, 'DRAFT')
         `);
+        const soId = soR.recordset[0].Id;
+        createdIds.push(soId);
+        createdRefs.push(wfRef);
+
+        for (let i = 0; i < lines.length; i++) {
+          const l = lines[i];
+          const lr = tx.request();
+          lr.input('soId',                 sql.Int,           soId);
+          lr.input('lineNum',              sql.Int,           i + 1);
+          lr.input('goodId',               sql.NVarChar(20),  l.goodId);
+          lr.input('goodName',             sql.NVarChar(200), l.goodName || '');
+          lr.input('goodCode',             sql.NVarChar(50),  l.goodCode || '');
+          lr.input('qtyTon',               sql.Decimal(12,3), Number(l.qtyTon));
+          lr.input('qtyBag',               sql.Int,           Number(l.qtyBag) || Math.round(l.qtyTon * 20));
+          lr.input('pricePerTon',          sql.Decimal(12,2), Number(l.pricePerTon));
+          lr.input('netPricePerTon',       sql.Decimal(12,2), Number(l.netPricePerTon) || 0);
+          lr.input('isGiveaway',           sql.Bit,           l.isGiveaway ? 1 : 0);
+          lr.input('refControlTicketNo',   sql.NVarChar(30),  l.refControlTicketNo || null);
+          lr.input('isControlTicketDrawn', sql.Bit,           l.isControlTicketDrawn ? 1 : 0);
+          
+          await lr.query(`
+            INSERT INTO wf.SalesOrderLine
+              (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, PricePerTon, NetPricePerTon, IsGiveaway, RefControlTicketNo, IsControlTicketDrawn)
+            VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @pricePerTon, @netPricePerTon, @isGiveaway, @refControlTicketNo, @isControlTicketDrawn)
+          `);
+        }
       }
-      return soId;
     });
 
-    await audit(null, result, req.user.sub, 'CREATED', null, 'DRAFT', null, req.ip);
-    res.json({ id: result, wfRef, needsApproval });
+    for (const soId of createdIds) {
+      await audit(null, soId, req.user.sub, 'CREATED', null, 'DRAFT', null, req.ip);
+    }
+
+    // For backwards compatibility, if they sent an array, return array format. Otherwise return single object format.
+    if (Array.isArray(req.body)) {
+      res.json({ ids: createdIds, wfRefs: createdRefs, needsApproval: anyNeedsApproval });
+    } else {
+      res.json({ id: createdIds[0], wfRef: createdRefs[0], needsApproval: anyNeedsApproval });
+    }
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
