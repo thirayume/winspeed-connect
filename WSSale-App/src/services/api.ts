@@ -226,6 +226,20 @@ export const approveRebateClaim = (id: number, docuNo?: string) =>
 
 export const fetchRebateSummary = () => req<RebateSummary[]>('/rebate/summary');
 
+// ── CN Rebate (dbo) ───────────────────────────────────────────
+export const fetchCnRebateSummary = (params?: { year?: number; empId?: number }) => {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params || {}).filter(([,v]) => v !== undefined).map(([k,v])=>[k,String(v)]))).toString();
+  return req<import('../types').CnRebateSummary[]>(`/rebate/cn-summary${qs ? `?${qs}` : ''}`);
+};
+
+export const fetchCnRebateList = (params?: { year?: number; empId?: number; custId?: string }) => {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params || {}).filter(([,v]) => v !== undefined).map(([k,v])=>[k,String(v)]))).toString();
+  return req<import('../types').CnRebateRow[]>(`/rebate/cn-list${qs ? `?${qs}` : ''}`);
+};
+
+export const fetchCnRebateDetail = (soInvId: number) =>
+  req<import('../types').CnRebateDetail[]>(`/rebate/cn-detail/${soInvId}`);
+
 export const fetchVoucherSummary = () =>
   req<import('../types').VoucherSummary[]>('/rebate/voucher-summary');
 
