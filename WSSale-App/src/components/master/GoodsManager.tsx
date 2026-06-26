@@ -1,10 +1,13 @@
 import { useEffect, useState, Fragment, useMemo } from 'react';
 import { Package, Search, Image as ImageIcon, Edit2, Save, X, RefreshCw, Upload, Tag, Trash2, ArrowUpDown } from 'lucide-react';
-import { fetchGoods, updateGood, fetchPrices } from '../../services/api';
+import { fetchGoods, updateGood, fetchPrices, getToken } from '../../services/api';
 import { useAppStore } from '../../store/app-store';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { DeleteConfirmModal } from '../ui/DeleteConfirmModal';
 import type { EMGood, EMSetPriceDT } from '../../types';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+
 
 export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: string) => void }) => {
   const [goods, setGoods] = useState<EMGood[]>([]);
@@ -122,9 +125,9 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
     if (!deletingId) return;
     setDeleteLoading(true);
     try {
-      await fetch(`http://localhost:3000/api/master/goods/${deletingId}`, { 
+      await fetch(`${API_BASE}/master/goods/${deletingId}`, { 
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('wssale_token')}` }
+        headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       setGoods(prev => prev.filter(g => g.GoodID !== deletingId));
       setDeletingId(null);
