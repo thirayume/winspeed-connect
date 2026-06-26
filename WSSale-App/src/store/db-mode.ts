@@ -12,9 +12,13 @@ const KEY = 'wssale_dbmode';
 
 export function getDbMode(): DbMode {
   const saved = (typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) : null) as DbMode | null;
-  if (saved === 'mock' || saved === 'local' || saved === 'remote') return saved;
-  // บังคับให้ใช้ข้อมูลจริงจากฐานข้อมูลเสมอตามความต้องการของผู้ใช้
-  return 'local';
+  const isProd = import.meta.env?.PROD;
+
+  if (saved === 'mock' || saved === 'local' || saved === 'remote') {
+    if (isProd && saved === 'local') return 'remote';
+    return saved;
+  }
+  return isProd ? 'remote' : 'local';
 }
 
 export function setDbMode(m: DbMode) {
