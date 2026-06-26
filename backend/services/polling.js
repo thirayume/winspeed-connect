@@ -61,12 +61,14 @@ function startPolling() {
   console.log(`[Polling] Started background polling every ${INTERVAL_MS}ms`);
   
   // Initial check to populate state without broadcasting
-  Promise.all([checkControlTickets(), checkAgingOrders()]).then(() => {
-    pollingInterval = setInterval(() => {
-      checkControlTickets();
-      checkAgingOrders();
-    }, INTERVAL_MS);
-  });
+  Promise.all([checkControlTickets(), checkAgingOrders()])
+    .catch((e) => console.error('[Polling] Initial check error:', e.message))
+    .then(() => {
+      pollingInterval = setInterval(() => {
+        checkControlTickets();
+        checkAgingOrders();
+      }, INTERVAL_MS);
+    });
 }
 
 function stopPolling() {

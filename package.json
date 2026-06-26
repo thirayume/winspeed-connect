@@ -1,22 +1,22 @@
-{
-  "name": "winspeed-erp-root",
-  "version": "4.2.0",
-  "description": "Root management for Sales Order app",
-  "scripts": {
-    "start:backend": "cd backend && nodemon server.js",
-    "start:frontend": "cd WSSale-App && npm run dev",
-    "dev": "concurrently -n API,WEB -c blue,green \"npm run start:backend\" \"npm run start:frontend\"",
-    "build": "cd WSSale-App && npm install && npm run build",
-    "migrate": "cd backend && node run_migrations.js",
-    "migrate:remote": "cd backend && cross-env DB_MODE=remote node run_migrations.js",
-    "deploy": "powershell -ExecutionPolicy Bypass -File deploy.ps1",
-    "deploy:minor": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -BumpType minor",
-    "deploy:major": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -BumpType major",
-    "deploy:skip-migrate": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -SkipMigration",
-    "deploy:dry": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -DryRun"
-  },
-  "devDependencies": {
-    "concurrently": "^10.0.3",
-    "nodemon": "^3.1.14"
-  }
+﻿{
+    "name":  "winspeed-erp-root",
+    "version":  "4.2.1",
+    "description":  "Root management for Sales Order app",
+    "scripts":  {
+                    "start:backend":  "cd backend \u0026\u0026 nodemon server.js",
+                    "start:frontend":  "cd WSSale-App \u0026\u0026 npm run dev",
+                    "dev":  "concurrently -n API,WEB -c blue,green \"npm run start:backend\" \"npm run start:frontend\"",
+                    "build":  "cd WSSale-App \u0026\u0026 npm install \u0026\u0026 npm run build",
+                    "migrate":  "cd backend \u0026\u0026 node run_migrations.js",
+                    "migrate:remote":  "cd backend \u0026\u0026 cross-env DB_MODE=remote node run_migrations.js",
+                    "deploy":  "powershell -ExecutionPolicy Bypass -File deploy.ps1",
+                    "deploy:minor":  "powershell -ExecutionPolicy Bypass -File deploy.ps1 -BumpType minor",
+                    "deploy:major":  "powershell -ExecutionPolicy Bypass -File deploy.ps1 -BumpType major",
+                    "deploy:skip-migrate":  "powershell -ExecutionPolicy Bypass -File deploy.ps1 -SkipMigration",
+                    "deploy:dry":  "powershell -ExecutionPolicy Bypass -File deploy.ps1 -DryRun"
+                },
+    "devDependencies":  {
+                            "concurrently":  "^10.0.3",
+                            "nodemon":  "^3.1.14"
+                        }
 }
