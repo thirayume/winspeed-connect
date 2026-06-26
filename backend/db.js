@@ -12,7 +12,11 @@
  */
 require('dotenv').config();
 const { AsyncLocalStorage } = require('async_hooks');
-const sql = require('mssql/msnodesqlv8');
+const os = require('os');
+const isWindows = os.platform() === 'win32';
+
+// Use msnodesqlv8 on Windows for Windows Auth support, standard tedious on Linux (Railway/Render)
+const sql = isWindows ? require('mssql/msnodesqlv8') : require('mssql');
 
 const DEFAULT_TARGET = (process.env.DB_MODE || 'local').toLowerCase() === 'remote' ? 'remote' : 'local';
 const DB = process.env.DB_NAME || 'dbwins_worldfert9';
@@ -29,13 +33,26 @@ function localConfig() {
 }
 function remoteConfig() {
   const server = process.env.REMOTE_DB_SERVER || '20.255.185.14';
-  const port   = process.env.REMOTE_DB_PORT || 1433;
+  const port   = parseInt(process.env.REMOTE_DB_PORT || '1433', 10);
   const user   = process.env.REMOTE_DB_USER || 'sa';
   const pwd    = process.env.REMOTE_DB_PASSWORD || '';
-  const connectionString =
-    `Driver={ODBC Driver 17 for SQL Server};Server=${server},${port};Database=${DB};` +
-    `Uid=${user};Pwd={${pwd}};Encrypt=yes;TrustServerCertificate=yes;`;
-  return { connectionString, pool: { max: 10, min: 0, idleTimeoutMillis: 30000 } };
+  
+  if (isWindows) {
+    const connectionString =
+      `Driver={ODBC Driver 17 for SQL Server};Server=${server},${port};Database=${DB};` +
+      `Uid=${user};Pwd={${pwd}};Encrypt=yes;TrustServerCertificate=yes;`;
+    return { connectionString, pool: { max: 10, min: 0, idleTimeoutMillis: 30000 } };
+  } else {
+    return {
+      user,
+      password: pwd,
+      server,
+      port,
+      database: DB,
+      options: { encrypt: true, trustServerCertificate: true },
+      pool: { max: 10, min: 0, idleTimeoutMillis: 30000 }
+    };
+  }
 }
 
 // registry: target -> { readerPool, ownerPool, ready }
