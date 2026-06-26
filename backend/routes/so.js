@@ -75,10 +75,16 @@ let _statsCache = null;
 let _statsCacheAt = 0;
 const STATS_TTL = 5 * 60 * 1000;
 
+router.delete('/stats/cache', requireRole('ADMIN'), (req, res) => {
+  _statsCache = null; _statsCacheAt = 0;
+  res.json({ ok: true, message: 'Stats cache cleared' });
+});
+
 router.get('/stats', async (req, res) => {
   try {
     const now = Date.now();
-    if (_statsCache && now - _statsCacheAt < STATS_TTL) return res.json(_statsCache);
+    const bust = req.query.bust === '1';
+    if (!bust && _statsCache && now - _statsCacheAt < STATS_TTL) return res.json(_statsCache);
 
     const r = await wfQuery(`
       SELECT Status, COUNT(*) AS Cnt

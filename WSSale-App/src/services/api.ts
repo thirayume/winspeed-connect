@@ -133,7 +133,7 @@ export const fetchInvoices = (params?: { custId?: string; dateFrom?: string; dat
   return req<unknown[]>(`/master/invoices${qs ? `?${qs}` : ''}`);
 };
 
-export const fetchAgingOrders = () => req<AgingRow[]>('/master/aging');
+export const fetchAgingOrders = (bust = false) => req<AgingRow[]>(`/master/aging${bust ? '?bust=1' : ''}`);
 
 // ── Sales Orders ──────────────────────────────────────────────
 export const fetchSalesOrders = (params?: {
@@ -148,8 +148,8 @@ export const fetchSalesOrders = (params?: {
 
 export const fetchSalesOrder = (id: number) => req<SalesOrder>(`/so/${id}`);
 
-export const fetchSoStats = () =>
-  req<{ byStatus: Record<string, number>; total: number }>('/so/stats');
+export const fetchSoStats = (bust = false) =>
+  req<{ byStatus: Record<string, number>; total: number }>(`/so/stats${bust ? '?bust=1' : ''}`);
 
 export const getRebateBalance = (custId: string) =>
   req<{ availableRebate: number }>(`/so/rebate-balance/${custId}`, { silent: true });

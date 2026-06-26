@@ -530,7 +530,8 @@ const AGING_TTL = 5 * 60 * 1000;
 router.get('/aging', async (req, res) => {
   try {
     const now = Date.now();
-    if (_agingCache && now - _agingCacheAt < AGING_TTL) return res.json(_agingCache);
+    const bust = req.query.bust === '1';
+    if (!bust && _agingCache && now - _agingCacheAt < AGING_TTL) return res.json(_agingCache);
 
     const { wfQuery: wq } = require('../db');
     const result = await wq(`
