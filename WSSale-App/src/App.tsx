@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell, LogOut,
-  Users, LayoutDashboard, Coins, FileCheck, Gift, FileText, LayoutGrid, Database
+  Users, LayoutDashboard, Coins, FileCheck, Gift, FileText, LayoutGrid, Database, Clock
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { SalesPortal } from './components/sales/SalesPortal';
@@ -14,6 +14,7 @@ import { QuotationPage } from './components/quotation/QuotationPage';
 import { PaperTrailPage } from './components/papertrail/PaperTrailPage';
 import { AdminUsersPage } from './components/admin/AdminUsersPage';
 import { MasterDataPortal } from './components/master/MasterDataPortal';
+import { AgingPage } from './components/aging/AgingPage';
 import { useErpStore } from './store/erp-store';
 import { useAuthStore } from './store/auth-store';
 import { fetchUnlockRequests, getMe } from './services/api';
@@ -23,7 +24,7 @@ import { DbModeSwitch } from './components/common/DbModeSwitch';
 import { useAppStore } from './store/app-store';
 import { GlobalLoader } from './components/common/GlobalLoader';
 
-export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'accounting' | 'giveaway' | 'admin' | 'master';
+export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'accounting' | 'giveaway' | 'aging' | 'admin' | 'master';
 
 type NavItem = {
   key: PortalKey;
@@ -43,6 +44,7 @@ const NAV: NavItem[] = [
   { key: 'rebate',     label: 'รีเบท',       sub: 'Pool · เคลม',          icon: Coins },
   { key: 'accounting', label: 'บัญชี',       sub: 'Sync · อนุมัติ CN',    icon: FileCheck, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER'] },
   { key: 'giveaway',   label: 'ของแถม',      sub: 'งบรายภาค · เบิก',     icon: Gift },
+  { key: 'aging',      label: 'ตั๋วคงค้าง',   sub: 'SO คงค้าง · ค้นหา',   icon: Clock },
   { key: 'admin',      label: 'ผู้ใช้งาน',    sub: 'Map พนักงาน',         icon: Users, roles: ['ADMIN'] },
   { key: 'master',     label: 'ข้อมูลหลัก',  sub: 'สินค้า · ลูกค้า',       icon: Database, roles: ['ADMIN'] },
 ];
@@ -199,6 +201,7 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
               {activePortal === 'rebate'     && <RebatePage />}
               {activePortal === 'accounting' && <AccountingPage />}
               {activePortal === 'giveaway'   && <GiveawayPage />}
+              {activePortal === 'aging'      && <AgingPage />}
               {activePortal === 'admin'      && role === 'ADMIN' && <AdminUsersPage />}
               {activePortal === 'master'     && role === 'ADMIN' && <MasterDataPortal />}
             </div>

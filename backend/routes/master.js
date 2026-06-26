@@ -522,7 +522,7 @@ router.get('/invoices', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/master/aging — dashboard SO คงค้าง (เฉพาะ 180 วันล่าสุด, max 200 rows)
+// GET /api/master/aging — dashboard SO คงค้าง (TOP 200, 2 ปีจาก Jan 1)
 let _agingCache = null;
 let _agingCacheAt = 0;
 const AGING_TTL = 5 * 60 * 1000;
@@ -536,20 +536,76 @@ router.get('/aging', async (req, res) => {
     const { wfQuery: wq } = require('../db');
     const result = await wq(`
       SELECT TOP 200
-             so.CustName, sol.GoodCode,
+             so.CustName, sol.GoodCode, sol.GoodName,
              SUM(sol.QtyTon)  AS QtyTon,
              DATEDIFF(DAY, so.CreatedAt, GETUTCDATE()) AS DaysOpen,
-             so.Status, so.WfRef, CAST(so.Id AS VARCHAR(50)) AS SoId
+             so.Status, so.WfRef, CAST(so.Id AS VARCHAR(50)) AS SoId,
+             so.CreatedAt
       FROM wf.v_AllSalesOrders so
       JOIN wf.v_AllSalesOrderLines sol ON sol.SoId = so.Id
-      WHERE so.Status NOT IN ('IMPORTED','CANCELLED')
-        AND so.CreatedAt >= DATEADD(DAY, -180, GETUTCDATE())
-      GROUP BY so.CustName, sol.GoodCode, so.CreatedAt, so.Status, so.WfRef, so.Id
+      WHERE so.Status NOT IN ('IMPORTED','CANCELLED','SHIPPED')
+        AND so.CreatedAt >= DATEFROMPARTS(YEAR(GETDATE())-2, 1, 1)
+      GROUP BY so.CustName, sol.GoodCode, sol.GoodName, so.CreatedAt, so.Status, so.WfRef, so.Id
       ORDER BY DaysOpen DESC
     `);
     _agingCache = result.recordset || [];
     _agingCacheAt = now;
     res.json(_agingCache);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/master/aging/search — full aging search with pagination
+// query params: q (search), status (comma-sep), page (default 1), pageSize (default 50), dateFrom (YYYY-MM-DD)
+router.get('/aging/search', async (req, res) => {
+  try {
+    const { wfQuery: wq } = require('../db');
+    const page     = Math.max(1, parseInt(req.query.page)     || 1);
+    const pageSize = Math.min(200, Math.max(10, parseInt(req.query.pageSize) || 50));
+    const q        = (req.query.q || '').trim();
+    const dateFrom = req.query.dateFrom || `${new Date().getFullYear() - 2}-01-01`;
+    const statusRaw = (req.query.status || '').trim();
+    const statuses = statusRaw ? statusRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const offset   = (page - 1) * pageSize;
+
+    // Build WHERE clauses
+    const conditions = [
+      `so.CreatedAt >= @dateFrom`,
+      `so.Status NOT IN ('IMPORTED','CANCELLED')`,
+    ];
+    if (statuses.length) {
+      conditions.push(`so.Status IN (${statuses.map(s => `'${s.replace(/'/g,"''"  )}'`).join(',')})`);
+    }
+    if (q) {
+      conditions.push(`(so.CustName LIKE @q OR so.WfRef LIKE @q OR sol.GoodCode LIKE @q OR sol.GoodName LIKE @q)`);
+    }
+    const where = conditions.join(' AND ');
+
+    const inputs = { dateFrom: { type: sql.Date, value: new Date(dateFrom) } };
+    if (q) inputs.q = { type: sql.NVarChar(200), value: `%${q}%` };
+
+    const countResult = await wq(`
+      SELECT COUNT(DISTINCT so.Id) AS Total
+      FROM wf.v_AllSalesOrders so
+      JOIN wf.v_AllSalesOrderLines sol ON sol.SoId = so.Id
+      WHERE ${where}
+    `, inputs);
+    const total = countResult.recordset[0]?.Total || 0;
+
+    const dataResult = await wq(`
+      SELECT so.CustName, sol.GoodCode, sol.GoodName,
+             SUM(sol.QtyTon) AS QtyTon,
+             DATEDIFF(DAY, so.CreatedAt, GETUTCDATE()) AS DaysOpen,
+             so.Status, so.WfRef, CAST(so.Id AS VARCHAR(50)) AS SoId,
+             CONVERT(VARCHAR(10), so.CreatedAt, 120) AS CreatedAt
+      FROM wf.v_AllSalesOrders so
+      JOIN wf.v_AllSalesOrderLines sol ON sol.SoId = so.Id
+      WHERE ${where}
+      GROUP BY so.CustName, sol.GoodCode, sol.GoodName, so.CreatedAt, so.Status, so.WfRef, so.Id
+      ORDER BY DaysOpen DESC
+      OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY
+    `, { ...inputs, offset: { type: sql.Int, value: offset }, pageSize: { type: sql.Int, value: pageSize } });
+
+    res.json({ total, page, pageSize, data: dataResult.recordset || [] });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 

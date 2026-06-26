@@ -306,11 +306,13 @@ export type TruckHistoryItem = {
 export type AgingRow = {
   CustName: string;
   GoodCode: string;
+  GoodName?: string;
   QtyTon: number;
   DaysOpen: number;
   Status: SOStatus;
   WfRef: string;
   SoId: string | number;
+  CreatedAt?: string;
 };
 
 // ── Unlock (Picking-phase edit approval) ──────────────────────
