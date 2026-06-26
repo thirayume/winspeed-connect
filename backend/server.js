@@ -23,25 +23,20 @@ initSocket(server);
 
 // Start Database Polling
 startPolling();
-// CORS_ORIGIN รองรับหลายค่าคั่นด้วย comma หรือ '*'
-// ตัวอย่าง: CORS_ORIGIN=https://winspeed-connect.vercel.app,http://localhost:5173
-const allowedOrigins = (process.env.CORS_ORIGIN || '*').split(',').map(s => s.trim());
-const isWildcard = allowedOrigins.includes('*');
+// CORS — supports comma-separated origins or '*'
+// Set CORS_ORIGIN in env, e.g.: https://winspeed-connect.vercel.app,http://localhost:5173
+const rawOrigins = (process.env.CORS_ORIGIN || '*').split(',').map(s => s.trim());
+const isWildcard = rawOrigins.includes('*');
 
-app.use(cors({
-  origin: isWildcard
-    ? '*'
-    : (origin, cb) => {
-        // allow server-to-server (no origin) or whitelisted origins
-        if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-        cb(new Error(`CORS: origin "${origin}" not allowed`));
-      },
+const corsOptions = {
+  origin: isWildcard ? true : rawOrigins,  // true = reflect request origin (for credentials)
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-DB-Target'],
-  credentials: !isWildcard,
-}));
-// Explicit preflight handler — use regex for Express 5 compatibility
-app.options(/.*/, cors());
+  credentials: true,
+  optionsSuccessStatus: 200, // some legacy browsers choke on 204
+};
+app.use(cors(corsOptions));
+
 
 app.use(express.json({ limit: '2mb' }));
 
