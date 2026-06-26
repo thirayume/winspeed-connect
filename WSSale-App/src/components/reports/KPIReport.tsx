@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart3, AlertTriangle, TrendingUp, Users } from 'lucide-react';
 import { Card, cn } from '../ui/Base';
+import { getToken } from '../../services/api';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+
 
 interface KPIEntry {
   Sales: string;
@@ -15,7 +19,7 @@ export function KPIReport() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:3000/api/reports/kpi')
+    fetch(`${API_BASE}/reports/kpi`)
       .then(res => res.json())
       .then(setData)
       .finally(() => setLoading(false));

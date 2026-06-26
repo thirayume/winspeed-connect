@@ -1,9 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Search, Edit2, Save, X, RefreshCw, Truck, Trash2, Users, UserCheck, ArrowUpDown, Phone } from 'lucide-react';
-import { fetchCustomers, updateCustomer } from '../../services/api';
+import { fetchCustomers, updateCustomer, getToken } from '../../services/api';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { DeleteConfirmModal } from '../ui/DeleteConfirmModal';
 import type { EMCust } from '../../types';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+
 
 export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: string) => void }) => {
   const [customers, setCustomers] = useState<EMCust[]>([]);
@@ -103,9 +106,9 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
     setDeleteLoading(true);
     try {
       // Calling the delete API we just made
-      await fetch(`http://localhost:3000/api/master/customers/${deletingId}`, { 
+      await fetch(`${API_BASE}/master/customers/${deletingId}`, { 
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('wssale_token')}` }
+        headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       // Remove from list
       setCustomers(prev => prev.filter(c => c.CustID !== deletingId));
