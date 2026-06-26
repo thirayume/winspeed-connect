@@ -59,8 +59,9 @@ SELECT
     ext.ControlTicketNo,
     ext.DeliveryDate,
     hd.Remark,
-    CASE 
+    CASE
         WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
+        WHEN hd.DocuStatus = 'Y' THEN 'SHIPPED'
         WHEN hd.clearflag = 'Y' THEN 'SHIPPED'
         WHEN ext.IsLoaded = 1 THEN 'LOADED'
         WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
