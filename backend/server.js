@@ -10,8 +10,11 @@
 require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
-
 const http = require('http');
+
+// ── Global error guards (prevent Railway silent crash) ────────
+process.on('uncaughtException',  (err) => { console.error('[FATAL] uncaughtException:', err); });
+process.on('unhandledRejection', (reason) => { console.error('[FATAL] unhandledRejection:', reason); });
 
 const app = express();
 const server = http.createServer(app);
