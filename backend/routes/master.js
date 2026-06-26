@@ -380,20 +380,36 @@ router.post('/prices/bulk-extend', async (req, res) => {
   }
 });
 
-// GET /api/master/control-tickets — ตั๋วคุม (AppvFlag='W', DocuStatus='Y')
+// GET /api/master/control-tickets — ตั๋วคุม (AppvDocuNo ขึ้นต้นด้วย 'AI', DocuStatus='Y')
 router.get('/control-tickets', async (req, res) => {
   try {
     const { custId } = req.query;
     const where = custId ? `AND h.CustID = @custId` : '';
     const inputs = custId ? { custId: { type: sql.NVarChar(20), value: custId } } : {};
     const rows = await query(`
-      SELECT TOP 100
-        h.SOID, h.DocuNo, h.DocuDate, h.CustID,
-        h.CustName, h.TransRegistration AS TruckPlate,
-        h.AppvFlag, h.AppvDocuNo, h.AppvDate, h.Desc1, h.Desc2
-      FROM dbo.SOHD h WITH (NOLOCK)
-      WHERE h.DocuType = 103 AND h.DocuStatus = 'Y' AND h.AppvFlag = 'W' ${where}
-      ORDER BY h.DocuDate DESC, h.SOID DESC
+      SELECT * FROM (
+        SELECT TOP 100
+          h.SOID, h.AppvDocuNo AS DocuNo, h.DocuDate, h.CustID,
+          h.CustName, h.TransRegistration AS TruckPlate,
+          h.AppvFlag, h.DocuNo AS OriginalDocuNo, h.AppvDate, h.Desc1, h.Desc2,
+          (
+            SELECT ISNULL(SUM(d.GoodQty2), 0)
+            FROM dbo.SODT d WITH (NOLOCK)
+            WHERE d.SOID = h.SOID
+          ) AS TotalQtyTon,
+          (
+            SELECT ISNULL(SUM(d2.GoodQty2), 0)
+            FROM dbo.SOHD h2 WITH (NOLOCK)
+            JOIN dbo.SODT d2 WITH (NOLOCK) ON h2.SOID = d2.SOID
+            LEFT JOIN wf.SalesOrderLine wfl WITH (NOLOCK) ON wfl.SoId = h2.SOID AND wfl.LineNum = d2.ListNo
+            WHERE h2.DocuType = 104 AND h2.DocuStatus <> 'C'
+              AND (h2.RefNo = h.AppvDocuNo OR wfl.RefControlTicketNo = h.AppvDocuNo)
+          ) AS DrawnQtyTon
+        FROM dbo.SOHD h WITH (NOLOCK)
+        WHERE h.DocuType = 103 AND h.DocuStatus = 'Y' AND h.AppvDocuNo LIKE 'AI%' ${where}
+        ORDER BY h.DocuDate DESC, h.SOID DESC
+      ) t
+      WHERE t.TotalQtyTon > t.DrawnQtyTon
     `, inputs);
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
@@ -405,14 +421,15 @@ router.get('/control-tickets/:docuNo', async (req, res) => {
     const rows = await query(`
       SELECT 
         d.ListNo, d.GoodID, g.GoodCode, g.GoodName1 AS GoodName, 
-        d.GoodQty2 AS QtyTon, d.GoodPrice2 AS PricePerTon, g.GoodPriceNet AS NetPricePerTon,
-        g.BagPerTon
+        d.GoodQty2 AS QtyTon, d.GoodPrice2 AS PricePerTon, 
+        ISNULL(gx.BagPerTon, 20) AS BagPerTon
       FROM dbo.SOHD h WITH (NOLOCK)
       JOIN dbo.SODT d WITH (NOLOCK) ON h.SOID = d.SOID
       JOIN dbo.EMGood g WITH (NOLOCK) ON d.GoodID = g.GoodID
-      WHERE h.DocuNo = @docuNo AND h.DocuType = 103 AND h.DocuStatus = 'Y'
+      LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = g.GoodID
+      WHERE RTRIM(h.AppvDocuNo) = RTRIM(@docuNo) AND h.DocuType = 103 AND h.DocuStatus = 'Y'
       ORDER BY d.ListNo ASC
-    `, { docuNo: { type: sql.NVarChar(30), value: req.params.docuNo } });
+    `, { docuNo: { type: sql.NVarChar(30), value: String(req.params.docuNo).trim() } });
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
