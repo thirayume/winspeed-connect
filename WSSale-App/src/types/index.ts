@@ -216,6 +216,42 @@ export type CouponCustomer = {
   OldestDate: string;
 };
 
+// ── CN Rebate (dbo — single source of truth) ─────────────────
+export type CnRebateSummary = {
+  EmpID: string;
+  SalesName: string;
+  CNCount: number;
+  CustCount: number;
+  TotalRebate: number;
+  FirstCN: string;
+  LastCN: string;
+};
+
+export type CnRebateRow = {
+  SOInvID: number;
+  CNDocuNo: string;
+  CNDate: string;
+  CustID: string;
+  CustName: string;
+  EmpID: string;
+  SalesName: string;
+  OrigInvNo: string;
+  OrigInvDate: string;
+  CNAmt: number;
+  RemaAmnt: number;
+  DocuStatus: string;
+  Reason: string;
+};
+
+export type CnRebateDetail = {
+  ListNo: number;
+  GoodName: string;
+  QtyTon: number;
+  RebatePerTon: number;
+  RebateAmt: number;
+  OrigPrice: number | null;
+};
+
 export type VoucherSummary = {
   EmpID: string;
   EmpName: string;

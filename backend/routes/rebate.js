@@ -172,6 +172,97 @@ router.get('/voucher-summary', async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+// ── dbo CN Rebate endpoints (read-only, single source of truth) ──────────
+
+// GET /api/rebate/cn-summary — สรุป CN rebate จาก dbo แยกตาม Sales/ลูกค้า
+router.get('/cn-summary', async (req, res) => {
+  try {
+    const { year, empId } = req.query;
+    let where = `WHERE cn.Docutype = 109 AND cn.CNRemarkTypeID IN (6001, 1001)`;
+    const req2 = ownerPool.request();
+    if (year)  { where += ` AND YEAR(cn.DocuDate) = @year`;  req2.input('year',  sql.Int, Number(year)); }
+    if (empId) { where += ` AND cn.EmpID = @empId`; req2.input('empId', sql.Int, Number(empId)); }
+
+    const r = await req2.query(`
+      SELECT
+        e.EmpName                          AS SalesName,
+        cn.EmpID,
+        COUNT(DISTINCT cn.SOInvID)         AS CNCount,
+        COUNT(DISTINCT cn.CustID)          AS CustCount,
+        SUM(d.GoodAmnt)                    AS TotalRebate,
+        MIN(cn.DocuDate)                   AS FirstCN,
+        MAX(cn.DocuDate)                   AS LastCN
+      FROM dbo.SOInvHD cn
+      JOIN dbo.SOInvDT d  ON d.SOInvID = cn.SOInvID
+      LEFT JOIN dbo.EMEmp e ON e.EmpID = cn.EmpID
+      ${where}
+      GROUP BY cn.EmpID, e.EmpName
+      ORDER BY TotalRebate DESC
+    `);
+    res.json(r.recordset || []);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/rebate/cn-list?year=&empId=&custId= — รายการ CN ทั้งหมด (header level)
+router.get('/cn-list', async (req, res) => {
+  try {
+    const { year, empId, custId } = req.query;
+    let where = `WHERE cn.Docutype = 109 AND cn.CNRemarkTypeID IN (6001, 1001)`;
+    const req2 = ownerPool.request();
+    if (year)   { where += ` AND YEAR(cn.DocuDate) = @year`;    req2.input('year',   sql.Int,          Number(year)); }
+    if (empId)  { where += ` AND cn.EmpID = @empId`;            req2.input('empId',  sql.Int,          Number(empId)); }
+    if (custId) { where += ` AND cn.CustID = @custId`;          req2.input('custId', sql.NVarChar(20), custId); }
+
+    const r = await req2.query(`
+      SELECT
+        cn.SOInvID,
+        cn.DocuNo                                        AS CNDocuNo,
+        CONVERT(VARCHAR(10), cn.DocuDate, 120)           AS CNDate,
+        cn.CustID,
+        cn.CustName,
+        cn.EmpID,
+        ISNULL(e.EmpName, CAST(cn.EmpID AS NVARCHAR(20))) AS SalesName,
+        cn.SONo                                          AS OrigInvNo,
+        CONVERT(VARCHAR(10), inv.DocuDate, 120)          AS OrigInvDate,
+        cn.NetAmnt                                       AS CNAmt,
+        cn.RemaAmnt,
+        cn.DocuStatus,
+        t.CNRemarkTypeName                               AS Reason
+      FROM dbo.SOInvHD cn
+      LEFT JOIN dbo.SOInvHD inv ON inv.SOInvID = cn.RefSOID
+      LEFT JOIN dbo.EMEmp    e  ON e.EmpID = cn.EmpID
+      LEFT JOIN dbo.EMcnremarkType t ON t.CNRemarkTypeID = cn.CNRemarkTypeID
+      ${where}
+      ORDER BY cn.DocuDate DESC
+    `);
+    res.json(r.recordset || []);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/rebate/cn-detail/:soInvId — รายการสินค้าใน CN
+router.get('/cn-detail/:soInvId', async (req, res) => {
+  try {
+    const r = await ownerPool.request()
+      .input('id', sql.Int, Number(req.params.soInvId))
+      .query(`
+        SELECT
+          d.ListNo,
+          d.GoodName,
+          d.GoodQty2     AS QtyTon,
+          d.GoodPrice2   AS RebatePerTon,
+          d.GoodAmnt     AS RebateAmt,
+          -- original invoice line
+          inv_d.GoodPrice2 AS OrigPrice
+        FROM dbo.SOInvDT d
+        LEFT JOIN dbo.SOInvHD cn    ON cn.SOInvID = d.SOInvID
+        LEFT JOIN dbo.SOInvDT inv_d ON inv_d.SOInvID = cn.RefSOID AND inv_d.GoodID = d.GoodID
+        WHERE d.SOInvID = @id
+        ORDER BY d.ListNo
+      `);
+    res.json(r.recordset || []);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
 // GET /api/rebate/coupons — รายลูกค้า สรุปยอดคูปองคงค้าง
 router.get('/coupons', async (req, res) => {
   try {
