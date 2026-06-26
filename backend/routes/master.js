@@ -522,22 +522,33 @@ router.get('/invoices', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/master/aging — dashboard SO คงค้าง
+// GET /api/master/aging — dashboard SO คงค้าง (เฉพาะ 180 วันล่าสุด, max 200 rows)
+let _agingCache = null;
+let _agingCacheAt = 0;
+const AGING_TTL = 5 * 60 * 1000;
+
 router.get('/aging', async (req, res) => {
   try {
+    const now = Date.now();
+    if (_agingCache && now - _agingCacheAt < AGING_TTL) return res.json(_agingCache);
+
     const { wfQuery: wq } = require('../db');
     const result = await wq(`
-      SELECT so.CustName, sol.GoodCode,
+      SELECT TOP 200
+             so.CustName, sol.GoodCode,
              SUM(sol.QtyTon)  AS QtyTon,
              DATEDIFF(DAY, so.CreatedAt, GETUTCDATE()) AS DaysOpen,
              so.Status, so.WfRef, CAST(so.Id AS VARCHAR(50)) AS SoId
       FROM wf.v_AllSalesOrders so
       JOIN wf.v_AllSalesOrderLines sol ON sol.SoId = so.Id
       WHERE so.Status NOT IN ('IMPORTED','CANCELLED')
+        AND so.CreatedAt >= DATEADD(DAY, -180, GETUTCDATE())
       GROUP BY so.CustName, sol.GoodCode, so.CreatedAt, so.Status, so.WfRef, so.Id
       ORDER BY DaysOpen DESC
     `);
-    res.json(result.recordset || []);
+    _agingCache = result.recordset || [];
+    _agingCacheAt = now;
+    res.json(_agingCache);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 

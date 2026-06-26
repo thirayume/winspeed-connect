@@ -68,7 +68,7 @@ export function DashboardPage() {
         {/* KPI cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <KpiCard icon={<Package size={20} />} label="ใบสั่งขายทั้งหมด" value={stats.total.toLocaleString()} color="#0C447C" />
-          <KpiCard icon={<Clock size={20} />} label="กำลังดำเนินการ"
+          <KpiCard icon={<Clock size={20} />} label="ยืนยัน + รอรับสินค้า"
             value={((stats.byStatus.CONFIRMED || 0) + (stats.byStatus.PICKING || 0)).toLocaleString()} color="#F59E0B" />
           <KpiCard icon={<AlertTriangle size={20} />} label="ตั๋วคงค้าง >30 วัน" value={warnAging.length.toLocaleString()} color="#EF4444" />
           <KpiCard icon={<TrendingUp size={20} />} label="รีเบทใช้ได้ (฿)"

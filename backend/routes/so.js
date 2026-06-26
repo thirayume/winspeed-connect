@@ -70,8 +70,16 @@ async function audit(_tx, soId, userId, action, fromStatus, toStatus, note, ipAd
 }
 
 // ── GET /api/so/stats — สรุปจำนวนตามสถานะ (Dashboard) ────────
+// Cache 5 นาที เพื่อลด load จาก 107k rows scan บน dbo.SOHD
+let _statsCache = null;
+let _statsCacheAt = 0;
+const STATS_TTL = 5 * 60 * 1000;
+
 router.get('/stats', async (req, res) => {
   try {
+    const now = Date.now();
+    if (_statsCache && now - _statsCacheAt < STATS_TTL) return res.json(_statsCache);
+
     const r = await wfQuery(`
       SELECT Status, COUNT(*) AS Cnt
       FROM wf.v_AllSalesOrders
@@ -80,7 +88,9 @@ router.get('/stats', async (req, res) => {
     const byStatus = {};
     for (const row of r.recordset || []) byStatus[row.Status] = row.Cnt;
     const total = Object.values(byStatus).reduce((s, n) => s + n, 0);
-    res.json({ byStatus, total });
+    _statsCache = { byStatus, total, cachedAt: new Date().toISOString() };
+    _statsCacheAt = now;
+    res.json(_statsCache);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
