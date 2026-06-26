@@ -85,10 +85,10 @@ BEGIN
 
         -- 6. INSERT INTO wf.SalesOrderLineExt
         INSERT INTO wf.SalesOrderLineExt (
-            SOID, ListNo, NetPricePerTon, IsGiveaway, RebateBooked
+            SOID, ListNo, NetPricePerTon, IsGiveaway, RebateBooked, RefControlTicketNo, IsControlTicketDrawn
         )
         SELECT 
-            @NewSoid, LineNum, NetPricePerTon, IsGiveaway, RebateBooked
+            @NewSoid, LineNum, NetPricePerTon, IsGiveaway, RebateBooked, RefControlTicketNo, IsControlTicketDrawn
         FROM wf.SalesOrderLine
         WHERE SoId = @SoId;
 
