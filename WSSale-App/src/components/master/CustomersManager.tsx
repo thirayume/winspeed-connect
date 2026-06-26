@@ -44,8 +44,8 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
 
   const filteredCustomers = useMemo(() => {
     return customers.filter(c => 
-      c.CustID.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      c.CustName.toLowerCase().includes(searchQuery.toLowerCase())
+      (c.CustID?.toString() ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.CustName ?? '').toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [customers, searchQuery]);
 
