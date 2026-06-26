@@ -169,6 +169,30 @@ router.get('/debug-sohd', async (req, res) => {
   } catch(e) { res.status(500).json({msg: e.message}); }
 });
 
+// ── GET /api/so/shipped-today — ออกของวันนี้ (สำหรับ Accounting)
+// returns dbo.SOHD records with DocuDate = today or clearflag set today
+router.get('/shipped-today', requireAuth, async (req, res) => {
+  try {
+    const dateStr = req.query.date || new Date().toISOString().substring(0, 10);
+    const r = await wfQuery(`
+      SELECT TOP 200
+             hd.SOID AS Id, hd.DocuNo AS WfRef, hd.CustName,
+             CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
+             hd.DocuStatus,
+             CAST(ISNULL(SUM(dt.GoodQty2), 0) AS DECIMAL(12,2)) AS TotalTon,
+             COUNT(dt.ListNo) AS LineCount,
+             hd.TransRegistration AS TruckPlate
+      FROM dbo.SOHD hd
+      LEFT JOIN dbo.SODT dt ON dt.SOID = hd.SOID
+      WHERE CAST(hd.DocuDate AS DATE) = @d
+        AND hd.DocuType = 103
+      GROUP BY hd.SOID, hd.DocuNo, hd.CustName, hd.DocuDate, hd.DocuStatus, hd.TransRegistration
+      ORDER BY hd.DocuDate DESC, hd.SOID DESC
+    `, { d: { type: sql.Date, value: new Date(dateStr) } });
+    res.json(r.recordset || []);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
 // ── GET /api/so/:id ──────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
