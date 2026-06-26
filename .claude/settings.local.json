@@ -12,7 +12,9 @@
       "PowerShell($env:DB_MODE=\"local\"; npm run migrate 2>&1 | Select-String \"013_|17 OK|maintenance|comprehensive\")",
       "Bash(git commit -m 'fix: show Active/Inactive status in สถานะระบบ column instead of EmpCode *)",
       "Bash(awk '{print $NF}')",
-      "Bash(git commit -m 'chore: cleanup unused files and fix migration naming *)"
+      "Bash(git commit -m 'chore: cleanup unused files and fix migration naming *)",
+      "Bash(cd \"C:/MyWork/winspeed-frontend\" && rm refs/giveaway_sheet_*.csv refs/giveaway_sheet_Data.csv refs/giveaway_budget.xlsx && echo \"Deleted OK\")",
+      "Bash(git commit -m 'chore: remove giveaway source CSVs from refs/ \\(data captured in 012 migration\\) *)"
     ]
   }
 }
