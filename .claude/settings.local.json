@@ -14,7 +14,14 @@
       "Bash(awk '{print $NF}')",
       "Bash(git commit -m 'chore: cleanup unused files and fix migration naming *)",
       "Bash(cd \"C:/MyWork/winspeed-frontend\" && rm refs/giveaway_sheet_*.csv refs/giveaway_sheet_Data.csv refs/giveaway_budget.xlsx && echo \"Deleted OK\")",
-      "Bash(git commit -m 'chore: remove giveaway source CSVs from refs/ \\(data captured in 012 migration\\) *)"
+      "Bash(git commit -m 'chore: remove giveaway source CSVs from refs/ \\(data captured in 012 migration\\) *)",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"admin\",\"password\":\"Admin@2025\"}')",
+      "Bash(python -m json.tool)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('scripts',{}\\), indent=2, ensure_ascii=False\\)\\)\")",
+      "PowerShell(Get-Process -Id \\(Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue\\).OwningProcess -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, StartTime)",
+      "PowerShell(Stop-Process -Id 21364 -Force)",
+      "Bash(git commit -m 'chore: auto kill-port 3000 5173 before npm run dev *)",
+      "Bash(git commit -m 'chore: add nodemon.json to explicitly watch routes/ and middleware/ *)"
     ]
   }
 }
