@@ -8,7 +8,7 @@
 IF EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK__RebateLed__SoId__403A8C7D')
     ALTER TABLE wf.RebateLedger DROP CONSTRAINT FK__RebateLed__SoId__403A8C7D;
 IF EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK__GiveawayIs__SoId__4BAC3F29')
-    ALTER TABLE wf.GiveawayIssue DROP CONSTRAINT FK__GiveawayIs__SoId__4BAC3F29;
+    ALTER TABLE wf.GiveawayWithdrawal DROP CONSTRAINT FK__GiveawayIs__SoId__4BAC3F29;
 IF EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK__SalesOrde__SoId__398D8EEE')
     ALTER TABLE wf.SalesOrderAudit DROP CONSTRAINT FK__SalesOrde__SoId__398D8EEE;
 
@@ -20,13 +20,13 @@ IF EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_RebateLedger_SOID' AND objec
 
 -- ลบข้อมูล Rebate/Giveaway เก่าทั้งหมดก่อนเปลี่ยน type (เพราะมีข้อมูล Integer เก่าตกค้าง)
 DELETE FROM wf.RebateLedger;
-DELETE FROM wf.GiveawayIssue;
+DELETE FROM wf.GiveawayWithdrawal;
 DELETE FROM wf.SalesOrderAudit;
 GO
 
 -- 2. เปลี่ยน Data Type ของ SoId เป็น VARCHAR(50) ให้ตรงกับ Winspeed
 ALTER TABLE wf.RebateLedger ALTER COLUMN SoId VARCHAR(50) NOT NULL;
-ALTER TABLE wf.GiveawayIssue ALTER COLUMN SoId VARCHAR(50) NULL;
+ALTER TABLE wf.GiveawayWithdrawal ALTER COLUMN SoId VARCHAR(50) NULL;
 ALTER TABLE wf.SalesOrderAudit ALTER COLUMN SoId VARCHAR(50) NOT NULL;
 GO
 
