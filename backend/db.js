@@ -10,7 +10,7 @@
  *
  * ⚠ IRON RULE: dbo = READ-ONLY — โค้ดเขียนเฉพาะ wf.* (master.js = SELECT ล้วน)
  */
-require('dotenv').config();
+require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
 const { AsyncLocalStorage } = require('async_hooks');
 const os = require('os');
 const isWindows = os.platform() === 'win32';

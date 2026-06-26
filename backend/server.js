@@ -7,7 +7,7 @@
  *   3. ก่อนรัน query ที่ไม่ใช่ SELECT ต้องถามยืนยัน (ทำในส่วน UI)
  * ─────────────────────────────────────────────────────────────────
  */
-require('dotenv').config();
+require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
 const express = require('express');
 const cors    = require('cors');
 const http = require('http');
