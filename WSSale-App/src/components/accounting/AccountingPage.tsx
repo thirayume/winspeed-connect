@@ -1,23 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
-import { FileCheck, RefreshCw, Coins, Package, ChevronLeft, ChevronRight, Info, CheckCircle } from 'lucide-react';
+import { FileCheck, RefreshCw, Coins, Package, Info, CheckCircle } from 'lucide-react';
 import {
-  fetchRebateClaims, approveRebateClaim,
+  fetchRebateClaims, approveRebateClaim, fetchShippedToday,
 } from '../../services/api';
 import { useSocketEvent } from '../../hooks/useSocket';
-import type { RebateClaim } from '../../types';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
-
-type ShippedRow = {
-  Id: number;
-  WfRef: string;
-  CustName: string;
-  DocuDate: string;
-  DocuStatus: string;
-  TotalTon: number;
-  LineCount: number;
-  TruckPlate: string;
-};
+import type { RebateClaim, ShippedRow } from '../../types';
 
 const STATUS_LABEL: Record<string, string> = {
   'Y': 'ชำระแล้ว',
@@ -43,20 +30,19 @@ export function AccountingPage() {
   const [busyId, setBusyId]   = useState<number | null>(null);
   const [date, setDate]       = useState(today());
 
-  const getToken = () => localStorage.getItem('wf_token') || '';
-
   const load = useCallback(async (d = date) => {
     setLoading(true);
     try {
       const [shippedRes, claimsRes] = await Promise.all([
-        fetch(`${API_BASE}/so/shipped-today?date=${d}`, {
-          headers: { Authorization: `Bearer ${getToken()}` },
-        }).then(r => r.json()),
+        fetchShippedToday(d),
         fetchRebateClaims('PENDING'),
       ]);
-      setShipped(shippedRes || []);
-      setClaims(claimsRes);
-    } catch (e) { console.error(e); }
+      setShipped(Array.isArray(shippedRes) ? shippedRes : []);
+      setClaims(Array.isArray(claimsRes) ? claimsRes : []);
+    } catch (e) {
+      console.error(e);
+      setShipped([]);
+    }
     setLoading(false);
   }, [date]);
 
