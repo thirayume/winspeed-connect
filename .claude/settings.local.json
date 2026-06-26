@@ -27,7 +27,8 @@
       "Bash(npx tsc *)",
       "Bash(grep -v \"//.*SHIPPED\\\\|IsGiveaway\")",
       "Bash(grep -v \"//.*DocuNo\")",
-      "Bash(xargs -I{} grep -l \"CREATE OR ALTER VIEW wf.v_AllSalesOrders\" {})"
+      "Bash(xargs -I{} grep -l \"CREATE OR ALTER VIEW wf.v_AllSalesOrders\" {})",
+      "Bash(xargs grep -l -i \"rebate\")"
     ]
   }
 }
