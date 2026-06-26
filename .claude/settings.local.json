@@ -21,7 +21,10 @@
       "PowerShell(Get-Process -Id \\(Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue\\).OwningProcess -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, StartTime)",
       "PowerShell(Stop-Process -Id 21364 -Force)",
       "Bash(git commit -m 'chore: auto kill-port 3000 5173 before npm run dev *)",
-      "Bash(git commit -m 'chore: add nodemon.json to explicitly watch routes/ and middleware/ *)"
+      "Bash(git commit -m 'chore: add nodemon.json to explicitly watch routes/ and middleware/ *)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\('start:backend:', p.scripts['start:backend']\\);\")",
+      "Bash(timeout 5 node server.js)",
+      "Bash(npx tsc *)"
     ]
   }
 }
