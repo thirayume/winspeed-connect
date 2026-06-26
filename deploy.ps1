@@ -55,9 +55,11 @@ function Bump-Version([string]$currentVer, [string]$bumpType) {
 }
 
 function Update-PackageJson([string]$filePath, [string]$newVersion) {
-  $json = Get-Content $filePath -Raw | ConvertFrom-Json
-  $json.version = $newVersion
-  $json | ConvertTo-Json -Depth 10 | Set-Content $filePath -Encoding UTF8
+  # Read as-is and replace only the "version" field with regex.
+  # This avoids PowerShell ConvertTo-Json re-formatting (BOM, extra spaces, & escapes).
+  $raw = [System.IO.File]::ReadAllText($filePath)
+  $raw = $raw -replace '("version"\s*:\s*)"[^"]*"', "`$1`"$newVersion`""
+  [System.IO.File]::WriteAllText($filePath, $raw, [System.Text.UTF8Encoding]::new($false))
 }
 
 # -- banner ---------------------------------------------------
