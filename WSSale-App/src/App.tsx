@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell, LogOut,
-  Users, LayoutDashboard, Coins, FileCheck, Gift, FileText, LayoutGrid, Database, Clock
+  Users, LayoutDashboard, Coins, FileCheck, Gift, FileText, LayoutGrid, Database, Clock, Ticket
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { SalesPortal } from './components/sales/SalesPortal';
@@ -15,6 +15,7 @@ import { PaperTrailPage } from './components/papertrail/PaperTrailPage';
 import { AdminUsersPage } from './components/admin/AdminUsersPage';
 import { MasterDataPortal } from './components/master/MasterDataPortal';
 import { AgingPage } from './components/aging/AgingPage';
+import { VoucherPage } from './components/voucher/VoucherPage';
 import { useErpStore } from './store/erp-store';
 import { useAuthStore } from './store/auth-store';
 import { fetchUnlockRequests, getMe } from './services/api';
@@ -24,7 +25,7 @@ import { DbModeSwitch } from './components/common/DbModeSwitch';
 import { useAppStore } from './store/app-store';
 import { GlobalLoader } from './components/common/GlobalLoader';
 
-export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'accounting' | 'giveaway' | 'aging' | 'admin' | 'master';
+export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'voucher' | 'accounting' | 'giveaway' | 'aging' | 'admin' | 'master';
 
 type NavItem = {
   key: PortalKey;
@@ -42,6 +43,7 @@ const NAV: NavItem[] = [
   { key: 'store',      label: 'คลัง',        sub: 'รับสินค้า/ส่งออก',     icon: Warehouse, badge: true },
   { key: 'papertrail', label: 'Paper Trail', sub: 'Kanban เอกสาร',       icon: LayoutGrid },
   { key: 'rebate',     label: 'รีเบท',       sub: 'Pool · เคลม',          icon: Coins },
+  { key: 'voucher',    label: 'Voucher',     sub: 'คูปองคงค้าง · Winspeed', icon: Ticket },
   { key: 'accounting', label: 'บัญชี',       sub: 'Sync · อนุมัติ CN',    icon: FileCheck, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER'] },
   { key: 'giveaway',   label: 'ของแถม',      sub: 'งบรายภาค · เบิก',     icon: Gift },
   { key: 'aging',      label: 'ตั๋วคงค้าง',   sub: 'SO คงค้าง · ค้นหา',   icon: Clock },
@@ -199,6 +201,7 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
               {activePortal === 'store'      && <StorePortal />}
               {activePortal === 'papertrail' && <PaperTrailPage />}
               {activePortal === 'rebate'     && <RebatePage />}
+              {activePortal === 'voucher'    && <VoucherPage />}
               {activePortal === 'accounting' && <AccountingPage />}
               {activePortal === 'giveaway'   && <GiveawayPage />}
               {activePortal === 'aging'      && <AgingPage />}

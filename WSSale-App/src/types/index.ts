@@ -216,6 +216,14 @@ export type CouponCustomer = {
   OldestDate: string;
 };
 
+export type VoucherSummary = {
+  EmpID: string;
+  EmpName: string;
+  CustCount: number;
+  CouponCount: number;
+  OutstandingTon: number;
+};
+
 // ── Giveaway (qty model จาก xls: ภาค × ตรา × รายการ) ──────────
 export type GiveawayItem = {
   Id: number;
