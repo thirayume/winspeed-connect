@@ -226,6 +226,9 @@ export const approveRebateClaim = (id: number, docuNo?: string) =>
 
 export const fetchRebateSummary = () => req<RebateSummary[]>('/rebate/summary');
 
+export const fetchVoucherSummary = () =>
+  req<import('../types').VoucherSummary[]>('/rebate/voucher-summary');
+
 export const fetchCouponCustomers = (params?: { empId?: number }) => {
   const qs = params?.empId ? `?empId=${params.empId}` : '';
   return req<import('../types').CouponCustomer[]>(`/rebate/coupons${qs}`);
