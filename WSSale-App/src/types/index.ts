@@ -182,11 +182,37 @@ export type RebateClaim = {
 };
 
 export type RebateSummary = {
-  SalesName: string;
-  TotalAccrued: number;
-  TotalClaimed: number;
-  TotalAvailable: number;
-  TotalAllocated: number;
+  EmpID: string;
+  EmpName: string;
+  CustCount: number;
+  CouponCount: number;
+  OutstandingTon: number;
+};
+
+export type CouponRow = {
+  CouponID: number;
+  CouponNo: string;
+  SONo: string;
+  DocuDate: string;
+  CustID: string;
+  CustName: string;
+  EmpID: string;
+  EmpName: string;
+  GoodID: number;
+  GoodName: string;
+  GoodQty: number;
+  RemaQty: number;
+  RedeemedQty: number;
+};
+
+export type CouponCustomer = {
+  CustID: string;
+  CustName: string;
+  EmpID: string;
+  EmpName: string;
+  CouponCount: number;
+  OutstandingTon: number;
+  OldestDate: string;
 };
 
 // ── Giveaway (qty model จาก xls: ภาค × ตรา × รายการ) ──────────
