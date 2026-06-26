@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Gift, Search, RefreshCw, History, Plus, X, Calendar, MapPin, Tag, Layers, User, ArrowUpDown } from 'lucide-react';
 import { fetchGiveawayItems, fetchGiveawayWithdrawals, fetchGiveawayRegions } from '../../services/api';
 import { formatThaiDate } from '../../utils/date';

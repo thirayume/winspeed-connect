@@ -47,8 +47,8 @@ export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }
 
   const filteredStats = useMemo(() => {
     return stats.filter(s => 
-      s.truckPlate.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      s.custName.toLowerCase().includes(searchQuery.toLowerCase())
+      (s.truckPlate ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.custName ?? '').toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [stats, searchQuery]);
 

@@ -57,8 +57,8 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
 
   const filteredGoods = useMemo(() => {
     return goods.filter(g => {
-      const matchesSearch = g.GoodCode.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            g.GoodName.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = (g.GoodCode ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            (g.GoodName ?? '').toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCategory = selectedCategory === 'ALL' || g.GoodGroupName === selectedCategory;
       return matchesSearch && matchesCategory;
     });
