@@ -249,14 +249,17 @@ export const AdminUsersPage = () => {
                       <RefreshCw size={15} className="animate-spin text-gray-400 inline" />
                     ) : savedId === u.Id ? (
                       <Check size={16} className="text-green-600 inline" />
-                    ) : needsMapping(u) ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-amber-600">
-                        <AlertTriangle size={13} /> ยังไม่ map
-                      </span>
-                    ) : u.EmpId ? (
-                      <span className="text-xs text-green-600">{u.EmpCode}</span>
                     ) : (
-                      <span className="text-xs text-gray-300">—</span>
+                      <div className="flex flex-col items-center gap-1">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${u.IsActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+                          {u.IsActive ? 'ใช้งาน' : 'ระงับ'}
+                        </span>
+                        {needsMapping(u) && (
+                          <span className="inline-flex items-center gap-1 text-xs text-amber-600">
+                            <AlertTriangle size={11} /> ยังไม่ map
+                          </span>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">
