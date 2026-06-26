@@ -2,7 +2,7 @@ import { Database } from 'lucide-react';
 import { getDbMode, setDbMode, DB_MODE_META, type DbMode } from '../../store/db-mode';
 import { clearToken } from '../../services/api';
 
-const ORDER: DbMode[] = ['mock', 'local', 'remote'];
+const ORDER: DbMode[] = import.meta.env?.PROD ? ['mock', 'remote'] : ['mock', 'local', 'remote'];
 
 /**
  * สลับแหล่งข้อมูล (ADMIN เท่านั้น) — เปลี่ยนแล้ว reload
