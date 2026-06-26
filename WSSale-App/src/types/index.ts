@@ -182,13 +182,14 @@ export type RebateClaim = {
 };
 
 export type RebateSummary = {
-  EmpID: string;
-  EmpName: string;
-  CustCount: number;
-  CouponCount: number;
-  OutstandingTon: number;
+  SalesName: string;
+  TotalAccrued: number;
+  TotalClaimed: number;
+  TotalAvailable: number;
+  TotalAllocated: number;
 };
 
+/** dbo.WFCoupon — Winspeed loyalty coupon (แลกสินค้าฟรี คนละระบบกับรีเบทเงิน) */
 export type CouponRow = {
   CouponID: number;
   CouponNo: string;
