@@ -97,5 +97,9 @@ app.use((err, req, res, _next) => {
   res.status(err.status || 500).json({ message: err.message || 'Internal server error' });
 });
 
+// Keepalive timer — prevents event loop from draining if all async work resolves
+const _keepalive = setInterval(() => {}, 30000);
+_keepalive.unref(); // don't block graceful shutdown
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`🚀 WS-Sale-App API listening on :${PORT}`));
