@@ -23,7 +23,7 @@ router.get('/regions', async (req, res) => {
              SUM(CASE WHEN v.RemainingQty < 0 THEN 1 ELSE 0 END) AS OverCount,
              SUM(CASE WHEN v.RemainingQty < 0 THEN ABS(v.RemainingQty) ELSE 0 END) AS OverQty
       FROM wf.v_GiveawayBudgetStatus v
-      LEFT JOIN dbo.EMEmp e WITH (NOLOCK) ON e.EmpID = v.EmpId
+      LEFT JOIN dbo.EMEmp e WITH (NOLOCK) ON e.EmpCode = v.EmpCode
       WHERE v.PeriodYear = @y
       GROUP BY v.Region, v.EmpCode, v.EmpId, e.EmpName
       ORDER BY v.Region
