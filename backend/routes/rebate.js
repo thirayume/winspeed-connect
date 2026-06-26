@@ -134,21 +134,19 @@ router.patch('/claims/:id/approve', requireRole('ACCOUNTING', 'ADMIN'), async (r
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/rebate/summary — KPI ต่อพนักงานขาย (จาก dbo.WFCoupon)
-router.get('/summary', async (req, res) => {
+// GET /api/rebate/summary — KPI ภาพรวมต่อพนักงานขาย (wf.RebatePool)
+router.get('/summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
   try {
-    const r = await ownerPool.request().query(`
-      SELECT hd.EmpID,
-             ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS EmpName,
-             COUNT(DISTINCT hd.CustID)  AS CustCount,
-             COUNT(c.CouponID)          AS CouponCount,
-             SUM(c.RemaQty)             AS OutstandingTon
-      FROM dbo.WFCoupon c
-      JOIN dbo.SOHD hd  ON hd.SOID = c.DocuID
-      LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
-      WHERE c.RemaQty > 0
-      GROUP BY hd.EmpID, emp.EmpName
-      ORDER BY OutstandingTon DESC
+    const r = await wfQuery(`
+      SELECT u.DisplayName AS SalesName,
+             SUM(p.AccruedAmt) AS TotalAccrued,
+             SUM(p.ClaimedAmt) AS TotalClaimed,
+             SUM(p.AccruedAmt - p.ClaimedAmt) AS TotalAvailable,
+             SUM(p.AllocatedAmt) AS TotalAllocated
+      FROM wf.RebatePool p
+      JOIN wf.AppUser u ON u.Id = p.SalesUserId
+      GROUP BY u.DisplayName
+      ORDER BY TotalAccrued DESC
     `);
     res.json(r.recordset || []);
   } catch (e) { res.status(500).json({ message: e.message }); }
