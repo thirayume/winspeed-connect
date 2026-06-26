@@ -1,5 +1,15 @@
 # Changelog
 
+## [v4.2.0] - 2026-06-26
+
+### Added
+- **FIFO Rebate System**: Implemented a new rebate withdrawal system utilizing a First-In-First-Out (FIFO) strategy.
+- **Rebate Ledger Integration**: Created the `/api/so/rebate-balance/:custId` endpoint to dynamically fetch the available rebate balance.
+- **Order Processing Logic**: Updated the `/api/so/:id/confirm` endpoint and the `wf.sp_ConfirmSalesOrder` stored procedure to process the RebateDiscountAmt and accurately subtract it from the final bill's NetAmnt.
+- **UI Interaction**: Added an 'Apply Rebate' input field in `CreateSODialog` that automatically validates against the available balance and the total bill amount, recalculating the totals in real-time.
+
+### Changed
+- **Backend Setup**: Added `nodemon` for auto-restarting the Node.js backend server during development.
 ## [v4.1.0] - 2026-06-25
 
 ### Changed

@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X, Plus, Minus, Truck, AlertTriangle, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers } from '../../services/api';
+import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { useAuthStore } from '../../store/auth-store';
 import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser } from '../../types';
 
 type DraftLine = SalesOrderLine & { tempId: string; refControlTicketNo?: string; isControlTicketDrawn?: boolean; maxQtyTon?: number };
-type DraftBill = { id: string; soPrefix: SOPrefix; lines: DraftLine[]; remark: string };
+type DraftBill = { id: string; soPrefix: SOPrefix; lines: DraftLine[]; remark: string; rebateDiscountAmt?: number };
 
 const PREFIX_LABELS: Record<SOPrefix, string> = {
   I: 'I — ขายปกติ (Invoice)',
@@ -37,6 +37,7 @@ export function CreateSODialog({
   const [isTruckOpen, setIsTruckOpen] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState('');
   const [salesUserId, setSalesUserId] = useState<string | number>('');
+  const [availableRebate, setAvailableRebate] = useState(0);
   
   // Multi-Bill State
   const [bills, setBills] = useState<DraftBill[]>([{ id: 'bill-1', soPrefix: 'I', lines: [], remark: '' }]);
@@ -86,8 +87,9 @@ export function CreateSODialog({
     if (custId) {
       fetchTruckPlates(custId).then(setTruckPlates).catch(console.error);
       fetchControlTickets(custId).then(setControlTickets).catch(console.error);
+      getRebateBalance(custId).then(r => setAvailableRebate(r.availableRebate)).catch(console.error);
     } else {
-      setTruckPlates([]); setControlTickets([]);
+      setTruckPlates([]); setControlTickets([]); setAvailableRebate(0);
     }
   }, [custId]);
 
@@ -260,7 +262,8 @@ export function CreateSODialog({
 
   // Totals calculation
   const totalTons = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (Number(l.qtyTon) || 0), 0), 0);
-  const totalPayable = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isControlTicketDrawn ? 0 : (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0)), 0), 0);
+  const totalRebateDiscount = bills.reduce((s, b) => s + (Number(b.rebateDiscountAmt) || 0), 0);
+  const totalPayable = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isControlTicketDrawn ? 0 : (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0)), 0), 0) - totalRebateDiscount;
   const totalOffset = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isControlTicketDrawn ? (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0) : 0), 0), 0);
 
   async function handleSubmit() {
@@ -285,6 +288,7 @@ export function CreateSODialog({
         truckPlate: truckPlate || undefined,
         deliveryDate: deliveryDate || undefined,
         remark: b.remark || undefined,
+        rebateDiscountAmt: b.rebateDiscountAmt || 0,
         salesUserId: salesUserId || undefined,
         lines: b.lines.map(({ tempId, ...l }) => ({
           ...l,
@@ -661,15 +665,40 @@ export function CreateSODialog({
                           <span className="text-sm font-bold text-[#0C447C]">฿{totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
                         </div>
                         {totalRebate > 0 && (
-                          <div className="flex justify-between items-center">
+                          <div className="flex justify-between items-center mb-1">
                             <span className="text-[10px] text-orange-500 font-medium">รีเบทสะสมบิลนี้</span>
                             <span className="text-[10px] font-bold text-orange-500">฿{totalRebate.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-100">
+                          <div className="flex flex-col">
+                            <span className="text-xs font-bold text-emerald-600">เบิก Rebate มาใช้ (฿)</span>
+                            <span className="text-[10px] text-gray-400">คงเหลือ: ฿{availableRebate.toLocaleString()}</span>
+                          </div>
+                          <input 
+                            type="number" 
+                            max={Math.min(availableRebate, totalAmt)}
+                            min={0}
+                            placeholder="0"
+                            disabled={availableRebate <= 0 || totalAmt <= 0}
+                            value={activeBill?.rebateDiscountAmt || ''} 
+                            onChange={e => {
+                              const val = Math.min(Number(e.target.value) || 0, Math.min(availableRebate, totalAmt));
+                              updateBillInfo(activeBillId, { rebateDiscountAmt: val });
+                            }} 
+                            className="w-24 text-right border border-emerald-300 rounded px-2 py-1 text-xs font-mono font-bold text-emerald-700 bg-emerald-50 focus:outline-none focus:border-emerald-500 disabled:opacity-50 disabled:bg-gray-100 disabled:border-gray-200" 
+                          />
+                        </div>
+                        {(activeBill?.rebateDiscountAmt || 0) > 0 && (
+                          <div className="flex justify-between items-center mt-2 bg-emerald-50 p-1.5 rounded">
+                            <span className="text-xs font-bold text-emerald-800">ยอดสุทธิบิลนี้</span>
+                            <span className="text-sm font-black text-emerald-800">฿{(totalAmt - (activeBill.rebateDiscountAmt || 0)).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                       </div>
                     );
                   })()}
-                  <input type="text" placeholder="หมายเหตุบิลนี้..." value={activeBill?.remark} onChange={e => updateBillInfo(activeBillId, { remark: e.target.value })} className="w-full text-xs border border-gray-200 rounded px-2 py-1.5" />
+                  <input type="text" placeholder="หมายเหตุบิลนี้..." value={activeBill?.remark} onChange={e => updateBillInfo(activeBillId, { remark: e.target.value })} className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 mt-1" />
                 </div>
               </div>
             </div>

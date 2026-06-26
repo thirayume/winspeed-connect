@@ -129,6 +129,30 @@ router.get('/', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
+// ── GET /api/so/rebate-balance/:custId ─────────────────────────
+router.get('/rebate-balance/:custId', async (req, res) => {
+  try {
+    const r = await wfQuery(
+      `SELECT ISNULL(SUM(RemainingAmt), 0) AS AvailableRebate 
+       FROM wf.RebateLedger 
+       WHERE CustId = @custId AND Status = 'PENDING' AND RemainingAmt > 0 AND ReversedFlag = 0`,
+      { custId: { type: sql.VarChar(20), value: req.params.custId } }
+    );
+    res.json({ availableRebate: Number(r.recordset[0]?.AvailableRebate || 0) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// ── GET /api/so/debug-sohd ──────────────────────────────────
+router.get('/debug-sohd', async (req, res) => {
+  try {
+    const r = await wfQuery(`SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='SOHD'`);
+    res.json(r.recordset);
+  } catch(e) { res.status(500).json({msg: e.message}); }
+});
+
 // ── GET /api/so/:id ──────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
@@ -163,7 +187,7 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
 
     await wfTransaction(async tx => {
       for (const order of orders) {
-        const { soPrefix, custId, custName, truckPlate, controlTicketNo, deliveryDate, remark, lines, salesUserId: impersonatedId } = order;
+        const { soPrefix, custId, custName, truckPlate, controlTicketNo, deliveryDate, remark, lines, salesUserId: impersonatedId, rebateDiscountAmt } = order;
 
         // price deviation check
         const devLine = lines.find(l => !l.isGiveaway && (Number(l.pricePerTon) < Number(l.netPricePerTon) - 500));
@@ -185,14 +209,15 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
         soReq.input('controlTicketNo',  sql.NVarChar(20),  controlTicketNo || null);
         soReq.input('deliveryDate',     sql.Date,          deliveryDate ? new Date(deliveryDate) : null);
         soReq.input('remark',           sql.NVarChar(500), remark || null);
+        soReq.input('rebateDiscountAmt', sql.Decimal(12,2), Number(rebateDiscountAmt) || 0);
         const actualSalesUserId = (req.user.role === 'ADMIN' && impersonatedId) ? Number(impersonatedId) : req.user.sub;
         soReq.input('salesUserId',      sql.Int,           actualSalesUserId);
 
         const soR = await soReq.query(`
           INSERT INTO wf.SalesOrder
-            (WfRef, SoPrefix, CustId, CustName, TruckPlate, ControlTicketNo, DeliveryDate, Remark, SalesUserId, Status)
+            (WfRef, SoPrefix, CustId, CustName, TruckPlate, ControlTicketNo, DeliveryDate, Remark, SalesUserId, RebateDiscountAmt, Status)
             OUTPUT inserted.Id
-          VALUES (@wfRef, @soPrefix, @custId, @custName, @truckPlate, @controlTicketNo, @deliveryDate, @remark, @salesUserId, 'DRAFT')
+          VALUES (@wfRef, @soPrefix, @custId, @custName, @truckPlate, @controlTicketNo, @deliveryDate, @remark, @salesUserId, @rebateDiscountAmt, 'DRAFT')
         `);
         const soId = soR.recordset[0].Id;
         createdIds.push(soId);
@@ -242,6 +267,10 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
     const so = await getSoOrThrow(Number(req.params.id), 'DRAFT');
     const lines = await getLines(so.Id);
 
+    // Get the RebateDiscountAmt from draft table
+    const rAmt = await wfQuery(`SELECT ISNULL(RebateDiscountAmt, 0) AS RebateDiscountAmt FROM wf.SalesOrder WHERE Id = @id`, { id: { type: sql.Int, value: so.Id } });
+    const rebateDiscountAmt = rAmt.recordset[0]?.RebateDiscountAmt || 0;
+
     // ตรวจ price deviation: ราคาขาย < NET - 500 → block
     const devLine = lines.find(l => !l.IsGiveaway && (Number(l.PricePerTon) < Number(l.NetPricePerTon) - 500));
     if (devLine) {
@@ -262,6 +291,11 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
 
     // 2. ตั้ง Rebate accrual — เรียก rebate service (ใช้ newSoid ที่เป็น string)
     await bookRebateAccrual({ ...so, Id: newSoid }, lines, req.user.sub);
+
+    // 2.5 Consume Rebate (FIFO)
+    if (rebateDiscountAmt > 0) {
+      await consumeRebateAccrual(so.CustId, newSoid, rebateDiscountAmt);
+    }
 
     // 3. Audit log (บันทึกโดยใช้ newSoid)
     await audit(null, newSoid, req.user.sub, 'CONFIRMED', 'DRAFT', 'CONFIRMED', null, req.ip);
@@ -420,6 +454,36 @@ async function bookRebateAccrual(so, lines, userId) {
     await wfQuery(
       `UPDATE wf.RebatePool SET AccruedAmt = AccruedAmt + @amt, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
       { amt: { type: sql.Decimal(12,2), value: rebateAmt }, id: { type: sql.Int, value: pool.Id } }
+    );
+  }
+}
+
+// ── Internal: Consume Rebate (FIFO) ──────────────────────────
+async function consumeRebateAccrual(custId, newSoid, rebateDiscountAmt) {
+  if (!rebateDiscountAmt || rebateDiscountAmt <= 0) return;
+  let remainingToDeduct = Number(rebateDiscountAmt);
+
+  const ledgersR = await wfQuery(
+    `SELECT Id, RemainingAmt FROM wf.RebateLedger 
+     WHERE CustId = @custId AND Status = 'PENDING' AND RemainingAmt > 0 AND ReversedFlag = 0 
+     ORDER BY CreatedAt ASC`,
+    { custId: { type: sql.VarChar(20), value: custId } }
+  );
+
+  for (const ledger of ledgersR.recordset) {
+    if (remainingToDeduct <= 0) break;
+    
+    const deduct = Math.min(remainingToDeduct, Number(ledger.RemainingAmt));
+    remainingToDeduct -= deduct;
+    
+    await wfQuery(
+      `UPDATE wf.RebateLedger SET RemainingAmt = RemainingAmt - @deduct WHERE Id = @id`,
+      { deduct: { type: sql.Decimal(12,2), value: deduct }, id: { type: sql.Int, value: ledger.Id } }
+    );
+    
+    await wfQuery(
+      `INSERT INTO wf.RebateUsage (LedgerId, AppliedSOID, DeductedAmt) VALUES (@ledgerId, @soid, @deduct)`,
+      { ledgerId: { type: sql.Int, value: ledger.Id }, soid: { type: sql.VarChar(50), value: newSoid }, deduct: { type: sql.Decimal(12,2), value: deduct } }
     );
   }
 }
