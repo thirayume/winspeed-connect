@@ -166,6 +166,9 @@ export const fetchSoStats = (bust = false) =>
 export const getRebateBalance = (custId: string) =>
   req<{ availableRebate: number }>(`/so/rebate-balance/${custId}`, { silent: true });
 
+export const fetchShippedToday = (date: string) =>
+  req<import('../types').ShippedRow[]>(`/so/shipped-today?date=${date}`);
+
 export const createSO = (payload: any) =>
   req<{ id?: number; ids?: number[]; wfRef?: string; wfRefs?: string[]; needsApproval: boolean }>('/so', {
     method: 'POST', body: JSON.stringify(payload),

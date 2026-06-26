@@ -9,6 +9,7 @@
     "dev": "concurrently -n API,WEB -c blue,green \"npm run start:backend\" \"npm run start:frontend\"",
     "build": "cd WSSale-App && npm install && npm run build",
     "migrate": "cd backend && node run_migrations.js",
+    "migrate:local": "cd backend && cross-env DB_MODE=local node run_migrations.js",
     "migrate:remote": "cd backend && cross-env DB_MODE=remote node run_migrations.js",
     "deploy": "powershell -ExecutionPolicy Bypass -File deploy.ps1",
     "deploy:minor": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -BumpType minor",
