@@ -148,6 +148,9 @@ export const fetchSalesOrder = (id: number) => req<SalesOrder>(`/so/${id}`);
 export const fetchSoStats = () =>
   req<{ byStatus: Record<string, number>; total: number }>('/so/stats');
 
+export const getRebateBalance = (custId: string) =>
+  req<{ availableRebate: number }>(`/so/rebate-balance/${custId}`, { silent: true });
+
 export const createSO = (payload: any) =>
   req<{ id?: number; ids?: number[]; wfRef?: string; wfRefs?: string[]; needsApproval: boolean }>('/so', {
     method: 'POST', body: JSON.stringify(payload),
