@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Users, RefreshCw, Check, AlertTriangle, Plus, Edit2, X, Search, UserX, ArrowUpDown } from 'lucide-react';
-import { listUsers, fetchEmployees, updateUser, createUser } from '../../services/api';
+import { Users, RefreshCw, Check, AlertTriangle, Plus, Edit2, X, Search, UserX, ArrowUpDown, Trash2 } from 'lucide-react';
+import { listUsers, fetchEmployees, updateUser, createUser, deleteUser } from '../../services/api';
 import { getDbMode, DB_MODE_META } from '../../store/db-mode';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import type { AdminUser, Employee } from '../../types';
@@ -15,6 +15,8 @@ export const AdminUsersPage = () => {
   // Modal state
   const [modalUser, setModalUser] = useState<Partial<AdminUser> | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Pagination, Searching & Sorting
   const [searchQuery, setSearchQuery] = useState('');
@@ -48,6 +50,20 @@ export const AdminUsersPage = () => {
       alert((e as Error).message || 'บันทึกไม่สำเร็จ');
     } finally {
       setSavingId(null);
+    }
+  }
+
+  async function handleDeleteUser() {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      await deleteUser(deleteTarget.Id);
+      setUsers(prev => prev.filter(u => u.Id !== deleteTarget.Id));
+      setDeleteTarget(null);
+    } catch (e: unknown) {
+      alert((e as Error).message || 'ลบไม่สำเร็จ');
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -244,9 +260,14 @@ export const AdminUsersPage = () => {
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <button onClick={() => setModalUser(u)} className="p-1.5 text-gray-400 hover:text-[#0C447C] hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center justify-center" title="แก้ไข">
-                      <Edit2 size={16} />
-                    </button>
+                    <div className="flex items-center justify-center gap-1">
+                      <button onClick={() => setModalUser(u)} className="p-1.5 text-gray-400 hover:text-[#0C447C] hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center justify-center" title="แก้ไข">
+                        <Edit2 size={16} />
+                      </button>
+                      <button onClick={() => setDeleteTarget(u)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors inline-flex items-center justify-center" title="ลบผู้ใช้">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -278,6 +299,38 @@ export const AdminUsersPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Delete Confirm Dialog */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
+              <div className="p-2 bg-red-100 rounded-full">
+                <Trash2 size={20} className="text-red-600" />
+              </div>
+              <h2 className="font-bold text-gray-800">ยืนยันการลบผู้ใช้งาน</h2>
+            </div>
+            <div className="px-6 py-5">
+              <p className="text-sm text-gray-600 mb-1">คุณต้องการลบผู้ใช้งานนี้หรือไม่?</p>
+              <p className="font-semibold text-gray-800">{deleteTarget.DisplayName}</p>
+              <p className="text-xs text-gray-400">@{deleteTarget.Username}</p>
+              {deleteTarget.EmpCode && (
+                <p className="text-xs text-blue-600 mt-1">ผูกกับ {deleteTarget.EmpCode} · {deleteTarget.EmpName}</p>
+              )}
+              <p className="text-xs text-amber-600 mt-3 bg-amber-50 px-3 py-2 rounded-lg">ข้อมูลพนักงาน (EMEmp) จะไม่ถูกกระทบ — ลบเฉพาะบัญชีในระบบ</p>
+            </div>
+            <div className="px-6 pb-5 flex gap-3">
+              <button onClick={() => setDeleteTarget(null)} className="flex-1 py-2 rounded-xl font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
+                ยกเลิก
+              </button>
+              <button onClick={handleDeleteUser} disabled={isDeleting} className="flex-1 py-2 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 transition-colors flex items-center justify-center gap-2">
+                {isDeleting && <RefreshCw size={14} className="animate-spin" />}
+                ลบผู้ใช้งาน
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* User CRUD Modal */}
       {modalUser && (
