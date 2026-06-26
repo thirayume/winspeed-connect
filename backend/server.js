@@ -23,11 +23,26 @@ initSocket(server);
 
 // Start Database Polling
 startPolling();
-// CORS_ORIGIN รองรับหลายค่าคั่นด้วย comma (เช่น dev localhost + โดเมน Vercel) หรือ '*'
-const allowed = (process.env.CORS_ORIGIN || '*').split(',').map(s => s.trim());
+// CORS_ORIGIN รองรับหลายค่าคั่นด้วย comma หรือ '*'
+// ตัวอย่าง: CORS_ORIGIN=https://winspeed-connect.vercel.app,http://localhost:5173
+const allowedOrigins = (process.env.CORS_ORIGIN || '*').split(',').map(s => s.trim());
+const isWildcard = allowedOrigins.includes('*');
+
 app.use(cors({
-  origin: allowed.includes('*') ? '*' : (origin, cb) => cb(null, !origin || allowed.includes(origin)),
+  origin: isWildcard
+    ? '*'
+    : (origin, cb) => {
+        // allow server-to-server (no origin) or whitelisted origins
+        if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+        cb(new Error(`CORS: origin "${origin}" not allowed`));
+      },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-DB-Target'],
+  credentials: !isWildcard,
 }));
+// Explicit preflight handler
+app.options('*', cors());
+
 app.use(express.json({ limit: '2mb' }));
 
 // ── DB target switch (per-request) ────────────────────────────
