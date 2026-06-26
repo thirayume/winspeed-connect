@@ -152,6 +152,26 @@ router.get('/summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+// GET /api/rebate/voucher-summary — WFCoupon summary by salesperson (for VoucherPage)
+router.get('/voucher-summary', async (req, res) => {
+  try {
+    const r = await ownerPool.request().query(`
+      SELECT hd.EmpID,
+             ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS EmpName,
+             COUNT(DISTINCT hd.CustID)  AS CustCount,
+             COUNT(c.CouponID)          AS CouponCount,
+             SUM(c.RemaQty)             AS OutstandingTon
+      FROM dbo.WFCoupon c
+      JOIN dbo.SOHD hd  ON hd.SOID = c.DocuID
+      LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
+      WHERE c.RemaQty > 0
+      GROUP BY hd.EmpID, emp.EmpName
+      ORDER BY OutstandingTon DESC
+    `);
+    res.json(r.recordset || []);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
 // GET /api/rebate/coupons — รายลูกค้า สรุปยอดคูปองคงค้าง
 router.get('/coupons', async (req, res) => {
   try {
