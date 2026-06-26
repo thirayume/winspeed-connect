@@ -1,18 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-const sql = require('mssql/msnodesqlv8');
-
-const config = {
-  server: 'localhost\\SQLEXPRESS',
-  database: 'dbwins_worldfert9',
-  options: { trustedConnection: true, trustServerCertificate: true },
-  driver: 'msnodesqlv8'
-};
+const db = require('./db');
 
 async function run() {
   try {
-    const pool = await sql.connect(config);
-    console.log("Connected to DB.");
+    await db.ownerReady;
+    const pool = db.ownerPool;
+    const target = db.getTarget();
+    console.log(`Connected to DB (Target: ${target}).`);
 
     const schema3 = fs.readFileSync(path.join(__dirname, 'migrations', '003_schema_ext.sql'), 'utf-8');
     console.log("Running 003_schema_ext...");
