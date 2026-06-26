@@ -14,7 +14,7 @@ export const SalesPortal = () => {
   const [orders, setOrders]         = useState<SalesOrder[]>([]);
   const [totalOrders, setTotalOrders] = useState(0);
   const [loading, setLoading]       = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [externalSelectedSo, setExternalSelectedSo] = useState<SalesOrder | null>(null);
 
@@ -96,7 +96,7 @@ export const SalesPortal = () => {
             <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
           </button>
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => setIsCreating(true)}
             className="h-10 px-5 flex items-center gap-2 rounded-xl text-white text-sm font-semibold"
             style={{ background: '#0C447C' }}
           >
@@ -106,8 +106,12 @@ export const SalesPortal = () => {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* List pane */}
-        <div className={cn('flex flex-col overflow-hidden border-r border-gray-200 bg-white/50', 'flex-1 lg:flex-none lg:w-[480px] xl:w-[540px]')}>
+        {isCreating ? (
+          <CreateSODialog isOpen={isCreating} onClose={() => setIsCreating(false)} onCreated={() => { loadData(); setIsCreating(false); }} />
+        ) : (
+          <>
+            {/* List pane */}
+            <div className={cn('flex flex-col overflow-hidden border-r border-gray-200 bg-white/50', 'flex-1 lg:flex-none lg:w-[480px] xl:w-[540px]')}>
           {/* Search */}
           <div className="p-4 space-y-3 bg-white border-b border-gray-100">
             <div className="relative">
@@ -251,16 +255,18 @@ export const SalesPortal = () => {
             </div>
           )}
         </div>
-      </div>
-
-      {/* Mobile detail drawer */}
-      <div className="lg:hidden">
-        {selectedSo && (
-          <SODetailsPanel so={selectedSo} onClose={() => setSelectedId(null)} onUpdate={loadData} isInline={false} />
+          </>
         )}
       </div>
 
-      <CreateSODialog isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onCreated={loadData} />
+      {/* Mobile detail drawer */}
+      {!isCreating && (
+        <div className="lg:hidden">
+          {selectedSo && (
+            <SODetailsPanel so={selectedSo} onClose={() => setSelectedId(null)} onUpdate={loadData} isInline={false} />
+          )}
+        </div>
+      )}
     </div>
   );
 };
