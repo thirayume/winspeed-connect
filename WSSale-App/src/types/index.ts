@@ -216,6 +216,18 @@ export type CouponCustomer = {
   OldestDate: string;
 };
 
+// ── Accounting: ออกของวันนี้ (dbo.SOHD) ──────────────────────
+export type ShippedRow = {
+  Id: number;
+  WfRef: string;
+  CustName: string;
+  DocuDate: string;
+  DocuStatus: string;
+  TotalTon: number;
+  LineCount: number;
+  TruckPlate: string;
+};
+
 // ── CN Rebate (dbo — single source of truth) ─────────────────
 export type CnRebateSummary = {
   EmpID: string;

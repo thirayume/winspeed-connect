@@ -3,7 +3,7 @@
  * ⚠ Writes ไปที่ wf schema เท่านั้น
  */
 const router = require('express').Router();
-const { sql, wfQuery, ownerPool } = require('../db');
+const { sql, wfQuery } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 
 router.use(requireAuth);
@@ -152,10 +152,12 @@ router.get('/summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+// ⚠ ทุก endpoint อ่าน dbo ใช้ wfQuery (ownerPool ของ target ปัจจุบัน) เพื่อให้ตามปุ่มสลับ LOCAL/REMOTE
+
 // GET /api/rebate/voucher-summary — WFCoupon summary by salesperson (for VoucherPage)
 router.get('/voucher-summary', async (req, res) => {
   try {
-    const r = await ownerPool.request().query(`
+    const r = await wfQuery(`
       SELECT hd.EmpID,
              ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS EmpName,
              COUNT(DISTINCT hd.CustID)  AS CustCount,
@@ -179,11 +181,11 @@ router.get('/cn-summary', async (req, res) => {
   try {
     const { year, empId } = req.query;
     let where = `WHERE cn.Docutype = 109 AND cn.CNRemarkTypeID IN (6001, 1001)`;
-    const req2 = ownerPool.request();
-    if (year)  { where += ` AND YEAR(cn.DocuDate) = @year`;  req2.input('year',  sql.Int, Number(year)); }
-    if (empId) { where += ` AND cn.EmpID = @empId`; req2.input('empId', sql.Int, Number(empId)); }
+    const inputs = {};
+    if (year)  { where += ` AND YEAR(cn.DocuDate) = @year`;  inputs.year  = { type: sql.Int, value: Number(year) }; }
+    if (empId) { where += ` AND cn.EmpID = @empId`;          inputs.empId = { type: sql.Int, value: Number(empId) }; }
 
-    const r = await req2.query(`
+    const r = await wfQuery(`
       SELECT
         e.EmpName                          AS SalesName,
         cn.EmpID,
@@ -198,7 +200,7 @@ router.get('/cn-summary', async (req, res) => {
       ${where}
       GROUP BY cn.EmpID, e.EmpName
       ORDER BY TotalRebate DESC
-    `);
+    `, inputs);
     res.json(r.recordset || []);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
@@ -208,12 +210,12 @@ router.get('/cn-list', async (req, res) => {
   try {
     const { year, empId, custId } = req.query;
     let where = `WHERE cn.Docutype = 109 AND cn.CNRemarkTypeID IN (6001, 1001)`;
-    const req2 = ownerPool.request();
-    if (year)   { where += ` AND YEAR(cn.DocuDate) = @year`;    req2.input('year',   sql.Int,          Number(year)); }
-    if (empId)  { where += ` AND cn.EmpID = @empId`;            req2.input('empId',  sql.Int,          Number(empId)); }
-    if (custId) { where += ` AND cn.CustID = @custId`;          req2.input('custId', sql.NVarChar(20), custId); }
+    const inputs = {};
+    if (year)   { where += ` AND YEAR(cn.DocuDate) = @year`; inputs.year   = { type: sql.Int,          value: Number(year) }; }
+    if (empId)  { where += ` AND cn.EmpID = @empId`;         inputs.empId  = { type: sql.Int,          value: Number(empId) }; }
+    if (custId) { where += ` AND cn.CustID = @custId`;       inputs.custId = { type: sql.NVarChar(20), value: custId }; }
 
-    const r = await req2.query(`
+    const r = await wfQuery(`
       SELECT
         cn.SOInvID,
         cn.DocuNo                                        AS CNDocuNo,
@@ -234,7 +236,7 @@ router.get('/cn-list', async (req, res) => {
       LEFT JOIN dbo.EMcnremarkType t ON t.CNRemarkTypeID = cn.CNRemarkTypeID
       ${where}
       ORDER BY cn.DocuDate DESC
-    `);
+    `, inputs);
     res.json(r.recordset || []);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
@@ -242,9 +244,7 @@ router.get('/cn-list', async (req, res) => {
 // GET /api/rebate/cn-detail/:soInvId — รายการสินค้าใน CN
 router.get('/cn-detail/:soInvId', async (req, res) => {
   try {
-    const r = await ownerPool.request()
-      .input('id', sql.Int, Number(req.params.soInvId))
-      .query(`
+    const r = await wfQuery(`
         SELECT
           d.ListNo,
           d.GoodName,
@@ -258,7 +258,7 @@ router.get('/cn-detail/:soInvId', async (req, res) => {
         LEFT JOIN dbo.SOInvDT inv_d ON inv_d.SOInvID = cn.RefSOID AND inv_d.GoodID = d.GoodID
         WHERE d.SOInvID = @id
         ORDER BY d.ListNo
-      `);
+      `, { id: { type: sql.Int, value: Number(req.params.soInvId) } });
     res.json(r.recordset || []);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
@@ -268,13 +268,11 @@ router.get('/coupons', async (req, res) => {
   try {
     const { custId, empId } = req.query;
     let where = 'WHERE c.RemaQty > 0';
-    const inputs = [];
-    if (custId) { where += ` AND hd.CustID = @custId`; inputs.push({ name: 'custId', type: sql.NVarChar(20), value: custId }); }
-    if (empId)  { where += ` AND hd.EmpID  = @empId`;  inputs.push({ name: 'empId',  type: sql.Int,          value: Number(empId) }); }
+    const inputs = {};
+    if (custId) { where += ` AND hd.CustID = @custId`; inputs.custId = { type: sql.NVarChar(20), value: custId }; }
+    if (empId)  { where += ` AND hd.EmpID  = @empId`;  inputs.empId  = { type: sql.Int,          value: Number(empId) }; }
 
-    const req2 = ownerPool.request();
-    inputs.forEach(i => req2.input(i.name, i.type, i.value));
-    const r = await req2.query(`
+    const r = await wfQuery(`
       SELECT hd.CustID, hd.CustName,
              hd.EmpID,
              ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS EmpName,
@@ -287,7 +285,7 @@ router.get('/coupons', async (req, res) => {
       ${where}
       GROUP BY hd.CustID, hd.CustName, hd.EmpID, emp.EmpName
       ORDER BY OutstandingTon DESC
-    `);
+    `, inputs);
     res.json(r.recordset || []);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
@@ -295,9 +293,7 @@ router.get('/coupons', async (req, res) => {
 // GET /api/rebate/coupons/:custId — รายการคูปองของลูกค้า
 router.get('/coupons/:custId', async (req, res) => {
   try {
-    const r = await ownerPool.request()
-      .input('cid', sql.NVarChar(20), req.params.custId)
-      .query(`
+    const r = await wfQuery(`
         SELECT c.CouponID, c.CouponNo, c.SONo,
                CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
                hd.CustID, hd.CustName,
@@ -312,7 +308,7 @@ router.get('/coupons/:custId', async (req, res) => {
         LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
         WHERE hd.CustID = @cid AND c.RemaQty > 0
         ORDER BY hd.DocuDate ASC
-      `);
+      `, { cid: { type: sql.NVarChar(20), value: req.params.custId } });
     res.json(r.recordset || []);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
