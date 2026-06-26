@@ -25,12 +25,12 @@ export function DashboardPage() {
   const [rebate, setRebate]   = useState<RebateSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
-  async function load() {
+  async function load(bustCache = false) {
     setLoading(true);
     try {
       const [s, a, r] = await Promise.all([
-        fetchSoStats(),
-        fetchAgingOrders().catch(() => []),
+        fetchSoStats(bustCache),
+        fetchAgingOrders(bustCache).catch(() => []),
         fetchRebateSummary().catch(() => []),
       ]);
       setStats(s);
@@ -59,7 +59,7 @@ export function DashboardPage() {
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">ภาพรวมใบสั่งขาย · ตั๋วคงค้าง · รีเบท</p>
         </div>
-        <button onClick={load} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white">
+        <button onClick={() => load(true)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white">
           <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
         </button>
       </div>
