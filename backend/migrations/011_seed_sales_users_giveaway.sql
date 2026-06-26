@@ -7,7 +7,25 @@
 
 -- ── 1. AppUsers ───────────────────────────────────────────────
 -- Nickname-based usernames from Excel display names
--- Existing: sales1 = ชูชาติ (EMP-00035), sales2 = มนัส (EMP-00036)
+-- Existing: sales1 = ชูชาติ (EMP-00035)
+-- Renamed:  sales2 → manas = มนัส (EMP-00036)
+
+-- rename sales2 → manas (idempotent)
+IF EXISTS (SELECT 1 FROM wf.AppUser WHERE Username = 'sales2')
+  UPDATE wf.AppUser SET Username = 'manas', DisplayName = N'มนัส (พนักงานขาย)' WHERE Username = 'sales2';
+GO
+
+-- link surachai APPROVER EmpId (only if chai doesn't already hold it)
+IF NOT EXISTS (SELECT 1 FROM wf.AppUser WHERE EmpId = '1018' AND Username <> 'surachai')
+  UPDATE wf.AppUser SET EmpId = '1018' WHERE Username = 'surachai';
+GO
+
+-- สุรชัย (SALES) — EMP-00019
+IF NOT EXISTS (SELECT 1 FROM wf.AppUser WHERE Username = 'chai')
+INSERT INTO wf.AppUser (Username, PasswordHash, DisplayName, Role, EmpId, IsActive)
+VALUES ('chai', '$2b$12$oes4OIRs60AC.r5MmgzMdeZkJelanWV2RI8ncpQ66dutFyGbrc6Ei',
+        N'สุรชัย (ช้าย)', 'SALES', '1018', 1);
+GO
 
 IF NOT EXISTS (SELECT 1 FROM wf.AppUser WHERE Username = 'bass')
 INSERT INTO wf.AppUser (Username, PasswordHash, DisplayName, Role, EmpId, IsActive)
