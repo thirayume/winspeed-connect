@@ -6,7 +6,14 @@
     "start:backend": "cd backend && nodemon server.js",
     "start:frontend": "cd WSSale-App && npm run dev",
     "dev": "concurrently -n API,WEB -c blue,green \"npm run start:backend\" \"npm run start:frontend\"",
-    "build": "cd WSSale-App && npm install && npm run build"
+    "build": "cd WSSale-App && npm install && npm run build",
+    "migrate": "cd backend && node run_migrations.js",
+    "migrate:remote": "cd backend && cross-env DB_MODE=remote node run_migrations.js",
+    "deploy": "powershell -ExecutionPolicy Bypass -File deploy.ps1",
+    "deploy:minor": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -BumpType minor",
+    "deploy:major": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -BumpType major",
+    "deploy:skip-migrate": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -SkipMigration",
+    "deploy:dry": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -DryRun"
   },
   "devDependencies": {
     "concurrently": "^10.0.3",
