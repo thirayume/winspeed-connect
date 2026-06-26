@@ -48,7 +48,7 @@ export function DashboardPage() {
   });
 
   const warnAging = aging.filter(a => a.DaysOpen > 30);
-  const totalRebateAvailable = rebate.reduce((s, r) => s + Number(r.TotalAvailable || 0), 0);
+  const totalRebateTon = rebate.reduce((s, r) => s + Number(r.OutstandingTon || 0), 0);
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
@@ -71,8 +71,8 @@ export function DashboardPage() {
           <KpiCard icon={<Clock size={20} />} label="ยืนยัน + รอรับสินค้า"
             value={((stats.byStatus.CONFIRMED || 0) + (stats.byStatus.PICKING || 0)).toLocaleString()} color="#F59E0B" />
           <KpiCard icon={<AlertTriangle size={20} />} label="ตั๋วคงค้าง >30 วัน" value={warnAging.length.toLocaleString()} color="#EF4444" />
-          <KpiCard icon={<TrendingUp size={20} />} label="รีเบทใช้ได้ (฿)"
-            value={totalRebateAvailable.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} color="#059669" />
+          <KpiCard icon={<TrendingUp size={20} />} label="Coupon คงค้าง (ตัน)"
+            value={totalRebateTon.toLocaleString('th-TH', { maximumFractionDigits: 1 })} color="#059669" />
         </div>
 
         {/* SO status breakdown */}
@@ -123,28 +123,30 @@ export function DashboardPage() {
             )}
           </div>
 
-          {/* Rebate summary per salesperson */}
+          {/* Rebate coupon outstanding by salesperson */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-            <h2 className="text-sm font-bold text-gray-700 mb-3">รีเบทต่อพนักงานขาย</h2>
+            <h2 className="text-sm font-bold text-gray-700 mb-3">Coupon คงค้างต่อพนักงานขาย</h2>
             {rebate.length === 0 ? (
-              <p className="text-xs text-gray-400 py-6 text-center">ยังไม่มีข้อมูลรีเบท</p>
+              <p className="text-xs text-gray-400 py-6 text-center">ไม่มีคูปองคงค้าง</p>
             ) : (
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-gray-400 border-b border-gray-100">
                     <th className="text-left py-1.5 font-medium">พนักงาน</th>
-                    <th className="text-right py-1.5 font-medium">สะสม</th>
-                    <th className="text-right py-1.5 font-medium">เคลมแล้ว</th>
-                    <th className="text-right py-1.5 font-medium">ใช้ได้</th>
+                    <th className="text-right py-1.5 font-medium">ลูกค้า</th>
+                    <th className="text-right py-1.5 font-medium">ใบ</th>
+                    <th className="text-right py-1.5 font-medium">คงค้าง (ตัน)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {rebate.map((r, i) => (
                     <tr key={i}>
-                      <td className="py-2 text-gray-700">{r.SalesName}</td>
-                      <td className="py-2 text-right tabular-nums text-gray-600">฿{Number(r.TotalAccrued).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td className="py-2 text-right tabular-nums text-gray-400">฿{Number(r.TotalClaimed).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td className="py-2 text-right tabular-nums font-bold" style={{ color: '#059669' }}>฿{Number(r.TotalAvailable).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className="py-2 text-gray-700 font-medium">{r.EmpName}</td>
+                      <td className="py-2 text-right tabular-nums text-gray-500">{r.CustCount}</td>
+                      <td className="py-2 text-right tabular-nums text-gray-400">{r.CouponCount}</td>
+                      <td className="py-2 text-right tabular-nums font-bold" style={{ color: '#059669' }}>
+                        {Number(r.OutstandingTon).toLocaleString('th-TH', { maximumFractionDigits: 1 })}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

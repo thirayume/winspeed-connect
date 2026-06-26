@@ -226,6 +226,14 @@ export const approveRebateClaim = (id: number, docuNo?: string) =>
 
 export const fetchRebateSummary = () => req<RebateSummary[]>('/rebate/summary');
 
+export const fetchCouponCustomers = (params?: { empId?: number }) => {
+  const qs = params?.empId ? `?empId=${params.empId}` : '';
+  return req<import('../types').CouponCustomer[]>(`/rebate/coupons${qs}`);
+};
+
+export const fetchCouponDetail = (custId: string) =>
+  req<import('../types').CouponRow[]>(`/rebate/coupons/${encodeURIComponent(custId)}`);
+
 // ── Giveaway (qty model) ──────────────────────────────────────
 export const fetchGiveawayRegions = (year?: number) =>
   req<GiveawayRegion[]>(`/giveaway/regions${year ? `?year=${year}` : ''}`);

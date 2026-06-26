@@ -3,7 +3,7 @@
  * ⚠ Writes ไปที่ wf schema เท่านั้น
  */
 const router = require('express').Router();
-const { sql, wfQuery } = require('../db');
+const { sql, wfQuery, ownerPool } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 
 router.use(requireAuth);
@@ -134,20 +134,76 @@ router.patch('/claims/:id/approve', requireRole('ACCOUNTING', 'ADMIN'), async (r
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/rebate/summary — KPI ภาพรวม
-router.get('/summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
+// GET /api/rebate/summary — KPI ต่อพนักงานขาย (จาก dbo.WFCoupon)
+router.get('/summary', async (req, res) => {
   try {
-    const r = await wfQuery(`
-      SELECT u.DisplayName AS SalesName,
-             SUM(p.AccruedAmt) AS TotalAccrued,
-             SUM(p.ClaimedAmt) AS TotalClaimed,
-             SUM(p.AccruedAmt - p.ClaimedAmt) AS TotalAvailable,
-             SUM(p.AllocatedAmt) AS TotalAllocated
-      FROM wf.RebatePool p
-      JOIN wf.AppUser u ON u.Id = p.SalesUserId
-      GROUP BY u.DisplayName
-      ORDER BY TotalAccrued DESC
+    const r = await ownerPool.request().query(`
+      SELECT hd.EmpID,
+             ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS EmpName,
+             COUNT(DISTINCT hd.CustID)  AS CustCount,
+             COUNT(c.CouponID)          AS CouponCount,
+             SUM(c.RemaQty)             AS OutstandingTon
+      FROM dbo.WFCoupon c
+      JOIN dbo.SOHD hd  ON hd.SOID = c.DocuID
+      LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
+      WHERE c.RemaQty > 0
+      GROUP BY hd.EmpID, emp.EmpName
+      ORDER BY OutstandingTon DESC
     `);
+    res.json(r.recordset || []);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/rebate/coupons — รายลูกค้า สรุปยอดคูปองคงค้าง
+router.get('/coupons', async (req, res) => {
+  try {
+    const { custId, empId } = req.query;
+    let where = 'WHERE c.RemaQty > 0';
+    const inputs = [];
+    if (custId) { where += ` AND hd.CustID = @custId`; inputs.push({ name: 'custId', type: sql.NVarChar(20), value: custId }); }
+    if (empId)  { where += ` AND hd.EmpID  = @empId`;  inputs.push({ name: 'empId',  type: sql.Int,          value: Number(empId) }); }
+
+    const req2 = ownerPool.request();
+    inputs.forEach(i => req2.input(i.name, i.type, i.value));
+    const r = await req2.query(`
+      SELECT hd.CustID, hd.CustName,
+             hd.EmpID,
+             ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS EmpName,
+             COUNT(c.CouponID)   AS CouponCount,
+             SUM(c.RemaQty)      AS OutstandingTon,
+             MIN(hd.DocuDate)    AS OldestDate
+      FROM dbo.WFCoupon c
+      JOIN dbo.SOHD hd ON hd.SOID = c.DocuID
+      LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
+      ${where}
+      GROUP BY hd.CustID, hd.CustName, hd.EmpID, emp.EmpName
+      ORDER BY OutstandingTon DESC
+    `);
+    res.json(r.recordset || []);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/rebate/coupons/:custId — รายการคูปองของลูกค้า
+router.get('/coupons/:custId', async (req, res) => {
+  try {
+    const r = await ownerPool.request()
+      .input('cid', sql.NVarChar(20), req.params.custId)
+      .query(`
+        SELECT c.CouponID, c.CouponNo, c.SONo,
+               CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
+               hd.CustID, hd.CustName,
+               hd.EmpID,
+               ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS EmpName,
+               c.GoodID, c.GoodName,
+               c.GoodQty,
+               c.RemaQty,
+               c.GoodQty - c.RemaQty AS RedeemedQty
+        FROM dbo.WFCoupon c
+        JOIN dbo.SOHD hd ON hd.SOID = c.DocuID
+        LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
+        WHERE hd.CustID = @cid AND c.RemaQty > 0
+        ORDER BY hd.DocuDate ASC
+      `);
     res.json(r.recordset || []);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
