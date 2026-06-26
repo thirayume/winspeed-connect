@@ -22,6 +22,14 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('dbo.SOHD')
     WITH (ONLINE = OFF, FILLFACTOR = 85);
 GO
 
+-- SQL Server missing index suggestion (Impact 23): RefNo before DocuStatus for LIKE 'AI%' seeks
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('dbo.SOHD') AND name = 'IX_SOHD_DeliveryByRefNo2')
+    CREATE NONCLUSTERED INDEX IX_SOHD_DeliveryByRefNo2
+        ON dbo.SOHD (DocuType, RefNo, DocuStatus)
+        INCLUDE (SOID)
+    WITH (ONLINE = OFF, FILLFACTOR = 85);
+GO
+
 -- ── dbo.SODT ─────────────────────────────────────────────────
 
 -- Aggregate GoodQty2 per SOID (TotalQtyTon / DrawnQtyTon)
