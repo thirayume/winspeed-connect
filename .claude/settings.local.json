@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "mcp__visualize__read_me",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(node -e ' *)",
+      "PowerShell($env:DB_MODE=\"local\"; npm run migrate 2>&1 | Select-String \"013_|OK|ERRORS\" | Select-Object -First 10)",
+      "PowerShell($env:DB_MODE=\"local\"; npm run migrate 2>&1 | Select-String \"013_|17 OK|maintenance|comprehensive\")",
+      "Bash(git commit -m 'fix: show Active/Inactive status in สถานะระบบ column instead of EmpCode *)",
+      "Bash(awk '{print $NF}')",
+      "Bash(git commit -m 'chore: cleanup unused files and fix migration naming *)"
+    ]
+  }
+}
