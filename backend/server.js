@@ -40,8 +40,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-DB-Target'],
   credentials: !isWildcard,
 }));
-// Explicit preflight handler (Express 5 syntax)
-app.options('/{*splat}', cors());
+// Explicit preflight handler — use regex for Express 5 compatibility
+app.options(/.*/, cors());
 
 app.use(express.json({ limit: '2mb' }));
 
