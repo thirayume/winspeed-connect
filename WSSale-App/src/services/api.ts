@@ -79,6 +79,9 @@ export const listUsers = () => req<AdminUser[]>('/auth/users');
 export const updateUser = (id: number, patch: { empId?: string | null; role?: string; displayName?: string; isActive?: boolean; password?: string }) =>
   req<{ ok: boolean; id: number }>(`/auth/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
 
+export const deleteUser = (id: number) =>
+  req<{ ok: boolean }>(`/auth/users/${id}`, { method: 'DELETE' });
+
 export const fetchEmployees = () => req<Employee[]>('/master/employees');
 
 // ── Master data ───────────────────────────────────────────────

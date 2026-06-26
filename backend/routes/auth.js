@@ -110,4 +110,17 @@ router.patch('/users/:id', requireAuth, requireRole('ADMIN'), async (req, res) =
   }
 });
 
+// DELETE /api/auth/users/:id — ลบผู้ใช้ (ADMIN only, ห้ามลบตัวเอง)
+router.delete('/users/:id', requireAuth, requireRole('ADMIN'), async (req, res) => {
+  try {
+    const targetId = Number(req.params.id);
+    if (targetId === req.user.id) return res.status(400).json({ message: 'ไม่สามารถลบบัญชีตัวเองได้' });
+    await wfQuery(
+      `DELETE FROM wf.AppUser WHERE Id = @id`,
+      { id: { type: sql.Int, value: targetId } }
+    );
+    res.json({ ok: true });
+  } catch (e) { console.error(e); res.status(500).json({ message: 'Server error' }); }
+});
+
 module.exports = router;
