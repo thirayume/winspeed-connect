@@ -1,56 +1,102 @@
-const fs = require('fs');
+/**
+ * run_migrations.js
+ * -----------------------------------------------------------
+ * Runs ALL SQL migration files in /migrations in sorted order.
+ * Skips batches that fail with non-fatal errors (idempotent).
+ *
+ * Usage:
+ *   node run_migrations.js            → run against DB_MODE in .env (default: remote)
+ *   DB_MODE=remote node run_migrations.js
+ *
+ * Called by deploy.ps1 as part of CI/CD pipeline.
+ */
+require('dotenv').config();
+const fs   = require('fs');
 const path = require('path');
-const db = require('./db');
+const db   = require('./db');
 
-async function run() {
-  try {
-    await db.ownerReady;
-    const pool = db.ownerPool;
-    const target = db.getTarget();
-    console.log(`Connected to DB (Target: ${target}).`);
+const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
+const SKIP_FILES     = ['001_wf_schema_backup.sql'];
 
-    const schema3 = fs.readFileSync(path.join(__dirname, 'migrations', '003_schema_ext.sql'), 'utf-8');
-    console.log("Running 003_schema_ext...");
-    const batches = schema3.split(/^\s*GO\s*$/im).filter(b => b.trim());
-    for (const batch of batches) {
+// Errors that are safe to ignore (object already exists, index already exists, etc.)
+const IGNORABLE_CODES = [
+  1913, // index already exists
+  2714, // object already exists
+  2705, // column already exists
+   911, // database does not exist (login scripts on wrong db)
+];
+
+async function runFile(pool, filePath) {
+  const fileName = path.basename(filePath);
+  const sql = fs.readFileSync(filePath, 'utf-8');
+  const batches = sql.split(/^\s*GO\s*$/im).filter(b => b.trim());
+
+  let successCount = 0;
+  let skipCount    = 0;
+  let errorCount   = 0;
+
+  for (const batch of batches) {
+    try {
       await pool.request().query(batch);
+      successCount++;
+    } catch (e) {
+      const code = e?.originalError?.code ?? e?.number;
+      if (IGNORABLE_CODES.includes(code)) {
+        skipCount++;
+      } else {
+        console.error(`  ✗ Error in ${fileName}:`, e.message);
+        errorCount++;
+      }
     }
-    console.log("003_schema_ext applied.");
-
-    const mdata = fs.readFileSync(path.join(__dirname, 'migrations', 'migration_2025_ext.sql'), 'utf-8');
-    console.log("Running migration_2025_ext...");
-    await pool.request().query(mdata);
-    console.log("Ext data migration applied.");
-
-    const view4 = fs.readFileSync(path.join(__dirname, 'migrations', '004_view_union.sql'), 'utf-8');
-    console.log("Running 004_view_union...");
-    const batches4 = view4.split(/^\s*GO\s*$/im).filter(b => b.trim());
-    for (const batch of batches4) {
-      await pool.request().query(batch);
-    }
-    console.log("004_view_union applied.");
-
-    const sp5 = fs.readFileSync(path.join(__dirname, 'migrations', '005_sp_confirm_so.sql'), 'utf-8');
-    console.log("Running 005_sp_confirm_so...");
-    const batches5 = sp5.split(/^\s*GO\s*$/im).filter(b => b.trim());
-    for (const batch of batches5) {
-      await pool.request().query(batch);
-    }
-    console.log("005_sp_confirm_so applied.");
-
-    const view6 = fs.readFileSync(path.join(__dirname, 'migrations', '006_customer_ext.sql'), 'utf-8');
-    console.log("Running 006_customer_ext...");
-    const batches6 = view6.split(/^\s*GO\s*$/im).filter(b => b.trim());
-    for (const batch of batches6) {
-      await pool.request().query(batch);
-    }
-    console.log("006_customer_ext applied.");
-
-    process.exit(0);
-  } catch (e) {
-    console.error("Migration failed:", e);
-    process.exit(1);
   }
+
+  const parts = [];
+  if (successCount) parts.push(`${successCount} OK`);
+  if (skipCount)    parts.push(`${skipCount} skipped`);
+  if (errorCount)   parts.push(`${errorCount} ERRORS`);
+  console.log(`  → ${parts.join(', ')}`);
+
+  return errorCount === 0;
 }
 
-run();
+async function run() {
+  console.log('');
+  console.log('╔═══════════════════════════════════════╗');
+  console.log('║         WinSpeed DB Migration         ║');
+  console.log('╚═══════════════════════════════════════╝');
+
+  await db.ownerReady;
+  const pool   = db.ownerPool;
+  const target = db.getTarget();
+  console.log(`\n🔌 Connected → Target: ${target.toUpperCase()}\n`);
+
+  const files = fs.readdirSync(MIGRATIONS_DIR)
+    .filter(f => f.endsWith('.sql') && !SKIP_FILES.includes(f))
+    .sort();
+
+  let totalOK  = 0;
+  let totalErr = 0;
+
+  for (const file of files) {
+    console.log(`📄 ${file}`);
+    const ok = await runFile(pool, path.join(MIGRATIONS_DIR, file));
+    if (ok) totalOK++;
+    else    totalErr++;
+  }
+
+  console.log('');
+  console.log('═══════════════════════════════════════');
+  if (totalErr === 0) {
+    console.log(`✅ All ${totalOK} migration file(s) applied successfully.`);
+  } else {
+    console.log(`⚠️  ${totalOK} OK, ${totalErr} file(s) had errors.`);
+  }
+  console.log('═══════════════════════════════════════\n');
+
+  process.exit(totalErr > 0 ? 1 : 0);
+}
+
+run().catch(e => {
+  console.error('Fatal:', e);
+  process.exit(1);
+});
