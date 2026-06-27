@@ -31,7 +31,10 @@
       "Bash(xargs grep -l -i \"rebate\")",
       "Bash(node -c routes/rebate.js)",
       "Bash(rm -f _diag_*.js _apply_005.js _sp_remote.sql _sp_local.sql && echo \"--- remaining _ temp files ---\" && ls -la _* 2>/dev/null || echo \"none \\(clean\\)\")",
-      "Bash(node -p \"require\\('./package.json'\\).version\")"
+      "Bash(node -p \"require\\('./package.json'\\).version\")",
+      "Bash(pandoc WorldFert_SRS_v5_0.docx -o /tmp/srs5.md)",
+      "Read(//tmp/**)",
+      "Bash(python -c ' *)"
     ]
   }
 }
