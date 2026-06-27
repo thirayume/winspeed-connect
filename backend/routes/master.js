@@ -434,6 +434,27 @@ router.get('/control-tickets/:docuNo', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
+// GET /api/master/control-tickets/:docuNo/draws — ประวัติการตัด (SO 104 ที่ตัดจากตั๋วคุมนี้) FR-021
+router.get('/control-tickets/:docuNo/draws', async (req, res) => {
+  try {
+    const rows = await query(`
+      SELECT h2.SOID, h2.DocuNo,
+             CONVERT(VARCHAR(10), h2.DocuDate, 120) AS DocuDate,
+             h2.CustName, h2.TransRegistration AS TruckPlate,
+             SUM(d2.GoodQty2) AS DrawnQtyTon,
+             COUNT(d2.ListNo) AS LineCnt
+      FROM dbo.SOHD h2 WITH (NOLOCK)
+      JOIN dbo.SODT d2 WITH (NOLOCK) ON h2.SOID = d2.SOID
+      LEFT JOIN wf.SalesOrderLine wfl WITH (NOLOCK) ON wfl.SoId = h2.SOID AND wfl.LineNum = d2.ListNo
+      WHERE h2.DocuType = 104 AND h2.DocuStatus <> 'C'
+        AND (RTRIM(h2.RefNo) = RTRIM(@docuNo) OR wfl.RefControlTicketNo = RTRIM(@docuNo))
+      GROUP BY h2.SOID, h2.DocuNo, h2.DocuDate, h2.CustName, h2.TransRegistration
+      ORDER BY h2.DocuDate DESC
+    `, { docuNo: { type: sql.NVarChar(30), value: String(req.params.docuNo).trim() } });
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
 // GET /api/master/truck-plates — ทะเบียนรถเก่าของลูกค้า (autocomplete)
 router.get('/truck-plates', async (req, res) => {
   try {
