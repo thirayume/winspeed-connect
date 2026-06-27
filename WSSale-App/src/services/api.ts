@@ -190,10 +190,13 @@ export const unlockSO = (id: number, note?: string) =>
     method: 'PATCH', body: JSON.stringify({ note }),
   });
 
-export const shipSO = (id: number, weighOutWeight?: number) =>
-  req<{ id: number; status: SOStatus; importFilePath: string }>(`/so/${id}/ship`, {
-    method: 'PATCH', body: JSON.stringify({ weighOutWeight }),
+export const shipSO = (id: number, weighOutWeight?: number, opts?: { tareKg?: number; scaleNo?: number; movebill?: string }) =>
+  req<{ id: number; status: SOStatus; netKg?: number; importFilePath?: string }>(`/so/${id}/ship`, {
+    method: 'PATCH', body: JSON.stringify({ weighOutWeight, ...(opts || {}) }),
   });
+
+export const fetchWeighTicket = (soId: number | string) =>
+  req<import('../types').WeighTicket | null>(`/so/${soId}/weigh`, { silent: true });
 
 export const syncImported = (id: number, docuNo: string) =>
   req<{ id: number; status: SOStatus }>(`/so/${id}/sync-imported`, {
