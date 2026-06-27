@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
-import { LayoutGrid, RefreshCw, Truck, FileText, ArrowRight, ArrowLeft, Clock, X } from 'lucide-react';
-import { fetchPaperBoard, confirmSO, moveToPicking, shipSO, syncImported } from '../../services/api';
+import { LayoutGrid, RefreshCw, Truck, FileText, ArrowRight, ArrowLeft, Clock, Printer, ScanLine, AlertTriangle } from 'lucide-react';
+import { fetchPaperBoard, confirmSO, moveToPicking, shipSO, syncImported, fetchLostPapers } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import type { SalesOrder } from '../../types';
 import { fetchSalesOrders } from '../../services/api';
 import type { PaperBoard, PaperCard, SOStatus } from '../../types';
+import { PaperDocModal } from './PaperDocModal';
+import { ScanModal } from './ScanModal';
 
 const STAGE_META: Record<string, { label: string; color: string; bg: string }> = {
   DRAFT:     { label: 'ร่าง',         color: '#6B7280', bg: '#F3F4F6' },
@@ -25,10 +27,17 @@ export function PaperTrailPage() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId]   = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'board' | 'cancelled'>('board');
+  const [printSoId, setPrintSoId] = useState<string | number | null>(null);
+  const [showScan, setShowScan]   = useState(false);
+  const [lostCount, setLostCount] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setData(await fetchPaperBoard()); } catch (e) { console.error(e); }
+    try {
+      const [board, lost] = await Promise.all([fetchPaperBoard(), fetchLostPapers().catch(() => [])]);
+      setData(board);
+      setLostCount(Array.isArray(lost) ? lost.length : 0);
+    } catch (e) { console.error(e); }
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -65,6 +74,14 @@ export function PaperTrailPage() {
           <p className="text-sm text-gray-500 mt-0.5">ติดตามใบสั่งขายข้าม 4 สถานะ (ย้อนหลัง 3 วันสำหรับใบส่งออก)</p>
         </div>
         <div className="flex items-center gap-2">
+          {lostCount > 0 && (
+            <span className="px-3 py-2 bg-red-50 text-red-700 rounded-lg text-sm font-semibold flex items-center gap-1.5 border border-red-200">
+              <AlertTriangle size={16} /> ใบค้าง/หาย {lostCount}
+            </span>
+          )}
+          <button onClick={() => setShowScan(true)} className="px-3 py-2 bg-[#0C447C] text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-colors flex items-center gap-1.5">
+            <ScanLine size={16} /> สแกนเอกสาร
+          </button>
           <button onClick={() => setViewMode('cancelled')} className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200 transition-colors flex items-center gap-1.5 border border-gray-200">
             <Clock size={16} /> ประวัติยกเลิก
           </button>
@@ -103,13 +120,19 @@ export function PaperTrailPage() {
                           <span>{Number(card.qtyTon || 0).toFixed(1)} ตัน</span>
                           {card.importedDocuNo && <span className="text-emerald-600">{card.importedDocuNo}</span>}
                         </div>
-                        {canAdvance && (
-                          <button disabled={busyId === card.id} onClick={() => advance(card)}
-                            className="w-full py-1.5 rounded-lg text-white text-[11px] font-semibold disabled:opacity-50 flex items-center justify-center gap-1"
-                            style={{ background: m.color }}>
-                            {next!.label} <ArrowRight size={12} />
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => setPrintSoId(card.id)}
+                            className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1">
+                            <Printer size={12} /> พิมพ์ 4 สี
                           </button>
-                        )}
+                          {canAdvance && (
+                            <button disabled={busyId === card.id} onClick={() => advance(card)}
+                              className="flex-1 py-1.5 rounded-lg text-white text-[11px] font-semibold disabled:opacity-50 flex items-center justify-center gap-1"
+                              style={{ background: m.color }}>
+                              {next!.label} <ArrowRight size={12} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -120,6 +143,9 @@ export function PaperTrailPage() {
           })}
         </div>
       </div>
+
+      {printSoId !== null && <PaperDocModal soId={printSoId} onClose={() => { setPrintSoId(null); load(); }} />}
+      {showScan && <ScanModal onClose={() => setShowScan(false)} onDone={load} />}
     </div>
   );
 }

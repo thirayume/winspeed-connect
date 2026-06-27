@@ -301,6 +301,23 @@ export const convertQuotation = (id: number, soPrefix = 'I') =>
 // ── Paper Trail ───────────────────────────────────────────────
 export const fetchPaperBoard = () => req<PaperBoard>('/papertrail/board');
 
+// Paper Trail v2 — เอกสาร 4 สี + QR + scan
+export const fetchPaperDocument = (soId: string | number) =>
+  req<import('../types').PaperDocument>(`/papertrail/document/${soId}`);
+export const fetchPaperCopies = (soId: string | number) =>
+  req<import('../types').PaperCopy[]>(`/papertrail/${soId}/copies`);
+export const printPaperCopies = (soId: string | number, docType = 'ISSUE') =>
+  req<{ soId: string; docType: string; copies: import('../types').PrintedCopy[] }>(
+    `/papertrail/${soId}/print`, { method: 'POST', body: JSON.stringify({ docType }) });
+export const scanPaper = (qrNonce: string, action: string, opts?: { note?: string; location?: string }) =>
+  req<{ qrNonce: string; color: string; soId: string; status: string }>(
+    '/papertrail/scan', { method: 'POST', body: JSON.stringify({ qrNonce, action, ...(opts || {}) }) });
+export const fetchPaperHistory = (qrNonce: string) =>
+  req<{ copy: import('../types').PaperCopy; history: import('../types').PaperScanRow[] }>(
+    `/papertrail/scan/${encodeURIComponent(qrNonce)}`);
+export const fetchLostPapers = () =>
+  req<import('../types').PaperCopy[]>('/papertrail/lost');
+
 // ── Unlock Requests (in-memory approximation via SO unlock endpoint) ─
 export const fetchUnlockRequests = (): Promise<UnlockRequest[]> =>
   fetchSalesOrders({ status: 'PICKING', silent: true }).then(r =>
