@@ -383,6 +383,9 @@ export type PaperCard = {
   qtyTon: number;
   lineCnt: number;
   daysOpen: number;
+  copyCnt?: number;
+  lostCnt?: number;
+  verifiedAt?: string | null;
 };
 
 export type PaperBoard = {
@@ -463,6 +466,20 @@ export type AgingRow = {
   WfRef: string;
   SoId: string | number;
   CreatedAt?: string;
+};
+
+// ── Unlock Request (FR-006/007) ───────────────────────────────
+export type UnlockReq = {
+  Id: number;
+  SoId: string;
+  WfRef?: string | null;
+  Reason: string;
+  Status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  RequesterName?: string | null;
+  ApproverName?: string | null;
+  ResponseNote?: string | null;
+  RequestedAt: string;
+  RespondedAt?: string | null;
 };
 
 // ── Unlock (Picking-phase edit approval) ──────────────────────
