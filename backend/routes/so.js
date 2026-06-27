@@ -243,6 +243,15 @@ router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN')
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
+// ── GET /api/so/:id/weigh — WeighTicket ของ SO ───────────────
+router.get('/:id/weigh', async (req, res) => {
+  try {
+    const r = await wfQuery(`SELECT TOP 1 * FROM wf.WeighTicket WHERE SoId=@id ORDER BY Id DESC`,
+      { id: { type: sql.NVarChar(50), value: String(req.params.id) } });
+    res.json(r.recordset?.[0] || null);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
 // ── GET /api/so/:id ──────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
@@ -494,19 +503,38 @@ router.patch('/:id/load', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) =>
 router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'LOADED');
-    const { weighOutWeight } = req.body;
-    
+    const { weighOutWeight, tareKg, scaleNo, movebill } = req.body;
+    const gross = weighOutWeight != null ? Number(weighOutWeight) : null;
+    const tare  = tareKg != null ? Number(tareKg) : null;
+    const net   = (gross != null && tare != null) ? gross - tare : null;
+
     // ตั้งสถานะว่า SHIPPED ใน Winspeed
     await wfQuery(
       `UPDATE dbo.SOHD SET clearflag='Y', ClearDate=GETDATE() WHERE SOID=@id`,
       { id: { type: sql.VarChar(50), value: so.Id } }
     );
     await wfQuery(
-      `UPDATE wf.SalesOrderExt SET WeighOutWeight=@weight, UpdatedAt=GETUTCDATE() WHERE SOID=@id`, 
-      { id: { type: sql.VarChar(50), value: so.Id }, weight: { type: sql.Decimal(10,2), value: weighOutWeight || null } }
+      `UPDATE wf.SalesOrderExt SET WeighOutWeight=@weight, UpdatedAt=GETUTCDATE() WHERE SOID=@id`,
+      { id: { type: sql.VarChar(50), value: so.Id }, weight: { type: sql.Decimal(10,2), value: gross } }
     );
+    // บันทึก WeighTicket (gross/tare/net) — รากฐาน TruckScale
+    await wfQuery(`
+      INSERT INTO wf.WeighTicket (SoId, WfRef, TruckPlate, GrossKg, TareKg, NetKg, ScaleNo, WeighOutAt, Status, Movebill, CreatedBy)
+      VALUES (@so, @ref, @plate, @gross, @tare, @net, @scale, GETUTCDATE(), 'DONE', @mb, @uid)`,
+      {
+        so:   { type: sql.NVarChar(50), value: so.Id },
+        ref:  { type: sql.NVarChar(30), value: so.WfRef || null },
+        plate:{ type: sql.NVarChar(30), value: so.TruckPlate || null },
+        gross:{ type: sql.Decimal(10,2), value: gross },
+        tare: { type: sql.Decimal(10,2), value: tare },
+        net:  { type: sql.Decimal(10,2), value: net },
+        scale:{ type: sql.Int, value: scaleNo != null ? Number(scaleNo) : null },
+        mb:   { type: sql.NVarChar(50), value: movebill || null },
+        uid:  { type: sql.Int, value: req.user.sub },
+      });
     await audit(null, so.Id, req.user.sub, 'SHIPPED', 'LOADED', 'SHIPPED', null, req.ip);
-    res.json({ id: so.Id, status: 'SHIPPED' });
+    broadcast('so_updated', { id: so.Id, action: 'shipped' });
+    res.json({ id: so.Id, status: 'SHIPPED', netKg: net });
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
