@@ -1,12 +1,16 @@
 import { useEffect, useState, useCallback } from 'react';
-import { LayoutGrid, RefreshCw, Truck, FileText, ArrowRight, ArrowLeft, Clock, Printer, ScanLine, AlertTriangle } from 'lucide-react';
-import { fetchPaperBoard, confirmSO, moveToPicking, shipSO, syncImported, fetchLostPapers } from '../../services/api';
+import { LayoutGrid, RefreshCw, Truck, FileText, ArrowRight, ArrowLeft, Clock, Printer, ScanLine, AlertTriangle, ShieldCheck, Unlock, X, Check } from 'lucide-react';
+import { fetchPaperBoard, confirmSO, moveToPicking, shipSO, syncImported, fetchLostPapers, verifySO, createUnlockRequest, listUnlockRequests, resolveUnlockReq } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
-import type { SalesOrder } from '../../types';
+import type { SalesOrder, UnlockReq } from '../../types';
 import { fetchSalesOrders } from '../../services/api';
 import type { PaperBoard, PaperCard, SOStatus } from '../../types';
 import { PaperDocModal } from './PaperDocModal';
 import { ScanModal } from './ScanModal';
+
+const CAN_VERIFY = ['COUNTER_SALES', 'ADMIN', 'MANAGER'];
+const CAN_REQ_UNLOCK = ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN'];
+const CAN_APPROVE_UNLOCK = ['APPROVER', 'ADMIN', 'MANAGER'];
 
 const STAGE_META: Record<string, { label: string; color: string; bg: string }> = {
   DRAFT:     { label: 'ร่าง',         color: '#6B7280', bg: '#F3F4F6' },
@@ -30,6 +34,9 @@ export function PaperTrailPage() {
   const [printSoId, setPrintSoId] = useState<string | number | null>(null);
   const [showScan, setShowScan]   = useState(false);
   const [lostCount, setLostCount] = useState(0);
+  const [showUnlockReview, setShowUnlockReview] = useState(false);
+  const [pendingUnlocks, setPendingUnlocks] = useState(0);
+  const canApproveUnlock = !!role && CAN_APPROVE_UNLOCK.includes(role);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -37,10 +44,27 @@ export function PaperTrailPage() {
       const [board, lost] = await Promise.all([fetchPaperBoard(), fetchLostPapers().catch(() => [])]);
       setData(board);
       setLostCount(Array.isArray(lost) ? lost.length : 0);
+      if (canApproveUnlock) {
+        try { setPendingUnlocks((await listUnlockRequests('PENDING')).length); } catch { /* ignore */ }
+      }
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, []);
+  }, [canApproveUnlock]);
   useEffect(() => { load(); }, [load]);
+
+  async function doVerify(card: PaperCard) {
+    setBusyId(card.id);
+    try { await verifySO(Number(card.id)); await load(); }
+    catch (e) { alert((e as Error).message); }
+    finally { setBusyId(null); }
+  }
+
+  async function doRequestUnlock(card: PaperCard) {
+    const reason = prompt(`เหตุผลขอปลดล็อก ${card.wfRef} (อย่างน้อย 10 ตัวอักษร):`);
+    if (reason === null) return;
+    try { await createUnlockRequest(card.id, reason); alert('ส่งคำขอแล้ว รออนุมัติ'); await load(); }
+    catch (e) { alert((e as Error).message); }
+  }
 
   async function advance(card: PaperCard) {
     setBusyId(card.id);
@@ -78,6 +102,11 @@ export function PaperTrailPage() {
             <span className="px-3 py-2 bg-red-50 text-red-700 rounded-lg text-sm font-semibold flex items-center gap-1.5 border border-red-200">
               <AlertTriangle size={16} /> ใบค้าง/หาย {lostCount}
             </span>
+          )}
+          {canApproveUnlock && (
+            <button onClick={() => setShowUnlockReview(true)} className="px-3 py-2 bg-amber-500 text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-colors flex items-center gap-1.5">
+              <Unlock size={16} /> คำขอปลดล็อก{pendingUnlocks > 0 ? ` (${pendingUnlocks})` : ''}
+            </button>
           )}
           <button onClick={() => setShowScan(true)} className="px-3 py-2 bg-[#0C447C] text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-colors flex items-center gap-1.5">
             <ScanLine size={16} /> สแกนเอกสาร
@@ -120,11 +149,26 @@ export function PaperTrailPage() {
                           <span>{Number(card.qtyTon || 0).toFixed(1)} ตัน</span>
                           {card.importedDocuNo && <span className="text-emerald-600">{card.importedDocuNo}</span>}
                         </div>
+                        {card.status === 'DRAFT' && card.verifiedAt && (
+                          <div className="text-[10px] text-green-600 flex items-center gap-0.5 mb-1"><ShieldCheck size={11} /> ตรวจแล้ว</div>
+                        )}
                         <div className="flex items-center gap-1.5">
                           <button onClick={() => setPrintSoId(card.id)}
                             className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1">
                             <Printer size={12} /> พิมพ์ 4 สี
                           </button>
+                          {card.status === 'DRAFT' && !card.verifiedAt && role && CAN_VERIFY.includes(role) && (
+                            <button disabled={busyId === card.id} onClick={() => doVerify(card)}
+                              className="flex-1 py-1.5 rounded-lg text-white text-[11px] font-semibold disabled:opacity-50 flex items-center justify-center gap-1 bg-emerald-600">
+                              <ShieldCheck size={12} /> ตรวจแล้ว
+                            </button>
+                          )}
+                          {card.status === 'PICKING' && role && CAN_REQ_UNLOCK.includes(role) && (
+                            <button onClick={() => doRequestUnlock(card)}
+                              className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold border border-amber-300 text-amber-700 hover:bg-amber-50 flex items-center justify-center gap-1">
+                              <Unlock size={12} /> ขอปลดล็อก
+                            </button>
+                          )}
                           {canAdvance && (
                             <button disabled={busyId === card.id} onClick={() => advance(card)}
                               className="flex-1 py-1.5 rounded-lg text-white text-[11px] font-semibold disabled:opacity-50 flex items-center justify-center gap-1"
@@ -146,6 +190,61 @@ export function PaperTrailPage() {
 
       {printSoId !== null && <PaperDocModal soId={printSoId} onClose={() => { setPrintSoId(null); load(); }} />}
       {showScan && <ScanModal onClose={() => setShowScan(false)} onDone={load} />}
+      {showUnlockReview && <UnlockReviewModal onClose={() => setShowUnlockReview(false)} onDone={load} />}
+    </div>
+  );
+}
+
+function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [reqs, setReqs] = useState<UnlockReq[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try { setReqs(await listUnlockRequests('PENDING')); } catch (e) { console.error(e); }
+    setLoading(false);
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
+
+  async function resolve(r: UnlockReq, approve: boolean) {
+    const note = approve ? (prompt('หมายเหตุ (ถ้ามี):') ?? '') : (prompt('เหตุผลที่ปฏิเสธ:') ?? '');
+    setBusyId(r.Id);
+    try { await resolveUnlockReq(r.Id, approve, note); await reload(); onDone(); }
+    catch (e) { alert((e as Error).message); }
+    finally { setBusyId(null); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="font-bold text-gray-800 flex items-center gap-2"><Unlock size={18} className="text-amber-600" /> คำขอปลดล็อก (รออนุมัติ)</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {loading ? (
+            <div className="py-10 flex justify-center"><RefreshCw size={22} className="animate-spin text-gray-300" /></div>
+          ) : reqs.length === 0 ? (
+            <p className="py-8 text-center text-sm text-gray-400">ไม่มีคำขอที่รออนุมัติ</p>
+          ) : reqs.map(r => (
+            <div key={r.Id} className="border border-gray-100 rounded-xl p-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-mono font-bold text-sm text-[#0C447C]">{r.WfRef || r.SoId}</span>
+                <span className="text-[11px] text-gray-400">{new Date(r.RequestedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+              <div className="text-xs text-gray-600 mb-1">เหตุผล: {r.Reason}</div>
+              <div className="text-[11px] text-gray-400 mb-2">โดย: {r.RequesterName || '-'}</div>
+              <div className="flex gap-2">
+                <button disabled={busyId === r.Id} onClick={() => resolve(r, true)}
+                  className="flex-1 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold disabled:opacity-50 flex items-center justify-center gap-1"><Check size={13} /> อนุมัติ (ปลดล็อก)</button>
+                <button disabled={busyId === r.Id} onClick={() => resolve(r, false)}
+                  className="flex-1 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-xs font-semibold disabled:opacity-50">ปฏิเสธ</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

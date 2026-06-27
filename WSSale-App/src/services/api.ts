@@ -200,6 +200,18 @@ export const syncImported = (id: number, docuNo: string) =>
     method: 'PATCH', body: JSON.stringify({ docuNo }),
   });
 
+// FR-022 Verification Gate
+export const verifySO = (id: number) =>
+  req<{ id: number; verified: boolean }>(`/so/${id}/verify`, { method: 'PATCH', body: '{}' });
+
+// FR-006/007 Unlock Request flow
+export const createUnlockRequest = (soId: number | string, reason: string) =>
+  req<{ id: string; ok: boolean }>(`/so/${soId}/unlock-request`, { method: 'POST', body: JSON.stringify({ reason }) });
+export const listUnlockRequests = (status = 'PENDING') =>
+  req<import('../types').UnlockReq[]>(`/so/unlock-requests?status=${status}`);
+export const resolveUnlockReq = (reqId: number, approve: boolean, note?: string) =>
+  req<{ id: number; status: string }>(`/so/unlock-requests/${reqId}/resolve`, { method: 'PATCH', body: JSON.stringify({ approve, note }) });
+
 export const cancelSO = (id: number, note?: string) =>
   req<{ id: number; status: SOStatus }>(`/so/${id}/cancel`, {
     method: 'PATCH', body: JSON.stringify({ note }),
