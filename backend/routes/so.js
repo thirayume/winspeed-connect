@@ -8,6 +8,7 @@ const router = require('express').Router();
 const { sql, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { generateImportFiles } = require('../services/winspeed-import.service');
+const { broadcast } = require('../services/socket');
 
 router.use(requireAuth);
 
@@ -193,6 +194,55 @@ router.get('/shipped-today', requireAuth, async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
+// ── Unlock Request flow (FR-006/007) ─────────────────────────
+// GET /api/so/unlock-requests?status=PENDING — สำหรับ Approver
+router.get('/unlock-requests', requireRole('APPROVER', 'ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { status } = req.query;
+    const where = status ? 'WHERE r.Status=@st' : '';
+    const inputs = status ? { st: { type: sql.NVarChar(20), value: status } } : {};
+    const r = await wfQuery(`
+      SELECT r.*, ru.DisplayName AS RequesterName, au.DisplayName AS ApproverName
+      FROM wf.UnlockRequest r
+      LEFT JOIN wf.AppUser ru ON ru.Id = r.RequesterId
+      LEFT JOIN wf.AppUser au ON au.Id = r.ApproverId
+      ${where} ORDER BY r.RequestedAt DESC
+    `, inputs);
+    res.json(r.recordset || []);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// PATCH /api/so/unlock-requests/:reqId/resolve — Approver อนุมัติ/ปฏิเสธ
+router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN'), async (req, res) => {
+  try {
+    const { approve, note } = req.body || {};
+    const reqRow = (await wfQuery(`SELECT * FROM wf.UnlockRequest WHERE Id=@id`,
+      { id: { type: sql.Int, value: Number(req.params.reqId) } })).recordset[0];
+    if (!reqRow) return res.status(404).json({ message: 'ไม่พบคำขอ' });
+    if (reqRow.Status !== 'PENDING') return res.status(400).json({ message: 'คำขอถูกดำเนินการแล้ว' });
+
+    if (approve) {
+      // reverse rebate accrual + ปลดสถานะ (เหมือน /:id/unlock)
+      await wfQuery(
+        `UPDATE wf.RebateLedger SET ReversedFlag=1, ReversedAt=GETUTCDATE(), ReversedNote=@note, Status='REVERSED'
+         WHERE SoId=@soId AND ReversedFlag=0`,
+        { soId: { type: sql.VarChar(50), value: reqRow.SoId }, note: { type: sql.NVarChar(300), value: note || 'Unlock approved' } });
+      await wfQuery(`UPDATE wf.SalesOrderLineExt SET RebateBooked=0 WHERE SOID=@soId`, { soId: { type: sql.VarChar(50), value: reqRow.SoId } });
+      await wfQuery(`UPDATE dbo.SOHD SET PkgStatus='N' WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: reqRow.SoId } });
+      await audit(null, reqRow.SoId, req.user.sub, 'UNLOCKED', 'PICKING', 'CONFIRMED', note, req.ip);
+    }
+    await wfQuery(`UPDATE wf.UnlockRequest SET Status=@st, ApproverId=@uid, ResponseNote=@note, RespondedAt=GETUTCDATE() WHERE Id=@id`,
+      {
+        st: { type: sql.NVarChar(20), value: approve ? 'APPROVED' : 'REJECTED' },
+        uid:{ type: sql.Int, value: req.user.sub },
+        note:{ type: sql.NVarChar(300), value: note || null },
+        id: { type: sql.Int, value: reqRow.Id },
+      });
+    broadcast('so_updated', { id: reqRow.SoId, action: 'unlock_resolved' });
+    res.json({ id: reqRow.Id, status: approve ? 'APPROVED' : 'REJECTED' });
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
+});
+
 // ── GET /api/so/:id ──────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
@@ -302,9 +352,29 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
 });
 
 // ── PATCH /api/so/:id/confirm ────────────────────────────────
+// ── PATCH /api/so/:id/verify — Counter-Sales ตรวจซ้ำ (FR-022) ─────
+router.patch('/:id/verify', requireRole('COUNTER_SALES', 'ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const so = await getSoOrThrow(Number(req.params.id), 'DRAFT');
+    await wfQuery(`UPDATE wf.SalesOrder SET VerifiedBy=@uid, VerifiedAt=GETUTCDATE() WHERE Id=@id`,
+      { uid: { type: sql.Int, value: req.user.sub }, id: { type: sql.Int, value: so.Id } });
+    await audit(null, so.Id, req.user.sub, 'VERIFIED', 'DRAFT', 'DRAFT', null, req.ip);
+    broadcast('so_updated', { id: so.Id, action: 'verified' });
+    res.json({ id: so.Id, verified: true });
+  } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
+});
+
 router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res) => {
   try {
     const so = await getSoOrThrow(Number(req.params.id), 'DRAFT');
+
+    // FR-022 Verification Gate: ต้องตรวจซ้ำ (Counter-Sales) ก่อนยืนยัน (ADMIN bypass ได้)
+    if (req.user.role !== 'ADMIN') {
+      const vr = await wfQuery(`SELECT VerifiedAt FROM wf.SalesOrder WHERE Id=@id`, { id: { type: sql.Int, value: so.Id } });
+      if (!vr.recordset?.[0]?.VerifiedAt)
+        return res.status(400).json({ message: 'ต้องตรวจซ้ำ (Counter-Sales) ก่อนยืนยัน — กดปุ่ม “ตรวจแล้ว” ก่อน (FR-022)' });
+    }
+
     const lines = await getLines(so.Id);
 
     // Get the RebateDiscountAmt from draft table
@@ -371,6 +441,28 @@ router.patch('/:id/unlock', requireRole('APPROVER', 'ADMIN'), async (req, res) =
     await wfQuery(`UPDATE wf.SalesOrderExt SET UpdatedAt=GETUTCDATE() WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: so.Id } });
     await audit(null, so.Id, req.user.sub, 'UNLOCKED', 'PICKING', 'CONFIRMED', note, req.ip);
     res.json({ id: so.Id, status: 'CONFIRMED' });
+  } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
+});
+
+// ── POST /api/so/:id/unlock-request — ขอปลดล็อก (เหตุผล ≥10 ตัว) FR-006 ─────
+router.post('/:id/unlock-request', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN'), async (req, res) => {
+  try {
+    const so = await getSoOrThrow(req.params.id);
+    const { reason } = req.body || {};
+    if (!reason || String(reason).trim().length < 10)
+      return res.status(400).json({ message: 'ต้องระบุเหตุผลอย่างน้อย 10 ตัวอักษร' });
+    const dup = (await wfQuery(`SELECT TOP 1 Id FROM wf.UnlockRequest WHERE SoId=@so AND Status='PENDING'`,
+      { so: { type: sql.NVarChar(50), value: so.Id } })).recordset[0];
+    if (dup) return res.status(400).json({ message: 'มีคำขอที่รออนุมัติอยู่แล้ว' });
+    await wfQuery(`INSERT INTO wf.UnlockRequest (SoId, WfRef, Reason, RequesterId) VALUES (@so, @ref, @reason, @uid)`,
+      {
+        so: { type: sql.NVarChar(50), value: so.Id },
+        ref:{ type: sql.NVarChar(30), value: so.WfRef || null },
+        reason:{ type: sql.NVarChar(500), value: String(reason).trim() },
+        uid:{ type: sql.Int, value: req.user.sub },
+      });
+    broadcast('so_updated', { id: so.Id, action: 'unlock_requested' });
+    res.json({ id: so.Id, ok: true });
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
 
