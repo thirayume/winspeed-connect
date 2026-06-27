@@ -12,7 +12,9 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
   const [sequenceOrder, setSequenceOrder] = useState<SalesOrder | null>(null);
   
   const [weighOrder, setWeighOrder] = useState<SalesOrder | null>(null);
-  const [weighWeight, setWeighWeight] = useState<string>('');
+  const [weighWeight, setWeighWeight] = useState<string>('');   // Gross (kg)
+  const [weighTare, setWeighTare] = useState<string>('');       // Tare (kg)
+  const [weighScale, setWeighScale] = useState<string>('1');    // เครื่องชั่ง
 
   const [errorMsg, setErrorMsg] = useState<string>('');
 
@@ -51,11 +53,15 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
       return;
     }
     
+    const tare = parseFloat(weighTare);
     setBusy(Number(weighOrder.id));
     try {
-      await shipSO(Number(weighOrder.id), weight);
+      await shipSO(Number(weighOrder.id), weight, {
+        tareKg: !isNaN(tare) && tare > 0 ? tare : undefined,
+        scaleNo: weighScale ? Number(weighScale) : undefined,
+      });
       setWeighOrder(null);
-      setWeighWeight('');
+      setWeighWeight(''); setWeighTare(''); setWeighScale('1');
       onUpdate();
     } catch (e: any) {
       setErrorMsg(e.message || 'Error');
@@ -184,22 +190,37 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
                 <div className="text-xl font-bold font-mono text-gray-800">{weighOrder.truckPlate}</div>
                 <div className="text-sm text-gray-500">{weighOrder.custName}</div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">น้ำหนักชั่งออก (ตัน)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  autoFocus
-                  className="w-full text-center text-2xl font-bold p-3 rounded-xl border border-gray-300 focus:border-[#0C447C] focus:ring-1 focus:ring-[#0C447C] outline-none"
-                  value={weighWeight}
-                  onChange={e => setWeighWeight(e.target.value)}
-                  placeholder="0.00"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-600">ชั่งเข้า / รถเปล่า (กก.)</label>
+                  <input type="number" step="1" value={weighTare} onChange={e => setWeighTare(e.target.value)} placeholder="0"
+                    className="w-full text-center text-lg font-bold p-2.5 rounded-xl border border-gray-300 focus:border-[#0C447C] outline-none" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-600">ชั่งออก / รถ+สินค้า (กก.)</label>
+                  <input type="number" step="1" autoFocus value={weighWeight} onChange={e => setWeighWeight(e.target.value)} placeholder="0"
+                    className="w-full text-center text-lg font-bold p-2.5 rounded-xl border border-gray-300 focus:border-[#0C447C] outline-none" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between mt-3">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-600">เครื่องชั่ง</label>
+                  <select value={weighScale} onChange={e => setWeighScale(e.target.value)} className="border border-gray-200 rounded-lg px-2 py-1 text-sm">
+                    <option value="1">1</option><option value="2">2</option>
+                  </select>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs text-gray-500">สุทธิ</span>
+                  <div className="text-lg font-bold text-[#0C447C]">
+                    {(() => { const g = parseFloat(weighWeight), t = parseFloat(weighTare); const n = (!isNaN(g) && !isNaN(t)) ? g - t : NaN;
+                      return isNaN(n) ? '—' : `${n.toLocaleString()} กก. (${(n/1000).toFixed(2)} ตัน)`; })()}
+                  </div>
+                </div>
               </div>
             </div>
             <div className="p-4 border-t border-gray-100 flex gap-2 bg-gray-50">
               <button 
-                onClick={() => { setWeighOrder(null); setWeighWeight(''); }}
+                onClick={() => { setWeighOrder(null); setWeighWeight(''); setWeighTare(''); setWeighScale('1'); }}
                 className="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600 font-medium text-sm bg-white"
               >
                 ยกเลิก

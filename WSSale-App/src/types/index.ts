@@ -468,6 +468,23 @@ export type AgingRow = {
   CreatedAt?: string;
 };
 
+// ── Weigh Ticket (FR — gross/tare/net) ────────────────────────
+export type WeighTicket = {
+  Id: number;
+  SoId: string;
+  WfRef?: string | null;
+  TruckPlate?: string | null;
+  GrossKg?: number | null;
+  TareKg?: number | null;
+  NetKg?: number | null;
+  ScaleNo?: number | null;
+  WeighInAt?: string | null;
+  WeighOutAt?: string | null;
+  Status: 'WEIGH_IN' | 'WEIGH_OUT' | 'DONE';
+  Movebill?: string | null;
+  CreatedAt: string;
+};
+
 // ── Unlock Request (FR-006/007) ───────────────────────────────
 export type UnlockReq = {
   Id: number;
