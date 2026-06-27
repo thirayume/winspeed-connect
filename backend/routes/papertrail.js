@@ -38,7 +38,8 @@ router.get('/board', async (req, res) => {
              SUM(CASE WHEN l.IsGiveaway=0 THEN l.QtyTon ELSE 0 END) AS QtyTon,
              COUNT(l.SoId) AS LineCnt,
              (SELECT COUNT(*) FROM wf.PaperCopy pc WHERE pc.SoId = so.Id) AS CopyCnt,
-             (SELECT COUNT(*) FROM wf.PaperCopy pc WHERE pc.SoId = so.Id AND pc.Status='LOST') AS LostCnt
+             (SELECT COUNT(*) FROM wf.PaperCopy pc WHERE pc.SoId = so.Id AND pc.Status='LOST') AS LostCnt,
+             (SELECT TOP 1 dso.VerifiedAt FROM wf.SalesOrder dso WHERE CAST(dso.Id AS NVARCHAR(50)) = so.Id) AS VerifiedAt
       FROM ActiveSO so
       LEFT JOIN wf.AppUser u ON u.Id = so.SalesUserId
       LEFT JOIN wf.v_AllSalesOrderLines l ON l.SoId = so.Id
@@ -54,7 +55,7 @@ router.get('/board', async (req, res) => {
         truckPlate: row.TruckPlate, controlTicketNo: row.ControlTicketNo,
         importedDocuNo: row.ImportedDocuNo, createdAt: row.CreatedAt,
         salesName: row.SalesName, qtyTon: row.QtyTon, lineCnt: row.LineCnt,
-        copyCnt: row.CopyCnt, lostCnt: row.LostCnt,
+        copyCnt: row.CopyCnt, lostCnt: row.LostCnt, verifiedAt: row.VerifiedAt,
         daysOpen: row.CreatedAt ? Math.floor((Date.now() - new Date(row.CreatedAt).getTime()) / 86400000) : 0,
       };
       (board[row.Status] ||= []).push(card);
