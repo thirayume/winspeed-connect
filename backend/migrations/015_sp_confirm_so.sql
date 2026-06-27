@@ -1,7 +1,9 @@
 -- ==========================================
--- 005_sp_confirm_so.sql
+-- 015_sp_confirm_so.sql  (เดิมคือ 005 — เลื่อนมารันท้ายสุด)
 -- ย้ายเอกสารจาก wf.SalesOrder ไปยัง dbo.SOHD และ wf.SalesOrderExt
 -- เพื่อให้ Winspeed มองเห็นทันที
+-- ⚠ ต้องรันหลัง 008/009 (Ref/IsControlTicketDrawn) + 010 (RebateDiscountAmt)
+--   มิฉะนั้น CREATE PROC จะ fail เพราะอ้างคอลัมน์ที่ยังไม่ถูกสร้าง
 -- ==========================================
 
 CREATE OR ALTER PROCEDURE wf.sp_ConfirmSalesOrder
