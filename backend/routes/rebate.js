@@ -152,6 +152,112 @@ router.get('/summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+// ── Rebate Plan (FR-008) + Pool allocation (FR-009) ──────────────────────
+
+// GET /api/rebate/plans?status= — รายการ Plan
+router.get('/plans', async (req, res) => {
+  try {
+    const { status } = req.query;
+    const where = status ? 'WHERE p.Status = @st' : '';
+    const inputs = status ? { st: { type: sql.NVarChar(20), value: status } } : {};
+    const r = await wfQuery(`
+      SELECT p.*, u.DisplayName AS CreatedByName,
+             (SELECT COUNT(*) FROM wf.RebateLedger l WHERE l.PlanId = p.PlanId) AS LedgerCount,
+             (SELECT ISNULL(SUM(l.RebateAmount),0) FROM wf.RebateLedger l WHERE l.PlanId = p.PlanId) AS AccruedAmt
+      FROM wf.RebatePlan p
+      LEFT JOIN wf.AppUser u ON u.Id = p.CreatedBy
+      ${where}
+      ORDER BY p.Status, p.Priority, p.PlanId DESC
+    `, inputs);
+    res.json(r.recordset || []);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/rebate/plans — สร้าง Plan (DRAFT)
+router.post('/plans', requireRole('MANAGER', 'ADMIN', 'APPROVER'), async (req, res) => {
+  try {
+    const { title, goodCodePattern, region, returnType, netPrice, validFrom, validTo, allocatedAmount, priority, note } = req.body || {};
+    const yy = (new Date().getFullYear() + 543) % 100;
+    const cnt = (await wfQuery(`SELECT COUNT(*) c FROM wf.RebatePlan WHERE PlanNo LIKE @p`,
+      { p: { type: sql.NVarChar(30), value: `RP${yy}-%` } })).recordset[0].c;
+    const planNo = `RP${yy}-${String(cnt + 1).padStart(3, '0')}`;
+    const r = await wfQuery(`
+      INSERT INTO wf.RebatePlan (PlanNo, Title, GoodCodePattern, Region, ReturnType, NetPrice, ValidFrom, ValidTo, AllocatedAmount, Priority, Status, Note, CreatedBy)
+      OUTPUT inserted.*
+      VALUES (@no, @title, @gcp, @region, @rt, @net, @vf, @vt, @alloc, @prio, 'DRAFT', @note, @uid)`,
+      {
+        no:    { type: sql.NVarChar(30),  value: planNo },
+        title: { type: sql.NVarChar(200), value: title || null },
+        gcp:   { type: sql.NVarChar(50),  value: goodCodePattern || null },
+        region:{ type: sql.NVarChar(20),  value: region || 'ALL' },
+        rt:    { type: sql.NVarChar(20),  value: returnType === 'PRICEDIFF' ? 'PRICEDIFF' : 'REBATE' },
+        net:   { type: sql.Decimal(12,2), value: netPrice != null ? Number(netPrice) : null },
+        vf:    { type: sql.Date,          value: validFrom || null },
+        vt:    { type: sql.Date,          value: validTo || null },
+        alloc: { type: sql.Decimal(14,2), value: allocatedAmount != null ? Number(allocatedAmount) : 0 },
+        prio:  { type: sql.Int,           value: priority != null ? Number(priority) : 100 },
+        note:  { type: sql.NVarChar(300), value: note || null },
+        uid:   { type: sql.Int,           value: req.user.sub },
+      });
+    res.json(r.recordset[0]);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// PATCH /api/rebate/plans/:id — แก้ไข / เปลี่ยนสถานะ (DRAFT→ACTIVE→CLOSED)
+router.patch('/plans/:id', requireRole('MANAGER', 'ADMIN', 'APPROVER'), async (req, res) => {
+  try {
+    const f = req.body || {};
+    const sets = [], inputs = { id: { type: sql.Int, value: Number(req.params.id) } };
+    const add = (col, key, type, val) => { sets.push(`${col}=@${key}`); inputs[key] = { type, value: val }; };
+    if (f.title !== undefined)          add('Title','title',sql.NVarChar(200), f.title || null);
+    if (f.goodCodePattern !== undefined)add('GoodCodePattern','gcp',sql.NVarChar(50), f.goodCodePattern || null);
+    if (f.region !== undefined)         add('Region','region',sql.NVarChar(20), f.region || 'ALL');
+    if (f.returnType !== undefined)     add('ReturnType','rt',sql.NVarChar(20), f.returnType === 'PRICEDIFF' ? 'PRICEDIFF':'REBATE');
+    if (f.netPrice !== undefined)       add('NetPrice','net',sql.Decimal(12,2), f.netPrice != null ? Number(f.netPrice):null);
+    if (f.validFrom !== undefined)      add('ValidFrom','vf',sql.Date, f.validFrom || null);
+    if (f.validTo !== undefined)        add('ValidTo','vt',sql.Date, f.validTo || null);
+    if (f.allocatedAmount !== undefined)add('AllocatedAmount','alloc',sql.Decimal(14,2), Number(f.allocatedAmount)||0);
+    if (f.priority !== undefined)       add('Priority','prio',sql.Int, Number(f.priority)||100);
+    if (f.note !== undefined)           add('Note','note',sql.NVarChar(300), f.note || null);
+    if (f.status !== undefined && ['DRAFT','ACTIVE','CLOSED'].includes(f.status))
+                                        add('Status','status',sql.NVarChar(20), f.status);
+    if (!sets.length) return res.status(400).json({ message: 'ไม่มีข้อมูลแก้ไข' });
+    sets.push('UpdatedAt=GETUTCDATE()');
+    await wfQuery(`UPDATE wf.RebatePlan SET ${sets.join(', ')} WHERE PlanId=@id`, inputs);
+    res.json({ id: Number(req.params.id), ok: true });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/rebate/plans/:id/allocate — จัดสรรงบ Plan → Pool ของ Sales
+router.post('/plans/:id/allocate', requireRole('MANAGER', 'ADMIN', 'APPROVER'), async (req, res) => {
+  try {
+    const { salesUserId, periodYear, periodMonth, amount, note } = req.body || {};
+    if (!salesUserId || !amount) return res.status(400).json({ message: 'salesUserId และ amount จำเป็น' });
+    const now = new Date();
+    const y = periodYear || now.getFullYear();
+    const m = periodMonth || (now.getMonth() + 1);
+    let pool = (await wfQuery(`SELECT * FROM wf.RebatePool WHERE SalesUserId=@u AND PeriodYear=@y AND PeriodMonth=@m`,
+      { u: { type: sql.Int, value: Number(salesUserId) }, y: { type: sql.Int, value: y }, m: { type: sql.Int, value: m } })).recordset[0];
+    if (!pool) {
+      pool = (await wfQuery(`INSERT INTO wf.RebatePool (SalesUserId, PeriodYear, PeriodMonth, AllocatedAmt) OUTPUT inserted.* VALUES (@u,@y,@m,0)`,
+        { u: { type: sql.Int, value: Number(salesUserId) }, y: { type: sql.Int, value: y }, m: { type: sql.Int, value: m } })).recordset[0];
+    }
+    await wfQuery(`UPDATE wf.RebatePool SET AllocatedAmt = AllocatedAmt + @amt, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
+      { amt: { type: sql.Decimal(14,2), value: Number(amount) }, id: { type: sql.Int, value: pool.Id } });
+    await wfQuery(`INSERT INTO wf.RebatePlanAllocation (PlanId, PoolId, SalesUserId, Amount, Note, CreatedBy)
+      VALUES (@pid, @pool, @u, @amt, @note, @by)`,
+      {
+        pid: { type: sql.Int, value: Number(req.params.id) },
+        pool:{ type: sql.Int, value: pool.Id },
+        u:   { type: sql.Int, value: Number(salesUserId) },
+        amt: { type: sql.Decimal(14,2), value: Number(amount) },
+        note:{ type: sql.NVarChar(300), value: note || null },
+        by:  { type: sql.Int, value: req.user.sub },
+      });
+    res.json({ ok: true, poolId: pool.Id, allocated: Number(amount) });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
 // ⚠ ทุก endpoint อ่าน dbo ใช้ wfQuery (ownerPool ของ target ปัจจุบัน) เพื่อให้ตามปุ่มสลับ LOCAL/REMOTE
 
 // GET /api/rebate/voucher-summary — WFCoupon summary by salesperson (for VoucherPage)
