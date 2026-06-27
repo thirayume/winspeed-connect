@@ -328,6 +328,18 @@ export const updateQuotationStatus = (id: number, status: string) =>
 export const convertQuotation = (id: number, soPrefix = 'I') =>
   req<{ quoteId: number; soId: number; wfRef: string }>(`/quotation/${id}/convert`, { method: 'POST', body: JSON.stringify({ soPrefix }) });
 
+// ── TruckScale (FR-024/025/026) ───────────────────────────────
+export const pingTruckScale = () =>
+  req<{ ok: boolean; configured: boolean; totalWeighings?: number; completed?: number }>('/truckscale/ping', { silent: true });
+export const fetchTruckScaleWeigh = (params: { plate?: string; movebill?: string; limit?: number }) => {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))).toString();
+  return req<import('../types').TruckScaleWeigh[]>(`/truckscale/weigh?${qs}`);
+};
+export const fetchTruckScaleDetail = (sequence: string) =>
+  req<import('../types').TruckScaleDetail>(`/truckscale/scale/${encodeURIComponent(sequence)}`);
+export const fetchTruckScaleForSO = (soId: number | string) =>
+  req<{ so: { Id: string; WfRef: string; TruckPlate?: string; CustName: string }; candidates: import('../types').TruckScaleWeigh[]; note?: string }>(`/truckscale/for-so/${soId}`);
+
 // ── Reports (FR-017) ──────────────────────────────────────────
 export type ReportData = { type: string; title: string; columns: { key: string; label: string }[]; rows: Record<string, unknown>[] };
 export const fetchReportTypes = () => req<{ key: string; title: string }[]>('/reports/types');
