@@ -1,17 +1,28 @@
 /**
- * papertrail.js — Kanban ติดตามเอกสาร SO ข้าม 5 สถานะ
- * อ่านจาก wf.SalesOrder (advance ใช้ endpoint /so/:id/* เดิม)
- * ⚠ READ-only ที่นี่ (เขียนสถานะผ่าน so.js)
+ * papertrail.js — Paper Trail v2
+ *  - Kanban board (SO 4 สถานะ) — อ่านจาก wf.v_AllSalesOrders
+ *  - เอกสาร 4 สี + QR (FR-004): print สร้าง wf.PaperCopy ต่อสี + QR nonce
+ *  - Scan tracking (FR-012/013): /scan เลื่อนสถานะกระดาษ + log wf.PaperScan + alert ใบหาย
+ * ⚠ เขียนเฉพาะ wf — SO status เปลี่ยนผ่าน so.js เท่านั้น
  */
 const router = require('express').Router();
+const crypto = require('crypto');
 const { sql, wfQuery } = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { broadcast } = require('../services/socket');
 
 router.use(requireAuth);
 
 const STAGES = ['DRAFT', 'CONFIRMED', 'PICKING', 'SHIPPED'];
+// ใบจ่ายของ (ISSUE) 4 สี ตามเอกสารจริง
+const ISSUE_COPIES = [
+  { color: 'WHITE',  label: 'ต้นฉบับ (บัญชี)' },
+  { color: 'BLUE',   label: 'สำเนา (เก็บ)' },
+  { color: 'PINK',   label: 'ลูกค้า' },
+  { color: 'YELLOW', label: 'รปภ. (ประตู)' },
+];
 
-// GET /api/papertrail/board — SO จัดกลุ่มตามสถานะ + ยอดรวม/ตัน
+// ── GET /api/papertrail/board ──────────────────────────────────
 router.get('/board', async (req, res) => {
   try {
     const r = await wfQuery(`
@@ -21,13 +32,13 @@ router.get('/board', async (req, res) => {
         WHERE Status IN ('DRAFT', 'CONFIRMED', 'PICKING')
            OR (Status = 'SHIPPED' AND CreatedAt >= DATEADD(day, -3, GETDATE()))
       ),
-      ActiveSO AS (
-        SELECT * FROM RankedSO WHERE RN <= 100
-      )
+      ActiveSO AS ( SELECT * FROM RankedSO WHERE RN <= 100 )
       SELECT so.Id, so.WfRef, so.CustName, so.Status, so.TruckPlate, so.ControlTicketNo,
              so.ImportedDocuNo, so.CreatedAt, u.DisplayName AS SalesName,
              SUM(CASE WHEN l.IsGiveaway=0 THEN l.QtyTon ELSE 0 END) AS QtyTon,
-             COUNT(l.SoId) AS LineCnt
+             COUNT(l.SoId) AS LineCnt,
+             (SELECT COUNT(*) FROM wf.PaperCopy pc WHERE pc.SoId = so.Id) AS CopyCnt,
+             (SELECT COUNT(*) FROM wf.PaperCopy pc WHERE pc.SoId = so.Id AND pc.Status='LOST') AS LostCnt
       FROM ActiveSO so
       LEFT JOIN wf.AppUser u ON u.Id = so.SalesUserId
       LEFT JOIN wf.v_AllSalesOrderLines l ON l.SoId = so.Id
@@ -43,11 +54,143 @@ router.get('/board', async (req, res) => {
         truckPlate: row.TruckPlate, controlTicketNo: row.ControlTicketNo,
         importedDocuNo: row.ImportedDocuNo, createdAt: row.CreatedAt,
         salesName: row.SalesName, qtyTon: row.QtyTon, lineCnt: row.LineCnt,
+        copyCnt: row.CopyCnt, lostCnt: row.LostCnt,
         daysOpen: row.CreatedAt ? Math.floor((Date.now() - new Date(row.CreatedAt).getTime()) / 86400000) : 0,
       };
       (board[row.Status] ||= []).push(card);
     }
     res.json({ stages: STAGES, board });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// ── GET /api/papertrail/document/:soId — ข้อมูลสำหรับพิมพ์เอกสาร ──
+router.get('/document/:soId', async (req, res) => {
+  try {
+    const soId = String(req.params.soId);
+    const hd = (await wfQuery(`
+      SELECT so.Id, so.WfRef, so.CustId, so.CustName, so.TruckPlate, so.ControlTicketNo,
+             so.Status, so.DeliveryDate, so.CreatedAt, u.DisplayName AS SalesName
+      FROM wf.v_AllSalesOrders so
+      LEFT JOIN wf.AppUser u ON u.Id = so.SalesUserId
+      WHERE so.Id = @id
+    `, { id: { type: sql.VarChar(50), value: soId } })).recordset[0];
+    if (!hd) return res.status(404).json({ message: 'ไม่พบ SO' });
+    const lines = (await wfQuery(`
+      SELECT LineNum, GoodCode, GoodName, QtyTon, QtyBag, PricePerTon, NetPricePerTon, IsGiveaway, LoadSequence
+      FROM wf.v_AllSalesOrderLines WHERE SoId = @id ORDER BY LineNum
+    `, { id: { type: sql.VarChar(50), value: soId } })).recordset;
+    res.json({ ...hd, lines });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// ── GET /api/papertrail/:soId/copies — สำเนากระดาษของ SO ──────
+router.get('/:soId/copies', async (req, res) => {
+  try {
+    const r = await wfQuery(`
+      SELECT pc.*, u.DisplayName AS HolderName
+      FROM wf.PaperCopy pc LEFT JOIN wf.AppUser u ON u.Id = pc.HolderUserId
+      WHERE pc.SoId = @id ORDER BY pc.Id
+    `, { id: { type: sql.VarChar(50), value: String(req.params.soId) } });
+    res.json(r.recordset || []);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// ── POST /api/papertrail/:soId/print — สร้างสำเนา 4 สี + QR ────
+router.post('/:soId/print', async (req, res) => {
+  try {
+    const soId = String(req.params.soId);
+    const docType = (req.body && req.body.docType) === 'RECEIVE' ? 'RECEIVE' : 'ISSUE';
+    const hd = (await wfQuery(`SELECT TOP 1 WfRef FROM wf.v_AllSalesOrders WHERE Id = @id`,
+      { id: { type: sql.VarChar(50), value: soId } })).recordset[0];
+    if (!hd) return res.status(404).json({ message: 'ไม่พบ SO' });
+
+    // พิมพ์ซ้ำ docType เดิม → reset (ลบของเก่า) เพื่อ run nonce ใหม่
+    await wfQuery(`DELETE FROM wf.PaperScan WHERE PaperCopyId IN (SELECT Id FROM wf.PaperCopy WHERE SoId=@id AND DocType=@dt)`,
+      { id: { type: sql.VarChar(50), value: soId }, dt: { type: sql.NVarChar(20), value: docType } });
+    await wfQuery(`DELETE FROM wf.PaperCopy WHERE SoId=@id AND DocType=@dt`,
+      { id: { type: sql.VarChar(50), value: soId }, dt: { type: sql.NVarChar(20), value: docType } });
+
+    const created = [];
+    for (const c of ISSUE_COPIES) {
+      const nonce = `${hd.WfRef || soId}-${c.color}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+      await wfQuery(`
+        INSERT INTO wf.PaperCopy (SoId, WfRef, DocType, CopyColor, CopyLabel, QrNonce, Status, HolderUserId)
+        VALUES (@so, @ref, @dt, @col, @lbl, @nonce, 'PRINTED', @uid)`,
+        {
+          so: { type: sql.NVarChar(50), value: soId },
+          ref:{ type: sql.NVarChar(30), value: hd.WfRef || null },
+          dt: { type: sql.NVarChar(20), value: docType },
+          col:{ type: sql.NVarChar(20), value: c.color },
+          lbl:{ type: sql.NVarChar(80), value: c.label },
+          nonce:{ type: sql.NVarChar(64), value: nonce },
+          uid:{ type: sql.Int, value: req.user.sub },
+        });
+      created.push({ color: c.color, label: c.label, qrNonce: nonce });
+    }
+    broadcast('paper_updated', { soId });
+    res.json({ soId, docType, copies: created });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// ── POST /api/papertrail/scan — สแกน QR เลื่อนสถานะกระดาษ ──────
+// body: { qrNonce, action }  action: TRANSIT/SIGN/FILE/LOST/FOUND
+router.post('/scan', async (req, res) => {
+  try {
+    const { qrNonce, action, note, location } = req.body || {};
+    if (!qrNonce || !action) return res.status(400).json({ message: 'qrNonce และ action จำเป็น' });
+    const map = { TRANSIT: 'IN_TRANSIT', SIGN: 'SIGNED', FILE: 'FILED', LOST: 'LOST', FOUND: 'SIGNED' };
+    const toStatus = map[action];
+    if (!toStatus) return res.status(400).json({ message: 'action ไม่ถูกต้อง' });
+
+    const copy = (await wfQuery(`SELECT * FROM wf.PaperCopy WHERE QrNonce = @n`,
+      { n: { type: sql.NVarChar(64), value: qrNonce } })).recordset[0];
+    if (!copy) return res.status(404).json({ message: 'ไม่พบสำเนา (QR ไม่ถูกต้อง)' });
+
+    await wfQuery(`UPDATE wf.PaperCopy SET Status=@st, HolderUserId=@uid, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
+      { st: { type: sql.NVarChar(20), value: toStatus }, uid: { type: sql.Int, value: req.user.sub }, id: { type: sql.Int, value: copy.Id } });
+    await wfQuery(`
+      INSERT INTO wf.PaperScan (PaperCopyId, Action, FromStatus, ToStatus, ScannerUserId, Location, Note)
+      VALUES (@cid, @act, @fr, @to, @uid, @loc, @note)`,
+      {
+        cid: { type: sql.Int, value: copy.Id },
+        act: { type: sql.NVarChar(30), value: action },
+        fr:  { type: sql.NVarChar(20), value: copy.Status },
+        to:  { type: sql.NVarChar(20), value: toStatus },
+        uid: { type: sql.Int, value: req.user.sub },
+        loc: { type: sql.NVarChar(100), value: location || null },
+        note:{ type: sql.NVarChar(300), value: note || null },
+      });
+    broadcast('paper_updated', { soId: copy.SoId, qrNonce, toStatus });
+    res.json({ qrNonce, color: copy.CopyColor, soId: copy.SoId, status: toStatus });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// ── GET /api/papertrail/scan/:qrNonce — ดูประวัติสำเนา ────────
+router.get('/scan/:qrNonce', async (req, res) => {
+  try {
+    const copy = (await wfQuery(`SELECT pc.*, u.DisplayName AS HolderName FROM wf.PaperCopy pc LEFT JOIN wf.AppUser u ON u.Id=pc.HolderUserId WHERE pc.QrNonce=@n`,
+      { n: { type: sql.NVarChar(64), value: req.params.qrNonce } })).recordset[0];
+    if (!copy) return res.status(404).json({ message: 'ไม่พบสำเนา' });
+    const hist = (await wfQuery(`
+      SELECT s.*, u.DisplayName AS ScannerName FROM wf.PaperScan s
+      LEFT JOIN wf.AppUser u ON u.Id = s.ScannerUserId
+      WHERE s.PaperCopyId=@id ORDER BY s.ScannedAt DESC`,
+      { id: { type: sql.Int, value: copy.Id } })).recordset;
+    res.json({ copy, history: hist });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// ── GET /api/papertrail/lost — ใบที่หาย/ค้างนาน (alert >3 วัน) ──
+router.get('/lost', async (req, res) => {
+  try {
+    const r = await wfQuery(`
+      SELECT pc.*, u.DisplayName AS HolderName,
+             DATEDIFF(day, pc.UpdatedAt, GETUTCDATE()) AS DaysStuck
+      FROM wf.PaperCopy pc LEFT JOIN wf.AppUser u ON u.Id = pc.HolderUserId
+      WHERE pc.Status = 'LOST'
+         OR (pc.Status IN ('PRINTED','IN_TRANSIT') AND pc.UpdatedAt < DATEADD(day, -3, GETUTCDATE()))
+      ORDER BY pc.UpdatedAt ASC`);
+    res.json(r.recordset || []);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 

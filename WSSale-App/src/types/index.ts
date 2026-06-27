@@ -370,6 +370,53 @@ export type PaperBoard = {
   board: Record<string, PaperCard[]>;
 };
 
+// ── Paper Trail v2 — เอกสาร 4 สี + QR + scan ──────────────────
+export type PaperCopyStatus = 'PRINTED' | 'IN_TRANSIT' | 'SIGNED' | 'FILED' | 'LOST';
+export type PaperCopy = {
+  Id: number;
+  SoId: string;
+  WfRef: string;
+  DocType: string;
+  CopyColor: string;
+  CopyLabel: string;
+  QrNonce: string;
+  Status: PaperCopyStatus;
+  HolderUserId: number | null;
+  HolderName?: string | null;
+  PrintedAt: string;
+  UpdatedAt: string;
+  DaysStuck?: number;
+};
+export type PaperDocLine = {
+  LineNum: number;
+  GoodCode: string;
+  GoodName: string;
+  QtyTon: number;
+  QtyBag: number;
+  PricePerTon: number;
+  NetPricePerTon: number;
+  IsGiveaway: boolean;
+  LoadSequence: number | null;
+};
+export type PaperDocument = {
+  Id: string;
+  WfRef: string;
+  CustId: string;
+  CustName: string;
+  TruckPlate?: string;
+  ControlTicketNo?: string;
+  Status: string;
+  DeliveryDate?: string;
+  CreatedAt: string;
+  SalesName?: string;
+  lines: PaperDocLine[];
+};
+export type PrintedCopy = { color: string; label: string; qrNonce: string };
+export type PaperScanRow = {
+  Id: number; Action: string; FromStatus: string; ToStatus: string;
+  ScannerName?: string; Location?: string; Note?: string; ScannedAt: string;
+};
+
 // ── Trucks ────────────────────────────────────────────────────
 export type TruckStats = {
   truckPlate: string;
