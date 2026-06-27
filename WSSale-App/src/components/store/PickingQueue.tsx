@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Truck, Package, CheckCircle, Unlock, ListOrdered, Scale } from 'lucide-react';
-import { moveToPicking, confirmLoading, shipSO, unlockSO } from '../../services/api';
+import { moveToPicking, confirmLoading, shipSO, unlockSO, fetchTruckScaleForSO } from '../../services/api';
+import type { TruckScaleWeigh } from '../../types';
 import type { SalesOrder } from '../../types';
 import { AlertDialog } from '../ui/AlertDialog';
 import { VisualTruckLoader } from './VisualTruckLoader';
@@ -15,6 +16,9 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
   const [weighWeight, setWeighWeight] = useState<string>('');   // Gross (kg)
   const [weighTare, setWeighTare] = useState<string>('');       // Tare (kg)
   const [weighScale, setWeighScale] = useState<string>('1');    // เครื่องชั่ง
+  const [weighMovebill, setWeighMovebill] = useState<string>(''); // จาก TruckScale
+  const [tsCandidates, setTsCandidates] = useState<TruckScaleWeigh[] | null>(null);
+  const [tsLoading, setTsLoading] = useState(false);
 
   const [errorMsg, setErrorMsg] = useState<string>('');
 
@@ -45,6 +49,24 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
     }
   };
 
+  const loadTsCandidates = async () => {
+    if (!weighOrder) return;
+    setTsLoading(true);
+    try {
+      const r = await fetchTruckScaleForSO(Number(weighOrder.id));
+      setTsCandidates(r.candidates || []);
+    } catch (e: any) { setErrorMsg(e.message || 'ดึงข้อมูล TruckScale ไม่สำเร็จ'); setTsCandidates([]); }
+    finally { setTsLoading(false); }
+  };
+
+  const pickTs = (c: TruckScaleWeigh) => {
+    setWeighTare(String(c.WeightIn));
+    setWeighWeight(String(c.WeightOut));
+    setWeighScale(String(c.ScaleNo || 1));
+    setWeighMovebill(c.Movebill);
+    setTsCandidates(null);
+  };
+
   const handleConfirmWeighOut = async () => {
     if (!weighOrder) return;
     const weight = parseFloat(weighWeight);
@@ -59,9 +81,10 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
       await shipSO(Number(weighOrder.id), weight, {
         tareKg: !isNaN(tare) && tare > 0 ? tare : undefined,
         scaleNo: weighScale ? Number(weighScale) : undefined,
+        movebill: weighMovebill || undefined,
       });
       setWeighOrder(null);
-      setWeighWeight(''); setWeighTare(''); setWeighScale('1');
+      setWeighWeight(''); setWeighTare(''); setWeighScale('1'); setWeighMovebill(''); setTsCandidates(null);
       onUpdate();
     } catch (e: any) {
       setErrorMsg(e.message || 'Error');
@@ -218,9 +241,28 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
                 </div>
               </div>
             </div>
+            <div className="px-6 pb-2">
+              <button onClick={loadTsCandidates} disabled={tsLoading}
+                className="w-full py-2 rounded-lg border border-[#0C447C] text-[#0C447C] text-sm font-semibold hover:bg-[#E6F1FB] flex items-center justify-center gap-1.5 disabled:opacity-50">
+                {tsLoading ? '⏳ กำลังดึง...' : `🔗 ดึงน้ำหนักจาก TruckScale (${weighOrder.truckPlate || '-'})`}
+              </button>
+              {weighMovebill && <div className="text-[11px] text-green-600 mt-1 text-center">✓ จาก TruckScale · Movebill {weighMovebill}</div>}
+              {tsCandidates && (
+                <div className="mt-2 max-h-40 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-50">
+                  {tsCandidates.length === 0 ? (
+                    <div className="text-xs text-gray-400 text-center py-3">ไม่พบใบชั่งของทะเบียนนี้</div>
+                  ) : tsCandidates.map(c => (
+                    <button key={c.Sequence} onClick={() => pickTs(c)} className="w-full text-left px-3 py-2 hover:bg-blue-50/50 text-xs flex items-center justify-between">
+                      <span><b className="font-mono">{c.Movebill}</b> · {c.DateOut !== '0' ? c.DateOut : '-'}</span>
+                      <span className="text-[#0C447C] font-bold">{Number(c.WeightNet).toLocaleString()} กก.</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <div className="p-4 border-t border-gray-100 flex gap-2 bg-gray-50">
-              <button 
-                onClick={() => { setWeighOrder(null); setWeighWeight(''); setWeighTare(''); setWeighScale('1'); }}
+              <button
+                onClick={() => { setWeighOrder(null); setWeighWeight(''); setWeighTare(''); setWeighScale('1'); setWeighMovebill(''); setTsCandidates(null); }}
                 className="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600 font-medium text-sm bg-white"
               >
                 ยกเลิก
