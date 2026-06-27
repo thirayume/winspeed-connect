@@ -468,6 +468,27 @@ export type AgingRow = {
   CreatedAt?: string;
 };
 
+// ── TruckScale (MySQL — FR-024/025/026) ───────────────────────
+export type TruckScaleWeigh = {
+  Sequence: string;
+  Movebill: string;
+  Plate: string;
+  CustName: string;
+  WeightIn: number;
+  WeightOut: number;
+  WeightNet: number;
+  DateIn: string;
+  TimeIn?: string;
+  DateOut: string;
+  TimeOut?: string;
+  WeighType: string;
+  ScaleNo: number;
+  OneNum: number;
+  Sid: number;
+};
+export type TruckScaleProduct = { GoodName: string; Brand?: string; WantWeightTon: number; Bag?: number; Destination?: string; RecvType?: string };
+export type TruckScaleDetail = TruckScaleWeigh & { products: TruckScaleProduct[] };
+
 // ── Control Ticket (ชุดตั๋วคุม — FR-021) ───────────────────────
 export type ControlTicket = {
   SOID: string | number;
