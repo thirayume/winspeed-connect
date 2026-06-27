@@ -29,7 +29,9 @@
       "Bash(grep -v \"//.*DocuNo\")",
       "Bash(xargs -I{} grep -l \"CREATE OR ALTER VIEW wf.v_AllSalesOrders\" {})",
       "Bash(xargs grep -l -i \"rebate\")",
-      "Bash(node -c routes/rebate.js)"
+      "Bash(node -c routes/rebate.js)",
+      "Bash(rm -f _diag_*.js _apply_005.js _sp_remote.sql _sp_local.sql && echo \"--- remaining _ temp files ---\" && ls -la _* 2>/dev/null || echo \"none \\(clean\\)\")",
+      "Bash(node -p \"require\\('./package.json'\\).version\")"
     ]
   }
 }
