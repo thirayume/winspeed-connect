@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell, LogOut,
-  Users, LayoutDashboard, Coins, FileCheck, FileCheck2, Gift, FileText, LayoutGrid, Database, Clock, Ticket, ClipboardList
+  Users, LayoutDashboard, Coins, FileCheck, FileCheck2, Gift, FileText, LayoutGrid, Database, Clock, Ticket, ClipboardList, Stamp, BarChart3
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { SalesPortal } from './components/sales/SalesPortal';
@@ -10,6 +10,8 @@ import { DashboardPage } from './components/dashboard/DashboardPage';
 import { RebatePage } from './components/rebate/RebatePage';
 import { CnRebatePage } from './components/rebate/CnRebatePage';
 import { RebatePlanPage } from './components/rebate/RebatePlanPage';
+import { ControlTicketPage } from './components/master/ControlTicketPage';
+import { ReportsPage } from './components/reports/ReportsPage';
 import { AccountingPage } from './components/accounting/AccountingPage';
 import { GiveawayPage } from './components/giveaway/GiveawayPage';
 import { QuotationPage } from './components/quotation/QuotationPage';
@@ -27,7 +29,7 @@ import { DbModeSwitch } from './components/common/DbModeSwitch';
 import { useAppStore } from './store/app-store';
 import { GlobalLoader } from './components/common/GlobalLoader';
 
-export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'voucher' | 'accounting' | 'giveaway' | 'aging' | 'admin' | 'master';
+export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'voucher' | 'control-ticket' | 'accounting' | 'giveaway' | 'aging' | 'reports' | 'admin' | 'master';
 
 type NavItem = {
   key: PortalKey;
@@ -50,7 +52,9 @@ const NAV: NavItem[] = [
   { key: 'voucher',    label: 'Voucher',     sub: 'คูปองคงค้าง · Winspeed', icon: Ticket },
   { key: 'accounting', label: 'บัญชี',       sub: 'Sync · อนุมัติ CN',    icon: FileCheck, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER'] },
   { key: 'giveaway',   label: 'ของแถม',      sub: 'งบรายภาค · เบิก',     icon: Gift },
+  { key: 'reports',    label: 'รายงาน',      sub: 'สรุป · Export Excel',  icon: BarChart3, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER'] },
   { key: 'aging',      label: 'ตั๋วคงค้าง',   sub: 'SO คงค้าง · ค้นหา',   icon: Clock },
+  { key: 'control-ticket', label: 'ชุดตั๋วคุม', sub: 'คงเหลือ · ตัดออก',   icon: Stamp },
   { key: 'admin',      label: 'ผู้ใช้งาน',    sub: 'Map พนักงาน',         icon: Users, roles: ['ADMIN'] },
   { key: 'master',     label: 'ข้อมูลหลัก',  sub: 'สินค้า · ลูกค้า',       icon: Database, roles: ['ADMIN'] },
 ];
@@ -208,6 +212,8 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
               {activePortal === 'rebate-plan' && <RebatePlanPage />}
               {activePortal === 'cn-rebate'  && <CnRebatePage />}
               {activePortal === 'voucher'    && <VoucherPage />}
+              {activePortal === 'control-ticket' && <ControlTicketPage />}
+              {activePortal === 'reports'    && <ReportsPage />}
               {activePortal === 'accounting' && <AccountingPage />}
               {activePortal === 'giveaway'   && <GiveawayPage />}
               {activePortal === 'aging'      && <AgingPage />}
