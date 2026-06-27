@@ -181,6 +181,26 @@ export type RebateClaim = {
   CreatedAt: string;
 };
 
+export type RebatePlan = {
+  PlanId: number;
+  PlanNo: string;
+  Title?: string | null;
+  GoodCodePattern?: string | null;
+  Region: string;
+  ReturnType: 'REBATE' | 'PRICEDIFF';
+  NetPrice?: number | null;
+  ValidFrom?: string | null;
+  ValidTo?: string | null;
+  AllocatedAmount: number;
+  Priority: number;
+  Status: 'DRAFT' | 'ACTIVE' | 'CLOSED';
+  Note?: string | null;
+  CreatedByName?: string | null;
+  CreatedAt: string;
+  LedgerCount?: number;
+  AccruedAmt?: number;
+};
+
 export type RebateSummary = {
   SalesName: string;
   TotalAccrued: number;

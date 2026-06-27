@@ -470,10 +470,25 @@ async function bookRebateAccrual(so, lines, userId) {
     if (rebatePer <= 0) continue;
     const rebateAmt = rebatePer * Number(l.QtyTon);
 
+    // FR-008: best-effort match Plan ที่ ACTIVE (ตาม GoodCode pattern + ช่วงเวลา) → tag PlanId/Region
+    let planId = null, planRegion = null;
+    try {
+      const plan = (await wfQuery(
+        `SELECT TOP 1 PlanId, Region FROM wf.RebatePlan
+         WHERE Status='ACTIVE'
+           AND (GoodCodePattern IS NULL OR @gc LIKE GoodCodePattern + '%')
+           AND (ValidFrom IS NULL OR ValidFrom <= CAST(GETDATE() AS DATE))
+           AND (ValidTo   IS NULL OR ValidTo   >= CAST(GETDATE() AS DATE))
+         ORDER BY Priority ASC, PlanId DESC`,
+        { gc: { type: sql.NVarChar(50), value: l.GoodCode || '' } }
+      )).recordset?.[0];
+      if (plan) { planId = plan.PlanId; planRegion = plan.Region; }
+    } catch { /* no plan layer — keep direct accrual */ }
+
     await wfQuery(
       `INSERT INTO wf.RebateLedger
-         (PoolId, SoId, SoLineId, CustId, GoodId, GoodCode, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, RebateAmount, RemainingAmt, Status)
-       VALUES (@poolId, @soId, @lineId, @custId, @goodId, @goodCode, @qty, @price, @net, @rebPer, @rebAmt, @rebAmt, 'PENDING')`,
+         (PoolId, SoId, SoLineId, CustId, GoodId, GoodCode, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, RebateAmount, RemainingAmt, Status, PlanId, Region)
+       VALUES (@poolId, @soId, @lineId, @custId, @goodId, @goodCode, @qty, @price, @net, @rebPer, @rebAmt, @rebAmt, 'PENDING', @planId, @region)`,
       {
         poolId:   { type: sql.Int,          value: pool.Id },
         soId:     { type: sql.Int,          value: so.Id },
@@ -486,6 +501,8 @@ async function bookRebateAccrual(so, lines, userId) {
         net:      { type: sql.Decimal(12,2),value: Number(l.NetPricePerTon) },
         rebPer:   { type: sql.Decimal(10,2),value: rebatePer },
         rebAmt:   { type: sql.Decimal(12,2),value: rebateAmt },
+        planId:   { type: sql.Int,          value: planId },
+        region:   { type: sql.NVarChar(20), value: planRegion },
       }
     );
     // ⚠ Update RebateBooked in Ext table because the line is now in Winspeed + Ext

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell, LogOut,
-  Users, LayoutDashboard, Coins, FileCheck, FileCheck2, Gift, FileText, LayoutGrid, Database, Clock, Ticket
+  Users, LayoutDashboard, Coins, FileCheck, FileCheck2, Gift, FileText, LayoutGrid, Database, Clock, Ticket, ClipboardList
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { SalesPortal } from './components/sales/SalesPortal';
@@ -9,6 +9,7 @@ import { StorePortal } from './components/store/StorePortal';
 import { DashboardPage } from './components/dashboard/DashboardPage';
 import { RebatePage } from './components/rebate/RebatePage';
 import { CnRebatePage } from './components/rebate/CnRebatePage';
+import { RebatePlanPage } from './components/rebate/RebatePlanPage';
 import { AccountingPage } from './components/accounting/AccountingPage';
 import { GiveawayPage } from './components/giveaway/GiveawayPage';
 import { QuotationPage } from './components/quotation/QuotationPage';
@@ -26,7 +27,7 @@ import { DbModeSwitch } from './components/common/DbModeSwitch';
 import { useAppStore } from './store/app-store';
 import { GlobalLoader } from './components/common/GlobalLoader';
 
-export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'cn-rebate' | 'voucher' | 'accounting' | 'giveaway' | 'aging' | 'admin' | 'master';
+export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'voucher' | 'accounting' | 'giveaway' | 'aging' | 'admin' | 'master';
 
 type NavItem = {
   key: PortalKey;
@@ -44,6 +45,7 @@ const NAV: NavItem[] = [
   { key: 'store',      label: 'คลัง',        sub: 'รับสินค้า/ส่งออก',     icon: Warehouse, badge: true },
   { key: 'papertrail', label: 'Paper Trail', sub: 'Kanban เอกสาร',       icon: LayoutGrid },
   { key: 'rebate',     label: 'รีเบท (App)', sub: 'Pool · เคลม · wf',      icon: Coins },
+  { key: 'rebate-plan',label: 'Rebate Plan', sub: 'แผน · จัดสรรงบ',        icon: ClipboardList, roles: ['ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING'] },
   { key: 'cn-rebate',  label: 'CN Rebate',   sub: 'ใบลดหนี้ · Winspeed',   icon: FileCheck2, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER', 'SALES'] },
   { key: 'voucher',    label: 'Voucher',     sub: 'คูปองคงค้าง · Winspeed', icon: Ticket },
   { key: 'accounting', label: 'บัญชี',       sub: 'Sync · อนุมัติ CN',    icon: FileCheck, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER'] },
@@ -203,6 +205,7 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
               {activePortal === 'store'      && <StorePortal />}
               {activePortal === 'papertrail' && <PaperTrailPage />}
               {activePortal === 'rebate'     && <RebatePage />}
+              {activePortal === 'rebate-plan' && <RebatePlanPage />}
               {activePortal === 'cn-rebate'  && <CnRebatePage />}
               {activePortal === 'voucher'    && <VoucherPage />}
               {activePortal === 'accounting' && <AccountingPage />}

@@ -229,6 +229,18 @@ export const approveRebateClaim = (id: number, docuNo?: string) =>
 
 export const fetchRebateSummary = () => req<RebateSummary[]>('/rebate/summary');
 
+// ── Rebate Plan (FR-008/009) ──────────────────────────────────
+export const fetchRebatePlans = (status?: string) =>
+  req<import('../types').RebatePlan[]>(`/rebate/plans${status ? `?status=${status}` : ''}`);
+export const createRebatePlan = (payload: {
+  title?: string; goodCodePattern?: string; region?: string; returnType?: string;
+  netPrice?: number; validFrom?: string; validTo?: string; allocatedAmount?: number; priority?: number; note?: string;
+}) => req<import('../types').RebatePlan>('/rebate/plans', { method: 'POST', body: JSON.stringify(payload) });
+export const updateRebatePlan = (id: number, patch: Record<string, unknown>) =>
+  req<{ id: number; ok: boolean }>(`/rebate/plans/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+export const allocateRebatePlan = (id: number, payload: { salesUserId: number; amount: number; periodYear?: number; periodMonth?: number; note?: string }) =>
+  req<{ ok: boolean; poolId: number; allocated: number }>(`/rebate/plans/${id}/allocate`, { method: 'POST', body: JSON.stringify(payload) });
+
 // ── CN Rebate (dbo) ───────────────────────────────────────────
 export const fetchCnRebateSummary = (params?: { year?: number; empId?: number }) => {
   const qs = new URLSearchParams(Object.fromEntries(Object.entries(params || {}).filter(([,v]) => v !== undefined).map(([k,v])=>[k,String(v)]))).toString();
