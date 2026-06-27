@@ -61,6 +61,7 @@ app.use('/api/rebate', require('./routes/rebate'));
 app.use('/api/giveaway', require('./routes/giveaway'));
 app.use('/api/quotation', require('./routes/quotation'));
 app.use('/api/papertrail', require('./routes/papertrail'));
+app.use('/api/reports', require('./routes/reports'));
 
 // ── Health check ──────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));

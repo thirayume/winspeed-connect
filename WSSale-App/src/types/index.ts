@@ -468,6 +468,29 @@ export type AgingRow = {
   CreatedAt?: string;
 };
 
+// ── Control Ticket (ชุดตั๋วคุม — FR-021) ───────────────────────
+export type ControlTicket = {
+  SOID: string | number;
+  DocuNo: string;          // AppvDocuNo (AI...)
+  DocuDate: string;
+  CustID: string;
+  CustName: string;
+  TruckPlate?: string;
+  AppvFlag?: string;
+  OriginalDocuNo?: string;
+  TotalQtyTon: number;
+  DrawnQtyTon: number;
+};
+export type ControlTicketDraw = {
+  SOID: string | number;
+  DocuNo: string;
+  DocuDate: string;
+  CustName: string;
+  TruckPlate?: string;
+  DrawnQtyTon: number;
+  LineCnt: number;
+};
+
 // ── Weigh Ticket (FR — gross/tare/net) ────────────────────────
 export type WeighTicket = {
   Id: number;

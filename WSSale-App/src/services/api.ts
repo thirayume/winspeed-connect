@@ -114,7 +114,10 @@ export const bulkExtendPrices = (payloads: { GoodID: string; CustID: string | nu
   req<{ ok: boolean; createdCount: number }>('/master/prices/bulk-extend', { method: 'POST', body: JSON.stringify({ items: payloads }) });
 
 export const fetchControlTickets = (custId?: string) =>
-  req<unknown[]>(`/master/control-tickets${custId ? `?custId=${custId}` : ''}`);
+  req<import('../types').ControlTicket[]>(`/master/control-tickets${custId ? `?custId=${custId}` : ''}`);
+
+export const fetchControlTicketDraws = (docuNo: string) =>
+  req<import('../types').ControlTicketDraw[]>(`/master/control-tickets/${encodeURIComponent(docuNo)}/draws`);
 
 export const fetchControlTicketDetails = (docuNo: string) =>
   req<{ ListNo: number; GoodID: string; GoodCode: string; GoodName: string; QtyTon: number; PricePerTon: number; NetPricePerTon: number; BagPerTon: number }[]>(`/master/control-tickets/${encodeURIComponent(docuNo)}`);
@@ -324,6 +327,21 @@ export const updateQuotationStatus = (id: number, status: string) =>
 
 export const convertQuotation = (id: number, soPrefix = 'I') =>
   req<{ quoteId: number; soId: number; wfRef: string }>(`/quotation/${id}/convert`, { method: 'POST', body: JSON.stringify({ soPrefix }) });
+
+// ── Reports (FR-017) ──────────────────────────────────────────
+export type ReportData = { type: string; title: string; columns: { key: string; label: string }[]; rows: Record<string, unknown>[] };
+export const fetchReportTypes = () => req<{ key: string; title: string }[]>('/reports/types');
+export const fetchReport = (type: string) => req<ReportData>(`/reports/${type}`);
+export async function exportReport(type: string) {
+  const res = await fetch(`${API_BASE}/reports/${type}/export`, { headers: { ...authHeaders(), ...dbTargetHeader() } });
+  if (!res.ok) throw new Error('Export ล้มเหลว');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${type}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
 
 // ── Paper Trail ───────────────────────────────────────────────
 export const fetchPaperBoard = () => req<PaperBoard>('/papertrail/board');
