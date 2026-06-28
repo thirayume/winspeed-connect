@@ -76,6 +76,7 @@ app.use('/api/quotation', require('./routes/quotation'));
 app.use('/api/papertrail', require('./routes/papertrail'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/truckscale', require('./routes/truckscale'));
+app.use('/api/recon', require('./routes/recon'));
 
 // ── Health check ──────────────────────────────────────────────
 // คืน 200 เสมอถ้า backend ยังตอบได้ (docker healthcheck) · แนบสถานะ DB เพื่อ monitor
