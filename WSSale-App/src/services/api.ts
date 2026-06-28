@@ -340,6 +340,31 @@ export const fetchTruckScaleDetail = (sequence: string) =>
 export const fetchTruckScaleForSO = (soId: number | string) =>
   req<{ so: { Id: string; WfRef: string; TruckPlate?: string; CustName: string }; candidates: import('../types').TruckScaleWeigh[]; note?: string }>(`/truckscale/for-so/${soId}`);
 
+// ── Reconciliation Workbench (FR-027) ─────────────────────────
+export type ReconCheck = 'WEIGH' | 'INVOICE';
+export interface ReconResolutionInfo { status: 'RESOLVED' | 'IGNORED'; note: string | null; }
+export interface ReconCase {
+  soId: string; wfRef: string | null; custName: string; truckPlate: string | null;
+  shipDate: string; wsDocuNo: string | null; wsInvoiceNo: string | null;
+  netApp: number | null; netTs: number | null; variance: number | null;
+  movebill: string | null; scaleNo: number | null;
+  weigh: 'MATCHED' | 'VARIANCE' | 'NO_WEIGH' | 'UNLINKED' | 'TS_NOT_FOUND' | 'TS_UNAVAILABLE';
+  invoice: 'MATCHED' | 'PENDING';
+  weighResolution: ReconResolutionInfo | null; invoiceResolution: ReconResolutionInfo | null;
+  overall: 'OK' | 'EXCEPTION' | 'RESOLVED'; tsAvailable: boolean;
+}
+export interface ReconSummary { total: number; ok: number; exception: number; resolved: number; tsAvailable: boolean; }
+export const fetchReconSummary = (days = 7) =>
+  req<ReconSummary>(`/recon/summary?days=${days}`, { silent: true });
+export const fetchReconCases = (days = 7, status?: string) =>
+  req<ReconCase[]>(`/recon/cases?days=${days}${status ? `&status=${status}` : ''}`);
+export const resolveReconCase = (
+  soId: string,
+  body: { checkType: ReconCheck; action: 'RESOLVE' | 'IGNORE'; note?: string; wfRef?: string | null },
+) => req<{ soId: string; checkType: string; status: string }>(`/recon/${encodeURIComponent(soId)}/resolve`, {
+  method: 'POST', body: JSON.stringify(body),
+});
+
 // ── Reports (FR-017) ──────────────────────────────────────────
 export type ReportData = { type: string; title: string; columns: { key: string; label: string }[]; rows: Record<string, unknown>[] };
 export const fetchReportTypes = () => req<{ key: string; title: string }[]>('/reports/types');
