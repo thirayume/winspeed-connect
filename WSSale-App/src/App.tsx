@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell, LogOut,
-  Users, LayoutDashboard, Coins, FileCheck, FileCheck2, Gift, FileText, LayoutGrid, Database, Clock, Ticket, ClipboardList, Stamp, BarChart3, Scale, ShieldCheck
+  Users, LayoutDashboard, Coins, FileCheck, FileCheck2, Gift, FileText, LayoutGrid, Database, Clock, Ticket, ClipboardList, Stamp, BarChart3, Scale, ShieldCheck, Activity
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { SalesPortal } from './components/sales/SalesPortal';
@@ -22,6 +22,7 @@ import { MasterDataPortal } from './components/master/MasterDataPortal';
 import { AgingPage } from './components/aging/AgingPage';
 import { VoucherPage } from './components/voucher/VoucherPage';
 import { ReconciliationPage } from './components/recon/ReconciliationPage';
+import { OpsStatusPage } from './components/ops/OpsStatusPage';
 import { useErpStore } from './store/erp-store';
 import { useAuthStore } from './store/auth-store';
 import { fetchUnlockRequests, getMe } from './services/api';
@@ -31,7 +32,7 @@ import { DbModeSwitch } from './components/common/DbModeSwitch';
 import { useAppStore } from './store/app-store';
 import { GlobalLoader } from './components/common/GlobalLoader';
 
-export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'voucher' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'admin' | 'master';
+export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'voucher' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'ops' | 'admin' | 'master';
 
 type NavItem = {
   key: PortalKey;
@@ -59,6 +60,7 @@ const NAV: NavItem[] = [
   { key: 'aging',      label: 'ตั๋วคงค้าง',   sub: 'SO คงค้าง · ค้นหา',   icon: Clock },
   { key: 'control-ticket', label: 'ชุดตั๋วคุม', sub: 'คงเหลือ · ตัดออก',   icon: Stamp },
   { key: 'truckscale', label: 'TruckScale',  sub: 'เครื่องชั่ง · MySQL',  icon: Scale, roles: ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ADMIN', 'MANAGER'] },
+  { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · error · alert', icon: Activity, roles: ['ADMIN', 'MANAGER'] },
   { key: 'admin',      label: 'ผู้ใช้งาน',    sub: 'Map พนักงาน',         icon: Users, roles: ['ADMIN'] },
   { key: 'master',     label: 'ข้อมูลหลัก',  sub: 'สินค้า · ลูกค้า',       icon: Database, roles: ['ADMIN'] },
 ];
@@ -221,6 +223,7 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
               {activePortal === 'truckscale' && <TruckScalePage />}
               {activePortal === 'accounting' && <AccountingPage />}
               {activePortal === 'recon'      && <ReconciliationPage />}
+              {activePortal === 'ops'        && <OpsStatusPage />}
               {activePortal === 'giveaway'   && <GiveawayPage />}
               {activePortal === 'aging'      && <AgingPage />}
               {activePortal === 'admin'      && role === 'ADMIN' && <AdminUsersPage />}

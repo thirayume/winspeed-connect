@@ -365,6 +365,23 @@ export const resolveReconCase = (
   method: 'POST', body: JSON.stringify(body),
 });
 
+// ── Ops / Observability (FR-030) ──────────────────────────────
+export interface OpsStatus {
+  version: string; env: string; startedAt: string; uptimeSec: number;
+  requests: number; errors: number; lastErrorAt: string | null;
+  byStatus: Record<string, number>; alertConfigured: boolean;
+  db: { sqlserver: string; mysql: string };
+}
+export interface OpsError {
+  Id?: number; OccurredAt?: string; at?: string;
+  Level?: string; level?: string; Source?: string; source?: string;
+  Message?: string; message?: string; ReqMethod?: string; method?: string;
+  ReqPath?: string; path?: string; StatusCode?: number; status?: number; AppVersion?: string;
+}
+export const fetchOpsStatus = () => req<OpsStatus>('/ops/status', { silent: true });
+export const fetchOpsErrors = (limit = 50) => req<{ source: string; errors: OpsError[] }>(`/ops/errors?limit=${limit}`);
+export const testOpsAlert = () => req<{ ok: boolean; message: string }>('/ops/test-alert', { method: 'POST', body: '{}' });
+
 // ── Reports (FR-017) ──────────────────────────────────────────
 export type ReportData = { type: string; title: string; columns: { key: string; label: string }[]; rows: Record<string, unknown>[] };
 export const fetchReportTypes = () => req<{ key: string; title: string }[]>('/reports/types');
