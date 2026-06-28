@@ -223,3 +223,46 @@ docker compose up -d --build frontend
 | Port 80 ถูกใช้งานอยู่ | แก้ใน `docker-compose.yml` เป็น `"8080:80"` แล้ว `docker compose up -d` |
 | Railway: connection refused | ตรวจ Networking → port ต้องตรงกับ `PORT` env var |
 | Image build นาน | ใช้ `docker compose build --no-cache` ถ้าต้องการ fresh build |
+
+---
+
+## Option C — Self-host ฐานข้อมูล (SQL Server + MySQL) สำหรับ Cloud Production
+
+ใช้เมื่อต้องการย้าย DB มารันเอง (แทน Railway/remote) — เพิ่ม service `sqlserver` + `mysql` ผ่าน **profile `db`**
+
+### 1. เตรียม env
+```bash
+cp .env.docker.example .env
+# แก้: REMOTE_DB_SERVER=sqlserver, MYSQL_HOST=mysql, รหัสผ่านทั้งหมด (ดู docs/SECURITY.md)
+```
+
+### 2. (ทางเลือก) เตรียม dump TruckScale
+วางไฟล์ `.sql` ใน `db-init/mysql/` → MySQL import อัตโนมัติครั้งแรก (ดู `db-init/mysql/README.md`)
+
+### 3. สตาร์ทครบชุด
+```bash
+docker compose --profile db up -d        # sqlserver + mysql + backend + frontend
+docker compose ps                        # ตรวจ health
+```
+> ค่าเริ่มต้น (`docker compose up -d` ไม่มี `--profile db`) = backend+frontend เท่านั้น (ใช้ DB ภายนอก)
+
+### 4. สร้าง schema wf บน SQL Server ที่ self-host
+```bash
+# หลัง sqlserver healthy — รัน migration เข้า DB ใหม่
+docker compose exec backend sh -c "cd /app && DB_MODE=remote node run_migrations.js"
+# หรือ restore backup WINSpeed (dbo) แล้วจึง migrate wf
+```
+
+### บริการและพอร์ต
+| Service | Image | Port | Volume |
+|---------|-------|------|--------|
+| backend | Node 22 (./backend) | 3000 | - |
+| frontend | nginx (Vite build) | 80 | - |
+| sqlserver | mcr.microsoft.com/mssql/server:2022 | 1433 | mssql_data |
+| mysql | mysql:8.0 | 3306 | mysql_data |
+
+### ข้อควรระวัง (Production)
+- `MSSQL_PID=Express` ฟรีแต่จำกัด 10GB/DB → เปลี่ยนเป็น Developer/Standard ตาม license จริง
+- เปลี่ยนรหัสผ่านทุกตัว (ดู [SECURITY.md](SECURITY.md)) · `CORS_ORIGIN` = domain จริง
+- ตั้ง backup volume (`mssql_data`, `mysql_data`) + ทดสอบ restore
+- ใส่ TLS ที่ reverse proxy (nginx/Traefik + Let's Encrypt) หน้า frontend/backend

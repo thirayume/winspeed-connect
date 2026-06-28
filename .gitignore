@@ -46,3 +46,7 @@ WSSale-App/node_modules/
 WSSale-App/dist/
 
 Ref/
+
+# TruckScale DB dumps (อย่า commit ข้อมูลจริง)
+db-init/mysql/*.sql
+db-init/mysql/*.sql.gz
