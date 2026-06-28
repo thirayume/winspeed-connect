@@ -10,6 +10,8 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
 const express = require('express');
 const cors    = require('cors');
+const helmet  = require('helmet');
+const rateLimit = require('express-rate-limit');
 const http = require('http');
 
 // ── Global error guards — exit so Railway can restart cleanly ─
@@ -40,8 +42,19 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
+// ── Security headers (P1) ─────────────────────────────────────
+// API ล้วน ไม่ serve HTML → ปิด CSP/COEP ที่ไม่จำเป็น เพื่อไม่บล็อก cross-origin frontend
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
 app.use(express.json({ limit: '2mb' }));
+
+// ── Rate limiting (P1) ────────────────────────────────────────
+// จำกัดเฉพาะ login เพื่อกัน brute-force (ไม่กระทบ polling/endpoint อื่น)
+app.use('/api/auth/login', rateLimit({
+  windowMs: 15 * 60 * 1000, max: 20,
+  standardHeaders: true, legacyHeaders: false,
+  message: { message: 'พยายามเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่' },
+}));
 
 // ── DB target switch (per-request) ────────────────────────────
 // frontend (ADMIN) ส่ง header X-DB-Target: local|remote → เลือก pool
@@ -65,7 +78,21 @@ app.use('/api/reports', require('./routes/reports'));
 app.use('/api/truckscale', require('./routes/truckscale'));
 
 // ── Health check ──────────────────────────────────────────────
-app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
+// คืน 200 เสมอถ้า backend ยังตอบได้ (docker healthcheck) · แนบสถานะ DB เพื่อ monitor
+app.get('/api/health', async (req, res) => {
+  const out = { ok: true, ts: new Date().toISOString(), db: { sqlserver: 'unknown', mysql: 'unknown' } };
+  try {
+    const { query } = require('./db');
+    await query('SELECT 1 AS ok');
+    out.db.sqlserver = 'up';
+  } catch { out.db.sqlserver = 'down'; }
+  try {
+    const { getPool, tsQuery } = require('./services/truckscale-db');
+    if (!getPool()) out.db.mysql = 'not-configured';
+    else { await tsQuery('SELECT 1 AS ok'); out.db.mysql = 'up'; }
+  } catch { out.db.mysql = 'down'; }
+  res.json(out);
+});
 
 // ── Migrate / setup wf schema (DEV only) ─────────────────────
 // POST /api/admin/migrate  — รัน DDL สร้าง schema wf
