@@ -13,10 +13,40 @@
 require('dotenv').config();
 const fs   = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const db   = require('./db');
 
 const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
 const SKIP_FILES     = ['001_wf_schema_backup.sql'];
+
+const sha256 = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
+
+// FR-031 — ledger: ensure table + load applied map (fail-safe: ว่าง = รันทุกไฟล์)
+async function ensureLedger(pool) {
+  try {
+    await pool.request().query(`IF OBJECT_ID('wf.SchemaMigration','U') IS NULL
+      CREATE TABLE wf.SchemaMigration (FileName NVARCHAR(255) NOT NULL PRIMARY KEY,
+        Checksum CHAR(64) NOT NULL, BatchCount INT NULL,
+        AppliedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(), AppliedBy NVARCHAR(128) NULL DEFAULT SUSER_SNAME());`);
+  } catch (e) { console.log('  (ledger bootstrap deferred:', e.message, ')'); }
+}
+async function loadApplied(pool) {
+  const map = new Map();
+  try {
+    const r = await pool.request().query(`SELECT FileName, Checksum FROM wf.SchemaMigration`);
+    for (const row of r.recordset || []) map.set(row.FileName, row.Checksum);
+  } catch { /* ledger not ready yet */ }
+  return map;
+}
+async function recordApplied(pool, fileName, checksum, batchCount) {
+  try {
+    await pool.request()
+      .input('f', fileName).input('c', checksum).input('b', batchCount)
+      .query(`MERGE wf.SchemaMigration AS t USING (SELECT @f AS FileName) AS s ON t.FileName=s.FileName
+              WHEN MATCHED THEN UPDATE SET Checksum=@c, BatchCount=@b, AppliedAt=SYSUTCDATETIME(), AppliedBy=SUSER_SNAME()
+              WHEN NOT MATCHED THEN INSERT (FileName, Checksum, BatchCount) VALUES (@f, @c, @b);`);
+  } catch (e) { console.log('  (ledger record skipped:', e.message, ')'); }
+}
 
 // Errors that are safe to ignore (object already exists, index already exists, etc.)
 const IGNORABLE_CODES = [
@@ -26,9 +56,8 @@ const IGNORABLE_CODES = [
    911, // database does not exist (login scripts on wrong db)
 ];
 
-async function runFile(pool, filePath) {
+async function runFile(pool, filePath, sql) {
   const fileName = path.basename(filePath);
-  const sql = fs.readFileSync(filePath, 'utf-8');
   const batches = sql.split(/^\s*GO\s*$/im).filter(b => b.trim());
 
   let successCount = 0;
@@ -56,7 +85,7 @@ async function runFile(pool, filePath) {
   if (errorCount)   parts.push(`${errorCount} ERRORS`);
   console.log(`  → ${parts.join(', ')}`);
 
-  return errorCount === 0;
+  return { ok: errorCount === 0, batchCount: batches.length };
 }
 
 async function run() {
@@ -70,24 +99,35 @@ async function run() {
   const target = db.getTarget();
   console.log(`\n🔌 Connected → Target: ${target.toUpperCase()}\n`);
 
+  await ensureLedger(pool);
+  const applied = await loadApplied(pool);   // FR-031 — files already applied (by checksum)
+
   const files = fs.readdirSync(MIGRATIONS_DIR)
     .filter(f => f.endsWith('.sql') && !SKIP_FILES.includes(f))
     .sort();
 
   let totalOK  = 0;
   let totalErr = 0;
+  let totalSkip = 0;
 
   for (const file of files) {
+    const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf-8');
+    const checksum = sha256(sql);
+    if (applied.get(file) === checksum) {
+      console.log(`📄 ${file}\n  → ledger: unchanged, skipped`);
+      totalSkip++; totalOK++;
+      continue;
+    }
     console.log(`📄 ${file}`);
-    const ok = await runFile(pool, path.join(MIGRATIONS_DIR, file));
-    if (ok) totalOK++;
-    else    totalErr++;
+    const { ok, batchCount } = await runFile(pool, path.join(MIGRATIONS_DIR, file), sql);
+    if (ok) { totalOK++; await recordApplied(pool, file, checksum, batchCount); }
+    else    { totalErr++; }   // errored → not recorded → retries next run
   }
 
   console.log('');
   console.log('═══════════════════════════════════════');
   if (totalErr === 0) {
-    console.log(`✅ All ${totalOK} migration file(s) applied successfully.`);
+    console.log(`✅ All ${totalOK} migration file(s) applied successfully (${totalSkip} unchanged).`);
   } else {
     console.log(`⚠️  ${totalOK} OK, ${totalErr} file(s) had errors.`);
   }
