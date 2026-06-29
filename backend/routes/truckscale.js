@@ -54,19 +54,44 @@ router.get('/scale/:sequence', async (req, res) => {
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
 
-// GET /api/truckscale/for-so/:soId — หาน้ำหนักชั่งที่ match SO (ด้วยทะเบียนรถ)
+// GET /api/truckscale/for-so/:soId — หาน้ำหนักชั่งที่ match SO + ranking score (FR-025)
+const normPlate = (s) => String(s || '').replace(/[\s-]/g, '').toLowerCase();
+const firstToken = (s) => String(s || '').trim().split(/\s+/)[0] || '';
+
 router.get('/for-so/:soId', async (req, res) => {
   try {
-    const so = (await wfQuery(`SELECT TOP 1 Id, WfRef, TruckPlate, CustName FROM wf.v_AllSalesOrders WHERE Id=@id`,
+    const so = (await wfQuery(`SELECT TOP 1 Id, WfRef, TruckPlate, CustName,
+        CONVERT(VARCHAR(10), ISNULL(DeliveryDate, CreatedAt), 120) AS RefDate
+      FROM wf.v_AllSalesOrders WHERE Id=@id`,
       { id: { type: sql.VarChar(50), value: String(req.params.soId) } })).recordset[0];
     if (!so) return res.status(404).json({ message: 'ไม่พบ SO' });
     if (!so.TruckPlate) return res.json({ so, candidates: [], note: 'SO ไม่มีทะเบียนรถ' });
-    // ดึงเลขทะเบียนหลัก (ตัดช่องว่าง) → match แบบ LIKE
+
     const plate = String(so.TruckPlate).trim();
-    const candidates = await tsQuery(
-      `SELECT ${SCALE_COLS} FROM tblscale WHERE one_car_regis LIKE ? AND weight_net > 0 ORDER BY s_id DESC LIMIT 20`,
+    const rows = await tsQuery(
+      `SELECT ${SCALE_COLS} FROM tblscale WHERE one_car_regis LIKE ? AND weight_net > 0 ORDER BY s_id DESC LIMIT 30`,
       [`%${plate}%`]);
-    res.json({ so, candidates });
+
+    // คำนวณ score + เหตุผล (evidence) ต่อ candidate
+    const soPlate = normPlate(so.TruckPlate);
+    const soCust = firstToken(so.CustName);
+    const scored = rows.map(r => {
+      let score = 0; const reasons = [];
+      const cp = normPlate(r.Plate);
+      if (cp && cp === soPlate) { score += 60; reasons.push('ทะเบียนตรงพอดี'); }
+      else if (cp && (cp.includes(soPlate) || soPlate.includes(cp))) { score += 35; reasons.push('ทะเบียนใกล้เคียง'); }
+      if (soCust && r.CustName && (String(r.CustName).includes(soCust) || soCust.includes(firstToken(r.CustName)))) {
+        score += 25; reasons.push('ชื่อลูกค้าตรง');
+      }
+      if (so.RefDate && r.DateOut && String(r.DateOut).slice(0, 10) === so.RefDate) { score += 20; reasons.push('วันที่ชั่งตรงกับ SO'); }
+      if (Number(r.WeightNet) > 0) { score += 15; reasons.push('มีน้ำหนักสุทธิ'); }
+      return { ...r, matchScore: Math.min(score, 100), matchReasons: reasons };
+    }).sort((a, b) => b.matchScore - a.matchScore);
+
+    res.json({
+      so, candidates: scored,
+      bestSequence: scored[0]?.matchScore >= 60 ? scored[0].Sequence : null,
+    });
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
 

@@ -33,6 +33,9 @@ initSocket(server);
 
 // Start Database Polling
 startPolling();
+
+// FR-029 — start integration outbox worker
+require('./services/outbox').startWorker();
 // CORS — supports comma-separated origins or '*'
 // Set CORS_ORIGIN in env, e.g.: https://winspeed-connect.vercel.app,http://localhost:5173
 const rawOrigins = (process.env.CORS_ORIGIN || '*').split(',').map(s => s.trim());
@@ -87,6 +90,8 @@ app.use('/api/reports', require('./routes/reports'));
 app.use('/api/truckscale', require('./routes/truckscale'));
 app.use('/api/recon', require('./routes/recon'));
 app.use('/api/ops', require('./routes/ops'));
+app.use('/api/policy', require('./routes/policy'));
+app.use('/api/pricebook', require('./routes/pricebook'));
 
 // ── Health check ──────────────────────────────────────────────
 // คืน 200 เสมอถ้า backend ยังตอบได้ (docker healthcheck) · แนบสถานะ DB เพื่อ monitor
