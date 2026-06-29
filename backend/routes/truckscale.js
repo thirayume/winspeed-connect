@@ -8,7 +8,21 @@
 const router = require('express').Router();
 const { sql, wfQuery } = require('../db');
 const { tsQuery, getPool } = require('../services/truckscale-db');
-const { requireAuth } = require('../middleware/auth');
+const { syncOnce, upsertRow } = require('../services/truckscale-sync');
+const { requireAuth, requireRole } = require('../middleware/auth');
+
+// ── Push ingest (optional) — agent ฝั่งโรงงาน POST เข้ามา (shared secret, ไม่ต้อง login)
+// วางก่อน requireAuth เพื่อให้ webhook/agent เรียกได้ด้วย header X-Ingest-Secret
+router.post('/ingest', async (req, res) => {
+  const secret = process.env.TS_INGEST_SECRET;
+  if (!secret || req.headers['x-ingest-secret'] !== secret) return res.status(401).json({ message: 'invalid ingest secret' });
+  try {
+    const rows = Array.isArray(req.body) ? req.body : (req.body?.rows || []);
+    let n = 0;
+    for (const r of rows) { await upsertRow(r); n++; }
+    res.json({ ok: true, ingested: n });
+  } catch (e) { console.error('[ts ingest]', e.message); res.status(500).json({ message: e.message }); }
+});
 
 router.use(requireAuth);
 
@@ -93,6 +107,46 @@ router.get('/for-so/:soId', async (req, res) => {
       bestSequence: scored[0]?.matchScore >= 60 ? scored[0].Sequence : null,
     });
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
+});
+
+// ── Inbox sync (pull) ─────────────────────────────────────────
+// GET /api/truckscale/sync/status — watermark + สถิติ + จำนวน inbox
+router.get('/sync/status', async (req, res) => {
+  try {
+    const wm = (await wfQuery(`SELECT LastSid, LastSyncAt, TotalIngested, LastError FROM wf.TruckScaleSync WHERE Id=1`)).recordset[0] || null;
+    const counts = (await wfQuery(`SELECT Status, COUNT(*) AS n FROM wf.WeighInbox GROUP BY Status`)).recordset || [];
+    const matched = (await wfQuery(`SELECT MatchStatus, COUNT(*) AS n FROM wf.WeighInbox WHERE Status='COMPLETED' GROUP BY MatchStatus`)).recordset || [];
+    res.json({ watermark: wm, counts, matched, configured: !!getPool(), intervalMs: Number(process.env.TS_SYNC_INTERVAL_MS) || 60000 });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/truckscale/sync/run — รัน sync เดี๋ยวนี้ (ADMIN/MANAGER/WAREHOUSE)
+router.post('/sync/run', requireRole('ADMIN', 'MANAGER', 'WAREHOUSE'), async (req, res) => {
+  const r = await syncOnce();
+  res.json(r);
+});
+
+// GET /api/truckscale/inbox?status=&match= — รายการ inbox
+router.get('/inbox', async (req, res) => {
+  try {
+    const where = ['1=1']; const inp = {};
+    if (req.query.status) { where.push('Status=@st'); inp.st = { type: sql.NVarChar(20), value: String(req.query.status) }; }
+    if (req.query.match)  { where.push('MatchStatus=@ms'); inp.ms = { type: sql.NVarChar(20), value: String(req.query.match) }; }
+    const r = await wfQuery(`SELECT TOP 200 Id, Sequence, Movebill, Plate, CustName, WeightIn, WeightOut, WeightNet,
+        DateIn, DateOut, ScaleNo, Status, MatchedSoId, MatchStatus, IngestedAt, UpdatedAt
+      FROM wf.WeighInbox WHERE ${where.join(' AND ')} ORDER BY UpdatedAt DESC`, inp);
+    res.json(r.recordset || []);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/truckscale/inbox/:id/match/:soId — จับคู่ inbox กับ SO ด้วยมือ
+router.post('/inbox/:id/match/:soId', requireRole('ADMIN', 'MANAGER', 'WAREHOUSE', 'COUNTER_SALES'), async (req, res) => {
+  try {
+    await wfQuery(`UPDATE wf.WeighInbox SET MatchedSoId=@so, MatchStatus='MATCHED', UpdatedAt=GETUTCDATE() WHERE Id=@id`, {
+      so: { type: sql.NVarChar(50), value: String(req.params.soId) }, id: { type: sql.BigInt, value: Number(req.params.id) },
+    });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
 module.exports = router;
