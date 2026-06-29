@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell, LogOut,
-  Users, LayoutDashboard, Coins, FileCheck, FileCheck2, Gift, FileText, LayoutGrid, Database, Clock, Ticket, ClipboardList, Stamp, BarChart3, Scale, ShieldCheck, Activity, BookOpen, ScrollText
+  Users, LayoutDashboard, Coins, FileCheck, FileCheck2, Gift, FileText, LayoutGrid, Database, Clock, Ticket, ClipboardList, Stamp, BarChart3, Scale, ShieldCheck, Activity, BookOpen, ScrollText, Landmark
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { SalesPortal } from './components/sales/SalesPortal';
@@ -25,6 +25,7 @@ import { ReconciliationPage } from './components/recon/ReconciliationPage';
 import { OpsStatusPage } from './components/ops/OpsStatusPage';
 import { PriceBookPage } from './components/pricebook/PriceBookPage';
 import { ApprovalPolicyPage } from './components/policy/ApprovalPolicyPage';
+import { DataGovernancePage } from './components/governance/DataGovernancePage';
 import { useErpStore } from './store/erp-store';
 import { useAuthStore } from './store/auth-store';
 import { fetchUnlockRequests, getMe } from './services/api';
@@ -34,7 +35,7 @@ import { DbModeSwitch } from './components/common/DbModeSwitch';
 import { useAppStore } from './store/app-store';
 import { GlobalLoader } from './components/common/GlobalLoader';
 
-export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'voucher' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'pricebook' | 'policy' | 'ops' | 'admin' | 'master';
+export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'voucher' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'pricebook' | 'policy' | 'governance' | 'ops' | 'admin' | 'master';
 
 type NavItem = {
   key: PortalKey;
@@ -64,6 +65,7 @@ const NAV: NavItem[] = [
   { key: 'truckscale', label: 'TruckScale',  sub: 'เครื่องชั่ง · MySQL',  icon: Scale, roles: ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ADMIN', 'MANAGER'] },
   { key: 'pricebook',  label: 'Price Book',  sub: 'ราคา · อนุมัติ',        icon: BookOpen, roles: ['ACCOUNTING', 'MANAGER', 'ADMIN'] },
   { key: 'policy',     label: 'นโยบายอนุมัติ', sub: 'อำนาจ · วงเงิน',       icon: ScrollText, roles: ['ADMIN', 'MANAGER'] },
+  { key: 'governance', label: 'กำกับข้อมูล',  sub: 'เครดิต · สต๊อก · PDPA',  icon: Landmark, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
   { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · error · alert', icon: Activity, roles: ['ADMIN', 'MANAGER'] },
   { key: 'admin',      label: 'ผู้ใช้งาน',    sub: 'Map พนักงาน',         icon: Users, roles: ['ADMIN'] },
   { key: 'master',     label: 'ข้อมูลหลัก',  sub: 'สินค้า · ลูกค้า',       icon: Database, roles: ['ADMIN'] },
@@ -229,6 +231,7 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
               {activePortal === 'recon'      && <ReconciliationPage />}
               {activePortal === 'pricebook'  && <PriceBookPage />}
               {activePortal === 'policy'     && <ApprovalPolicyPage />}
+              {activePortal === 'governance' && <DataGovernancePage />}
               {activePortal === 'ops'        && <OpsStatusPage />}
               {activePortal === 'giveaway'   && <GiveawayPage />}
               {activePortal === 'aging'      && <AgingPage />}

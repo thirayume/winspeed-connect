@@ -10,6 +10,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { generateImportFiles } = require('../services/winspeed-import.service');
 const { broadcast } = require('../services/socket');
 const { enqueue } = require('../services/outbox');
+const { resolveApprovalPolicy } = require('../services/approval');
 
 router.use(requireAuth);
 
@@ -386,6 +387,16 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
     }
 
     const lines = await getLines(so.Id);
+
+    // FR-003 Credit Hold: ถ้าลูกค้าถูก hold → ต้อง override โดย role ตามนโยบาย CREDIT_OVERRIDE
+    const credit = (await wfQuery(`SELECT CreditHold FROM wf.CreditMaster WHERE CustId=@c`,
+      { c: { type: sql.NVarChar(20), value: String(so.CustId) } })).recordset[0];
+    if (credit?.CreditHold) {
+      const pol = await resolveApprovalPolicy('CREDIT_OVERRIDE');
+      const allowed = req.user.role === 'ADMIN' || (pol && req.user.role === pol.RequiredRole);
+      if (!allowed)
+        return res.status(400).json({ message: `ลูกค้าถูกระงับเครดิต (Credit Hold) — ต้องอนุมัติโดย ${pol?.RequiredRole || 'ผจก.'} ก่อน (FR-003)`, requiresApproval: true });
+    }
 
     // Get the RebateDiscountAmt from draft table
     const rAmt = await wfQuery(`SELECT ISNULL(RebateDiscountAmt, 0) AS RebateDiscountAmt FROM wf.SalesOrder WHERE Id = @id`, { id: { type: sql.Int, value: so.Id } });
