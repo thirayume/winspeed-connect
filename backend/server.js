@@ -36,6 +36,9 @@ startPolling();
 
 // FR-029 — start integration outbox worker
 require('./services/outbox').startWorker();
+
+// TruckScale pull/sync worker — ดึงข้อมูลชั่งกลับเข้า wf.WeighInbox
+require('./services/truckscale-sync').startSync();
 // CORS — supports comma-separated origins or '*'
 // Set CORS_ORIGIN in env, e.g.: https://winspeed-connect.vercel.app,http://localhost:5173
 const rawOrigins = (process.env.CORS_ORIGIN || '*').split(',').map(s => s.trim());
