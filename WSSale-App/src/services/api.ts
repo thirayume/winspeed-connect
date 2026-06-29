@@ -415,6 +415,32 @@ export const priceBookAction = (id: number, action: 'approve' | 'activate' | 'ar
 export interface OutboxRow { Id: number; EventType: string; AggregateId: string | null; Status: string; RetryCount: number; LastError: string | null; CreatedAt: string; ProcessedAt: string | null; }
 export const fetchOpsOutbox = () => req<{ summary: { Status: string; n: number }[]; recent: OutboxRow[] }>('/ops/outbox');
 
+// ── Credit master (FR-003) ────────────────────────────────────
+export interface CreditInfo { CustId: string; CustName?: string; CreditLimit: number | null; CreditHold: boolean; Note?: string; UpdatedByName?: string; UpdatedAt?: string; }
+export const fetchCredits = () => req<CreditInfo[]>('/credit');
+export const setCredit = (custId: string, b: { custName?: string; creditLimit?: number | null; creditHold?: boolean; note?: string }) =>
+  req<{ ok: boolean }>(`/credit/${encodeURIComponent(custId)}`, { method: 'PUT', body: JSON.stringify(b) });
+
+// ── Operational stock (DG-04) ─────────────────────────────────
+export interface StockRow { GoodId: string; WarehouseId: string; GoodName?: string; QtyOnHand: number; Unit?: string; Source?: string; AsOf?: string; UpdatedByName?: string; }
+export const fetchStock = () => req<StockRow[]>('/stock');
+export const setStock = (b: { goodId: string; warehouseId?: string; goodName?: string; qtyOnHand: number; unit?: string; source?: string }) =>
+  req<{ ok: boolean }>('/stock', { method: 'PUT', body: JSON.stringify(b) });
+
+// ── PDPA retention / DSAR (FR-032) ────────────────────────────
+export interface RetentionPolicy { Id: number; DataClass: string; RetentionDays: number; Note?: string; UpdatedAt?: string; }
+export interface DsarRow { Id: number; SubjectType: string; SubjectId: string; Action: string; Status: string; ByName?: string; RequestedAt: string; Note?: string; }
+export const fetchRetentionPolicies = () => req<RetentionPolicy[]>('/pdpa/policies');
+export const updateRetentionPolicy = (id: number, retentionDays: number, note?: string) =>
+  req<{ ok: boolean }>(`/pdpa/policies/${id}`, { method: 'PUT', body: JSON.stringify({ retentionDays, note }) });
+export const fetchDsarLog = () => req<DsarRow[]>('/pdpa/dsar');
+export const dsarExport = (subjectType: 'CUSTOMER' | 'USER', subjectId: string) =>
+  req<{ subjectType: string; subjectId: string; exportedAt: string; data: Record<string, unknown> }>('/pdpa/dsar/export', { method: 'POST', body: JSON.stringify({ subjectType, subjectId }) });
+export const runRetention = () => req<{ ok: boolean; ranAt: string; result: Record<string, number> }>('/pdpa/retention/run', { method: 'POST', body: '{}' });
+
+// ── LINE (FR-016) ─────────────────────────────────────────────
+export const fetchLineStatus = () => req<{ webhookConfigured: boolean; pushConfigured: boolean }>('/line/status', { silent: true });
+
 // ── Reports (FR-017) ──────────────────────────────────────────
 export type ReportData = { type: string; title: string; columns: { key: string; label: string }[]; rows: Record<string, unknown>[] };
 export const fetchReportTypes = () => req<{ key: string; title: string }[]>('/reports/types');
