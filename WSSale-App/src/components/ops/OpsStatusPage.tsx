@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Activity, RefreshCw, Database, Server, AlertTriangle, Bell, BellOff, Cpu, CheckCircle, XCircle } from 'lucide-react';
-import { fetchOpsStatus, fetchOpsErrors, testOpsAlert, type OpsStatus, type OpsError } from '../../services/api';
+import { fetchOpsStatus, fetchOpsErrors, fetchOpsOutbox, testOpsAlert, type OpsStatus, type OpsError, type OutboxRow } from '../../services/api';
 
 function fmtUptime(sec: number) {
   const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
@@ -21,14 +21,15 @@ const norm = (e: OpsError) => ({
 export function OpsStatusPage() {
   const [status, setStatus] = useState<OpsStatus | null>(null);
   const [errors, setErrors] = useState<OpsError[]>([]);
+  const [outbox, setOutbox] = useState<{ summary: { Status: string; n: number }[]; recent: OutboxRow[] }>({ summary: [], recent: [] });
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, e] = await Promise.all([fetchOpsStatus(), fetchOpsErrors(50)]);
-      setStatus(s); setErrors(Array.isArray(e.errors) ? e.errors : []);
+      const [s, e, o] = await Promise.all([fetchOpsStatus(), fetchOpsErrors(50), fetchOpsOutbox().catch(() => ({ summary: [], recent: [] }))]);
+      setStatus(s); setErrors(Array.isArray(e.errors) ? e.errors : []); setOutbox(o);
     } catch (err) { console.error(err); }
     setLoading(false);
   }, []);
@@ -117,6 +118,40 @@ export function OpsStatusPage() {
                   <td className="px-4 py-2 text-gray-700 max-w-md truncate" title={e.message}>{e.message}</td>
                   <td className="px-4 py-2 text-xs text-gray-500">{e.method} {e.path}</td>
                   <td className="px-4 py-2 text-center"><span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-600">{e.status}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Integration outbox (FR-029) */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <span className="text-sm font-semibold text-gray-700">Integration Outbox</span>
+            <div className="flex gap-1.5">
+              {outbox.summary.map(s => (
+                <span key={s.Status} className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                  s.Status === 'DONE' ? 'bg-green-100 text-green-700' : s.Status === 'FAILED' ? 'bg-red-100 text-red-600' :
+                  s.Status === 'PENDING' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>{s.Status} {s.n}</span>
+              ))}
+            </div>
+          </div>
+          <table className="w-full text-sm">
+            <thead><tr className="bg-gray-50 text-gray-500 text-xs uppercase">
+              <th className="text-left px-4 py-2">Event</th><th className="text-left px-4 py-2">Aggregate</th>
+              <th className="text-center px-4 py-2">สถานะ</th><th className="text-center px-4 py-2">retry</th><th className="text-left px-4 py-2">เวลา</th>
+            </tr></thead>
+            <tbody className="divide-y divide-gray-50">
+              {outbox.recent.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-400">ยังไม่มี event</td></tr>}
+              {outbox.recent.map(o => (
+                <tr key={o.Id}>
+                  <td className="px-4 py-2 font-medium text-gray-700">{o.EventType}</td>
+                  <td className="px-4 py-2 text-xs text-gray-500">{o.AggregateId}</td>
+                  <td className="px-4 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                    o.Status === 'DONE' ? 'bg-green-100 text-green-700' : o.Status === 'FAILED' ? 'bg-red-100 text-red-600' :
+                    o.Status === 'PENDING' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{o.Status}</span></td>
+                  <td className="px-4 py-2 text-center text-xs text-gray-500">{o.RetryCount || ''}</td>
+                  <td className="px-4 py-2 text-xs text-gray-400">{new Date(o.CreatedAt).toLocaleString('th-TH')}</td>
                 </tr>
               ))}
             </tbody>

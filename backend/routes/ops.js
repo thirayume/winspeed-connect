@@ -34,6 +34,16 @@ router.get('/errors', async (req, res) => {
   }
 });
 
+// GET /api/ops/outbox — สรุป + รายการล่าสุดของ integration outbox (FR-029)
+router.get('/outbox', async (req, res) => {
+  try {
+    const summary = (await wfQuery(`SELECT Status, COUNT(*) AS n FROM wf.OutboxEvent GROUP BY Status`)).recordset || [];
+    const recent = (await wfQuery(`SELECT TOP 30 Id, EventType, AggregateId, Status, RetryCount, LastError, CreatedAt, ProcessedAt
+                                   FROM wf.OutboxEvent ORDER BY Id DESC`)).recordset || [];
+    res.json({ summary, recent });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
 // POST /api/ops/test-alert — ทดสอบ webhook (ADMIN)
 router.post('/test-alert', requireRole('ADMIN'), async (req, res) => {
   if (!process.env.ALERT_WEBHOOK_URL)
