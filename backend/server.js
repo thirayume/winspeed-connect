@@ -54,6 +54,8 @@ app.use(cors(corsOptions));
 // API ล้วน ไม่ serve HTML → ปิด CSP/COEP ที่ไม่จำเป็น เพื่อไม่บล็อก cross-origin frontend
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
+// LINE webhook ต้องใช้ raw body (verify signature) — ต้องมาก่อน express.json
+app.use('/api/line/webhook', express.raw({ type: '*/*' }));
 app.use(express.json({ limit: '2mb' }));
 
 // ── Observability (FR-030) — นับ request/error + telemetry ─────
@@ -92,6 +94,10 @@ app.use('/api/recon', require('./routes/recon'));
 app.use('/api/ops', require('./routes/ops'));
 app.use('/api/policy', require('./routes/policy'));
 app.use('/api/pricebook', require('./routes/pricebook'));
+app.use('/api/credit', require('./routes/credit'));
+app.use('/api/stock', require('./routes/stock'));
+app.use('/api/pdpa', require('./routes/pdpa'));
+app.use('/api/line', require('./routes/line').router);
 
 // ── Health check ──────────────────────────────────────────────
 // คืน 200 เสมอถ้า backend ยังตอบได้ (docker healthcheck) · แนบสถานะ DB เพื่อ monitor
