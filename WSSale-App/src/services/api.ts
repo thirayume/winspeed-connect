@@ -382,6 +382,39 @@ export const fetchOpsStatus = () => req<OpsStatus>('/ops/status', { silent: true
 export const fetchOpsErrors = (limit = 50) => req<{ source: string; errors: OpsError[] }>(`/ops/errors?limit=${limit}`);
 export const testOpsAlert = () => req<{ ok: boolean; message: string }>('/ops/test-alert', { method: 'POST', body: '{}' });
 
+// ── Approval Policy (FR-028) ──────────────────────────────────
+export interface ApprovalPolicy {
+  Id: number; CaseType: string; MinAmount: number | null; MaxAmount: number | null;
+  RequiredRole: string; EffectiveFrom: string; EffectiveTo: string | null;
+  IsActive: boolean; Note: string | null; CreatedByName?: string;
+}
+export const fetchPolicies = () => req<ApprovalPolicy[]>('/policy');
+export const createPolicy = (b: Partial<ApprovalPolicy> & { caseType: string; requiredRole: string; minAmount?: number | null; maxAmount?: number | null; note?: string }) =>
+  req<{ id: number }>('/policy', { method: 'POST', body: JSON.stringify(b) });
+export const updatePolicy = (id: number, b: Record<string, unknown>) =>
+  req<{ ok: boolean }>(`/policy/${id}`, { method: 'PUT', body: JSON.stringify(b) });
+export const deletePolicy = (id: number) => req<{ ok: boolean }>(`/policy/${id}`, { method: 'DELETE' });
+
+// ── Price Book (FR-023) ───────────────────────────────────────
+export interface PriceBook {
+  Id: number; Name: string; EffectiveMonth: string; Status: 'DRAFT' | 'APPROVED' | 'ACTIVE' | 'ARCHIVED';
+  Note?: string; LineCount?: number; CreatedByName?: string; ApprovedByName?: string; ActivatedByName?: string; CreatedAt?: string;
+}
+export interface PriceBookLine { Id?: number; GoodId: string; GoodName?: string; Unit?: string; Price: number; }
+export interface PriceBookAuditRow { Action: string; FromStatus: string | null; ToStatus: string | null; ByName: string | null; Note: string | null; At: string; }
+export const fetchPriceBooks = () => req<PriceBook[]>('/pricebook');
+export const fetchPriceBook = (id: number) => req<PriceBook & { lines: PriceBookLine[]; audit: PriceBookAuditRow[] }>(`/pricebook/${id}`);
+export const createPriceBook = (b: { name: string; effectiveMonth: string; note?: string; seedFromCurrent?: boolean }) =>
+  req<{ id: number }>('/pricebook', { method: 'POST', body: JSON.stringify(b) });
+export const setPriceBookLines = (id: number, lines: PriceBookLine[]) =>
+  req<{ ok: boolean; count: number }>(`/pricebook/${id}/lines`, { method: 'POST', body: JSON.stringify({ lines }) });
+export const priceBookAction = (id: number, action: 'approve' | 'activate' | 'archive', note?: string) =>
+  req<{ ok: boolean; status: string }>(`/pricebook/${id}/${action}`, { method: 'POST', body: JSON.stringify({ note }) });
+
+// ── Ops outbox (FR-029) ───────────────────────────────────────
+export interface OutboxRow { Id: number; EventType: string; AggregateId: string | null; Status: string; RetryCount: number; LastError: string | null; CreatedAt: string; ProcessedAt: string | null; }
+export const fetchOpsOutbox = () => req<{ summary: { Status: string; n: number }[]; recent: OutboxRow[] }>('/ops/outbox');
+
 // ── Reports (FR-017) ──────────────────────────────────────────
 export type ReportData = { type: string; title: string; columns: { key: string; label: string }[]; rows: Record<string, unknown>[] };
 export const fetchReportTypes = () => req<{ key: string; title: string }[]>('/reports/types');
