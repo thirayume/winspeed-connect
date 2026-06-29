@@ -340,6 +340,24 @@ export const fetchTruckScaleDetail = (sequence: string) =>
 export const fetchTruckScaleForSO = (soId: number | string) =>
   req<{ so: { Id: string; WfRef: string; TruckPlate?: string; CustName: string }; candidates: import('../types').TruckScaleWeigh[]; note?: string }>(`/truckscale/for-so/${soId}`);
 
+// ── TruckScale inbox / sync (pull) ────────────────────────────
+export interface WeighInboxRow {
+  Id: number; Sequence: string; Movebill?: string; Plate?: string; CustName?: string;
+  WeightIn?: number; WeightOut?: number; WeightNet?: number; DateIn?: string; DateOut?: string; ScaleNo?: string;
+  Status: 'OPEN' | 'COMPLETED'; MatchedSoId?: string | null; MatchStatus?: 'MATCHED' | 'MULTI' | 'UNMATCHED' | null;
+  IngestedAt: string; UpdatedAt: string;
+}
+export interface TsSyncStatus {
+  watermark: { LastSid: number; LastSyncAt: string | null; TotalIngested: number; LastError: string | null } | null;
+  counts: { Status: string; n: number }[]; matched: { MatchStatus: string; n: number }[]; configured: boolean; intervalMs: number;
+}
+export const fetchTsSyncStatus = () => req<TsSyncStatus>('/truckscale/sync/status', { silent: true });
+export const runTsSync = () => req<{ ingested?: number; refreshed?: number; lastSid?: number; error?: string }>('/truckscale/sync/run', { method: 'POST', body: '{}' });
+export const fetchWeighInbox = (status?: string, match?: string) =>
+  req<WeighInboxRow[]>(`/truckscale/inbox?${new URLSearchParams({ ...(status ? { status } : {}), ...(match ? { match } : {}) }).toString()}`);
+export const matchWeighInbox = (id: number, soId: string) =>
+  req<{ ok: boolean }>(`/truckscale/inbox/${id}/match/${encodeURIComponent(soId)}`, { method: 'POST', body: '{}' });
+
 // ── Reconciliation Workbench (FR-027) ─────────────────────────
 export type ReconCheck = 'WEIGH' | 'INVOICE';
 export interface ReconResolutionInfo { status: 'RESOLVED' | 'IGNORED'; note: string | null; }
