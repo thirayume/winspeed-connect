@@ -9,6 +9,7 @@ const { sql, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { generateImportFiles } = require('../services/winspeed-import.service');
 const { broadcast } = require('../services/socket');
+const { enqueue } = require('../services/outbox');
 
 router.use(requireAuth);
 
@@ -418,6 +419,8 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
 
     // 3. Audit log (บันทึกโดยใช้ newSoid)
     await audit(null, newSoid, req.user.sub, 'CONFIRMED', 'DRAFT', 'CONFIRMED', null, req.ip);
+    // FR-029 outbox: reliable integration event (idempotent ต่อ SO)
+    await enqueue('SO_CONFIRMED', newSoid, { soId: newSoid, custId: so.CustId, by: req.user.sub }, `SO_CONFIRMED:${newSoid}`);
     res.json({ id: newSoid, status: 'CONFIRMED' });
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
@@ -534,6 +537,7 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) =>
       });
     await audit(null, so.Id, req.user.sub, 'SHIPPED', 'LOADED', 'SHIPPED', null, req.ip);
     broadcast('so_updated', { id: so.Id, action: 'shipped' });
+    await enqueue('SO_SHIPPED', so.Id, { soId: so.Id, netKg: net, by: req.user.sub }, `SO_SHIPPED:${so.Id}`);
     res.json({ id: so.Id, status: 'SHIPPED', netKg: net });
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
