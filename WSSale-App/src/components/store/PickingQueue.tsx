@@ -103,13 +103,13 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
   }
 
   return (
-    <div className="space-y-3 p-4">
+    <div className="space-y-2 sm:space-y-3 p-2 sm:p-4">
       {orders.map(order => {
         const totalTon = (order.lines || []).filter(l => !l.isGiveaway).reduce((s, l) => s + l.qtyTon, 0);
         const isBusy = busy === order.id;
 
         return (
-          <div key={order.id} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+          <div key={order.id} className="bg-white rounded-none sm:rounded-xl border-y sm:border border-gray-100 p-3 sm:p-4 shadow-sm">
             <div className="flex items-start justify-between mb-3">
               <div>
                 <span className="font-mono text-sm font-bold text-gray-800">{order.wfRef}</span>
@@ -140,7 +140,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
               <span className="font-semibold text-gray-600">รวม {totalTon.toFixed(3)} ตัน</span>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               {mode === 'LOADING' && order.status === 'CONFIRMED' && (
                 <button
                   disabled={isBusy}

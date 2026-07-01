@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Search, RefreshCw, X, Clock, Package, ChevronLeft, ChevronRight } from 'lucide-react';
 import { searchAgingOrders } from '../../services/api';
+import { DataSummaryCard } from '../ui/DataSummaryCard';
 import type { AgingRow } from '../../types';
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -68,51 +69,40 @@ export const AgingPage = () => {
   return (
     <div className="h-full flex flex-col gap-4 overflow-hidden">
       {/* Header summary */}
-      <div className="grid grid-cols-3 gap-4 shrink-0">
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-red-50 text-red-500 flex items-center justify-center shrink-0">
-            <Clock size={20} />
-          </div>
-          <div>
-            <div className="text-xs text-gray-400">ตั๋วคงค้างทั้งหมด</div>
-            <div className="text-2xl font-bold text-gray-800">{total.toLocaleString()}</div>
-          </div>
-        </div>
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center shrink-0">
-            <Package size={20} />
-          </div>
-          <div>
-            <div className="text-xs text-gray-400">แสดงหน้านี้</div>
-            <div className="text-2xl font-bold text-gray-800">{data.length.toLocaleString()}</div>
-          </div>
-        </div>
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0">
-            <Clock size={20} />
-          </div>
-          <div>
-            <div className="text-xs text-gray-400">รวมตัน (หน้านี้)</div>
-            <div className="text-2xl font-bold text-gray-800">
-              {data.reduce((s, r) => s + (Number(r.QtyTon) || 0), 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-            </div>
-          </div>
-        </div>
+      <div className="grid grid-cols-3 gap-2 sm:gap-4 shrink-0">
+        <DataSummaryCard
+          title="ตั๋วคงค้างทั้งหมด"
+          value={total.toLocaleString()}
+          icon={<Clock size={24} />}
+          colorClass="bg-red-100 text-red-500"
+        />
+        <DataSummaryCard
+          title="แสดงหน้านี้"
+          value={data.length.toLocaleString()}
+          icon={<Package size={24} />}
+          colorClass="bg-blue-100 text-blue-500"
+        />
+        <DataSummaryCard
+          title="รวมตัน (หน้านี้)"
+          value={data.reduce((s, r) => s + (Number(r.QtyTon) || 0), 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          icon={<Clock size={24} />}
+          colorClass="bg-orange-100 text-orange-500"
+        />
       </div>
 
-      <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="flex-1 bg-white border border-gray-200 rounded-xl sm:rounded-2xl shadow-sm grid grid-rows-[auto_1fr_auto] overflow-hidden min-h-0">
         {/* Toolbar */}
-        <div className="p-4 border-b border-gray-100 flex flex-wrap items-center gap-3 bg-gray-50/50">
+        <div className="p-2 sm:p-4 border-b border-gray-100 flex flex-row items-center gap-2 bg-gray-50/50 overflow-x-auto scrollbar-hide">
           {/* Search */}
-          <div className="relative flex-1 min-w-[200px] max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+          <div className="relative flex-1 min-w-[140px]">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input
               type="text"
               placeholder="ค้นหา ลูกค้า / เลขเอกสาร / สินค้า..."
               value={inputVal}
               onChange={e => setInputVal(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSearch()}
-              className="w-full pl-9 pr-8 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+              className="w-full pl-8 pr-8 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
             />
             {inputVal && (
               <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -120,76 +110,79 @@ export const AgingPage = () => {
               </button>
             )}
           </div>
-          <button
-            onClick={handleSearch}
-            className="px-4 py-2 bg-[#0C447C] text-white rounded-lg text-sm hover:bg-[#0a3866] transition-colors"
-          >
-            ค้นหา
-          </button>
 
-          {/* Status filter chips */}
-          <div className="flex flex-wrap gap-1.5">
-            {['CONFIRMED','LOADED','PICKING','SHIPPED'].map(s => (
-              <button
-                key={s}
-                onClick={() => toggleStatus(s)}
-                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                  statusFilter.includes(s)
-                    ? 'bg-[#0C447C] text-white border-[#0C447C]'
-                    : 'bg-white text-gray-500 border-gray-200 hover:border-[#0C447C]'
-                }`}
-              >
-                {STATUS_LABELS[s]?.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleSearch}
+              className="px-3 py-2 bg-[#0C447C] text-white rounded-lg text-sm hover:bg-[#0a3866] transition-colors whitespace-nowrap"
+            >
+              ค้นหา
+            </button>
+
+            {/* Status filter chips */}
+            <div className="flex flex-row gap-1.5 items-center hidden sm:flex">
+              {['CONFIRMED','LOADED','PICKING','SHIPPED'].map(s => (
+                <button
+                  key={s}
+                  onClick={() => toggleStatus(s)}
+                  className={`px-2 py-1 rounded-md text-[10px] font-medium border transition-colors whitespace-nowrap ${
+                    statusFilter.includes(s)
+                      ? 'bg-[#0C447C] text-white border-[#0C447C]'
+                      : 'bg-white text-gray-500 border-gray-200 hover:border-[#0C447C]'
+                  }`}
+                >
+                  {STATUS_LABELS[s]?.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Date from */}
+            <div className="flex items-center gap-1.5 text-sm text-gray-500 bg-white border border-gray-200 rounded-lg px-2 py-1 shrink-0">
+              <span className="text-[10px] hidden sm:inline">จาก</span>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => { setDateFrom(e.target.value); setPage(1); }}
+                className="text-xs focus:outline-none bg-transparent"
+              />
+            </div>
+
+            <button
+              onClick={() => load(page)}
+              className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+              title="รีเฟรช"
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            </button>
           </div>
-
-          {/* Date from */}
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <span className="text-xs">จากวันที่</span>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-              className="border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
-            />
-          </div>
-
-          <button
-            onClick={() => load(page)}
-            className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors ml-auto"
-            title="รีเฟรช"
-          >
-            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-          </button>
         </div>
 
         {/* Table */}
-        <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-gray-50 sticky top-0 z-10 text-gray-500 text-xs uppercase tracking-wider shadow-sm">
+        <div className="overflow-auto min-h-0 relative">
+          <table className="w-full text-sm text-left min-w-full">
+            <thead className="bg-gray-50 sticky top-0 z-10 text-gray-500 text-xs uppercase tracking-wider shadow-sm whitespace-nowrap">
               <tr>
-                <th className="px-4 py-3 border-b border-gray-100">#</th>
-                <th className="px-4 py-3 border-b border-gray-100">เลขเอกสาร</th>
-                <th className="px-4 py-3 border-b border-gray-100">ลูกค้า</th>
-                <th className="px-4 py-3 border-b border-gray-100">สินค้า</th>
-                <th className="px-4 py-3 border-b border-gray-100 text-right">ตัน</th>
-                <th className="px-4 py-3 border-b border-gray-100 text-center">วันที่สั่ง</th>
-                <th className="px-4 py-3 border-b border-gray-100 text-center">อายุ (วัน)</th>
-                <th className="px-4 py-3 border-b border-gray-100 text-center">สถานะ</th>
+                <th className="px-4 py-3 border-b border-gray-100 whitespace-nowrap">#</th>
+                <th className="px-4 py-3 border-b border-gray-100 whitespace-nowrap">เลขเอกสาร</th>
+                <th className="px-4 py-3 border-b border-gray-100 whitespace-nowrap">ลูกค้า</th>
+                <th className="px-4 py-3 border-b border-gray-100 whitespace-nowrap">สินค้า</th>
+                <th className="px-4 py-3 border-b border-gray-100 text-right whitespace-nowrap">ตัน</th>
+                <th className="px-4 py-3 border-b border-gray-100 text-center whitespace-nowrap">วันที่สั่ง</th>
+                <th className="px-4 py-3 border-b border-gray-100 text-center whitespace-nowrap">อายุ (วัน)</th>
+                <th className="px-4 py-3 border-b border-gray-100 text-center whitespace-nowrap">สถานะ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-16 text-center">
+                  <td colSpan={8} className="px-4 py-16 text-center whitespace-nowrap">
                     <RefreshCw size={28} className="animate-spin mx-auto text-[#0C447C] opacity-50" />
                     <p className="text-sm text-gray-400 mt-3 animate-pulse">กำลังโหลด...</p>
                   </td>
                 </tr>
               ) : data.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-400 whitespace-nowrap">
                     <Clock size={32} className="mx-auto mb-3 opacity-30" />
                     <p>ไม่พบข้อมูลตั๋วคงค้าง</p>
                   </td>
@@ -199,8 +192,8 @@ export const AgingPage = () => {
                   const st = STATUS_LABELS[row.Status] || { label: row.Status, color: 'bg-gray-100 text-gray-500' };
                   return (
                     <tr key={`${row.SoId}-${row.GoodCode}-${i}`} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="px-4 py-3 text-gray-400 text-xs">{(page - 1) * PAGE_SIZE + i + 1}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{(page - 1) * PAGE_SIZE + i + 1}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-700">
                           {row.WfRef || '-'}
                         </span>
@@ -208,20 +201,20 @@ export const AgingPage = () => {
                       <td className="px-4 py-3 text-gray-800 font-medium max-w-[200px] truncate" title={row.CustName}>
                         {row.CustName}
                       </td>
-                      <td className="px-4 py-3 text-gray-600 max-w-[160px]">
+                      <td className="px-4 py-3 text-gray-600 max-w-[160px] whitespace-nowrap">
                         <div className="text-xs font-semibold text-[#0C447C]">{row.GoodCode}</div>
                         {row.GoodName && <div className="text-xs text-gray-400 truncate" title={row.GoodName}>{row.GoodName}</div>}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-700">
+                      <td className="px-4 py-3 text-right font-semibold text-gray-700 whitespace-nowrap">
                         {Number(row.QtyTon).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                       </td>
-                      <td className="px-4 py-3 text-center text-xs text-gray-500">
+                      <td className="px-4 py-3 text-center text-xs text-gray-500 whitespace-nowrap">
                         {row.CreatedAt ? row.CreatedAt.substring(0, 10) : '-'}
                       </td>
                       <td className={`px-4 py-3 text-center font-mono text-sm ${daysColor(row.DaysOpen)}`}>
                         {row.DaysOpen}
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-4 py-3 text-center whitespace-nowrap">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${st.color}`}>
                           {st.label}
                         </span>

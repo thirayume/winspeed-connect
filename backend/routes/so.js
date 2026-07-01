@@ -26,6 +26,9 @@ const camelizeRows = (rows) => (rows || []).map(camelizeRow);
 
 // ── helpers ──────────────────────────────────────────────────
 async function getSoOrThrow(id, expectedStatus = null) {
+  if (id === 'undefined' || id === null || id === undefined || String(id).trim() === '' || Number.isNaN(id)) {
+    throw Object.assign(new Error(`Invalid SO id: ${id}`), { status: 400 });
+  }
   const isString = typeof id === 'string' && isNaN(Number(id));
   const idValue = isString ? id : Number(id);
   const idCol = isString ? 'Id' : 'CAST(Id AS INT)';
@@ -112,7 +115,7 @@ router.get('/', async (req, res) => {
     if (status)  { conditions.push(`so.Status = @status`);  inputs.status  = { type: sql.NVarChar(20), value: status }; }
     if (custId)  { conditions.push(`so.CustId = @custId`);  inputs.custId  = { type: sql.NVarChar(20), value: custId }; }
     if (search)  { 
-      conditions.push(`(so.WfRef LIKE '%' + @search + '%' OR so.CustName LIKE '%' + @search + '%')`);
+      conditions.push(`(so.WfRef LIKE '%' + @search + '%' OR so.CustName LIKE '%' + @search + '%' OR so.TruckPlate LIKE '%' + @search + '%' OR so.ImportedDocuNo LIKE '%' + @search + '%')`);
       inputs.search = { type: sql.NVarChar(100), value: search }; 
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -133,7 +136,11 @@ router.get('/', async (req, res) => {
     // attach lines for each order on this page
     const orders = camelizeRows(rows);
     if (orders.length) {
-      const ids = rows.map(x => x.Id);
+      const ids = rows.map(x => x.Id).filter(id => id != null && id !== 'undefined');
+      if (ids.length === 0) {
+        for (const o of orders) o.lines = [];
+        return;
+      }
       const lr = await wfQuery(
         `SELECT * FROM wf.v_AllSalesOrderLines WHERE SoId IN (${ids.map((_, i) => `@id${i}`).join(',')}) ORDER BY SoId, LineNum`,
         Object.fromEntries(ids.map((id, i) => [`id${i}`, { type: sql.VarChar(50), value: String(id) }]))
@@ -197,6 +204,26 @@ router.get('/shipped-today', requireAuth, async (req, res) => {
 });
 
 // ── Unlock Request flow (FR-006/007) ─────────────────────────
+
+// GET /api/so/unlock-reasons?type=EDIT — Fetch historical reasons
+router.get('/unlock-reasons', async (req, res) => {
+  try {
+    const { type } = req.query;
+    if (!type) return res.status(400).json({ message: 'Missing type' });
+    const r = await wfQuery(`
+      SELECT DISTINCT TOP 20 Reason
+      FROM wf.UnlockRequest
+      WHERE ReqType = @type
+        AND Reason NOT IN ('🚚 เปลี่ยนรถ', '📦 สินค้าผิด/เปลี่ยนสินค้า', '📅 เลื่อนวันส่ง', '❌ ลูกค้ายกเลิก', '✍️ อื่นๆ')
+      ORDER BY Reason
+    `, { type: { type: sql.NVarChar(20), value: type } });
+    res.json(r.recordset.map(row => row.Reason));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
 // GET /api/so/unlock-requests?status=PENDING — สำหรับ Approver
 router.get('/unlock-requests', requireRole('APPROVER', 'ADMIN', 'MANAGER'), async (req, res) => {
   try {
@@ -224,14 +251,26 @@ router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN')
     if (reqRow.Status !== 'PENDING') return res.status(400).json({ message: 'คำขอถูกดำเนินการแล้ว' });
 
     if (approve) {
-      // reverse rebate accrual + ปลดสถานะ (เหมือน /:id/unlock)
+      // reverse rebate accrual
       await wfQuery(
         `UPDATE wf.RebateLedger SET ReversedFlag=1, ReversedAt=GETUTCDATE(), ReversedNote=@note, Status='REVERSED'
          WHERE SoId=@soId AND ReversedFlag=0`,
-        { soId: { type: sql.VarChar(50), value: reqRow.SoId }, note: { type: sql.NVarChar(300), value: note || 'Unlock approved' } });
+        { soId: { type: sql.VarChar(50), value: reqRow.SoId }, note: { type: sql.NVarChar(300), value: note || 'Request approved' } });
       await wfQuery(`UPDATE wf.SalesOrderLineExt SET RebateBooked=0 WHERE SOID=@soId`, { soId: { type: sql.VarChar(50), value: reqRow.SoId } });
-      await wfQuery(`UPDATE dbo.SOHD SET PkgStatus='N' WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: reqRow.SoId } });
-      await audit(null, reqRow.SoId, req.user.sub, 'UNLOCKED', 'PICKING', 'CONFIRMED', note, req.ip);
+      
+      const targetStatus = reqRow.ReqType === 'CANCEL' ? 'CANCELLED' : 'DRAFT';
+      
+      // Update PkgStatus in SOHD depending on targetStatus
+      if (targetStatus === 'CANCELLED') {
+        await wfQuery(`UPDATE dbo.SOHD SET PkgStatus='C' WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: reqRow.SoId } });
+      } else {
+        // DRAFT
+        await wfQuery(`UPDATE dbo.SOHD SET PkgStatus='N' WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: reqRow.SoId } });
+        // Set IsUnlocked flag so view considers it DRAFT
+        await wfQuery(`UPDATE wf.SalesOrderExt SET IsUnlocked=1 WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: reqRow.SoId } });
+      }
+
+      await audit(null, reqRow.SoId, req.user.sub, reqRow.ReqType === 'CANCEL' ? 'CANCELLED' : 'EDIT_UNLOCKED', null, targetStatus, note, req.ip);
     }
     await wfQuery(`UPDATE wf.UnlockRequest SET Status=@st, ApproverId=@uid, ResponseNote=@note, RespondedAt=GETUTCDATE() WHERE Id=@id`,
       {
@@ -297,9 +336,9 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
 
         // generate WfRef
         const seqR = await tx.request().query(`SELECT NEXT VALUE FOR wf.WfRefSeq AS Seq`);
-        const seq = String(seqR.recordset[0].Seq).padStart(6, '0');
+        const seq = String(seqR.recordset[0].Seq).padStart(5, '0');
         const yy = (new Date().getFullYear() + 543 - 2500).toString().slice(-2);
-        const wfRef = `WF${yy}${soPrefix}-${seq}`;
+        const wfRef = `${soPrefix}${yy}-${seq}`;
 
         const soReq = tx.request();
         soReq.input('wfRef',            sql.NVarChar(30),  wfRef);
@@ -362,11 +401,151 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
+// ── PUT /api/so/:id — Update existing DRAFT SO ──
+router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res) => {
+  try {
+    const so = await getSoOrThrow(req.params.id, 'DRAFT');
+    const order = req.body;
+    
+    if (!order.custId) return res.status(400).json({ message: 'ต้องระบุข้อมูลลูกค้า (custId)' });
+    if (!order.lines?.length) return res.status(400).json({ message: 'ต้องมีรายการสินค้าอย่างน้อย 1 รายการ' });
+    if (!['I', 'K', 'AI'].includes(order.soPrefix)) return res.status(400).json({ message: 'soPrefix ต้องเป็น I / K / AI' });
+
+    let needsApproval = false;
+
+    // Check if it's an SOHD order by checking if it came from WINSpeed
+    const isSohdOrder = !!so.ImportedDocuNo;
+
+      if (isSohdOrder) {
+      await wfTransaction(async tx => {
+        const { soPrefix, custId, custName, truckPlate, controlTicketNo, deliveryDate, remark, lines, rebateDiscountAmt } = order;
+        const totalAmnt = lines.reduce((sum, l) => sum + (Number(l.qtyTon) * Number(l.pricePerTon)), 0) - Number(rebateDiscountAmt || 0);
+
+        const soReq = tx.request();
+        soReq.input('id', sql.VarChar(50), so.Id);
+        soReq.input('soPrefix', sql.NVarChar(5), soPrefix);
+        soReq.input('custId', sql.NVarChar(20), custId);
+        soReq.input('custName', sql.NVarChar(200), custName || '');
+        soReq.input('truckPlate', sql.NVarChar(30), truckPlate || null);
+        soReq.input('controlTicketNo', sql.NVarChar(20), controlTicketNo || null);
+        soReq.input('deliveryDate', sql.Date, deliveryDate ? new Date(deliveryDate) : null);
+        soReq.input('remark', sql.NVarChar(500), remark || null);
+        soReq.input('rebateDiscountAmt', sql.Decimal(12,2), Number(rebateDiscountAmt) || 0);
+        soReq.input('netAmnt', sql.Decimal(18,2), totalAmnt);
+
+        await soReq.query(`
+          UPDATE dbo.SOHD SET CustID=@custId, CustName=@custName, TransRegistration=@truckPlate, Remark=@remark, NetAmnt=@netAmnt WHERE SOID=@id;
+          UPDATE wf.SalesOrderExt SET SoPrefix=@soPrefix, ControlTicketNo=@controlTicketNo, DeliveryDate=@deliveryDate, RebateDiscountAmt=@rebateDiscountAmt, UpdatedAt=GETUTCDATE() WHERE SOID=@id;
+        `);
+
+        await tx.request().input('id', sql.VarChar(50), so.Id).query(`DELETE FROM dbo.SODT WHERE SOID=@id; DELETE FROM wf.SalesOrderLineExt WHERE SOID=@id;`);
+
+        for (let i = 0; i < lines.length; i++) {
+          const l = lines[i];
+          const lr = tx.request();
+          lr.input('soId', sql.VarChar(50), so.Id);
+          lr.input('lineNum', sql.Int, i + 1);
+          lr.input('goodId', sql.NVarChar(20), l.goodId);
+          lr.input('qtyTon', sql.Decimal(12,3), Number(l.qtyTon));
+          lr.input('pricePerTon', sql.Decimal(12,2), Number(l.pricePerTon));
+          lr.input('netPricePerTon', sql.Decimal(12,2), Number(l.netPricePerTon) || 0);
+          lr.input('isGiveaway', sql.Bit, l.isGiveaway ? 1 : 0);
+          lr.input('refControlTicketNo', sql.NVarChar(30), l.refControlTicketNo || null);
+          lr.input('isControlTicketDrawn', sql.Bit, l.isControlTicketDrawn ? 1 : 0);
+
+          await lr.query(`
+            INSERT INTO dbo.SODT (SOID, ListNo, GoodID, GoodQty2, GoodPrice2, DocuType, LotFlag, SerialFlag, GoodType, VatType, StockFlag, GoodFlag, RemaQty, FreeFlag, GoodStockRate1, RemaGoodStockQty, remaamnt)
+            VALUES (@soId, @lineNum, @goodId, @qtyTon, @pricePerTon, '112', 'N', 'N', '1', '1', '0', 'G', '0', 'N', '0', '0', '0');
+
+            INSERT INTO wf.SalesOrderLineExt (SOID, ListNo, NetPricePerTon, IsGiveaway, RebateBooked, RefControlTicketNo, IsControlTicketDrawn)
+            VALUES (@soId, @lineNum, @netPricePerTon, @isGiveaway, 0, @refControlTicketNo, @isControlTicketDrawn);
+          `);
+        }
+      });
+      await audit(null, so.Id, req.user.sub, 'UPDATED', 'DRAFT', 'DRAFT', null, req.ip);
+      broadcast('so_updated', { id: so.Id, action: 'updated' });
+      return res.json({ id: so.Id, wfRef: so.WfRef, needsApproval: false });
+    }
+
+    await wfTransaction(async tx => {
+      const { soPrefix, custId, custName, truckPlate, controlTicketNo, deliveryDate, remark, lines, rebateDiscountAmt } = order;
+
+      // price deviation check
+      const devLine = lines.find(l => !l.isGiveaway && (Number(l.pricePerTon) < Number(l.netPricePerTon) - 500));
+      needsApproval = !!devLine;
+
+      const yy = (new Date().getFullYear() + 543 - 2500).toString().slice(-2);
+      // Extract the sequence number from the existing WfRef (e.g. 'WF69I-00001' or 'I69-00001' -> '00001')
+      const seqMatch = so.WfRef ? so.WfRef.match(/-(\d+)$/) : null;
+      const seq = seqMatch ? seqMatch[1] : '00001';
+      const newWfRef = `${soPrefix}${yy}-${seq}`;
+
+      const soReq = tx.request();
+      soReq.input('id',                sql.Int,           so.Id);
+      soReq.input('soPrefix',          sql.NVarChar(5),   soPrefix);
+      soReq.input('wfRef',             sql.NVarChar(30),  newWfRef);
+      soReq.input('custId',            sql.NVarChar(20),  custId);
+      soReq.input('custName',          sql.NVarChar(200), custName || '');
+      soReq.input('truckPlate',        sql.NVarChar(30),  truckPlate || null);
+      soReq.input('controlTicketNo',   sql.NVarChar(20),  controlTicketNo || null);
+      soReq.input('deliveryDate',      sql.Date,          deliveryDate ? new Date(deliveryDate) : null);
+      soReq.input('remark',            sql.NVarChar(500), remark || null);
+      soReq.input('rebateDiscountAmt', sql.Decimal(12,2), Number(rebateDiscountAmt) || 0);
+
+      await soReq.query(`
+        UPDATE wf.SalesOrder SET
+          SoPrefix = @soPrefix,
+          WfRef = @wfRef,
+          CustId = @custId,
+          CustName = @custName,
+          TruckPlate = @truckPlate,
+          ControlTicketNo = @controlTicketNo,
+          DeliveryDate = @deliveryDate,
+          Remark = @remark,
+          RebateDiscountAmt = @rebateDiscountAmt,
+          UpdatedAt = GETUTCDATE()
+        WHERE Id = @id
+      `);
+
+      // Delete existing lines
+      await tx.request().input('id', sql.Int, so.Id).query(`DELETE FROM wf.SalesOrderLine WHERE SoId = @id`);
+
+      // Insert new lines
+      for (let i = 0; i < lines.length; i++) {
+        const l = lines[i];
+        const lr = tx.request();
+        lr.input('soId',                 sql.Int,           so.Id);
+        lr.input('lineNum',              sql.Int,           i + 1);
+        lr.input('goodId',               sql.NVarChar(20),  l.goodId);
+        lr.input('goodName',             sql.NVarChar(200), l.goodName || '');
+        lr.input('goodCode',             sql.NVarChar(50),  l.goodCode || '');
+        lr.input('qtyTon',               sql.Decimal(12,3), Number(l.qtyTon));
+        lr.input('qtyBag',               sql.Int,           Number(l.qtyBag) || Math.round(l.qtyTon * 20));
+        lr.input('pricePerTon',          sql.Decimal(12,2), Number(l.pricePerTon));
+        lr.input('netPricePerTon',       sql.Decimal(12,2), Number(l.netPricePerTon) || 0);
+        lr.input('isGiveaway',           sql.Bit,           l.isGiveaway ? 1 : 0);
+        lr.input('refControlTicketNo',   sql.NVarChar(30),  l.refControlTicketNo || null);
+        lr.input('isControlTicketDrawn', sql.Bit,           l.isControlTicketDrawn ? 1 : 0);
+        
+        await lr.query(`
+          INSERT INTO wf.SalesOrderLine
+            (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, PricePerTon, NetPricePerTon, IsGiveaway, RefControlTicketNo, IsControlTicketDrawn)
+          VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @pricePerTon, @netPricePerTon, @isGiveaway, @refControlTicketNo, @isControlTicketDrawn)
+        `);
+      }
+    });
+
+    await audit(null, so.Id, req.user.sub, 'UPDATED', 'DRAFT', 'DRAFT', null, req.ip);
+    broadcast('so_updated', { id: so.Id, action: 'updated' });
+    res.json({ id: so.Id, wfRef: newWfRef, needsApproval });
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
+});
+
 // ── PATCH /api/so/:id/confirm ────────────────────────────────
 // ── PATCH /api/so/:id/verify — Counter-Sales ตรวจซ้ำ (FR-022) ─────
 router.patch('/:id/verify', requireRole('COUNTER_SALES', 'ADMIN', 'MANAGER'), async (req, res) => {
   try {
-    const so = await getSoOrThrow(Number(req.params.id), 'DRAFT');
+    const so = await getSoOrThrow(req.params.id, 'DRAFT');
     await wfQuery(`UPDATE wf.SalesOrder SET VerifiedBy=@uid, VerifiedAt=GETUTCDATE() WHERE Id=@id`,
       { uid: { type: sql.Int, value: req.user.sub }, id: { type: sql.Int, value: so.Id } });
     await audit(null, so.Id, req.user.sub, 'VERIFIED', 'DRAFT', 'DRAFT', null, req.ip);
@@ -377,7 +556,16 @@ router.patch('/:id/verify', requireRole('COUNTER_SALES', 'ADMIN', 'MANAGER'), as
 
 router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res) => {
   try {
-    const so = await getSoOrThrow(Number(req.params.id), 'DRAFT');
+    const isSohdOrder = (await wfQuery(`SELECT SOID FROM wf.SalesOrderExt WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: String(req.params.id) } })).recordset.length > 0;
+    
+    if (isSohdOrder) {
+      await wfQuery(`UPDATE wf.SalesOrderExt SET IsUnlocked=0 WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: req.params.id } });
+      await audit(null, req.params.id, req.user.sub, 'CONFIRMED', 'DRAFT', 'CONFIRMED', null, req.ip);
+      broadcast('so_updated', { id: req.params.id, action: 'confirmed' });
+      return res.json({ id: req.params.id, status: 'CONFIRMED' });
+    }
+
+    const so = await getSoOrThrow(req.params.id, 'DRAFT');
 
     // FR-022 Verification Gate: ต้องตรวจซ้ำ (Counter-Sales) ก่อนยืนยัน (ADMIN bypass ได้)
     if (req.user.role !== 'ADMIN') {
@@ -412,7 +600,8 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
     }
 
     // 1. เรียก Stored Procedure เพื่อย้ายข้อมูลจาก wf.SalesOrder ไป SOHD (Winspeed)
-    const spReq = new sql.Request();
+    const activePool = require('../db').pools().ownerPool;
+    const spReq = activePool.request();
     spReq.input('SoId', sql.Int, so.Id);
     spReq.output('NewSoid', sql.VarChar(50));
     const spRes = await spReq.execute('wf.sp_ConfirmSalesOrder');
@@ -420,8 +609,8 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
     const newSoid = spRes.output.NewSoid;
     if (!newSoid) throw new Error('ย้ายข้อมูลไปยัง Winspeed ไม่สำเร็จ (ไม่ได้ SOID กลับมา)');
 
-    // 2. ตั้ง Rebate accrual — เรียก rebate service (ใช้ newSoid ที่เป็น string)
-    await bookRebateAccrual({ ...so, Id: newSoid }, lines, req.user.sub);
+    // 2. (Moved to SHIPPED) ตั้ง Rebate accrual
+    // await bookRebateAccrual({ ...so, Id: newSoid }, lines, req.user.sub);
 
     // 2.5 Consume Rebate (FIFO)
     if (rebateDiscountAmt > 0) {
@@ -467,22 +656,27 @@ router.patch('/:id/unlock', requireRole('APPROVER', 'ADMIN'), async (req, res) =
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
 
-// ── POST /api/so/:id/unlock-request — ขอปลดล็อก (เหตุผล ≥10 ตัว) FR-006 ─────
+// ── POST /api/so/:id/unlock-request — ขอปลดล็อก/ขอแก้ไข/ขอยกเลิก ─────
 router.post('/:id/unlock-request', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id);
-    const { reason } = req.body || {};
-    if (!reason || String(reason).trim().length < 10)
-      return res.status(400).json({ message: 'ต้องระบุเหตุผลอย่างน้อย 10 ตัวอักษร' });
+    const { reason, reqType = 'UNLOCK' } = req.body || {};
+    if (!reason || String(reason).trim().length < 5)
+      return res.status(400).json({ message: 'ต้องระบุเหตุผลอย่างน้อย 5 ตัวอักษร' });
+    if (!['UNLOCK', 'EDIT', 'CANCEL'].includes(reqType))
+      return res.status(400).json({ message: 'ประเภทคำขอไม่ถูกต้อง' });
+      
     const dup = (await wfQuery(`SELECT TOP 1 Id FROM wf.UnlockRequest WHERE SoId=@so AND Status='PENDING'`,
       { so: { type: sql.NVarChar(50), value: so.Id } })).recordset[0];
     if (dup) return res.status(400).json({ message: 'มีคำขอที่รออนุมัติอยู่แล้ว' });
-    await wfQuery(`INSERT INTO wf.UnlockRequest (SoId, WfRef, Reason, RequesterId) VALUES (@so, @ref, @reason, @uid)`,
+    
+    await wfQuery(`INSERT INTO wf.UnlockRequest (SoId, WfRef, Reason, RequesterId, ReqType) VALUES (@so, @ref, @reason, @uid, @reqType)`,
       {
         so: { type: sql.NVarChar(50), value: so.Id },
         ref:{ type: sql.NVarChar(30), value: so.WfRef || null },
         reason:{ type: sql.NVarChar(500), value: String(reason).trim() },
         uid:{ type: sql.Int, value: req.user.sub },
+        reqType: { type: sql.NVarChar(20), value: reqType }
       });
     broadcast('so_updated', { id: so.Id, action: 'unlock_requested' });
     res.json({ id: so.Id, ok: true });
@@ -546,6 +740,10 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) =>
         mb:   { type: sql.NVarChar(50), value: movebill || null },
         uid:  { type: sql.Int, value: req.user.sub },
       });
+
+    // ตั้ง Rebate accrual เมื่อ SHIPPED (เรียกชำระเงินแล้ว)
+    const lines = await getLines(so.Id);
+    await bookRebateAccrual(so, lines, req.user.sub);
     await audit(null, so.Id, req.user.sub, 'SHIPPED', 'LOADED', 'SHIPPED', null, req.ip);
     broadcast('so_updated', { id: so.Id, action: 'shipped' });
     await enqueue('SO_SHIPPED', so.Id, { soId: so.Id, netKg: net, by: req.user.sub }, `SO_SHIPPED:${so.Id}`);
@@ -585,19 +783,24 @@ async function bookRebateAccrual(so, lines, userId) {
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
 
-  // หา/สร้าง RebatePool
-  let pool = (await wfQuery(
-    `SELECT * FROM wf.RebatePool WHERE SalesUserId=@u AND PeriodYear=@y AND PeriodMonth=@m`,
-    { u: { type: sql.Int, value: userId }, y: { type: sql.Int, value: year }, m: { type: sql.Int, value: month } }
-  )).recordset?.[0];
-
-  if (!pool) {
-    const pr = await wfQuery(
-      `INSERT INTO wf.RebatePool (SalesUserId, PeriodYear, PeriodMonth, AllocatedAmt) OUTPUT inserted.* VALUES (@u,@y,@m,0)`,
+  // หา/สร้าง RebatePool แบบ Lazy (สร้างเฉพาะเมื่อมีรายการรีเบทจริงๆ เพื่อป้องกันแฟ้มขยะ)
+  let pool = null;
+  const getOrCreatePool = async () => {
+    if (pool) return pool;
+    pool = (await wfQuery(
+      `SELECT * FROM wf.RebatePool WHERE SalesUserId=@u AND PeriodYear=@y AND PeriodMonth=@m`,
       { u: { type: sql.Int, value: userId }, y: { type: sql.Int, value: year }, m: { type: sql.Int, value: month } }
-    );
-    pool = pr.recordset[0];
-  }
+    )).recordset?.[0];
+
+    if (!pool) {
+      const pr = await wfQuery(
+        `INSERT INTO wf.RebatePool (SalesUserId, PeriodYear, PeriodMonth, AllocatedAmt) OUTPUT inserted.* VALUES (@u,@y,@m,0)`,
+        { u: { type: sql.Int, value: userId }, y: { type: sql.Int, value: year }, m: { type: sql.Int, value: month } }
+      );
+      pool = pr.recordset[0];
+    }
+    return pool;
+  };
 
   for (const l of lines) {
     if (l.IsGiveaway) continue;
@@ -620,13 +823,15 @@ async function bookRebateAccrual(so, lines, userId) {
       if (plan) { planId = plan.PlanId; planRegion = plan.Region; }
     } catch { /* no plan layer — keep direct accrual */ }
 
+    const activePool = await getOrCreatePool();
+
     await wfQuery(
       `INSERT INTO wf.RebateLedger
          (PoolId, SoId, SoLineId, CustId, GoodId, GoodCode, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, RebateAmount, RemainingAmt, Status, PlanId, Region)
        VALUES (@poolId, @soId, @lineId, @custId, @goodId, @goodCode, @qty, @price, @net, @rebPer, @rebAmt, @rebAmt, 'PENDING', @planId, @region)`,
       {
-        poolId:   { type: sql.Int,          value: pool.Id },
-        soId:     { type: sql.Int,          value: so.Id },
+        poolId:   { type: sql.Int,          value: activePool.Id },
+        soId:     { type: sql.VarChar(50),  value: String(so.Id) },
         lineId:   { type: sql.Int,          value: l.Id },
         custId:   { type: sql.NVarChar(20), value: so.CustId },
         goodId:   { type: sql.NVarChar(20), value: l.GoodId },
@@ -645,7 +850,7 @@ async function bookRebateAccrual(so, lines, userId) {
       { soId: { type: sql.VarChar(50), value: so.Id }, listNo: { type: sql.Int, value: l.LineNum || l.ListNo } });
     await wfQuery(
       `UPDATE wf.RebatePool SET AccruedAmt = AccruedAmt + @amt, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
-      { amt: { type: sql.Decimal(12,2), value: rebateAmt }, id: { type: sql.Int, value: pool.Id } }
+      { amt: { type: sql.Decimal(12,2), value: rebateAmt }, id: { type: sql.Int, value: activePool.Id } }
     );
   }
 }

@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 
-type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'accounting' | 'giveaway' | 'admin' | 'master';
+type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'voucher' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'weigh-inbox' | 'pricebook' | 'policy' | 'governance' | 'ops' | 'admin' | 'master';
 
 type NavParams = {
   soId?: number;
+  action?: 'edit' | 'view';
 };
 
 type AppState = {

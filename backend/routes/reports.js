@@ -31,6 +31,7 @@ const REPORTS = {
                  p.AllocatedAmt, p.AccruedAmt, p.ClaimedAmt,
                  (p.AccruedAmt - p.ClaimedAmt) AS Available
           FROM wf.RebatePool p JOIN wf.AppUser u ON u.Id = p.SalesUserId
+          WHERE (p.AccruedAmt > 0 OR p.ClaimedAmt > 0)
           ORDER BY p.PeriodYear DESC, p.PeriodMonth DESC, Available DESC`,
   },
   'giveaway': {

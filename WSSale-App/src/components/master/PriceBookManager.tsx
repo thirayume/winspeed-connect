@@ -11,7 +11,7 @@ const STATUS_COLOR: Record<string, string> = {
 };
 type Detail = PriceBook & { lines: PriceBookLine[]; audit: PriceBookAuditRow[] };
 
-export function PriceBookPage() {
+export function PriceBookManager() {
   const [books, setBooks] = useState<PriceBook[]>([]);
   const [sel, setSel] = useState<Detail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -49,15 +49,15 @@ export function PriceBookPage() {
   }
 
   return (
-    <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
-      <div className="px-6 py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between">
+    <div className="h-full flex flex-col bg-white">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3 bg-gray-50/50">
         <div>
-          <h1 className="text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}><BookOpen size={26} /> Price Book</h1>
-          <p className="text-sm text-gray-500 mt-0.5">ร่าง → อนุมัติ → เปิดใช้งาน (มี audit) · FR-023</p>
+          <h2 className="text-lg font-bold flex items-center gap-2 text-[#0C447C]"><BookOpen size={18} /> Price Book</h2>
+          <p className="text-xs text-gray-500 mt-0.5">ร่าง → อนุมัติ → เปิดใช้งาน (มี audit) · FR-023</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setCreating(!creating)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-[#0C447C] text-white hover:opacity-90"><Plus size={15} /> สร้างใหม่</button>
-          <button onClick={load} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50"><RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} /></button>
+          <button onClick={() => setCreating(!creating)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-[#0C447C] text-white hover:opacity-90"><Plus size={15} /> สร้างใหม่</button>
+          <button onClick={load} className="p-1.5 flex items-center justify-center rounded-lg border border-gray-200 bg-white hover:bg-gray-50"><RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} /></button>
         </div>
       </div>
 
@@ -90,7 +90,7 @@ export function PriceBookPage() {
         <div className="md:col-span-3 overflow-y-auto p-4">
           {!sel ? <div className="text-center text-gray-400 text-sm py-16">เลือก Price Book เพื่อดูรายละเอียด</div> : (
             <div className="space-y-4">
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+              <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-lg font-bold text-gray-800">{sel.Name}</div>
@@ -105,20 +105,20 @@ export function PriceBookPage() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
                 <div className="px-4 py-2.5 border-b border-gray-100 text-sm font-semibold text-gray-700">รายการราคา ({sel.lines.length})</div>
                 <div className="max-h-72 overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0"><tr className="bg-gray-50 text-gray-500 text-xs uppercase"><th className="text-left px-4 py-2">รหัส</th><th className="text-left px-4 py-2">สินค้า</th><th className="text-right px-4 py-2">ราคา/ตัน</th></tr></thead>
+                  <table className="w-full text-sm min-w-full">
+                    <thead className="sticky top-0 whitespace-nowrap"><tr className="bg-gray-50 text-gray-500 text-xs uppercase"><th className="text-left px-4 py-2 whitespace-nowrap">รหัส</th><th className="text-left px-4 py-2 whitespace-nowrap">สินค้า</th><th className="text-right px-4 py-2 whitespace-nowrap">ราคา/ตัน</th></tr></thead>
                     <tbody className="divide-y divide-gray-50">
-                      {sel.lines.map((l, i) => <tr key={i}><td className="px-4 py-2 text-gray-500">{l.GoodId}</td><td className="px-4 py-2 text-gray-700">{l.GoodName}</td><td className="px-4 py-2 text-right font-semibold text-gray-800">฿{Number(l.Price).toLocaleString()}</td></tr>)}
-                      {sel.lines.length === 0 && <tr><td colSpan={3} className="px-4 py-6 text-center text-gray-400">ยังไม่มีรายการ</td></tr>}
+                      {sel.lines.map((l, i) => <tr key={i}><td className="px-4 py-2 text-gray-500 whitespace-nowrap">{l.GoodId}</td><td className="px-4 py-2 text-gray-700 whitespace-nowrap">{l.GoodName}</td><td className="px-4 py-2 text-right font-semibold text-gray-800 whitespace-nowrap">฿{Number(l.Price).toLocaleString()}</td></tr>)}
+                      {sel.lines.length === 0 && <tr><td colSpan={3} className="px-4 py-6 text-center text-gray-400 whitespace-nowrap">ยังไม่มีรายการ</td></tr>}
                     </tbody>
                   </table>
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+              <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4">
                 <div className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5"><FileClock size={15} /> ประวัติ (Audit)</div>
                 <div className="space-y-1.5">
                   {sel.audit.map((a, i) => (

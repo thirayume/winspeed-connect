@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import {
   Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell, LogOut,
-  Users, LayoutDashboard, Coins, FileCheck, FileCheck2, Gift, FileText, LayoutGrid, Database, Clock, Ticket, ClipboardList, Stamp, BarChart3, Scale, ShieldCheck, Activity, BookOpen, ScrollText, Landmark, Inbox
+  Users, LayoutDashboard, Coins, FileCheck, FileCheck2, Gift, FileText, LayoutGrid, Database, Clock, Ticket, ClipboardList, Stamp, BarChart3, Scale, ShieldCheck, Activity, BookOpen, ScrollText, Landmark, Inbox,
+  Menu, ChevronDown, Settings, CheckCircle2
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { SalesPortal } from './components/sales/SalesPortal';
@@ -24,53 +25,84 @@ import { AgingPage } from './components/aging/AgingPage';
 import { VoucherPage } from './components/voucher/VoucherPage';
 import { ReconciliationPage } from './components/recon/ReconciliationPage';
 import { OpsStatusPage } from './components/ops/OpsStatusPage';
-import { PriceBookPage } from './components/pricebook/PriceBookPage';
+
 import { ApprovalPolicyPage } from './components/policy/ApprovalPolicyPage';
 import { DataGovernancePage } from './components/governance/DataGovernancePage';
 import { useErpStore } from './store/erp-store';
 import { useAuthStore } from './store/auth-store';
-import { fetchUnlockRequests, getMe } from './services/api';
+import { getMe, listUnlockRequests } from './services/api';
 import type { UserRole } from './types';
 import LoginPage from './pages/LoginPage';
 import { DbModeSwitch } from './components/common/DbModeSwitch';
 import { useAppStore } from './store/app-store';
 import { GlobalLoader } from './components/common/GlobalLoader';
+import { MobileDrawer } from './components/common/MobileDrawer';
+import type { NavItem, NavGroup } from './components/common/MobileDrawer';
+import { UnlockReviewModal } from './components/papertrail/UnlockReviewModal';
 
-export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'voucher' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'weigh-inbox' | 'pricebook' | 'policy' | 'governance' | 'ops' | 'admin' | 'master';
+export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'voucher' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'weigh-inbox' | 'policy' | 'governance' | 'ops' | 'admin' | 'master';
 
-type NavItem = {
-  key: PortalKey;
-  label: string;
-  sub: string;
-  icon: LucideIcon;
-  roles?: UserRole[];   // ถ้ามี = แสดงเฉพาะ role เหล่านี้
-  badge?: boolean;      // แสดง pendingUnlocks badge
-};
+// ── Grouped Navigation ──────────────────────────────────────
+const NAV_GROUPS: NavGroup[] = [
+  {
+    groupLabel: 'หลัก',
+    items: [
+      { key: 'dashboard',  label: 'Dashboard',  sub: 'ภาพรวม',              icon: LayoutDashboard },
+      { key: 'sales',      label: 'ขาย',         sub: 'ใบสั่งขาย (POS)',     icon: ShoppingCart },
+      { key: 'quotation',  label: 'เสนอราคา',    sub: 'Quotation → SO',      icon: FileText },
+      { key: 'store',      label: 'คลัง',        sub: 'รับสินค้า/ส่งออก',     icon: Warehouse, badge: true },
+      { key: 'papertrail', label: 'Paper Trail', sub: 'Kanban เอกสาร',       icon: LayoutGrid },
+      { key: 'aging',      label: 'ตั๋วคงค้าง',   sub: 'SO คงค้าง · ค้นหา',   icon: Clock },
+      { key: 'approvals',  label: 'อนุมัติคำขอ',  sub: 'แก้ไข · ยกเลิก',        icon: CheckCircle2, roles: ['APPROVER', 'ADMIN', 'MANAGER'], badge: true },
+    ],
+  },
+  {
+    groupLabel: 'การเงิน',
+    items: [
+      { key: 'rebate',     label: 'รีเบท (App)', sub: 'Pool · เคลม · wf',      icon: Coins },
+      { key: 'rebate-plan',label: 'Rebate Plan', sub: 'แผน · จัดสรรงบ',        icon: ClipboardList, roles: ['ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING'] },
+      { key: 'cn-rebate',  label: 'CN Rebate',   sub: 'ใบลดหนี้ · Winspeed',   icon: FileCheck2, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER', 'SALES'] },
+      { key: 'voucher',    label: 'Voucher',     sub: 'คูปองคงค้าง · Winspeed', icon: Ticket },
+      { key: 'giveaway',   label: 'ของแถม',      sub: 'งบรายภาค · เบิก',     icon: Gift },
+    ],
+  },
+  {
+    groupLabel: 'บัญชี',
+    items: [
+      { key: 'accounting', label: 'บัญชี',       sub: 'Sync · อนุมัติ CN',    icon: FileCheck, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER'] },
+      { key: 'recon',      label: 'กระทบยอด',    sub: 'Recon · ตรวจออกของ',   icon: ShieldCheck, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER'] },
+      { key: 'reports',    label: 'รายงาน',      sub: 'สรุป · Export Excel',  icon: BarChart3, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER'] },
+      { key: 'control-ticket', label: 'ชุดตั๋วคุม', sub: 'คงเหลือ · ตัดออก',   icon: Stamp },
+    ],
+  },
+  {
+    groupLabel: 'คลัง/ชั่ง',
+    items: [
+      { key: 'truckscale', label: 'TruckScale',  sub: 'เครื่องชั่ง · MySQL',  icon: Scale, roles: ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ADMIN', 'MANAGER'] },
+      { key: 'weigh-inbox',label: 'Weigh Inbox', sub: 'ดึงชั่ง · จับคู่ SO',     icon: Inbox, roles: ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ADMIN', 'MANAGER'] },
+    ],
+  },
+  {
+    groupLabel: 'ตั้งค่าระบบ',
+    items: [
+      { key: 'master',     label: 'ข้อมูลหลัก',  sub: 'สินค้า · ลูกค้า',       icon: Database, roles: ['ADMIN'] },
+      { key: 'policy',     label: 'นโยบายอนุมัติ', sub: 'อำนาจ · วงเงิน',       icon: ScrollText, roles: ['ADMIN', 'MANAGER'] },
+      { key: 'governance', label: 'กำกับข้อมูล',  sub: 'เครดิต · สต๊อก · PDPA',  icon: Landmark, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
+      { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · error · alert', icon: Activity, roles: ['ADMIN', 'MANAGER'] },
+      { key: 'admin',      label: 'ผู้ใช้งาน',    sub: 'Map พนักงาน',         icon: Users, roles: ['ADMIN'] },
+    ],
+  },
+];
 
-const NAV: NavItem[] = [
-  { key: 'dashboard',  label: 'Dashboard',  sub: 'ภาพรวม',              icon: LayoutDashboard },
-  { key: 'sales',      label: 'ขาย',         sub: 'ใบสั่งขาย (POS)',     icon: ShoppingCart },
-  { key: 'quotation',  label: 'เสนอราคา',    sub: 'Quotation → SO',      icon: FileText },
-  { key: 'store',      label: 'คลัง',        sub: 'รับสินค้า/ส่งออก',     icon: Warehouse, badge: true },
-  { key: 'papertrail', label: 'Paper Trail', sub: 'Kanban เอกสาร',       icon: LayoutGrid },
-  { key: 'rebate',     label: 'รีเบท (App)', sub: 'Pool · เคลม · wf',      icon: Coins },
-  { key: 'rebate-plan',label: 'Rebate Plan', sub: 'แผน · จัดสรรงบ',        icon: ClipboardList, roles: ['ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING'] },
-  { key: 'cn-rebate',  label: 'CN Rebate',   sub: 'ใบลดหนี้ · Winspeed',   icon: FileCheck2, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER', 'SALES'] },
-  { key: 'voucher',    label: 'Voucher',     sub: 'คูปองคงค้าง · Winspeed', icon: Ticket },
-  { key: 'accounting', label: 'บัญชี',       sub: 'Sync · อนุมัติ CN',    icon: FileCheck, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER'] },
-  { key: 'recon',      label: 'กระทบยอด',    sub: 'Recon · ตรวจออกของ',   icon: ShieldCheck, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER'] },
-  { key: 'giveaway',   label: 'ของแถม',      sub: 'งบรายภาค · เบิก',     icon: Gift },
-  { key: 'reports',    label: 'รายงาน',      sub: 'สรุป · Export Excel',  icon: BarChart3, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER'] },
-  { key: 'aging',      label: 'ตั๋วคงค้าง',   sub: 'SO คงค้าง · ค้นหา',   icon: Clock },
-  { key: 'control-ticket', label: 'ชุดตั๋วคุม', sub: 'คงเหลือ · ตัดออก',   icon: Stamp },
-  { key: 'truckscale', label: 'TruckScale',  sub: 'เครื่องชั่ง · MySQL',  icon: Scale, roles: ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ADMIN', 'MANAGER'] },
-  { key: 'weigh-inbox',label: 'Weigh Inbox', sub: 'ดึงชั่ง · จับคู่ SO',     icon: Inbox, roles: ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ADMIN', 'MANAGER'] },
-  { key: 'pricebook',  label: 'Price Book',  sub: 'ราคา · อนุมัติ',        icon: BookOpen, roles: ['ACCOUNTING', 'MANAGER', 'ADMIN'] },
-  { key: 'policy',     label: 'นโยบายอนุมัติ', sub: 'อำนาจ · วงเงิน',       icon: ScrollText, roles: ['ADMIN', 'MANAGER'] },
-  { key: 'governance', label: 'กำกับข้อมูล',  sub: 'เครดิต · สต๊อก · PDPA',  icon: Landmark, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
-  { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · error · alert', icon: Activity, roles: ['ADMIN', 'MANAGER'] },
-  { key: 'admin',      label: 'ผู้ใช้งาน',    sub: 'Map พนักงาน',         icon: Users, roles: ['ADMIN'] },
-  { key: 'master',     label: 'ข้อมูลหลัก',  sub: 'สินค้า · ลูกค้า',       icon: Database, roles: ['ADMIN'] },
+// Flatten for lookups
+const ALL_NAV: NavItem[] = NAV_GROUPS.flatMap(g => g.items);
+
+// Mobile bottom tab bar items (fixed 4 + "More")
+const MOBILE_TABS: (NavItem & { isMobileOnly?: boolean })[] = [
+  { key: 'dashboard',  label: 'Dashboard',  sub: '',  icon: LayoutDashboard },
+  { key: 'papertrail', label: 'เอกสาร',      sub: '',  icon: LayoutGrid },
+  { key: 'sales',      label: 'ขาย',         sub: '',  icon: ShoppingCart },
+  { key: 'store',      label: 'คลัง',        sub: '',  icon: Warehouse, badge: true },
 ];
 
 function App() {
@@ -94,17 +126,27 @@ function App() {
 
 function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['getState']['user']; logout: () => void }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ 'หลัก': true });
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+  const [showUnlockReview, setShowUnlockReview] = useState(false);
   const { activePortal, navigate } = useAppStore();
   const setUnlockRequests = useErpStore(s => s.setUnlockRequests);
-  const pendingUnlocks = useErpStore(s => s.unlockRequests.filter(r => !r.resolved).length);
+  const pendingUnlocks = useErpStore(s => s.unlockRequests.length);
 
   const role = user?.role;
-  const visibleNav = NAV.filter(n => !n.roles || (role && n.roles.includes(role)));
+
+  // Auto-expand group containing active portal
+  useEffect(() => {
+    const activeGroup = NAV_GROUPS.find(g => g.items.some(n => n.key === activePortal));
+    if (activeGroup && !expandedGroups[activeGroup.groupLabel]) {
+      setExpandedGroups(prev => ({ ...prev, [activeGroup.groupLabel]: true }));
+    }
+  }, [activePortal]);
 
   // Background poller for unlock requests (PICKING orders) — keeps badge live
   useEffect(() => {
     const poll = async () => {
-      try { setUnlockRequests(await fetchUnlockRequests()); }
+      try { setUnlockRequests(await listUnlockRequests('PENDING', true)); }
       catch (e) { console.error('Polling failed', e); }
     };
     poll();
@@ -112,13 +154,24 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
     return () => clearInterval(timer);
   }, [setUnlockRequests]);
 
-  const current = NAV.find(n => n.key === activePortal);
+  const current = ALL_NAV.find(n => n.key === activePortal);
   const portalLabel = current ? `${current.label} — ${current.sub}` : '';
+
+  const toggleGroup = (groupLabel: string) => {
+    setExpandedGroups(prev => ({ ...prev, [groupLabel]: !prev[groupLabel] }));
+  };
 
   const navBtnClass = (active: boolean, collapsed: boolean) =>
     `relative w-full flex items-center gap-3 rounded-lg px-2.5 py-2.5 text-sm transition-all ${
       active ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
     } ${collapsed ? 'justify-center' : ''}`;
+
+  // Check if any item in a group is active (for highlighting group header)
+  const isGroupActive = (group: NavGroup) => group.items.some(n => n.key === activePortal);
+
+  // Filter visible groups based on role
+  const getVisibleItems = (items: NavItem[]) =>
+    items.filter(n => !n.roles || (role && n.roles.includes(role)));
 
   return (
     <div className="flex h-screen w-full bg-background text-foreground overflow-hidden">
@@ -139,26 +192,67 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
           )}
         </div>
 
-        <nav className="flex-1 space-y-1.5 p-2 overflow-y-auto">
-          {visibleNav.map(n => {
-            const Icon = n.icon;
+        <nav className="flex-1 p-2 overflow-y-auto custom-scrollbar">
+          {NAV_GROUPS.map((group, gi) => {
+            const visibleItems = getVisibleItems(group.items);
+            if (visibleItems.length === 0) return null;
+
+            const isExpanded = expandedGroups[group.groupLabel] ?? false;
+            const groupActive = isGroupActive(group);
+
             return (
-              <button key={n.key} onClick={() => navigate(n.key as PortalKey)}
-                title={isSidebarCollapsed ? n.label : ''} className={navBtnClass(activePortal === n.key, isSidebarCollapsed)}>
-                <Icon className="h-4 w-4 shrink-0" />
+              <div key={group.groupLabel}>
+                {/* Group divider (not before first group) */}
+                {gi > 0 && <div className="nav-group-divider" />}
+
+                {/* Group header (when sidebar is expanded) */}
                 {!isSidebarCollapsed && (
-                  <div className="flex flex-col text-left animate-in fade-in slide-in-from-left-2 duration-300">
-                    <span className="font-medium">{n.label}</span>
-                    <span className="text-[11px] text-muted-foreground">{n.sub}</span>
-                  </div>
+                  <button
+                    onClick={() => toggleGroup(group.groupLabel)}
+                    className={`nav-group-label w-full flex items-center justify-between cursor-pointer hover:text-foreground transition-colors ${groupActive ? 'text-[#0C447C]' : ''}`}
+                  >
+                    <span>{group.groupLabel}</span>
+                    <ChevronDown
+                      size={12}
+                      className={`transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`}
+                    />
+                  </button>
                 )}
-                {n.badge && pendingUnlocks > 0 && (
-                  <span className={`absolute bg-amber-500 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${
-                    isSidebarCollapsed ? 'top-1.5 right-1.5 h-3.5 w-3.5' : 'top-3 right-3 h-4 w-4'}`}>
-                    {pendingUnlocks}
-                  </span>
-                )}
-              </button>
+
+                {/* Group items */}
+                <div
+                  className={`nav-group-items space-y-0.5 ${!isSidebarCollapsed ? (isExpanded ? 'expanded' : 'collapsed') : 'expanded'}`}
+                  style={!isSidebarCollapsed && isExpanded ? { maxHeight: `${visibleItems.length * 52}px` } : undefined}
+                >
+                  {visibleItems.map(n => {
+                    const Icon = n.icon;
+                    return (
+                      <button key={n.key} onClick={() => {
+                        if (n.key === 'approvals') {
+                          setShowUnlockReview(true);
+                          return;
+                        }
+                        navigate(n.key as PortalKey);
+                      }}
+                        title={isSidebarCollapsed ? n.label : ''} className={navBtnClass(activePortal === n.key, isSidebarCollapsed)}>
+                        <Icon className="h-4 w-4 shrink-0" />
+                        {!isSidebarCollapsed && (
+                          <div className="flex flex-col text-left animate-in fade-in slide-in-from-left-2 duration-300">
+                            <span className="font-medium">{n.label}</span>
+                            <span className="text-[11px] text-muted-foreground">{n.sub}</span>
+                          </div>
+                        )}
+                        {n.badge && pendingUnlocks > 0 && (
+                          <span className={`absolute bg-amber-500 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${
+                            isSidebarCollapsed ? 'top-1.5 right-1.5 h-3.5 w-3.5' : 'top-3 right-3 h-4 w-4'}`}>
+                            {pendingUnlocks}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
         </nav>
@@ -184,7 +278,7 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
       </aside>
 
       {/* Main content area */}
-      <div className="flex flex-1 flex-col pb-16 md:pb-0">
+      <div className="flex flex-1 flex-col pb-16 md:pb-0 min-w-0">
         <header className="glass-header sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border px-4 md:px-6">
           <div className="flex items-center gap-2.5 md:hidden">
             <Boxes className="h-5 w-5" />
@@ -213,11 +307,11 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-hidden">
+        <main className="flex-1 overflow-hidden min-w-0 max-w-full flex flex-col">
           {activePortal === 'sales' ? (
             <SalesPortal />
           ) : (
-            <div className="h-full overflow-y-auto custom-scrollbar">
+            <div className="h-full w-full overflow-auto custom-scrollbar">
               {activePortal === 'dashboard'  && <DashboardPage />}
               {activePortal === 'quotation'  && <QuotationPage />}
               {activePortal === 'store'      && <StorePortal />}
@@ -232,7 +326,7 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
               {activePortal === 'weigh-inbox' && <WeighInboxPage />}
               {activePortal === 'accounting' && <AccountingPage />}
               {activePortal === 'recon'      && <ReconciliationPage />}
-              {activePortal === 'pricebook'  && <PriceBookPage />}
+
               {activePortal === 'policy'     && <ApprovalPolicyPage />}
               {activePortal === 'governance' && <DataGovernancePage />}
               {activePortal === 'ops'        && <OpsStatusPage />}
@@ -245,25 +339,85 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
         </main>
       </div>
 
-      {/* Mobile Bottom Tab Bar — first 5 visible nav items */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-border bg-background safe-bottom md:hidden">
-        {visibleNav.slice(0, 5).map(n => {
+      {/* Mobile Bottom Tab Bar — 4 fixed + "More" */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-border bg-background safe-bottom md:hidden h-[60px] items-center px-1">
+        {MOBILE_TABS.map(n => {
           const Icon = n.icon;
+          const isSales = n.key === 'sales';
+          const isActive = activePortal === n.key;
+          
+          if (isSales) {
+            return (
+              <div key={n.key} className="relative flex flex-1 justify-center">
+                <button 
+                  onClick={() => { navigate(n.key as PortalKey); setIsMobileDrawerOpen(false); }}
+                  className="absolute -top-6 flex flex-col items-center justify-center w-14 h-14 rounded-full shadow-lg transition-transform active:scale-95"
+                  style={{ background: '#0C447C', color: 'white' }}
+                >
+                  <Icon className="h-6 w-6 mb-0.5" />
+                  <span className="text-[9px] font-bold leading-none">{n.label}</span>
+                </button>
+              </div>
+            );
+          }
+
           return (
-            <button key={n.key} onClick={() => navigate(n.key as PortalKey)}
+            <button key={n.key} onClick={() => {
+              if (n.key === 'approvals') {
+                setShowUnlockReview(true);
+                setIsMobileDrawerOpen(false);
+                return;
+              }
+              navigate(n.key as PortalKey);
+              setIsMobileDrawerOpen(false);
+            }}
               className={`relative flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition-colors ${
-                activePortal === n.key ? 'text-foreground' : 'text-muted-foreground'}`}>
+                isActive ? 'text-foreground' : 'text-muted-foreground'}`}>
               <Icon className="h-5 w-5" />
               {n.label}
               {n.badge && pendingUnlocks > 0 && (
-                <span className="absolute top-1.5 right-1/4 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-white">
+                <span className="absolute top-1 right-1/4 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-white">
                   {pendingUnlocks}
                 </span>
               )}
             </button>
           );
         })}
+        {/* "More" tab */}
+        <button
+          onClick={() => setIsMobileDrawerOpen(true)}
+          className={`relative flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition-colors ${
+            isMobileDrawerOpen || !MOBILE_TABS.some(t => t.key === activePortal) ? 'text-foreground' : 'text-muted-foreground'
+          }`}
+        >
+          <Menu className="h-5 w-5" />
+          เพิ่มเติม
+        </button>
       </nav>
+
+      {/* Mobile Navigation Drawer */}
+      <MobileDrawer
+        isOpen={isMobileDrawerOpen}
+        onClose={() => setIsMobileDrawerOpen(false)}
+        groups={NAV_GROUPS}
+        activePortal={activePortal}
+        userRole={role}
+        pendingUnlocks={pendingUnlocks}
+        onNavigate={(key) => {
+          if (key === 'approvals') {
+            setShowUnlockReview(true);
+            return;
+          }
+          navigate(key as PortalKey);
+        }}
+      />
+
+      {showUnlockReview && (
+        <UnlockReviewModal
+          onClose={() => setShowUnlockReview(false)}
+          onDone={() => setUnlockRequests([]) /* Force repoll logic by clearing local state */}
+        />
+      )}
 
       <GlobalLoader />
     </div>
