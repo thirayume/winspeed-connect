@@ -9,6 +9,7 @@ import type { Quotation, QuoteStatus, EMCust, EMGood, CurrentPrice, AdminUser } 
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { Search, ArrowUpDown, Tag, Check } from 'lucide-react';
+import { CreateSODialog } from '../sales/CreateSODialog';
 
 const STATUS_STYLE: Record<QuoteStatus, string> = {
   DRAFT: 'bg-gray-100 text-gray-600', SENT: 'bg-blue-50 text-blue-700', ACCEPTED: 'bg-green-50 text-green-700',
@@ -20,6 +21,7 @@ export function QuotationPage() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [busyId, setBusyId]   = useState<number | null>(null);
+  const [convertQuoteId, setConvertQuoteId] = useState<number | null>(null);
 
   // Pagination & Sorting
   const [searchQuery, setSearchQuery] = useState('');
@@ -35,12 +37,8 @@ export function QuotationPage() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  async function doConvert(q: Quotation) {
-    if (!confirm(`แปลงใบเสนอราคา ${q.QuoteNo} เป็นใบสั่งขาย (DRAFT)?`)) return;
-    setBusyId(q.Id);
-    try { const r = await convertQuotation(q.Id); alert(`✓ สร้าง SO: ${r.wfRef}`); await load(); }
-    catch (e: unknown) { alert((e as Error).message); }
-    finally { setBusyId(null); }
+  function doConvert(q: Quotation) {
+    setConvertQuoteId(q.Id);
   }
   async function setStatus(q: Quotation, status: string) {
     setBusyId(q.Id);
@@ -182,14 +180,14 @@ export function QuotationPage() {
           </div>
         </div>
 
-        <div className="overflow-auto min-h-0 relative p-2 sm:p-4 space-y-3 sm:space-y-4 bg-gray-50/30">
+        <div className="overflow-auto min-h-0 relative p-2 sm:p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 auto-rows-max gap-3 sm:gap-4 bg-gray-50/30">
           {paginatedQuotes.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center opacity-30 text-center py-12">
+            <div className="col-span-full h-full flex flex-col items-center justify-center opacity-30 text-center py-12">
               <Package size={48} className="mb-3 text-gray-400" />
               <p className="font-semibold text-gray-500">ไม่พบใบเสนอราคา</p>
             </div>
           ) : groupedQuotes.map((g, idx) => (
-              <div key={idx} className="rounded-xl border border-gray-200 shadow-sm overflow-hidden" style={{ background: '#F9F9FB' }}>
+              <div key={idx} className="rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col min-h-[80px]" style={{ background: '#F9F9FB' }}>
                 <div className="px-3 py-2 border-b border-gray-100 bg-white flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="text-[11px] font-bold text-[#0C447C] flex items-center gap-1 bg-[#F0F4F8] px-2 py-0.5 rounded-md">
@@ -286,6 +284,14 @@ export function QuotationPage() {
       </div>
 
       {showCreate && <CreateQuoteDialog onClose={() => setShowCreate(false)} onDone={() => { setShowCreate(false); load(); }} />}
+      {convertQuoteId && (
+        <CreateSODialog
+          isOpen={!!convertQuoteId}
+          onClose={() => setConvertQuoteId(null)}
+          onCreated={() => { setConvertQuoteId(null); load(); }}
+          convertFromQuoteId={convertQuoteId}
+        />
+      )}
     </div>
   );
 }
