@@ -44,7 +44,7 @@ export function OpsStatusPage() {
   }
 
   const card = (icon: React.ReactNode, label: string, value: React.ReactNode, tone: string) => (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+    <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4 flex items-center gap-3">
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${tone}`}>{icon}</div>
       <div className="min-w-0"><div className="text-xs text-gray-400">{label}</div><div className="text-xl font-bold text-gray-800 truncate">{value}</div></div>
     </div>
@@ -52,12 +52,12 @@ export function OpsStatusPage() {
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
-      <div className="px-6 py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between">
+      <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
-            <Activity size={26} /> สถานะระบบ (Observability)
+          <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
+            <Activity className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> สถานะระบบ (Observability)
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">เวอร์ชัน · uptime · DB · error log · แจ้งเตือน · FR-030</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">เวอร์ชัน · uptime · DB · error log · แจ้งเตือน · FR-030</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={doTest} disabled={testing || !status?.alertConfigured}
@@ -71,7 +71,7 @@ export function OpsStatusPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="flex-1 overflow-y-auto p-0 sm:p-6 space-y-2 sm:space-y-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {card(<Server size={20} />, 'เวอร์ชัน', status?.version ?? '–', 'bg-blue-50 text-blue-600')}
           {card(<Cpu size={20} />, 'Uptime', status ? fmtUptime(status.uptimeSec) : '–', 'bg-green-50 text-green-600')}
@@ -80,18 +80,18 @@ export function OpsStatusPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4">
             <div className="text-xs text-gray-400 mb-2 flex items-center gap-1.5"><Database size={14} /> ฐานข้อมูล</div>
             <div className="flex items-center justify-between py-1"><span className="text-sm text-gray-600">SQL Server (WINSpeed/wf)</span>{dbBadge(status?.db.sqlserver ?? 'unknown')}</div>
             <div className="flex items-center justify-between py-1"><span className="text-sm text-gray-600">MySQL (TruckScale)</span>{dbBadge(status?.db.mysql ?? 'unknown')}</div>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4">
             <div className="text-xs text-gray-400 mb-2">สภาพแวดล้อม</div>
             <div className="flex items-center justify-between py-1"><span className="text-sm text-gray-600">Env</span><span className="font-semibold text-gray-800">{status?.env ?? '–'}</span></div>
             <div className="flex items-center justify-between py-1"><span className="text-sm text-gray-600">เริ่มทำงาน</span><span className="text-sm text-gray-700">{status ? new Date(status.startedAt).toLocaleString('th-TH') : '–'}</span></div>
             <div className="flex items-center justify-between py-1"><span className="text-sm text-gray-600">Error ล่าสุด</span><span className="text-sm text-gray-700">{status?.lastErrorAt ? new Date(status.lastErrorAt).toLocaleString('th-TH') : '–'}</span></div>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4">
             <div className="text-xs text-gray-400 mb-2">การแจ้งเตือน</div>
             <div className="flex items-center gap-2 py-1">
               {status?.alertConfigured
@@ -102,22 +102,22 @@ export function OpsStatusPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 text-sm font-semibold text-gray-700">Error Log ล่าสุด ({errors.length})</div>
-          <table className="w-full text-sm">
-            <thead><tr className="bg-gray-50 text-gray-500 text-xs uppercase">
-              <th className="text-left px-4 py-2">เวลา</th><th className="text-left px-4 py-2">ที่มา</th>
-              <th className="text-left px-4 py-2">ข้อความ</th><th className="text-left px-4 py-2">Request</th><th className="text-center px-4 py-2">สถานะ</th>
+          <table className="w-full text-sm min-w-full">
+            <thead className="whitespace-nowrap"><tr className="bg-gray-50 text-gray-500 text-xs uppercase">
+              <th className="text-left px-4 py-2 whitespace-nowrap">เวลา</th><th className="text-left px-4 py-2 whitespace-nowrap">ที่มา</th>
+              <th className="text-left px-4 py-2 whitespace-nowrap">ข้อความ</th><th className="text-left px-4 py-2 whitespace-nowrap">Request</th><th className="text-center px-4 py-2 whitespace-nowrap">สถานะ</th>
             </tr></thead>
             <tbody className="divide-y divide-gray-50">
-              {!loading && errors.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400">ไม่มี error 🎉</td></tr>}
+              {!loading && errors.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400 whitespace-nowrap">ไม่มี error 🎉</td></tr>}
               {errors.map(norm).map((e, i) => (
                 <tr key={i} className="hover:bg-gray-50/50">
                   <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{e.at ? new Date(e.at).toLocaleString('th-TH') : '–'}</td>
-                  <td className="px-4 py-2 text-xs text-gray-600">{e.source}</td>
+                  <td className="px-4 py-2 text-xs text-gray-600 whitespace-nowrap">{e.source}</td>
                   <td className="px-4 py-2 text-gray-700 max-w-md truncate" title={e.message}>{e.message}</td>
-                  <td className="px-4 py-2 text-xs text-gray-500">{e.method} {e.path}</td>
-                  <td className="px-4 py-2 text-center"><span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-600">{e.status}</span></td>
+                  <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{e.method} {e.path}</td>
+                  <td className="px-4 py-2 text-center whitespace-nowrap"><span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-600">{e.status}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -125,7 +125,7 @@ export function OpsStatusPage() {
         </div>
 
         {/* Integration outbox (FR-029) */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
             <span className="text-sm font-semibold text-gray-700">Integration Outbox</span>
             <div className="flex gap-1.5">
@@ -136,22 +136,22 @@ export function OpsStatusPage() {
               ))}
             </div>
           </div>
-          <table className="w-full text-sm">
-            <thead><tr className="bg-gray-50 text-gray-500 text-xs uppercase">
-              <th className="text-left px-4 py-2">Event</th><th className="text-left px-4 py-2">Aggregate</th>
-              <th className="text-center px-4 py-2">สถานะ</th><th className="text-center px-4 py-2">retry</th><th className="text-left px-4 py-2">เวลา</th>
+          <table className="w-full text-sm min-w-full">
+            <thead className="whitespace-nowrap"><tr className="bg-gray-50 text-gray-500 text-xs uppercase">
+              <th className="text-left px-4 py-2 whitespace-nowrap">Event</th><th className="text-left px-4 py-2 whitespace-nowrap">Aggregate</th>
+              <th className="text-center px-4 py-2 whitespace-nowrap">สถานะ</th><th className="text-center px-4 py-2 whitespace-nowrap">retry</th><th className="text-left px-4 py-2 whitespace-nowrap">เวลา</th>
             </tr></thead>
             <tbody className="divide-y divide-gray-50">
-              {outbox.recent.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-400">ยังไม่มี event</td></tr>}
+              {outbox.recent.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-400 whitespace-nowrap">ยังไม่มี event</td></tr>}
               {outbox.recent.map(o => (
                 <tr key={o.Id}>
-                  <td className="px-4 py-2 font-medium text-gray-700">{o.EventType}</td>
-                  <td className="px-4 py-2 text-xs text-gray-500">{o.AggregateId}</td>
-                  <td className="px-4 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                  <td className="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">{o.EventType}</td>
+                  <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{o.AggregateId}</td>
+                  <td className="px-4 py-2 text-center whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
                     o.Status === 'DONE' ? 'bg-green-100 text-green-700' : o.Status === 'FAILED' ? 'bg-red-100 text-red-600' :
                     o.Status === 'PENDING' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{o.Status}</span></td>
-                  <td className="px-4 py-2 text-center text-xs text-gray-500">{o.RetryCount || ''}</td>
-                  <td className="px-4 py-2 text-xs text-gray-400">{new Date(o.CreatedAt).toLocaleString('th-TH')}</td>
+                  <td className="px-4 py-2 text-center text-xs text-gray-500 whitespace-nowrap">{o.RetryCount || ''}</td>
+                  <td className="px-4 py-2 text-xs text-gray-400 whitespace-nowrap">{new Date(o.CreatedAt).toLocaleString('th-TH')}</td>
                 </tr>
               ))}
             </tbody>

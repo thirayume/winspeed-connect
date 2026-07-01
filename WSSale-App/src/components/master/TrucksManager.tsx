@@ -109,7 +109,7 @@ export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }
   return (
     <div className="h-full flex flex-col gap-4 overflow-hidden relative">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4 shrink-0">
         <DataSummaryCard
           title="รถบรรทุกทั้งหมด"
           value={totalTrucks.toLocaleString()}
@@ -130,10 +130,10 @@ export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }
         />
       </div>
 
-      <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative">
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-4 bg-gray-50/50">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+      <div className="flex-1 grid grid-rows-[auto_1fr_auto] bg-white rounded-none sm:rounded-2xl shadow-sm sm:shadow-sm shadow-none border-y sm:border border-gray-100 overflow-hidden relative min-h-0">
+        <div className="p-2 sm:p-4 border-b border-gray-100 flex flex-row items-center gap-2 bg-gray-50/50 overflow-x-auto scrollbar-hide w-full">
+          <div className="relative flex-1 min-w-[140px]">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input
               type="text"
               placeholder="ค้นหาทะเบียนรถ หรือ ชื่อลูกค้า..."
@@ -147,27 +147,29 @@ export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }
               </button>
             )}
           </div>
-          <button onClick={loadData} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
-            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button onClick={loadData} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-gray-50 sticky top-0 z-10 text-gray-600 font-semibold text-xs uppercase tracking-wider shadow-sm">
+        <div className="overflow-auto min-h-0 relative">
+          <table className="w-full text-sm text-left min-w-full">
+            <thead className="bg-gray-50 sticky top-0 z-10 text-gray-600 font-semibold text-xs uppercase tracking-wider shadow-sm whitespace-nowrap">
               <tr>
-                <th className="px-6 py-4 border-b border-gray-100 w-16 text-center">ลำดับ</th>
+                <th className="px-6 py-4 border-b border-gray-100 w-16 text-center whitespace-nowrap">ลำดับ</th>
                 <SortableHeader title="ทะเบียนรถ" sortKey="truckPlate" />
                 <SortableHeader title="ลูกค้าหลัก" sortKey="custName" />
                 <SortableHeader title="ความถี่ (ครั้ง)" sortKey="count" align="center" />
                 <SortableHeader title="เข้ารับของล่าสุด" sortKey="lastVisit" />
-                <th className="px-6 py-4 border-b border-gray-100 text-right">Audit Trail</th>
+                <th className="px-6 py-4 border-b border-gray-100 text-right whitespace-nowrap">Audit Trail</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-16 text-center">
+                  <td colSpan={6} className="px-6 py-16 text-center whitespace-nowrap">
                     <div className="flex flex-col items-center justify-center text-[#0C447C]">
                       <RefreshCw size={32} className="animate-spin mb-4 opacity-50" />
                       <p className="text-sm font-medium animate-pulse opacity-70">กำลังโหลดข้อมูลรถบรรทุก...</p>
@@ -176,7 +178,7 @@ export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }
                 </tr>
               ) : paginatedStats.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
+                  <td colSpan={6} className="px-6 py-12 text-center text-gray-400 whitespace-nowrap">
                     <Truck size={32} className="mx-auto mb-3 opacity-30" />
                     <p>ไม่พบข้อมูลสถิติรถบรรทุก</p>
                   </td>
@@ -184,22 +186,22 @@ export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }
               ) : (
                 paginatedStats.map((stat, idx) => (
                   <tr key={stat.truckPlate} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-6 py-4 text-center text-gray-400">{((currentPage - 1) * itemsPerPage) + idx + 1}</td>
-                    <td className="px-6 py-4 font-bold text-gray-800">
+                    <td className="px-6 py-4 text-center text-gray-400 whitespace-nowrap">{((currentPage - 1) * itemsPerPage) + idx + 1}</td>
+                    <td className="px-6 py-4 font-bold text-gray-800 whitespace-nowrap">
                       <div className="inline-flex items-center gap-2 bg-yellow-100 text-yellow-800 border border-yellow-300 px-2 py-0.5 rounded text-xs">
                         {stat.truckPlate}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-gray-700 truncate max-w-[200px]">{stat.custName}</td>
-                    <td className="px-6 py-4 text-center">
+                    <td className="px-6 py-4 text-center whitespace-nowrap">
                       <span className="inline-flex items-center justify-center bg-blue-50 text-blue-700 font-semibold h-7 min-w-[28px] rounded-full px-2">
                         {stat.count.toLocaleString()}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-gray-500">
+                    <td className="px-6 py-4 text-gray-500 whitespace-nowrap">
                       {stat.lastVisit ? formatThaiDate(stat.lastVisit) : '-'}
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
                       <button 
                         onClick={() => loadHistory(stat)}
                         className="p-1.5 text-gray-400 hover:text-[#0C447C] hover:bg-blue-50 rounded-lg transition-colors flex items-center justify-center"
@@ -277,7 +279,7 @@ export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }
                           <div className="font-semibold text-gray-800">
                             {h.date ? formatThaiDate(h.date, true) : 'ไม่ระบุวันที่'}
                           </div>
-                          <div className="text-sm text-gray-500 mt-1">
+                          <div className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
                             <button 
                               onClick={() => alert(`คุณคลิกเพื่อดูเอกสารอ้างอิง: ${h.so}\n(ฟังก์ชันเปิดเอกสารจริงจะมาในเฟสถัดไป)`)}
                               className="flex items-center gap-1 hover:text-[#0C447C] hover:underline cursor-pointer transition-colors"

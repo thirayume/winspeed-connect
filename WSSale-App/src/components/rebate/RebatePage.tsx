@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Coins, RefreshCw, ArrowRight, Scissors, X, Info } from 'lucide-react';
+import { Coins, RefreshCw, ArrowRight, ArrowLeft, Scissors, X, Info } from 'lucide-react';
 import {
   fetchRebatePools, fetchRebateLedger, fetchRebateClaims, createRebateClaim,
 } from '../../services/api';
@@ -14,6 +14,7 @@ export function RebatePage() {
   const [ledger, setLedger]     = useState<RebateLedger[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showClaim, setShowClaim] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -36,35 +37,27 @@ export function RebatePage() {
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
-      <div className="px-6 py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between">
+      <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
-            <Coins size={26} /> รีเบท (Rebate)
+          <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
+            <Coins className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> รีเบท (Rebate)
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">ส่วนต่างราคา (฿) · Pool รายเดือน · Ledger FIFO · เคลม → CN 109</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">ส่วนต่างราคา (฿) · Pool รายเดือน · Ledger FIFO · เคลม → CN 109</p>
         </div>
-        <button onClick={load} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white">
-          <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowInfo(true)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600">
+            <Info size={18} />
+          </button>
+          <button onClick={load} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white">
+            <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col">
-        {/* How-it-works notice */}
-        <div className="mx-4 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3 shrink-0">
-          <Info size={18} className="text-blue-500 mt-0.5 shrink-0" />
-          <div className="text-sm text-blue-700 space-y-1">
-            <p><strong>วิธีทำงาน:</strong> เมื่อ Sales สร้าง SO ผ่าน App และตั้งราคาขาย (Price) สูงกว่าราคาสุทธิ (Net) —</p>
-            <p className="font-mono text-xs bg-blue-100 rounded px-2 py-1 inline-block">รีเบท = (PricePerTon − NetPricePerTon) × ตัน → สะสมในบัญชีพนักงาน</p>
-            <p>ลูกค้าสามารถใช้รีเบทเป็นส่วนลดบิลใดก็ได้ → บัญชีออก CN 109 ลดหนี้ให้ลูกค้า</p>
-            {pools.length === 0 && (
-              <p className="text-blue-500 text-xs mt-1">⏳ ข้อมูลจะปรากฏเมื่อมีการสร้าง SO ผ่าน App ที่มีส่วนต่างราคา</p>
-            )}
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-hidden flex mt-4">
+        <div className="flex-1 overflow-hidden flex mt-2 lg:mt-4">
           {/* Left: Pools + Claims */}
-          <div className="w-full lg:max-w-md flex flex-col border-r border-gray-200 overflow-y-auto px-4 pb-4 space-y-5">
+          <div className={`w-full lg:max-w-md flex flex-col lg:border-r border-gray-200 overflow-y-auto px-4 pb-4 space-y-5 ${selectedPool ? 'hidden lg:flex' : 'flex'}`}>
             <div>
               <h2 className="text-xs font-bold uppercase text-gray-400 mb-2">Rebate Pools (รายเดือน)</h2>
               {pools.length === 0 ? (
@@ -108,13 +101,19 @@ export function RebatePage() {
           </div>
 
           {/* Right: Ledger */}
-          <div className="hidden lg:flex flex-1 flex-col overflow-hidden bg-white">
+          <div className={`flex-1 flex-col overflow-hidden bg-white ${selectedPool ? 'flex' : 'hidden lg:flex'}`}>
             {selectedPool ? (
               <>
                 <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
                   <div>
-                    <h2 className="font-bold text-gray-800">{selectedPool.SalesName} · {monthLabel(selectedPool)}</h2>
-                    <p className="text-xs text-gray-400">Ledger FIFO — ตัดจากรายการเก่าสุดก่อน</p>
+                    <div className="flex items-center gap-2 mb-1 lg:hidden">
+                      <button onClick={() => setSelectedPool(null)} className="p-1 -ml-2 text-gray-500 hover:bg-gray-100 rounded-lg">
+                        <ArrowLeft size={20} />
+                      </button>
+                      <h2 className="font-bold text-gray-800">{selectedPool.SalesName}</h2>
+                    </div>
+                    <h2 className="font-bold text-gray-800 hidden lg:block">{selectedPool.SalesName} · {monthLabel(selectedPool)}</h2>
+                    <p className="text-xs text-gray-400"><span className="lg:hidden">{monthLabel(selectedPool)} · </span>Ledger FIFO — ตัดจากรายการเก่าสุดก่อน</p>
                   </div>
                   {(role === 'SALES' || role === 'ACCOUNTING' || role === 'ADMIN') && (
                     <button onClick={() => setShowClaim(true)}
@@ -124,35 +123,37 @@ export function RebatePage() {
                   )}
                 </div>
                 <div className="flex-1 overflow-y-auto p-4">
-                  <table className="w-full text-xs">
-                    <thead>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs min-w-full">
+                      <thead className="whitespace-nowrap">
                       <tr className="text-gray-400 border-b border-gray-100">
-                        <th className="text-left py-2">สินค้า</th>
-                        <th className="text-right py-2">ตัน</th>
-                        <th className="text-right py-2">รีเบท/ตัน</th>
-                        <th className="text-right py-2">ยอดรีเบท</th>
-                        <th className="text-right py-2">คงเหลือ</th>
-                        <th className="text-center py-2">สถานะ</th>
+                        <th className="text-left py-2 px-3 whitespace-nowrap">สินค้า</th>
+                        <th className="text-right py-2 px-3 whitespace-nowrap">ตัน</th>
+                        <th className="text-right py-2 px-3 whitespace-nowrap">รีเบท/ตัน</th>
+                        <th className="text-right py-2 px-3 whitespace-nowrap">ยอดรีเบท</th>
+                        <th className="text-right py-2 px-3 whitespace-nowrap">คงเหลือ</th>
+                        <th className="text-center py-2 px-3 whitespace-nowrap">สถานะ</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {ledger.map(l => (
                         <tr key={l.Id}>
-                          <td className="py-2 text-gray-700">{l.GoodCode}</td>
-                          <td className="py-2 text-right tabular-nums text-gray-600">{Number(l.QtyTon).toFixed(2)}</td>
-                          <td className="py-2 text-right tabular-nums text-gray-600">฿{Number(l.RebatePerTon).toLocaleString()}</td>
-                          <td className="py-2 text-right tabular-nums text-gray-700">฿{Number(l.RebateAmount).toLocaleString('th-TH',{maximumFractionDigits:0})}</td>
-                          <td className="py-2 text-right tabular-nums font-bold" style={{color: Number(l.RemainingAmt)>0?'#059669':'#9CA3AF'}}>฿{Number(l.RemainingAmt).toLocaleString('th-TH',{maximumFractionDigits:0})}</td>
-                          <td className="py-2 text-center">
+                          <td className="py-2 px-3 whitespace-nowrap text-gray-700">{l.GoodCode}</td>
+                          <td className="py-2 px-3 whitespace-nowrap text-right tabular-nums text-gray-600">{Number(l.QtyTon).toFixed(2)}</td>
+                          <td className="py-2 px-3 whitespace-nowrap text-right tabular-nums text-gray-600">฿{Number(l.RebatePerTon).toLocaleString()}</td>
+                          <td className="py-2 px-3 whitespace-nowrap text-right tabular-nums text-gray-700">฿{Number(l.RebateAmount).toLocaleString('th-TH',{maximumFractionDigits:0})}</td>
+                          <td className="py-2 px-3 whitespace-nowrap text-right tabular-nums font-bold" style={{color: Number(l.RemainingAmt)>0?'#059669':'#9CA3AF'}}>฿{Number(l.RemainingAmt).toLocaleString('th-TH',{maximumFractionDigits:0})}</td>
+                          <td className="py-2 px-3 whitespace-nowrap text-center">
                             <span className={`text-[10px] px-2 py-0.5 rounded-full ${l.Status==='CLAIMED'?'bg-gray-100 text-gray-500':'bg-blue-50 text-blue-700'}`}>{l.Status}</span>
                           </td>
                         </tr>
                       ))}
                       {ledger.length === 0 && (
-                        <tr><td colSpan={6} className="py-8 text-center text-gray-300">ไม่มีรายการใน pool นี้</td></tr>
+                        <tr><td colSpan={6} className="py-8 text-center text-gray-300 whitespace-nowrap">ไม่มีรายการใน pool นี้</td></tr>
                       )}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               </>
             ) : (
@@ -168,6 +169,28 @@ export function RebatePage() {
       {showClaim && selectedPool && (
         <ClaimDialog pool={selectedPool} onClose={() => setShowClaim(false)}
           onDone={() => { setShowClaim(false); load(); openPool(selectedPool); }} />
+      )}
+
+      {showInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowInfo(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold flex items-center gap-2 text-blue-800">
+                <Info size={20} /> วิธีทำงาน (Rebate)
+              </h2>
+              <button onClick={() => setShowInfo(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            <div className="text-sm text-gray-600 space-y-3">
+              <p>เมื่อ Sales สร้าง SO ผ่าน App และตั้งราคาขาย (Price) สูงกว่าราคาสุทธิ (Net) —</p>
+              <div className="bg-blue-50 text-blue-800 p-3 rounded-lg font-mono text-xs border border-blue-100">
+                รีเบท = (PricePerTon − NetPricePerTon) × ตัน
+                <br/>→ สะสมในบัญชีพนักงาน
+              </div>
+              <p>ลูกค้าสามารถใช้รีเบทเป็นส่วนลดบิลใดก็ได้ → บัญชีออก CN 109 ลดหนี้ให้ลูกค้า</p>
+              <p><strong>Ledger FIFO:</strong> ระบบจะตัดยอดจากรายการเก่าสุดก่อนเสมอ</p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

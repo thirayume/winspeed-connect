@@ -46,39 +46,39 @@ export const StorePortal = () => {
   );
 
   return (
-    <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
-      <div className="px-6 py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between gap-4">
+    <div className="h-full flex flex-col w-full overflow-hidden max-w-full" style={{ background: '#F1EFE8' }}>
+      <div className="px-4 py-3 sm:px-6 sm:py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between gap-3 shrink-0">
         <div>
-          <h1 className="text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
-            <Package size={26} /> คลัง / รับสินค้า
+          <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
+            <Package className="w-5 h-5 sm:w-6 sm:h-6" /> คลัง / รับสินค้า
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">จัดการการโหลดสินค้าและชั่งออก</p>
+          <p className="hidden sm:block text-sm text-gray-500 mt-0.5">จัดการการโหลดสินค้าและชั่งออก</p>
         </div>
-        <button onClick={loadData} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white">
+        <button onClick={loadData} className="h-9 w-9 sm:h-10 sm:w-10 flex items-center justify-center rounded-lg sm:rounded-xl border border-gray-200 bg-white shrink-0">
           <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
         </button>
       </div>
 
-      <div className="flex px-4 pt-4 bg-white border-b border-gray-200">
+      <div className="flex px-2 sm:px-4 pt-2 sm:pt-4 bg-white border-b border-gray-200 overflow-x-auto scrollbar-hide shrink-0">
         <button
           onClick={() => setActiveTab('LOADING')}
-          className={`flex items-center gap-2 px-6 py-3 font-semibold text-sm border-b-2 transition-colors ${
+          className={`flex items-center gap-1.5 sm:gap-2 px-4 py-2.5 sm:px-6 sm:py-3 font-semibold text-xs sm:text-sm border-b-2 transition-colors whitespace-nowrap ${
             activeTab === 'LOADING' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'
           }`}
         >
-          <Truck size={18} /> โกดัง (โหลดสินค้า)
+          <Truck className="w-4 h-4 sm:w-[18px] sm:h-[18px]" /> โกดัง (โหลดสินค้า)
         </button>
         <button
           onClick={() => setActiveTab('SCALE')}
-          className={`flex items-center gap-2 px-6 py-3 font-semibold text-sm border-b-2 transition-colors ${
+          className={`flex items-center gap-1.5 sm:gap-2 px-4 py-2.5 sm:px-6 sm:py-3 font-semibold text-xs sm:text-sm border-b-2 transition-colors whitespace-nowrap ${
             activeTab === 'SCALE' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'
           }`}
         >
-          <Scale size={18} /> เครื่องชั่ง (ชั่งออก)
+          <Scale className="w-4 h-4 sm:w-[18px] sm:h-[18px]" /> เครื่องชั่ง (ชั่งออก)
         </button>
       </div>
 
-      <div className="p-4 bg-white border-b border-gray-100">
+      <div className="p-3 sm:p-4 bg-white border-b border-gray-100 shrink-0">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
           <input

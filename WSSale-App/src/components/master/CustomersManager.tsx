@@ -31,7 +31,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
       const data = await fetchCustomers();
       // Filter out deleted/inactive if we want to hide them, but the API might already filter them or we just show them as inactive.
       // Assuming 'Inactive' property exists if added to backend, for now just show all.
-      setCustomers(data.filter(c => c.Inactive !== 'I')); 
+      setCustomers(data.filter(c => (c as any).Inactive !== 'I')); 
     } catch (err) {
       console.error(err);
     }
@@ -124,7 +124,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
     <div className="h-full flex flex-col gap-4 overflow-hidden">
       
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4 shrink-0">
         <DataSummaryCard
           title="ลูกค้าทั้งหมด"
           value={customers.length.toLocaleString()}
@@ -145,10 +145,10 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
         />
       </div>
 
-      <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative">
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-4 bg-gray-50/50">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+      <div className="flex-1 grid grid-rows-[auto_1fr_auto] bg-white rounded-none sm:rounded-lg sm:rounded-2xl shadow-sm sm:shadow-sm shadow-none border-y sm:border border-gray-100 overflow-hidden relative min-h-0">
+        <div className="p-2 sm:p-4 border-b border-gray-100 flex flex-row items-center gap-2 bg-gray-50/50 overflow-x-auto scrollbar-hide w-full">
+          <div className="relative flex-1 min-w-[140px]">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input
               type="text"
               placeholder="ค้นหารหัส หรือ ชื่อลูกค้า..."
@@ -162,34 +162,35 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
               </button>
             )}
           </div>
-          <button onClick={loadCustomers} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
-            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button onClick={loadCustomers} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
         </div>
-
-        <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-gray-50 sticky top-0 z-10 text-gray-600 font-semibold text-xs uppercase tracking-wider">
+        <div className="overflow-auto min-h-0 relative">
+          <table className="w-full text-sm text-left min-w-full">
+            <thead className="bg-gray-50 sticky top-0 z-10 text-gray-600 font-semibold text-xs uppercase tracking-wider whitespace-nowrap">
               <tr>
-                <th className="px-6 py-4 border-b border-gray-100 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => requestSort('CustID')}>
+                <th className="px-6 py-4 border-b border-gray-100 cursor-pointer hover:bg-gray-100 transition-colors whitespace-nowrap" onClick={() => requestSort('CustID')}>
                   <div className="flex items-center gap-1">รหัสลูกค้า <ArrowUpDown size={12} className={sortConfig.key === 'CustID' ? 'text-[#0C447C] font-bold' : 'text-gray-400'} /></div>
                 </th>
-                <th className="px-6 py-4 border-b border-gray-100 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => requestSort('CustName')}>
+                <th className="px-6 py-4 border-b border-gray-100 cursor-pointer hover:bg-gray-100 transition-colors whitespace-nowrap" onClick={() => requestSort('CustName')}>
                   <div className="flex items-center gap-1">ชื่อลูกค้า <ArrowUpDown size={12} className={sortConfig.key === 'CustName' ? 'text-[#0C447C] font-bold' : 'text-gray-400'} /></div>
                 </th>
-                <th className="px-6 py-4 border-b border-gray-100 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => requestSort('Tel')}>
+                <th className="px-6 py-4 border-b border-gray-100 cursor-pointer hover:bg-gray-100 transition-colors whitespace-nowrap" onClick={() => requestSort('Tel')}>
                   <div className="flex items-center gap-1">โทรศัพท์ <ArrowUpDown size={12} className={sortConfig.key === 'Tel' ? 'text-[#0C447C] font-bold' : 'text-gray-400'} /></div>
                 </th>
-                <th className="px-6 py-4 border-b border-gray-100 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => requestSort('Remark')}>
+                <th className="px-6 py-4 border-b border-gray-100 cursor-pointer hover:bg-gray-100 transition-colors whitespace-nowrap" onClick={() => requestSort('Remark')}>
                   <div className="flex items-center gap-1">หมายเหตุเพิ่มเติม <ArrowUpDown size={12} className={sortConfig.key === 'Remark' ? 'text-[#0C447C] font-bold' : 'text-gray-400'} /></div>
                 </th>
-                <th className="px-6 py-4 border-b border-gray-100 text-right">จัดการ</th>
+                <th className="px-6 py-4 border-b border-gray-100 text-right whitespace-nowrap">จัดการ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-16 text-center">
+                  <td colSpan={5} className="px-6 py-16 text-center whitespace-nowrap">
                     <div className="flex flex-col items-center justify-center text-[#0C447C]">
                       <RefreshCw size={32} className="animate-spin mb-4 opacity-50" />
                       <p className="text-sm font-medium animate-pulse opacity-70">กำลังโหลดข้อมูลลูกค้า...</p>
@@ -198,7 +199,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                 </tr>
               ) : paginatedCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-400">
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-400 whitespace-nowrap">
                     <Users size={32} className="mx-auto mb-3 opacity-30" />
                     <p>ไม่พบข้อมูลลูกค้า</p>
                   </td>
@@ -209,8 +210,8 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                   
                   return (
                     <tr key={cust.CustID} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="px-6 py-3 font-medium text-gray-800">{cust.CustID}</td>
-                      <td className="px-6 py-3">
+                      <td className="px-6 py-3 font-medium text-gray-800 whitespace-nowrap">{cust.CustID}</td>
+                      <td className="px-6 py-3 whitespace-nowrap">
                         {isEditing ? (
                           <input 
                             type="text" 
@@ -220,7 +221,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                           />
                         ) : cust.CustName}
                       </td>
-                      <td className="px-6 py-3 text-gray-600">
+                      <td className="px-6 py-3 text-gray-600 whitespace-nowrap">
                         {isEditing ? (
                           <input 
                             type="text" 
@@ -230,7 +231,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                           />
                         ) : cust.Tel || '-'}
                       </td>
-                      <td className="px-6 py-3 text-gray-600">
+                      <td className="px-6 py-3 text-gray-600 whitespace-nowrap">
                         {isEditing ? (
                           <input 
                             type="text" 
@@ -241,7 +242,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                           />
                         ) : cust.Remark || '-'}
                       </td>
-                      <td className="px-6 py-3 text-right">
+                      <td className="px-6 py-3 text-right whitespace-nowrap">
                         {isEditing ? (
                           <div className="flex items-center justify-end gap-2">
                             <button onClick={() => setEditingId(null)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded">
