@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
-import { FileText, RefreshCw, Plus, X, ArrowRightCircle, AlertTriangle, Package, Send } from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { FileText, RefreshCw, Plus, X, ArrowRightCircle, AlertTriangle, Package, Send, Clock, User, ChevronRight, Gift } from 'lucide-react';
 import {
   fetchQuotations, createQuotation, convertQuotation, updateQuotationStatus,
   fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, listUsers
@@ -83,6 +83,23 @@ export function QuotationPage() {
     setSortConfig({ key, direction });
   };
 
+  const groupedQuotes = useMemo(() => {
+    const map = new Map<string, { dateDisplay: string; cust: string; quotes: Quotation[]; totalAmt: number; totalTon: number }>();
+    for (const q of paginatedQuotes) {
+      const dateRaw = q.CreatedAt ? q.CreatedAt.split('T')[0] : '9999-12-31';
+      const dateDisplay = q.CreatedAt ? new Date(q.CreatedAt).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : 'ไม่ระบุวันที่';
+      const cust = q.CustName || 'ไม่ระบุลูกค้า';
+      const key = `${dateRaw}::${cust}`;
+      
+      if (!map.has(key)) map.set(key, { dateDisplay, cust, quotes: [], totalAmt: 0, totalTon: 0 });
+      const g = map.get(key)!;
+      g.quotes.push(q);
+      g.totalAmt += (q.lines || []).reduce((s, l) => s + (l.QtyTon * l.PricePerTon), 0);
+      g.totalTon += (q.lines || []).reduce((s, l) => s + l.QtyTon, 0);
+    }
+    return Array.from(map.values());
+  }, [paginatedQuotes]);
+
   const SortableHeader = ({ title, sortKey, align = 'left' }: { title: string, sortKey: string, align?: 'left'|'center'|'right' }) => (
     <th className={`px-4 py-3 cursor-pointer hover:bg-gray-100 transition-colors text-${align} text-xs font-semibold text-gray-500`} onClick={() => requestSort(sortKey)}>
       <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : ''}`}>
@@ -93,21 +110,21 @@ export function QuotationPage() {
   );
 
   return (
-    <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
-      <div className="px-6 py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between shrink-0">
+    <div className="h-full flex flex-col w-full overflow-hidden max-w-full" style={{ background: '#F1EFE8' }}>
+      <div className="px-4 py-3 sm:px-6 sm:py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between shrink-0">
         <div>
-          <h1 className="text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
-            <FileText size={26} /> ใบเสนอราคา (Quotations)
+          <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
+            <FileText className="w-5 h-5 sm:w-[26px] sm:h-[26px]" /> ใบเสนอราคา
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <p className="hidden sm:block text-sm text-gray-500 mt-0.5">
             จัดการใบเสนอราคา, แปลงเป็นใบสั่งขาย (SO) และติดตามสถานะ
           </p>
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col gap-4 overflow-hidden p-6">
+      <div className="flex-1 flex flex-col gap-4 overflow-hidden p-2 sm:p-4 min-h-0">
         {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4 shrink-0">
         <DataSummaryCard
           title="ใบเสนอราคาทั้งหมด"
           value={quotes.length.toLocaleString()}
@@ -128,10 +145,10 @@ export function QuotationPage() {
         />
       </div>
 
-      <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative">
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-4 bg-gray-50/50">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+      <div className="flex-1 grid grid-rows-[auto_1fr_auto] bg-white rounded-none sm:rounded-lg sm:rounded-2xl shadow-sm sm:shadow-sm shadow-none border-y sm:border border-gray-100 overflow-hidden relative min-h-0">
+        <div className="p-2 sm:p-4 border-b border-gray-100 flex flex-row items-center gap-2 bg-gray-50/50 overflow-x-auto scrollbar-hide">
+          <div className="relative flex-1 min-w-[140px]">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input
               type="text"
               placeholder="ค้นหาเลขที่, ชื่อลูกค้า..."
@@ -145,7 +162,7 @@ export function QuotationPage() {
               </button>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             <select
               value={statusFilter}
               onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
@@ -165,49 +182,82 @@ export function QuotationPage() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 sticky top-0 z-10 border-b border-gray-100 shadow-sm">
-              <tr>
-                <SortableHeader title="เลขที่" sortKey="QuoteNo" />
-                <SortableHeader title="ลูกค้า" sortKey="CustName" />
-                <SortableHeader title="ยอดรวม" sortKey="Total" align="right" />
-                <SortableHeader title="สถานะ" sortKey="Status" align="center" />
-                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500">จัดการ</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {paginatedQuotes.map(q => {
-                const total = (q.lines || []).reduce((s, l) => s + l.QtyTon * l.PricePerTon, 0);
-                return (
-                  <tr key={q.Id}>
-                    <td className="px-4 py-3 font-mono text-xs font-bold text-gray-700">{q.QuoteNo}</td>
-                    <td className="px-4 py-3 text-gray-700">{q.CustName}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-gray-600">{total ? `฿${total.toLocaleString('th-TH',{maximumFractionDigits:0})}` : '—'}</td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${STATUS_STYLE[q.Status]}`}>{q.Status}</span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {q.Status !== 'CONVERTED' && q.Status !== 'CANCELLED' && (
-                        <div className="inline-flex gap-1.5">
-                          {q.Status === 'DRAFT' && (
-                            <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'SENT')} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50" title="ส่งใบเสนอราคา">
-                              <Send size={16} />
-                            </button>
-                          )}
-                          <button disabled={busyId===q.Id} onClick={() => doConvert(q)} className="p-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50" title="แปลงเป็นใบสั่งขาย (SO)">
-                            <ArrowRightCircle size={16} />
-                          </button>
+        <div className="overflow-auto min-h-0 relative p-2 sm:p-4 space-y-3 sm:space-y-4 bg-gray-50/30">
+          {paginatedQuotes.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center opacity-30 text-center py-12">
+              <Package size={48} className="mb-3 text-gray-400" />
+              <p className="font-semibold text-gray-500">ไม่พบใบเสนอราคา</p>
+            </div>
+          ) : groupedQuotes.map((g, idx) => (
+              <div key={idx} className="rounded-xl border border-gray-200 shadow-sm overflow-hidden" style={{ background: '#F9F9FB' }}>
+                <div className="px-3 py-2 border-b border-gray-100 bg-white flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="text-[11px] font-bold text-[#0C447C] flex items-center gap-1 bg-[#F0F4F8] px-2 py-0.5 rounded-md">
+                      <Clock size={10} /> สร้าง {g.dateDisplay}
+                    </div>
+                    <div className="text-[11px] font-bold text-gray-700 bg-[#F1F3F5] px-2 py-0.5 rounded-md">
+                      รวม {g.totalTon.toLocaleString('th-TH', { maximumFractionDigits: 2 })} ตัน
+                    </div>
+                  </div>
+                  <div className="text-xs font-bold text-[#0C447C]">
+                    ฿{g.totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                  </div>
+                </div>
+                <div className="px-3 py-2 bg-white flex items-start gap-2 border-b border-gray-100">
+                  <div className="bg-[#1F2937] text-white p-1.5 rounded-lg shrink-0 flex items-center justify-center">
+                    <User size={14} />
+                  </div>
+                  <div className="min-w-0 flex-1 flex items-center">
+                    <div className="font-bold text-sm text-gray-900 truncate" title={g.cust}>{g.cust}</div>
+                  </div>
+                </div>
+                <div className="p-1.5 space-y-1.5">
+                  {g.quotes.map(q => {
+                    const total = (q.lines || []).reduce((s, l) => s + l.QtyTon * l.PricePerTon, 0);
+                    return (
+                      <div key={q.Id} className="relative p-3 rounded-lg border border-gray-100 transition-all bg-white hover:shadow-sm hover:border-gray-200">
+                        <div className="flex items-start justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-bold text-gray-700">{q.QuoteNo}</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${STATUS_STYLE[q.Status]}`}>{q.Status}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {q.Status !== 'CONVERTED' && q.Status !== 'CANCELLED' && (
+                              <div className="inline-flex gap-1.5 shrink-0">
+                                {q.Status === 'DRAFT' && (
+                                  <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'SENT')} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50" title="ส่งใบเสนอราคา">
+                                    <Send size={14} />
+                                  </button>
+                                )}
+                                <button disabled={busyId===q.Id} onClick={() => doConvert(q)} className="p-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50" title="แปลงเป็นใบสั่งขาย (SO)">
+                                  <ArrowRightCircle size={14} />
+                                </button>
+                              </div>
+                            )}
+                            {q.ConvertedSoId && <span className="text-[10px] text-emerald-600 font-bold shrink-0">→ SO #{q.ConvertedSoId}</span>}
+                            <span className="text-xs font-bold text-[#0C447C] min-w-[70px] text-right">
+                              ฿{total.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                            </span>
+                          </div>
                         </div>
-                      )}
-                      {q.ConvertedSoId && <span className="text-[10px] text-emerald-600">→ SO #{q.ConvertedSoId}</span>}
-                    </td>
-                  </tr>
-                );
-              })}
-              {paginatedQuotes.length === 0 && <tr><td colSpan={5} className="py-12 text-center text-gray-300">ไม่พบใบเสนอราคา</td></tr>}
-            </tbody>
-          </table>
+                        <div className="flex items-center justify-between text-xs text-gray-400">
+                          <div className="flex items-center gap-3">
+                            <span className="flex items-center gap-1">
+                              <Package size={11} /> {(q.lines || []).length} รายการ
+                            </span>
+                            {q.SalesName && (
+                              <span className="flex items-center gap-1 text-gray-500">
+                                โดย {q.SalesName}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
         </div>
 
         {/* Pagination Footer */}
@@ -268,7 +318,7 @@ function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; onDone: (
       .then(([g, gw]) => setGoods([...g, ...gw.map(x => ({ ...x, GoodGroupName: 'ของแถม' }))]))
       .catch(()=>{});
     if (userRole === 'ADMIN') {
-      listUsers().then(users => setSalesUsers(users.filter(u => u.Role === 'SALES' || u.Role === 'COUNTER_SALES'))).catch(()=>{});
+      listUsers().then(setSalesUsers).catch(()=>{});
     }
   }, [userRole]);
   useEffect(() => { 

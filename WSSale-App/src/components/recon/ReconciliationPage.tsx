@@ -59,7 +59,7 @@ export function ReconciliationPage() {
   }
 
   const card = (icon: React.ReactNode, label: string, value: number | string, tone: string) => (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+    <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4 flex items-center gap-3">
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${tone}`}>{icon}</div>
       <div><div className="text-xs text-gray-400">{label}</div><div className="text-2xl font-bold text-gray-800">{value}</div></div>
     </div>
@@ -79,26 +79,26 @@ export function ReconciliationPage() {
   };
 
   return (
-    <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
-      <div className="px-6 py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between">
+    <div className="h-full flex flex-col w-full overflow-hidden max-w-full" style={{ background: '#F1EFE8' }}>
+      <div className="px-4 py-3 sm:px-6 sm:py-5 border-b border-gray-200 bg-white shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
         <div>
-          <h1 className="text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
-            <ShieldCheck size={26} /> กระทบยอด (Reconciliation)
+          <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
+            <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> กระทบยอด (Reconciliation)
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">ออกของ ↔ ใบกำกับ Winspeed ↔ น้ำหนัก TruckScale · FR-027</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">ออกของ ↔ ใบกำกับ Winspeed ↔ น้ำหนัก TruckScale · FR-027</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
           <select value={days} onChange={e => setDays(Number(e.target.value))}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]">
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C] flex-1 sm:flex-none">
             <option value={7}>7 วันล่าสุด</option><option value={14}>14 วัน</option><option value={30}>30 วัน</option>
           </select>
-          <button onClick={() => load(days, filter)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
+          <button onClick={() => load(days, filter)} className="h-10 w-10 shrink-0 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
             <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
           </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
         {summary && !summary.tsAvailable && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3 text-sm text-amber-700">
             <Info size={18} className="mt-0.5 shrink-0" /> TruckScale (MySQL) ไม่พร้อมใช้งาน — การกระทบยอดน้ำหนักจะแสดงเป็น "ไม่พร้อม" จนกว่าจะเชื่อมต่อได้
@@ -112,38 +112,39 @@ export function ReconciliationPage() {
           {card(<FileCheck2 size={20} />, 'จัดการแล้ว', summary?.resolved ?? '–', 'bg-blue-50 text-blue-600')}
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {([['', 'ทั้งหมด'], ['EXCEPTION', 'ต้องตรวจ'], ['RESOLVED', 'จัดการแล้ว'], ['OK', 'ปกติ']] as const).map(([v, l]) => (
             <button key={v} onClick={() => setFilter(v)}
               className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition ${filter === v ? 'bg-[#0C447C] text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>{l}</button>
           ))}
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
+        <div className="bg-white rounded-none sm:rounded-lg sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm sm:shadow-sm shadow-none overflow-hidden">
+          <div className="overflow-x-auto w-full scrollbar-hide">
+          <table className="w-full text-sm min-w-full">
+            <thead className="whitespace-nowrap">
               <tr className="bg-gray-50 text-gray-500 text-xs uppercase">
-                <th className="text-left px-4 py-3">SO / วันที่</th>
-                <th className="text-left px-4 py-3">ลูกค้า / ทะเบียน</th>
-                <th className="text-left px-4 py-3">น้ำหนัก (App ↔ TS)</th>
-                <th className="text-left px-4 py-3">ใบกำกับ Winspeed</th>
-                <th className="text-right px-4 py-3">การจัดการ</th>
+                <th className="text-left px-4 py-3 whitespace-nowrap">SO / วันที่</th>
+                <th className="text-left px-4 py-3 whitespace-nowrap">ลูกค้า / ทะเบียน</th>
+                <th className="text-left px-4 py-3 whitespace-nowrap">น้ำหนัก (App ↔ TS)</th>
+                <th className="text-left px-4 py-3 whitespace-nowrap">ใบกำกับ Winspeed</th>
+                <th className="text-right px-4 py-3 whitespace-nowrap">การจัดการ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {loading && <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400">กำลังโหลด…</td></tr>}
-              {!loading && cases.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400">ไม่พบรายการ</td></tr>}
+              {loading && <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400 whitespace-nowrap">กำลังโหลด…</td></tr>}
+              {!loading && cases.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400 whitespace-nowrap">ไม่พบรายการ</td></tr>}
               {!loading && cases.map(c => (
                 <tr key={c.soId} className={c.overall === 'EXCEPTION' ? 'bg-red-50/40' : ''}>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <div className="font-semibold text-gray-800">{c.wfRef || c.soId}</div>
                     <div className="text-xs text-gray-400">{c.shipDate}</div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <div className="text-gray-700">{c.custName}</div>
                     <div className="text-xs text-gray-400">{c.truckPlate || '–'} · movebill {c.movebill || '–'}</div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge(weighKind(c.weigh) as 'ok' | 'exc' | 'muted')}`}>{WEIGH_LABEL[c.weigh]}</span>
                     <div className="text-xs text-gray-500 mt-1">
                       {c.netApp != null ? `${c.netApp.toLocaleString()} kg` : '–'}
@@ -151,11 +152,11 @@ export function ReconciliationPage() {
                       {c.variance != null && c.variance !== 0 && <span className={Math.abs(c.variance) > 50 ? 'text-red-500 font-semibold' : 'text-gray-400'}> ({c.variance > 0 ? '+' : ''}{c.variance})</span>}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge(c.invoice === 'MATCHED' ? 'ok' : 'exc')}`}>{INVOICE_LABEL[c.invoice]}</span>
                     {c.wsInvoiceNo && <div className="text-xs text-gray-400 mt-1">{c.wsInvoiceNo}</div>}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex flex-col items-end gap-1.5">
                       {(['VARIANCE', 'TS_NOT_FOUND', 'NO_WEIGH'].includes(c.weigh) || c.weighResolution) &&
                         <div className="flex items-center gap-1"><span className="text-[10px] text-gray-400">น้ำหนัก</span><ResolveBtns c={c} type="WEIGH" info={c.weighResolution} /></div>}
@@ -168,6 +169,7 @@ export function ReconciliationPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </div>

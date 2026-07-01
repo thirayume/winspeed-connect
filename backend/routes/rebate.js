@@ -17,6 +17,10 @@ router.get('/pools', async (req, res) => {
     if (userId) { conditions.push(`p.SalesUserId = @uid`); inputs.uid = { type: sql.Int, value: Number(userId) }; }
     if (year)   { conditions.push(`p.PeriodYear = @y`);   inputs.y  = { type: sql.Int, value: Number(year) }; }
     if (month)  { conditions.push(`p.PeriodMonth = @m`);  inputs.m  = { type: sql.Int, value: Number(month) }; }
+    
+    // Ignore empty phantom pools
+    conditions.push(`(p.AccruedAmt > 0 OR p.ClaimedAmt > 0)`);
+    
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const r = await wfQuery(`
       SELECT p.*, u.DisplayName AS SalesName
@@ -145,6 +149,7 @@ router.get('/summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req
              SUM(p.AllocatedAmt) AS TotalAllocated
       FROM wf.RebatePool p
       JOIN wf.AppUser u ON u.Id = p.SalesUserId
+      WHERE (p.AccruedAmt > 0 OR p.ClaimedAmt > 0)
       GROUP BY u.DisplayName
       ORDER BY TotalAccrued DESC
     `);

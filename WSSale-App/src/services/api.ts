@@ -131,6 +131,11 @@ export const fetchTruckStats = (q?: string) =>
 export const fetchTruckHistory = (plate: string) => 
   req<TruckHistoryItem[]>(`/master/trucks/${encodeURIComponent(plate)}/history`);
 
+export const fetchTruckTypes = () => req<import('../types').TruckType[]>('/master/truck-types');
+export const createTruckType = (data: Partial<import('../types').TruckType>) => req('/master/truck-types', { method: 'POST', body: JSON.stringify(data) });
+export const updateTruckType = (id: string, data: Partial<import('../types').TruckType>) => req(`/master/truck-types/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteTruckType = (id: string) => req(`/master/truck-types/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
 export const fetchInvoices = (params?: { custId?: string; dateFrom?: string; dateTo?: string }) => {
   const qs = new URLSearchParams(params as Record<string, string>).toString();
   return req<unknown[]>(`/master/invoices${qs ? `?${qs}` : ''}`);
@@ -161,7 +166,7 @@ export const fetchSalesOrders = (params?: {
   return req<PaginatedResult<SalesOrder>>(`/so${qs ? `?${qs}` : ''}`, { silent });
 };
 
-export const fetchSalesOrder = (id: number) => req<SalesOrder>(`/so/${id}`);
+export const fetchSalesOrder = (id: number | string) => req<SalesOrder>(`/so/${id}`);
 
 export const fetchSoStats = (bust = false) =>
   req<{ byStatus: Record<string, number>; total: number }>(`/so/stats${bust ? '?bust=1' : ''}`);
@@ -177,10 +182,15 @@ export const createSO = (payload: any) =>
     method: 'POST', body: JSON.stringify(payload),
   });
 
-export const confirmSO = (id: number) =>
+export const updateSO = (id: number | string, payload: any) =>
+  req<{ id: number; wfRef?: string; needsApproval: boolean }>(`/so/${id}`, {
+    method: 'PUT', body: JSON.stringify(payload),
+  });
+
+export const confirmSO = (id: number | string) =>
   req<{ id: number; status: SOStatus }>(`/so/${id}/confirm`, { method: 'PATCH', body: '{}' });
 
-export const moveToPicking = (id: number) =>
+export const moveToPicking = (id: number | string) =>
   req<{ id: number; status: SOStatus }>(`/so/${id}/picking`, { method: 'PATCH', body: '{}' });
 
 export const confirmLoading = (id: number, sequences: { lineNum: number, seq: number }[]) =>
@@ -211,14 +221,16 @@ export const verifySO = (id: number) =>
   req<{ id: number; verified: boolean }>(`/so/${id}/verify`, { method: 'PATCH', body: '{}' });
 
 // FR-006/007 Unlock Request flow
-export const createUnlockRequest = (soId: number | string, reason: string) =>
-  req<{ id: string; ok: boolean }>(`/so/${soId}/unlock-request`, { method: 'POST', body: JSON.stringify({ reason }) });
-export const listUnlockRequests = (status = 'PENDING') =>
-  req<import('../types').UnlockReq[]>(`/so/unlock-requests?status=${status}`);
+export const createUnlockRequest = (soId: number | string, reason: string, reqType: 'UNLOCK' | 'EDIT' | 'CANCEL' = 'UNLOCK') =>
+  req<{ id: string; ok: boolean }>(`/so/${soId}/unlock-request`, { method: 'POST', body: JSON.stringify({ reason, reqType }) });
+export const listUnlockRequests = (status = 'PENDING', silent = false) =>
+  req<import('../types').UnlockReq[]>(`/so/unlock-requests?status=${status}`, { silent });
+export const fetchUnlockReasons = (type: 'EDIT' | 'CANCEL') =>
+  req<string[]>(`/so/unlock-reasons?type=${type}`);
 export const resolveUnlockReq = (reqId: number, approve: boolean, note?: string) =>
   req<{ id: number; status: string }>(`/so/unlock-requests/${reqId}/resolve`, { method: 'PATCH', body: JSON.stringify({ approve, note }) });
 
-export const cancelSO = (id: number, note?: string) =>
+export const cancelSO = (id: number | string, note?: string) =>
   req<{ id: number; status: SOStatus }>(`/so/${id}/cancel`, {
     method: 'PATCH', body: JSON.stringify({ note }),
   });
@@ -300,6 +312,13 @@ export const fetchGiveawayWithdrawals = (region?: string, year?: number) => {
 
 export const fetchGiveawayItems = (brand?: string) =>
   req<GiveawayItem[]>(`/giveaway/items${brand ? `?brand=${encodeURIComponent(brand)}` : ''}`);
+
+export const fetchGiveawayBorrowRequests = () => req<any[]>('/giveaway/borrow-requests');
+export const resolveGiveawayBorrowRequest = (id: number, approve: boolean, note?: string) => 
+  req<{ ok: boolean; status: string }>(`/giveaway/borrow-requests/${id}/resolve`, {
+    method: 'PATCH',
+    body: JSON.stringify({ approve, note })
+  });
 
 export const createGiveawayWithdrawal = (payload: {
   region: string; brand: string; itemName: string; qty: number;
@@ -511,3 +530,5 @@ export const requestUnlock = (soId: number | string, note?: string) =>
 
 export const resolveUnlockRequest = (id: string) =>
   req<{ ok: boolean }>(`/so/${id}/unlock`, { method: 'PATCH', body: '{}' });
+
+export const apiFetch = req;

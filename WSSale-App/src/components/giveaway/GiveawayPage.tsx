@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Gift, RefreshCw, Plus, X, AlertTriangle, Package } from 'lucide-react';
+import { Gift, RefreshCw, Plus, X, AlertTriangle, Package, ChevronLeft } from 'lucide-react';
 import {
   fetchGiveawayRegions, fetchGiveawayBudgetLines, fetchGiveawayWithdrawals,
-  fetchGiveawayItems, createGiveawayWithdrawal,
+  fetchGiveawayItems, createGiveawayWithdrawal, fetchGiveawayBorrowRequests, resolveGiveawayBorrowRequest
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import type { GiveawayRegion, GiveawayBudgetLine, GiveawayWithdrawal, GiveawayItem } from '../../types';
@@ -17,13 +17,17 @@ export function GiveawayPage() {
   const [selected, setSelected] = useState<GiveawayRegion | null>(null);
   const [lines, setLines]       = useState<GiveawayBudgetLine[]>([]);
   const [log, setLog]           = useState<GiveawayWithdrawal[]>([]);
+  const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
-  const [tab, setTab]           = useState<'budget' | 'log'>('budget');
+  const [tab, setTab]           = useState<'budget' | 'log' | 'requests'>('budget');
   const [showWd, setShowWd]     = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setRegions(await fetchGiveawayRegions()); }
+    try { 
+      setRegions(await fetchGiveawayRegions());
+      setRequests(await fetchGiveawayBorrowRequests());
+    }
     catch (e) { console.error(e); }
     setLoading(false);
   }, []);
@@ -39,12 +43,12 @@ export function GiveawayPage() {
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
-      <div className="px-6 py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between">
+      <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
-            <Gift size={26} /> ของแถม (Giveaway)
+          <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
+            <Gift className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> ของแถม (Giveaway)
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">งบส่งเสริมการขายรายภาค ปี 2569 · จำนวนชิ้น ต่อ ตรา × รายการ</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">งบส่งเสริมการขายรายภาค ปี 2569 · จำนวนชิ้น ต่อ ตรา × รายการ</p>
         </div>
         <button onClick={load} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white">
           <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
@@ -53,7 +57,7 @@ export function GiveawayPage() {
 
       <div className="flex-1 overflow-hidden flex">
         {/* Region list */}
-        <div className="w-full lg:max-w-xs border-r border-gray-200 overflow-y-auto p-4">
+        <div className={`${selected ? 'hidden lg:block' : 'w-full'} lg:w-full lg:max-w-xs border-r border-gray-200 overflow-y-auto p-4`}>
           <h2 className="text-xs font-bold uppercase text-gray-400 mb-3">ภาค / พนักงาน</h2>
           {regions.length === 0 ? (
             <p className="text-xs text-gray-400 py-6 text-center">ไม่มีข้อมูล</p>
@@ -102,13 +106,17 @@ export function GiveawayPage() {
         </div>
 
         {/* Detail */}
-        <div className="hidden lg:flex flex-1 flex-col overflow-hidden bg-white">
+        <div className={`${!selected ? 'hidden' : 'flex'} lg:flex flex-1 flex-col overflow-hidden bg-white w-full`}>
           {selected ? (
             <>
-              <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-                <div className="flex items-center gap-1">
+              <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between overflow-x-auto">
+                <div className="flex items-center gap-1 whitespace-nowrap">
+                  <button onClick={() => setSelected(null)} className="lg:hidden p-1.5 mr-1 -ml-2 text-gray-500 rounded-lg hover:bg-gray-100">
+                    <ChevronLeft size={20} />
+                  </button>
                   <button onClick={() => setTab('budget')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${tab==='budget'?'text-white':'text-gray-500 hover:bg-gray-100'}`} style={tab==='budget'?{background:'#0C447C'}:{}}>งบ + คงเหลือ</button>
                   <button onClick={() => setTab('log')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${tab==='log'?'text-white':'text-gray-500 hover:bg-gray-100'}`} style={tab==='log'?{background:'#0C447C'}:{}}>ประวัติเบิก ({log.length})</button>
+                  <button onClick={() => setTab('requests')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${tab==='requests'?'text-white':'text-gray-500 hover:bg-gray-100'}`} style={tab==='requests'?{background:'#0C447C'}:{}}>คำขอยืม ({requests.filter(r => r.Status === 'PENDING').length})</button>
                 </div>
                 {canWithdraw && (
                   <button onClick={() => setShowWd(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-xs font-semibold" style={{ background: '#0C447C' }}>
@@ -118,14 +126,14 @@ export function GiveawayPage() {
               </div>
               <div className="flex-1 overflow-y-auto p-4">
                 {tab === 'budget' ? (
-                  <table className="w-full text-xs">
-                    <thead>
+                  <table className="w-full text-xs min-w-full">
+                    <thead className="whitespace-nowrap">
                       <tr className="text-gray-400 border-b border-gray-100">
-                        <th className="text-left py-2">ตรา</th>
-                        <th className="text-left py-2">รายการ</th>
-                        <th className="text-right py-2">งบ</th>
-                        <th className="text-right py-2">เบิกแล้ว</th>
-                        <th className="text-right py-2">คงเหลือ</th>
+                        <th className="text-left py-2 whitespace-nowrap">ตรา</th>
+                        <th className="text-left py-2 whitespace-nowrap">รายการ</th>
+                        <th className="text-right py-2 whitespace-nowrap">งบ</th>
+                        <th className="text-right py-2 whitespace-nowrap">เบิกแล้ว</th>
+                        <th className="text-right py-2 whitespace-nowrap">คงเหลือ</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -133,44 +141,85 @@ export function GiveawayPage() {
                         const over = Number(l.RemainingQty) < 0;
                         return (
                           <tr key={l.Id} className={over ? 'bg-red-50/40' : ''}>
-                            <td className="py-2 text-gray-500">{l.Brand}</td>
-                            <td className="py-2 text-gray-700">{l.ItemName}</td>
-                            <td className="py-2 text-right tabular-nums text-gray-600">{Number(l.BudgetQty).toLocaleString()}</td>
-                            <td className="py-2 text-right tabular-nums text-gray-600">{Number(l.WithdrawnQty).toLocaleString()}</td>
+                            <td className="py-2 text-gray-500 whitespace-nowrap">{l.Brand}</td>
+                            <td className="py-2 text-gray-700 whitespace-nowrap">{l.ItemName}</td>
+                            <td className="py-2 text-right tabular-nums text-gray-600 whitespace-nowrap">{Number(l.BudgetQty).toLocaleString()}</td>
+                            <td className="py-2 text-right tabular-nums text-gray-600 whitespace-nowrap">{Number(l.WithdrawnQty).toLocaleString()}</td>
                             <td className={`py-2 text-right tabular-nums font-bold ${over ? 'text-red-600' : 'text-green-600'}`}>{Number(l.RemainingQty).toLocaleString()}</td>
                           </tr>
                         );
                       })}
-                      {lines.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-gray-300">ไม่มีงบ</td></tr>}
+                      {lines.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-gray-300 whitespace-nowrap">ไม่มีงบ</td></tr>}
                     </tbody>
                   </table>
-                ) : (
-                  <table className="w-full text-xs">
-                    <thead>
+                ) : tab === 'log' ? (
+                  <table className="w-full text-xs min-w-full">
+                    <thead className="whitespace-nowrap">
                       <tr className="text-gray-400 border-b border-gray-100">
-                        <th className="text-left py-2">เดือน</th>
-                        <th className="text-left py-2">ตรา</th>
-                        <th className="text-left py-2">รายการ</th>
-                        <th className="text-right py-2">จ่ายออก</th>
-                        <th className="text-center py-2">ที่มา</th>
+                        <th className="text-left py-2 whitespace-nowrap">เดือน</th>
+                        <th className="text-left py-2 whitespace-nowrap">ตรา</th>
+                        <th className="text-left py-2 whitespace-nowrap">รายการ</th>
+                        <th className="text-right py-2 whitespace-nowrap">จ่ายออก</th>
+                        <th className="text-center py-2 whitespace-nowrap">ที่มา</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {log.map(w => (
                         <tr key={w.Id}>
-                          <td className="py-2 text-gray-500">{w.IssueMonth ? TH_MONTHS[w.IssueMonth] : '-'}</td>
-                          <td className="py-2 text-gray-500">{w.Brand}</td>
-                          <td className="py-2 text-gray-700">{w.ItemName}</td>
-                          <td className="py-2 text-right tabular-nums text-gray-700">{Number(w.Qty).toLocaleString()}</td>
-                          <td className="py-2 text-center">
+                          <td className="py-2 text-gray-500 whitespace-nowrap">{w.IssueMonth ? TH_MONTHS[w.IssueMonth] : '-'}</td>
+                          <td className="py-2 text-gray-500 whitespace-nowrap">{w.Brand}</td>
+                          <td className="py-2 text-gray-700 whitespace-nowrap">{w.ItemName}</td>
+                          <td className="py-2 text-right tabular-nums text-gray-700 whitespace-nowrap">{Number(w.Qty).toLocaleString()}</td>
+                          <td className="py-2 text-center whitespace-nowrap">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${w.Source==='IMPORT'?'bg-gray-100 text-gray-500':'bg-blue-50 text-blue-700'}`}>{w.Source}</span>
                           </td>
                         </tr>
                       ))}
-                      {log.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-gray-300">ยังไม่มีการเบิก</td></tr>}
+                      {log.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-gray-300 whitespace-nowrap">ยังไม่มีการเบิก</td></tr>}
                     </tbody>
                   </table>
-                )}
+                ) : tab === 'requests' ? (
+                  <div className="space-y-4">
+                    {requests.map(r => (
+                      <div key={r.Id} className="border border-gray-200 rounded-lg p-4 shadow-sm bg-white">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <span className={`text-[10px] px-2 py-1 rounded-full font-bold ${r.Status === 'PENDING' ? 'bg-amber-100 text-amber-700' : r.Status === 'APPROVED' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                              {r.Status === 'PENDING' ? 'รออนุมัติ' : r.Status === 'APPROVED' ? 'อนุมัติแล้ว' : 'ปฏิเสธ'}
+                            </span>
+                            <span className="ml-2 text-sm font-bold text-gray-700">{r.RequesterName} ขอยืมจาก {r.LenderName}</span>
+                          </div>
+                          <div className="text-xs text-gray-400">{new Date(r.RequestedAt).toLocaleString()}</div>
+                        </div>
+                        <div className="text-sm mt-2">
+                          <span className="font-semibold text-gray-600">รายการ: </span> <span className="text-[#0C447C] font-bold">{r.Brand} - {r.ItemName}</span>
+                        </div>
+                        <div className="text-sm mt-1">
+                          <span className="font-semibold text-gray-600">จำนวน: </span> <span className="text-amber-600 font-bold">{r.Qty} ชิ้น</span>
+                        </div>
+                        <div className="text-sm mt-1">
+                          <span className="font-semibold text-gray-600">เหตุผล: </span> <span className="text-gray-700">{r.Reason}</span>
+                        </div>
+                        {r.Status === 'PENDING' && (r.LenderId === useAuthStore.getState().user?.id || ['ADMIN', 'MANAGER'].includes(role || '')) && (
+                          <div className="mt-4 flex gap-2">
+                            <button onClick={() => {
+                              if(window.confirm('ยืนยันการอนุมัติ? ระบบจะหักโควต้าของคุณไปให้ผู้ขอยืม')) {
+                                resolveGiveawayBorrowRequest(r.Id, true).then(() => load()).catch(e => alert(e.message));
+                              }
+                            }} className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded hover:bg-green-700">อนุมัติให้ยืม</button>
+                            <button onClick={() => {
+                              const note = window.prompt('เหตุผลที่ปฏิเสธ (ไม่บังคับ):');
+                              if (note !== null) {
+                                resolveGiveawayBorrowRequest(r.Id, false, note).then(() => load()).catch(e => alert(e.message));
+                              }
+                            }} className="px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded hover:bg-red-700">ปฏิเสธ</button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {requests.length === 0 && <div className="text-center py-8 text-gray-400">ไม่มีคำขอยืมโควต้า</div>}
+                  </div>
+                ) : null}
               </div>
             </>
           ) : (
