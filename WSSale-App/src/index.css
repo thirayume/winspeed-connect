@@ -87,6 +87,13 @@
     border-color: var(--color-border);
   }
 
+  html, body {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100vw;
+    position: relative;
+  }
+
   body {
     font-family: var(--font-sans);
     background-color: var(--color-background);
@@ -135,4 +142,73 @@
   background-color: var(--color-primary-foreground);
   border-color: var(--color-primary);
   transform: scale(1.01);
+}
+
+/* Mobile Drawer Animations */
+.mobile-drawer-backdrop {
+  animation: fadeIn 0.2s ease-out;
+}
+.mobile-drawer-sheet {
+  animation: slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+/* Sidebar group section */
+.nav-group-label {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: oklch(0.556 0.046 257);
+  padding: 0.5rem 0.625rem 0.25rem;
+  user-select: none;
+}
+
+.nav-group-divider {
+  height: 1px;
+  background: oklch(0.922 0.013 256);
+  margin: 0.375rem 0.5rem;
+}
+
+/* Sidebar group collapsible transition */
+.nav-group-items {
+  overflow: hidden;
+  transition: max-height 0.25s ease, opacity 0.2s ease;
+}
+.nav-group-items.collapsed {
+  max-height: 0 !important;
+  opacity: 0;
+}
+.nav-group-items.expanded {
+  opacity: 1;
+}
+
+/* Global Mobile Responsive Tables */
+@media (max-width: 1024px) {
+  table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Print Overrides: Prevent multi-page clipping from layout wrappers */
+@media print {
+  html, body, #root, 
+  .overflow-hidden, .overflow-y-auto, .overflow-auto, 
+  .h-screen, .h-full {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
 }

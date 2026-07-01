@@ -142,12 +142,12 @@ export const AdminUsersPage = () => {
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
-      <div className="px-6 py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between shrink-0">
+      <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
-            <Users size={26} /> จัดการผู้ใช้งาน (Admin Users)
+          <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
+            <Users className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> จัดการผู้ใช้งาน (Admin Users)
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
             เพิ่ม ลบ แก้ไข ผู้ใช้งานระบบ และผูกบัญชีกับพนักงาน WINSpeed
           </p>
         </div>
@@ -176,7 +176,7 @@ export const AdminUsersPage = () => {
         />
       </div>
 
-      <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative">
+      <div className="flex-1 flex flex-col bg-white rounded-none sm:rounded-2xl shadow-sm sm:shadow-sm shadow-none border-y sm:border border-gray-100 overflow-hidden relative">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-4 bg-gray-50/50">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
@@ -204,29 +204,29 @@ export const AdminUsersPage = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 sticky top-0 z-10 border-b border-gray-100 shadow-sm">
+          <table className="w-full text-sm min-w-full">
+            <thead className="bg-gray-50 sticky top-0 z-10 border-b border-gray-100 shadow-sm whitespace-nowrap">
               <tr>
                 <SortableHeader title="ผู้ใช้" sortKey="DisplayName" />
                 <SortableHeader title="บทบาท" sortKey="Role" />
                 <SortableHeader title="พนักงาน WINSpeed (EMEmp)" sortKey="EmpCode" />
                 <SortableHeader title="สถานะระบบ" sortKey="EmpId" align="center" />
-                <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500">จัดการ</th>
+                <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 whitespace-nowrap">จัดการ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {paginatedUsers.map(u => (
                 <tr key={u.Id} className={needsMapping(u) ? 'bg-amber-50/40' : ''}>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <div className="font-medium text-gray-800">{u.DisplayName}</div>
                     <div className="text-xs text-gray-400">@{u.Username}</div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`text-xs px-2 py-0.5 rounded-full ${u.IsActive ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-600 font-medium'}`}>
                       {u.Role} {!u.IsActive && '(ถูกระงับ)'}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <select
                       value={u.EmpId ?? ''}
                       onChange={e => assignEmp(u, e.target.value)}
@@ -244,7 +244,7 @@ export const AdminUsersPage = () => {
                       })}
                     </select>
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-4 py-3 text-center whitespace-nowrap">
                     {savingId === u.Id ? (
                       <RefreshCw size={15} className="animate-spin text-gray-400 inline" />
                     ) : savedId === u.Id ? (
@@ -262,7 +262,7 @@ export const AdminUsersPage = () => {
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-4 py-3 text-center whitespace-nowrap">
                     <div className="flex items-center justify-center gap-1">
                       <button onClick={() => setModalUser(u)} className="p-1.5 text-gray-400 hover:text-[#0C447C] hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center justify-center" title="แก้ไข">
                         <Edit2 size={16} />

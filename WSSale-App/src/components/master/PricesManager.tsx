@@ -351,13 +351,13 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
     const isSelected = selectedKeys.has(groupKey);
     return (
       <tr key={rowKey} className={`hover:bg-gray-50/50 transition-colors ${statusInfo.label === 'หมดอายุ' ? 'opacity-70 hover:opacity-100' : ''}`}>
-        <td className="px-4 py-4 w-12 text-center">
+        <td className="px-4 py-4 w-12 text-center whitespace-nowrap">
           <button onClick={() => toggleSelect(groupKey)} className="text-gray-400 hover:text-[#0C447C] transition-colors">
             {isSelected ? <CheckSquare size={18} className="text-[#0C447C]" /> : <Square size={18} />}
           </button>
         </td>
 
-        <td className="px-4 py-4">
+        <td className="px-4 py-4 whitespace-nowrap">
           <div className="flex items-start gap-2">
             <div>
               <div className="font-bold text-gray-800">{goodName}</div>
@@ -371,7 +371,7 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
             </div>
           </div>
         </td>
-        <td className="px-4 py-4 text-center">
+        <td className="px-4 py-4 text-center whitespace-nowrap">
           <div className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${statusInfo.color}`}>
             {statusInfo.label}
           </div>
@@ -381,7 +381,7 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
             </div>
           )}
         </td>
-        <td className="px-4 py-4 text-right font-bold text-lg text-[#0C447C]">
+        <td className="px-4 py-4 text-right font-bold text-lg text-[#0C447C] whitespace-nowrap">
           {isEditing || isExtending ? (
             <input 
               type="number" 
@@ -400,7 +400,7 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
             <div className="text-[10px] text-gray-400 mt-1 font-normal">บาท / ตัน</div>
           )}
         </td>
-        <td className="px-4 py-4 text-center text-gray-500">
+        <td className="px-4 py-4 text-center text-gray-500 whitespace-nowrap">
           {isEditing || isExtending ? (
             <div className="flex flex-col items-center gap-2 text-xs bg-white p-2 rounded-lg border border-gray-200 shadow-sm">
               {isExtending && (
@@ -444,7 +444,7 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
             </div>
           )}
         </td>
-        <td className="px-4 py-4 text-right">
+        <td className="px-4 py-4 text-right whitespace-nowrap">
           {isEditing || isExtending ? (
             <div className="flex flex-col items-end gap-2">
               <button onClick={() => isEditing ? handleSaveEdit(p) : handleSaveExtend(p)} disabled={saving} className="flex items-center gap-1 px-3 py-1.5 text-white bg-[#0C447C] hover:bg-[#0a3866] rounded-md disabled:opacity-50 text-xs font-semibold">
@@ -479,15 +479,8 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
   const expiredPrices = groupedPrices.filter(g => getStatusInfo(g.main).label === 'หมดอายุ').length;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-[#0C447C] flex items-center gap-3">
-          <Tag className="text-[#0C447C]" />
-          จัดการราคาขาย
-        </h2>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="h-full flex flex-col gap-4 overflow-hidden animate-in fade-in duration-500 w-full max-w-full p-2">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4 shrink-0">
         <DataSummaryCard
           title="ราคาทั้งหมด"
           value={groupedPrices.length.toLocaleString()}
@@ -498,37 +491,37 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
           title="ใช้งานอยู่"
           value={activePrices.toLocaleString()}
           icon={<CheckSquare />}
-          color="green"
+          colorClass="bg-green-100 text-green-600"
         />
         <DataSummaryCard
           title="หมดอายุ"
           value={expiredPrices.toLocaleString()}
           icon={<X />}
-          color="red"
+          colorClass="bg-red-100 text-red-600"
         />
       </div>
 
-      <div className="flex flex-col md:flex-row gap-4 mb-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+      <div className="p-2 sm:p-4 border-b border-gray-100 flex flex-row items-center gap-2 bg-gray-50/50 overflow-x-auto scrollbar-hide w-full rounded-xl shrink-0">
+        <div className="relative flex-1 min-w-[140px]">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
           <input
             type="text"
-            placeholder="ค้นหาชื่อสินค้า รหัส หรือลูกค้า..."
+            placeholder="ค้นหาชื่อสินค้า รหัส..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-10 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0C447C]/20 focus:border-[#0C447C] transition-all shadow-sm"
+            className="w-full pl-8 pr-8 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0C447C] transition-all shadow-sm text-sm"
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
-              <X size={18} />
+            <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
+              <X size={14} />
             </button>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           <select 
             value={statusFilter} 
             onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-[#0C447C] min-w-[150px] shadow-sm"
+            className="px-2 py-1.5 sm:px-3 sm:py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#0C447C] shadow-sm text-xs font-semibold"
           >
             <option value="ALL">ทุกสถานะ</option>
             <option value="ACTIVE">ใช้งานอยู่</option>
@@ -538,7 +531,7 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
           <select 
             value={selectedCategory} 
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:border-[#0C447C] min-w-[150px] shadow-sm"
+            className="px-2 py-1.5 sm:px-3 sm:py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#0C447C] shadow-sm text-xs font-semibold"
           >
             <option value="ALL">ทุกหมวดหมู่</option>
             {categories.map(c => <option key={c} value={c}>{c}</option>)}
@@ -546,7 +539,7 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative">
+      <div className="flex-1 grid grid-rows-[auto_1fr_auto] bg-white rounded-none sm:rounded-2xl shadow-sm sm:shadow-sm shadow-none border-y sm:border border-gray-100 overflow-hidden relative min-h-0">
         <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
           <div className="flex items-center gap-4">
             <button 
@@ -565,27 +558,27 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
               </span>
             )}
           </div>
-          <button onClick={loadData} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors ml-auto">
+          <button onClick={loadData} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors ml-auto shrink-0">
             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-sm text-left border-collapse">
-          <thead className="bg-gray-50 sticky top-0 z-10 text-gray-600 font-semibold text-xs uppercase tracking-wider shadow-sm">
+        <div className="overflow-auto min-h-0 relative">
+          <table className="w-full text-sm text-left border-collapse min-w-full">
+          <thead className="bg-gray-50 sticky top-0 z-10 text-gray-600 font-semibold text-xs uppercase tracking-wider shadow-sm whitespace-nowrap">
             <tr>
-              <th className="px-4 py-3 w-12 text-center border-b border-gray-100"></th>
+              <th className="px-4 py-3 w-12 text-center border-b border-gray-100 whitespace-nowrap"></th>
               <SortableHeader title="สินค้า / ลูกค้า" sortKey="GoodName" />
-              <th className="px-4 py-3 text-center w-32 border-b border-gray-100">สถานะ</th>
+              <th className="px-4 py-3 text-center w-32 border-b border-gray-100 whitespace-nowrap">สถานะ</th>
               <SortableHeader title="ราคา NET" sortKey="GoodPriceNet" align="right" />
               <SortableHeader title="เริ่มใช้งาน" sortKey="BeginDate" align="center" />
-              <th className="px-4 py-3 text-right w-24 border-b border-gray-100">จัดการ</th>
+              <th className="px-4 py-3 text-right w-24 border-b border-gray-100 whitespace-nowrap">จัดการ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-6 py-16 text-center">
+                <td colSpan={6} className="px-6 py-16 text-center whitespace-nowrap">
                   <div className="flex flex-col items-center justify-center text-[#0C447C]">
                     <RefreshCw size={32} className="animate-spin mb-4 opacity-50" />
                     <p className="text-sm font-medium animate-pulse opacity-70">กำลังโหลดข้อมูลราคาขาย...</p>
@@ -594,7 +587,7 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
               </tr>
             ) : filteredGroups.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
+                <td colSpan={6} className="px-6 py-12 text-center text-gray-400 whitespace-nowrap">
                   <Tag size={32} className="mx-auto mb-3 opacity-30" />
                   <p>ไม่พบข้อมูลราคาขาย</p>
                 </td>
@@ -607,7 +600,7 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
               ))
             )}
           </tbody>
-        </table>
+          </table>
         </div>
 
         {/* Pagination Footer */}
@@ -636,7 +629,6 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
         )}
       </div>
 
-      {/* Bulk Action Bar */}
       {selectedKeys.size > 0 && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-[#0C447C] text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-6 animate-in slide-in-from-bottom-5">
           <div className="font-bold">
@@ -656,7 +648,6 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
         </div>
       )}
 
-      {/* Bulk Extend Modal */}
       {showBulkModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
@@ -714,7 +705,6 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
         </div>
       )}
 
-      {/* Price History Modal */}
       {selectedHistoryGroup && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-2 sm:p-6 z-50 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white rounded-2xl shadow-2xl w-[96vw] h-[96vh] max-w-none flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
@@ -728,7 +718,7 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
                     <History size={20} className="text-[#0C447C]" />
                     ประวัติราคาขาย (Price History)
                   </h3>
-                  <p className="text-sm text-gray-500 mt-0.5">
+                  <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
                     ลูกค้า: <span className="font-semibold text-gray-700">{selectedHistoryGroup.main.CustID ? (custMap[selectedHistoryGroup.main.CustID] || selectedHistoryGroup.main.CustID) : 'ราคากลาง (ทุกลูกค้า)'}</span> • 
                     ทั้งหมด <span className="font-semibold text-[#0C447C]">{selectedHistoryGroup.history.length + 1}</span> รายการ
                   </p>

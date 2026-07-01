@@ -137,4 +137,137 @@ router.post('/budgets', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
+// GET /api/giveaway/my-quota — Get current user's quota
+router.get('/my-quota', async (req, res) => {
+  try {
+    const year = YEAR(req.query.year);
+    const r = await wfQuery(`
+      SELECT * FROM wf.v_GiveawayBudgetStatus
+      WHERE SalesUserId = @u AND PeriodYear = @y
+    `, { u: { type: sql.Int, value: req.user.id }, y: { type: sql.Int, value: year } });
+    res.json(r.recordset || []);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/giveaway/available-lenders — Get users who have quota for an item
+router.get('/available-lenders', async (req, res) => {
+  try {
+    const { brand, itemName } = req.query;
+    const year = YEAR(req.query.year);
+    if (!brand || !itemName) return res.status(400).json({ message: 'brand and itemName are required' });
+    const r = await wfQuery(`
+      SELECT v.SalesUserId, v.EmpId, v.EmpCode, v.Region, v.RemainingQty, u.DisplayName
+      FROM wf.v_GiveawayBudgetStatus v
+      JOIN wf.AppUser u ON u.Id = v.SalesUserId
+      WHERE v.Brand = @b AND v.ItemName = @i AND v.PeriodYear = @y AND v.RemainingQty > 0 AND v.SalesUserId != @u
+      ORDER BY v.RemainingQty DESC
+    `, {
+      b: { type: sql.NVarChar(50), value: brand },
+      i: { type: sql.NVarChar(100), value: itemName },
+      y: { type: sql.Int, value: year },
+      u: { type: sql.Int, value: req.user.id }
+    });
+    res.json(r.recordset || []);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/giveaway/borrow-requests — Request to borrow quota
+router.post('/borrow-requests', async (req, res) => {
+  try {
+    const { lenderId, region, brand, itemName, qty, reason } = req.body;
+    if (!lenderId || !region || !brand || !itemName || !qty) return res.status(400).json({ message: 'Missing required fields' });
+    const year = YEAR(req.body.periodYear);
+    const r = await wfQuery(`
+      INSERT INTO wf.GiveawayBorrowRequest (RequesterId, LenderId, Region, PeriodYear, Brand, ItemName, Qty, Reason, Status)
+      OUTPUT INSERTED.Id
+      VALUES (@req, @len, @rg, @y, @br, @it, @qty, @rs, 'PENDING')
+    `, {
+      req: { type: sql.Int, value: req.user.id },
+      len: { type: sql.Int, value: Number(lenderId) },
+      rg: { type: sql.NVarChar(60), value: region },
+      y: { type: sql.Int, value: year },
+      br: { type: sql.NVarChar(50), value: brand },
+      it: { type: sql.NVarChar(100), value: itemName },
+      qty: { type: sql.Decimal(12,2), value: Number(qty) },
+      rs: { type: sql.NVarChar(200), value: reason || '' }
+    });
+    res.json({ ok: true, id: r.recordset[0].Id });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/giveaway/borrow-requests — Get pending borrow requests for the current user (either requester, lender, or approver)
+router.get('/borrow-requests', async (req, res) => {
+  try {
+    const cond = req.user.role === 'ADMIN' || req.user.role === 'MANAGER' 
+      ? '1=1' // Admin/Manager sees all
+      : 'b.RequesterId = @u OR b.LenderId = @u';
+    const r = await wfQuery(`
+      SELECT b.*, req.DisplayName as RequesterName, len.DisplayName as LenderName
+      FROM wf.GiveawayBorrowRequest b
+      JOIN wf.AppUser req ON req.Id = b.RequesterId
+      JOIN wf.AppUser len ON len.Id = b.LenderId
+      WHERE ${cond}
+      ORDER BY b.RequestedAt DESC
+    `, { u: { type: sql.Int, value: req.user.id } });
+    res.json(r.recordset || []);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// PATCH /api/giveaway/borrow-requests/:id/resolve — Approve or Reject
+router.patch('/borrow-requests/:id/resolve', async (req, res) => {
+  try {
+    const { approve, note } = req.body;
+    const reqId = Number(req.params.id);
+    const bReq = (await wfQuery(`SELECT * FROM wf.GiveawayBorrowRequest WHERE Id=@id`, { id: { type: sql.Int, value: reqId } })).recordset?.[0];
+    if (!bReq) return res.status(404).json({ message: 'Request not found' });
+    if (bReq.Status !== 'PENDING') return res.status(400).json({ message: 'Request is already resolved' });
+    
+    // Only Lender or Manager/Admin can approve
+    if (req.user.id !== bReq.LenderId && !['MANAGER', 'ADMIN'].includes(req.user.role)) {
+      return res.status(403).json({ message: 'You do not have permission to resolve this request' });
+    }
+
+    if (!approve) {
+      await wfQuery(`UPDATE wf.GiveawayBorrowRequest SET Status='REJECTED', ApproverId=@u, Note=@n, ResolvedAt=GETUTCDATE() WHERE Id=@id`,
+        { id: { type: sql.Int, value: reqId }, u: { type: sql.Int, value: req.user.id }, n: { type: sql.NVarChar(500), value: note || null } });
+      return res.json({ ok: true, status: 'REJECTED' });
+    }
+
+    // Approve logic: We need to transfer budget.
+    // Easiest way is to increase the requester's budget, and increase the lender's withdrawal.
+    // Wait, or we just decrease the lender's budget and increase the requester's budget?
+    // Let's modify GiveawayBudget for both!
+    // 1. Get Lender's Region
+    const lenderBudget = (await wfQuery(`SELECT EmpCode FROM wf.GiveawayBudget WHERE SalesUserId=@len AND Region=@rg AND PeriodYear=@y AND Brand=@br AND ItemName=@it`,
+      { len: { type: sql.Int, value: bReq.LenderId }, rg: { type: sql.NVarChar(60), value: bReq.Region }, y: { type: sql.Int, value: bReq.PeriodYear }, br: { type: sql.NVarChar(50), value: bReq.Brand }, it: { type: sql.NVarChar(100), value: bReq.ItemName } })).recordset?.[0];
+    
+    // Decrease lender's budget
+    await wfQuery(`
+      UPDATE wf.GiveawayBudget SET BudgetQty = BudgetQty - @qty
+      WHERE SalesUserId=@len AND Region=@rg AND PeriodYear=@y AND Brand=@br AND ItemName=@it
+    `, { qty: { type: sql.Decimal(12,2), value: bReq.Qty }, len: { type: sql.Int, value: bReq.LenderId }, rg: { type: sql.NVarChar(60), value: bReq.Region }, y: { type: sql.Int, value: bReq.PeriodYear }, br: { type: sql.NVarChar(50), value: bReq.Brand }, it: { type: sql.NVarChar(100), value: bReq.ItemName } });
+    
+    // Increase requester's budget
+    const reqBudget = (await wfQuery(`SELECT Id FROM wf.GiveawayBudget WHERE SalesUserId=@req AND Region=@rg AND PeriodYear=@y AND Brand=@br AND ItemName=@it`,
+      { req: { type: sql.Int, value: bReq.RequesterId }, rg: { type: sql.NVarChar(60), value: bReq.Region }, y: { type: sql.Int, value: bReq.PeriodYear }, br: { type: sql.NVarChar(50), value: bReq.Brand }, it: { type: sql.NVarChar(100), value: bReq.ItemName } })).recordset?.[0];
+    
+    if (reqBudget) {
+      await wfQuery(`UPDATE wf.GiveawayBudget SET BudgetQty = BudgetQty + @qty WHERE Id=@id`, { qty: { type: sql.Decimal(12,2), value: bReq.Qty }, id: { type: sql.Int, value: reqBudget.Id } });
+    } else {
+      // Create budget for requester
+      // Assume Requester Region is same as Lender Region (since they borrow within region, or we use Lender's region as the context)
+      await wfQuery(`
+        INSERT INTO wf.GiveawayBudget (SalesUserId, Region, PeriodYear, Brand, ItemName, BudgetQty)
+        VALUES (@req, @rg, @y, @br, @it, @qty)
+      `, { req: { type: sql.Int, value: bReq.RequesterId }, rg: { type: sql.NVarChar(60), value: bReq.Region }, y: { type: sql.Int, value: bReq.PeriodYear }, br: { type: sql.NVarChar(50), value: bReq.Brand }, it: { type: sql.NVarChar(100), value: bReq.ItemName }, qty: { type: sql.Decimal(12,2), value: bReq.Qty } });
+    }
+
+    // Mark as approved
+    await wfQuery(`UPDATE wf.GiveawayBorrowRequest SET Status='APPROVED', ApproverId=@u, Note=@n, ResolvedAt=GETUTCDATE() WHERE Id=@id`,
+      { id: { type: sql.Int, value: reqId }, u: { type: sql.Int, value: req.user.id }, n: { type: sql.NVarChar(500), value: note || null } });
+    
+    res.json({ ok: true, status: 'APPROVED' });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
 module.exports = router;
