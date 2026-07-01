@@ -327,7 +327,7 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
 
     await wfTransaction(async tx => {
       for (const order of orders) {
-        const { soPrefix, custId, custName, truckPlate, controlTicketNo, deliveryDate, remark, lines, salesUserId: impersonatedId, rebateDiscountAmt } = order;
+        const { soPrefix, custId, custName, truckPlate, controlTicketNo, deliveryDate, remark, lines, salesUserId: impersonatedId, rebateDiscountAmt, convertFromQuoteId } = order;
 
         // price deviation check
         const devLine = lines.find(l => !l.isGiveaway && (Number(l.pricePerTon) < Number(l.netPricePerTon) - 500));
@@ -362,6 +362,13 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
         const soId = soR.recordset[0].Id;
         createdIds.push(soId);
         createdRefs.push(wfRef);
+
+        if (convertFromQuoteId) {
+          await tx.request()
+            .input('quoteId', sql.Int, convertFromQuoteId)
+            .input('soId', sql.Int, soId)
+            .query(`UPDATE wf.Quotation SET Status='CONVERTED', ConvertedSoId=@soId, UpdatedAt=GETUTCDATE() WHERE Id=@quoteId`);
+        }
 
         for (let i = 0; i < lines.length; i++) {
           const l = lines[i];
