@@ -161,10 +161,10 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
   const activeCount = goods.length;
 
   return (
-    <div className="h-full flex flex-col gap-4 overflow-hidden">
+    <div className="h-full flex flex-col gap-4 overflow-hidden w-full max-w-full">
       
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4 shrink-0">
         <DataSummaryCard
           title="สินค้าทั้งหมด"
           value={activeCount.toLocaleString()}
@@ -185,10 +185,10 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
         />
       </div>
 
-      <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative">
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-4 bg-gray-50/50">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+      <div className="flex-1 grid grid-rows-[auto_1fr_auto] bg-white rounded-none sm:rounded-lg sm:rounded-2xl shadow-sm sm:shadow-sm shadow-none border-y sm:border border-gray-100 overflow-hidden relative min-h-0">
+        <div className="p-2 sm:p-4 border-b border-gray-100 flex flex-row items-center gap-2 bg-gray-50/50 overflow-x-auto scrollbar-hide w-full">
+          <div className="relative flex-1 min-w-[140px]">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input
               type="text"
               placeholder="ค้นหารหัส หรือ ชื่อสินค้า..."
@@ -202,39 +202,41 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
               </button>
             )}
           </div>
-          <div className="flex bg-gray-100 p-1 rounded-lg">
-            <select 
-              value={selectedCategory} 
-              onChange={e => setSelectedCategory(e.target.value)}
-              className="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-white text-gray-800 shadow-sm focus:outline-none cursor-pointer border-none"
-            >
-              <option value="ALL">ทุกหมวดหมู่</option>
-              {categories.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex bg-gray-100 p-1 rounded-lg">
+              <select 
+                value={selectedCategory} 
+                onChange={e => setSelectedCategory(e.target.value)}
+                className="px-3 py-1 text-xs font-semibold rounded-md transition-colors bg-white text-gray-800 shadow-sm focus:outline-none cursor-pointer border-none"
+              >
+                <option value="ALL">ทุกหมวดหมู่</option>
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <button onClick={loadData} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            </button>
           </div>
-          <button onClick={loadData} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors ml-auto">
-            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-gray-50 sticky top-0 z-10 text-gray-600 font-semibold text-xs uppercase tracking-wider shadow-sm">
+        <div className="overflow-auto min-h-0 relative">
+          <table className="w-full text-sm text-left min-w-full">
+            <thead className="bg-gray-50 sticky top-0 z-10 text-gray-600 font-semibold text-xs uppercase tracking-wider shadow-sm whitespace-nowrap">
               <tr>
-                <th className="px-6 py-4 border-b border-gray-100 w-16">รูปภาพ</th>
+                <th className="px-6 py-4 border-b border-gray-100 w-16 whitespace-nowrap">รูปภาพ</th>
                 <SortableHeader title="รหัส/ชื่อสินค้า" sortKey="GoodCode" />
                 <SortableHeader title="คงเหลือ" sortKey="StockQty" align="right" />
                 <SortableHeader title="ยอดขายปีนี้ (ตัน)" sortKey="TotalQtyTonThisYear" align="center" />
                 <SortableHeader title="ยอดขายรวม (ตัน)" sortKey="TotalQtyTon" align="center" />
-                <th className="px-6 py-4 border-b border-gray-100 text-right">ราคาล่าสุด</th>
-                <th className="px-6 py-4 border-b border-gray-100">สเปค</th>
-                <th className="px-6 py-4 border-b border-gray-100 text-right">จัดการ</th>
+                <th className="px-6 py-4 border-b border-gray-100 text-right whitespace-nowrap">ราคาล่าสุด</th>
+                <th className="px-6 py-4 border-b border-gray-100 whitespace-nowrap">สเปค</th>
+                <th className="px-6 py-4 border-b border-gray-100 text-right whitespace-nowrap">จัดการ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-16 text-center">
+                  <td colSpan={7} className="px-6 py-16 text-center whitespace-nowrap">
                     <div className="flex flex-col items-center justify-center text-[#0C447C]">
                       <RefreshCw size={32} className="animate-spin mb-4 opacity-50" />
                       <p className="text-sm font-medium animate-pulse opacity-70">กำลังโหลดข้อมูลสินค้า...</p>
@@ -243,7 +245,7 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
                 </tr>
               ) : paginatedGoods.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
+                  <td colSpan={7} className="px-6 py-12 text-center text-gray-400 whitespace-nowrap">
                     <Package size={32} className="mx-auto mb-3 opacity-30" />
                     <p>ไม่พบข้อมูลสินค้า</p>
                   </td>
@@ -257,7 +259,7 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
                   return (
                     <Fragment key={good.GoodID}>
                       <tr className="hover:bg-gray-50/50 transition-colors">
-                        <td className="px-6 py-3">
+                        <td className="px-6 py-3 whitespace-nowrap">
                           <div className="h-10 w-10 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden border border-gray-200">
                             {good.ImageUrl ? (
                               <img src={good.ImageUrl} alt={good.GoodCode} className="h-full w-full object-cover" />
@@ -266,7 +268,7 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
                             )}
                           </div>
                         </td>
-                        <td className="px-6 py-3">
+                        <td className="px-6 py-3 whitespace-nowrap">
                           {isEditing ? (
                             <div className="space-y-1">
                               <div className="text-xs text-gray-500 font-mono">{good.GoodCode}</div>
@@ -291,20 +293,20 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
                             </div>
                           )}
                         </td>
-                        <td className="px-6 py-3 text-right">
+                        <td className="px-6 py-3 text-right whitespace-nowrap">
                           <div className="font-bold text-[#0C447C]">{good.StockQty ? good.StockQty.toLocaleString() : '0'}</div>
                         </td>
-                        <td className="px-6 py-3 text-center">
+                        <td className="px-6 py-3 text-center whitespace-nowrap">
                           <span className={`inline-flex items-center justify-center font-bold h-7 min-w-[28px] rounded-full px-2 ${ytdSales > 0 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
                             {ytdSales.toLocaleString()}
                           </span>
                         </td>
-                        <td className="px-6 py-3 text-center">
+                        <td className="px-6 py-3 text-center whitespace-nowrap">
                           <span className={`inline-flex items-center justify-center font-bold h-7 min-w-[28px] rounded-full px-2 ${totalSales > 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
                             {totalSales.toLocaleString()}
                           </span>
                         </td>
-                        <td className="px-6 py-3 text-right">
+                        <td className="px-6 py-3 text-right whitespace-nowrap">
                           {(() => {
                             const pObj = prices.find(p => p.GoodID === good.GoodID);
                             if (!pObj || !pObj.GoodPriceNet) return <div className="text-xs text-orange-400 font-medium">ไม่มีข้อมูล</div>;
@@ -318,7 +320,7 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
                             );
                           })()}
                         </td>
-                        <td className="px-6 py-3 text-gray-600">
+                        <td className="px-6 py-3 text-gray-600 whitespace-nowrap">
                           {isEditing ? (
                             <div className="flex items-center gap-2">
                               <input 
@@ -341,7 +343,7 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
                             </div>
                           )}
                         </td>
-                        <td className="px-6 py-3 text-right">
+                        <td className="px-6 py-3 text-right whitespace-nowrap">
                           {isEditing ? (
                             <div className="flex items-center justify-end gap-2">
                               <button onClick={() => setEditingId(null)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded">
@@ -370,7 +372,7 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
                       </tr>
                       {isEditing && (
                         <tr className="bg-blue-50/30">
-                          <td colSpan={7} className="px-6 py-4 border-t border-blue-100">
+                          <td colSpan={7} className="px-6 py-4 border-t border-blue-100 whitespace-nowrap">
                             <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                               <span className="text-sm font-medium text-gray-700 whitespace-nowrap">รูปภาพสินค้า:</span>
                               <label className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 text-sm shadow-sm transition-colors">

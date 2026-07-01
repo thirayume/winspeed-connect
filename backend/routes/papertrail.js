@@ -34,7 +34,7 @@ router.get('/board', async (req, res) => {
       ),
       ActiveSO AS ( SELECT * FROM RankedSO WHERE RN <= 100 )
       SELECT so.Id, so.WfRef, so.CustName, so.Status, so.TruckPlate, so.ControlTicketNo,
-             so.ImportedDocuNo, so.CreatedAt, u.DisplayName AS SalesName,
+             so.ImportedDocuNo, so.CreatedAt, so.DeliveryDate, u.DisplayName AS SalesName,
              SUM(CASE WHEN l.IsGiveaway=0 THEN l.QtyTon ELSE 0 END) AS QtyTon,
              COUNT(l.SoId) AS LineCnt,
              (SELECT COUNT(*) FROM wf.PaperCopy pc WHERE pc.SoId = so.Id) AS CopyCnt,
@@ -44,7 +44,7 @@ router.get('/board', async (req, res) => {
       LEFT JOIN wf.AppUser u ON u.Id = so.SalesUserId
       LEFT JOIN wf.v_AllSalesOrderLines l ON l.SoId = so.Id
       GROUP BY so.Id, so.WfRef, so.CustName, so.Status, so.TruckPlate, so.ControlTicketNo,
-               so.ImportedDocuNo, so.CreatedAt, u.DisplayName
+               so.ImportedDocuNo, so.CreatedAt, so.DeliveryDate, u.DisplayName
       ORDER BY so.CreatedAt DESC
     `);
     const board = {};
@@ -54,8 +54,8 @@ router.get('/board', async (req, res) => {
         id: row.Id, wfRef: row.WfRef, custName: row.CustName, status: row.Status,
         truckPlate: row.TruckPlate, controlTicketNo: row.ControlTicketNo,
         importedDocuNo: row.ImportedDocuNo, createdAt: row.CreatedAt,
-        salesName: row.SalesName, qtyTon: row.QtyTon, lineCnt: row.LineCnt,
-        copyCnt: row.CopyCnt, lostCnt: row.LostCnt, verifiedAt: row.VerifiedAt,
+        deliveryDate: row.DeliveryDate, salesName: row.SalesName, qtyTon: row.QtyTon, 
+        lineCnt: row.LineCnt, copyCnt: row.CopyCnt, lostCnt: row.LostCnt, verifiedAt: row.VerifiedAt,
         daysOpen: row.CreatedAt ? Math.floor((Date.now() - new Date(row.CreatedAt).getTime()) / 86400000) : 0,
       };
       (board[row.Status] ||= []).push(card);
@@ -196,3 +196,4 @@ router.get('/lost', async (req, res) => {
 });
 
 module.exports = router;
+// Trigger restart

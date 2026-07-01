@@ -75,7 +75,7 @@ export const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
   };
 
   return (
-    <div className="relative">
+    <div className="relative inline-block w-full">
       <input
         ref={inputRef}
         type="text"
@@ -83,10 +83,21 @@ export const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
         onChange={handleChange}
         onBlur={handleBlur}
         placeholder={placeholder}
-        className={`${className} pl-3 pr-8`}
+        className={`${className} pl-3 pr-8 w-full`}
         maxLength={10}
       />
       <Calendar size={16} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+      <input 
+        type="date"
+        value={value || ''}
+        onChange={(e) => {
+          if (e.target.value) {
+            onChange(e.target.value);
+            setDisplayValue(toThaiDateInputFormat(e.target.value));
+          }
+        }}
+        className="absolute right-0 top-0 bottom-0 opacity-0 cursor-pointer w-10 h-full"
+      />
     </div>
   );
 };

@@ -62,7 +62,7 @@ BEGIN
         )
         VALUES (
             @NewSoid, @DocuNo, @CustId, CAST(GETDATE() AS DATE), @TotalAmnt, 'N', 'N', 'N', @EmpID, '1',
-            '112', 'N', '7', '1', '1', '1', 'N', 'N', 'Y', 'N',
+            '112', 'N', '7', '1', '1', '1', 'N', 'N', 'N', 'N',
             @TruckPlate, @Remark
         );
 

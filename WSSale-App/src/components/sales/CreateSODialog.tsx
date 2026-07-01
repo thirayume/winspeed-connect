@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Plus, Minus, Truck, AlertTriangle, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance } from '../../services/api';
+import { X, Plus, Minus, Truck, AlertTriangle, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown } from 'lucide-react';
+import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
+import { GiveawayBorrowModal } from './GiveawayBorrowModal';
 import { useAuthStore } from '../../store/auth-store';
+import { useTripStore } from '../../store/trip-store';
 import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser } from '../../types';
 
 type DraftLine = SalesOrderLine & { tempId: string; refControlTicketNo?: string; isControlTicketDrawn?: boolean; maxQtyTon?: number };
@@ -18,10 +20,12 @@ export function CreateSODialog({
   isOpen,
   onClose,
   onCreated,
+  editSoId,
 }: {
   isOpen: boolean;
   onClose: () => void;
   onCreated?: () => void;
+  editSoId?: string;
 }) {
   const [customers, setCustomers] = useState<EMCust[]>([]);
   const [goods, setGoods] = useState<EMGood[]>([]);
@@ -29,6 +33,8 @@ export function CreateSODialog({
   const [truckPlates, setTruckPlates] = useState<string[]>([]);
   const [controlTickets, setControlTickets] = useState<{ DocuNo: string; DocuDate: string; TruckPlate?: string; Desc1?: string }[]>([]);
   
+  const activeTrip = useTripStore(s => s.activeTrip);
+
   // Grouped Order State
   const [custId, setCustId] = useState('');
   const [custSearch, setCustSearch] = useState('');
@@ -56,31 +62,90 @@ export function CreateSODialog({
 
   const [activeTab, setActiveTab] = useState('ทั้งหมด');
   const [goodSearch, setGoodSearch] = useState('');
+  const [debouncedCustSearch, setDebouncedCustSearch] = useState('');
+  
+  // Giveaway Quota State
+  const [myQuota, setMyQuota] = useState<{ Brand: string; ItemName: string; RemainingQty: number }[]>([]);
+  const [borrowModalOpen, setBorrowModalOpen] = useState(false);
+  const [borrowReq, setBorrowReq] = useState({ brand: '', itemName: '', requiredQty: 0 });
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
 
+  // Mobile UX State
+  const [mobileView, setMobileView] = useState<'products' | 'cart'>('products');
+  const [isTruckInfoCollapsed, setIsTruckInfoCollapsed] = useState(false);
+
   useEffect(() => {
     if (!isOpen) return;
-    fetchCustomers().then(setCustomers).catch(console.error);
     Promise.all([fetchGoods(), fetchGiveawayGoods()])
       .then(([g, gw]) => setGoods([...g, ...gw.map(x => ({ ...x, GoodGroupName: 'ของแถม' }))]))
       .catch(console.error);
+      
+    const currentYear = new Date().getFullYear() + 543 - 2500 + 2500;
+    apiFetch(`/giveaway/my-quota?year=${currentYear}`).then(setMyQuota).catch(console.error);
     
     if (userRole === 'ADMIN') {
-      listUsers().then(users => setSalesUsers(users.filter(u => u.Role === 'SALES' || u.Role === 'COUNTER_SALES'))).catch(console.error);
+      listUsers().then(setSalesUsers).catch(console.error);
     }
-
-    setBills([{ id: 'bill-1', soPrefix: 'I', lines: [], remark: '' }]);
-    setActiveBillId('bill-1');
-    setCustId(''); setTruckPlate(''); setSalesUserId('');
-    setUseControlTicket(false); setSelectedTicketForDraw('');
-    setActiveTab('ทั้งหมด'); setGoodSearch(''); setCurrentPage(1);
-    
-    const d = new Date(); d.setDate(d.getDate() + 7);
-    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-    setDeliveryDate(local.toISOString().slice(0, 10));
-    setError(''); setCustSearch(''); setTruckPlates([]);
   }, [isOpen, userRole]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedCustSearch(custSearch), 300);
+    return () => clearTimeout(timer);
+  }, [custSearch]);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchCustomers(debouncedCustSearch.length >= 2 ? debouncedCustSearch : undefined).then(setCustomers).catch(console.error);
+    }
+  }, [debouncedCustSearch, isOpen]);
+
+  useEffect(() => {
+    if (editSoId && editSoId !== 'undefined') {
+      fetchSalesOrder(editSoId).then(so => {
+        setCustId((so as any).custId || (so as any).custID || (so as any).CustId || (so as any).CustID || '');
+        setCustSearch((so as any).custName || (so as any).CustName || '');
+        setTruckPlate((so as any).truckPlate || (so as any).TruckPlate || '');
+        setSalesUserId((so as any).salesUserId || (so as any).salesUserID || (so as any).SalesUserId || (so as any).SalesUserID || '');
+        setDeliveryDate(so.deliveryDate ? so.deliveryDate.split('T')[0] : '');
+        setBills([{
+          id: 'bill-1',
+          soPrefix: so.soPrefix as SOPrefix,
+          remark: so.remark || '',
+          rebateDiscountAmt: so.rebateDiscountAmt || 0,
+          lines: (so.lines || []).map((l, i) => ({
+            ...l,
+            tempId: `${l.goodId}-${i}`,
+            lineNo: i + 1,
+            isGiveaway: !!l.isGiveaway,
+            isControlTicketDrawn: !!l.isControlTicketDrawn
+          }))
+        }]);
+      }).catch(console.error);
+    } else {
+      setBills([{ id: 'bill-1', soPrefix: 'I', lines: [], remark: '' }]);
+      setActiveBillId('bill-1');
+      setCustId(''); setTruckPlate(''); setSalesUserId('');
+      setUseControlTicket(false); setSelectedTicketForDraw('');
+      setActiveTab('ทั้งหมด'); setGoodSearch(''); setCurrentPage(1);
+      
+      const d = new Date(); d.setDate(d.getDate() + 7);
+      const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+      
+      if (activeTrip) {
+        setCustId(activeTrip.custId);
+        setCustSearch(activeTrip.custName);
+        setTruckPlate(activeTrip.truckPlate);
+        setDeliveryDate(activeTrip.deliveryDate || local.toISOString().slice(0, 10));
+      } else {
+        setDeliveryDate(local.toISOString().slice(0, 10));
+        setCustSearch(''); setTruckPlates([]);
+      }
+      
+      setError('');
+      setIsTruckInfoCollapsed(!!activeTrip); setMobileView('products');
+    }
+  }, [isOpen, userRole, editSoId, activeTrip]);
 
   useEffect(() => {
     fetchPrices({ custId }).then(setPrices).catch(console.error);
@@ -128,13 +193,42 @@ export function CreateSODialog({
     if (!activeBill) return;
     const net = getNetPrice(good.GoodID, 1);
     
+    // Auto-collapse truck info on mobile when starting to add products
+    if (window.innerWidth < 1024) setIsTruckInfoCollapsed(true);
+    
+    const isGiveaway = good.GoodGroupName === 'ของแถม';
+
+    // Giveaway Quota Check
+    if (isGiveaway) {
+      const quota = myQuota.find(q => good.GoodName.includes(q.ItemName) || q.ItemName.includes(good.GoodName));
+      const remaining = quota ? quota.RemainingQty : 0;
+      
+      const totalAdded = bills.reduce((sum, currB) => 
+        sum + currB.lines.filter(l => l.goodId === good.GoodID && l.isGiveaway).reduce((s, l) => s + l.qtyTon, 0)
+      , 0);
+
+      if (totalAdded + 1 > remaining) {
+        const brandMatch = good.GoodName.match(/ตรา([^\s]+)/);
+        const parsedBrand = quota ? quota.Brand : (brandMatch ? `ตรา${brandMatch[1]}` : 'ทั่วไป');
+        const parsedItemName = quota ? quota.ItemName : good.GoodName;
+        
+        setBorrowReq({ brand: parsedBrand, itemName: parsedItemName, requiredQty: (totalAdded + 1) - remaining });
+        setBorrowModalOpen(true);
+        return; // Prevent adding
+      }
+    }
+
     setBills(prevBills => prevBills.map(b => {
       if (b.id !== activeBillId) return b;
       
-      const defaultPrice = good.GoodGroupName === 'ของแถม' ? 0 : net;
+      const defaultPrice = isGiveaway ? 0 : net;
       
-      // Separate drawn and non-drawn items
-      const existing = b.lines.find(l => l.goodId === good.GoodID && !l.isGiveaway && !l.isControlTicketDrawn);
+      // Separate drawn and non-drawn items, but allow merging identical giveaways
+      const existing = b.lines.find(l => 
+        l.goodId === good.GoodID && 
+        l.isGiveaway === isGiveaway && 
+        !l.isControlTicketDrawn
+      );
       
       if (existing) {
         const newQty = existing.qtyTon + 1;
@@ -261,15 +355,24 @@ export function CreateSODialog({
   const selectedCust = customers.find(c => c.CustID === custId);
 
   // Totals calculation
-  const totalTons = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (Number(l.qtyTon) || 0), 0), 0);
+  const totalTons = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isGiveaway ? 0 : (Number(l.qtyTon) || 0)), 0), 0);
   const totalRebateDiscount = bills.reduce((s, b) => s + (Number(b.rebateDiscountAmt) || 0), 0);
   const totalPayable = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isControlTicketDrawn ? 0 : (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0)), 0), 0) - totalRebateDiscount;
   const totalOffset = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isControlTicketDrawn ? (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0) : 0), 0), 0);
+  const totalCartItems = bills.reduce((s, b) => s + b.lines.length, 0);
 
   async function handleSubmit() {
     if (!custId) { setError('กรุณาเลือกลูกค้า'); return; }
     const emptyBills = bills.filter(b => b.lines.length === 0);
     if (emptyBills.length > 0) { setError(`มีบิลที่ยังไม่ได้เลือกสินค้า (${emptyBills.length} บิล)`); return; }
+
+    if (!custId) { setError('กรุณาเลือกลูกค้าจากรายการ'); return; }
+
+    if (totalPayable === 0) {
+      if (!window.confirm(`ยอดรวมเป็น 0 บาท\n\nต้องการบันทึกเอกสารนี้หรือไม่?`)) {
+        return;
+      }
+    }
 
     const isNewTruck = truckPlate && truckPlates.length > 0 && !truckPlates.includes(truckPlate);
     if (isNewTruck) {
@@ -280,28 +383,53 @@ export function CreateSODialog({
 
     setError(''); setSubmitting(true);
     try {
-      // Build grouped payload (Array of orders)
-      const payload = bills.map(b => ({
-        soPrefix: b.soPrefix,
-        custId,
-        custName: selectedCust?.CustName || custId,
-        truckPlate: truckPlate || undefined,
-        deliveryDate: deliveryDate || undefined,
-        remark: b.remark || undefined,
-        rebateDiscountAmt: b.rebateDiscountAmt || 0,
-        salesUserId: salesUserId || undefined,
-        lines: b.lines.map(({ tempId, ...l }) => ({
-          ...l,
-          qtyTon: Number(l.qtyTon) || 0,
-          pricePerTon: Number(l.pricePerTon) || 0,
-          isControlTicketDrawn: l.isControlTicketDrawn,
-          refControlTicketNo: l.refControlTicketNo
-        }))
-      }));
+      if (editSoId) {
+        // EditSODialog — การแก้ไขบิลทำผ่าน SO state machine (cancel + create ใหม่)
+        const b = bills[0];
+        const payload = {
+          soPrefix: b.soPrefix,
+          custId,
+          custName: selectedCust?.CustName || activeTrip?.custName || custId,
+          truckPlate: truckPlate || undefined,
+          deliveryDate: deliveryDate || undefined,
+          remark: b.remark || undefined,
+          rebateDiscountAmt: b.rebateDiscountAmt || 0,
+          salesUserId: salesUserId || undefined,
+          lines: b.lines.map(({ tempId, ...l }) => ({
+            ...l,
+            qtyTon: Number(l.qtyTon) || 0,
+            pricePerTon: Number(l.pricePerTon) || 0,
+            isControlTicketDrawn: l.isControlTicketDrawn,
+            refControlTicketNo: l.refControlTicketNo
+          }))
+        };
+        const res = await updateSO(editSoId, payload);
+        if (res.needsApproval) alert(`⚠ มีรายการที่ราคาต่ำกว่า NET\nต้องการอนุมัติจาก ผจก. ก่อน confirm`);
+        else alert(`✓ แก้ไขบิลสำเร็จ`);
+      } else {
+        // Build grouped payload (Array of orders)
+        const payload = bills.map(b => ({
+          soPrefix: b.soPrefix,
+          custId,
+          custName: selectedCust?.CustName || activeTrip?.custName || custId,
+          truckPlate: truckPlate || undefined,
+          deliveryDate: deliveryDate || undefined,
+          remark: b.remark || undefined,
+          rebateDiscountAmt: b.rebateDiscountAmt || 0,
+          salesUserId: salesUserId || undefined,
+          lines: b.lines.map(({ tempId, ...l }) => ({
+            ...l,
+            qtyTon: Number(l.qtyTon) || 0,
+            pricePerTon: Number(l.pricePerTon) || 0,
+            isControlTicketDrawn: l.isControlTicketDrawn,
+            refControlTicketNo: l.refControlTicketNo
+          }))
+        }));
 
-      const res = await createSO(payload);
-      if (res.needsApproval) alert(`⚠ มีรายการที่ราคาต่ำกว่า NET\nต้องการอนุมัติจาก ผจก. ก่อน confirm`);
-      else alert(`✓ สร้างกลุ่มใบสั่งขายสำเร็จ (จำนวน ${payload.length} บิล)`);
+        const res = await createSO(payload);
+        if (res.needsApproval) alert(`⚠ มีรายการที่ราคาต่ำกว่า NET\nต้องการอนุมัติจาก ผจก. ก่อน confirm`);
+        else alert(`✓ สร้างกลุ่มบิลสำเร็จ (จำนวน ${payload.length} บิล)`);
+      }
       onCreated?.();
       onClose();
     } catch (e: unknown) {
@@ -314,20 +442,36 @@ export function CreateSODialog({
   if (!isOpen) return null;
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-white relative w-full">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-[#0C447C] text-white">
+    <>
+      <div className="flex-1 flex flex-col h-full bg-white relative w-full overflow-hidden max-w-full">
+        <div className="flex items-center justify-between px-4 py-2 sm:px-6 sm:py-3 border-b border-gray-100 bg-[#0C447C] text-white shrink-0">
           <div>
-            <h2 className="text-xl font-bold flex items-center gap-2"><Truck size={24}/> รถบรรทุก (Grouped Bills)</h2>
-            <p className="text-xs text-blue-200 mt-1">จัดเรียงบิล I, K ในรถคันเดียวกัน และจัดการเบิกตั๋วคุม</p>
+            <h2 className="text-base sm:text-xl font-bold flex items-center gap-2"><Truck size={20} className="sm:w-6 sm:h-6"/> {activeTrip && !editSoId ? 'เพิ่มบิลในทริป' : 'บิล'}</h2>
+            <p className="hidden sm:block text-xs text-blue-200 mt-1">{activeTrip && !editSoId ? `ลูกค้า: ${activeTrip.custName} | ทะเบียนรถ: ${activeTrip.truckPlate}` : 'จัดเรียงบิล I, K ในรถคันเดียวกัน และจัดการเบิกตั๋วคุม'}</p>
           </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white rounded-full p-2 hover:bg-white/10">
+          <button onClick={onClose} className="text-white/80 hover:text-white rounded-full p-1.5 sm:p-2 hover:bg-white/10">
             <X size={20} />
           </button>
         </div>
 
         {/* TRUCK INFO BAR — shared across all bills */}
-        <div className="px-6 py-3 bg-white border-b border-gray-200 shrink-0">
-          <div className="flex flex-wrap items-end gap-4">
+        {!activeTrip && (
+        <div className="bg-white border-b border-gray-200 shrink-0 flex flex-col">
+          <div 
+            className="flex items-center justify-between px-4 sm:px-6 py-1.5 bg-gray-50 border-b border-gray-100 cursor-pointer lg:hidden"
+            onClick={() => setIsTruckInfoCollapsed(!isTruckInfoCollapsed)}
+          >
+            <div className="flex items-center gap-2">
+              <Truck size={14} className="text-gray-500" />
+              <span className="text-xs font-bold text-gray-700">
+                ลูกค้า {custSearch ? `(${custSearch})` : ''} {truckPlate ? `[${truckPlate}]` : ''}
+              </span>
+            </div>
+            {isTruckInfoCollapsed ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronUp size={16} className="text-gray-400" />}
+          </div>
+          
+          <div className={`px-4 sm:px-6 py-2 sm:py-3 transition-all overflow-hidden ${isTruckInfoCollapsed ? 'hidden lg:block' : 'block'}`}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:flex lg:flex-wrap items-end gap-2 sm:gap-4">
             {userRole === 'ADMIN' && (
               <div className="min-w-[200px]">
                 <label className="text-[10px] font-bold text-amber-700 block mb-0.5">ทำรายการแทน (Admin)</label>
@@ -351,7 +495,7 @@ export function CreateSODialog({
                 />
                 {isCustOpen && (
                   <div className="absolute z-30 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                    {customers.filter(c => c.CustName.toLowerCase().includes(custSearch.toLowerCase()) || c.CustID.toLowerCase().includes(custSearch.toLowerCase())).map(c => (
+                    {customers.map(c => (
                       <div key={c.CustID} className="px-3 py-2 text-sm hover:bg-blue-50 cursor-pointer border-b" onClick={() => { setCustId(c.CustID); setCustSearch(c.CustName); setIsCustOpen(false); }}>
                         <div className="font-bold">{c.CustName}</div><div className="text-[10px] text-gray-500">{c.CustID}</div>
                       </div>
@@ -380,41 +524,91 @@ export function CreateSODialog({
               <label className="text-[10px] font-bold text-gray-500 block mb-0.5">วันที่รับของ</label>
               <ThaiDatePicker value={deliveryDate} onChange={setDeliveryDate} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none" />
             </div>
+            </div>
           </div>
+        </div>
+        )}
+
+        {/* MOBILE SEGMENTED CONTROL */}
+        <div className="lg:hidden flex border-b border-gray-200 bg-white shrink-0">
+          <button 
+            onClick={() => setMobileView('products')}
+            className={`flex-1 py-2 sm:py-3 text-sm font-bold flex items-center justify-center gap-2 transition-colors border-b-2 ${mobileView === 'products' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            <Package size={16} /> เลือกสินค้า
+          </button>
+          <button 
+            onClick={() => setMobileView('cart')}
+            className={`flex-1 py-2 sm:py-3 text-sm font-bold flex items-center justify-center gap-2 transition-colors border-b-2 relative ${mobileView === 'cart' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            <ShoppingCart size={16} /> ตะกร้าบิล
+            {totalCartItems > 0 && (
+              <span className={`absolute top-2 right-1/4 translate-x-2 -translate-y-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${mobileView === 'cart' ? 'bg-[#0C447C]' : 'bg-red-500'}`}>
+                {totalCartItems}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* MOBILE BILL TABS */}
+        <div className="lg:hidden flex items-center px-2 sm:px-4 pt-1.5 sm:pt-3 border-b border-gray-200 bg-gray-50 overflow-x-auto scrollbar-hide shrink-0 w-full">
+          {bills.map((b, i) => {
+            const billTotal = b.lines.reduce((s, l) => s + (l.isControlTicketDrawn ? 0 : l.qtyTon * l.pricePerTon), 0);
+            return (
+            <div 
+              key={b.id} 
+              onClick={() => setActiveBillId(b.id)}
+              className={`flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-t-lg border-t border-x cursor-pointer transition-colors whitespace-nowrap ${activeBillId === b.id ? 'bg-white border-gray-200 font-bold text-[#0C447C] border-b-white' : 'bg-transparent border-transparent text-gray-500 hover:text-gray-800'}`}
+              style={{ marginBottom: '-1px' }}
+            >
+              <FileText size={16} /> บิลที่ {i+1} ({b.soPrefix})
+              <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full border ${billTotal > 0 ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>฿{billTotal.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+              {!editSoId && !activeTrip && (
+                <X size={14} className="ml-2 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); removeBill(b.id); }} />
+              )}
+            </div>
+          )})}
+          {!editSoId && !activeTrip && (
+            <button onClick={addNewBill} className="ml-2 px-3 py-2 text-sm text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 shrink-0">
+              <Plus size={16} /> เพิ่มบิล
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-hidden bg-[#f9fafb]">
           <div className="grid grid-cols-1 lg:grid-cols-12 min-h-0 h-full">
             
             {/* LEFT PANEL: Bill Tabs & Items Picker */}
-            <div className="lg:col-span-8 flex flex-col border-r border-gray-200 bg-white flex-1 min-w-0 min-h-0">
+            <div className={`lg:col-span-8 flex-col border-r border-gray-200 bg-white flex-1 min-w-0 min-h-0 ${mobileView === 'products' ? 'flex' : 'hidden lg:flex'}`}>
               
-              {/* Tabs */}
-              <div className="flex items-center px-4 pt-3 border-b border-gray-200 bg-gray-50 overflow-x-auto">
+              {/* PC Tabs */}
+              <div className="hidden lg:flex items-center px-4 pt-1.5 sm:pt-3 border-b border-gray-200 bg-gray-50 overflow-x-auto scrollbar-hide w-full">
                 {bills.map((b, i) => {
                   const billTotal = b.lines.reduce((s, l) => s + (l.isControlTicketDrawn ? 0 : l.qtyTon * l.pricePerTon), 0);
                   return (
                   <div 
                     key={b.id} 
                     onClick={() => setActiveBillId(b.id)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-t-lg border-t border-x cursor-pointer transition-colors ${activeBillId === b.id ? 'bg-white border-gray-200 font-bold text-[#0C447C] border-b-white' : 'bg-transparent border-transparent text-gray-500 hover:text-gray-800'}`}
+                    className={`flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-t-lg border-t border-x cursor-pointer transition-colors whitespace-nowrap ${activeBillId === b.id ? 'bg-white border-gray-200 font-bold text-[#0C447C] border-b-white' : 'bg-transparent border-transparent text-gray-500 hover:text-gray-800'}`}
                     style={{ marginBottom: '-1px' }}
                   >
                     <FileText size={16} /> บิลที่ {i+1} ({b.soPrefix})
                     <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full border ${billTotal > 0 ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>฿{billTotal.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
-                    {bills.length > 1 && (
+                    {!editSoId && !activeTrip && bills.length > 1 && (
                       <X size={14} className="ml-2 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); removeBill(b.id); }} />
                     )}
                   </div>
                 )})}
-                <button onClick={addNewBill} className="ml-2 px-3 py-2 text-sm text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1">
-                  <Plus size={16} /> เพิ่มบิลในรถคันนี้
-                </button>
+                {!editSoId && !activeTrip && (
+                  <button onClick={addNewBill} className="ml-2 px-3 py-2 text-sm text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1">
+                    <Plus size={16} /> เพิ่มบิลในรถคันนี้
+                  </button>
+                )}
               </div>
 
               {/* Product Picker */}
-              <div className="p-4 flex flex-col flex-1 overflow-hidden min-h-0">
-                <div className="flex flex-col sm:flex-row justify-between gap-4 mb-4">
+              <div className="p-2 sm:p-4 flex flex-col flex-1 overflow-hidden min-h-0">
+                <div className="flex flex-col sm:flex-row justify-between gap-2 sm:gap-4 mb-2 sm:mb-4">
                   <div className="flex-1 flex flex-col gap-2">
                     {/* Search Input */}
                     <div className="relative">
@@ -436,7 +630,7 @@ export function CreateSODialog({
                       )}
                     </div>
                     {/* Category Filter */}
-                    <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-hide">
+                    <div className="flex flex-wrap items-center gap-1.5 pb-1">
                       {categories.map(cat => (
                       <button
                         key={cat}
@@ -564,7 +758,7 @@ export function CreateSODialog({
 
                 {/* Pagination */}
                 {totalPages > 1 && (
-                  <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
+                  <div className="flex items-center justify-between mt-2 sm:mt-4 pt-2 sm:pt-3 border-t border-gray-100">
                     <span className="text-xs text-gray-500 font-medium">หน้า {currentPage} จาก {totalPages} <span className="text-gray-400">({filteredGoods.length} รายการ)</span></span>
                     <div className="flex items-center gap-2">
                       <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="h-7 w-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-30 hover:bg-gray-50 transition-colors"><ChevronLeft size={16}/></button>
@@ -576,7 +770,7 @@ export function CreateSODialog({
             </div>
 
             {/* RIGHT PANEL: Active Bill Lines */}
-            <div className="lg:col-span-4 p-4 flex flex-col gap-4 overflow-y-auto bg-[#f9fafb]">
+            <div className={`lg:col-span-4 p-4 flex-col gap-4 overflow-y-auto bg-[#f9fafb] ${mobileView === 'cart' ? 'flex' : 'hidden lg:flex'}`}>
 
               {/* Active Bill Config */}
               <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-sm border-t-4 border-t-[#0C447C] flex flex-col flex-1 min-h-[300px]">
@@ -706,29 +900,29 @@ export function CreateSODialog({
         </div>
 
         {/* FOOTER */}
-        <div className="border-t border-gray-200 bg-white p-4 px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex gap-6">
-            <div>
-              <div className="text-xs text-gray-500 font-bold">น้ำหนักรถรวม</div>
-              <div className="text-lg font-black text-[#0C447C]">{totalTons.toLocaleString()} <span className="text-xs font-normal">ตัน</span></div>
+        <div className="border-t border-gray-200 bg-white p-2 sm:p-3 px-3 sm:px-4 flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-4 shrink-0">
+          <div className="flex flex-wrap sm:flex-nowrap justify-between w-full sm:w-auto gap-3 sm:gap-6">
+            <div className="flex-1 sm:flex-none">
+              <div className="text-[10px] sm:text-xs text-gray-500 font-bold">น้ำหนักรวม</div>
+              <div className="text-base sm:text-lg font-black text-[#0C447C]">{totalTons.toLocaleString()} <span className="text-[10px] sm:text-xs font-normal">ตัน</span></div>
             </div>
-            <div>
-              <div className="text-xs text-amber-600 font-bold">ยอดหักตั๋วคุม (AI)</div>
-              <div className="text-lg font-black text-amber-600">฿{totalOffset.toLocaleString()}</div>
+            <div className="flex-1 sm:flex-none text-center sm:text-left border-l sm:border-none border-gray-100 pl-4 sm:pl-0">
+              <div className="text-[10px] sm:text-xs text-amber-600 font-bold">ยอดหัก (AI)</div>
+              <div className="text-base sm:text-lg font-black text-amber-600">฿{totalOffset.toLocaleString()}</div>
             </div>
-            <div>
-              <div className="text-xs text-green-600 font-bold">ยอดชำระสุทธิ</div>
-              <div className="text-xl font-black text-green-600">฿{totalPayable.toLocaleString()}</div>
+            <div className="flex-1 sm:flex-none text-right sm:text-left border-l sm:border-none border-gray-100 pl-4 sm:pl-0">
+              <div className="text-[10px] sm:text-xs text-green-600 font-bold">ยอดสุทธิ</div>
+              <div className="text-lg sm:text-xl font-black text-green-600">฿{totalPayable.toLocaleString()}</div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            {error && <div className="text-red-500 text-xs font-bold bg-red-50 px-3 py-1.5 rounded-lg border border-red-100">{error}</div>}
-            <button onClick={onClose} className="px-5 py-2.5 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">ยกเลิก</button>
+          <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2 sm:gap-3">
+            {error && <div className="text-red-500 text-[10px] sm:text-xs font-bold bg-red-50 px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg border border-red-100">{error}</div>}
+            <button onClick={onClose} className="px-4 py-2 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg sm:rounded-xl transition-colors">ยกเลิก</button>
             <button
               onClick={handleSubmit}
               disabled={submitting}
-              className="px-6 py-2.5 text-sm font-bold text-white bg-[#0C447C] hover:bg-[#0a3663] rounded-xl flex items-center gap-2 shadow-lg disabled:opacity-50 transition-colors"
+              className="px-4 py-2 text-sm font-bold text-white bg-[#0C447C] hover:bg-[#0a3663] rounded-lg sm:rounded-xl flex items-center gap-2 shadow-lg disabled:opacity-50 transition-colors"
             >
               {submitting ? 'กำลังบันทึก...' : <><CheckCircle2 size={16}/> บันทึกการจัดรถ</>}
             </button>
@@ -736,5 +930,23 @@ export function CreateSODialog({
         </div>
 
       </div>
+
+      <GiveawayBorrowModal
+        isOpen={borrowModalOpen}
+        onClose={() => setBorrowModalOpen(false)}
+        brand={borrowReq.brand}
+        itemName={borrowReq.itemName}
+        requiredQty={borrowReq.requiredQty}
+        region={(userRole === 'ADMIN' ? 'ภาคเหนือ' : 'ภาคเหนือ')} // Assuming hardcoded for now, or fetch user's region
+        periodYear={new Date().getFullYear() + 543 - 2500 + 2500}
+        onSuccess={() => {
+          setBorrowModalOpen(false);
+          // Refetch quota after borrowing
+          const currentYear = new Date().getFullYear() + 543 - 2500 + 2500;
+          apiFetch(`/giveaway/my-quota?year=${currentYear}`).then(setMyQuota).catch(console.error);
+          alert('ส่งคำขอยืมเรียบร้อยแล้ว กรุณารอการอนุมัติ');
+        }}
+      />
+    </>
   );
 }

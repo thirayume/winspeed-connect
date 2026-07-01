@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { FileCheck, RefreshCw, Coins, Package, Info, CheckCircle } from 'lucide-react';
+import { FileCheck, RefreshCw, Coins, Package, Info, CheckCircle, X } from 'lucide-react';
 import {
   fetchRebateClaims, approveRebateClaim, fetchShippedToday,
 } from '../../services/api';
@@ -29,6 +29,7 @@ export function AccountingPage() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId]   = useState<number | null>(null);
   const [date, setDate]       = useState(today());
+  const [showInfo, setShowInfo] = useState(false);
 
   const load = useCallback(async (d = date) => {
     setLoading(true);
@@ -64,14 +65,17 @@ export function AccountingPage() {
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
       {/* Header */}
-      <div className="px-6 py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between">
+      <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
-            <FileCheck size={26} /> บัญชี / Winspeed
+          <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
+            <FileCheck className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> บัญชี / Winspeed
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">ออกของวันนี้ · อนุมัติเคลมรีเบท → CN</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">ออกของวันนี้ · อนุมัติเคลมรีเบท → CN</p>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => setShowInfo(true)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600">
+            <Info size={18} />
+          </button>
           <input
             type="date"
             value={date}
@@ -84,19 +88,9 @@ export function AccountingPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* Auto-sync notice */}
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3">
-          <Info size={18} className="text-blue-500 mt-0.5 shrink-0" />
-          <div className="text-sm text-blue-700">
-            <strong>Real-time Sync:</strong> เอกสารทั้งหมดที่สร้างจาก App จะถูก Sync เข้า Winspeed โดยอัตโนมัติเมื่อกด "ยืนยัน" (Confirm) —
-            ไม่ต้องดำเนินการใดๆ เพิ่มเติม เนื่องจาก App และ Winspeed ใช้ฐานข้อมูลเดียวกัน
-          </div>
-        </div>
-
-        {/* Summary cards */}
+      <div className="flex-1 overflow-y-auto p-0 sm:p-6 space-y-2 sm:space-y-6">
         <div className="grid grid-cols-3 gap-4">
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+          <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4 flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-green-50 text-green-600 flex items-center justify-center">
               <CheckCircle size={20} />
             </div>
@@ -105,7 +99,7 @@ export function AccountingPage() {
               <div className="text-2xl font-bold text-gray-800">{shipped.length}</div>
             </div>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+          <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4 flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
               <Package size={20} />
             </div>
@@ -114,7 +108,7 @@ export function AccountingPage() {
               <div className="text-2xl font-bold text-gray-800">{totalTon.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
             </div>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+          <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4 flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center">
               <Coins size={20} />
             </div>
@@ -126,7 +120,7 @@ export function AccountingPage() {
         </div>
 
         {/* Shipped today */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="text-sm font-bold text-gray-700 flex items-center gap-2">
               <CheckCircle size={16} className="text-green-500" />
@@ -142,30 +136,30 @@ export function AccountingPage() {
             <p className="text-xs text-gray-400 py-8 text-center">ไม่มีเอกสารออกในวันที่เลือก</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+              <table className="w-full text-sm min-w-full">
+                <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
                   <tr>
-                    <th className="px-4 py-3 text-left">#</th>
-                    <th className="px-4 py-3 text-left">เลขเอกสาร</th>
-                    <th className="px-4 py-3 text-left">ลูกค้า</th>
-                    <th className="px-4 py-3 text-right">ตัน</th>
-                    <th className="px-4 py-3 text-center">รายการ</th>
-                    <th className="px-4 py-3 text-left">รถ</th>
-                    <th className="px-4 py-3 text-center">สถานะ</th>
+                    <th className="px-4 py-3 text-left whitespace-nowrap">#</th>
+                    <th className="px-4 py-3 text-left whitespace-nowrap">เลขเอกสาร</th>
+                    <th className="px-4 py-3 text-left whitespace-nowrap">ลูกค้า</th>
+                    <th className="px-4 py-3 text-right whitespace-nowrap">ตัน</th>
+                    <th className="px-4 py-3 text-center whitespace-nowrap">รายการ</th>
+                    <th className="px-4 py-3 text-left whitespace-nowrap">รถ</th>
+                    <th className="px-4 py-3 text-center whitespace-nowrap">สถานะ</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {shipped.map((row, i) => (
                     <tr key={row.Id} className="hover:bg-gray-50/50">
-                      <td className="px-4 py-2.5 text-xs text-gray-400">{i + 1}</td>
-                      <td className="px-4 py-2.5 font-mono text-xs font-semibold text-[#0C447C]">{row.WfRef}</td>
+                      <td className="px-4 py-2.5 text-xs text-gray-400 whitespace-nowrap">{i + 1}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs font-semibold text-[#0C447C] whitespace-nowrap">{row.WfRef}</td>
                       <td className="px-4 py-2.5 text-gray-700 max-w-[180px] truncate" title={row.CustName}>{row.CustName}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-gray-700">
+                      <td className="px-4 py-2.5 text-right font-semibold text-gray-700 whitespace-nowrap">
                         {Number(row.TotalTon).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                       </td>
-                      <td className="px-4 py-2.5 text-center text-gray-500">{row.LineCount}</td>
-                      <td className="px-4 py-2.5 text-xs text-gray-500">{row.TruckPlate || '-'}</td>
-                      <td className="px-4 py-2.5 text-center">
+                      <td className="px-4 py-2.5 text-center text-gray-500 whitespace-nowrap">{row.LineCount}</td>
+                      <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">{row.TruckPlate || '-'}</td>
+                      <td className="px-4 py-2.5 text-center whitespace-nowrap">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[row.DocuStatus] || 'bg-gray-100 text-gray-500'}`}>
                           {STATUS_LABEL[row.DocuStatus] || row.DocuStatus}
                         </span>
@@ -179,7 +173,7 @@ export function AccountingPage() {
         </div>
 
         {/* Rebate claims */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-5">
           <h2 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
             <Coins size={16} className="text-orange-500" /> เคลมรีเบทรออนุมัติ
           </h2>
@@ -210,6 +204,23 @@ export function AccountingPage() {
           )}
         </div>
       </div>
+
+      {showInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowInfo(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold flex items-center gap-2 text-blue-800">
+                <Info size={20} /> ระบบซิงค์ข้อมูล
+              </h2>
+              <button onClick={() => setShowInfo(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            <div className="text-sm text-gray-600 space-y-3">
+              <p><strong>Real-time Sync:</strong> เอกสารทั้งหมดที่สร้างจาก App จะถูก Sync เข้า Winspeed โดยอัตโนมัติเมื่อกด "ยืนยัน" (Confirm)</p>
+              <p>ไม่ต้องดำเนินการใดๆ เพิ่มเติม เนื่องจาก App และ Winspeed ใช้ฐานข้อมูลเดียวกัน</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

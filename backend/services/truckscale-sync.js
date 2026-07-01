@@ -16,13 +16,28 @@ async function matchSo(plate) {
   if (!plate) return { id: null, status: 'UNMATCHED' };
   const np = String(plate).replace(/\s/g, '');
   if (!np) return { id: null, status: 'UNMATCHED' };
-  const cand = (await wfQuery(
-    `SELECT TOP 3 Id FROM wf.v_AllSalesOrders
-     WHERE Status IN ('CONFIRMED','PICKING','LOADED')
+  
+  // OPTIMIZED: Query active draft orders directly
+  const draftCand = (await wfQuery(
+    `SELECT TOP 3 Id FROM wf.SalesOrder
+     WHERE Status IN ('DRAFT', 'CONFIRMED', 'PICKING', 'LOADED')
        AND REPLACE(ISNULL(TruckPlate,''),' ','') LIKE @p`,
     { p: { type: sql.NVarChar(80), value: `%${np}%` } })).recordset || [];
-  if (cand.length === 1) return { id: String(cand[0].Id), status: 'MATCHED' };
-  if (cand.length > 1) return { id: null, status: 'MULTI' };
+    
+  if (draftCand.length === 1) return { id: String(draftCand[0].Id), status: 'MATCHED' };
+  if (draftCand.length > 1) return { id: null, status: 'MULTI' };
+  
+  // OPTIMIZED: Query active WINSpeed orders directly (avoid v_AllSalesOrders full scan)
+  const hdCand = (await wfQuery(
+    `SELECT TOP 3 hd.SOID AS Id FROM dbo.SOHD hd
+     LEFT JOIN wf.SalesOrderExt ext ON ext.SOID = hd.SOID
+     WHERE hd.DocuStatus NOT IN ('Y', 'C') AND ISNULL(hd.clearflag, 'N') <> 'Y'
+       AND REPLACE(ISNULL(hd.TransRegistration,''),' ','') LIKE @p`,
+    { p: { type: sql.NVarChar(80), value: `%${np}%` } })).recordset || [];
+    
+  if (hdCand.length === 1) return { id: String(hdCand[0].Id), status: 'MATCHED' };
+  if (hdCand.length > 1) return { id: null, status: 'MULTI' };
+
   return { id: null, status: 'UNMATCHED' };
 }
 

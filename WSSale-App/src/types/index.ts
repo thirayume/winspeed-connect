@@ -74,6 +74,7 @@ export type CurrentPrice = {
   EndDate: string;
   startgoodqty: number;
   endgoodqty: number;
+  IsExpired?: number;
 };
 
 // ── wf.SalesOrder State Machine ───────────────────────────────
@@ -102,6 +103,7 @@ export type SalesOrderLine = {
   rebatePerTon?: number;      // computed: pricePerTon - netPricePerTon
   rebateAmount?: number;      // computed: rebatePerTon * qtyTon
   isGiveaway: boolean;
+  isControlTicketDrawn?: boolean;
   rebateBooked?: boolean;
   loadSequence?: number;
 };
@@ -119,6 +121,7 @@ export type SalesOrder = {
   status: SOStatus;
   salesUserId?: number;
   salesName?: string;
+  rebateDiscountAmt?: number;
   importFilePath?: string;
   importedDocuNo?: string;
   importedAt?: string;
@@ -379,6 +382,7 @@ export type PaperCard = {
   controlTicketNo?: string;
   importedDocuNo?: string;
   createdAt: string;
+  deliveryDate?: string;
   salesName?: string;
   qtyTon: number;
   lineCnt: number;
@@ -441,6 +445,15 @@ export type PaperScanRow = {
 };
 
 // ── Trucks ────────────────────────────────────────────────────
+export type TruckType = {
+  Id: string;
+  Name: string;
+  SlotCount: number;
+  TrailerSlotCount?: number | null;
+  MaxTonPerSlot: number;
+  IsActive?: boolean;
+};
+
 export type TruckStats = {
   truckPlate: string;
   custName: string;
@@ -536,7 +549,10 @@ export type UnlockReq = {
   WfRef?: string | null;
   Reason: string;
   Status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  ReqType: 'UNLOCK' | 'EDIT' | 'CANCEL';
+  RequesterId: number;
   RequesterName?: string | null;
+  ApproverId?: number;
   ApproverName?: string | null;
   ResponseNote?: string | null;
   RequestedAt: string;

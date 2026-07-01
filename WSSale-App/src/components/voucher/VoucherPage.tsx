@@ -53,7 +53,7 @@ export function VoucherPage() {
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
-      <div className="px-6 py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between">
+      <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           {view !== 'summary' && (
             <button onClick={goBack} className="h-8 w-8 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50">
@@ -61,13 +61,13 @@ export function VoucherPage() {
             </button>
           )}
           <div>
-            <h1 className="text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
-              <Ticket size={26} />
+            <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
+              <Ticket className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
               {view === 'summary' && 'Voucher คงค้าง'}
               {view === 'customer' && `ลูกค้าของ ${selEmp?.EmpName}`}
               {view === 'coupon'   && `Voucher ของ ${selCust?.CustName}`}
             </h1>
-            <p className="text-sm text-gray-500 mt-0.5">
+            <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
               {view === 'summary'  && 'ยอด Voucher คงค้างจาก Winspeed (WFCoupon) · แยกตามพนักงานขาย'}
               {view === 'customer' && `${customers.length} ลูกค้า · คลิกเพื่อดูรายการ voucher`}
               {view === 'coupon'   && `${coupons.length} ใบคงค้าง`}
@@ -79,13 +79,13 @@ export function VoucherPage() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-5">
+      <div className="flex-1 overflow-y-auto p-0 sm:p-6 space-y-2 sm:space-y-5">
 
         {/* ── SUMMARY ── */}
         {view === 'summary' && (
           <>
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+              <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-[#0C447C]/10 text-[#0C447C] flex items-center justify-center shrink-0">
                   <Package size={20} />
                 </div>
@@ -94,7 +94,7 @@ export function VoucherPage() {
                   <div className="text-2xl font-bold text-gray-800">{totalTon.toLocaleString(undefined,{maximumFractionDigits:1})}</div>
                 </div>
               </div>
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+              <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                   <Users size={20} />
                 </div>
@@ -105,7 +105,7 @@ export function VoucherPage() {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100">
                 <h2 className="text-sm font-bold text-gray-700">แยกตามพนักงานขาย</h2>
                 <p className="text-xs text-gray-400 mt-0.5">คลิกเพื่อดูลูกค้าในสังกัด</p>
@@ -152,7 +152,7 @@ export function VoucherPage() {
 
         {/* ── CUSTOMER LIST ── */}
         {view === 'customer' && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100">
               <h2 className="text-sm font-bold text-gray-700">ลูกค้าในสังกัด {selEmp?.EmpName}</h2>
               <p className="text-xs text-gray-400 mt-0.5">คลิกเพื่อดูรายการ voucher</p>
@@ -161,28 +161,28 @@ export function VoucherPage() {
               <div className="py-12 flex justify-center"><RefreshCw size={24} className="animate-spin text-gray-300" /></div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                <table className="w-full text-sm min-w-full">
+                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
                     <tr>
-                      <th className="px-4 py-3 text-left">ลูกค้า</th>
-                      <th className="px-4 py-3 text-center">ใบ</th>
-                      <th className="px-4 py-3 text-right">คงค้าง (ตัน)</th>
-                      <th className="px-4 py-3 text-center">ใบแรก</th>
-                      <th className="px-4 py-3"></th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">ลูกค้า</th>
+                      <th className="px-4 py-3 text-center whitespace-nowrap">ใบ</th>
+                      <th className="px-4 py-3 text-right whitespace-nowrap">คงค้าง (ตัน)</th>
+                      <th className="px-4 py-3 text-center whitespace-nowrap">ใบแรก</th>
+                      <th className="px-4 py-3 whitespace-nowrap"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {customers.map(c => (
                       <tr key={c.CustID} onClick={() => drillCust(c)} className="hover:bg-blue-50/40 cursor-pointer transition-colors">
-                        <td className="px-4 py-3 font-medium text-gray-800">{c.CustName}</td>
-                        <td className="px-4 py-3 text-center text-gray-500">{c.CouponCount}</td>
-                        <td className="px-4 py-3 text-right font-bold text-[#0C447C]">
+                        <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{c.CustName}</td>
+                        <td className="px-4 py-3 text-center text-gray-500 whitespace-nowrap">{c.CouponCount}</td>
+                        <td className="px-4 py-3 text-right font-bold text-[#0C447C] whitespace-nowrap">
                           {Number(c.OutstandingTon).toLocaleString(undefined,{maximumFractionDigits:2})}
                         </td>
-                        <td className="px-4 py-3 text-center text-xs text-gray-400">
+                        <td className="px-4 py-3 text-center text-xs text-gray-400 whitespace-nowrap">
                           {c.OldestDate?.substring(0,10) || '-'}
                         </td>
-                        <td className="px-4 py-3 text-right"><ChevronRight size={16} className="text-gray-300 ml-auto" /></td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap"><ChevronRight size={16} className="text-gray-300 ml-auto" /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -194,7 +194,7 @@ export function VoucherPage() {
 
         {/* ── COUPON DETAIL ── */}
         {view === 'coupon' && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100">
               <h2 className="text-sm font-bold text-gray-700">{selCust?.CustName}</h2>
               <p className="text-xs text-gray-400 mt-0.5">Sales: {selCust?.EmpName} · voucher ที่ยังไม่ได้เบิก</p>
@@ -203,28 +203,28 @@ export function VoucherPage() {
               <div className="py-12 flex justify-center"><RefreshCw size={24} className="animate-spin text-gray-300" /></div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                <table className="w-full text-sm min-w-full">
+                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
                     <tr>
-                      <th className="px-4 py-3 text-left">เลข Voucher</th>
-                      <th className="px-4 py-3 text-left">เลข SO</th>
-                      <th className="px-4 py-3 text-center">วันที่</th>
-                      <th className="px-4 py-3 text-left">สินค้า</th>
-                      <th className="px-4 py-3 text-right">ออก (ตัน)</th>
-                      <th className="px-4 py-3 text-right">เบิกแล้ว</th>
-                      <th className="px-4 py-3 text-right">คงเหลือ</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">เลข Voucher</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">เลข SO</th>
+                      <th className="px-4 py-3 text-center whitespace-nowrap">วันที่</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">สินค้า</th>
+                      <th className="px-4 py-3 text-right whitespace-nowrap">ออก (ตัน)</th>
+                      <th className="px-4 py-3 text-right whitespace-nowrap">เบิกแล้ว</th>
+                      <th className="px-4 py-3 text-right whitespace-nowrap">คงเหลือ</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {coupons.map(c => (
                       <tr key={c.CouponID} className="hover:bg-gray-50/50">
-                        <td className="px-4 py-2.5 font-mono text-xs font-semibold text-[#0C447C]">{c.CouponNo}</td>
-                        <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{c.SONo}</td>
-                        <td className="px-4 py-2.5 text-center text-xs text-gray-400">{c.DocuDate}</td>
+                        <td className="px-4 py-2.5 font-mono text-xs font-semibold text-[#0C447C] whitespace-nowrap">{c.CouponNo}</td>
+                        <td className="px-4 py-2.5 font-mono text-xs text-gray-500 whitespace-nowrap">{c.SONo}</td>
+                        <td className="px-4 py-2.5 text-center text-xs text-gray-400 whitespace-nowrap">{c.DocuDate}</td>
                         <td className="px-4 py-2.5 text-gray-700 max-w-[180px] truncate" title={c.GoodName}>{c.GoodName}</td>
-                        <td className="px-4 py-2.5 text-right text-gray-500">{Number(c.GoodQty).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-                        <td className="px-4 py-2.5 text-right text-gray-400">{Number(c.RedeemedQty).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-                        <td className="px-4 py-2.5 text-right font-bold text-green-600">
+                        <td className="px-4 py-2.5 text-right text-gray-500 whitespace-nowrap">{Number(c.GoodQty).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+                        <td className="px-4 py-2.5 text-right text-gray-400 whitespace-nowrap">{Number(c.RedeemedQty).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+                        <td className="px-4 py-2.5 text-right font-bold text-green-600 whitespace-nowrap">
                           {Number(c.RemaQty).toLocaleString(undefined,{maximumFractionDigits:2})}
                         </td>
                       </tr>
@@ -232,14 +232,14 @@ export function VoucherPage() {
                   </tbody>
                   <tfoot className="bg-gray-50 border-t border-gray-100 text-sm">
                     <tr>
-                      <td colSpan={4} className="px-4 py-2.5 text-right text-xs font-bold text-gray-500">รวม</td>
-                      <td className="px-4 py-2.5 text-right font-bold text-gray-600">
+                      <td colSpan={4} className="px-4 py-2.5 text-right text-xs font-bold text-gray-500 whitespace-nowrap">รวม</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-gray-600 whitespace-nowrap">
                         {coupons.reduce((s,c)=>s+Number(c.GoodQty),0).toLocaleString(undefined,{maximumFractionDigits:2})}
                       </td>
-                      <td className="px-4 py-2.5 text-right font-bold text-gray-400">
+                      <td className="px-4 py-2.5 text-right font-bold text-gray-400 whitespace-nowrap">
                         {coupons.reduce((s,c)=>s+Number(c.RedeemedQty),0).toLocaleString(undefined,{maximumFractionDigits:2})}
                       </td>
-                      <td className="px-4 py-2.5 text-right font-bold text-green-600">
+                      <td className="px-4 py-2.5 text-right font-bold text-green-600 whitespace-nowrap">
                         {coupons.reduce((s,c)=>s+Number(c.RemaQty),0).toLocaleString(undefined,{maximumFractionDigits:2})}
                       </td>
                     </tr>

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { FileCheck2, RefreshCw, ChevronRight, ChevronLeft, Search, Calendar, Info } from 'lucide-react';
+import { FileCheck2, RefreshCw, ChevronRight, ChevronLeft, Search, Calendar, Info, X } from 'lucide-react';
 import { fetchCnRebateSummary, fetchCnRebateList, fetchCnRebateDetail } from '../../services/api';
 import type { CnRebateSummary, CnRebateRow, CnRebateDetail } from '../../types';
 
@@ -17,6 +17,7 @@ export function CnRebatePage() {
   const [selCN, setSelCN]         = useState<CnRebateRow | null>(null);
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState('');
+  const [showInfo, setShowInfo]   = useState(false);
 
   const loadSummary = useCallback(async () => {
     setLoading(true);
@@ -64,7 +65,7 @@ export function CnRebatePage() {
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
       {/* Header */}
-      <div className="px-6 py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between">
+      <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           {view !== 'summary' && (
             <button onClick={goBack} className="h-8 w-8 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50">
@@ -72,13 +73,13 @@ export function CnRebatePage() {
             </button>
           )}
           <div>
-            <h1 className="text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
-              <FileCheck2 size={26} />
+            <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
+              <FileCheck2 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
               {view === 'summary' && 'CN Rebate (Winspeed)'}
               {view === 'list'    && `CN ของ ${selSales?.SalesName}`}
               {view === 'detail'  && `${selCN?.CNDocuNo}`}
             </h1>
-            <p className="text-sm text-gray-500 mt-0.5">
+            <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
               {view === 'summary' && 'ใบลดหนี้ rebate จาก dbo.SOInvHD · DocuType=109 · CNRemarkType=ส่วนลดลูกค้า'}
               {view === 'list'    && `${list.length} CN · คลิกเพื่อดูรายการสินค้า`}
               {view === 'detail'  && `${selCN?.CustName} · Orig: ${selCN?.OrigInvNo}`}
@@ -86,6 +87,9 @@ export function CnRebatePage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => setShowInfo(true)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600">
+            <Info size={18} />
+          </button>
           {/* Year filter */}
           <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
             <Calendar size={14} className="text-gray-400" />
@@ -103,30 +107,20 @@ export function CnRebatePage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-5">
+      <div className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-2 sm:space-y-4 min-h-0">
 
         {/* ── SUMMARY ── */}
         {view === 'summary' && (
           <>
             {/* KPI cards */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                <div className="text-xs text-gray-400 mb-1">รวม CN rebate ทั้งหมด</div>
-                <div className="text-2xl font-bold" style={{ color: '#0C447C' }}>{THB(totalRebate)}</div>
-                <div className="text-xs text-gray-400 mt-1">{totalCN} ใบ · {summary.length} พนักงานขาย</div>
-              </div>
-              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-start gap-2">
-                <Info size={16} className="text-amber-500 mt-0.5 shrink-0" />
-                <div className="text-xs text-amber-700 space-y-1">
-                  <p><strong>Single source of truth:</strong> ข้อมูลนี้ดึงตรงจาก Winspeed</p>
-                  <p>CN ที่ออกแล้ว (DocuStatus=Y) = cleared ทั้งหมด</p>
-                  <p>CN ที่ยังค้างอยู่ = RemaAmnt &gt; 0</p>
-                </div>
-              </div>
+            <div className="bg-white rounded-none sm:rounded-xl border-y sm:border border-gray-100 shadow-sm p-4 text-center sm:text-left flex flex-col items-center sm:items-start min-w-0 shrink-0">
+              <div className="text-xs text-gray-400 mb-1">รวม CN rebate ทั้งหมด</div>
+              <div className="text-2xl font-bold" style={{ color: '#0C447C' }}>{THB(totalRebate)}</div>
+              <div className="text-xs text-gray-400 mt-1">{totalCN} ใบ · {summary.length} พนักงานขาย</div>
             </div>
 
             {/* Summary table */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100">
                 <h2 className="text-sm font-bold text-gray-700">สรุปต่อพนักงานขาย</h2>
                 <p className="text-xs text-gray-400 mt-0.5">คลิกเพื่อดูรายการ CN</p>
@@ -136,16 +130,16 @@ export function CnRebatePage() {
               ) : summary.length === 0 ? (
                 <p className="py-10 text-center text-sm text-gray-400">ไม่พบข้อมูล CN rebate{year ? ` ปี ${year + 543}` : ''}</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                <div className="overflow-auto w-full h-full pb-2">
+                  <table className="w-full text-sm text-left min-w-full">
+                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
                       <tr>
-                        <th className="px-5 py-3 text-left">พนักงานขาย</th>
-                        <th className="px-4 py-3 text-center">จำนวน CN</th>
-                        <th className="px-4 py-3 text-center">ลูกค้า</th>
-                        <th className="px-4 py-3 text-right">รวม rebate</th>
-                        <th className="px-4 py-3 text-center">ล่าสุด</th>
-                        <th className="px-4 py-3"></th>
+                        <th className="px-5 py-3 text-left whitespace-nowrap">พนักงานขาย</th>
+                        <th className="px-4 py-3 text-center whitespace-nowrap">จำนวน CN</th>
+                        <th className="px-4 py-3 text-center whitespace-nowrap">ลูกค้า</th>
+                        <th className="px-4 py-3 text-right whitespace-nowrap">รวม rebate</th>
+                        <th className="px-4 py-3 text-center whitespace-nowrap">ล่าสุด</th>
+                        <th className="px-4 py-3 whitespace-nowrap"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -153,28 +147,28 @@ export function CnRebatePage() {
                         const pct = totalRebate ? (Number(s.TotalRebate) / totalRebate) * 100 : 0;
                         return (
                           <tr key={s.EmpID} onClick={() => drillSales(s)} className="hover:bg-blue-50/40 cursor-pointer transition-colors">
-                            <td className="px-5 py-3">
+                            <td className="px-5 py-3 whitespace-nowrap">
                               <div className="font-semibold text-gray-800">{s.SalesName}</div>
                               <div className="h-1.5 w-28 bg-gray-100 rounded-full mt-1 overflow-hidden">
                                 <div className="h-full bg-[#0C447C] rounded-full" style={{ width: `${pct}%` }} />
                               </div>
                             </td>
-                            <td className="px-4 py-3 text-center text-gray-600">{s.CNCount}</td>
-                            <td className="px-4 py-3 text-center text-gray-600">{s.CustCount}</td>
-                            <td className="px-4 py-3 text-right font-bold" style={{ color: '#0C447C' }}>{THB(s.TotalRebate)}</td>
-                            <td className="px-4 py-3 text-center text-xs text-gray-400">{s.LastCN?.substring(0,10)}</td>
-                            <td className="px-4 py-3"><ChevronRight size={16} className="text-gray-300 ml-auto" /></td>
+                            <td className="px-4 py-3 text-center text-gray-600 whitespace-nowrap">{s.CNCount}</td>
+                            <td className="px-4 py-3 text-center text-gray-600 whitespace-nowrap">{s.CustCount}</td>
+                            <td className="px-4 py-3 text-right font-bold whitespace-nowrap" style={{ color: '#0C447C' }}>{THB(s.TotalRebate)}</td>
+                            <td className="px-4 py-3 text-center text-xs text-gray-400 whitespace-nowrap">{s.LastCN?.substring(0,10)}</td>
+                            <td className="px-4 py-3 whitespace-nowrap"><ChevronRight size={16} className="text-gray-300 ml-auto" /></td>
                           </tr>
                         );
                       })}
                     </tbody>
                     <tfoot className="bg-gray-50 border-t border-gray-200 text-sm font-bold">
                       <tr>
-                        <td className="px-5 py-3 text-gray-600">รวม</td>
-                        <td className="px-4 py-3 text-center text-gray-600">{totalCN}</td>
-                        <td className="px-4 py-3"></td>
-                        <td className="px-4 py-3 text-right" style={{ color: '#0C447C' }}>{THB(totalRebate)}</td>
-                        <td colSpan={2}></td>
+                        <td className="px-5 py-3 text-gray-600 whitespace-nowrap">รวม</td>
+                        <td className="px-4 py-3 text-center text-gray-600 whitespace-nowrap">{totalCN}</td>
+                        <td className="px-4 py-3 whitespace-nowrap"></td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap" style={{ color: '#0C447C' }}>{THB(totalRebate)}</td>
+                        <td colSpan={2} className="whitespace-nowrap"></td>
                       </tr>
                     </tfoot>
                   </table>
@@ -186,7 +180,7 @@ export function CnRebatePage() {
 
         {/* ── CN LIST ── */}
         {view === 'list' && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden flex-1 grid grid-rows-[auto_1fr_auto] min-h-0">
             <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-3">
               <Search size={14} className="text-gray-400" />
               <input
@@ -198,28 +192,28 @@ export function CnRebatePage() {
             {loading ? (
               <div className="py-12 flex justify-center"><RefreshCw size={24} className="animate-spin text-gray-300" /></div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+              <div className="overflow-auto w-full h-full pb-2">
+              <table className="w-full text-sm text-left min-w-full">
+                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
                     <tr>
-                      <th className="px-4 py-3 text-left">เลข CN</th>
-                      <th className="px-4 py-3 text-center">วันที่</th>
-                      <th className="px-4 py-3 text-left">ลูกค้า</th>
-                      <th className="px-4 py-3 text-left">INV อ้างอิง</th>
-                      <th className="px-4 py-3 text-right">ยอด CN</th>
-                      <th className="px-4 py-3 text-center">สถานะ</th>
-                      <th className="px-4 py-3"></th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">เลข CN</th>
+                      <th className="px-4 py-3 text-center whitespace-nowrap">วันที่</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">ลูกค้า</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">INV อ้างอิง</th>
+                      <th className="px-4 py-3 text-right whitespace-nowrap">ยอด CN</th>
+                      <th className="px-4 py-3 text-center whitespace-nowrap">สถานะ</th>
+                      <th className="px-4 py-3 whitespace-nowrap"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {filteredList.map(row => (
                       <tr key={row.SOInvID} onClick={() => drillCN(row)} className="hover:bg-blue-50/40 cursor-pointer transition-colors">
-                        <td className="px-4 py-2.5 font-mono text-xs font-bold text-[#0C447C]">{row.CNDocuNo}</td>
-                        <td className="px-4 py-2.5 text-center text-xs text-gray-400">{row.CNDate}</td>
+                        <td className="px-4 py-2.5 font-mono text-xs font-bold text-[#0C447C] whitespace-nowrap">{row.CNDocuNo}</td>
+                        <td className="px-4 py-2.5 text-center text-xs text-gray-400 whitespace-nowrap">{row.CNDate}</td>
                         <td className="px-4 py-2.5 text-gray-700 max-w-[180px] truncate" title={row.CustName}>{row.CustName}</td>
-                        <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{row.OrigInvNo}</td>
-                        <td className="px-4 py-2.5 text-right font-bold text-gray-800">{THB(row.CNAmt)}</td>
-                        <td className="px-4 py-2.5 text-center">
+                        <td className="px-4 py-2.5 font-mono text-xs text-gray-500 whitespace-nowrap">{row.OrigInvNo}</td>
+                        <td className="px-4 py-2.5 text-right font-bold text-gray-800 whitespace-nowrap">{THB(row.CNAmt)}</td>
+                        <td className="px-4 py-2.5 text-center whitespace-nowrap">
                           {Number(row.RemaAmnt) > 0 ? (
                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-bold">
                               คงค้าง {THB(row.RemaAmnt)}
@@ -230,20 +224,20 @@ export function CnRebatePage() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-2.5"><ChevronRight size={16} className="text-gray-300 ml-auto" /></td>
+                        <td className="px-4 py-2.5 whitespace-nowrap"><ChevronRight size={16} className="text-gray-300 ml-auto" /></td>
                       </tr>
                     ))}
                     {filteredList.length === 0 && (
-                      <tr><td colSpan={7} className="py-10 text-center text-gray-300 text-sm">ไม่พบรายการ</td></tr>
+                      <tr><td colSpan={7} className="py-10 text-center text-gray-300 text-sm whitespace-nowrap">ไม่พบรายการ</td></tr>
                     )}
                   </tbody>
                   <tfoot className="bg-gray-50 border-t border-gray-100">
                     <tr>
-                      <td colSpan={4} className="px-4 py-2.5 text-xs font-bold text-gray-500 text-right">รวม {filteredList.length} ใบ</td>
-                      <td className="px-4 py-2.5 text-right font-bold text-gray-700">
+                      <td colSpan={4} className="px-4 py-2.5 text-xs font-bold text-gray-500 text-right whitespace-nowrap">รวม {filteredList.length} ใบ</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-gray-700 whitespace-nowrap">
                         {THB(filteredList.reduce((s, r) => s + Number(r.CNAmt), 0))}
                       </td>
-                      <td colSpan={2}></td>
+                      <td colSpan={2} className="whitespace-nowrap"></td>
                     </tr>
                   </tfoot>
                 </table>
@@ -256,7 +250,7 @@ export function CnRebatePage() {
         {view === 'detail' && selCN && (
           <>
             {/* CN header card */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 grid grid-cols-2 gap-4 text-sm">
+            <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-5 grid grid-cols-2 gap-4 text-sm">
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-gray-400">เลข CN</span>
@@ -300,53 +294,53 @@ export function CnRebatePage() {
             </div>
 
             {/* CN lines */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100">
                 <h2 className="text-sm font-bold text-gray-700">รายการสินค้า · ยอด rebate</h2>
               </div>
               {loading ? (
                 <div className="py-10 flex justify-center"><RefreshCw size={20} className="animate-spin text-gray-300" /></div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                <div className="overflow-x-auto pb-2">
+                  <table className="w-full text-sm min-w-full">
+                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
                       <tr>
-                        <th className="px-5 py-3 text-left">สินค้า</th>
-                        <th className="px-4 py-3 text-right">ราคาขาย (INV)</th>
-                        <th className="px-4 py-3 text-right">Rebate/ตัน</th>
-                        <th className="px-4 py-3 text-right">จำนวน (ตัน)</th>
-                        <th className="px-4 py-3 text-right">รวม Rebate</th>
+                        <th className="px-5 py-3 text-left whitespace-nowrap">สินค้า</th>
+                        <th className="px-4 py-3 text-right whitespace-nowrap">ราคาขาย (INV)</th>
+                        <th className="px-4 py-3 text-right whitespace-nowrap">Rebate/ตัน</th>
+                        <th className="px-4 py-3 text-right whitespace-nowrap">จำนวน (ตัน)</th>
+                        <th className="px-4 py-3 text-right whitespace-nowrap">รวม Rebate</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {detail.map(d => (
                         <tr key={d.ListNo} className="hover:bg-gray-50/50">
-                          <td className="px-5 py-3 text-gray-700">{d.GoodName}</td>
-                          <td className="px-4 py-3 text-right text-gray-500 tabular-nums">
+                          <td className="px-5 py-3 text-gray-700 whitespace-nowrap">{d.GoodName}</td>
+                          <td className="px-4 py-3 text-right text-gray-500 tabular-nums whitespace-nowrap">
                             {d.OrigPrice ? THB(d.OrigPrice) : '-'}
                           </td>
-                          <td className="px-4 py-3 text-right text-amber-600 font-semibold tabular-nums">
+                          <td className="px-4 py-3 text-right text-amber-600 font-semibold tabular-nums whitespace-nowrap">
                             {THB(d.RebatePerTon)}
                           </td>
-                          <td className="px-4 py-3 text-right text-gray-600 tabular-nums">
+                          <td className="px-4 py-3 text-right text-gray-600 tabular-nums whitespace-nowrap">
                             {Number(d.QtyTon).toFixed(2)}
                           </td>
-                          <td className="px-4 py-3 text-right font-bold tabular-nums" style={{ color: '#0C447C' }}>
+                          <td className="px-4 py-3 text-right font-bold tabular-nums whitespace-nowrap" style={{ color: '#0C447C' }}>
                             {THB(d.RebateAmt)}
                           </td>
                         </tr>
                       ))}
                       {detail.length === 0 && (
-                        <tr><td colSpan={5} className="py-8 text-center text-gray-300">ไม่มีรายการสินค้า</td></tr>
+                        <tr><td colSpan={5} className="py-8 text-center text-gray-300 whitespace-nowrap">ไม่มีรายการสินค้า</td></tr>
                       )}
                     </tbody>
                     <tfoot className="bg-gray-50 border-t border-gray-200">
                       <tr>
-                        <td colSpan={3} className="px-5 py-3 text-xs font-bold text-gray-500 text-right">รวม</td>
-                        <td className="px-4 py-3 text-right font-bold text-gray-600 tabular-nums">
+                        <td colSpan={3} className="px-5 py-3 text-xs font-bold text-gray-500 text-right whitespace-nowrap">รวม</td>
+                        <td className="px-4 py-3 text-right font-bold text-gray-600 tabular-nums whitespace-nowrap">
                           {detail.reduce((s, d) => s + Number(d.QtyTon), 0).toFixed(2)}
                         </td>
-                        <td className="px-4 py-3 text-right font-bold tabular-nums" style={{ color: '#0C447C' }}>
+                        <td className="px-4 py-3 text-right font-bold tabular-nums whitespace-nowrap" style={{ color: '#0C447C' }}>
                           {THB(detail.reduce((s, d) => s + Number(d.RebateAmt), 0))}
                         </td>
                       </tr>
@@ -358,6 +352,23 @@ export function CnRebatePage() {
           </>
         )}
       </div>
+      {showInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowInfo(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold flex items-center gap-2 text-amber-600">
+                <Info size={20} /> ข้อมูล CN รีเบท
+              </h2>
+              <button onClick={() => setShowInfo(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            <div className="text-sm text-gray-600 space-y-3">
+              <p><strong>Single source of truth:</strong> ข้อมูลนี้ดึงตรงจาก Winspeed</p>
+              <p><strong>CN ที่ออกแล้ว (DocuStatus=Y)</strong><br/>= cleared ทั้งหมด</p>
+              <p><strong>CN ที่ยังค้างอยู่</strong><br/>= RemaAmnt &gt; 0</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

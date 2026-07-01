@@ -77,7 +77,6 @@ SELECT
     ext.WeighOutWeight
 FROM dbo.SOHD hd
 LEFT JOIN wf.SalesOrderExt ext ON ext.SOID = hd.SOID
-WHERE EXISTS (SELECT 1 FROM dbo.SODT dt WHERE dt.SOID = hd.SOID)
 GO
 
 -- 3. Update wf.v_AllSalesOrderLines View

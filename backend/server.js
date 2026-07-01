@@ -83,6 +83,18 @@ app.use((req, res, next) => {
 });
 app.get('/api/dbinfo', (req, res) => res.json({ target: getTarget(), default: DEFAULT_TARGET }));
 
+// ── Global Param Validator ────────────────────────────────────
+app.use((req, res, next) => {
+  const hasInvalidPath = req.path.includes('/undefined') || req.path.includes('/NaN') || req.path.includes('/null');
+  const hasInvalidQuery = Object.values(req.query).some(v => v === 'undefined' || v === 'null' || v === 'NaN');
+  
+  if (hasInvalidPath || hasInvalidQuery) {
+    console.warn(`[Blocked] Invalid parameters: ${req.method} ${req.originalUrl}`);
+    return res.status(400).json({ message: 'Invalid URL parameter or query (undefined/NaN/null)' });
+  }
+  next();
+});
+
 // ── Routes ────────────────────────────────────────────────────
 app.use('/api/auth',   require('./routes/auth'));
 app.use('/api/master', require('./routes/master'));

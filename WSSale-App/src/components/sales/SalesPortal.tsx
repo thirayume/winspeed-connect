@@ -1,13 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, RefreshCw, ChevronRight, Filter, ChevronLeft, Package, Calendar, User, X } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Plus, Search, RefreshCw, ChevronRight, Filter, ChevronLeft, Package, Calendar, User, X, Clock, Truck, Gift, Trash2 } from 'lucide-react';
 import { Button, Card, cn } from '../ui/Base';
 import { useErpStore } from '../../store/erp-store';
 import { useAppStore } from '../../store/app-store';
-import { fetchSalesOrders, fetchSalesOrder } from '../../services/api';
+import { fetchSalesOrders, fetchSalesOrder, cancelSO, fetchCustomers } from '../../services/api';
+import { appConfirm } from '../ui/AppAlert';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { SOStatusBadge } from './SOStatusBadge';
 import { CreateSODialog } from './CreateSODialog';
 import { SODetailsPanel } from './SODetailsPanel';
+import { TripSetupModal } from './TripSetupModal';
+import { TripSummaryModal } from './TripSummaryModal';
+import { useTripStore } from '../../store/trip-store';
+import { CheckCircle } from 'lucide-react';
 import type { SalesOrder, SOStatus } from '../../types';
 
 export const SalesPortal = () => {
@@ -15,11 +20,19 @@ export const SalesPortal = () => {
   const [totalOrders, setTotalOrders] = useState(0);
   const [loading, setLoading]       = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [editingSoId, setEditingSoId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [externalSelectedSo, setExternalSelectedSo] = useState<SalesOrder | null>(null);
+  const [returnToTripFromSoId, setReturnToTripFromSoId] = useState<string | null>(null);
+  const [returnToTripKey, setReturnToTripKey] = useState<string | null>(null);
+  
+  const [customersMap, setCustomersMap] = useState<Record<string, string>>({});
 
   const navParams = useAppStore(s => s.navParams);
   const clearNavParams = useAppStore(s => s.clearNavParams);
+
+  const { activeTrip, setTrip, clearTrip } = useTripStore();
+  const [isTripSetupOpen, setIsTripSetupOpen] = useState(false);
 
   const [page, setPage]               = useState(1);
   const [limit]                        = useState(20);
@@ -27,6 +40,8 @@ export const SalesPortal = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [statusFilter, setStatusFilter] = useState<SOStatus | ''>('');
+  
+  const [viewingTrip, setViewingTrip] = useState<any>(null);
 
   const unlockRequests  = useErpStore(s => s.unlockRequests);
   const setUnlockRequests = useErpStore(s => s.setUnlockRequests);
@@ -54,7 +69,69 @@ export const SalesPortal = () => {
     setLoading(false);
   }, [page, limit, debouncedSearch, statusFilter, setUnlockRequests]);
 
+  const handleConfirmTrip = async () => {
+    if (!activeTrip) return;
+    
+    // Find all draft orders that match the active trip's criteria
+    const tripOrders = orders.filter(so => {
+      const matchCust = so.custId === activeTrip.custId;
+      const matchTruck = so.truckPlate === activeTrip.truckPlate;
+      const soDate = so.deliveryDate ? so.deliveryDate.split('T')[0] : '';
+      const matchDate = soDate === activeTrip.deliveryDate;
+      return so.status === 'DRAFT' && matchCust && matchTruck && matchDate;
+    });
+
+    if (tripOrders.length === 0) {
+      alert('ไม่พบบิลในทริปนี้ กรุณาเพิ่มบิลก่อนยืนยัน');
+      return;
+    }
+
+    if (window.confirm(`ต้องการยืนยันออร์เดอร์ทริปนี้ทั้ง ${tripOrders.length} บิลใช่หรือไม่?`)) {
+      try {
+        setLoading(true);
+        // Using existing confirmSO endpoint for each bill
+        const { confirmSO } = await import('../../services/api');
+        await Promise.all(tripOrders.map(so => confirmSO(so.id as number)));
+        alert('ยืนยันออร์เดอร์ทริปสำเร็จ');
+        clearTrip();
+        loadData();
+      } catch (e: any) {
+        alert(e.message || 'เกิดข้อผิดพลาดในการยืนยัน');
+        setLoading(false);
+      }
+    }
+  };
+
   useEffect(() => { loadData(); }, [loadData]);
+  
+  useEffect(() => {
+    fetchCustomers().then(custs => {
+      const map: Record<string, string> = {};
+      custs.forEach(c => {
+        if (c.CustID) map[c.CustID] = c.CustName;
+      });
+      setCustomersMap(map);
+    }).catch(console.error);
+  }, []);
+
+  const [attemptedCustIds] = useState(() => new Set<string>());
+
+  useEffect(() => {
+    const missingIds = Array.from(new Set(
+      orders.map(o => o.custId).filter(id => id && !customersMap[id] && !attemptedCustIds.has(id))
+    ));
+    if (missingIds.length > 0) {
+      missingIds.forEach(id => {
+        attemptedCustIds.add(id);
+        fetchCustomers(id).then(res => {
+          const match = res.find(c => String(c.CustID) === String(id));
+          if (match) {
+            setCustomersMap(prev => ({ ...prev, [id]: match.CustName }));
+          }
+        }).catch(console.error);
+      });
+    }
+  }, [orders, customersMap, attemptedCustIds]);
 
   // Listen for real-time updates
   useSocketEvent('so_updated', () => {
@@ -65,10 +142,14 @@ export const SalesPortal = () => {
   // Handle Jump to SO
   useEffect(() => {
     if (navParams?.soId) {
-      setSelectedId(navParams.soId);
-      fetchSalesOrder(navParams.soId).then(so => {
-        setExternalSelectedSo(so);
-      }).catch(console.error);
+      if (navParams.action === 'edit') {
+        setEditingSoId(navParams.soId ? String(navParams.soId) : null);
+      } else {
+        setSelectedId(navParams.soId);
+        fetchSalesOrder(navParams.soId).then(so => {
+          setExternalSelectedSo(so);
+        }).catch(console.error);
+      }
       clearNavParams();
     }
   }, [navParams, clearNavParams]);
@@ -80,38 +161,134 @@ export const SalesPortal = () => {
   const totalPages = Math.ceil(totalOrders / limit) || 1;
   const selectedSo = orders.find(o => o.id === selectedId) || externalSelectedSo;
 
+  const groupedOrders = useMemo(() => {
+    const map = new Map<string, { dateDisplay: string; cust: string; truck: string; orders: SalesOrder[]; totalAmt: number; totalTon: number }>();
+    for (const o of orders) {
+      const dateRaw = o.deliveryDate ? o.deliveryDate.split('T')[0] : '9999-12-31';
+      const dateDisplay = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : 'ไม่ระบุวันรับ';
+      const truck = o.truckPlate || 'ไม่ระบุทะเบียนรถ';
+      const custId = o.custId || 'ไม่ระบุลูกค้า';
+      const cust = customersMap[custId] || o.custName || custId;
+      // Group by date, customer ID, truck AND status to match Paper Trail's column separation
+      const key = `${dateRaw}::${custId}::${truck}::${o.status}`;
+      
+      if (!map.has(key)) map.set(key, { dateDisplay, cust, truck, orders: [], totalAmt: 0, totalTon: 0 });
+      const g = map.get(key)!;
+      g.orders.push(o);
+      g.totalAmt += (o.lines || []).reduce((s, l) => s + (l.qtyTon * l.pricePerTon), 0);
+      g.totalTon += (o.lines || []).reduce((s, l) => s + (l.isGiveaway ? 0 : l.qtyTon), 0);
+    }
+    return Array.from(map.values());
+  }, [orders, customersMap]);
+
+  // Auto-restore viewingTrip if returning from edit or create
+  useEffect(() => {
+    if (!isCreating && !editingSoId && orders.length > 0) {
+      if (returnToTripFromSoId) {
+        const group = groupedOrders.find(g => g.orders.some(o => String(o.id) === returnToTripFromSoId));
+        if (group) setViewingTrip(group);
+        setReturnToTripFromSoId(null);
+      } else if (returnToTripKey) {
+        const group = groupedOrders.find(g => {
+          const dateRaw = g.orders[0]?.deliveryDate ? g.orders[0].deliveryDate.split('T')[0] : '9999-12-31';
+          const custId = g.orders[0]?.custId || g.cust;
+          const key = `${dateRaw}::${custId}::${g.truck}::${g.orders[0]?.status}`;
+          return key === returnToTripKey;
+        });
+        if (group) setViewingTrip(group);
+        setReturnToTripKey(null);
+      }
+    }
+  }, [groupedOrders, returnToTripFromSoId, returnToTripKey, isCreating, editingSoId, orders.length]);
+
   return (
     <div className="h-full w-full flex flex-col overflow-hidden" style={{ background: '#F1EFE8' }}>
-      {/* Header */}
-      <div className="px-6 py-5 border-b border-gray-200 bg-white shadow-sm flex flex-wrap items-center justify-between gap-4">
+      {/* Header - hide on mobile when creating or viewing details to save space */}
+      <div className={cn(
+        "px-6 py-5 border-b border-gray-200 bg-white shadow-sm flex-wrap items-center justify-between gap-4",
+        (isCreating || selectedId) ? "hidden md:flex" : "flex"
+      )}>
         <div>
           <h1 className="text-2xl font-black tracking-tight flex items-center gap-2" style={{ color: '#0C447C' }}>
-            <Package size={26} />
+            <Package className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
             Sales Portal
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">สั่งขายปุ๋ย · World Fert Co., Ltd.</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">สั่งขายปุ๋ย · World Fert Co., Ltd.</p>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={loadData} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
             <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
           </button>
-          <button
-            onClick={() => setIsCreating(true)}
-            className="h-10 px-5 flex items-center gap-2 rounded-xl text-white text-sm font-semibold"
-            style={{ background: '#0C447C' }}
-          >
-            <Plus size={18} /> สร้างใบสั่งขาย
-          </button>
+          {!isCreating && !editingSoId && (
+            <button
+              onClick={() => setIsTripSetupOpen(true)}
+              className="h-10 px-5 flex items-center gap-2 rounded-xl text-white text-sm font-semibold hover:bg-blue-800 transition-colors shadow-sm"
+              style={{ background: '#0C447C' }}
+            >
+              <Plus size={18} /> สร้างบิล
+            </button>
+          )}
         </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {isCreating ? (
-          <CreateSODialog isOpen={isCreating} onClose={() => setIsCreating(false)} onCreated={() => { loadData(); setIsCreating(false); }} />
+        {isCreating || editingSoId ? (
+          <CreateSODialog 
+             isOpen={isCreating || !!editingSoId} 
+             editSoId={editingSoId || undefined}
+             onClose={() => { setIsCreating(false); setEditingSoId(null); }} 
+             onCreated={() => { loadData(); setIsCreating(false); setEditingSoId(null); }} 
+          />
         ) : (
           <>
             {/* List pane */}
-            <div className={cn('flex flex-col overflow-hidden border-r border-gray-200 bg-white/50', 'flex-1 lg:flex-none lg:w-[480px] xl:w-[540px]')}>
+            <div className={cn('flex flex-col overflow-hidden border-r border-gray-200 bg-white/50', 'flex-1')}>
+              
+              {/* Active Trip Banner */}
+              {activeTrip && (
+                <div className="bg-blue-50 border-b border-blue-100 p-4 shrink-0 flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-[#0C447C] font-bold">
+                      <Truck size={18} />
+                      กำลังจัดทริปส่งสินค้า
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setIsTripSetupOpen(true)} className="text-xs text-blue-600 font-bold hover:underline">แก้ไขทริป</button>
+                      <button onClick={clearTrip} className="text-xs text-gray-500 font-bold hover:text-red-500 transition-colors">ยกเลิก</button>
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 text-sm shadow-sm border border-blue-100/50 flex flex-col gap-1.5">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">ลูกค้า:</span>
+                      <span className="font-bold text-gray-900">{activeTrip.custName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">ทะเบียนรถ:</span>
+                      <span className="font-mono font-bold text-gray-900">{activeTrip.truckPlate}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">กำหนดส่ง:</span>
+                      <span className="font-bold text-gray-900">
+                        {activeTrip.deliveryDate ? new Date(activeTrip.deliveryDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : 'ไม่ระบุ'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => setIsCreating(true)} 
+                      className="flex-1 bg-[#0C447C] text-white py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-blue-800 shadow-sm"
+                    >
+                      <Plus size={16} /> เพิ่มบิลในทริปนี้
+                    </button>
+                    <button 
+                      onClick={handleConfirmTrip}
+                      className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-green-700 shadow-sm"
+                    >
+                      <CheckCircle size={16} /> ยืนยันออร์เดอร์
+                    </button>
+                  </div>
+                </div>
+              )}
           {/* Search */}
           <div className="p-4 space-y-3 bg-white border-b border-gray-100">
             <div className="relative">
@@ -165,62 +342,106 @@ export const SalesPortal = () => {
             )}
           </div>
 
-          {/* Order list */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-2">
-            {loading ? (
-              Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="h-24 bg-white rounded-xl animate-pulse border border-gray-100" />
-              ))
-            ) : orders.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center opacity-30 text-center">
-                <Package size={48} className="mb-3" />
-                <p className="font-semibold">ไม่พบใบสั่งขาย</p>
+            {/* Group orders into Trips */}
+            <div className="flex-1 overflow-y-auto p-2 sm:p-4 bg-gray-50/50">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 auto-rows-max">
+                {loading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="h-32 bg-white rounded-xl animate-pulse border border-gray-100" />
+                  ))
+                ) : orders.length === 0 ? (
+                  <div className="py-20 flex flex-col items-center justify-center opacity-30 text-center col-span-full">
+                    <Package size={48} className="mb-3" />
+                    <p className="font-semibold">ไม่พบบิล</p>
+                  </div>
+                ) : groupedOrders.map((g, idx) => (
+                      <div key={idx} className="rounded-xl border border-gray-200 shadow-sm bg-[#F9F9FB] flex flex-col">
+                        <div className="px-3 py-2 border-b border-gray-100 bg-white flex items-center justify-between rounded-t-xl shrink-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <SOStatusBadge status={g.orders[0]?.status || 'DRAFT'} isUnlockRequested={unlockRequests.some(r => g.orders.some(o => r.SoId === o.id))} />
+                            <div className="text-[11px] font-bold text-[#0C447C] flex items-center gap-1 bg-[#F0F4F8] px-2 py-0.5 rounded-md">
+                              <Clock size={10} /> {g.dateDisplay}
+                            </div>
+                            <div className="text-[11px] font-bold text-gray-700 bg-[#F1F3F5] px-2 py-0.5 rounded-md">
+                              รวม {g.totalTon.toLocaleString('th-TH', { maximumFractionDigits: 2 })} ตัน
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-xs font-bold text-[#0C447C]">
+                              ฿{g.totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                            </div>
+                            <button
+                              onClick={async () => {
+                                if (await appConfirm(`ยืนยันลบ Sale Trip นี้ (รวม ${g.orders.length} บิล)?`)) {
+                                  setLoading(true);
+                                  try {
+                                    await Promise.all(g.orders.map(o => cancelSO(o.id!, 'ลบทั้งทริป')));
+                                    loadData();
+                                  } catch (e) {
+                                    alert('เกิดข้อผิดพลาดในการลบทริป');
+                                    setLoading(false);
+                                  }
+                                }
+                              }}
+                              className="text-gray-400 hover:text-red-500 transition-colors shrink-0"
+                              title="ลบ Sale Trip นี้"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="px-3 py-2 bg-white flex items-center gap-2 border-b border-gray-100 transition-colors shrink-0">
+                          <div className="bg-[#1F2937] text-white p-1.5 rounded-lg shrink-0 flex items-center justify-center">
+                            <Truck size={14} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-sm text-gray-900 truncate" title={g.truck}>{g.truck}</div>
+                            <div className="text-[10px] text-gray-500 truncate" title={customersMap[g.orders[0]?.custId] || g.orders[0]?.custName || g.cust}>{customersMap[g.orders[0]?.custId] || g.orders[0]?.custName || g.cust}</div>
+                          </div>
+                          <button 
+                            onClick={() => setViewingTrip(g)}
+                            className="shrink-0 text-xs text-blue-600 font-medium px-3 py-1.5 bg-blue-50 rounded-full hover:bg-blue-100 transition-colors cursor-pointer active:scale-95 flex items-center gap-1 border border-blue-100 shadow-sm"
+                          >
+                            ดูสรุปทริป
+                          </button>
+                        </div>
+                        <div className="p-1.5 space-y-1.5 overflow-y-auto custom-scrollbar xl:h-36 min-h-[80px]">
+                          {g.orders.length === 0 ? (
+                            <div className="flex items-center justify-center h-full text-xs text-gray-400 py-4">ไม่มีบิลในทริปนี้</div>
+                          ) : g.orders.map(order => {
+                            const totalAmt = (order.lines || []).reduce((s, l) => s + (l.qtyTon * l.pricePerTon), 0);
+                            
+                            return (
+                              <div
+                                key={order.id}
+                                className="relative p-3 rounded-lg border border-gray-100 bg-white"
+                              >
+                                <div className="flex items-start justify-between mb-1.5">
+                                  <span className="font-mono text-xs font-bold text-gray-700">{order.wfRef || (order as any).docuNo || (order as any).importedDocuNo || `#${order.id}`}</span>
+                                  <span className="text-xs font-bold text-[#0C447C]">
+                                    ฿{totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-xs text-gray-400">
+                                  <div className="flex items-center gap-3">
+                                    <span className="flex items-center gap-1">
+                                      <Package size={11} /> {(order.lines || []).filter(l => !l.isGiveaway).length} รายการ
+                                    </span>
+                                    {(order.lines || []).some(l => l.isGiveaway) && (
+                                      <span className="flex items-center gap-1 text-green-600 bg-green-50 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                        <Gift size={10} /> ของแถม
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
               </div>
-            ) : orders.map(order => {
-              const isSelected = selectedId === order.id;
-              const totalAmt = (order.lines || []).reduce((s, l) => s + (l.qtyTon * l.pricePerTon), 0);
-              const isUnlockPending = unlockRequests.some(r => r.SOID === String(order.id) && !r.resolved);
-
-              return (
-                <div
-                  key={order.id}
-                  onClick={() => setSelectedId(isSelected ? null : (order.id ?? null))}
-                  className={cn(
-                    'relative p-4 rounded-xl cursor-pointer border transition-all',
-                    isSelected
-                      ? 'border-blue-700 bg-white shadow-md'
-                      : 'border-gray-100 bg-white hover:shadow-sm hover:border-gray-200'
-                  )}
-                >
-                  {isSelected && <div className="absolute left-0 top-3 bottom-3 w-1 rounded-r-full" style={{ background: '#0C447C' }} />}
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-gray-700">{order.wfRef || `#${order.id}`}</span>
-                      <SOStatusBadge status={order.status} isUnlockRequested={isUnlockPending} />
-                    </div>
-                    <span className="text-sm font-bold" style={{ color: '#0C447C' }}>
-                      ฿{totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-2 truncate">
-                    <User size={13} className="text-gray-400 shrink-0" />
-                    {order.custName}
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-gray-400">
-                    <div className="flex items-center gap-3">
-                      <span className="flex items-center gap-1">
-                        <Calendar size={11} /> {order.createdAt?.slice(0, 10)}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Package size={11} /> {(order.lines || []).filter(l => !l.isGiveaway).length} รายการ
-                      </span>
-                    </div>
-                    <ChevronRight size={14} className={cn('transition-transform', isSelected && 'rotate-90')} style={isSelected ? { color: '#0C447C' } : {}} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+            </div>
 
           {/* Pagination */}
           <div className="p-3 border-t border-gray-100 bg-white flex items-center justify-between">
@@ -244,29 +465,49 @@ export const SalesPortal = () => {
           </div>
         </div>
 
-        {/* Detail pane (desktop) */}
-        <div className="hidden lg:flex flex-col flex-1 bg-white overflow-hidden transition-all">
-          {selectedSo ? (
-            <SODetailsPanel so={selectedSo} onClose={() => setSelectedId(null)} onUpdate={loadData} isInline />
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-center opacity-20">
-              <Package size={64} className="mb-4" />
-              <p className="font-bold">เลือกใบสั่งขายจากรายการ</p>
-            </div>
-          )}
-        </div>
           </>
         )}
       </div>
 
-      {/* Mobile detail drawer */}
-      {!isCreating && (
-        <div className="lg:hidden">
-          {selectedSo && (
-            <SODetailsPanel so={selectedSo} onClose={() => setSelectedId(null)} onUpdate={loadData} isInline={false} />
-          )}
-        </div>
-      )}
+      <TripSummaryModal
+        isOpen={!!viewingTrip}
+        onClose={() => setViewingTrip(null)}
+        trip={viewingTrip}
+        onUpdate={() => {
+          loadData();
+          setViewingTrip(null); 
+        }}
+        onEditBill={(soId) => {
+          setReturnToTripFromSoId(String(soId));
+          setEditingSoId(String(soId));
+          setViewingTrip(null);
+        }}
+        onAddBill={() => {
+          if (viewingTrip) {
+            setTrip({
+              custId: viewingTrip.orders[0]?.custId || '',
+              custName: viewingTrip.orders[0]?.custName || '',
+              truckPlate: viewingTrip.truck,
+              deliveryDate: viewingTrip.orders[0]?.deliveryDate?.split('T')[0] || ''
+            });
+            const dateRaw = viewingTrip.orders[0]?.deliveryDate ? viewingTrip.orders[0].deliveryDate.split('T')[0] : '9999-12-31';
+            const custId = viewingTrip.orders[0]?.custId || viewingTrip.cust;
+            setReturnToTripKey(`${dateRaw}::${custId}::${viewingTrip.truck}::${viewingTrip.orders[0]?.status}`);
+            setViewingTrip(null);
+            setIsCreating(true);
+          }
+        }}
+      />
+
+      <TripSetupModal
+        isOpen={isTripSetupOpen}
+        onClose={() => setIsTripSetupOpen(false)}
+        onConfirm={(data) => {
+          setTrip(data);
+          setIsTripSetupOpen(false);
+          setIsCreating(true);
+        }}
+      />
     </div>
   );
 };

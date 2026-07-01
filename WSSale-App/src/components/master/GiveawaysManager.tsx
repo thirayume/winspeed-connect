@@ -117,35 +117,34 @@ export const GiveawaysManager = () => {
 
   const uniqueBrands = new Set(items.map(i => i.Brand)).size;
   const uniqueTypes = new Set(items.map(i => i.ItemType)).size;
-
   return (
     <div className="h-full flex flex-col gap-4 overflow-hidden">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4 shrink-0">
         <DataSummaryCard
-          title="รายการของแถมทั้งหมด"
+          title="ของแถมทั้งหมด"
           value={items.length.toLocaleString()}
           icon={<Gift size={24} />}
           colorClass="bg-blue-100 text-blue-600"
         />
         <DataSummaryCard
-          title="จำนวนแบรนด์"
-          value={uniqueBrands.toLocaleString()}
-          icon={<Tag size={24} />}
+          title="ค้นพบ"
+          value={filteredItems.length.toLocaleString()}
+          icon={<Search size={24} />}
           colorClass="bg-emerald-100 text-emerald-600"
         />
         <DataSummaryCard
-          title="ประเภทของแถม"
-          value={uniqueTypes.toLocaleString()}
-          icon={<Layers size={24} />}
+          title="มีการกำหนดขั้นต่ำ"
+          value={items.filter(g => Number((g as any).QtyMin) > 0).length.toLocaleString()}
+          icon={<AlertCircle size={24} />}
           colorClass="bg-orange-100 text-orange-600"
         />
       </div>
 
-      <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative">
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-4 bg-gray-50/50">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+      <div className="flex-1 grid grid-rows-[auto_1fr_auto] bg-white rounded-none sm:rounded-2xl shadow-sm sm:shadow-sm shadow-none border-y sm:border border-gray-100 overflow-hidden relative min-h-0">
+        <div className="p-2 sm:p-4 border-b border-gray-100 flex flex-row items-center gap-2 bg-gray-50/50 overflow-x-auto scrollbar-hide w-full">
+          <div className="relative flex-1 min-w-[140px]">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input
               type="text"
               placeholder="ค้นหาชื่อของแถม หรือ แบรนด์..."
@@ -159,31 +158,31 @@ export const GiveawaysManager = () => {
               </button>
             )}
           </div>
-          <div className="flex gap-2">
-            <button onClick={loadData} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
-              <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button onClick={loadData} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             </button>
-            <button onClick={handleAddMockItem} className="px-3 py-2 bg-[#0C447C] text-white rounded-lg text-sm font-medium hover:bg-[#0a3866] flex items-center gap-2">
-              <Plus size={16} /> เพิ่มของแถม
+            <button onClick={handleAddMockItem} className="px-2 py-1.5 sm:px-3 sm:py-2 bg-[#0C447C] text-white rounded-lg text-xs sm:text-sm font-medium hover:bg-[#0a3866] flex items-center gap-1 sm:gap-2">
+              <Plus size={14} className="sm:w-4 sm:h-4" /> <span className="hidden sm:inline">เพิ่มของแถม</span><span className="sm:hidden">เพิ่ม</span>
             </button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-gray-50 sticky top-0 z-10 text-gray-600 font-semibold text-xs uppercase tracking-wider shadow-sm">
+        <div className="overflow-auto min-h-0 relative">
+          <table className="w-full text-sm text-left min-w-full">
+            <thead className="bg-gray-50 sticky top-0 z-10 text-gray-600 font-semibold text-xs uppercase tracking-wider shadow-sm whitespace-nowrap">
               <tr>
                 <SortableHeader title="ID" sortKey="Id" />
                 <SortableHeader title="แบรนด์" sortKey="Brand" />
                 <SortableHeader title="ชื่อรายการของแถม" sortKey="ItemName" />
                 <SortableHeader title="ประเภท" sortKey="ItemType" />
-                <th className="px-6 py-4 border-b border-gray-100 text-right">ประวัติการเบิก</th>
+                <th className="px-6 py-4 border-b border-gray-100 text-right whitespace-nowrap">ประวัติการเบิก</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-16 text-center">
+                  <td colSpan={5} className="px-6 py-16 text-center whitespace-nowrap">
                     <div className="flex flex-col items-center justify-center text-[#0C447C]">
                       <RefreshCw size={32} className="animate-spin mb-4 opacity-50" />
                       <p className="text-sm font-medium animate-pulse opacity-70">กำลังโหลดข้อมูลของแถม...</p>
@@ -192,7 +191,7 @@ export const GiveawaysManager = () => {
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-400">
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-400 whitespace-nowrap">
                     <Gift size={32} className="mx-auto mb-3 opacity-30" />
                     <p>ไม่พบรายการของแถม</p>
                   </td>
@@ -200,13 +199,13 @@ export const GiveawaysManager = () => {
               ) : (
                 paginatedItems.map(item => (
                   <tr key={item.Id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-6 py-4 text-gray-500">{item.Id}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 text-gray-500 whitespace-nowrap">{item.Id}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs">{item.Brand}</span>
                     </td>
-                    <td className="px-6 py-4 font-medium text-gray-800">{item.ItemName}</td>
-                    <td className="px-6 py-4 text-gray-600">{item.ItemType}</td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-6 py-4 font-medium text-gray-800 whitespace-nowrap">{item.ItemName}</td>
+                    <td className="px-6 py-4 text-gray-600 whitespace-nowrap">{item.ItemType}</td>
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
                       <button 
                         title="ดูประวัติการเบิกของแถม"
                         onClick={() => handleViewHistory(item)}
@@ -260,7 +259,7 @@ export const GiveawaysManager = () => {
                   <h3 className="font-bold text-gray-800 text-lg flex items-center gap-2">
                     ประวัติการเบิก: {selectedItem.ItemName}
                   </h3>
-                  <p className="text-sm text-gray-500 mt-0.5">
+                  <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
                     แบรนด์: <span className="font-semibold text-gray-700">{selectedItem.Brand}</span> • 
                     ประเภท: <span className="font-semibold text-gray-700">{selectedItem.ItemType}</span> • 
                     ทั้งหมด <span className="font-semibold text-[#0C447C]">{withdrawals.length}</span> รายการ

@@ -13,11 +13,11 @@ router.get('/customers', async (req, res) => {
   try {
     const { q } = req.query;
     const whereClause = q
-      ? `WHERE CustName LIKE N'%' + @q + '%' OR CustID LIKE N'%' + @q + '%'`
+      ? `WHERE c.CustName LIKE N'%' + @q + '%' OR c.CustID LIKE N'%' + @q + '%'`
       : '';
     const inputs = q ? { q: { type: sql.NVarChar(100), value: q } } : {};
     const rows = await query(
-      `SELECT c.CustID, c.CustName, c.ContTel AS Tel, c.ContTel1 AS Mobile, ISNULL(cx.Remark, '') AS Remark, c.Inactive
+      `SELECT TOP 50 c.CustID, c.CustName, c.ContTel AS Tel, c.ContTel1 AS Mobile, ISNULL(cx.Remark, '') AS Remark, c.Inactive
        FROM dbo.EMCust c WITH (NOLOCK) 
        LEFT JOIN wf.CustomerExt cx ON cx.CustId = c.CustID
        ${whereClause} 
@@ -387,29 +387,76 @@ router.get('/control-tickets', async (req, res) => {
     const where = custId ? `AND h.CustID = @custId` : '';
     const inputs = custId ? { custId: { type: sql.NVarChar(20), value: custId } } : {};
     const rows = await query(`
-      SELECT * FROM (
+      WITH Tickets AS (
         SELECT TOP 100
           h.SOID, h.AppvDocuNo AS DocuNo, h.DocuDate, h.CustID,
           h.CustName, h.TransRegistration AS TruckPlate,
-          h.AppvFlag, h.DocuNo AS OriginalDocuNo, h.AppvDate, h.Desc1, h.Desc2,
-          (
-            SELECT ISNULL(SUM(d.GoodQty2), 0)
-            FROM dbo.SODT d WITH (NOLOCK)
-            WHERE d.SOID = h.SOID
-          ) AS TotalQtyTon,
-          (
-            SELECT ISNULL(SUM(d2.GoodQty2), 0)
-            FROM dbo.SOHD h2 WITH (NOLOCK)
-            JOIN dbo.SODT d2 WITH (NOLOCK) ON h2.SOID = d2.SOID
-            LEFT JOIN wf.SalesOrderLine wfl WITH (NOLOCK) ON wfl.SoId = h2.SOID AND wfl.LineNum = d2.ListNo
-            WHERE h2.DocuType = 104 AND h2.DocuStatus <> 'C'
-              AND (h2.RefNo = h.AppvDocuNo OR wfl.RefControlTicketNo = h.AppvDocuNo)
-          ) AS DrawnQtyTon
+          h.AppvFlag, h.DocuNo AS OriginalDocuNo, h.AppvDate, h.Desc1, h.Desc2
         FROM dbo.SOHD h WITH (NOLOCK)
         WHERE h.DocuType = 103 AND h.DocuStatus = 'Y' AND h.AppvDocuNo LIKE 'AI%' ${where}
-        ORDER BY h.DocuDate DESC, h.SOID DESC
-      ) t
-      WHERE t.TotalQtyTon > t.DrawnQtyTon
+      ),
+      DraftTickets AS (
+        SELECT 
+          so.Id AS SOID,
+          so.WfRef AS DocuNo,
+          so.CreatedAt AS DocuDate,
+          so.CustId AS CustID,
+          so.CustName AS CustName,
+          so.TruckPlate AS TruckPlate,
+          'N' AS AppvFlag,
+          so.WfRef AS OriginalDocuNo,
+          NULL AS AppvDate,
+          N'(แบบร่าง / ยังไม่ยืนยัน)' AS Desc1,
+          NULL AS Desc2
+        FROM wf.SalesOrder so WITH (NOLOCK)
+        WHERE so.SoPrefix = 'AI' AND so.Status = 'DRAFT'
+        ${custId ? `AND so.CustId = @custId` : ''}
+      ),
+      AllTickets AS (
+        SELECT * FROM Tickets
+        UNION ALL
+        SELECT * FROM DraftTickets
+      )
+      SELECT * FROM (
+        SELECT 
+          t.*,
+          ISNULL((
+            SELECT SUM(d.GoodQty2)
+            FROM dbo.SODT d WITH (NOLOCK)
+            WHERE d.SOID = t.SOID
+          ), 
+            ISNULL((SELECT SUM(wfl.QtyTon) FROM wf.SalesOrderLine wfl WHERE wfl.SoId = t.SOID), 0)
+          ) AS TotalQtyTon,
+          (
+            ISNULL((
+              SELECT SUM(d2.GoodQty2)
+              FROM dbo.SOHD h2 WITH (NOLOCK)
+              JOIN dbo.SODT d2 WITH (NOLOCK) ON h2.SOID = d2.SOID
+              WHERE h2.DocuType = 104 AND h2.DocuStatus <> 'C'
+                AND h2.RefNo = t.DocuNo
+            ), 0)
+            +
+            ISNULL((
+              SELECT SUM(d2.GoodQty2)
+              FROM dbo.SOHD h2 WITH (NOLOCK)
+              JOIN dbo.SODT d2 WITH (NOLOCK) ON h2.SOID = d2.SOID
+              JOIN wf.SalesOrderLine wfl WITH (NOLOCK) ON wfl.SoId = h2.SOID AND wfl.LineNum = d2.ListNo
+              WHERE h2.DocuType = 104 AND h2.DocuStatus <> 'C'
+                AND wfl.RefControlTicketNo = t.DocuNo
+                AND (h2.RefNo IS NULL OR h2.RefNo <> t.DocuNo)
+            ), 0)
+            +
+            ISNULL((
+              SELECT SUM(wfl.QtyTon)
+              FROM wf.SalesOrderLine wfl
+              JOIN wf.SalesOrder so2 ON so2.Id = wfl.SoId
+              WHERE so2.Status = 'DRAFT' AND wfl.RefControlTicketNo = t.DocuNo
+            ), 0)
+          ) AS DrawnQtyTon
+        FROM AllTickets t
+      ) final
+      WHERE TotalQtyTon > DrawnQtyTon
+      ORDER BY DocuDate DESC
     `, inputs);
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
@@ -418,6 +465,27 @@ router.get('/control-tickets', async (req, res) => {
 // GET /api/master/control-tickets/:docuNo — ดึงรายการสินค้าของตั๋วคุม
 router.get('/control-tickets/:docuNo', async (req, res) => {
   try {
+    const docuNo = String(req.params.docuNo).trim();
+    if (docuNo.startsWith('AI') && docuNo.includes('-')) {
+      // Might be a Draft WfRef
+      const draftCheck = await query(`
+        SELECT 
+          d.LineNum AS ListNo, d.GoodID, g.GoodCode, g.GoodName1 AS GoodName, 
+          d.QtyTon AS QtyTon, d.PricePerTon AS PricePerTon, 
+          ISNULL(gx.BagPerTon, 20) AS BagPerTon
+        FROM wf.SalesOrder h WITH (NOLOCK)
+        JOIN wf.SalesOrderLine d WITH (NOLOCK) ON h.Id = d.SoId
+        JOIN dbo.EMGood g WITH (NOLOCK) ON d.GoodId = g.GoodID
+        LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = g.GoodID
+        WHERE h.WfRef = @docuNo AND h.Status = 'DRAFT'
+        ORDER BY d.LineNum ASC
+      `, { docuNo: { type: sql.NVarChar(30), value: docuNo } });
+
+      if (draftCheck.length > 0) {
+        return res.json(draftCheck);
+      }
+    }
+
     const rows = await query(`
       SELECT 
         d.ListNo, d.GoodID, g.GoodCode, g.GoodName1 AS GoodName, 
@@ -429,7 +497,7 @@ router.get('/control-tickets/:docuNo', async (req, res) => {
       LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = g.GoodID
       WHERE RTRIM(h.AppvDocuNo) = RTRIM(@docuNo) AND h.DocuType = 103 AND h.DocuStatus = 'Y'
       ORDER BY d.ListNo ASC
-    `, { docuNo: { type: sql.NVarChar(30), value: String(req.params.docuNo).trim() } });
+    `, { docuNo: { type: sql.NVarChar(30), value: docuNo } });
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -627,6 +695,76 @@ router.get('/aging/search', async (req, res) => {
     `, { ...inputs, offset: { type: sql.Int, value: offset }, pageSize: { type: sql.Int, value: pageSize } });
 
     res.json({ total, page, pageSize, data: dataResult.recordset || [] });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/master/truck-types — รายการประเภทรถบรรทุก
+router.get('/truck-types', async (req, res) => {
+  try {
+    const { wfQuery: wq } = require('../db');
+    const rows = await wq(`
+      SELECT Id, Name, SlotCount, TrailerSlotCount, MaxTonPerSlot, IsActive
+      FROM wf.TruckType
+      ORDER BY SlotCount ASC, MaxTonPerSlot ASC
+    `);
+    res.json(rows.recordset || []);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/master/truck-types — สร้างประเภทรถบรรทุกใหม่
+router.post('/truck-types', async (req, res) => {
+  try {
+    const { wfQuery: wq } = require('../db');
+    const { Id, Name, SlotCount, TrailerSlotCount, MaxTonPerSlot, IsActive } = req.body;
+    
+    await wq(`
+      INSERT INTO wf.TruckType (Id, Name, SlotCount, TrailerSlotCount, MaxTonPerSlot, IsActive)
+      VALUES (@id, @name, @slots, @tslots, @max, @active)
+    `, {
+      id: { type: sql.VarChar(50), value: Id },
+      name: { type: sql.NVarChar(100), value: Name },
+      slots: { type: sql.Int, value: SlotCount },
+      tslots: { type: sql.Int, value: TrailerSlotCount ?? null },
+      max: { type: sql.Decimal(10,2), value: MaxTonPerSlot },
+      active: { type: sql.Bit, value: IsActive ?? 1 }
+    });
+    res.json({ ok: true, id: Id });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// PUT /api/master/truck-types/:id — อัปเดตประเภทรถบรรทุก
+router.put('/truck-types/:id', async (req, res) => {
+  try {
+    const { wfQuery: wq } = require('../db');
+    const id = req.params.id;
+    const { Name, SlotCount, TrailerSlotCount, MaxTonPerSlot, IsActive } = req.body;
+    
+    await wq(`
+      UPDATE wf.TruckType
+      SET Name = @name, SlotCount = @slots, TrailerSlotCount = @tslots, 
+          MaxTonPerSlot = @max, IsActive = @active, UpdatedAt = GETUTCDATE()
+      WHERE Id = @id
+    `, {
+      id: { type: sql.VarChar(50), value: id },
+      name: { type: sql.NVarChar(100), value: Name },
+      slots: { type: sql.Int, value: SlotCount },
+      tslots: { type: sql.Int, value: TrailerSlotCount ?? null },
+      max: { type: sql.Decimal(10,2), value: MaxTonPerSlot },
+      active: { type: sql.Bit, value: IsActive ?? 1 }
+    });
+    res.json({ ok: true });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// DELETE /api/master/truck-types/:id — ลบประเภทรถบรรทุก (ถ้าจำเป็น) หรือแค่ set inactive
+router.delete('/truck-types/:id', async (req, res) => {
+  try {
+    const { wfQuery: wq } = require('../db');
+    const id = req.params.id;
+    await wq(`DELETE FROM wf.TruckType WHERE Id = @id`, {
+      id: { type: sql.VarChar(50), value: id }
+    });
+    res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 

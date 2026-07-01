@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { ScanLine, X, CheckCircle, History } from 'lucide-react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { ScanLine, X, CheckCircle, History, Camera, CameraOff } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
 import { scanPaper, fetchPaperHistory } from '../../services/api';
 import type { PaperScanRow, PaperCopy } from '../../types';
 
@@ -12,6 +13,7 @@ const ACTIONS = [
 ];
 
 export function ScanModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [showCamera, setShowCamera] = useState(false);
   const [nonce, setNonce] = useState('');
   const [action, setAction] = useState('SIGN');
   const [busy, setBusy] = useState(false);
@@ -41,6 +43,41 @@ export function ScanModal({ onClose, onDone }: { onClose: () => void; onDone: ()
     finally { setBusy(false); }
   }
 
+  // Effect to lookup automatically if nonce changes (and it looks like a full QR)
+  useEffect(() => {
+    if (nonce && nonce.length > 10 && !busy) {
+      lookup();
+    }
+  }, [nonce]);
+
+  useEffect(() => {
+    let html5QrCode: Html5Qrcode | null = null;
+    
+    if (showCamera) {
+      html5QrCode = new Html5Qrcode("reader");
+      html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText) => {
+          setNonce(decodedText);
+          setShowCamera(false);
+        },
+        (errorMessage) => {
+          // ignore scan errors, they happen continuously until a QR is found
+        }
+      ).catch(err => {
+        setErr("ไม่สามารถเปิดกล้องได้: " + err);
+        setShowCamera(false);
+      });
+    }
+
+    return () => {
+      if (html5QrCode && html5QrCode.isScanning) {
+        html5QrCode.stop().catch(console.error);
+      }
+    };
+  }, [showCamera]);
+
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
@@ -49,11 +86,26 @@ export function ScanModal({ onClose, onDone }: { onClose: () => void; onDone: ()
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
 
-        <label className="text-xs font-semibold text-gray-500 block mb-1">รหัส QR (สแกนหรือพิมพ์)</label>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs font-semibold text-gray-500">รหัส QR (สแกนหรือพิมพ์)</label>
+          <button 
+            onClick={() => setShowCamera(!showCamera)}
+            className={`text-xs px-2 py-1 rounded-md flex items-center gap-1 font-semibold transition-colors ${showCamera ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}
+          >
+            {showCamera ? <><CameraOff size={14}/> ปิดกล้อง</> : <><Camera size={14}/> เปิดกล้องสแกน</>}
+          </button>
+        </div>
+        
+        {showCamera && (
+          <div className="mb-3 rounded-lg overflow-hidden border border-gray-200 bg-black">
+            <div id="reader" className="w-full"></div>
+          </div>
+        )}
+
         <input autoFocus value={nonce} onChange={e => setNonce(e.target.value)} onBlur={lookup}
           onKeyDown={e => { if (e.key === 'Enter') lookup(); }}
           placeholder="เช่น I69-03842-PINK-A1B2C3D4"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono mb-3" />
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono mb-3 focus:ring-2 focus:ring-blue-500 outline-none" />
 
         <label className="text-xs font-semibold text-gray-500 block mb-1">การกระทำ</label>
         <div className="grid grid-cols-2 gap-2 mb-3">
