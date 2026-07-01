@@ -21,11 +21,13 @@ export function CreateSODialog({
   onClose,
   onCreated,
   editSoId,
+  convertFromQuoteId,
 }: {
   isOpen: boolean;
   onClose: () => void;
   onCreated?: () => void;
   editSoId?: string;
+  convertFromQuoteId?: number;
 }) {
   const [customers, setCustomers] = useState<EMCust[]>([]);
   const [goods, setGoods] = useState<EMGood[]>([]);
@@ -101,7 +103,40 @@ export function CreateSODialog({
   }, [debouncedCustSearch, isOpen]);
 
   useEffect(() => {
-    if (editSoId && editSoId !== 'undefined') {
+    if (convertFromQuoteId) {
+      import('../../services/api').then(({ fetchQuotation }) => {
+        fetchQuotation(convertFromQuoteId).then(q => {
+          setCustId(q.CustId || '');
+          setCustSearch(q.CustName || '');
+          setSalesUserId(q.SalesUserId || '');
+          
+          const d = new Date(); d.setDate(d.getDate() + 7);
+          const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+          setDeliveryDate(local.toISOString().slice(0, 10));
+          
+          setBills([{
+            id: 'bill-1',
+            soPrefix: 'I',
+            remark: q.Remark || `จากใบเสนอราคา ${q.QuoteNo}`,
+            lines: (q.lines || []).map((l, i) => ({
+              tempId: `${l.GoodId}-${i}`,
+              lineNo: i + 1,
+              goodId: l.GoodId,
+              goodCode: l.GoodCode,
+              goodName: l.GoodName,
+              qtyTon: l.QtyTon,
+              qtyBag: Math.round(l.QtyTon * 20),
+              pricePerTon: l.PricePerTon,
+              netPricePerTon: l.NetPricePerTon,
+              isGiveaway: !!l.IsGiveaway,
+              isControlTicketDrawn: false
+            }))
+          }]);
+          setActiveBillId('bill-1');
+          setIsTruckInfoCollapsed(true);
+        }).catch(console.error);
+      });
+    } else if (editSoId && editSoId !== 'undefined') {
       fetchSalesOrder(editSoId).then(so => {
         setCustId((so as any).custId || (so as any).custID || (so as any).CustId || (so as any).CustID || '');
         setCustSearch((so as any).custName || (so as any).CustName || '');
@@ -145,7 +180,7 @@ export function CreateSODialog({
       setError('');
       setIsTruckInfoCollapsed(!!activeTrip); setMobileView('products');
     }
-  }, [isOpen, userRole, editSoId, activeTrip]);
+  }, [isOpen, userRole, editSoId, activeTrip, convertFromQuoteId]);
 
   useEffect(() => {
     fetchPrices({ custId }).then(setPrices).catch(console.error);
@@ -395,6 +430,7 @@ export function CreateSODialog({
           remark: b.remark || undefined,
           rebateDiscountAmt: b.rebateDiscountAmt || 0,
           salesUserId: salesUserId || undefined,
+          convertFromQuoteId,
           lines: b.lines.map(({ tempId, ...l }) => ({
             ...l,
             qtyTon: Number(l.qtyTon) || 0,
@@ -417,6 +453,7 @@ export function CreateSODialog({
           remark: b.remark || undefined,
           rebateDiscountAmt: b.rebateDiscountAmt || 0,
           salesUserId: salesUserId || undefined,
+          convertFromQuoteId,
           lines: b.lines.map(({ tempId, ...l }) => ({
             ...l,
             qtyTon: Number(l.qtyTon) || 0,
