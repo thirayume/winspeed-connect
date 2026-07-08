@@ -1,6 +1,6 @@
 # 03 — คู่มือผู้ใช้งาน (User Guide & Manual)
 
-> WS-Sale-App · build v4.2.17 · สำหรับผู้ใช้ทุก Role
+> WS-Sale-App · build v4.2.26 · สำหรับผู้ใช้ทุก Role
 > ระบบเป็น Web App (tablet-first, iPad 768–1024px) · เข้าผ่าน browser
 
 ## บทบาทผู้ใช้ (Roles)
@@ -126,3 +126,29 @@
 | TruckScale "เชื่อมต่อไม่ได้" | แจ้ง Admin ตรวจ env MYSQL_* บน server |
 | ข้อมูล LOCAL/REMOTE ต่างกัน | ปกติ — เลือกปุ่มให้ตรงงาน (REMOTE=จริง) |
 | Export Excel ไม่ดาวน์โหลด | ตรวจ pop-up blocker ของ browser |
+
+---
+
+## Current Addendum - 2026-07-08
+
+### Login with LINE
+1. Click **Login with LINE** on the login page.
+2. If the LINE account is not linked yet, the login page asks the user to enter their existing WS-Sale-App username/password.
+3. If the username/password is valid and active, the app links LINE to that `wf.AppUser` and logs in immediately.
+4. If login fails, contact Admin so the user can be created, activated, or reset first.
+5. Admin can still review or clear `LineUserId` in **ผู้ใช้งาน / Admin Users** when support is needed.
+
+LINE Developers setup:
+- Messaging API Webhook URL: `https://<backend-domain>/api/line/webhook`
+- LINE Login Callback URL: `https://<backend-domain>/api/auth/line/callback`
+
+### Sales Order updates
+- SO create/edit supports requested date-time, own truck, no truck required, and P-Sling.
+- Price input uses 5 color levels compared with Set Price.
+- Giveaway can be ticked per line; Manager/Admin must approve giveaway lines before SO confirm.
+- SO detail shows status timeline timestamps, including shipping/weigh-out time where available.
+
+### Admin / Sale Admin updates
+- Rebate Plan supports Ref Doc fields.
+- Master Data > Customers includes new customer request flow stored in `wf.CustomerRequest`.
+- The customer request flow does not automatically create `dbo.EMCust`; Sale Admin/WINSpeed remains responsible for official customer master creation.

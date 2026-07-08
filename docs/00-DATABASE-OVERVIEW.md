@@ -1,7 +1,7 @@
 # 00 — ภาพรวมฐานข้อมูล & การ Mapping (Database Overview & Mapping)
 
 > WS-Sale-App · World Fert Co., Ltd. · เอกสารควบคุมสำหรับ ISO 9001
-> อ้างอิง build v4.2.17 / SRS v6.2 · ปรับปรุง 27 มิ.ย. 2569
+> อ้างอิง build v4.2.26 / SRS v6.2 · ปรับปรุง 8 ก.ค. 2569
 
 ## สารบัญ
 1. [ระบบฐานข้อมูล 3 แหล่ง](#1-ระบบฐานข้อมูล-3-แหล่ง)
@@ -34,7 +34,7 @@
 ```mermaid
 flowchart LR
   subgraph FE[Frontend - React 19 / Vite / Vercel]
-    UI[17 หน้า/โมดูล]
+    UI[22 หน้า/โมดูล]
   end
   subgraph API[Backend - Express / Railway]
     R1[routes: so, master, rebate, giveaway,\nquotation, papertrail, reports, truckscale, auth]
@@ -193,6 +193,22 @@ flowchart TD
 |-------|-------------|------|
 | `tblscale` (403,908) | sequence, **movebill**, **one_car_regis**(ทะเบียน), one_cus_name, weight_in/out/net, Date_In/Out, one_w_type, Computer_w(เครื่องชั่ง), one_num | รายการชั่ง (หลัก) |
 | `tblproduct_detail` (550,161) | pd_pro_name, pd_pro_wantWeight, pd_Destination, one_num, pd_pro_invoid⚠️ | สินค้าต่อใบชั่ง |
+
+---
+
+## Current Addendum - 2026-07-08
+
+Schema changes `031-035` are implemented in source code and were applied to the restored local `dbwins_worldfert9` database on 2026-07-08.
+
+| Object | Current columns / purpose | Migration |
+|---|---|---|
+| `wf.SalesOrder`, `wf.SalesOrderExt` | `RequestedAt`, `IsOwnTruck`, `NoTruckRequired`, `PSling` | 031 |
+| `wf.RebatePlan` | `RefDoc` | 032 |
+| `wf.SalesOrderLine`, `wf.SalesOrderLineExt` | `GiveawayApprovalStatus`, `GiveawayApprovedBy`, `GiveawayApprovedAt`, `GiveawayApprovalNote` | 033 |
+| `wf.CustomerRequest` | app-owned new customer request flow via Sale Admin; no automatic write to `dbo.EMCust` | 034 |
+| `wf.AppUser` | `LineUserId`, `LineDisplayName`, `LinePictureUrl`, `LineLinkedAt` for LINE Login binding | 035 |
+
+Operational note: after migration/config changes, restart the backend so schema checks and LINE Login env values are refreshed.
 | `tbl_keyone` (407,973) | one_cus_id/name, one_car_regis, one_type | ข้อมูลก่อนชั่ง |
 | `tblorder` (5,890) | O_numId, O_num, O_numBalance | ยอดสั่ง/คงเหลือ |
 | `tblproduct / tblcustomer / tblstore / tblweighttype` | — | master |

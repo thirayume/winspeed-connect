@@ -36,6 +36,9 @@ export type AdminUser = {
   EmpId: string | null;
   EmpCode: string | null;
   EmpName: string | null;
+  LineUserId?: string | null;
+  LineDisplayName?: string | null;
+  LineLinkedAt?: string | null;
   IsActive: boolean;
 };
 
@@ -46,6 +49,49 @@ export type EMCust = {
   Tel?: string;
   Mobile?: string;
   Remark?: string;
+  salespersonId?: string | null;
+  salespersonName?: string | null;
+  areaId?: string | null;
+  groupId?: string | null;
+  employeeId?: string | null;
+  employeeName?: string | null;
+};
+
+export type CustomerFilterOption = {
+  value: string;
+  label: string;
+  count: number;
+};
+
+export type CustomerFilterOptions = {
+  columns: Record<'salesperson' | 'area' | 'group' | 'employee', string | null>;
+  salesperson: CustomerFilterOption[];
+  area: CustomerFilterOption[];
+  group: CustomerFilterOption[];
+  employee: CustomerFilterOption[];
+};
+
+export type CustomerRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED';
+
+export type CustomerRequest = {
+  Id: number;
+  CustName: string;
+  ContactName?: string | null;
+  Tel?: string | null;
+  Mobile?: string | null;
+  TaxId?: string | null;
+  Address?: string | null;
+  Note?: string | null;
+  Status: CustomerRequestStatus;
+  WinspeedCustId?: string | null;
+  RequestedBy?: number | null;
+  RequestedByName?: string | null;
+  ReviewedBy?: number | null;
+  ReviewedByName?: string | null;
+  ReviewedAt?: string | null;
+  ReviewNote?: string | null;
+  CreatedAt: string;
+  UpdatedAt: string;
 };
 
 /** ปุ๋ย FG (StockFlag='Y', MainGoodUnitID=1002 ตัน) */
@@ -103,6 +149,11 @@ export type SalesOrderLine = {
   rebatePerTon?: number;      // computed: pricePerTon - netPricePerTon
   rebateAmount?: number;      // computed: rebatePerTon * qtyTon
   isGiveaway: boolean;
+  giveawayApprovalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED' | null;
+  giveawayApprovedBy?: number | null;
+  giveawayApprovedAt?: string | null;
+  giveawayApprovalNote?: string | null;
+  giveawayApprovedByName?: string | null;
   isControlTicketDrawn?: boolean;
   rebateBooked?: boolean;
   loadSequence?: number;
@@ -117,6 +168,10 @@ export type SalesOrder = {
   truckPlate?: string;
   controlTicketNo?: string;
   deliveryDate?: string;
+  requestedAt?: string;
+  isOwnTruck?: boolean;
+  noTruckRequired?: boolean;
+  pSling?: boolean;
   remark?: string;
   status: SOStatus;
   salesUserId?: number;
@@ -130,7 +185,16 @@ export type SalesOrder = {
   auditLogs?: AuditLog[];
   needsApproval?: boolean;
   weighOutWeight?: number;
+  weighOutAt?: string | null;
   isLoaded?: boolean;
+  statusTimeline?: StatusTimelineItem[];
+};
+
+export type StatusTimelineItem = {
+  status: SOStatus;
+  label: string;
+  at?: string | null;
+  source?: string | null;
 };
 
 export type AuditLog = {
@@ -188,6 +252,7 @@ export type RebatePlan = {
   PlanId: number;
   PlanNo: string;
   Title?: string | null;
+  RefDoc?: string | null;
   GoodCodePattern?: string | null;
   Region: string;
   ReturnType: 'REBATE' | 'PRICEDIFF';

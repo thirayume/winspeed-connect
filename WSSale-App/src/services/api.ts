@@ -11,7 +11,7 @@ import type {
   GiveawayRegion, GiveawayBudgetLine, GiveawayWithdrawal, GiveawayItem,
   Quotation, PaperBoard,
   PaginatedResult, UnlockRequest, AppUser, AdminUser, AgingRow,
-  TruckStats, TruckHistoryItem,
+  TruckStats, TruckHistoryItem, CustomerFilterOptions, CustomerRequest, CustomerRequestStatus,
 } from '../types';
 
 import { isMock, mockRequest } from './mock';
@@ -69,6 +69,13 @@ export const login = (username: string, password: string) =>
 
 export const getMe = () => req<AppUser>('/auth/me');
 
+export const lineLoginUrl = () => `${API_BASE}/auth/line/start`;
+
+export const linkLineLogin = (username: string, password: string, lineLinkToken: string) =>
+  req<{ accessToken: string; user: AppUser; linked: boolean }>('/auth/line/link', {
+    method: 'POST', body: JSON.stringify({ username, password, lineLinkToken }),
+  });
+
 export const createUser = (payload: {
   username: string; password: string; displayName: string;
   role: string; empId?: string;
@@ -76,7 +83,7 @@ export const createUser = (payload: {
 
 export const listUsers = () => req<AdminUser[]>('/auth/users');
 
-export const updateUser = (id: number, patch: { empId?: string | null; role?: string; displayName?: string; isActive?: boolean; password?: string }) =>
+export const updateUser = (id: number, patch: { empId?: string | null; role?: string; displayName?: string; isActive?: boolean; password?: string; lineUserId?: string | null }) =>
   req<{ ok: boolean; id: number }>(`/auth/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
 
 export const deleteUser = (id: number) =>
@@ -85,11 +92,38 @@ export const deleteUser = (id: number) =>
 export const fetchEmployees = () => req<Employee[]>('/master/employees');
 
 // ── Master data ───────────────────────────────────────────────
-export const fetchCustomers = (q?: string) =>
-  req<EMCust[]>(`/master/customers${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+export const fetchCustomerFilters = () =>
+  req<CustomerFilterOptions>('/master/customer-filters');
+
+export const fetchCustomers = (params?: string | {
+  q?: string;
+  salesperson?: string;
+  area?: string;
+  group?: string;
+  employee?: string;
+  limit?: number;
+}) => {
+  const queryParams = typeof params === 'string' ? { q: params } : (params || {});
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(queryParams).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
+  ).toString();
+  return req<EMCust[]>(`/master/customers${qs ? `?${qs}` : ''}`);
+};
 
 export const updateCustomer = (id: string, patch: Partial<EMCust>) =>
   req<{ ok: boolean }>(`/master/customers/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+
+export const fetchCustomerRequests = () =>
+  req<CustomerRequest[]>('/master/customer-requests');
+
+export const createCustomerRequest = (payload: Partial<CustomerRequest> & { CustName: string }) =>
+  req<{ id: number }>('/master/customer-requests', { method: 'POST', body: JSON.stringify(payload) });
+
+export const reviewCustomerRequest = (
+  id: number,
+  payload: { status: Exclude<CustomerRequestStatus, 'PENDING'>; winspeedCustId?: string; reviewNote?: string }
+) =>
+  req<{ ok: boolean }>(`/master/customer-requests/${id}/review`, { method: 'PATCH', body: JSON.stringify(payload) });
 
 export const fetchGoods = (q?: string) =>
   req<EMGood[]>(`/master/goods${q ? `?q=${encodeURIComponent(q)}` : ''}`);
@@ -157,7 +191,7 @@ export const searchAgingOrders = (params: {
 
 // ── Sales Orders ──────────────────────────────────────────────
 export const fetchSalesOrders = (params?: {
-  status?: string; custId?: string; search?: string; page?: number; limit?: number; silent?: boolean;
+  status?: string; custId?: string; search?: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number; silent?: boolean;
 }) => {
   const { silent, ...queryParams } = params || {};
   const qs = new URLSearchParams(
@@ -177,18 +211,23 @@ export const getRebateBalance = (custId: string) =>
 export const fetchShippedToday = (date: string) =>
   req<import('../types').ShippedRow[]>(`/so/shipped-today?date=${date}`);
 
-export const createSO = (payload: any) =>
+export const createSO = (payload: Record<string, unknown>) =>
   req<{ id?: number; ids?: number[]; wfRef?: string; wfRefs?: string[]; needsApproval: boolean }>('/so', {
     method: 'POST', body: JSON.stringify(payload),
   });
 
-export const updateSO = (id: number | string, payload: any) =>
+export const updateSO = (id: number | string, payload: Record<string, unknown>) =>
   req<{ id: number; wfRef?: string; needsApproval: boolean }>(`/so/${id}`, {
     method: 'PUT', body: JSON.stringify(payload),
   });
 
 export const confirmSO = (id: number | string) =>
   req<{ id: number; status: SOStatus }>(`/so/${id}/confirm`, { method: 'PATCH', body: '{}' });
+
+export const approveGiveawayLine = (id: number | string, lineNum: number, note?: string) =>
+  req<{ id: number | string; lineNum: number; status: 'APPROVED' }>(`/so/${id}/giveaway-lines/${lineNum}/approve`, {
+    method: 'PATCH', body: JSON.stringify({ note }),
+  });
 
 export const moveToPicking = (id: number | string) =>
   req<{ id: number; status: SOStatus }>(`/so/${id}/picking`, { method: 'PATCH', body: '{}' });
@@ -263,7 +302,7 @@ export const fetchRebateSummary = () => req<RebateSummary[]>('/rebate/summary');
 export const fetchRebatePlans = (status?: string) =>
   req<import('../types').RebatePlan[]>(`/rebate/plans${status ? `?status=${status}` : ''}`);
 export const createRebatePlan = (payload: {
-  title?: string; goodCodePattern?: string; region?: string; returnType?: string;
+  title?: string; refDoc?: string; goodCodePattern?: string; region?: string; returnType?: string;
   netPrice?: number; validFrom?: string; validTo?: string; allocatedAmount?: number; priority?: number; note?: string;
 }) => req<import('../types').RebatePlan>('/rebate/plans', { method: 'POST', body: JSON.stringify(payload) });
 export const updateRebatePlan = (id: number, patch: Record<string, unknown>) =>
@@ -313,7 +352,7 @@ export const fetchGiveawayWithdrawals = (region?: string, year?: number) => {
 export const fetchGiveawayItems = (brand?: string) =>
   req<GiveawayItem[]>(`/giveaway/items${brand ? `?brand=${encodeURIComponent(brand)}` : ''}`);
 
-export const fetchGiveawayBorrowRequests = () => req<any[]>('/giveaway/borrow-requests');
+export const fetchGiveawayBorrowRequests = () => req<unknown[]>('/giveaway/borrow-requests');
 export const resolveGiveawayBorrowRequest = (id: number, approve: boolean, note?: string) => 
   req<{ ok: boolean; status: string }>(`/giveaway/borrow-requests/${id}/resolve`, {
     method: 'PATCH',

@@ -5,6 +5,20 @@
 -- ==========================================
 
 -- 1. ลบ Foreign Key ที่ผูกกับ wf.SalesOrder
+DECLARE @dropFkSql NVARCHAR(MAX) = N'';
+SELECT @dropFkSql = @dropFkSql +
+    N'ALTER TABLE ' + QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + N'.' +
+    QUOTENAME(OBJECT_NAME(parent_object_id)) + N' DROP CONSTRAINT ' + QUOTENAME(name) + N';'
+FROM sys.foreign_keys
+WHERE parent_object_id IN (
+    OBJECT_ID('wf.RebateLedger'),
+    OBJECT_ID('wf.GiveawayWithdrawal'),
+    OBJECT_ID('wf.GiveawayIssue'),
+    OBJECT_ID('wf.SalesOrderAudit')
+)
+AND referenced_object_id = OBJECT_ID('wf.SalesOrder');
+IF @dropFkSql <> N'' EXEC sp_executesql @dropFkSql;
+
 IF EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK__RebateLed__SoId__403A8C7D')
     ALTER TABLE wf.RebateLedger DROP CONSTRAINT FK__RebateLed__SoId__403A8C7D;
 IF EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK__GiveawayIs__SoId__4BAC3F29')
@@ -13,6 +27,24 @@ IF EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK__SalesOrde__SoId__398
     ALTER TABLE wf.SalesOrderAudit DROP CONSTRAINT FK__SalesOrde__SoId__398D8EEE;
 
 -- ลบ Index ที่ผูกกับ SoId ก่อน Alter
+DECLARE @dropIxSql NVARCHAR(MAX) = N'';
+SELECT @dropIxSql = @dropIxSql +
+    N'DROP INDEX ' + QUOTENAME(i.name) + N' ON ' +
+    QUOTENAME(OBJECT_SCHEMA_NAME(i.object_id)) + N'.' + QUOTENAME(OBJECT_NAME(i.object_id)) + N';'
+FROM sys.indexes i
+JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+WHERE i.object_id IN (
+    OBJECT_ID('wf.RebateLedger'),
+    OBJECT_ID('wf.GiveawayWithdrawal'),
+    OBJECT_ID('wf.GiveawayIssue'),
+    OBJECT_ID('wf.SalesOrderAudit')
+)
+AND c.name = 'SoId'
+AND i.is_primary_key = 0
+AND i.is_unique_constraint = 0;
+IF @dropIxSql <> N'' EXEC sp_executesql @dropIxSql;
+
 IF EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_RebateLedger_SoId' AND object_id=OBJECT_ID('wf.RebateLedger'))
     DROP INDEX IX_RebateLedger_SoId ON wf.RebateLedger;
 IF EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_RebateLedger_SOID' AND object_id=OBJECT_ID('wf.RebateLedger'))

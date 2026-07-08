@@ -5,6 +5,7 @@ import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { GiveawayBorrowModal } from './GiveawayBorrowModal';
 import { useAuthStore } from '../../store/auth-store';
 import { useTripStore } from '../../store/trip-store';
+import { canViewRebateAmounts } from '../../utils/permissions';
 import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser } from '../../types';
 
 type DraftLine = SalesOrderLine & { tempId: string; refControlTicketNo?: string; isControlTicketDrawn?: boolean; maxQtyTon?: number };
@@ -15,6 +16,35 @@ const PREFIX_LABELS: Record<SOPrefix, string> = {
   K: 'K — ขายพิเศษ',
   AI: 'AI — ตั๋วคุม',
 };
+
+const GIVEAWAY_GROUP = 'ของแถม';
+const ALL_GOODS_TAB = 'ทั้งหมด';
+const OTHER_GOODS_GROUP = 'อื่นๆ';
+
+function goodListKey(good: EMGood) {
+  return `${good.GoodID}::${good.GoodGroupName || OTHER_GOODS_GROUP}`;
+}
+
+function mergeGoods(normalGoods: EMGood[], giveawayGoods: EMGood[]) {
+  const merged = new Map<string, EMGood>();
+  [...normalGoods, ...giveawayGoods.map(g => ({ ...g, GoodGroupName: GIVEAWAY_GROUP }))].forEach(good => {
+    const key = goodListKey(good);
+    if (!merged.has(key)) merged.set(key, good);
+  });
+  return Array.from(merged.values());
+}
+
+function getPriceBand(pricePerTon: number, setPricePerTon: number) {
+  if (!setPricePerTon) {
+    return { label: '', className: 'border-gray-200 bg-white text-gray-700' };
+  }
+  const diff = Number(pricePerTon || 0) - Number(setPricePerTon || 0);
+  if (diff > 500) return { label: 'ดีมาก', className: 'border-lime-300 bg-lime-50 text-lime-700' };
+  if (diff > 0) return { label: 'ดี', className: 'border-emerald-300 bg-emerald-50 text-emerald-700' };
+  if (diff === 0) return { label: 'เท่าราคาตั้ง', className: 'border-yellow-300 bg-yellow-50 text-yellow-700' };
+  if (diff >= -500) return { label: `ต่ำกว่า ${Math.abs(diff).toLocaleString('th-TH')}`, className: 'border-orange-300 bg-orange-50 text-orange-700' };
+  return { label: `ต่ำกว่า ${Math.abs(diff).toLocaleString('th-TH')}`, className: 'border-red-300 bg-red-50 text-red-700' };
+}
 
 export function CreateSODialog({
   isOpen,
@@ -44,6 +74,10 @@ export function CreateSODialog({
   const [truckPlate, setTruckPlate] = useState('');
   const [isTruckOpen, setIsTruckOpen] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState('');
+  const [requestedAt, setRequestedAt] = useState('');
+  const [isOwnTruck, setIsOwnTruck] = useState(false);
+  const [noTruckRequired, setNoTruckRequired] = useState(false);
+  const [pSling, setPSling] = useState(false);
   const [salesUserId, setSalesUserId] = useState<string | number>('');
   const [availableRebate, setAvailableRebate] = useState(0);
   
@@ -60,7 +94,9 @@ export function CreateSODialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [salesUsers, setSalesUsers] = useState<AdminUser[]>([]);
-  const userRole = useAuthStore(s => s.user?.role);
+  const currentUser = useAuthStore(s => s.user);
+  const userRole = currentUser?.role;
+  const canSeeRebate = canViewRebateAmounts(currentUser);
 
   const [activeTab, setActiveTab] = useState('ทั้งหมด');
   const [goodSearch, setGoodSearch] = useState('');
@@ -80,7 +116,7 @@ export function CreateSODialog({
   useEffect(() => {
     if (!isOpen) return;
     Promise.all([fetchGoods(), fetchGiveawayGoods()])
-      .then(([g, gw]) => setGoods([...g, ...gw.map(x => ({ ...x, GoodGroupName: 'ของแถม' }))]))
+      .then(([g, gw]) => setGoods(mergeGoods(g, gw)))
       .catch(console.error);
       
     const currentYear = new Date().getFullYear() + 543 - 2500 + 2500;
@@ -143,11 +179,15 @@ export function CreateSODialog({
         setTruckPlate((so as any).truckPlate || (so as any).TruckPlate || '');
         setSalesUserId((so as any).salesUserId || (so as any).salesUserID || (so as any).SalesUserId || (so as any).SalesUserID || '');
         setDeliveryDate(so.deliveryDate ? so.deliveryDate.split('T')[0] : '');
+        setRequestedAt((so as any).requestedAt ? String((so as any).requestedAt).slice(0, 16) : '');
+        setIsOwnTruck(!!(so as any).isOwnTruck);
+        setNoTruckRequired(!!(so as any).noTruckRequired);
+        setPSling(!!(so as any).pSling);
         setBills([{
           id: 'bill-1',
           soPrefix: so.soPrefix as SOPrefix,
           remark: so.remark || '',
-          rebateDiscountAmt: so.rebateDiscountAmt || 0,
+          rebateDiscountAmt: canSeeRebate ? so.rebateDiscountAmt || 0 : 0,
           lines: (so.lines || []).map((l, i) => ({
             ...l,
             tempId: `${l.goodId}-${i}`,
@@ -161,8 +201,9 @@ export function CreateSODialog({
       setBills([{ id: 'bill-1', soPrefix: 'I', lines: [], remark: '' }]);
       setActiveBillId('bill-1');
       setCustId(''); setTruckPlate(''); setSalesUserId('');
+      setRequestedAt(''); setIsOwnTruck(false); setNoTruckRequired(false); setPSling(false);
       setUseControlTicket(false); setSelectedTicketForDraw('');
-      setActiveTab('ทั้งหมด'); setGoodSearch(''); setCurrentPage(1);
+      setActiveTab(ALL_GOODS_TAB); setGoodSearch(''); setCurrentPage(1);
       
       const d = new Date(); d.setDate(d.getDate() + 7);
       const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
@@ -180,18 +221,22 @@ export function CreateSODialog({
       setError('');
       setIsTruckInfoCollapsed(!!activeTrip); setMobileView('products');
     }
-  }, [isOpen, userRole, editSoId, activeTrip, convertFromQuoteId]);
+  }, [isOpen, userRole, editSoId, activeTrip, convertFromQuoteId, canSeeRebate]);
 
   useEffect(() => {
     fetchPrices({ custId }).then(setPrices).catch(console.error);
     if (custId) {
       fetchTruckPlates(custId).then(setTruckPlates).catch(console.error);
       fetchControlTickets(custId).then(setControlTickets).catch(console.error);
-      getRebateBalance(custId).then(r => setAvailableRebate(r.availableRebate)).catch(console.error);
+      if (canSeeRebate) {
+        getRebateBalance(custId).then(r => setAvailableRebate(r.availableRebate)).catch(console.error);
+      } else {
+        setAvailableRebate(0);
+      }
     } else {
       setTruckPlates([]); setControlTickets([]); setAvailableRebate(0);
     }
-  }, [custId]);
+  }, [custId, canSeeRebate]);
 
   const priceObj = useCallback((goodId: string) => prices.find(p => p.GoodID === goodId), [prices]);
   const getNetPrice = useCallback((goodId: string, _qtyTon: number) => {
@@ -208,9 +253,9 @@ export function CreateSODialog({
       .finally(() => setTicketLoading(false));
   }, [selectedTicketForDraw]);
 
-  const categories = ['ทั้งหมด', ...Array.from(new Set(goods.map(g => g.GoodGroupName || 'อื่นๆ'))).filter(c => c !== 'ของแถม').sort(), 'ของแถม'];
+  const categories = [ALL_GOODS_TAB, ...Array.from(new Set(goods.map(g => g.GoodGroupName || OTHER_GOODS_GROUP))).filter(c => c !== GIVEAWAY_GROUP).sort(), GIVEAWAY_GROUP];
   const filteredGoods = goods.filter(g => {
-    if (activeTab !== 'ทั้งหมด' && (g.GoodGroupName || 'อื่นๆ') !== activeTab) return false;
+    if (activeTab !== ALL_GOODS_TAB && (g.GoodGroupName || OTHER_GOODS_GROUP) !== activeTab) return false;
     if (goodSearch) {
       const q = goodSearch.toLowerCase();
       return g.GoodName.toLowerCase().includes(q) || g.GoodCode.toLowerCase().includes(q);
@@ -231,7 +276,7 @@ export function CreateSODialog({
     // Auto-collapse truck info on mobile when starting to add products
     if (window.innerWidth < 1024) setIsTruckInfoCollapsed(true);
     
-    const isGiveaway = good.GoodGroupName === 'ของแถม';
+    const isGiveaway = good.GoodGroupName === GIVEAWAY_GROUP;
 
     // Giveaway Quota Check
     if (isGiveaway) {
@@ -287,7 +332,7 @@ export function CreateSODialog({
         qtyBag: good.BagPerTon || 0,
         pricePerTon: defaultPrice,
         netPricePerTon: defaultPrice,
-        isGiveaway: good.GoodGroupName === 'ของแถม',
+        isGiveaway: good.GoodGroupName === GIVEAWAY_GROUP,
         isControlTicketDrawn: false,
         refControlTicketNo: undefined
       };
@@ -344,15 +389,20 @@ export function CreateSODialog({
           if (l.tempId !== tempId) return l;
           const updated = { ...l, ...patch };
           if (patch.qtyTon !== undefined) {
-            if (l.maxQtyTon !== undefined && patch.qtyTon > l.maxQtyTon) {
-              patch.qtyTon = l.maxQtyTon;
-            }
+            updated.qtyTon = l.maxQtyTon !== undefined && patch.qtyTon > l.maxQtyTon ? l.maxQtyTon : patch.qtyTon;
             const good = goods.find(g => g.GoodID === updated.goodId);
             updated.qtyBag = Math.round(updated.qtyTon * (good?.BagPerTon ?? 20));
-            // Only recalculate net price if it's NOT drawn from a ticket
             if (!updated.isControlTicketDrawn) {
-              updated.netPricePerTon = getNetPrice(updated.goodId, updated.qtyTon);
+              const netPrice = getNetPrice(updated.goodId, updated.qtyTon);
+              updated.netPricePerTon = updated.isGiveaway ? 0 : netPrice;
+              if (updated.isGiveaway) updated.pricePerTon = 0;
             }
+          }
+          if (patch.isGiveaway !== undefined && !updated.isControlTicketDrawn) {
+            const netPrice = getNetPrice(updated.goodId, updated.qtyTon);
+            updated.netPricePerTon = patch.isGiveaway ? 0 : netPrice;
+            updated.pricePerTon = patch.isGiveaway ? 0 : netPrice;
+            updated.giveawayApprovalStatus = patch.isGiveaway ? 'PENDING' : null;
           }
           return updated;
         })
@@ -391,7 +441,7 @@ export function CreateSODialog({
 
   // Totals calculation
   const totalTons = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isGiveaway ? 0 : (Number(l.qtyTon) || 0)), 0), 0);
-  const totalRebateDiscount = bills.reduce((s, b) => s + (Number(b.rebateDiscountAmt) || 0), 0);
+  const totalRebateDiscount = canSeeRebate ? bills.reduce((s, b) => s + (Number(b.rebateDiscountAmt) || 0), 0) : 0;
   const totalPayable = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isControlTicketDrawn ? 0 : (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0)), 0), 0) - totalRebateDiscount;
   const totalOffset = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isControlTicketDrawn ? (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0) : 0), 0), 0);
   const totalCartItems = bills.reduce((s, b) => s + b.lines.length, 0);
@@ -409,7 +459,7 @@ export function CreateSODialog({
       }
     }
 
-    const isNewTruck = truckPlate && truckPlates.length > 0 && !truckPlates.includes(truckPlate);
+    const isNewTruck = !noTruckRequired && truckPlate && truckPlates.length > 0 && !truckPlates.includes(truckPlate);
     if (isNewTruck) {
       if (!window.confirm(`ทะเบียนรถ "${truckPlate}" เป็นรถใหม่ที่ไม่เคยเข้ารับบริการ\n\nระบบจะบันทึกเป็นรถคันใหม่ให้โดยอัตโนมัติ\n\nคุณแน่ใจหรือไม่ที่จะใช้ทะเบียนนี้?`)) {
         return;
@@ -427,8 +477,12 @@ export function CreateSODialog({
           custName: selectedCust?.CustName || activeTrip?.custName || custId,
           truckPlate: truckPlate || undefined,
           deliveryDate: deliveryDate || undefined,
+          requestedAt: requestedAt || undefined,
+          isOwnTruck,
+          noTruckRequired,
+          pSling,
           remark: b.remark || undefined,
-          rebateDiscountAmt: b.rebateDiscountAmt || 0,
+          rebateDiscountAmt: canSeeRebate ? b.rebateDiscountAmt || 0 : 0,
           salesUserId: salesUserId || undefined,
           convertFromQuoteId,
           lines: b.lines.map(({ tempId, ...l }) => ({
@@ -450,8 +504,12 @@ export function CreateSODialog({
           custName: selectedCust?.CustName || activeTrip?.custName || custId,
           truckPlate: truckPlate || undefined,
           deliveryDate: deliveryDate || undefined,
+          requestedAt: requestedAt || undefined,
+          isOwnTruck,
+          noTruckRequired,
+          pSling,
           remark: b.remark || undefined,
-          rebateDiscountAmt: b.rebateDiscountAmt || 0,
+          rebateDiscountAmt: canSeeRebate ? b.rebateDiscountAmt || 0 : 0,
           salesUserId: salesUserId || undefined,
           convertFromQuoteId,
           lines: b.lines.map(({ tempId, ...l }) => ({
@@ -542,14 +600,15 @@ export function CreateSODialog({
               </div>
             </div>
             <div className="relative min-w-[140px]">
-              <label className="text-[10px] font-bold text-gray-500 block mb-0.5"><Truck size={10} className="inline mr-0.5"/>ทะเบียนรถ *</label>
+              <label className="text-[10px] font-bold text-gray-500 block mb-0.5"><Truck size={10} className="inline mr-0.5"/>ทะเบียนรถ{noTruckRequired ? '' : ' *'}</label>
               <input
                 value={truckPlate} onChange={e => setTruckPlate(e.target.value)}
                 onFocus={() => setIsTruckOpen(true)} onBlur={() => setTimeout(() => setIsTruckOpen(false), 200)}
                 placeholder="70-1087/88"
-                className={`w-full border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none ${truckPlate && truckPlates.length > 0 && !truckPlates.includes(truckPlate) ? 'border-red-400 text-red-600 bg-red-50' : 'border-gray-200'}`}
+                disabled={noTruckRequired}
+                className={`w-full border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none disabled:bg-gray-100 disabled:text-gray-400 ${truckPlate && truckPlates.length > 0 && !truckPlates.includes(truckPlate) ? 'border-red-400 text-red-600 bg-red-50' : 'border-gray-200'}`}
               />
-              {isTruckOpen && truckPlates.length > 0 && (
+              {isTruckOpen && !noTruckRequired && truckPlates.length > 0 && (
                 <div className="absolute z-30 w-full mt-1 bg-white border rounded shadow max-h-32 overflow-y-auto">
                   {truckPlates.filter(p => p.toLowerCase().includes(truckPlate.toLowerCase())).map(p => (
                     <div key={p} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer font-mono" onClick={() => { setTruckPlate(p); setIsTruckOpen(false); }}>{p}</div>
@@ -560,6 +619,37 @@ export function CreateSODialog({
             <div className="min-w-[150px]">
               <label className="text-[10px] font-bold text-gray-500 block mb-0.5">วันที่รับของ</label>
               <ThaiDatePicker value={deliveryDate} onChange={setDeliveryDate} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none" />
+            </div>
+            <div className="min-w-[190px]">
+              <label className="text-[10px] font-bold text-gray-500 block mb-0.5"><Calendar size={10} className="inline mr-0.5"/>วันที่แจ้ง/เวลานัด</label>
+              <input
+                type="datetime-local"
+                value={requestedAt}
+                onChange={e => setRequestedAt(e.target.value)}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="min-w-[260px] flex flex-wrap items-center gap-2 pb-1">
+              <label className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5">
+                <input type="checkbox" checked={isOwnTruck} onChange={e => setIsOwnTruck(e.target.checked)} className="h-3.5 w-3.5 accent-[#0C447C]" />
+                ขึ้นรถตัวเอง
+              </label>
+              <label className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5">
+                <input
+                  type="checkbox"
+                  checked={noTruckRequired}
+                  onChange={e => {
+                    setNoTruckRequired(e.target.checked);
+                    if (e.target.checked) setTruckPlate('');
+                  }}
+                  className="h-3.5 w-3.5 accent-[#0C447C]"
+                />
+                ไม่ต้องระบุรถ
+              </label>
+              <label className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5">
+                <input type="checkbox" checked={pSling} onChange={e => setPSling(e.target.checked)} className="h-3.5 w-3.5 accent-[#0C447C]" />
+                P-Sling
+              </label>
             </div>
             </div>
           </div>
@@ -772,10 +862,11 @@ export function CreateSODialog({
                     const pObj = priceObj(g.GoodID);
                     const net = pObj?.GoodPriceNet ?? 0;
                     const isExpired = pObj?.IsExpired === 1;
-                    const inCart = activeBill?.lines.some(l => l.goodId === g.GoodID);
+                    const isGiveaway = g.GoodGroupName === GIVEAWAY_GROUP;
+                    const inCart = activeBill?.lines.some(l => l.goodId === g.GoodID && l.isGiveaway === isGiveaway);
                     return (
                       <button
-                        key={g.GoodID}
+                        key={goodListKey(g)}
                         onClick={() => addGoodToActiveBill(g)}
                         className={`text-left p-3 rounded-xl border transition-all ${inCart ? 'border-blue-300 bg-blue-50' : 'border-gray-100 bg-gray-50 hover:border-gray-200 hover:bg-white'}`}
                       >
@@ -831,7 +922,9 @@ export function CreateSODialog({
                   </div>
                 ) : (
                   <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-                    {activeBill?.lines.map(l => (
+                    {activeBill?.lines.map(l => {
+                      const priceBand = getPriceBand(l.pricePerTon, l.netPricePerTon);
+                      return (
                       <div key={l.tempId} className={`p-3 rounded-lg border ${l.isControlTicketDrawn ? 'border-amber-200 bg-amber-50' : 'border-gray-100 bg-white'}`}>
                         <div className="flex justify-between items-start mb-2">
                           <div>
@@ -863,11 +956,29 @@ export function CreateSODialog({
                               ) : (
                                   <div className="flex items-center gap-1">
                                     <span className="text-[10px] text-gray-500">฿/ตัน</span>
-                                    <input type="number" value={l.pricePerTon || ''} onChange={e => updateActiveLine(l.tempId, { pricePerTon: Number(e.target.value) })} className="w-20 text-right border border-gray-200 rounded px-1.5 py-1 text-xs font-mono font-bold focus:outline-none focus:border-blue-400" />
+                                    <input type="number" value={l.pricePerTon || ''} onChange={e => updateActiveLine(l.tempId, { pricePerTon: Number(e.target.value) })} className={`w-20 text-right border rounded px-1.5 py-1 text-xs font-mono font-bold focus:outline-none focus:border-blue-400 ${priceBand.className}`} />
                                   </div>
+                              )}
+                              {!l.isControlTicketDrawn && !l.isGiveaway && priceBand.label && (
+                                <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${priceBand.className}`}>
+                                  {priceBand.label}
+                                </div>
                               )}
                             </div>
                           </div>
+
+                          {!l.isControlTicketDrawn && (
+                            <label className="mt-1 inline-flex w-fit items-center gap-1.5 rounded border border-green-100 bg-green-50 px-2 py-1 text-[10px] font-bold text-green-700">
+                              <input
+                                type="checkbox"
+                                checked={!!l.isGiveaway}
+                                onChange={e => updateActiveLine(l.tempId, { isGiveaway: e.target.checked })}
+                                className="h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500"
+                              />
+                              ของแถม
+                              {l.isGiveaway && <span className="text-amber-600">รอผู้จัดการอนุมัติ</span>}
+                            </label>
+                          )}
                           
                           {!l.isControlTicketDrawn && !l.isGiveaway && (
                             <div className="flex justify-between items-center mt-1 pt-1 border-t border-dashed border-gray-100">
@@ -881,14 +992,15 @@ export function CreateSODialog({
                           )}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
                 
                 <div className="mt-3 pt-3 border-t">
                   {activeBill && activeBill.lines.length > 0 && (() => {
                     const totalAmt = activeBill.lines.reduce((s, l) => s + (l.isControlTicketDrawn ? 0 : l.qtyTon * l.pricePerTon), 0);
-                    const totalRebate = activeBill.lines.reduce((s, l) => s + (!l.isControlTicketDrawn && l.pricePerTon > l.netPricePerTon ? (l.pricePerTon - l.netPricePerTon) * l.qtyTon : 0), 0);
+                    const totalRebate = canSeeRebate ? activeBill.lines.reduce((s, l) => s + (!l.isControlTicketDrawn && l.pricePerTon > l.netPricePerTon ? (l.pricePerTon - l.netPricePerTon) * l.qtyTon : 0), 0) : 0;
                     return (
                       <div className="mb-2">
                         <div className="flex justify-between items-center mb-1">
@@ -901,7 +1013,7 @@ export function CreateSODialog({
                             <span className="text-[10px] font-bold text-orange-500">฿{totalRebate.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
-                        <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-100">
+                        {canSeeRebate && <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-100">
                           <div className="flex flex-col">
                             <span className="text-xs font-bold text-emerald-600">เบิก Rebate มาใช้ (฿)</span>
                             <span className="text-[10px] text-gray-400">คงเหลือ: ฿{availableRebate.toLocaleString()}</span>
@@ -919,8 +1031,8 @@ export function CreateSODialog({
                             }} 
                             className="w-24 text-right border border-emerald-300 rounded px-2 py-1 text-xs font-mono font-bold text-emerald-700 bg-emerald-50 focus:outline-none focus:border-emerald-500 disabled:opacity-50 disabled:bg-gray-100 disabled:border-gray-200" 
                           />
-                        </div>
-                        {(activeBill?.rebateDiscountAmt || 0) > 0 && (
+                        </div>}
+                        {canSeeRebate && (activeBill?.rebateDiscountAmt || 0) > 0 && (
                           <div className="flex justify-between items-center mt-2 bg-emerald-50 p-1.5 rounded">
                             <span className="text-xs font-bold text-emerald-800">ยอดสุทธิบิลนี้</span>
                             <span className="text-sm font-black text-emerald-800">฿{(totalAmt - (activeBill.rebateDiscountAmt || 0)).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>

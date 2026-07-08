@@ -22,4 +22,30 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { requireAuth, requireRole, SECRET };
+const REBATE_ALL_ROLES = ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER'];
+const REBATE_OWN_ROLES = ['SALES'];
+const REBATE_AMOUNT_ROLES = [...REBATE_ALL_ROLES, ...REBATE_OWN_ROLES];
+
+function canViewAllRebateAmounts(user) {
+  return REBATE_ALL_ROLES.includes(user?.role);
+}
+
+function canViewRebateAmounts(user) {
+  return REBATE_AMOUNT_ROLES.includes(user?.role);
+}
+
+function requireRebateAmountAccess(req, res, next) {
+  if (!canViewRebateAmounts(req.user)) {
+    return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูตัวเลขรีเบท' });
+  }
+  next();
+}
+
+module.exports = {
+  requireAuth,
+  requireRole,
+  requireRebateAmountAccess,
+  canViewAllRebateAmounts,
+  canViewRebateAmounts,
+  SECRET,
+};

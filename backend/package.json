@@ -1,6 +1,6 @@
 {
   "name": "backend",
-  "version": "4.2.25",
+  "version": "4.2.26",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -20,13 +20,11 @@
     "express-validator": "^7.3.2",
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
+    "msnodesqlv8": "^5.2.1",
     "mssql": "^12.5.2",
     "mysql2": "^3.22.5",
     "socket.io": "^4.8.3",
     "xlsx": "^0.18.5"
-  },
-  "optionalDependencies": {
-    "msnodesqlv8": "^5.2.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

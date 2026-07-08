@@ -89,7 +89,7 @@
 | FR-023 | Price Book NET | ข้อมูลหลัก | dbo | TC-O02..O03 | ✅ |
 | FR-024/025/026 | TruckScale live | TruckScale, คลัง | MySQL/019 | TC-N01..N05, TC-D04..D06 | ✅ |
 | FR-003 | Credit Hold | — | — | — | ⏳ เลื่อน |
-| FR-016 | LINE intake | — | — | — | ⏳ เลื่อน |
+| FR-016 | LINE Login / LINE integration | Auth / Admin Users / LINE route | 035 + code | TC-A05..A06, TC-O06 | ✅ code ready / pending DB apply |
 
 ---
 
@@ -107,7 +107,7 @@
 
 | เวอร์ชัน | วันที่ | ผู้ deploy | migration ที่รัน | สรุปการเปลี่ยนแปลง | ผลตรวจหลัง deploy | rollback? |
 |----------|--------|-----------|------------------|---------------------|-------------------|-----------|
-| v4.2.17 | 27/06/2569 | T.M | 016-019 | TruckScale live | ✅ | - |
+| v4.2.26 | 27/06/2569 | T.M | 016-019 | TruckScale live | ✅ | - |
 |  |  |  |  |  |  |  |
 
 ---
@@ -123,6 +123,32 @@
 | WF-DOC-02 | Test Cases | 1.0 | 27/06/2569 | QA | docs/ |
 | WF-DOC-03 | User Guide | 1.0 | 27/06/2569 | ฝ่ายขาย | docs/ |
 | WF-SOP-WSSALE | SOP | 1.0 | 27/06/2569 | IT/ฝ่ายขาย | docs/ |
+
+---
+
+## Current Addendum - 2026-07-08
+
+### Release Record row to add
+| Version | Date | Deployer | Migrations | Change Summary | Post-deploy Check | Rollback? |
+|---|---|---|---|---|---|---|
+| v4.2.26 | 08/07/2569 | T.M / IT | 031-035 | SO requested/transport flags, Rebate Plan Ref Doc, giveaway line approval, customer request flow, LINE Login binding | Applied to restored local DB; smoke test pending | Restore backup / disable feature routes |
+
+### RTM additions
+| Requirement | Module | Migration / Source | Test Case | Status |
+|---|---|---|---|---|
+| Requested date-time and transport flags | Sales Order | 031 | TC-B06 | Implemented, DB applied |
+| 5-level price color | Sales Order | code | TC-B07 | Implemented |
+| Giveaway per-item approval | Sales Order / Giveaway | 033 | TC-B08..B09 | Implemented, DB applied |
+| Rebate Plan Ref Doc | Rebate Plan | 032 | TC-H06 | Implemented, DB applied |
+| New customer request flow | Master Data | 034 | TC-O04..O05 | Implemented, DB applied |
+| LINE Login | Auth / Admin Users | 035 + code | TC-A05..A06, TC-O06 | Implemented, DB applied; self-link/UAT pending |
+
+### Deployment checklist additions
+- [x] Restore target database.
+- [x] Apply migrations `031-035`.
+- [ ] Restart backend.
+- [ ] Verify LINE Login callback URL in LINE Developers matches `LINE_LOGIN_CALLBACK_URL`.
+- [ ] Self-link at least one active user through LINE Login and perform login smoke test.
 | WF-DOC-05 | Production Readiness | 1.0 | 27/06/2569 | SA | docs/ |
 | WF-FM-01..07 | Forms | 1.0 | 27/06/2569 | QMR | docs/ |
 

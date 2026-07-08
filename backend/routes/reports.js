@@ -8,7 +8,7 @@
 const router = require('express').Router();
 const XLSX = require('xlsx');
 const { wfQuery } = require('../db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, canViewAllRebateAmounts } = require('../middleware/auth');
 
 router.use(requireAuth);
 
@@ -64,8 +64,16 @@ const REPORTS = {
   },
 };
 
+function canRunReport(req, type) {
+  if (type === 'rebate-pools') return canViewAllRebateAmounts(req.user);
+  if (type === 'cn-rebate') return ['ACCOUNTING', 'ADMIN', 'MANAGER'].includes(req.user?.role);
+  return true;
+}
+
 router.get('/types', (req, res) => {
-  res.json(Object.entries(REPORTS).map(([key, r]) => ({ key, title: r.title })));
+  res.json(Object.entries(REPORTS)
+    .filter(([key]) => canRunReport(req, key))
+    .map(([key, r]) => ({ key, title: r.title })));
 });
 
 async function runReport(type) {
@@ -77,6 +85,7 @@ async function runReport(type) {
 
 router.get('/:type', async (req, res) => {
   try {
+    if (!canRunReport(req, req.params.type)) return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูรายงานนี้' });
     const data = await runReport(req.params.type);
     if (!data) return res.status(404).json({ message: 'ไม่พบรายงาน' });
     res.json(data);
@@ -85,6 +94,7 @@ router.get('/:type', async (req, res) => {
 
 router.get('/:type/export', async (req, res) => {
   try {
+    if (!canRunReport(req, req.params.type)) return res.status(403).json({ message: 'ไม่มีสิทธิ์ export รายงานนี้' });
     const data = await runReport(req.params.type);
     if (!data) return res.status(404).json({ message: 'ไม่พบรายงาน' });
     // map rows → ภาษาไทย header ตาม columns

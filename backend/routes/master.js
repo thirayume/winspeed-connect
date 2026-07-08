@@ -4,27 +4,195 @@
  */
 const router = require('express').Router();
 const { sql, query } = require('../db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 
 router.use(requireAuth);
+
+const CUSTOMER_FILTER_CANDIDATES = {
+  salesperson: ['SalesID', 'SaleID', 'SalesEmpID', 'SaleEmpID', 'SalesmanID', 'SalesManID'],
+  employee: ['EmpID', 'EmployeeID', 'StaffID'],
+  area: ['AreaID', 'AreaCode', 'ZoneID', 'CustAreaID', 'RegionID'],
+  group: ['CustGroupID', 'CustGroupCode', 'CustTypeID', 'GroupID', 'PriceGroupID'],
+};
+
+let customerFilterColumnCache = null;
+
+function bracketIdent(name) {
+  return `[${String(name).replace(/]/g, ']]')}]`;
+}
+
+async function getCustomerFilterColumns() {
+  if (customerFilterColumnCache) return customerFilterColumnCache;
+  const cols = await query(`
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'EMCust'
+  `);
+  const existing = new Set((cols || []).map(r => String(r.COLUMN_NAME).toLowerCase()));
+  const found = {};
+  for (const [key, candidates] of Object.entries(CUSTOMER_FILTER_CANDIDATES)) {
+    found[key] = candidates.find(c => existing.has(c.toLowerCase())) || null;
+  }
+  customerFilterColumnCache = found;
+  return found;
+}
+
+async function getCustomerFilterOptionsFor(key, column) {
+  if (!column) return [];
+  const col = bracketIdent(column);
+  const joins = ['salesperson', 'employee'].includes(key)
+    ? `LEFT JOIN dbo.EMEmp emp WITH (NOLOCK) ON CONVERT(NVARCHAR(50), emp.EmpID) = CONVERT(NVARCHAR(50), c.${col})`
+    : '';
+  const labelExpr = ['salesperson', 'employee'].includes(key)
+    ? `COALESCE(NULLIF(emp.EmpName, ''), CONVERT(NVARCHAR(100), c.${col}))`
+    : `CONVERT(NVARCHAR(100), c.${col})`;
+  return query(`
+    SELECT TOP 200
+           CONVERT(NVARCHAR(50), c.${col}) AS value,
+           MAX(${labelExpr}) AS label,
+           COUNT(*) AS count
+    FROM dbo.EMCust c WITH (NOLOCK)
+    ${joins}
+    WHERE c.${col} IS NOT NULL AND CONVERT(NVARCHAR(50), c.${col}) <> ''
+      AND ISNULL(c.Inactive, 'A') <> 'I'
+    GROUP BY CONVERT(NVARCHAR(50), c.${col})
+    ORDER BY MAX(${labelExpr})
+  `);
+}
+
+// GET /api/master/customer-filters
+router.get('/customer-filters', async (req, res) => {
+  try {
+    const columns = await getCustomerFilterColumns();
+    const [salesperson, employee, area, group] = await Promise.all([
+      getCustomerFilterOptionsFor('salesperson', columns.salesperson),
+      getCustomerFilterOptionsFor('employee', columns.employee),
+      getCustomerFilterOptionsFor('area', columns.area),
+      getCustomerFilterOptionsFor('group', columns.group),
+    ]);
+    res.json({ columns, salesperson, employee, area, group });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
 
 // GET /api/master/customers
 router.get('/customers', async (req, res) => {
   try {
-    const { q } = req.query;
-    const whereClause = q
-      ? `WHERE c.CustName LIKE N'%' + @q + '%' OR c.CustID LIKE N'%' + @q + '%'`
+    const { q, salesperson, area, group, employee } = req.query;
+    const limit = Math.min(Math.max(Number(req.query.limit) || 500, 50), 2000);
+    const columns = await getCustomerFilterColumns();
+    const conditions = [`ISNULL(c.Inactive, 'A') <> 'I'`];
+    const inputs = { limit: { type: sql.Int, value: limit } };
+    if (q) {
+      conditions.push(`(c.CustName LIKE N'%' + @q + '%' OR c.CustID LIKE N'%' + @q + '%')`);
+      inputs.q = { type: sql.NVarChar(100), value: q };
+    }
+    for (const [key, value] of Object.entries({ salesperson, area, group, employee })) {
+      const column = columns[key];
+      if (!value || !column) continue;
+      conditions.push(`CONVERT(NVARCHAR(50), c.${bracketIdent(column)}) = @${key}`);
+      inputs[key] = { type: sql.NVarChar(50), value: String(value) };
+    }
+    const selectExt = Object.entries(columns)
+      .map(([key, column]) => column ? `CONVERT(NVARCHAR(50), c.${bracketIdent(column)}) AS ${key}Id` : `CAST(NULL AS NVARCHAR(50)) AS ${key}Id`)
+      .join(',\n             ');
+    const salesJoin = columns.salesperson
+      ? `LEFT JOIN dbo.EMEmp salesEmp WITH (NOLOCK) ON CONVERT(NVARCHAR(50), salesEmp.EmpID) = CONVERT(NVARCHAR(50), c.${bracketIdent(columns.salesperson)})`
       : '';
-    const inputs = q ? { q: { type: sql.NVarChar(100), value: q } } : {};
+    const empJoin = columns.employee
+      ? `LEFT JOIN dbo.EMEmp custEmp WITH (NOLOCK) ON CONVERT(NVARCHAR(50), custEmp.EmpID) = CONVERT(NVARCHAR(50), c.${bracketIdent(columns.employee)})`
+      : '';
     const rows = await query(
-      `SELECT TOP 50 c.CustID, c.CustName, c.ContTel AS Tel, c.ContTel1 AS Mobile, ISNULL(cx.Remark, '') AS Remark, c.Inactive
+      `SELECT TOP (@limit)
+              c.CustID, c.CustName, c.ContTel AS Tel, c.ContTel1 AS Mobile,
+              ISNULL(cx.Remark, '') AS Remark, c.Inactive,
+              ${selectExt},
+              ${columns.salesperson ? `salesEmp.EmpName` : `CAST(NULL AS NVARCHAR(255))`} AS salespersonName,
+              ${columns.employee ? `custEmp.EmpName` : `CAST(NULL AS NVARCHAR(255))`} AS employeeName
        FROM dbo.EMCust c WITH (NOLOCK) 
        LEFT JOIN wf.CustomerExt cx ON cx.CustId = c.CustID
-       ${whereClause} 
+       ${salesJoin}
+       ${empJoin}
+       WHERE ${conditions.join(' AND ')}
        ORDER BY c.CustName`,
       inputs
     );
     res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/master/customer-requests
+router.get('/customer-requests', async (req, res) => {
+  try {
+    const allAccess = ['ADMIN', 'MANAGER'].includes(req.user?.role);
+    const where = allAccess ? '' : 'WHERE cr.RequestedBy = @uid';
+    const inputs = allAccess ? {} : { uid: { type: sql.Int, value: req.user.sub } };
+    const rows = await query(`
+      SELECT TOP 200
+             cr.*,
+             requester.DisplayName AS RequestedByName,
+             reviewer.DisplayName AS ReviewedByName
+      FROM wf.CustomerRequest cr
+      LEFT JOIN wf.AppUser requester ON requester.Id = cr.RequestedBy
+      LEFT JOIN wf.AppUser reviewer ON reviewer.Id = cr.ReviewedBy
+      ${where}
+      ORDER BY CASE WHEN cr.Status = 'PENDING' THEN 0 ELSE 1 END, cr.CreatedAt DESC
+    `, inputs);
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/master/customer-requests — app-owned request only, no dbo.EMCust insert
+router.post('/customer-requests', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { CustName, ContactName, Tel, Mobile, TaxId, Address, Note } = req.body || {};
+    if (!CustName || !String(CustName).trim()) {
+      return res.status(400).json({ message: 'กรุณาระบุชื่อลูกค้า' });
+    }
+    const r = await query(`
+      INSERT INTO wf.CustomerRequest
+        (CustName, ContactName, Tel, Mobile, TaxId, Address, Note, RequestedBy)
+      OUTPUT inserted.Id
+      VALUES
+        (@custName, @contactName, @tel, @mobile, @taxId, @address, @note, @uid)
+    `, {
+      custName: { type: sql.NVarChar(255), value: String(CustName).trim() },
+      contactName: { type: sql.NVarChar(255), value: ContactName || null },
+      tel: { type: sql.NVarChar(50), value: Tel || null },
+      mobile: { type: sql.NVarChar(50), value: Mobile || null },
+      taxId: { type: sql.NVarChar(50), value: TaxId || null },
+      address: { type: sql.NVarChar(500), value: Address || null },
+      note: { type: sql.NVarChar(500), value: Note || null },
+      uid: { type: sql.Int, value: req.user.sub },
+    });
+    res.status(201).json({ id: r.recordset[0].Id });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// PATCH /api/master/customer-requests/:id/review — close request after Sale Admin/WINSpeed action
+router.patch('/customer-requests/:id/review', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { status, winspeedCustId, reviewNote } = req.body || {};
+    const nextStatus = String(status || '').toUpperCase();
+    if (!['APPROVED', 'REJECTED', 'COMPLETED'].includes(nextStatus)) {
+      return res.status(400).json({ message: 'สถานะไม่ถูกต้อง' });
+    }
+    await query(`
+      UPDATE wf.CustomerRequest
+      SET Status = @status,
+          WinspeedCustId = COALESCE(@winspeedCustId, WinspeedCustId),
+          ReviewedBy = @uid,
+          ReviewedAt = GETUTCDATE(),
+          ReviewNote = @reviewNote,
+          UpdatedAt = GETUTCDATE()
+      WHERE Id = @id
+    `, {
+      id: { type: sql.Int, value: Number(req.params.id) },
+      status: { type: sql.NVarChar(20), value: nextStatus },
+      winspeedCustId: { type: sql.NVarChar(20), value: winspeedCustId || null },
+      reviewNote: { type: sql.NVarChar(500), value: reviewNote || null },
+      uid: { type: sql.Int, value: req.user.sub },
+    });
+    res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 

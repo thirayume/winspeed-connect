@@ -1,5 +1,7 @@
 # SQL Performance Tuning Guide
 
+> Current note (2026-07-08): feature migrations `031-035` add nullable workflow/auth columns and small app-owned tables. They do not replace the existing performance-index guidance in this file. After applying `034_customer_request_flow.sql`, verify the `IX_CustomerRequest_*` indexes exist for the new customer request panel.
+
 ## ปัญหาเดิม — ทำไมถึงช้า 6 นาที
 
 ### 1. Correlated Subquery (ฆาตกรตัวจริง)
@@ -35,7 +37,7 @@ AND (h2.RefNo = h.AppvDocuNo OR wfl.RefControlTicketNo = h.AppvDocuNo)
 
 ```bash
 cd backend
-node run_migrations.js   # จะรัน 002_performance_indexes.sql อัตโนมัติ
+node run_migrations.js   # จะรัน schema migrations ที่ยังไม่อยู่ใน ledger; 000_logins.sql ถูกข้ามเป็น manual security setup
 ```
 
 หรือรัน SQL ตรงใน SSMS:

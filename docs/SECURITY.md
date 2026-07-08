@@ -38,6 +38,21 @@
   ```
 - ใช้ `.env.example` / `.env.docker.example` เป็น template (มีแต่ placeholder)
 
+## Current Addendum - 2026-07-08
+
+### LINE Login security notes
+- `LINE_LOGIN_CHANNEL_SECRET` must be stored only in backend environment variables.
+- `backend/.env` is ignored by git; do not commit it.
+- LINE Login is account-binding based: first-time users must verify their existing WS-Sale-App username/password before `wf.AppUser.LineUserId` is saved.
+- Unbound LINE accounts receive a short-lived link token, not the raw LINE User ID. If credential verification fails, the user must contact Admin.
+- Callback URL must be exact:
+  - local: `http://localhost:3000/api/auth/line/callback`
+  - production: `https://<backend-domain>/api/auth/line/callback`
+
+### Secret rotation reminder
+- The LINE secret was entered into local `.env`; treat it as sensitive.
+- If any secret was pasted into chat/history or screenshots, rotate it in LINE Developers before production.
+
 ## เมื่อเปลี่ยนรหัสเสร็จ
 1. อัปเดต env บน Railway + Vercel + เครื่อง dev
 2. Restart services (`docker compose up -d` หรือ redeploy)

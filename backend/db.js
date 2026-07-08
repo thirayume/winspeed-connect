@@ -23,8 +23,21 @@ const DB = process.env.DB_NAME || 'dbwins_worldfert9';
 const als = new AsyncLocalStorage();
 
 function localConfig() {
+  const localConnectionString = process.env.LOCAL_DB_CONNECTION_STRING;
+  if (localConnectionString) {
+    return { connectionString: localConnectionString, pool: { max: 10, min: 0, idleTimeoutMillis: 30000 } };
+  }
+  const server = process.env.LOCAL_DB_SERVER || 'localhost\\SQLEXPRESS';
+  if (/^np:/i.test(server)) {
+    return {
+      connectionString:
+        `Driver={SQL Server Native Client 11.0};Server=${server};Database=${DB};` +
+        'Trusted_Connection=Yes;TrustServerCertificate=Yes;',
+      pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
+    };
+  }
   return {
-    server: process.env.LOCAL_DB_SERVER || 'localhost\\SQLEXPRESS',
+    server,
     database: DB,
     options: { trustedConnection: true, trustServerCertificate: true, enableArithAbort: true },
     driver: 'msnodesqlv8',

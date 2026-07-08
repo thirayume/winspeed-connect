@@ -1,12 +1,25 @@
 import { useState } from 'react';
-import { X, Lock, Unlock, Truck, Package, FileText } from 'lucide-react';
+import { X, Lock, Unlock, Truck, Package, FileText, CalendarClock, CheckCircle2, Clock3 } from 'lucide-react';
 import { cn } from '../ui/Base';
 import { SOStatusBadge } from './SOStatusBadge';
 import { useErpStore } from '../../store/erp-store';
-import { confirmSO, cancelSO, shipSO, moveToPicking, createUnlockRequest } from '../../services/api';
+import { approveGiveawayLine, confirmSO, cancelSO, shipSO, moveToPicking, createUnlockRequest } from '../../services/api';
 import { appConfirm } from '../ui/AppAlert';
 import { RequestActionModal, type RequestActionType } from '../papertrail/RequestActionModal';
+import { useAuthStore } from '../../store/auth-store';
+import { canViewRebateAmounts } from '../../utils/permissions';
 import type { SalesOrder } from '../../types';
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '-';
+  return new Date(value).toLocaleString('th-TH', {
+    year: '2-digit',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 export function SODetailsPanel({
   so,
@@ -22,6 +35,9 @@ export function SODetailsPanel({
   isInline?: boolean;
 }) {
   const unlockRequests = useErpStore(s => s.unlockRequests);
+  const currentUser = useAuthStore(s => s.user);
+  const canSeeRebate = canViewRebateAmounts(currentUser);
+  const canApproveGiveaway = currentUser?.role === 'MANAGER' || currentUser?.role === 'ADMIN';
   const [busy, setBusy] = useState(false);
   const [requestModalConfig, setRequestModalConfig] = useState<{ isOpen: boolean, type: RequestActionType }>({ isOpen: false, type: 'EDIT' });
 
@@ -40,13 +56,20 @@ export function SODetailsPanel({
   const pendingReq = unlockRequests.find(r => r.SoId === so.id);
   const totalAmt   = (so.lines || []).filter(l => !l.isGiveaway).reduce((s, l) => s + l.qtyTon * l.pricePerTon, 0);
   const totalTon   = (so.lines || []).filter(l => !l.isGiveaway).reduce((s, l) => s + l.qtyTon, 0);
-  const totalRebate = (so.lines || []).filter(l => !l.isGiveaway && (l.rebateAmount || 0) > 0).reduce((s, l) => s + (l.rebateAmount || 0), 0);
+  const totalRebate = canSeeRebate
+    ? (so.lines || []).filter(l => !l.isGiveaway && (l.rebateAmount || 0) > 0).reduce((s, l) => s + (l.rebateAmount || 0), 0)
+    : 0;
 
   async function doAction(fn: () => Promise<unknown>) {
     setBusy(true);
     try { await fn(); onUpdate(); }
     catch (e: unknown) { alert((e as Error).message || 'เกิดข้อผิดพลาด'); }
     finally { setBusy(false); }
+  }
+
+  async function approveLine(lineNum: number) {
+    const note = window.prompt('หมายเหตุการอนุมัติของแถม (ไม่บังคับ):') || undefined;
+    await doAction(() => approveGiveawayLine(so.id!, lineNum, note));
   }
 
   const content = (
@@ -91,6 +114,22 @@ export function SODetailsPanel({
               </div>
             </div>
           )}
+          {so.requestedAt && (
+            <div className="col-span-2 flex items-center gap-2 p-3 rounded-xl bg-blue-50 border border-blue-100">
+              <CalendarClock size={15} className="text-blue-500 shrink-0" />
+              <div>
+                <p className="text-xs text-blue-500">วันที่แจ้ง/เวลานัด</p>
+                <p className="font-bold text-blue-900">{new Date(so.requestedAt).toLocaleString('th-TH')}</p>
+              </div>
+            </div>
+          )}
+          {(so.isOwnTruck || so.noTruckRequired || so.pSling) && (
+            <div className="col-span-2 flex flex-wrap gap-1.5">
+              {so.isOwnTruck && <span className="inline-flex items-center gap-1 text-[10px] font-bold text-gray-700 bg-gray-100 rounded-full px-2 py-1"><CheckCircle2 size={11} /> ขึ้นรถตัวเอง</span>}
+              {so.noTruckRequired && <span className="inline-flex items-center gap-1 text-[10px] font-bold text-gray-700 bg-gray-100 rounded-full px-2 py-1"><CheckCircle2 size={11} /> ไม่ต้องระบุรถ</span>}
+              {so.pSling && <span className="inline-flex items-center gap-1 text-[10px] font-bold text-gray-700 bg-gray-100 rounded-full px-2 py-1"><CheckCircle2 size={11} /> P-Sling</span>}
+            </div>
+          )}
           <div className="flex items-center gap-2 p-3 rounded-xl bg-gray-50 border border-gray-100">
             <Package size={15} className="text-gray-400 shrink-0" />
             <div>
@@ -117,6 +156,34 @@ export function SODetailsPanel({
           </div>
         )}
 
+        {so.statusTimeline && so.statusTimeline.length > 0 && (
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-2 flex items-center gap-1.5">
+              <Clock3 size={13} /> เวลาสถานะ
+            </h3>
+            <div className="rounded-xl border border-gray-100 overflow-hidden bg-white">
+              {so.statusTimeline.map((item, idx) => {
+                const reached = !!item.at;
+                const isCurrent = item.status === so.status;
+                return (
+                  <div key={`${item.status}-${idx}`} className={`flex items-start gap-3 px-3 py-2.5 border-b border-gray-50 last:border-b-0 ${isCurrent ? 'bg-blue-50/60' : ''}`}>
+                    <div className={`mt-0.5 h-2.5 w-2.5 rounded-full shrink-0 ${reached ? 'bg-[#0C447C]' : 'bg-gray-200'}`} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`text-xs font-bold ${reached ? 'text-gray-800' : 'text-gray-400'}`}>{item.label}</span>
+                        <span className={`text-[10px] font-mono whitespace-nowrap ${reached ? 'text-gray-600' : 'text-gray-300'}`}>{formatDateTime(item.at)}</span>
+                      </div>
+                      {item.source === 'weigh_ticket' && (
+                        <div className="text-[9px] text-emerald-600 font-bold mt-0.5">เวลาออกจากข้อมูลชั่ง</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Line items table */}
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-2">รายการสินค้า</h3>
@@ -130,22 +197,53 @@ export function SODetailsPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {(so.lines || []).map((l, i) => (
-                  <tr key={i} className={l.isGiveaway ? 'bg-green-50/50' : ''}>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
-                      <div className="font-medium text-gray-800 text-xs">{l.goodCode}</div>
-                      <div className="text-[10px] text-gray-400 truncate max-w-[140px]">{l.goodName}</div>
-                      {l.isGiveaway && <span className="text-[9px] text-green-600 font-bold">ของแถม</span>}
-                      {(l.rebatePerTon || 0) > 0 && (
-                        <div className="text-[9px] text-orange-500">รีเบท ฿{(l.rebatePerTon || 0).toFixed(0)}/ตัน</div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-right text-xs text-gray-600 tabular-nums whitespace-nowrap">{l.qtyTon.toFixed(3)}</td>
-                    <td className="px-3 py-2.5 text-right text-xs font-medium text-gray-800 tabular-nums whitespace-nowrap">
-                      {l.isGiveaway ? '–' : `฿${(l.qtyTon * l.pricePerTon).toLocaleString('th-TH', { maximumFractionDigits: 0 })}`}
-                    </td>
-                  </tr>
-                ))}
+                {(so.lines || []).map((l, i) => {
+                  const lineNum = (l as any).lineNum || l.lineNo || i + 1;
+                  const giveawayStatus = l.giveawayApprovalStatus || (l.isGiveaway ? 'PENDING' : null);
+                  const giveawayApproved = giveawayStatus === 'APPROVED';
+                  return (
+                    <tr key={i} className={l.isGiveaway ? 'bg-green-50/50' : ''}>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <div className="font-medium text-gray-800 text-xs">{l.goodCode}</div>
+                        <div className="text-[10px] text-gray-400 truncate max-w-[140px]">{l.goodName}</div>
+                        {l.isGiveaway && (
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <span className="text-[9px] text-green-600 font-bold">ของแถม</span>
+                            <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold ${
+                              giveawayApproved
+                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                : 'border-amber-200 bg-amber-50 text-amber-700'
+                            }`}>
+                              {giveawayApproved ? 'อนุมัติแล้ว' : 'รออนุมัติ'}
+                            </span>
+                            {canApproveGiveaway && !giveawayApproved && (
+                              <button
+                                type="button"
+                                onClick={() => approveLine(lineNum)}
+                                disabled={busy}
+                                className="rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                              >
+                                อนุมัติ
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {l.isGiveaway && giveawayApproved && (l.giveawayApprovedByName || l.giveawayApprovedAt) && (
+                          <div className="mt-0.5 text-[9px] text-gray-400">
+                            {l.giveawayApprovedByName || 'Manager'} {l.giveawayApprovedAt ? formatDateTime(l.giveawayApprovedAt) : ''}
+                          </div>
+                        )}
+                        {canSeeRebate && (l.rebatePerTon || 0) > 0 && (
+                          <div className="text-[9px] text-orange-500">รีเบท ฿{(l.rebatePerTon || 0).toFixed(0)}/ตัน</div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-xs text-gray-600 tabular-nums whitespace-nowrap">{l.qtyTon.toFixed(3)}</td>
+                      <td className="px-3 py-2.5 text-right text-xs font-medium text-gray-800 tabular-nums whitespace-nowrap">
+                        {l.isGiveaway ? '–' : `฿${(l.qtyTon * l.pricePerTon).toLocaleString('th-TH', { maximumFractionDigits: 0 })}`}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

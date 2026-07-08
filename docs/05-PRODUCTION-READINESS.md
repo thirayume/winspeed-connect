@@ -1,15 +1,15 @@
 # 05 — ประเมินความพร้อม Production (Production Readiness Assessment)
 
-> WS-Sale-App · build v4.2.17 · ประเมิน 27 มิ.ย. 2569 · โดย Solution Architect
+> WS-Sale-App · build v4.2.26 · ประเมิน 8 ก.ค. 2569 · โดย Solution Architect
 
 ## บทสรุปผู้บริหาร (Verdict)
 > **สถานะ: พร้อมระดับ "Soft Launch / Pilot" — ยังไม่ควรขึ้น Full Production จนกว่าจะปิดรายการ P0 (ความปลอดภัย/ความถูกต้องบัญชี)**
 
-ระบบมีฟังก์ชันครบตาม SRS v6.2 (17 หน้า, FR หลักครบ, deploy จริง Railway+Vercel, migration clean) — **ความพร้อมด้านฟีเจอร์ ≈ 90%** แต่ความพร้อมด้าน **Operations/Security ≈ 55%** ต้อง hardening ก่อนใช้งานจริงเต็มรูปแบบ
+ระบบมีฟังก์ชันครบตาม SRS v6.2 (22 หน้า, FR หลักครบ, deploy จริง Railway+Vercel, migration clean) — **ความพร้อมด้านฟีเจอร์ ≈ 90%** แต่ความพร้อมด้าน **Operations/Security ≈ 55%** ต้อง hardening ก่อนใช้งานจริงเต็มรูปแบบ
 
 | มิติ | คะแนน | สรุป |
 |------|-------|------|
-| Functionality | 🟢 90% | ครบตาม SRS · ยังขาด LINE intake, Credit Hold (เลื่อนได้) |
+| Functionality | 🟢 95% | ครบตาม SRS หลัก + Meeting Minutes 02072026 ส่วนใหญ่ · LINE Login implemented in code; Credit Hold ยังเป็น next phase |
 | Security | 🔴 50% | **credentials หลุด/อ่อน, JWT default** (P0) |
 | Data Integrity / บัญชี | 🟡 65% | เขียน dbo ตรง — ต้องยืนยันว่าไม่กระทบ GL WINSpeed (P0) |
 | Reliability / Backup | 🟡 60% | ยังไม่มี backup/DR policy ที่ชัด, ไม่มี error monitoring |
@@ -58,7 +58,7 @@
 |---|--------|
 | P2-1 | Automated tests (unit สำหรับ rebate FIFO/accrual, integration สำหรับ SO lifecycle) — อ้าง RBD68-019 เป็น fixture |
 | P2-2 | Code-split frontend (bundle 858KB > 500KB warning) — lazy load หน้าที่ไม่ใช้บ่อย |
-| P2-3 | Credit Hold (FR-003) + LINE intake (FR-016) — Phase ถัดไป |
+| P2-3 | Credit Hold (FR-003) — Phase ถัดไป; LINE Login implemented in code, pending migration/UAT |
 | P2-4 | Receive-mode (รับเฉพาะชุด/รับพร้อม) ให้บันทึกชัดใน Control Ticket |
 | P2-5 | ลบ migration ตาย (002_wf_schema_v2 no-op, 011 section) ออกเพื่อความสะอาด — optional |
 | P2-6 | PDPA: เข้ารหัสข้อมูลส่วนบุคคล + retention policy (NFR-007) |
@@ -86,3 +86,23 @@
 4. หลังเสถียร ค่อยทำ **automated tests + Phase 2 (Credit/LINE)**
 
 > โดยรวม: ระบบ "ใช้งานได้จริงและออกแบบดี" แต่ต้อง **harden ด้าน security/ops** ให้ถึงมาตรฐาน production ก่อนใช้เต็มรูปแบบ — ซึ่งเป็นงานปิด gap ที่ชัดเจนและทำได้ในเวลาสั้น
+
+---
+
+## Current Addendum - 2026-07-08
+
+### Feature readiness update
+- Functionality is now closer to pilot-complete for the Meeting Minutes 02072026 backlog.
+- Implemented in source: SO requested/transport flags, 5-level price colors, rebate role visibility, dashboard/date search, customer filters, goods dedupe, giveaway line approval, status timestamps, Paper Trail price hiding/security green, customer request flow, Rebate Plan Ref Doc, and LINE Login.
+- Migrations `031-035` have been applied to the restored local `dbwins_worldfert9` database on 2026-07-08.
+
+### Remaining critical work before full production
+- Run smoke tests against the restored local database.
+- Restart backend after migration/config changes.
+- Verify LINE Login callback domain and CORS on the real deployment domain.
+- Smoke test first-time LINE self-link with an existing active user; Admin binding is only needed for support exceptions.
+- Keep P0 security controls active: rotate any secrets exposed in chat/history, store secrets only in env vars, and confirm `.env` is not tracked.
+
+### Updated P2 status
+- LINE Login is no longer purely future work; it is implemented in code and schema, but requires callback URL verification and self-link UAT.
+- Credit Hold remains a future/next-phase item.

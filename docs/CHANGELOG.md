@@ -1,4 +1,36 @@
-﻿# Changelog
+# Changelog
+
+## [v4.2.26] - 2026-07-08
+
+### Added
+- Added SO requested/notification date-time and transport flags: own truck, no truck required, and P-Sling.
+- Added 5-level sales price color display compared with Set Price.
+- Added role-based rebate amount visibility in backend/frontend paths.
+- Added dashboard search by customer, truck plate, and date/time.
+- Added customer filters by salesperson, area, customer group, and employee.
+- Added per-item giveaway checkbox and manager/admin approval gate before SO confirm.
+- Added status timeline timestamps, including shipping/weigh-out time.
+- Added Paper Trail print changes: customer/security copies hide price; security copy uses green styling.
+- Added Rebate Plan Ref Doc fields.
+- Added app-owned new customer request flow through Sale Admin/Master Data without auto-writing `dbo.EMCust`.
+- Added LINE Login OAuth with first-time self-link by existing username/password, plus Admin support override for `wf.AppUser.LineUserId`.
+
+### Changed
+- Aligned backend/frontend metadata and visible UI badge to v4.2.26.
+- Updated documentation to reflect the actual stack: React 19 + Vite + Express.
+- Clarified database architecture: SQL Server is the primary WINSpeed/App database; MySQL is used as the TruckScale bridge only.
+- Added `07-SOURCE-ALIGNMENT-v4.2.26.md` to highlight source/document alignment, WINSpeed WF custom-build boundaries, and Meeting Minutes 02072026 backlog.
+
+### Database Migration Status
+- Applied schema migrations `001-035` to the restored local `dbwins_worldfert9` database on 2026-07-08.
+- `000_logins.sql` is treated as a manual security setup file and is skipped by the default Node migration runner.
+
+### Meeting Minutes Migration Batch
+- `031_so_requested_transport_flags.sql`
+- `032_rebate_plan_ref_doc.sql`
+- `033_giveaway_line_approval.sql`
+- `034_customer_request_flow.sql`
+- `035_line_login_app_user.sql`
 
 ## [v4.2.0] - 2026-06-26
 
@@ -10,6 +42,7 @@
 
 ### Changed
 - **Backend Setup**: Added `nodemon` for auto-restarting the Node.js backend server during development.
+
 ## [v4.1.0] - 2026-06-25
 
 ### Changed

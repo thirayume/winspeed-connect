@@ -1,6 +1,6 @@
 # 04 — ขั้นตอนปฏิบัติงานมาตรฐาน (Standard Operating Procedures · SOP)
 
-> สำหรับระบบบริหารคุณภาพ ISO 9001 · WS-Sale-App · build v4.2.17
+> สำหรับระบบบริหารคุณภาพ ISO 9001 · WS-Sale-App · build v4.2.26
 > เอกสารควบคุม — แก้ไขต้องผ่านผู้อนุมัติและขึ้นเวอร์ชันใหม่
 
 ## ข้อมูลควบคุมเอกสาร (Document Control)
@@ -149,3 +149,32 @@
 - [02-TEST-CASES.md](02-TEST-CASES.md) — กรณีทดสอบ
 - [03-USER-GUIDE.md](03-USER-GUIDE.md) — คู่มือผู้ใช้
 - SRS v6.2 (`refs/WorldFert_SRS_v6_0.docx`), Diagrams v6.2, Presentation v6.2
+
+---
+
+## Current Addendum - 2026-07-08
+
+### SOP-01 Sales Order updates
+- SALES can record requested/notification date-time, own truck, no truck required, and P-Sling during SO create/edit.
+- Price color is displayed against Set Price to support review before save/confirm.
+- Giveaway line items require Manager/Admin approval before SO confirm.
+
+### SOP-04 Paper Trail updates
+- Customer and security copies must not show prices.
+- Security copy styling is green.
+- SO detail now surfaces status timestamps, including shipping/weigh-out time where available.
+
+### SOP-06 Master / Customer request updates
+- New customer requests are captured in `wf.CustomerRequest`.
+- Sale Admin/Admin reviews the request and creates/maintains the official customer master in WINSpeed.
+- WS-Sale-App does not automatically insert `dbo.EMCust` for this flow.
+
+### SOP-08 User & Access updates
+- LINE Login is enabled through LINE OAuth.
+- First-time LINE users link themselves by entering their existing WS-Sale-App username/password.
+- If the credential check succeeds, `wf.AppUser.LineUserId` is saved and the user logs in with the existing role/employee mapping.
+- If the credential check fails, the user contacts Admin to create, activate, reset, or correct the mapped user first.
+
+### IT operation note
+- Migrations `031-035` were applied to the restored local `dbwins_worldfert9` database on 2026-07-08.
+- Restart backend after migration/config changes.

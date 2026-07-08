@@ -219,6 +219,34 @@ docker compose up -d --build frontend
 | อาการ | วิธีแก้ |
 |---|---|
 | Frontend แสดง "Failed to fetch" | ตรวจ `VITE_API_BASE_URL` ใน `.env` และ rebuild frontend |
+
+## Current Addendum - 2026-07-08
+
+### LINE Login env
+Backend env must include:
+
+```ini
+LINE_LOGIN_CHANNEL_ID=...
+LINE_LOGIN_CHANNEL_SECRET=...
+LINE_LOGIN_CALLBACK_URL=https://<backend-domain>/api/auth/line/callback
+LINE_LOGIN_SUCCESS_REDIRECT=https://<frontend-domain>
+```
+
+For local development:
+
+```ini
+LINE_LOGIN_CALLBACK_URL=http://localhost:3000/api/auth/line/callback
+LINE_LOGIN_SUCCESS_REDIRECT=http://localhost:5173
+```
+
+LINE Developers:
+- Messaging API Webhook URL: `https://<backend-domain>/api/line/webhook`
+- LINE Login Callback URL: `https://<backend-domain>/api/auth/line/callback`
+
+After changing env, restart the backend.
+
+### Migration batch after DB restore
+For the local restored `dbwins_worldfert9` database, migrations `031-035` were applied on 2026-07-08. For a new environment, apply the same migration batch, then restart backend and run smoke tests for SO, Rebate Plan, Giveaway approval, Customer Request, and LINE Login.
 | Backend ต่อ DB ไม่ได้ | ตรวจ `REMOTE_DB_SERVER`, `REMOTE_DB_PASSWORD` และ firewall ของ SQL Server |
 | Port 80 ถูกใช้งานอยู่ | แก้ใน `docker-compose.yml` เป็น `"8080:80"` แล้ว `docker compose up -d` |
 | Railway: connection refused | ตรวจ Networking → port ต้องตรงกับ `PORT` env var |

@@ -1,7 +1,7 @@
 # 01 — แผนที่หน้า → API → SQL → Migration (Pages / SQL / Migration Map)
 
 > ใช้สำหรับ **ทดสอบรายหน้า** · ระบุชัดเจนว่าแต่ละหน้าใช้ endpoint ใด, อ่าน/เขียน SQL อะไร, object อยู่ใน migration ไหน, และส่วนใด **ไม่อยู่ใน migration** (= dbo ของ WINSpeed / MySQL TruckScale / โค้ด)
-> build v4.2.17 · 17 หน้า/โมดูล
+> build v4.2.26 · 22 หน้า/โมดูล
 
 ## คำอธิบายสัญลักษณ์
 - 🟢 **wf** = ตาราง/วิวของเรา (อยู่ใน migration `backend/migrations/`)
@@ -165,3 +165,22 @@
 2. **เขียน dbo ตรง (🟠):** `sp_ConfirmSalesOrder` (mig 015 แต่ INSERT dbo), picking/ship/cancel (UPDATE dbo.SOHD), master prices PATCH/POST (dbo.EMSetPrice) — **ข้อยกเว้นที่รับไว้ (GL ยังให้ WINSpeed post)**
 3. **MySQL TruckScale:** ทุก endpoint `/truckscale/*` — แยก DB ไม่มี migration ใน repo นี้
 4. **Logic ใน code (ไม่ใช่ schema):** reports.js (สร้างรายงาน+xlsx), bookRebateAccrual, winspeed-import.service
+
+---
+
+## Current Addendum - 2026-07-08
+
+Additional implemented source mappings after Meeting Minutes 02072026:
+
+| Area | Endpoint / UI | SQL / Source | Migration |
+|---|---|---|---|
+| SO requested/transport flags | `POST/PUT /so`, SO create/edit/detail | `wf.SalesOrder`, `wf.SalesOrderExt` | 031 |
+| SO price color | `CreateSODialog` | frontend logic using current Set Price | code |
+| Giveaway line approval | `PATCH /so/:id/giveaway-lines/:lineNum/approve`, confirm gate | `wf.SalesOrderLine`, `wf.SalesOrderLineExt` | 033 |
+| Rebate Plan Ref Doc | `GET/POST/PATCH /rebate/plans` | `wf.RebatePlan.RefDoc` | 032 |
+| Dashboard search | `GET /so?search=&dateFrom=&dateTo=` | `wf.v_AllSalesOrders` | code/view |
+| Customer filters | `GET /master/customer-filters`, `/master/customers` | dynamic read from `dbo.EMCust` columns | code/dbo |
+| Customer request flow | `GET/POST/PATCH /master/customer-requests` | `wf.CustomerRequest` | 034 |
+| LINE Login | `GET /auth/line/start`, `/auth/line/callback`, `POST /auth/line/link`, `/auth/line/status` | `wf.AppUser.LineUserId` self-link after username/password verification | 035 |
+
+Webhook note: LINE Messaging API webhook URL is `/api/line/webhook`; LINE Login uses Callback URL `/api/auth/line/callback`.

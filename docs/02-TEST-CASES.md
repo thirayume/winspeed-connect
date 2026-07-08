@@ -1,6 +1,6 @@
 # 02 — Test Cases (กรณีทดสอบ)
 
-> สำหรับ UAT / Regression / ISO 9001 · build v4.2.17
+> สำหรับ UAT / Regression / ISO 9001 · build v4.2.26
 > รูปแบบ: **TC-รหัส | สถานการณ์ | ขั้นตอน | ผลที่คาดหวัง | Role | ผ่าน/ไม่ผ่าน**
 > วิธีบันทึกผล: คัดลอกตารางลง Excel/แบบฟอร์ม แล้วกรอกคอลัมน์ "ผล/วันที่/ผู้ทดสอบ"
 
@@ -143,4 +143,20 @@
 | TC-P04 | dbo READ-ONLY (ยกเว้นที่ระบุ) | ตรวจว่าไม่มีการเขียน dbo นอกเหนือ confirm/picking/ship/cancel/prices | GL ยังออกโดย WINSpeed |
 
 ---
+
+## Current Addendum - 2026-07-08 Test Cases
+
+| TC | Scenario | Steps | Expected Result | Role |
+|---|---|---|---|---|
+| TC-A05 | LINE Login first-time self-link | Click `Login with LINE` using a new LINE account, then enter an existing active username/password | LINE is linked to that `wf.AppUser` and user logs in with existing role | Any |
+| TC-A06 | LINE Login already linked | Click `Login with LINE` after self-link is complete | User logs in with mapped `wf.AppUser` role | Any |
+| TC-B06 | SO requested/transport flags | Create SO with requested date/time, own truck/no truck/P-Sling | Values persist and show in detail | SALES |
+| TC-B07 | 5-level price color | Enter prices above/equal/below Set Price | Color band matches green/light-green/yellow/orange/red rule | SALES |
+| TC-B08 | Giveaway confirm block | Tick giveaway line and confirm before approval | Confirm is blocked with manager approval message | SALES |
+| TC-B09 | Giveaway approval pass | Manager/Admin approves giveaway line, then confirm | Confirm succeeds and line shows approved | MANAGER |
+| TC-H06 | Rebate Plan Ref Doc | Create/edit plan with Ref Doc fields | Ref Doc is saved and reloaded | MANAGER |
+| TC-O04 | Customer request create | Master Data > Customers > create new customer request | `wf.CustomerRequest` row is PENDING; no `dbo.EMCust` auto-write | ADMIN |
+| TC-O05 | Customer request close | Admin completes request with WINSpeed customer id | Request becomes COMPLETED with `WinspeedCustId` | ADMIN |
+| TC-O06 | LINE support override | Admin edits user and clears/replaces LINE User ID for a support case | `wf.AppUser.LineUserId` remains unique and user can self-link again if cleared | ADMIN |
+| TC-P05 | Migration batch 031-035 | After DB restore, apply migrations 031-035 and restart backend | SO/Rebate/Giveaway/CustomerRequest/LINE Login features are available | IT |
 **เกณฑ์ผ่าน (Go-Live):** ทุก TC สถานะ "ผ่าน" 100% สำหรับ critical (B,C,D,E,G,N) · NFR (P) ผ่าน · บันทึกผลพร้อมผู้ทดสอบ+วันที่
