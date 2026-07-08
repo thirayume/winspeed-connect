@@ -68,6 +68,7 @@ export function RebatePlanPage() {
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
                 <tr>
                   <th className="px-4 py-3 text-left whitespace-nowrap">เลขที่ / ชื่อ</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Ref Doc</th>
                   <th className="px-4 py-3 text-left whitespace-nowrap">สูตร</th>
                   <th className="px-4 py-3 text-center whitespace-nowrap">ภาค</th>
                   <th className="px-4 py-3 text-center whitespace-nowrap">ประเภท</th>
@@ -85,6 +86,7 @@ export function RebatePlanPage() {
                   return (
                     <tr key={p.PlanId} className="hover:bg-gray-50/60">
                       <td className="px-4 py-2.5 whitespace-nowrap"><div className="font-mono font-bold text-[#0C447C]">{p.PlanNo}</div><div className="text-xs text-gray-500">{p.Title || '-'}</div></td>
+                      <td className="px-4 py-2.5 whitespace-nowrap font-mono text-xs text-gray-600">{p.RefDoc || '-'}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap">{p.GoodCodePattern || <span className="text-gray-400">ทุกสูตร</span>}</td>
                       <td className="px-4 py-2.5 text-center whitespace-nowrap">{p.Region}</td>
                       <td className="px-4 py-2.5 text-center text-xs whitespace-nowrap">{p.ReturnType === 'PRICEDIFF' ? 'ส่วนต่าง' : 'รีเบท'}</td>
@@ -118,7 +120,7 @@ export function RebatePlanPage() {
 
 function PlanForm({ plan, onClose, onDone }: { plan: RebatePlan | null; onClose: () => void; onDone: () => void }) {
   const [f, setF] = useState({
-    title: plan?.Title || '', goodCodePattern: plan?.GoodCodePattern || '', region: plan?.Region || 'ALL',
+    title: plan?.Title || '', refDoc: plan?.RefDoc || '', goodCodePattern: plan?.GoodCodePattern || '', region: plan?.Region || 'ALL',
     returnType: plan?.ReturnType || 'REBATE', netPrice: plan?.NetPrice ?? '', validFrom: plan?.ValidFrom?.substring(0,10) || '',
     validTo: plan?.ValidTo?.substring(0,10) || '', allocatedAmount: plan?.AllocatedAmount ?? '', priority: plan?.Priority ?? 100, note: plan?.Note || '',
   });
@@ -129,7 +131,7 @@ function PlanForm({ plan, onClose, onDone }: { plan: RebatePlan | null; onClose:
     setBusy(true); setErr('');
     try {
       const payload = {
-        title: f.title || undefined, goodCodePattern: f.goodCodePattern || undefined, region: f.region,
+        title: f.title || undefined, refDoc: f.refDoc || undefined, goodCodePattern: f.goodCodePattern || undefined, region: f.region,
         returnType: f.returnType, netPrice: f.netPrice !== '' ? Number(f.netPrice) : undefined,
         validFrom: f.validFrom || undefined, validTo: f.validTo || undefined,
         allocatedAmount: f.allocatedAmount !== '' ? Number(f.allocatedAmount) : undefined,
@@ -151,6 +153,7 @@ function PlanForm({ plan, onClose, onDone }: { plan: RebatePlan | null; onClose:
         </div>
         <div className="space-y-3 text-sm">
           <Field label="ชื่อแผน"><input value={f.title} onChange={e => set('title', e.target.value)} className="inp" /></Field>
+          <Field label="Ref Doc"><input value={f.refDoc} onChange={e => set('refDoc', e.target.value)} placeholder="เลขอ้างอิงเอกสาร/โปรโมชัน" className="inp" /></Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="สูตร (เว้นว่าง=ทุกสูตร)"><input value={f.goodCodePattern} onChange={e => set('goodCodePattern', e.target.value)} placeholder="เช่น 15-5-35" className="inp" /></Field>
             <Field label="ภาค"><select value={f.region} onChange={e => set('region', e.target.value)} className="inp">{REGIONS.map(r => <option key={r}>{r}</option>)}</select></Field>

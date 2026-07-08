@@ -9,8 +9,11 @@ const COLOR_META: Record<string, { name: string; accent: string; bg: string }> =
   WHITE:  { name: 'ขาว — ต้นฉบับ (บัญชี)', accent: '#475569', bg: '#FFFFFF' },
   BLUE:   { name: 'ฟ้า — สำเนา (เก็บ)',     accent: '#2563EB', bg: '#EFF6FF' },
   PINK:   { name: 'ชมพู — ลูกค้า',          accent: '#DB2777', bg: '#FDF2F8' },
+  GREEN:  { name: 'เขียว — รปภ. (ประตู)',  accent: '#059669', bg: '#ECFDF5' },
   YELLOW: { name: 'เหลือง — รปภ. (ประตู)',  accent: '#CA8A04', bg: '#FEFCE8' },
 };
+
+const PRICE_HIDDEN_COPY_COLORS = new Set(['PINK', 'GREEN', 'YELLOW']);
 
 const PRINT_CSS = `
 @media print {
@@ -110,6 +113,7 @@ export function PaperDocModal({ soIds, onClose }: { soIds: (string | number)[]; 
                 <div key={jIdx}>
                   {job.copies.map(c => {
                     const m = COLOR_META[c.color] || COLOR_META.WHITE;
+                    const showPrices = !PRICE_HIDDEN_COPY_COLORS.has(c.color);
                     return (
                       <div key={c.color} className="pt-copy bg-white border rounded-lg p-4 sm:p-5 mx-auto mb-5" style={{ borderColor: m.accent, borderTopWidth: 6, maxWidth: 790, '--accent-color': m.accent } as React.CSSProperties}>
                         <div className="flex items-start justify-between">
@@ -141,8 +145,8 @@ export function PaperDocModal({ soIds, onClose }: { soIds: (string | number)[]; 
                               <th className="px-2 py-1.5 text-left whitespace-nowrap">รหัส/สูตร</th>
                               <th className="px-2 py-1.5 text-right whitespace-nowrap w-12">ตัน</th>
                               <th className="px-2 py-1.5 text-right whitespace-nowrap w-14">กระสอบ</th>
-                              <th className="px-2 py-1.5 text-right whitespace-nowrap w-16">ราคา/ตัน</th>
-                              <th className="px-2 py-1.5 text-right whitespace-nowrap w-24">จำนวนเงิน</th>
+                              {showPrices && <th className="px-2 py-1.5 text-right whitespace-nowrap w-16">ราคา/ตัน</th>}
+                              {showPrices && <th className="px-2 py-1.5 text-right whitespace-nowrap w-24">จำนวนเงิน</th>}
                               <th className="px-2 py-1.5 text-center whitespace-nowrap w-12">โหลด</th>
                             </tr>
                           </thead>
@@ -156,8 +160,8 @@ export function PaperDocModal({ soIds, onClose }: { soIds: (string | number)[]; 
                                   <td className="px-2 py-1.5 whitespace-nowrap font-medium">{l.GoodName || l.GoodCode}{l.IsGiveaway ? ' (แถม)' : ''}</td>
                                   <td className="px-2 py-1.5 text-right whitespace-nowrap">{Number(l.QtyTon).toFixed(2)}</td>
                                   <td className="px-2 py-1.5 text-right whitespace-nowrap">{l.QtyBag}</td>
-                                  <td className="px-2 py-1.5 text-right whitespace-nowrap">{price > 0 ? price.toLocaleString(undefined, {minimumFractionDigits: 2}) : '-'}</td>
-                                  <td className="px-2 py-1.5 text-right whitespace-nowrap font-medium">{total > 0 ? total.toLocaleString(undefined, {minimumFractionDigits: 2}) : '-'}</td>
+                                  {showPrices && <td className="px-2 py-1.5 text-right whitespace-nowrap">{price > 0 ? price.toLocaleString(undefined, {minimumFractionDigits: 2}) : '-'}</td>}
+                                  {showPrices && <td className="px-2 py-1.5 text-right whitespace-nowrap font-medium">{total > 0 ? total.toLocaleString(undefined, {minimumFractionDigits: 2}) : '-'}</td>}
                                   <td className="px-2 py-1.5 text-center whitespace-nowrap">{l.LoadSequence ?? '-'}</td>
                                 </tr>
                               );
@@ -168,8 +172,8 @@ export function PaperDocModal({ soIds, onClose }: { soIds: (string | number)[]; 
                               <td className="px-2 py-2 whitespace-nowrap text-right" colSpan={2}>รวมทั้งหมด</td>
                               <td className="px-2 py-2 text-right whitespace-nowrap">{job.doc.lines.reduce((s, l) => s + Number(l.QtyTon), 0).toFixed(2)}</td>
                               <td className="px-2 py-2 text-right whitespace-nowrap">{job.doc.lines.reduce((s, l) => s + Number(l.QtyBag), 0).toLocaleString()}</td>
-                              <td className="px-2 py-2 text-right whitespace-nowrap"></td>
-                              <td className="px-2 py-2 text-right whitespace-nowrap">{job.doc.lines.reduce((s, l) => s + (Number(l.QtyTon) * Number(l.NetPricePerTon || l.PricePerTon || 0)), 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                              {showPrices && <td className="px-2 py-2 text-right whitespace-nowrap"></td>}
+                              {showPrices && <td className="px-2 py-2 text-right whitespace-nowrap">{job.doc.lines.reduce((s, l) => s + (Number(l.QtyTon) * Number(l.NetPricePerTon || l.PricePerTon || 0)), 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>}
                               <td className="px-2 py-2 whitespace-nowrap"></td>
                             </tr>
                           </tfoot>
