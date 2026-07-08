@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, RefreshCw, Package, Clock, TrendingUp, AlertTriangle, Truck, Database } from 'lucide-react';
-import { fetchSoStats, fetchAgingOrders, fetchRebateSummary } from '../../services/api';
+import { LayoutDashboard, RefreshCw, Package, Clock, TrendingUp, AlertTriangle, Truck, Database, Search, X, Calendar } from 'lucide-react';
+import { fetchSoStats, fetchAgingOrders, fetchRebateSummary, fetchSalesOrders } from '../../services/api';
 import { useSocketEvent } from '../../hooks/useSocket';
-import type { AgingRow, RebateSummary, SOStatus } from '../../types';
+import { useAuthStore } from '../../store/auth-store';
+import { canViewAllRebateAmounts } from '../../utils/permissions';
+import type { AgingRow, RebateSummary, SalesOrder, SOStatus } from '../../types';
 
 const STATUS_META: Record<SOStatus, { label: string; color: string }> = {
   DRAFT:     { label: 'ร่าง',          color: '#9CA3AF' },
   CONFIRMED: { label: 'ยืนยัน',        color: '#0C447C' },
   PICKING:   { label: 'รอรับสินค้า',   color: '#F59E0B' },
+  LOADED:    { label: 'โหลดสินค้า',     color: '#7C3AED' },
   SHIPPED:   { label: 'ส่งออก',        color: '#059669' },
   IMPORTED:  { label: 'นำเข้า WS',     color: '#10B981' },
   CANCELLED: { label: 'ยกเลิก',        color: '#EF4444' },
@@ -22,10 +25,17 @@ function agingColor(days: number) {
 }
 
 export function DashboardPage() {
+  const canSeeRebate = canViewAllRebateAmounts(useAuthStore(s => s.user));
   const [stats, setStats]     = useState<{ byStatus: Record<string, number>; total: number }>({ byStatus: {}, total: 0 });
   const [aging, setAging]     = useState<AgingRow[]>([]);
   const [rebate, setRebate]   = useState<RebateSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [searchRows, setSearchRows] = useState<SalesOrder[]>([]);
+  const [searchTotal, setSearchTotal] = useState(0);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   async function load(bustCache = false) {
     setLoading(true);
@@ -33,7 +43,7 @@ export function DashboardPage() {
       const [s, a, r] = await Promise.all([
         fetchSoStats(bustCache),
         fetchAgingOrders(bustCache).catch(() => []),
-        fetchRebateSummary().catch(() => []),
+        canSeeRebate ? fetchRebateSummary().catch(() => []) : Promise.resolve([]),
       ]);
       setStats(s);
       setAging(a as AgingRow[]);
@@ -51,6 +61,42 @@ export function DashboardPage() {
 
   const warnAging = aging.filter(a => a.DaysOpen > 30);
   const totalRebateAvailable = rebate.reduce((s, r) => s + Number(r.TotalAvailable || 0), 0);
+  const hasSearch = !!(searchQuery.trim() || dateFrom || dateTo);
+
+  async function runSearch() {
+    if (!hasSearch) {
+      setSearchRows([]);
+      setSearchTotal(0);
+      return;
+    }
+    setSearchLoading(true);
+    try {
+      const r = await fetchSalesOrders({
+        search: searchQuery.trim() || undefined,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+        page: 1,
+        limit: 12,
+        silent: true,
+      });
+      setSearchRows(r.data || []);
+      setSearchTotal(r.total || 0);
+    } catch (e) {
+      console.error(e);
+      setSearchRows([]);
+      setSearchTotal(0);
+    } finally {
+      setSearchLoading(false);
+    }
+  }
+
+  function clearSearch() {
+    setSearchQuery('');
+    setDateFrom('');
+    setDateTo('');
+    setSearchRows([]);
+    setSearchTotal(0);
+  }
 
   return (
     <div className="h-full flex flex-col w-full overflow-hidden max-w-full" style={{ background: '#F1EFE8' }}>
@@ -75,8 +121,90 @@ export function DashboardPage() {
           <KpiCard icon={<Truck size={20} />} label="ส่งออกแล้ว" value={(stats.byStatus.SHIPPED || 0).toLocaleString()} color="#059669" />
           <KpiCard icon={<Database size={20} />} label="นำเข้า WS" value={(stats.byStatus.IMPORTED || 0).toLocaleString()} color="#10B981" />
           <KpiCard icon={<AlertTriangle size={20} />} label="ตั๋วค้าง >30 วัน" value={warnAging.length.toLocaleString()} color="#EF4444" />
-          <KpiCard icon={<TrendingUp size={20} />} label="รีเบท (฿)"
-            value={totalRebateAvailable.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} color="#059669" />
+          {canSeeRebate && (
+            <KpiCard icon={<TrendingUp size={20} />} label="รีเบท (฿)"
+              value={totalRebateAvailable.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} color="#059669" />
+          )}
+        </div>
+
+        <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 p-4 sm:p-5 shadow-sm">
+          <div className="flex flex-col lg:flex-row lg:items-end gap-3">
+            <div className="flex-1 min-w-0">
+              <label className="text-[10px] font-bold text-gray-500 block mb-1">ค้นหา Dashboard</label>
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') runSearch(); }}
+                  placeholder="ชื่อลูกค้า / ทะเบียนรถ / เลขเอกสาร"
+                  className="w-full rounded-xl border border-gray-200 py-2.5 pl-9 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 lg:w-[320px]">
+              <label className="block">
+                <span className="text-[10px] font-bold text-gray-500 block mb-1"><Calendar size={10} className="inline mr-0.5" />จากวันที่</span>
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]" />
+              </label>
+              <label className="block">
+                <span className="text-[10px] font-bold text-gray-500 block mb-1">ถึงวันที่</span>
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]" />
+              </label>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={runSearch} disabled={!hasSearch || searchLoading} className="h-10 px-4 rounded-xl text-white text-sm font-bold disabled:opacity-40" style={{ background: '#0C447C' }}>
+                {searchLoading ? 'กำลังค้นหา...' : 'ค้นหา'}
+              </button>
+              <button onClick={clearSearch} disabled={!hasSearch && searchRows.length === 0} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 disabled:opacity-40">
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+
+          {(searchRows.length > 0 || (hasSearch && !searchLoading)) && (
+            <div className="mt-4 border-t border-gray-100 pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-xs font-bold text-gray-600">ผลการค้นหา SO</h2>
+                <span className="text-[10px] text-gray-400">แสดง {searchRows.length.toLocaleString()} จาก {searchTotal.toLocaleString()} รายการ</span>
+              </div>
+              {searchRows.length === 0 ? (
+                <p className="text-xs text-gray-400 py-4 text-center">ไม่พบรายการที่ตรงกับเงื่อนไข</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs min-w-[760px]">
+                    <thead>
+                      <tr className="text-gray-400 border-b border-gray-100">
+                        <th className="text-left py-2 pr-3">เลขอ้างอิง</th>
+                        <th className="text-left py-2 px-3">ลูกค้า</th>
+                        <th className="text-left py-2 px-3">ทะเบียน</th>
+                        <th className="text-left py-2 px-3">วันที่แจ้ง/นัด</th>
+                        <th className="text-left py-2 px-3">วันรับของ</th>
+                        <th className="text-left py-2 pl-3">สถานะ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {searchRows.map(row => (
+                        <tr key={String(row.id)} className="text-gray-700">
+                          <td className="py-2 pr-3 font-mono font-bold text-[#0C447C] whitespace-nowrap">{row.wfRef || row.importedDocuNo || row.id}</td>
+                          <td className="py-2 px-3 max-w-[220px] truncate" title={row.custName}>{row.custName}</td>
+                          <td className="py-2 px-3 font-mono whitespace-nowrap">{row.truckPlate || (row.noTruckRequired ? 'ไม่ต้องระบุรถ' : '-')}</td>
+                          <td className="py-2 px-3 whitespace-nowrap">{row.requestedAt ? new Date(row.requestedAt).toLocaleString('th-TH') : '-'}</td>
+                          <td className="py-2 px-3 whitespace-nowrap">{row.deliveryDate ? new Date(row.deliveryDate).toLocaleDateString('th-TH') : '-'}</td>
+                          <td className="py-2 pl-3 whitespace-nowrap">{STATUS_META[row.status]?.label || row.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* SO status breakdown */}
@@ -128,7 +256,7 @@ export function DashboardPage() {
           </div>
 
           {/* Rebate summary per salesperson */}
-          <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 p-4 sm:p-5 shadow-sm overflow-hidden flex flex-col w-full">
+          {canSeeRebate && <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 p-4 sm:p-5 shadow-sm overflow-hidden flex flex-col w-full">
             <h2 className="text-sm font-bold text-gray-700 mb-3">รีเบทต่อพนักงานขาย</h2>
             {rebate.length === 0 ? (
               <p className="text-xs text-gray-400 py-6 text-center">ยังไม่มีข้อมูลรีเบท</p>
@@ -156,7 +284,7 @@ export function DashboardPage() {
               </table>
               </div>
             )}
-          </div>
+          </div>}
         </div>
       </div>
     </div>

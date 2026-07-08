@@ -17,7 +17,7 @@ const crypto = require('crypto');
 const db   = require('./db');
 
 const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
-const SKIP_FILES     = ['001_wf_schema_backup.sql'];
+const SKIP_FILES     = ['000_logins.sql', '001_wf_schema_backup.sql'];
 
 const sha256 = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
 

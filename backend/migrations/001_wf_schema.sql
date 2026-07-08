@@ -250,10 +250,12 @@ GO
 
 -- ── Grants ────────────────────────────────────────────────────
 -- wf_reader: อ่าน wf views/tables ได้
-GRANT SELECT ON SCHEMA::wf TO wf_reader
+IF EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'wf_reader')
+  GRANT SELECT ON SCHEMA::wf TO wf_reader
 GO
 -- wf_owner: อ่าน/เขียน/DDL เต็มเฉพาะ schema wf (เขียน dbo ไม่ได้ — ไม่มี datawriter)
-GRANT CONTROL ON SCHEMA::wf TO wf_owner
+IF EXISTS (SELECT 1 FROM sys.database_principals WHERE name = 'wf_owner')
+  GRANT CONTROL ON SCHEMA::wf TO wf_owner
 GO
 
 PRINT '✓ WF schema migration 001 complete'
