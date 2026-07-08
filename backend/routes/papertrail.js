@@ -19,7 +19,7 @@ const ISSUE_COPIES = [
   { color: 'WHITE',  label: 'ต้นฉบับ (บัญชี)' },
   { color: 'BLUE',   label: 'สำเนา (เก็บ)' },
   { color: 'PINK',   label: 'ลูกค้า' },
-  { color: 'YELLOW', label: 'รปภ. (ประตู)' },
+  { color: 'GREEN',  label: 'รปภ. (ประตู)' },
 ];
 
 // ── GET /api/papertrail/board ──────────────────────────────────

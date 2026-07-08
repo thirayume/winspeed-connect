@@ -72,6 +72,11 @@ app.use('/api/auth/login', rateLimit({
   standardHeaders: true, legacyHeaders: false,
   message: { message: 'พยายามเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่' },
 }));
+app.use('/api/auth/line/link', rateLimit({
+  windowMs: 15 * 60 * 1000, max: 20,
+  standardHeaders: true, legacyHeaders: false,
+  message: { message: 'พยายามผูก LINE บ่อยเกินไป กรุณารอสักครู่' },
+}));
 
 // ── DB target switch (per-request) ────────────────────────────
 // frontend (ADMIN) ส่ง header X-DB-Target: local|remote → เลือก pool

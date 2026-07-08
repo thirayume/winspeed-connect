@@ -4,17 +4,22 @@
  */
 const router = require('express').Router();
 const { sql, wfQuery } = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, requireRebateAmountAccess, canViewAllRebateAmounts } = require('../middleware/auth');
 
 router.use(requireAuth);
 
 // GET /api/rebate/pools — pool รายเดือนของ sales user
-router.get('/pools', async (req, res) => {
+router.get('/pools', requireRebateAmountAccess, async (req, res) => {
   try {
     const { userId, year, month } = req.query;
     const conditions = [];
     const inputs = {};
-    if (userId) { conditions.push(`p.SalesUserId = @uid`); inputs.uid = { type: sql.Int, value: Number(userId) }; }
+    if (canViewAllRebateAmounts(req.user)) {
+      if (userId) { conditions.push(`p.SalesUserId = @uid`); inputs.uid = { type: sql.Int, value: Number(userId) }; }
+    } else {
+      conditions.push(`p.SalesUserId = @uid`);
+      inputs.uid = { type: sql.Int, value: Number(req.user.sub) };
+    }
     if (year)   { conditions.push(`p.PeriodYear = @y`);   inputs.y  = { type: sql.Int, value: Number(year) }; }
     if (month)  { conditions.push(`p.PeriodMonth = @m`);  inputs.m  = { type: sql.Int, value: Number(month) }; }
     
@@ -34,16 +39,24 @@ router.get('/pools', async (req, res) => {
 });
 
 // GET /api/rebate/ledger?poolId=&soId= — รายการ accrual
-router.get('/ledger', async (req, res) => {
+router.get('/ledger', requireRebateAmountAccess, async (req, res) => {
   try {
     const { poolId, soId, custId } = req.query;
     const conditions = ['l.ReversedFlag = 0'];
     const inputs = {};
+    if (!canViewAllRebateAmounts(req.user)) {
+      conditions.push(`p.SalesUserId = @salesUserId`);
+      inputs.salesUserId = { type: sql.Int, value: Number(req.user.sub) };
+    }
     if (poolId) { conditions.push(`l.PoolId = @pid`);  inputs.pid  = { type: sql.Int,          value: Number(poolId) }; }
     if (soId)   { conditions.push(`l.SoId = @soId`);   inputs.soId = { type: sql.VarChar(50),  value: String(soId) }; }
     if (custId) { conditions.push(`l.CustId = @cid`);  inputs.cid  = { type: sql.NVarChar(20), value: custId }; }
     const r = await wfQuery(
-      `SELECT * FROM wf.RebateLedger l WHERE ${conditions.join(' AND ')} ORDER BY l.CreatedAt DESC`,
+      `SELECT l.*
+       FROM wf.RebateLedger l
+       JOIN wf.RebatePool p ON p.Id = l.PoolId
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY l.CreatedAt DESC`,
       inputs
     );
     res.json(r.recordset || []);
@@ -51,11 +64,20 @@ router.get('/ledger', async (req, res) => {
 });
 
 // GET /api/rebate/claims — เคลมที่เปิดอยู่
-router.get('/claims', async (req, res) => {
+router.get('/claims', requireRebateAmountAccess, async (req, res) => {
   try {
     const { status } = req.query;
-    const where = status ? `WHERE c.Status = @status` : '';
-    const inputs = status ? { status: { type: sql.NVarChar(20), value: status } } : {};
+    const conditions = [];
+    const inputs = {};
+    if (status) {
+      conditions.push(`c.Status = @status`);
+      inputs.status = { type: sql.NVarChar(20), value: status };
+    }
+    if (!canViewAllRebateAmounts(req.user)) {
+      conditions.push(`c.SalesUserId = @salesUserId`);
+      inputs.salesUserId = { type: sql.Int, value: Number(req.user.sub) };
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const r = await wfQuery(`
       SELECT c.*, u.DisplayName AS SalesName
       FROM wf.RebateClaim c
@@ -75,6 +97,9 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN'), async (req, 
 
     const pool = (await wfQuery(`SELECT * FROM wf.RebatePool WHERE Id=@id`, { id: { type: sql.Int, value: poolId } })).recordset?.[0];
     if (!pool) return res.status(404).json({ message: 'ไม่พบ pool' });
+    if (!canViewAllRebateAmounts(req.user) && Number(pool.SalesUserId) !== Number(req.user.sub)) {
+      return res.status(403).json({ message: 'ไม่มีสิทธิ์เคลม pool ของพนักงานขายอื่น' });
+    }
 
     const available = Number(pool.AccruedAmt) - Number(pool.ClaimedAmt);
     if (Number(claimAmt) > available)
@@ -159,6 +184,14 @@ router.get('/summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req
 
 // ── Rebate Plan (FR-008) + Pool allocation (FR-009) ──────────────────────
 
+let rebatePlanRefDocColumn = null;
+async function hasRebatePlanRefDoc() {
+  if (rebatePlanRefDocColumn !== null) return rebatePlanRefDocColumn;
+  const r = await wfQuery(`SELECT CASE WHEN COL_LENGTH('wf.RebatePlan', 'RefDoc') IS NULL THEN 0 ELSE 1 END AS HasRefDoc`);
+  rebatePlanRefDocColumn = Number(r.recordset?.[0]?.HasRefDoc || 0) === 1;
+  return rebatePlanRefDocColumn;
+}
+
 // GET /api/rebate/plans?status= — รายการ Plan
 router.get('/plans', async (req, res) => {
   try {
@@ -181,29 +214,34 @@ router.get('/plans', async (req, res) => {
 // POST /api/rebate/plans — สร้าง Plan (DRAFT)
 router.post('/plans', requireRole('MANAGER', 'ADMIN', 'APPROVER'), async (req, res) => {
   try {
-    const { title, goodCodePattern, region, returnType, netPrice, validFrom, validTo, allocatedAmount, priority, note } = req.body || {};
+    const { title, refDoc, goodCodePattern, region, returnType, netPrice, validFrom, validTo, allocatedAmount, priority, note } = req.body || {};
     const yy = (new Date().getFullYear() + 543) % 100;
     const cnt = (await wfQuery(`SELECT COUNT(*) c FROM wf.RebatePlan WHERE PlanNo LIKE @p`,
       { p: { type: sql.NVarChar(30), value: `RP${yy}-%` } })).recordset[0].c;
     const planNo = `RP${yy}-${String(cnt + 1).padStart(3, '0')}`;
+    const hasRefDoc = await hasRebatePlanRefDoc();
+    const refDocColumn = hasRefDoc ? ', RefDoc' : '';
+    const refDocValue = hasRefDoc ? ', @refDoc' : '';
+    const inputs = {
+      no:    { type: sql.NVarChar(30),  value: planNo },
+      title: { type: sql.NVarChar(200), value: title || null },
+      gcp:   { type: sql.NVarChar(50),  value: goodCodePattern || null },
+      region:{ type: sql.NVarChar(20),  value: region || 'ALL' },
+      rt:    { type: sql.NVarChar(20),  value: returnType === 'PRICEDIFF' ? 'PRICEDIFF' : 'REBATE' },
+      net:   { type: sql.Decimal(12,2), value: netPrice != null ? Number(netPrice) : null },
+      vf:    { type: sql.Date,          value: validFrom || null },
+      vt:    { type: sql.Date,          value: validTo || null },
+      alloc: { type: sql.Decimal(14,2), value: allocatedAmount != null ? Number(allocatedAmount) : 0 },
+      prio:  { type: sql.Int,           value: priority != null ? Number(priority) : 100 },
+      note:  { type: sql.NVarChar(300), value: note || null },
+      uid:   { type: sql.Int,           value: req.user.sub },
+    };
+    if (hasRefDoc) inputs.refDoc = { type: sql.NVarChar(100), value: refDoc || null };
     const r = await wfQuery(`
-      INSERT INTO wf.RebatePlan (PlanNo, Title, GoodCodePattern, Region, ReturnType, NetPrice, ValidFrom, ValidTo, AllocatedAmount, Priority, Status, Note, CreatedBy)
+      INSERT INTO wf.RebatePlan (PlanNo, Title${refDocColumn}, GoodCodePattern, Region, ReturnType, NetPrice, ValidFrom, ValidTo, AllocatedAmount, Priority, Status, Note, CreatedBy)
       OUTPUT inserted.*
-      VALUES (@no, @title, @gcp, @region, @rt, @net, @vf, @vt, @alloc, @prio, 'DRAFT', @note, @uid)`,
-      {
-        no:    { type: sql.NVarChar(30),  value: planNo },
-        title: { type: sql.NVarChar(200), value: title || null },
-        gcp:   { type: sql.NVarChar(50),  value: goodCodePattern || null },
-        region:{ type: sql.NVarChar(20),  value: region || 'ALL' },
-        rt:    { type: sql.NVarChar(20),  value: returnType === 'PRICEDIFF' ? 'PRICEDIFF' : 'REBATE' },
-        net:   { type: sql.Decimal(12,2), value: netPrice != null ? Number(netPrice) : null },
-        vf:    { type: sql.Date,          value: validFrom || null },
-        vt:    { type: sql.Date,          value: validTo || null },
-        alloc: { type: sql.Decimal(14,2), value: allocatedAmount != null ? Number(allocatedAmount) : 0 },
-        prio:  { type: sql.Int,           value: priority != null ? Number(priority) : 100 },
-        note:  { type: sql.NVarChar(300), value: note || null },
-        uid:   { type: sql.Int,           value: req.user.sub },
-      });
+      VALUES (@no, @title${refDocValue}, @gcp, @region, @rt, @net, @vf, @vt, @alloc, @prio, 'DRAFT', @note, @uid)`,
+      inputs);
     res.json(r.recordset[0]);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -215,6 +253,8 @@ router.patch('/plans/:id', requireRole('MANAGER', 'ADMIN', 'APPROVER'), async (r
     const sets = [], inputs = { id: { type: sql.Int, value: Number(req.params.id) } };
     const add = (col, key, type, val) => { sets.push(`${col}=@${key}`); inputs[key] = { type, value: val }; };
     if (f.title !== undefined)          add('Title','title',sql.NVarChar(200), f.title || null);
+    if (f.refDoc !== undefined && await hasRebatePlanRefDoc())
+                                        add('RefDoc','refDoc',sql.NVarChar(100), f.refDoc || null);
     if (f.goodCodePattern !== undefined)add('GoodCodePattern','gcp',sql.NVarChar(50), f.goodCodePattern || null);
     if (f.region !== undefined)         add('Region','region',sql.NVarChar(20), f.region || 'ALL');
     if (f.returnType !== undefined)     add('ReturnType','rt',sql.NVarChar(20), f.returnType === 'PRICEDIFF' ? 'PRICEDIFF':'REBATE');
@@ -288,7 +328,7 @@ router.get('/voucher-summary', async (req, res) => {
 // ── dbo CN Rebate endpoints (read-only, single source of truth) ──────────
 
 // GET /api/rebate/cn-summary — สรุป CN rebate จาก dbo แยกตาม Sales/ลูกค้า
-router.get('/cn-summary', async (req, res) => {
+router.get('/cn-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
   try {
     const { year, empId } = req.query;
     let where = `WHERE cn.Docutype = 109 AND cn.CNRemarkTypeID IN (6001, 1001)`;
@@ -317,7 +357,7 @@ router.get('/cn-summary', async (req, res) => {
 });
 
 // GET /api/rebate/cn-list?year=&empId=&custId= — รายการ CN ทั้งหมด (header level)
-router.get('/cn-list', async (req, res) => {
+router.get('/cn-list', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
   try {
     const { year, empId, custId } = req.query;
     let where = `WHERE cn.Docutype = 109 AND cn.CNRemarkTypeID IN (6001, 1001)`;
@@ -353,7 +393,7 @@ router.get('/cn-list', async (req, res) => {
 });
 
 // GET /api/rebate/cn-detail/:soInvId — รายการสินค้าใน CN
-router.get('/cn-detail/:soInvId', async (req, res) => {
+router.get('/cn-detail/:soInvId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
   try {
     const r = await wfQuery(`
         SELECT
