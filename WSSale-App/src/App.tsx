@@ -59,9 +59,9 @@ const NAV_GROUPS: NavGroup[] = [
   {
     groupLabel: 'การเงิน',
     items: [
-      { key: 'rebate',     label: 'รีเบท (App)', sub: 'Pool · เคลม · wf',      icon: Coins },
+      { key: 'rebate',     label: 'รีเบท (App)', sub: 'Pool · เคลม · wf',      icon: Coins, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'SALES'] },
       { key: 'rebate-plan',label: 'Rebate Plan', sub: 'แผน · จัดสรรงบ',        icon: ClipboardList, roles: ['ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING'] },
-      { key: 'cn-rebate',  label: 'CN Rebate',   sub: 'ใบลดหนี้ · Winspeed',   icon: FileCheck2, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER', 'SALES'] },
+      { key: 'cn-rebate',  label: 'CN Rebate',   sub: 'ใบลดหนี้ · Winspeed',   icon: FileCheck2, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER'] },
       { key: 'voucher',    label: 'Voucher',     sub: 'คูปองคงค้าง · Winspeed', icon: Ticket },
       { key: 'giveaway',   label: 'ของแถม',      sub: 'งบรายภาค · เบิก',     icon: Gift },
     ],
@@ -185,7 +185,7 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
             <div className="flex flex-col leading-tight animate-in fade-in duration-300">
               <span className="text-sm font-semibold flex items-center gap-1.5">
                 WS-Sale-App
-                <span className="text-[9px] bg-blue-100 text-blue-800 px-1 rounded font-bold">v4.1</span>
+                <span className="text-[9px] bg-blue-100 text-blue-800 px-1 rounded font-bold">v4.2.26</span>
               </span>
               <span className="text-[11px] text-muted-foreground">World Fert</span>
             </div>

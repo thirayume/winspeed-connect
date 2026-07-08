@@ -87,6 +87,7 @@ export const AdminUsersPage = () => {
           displayName: fd.get('displayName') as string,
           role: fd.get('role') as string,
           isActive: fd.get('isActive') === 'on',
+          lineUserId: (fd.get('lineUserId') as string) || null,
           ...(fd.get('password') ? { password: fd.get('password') as string } : {})
         });
       } else {
@@ -398,6 +399,24 @@ export const AdminUsersPage = () => {
                   <option value="ADMIN">ADMIN</option>
                 </select>
               </div>
+
+              {modalUser.Id && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">LINE User ID</label>
+                  <input
+                    name="lineUserId"
+                    defaultValue={modalUser.LineUserId || ''}
+                    autoComplete="off"
+                    placeholder="เช่น Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-[#0C447C]/20 outline-none"
+                  />
+                  {modalUser.LineDisplayName && (
+                    <div className="mt-1 text-[11px] text-gray-500">
+                      LINE: {modalUser.LineDisplayName}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {modalUser.Id && (
                 <div className="flex items-center gap-2 mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
