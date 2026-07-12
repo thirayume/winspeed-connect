@@ -42,7 +42,7 @@ export function RebatePage() {
           <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
             <Coins className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> รีเบท (Rebate)
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">ส่วนต่างราคา (฿) · Pool รายเดือน · Ledger FIFO · เคลม → CN 109</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">ส่วนต่างราคา (฿) · Pool รายเดือน · Ledger FIFO · เคลม → WINSpeed Ref</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowInfo(true)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600">
@@ -90,7 +90,7 @@ export function RebatePage() {
                 <div key={c.Id} className="flex items-center justify-between p-2.5 rounded-lg bg-white border border-gray-100 mb-1.5">
                   <div>
                     <div className="text-xs font-bold text-gray-700">฿{Number(c.ClaimAmt).toLocaleString('th-TH',{maximumFractionDigits:0})}</div>
-                    <div className="text-[10px] text-gray-400">{c.SalesName} {c.CnDocuNo ? `· CN ${c.CnDocuNo}` : ''}</div>
+                    <div className="text-[10px] text-gray-400">{c.SalesName} {c.CnDocuNo ? `· Ref ${c.CnDocuNo}` : ''}</div>
                   </div>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${c.Status==='APPROVED'?'bg-green-50 text-green-700':'bg-amber-50 text-amber-700'}`}>
                     {c.Status === 'APPROVED' ? 'อนุมัติ' : 'รออนุมัติ'}

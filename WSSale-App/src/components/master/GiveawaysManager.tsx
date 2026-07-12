@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Gift, Search, RefreshCw, History, Plus, X, Calendar, MapPin, Tag, Layers, User, ArrowUpDown } from 'lucide-react';
+import { Gift, Search, RefreshCw, History, Plus, X, Calendar, MapPin, Tag, Layers, User, ArrowUpDown, AlertCircle } from 'lucide-react';
 import { fetchGiveawayItems, fetchGiveawayWithdrawals, fetchGiveawayRegions } from '../../services/api';
 import { formatThaiDate } from '../../utils/date';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
@@ -60,16 +60,7 @@ export const GiveawaysManager = () => {
     setHistoryLoading(false);
   };
 
-  const handleAddMockItem = () => {
-    const newItem: GiveawayItem = {
-      Id: Math.floor(Math.random() * 1000) + 9000,
-      Brand: 'แบรนด์ใหม่',
-      ItemName: 'ของแถมใหม่ ' + Math.floor(Math.random() * 100),
-      ItemType: 'OTHER'
-    };
-    setItems([newItem, ...items]);
-    alert('เพิ่มของแถมใหม่แล้ว (Mock Data - จะหายไปเมื่อรีเฟรช)');
-  };
+
 
   const filteredItems = items.filter(i => 
     i.ItemName.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -159,13 +150,10 @@ export const GiveawaysManager = () => {
             )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <button onClick={loadData} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
-              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            </button>
-            <button onClick={handleAddMockItem} className="px-2 py-1.5 sm:px-3 sm:py-2 bg-[#0C447C] text-white rounded-lg text-xs sm:text-sm font-medium hover:bg-[#0a3866] flex items-center gap-1 sm:gap-2">
-              <Plus size={14} className="sm:w-4 sm:h-4" /> <span className="hidden sm:inline">เพิ่มของแถม</span><span className="sm:hidden">เพิ่ม</span>
-            </button>
-          </div>
+              <button onClick={loadData} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
+                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              </button>
+            </div>
         </div>
 
         <div className="overflow-auto min-h-0 relative">
