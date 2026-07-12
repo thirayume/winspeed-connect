@@ -15,6 +15,7 @@ export type NavItem = {
 export type NavGroup = {
   groupLabel: string;
   icon?: LucideIcon;
+  color?: string;
   items: NavItem[];
 };
 
@@ -85,8 +86,9 @@ export function MobileDrawer({ isOpen, onClose, groups, activePortal, userRole, 
 
             return (
               <div key={group.groupLabel}>
-                <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider px-1 mb-2">
-                  {group.groupLabel}
+                <div className={`flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider px-1 mb-2 ${group.color || 'text-gray-400'}`}>
+                  {group.icon && <group.icon size={14} />}
+                  <span>{group.groupLabel}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   {visibleItems.map(n => {
@@ -102,7 +104,7 @@ export function MobileDrawer({ isOpen, onClose, groups, activePortal, userRole, 
                             : 'bg-gray-50 text-gray-600 hover:bg-gray-100 active:scale-95'
                         }`}
                       >
-                        <Icon size={20} className={isActive ? 'text-white' : 'text-gray-500'} />
+                        <Icon size={20} className={isActive ? 'text-white' : (group.color || 'text-gray-500')} />
                         <span className="text-[11px] font-semibold leading-tight">{n.label}</span>
                         {n.badge && pendingUnlocks > 0 && (
                           <span className="absolute top-1.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold text-white">
