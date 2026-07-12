@@ -681,7 +681,7 @@ router.get('/unlock-reasons', async (req, res) => {
 });
 
 // GET /api/so/unlock-requests?status=PENDING — สำหรับ Approver
-router.get('/unlock-requests', requireRole('APPROVER', 'ADMIN', 'MANAGER'), async (req, res) => {
+router.get('/unlock-requests', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
   try {
     const { status } = req.query;
     const where = status ? 'WHERE r.Status=@st' : '';
@@ -698,7 +698,7 @@ router.get('/unlock-requests', requireRole('APPROVER', 'ADMIN', 'MANAGER'), asyn
 });
 
 // PATCH /api/so/unlock-requests/:reqId/resolve — Approver อนุมัติ/ปฏิเสธ
-router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN'), async (req, res) => {
+router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
   try {
     const { approve, note } = req.body || {};
     const reqRow = (await wfQuery(`SELECT * FROM wf.UnlockRequest WHERE Id=@id`,
@@ -1407,7 +1407,7 @@ router.patch('/:id/picking', requireRole('WAREHOUSE', 'ADMIN'), async (req, res)
 });
 
 // ── PATCH /api/so/:id/unlock — APPROVER เท่านั้น (สุรชัย) ─────
-router.patch('/:id/unlock', requireRole('APPROVER', 'ADMIN'), async (req, res) => {
+router.patch('/:id/unlock', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'PICKING');
     const { note } = req.body;
