@@ -87,6 +87,7 @@ app.use((req, res, next) => {
   return next();
 });
 app.get('/api/dbinfo', (req, res) => res.json({ target: getTarget(), default: DEFAULT_TARGET }));
+app.use(require('./middleware/apiAudit')());
 
 // ── Global Param Validator ────────────────────────────────────
 app.use((req, res, next) => {

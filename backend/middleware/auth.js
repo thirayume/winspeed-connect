@@ -7,7 +7,19 @@ function requireAuth(req, res, next) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ message: 'Token required' });
   try {
-    req.user = jwt.verify(token, SECRET);
+    const payload = jwt.verify(token, SECRET);
+    const effectiveId = payload.sub || payload.id;
+    const actorId = payload.actorSub || payload.actorId || effectiveId;
+    req.user = {
+      ...payload,
+      sub: effectiveId,
+      id: effectiveId,
+      actorSub: actorId,
+      actorId,
+      effectiveSub: effectiveId,
+      effectiveId,
+      isImpersonating: Boolean(payload.impersonating || Number(actorId) !== Number(effectiveId)),
+    };
     next();
   } catch {
     res.status(401).json({ message: 'Token invalid or expired' });

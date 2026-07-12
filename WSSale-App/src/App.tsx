@@ -8,8 +8,8 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useErpStore } from './store/erp-store';
 import { useAuthStore } from './store/auth-store';
-import { getMe, listUnlockRequests } from './services/api';
-import type { UserRole } from './types';
+import { getMe, listAccessAsCandidates, listUnlockRequests, startAccessAs, stopAccessAs } from './services/api';
+import type { AdminUser, UserRole } from './types';
 import LoginPage from './pages/LoginPage';
 import { DbModeSwitch } from './components/common/DbModeSwitch';
 import { useAppStore } from './store/app-store';
@@ -116,6 +116,8 @@ const MOBILE_TABS: (NavItem & { isMobileOnly?: boolean })[] = [
   { key: 'store',      label: 'คลัง',        sub: '',  icon: Warehouse, badge: true },
 ];
 
+const ACCESS_AS_ROLES: UserRole[] = ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'COUNTER_SALES'];
+
 function PageFallback() {
   return (
     <div className="h-full w-full flex items-center justify-center text-sm text-muted-foreground">
@@ -164,11 +166,17 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ 'หลัก': true });
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [showUnlockReview, setShowUnlockReview] = useState(false);
+  const [showAccessAs, setShowAccessAs] = useState(false);
+  const [accessAsUsers, setAccessAsUsers] = useState<AdminUser[]>([]);
+  const [accessAsLoading, setAccessAsLoading] = useState(false);
+  const [accessAsSearch, setAccessAsSearch] = useState('');
   const { activePortal, navigate } = useAppStore();
   const setUnlockRequests = useErpStore(s => s.setUnlockRequests);
   const pendingUnlocks = useErpStore(s => s.unlockRequests.length);
   const role = user?.role;
-  const canReviewUnlocks = ['APPROVER', 'ADMIN', 'MANAGER'].includes(role || '');
+  const actorRole = user?.actorRole || role;
+  const canReviewUnlocks = ['APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '');
+  const canUseAccessAs = Boolean(actorRole && ACCESS_AS_ROLES.includes(actorRole));
 
   useEffect(() => {
     const activeGroup = NAV_GROUPS.find(g => g.items.some(n => n.key === activePortal));
@@ -186,6 +194,51 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
     const timer = setInterval(poll, 5000);
     return () => clearInterval(timer);
   }, [setUnlockRequests]);
+
+  useEffect(() => {
+    if (!showAccessAs || !canUseAccessAs) return;
+    setAccessAsLoading(true);
+    listAccessAsCandidates()
+      .then(setAccessAsUsers)
+      .catch(e => console.error('Access As users failed', e))
+      .finally(() => setAccessAsLoading(false));
+  }, [showAccessAs, canUseAccessAs]);
+
+  const filteredAccessAsUsers = accessAsUsers.filter(u => {
+    const term = accessAsSearch.trim().toLowerCase();
+    if (!term) return true;
+    return [u.DisplayName, u.Username, u.Role, u.EmpCode, u.EmpName]
+      .filter(Boolean)
+      .some(v => String(v).toLowerCase().includes(term));
+  });
+
+  const switchAccessAs = async (targetId: number) => {
+    setAccessAsLoading(true);
+    try {
+      const session = await startAccessAs(targetId);
+      useAuthStore.getState().login(session.accessToken, session.user);
+      setShowAccessAs(false);
+      setAccessAsSearch('');
+    } catch (e) {
+      alert((e as Error).message || 'Access As failed');
+    } finally {
+      setAccessAsLoading(false);
+    }
+  };
+
+  const stopAccessAsSession = async () => {
+    setAccessAsLoading(true);
+    try {
+      const session = await stopAccessAs();
+      useAuthStore.getState().login(session.accessToken, session.user);
+      setShowAccessAs(false);
+      setAccessAsSearch('');
+    } catch (e) {
+      alert((e as Error).message || 'Stop Access As failed');
+    } finally {
+      setAccessAsLoading(false);
+    }
+  };
 
   const current = ALL_NAV.find(n => n.key === activePortal);
   const portalLabel = current ? `${current.label} — ${current.sub}` : '';
@@ -290,6 +343,9 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
             <div className="px-3 py-2 mx-1 mb-2 bg-gray-50 border border-gray-100 rounded-lg flex flex-col">
               <span className="text-xs font-bold text-gray-800">{user.displayName}</span>
               <span className="text-[10px] font-semibold text-[#0C447C] mt-0.5">Role: {user.role}</span>
+              {user.isImpersonating && (
+                <span className="text-[10px] text-amber-700 mt-0.5">By: {user.actorDisplayName}</span>
+              )}
             </div>
           )}
           {role === 'ADMIN' && <DbModeSwitch collapsed={isSidebarCollapsed} />}
@@ -326,13 +382,88 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 )}
               </button>
             )}
+            {canUseAccessAs && (
+              <div className="relative">
+                <button
+                  className={`relative rounded-lg p-2 transition-colors ${
+                    user?.isImpersonating
+                      ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                  }`}
+                  onClick={() => setShowAccessAs(v => !v)}
+                  title="Access As"
+                >
+                  <Users className="h-5 w-5" />
+                  {user?.isImpersonating && (
+                    <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-white" />
+                  )}
+                </button>
+                {showAccessAs && (
+                  <div className="absolute right-0 mt-2 w-80 rounded-xl border border-border bg-white p-3 shadow-xl z-50">
+                    <div className="mb-2 flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-bold text-gray-900">Access As</div>
+                        <div className="text-[11px] text-muted-foreground">
+                          ตัวจริง: {user?.actorDisplayName || user?.displayName} ({actorRole})
+                        </div>
+                      </div>
+                      <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowAccessAs(false)}>ปิด</button>
+                    </div>
+
+                    {user?.isImpersonating && (
+                      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-2">
+                        <div className="text-xs font-semibold text-amber-900">กำลังทำงานแทน {user.displayName}</div>
+                        <button
+                          onClick={stopAccessAsSession}
+                          disabled={accessAsLoading}
+                          className="mt-2 w-full rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                        >
+                          กลับเป็น {user.actorDisplayName || 'ตัวจริง'}
+                        </button>
+                      </div>
+                    )}
+
+                    <input
+                      value={accessAsSearch}
+                      onChange={e => setAccessAsSearch(e.target.value)}
+                      placeholder="ค้นหาชื่อ / username / role"
+                      className="mb-2 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#0C447C]/20"
+                    />
+
+                    <div className="max-h-72 overflow-y-auto custom-scrollbar space-y-1">
+                      {accessAsLoading ? (
+                        <div className="py-5 text-center text-xs text-muted-foreground">กำลังโหลด...</div>
+                      ) : filteredAccessAsUsers.length === 0 ? (
+                        <div className="py-5 text-center text-xs text-muted-foreground">ไม่มีผู้ใช้ที่สามารถ Access As ได้</div>
+                      ) : filteredAccessAsUsers.map(u => (
+                        <button
+                          key={u.Id}
+                          onClick={() => switchAccessAs(u.Id)}
+                          className="w-full rounded-lg px-3 py-2 text-left hover:bg-accent transition-colors"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-semibold text-gray-900">{u.DisplayName}</span>
+                            <span className="rounded bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-600">{u.Role}</span>
+                          </div>
+                          <div className="mt-0.5 text-[11px] text-muted-foreground">
+                            {u.Username}{u.EmpName ? ` · ${u.EmpName}` : ''}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="hidden items-center gap-2 sm:flex">
               <div className="h-8 w-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm" style={{ background: '#0C447C' }}>
                 {user?.displayName?.charAt(0) ?? '?'}
               </div>
               <div className="text-xs leading-tight">
                 <div className="font-medium">{user?.displayName}</div>
-                <div className="text-muted-foreground">{user?.role}</div>
+                <div className="text-muted-foreground">
+                  {user?.isImpersonating ? `Access as ${user.role}` : user?.role}
+                </div>
               </div>
             </div>
           </div>

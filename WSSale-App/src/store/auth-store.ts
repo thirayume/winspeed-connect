@@ -7,7 +7,26 @@ const USER_KEY = 'wssale_user';
 function getStoredUser(): AppUser | null {
   try {
     const raw = localStorage.getItem(USER_KEY);
-    return raw ? JSON.parse(raw) as AppUser : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as AppUser & Record<string, unknown>;
+    return {
+      ...parsed,
+      id: Number(parsed.id ?? parsed.Id),
+      username: String(parsed.username ?? parsed.Username ?? ''),
+      displayName: String(parsed.displayName ?? parsed.DisplayName ?? ''),
+      role: (parsed.role ?? parsed.Role) as AppUser['role'],
+      empId: (parsed.empId ?? parsed.EmpId ?? null) as string | null,
+      isActive: parsed.isActive === undefined && parsed.IsActive === undefined ? true : Boolean(parsed.isActive ?? parsed.IsActive),
+      address: (parsed.address ?? parsed.Address ?? null) as string | null,
+      phone: (parsed.phone ?? parsed.Phone ?? null) as string | null,
+      email: (parsed.email ?? parsed.Email ?? null) as string | null,
+      idCardNo: (parsed.idCardNo ?? parsed.IdCardNo ?? null) as string | null,
+      taxId: (parsed.taxId ?? parsed.TaxId ?? null) as string | null,
+      signatureFile: (parsed.signatureFile ?? parsed.SignatureFile ?? null) as string | null,
+      lineUserId: (parsed.lineUserId ?? parsed.LineUserId ?? null) as string | null,
+      lineDisplayName: (parsed.lineDisplayName ?? parsed.LineDisplayName ?? null) as string | null,
+      lineLinkedAt: (parsed.lineLinkedAt ?? parsed.LineLinkedAt ?? null) as string | null,
+    } as AppUser;
   } catch {
     localStorage.removeItem(USER_KEY);
     return null;

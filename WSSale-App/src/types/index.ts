@@ -15,6 +15,11 @@ export type AppUser = {
   username: string;
   displayName: string;
   role: UserRole;
+  actorId?: number;
+  actorUsername?: string;
+  actorDisplayName?: string;
+  actorRole?: UserRole;
+  isImpersonating?: boolean;
   empId?: string | null;
   isActive: boolean;
   address?: string | null;
