@@ -81,6 +81,17 @@ export const linkLineLogin = (username: string, password: string, lineLinkToken:
     method: 'POST', body: JSON.stringify({ username, password, lineLinkToken }),
   });
 
+export const listAccessAsCandidates = () =>
+  req<AdminUser[]>('/auth/access-as/candidates', { silent: true });
+
+export const startAccessAs = (userId: number) =>
+  req<{ accessToken: string; user: AppUser }>('/auth/access-as', {
+    method: 'POST', body: JSON.stringify({ userId }),
+  });
+
+export const stopAccessAs = () =>
+  req<{ accessToken: string; user: AppUser }>('/auth/access-as/stop', { method: 'POST' });
+
 export const createUser = (payload: {
   username: string; password: string; displayName: string;
   role: string; empId?: string;
