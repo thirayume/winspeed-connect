@@ -19,11 +19,11 @@ const STATUS_STYLE: Record<QuoteStatus, string> = {
 
 type WorkView = 'ACTIVE' | 'HISTORY';
 
-const HISTORY_STATUSES = new Set<QuoteStatus>(['CONVERTED', 'CANCELLED']);
-const ACTIVE_STATUS_OPTIONS: QuoteStatus[] = ['ACCEPTED', 'SENT', 'DRAFT', 'EXPIRED'];
-const HISTORY_STATUS_OPTIONS: QuoteStatus[] = ['CONVERTED', 'CANCELLED'];
-const ACTIVE_STATUS_ORDER: Record<string, number> = { ACCEPTED: 0, SENT: 1, DRAFT: 2, EXPIRED: 3 };
-const HISTORY_STATUS_ORDER: Record<string, number> = { CONVERTED: 0, CANCELLED: 1 };
+const HISTORY_STATUSES = new Set<QuoteStatus>(['CONVERTED', 'CANCELLED', 'EXPIRED']);
+const ACTIVE_STATUS_OPTIONS: QuoteStatus[] = ['ACCEPTED', 'SENT', 'DRAFT'];
+const HISTORY_STATUS_OPTIONS: QuoteStatus[] = ['CONVERTED', 'EXPIRED', 'CANCELLED'];
+const ACTIVE_STATUS_ORDER: Record<string, number> = { ACCEPTED: 0, SENT: 1, DRAFT: 2 };
+const HISTORY_STATUS_ORDER: Record<string, number> = { CONVERTED: 0, EXPIRED: 1, CANCELLED: 2 };
 const STATUS_LABEL: Record<QuoteStatus, string> = {
   DRAFT: 'ร่าง',
   SENT: 'ส่งแล้ว / รอยืนยัน',
@@ -153,37 +153,23 @@ export function QuotationPage() {
   const totalPages = Math.ceil(sortedQuotes.length / itemsPerPage);
   const paginatedQuotes = sortedQuotes.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  const requestSort = (key: string) => {
+  /* const requestSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
     setSortConfig({ key, direction });
-  };
+  }; */
 
-  const groupedQuotes = useMemo(() => {
-    const map = new Map<string, { status: QuoteStatus; dateDisplay: string; cust: string; quotes: Quotation[]; totalAmt: number; totalTon: number }>();
-    for (const q of paginatedQuotes) {
-      const dateRaw = q.CreatedAt ? q.CreatedAt.split('T')[0] : '9999-12-31';
-      const dateDisplay = q.CreatedAt ? new Date(q.CreatedAt).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : 'ไม่ระบุวันที่';
-      const cust = q.CustName || 'ไม่ระบุลูกค้า';
-      const key = `${q.Status}::${dateRaw}::${cust}`;
-      
-      if (!map.has(key)) map.set(key, { status: q.Status, dateDisplay, cust, quotes: [], totalAmt: 0, totalTon: 0 });
-      const g = map.get(key)!;
-      g.quotes.push(q);
-      g.totalAmt += quoteTotal(q);
-      g.totalTon += quoteTon(q);
-    }
-    return Array.from(map.values());
-  }, [paginatedQuotes]);
-
-  const SortableHeader = ({ title, sortKey, align = 'left' }: { title: string, sortKey: string, align?: 'left'|'center'|'right' }) => (
-    <th className={`px-4 py-3 cursor-pointer hover:bg-gray-100 transition-colors text-${align} text-xs font-semibold text-gray-500`} onClick={() => requestSort(sortKey)}>
-      <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : ''}`}>
-        {title}
-        <ArrowUpDown size={12} className={`text-gray-400 ${sortConfig.key === sortKey ? 'text-[#0C447C] font-bold' : ''}`} />
-      </div>
-    </th>
-  );
+  const kanbanColumns = useMemo(() => {
+    return statusOptions.map(status => {
+      const filtered = paginatedQuotes.filter(q => q.Status === status);
+      return {
+        status,
+        quotes: filtered,
+        totalAmt: filtered.reduce((sum, q) => sum + quoteTotal(q), 0),
+        totalTon: filtered.reduce((sum, q) => sum + quoteTon(q), 0)
+      };
+    });
+  }, [paginatedQuotes, statusOptions]);
 
   return (
     <div className="h-full flex flex-col w-full overflow-hidden max-w-full" style={{ background: '#F1EFE8' }}>
@@ -274,161 +260,123 @@ export function QuotationPage() {
           </div>
         </div>
 
-        <div className="overflow-auto min-h-0 relative p-2 sm:p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 auto-rows-max gap-3 sm:gap-4 bg-gray-50/30">
+                <div className="overflow-auto min-h-0 relative p-2 sm:p-4 flex gap-4 bg-gray-50/30">
           {paginatedQuotes.length === 0 ? (
-            <div className="col-span-full h-full flex flex-col items-center justify-center opacity-30 text-center py-12">
+            <div className="flex-1 flex flex-col items-center justify-center opacity-30 text-center py-12">
               <Package size={48} className="mb-3 text-gray-400" />
               <p className="font-semibold text-gray-500">ไม่พบใบเสนอราคา</p>
             </div>
-          ) : groupedQuotes.map((g, idx) => (
-              <div
-                key={idx}
-                className={`rounded-xl border shadow-sm overflow-hidden flex flex-col min-h-[80px] ${g.status === 'ACCEPTED' ? 'border-emerald-200 bg-emerald-50/70' : 'border-gray-200 bg-[#F9F9FB]'}`}
-              >
-                <div className="px-3 py-2 border-b border-gray-100 bg-white flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${g.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700' : STATUS_STYLE[g.status]}`}>
-                      {STATUS_LABEL[g.status]}
-                    </div>
-                    <div className="text-[11px] font-bold text-[#0C447C] flex items-center gap-1 bg-[#F0F4F8] px-2 py-0.5 rounded-md">
-                      <Clock size={10} /> สร้าง {g.dateDisplay}
-                    </div>
-                    <div className="text-[11px] font-bold text-gray-700 bg-[#F1F3F5] px-2 py-0.5 rounded-md">
-                      รวม {g.totalTon.toLocaleString('th-TH', { maximumFractionDigits: 2 })} ตัน
-                    </div>
-                  </div>
-                  <div className="text-xs font-bold text-[#0C447C]">
-                    ฿{g.totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
-                  </div>
+          ) : (
+            kanbanColumns.map((col) => (
+              <div key={col.status} className="flex-none w-[320px] lg:w-[350px] flex flex-col gap-3">
+                <div className={`px-3 py-2 rounded-lg border font-bold text-sm flex items-center justify-between ${STATUS_STYLE[col.status]} bg-white shadow-sm`}>
+                  <span>{STATUS_LABEL[col.status]}</span>
+                  <span className="bg-white/50 px-2 py-0.5 rounded-full text-xs">{col.quotes.length}</span>
                 </div>
-                <div className="px-3 py-2 bg-white flex items-start gap-2 border-b border-gray-100">
-                  <div className="bg-[#1F2937] text-white p-1.5 rounded-lg shrink-0 flex items-center justify-center">
-                    <User size={14} />
-                  </div>
-                  <div className="min-w-0 flex-1 flex items-center">
-                    <div className="font-bold text-sm text-gray-900 truncate" title={g.cust}>{g.cust}</div>
-                  </div>
-                </div>
-                <div className="p-1.5 space-y-1.5">
-                  {g.quotes.map(q => {
+                <div className="flex flex-col gap-3 pb-4">
+                  {col.quotes.map(q => {
                     const total = quoteTotal(q);
-                    const lineCount = quoteLineCount(q);
+                    // const lineCount = quoteLineCount(q);
                     const nativeOnly = isNativeOnly(q);
                     const winspeedQuoteNo = q.WinspeedQuoteNo || q.WinspeedEstimateNo;
                     const winspeedConfirmNo = q.WinspeedConfirmNo;
-                    const quoteCardClass = q.Status === 'ACCEPTED'
-                      ? 'border-emerald-300 bg-emerald-50 hover:border-emerald-400'
-                      : q.Status === 'CONVERTED'
-                        ? 'border-emerald-200 bg-white'
-                        : q.Status === 'CANCELLED'
-                          ? 'border-red-200 bg-red-50/60'
-                          : 'border-gray-100 bg-white hover:border-gray-200';
-                    const workflowClass = q.Status === 'ACCEPTED'
-                      ? 'border-emerald-200 bg-white/80 text-emerald-900'
-                      : 'border-gray-100 bg-gray-50/80 text-gray-600';
+                    
                     return (
-                      <div key={q.Id} className={`relative p-3 rounded-lg border transition-all hover:shadow-sm ${quoteCardClass} ${focusedQuoteId === q.Id ? 'ring-2 ring-blue-100' : ''}`}>
-                        <div className="flex items-start justify-between mb-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-bold text-gray-700">{q.QuoteNo}</span>
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${STATUS_STYLE[q.Status]}`}>{STATUS_LABEL[q.Status]}</span>
+                      <div key={q.Id} className={`relative flex flex-col p-3 rounded-xl border transition-all hover:shadow-md bg-white ${q.Status === 'ACCEPTED' ? 'border-emerald-300' : 'border-gray-200'} ${focusedQuoteId === q.Id ? 'ring-2 ring-blue-200' : ''}`}>
+                        {/* Header: Date + Amount */}
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-[10px] text-gray-500 flex items-center gap-1 font-bold">
+                            <Clock size={12} /> {q.CreatedAt ? new Date(q.CreatedAt).toLocaleDateString('th-TH') : ''}
                           </div>
-                          <div className="flex items-center gap-2">
-                            {q.Status !== 'CONVERTED' && q.Status !== 'CANCELLED' && (
-                              <div className="inline-flex gap-1.5 shrink-0">
-                                {q.Status === 'DRAFT' && !nativeOnly && (
-                                  <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'SENT')} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50" title="ส่งใบเสนอราคา">
-                                    <Send size={14} />
-                                  </button>
-                                )}
-                                {(q.Status === 'DRAFT' || q.Status === 'SENT') && !nativeOnly && (
-                                  <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'ACCEPTED')} className="p-1.5 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50" title="ยืนยันใบเสนอราคา">
-                                    <Check size={14} />
-                                  </button>
-                                )}
-                                {!nativeOnly && (
-                                <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'CANCELLED')} className="p-1.5 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50" title="ยกเลิกใบเสนอราคา">
-                                  <X size={14} />
-                                </button>
-                                )}
-                              </div>
-                            )}
-                            <span className={`text-xs font-bold min-w-[70px] text-right ${q.Status === 'ACCEPTED' ? 'text-emerald-800' : 'text-[#0C447C]'}`}>
-                              ฿{total.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
-                            </span>
+                          <div className={`font-bold text-sm ${q.Status === 'ACCEPTED' ? 'text-emerald-700' : 'text-[#0C447C]'}`}>
+                            ฿{total.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                           </div>
                         </div>
-                        <div className="flex items-center justify-between text-xs text-gray-400">
-                          <div className="flex items-center gap-3">
-                            <span className="flex items-center gap-1">
-                              <Package size={11} /> {lineCount} รายการ
-                            </span>
-                            {q.SalesName && (
-                              <span className="flex items-center gap-1 text-gray-500">
-                                โดย {q.SalesName}
-                              </span>
-                            )}
-                            {q.ValidUntil && (
-                              <span className="flex items-center gap-1 text-gray-500">
-                                ยืนราคาถึง {new Date(q.ValidUntil).toLocaleDateString('th-TH')}
-                              </span>
-                            )}
+                        
+                        {/* Main Info: Cust Name */}
+                        <div className="flex items-start gap-2 mb-2">
+                          <div className="bg-[#1F2937] text-white p-1.5 rounded-lg shrink-0 flex items-center justify-center mt-0.5">
+                            <User size={14} />
                           </div>
-                        </div>
-                        <div className={`mt-2 rounded-lg border px-2.5 py-2 flex flex-wrap items-center justify-between gap-2 ${workflowClass}`}>
                           <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${nativeOnly ? 'bg-slate-100 text-slate-700' : 'bg-blue-50 text-blue-700'}`}>
-                                {nativeOnly ? 'WINSpeed' : 'App'}
-                              </span>
-                              {winspeedQuoteNo && (
-                                <span className="text-xs font-bold text-emerald-700">
-                                  WINSpeed: {winspeedQuoteNo}{winspeedConfirmNo ? ` / ${winspeedConfirmNo}` : ''}
-                                </span>
-                              )}
-                              {(q.SourceSoCount || 0) > 0 && (
-                                <span className="text-xs font-bold text-blue-700">
-                                  อ้างอิง Sale Trip: {q.SourceSoCount} ใบ
-                                </span>
-                              )}
-                              {q.ConvertedSoId && (
-                                <span className="text-xs font-bold text-emerald-700">
-                                  SO #{q.ConvertedSoId}
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-1 text-[11px] text-gray-500">
-                              {(q.SourceSoCount || 0) > 0
-                                ? 'ใบเสนอราคานี้สร้างจาก Sale Trip และควบคุมการยืนยันกลับไปที่ทริปเดิม'
-                                : nativeOnly
-                                  ? 'เอกสารจาก WINSpeed โดยตรง ใช้ flow เดียวกับเอกสารใน App'
-                                  : 'เอกสารจาก App พร้อมเชื่อมต่อ WINSpeed'}
-                            </div>
+                            <div className="font-bold text-sm text-gray-900 truncate" title={q.CustName}>{q.CustName || 'ไม่ระบุลูกค้า'}</div>
+                            <div className="text-xs text-gray-500 font-mono mt-0.5">{q.QuoteNo}</div>
                           </div>
+                        </div>
+
+                        {/* Details (Ton, Expire) */}
+                        <div className="flex items-center justify-between text-[11px] text-gray-500 mb-3 bg-gray-50 p-2 rounded-lg border border-gray-100">
+                          <div className="flex items-center gap-1 font-bold">
+                            <Package size={12} /> {quoteTon(q).toLocaleString('th-TH', { maximumFractionDigits: 2 })} ตัน
+                          </div>
+                          {q.ValidUntil && (
+                            <div className="flex items-center gap-1 font-bold text-orange-600">
+                               หมดอายุ {new Date(q.ValidUntil).toLocaleDateString('th-TH')}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Badges for WINSpeed/App source */}
+                        <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${nativeOnly ? 'bg-slate-50 text-slate-700 border-slate-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                            {nativeOnly ? 'WINSpeed' : 'App'}
+                          </span>
+                          {winspeedQuoteNo && (
+                            <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+                              {winspeedQuoteNo}{winspeedConfirmNo ? ` / ${winspeedConfirmNo}` : ''}
+                            </span>
+                          )}
+                          {(q.SourceSoCount || 0) > 0 && (
+                            <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full">
+                              Sale Trip: {q.SourceSoCount} ใบ
+                            </span>
+                          )}
+                          {q.ConvertedSoId && (
+                            <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+                              SO #{q.ConvertedSoId}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Actions Footer */}
+                        <div className="mt-auto pt-3 border-t border-gray-100 flex flex-wrap items-center justify-end gap-2">
+                          {q.Status === 'DRAFT' && !nativeOnly && (
+                            <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'SENT')} className="px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                              <Send size={14} /> ส่ง
+                            </button>
+                          )}
+                          {(q.Status === 'DRAFT' || q.Status === 'SENT') && !nativeOnly && (
+                            <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'ACCEPTED')} className="px-3 py-1.5 text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                              <Check size={14} /> ยืนยัน
+                            </button>
+                          )}
+                          {!nativeOnly && (q.Status === 'DRAFT' || q.Status === 'SENT' || q.Status === 'ACCEPTED') && (
+                            <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'CANCELLED')} className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                              <X size={14} /> ยกเลิก
+                            </button>
+                          )}
                           {q.Status === 'ACCEPTED' && !(q.SourceSoCount && q.SourceSoCount > 0) && (
                             <button
                               disabled={busyId===q.Id}
                               onClick={() => doConvert(q)}
-                              className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
-                              title="แปลงเป็นใบสั่งขาย (SO)"
+                              className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-colors flex items-center gap-1.5 disabled:opacity-50"
                             >
-                              <ArrowRightCircle size={14} /> แปลงเป็น SO
+                              <ArrowRightCircle size={14} /> แปลง SO
                             </button>
                           )}
                         </div>
+                        
+                        {/* Extend Validity */}
                         {q.Status !== 'CONVERTED' && q.Status !== 'CANCELLED' && !nativeOnly && (
-                          <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-gray-100 pt-2">
-                            <span className="text-[10px] text-gray-400 font-bold">ต่ออายุ:</span>
-                            {[7, 15, 20, 30, 45].map(days => (
-                              <button
-                                key={days}
-                                disabled={busyId === q.Id}
-                                onClick={() => extendValidUntil(q, days as 7 | 15 | 20 | 30 | 45)}
-                                className="px-2 py-1 rounded-md bg-gray-50 border border-gray-200 text-[10px] font-bold text-gray-600 hover:bg-blue-50 hover:text-[#0C447C] disabled:opacity-50"
-                              >
-                                +{days}
-                              </button>
-                            ))}
+                          <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-2">
+                             <span className="text-[10px] text-gray-400 font-bold">ต่ออายุ:</span>
+                             <div className="flex gap-1.5">
+                              {[7, 15, 30].map(days => (
+                                <button key={days} disabled={busyId===q.Id} onClick={() => extendValidUntil(q, days as 7 | 15 | 30 | 20 | 45)} className="px-2 py-1 rounded text-[10px] font-bold text-gray-500 bg-gray-100 hover:bg-blue-100 hover:text-blue-700 transition-colors disabled:opacity-50">
+                                  +{days}
+                                </button>
+                              ))}
+                             </div>
                           </div>
                         )}
                       </div>
@@ -436,8 +384,10 @@ export function QuotationPage() {
                   })}
                 </div>
               </div>
-            ))}
+            ))
+          )}
         </div>
+
 
         {/* Pagination Footer */}
         <div className="p-3 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">

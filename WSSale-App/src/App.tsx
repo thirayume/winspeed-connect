@@ -49,6 +49,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     groupLabel: 'หลัก',
     icon: Folder,
+    color: 'text-blue-600',
     items: [
       { key: 'dashboard',  label: 'Dashboard',  sub: 'ภาพรวม',              icon: LayoutDashboard },
       { key: 'sales',      label: 'ขาย',         sub: 'ใบสั่งขาย (POS)',     icon: ShoppingCart },
@@ -61,6 +62,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     groupLabel: 'การเงิน',
     icon: Wallet,
+    color: 'text-emerald-600',
     items: [
       { key: 'rebate',     label: 'รีเบท (App)', sub: 'Pool · เคลม · wf',      icon: Coins, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'SALES'] },
       { key: 'rebate-plan',label: 'Rebate Plan', sub: 'แผน · จัดสรรงบ',        icon: ClipboardList, roles: ['ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING'] },
@@ -72,6 +74,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     groupLabel: 'บัญชี',
     icon: Calculator,
+    color: 'text-purple-600',
     items: [
       { key: 'accounting', label: 'บัญชี',       sub: 'Sync · อนุมัติ CN',    icon: FileCheck, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER'] },
       { key: 'recon',      label: 'กระทบยอด',    sub: 'Recon · ตรวจออกของ',   icon: ShieldCheck, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER'] },
@@ -82,6 +85,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     groupLabel: 'คลัง/ชั่ง',
     icon: Truck,
+    color: 'text-orange-600',
     items: [
       { key: 'truckscale', label: 'TruckScale',  sub: 'เครื่องชั่ง · MySQL',  icon: Scale, roles: ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ADMIN', 'MANAGER'] },
       { key: 'weigh-inbox',label: 'Weigh Inbox', sub: 'ดึงชั่ง · จับคู่ SO',     icon: Inbox, roles: ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ADMIN', 'MANAGER'] },
@@ -90,6 +94,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     groupLabel: 'ตั้งค่าระบบ',
     icon: Settings,
+    color: 'text-slate-600',
     items: [
       { key: 'master',     label: 'ข้อมูลหลัก',  sub: 'สินค้า · ลูกค้า',       icon: Database, roles: ['ADMIN'] },
       { key: 'policy',     label: 'นโยบายอนุมัติ', sub: 'อำนาจ · วงเงิน',       icon: ScrollText, roles: ['ADMIN', 'MANAGER'] },
@@ -222,18 +227,30 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
             return (
               <div key={group.groupLabel}>
                 {gi > 0 && <div className="nav-group-divider" />}
-                {!isSidebarCollapsed && (
-                  <button
-                    onClick={() => toggleGroup(group.groupLabel)}
-                    className={`nav-group-label w-full flex items-center justify-between cursor-pointer hover:text-foreground transition-colors ${groupActive ? 'text-[#0C447C]' : ''}`}
-                  >
-                    <span>{group.groupLabel}</span>
-                    <ChevronDown size={12} className={`transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
-                  </button>
-                )}
+                <button
+                  onClick={() => toggleGroup(group.groupLabel)}
+                  className={`w-full flex items-center cursor-pointer transition-colors ${
+                    isSidebarCollapsed 
+                      ? 'justify-center p-2 mb-1 rounded-lg hover:bg-accent/60' 
+                      : 'nav-group-label justify-between hover:text-foreground'
+                  } ${groupActive && isSidebarCollapsed ? 'bg-accent/40' : ''} ${groupActive && !isSidebarCollapsed ? group.color : 'text-muted-foreground'}`}
+                  title={isSidebarCollapsed ? group.groupLabel : ''}
+                >
+                  {isSidebarCollapsed ? (
+                    group.icon && <group.icon size={18} className={group.color} />
+                  ) : (
+                    <>
+                      <div className={`flex items-center gap-2 ${group.color}`}>
+                        {group.icon && <group.icon size={14} />}
+                        <span>{group.groupLabel}</span>
+                      </div>
+                      <ChevronDown size={12} className={`transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
+                    </>
+                  )}
+                </button>
                 <div
-                  className={`nav-group-items space-y-0.5 ${!isSidebarCollapsed ? (isExpanded ? 'expanded' : 'collapsed') : 'expanded'}`}
-                  style={!isSidebarCollapsed && isExpanded ? { maxHeight: `${visibleItems.length * 52}px` } : undefined}
+                  className={`nav-group-items space-y-0.5 ${isExpanded ? 'expanded' : 'collapsed'}`}
+                  style={isExpanded ? { maxHeight: `${visibleItems.length * 52}px` } : undefined}
                 >
                   {visibleItems.map(n => {
                     const Icon = n.icon;
@@ -246,7 +263,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                         navigate(n.key as PortalKey);
                       }}
                         title={isSidebarCollapsed ? n.label : ''} className={navBtnClass(activePortal === n.key, isSidebarCollapsed)}>
-                        <Icon className="h-4 w-4 shrink-0" />
+                        <Icon className={`shrink-0 ${isSidebarCollapsed ? 'h-5 w-5' : 'h-4 w-4'} ${activePortal === n.key ? '' : (group.color || '')}`} />
                         {!isSidebarCollapsed && (
                           <div className="flex flex-col text-left animate-in fade-in slide-in-from-left-2 duration-300">
                             <span className="font-medium">{n.label}</span>
