@@ -4,6 +4,8 @@ type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 
 
 type NavParams = {
   soId?: number;
+  quoteId?: number;
+  quoteNo?: string;
   action?: 'edit' | 'view';
 };
 

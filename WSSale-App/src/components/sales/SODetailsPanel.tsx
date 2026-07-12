@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Lock, Unlock, Truck, Package, FileText, CalendarClock, CheckCircle2, Clock3 } from 'lucide-react';
+import { X, Lock, Unlock, Truck, Package, FileText, CalendarClock, CheckCircle2, Clock3, ShieldCheck } from 'lucide-react';
 import { cn } from '../ui/Base';
 import { SOStatusBadge } from './SOStatusBadge';
 import { useErpStore } from '../../store/erp-store';
@@ -54,6 +54,9 @@ export function SODetailsPanel({
   }
 
   const pendingReq = unlockRequests.find(r => r.SoId === so.id);
+  const winspeedInvoices = so.winspeedInvoices || [];
+  const firstInvoice = winspeedInvoices[0];
+  const isWinspeedPosted = !!so.isWinspeedPosted || winspeedInvoices.length > 0;
   const totalAmt   = (so.lines || []).filter(l => !l.isGiveaway).reduce((s, l) => s + l.qtyTon * l.pricePerTon, 0);
   const totalTon   = (so.lines || []).filter(l => !l.isGiveaway).reduce((s, l) => s + l.qtyTon, 0);
   const totalRebate = canSeeRebate
@@ -83,6 +86,11 @@ export function SODetailsPanel({
               {so.docuNo || (so as any).importedDocuNo || so.wfRef || `#${so.id}`}
             </h2>
             <SOStatusBadge status={so.status} isUnlockRequested={!!pendingReq} />
+            {isWinspeedPosted && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                <ShieldCheck size={11} /> WINSpeed Posted
+              </span>
+            )}
           </div>
           <p className="text-xs text-gray-400 mt-0.5">{so.custName} · {so.createdAt?.slice(0, 10)}</p>
         </div>
@@ -153,6 +161,20 @@ export function SODetailsPanel({
           <div className="flex items-start gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3 text-xs">
             <Lock className="h-4 w-4 text-gray-400 shrink-0 mt-0.5" />
             <p className="text-gray-500">บิล locked — คลังกำลังดำเนินการ</p>
+          </div>
+        )}
+        {isWinspeedPosted && (
+          <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs">
+            <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-emerald-700">WINSpeed Invoice Posted — SO Locked</p>
+              <p className="text-emerald-600 mt-0.5">
+                {firstInvoice?.docuNo || firstInvoice?.soInvID || 'พบ invoice ใน WINSpeed'}
+                {firstInvoice?.docuDate ? ` · ${formatDateTime(firstInvoice.docuDate)}` : ''}
+                {firstInvoice?.postID ? ` · PostID ${firstInvoice.postID}` : ''}
+              </p>
+              <p className="text-emerald-700/80 mt-1">หลังพบ invoice แล้ว app จะไม่อนุญาตให้แก้ไข/ปลดล็อก/ยกเลิก SO เพื่อให้ข้อมูลตรงกับบัญชีและ GL</p>
+            </div>
           </div>
         )}
 
@@ -304,7 +326,7 @@ export function SODetailsPanel({
           </button>
         )}
         
-        {['CONFIRMED', 'PICKING'].includes(so.status) && !pendingReq && (
+        {['CONFIRMED', 'PICKING'].includes(so.status) && !pendingReq && !isWinspeedPosted && (
           <div className="flex gap-2">
             <button
               disabled={busy}

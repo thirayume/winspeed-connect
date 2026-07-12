@@ -1,22 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { LayoutDashboard, RefreshCw, Package, Clock, TrendingUp, AlertTriangle, Truck, Database, Search, X, Calendar } from 'lucide-react';
 import { fetchSoStats, fetchAgingOrders, fetchRebateSummary, fetchSalesOrders } from '../../services/api';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { useAuthStore } from '../../store/auth-store';
 import { canViewAllRebateAmounts } from '../../utils/permissions';
-import type { AgingRow, RebateSummary, SalesOrder, SOStatus } from '../../types';
+import type { AgingRow, RebateSummary, SalesOrder } from '../../types';
+import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
 
-const STATUS_META: Record<SOStatus, { label: string; color: string }> = {
-  DRAFT:     { label: 'ร่าง',          color: '#9CA3AF' },
-  CONFIRMED: { label: 'ยืนยัน',        color: '#0C447C' },
-  PICKING:   { label: 'รอรับสินค้า',   color: '#F59E0B' },
-  LOADED:    { label: 'โหลดสินค้า',     color: '#7C3AED' },
-  SHIPPED:   { label: 'ส่งออก',        color: '#059669' },
-  IMPORTED:  { label: 'นำเข้า WS',     color: '#10B981' },
-  CANCELLED: { label: 'ยกเลิก',        color: '#EF4444' },
-};
-
-const CHART_STATUSES: SOStatus[] = ['DRAFT', 'CONFIRMED', 'PICKING', 'CANCELLED'];
 
 function agingColor(days: number) {
   if (days > 45) return { bg: 'bg-red-50', text: 'text-red-700', dot: '#EF4444', label: '>45 วัน' };
@@ -60,6 +50,57 @@ export function DashboardPage() {
   });
 
   const warnAging = aging.filter(a => a.DaysOpen > 30);
+  const groupedAging = useMemo(() => {
+    const groups: Record<string, {
+      truckPlate: string;
+      custName: string;
+      maxDays: number;
+      wfRefs: Set<string>;
+      items: { code: string; name?: string; qty: number; wfRef: string }[];
+      totalQty: number;
+    }> = {};
+    for (const a of aging) {
+      const truck = a.TruckPlate || 'ไม่ระบุรถ';
+      let key = `${truck}-${a.CustName}`;
+      if (truck === 'ไม่ระบุรถ') {
+        key = `NO_TRUCK-${a.WfRef}-${a.CustName}`;
+      }
+      
+      if (!groups[key]) {
+        groups[key] = {
+          truckPlate: truck,
+          custName: a.CustName,
+          maxDays: a.DaysOpen,
+          wfRefs: new Set<string>(),
+          items: [],
+          totalQty: 0
+        };
+      }
+      if (a.DaysOpen > groups[key].maxDays) {
+        groups[key].maxDays = a.DaysOpen;
+      }
+      if (a.WfRef) groups[key].wfRefs.add(a.WfRef);
+      
+      const qty = Number(a.QtyTon || 0);
+      groups[key].totalQty += qty;
+      
+      const existingItem = groups[key].items.find(i => i.code === a.GoodCode && i.wfRef === a.WfRef);
+      if (existingItem) {
+        existingItem.qty += qty;
+      } else {
+        groups[key].items.push({
+          code: a.GoodCode,
+          name: a.GoodName,
+          qty: qty,
+          wfRef: a.WfRef
+        });
+      }
+    }
+    return Object.values(groups).map(g => ({
+      ...g,
+      wfRefs: Array.from(g.wfRefs)
+    })).sort((a, b) => b.maxDays - a.maxDays);
+  }, [aging]);
   const totalRebateAvailable = rebate.reduce((s, r) => s + Number(r.TotalAvailable || 0), 0);
   const hasSearch = !!(searchQuery.trim() || dateFrom || dateTo);
 
@@ -105,7 +146,7 @@ export function DashboardPage() {
           <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
             <LayoutDashboard className="w-5 h-5 sm:w-6 sm:h-6" /> Dashboard
           </h1>
-          <p className="hidden sm:block text-sm text-gray-500 mt-0.5">ภาพรวมใบสั่งขาย · ตั๋วคงค้าง · รีเบท</p>
+          <p className="hidden sm:block text-sm text-gray-500 mt-0.5">ภาพรวมใบสั่งขาย · SO ค้างจัดส่ง · รีเบท</p>
         </div>
         <button onClick={() => load(true)} className="h-9 w-9 sm:h-10 sm:w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white shrink-0">
           <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
@@ -116,11 +157,11 @@ export function DashboardPage() {
         {/* KPI cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-4">
           <KpiCard icon={<Package size={20} />} label="ทั้งหมด" value={stats.total.toLocaleString()} color="#0C447C" />
-          <KpiCard icon={<Clock size={20} />} label="รอดำเนินการ"
-            value={((stats.byStatus.CONFIRMED || 0) + (stats.byStatus.PICKING || 0)).toLocaleString()} color="#F59E0B" />
-          <KpiCard icon={<Truck size={20} />} label="ส่งออกแล้ว" value={(stats.byStatus.SHIPPED || 0).toLocaleString()} color="#059669" />
-          <KpiCard icon={<Database size={20} />} label="นำเข้า WS" value={(stats.byStatus.IMPORTED || 0).toLocaleString()} color="#10B981" />
-          <KpiCard icon={<AlertTriangle size={20} />} label="ตั๋วค้าง >30 วัน" value={warnAging.length.toLocaleString()} color="#EF4444" />
+          <KpiCard icon={<Clock size={20} />} label="รอจัดส่ง/รับสินค้า"
+            value={((stats.byStatus.CONFIRMED || 0) + (stats.byStatus.PICKING || 0) + (stats.byStatus.LOADED || 0)).toLocaleString()} color="#F59E0B" />
+          <KpiCard icon={<Truck size={20} />} label="ส่งออกจากตาชั่ง" value={(stats.byStatus.SHIPPED || 0).toLocaleString()} color="#059669" />
+          <KpiCard icon={<Database size={20} />} label="ปิด SO ใน WINSpeed" value={(stats.byStatus.IMPORTED || 0).toLocaleString()} color="#10B981" />
+          <KpiCard icon={<AlertTriangle size={20} />} label="SO ค้าง >30 วัน" value={warnAging.length.toLocaleString()} color="#EF4444" />
           {canSeeRebate && (
             <KpiCard icon={<TrendingUp size={20} />} label="รีเบท (฿)"
               value={totalRebateAvailable.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} color="#059669" />
@@ -196,7 +237,7 @@ export function DashboardPage() {
                           <td className="py-2 px-3 font-mono whitespace-nowrap">{row.truckPlate || (row.noTruckRequired ? 'ไม่ต้องระบุรถ' : '-')}</td>
                           <td className="py-2 px-3 whitespace-nowrap">{row.requestedAt ? new Date(row.requestedAt).toLocaleString('th-TH') : '-'}</td>
                           <td className="py-2 px-3 whitespace-nowrap">{row.deliveryDate ? new Date(row.deliveryDate).toLocaleDateString('th-TH') : '-'}</td>
-                          <td className="py-2 pl-3 whitespace-nowrap">{STATUS_META[row.status]?.label || row.status}</td>
+                          <td className="py-2 pl-3 whitespace-nowrap">{SO_STATUS_META[row.status]?.label || row.status}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -211,10 +252,10 @@ export function DashboardPage() {
         <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 p-4 sm:p-5 shadow-sm">
           <h2 className="text-sm font-bold text-gray-700 mb-4">สถานะใบสั่งขาย</h2>
           <div className="space-y-2">
-            {CHART_STATUSES.map(st => {
+            {SO_STATUS_ORDER.map(st => {
               const count = stats.byStatus[st] || 0;
               const pct = stats.total ? (count / stats.total) * 100 : 0;
-              const m = STATUS_META[st];
+              const m = SO_STATUS_META[st];
               return (
                 <div key={st} className="flex items-center gap-3">
                   <span className="w-24 text-xs text-gray-600 shrink-0">{m.label}</span>
@@ -229,25 +270,44 @@ export function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-          {/* Aging tickets */}
+          {/* Aging orders */}
           <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 p-4 sm:p-5 shadow-sm flex flex-col">
             <h2 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-              ตั๋วคงค้าง (Aging)
+              SO ค้างจัดส่งนาน
               <span className="text-[10px] font-normal text-gray-400">เหลือง &gt;30 · แดง &gt;45 วัน</span>
             </h2>
-            {aging.length === 0 ? (
-              <p className="text-xs text-gray-400 py-6 text-center">ไม่มีตั๋วคงค้าง</p>
+            {groupedAging.length === 0 ? (
+              <p className="text-xs text-gray-400 py-6 text-center">ไม่มี SO ค้างจัดส่ง</p>
             ) : (
-              <div className="space-y-1.5 max-h-80 overflow-y-auto">
-                {aging.slice(0, 30).map((a, i) => {
-                  const c = agingColor(a.DaysOpen);
+              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                {groupedAging.slice(0, 30).map((g, i) => {
+                  const c = agingColor(g.maxDays);
                   return (
-                    <div key={i} className={`flex items-center gap-2 p-2 rounded-lg ${c.bg}`}>
-                      <span className="h-2 w-2 rounded-full shrink-0" style={{ background: c.dot }} />
-                      <span className="font-mono text-xs text-gray-700 w-24 shrink-0 truncate">{a.WfRef}</span>
-                      <span className="flex-1 text-xs text-gray-600 truncate">{a.CustName}</span>
-                      <span className="text-xs text-gray-400">{a.GoodCode}</span>
-                      <span className={`text-xs font-bold ${c.text} w-16 text-right`}>{a.DaysOpen} วัน</span>
+                    <div key={i} className={`flex flex-col gap-1.5 p-3 rounded-xl border ${c.bg.replace('bg-', 'border-').replace('50', '200')} ${c.bg}`}>
+                      <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full shrink-0 shadow-sm" style={{ background: c.dot }} />
+                        <span className="font-mono text-xs font-bold text-[#0C447C] w-24 shrink-0 truncate flex items-center gap-1"><Truck size={12}/> {g.truckPlate}</span>
+                        <span className="flex-1 text-xs font-semibold text-gray-700 truncate">{g.custName}</span>
+                        <span className="text-xs font-bold text-gray-500 w-16 text-right shrink-0">{g.totalQty.toLocaleString('th-TH', { maximumFractionDigits: 2 })} ตัน</span>
+                        <span className={`text-xs font-bold ${c.text} w-16 text-right shrink-0`}>{g.maxDays} วัน</span>
+                      </div>
+                      {g.wfRefs.length > 0 && (
+                        <div className="mt-0.5 ml-4 text-[10px] text-gray-400 font-mono flex gap-1 flex-wrap">
+                          {g.wfRefs.map(ref => <span key={ref} className="bg-gray-100 px-1 rounded">{ref}</span>)}
+                        </div>
+                      )}
+                      <div className="mt-1 ml-4 pl-3 border-l-2 border-gray-200/60 space-y-1">
+                        {g.items.map((item, idx) => (
+                           <div key={idx} className="flex justify-between items-center text-[11px] text-gray-600 gap-2">
+                             <div className="flex flex-1 items-center gap-2 min-w-0">
+                               <span className="truncate font-medium flex-1" title={item.name}>{item.name || 'ไม่ระบุชื่อสินค้า'}</span>
+                             </div>
+                             <span className="w-16 text-right tabular-nums font-medium shrink-0">
+                               {Number(item.qty || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })} ตัน
+                             </span>
+                           </div>
+                        ))}
+                      </div>
                     </div>
                   );
                 })}

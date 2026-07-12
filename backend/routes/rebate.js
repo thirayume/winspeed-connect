@@ -150,7 +150,7 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN'), async (req, 
 // PATCH /api/rebate/claims/:id/approve — ACCOUNTING/ADMIN อนุมัติ
 router.patch('/claims/:id/approve', requireRole('ACCOUNTING', 'ADMIN'), async (req, res) => {
   try {
-    const { docuNo } = req.body; // CN DocuNo จาก WINSpeed หลัง import
+    const { docuNo } = req.body; // WINSpeed reference document number after official processing
     await wfQuery(
       `UPDATE wf.RebateClaim SET Status='APPROVED', ApprovedAt=GETUTCDATE(), ApprovedBy=@uid, CnDocuNo=@cn WHERE Id=@id`,
       {
@@ -325,7 +325,201 @@ router.get('/voucher-summary', async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// ── dbo CN Rebate endpoints (read-only, single source of truth) ──────────
+// ── dbo WF Rebate Trail endpoints (read-only, WINSpeed-owned flow) ───────
+// Correct WF flow observed from production data:
+// SOHD(103 booking) -> SOHD(104 order) -> WFCoupon -> WFRedemtionDT
+// -> SOInvHD(107 invoice) / SOInvHD(202 cash flow) -> ARReceHD/DT -> GL/VAT.
+
+router.get('/wf-trail-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { year, empId } = req.query;
+    const conditions = [`hd.DocuType = 104`];
+    const inputs = {};
+    if (year) {
+      conditions.push(`YEAR(hd.DocuDate) = @year`);
+      inputs.year = { type: sql.Int, value: Number(year) };
+    }
+    if (empId) {
+      conditions.push(`hd.EmpID = @empId`);
+      inputs.empId = { type: sql.Int, value: Number(empId) };
+    }
+    const r = await wfQuery(`
+      SELECT
+        hd.EmpID,
+        ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS SalesName,
+        COUNT(DISTINCT hd.SOID) AS OrderCount,
+        COUNT(c.CouponID) AS CouponCount,
+        SUM(c.GoodQty) AS CouponTon,
+        SUM(c.GoodQty - c.RemaQty) AS RedeemedTon,
+        SUM(c.RemaQty) AS RemainingTon,
+        COUNT(DISTINCT rd.RedemtionID) AS RedemptionCount,
+        COUNT(DISTINCT inv107.SOInvID) AS InvoiceCount,
+        MIN(hd.DocuDate) AS FirstDocuDate,
+        MAX(hd.DocuDate) AS LastDocuDate
+      FROM dbo.WFCoupon c
+      JOIN dbo.SOHD hd ON hd.SOID = c.DocuID
+      LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
+      LEFT JOIN dbo.WFRedemtionDT rd ON rd.CouponID = c.CouponID
+      LEFT JOIN dbo.SOInvHD inv107 ON inv107.SOInvID = rd.SOInvID
+      WHERE ${conditions.join(' AND ')}
+      GROUP BY hd.EmpID, emp.EmpName
+      ORDER BY RedeemedTon DESC, CouponTon DESC
+    `, inputs);
+    res.json(r.recordset || []);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+router.get('/wf-trail-list', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { year, empId, custId, q } = req.query;
+    const conditions = [`hd.DocuType = 104`];
+    const inputs = {};
+    if (year) {
+      conditions.push(`YEAR(hd.DocuDate) = @year`);
+      inputs.year = { type: sql.Int, value: Number(year) };
+    }
+    if (empId) {
+      conditions.push(`hd.EmpID = @empId`);
+      inputs.empId = { type: sql.Int, value: Number(empId) };
+    }
+    if (custId) {
+      conditions.push(`hd.CustID = @custId`);
+      inputs.custId = { type: sql.NVarChar(20), value: custId };
+    }
+    if (q) {
+      conditions.push(`(
+        hd.DocuNo LIKE @q OR hd.RefNo LIKE @q OR hd.AppvDocuNo LIKE @q OR
+        c.CouponNo LIKE @q OR inv107.DocuNo LIKE @q OR hd.CustName LIKE @q
+      )`);
+      inputs.q = { type: sql.NVarChar(100), value: `%${q}%` };
+    }
+    const r = await wfQuery(`
+      SELECT
+        hd.SOID,
+        hd.DocuNo AS SONo,
+        hd.RefNo AS ControlNo,
+        hd.DocuDate,
+        hd.CustID,
+        hd.CustName,
+        hd.EmpID,
+        ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS SalesName,
+        COUNT(c.CouponID) AS CouponCount,
+        SUM(c.GoodQty) AS CouponTon,
+        SUM(c.GoodQty - c.RemaQty) AS RedeemedTon,
+        SUM(c.RemaQty) AS RemainingTon,
+        COUNT(DISTINCT rd.RedemtionID) AS RedemptionCount,
+        MAX(rh.DocuNo) AS RedemptionNo,
+        MAX(inv107.SOInvID) AS InvoiceId,
+        MAX(inv107.DocuNo) AS InvoiceNo,
+        MAX(inv107.Docutype) AS InvoiceType,
+        MAX(inv107.PostID) AS InvoicePostId
+      FROM dbo.WFCoupon c
+      JOIN dbo.SOHD hd ON hd.SOID = c.DocuID
+      LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
+      LEFT JOIN dbo.WFRedemtionDT rd ON rd.CouponID = c.CouponID
+      LEFT JOIN dbo.WFRedemtionHD rh ON rh.RedemtionID = rd.RedemtionID
+      LEFT JOIN dbo.SOInvHD inv107 ON inv107.SOInvID = rd.SOInvID
+      WHERE ${conditions.join(' AND ')}
+      GROUP BY hd.SOID, hd.DocuNo, hd.RefNo, hd.DocuDate, hd.CustID, hd.CustName, hd.EmpID, emp.EmpName
+      ORDER BY hd.DocuDate DESC, hd.SOID DESC
+    `, inputs);
+    res.json(r.recordset || []);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+router.get('/wf-trail-detail/:soId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const soId = Number(req.params.soId);
+    if (!Number.isFinite(soId)) return res.status(400).json({ message: 'Invalid SOID' });
+
+    const so = (await wfQuery(`
+      SELECT h.*, emp.EmpName AS SalesName
+      FROM dbo.SOHD h
+      LEFT JOIN dbo.EMEmp emp ON emp.EmpID = h.EmpID
+      WHERE h.SOID = @soId
+    `, { soId: { type: sql.Int, value: soId } })).recordset?.[0] || null;
+
+    const booking = (await wfQuery(`
+      SELECT TOP 1 b.*
+      FROM dbo.SOHD o
+      JOIN dbo.SOHD b ON b.AppvDocuNo = o.RefNo AND b.DocuType = 103
+      WHERE o.SOID = @soId
+      ORDER BY b.SOID DESC
+    `, { soId: { type: sql.Int, value: soId } })).recordset?.[0] || null;
+
+    const soLines = (await wfQuery(`
+      SELECT * FROM dbo.SODT WHERE SOID IN (@soId${booking ? ', @bookingSoId' : ''}) ORDER BY SOID, ListNo
+    `, {
+      soId: { type: sql.Int, value: soId },
+      ...(booking ? { bookingSoId: { type: sql.Int, value: Number(booking.SOID) } } : {}),
+    })).recordset || [];
+
+    const coupons = (await wfQuery(`
+      SELECT c.*, rd.RedemtionID, rd.Listno AS RedemptionListNo, rd.PostInv, rd.SOInvID, rd.SOListNo,
+             rh.DocuNo AS RedemptionNo, rh.DocuDate AS RedemptionDate, rh.DocuType AS RedemptionType,
+             inv.DocuNo AS InvoiceNo, inv.Docutype AS InvoiceType, inv.PostID AS InvoicePostID
+      FROM dbo.WFCoupon c
+      LEFT JOIN dbo.WFRedemtionDT rd ON rd.CouponID = c.CouponID
+      LEFT JOIN dbo.WFRedemtionHD rh ON rh.RedemtionID = rd.RedemtionID
+      LEFT JOIN dbo.SOInvHD inv ON inv.SOInvID = rd.SOInvID
+      WHERE c.DocuID = @soId
+      ORDER BY c.Listno, c.CouponID
+    `, { soId: { type: sql.Int, value: soId } })).recordset || [];
+
+    const invoiceIds = [...new Set(coupons.map(r => Number(r.SOInvID)).filter(Boolean))];
+    const invoiceIdList = invoiceIds.length ? invoiceIds.join(',') : '0';
+    const invoices = (await wfQuery(`
+      SELECT * FROM dbo.SOInvHD
+      WHERE SOInvID IN (${invoiceIdList})
+         OR SONo = @soNo
+      ORDER BY Docutype, SOInvID
+    `, { soNo: { type: sql.NVarChar(25), value: so?.DocuNo || '' } })).recordset || [];
+
+    const allInvoiceIds = [...new Set(invoices.map(r => Number(r.SOInvID)).filter(Boolean))];
+    const allInvoiceIdList = allInvoiceIds.length ? allInvoiceIds.join(',') : '0';
+    const invoiceLines = (await wfQuery(`
+      SELECT * FROM dbo.SOInvDT WHERE SOInvID IN (${allInvoiceIdList}) ORDER BY SOInvID, ListNo
+    `)).recordset || [];
+
+    const receipts = (await wfQuery(`
+      SELECT DISTINCT h.*
+      FROM dbo.ARReceHD h
+      LEFT JOIN dbo.ARReceDT d ON d.ARReceID = h.ARReceID
+      WHERE h.SOInvID IN (${allInvoiceIdList})
+         OR d.SOInvID IN (${allInvoiceIdList})
+      ORDER BY h.DocuType, h.ARReceID
+    `)).recordset || [];
+
+    const postIds = [
+      ...invoices.map(r => Number(r.PostID)).filter(Boolean),
+      ...receipts.map(r => Number(r.PostID)).filter(Boolean),
+    ];
+    const postIdList = [...new Set(postIds)].length ? [...new Set(postIds)].join(',') : '0';
+    const vat = (await wfQuery(`
+      SELECT * FROM dbo.VTVAT WHERE FromID IN (${postIdList}) ORDER BY FromID, VATID, ListNo
+    `)).recordset || [];
+    const gl = (await wfQuery(`
+      SELECT h.GLID, h.DocuNo, h.DocuDate, h.JourID, h.FromFlag, h.FromID, h.FormGLID, h.TotaAmnt,
+             d.ListNo, d.AccID, d.DrAmnt, d.CrAmnt, d.GLDesc1
+      FROM dbo.GLHD h
+      LEFT JOIN dbo.GLDT d ON d.GLID = h.GLID
+      WHERE h.FromID IN (${postIdList})
+      ORDER BY h.GLID, d.ListNo
+    `)).recordset || [];
+    const bank = (await wfQuery(`
+      SELECT 'cqbookmove' AS Source, bookmoveid AS Id, docuno AS DocuNo, docudate AS DocuDate, docutype AS DocuType, fromid AS FromID, bankbookid AS BankBookID, custid AS CustID
+      FROM dbo.cqbookmove WHERE fromid IN (${postIdList})
+      UNION ALL
+      SELECT 'CQStatement' AS Source, StatementID AS Id, DocuNo, DocuDate, DocuType, FromID, BankBookID, CustID
+      FROM dbo.CQStatement WHERE FromID IN (${postIdList})
+      ORDER BY Source, Id
+    `)).recordset || [];
+
+    res.json({ so, booking, soLines, coupons, invoices, invoiceLines, receipts, vat, gl, bank });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// ── Legacy dbo CN Rebate endpoints (kept for compatibility; not WF main flow) ──
 
 // GET /api/rebate/cn-summary — สรุป CN rebate จาก dbo แยกตาม Sales/ลูกค้า
 router.get('/cn-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {

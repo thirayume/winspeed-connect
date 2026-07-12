@@ -14,6 +14,7 @@ export type NavItem = {
 
 export type NavGroup = {
   groupLabel: string;
+  icon?: LucideIcon;
   items: NavItem[];
 };
 

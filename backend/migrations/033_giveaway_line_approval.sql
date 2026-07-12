@@ -30,6 +30,19 @@ IF COL_LENGTH('wf.SalesOrderLineExt','GiveawayApprovalNote') IS NULL
   ALTER TABLE wf.SalesOrderLineExt ADD GiveawayApprovalNote NVARCHAR(300) NULL;
 GO
 
+IF COL_LENGTH('wf.SalesOrderExt', 'RequestedAt') IS NULL
+  ALTER TABLE wf.SalesOrderExt ADD RequestedAt DATETIME2 NULL;
+GO
+IF COL_LENGTH('wf.SalesOrderExt', 'IsOwnTruck') IS NULL
+  ALTER TABLE wf.SalesOrderExt ADD IsOwnTruck BIT NOT NULL CONSTRAINT DF_SalesOrderExt_IsOwnTruck_033 DEFAULT 0;
+GO
+IF COL_LENGTH('wf.SalesOrderExt', 'NoTruckRequired') IS NULL
+  ALTER TABLE wf.SalesOrderExt ADD NoTruckRequired BIT NOT NULL CONSTRAINT DF_SalesOrderExt_NoTruckRequired_033 DEFAULT 0;
+GO
+IF COL_LENGTH('wf.SalesOrderExt', 'PSling') IS NULL
+  ALTER TABLE wf.SalesOrderExt ADD PSling BIT NOT NULL CONSTRAINT DF_SalesOrderExt_PSling_033 DEFAULT 0;
+GO
+
 UPDATE wf.SalesOrderLine
 SET GiveawayApprovalStatus = CASE WHEN IsGiveaway = 1 THEN 'PENDING' ELSE NULL END
 WHERE GiveawayApprovalStatus IS NULL;
@@ -125,7 +138,9 @@ BEGIN
             RETURN;
         END
 
-        SELECT TOP 1 @EmpID = TRY_CAST(EmpId AS INT) FROM wf.AppUser WHERE Id = @SalesUserId;
+        SELECT TOP 1 @EmpID = CASE WHEN ISNUMERIC(EmpId) = 1 THEN CAST(EmpId AS INT) ELSE NULL END
+        FROM wf.AppUser
+        WHERE Id = @SalesUserId;
         IF @EmpID IS NULL SET @EmpID = 1000;
 
         SET @NewSoid = CAST(@SoId AS VARCHAR(50));
@@ -136,24 +151,43 @@ BEGIN
         SET @TotalAmnt = @TotalAmnt - ISNULL(@RebateDiscountAmt, 0);
 
         INSERT INTO dbo.SOHD (
-            SOID, DocuNo, CustID, DocuDate, NetAmnt, AppvFlag, PkgStatus, clearflag, EmpID, BrchID,
+            SOID, DocuNo, CustID, CustName, DocuDate, NetAmnt, AppvFlag, PkgStatus, clearflag, EmpID, BrchID,
             DocuType, OnHold, VatRate, VatType, GoodType, ExchRate, ClearSO, MultiCurrency, DocuStatus, AlertFlag,
             TransRegistration, Remark
         )
         VALUES (
-            @NewSoid, @DocuNo, @CustId, CAST(GETDATE() AS DATE), @TotalAmnt, 'N', 'N', 'N', @EmpID, '1',
-            '112', 'N', '7', '1', '1', '1', 'N', 'N', 'N', 'N',
+            @NewSoid, @DocuNo, @CustId, @CustName, CAST(GETDATE() AS DATE), @TotalAmnt, 'W', 'N', 'N', @EmpID, '1',
+            '103', 'N', 0, '3', '1', 1, 'N', 'N', 'N', 'N',
             @TruckPlate, @Remark
         );
 
         INSERT INTO dbo.SODT (
-            SOID, ListNo, GoodID, GoodQty2, GoodPrice2, DocuType, LotFlag, SerialFlag, GoodType, VatType,
-            StockFlag, GoodFlag, RemaQty, FreeFlag, GoodStockRate1, RemaGoodStockQty, remaamnt
+            SOID, ListNo, GoodID, GoodName, InveID, LocaID,
+            GoodUnitID1, GoodPrice1, GoodQty1, GoodUnitID2, GoodStockRate1, GoodQty2, GoodPrice2,
+            GoodDiscAmnt, MiscChargAmnt, SumExcludeAmnt, GoodAmnt,
+            DocuType, LotFlag, SerialFlag, GoodType, VatType, StockFlag, GoodFlag,
+            RemaQty, ReserveQty, FreeFlag, GoodStockRate2, GoodStockUnitID, GoodStockQty,
+            GoodCost, GoodRemaQty1, GoodRemaQty2, POQty, RemaQtyPkg, Expireflag, Poststock,
+            RemaGoodStockQty, remaamnt, CheckFlag, MasterQty, ChildQty
         )
-        SELECT @NewSoid, LineNum, GoodId, QtyTon, PricePerTon, '112', 'N', 'N', '1', '1',
-               '0', 'G', '0', CASE WHEN IsGiveaway = 1 THEN 'Y' ELSE 'N' END, '0', '0', '0'
-        FROM wf.SalesOrderLine
-        WHERE SoId = @SoId;
+        SELECT
+            @NewSoid, sol.LineNum, sol.GoodId, COALESCE(NULLIF(sol.GoodName, ''), g.GoodName1), 1000, 1000,
+            NULL, 0, 0, COALESCE(g.MainGoodUnitID, 1002), 0, sol.QtyTon, sol.PricePerTon,
+            0, 0, 0, sol.QtyTon * sol.PricePerTon,
+            '103', 'N', 'N', '1', COALESCE(g.VatType, '3'), '-1', 'G',
+            sol.QtyTon, 0, CASE WHEN sol.IsGiveaway = 1 THEN 'Y' ELSE 'N' END, 1, COALESCE(g.MainGoodUnitID, 1002), sol.QtyTon,
+            0, sol.QtyTon, sol.QtyTon, sol.QtyTon, sol.QtyTon, 'N', 'N',
+            sol.QtyTon, sol.QtyTon * sol.PricePerTon, 'Y', sol.QtyTon, sol.QtyBag
+        FROM wf.SalesOrderLine sol
+        LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = sol.GoodId
+        WHERE sol.SoId = @SoId;
+
+        INSERT INTO dbo.SODTRemark (SOID, ListNo, RefListNo, Remark)
+        SELECT @NewSoid, sol.LineNum, sol.LineNum, COALESCE(NULLIF(sol.GoodName, ''), g.GoodName1)
+        FROM wf.SalesOrderLine sol
+        LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = sol.GoodId
+        WHERE sol.SoId = @SoId
+          AND COALESCE(NULLIF(sol.GoodName, ''), g.GoodName1) IS NOT NULL;
 
         INSERT INTO wf.SalesOrderExt (
             SOID, WfRef, SoPrefix, SalesUserId, ControlTicketNo, DeliveryDate,

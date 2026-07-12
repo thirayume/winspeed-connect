@@ -1,12 +1,11 @@
 /**
  * db-mode.ts — โหมดแหล่งข้อมูล (runtime, เก็บใน localStorage)
- *   mock   → ใช้ mock.ts (ไม่ต้องมี backend) — สำหรับ demo/Vercel
  *   local  → backend จริง + DB local (Windows Auth)
  *   remote → backend จริง + DB remote (SQL Auth) ผ่าน header X-DB-Target
  *
- * เปลี่ยนได้เฉพาะ ADMIN (UI gate) · กรณีรัน local เลือกได้ทั้ง 3
+ * เปลี่ยนได้เฉพาะ ADMIN (UI gate) · กรณีรัน local เลือกได้ทั้ง 2
  */
-export type DbMode = 'mock' | 'local' | 'remote';
+export type DbMode = 'local' | 'remote';
 
 const KEY = 'wssale_dbmode';
 
@@ -14,7 +13,7 @@ export function getDbMode(): DbMode {
   const saved = (typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) : null) as DbMode | null;
   const isProd = import.meta.env?.PROD;
 
-  if (saved === 'mock' || saved === 'local' || saved === 'remote') {
+  if (saved === 'local' || saved === 'remote') {
     if (isProd && saved === 'local') return 'remote';
     return saved;
   }
@@ -32,7 +31,6 @@ export function dbTargetHeader(): Record<string, string> {
 }
 
 export const DB_MODE_META: Record<DbMode, { label: string; color: string; desc: string }> = {
-  mock:   { label: 'MOCK',   color: '#EA580C', desc: 'ข้อมูลตัวอย่าง (ไม่ต้องมี backend)' },
   local:  { label: 'LOCAL',  color: '#475569', desc: 'DB ในเครื่อง (Windows Auth)' },
   remote: { label: 'REMOTE', color: '#059669', desc: 'DB ระยะไกล (SQL Auth)' },
 };

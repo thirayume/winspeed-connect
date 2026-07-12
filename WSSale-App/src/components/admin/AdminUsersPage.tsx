@@ -88,6 +88,11 @@ export const AdminUsersPage = () => {
           role: fd.get('role') as string,
           isActive: fd.get('isActive') === 'on',
           lineUserId: (fd.get('lineUserId') as string) || null,
+          address: (fd.get('address') as string) || null,
+          phone: (fd.get('phone') as string) || null,
+          email: (fd.get('email') as string) || null,
+          idCardNo: (fd.get('idCardNo') as string) || null,
+          taxId: (fd.get('taxId') as string) || null,
           ...(fd.get('password') ? { password: fd.get('password') as string } : {})
         });
       } else {
@@ -339,105 +344,152 @@ export const AdminUsersPage = () => {
       {/* User CRUD Modal */}
       {modalUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 shrink-0">
               <h2 className="font-bold text-gray-800 text-lg flex items-center gap-2">
                 {modalUser.Id ? 'แก้ไขผู้ใช้งาน' : 'เพิ่มผู้ใช้งานใหม่'}
               </h2>
-              <button onClick={() => setModalUser(null)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-full">
+              <button type="button" onClick={() => setModalUser(null)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-full">
                 <X size={20} />
               </button>
             </div>
-            <form onSubmit={handleSaveUser} className="p-6 flex flex-col gap-4 flex-1 overflow-y-auto">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Username (ใช้ Login)</label>
-                <input
-                  name="username"
-                  defaultValue={modalUser.Username}
-                  disabled={!!modalUser.Id}
-                  required
-                  autoComplete="off"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-100 focus:ring-2 focus:ring-[#0C447C]/20 outline-none"
-                />
+            <form onSubmit={handleSaveUser} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-6 overflow-y-auto custom-scrollbar">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Left Column: Account Settings */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-[#0C447C] border-b border-gray-100 pb-2">ข้อมูลบัญชีผู้ใช้</h3>
+                    
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Username (ใช้ Login)</label>
+                      <input
+                        name="username"
+                        defaultValue={modalUser.Username}
+                        disabled={!!modalUser.Id}
+                        required
+                        autoComplete="off"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-100 focus:ring-2 focus:ring-[#0C447C]/20 outline-none"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Password {modalUser.Id && '(เว้นว่างไว้ถ้าไม่ต้องการเปลี่ยน)'}</label>
+                      <input
+                        name="password"
+                        type="password"
+                        required={!modalUser.Id}
+                        autoComplete="new-password"
+                        placeholder={modalUser.Id ? "••••••••" : ""}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#0C447C]/20 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">ชื่อที่แสดง (Display Name)</label>
+                      <input
+                        name="displayName"
+                        defaultValue={modalUser.DisplayName}
+                        required
+                        autoComplete="off"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#0C447C]/20 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">บทบาท (Role)</label>
+                      <select
+                        name="role"
+                        defaultValue={modalUser.Role || 'SALES'}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#0C447C]/20 outline-none bg-white"
+                      >
+                        <option value="SALES">SALES</option>
+                        <option value="COUNTER_SALES">COUNTER_SALES</option>
+                        <option value="APPROVER">APPROVER</option>
+                        <option value="WAREHOUSE">WAREHOUSE</option>
+                        <option value="ACCOUNTING">ACCOUNTING</option>
+                        <option value="ADMIN">ADMIN</option>
+                        <option value="MANAGER">MANAGER</option>
+                      </select>
+                    </div>
+
+                    {modalUser.Id && (
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">LINE User ID</label>
+                        <input
+                          name="lineUserId"
+                          defaultValue={modalUser.LineUserId || ''}
+                          autoComplete="off"
+                          placeholder="เช่น Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-[#0C447C]/20 outline-none"
+                        />
+                        {modalUser.LineDisplayName && (
+                          <div className="mt-1 text-[11px] text-gray-500">
+                            LINE: {modalUser.LineDisplayName}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {modalUser.Id && (
+                      <div className="flex items-center gap-2 mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <input
+                          type="checkbox"
+                          id="isActive"
+                          name="isActive"
+                          defaultChecked={modalUser.IsActive}
+                          className="h-4 w-4 text-blue-600 rounded border-gray-300"
+                        />
+                        <label htmlFor="isActive" className="text-sm font-medium text-gray-700 cursor-pointer select-none">
+                          เปิดใช้งาน (Active)
+                        </label>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Column: Profile Data */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-[#0C447C] border-b border-gray-100 pb-2">ข้อมูลส่วนตัว (Profile)</h3>
+                    {modalUser.Id ? (
+                      <>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-700 mb-1">ที่อยู่</label>
+                          <textarea name="address" defaultValue={modalUser.Address || ''} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#0C447C]/20 outline-none custom-scrollbar" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-gray-700 mb-1">เบอร์โทร</label>
+                            <input name="phone" defaultValue={modalUser.Phone || ''} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#0C447C]/20 outline-none" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-700 mb-1">อีเมล</label>
+                            <input name="email" type="email" defaultValue={modalUser.Email || ''} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#0C447C]/20 outline-none" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-700 mb-1">เลขบัตรประชาชน</label>
+                            <input name="idCardNo" defaultValue={modalUser.IdCardNo || ''} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#0C447C]/20 outline-none" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-700 mb-1">เลขผู้เสียภาษี</label>
+                            <input name="taxId" defaultValue={modalUser.TaxId || ''} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#0C447C]/20 outline-none" />
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-sm text-gray-500 italic bg-gray-50 p-6 mt-4 rounded-xl border border-dashed border-gray-300 text-center flex flex-col items-center justify-center h-40">
+                        <UserX className="h-8 w-8 text-gray-300 mb-2" />
+                        <p>กรุณาสร้างบัญชีผู้ใช้ให้เสร็จสิ้นก่อน</p>
+                        <p>จึงจะสามารถเพิ่มข้อมูลโปรไฟล์ได้</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
               
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Password {modalUser.Id && '(เว้นว่างไว้ถ้าไม่ต้องการเปลี่ยน)'}</label>
-                <input
-                  name="password"
-                  type="password"
-                  required={!modalUser.Id}
-                  autoComplete="new-password"
-                  placeholder={modalUser.Id ? "••••••••" : ""}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#0C447C]/20 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">ชื่อที่แสดง (Display Name)</label>
-                <input
-                  name="displayName"
-                  defaultValue={modalUser.DisplayName}
-                  required
-                  autoComplete="off"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#0C447C]/20 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">บทบาท (Role)</label>
-                <select
-                  name="role"
-                  defaultValue={modalUser.Role || 'SALES'}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#0C447C]/20 outline-none bg-white"
-                >
-                  <option value="SALES">SALES</option>
-                  <option value="COUNTER_SALES">COUNTER_SALES</option>
-                  <option value="APPROVER">APPROVER</option>
-                  <option value="WAREHOUSE">WAREHOUSE</option>
-                  <option value="ACCOUNTING">ACCOUNTING</option>
-                  <option value="ADMIN">ADMIN</option>
-                </select>
-              </div>
-
-              {modalUser.Id && (
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">LINE User ID</label>
-                  <input
-                    name="lineUserId"
-                    defaultValue={modalUser.LineUserId || ''}
-                    autoComplete="off"
-                    placeholder="เช่น Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-[#0C447C]/20 outline-none"
-                  />
-                  {modalUser.LineDisplayName && (
-                    <div className="mt-1 text-[11px] text-gray-500">
-                      LINE: {modalUser.LineDisplayName}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {modalUser.Id && (
-                <div className="flex items-center gap-2 mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <input
-                    type="checkbox"
-                    id="isActive"
-                    name="isActive"
-                    defaultChecked={modalUser.IsActive}
-                    className="h-4 w-4 text-blue-600 rounded border-gray-300"
-                  />
-                  <label htmlFor="isActive" className="text-sm font-medium text-gray-700 cursor-pointer select-none">
-                    เปิดใช้งาน (Active)
-                  </label>
-                </div>
-              )}
-
-              <div className="mt-4 flex gap-3 pt-4 border-t border-gray-100">
-                <button type="button" onClick={() => setModalUser(null)} className="flex-1 py-2 rounded-xl font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">
+              <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3 shrink-0">
+                <button type="button" onClick={() => setModalUser(null)} className="px-6 py-2 rounded-xl font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors shadow-sm">
                   ยกเลิก
                 </button>
-                <button type="submit" disabled={isSubmitting} className="flex-1 py-2 rounded-xl font-bold text-white bg-[#0C447C] hover:bg-blue-800 transition-colors flex items-center justify-center gap-2">
+                <button type="submit" disabled={isSubmitting} className="px-6 py-2 rounded-xl font-bold text-white bg-[#0C447C] hover:bg-blue-800 transition-colors flex items-center justify-center gap-2 shadow-sm">
                   {isSubmitting && <RefreshCw size={16} className="animate-spin" />}
                   {modalUser.Id ? 'บันทึกการแก้ไข' : 'สร้างผู้ใช้ใหม่'}
                 </button>

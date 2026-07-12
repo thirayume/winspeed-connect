@@ -20,12 +20,28 @@ async function buildCases(days) {
            CONVERT(VARCHAR(10), so.CreatedAt, 120) AS ShipDate,
            so.ImportedDocuNo AS WsDocuNo,
            wt.NetKg, wt.Movebill, wt.ScaleNo,
-           -- WINSpeed invoice link = SOInvDT.RefID → SOHD.SOID (header SONo ใช้ไม่ได้)
-           (SELECT TOP 1 h.DocuNo FROM dbo.SOInvDT d
-              JOIN dbo.SOInvHD h ON h.SOInvID = d.SOInvID
-             WHERE d.RefID = so.Id AND h.Docutype IN (107,202)) AS WsInvoiceNo
+           inv.SOInvID AS WsInvoiceId,
+           inv.DocuNo AS WsInvoiceNo,
+           inv.DocuDate AS WsInvoiceDate,
+           inv.DocuType AS WsInvoiceType,
+           inv.PostID AS WsPostId
     FROM wf.v_AllSalesOrders so
     LEFT JOIN wf.WeighTicket wt ON wt.SoId = so.Id
+    OUTER APPLY (
+      SELECT TOP 1 h.SOInvID, h.DocuNo, h.DocuDate, h.DocuType, h.PostID
+      FROM dbo.SOInvHD h WITH (NOLOCK)
+      WHERE h.DocuType IN (107, 202)
+        AND (
+          h.SOInvID IN (
+            SELECT d.SOInvID
+            FROM dbo.SOInvDT d WITH (NOLOCK)
+            WHERE CONVERT(varchar(50), d.RefID) = CONVERT(varchar(50), so.Id)
+          )
+          OR CONVERT(varchar(50), h.RefSOID) = CONVERT(varchar(50), so.Id)
+          OR h.SONo = so.ImportedDocuNo
+        )
+      ORDER BY h.DocuDate DESC, h.SOInvID DESC
+    ) inv
     WHERE so.Status = 'SHIPPED' AND so.CreatedAt >= DATEADD(day, -@d, GETDATE())
     ORDER BY so.CreatedAt DESC
   `, { d: { type: sql.Int, value: Number(days) || 7 } })).recordset || [];
@@ -57,6 +73,7 @@ async function buildCases(days) {
     else weigh = Math.abs(netApp - tsMap[String(r.Movebill)]) <= WEIGH_TOL_KG ? 'MATCHED' : 'VARIANCE';
     // INVOICE check
     const invoice = r.WsInvoiceNo ? 'MATCHED' : 'PENDING';
+    const postInvoiceStatus = r.WsInvoiceNo ? 'POSTED' : 'READY';
 
     const wRes = resMap[`${r.SoId}|WEIGH`];
     const iRes = resMap[`${r.SoId}|INVOICE`];
@@ -67,6 +84,12 @@ async function buildCases(days) {
     return {
       soId: r.SoId, wfRef: r.WfRef, custName: r.CustName, truckPlate: r.TruckPlate,
       shipDate: r.ShipDate, wsDocuNo: r.WsDocuNo, wsInvoiceNo: r.WsInvoiceNo,
+      wsInvoiceId: r.WsInvoiceId || null,
+      wsInvoiceDate: r.WsInvoiceDate || null,
+      wsInvoiceType: r.WsInvoiceType || null,
+      wsPostId: r.WsPostId || null,
+      postInvoiceStatus,
+      readyForPostInvoice: postInvoiceStatus === 'READY',
       netApp, netTs: r.Movebill ? (tsMap[String(r.Movebill)] ?? null) : null,
       variance: (netApp != null && r.Movebill && tsMap[String(r.Movebill)] != null) ? Math.round(netApp - tsMap[String(r.Movebill)]) : null,
       movebill: r.Movebill, scaleNo: r.ScaleNo,
@@ -87,6 +110,8 @@ router.get('/summary', async (req, res) => {
       ok: cases.filter(c => c.overall === 'OK').length,
       exception: cases.filter(c => c.overall === 'EXCEPTION').length,
       resolved: cases.filter(c => c.overall === 'RESOLVED').length,
+      readyForPostInvoice: cases.filter(c => c.postInvoiceStatus === 'READY').length,
+      postedInvoice: cases.filter(c => c.postInvoiceStatus === 'POSTED').length,
       tsAvailable: cases[0]?.tsAvailable ?? true,
     };
     res.json(summary);
