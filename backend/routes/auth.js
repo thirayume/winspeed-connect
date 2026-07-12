@@ -20,12 +20,122 @@ const LINE_AUTH_URL = 'https://access.line.me/oauth2/v2.1/authorize';
 const LINE_TOKEN_URL = 'https://api.line.me/oauth2/v2.1/token';
 const LINE_PROFILE_URL = 'https://api.line.me/v2/profile';
 
-function appUserPayload(user) {
-  return { sub: user.Id, username: user.Username, role: user.Role, displayName: user.DisplayName };
+const ACCESS_AS_ROLE_RANK = Object.freeze({
+  SALES: 1,
+  COUNTER_SALES: 2,
+  APPROVER: 3,
+  ACCOUNTING: 4,
+  MANAGER: 5,
+  ADMIN: 6,
+});
+const ACCESS_AS_ACTOR_ROLES = new Set(['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'COUNTER_SALES']);
+
+function getUserId(user) {
+  return Number(user?.Id ?? user?.id ?? user?.sub);
 }
 
-function signAppToken(user) {
-  return jwt.sign(appUserPayload(user), SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '8h' });
+function getUserRole(user) {
+  return String(user?.Role ?? user?.role ?? '').toUpperCase();
+}
+
+function roleRank(role) {
+  return ACCESS_AS_ROLE_RANK[String(role || '').toUpperCase()] || 0;
+}
+
+function canUseAccessAs(role) {
+  return ACCESS_AS_ACTOR_ROLES.has(String(role || '').toUpperCase());
+}
+
+function canAccessAs(actorRole, targetRole) {
+  const actorRank = roleRank(actorRole);
+  const targetRank = roleRank(targetRole);
+  return actorRank > 0 && targetRank > 0 && actorRank >= targetRank;
+}
+
+function toClientUser(user, actor = null) {
+  const effectiveId = getUserId(user);
+  const actorId = actor ? getUserId(actor) : effectiveId;
+  const isImpersonating = actorId && effectiveId && Number(actorId) !== Number(effectiveId);
+  const out = {
+    id: effectiveId,
+    username: user.Username ?? user.username,
+    displayName: user.DisplayName ?? user.displayName,
+    role: getUserRole(user),
+    empId: user.EmpId ?? user.empId ?? null,
+    isActive: user.IsActive === undefined ? true : Boolean(user.IsActive),
+    address: user.Address ?? user.address ?? null,
+    phone: user.Phone ?? user.phone ?? null,
+    email: user.Email ?? user.email ?? null,
+    idCardNo: user.IdCardNo ?? user.idCardNo ?? null,
+    taxId: user.TaxId ?? user.taxId ?? null,
+    signatureFile: user.SignatureFile ?? user.signatureFile ?? null,
+    lineUserId: user.LineUserId ?? user.lineUserId ?? null,
+    lineDisplayName: user.LineDisplayName ?? user.lineDisplayName ?? null,
+    lineLinkedAt: user.LineLinkedAt ?? user.lineLinkedAt ?? null,
+    actorId,
+    actorUsername: actor ? (actor.Username ?? actor.username) : (user.Username ?? user.username),
+    actorDisplayName: actor ? (actor.DisplayName ?? actor.displayName) : (user.DisplayName ?? user.displayName),
+    actorRole: actor ? getUserRole(actor) : getUserRole(user),
+    isImpersonating,
+  };
+  return out;
+}
+
+function appUserPayload(user, actor = null) {
+  const effective = toClientUser(user, actor);
+  return {
+    sub: effective.id,
+    id: effective.id,
+    username: effective.username,
+    role: effective.role,
+    displayName: effective.displayName,
+    actorSub: effective.actorId,
+    actorId: effective.actorId,
+    actorUsername: effective.actorUsername,
+    actorRole: effective.actorRole,
+    actorDisplayName: effective.actorDisplayName,
+    impersonating: effective.isImpersonating,
+  };
+}
+
+function signAppToken(user, actor = null) {
+  return jwt.sign(appUserPayload(user, actor), SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '8h' });
+}
+
+async function loadAppUserById(id) {
+  const rows = await wfQuery(
+    `SELECT Id, Username, DisplayName, Role, EmpId, IsActive,
+            Address, Phone, Email, IdCardNo, TaxId, SignatureFile,
+            LineUserId, LineDisplayName, LineLinkedAt
+     FROM wf.AppUser
+     WHERE Id = @id`,
+    { id: { type: sql.Int, value: Number(id) } }
+  );
+  return rows.recordset?.[0] || null;
+}
+
+async function recordAccessAsAudit(actorId, effectiveId, action, req) {
+  try {
+    await wfQuery(
+      `IF OBJECT_ID('wf.AccessAsAudit', 'U') IS NOT NULL
+       BEGIN
+         EXEC sp_executesql
+           N'INSERT INTO wf.AccessAsAudit (ActorUserId, EffectiveUserId, Action, IpAddress, UserAgent, CreatedAt)
+             VALUES (@actorUserId, @effectiveUserId, @action, @ipAddress, @userAgent, SYSUTCDATETIME())',
+           N'@actorUserId int, @effectiveUserId int, @action nvarchar(20), @ipAddress nvarchar(80), @userAgent nvarchar(500)',
+           @actorUserId=@actorUserId, @effectiveUserId=@effectiveUserId, @action=@action, @ipAddress=@ipAddress, @userAgent=@userAgent;
+       END`,
+      {
+        actorUserId: { type: sql.Int, value: Number(actorId) },
+        effectiveUserId: { type: sql.Int, value: Number(effectiveId) },
+        action: { type: sql.NVarChar(20), value: action },
+        ipAddress: { type: sql.NVarChar(80), value: req.ip || null },
+        userAgent: { type: sql.NVarChar(500), value: req.get('user-agent') || null },
+      }
+    );
+  } catch (e) {
+    if (process.env.NODE_ENV !== 'production') console.warn('[access-as-audit]', e.message);
+  }
 }
 
 function signLineLinkToken(profile) {
@@ -107,7 +217,7 @@ router.post('/login', async (req, res) => {
     const token = signAppToken(user);
     res.json({
       accessToken: token,
-      user: { id: user.Id, username: user.Username, displayName: user.DisplayName, role: user.Role },
+      user: toClientUser(user),
     });
   } catch (e) {
     console.error(e);
@@ -254,7 +364,7 @@ router.post('/line/link', async (req, res) => {
 
     res.json({
       accessToken: signAppToken(user),
-      user: { id: user.Id, username: user.Username, displayName: user.DisplayName, role: user.Role },
+      user: toClientUser(user),
       linked: true,
     });
   } catch (e) {
@@ -269,16 +379,86 @@ router.get('/line/status', (req, res) => {
   res.json({ configured: !!(cfg.channelId && cfg.channelSecret), callbackUrl: cfg.callbackUrl });
 });
 
+// GET /api/auth/access-as/candidates
+router.get('/access-as/candidates', requireAuth, async (req, res) => {
+  try {
+    const actor = await loadAppUserById(req.user.actorSub || req.user.sub);
+    if (!actor || !actor.IsActive || !canUseAccessAs(actor.Role)) return res.json([]);
+
+    const result = await wfQuery(
+      `SELECT u.Id, u.Username, u.DisplayName, u.Role, u.EmpId, u.IsActive,
+              e.EmpCode, e.EmpName
+       FROM wf.AppUser u
+       LEFT JOIN dbo.EMEmp e WITH (NOLOCK) ON e.EmpID = u.EmpId
+       WHERE u.IsActive = 1
+       ORDER BY u.DisplayName`
+    );
+    const actorId = getUserId(actor);
+    const rows = (result.recordset || [])
+      .filter(u => getUserId(u) !== actorId && canAccessAs(actor.Role, u.Role))
+      .sort((a, b) => (roleRank(b.Role) - roleRank(a.Role)) || String(a.DisplayName || '').localeCompare(String(b.DisplayName || '')));
+    res.json(rows);
+  } catch (e) {
+    console.error('[access-as:candidates]', e);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/auth/access-as
+router.post('/access-as', requireAuth, async (req, res) => {
+  try {
+    const targetId = Number(req.body?.userId);
+    if (!Number.isFinite(targetId)) return res.status(400).json({ message: 'target user required' });
+
+    const actor = await loadAppUserById(req.user.actorSub || req.user.sub);
+    const target = await loadAppUserById(targetId);
+    if (!actor || !actor.IsActive) return res.status(401).json({ message: 'Actor user not found' });
+    if (!target || !target.IsActive) return res.status(404).json({ message: 'Target user not found' });
+    if (!canUseAccessAs(actor.Role) || !canAccessAs(actor.Role, target.Role)) {
+      return res.status(403).json({ message: 'Access As is not allowed for this role' });
+    }
+
+    if (getUserId(actor) === getUserId(target)) {
+      const accessToken = signAppToken(actor);
+      return res.json({ accessToken, user: toClientUser(actor) });
+    }
+
+    const accessToken = signAppToken(target, actor);
+    await recordAccessAsAudit(getUserId(actor), getUserId(target), 'START', req);
+    res.json({ accessToken, user: toClientUser(target, actor) });
+  } catch (e) {
+    console.error('[access-as:start]', e);
+    res.status(500).json({ message: e.message || 'Server error' });
+  }
+});
+
+// POST /api/auth/access-as/stop
+router.post('/access-as/stop', requireAuth, async (req, res) => {
+  try {
+    const actor = await loadAppUserById(req.user.actorSub || req.user.sub);
+    if (!actor || !actor.IsActive) return res.status(401).json({ message: 'Actor user not found' });
+
+    if (Number(req.user.sub) !== getUserId(actor)) {
+      await recordAccessAsAudit(getUserId(actor), Number(req.user.sub), 'STOP', req);
+    }
+
+    const accessToken = signAppToken(actor);
+    res.json({ accessToken, user: toClientUser(actor) });
+  } catch (e) {
+    console.error('[access-as:stop]', e);
+    res.status(500).json({ message: e.message || 'Server error' });
+  }
+});
+
 // GET /api/auth/me
 router.get('/me', requireAuth, async (req, res) => {
   try {
-    const rows = await wfQuery(
-      `SELECT Id, Username, DisplayName, Role, EmpId, IsActive, Address, Phone, Email, IdCardNo, TaxId, SignatureFile 
-       FROM wf.AppUser WHERE Id = @id`,
-      { id: { type: sql.Int, value: req.user.sub } }
-    );
-    if (!rows.recordset.length) return res.status(404).json({ message: 'User not found' });
-    res.json(rows.recordset[0]);
+    const user = await loadAppUserById(req.user.sub);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const actor = Number(req.user.actorSub || req.user.sub) !== Number(req.user.sub)
+      ? await loadAppUserById(req.user.actorSub)
+      : null;
+    res.json(toClientUser(user, actor));
   } catch (e) {
     res.status(500).json({ message: 'Server error' });
   }
