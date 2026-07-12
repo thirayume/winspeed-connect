@@ -52,7 +52,7 @@ export function AccountingPage() {
   useSocketEvent('so_updated', () => { load(date); });
 
   async function doApprove(claim: RebateClaim) {
-    const cn = prompt(`กรอกเลข CN (Credit Note 109) จาก WINSpeed สำหรับเคลม ฿${Number(claim.ClaimAmt).toLocaleString()}:\n(เว้นว่างได้ ถ้าออก CN ในภายหลัง)`);
+    const cn = prompt(`กรอกเลขอ้างอิงเอกสาร WINSpeed สำหรับเคลม ฿${Number(claim.ClaimAmt).toLocaleString()}:\n(เว้นว่างได้ ถ้ายังไม่มีเลขเอกสาร)`);
     if (cn === null) return;
     setBusyId(claim.Id);
     try { await approveRebateClaim(claim.Id, cn || undefined); await load(date); }
@@ -70,7 +70,7 @@ export function AccountingPage() {
           <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
             <FileCheck className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> บัญชี / Winspeed
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">ออกของวันนี้ · อนุมัติเคลมรีเบท → CN</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">ออกของวันนี้ · อนุมัติเคลมรีเบท · อ้างอิงเอกสาร WINSpeed</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowInfo(true)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600">
@@ -196,7 +196,7 @@ export function AccountingPage() {
                     className="px-3 py-1.5 rounded-lg text-white text-xs font-semibold disabled:opacity-50"
                     style={{ background: '#0C447C' }}
                   >
-                    {busyId === c.Id ? <RefreshCw size={14} className="animate-spin" /> : 'อนุมัติ + CN'}
+                    {busyId === c.Id ? <RefreshCw size={14} className="animate-spin" /> : 'อนุมัติ + Ref'}
                   </button>
                 </div>
               ))}

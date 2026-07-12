@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X, Plus, Minus, Truck, AlertTriangle, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown } from 'lucide-react';
-import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch } from '../../services/api';
+import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { GiveawayBorrowModal } from './GiveawayBorrowModal';
 import { useAuthStore } from '../../store/auth-store';
@@ -8,8 +8,8 @@ import { useTripStore } from '../../store/trip-store';
 import { canViewRebateAmounts } from '../../utils/permissions';
 import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser } from '../../types';
 
-type DraftLine = SalesOrderLine & { tempId: string; refControlTicketNo?: string; isControlTicketDrawn?: boolean; maxQtyTon?: number };
-type DraftBill = { id: string; soPrefix: SOPrefix; lines: DraftLine[]; remark: string; rebateDiscountAmt?: number };
+type DraftLine = SalesOrderLine & { tempId: string; refControlTicketNo?: string; isControlTicketDrawn?: boolean; maxQtyTon?: number; loadSequence?: number; };
+type DraftBill = { id: string; soPrefix: SOPrefix; lines: DraftLine[]; remark: string; rebateDiscountAmt?: number; creditDays?: number; truckRemark?: string; billRemark?: string; };
 
 const PREFIX_LABELS: Record<SOPrefix, string> = {
   I: 'I — ขายปกติ (Invoice)',
@@ -63,6 +63,7 @@ export function CreateSODialog({
   const [goods, setGoods] = useState<EMGood[]>([]);
   const [prices, setPrices] = useState<CurrentPrice[]>([]);
   const [truckPlates, setTruckPlates] = useState<string[]>([]);
+  const [transports, setTransports] = useState<{TranspID: number; TranspName: string}[]>([]);
   const [controlTickets, setControlTickets] = useState<{ DocuNo: string; DocuDate: string; TruckPlate?: string; Desc1?: string }[]>([]);
   
   const activeTrip = useTripStore(s => s.activeTrip);
@@ -72,6 +73,7 @@ export function CreateSODialog({
   const [custSearch, setCustSearch] = useState('');
   const [isCustOpen, setIsCustOpen] = useState(false);
   const [truckPlate, setTruckPlate] = useState('');
+  const [transpId, setTranspId] = useState<number | ''>('');
   const [isTruckOpen, setIsTruckOpen] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState('');
   const [requestedAt, setRequestedAt] = useState('');
@@ -119,6 +121,8 @@ export function CreateSODialog({
       .then(([g, gw]) => setGoods(mergeGoods(g, gw)))
       .catch(console.error);
       
+    fetchTransports().then(setTransports).catch(console.error);
+      
     const currentYear = new Date().getFullYear() + 543 - 2500 + 2500;
     apiFetch(`/giveaway/my-quota?year=${currentYear}`).then(setMyQuota).catch(console.error);
     
@@ -140,8 +144,7 @@ export function CreateSODialog({
 
   useEffect(() => {
     if (convertFromQuoteId) {
-      import('../../services/api').then(({ fetchQuotation }) => {
-        fetchQuotation(convertFromQuoteId).then(q => {
+      fetchQuotation(convertFromQuoteId).then(q => {
           setCustId(q.CustId || '');
           setCustSearch(q.CustName || '');
           setSalesUserId(q.SalesUserId || '');
@@ -171,12 +174,12 @@ export function CreateSODialog({
           setActiveBillId('bill-1');
           setIsTruckInfoCollapsed(true);
         }).catch(console.error);
-      });
     } else if (editSoId && editSoId !== 'undefined') {
       fetchSalesOrder(editSoId).then(so => {
         setCustId((so as any).custId || (so as any).custID || (so as any).CustId || (so as any).CustID || '');
         setCustSearch((so as any).custName || (so as any).CustName || '');
         setTruckPlate((so as any).truckPlate || (so as any).TruckPlate || '');
+        setTranspId((so as any).transpId || (so as any).TranspId || '');
         setSalesUserId((so as any).salesUserId || (so as any).salesUserID || (so as any).SalesUserId || (so as any).SalesUserID || '');
         setDeliveryDate(so.deliveryDate ? so.deliveryDate.split('T')[0] : '');
         setRequestedAt((so as any).requestedAt ? String((so as any).requestedAt).slice(0, 16) : '');
@@ -200,7 +203,7 @@ export function CreateSODialog({
     } else {
       setBills([{ id: 'bill-1', soPrefix: 'I', lines: [], remark: '' }]);
       setActiveBillId('bill-1');
-      setCustId(''); setTruckPlate(''); setSalesUserId('');
+      setCustId(''); setTruckPlate(''); setTranspId(''); setSalesUserId('');
       setRequestedAt(''); setIsOwnTruck(false); setNoTruckRequired(false); setPSling(false);
       setUseControlTicket(false); setSelectedTicketForDraw('');
       setActiveTab(ALL_GOODS_TAB); setGoodSearch(''); setCurrentPage(1);
@@ -484,13 +487,20 @@ export function CreateSODialog({
           remark: b.remark || undefined,
           rebateDiscountAmt: canSeeRebate ? b.rebateDiscountAmt || 0 : 0,
           salesUserId: salesUserId || undefined,
+          creditDays: b.creditDays,
+          truckRemark: b.truckRemark,
+          billRemark: b.billRemark,
+          transpId: transpId || undefined,
           convertFromQuoteId,
           lines: b.lines.map(({ tempId, ...l }) => ({
             ...l,
             qtyTon: Number(l.qtyTon) || 0,
             pricePerTon: Number(l.pricePerTon) || 0,
             isControlTicketDrawn: l.isControlTicketDrawn,
-            refControlTicketNo: l.refControlTicketNo
+            refControlTicketNo: l.refControlTicketNo,
+            masterQty: l.masterQty,
+            childQty: l.childQty,
+            loadSequence: l.loadSequence
           }))
         };
         const res = await updateSO(editSoId, payload);
@@ -511,13 +521,20 @@ export function CreateSODialog({
           remark: b.remark || undefined,
           rebateDiscountAmt: canSeeRebate ? b.rebateDiscountAmt || 0 : 0,
           salesUserId: salesUserId || undefined,
+          creditDays: b.creditDays,
+          truckRemark: b.truckRemark,
+          billRemark: b.billRemark,
+          transpId: transpId || undefined,
           convertFromQuoteId,
           lines: b.lines.map(({ tempId, ...l }) => ({
             ...l,
             qtyTon: Number(l.qtyTon) || 0,
             pricePerTon: Number(l.pricePerTon) || 0,
             isControlTicketDrawn: l.isControlTicketDrawn,
-            refControlTicketNo: l.refControlTicketNo
+            refControlTicketNo: l.refControlTicketNo,
+            masterQty: l.masterQty,
+            childQty: l.childQty,
+            loadSequence: l.loadSequence
           }))
         }));
 
@@ -615,6 +632,19 @@ export function CreateSODialog({
                   ))}
                 </div>
               )}
+            </div>
+            <div className="min-w-[150px]">
+              <label className="text-[10px] font-bold text-gray-500 block mb-0.5">ขนส่งโดย</label>
+              <select
+                value={transpId}
+                onChange={e => setTranspId(e.target.value ? Number(e.target.value) : '')}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">-- ไม่ระบุ (ใช้ค่าดั้งเดิม) --</option>
+                {transports.map(t => (
+                  <option key={t.TranspID} value={t.TranspID}>{t.TranspName}</option>
+                ))}
+              </select>
             </div>
             <div className="min-w-[150px]">
               <label className="text-[10px] font-bold text-gray-500 block mb-0.5">วันที่รับของ</label>
@@ -904,15 +934,31 @@ export function CreateSODialog({
               <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-sm border-t-4 border-t-[#0C447C] flex flex-col flex-1 min-h-[300px]">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-bold text-[#0C447C]">รายการในบิล {activeBill?.soPrefix}</h3>
-                  <select 
-                    value={activeBill?.soPrefix} 
-                    onChange={e => updateBillInfo(activeBillId, { soPrefix: e.target.value as SOPrefix })}
-                    className="border border-gray-200 rounded text-sm px-2 py-1 font-bold bg-gray-50"
-                  >
-                    <option value="I">I - บัญชี 1</option>
-                    <option value="K">K - บัญชี 2</option>
-                    <option value="AI">AI - ตั๋วคุม</option>
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-gray-500 font-bold hidden sm:inline">ประเภทบิล</span>
+                      <select 
+                        value={activeBill?.soPrefix} 
+                        onChange={e => updateBillInfo(activeBillId, { soPrefix: e.target.value as SOPrefix })}
+                        className="border border-gray-200 rounded text-sm px-2 py-1 font-bold bg-gray-50"
+                      >
+                        <option value="I">I - บัญชี 1</option>
+                        <option value="K">K - บัญชี 2</option>
+                        <option value="AI">AI - ตั๋วคุม</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-1" title="ระยะเวลาเครดิต (วัน) จะถูกบวกเข้ากับวันที่ชั่งออกเพื่อหาวันครบกำหนดชำระ">
+                      <span className="text-[10px] text-gray-500 font-bold hidden sm:inline">เครดิต(วัน)</span>
+                      <input 
+                        type="number" 
+                        min="0"
+                        value={activeBill?.creditDays !== undefined ? activeBill.creditDays : ''} 
+                        onChange={e => updateBillInfo(activeBillId, { creditDays: e.target.value ? Number(e.target.value) : 0 })}
+                        className="border border-gray-200 rounded text-sm px-2 py-1 font-bold bg-white w-16 text-center focus:ring-1 focus:ring-[#0C447C] outline-none"
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 {activeBill?.lines.length === 0 ? (
@@ -939,13 +985,29 @@ export function CreateSODialog({
                         </div>
                         <div className="flex flex-col gap-1.5 mt-2">
                           <div className="flex justify-between items-end">
-                            <div className="flex items-center gap-2">
-                              <div className="flex items-center border border-gray-200 rounded bg-white">
-                                <button onClick={() => updateActiveLine(l.tempId, { qtyTon: Math.max(0.5, l.qtyTon - 1) })} className="px-2 py-1 text-gray-500 hover:bg-gray-100"><Minus size={12} /></button>
-                                <input type="number" max={l.maxQtyTon} value={l.qtyTon || ''} onChange={e => updateActiveLine(l.tempId, { qtyTon: Number(e.target.value) })} className="w-12 text-center text-xs font-mono font-bold py-1 focus:outline-none" />
-                                <button onClick={() => updateActiveLine(l.tempId, { qtyTon: l.qtyTon + 1 })} disabled={l.maxQtyTon !== undefined && l.qtyTon >= l.maxQtyTon} className="px-2 py-1 text-gray-500 hover:bg-gray-100 disabled:opacity-30"><Plus size={12} /></button>
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center border border-gray-200 rounded bg-white">
+                                  <button onClick={() => updateActiveLine(l.tempId, { qtyTon: Math.max(0.5, l.qtyTon - 1) })} className="px-2 py-1 text-gray-500 hover:bg-gray-100"><Minus size={12} /></button>
+                                  <input type="number" max={l.maxQtyTon} value={l.qtyTon || ''} onChange={e => updateActiveLine(l.tempId, { qtyTon: Number(e.target.value) })} className="w-12 text-center text-xs font-mono font-bold py-1 focus:outline-none" />
+                                  <button onClick={() => updateActiveLine(l.tempId, { qtyTon: l.qtyTon + 1 })} disabled={l.maxQtyTon !== undefined && l.qtyTon >= l.maxQtyTon} className="px-2 py-1 text-gray-500 hover:bg-gray-100 disabled:opacity-30"><Plus size={12} /></button>
+                                </div>
+                                <span className="text-[10px] text-gray-500 font-medium">{l.isGiveaway ? 'ชิ้น' : 'ตัน'}</span>
+                                <div className="flex items-center ml-2 border border-gray-200 rounded px-1">
+                                  <span className="text-[10px] text-gray-400 mr-1">ลำดับ</span>
+                                  <input type="number" min="1" max="99" value={l.loadSequence || ''} onChange={e => updateActiveLine(l.tempId, { loadSequence: e.target.value ? Number(e.target.value) : undefined })} className="w-8 text-center text-xs font-mono py-1 focus:outline-none bg-transparent" />
+                                </div>
                               </div>
-                              <span className="text-[10px] text-gray-500 font-medium">{l.isGiveaway ? 'ชิ้น' : 'ตัน'}</span>
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center border border-blue-100 rounded bg-blue-50/50 px-1">
+                                  <span className="text-[10px] text-blue-500 font-medium mr-1" title="น้ำหนักสินค้าจริง (ตัดสต๊อก/คิดเงิน)">Master</span>
+                                  <input type="number" value={l.masterQty !== undefined && l.masterQty !== null ? l.masterQty : l.qtyTon} onChange={e => updateActiveLine(l.tempId, { masterQty: e.target.value === '' ? undefined : Number(e.target.value) })} className="w-12 text-right text-xs font-mono py-1 focus:outline-none bg-transparent" />
+                                </div>
+                                <div className="flex items-center border border-purple-100 rounded bg-purple-50/50 px-1">
+                                  <span className="text-[10px] text-purple-500 font-medium mr-1" title="น้ำหนักลูก (ถุงเปล่า แยกตัดสต๊อกแต่ไม่คิดเงินเพิ่ม)">Child</span>
+                                  <input type="number" value={l.childQty !== undefined && l.childQty !== null ? l.childQty : 0} onChange={e => updateActiveLine(l.tempId, { childQty: e.target.value === '' ? undefined : Number(e.target.value) })} className="w-12 text-right text-xs font-mono py-1 focus:outline-none bg-transparent" />
+                                </div>
+                              </div>
                             </div>
                             
                             <div className="flex flex-col items-end gap-1">

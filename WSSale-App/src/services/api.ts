@@ -14,7 +14,7 @@ import type {
   TruckStats, TruckHistoryItem, CustomerFilterOptions, CustomerRequest, CustomerRequestStatus,
 } from '../types';
 
-import { isMock, mockRequest } from './mock';
+
 import { dbTargetHeader } from '../store/db-mode';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -25,6 +25,11 @@ export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (t: string) => localStorage.setItem(TOKEN_KEY, t);
 export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
 
+function notifyAuthExpired() {
+  clearToken();
+  window.dispatchEvent(new CustomEvent('wssale:auth-expired'));
+}
+
 function authHeaders(): Record<string, string> {
   const t = getToken();
   return t ? { Authorization: `Bearer ${t}` } : {};
@@ -32,14 +37,13 @@ function authHeaders(): Record<string, string> {
 
 import { useAppStore } from '../store/app-store';
 
-async function req<T>(path: string, init?: RequestInit & { silent?: boolean }): Promise<T> {
+export async function req<T>(path: string, init?: RequestInit & { silent?: boolean }): Promise<T> {
   const silent = init?.silent;
   if (!silent) {
     useAppStore.getState().startLoading();
   }
   
   try {
-    if (isMock()) return await mockRequest<T>(path, init);
     const res = await fetch(`${API_BASE}${path}`, {
       ...init,
       headers: {
@@ -51,6 +55,7 @@ async function req<T>(path: string, init?: RequestInit & { silent?: boolean }): 
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText }));
+      if (res.status === 401) notifyAuthExpired();
       throw Object.assign(new Error(err.message || 'Request failed'), { status: res.status, data: err });
     }
     return await res.json();
@@ -92,6 +97,21 @@ export const deleteUser = (id: number) =>
 export const fetchEmployees = () => req<Employee[]>('/master/employees');
 
 // ── Master data ───────────────────────────────────────────────
+const MASTER_CACHE_TTL = 5 * 60 * 1000;
+const masterCache = new Map<string, { expiresAt: number; promise: Promise<unknown> }>();
+
+function cachedReq<T>(key: string, loader: () => Promise<T>, ttl = MASTER_CACHE_TTL): Promise<T> {
+  const now = Date.now();
+  const cached = masterCache.get(key);
+  if (cached && cached.expiresAt > now) return cached.promise as Promise<T>;
+  const promise = loader().catch(error => {
+    masterCache.delete(key);
+    throw error;
+  });
+  masterCache.set(key, { expiresAt: now + ttl, promise });
+  return promise;
+}
+
 export const fetchCustomerFilters = () =>
   req<CustomerFilterOptions>('/master/customer-filters');
 
@@ -125,10 +145,16 @@ export const reviewCustomerRequest = (
 ) =>
   req<{ ok: boolean }>(`/master/customer-requests/${id}/review`, { method: 'PATCH', body: JSON.stringify(payload) });
 
-export const fetchGoods = (q?: string) =>
-  req<EMGood[]>(`/master/goods${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+export const fetchGoods = (q?: string) => {
+  const qs = q ? `?q=${encodeURIComponent(q)}` : '';
+  const target = dbTargetHeader()['X-DB-Target'] || '';
+  return cachedReq<EMGood[]>(`goods:${target}:${qs}`, () => req<EMGood[]>(`/master/goods${qs}`, { silent: true }));
+};
 
-export const fetchGiveawayGoods = () => req<EMGood[]>('/master/giveaway-goods');
+export const fetchGiveawayGoods = () => {
+  const target = dbTargetHeader()['X-DB-Target'] || '';
+  return cachedReq<EMGood[]>(`giveaway-goods:${target}`, () => req<EMGood[]>('/master/giveaway-goods', { silent: true }));
+};
 
 export const updateGood = (id: string, patch: Partial<EMGood>) =>
   req<{ ok: boolean }>(`/master/goods/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
@@ -378,13 +404,44 @@ export const fetchQuotation = (id: number) => req<Quotation>(`/quotation/${id}`)
 export const createQuotation = (payload: {
   custId: string; custName: string; validUntil?: string; remark?: string;
   lines: { goodId: string; goodCode: string; goodName: string; qtyTon: number; pricePerTon: number; netPricePerTon: number }[];
-}) => req<{ id: number; quoteNo: string }>('/quotation', { method: 'POST', body: JSON.stringify(payload) });
+}) => req<{
+  id: number;
+  quoteNo: string;
+  winspeedQuoteSoid?: number;
+  winspeedQuoteNo?: string;
+  winspeedEstimateId?: number;
+  winspeedEstimateNo?: string;
+}>('/quotation', { method: 'POST', body: JSON.stringify(payload) });
 
 export const updateQuotationStatus = (id: number, status: string) =>
-  req<{ id: number; status: string }>(`/quotation/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+  req<{ id: number; status: string; sourceSoCount?: number }>(`/quotation/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
 
 export const convertQuotation = (id: number, soPrefix = 'I') =>
   req<{ quoteId: number; soId: number; wfRef: string }>(`/quotation/${id}/convert`, { method: 'POST', body: JSON.stringify({ soPrefix }) });
+
+export const createQuotationFromSoTrip = (payload: {
+  soIds: Array<number | string>;
+  sourceRefs?: string[];
+  validDays?: 7 | 15 | 20 | 30 | 45;
+  validUntil?: string;
+  remark?: string;
+  salesUserId?: number | string;
+}) =>
+  req<{
+    id: number;
+    quoteNo: string;
+    sourceSoIds: number[];
+    sourceWfRefs: string[];
+    lineCount: number;
+    validUntil: string;
+    winspeedQuoteSoid?: number;
+    winspeedQuoteNo?: string;
+    winspeedEstimateId?: number;
+    winspeedEstimateNo?: string;
+  }>('/quotation/from-so-trip', { method: 'POST', body: JSON.stringify(payload) });
+
+export const extendQuotationValidity = (id: number, payload: { validDays?: 7 | 15 | 20 | 30 | 45; validUntil?: string }) =>
+  req<{ id: number; validUntil: string }>(`/quotation/${id}/valid-until`, { method: 'PATCH', body: JSON.stringify(payload) });
 
 // ── TruckScale (FR-024/025/026) ───────────────────────────────
 export const pingTruckScale = () =>
@@ -571,3 +628,22 @@ export const resolveUnlockRequest = (id: string) =>
   req<{ ok: boolean }>(`/so/${id}/unlock`, { method: 'PATCH', body: '{}' });
 
 export const apiFetch = req;
+
+export const fetchTransports = () => req<{ TranspID: number; TranspName: string }[]>('/master/transports');
+
+export const fetchWfRebateTrailSummary = (params?: { year?: number }) => {
+  const qs = new URLSearchParams();
+  if (params?.year) qs.set('year', String(params.year));
+  const suffix = qs.toString();
+  return req<import('../types').WfRebateTrailSummary[]>(`/rebate/wf-trail-summary${suffix ? `?${suffix}` : ''}`);
+};
+
+export const fetchWfRebateTrailList = (params: { year?: number; empId: number }) => {
+  const qs = new URLSearchParams();
+  if (params.year) qs.set('year', String(params.year));
+  qs.set('empId', String(params.empId));
+  return req<import('../types').WfRebateTrailRow[]>(`/rebate/wf-trail-list?${qs}`);
+};
+
+export const fetchWfRebateTrailDetail = (orderId: string) =>
+  req<import('../types').WfRebateTrailDetail>(`/rebate/wf-trail-detail/${orderId}`);

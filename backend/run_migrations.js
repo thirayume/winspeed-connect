@@ -54,6 +54,7 @@ const IGNORABLE_CODES = [
   2714, // object already exists
   2705, // column already exists
    911, // database does not exist (login scripts on wrong db)
+  15151, // grant target user/role missing in local dev (for example wf_reader)
 ];
 
 async function runFile(pool, filePath, sql) {

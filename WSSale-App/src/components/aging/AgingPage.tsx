@@ -1,18 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Search, RefreshCw, X, Clock, Package, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Search, RefreshCw, X, Clock, Package, ChevronLeft, ChevronRight, Truck } from 'lucide-react';
 import { searchAgingOrders } from '../../services/api';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
-import type { AgingRow } from '../../types';
-
-const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  CONFIRMED:  { label: 'ยืนยัน',        color: 'bg-blue-100 text-blue-700' },
-  LOADED:     { label: 'โหลดแล้ว',      color: 'bg-yellow-100 text-yellow-700' },
-  PICKING:    { label: 'กำลัง Pick',     color: 'bg-orange-100 text-orange-700' },
-  DRAFT:      { label: 'ร่าง',           color: 'bg-gray-100 text-gray-500' },
-  SHIPPED:    { label: 'ส่งออกแล้ว',     color: 'bg-green-100 text-green-700' },
-  IMPORTED:   { label: 'นำเข้า WS',      color: 'bg-purple-100 text-purple-700' },
-  CANCELLED:  { label: 'ยกเลิก',         color: 'bg-red-100 text-red-500' },
-};
+import type { AgingRow, SOStatus } from '../../types';
+import { SO_STATUS_META } from '../../constants/soStatus';
 
 const PAGE_SIZE = 50;
 
@@ -60,25 +51,77 @@ export const AgingPage = () => {
     setStatusFilter(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
 
   const daysColor = (d: number) => {
-    if (d >= 90) return 'text-red-600 font-bold';
-    if (d >= 45) return 'text-orange-500 font-semibold';
-    if (d >= 30) return 'text-yellow-600';
-    return 'text-gray-500';
+    if (d >= 90) return { bg: 'bg-red-50', text: 'text-red-700', dot: '#EF4444' };
+    if (d >= 45) return { bg: 'bg-orange-50', text: 'text-orange-700', dot: '#F97316' };
+    if (d >= 30) return { bg: 'bg-yellow-50', text: 'text-yellow-700', dot: '#EAB308' };
+    return { bg: 'bg-gray-50', text: 'text-gray-600', dot: '#9CA3AF' };
   };
+
+  const groupedData = useMemo(() => {
+    const groups: Record<string, {
+      truckPlate: string;
+      custName: string;
+      maxDays: number;
+      wfRefs: Set<string>;
+      items: { code: string; name?: string; qty: number; wfRef: string }[];
+      totalQty: number;
+    }> = {};
+    for (const a of data) {
+      const truck = a.TruckPlate || 'ไม่ระบุรถ';
+      let key = `${truck}-${a.CustName}`;
+      if (truck === 'ไม่ระบุรถ') {
+        key = `NO_TRUCK-${a.WfRef}-${a.CustName}`;
+      }
+      
+      if (!groups[key]) {
+        groups[key] = {
+          truckPlate: truck,
+          custName: a.CustName,
+          maxDays: a.DaysOpen,
+          wfRefs: new Set<string>(),
+          items: [],
+          totalQty: 0
+        };
+      }
+      if (a.DaysOpen > groups[key].maxDays) {
+        groups[key].maxDays = a.DaysOpen;
+      }
+      if (a.WfRef) groups[key].wfRefs.add(a.WfRef);
+      
+      const qty = Number(a.QtyTon || 0);
+      groups[key].totalQty += qty;
+      
+      const existingItem = groups[key].items.find(i => i.code === a.GoodCode && i.wfRef === a.WfRef);
+      if (existingItem) {
+        existingItem.qty += qty;
+      } else {
+        groups[key].items.push({
+          code: a.GoodCode,
+          name: a.GoodName,
+          qty: qty,
+          wfRef: a.WfRef
+        });
+      }
+    }
+    return Object.values(groups).map(g => ({
+      ...g,
+      wfRefs: Array.from(g.wfRefs)
+    })).sort((a, b) => b.maxDays - a.maxDays);
+  }, [data]);
 
   return (
     <div className="h-full flex flex-col gap-4 overflow-hidden">
       {/* Header summary */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4 shrink-0">
         <DataSummaryCard
-          title="ตั๋วคงค้างทั้งหมด"
+          title="SO ค้างจัดส่งทั้งหมด"
           value={total.toLocaleString()}
           icon={<Clock size={24} />}
           colorClass="bg-red-100 text-red-500"
         />
         <DataSummaryCard
           title="แสดงหน้านี้"
-          value={data.length.toLocaleString()}
+          value={groupedData.length.toLocaleString()}
           icon={<Package size={24} />}
           colorClass="bg-blue-100 text-blue-500"
         />
@@ -131,7 +174,7 @@ export const AgingPage = () => {
                       : 'bg-white text-gray-500 border-gray-200 hover:border-[#0C447C]'
                   }`}
                 >
-                  {STATUS_LABELS[s]?.label}
+                  {SO_STATUS_META[s as SOStatus]?.label || s}
                 </button>
               ))}
             </div>
@@ -157,81 +200,63 @@ export const AgingPage = () => {
           </div>
         </div>
 
-        {/* Table */}
-        <div className="overflow-auto min-h-0 relative">
-          <table className="w-full text-sm text-left min-w-full">
-            <thead className="bg-gray-50 sticky top-0 z-10 text-gray-500 text-xs uppercase tracking-wider shadow-sm whitespace-nowrap">
-              <tr>
-                <th className="px-4 py-3 border-b border-gray-100 whitespace-nowrap">#</th>
-                <th className="px-4 py-3 border-b border-gray-100 whitespace-nowrap">เลขเอกสาร</th>
-                <th className="px-4 py-3 border-b border-gray-100 whitespace-nowrap">ลูกค้า</th>
-                <th className="px-4 py-3 border-b border-gray-100 whitespace-nowrap">สินค้า</th>
-                <th className="px-4 py-3 border-b border-gray-100 text-right whitespace-nowrap">ตัน</th>
-                <th className="px-4 py-3 border-b border-gray-100 text-center whitespace-nowrap">วันที่สั่ง</th>
-                <th className="px-4 py-3 border-b border-gray-100 text-center whitespace-nowrap">อายุ (วัน)</th>
-                <th className="px-4 py-3 border-b border-gray-100 text-center whitespace-nowrap">สถานะ</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {loading ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-16 text-center whitespace-nowrap">
-                    <RefreshCw size={28} className="animate-spin mx-auto text-[#0C447C] opacity-50" />
-                    <p className="text-sm text-gray-400 mt-3 animate-pulse">กำลังโหลด...</p>
-                  </td>
-                </tr>
-              ) : data.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-gray-400 whitespace-nowrap">
-                    <Clock size={32} className="mx-auto mb-3 opacity-30" />
-                    <p>ไม่พบข้อมูลตั๋วคงค้าง</p>
-                  </td>
-                </tr>
-              ) : (
-                data.map((row, i) => {
-                  const st = STATUS_LABELS[row.Status] || { label: row.Status, color: 'bg-gray-100 text-gray-500' };
-                  return (
-                    <tr key={`${row.SoId}-${row.GoodCode}-${i}`} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{(page - 1) * PAGE_SIZE + i + 1}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-700">
-                          {row.WfRef || '-'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-800 font-medium max-w-[200px] truncate" title={row.CustName}>
-                        {row.CustName}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 max-w-[160px] whitespace-nowrap">
-                        <div className="text-xs font-semibold text-[#0C447C]">{row.GoodCode}</div>
-                        {row.GoodName && <div className="text-xs text-gray-400 truncate" title={row.GoodName}>{row.GoodName}</div>}
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-700 whitespace-nowrap">
-                        {Number(row.QtyTon).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </td>
-                      <td className="px-4 py-3 text-center text-xs text-gray-500 whitespace-nowrap">
-                        {row.CreatedAt ? row.CreatedAt.substring(0, 10) : '-'}
-                      </td>
-                      <td className={`px-4 py-3 text-center font-mono text-sm ${daysColor(row.DaysOpen)}`}>
-                        {row.DaysOpen}
-                      </td>
-                      <td className="px-4 py-3 text-center whitespace-nowrap">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${st.color}`}>
-                          {st.label}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+        {/* Card View */}
+        <div className="overflow-auto min-h-0 relative p-4 bg-gray-50/50">
+          {loading ? (
+            <div className="flex flex-col justify-center items-center h-full opacity-50 py-16">
+              <RefreshCw size={32} className="animate-spin text-[#0C447C]" />
+              <p className="text-sm text-gray-500 mt-4 animate-pulse">กำลังโหลด...</p>
+            </div>
+          ) : groupedData.length === 0 ? (
+            <div className="flex flex-col justify-center items-center h-full text-gray-400 py-16">
+              <Clock size={40} className="mb-4 opacity-30" />
+              <p>ไม่พบข้อมูล SO ค้างจัดส่ง</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-4 items-stretch">
+              {groupedData.map((g, i) => {
+                const c = daysColor(g.maxDays);
+                return (
+                  <div key={i} className={`flex flex-col h-full gap-1.5 p-4 rounded-2xl border bg-white shadow-sm hover:shadow-md transition-shadow ${c.bg.replace('bg-', 'border-').replace('50', '200')}`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="h-3 w-3 rounded-full shrink-0 shadow-sm" style={{ background: c.dot }} />
+                      <span className="font-mono text-sm font-bold text-[#0C447C] shrink-0 truncate flex items-center gap-1.5"><Truck size={14}/> {g.truckPlate}</span>
+                      <div className="flex-1"></div>
+                      <span className="text-xs font-bold text-gray-500">{g.totalQty.toLocaleString('th-TH', { maximumFractionDigits: 2 })} ตัน</span>
+                      <span className={`text-xs font-bold ${c.text} bg-white px-2 py-0.5 rounded-full border border-gray-100 shadow-sm`}>{g.maxDays} วัน</span>
+                    </div>
+                    <div className="text-sm font-bold text-gray-800 line-clamp-1">{g.custName}</div>
+                    
+                    {g.wfRefs.length > 0 && (
+                      <div className="mt-1 text-[10px] text-gray-400 font-mono flex gap-1 flex-wrap">
+                        {g.wfRefs.map(ref => <span key={ref} className="bg-gray-100 border border-gray-200 text-gray-600 px-1.5 py-0.5 rounded shadow-sm">{ref}</span>)}
+                      </div>
+                    )}
+                    
+                    <div className="mt-auto pt-3 border-t border-gray-100 flex flex-col gap-1.5 flex-1 justify-start max-h-[60px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
+                      {g.items.map((item, idx) => (
+                         <div key={idx} className="flex justify-between items-center text-xs text-gray-600 gap-2 shrink-0">
+                           <div className="flex flex-col flex-1 min-w-0">
+                             <span className="truncate font-medium text-gray-700" title={item.name}>{item.name || 'ไม่ระบุชื่อสินค้า'}</span>
+                           </div>
+                           <span className="w-20 text-right tabular-nums font-bold text-[#0C447C] shrink-0 bg-[#0C447C]/5 px-2 py-1 rounded">
+                             {Number(item.qty || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })} ตัน
+                           </span>
+                         </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="p-3 border-t border-gray-100 flex items-center justify-between bg-gray-50/50 shrink-0">
+          <div className="p-3 border-t border-gray-100 flex items-center justify-between bg-white shrink-0">
             <span className="text-sm text-gray-500">
-              {(page-1)*PAGE_SIZE+1}–{Math.min(page*PAGE_SIZE, total)} จาก {total.toLocaleString()} รายการ
+              {(page-1)*PAGE_SIZE+1}–{Math.min(page*PAGE_SIZE, total)} จาก {total.toLocaleString()} บิล
             </span>
             <div className="flex items-center gap-1">
               <button
