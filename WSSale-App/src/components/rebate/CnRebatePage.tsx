@@ -1,176 +1,233 @@
-import { useEffect, useState, useCallback } from 'react';
-import { FileCheck2, RefreshCw, ChevronRight, ChevronLeft, Search, Calendar, Info, X } from 'lucide-react';
-import { fetchCnRebateSummary, fetchCnRebateList, fetchCnRebateDetail } from '../../services/api';
-import type { CnRebateSummary, CnRebateRow, CnRebateDetail } from '../../types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Calendar, ChevronLeft, ChevronRight, FileCheck2, RefreshCw, Search } from 'lucide-react';
+import {
+  fetchWfRebateTrailDetail,
+  fetchWfRebateTrailList,
+  fetchWfRebateTrailSummary,
+} from '../../services/api';
+import type { WfRebateTrailDetail, WfRebateTrailRow, WfRebateTrailSummary } from '../../types';
 
 type View = 'summary' | 'list' | 'detail';
-const THB = (n: number) => `฿${Number(n).toLocaleString('th-TH', { maximumFractionDigits: 0 })}`;
-const currentYear = new Date().getFullYear() + 543; // Buddhist Era
+
+const fmtTon = (n: unknown) => Number(n || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
+const fmtDate = (v: unknown) => String(v || '').slice(0, 10) || '-';
+const currentYear = new Date().getFullYear() + 543;
+
+function val(row: Record<string, unknown> | null | undefined, key: string) {
+  const value = row?.[key];
+  return value === null || value === undefined || value === '' ? '-' : String(value);
+}
+
+function MiniTable({ title, rows, columns }: {
+  title: string;
+  rows: Record<string, unknown>[];
+  columns: { key: string; label: string; align?: 'right' | 'center' }[];
+}) {
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
+      <div className="px-4 py-3 border-b border-gray-100">
+        <h2 className="text-sm font-bold text-gray-700">{title}</h2>
+        <p className="text-xs text-gray-400">{rows.length} rows</p>
+      </div>
+      <div className="overflow-auto">
+        <table className="w-full text-sm min-w-[720px]">
+          <thead className="bg-gray-50 text-xs text-gray-500">
+            <tr>
+              {columns.map(c => (
+                <th key={c.key} className={`px-3 py-2 ${c.align === 'right' ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left'}`}>
+                  {c.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {rows.map((row, idx) => (
+              <tr key={idx} className="hover:bg-gray-50/70">
+                {columns.map(c => (
+                  <td key={c.key} className={`px-3 py-2 text-gray-700 ${c.align === 'right' ? 'text-right tabular-nums' : c.align === 'center' ? 'text-center' : ''}`}>
+                    {val(row, c.key)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {!rows.length && (
+              <tr>
+                <td colSpan={columns.length} className="px-3 py-8 text-center text-gray-300">No data</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 export function CnRebatePage() {
-  const [view, setView]           = useState<View>('summary');
-  const [year, setYear]           = useState<number | undefined>(undefined);
-  const [summary, setSummary]     = useState<CnRebateSummary[]>([]);
-  const [list, setList]           = useState<CnRebateRow[]>([]);
-  const [detail, setDetail]       = useState<CnRebateDetail[]>([]);
-  const [selSales, setSelSales]   = useState<CnRebateSummary | null>(null);
-  const [selCN, setSelCN]         = useState<CnRebateRow | null>(null);
-  const [loading, setLoading]     = useState(true);
-  const [search, setSearch]       = useState('');
-  const [showInfo, setShowInfo]   = useState(false);
+  const [view, setView] = useState<View>('summary');
+  const [year, setYear] = useState<number | undefined>(undefined);
+  const [summary, setSummary] = useState<WfRebateTrailSummary[]>([]);
+  const [list, setList] = useState<WfRebateTrailRow[]>([]);
+  const [detail, setDetail] = useState<WfRebateTrailDetail | null>(null);
+  const [selectedSales, setSelectedSales] = useState<WfRebateTrailSummary | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<WfRebateTrailRow | null>(null);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const yearOptions = useMemo(() => Array.from({ length: 10 }, (_, i) => currentYear - i), []);
 
   const loadSummary = useCallback(async () => {
     setLoading(true);
-    try { setSummary(await fetchCnRebateSummary({ year })); }
-    catch (e) { console.error(e); }
-    setLoading(false);
+    try {
+      setSummary(await fetchWfRebateTrailSummary({ year }));
+    } finally {
+      setLoading(false);
+    }
   }, [year]);
 
   useEffect(() => { loadSummary(); }, [loadSummary]);
 
-  async function drillSales(s: CnRebateSummary) {
-    setSelSales(s);
+  async function drillSales(row: WfRebateTrailSummary) {
+    setSelectedSales(row);
     setLoading(true);
     try {
-      setList(await fetchCnRebateList({ year, empId: Number(s.EmpID) }));
+      setList(await fetchWfRebateTrailList({ year, empId: Number(row.EmpID) }));
       setView('list');
-    } catch (e) { console.error(e); }
-    setLoading(false);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  async function drillCN(row: CnRebateRow) {
-    setSelCN(row);
+  async function drillOrder(row: WfRebateTrailRow) {
+    setSelectedOrder(row);
     setLoading(true);
     try {
-      setDetail(await fetchCnRebateDetail(row.SOInvID));
+      setDetail(await fetchWfRebateTrailDetail(Number(row.SOID)));
       setView('detail');
-    } catch (e) { console.error(e); }
-    setLoading(false);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function goBack() {
-    if (view === 'detail') { setView('list'); setSelCN(null); }
-    else                   { setView('summary'); setSelSales(null); setList([]); }
+    if (view === 'detail') {
+      setView('list');
+      setSelectedOrder(null);
+      setDetail(null);
+    } else {
+      setView('summary');
+      setSelectedSales(null);
+      setList([]);
+    }
   }
 
-  const filteredList = list.filter(r =>
-    !search || r.CustName.includes(search) || r.CNDocuNo.includes(search) || r.OrigInvNo.includes(search)
-  );
+  async function runSearch(next = search) {
+    setSearch(next);
+    if (view !== 'list') return;
+    setLoading(true);
+    try {
+      setList(await fetchWfRebateTrailList({ year, empId: selectedSales?.EmpID ? Number(selectedSales.EmpID) : undefined, q: next || undefined }));
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  const totalRebate = summary.reduce((s, r) => s + Number(r.TotalRebate || 0), 0);
-  const totalCN     = summary.reduce((s, r) => s + Number(r.CNCount || 0), 0);
-
-  const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - i);
+  const totalOrders = summary.reduce((s, r) => s + Number(r.OrderCount || 0), 0);
+  const totalCoupons = summary.reduce((s, r) => s + Number(r.CouponCount || 0), 0);
+  const totalRedeemed = summary.reduce((s, r) => s + Number(r.RedeemedTon || 0), 0);
+  const totalRemaining = summary.reduce((s, r) => s + Number(r.RemainingTon || 0), 0);
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
-      {/* Header */}
       <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           {view !== 'summary' && (
-            <button onClick={goBack} className="h-8 w-8 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50">
-              <ChevronLeft size={16} />
+            <button onClick={goBack} className="h-9 w-9 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50">
+              <ChevronLeft size={17} />
             </button>
           )}
           <div>
             <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
               <FileCheck2 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
-              {view === 'summary' && 'CN Rebate (Winspeed)'}
-              {view === 'list'    && `CN ของ ${selSales?.SalesName}`}
-              {view === 'detail'  && `${selCN?.CNDocuNo}`}
+              {view === 'summary' && 'WF Rebate Trail'}
+              {view === 'list' && `Orders by ${selectedSales?.SalesName || 'salesperson'}`}
+              {view === 'detail' && `${selectedOrder?.SONo || 'Order detail'}`}
             </h1>
-            <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
-              {view === 'summary' && 'ใบลดหนี้ rebate จาก dbo.SOInvHD · DocuType=109 · CNRemarkType=ส่วนลดลูกค้า'}
-              {view === 'list'    && `${list.length} CN · คลิกเพื่อดูรายการสินค้า`}
-              {view === 'detail'  && `${selCN?.CustName} · Orig: ${selCN?.OrigInvNo}`}
+            <p className="text-xs sm:text-sm text-gray-500 mt-1">
+              WINSpeed read-only flow: SO booking, control ticket, coupon, redemption, invoice, receipt, VAT and GL.
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowInfo(true)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600">
-            <Info size={18} />
-          </button>
-          {/* Year filter */}
           <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
             <Calendar size={14} className="text-gray-400" />
-            <select value={year ?? ''} onChange={e => setYear(e.target.value ? Number(e.target.value) : undefined)}
-              className="text-sm bg-transparent border-0 outline-none text-gray-700 pr-1">
-              <option value="">ทุกปี</option>
-              {yearOptions.map(y => (
-                <option key={y} value={y - 543}>{y}</option>
-              ))}
+            <select
+              value={year ?? ''}
+              onChange={e => setYear(e.target.value ? Number(e.target.value) : undefined)}
+              className="text-sm bg-transparent border-0 outline-none text-gray-700 pr-1"
+            >
+              <option value="">All years</option>
+              {yearOptions.map(y => <option key={y} value={y - 543}>{y}</option>)}
             </select>
           </div>
-          <button onClick={loadSummary} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
+          <button onClick={view === 'summary' ? loadSummary : () => runSearch(search)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
             <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
           </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-2 sm:space-y-4 min-h-0">
-
-        {/* ── SUMMARY ── */}
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4 min-h-0">
         {view === 'summary' && (
           <>
-            {/* KPI cards */}
-            <div className="bg-white rounded-none sm:rounded-xl border-y sm:border border-gray-100 shadow-sm p-4 text-center sm:text-left flex flex-col items-center sm:items-start min-w-0 shrink-0">
-              <div className="text-xs text-gray-400 mb-1">รวม CN rebate ทั้งหมด</div>
-              <div className="text-2xl font-bold" style={{ color: '#0C447C' }}>{THB(totalRebate)}</div>
-              <div className="text-xs text-gray-400 mt-1">{totalCN} ใบ · {summary.length} พนักงานขาย</div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                ['Orders', totalOrders],
+                ['Coupons', totalCoupons],
+                ['Redeemed tons', fmtTon(totalRedeemed)],
+                ['Remaining tons', fmtTon(totalRemaining)],
+              ].map(([label, value]) => (
+                <div key={label} className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
+                  <div className="text-xs text-gray-400">{label}</div>
+                  <div className="text-2xl font-black mt-1" style={{ color: '#0C447C' }}>{value}</div>
+                </div>
+              ))}
             </div>
 
-            {/* Summary table */}
-            <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
               <div className="px-5 py-4 border-b border-gray-100">
-                <h2 className="text-sm font-bold text-gray-700">สรุปต่อพนักงานขาย</h2>
-                <p className="text-xs text-gray-400 mt-0.5">คลิกเพื่อดูรายการ CN</p>
+                <h2 className="text-sm font-bold text-gray-700">Summary by salesperson</h2>
               </div>
               {loading ? (
                 <div className="py-12 flex justify-center"><RefreshCw size={24} className="animate-spin text-gray-300" /></div>
-              ) : summary.length === 0 ? (
-                <p className="py-10 text-center text-sm text-gray-400">ไม่พบข้อมูล CN rebate{year ? ` ปี ${year + 543}` : ''}</p>
               ) : (
-                <div className="overflow-auto w-full h-full pb-2">
-                  <table className="w-full text-sm text-left min-w-full">
-                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
+                <div className="overflow-auto">
+                  <table className="w-full text-sm min-w-[760px]">
+                    <thead className="bg-gray-50 text-xs text-gray-500">
                       <tr>
-                        <th className="px-5 py-3 text-left whitespace-nowrap">พนักงานขาย</th>
-                        <th className="px-4 py-3 text-center whitespace-nowrap">จำนวน CN</th>
-                        <th className="px-4 py-3 text-center whitespace-nowrap">ลูกค้า</th>
-                        <th className="px-4 py-3 text-right whitespace-nowrap">รวม rebate</th>
-                        <th className="px-4 py-3 text-center whitespace-nowrap">ล่าสุด</th>
-                        <th className="px-4 py-3 whitespace-nowrap"></th>
+                        <th className="px-5 py-3 text-left">Salesperson</th>
+                        <th className="px-4 py-3 text-right">Orders</th>
+                        <th className="px-4 py-3 text-right">Coupons</th>
+                        <th className="px-4 py-3 text-right">Redeemed</th>
+                        <th className="px-4 py-3 text-right">Remaining</th>
+                        <th className="px-4 py-3 text-center">Last date</th>
+                        <th className="px-4 py-3" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {summary.map(s => {
-                        const pct = totalRebate ? (Number(s.TotalRebate) / totalRebate) * 100 : 0;
-                        return (
-                          <tr key={s.EmpID} onClick={() => drillSales(s)} className="hover:bg-blue-50/40 cursor-pointer transition-colors">
-                            <td className="px-5 py-3 whitespace-nowrap">
-                              <div className="font-semibold text-gray-800">{s.SalesName}</div>
-                              <div className="h-1.5 w-28 bg-gray-100 rounded-full mt-1 overflow-hidden">
-                                <div className="h-full bg-[#0C447C] rounded-full" style={{ width: `${pct}%` }} />
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-center text-gray-600 whitespace-nowrap">{s.CNCount}</td>
-                            <td className="px-4 py-3 text-center text-gray-600 whitespace-nowrap">{s.CustCount}</td>
-                            <td className="px-4 py-3 text-right font-bold whitespace-nowrap" style={{ color: '#0C447C' }}>{THB(s.TotalRebate)}</td>
-                            <td className="px-4 py-3 text-center text-xs text-gray-400 whitespace-nowrap">{s.LastCN?.substring(0,10)}</td>
-                            <td className="px-4 py-3 whitespace-nowrap"><ChevronRight size={16} className="text-gray-300 ml-auto" /></td>
-                          </tr>
-                        );
-                      })}
+                      {summary.map(row => (
+                        <tr key={row.EmpID || row.SalesName} onClick={() => drillSales(row)} className="hover:bg-blue-50/40 cursor-pointer">
+                          <td className="px-5 py-3 font-semibold text-gray-800">{row.SalesName}</td>
+                          <td className="px-4 py-3 text-right tabular-nums">{row.OrderCount}</td>
+                          <td className="px-4 py-3 text-right tabular-nums">{row.CouponCount}</td>
+                          <td className="px-4 py-3 text-right tabular-nums font-bold text-green-700">{fmtTon(row.RedeemedTon)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-amber-700">{fmtTon(row.RemainingTon)}</td>
+                          <td className="px-4 py-3 text-center text-xs text-gray-400">{fmtDate(row.LastDocuDate)}</td>
+                          <td className="px-4 py-3"><ChevronRight size={16} className="ml-auto text-gray-300" /></td>
+                        </tr>
+                      ))}
+                      {!summary.length && (
+                        <tr><td colSpan={7} className="py-10 text-center text-gray-300">No trail data found</td></tr>
+                      )}
                     </tbody>
-                    <tfoot className="bg-gray-50 border-t border-gray-200 text-sm font-bold">
-                      <tr>
-                        <td className="px-5 py-3 text-gray-600 whitespace-nowrap">รวม</td>
-                        <td className="px-4 py-3 text-center text-gray-600 whitespace-nowrap">{totalCN}</td>
-                        <td className="px-4 py-3 whitespace-nowrap"></td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap" style={{ color: '#0C447C' }}>{THB(totalRebate)}</td>
-                        <td colSpan={2} className="whitespace-nowrap"></td>
-                      </tr>
-                    </tfoot>
                   </table>
                 </div>
               )}
@@ -178,197 +235,135 @@ export function CnRebatePage() {
           </>
         )}
 
-        {/* ── CN LIST ── */}
         {view === 'list' && (
-          <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden flex-1 grid grid-rows-[auto_1fr_auto] min-h-0">
+          <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
             <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-3">
-              <Search size={14} className="text-gray-400" />
+              <Search size={15} className="text-gray-400" />
               <input
-                value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="ค้นหาลูกค้า / เลข CN / เลข INV..."
+                value={search}
+                onChange={e => runSearch(e.target.value)}
+                placeholder="Search SO, control ticket, coupon, invoice, customer..."
                 className="flex-1 text-sm outline-none bg-transparent text-gray-700 placeholder-gray-300"
               />
             </div>
             {loading ? (
               <div className="py-12 flex justify-center"><RefreshCw size={24} className="animate-spin text-gray-300" /></div>
             ) : (
-              <div className="overflow-auto w-full h-full pb-2">
-              <table className="w-full text-sm text-left min-w-full">
-                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
+              <div className="overflow-auto">
+                <table className="w-full text-sm min-w-[980px]">
+                  <thead className="bg-gray-50 text-xs text-gray-500">
                     <tr>
-                      <th className="px-4 py-3 text-left whitespace-nowrap">เลข CN</th>
-                      <th className="px-4 py-3 text-center whitespace-nowrap">วันที่</th>
-                      <th className="px-4 py-3 text-left whitespace-nowrap">ลูกค้า</th>
-                      <th className="px-4 py-3 text-left whitespace-nowrap">INV อ้างอิง</th>
-                      <th className="px-4 py-3 text-right whitespace-nowrap">ยอด CN</th>
-                      <th className="px-4 py-3 text-center whitespace-nowrap">สถานะ</th>
-                      <th className="px-4 py-3 whitespace-nowrap"></th>
+                      <th className="px-4 py-3 text-left">SO</th>
+                      <th className="px-4 py-3 text-left">Control</th>
+                      <th className="px-4 py-3 text-left">Customer</th>
+                      <th className="px-4 py-3 text-right">Coupons</th>
+                      <th className="px-4 py-3 text-right">Redeemed</th>
+                      <th className="px-4 py-3 text-right">Remaining</th>
+                      <th className="px-4 py-3 text-left">Redemption</th>
+                      <th className="px-4 py-3 text-left">Invoice</th>
+                      <th className="px-4 py-3" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {filteredList.map(row => (
-                      <tr key={row.SOInvID} onClick={() => drillCN(row)} className="hover:bg-blue-50/40 cursor-pointer transition-colors">
-                        <td className="px-4 py-2.5 font-mono text-xs font-bold text-[#0C447C] whitespace-nowrap">{row.CNDocuNo}</td>
-                        <td className="px-4 py-2.5 text-center text-xs text-gray-400 whitespace-nowrap">{row.CNDate}</td>
-                        <td className="px-4 py-2.5 text-gray-700 max-w-[180px] truncate" title={row.CustName}>{row.CustName}</td>
-                        <td className="px-4 py-2.5 font-mono text-xs text-gray-500 whitespace-nowrap">{row.OrigInvNo}</td>
-                        <td className="px-4 py-2.5 text-right font-bold text-gray-800 whitespace-nowrap">{THB(row.CNAmt)}</td>
-                        <td className="px-4 py-2.5 text-center whitespace-nowrap">
-                          {Number(row.RemaAmnt) > 0 ? (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-bold">
-                              คงค้าง {THB(row.RemaAmnt)}
-                            </span>
-                          ) : (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-700 font-bold">
-                              ชำระแล้ว
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 whitespace-nowrap"><ChevronRight size={16} className="text-gray-300 ml-auto" /></td>
+                    {list.map(row => (
+                      <tr key={row.SOID} onClick={() => drillOrder(row)} className="hover:bg-blue-50/40 cursor-pointer">
+                        <td className="px-4 py-3 font-mono text-xs font-bold text-[#0C447C]">{row.SONo}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-gray-600">{row.ControlNo || '-'}</td>
+                        <td className="px-4 py-3 text-gray-700 max-w-[220px] truncate" title={row.CustName}>{row.CustName}</td>
+                        <td className="px-4 py-3 text-right tabular-nums">{row.CouponCount}</td>
+                        <td className="px-4 py-3 text-right tabular-nums font-bold text-green-700">{fmtTon(row.RedeemedTon)}</td>
+                        <td className="px-4 py-3 text-right tabular-nums text-amber-700">{fmtTon(row.RemainingTon)}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-gray-600">{row.RedemptionNo || '-'}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-gray-600">{row.InvoiceNo || '-'}</td>
+                        <td className="px-4 py-3"><ChevronRight size={16} className="ml-auto text-gray-300" /></td>
                       </tr>
                     ))}
-                    {filteredList.length === 0 && (
-                      <tr><td colSpan={7} className="py-10 text-center text-gray-300 text-sm whitespace-nowrap">ไม่พบรายการ</td></tr>
+                    {!list.length && (
+                      <tr><td colSpan={9} className="py-10 text-center text-gray-300">No orders found</td></tr>
                     )}
                   </tbody>
-                  <tfoot className="bg-gray-50 border-t border-gray-100">
-                    <tr>
-                      <td colSpan={4} className="px-4 py-2.5 text-xs font-bold text-gray-500 text-right whitespace-nowrap">รวม {filteredList.length} ใบ</td>
-                      <td className="px-4 py-2.5 text-right font-bold text-gray-700 whitespace-nowrap">
-                        {THB(filteredList.reduce((s, r) => s + Number(r.CNAmt), 0))}
-                      </td>
-                      <td colSpan={2} className="whitespace-nowrap"></td>
-                    </tr>
-                  </tfoot>
                 </table>
               </div>
             )}
           </div>
         )}
 
-        {/* ── DETAIL ── */}
-        {view === 'detail' && selCN && (
+        {view === 'detail' && (
           <>
-            {/* CN header card */}
-            <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-5 grid grid-cols-2 gap-4 text-sm">
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">เลข CN</span>
-                  <span className="font-mono font-bold text-[#0C447C]">{selCN.CNDocuNo}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">วันที่</span>
-                  <span className="text-gray-700">{selCN.CNDate}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">ลูกค้า</span>
-                  <span className="text-gray-700 text-right max-w-[200px]">{selCN.CustName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">พนักงานขาย</span>
-                  <span className="text-gray-700">{selCN.SalesName}</span>
-                </div>
+            <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div>
+                <div className="text-xs text-gray-400">Sale order</div>
+                <div className="font-mono font-bold text-[#0C447C] mt-1">{val(detail?.so, 'DocuNo')}</div>
+                <div className="text-gray-500 mt-1">SOID {val(detail?.so, 'SOID')}</div>
               </div>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">INV อ้างอิง</span>
-                  <span className="font-mono text-gray-600">{selCN.OrigInvNo}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">วันที่ INV</span>
-                  <span className="text-gray-600">{selCN.OrigInvDate || '-'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">เหตุผล CN</span>
-                  <span className="text-gray-600 text-right max-w-[200px] text-xs">{selCN.Reason}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">สถานะ</span>
-                  {Number(selCN.RemaAmnt) > 0 ? (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-bold">คงค้าง {THB(selCN.RemaAmnt)}</span>
-                  ) : (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 font-bold">ชำระแล้ว</span>
-                  )}
-                </div>
+              <div>
+                <div className="text-xs text-gray-400">Booking / control ticket</div>
+                <div className="font-mono font-bold text-gray-700 mt-1">{val(detail?.booking, 'DocuNo')}</div>
+                <div className="text-gray-500 mt-1">AI {val(detail?.booking, 'AppvDocuNo')}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-400">Customer</div>
+                <div className="font-bold text-gray-800 mt-1">{val(detail?.so, 'CustName')}</div>
+                <div className="text-gray-500 mt-1">{val(detail?.so, 'SalesName')}</div>
               </div>
             </div>
 
-            {/* CN lines */}
-            <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100">
-                <h2 className="text-sm font-bold text-gray-700">รายการสินค้า · ยอด rebate</h2>
-              </div>
-              {loading ? (
-                <div className="py-10 flex justify-center"><RefreshCw size={20} className="animate-spin text-gray-300" /></div>
-              ) : (
-                <div className="overflow-x-auto pb-2">
-                  <table className="w-full text-sm min-w-full">
-                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
-                      <tr>
-                        <th className="px-5 py-3 text-left whitespace-nowrap">สินค้า</th>
-                        <th className="px-4 py-3 text-right whitespace-nowrap">ราคาขาย (INV)</th>
-                        <th className="px-4 py-3 text-right whitespace-nowrap">Rebate/ตัน</th>
-                        <th className="px-4 py-3 text-right whitespace-nowrap">จำนวน (ตัน)</th>
-                        <th className="px-4 py-3 text-right whitespace-nowrap">รวม Rebate</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {detail.map(d => (
-                        <tr key={d.ListNo} className="hover:bg-gray-50/50">
-                          <td className="px-5 py-3 text-gray-700 whitespace-nowrap">{d.GoodName}</td>
-                          <td className="px-4 py-3 text-right text-gray-500 tabular-nums whitespace-nowrap">
-                            {d.OrigPrice ? THB(d.OrigPrice) : '-'}
-                          </td>
-                          <td className="px-4 py-3 text-right text-amber-600 font-semibold tabular-nums whitespace-nowrap">
-                            {THB(d.RebatePerTon)}
-                          </td>
-                          <td className="px-4 py-3 text-right text-gray-600 tabular-nums whitespace-nowrap">
-                            {Number(d.QtyTon).toFixed(2)}
-                          </td>
-                          <td className="px-4 py-3 text-right font-bold tabular-nums whitespace-nowrap" style={{ color: '#0C447C' }}>
-                            {THB(d.RebateAmt)}
-                          </td>
-                        </tr>
-                      ))}
-                      {detail.length === 0 && (
-                        <tr><td colSpan={5} className="py-8 text-center text-gray-300 whitespace-nowrap">ไม่มีรายการสินค้า</td></tr>
-                      )}
-                    </tbody>
-                    <tfoot className="bg-gray-50 border-t border-gray-200">
-                      <tr>
-                        <td colSpan={3} className="px-5 py-3 text-xs font-bold text-gray-500 text-right whitespace-nowrap">รวม</td>
-                        <td className="px-4 py-3 text-right font-bold text-gray-600 tabular-nums whitespace-nowrap">
-                          {detail.reduce((s, d) => s + Number(d.QtyTon), 0).toFixed(2)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-bold tabular-nums whitespace-nowrap" style={{ color: '#0C447C' }}>
-                          {THB(detail.reduce((s, d) => s + Number(d.RebateAmt), 0))}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
-            </div>
+            <MiniTable
+              title="Coupons and redemption"
+              rows={detail?.coupons || []}
+              columns={[
+                { key: 'CouponNo', label: 'Coupon' },
+                { key: 'GoodName', label: 'Good' },
+                { key: 'GoodQty', label: 'Qty', align: 'right' },
+                { key: 'RemaQty', label: 'Remain', align: 'right' },
+                { key: 'RedemptionNo', label: 'Redemption' },
+                { key: 'PostInv', label: 'Post inv', align: 'center' },
+                { key: 'InvoiceNo', label: 'Invoice' },
+              ]}
+            />
+
+            <MiniTable
+              title="Invoices"
+              rows={detail?.invoices || []}
+              columns={[
+                { key: 'SOInvID', label: 'SOInvID', align: 'right' },
+                { key: 'DocuNo', label: 'DocuNo' },
+                { key: 'Docutype', label: 'Type', align: 'center' },
+                { key: 'SONo', label: 'SONo' },
+                { key: 'PostID', label: 'PostID', align: 'right' },
+                { key: 'DocuStatus', label: 'Status', align: 'center' },
+              ]}
+            />
+
+            <MiniTable
+              title="Receipts / AR"
+              rows={detail?.receipts || []}
+              columns={[
+                { key: 'ARReceID', label: 'ARReceID', align: 'right' },
+                { key: 'DocuNo', label: 'DocuNo' },
+                { key: 'DocuType', label: 'Type', align: 'center' },
+                { key: 'SOInvID', label: 'SOInvID', align: 'right' },
+                { key: 'PostID', label: 'PostID', align: 'right' },
+                { key: 'DocuStatus', label: 'Status', align: 'center' },
+              ]}
+            />
+
+            <MiniTable
+              title="VAT / GL / Bank trail"
+              rows={[...(detail?.vat || []), ...(detail?.gl || []), ...(detail?.bank || [])]}
+              columns={[
+                { key: 'Source', label: 'Source' },
+                { key: 'DocuNo', label: 'DocuNo' },
+                { key: 'FromID', label: 'FromID', align: 'right' },
+                { key: 'GLID', label: 'GLID', align: 'right' },
+                { key: 'AccID', label: 'AccID', align: 'right' },
+                { key: 'DrAmnt', label: 'Dr', align: 'right' },
+                { key: 'CrAmnt', label: 'Cr', align: 'right' },
+              ]}
+            />
           </>
         )}
       </div>
-      {showInfo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowInfo(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold flex items-center gap-2 text-amber-600">
-                <Info size={20} /> ข้อมูล CN รีเบท
-              </h2>
-              <button onClick={() => setShowInfo(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
-            </div>
-            <div className="text-sm text-gray-600 space-y-3">
-              <p><strong>Single source of truth:</strong> ข้อมูลนี้ดึงตรงจาก Winspeed</p>
-              <p><strong>CN ที่ออกแล้ว (DocuStatus=Y)</strong><br/>= cleared ทั้งหมด</p>
-              <p><strong>CN ที่ยังค้างอยู่</strong><br/>= RemaAmnt &gt; 0</p>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

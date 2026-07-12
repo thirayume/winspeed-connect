@@ -2,20 +2,17 @@ import { Database } from 'lucide-react';
 import { getDbMode, setDbMode, DB_MODE_META, type DbMode } from '../../store/db-mode';
 import { clearToken } from '../../services/api';
 
-const ORDER: DbMode[] = import.meta.env?.PROD ? ['mock', 'remote'] : ['mock', 'local', 'remote'];
+const ORDER: DbMode[] = import.meta.env?.PROD ? ['remote'] : ['local', 'remote'];
 
 /**
  * สลับแหล่งข้อมูล (ADMIN เท่านั้น) — เปลี่ยนแล้ว reload
- * ข้ามขอบ mock ↔ real = ล้าง token ให้ login ใหม่ (token คนละชุด)
  */
 export function DbModeSwitch({ collapsed }: { collapsed?: boolean }) {
   const cur = getDbMode();
 
   function switchTo(m: DbMode) {
     if (m === cur) return;
-    const crossingMock = (m === 'mock') !== (cur === 'mock');
     setDbMode(m);
-    if (crossingMock) clearToken();
     window.location.reload();
   }
 

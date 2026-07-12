@@ -10,9 +10,9 @@ type DraftLine = SalesOrderLine & { tempId: string; refControlTicketNo?: string;
 type DraftBill = { id: string; soPrefix: SOPrefix; lines: DraftLine[]; remark: string; rebateDiscountAmt?: number };
 
 const PREFIX_LABELS: Record<SOPrefix, string> = {
-  I: 'I â€” à¸‚à¸²à¸¢à¸›à¸à¸•à¸´ (Invoice)',
-  K: 'K â€” à¸‚à¸²à¸¢à¸žà¸´à¹€à¸¨à¸©',
-  AI: 'AI â€” à¸•à¸±à¹‹à¸§à¸„à¸¸à¸¡',
+  I: 'I — ขายปกติ (Invoice)',
+  K: 'K — ขายพิเศษ',
+  AI: 'AI — ตั๋วคุม',
 };
 
 export function CreateSODialog({
@@ -57,7 +57,7 @@ export function CreateSODialog({
   const [salesUsers, setSalesUsers] = useState<AdminUser[]>([]);
   const userRole = useAuthStore(s => s.user?.role);
 
-  const [activeTab, setActiveTab] = useState('à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”');
+  const [activeTab, setActiveTab] = useState('ทั้งหมด');
   const [goodSearch, setGoodSearch] = useState('');
   
   // Giveaway Quota State
@@ -75,7 +75,7 @@ export function CreateSODialog({
     if (!isOpen) return;
     fetchCustomers().then(setCustomers).catch(console.error);
     Promise.all([fetchGoods(), fetchGiveawayGoods()])
-      .then(([g, gw]) => setGoods([...g, ...gw.map(x => ({ ...x, GoodGroupName: 'à¸‚à¸­à¸‡à¹à¸–à¸¡' }))]))
+      .then(([g, gw]) => setGoods([...g, ...gw.map(x => ({ ...x, GoodGroupName: 'ของแถม' }))]))
       .catch(console.error);
       
     const currentYear = new Date().getFullYear() + 543 - 2500 + 2500;
@@ -111,7 +111,7 @@ export function CreateSODialog({
       setActiveBillId('bill-1');
       setCustId(''); setTruckPlate(''); setSalesUserId('');
       setUseControlTicket(false); setSelectedTicketForDraw('');
-      setActiveTab('à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”'); setGoodSearch(''); setCurrentPage(1);
+      setActiveTab('ทั้งหมด'); setGoodSearch(''); setCurrentPage(1);
       
       const d = new Date(); d.setDate(d.getDate() + 7);
       const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
@@ -147,9 +147,9 @@ export function CreateSODialog({
       .finally(() => setTicketLoading(false));
   }, [selectedTicketForDraw]);
 
-  const categories = ['à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”', ...Array.from(new Set(goods.map(g => g.GoodGroupName || 'à¸­à¸·à¹ˆà¸™à¹†'))).filter(c => c !== 'à¸‚à¸­à¸‡à¹à¸–à¸¡').sort(), 'à¸‚à¸­à¸‡à¹à¸–à¸¡'];
+  const categories = ['ทั้งหมด', ...Array.from(new Set(goods.map(g => g.GoodGroupName || 'อื่นๆ'))).filter(c => c !== 'ของแถม').sort(), 'ของแถม'];
   const filteredGoods = goods.filter(g => {
-    if (activeTab !== 'à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”' && (g.GoodGroupName || 'à¸­à¸·à¹ˆà¸™à¹†') !== activeTab) return false;
+    if (activeTab !== 'ทั้งหมด' && (g.GoodGroupName || 'อื่นๆ') !== activeTab) return false;
     if (goodSearch) {
       const q = goodSearch.toLowerCase();
       return g.GoodName.toLowerCase().includes(q) || g.GoodCode.toLowerCase().includes(q);
@@ -170,7 +170,7 @@ export function CreateSODialog({
     // Auto-collapse truck info on mobile when starting to add products
     if (window.innerWidth < 1024) setIsTruckInfoCollapsed(true);
     
-    const isGiveaway = good.GoodGroupName === 'à¸‚à¸­à¸‡à¹à¸–à¸¡';
+    const isGiveaway = good.GoodGroupName === 'ของแถม';
 
     // Giveaway Quota Check
     if (isGiveaway) {
@@ -182,8 +182,8 @@ export function CreateSODialog({
       , 0);
 
       if (totalAdded + 1 > remaining) {
-        const brandMatch = good.GoodName.match(/à¸•à¸£à¸²([^\s]+)/);
-        const parsedBrand = quota ? quota.Brand : (brandMatch ? `à¸•à¸£à¸²${brandMatch[1]}` : 'à¸—à¸±à¹ˆà¸§à¹„à¸›');
+        const brandMatch = good.GoodName.match(/ตรา([^\s]+)/);
+        const parsedBrand = quota ? quota.Brand : (brandMatch ? `ตรา${brandMatch[1]}` : 'ทั่วไป');
         const parsedItemName = quota ? quota.ItemName : good.GoodName;
         
         setBorrowReq({ brand: parsedBrand, itemName: parsedItemName, requiredQty: (totalAdded + 1) - remaining });
@@ -226,7 +226,7 @@ export function CreateSODialog({
         qtyBag: good.BagPerTon || 0,
         pricePerTon: defaultPrice,
         netPricePerTon: defaultPrice,
-        isGiveaway: good.GoodGroupName === 'à¸‚à¸­à¸‡à¹à¸–à¸¡',
+        isGiveaway: good.GoodGroupName === 'ของแถม',
         isControlTicketDrawn: false,
         refControlTicketNo: undefined
       };
@@ -336,21 +336,21 @@ export function CreateSODialog({
   const totalCartItems = bills.reduce((s, b) => s + b.lines.length, 0);
 
   async function handleSubmit() {
-    if (!custId) { setError('à¸à¸£à¸¸à¸“à¸²à¹€à¸¥à¸·à¸­à¸à¸¥à¸¹à¸à¸„à¹‰à¸²'); return; }
+    if (!custId) { setError('กรุณาเลือกลูกค้า'); return; }
     const emptyBills = bills.filter(b => b.lines.length === 0);
-    if (emptyBills.length > 0) { setError(`à¸¡à¸µà¸šà¸´à¸¥à¸—à¸µà¹ˆà¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¹€à¸¥à¸·à¸­à¸à¸ªà¸´à¸™à¸„à¹‰à¸² (${emptyBills.length} à¸šà¸´à¸¥)`); return; }
+    if (emptyBills.length > 0) { setError(`มีบิลที่ยังไม่ได้เลือกสินค้า (${emptyBills.length} บิล)`); return; }
 
-    if (!custId) { setError('à¸à¸£à¸¸à¸“à¸²à¹€à¸¥à¸·à¸­à¸à¸¥à¸¹à¸à¸„à¹‰à¸²à¸ˆà¸²à¸à¸£à¸²à¸¢à¸à¸²à¸£'); return; }
+    if (!custId) { setError('กรุณาเลือกลูกค้าจากรายการ'); return; }
 
     if (totalPayable === 0) {
-      if (!window.confirm(`à¸¢à¸­à¸”à¸£à¸§à¸¡à¹€à¸›à¹‡à¸™ 0 à¸šà¸²à¸—\n\nà¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¸šà¸±à¸™à¸—à¸¶à¸à¹€à¸­à¸à¸ªà¸²à¸£à¸™à¸µà¹‰à¸«à¸£à¸·à¸­à¹„à¸¡à¹ˆ?`)) {
+      if (!window.confirm(`ยอดรวมเป็น 0 บาท\n\nต้องการบันทึกเอกสารนี้หรือไม่?`)) {
         return;
       }
     }
 
     const isNewTruck = truckPlate && truckPlates.length > 0 && !truckPlates.includes(truckPlate);
     if (isNewTruck) {
-      if (!window.confirm(`à¸—à¸°à¹€à¸šà¸µà¸¢à¸™à¸£à¸– "${truckPlate}" à¹€à¸›à¹‡à¸™à¸£à¸–à¹ƒà¸«à¸¡à¹ˆà¸—à¸µà¹ˆà¹„à¸¡à¹ˆà¹€à¸„à¸¢à¹€à¸‚à¹‰à¸²à¸£à¸±à¸šà¸šà¸£à¸´à¸à¸²à¸£\n\nà¸£à¸°à¸šà¸šà¸ˆà¸°à¸šà¸±à¸™à¸—à¸¶à¸à¹€à¸›à¹‡à¸™à¸£à¸–à¸„à¸±à¸™à¹ƒà¸«à¸¡à¹ˆà¹ƒà¸«à¹‰à¹‚à¸”à¸¢à¸­à¸±à¸•à¹‚à¸™à¸¡à¸±à¸•à¸´\n\nà¸„à¸¸à¸“à¹à¸™à¹ˆà¹ƒà¸ˆà¸«à¸£à¸·à¸­à¹„à¸¡à¹ˆà¸—à¸µà¹ˆà¸ˆà¸°à¹ƒà¸Šà¹‰à¸—à¸°à¹€à¸šà¸µà¸¢à¸™à¸™à¸µà¹‰?`)) {
+      if (!window.confirm(`ทะเบียนรถ "${truckPlate}" เป็นรถใหม่ที่ไม่เคยเข้ารับบริการ\n\nระบบจะบันทึกเป็นรถคันใหม่ให้โดยอัตโนมัติ\n\nคุณแน่ใจหรือไม่ที่จะใช้ทะเบียนนี้?`)) {
         return;
       }
     }
@@ -378,8 +378,8 @@ export function CreateSODialog({
           }))
         };
         const res = await updateSO(editSoId, payload);
-        if (res.needsApproval) alert(`âš  à¸¡à¸µà¸£à¸²à¸¢à¸à¸²à¸£à¸—à¸µà¹ˆà¸£à¸²à¸„à¸²à¸•à¹ˆà¸³à¸à¸§à¹ˆà¸² NET\nà¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¸ˆà¸²à¸ à¸œà¸ˆà¸. à¸à¹ˆà¸­à¸™ confirm`);
-        else alert(`âœ“ à¹à¸à¹‰à¹„à¸‚à¹ƒà¸šà¸ªà¸±à¹ˆà¸‡à¸‚à¸²à¸¢à¸ªà¸³à¹€à¸£à¹‡à¸ˆ`);
+        if (res.needsApproval) alert(`⚠ มีรายการที่ราคาต่ำกว่า NET\nต้องการอนุมัติจาก ผจก. ก่อน confirm`);
+        else alert(`✓ แก้ไขใบสั่งขายสำเร็จ`);
       } else {
         // Build grouped payload (Array of orders)
         const payload = bills.map(b => ({
@@ -401,13 +401,13 @@ export function CreateSODialog({
         }));
 
         const res = await createSO(payload);
-        if (res.needsApproval) alert(`âš  à¸¡à¸µà¸£à¸²à¸¢à¸à¸²à¸£à¸—à¸µà¹ˆà¸£à¸²à¸„à¸²à¸•à¹ˆà¸³à¸à¸§à¹ˆà¸² NET\nà¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´à¸ˆà¸²à¸ à¸œà¸ˆà¸. à¸à¹ˆà¸­à¸™ confirm`);
-        else alert(`âœ“ à¸ªà¸£à¹‰à¸²à¸‡à¸à¸¥à¸¸à¹ˆà¸¡à¹ƒà¸šà¸ªà¸±à¹ˆà¸‡à¸‚à¸²à¸¢à¸ªà¸³à¹€à¸£à¹‡à¸ˆ (à¸ˆà¸³à¸™à¸§à¸™ ${payload.length} à¸šà¸´à¸¥)`);
+        if (res.needsApproval) alert(`⚠ มีรายการที่ราคาต่ำกว่า NET\nต้องการอนุมัติจาก ผจก. ก่อน confirm`);
+        else alert(`✓ สร้างกลุ่มใบสั่งขายสำเร็จ (จำนวน ${payload.length} บิล)`);
       }
       onCreated?.();
       onClose();
     } catch (e: unknown) {
-      setError((e as Error).message || 'à¹€à¸à¸´à¸”à¸‚à¹‰à¸­à¸œà¸´à¸”à¸žà¸¥à¸²à¸”');
+      setError((e as Error).message || 'เกิดข้อผิดพลาด');
     } finally {
       setSubmitting(false);
     }
@@ -420,15 +420,15 @@ export function CreateSODialog({
       <div className="flex-1 flex flex-col h-full bg-white relative w-full overflow-hidden max-w-full">
         <div className="flex items-center justify-between px-4 py-2 sm:px-6 sm:py-3 border-b border-gray-100 bg-[#0C447C] text-white shrink-0">
           <div>
-            <h2 className="text-base sm:text-xl font-bold flex items-center gap-2"><Truck size={20} className="sm:w-6 sm:h-6"/> à¹ƒà¸šà¸ªà¸±à¹ˆà¸‡à¸‚à¸²à¸¢</h2>
-            <p className="hidden sm:block text-xs text-blue-200 mt-1">à¸ˆà¸±à¸”à¹€à¸£à¸µà¸¢à¸‡à¸šà¸´à¸¥ I, K à¹ƒà¸™à¸£à¸–à¸„à¸±à¸™à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸™ à¹à¸¥à¸°à¸ˆà¸±à¸”à¸à¸²à¸£à¹€à¸šà¸´à¸à¸•à¸±à¹‹à¸§à¸„à¸¸à¸¡</p>
+            <h2 className="text-base sm:text-xl font-bold flex items-center gap-2"><Truck size={20} className="sm:w-6 sm:h-6"/> ใบสั่งขาย</h2>
+            <p className="hidden sm:block text-xs text-blue-200 mt-1">จัดเรียงบิล I, K ในรถคันเดียวกัน และจัดการเบิกตั๋วคุม</p>
           </div>
           <button onClick={onClose} className="text-white/80 hover:text-white rounded-full p-1.5 sm:p-2 hover:bg-white/10">
             <X size={20} />
           </button>
         </div>
 
-        {/* TRUCK INFO BAR â€” shared across all bills */}
+        {/* TRUCK INFO BAR — shared across all bills */}
         <div className="bg-white border-b border-gray-200 shrink-0 flex flex-col">
           <div 
             className="flex items-center justify-between px-4 sm:px-6 py-1.5 bg-gray-50 border-b border-gray-100 cursor-pointer lg:hidden"
@@ -437,7 +437,7 @@ export function CreateSODialog({
             <div className="flex items-center gap-2">
               <Truck size={14} className="text-gray-500" />
               <span className="text-xs font-bold text-gray-700">
-                à¸¥à¸¹à¸à¸„à¹‰à¸² {custSearch ? `(${custSearch})` : ''} {truckPlate ? `[${truckPlate}]` : ''}
+                ลูกค้า {custSearch ? `(${custSearch})` : ''} {truckPlate ? `[${truckPlate}]` : ''}
               </span>
             </div>
             {isTruckInfoCollapsed ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronUp size={16} className="text-gray-400" />}
@@ -447,23 +447,23 @@ export function CreateSODialog({
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:flex lg:flex-wrap items-end gap-2 sm:gap-4">
             {userRole === 'ADMIN' && (
               <div className="min-w-[200px]">
-                <label className="text-[10px] font-bold text-amber-700 block mb-0.5">à¸—à¸³à¸£à¸²à¸¢à¸à¸²à¸£à¹à¸—à¸™ (Admin)</label>
+                <label className="text-[10px] font-bold text-amber-700 block mb-0.5">ทำรายการแทน (Admin)</label>
                 <select value={salesUserId} onChange={e => setSalesUserId(e.target.value)}
                   className="w-full border border-amber-200 rounded-lg px-2 py-1.5 text-sm bg-amber-50 text-amber-900 focus:ring-amber-500 focus:outline-none">
-                  <option value="">-- à¹€à¸›à¹‡à¸™à¸•à¸±à¸§à¹€à¸­à¸‡ --</option>
+                  <option value="">-- เป็นตัวเอง --</option>
                   {salesUsers.map(u => <option key={u.Id} value={u.Id}>{u.DisplayName} ({u.Username})</option>)}
                 </select>
               </div>
             )}
             <div className="relative flex-1 min-w-[200px] max-w-xs">
-              <label className="text-[10px] font-bold text-gray-500 block mb-0.5">à¸¥à¸¹à¸à¸„à¹‰à¸² *</label>
+              <label className="text-[10px] font-bold text-gray-500 block mb-0.5">ลูกค้า *</label>
               <div className="relative">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   value={custSearch}
                   onChange={e => { setCustSearch(e.target.value); if (custId) setCustId(''); }}
                   onFocus={() => setIsCustOpen(true)} onBlur={() => setTimeout(() => setIsCustOpen(false), 200)}
-                  placeholder="à¸„à¹‰à¸™à¸«à¸²à¸Šà¸·à¹ˆà¸­à¸¥à¸¹à¸à¸„à¹‰à¸²..."
+                  placeholder="ค้นหาชื่อลูกค้า..."
                   className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 {isCustOpen && (
@@ -478,7 +478,7 @@ export function CreateSODialog({
               </div>
             </div>
             <div className="relative min-w-[140px]">
-              <label className="text-[10px] font-bold text-gray-500 block mb-0.5"><Truck size={10} className="inline mr-0.5"/>à¸—à¸°à¹€à¸šà¸µà¸¢à¸™à¸£à¸– *</label>
+              <label className="text-[10px] font-bold text-gray-500 block mb-0.5"><Truck size={10} className="inline mr-0.5"/>ทะเบียนรถ *</label>
               <input
                 value={truckPlate} onChange={e => setTruckPlate(e.target.value)}
                 onFocus={() => setIsTruckOpen(true)} onBlur={() => setTimeout(() => setIsTruckOpen(false), 200)}
@@ -494,7 +494,7 @@ export function CreateSODialog({
               )}
             </div>
             <div className="min-w-[150px]">
-              <label className="text-[10px] font-bold text-gray-500 block mb-0.5">à¸§à¸±à¸™à¸—à¸µà¹ˆà¸£à¸±à¸šà¸‚à¸­à¸‡</label>
+              <label className="text-[10px] font-bold text-gray-500 block mb-0.5">วันที่รับของ</label>
               <ThaiDatePicker value={deliveryDate} onChange={setDeliveryDate} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none" />
             </div>
           </div>
@@ -507,13 +507,13 @@ export function CreateSODialog({
             onClick={() => setMobileView('products')}
             className={`flex-1 py-2 sm:py-3 text-sm font-bold flex items-center justify-center gap-2 transition-colors border-b-2 ${mobileView === 'products' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
           >
-            <Package size={16} /> à¹€à¸¥à¸·à¸­à¸à¸ªà¸´à¸™à¸„à¹‰à¸²
+            <Package size={16} /> เลือกสินค้า
           </button>
           <button 
             onClick={() => setMobileView('cart')}
             className={`flex-1 py-2 sm:py-3 text-sm font-bold flex items-center justify-center gap-2 transition-colors border-b-2 relative ${mobileView === 'cart' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
           >
-            <ShoppingCart size={16} /> à¸•à¸°à¸à¸£à¹‰à¸²à¸šà¸´à¸¥
+            <ShoppingCart size={16} /> ตะกร้าบิล
             {totalCartItems > 0 && (
               <span className={`absolute top-2 right-1/4 translate-x-2 -translate-y-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${mobileView === 'cart' ? 'bg-[#0C447C]' : 'bg-red-500'}`}>
                 {totalCartItems}
@@ -533,8 +533,8 @@ export function CreateSODialog({
               className={`flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-t-lg border-t border-x cursor-pointer transition-colors whitespace-nowrap ${activeBillId === b.id ? 'bg-white border-gray-200 font-bold text-[#0C447C] border-b-white' : 'bg-transparent border-transparent text-gray-500 hover:text-gray-800'}`}
               style={{ marginBottom: '-1px' }}
             >
-              <FileText size={16} /> à¸šà¸´à¸¥à¸—à¸µà¹ˆ {i+1} ({b.soPrefix})
-              <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full border ${billTotal > 0 ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>à¸¿{billTotal.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+              <FileText size={16} /> บิลที่ {i+1} ({b.soPrefix})
+              <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full border ${billTotal > 0 ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>฿{billTotal.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
               {!editSoId && bills.length > 1 && (
                 <X size={14} className="ml-2 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); removeBill(b.id); }} />
               )}
@@ -542,7 +542,7 @@ export function CreateSODialog({
           )})}
           {!editSoId && (
             <button onClick={addNewBill} className="ml-2 px-3 py-2 text-sm text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 shrink-0">
-              <Plus size={16} /> à¹€à¸žà¸´à¹ˆà¸¡à¸šà¸´à¸¥
+              <Plus size={16} /> เพิ่มบิล
             </button>
           )}
         </div>
@@ -564,8 +564,8 @@ export function CreateSODialog({
                     className={`flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-t-lg border-t border-x cursor-pointer transition-colors whitespace-nowrap ${activeBillId === b.id ? 'bg-white border-gray-200 font-bold text-[#0C447C] border-b-white' : 'bg-transparent border-transparent text-gray-500 hover:text-gray-800'}`}
                     style={{ marginBottom: '-1px' }}
                   >
-                    <FileText size={16} /> à¸šà¸´à¸¥à¸—à¸µà¹ˆ {i+1} ({b.soPrefix})
-                    <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full border ${billTotal > 0 ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>à¸¿{billTotal.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+                    <FileText size={16} /> บิลที่ {i+1} ({b.soPrefix})
+                    <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full border ${billTotal > 0 ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>฿{billTotal.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
                     {!editSoId && bills.length > 1 && (
                       <X size={14} className="ml-2 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); removeBill(b.id); }} />
                     )}
@@ -573,7 +573,7 @@ export function CreateSODialog({
                 )})}
                 {!editSoId && (
                   <button onClick={addNewBill} className="ml-2 px-3 py-2 text-sm text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1">
-                    <Plus size={16} /> à¹€à¸žà¸´à¹ˆà¸¡à¸šà¸´à¸¥à¹ƒà¸™à¸£à¸–à¸„à¸±à¸™à¸™à¸µà¹‰
+                    <Plus size={16} /> เพิ่มบิลในรถคันนี้
                   </button>
                 )}
               </div>
@@ -586,7 +586,7 @@ export function CreateSODialog({
                     <div className="relative">
                       <input 
                         type="text" 
-                        placeholder="à¸„à¹‰à¸™à¸«à¸²à¸ªà¸´à¸™à¸„à¹‰à¸² (à¸Šà¸·à¹ˆà¸­, à¸£à¸«à¸±à¸ª)..." 
+                        placeholder="ค้นหาสินค้า (ชื่อ, รหัส)..." 
                         value={goodSearch} 
                         onChange={e => setGoodSearch(e.target.value)}
                         className="border border-gray-200 rounded-lg pl-8 pr-8 py-1.5 text-sm w-full focus:ring-1 focus:ring-[#0C447C] outline-none"
@@ -619,7 +619,7 @@ export function CreateSODialog({
                   <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg p-2 shrink-0">
                     <label className="flex items-center gap-2 text-xs font-bold text-amber-800 cursor-pointer">
                       <input type="checkbox" checked={useControlTicket} onChange={e => setUseControlTicket(e.target.checked)} className="rounded text-amber-600 focus:ring-amber-500"/>
-                      à¹€à¸šà¸´à¸à¸ˆà¸²à¸à¸•à¸±à¹‹à¸§à¸„à¸¸à¸¡ (AI)
+                      เบิกจากตั๋วคุม (AI)
                     </label>
                     {useControlTicket && (
                       <div className="relative">
@@ -632,7 +632,7 @@ export function CreateSODialog({
                             setIsTicketOpen(true);
                           }}
                           onFocus={() => setIsTicketOpen(true)}
-                          placeholder="à¸„à¹‰à¸™à¸«à¸²à¹€à¸¥à¸‚à¸•à¸±à¹‹à¸§à¸„à¸¸à¸¡..."
+                          placeholder="ค้นหาเลขตั๋วคุม..."
                           className="border border-amber-300 rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 w-40"
                         />
                         {selectedTicketForDraw && (
@@ -645,7 +645,7 @@ export function CreateSODialog({
                             <div className="fixed inset-0 z-40" onClick={() => setIsTicketOpen(false)} />
                             <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto">
                               {controlTickets.filter(t => t.DocuNo.toLowerCase().includes(ticketSearch.toLowerCase())).length === 0 ? (
-                                <div className="px-3 py-2 text-xs text-gray-500">à¹„à¸¡à¹ˆà¸žà¸šà¸•à¸±à¹‹à¸§à¸„à¸¸à¸¡à¸—à¸µà¹ˆà¸„à¹‰à¸™à¸«à¸²</div>
+                                <div className="px-3 py-2 text-xs text-gray-500">ไม่พบตั๋วคุมที่ค้นหา</div>
                               ) : (
                                 controlTickets
                                   .filter(t => t.DocuNo.toLowerCase().includes(ticketSearch.toLowerCase()))
@@ -676,12 +676,12 @@ export function CreateSODialog({
                 {useControlTicket && selectedTicketForDraw && (
                   <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
                     <div className="text-xs font-bold text-amber-800 mb-2 flex items-center gap-2">
-                      <FileText size={14}/> à¸£à¸²à¸¢à¸à¸²à¸£à¹ƒà¸™à¸•à¸±à¹‹à¸§à¸„à¸¸à¸¡: {selectedTicketForDraw}
+                      <FileText size={14}/> รายการในตั๋วคุม: {selectedTicketForDraw}
                     </div>
                     {ticketLoading ? (
-                      <div className="text-xs text-amber-600 animate-pulse">à¸à¸³à¸¥à¸±à¸‡à¹‚à¸«à¸¥à¸”...</div>
+                      <div className="text-xs text-amber-600 animate-pulse">กำลังโหลด...</div>
                     ) : ticketDetails.length === 0 ? (
-                      <div className="text-xs text-gray-500">à¹„à¸¡à¹ˆà¸žà¸šà¸£à¸²à¸¢à¸à¸²à¸£à¸ªà¸´à¸™à¸„à¹‰à¸²à¹ƒà¸™à¸•à¸±à¹‹à¸§à¸™à¸µà¹‰</div>
+                      <div className="text-xs text-gray-500">ไม่พบรายการสินค้าในตั๋วนี้</div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
                         {ticketDetails.map((td, i) => (
@@ -691,14 +691,14 @@ export function CreateSODialog({
                               <div className="text-[10px] text-gray-500">{td.GoodCode}</div>
                             </div>
                             <div className="text-right shrink-0">
-                              <div className="font-bold text-amber-700">{td.QtyTon} à¸•à¸±à¸™</div>
-                              <div className="text-[10px] text-gray-400">à¸¿{td.PricePerTon?.toLocaleString()}/à¸•à¸±à¸™</div>
+                              <div className="font-bold text-amber-700">{td.QtyTon} ตัน</div>
+                              <div className="text-[10px] text-gray-400">฿{td.PricePerTon?.toLocaleString()}/ตัน</div>
                             </div>
                           </button>
                         ))}
                       </div>
                     )}
-                    <p className="text-[10px] text-amber-600 mt-2">à¸„à¸¥à¸´à¸à¸ªà¸´à¸™à¸„à¹‰à¸²à¸”à¹‰à¸²à¸™à¸šà¸™à¹€à¸žà¸·à¹ˆà¸­à¹€à¸žà¸´à¹ˆà¸¡à¸£à¸²à¸¢à¸à¸²à¸£à¸—à¸µà¹ˆà¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¹€à¸šà¸´à¸à¸ˆà¸²à¸à¸•à¸±à¹‹à¸§à¸„à¸¸à¸¡à¸™à¸µà¹‰ (à¸£à¸²à¸„à¸²à¸ªà¸´à¸™à¸„à¹‰à¸²à¸ˆà¸°à¸–à¸¹à¸à¸¥à¹‡à¸­à¸à¸•à¸²à¸¡à¸•à¸±à¹‹à¸§à¸„à¸¸à¸¡)</p>
+                    <p className="text-[10px] text-amber-600 mt-2">คลิกสินค้าด้านบนเพื่อเพิ่มรายการที่ต้องการเบิกจากตั๋วคุมนี้ (ราคาสินค้าจะถูกล็อกตามตั๋วคุม)</p>
                   </div>
                 )}
 
@@ -717,12 +717,12 @@ export function CreateSODialog({
                         <div className="text-sm font-bold text-[#0C447C] line-clamp-2 leading-tight mb-1.5 h-10" title={g.GoodName}>{g.GoodName}</div>
                         {net > 0 ? (
                           <div className="text-xs font-bold" style={{ color: isExpired ? '#DC2626' : '#0C447C' }}>
-                            à¸¿{net.toLocaleString()}<span className="text-[9px] font-normal text-gray-400">/à¸•à¸±à¸™</span>
+                            ฿{net.toLocaleString()}<span className="text-[9px] font-normal text-gray-400">/ตัน</span>
                           </div>
                         ) : (
-                          <div className="text-[10px] text-orange-400">à¹„à¸¡à¹ˆà¸¡à¸µà¸£à¸²à¸„à¸² NET</div>
+                          <div className="text-[10px] text-orange-400">ไม่มีราคา NET</div>
                         )}
-                        <div className="text-[9px] text-gray-300 mt-0.5">{g.BagPerTon} à¸à¸£à¸°à¸ªà¸­à¸š/à¸•à¸±à¸™ Â· {g.WeightKgPerBag}kg</div>
+                        <div className="text-[9px] text-gray-300 mt-0.5">{g.BagPerTon} กระสอบ/ตัน · {g.WeightKgPerBag}kg</div>
                       </button>
                     );
                   })}
@@ -731,7 +731,7 @@ export function CreateSODialog({
                 {/* Pagination */}
                 {totalPages > 1 && (
                   <div className="flex items-center justify-between mt-2 sm:mt-4 pt-2 sm:pt-3 border-t border-gray-100">
-                    <span className="text-xs text-gray-500 font-medium">à¸«à¸™à¹‰à¸² {currentPage} à¸ˆà¸²à¸ {totalPages} <span className="text-gray-400">({filteredGoods.length} à¸£à¸²à¸¢à¸à¸²à¸£)</span></span>
+                    <span className="text-xs text-gray-500 font-medium">หน้า {currentPage} จาก {totalPages} <span className="text-gray-400">({filteredGoods.length} รายการ)</span></span>
                     <div className="flex items-center gap-2">
                       <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="h-7 w-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-30 hover:bg-gray-50 transition-colors"><ChevronLeft size={16}/></button>
                       <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="h-7 w-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-30 hover:bg-gray-50 transition-colors"><ChevronRight size={16}/></button>
@@ -747,22 +747,22 @@ export function CreateSODialog({
               {/* Active Bill Config */}
               <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-sm border-t-4 border-t-[#0C447C] flex flex-col flex-1 min-h-[300px]">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-bold text-[#0C447C]">à¸£à¸²à¸¢à¸à¸²à¸£à¹ƒà¸™à¸šà¸´à¸¥ {activeBill?.soPrefix}</h3>
+                  <h3 className="font-bold text-[#0C447C]">รายการในบิล {activeBill?.soPrefix}</h3>
                   <select 
                     value={activeBill?.soPrefix} 
                     onChange={e => updateBillInfo(activeBillId, { soPrefix: e.target.value as SOPrefix })}
                     className="border border-gray-200 rounded text-sm px-2 py-1 font-bold bg-gray-50"
                   >
-                    <option value="I">I - à¸šà¸±à¸à¸Šà¸µ 1</option>
-                    <option value="K">K - à¸šà¸±à¸à¸Šà¸µ 2</option>
-                    <option value="AI">AI - à¸•à¸±à¹‹à¸§à¸„à¸¸à¸¡</option>
+                    <option value="I">I - บัญชี 1</option>
+                    <option value="K">K - บัญชี 2</option>
+                    <option value="AI">AI - ตั๋วคุม</option>
                   </select>
                 </div>
 
                 {activeBill?.lines.length === 0 ? (
                   <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
                     <Package size={32} className="mb-2 opacity-50"/>
-                    <p className="text-sm">à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸¡à¸µà¸ªà¸´à¸™à¸„à¹‰à¸²à¹ƒà¸™à¸šà¸´à¸¥à¸™à¸µà¹‰</p>
+                    <p className="text-sm">ยังไม่มีสินค้าในบิลนี้</p>
                   </div>
                 ) : (
                   <div className="flex-1 overflow-y-auto space-y-2 pr-1">
@@ -773,7 +773,7 @@ export function CreateSODialog({
                             <div className="text-xs font-bold text-gray-800 line-clamp-2">{l.goodName}</div>
                             {l.isControlTicketDrawn && (
                               <div className="text-[10px] text-amber-700 font-bold bg-amber-100 inline-block px-1.5 py-0.5 rounded mt-1">
-                                à¹€à¸šà¸´à¸à¸•à¸±à¹‹à¸§: {l.refControlTicketNo}
+                                เบิกตั๋ว: {l.refControlTicketNo}
                               </div>
                             )}
                           </div>
@@ -787,17 +787,17 @@ export function CreateSODialog({
                                 <input type="number" max={l.maxQtyTon} value={l.qtyTon || ''} onChange={e => updateActiveLine(l.tempId, { qtyTon: Number(e.target.value) })} className="w-12 text-center text-xs font-mono font-bold py-1 focus:outline-none" />
                                 <button onClick={() => updateActiveLine(l.tempId, { qtyTon: l.qtyTon + 1 })} disabled={l.maxQtyTon !== undefined && l.qtyTon >= l.maxQtyTon} className="px-2 py-1 text-gray-500 hover:bg-gray-100 disabled:opacity-30"><Plus size={12} /></button>
                               </div>
-                              <span className="text-[10px] text-gray-500 font-medium">{l.isGiveaway ? 'à¸Šà¸´à¹‰à¸™' : 'à¸•à¸±à¸™'}</span>
+                              <span className="text-[10px] text-gray-500 font-medium">{l.isGiveaway ? 'ชิ้น' : 'ตัน'}</span>
                             </div>
                             
                             <div className="flex flex-col items-end gap-1">
                               {l.isControlTicketDrawn ? (
-                                  <div className="text-xs font-bold text-amber-600">à¸¿0 (à¸«à¸±à¸à¸¢à¸­à¸”à¸•à¸±à¹‹à¸§)</div>
+                                  <div className="text-xs font-bold text-amber-600">฿0 (หักยอดตั๋ว)</div>
                               ) : l.isGiveaway ? (
-                                  <div className="text-xs font-bold text-blue-600">à¸‚à¸­à¸‡à¹à¸–à¸¡ (à¸¿0)</div>
+                                  <div className="text-xs font-bold text-blue-600">ของแถม (฿0)</div>
                               ) : (
                                   <div className="flex items-center gap-1">
-                                    <span className="text-[10px] text-gray-500">à¸¿/à¸•à¸±à¸™</span>
+                                    <span className="text-[10px] text-gray-500">฿/ตัน</span>
                                     <input type="number" value={l.pricePerTon || ''} onChange={e => updateActiveLine(l.tempId, { pricePerTon: Number(e.target.value) })} className="w-20 text-right border border-gray-200 rounded px-1.5 py-1 text-xs font-mono font-bold focus:outline-none focus:border-blue-400" />
                                   </div>
                               )}
@@ -807,10 +807,10 @@ export function CreateSODialog({
                           {!l.isControlTicketDrawn && !l.isGiveaway && (
                             <div className="flex justify-between items-center mt-1 pt-1 border-t border-dashed border-gray-100">
                               <div className="text-[10px] text-orange-500 font-medium">
-                                {l.pricePerTon > l.netPricePerTon ? `à¸£à¸µà¹€à¸šà¸—à¸ªà¸°à¸ªà¸¡: à¸¿${((l.pricePerTon - l.netPricePerTon) * l.qtyTon).toLocaleString('th-TH', { maximumFractionDigits: 0 })}` : ''}
+                                {l.pricePerTon > l.netPricePerTon ? `รีเบทสะสม: ฿${((l.pricePerTon - l.netPricePerTon) * l.qtyTon).toLocaleString('th-TH', { maximumFractionDigits: 0 })}` : ''}
                               </div>
                               <div className="text-xs font-bold text-[#0C447C]">
-                                à¸£à¸§à¸¡: à¸¿{(l.pricePerTon * l.qtyTon).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                                รวม: ฿{(l.pricePerTon * l.qtyTon).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                               </div>
                             </div>
                           )}
@@ -827,19 +827,19 @@ export function CreateSODialog({
                     return (
                       <div className="mb-2">
                         <div className="flex justify-between items-center mb-1">
-                          <span className="text-xs text-gray-600">à¸¢à¸­à¸”à¸£à¸§à¸¡à¸šà¸´à¸¥à¸™à¸µà¹‰</span>
-                          <span className="text-sm font-bold text-[#0C447C]">à¸¿{totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+                          <span className="text-xs text-gray-600">ยอดรวมบิลนี้</span>
+                          <span className="text-sm font-bold text-[#0C447C]">฿{totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
                         </div>
                         {totalRebate > 0 && (
                           <div className="flex justify-between items-center mb-1">
-                            <span className="text-[10px] text-orange-500 font-medium">à¸£à¸µà¹€à¸šà¸—à¸ªà¸°à¸ªà¸¡à¸šà¸´à¸¥à¸™à¸µà¹‰</span>
-                            <span className="text-[10px] font-bold text-orange-500">à¸¿{totalRebate.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+                            <span className="text-[10px] text-orange-500 font-medium">รีเบทสะสมบิลนี้</span>
+                            <span className="text-[10px] font-bold text-orange-500">฿{totalRebate.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                         <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-100">
                           <div className="flex flex-col">
-                            <span className="text-xs font-bold text-emerald-600">à¹€à¸šà¸´à¸ Rebate à¸¡à¸²à¹ƒà¸Šà¹‰ (à¸¿)</span>
-                            <span className="text-[10px] text-gray-400">à¸„à¸‡à¹€à¸«à¸¥à¸·à¸­: à¸¿{availableRebate.toLocaleString()}</span>
+                            <span className="text-xs font-bold text-emerald-600">เบิก Rebate มาใช้ (฿)</span>
+                            <span className="text-[10px] text-gray-400">คงเหลือ: ฿{availableRebate.toLocaleString()}</span>
                           </div>
                           <input 
                             type="number" 
@@ -857,14 +857,14 @@ export function CreateSODialog({
                         </div>
                         {(activeBill?.rebateDiscountAmt || 0) > 0 && (
                           <div className="flex justify-between items-center mt-2 bg-emerald-50 p-1.5 rounded">
-                            <span className="text-xs font-bold text-emerald-800">à¸¢à¸­à¸”à¸ªà¸¸à¸—à¸˜à¸´à¸šà¸´à¸¥à¸™à¸µà¹‰</span>
-                            <span className="text-sm font-black text-emerald-800">à¸¿{(totalAmt - (activeBill.rebateDiscountAmt || 0)).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+                            <span className="text-xs font-bold text-emerald-800">ยอดสุทธิบิลนี้</span>
+                            <span className="text-sm font-black text-emerald-800">฿{(totalAmt - (activeBill.rebateDiscountAmt || 0)).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
                           </div>
                         )}
                       </div>
                     );
                   })()}
-                  <input type="text" placeholder="à¸«à¸¡à¸²à¸¢à¹€à¸«à¸•à¸¸à¸šà¸´à¸¥à¸™à¸µà¹‰..." value={activeBill?.remark} onChange={e => updateBillInfo(activeBillId, { remark: e.target.value })} className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 mt-1" />
+                  <input type="text" placeholder="หมายเหตุบิลนี้..." value={activeBill?.remark} onChange={e => updateBillInfo(activeBillId, { remark: e.target.value })} className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 mt-1" />
                 </div>
               </div>
             </div>
@@ -875,28 +875,28 @@ export function CreateSODialog({
         <div className="border-t border-gray-200 bg-white p-2 sm:p-3 px-3 sm:px-4 flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-4 shrink-0">
           <div className="flex flex-wrap sm:flex-nowrap justify-between w-full sm:w-auto gap-3 sm:gap-6">
             <div className="flex-1 sm:flex-none">
-              <div className="text-[10px] sm:text-xs text-gray-500 font-bold">à¸™à¹‰à¸³à¸«à¸™à¸±à¸à¸£à¸§à¸¡</div>
-              <div className="text-base sm:text-lg font-black text-[#0C447C]">{totalTons.toLocaleString()} <span className="text-[10px] sm:text-xs font-normal">à¸•à¸±à¸™</span></div>
+              <div className="text-[10px] sm:text-xs text-gray-500 font-bold">น้ำหนักรวม</div>
+              <div className="text-base sm:text-lg font-black text-[#0C447C]">{totalTons.toLocaleString()} <span className="text-[10px] sm:text-xs font-normal">ตัน</span></div>
             </div>
             <div className="flex-1 sm:flex-none text-center sm:text-left border-l sm:border-none border-gray-100 pl-4 sm:pl-0">
-              <div className="text-[10px] sm:text-xs text-amber-600 font-bold">à¸¢à¸­à¸”à¸«à¸±à¸ (AI)</div>
-              <div className="text-base sm:text-lg font-black text-amber-600">à¸¿{totalOffset.toLocaleString()}</div>
+              <div className="text-[10px] sm:text-xs text-amber-600 font-bold">ยอดหัก (AI)</div>
+              <div className="text-base sm:text-lg font-black text-amber-600">฿{totalOffset.toLocaleString()}</div>
             </div>
             <div className="flex-1 sm:flex-none text-right sm:text-left border-l sm:border-none border-gray-100 pl-4 sm:pl-0">
-              <div className="text-[10px] sm:text-xs text-green-600 font-bold">à¸¢à¸­à¸”à¸ªà¸¸à¸—à¸˜à¸´</div>
-              <div className="text-lg sm:text-xl font-black text-green-600">à¸¿{totalPayable.toLocaleString()}</div>
+              <div className="text-[10px] sm:text-xs text-green-600 font-bold">ยอดสุทธิ</div>
+              <div className="text-lg sm:text-xl font-black text-green-600">฿{totalPayable.toLocaleString()}</div>
             </div>
           </div>
 
           <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2 sm:gap-3">
             {error && <div className="text-red-500 text-[10px] sm:text-xs font-bold bg-red-50 px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg border border-red-100">{error}</div>}
-            <button onClick={onClose} className="px-4 py-2 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg sm:rounded-xl transition-colors">à¸¢à¸à¹€à¸¥à¸´à¸</button>
+            <button onClick={onClose} className="px-4 py-2 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg sm:rounded-xl transition-colors">ยกเลิก</button>
             <button
               onClick={handleSubmit}
               disabled={submitting}
               className="px-4 py-2 text-sm font-bold text-white bg-[#0C447C] hover:bg-[#0a3663] rounded-lg sm:rounded-xl flex items-center gap-2 shadow-lg disabled:opacity-50 transition-colors"
             >
-              {submitting ? 'à¸à¸³à¸¥à¸±à¸‡à¸šà¸±à¸™à¸—à¸¶à¸...' : <><CheckCircle2 size={16}/> à¸šà¸±à¸™à¸—à¸¶à¸à¸à¸²à¸£à¸ˆà¸±à¸”à¸£à¸–</>}
+              {submitting ? 'กำลังบันทึก...' : <><CheckCircle2 size={16}/> บันทึกการจัดรถ</>}
             </button>
           </div>
         </div>
@@ -909,14 +909,14 @@ export function CreateSODialog({
         brand={borrowReq.brand}
         itemName={borrowReq.itemName}
         requiredQty={borrowReq.requiredQty}
-        region={(userRole === 'ADMIN' ? 'à¸ à¸²à¸„à¹€à¸«à¸™à¸·à¸­' : 'à¸ à¸²à¸„à¹€à¸«à¸™à¸·à¸­')} // Assuming hardcoded for now, or fetch user's region
+        region={(userRole === 'ADMIN' ? 'ภาคเหนือ' : 'ภาคเหนือ')} // Assuming hardcoded for now, or fetch user's region
         periodYear={new Date().getFullYear() + 543 - 2500 + 2500}
         onSuccess={() => {
           setBorrowModalOpen(false);
           // Refetch quota after borrowing
           const currentYear = new Date().getFullYear() + 543 - 2500 + 2500;
           apiFetch(`/giveaway/my-quota?year=${currentYear}`).then(setMyQuota).catch(console.error);
-          alert('à¸ªà¹ˆà¸‡à¸„à¸³à¸‚à¸­à¸¢à¸·à¸¡à¹€à¸£à¸µà¸¢à¸šà¸£à¹‰à¸­à¸¢à¹à¸¥à¹‰à¸§ à¸à¸£à¸¸à¸“à¸²à¸£à¸­à¸à¸²à¸£à¸­à¸™à¸¸à¸¡à¸±à¸•à¸´');
+          alert('ส่งคำขอยืมเรียบร้อยแล้ว กรุณารอการอนุมัติ');
         }}
       />
     </>

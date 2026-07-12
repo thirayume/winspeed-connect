@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { FileText, RefreshCw, Plus, X, ArrowRightCircle, AlertTriangle, Package, Send, Clock, User, ChevronRight, Gift } from 'lucide-react';
 import {
-  fetchQuotations, createQuotation, convertQuotation, updateQuotationStatus,
+  fetchQuotations, createQuotation, convertQuotation, updateQuotationStatus, extendQuotationValidity,
   fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, listUsers
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
+import { useAppStore } from '../../store/app-store';
 import type { Quotation, QuoteStatus, EMCust, EMGood, CurrentPrice, AdminUser } from '../../types';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
@@ -16,16 +17,36 @@ const STATUS_STYLE: Record<QuoteStatus, string> = {
   CONVERTED: 'bg-emerald-50 text-emerald-700', EXPIRED: 'bg-amber-50 text-amber-700', CANCELLED: 'bg-red-50 text-red-600',
 };
 
+type WorkView = 'ACTIVE' | 'HISTORY';
+
+const HISTORY_STATUSES = new Set<QuoteStatus>(['CONVERTED', 'CANCELLED']);
+const ACTIVE_STATUS_OPTIONS: QuoteStatus[] = ['ACCEPTED', 'SENT', 'DRAFT', 'EXPIRED'];
+const HISTORY_STATUS_OPTIONS: QuoteStatus[] = ['CONVERTED', 'CANCELLED'];
+const ACTIVE_STATUS_ORDER: Record<string, number> = { ACCEPTED: 0, SENT: 1, DRAFT: 2, EXPIRED: 3 };
+const HISTORY_STATUS_ORDER: Record<string, number> = { CONVERTED: 0, CANCELLED: 1 };
+const STATUS_LABEL: Record<QuoteStatus, string> = {
+  DRAFT: 'ร่าง',
+  SENT: 'ส่งแล้ว / รอยืนยัน',
+  ACCEPTED: 'ยืนยันแล้ว / พร้อมออก SO',
+  CONVERTED: 'ออก SO แล้ว',
+  EXPIRED: 'หมดอายุ',
+  CANCELLED: 'ยกเลิก / ปฏิเสธ',
+};
+
 export function QuotationPage() {
   const [quotes, setQuotes]   = useState<Quotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [busyId, setBusyId]   = useState<number | null>(null);
   const [convertQuoteId, setConvertQuoteId] = useState<number | null>(null);
+  const [focusedQuoteId, setFocusedQuoteId] = useState<number | null>(null);
+  const navParams = useAppStore(s => s.navParams);
+  const clearNavParams = useAppStore(s => s.clearNavParams);
 
   // Pagination & Sorting
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [workView, setWorkView] = useState<WorkView>('ACTIVE');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 30;
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'Id', direction: 'desc' });
@@ -37,21 +58,71 @@ export function QuotationPage() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    if (!navParams?.quoteId && !navParams?.quoteNo) return;
+    setStatusFilter('ALL');
+    setSearchQuery(navParams.quoteNo || String(navParams.quoteId || ''));
+    setFocusedQuoteId(navParams.quoteId || null);
+    setCurrentPage(1);
+    clearNavParams();
+  }, [navParams, clearNavParams]);
+
+  const quoteTotal = (q: Quotation) =>
+    Number(q.TotalAmount ?? (q.lines || []).reduce((s, l) => s + l.QtyTon * l.PricePerTon, 0));
+  const quoteTon = (q: Quotation) =>
+    Number(q.TotalTon ?? (q.lines || []).reduce((s, l) => s + l.QtyTon, 0));
+  const quoteLineCount = (q: Quotation) =>
+    Number(q.LineCount ?? (q.lines || []).length);
+  const isNativeOnly = (q: Quotation) => !!q.IsNativeOnly || q.Id < 0;
+  const activeCount = quotes.filter(q => !HISTORY_STATUSES.has(q.Status)).length;
+  const historyCount = quotes.filter(q => HISTORY_STATUSES.has(q.Status)).length;
+  const statusOptions = workView === 'HISTORY' ? HISTORY_STATUS_OPTIONS : ACTIVE_STATUS_OPTIONS;
+  const statusOrder = workView === 'HISTORY' ? HISTORY_STATUS_ORDER : ACTIVE_STATUS_ORDER;
+
   function doConvert(q: Quotation) {
+    if (q.Status !== 'ACCEPTED') {
+      alert('ใบเสนอราคาต้องได้รับการอนุมัติ/ยืนยันก่อนจึงจะออก SO ได้');
+      return;
+    }
     setConvertQuoteId(q.Id);
   }
   async function setStatus(q: Quotation, status: string) {
+    if (isNativeOnly(q)) {
+      alert('เอกสารนี้ออกจาก WINSpeed โดยตรง กรุณาเปลี่ยนสถานะใน WINSpeed แล้วกดรีเฟรช');
+      return;
+    }
+    if (status === 'CANCELLED' && (q.SourceSoCount || 0) > 0) {
+      const ok = confirm(`ใบเสนอราคานี้ผูกกับ SO ร่าง ${q.SourceSoCount} ใบ\nหากยกเลิกใบเสนอราคาแล้ว ควรยกเลิกหรือแก้ไข SO ที่เกี่ยวข้องด้วย\n\nยืนยันยกเลิกใบเสนอราคา?`);
+      if (!ok) return;
+    }
     setBusyId(q.Id);
     try { await updateQuotationStatus(q.Id, status); await load(); }
     catch (e: unknown) { alert((e as Error).message); }
     finally { setBusyId(null); }
   }
 
+  async function extendValidUntil(q: Quotation, validDays: 7 | 15 | 20 | 30 | 45) {
+    setBusyId(q.Id);
+    try { await extendQuotationValidity(q.Id, { validDays }); await load(); }
+    catch (e: unknown) { alert((e as Error).message); }
+    finally { setBusyId(null); }
+  }
+
   const filteredQuotes = quotes.filter(q => {
+    if (workView === 'HISTORY') {
+      if (!HISTORY_STATUSES.has(q.Status)) return false;
+    } else if (HISTORY_STATUSES.has(q.Status)) {
+      return false;
+    }
     if (statusFilter !== 'ALL' && q.Status !== statusFilter) return false;
     if (searchQuery) {
       const qLower = searchQuery.toLowerCase();
-      if (!q.QuoteNo.toLowerCase().includes(qLower) && !q.CustName.toLowerCase().includes(qLower)) {
+      if (
+        !q.QuoteNo.toLowerCase().includes(qLower) &&
+        !q.CustName.toLowerCase().includes(qLower) &&
+        !(q.WinspeedQuoteNo || '').toLowerCase().includes(qLower) &&
+        !(q.WinspeedConfirmNo || '').toLowerCase().includes(qLower)
+      ) {
         return false;
       }
     }
@@ -59,17 +130,24 @@ export function QuotationPage() {
   });
 
   const sortedQuotes = [...filteredQuotes].sort((a, b) => {
+    const statusDiff = (statusOrder[a.Status] ?? 99) - (statusOrder[b.Status] ?? 99);
+    if (statusDiff !== 0) return statusDiff;
+
+    const aDate = a.CreatedAt ? Date.parse(a.CreatedAt) : 0;
+    const bDate = b.CreatedAt ? Date.parse(b.CreatedAt) : 0;
+    if (aDate !== bDate) return bDate - aDate;
+
     let aVal: any = a[sortConfig.key as keyof Quotation] || '';
     let bVal: any = b[sortConfig.key as keyof Quotation] || '';
     
     if (sortConfig.key === 'Total') {
-      aVal = (a.lines || []).reduce((s, l) => s + l.QtyTon * l.PricePerTon, 0);
-      bVal = (b.lines || []).reduce((s, l) => s + l.QtyTon * l.PricePerTon, 0);
+      aVal = quoteTotal(a);
+      bVal = quoteTotal(b);
     }
     
     if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
     if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-    return 0;
+    return Number(b.Id || 0) - Number(a.Id || 0);
   });
 
   const totalPages = Math.ceil(sortedQuotes.length / itemsPerPage);
@@ -82,18 +160,18 @@ export function QuotationPage() {
   };
 
   const groupedQuotes = useMemo(() => {
-    const map = new Map<string, { dateDisplay: string; cust: string; quotes: Quotation[]; totalAmt: number; totalTon: number }>();
+    const map = new Map<string, { status: QuoteStatus; dateDisplay: string; cust: string; quotes: Quotation[]; totalAmt: number; totalTon: number }>();
     for (const q of paginatedQuotes) {
       const dateRaw = q.CreatedAt ? q.CreatedAt.split('T')[0] : '9999-12-31';
       const dateDisplay = q.CreatedAt ? new Date(q.CreatedAt).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : 'ไม่ระบุวันที่';
       const cust = q.CustName || 'ไม่ระบุลูกค้า';
-      const key = `${dateRaw}::${cust}`;
+      const key = `${q.Status}::${dateRaw}::${cust}`;
       
-      if (!map.has(key)) map.set(key, { dateDisplay, cust, quotes: [], totalAmt: 0, totalTon: 0 });
+      if (!map.has(key)) map.set(key, { status: q.Status, dateDisplay, cust, quotes: [], totalAmt: 0, totalTon: 0 });
       const g = map.get(key)!;
       g.quotes.push(q);
-      g.totalAmt += (q.lines || []).reduce((s, l) => s + (l.QtyTon * l.PricePerTon), 0);
-      g.totalTon += (q.lines || []).reduce((s, l) => s + l.QtyTon, 0);
+      g.totalAmt += quoteTotal(q);
+      g.totalTon += quoteTon(q);
     }
     return Array.from(map.values());
   }, [paginatedQuotes]);
@@ -161,15 +239,31 @@ export function QuotationPage() {
             )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
+              <button
+                type="button"
+                onClick={() => { setWorkView('ACTIVE'); setStatusFilter('ALL'); setCurrentPage(1); }}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${workView === 'ACTIVE' ? 'bg-[#0C447C] text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+              >
+                งานประจำ {activeCount.toLocaleString()}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setWorkView('HISTORY'); setStatusFilter('ALL'); setCurrentPage(1); }}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${workView === 'HISTORY' ? 'bg-[#0C447C] text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+              >
+                ประวัติ {historyCount.toLocaleString()}
+              </button>
+            </div>
             <select
               value={statusFilter}
               onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
               className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
             >
               <option value="ALL">ทุกสถานะ</option>
-              <option value="DRAFT">DRAFT</option>
-              <option value="SENT">SENT</option>
-              <option value="CONVERTED">CONVERTED</option>
+              {statusOptions.map(status => (
+                <option key={status} value={status}>{STATUS_LABEL[status]}</option>
+              ))}
             </select>
             <button onClick={() => setShowCreate(true)} className="p-2 bg-[#0C447C] text-white rounded-lg hover:bg-[#0a3866] transition-colors flex items-center justify-center" title="สร้างใบเสนอราคา">
               <Plus size={18} />
@@ -187,9 +281,15 @@ export function QuotationPage() {
               <p className="font-semibold text-gray-500">ไม่พบใบเสนอราคา</p>
             </div>
           ) : groupedQuotes.map((g, idx) => (
-              <div key={idx} className="rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col min-h-[80px]" style={{ background: '#F9F9FB' }}>
+              <div
+                key={idx}
+                className={`rounded-xl border shadow-sm overflow-hidden flex flex-col min-h-[80px] ${g.status === 'ACCEPTED' ? 'border-emerald-200 bg-emerald-50/70' : 'border-gray-200 bg-[#F9F9FB]'}`}
+              >
                 <div className="px-3 py-2 border-b border-gray-100 bg-white flex items-center justify-between">
                   <div className="flex items-center gap-2">
+                    <div className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${g.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700' : STATUS_STYLE[g.status]}`}>
+                      {STATUS_LABEL[g.status]}
+                    </div>
                     <div className="text-[11px] font-bold text-[#0C447C] flex items-center gap-1 bg-[#F0F4F8] px-2 py-0.5 rounded-md">
                       <Clock size={10} /> สร้าง {g.dateDisplay}
                     </div>
@@ -211,29 +311,49 @@ export function QuotationPage() {
                 </div>
                 <div className="p-1.5 space-y-1.5">
                   {g.quotes.map(q => {
-                    const total = (q.lines || []).reduce((s, l) => s + l.QtyTon * l.PricePerTon, 0);
+                    const total = quoteTotal(q);
+                    const lineCount = quoteLineCount(q);
+                    const nativeOnly = isNativeOnly(q);
+                    const winspeedQuoteNo = q.WinspeedQuoteNo || q.WinspeedEstimateNo;
+                    const winspeedConfirmNo = q.WinspeedConfirmNo;
+                    const quoteCardClass = q.Status === 'ACCEPTED'
+                      ? 'border-emerald-300 bg-emerald-50 hover:border-emerald-400'
+                      : q.Status === 'CONVERTED'
+                        ? 'border-emerald-200 bg-white'
+                        : q.Status === 'CANCELLED'
+                          ? 'border-red-200 bg-red-50/60'
+                          : 'border-gray-100 bg-white hover:border-gray-200';
+                    const workflowClass = q.Status === 'ACCEPTED'
+                      ? 'border-emerald-200 bg-white/80 text-emerald-900'
+                      : 'border-gray-100 bg-gray-50/80 text-gray-600';
                     return (
-                      <div key={q.Id} className="relative p-3 rounded-lg border border-gray-100 transition-all bg-white hover:shadow-sm hover:border-gray-200">
+                      <div key={q.Id} className={`relative p-3 rounded-lg border transition-all hover:shadow-sm ${quoteCardClass} ${focusedQuoteId === q.Id ? 'ring-2 ring-blue-100' : ''}`}>
                         <div className="flex items-start justify-between mb-1.5">
                           <div className="flex items-center gap-2">
                             <span className="font-mono text-xs font-bold text-gray-700">{q.QuoteNo}</span>
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${STATUS_STYLE[q.Status]}`}>{q.Status}</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${STATUS_STYLE[q.Status]}`}>{STATUS_LABEL[q.Status]}</span>
                           </div>
                           <div className="flex items-center gap-2">
                             {q.Status !== 'CONVERTED' && q.Status !== 'CANCELLED' && (
                               <div className="inline-flex gap-1.5 shrink-0">
-                                {q.Status === 'DRAFT' && (
+                                {q.Status === 'DRAFT' && !nativeOnly && (
                                   <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'SENT')} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50" title="ส่งใบเสนอราคา">
                                     <Send size={14} />
                                   </button>
                                 )}
-                                <button disabled={busyId===q.Id} onClick={() => doConvert(q)} className="p-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50" title="แปลงเป็นใบสั่งขาย (SO)">
-                                  <ArrowRightCircle size={14} />
+                                {(q.Status === 'DRAFT' || q.Status === 'SENT') && !nativeOnly && (
+                                  <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'ACCEPTED')} className="p-1.5 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50" title="ยืนยันใบเสนอราคา">
+                                    <Check size={14} />
+                                  </button>
+                                )}
+                                {!nativeOnly && (
+                                <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'CANCELLED')} className="p-1.5 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50" title="ยกเลิกใบเสนอราคา">
+                                  <X size={14} />
                                 </button>
+                                )}
                               </div>
                             )}
-                            {q.ConvertedSoId && <span className="text-[10px] text-emerald-600 font-bold shrink-0">→ SO #{q.ConvertedSoId}</span>}
-                            <span className="text-xs font-bold text-[#0C447C] min-w-[70px] text-right">
+                            <span className={`text-xs font-bold min-w-[70px] text-right ${q.Status === 'ACCEPTED' ? 'text-emerald-800' : 'text-[#0C447C]'}`}>
                               ฿{total.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                             </span>
                           </div>
@@ -241,15 +361,76 @@ export function QuotationPage() {
                         <div className="flex items-center justify-between text-xs text-gray-400">
                           <div className="flex items-center gap-3">
                             <span className="flex items-center gap-1">
-                              <Package size={11} /> {(q.lines || []).length} รายการ
+                              <Package size={11} /> {lineCount} รายการ
                             </span>
                             {q.SalesName && (
                               <span className="flex items-center gap-1 text-gray-500">
                                 โดย {q.SalesName}
                               </span>
                             )}
+                            {q.ValidUntil && (
+                              <span className="flex items-center gap-1 text-gray-500">
+                                ยืนราคาถึง {new Date(q.ValidUntil).toLocaleDateString('th-TH')}
+                              </span>
+                            )}
                           </div>
                         </div>
+                        <div className={`mt-2 rounded-lg border px-2.5 py-2 flex flex-wrap items-center justify-between gap-2 ${workflowClass}`}>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${nativeOnly ? 'bg-slate-100 text-slate-700' : 'bg-blue-50 text-blue-700'}`}>
+                                {nativeOnly ? 'WINSpeed' : 'App'}
+                              </span>
+                              {winspeedQuoteNo && (
+                                <span className="text-xs font-bold text-emerald-700">
+                                  WINSpeed: {winspeedQuoteNo}{winspeedConfirmNo ? ` / ${winspeedConfirmNo}` : ''}
+                                </span>
+                              )}
+                              {(q.SourceSoCount || 0) > 0 && (
+                                <span className="text-xs font-bold text-blue-700">
+                                  อ้างอิง Sale Trip: {q.SourceSoCount} ใบ
+                                </span>
+                              )}
+                              {q.ConvertedSoId && (
+                                <span className="text-xs font-bold text-emerald-700">
+                                  SO #{q.ConvertedSoId}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 text-[11px] text-gray-500">
+                              {(q.SourceSoCount || 0) > 0
+                                ? 'ใบเสนอราคานี้สร้างจาก Sale Trip และควบคุมการยืนยันกลับไปที่ทริปเดิม'
+                                : nativeOnly
+                                  ? 'เอกสารจาก WINSpeed โดยตรง ใช้ flow เดียวกับเอกสารใน App'
+                                  : 'เอกสารจาก App พร้อมเชื่อมต่อ WINSpeed'}
+                            </div>
+                          </div>
+                          {q.Status === 'ACCEPTED' && !(q.SourceSoCount && q.SourceSoCount > 0) && (
+                            <button
+                              disabled={busyId===q.Id}
+                              onClick={() => doConvert(q)}
+                              className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+                              title="แปลงเป็นใบสั่งขาย (SO)"
+                            >
+                              <ArrowRightCircle size={14} /> แปลงเป็น SO
+                            </button>
+                          )}
+                        </div>
+                        {q.Status !== 'CONVERTED' && q.Status !== 'CANCELLED' && !nativeOnly && (
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-gray-100 pt-2">
+                            <span className="text-[10px] text-gray-400 font-bold">ต่ออายุ:</span>
+                            {[7, 15, 20, 30, 45].map(days => (
+                              <button
+                                key={days}
+                                disabled={busyId === q.Id}
+                                onClick={() => extendValidUntil(q, days as 7 | 15 | 20 | 30 | 45)}
+                                className="px-2 py-1 rounded-md bg-gray-50 border border-gray-200 text-[10px] font-bold text-gray-600 hover:bg-blue-50 hover:text-[#0C447C] disabled:opacity-50"
+                              >
+                                +{days}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

@@ -43,7 +43,9 @@ GO
 -- ── wf.SalesOrderLine ────────────────────────────────────────
 
 -- JOIN on (SoId, LineNum), lookup RefControlTicketNo
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('wf.SalesOrderLine') AND name = 'IX_SOLine_SoId_LineNum_RefCtrl')
+-- RefControlTicketNo is added by a later migration in some restored DBs, so guard the column too.
+IF COL_LENGTH('wf.SalesOrderLine', 'RefControlTicketNo') IS NOT NULL
+AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('wf.SalesOrderLine') AND name = 'IX_SOLine_SoId_LineNum_RefCtrl')
     CREATE NONCLUSTERED INDEX IX_SOLine_SoId_LineNum_RefCtrl
         ON wf.SalesOrderLine (SoId, LineNum)
         INCLUDE (RefControlTicketNo)
@@ -51,7 +53,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('wf.SalesOr
 GO
 
 -- Reverse lookup: find lines by RefControlTicketNo
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('wf.SalesOrderLine') AND name = 'IX_SOLine_RefControlTicketNo')
+IF COL_LENGTH('wf.SalesOrderLine', 'RefControlTicketNo') IS NOT NULL
+AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('wf.SalesOrderLine') AND name = 'IX_SOLine_RefControlTicketNo')
     CREATE NONCLUSTERED INDEX IX_SOLine_RefControlTicketNo
         ON wf.SalesOrderLine (RefControlTicketNo)
         INCLUDE (SoId, LineNum)

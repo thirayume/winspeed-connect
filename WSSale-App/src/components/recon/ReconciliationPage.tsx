@@ -10,7 +10,7 @@ const WEIGH_LABEL: Record<ReconCase['weigh'], string> = {
   MATCHED: 'ตรงกัน', VARIANCE: 'น้ำหนักต่าง', NO_WEIGH: 'ไม่มีตั๋วชั่ง',
   UNLINKED: 'ไม่ผูก movebill', TS_NOT_FOUND: 'ไม่พบใน TruckScale', TS_UNAVAILABLE: 'TruckScale ไม่พร้อม',
 };
-const INVOICE_LABEL: Record<ReconCase['invoice'], string> = { MATCHED: 'มีใบกำกับ', PENDING: 'รอใบกำกับ' };
+const INVOICE_LABEL: Record<ReconCase['invoice'], string> = { MATCHED: 'Post แล้ว', PENDING: 'พร้อม Post Invoice' };
 
 function badge(kind: 'ok' | 'warn' | 'exc' | 'muted' | 'resolved') {
   return {
@@ -85,7 +85,7 @@ export function ReconciliationPage() {
           <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
             <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> กระทบยอด (Reconciliation)
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">ออกของ ↔ ใบกำกับ Winspeed ↔ น้ำหนัก TruckScale · FR-027</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">SHIPPED → Ready for WINSpeed Post Invoice → Invoice/GL reconciliation · FR-027</p>
         </div>
         <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
           <select value={days} onChange={e => setDays(Number(e.target.value))}
@@ -105,8 +105,10 @@ export function ReconciliationPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           {card(<Scale size={20} />, 'ออกของทั้งหมด', summary?.total ?? '–', 'bg-blue-50 text-blue-600')}
+          {card(<FileCheck2 size={20} />, 'พร้อม Post Invoice', summary?.readyForPostInvoice ?? '–', 'bg-amber-50 text-amber-600')}
+          {card(<CheckCircle size={20} />, 'Post แล้ว', summary?.postedInvoice ?? '–', 'bg-green-50 text-green-600')}
           {card(<AlertTriangle size={20} />, 'ต้องตรวจ (Exception)', summary?.exception ?? '–', 'bg-red-50 text-red-500')}
           {card(<CheckCircle size={20} />, 'ปกติ (OK)', summary?.ok ?? '–', 'bg-green-50 text-green-600')}
           {card(<FileCheck2 size={20} />, 'จัดการแล้ว', summary?.resolved ?? '–', 'bg-blue-50 text-blue-600')}
@@ -153,8 +155,16 @@ export function ReconciliationPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge(c.invoice === 'MATCHED' ? 'ok' : 'exc')}`}>{INVOICE_LABEL[c.invoice]}</span>
-                    {c.wsInvoiceNo && <div className="text-xs text-gray-400 mt-1">{c.wsInvoiceNo}</div>}
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge(c.invoice === 'MATCHED' ? 'ok' : 'warn')}`}>{INVOICE_LABEL[c.invoice]}</span>
+                    {c.wsInvoiceNo ? (
+                      <div className="text-xs text-gray-400 mt-1">
+                        {c.wsInvoiceNo}
+                        {c.wsInvoiceDate ? ` · ${String(c.wsInvoiceDate).slice(0, 10)}` : ''}
+                        {c.wsPostId ? ` · PostID ${c.wsPostId}` : ''}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-amber-600 mt-1">ให้บัญชีไป Post Invoice (WF) ใน WINSpeed</div>
+                    )}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex flex-col items-end gap-1.5">
