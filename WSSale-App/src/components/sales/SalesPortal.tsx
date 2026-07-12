@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Plus, Search, RefreshCw, ChevronRight, Filter, ChevronLeft, Package, Calendar, User, X, Clock, Truck, Gift, Trash2 } from 'lucide-react';
+import { Plus, Search, RefreshCw, ChevronRight, Filter, ChevronLeft, Package, Calendar, User, X, Clock, Truck, Gift, Trash2, FileText } from 'lucide-react';
 import { Button, Card, cn } from '../ui/Base';
 import { useErpStore } from '../../store/erp-store';
 import { useAppStore } from '../../store/app-store';
-import { fetchSalesOrders, fetchSalesOrder, cancelSO, fetchCustomers } from '../../services/api';
+import { fetchSalesOrders, fetchSalesOrder, cancelSO, fetchCustomers, confirmSO } from '../../services/api';
 import { appConfirm } from '../ui/AppAlert';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { SOStatusBadge } from './SOStatusBadge';
@@ -14,6 +14,7 @@ import { TripSummaryModal } from './TripSummaryModal';
 import { useTripStore } from '../../store/trip-store';
 import { CheckCircle } from 'lucide-react';
 import type { SalesOrder, SOStatus } from '../../types';
+import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
 
 export const SalesPortal = () => {
   const [orders, setOrders]         = useState<SalesOrder[]>([]);
@@ -30,6 +31,7 @@ export const SalesPortal = () => {
 
   const navParams = useAppStore(s => s.navParams);
   const clearNavParams = useAppStore(s => s.clearNavParams);
+  const navigate = useAppStore(s => s.navigate);
 
   const { activeTrip, setTrip, clearTrip } = useTripStore();
   const [isTripSetupOpen, setIsTripSetupOpen] = useState(false);
@@ -85,12 +87,16 @@ export const SalesPortal = () => {
       alert('ไม่พบบิลในทริปนี้ กรุณาเพิ่มบิลก่อนยืนยัน');
       return;
     }
+    const lockedByQuote = tripOrders.find(so => so.linkedQuoteId && ['DRAFT', 'SENT', 'EXPIRED'].includes(String(so.linkedQuoteStatus || '')));
+    if (lockedByQuote) {
+      alert(`ทริปนี้ผูกกับใบเสนอราคา ${lockedByQuote.linkedQuoteNo || ''} ที่ยังรอการยืนยันอยู่`);
+      return;
+    }
 
     if (window.confirm(`ต้องการยืนยันออร์เดอร์ทริปนี้ทั้ง ${tripOrders.length} บิลใช่หรือไม่?`)) {
       try {
         setLoading(true);
         // Using existing confirmSO endpoint for each bill
-        const { confirmSO } = await import('../../services/api');
         await Promise.all(tripOrders.map(so => confirmSO(so.id as number)));
         alert('ยืนยันออร์เดอร์ทริปสำเร็จ');
         clearTrip();
@@ -321,7 +327,7 @@ export const SalesPortal = () => {
               {statusFilter && (
                 <button onClick={() => setStatusFilter('')}
                   className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                  {statusFilter} ✕
+                  {statusFilter ? SO_STATUS_META[statusFilter]?.label : ''} x
                 </button>
               )}
             </div>
@@ -334,8 +340,8 @@ export const SalesPortal = () => {
                   className="w-full rounded-lg border border-gray-200 bg-white py-2 px-3 text-sm"
                 >
                   <option value="">ทุกสถานะ</option>
-                  {(['DRAFT','CONFIRMED','PICKING','SHIPPED','IMPORTED','CANCELLED'] as SOStatus[]).map(s =>
-                    <option key={s} value={s}>{s}</option>
+                  {SO_STATUS_ORDER.map(s =>
+                    <option key={s} value={s}>{SO_STATUS_META[s].label}</option>
                   )}
                 </select>
               </div>
@@ -354,7 +360,18 @@ export const SalesPortal = () => {
                     <Package size={48} className="mb-3" />
                     <p className="font-semibold">ไม่พบบิล</p>
                   </div>
-                ) : groupedOrders.map((g, idx) => (
+                ) : groupedOrders.map((g, idx) => {
+                  const linkedQuoteOrder = g.orders.find(o => o.linkedQuoteId && ['DRAFT', 'SENT', 'EXPIRED'].includes(String(o.linkedQuoteStatus || '')));
+                  const isQuoteLocked = !!linkedQuoteOrder;
+                  const openQuote = () => {
+                    if (!linkedQuoteOrder?.linkedQuoteId) return;
+                    navigate('quotation', {
+                      quoteId: Number(linkedQuoteOrder.linkedQuoteId),
+                      quoteNo: linkedQuoteOrder.linkedQuoteNo || undefined,
+                    });
+                  };
+
+                  return (
                       <div key={idx} className="rounded-xl border border-gray-200 shadow-sm bg-[#F9F9FB] flex flex-col">
                         <div className="px-3 py-2 border-b border-gray-100 bg-white flex items-center justify-between rounded-t-xl shrink-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -371,7 +388,9 @@ export const SalesPortal = () => {
                               ฿{g.totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                             </div>
                             <button
+                              disabled={isQuoteLocked}
                               onClick={async () => {
+                                if (isQuoteLocked) return;
                                 if (await appConfirm(`ยืนยันลบ Sale Trip นี้ (รวม ${g.orders.length} บิล)?`)) {
                                   setLoading(true);
                                   try {
@@ -383,8 +402,8 @@ export const SalesPortal = () => {
                                   }
                                 }
                               }}
-                              className="text-gray-400 hover:text-red-500 transition-colors shrink-0"
-                              title="ลบ Sale Trip นี้"
+                              className="text-gray-400 hover:text-red-500 transition-colors shrink-0 disabled:opacity-30 disabled:hover:text-gray-400"
+                              title={isQuoteLocked ? 'ต้องยกเลิกใบเสนอราคาก่อน' : 'ลบ Sale Trip นี้'}
                             >
                               <Trash2 size={14} />
                             </button>
@@ -405,6 +424,25 @@ export const SalesPortal = () => {
                             ดูสรุปทริป
                           </button>
                         </div>
+                        {isQuoteLocked && (
+                          <div className="mx-2 mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-bold flex items-center gap-1">
+                                <FileText size={12} /> รอใบเสนอราคา {linkedQuoteOrder?.linkedQuoteNo} ยืนยัน
+                              </span>
+                              <button
+                                type="button"
+                                onClick={openQuote}
+                                className="shrink-0 rounded-md bg-white px-2 py-1 font-bold text-[#0C447C] border border-amber-200 hover:bg-amber-100"
+                              >
+                                เปิดใบเสนอราคา
+                              </button>
+                            </div>
+                            {linkedQuoteOrder?.linkedQuoteRemark && (
+                              <div className="mt-1 line-clamp-2 text-amber-700">{linkedQuoteOrder.linkedQuoteRemark}</div>
+                            )}
+                          </div>
+                        )}
                         <div className="p-1.5 space-y-1.5 overflow-y-auto custom-scrollbar xl:h-36 min-h-[80px]">
                           {g.orders.length === 0 ? (
                             <div className="flex items-center justify-center h-full text-xs text-gray-400 py-4">ไม่มีบิลในทริปนี้</div>
@@ -439,7 +477,8 @@ export const SalesPortal = () => {
                           })}
                         </div>
                       </div>
-                    ))}
+                    );
+                  })}
               </div>
             </div>
 

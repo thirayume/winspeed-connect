@@ -55,7 +55,7 @@ export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; on
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-bold text-gray-800 flex items-center gap-2">
             <Unlock size={18} className="text-amber-600" /> คำขอปลดล็อก (รออนุมัติ)
@@ -64,7 +64,7 @@ export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; on
             <X size={18} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-0 sm:p-4 space-y-2 sm:space-y-2">
+        <div className="flex-1 overflow-y-auto p-0 sm:p-5 space-y-2 sm:space-y-3">
           {loading ? (
             <div className="py-10 flex justify-center">
               <RefreshCw size={22} className="animate-spin text-gray-300" />

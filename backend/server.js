@@ -60,13 +60,13 @@ app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false,
 // LINE webhook ต้องใช้ raw body (verify signature) — ต้องมาก่อน express.json
 app.use('/api/line/webhook', express.raw({ type: '*/*' }));
 app.use(express.json({ limit: '2mb' }));
+app.use('/uploads', express.static(require('path').join(__dirname, 'uploads')));
 
 // ── Observability (FR-030) — นับ request/error + telemetry ─────
 const obs = require('./services/observability');
 app.use(obs.requestTimer);
 
 // ── Rate limiting (P1) ────────────────────────────────────────
-// จำกัดเฉพาะ login เพื่อกัน brute-force (ไม่กระทบ polling/endpoint อื่น)
 app.use('/api/auth/login', rateLimit({
   windowMs: 15 * 60 * 1000, max: 20,
   standardHeaders: true, legacyHeaders: false,

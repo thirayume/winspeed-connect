@@ -246,37 +246,57 @@ router.delete('/customers/:id', async (req, res) => {
 // GET /api/master/goods — ปุ๋ย FG เท่านั้น (StockFlag='Y', MainGoodUnitID=1002)
 router.get('/goods', async (req, res) => {
   try {
-    const { q } = req.query;
+    const { q, limit = 800 } = req.query;
+    const safeLimit = Math.max(50, Math.min(Number(limit) || 800, 2000));
     const whereClause = q
       ? `AND (g.GoodCode LIKE N'%' + @q + '%' OR g.GoodName1 LIKE N'%' + @q + '%')`
       : '';
-    const inputs = q ? { q: { type: sql.NVarChar(100), value: q } } : {};
+    const inputs = {
+      limit: { type: sql.Int, value: safeLimit },
+      ...(q ? { q: { type: sql.NVarChar(100), value: q } } : {}),
+    };
     const rows = await query(`
-      SELECT g.GoodID, g.GoodCode, g.GoodName1 AS GoodName,
+      SELECT TOP (@limit)
+             g.GoodID, g.GoodCode, g.GoodName1 AS GoodName,
              ISNULL(gx.BagPerTon, 20)         AS BagPerTon,
              ISNULL(gx.WeightKgPerBag, 50.0)  AS WeightKgPerBag,
              gg.GoodGroupName,
              g.StockQty,
              g.RemaQty,
-             ISNULL(agg.TotalQtyTon, 0) AS TotalQtyTon,
-             ISNULL(agg.QtyTonThisYear, 0) AS TotalQtyTonThisYear
+             CAST(0 AS DECIMAL(18,3)) AS TotalQtyTon,
+             CAST(0 AS DECIMAL(18,3)) AS TotalQtyTonThisYear
       FROM dbo.EMGood g WITH (NOLOCK)
-      LEFT JOIN wf.GoodExtra gx ON gx.GoodId = g.GoodID
+      LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = g.GoodID
       LEFT JOIN dbo.EMGoodGroup gg WITH (NOLOCK) ON g.GoodGroupID = gg.GoodGroupID
-      LEFT JOIN (
-        SELECT 
-          sol.GoodId,
-          SUM(sol.QtyTon) AS TotalQtyTon,
-          SUM(CASE WHEN YEAR(so.CreatedAt) = YEAR(GETUTCDATE()) THEN sol.QtyTon ELSE 0 END) AS QtyTonThisYear
-        FROM wf.v_AllSalesOrderLines sol
-        JOIN wf.v_AllSalesOrders so ON so.Id = sol.SoId
-        WHERE so.Status NOT IN ('CANCELLED')
-        GROUP BY sol.GoodId
-      ) agg ON agg.GoodId = g.GoodID
       WHERE g.StockFlag = 'Y' AND g.MainGoodUnitID = 1002 AND g.Inactive = 'A'
       ${whereClause}
-      ORDER BY ISNULL(agg.TotalQtyTon, 0) DESC, g.GoodCode
+      ORDER BY g.GoodCode
     `, inputs);
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/master/transports - WINSpeed transport master for SOHD.TranspID
+router.get('/transports', async (req, res) => {
+  try {
+    const { q, limit = 300 } = req.query;
+    const safeLimit = Math.max(20, Math.min(Number(limit) || 300, 1000));
+    const whereClause = q
+      ? `WHERE (TranspCode LIKE N'%' + @q + '%' OR TranspName LIKE N'%' + @q + '%' OR Remark LIKE N'%' + @q + '%')`
+      : '';
+    const rows = await query(`
+      SELECT TOP (@limit)
+             TranspID,
+             TranspCode,
+             TranspName,
+             Remark
+      FROM dbo.EMTransp WITH (NOLOCK)
+      ${whereClause}
+      ORDER BY TranspName, TranspCode, TranspID
+    `, {
+      limit: { type: sql.Int, value: safeLimit },
+      ...(q ? { q: { type: sql.NVarChar(100), value: q } } : {}),
+    });
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -792,17 +812,62 @@ router.get('/aging', async (req, res) => {
 
     const { wfQuery: wq } = require('../db');
     const result = await wq(`
-      SELECT TOP 200
-             so.CustName, sol.GoodCode, sol.GoodName,
-             SUM(sol.QtyTon)  AS QtyTon,
-             DATEDIFF(DAY, so.CreatedAt, GETUTCDATE()) AS DaysOpen,
-             so.Status, so.WfRef, CAST(so.Id AS VARCHAR(50)) AS SoId,
-             so.CreatedAt
-      FROM wf.v_AllSalesOrders so
-      JOIN wf.v_AllSalesOrderLines sol ON sol.SoId = so.Id
-      WHERE so.Status NOT IN ('IMPORTED','CANCELLED','SHIPPED')
-        AND so.CreatedAt >= DATEFROMPARTS(YEAR(GETDATE())-2, 1, 1)
-      GROUP BY so.CustName, sol.GoodCode, sol.GoodName, so.CreatedAt, so.Status, so.WfRef, so.Id
+      WITH BaseCandidateSo AS (
+        SELECT 
+          hd.SOID AS SoIdKey,
+          CAST(hd.SOID AS VARCHAR(50)) AS SoId,
+          hd.DocuNo AS WfRef,
+          hd.CustName,
+          ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), 'ไม่ระบุรถ') AS TruckPlate,
+          CAST(hd.DocuDate AS DATETIME2) AS CreatedAt,
+          CASE WHEN hd.PkgStatus = 'Y' THEN 'PICKING' ELSE 'CONFIRMED' END AS BaseStatus,
+          ROW_NUMBER() OVER(PARTITION BY hd.DocuNo ORDER BY hd.DocuType DESC, hd.SOID DESC) as rn
+        FROM dbo.SOHD hd WITH (NOLOCK)
+        WHERE hd.DocuType IN (103, 104)
+          AND ISNULL(hd.DocuStatus, '') <> 'C'
+          AND ISNULL(hd.clearflag, 'N') <> 'Y'
+          AND ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), '') <> N'ตั๋วคุม'
+          AND hd.DocuDate >= DATEFROMPARTS(YEAR(GETDATE()) - 2, 1, 1)
+      ),
+      CandidateSo AS (
+        SELECT TOP 1000 * FROM BaseCandidateSo WHERE rn = 1
+        ORDER BY CreatedAt ASC, SoId ASC
+      ),
+      OpenSo AS (
+        SELECT TOP 200
+          c.SoIdKey,
+          c.SoId,
+          c.WfRef,
+          c.CustName,
+          c.TruckPlate,
+          c.CreatedAt,
+          CASE WHEN ext.IsLoaded = 1 THEN 'LOADED' ELSE c.BaseStatus END AS Status
+        FROM CandidateSo c
+        LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
+          ON ext.SOID = c.SoId
+        WHERE ext.WeighOutWeight IS NULL
+        ORDER BY c.CreatedAt ASC, c.SoId ASC
+      )
+      SELECT
+        o.CustName,
+        CAST(ISNULL(line.GoodID, '') AS VARCHAR(50)) AS GoodCode,
+        line.GoodName,
+        ISNULL(line.QtyTon, 0) AS QtyTon,
+        DATEDIFF(DAY, o.CreatedAt, GETUTCDATE()) AS DaysOpen,
+        o.Status,
+        o.WfRef,
+        o.SoId,
+        o.CreatedAt,
+        o.TruckPlate
+      FROM OpenSo o
+      OUTER APPLY (
+        SELECT 
+          dt.GoodID,
+          dt.GoodName,
+          CAST(ISNULL(dt.GoodQty2, 0) AS DECIMAL(12,3)) AS QtyTon
+        FROM dbo.SODT dt WITH (NOLOCK)
+        WHERE CONVERT(VARCHAR(50), dt.SOID) = o.SoId
+      ) line
       ORDER BY DaysOpen DESC
     `);
     _agingCache = result.recordset || [];
@@ -826,14 +891,22 @@ router.get('/aging/search', async (req, res) => {
 
     // Build WHERE clauses
     const conditions = [
-      `so.CreatedAt >= @dateFrom`,
-      `so.Status NOT IN ('IMPORTED','CANCELLED')`,
+      `hd.DocuDate >= @dateFrom`,
+      `hd.DocuType IN (103, 104)`,
+      `ISNULL(hd.DocuStatus, '') <> 'C'`,
+      `ISNULL(hd.clearflag, 'N') <> 'Y'`,
+      `ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), '') <> N'ตั๋วคุม'`,
     ];
     if (statuses.length) {
-      conditions.push(`so.Status IN (${statuses.map(s => `'${s.replace(/'/g,"''"  )}'`).join(',')})`);
+      conditions.push(`CASE
+        WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
+        WHEN ext.IsLoaded = 1 THEN 'LOADED'
+        WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
+        ELSE 'CONFIRMED'
+      END IN (${statuses.map(s => `'${s.replace(/'/g,"''"  )}'`).join(',')})`);
     }
     if (q) {
-      conditions.push(`(so.CustName LIKE @q OR so.WfRef LIKE @q OR sol.GoodCode LIKE @q OR sol.GoodName LIKE @q)`);
+      conditions.push(`(hd.CustName LIKE @q OR hd.DocuNo LIKE @q OR CONVERT(NVARCHAR(50), dt.GoodID) LIKE @q OR dt.GoodName LIKE @q)`);
     }
     const where = conditions.join(' AND ');
 
@@ -841,23 +914,70 @@ router.get('/aging/search', async (req, res) => {
     if (q) inputs.q = { type: sql.NVarChar(200), value: `%${q}%` };
 
     const countResult = await wq(`
-      SELECT COUNT(DISTINCT so.Id) AS Total
-      FROM wf.v_AllSalesOrders so
-      JOIN wf.v_AllSalesOrderLines sol ON sol.SoId = so.Id
+      WITH BaseCandidateSo AS (
+        SELECT 
+          hd.SOID,
+          hd.DocuNo,
+          ROW_NUMBER() OVER(PARTITION BY hd.DocuNo ORDER BY hd.DocuType DESC, hd.SOID DESC) as rn
+        FROM dbo.SOHD hd WITH (NOLOCK)
+        WHERE hd.DocuDate >= @dateFrom
+          AND hd.DocuType IN (103, 104)
+          AND ISNULL(hd.DocuStatus, '') <> 'C'
+          AND ISNULL(hd.clearflag, 'N') <> 'Y'
+          AND ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), '') <> N'ตั๋วคุม'
+      ),
+      CandidateSo AS (
+        SELECT SOID FROM BaseCandidateSo WHERE rn = 1
+      )
+      SELECT COUNT(DISTINCT hd.SOID) AS Total
+      FROM dbo.SOHD hd WITH (NOLOCK)
+      JOIN CandidateSo c ON c.SOID = hd.SOID
+      JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
+      LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
+        ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
       WHERE ${where}
     `, inputs);
     const total = countResult.recordset[0]?.Total || 0;
 
     const dataResult = await wq(`
-      SELECT so.CustName, sol.GoodCode, sol.GoodName,
-             SUM(sol.QtyTon) AS QtyTon,
-             DATEDIFF(DAY, so.CreatedAt, GETUTCDATE()) AS DaysOpen,
-             so.Status, so.WfRef, CAST(so.Id AS VARCHAR(50)) AS SoId,
-             CONVERT(VARCHAR(10), so.CreatedAt, 120) AS CreatedAt
-      FROM wf.v_AllSalesOrders so
-      JOIN wf.v_AllSalesOrderLines sol ON sol.SoId = so.Id
+      WITH BaseCandidateSo AS (
+        SELECT 
+          hd.SOID,
+          hd.DocuNo,
+          ROW_NUMBER() OVER(PARTITION BY hd.DocuNo ORDER BY hd.DocuType DESC, hd.SOID DESC) as rn
+        FROM dbo.SOHD hd WITH (NOLOCK)
+        WHERE hd.DocuDate >= @dateFrom
+          AND hd.DocuType IN (103, 104)
+          AND ISNULL(hd.DocuStatus, '') <> 'C'
+          AND ISNULL(hd.clearflag, 'N') <> 'Y'
+          AND ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), '') <> N'ตั๋วคุม'
+      ),
+      CandidateSo AS (
+        SELECT SOID FROM BaseCandidateSo WHERE rn = 1
+      )
+      SELECT hd.CustName,
+             CAST(dt.GoodID AS VARCHAR(50)) AS GoodCode,
+             dt.GoodName,
+             SUM(CAST(ISNULL(dt.GoodQty2, 0) AS DECIMAL(12,3))) AS QtyTon,
+             DATEDIFF(DAY, CAST(hd.DocuDate AS DATETIME2), GETUTCDATE()) AS DaysOpen,
+             CASE
+               WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
+               WHEN ext.IsLoaded = 1 THEN 'LOADED'
+               WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
+               ELSE 'CONFIRMED'
+             END AS Status,
+             hd.DocuNo AS WfRef,
+             CAST(hd.SOID AS VARCHAR(50)) AS SoId,
+             CONVERT(VARCHAR(10), hd.DocuDate, 120) AS CreatedAt,
+             ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), 'ไม่ระบุรถ') AS TruckPlate
+      FROM dbo.SOHD hd WITH (NOLOCK)
+      JOIN CandidateSo c ON c.SOID = hd.SOID
+      JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
+      LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
+        ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
       WHERE ${where}
-      GROUP BY so.CustName, sol.GoodCode, sol.GoodName, so.CreatedAt, so.Status, so.WfRef, so.Id
+      GROUP BY hd.CustName, dt.GoodID, dt.GoodName, hd.DocuDate, hd.PkgStatus,
+               ext.IsLoaded, ext.WeighOutWeight, hd.DocuNo, hd.SOID, hd.TransRegistration
       ORDER BY DaysOpen DESC
       OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY
     `, { ...inputs, offset: { type: sql.Int, value: offset }, pageSize: { type: sql.Int, value: pageSize } });
@@ -880,7 +1000,7 @@ router.get('/truck-types', async (req, res) => {
 });
 
 // POST /api/master/truck-types — สร้างประเภทรถบรรทุกใหม่
-router.post('/truck-types', async (req, res) => {
+router.post('/truck-types', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
   try {
     const { wfQuery: wq } = require('../db');
     const { Id, Name, SlotCount, TrailerSlotCount, MaxTonPerSlot, IsActive } = req.body;
@@ -901,7 +1021,7 @@ router.post('/truck-types', async (req, res) => {
 });
 
 // PUT /api/master/truck-types/:id — อัปเดตประเภทรถบรรทุก
-router.put('/truck-types/:id', async (req, res) => {
+router.put('/truck-types/:id', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
   try {
     const { wfQuery: wq } = require('../db');
     const id = req.params.id;
@@ -925,7 +1045,7 @@ router.put('/truck-types/:id', async (req, res) => {
 });
 
 // DELETE /api/master/truck-types/:id — ลบประเภทรถบรรทุก (ถ้าจำเป็น) หรือแค่ set inactive
-router.delete('/truck-types/:id', async (req, res) => {
+router.delete('/truck-types/:id', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
   try {
     const { wfQuery: wq } = require('../db');
     const id = req.params.id;

@@ -14,11 +14,24 @@
 - Added Rebate Plan Ref Doc fields.
 - Added app-owned new customer request flow through Sale Admin/Master Data without auto-writing `dbo.EMCust`.
 - Added LINE Login OAuth with first-time self-link by existing username/password, plus Admin support override for `wf.AppUser.LineUserId`.
+- Added read-only WF Rebate Trail from WINSpeed (`SOHD` 103/104 -> `WFCoupon` -> `WFRedemtion` -> `SOInv` -> receipt/GL trail).
+- Added Post Invoice readiness indicators for shipped SOs and invoice/GL reconciliation visibility.
+- Added WINSpeed invoice posted/locked badge to SO detail.
+- Added WINSpeed SO Data Entry lab script and migration `038` to preserve transport display, header check-all, header totals, line descriptions, and Master/Child quantities.
+- Added migration `039` and SO form/API mapping for explicit transporter (`TranspID`) selection, credit days, header remarks, and per-line Master/Child quantities across draft create/edit and WINSpeed confirm flow.
+- Added migration `044` and WINSpeed Quotation lab script after validating native documents `QU6907-00001`, `QU6907-00002`, and `QC69-00002`.
 
 ### Changed
 - Aligned backend/frontend metadata and visible UI badge to v4.2.26.
 - Updated documentation to reflect the actual stack: React 19 + Vite + Express.
 - Clarified database architecture: SQL Server is the primary WINSpeed/App database; MySQL is used as the TruckScale bridge only.
+- Re-aligned the old CN Rebate screen/report into WF Rebate Trail; legacy `cn-rebate` keys remain only for compatibility.
+- Locked SO edit/unlock/cancel paths after a WINSpeed invoice is detected, preserving WINSpeed as the owner of invoice/AR/GL posting.
+- Clarified and restricted approved dbo master-data write routes for customers, goods, and price lists.
+- Aligned app-confirmed SO creation with the observed WINSpeed WF flow: app confirm now writes `SOHD/SODT` as `DocuType=103`; WINSpeed WF menus own the `103 -> 104` transition and invoice/accounting posting.
+- Tightened app-created `DocuType=103` rows to match WINSpeed SO Data Entry after local validation with `I69-KORAT-1`: `SOHD.TranspID`, `SOHD.CheckAll`, `SODT.CheckFlag`, `SODT.MasterQty`, and `SODT.ChildQty` are now part of the mapped contract.
+- Re-aligned app quotation integration to native WINSpeed Sale Quotation: `SOHD/SODT DocuType=102` for `QU...` and `DocuType=113` for confirmed `QC...`; `SCEstimate*` is no longer the active mapping for this flow.
+- Aligned customer salesperson filtering and SALES visibility to `dbo.EMCustMultiEmp` instead of assuming salesperson fields exist on `dbo.EMCust`.
 - Added `07-SOURCE-ALIGNMENT-v4.2.26.md` to highlight source/document alignment, WINSpeed WF custom-build boundaries, and Meeting Minutes 02072026 backlog.
 
 ### Database Migration Status
@@ -31,6 +44,15 @@
 - `033_giveaway_line_approval.sql`
 - `034_customer_request_flow.sql`
 - `035_line_login_app_user.sql`
+- `036_align_winspeed_so_flow.sql`
+- `037_so_credit_days_and_remarks.sql`
+- `038_winspeed_so_data_entry_mapping.sql`
+- `039_so_transp_id.sql`
+- `040_deduplicate_winspeed_so.sql`
+- `041_app_user_profile.sql`
+- `042_so_trip_quotation.sql`
+- `043_winspeed_estimate_link.sql` (legacy/superseded for active WINSpeed Sale Quotation)
+- `044_winspeed_native_quotation_link.sql`
 
 ## [v4.2.0] - 2026-06-26
 

@@ -93,7 +93,7 @@ export const StorePortal = () => {
           )}
         </div>
         <p className="text-xs text-gray-400 mt-2">
-          แสดง {filtered.length} รายการ ({activeTab === 'LOADING' ? 'CONFIRMED + PICKING' : 'LOADED'})
+          แสดง {filtered.length} รายการ ({activeTab === 'LOADING' ? 'รอจัดส่ง + รอรับสินค้า' : 'โหลดสินค้า'})
         </p>
       </div>
 

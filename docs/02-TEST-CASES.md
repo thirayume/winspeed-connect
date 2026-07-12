@@ -33,7 +33,7 @@
 |----|-----------|---------|--------------|------|
 | TC-C01 | confirm โดยยังไม่ตรวจ | SO DRAFT (ยังไม่ verify) → กดยืนยัน | **ถูกบล็อก** "ต้องตรวจซ้ำก่อนยืนยัน" | SALES |
 | TC-C02 | ตรวจแล้ว (verify) | Paper Trail → การ์ด DRAFT → "ตรวจแล้ว" | ขึ้น ✓ ตรวจแล้ว, VerifiedAt บันทึก | COUNTER_SALES |
-| TC-C03 | confirm หลัง verify | verify แล้ว → ยืนยัน | SO → CONFIRMED, ตั้ง Rebate accrual, เขียน dbo.SOHD | SALES |
+| TC-C03 | confirm หลัง verify | verify แล้ว → ยืนยัน | SO → CONFIRMED, เขียน `dbo.SOHD/SODT` เป็น WINSpeed WF `DocuType=103` (ไม่ใช่ 112), มียอดคงเหลือให้ WF menus ทำต่อ | SALES |
 | TC-C04 | ADMIN bypass | ADMIN ยืนยัน SO ที่ยังไม่ verify | ผ่านได้ (bypass) | ADMIN |
 | TC-C05 | audit | ดูประวัติ SO | มี VERIFIED/CONFIRMED ครบ (actor/time) | ADMIN |
 
@@ -73,7 +73,7 @@
 | TC-G02 | ดู Pool/Ledger | เปิดหน้า รีเบท → เลือก pool | เห็น ledger FIFO เรียงเก่า→ใหม่ | ทุก |
 | TC-G03 | ยื่นเคลม | เลือก pool → ยื่นเคลม ≤ ใช้ได้ | ตัด FIFO, ClaimedAmt เพิ่ม, Claim=PENDING | SALES |
 | TC-G04 | เคลมเกิน | ยื่นเกินยอดใช้ได้ | บล็อก แจ้งยอดเกิน | SALES |
-| TC-G05 | อนุมัติ + CN | บัญชี อนุมัติ + กรอกเลข CN | Claim=APPROVED, CnDocuNo บันทึก | ACCOUNTING |
+| TC-G05 | อนุมัติ + Ref | บัญชีอนุมัติ claim + กรอกเลขอ้างอิง WINSpeed เมื่อมี | Claim=APPROVED, CnDocuNo บันทึกเป็น WINSpeed Ref | ACCOUNTING |
 
 ## H. Rebate Plan + Allocation (FR-008/009)
 | TC | สถานการณ์ | ขั้นตอน | ผลที่คาดหวัง | Role |
@@ -84,12 +84,12 @@
 | TC-H04 | accrual match Plan | confirm SO สูตรตรง Plan ACTIVE | RebateLedger.PlanId/Region ถูก tag | SALES |
 | TC-H05 | ปิด Plan | กด ⬛ (close) | Plan=CLOSED, ไม่ match accrual ใหม่ | MANAGER |
 
-## I. CN Rebate (dbo, อ่าน) (FR — ประวัติ)
+## I. WF Rebate Trail (dbo, อ่าน) (FR — ประวัติ)
 | TC | สถานการณ์ | ขั้นตอน | ผลที่คาดหวัง | Role |
 |----|-----------|---------|--------------|------|
-| TC-I01 | สรุปตามพนักงาน | เปิด CN Rebate | เห็นยอดรวมต่อพนักงานขาย (จาก dbo จริง) | ACCOUNTING |
+| TC-I01 | สรุปตามพนักงาน | เปิด WF Rebate Trail | เห็นยอดรวมคูปอง/การใช้สิทธิ์/ใบกำกับต่อพนักงานขาย (จาก dbo จริง) | ACCOUNTING |
 | TC-I02 | กรองปี | เลือกปี | รายการกรองตามปี | ACCOUNTING |
-| TC-I03 | drill CN | คลิกพนักงาน → CN → detail | เห็น trail CN→INV ต้นทาง + รีเบท/ตัน | ACCOUNTING |
+| TC-I03 | drill WF trail | คลิกพนักงาน → SO → detail | เห็น trail ใบจอง/ใบสั่งขาย → คูปอง → Redemption → Invoice/Receipt/GL | ACCOUNTING |
 
 ## J. Voucher (dbo WFCoupon, อ่าน)
 | TC | สถานการณ์ | ขั้นตอน | ผลที่คาดหวัง | Role |
@@ -116,7 +116,7 @@
 |----|-----------|---------|--------------|------|
 | TC-M01 | เลือกรายงาน | เปิด รายงาน → เลือกชนิด | ตารางแสดงข้อมูล | ACCOUNTING |
 | TC-M02 | Export Excel | กด Export Excel | ดาวน์โหลด .xlsx เปิดได้ หัวตารางไทย | ACCOUNTING |
-| TC-M03 | ครบ 5 ชนิด | ทดสอบ so-status/rebate-pools/giveaway/paper-status/cn-rebate | ทุกชนิดมีข้อมูล/ส่งออกได้ | ACCOUNTING |
+| TC-M03 | ครบ 5 ชนิด | ทดสอบ so-status/rebate-pools/giveaway/paper-status/cn-rebate (WF Rebate Trail) | ทุกชนิดมีข้อมูล/ส่งออกได้ | ACCOUNTING |
 
 ## N. TruckScale (MySQL live) (FR-024/025/026)
 | TC | สถานการณ์ | ขั้นตอน | ผลที่คาดหวัง | Role |

@@ -11,7 +11,7 @@ GO
 
 IF COL_LENGTH('wf.UnlockRequest','ReqType') IS NOT NULL
 BEGIN
-  IF OBJECT_ID('chk_UnlockReq_ReqType', 'C') IS NULL
+  IF OBJECT_ID('wf.chk_UnlockReq_ReqType', 'C') IS NULL
     ALTER TABLE wf.UnlockRequest ADD CONSTRAINT chk_UnlockReq_ReqType CHECK (ReqType IN ('UNLOCK', 'EDIT', 'CANCEL'));
 END
 GO

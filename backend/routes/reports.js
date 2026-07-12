@@ -17,7 +17,47 @@ const REPORTS = {
   'so-status': {
     title: 'สรุปใบสั่งขายตามสถานะ',
     columns: [{ key: 'Status', label: 'สถานะ' }, { key: 'Cnt', label: 'จำนวน' }],
-    sql: `SELECT Status, COUNT(*) AS Cnt FROM wf.v_AllSalesOrders GROUP BY Status ORDER BY Cnt DESC`,
+    sql: `
+      WITH WfDraft AS (
+        SELECT Status, COUNT_BIG(*) AS Cnt
+        FROM wf.SalesOrder WITH (NOLOCK)
+        GROUP BY Status
+      ),
+      WinspeedBase AS (
+        SELECT
+          CASE
+            WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
+            WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
+            WHEN hd.DocuType = 104 THEN 'IMPORTED'
+            WHEN ext.IsLoaded = 1 THEN 'LOADED'
+            WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
+            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+            ELSE 'CONFIRMED'
+          END AS Status,
+          COUNT_BIG(*) AS Cnt
+        FROM dbo.SOHD hd WITH (NOLOCK)
+        LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
+          ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
+        WHERE hd.DocuType IN (103, 104)
+        GROUP BY
+          CASE
+            WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
+            WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
+            WHEN hd.DocuType = 104 THEN 'IMPORTED'
+            WHEN ext.IsLoaded = 1 THEN 'LOADED'
+            WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
+            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+            ELSE 'CONFIRMED'
+          END
+      )
+      SELECT Status, CAST(SUM(Cnt) AS INT) AS Cnt
+      FROM (
+        SELECT Status, Cnt FROM WfDraft
+        UNION ALL
+        SELECT Status, Cnt FROM WinspeedBase
+      ) x
+      GROUP BY Status
+      ORDER BY Cnt DESC`,
   },
   'rebate-pools': {
     title: 'Rebate Pool ต่อพนักงานขาย',
@@ -49,18 +89,26 @@ const REPORTS = {
     sql: `SELECT Status, COUNT(*) AS Cnt FROM wf.PaperCopy GROUP BY Status ORDER BY Cnt DESC`,
   },
   'cn-rebate': {
-    title: 'CN รีเบท ที่ออกแล้ว (Winspeed)',
+    title: 'WF Rebate Trail (WINSpeed coupon redemption)',
     columns: [
-      { key: 'SalesName', label: 'พนักงานขาย' }, { key: 'CNCount', label: 'จำนวน CN' },
-      { key: 'CustCount', label: 'ลูกค้า' }, { key: 'TotalRebate', label: 'รวมรีเบท (฿)' },
+      { key: 'SalesName', label: 'พนักงานขาย' }, { key: 'OrderCount', label: 'จำนวน SO' },
+      { key: 'CouponCount', label: 'จำนวน Coupon' }, { key: 'RedeemedTon', label: 'ตัดแล้ว (ตัน)' },
+      { key: 'RemainingTon', label: 'คงเหลือ (ตัน)' }, { key: 'InvoiceCount', label: 'Invoice' },
     ],
-    sql: `SELECT ISNULL(e.EmpName, CAST(cn.EmpID AS NVARCHAR(20))) AS SalesName,
-                 COUNT(DISTINCT cn.SOInvID) AS CNCount, COUNT(DISTINCT cn.CustID) AS CustCount,
-                 SUM(d.GoodAmnt) AS TotalRebate
-          FROM dbo.SOInvHD cn JOIN dbo.SOInvDT d ON d.SOInvID = cn.SOInvID
-          LEFT JOIN dbo.EMEmp e ON e.EmpID = cn.EmpID
-          WHERE cn.Docutype = 109 AND cn.CNRemarkTypeID IN (6001, 1001)
-          GROUP BY cn.EmpID, e.EmpName ORDER BY TotalRebate DESC`,
+    sql: `SELECT ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS SalesName,
+                 COUNT(DISTINCT hd.SOID) AS OrderCount,
+                 COUNT(c.CouponID) AS CouponCount,
+                 SUM(c.GoodQty - c.RemaQty) AS RedeemedTon,
+                 SUM(c.RemaQty) AS RemainingTon,
+                 COUNT(DISTINCT inv.SOInvID) AS InvoiceCount
+          FROM dbo.WFCoupon c
+          JOIN dbo.SOHD hd ON hd.SOID = c.DocuID
+          LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
+          LEFT JOIN dbo.WFRedemtionDT rd ON rd.CouponID = c.CouponID
+          LEFT JOIN dbo.SOInvHD inv ON inv.SOInvID = rd.SOInvID
+          WHERE hd.DocuType = 104
+          GROUP BY hd.EmpID, emp.EmpName
+          ORDER BY RedeemedTon DESC, CouponCount DESC`,
   },
 };
 

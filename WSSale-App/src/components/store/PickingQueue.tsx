@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Truck, Package, CheckCircle, Unlock, ListOrdered, Scale } from 'lucide-react';
+import { Truck, Package, Unlock, ListOrdered, Scale, User, FileText, CalendarDays } from 'lucide-react';
 import { moveToPicking, confirmLoading, shipSO, unlockSO, fetchTruckScaleForSO } from '../../services/api';
 import type { TruckScaleWeigh } from '../../types';
 import type { SalesOrder } from '../../types';
 import { AlertDialog } from '../ui/AlertDialog';
 import { VisualTruckLoader } from './VisualTruckLoader';
+import { SO_STATUS_META } from '../../constants/soStatus';
 
 export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[]; onUpdate: () => void, mode: 'LOADING' | 'SCALE' }) => {
   const [busy, setBusy] = useState<number | null>(null);
@@ -21,6 +22,8 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
   const [tsLoading, setTsLoading] = useState(false);
 
   const [errorMsg, setErrorMsg] = useState<string>('');
+
+  const formatTon = (value: number) => value.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
 
   async function doAction(soId: number, fn: () => Promise<unknown>) {
     setBusy(soId);
@@ -103,48 +106,118 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
   }
 
   return (
-    <div className="space-y-2 sm:space-y-3 p-2 sm:p-4">
+    <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3 sm:gap-4 p-2 sm:p-4">
       {orders.map(order => {
-        const totalTon = (order.lines || []).filter(l => !l.isGiveaway).reduce((s, l) => s + l.qtyTon, 0);
-        const isBusy = busy === order.id;
+        const orderId = Number(order.id);
+        const productLines = (order.lines || []).filter(l => !l.isGiveaway);
+        const giveawayLines = (order.lines || []).filter(l => l.isGiveaway);
+        const totalTon = productLines.reduce((s, l) => s + (Number(l.qtyTon) || 0), 0);
+        const isBusy = busy === orderId;
+        const statusMeta = SO_STATUS_META[order.status];
+        const dateText = (order.deliveryDate || order.requestedAt || order.createdAt || '').slice(0, 10);
+        const plateText = order.noTruckRequired ? 'ไม่ต้องระบุรถ' : (order.truckPlate || 'ไม่ระบุรถ');
+        const visibleLines = productLines.slice(0, 4);
+        const moreLines = Math.max(productLines.length - visibleLines.length, 0);
+        const cardTone = order.status === 'PICKING'
+          ? 'border-emerald-200 bg-emerald-50/40'
+          : order.status === 'LOADED'
+            ? 'border-blue-200 bg-blue-50/40'
+            : 'border-amber-200 bg-white';
 
         return (
-          <div key={order.id} className="bg-white rounded-none sm:rounded-xl border-y sm:border border-gray-100 p-3 sm:p-4 shadow-sm">
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <span className="font-mono text-sm font-bold text-gray-800">{order.wfRef}</span>
-                <span className={`ml-2 text-xs px-2 py-0.5 rounded-full border ${
-                  order.status === 'LOADED' ? 'bg-blue-50 text-blue-700 border-blue-100' :
-                  order.status === 'PICKING' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                  'bg-amber-50 text-amber-700 border-amber-100'
-                }`}>
-                  {order.status}
-                </span>
+          <div key={order.id || order.wfRef} className={`rounded-xl border p-3 sm:p-4 shadow-sm flex flex-col gap-3 ${cardTone}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${statusMeta?.badgeClass || 'bg-gray-50 text-gray-600 border-gray-100'}`}>
+                    {statusMeta?.label || order.status}
+                  </span>
+                  {dateText && (
+                    <span className="inline-flex items-center gap-1 text-[11px] text-gray-500">
+                      <CalendarDays size={12} /> {dateText}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="h-9 w-9 rounded-lg bg-[#0C447C] text-white flex items-center justify-center shrink-0">
+                    <Truck size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-lg font-black text-gray-900 font-mono truncate" title={plateText}>
+                      {plateText}
+                    </div>
+                    <div className="text-xs text-gray-500 truncate">
+                      {order.isOwnTruck ? 'รถบริษัท' : 'รถลูกค้า/ขนส่ง'}
+                      {order.pSling ? ' · P-Sling' : ''}
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="text-xs text-gray-400">{order.createdAt?.slice(0, 10)}</div>
+              <div className="text-right shrink-0">
+                <div className="text-xs text-gray-500">รวมสินค้า</div>
+                <div className="text-xl font-black text-[#0C447C]">{formatTon(totalTon)}</div>
+                <div className="text-[11px] text-gray-400">ตัน</div>
+              </div>
             </div>
 
-            <div className="text-sm text-gray-700 mb-1 font-medium">{order.custName}</div>
-
-            {order.truckPlate && (
-              <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-2">
-                <Truck size={12} />
-                <span className="font-mono">{order.truckPlate}</span>
+            <div className="grid grid-cols-1 gap-2 rounded-lg border border-white/70 bg-white/85 p-2.5">
+              <div className="flex items-start gap-2 min-w-0">
+                <User size={14} className="mt-0.5 text-gray-400 shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-[11px] text-gray-400">ลูกค้า</div>
+                  <div className="text-sm font-bold text-gray-900 truncate" title={order.custName}>{order.custName}</div>
+                </div>
               </div>
-            )}
-
-            <div className="text-xs text-gray-400 mb-3">
-              {(order.lines || []).filter(l => !l.isGiveaway).map((l, i) =>
-                <span key={`${l.lineNo || i}-${l.goodId}`} className="mr-2">{l.goodCode} {l.qtyTon.toFixed(2)}ตัน</span>
-              )}
-              <span className="font-semibold text-gray-600">รวม {totalTon.toFixed(3)} ตัน</span>
+              <div className="flex items-start gap-2 min-w-0">
+                <FileText size={14} className="mt-0.5 text-gray-400 shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-[11px] text-gray-400">เอกสาร</div>
+                  <div className="font-mono text-sm font-bold text-[#0C447C] truncate">
+                    {order.wfRef || order.importedDocuNo || `#${order.id}`}
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-2">
+            <div className="rounded-lg border border-gray-100 bg-white p-2.5 flex-1">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-700">
+                  <Package size={14} /> รายการสินค้า
+                </div>
+                <div className="text-[11px] text-gray-400">{productLines.length} รายการ</div>
+              </div>
+              <div className="space-y-1.5">
+                {visibleLines.length === 0 ? (
+                  <div className="rounded-md bg-gray-50 px-2 py-3 text-center text-xs text-gray-400">ไม่พบรายการสินค้า</div>
+                ) : visibleLines.map((line, i) => (
+                  <div key={`${line.lineNo || i}-${line.goodId}`} className="flex items-center justify-between gap-2 rounded-md bg-gray-50 px-2 py-1.5">
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-gray-800 truncate" title={line.goodName}>{line.goodName}</div>
+                      <div className="font-mono text-[11px] text-gray-400 truncate">{line.goodCode}</div>
+                    </div>
+                    <div className="shrink-0 rounded-md bg-white px-2 py-1 text-xs font-black text-[#0C447C] border border-gray-100">
+                      {formatTon(Number(line.qtyTon) || 0)} ตัน
+                    </div>
+                  </div>
+                ))}
+                {moreLines > 0 && (
+                  <div className="rounded-md bg-blue-50 px-2 py-1.5 text-xs font-bold text-[#0C447C] text-center">
+                    + อีก {moreLines} รายการ
+                  </div>
+                )}
+                {giveawayLines.length > 0 && (
+                  <div className="rounded-md bg-amber-50 px-2 py-1.5 text-xs font-bold text-amber-700 border border-amber-100">
+                    ของแถม {giveawayLines.length} รายการ
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 mt-auto">
               {mode === 'LOADING' && order.status === 'CONFIRMED' && (
                 <button
                   disabled={isBusy}
-                  onClick={() => doAction(Number(order.id), () => moveToPicking(Number(order.id)))}
+                  onClick={() => doAction(orderId, () => moveToPicking(orderId))}
                   className="flex-1 py-2 rounded-lg text-white text-xs font-semibold disabled:opacity-50"
                   style={{ background: '#F59E0B' }}
                 >
@@ -166,7 +239,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
                     disabled={isBusy}
                     onClick={() => {
                       const note = prompt('เหตุผลในการปลดล็อก (รออนุมัติสุรชัย):');
-                      if (note !== null) doAction(Number(order.id), () => unlockSO(Number(order.id), note));
+                      if (note !== null) doAction(orderId, () => unlockSO(orderId, note));
                     }}
                     className="px-3 py-2 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-50 flex items-center gap-1"
                   >

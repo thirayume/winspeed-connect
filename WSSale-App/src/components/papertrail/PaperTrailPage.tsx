@@ -12,21 +12,16 @@ import { ScanModal } from './ScanModal';
 import { RequestActionModal, type RequestActionType } from './RequestActionModal';
 
 import { UnlockReviewModal } from './UnlockReviewModal';
+import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
 const CAN_VERIFY = ['COUNTER_SALES', 'ADMIN', 'MANAGER'];
 const CAN_REQ_UNLOCK = ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN'];
 const CAN_APPROVE_UNLOCK = ['APPROVER', 'ADMIN', 'MANAGER'];
 
-const STAGE_META: Record<string, { label: string; color: string; bg: string }> = {
-  DRAFT:     { label: 'ร่าง',         color: '#6B7280', bg: '#F3F4F6' },
-  CONFIRMED: { label: 'ยืนยัน',       color: '#0C447C', bg: '#EFF6FF' },
-  PICKING:   { label: 'รอรับสินค้า',  color: '#B45309', bg: '#FFFBEB' },
-  SHIPPED:   { label: 'ส่งออก',       color: '#047857', bg: '#ECFDF5' },
-};
-// next action per stage (role-gated server-side)
-const NEXT: Record<string, { label: string; roles: string[] } | undefined> = {
-  DRAFT:     { label: 'ยืนยัน', roles: ['SALES', 'COUNTER_SALES', 'ADMIN'] },
-  CONFIRMED: { label: 'เริ่มรับสินค้า', roles: ['WAREHOUSE', 'ADMIN'] },
-  PICKING:   { label: 'ส่งออก', roles: ['WAREHOUSE', 'ADMIN'] },
+const STATUS_NEXT: Record<string, { label: string; roles: string[] } | undefined> = {
+  DRAFT:     { label: 'ยืนยันเป็นรอจัดส่ง', roles: ['SALES', 'COUNTER_SALES', 'ADMIN'] },
+  CONFIRMED: { label: 'เริ่มรอรับสินค้า', roles: ['WAREHOUSE', 'ADMIN'] },
+  PICKING:   { label: 'โหลดสินค้า', roles: ['WAREHOUSE', 'ADMIN'] },
+  LOADED:    { label: 'ส่งออกจากตาชั่ง', roles: ['WAREHOUSE', 'ADMIN'] },
 };
 
 export function PaperTrailPage() {
@@ -108,6 +103,7 @@ export function PaperTrailPage() {
       if (card.status === 'DRAFT') await confirmSO(card.id);
       else if (card.status === 'CONFIRMED') await moveToPicking(card.id);
       else if (card.status === 'PICKING') await shipSO(card.id);
+      else if (card.status === 'LOADED') await shipSO(card.id);
       else if (card.status === 'SHIPPED') {
         const docuNo = await appPrompt(`กรอกเลขใบกำกับ WINSpeed สำหรับ ${card.wfRef}:`);
         if (!docuNo) { setBusyId(null); return; }
@@ -118,7 +114,7 @@ export function PaperTrailPage() {
     finally { setBusyId(null); }
   }
 
-  const stages = data?.stages || ['DRAFT', 'CONFIRMED', 'PICKING', 'SHIPPED'];
+  const stages = (data?.stages?.length ? data.stages : SO_STATUS_ORDER).filter(stage => stage !== 'CANCELLED');
 
   if (viewMode === 'cancelled') {
     return <CancelledOrdersView onBack={() => setViewMode('board')} />;
@@ -131,7 +127,7 @@ export function PaperTrailPage() {
           <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
             <LayoutGrid className="w-5 h-5 sm:w-6 sm:h-6" /> Paper Trail
           </h1>
-          <p className="hidden sm:block text-sm text-gray-500 mt-0.5">ติดตามใบสั่งขายข้าม 4 สถานะ</p>
+          <p className="hidden sm:block text-sm text-gray-500 mt-0.5">ติดตามสถานะใบสั่งขาย</p>
         </div>
         
         <div className="flex-1 w-full sm:w-auto sm:max-w-sm mt-2 sm:mt-0 sm:ml-4 order-3 sm:order-2">
@@ -189,7 +185,7 @@ export function PaperTrailPage() {
                 (c.controlTicketNo && c.controlTicketNo.toLowerCase().includes(q))
               );
             });
-            const m = STAGE_META[stage];
+            const m = SO_STATUS_META[stage as SOStatus] || { label: stage, color: '#6B7280', bg: '#F3F4F6' };
             
             // Group cards by DeliveryDate + Customer + TruckPlate
             const map = new Map<string, { dateDisplay: string; cust: string; truck: string; cards: PaperCard[]; totalTon: number }>();
@@ -243,7 +239,7 @@ export function PaperTrailPage() {
                       </div>
                       <div className="p-1.5 space-y-1.5">
                         {g.cards.map(card => {
-                          const next = NEXT[card.status];
+                          const next = STATUS_NEXT[card.status];
                           const canAdvance = next && role && next.roles.includes(role);
                           const overdue = card.daysOpen > 45 ? 'text-red-600' : card.daysOpen > 30 ? 'text-amber-600' : 'text-gray-400';
                           return (

@@ -16,6 +16,16 @@ export type AppUser = {
   displayName: string;
   role: UserRole;
   empId?: string | null;
+  isActive: boolean;
+  address?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  idCardNo?: string | null;
+  taxId?: string | null;
+  signatureFile?: string | null;
+  lineUserId?: string | null;
+  lineDisplayName?: string | null;
+  lineLinkedAt?: string | null;
 };
 
 /** WINSpeed employee (dbo.EMEmp) — for mapping AppUser.empId */
@@ -40,6 +50,12 @@ export type AdminUser = {
   LineDisplayName?: string | null;
   LineLinkedAt?: string | null;
   IsActive: boolean;
+  Address?: string | null;
+  Phone?: string | null;
+  Email?: string | null;
+  IdCardNo?: string | null;
+  TaxId?: string | null;
+  SignatureFile?: string | null;
 };
 
 // ── Master Data (maps to dbo views — READ ONLY) ───────────────
@@ -184,6 +200,12 @@ export type SalesOrder = {
   lines: SalesOrderLine[];
   auditLogs?: AuditLog[];
   needsApproval?: boolean;
+  linkedQuoteId?: number | null;
+  linkedQuoteNo?: string | null;
+  linkedQuoteStatus?: QuoteStatus | null;
+  linkedQuoteRemark?: string | null;
+  linkedQuoteValidUntil?: string | null;
+  quotationLockReason?: string | null;
   weighOutWeight?: number;
   weighOutAt?: string | null;
   isLoaded?: boolean;
@@ -425,16 +447,39 @@ export type QuotationLine = {
 
 export type Quotation = {
   Id: number;
+  IsNativeOnly?: boolean;
   QuoteNo: string;
   CustId: string;
   CustName: string;
   ValidUntil?: string;
   Status: QuoteStatus;
+  SalesUserId?: number | null;
   SalesName?: string;
   ConvertedSoId?: number;
+  WinspeedQuoteSOID?: number | null;
+  WinspeedQuoteNo?: string | null;
+  WinspeedQuoteSyncedAt?: string | null;
+  WinspeedConfirmSOID?: number | null;
+  WinspeedConfirmNo?: string | null;
+  WinspeedConfirmSyncedAt?: string | null;
+  WinspeedEstimateID?: number | null;
+  WinspeedEstimateNo?: string | null;
+  WinspeedEstimateSyncedAt?: string | null;
   Remark?: string;
   CreatedAt: string;
   lines?: QuotationLine[];
+  LineCount?: number;
+  TotalTon?: number;
+  TotalAmount?: number;
+  SourceSoCount?: number;
+  sourceSos?: Array<{
+    SoId: number;
+    SourceWfRef?: string;
+    Status?: SOStatus;
+    CustId?: string;
+    CustName?: string;
+    TruckPlate?: string;
+  }>;
 };
 
 // ── Paper Trail (Kanban) ──────────────────────────────────────
@@ -544,6 +589,7 @@ export type AgingRow = {
   WfRef: string;
   SoId: string | number;
   CreatedAt?: string;
+  TruckPlate?: string;
 };
 
 // ── TruckScale (MySQL — FR-024/025/026) ───────────────────────

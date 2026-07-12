@@ -31,7 +31,9 @@
 3. **SALES** กด **ยืนยัน** (ระบบบล็อกถ้ายังไม่ตรวจ) → สถานะ **CONFIRMED** + ตั้ง Rebate accrual อัตโนมัติ + ส่งข้อมูลเข้า WINSpeed (dbo.SOHD/SODT)
 4. **WAREHOUSE** "เริ่มรับสินค้า" → **PICKING** → จัดลำดับโหลดแม่-ลูก
 5. **WEIGHBRIDGE** ชั่งออก (ดู SOP-03) → **SHIPPED**
-6. WINSpeed ออกใบกำกับ + ลงบัญชี (GL) เอง (ดู SOP ของบัญชี WINSpeed)
+6. **ACCOUNTING** เปิดเมนู Post Invoice ใน app เพื่อตรวจรายการ SHIPPED ที่พร้อม post จากนั้นไปทำ **Post Invoice (WF)** ใน WINSpeed
+7. WINSpeed ออกใบกำกับ + ลงบัญชี (GL) เอง (ดู SOP ของบัญชี WINSpeed)
+8. หลังพบ invoice ใน WINSpeed แล้ว app จะ lock การแก้ SO เพื่อป้องกันข้อมูล SO ไม่ตรงกับ invoice/GL
 
 **การควบคุม:** ทุก transition บันทึก `wf.SalesOrderAudit` (ผู้ทำ, IP, เวลา, before/after) · ห้ามแก้ DRAFT หลังยืนยันโดยไม่ผ่าน Unlock (SOP-05)
 **บันทึก/หลักฐาน:** wf.SalesOrder, SalesOrderAudit, เอกสาร 4 สี (SOP-04)
@@ -40,17 +42,17 @@
 
 ## SOP-02 — การบริหารรีเบท (Rebate Management)
 **วัตถุประสงค์:** คำนวณ/เคลม/คืนรีเบทถูกต้อง ตรวจสอบย้อนกลับได้ 100%
-**ผู้รับผิดชอบ:** MANAGER (Plan), SALES (เคลม), ACCOUNTING (อนุมัติ/CN)
+**ผู้รับผิดชอบ:** MANAGER (Plan), SALES (เคลม), ACCOUNTING (อนุมัติ/ตรวจเอกสาร WINSpeed)
 
 **ขั้นตอน:**
 1. **MANAGER** สร้าง Rebate Plan (หน้า Rebate Plan) → เปิดใช้งาน (ACTIVE) → จัดสรรงบให้พนักงานขาย (เข้า Pool)
 2. เมื่อ **ยืนยัน SO** ที่ราคาขาย > NET → ระบบตั้ง accrual = (ราคาขาย − NET) × ตัน เข้า `wf.RebateLedger` (FIFO) + tag Plan
 3. **SALES** ยื่นเคลม (หน้า รีเบท) → ระบบตัด FIFO จากรายการเก่าสุด
-4. **ACCOUNTING** อนุมัติ (หน้า บัญชี) → ออก Credit Note (CN 109) ใน WINSpeed → กรอกเลข CN กลับ
-5. ตรวจประวัติ CN จริงได้ที่หน้า **CN Rebate** (อ่านจาก WINSpeed)
+4. **ACCOUNTING** อนุมัติ claim ใน app → บันทึกเลขอ้างอิงเอกสาร WINSpeed เมื่อมี โดยไม่ให้ app เป็นผู้ post GL/AR แทน WINSpeed
+5. ตรวจประวัติ WF Rebate จริงได้ที่หน้า **WF Rebate Trail** (อ่านจาก WINSpeed: `WFCoupon` → `WFRedemtion` → `SOInv` → Receipt/GL)
 
 **การควบคุม:** ฐานราคา NET มาจาก Price Book (dbo.EMSetPriceDT, SOP-06) · การ unlock จะ reverse accrual (ไม่ลบ — ReversedFlag)
-**บันทึก:** wf.RebatePlan/Pool/Ledger/Claim, dbo.SOInvHD (CN)
+**บันทึก:** wf.RebatePlan/Pool/Ledger/Claim, dbo.WFCoupon/WFRedemtionHD/DT/SOInvHD/SOInvDT (อ่านเพื่อตรวจสอบ)
 
 ---
 

@@ -1,33 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import {
   Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell, LogOut,
   Users, LayoutDashboard, Coins, FileCheck, FileCheck2, Gift, FileText, LayoutGrid, Database, Clock, Ticket, ClipboardList, Stamp, BarChart3, Scale, ShieldCheck, Activity, BookOpen, ScrollText, Landmark, Inbox,
-  Menu, ChevronDown, Settings, CheckCircle2
+  Menu, ChevronDown, Settings, CheckCircle2,
+  Folder, Wallet, Calculator, Truck, Unlock
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { SalesPortal } from './components/sales/SalesPortal';
-import { StorePortal } from './components/store/StorePortal';
-import { DashboardPage } from './components/dashboard/DashboardPage';
-import { RebatePage } from './components/rebate/RebatePage';
-import { CnRebatePage } from './components/rebate/CnRebatePage';
-import { RebatePlanPage } from './components/rebate/RebatePlanPage';
-import { ControlTicketPage } from './components/master/ControlTicketPage';
-import { ReportsPage } from './components/reports/ReportsPage';
-import { TruckScalePage } from './components/truckscale/TruckScalePage';
-import { WeighInboxPage } from './components/truckscale/WeighInboxPage';
-import { AccountingPage } from './components/accounting/AccountingPage';
-import { GiveawayPage } from './components/giveaway/GiveawayPage';
-import { QuotationPage } from './components/quotation/QuotationPage';
-import { PaperTrailPage } from './components/papertrail/PaperTrailPage';
-import { AdminUsersPage } from './components/admin/AdminUsersPage';
-import { MasterDataPortal } from './components/master/MasterDataPortal';
-import { AgingPage } from './components/aging/AgingPage';
-import { VoucherPage } from './components/voucher/VoucherPage';
-import { ReconciliationPage } from './components/recon/ReconciliationPage';
-import { OpsStatusPage } from './components/ops/OpsStatusPage';
-
-import { ApprovalPolicyPage } from './components/policy/ApprovalPolicyPage';
-import { DataGovernancePage } from './components/governance/DataGovernancePage';
 import { useErpStore } from './store/erp-store';
 import { useAuthStore } from './store/auth-store';
 import { getMe, listUnlockRequests } from './services/api';
@@ -40,12 +18,37 @@ import { MobileDrawer } from './components/common/MobileDrawer';
 import type { NavItem, NavGroup } from './components/common/MobileDrawer';
 import { UnlockReviewModal } from './components/papertrail/UnlockReviewModal';
 
-export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'voucher' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'weigh-inbox' | 'policy' | 'governance' | 'ops' | 'admin' | 'master';
+export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'voucher' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'weigh-inbox' | 'policy' | 'governance' | 'ops' | 'admin' | 'master' | 'profile';
+
+const SalesPortal = lazy(() => import('./components/sales/SalesPortal').then(m => ({ default: m.SalesPortal })));
+const StorePortal = lazy(() => import('./components/store/StorePortal').then(m => ({ default: m.StorePortal })));
+const DashboardPage = lazy(() => import('./components/dashboard/DashboardPage').then(m => ({ default: m.DashboardPage })));
+const RebatePage = lazy(() => import('./components/rebate/RebatePage').then(m => ({ default: m.RebatePage })));
+const CnRebatePage = lazy(() => import('./components/rebate/CnRebatePage').then(m => ({ default: m.CnRebatePage })));
+const RebatePlanPage = lazy(() => import('./components/rebate/RebatePlanPage').then(m => ({ default: m.RebatePlanPage })));
+const ControlTicketPage = lazy(() => import('./components/master/ControlTicketPage').then(m => ({ default: m.ControlTicketPage })));
+const ReportsPage = lazy(() => import('./components/reports/ReportsPage').then(m => ({ default: m.ReportsPage })));
+const TruckScalePage = lazy(() => import('./components/truckscale/TruckScalePage').then(m => ({ default: m.TruckScalePage })));
+const WeighInboxPage = lazy(() => import('./components/truckscale/WeighInboxPage').then(m => ({ default: m.WeighInboxPage })));
+const AccountingPage = lazy(() => import('./components/accounting/AccountingPage').then(m => ({ default: m.AccountingPage })));
+const GiveawayPage = lazy(() => import('./components/giveaway/GiveawayPage').then(m => ({ default: m.GiveawayPage })));
+const QuotationPage = lazy(() => import('./components/quotation/QuotationPage').then(m => ({ default: m.QuotationPage })));
+const PaperTrailPage = lazy(() => import('./components/papertrail/PaperTrailPage').then(m => ({ default: m.PaperTrailPage })));
+const AdminUsersPage = lazy(() => import('./components/admin/AdminUsersPage').then(m => ({ default: m.AdminUsersPage })));
+const ProfilePage = lazy(() => import('./components/profile/ProfilePage'));
+const MasterDataPortal = lazy(() => import('./components/master/MasterDataPortal').then(m => ({ default: m.MasterDataPortal })));
+const AgingPage = lazy(() => import('./components/aging/AgingPage').then(m => ({ default: m.AgingPage })));
+const VoucherPage = lazy(() => import('./components/voucher/VoucherPage').then(m => ({ default: m.VoucherPage })));
+const ReconciliationPage = lazy(() => import('./components/recon/ReconciliationPage').then(m => ({ default: m.ReconciliationPage })));
+const OpsStatusPage = lazy(() => import('./components/ops/OpsStatusPage').then(m => ({ default: m.OpsStatusPage })));
+const ApprovalPolicyPage = lazy(() => import('./components/policy/ApprovalPolicyPage').then(m => ({ default: m.ApprovalPolicyPage })));
+const DataGovernancePage = lazy(() => import('./components/governance/DataGovernancePage').then(m => ({ default: m.DataGovernancePage })));
 
 // ── Grouped Navigation ──────────────────────────────────────
 const NAV_GROUPS: NavGroup[] = [
   {
     groupLabel: 'หลัก',
+    icon: Folder,
     items: [
       { key: 'dashboard',  label: 'Dashboard',  sub: 'ภาพรวม',              icon: LayoutDashboard },
       { key: 'sales',      label: 'ขาย',         sub: 'ใบสั่งขาย (POS)',     icon: ShoppingCart },
@@ -53,11 +56,11 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'store',      label: 'คลัง',        sub: 'รับสินค้า/ส่งออก',     icon: Warehouse, badge: true },
       { key: 'papertrail', label: 'Paper Trail', sub: 'Kanban เอกสาร',       icon: LayoutGrid },
       { key: 'aging',      label: 'ตั๋วคงค้าง',   sub: 'SO คงค้าง · ค้นหา',   icon: Clock },
-      { key: 'approvals',  label: 'อนุมัติคำขอ',  sub: 'แก้ไข · ยกเลิก',        icon: CheckCircle2, roles: ['APPROVER', 'ADMIN', 'MANAGER'], badge: true },
     ],
   },
   {
     groupLabel: 'การเงิน',
+    icon: Wallet,
     items: [
       { key: 'rebate',     label: 'รีเบท (App)', sub: 'Pool · เคลม · wf',      icon: Coins, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'SALES'] },
       { key: 'rebate-plan',label: 'Rebate Plan', sub: 'แผน · จัดสรรงบ',        icon: ClipboardList, roles: ['ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING'] },
@@ -68,6 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     groupLabel: 'บัญชี',
+    icon: Calculator,
     items: [
       { key: 'accounting', label: 'บัญชี',       sub: 'Sync · อนุมัติ CN',    icon: FileCheck, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER'] },
       { key: 'recon',      label: 'กระทบยอด',    sub: 'Recon · ตรวจออกของ',   icon: ShieldCheck, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER'] },
@@ -77,6 +81,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     groupLabel: 'คลัง/ชั่ง',
+    icon: Truck,
     items: [
       { key: 'truckscale', label: 'TruckScale',  sub: 'เครื่องชั่ง · MySQL',  icon: Scale, roles: ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ADMIN', 'MANAGER'] },
       { key: 'weigh-inbox',label: 'Weigh Inbox', sub: 'ดึงชั่ง · จับคู่ SO',     icon: Inbox, roles: ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ADMIN', 'MANAGER'] },
@@ -84,12 +89,13 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     groupLabel: 'ตั้งค่าระบบ',
+    icon: Settings,
     items: [
       { key: 'master',     label: 'ข้อมูลหลัก',  sub: 'สินค้า · ลูกค้า',       icon: Database, roles: ['ADMIN'] },
       { key: 'policy',     label: 'นโยบายอนุมัติ', sub: 'อำนาจ · วงเงิน',       icon: ScrollText, roles: ['ADMIN', 'MANAGER'] },
       { key: 'governance', label: 'กำกับข้อมูล',  sub: 'เครดิต · สต๊อก · PDPA',  icon: Landmark, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
       { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · error · alert', icon: Activity, roles: ['ADMIN', 'MANAGER'] },
-      { key: 'admin',      label: 'ผู้ใช้งาน',    sub: 'Map พนักงาน',         icon: Users, roles: ['ADMIN'] },
+      { key: 'admin',      label: 'ผู้ใช้งาน',    sub: 'Map พนักงาน',         icon: Users, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
     ],
   },
 ];
@@ -105,6 +111,17 @@ const MOBILE_TABS: (NavItem & { isMobileOnly?: boolean })[] = [
   { key: 'store',      label: 'คลัง',        sub: '',  icon: Warehouse, badge: true },
 ];
 
+function PageFallback() {
+  return (
+    <div className="h-full w-full flex items-center justify-center text-sm text-muted-foreground">
+      <div className="flex items-center gap-2 rounded-xl border border-border bg-white px-4 py-3 shadow-sm">
+        <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#0C447C] border-t-transparent" />
+        <span>กำลังโหลดหน้า...</span>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
   const user = useAuthStore(s => s.user);
@@ -113,18 +130,31 @@ function App() {
   useEffect(() => {
     if (isAuthenticated && !user) {
       getMe().then(u => {
+        useAuthStore.getState().login(useAuthStore.getState().token || '', u);
         useAuthStore.setState({ user: u });
       }).catch(() => logout());
     }
   }, [isAuthenticated, user, logout]);
 
+  useEffect(() => {
+    const onAuthExpired = () => logout();
+    window.addEventListener('wssale:auth-expired', onAuthExpired);
+    return () => window.removeEventListener('wssale:auth-expired', onAuthExpired);
+  }, [logout]);
+
   if (!isAuthenticated) return <LoginPage />;
-  if (isAuthenticated && !user) return <div className="h-screen w-screen flex items-center justify-center bg-[#F1EFE8]"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0C447C]"></div></div>;
+  if (isAuthenticated && !user) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-[#F1EFE8]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0C447C]" />
+      </div>
+    );
+  }
 
   return <AppShell user={user} logout={logout} />;
 }
 
-function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['getState']['user']; logout: () => void }) {
+function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAuthStore.getState>['user']>; logout: () => void }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ 'หลัก': true });
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
@@ -132,18 +162,16 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
   const { activePortal, navigate } = useAppStore();
   const setUnlockRequests = useErpStore(s => s.setUnlockRequests);
   const pendingUnlocks = useErpStore(s => s.unlockRequests.length);
-
   const role = user?.role;
+  const canReviewUnlocks = ['APPROVER', 'ADMIN', 'MANAGER'].includes(role || '');
 
-  // Auto-expand group containing active portal
   useEffect(() => {
     const activeGroup = NAV_GROUPS.find(g => g.items.some(n => n.key === activePortal));
     if (activeGroup && !expandedGroups[activeGroup.groupLabel]) {
       setExpandedGroups(prev => ({ ...prev, [activeGroup.groupLabel]: true }));
     }
-  }, [activePortal]);
+  }, [activePortal, expandedGroups]);
 
-  // Background poller for unlock requests (PICKING orders) — keeps badge live
   useEffect(() => {
     const poll = async () => {
       try { setUnlockRequests(await listUnlockRequests('PENDING', true)); }
@@ -156,26 +184,19 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
 
   const current = ALL_NAV.find(n => n.key === activePortal);
   const portalLabel = current ? `${current.label} — ${current.sub}` : '';
-
   const toggleGroup = (groupLabel: string) => {
     setExpandedGroups(prev => ({ ...prev, [groupLabel]: !prev[groupLabel] }));
   };
-
   const navBtnClass = (active: boolean, collapsed: boolean) =>
     `relative w-full flex items-center gap-3 rounded-lg px-2.5 py-2.5 text-sm transition-all ${
       active ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
     } ${collapsed ? 'justify-center' : ''}`;
-
-  // Check if any item in a group is active (for highlighting group header)
   const isGroupActive = (group: NavGroup) => group.items.some(n => n.key === activePortal);
-
-  // Filter visible groups based on role
   const getVisibleItems = (items: NavItem[]) =>
     items.filter(n => !n.roles || (role && n.roles.includes(role)));
 
   return (
     <div className="flex h-screen w-full bg-background text-foreground overflow-hidden">
-      {/* Desktop Sidebar */}
       <aside className={`hidden shrink-0 flex-col border-r border-border bg-sidebar md:flex transition-all duration-300 ${isSidebarCollapsed ? 'w-16' : 'w-60'}`}>
         <div className={`flex h-14 items-center border-b border-border transition-all ${isSidebarCollapsed ? 'justify-center' : 'gap-2.5 px-5'}`}>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white" style={{ background: '#0C447C' }}>
@@ -196,30 +217,20 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
           {NAV_GROUPS.map((group, gi) => {
             const visibleItems = getVisibleItems(group.items);
             if (visibleItems.length === 0) return null;
-
             const isExpanded = expandedGroups[group.groupLabel] ?? false;
             const groupActive = isGroupActive(group);
-
             return (
               <div key={group.groupLabel}>
-                {/* Group divider (not before first group) */}
                 {gi > 0 && <div className="nav-group-divider" />}
-
-                {/* Group header (when sidebar is expanded) */}
                 {!isSidebarCollapsed && (
                   <button
                     onClick={() => toggleGroup(group.groupLabel)}
                     className={`nav-group-label w-full flex items-center justify-between cursor-pointer hover:text-foreground transition-colors ${groupActive ? 'text-[#0C447C]' : ''}`}
                   >
                     <span>{group.groupLabel}</span>
-                    <ChevronDown
-                      size={12}
-                      className={`transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`}
-                    />
+                    <ChevronDown size={12} className={`transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
                   </button>
                 )}
-
-                {/* Group items */}
                 <div
                   className={`nav-group-items space-y-0.5 ${!isSidebarCollapsed ? (isExpanded ? 'expanded' : 'collapsed') : 'expanded'}`}
                   style={!isSidebarCollapsed && isExpanded ? { maxHeight: `${visibleItems.length * 52}px` } : undefined}
@@ -277,7 +288,6 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
         </div>
       </aside>
 
-      {/* Main content area */}
       <div className="flex flex-1 flex-col pb-16 md:pb-0 min-w-0">
         <header className="glass-header sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border px-4 md:px-6">
           <div className="flex items-center gap-2.5 md:hidden">
@@ -286,16 +296,21 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
           </div>
           <div className="hidden text-sm text-muted-foreground md:block">{portalLabel}</div>
           <div className="flex items-center gap-3">
-            <button className="relative rounded-lg p-2 text-muted-foreground hover:bg-accent transition-colors" onClick={() => navigate('store')}>
+            <button className="relative rounded-lg p-2 text-muted-foreground hover:bg-accent transition-colors" onClick={() => navigate('store')} title="แจ้งเตือน">
               <Bell className="h-5 w-5" />
-              {pendingUnlocks > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-white">
-                  {pendingUnlocks}
-                </span>
-              )}
             </button>
+            {canReviewUnlocks && (
+              <button className="relative rounded-lg p-2 text-muted-foreground hover:bg-amber-50 hover:text-amber-700 transition-colors" onClick={() => setShowUnlockReview(true)} title="คำขออนุมัติ">
+                <Unlock className="h-5 w-5" />
+                {pendingUnlocks > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-white">
+                    {pendingUnlocks}
+                  </span>
+                )}
+              </button>
+            )}
             <div className="hidden items-center gap-2 sm:flex">
-              <div className="h-8 w-8 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ background: '#0C447C' }}>
+              <div className="h-8 w-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm" style={{ background: '#0C447C' }}>
                 {user?.displayName?.charAt(0) ?? '?'}
               </div>
               <div className="text-xs leading-tight">
@@ -308,34 +323,37 @@ function AppShell({ user, logout }: { user: ReturnType<typeof useAuthStore>['get
 
         {/* Main Content */}
         <main className="flex-1 overflow-hidden min-w-0 max-w-full flex flex-col">
-          {activePortal === 'sales' ? (
-            <SalesPortal />
-          ) : (
-            <div className="h-full w-full overflow-auto custom-scrollbar">
-              {activePortal === 'dashboard'  && <DashboardPage />}
-              {activePortal === 'quotation'  && <QuotationPage />}
-              {activePortal === 'store'      && <StorePortal />}
-              {activePortal === 'papertrail' && <PaperTrailPage />}
-              {activePortal === 'rebate'     && <RebatePage />}
-              {activePortal === 'rebate-plan' && <RebatePlanPage />}
-              {activePortal === 'cn-rebate'  && <CnRebatePage />}
-              {activePortal === 'voucher'    && <VoucherPage />}
-              {activePortal === 'control-ticket' && <ControlTicketPage />}
-              {activePortal === 'reports'    && <ReportsPage />}
-              {activePortal === 'truckscale' && <TruckScalePage />}
-              {activePortal === 'weigh-inbox' && <WeighInboxPage />}
-              {activePortal === 'accounting' && <AccountingPage />}
-              {activePortal === 'recon'      && <ReconciliationPage />}
+          <Suspense fallback={<PageFallback />}>
+            {activePortal === 'sales' ? (
+              <SalesPortal />
+            ) : (
+              <div className="h-full w-full overflow-auto custom-scrollbar">
+                {activePortal === 'dashboard'  && <DashboardPage />}
+                {activePortal === 'quotation'  && <QuotationPage />}
+                {activePortal === 'store'      && <StorePortal />}
+                {activePortal === 'papertrail' && <PaperTrailPage />}
+                {activePortal === 'rebate'     && <RebatePage />}
+                {activePortal === 'rebate-plan' && <RebatePlanPage />}
+                {activePortal === 'cn-rebate'  && <CnRebatePage />}
+                {activePortal === 'voucher'    && <VoucherPage />}
+                {activePortal === 'control-ticket' && <ControlTicketPage />}
+                {activePortal === 'reports'    && <ReportsPage />}
+                {activePortal === 'truckscale' && <TruckScalePage />}
+                {activePortal === 'weigh-inbox' && <WeighInboxPage />}
+                {activePortal === 'accounting' && <AccountingPage />}
+                {activePortal === 'recon'      && <ReconciliationPage />}
 
-              {activePortal === 'policy'     && <ApprovalPolicyPage />}
-              {activePortal === 'governance' && <DataGovernancePage />}
-              {activePortal === 'ops'        && <OpsStatusPage />}
-              {activePortal === 'giveaway'   && <GiveawayPage />}
-              {activePortal === 'aging'      && <AgingPage />}
-              {activePortal === 'admin'      && role === 'ADMIN' && <AdminUsersPage />}
-              {activePortal === 'master'     && role === 'ADMIN' && <MasterDataPortal />}
-            </div>
-          )}
+                {activePortal === 'policy'     && <ApprovalPolicyPage />}
+                {activePortal === 'governance' && <DataGovernancePage />}
+                {activePortal === 'ops'        && <OpsStatusPage />}
+                {activePortal === 'giveaway'   && <GiveawayPage />}
+                {activePortal === 'aging'      && <AgingPage />}
+                {activePortal === 'profile'    && <ProfilePage />}
+                {activePortal === 'admin'      && ['ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '') && <AdminUsersPage />}
+                {activePortal === 'master'     && role === 'ADMIN' && <MasterDataPortal />}
+              </div>
+            )}
+          </Suspense>
         </main>
       </div>
 

@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { X, Truck, Package, Clock, FileText, CheckCircle2, ShieldAlert, Printer, Edit, AlertTriangle, Plus, ChevronDown } from 'lucide-react';
 import type { SalesOrder } from '../../types';
 import { useErpStore } from '../../store/erp-store';
-import { confirmSO, cancelSO, shipSO, moveToPicking, createUnlockRequest, fetchSalesOrder, updateSO } from '../../services/api';
+import { useAppStore } from '../../store/app-store';
+import { confirmSO, cancelSO, shipSO, moveToPicking, createUnlockRequest, fetchSalesOrder, updateSO, createQuotationFromSoTrip } from '../../services/api';
 import { appConfirm } from '../ui/AppAlert';
 import { RequestActionModal, type RequestActionType } from '../papertrail/RequestActionModal';
 import { TripSetupModal } from './TripSetupModal';
 import { PaperDocModal } from '../papertrail/PaperDocModal';
+import { SO_STATUS_META, soStatusLabel } from '../../constants/soStatus';
 
 export function TripSummaryModal({
   isOpen,
@@ -24,8 +26,10 @@ export function TripSummaryModal({
   onAddBill?: () => void;
 }) {
   const unlockRequests = useErpStore(s => s.unlockRequests);
+  const navigate = useAppStore(s => s.navigate);
   const [busy, setBusy] = useState(false);
   const [requestModalConfig, setRequestModalConfig] = useState<{ isOpen: boolean, type: RequestActionType }>({ isOpen: false, type: 'EDIT' });
+  const [quoteDays, setQuoteDays] = useState<7 | 15 | 20 | 30 | 45>(15);
   
   const [isEditTripOpen, setIsEditTripOpen] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
@@ -57,6 +61,16 @@ export function TripSummaryModal({
     if (a.isGiveaway !== b.isGiveaway) return a.isGiveaway ? 1 : -1;
     return b.qtyTon - a.qtyTon;
   });
+  const linkedQuoteOrder = trip.orders.find(o => o.linkedQuoteId && ['DRAFT', 'SENT', 'EXPIRED'].includes(String(o.linkedQuoteStatus || '')));
+  const isQuoteLocked = !!linkedQuoteOrder;
+  const openLinkedQuotation = () => {
+    if (!linkedQuoteOrder?.linkedQuoteId) return;
+    navigate('quotation', {
+      quoteId: Number(linkedQuoteOrder.linkedQuoteId),
+      quoteNo: linkedQuoteOrder.linkedQuoteNo || undefined,
+    });
+    onClose();
+  };
 
   async function doAction(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -79,6 +93,22 @@ export function TripSummaryModal({
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleCreateQuotation = async () => {
+    const soIds = trip.orders.map(o => o.id).filter((id): id is string | number => !!id && String(id) !== 'undefined');
+    if (!soIds.length) return alert('ไม่พบ SO สำหรับสร้างใบเสนอราคา');
+    if (isQuoteLocked) return alert(`ทริปนี้ผูกกับใบเสนอราคา ${linkedQuoteOrder?.linkedQuoteNo || ''} ที่ยังรอการยืนยันอยู่`);
+    if (!allDraft) return alert('สร้างใบเสนอราคาได้เฉพาะบิลร่างทั้งหมดในทริปเท่านั้น');
+    const ok = await appConfirm(`สร้างใบเสนอราคาจากทริปนี้ ${soIds.length} บิล?\nระบบจะรวมสินค้าเป็นใบเดียว และไม่รวมรายการของแถม`);
+    if (!ok) return;
+    await doAction(async () => {
+      const sourceRefs = trip.orders
+        .map(o => o.wfRef || (o as any).importedDocuNo || String(o.id || ''))
+        .filter(ref => ref && ref !== 'undefined');
+      const result = await createQuotationFromSoTrip({ soIds, sourceRefs, validDays: quoteDays });
+      alert(`สร้างใบเสนอราคา ${result.quoteNo} สำเร็จ\nSO ในทริปจะยังเป็นร่างจนกว่าใบเสนอราคาจะถูกยืนยัน`);
+    });
   };
 
   const handleEditTripMetadata = async (data: { custId: string; custName: string; truckPlate: string; deliveryDate: string }) => {
@@ -144,9 +174,10 @@ export function TripSummaryModal({
                   </div>
                   {/* Edit Trip Metadata */}
                   <button
-                    disabled={busy}
+                    disabled={busy || isQuoteLocked}
                     onClick={() => setIsEditTripOpen(true)}
-                    className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm"
+                    title={isQuoteLocked ? 'ต้องยืนยันหรือยกเลิกใบเสนอราคาก่อน' : undefined}
+                    className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50 disabled:hover:bg-white"
                   >
                     <Edit size={12} /> แก้ไขข้อมูล
                   </button>
@@ -160,11 +191,32 @@ export function TripSummaryModal({
                   </div>
                 </div>
 
+                {isQuoteLocked && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-bold flex items-center gap-2">
+                        <FileText size={16} /> รอใบเสนอราคา {linkedQuoteOrder?.linkedQuoteNo} ยืนยัน
+                      </div>
+                      <button
+                        type="button"
+                        onClick={openLinkedQuotation}
+                        className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-[#0C447C] border border-amber-200 hover:bg-amber-100"
+                      >
+                        เปิดใบเสนอราคา
+                      </button>
+                    </div>
+                    {linkedQuoteOrder?.linkedQuoteRemark && (
+                      <div className="mt-2 text-xs text-amber-700 line-clamp-3">{linkedQuoteOrder.linkedQuoteRemark}</div>
+                    )}
+                    <div className="mt-2 text-xs text-amber-700">ทริปนี้จะอยู่เป็นฉบับร่างจนกว่าใบเสนอราคาจะถูกยืนยัน หรือถูกยกเลิก</div>
+                  </div>
+                )}
+
                 {/* Bulk Actions for the Trip */}
                 <div className="mt-3 pt-3 sm:mt-4 sm:pt-4 border-t border-gray-200 space-y-2 sm:space-y-3">
                   {!hasAnyUnlockRequest && (
                     <div className="flex flex-col gap-2 sm:gap-3">
-                      {allDraft && (
+                      {allDraft && !isQuoteLocked && (
                         <button
                           disabled={busy}
                           onClick={() => handleBulkAction(confirmSO, `ยืนยันออร์เดอร์ทั้งหมด ${trip.orders.length} บิลในทริปนี้ใช่หรือไม่?`)}
@@ -172,6 +224,30 @@ export function TripSummaryModal({
                         >
                           <CheckCircle2 size={18} /> ยืนยันออร์เดอร์ทั้งทริป
                         </button>
+                      )}
+                      {allDraft && !isQuoteLocked && (
+                        <div className="rounded-xl border border-blue-100 bg-blue-50 p-2.5 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <FileText size={15} className="text-[#0C447C]" />
+                            <select
+                              value={quoteDays}
+                              onChange={e => setQuoteDays(Number(e.target.value) as 7 | 15 | 20 | 30 | 45)}
+                              className="flex-1 rounded-lg border border-blue-100 bg-white px-2 py-1.5 text-xs font-bold text-[#0C447C] outline-none"
+                              disabled={busy}
+                            >
+                              {[7, 15, 20, 30, 45].map(days => (
+                                <option key={days} value={days}>ยืนราคา +{days} วัน</option>
+                              ))}
+                            </select>
+                          </div>
+                          <button
+                            disabled={busy}
+                            onClick={handleCreateQuotation}
+                            className="w-full bg-white text-[#0C447C] border border-blue-200 py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                          >
+                            <FileText size={16} /> สร้างใบเสนอราคาจากทริป
+                          </button>
+                        </div>
                       )}
                       {allConfirmed && (
                         <button
@@ -224,7 +300,7 @@ export function TripSummaryModal({
                     <Printer size={16} /> พิมพ์เอกสารทั้งหมด ({trip.orders.length} ใบ)
                   </button>
                   
-                  {onAddBill && (
+                  {onAddBill && !isQuoteLocked && (
                     <button
                       disabled={busy}
                       onClick={onAddBill}
@@ -291,8 +367,8 @@ export function TripSummaryModal({
                             {order.wfRef || (order as any).docuNo || (order as any).importedDocuNo || `#${order.id}`}
                             {pendingReq && <ShieldAlert size={14} className="text-red-500" />}
                           </div>
-                          <div className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${order.status === 'DRAFT' ? 'bg-gray-100 text-gray-600 border-gray-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
-                            {order.status}
+                          <div className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${SO_STATUS_META[order.status]?.badgeClass || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                            {soStatusLabel(order.status)}
                           </div>
                         </div>
                         
@@ -317,7 +393,7 @@ export function TripSummaryModal({
                         </div>
 
                         {/* Actions */}
-                        {order.status === 'DRAFT' && (
+                        {order.status === 'DRAFT' && !isQuoteLocked && (
                           <div className="flex gap-2 mt-auto pt-2 border-t border-gray-100">
                             <button
                               disabled={busy}

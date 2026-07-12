@@ -181,13 +181,14 @@
 /* Sidebar group collapsible transition */
 .nav-group-items {
   overflow: hidden;
-  transition: max-height 0.25s ease, opacity 0.2s ease;
+  transition: max-height 0.3s ease-in-out, opacity 0.2s ease;
 }
 .nav-group-items.collapsed {
   max-height: 0 !important;
   opacity: 0;
 }
 .nav-group-items.expanded {
+  max-height: 2000px;
   opacity: 1;
 }
 

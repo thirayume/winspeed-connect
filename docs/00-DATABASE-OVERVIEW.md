@@ -18,7 +18,7 @@
 
 | # | ระบบ | Engine | ที่อยู่ | สิทธิ์จาก App | ใช้ทำอะไร |
 |---|------|--------|---------|---------------|-----------|
-| 1 | **WINSpeed (dbo)** | SQL Server 2022 | `dbwins_worldfert9` (20.255.185.14 remote / SQLEXPRESS local) | **READ** (+เขียน SOHD/SODT ตรงตอน confirm/ship — ดู §7) | ERP หลัก: master, ใบสั่งขาย, ใบกำกับ, GL, รีเบท CN, คูปอง |
+| 1 | **WINSpeed (dbo)** | SQL Server 2022 | `dbwins_worldfert9` (20.255.185.14 remote / SQLEXPRESS local) | **READ** (+เขียน SOHD/SODT ตรงตอน confirm/ship — ดู §7) | ERP หลัก: master, ใบสั่งขาย, ใบกำกับ, GL, WF Rebate Trail, คูปอง |
 | 2 | **App (wf schema)** | SQL Server 2022 (DB เดียวกับ dbo) | schema `wf` ใน `dbwins_worldfert9` | **READ-WRITE** | ข้อมูลที่ WINSpeed ไม่มี: SO state, Rebate Plan/Pool/Ledger, Giveaway, Paper Trail, WeighTicket, Quotation, Unlock |
 | 3 | **TruckScale** | MySQL 5.7 | `db_truckscale` (Railway cloud: `reseau.proxy.rlwy.net:42508`) | **READ** | เครื่องชั่งน้ำหนักรถ: น้ำหนักเข้า/ออก/สุทธิ (403,908 ใบชั่ง) |
 
@@ -65,17 +65,24 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  Q[wf.Quotation] -->|convert| SO
-  SO[wf.SalesOrder DRAFT] -->|confirm: sp_ConfirmSalesOrder| SOHD[dbo.SOHD/SODT 104]
+  Q[wf.Quotation] -->|sync native quotation| QU[dbo.SOHD/SODT 102 QU]
+  Q -->|accept/approve| QC[dbo.SOHD/SODT 113 QC]
+  QC -->|RefNo| QU
+  Q -->|convert| SO
+  SO[wf.SalesOrder DRAFT] -->|confirm: sp_ConfirmSalesOrder| SOHD103[dbo.SOHD/SODT 103]
   SO --> EXT[wf.SalesOrderExt / LineExt]
-  SOHD -->|SOID เดียวกัน| EXT
-  SOHD -->|Post Invoice WF| INV[dbo.SOInvHD/DT 107]
+  SOHD103 -->|SOID เดียวกัน| EXT
+  SOHD103 -->|WINSpeed Confirm/Approve Order WF| SOHD104[dbo.SOHD/SODT 104]
+  SOHD104 -->|Post Invoice WF| INV[dbo.SOInvHD/DT 107/202]
   INV --> GL[dbo.GLHD/GLDT 501]
-  INV -->|RefSOID| CN[dbo.SOInvHD 109 = CN รีเบท]
-  SOHD -->|ทะเบียนรถ TransRegistration| TS[(tblscale MySQL)]
+  SOHD104 -->|DocuID| CPN[dbo.WFCoupon]
+  CPN -->|CouponID| RDT[dbo.WFRedemtionDT]
+  RDT --> RHD[dbo.WFRedemtionHD]
+  RDT -->|SOInvID| INV
+  SOHD103 -->|ทะเบียนรถ TransRegistration| TS[(tblscale MySQL)]
   EXT -->|ship: Movebill| WT[wf.WeighTicket]
   WT -->|Movebill| TS
-  SOHD -->|DocuType 103 AppvDocuNo AI| CT[wf.v_ControlTicket = ตั๋วคุม]
+  SOHD103 -->|DocuType 103 AppvDocuNo AI| CT[wf.v_ControlTicket = ตั๋วคุม]
 ```
 
 ### 3.1 App ↔ WINSpeed (dbo)
@@ -84,12 +91,14 @@ flowchart TD
 |--------------|----------|----------------|-----|
 | Master ลูกค้า | `v_Customer` | `EMCust` | CustID |
 | Master สินค้า | `v_FertGood` | `EMGood` | GoodID |
+| Native ใบเสนอราคา | `wf.Quotation` | `SOHD/SODT` DocuType `102` (QU) และ `113` (QC) | WinspeedQuoteSOID / WinspeedConfirmSOID |
 | ราคา NET | `v_CurrentPrice` | `EMSetPriceHD/DT` | GoodID + เดือน |
 | พนักงานขาย | `AppUser.EmpId` | `EMEmp.EmpID` | EmpID |
-| SO ที่ confirm แล้ว | `SalesOrderExt.SOID` | `SOHD.SOID` (DocuType 104) | **SOID** |
+| ลูกค้า ↔ พนักงานขายที่ดูแล | customer RBAC / filters | `EMCustMultiEmp.CustID` ↔ `EMCustMultiEmp.EmpID` | CustID+EmpID |
+| SO ที่ confirm แล้ว | `SalesOrderExt.SOID` | `SOHD.SOID` (DocuType 103; WINSpeed WF menu อาจสร้าง/โยง DocuType 104 ภายหลัง) | **SOID** |
 | บรรทัดสินค้า | `SalesOrderLineExt.(SOID,ListNo)` | `SODT.(SOID,ListNo)` | SOID+ListNo |
 | ตั๋วคุม | `v_ControlTicket` / `SalesOrderLine.RefControlTicketNo` | `SOHD.AppvDocuNo` (AI..., DocuType 103) | AppvDocuNo |
-| CN รีเบท (ประวัติ) | `CnRebatePage` (อ่านตรง) | `SOInvHD` DocuType 109, CNRemarkTypeID 6001/1001 | RefSOID→107 |
+| WF Rebate Trail (ประวัติ) | `CnRebatePage` / `WF Rebate Trail` (อ่านตรง) | `SOHD` 103/104 → `WFCoupon` → `WFRedemtionHD/DT` → `SOInvHD/DT` 107/202 | SOID/CouponID/RedemtionID/SOInvID |
 | คูปอง (Voucher) | `VoucherPage` (อ่านตรง) | `WFCoupon` → `SOHD.SOID` → `EMEmp` | DocuID=SOID |
 
 ### 3.2 App ↔ TruckScale (MySQL)
@@ -153,8 +162,10 @@ flowchart TD
 |-------|-------------|-----------|
 | `WeighTicket` | Id, SoId, WfRef, TruckPlate, GrossKg, TareKg, NetKg, ScaleNo, WeighInAt, WeighOutAt, Status, **Movebill** | 019 |
 | `UnlockRequest` | Id, SoId, WfRef, Reason, Status(PENDING/APPROVED/REJECTED), RequesterId, ApproverId, RespondedAt | 018 |
-| `Quotation` | Id, QuoteNo, CustId, CustName, ValidUntil, Status, ConvertedSoId | 002 |
+| `Quotation` | Id, QuoteNo, CustId, CustName, ValidUntil, Status, ConvertedSoId, WinspeedQuoteSOID, WinspeedQuoteNo, WinspeedConfirmSOID, WinspeedConfirmNo | 002 + 044 |
 | `QuotationLine` | QuotationId, LineNum, GoodId, QtyTon, PricePerTon, NetPricePerTon | 002 |
+| `QuotationSourceSO` | QuoteId, SoId, SourceWfRef; ผูก Quotation กลับไปยัง SO draft ใน Sale Trip | 042 |
+| `dbo.SOHD/SODT` DocuType `102/113` | Native WINSpeed Quotation (`QU...`) และ Confirm Quotation (`QC...`); written by `/api/quotation` after structure validation | dbo + 044 link |
 | `AppUser` | Id, Username, PasswordHash, DisplayName, Role(7), EmpId, IsActive | 001 |
 | `GoodExtra` | GoodId, BagPerTon(20), WeightKgPerBag(50) | 001 |
 
@@ -176,12 +187,14 @@ flowchart TD
 | ตาราง | สาระ | DocuType / หมายเหตุ |
 |-------|------|---------------------|
 | `EMCust` (790) | ลูกค้า | CustID |
+| `EMCustMultiEmp` | ตารางเชื่อมลูกค้า ↔ พนักงานขาย | CustID+EmpID; ใช้จำกัดสิทธิ์ SALES และ filter salesperson |
 | `EMGood` (417) | สินค้า | FG = StockFlag='Y' (193) |
 | `EMEmp` | พนักงาน | EmpID ↔ AppUser.EmpId |
 | `EMSetPriceHD/DT` (4,054) | ราคา NET รายเดือน | GoodPriceNet |
-| `SOHD/SODT` | ใบจอง/ใบสั่งขาย | 103=ใบจอง(ตั๋วคุม) · 104=ใบสั่งขาย |
-| `SOInvHD/SOInvDT` | ใบกำกับ/CN/DN | 107=ขายเชื่อ · 109=CN · 110=DN · 202=flow ลัด |
-| `WFCoupon` (94,540) | คูปองสะสม (ตัน) | DocuID=SOHD.SOID |
+| `SOHD/SODT` | ใบจอง/ใบสั่งขาย | 103=SO Data Entry/booking ที่ WINSpeed WF เห็นได้ · 104=เอกสารจาก Confirm/Approve Order (WF) |
+| `SOInvHD/SOInvDT` | ใบกำกับ/CN/DN | 107=ขายเชื่อ · 109=CN legacy · 110=DN · 202=flow ลัด |
+| `WFCoupon` (94,540) | คูปอง/สิทธิ์ WF Rebate ที่ผูกกับ SO | DocuID=SOHD.SOID |
+| `WFRedemtionHD/DT` | การใช้สิทธิ์/ตัดคูปอง WF Rebate | RedemtionID/CouponID/SOInvID |
 | `EMcnremarkType` | เหตุผล CN | 6001=ลดหนี้/ส่วนลด · 1001=ส่วนลดพิเศษ (=รีเบท) |
 | `GLHD/GLDT` | บัญชีแยกประเภท | 501 · FromFlag=107 |
 
@@ -222,7 +235,7 @@ Operational note: after migration/config changes, restart the backend so schema 
 1. **schema wf = แก้ผ่าน migration เท่านั้น** (`backend/migrations/0xx.sql`) — รัน `npm run migrate:local` + `migrate:remote`
 2. **TruckScale (MySQL) = READ-ONLY** จาก App — ไม่เขียนกลับ
 3. **dbo = อ่านผ่าน view เป็นหลัก** · ข้อยกเว้นที่ตัดสินใจรับ (v6.1 §17.3): confirm/picking/ship/cancel **เขียน `dbo.SOHD/SODT` ตรง** (`sp_ConfirmSalesOrder` + UPDATE PkgStatus/clearflag/DocuStatus) — แต่ **GL ยังให้ WINSpeed post เอง** (WINSpeed = เจ้าของบัญชี)
-4. **ระบบรีเบท/ส่วนลด 3 แบบ แยกกัน:** ฿Rebate (wf) · Voucher/WFCoupon (ตัน, dbo) · ตั๋วคุม (AI, dbo)
+4. **ระบบรีเบท/ส่วนลดแยกกันชัดเจน:** App Rebate Plan/Pool (wf) · WF Rebate Trail ของ WINSpeed (`WFCoupon`/`WFRedemtion`/`SOInv`, dbo) · Voucher/WFCoupon (ตัน, dbo) · ตั๋วคุม (AI, dbo)
 5. **Realtime:** Socket.IO (event `so_updated`, `paper_updated`) + polling fallback
 
 ---

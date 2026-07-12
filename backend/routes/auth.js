@@ -2,8 +2,19 @@ const router = require('express').Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const { sql, wfQuery } = require('../db');
 const { requireAuth, requireRole, SECRET } = require('../middleware/auth');
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, path.join(__dirname, '../uploads/signatures')),
+    filename: (req, file, cb) => cb(null, `sig_${req.user.sub}_${Date.now()}${path.extname(file.originalname)}`),
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
 
 const LINE_AUTH_URL = 'https://access.line.me/oauth2/v2.1/authorize';
 const LINE_TOKEN_URL = 'https://api.line.me/oauth2/v2.1/token';
@@ -259,10 +270,80 @@ router.get('/line/status', (req, res) => {
 });
 
 // GET /api/auth/me
-router.get('/me', requireAuth, (req, res) => res.json(req.user));
+router.get('/me', requireAuth, async (req, res) => {
+  try {
+    const rows = await wfQuery(
+      `SELECT Id, Username, DisplayName, Role, EmpId, IsActive, Address, Phone, Email, IdCardNo, TaxId, SignatureFile 
+       FROM wf.AppUser WHERE Id = @id`,
+      { id: { type: sql.Int, value: req.user.sub } }
+    );
+    if (!rows.recordset.length) return res.status(404).json({ message: 'User not found' });
+    res.json(rows.recordset[0]);
+  } catch (e) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
-// POST /api/auth/users (ADMIN only)
-router.post('/users', requireAuth, requireRole('ADMIN'), async (req, res) => {
+// PUT /api/auth/profile
+router.put('/profile', requireAuth, async (req, res) => {
+  try {
+    const { address, phone, email, idCardNo, taxId } = req.body;
+    await wfQuery(
+      `UPDATE wf.AppUser SET Address=@a, Phone=@p, Email=@e, IdCardNo=@idCard, TaxId=@tax, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
+      {
+        id: { type: sql.Int, value: req.user.sub },
+        a: { type: sql.NVarChar(500), value: address || null },
+        p: { type: sql.NVarChar(50), value: phone || null },
+        e: { type: sql.NVarChar(100), value: email || null },
+        idCard: { type: sql.NVarChar(20), value: idCardNo || null },
+        tax: { type: sql.NVarChar(20), value: taxId || null },
+      }
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PUT /api/auth/profile/password
+router.put('/profile/password', requireAuth, async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    const rows = await wfQuery(`SELECT PasswordHash FROM wf.AppUser WHERE Id=@id`, { id: { type: sql.Int, value: req.user.sub } });
+    const user = rows.recordset[0];
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const valid = await bcrypt.compare(oldPassword, user.PasswordHash);
+    if (!valid) return res.status(401).json({ message: 'รหัสผ่านเดิมไม่ถูกต้อง' });
+
+    const hash = await bcrypt.hash(newPassword, 12);
+    await wfQuery(`UPDATE wf.AppUser SET PasswordHash=@ph, UpdatedAt=GETUTCDATE() WHERE Id=@id`, {
+      id: { type: sql.Int, value: req.user.sub },
+      ph: { type: sql.NVarChar(255), value: hash },
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/auth/profile/signature
+router.post('/profile/signature', requireAuth, upload.single('signature'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'ไม่มีไฟล์ที่อัพโหลด' });
+    const filename = req.file.filename;
+    await wfQuery(`UPDATE wf.AppUser SET SignatureFile=@sig, UpdatedAt=GETUTCDATE() WHERE Id=@id`, {
+      id: { type: sql.Int, value: req.user.sub },
+      sig: { type: sql.NVarChar(255), value: filename },
+    });
+    res.json({ ok: true, filename });
+  } catch (e) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/auth/users (ADMIN/MANAGER/ACCOUNTING)
+router.post('/users', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
   try {
     const { username, password, displayName, role, empId } = req.body;
     const hash = await bcrypt.hash(password, 12);
@@ -287,11 +368,12 @@ router.post('/users', requireAuth, requireRole('ADMIN'), async (req, res) => {
   }
 });
 
-// GET /api/auth/users (ADMIN only)
-router.get('/users', requireAuth, requireRole('ADMIN'), async (req, res) => {
+// GET /api/auth/users (ADMIN/MANAGER/ACCOUNTING)
+router.get('/users', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
   try {
     const result = await wfQuery(
       `SELECT u.Id, u.Username, u.DisplayName, u.Role, u.EmpId, u.IsActive, u.CreatedAt,
+              u.Address, u.Phone, u.Email, u.IdCardNo, u.TaxId, u.SignatureFile,
               u.LineUserId, u.LineDisplayName, u.LineLinkedAt,
               e.EmpCode, e.EmpName
        FROM wf.AppUser u
@@ -305,16 +387,21 @@ router.get('/users', requireAuth, requireRole('ADMIN'), async (req, res) => {
   }
 });
 
-// PATCH /api/auth/users/:id — แก้ไข (map EmpId, role, displayName, active) ADMIN only
-router.patch('/users/:id', requireAuth, requireRole('ADMIN'), async (req, res) => {
+// PATCH /api/auth/users/:id — แก้ไข ADMIN/MANAGER/ACCOUNTING
+router.patch('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
   try {
-    const { empId, role, displayName, isActive, password, lineUserId } = req.body;
+    const { empId, role, displayName, isActive, password, lineUserId, address, phone, email, idCardNo, taxId } = req.body;
     const sets = [];
     const inputs = { id: { type: sql.Int, value: Number(req.params.id) } };
     if (empId !== undefined)       { sets.push('EmpId = @empId');        inputs.empId       = { type: sql.NVarChar(20),  value: empId || null }; }
     if (role !== undefined)        { sets.push('Role = @role');          inputs.role        = { type: sql.NVarChar(30),  value: role }; }
     if (displayName !== undefined) { sets.push('DisplayName = @dn');      inputs.dn          = { type: sql.NVarChar(100), value: displayName }; }
     if (isActive !== undefined)    { sets.push('IsActive = @act');       inputs.act         = { type: sql.Bit,          value: isActive ? 1 : 0 }; }
+    if (address !== undefined)     { sets.push('Address = @addr');       inputs.addr        = { type: sql.NVarChar(500), value: address || null }; }
+    if (phone !== undefined)       { sets.push('Phone = @phn');          inputs.phn         = { type: sql.NVarChar(50),  value: phone || null }; }
+    if (email !== undefined)       { sets.push('Email = @eml');          inputs.eml         = { type: sql.NVarChar(100), value: email || null }; }
+    if (idCardNo !== undefined)    { sets.push('IdCardNo = @idc');       inputs.idc         = { type: sql.NVarChar(20),  value: idCardNo || null }; }
+    if (taxId !== undefined)       { sets.push('TaxId = @tax');          inputs.tax         = { type: sql.NVarChar(20),  value: taxId || null }; }
     if (lineUserId !== undefined)  {
       sets.push('LineUserId = @lineUserId');
       sets.push('LineLinkedAt = CASE WHEN @lineUserId IS NULL THEN NULL ELSE COALESCE(LineLinkedAt, GETUTCDATE()) END');
@@ -339,8 +426,8 @@ router.patch('/users/:id', requireAuth, requireRole('ADMIN'), async (req, res) =
   }
 });
 
-// DELETE /api/auth/users/:id — ลบผู้ใช้ (ADMIN only, ห้ามลบตัวเอง)
-router.delete('/users/:id', requireAuth, requireRole('ADMIN'), async (req, res) => {
+// DELETE /api/auth/users/:id — ลบผู้ใช้ (ADMIN/MANAGER/ACCOUNTING, ห้ามลบตัวเอง)
+router.delete('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
   try {
     const targetId = Number(req.params.id);
     if (targetId === req.user.id) return res.status(400).json({ message: 'ไม่สามารถลบบัญชีตัวเองได้' });

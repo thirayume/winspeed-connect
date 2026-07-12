@@ -5,7 +5,7 @@
  * ⚠ ไม่มีการเขียน dbo ใดๆ — writes ไปที่ wf schema เท่านั้น
  */
 const router = require('express').Router();
-const { sql, wfQuery, wfTransaction } = require('../db');
+const { sql, wfQuery, wfTransaction, getTarget } = require('../db');
 const { requireAuth, requireRole, requireRebateAmountAccess, canViewRebateAmounts } = require('../middleware/auth');
 const { generateImportFiles } = require('../services/winspeed-import.service');
 const { broadcast } = require('../services/socket');
@@ -50,6 +50,36 @@ async function hasGiveawayApprovalColumns() {
   `);
   giveawayApprovalColumns = Number(r.recordset?.[0]?.HasColumns || 0) === 1;
   return giveawayApprovalColumns;
+}
+
+const quoteSourceTableCache = new Map();
+async function hasQuoteSourceTable() {
+  const target = getTarget();
+  if (quoteSourceTableCache.has(target)) return quoteSourceTableCache.get(target);
+  const r = await wfQuery(`SELECT CASE WHEN OBJECT_ID('wf.QuotationSourceSO', 'U') IS NULL THEN 0 ELSE 1 END AS HasTable`);
+  const value = Number(r.recordset?.[0]?.HasTable || 0) === 1;
+  quoteSourceTableCache.set(target, value);
+  return value;
+}
+
+function quoteSourceSoId(id) {
+  const n = Number(id);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+async function getPendingQuoteForSo(soId) {
+  if (!(await hasQuoteSourceTable())) return null;
+  const sourceSoId = quoteSourceSoId(soId);
+  if (!sourceSoId) return null;
+  const r = await wfQuery(`
+    SELECT TOP 1 q.Id, q.QuoteNo, q.Status, q.Remark, q.ValidUntil
+    FROM wf.QuotationSourceSO src WITH (NOLOCK)
+    INNER JOIN wf.Quotation q WITH (NOLOCK) ON q.Id = src.QuoteId
+    WHERE src.SoId = @soId
+      AND q.Status IN ('DRAFT', 'SENT', 'EXPIRED')
+    ORDER BY q.Id DESC
+  `, { soId: { type: sql.Int, value: sourceSoId } });
+  return r.recordset?.[0] || null;
 }
 
 function giveawayApprovalStatusForLine(req, line) {
@@ -216,11 +246,137 @@ router.get('/stats', async (req, res) => {
     const bust = req.query.bust === '1';
     if (!bust && _statsCache && now - _statsCacheAt < STATS_TTL) return res.json(_statsCache);
 
-    const r = await wfQuery(`
-      SELECT Status, COUNT(*) AS Cnt
-      FROM wf.v_AllSalesOrders
+    const extCountResult = await wfQuery(`SELECT COUNT_BIG(*) AS Cnt FROM wf.SalesOrderExt WITH (NOLOCK)`);
+    const hasWinspeedExt = Number(extCountResult.recordset?.[0]?.Cnt || 0) > 0;
+    const winspeedStatsSql = hasWinspeedExt ? `
+      WITH WfDraft AS (
+        SELECT Status, COUNT(*) AS Cnt
+        FROM wf.SalesOrder WITH (NOLOCK)
+        GROUP BY Status
+      ),
+      WinspeedBase AS (
+        SELECT
+          CASE
+            WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
+            WHEN hd.DocuType = 104 THEN 'IMPORTED'
+            WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
+            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+            ELSE 'CONFIRMED'
+          END AS Status,
+          COUNT_BIG(*) AS Cnt
+        FROM dbo.SOHD hd WITH (NOLOCK)
+        WHERE hd.DocuType IN (103, 104)
+        GROUP BY
+          CASE
+            WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
+            WHEN hd.DocuType = 104 THEN 'IMPORTED'
+            WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
+            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+            ELSE 'CONFIRMED'
+          END
+      ),
+      WinspeedExtAdjust AS (
+        SELECT OldStatus AS Status, CAST(-COUNT_BIG(*) AS BIGINT) AS Cnt
+        FROM (
+          SELECT
+            CASE
+              WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
+              WHEN hd.DocuType = 104 THEN 'IMPORTED'
+              WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
+              WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+              ELSE 'CONFIRMED'
+            END AS OldStatus,
+            CASE
+              WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
+              WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
+              WHEN hd.DocuType = 104 THEN 'IMPORTED'
+              WHEN ext.IsLoaded = 1 THEN 'LOADED'
+              WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
+              WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+              ELSE 'CONFIRMED'
+            END AS NewStatus
+          FROM wf.SalesOrderExt ext WITH (NOLOCK)
+          JOIN dbo.SOHD hd WITH (NOLOCK)
+            ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
+          WHERE hd.DocuType IN (103, 104)
+        ) adjusted
+        WHERE OldStatus <> NewStatus
+        GROUP BY OldStatus
+
+        UNION ALL
+
+        SELECT NewStatus AS Status, COUNT_BIG(*) AS Cnt
+        FROM (
+          SELECT
+            CASE
+              WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
+              WHEN hd.DocuType = 104 THEN 'IMPORTED'
+              WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
+              WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+              ELSE 'CONFIRMED'
+            END AS OldStatus,
+            CASE
+              WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
+              WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
+              WHEN hd.DocuType = 104 THEN 'IMPORTED'
+              WHEN ext.IsLoaded = 1 THEN 'LOADED'
+              WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
+              WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+              ELSE 'CONFIRMED'
+            END AS NewStatus
+          FROM wf.SalesOrderExt ext WITH (NOLOCK)
+          JOIN dbo.SOHD hd WITH (NOLOCK)
+            ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
+          WHERE hd.DocuType IN (103, 104)
+        ) adjusted
+        WHERE OldStatus <> NewStatus
+        GROUP BY NewStatus
+      )
+      SELECT Status, CAST(SUM(Cnt) AS INT) AS Cnt
+      FROM (
+        SELECT Status, Cnt FROM WfDraft
+        UNION ALL
+        SELECT Status, Cnt FROM WinspeedBase
+        UNION ALL
+        SELECT Status, Cnt FROM WinspeedExtAdjust
+      ) x
       GROUP BY Status
-    `);
+    ` : `
+      WITH WfDraft AS (
+        SELECT Status, COUNT(*) AS Cnt
+        FROM wf.SalesOrder WITH (NOLOCK)
+        GROUP BY Status
+      ),
+      WinspeedBase AS (
+        SELECT
+          CASE
+            WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
+            WHEN hd.DocuType = 104 THEN 'IMPORTED'
+            WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
+            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+            ELSE 'CONFIRMED'
+          END AS Status,
+          COUNT_BIG(*) AS Cnt
+        FROM dbo.SOHD hd WITH (NOLOCK)
+        WHERE hd.DocuType IN (103, 104)
+        GROUP BY
+          CASE
+            WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
+            WHEN hd.DocuType = 104 THEN 'IMPORTED'
+            WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
+            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+            ELSE 'CONFIRMED'
+          END
+      )
+      SELECT Status, CAST(SUM(Cnt) AS INT) AS Cnt
+      FROM (
+        SELECT Status, Cnt FROM WfDraft
+        UNION ALL
+        SELECT Status, Cnt FROM WinspeedBase
+      ) x
+      GROUP BY Status
+    `;
+    const r = await wfQuery(winspeedStatsSql);
     const byStatus = {};
     for (const row of r.recordset || []) byStatus[row.Status] = row.Cnt;
     const total = Object.values(byStatus).reduce((s, n) => s + n, 0);
@@ -236,14 +392,14 @@ router.get('/', async (req, res) => {
     const { status, custId, search, dateFrom, dateTo, page = 1, limit = 50 } = req.query;
     const conditions = [];
     const inputs = {};
-    if (status)  { conditions.push(`so.Status = @status`);  inputs.status  = { type: sql.NVarChar(20), value: status }; }
-    if (custId)  { conditions.push(`so.CustId = @custId`);  inputs.custId  = { type: sql.NVarChar(20), value: custId }; }
+    if (status)  { conditions.push(`q.Status = @status`);  inputs.status  = { type: sql.NVarChar(20), value: status }; }
+    if (custId)  { conditions.push(`q.CustId = @custId`);  inputs.custId  = { type: sql.NVarChar(20), value: custId }; }
     if (search)  { 
-      conditions.push(`(so.WfRef LIKE '%' + @search + '%' OR so.CustName LIKE '%' + @search + '%' OR so.TruckPlate LIKE '%' + @search + '%' OR so.ImportedDocuNo LIKE '%' + @search + '%')`);
+      conditions.push(`(q.WfRef LIKE '%' + @search + '%' OR q.CustName LIKE '%' + @search + '%' OR q.TruckPlate LIKE '%' + @search + '%' OR q.ImportedDocuNo LIKE '%' + @search + '%')`);
       inputs.search = { type: sql.NVarChar(100), value: search }; 
     }
     if (dateFrom || dateTo) {
-      const dateFields = ['so.CreatedAt', 'so.DeliveryDate', 'so.RequestedAt', 'so.ImportedAt'];
+      const dateFields = ['q.CreatedAt', 'q.DeliveryDate', 'q.RequestedAt', 'q.ImportedAt'];
       const perField = dateFields.map(field => {
         if (dateFrom && dateTo) return `(CAST(${field} AS DATE) BETWEEN @dateFrom AND @dateTo)`;
         if (dateFrom) return `(CAST(${field} AS DATE) >= @dateFrom)`;
@@ -257,16 +413,121 @@ router.get('/', async (req, res) => {
     const offset = (Number(page) - 1) * Number(limit);
 
     const r = await wfQuery(`
-      SELECT so.*, u.DisplayName AS SalesName,
-             COUNT(*) OVER() AS TotalCount
-      FROM wf.v_AllSalesOrders so
-      LEFT JOIN wf.AppUser u ON u.Id = so.SalesUserId
+      WITH Orders AS (
+        SELECT
+          CAST(so.Id AS VARCHAR(50)) AS Id,
+          so.WfRef,
+          so.SoPrefix,
+          so.CustId,
+          so.CustName,
+          so.TruckPlate,
+          so.ControlTicketNo,
+          so.DeliveryDate,
+          so.RequestedAt,
+          so.IsOwnTruck,
+          so.NoTruckRequired,
+          so.PSling,
+          so.Remark,
+          so.Status,
+          so.SalesUserId,
+          so.ImportFilePath,
+          so.ImportedDocuNo,
+          so.ImportedAt,
+          so.CreatedAt,
+          so.UpdatedAt,
+          ISNULL(so.RebateDiscountAmt, 0) AS RebateDiscountAmt,
+          CAST(0 AS BIT) AS IsLoaded,
+          CAST(NULL AS DECIMAL(10,2)) AS WeighOutWeight,
+          so.CreditDays,
+          so.TruckRemark,
+          so.BillRemark,
+          so.TranspId,
+          pq.Id AS LinkedQuoteId,
+          pq.QuoteNo AS LinkedQuoteNo,
+          pq.Status AS LinkedQuoteStatus,
+          pq.Remark AS LinkedQuoteRemark,
+          pq.ValidUntil AS LinkedQuoteValidUntil,
+          CASE WHEN pq.Id IS NOT NULL THEN CONCAT('Waiting for quotation ', pq.QuoteNo, ' confirmation') ELSE NULL END AS QuotationLockReason
+        FROM wf.SalesOrder so WITH (NOLOCK)
+        OUTER APPLY (
+          SELECT TOP 1 q.Id, q.QuoteNo, q.Status, q.Remark, q.ValidUntil
+          FROM wf.QuotationSourceSO src WITH (NOLOCK)
+          INNER JOIN wf.Quotation q WITH (NOLOCK) ON q.Id = src.QuoteId
+          WHERE src.SoId = so.Id
+            AND q.Status IN ('DRAFT', 'SENT', 'EXPIRED')
+          ORDER BY q.Id DESC
+        ) pq
+
+        UNION ALL
+
+        SELECT
+          CAST(hd.SOID AS VARCHAR(50)) AS Id,
+          ISNULL(ext.WfRef, hd.DocuNo) AS WfRef,
+          ISNULL(ext.SoPrefix, CASE WHEN LEFT(hd.DocuNo, 2) = 'AI' THEN 'AI' WHEN LEFT(hd.DocuNo, 1) IN ('I', 'K') THEN LEFT(hd.DocuNo, 1) ELSE 'W' END) AS SoPrefix,
+          hd.CustID AS CustId,
+          hd.CustName,
+          hd.TransRegistration AS TruckPlate,
+          ext.ControlTicketNo,
+          ext.DeliveryDate,
+          ext.RequestedAt,
+          ISNULL(ext.IsOwnTruck, 0) AS IsOwnTruck,
+          ISNULL(ext.NoTruckRequired, 0) AS NoTruckRequired,
+          ISNULL(ext.PSling, 0) AS PSling,
+          hd.Remark,
+          CASE
+            WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
+            WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
+            WHEN hd.DocuType = 104 THEN 'IMPORTED'
+            WHEN ext.IsLoaded = 1 THEN 'LOADED'
+            WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
+            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+            ELSE 'CONFIRMED'
+          END AS Status,
+          ext.SalesUserId,
+          ext.ImportFilePath,
+          hd.DocuNo AS ImportedDocuNo,
+          ext.ImportedAt,
+          CAST(hd.DocuDate AS DATETIME2) AS CreatedAt,
+          ext.UpdatedAt,
+          ISNULL(ext.RebateDiscountAmt, 0) AS RebateDiscountAmt,
+          ISNULL(ext.IsLoaded, 0) AS IsLoaded,
+          ext.WeighOutWeight,
+          ISNULL(ext.CreditDays, hd.CreditDays) AS CreditDays,
+          ISNULL(ext.TruckRemark, hd.Desc1) AS TruckRemark,
+          ISNULL(ext.BillRemark, hd.Desc2) AS BillRemark,
+          ISNULL(ext.TranspId, hd.TranspID) AS TranspId,
+          pq.Id AS LinkedQuoteId,
+          pq.QuoteNo AS LinkedQuoteNo,
+          pq.Status AS LinkedQuoteStatus,
+          pq.Remark AS LinkedQuoteRemark,
+          pq.ValidUntil AS LinkedQuoteValidUntil,
+          CASE WHEN pq.Id IS NOT NULL THEN CONCAT('Waiting for quotation ', pq.QuoteNo, ' confirmation') ELSE NULL END AS QuotationLockReason
+        FROM dbo.SOHD hd WITH (NOLOCK)
+        LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
+          ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
+        OUTER APPLY (
+          SELECT TOP 1 q.Id, q.QuoteNo, q.Status, q.Remark, q.ValidUntil
+          FROM wf.QuotationSourceSO src WITH (NOLOCK)
+          INNER JOIN wf.Quotation q WITH (NOLOCK) ON q.Id = src.QuoteId
+          WHERE src.SoId = CASE
+              WHEN ISNUMERIC(CONVERT(VARCHAR(50), hd.SOID)) = 1 THEN CAST(hd.SOID AS INT)
+              ELSE NULL
+            END
+            AND q.Status IN ('DRAFT', 'SENT', 'EXPIRED')
+          ORDER BY q.Id DESC
+        ) pq
+        WHERE hd.DocuType IN (103, 104)
+      )
+      SELECT q.*, u.DisplayName AS SalesName,
+             COUNT_BIG(*) OVER() AS TotalCount
+      FROM Orders q
+      LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = q.SalesUserId
       ${where}
-      ORDER BY so.CreatedAt DESC, so.Id DESC
+      ORDER BY q.CreatedAt DESC, q.Id DESC
       OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
     `, inputs);
     const rows = r.recordset || [];
-    const total = rows[0]?.TotalCount || 0;
+    const total = Number(rows[0]?.TotalCount || 0);
 
     // attach lines for each order on this page
     const orders = camelizeRows(rows);
@@ -276,8 +537,68 @@ router.get('/', async (req, res) => {
         for (const o of orders) o.lines = [];
         return;
       }
+      const idParams = ids.map((_, i) => `@id${i}`).join(',');
       const lr = await wfQuery(
-        `SELECT * FROM wf.v_AllSalesOrderLines WHERE SoId IN (${ids.map((_, i) => `@id${i}`).join(',')}) ORDER BY SoId, LineNum`,
+        `
+        SELECT
+          CAST(sol.SoId AS VARCHAR(50)) AS SoId,
+          sol.LineNum,
+          sol.GoodId,
+          sol.GoodCode,
+          sol.GoodName,
+          sol.QtyTon,
+          sol.QtyBag,
+          sol.MasterQty,
+          sol.ChildQty,
+          sol.PricePerTon,
+          sol.NetPricePerTon,
+          CAST(sol.QtyTon * sol.PricePerTon AS DECIMAL(18,2)) AS LineAmount,
+          CAST((sol.PricePerTon - sol.NetPricePerTon) AS DECIMAL(18,2)) AS RebatePerTon,
+          CAST((sol.PricePerTon - sol.NetPricePerTon) * sol.QtyTon AS DECIMAL(18,2)) AS RebateAmount,
+          sol.IsGiveaway,
+          sol.GiveawayApprovalStatus,
+          sol.GiveawayApprovedBy,
+          sol.GiveawayApprovedAt,
+          sol.GiveawayApprovalNote,
+          sol.RefControlTicketNo,
+          sol.IsControlTicketDrawn,
+          sol.LoadSequence
+        FROM wf.SalesOrderLine sol WITH (NOLOCK)
+        WHERE CONVERT(VARCHAR(50), sol.SoId) IN (${idParams})
+
+        UNION ALL
+
+        SELECT
+          CAST(dt.SOID AS VARCHAR(50)) AS SoId,
+          dt.ListNo AS LineNum,
+          CAST(dt.GoodID AS NVARCHAR(20)) AS GoodId,
+          ISNULL(g.GoodCode, CAST(dt.GoodID AS NVARCHAR(50))) AS GoodCode,
+          ISNULL(NULLIF(dt.GoodName, ''), g.GoodName1) AS GoodName,
+          CAST(ISNULL(dt.GoodQty2, 0) AS DECIMAL(12,3)) AS QtyTon,
+          CAST(0 AS INT) AS QtyBag,
+          dt.MasterQty,
+          dt.ChildQty,
+          CAST(ISNULL(dt.GoodPrice2, 0) AS DECIMAL(12,2)) AS PricePerTon,
+          CAST(ISNULL(ext.NetPricePerTon, dt.GoodPrice2) AS DECIMAL(12,2)) AS NetPricePerTon,
+          CAST(ISNULL(dt.GoodAmnt, ISNULL(dt.GoodQty2, 0) * ISNULL(dt.GoodPrice2, 0)) AS DECIMAL(18,2)) AS LineAmount,
+          CAST(ISNULL(dt.GoodPrice2, 0) - ISNULL(ext.NetPricePerTon, dt.GoodPrice2) AS DECIMAL(18,2)) AS RebatePerTon,
+          CAST((ISNULL(dt.GoodPrice2, 0) - ISNULL(ext.NetPricePerTon, dt.GoodPrice2)) * ISNULL(dt.GoodQty2, 0) AS DECIMAL(18,2)) AS RebateAmount,
+          CAST(CASE WHEN ISNULL(ext.IsGiveaway, 0) = 1 OR ISNULL(dt.FreeFlag, 'N') = 'Y' THEN 1 ELSE 0 END AS BIT) AS IsGiveaway,
+          ext.GiveawayApprovalStatus,
+          ext.GiveawayApprovedBy,
+          ext.GiveawayApprovedAt,
+          ext.GiveawayApprovalNote,
+          ext.RefControlTicketNo,
+          ext.IsControlTicketDrawn,
+          ext.LoadSequence
+        FROM dbo.SODT dt WITH (NOLOCK)
+        LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = dt.GoodID
+        LEFT JOIN wf.SalesOrderLineExt ext WITH (NOLOCK)
+          ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), dt.SOID)
+         AND ext.ListNo = dt.ListNo
+        WHERE CONVERT(VARCHAR(50), dt.SOID) IN (${idParams})
+        ORDER BY SoId, LineNum
+        `,
         Object.fromEntries(ids.map((id, i) => [`id${i}`, { type: sql.VarChar(50), value: String(id) }]))
       );
       const linesByso = {};
@@ -443,8 +764,15 @@ router.get('/:id', async (req, res) => {
     );
     const auditRows = auditR.recordset || [];
     const weighTicket = weighR.recordset?.[0] || null;
+    const pendingQuote = await getPendingQuoteForSo(so.Id);
     res.json(redactSoForRole(req, {
       ...camelizeRow(so),
+      linkedQuoteId: pendingQuote?.Id || null,
+      linkedQuoteNo: pendingQuote?.QuoteNo || null,
+      linkedQuoteStatus: pendingQuote?.Status || null,
+      linkedQuoteRemark: pendingQuote?.Remark || null,
+      linkedQuoteValidUntil: pendingQuote?.ValidUntil || null,
+      quotationLockReason: pendingQuote ? `Waiting for quotation ${pendingQuote.QuoteNo} confirmation` : null,
       lines: camelizeRows(lines),
       auditLogs: camelizeRows(auditRows),
       weighOutAt: weighTicket?.WeighOutAt || null,
@@ -507,7 +835,8 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
 
     await wfTransaction(async tx => {
       for (const order of orders) {
-        const { soPrefix, custId, custName, truckPlate, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, salesUserId: impersonatedId, rebateDiscountAmt, convertFromQuoteId } = order;
+        const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, salesUserId: impersonatedId, rebateDiscountAmt, convertFromQuoteId, creditDays, truckRemark, billRemark, transpId } = order;
+        const truckPlate = ['I', 'K'].includes(soPrefix) ? 'ตั๋วคุม' : (order.truckPlate || null);
 
         // price deviation check
         const devLine = lines.find(l => !l.isGiveaway && (Number(l.pricePerTon) < Number(l.netPricePerTon) - 500));
@@ -536,22 +865,108 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
         soReq.input('rebateDiscountAmt', sql.Decimal(12,2), normalizeRebateDiscount(req, rebateDiscountAmt));
         const actualSalesUserId = (req.user.role === 'ADMIN' && impersonatedId) ? Number(impersonatedId) : req.user.sub;
         soReq.input('salesUserId',      sql.Int,           actualSalesUserId);
+        soReq.input('creditDays',       sql.Int,           creditDays || 30);
+        soReq.input('truckRemark',      sql.NVarChar(500), truckRemark || null);
+        soReq.input('billRemark',       sql.NVarChar(500), billRemark || null);
+        soReq.input('transpId',         sql.Int,           transpId || null);
 
         const soR = await soReq.query(`
           INSERT INTO wf.SalesOrder
-            (WfRef, SoPrefix, CustId, CustName, TruckPlate, ControlTicketNo, DeliveryDate, RequestedAt, IsOwnTruck, NoTruckRequired, PSling, Remark, SalesUserId, RebateDiscountAmt, Status)
+            (WfRef, SoPrefix, CustId, CustName, TruckPlate, ControlTicketNo, DeliveryDate, RequestedAt, IsOwnTruck, NoTruckRequired, PSling, Remark, SalesUserId, RebateDiscountAmt, Status, CreditDays, TruckRemark, BillRemark, TranspId)
             OUTPUT inserted.Id
-          VALUES (@wfRef, @soPrefix, @custId, @custName, @truckPlate, @controlTicketNo, @deliveryDate, @requestedAt, @isOwnTruck, @noTruckRequired, @pSling, @remark, @salesUserId, @rebateDiscountAmt, 'DRAFT')
+          VALUES (@wfRef, @soPrefix, @custId, @custName, @truckPlate, @controlTicketNo, @deliveryDate, @requestedAt, @isOwnTruck, @noTruckRequired, @pSling, @remark, @salesUserId, @rebateDiscountAmt, 'DRAFT', @creditDays, @truckRemark, @billRemark, @transpId)
         `);
         const soId = soR.recordset[0].Id;
         createdIds.push(soId);
         createdRefs.push(wfRef);
 
         if (convertFromQuoteId) {
-          await tx.request()
-            .input('quoteId', sql.Int, convertFromQuoteId)
-            .input('soId', sql.Int, soId)
-            .query(`UPDATE wf.Quotation SET Status='CONVERTED', ConvertedSoId=@soId, UpdatedAt=GETUTCDATE() WHERE Id=@quoteId`);
+          const quoteId = Number(convertFromQuoteId);
+          if (Number.isInteger(quoteId) && quoteId > 0) {
+            await tx.request()
+              .input('quoteId', sql.Int, quoteId)
+              .input('soId', sql.Int, soId)
+              .query(`UPDATE wf.Quotation SET Status='CONVERTED', ConvertedSoId=@soId, UpdatedAt=GETUTCDATE() WHERE Id=@quoteId`);
+          } else if (Number.isInteger(quoteId) && quoteId < 0) {
+            const nativeQuoteSoid = Math.abs(quoteId);
+            const nativeQuote = (await tx.request()
+              .input('soid', sql.Int, nativeQuoteSoid)
+              .query(`
+                SELECT TOP 1
+                  CAST(qu.SOID AS INT) AS QuoteSOID,
+                  qu.DocuNo AS QuoteNo,
+                  CAST(qu.CustID AS NVARCHAR(20)) AS CustId,
+                  qu.CustName,
+                  CAST(qu.ExpireDate AS DATE) AS ValidUntil,
+                  qu.Remark,
+                  CAST(qc.SOID AS INT) AS ConfirmSOID,
+                  qc.DocuNo AS ConfirmNo
+                FROM dbo.SOHD qu WITH (NOLOCK)
+                OUTER APPLY (
+                  SELECT TOP 1 qc2.SOID, qc2.DocuNo
+                  FROM dbo.SOHD qc2 WITH (NOLOCK)
+                  WHERE qc2.DocuType = '113'
+                    AND qc2.RefNo = qu.DocuNo
+                    AND ISNULL(qc2.DocuStatus, 'N') <> 'C'
+                  ORDER BY qc2.SOID DESC
+                ) qc
+                WHERE qu.DocuType = '102'
+                  AND ISNUMERIC(CONVERT(VARCHAR(50), qu.SOID)) = 1
+                  AND CAST(qu.SOID AS INT) = @soid
+              `)).recordset?.[0];
+            if (nativeQuote) {
+              const existingQuote = (await tx.request()
+                .input('quoteSoid', sql.Int, nativeQuote.QuoteSOID)
+                .input('quoteNo', sql.NVarChar(30), nativeQuote.QuoteNo)
+                .query(`SELECT TOP 1 Id FROM wf.Quotation WHERE WinspeedQuoteSOID=@quoteSoid OR QuoteNo=@quoteNo`)).recordset?.[0];
+              if (existingQuote) {
+                await tx.request()
+                  .input('quoteId', sql.Int, existingQuote.Id)
+                  .input('soId', sql.Int, soId)
+                  .input('quoteSoid', sql.Int, nativeQuote.QuoteSOID)
+                  .input('quoteNo', sql.NVarChar(30), nativeQuote.QuoteNo)
+                  .input('confirmSoid', sql.Int, nativeQuote.ConfirmSOID || null)
+                  .input('confirmNo', sql.NVarChar(30), nativeQuote.ConfirmNo || null)
+                  .query(`
+                    UPDATE wf.Quotation
+                    SET Status='CONVERTED',
+                        ConvertedSoId=@soId,
+                        WinspeedQuoteSOID=COALESCE(WinspeedQuoteSOID, @quoteSoid),
+                        WinspeedQuoteNo=COALESCE(WinspeedQuoteNo, @quoteNo),
+                        WinspeedQuoteSyncedAt=COALESCE(WinspeedQuoteSyncedAt, SYSUTCDATETIME()),
+                        WinspeedConfirmSOID=COALESCE(WinspeedConfirmSOID, @confirmSoid),
+                        WinspeedConfirmNo=COALESCE(WinspeedConfirmNo, @confirmNo),
+                        WinspeedConfirmSyncedAt=COALESCE(WinspeedConfirmSyncedAt, SYSUTCDATETIME()),
+                        UpdatedAt=GETUTCDATE()
+                    WHERE Id=@quoteId
+                  `);
+              } else {
+                await tx.request()
+                  .input('quoteNo', sql.NVarChar(30), nativeQuote.QuoteNo)
+                  .input('custIdQ', sql.NVarChar(20), nativeQuote.CustId || custId)
+                  .input('custNameQ', sql.NVarChar(200), nativeQuote.CustName || custName || '')
+                  .input('validUntil', sql.Date, nativeQuote.ValidUntil || null)
+                  .input('remarkQ', sql.NVarChar(500), nativeQuote.Remark || remark || null)
+                  .input('salesUserIdQ', sql.Int, actualSalesUserId)
+                  .input('soId', sql.Int, soId)
+                  .input('quoteSoid', sql.Int, nativeQuote.QuoteSOID)
+                  .input('confirmSoid', sql.Int, nativeQuote.ConfirmSOID || null)
+                  .input('confirmNo', sql.NVarChar(30), nativeQuote.ConfirmNo || null)
+                  .query(`
+                    INSERT INTO wf.Quotation (
+                      QuoteNo, CustId, CustName, ValidUntil, Remark, SalesUserId, Status, ConvertedSoId,
+                      WinspeedQuoteSOID, WinspeedQuoteNo, WinspeedQuoteSyncedAt,
+                      WinspeedConfirmSOID, WinspeedConfirmNo, WinspeedConfirmSyncedAt
+                    )
+                    VALUES (
+                      @quoteNo, @custIdQ, @custNameQ, @validUntil, @remarkQ, @salesUserIdQ, 'CONVERTED', @soId,
+                      @quoteSoid, @quoteNo, SYSUTCDATETIME(),
+                      @confirmSoid, @confirmNo, CASE WHEN @confirmSoid IS NULL THEN NULL ELSE SYSUTCDATETIME() END
+                    )
+                  `);
+              }
+            }
+          }
         }
 
         const hasGiveawayApproval = await hasGiveawayApprovalColumns();
@@ -565,6 +980,8 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
           lr.input('goodCode',             sql.NVarChar(50),  l.goodCode || '');
           lr.input('qtyTon',               sql.Decimal(12,3), Number(l.qtyTon));
           lr.input('qtyBag',               sql.Int,           Number(l.qtyBag) || Math.round(l.qtyTon * 20));
+          lr.input('masterQty',            sql.Decimal(12,3), l.masterQty === undefined || l.masterQty === null ? Number(l.qtyTon) : Number(l.masterQty));
+          lr.input('childQty',             sql.Decimal(12,3), l.childQty === undefined || l.childQty === null ? 0 : Number(l.childQty));
           lr.input('pricePerTon',          sql.Decimal(12,2), Number(l.pricePerTon));
           lr.input('netPricePerTon',       sql.Decimal(12,2), Number(l.netPricePerTon) || 0);
           lr.input('isGiveaway',           sql.Bit,           l.isGiveaway ? 1 : 0);
@@ -574,8 +991,8 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
           
           await lr.query(`
             INSERT INTO wf.SalesOrderLine
-              (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, PricePerTon, NetPricePerTon, IsGiveaway, RefControlTicketNo, IsControlTicketDrawn${giveawayApprovalInsertColumns(hasGiveawayApproval)})
-            VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @pricePerTon, @netPricePerTon, @isGiveaway, @refControlTicketNo, @isControlTicketDrawn${giveawayApprovalInsertValues(hasGiveawayApproval)})
+              (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, MasterQty, ChildQty, PricePerTon, NetPricePerTon, IsGiveaway, RefControlTicketNo, IsControlTicketDrawn${giveawayApprovalInsertColumns(hasGiveawayApproval)})
+            VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @masterQty, @childQty, @pricePerTon, @netPricePerTon, @isGiveaway, @refControlTicketNo, @isControlTicketDrawn${giveawayApprovalInsertValues(hasGiveawayApproval)})
           `);
         }
       }
@@ -611,7 +1028,8 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
 
       if (isSohdOrder) {
       await wfTransaction(async tx => {
-        const { soPrefix, custId, custName, truckPlate, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, rebateDiscountAmt } = order;
+        const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, rebateDiscountAmt, creditDays, truckRemark, billRemark, transpId } = order;
+        const truckPlate = ['I', 'K'].includes(soPrefix) ? 'ตั๋วคุม' : (order.truckPlate || null);
         const safeRebateDiscountAmt = normalizeRebateDiscount(req, rebateDiscountAmt);
         const totalAmnt = lines.reduce((sum, l) => sum + (Number(l.qtyTon) * Number(l.pricePerTon)), 0) - safeRebateDiscountAmt;
 
@@ -630,9 +1048,23 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
         soReq.input('remark', sql.NVarChar(500), remark || null);
         soReq.input('rebateDiscountAmt', sql.Decimal(12,2), safeRebateDiscountAmt);
         soReq.input('netAmnt', sql.Decimal(18,2), totalAmnt);
+        soReq.input('creditDays', sql.Int, creditDays || 30);
+        soReq.input('truckRemark', sql.NVarChar(500), truckRemark || null);
+        soReq.input('billRemark', sql.NVarChar(500), billRemark || null);
+        soReq.input('transpId', sql.Int, transpId || null);
 
         await soReq.query(`
-          UPDATE dbo.SOHD SET CustID=@custId, CustName=@custName, TransRegistration=@truckPlate, Remark=@remark, NetAmnt=@netAmnt WHERE SOID=@id;
+          UPDATE dbo.SOHD
+          SET CustID=@custId,
+              CustName=@custName,
+              TransRegistration=@truckPlate,
+              Remark=@remark,
+              NetAmnt=@netAmnt,
+              SumGoodAmnt=@netAmnt,
+              BillAftrDiscAmnt=@netAmnt,
+              CheckAll='Y',
+              TranspID=ISNULL(@transpId, ISNULL(TranspID, (SELECT TOP 1 TranspID FROM dbo.EMTransp ORDER BY TranspID)))
+          WHERE SOID=@id;
           UPDATE wf.SalesOrderExt
           SET SoPrefix=@soPrefix,
               ControlTicketNo=@controlTicketNo,
@@ -642,19 +1074,27 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
               NoTruckRequired=@noTruckRequired,
               PSling=@pSling,
               RebateDiscountAmt=@rebateDiscountAmt,
+              CreditDays=@creditDays,
+              TruckRemark=@truckRemark,
+              BillRemark=@billRemark,
+              TranspId=@transpId,
               UpdatedAt=GETUTCDATE()
           WHERE SOID=@id;
         `);
 
-        await tx.request().input('id', sql.VarChar(50), so.Id).query(`DELETE FROM dbo.SODT WHERE SOID=@id; DELETE FROM wf.SalesOrderLineExt WHERE SOID=@id;`);
+        await tx.request().input('id', sql.VarChar(50), so.Id).query(`DELETE FROM dbo.SODTRemark WHERE SOID=@id; DELETE FROM dbo.SODT WHERE SOID=@id; DELETE FROM wf.SalesOrderLineExt WHERE SOID=@id;`);
 
+        const hasGiveawayApproval = await hasGiveawayApprovalColumns();
         for (let i = 0; i < lines.length; i++) {
           const l = lines[i];
           const lr = tx.request();
           lr.input('soId', sql.VarChar(50), so.Id);
           lr.input('lineNum', sql.Int, i + 1);
           lr.input('goodId', sql.NVarChar(20), l.goodId);
+          lr.input('goodName', sql.NVarChar(200), l.goodName || '');
           lr.input('qtyTon', sql.Decimal(12,3), Number(l.qtyTon));
+          lr.input('masterQty', sql.Decimal(12,3), l.masterQty === undefined || l.masterQty === null ? Number(l.qtyTon) : Number(l.masterQty));
+          lr.input('childQty', sql.Decimal(12,3), l.childQty === undefined || l.childQty === null ? 0 : Number(l.childQty));
           lr.input('pricePerTon', sql.Decimal(12,2), Number(l.pricePerTon));
           lr.input('netPricePerTon', sql.Decimal(12,2), Number(l.netPricePerTon) || 0);
           lr.input('isGiveaway', sql.Bit, l.isGiveaway ? 1 : 0);
@@ -664,11 +1104,36 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
           addGiveawayApprovalInputs(lr, req, l, hasGiveawayApproval);
 
           await lr.query(`
-            INSERT INTO dbo.SODT (SOID, ListNo, GoodID, GoodQty2, GoodPrice2, DocuType, LotFlag, SerialFlag, GoodType, VatType, StockFlag, GoodFlag, RemaQty, FreeFlag, GoodStockRate1, RemaGoodStockQty, remaamnt)
-            VALUES (@soId, @lineNum, @goodId, @qtyTon, @pricePerTon, '112', 'N', 'N', '1', '1', '0', 'G', '0', @freeFlag, '0', '0', '0');
+            INSERT INTO dbo.SODT (
+              SOID, ListNo, GoodID, GoodName, InveID, LocaID,
+              GoodUnitID1, GoodPrice1, GoodQty1, GoodUnitID2, GoodStockRate1, GoodQty2, GoodPrice2,
+              GoodDiscAmnt, MiscChargAmnt, SumExcludeAmnt, GoodAmnt,
+              GoodCompareQty, ShipDate, RemaBefoQty, ResvAmnt1, ResvAmnt2, MarkUpAmnt, CommisAmnt, AfterMarkupamnt,
+              DocuType, LotFlag, SerialFlag, GoodType, VatType, StockFlag, GoodFlag,
+              RemaQty, ReserveQty, FreeFlag, GoodStockRate2, GoodStockUnitID, GoodStockQty,
+              GoodCost, GoodRemaQty1, GoodRemaQty2, POQty, RemaQtyPkg, Expireflag, Poststock,
+              RemaGoodStockQty, remaamnt, CheckFlag, MasterQty, ChildQty
+            )
+            SELECT
+              @soId, @lineNum, @goodId, COALESCE(NULLIF(@goodName, ''), g.GoodName1), 1000, 1000,
+              NULL, 0, 0, COALESCE(g.MainGoodUnitID, 1002), 0, @qtyTon, @pricePerTon,
+              0, 0, 0, @qtyTon * @pricePerTon,
+              0, h.ShipDate, 0, 0, 0, 0, 0, @qtyTon * @pricePerTon,
+              '103', 'N', 'N', '1', COALESCE(g.VatType, '3'), '-1', 'G',
+              @qtyTon, 0, @freeFlag, 1, COALESCE(g.MainGoodUnitID, 1002), @qtyTon,
+              0, @qtyTon, 0, @qtyTon, @qtyTon, 'N', 'N',
+              0, @qtyTon * @pricePerTon, 'Y', @masterQty, @childQty
+            FROM dbo.EMGood g
+            CROSS JOIN dbo.SOHD h
+            WHERE g.GoodID = @goodId AND h.SOID = @soId;
 
-            INSERT INTO wf.SalesOrderLineExt (SOID, ListNo, NetPricePerTon, IsGiveaway, RebateBooked, RefControlTicketNo, IsControlTicketDrawn${giveawayApprovalInsertColumns(hasGiveawayApproval)})
-            VALUES (@soId, @lineNum, @netPricePerTon, @isGiveaway, 0, @refControlTicketNo, @isControlTicketDrawn${giveawayApprovalInsertValues(hasGiveawayApproval)});
+            INSERT INTO dbo.SODTRemark (SOID, ListNo, RefListNo, Remark)
+            SELECT @soId, @lineNum, @lineNum, COALESCE(NULLIF(@goodName, ''), g.GoodName1)
+            FROM dbo.EMGood g
+            WHERE g.GoodID = @goodId;
+
+            INSERT INTO wf.SalesOrderLineExt (SOID, ListNo, NetPricePerTon, IsGiveaway, RebateBooked, RefControlTicketNo, IsControlTicketDrawn, MasterQty, ChildQty${giveawayApprovalInsertColumns(hasGiveawayApproval)})
+            VALUES (@soId, @lineNum, @netPricePerTon, @isGiveaway, 0, @refControlTicketNo, @isControlTicketDrawn, @masterQty, @childQty${giveawayApprovalInsertValues(hasGiveawayApproval)});
           `);
         }
       });
@@ -678,7 +1143,8 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
     }
 
     await wfTransaction(async tx => {
-      const { soPrefix, custId, custName, truckPlate, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, rebateDiscountAmt } = order;
+      const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, rebateDiscountAmt, creditDays, truckRemark, billRemark, transpId } = order;
+      const truckPlate = ['I', 'K'].includes(soPrefix) ? 'ตั๋วคุม' : (order.truckPlate || null);
 
       // price deviation check
       const devLine = lines.find(l => !l.isGiveaway && (Number(l.pricePerTon) < Number(l.netPricePerTon) - 500));
@@ -705,6 +1171,10 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
       soReq.input('pSling',            sql.Bit,           toBit(pSling));
       soReq.input('remark',            sql.NVarChar(500), remark || null);
       soReq.input('rebateDiscountAmt', sql.Decimal(12,2), normalizeRebateDiscount(req, rebateDiscountAmt));
+      soReq.input('creditDays',        sql.Int,           creditDays || 30);
+      soReq.input('truckRemark',       sql.NVarChar(500), truckRemark || null);
+      soReq.input('billRemark',        sql.NVarChar(500), billRemark || null);
+      soReq.input('transpId',          sql.Int,           transpId || null);
 
       await soReq.query(`
         UPDATE wf.SalesOrder SET
@@ -721,6 +1191,10 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
           PSling = @pSling,
           Remark = @remark,
           RebateDiscountAmt = @rebateDiscountAmt,
+          CreditDays = @creditDays,
+          TruckRemark = @truckRemark,
+          BillRemark = @billRemark,
+          TranspId = @transpId,
           UpdatedAt = GETUTCDATE()
         WHERE Id = @id
       `);
@@ -740,6 +1214,8 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
         lr.input('goodCode',             sql.NVarChar(50),  l.goodCode || '');
         lr.input('qtyTon',               sql.Decimal(12,3), Number(l.qtyTon));
         lr.input('qtyBag',               sql.Int,           Number(l.qtyBag) || Math.round(l.qtyTon * 20));
+        lr.input('masterQty',            sql.Decimal(12,3), l.masterQty === undefined || l.masterQty === null ? Number(l.qtyTon) : Number(l.masterQty));
+        lr.input('childQty',             sql.Decimal(12,3), l.childQty === undefined || l.childQty === null ? 0 : Number(l.childQty));
         lr.input('pricePerTon',          sql.Decimal(12,2), Number(l.pricePerTon));
         lr.input('netPricePerTon',       sql.Decimal(12,2), Number(l.netPricePerTon) || 0);
         lr.input('isGiveaway',           sql.Bit,           l.isGiveaway ? 1 : 0);
@@ -749,8 +1225,8 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
         
         await lr.query(`
           INSERT INTO wf.SalesOrderLine
-            (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, PricePerTon, NetPricePerTon, IsGiveaway, RefControlTicketNo, IsControlTicketDrawn${giveawayApprovalInsertColumns(hasGiveawayApproval)})
-          VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @pricePerTon, @netPricePerTon, @isGiveaway, @refControlTicketNo, @isControlTicketDrawn${giveawayApprovalInsertValues(hasGiveawayApproval)})
+            (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, MasterQty, ChildQty, PricePerTon, NetPricePerTon, IsGiveaway, RefControlTicketNo, IsControlTicketDrawn${giveawayApprovalInsertColumns(hasGiveawayApproval)})
+          VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @masterQty, @childQty, @pricePerTon, @netPricePerTon, @isGiveaway, @refControlTicketNo, @isControlTicketDrawn${giveawayApprovalInsertValues(hasGiveawayApproval)})
         `);
       }
     });
@@ -776,6 +1252,17 @@ router.patch('/:id/verify', requireRole('COUNTER_SALES', 'ADMIN', 'MANAGER'), as
 
 router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res) => {
   try {
+    const pendingQuote = await getPendingQuoteForSo(req.params.id);
+    if (pendingQuote) {
+      return res.status(400).json({
+        message: `SO นี้ผูกกับใบเสนอราคา ${pendingQuote.QuoteNo} (${pendingQuote.Status}) ต้องยืนยันหรือยกเลิกใบเสนอราคาก่อน`,
+        requiresQuotationAccepted: true,
+        quoteId: pendingQuote.Id,
+        quoteNo: pendingQuote.QuoteNo,
+        quoteStatus: pendingQuote.Status,
+      });
+    }
+
     const isSohdOrder = (await wfQuery(`SELECT SOID FROM wf.SalesOrderExt WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: String(req.params.id) } })).recordset.length > 0;
     
     if (isSohdOrder) {
@@ -786,6 +1273,34 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
     }
 
     const so = await getSoOrThrow(req.params.id, 'DRAFT');
+
+    if (await hasQuoteSourceTable()) {
+      const pendingQuote = (await wfQuery(`
+        SELECT TOP 1 q.Id, q.QuoteNo, q.Status
+        FROM wf.QuotationSourceSO src
+        INNER JOIN wf.Quotation q ON q.Id = src.QuoteId
+        WHERE src.SoId = @soId
+          AND q.Status IN ('DRAFT', 'SENT', 'EXPIRED')
+          AND NOT EXISTS (
+            SELECT 1
+            FROM wf.QuotationSourceSO acceptedSrc
+            INNER JOIN wf.Quotation acceptedQ ON acceptedQ.Id = acceptedSrc.QuoteId
+            WHERE acceptedSrc.SoId = @soId
+              AND acceptedQ.Status = 'ACCEPTED'
+          )
+        ORDER BY q.Id DESC
+      `, { soId: { type: sql.Int, value: so.Id } })).recordset?.[0];
+
+      if (pendingQuote) {
+        return res.status(400).json({
+          message: `SO ${so.WfRef || so.Id} อยู่ในใบเสนอราคา ${pendingQuote.QuoteNo} (${pendingQuote.Status}) ต้องยืนยันใบเสนอราคาก่อนจึงจะ Confirm SO ได้`,
+          requiresQuotationAccepted: true,
+          quoteId: pendingQuote.Id,
+          quoteNo: pendingQuote.QuoteNo,
+          quoteStatus: pendingQuote.Status,
+        });
+      }
+    }
 
     // FR-022 Verification Gate: ต้องตรวจซ้ำ (Counter-Sales) ก่อนยืนยัน (ADMIN bypass ได้)
     if (req.user.role !== 'ADMIN') {
@@ -839,6 +1354,30 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
     
     const newSoid = spRes.output.NewSoid;
     if (!newSoid) throw new Error('ย้ายข้อมูลไปยัง Winspeed ไม่สำเร็จ (ไม่ได้ SOID กลับมา)');
+
+    if (await hasQuoteSourceTable()) {
+      await wfQuery(`
+        UPDATE q
+        SET q.Status = 'CONVERTED',
+            q.ConvertedSoId = COALESCE(q.ConvertedSoId, @sourceSoId),
+            q.UpdatedAt = GETUTCDATE()
+        FROM wf.Quotation q
+        WHERE q.Status = 'ACCEPTED'
+          AND EXISTS (
+            SELECT 1
+            FROM wf.QuotationSourceSO src
+            WHERE src.QuoteId = q.Id
+              AND src.SoId = @sourceSoId
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM wf.QuotationSourceSO src
+            LEFT JOIN wf.SalesOrder draftSo ON draftSo.Id = src.SoId
+            WHERE src.QuoteId = q.Id
+              AND draftSo.Status = 'DRAFT'
+          )
+      `, { sourceSoId: { type: sql.Int, value: so.Id } });
+    }
 
     // 2. (Moved to SHIPPED) ตั้ง Rebate accrual
     // await bookRebateAccrual({ ...so, Id: newSoid }, lines, req.user.sub);
@@ -994,6 +1533,16 @@ router.patch('/:id/cancel', requireRole('SALES', 'ADMIN'), async (req, res) => {
     if (['SHIPPED', 'IMPORTED', 'CANCELLED'].includes(so.Status))
       return res.status(400).json({ message: 'ยกเลิกไม่ได้ในสถานะนี้' });
     const { note } = req.body;
+    const pendingQuote = await getPendingQuoteForSo(so.Id);
+    if (pendingQuote) {
+      return res.status(400).json({
+        message: `SO นี้ผูกกับใบเสนอราคา ${pendingQuote.QuoteNo} (${pendingQuote.Status}) ต้องยกเลิกใบเสนอราคาก่อน`,
+        requiresQuotationAction: true,
+        quoteId: pendingQuote.Id,
+        quoteNo: pendingQuote.QuoteNo,
+        quoteStatus: pendingQuote.Status,
+      });
+    }
 
     if (so.Status === 'DRAFT') {
       await wfQuery(`UPDATE wf.SalesOrder SET Status='CANCELLED', UpdatedAt=GETUTCDATE() WHERE Id=@id`, { id: { type: sql.Int, value: so.Id } });
