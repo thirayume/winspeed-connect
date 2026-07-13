@@ -162,3 +162,23 @@ LINE Developers setup:
 - Rebate Plan supports Ref Doc fields.
 - Master Data > Customers includes new customer request flow stored in `wf.CustomerRequest`.
 - The customer request flow does not automatically create `dbo.EMCust`; Sale Admin/WINSpeed remains responsible for official customer master creation.
+
+## Current Addendum - 2026-07-13
+
+### Access As
+1. Users with role `ADMIN`, `MANAGER`, `ACCOUNTING`, `APPROVER`, or `COUNTER_SALES` can use **Access As** from the topbar.
+2. Role hierarchy from highest to lowest is: `ADMIN` -> `MANAGER` -> `ACCOUNTING` -> `APPROVER` -> `COUNTER_SALES` -> `SALES`.
+3. While Access As is active, the app behaves like the selected effective user:
+   - sidebar/menu visibility follows the effective role;
+   - customer/data visibility follows the effective user mapping;
+   - create/edit/approve permissions follow the effective role.
+4. The real actor is still preserved in the token and audit trail.
+5. Use **Stop Access As** to return to the real user.
+
+Audit behavior:
+- `wf.AccessAsAudit` records START and STOP.
+- `wf.ApiAuditLog` records mutating API calls with both `ActorUserId` and `EffectiveUserId`.
+- This allows review of who performed work directly and who performed work on behalf of another user.
+
+### Automated QA reference
+- IT/QA can repeat the latest smoke tests from [09-AUTOMATED-QA-v4.2.26.md](09-AUTOMATED-QA-v4.2.26.md).

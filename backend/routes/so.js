@@ -410,7 +410,59 @@ router.get('/', async (req, res) => {
       if (dateTo) inputs.dateTo = { type: sql.Date, value: new Date(String(dateTo)) };
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const offset = (Number(page) - 1) * Number(limit);
+    const pageNumber = Math.max(1, Number.parseInt(String(page), 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(limit), 10) || 50));
+    const offset = (pageNumber - 1) * pageSize;
+
+    const countResult = await wfQuery(`
+      WITH Orders AS (
+        SELECT
+          CAST(so.Id AS VARCHAR(50)) AS Id,
+          so.WfRef,
+          so.CustId,
+          so.CustName,
+          so.TruckPlate,
+          so.Status,
+          so.ImportedDocuNo,
+          so.CreatedAt,
+          so.DeliveryDate,
+          so.RequestedAt,
+          so.ImportedAt
+        FROM wf.SalesOrder so WITH (NOLOCK)
+
+        UNION ALL
+
+        SELECT
+          CAST(hd.SOID AS VARCHAR(50)) AS Id,
+          ISNULL(ext.WfRef, hd.DocuNo) AS WfRef,
+          hd.CustID AS CustId,
+          hd.CustName,
+          hd.TransRegistration AS TruckPlate,
+          CASE
+            WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
+            WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
+            WHEN hd.DocuType = 104 THEN 'IMPORTED'
+            WHEN ext.IsLoaded = 1 THEN 'LOADED'
+            WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
+            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+            ELSE 'CONFIRMED'
+          END AS Status,
+          hd.DocuNo AS ImportedDocuNo,
+          CAST(hd.DocuDate AS DATETIME2) AS CreatedAt,
+          ext.DeliveryDate,
+          ext.RequestedAt,
+          ext.ImportedAt
+        FROM dbo.SOHD hd WITH (NOLOCK)
+        LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
+          ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
+        WHERE hd.DocuType IN (103, 104)
+      )
+      SELECT COUNT_BIG(*) AS TotalCount
+      FROM Orders q
+      ${where}
+    `, inputs);
+
+    const total = Number(countResult.recordset?.[0]?.TotalCount || 0);
 
     const r = await wfQuery(`
       WITH Orders AS (
@@ -518,16 +570,14 @@ router.get('/', async (req, res) => {
         ) pq
         WHERE hd.DocuType IN (103, 104)
       )
-      SELECT q.*, u.DisplayName AS SalesName,
-             COUNT_BIG(*) OVER() AS TotalCount
+      SELECT q.*, u.DisplayName AS SalesName
       FROM Orders q
       LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = q.SalesUserId
       ${where}
       ORDER BY q.CreatedAt DESC, q.Id DESC
-      OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
+      OFFSET ${offset} ROWS FETCH NEXT ${pageSize} ROWS ONLY
     `, inputs);
     const rows = r.recordset || [];
-    const total = Number(rows[0]?.TotalCount || 0);
 
     // attach lines for each order on this page
     const orders = camelizeRows(rows);
@@ -535,6 +585,7 @@ router.get('/', async (req, res) => {
       const ids = rows.map(x => x.Id).filter(id => id != null && id !== 'undefined');
       if (ids.length === 0) {
         for (const o of orders) o.lines = [];
+        res.json({ data: orders.map(o => redactSoForRole(req, o)), total, page: pageNumber, limit: pageSize });
         return;
       }
       const idParams = ids.map((_, i) => `@id${i}`).join(',');
@@ -607,7 +658,7 @@ router.get('/', async (req, res) => {
       }
       for (const o of orders) o.lines = linesByso[o.id] || [];
     }
-    res.json({ data: orders.map(o => redactSoForRole(req, o)), total, page: Number(page), limit: Number(limit) });
+    res.json({ data: orders.map(o => redactSoForRole(req, o)), total, page: pageNumber, limit: pageSize });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 

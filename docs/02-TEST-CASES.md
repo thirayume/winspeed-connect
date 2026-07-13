@@ -159,4 +159,18 @@
 | TC-O05 | Customer request close | Admin completes request with WINSpeed customer id | Request becomes COMPLETED with `WinspeedCustId` | ADMIN |
 | TC-O06 | LINE support override | Admin edits user and clears/replaces LINE User ID for a support case | `wf.AppUser.LineUserId` remains unique and user can self-link again if cleared | ADMIN |
 | TC-P05 | Migration batch 031-035 | After DB restore, apply migrations 031-035 and restart backend | SO/Rebate/Giveaway/CustomerRequest/LINE Login features are available | IT |
+
+## Current Addendum - 2026-07-13 Automated QA / Access As
+
+| TC | Scenario | Steps | Expected Result | Role |
+|---|---|---|---|---|
+| TC-A07 | Access As candidate list | Login as Admin/Manager/Accounting/Approver/Counter Sale and open the Access As control in the topbar | User sees only same-or-lower allowed roles according to the role hierarchy | ADMIN, MANAGER, ACCOUNTING, APPROVER, COUNTER_SALES |
+| TC-A08 | Access As effective permissions | Select a lower-role user and open Sales Portal/Dashboard | Menus, customer visibility, and data access follow the effective user, not the real actor | ADMIN, MANAGER, ACCOUNTING, APPROVER, COUNTER_SALES |
+| TC-A09 | Access As audit | Start Access As, perform a small read/write action, then stop Access As | `wf.AccessAsAudit` records START/STOP; `wf.ApiAuditLog` records actor and effective user | IT, ADMIN |
+| TC-A10 | Refresh with token | Login, refresh with F5/CTRL+F5, then test an expired/invalid token scenario | Valid token keeps the session; invalid token redirects to Login cleanly | Any |
+| TC-QA01 | Query smoke | Run `npm run smoke:queries` after DB restore/migration | Dashboard, master goods, transports, quotation migration, Paper Trail, aging, and SO distribution checks pass | IT |
+| TC-QA02 | API smoke | Run `npm run smoke:api:local` | Temporary backend starts, API smoke passes, backend stops automatically | IT |
+| TC-QA03 | Build and lint | Run `cd WSSale-App; npm run lint; cd ..; npm run build` | Lint exits with 0 errors and production build succeeds | IT |
+
+Detailed automated steps and latest measured results are maintained in [09-AUTOMATED-QA-v4.2.26.md](09-AUTOMATED-QA-v4.2.26.md).
 **เกณฑ์ผ่าน (Go-Live):** ทุก TC สถานะ "ผ่าน" 100% สำหรับ critical (B,C,D,E,G,N) · NFR (P) ผ่าน · บันทึกผลพร้อมผู้ทดสอบ+วันที่

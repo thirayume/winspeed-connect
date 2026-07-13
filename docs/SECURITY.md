@@ -66,6 +66,19 @@
 - ✅ CORS ตั้งผ่าน `CORS_ORIGIN` (ตั้ง domain จริง ห้ามใช้ `*` บน prod)
 - ✅ JWT auth + RBAC 7 roles · bcrypt password hash
 
+## Current Addendum - 2026-07-13
+
+### Access As security notes
+- Access As is limited to `ADMIN`, `MANAGER`, `ACCOUNTING`, `APPROVER`, and `COUNTER_SALES`.
+- A user can only access the same or lower role according to the approved hierarchy: `ADMIN` -> `MANAGER` -> `ACCOUNTING` -> `APPROVER` -> `COUNTER_SALES` -> `SALES`.
+- While Access As is active, authorization uses the effective user/role so menus and customer visibility match the selected user.
+- The JWT still preserves the real actor as `actorId` / `actorRole`.
+- `wf.AccessAsAudit` records START/STOP and `wf.ApiAuditLog` records mutating API calls with actor/effective user.
+
+Security follow-up:
+- Review Access As audit weekly during pilot to detect repeated work performed on behalf of other users.
+- Keep Access As unavailable to normal SALES users.
+
 ## ที่ยังต้องทำเพิ่ม (แนะนำ)
 - [ ] Backup อัตโนมัติ + ทดสอบ restore (P1-1)
 - [ ] Centralized log + alert (Sentry/Logtail) (P1-2)

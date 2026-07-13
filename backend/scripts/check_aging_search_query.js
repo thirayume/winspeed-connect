@@ -1,14 +1,7 @@
-const sql = require('mssql/msnodesqlv8');
+const { sql, getReadPool, closePools } = require('./_db');
 
 async function main() {
-  const pool = new sql.ConnectionPool({
-    server: '.\\SQLEXPRESS',
-    database: 'dbwins_worldfert9',
-    driver: 'msnodesqlv8',
-    requestTimeout: 120000,
-    options: { trustedConnection: true, trustServerCertificate: true },
-  });
-  await pool.connect();
+  const pool = await getReadPool();
   const started = Date.now();
   const result = await pool.request()
     .input('dateFrom', sql.Date, new Date(`${new Date().getFullYear() - 2}-01-01`))
@@ -48,7 +41,7 @@ async function main() {
     rows: result.recordset.length,
     sample: result.recordset.slice(0, 5),
   }, null, 2));
-  await pool.close();
+  await closePools();
 }
 
 main().catch(error => {

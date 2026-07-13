@@ -83,14 +83,9 @@ export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }
   }, [searchQuery]);
 
   const requestSort = (key: string) => {
-    let direction: 'asc' | 'desc' = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    } else if (sortConfig.key === key && sortConfig.direction === 'desc') {
-      direction = 'asc';
-    } else {
-      direction = key === 'count' ? 'desc' : 'asc';
-    }
+    const direction: 'asc' | 'desc' = sortConfig.key === key
+      ? (sortConfig.direction === 'asc' ? 'desc' : 'asc')
+      : (key === 'count' ? 'desc' : 'asc');
     setSortConfig({ key, direction });
   };
 

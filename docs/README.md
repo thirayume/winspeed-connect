@@ -14,6 +14,8 @@
 | 05 | [PRODUCTION-READINESS](05-PRODUCTION-READINESS.md) | ประเมินความพร้อม Production + Go-Live checklist (P0/P1/P2) | ผู้บริหาร, IT |
 | 06 | [FORMS](06-FORMS.md) | แบบฟอร์ม: Test Log, UAT Sign-off, Change Request, RTM, Training, Release, Doc Register | QA, QMR |
 | 07 | [SOURCE-ALIGNMENT-v4.2.26](07-SOURCE-ALIGNMENT-v4.2.26.md) | Highlight การปรับเอกสารให้ตรง source code v4.2.26, React+Express, SQL Server primary + MySQL TruckScale bridge, และ backlog จากประชุม 02/07/2026 | IT, BA, Dev |
+| 08 | [WINSPEED-SO-FLOW](08-WINSPEED-SO-FLOW.md) | Flow Draft -> Confirm -> Picking -> Shipped -> Post Invoice, DocuType mapping, Quotation/Sale Trip integration | IT, BA, Dev, QA |
+| 09 | [AUTOMATED-QA-v4.2.26](09-AUTOMATED-QA-v4.2.26.md) | Automated smoke test steps, latest results, and Manual Retest checklist | QA, IT, Key Users |
 
 > **ฉบับ Word (.docx):** ทุกเอกสารข้างต้นแปลงเป็น Word ไว้ที่โฟลเดอร์ [`word/`](word/) (สำหรับยื่น ISO เป็นไฟล์เอกสาร) · ไดอะแกรมอยู่ใน `refs/WorldFert_Diagrams_v6.drawio` (13 หน้า รวม DB Architecture + 3-Way Mapping)
 
@@ -36,8 +38,14 @@
 - LINE Login is implemented with migration `035`; first-time users self-link by entering their existing WS-Sale-App username/password.
 - Migrations `031-035` have been applied to the restored local `dbwins_worldfert9` database on 2026-07-08.
 
+## Current QA Addendum (13 Jul 2026)
+- Added repeatable automated smoke commands: `npm run smoke:queries`, `npm run smoke:api`, and `npm run smoke:api:local`.
+- Local migrations through `045_access_as_audit.sql`, SQL query smoke, API smoke, lint, and production build have passed in the latest local QA round.
+- Access As now has audit verification through `wf.AccessAsAudit` and `wf.ApiAuditLog`.
+- Detailed test steps and manual retest checklist are maintained in [AUTOMATED-QA-v4.2.26](09-AUTOMATED-QA-v4.2.26.md).
+
 ## เอกสารเทคนิคอื่น
-- [CHANGELOG.md](CHANGELOG.md) · [DOCKER-DEPLOY.md](DOCKER-DEPLOY.md) · [SQL-PERFORMANCE.md](SQL-PERFORMANCE.md)
+- [CHANGELOG.md](CHANGELOG.md) · [DOCKER-DEPLOY.md](DOCKER-DEPLOY.md) · [SQL-PERFORMANCE.md](SQL-PERFORMANCE.md) · [AUTOMATED-QA-v4.2.26](09-AUTOMATED-QA-v4.2.26.md)
 
 ## สรุประบบโดยย่อ
 - **22 หน้า/โมดูล** · React 19 + Express + SQL Server primary (WINSpeed dbo + wf) + MySQL bridge (TruckScale)

@@ -20,6 +20,8 @@
 - Added WINSpeed SO Data Entry lab script and migration `038` to preserve transport display, header check-all, header totals, line descriptions, and Master/Child quantities.
 - Added migration `039` and SO form/API mapping for explicit transporter (`TranspID`) selection, credit days, header remarks, and per-line Master/Child quantities across draft create/edit and WINSpeed confirm flow.
 - Added migration `044` and WINSpeed Quotation lab script after validating native documents `QU6907-00001`, `QU6907-00002`, and `QC69-00002`.
+- Added repeatable automated QA scripts: `smoke:queries`, `smoke:api`, and `smoke:api:local`.
+- Added automated QA documentation and manual retest checklist in `docs/09-AUTOMATED-QA-v4.2.26.md`.
 
 ### Changed
 - Aligned backend/frontend metadata and visible UI badge to v4.2.26.
@@ -32,11 +34,19 @@
 - Tightened app-created `DocuType=103` rows to match WINSpeed SO Data Entry after local validation with `I69-KORAT-1`: `SOHD.TranspID`, `SOHD.CheckAll`, `SODT.CheckFlag`, `SODT.MasterQty`, and `SODT.ChildQty` are now part of the mapped contract.
 - Re-aligned app quotation integration to native WINSpeed Sale Quotation: `SOHD/SODT DocuType=102` for `QU...` and `DocuType=113` for confirmed `QC...`; `SCEstimate*` is no longer the active mapping for this flow.
 - Aligned customer salesperson filtering and SALES visibility to `dbo.EMCustMultiEmp` instead of assuming salesperson fields exist on `dbo.EMCust`.
+- Fixed API audit path capture so Access As API calls are reliably written to `wf.ApiAuditLog`.
+- Improved `/api/so` list performance by splitting total-count and page queries while preserving the same response shape.
+- Adjusted frontend lint policy to keep React/data-loading advisory rules as warnings while still failing on real lint errors.
 - Added `07-SOURCE-ALIGNMENT-v4.2.26.md` to highlight source/document alignment, WINSpeed WF custom-build boundaries, and Meeting Minutes 02072026 backlog.
 
 ### Database Migration Status
 - Applied schema migrations `001-035` to the restored local `dbwins_worldfert9` database on 2026-07-08.
 - `000_logins.sql` is treated as a manual security setup file and is skipped by the default Node migration runner.
+- Latest local QA checked 49 migration files through `045_access_as_audit.sql`; all were applied or unchanged.
+
+### QA Status
+- Migration smoke, SQL query smoke, API smoke, frontend lint, and production build passed in the latest local QA round.
+- `/api/so?page=1&limit=5` improved from about 3.2 seconds to about 1.9 seconds in local API smoke; continue tuning only if concurrent UAT needs sub-second list response.
 
 ### Meeting Minutes Migration Batch
 - `031_so_requested_transport_flags.sql`
@@ -53,6 +63,7 @@
 - `042_so_trip_quotation.sql`
 - `043_winspeed_estimate_link.sql` (legacy/superseded for active WINSpeed Sale Quotation)
 - `044_winspeed_native_quotation_link.sql`
+- `045_access_as_audit.sql`
 
 ## [v4.2.0] - 2026-06-26
 

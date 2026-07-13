@@ -1,6 +1,27 @@
 # SQL Performance Tuning Guide
 
-> Current note (2026-07-08): feature migrations `031-035` add nullable workflow/auth columns and small app-owned tables. They do not replace the existing performance-index guidance in this file. After applying `034_customer_request_flow.sql`, verify the `IX_CustomerRequest_*` indexes exist for the new customer request panel.
+> Current note (2026-07-13): feature migrations through `045_access_as_audit.sql` have been verified by local smoke tests. Dashboard, Paper Trail, goods, transports, aging, and quotation migration checks pass. The SO list API (`/api/so?page=1&limit=5`) improved from about 3.2 seconds to about 1.9 seconds after splitting total-count and page queries; continue tuning if high-concurrency UAT needs sub-second response.
+
+## Current QA Baseline - 2026-07-13
+
+| Query area | Latest local result |
+|---|---|
+| Dashboard stats | PASS, about 48 ms |
+| Dashboard aging | PASS, about 75 ms |
+| SO list SQL smoke | PASS, about 1.2 s for latest page query |
+| SO list API smoke | PASS, about 1.9 s end-to-end after count/page split |
+| Goods master | PASS, 209 rows, about 35 ms |
+| Transport master | PASS, 3 rows, about 21 ms |
+| Paper Trail report | PASS, about 416 ms |
+| Paper Trail board | PASS, about 317 ms |
+| Aging search | PASS, 50 rows, about 380 ms |
+
+Repeat with:
+
+```powershell
+npm run smoke:queries
+npm run smoke:api:local
+```
 
 ## ปัญหาเดิม — ทำไมถึงช้า 6 นาที
 

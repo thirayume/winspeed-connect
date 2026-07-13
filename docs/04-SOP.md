@@ -141,7 +141,7 @@
 3. ทบทวนสิทธิ์ตามรอบ
 
 **การควบคุม:** รหัสผ่าน bcrypt · JWT หมดอายุตามกำหนด · permission ตรวจทั้ง frontend + backend
-**บันทึก:** wf.AppUser
+**บันทึก:** wf.AppUser, wf.AccessAsAudit, wf.ApiAuditLog
 
 ---
 
@@ -175,6 +175,14 @@
 - LINE Login is enabled through LINE OAuth.
 - First-time LINE users link themselves by entering their existing WS-Sale-App username/password.
 - If the credential check succeeds, `wf.AppUser.LineUserId` is saved and the user logs in with the existing role/employee mapping.
+- Access As is available from the topbar for Admin, Manager, Accounting, Approver, and Counter Sale. While active, the app works as the selected effective user, but audit records both the real actor and effective user.
+
+### SOP-09 Automated QA before UAT
+1. After DB restore, run `npm run migrate:local`.
+2. Run `npm run smoke:queries`.
+3. Run `npm run smoke:api:local`.
+4. Run frontend lint and production build.
+5. Record the result in the Test Log and compare with [09-AUTOMATED-QA-v4.2.26.md](09-AUTOMATED-QA-v4.2.26.md).
 - If the credential check fails, the user contacts Admin to create, activate, reset, or correct the mapped user first.
 
 ### IT operation note

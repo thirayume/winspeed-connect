@@ -26,6 +26,7 @@
 | 042 | wf.QuotationSourceSO (ผูกใบเสนอราคาเข้ากับ SO draft หลายใบใน Sale Trip) |
 | 043 | Legacy wf.Quotation WinspeedEstimateID/WinspeedEstimateNo columns (superseded for WINSpeed Sale Quotation) |
 | 044 | wf.Quotation WinspeedQuoteSOID/WinspeedQuoteNo + WinspeedConfirmSOID/WinspeedConfirmNo link to native WINSpeed `SOHD/SODT` DocuType 102/113 |
+| 045 | wf.AccessAsAudit + wf.ApiAuditLog for Access As and API audit trail |
 
 ---
 
@@ -196,5 +197,8 @@ Additional implemented source mappings after Meeting Minutes 02072026:
 | Customer filters | `GET /master/customer-filters`, `/master/customers` | salesperson from `dbo.EMCustMultiEmp`; area from `dbo.EMCust.SaleAreaID`/`dbo.EMSaleArea`; other filters from available `dbo.EMCust` columns | code/dbo |
 | Customer request flow | `GET/POST/PATCH /master/customer-requests` | `wf.CustomerRequest` | 034 |
 | LINE Login | `GET /auth/line/start`, `/auth/line/callback`, `POST /auth/line/link`, `/auth/line/status` | `wf.AppUser.LineUserId` self-link after username/password verification | 035 |
+| Access As | `GET /auth/access-as/candidates`, `POST /auth/access-as`, `POST /auth/access-as/stop` | `wf.AppUser`, `wf.AccessAsAudit`, `wf.ApiAuditLog` | 045 |
 
 Webhook note: LINE Messaging API webhook URL is `/api/line/webhook`; LINE Login uses Callback URL `/api/auth/line/callback`.
+
+Automated QA note: root scripts `smoke:queries` and `smoke:api:local` validate the current SQL/API map against the restored local database. See [09-AUTOMATED-QA-v4.2.26.md](09-AUTOMATED-QA-v4.2.26.md).

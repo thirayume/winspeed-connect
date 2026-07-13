@@ -246,7 +246,14 @@ LINE Developers:
 After changing env, restart the backend.
 
 ### Migration batch after DB restore
-For the local restored `dbwins_worldfert9` database, migrations `031-035` were applied on 2026-07-08. For a new environment, apply the same migration batch, then restart backend and run smoke tests for SO, Rebate Plan, Giveaway approval, Customer Request, and LINE Login.
+For the local restored `dbwins_worldfert9` database, migrations through `045_access_as_audit.sql` were checked in the 2026-07-13 local QA round. For a new environment, apply the full migration batch, restart backend, then run:
+
+```powershell
+npm run smoke:queries
+npm run smoke:api:local
+```
+
+After deployment-domain configuration, also run manual UAT for SO, Rebate Plan, Giveaway approval, Customer Request, LINE Login, Access As, WINSpeed Quotation, and TruckScale live sync.
 | Backend ต่อ DB ไม่ได้ | ตรวจ `REMOTE_DB_SERVER`, `REMOTE_DB_PASSWORD` และ firewall ของ SQL Server |
 | Port 80 ถูกใช้งานอยู่ | แก้ใน `docker-compose.yml` เป็น `"8080:80"` แล้ว `docker compose up -d` |
 | Railway: connection refused | ตรวจ Networking → port ต้องตรงกับ `PORT` env var |

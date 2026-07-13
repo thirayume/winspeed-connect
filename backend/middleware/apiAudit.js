@@ -14,9 +14,9 @@ async function hasApiAuditTable() {
   return apiAuditReady.get(target);
 }
 
-function shouldAudit(req, res) {
+function shouldAudit(req, res, auditPath) {
   if (!req.user) return false;
-  if (!req.path.startsWith('/api/')) return false;
+  if (!String(auditPath || '').startsWith('/api/')) return false;
   if (req.method === 'OPTIONS' || req.method === 'HEAD') return false;
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return true;
   return res.statusCode >= 400;
@@ -25,8 +25,9 @@ function shouldAudit(req, res) {
 function apiAudit() {
   return (req, res, next) => {
     const startedAt = Date.now();
+    const auditPath = req.originalUrl || req.url || req.path;
     res.on('finish', () => {
-      if (!shouldAudit(req, res)) return;
+      if (!shouldAudit(req, res, auditPath)) return;
 
       hasApiAuditTable()
         .then((ready) => {
@@ -42,7 +43,7 @@ function apiAudit() {
               actorUserId: { type: sql.Int, value: Number.isFinite(actorId) ? actorId : null },
               effectiveUserId: { type: sql.Int, value: Number.isFinite(effectiveId) ? effectiveId : null },
               method: { type: sql.NVarChar(12), value: req.method },
-              path: { type: sql.NVarChar(500), value: req.originalUrl || req.url || req.path },
+              path: { type: sql.NVarChar(500), value: auditPath },
               statusCode: { type: sql.Int, value: res.statusCode },
               durationMs: { type: sql.Int, value: Math.max(0, Date.now() - startedAt) },
               ipAddress: { type: sql.NVarChar(80), value: req.ip || null },

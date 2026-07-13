@@ -13,7 +13,7 @@
 | Security | 🔴 50% | **credentials หลุด/อ่อน, JWT default** (P0) |
 | Data Integrity / บัญชี | 🟡 65% | เขียน dbo ตรง — ต้องยืนยันว่าไม่กระทบ GL WINSpeed (P0) |
 | Reliability / Backup | 🟡 60% | ยังไม่มี backup/DR policy ที่ชัด, ไม่มี error monitoring |
-| Testability / QA | 🟡 60% | มี test cases (manual) แต่ยังไม่มี automated test |
+| Testability / QA | 🟡 75% | มี manual test cases และ automated smoke tests สำหรับ migration/query/API/build/lint แล้ว; ยังต้องเพิ่ม unit/integration เชิงลึก |
 | Observability | 🔴 40% | log แค่ console · ไม่มี centralized log/alert |
 | Performance | 🟢 80% | indexed views, polling เบา, dataset ใหญ่แต่ query มี TOP/cache |
 
@@ -56,7 +56,7 @@
 
 | # | รายการ |
 |---|--------|
-| P2-1 | Automated tests (unit สำหรับ rebate FIFO/accrual, integration สำหรับ SO lifecycle) — อ้าง RBD68-019 เป็น fixture |
+| P2-1 | Automated tests เชิงลึก: unit สำหรับ rebate FIFO/accrual และ integration สำหรับ SO lifecycle เพิ่มเติม; smoke tests ปัจจุบันอยู่ที่ `docs/09-AUTOMATED-QA-v4.2.26.md` |
 | P2-2 | Code-split frontend (bundle 858KB > 500KB warning) — lazy load หน้าที่ไม่ใช้บ่อย |
 | P2-3 | Credit Hold (FR-003) — Phase ถัดไป; LINE Login implemented in code, pending migration/UAT |
 | P2-4 | Receive-mode (รับเฉพาะชุด/รับพร้อม) ให้บันทึกชัดใน Control Ticket |
@@ -106,3 +106,20 @@
 ### Updated P2 status
 - LINE Login is no longer purely future work; it is implemented in code and schema, but requires callback URL verification and self-link UAT.
 - Credit Hold remains a future/next-phase item.
+
+## Current Addendum - 2026-07-13
+
+### QA readiness update
+- Added repeatable local smoke commands:
+  - `npm run smoke:queries`
+  - `npm run smoke:api`
+  - `npm run smoke:api:local`
+- Latest local QA passed migration, SQL query smoke, API smoke, frontend lint, and production build.
+- `wf.AccessAsAudit` and `wf.ApiAuditLog` are verified by API smoke.
+- The remaining QA gap is not basic stability; it is deeper workflow/UAT coverage for real users, WINSpeed screens, and TruckScale live data.
+
+### Remaining before wider UAT
+- Continue tuning `/api/so?page=1&limit=5` if concurrent UAT needs sub-second response; latest local API smoke improved from about 3.2 seconds to about 1.9 seconds after splitting total-count and page queries.
+- Run manual retest checklist in [09-AUTOMATED-QA-v4.2.26.md](09-AUTOMATED-QA-v4.2.26.md).
+- Confirm Access As behavior by real role: Admin, Manager, Accounting, Approver, Counter Sale, Sales.
+- Confirm LINE callback URL and first-time self-link on the real deployment domain.

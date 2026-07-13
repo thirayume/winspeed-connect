@@ -132,6 +132,7 @@
 | Version | Date | Deployer | Migrations | Change Summary | Post-deploy Check | Rollback? |
 |---|---|---|---|---|---|---|
 | v4.2.26 | 08/07/2569 | T.M / IT | 031-035 | SO requested/transport flags, Rebate Plan Ref Doc, giveaway line approval, customer request flow, LINE Login binding | Applied to restored local DB; smoke test pending | Restore backup / disable feature routes |
+| v4.2.26 | 13/07/2569 | T.M / IT | 036-045 | WINSpeed SO/Quotation alignment, Access As audit, automated QA scripts | Migration/query/API smoke, lint, and build passed locally | Restore backup / disable feature routes |
 
 ### RTM additions
 | Requirement | Module | Migration / Source | Test Case | Status |
@@ -149,6 +150,8 @@
 - [ ] Restart backend.
 - [ ] Verify LINE Login callback URL in LINE Developers matches `LINE_LOGIN_CALLBACK_URL`.
 - [ ] Self-link at least one active user through LINE Login and perform login smoke test.
+- [x] Run automated query/API smoke tests locally and attach result reference: `docs/09-AUTOMATED-QA-v4.2.26.md`.
+- [ ] Manual retest Access As by real role hierarchy.
 | WF-DOC-05 | Production Readiness | 1.0 | 27/06/2569 | SA | docs/ |
 | WF-FM-01..07 | Forms | 1.0 | 27/06/2569 | QMR | docs/ |
 

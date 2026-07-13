@@ -250,3 +250,25 @@ Recently implemented in the SO form/API:
 - Explicit UI controls for `masterQty` / `childQty`.
 - Explicit transport selector mapped to `TranspID`.
 - Draft create/edit payloads carry `creditDays`, `truckRemark`, `billRemark`, `transpId`, `masterQty`, and `childQty`.
+
+## 14. QA Status - 2026-07-13
+
+Automated smoke tests now cover the basic health of this flow:
+
+- migration state through `045_access_as_audit.sql`;
+- dashboard/SO status query performance and status distribution;
+- master goods and transport queries used by SO entry;
+- native WINSpeed quotation links for `QU6907-00001`, `QU6907-00002`, and `QC69-00002`;
+- Access As token/audit behavior;
+- API reachability for SO stats/list and quotation list.
+
+Manual retest is still required for the full visual/user workflow:
+
+- create/edit SO draft with transport, credit days, descriptions, and master/child quantities;
+- verify app-created SO in WINSpeed SO Data Entry;
+- convert Sale Trip to Quotation and confirm/cancel quotation behavior;
+- warehouse receive/load card view;
+- TruckScale weigh-in/weigh-out realtime bridge;
+- Post Invoice handoff in WINSpeed.
+
+See `docs/09-AUTOMATED-QA-v4.2.26.md` for repeatable commands and step-by-step manual retest checklist.

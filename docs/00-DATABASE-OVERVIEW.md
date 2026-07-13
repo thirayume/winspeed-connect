@@ -131,6 +131,8 @@ flowchart TD
 | `SalesOrderExt` | SOID(PK=dbo.SOHD.SOID), WfRef, SoPrefix, SalesUserId, ControlTicketNo, ImportedDocuNo, **IsLoaded, WeighOutWeight** | 003 (+007) |
 | `SalesOrderLineExt` | SOID, ListNo, NetPricePerTon, IsGiveaway, RebateBooked, **LoadSequence, RefControlTicketNo, IsControlTicketDrawn** | 003 (+007,009) |
 | `SalesOrderAudit` | Id, SoId, UserId, Action, FromStatus, ToStatus, Note, IpAddress, CreatedAt | 001 |
+| `AccessAsAudit` | ActorUserId, EffectiveUserId, Action, IpAddress, UserAgent, CreatedAt; records Access As START/STOP | 045 |
+| `ApiAuditLog` | ActorUserId, EffectiveUserId, Method, Path, StatusCode, DurationMs, IpAddress, UserAgent, CreatedAt; records mutating/error API calls | 045 |
 
 ### 4.2 กลุ่ม Rebate (฿)
 | ตาราง | คอลัมน์หลัก | migration |
@@ -220,8 +222,19 @@ Schema changes `031-035` are implemented in source code and were applied to the 
 | `wf.SalesOrderLine`, `wf.SalesOrderLineExt` | `GiveawayApprovalStatus`, `GiveawayApprovedBy`, `GiveawayApprovedAt`, `GiveawayApprovalNote` | 033 |
 | `wf.CustomerRequest` | app-owned new customer request flow via Sale Admin; no automatic write to `dbo.EMCust` | 034 |
 | `wf.AppUser` | `LineUserId`, `LineDisplayName`, `LinePictureUrl`, `LineLinkedAt` for LINE Login binding | 035 |
+| `wf.AccessAsAudit` | Access As START/STOP audit trail with real actor and selected effective user | 045 |
+| `wf.ApiAuditLog` | API audit trail for POST/PUT/PATCH/DELETE and error responses, preserving actor/effective user | 045 |
 
 Operational note: after migration/config changes, restart the backend so schema checks and LINE Login env values are refreshed.
+
+## Current Addendum - 2026-07-13
+
+Access As uses the same `wf.AppUser` identity table but preserves two identities:
+
+- `ActorUserId`: the real logged-in user.
+- `EffectiveUserId`: the selected user being accessed as.
+
+The backend token carries both identities. Business permission checks use the effective role/user, while audit tables keep both values for traceability.
 | `tbl_keyone` (407,973) | one_cus_id/name, one_car_regis, one_type | ข้อมูลก่อนชั่ง |
 | `tblorder` (5,890) | O_numId, O_num, O_numBalance | ยอดสั่ง/คงเหลือ |
 | `tblproduct / tblcustomer / tblstore / tblweighttype` | — | master |

@@ -1,6 +1,6 @@
 # Source Alignment v4.2.26 - WS-Sale-App
 
-> Updated: 2026-07-08
+> Updated: 2026-07-13
 > Scope: align documentation with current source code and Meeting Minutes WorldFert 02072026.
 
 ## Highlight - What Changed
@@ -133,6 +133,18 @@ WS-Sale-App should focus on workflow assistance, UX, approval status, data visib
 2. Restart backend so dynamic schema caches and env values are refreshed.
 3. Run smoke tests for SO create/edit/confirm, giveaway approval, Rebate Plan Ref Doc, Customer Request, and LINE Login self-link.
 4. Run role-based UAT for rebate visibility and Admin LINE support override.
+
+## QA / Access As Alignment - 2026-07-13
+
+- Access As is now part of the current source flow for `ADMIN`, `MANAGER`, `ACCOUNTING`, `APPROVER`, and `COUNTER_SALES`.
+- Effective behavior follows the selected user: menu, customer visibility, role permissions, and workflow action availability.
+- The real actor remains visible in audit through `wf.AccessAsAudit` and `wf.ApiAuditLog`.
+- Automated QA commands are available from the root package:
+  - `npm run smoke:queries`
+  - `npm run smoke:api`
+  - `npm run smoke:api:local`
+- Latest local QA passed migrations through `045_access_as_audit.sql`, SQL query smoke, API smoke, frontend lint, and production build.
+- Full steps and manual retest checklist are documented in `docs/09-AUTOMATED-QA-v4.2.26.md`.
 
 ## Notes For Future Code Changes
 
