@@ -1,4 +1,4 @@
-const sql = require('mssql/msnodesqlv8');
+const { sql, getReadPool, closePools } = require('./_db');
 
 async function timed(pool, text) {
   const started = Date.now();
@@ -7,14 +7,7 @@ async function timed(pool, text) {
 }
 
 async function main() {
-  const pool = new sql.ConnectionPool({
-    server: '.\\SQLEXPRESS',
-    database: 'dbwins_worldfert9',
-    driver: 'msnodesqlv8',
-    requestTimeout: 120000,
-    options: { trustedConnection: true, trustServerCertificate: true },
-  });
-  await pool.connect();
+  const pool = await getReadPool();
 
   const ext = await timed(pool, `SELECT COUNT_BIG(*) AS Cnt FROM wf.SalesOrderExt WITH (NOLOCK)`);
   const hasWinspeedExt = Number(ext.rows[0]?.Cnt || 0) > 0;
@@ -267,7 +260,7 @@ async function main() {
     listSample: list.rows.slice(0, 3),
   }, null, 2));
 
-  await pool.close();
+  await closePools();
 }
 
 main().catch((error) => {

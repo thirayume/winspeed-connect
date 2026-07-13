@@ -1,4 +1,4 @@
-const sql = require('mssql/msnodesqlv8');
+const { getReadPool, closePools } = require('./_db');
 
 async function run(pool, name, text) {
   const started = Date.now();
@@ -7,14 +7,7 @@ async function run(pool, name, text) {
 }
 
 async function main() {
-  const pool = new sql.ConnectionPool({
-    server: '.\\SQLEXPRESS',
-    database: 'dbwins_worldfert9',
-    driver: 'msnodesqlv8',
-    requestTimeout: 120000,
-    options: { trustedConnection: true, trustServerCertificate: true },
-  });
-  await pool.connect();
+  const pool = await getReadPool();
 
   await run(pool, 'ext counts', `
     SELECT 'SalesOrderExt' AS TableName, COUNT(*) AS Cnt FROM wf.SalesOrderExt
@@ -59,7 +52,7 @@ async function main() {
       END;
   `);
 
-  await pool.close();
+  await closePools();
 }
 
 main().catch((error) => {
