@@ -1,14 +1,7 @@
-const sql = require('mssql/msnodesqlv8');
+const { getReadPool, closePools } = require('./_db');
 
 async function main() {
-  const pool = new sql.ConnectionPool({
-    server: '.\\SQLEXPRESS',
-    database: 'dbwins_worldfert9',
-    driver: 'msnodesqlv8',
-    requestTimeout: 120000,
-    options: { trustedConnection: true, trustServerCertificate: true },
-  });
-  await pool.connect();
+  const pool = await getReadPool();
 
   const queries = {
     byDocuType: `
@@ -51,7 +44,7 @@ async function main() {
   }
 
   console.log(JSON.stringify(output, null, 2));
-  await pool.close();
+  await closePools();
 }
 
 main().catch((error) => {
