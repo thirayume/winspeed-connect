@@ -270,11 +270,11 @@ export function PaperTrailPage() {
                                 {card.status === 'DRAFT' && (
                                   <>
                                     <button disabled={busyId === card.id} onClick={() => useAppStore.getState().navigate('sales', { soId: card.id as number, action: 'edit' })} title="แก้ไขเอกสาร"
-                                      className="flex-1 h-7 rounded-md text-[#0C447C] hover:text-white bg-blue-50 hover:bg-[#0C447C] border border-blue-200 flex items-center justify-center gap-1 shrink-0 disabled:opacity-50 text-[10px] font-bold transition-colors">
+                                      className="flex-1 h-7 px-1.5 rounded-md text-[#0C447C] hover:text-white bg-blue-50 hover:bg-[#0C447C] border border-blue-200 flex items-center justify-center gap-1 shrink-0 disabled:opacity-50 text-[10px] font-bold whitespace-nowrap transition-colors">
                                       <Edit size={11} /> แก้ไข
                                     </button>
                                     <button disabled={busyId === card.id} onClick={() => doCancel(card)} title="ลบเอกสารร่าง"
-                                      className="flex-1 h-7 rounded-md text-red-500 hover:text-white bg-red-50 hover:bg-red-500 border border-red-200 flex items-center justify-center gap-1 shrink-0 disabled:opacity-50 text-[10px] font-bold transition-colors">
+                                      className="flex-1 h-7 px-1.5 rounded-md text-red-500 hover:text-white bg-red-50 hover:bg-red-500 border border-red-200 flex items-center justify-center gap-1 shrink-0 disabled:opacity-50 text-[10px] font-bold whitespace-nowrap transition-colors">
                                       <Trash2 size={11} /> ยกเลิก
                                     </button>
                                   </>
@@ -283,29 +283,29 @@ export function PaperTrailPage() {
                                 {['CONFIRMED', 'PICKING'].includes(card.status) && role && CAN_REQ_UNLOCK.includes(role) && (
                                   <>
                                     <button onClick={() => setRequestModalConfig({ isOpen: true, type: 'EDIT', card })} title="ขอแก้ไขเอกสาร"
-                                      className="flex-1 h-7 rounded-md text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 flex items-center justify-center gap-1 shrink-0 text-[10px] font-bold transition-colors">
+                                      className="flex-1 h-7 px-1.5 rounded-md text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 flex items-center justify-center gap-1 shrink-0 text-[10px] font-bold whitespace-nowrap transition-colors">
                                       <Edit size={11} /> ขอแก้ไข
                                     </button>
                                     <button onClick={() => setRequestModalConfig({ isOpen: true, type: 'CANCEL', card })} title="ขอยกเลิกเอกสาร"
-                                      className="flex-1 h-7 rounded-md text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 border border-red-300 flex items-center justify-center gap-1 shrink-0 text-[10px] font-bold transition-colors">
+                                      className="flex-1 h-7 px-1.5 rounded-md text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 border border-red-300 flex items-center justify-center gap-1 shrink-0 text-[10px] font-bold whitespace-nowrap transition-colors">
                                       <Trash2 size={11} /> ขอยกเลิก
                                     </button>
                                   </>
                                 )}
 
                                 <button onClick={() => setPrintSoIds([card.id])}
-                                  className="flex-1 h-7 rounded-md text-[10px] font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1">
+                                  className="flex-1 h-7 px-1.5 rounded-md text-[10px] font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1 whitespace-nowrap">
                                   <Printer size={11} /> พิมพ์
                                 </button>
                                 {card.status === 'DRAFT' && !card.verifiedAt && role && CAN_VERIFY.includes(role) && (
                                   <button disabled={busyId === card.id} onClick={() => doVerify(card)}
-                                    className="flex-1 h-7 rounded-md text-white text-[10px] font-semibold disabled:opacity-50 flex items-center justify-center gap-1 bg-emerald-600 shadow-sm">
+                                    className="flex-1 h-7 px-1.5 rounded-md text-white text-[10px] font-semibold disabled:opacity-50 flex items-center justify-center gap-1 bg-emerald-600 shadow-sm whitespace-nowrap">
                                     <ShieldCheck size={11} /> ตรวจ
                                   </button>
                                 )}
                                 {canAdvance && (
                                   <button disabled={busyId === card.id} onClick={() => advance(card)}
-                                    className="flex-1 h-7 rounded-md text-white text-[10px] font-semibold disabled:opacity-50 flex items-center justify-center gap-1 shadow-sm"
+                                    className="flex-1 h-7 px-1.5 rounded-md text-white text-[10px] font-semibold disabled:opacity-50 flex items-center justify-center gap-1 shadow-sm whitespace-nowrap"
                                     style={{ background: m.color }}>
                                     {next!.label} <ArrowRight size={11} />
                                   </button>
