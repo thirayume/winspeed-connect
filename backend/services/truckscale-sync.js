@@ -21,10 +21,11 @@ async function matchSo(r) {
   
   // 1. WebApp (wf.SalesOrder)
   const draftCand = (await wfQuery(
-    `SELECT Id, TotalQtyTon, ISNULL(DeliveryDate, CreatedAt) AS RefDate, CustName
-     FROM wf.SalesOrder
-     WHERE Status IN ('DRAFT', 'CONFIRMED', 'PICKING', 'LOADED')
-       AND REPLACE(REPLACE(REPLACE(ISNULL(TruckPlate,''),' ',''),'-',''),'/','') LIKE @p`,
+    `SELECT so.Id, ISNULL(so.DeliveryDate, so.CreatedAt) AS RefDate, so.CustName,
+       (SELECT SUM(QtyTon) FROM wf.SalesOrderLine l WHERE l.SoId = so.Id) AS TotalQtyTon
+     FROM wf.SalesOrder so
+     WHERE so.Status IN ('DRAFT', 'CONFIRMED', 'PICKING', 'LOADED')
+       AND REPLACE(REPLACE(REPLACE(ISNULL(so.TruckPlate,''),' ',''),'-',''),'/','') LIKE @p`,
     { p: { type: sql.NVarChar(80), value: `%${np}%` } })).recordset || [];
   draftCand.forEach(c => candidates.push({ id: String(c.Id), ...c, source: 'DRAFT' }));
     
