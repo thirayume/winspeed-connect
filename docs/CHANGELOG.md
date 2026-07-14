@@ -1,6 +1,6 @@
-# Changelog
+﻿# Changelog
 
-## [v4.2.26] - 2026-07-08
+## [v5.0.0] - 2026-07-14
 
 ### Added
 - Added SO requested/notification date-time and transport flags: own truck, no truck required, and P-Sling.
@@ -21,10 +21,10 @@
 - Added migration `039` and SO form/API mapping for explicit transporter (`TranspID`) selection, credit days, header remarks, and per-line Master/Child quantities across draft create/edit and WINSpeed confirm flow.
 - Added migration `044` and WINSpeed Quotation lab script after validating native documents `QU6907-00001`, `QU6907-00002`, and `QC69-00002`.
 - Added repeatable automated QA scripts: `smoke:queries`, `smoke:api`, and `smoke:api:local`.
-- Added automated QA documentation and manual retest checklist in `docs/09-AUTOMATED-QA-v4.2.26.md`.
+- Added automated QA documentation and manual retest checklist in `docs/09-AUTOMATED-QA-v5.0.0.md`.
 
 ### Changed
-- Aligned backend/frontend metadata and visible UI badge to v4.2.26.
+- Aligned backend/frontend metadata and visible UI badge to v5.0.0.
 - Updated documentation to reflect the actual stack: React 19 + Vite + Express.
 - Clarified database architecture: SQL Server is the primary WINSpeed/App database; MySQL is used as the TruckScale bridge only.
 - Re-aligned the old CN Rebate screen/report into WF Rebate Trail; legacy `cn-rebate` keys remain only for compatibility.
@@ -37,7 +37,7 @@
 - Fixed API audit path capture so Access As API calls are reliably written to `wf.ApiAuditLog`.
 - Improved `/api/so` list performance by splitting total-count and page queries while preserving the same response shape.
 - Adjusted frontend lint policy to keep React/data-loading advisory rules as warnings while still failing on real lint errors.
-- Added `07-SOURCE-ALIGNMENT-v4.2.26.md` to highlight source/document alignment, WINSpeed WF custom-build boundaries, and Meeting Minutes 02072026 backlog.
+- Added `07-SOURCE-ALIGNMENT-v5.0.0.md` to highlight source/document alignment, WINSpeed WF custom-build boundaries, and Meeting Minutes 02072026 backlog.
 
 ### Database Migration Status
 - Applied schema migrations `001-035` to the restored local `dbwins_worldfert9` database on 2026-07-08.
@@ -87,6 +87,9 @@
 ### Fixed
 - Fixed an `X is not defined` ReferenceError in `PaperTrailPage.tsx` caused by a missing import from `lucide-react`.
 - Fixed a syntax parsing error `Unterminated regular expression` in `PaperTrailPage.tsx` caused by a mismatched closing `</div>` tag.
+
+
+
 
 
 

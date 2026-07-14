@@ -1,11 +1,11 @@
-# Source Alignment v4.2.26 - WS-Sale-App
+﻿# Source Alignment v5.0.0 - WS-Sale-App
 
 > Updated: 2026-07-13
 > Scope: align documentation with current source code and Meeting Minutes WorldFert 02072026.
 
 ## Highlight - What Changed
 
-- **Version aligned to v4.2.26**: root, backend, frontend metadata and UI badge should use the same release version.
+- **Version aligned to v5.0.0**: root, backend, frontend metadata and UI badge should use the same release version.
 - **Actual stack clarified**: current source code is **React 19 + Vite frontend** and **Express backend**. It is not NestJS in the current implementation.
 - **Database architecture clarified**: **Microsoft SQL Server is the primary system of record** for WINSpeed `dbo` and app-owned `wf`; **MySQL is used only for TruckScale** and is bridged by WS-Sale-App so weighing data can be matched and sent back into the WINSpeed workflow.
 - **WINSpeed custom build boundary documented**: WF-specific WINSpeed functions must be reused where they already exist. WS-Sale-App should not duplicate accounting or GL posting logic.
@@ -15,12 +15,12 @@
 
 | Area | Current value |
 |---|---|
-| Root package | `4.2.26` |
-| Backend package | `4.2.26` |
-| Frontend package | `4.2.26` |
-| UI badge | `v4.2.26` |
+| Root package | `5.0.0` |
+| Backend package | `5.0.0` |
+| Frontend package | `5.0.0` |
+| UI badge | `v5.0.0` |
 | Current branch | `main` / `origin/main` |
-| Latest reviewed commit | `d2b9b10 chore: bump version to 4.2.26 and update quotation flow` |
+| Latest reviewed commit | `d2b9b10 chore: bump version to 5.0.0 and update quotation flow` |
 
 ## Actual Application Stack
 
@@ -59,7 +59,7 @@ The app now treats shipped orders without an invoice as **Ready for WINSpeed Pos
 
 Local validation against the restored 2026-07-02 TEST data showed that `DocuType=112` is not part of the active WF SO flow. Migration `036_align_winspeed_so_flow.sql` supersedes earlier confirm-procedure definitions and aligns app-confirmed SO creation to `DocuType=103` with WINSpeed WF-compatible remaining quantities and VAT type.
 
-Follow-up validation with `I69-KORAT-1` in WINSpeed SO Data Entry confirmed additional required display/update fields. Migrations `038_winspeed_so_data_entry_mapping.sql` and `039_so_transp_id.sql` keep app-created booking rows closer to native WINSpeed rows by filling `SOHD.TranspID` for "ขนส่งโดย", `SOHD.CheckAll`, header totals/defaults, line `SODTRemark`, and line `MasterQty` / `ChildQty`. The repeatable local test utility is `backend/scripts/winspeed_so_lab.js`.
+Follow-up validation with `I69-KORAT-1` in WINSpeed SO Data Entry confirmed additional required display/update fields. Migrations `038_winspeed_so_data_entry_mapping.sql` and `039_so_transp_id.sql` keep app-created booking rows closer to native WINSpeed rows by filling `SOHD.TranspID` for "เธเธเธชเนเธเนเธ”เธข", `SOHD.CheckAll`, header totals/defaults, line `SODTRemark`, and line `MasterQty` / `ChildQty`. The repeatable local test utility is `backend/scripts/winspeed_so_lab.js`.
 
 For the full working flow, status model, SQL mapping, and local lab commands, see `docs/08-WINSPEED-SO-FLOW.md`.
 
@@ -75,11 +75,11 @@ Meeting Minutes 02072026 confirms the production WINSpeed is a World Fert custom
 
 ### Sale Order WF functions
 
-- Sale Booking (WF) / ใบสั่งจอง
-- Approve Sale Booking (WF) / อนุมัติใบสั่งจอง
-- Sale Order (WF) / ใบสั่งขาย
+- Sale Booking (WF) / เนเธเธชเธฑเนเธเธเธญเธ
+- Approve Sale Booking (WF) / เธญเธเธธเธกเธฑเธ•เธดเนเธเธชเธฑเนเธเธเธญเธ
+- Sale Order (WF) / เนเธเธชเธฑเนเธเธเธฒเธข
 - Return Ticket / Return Goods (WF)
-- Coupon/Fertilizer ticket redemption / ตัดตั๋วปุ๋ย
+- Coupon/Fertilizer ticket redemption / เธ•เธฑเธ”เธ•เธฑเนเธงเธเธธเนเธข
 - Cancel/Clear fertilizer ticket (WF)
 - Post Invoice (WF)
 - SO Export/Import
@@ -87,9 +87,9 @@ Meeting Minutes 02072026 confirms the production WINSpeed is a World Fert custom
 
 ### Accounts Receivable WF functions
 
-- Billing Note (WF) / ใบวางบิล
-- Receipt (WF) / รับชำระหนี้
-- Debt follow-up / ติดตามหนี้
+- Billing Note (WF) / เนเธเธงเธฒเธเธเธดเธฅ
+- Receipt (WF) / เธฃเธฑเธเธเธณเธฃเธฐเธซเธเธตเน
+- Debt follow-up / เธ•เธดเธ”เธ•เธฒเธกเธซเธเธตเน
 - BlackList / Cancel Blacklist
 - Generate billing note
 - Clear outstanding AR/AP
@@ -101,7 +101,7 @@ Meeting Minutes 02072026 confirms the production WINSpeed is a World Fert custom
 - DAILY COUPON / DELIVERY ORDER / INVOICE REGISTER
 - DAILY COUPON REDEMPTION
 - 12 MONTHS PRODUCT DELIVERY
-- Pending delivery by sales order / ลูกหนี้ค้างส่งคงเหลือ
+- Pending delivery by sales order / เธฅเธนเธเธซเธเธตเนเธเนเธฒเธเธชเนเธเธเธเน€เธซเธฅเธทเธญ
 - Weighing detail (WF)
 - Credit approval report
 
@@ -111,7 +111,7 @@ WS-Sale-App should focus on workflow assistance, UX, approval status, data visib
 
 ## Meeting Minutes 02072026 - Backlog
 
-| # | Requirement | Status in v4.2.26 | Suggested implementation path | Risk |
+| # | Requirement | Status in v5.0.0 | Suggested implementation path | Risk |
 |---|---|---|---|---|
 | 1 | Add requested date/time to SO | Implemented in code | Migration `031`, backend SO routes, create/edit/detail UI | Pending DB apply |
 | 2 | 5-level price color vs Set Price | Implemented in code | `CreateSODialog` price classifier | Build passed |
@@ -144,7 +144,7 @@ WS-Sale-App should focus on workflow assistance, UX, approval status, data visib
   - `npm run smoke:api`
   - `npm run smoke:api:local`
 - Latest local QA passed migrations through `045_access_as_audit.sql`, SQL query smoke, API smoke, frontend lint, and production build.
-- Full steps and manual retest checklist are documented in `docs/09-AUTOMATED-QA-v4.2.26.md`.
+- Full steps and manual retest checklist are documented in `docs/09-AUTOMATED-QA-v5.0.0.md`.
 
 ## Notes For Future Code Changes
 
@@ -152,3 +152,4 @@ WS-Sale-App should focus on workflow assistance, UX, approval status, data visib
 - Preserve existing `dbo` behavior unless a change is explicitly approved.
 - Prefer app-owned `wf` workflow fields over writing new meaning into WINSpeed `dbo` columns.
 - For any write that can affect accounting, route the official action through WINSpeed custom WF menus where possible.
+

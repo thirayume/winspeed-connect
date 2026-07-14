@@ -1,4 +1,4 @@
-# 09 - Automated QA and Manual Retest Log v4.2.26
+﻿# 09 - Automated QA and Manual Retest Log v5.0.0
 
 > Updated: 2026-07-13  
 > Scope: Localhost QA after restored local `dbwins_worldfert9`, migrations through `045_access_as_audit.sql`, WINSpeed quotation alignment, Access As audit, dashboard/SO performance, and frontend build/lint health.
@@ -176,7 +176,7 @@ Use this checklist after running the automated tests.
 | M-02 | Open Access As from topbar | Admin can select lower/equal permitted users; sidebar and visible data follow effective role |
 | M-03 | Stop Access As | User returns to real Admin role; audit remains in DB |
 | M-04 | Refresh browser during normal login | Token persists; if invalid, app redirects to Login cleanly |
-| M-05 | Dashboard | Counts match status meaning: Draft, รอจัดส่ง, รอรับสินค้า, โหลดสินค้า, ส่งออกจากตาชั่ง, ปิด SO ใน WINSpeed, ยกเลิก |
+| M-05 | Dashboard | Counts match status meaning: Draft, เธฃเธญเธเธฑเธ”เธชเนเธ, เธฃเธญเธฃเธฑเธเธชเธดเธเธเนเธฒ, เนเธซเธฅเธ”เธชเธดเธเธเนเธฒ, เธชเนเธเธญเธญเธเธเธฒเธเธ•เธฒเธเธฑเนเธ, เธเธดเธ” SO เนเธ WINSpeed, เธขเธเน€เธฅเธดเธ |
 | M-06 | Sales Portal | Cards show latest SOs from WINSpeed and app-created drafts; search/filter remains responsive |
 | M-07 | Create/inspect SO draft | Requested date/time, transport, credit days, remarks, master/child quantities display correctly |
 | M-08 | Convert Sale Trip to Quotation | Draft trip creates one quotation, giveaway lines excluded, linked trip shows quotation remark/link |
@@ -193,5 +193,6 @@ Use this checklist after running the automated tests.
 - `/api/so?page=1&limit=5` improved from about `3.2 s` to about `1.9 s` after splitting total-count and page queries; target additional tuning if concurrent UAT needs sub-second list response.
 - Frontend lint passes with warnings; cleanup can be done gradually without blocking current UAT.
 - TruckScale live sync was not fully exercised in the API smoke because current local MySQL configuration may vary by machine.
-- Word copy for this QA log was generated at `docs/word/09-AUTOMATED-QA-v4.2.26.docx`; older Word copies were not regenerated in this pass.
+- Word copy for this QA log was generated at `docs/word/09-AUTOMATED-QA-v5.0.0.docx`; older Word copies were not regenerated in this pass.
 - DOCX structural QA passed; visual render QA was skipped because the current runtime does not have the DOCX-to-PDF renderer installed.
+

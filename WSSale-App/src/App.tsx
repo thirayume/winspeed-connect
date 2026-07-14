@@ -264,7 +264,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
             <div className="flex flex-col leading-tight animate-in fade-in duration-300">
               <span className="text-sm font-semibold flex items-center gap-1.5">
                 WS-Sale-App
-                <span className="text-[9px] bg-blue-100 text-blue-800 px-1 rounded font-bold">v4.2.26</span>
+                <span className="text-[9px] bg-blue-100 text-blue-800 px-1 rounded font-bold">v5.0.0</span>
               </span>
               <span className="text-[11px] text-muted-foreground">World Fert</span>
             </div>

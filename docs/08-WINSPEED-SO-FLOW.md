@@ -1,4 +1,4 @@
-# WINSpeed SO Flow - Working Notes
+﻿# WINSpeed SO Flow - Working Notes
 
 > Updated: 2026-07-10  
 > Scope: WS-Sale-App, WINSpeed SO Data Entry, TruckScale realtime bridge, and accounting handoff.
@@ -92,9 +92,9 @@ Current dashboard status interpretation:
 
 For user-facing text, prefer:
 
-- `CONFIRMED` = "รอจัดส่ง"
-- `SHIPPED` = "ส่งออกจากตาชั่ง"
-- `IMPORTED` = "ปิด SO ใน WINSpeed"
+- `CONFIRMED` = "เธฃเธญเธเธฑเธ”เธชเนเธ"
+- `SHIPPED` = "เธชเนเธเธญเธญเธเธเธฒเธเธ•เธฒเธเธฑเนเธ"
+- `IMPORTED` = "เธเธดเธ” SO เนเธ WINSpeed"
 
 `SHIPPED` can be zero after a fresh restore if TruckScale/app bridge state in `wf.SalesOrderExt` is empty. Older WINSpeed data may still show as `IMPORTED`/DocuType 104 because it already passed WINSpeed's own downstream flow.
 
@@ -104,11 +104,11 @@ Dashboard "Aging" is **not AR aging** and is **not the control-ticket list**.
 
 | Concept | Meaning | Source |
 |---|---|---|
-| SO aging / SO ค้างจัดส่ง | SO rows that have remained open too long; used for operations follow-up | `dbo.SOHD/SODT`, `wf.SalesOrderExt` |
-| Control ticket / ตั๋วคุม | Booking/control-ticket style SO; detected by `SOHD.TransRegistration = N'ตั๋วคุม'` or AI/control-ticket workflow | `dbo.SOHD`, app control-ticket fields |
-| AR aging / ลูกหนี้คงค้าง | Unpaid invoice/customer receivable exposure | WINSpeed AR/Invoice tables such as `ARRece*`, `SOInv*` |
+| SO aging / SO เธเนเธฒเธเธเธฑเธ”เธชเนเธ | SO rows that have remained open too long; used for operations follow-up | `dbo.SOHD/SODT`, `wf.SalesOrderExt` |
+| Control ticket / เธ•เธฑเนเธงเธเธธเธก | Booking/control-ticket style SO; detected by `SOHD.TransRegistration = N'เธ•เธฑเนเธงเธเธธเธก'` or AI/control-ticket workflow | `dbo.SOHD`, app control-ticket fields |
+| AR aging / เธฅเธนเธเธซเธเธตเนเธเธเธเนเธฒเธ | Unpaid invoice/customer receivable exposure | WINSpeed AR/Invoice tables such as `ARRece*`, `SOInv*` |
 
-Dashboard SO aging excludes control-ticket rows (`SOHD.TransRegistration = N'ตั๋วคุม'`) so the operational list does not mix reservations/control tickets with delivery follow-up. It currently shows the first product line for context and the open age in days. The quantity shown is tons (`QtyTon`), not outstanding baht. If C-Level needs financial exposure, add a separate AR Aging KPI/report rather than reusing SO Aging.
+Dashboard SO aging excludes control-ticket rows (`SOHD.TransRegistration = N'เธ•เธฑเนเธงเธเธธเธก'`) so the operational list does not mix reservations/control tickets with delivery follow-up. It currently shows the first product line for context and the open age in days. The quantity shown is tons (`QtyTon`), not outstanding baht. If C-Level needs financial exposure, add a separate AR Aging KPI/report rather than reusing SO Aging.
 
 ## 5. App Confirm Contract
 
@@ -119,9 +119,9 @@ Required header fields confirmed by local `I69-KORAT-1` testing:
 | WINSpeed field | Purpose |
 |---|---|
 | `SOHD.DocuType='103'` | Make document appear as SO Data Entry booking |
-| `SOHD.TranspID` | Displays "ขนส่งโดย"; selected in the app when supplied, otherwise derived from customer ship-to/default transport |
+| `SOHD.TranspID` | Displays "เธเธเธชเนเธเนเธ”เธข"; selected in the app when supplied, otherwise derived from customer ship-to/default transport |
 | `SOHD.TransRegistration` | Truck plate / control-ticket text |
-| `SOHD.CheckAll='Y'` | Represents "ตรวจสอบทั้งใบ" |
+| `SOHD.CheckAll='Y'` | Represents "เธ•เธฃเธงเธเธชเธญเธเธ—เธฑเนเธเนเธ" |
 | `SOHD.NetAmnt` | Total amount |
 | `SOHD.SumGoodAmnt` | Goods total |
 | `SOHD.BillAftrDiscAmnt` | After-discount total |
@@ -136,7 +136,7 @@ Required line fields:
 | `SODT.GoodID`, `GoodName` | Product identity and display |
 | `SODT.GoodQty2`, `GoodPrice2`, `GoodAmnt` | Quantity, price, line amount |
 | `SODT.CheckFlag='Y'` | Per-line checked state |
-| `SODT.MasterQty`, `ChildQty` | จำนวนแม่ / จำนวนลูก; independent split fields |
+| `SODT.MasterQty`, `ChildQty` | เธเธณเธเธงเธเนเธกเน / เธเธณเธเธงเธเธฅเธนเธ; independent split fields |
 | `SODT.RemaQty`, `POQty`, `RemaQtyPkg` | Remaining/order quantities for WF menus |
 | `SODTRemark.Remark` | Line description display |
 
@@ -161,7 +161,7 @@ When the UI supports split input, send `masterQty` and `childQty` per line.
 
 ## 7. Transport Rule
 
-The visible "ขนส่งโดย" field in WINSpeed comes from:
+The visible "เธเธเธชเนเธเนเธ”เธข" field in WINSpeed comes from:
 
 - `SOHD.TranspID`
 - lookup: `dbo.EMTransp.TranspID`
@@ -219,7 +219,7 @@ The old CN Rebate assumption should be treated as legacy/compatibility only.
 | Main SO API flow | `backend/routes/so.js` |
 | Latest SO mapping migration | `backend/migrations/039_so_transp_id.sql` |
 | Reusable local SO lab tool | `backend/scripts/winspeed_so_lab.js` |
-| Source alignment notes | `docs/07-SOURCE-ALIGNMENT-v4.2.26.md` |
+| Source alignment notes | `docs/07-SOURCE-ALIGNMENT-v5.0.0.md` |
 | Database overview | `docs/00-DATABASE-OVERVIEW.md` |
 | Test cases | `docs/02-TEST-CASES.md` |
 
@@ -271,4 +271,5 @@ Manual retest is still required for the full visual/user workflow:
 - TruckScale weigh-in/weigh-out realtime bridge;
 - Post Invoice handoff in WINSpeed.
 
-See `docs/09-AUTOMATED-QA-v4.2.26.md` for repeatable commands and step-by-step manual retest checklist.
+See `docs/09-AUTOMATED-QA-v5.0.0.md` for repeatable commands and step-by-step manual retest checklist.
+
