@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'voucher' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'weigh-inbox' | 'pricebook' | 'policy' | 'governance' | 'ops' | 'admin' | 'master';
+type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'weigh-inbox' | 'policy' | 'governance' | 'ops' | 'admin' | 'master' | 'profile';
 
 type NavParams = {
   soId?: number;

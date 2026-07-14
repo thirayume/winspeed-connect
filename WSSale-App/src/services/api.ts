@@ -184,8 +184,13 @@ export const createPrice = (payload: { GoodID: string; CustID: string | null; Go
 export const bulkExtendPrices = (payloads: { GoodID: string; CustID: string | null; GoodPriceNet: number; BeginDate: string; EndDate: string; startgoodqty: number; endgoodqty: number }[]) =>
   req<{ ok: boolean; createdCount: number }>('/master/prices/bulk-extend', { method: 'POST', body: JSON.stringify({ items: payloads }) });
 
-export const fetchControlTickets = (custId?: string) =>
-  req<import('../types').ControlTicket[]>(`/master/control-tickets${custId ? `?custId=${custId}` : ''}`);
+export const fetchControlTickets = (custId?: string, includeCompleted?: boolean) => {
+  const qs = new URLSearchParams();
+  if (custId) qs.set('custId', custId);
+  if (includeCompleted) qs.set('includeCompleted', 'true');
+  const str = qs.toString();
+  return req<import('../types').ControlTicket[]>(`/master/control-tickets${str ? `?${str}` : ''}`);
+};
 
 export const fetchControlTicketDraws = (docuNo: string) =>
   req<import('../types').ControlTicketDraw[]>(`/master/control-tickets/${encodeURIComponent(docuNo)}/draws`);

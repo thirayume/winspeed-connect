@@ -9,6 +9,7 @@ export function ControlTicketPage() {
   const [tickets, setTickets] = useState<ControlTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
+  const [includeCompleted, setIncludeCompleted] = useState(false);
   const [sel, setSel] = useState<ControlTicket | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [draws, setDraws] = useState<ControlTicketDraw[]>([]);
@@ -16,9 +17,9 @@ export function ControlTicketPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setTickets(await fetchControlTickets()); } catch (e) { console.error(e); }
+    try { setTickets(await fetchControlTickets(undefined, includeCompleted)); } catch (e) { console.error(e); }
     setLoading(false);
-  }, []);
+  }, [includeCompleted]);
   useEffect(() => { load(); }, [load]);
 
   async function open(t: ControlTicket) {
@@ -54,9 +55,15 @@ export function ControlTicketPage() {
       <div className="flex-1 overflow-auto p-0 sm:p-6">
         {!sel ? (
           <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
-              <Search size={14} className="text-gray-400" />
-              <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหา ลูกค้า / เลขตั๋ว (AI...)" className="flex-1 text-sm outline-none bg-transparent" />
+            <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-4">
+              <div className="flex-1 flex items-center gap-2">
+                <Search size={14} className="text-gray-400" />
+                <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหา ลูกค้า / เลขตั๋ว (AI...)" className="flex-1 text-sm outline-none bg-transparent" />
+              </div>
+              <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                <input type="checkbox" checked={includeCompleted} onChange={e => setIncludeCompleted(e.target.checked)} className="rounded text-[#0C447C] focus:ring-[#0C447C]" />
+                แสดงตั๋วที่ถูกตัดหมดแล้ว
+              </label>
               <span className="text-xs text-gray-400">{filtered.length} ตั๋ว</span>
             </div>
             {loading ? (

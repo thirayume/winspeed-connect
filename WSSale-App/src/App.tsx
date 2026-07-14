@@ -18,7 +18,7 @@ import { MobileDrawer } from './components/common/MobileDrawer';
 import type { NavItem, NavGroup } from './components/common/MobileDrawer';
 import { UnlockReviewModal } from './components/papertrail/UnlockReviewModal';
 
-export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'voucher' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'weigh-inbox' | 'policy' | 'governance' | 'ops' | 'admin' | 'master' | 'profile';
+export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'weigh-inbox' | 'policy' | 'governance' | 'ops' | 'admin' | 'master' | 'profile';
 
 const SalesPortal = lazy(() => import('./components/sales/SalesPortal').then(m => ({ default: m.SalesPortal })));
 const StorePortal = lazy(() => import('./components/store/StorePortal').then(m => ({ default: m.StorePortal })));
@@ -38,7 +38,7 @@ const AdminUsersPage = lazy(() => import('./components/admin/AdminUsersPage').th
 const ProfilePage = lazy(() => import('./components/profile/ProfilePage'));
 const MasterDataPortal = lazy(() => import('./components/master/MasterDataPortal').then(m => ({ default: m.MasterDataPortal })));
 const AgingPage = lazy(() => import('./components/aging/AgingPage').then(m => ({ default: m.AgingPage })));
-const VoucherPage = lazy(() => import('./components/voucher/VoucherPage').then(m => ({ default: m.VoucherPage })));
+
 const ReconciliationPage = lazy(() => import('./components/recon/ReconciliationPage').then(m => ({ default: m.ReconciliationPage })));
 const OpsStatusPage = lazy(() => import('./components/ops/OpsStatusPage').then(m => ({ default: m.OpsStatusPage })));
 const ApprovalPolicyPage = lazy(() => import('./components/policy/ApprovalPolicyPage').then(m => ({ default: m.ApprovalPolicyPage })));
@@ -67,7 +67,6 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'rebate',     label: 'รีเบท (App)', sub: 'Pool · เคลม · wf',      icon: Coins, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'SALES'] },
       { key: 'rebate-plan',label: 'Rebate Plan', sub: 'แผน · จัดสรรงบ',        icon: ClipboardList, roles: ['ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING'] },
       { key: 'cn-rebate',  label: 'CN Rebate',   sub: 'ใบลดหนี้ · Winspeed',   icon: FileCheck2, roles: ['ACCOUNTING', 'ADMIN', 'MANAGER'] },
-      { key: 'voucher',    label: 'Voucher',     sub: 'คูปองคงค้าง · Winspeed', icon: Ticket },
       { key: 'giveaway',   label: 'ของแถม',      sub: 'งบรายภาค · เบิก',     icon: Gift },
     ],
   },
@@ -264,7 +263,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
             <div className="flex flex-col leading-tight animate-in fade-in duration-300">
               <span className="text-sm font-semibold flex items-center gap-1.5">
                 WS-Sale-App
-                <span className="text-[9px] bg-blue-100 text-blue-800 px-1 rounded font-bold">v5.0.0</span>
+                <span className="text-[9px] bg-blue-100 text-blue-800 px-1 rounded font-bold">v5.0.9</span>
               </span>
               <span className="text-[11px] text-muted-foreground">World Fert</span>
             </div>
@@ -483,7 +482,6 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'rebate'     && <RebatePage />}
                 {activePortal === 'rebate-plan' && <RebatePlanPage />}
                 {activePortal === 'cn-rebate'  && <CnRebatePage />}
-                {activePortal === 'voucher'    && <VoucherPage />}
                 {activePortal === 'control-ticket' && <ControlTicketPage />}
                 {activePortal === 'reports'    && <ReportsPage />}
                 {activePortal === 'truckscale' && <TruckScalePage />}

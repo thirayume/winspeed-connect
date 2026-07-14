@@ -8,7 +8,8 @@ export type UserRole =
   | 'WAREHOUSE'
   | 'ACCOUNTING'
   | 'MANAGER'
-  | 'APPROVER';
+  | 'APPROVER'
+  | 'WEIGHBRIDGE';
 
 export type AppUser = {
   id: number;

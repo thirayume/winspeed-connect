@@ -571,17 +571,18 @@ router.post('/prices/bulk-extend', async (req, res) => {
 // GET /api/master/control-tickets — ตั๋วคุม (AppvDocuNo ขึ้นต้นด้วย 'AI', DocuStatus='Y')
 router.get('/control-tickets', async (req, res) => {
   try {
-    const { custId } = req.query;
+    const { custId, includeCompleted } = req.query;
     const where = custId ? `AND h.CustID = @custId` : '';
     const inputs = custId ? { custId: { type: sql.NVarChar(20), value: custId } } : {};
+    const condition = includeCompleted === 'true' ? '' : 'WHERE TotalQtyTon > DrawnQtyTon';
     const rows = await query(`
       WITH Tickets AS (
         SELECT TOP 100
-          h.SOID, h.AppvDocuNo AS DocuNo, h.DocuDate, h.CustID,
+          h.SOID, ISNULL(h.AppvDocuNo, h.DocuNo) AS DocuNo, h.DocuDate, h.CustID,
           h.CustName, h.TransRegistration AS TruckPlate,
           h.AppvFlag, h.DocuNo AS OriginalDocuNo, h.AppvDate, h.Desc1, h.Desc2
         FROM dbo.SOHD h WITH (NOLOCK)
-        WHERE h.DocuType = 103 AND h.DocuStatus = 'Y' AND h.AppvDocuNo LIKE 'AI%' ${where}
+        WHERE h.DocuType = 103 AND (h.AppvDocuNo LIKE 'AI%' OR h.TransRegistration = N'ตั๋วคุม') ${where}
       ),
       DraftTickets AS (
         SELECT 
@@ -643,7 +644,7 @@ router.get('/control-tickets', async (req, res) => {
           ) AS DrawnQtyTon
         FROM AllTickets t
       ) final
-      WHERE TotalQtyTon > DrawnQtyTon
+      ${condition}
       ORDER BY DocuDate DESC
     `, inputs);
     res.json(rows);
