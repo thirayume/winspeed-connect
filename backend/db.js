@@ -18,7 +18,7 @@ const isWindows = os.platform() === 'win32';
 // Use msnodesqlv8 on Windows for Windows Auth support, standard tedious on Linux (Railway/Render)
 const sql = isWindows ? require('mssql/msnodesqlv8') : require('mssql');
 
-const DEFAULT_TARGET = (process.env.DB_MODE || 'local').toLowerCase() === 'remote' ? 'remote' : 'local';
+const DEFAULT_TARGET = (process.env.DB_MODE || (isWindows ? 'local' : 'remote')).toLowerCase() === 'remote' ? 'remote' : 'local';
 const DB = process.env.DB_NAME || 'dbwins_worldfert9';
 const als = new AsyncLocalStorage();
 
