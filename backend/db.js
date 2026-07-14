@@ -106,14 +106,16 @@ async function query(text, inputs = {}) {
   await pl.ready;
   const req = pl.readerPool.request();
   for (const [k, { type, value }] of Object.entries(inputs)) req.input(k, type, value);
-  return (await req.query(text)).recordset;
+  const actualText = isWindows ? text : `SET ARITHABORT ON; SET ANSI_WARNINGS ON; ${text}`;
+  return (await req.query(actualText)).recordset;
 }
 async function wfQuery(text, inputs = {}) {
   const pl = pools();
   await pl.ready;
   const req = pl.ownerPool.request();
   for (const [k, { type, value }] of Object.entries(inputs)) req.input(k, type, value);
-  return await req.query(text);
+  const actualText = isWindows ? text : `SET ARITHABORT ON; SET ANSI_WARNINGS ON; ${text}`;
+  return await req.query(actualText);
 }
 async function wfTransaction(fn) {
   const pl = pools();
