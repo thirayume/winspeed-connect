@@ -622,13 +622,15 @@ export type TruckScaleDetail = TruckScaleWeigh & { products: TruckScaleProduct[]
 // ── Control Ticket (ชุดตั๋วคุม — FR-021) ───────────────────────
 export type ControlTicket = {
   SOID: string | number;
-  DocuNo: string;          // AppvDocuNo (AI...)
+  DocuNo: string;
+  AppvDocuNo?: string;
+  DisplayDocuNo: string;
   DocuDate: string;
   CustID: string;
   CustName: string;
   TruckPlate?: string;
   AppvFlag?: string;
-  OriginalDocuNo?: string;
+  AppvDate?: string;
   TotalQtyTon: number;
   DrawnQtyTon: number;
 };
