@@ -564,9 +564,8 @@ export type PaperScanRow = {
 export type TruckType = {
   Id: string;
   Name: string;
-  SlotCount: number;
-  TrailerSlotCount?: number | null;
-  MaxTonPerSlot: number;
+  MaxWeightMain: number;
+  MaxWeightTrailer?: number | null;
   IsActive?: boolean;
 };
 
