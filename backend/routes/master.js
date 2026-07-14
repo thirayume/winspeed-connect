@@ -995,9 +995,9 @@ router.get('/truck-types', async (req, res) => {
   try {
     const { wfQuery: wq } = require('../db');
     const rows = await wq(`
-      SELECT Id, Name, SlotCount, TrailerSlotCount, MaxTonPerSlot, IsActive
+      SELECT Id, Name, MaxWeightMain, MaxWeightTrailer, IsActive
       FROM wf.TruckType
-      ORDER BY SlotCount ASC, MaxTonPerSlot ASC
+      ORDER BY MaxWeightMain ASC
     `);
     res.json(rows.recordset || []);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
@@ -1007,17 +1007,16 @@ router.get('/truck-types', async (req, res) => {
 router.post('/truck-types', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
   try {
     const { wfQuery: wq } = require('../db');
-    const { Id, Name, SlotCount, TrailerSlotCount, MaxTonPerSlot, IsActive } = req.body;
+    const { Id, Name, MaxWeightMain, MaxWeightTrailer, IsActive } = req.body;
     
     await wq(`
-      INSERT INTO wf.TruckType (Id, Name, SlotCount, TrailerSlotCount, MaxTonPerSlot, IsActive)
-      VALUES (@id, @name, @slots, @tslots, @max, @active)
+      INSERT INTO wf.TruckType (Id, Name, MaxWeightMain, MaxWeightTrailer, IsActive)
+      VALUES (@id, @name, @main, @trailer, @active)
     `, {
       id: { type: sql.VarChar(50), value: Id },
       name: { type: sql.NVarChar(100), value: Name },
-      slots: { type: sql.Int, value: SlotCount },
-      tslots: { type: sql.Int, value: TrailerSlotCount ?? null },
-      max: { type: sql.Decimal(10,2), value: MaxTonPerSlot },
+      main: { type: sql.Decimal(10,2), value: MaxWeightMain },
+      trailer: { type: sql.Decimal(10,2), value: MaxWeightTrailer ?? null },
       active: { type: sql.Bit, value: IsActive ?? 1 }
     });
     res.json({ ok: true, id: Id });
@@ -1029,19 +1028,18 @@ router.put('/truck-types/:id', requireRole('ADMIN', 'MANAGER'), async (req, res)
   try {
     const { wfQuery: wq } = require('../db');
     const id = req.params.id;
-    const { Name, SlotCount, TrailerSlotCount, MaxTonPerSlot, IsActive } = req.body;
+    const { Name, MaxWeightMain, MaxWeightTrailer, IsActive } = req.body;
     
     await wq(`
       UPDATE wf.TruckType
-      SET Name = @name, SlotCount = @slots, TrailerSlotCount = @tslots, 
-          MaxTonPerSlot = @max, IsActive = @active, UpdatedAt = GETUTCDATE()
+      SET Name = @name, MaxWeightMain = @main, MaxWeightTrailer = @trailer, 
+          IsActive = @active, UpdatedAt = GETUTCDATE()
       WHERE Id = @id
     `, {
       id: { type: sql.VarChar(50), value: id },
       name: { type: sql.NVarChar(100), value: Name },
-      slots: { type: sql.Int, value: SlotCount },
-      tslots: { type: sql.Int, value: TrailerSlotCount ?? null },
-      max: { type: sql.Decimal(10,2), value: MaxTonPerSlot },
+      main: { type: sql.Decimal(10,2), value: MaxWeightMain },
+      trailer: { type: sql.Decimal(10,2), value: MaxWeightTrailer ?? null },
       active: { type: sql.Bit, value: IsActive ?? 1 }
     });
     res.json({ ok: true });
