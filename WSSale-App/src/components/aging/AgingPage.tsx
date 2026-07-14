@@ -7,7 +7,11 @@ import { SO_STATUS_META } from '../../constants/soStatus';
 
 const PAGE_SIZE = 50;
 
-const defaultDateFrom = () => `${new Date().getFullYear() - 2}-01-01`;
+const defaultDateFrom = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 180);
+  return d.toISOString().split('T')[0];
+};
 
 export const AgingPage = () => {
   const [data, setData]       = useState<AgingRow[]>([]);
