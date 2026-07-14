@@ -180,8 +180,8 @@ export function CnRebatePage() {
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {[
-                ['Orders', totalOrders],
-                ['Coupons', totalCoupons],
+                ['Order count (บิล)', totalOrders.toLocaleString()],
+                ['Coupon count (ใบ)', totalCoupons.toLocaleString()],
                 ['Redeemed tons', fmtTon(totalRedeemed)],
                 ['Remaining tons', fmtTon(totalRemaining)],
               ].map(([label, value]) => (
@@ -204,8 +204,8 @@ export function CnRebatePage() {
                     <thead className="bg-gray-50 text-xs text-gray-500">
                       <tr>
                         <th className="px-5 py-3 text-left">Salesperson</th>
-                        <th className="px-4 py-3 text-right">Orders</th>
-                        <th className="px-4 py-3 text-right">Coupons</th>
+                        <th className="px-4 py-3 text-right">Order count</th>
+                        <th className="px-4 py-3 text-right">Coupon count</th>
                         <th className="px-4 py-3 text-right">Redeemed</th>
                         <th className="px-4 py-3 text-right">Remaining</th>
                         <th className="px-4 py-3 text-center">Last date</th>
@@ -216,8 +216,8 @@ export function CnRebatePage() {
                       {summary.map(row => (
                         <tr key={row.EmpID || row.SalesName} onClick={() => drillSales(row)} className="hover:bg-blue-50/40 cursor-pointer">
                           <td className="px-5 py-3 font-semibold text-gray-800">{row.SalesName}</td>
-                          <td className="px-4 py-3 text-right tabular-nums">{row.OrderCount}</td>
-                          <td className="px-4 py-3 text-right tabular-nums">{row.CouponCount}</td>
+                          <td className="px-4 py-3 text-right tabular-nums">{Number(row.OrderCount || 0).toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right tabular-nums">{Number(row.CouponCount || 0).toLocaleString()}</td>
                           <td className="px-4 py-3 text-right tabular-nums font-bold text-green-700">{fmtTon(row.RedeemedTon)}</td>
                           <td className="px-4 py-3 text-right tabular-nums text-amber-700">{fmtTon(row.RemainingTon)}</td>
                           <td className="px-4 py-3 text-center text-xs text-gray-400">{fmtDate(row.LastDocuDate)}</td>
@@ -256,7 +256,7 @@ export function CnRebatePage() {
                       <th className="px-4 py-3 text-left">SO</th>
                       <th className="px-4 py-3 text-left">Control</th>
                       <th className="px-4 py-3 text-left">Customer</th>
-                      <th className="px-4 py-3 text-right">Coupons</th>
+                      <th className="px-4 py-3 text-right">Coupon count</th>
                       <th className="px-4 py-3 text-right">Redeemed</th>
                       <th className="px-4 py-3 text-right">Remaining</th>
                       <th className="px-4 py-3 text-left">Redemption</th>
@@ -270,7 +270,7 @@ export function CnRebatePage() {
                         <td className="px-4 py-3 font-mono text-xs font-bold text-[#0C447C]">{row.SONo}</td>
                         <td className="px-4 py-3 font-mono text-xs text-gray-600">{row.ControlNo || '-'}</td>
                         <td className="px-4 py-3 text-gray-700 max-w-[220px] truncate" title={row.CustName}>{row.CustName}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{row.CouponCount}</td>
+                        <td className="px-4 py-3 text-right tabular-nums">{Number(row.CouponCount || 0).toLocaleString()}</td>
                         <td className="px-4 py-3 text-right tabular-nums font-bold text-green-700">{fmtTon(row.RedeemedTon)}</td>
                         <td className="px-4 py-3 text-right tabular-nums text-amber-700">{fmtTon(row.RemainingTon)}</td>
                         <td className="px-4 py-3 font-mono text-xs text-gray-600">{row.RedemptionNo || '-'}</td>
