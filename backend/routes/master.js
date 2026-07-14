@@ -747,9 +747,20 @@ router.get('/trucks-stats', async (req, res) => {
         MAX(CustName) AS custName,
         COUNT(*) AS count,
         MAX(CreatedAt) AS lastVisit
-      FROM wf.v_AllSalesOrders
-      WHERE TruckPlate IS NOT NULL AND TruckPlate <> '' AND Status NOT IN ('DRAFT', 'CANCELLED')
-        AND CreatedAt >= DATEADD(month, -12, GETDATE())
+      FROM (
+        SELECT so.TruckPlate, so.CustName, so.CreatedAt
+        FROM wf.SalesOrder so
+        WHERE so.TruckPlate IS NOT NULL AND so.TruckPlate <> '' AND so.Status NOT IN ('DRAFT', 'CANCELLED')
+          AND so.CreatedAt >= DATEADD(month, -12, GETDATE())
+        UNION ALL
+        SELECT hd.TransRegistration AS TruckPlate, hd.CustName, ISNULL(ext.CreatedAt, hd.DocuDate) AS CreatedAt
+        FROM dbo.SOHD hd WITH (NOLOCK)
+        LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
+        WHERE hd.TransRegistration IS NOT NULL AND hd.TransRegistration <> ''
+          AND hd.DocuDate >= DATEADD(month, -12, GETDATE())
+          AND hd.DocuType IN (103, 104) AND hd.DocuStatus <> 'C'
+      ) T
+      WHERE TruckPlate IS NOT NULL AND TruckPlate <> ''
       ${where}
       GROUP BY TruckPlate
       ORDER BY count DESC
@@ -767,15 +778,23 @@ router.get('/trucks/:plate/history', async (req, res) => {
     
     const rows = await query(`
       SELECT TOP 100
-        so.CreatedAt AS date,
-        ISNULL(so.WfRef, CAST(so.Id AS VARCHAR(50))) AS so,
-        CAST(so.Id AS VARCHAR(50)) AS soId,
+        T.CreatedAt AS date,
+        ISNULL(T.WfRef, CAST(T.Id AS VARCHAR(50))) AS so,
+        CAST(T.Id AS VARCHAR(50)) AS soId,
         ISNULL(SUM(sol.QtyTon), 0) AS qtyTon
-      FROM wf.v_AllSalesOrders so
-      LEFT JOIN wf.v_AllSalesOrderLines sol ON sol.SoId = so.Id
-      WHERE so.TruckPlate = @plate AND so.Status NOT IN ('DRAFT', 'CANCELLED')
-      GROUP BY so.Id, so.WfRef, so.CreatedAt
-      ORDER BY so.CreatedAt DESC
+      FROM (
+        SELECT CAST(so.Id AS VARCHAR(50)) AS Id, so.WfRef, so.CreatedAt
+        FROM wf.SalesOrder so
+        WHERE so.TruckPlate = @plate AND so.Status NOT IN ('DRAFT', 'CANCELLED')
+        UNION ALL
+        SELECT CAST(hd.SOID AS VARCHAR(50)) AS Id, ISNULL(ext.WfRef, hd.DocuNo) AS WfRef, ISNULL(ext.CreatedAt, hd.DocuDate) AS CreatedAt
+        FROM dbo.SOHD hd WITH (NOLOCK)
+        LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
+        WHERE hd.TransRegistration = @plate AND hd.DocuType IN (103, 104) AND hd.DocuStatus <> 'C'
+      ) T
+      LEFT JOIN wf.v_AllSalesOrderLines sol ON sol.SoId = T.Id
+      GROUP BY T.Id, T.WfRef, T.CreatedAt
+      ORDER BY T.CreatedAt DESC
     `, inputs);
     
     res.json(rows);
