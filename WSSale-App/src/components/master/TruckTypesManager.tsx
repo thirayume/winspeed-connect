@@ -35,9 +35,8 @@ export const TruckTypesManager = () => {
     setEditingItem({
       Id: '',
       Name: '',
-      SlotCount: 4,
-      TrailerSlotCount: null,
-      MaxTonPerSlot: 2.5,
+      MaxWeightMain: 15,
+      MaxWeightTrailer: null,
       IsActive: true
     });
     setIsNew(true);
@@ -129,18 +128,14 @@ export const TruckTypesManager = () => {
                 <h3 className="font-bold text-gray-800 text-lg mb-4">{t.Name}</h3>
                 
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="bg-gray-50 p-2 rounded-lg border border-gray-100">
-                    <div className="text-xs text-gray-500 mb-0.5">จำนวนล็อค (หน้า)</div>
-                    <div className="font-semibold text-gray-800">{t.SlotCount} ล็อค</div>
+                  <div className="bg-gray-50 p-2 rounded-lg border border-gray-100 col-span-2">
+                    <div className="text-xs text-gray-500 mb-0.5">ลิมิตน้ำหนัก ตัวแม่ (ตัน)</div>
+                    <div className="font-semibold text-gray-800">{t.MaxWeightMain?.toFixed(2) || '0.00'} ตัน</div>
                   </div>
-                  <div className="bg-gray-50 p-2 rounded-lg border border-gray-100">
-                    <div className="text-xs text-gray-500 mb-0.5">ลิมิตน้ำหนัก/ล็อค</div>
-                    <div className="font-semibold text-[#0C447C]">{t.MaxTonPerSlot.toFixed(2)} ตัน</div>
-                  </div>
-                  {t.TrailerSlotCount != null && t.TrailerSlotCount > 0 && (
+                  {t.MaxWeightTrailer != null && t.MaxWeightTrailer > 0 && (
                     <div className="bg-amber-50 p-2 rounded-lg border border-amber-100 col-span-2">
-                      <div className="text-xs text-amber-700 mb-0.5">จำนวนล็อค (ลูกพ่วง)</div>
-                      <div className="font-semibold text-amber-900">{t.TrailerSlotCount} ล็อค</div>
+                      <div className="text-xs text-amber-700 mb-0.5">ลิมิตน้ำหนัก ตัวลูก (ตัน)</div>
+                      <div className="font-semibold text-amber-900">{t.MaxWeightTrailer.toFixed(2)} ตัน</div>
                     </div>
                   )}
                 </div>
@@ -194,35 +189,26 @@ export const TruckTypesManager = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">จำนวนล็อค (ท่อนหน้า)*</label>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">ลิมิตน้ำหนักรวม ตัวแม่ (ตัน)*</label>
                   <input
-                    type="number" min={1} max={20}
-                    value={editingItem.SlotCount}
-                    onChange={e => setEditingItem({ ...editingItem, SlotCount: parseInt(e.target.value) || 0 })}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">ลิมิตน้ำหนัก/ล็อค (ตัน)*</label>
-                  <input
-                    type="number" step="0.1" min={0.5} max={10}
-                    value={editingItem.MaxTonPerSlot}
-                    onChange={e => setEditingItem({ ...editingItem, MaxTonPerSlot: parseFloat(e.target.value) || 0 })}
+                    type="number" step="0.1" min={1} max={100}
+                    value={editingItem.MaxWeightMain}
+                    onChange={e => setEditingItem({ ...editingItem, MaxWeightMain: parseFloat(e.target.value) || 0 })}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-bold text-[#0C447C]"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">จำนวนล็อค (ลูกพ่วง) - ถ้าไม่มีให้ใส่ 0</label>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">ลิมิตน้ำหนักรวม ตัวลูก (ตัน) - ถ้าไม่มีพ่วงให้ใส่ 0</label>
                 <input
-                  type="number" min={0} max={20}
-                  value={editingItem.TrailerSlotCount || 0}
+                  type="number" step="0.1" min={0} max={100}
+                  value={editingItem.MaxWeightTrailer || 0}
                   onChange={e => {
-                    const val = parseInt(e.target.value);
-                    setEditingItem({ ...editingItem, TrailerSlotCount: val > 0 ? val : null });
+                    const val = parseFloat(e.target.value);
+                    setEditingItem({ ...editingItem, MaxWeightTrailer: val > 0 ? val : null });
                   }}
                   className="w-full border border-amber-200 bg-amber-50 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none"
                 />
