@@ -74,7 +74,7 @@ export function ControlTicketPage() {
               <table className="w-full text-sm min-w-full">
                 <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
                   <tr>
-                    <th className="px-4 py-3 text-left whitespace-nowrap">เลขตั๋ว (AI)</th>
+                    <th className="px-4 py-3 text-left whitespace-nowrap">เลขตั๋ว / ใบจอง</th>
                     <th className="px-4 py-3 text-left whitespace-nowrap">ลูกค้า</th>
                     <th className="px-4 py-3 text-center whitespace-nowrap">วันที่</th>
                     <th className="px-4 py-3 text-right whitespace-nowrap">จอง (ตัน)</th>
@@ -89,7 +89,12 @@ export function ControlTicketPage() {
                     const pct = total ? (drawn / total) * 100 : 0;
                     return (
                       <tr key={String(t.SOID)} onClick={() => open(t)} className="hover:bg-blue-50/40 cursor-pointer">
-                        <td className="px-4 py-2.5 font-mono font-bold text-[#0C447C] whitespace-nowrap">{t.DocuNo}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <div className="font-mono font-bold text-[#0C447C]">{t.DisplayDocuNo || t.DocuNo}</div>
+                          {t.DisplayDocuNo && t.DocuNo !== t.DisplayDocuNo && (
+                            <div className="text-[10px] text-gray-400 font-mono">Ref: {t.DocuNo}</div>
+                          )}
+                        </td>
                         <td className="px-4 py-2.5 text-gray-700 max-w-[180px] truncate" title={t.CustName}>{t.CustName}</td>
                         <td className="px-4 py-2.5 text-center text-xs text-gray-400 whitespace-nowrap">{t.DocuDate?.substring(0, 10)}</td>
                         <td className="px-4 py-2.5 text-right text-gray-600 whitespace-nowrap">{total.toFixed(2)}</td>

@@ -577,17 +577,20 @@ router.get('/control-tickets', async (req, res) => {
     const condition = includeCompleted === 'true' ? '' : 'WHERE TotalQtyTon > DrawnQtyTon';
     const rows = await query(`
       WITH Tickets AS (
-        SELECT TOP 100
-          h.SOID, ISNULL(h.AppvDocuNo, h.DocuNo) AS DocuNo, h.DocuDate, h.CustID,
+        SELECT TOP 300
+          h.SOID, h.DocuNo, h.AppvDocuNo, ISNULL(h.AppvDocuNo, h.DocuNo) AS DisplayDocuNo, h.DocuDate, h.CustID,
           h.CustName, h.TransRegistration AS TruckPlate,
-          h.AppvFlag, h.DocuNo AS OriginalDocuNo, h.AppvDate, h.Desc1, h.Desc2
+          h.AppvFlag, h.AppvDate, h.Desc1, h.Desc2
         FROM dbo.SOHD h WITH (NOLOCK)
         WHERE h.DocuType = 103 AND (h.AppvDocuNo LIKE 'AI%' OR h.TransRegistration = N'ตั๋วคุม') ${where}
+        ORDER BY h.DocuDate DESC
       ),
       DraftTickets AS (
         SELECT 
           so.Id AS SOID,
           so.WfRef AS DocuNo,
+          so.WfRef AS AppvDocuNo,
+          so.WfRef AS DisplayDocuNo,
           so.CreatedAt AS DocuDate,
           so.CustId AS CustID,
           so.CustName AS CustName,
@@ -622,7 +625,7 @@ router.get('/control-tickets', async (req, res) => {
               FROM dbo.SOHD h2 WITH (NOLOCK)
               JOIN dbo.SODT d2 WITH (NOLOCK) ON h2.SOID = d2.SOID
               WHERE h2.DocuType = 104 AND h2.DocuStatus <> 'C'
-                AND h2.RefNo = t.DocuNo
+                AND (h2.RefNo = t.DocuNo OR h2.RefNo = t.AppvDocuNo)
             ), 0)
             +
             ISNULL((
@@ -631,15 +634,15 @@ router.get('/control-tickets', async (req, res) => {
               JOIN dbo.SODT d2 WITH (NOLOCK) ON h2.SOID = d2.SOID
               JOIN wf.SalesOrderLine wfl WITH (NOLOCK) ON wfl.SoId = h2.SOID AND wfl.LineNum = d2.ListNo
               WHERE h2.DocuType = 104 AND h2.DocuStatus <> 'C'
-                AND wfl.RefControlTicketNo = t.DocuNo
-                AND (h2.RefNo IS NULL OR h2.RefNo <> t.DocuNo)
+                AND (wfl.RefControlTicketNo = t.DocuNo OR wfl.RefControlTicketNo = t.AppvDocuNo)
+                AND (h2.RefNo IS NULL OR (h2.RefNo <> t.DocuNo AND h2.RefNo <> t.AppvDocuNo))
             ), 0)
             +
             ISNULL((
               SELECT SUM(wfl.QtyTon)
               FROM wf.SalesOrderLine wfl
               JOIN wf.SalesOrder so2 ON so2.Id = wfl.SoId
-              WHERE so2.Status = 'DRAFT' AND wfl.RefControlTicketNo = t.DocuNo
+              WHERE so2.Status = 'DRAFT' AND (wfl.RefControlTicketNo = t.DocuNo OR wfl.RefControlTicketNo = t.AppvDocuNo)
             ), 0)
           ) AS DrawnQtyTon
         FROM AllTickets t
