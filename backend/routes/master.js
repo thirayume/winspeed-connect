@@ -827,7 +827,7 @@ router.get('/aging', async (req, res) => {
           AND ISNULL(hd.DocuStatus, '') <> 'C'
           AND ISNULL(hd.clearflag, 'N') <> 'Y'
           AND ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), '') <> N'ตั๋วคุม'
-          AND hd.DocuDate >= DATEFROMPARTS(YEAR(GETDATE()) - 2, 1, 1)
+          AND hd.DocuDate >= DATEADD(DAY, -180, GETDATE())
       ),
       CandidateSo AS (
         SELECT TOP 1000 * FROM BaseCandidateSo WHERE rn = 1
@@ -884,7 +884,7 @@ router.get('/aging/search', async (req, res) => {
     const page     = Math.max(1, parseInt(req.query.page)     || 1);
     const pageSize = Math.min(200, Math.max(10, parseInt(req.query.pageSize) || 50));
     const q        = (req.query.q || '').trim();
-    const dateFrom = req.query.dateFrom || `${new Date().getFullYear() - 2}-01-01`;
+    const dateFrom = req.query.dateFrom || new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const statusRaw = (req.query.status || '').trim();
     const statuses = statusRaw ? statusRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
     const offset   = (page - 1) * pageSize;
