@@ -484,8 +484,19 @@ export interface TsSyncStatus {
 }
 export const fetchTsSyncStatus = () => req<TsSyncStatus>('/truckscale/sync/status', { silent: true });
 export const runTsSync = () => req<{ ingested?: number; refreshed?: number; lastSid?: number; error?: string }>('/truckscale/sync/run', { method: 'POST', body: '{}' });
-export const fetchWeighInbox = (status?: string, match?: string) =>
-  req<WeighInboxRow[]>(`/truckscale/inbox?${new URLSearchParams({ ...(status ? { status } : {}), ...(match ? { match } : {}) }).toString()}`);
+export interface PaginatedResponse<T> {
+  data: T[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
+}
+
+export const fetchWeighInbox = (status?: string, match?: string, search?: string, page = 1, limit = 20) =>
+  req<PaginatedResponse<WeighInboxRow>>(`/truckscale/inbox?${new URLSearchParams({ 
+    ...(status ? { status } : {}), 
+    ...(match ? { match } : {}),
+    ...(search ? { search } : {}),
+    page: String(page),
+    limit: String(limit)
+  }).toString()}`);
 export const matchWeighInbox = (id: number, soId: string) =>
   req<{ ok: boolean }>(`/truckscale/inbox/${id}/match/${encodeURIComponent(soId)}`, { method: 'POST', body: '{}' });
 

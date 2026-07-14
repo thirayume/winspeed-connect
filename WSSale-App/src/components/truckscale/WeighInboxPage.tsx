@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Inbox, RefreshCw, DownloadCloud, Link2, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
+import { Inbox, RefreshCw, DownloadCloud, Link2, CheckCircle, AlertTriangle, Clock, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   fetchTsSyncStatus, runTsSync, fetchWeighInbox, matchWeighInbox,
   type TsSyncStatus, type WeighInboxRow,
@@ -14,21 +14,29 @@ const MATCH_BADGE: Record<string, string> = {
 export function WeighInboxPage() {
   const [status, setStatus] = useState<TsSyncStatus | null>(null);
   const [rows, setRows] = useState<WeighInboxRow[]>([]);
-  const [filter, setFilter] = useState<'' | 'MATCHED' | 'MULTI' | 'UNMATCHED'>('');
-  const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
+  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
 
-  const load = useCallback(async (f = filter) => {
+  const load = useCallback(async (f = filter, s = search, p = page) => {
     setLoading(true);
     try {
-      const [s, r] = await Promise.all([fetchTsSyncStatus(), fetchWeighInbox('COMPLETED', f || undefined)]);
-      setStatus(s); setRows(Array.isArray(r) ? r : []);
+      const [st, r] = await Promise.all([fetchTsSyncStatus(), fetchWeighInbox('COMPLETED', f || undefined, s || undefined, p, 20)]);
+      setStatus(st); 
+      if (r && r.data) {
+        setRows(r.data);
+        setPagination({ total: r.pagination.total, totalPages: r.pagination.totalPages });
+      } else {
+        setRows([]);
+        setPagination({ total: 0, totalPages: 1 });
+      }
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [filter]);
+  }, [filter, search, page]);
 
-  useEffect(() => { load(filter); /* eslint-disable-next-line */ }, [filter]);
-  useSocketEvent('weigh_inbox', () => load(filter));
+  useEffect(() => { load(filter, search, page); /* eslint-disable-next-line */ }, [filter, search, page]);
+  useSocketEvent('weigh_inbox', () => load(filter, search, page));
 
   async function doSync() {
     setSyncing(true);
@@ -62,10 +70,20 @@ export function WeighInboxPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <form onSubmit={e => { e.preventDefault(); setSearch(searchInput); setPage(1); }} className="relative hidden sm:block">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input 
+              type="text" 
+              placeholder="ค้นหาทะเบียน, ชื่อ..." 
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
+              className="pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-[#0C447C] focus:ring-1 focus:ring-[#0C447C] w-48 transition-all"
+            />
+          </form>
           <button onClick={doSync} disabled={syncing} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-[#0C447C] text-white hover:opacity-90 disabled:opacity-40">
-            <DownloadCloud size={15} className={syncing ? 'animate-pulse' : ''} /> ดึงเดี๋ยวนี้
+            <DownloadCloud size={15} className={syncing ? 'animate-pulse' : ''} /> <span className="hidden sm:inline">ดึงเดี๋ยวนี้</span>
           </button>
-          <button onClick={() => load(filter)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
+          <button onClick={() => load()} className="h-10 w-10 flex shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
             <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
           </button>
         </div>
@@ -87,9 +105,9 @@ export function WeighInboxPage() {
         </div>
 
         <div className="flex items-center justify-between">
-          <div className="flex gap-2">
+          <div className="flex gap-2 overflow-x-auto pb-1">
             {([['', 'ทั้งหมด'], ['MATCHED', 'จับคู่ได้'], ['MULTI', 'หลายคู่'], ['UNMATCHED', 'ยังไม่จับคู่']] as const).map(([v, l]) => (
-              <button key={v} onClick={() => setFilter(v)} className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${filter === v ? 'bg-[#0C447C] text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>{l}</button>
+              <button key={v} onClick={() => { setFilter(v); setPage(1); }} className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-semibold ${filter === v ? 'bg-[#0C447C] text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>{l}</button>
             ))}
           </div>
           <div className="text-xs text-gray-400">sync ล่าสุด: {status?.watermark?.LastSyncAt ? new Date(status.watermark.LastSyncAt).toLocaleString('th-TH') : '–'}</div>
@@ -124,6 +142,29 @@ export function WeighInboxPage() {
               ))}
             </tbody>
           </table>
+          
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50/50">
+            <div className="text-sm text-gray-500">
+              พบทั้งหมด <span className="font-semibold text-gray-800">{pagination.total}</span> รายการ
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="p-1.5 rounded-md hover:bg-white border border-transparent hover:border-gray-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:border-transparent transition-all"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-sm font-medium text-gray-600">หน้า {page} / {pagination.totalPages}</span>
+              <button 
+                onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
+                disabled={page >= pagination.totalPages}
+                className="p-1.5 rounded-md hover:bg-white border border-transparent hover:border-gray-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:border-transparent transition-all"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
