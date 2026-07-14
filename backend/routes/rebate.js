@@ -325,6 +325,97 @@ router.get('/voucher-summary', async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+// ── Legacy Data Migration (Tons to Baht) ───────────────────────────────────
+router.post('/migrate-legacy', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { rate } = req.body;
+    if (!rate || isNaN(Number(rate)) || Number(rate) <= 0) {
+      return res.status(400).json({ message: 'กรุณาระบุอัตราการแปลง (rate) เช่น 100 บาท/ตัน' });
+    }
+    const conversionRate = Number(rate);
+
+    // 1. Get legacy remaining tons per EmpID
+    const legacyR = await wfQuery(`
+      SELECT
+        hd.EmpID,
+        SUM(c.RemaQty) AS RemainingTon
+      FROM dbo.WFCoupon c
+      JOIN dbo.SOHD hd ON hd.SOID = c.DocuID
+      WHERE hd.DocuType = 104 AND c.RemaQty > 0
+      GROUP BY hd.EmpID
+    `);
+    const legacyBalances = legacyR.recordset || [];
+
+    if (legacyBalances.length === 0) {
+      return res.json({ message: 'ไม่พบยอดค้างในระบบเดิม', processed: 0 });
+    }
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    let processed = 0;
+    let totalInjectedBaht = 0;
+    const errors = [];
+
+    for (const row of legacyBalances) {
+      if (!row.EmpID) continue;
+      
+      // 2. Map WINSpeed EmpID to Web App User
+      const userR = await wfQuery(`SELECT Id FROM wf.AppUser WHERE EmpId = @empId`, {
+        empId: { type: sql.NVarChar(20), value: String(row.EmpID) }
+      });
+      const user = userR.recordset?.[0];
+      if (!user) {
+        errors.push(`ไม่พบบัญชี Web App สำหรับ EmpID: ${row.EmpID}`);
+        continue;
+      }
+
+      const salesUserId = user.Id;
+      const tons = Number(row.RemainingTon);
+      const bahtAmount = Math.round(tons * conversionRate * 100) / 100;
+
+      if (bahtAmount <= 0) continue;
+
+      // 3. Pool Injection
+      let pool = (await wfQuery(`SELECT * FROM wf.RebatePool WHERE SalesUserId=@u AND PeriodYear=@y AND PeriodMonth=@m`,
+        { u: { type: sql.Int, value: salesUserId }, y: { type: sql.Int, value: currentYear }, m: { type: sql.Int, value: currentMonth } })).recordset?.[0];
+      
+      if (!pool) {
+        pool = (await wfQuery(`INSERT INTO wf.RebatePool (SalesUserId, PeriodYear, PeriodMonth, AllocatedAmt) OUTPUT inserted.* VALUES (@u,@y,@m,0)`,
+          { u: { type: sql.Int, value: salesUserId }, y: { type: sql.Int, value: currentYear }, m: { type: sql.Int, value: currentMonth } })).recordset[0];
+      }
+
+      // Add to pool
+      await wfQuery(`UPDATE wf.RebatePool SET AllocatedAmt = AllocatedAmt + @amt, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
+        { amt: { type: sql.Decimal(14,2), value: bahtAmount }, id: { type: sql.Int, value: pool.Id } });
+
+      // Create Ledger Entry for traceability
+      await wfQuery(`INSERT INTO wf.RebateLedger (PoolId, SoId, CustId, GoodId, GoodCode, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, RebateAmount, RemainingAmt, Status)
+        VALUES (@pid, 0, 'LEGACY', '0', 'LEGACY_MIGRATION', @tons, 0, 0, @rate, @baht, @baht, 'ACCRUED')`,
+        {
+          pid: { type: sql.Int, value: pool.Id },
+          tons: { type: sql.Decimal(12,3), value: tons },
+          rate: { type: sql.Decimal(10,2), value: conversionRate },
+          baht: { type: sql.Decimal(12,2), value: bahtAmount }
+        });
+
+      processed++;
+      totalInjectedBaht += bahtAmount;
+    }
+
+    res.json({
+      message: 'Migration completed',
+      processedSalespersons: processed,
+      totalInjectedBaht,
+      conversionRate,
+      errors
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
 // ── dbo WF Rebate Trail endpoints (read-only, WINSpeed-owned flow) ───────
 // Correct WF flow observed from production data:
 // SOHD(103 booking) -> SOHD(104 order) -> WFCoupon -> WFRedemtionDT
