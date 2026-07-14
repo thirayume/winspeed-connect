@@ -68,8 +68,8 @@ export const VisualTruckLoader = ({
     const withoutSeq = linesWithId.filter(l => !l.loadSequence || l.loadSequence === 0);
 
     withSeq.forEach(l => {
-       if (l.loadSequence! < 100) initialMain.push(l);
-       else initialTrailer.push(l);
+       if (l.loadSequence! >= 100 && l.loadSequence! < 200) initialMain.push(l);
+       else if (l.loadSequence! >= 200) initialTrailer.push(l);
     });
     initialMain.sort((a,b) => (a.loadSequence || 0) - (b.loadSequence || 0));
     initialTrailer.sort((a,b) => (a.loadSequence || 0) - (b.loadSequence || 0));
@@ -126,10 +126,10 @@ export const VisualTruckLoader = ({
     const seqMapping: Record<number, number> = {};
     
     assigned.main.forEach((l, idx) => {
-      if (l.lineNum) seqMapping[l.lineNum] = idx + 1; // 1 to 99
+      if (l.lineNum) seqMapping[l.lineNum] = idx + 101; // 101 to 199
     });
     assigned.trailer.forEach((l, idx) => {
-      if (l.lineNum) seqMapping[l.lineNum] = idx + 101; // 101 to 199
+      if (l.lineNum) seqMapping[l.lineNum] = idx + 201; // 201 to 299
     });
     
     onConfirm(seqMapping);
