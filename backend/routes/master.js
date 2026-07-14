@@ -580,7 +580,7 @@ router.get('/control-tickets', async (req, res) => {
         SELECT TOP 300
           h.SOID, h.DocuNo, h.AppvDocuNo, ISNULL(h.AppvDocuNo, h.DocuNo) AS DisplayDocuNo, h.DocuDate, h.CustID,
           h.CustName, h.TransRegistration AS TruckPlate,
-          h.AppvFlag, h.AppvDate, h.Desc1, h.Desc2
+          h.AppvFlag, h.AppvDate, h.Desc1, h.Desc2, h.DocuStatus
         FROM dbo.SOHD h WITH (NOLOCK)
         WHERE h.DocuType = 103 AND (h.AppvDocuNo LIKE 'AI%' OR h.TransRegistration = N'ตั๋วคุม') ${where}
         ORDER BY h.DocuDate DESC
@@ -599,7 +599,8 @@ router.get('/control-tickets', async (req, res) => {
           so.WfRef AS OriginalDocuNo,
           NULL AS AppvDate,
           N'(แบบร่าง / ยังไม่ยืนยัน)' AS Desc1,
-          NULL AS Desc2
+          NULL AS Desc2,
+          'DRAFT' AS DocuStatus
         FROM wf.SalesOrder so WITH (NOLOCK)
         WHERE so.SoPrefix = 'AI' AND so.Status = 'DRAFT'
         ${custId ? `AND so.CustId = @custId` : ''}

@@ -631,6 +631,7 @@ export type ControlTicket = {
   TruckPlate?: string;
   AppvFlag?: string;
   AppvDate?: string;
+  DocuStatus?: string;
   TotalQtyTon: number;
   DrawnQtyTon: number;
 };

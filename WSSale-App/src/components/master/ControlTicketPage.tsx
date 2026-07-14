@@ -9,7 +9,7 @@ export function ControlTicketPage() {
   const [tickets, setTickets] = useState<ControlTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
-  const [includeCompleted, setIncludeCompleted] = useState(false);
+  const [tab, setTab] = useState<'ACTIVE' | 'HISTORY' | 'PENDING'>('ACTIVE');
   const [sel, setSel] = useState<ControlTicket | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [draws, setDraws] = useState<ControlTicketDraw[]>([]);
@@ -17,9 +17,9 @@ export function ControlTicketPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setTickets(await fetchControlTickets(undefined, includeCompleted)); } catch (e) { console.error(e); }
+    try { setTickets(await fetchControlTickets(undefined, true)); } catch (e) { console.error(e); }
     setLoading(false);
-  }, [includeCompleted]);
+  }, []);
   useEffect(() => { load(); }, [load]);
 
   async function open(t: ControlTicket) {
@@ -34,8 +34,15 @@ export function ControlTicketPage() {
     setDetailLoading(false);
   }
 
-  const filtered = tickets.filter(t => !q || t.CustName?.includes(q) || t.DocuNo?.includes(q));
   const rem = (t: ControlTicket) => Math.max(0, Number(t.TotalQtyTon) - Number(t.DrawnQtyTon));
+  
+  const tabFiltered = tickets.filter(t => {
+    if (tab === 'ACTIVE') return t.DocuStatus === 'Y' && rem(t) > 0;
+    if (tab === 'HISTORY') return t.DocuStatus === 'Y' && rem(t) <= 0;
+    return t.DocuStatus !== 'Y'; // PENDING / DRAFT
+  });
+
+  const filtered = tabFiltered.filter(t => !q || t.CustName?.includes(q) || t.DocuNo?.includes(q) || t.DisplayDocuNo?.includes(q));
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
@@ -55,15 +62,16 @@ export function ControlTicketPage() {
       <div className="flex-1 overflow-auto p-0 sm:p-6">
         {!sel ? (
           <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
+            <div className="flex border-b border-gray-100 px-2 pt-2 bg-gray-50/50">
+              <button onClick={() => setTab('ACTIVE')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === 'ACTIVE' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>คงเหลือ</button>
+              <button onClick={() => setTab('HISTORY')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === 'HISTORY' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>ประวัติ (ใช้หมดแล้ว)</button>
+              <button onClick={() => setTab('PENDING')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === 'PENDING' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>รอยืนยัน / แบบร่าง</button>
+            </div>
             <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-4">
               <div className="flex-1 flex items-center gap-2">
                 <Search size={14} className="text-gray-400" />
-                <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหา ลูกค้า / เลขตั๋ว (AI...)" className="flex-1 text-sm outline-none bg-transparent" />
+                <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหา ลูกค้า / เลขตั๋ว..." className="flex-1 text-sm outline-none bg-transparent" />
               </div>
-              <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                <input type="checkbox" checked={includeCompleted} onChange={e => setIncludeCompleted(e.target.checked)} className="rounded text-[#0C447C] focus:ring-[#0C447C]" />
-                แสดงตั๋วที่ถูกตัดหมดแล้ว
-              </label>
               <span className="text-xs text-gray-400">{filtered.length} ตั๋ว</span>
             </div>
             {loading ? (
