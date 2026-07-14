@@ -742,13 +742,14 @@ router.get('/trucks-stats', async (req, res) => {
     const inputs = q ? { q: { type: sql.NVarChar(100), value: q } } : {};
     
     const rows = await query(`
-      SELECT 
+      SELECT TOP 100
         TruckPlate AS truckPlate,
         MAX(CustName) AS custName,
         COUNT(*) AS count,
         MAX(CreatedAt) AS lastVisit
       FROM wf.v_AllSalesOrders
       WHERE TruckPlate IS NOT NULL AND TruckPlate <> '' AND Status NOT IN ('DRAFT', 'CANCELLED')
+        AND CreatedAt >= DATEADD(month, -12, GETDATE())
       ${where}
       GROUP BY TruckPlate
       ORDER BY count DESC
@@ -765,7 +766,7 @@ router.get('/trucks/:plate/history', async (req, res) => {
     const inputs = { plate: { type: sql.NVarChar(30), value: plate } };
     
     const rows = await query(`
-      SELECT 
+      SELECT TOP 100
         so.CreatedAt AS date,
         ISNULL(so.WfRef, CAST(so.Id AS VARCHAR(50))) AS so,
         CAST(so.Id AS VARCHAR(50)) AS soId,
