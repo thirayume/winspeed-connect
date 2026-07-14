@@ -130,11 +130,11 @@ export function WeighInboxPage() {
                 <tr key={r.Id}>
                   <td className="px-4 py-3 whitespace-nowrap"><div className="font-semibold text-gray-800">{r.Sequence}</div><div className="text-xs text-gray-400">{r.Movebill || '–'}</div></td>
                   <td className="px-4 py-3 whitespace-nowrap"><div className="text-gray-700">{r.Plate}</div><div className="text-xs text-gray-400">{r.CustName}</div></td>
-                  <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">{r.WeightNet != null ? `${Number(r.WeightNet).toLocaleString()} kg` : '–'}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">{r.WeightNet != null ? `${(Number(r.WeightNet) / 1000).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} Ton` : '–'}</td>
                   <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{r.DateOut || '–'}</td>
                   <td className="px-4 py-3 text-center whitespace-nowrap">
                     <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${MATCH_BADGE[r.MatchStatus || 'UNMATCHED']}`}>{r.MatchStatus || '—'}</span>
-                    {r.MatchedSoId && <div className="text-[11px] text-gray-400 mt-0.5">SO {r.MatchedSoId}</div>}
+                    {r.MatchedSoId && <div className="text-[11px] text-gray-400 mt-0.5">{r.MatchedDocuNo || `SO ${r.MatchedSoId}`}</div>}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     {r.MatchStatus !== 'MATCHED' && (
@@ -148,7 +148,7 @@ export function WeighInboxPage() {
           
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50/50">
             <div className="text-sm text-gray-500">
-              พบทั้งหมด <span className="font-semibold text-gray-800">{pagination.total}</span> รายการ
+              พบทั้งหมด <span className="font-semibold text-gray-800">{pagination.total.toLocaleString()}</span> รายการ
             </div>
             <div className="flex items-center gap-2">
               <button 
