@@ -596,7 +596,6 @@ router.get('/control-tickets', async (req, res) => {
           so.CustName AS CustName,
           so.TruckPlate AS TruckPlate,
           'N' AS AppvFlag,
-          so.WfRef AS OriginalDocuNo,
           NULL AS AppvDate,
           N'(แบบร่าง / ยังไม่ยืนยัน)' AS Desc1,
           NULL AS Desc2,
