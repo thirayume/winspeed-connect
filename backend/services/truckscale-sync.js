@@ -10,42 +10,101 @@ const { tsQuery, getPool } = require('./truckscale-db');
 
 const COLS = `sequence AS Sequence, s_id AS Sid, movebill AS Movebill, one_car_regis AS Plate,
   one_cus_name AS CustName, weight_in AS WeightIn, weight_out AS WeightOut, weight_net AS WeightNet,
-  Date_In AS DateIn, Date_Out AS DateOut, Computer_w AS ScaleNo`;
+  Date_In AS DateIn, Date_Out AS DateOut, Computer_w AS ScaleNo, one_num AS OneNum`;
 
-async function matchSo(plate) {
-  if (!plate) return { id: null, status: 'UNMATCHED' };
-  const np = String(plate).replace(/\s/g, '');
+async function matchSo(r) {
+  const plate = r?.Plate || r; // fallback if passed string
+  const np = String(plate).replace(/[\s\-\/]/g, '');
   if (!np) return { id: null, status: 'UNMATCHED' };
   
-  // OPTIMIZED: Query active draft orders directly
-  const draftCand = (await wfQuery(
-    `SELECT TOP 3 Id FROM wf.SalesOrder
-     WHERE Status IN ('DRAFT', 'CONFIRMED', 'PICKING', 'LOADED')
-       AND REPLACE(ISNULL(TruckPlate,''),' ','') LIKE @p`,
-    { p: { type: sql.NVarChar(80), value: `%${np}%` } })).recordset || [];
-    
-  if (draftCand.length === 1) return { id: String(draftCand[0].Id), status: 'MATCHED' };
-  if (draftCand.length > 1) return { id: null, status: 'MULTI' };
+  const candidates = [];
   
-  // OPTIMIZED: Query active WINSpeed orders directly (avoid v_AllSalesOrders full scan)
+  // 1. WebApp (wf.SalesOrder)
+  const draftCand = (await wfQuery(
+    `SELECT Id, TotalQtyTon, ISNULL(DeliveryDate, CreatedAt) AS RefDate, CustName
+     FROM wf.SalesOrder
+     WHERE Status IN ('DRAFT', 'CONFIRMED', 'PICKING', 'LOADED')
+       AND REPLACE(REPLACE(REPLACE(ISNULL(TruckPlate,''),' ',''),'-',''),'/','') LIKE @p`,
+    { p: { type: sql.NVarChar(80), value: `%${np}%` } })).recordset || [];
+  draftCand.forEach(c => candidates.push({ id: String(c.Id), ...c, source: 'DRAFT' }));
+    
+  // 2. WINSpeed (dbo.SOHD)
   const hdCand = (await wfQuery(
-    `SELECT TOP 3 hd.SOID AS Id FROM dbo.SOHD hd
+    `SELECT hd.SOID AS Id, hd.CustName, hd.DocuDate AS RefDate,
+       (SELECT SUM(GoodQty2) FROM dbo.SODT dt WHERE dt.SOID = hd.SOID) AS TotalQtyTon
+     FROM dbo.SOHD hd
      LEFT JOIN wf.SalesOrderExt ext ON ext.SOID = hd.SOID
      WHERE hd.DocuStatus NOT IN ('Y', 'C') AND ISNULL(hd.clearflag, 'N') <> 'Y'
-       AND REPLACE(ISNULL(hd.TransRegistration,''),' ','') LIKE @p`,
+       AND REPLACE(REPLACE(REPLACE(ISNULL(hd.TransRegistration,''),' ',''),'-',''),'/','') LIKE @p`,
     { p: { type: sql.NVarChar(80), value: `%${np}%` } })).recordset || [];
+  hdCand.forEach(c => candidates.push({ id: String(c.Id), ...c, source: 'SOHD' }));
     
-  if (hdCand.length === 1) return { id: String(hdCand[0].Id), status: 'MATCHED' };
-  if (hdCand.length > 1) return { id: null, status: 'MULTI' };
+  if (candidates.length === 0) return { id: null, status: 'UNMATCHED' };
+  if (candidates.length === 1) return { id: candidates[0].id, status: 'MATCHED' };
+  
+  // We have MULTI. Apply Scoring.
+  let truckDate = String(r.DateOut || r.DateIn || '');
+  const truckWeight = Number(r.WeightNet) / 1000;
+  
+  // Fetch truck products if needed
+  let truckProducts = [];
+  if (r.OneNum) {
+     const p = await tsQuery(`SELECT pd_pro_name AS GoodName FROM tblproduct_detail WHERE one_num = ?`, [r.OneNum]);
+     truckProducts = p.map(x => String(x.GoodName || '').trim().toLowerCase());
+  }
 
-  return { id: null, status: 'UNMATCHED' };
+  candidates.forEach(c => {
+    let score = 50; // base plate match
+    
+    // Date Match
+    let cDate = '';
+    if (c.RefDate) {
+      if (c.RefDate instanceof Date) cDate = c.RefDate.toISOString().substring(0, 10);
+      else cDate = String(c.RefDate).substring(0, 10);
+    }
+    
+    if (cDate && truckDate) {
+      const tParts = truckDate.match(/\d{2,4}/g) || [];
+      const cParts = cDate.match(/\d{2,4}/g) || [];
+      const overlap = tParts.filter(p => cParts.includes(p));
+      if (overlap.length >= 2) score += 30; // matched day and month
+      else if (overlap.length === 1) score += 10;
+    }
+    
+    // Weight Match
+    if (c.TotalQtyTon > 0 && truckWeight > 0) {
+      const diff = Math.abs(Number(c.TotalQtyTon) - truckWeight);
+      if (diff <= 0.5) score += 40;
+      else if (diff <= 1.5) score += 20;
+    }
+    
+    // Customer Match
+    if (r.CustName && c.CustName) {
+      const tName = String(r.CustName).trim().split(/\s+/)[0];
+      const cName = String(c.CustName).trim();
+      if (cName.includes(tName)) score += 10;
+    }
+    
+    c.score = score;
+  });
+  
+  candidates.sort((a, b) => b.score - a.score);
+  const top = candidates[0];
+  const sec = candidates[1];
+  
+  // If top candidate is significantly better
+  if (top.score >= 80 && (top.score - sec.score) >= 20) {
+    return { id: top.id, status: 'MATCHED' };
+  }
+  
+  return { id: null, status: 'MULTI' };
 }
 
 async function upsertRow(r) {
   const completed = Number(r.WeightOut) > 0;
   let matchedSoId = null, matchStatus = null;
   if (completed) {
-    const m = await matchSo(r.Plate);
+    const m = await matchSo(r);
     matchedSoId = m.id; matchStatus = m.status;
   }
   await wfQuery(`
