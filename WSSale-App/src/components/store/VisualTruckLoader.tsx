@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Truck, X, ArrowRight, CheckCircle2, Package, Info, Weight, Settings } from 'lucide-react';
+import { Truck, X, ArrowRight, CheckCircle2, Package, Info, Weight } from 'lucide-react';
 import { Button, cn } from '../ui/Base';
 import type { SalesOrder, SalesOrderLine, TruckType } from '../../types';
 import { predictTruckCategory } from '../../utils/truckAnalyzer';
@@ -19,126 +19,100 @@ const ITEM_COLORS = [
 
 const getColorForProduct = (goodCode: string) => {
   let hash = 0;
-  for (let i = 0; i < goodCode.length; i++) {
-    hash = goodCode.charCodeAt(i) + ((hash << 5) - hash);
-  }
+  for (let i = 0; i < goodCode.length; i++) hash = goodCode.charCodeAt(i) + ((hash << 5) - hash);
   return ITEM_COLORS[Math.abs(hash) % ITEM_COLORS.length];
 };
 
-
-
 export const VisualTruckLoader = ({ 
-  order, 
-  onConfirm, 
-  onCancel 
+  order, onConfirm, onCancel 
 }: { 
-  order: SalesOrder; 
-  onConfirm: (sequences: Record<number, number>) => void;
-  onCancel: () => void;
+  order: SalesOrder; onConfirm: (sequences: Record<number, number>) => void; onCancel: () => void;
 }) => {
   const linesWithId = useMemo(() => {
     return (order.lines || []).filter(l => !l.isGiveaway).map((l, idx) => ({
-      ...l,
-      uid: l.lineNum || l.id || `fallback-${idx}`
+      ...l, uid: l.lineNum || l.id || `fallback-${idx}`
     }));
   }, [order.lines]);
 
   const [truckTypesList, setTruckTypesList] = useState<TruckType[]>([]);
   const [loadingTypes, setLoadingTypes] = useState(true);
-  
   const [truckType, setTruckType] = useState<TruckType | null>(null);
-  
+
   useEffect(() => {
     fetchTruckTypes().then(types => {
       const activeTypes = types.filter(t => t.IsActive !== false);
       setTruckTypesList(activeTypes);
       const category = predictTruckCategory(order.truckPlate);
       const found = activeTypes.find(t => t.Id === category);
-      // Fallback to '10w' or the first available
       setTruckType(found || activeTypes.find(t => t.Id === '10w') || activeTypes[0] || null);
       setLoadingTypes(false);
-    }).catch(e => {
-      console.error(e);
-      setLoadingTypes(false);
-    });
+    }).catch(e => { console.error(e); setLoadingTypes(false); });
   }, [order.truckPlate]);
 
-  const currentMaxTonPerSlot = truckType ? truckType.MaxTonPerSlot : 0;
-
   const [unassigned, setUnassigned] = useState<typeof linesWithId>([]);
-  const [assigned, setAssigned] = useState<Record<number, typeof linesWithId>>({});
+  const [assigned, setAssigned] = useState<{main: typeof linesWithId, trailer: typeof linesWithId}>({ main: [], trailer: [] });
   const [selectedLine, setSelectedLine] = useState<typeof linesWithId[0] | null>(null);
   const [showStackingGuide, setShowStackingGuide] = useState(false);
   const [draggedUid, setDraggedUid] = useState<string | null>(null);
 
-  // Auto-assignment
   useEffect(() => {
     if (!truckType) return;
-    
-    let currentSlot = 1;
-    const initialAssigned: Record<number, typeof linesWithId> = {};
+    const initialMain: typeof linesWithId = [];
+    const initialTrailer: typeof linesWithId = [];
     const initialUnassigned: typeof linesWithId = [];
-    const maxSlots = truckType.SlotCount + (truckType.TrailerSlotCount || 0);
 
-    linesWithId.forEach((l) => {
-      if (l.loadSequence && l.loadSequence > 0 && l.loadSequence <= maxSlots) {
-         if (!initialAssigned[l.loadSequence]) initialAssigned[l.loadSequence] = [];
-         initialAssigned[l.loadSequence].push(l);
-      } else {
-         const currentWeight = (initialAssigned[currentSlot] || []).reduce((sum, item) => sum + item.qtyTon, 0);
-         
-         if (currentWeight > 0 && currentWeight + l.qtyTon > currentMaxTonPerSlot) {
-            currentSlot++;
-            if (currentSlot > maxSlots) currentSlot = 1;
-         }
-         
-         if (!initialAssigned[currentSlot]) initialAssigned[currentSlot] = [];
-         initialAssigned[currentSlot].push(l);
-      }
+    const hasTrailer = (truckType.MaxWeightTrailer || 0) > 0;
+    const maxMain = truckType.MaxWeightMain || 15;
+
+    const withSeq = linesWithId.filter(l => l.loadSequence && l.loadSequence > 0);
+    const withoutSeq = linesWithId.filter(l => !l.loadSequence || l.loadSequence === 0);
+
+    withSeq.forEach(l => {
+       if (l.loadSequence! < 100) initialMain.push(l);
+       else initialTrailer.push(l);
+    });
+    initialMain.sort((a,b) => (a.loadSequence || 0) - (b.loadSequence || 0));
+    initialTrailer.sort((a,b) => (a.loadSequence || 0) - (b.loadSequence || 0));
+
+    withoutSeq.forEach(l => {
+       const currentMainWeight = initialMain.reduce((sum, item) => sum + item.qtyTon, 0);
+       if (currentMainWeight + l.qtyTon <= maxMain || !hasTrailer) {
+          initialMain.push(l);
+       } else {
+          initialTrailer.push(l);
+       }
     });
 
-    setAssigned(initialAssigned);
+    setAssigned({ main: initialMain, trailer: initialTrailer });
     setUnassigned(initialUnassigned);
     setSelectedLine(null);
-  }, [linesWithId, truckType, currentMaxTonPerSlot]);
+  }, [linesWithId, truckType]);
 
-  const handleAssign = (slotNo: number) => {
-    if (!selectedLine) return;
-    setAssigned(prev => ({
-      ...prev,
-      [slotNo]: [...(prev[slotNo] || []), selectedLine]
-    }));
-    setUnassigned(prev => prev.filter(l => l.uid !== selectedLine.uid));
-    setSelectedLine(null);
-  };
-
-  const handleUnassign = (slotNo: number, line: typeof linesWithId[0], e?: React.MouseEvent) => {
+  const handleUnassign = (line: typeof linesWithId[0], e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setAssigned(prev => ({
-      ...prev,
-      [slotNo]: prev[slotNo].filter(l => l.uid !== line.uid)
+      main: prev.main.filter(l => l.uid !== line.uid),
+      trailer: prev.trailer.filter(l => l.uid !== line.uid)
     }));
-    setUnassigned(prev => {
-      if (prev.some(l => l.uid === line.uid)) return prev;
-      return [...prev, line];
-    });
+    setUnassigned(prev => prev.some(l => l.uid === line.uid) ? prev : [...prev, line]);
   };
 
-  const handleDropToSlot = (slotNo: number, uid: string) => {
+  const handleDropToZone = (zone: 'main'|'trailer', uid: string, targetIdx?: number) => {
     const line = linesWithId.find(l => String(l.uid) === uid);
     if (!line) return;
 
-    // Remove from unassigned
     setUnassigned(prev => prev.filter(l => String(l.uid) !== uid));
-
-    // Remove from any assigned slot
     setAssigned(prev => {
-      const next = { ...prev };
-      Object.keys(next).forEach(k => {
-         next[Number(k)] = next[Number(k)].filter(l => String(l.uid) !== uid);
-      });
-      // Add to new slot
-      next[slotNo] = [...(next[slotNo] || []), line];
+      const next = { 
+         main: prev.main.filter(l => String(l.uid) !== uid),
+         trailer: prev.trailer.filter(l => String(l.uid) !== uid)
+      };
+      
+      if (targetIdx !== undefined) {
+         next[zone].splice(targetIdx, 0, line);
+      } else {
+         next[zone].push(line);
+      }
       return next;
     });
     setSelectedLine(null);
@@ -150,92 +124,94 @@ export const VisualTruckLoader = ({
       return;
     }
     const seqMapping: Record<number, number> = {};
-    Object.entries(assigned).forEach(([slotStr, lines]) => {
-      const slotNo = Number(slotStr);
-      lines.forEach(l => {
-        if (l.lineNum) seqMapping[l.lineNum] = slotNo;
-      });
+    
+    assigned.main.forEach((l, idx) => {
+      if (l.lineNum) seqMapping[l.lineNum] = idx + 1; // 1 to 99
     });
+    assigned.trailer.forEach((l, idx) => {
+      if (l.lineNum) seqMapping[l.lineNum] = idx + 101; // 101 to 199
+    });
+    
     onConfirm(seqMapping);
   };
 
-  const renderTruckBed = (startIdx: number, count: number, label: string) => {
+  const renderBed = (zone: 'main'|'trailer', label: string, maxWeight: number) => {
+    const lines = assigned[zone];
+    const totalWeight = lines.reduce((acc, curr) => acc + curr.qtyTon, 0);
+    const isOverloaded = totalWeight > maxWeight;
+
     return (
-      <div className="flex flex-col border-[3px] border-slate-700 rounded-lg bg-slate-50 shadow-inner overflow-hidden shrink-0">
-        <div className="bg-slate-700 text-white text-center text-[10px] uppercase tracking-widest py-1 font-bold">{label}</div>
-        <div className="flex flex-row divide-x-2 divide-dashed divide-slate-300 min-h-[260px]">
-          {Array.from({ length: count }).map((_, i) => {
-            const slotIdx = startIdx + i;
-            const lines = assigned[slotIdx] || [];
-            const totalWeight = lines.reduce((acc, curr) => acc + curr.qtyTon, 0);
-            const isOverloaded = totalWeight > currentMaxTonPerSlot;
-
-            return (
-              <div 
-                key={slotIdx}
-                onClick={() => handleAssign(slotIdx)}
-                onDragOver={e => e.preventDefault()}
-                onDrop={e => {
-                  e.preventDefault();
-                  const uid = e.dataTransfer.getData('uid');
-                  if (uid) handleDropToSlot(slotIdx, uid);
-                }}
-                className={cn(
-                  "relative w-[150px] p-2 transition-all flex flex-col gap-2 items-center justify-start cursor-pointer hover:bg-blue-50/50",
-                  lines.length > 0 ? (isOverloaded ? 'bg-red-50' : 'bg-amber-50') : 'bg-slate-100/50',
-                  draggedUid && "border-2 border-dashed border-blue-400"
-                )}
+      <div 
+         className={cn(
+           "flex flex-col border-[3px] rounded-lg shadow-inner overflow-hidden shrink-0 w-[260px] sm:w-[280px] transition-all",
+           isOverloaded ? "border-red-400 bg-red-50/30" : "border-slate-700 bg-slate-50",
+           draggedUid && "ring-2 ring-blue-400"
+         )}
+         onDragOver={e => e.preventDefault()}
+         onDrop={e => {
+            e.preventDefault();
+            const uid = e.dataTransfer.getData('uid');
+            if (uid) handleDropToZone(zone, uid);
+         }}
+      >
+        <div className={cn("text-white text-center text-[10px] sm:text-xs uppercase tracking-widest py-1.5 font-bold flex justify-between px-3", isOverloaded ? "bg-red-600" : "bg-slate-700")}>
+           <span>{label}</span>
+           <span>{totalWeight.toFixed(2)} / {maxWeight.toFixed(1)}t {isOverloaded && '⚠️'}</span>
+        </div>
+        <div className="flex flex-col gap-2 p-2 min-h-[320px] overflow-y-auto">
+           {lines.length === 0 && (
+             <div className="flex-1 flex items-center justify-center text-slate-400 text-sm border-2 border-dashed border-slate-200 rounded-lg">
+                ลากสินค้ามาวางที่นี่
+             </div>
+           )}
+           <AnimatePresence>
+           {lines.map((line, idx) => {
+             const color = getColorForProduct(line.goodCode || line.uid);
+             return (
+               <motion.div 
+                 layoutId={`line-${line.uid}`}
+                 key={line.uid} 
+                 draggable
+                 onDragStart={e => {
+                   e.dataTransfer.setData('uid', String(line.uid));
+                   setDraggedUid(String(line.uid));
+                 }}
+                 onDragEnd={() => setDraggedUid(null)}
+                 onDragOver={e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                 }}
+                 onDrop={e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const uid = e.dataTransfer.getData('uid');
+                    if (uid && uid !== String(line.uid)) {
+                       handleDropToZone(zone, uid, idx);
+                    }
+                 }}
+                 className={cn("relative text-xs px-2 py-2 rounded shadow-sm flex flex-col gap-1 w-full cursor-grab active:cursor-grabbing border", color.bg, color.text, color.border)}
+               >
+                 <div className="absolute -left-2 -top-2 bg-slate-800 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md">{idx + 1}</div>
+                 <div className="flex justify-between items-start w-full pl-2">
+                   <span className="font-bold leading-tight line-clamp-2" title={line.goodName}>{line.goodName}</span>
+                   <button onClick={(e) => handleUnassign(line, e)} className={cn("p-1 rounded-full shrink-0 ml-1 transition-colors", color.hover)}><X size={12} /></button>
+                 </div>
+                 <div className={cn("flex items-center justify-between text-[10px] font-medium px-2 py-1 rounded-sm mt-1", color.mute)}>
+                   <span className="flex items-center gap-1"><Weight size={12} className={color.icon} /> {line.qtyTon.toFixed(2)}t</span>
+                   <span className="flex items-center gap-1"><Package size={12} className={color.icon} /> {line.qtyBag}</span>
+                 </div>
+               </motion.div>
+             )
+           })}
+           </AnimatePresence>
+           {selectedLine && !draggedUid && (
+              <button 
+                 onClick={() => { handleDropToZone(zone, String(selectedLine.uid)); }}
+                 className="w-full py-3 border-2 border-dashed border-blue-400 bg-blue-50 hover:bg-blue-100 rounded-lg text-blue-700 font-bold text-sm transition-colors flex items-center justify-center gap-2"
               >
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10">
-                  <span className="text-6xl font-black">{slotIdx}</span>
-                </div>
-                
-                {/* Visual cue for tap-to-place */}
-                {selectedLine && !draggedUid && (
-                   <div className="absolute inset-0 border-2 border-dashed border-blue-500 bg-blue-50/60 z-20 flex items-center justify-center rounded-lg pointer-events-none transition-all">
-                     <span className="bg-blue-600 text-white text-[10px] sm:text-xs font-bold px-2 py-1 sm:px-3 sm:py-1.5 rounded-full animate-bounce shadow-md">แตะเพื่อวาง</span>
-                   </div>
-                )}
-                
-                {/* Weight Warning Indicator */}
-                <div className={cn(
-                  "z-10 text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 w-full justify-center shadow-sm border",
-                  lines.length === 0 ? "bg-white text-slate-400 border-slate-200" :
-                  isOverloaded ? "bg-red-100 text-red-700 border-red-200" : "bg-emerald-100 text-emerald-700 border-emerald-200"
-                )}>
-                  {lines.length > 0 && isOverloaded && <span>⚠️</span>}
-                  {totalWeight.toFixed(2)}t / {currentMaxTonPerSlot.toFixed(1)}t
-                </div>
-
-                <div className="flex-1 w-full overflow-y-auto space-y-2 z-10 pr-1">
-                  {lines.map(line => {
-                    const color = getColorForProduct(line.goodCode || line.uid);
-                    return (
-                    <motion.div 
-                      layoutId={`line-${line.uid}`}
-                      key={line.uid} 
-                      draggable
-                      onDragStart={e => {
-                        e.dataTransfer.setData('uid', String(line.uid));
-                        setDraggedUid(String(line.uid));
-                      }}
-                      onDragEnd={() => setDraggedUid(null)}
-                      className={cn("relative text-[11px] px-2 py-1.5 rounded shadow-sm flex flex-col gap-1 w-full cursor-grab active:cursor-grabbing border", color.bg, color.text, color.border)}
-                    >
-                      <div className="flex justify-between items-start w-full">
-                        <span className="font-bold leading-tight line-clamp-2" title={line.goodName}>{line.goodName}</span>
-                        <button onClick={(e) => handleUnassign(slotIdx, line, e)} className={cn("p-0.5 rounded-full shrink-0 ml-1 transition-colors", color.hover)}><X size={10} /></button>
-                      </div>
-                      <div className={cn("flex items-center justify-between text-[9px] font-medium px-1.5 py-0.5 rounded-sm", color.mute)}>
-                        <span className="flex items-center gap-0.5"><Weight size={10} className={color.icon} /> {line.qtyTon.toFixed(2)}t</span>
-                        <span className="flex items-center gap-0.5"><Package size={10} className={color.icon} /> {line.qtyBag}</span>
-                      </div>
-                    </motion.div>
-                  )})}
-                </div>
-              </div>
-            )
-          })}
+                 วาง <b>{selectedLine.goodName}</b> ที่นี่
+              </button>
+           )}
         </div>
       </div>
     );
@@ -243,26 +219,16 @@ export const VisualTruckLoader = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-[98vw] max-w-[1400px] h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-      >
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-[98vw] max-w-[1200px] h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         <div className="p-3 sm:p-4 border-b border-slate-200 bg-white flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0 relative">
           <div className="pr-16">
             <h2 className="text-lg sm:text-xl font-black text-slate-800 flex items-center gap-2">
               <Truck className="text-blue-600 shrink-0" /> จัดลำดับการโหลดสินค้า
             </h2>
-            <div className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">ระบุตำแหน่งสินค้า (คำนึงถึงสมดุลน้ำหนัก)</div>
+            <div className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">จัดเรียงสินค้าจากหัวไปท้าย (เรียงจากบนลงล่าง)</div>
           </div>
           <div className="absolute top-2 sm:top-3 right-2 sm:right-3 flex items-center gap-1">
-            <button 
-              onClick={() => setShowStackingGuide(true)} 
-              className="p-2 hover:bg-blue-50 rounded-full text-blue-500 hover:text-blue-700 transition-colors"
-              title="วิธีการเรียงกระสอบ"
-            >
-              <Info size={20} />
-            </button>
+            <button onClick={() => setShowStackingGuide(true)} className="p-2 hover:bg-blue-50 rounded-full text-blue-500 hover:text-blue-700 transition-colors" title="วิธีการเรียงกระสอบ"><Info size={20} /></button>
             <button onClick={onCancel} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600"><X size={20} /></button>
           </div>
         </div>
@@ -276,22 +242,14 @@ export const VisualTruckLoader = ({
               const uid = e.dataTransfer.getData('uid');
               if (uid) {
                 const line = linesWithId.find(l => String(l.uid) === uid);
-                if (line) {
-                  // find its slot and remove it
-                  Object.keys(assigned).forEach(k => {
-                    const slotNo = Number(k);
-                    if (assigned[slotNo].some(l => String(l.uid) === uid)) {
-                      handleUnassign(slotNo, line);
-                    }
-                  });
-                }
+                if (line) handleUnassign(line);
               }
             }}
           >
-            <div className="p-4 border-b border-slate-200 bg-white shadow-sm z-10">
+            <div className="p-4 border-b border-slate-200 bg-white shadow-sm z-10 flex justify-between items-center">
               <h3 className="font-semibold text-slate-800 flex items-center gap-2"><Package size={18} /> สินค้าที่รอโหลด ({unassigned.length})</h3>
             </div>
-            <div className="flex-1 overflow-y-auto p-2 sm:p-4 grid grid-cols-2 gap-2 content-start bg-slate-50/50">
+            <div className="flex-1 overflow-y-auto p-2 sm:p-4 grid grid-cols-2 lg:grid-cols-1 gap-2 content-start bg-slate-50/50">
               <AnimatePresence>
                 {unassigned.map(l => {
                   const color = getColorForProduct(l.goodCode || l.uid);
@@ -309,17 +267,17 @@ export const VisualTruckLoader = ({
                     onDragEnd={() => setDraggedUid(null)}
                     onClick={() => setSelectedLine(isSelected ? null : l)}
                     className={cn(
-                      "px-2 py-1.5 rounded-lg border-2 cursor-grab active:cursor-grabbing transition-all flex flex-col justify-between shadow-sm",
+                      "px-3 py-2 rounded-lg border-2 cursor-grab active:cursor-grabbing transition-all flex flex-col justify-between shadow-sm",
                       isSelected ? cn("ring-2 ring-blue-500/30 ring-offset-1", color.border, color.bg, color.text) : cn("border-slate-200 bg-white hover:border-slate-300")
                     )}
                   >
                     <div>
                       <div className={cn("font-bold text-xs sm:text-sm leading-tight line-clamp-2", isSelected ? color.text : "text-slate-800")}>{l.goodName}</div>
-                      <div className={cn("text-[9px] sm:text-[10px] font-mono mt-0.5", isSelected ? color.icon : "text-slate-400")}>{l.goodCode}</div>
+                      <div className={cn("text-[10px] font-mono mt-1", isSelected ? color.icon : "text-slate-400")}>{l.goodCode}</div>
                     </div>
-                    <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-slate-100/50">
-                        <span className={cn("text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5", isSelected ? color.mute : "bg-blue-50 text-blue-700")}><Weight size={10} /> {l.qtyTon.toFixed(2)}t</span>
-                        <span className={cn("text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5", isSelected ? color.mute : "bg-amber-50 text-amber-700")}><Package size={10} /> {l.qtyBag}</span>
+                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100/50">
+                        <span className={cn("text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1", isSelected ? color.mute : "bg-blue-50 text-blue-700")}><Weight size={12} /> {l.qtyTon.toFixed(2)}t</span>
+                        <span className={cn("text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1", isSelected ? color.mute : "bg-amber-50 text-amber-700")}><Package size={12} /> {l.qtyBag}</span>
                     </div>
                   </motion.div>
                 )})}
@@ -327,58 +285,44 @@ export const VisualTruckLoader = ({
             </div>
           </div>
 
-          <div className="flex-1 bg-slate-200/50 flex flex-col items-center justify-start lg:justify-center p-3 sm:p-6 overflow-hidden min-h-0 relative">
-            
-            {/* Desktop Truck Selector */}
-            <div className="hidden sm:flex p-1.5 flex-nowrap sm:flex-wrap gap-1 sm:gap-2 justify-start sm:justify-center mb-4 bg-white/80 backdrop-blur rounded-lg shadow-sm border border-slate-200 w-full lg:w-auto shrink-0">
-              {truckTypesList.map(t => (
-                <button key={t.Id} onClick={() => setTruckType(t)} className={cn("px-3 py-1.5 rounded-md text-xs sm:text-sm font-bold whitespace-nowrap", truckType?.Id === t.Id ? 'bg-slate-800 text-white' : 'hover:bg-slate-200')}>{t.Name}</button>
-              ))}
-            </div>
-            
-            {/* Mobile Truck Selector */}
-            <div className="sm:hidden w-full max-w-[400px] mb-4 shrink-0">
-              <select 
-                value={truckType?.Id || ''}
-                onChange={e => {
-                  const t = truckTypesList.find(x => x.Id === e.target.value);
-                  if (t) setTruckType(t);
-                }}
-                className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white shadow-sm text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23475569%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')] bg-[length:1.25em_1.25em] bg-[right_0.5rem_center] bg-no-repeat pr-10"
-              >
-                {truckTypesList.map(t => (
-                  <option key={t.Id} value={t.Id}>{t.Name}</option>
-                ))}
-              </select>
+          <div className="flex-1 bg-slate-200/50 flex flex-col items-center justify-start p-3 sm:p-6 overflow-hidden min-h-0 relative">
+            <div className="w-full flex justify-center mb-4 shrink-0">
+               <select 
+                 value={truckType?.Id || ''}
+                 onChange={e => {
+                   const t = truckTypesList.find(x => x.Id === e.target.value);
+                   if (t) setTruckType(t);
+                 }}
+                 className="w-full max-w-xs px-4 py-2.5 rounded-lg border border-slate-300 bg-white shadow-sm text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23475569%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')] bg-[length:1.25em_1.25em] bg-[right_0.5rem_center] bg-no-repeat pr-10"
+               >
+                 {truckTypesList.map(t => (
+                   <option key={t.Id} value={t.Id}>{t.Name}</option>
+                 ))}
+               </select>
             </div>
 
-            <div className="w-full h-full flex flex-col items-start lg:items-center pt-2 sm:pt-8 pb-4 overflow-auto">
+            <div className="w-full h-full flex flex-col items-center justify-start pt-2 overflow-auto pb-8">
               {loadingTypes || !truckType ? (
                 <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-400 mb-4"></div>
-                  กำลังโหลดข้อมูล...
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-400 mb-4"></div>กำลังโหลดข้อมูล...
                 </div>
               ) : (
-                <div className="flex flex-col gap-6">
-                  {/* Truck Row */}
-                  <div className="flex flex-row items-center">
-                    {/* Cabin pointing Left */}
-                    <div className="w-[90px] h-32 bg-gradient-to-l from-blue-600 to-blue-800 rounded-l-[2rem] rounded-r-md shadow-lg border-4 border-slate-800 mr-2 shrink-0 z-10 relative overflow-hidden flex items-center justify-start">
-                       {/* Window */}
-                       <div className="w-10 h-20 bg-slate-900 rounded-l-[1rem] absolute left-2 opacity-60" />
-                       {/* Light */}
-                       <div className="w-3 h-8 bg-amber-300 absolute left-0 bottom-3 rounded-r-full opacity-80 blur-[1px]" />
+                <div className="flex flex-col sm:flex-row items-stretch justify-center gap-6">
+                  {/* Main Bed */}
+                  <div className="flex flex-col items-center">
+                    <div className="w-[90px] h-20 bg-gradient-to-t from-blue-600 to-blue-800 rounded-t-3xl rounded-b-md shadow-lg border-4 border-slate-800 mb-2 shrink-0 z-10 relative overflow-hidden flex items-start justify-center">
+                       <div className="w-16 h-8 bg-slate-900 rounded-t-xl absolute top-2 opacity-60" />
                     </div>
-                    {/* Bed */}
-                    {renderTruckBed(1, truckType.SlotCount, truckType.Id === 'container' ? 'Container' : (truckType.Id === 'semi-trailer' ? 'Flatbed Trailer' : 'Bed'))}
+                    {renderBed('main', truckType.Id === 'container' ? 'Container' : 'ตัวแม่ (Main)', truckType.MaxWeightMain || 15)}
                   </div>
                   
-                  {/* Trailer Row */}
-                  {truckType.TrailerSlotCount != null && truckType.TrailerSlotCount > 0 && (
-                    <div className="flex flex-row items-start pl-[98px] relative">
-                      {/* Visual Connector / Hitch */}
-                      <div className="absolute -top-6 left-[140px] w-3 h-6 bg-slate-800 z-0 border-x border-slate-600" />
-                      {renderTruckBed(truckType.SlotCount + 1, truckType.TrailerSlotCount, 'Trailer')}
+                  {/* Trailer Bed */}
+                  {(truckType.MaxWeightTrailer || 0) > 0 && (
+                    <div className="flex flex-col items-center relative mt-16 sm:mt-0">
+                      <div className="hidden sm:block absolute -left-6 top-32 w-6 h-3 bg-slate-800 z-0 border-y border-slate-600" />
+                      <div className="sm:hidden absolute -top-8 left-1/2 -ml-1.5 h-8 w-3 bg-slate-800 z-0 border-x border-slate-600" />
+                      <div className="w-[90px] h-10 bg-slate-600 rounded-md shadow-lg border-4 border-slate-800 mb-2 shrink-0 z-10 relative flex items-center justify-center text-[10px] text-white font-bold">HITCH</div>
+                      {renderBed('trailer', 'ตัวลูก (Trailer)', truckType.MaxWeightTrailer || 15)}
                     </div>
                   )}
                 </div>
@@ -387,51 +331,32 @@ export const VisualTruckLoader = ({
           </div>
         </div>
 
-        {/* Footer */}
         <div className="p-3 sm:p-4 border-t border-slate-200 bg-white flex flex-col sm:flex-row items-center justify-between shrink-0 gap-3">
-          <div className="text-xs sm:text-sm font-medium text-slate-500 text-center sm:text-left">
+          <div className="text-xs sm:text-sm font-medium text-slate-500">
             {unassigned.length > 0 ? (
-              <span className="text-amber-600 flex items-center justify-center sm:justify-start gap-1"><Package size={16}/> เหลืออีก {unassigned.length} รายการที่ต้องจัดวาง</span>
+              <span className="text-amber-600 flex items-center justify-center gap-1"><Package size={16}/> เหลืออีก {unassigned.length} รายการที่ต้องจัดวาง</span>
             ) : (
-              <span className="text-emerald-600 flex items-center justify-center sm:justify-start gap-1"><CheckCircle2 size={16}/> จัดวางครบทุกรายการแล้ว</span>
+              <span className="text-emerald-600 flex items-center justify-center gap-1"><CheckCircle2 size={16}/> จัดวางครบทุกรายการแล้ว</span>
             )}
           </div>
           <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
-            <Button variant="outline" onClick={onCancel} className="flex-1 sm:w-32 py-2 sm:py-1">ยกเลิก</Button>
-            <Button 
-              onClick={handleConfirm} 
-              disabled={unassigned.length > 0}
-              className={cn("flex-1 sm:w-48 gap-2 py-2 sm:py-1", unassigned.length > 0 ? "bg-slate-300" : "bg-emerald-600 hover:bg-emerald-700 text-white")}
-            >
+            <Button variant="outline" onClick={onCancel} className="flex-1 sm:w-32 py-2">ยกเลิก</Button>
+            <Button onClick={handleConfirm} disabled={unassigned.length > 0} className={cn("flex-1 sm:w-48 gap-2 py-2", unassigned.length > 0 ? "bg-slate-300" : "bg-emerald-600 hover:bg-emerald-700 text-white")}>
               ยืนยัน <ArrowRight size={18} className="hidden sm:block" />
             </Button>
           </div>
         </div>
       </motion.div>
-
-      {/* Stacking Guide Modal */}
       {showStackingGuide && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md" onClick={() => setShowStackingGuide(false)}>
-          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2">
-                <Info size={20} /> คู่มือการเรียงกระสอบ (Stacking Reference)
-              </h3>
-              <button onClick={() => setShowStackingGuide(false)} className="text-slate-400 hover:text-slate-600"><X/></button>
+         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md" onClick={() => setShowStackingGuide(false)}>
+            <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl p-6" onClick={e=>e.stopPropagation()}>
+               <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-bold">คู่มือการเรียงกระสอบ</h3>
+                  <button onClick={() => setShowStackingGuide(false)}><X/></button>
+               </div>
+               <img src={STACKING_GUIDE_IMG} className="w-full rounded-lg border" />
             </div>
-            <div className="p-6">
-              <div className="bg-blue-50 text-blue-800 p-4 rounded-xl mb-4 text-sm font-medium border border-blue-100 leading-relaxed">
-                <p>• <b>กระสอบมาตรฐาน:</b> 50 กก. (ขนาดประมาณ 0.5 x 0.8 เมตร)</p>
-                <p>• <b>การจัดเรียง (Tie-in Stacking):</b> นิยมเรียงสลับชั้นละ 5 ใบ (ล็อก 3 ใบทางยาว และ 2 ใบทางขวาง) เพื่อป้องกันการโค่นล้มระหว่างขนส่ง</p>
-                <p>• <b>รถ 10 ล้อ (15 ตัน):</b> บรรทุกได้ประมาณ 300 กระสอบ</p>
-                <p>• <b>รถพ่วง (30 ตัน):</b> บรรทุกได้ประมาณ 600 กระสอบ (แม่ 300 / ลูก 300)</p>
-              </div>
-              <div className="aspect-video w-full bg-slate-100 rounded-xl overflow-hidden border border-slate-200 relative flex items-center justify-center">
-                 <img src={STACKING_GUIDE_IMG} alt="Bag Stacking Guide" className="object-cover w-full h-full" />
-              </div>
-            </div>
-          </div>
-        </div>
+         </div>
       )}
     </div>
   );
