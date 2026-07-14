@@ -147,7 +147,11 @@ router.get('/inbox', async (req, res) => {
 
     const query = `
       SELECT Id, Sequence, Movebill, Plate, CustName, WeightIn, WeightOut, WeightNet,
-        DateIn, DateOut, ScaleNo, Status, MatchedSoId, MatchStatus, IngestedAt, UpdatedAt
+        DateIn, DateOut, ScaleNo, Status, MatchedSoId, MatchStatus, IngestedAt, UpdatedAt,
+        ISNULL(
+          (SELECT TOP 1 DocuNo FROM dbo.SOHD WITH (NOLOCK) WHERE CONVERT(VARCHAR, SOID) = wf.WeighInbox.MatchedSoId),
+          (SELECT TOP 1 ISNULL(ImportedDocuNo, WfRef) FROM wf.SalesOrder WITH (NOLOCK) WHERE CONVERT(VARCHAR, Id) = wf.WeighInbox.MatchedSoId)
+        ) AS MatchedDocuNo
       FROM wf.WeighInbox WHERE ${where.join(' AND ')}
       ORDER BY UpdatedAt DESC
       OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY`;

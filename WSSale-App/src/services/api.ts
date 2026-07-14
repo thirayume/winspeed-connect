@@ -475,7 +475,7 @@ export const fetchTruckScaleForSO = (soId: number | string) =>
 export interface WeighInboxRow {
   Id: number; Sequence: string; Movebill?: string; Plate?: string; CustName?: string;
   WeightIn?: number; WeightOut?: number; WeightNet?: number; DateIn?: string; DateOut?: string; ScaleNo?: string;
-  Status: 'OPEN' | 'COMPLETED'; MatchedSoId?: string | null; MatchStatus?: 'MATCHED' | 'MULTI' | 'UNMATCHED' | null;
+  Status: 'OPEN' | 'COMPLETED'; MatchedSoId?: string | null; MatchedDocuNo?: string | null; MatchStatus?: 'MATCHED' | 'MULTI' | 'UNMATCHED' | null;
   IngestedAt: string; UpdatedAt: string;
 }
 export interface TsSyncStatus {
