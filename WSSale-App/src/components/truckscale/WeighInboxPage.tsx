@@ -14,6 +14,9 @@ const MATCH_BADGE: Record<string, string> = {
 export function WeighInboxPage() {
   const [status, setStatus] = useState<TsSyncStatus | null>(null);
   const [rows, setRows] = useState<WeighInboxRow[]>([]);
+  const [filter, setFilter] = useState<'' | 'MATCHED' | 'MULTI' | 'UNMATCHED'>('');
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [page, setPage] = useState(1);
