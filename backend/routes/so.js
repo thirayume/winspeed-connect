@@ -188,11 +188,32 @@ async function getSoOrThrow(id, expectedStatus = null) {
   const idCol = isString ? 'Id' : 'CAST(Id AS INT)';
   const idType = isString ? sql.VarChar(50) : sql.Int;
 
-  const r = await wfQuery(
+  let r = await wfQuery(
     `SELECT * FROM wf.v_AllSalesOrders WHERE ${idCol} = @id`,
     { id: { type: idType, value: idValue } }
   );
-  const so = r.recordset?.[0];
+  let so = r.recordset?.[0];
+
+  // If not found, try to see if this ID was deduplicated out. Find the actual active SOID for its DocuNo.
+  if (!so) {
+    const docLookup = await wfQuery(`
+      SELECT DocuNo FROM dbo.SOHD WITH (NOLOCK) WHERE SOID = @id
+      UNION
+      SELECT ISNULL(ImportedDocuNo, WfRef) AS DocuNo FROM wf.SalesOrder WITH (NOLOCK) WHERE Id = @id
+    `, { id: { type: sql.Int, value: Number(id) || 0 } });
+    
+    if (docLookup.recordset?.length > 0) {
+       const docuNo = docLookup.recordset[0].DocuNo;
+       if (docuNo) {
+         r = await wfQuery(
+           `SELECT * FROM wf.v_AllSalesOrders WHERE WfRef = @docuNo OR ImportedDocuNo = @docuNo`,
+           { docuNo: { type: sql.VarChar(50), value: docuNo } }
+         );
+         so = r.recordset?.[0];
+       }
+    }
+  }
+
   if (!so) throw Object.assign(new Error(`SO id ${id} ไม่พบ`), { status: 404 });
   if (expectedStatus && so.Status !== expectedStatus)
     throw Object.assign(new Error(`SO ต้องอยู่ใน ${expectedStatus} (ปัจจุบัน: ${so.Status})`), { status: 400 });
