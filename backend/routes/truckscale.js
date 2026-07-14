@@ -126,16 +126,37 @@ router.post('/sync/run', requireRole('ADMIN', 'MANAGER', 'WAREHOUSE'), async (re
   res.json(r);
 });
 
-// GET /api/truckscale/inbox?status=&match= — รายการ inbox
+// GET /api/truckscale/inbox?status=&match=&search=&page=&limit= — รายการ inbox
 router.get('/inbox', async (req, res) => {
   try {
     const where = ['1=1']; const inp = {};
     if (req.query.status) { where.push('Status=@st'); inp.st = { type: sql.NVarChar(20), value: String(req.query.status) }; }
     if (req.query.match)  { where.push('MatchStatus=@ms'); inp.ms = { type: sql.NVarChar(20), value: String(req.query.match) }; }
-    const r = await wfQuery(`SELECT TOP 200 Id, Sequence, Movebill, Plate, CustName, WeightIn, WeightOut, WeightNet,
+    if (req.query.search) {
+      where.push('(Sequence LIKE @q OR Movebill LIKE @q OR Plate LIKE @q OR CustName LIKE @q)');
+      inp.q = { type: sql.NVarChar(100), value: `%${String(req.query.search)}%` };
+    }
+
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const offset = (page - 1) * limit;
+
+    const countQuery = `SELECT COUNT(*) AS total FROM wf.WeighInbox WHERE ${where.join(' AND ')}`;
+    const totalRow = await wfQuery(countQuery, inp);
+    const total = totalRow.recordset[0].total;
+
+    const query = `
+      SELECT Id, Sequence, Movebill, Plate, CustName, WeightIn, WeightOut, WeightNet,
         DateIn, DateOut, ScaleNo, Status, MatchedSoId, MatchStatus, IngestedAt, UpdatedAt
-      FROM wf.WeighInbox WHERE ${where.join(' AND ')} ORDER BY UpdatedAt DESC`, inp);
-    res.json(r.recordset || []);
+      FROM wf.WeighInbox WHERE ${where.join(' AND ')}
+      ORDER BY UpdatedAt DESC
+      OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY`;
+    const r = await wfQuery(query, inp);
+    
+    res.json({
+      data: r.recordset || [],
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
+    });
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
