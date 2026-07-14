@@ -5,6 +5,7 @@ import {
   type TsSyncStatus, type WeighInboxRow,
 } from '../../services/api';
 import { useSocketEvent } from '../../hooks/useSocket';
+import { useAppStore } from '../../store/app-store';
 
 const MATCH_BADGE: Record<string, string> = {
   MATCHED: 'bg-green-100 text-green-700', MULTI: 'bg-amber-100 text-amber-700',
@@ -21,6 +22,8 @@ export function WeighInboxPage() {
   const [searchInput, setSearchInput] = useState('');
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  
+  const navigate = useAppStore(s => s.navigate);
 
   const load = useCallback(async (f = filter, s = search, p = page) => {
     setLoading(true);
@@ -134,7 +137,17 @@ export function WeighInboxPage() {
                   <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{r.DateOut || '–'}</td>
                   <td className="px-4 py-3 text-center whitespace-nowrap">
                     <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${MATCH_BADGE[r.MatchStatus || 'UNMATCHED']}`}>{r.MatchStatus || '—'}</span>
-                    {r.MatchedSoId && <div className="text-[11px] text-gray-400 mt-0.5">{r.MatchedDocuNo || `SO ${r.MatchedSoId}`}</div>}
+                    {r.MatchedSoId && (
+                      <div className="mt-0.5">
+                        <button 
+                          onClick={() => navigate('sales', { soId: Number(r.MatchedSoId), action: 'view' })}
+                          className="text-[11px] text-blue-600 font-medium hover:underline focus:outline-none"
+                          title="ดูรายละเอียดบิล"
+                        >
+                          {r.MatchedDocuNo || `SO ${r.MatchedSoId}`}
+                        </button>
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     {r.MatchStatus !== 'MATCHED' && (
