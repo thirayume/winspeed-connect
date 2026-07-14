@@ -92,7 +92,7 @@ if (-not $DryRun) {
   if (Test-Path $changelog) {
     $date    = Get-Date -Format "yyyy-MM-dd"
     $content = Get-Content $changelog -Raw
-    $content = $content -replace "\[v$([regex]::Escape($newVersion))\].*", "## [v$newVersion] - $date"
+    $content = $content -replace "(?m)^(#*\s*)?\[v$([regex]::Escape($newVersion))\].*", "## [v$newVersion] - $date"
     $content | Set-Content $changelog -Encoding UTF8
   }
 }
