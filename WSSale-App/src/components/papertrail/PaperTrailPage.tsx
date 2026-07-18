@@ -10,6 +10,7 @@ import type { PaperBoard, PaperCard, SOStatus } from '../../types';
 import { PaperDocModal } from './PaperDocModal';
 import { ScanModal } from './ScanModal';
 import { RequestActionModal, type RequestActionType } from './RequestActionModal';
+import { useSocketEvent } from '../../hooks/useSocket';
 
 import { UnlockReviewModal } from './UnlockReviewModal';
 import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
@@ -54,6 +55,7 @@ export function PaperTrailPage() {
     setLoading(false);
   }, [canApproveUnlock]);
   useEffect(() => { load(); }, [load]);
+  useSocketEvent('so_updated', load);
 
   async function doVerify(card: PaperCard) {
     setBusyId(card.id);
