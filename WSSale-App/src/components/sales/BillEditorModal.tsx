@@ -7,7 +7,7 @@ import { useAuthStore } from '../../store/auth-store';
 import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser } from '../../types';
 
 type DraftLine = SalesOrderLine & { tempId: string; refControlTicketNo?: string; isControlTicketDrawn?: boolean; maxQtyTon?: number };
-type DraftBill = { id: string; soPrefix: SOPrefix; lines: DraftLine[]; remark: string; rebateDiscountAmt?: number };
+type DraftBill = { id: string; soPrefix: SOPrefix; lines: DraftLine[]; remark: string; rebateDiscountAmt?: number; wfRef?: string };
 
 const PREFIX_LABELS: Record<SOPrefix, string> = {
   I: 'I — ขายปกติ (Invoice)',
@@ -97,6 +97,7 @@ export function CreateSODialog({
           soPrefix: so.soPrefix as SOPrefix,
           remark: so.remark || '',
           rebateDiscountAmt: so.rebateDiscountAmt || 0,
+          wfRef: (so as any).wfRef || (so as any).WfRef || '',
           lines: (so.lines || []).map((l, i) => ({
             ...l,
             tempId: `${l.goodId}-${i}`,
@@ -530,10 +531,16 @@ export function CreateSODialog({
             <div 
               key={b.id} 
               onClick={() => setActiveBillId(b.id)}
-              className={`flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-t-lg border-t border-x cursor-pointer transition-colors whitespace-nowrap ${activeBillId === b.id ? 'bg-white border-gray-200 font-bold text-[#0C447C] border-b-white' : 'bg-transparent border-transparent text-gray-500 hover:text-gray-800'}`}
+              className={`flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-t-lg border-t border-x cursor-pointer transition-colors whitespace-nowrap ${
+                activeBillId === b.id 
+                  ? `bg-white border-gray-200 font-bold border-b-white ${truckPlate === 'ตั๋วคุม' ? 'text-purple-800' : 'text-[#0C447C]'}` 
+                  : `bg-transparent border-transparent ${truckPlate === 'ตั๋วคุม' ? 'text-purple-500 hover:text-purple-700' : 'text-gray-500 hover:text-gray-800'}`
+              }`}
               style={{ marginBottom: '-1px' }}
             >
-              <FileText size={16} /> บิลที่ {i+1} ({b.soPrefix})
+              <FileText size={16} /> 
+              <span>บิลที่ {i+1} ({b.soPrefix})</span>
+              {truckPlate === 'ตั๋วคุม' && <span className="ml-1 text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">ตั๋วคุม</span>}
               <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full border ${billTotal > 0 ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>฿{billTotal.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
               {!editSoId && bills.length > 1 && (
                 <X size={14} className="ml-2 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); removeBill(b.id); }} />
@@ -558,14 +565,20 @@ export function CreateSODialog({
                 {bills.map((b, i) => {
                   const billTotal = b.lines.reduce((s, l) => s + (l.isControlTicketDrawn ? 0 : l.qtyTon * l.pricePerTon), 0);
                   return (
-                  <div 
-                    key={b.id} 
-                    onClick={() => setActiveBillId(b.id)}
-                    className={`flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-t-lg border-t border-x cursor-pointer transition-colors whitespace-nowrap ${activeBillId === b.id ? 'bg-white border-gray-200 font-bold text-[#0C447C] border-b-white' : 'bg-transparent border-transparent text-gray-500 hover:text-gray-800'}`}
-                    style={{ marginBottom: '-1px' }}
-                  >
-                    <FileText size={16} /> บิลที่ {i+1} ({b.soPrefix})
-                    <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full border ${billTotal > 0 ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>฿{billTotal.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+                    <div 
+                      key={b.id} 
+                      onClick={() => setActiveBillId(b.id)}
+                      className={`flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-t-lg border-t border-x cursor-pointer transition-colors whitespace-nowrap ${
+                        activeBillId === b.id 
+                          ? `bg-white border-gray-200 font-bold border-b-white ${truckPlate === 'ตั๋วคุม' ? 'text-purple-800' : 'text-[#0C447C]'}` 
+                          : `bg-transparent border-transparent ${truckPlate === 'ตั๋วคุม' ? 'text-purple-500 hover:text-purple-700' : 'text-gray-500 hover:text-gray-800'}`
+                      }`}
+                      style={{ marginBottom: '-1px' }}
+                    >
+                      <FileText size={16} /> 
+                      <span>บิลที่ {i+1} {b.wfRef ? `(เลขที่: ${b.wfRef})` : `(${b.soPrefix})`}</span>
+                      {truckPlate === 'ตั๋วคุม' && <span className="ml-1 text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">ตั๋วคุม</span>}
+                      <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full border ${billTotal > 0 ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>฿{billTotal.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
                     {!editSoId && bills.length > 1 && (
                       <X size={14} className="ml-2 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); removeBill(b.id); }} />
                     )}
@@ -707,22 +720,40 @@ export function CreateSODialog({
                     const pObj = priceObj(g.GoodID);
                     const net = pObj?.GoodPriceNet ?? 0;
                     const isExpired = pObj?.IsExpired === 1;
+                    const isGiveaway = g.GoodGroupName === 'ของแถม';
                     const inCart = activeBill?.lines.some(l => l.goodId === g.GoodID);
                     return (
                       <button
                         key={g.GoodID}
                         onClick={() => addGoodToActiveBill(g)}
-                        className={`text-left p-3 rounded-xl border transition-all ${inCart ? 'border-blue-300 bg-blue-50' : 'border-gray-100 bg-gray-50 hover:border-gray-200 hover:bg-white'}`}
+                        className={`text-left p-3 rounded-xl border transition-all ${
+                          inCart 
+                            ? 'border-blue-300 bg-blue-50' 
+                            : isGiveaway && (g.RemainingQty || 0) <= 0
+                              ? 'border-red-200 bg-red-50 hover:border-red-300 hover:bg-red-100'
+                              : 'border-gray-100 bg-gray-50 hover:border-gray-200 hover:bg-white'
+                        }`}
                       >
                         <div className="text-sm font-bold text-[#0C447C] line-clamp-2 leading-tight mb-1.5 h-10" title={g.GoodName}>{g.GoodName}</div>
-                        {net > 0 ? (
-                          <div className="text-xs font-bold" style={{ color: isExpired ? '#DC2626' : '#0C447C' }}>
-                            ฿{net.toLocaleString()}<span className="text-[9px] font-normal text-gray-400">/ตัน</span>
-                          </div>
+                        {!isGiveaway ? (
+                          <>
+                            {net > 0 ? (
+                              <div className="text-xs font-bold" style={{ color: isExpired ? '#DC2626' : '#0C447C' }}>
+                                ฿{net.toLocaleString()}<span className="text-[9px] font-normal text-gray-400">/ตัน</span>
+                              </div>
+                            ) : (
+                              <div className="text-[10px] text-orange-400">ไม่มีราคา NET</div>
+                            )}
+                            <div className="text-[9px] text-gray-300 mt-0.5">{g.BagPerTon} กระสอบ/ตัน · {g.WeightKgPerBag}kg</div>
+                          </>
                         ) : (
-                          <div className="text-[10px] text-orange-400">ไม่มีราคา NET</div>
+                          <>
+                            <div className={`text-[11px] font-bold ${(g.RemainingQty || 0) > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                              โควต้าคงเหลือ: {(g.RemainingQty || 0).toLocaleString()} {g.UnitName || 'ชิ้น'}
+                            </div>
+                            <div className="text-[9px] text-gray-300 mt-0.5">หน่วยนับ: {g.UnitName || 'ชิ้น'}</div>
+                          </>
                         )}
-                        <div className="text-[9px] text-gray-300 mt-0.5">{g.BagPerTon} กระสอบ/ตัน · {g.WeightKgPerBag}kg</div>
                       </button>
                     );
                   })}
@@ -747,7 +778,7 @@ export function CreateSODialog({
               {/* Active Bill Config */}
               <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-sm border-t-4 border-t-[#0C447C] flex flex-col flex-1 min-h-[300px]">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-bold text-[#0C447C]">รายการในบิล {activeBill?.soPrefix}</h3>
+                  <h3 className="font-bold text-[#0C447C]">รายการในบิล {activeBill?.wfRef ? `(เลขที่: ${activeBill?.wfRef})` : activeBill?.soPrefix}</h3>
                   <select 
                     value={activeBill?.soPrefix} 
                     onChange={e => updateBillInfo(activeBillId, { soPrefix: e.target.value as SOPrefix })}
@@ -787,7 +818,7 @@ export function CreateSODialog({
                                 <input type="number" max={l.maxQtyTon} value={l.qtyTon || ''} onChange={e => updateActiveLine(l.tempId, { qtyTon: Number(e.target.value) })} className="w-12 text-center text-xs font-mono font-bold py-1 focus:outline-none" />
                                 <button onClick={() => updateActiveLine(l.tempId, { qtyTon: l.qtyTon + 1 })} disabled={l.maxQtyTon !== undefined && l.qtyTon >= l.maxQtyTon} className="px-2 py-1 text-gray-500 hover:bg-gray-100 disabled:opacity-30"><Plus size={12} /></button>
                               </div>
-                              <span className="text-[10px] text-gray-500 font-medium">{l.isGiveaway ? 'ชิ้น' : 'ตัน'}</span>
+                              <span className="text-[10px] text-gray-500 font-medium">{l.isGiveaway ? (goods.find(g => g.GoodID === l.goodId)?.UnitName || 'ชิ้น') : 'ตัน'}</span>
                             </div>
                             
                             <div className="flex flex-col items-end gap-1">

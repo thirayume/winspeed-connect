@@ -12,12 +12,14 @@ BEGIN
     );
 
     -- Seed initial data matching existing hardcoded TRUCK_TYPES
+    EXEC('
     INSERT INTO [wf].[TruckType] ([Id], [Name], [SlotCount], [TrailerSlotCount], [MaxTonPerSlot]) VALUES
-    ('4w', N'รถกระบะ', 2, NULL, 1.5),
-    ('6w', N'รถ 6 ล้อ', 4, NULL, 2.5),
-    ('10w', N'รถ 10 ล้อ', 6, NULL, 2.5),
-    ('trailer', N'รถพ่วง', 6, 6, 3.0),
-    ('semi-trailer', N'รถเทรลเลอร์', 10, NULL, 3.0),
-    ('container', N'ตู้คอนเทนเนอร์', 8, NULL, 3.5);
+    (''4w'', N''รถกระบะ'', 2, NULL, 1.5),
+    (''6w'', N''รถ 6 ล้อ'', 4, NULL, 2.5),
+    (''10w'', N''รถ 10 ล้อ'', 6, NULL, 2.5),
+    (''trailer'', N''รถพ่วง'', 6, 6, 3.0),
+    (''semi-trailer'', N''รถเทรลเลอร์'', 10, NULL, 3.0),
+    (''container'', N''ตู้คอนเทนเนอร์'', 8, NULL, 3.5);
+    ');
 END
 GO
