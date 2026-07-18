@@ -253,7 +253,7 @@ export const getRebateBalance = (custId: string) =>
 export const fetchShippedToday = (date: string) =>
   req<import('../types').ShippedRow[]>(`/so/shipped-today?date=${date}`);
 
-export const createSO = (payload: Record<string, unknown>) =>
+export const createSO = (payload: Record<string, unknown> | Record<string, unknown>[]) =>
   req<{ id?: number; ids?: number[]; wfRef?: string; wfRefs?: string[]; needsApproval: boolean }>('/so', {
     method: 'POST', body: JSON.stringify(payload),
   });
@@ -314,6 +314,11 @@ export const resolveUnlockReq = (reqId: number, approve: boolean, note?: string)
 export const cancelSO = (id: number | string, note?: string) =>
   req<{ id: number; status: SOStatus }>(`/so/${id}/cancel`, {
     method: 'PATCH', body: JSON.stringify({ note }),
+  });
+
+export const deleteSO = (id: number | string) =>
+  req<{ id: number; deleted: boolean }>(`/so/${id}`, {
+    method: 'DELETE',
   });
 
 // ── Rebate ────────────────────────────────────────────────────

@@ -77,6 +77,7 @@ export type EMCust = {
   groupId?: string | null;
   employeeId?: string | null;
   employeeName?: string | null;
+  CreditDays?: number;
 };
 
 export type CustomerFilterOption = {
@@ -130,6 +131,8 @@ export type EMGood = {
   RemaQty?: number;
   TotalQtyTon?: number;
   TotalQtyTonThisYear?: number;
+  RemainingQty?: number;
+  UnitName?: string;
 };
 
 export type CurrentPrice = {
@@ -177,8 +180,11 @@ export type SalesOrderLine = {
   giveawayApprovalNote?: string | null;
   giveawayApprovedByName?: string | null;
   isControlTicketDrawn?: boolean;
+  refControlTicketNo?: string;
   rebateBooked?: boolean;
   loadSequence?: number;
+  masterQty?: number;
+  childQty?: number;
 };
 
 export type SalesOrder = {
@@ -449,6 +455,7 @@ export type QuotationLine = {
   PricePerTon: number;
   NetPricePerTon: number;
   LineAmount?: number;
+  IsGiveaway?: boolean;
 };
 
 export type Quotation = {

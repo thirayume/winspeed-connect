@@ -104,7 +104,7 @@ router.get('/customers', async (req, res) => {
     const rows = await query(
       `SELECT TOP (@limit)
               c.CustID, c.CustName, c.ContTel AS Tel, c.ContTel1 AS Mobile,
-              ISNULL(cx.Remark, '') AS Remark, c.Inactive,
+              ISNULL(cx.Remark, '') AS Remark, c.Inactive, ISNULL(c.CreditDays, 0) AS CreditDays,
               ${selectExt},
               ${columns.salesperson ? `salesEmp.EmpName` : `CAST(NULL AS NVARCHAR(255))`} AS salespersonName,
               ${columns.employee ? `custEmp.EmpName` : `CAST(NULL AS NVARCHAR(255))`} AS employeeName
@@ -347,18 +347,21 @@ router.delete('/goods/:id', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/master/giveaway-goods — ของแถม
+// GET /api/master/giveaway-goods — ของแถม (ดึงเฉพาะรายการที่ถูก Map ไว้ในระบบโควต้าแล้วเท่านั้น)
 router.get('/giveaway-goods', async (req, res) => {
   try {
-    // ของแถม/Souvenir จริง: P-prefix (เสื้อ/แบนเนอร์/ผ้า) + N-prefix (กระเป๋า)
-    // หมายเหตุ: StockFlag='N' (ไม่ใช่ stocked FG) · ตัด misc/service (G-prefix)
+    const y = new Date().getFullYear();
     const rows = await query(`
-      SELECT GoodID, GoodCode, GoodName1 AS GoodName
-      FROM dbo.EMGood WITH (NOLOCK)
-      WHERE GoodGroupID IS NULL AND MainGoodUnitID <> 1002
-        AND (GoodCode LIKE 'P%' OR GoodCode LIKE 'N%')
-      ORDER BY GoodCode
-    `);
+      SELECT g.GoodID, g.GoodCode, g.GoodName1 AS GoodName, m.Brand, m.ItemName, u.GoodUnitName AS UnitName,
+             ISNULL(b.RemainingQty, 0) AS RemainingQty
+      FROM dbo.EMGood g WITH (NOLOCK)
+      INNER JOIN wf.GiveawayItemMapping m WITH (NOLOCK) ON g.GoodID = m.GoodID
+      LEFT JOIN dbo.EMGoodUnit u WITH (NOLOCK) ON g.MainGoodUnitID = u.GoodUnitID
+      LEFT JOIN wf.v_GiveawayBudgetStatus b WITH (NOLOCK) 
+        ON b.Brand = m.Brand AND b.ItemName = m.ItemName 
+        AND b.SalesUserId = @su AND b.PeriodYear = @y
+      ORDER BY m.Brand, m.ItemName
+    `, { su: { type: sql.Int, value: req.user.sub }, y: { type: sql.Int, value: y } });
     res.json(rows);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
@@ -582,7 +585,7 @@ router.get('/control-tickets', async (req, res) => {
           h.CustName, h.TransRegistration AS TruckPlate,
           h.AppvFlag, h.AppvDate, h.Desc1, h.Desc2, h.DocuStatus
         FROM dbo.SOHD h WITH (NOLOCK)
-        WHERE h.DocuType = 103 AND (h.AppvDocuNo LIKE 'AI%' OR h.TransRegistration = N'ตั๋วคุม') ${where}
+        WHERE h.DocuType = 103 AND h.DocuStatus = 'Y' AND (h.AppvDocuNo LIKE 'AI%' OR h.TransRegistration = N'ตั๋วคุม') ${where}
         ORDER BY h.DocuDate DESC
       ),
       DraftTickets AS (
@@ -687,7 +690,7 @@ router.get('/control-tickets/:docuNo', async (req, res) => {
       JOIN dbo.SODT d WITH (NOLOCK) ON h.SOID = d.SOID
       JOIN dbo.EMGood g WITH (NOLOCK) ON d.GoodID = g.GoodID
       LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = g.GoodID
-      WHERE RTRIM(h.AppvDocuNo) = RTRIM(@docuNo) AND h.DocuType = 103 AND h.DocuStatus = 'Y'
+      WHERE (RTRIM(h.AppvDocuNo) = RTRIM(@docuNo) OR RTRIM(h.DocuNo) = RTRIM(@docuNo)) AND h.DocuType = 103 AND h.DocuStatus = 'Y'
       ORDER BY d.ListNo ASC
     `, { docuNo: { type: sql.NVarChar(30), value: docuNo } });
     res.json(rows);

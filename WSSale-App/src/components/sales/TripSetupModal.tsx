@@ -12,22 +12,27 @@ export function TripSetupModal({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (data: { custId: string; custName: string; truckPlate: string; deliveryDate: string }) => void;
-  initialData?: { custId: string; custName: string; truckPlate: string; deliveryDate: string };
+  onConfirm: (data: { custId: string; custName: string; truckPlate: string; deliveryDate: string; creditDays?: number; pSling?: boolean; loadInOrder?: boolean; }) => void;
+  initialData?: { custId: string; custName: string; truckPlate: string; deliveryDate: string; creditDays?: number; pSling?: boolean; loadInOrder?: boolean; };
 }) {
   const [customers, setCustomers] = useState<EMCust[]>([]);
   const [truckPlates, setTruckPlates] = useState<string[]>([]);
-  
+
   const [custId, setCustId] = useState(initialData?.custId || '');
   const [custSearch, setCustSearch] = useState(initialData?.custName || '');
   const [debouncedSearch, setDebouncedSearch] = useState(initialData?.custName || '');
   const [isCustOpen, setIsCustOpen] = useState(false);
-  
+
   const [truckPlate, setTruckPlate] = useState(initialData?.truckPlate || '');
   const [isTruckOpen, setIsTruckOpen] = useState(false);
-  
-  const [deliveryDate, setDeliveryDate] = useState(initialData?.deliveryDate || '');
-  
+
+  const [deliveryDate, setDeliveryDate] = useState(initialData?.deliveryDate || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10));
+
+  const [creditDays, setCreditDays] = useState(Number(initialData?.creditDays || 0));
+  const [pSling, setPSling] = useState(initialData?.pSling || false);
+  const [loadInOrder, setLoadInOrder] = useState(initialData?.loadInOrder || false);
+  const [remark, setRemark] = useState(initialData?.remark || '');
+
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -35,7 +40,11 @@ export function TripSetupModal({
       setCustId(initialData?.custId || '');
       setCustSearch(initialData?.custName || '');
       setTruckPlate(initialData?.truckPlate || '');
-      setDeliveryDate(initialData?.deliveryDate || '');
+      setDeliveryDate(initialData?.deliveryDate || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10));
+      setCreditDays(Number(initialData?.creditDays || 0));
+      setPSling(initialData?.pSling || false);
+      setLoadInOrder(initialData?.loadInOrder || false);
+      setRemark(initialData?.remark || '');
       setError('');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -67,7 +76,12 @@ export function TripSetupModal({
       setError('กรุณาเลือกลูกค้าจากรายการ');
       return;
     }
-    onConfirm({ custId, custName: custSearch, truckPlate, deliveryDate });
+    onConfirm({
+      custId, custName: custSearch,
+      truckPlate,
+      deliveryDate,
+      creditDays, pSling, loadInOrder, remark
+    });
   };
 
   if (!isOpen) return null;
@@ -98,7 +112,7 @@ export function TripSetupModal({
               <input
                 value={custSearch}
                 onChange={e => { setCustSearch(e.target.value); if (custId) setCustId(''); }}
-                onFocus={() => setIsCustOpen(true)} 
+                onFocus={() => setIsCustOpen(true)}
                 onBlur={() => setTimeout(() => setIsCustOpen(false), 200)}
                 placeholder="ค้นหาชื่อลูกค้า..."
                 className="w-full border border-gray-300 rounded-xl pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] focus:border-transparent transition-all"
@@ -106,7 +120,7 @@ export function TripSetupModal({
               {isCustOpen && (
                 <div className="absolute z-30 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
                   {customers.map(c => (
-                    <div key={c.CustID} className="px-4 py-3 text-sm hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-0" onClick={() => { setCustId(c.CustID); setCustSearch(c.CustName); setIsCustOpen(false); }}>
+                    <div key={c.CustID} className="px-4 py-3 text-sm hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-0" onClick={() => { setCustId(c.CustID); setCustSearch(c.CustName); setCreditDays(c.CreditDays || 0); setIsCustOpen(false); }}>
                       <div className="font-bold text-gray-900">{c.CustName}</div>
                       <div className="text-xs text-gray-500 font-mono mt-0.5">{c.CustID}</div>
                     </div>
@@ -117,12 +131,14 @@ export function TripSetupModal({
           </div>
 
           <div className="space-y-1 relative">
-            <label className="text-sm font-bold text-gray-700 flex items-center gap-1.5">
-              <Truck size={14} /> ทะเบียนรถ *
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-bold text-gray-700 flex items-center gap-1.5">
+                <Truck size={14} /> ทะเบียนรถ
+              </label>
+            </div>
             <input
               value={truckPlate} onChange={e => setTruckPlate(e.target.value)}
-              onFocus={() => setIsTruckOpen(true)} 
+              onFocus={() => setIsTruckOpen(true)}
               onBlur={() => setTimeout(() => setIsTruckOpen(false), 200)}
               placeholder="เช่น กจ70-4088"
               className={`w-full border rounded-xl px-4 py-2.5 font-mono focus:outline-none transition-all ${truckPlate && truckPlates.length > 0 && !truckPlates.includes(truckPlate) ? 'border-amber-400 focus:ring-2 focus:ring-amber-500 bg-amber-50' : 'border-gray-300 focus:ring-2 focus:ring-[#0C447C]'}`}
@@ -141,9 +157,40 @@ export function TripSetupModal({
             )}
           </div>
 
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-sm font-bold text-gray-700">เครดิต (วัน)</label>
+              <input
+                type="number" min="0"
+                value={creditDays.toString()} onChange={e => setCreditDays(e.target.value === '' ? 0 : parseInt(e.target.value, 10))}
+                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] transition-all"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-bold text-gray-700">วันที่เอกสาร</label>
+              <ThaiDatePicker value={deliveryDate} onChange={setDeliveryDate} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] transition-all" />
+            </div>
+          </div>
+
+          <div className="flex gap-6 items-center pt-2">
+            <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 cursor-pointer">
+              <input type="checkbox" checked={pSling} onChange={e => setPSling(e.target.checked)} className="w-4 h-4 accent-[#0C447C]" />
+              ใช้ Pre-Sling
+            </label>
+            <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 cursor-pointer">
+              <input type="checkbox" checked={loadInOrder} onChange={e => setLoadInOrder(e.target.checked)} className="w-4 h-4 accent-[#0C447C]" />
+              ขึ้นของตามลำดับ
+            </label>
+          </div>
+
           <div className="space-y-1">
-            <label className="text-sm font-bold text-gray-700">วันที่รับของ</label>
-            <ThaiDatePicker value={deliveryDate} onChange={setDeliveryDate} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] transition-all" />
+            <label className="text-sm font-bold text-gray-700">หมายเหตุทริป</label>
+            <textarea
+              value={remark} onChange={e => setRemark(e.target.value)}
+              placeholder="ระบุหมายเหตุสำหรับทริปนี้ (ถ้ามี)..."
+              rows={2}
+              className="w-full border border-gray-300 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#0C447C] transition-all resize-none text-sm"
+            />
           </div>
         </div>
 

@@ -1,5 +1,20 @@
 ﻿# Changelog
 
+## [v5.0.25] - 2026-07-19
+
+### Added
+- Standardized Enterprise UI across master data modules with Clear buttons, DataSummaryCards, and loading states.
+- Enhanced Trip Management with credit terms, mother/child tonnage granularity, and automatic 50kg/bag count calculations.
+- Implemented historical giveaway withdrawals migration (Excel to DB).
+- Fixed Railway deployment by resolving Express 5 CORS and routing incompatibilities.
+
+### Changed
+- Refactored Quotation system into a card-based UI with multi-bill SO conversion.
+- Removed arbitrary bill prefix (AI/K) logic for "à¸•à¸±à¹‹à¸§à¸„à¸¸à¸¡" (Control Ticket), now strictly respecting the user-provided `TransRegistration` field.
+- Modernized Create Sales Order interface with near full-screen layout, advanced customer dropdown, and realtime truck plate validation.
+- Improved OT queue access control to prevent unauthorized cancellations.
+- Migrated Admin Portal navigation to a hierarchical sidebar submenu.
+
 ## [v5.0.0] - 2026-07-14
 
 ### Added
@@ -87,6 +102,7 @@
 ### Fixed
 - Fixed an `X is not defined` ReferenceError in `PaperTrailPage.tsx` caused by a missing import from `lucide-react`.
 - Fixed a syntax parsing error `Unterminated regular expression` in `PaperTrailPage.tsx` caused by a mismatched closing `</div>` tag.
+
 
 
 

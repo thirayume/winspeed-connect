@@ -3,7 +3,7 @@ import { Plus, Search, RefreshCw, ChevronRight, Filter, ChevronLeft, Package, Ca
 import { Button, Card, cn } from '../ui/Base';
 import { useErpStore } from '../../store/erp-store';
 import { useAppStore } from '../../store/app-store';
-import { fetchSalesOrders, fetchSalesOrder, cancelSO, fetchCustomers, confirmSO } from '../../services/api';
+import { fetchSalesOrders, fetchSalesOrder, cancelSO, deleteSO, fetchCustomers, confirmSO } from '../../services/api';
 import { appConfirm } from '../ui/AppAlert';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { SOStatusBadge } from './SOStatusBadge';
@@ -26,6 +26,7 @@ export const SalesPortal = () => {
   const [externalSelectedSo, setExternalSelectedSo] = useState<SalesOrder | null>(null);
   const [returnToTripFromSoId, setReturnToTripFromSoId] = useState<string | null>(null);
   const [returnToTripKey, setReturnToTripKey] = useState<string | null>(null);
+  const [shouldOpenActiveTripSummary, setShouldOpenActiveTripSummary] = useState(false);
   
   const [customersMap, setCustomersMap] = useState<Record<string, string>>({});
 
@@ -77,7 +78,7 @@ export const SalesPortal = () => {
     // Find all draft orders that match the active trip's criteria
     const tripOrders = orders.filter(so => {
       const matchCust = so.custId === activeTrip.custId;
-      const matchTruck = so.truckPlate === activeTrip.truckPlate;
+      const matchTruck = so.truckPlate === activeTrip.truckPlate || (so.truckPlate === 'ตั๋วคุม');
       const soDate = so.deliveryDate ? so.deliveryDate.split('T')[0] : '';
       const matchDate = soDate === activeTrip.deliveryDate;
       return so.status === 'DRAFT' && matchCust && matchTruck && matchDate;
@@ -187,9 +188,50 @@ export const SalesPortal = () => {
     return Array.from(map.values());
   }, [orders, customersMap]);
 
+  const activeTripGroup = useMemo(() => {
+    if (!activeTrip) return null;
+    const tripOrders = orders.filter(so => {
+      const matchCust = so.custId === activeTrip.custId;
+      const matchTruck = so.truckPlate === activeTrip.truckPlate || (so.truckPlate === 'ตั๋วคุม');
+      const soDate = so.deliveryDate ? so.deliveryDate.split('T')[0] : '';
+      const matchDate = soDate === activeTrip.deliveryDate;
+      return so.status === 'DRAFT' && matchCust && matchTruck && matchDate;
+    });
+    
+    if (tripOrders.length === 0) return null;
+    
+    const totalAmt = tripOrders.reduce((s, l) => s + (l.lines || []).reduce((ss, ll) => ss + (ll.qtyTon * ll.pricePerTon), 0), 0);
+    const totalTon = tripOrders.reduce((s, l) => s + (l.lines || []).reduce((ss, ll) => ss + (ll.isGiveaway ? 0 : ll.qtyTon), 0), 0);
+    
+    return {
+      dateDisplay: activeTrip.deliveryDate ? new Date(activeTrip.deliveryDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : 'ไม่ระบุวันรับ',
+      cust: activeTrip.custName,
+      truck: activeTrip.truckPlate || 'ตั๋วคุม',
+      orders: tripOrders,
+      totalAmt,
+      totalTon
+    };
+  }, [activeTrip, orders]);
+
+  const displayGroupedOrders = useMemo(() => {
+    if (!activeTripGroup) return groupedOrders;
+    const activeIds = new Set(activeTripGroup.orders.map(o => o.id));
+    return groupedOrders.map(g => ({
+      ...g,
+      orders: g.orders.filter(o => !activeIds.has(o.id))
+    })).filter(g => g.orders.length > 0);
+  }, [groupedOrders, activeTripGroup]);
+
+  useEffect(() => {
+    if (shouldOpenActiveTripSummary && !loading && activeTripGroup) {
+      setViewingTrip(activeTripGroup);
+      setShouldOpenActiveTripSummary(false);
+    }
+  }, [shouldOpenActiveTripSummary, loading, activeTripGroup]);
+
   // Auto-restore viewingTrip if returning from edit or create
   useEffect(() => {
-    if (!isCreating && !editingSoId && orders.length > 0) {
+    if (!isCreating && !editingSoId && !loading && orders.length > 0) {
       if (returnToTripFromSoId) {
         const group = groupedOrders.find(g => g.orders.some(o => String(o.id) === returnToTripFromSoId));
         if (group) setViewingTrip(group);
@@ -205,7 +247,7 @@ export const SalesPortal = () => {
         setReturnToTripKey(null);
       }
     }
-  }, [groupedOrders, returnToTripFromSoId, returnToTripKey, isCreating, editingSoId, orders.length]);
+  }, [groupedOrders, returnToTripFromSoId, returnToTripKey, isCreating, editingSoId, orders.length, loading]);
 
   return (
     <div className="h-full w-full flex flex-col overflow-hidden" style={{ background: '#F1EFE8' }}>
@@ -243,7 +285,7 @@ export const SalesPortal = () => {
              isOpen={isCreating || !!editingSoId} 
              editSoId={editingSoId || undefined}
              onClose={() => { setIsCreating(false); setEditingSoId(null); }} 
-             onCreated={() => { loadData(); setIsCreating(false); setEditingSoId(null); }} 
+             onCreated={() => { loadData(); setIsCreating(false); setEditingSoId(null); setShouldOpenActiveTripSummary(true); }} 
           />
         ) : (
           <>
@@ -256,10 +298,11 @@ export const SalesPortal = () => {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-[#0C447C] font-bold">
                       <Truck size={18} />
-                      กำลังจัดทริปส่งสินค้า
+                      กำลังจัดทริปส่งสินค้า {activeTripGroup ? `(${activeTripGroup.orders.length} บิล)` : ''}
                     </div>
                     <div className="flex items-center gap-2">
                       <button onClick={() => setIsTripSetupOpen(true)} className="text-xs text-blue-600 font-bold hover:underline">แก้ไขทริป</button>
+                      {activeTripGroup && <button onClick={() => setViewingTrip(activeTripGroup)} className="text-xs text-blue-600 font-bold hover:underline">ดูสรุปทริป</button>}
                       <button onClick={clearTrip} className="text-xs text-gray-500 font-bold hover:text-red-500 transition-colors">ยกเลิก</button>
                     </div>
                   </div>
@@ -360,7 +403,7 @@ export const SalesPortal = () => {
                     <Package size={48} className="mb-3" />
                     <p className="font-semibold">ไม่พบบิล</p>
                   </div>
-                ) : groupedOrders.map((g, idx) => {
+                ) : displayGroupedOrders.map((g, idx) => {
                   const linkedQuoteOrder = g.orders.find(o => o.linkedQuoteId && ['DRAFT', 'SENT', 'EXPIRED'].includes(String(o.linkedQuoteStatus || '')));
                   const isQuoteLocked = !!linkedQuoteOrder;
                   const openQuote = () => {
@@ -394,10 +437,16 @@ export const SalesPortal = () => {
                                 if (await appConfirm(`ยืนยันลบ Sale Trip นี้ (รวม ${g.orders.length} บิล)?`)) {
                                   setLoading(true);
                                   try {
-                                    await Promise.all(g.orders.map(o => cancelSO(o.id!, 'ลบทั้งทริป')));
+                                    for (const o of g.orders) {
+                                      if (['DRAFT', 'CANCELLED'].includes(o.status)) {
+                                        await deleteSO(o.id!);
+                                      } else {
+                                        await cancelSO(o.id!, 'ลบทั้งทริป');
+                                      }
+                                    }
                                     loadData();
-                                  } catch (e) {
-                                    alert('เกิดข้อผิดพลาดในการลบทริป');
+                                  } catch (e: any) {
+                                    alert('เกิดข้อผิดพลาดในการลบทริป: ' + (e?.message || ''));
                                     setLoading(false);
                                   }
                                 }
@@ -452,11 +501,14 @@ export const SalesPortal = () => {
                             return (
                               <div
                                 key={order.id}
-                                className="relative p-3 rounded-lg border border-gray-100 bg-white"
+                                className={`relative p-3 rounded-lg border ${order.truckPlate === 'ตั๋วคุม' ? 'border-purple-200 bg-purple-50/50' : 'border-gray-100 bg-white'}`}
                               >
                                 <div className="flex items-start justify-between mb-1.5">
-                                  <span className="font-mono text-xs font-bold text-gray-700">{order.wfRef || (order as any).docuNo || (order as any).importedDocuNo || `#${order.id}`}</span>
-                                  <span className="text-xs font-bold text-[#0C447C]">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`font-mono text-xs font-bold ${order.truckPlate === 'ตั๋วคุม' ? 'text-purple-700' : 'text-gray-700'}`}>{order.wfRef || (order as any).docuNo || (order as any).importedDocuNo || `#${order.id}`}</span>
+                                    {order.truckPlate === 'ตั๋วคุม' && <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">ตั๋วคุม</span>}
+                                  </div>
+                                  <span className={`text-xs font-bold ${order.truckPlate === 'ตั๋วคุม' ? 'text-purple-700' : 'text-[#0C447C]'}`}>
                                     ฿{totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                                   </span>
                                 </div>
@@ -513,6 +565,9 @@ export const SalesPortal = () => {
         onClose={() => setViewingTrip(null)}
         trip={viewingTrip}
         onUpdate={() => {
+          if (viewingTrip?.orders?.[0]?.id) {
+            setReturnToTripFromSoId(String(viewingTrip.orders[0].id));
+          }
           loadData();
           setViewingTrip(null); 
         }}
@@ -541,6 +596,7 @@ export const SalesPortal = () => {
       <TripSetupModal
         isOpen={isTripSetupOpen}
         onClose={() => setIsTripSetupOpen(false)}
+        initialData={activeTrip || undefined}
         onConfirm={(data) => {
           setTrip(data);
           setIsTripSetupOpen(false);
