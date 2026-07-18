@@ -17,6 +17,7 @@ import { GlobalLoader } from './components/common/GlobalLoader';
 import { MobileDrawer } from './components/common/MobileDrawer';
 import type { NavItem, NavGroup } from './components/common/MobileDrawer';
 import { UnlockReviewModal } from './components/papertrail/UnlockReviewModal';
+import { useSocketEvent } from './hooks/useSocket';
 
 export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'weigh-inbox' | 'policy' | 'governance' | 'ops' | 'admin' | 'master' | 'profile';
 
@@ -185,14 +186,17 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
   }, [activePortal, expandedGroups]);
 
   useEffect(() => {
-    const poll = async () => {
+    const fetchReqs = async () => {
       try { setUnlockRequests(await listUnlockRequests('PENDING', true)); }
-      catch (e) { console.error('Polling failed', e); }
+      catch (e) { console.error('Fetch unlock requests failed', e); }
     };
-    poll();
-    const timer = setInterval(poll, 5000);
-    return () => clearInterval(timer);
+    fetchReqs();
   }, [setUnlockRequests]);
+
+  useSocketEvent('so_updated', async () => {
+    try { setUnlockRequests(await listUnlockRequests('PENDING', true)); }
+    catch (e) { console.error('Fetch unlock requests failed', e); }
+  });
 
   useEffect(() => {
     if (!showAccessAs || !canUseAccessAs) return;

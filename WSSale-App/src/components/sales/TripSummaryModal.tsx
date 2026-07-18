@@ -122,6 +122,11 @@ export function TripSummaryModal({
         const updatedLines = fullSo.lines || [];
         if (data.loadInOrder === false) {
           updatedLines.forEach((l: any) => { l.loadSequence = null; });
+        } else if (data.loadInOrder === true) {
+          const hasAnySequence = updatedLines.some((l: any) => l.loadSequence && Number(l.loadSequence) > 0);
+          if (!hasAnySequence) {
+            updatedLines.forEach((l: any, i: number) => { l.loadSequence = i + 1; });
+          }
         }
         
         await updateSO(o.id, {
