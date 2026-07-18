@@ -186,6 +186,7 @@ export function CreateSODialog({
         setIsOwnTruck(!!(so as any).isOwnTruck);
         setNoTruckRequired(!!(so as any).noTruckRequired);
         setPSling(!!(so as any).pSling);
+        setLoadInOrder((so.lines || []).some((l: any) => l.loadSequence && Number(l.loadSequence) > 0));
         setBills([{
           id: 'bill-1',
           soPrefix: so.soPrefix as SOPrefix,
@@ -489,6 +490,7 @@ export function CreateSODialog({
           isOwnTruck,
           noTruckRequired,
           pSling,
+          loadInOrder,
           remark: b.remark || undefined,
           rebateDiscountAmt: canSeeRebate ? b.rebateDiscountAmt || 0 : 0,
           salesUserId: salesUserId || undefined,
@@ -523,6 +525,7 @@ export function CreateSODialog({
           isOwnTruck,
           noTruckRequired,
           pSling,
+          loadInOrder,
           remark: b.remark || undefined,
           rebateDiscountAmt: canSeeRebate ? b.rebateDiscountAmt || 0 : 0,
           salesUserId: salesUserId || undefined,
@@ -1048,7 +1051,7 @@ export function CreateSODialog({
                                     updateActiveLine(l.tempId, { childQty: val, masterQty: val !== undefined ? Number((l.qtyTon - val).toFixed(3)) : undefined });
                                   }} onBlur={e => e.target.value = parseFloat(e.target.value || '0').toFixed(3)} className="w-14 text-right text-xs font-mono py-1 focus:outline-none bg-transparent text-purple-900 font-bold" />
                                 </div>
-                                {activeTrip?.loadInOrder && (
+                                {loadInOrder && (
                                   <div className="flex items-center border border-amber-100 rounded px-1 bg-amber-50" title="ลำดับการขึ้นของ">
                                     <span className="text-[10px] text-amber-600 font-medium mr-1">ลำดับ</span>
                                     <input type="number" min="1" value={l.loadSequence || ''} onChange={e => updateActiveLine(l.tempId, { loadSequence: e.target.value ? Number(e.target.value) : undefined })} className="w-10 text-center text-xs font-mono py-1 focus:outline-none bg-transparent text-amber-900 font-bold" placeholder="-" />
