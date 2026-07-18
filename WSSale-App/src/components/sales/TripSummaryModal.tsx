@@ -111,19 +111,29 @@ export function TripSummaryModal({
     });
   };
 
-  const handleEditTripMetadata = async (data: { custId: string; custName: string; truckPlate: string; deliveryDate: string }) => {
+  const handleEditTripMetadata = async (data: { custId: string; custName: string; truckPlate: string; deliveryDate: string; creditDays?: number; pSling?: boolean; loadInOrder?: boolean; remark?: string }) => {
     setBusy(true);
     try {
-      // For each order in the trip, update its metadata
       for (const o of trip.orders) {
         if (!o.id || String(o.id) === 'undefined') continue;
         const fullSo = await fetchSalesOrder(o.id);
+        
+        // If loadInOrder is false, clear all loadSequences
+        const updatedLines = fullSo.lines || [];
+        if (data.loadInOrder === false) {
+          updatedLines.forEach((l: any) => { l.loadSequence = null; });
+        }
+        
         await updateSO(o.id, {
           ...fullSo,
+          lines: updatedLines,
           custId: data.custId,
           custName: data.custName,
           truckPlate: data.truckPlate,
-          deliveryDate: data.deliveryDate
+          deliveryDate: data.deliveryDate,
+          creditDays: data.creditDays !== undefined ? data.creditDays : (fullSo as any).creditDays,
+          pSling: data.pSling !== undefined ? data.pSling : fullSo.pSling,
+          remark: data.remark !== undefined ? data.remark : fullSo.remark,
         });
       }
       setIsEditTripOpen(false);
@@ -359,12 +369,13 @@ export function TripSummaryModal({
                   const hasTicket = (order.lines || []).some(l => l.isControlTicketDrawn);
                   
                   return (
-                    <div key={order.id} className="border border-gray-200 rounded-xl bg-white shadow-sm flex flex-col">
+                    <div key={order.id} className={`border rounded-xl shadow-sm flex flex-col ${order.truckPlate === 'ตั๋วคุม' ? 'border-purple-200 bg-purple-50' : 'border-gray-200 bg-white'}`}>
                       <div className="p-3 sm:p-4 relative flex flex-col flex-1">
                         <div className="flex justify-between items-start mb-2">
-                          <div className="font-bold text-sm font-mono text-[#0C447C] flex items-center gap-1.5">
+                          <div className={`font-bold text-sm font-mono flex items-center gap-1.5 ${order.truckPlate === 'ตั๋วคุม' ? 'text-purple-800' : 'text-[#0C447C]'}`}>
                             <FileText size={16} />
                             {order.wfRef || (order as any).docuNo || (order as any).importedDocuNo || `#${order.id}`}
+                            {order.truckPlate === 'ตั๋วคุม' && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">ตั๋วคุม</span>}
                             {pendingReq && <ShieldAlert size={14} className="text-red-500" />}
                           </div>
                           <div className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${SO_STATUS_META[order.status]?.badgeClass || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
@@ -463,7 +474,11 @@ export function TripSummaryModal({
           custId: trip.orders[0]?.custId || '',
           custName: trip.orders[0]?.custName || '',
           truckPlate: trip.truck,
-          deliveryDate: trip.orders[0]?.deliveryDate?.split('T')[0] || ''
+          deliveryDate: trip.orders[0]?.deliveryDate?.split('T')[0] || '',
+          creditDays: (trip.orders[0] as any)?.creditDays || 0,
+          pSling: trip.orders.some(o => !!o.pSling),
+          loadInOrder: trip.orders.some(o => (o.lines || []).some((l: any) => l.loadSequence && Number(l.loadSequence) > 0)),
+          remark: trip.orders[0]?.remark || ''
         }}
         onConfirm={handleEditTripMetadata}
       />

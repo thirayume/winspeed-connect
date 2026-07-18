@@ -5,6 +5,11 @@ export type TripContext = {
   custName: string;
   truckPlate: string;
   deliveryDate: string;
+  creditDays?: number;
+  isControlTicket?: boolean;
+  pSling?: boolean;
+  loadInOrder?: boolean;
+  remark?: string;
 };
 
 type TripState = {
