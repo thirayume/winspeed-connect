@@ -908,7 +908,7 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
     await wfTransaction(async tx => {
       for (const order of orders) {
         const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, salesUserId: impersonatedId, rebateDiscountAmt, convertFromQuoteId, creditDays, truckRemark, billRemark, transpId } = order;
-        const truckPlate = ['I', 'K'].includes(soPrefix) ? 'ตั๋วคุม' : (order.truckPlate || null);
+        const truckPlate = order.truckPlate || null;
 
         // price deviation check
         const devLine = lines.find(l => !l.isGiveaway && (Number(l.pricePerTon) < Number(l.netPricePerTon) - 500));
@@ -1060,11 +1060,12 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
           lr.input('refControlTicketNo',   sql.NVarChar(30),  l.refControlTicketNo || null);
           lr.input('isControlTicketDrawn', sql.Bit,           l.isControlTicketDrawn ? 1 : 0);
           addGiveawayApprovalInputs(lr, req, l, hasGiveawayApproval);
+          lr.input('loadSequence',         sql.Int,           l.loadSequence || null);
           
           await lr.query(`
             INSERT INTO wf.SalesOrderLine
-              (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, MasterQty, ChildQty, PricePerTon, NetPricePerTon, IsGiveaway, RefControlTicketNo, IsControlTicketDrawn${giveawayApprovalInsertColumns(hasGiveawayApproval)})
-            VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @masterQty, @childQty, @pricePerTon, @netPricePerTon, @isGiveaway, @refControlTicketNo, @isControlTicketDrawn${giveawayApprovalInsertValues(hasGiveawayApproval)})
+              (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, MasterQty, ChildQty, PricePerTon, NetPricePerTon, IsGiveaway, RefControlTicketNo, IsControlTicketDrawn, LoadSequence${giveawayApprovalInsertColumns(hasGiveawayApproval)})
+            VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @masterQty, @childQty, @pricePerTon, @netPricePerTon, @isGiveaway, @refControlTicketNo, @isControlTicketDrawn, @loadSequence${giveawayApprovalInsertValues(hasGiveawayApproval)})
           `);
         }
       }
@@ -1101,7 +1102,7 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
       if (isSohdOrder) {
       await wfTransaction(async tx => {
         const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, rebateDiscountAmt, creditDays, truckRemark, billRemark, transpId } = order;
-        const truckPlate = ['I', 'K'].includes(soPrefix) ? 'ตั๋วคุม' : (order.truckPlate || null);
+        const truckPlate = order.truckPlate || null;
         const safeRebateDiscountAmt = normalizeRebateDiscount(req, rebateDiscountAmt);
         const totalAmnt = lines.reduce((sum, l) => sum + (Number(l.qtyTon) * Number(l.pricePerTon)), 0) - safeRebateDiscountAmt;
 
@@ -1174,6 +1175,7 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
           lr.input('refControlTicketNo', sql.NVarChar(30), l.refControlTicketNo || null);
           lr.input('isControlTicketDrawn', sql.Bit, l.isControlTicketDrawn ? 1 : 0);
           addGiveawayApprovalInputs(lr, req, l, hasGiveawayApproval);
+          lr.input('loadSequence', sql.Int, l.loadSequence || null);
 
           await lr.query(`
             INSERT INTO dbo.SODT (
@@ -1204,8 +1206,8 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
             FROM dbo.EMGood g
             WHERE g.GoodID = @goodId;
 
-            INSERT INTO wf.SalesOrderLineExt (SOID, ListNo, NetPricePerTon, IsGiveaway, RebateBooked, RefControlTicketNo, IsControlTicketDrawn, MasterQty, ChildQty${giveawayApprovalInsertColumns(hasGiveawayApproval)})
-            VALUES (@soId, @lineNum, @netPricePerTon, @isGiveaway, 0, @refControlTicketNo, @isControlTicketDrawn, @masterQty, @childQty${giveawayApprovalInsertValues(hasGiveawayApproval)});
+            INSERT INTO wf.SalesOrderLineExt (SOID, ListNo, NetPricePerTon, IsGiveaway, RebateBooked, RefControlTicketNo, IsControlTicketDrawn, MasterQty, ChildQty, LoadSequence${giveawayApprovalInsertColumns(hasGiveawayApproval)})
+            VALUES (@soId, @lineNum, @netPricePerTon, @isGiveaway, 0, @refControlTicketNo, @isControlTicketDrawn, @masterQty, @childQty, @loadSequence${giveawayApprovalInsertValues(hasGiveawayApproval)});
           `);
         }
       });
@@ -1216,7 +1218,7 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
 
     await wfTransaction(async tx => {
       const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, rebateDiscountAmt, creditDays, truckRemark, billRemark, transpId } = order;
-      const truckPlate = ['I', 'K'].includes(soPrefix) ? 'ตั๋วคุม' : (order.truckPlate || null);
+      const truckPlate = order.truckPlate || null;
 
       // price deviation check
       const devLine = lines.find(l => !l.isGiveaway && (Number(l.pricePerTon) < Number(l.netPricePerTon) - 500));
@@ -1294,18 +1296,19 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
         lr.input('refControlTicketNo',   sql.NVarChar(30),  l.refControlTicketNo || null);
         lr.input('isControlTicketDrawn', sql.Bit,           l.isControlTicketDrawn ? 1 : 0);
         addGiveawayApprovalInputs(lr, req, l, hasGiveawayApproval);
+        lr.input('loadSequence',         sql.Int,           l.loadSequence || null);
         
         await lr.query(`
           INSERT INTO wf.SalesOrderLine
-            (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, MasterQty, ChildQty, PricePerTon, NetPricePerTon, IsGiveaway, RefControlTicketNo, IsControlTicketDrawn${giveawayApprovalInsertColumns(hasGiveawayApproval)})
-          VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @masterQty, @childQty, @pricePerTon, @netPricePerTon, @isGiveaway, @refControlTicketNo, @isControlTicketDrawn${giveawayApprovalInsertValues(hasGiveawayApproval)})
+            (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, MasterQty, ChildQty, PricePerTon, NetPricePerTon, IsGiveaway, RefControlTicketNo, IsControlTicketDrawn, LoadSequence${giveawayApprovalInsertColumns(hasGiveawayApproval)})
+          VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @masterQty, @childQty, @pricePerTon, @netPricePerTon, @isGiveaway, @refControlTicketNo, @isControlTicketDrawn, @loadSequence${giveawayApprovalInsertValues(hasGiveawayApproval)})
         `);
       }
     });
 
     await audit(null, so.Id, req.user.sub, 'UPDATED', 'DRAFT', 'DRAFT', null, req.ip);
     broadcast('so_updated', { id: so.Id, action: 'updated' });
-    res.json({ id: so.Id, wfRef: newWfRef, needsApproval });
+    res.json({ id: so.Id, wfRef: so.WfRef, needsApproval });
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
@@ -1457,6 +1460,35 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
     // 2.5 Consume Rebate (FIFO)
     if (rebateDiscountAmt > 0) {
       await consumeRebateAccrual(so.CustId, newSoid, rebateDiscountAmt);
+    }
+
+    // 2.7 Auto-deduct Giveaway Quota (FR-AutoDeduct)
+    const giveawayLines = lines.filter(l => l.IsGiveaway);
+    for (const gl of giveawayLines) {
+      const mapRow = (await wfQuery(`SELECT Brand, ItemName FROM wf.GiveawayItemMapping WHERE GoodID=@g`, { g: { type: sql.VarChar(50), value: gl.GoodId } })).recordset[0];
+      if (mapRow) {
+        const y = new Date().getFullYear();
+        const regRow = (await wfQuery(`SELECT TOP 1 Region, EmpId, EmpCode FROM wf.GiveawayBudget WHERE SalesUserId=@su AND PeriodYear=@y`, { su: { type: sql.Int, value: req.user.sub }, y: { type: sql.Int, value: y } })).recordset[0];
+        if (regRow) {
+          await wfQuery(`
+            INSERT INTO wf.GiveawayWithdrawal (SalesUserId, EmpId, EmpCode, Region, PeriodYear, IssueMonth, Brand, ItemName, Qty, CustId, SoId, Note, Source)
+            VALUES (@su, @ei, @ec, @rg, @y, @mo, @br, @it, @qy, @cu, @so, @nt, 'APP')
+          `, {
+            su: { type: sql.Int, value: req.user.sub },
+            ei: { type: sql.NVarChar(20), value: regRow.EmpId || null },
+            ec: { type: sql.NVarChar(20), value: regRow.EmpCode || null },
+            rg: { type: sql.NVarChar(60), value: regRow.Region },
+            y: { type: sql.Int, value: y },
+            mo: { type: sql.Int, value: new Date().getMonth() + 1 },
+            br: { type: sql.NVarChar(50), value: mapRow.Brand },
+            it: { type: sql.NVarChar(100), value: mapRow.ItemName },
+            qy: { type: sql.Decimal(12,2), value: gl.QtyBag || 0 },
+            cu: { type: sql.NVarChar(20), value: so.CustId || null },
+            so: { type: sql.Int, value: so.Id },
+            nt: { type: sql.NVarChar(300), value: `ตัดโควต้าอัตโนมัติจากบิล ${so.WfRef || so.Id}` }
+          });
+        }
+      }
     }
 
     // 3. Audit log (บันทึกโดยใช้ newSoid)
@@ -1624,8 +1656,38 @@ router.patch('/:id/cancel', requireRole('SALES', 'ADMIN'), async (req, res) => {
       await wfQuery(`UPDATE dbo.SOHD SET DocuStatus='C' WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: so.Id } });
       await wfQuery(`UPDATE wf.SalesOrderExt SET UpdatedAt=GETUTCDATE() WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: so.Id } });
     }
+
+    // Auto-restore Giveaway Quota
+    await wfQuery(`DELETE FROM wf.GiveawayWithdrawal WHERE Note = @nt`, { nt: { type: sql.NVarChar(300), value: `ตัดโควต้าอัตโนมัติจากบิล ${so.WfRef || so.Id}` } });
+
     await audit(null, so.Id, req.user.sub, 'CANCELLED', so.Status, 'CANCELLED', note, req.ip);
     res.json({ id: so.Id, status: 'CANCELLED' });
+  } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
+});
+
+// ── DELETE /api/so/:id — Permanently remove DRAFT/CANCELLED SO ──
+router.delete('/:id', requireRole('SALES', 'ADMIN'), async (req, res) => {
+  try {
+    const so = await getSoOrThrow(req.params.id);
+    if (!['DRAFT', 'CANCELLED'].includes(so.Status))
+      return res.status(400).json({ message: `ลบได้เฉพาะบิลร่างหรือยกเลิกแล้ว (ปัจจุบัน: ${so.Status})` });
+
+    // If it's a web-app draft (integer Id in wf.SalesOrder)
+    const isWebDraft = !so.ImportedDocuNo;
+    if (isWebDraft) {
+      await wfQuery(`DELETE FROM wf.SalesOrderLine WHERE SoId=@id`, { id: { type: sql.Int, value: so.Id } });
+      await wfQuery(`DELETE FROM wf.SalesOrder WHERE Id=@id`, { id: { type: sql.Int, value: so.Id } });
+    } else {
+      // SOHD-based order: mark as cancelled (DocuStatus='C') if not already, and clean up ext tables
+      await wfQuery(`UPDATE dbo.SOHD SET DocuStatus='C' WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: so.Id } });
+    }
+
+    // Clean up related data
+    await wfQuery(`DELETE FROM wf.GiveawayWithdrawal WHERE Note = @nt`, { nt: { type: sql.NVarChar(300), value: `ตัดโควต้าอัตโนมัติจากบิล ${so.WfRef || so.Id}` } });
+    await wfQuery(`DELETE FROM wf.SalesOrderAudit WHERE SoId=@id`, { id: { type: sql.VarChar(50), value: String(so.Id) } });
+
+    broadcast('so_updated', { id: so.Id, action: 'deleted' });
+    res.json({ id: so.Id, deleted: true });
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
 
