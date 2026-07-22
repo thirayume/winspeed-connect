@@ -3,12 +3,24 @@ import { expect, type Page } from '@playwright/test';
 export const E2E_PASSWORD = process.env.E2E_PASSWORD || 'W0rldF3rt';
 export const API_BASE = process.env.E2E_API_BASE || 'http://localhost:3000/api';
 
+const observedPages = new WeakSet<Page>();
+
+function captureBrowserDiagnostics(page: Page) {
+  if (observedPages.has(page)) return;
+  observedPages.add(page);
+  page.on('pageerror', error => console.error(`[browser:pageerror] ${error.stack || error.message}`));
+  page.on('console', message => {
+    if (message.type() === 'error') console.error(`[browser:console] ${message.text()}`);
+  });
+}
+
 export type ApiResult<T> = {
   status: number;
   body: T;
 };
 
 export async function login(page: Page, username: string, expectedDisplayName: string) {
+  captureBrowserDiagnostics(page);
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'WS-Sale-App' })).toBeVisible();
   await page.locator('input[type="text"]').fill(username);
