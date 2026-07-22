@@ -3,7 +3,7 @@ documentId: "WF-REQ-STATE-008"
 title: "Current System State — Modules, Data Dictionary & API (v8)"
 version: "v1.0"
 runtimeVersion: "1.0.0"
-sourceMigrationSequence: 54
+sourceMigrationSequence: 55
 truckScaleWriteTargets: "tbl_keyone"
 status: Review
 statusDetail: "Merged from v8.0; source verification and approval required"
@@ -28,7 +28,7 @@ normative: true
 | Owner | Solution Architect |
 | Status | Review — merged candidate; source verification required |
 | Classification | Confidential — Client / Authorized Partner Use Only |
-| Source snapshot | package runtime 1.0.0 · migration sequence through 054 · 17 route modules / 160 endpoints / 22 portal keys |
+| Source snapshot | package runtime 1.0.0 · migration sequence through 055 · 17 route modules / 160 endpoints / 22 portal keys |
 
 > **Merge provenance — 21 July 2026:** เอกสารต้นทาง v8.0 ถูกคงไว้เป็น v1.0 review candidate ตามนโยบาย `latest-document-wins`; หากขัดกับเอกสารที่ใหม่กว่าหรือ source code ปัจจุบัน ให้ยึดหลักฐานล่าสุด และต้อง review/approve ก่อน baseline.
 
@@ -75,7 +75,7 @@ normative: true
 | **RetentionPolicy / DsarLog** | 028 | **PDPA retention + DSAR log** |
 | **WeighInbox / TruckScaleSync** | 029 | **inbox ชั่งจาก TruckScale + watermark** |
 
-> ตารางนี้สรุป object หลักจาก baseline เดิม; source inventory ปัจจุบันมี migration sequence ต่อเนื่องถึง 054 และต้องใช้รายงาน pipeline ตรวจรายการไฟล์จริง.
+> ตารางนี้สรุป object หลักจาก baseline เดิม; source inventory ปัจจุบันมี migration sequence ต่อเนื่องถึง 055 และต้องใช้รายงาน pipeline ตรวจรายการไฟล์จริง.
 
 ## 4. API Reference (หมวด /api)
 | Base | endpoints หลัก |

@@ -3,7 +3,7 @@ documentId: "WF-REQ-IMPL-008"
 title: "Implementation Status & Feature Gap (vs SRS v8 FRs)"
 version: "v1.0"
 runtimeVersion: "1.0.0"
-sourceMigrationSequence: 54
+sourceMigrationSequence: 55
 status: Review
 statusDetail: "Merged from v8.0; source verification and approval required"
 sourceVersion: "v8.0"
@@ -27,7 +27,7 @@ normative: true
 | Owner | Solution Architect / Product Owner |
 | Status | Review — merged candidate; source verification required |
 | Classification | Confidential — Client / Authorized Partner Use Only |
-| Source snapshot | package runtime 1.0.0 · migration sequence through 054 · 17 route modules / 160 endpoints / 22 portal keys |
+| Source snapshot | package runtime 1.0.0 · migration sequence through 055 · 17 route modules / 160 endpoints / 22 portal keys |
 
 > **Merge provenance — 21 July 2026:** เอกสารต้นทาง v8.0 ถูกคงไว้เป็น v1.0 review candidate ตามนโยบาย `latest-document-wins`; หากขัดกับเอกสารที่ใหม่กว่าหรือ source code ปัจจุบัน ให้ยึดหลักฐานล่าสุด และต้อง review/approve ก่อน baseline.
 

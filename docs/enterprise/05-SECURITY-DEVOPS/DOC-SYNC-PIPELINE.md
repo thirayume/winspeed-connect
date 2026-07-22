@@ -64,7 +64,7 @@ node ./source-diagrams.js
 
 - packages ทั้งสามตำแหน่งเป็น `1.0.0`
 - source scan พบ 17 Express route modules, 160 endpoints, 22 portal keys และ 8 roles
-- migration ล่าสุดมี numeric sequence 054; duplicate sequence ต้อง review แยก
+- migration ล่าสุดมี numeric sequence 055; duplicate sequence ต้อง review แยก
 - source ปัจจุบันมี controlled writes ไป WINSpeed `dbo` และ pre-weigh writes ไป TruckScale `tbl_keyone`; boundary documents ถูก reconcile และประกาศ `truckScaleWriteTargets` แล้ว แต่ยังคงสถานะ Review จนกว่าจะตรวจ E2E/อนุมัติ
 - review candidates จาก merge เดิมถูก map กับ source sets ครบ 40/40
 
