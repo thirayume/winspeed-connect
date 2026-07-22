@@ -59,6 +59,7 @@ function reviewE2eEvidence(e2eConfig = {}, options = {}) {
     coverage: null,
     environment: null,
     sourceHashFileCount: 0,
+    expectedSourceHashFileCount: 0,
   };
   const gaps = [];
   const issue = (severity, code, message, metadata = {}) => gaps.push({ severity, code, message, ...metadata });
@@ -124,9 +125,24 @@ function reviewE2eEvidence(e2eConfig = {}, options = {}) {
 
   const hashEntries = Object.entries(evidence.fileHashes || {});
   review.sourceHashFileCount = hashEntries.length;
+  let expectedHashPaths = null;
+  try {
+    expectedHashPaths = listEvidenceTrackedFiles(repoRoot, e2eConfig.evidenceManifestFile || 'e2e/evidence.config.json');
+    review.expectedSourceHashFileCount = expectedHashPaths.length;
+  } catch (error) {
+    issue('ERROR', 'E2E_EVIDENCE_MANIFEST_INVALID', `Cannot enumerate the E2E evidence manifest: ${error.message}`, { path: e2eConfig.evidenceManifestFile || 'e2e/evidence.config.json' });
+  }
   if (!hashEntries.length) {
     issue('ERROR', 'E2E_SOURCE_HASHES_MISSING', 'E2E evidence contains no source file hashes.', { path: e2eConfig.evidenceFile });
   } else {
+    if (expectedHashPaths) {
+      const actualPaths = new Set(hashEntries.map(([relative]) => slash(String(relative))));
+      const expectedPaths = new Set(expectedHashPaths);
+      const missingHashes = expectedHashPaths.filter(relative => !actualPaths.has(relative));
+      const unexpectedHashes = [...actualPaths].filter(relative => !expectedPaths.has(relative)).sort((a, b) => a.localeCompare(b, 'en'));
+      if (missingHashes.length) issue('ERROR', 'E2E_SOURCE_HASH_SET_INCOMPLETE', `${missingHashes.length} currently tracked source/test file(s) are missing from the E2E evidence.`, { paths: missingHashes });
+      if (unexpectedHashes.length) issue('ERROR', 'E2E_SOURCE_HASH_SET_UNEXPECTED', `${unexpectedHashes.length} E2E hash entr${unexpectedHashes.length === 1 ? 'y is' : 'ies are'} outside the current evidence manifest.`, { paths: unexpectedHashes });
+    }
     const drifted = hashEntries.filter(([relative, expected]) => {
       const current = path.join(repoRoot, ...String(relative).split('/'));
       return !expected || !fs.existsSync(current) || sha256(fs.readFileSync(current)) !== String(expected).toUpperCase();
@@ -136,6 +152,28 @@ function reviewE2eEvidence(e2eConfig = {}, options = {}) {
 
   review.evidenceReviewed = !gaps.some(gap => gap.severity === 'ERROR');
   return { review, gaps };
+}
+
+function listEvidenceTrackedFiles(repoRoot, manifestRelative) {
+  const manifestPath = path.join(repoRoot, ...String(manifestRelative).split('/'));
+  if (!fs.existsSync(manifestPath)) throw new Error(`manifest is missing: ${manifestRelative}`);
+  const manifest = readJson(manifestPath);
+  const selected = new Set();
+  for (const relative of manifest.requiredEvidenceFiles || []) {
+    const full = path.join(repoRoot, ...String(relative).split('/'));
+    if (!fs.existsSync(full) || !fs.statSync(full).isFile()) throw new Error(`required evidence file is missing: ${relative}`);
+    selected.add(slash(String(relative)));
+  }
+  for (const trackedRoot of manifest.trackedRoots || []) {
+    const root = path.join(repoRoot, ...String(trackedRoot.root || '').split('/'));
+    for (const full of walkFiles(root)) {
+      const relativeToRoot = slash(path.relative(root, full));
+      if (excluded(relativeToRoot, path.basename(full), trackedRoot)) continue;
+      if (trackedRoot.extensions && !trackedRoot.extensions.includes(path.extname(full).toLowerCase())) continue;
+      selected.add(slash(path.relative(repoRoot, full)));
+    }
+  }
+  return [...selected].sort((a, b) => a.localeCompare(b, 'en'));
 }
 
 function walkFiles(root) {
@@ -589,7 +627,7 @@ function replaceGeneratedBlock(text, startMarker, endMarker, replacement) {
 function syncApiReference(source) {
   if (!source.scanStable) throw new Error('Source changed during scan; API reference was not modified.');
   const file = path.join(ENTERPRISE_ROOT, '04-DATA-INTEGRATION', 'API-REFERENCE.md');
-  const before = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+  const before = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
   const after = replaceGeneratedBlock(before, API_BLOCK_START, API_BLOCK_END, renderApiReferenceBlock(source));
   if (after === before) {
     console.log('API Reference generated block is already current.');
@@ -779,7 +817,8 @@ function main() {
     let analysis = analyse();
     printSummary(analysis);
     if (options.command === 'sync-api') {
-      syncApiReference(analysis.source);
+      if (options.noWrite) console.log('No-write: API Reference was not modified.');
+      else syncApiReference(analysis.source);
       analysis = analyse();
       if (!options.noWrite) writeReports(options.command, analysis);
       printSummary(analysis);

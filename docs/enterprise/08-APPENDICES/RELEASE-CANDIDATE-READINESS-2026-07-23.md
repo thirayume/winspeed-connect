@@ -7,7 +7,7 @@ owner: Release Manager / QA Lead / Solution Architect
 normative: false
 runtimeVersion: 1.0.0
 sourceMigrationSequence: 55
-auditedCommit: 4fc55b269b558877e5876a25ed64357656d4e987
+auditedCommit: 5916788c5150ecb70dba970c5742d56f33b76e2b
 sourceRefs:
   - test-results/e2e-evidence.json
   - test-results/playwright-results.json
@@ -18,6 +18,9 @@ sourceRefs:
   - WSSale-App/package.json
   - WSSale-App/package-lock.json
   - run-e2e.ps1
+  - e2e/evidence.config.json
+  - docs/enterprise/pipeline/source-alignment.config.json
+  - sql/fix-winspeed-legacy-raiserror.sql
   - docs/enterprise/pipeline/reports/source-alignment-report.json
   - docs/enterprise/pipeline/reports/document-validation-report.json
 outputs:
@@ -26,8 +29,8 @@ outputs:
 
 # Release Candidate Readiness and Approval Packet
 
-วันที่จัดทำ: 23 กรกฎาคม 2026 เวลา 01:24 น. (Asia/Bangkok)  
-ขอบเขต: repository `winspeed-frontend`, runtime v1.0.0, local SQL Server/MySQL test environment และเอกสารภายใต้ `docs/enterprise`  
+วันที่จัดทำ: 23 กรกฎาคม 2026 เวลา 02:02 น. (Asia/Bangkok)
+ขอบเขต: repository `winspeed-frontend`, runtime v1.0.0, local SQL Server/MySQL test environment และเอกสารภายใต้ `docs/enterprise`
 สถานะ: **engineering review candidate เท่านั้น — ไม่ใช่ production release approval, business UAT sign-off, ISO certification หรือ accepted baseline**
 
 ## 1. Executive outcome
@@ -40,10 +43,10 @@ outputs:
 
 | รายการ | หลักฐานล่าสุด |
 |---|---|
-| Git commit | `4fc55b269b558877e5876a25ed64357656d4e987` |
+| Git commit | `5916788c5150ecb70dba970c5742d56f33b76e2b` |
 | Worktree | dirty — เป็น candidate changes ที่ยังไม่ควรถูกตีความเป็น released baseline |
-| Source inventory | 213 files |
-| Source SHA-256 | `AF8F72840C1F5CFAAEB44B8D247C8DFAF0B3DBF19F30916AB895724DA25F95EB` |
+| Source inventory | 214 files |
+| Source SHA-256 | `DD5919B298128637E2FCEF56A2B663F0B09EE94206349E3B28C61E27569BE49F` |
 | Source scan | stable; 0 errors; 2 warnings หลัง sync |
 | API/UI/migration facts | 17 mounts / 160 endpoints; 22 portals / 8 roles; latest migration sequence 55 |
 | Review mapping | 40/40 source-sensitive review candidates mapped |
@@ -55,13 +58,14 @@ outputs:
 | Gate | ผล | หลักฐาน/หมายเหตุ |
 |---|---:|---|
 | Full Playwright E2E | PASS | 10 passed, 0 failed/flaky/skipped/not-run; 3 required specs ครบ |
-| Evidence completeness | PASS | `PASSED_COMPLETE`, `complete=true`, run `2026-07-22T14-44-01-798Z` |
-| Source stability during E2E | PASS | start/end commit ตรงกัน; `changedFiles=[]`; 210 evidence file hashes |
-| Test environment health | PASS | frontend `5174`, API `3100`, SQL Server `up`, MySQL `up` |
+| Evidence completeness | PASS | `PASSED_COMPLETE`, `complete=true`, run `2026-07-22T18-57-48-900Z` |
+| Source stability during E2E | PASS | start/end commit ตรงกัน; `changedFiles=[]`; 211 evidence file hashes; actual/expected hash set 211/211 รวม consolidated operational SQL 1 ไฟล์ |
+| Test environment health | PASS with caveat | frontend `5174`, API `3100`, SQL Server `up`; MySQL `down` และไม่ใช่ required gate ตาม policy ปัจจุบัน |
 | Production frontend build | PASS | Vite 8.1.5; 2,280 modules transformed |
 | Document pipeline tests | PASS | 23/23 |
 | Migration runner tests | PASS | 5/5 |
 | Local migration plan | PASS | active 54, excluded 2, unchanged 54, pending 0, drift 0; read-only |
+| Operational SQL traceability | PASS | source inventory และ E2E completeness gate ครอบคลุม consolidated `sql/fix-winspeed-legacy-raiserror.sql`; hash set 211/211 |
 | npm audit — root | PASS | 0 vulnerabilities / 72 dependencies |
 | npm audit — backend | PASS | 0 vulnerabilities / 241 dependencies |
 | npm audit — frontend | PASS | 0 vulnerabilities / 249 dependencies |
@@ -72,6 +76,17 @@ outputs:
 ### E2E isolation and reliability correction
 
 รอบวิเคราะห์แรกพบ `Query timeout expired` ที่ขั้น WAREHOUSE และพบ process tree `npm run dev:e2e` เก่าค้าง 9 roots รวม 116 process targets ขณะที่ dev server ของผู้ใช้บน `3000/5173` ยังทำงานอยู่ การทดสอบจึงถูกแยกไปใช้ `3100/5174`, ปิดเฉพาะ process ทดสอบเก่า และปรับ `run-e2e.ps1` ให้ terminate process tree ของตนเองใน `finally` หลังแก้ไข Full E2E ผ่าน 10/10 และไม่เหลือ `dev:e2e` process ค้าง โดย dev server เดิมของผู้ใช้ไม่ถูกหยุด
+
+### TruckScale availability caveat
+
+E2E รอบ `2026-07-22T18-57-48-900Z` บันทึก MySQL `down` ตั้งแต่ environment snapshot และพบ `GET /api/truckscale/ping` ตอบ 500 จำนวน 4 ครั้ง; UI แสดง “เชื่อมต่อไม่ได้” ตรงกัน หลัง observability patch รายการทั้ง 4 ถูกบันทึกใน API audit และ `wf.ErrorLog` ชุดทดสอบยังผ่านตาม policy ปัจจุบันซึ่งบังคับ frontend/API/SQL Server แต่ไม่บังคับ MySQL ข้อนี้เป็น operational availability caveat ไม่ใช่หลักฐานว่า TruckScale พร้อมใช้งาน
+
+### WINSpeed trigger maintenance evidence
+
+- Commit `c249bd7855c13c57a0174b380c138e4448538372` consolidate apply/rollback dumps เป็น `sql/fix-winspeed-legacy-raiserror.sql` ไฟล์เดียว
+- สคริปต์ระบุผล REMOTE: user triggers 1,289, new syntax 1,283, legacy 0 และ `wf.LegacyTriggerBackup` 1,283 rows
+- Read-only query ที่ `\.\SQLEXPRESS` local พบ 1,289 / 1,283 / 0 เช่นกัน แต่ `wf.LegacyTriggerBackup` ไม่มีอยู่ จึงห้ามนำผลของ REMOTE และ LOCAL มาปะปนกัน
+- ต้องให้ DBA ยืนยัน connection target, backup-table evidence และ rollback disposition ราย environment; migration ledger plan ไม่ครอบคลุม out-of-band trigger ALTER นี้
 
 ### Dependency disposition
 
@@ -89,6 +104,7 @@ outputs:
 | Normative documents 38 ฉบับยังไม่ Approved | Document owners / QA / Business / Security / Operations | ตรวจ checklist ด้านล่างและลง decision รายฉบับหรือเป็นชุดที่มีขอบเขตชัดเจน |
 | Accepted document baseline missing | Configuration manager | รับหลัง source baseline และ normative approvals เท่านั้น |
 | Migration incident disposition | Solution architect / DBA / Data owner | ยืนยันผลกระทบ migration history และบันทึก decision |
+| Trigger maintenance environment evidence | DBA / Configuration manager | reconcile REMOTE backup-table claim กับ LOCAL read-only result และบันทึก out-of-band change/rollback evidence |
 | Data recovery disposition | Data owner / DBA | หากต้องกู้ ให้ restore backup แบบ side-by-side แล้ว compare/export; ห้าม restore ทับ active database |
 | Business UAT sign-off | Business process owners | ใช้ automation เป็น supporting evidence แต่ต้องมี UAT actor/date/decision จริง |
 | Artifact release | Document owner / QA | สร้าง DOCX/PDF/PPTX/drawio หลัง approved Markdown baseline แล้วทำ render/visual QA |

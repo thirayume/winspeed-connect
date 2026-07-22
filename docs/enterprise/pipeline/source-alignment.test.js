@@ -111,6 +111,10 @@ test('accepts complete source-bound E2E evidence and rejects later source drift'
   fs.mkdirSync(path.join(repoRoot, 'e2e'), { recursive: true });
   fs.mkdirSync(path.join(repoRoot, 'test-results'), { recursive: true });
   fs.writeFileSync(path.join(repoRoot, 'e2e/spec.ts'), 'test source', 'utf8');
+  fs.writeFileSync(path.join(repoRoot, 'e2e/evidence.config.json'), JSON.stringify({
+    requiredEvidenceFiles: [],
+    trackedRoots: [{ root: 'e2e', extensions: ['.ts'] }],
+  }), 'utf8');
   const completedAt = '2026-07-22T04:58:47.000Z';
   const evidence = {
     schemaVersion: 2,
@@ -131,6 +135,11 @@ test('accepts complete source-bound E2E evidence and rejects later source drift'
   const accepted = reviewE2eEvidence(config, { repoRoot, now });
   assert.equal(accepted.review.evidenceReviewed, true);
   assert.equal(accepted.gaps.length, 0);
+  fs.writeFileSync(path.join(repoRoot, 'e2e/added-after-run.ts'), 'new source', 'utf8');
+  const incomplete = reviewE2eEvidence(config, { repoRoot, now });
+  assert.equal(incomplete.review.evidenceReviewed, false);
+  assert.ok(incomplete.gaps.some(gap => gap.code === 'E2E_SOURCE_HASH_SET_INCOMPLETE'));
+  fs.rmSync(path.join(repoRoot, 'e2e/added-after-run.ts'));
   evidence.sourceStability.stable = false;
   evidence.sourceStability.changedFiles = ['e2e/spec.ts'];
   fs.writeFileSync(path.join(repoRoot, 'test-results/e2e-evidence.json'), JSON.stringify(evidence), 'utf8');

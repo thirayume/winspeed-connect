@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "kind": "WS-Sale-App Playwright E2E Evidence",
-  "runId": "2026-07-22T14-44-01-798Z",
-  "startedAt": "2026-07-22T14:44:01.798Z",
-  "completedAt": "2026-07-22T14:51:40.116Z",
-  "durationMs": 458318,
+  "runId": "2026-07-22T18-57-48-900Z",
+  "startedAt": "2026-07-22T18:57:48.900Z",
+  "completedAt": "2026-07-22T18:58:49.223Z",
+  "durationMs": 60323,
   "status": "PASSED_COMPLETE",
   "playwrightStatus": "passed",
   "complete": true,
@@ -59,6 +59,12 @@
         ]
       },
       {
+        "root": "sql",
+        "extensions": [
+          ".sql"
+        ]
+      },
+      {
         "root": "WSSale-App/src",
         "extensions": [
           ".ts",
@@ -95,43 +101,43 @@
   },
   "environment": {
     "schemaVersion": 1,
-    "capturedAt": "2026-07-22T14:44:01.500Z",
+    "capturedAt": "2026-07-22T18:57:48.677Z",
     "frontend": {
       "url": "http://localhost:5174",
       "status": 200,
       "ok": true,
-      "durationMs": 169,
+      "durationMs": 37,
       "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx\"></script>\n  </body>\n</html>\n"
     },
     "api": {
       "url": "http://localhost:3100/api/health",
       "status": 200,
       "ok": true,
-      "durationMs": 231,
+      "durationMs": 177,
       "body": {
         "ok": true,
-        "ts": "2026-07-22T14:44:01.539Z",
+        "ts": "2026-07-22T18:57:48.697Z",
         "version": "1.0.0",
         "env": "development",
-        "uptimeSec": 5,
+        "uptimeSec": 2,
         "requests": 1,
         "errors": 0,
         "lastErrorAt": null,
         "db": {
           "sqlserver": "up",
-          "mysql": "up"
+          "mysql": "down"
         }
       }
     }
   },
   "git": {
-    "commit": "4fc55b269b558877e5876a25ed64357656d4e987",
+    "commit": "c249bd7855c13c57a0174b380c138e4448538372",
     "dirty": true
   },
   "sourceStability": {
     "stable": true,
-    "startGitCommit": "4fc55b269b558877e5876a25ed64357656d4e987",
-    "endGitCommit": "4fc55b269b558877e5876a25ed64357656d4e987",
+    "startGitCommit": "c249bd7855c13c57a0174b380c138e4448538372",
+    "endGitCommit": "c249bd7855c13c57a0174b380c138e4448538372",
     "changedFiles": []
   },
   "fileHashes": {
@@ -321,9 +327,9 @@
     "backend/seed_admin.js": "783418984BADA8DC0DDBCF316A1C75A9102124901175980C6809E89150F3AC76",
     "backend/seed_data.js": "65B6D02959A5A15338C0907F3D489A681512A3F715205D23C0202069631FBD3C",
     "backend/seed_data_backup.js": "65B6D02959A5A15338C0907F3D489A681512A3F715205D23C0202069631FBD3C",
-    "backend/server.js": "77F1B39BC911A58307CE6C19A4663D28A5C8C313CE175867C5510D81C238E1CC",
+    "backend/server.js": "8C53C9CD17FCE19E5AA1488F174543C306CE3738458D86F49F4E0FD69AE909D1",
     "backend/services/approval.js": "83F6BC5857D5F7FE04B8C64751FB1724B50D67B842E8BA85D4B83CA432275BA6",
-    "backend/services/observability.js": "59CDC4411BBFFF51BE9A3F78CE6F566AA0F774E67AC8DB88C42A2ABD4B2927BB",
+    "backend/services/observability.js": "97B183391F08CB894C60B89252F65CA6F779A071B42FA2F699EEC3573652E59C",
     "backend/services/outbox.js": "14DFD9A8AED2C8D2540FFE56C85EB14F00B167B73A77CD7053A2BB452755001B",
     "backend/services/polling.js": "98016B01E83CEF7D1F202C0D02EA32D28C34691B3C21CAECA1B6C40308A22FA6",
     "backend/services/socket.js": "E68D6E9EA80BD310BDDE9A49219005A48343DDB93AC618096F36AEAF3AF4BEDC",
@@ -336,7 +342,7 @@
     "docker-compose.yml": "BCDE1294AE17924D79815F49429CE82BCB9E9777A5C0EA79DD08B052E0A3D4C6",
     "e2e/comprehensive-sales.spec.ts": "335789DD1F298D9C38DC4B33D8E31526F9CB031B18B1B585A81F2D2673C7FBF6",
     "e2e/evidence-reporter.cjs": "2027720E4D332D31AE308A644D2B5B5FA6480EF01FE2DBDB5D5ED59AFE5A5A56",
-    "e2e/evidence.config.json": "E0A121A02496E47DF346DE5B84AC19D1783EADA19460239080D3D1A10AEC9FAB",
+    "e2e/evidence.config.json": "F206D8180BCAA2A17BFEF5DB7414C4CBDA7AAF9F1D7401494C2D236DD53061DA",
     "e2e/global-setup.ts": "74F92D253E8763C7B9C39B4828C9A5BF7D8490D5A0268518199967431A6F0D2C",
     "e2e/helpers.ts": "41329873704235A9765185D7DF3A228170F0093F5D7308B8389D24E91F0A278B",
     "e2e/uat-full-loop.spec.ts": "5BF53477132672A267B29CB68775EC1E8A5BA060CB8DD343E1A5896EEEA20E75",
@@ -344,7 +350,8 @@
     "package.json": "5120E084FB221067919BA59C308B8C8193EB722E616AF6A5CCB55D1D1FABB773",
     "playwright.config.ts": "A1239FDD163F4A37E7CDE0C56B5EF4082EA5B2D6F7D3141D3B0B1FABC787ACE6",
     "run-e2e.bat": "7E204347C4D2960DE63641A1343F9A878C1C672B67E2021F46A675EE6CDA7EC6",
-    "run-e2e.ps1": "0E21C688537B5B5A6D29A054ABD078611CA2158037A1A105A525A64F450F9CC3"
+    "run-e2e.ps1": "0E21C688537B5B5A6D29A054ABD078611CA2158037A1A105A525A64F450F9CC3",
+    "sql/fix-winspeed-legacy-raiserror.sql": "5EAA90A2660AF41FA6524630F36BC0E64F0339161450A363C4898EC0924E86E4"
   },
   "tests": [
     {
@@ -356,7 +363,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 61654,
+      "durationMs": 13667,
       "errors": [],
       "attachments": [
         {
@@ -381,7 +388,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 47184,
+      "durationMs": 6787,
       "errors": [],
       "attachments": [
         {
@@ -406,7 +413,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 57772,
+      "durationMs": 7123,
       "errors": [],
       "attachments": [
         {
@@ -431,7 +438,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 9197,
+      "durationMs": 2255,
       "errors": [],
       "attachments": [
         {
@@ -456,7 +463,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 96630,
+      "durationMs": 15814,
       "errors": [],
       "attachments": [
         {
@@ -481,7 +488,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 24267,
+      "durationMs": 2823,
       "errors": [],
       "attachments": [
         {
@@ -506,7 +513,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 26138,
+      "durationMs": 2218,
       "errors": [],
       "attachments": [
         {
@@ -531,7 +538,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 17583,
+      "durationMs": 1470,
       "errors": [],
       "attachments": [
         {
@@ -551,7 +558,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 40770,
+      "durationMs": 1998,
       "errors": [],
       "attachments": [
         {
@@ -571,7 +578,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 38040,
+      "durationMs": 4375,
       "errors": [],
       "attachments": [
         {

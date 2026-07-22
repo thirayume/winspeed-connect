@@ -6,13 +6,13 @@
 
 | Field | Current value |
 |---|---|
-| Refreshed at | 2026-07-23 01:27:10 +07:00 (Asia/Bangkok) |
+| Refreshed at | 2026-07-23 02:02:00 +07:00 (Asia/Bangkok) |
 | Repository | `C:\MyWork\WorldFert\winspeed-frontend` |
-| Git commit | `4fc55b269b558877e5876a25ed64357656d4e987` |
+| Git commit | `5916788c5150ecb70dba970c5742d56f33b76e2b` |
 | Git state | dirty — intentional source/dependency/E2E/pipeline changes, current evidence, synchronized documentation/diagrams, readiness packet และ `MEMORY.md` |
 | Runtime version | `1.0.0` in root, backend, and frontend packages |
-| Source inventory | 213 files; `AF8F72840C1F5CFAAEB44B8D247C8DFAF0B3DBF19F30916AB895724DA25F95EB` |
-| Document inventory | 81 documents + 29 control files; `6D71DB098DD773E7BEC07DBAD8544F6F452E0F77761CB65212726BC546BFA647` |
+| Source inventory | 214 files; `DD5919B298128637E2FCEF56A2B663F0B09EE94206349E3B28C61E27569BE49F` |
+| Document inventory | 81 documents + 29 control files; `7D2C65258D206A1DABF2023D9503ECF6B01FD76F0780D2204E0A421500B6A33A` |
 | E2E evidence | `PASSED_COMPLETE`; 10/10 passed, 3/3 required specs, source stable |
 
 หาก `HEAD`, Git status, รายการไฟล์, source inventory หรือ document inventory เปลี่ยน ค่าในไฟล์นี้ถือว่าหมดอายุและต้อง refresh ก่อนใช้อ้างอิงต่อ
@@ -28,15 +28,16 @@
 
 ## Current repository snapshot
 
-- Source scan เสถียร: 213 source files, 17 Express route mounts, 160 endpoints, 22 frontend portal keys และ 8 roles
+- Source scan เสถียร: 214 source files, 17 Express route mounts, 160 endpoints, 22 frontend portal keys และ 8 roles
 - Source pipeline รายงาน migration 55 files และ latest numeric sequence `055`
+- Controlled source set `database-operations` และ E2E tracked root ครอบคลุม consolidated `sql/fix-winspeed-legacy-raiserror.sql` 1 ไฟล์; completeness gate เปรียบเทียบ actual/expected file set แบบ fail-closed
 - บน disk มี SQL 56 ไฟล์: runner local plan เลือก 54 active และ exclude 2 (`000_logins.sql`, `uat_create_admin.sql` ผ่าน policy/pattern)
 - Read-only local migration plan: 54 unchanged, 0 pending, 0 drift; ไม่มี schema/data/ledger write
 - `backend/migration-policy.json` ใช้ immutable-after-apply, exclude `000_logins.sql` และ `^uat_`; ไม่มี duplicate numeric sequence ที่อนุมัติค้างอยู่
 - Source preflight: 0 errors / 2 warnings; warnings คือ accepted source baseline missing และ dirty Git worktree
 - Documentation control: 81 documents + 29 control files, scan stable, 110 changes, impact `HIGH`, 0 errors / 40 warnings
 - Document warnings คือ normative documents ยังไม่ Approved 38 รายการ, accepted document baseline missing 1 รายการ และ dirty-worktree 1 รายการ
-- API generated block และ canonical Mermaid/Draw.io sources ถูก sync กับ source inventory `AF8F7284...A25F95EB`
+- API generated block และ canonical Mermaid/Draw.io sources ถูก sync กับ source inventory `DD5919B2...569BE49F`
 - Release-readiness/approval packet ปัจจุบันอยู่ที่ `docs/enterprise/08-APPENDICES/RELEASE-CANDIDATE-READINESS-2026-07-23.md`; เป็น Draft/non-normative และไม่ได้อนุมัติ release หรือ baseline
 
 ## Architecture and functional scope
@@ -53,16 +54,19 @@
 - Engineering audit วันที่ 2026-07-22 ยืนยันว่า runner รุ่นเดิมเคย rerun historical migrations และทำให้ schema contract ถอยหลัง; migration 003 มี destructive data/table operations
 - Fail-closed runner, immutable ledger controls และ forward-only migration `055_restore_all_sales_orders_contract.sql` ถูกเพิ่มเพื่อ restore object contract โดยไม่แก้ historical migration
 - Migration 055 ช่วย restore schema/view/procedure contract แต่ไม่ได้พิสูจน์หรือกู้ข้อมูลที่อาจสูญหายจาก destructive rerun
+- Commit `c249bd7855c13c57a0174b380c138e4448538372` consolidate operational SQL เป็น `sql/fix-winspeed-legacy-raiserror.sql`; ไฟล์ระบุผล REMOTE 1,289 triggers / new syntax 1,283 / legacy 0 / backup table 1,283 rows
+- Read-only query ต่อ `\.\SQLEXPRESS` local พบ 1,289 / 1,283 / 0 เช่นกัน แต่ไม่พบ `wf.LegacyTriggerBackup`; ต้องให้ DBA reconcile environment target, out-of-band ALTER record และ rollback evidence ห้ามสรุปว่า REMOTE/LOCAL เป็นฐานเดียวกัน
 - หลัง repository consolidation ชื่อ/เนื้อหา migration บาง sequence ถูก merge; local read-only plan ปัจจุบันยืนยัน 54 unchanged, 0 pending และ 0 drift
 - การกู้ข้อมูลต้อง restore backup แบบ side-by-side แล้ว compare/export เท่านั้น ห้าม restore ทับ active database; ยังไม่มีคำสั่งอนุมัติให้ทำ data recovery
 - Audit รายละเอียดอยู่ที่ `docs/enterprise/08-APPENDICES/MIGRATION-LEDGER-AUDIT-2026-07-22.md`; ตัวเลข 61/63 ในรายงานนั้นเป็น historical snapshot ก่อน migration consolidation ไม่ใช่ current file count
 
 ## Test, dependency and release evidence
 
-- Current machine-readable evidence อยู่ที่ `test-results/e2e-evidence.json`: run `2026-07-22T14-44-01-798Z`, `PASSED_COMPLETE`, `complete=true`, Playwright passed
+- Current machine-readable evidence อยู่ที่ `test-results/e2e-evidence.json`: run `2026-07-22T18-57-48-900Z`, `PASSED_COMPLETE`, `complete=true`, Playwright passed
 - Full E2E ผ่าน 10/10 จาก required specs ครบ 3/3: `comprehensive-sales`, `uat-full-loop` และ `workflow`; failed/flaky/skipped/timed-out/interrupted/not-run เป็น 0 ทั้งหมด
-- Environment evidence: frontend `http://localhost:5174`, API `http://localhost:3100/api`, SQL Server `up`, MySQL `up`
-- Source stability: start/end commit ตรงกันที่ `4fc55b269b558877e5876a25ed64357656d4e987`, changed during run 0 และ file hashes 210 รายการ
+- Environment snapshot ตอนเริ่ม E2E: frontend `http://localhost:5174`, API `http://localhost:3100/api`, SQL Server `up`, MySQL `down`
+- ระหว่าง E2E `/api/truckscale/ping` ตอบ 500 จำนวน 4 ครั้ง; UI แสดง “เชื่อมต่อไม่ได้” ตรงกัน และ observability patch บันทึกครบใน API audit/`wf.ErrorLog` จึงเป็น operational availability caveat แม้ policy ปัจจุบันยังให้ E2E ผ่าน
+- Source stability: start/end commit ตรงกันที่ `c249bd7855c13c57a0174b380c138e4448538372`, changed during run 0 และ file hashes 211 รายการ, actual/expected hash set 211/211 และ consolidated operational SQL 1 ไฟล์
 - E2E แยกจาก dev server ของผู้ใช้บน `3000/5173`; runner ใช้ `3100/5174`, cleanup ด้วย `predev:e2e` และ terminate process tree ของตนเองใน `finally`
 - รอบวิเคราะห์พบ stale `npm run dev:e2e` 9 roots/116 process targets และ Query timeout; หลังปิดเฉพาะ test trees แล้ว Full E2E ผ่านครบ และไม่มี `dev:e2e` ค้าง โดย dev server เดิมยังทำงาน
 - Navigation race ถูกแก้โดยให้ E2E รอ `GlobalLoader` idle, ยกเลิก forced click, scroll/click แบบ actionability และตั้ง workflow suite timeout 60 วินาที
@@ -75,7 +79,7 @@
 
 - Authored source of truth คือ Markdown ภายใต้ `docs/enterprise/`
 - Pipeline entry points อยู่ที่ `docs/enterprise/pipeline/docs.ps1` และ `source.ps1`
-- Current source reports, API generated block, Mermaid sources และ editable Draw.io source manifest ผูกกับ `AF8F72840C1F5CFAAEB44B8D247C8DFAF0B3DBF19F30916AB895724DA25F95EB`
+- Current source reports, API generated block, Mermaid sources และ editable Draw.io source manifest ผูกกับ `DD5919B298128637E2FCEF56A2B663F0B09EE94206349E3B28C61E27569BE49F`
 - Source gate ไม่มี error แล้ว แต่ยังมี baseline-missing และ dirty-worktree warnings
 - Document validation ไม่มี error แต่ยังมี 38 normative approval warnings รวมเป็น 40 เมื่อรวม accepted-baseline-missing และ dirty worktree
 - DOCX/PPTX/PDF/PNG ที่มีอยู่ยังไม่น่าเชื่อถือในฐานะ released artefacts; ต้อง regenerate จาก approved Markdown baseline ด้วย Kanit หรือ Prompt แล้วทำ visual QA
@@ -95,7 +99,7 @@
 ## Immediate next actions
 
 1. Review และจัดชุด/commit candidate changes โดยแยก source fixes, dependency remediation, E2E evidence และ documentation-control artefacts ให้ตรวจสอบได้
-2. ให้ reviewer ปิด normative approval warnings 38 รายการตาม readiness packet และตัดสิน migration incident/data-recovery disposition
+2. ให้ reviewer ปิด normative approval warnings 38 รายการตาม readiness packet, ตัดสิน migration incident/data-recovery disposition และให้ DBA reconcile REMOTE/LOCAL trigger backup evidence กับ TruckScale availability caveat
 3. รับ source baseline ด้วย actor/reason หลังเลือก clean commit แล้ว จากนั้นจึงรับ document baseline
 4. รัน strict release-check จาก clean worktree
 5. Regenerate DOCX/PPTX/PDF/PNG/Draw.io จาก approved Markdown baseline ด้วย Kanit หรือ Prompt และทำ render/visual QA
