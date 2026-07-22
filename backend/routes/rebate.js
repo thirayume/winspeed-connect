@@ -699,50 +699,76 @@ router.get('/cn-detail/:soInvId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'),
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/rebate/coupons — รายลูกค้า สรุปยอดคูปองคงค้าง
+// POST /api/rebate/sync-mirror — ดึงข้อมูลคูปองจาก dbo สู่ wf.CouponMirror
+router.post('/sync-mirror', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const r = await wfQuery(`
+      MERGE wf.CouponMirror AS tgt
+      USING (
+        SELECT c.CouponID, c.CouponNo, c.DocuID AS SourceSOID, src.DocuNo AS SourceDocuNo,
+               src.CustID, src.EmpID AS SalesEmpId, c.GoodID,
+               c.GoodQty AS IssuedTon, c.RemaQty AS RemainingTon, c.GoodPrice
+        FROM dbo.WFCoupon c WITH (NOLOCK)
+        JOIN dbo.SOHD src   WITH (NOLOCK) ON src.SOID = c.DocuID
+      ) AS s ON tgt.CouponID = s.CouponID
+      WHEN MATCHED AND (tgt.RemainingTon <> s.RemainingTon) THEN
+        UPDATE SET tgt.RemainingTon = s.RemainingTon, tgt.LastSyncAt = SYSUTCDATETIME()
+      WHEN NOT MATCHED THEN
+        INSERT (CouponID, CouponNo, SourceSOID, SourceDocuNo, CustId, SalesEmpId, GoodId, IssuedTon, RemainingTon, GoodPrice)
+        VALUES (s.CouponID, s.CouponNo, s.SourceSOID, s.SourceDocuNo, s.CustID, s.SalesEmpId, s.GoodID, s.IssuedTon, s.RemainingTon, s.GoodPrice);
+    `);
+    res.json({ message: 'Sync WFCoupon to CouponMirror completed.', rowsAffected: r.rowsAffected });
+  } catch (e) {
+    console.error('[rebate-sync]', e.message);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// GET /api/rebate/coupons — รายลูกค้า สรุปยอดคูปองคงค้าง (ใช้ wf.CouponMirror)
 router.get('/coupons', async (req, res) => {
   try {
     const { custId, empId } = req.query;
-    let where = 'WHERE c.RemaQty > 0';
+    let where = 'WHERE c.RemainingTon > 0';
     const inputs = {};
-    if (custId) { where += ` AND hd.CustID = @custId`; inputs.custId = { type: sql.NVarChar(20), value: custId }; }
-    if (empId)  { where += ` AND hd.EmpID  = @empId`;  inputs.empId  = { type: sql.Int,          value: Number(empId) }; }
+    if (custId) { where += ` AND c.CustID = @custId`; inputs.custId = { type: sql.NVarChar(20), value: custId }; }
+    if (empId)  { where += ` AND c.SalesEmpId = @empId`;  inputs.empId  = { type: sql.Int,          value: Number(empId) }; }
 
     const r = await wfQuery(`
-      SELECT hd.CustID, hd.CustName,
-             hd.EmpID,
-             ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS EmpName,
+      SELECT c.CustID, ISNULL(MAX(hd.CustName), c.CustID) AS CustName,
+             c.SalesEmpId AS EmpID,
+             ISNULL(MAX(emp.EmpName), CAST(c.SalesEmpId AS NVARCHAR(20))) AS EmpName,
              COUNT(c.CouponID)   AS CouponCount,
-             SUM(c.RemaQty)      AS OutstandingTon,
+             SUM(c.RemainingTon) AS OutstandingTon,
              MIN(hd.DocuDate)    AS OldestDate
-      FROM dbo.WFCoupon c
-      JOIN dbo.SOHD hd ON hd.SOID = c.DocuID
-      LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
+      FROM wf.CouponMirror c
+      LEFT JOIN dbo.SOHD hd ON hd.SOID = c.SourceSOID
+      LEFT JOIN dbo.EMEmp emp ON emp.EmpID = c.SalesEmpId
       ${where}
-      GROUP BY hd.CustID, hd.CustName, hd.EmpID, emp.EmpName
+      GROUP BY c.CustID, c.SalesEmpId
       ORDER BY OutstandingTon DESC
     `, inputs);
     res.json(r.recordset || []);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/rebate/coupons/:custId — รายการคูปองของลูกค้า
+// GET /api/rebate/coupons/:custId — รายการคูปองของลูกค้า (ใช้ wf.CouponMirror)
 router.get('/coupons/:custId', async (req, res) => {
   try {
     const r = await wfQuery(`
-        SELECT c.CouponID, c.CouponNo, c.SONo,
+        SELECT c.CouponID, c.CouponNo, c.SourceDocuNo AS SONo,
                CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
-               hd.CustID, hd.CustName,
-               hd.EmpID,
-               ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS EmpName,
-               c.GoodID, c.GoodName,
-               c.GoodQty,
-               c.RemaQty,
-               c.GoodQty - c.RemaQty AS RedeemedQty
-        FROM dbo.WFCoupon c
-        JOIN dbo.SOHD hd ON hd.SOID = c.DocuID
-        LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
-        WHERE hd.CustID = @cid AND c.RemaQty > 0
+               c.CustID, hd.CustName,
+               c.SalesEmpId AS EmpID,
+               ISNULL(emp.EmpName, CAST(c.SalesEmpId AS NVARCHAR(20))) AS EmpName,
+               c.GoodID, hd_dt.GoodName,
+               c.IssuedTon AS GoodQty,
+               c.RemainingTon AS RemaQty,
+               c.IssuedTon - c.RemainingTon AS RedeemedQty
+        FROM wf.CouponMirror c
+        LEFT JOIN dbo.SOHD hd ON hd.SOID = c.SourceSOID
+        LEFT JOIN dbo.SODT hd_dt ON hd_dt.SOID = c.SourceSOID AND hd_dt.GoodID = c.GoodId
+        LEFT JOIN dbo.EMEmp emp ON emp.EmpID = c.SalesEmpId
+        WHERE c.CustID = @cid AND c.RemainingTon > 0
         ORDER BY hd.DocuDate ASC
       `, { cid: { type: sql.NVarChar(20), value: req.params.custId } });
     res.json(r.recordset || []);
