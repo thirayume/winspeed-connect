@@ -1,4 +1,18 @@
 -- =============================================================
+-- 050_cleanup_hardcoded_users.sql
+-- Remove hardcoded users to rely purely on EmpCode sync (except admin)
+-- =============================================================
+
+DELETE FROM wf.AppUser 
+WHERE Username IN (
+    'chai', 'bass', 'arm', 'ann', 'um', 'ton', 'na', 'don', 'oh', 
+    'surachai', 'manas', 'sales1', 'sales2'
+);
+GO
+
+GO
+
+-- =============================================================
 -- 050_fix_confirm_sp_truckplate.sql
 -- Fix: Only AI (control ticket) bills should force TruckPlate='ตั๋วคุม'
 -- Regular I/K invoices should keep their user-provided truck plate
@@ -138,4 +152,6 @@ END
 GO
 
 PRINT 'WF migration 050 complete (Fix sp_ConfirmSalesOrder truckplate logic)'
+GO
+
 GO
