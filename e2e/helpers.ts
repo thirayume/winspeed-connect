@@ -19,6 +19,10 @@ export type ApiResult<T> = {
   body: T;
 };
 
+export async function waitForUiIdle(page: Page, timeout = 30_000) {
+  await expect(page.getByTestId('global-loader')).toBeHidden({ timeout });
+}
+
 export async function login(page: Page, username: string, expectedDisplayName: string) {
   captureBrowserDiagnostics(page);
   await page.goto('/');
@@ -27,18 +31,22 @@ export async function login(page: Page, username: string, expectedDisplayName: s
   await page.locator('input[type="password"]').fill(E2E_PASSWORD);
   await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
   await expect(page.getByText(expectedDisplayName, { exact: true })).toBeVisible({ timeout: 15_000 });
+  await waitForUiIdle(page);
 }
 
 export async function logout(page: Page) {
+  await waitForUiIdle(page);
   await page.getByRole('button', { name: 'ออกจากระบบ' }).click();
   await expect(page.getByRole('heading', { name: 'WS-Sale-App' })).toBeVisible();
 }
 
 export async function openSidebar(page: Page, title: string) {
+  await waitForUiIdle(page);
   const button = page.locator(`aside button[title="${title}"]`);
   await expect(button).toHaveCount(1);
   await expect(button).toBeVisible();
-  await button.click({ force: true });
+  await button.scrollIntoViewIfNeeded();
+  await button.click({ timeout: 30_000 });
 }
 
 export async function api<T>(

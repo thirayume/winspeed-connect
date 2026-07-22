@@ -3,8 +3,7 @@
     "argv": [
       "C:\\Program Files\\nodejs\\node.exe",
       "C:\\MyWork\\WorldFert\\winspeed-frontend\\node_modules\\@playwright\\test\\cli.js",
-      "test",
-      "e2e/uat-full-loop.spec.ts"
+      "test"
     ],
     "configFile": "C:\\MyWork\\WorldFert\\winspeed-frontend\\playwright.config.ts",
     "rootDir": "C:/MyWork/WorldFert/winspeed-frontend/e2e",
@@ -83,6 +82,68 @@
   },
   "suites": [
     {
+      "title": "comprehensive-sales.spec.ts",
+      "file": "comprehensive-sales.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Comprehensive Sales Trip E2E",
+          "file": "comprehensive-sales.spec.ts",
+          "line": 6,
+          "column": 6,
+          "specs": [
+            {
+              "title": "multi-bill trip is traceable and blocked by the verification gate",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 61654,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-07-22T14:44:03.178Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "multi-bill-gate.json",
+                          "contentType": "application/json",
+                          "body": "ewogICJwbGF0ZSI6ICJDTVAtTVJXNzBSMTgiLAogICJvcmRlcnMiOiBbCiAgICB7CiAgICAgICJpZCI6ICIxOCIsCiAgICAgICJ3ZlJlZiI6ICJLNjktMDIwNDIiLAogICAgICAic3RhdHVzIjogIkRSQUZUIgogICAgfSwKICAgIHsKICAgICAgImlkIjogIjE3IiwKICAgICAgIndmUmVmIjogIkk2OS0wMjUyNyIsCiAgICAgICJzdGF0dXMiOiAiRFJBRlQiCiAgICB9CiAgXSwKICAiZ2F0ZXMiOiBbCiAgICB7CiAgICAgICJpZCI6ICIxOCIsCiAgICAgICJtZXNzYWdlIjogIuC4leC5ieC4reC4h+C4leC4o+C4p+C4iOC4i+C5ieC4syAoQ291bnRlci1TYWxlcykg4LiB4LmI4Lit4LiZ4Lii4Li34LiZ4Lii4Lix4LiZIOKAlCDguIHguJTguJvguLjguYjguKEg4oCc4LiV4Lij4Lin4LiI4LmB4Lil4LmJ4Lin4oCdIOC4geC5iOC4reC4mSAoRlItMDIyKSIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICIxNyIsCiAgICAgICJtZXNzYWdlIjogIuC4leC5ieC4reC4h+C4leC4o+C4p+C4iOC4i+C5ieC4syAoQ291bnRlci1TYWxlcykg4LiB4LmI4Lit4LiZ4Lii4Li34LiZ4Lii4Lix4LiZIOKAlCDguIHguJTguJvguLjguYjguKEg4oCc4LiV4Lij4Lin4LiI4LmB4Lil4LmJ4Lin4oCdIOC4geC5iOC4reC4mSAoRlItMDIyKSIKICAgIH0KICBdCn0="
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\\test-finished-1.png"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "3cd50836bd7f62ac9888-c6ae3c257ed65c7c65c0",
+              "file": "comprehensive-sales.spec.ts",
+              "line": 7,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
       "title": "uat-full-loop.spec.ts",
       "file": "uat-full-loop.spec.ts",
       "column": 0,
@@ -111,18 +172,18 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 10316,
+                      "duration": 47184,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-22T11:52:42.023Z",
+                      "startTime": "2026-07-22T14:45:05.154Z",
                       "annotations": [],
                       "attachments": [
                         {
                           "name": "created-order.json",
                           "contentType": "application/json",
-                          "body": "ewogICJpZCI6ICI0IiwKICAid2ZSZWYiOiAiSTY5LTAyNDI2IiwKICAicGxhdGUiOiAiVUFULU1SVzBXRTFIIiwKICAic3RhdHVzIjogIkRSQUZUIgp9"
+                          "body": "ewogICJpZCI6ICIxOSIsCiAgIndmUmVmIjogIkk2OS0wMjU0NiIsCiAgInBsYXRlIjogIlVBVC1NUlc3MjJVTSIsCiAgInN0YXR1cyI6ICJEUkFGVCIKfQ=="
                         },
                         {
                           "name": "screenshot",
@@ -156,18 +217,18 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 11459,
+                      "duration": 57772,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-22T11:52:52.503Z",
+                      "startTime": "2026-07-22T14:45:52.396Z",
                       "annotations": [],
                       "attachments": [
                         {
                           "name": "confirmed-order.json",
                           "contentType": "application/json",
-                          "body": "ewogICJpZCI6ICIyNzMxMjEiLAogICJ3ZlJlZiI6ICJJNjktMDI0MjYiLAogICJzdGF0dXMiOiAiQ09ORklSTUVEIgp9"
+                          "body": "ewogICJpZCI6ICIyNzMxMjUiLAogICJ3ZlJlZiI6ICJJNjktMDI1NDYiLAogICJzdGF0dXMiOiAiQ09ORklSTUVEIgp9"
                         },
                         {
                           "name": "screenshot",
@@ -201,12 +262,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 2565,
+                      "duration": 9197,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-22T11:53:03.976Z",
+                      "startTime": "2026-07-22T14:46:50.222Z",
                       "annotations": [],
                       "attachments": [
                         {
@@ -246,18 +307,18 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 23136,
+                      "duration": 96630,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-22T11:53:06.554Z",
+                      "startTime": "2026-07-22T14:46:59.496Z",
                       "annotations": [],
                       "attachments": [
                         {
                           "name": "shipped-order.json",
                           "contentType": "application/json",
-                          "body": "ewogICJpZCI6ICIyNzMxMjEiLAogICJ3ZlJlZiI6ICJJNjktMDI0MjYiLAogICJzdGF0dXMiOiAiU0hJUFBFRCIsCiAgIndlaWdoIjogewogICAgIklkIjogIjEiLAogICAgIlNvSWQiOiAiMjczMTIxIiwKICAgICJXZlJlZiI6ICJJNjktMDI0MjYiLAogICAgIlRydWNrUGxhdGUiOiAiVUFULU1SVzBXRTFIIiwKICAgICJHcm9zc0tnIjogMjAwMDAsCiAgICAiVGFyZUtnIjogMTAwMDAsCiAgICAiTmV0S2ciOiAxMDAwMCwKICAgICJTY2FsZU5vIjogMSwKICAgICJXZWlnaEluQXQiOiBudWxsLAogICAgIldlaWdoT3V0QXQiOiAiMjAyNi0wNy0yMlQxMTo1MzoyNi45MjNaIiwKICAgICJTdGF0dXMiOiAiRE9ORSIsCiAgICAiTW92ZWJpbGwiOiBudWxsLAogICAgIk5vdGUiOiBudWxsLAogICAgIkNyZWF0ZWRCeSI6IDY1LAogICAgIkNyZWF0ZWRBdCI6ICIyMDI2LTA3LTIyVDExOjUzOjI2LjkyM1oiLAogICAgIlVwZGF0ZWRBdCI6ICIyMDI2LTA3LTIyVDExOjUzOjI2LjkyM1oiCiAgfQp9"
+                          "body": "ewogICJpZCI6ICIyNzMxMjUiLAogICJ3ZlJlZiI6ICJJNjktMDI1NDYiLAogICJzdGF0dXMiOiAiU0hJUFBFRCIsCiAgIndlaWdoIjogewogICAgIklkIjogIjQiLAogICAgIlNvSWQiOiAiMjczMTI1IiwKICAgICJXZlJlZiI6ICJJNjktMDI1NDYiLAogICAgIlRydWNrUGxhdGUiOiAiVUFULU1SVzcyMlVNIiwKICAgICJHcm9zc0tnIjogMjAwMDAsCiAgICAiVGFyZUtnIjogMTAwMDAsCiAgICAiTmV0S2ciOiAxMDAwMCwKICAgICJTY2FsZU5vIjogMSwKICAgICJXZWlnaEluQXQiOiBudWxsLAogICAgIldlaWdoT3V0QXQiOiAiMjAyNi0wNy0yMlQxNDo0ODoyNS4zNjBaIiwKICAgICJTdGF0dXMiOiAiRE9ORSIsCiAgICAiTW92ZWJpbGwiOiBudWxsLAogICAgIk5vdGUiOiBudWxsLAogICAgIkNyZWF0ZWRCeSI6IDY1LAogICAgIkNyZWF0ZWRBdCI6ICIyMDI2LTA3LTIyVDE0OjQ4OjI1LjM2MFoiLAogICAgIlVwZGF0ZWRBdCI6ICIyMDI2LTA3LTIyVDE0OjQ4OjI1LjM2MFoiCiAgfQp9"
                         },
                         {
                           "name": "screenshot",
@@ -291,18 +352,18 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 4063,
+                      "duration": 24267,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-22T11:53:29.701Z",
+                      "startTime": "2026-07-22T14:48:36.192Z",
                       "annotations": [],
                       "attachments": [
                         {
                           "name": "uat-final-audit.json",
                           "contentType": "application/json",
-                          "body": "ewogICJpZCI6ICIyNzMxMjEiLAogICJ3ZlJlZiI6ICJJNjktMDI0MjYiLAogICJzdGF0dXMiOiAiU0hJUFBFRCIsCiAgImF1ZGl0QWN0aW9ucyI6IFsKICAgICJTSElQUEVEIiwKICAgICJMT0FERUQiLAogICAgIlBJQ0tJTkciLAogICAgIkNPTkZJUk1FRCIKICBdCn0="
+                          "body": "ewogICJpZCI6ICIyNzMxMjUiLAogICJ3ZlJlZiI6ICJJNjktMDI1NDYiLAogICJzdGF0dXMiOiAiU0hJUFBFRCIsCiAgImF1ZGl0QWN0aW9ucyI6IFsKICAgICJTSElQUEVEIiwKICAgICJMT0FERUQiLAogICAgIlBJQ0tJTkciLAogICAgIkNPTkZJUk1FRCIKICBdCn0="
                         },
                         {
                           "name": "screenshot",
@@ -323,13 +384,199 @@
           ]
         }
       ]
+    },
+    {
+      "title": "workflow.spec.ts",
+      "file": "workflow.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "WS-Sale-App V1.0 role navigation",
+          "file": "workflow.spec.ts",
+          "line": 4,
+          "column": 6,
+          "specs": [
+            {
+              "title": "ADMIN can login, use Access As and return to ADMIN",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 26138,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-07-22T14:49:00.560Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "admin-access-as.txt",
+                          "contentType": "text/plain",
+                          "body": "QURNSU4gLT4gU0FMRVMgLT4gQURNSU4="
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\workflow-WS-Sale-App-V1-0--8b979-cess-As-and-return-to-ADMIN-chromium\\test-finished-1.png"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "c601ceb5ecfc8efa4a14-db9b981441c6f07525bd",
+              "file": "workflow.spec.ts",
+              "line": 11,
+              "column": 7
+            },
+            {
+              "title": "SALES can access Quotation",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 17583,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-07-22T14:49:26.765Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\workflow-WS-Sale-App-V1-0--c0537--SALES-can-access-Quotation-chromium\\test-finished-1.png"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "c601ceb5ecfc8efa4a14-04d11070d9eea9169f61",
+              "file": "workflow.spec.ts",
+              "line": 26,
+              "column": 7
+            },
+            {
+              "title": "COUNTER_SALES can access TruckScale with explicit health",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 40770,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [
+                        {
+                          "text": "[browser:console] Failed to load resource: net::ERR_TIMED_OUT\n"
+                        }
+                      ],
+                      "retry": 0,
+                      "startTime": "2026-07-22T14:49:44.421Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\workflow-WS-Sale-App-V1-0--fb082-kScale-with-explicit-health-chromium\\test-finished-1.png"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "c601ceb5ecfc8efa4a14-6be9e43a9e3c225ddd6c",
+              "file": "workflow.spec.ts",
+              "line": 33,
+              "column": 7
+            },
+            {
+              "title": "WAREHOUSE can access loading and scale queues",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 38040,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-07-22T14:50:25.280Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\workflow-WS-Sale-App-V1-0--0d684-ss-loading-and-scale-queues-chromium\\test-finished-1.png"
+                        }
+                      ]
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "c601ceb5ecfc8efa4a14-8da8bce2365e3b609421",
+              "file": "workflow.spec.ts",
+              "line": 44,
+              "column": 7
+            }
+          ]
+        }
+      ]
     }
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-07-22T11:52:40.804Z",
-    "duration": 53792.144,
-    "expected": 5,
+    "startTime": "2026-07-22T14:44:01.468Z",
+    "duration": 458082.317,
+    "expected": 10,
     "skipped": 0,
     "unexpected": 0,
     "flaky": 0

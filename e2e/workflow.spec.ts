@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test';
 import { login, openSidebar, publicApi } from './helpers';
 
 test.describe('WS-Sale-App V1.0 role navigation', () => {
+  test.setTimeout(60_000);
+
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
   });
