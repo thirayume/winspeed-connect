@@ -35,6 +35,10 @@
       "excludeNamePatterns": ["^uat_"]
     },
     {
+      "root": "sql",
+      "extensions": [".sql"]
+    },
+    {
       "root": "WSSale-App/src",
       "extensions": [".ts", ".tsx", ".css"]
     },
