@@ -1,9 +1,46 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "minimumTestCount": 10,
   "requiredSpecs": [
     "e2e/comprehensive-sales.spec.ts",
     "e2e/uat-full-loop.spec.ts",
     "e2e/workflow.spec.ts"
+  ],
+  "requiredEvidenceFiles": [
+    "package.json",
+    "backend/package.json",
+    "backend/migration-policy.json",
+    "WSSale-App/package.json",
+    "playwright.config.ts",
+    "e2e/evidence.config.json",
+    "e2e/evidence-reporter.cjs",
+    "run-e2e.ps1",
+    "run-e2e.bat",
+    "db-init/e2e-seed.sql",
+    "db-init/e2e-cleanup.sql",
+    "docker-compose.yml",
+    "deploy.ps1",
+    "DEPLOY.md"
+  ],
+  "trackedRoots": [
+    {
+      "root": "backend",
+      "extensions": [".js"],
+      "excludePrefixes": ["node_modules/", "coverage/", "uploads/"],
+      "excludeNamePatterns": ["^_", "^scratch_", "^uat_"]
+    },
+    {
+      "root": "backend/migrations",
+      "extensions": [".sql"],
+      "excludeNamePatterns": ["^uat_"]
+    },
+    {
+      "root": "WSSale-App/src",
+      "extensions": [".ts", ".tsx", ".css"]
+    },
+    {
+      "root": "e2e",
+      "extensions": [".ts"]
+    }
   ]
 }
