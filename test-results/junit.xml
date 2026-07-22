@@ -1,78 +1,79 @@
-<testsuites id="" name="" tests="10" failures="0" skipped="0" errors="0" time="44.697277">
-<testsuite name="comprehensive-sales.spec.ts" timestamp="2026-07-22T04:58:03.003Z" hostname="chromium" tests="1" failures="0" skipped="0" time="9.448" errors="0">
-<testcase name="Comprehensive Sales Trip E2E › multi-bill trip is traceable and blocked by the verification gate" classname="comprehensive-sales.spec.ts" time="9.448">
+<testsuites id="" name="" tests="1" failures="1" skipped="0" errors="0" time="121.846009">
+<testsuite name="comprehensive-sales.spec.ts" timestamp="2026-07-22T10:56:22.348Z" hostname="chromium" tests="1" failures="1" skipped="0" time="20.214" errors="0">
+<testcase name="Comprehensive Sales Trip E2E › multi-bill trip is traceable and blocked by the verification gate" classname="comprehensive-sales.spec.ts" time="20.214">
 <system-out>
 <![CDATA[
-[[ATTACHMENT|artifacts\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\test-finished-1.png]]
+[[ATTACHMENT|artifacts\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\test-failed-1.png]]
+
+[[ATTACHMENT|artifacts\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\video.webm]]
+
+[[ATTACHMENT|artifacts\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\error-context.md]]
+
+[[ATTACHMENT|artifacts\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\trace.zip]]
 ]]>
 </system-out>
-</testcase>
-</testsuite>
-<testsuite name="uat-full-loop.spec.ts" timestamp="2026-07-22T04:58:03.003Z" hostname="chromium" tests="5" failures="0" skipped="0" time="25.964" errors="0">
-<testcase name="UAT Full Loop E2E › 1. SALES creates a traceable SO draft" classname="uat-full-loop.spec.ts" time="6.141">
-<system-out>
-<![CDATA[
-[[ATTACHMENT|artifacts\uat-full-loop-UAT-Full-Loo-4d721-reates-a-traceable-SO-draft-chromium\test-finished-1.png]]
+<system-err>
+<![CDATA[[browser:console] Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+[browser:console] fetchSalesOrders failed Error: Invalid column name 'RequestedAt'.
+    at req (http://localhost:5173/src/services/api.ts:35:24)
+    at async http://localhost:5173/src/components/sales/SalesPortal.tsx:57:16
+[browser:console] Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+[browser:console] fetchSalesOrders failed Error: Invalid column name 'RequestedAt'.
+    at req (http://localhost:5173/src/services/api.ts:35:24)
+    at async http://localhost:5173/src/components/sales/SalesPortal.tsx:57:16
+[browser:console] Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+[browser:console] fetchSalesOrders failed Error: Invalid column name 'RequestedAt'.
+    at req (http://localhost:5173/src/services/api.ts:35:24)
+    at async http://localhost:5173/src/components/sales/SalesPortal.tsx:57:16
+[browser:console] Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+[browser:console] fetchSalesOrders failed Error: Invalid column name 'RequestedAt'.
+    at req (http://localhost:5173/src/services/api.ts:35:24)
+    at async http://localhost:5173/src/components/sales/SalesPortal.tsx:57:16
 ]]>
-</system-out>
-</testcase>
-<testcase name="UAT Full Loop E2E › 2. MANAGER verifies and ADMIN confirms the SO" classname="uat-full-loop.spec.ts" time="5.747">
-<system-out>
-<![CDATA[
-[[ATTACHMENT|artifacts\uat-full-loop-UAT-Full-Loo-e594d-s-and-ADMIN-confirms-the-SO-chromium\test-finished-1.png]]
+</system-err>
+<failure message="expect(locator).toBeVisible() failed" type="expect.toBeVisible">
+<![CDATA[  [chromium] › comprehensive-sales.spec.ts:7:7 › Comprehensive Sales Trip E2E › multi-bill trip is traceable and blocked by the verification gate 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })
+    Expected: visible
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 15000ms
+      - waiting for getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })
+
+
+      29 |
+      30 |     const addFromModal = page.getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' });
+    > 31 |     await expect(addFromModal).toBeVisible({ timeout: 15_000 });
+         |                                ^
+      32 |     await addFromModal.click();
+      33 |
+      34 |     const prefix = page.locator('select').first();
+        at C:\MyWork\WorldFert\winspeed-frontend\e2e\comprehensive-sales.spec.ts:31:32
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ..\test-results\artifacts\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    ..\test-results\artifacts\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ..\test-results\artifacts\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ..\test-results\artifacts\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace ..\test-results\artifacts\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
 ]]>
-</system-out>
-</testcase>
-<testcase name="UAT Full Loop E2E › 3. COUNTER SALES sees the real TruckScale health state" classname="uat-full-loop.spec.ts" time="1.522">
-<system-out>
-<![CDATA[
-[[ATTACHMENT|artifacts\uat-full-loop-UAT-Full-Loo-29cb0-eal-TruckScale-health-state-chromium\test-finished-1.png]]
-]]>
-</system-out>
-</testcase>
-<testcase name="UAT Full Loop E2E › 4. WAREHOUSE picks, loads and ships the SO" classname="uat-full-loop.spec.ts" time="10.476">
-<system-out>
-<![CDATA[
-[[ATTACHMENT|artifacts\uat-full-loop-UAT-Full-Loo-d38a5-icks-loads-and-ships-the-SO-chromium\test-finished-1.png]]
-]]>
-</system-out>
-</testcase>
-<testcase name="UAT Full Loop E2E › 5. ADMIN verifies SHIPPED state and audit trail in Paper Trail" classname="uat-full-loop.spec.ts" time="2.078">
-<system-out>
-<![CDATA[
-[[ATTACHMENT|artifacts\uat-full-loop-UAT-Full-Loo-26b9a--audit-trail-in-Paper-Trail-chromium\test-finished-1.png]]
-]]>
-</system-out>
-</testcase>
-</testsuite>
-<testsuite name="workflow.spec.ts" timestamp="2026-07-22T04:58:03.003Z" hostname="chromium" tests="4" failures="0" skipped="0" time="8.36" errors="0">
-<testcase name="WS-Sale-App V1.0 role navigation › ADMIN can login, use Access As and return to ADMIN" classname="workflow.spec.ts" time="1.863">
-<system-out>
-<![CDATA[
-[[ATTACHMENT|artifacts\workflow-WS-Sale-App-V1-0--8b979-cess-As-and-return-to-ADMIN-chromium\test-finished-1.png]]
-]]>
-</system-out>
-</testcase>
-<testcase name="WS-Sale-App V1.0 role navigation › SALES can access Quotation" classname="workflow.spec.ts" time="1.182">
-<system-out>
-<![CDATA[
-[[ATTACHMENT|artifacts\workflow-WS-Sale-App-V1-0--c0537--SALES-can-access-Quotation-chromium\test-finished-1.png]]
-]]>
-</system-out>
-</testcase>
-<testcase name="WS-Sale-App V1.0 role navigation › COUNTER_SALES can access TruckScale with explicit health" classname="workflow.spec.ts" time="1.52">
-<system-out>
-<![CDATA[
-[[ATTACHMENT|artifacts\workflow-WS-Sale-App-V1-0--fb082-kScale-with-explicit-health-chromium\test-finished-1.png]]
-]]>
-</system-out>
-</testcase>
-<testcase name="WS-Sale-App V1.0 role navigation › WAREHOUSE can access loading and scale queues" classname="workflow.spec.ts" time="3.795">
-<system-out>
-<![CDATA[
-[[ATTACHMENT|artifacts\workflow-WS-Sale-App-V1-0--0d684-ss-loading-and-scale-queues-chromium\test-finished-1.png]]
-]]>
-</system-out>
+</failure>
 </testcase>
 </testsuite>
 </testsuites>

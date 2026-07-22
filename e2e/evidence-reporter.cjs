@@ -41,6 +41,16 @@ class EvidenceReporter {
   onBegin(config, suite) {
     this.startedAt = new Date();
     this.config = config;
+    const policyPath = path.join(root, 'e2e/evidence.config.json');
+    this.policy = JSON.parse(fs.readFileSync(policyPath, 'utf8'));
+    this.trackedFiles = collectTrackedFiles(this.policy);
+    this.startFileHashes = Object.fromEntries(this.trackedFiles.map(file => {
+      const absolute = path.join(root, file);
+      return [file, fs.existsSync(absolute) ? sha256(absolute) : null];
+    }));
+    try {
+      this.startGitCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+    } catch { this.startGitCommit = null; }
     this.selected = suite.allTests().map(test => ({
       id: test.id,
       file: rel(test.location.file),
@@ -73,8 +83,7 @@ class EvidenceReporter {
 
   async onEnd(result) {
     const completedAt = new Date();
-    const policyPath = path.join(root, 'e2e/evidence.config.json');
-    const policy = JSON.parse(fs.readFileSync(policyPath, 'utf8'));
+    const policy = this.policy;
     const tests = this.selected.map(item => this.tests.get(item.id) || { ...item, status: 'not-run', outcome: 'unexpected' });
     const selectedSpecs = [...new Set(this.selected.map(test => test.file))].sort();
     const missingSpecs = policy.requiredSpecs.filter(spec => !selectedSpecs.includes(spec));
@@ -89,8 +98,7 @@ class EvidenceReporter {
       else counts.failed += 1;
     }
 
-    const trackedFiles = collectTrackedFiles(policy);
-    const fileHashes = Object.fromEntries(trackedFiles.map(file => {
+    const fileHashes = Object.fromEntries(this.trackedFiles.map(file => {
       const absolute = path.join(root, file);
       return [file, fs.existsSync(absolute) ? sha256(absolute) : null];
     }));
@@ -104,8 +112,16 @@ class EvidenceReporter {
     let environment = null;
     const environmentPath = path.join(root, 'test-results/environment.json');
     if (fs.existsSync(environmentPath)) environment = JSON.parse(fs.readFileSync(environmentPath, 'utf8'));
+    const changedFiles = this.trackedFiles.filter(file => this.startFileHashes[file] !== fileHashes[file]);
+    const sourceStability = {
+      stable: changedFiles.length === 0 && (!this.startGitCommit || !git.commit || this.startGitCommit === git.commit),
+      startGitCommit: this.startGitCommit,
+      endGitCommit: git.commit,
+      changedFiles,
+    };
 
     const complete = result.status === 'passed'
+      && sourceStability.stable
       && counts.total >= policy.minimumTestCount
       && missingSpecs.length === 0
       && counts.failed === 0
@@ -115,7 +131,7 @@ class EvidenceReporter {
       && counts.interrupted === 0
       && counts.notRun === 0;
     const evidence = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       kind: 'WS-Sale-App Playwright E2E Evidence',
       runId: this.startedAt.toISOString().replace(/[:.]/g, '-'),
       startedAt: this.startedAt.toISOString(),
@@ -129,6 +145,7 @@ class EvidenceReporter {
       counts,
       environment,
       git,
+      sourceStability,
       fileHashes,
       tests,
     };
