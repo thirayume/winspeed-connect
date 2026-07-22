@@ -1,12 +1,12 @@
 {
   "schemaVersion": 2,
   "kind": "WS-Sale-App Playwright E2E Evidence",
-  "runId": "2026-07-22T10-56-22-348Z",
-  "startedAt": "2026-07-22T10:56:22.348Z",
-  "completedAt": "2026-07-22T10:56:44.575Z",
-  "durationMs": 22227,
+  "runId": "2026-07-22T11-52-40-978Z",
+  "startedAt": "2026-07-22T11:52:40.978Z",
+  "completedAt": "2026-07-22T11:53:34.664Z",
+  "durationMs": 53686,
   "status": "INCOMPLETE_OR_FAILED",
-  "playwrightStatus": "failed",
+  "playwrightStatus": "passed",
   "complete": false,
   "policy": {
     "schemaVersion": 2,
@@ -76,18 +76,18 @@
   },
   "coverage": {
     "selectedSpecs": [
-      "e2e/comprehensive-sales.spec.ts"
+      "e2e/uat-full-loop.spec.ts"
     ],
     "missingSpecs": [
-      "e2e/uat-full-loop.spec.ts",
+      "e2e/comprehensive-sales.spec.ts",
       "e2e/workflow.spec.ts"
     ],
-    "selectedTestCount": 1
+    "selectedTestCount": 5
   },
   "counts": {
-    "total": 1,
-    "passed": 0,
-    "failed": 1,
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
     "flaky": 0,
     "skipped": 0,
     "timedOut": 0,
@@ -96,43 +96,43 @@
   },
   "environment": {
     "schemaVersion": 1,
-    "capturedAt": "2026-07-22T10:56:22.102Z",
+    "capturedAt": "2026-07-22T11:52:40.815Z",
     "frontend": {
       "url": "http://localhost:5173",
       "status": 200,
       "ok": true,
-      "durationMs": 104,
+      "durationMs": 35,
       "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx?t=1784717666440\"></script>\n  </body>\n</html>\n"
     },
     "api": {
       "url": "http://localhost:3000/api/health",
       "status": 200,
       "ok": true,
-      "durationMs": 147,
+      "durationMs": 117,
       "body": {
         "ok": true,
-        "ts": "2026-07-22T10:56:22.188Z",
+        "ts": "2026-07-22T11:52:40.843Z",
         "version": "1.0.0",
         "env": "development",
-        "uptimeSec": 1595,
-        "requests": 222,
+        "uptimeSec": 4974,
+        "requests": 848,
         "errors": 0,
         "lastErrorAt": null,
         "db": {
           "sqlserver": "up",
-          "mysql": "down"
+          "mysql": "up"
         }
       }
     }
   },
   "git": {
-    "commit": "0d1e46b69b98698e5404bffbaccce7f9c76b5a53",
+    "commit": "0a1007345a8e0e4f38d9fd18bc79a7336f24273b",
     "dirty": true
   },
   "sourceStability": {
     "stable": true,
-    "startGitCommit": "0d1e46b69b98698e5404bffbaccce7f9c76b5a53",
-    "endGitCommit": "0d1e46b69b98698e5404bffbaccce7f9c76b5a53",
+    "startGitCommit": "0a1007345a8e0e4f38d9fd18bc79a7336f24273b",
+    "endGitCommit": "0a1007345a8e0e4f38d9fd18bc79a7336f24273b",
     "changedFiles": []
   },
   "fileHashes": {
@@ -223,32 +223,26 @@
     "backend/gen_hash.js": "5D100747F97B15F12FB1AFE890F5EAFD1C35718F09A36B58F0B0D7675AB0304F",
     "backend/middleware/apiAudit.js": "5EEFF5940A15A0489C596B1C052A2E9519AD85BA78BD801AF80666C53B7842F7",
     "backend/middleware/auth.js": "0FDD8B35659A9A682FC2686EA58D80B3B0E0039300EC50FAD19DA2F810580356",
-    "backend/migration-policy.json": "270AF400E6FBB3D1FA2186232A2F0C1A7DC46896DD918B69B2C8744220A6F896",
+    "backend/migration-policy.json": "B8FF53206EBE0A6B7BAE4B838617F8FDDC5F5422E8A9D3EEA5D6F7AA51AE73E7",
     "backend/migrations/000_logins.sql": "C4256F3FE8D379460A70406055B5CD6C68D081DD50F2266BBA89B577E7B9915D",
     "backend/migrations/001_wf_schema.sql": "279B6D15719FB9BCEF8FA0871773FCEC745AFCAD012BC00CDF9C33AE47CF3347",
-    "backend/migrations/001_wf_schema_backup.sql": "0C5725C39053A0B506EA6893E2AE39FFCA572109B50DA15ACD24504C7A9EEB0C",
-    "backend/migrations/002_giveaway_quotation_papertrail.sql": "E2B51C045FA86B45A923847CD3B9D7CFC21CAFDEC077B288DCAA029F1AF579E5",
-    "backend/migrations/002_performance_indexes.sql": "4EDFF52748C1E800ED56D9606DE0C3C77BC8F18F74CB2E9D18BD6373525D435A",
-    "backend/migrations/002_wf_schema_v2.sql": "CE0CBFAD85B61CB2BA64B84E635035EDDC2BDB526D924591BAA1365D07D3966E",
+    "backend/migrations/002_schema_v2_and_indexes.sql": "34791FA20F1BA83FB06CA3AB2A37668EEF14D610245C9BDC641815E1B5BE5772",
     "backend/migrations/003_schema_ext.sql": "1AB72CEE7C3ECE1952027C45AAD4FCDCBCDFB8C2DCC5C816465DFFB19ED4002B",
     "backend/migrations/004_view_union.sql": "904F37030C40C9273E0F3DEDB528B0B33180462F55882A742249FD44C7F9A908",
     "backend/migrations/006_customer_ext.sql": "E3731B2B7168906F2C4E9531338E56C74D2A431E290D4172AA71E53F59DEC287",
     "backend/migrations/007_store_weigh_out.sql": "318E2C4B27FF871CAA14E4805D3A5DAF9B7450C2F8F2F8324B40E583A17622DE",
     "backend/migrations/008_control_ticket_line_ref.sql": "ECCDC2C989A630AC39BECEA1A08E74F63C30222B16AA9C9C9C64EE14A228C873",
     "backend/migrations/009_update_views.sql": "424A178ACFDA59FF78C7A4904EF0DD800E320319ED21EE23441509CF7BB2FC91",
-    "backend/migrations/010_add_loadsequence_to_views.sql": "DDFFF21BD6F8F4E835BE8A936E435C2F517D8AF894E3609C8A34B57501F16A8E",
-    "backend/migrations/010_rebate_usage.sql": "B2C69A0C9E6D6F25A1FED7CD1B68F8F42431918EDC8555B4D0F76075EA929C56",
+    "backend/migrations/010_rebate_and_loadsequence.sql": "8B0D866BA05B192D025C88E4707B07D33835D4C9A26155F35BF4673D8CC13D71",
     "backend/migrations/011_seed_sales_users_giveaway.sql": "E753CECC4237EED8F7EC6CC866EEA379FD6AB194589AFA78343C9D41C715C9B3",
     "backend/migrations/012_seed_giveaway_budget.sql": "324C65964109A24400EF30F39785E0CF5031F088D99990F8B04B7E5046D420FD",
     "backend/migrations/013_comprehensive_indexes.sql": "C356AE9CB96ED9A9364CCB46A3CDCA1017866C1A8CD4C3E8B7BD1EC65D1852D0",
     "backend/migrations/014_data_migration_ext.sql": "B7914E748854745A371BC288EE42058270803ED556C399B4AC51AB8F44C05DAF",
     "backend/migrations/015_sp_confirm_so.sql": "6BA1C2B6ACB9A5C2F106C4F2506D3D54282C8D2D9183CEF866BFF24E1C98E810",
-    "backend/migrations/016_paper_copies.sql": "C327563BA3CE7DBD2BE448BF3778D06364EAB33CB6E57F9FDA2E3E0702914439",
-    "backend/migrations/016_truck_types.sql": "54F42A09DBB6747CBFBBC1316AF47DDB1E290478B567ADC941ED3FC003725022",
+    "backend/migrations/016_paper_copies_truck_types.sql": "AD95EE4056B06AAD286FF73EB02F8EBC1EC698620188E333D7AA70B098823ED7",
     "backend/migrations/017_rebate_plan.sql": "F66BD33212639994182E212D2EDF841C0C26348F4475E69606FEB4861899079F",
     "backend/migrations/018_verify_unlock.sql": "6138C4EA0E5C6EB8458F6D855A8C294F4D945FD5D553F7DB633E1FABD597C98D",
-    "backend/migrations/019_request_types.sql": "FEF9270BB4462E1F59D91CAD28553A140E8829C3A034FBC27BC8908B8BD83D78",
-    "backend/migrations/019_weigh_ticket.sql": "49DC27E0C541E7ECD969F3BD1D9A5470F82ACB0476BEAC971A097BA8E7206681",
+    "backend/migrations/019_request_and_weigh_ticket.sql": "7E1BA081AC2826C964836BC69615045ABA9BF49F2BF0A43466E8112756F8D0C1",
     "backend/migrations/020_migration_ledger.sql": "F51CF3A0B9D98FADB79BCC0D40416291C7FCE1DFF0D090313E74E2BF8F6D6079",
     "backend/migrations/021_recon.sql": "AC76967BC27017542994B01C3F59EC227E8918FA17BAC3D8211A1490B0C18873",
     "backend/migrations/022_error_log.sql": "AE83AFF27287100D05876E53B1A8C0FF1F5D2051FE232C4AC0A2B68B662EEC92",
@@ -278,14 +272,13 @@
     "backend/migrations/046_truck_types_nolock.sql": "5EBA91FD7F0B6103078EF3B38D12A143FC158AACA995B8A5AB3EE08BD7DFFBA9",
     "backend/migrations/047_seed_giveaway_items.sql": "315C851A484EEA40689994779ABE690617C25D1357BFD6F749F8E001555FF4DF",
     "backend/migrations/048_seed_giveaway_withdrawals.sql": "D041CB673216A657B539C0ABA587D69AAFFEDF8DBE779CF8F40CED6FF025F83F",
-    "backend/migrations/049_giveaway_item_mapping.sql": "6E2C56AB845C673BF6A830FAAFEF5A8876F7EE00E9390E1C586E91EA196D1DE2",
-    "backend/migrations/049_seed_all_employees.sql": "C3242F9411DF16B16C163D15525A3A3A009E8301F4DA681677E6D4E8DADC091F",
-    "backend/migrations/050_cleanup_hardcoded_users.sql": "6D9ADA8781A22BAAA3D79B6B728F7E770DEE02245406865C58C1980A07550690",
-    "backend/migrations/050_fix_confirm_sp_truckplate.sql": "6BDD7444900686DEAF00BFB03F2B0AA1C284D948E1C7EDD2E8CD00933C328647",
+    "backend/migrations/049_giveaway_item_mapping_seed.sql": "D47432289BC88389C88BC0219311A1C15050F1B559400D709339EED4541D06BF",
+    "backend/migrations/050_cleanup_and_truckplate_fix.sql": "DFAA5C6119A00D2466176BB3A79EA55C21498529E4B7B2A995B1A3E2EDA1CFFA",
     "backend/migrations/051_update_so_status_check.sql": "A9D133319790D91C1CA98EF0EE117A804BC1C05279013EE1397DAC91000CBFF2",
     "backend/migrations/052_sohd_remark_logistics.sql": "0490FC4AABA1F75968CE8146E82AE4E665EB7892BD467B3CAE0A27299C601009",
     "backend/migrations/053_so_notified_at.sql": "68A2EE1ACD96BE6062678ADB1D0970F82A5CC52D0277D97B6A188FCAEB3F3CBF",
     "backend/migrations/054_rebate_coupon_mirror.sql": "D8331274CB30AF20F42A8534DD26214A1A71AB6E41FA5A220CF995D10850F28C",
+    "backend/migrations/055_restore_all_sales_orders_contract.sql": "DF42880CC03D5E315EDDC789BE108429C4FB75E8932A4016BA0CDC87E6279333",
     "backend/package.json": "B75415FC81DD3A523661092639E8F8F64605AE5CDB06F39554A66F4807BAE7FF",
     "backend/routes/auth.js": "DFF4CFF9C124A052F9A03453C21A2428E19C2F060958AC3580D948E1B035BE4A",
     "backend/routes/credit.js": "4FA36A2296E4A7AFC07AB45CB3F16FABE8EFAB6FE098F0FD502DBA5459ABB3A6",
@@ -356,41 +349,126 @@
   },
   "tests": [
     {
-      "id": "3cd50836bd7f62ac9888-c6ae3c257ed65c7c65c0",
-      "file": "e2e/comprehensive-sales.spec.ts",
-      "line": 7,
-      "title": "chromium > comprehensive-sales.spec.ts > Comprehensive Sales Trip E2E > multi-bill trip is traceable and blocked by the verification gate",
+      "id": "a78c4a1581d8f3c0dba6-173e4d92c3868270b26a",
+      "file": "e2e/uat-full-loop.spec.ts",
+      "line": 25,
+      "title": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 1. SALES creates a traceable SO draft",
       "expectedStatus": "passed",
-      "status": "failed",
-      "outcome": "unexpected",
+      "status": "passed",
+      "outcome": "expected",
       "retry": 0,
-      "durationMs": 20214,
-      "errors": [
-        {
-          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })\u001b[22m\n",
-          "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })\u001b[22m\n\n    at C:\\MyWork\\WorldFert\\winspeed-frontend\\e2e\\comprehensive-sales.spec.ts:31:32"
-        }
-      ],
+      "durationMs": 10316,
+      "errors": [],
       "attachments": [
+        {
+          "name": "created-order.json",
+          "contentType": "application/json",
+          "path": null
+        },
         {
           "name": "screenshot",
           "contentType": "image/png",
-          "path": "test-results/artifacts/comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium/test-failed-1.png"
+          "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-4d721-reates-a-traceable-SO-draft-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "a78c4a1581d8f3c0dba6-6b3685cc8e0ea0cb9fd5",
+      "file": "e2e/uat-full-loop.spec.ts",
+      "line": 65,
+      "title": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 2. MANAGER verifies and ADMIN confirms the SO",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 11459,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "confirmed-order.json",
+          "contentType": "application/json",
+          "path": null
         },
         {
-          "name": "video",
-          "contentType": "video/webm",
-          "path": "test-results/artifacts/comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium/video.webm"
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-e594d-s-and-ADMIN-confirms-the-SO-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "a78c4a1581d8f3c0dba6-8b2e67fad78890575c18",
+      "file": "e2e/uat-full-loop.spec.ts",
+      "line": 96,
+      "title": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 3. COUNTER SALES sees the real TruckScale health state",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 2565,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "truckscale-health.json",
+          "contentType": "application/json",
+          "path": null
         },
         {
-          "name": "error-context",
-          "contentType": "text/markdown",
-          "path": "test-results/artifacts/comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium/error-context.md"
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-29cb0-eal-TruckScale-health-state-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "a78c4a1581d8f3c0dba6-309415de19fac6059a0f",
+      "file": "e2e/uat-full-loop.spec.ts",
+      "line": 116,
+      "title": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 4. WAREHOUSE picks, loads and ships the SO",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 23136,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "shipped-order.json",
+          "contentType": "application/json",
+          "path": null
         },
         {
-          "name": "trace",
-          "contentType": "application/zip",
-          "path": "test-results/artifacts/comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium/trace.zip"
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-d38a5-icks-loads-and-ships-the-SO-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "a78c4a1581d8f3c0dba6-8afd006492b60736c227",
+      "file": "e2e/uat-full-loop.spec.ts",
+      "line": 154,
+      "title": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 5. ADMIN verifies SHIPPED state and audit trail in Paper Trail",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 4063,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "uat-final-audit.json",
+          "contentType": "application/json",
+          "path": null
+        },
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-26b9a--audit-trail-in-Paper-Trail-chromium/test-finished-1.png"
         }
       ],
       "annotations": []
