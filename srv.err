@@ -1,0 +1,23 @@
+RequestError: Query timeout expired
+    at handleError (C:\MyWork\WorldFert\winspeed-frontend\backend\node_modules\mssql\lib\msnodesqlv8\request.js:291:21)
+    at StreamEvents.emit (node:events:519:28)
+    at C:\MyWork\WorldFert\winspeed-frontend\backend\node_modules\msnodesqlv8\lib\reader.js:94:20
+    at Array.forEach (<anonymous>)
+    at Query.routeStatementError (C:\MyWork\WorldFert\winspeed-frontend\backend\node_modules\msnodesqlv8\lib\reader.js:84:19)
+    at C:\MyWork\WorldFert\winspeed-frontend\backend\node_modules\msnodesqlv8\lib\reader.js:436:12 {
+  code: 'EREQUEST',
+  originalError: [Error: [Microsoft][SQL Server Native Client 11.0]Query timeout expired] {
+    sqlstate: 'HYT00',
+    code: 0,
+    severity: 0,
+    serverName: '',
+    procName: '',
+    lineNumber: 0
+  },
+  number: 0,
+  lineNumber: 0,
+  state: 'HYT00',
+  class: 0,
+  serverName: '',
+  procName: ''
+}
