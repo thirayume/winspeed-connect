@@ -159,6 +159,27 @@ GO
 
 
 /*------------------------------------------------------------------------------
+  STEP 4B — ⚠ กรณีพิเศษ: trigger ที่มีแบนเนอร์คอมเมนต์ "Create Trigger" ข้างบน
+            ตัวอย่างจริง: tI_ICCountHD ขึ้นต้นด้วย
+                /**********  Create Trigger ****************/
+                 create trigger tI_ICCountHD on ICCountHD
+            CHARINDEX จะไปเจอคำในคอมเมนต์ก่อน -> แทนที่ผิดตำแหน่ง
+            -> statement จริงยังเป็น CREATE -> Msg 2714 "There is already an object named ..."
+
+            วิธีตรวจ: หลัง STEP 3B ถ้า STEP 4 ยังไม่เป็น 0 ให้ดูรายชื่อที่เหลือ
+            วิธีแก้: แก้ทีละตัวโดยแทนที่ "create trigger" ตัวที่เป็น statement จริง
+                     (ตัวสุดท้าย ไม่ใช่ตัวในคอมเมนต์) แล้วรัน ALTER
+------------------------------------------------------------------------------*/
+SELECT o.name AS StillLegacy
+FROM sys.sql_modules m
+JOIN sys.objects   o ON o.object_id = m.object_id
+WHERE o.type = 'TR' AND m.definition LIKE '%raiserror @errno @errmsg%';
+-- ถ้ามีรายชื่อ: SELECT definition ของตัวนั้น -> แก้ 'create trigger' ตัวจริงเป็น 'ALTER TRIGGER'
+--              + แก้ raiserror -> raiserror(@errmsg, 16, 1) -> แล้วรัน
+GO
+
+
+/*------------------------------------------------------------------------------
   STEP 5 — ตรวจรูปแบบอื่นที่สคริปต์นี้ไม่ครอบคลุม (ถ้ามี ให้แก้มือ)
            เช่น raiserror ที่เว้นวรรค/ชื่อตัวแปรต่างออกไป
 ------------------------------------------------------------------------------*/
