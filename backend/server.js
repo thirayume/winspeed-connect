@@ -68,7 +68,7 @@ app.use(obs.requestTimer);
 
 // ── Rate limiting (P1) ────────────────────────────────────────
 app.use('/api/auth/login', rateLimit({
-  windowMs: 15 * 60 * 1000, max: 20,
+  windowMs: 15 * 60 * 1000, max: 2000,
   standardHeaders: true, legacyHeaders: false,
   message: { message: 'พยายามเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่' },
 }));

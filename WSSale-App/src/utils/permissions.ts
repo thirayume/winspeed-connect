@@ -1,7 +1,7 @@
 import type { AppUser, UserRole } from '../types';
 
 const REBATE_ALL_ROLES: UserRole[] = ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER'];
-const REBATE_OWN_ROLES: UserRole[] = ['SALES'];
+const REBATE_OWN_ROLES: UserRole[] = [];
 
 export function canViewRebateAmounts(userOrRole?: AppUser | UserRole | null) {
   const role = typeof userOrRole === 'string' ? userOrRole : userOrRole?.role;

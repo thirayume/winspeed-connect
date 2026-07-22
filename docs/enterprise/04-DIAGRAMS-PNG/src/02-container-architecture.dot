@@ -1,0 +1,7 @@
+
+digraph G { graph [rankdir=LR, bgcolor="transparent", compound=true, pad="0.2"]; node [shape=rect, style="rounded,filled", fontname="Kanit", fontsize=18, color="#173B63", fillcolor="#FFFFFF", penwidth=2]; edge [fontname="Kanit", fontsize=13, color="#334155", penwidth=2];
+subgraph cluster_client { label="Client"; fontname="Kanit"; fontsize=20; color="#D3D1C7"; Browser [label="Browser / iPad\nReact + Vite"] }
+subgraph cluster_api { label="Application Services"; fontname="Kanit"; fontsize=20; color="#D3D1C7"; API [label="Express API\nJWT · RBAC · Socket.IO"]; Import [label="WINSpeed Import Service\nSO/CN TXT generation"]; TruckSvc [label="TruckScale Service\nmysql2 pool"] }
+subgraph cluster_data { label="Data"; fontname="Kanit"; fontsize=20; color="#D3D1C7"; WF [label="SQL Server schema wf\n18 tables + 7 views", shape=cylinder, fillcolor="#E6F1FB"]; DBO [label="WINSpeed dbo\nREAD mostly · controlled exceptions", shape=cylinder, fillcolor="#F1EFE8"]; MySQL [label="TruckScale MySQL\nread-only", shape=cylinder, fillcolor="#F1EFE8"] }
+Browser -> API [label="HTTPS / JSON"]; API -> WF [label="read-write"]; API -> DBO [label="read + controlled write"]; API -> Import [label="export files"]; Import -> DBO [label="WINSpeed client posts invoice/GL"]; API -> TruckSvc; TruckSvc -> MySQL [label="read-only"];
+}

@@ -1,0 +1,6 @@
+
+digraph G { graph [rankdir=LR, bgcolor="transparent", pad="0.2", ranksep="0.7"]; node [shape=rect, style="rounded,filled", fontname="Kanit", fontsize=16, color="#173B63", fillcolor="#FFFFFF", penwidth=2]; edge [fontname="Kanit", fontsize=12, color="#334155", penwidth=2];
+subgraph cluster_as { label="AS-IS: กระดาษ + LINE + Manual"; fontname="Kanit"; fontsize=20; color="#A32D2D"; A1[label="Sales ส่ง LINE"]; A2[label="Counter คีย์ WINSpeed"]; A3[label="โรงงานคีย์ TruckScale"]; A4[label="เอกสาร 4 สีติดตามยาก"]; A5[label="Rebate ตรวจทีละบิล"]; A1->A2->A3->A4->A5; }
+subgraph cluster_to { label="TO-BE: WS-Sale-App v7"; fontname="Kanit"; fontsize=20; color="#3B6D11"; T1[label="Sales สร้าง SO ใน Web"]; T2[label="Counter Verify"]; T3[label="Picking + Load sequence"]; T4[label="TruckScale lookup + Ship"]; T5[label="Rebate FIFO + CN trace"]; T1->T2->T3->T4->T5; }
+A5 -> T1 [label="digital transformation", style=dashed, color="#BA7517"];
+}

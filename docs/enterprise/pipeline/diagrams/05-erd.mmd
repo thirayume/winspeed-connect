@@ -1,0 +1,29 @@
+erDiagram
+  SOHD ||--o{ SODT : "SOID"
+  SOHD ||--o{ WFCoupon : "DocuID"
+  WFCoupon ||--o{ WFRedemtionDT : "CouponID"
+  WFRedemtionDT }o--|| SOInvHD : "SOInvID"
+  SalesOrder ||--o{ RebateLedger : "SoId"
+  RebatePool ||--o{ RebateLedger : "PoolId"
+  RebateLedger ||--o{ RebateUsage : "LedgerId"
+  RebatePool ||--o{ RebateClaim : "PoolId"
+  WFCoupon {
+    int CouponID
+    int DocuID
+    money GoodQty
+    money RemaQty
+    money GoodPrice
+  }
+  RebatePool {
+    int SalesUserId
+    int PeriodYear
+    decimal AccruedAmt
+    decimal ClaimedAmt
+  }
+  RebateLedger {
+    int SoId
+    string CustId
+    decimal RebateAmount
+    decimal RemainingAmt
+    string Status
+  }

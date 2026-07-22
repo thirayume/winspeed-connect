@@ -1,0 +1,11 @@
+stateDiagram-v2
+  [*] --> DRAFT
+  DRAFT --> CONFIRMED: confirm (sp_ConfirmSalesOrder)
+  CONFIRMED --> PICKING: PkgStatus = Y
+  PICKING --> LOADED: IsLoaded = 1
+  LOADED --> SHIPPED: weigh-out - bookRebateAccrual
+  SHIPPED --> CLOSED: post invoice (DocuType 107)
+  DRAFT --> CANCELLED
+  CONFIRMED --> CANCELLED
+  CLOSED --> [*]
+  CANCELLED --> [*]

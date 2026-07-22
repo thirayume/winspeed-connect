@@ -8,7 +8,7 @@
  * เลือก target ต่อ request ผ่าน header X-DB-Target: local|remote (AsyncLocalStorage)
  * ค่า default = DB_MODE ใน .env (ใช้กับ scripts: seed/import/export)
  *
- * ⚠ IRON RULE: dbo = READ-ONLY — โค้ดเขียนเฉพาะ wf.* (master.js = SELECT ล้วน)
+ * ⚠ DATA BOUNDARY: wf.* is app-owned; dbo reads are the default, while only explicitly approved master, quotation, and SO workflows may write dbo (see ADR-003).
  */
 require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
 const { AsyncLocalStorage } = require('async_hooks');

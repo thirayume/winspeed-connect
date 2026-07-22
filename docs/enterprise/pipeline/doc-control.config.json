@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "documentExtensions": [".md"],
+  "controlFilePrefixes": ["pipeline/"],
+  "controlFileExtensions": [".js", ".ps1", ".py", ".json", ".mmd", ".drawio", ".yaml", ".yml"],
+  "excludePrefixes": [
+    "_archive/",
+    "pipeline/baselines/",
+    "pipeline/reports/"
+  ],
+  "excludeFiles": [
+    "MANIFEST-SHA256.md",
+    "pipeline/last-run-report.md"
+  ],
+  "allowedStatuses": [
+    "Draft",
+    "Review",
+    "Approved",
+    "Released",
+    "Superseded",
+    "Archived"
+  ],
+  "releaseVersionStatuses": ["Review", "Approved", "Released"],
+  "unapprovedNormativeStatuses": ["Draft", "Review"],
+  "normativePrefixes": [
+    "00-GOVERNANCE/",
+    "01-BUSINESS-ANALYSIS/",
+    "02-REQUIREMENTS/",
+    "03-SOLUTION-ARCHITECTURE/",
+    "04-DATA-INTEGRATION/",
+    "05-SECURITY-DEVOPS/",
+    "06-QUALITY-OPERATIONS/"
+  ],
+  "impactRules": [
+    {
+      "prefix": "00-GOVERNANCE/",
+      "severity": "HIGH",
+      "artifacts": ["document-register", "release-pack", "provenance", "records-register"],
+      "reviewers": ["QMR", "Product Owner", "Solution Architect"]
+    },
+    {
+      "prefix": "01-BUSINESS-ANALYSIS/",
+      "severity": "HIGH",
+      "artifacts": ["BAD", "SRS", "requirements-catalog", "training-scope"],
+      "reviewers": ["Business Analyst", "Product Owner", "Process Owner"]
+    },
+    {
+      "prefix": "02-REQUIREMENTS/",
+      "severity": "HIGH",
+      "artifacts": ["SRS", "acceptance-criteria", "RTM", "test-catalog", "UAT-pack"],
+      "reviewers": ["Product Owner", "Business Analyst", "QA Lead", "Tech Lead"]
+    },
+    {
+      "prefix": "03-SOLUTION-ARCHITECTURE/",
+      "severity": "HIGH",
+      "artifacts": ["technical-spec", "SAD", "ADR", "architecture-diagrams", "integration-tests"],
+      "reviewers": ["Solution Architect", "Tech Lead", "DBA", "Security Reviewer"]
+    },
+    {
+      "prefix": "04-DATA-INTEGRATION/",
+      "severity": "HIGH",
+      "artifacts": ["technical-spec", "API-reference", "ERD", "data-dictionary", "migration-plan", "integration-tests"],
+      "reviewers": ["Solution Architect", "Tech Lead", "DBA", "QA Lead"]
+    },
+    {
+      "prefix": "05-SECURITY-DEVOPS/",
+      "severity": "HIGH",
+      "artifacts": ["security-plan", "deployment-plan", "operations-runbook", "DR-plan", "release-pack"],
+      "reviewers": ["Security Reviewer", "Release Manager", "IT Operations"]
+    },
+    {
+      "prefix": "06-QUALITY-OPERATIONS/",
+      "severity": "HIGH",
+      "artifacts": ["test-plan", "test-cases", "UAT-pack", "user-guides", "training-resources", "production-readiness"],
+      "reviewers": ["QA Lead", "Business Owner", "Training Owner", "Operations Owner"]
+    },
+    {
+      "prefix": "07-SALES-ENABLEMENT/",
+      "severity": "MEDIUM",
+      "artifacts": ["product-overview", "proposal", "implementation-plan"],
+      "reviewers": ["Product Owner", "Sales Owner"]
+    },
+    {
+      "prefix": "08-APPENDICES/",
+      "severity": "MEDIUM",
+      "artifacts": ["release-notes", "support-assumptions", "release-pack"],
+      "reviewers": ["Product Owner", "Release Manager"]
+    },
+    {
+      "prefix": "09-ROADMAP-AND-BACKLOG/",
+      "severity": "MEDIUM",
+      "artifacts": ["roadmap", "risk-register", "open-decisions"],
+      "reviewers": ["Product Owner", "Project Manager"]
+    },
+    {
+      "prefix": "pipeline/",
+      "severity": "HIGH",
+      "artifacts": ["documentation-toolchain", "all-generated-artifacts"],
+      "reviewers": ["Solution Architect", "QA Lead", "Release Manager"]
+    }
+  ]
+}

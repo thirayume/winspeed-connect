@@ -76,7 +76,7 @@ export function CreateSODialog({
   const [transpId, setTranspId] = useState<number | ''>('');
   const [isTruckOpen, setIsTruckOpen] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState('');
-  const [requestedAt, setRequestedAt] = useState('');
+  const [notifiedAt, setNotifiedAt] = useState('');
   const [isOwnTruck, setIsOwnTruck] = useState(false);
   const [noTruckRequired, setNoTruckRequired] = useState(false);
   const [pSling, setPSling] = useState(false);
@@ -150,13 +150,26 @@ export function CreateSODialog({
           setCustSearch(q.CustName || '');
           setSalesUserId(q.SalesUserId || '');
           
+          if (q.TruckPlate) setTruckPlate(q.TruckPlate);
+          if (q.TranspId) setTranspId(q.TranspId);
+          if (q.IsOwnTruck !== undefined) setIsOwnTruck(!!q.IsOwnTruck);
+          if (q.NoTruckRequired !== undefined) setNoTruckRequired(!!q.NoTruckRequired);
+          if (q.PSling !== undefined) setPSling(!!q.PSling);
+          
           const local = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
-          setDeliveryDate(local.toISOString().slice(0, 10));
+          setDeliveryDate(q.DeliveryDate ? q.DeliveryDate.split('T')[0] : local.toISOString().slice(0, 10));
+          
+          const hasLoadSequence = (q.lines || []).some(l => l.LoadSequence && Number(l.LoadSequence) > 0);
+          if (hasLoadSequence) setLoadInOrder(true);
           
           setBills([{
             id: 'bill-1',
             soPrefix: 'I',
             remark: q.Remark || `จากใบเสนอราคา ${q.QuoteNo}`,
+            creditDays: q.CreditDays || 0,
+            truckRemark: q.TruckRemark || '',
+            billRemark: q.BillRemark || '',
+            isControlTicket: false,
             lines: (q.lines || []).map((l, i) => ({
               tempId: `${l.GoodId}-${i}`,
               lineNo: i + 1,
@@ -168,7 +181,10 @@ export function CreateSODialog({
               pricePerTon: l.PricePerTon,
               netPricePerTon: l.NetPricePerTon,
               isGiveaway: !!l.IsGiveaway,
-              isControlTicketDrawn: false
+              isControlTicketDrawn: false,
+              masterQty: l.MasterQty,
+              childQty: l.ChildQty,
+              loadSequence: l.LoadSequence
             }))
           }]);
           setActiveBillId('bill-1');
@@ -182,7 +198,7 @@ export function CreateSODialog({
         setTranspId((so as any).transpId || (so as any).TranspId || '');
         setSalesUserId((so as any).salesUserId || (so as any).salesUserID || (so as any).SalesUserId || (so as any).SalesUserID || '');
         setDeliveryDate(so.deliveryDate ? so.deliveryDate.split('T')[0] : '');
-        setRequestedAt((so as any).requestedAt ? String((so as any).requestedAt).slice(0, 16) : '');
+        setNotifiedAt((so as any).notifiedAt ? String((so as any).notifiedAt).slice(0, 16) : '');
         setIsOwnTruck(!!(so as any).isOwnTruck);
         setNoTruckRequired(!!(so as any).noTruckRequired);
         setPSling(!!(so as any).pSling);
@@ -208,7 +224,7 @@ export function CreateSODialog({
       setBills([{ id: 'bill-1', soPrefix: 'I', lines: [], remark: activeTrip?.remark || '', creditDays: activeTrip?.creditDays || 0, isControlTicket: false }]);
       setActiveBillId('bill-1');
       setCustId(''); setTruckPlate(''); setTranspId(''); setSalesUserId('');
-      setRequestedAt(''); setIsOwnTruck(false); 
+      setNotifiedAt(''); setIsOwnTruck(false); 
       setNoTruckRequired(activeTrip?.isControlTicket ? true : false); 
       setPSling(activeTrip?.pSling ? true : false);
       setLoadInOrder(activeTrip?.loadInOrder ? true : false);
@@ -486,7 +502,7 @@ export function CreateSODialog({
           custName: selectedCust?.CustName || activeTrip?.custName || custId,
           truckPlate: b.isControlTicket ? 'ตั๋วคุม' : (truckPlate || undefined),
           deliveryDate: deliveryDate || undefined,
-          requestedAt: requestedAt || undefined,
+          notifiedAt: notifiedAt || undefined,
           isOwnTruck,
           noTruckRequired,
           pSling,
@@ -521,7 +537,7 @@ export function CreateSODialog({
           custName: selectedCust?.CustName || activeTrip?.custName || custId,
           truckPlate: b.isControlTicket ? 'ตั๋วคุม' : (truckPlate || undefined),
           deliveryDate: deliveryDate || undefined,
-          requestedAt: requestedAt || undefined,
+          notifiedAt: notifiedAt || undefined,
           isOwnTruck,
           noTruckRequired,
           pSling,
@@ -662,8 +678,8 @@ export function CreateSODialog({
               <label className="text-[10px] font-bold text-gray-500 block mb-0.5"><Calendar size={10} className="inline mr-0.5"/>วันที่แจ้ง/เวลานัด</label>
               <input
                 type="datetime-local"
-                value={requestedAt}
-                onChange={e => setRequestedAt(e.target.value)}
+                value={notifiedAt}
+                onChange={e => setNotifiedAt(e.target.value)}
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -1009,7 +1025,8 @@ export function CreateSODialog({
                 ) : (
                   <div className="flex-1 overflow-y-auto space-y-2 pr-1">
                     {activeBill?.lines.map(l => {
-                      const priceBand = getPriceBand(l.pricePerTon, l.netPricePerTon);
+                      const good = goods.find(g => g.GoodID === l.goodId);
+                      const priceBand = getPriceBand(l.pricePerTon, good?.SetPrice || 0);
                       return (
                       <div key={l.tempId} className={`p-3 rounded-lg border ${l.isControlTicketDrawn ? 'border-amber-200 bg-amber-50' : 'border-gray-100 bg-white'}`}>
                         <div className="flex justify-between items-start mb-2">

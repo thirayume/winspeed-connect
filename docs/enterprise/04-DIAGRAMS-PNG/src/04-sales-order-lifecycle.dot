@@ -1,0 +1,9 @@
+
+digraph G { graph [rankdir=LR, bgcolor="transparent", pad="0.2"]; node [shape=rect, style="rounded,filled", fontname="Kanit", fontsize=18, color="#173B63", fillcolor="#FFFFFF", penwidth=2]; edge [fontname="Kanit", fontsize=13, color="#334155", penwidth=2];
+DRAFT [fillcolor="#F1EFE8", label="DRAFT\nแก้ไขได้"];
+VERIFIED [fillcolor="#E6F1FB", label="VERIFIED\nCounter ตรวจแล้ว"];
+CONFIRMED [fillcolor="#FAEEDA", label="CONFIRMED\nตั้ง accrual · import SO"];
+PICKING [fillcolor="#FFF7ED", label="PICKING\nจัดของ · load sequence"];
+SHIPPED [fillcolor="#EAF3DE", label="SHIPPED\nน้ำหนักจริง · lock"];
+DRAFT -> VERIFIED [label="verify"]; VERIFIED -> CONFIRMED [label="confirm"]; CONFIRMED -> PICKING [label="start picking"]; PICKING -> SHIPPED [label="weigh out + ship"]; PICKING -> CONFIRMED [label="unlock approved\nreverse accrual", color="#A32D2D", fontcolor="#A32D2D"];
+}

@@ -1,0 +1,13 @@
+sequenceDiagram
+  actor Sales
+  participant App as WS-Sale-App
+  participant WS as WINSpeed dbo
+  participant Scale as TruckScale
+  Sales->>App: Confirm Sales Order
+  App->>WS: sp_ConfirmSalesOrder
+  Scale-->>App: weigh-out ticket (bridge)
+  App->>App: status to SHIPPED
+  App->>App: bookRebateAccrual
+  Note over App: RebateLedger += (Price - Net) x Qty
+  Sales->>App: use rebate on next order
+  App->>App: consumeRebateAccrual (FIFO) - RebateUsage

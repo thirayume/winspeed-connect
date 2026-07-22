@@ -1,0 +1,243 @@
+{
+  "schemaVersion": 1,
+  "sourceSets": [
+    {
+      "name": "runtime-manifests",
+      "files": [
+        "package.json",
+        "backend/package.json",
+        "WSSale-App/package.json",
+        "docker-compose.yml",
+        ".env.example",
+        ".env.docker.example",
+        "vercel.json"
+      ]
+    },
+    {
+      "name": "backend-runtime",
+      "root": "backend",
+      "extensions": [
+        ".js"
+      ],
+      "excludePrefixes": [
+        "node_modules/",
+        "coverage/",
+        "uploads/"
+      ],
+      "excludeNamePatterns": [
+        "^_",
+        "^scratch_",
+        "^uat_"
+      ]
+    },
+    {
+      "name": "database-migrations",
+      "root": "backend/migrations",
+      "extensions": [
+        ".sql"
+      ],
+      "excludeNamePatterns": [
+        "^uat_"
+      ]
+    },
+    {
+      "name": "frontend-runtime",
+      "root": "WSSale-App/src",
+      "extensions": [
+        ".ts",
+        ".tsx",
+        ".css"
+      ]
+    },
+    {
+      "name": "e2e-specifications",
+      "root": "e2e",
+      "extensions": [
+        ".ts"
+      ]
+    },
+    {
+      "name": "e2e-specifications",
+      "files": [
+        "playwright.config.ts",
+        "run-e2e.ps1",
+        "run-e2e.bat",
+        "e2e/evidence.config.json",
+        "e2e/evidence-reporter.cjs",
+        "db-init/e2e-seed.sql",
+        "db-init/e2e-cleanup.sql"
+      ]
+    },
+    {
+      "name": "deployment",
+      "files": [
+        "deploy.ps1",
+        "DEPLOY.md"
+      ]
+    }
+  ],
+  "documentCoverageRules": [
+    {
+      "prefix": "00-GOVERNANCE/",
+      "sourceSets": [
+        "runtime-manifests",
+        "backend-runtime",
+        "database-migrations",
+        "frontend-runtime",
+        "deployment"
+      ]
+    },
+    {
+      "prefix": "01-BUSINESS-ANALYSIS/",
+      "sourceSets": [
+        "backend-runtime",
+        "database-migrations",
+        "frontend-runtime"
+      ]
+    },
+    {
+      "prefix": "02-REQUIREMENTS/",
+      "sourceSets": [
+        "runtime-manifests",
+        "backend-runtime",
+        "database-migrations",
+        "frontend-runtime"
+      ]
+    },
+    {
+      "prefix": "03-SOLUTION-ARCHITECTURE/",
+      "sourceSets": [
+        "runtime-manifests",
+        "backend-runtime",
+        "database-migrations",
+        "frontend-runtime",
+        "deployment"
+      ]
+    },
+    {
+      "prefix": "04-DATA-INTEGRATION/",
+      "sourceSets": [
+        "backend-runtime",
+        "database-migrations"
+      ]
+    },
+    {
+      "prefix": "05-SECURITY-DEVOPS/",
+      "sourceSets": [
+        "runtime-manifests",
+        "backend-runtime",
+        "frontend-runtime",
+        "deployment"
+      ]
+    },
+    {
+      "prefix": "06-QUALITY-OPERATIONS/",
+      "sourceSets": [
+        "backend-runtime",
+        "database-migrations",
+        "frontend-runtime",
+        "e2e-specifications"
+      ]
+    },
+    {
+      "prefix": "07-SALES-ENABLEMENT/",
+      "sourceSets": [
+        "runtime-manifests",
+        "backend-runtime",
+        "frontend-runtime"
+      ]
+    },
+    {
+      "prefix": "08-APPENDICES/",
+      "sourceSets": [
+        "runtime-manifests",
+        "deployment"
+      ]
+    },
+    {
+      "prefix": "09-ROADMAP-AND-BACKLOG/",
+      "sourceSets": [
+        "runtime-manifests",
+        "backend-runtime",
+        "database-migrations",
+        "frontend-runtime"
+      ]
+    }
+  ],
+  "documentOverrides": {
+    "WF-INT-004": [
+      "backend-runtime"
+    ],
+    "WF-INT-001": [
+      "database-migrations",
+      "backend-runtime"
+    ],
+    "WF-SAD-002": [
+      "runtime-manifests",
+      "backend-runtime",
+      "frontend-runtime",
+      "deployment"
+    ],
+    "WF-REQ-010": [
+      "runtime-manifests",
+      "backend-runtime",
+      "database-migrations",
+      "frontend-runtime"
+    ],
+    "WF-QA-002": [
+      "backend-runtime",
+      "database-migrations",
+      "frontend-runtime",
+      "e2e-specifications"
+    ]
+  },
+  "claimDocuments": {
+    "runtimeVersion": [
+      "WF-REQ-010",
+      "WF-REQ-STATE-008",
+      "WF-REQ-IMPL-008"
+    ],
+    "migrationBaseline": [
+      "WF-REQ-STATE-008",
+      "WF-REQ-IMPL-008",
+      "WF-REQ-010"
+    ],
+    "apiContract": [
+      "WF-INT-004"
+    ],
+    "databaseBoundary": [
+      "WF-REQ-010",
+      "WF-SAD-001",
+      "WF-SAD-002",
+      "WF-ADR-003",
+      "WF-INT-002",
+      "WF-INT-003"
+    ]
+  },
+  "e2e": {
+    "status": "REQUIRED",
+    "specRoot": "e2e",
+    "extensions": [
+      ".ts"
+    ],
+    "evidenceRoots": [
+      "test-results",
+      "playwright-report"
+    ],
+    "evidenceFile": "test-results/e2e-evidence.json",
+    "requiredEvidenceStatus": "PASSED_COMPLETE",
+    "minimumTestCount": 10,
+    "maxAgeHours": 72,
+    "requiredSpecs": [
+      "e2e/comprehensive-sales.spec.ts",
+      "e2e/uat-full-loop.spec.ts",
+      "e2e/workflow.spec.ts"
+    ],
+    "requiredEnvironment": {
+      "frontendOk": true,
+      "apiOk": true,
+      "sqlserver": "up"
+    },
+    "note": "รับเป็น UAT evidence เมื่อครบ 10 tests จาก 3 required specs, ไม่มี failed/flaky/skipped/not-run, health ของ frontend/API/SQL Server ผ่าน และ hash ของ source/test ตรงกับหลักฐาน"
+  }
+}

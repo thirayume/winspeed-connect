@@ -1,0 +1,17 @@
+flowchart TB
+  subgraph ROLES["RBAC · 7 Roles"]
+    R1[SALES]
+    R2[COUNTER_SALES]
+    R3[WAREHOUSE]
+    R4[WEIGHBRIDGE]
+    R5[APPROVER]
+    R6[ACCOUNTING]
+    R7[ADMIN]
+  end
+  R1 --> P1["Create/Convert SO · Quotation"]
+  R2 --> P1
+  R3 --> P2["Picking · Loading"]
+  R4 --> P3["Weigh-out · Weigh Inbox"]
+  R5 --> P4["Approve price/giveaway"]
+  R6 --> P5["Rebate amounts · Recon · CN"]
+  R7 --> P6["All + Master · Users · Policy"]

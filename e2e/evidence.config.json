@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "minimumTestCount": 10,
+  "requiredSpecs": [
+    "e2e/comprehensive-sales.spec.ts",
+    "e2e/uat-full-loop.spec.ts",
+    "e2e/workflow.spec.ts"
+  ]
+}

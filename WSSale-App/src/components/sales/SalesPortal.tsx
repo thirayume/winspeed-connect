@@ -77,7 +77,7 @@ export const SalesPortal = () => {
     
     // Find all draft orders that match the active trip's criteria
     const tripOrders = orders.filter(so => {
-      const matchCust = so.custId === activeTrip.custId;
+      const matchCust = String(so.custId) === String(activeTrip.custId);
       const matchTruck = so.truckPlate === activeTrip.truckPlate || (so.truckPlate === 'ตั๋วคุม');
       const soDate = so.deliveryDate ? so.deliveryDate.split('T')[0] : '';
       const matchDate = soDate === activeTrip.deliveryDate;
@@ -191,7 +191,7 @@ export const SalesPortal = () => {
   const activeTripGroup = useMemo(() => {
     if (!activeTrip) return null;
     const tripOrders = orders.filter(so => {
-      const matchCust = so.custId === activeTrip.custId;
+      const matchCust = String(so.custId) === String(activeTrip.custId);
       const matchTruck = so.truckPlate === activeTrip.truckPlate || (so.truckPlate === 'ตั๋วคุม');
       const soDate = so.deliveryDate ? so.deliveryDate.split('T')[0] : '';
       const matchDate = soDate === activeTrip.deliveryDate;

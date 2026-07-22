@@ -33,7 +33,7 @@ export function TruckScalePage() {
           <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">ค้นน้ำหนักชั่งจริง (db_truckscale) ด้วยทะเบียนรถ / movebill</p>
         </div>
         {status && (
-          <span className={`px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 ${status.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          <span data-testid="truckscale-status" className={`px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 ${status.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
             {status.ok ? <Wifi size={16} /> : <WifiOff size={16} />}
             {status.ok ? `เชื่อมต่อแล้ว · ${Number(status.total).toLocaleString()} ใบชั่ง` : 'เชื่อมต่อไม่ได้'}
           </span>

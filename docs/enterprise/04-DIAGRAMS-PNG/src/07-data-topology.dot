@@ -1,0 +1,11 @@
+
+digraph G { graph [rankdir=TB, bgcolor="transparent", pad="0.2"]; node [shape=rect, style="rounded,filled", fontname="Kanit", fontsize=18, color="#173B63", fillcolor="#FFFFFF", penwidth=2]; edge [fontname="Kanit", fontsize=13, color="#334155", penwidth=2];
+App[label="WS-Sale-App API", fillcolor="#E6F1FB"];
+DBO[label="SQL Server: dbo\nWINSpeed master / SO / Invoice / CN / GL", shape=cylinder, fillcolor="#F1EFE8"];
+WF[label="SQL Server: wf\nSO state / Rebate / Paper / Audit / WeighTicket", shape=cylinder, fillcolor="#EAF3DE"];
+TS[label="MySQL: db_truckscale\ntblscale / tblproduct_detail", shape=cylinder, fillcolor="#FAEEDA"];
+App -> WF [label="read-write"];
+App -> DBO [label="read + controlled exception"];
+App -> TS [label="read-only"];
+WF -> DBO [label="join same SQL Server", dir=both];
+}

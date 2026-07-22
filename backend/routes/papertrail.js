@@ -74,7 +74,7 @@ router.get('/board', async (req, res) => {
               WHEN hd.DocuType = 104 THEN 'IMPORTED'
               WHEN ext.IsLoaded = 1 THEN 'LOADED'
               WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-              WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+              WHEN ext.IsUnlocked = 1 THEN 'DRAFT'
               ELSE 'CONFIRMED'
             END AS Status,
             ROW_NUMBER() OVER(PARTITION BY hd.DocuNo ORDER BY hd.DocuType DESC, hd.SOID DESC) AS DedupRN

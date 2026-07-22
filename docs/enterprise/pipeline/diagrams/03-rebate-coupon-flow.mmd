@@ -1,0 +1,6 @@
+flowchart LR
+  A["SOHD 104<br/>source order"] -->|creates| B["WFCoupon<br/>GET · RemaQty (tons)"]
+  B -->|redeem| C["WFRedemtionDT<br/>USE"]
+  C -->|SOInvID| E["SOInvHD 107<br/>invoice"]
+  E --> F["ARReceHD - GL / VAT"]
+  C -. RemaQty to 0 .-> G["fully used"]

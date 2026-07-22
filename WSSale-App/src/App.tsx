@@ -100,7 +100,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'policy',     label: 'นโยบายอนุมัติ', sub: 'อำนาจ · วงเงิน',       icon: ScrollText, roles: ['ADMIN', 'MANAGER'] },
       { key: 'governance', label: 'กำกับข้อมูล',  sub: 'เครดิต · สต๊อก · PDPA',  icon: Landmark, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
       { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · error · alert', icon: Activity, roles: ['ADMIN', 'MANAGER'] },
-      { key: 'admin',      label: 'ผู้ใช้งาน',    sub: 'Map พนักงาน',         icon: Users, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
+      { key: 'admin',      label: 'User Management',    sub: 'ผู้ใช้งานระบบ',         icon: Users, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
     ],
   },
 ];

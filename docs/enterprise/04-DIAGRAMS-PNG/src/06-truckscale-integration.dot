@@ -1,0 +1,10 @@
+
+digraph G { graph [rankdir=LR, bgcolor="transparent", pad="0.2"]; node [shape=rect, style="rounded,filled", fontname="Kanit", fontsize=17, color="#173B63", fillcolor="#FFFFFF", penwidth=2]; edge [fontname="Kanit", fontsize=12, color="#334155", penwidth=2];
+SO[label="SO / Truck Plate\nfrom WS-Sale-App", fillcolor="#E6F1FB"];
+Key[label="Lookup Key\nทะเบียนรถ / movebill", fillcolor="#FAEEDA"];
+Scale[label="tblscale\nweight_in/out/net", shape=cylinder, fillcolor="#F1EFE8"];
+PD[label="tblproduct_detail\nสินค้า · คลัง · invoice", shape=cylinder, fillcolor="#F1EFE8"];
+WT[label="wf.WeighTicket\ngross/tare/net + timestamp", fillcolor="#EAF3DE"];
+Ship[label="SHIPPED\nready for WINSpeed invoice", fillcolor="#EAF3DE"];
+SO -> Key -> Scale -> WT -> Ship; Scale -> PD [label="detail", dir=both];
+}

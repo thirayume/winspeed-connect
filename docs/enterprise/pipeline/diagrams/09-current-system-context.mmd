@@ -1,0 +1,11 @@
+%% Current source system context
+%% generatedFromSourceInventory: A680B2726E0810C470A76B2CDCE03ECB9CD5C557C4B69244F5E5A0C8DC21EF4C
+%% generatedAt: 2026-07-22T09:30:36.268Z
+flowchart LR
+  U["World Fert users<br/>8 roles"] --> FE["React 19 + Vite<br/>22 portal keys"]
+  FE -->|"HTTP / Socket.IO"| API["Express 5 API<br/>17 route modules · 160 endpoints"]
+  API --> WF["SQL Server · wf schema<br/>application-owned workflow"]
+  API -->|"controlled WINSpeed writes<br/>33 statements detected"| DBO["SQL Server · dbo schema<br/>WINSpeed-owned records"]
+  API -->|"read + pre-weigh write<br/>2 statements detected"| TS["TruckScale MySQL<br/>tblscale / tbl_keyone"]
+  DBO --> ACC["WINSpeed accounting<br/>Invoice · AR · VAT · GL"]
+  E2E["E2E evidence<br/>PASSED_COMPLETE<br/>10/10 passed"] -->|"source-bound evidence"| API

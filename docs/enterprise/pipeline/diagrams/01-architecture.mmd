@@ -1,0 +1,24 @@
+flowchart TB
+  subgraph APP["WS-Sale-App  (React 19 + Vite + Express)"]
+    UI["Tablet-first UI · 21 screens · RBAC 7 roles"]
+  end
+  subgraph WF["wf schema  (writable)"]
+    W1["SalesOrder (draft)"]
+    W2["Rebate engine<br/>Pool · Ledger · Usage · Claim"]
+    W3["Audit · Users · Quotation"]
+  end
+  subgraph DBO["WINSpeed dbo  (READ-ONLY)"]
+    D1["SOHD / SODT · SOInvHD"]
+    D2["WFCoupon / WFRedemtion"]
+    D3["AR · GL · Price"]
+  end
+  subgraph TS["TruckScale  (MySQL, READ-ONLY)"]
+    T1["Weigh tickets"]
+  end
+  UI --> W1
+  UI --> W2
+  UI --> W3
+  W1 -->|sp_ConfirmSalesOrder| D1
+  W2 -. reads .-> D2
+  T1 -->|bridge| W2
+  D1 --> D3

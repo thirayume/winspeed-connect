@@ -1,0 +1,14 @@
+%% Documentation evidence and release flow
+%% generatedFromSourceInventory: A680B2726E0810C470A76B2CDCE03ECB9CD5C557C4B69244F5E5A0C8DC21EF4C
+%% generatedAt: 2026-07-22T09:30:36.268Z
+flowchart LR
+  SRC["Backend · Frontend · Migrations · Deployment"] --> INV["Deterministic source inventory<br/>SHA-256"]
+  INV --> GAP["Source ↔ document gap report"]
+  GAP --> REV["40 merged documents<br/>Review"]
+  REV --> APPROVE{"Technical / business approval"}
+  E2E["Automated E2E<br/>PASSED_COMPLETE<br/>10/10 passed"] --> REVIEW["Source/hash evidence review"]
+  REVIEW --> UAT["Business UAT sign-off (separate)"]
+  APPROVE --> GATE{"Strict documentation gate"}
+  UAT --> GATE
+  GATE -->|"pass"| BASE["Accepted source + document baseline"]
+  GATE -->|"gap / drift"| BLOCK["Release blocked"]

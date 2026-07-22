@@ -1,0 +1,10 @@
+
+digraph G { graph [rankdir=LR, bgcolor="transparent", pad="0.2"]; node [shape=rect, style="rounded,filled", fontname="Kanit", fontsize=17, color="#173B63", fillcolor="#FFFFFF", penwidth=2]; edge [fontname="Kanit", fontsize=12, color="#334155", penwidth=2];
+Dev[label="DEV / LOCAL\nfeature + migration test", fillcolor="#E6F1FB"];
+Pilot[label="SOFT LAUNCH / PILOT\nrestricted users", fillcolor="#FAEEDA"];
+Gate[label="P0 Gate\nsecrets · least privilege · reconcile · backup restore", fillcolor="#FEE2E2", color="#A32D2D"];
+Prod[label="FULL PRODUCTION\ncontrolled release", fillcolor="#EAF3DE"];
+Operate[label="Operate\nmonitoring · incident · DR drill", fillcolor="#F1EFE8"];
+Dev -> Pilot -> Gate -> Prod -> Operate;
+Gate -> Pilot [label="not pass: continue pilot", color="#A32D2D", fontcolor="#A32D2D"];
+}

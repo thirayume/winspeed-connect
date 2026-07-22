@@ -1,0 +1,17 @@
+flowchart TB
+  subgraph SALES["Lane: Sales"]
+    S1[Create SO] --> S2[Confirm]
+  end
+  subgraph WH["Lane: Warehouse"]
+    W1[Pick] --> W2[Load]
+  end
+  subgraph WB["Lane: Weighbridge"]
+    B1[Weigh-out] --> B2[WeighTicket]
+  end
+  subgraph ACC["Lane: Accounting"]
+    A1[Post Invoice 107] --> A2[AR / Rebate / CN]
+  end
+  S2 --> W1
+  W2 --> B1
+  B2 --> A1
+  B1 -. trigger .-> RB[Rebate accrual]

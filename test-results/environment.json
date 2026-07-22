@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-22T04:58:02.865Z",
+  "frontend": {
+    "url": "http://localhost:5173",
+    "status": 200,
+    "ok": true,
+    "durationMs": 26,
+    "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx?t=1784694397467\"></script>\n  </body>\n</html>\n"
+  },
+  "api": {
+    "url": "http://localhost:3000/api/health",
+    "status": 200,
+    "ok": true,
+    "durationMs": 100,
+    "body": {
+      "ok": true,
+      "ts": "2026-07-22T04:58:02.881Z",
+      "version": "1.0.0",
+      "env": "development",
+      "uptimeSec": 895,
+      "requests": 706,
+      "errors": 0,
+      "lastErrorAt": null,
+      "db": {
+        "sqlserver": "up",
+        "mysql": "down"
+      }
+    }
+  }
+}

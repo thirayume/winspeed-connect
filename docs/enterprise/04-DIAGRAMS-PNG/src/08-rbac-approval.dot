@@ -1,0 +1,14 @@
+
+digraph G { graph [rankdir=LR, bgcolor="transparent", pad="0.2"]; node [shape=rect, style="rounded,filled", fontname="Kanit", fontsize=16, color="#173B63", fillcolor="#FFFFFF", penwidth=2]; edge [fontname="Kanit", fontsize=12, color="#334155", penwidth=2];
+Sales[label="SALES\ncreate order · claim"];
+Counter[label="COUNTER_SALES\nverify · print"];
+Warehouse[label="WAREHOUSE\npicking · unlock request"];
+Weigh[label="WEIGHBRIDGE\nweight · ship"];
+Approver[label="APPROVER / MANAGER\napprove plan · unlock"];
+Accounting[label="ACCOUNTING\nCN · reconciliation"];
+Admin[label="ADMIN\nusers · master · DB target"];
+SO[label="SO Workflow", fillcolor="#E6F1FB"];
+Rebate[label="Rebate / CN", fillcolor="#FAEEDA"];
+AdminOps[label="System Admin", fillcolor="#F1EFE8"];
+Sales -> SO; Counter -> SO; Warehouse -> SO; Weigh -> SO; Approver -> SO; Accounting -> Rebate; Sales -> Rebate; Approver -> Rebate; Admin -> AdminOps;
+}

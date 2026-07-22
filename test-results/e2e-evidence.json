@@ -1,0 +1,330 @@
+{
+  "schemaVersion": 1,
+  "kind": "WS-Sale-App Playwright E2E Evidence",
+  "runId": "2026-07-22T04-58-03-003Z",
+  "startedAt": "2026-07-22T04:58:03.003Z",
+  "completedAt": "2026-07-22T04:58:47.611Z",
+  "durationMs": 44608,
+  "status": "PASSED_COMPLETE",
+  "playwrightStatus": "passed",
+  "complete": true,
+  "policy": {
+    "schemaVersion": 1,
+    "minimumTestCount": 10,
+    "requiredSpecs": [
+      "e2e/comprehensive-sales.spec.ts",
+      "e2e/uat-full-loop.spec.ts",
+      "e2e/workflow.spec.ts"
+    ]
+  },
+  "coverage": {
+    "selectedSpecs": [
+      "e2e/comprehensive-sales.spec.ts",
+      "e2e/uat-full-loop.spec.ts",
+      "e2e/workflow.spec.ts"
+    ],
+    "missingSpecs": [],
+    "selectedTestCount": 10
+  },
+  "counts": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "timedOut": 0,
+    "interrupted": 0,
+    "notRun": 0
+  },
+  "environment": {
+    "schemaVersion": 1,
+    "capturedAt": "2026-07-22T04:58:02.865Z",
+    "frontend": {
+      "url": "http://localhost:5173",
+      "status": 200,
+      "ok": true,
+      "durationMs": 26,
+      "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx?t=1784694397467\"></script>\n  </body>\n</html>\n"
+    },
+    "api": {
+      "url": "http://localhost:3000/api/health",
+      "status": 200,
+      "ok": true,
+      "durationMs": 100,
+      "body": {
+        "ok": true,
+        "ts": "2026-07-22T04:58:02.881Z",
+        "version": "1.0.0",
+        "env": "development",
+        "uptimeSec": 895,
+        "requests": 706,
+        "errors": 0,
+        "lastErrorAt": null,
+        "db": {
+          "sqlserver": "up",
+          "mysql": "down"
+        }
+      }
+    }
+  },
+  "git": {
+    "commit": "48d301796560086402a1208c947ece2a9acbe005",
+    "dirty": true
+  },
+  "fileHashes": {
+    "playwright.config.ts": "A1239FDD163F4A37E7CDE0C56B5EF4082EA5B2D6F7D3141D3B0B1FABC787ACE6",
+    "e2e/evidence.config.json": "6764ABE8FB63ED606E3B9770145BE411D8ACF129AD264D07BD9EAB8736E98D53",
+    "e2e/helpers.ts": "75CD506221941C67712044191C03015D392E5384C8FD4BED317DBDD4333FC048",
+    "e2e/global-setup.ts": "74F92D253E8763C7B9C39B4828C9A5BF7D8490D5A0268518199967431A6F0D2C",
+    "e2e/evidence-reporter.cjs": "23309D72818828DB4322C6B814A3F518AE2B6512B5395DEF5AC27C68FCBA4DB3",
+    "run-e2e.ps1": "D48F9ED0B06D26310F18A47ABB86246BCBA4C49F217E84BF5DA4F0BF3B51BF07",
+    "db-init/e2e-seed.sql": "98BE1AACDA97CB4DEA314A67E2895F023BD8AC3E674C3D429E95DBE9FD0FEFB6",
+    "db-init/e2e-cleanup.sql": "81C9C1F996A23A96D1BBA929BB3D3031E7B9458A27F8B5CF6F19BDC6DE68641D",
+    "backend/routes/so.js": "36BA512A85C514361C0C58897314479710AD5B310C4A7196D4C49E891C84A678",
+    "backend/routes/papertrail.js": "5E8AD505AC4FF73F48EE4C7A4F4F644B3860129BE167E39951491605B05A64C7",
+    "backend/routes/reports.js": "3EDA8F07A05BFEC68F74B0490FA6D77338B5971CD8E47E6F94AF05E79BCB8CB8",
+    "WSSale-App/src/components/sales/SalesPortal.tsx": "38D157E4A0BCD4C3BA388500A05E2D4EEB377F752BC6FAF3E7657D24D0869FC4",
+    "WSSale-App/src/components/store/PickingQueue.tsx": "A9298FF12AA293AE1B686350CA9AFB622567ED3C8F29FC594FF795119B4DCFEB",
+    "WSSale-App/src/components/truckscale/TruckScalePage.tsx": "50AB1DB1F9809A8D0BC1F5F5B7CBCA11AF12FA1CD914A5F99B100CE0E740CB20",
+    "e2e/comprehensive-sales.spec.ts": "335789DD1F298D9C38DC4B33D8E31526F9CB031B18B1B585A81F2D2673C7FBF6",
+    "e2e/uat-full-loop.spec.ts": "5BF53477132672A267B29CB68775EC1E8A5BA060CB8DD343E1A5896EEEA20E75",
+    "e2e/workflow.spec.ts": "3F0A927A4C10144718C7D0E263AEF3FE92BF9CD41C7E28611E6FB06DB585CAF1"
+  },
+  "tests": [
+    {
+      "id": "3cd50836bd7f62ac9888-c6ae3c257ed65c7c65c0",
+      "file": "e2e/comprehensive-sales.spec.ts",
+      "line": 7,
+      "title": "chromium > comprehensive-sales.spec.ts > Comprehensive Sales Trip E2E > multi-bill trip is traceable and blocked by the verification gate",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 9448,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "multi-bill-gate.json",
+          "contentType": "application/json",
+          "path": null
+        },
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "a78c4a1581d8f3c0dba6-173e4d92c3868270b26a",
+      "file": "e2e/uat-full-loop.spec.ts",
+      "line": 25,
+      "title": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 1. SALES creates a traceable SO draft",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 6141,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "created-order.json",
+          "contentType": "application/json",
+          "path": null
+        },
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-4d721-reates-a-traceable-SO-draft-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "a78c4a1581d8f3c0dba6-6b3685cc8e0ea0cb9fd5",
+      "file": "e2e/uat-full-loop.spec.ts",
+      "line": 65,
+      "title": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 2. MANAGER verifies and ADMIN confirms the SO",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 5747,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "confirmed-order.json",
+          "contentType": "application/json",
+          "path": null
+        },
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-e594d-s-and-ADMIN-confirms-the-SO-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "a78c4a1581d8f3c0dba6-8b2e67fad78890575c18",
+      "file": "e2e/uat-full-loop.spec.ts",
+      "line": 96,
+      "title": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 3. COUNTER SALES sees the real TruckScale health state",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 1522,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "truckscale-health.json",
+          "contentType": "application/json",
+          "path": null
+        },
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-29cb0-eal-TruckScale-health-state-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "a78c4a1581d8f3c0dba6-309415de19fac6059a0f",
+      "file": "e2e/uat-full-loop.spec.ts",
+      "line": 116,
+      "title": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 4. WAREHOUSE picks, loads and ships the SO",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 10476,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "shipped-order.json",
+          "contentType": "application/json",
+          "path": null
+        },
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-d38a5-icks-loads-and-ships-the-SO-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "a78c4a1581d8f3c0dba6-8afd006492b60736c227",
+      "file": "e2e/uat-full-loop.spec.ts",
+      "line": 154,
+      "title": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 5. ADMIN verifies SHIPPED state and audit trail in Paper Trail",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 2078,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "uat-final-audit.json",
+          "contentType": "application/json",
+          "path": null
+        },
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-26b9a--audit-trail-in-Paper-Trail-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "c601ceb5ecfc8efa4a14-db9b981441c6f07525bd",
+      "file": "e2e/workflow.spec.ts",
+      "line": 9,
+      "title": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > ADMIN can login, use Access As and return to ADMIN",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 1863,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "admin-access-as.txt",
+          "contentType": "text/plain",
+          "path": null
+        },
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/workflow-WS-Sale-App-V1-0--8b979-cess-As-and-return-to-ADMIN-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "c601ceb5ecfc8efa4a14-04d11070d9eea9169f61",
+      "file": "e2e/workflow.spec.ts",
+      "line": 24,
+      "title": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > SALES can access Quotation",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 1182,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/workflow-WS-Sale-App-V1-0--c0537--SALES-can-access-Quotation-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "c601ceb5ecfc8efa4a14-6be9e43a9e3c225ddd6c",
+      "file": "e2e/workflow.spec.ts",
+      "line": 31,
+      "title": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > COUNTER_SALES can access TruckScale with explicit health",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 1520,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/workflow-WS-Sale-App-V1-0--fb082-kScale-with-explicit-health-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "c601ceb5ecfc8efa4a14-8da8bce2365e3b609421",
+      "file": "e2e/workflow.spec.ts",
+      "line": 42,
+      "title": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > WAREHOUSE can access loading and scale queues",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 3795,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/workflow-WS-Sale-App-V1-0--0d684-ss-loading-and-scale-queues-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    }
+  ]
+}

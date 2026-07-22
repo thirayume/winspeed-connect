@@ -1,0 +1,27 @@
+classDiagram
+  class RebatePool {
+    +int SalesUserId
+    +int PeriodYear
+    +int PeriodMonth
+    +decimal AccruedAmt
+    +decimal ClaimedAmt
+  }
+  class RebateLedger {
+    +string SoId
+    +string CustId
+    +decimal RebateAmount
+    +decimal RemainingAmt
+    +string Status
+  }
+  class RebateUsage {
+    +int LedgerId
+    +string AppliedSOID
+    +decimal DeductedAmt
+  }
+  class RebateClaim {
+    +string CnDocuNo
+    +decimal ClaimAmt
+  }
+  RebatePool "1" --> "*" RebateLedger
+  RebateLedger "1" --> "*" RebateUsage
+  RebatePool "1" --> "*" RebateClaim
