@@ -15,6 +15,18 @@ const PREFIX_LABELS: Record<SOPrefix, string> = {
   AI: 'AI — ตั๋วคุม',
 };
 
+function getPriceBand(pricePerTon: number, setPricePerTon: number) {
+  if (!setPricePerTon) {
+    return { label: '', className: 'border-gray-200 bg-white text-gray-700' };
+  }
+  const diff = Number(pricePerTon || 0) - Number(setPricePerTon || 0);
+  if (diff > 500) return { label: 'ดีมาก', className: 'border-lime-300 bg-lime-50 text-lime-700' };
+  if (diff > 0) return { label: 'ดี', className: 'border-emerald-300 bg-emerald-50 text-emerald-700' };
+  if (diff === 0) return { label: 'เท่าราคาตั้ง', className: 'border-yellow-300 bg-yellow-50 text-yellow-700' };
+  if (diff >= -500) return { label: `ต่ำกว่า ${Math.abs(diff).toLocaleString('th-TH')}`, className: 'border-orange-300 bg-orange-50 text-orange-700' };
+  return { label: `ต่ำกว่า ${Math.abs(diff).toLocaleString('th-TH')}`, className: 'border-red-300 bg-red-50 text-red-700' };
+}
+
 export function CreateSODialog({
   isOpen,
   onClose,
@@ -797,7 +809,10 @@ export function CreateSODialog({
                   </div>
                 ) : (
                   <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-                    {activeBill?.lines.map(l => (
+                    {activeBill?.lines.map(l => {
+                      const good = goods.find(g => g.GoodID === l.goodId);
+                      const priceBand = getPriceBand(l.pricePerTon, good?.SetPrice || 0);
+                      return (
                       <div key={l.tempId} className={`p-3 rounded-lg border ${l.isControlTicketDrawn ? 'border-amber-200 bg-amber-50' : 'border-gray-100 bg-white'}`}>
                         <div className="flex justify-between items-start mb-2">
                           <div>
@@ -829,8 +844,13 @@ export function CreateSODialog({
                               ) : (
                                   <div className="flex items-center gap-1">
                                     <span className="text-[10px] text-gray-500">฿/ตัน</span>
-                                    <input type="number" value={l.pricePerTon || ''} onChange={e => updateActiveLine(l.tempId, { pricePerTon: Number(e.target.value) })} className="w-20 text-right border border-gray-200 rounded px-1.5 py-1 text-xs font-mono font-bold focus:outline-none focus:border-blue-400" />
+                                    <input type="number" value={l.pricePerTon || ''} onChange={e => updateActiveLine(l.tempId, { pricePerTon: Number(e.target.value) })} className={`w-20 text-right border rounded px-1.5 py-1 text-xs font-mono font-bold focus:outline-none focus:border-blue-400 ${priceBand.className}`} />
                                   </div>
+                              )}
+                              {!l.isControlTicketDrawn && !l.isGiveaway && priceBand.label && (
+                                <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${priceBand.className}`}>
+                                  {priceBand.label}
+                                </div>
                               )}
                             </div>
                           </div>
@@ -847,7 +867,7 @@ export function CreateSODialog({
                           )}
                         </div>
                       </div>
-                    ))}
+                    );})}
                   </div>
                 )}
                 
