@@ -11,6 +11,7 @@ const { generateImportFiles } = require('../services/winspeed-import.service');
 const { broadcast } = require('../services/socket');
 const { enqueue } = require('../services/outbox');
 const { resolveApprovalPolicy } = require('../services/approval');
+const { insertPreWeighTicket, removePreWeighTicket } = require('../services/truckscale-db');
 
 router.use(requireAuth);
 
@@ -36,6 +37,69 @@ function toSqlDateTime(value) {
 
 function toBit(value) {
   return value ? 1 : 0;
+}
+
+// Keep workflow references compatible with WINSpeed DocuNo while avoiding
+// collisions with both existing native documents and concurrent app drafts.
+async function allocateWorkflowRef(tx, soPrefix) {
+  const yy = (new Date().getFullYear() + 543 - 2500).toString().slice(-2);
+  const prefixYear = `${soPrefix}${yy}`;
+  const maxResult = await tx.request()
+    .input('prefixYear', sql.NVarChar(10), prefixYear)
+    .query(`
+      SELECT ISNULL(MAX(RefSuffix), 0) AS MaxSuffix
+      FROM (
+        SELECT CASE
+          WHEN ISNUMERIC(SUBSTRING(WfRef, LEN(@prefixYear) + 2, 20)) = 1
+          THEN CONVERT(BIGINT, SUBSTRING(WfRef, LEN(@prefixYear) + 2, 20))
+        END AS RefSuffix
+        FROM wf.SalesOrder
+        WHERE WfRef LIKE @prefixYear + '-%'
+        UNION ALL
+        SELECT CASE
+          WHEN ISNUMERIC(SUBSTRING(DocuNo, LEN(@prefixYear) + 2, 20)) = 1
+          THEN CONVERT(BIGINT, SUBSTRING(DocuNo, LEN(@prefixYear) + 2, 20))
+        END AS RefSuffix
+        FROM dbo.SOHD
+        WHERE DocuType = 103 AND DocuNo LIKE @prefixYear + '-%'
+      ) refs
+      WHERE RefSuffix IS NOT NULL;
+    `);
+  const sequenceResult = await tx.request().query('SELECT NEXT VALUE FOR wf.WfRefSeq AS Seq');
+  const nextSuffix = Number(maxResult.recordset?.[0]?.MaxSuffix || 0)
+    + Number(sequenceResult.recordset?.[0]?.Seq || 1);
+  return `${prefixYear}-${String(nextSuffix).padStart(5, '0')}`;
+}
+
+async function reassignCollidingDraftRef(so, userId, ip) {
+  const collision = await wfQuery(`
+    SELECT CASE WHEN EXISTS (
+      SELECT 1 FROM dbo.SOHD WITH (NOLOCK)
+      WHERE DocuType = 103 AND DocuNo = @wfRef
+    ) THEN 1 ELSE 0 END AS HasCollision
+  `, { wfRef: { type: sql.NVarChar(30), value: so.WfRef } });
+  if (!Number(collision.recordset?.[0]?.HasCollision || 0)) return so;
+
+  const oldRef = so.WfRef;
+  const newRef = await wfTransaction(async tx => {
+    const allocated = await allocateWorkflowRef(tx, so.SoPrefix);
+    const result = await tx.request()
+      .input('id', sql.Int, Number(so.Id))
+      .input('oldRef', sql.NVarChar(30), oldRef)
+      .input('newRef', sql.NVarChar(30), allocated)
+      .query(`
+        UPDATE wf.SalesOrder SET WfRef=@newRef, UpdatedAt=GETUTCDATE()
+        WHERE Id=@id AND WfRef=@oldRef;
+        SELECT @@ROWCOUNT AS Affected;
+      `);
+    if (Number(result.recordset?.[0]?.Affected || 0) !== 1) {
+      throw new Error('ไม่สามารถแก้เลข WfRef ที่ซ้ำได้');
+    }
+    return allocated;
+  });
+  await audit(null, so.Id, userId, 'WFREF_REASSIGNED', 'DRAFT', 'DRAFT', `${oldRef} -> ${newRef}`, ip);
+  broadcast('so_updated', { id: so.Id, action: 'wfref_reassigned', oldRef, newRef });
+  return { ...so, WfRef: newRef };
 }
 
 let giveawayApprovalColumns = null;
@@ -313,7 +377,7 @@ router.get('/stats', async (req, res) => {
               WHEN hd.DocuType = 104 THEN 'IMPORTED'
               WHEN ext.IsLoaded = 1 THEN 'LOADED'
               WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-              WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+              WHEN ext.IsUnlocked = 1 THEN 'DRAFT'
               ELSE 'CONFIRMED'
             END AS NewStatus
           FROM wf.SalesOrderExt ext WITH (NOLOCK)
@@ -342,7 +406,7 @@ router.get('/stats', async (req, res) => {
               WHEN hd.DocuType = 104 THEN 'IMPORTED'
               WHEN ext.IsLoaded = 1 THEN 'LOADED'
               WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-              WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+              WHEN ext.IsUnlocked = 1 THEN 'DRAFT'
               ELSE 'CONFIRMED'
             END AS NewStatus
           FROM wf.SalesOrderExt ext WITH (NOLOCK)
@@ -465,7 +529,7 @@ router.get('/', async (req, res) => {
             WHEN hd.DocuType = 104 THEN 'IMPORTED'
             WHEN ext.IsLoaded = 1 THEN 'LOADED'
             WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+            WHEN ext.IsUnlocked = 1 THEN 'DRAFT'
             ELSE 'CONFIRMED'
           END AS Status,
           hd.DocuNo AS ImportedDocuNo,
@@ -553,7 +617,7 @@ router.get('/', async (req, res) => {
             WHEN hd.DocuType = 104 THEN 'IMPORTED'
             WHEN ext.IsLoaded = 1 THEN 'LOADED'
             WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+            WHEN ext.IsUnlocked = 1 THEN 'DRAFT'
             ELSE 'CONFIRMED'
           END AS Status,
           ext.SalesUserId,
@@ -915,11 +979,8 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
         const needsApproval = !!devLine;
         if (needsApproval) anyNeedsApproval = true;
 
-        // generate WfRef
-        const seqR = await tx.request().query(`SELECT NEXT VALUE FOR wf.WfRefSeq AS Seq`);
-        const seq = String(seqR.recordset[0].Seq).padStart(5, '0');
-        const yy = (new Date().getFullYear() + 543 - 2500).toString().slice(-2);
-        const wfRef = `${soPrefix}${yy}-${seq}`;
+        // Generate a native-compatible reference above all used suffixes.
+        const wfRef = await allocateWorkflowRef(tx, soPrefix);
 
         const soReq = tx.request();
         soReq.input('wfRef',            sql.NVarChar(30),  wfRef);
@@ -1343,11 +1404,15 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
     if (isSohdOrder) {
       await wfQuery(`UPDATE wf.SalesOrderExt SET IsUnlocked=0 WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: req.params.id } });
       await audit(null, req.params.id, req.user.sub, 'CONFIRMED', 'DRAFT', 'CONFIRMED', null, req.ip);
+      
+      const soExt = await getSoOrThrow(req.params.id);
+      insertPreWeighTicket(soExt).catch(err => console.error('[truckscale] Push error:', err));
+      
       broadcast('so_updated', { id: req.params.id, action: 'confirmed' });
       return res.json({ id: req.params.id, status: 'CONFIRMED' });
     }
 
-    const so = await getSoOrThrow(req.params.id, 'DRAFT');
+    let so = await getSoOrThrow(req.params.id, 'DRAFT');
 
     if (await hasQuoteSourceTable()) {
       const pendingQuote = (await wfQuery(`
@@ -1419,6 +1484,9 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
         requiresApproval: true
       });
     }
+
+    // Existing drafts may predate collision-safe allocation; repair just-in-time.
+    so = await reassignCollidingDraftRef(so, req.user.sub, req.ip);
 
     // 1. เรียก Stored Procedure เพื่อย้ายข้อมูลจาก wf.SalesOrder ไป SOHD (Winspeed)
     const activePool = require('../db').pools().ownerPool;
@@ -1493,6 +1561,10 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
 
     // 3. Audit log (บันทึกโดยใช้ newSoid)
     await audit(null, newSoid, req.user.sub, 'CONFIRMED', 'DRAFT', 'CONFIRMED', null, req.ip);
+    
+    // Insert to TruckScale Pre-weigh
+    insertPreWeighTicket(so).catch(err => console.error('[truckscale] Push error:', err));
+    
     // FR-029 outbox: reliable integration event (idempotent ต่อ SO)
     await enqueue('SO_CONFIRMED', newSoid, { soId: newSoid, custId: so.CustId, by: req.user.sub }, `SO_CONFIRMED:${newSoid}`);
     res.json({ id: newSoid, status: 'CONFIRMED' });
@@ -1552,6 +1624,10 @@ router.post('/:id/unlock-request', requireRole('SALES', 'COUNTER_SALES', 'WAREHO
         uid:{ type: sql.Int, value: req.user.sub },
         reqType: { type: sql.NVarChar(20), value: reqType }
       });
+      
+    // Hold at TruckScale (remove pre-weigh ticket)
+    removePreWeighTicket(so.WfRef || so.Id).catch(err => console.error('[truckscale] Push error (remove):', err));
+    
     broadcast('so_updated', { id: so.Id, action: 'unlock_requested' });
     res.json({ id: so.Id, ok: true });
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }

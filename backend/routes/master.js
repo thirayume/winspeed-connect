@@ -261,6 +261,7 @@ router.get('/goods', async (req, res) => {
              ISNULL(gx.BagPerTon, 20)         AS BagPerTon,
              ISNULL(gx.WeightKgPerBag, 50.0)  AS WeightKgPerBag,
              gg.GoodGroupName,
+             0                                AS SetPrice,
              g.StockQty,
              g.RemaQty,
              CAST(0 AS DECIMAL(18,3)) AS TotalQtyTon,
