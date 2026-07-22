@@ -31,7 +31,7 @@ const REPORTS = {
             WHEN hd.DocuType = 104 THEN 'IMPORTED'
             WHEN ext.IsLoaded = 1 THEN 'LOADED'
             WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+            WHEN ext.IsUnlocked = 1 THEN 'DRAFT'
             ELSE 'CONFIRMED'
           END AS Status,
           COUNT_BIG(*) AS Cnt
@@ -46,7 +46,7 @@ const REPORTS = {
             WHEN hd.DocuType = 104 THEN 'IMPORTED'
             WHEN ext.IsLoaded = 1 THEN 'LOADED'
             WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+            WHEN ext.IsUnlocked = 1 THEN 'DRAFT'
             ELSE 'CONFIRMED'
           END
       )

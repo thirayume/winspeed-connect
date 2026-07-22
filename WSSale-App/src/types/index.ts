@@ -133,6 +133,7 @@ export type EMGood = {
   TotalQtyTonThisYear?: number;
   RemainingQty?: number;
   UnitName?: string;
+  SetPrice?: number;
 };
 
 export type CurrentPrice = {
@@ -456,6 +457,10 @@ export type QuotationLine = {
   NetPricePerTon: number;
   LineAmount?: number;
   IsGiveaway?: boolean;
+  // เติมจาก SO ต้นทางใน GET /quotation/:id (มีเมื่อสร้างจาก SO)
+  MasterQty?: number;
+  ChildQty?: number;
+  LoadSequence?: number;
 };
 
 export type Quotation = {
@@ -480,6 +485,16 @@ export type Quotation = {
   WinspeedEstimateSyncedAt?: string | null;
   Remark?: string;
   CreatedAt: string;
+  // เติมจาก SO ต้นทางใน GET /quotation/:id (มีเมื่อสร้างจาก SO)
+  TruckPlate?: string;
+  TranspId?: number;
+  CreditDays?: number;
+  IsOwnTruck?: boolean;
+  NoTruckRequired?: boolean;
+  PSling?: boolean;
+  DeliveryDate?: string;
+  TruckRemark?: string;
+  BillRemark?: string;
   lines?: QuotationLine[];
   LineCount?: number;
   TotalTon?: number;
