@@ -186,14 +186,19 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
   }, [activePortal, expandedGroups]);
 
   useEffect(() => {
+    if (!canReviewUnlocks) {
+      setUnlockRequests([]);
+      return;
+    }
     const fetchReqs = async () => {
       try { setUnlockRequests(await listUnlockRequests('PENDING', true)); }
       catch (e) { console.error('Fetch unlock requests failed', e); }
     };
     fetchReqs();
-  }, [setUnlockRequests]);
+  }, [canReviewUnlocks, setUnlockRequests]);
 
   useSocketEvent('so_updated', async () => {
+    if (!canReviewUnlocks) return;
     try { setUnlockRequests(await listUnlockRequests('PENDING', true)); }
     catch (e) { console.error('Fetch unlock requests failed', e); }
   });
@@ -311,12 +316,12 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                   )}
                 </button>
                 <div
-                  className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+                  className={`nav-group-items space-y-0.5 ${isExpanded ? 'expanded' : 'collapsed'}`}
+                  style={isExpanded ? { maxHeight: `${visibleItems.length * 80}px` } : undefined}
                 >
-                  <div className="overflow-hidden space-y-0.5">
-                    {visibleItems.map(n => {
-                      const Icon = n.icon;
-                      return (
+                  {visibleItems.map(n => {
+                    const Icon = n.icon;
+                    return (
                       <button key={n.key} onClick={() => {
                         if (n.key === 'approvals') {
                           setShowUnlockReview(true);
@@ -341,7 +346,6 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                       </button>
                     );
                   })}
-                  </div>
                 </div>
               </div>
             );
