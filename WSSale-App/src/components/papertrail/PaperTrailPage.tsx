@@ -116,7 +116,13 @@ export function PaperTrailPage() {
     finally { setBusyId(null); }
   }
 
-  const stages = (data?.stages?.length ? data.stages : SO_STATUS_ORDER).filter(stage => stage !== 'CANCELLED');
+  const stages = useMemo(() => {
+    const s = (data?.stages?.length ? data.stages : SO_STATUS_ORDER).filter(stage => stage !== 'CANCELLED');
+    if (data?.board) {
+      return ['CONTROL_TICKET', ...s];
+    }
+    return s;
+  }, [data]);
 
   if (viewMode === 'cancelled') {
     return <CancelledOrdersView onBack={() => setViewMode('board')} />;
@@ -176,7 +182,10 @@ export function PaperTrailPage() {
       <div className="flex-1 overflow-x-auto overflow-y-hidden p-4 min-w-0 print:hidden">
         <div className="flex gap-4 h-full w-max min-w-full pb-2">
           {stages.map(stage => {
-            const allCards = data?.board[stage] || [];
+            const allCards = stage === 'CONTROL_TICKET'
+              ? Object.values(data?.board || {}).flat().filter(c => c.truckPlate === 'ตั๋วคุม')
+              : (data?.board[stage] || []).filter(c => c.truckPlate !== 'ตั๋วคุม');
+
             const cards = allCards.filter(c => {
               if (!searchQuery) return true;
               const q = searchQuery.toLowerCase();
@@ -187,7 +196,9 @@ export function PaperTrailPage() {
                 (c.controlTicketNo && c.controlTicketNo.toLowerCase().includes(q))
               );
             });
-            const m = SO_STATUS_META[stage as SOStatus] || { label: stage, color: '#6B7280', bg: '#F3F4F6' };
+            const m = stage === 'CONTROL_TICKET' 
+              ? { label: 'ตั๋วคุม (ล่วงหน้า)', color: '#6D28D9', bg: '#F5F3FF' }
+              : SO_STATUS_META[stage as SOStatus] || { label: stage, color: '#6B7280', bg: '#F3F4F6' };
             
             // Group cards by DeliveryDate + Customer + TruckPlate
             const map = new Map<string, { dateDisplay: string; cust: string; truck: string; cards: PaperCard[]; totalTon: number }>();
@@ -245,11 +256,20 @@ export function PaperTrailPage() {
                           const canAdvance = next && role && next.roles.includes(role);
                           const overdue = card.daysOpen > 45 ? 'text-red-600' : card.daysOpen > 30 ? 'text-amber-600' : 'text-gray-400';
                           return (
-                            <div key={card.id} className="rounded-lg bg-white p-2.5 shadow-sm relative overflow-hidden group border border-gray-100">
+                            <div key={card.id} data-testid={`paper-card-${card.id}`} className="rounded-lg bg-white p-2.5 shadow-sm relative overflow-hidden group border border-gray-100">
                               <div className="absolute top-0 left-0 w-1 h-full" style={{ background: m.color }} />
                               <div className="flex items-center justify-between mb-1 pl-1">
                                 <span className="font-mono text-[11px] font-bold text-gray-800">{card.wfRef}</span>
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ color: m.color, background: m.bg }}>{m.label}</span>
+                                {(() => {
+                                  const cardMeta = stage === 'CONTROL_TICKET' && SO_STATUS_META[card.status as SOStatus]
+                                    ? SO_STATUS_META[card.status as SOStatus]
+                                    : m;
+                                  return (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ color: cardMeta.color, background: cardMeta.bg }}>
+                                      {cardMeta.label}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                               <div className="flex flex-wrap gap-1 text-[9px] text-gray-500 mb-2 pl-1">
                                 <span className="bg-gray-100 px-1 rounded">{Number(card.qtyTon || 0).toFixed(2)} ตัน</span>
@@ -305,7 +325,7 @@ export function PaperTrailPage() {
                                     <ShieldCheck size={11} /> ตรวจ
                                   </button>
                                 )}
-                                {canAdvance && (
+                                {canAdvance && !(card.truckPlate === 'ตั๋วคุม' && card.status !== 'DRAFT') && (
                                   <button disabled={busyId === card.id} onClick={() => advance(card)}
                                     className="flex-1 h-7 px-1.5 rounded-md text-white text-[10px] font-semibold disabled:opacity-50 flex items-center justify-center gap-1 shadow-sm whitespace-nowrap"
                                     style={{ background: m.color }}>

@@ -1,0 +1,7 @@
+- `[x]` Create `054_rebate_coupon_mirror.sql` for Rebate Mirror tables
+- `[x]` Update `backend/routes/rebate.js` to implement Sync logic for `CouponMirror`
+- `[x]` Update `backend/services/truckscale-db.js` to insert into `tbl_keyone`
+- `[x]` Update `backend/routes/so.js` to push to TruckScale on CONFIRMED
+- `[x]` Verify Quotation <-> SO Conversion (Frontend/Backend alignment)
+- `[x]` Update Enterprise Documentation (`docs/enterprise/*`)
+- `[x]` Update Walkthrough
