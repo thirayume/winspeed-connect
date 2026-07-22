@@ -341,6 +341,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                       </button>
                     );
                   })}
+                  </div>
                 </div>
               </div>
             );
