@@ -7,6 +7,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
+$e2eApiUrl = 'http://localhost:3100/api'
+$e2eWebUrl = 'http://localhost:5174'
+$env:E2E_API_BASE = $e2eApiUrl
+$env:E2E_BASE_URL = $e2eWebUrl
 $testExitCode = 1
 $serverProcess = $null
 
@@ -29,7 +33,7 @@ Write-Host '==================================================' -ForegroundColor
 
 try {
     Write-Host '1. Stopping stale background servers...' -ForegroundColor Yellow
-    npm run predev
+    npm run predev:e2e
 
     Write-Host '2. Seeding stable E2E fixtures...' -ForegroundColor Yellow
     sqlcmd -S .\SQLEXPRESS -E -d dbwins_worldfert9 -i db-init\e2e-seed.sql -b
@@ -37,8 +41,8 @@ try {
 
     Write-Host '3. Starting API and frontend...' -ForegroundColor Yellow
     $serverProcess = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'npm run dev:e2e' -WindowStyle Hidden -PassThru
-    Wait-Endpoint 'http://localhost:3000/api/health'
-    Wait-Endpoint 'http://localhost:5173'
+    Wait-Endpoint "$e2eApiUrl/health"
+    Wait-Endpoint $e2eWebUrl
 
     if ($Spec) {
         Write-Host "4. Running Playwright spec: $Spec" -ForegroundColor Yellow
@@ -59,8 +63,11 @@ try {
         Write-Warning "E2E cleanup failed: $($_.Exception.Message)"
     }
     if (-not $KeepServers) {
-        Write-Host '6. Stopping test servers...' -ForegroundColor Yellow
-        npm run predev
+        Write-Host '6. Stopping test server process tree...' -ForegroundColor Yellow
+        if ($serverProcess -and -not $serverProcess.HasExited) {
+            & taskkill.exe /PID $serverProcess.Id /T /F | Out-Null
+        }
+        npm run predev:e2e
     }
 }
 

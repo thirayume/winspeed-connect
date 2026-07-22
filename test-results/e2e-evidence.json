@@ -1,13 +1,13 @@
 {
   "schemaVersion": 2,
   "kind": "WS-Sale-App Playwright E2E Evidence",
-  "runId": "2026-07-22T11-52-40-978Z",
-  "startedAt": "2026-07-22T11:52:40.978Z",
-  "completedAt": "2026-07-22T11:53:34.664Z",
-  "durationMs": 53686,
-  "status": "INCOMPLETE_OR_FAILED",
+  "runId": "2026-07-22T14-44-01-798Z",
+  "startedAt": "2026-07-22T14:44:01.798Z",
+  "completedAt": "2026-07-22T14:51:40.116Z",
+  "durationMs": 458318,
+  "status": "PASSED_COMPLETE",
   "playwrightStatus": "passed",
-  "complete": false,
+  "complete": true,
   "policy": {
     "schemaVersion": 2,
     "minimumTestCount": 10,
@@ -76,17 +76,16 @@
   },
   "coverage": {
     "selectedSpecs": [
-      "e2e/uat-full-loop.spec.ts"
-    ],
-    "missingSpecs": [
       "e2e/comprehensive-sales.spec.ts",
+      "e2e/uat-full-loop.spec.ts",
       "e2e/workflow.spec.ts"
     ],
-    "selectedTestCount": 5
+    "missingSpecs": [],
+    "selectedTestCount": 10
   },
   "counts": {
-    "total": 5,
-    "passed": 5,
+    "total": 10,
+    "passed": 10,
     "failed": 0,
     "flaky": 0,
     "skipped": 0,
@@ -96,26 +95,26 @@
   },
   "environment": {
     "schemaVersion": 1,
-    "capturedAt": "2026-07-22T11:52:40.815Z",
+    "capturedAt": "2026-07-22T14:44:01.500Z",
     "frontend": {
-      "url": "http://localhost:5173",
+      "url": "http://localhost:5174",
       "status": 200,
       "ok": true,
-      "durationMs": 35,
-      "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx?t=1784717666440\"></script>\n  </body>\n</html>\n"
+      "durationMs": 169,
+      "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx\"></script>\n  </body>\n</html>\n"
     },
     "api": {
-      "url": "http://localhost:3000/api/health",
+      "url": "http://localhost:3100/api/health",
       "status": 200,
       "ok": true,
-      "durationMs": 117,
+      "durationMs": 231,
       "body": {
         "ok": true,
-        "ts": "2026-07-22T11:52:40.843Z",
+        "ts": "2026-07-22T14:44:01.539Z",
         "version": "1.0.0",
         "env": "development",
-        "uptimeSec": 4974,
-        "requests": 848,
+        "uptimeSec": 5,
+        "requests": 1,
         "errors": 0,
         "lastErrorAt": null,
         "db": {
@@ -126,25 +125,25 @@
     }
   },
   "git": {
-    "commit": "0a1007345a8e0e4f38d9fd18bc79a7336f24273b",
+    "commit": "4fc55b269b558877e5876a25ed64357656d4e987",
     "dirty": true
   },
   "sourceStability": {
     "stable": true,
-    "startGitCommit": "0a1007345a8e0e4f38d9fd18bc79a7336f24273b",
-    "endGitCommit": "0a1007345a8e0e4f38d9fd18bc79a7336f24273b",
+    "startGitCommit": "4fc55b269b558877e5876a25ed64357656d4e987",
+    "endGitCommit": "4fc55b269b558877e5876a25ed64357656d4e987",
     "changedFiles": []
   },
   "fileHashes": {
     "DEPLOY.md": "6B917D1A0BEDD299CC113C2FF47D4291C7DA027D05E4A0D50159ABA37D1FB649",
-    "WSSale-App/package.json": "90402391383B4B751B3D8031678F7B0495FE144BD28B1EE2055FA8B69D4D7DE8",
+    "WSSale-App/package.json": "CB0BE0F03138EBCDA0DCBF3BE1B4FB52EF0D73CEFF4EA4512B724F010D95CBA4",
     "WSSale-App/src/App.css": "6E25A776D3E8102DA5BACB3CB99F4A5FC662A2E01E6143140671A556D28C3D5C",
     "WSSale-App/src/App.tsx": "116CF2D77124067CE5202DC707FF922B3DA2A53F5F938A2B748BED63F056B8CA",
     "WSSale-App/src/components/accounting/AccountingPage.tsx": "5BFA708634818C1069AEB67A51D13D2DBFFF77D875C2568DC45F1CCC32833C69",
     "WSSale-App/src/components/admin/AdminUsersPage.tsx": "FDEC17112A9B5DC4B14F499FBF21B7EE752540348945492404DC58AE234646A9",
     "WSSale-App/src/components/aging/AgingPage.tsx": "1CB9D28C7EE05DC6DC361E10A81D05296D85B7BB45AA743665D4ADA3171867AA",
     "WSSale-App/src/components/common/DbModeSwitch.tsx": "D59EF2BE1883823E7A8DC3DF8A0CC6E51C8C329DACD3A1B0DCA1A867FF24E3E3",
-    "WSSale-App/src/components/common/GlobalLoader.tsx": "F6F383BF0B8D04801610A90AE07FB4FF157EC699114893C0B8284B41E344D941",
+    "WSSale-App/src/components/common/GlobalLoader.tsx": "D70DEABCFC485A7AEC33B17CDD0F2938C518FBB519808714969C8D71AD06EE11",
     "WSSale-App/src/components/common/MobileDrawer.tsx": "1DBC9F9405A927A8CF26596A08271C5EA8A35448765F99666CEB08476C9925BD",
     "WSSale-App/src/components/dashboard/DashboardPage.tsx": "F44A55B0FF3081D36A9003AC02C940B795540BDBD0B9FDD3827C18FC2524FEEF",
     "WSSale-App/src/components/giveaway/GiveawayPage.tsx": "338529402ED600E725978887E5D556B21E92AFF74FD5728E2D6A9ACA9A8D38D5",
@@ -279,7 +278,7 @@
     "backend/migrations/053_so_notified_at.sql": "68A2EE1ACD96BE6062678ADB1D0970F82A5CC52D0277D97B6A188FCAEB3F3CBF",
     "backend/migrations/054_rebate_coupon_mirror.sql": "D8331274CB30AF20F42A8534DD26214A1A71AB6E41FA5A220CF995D10850F28C",
     "backend/migrations/055_restore_all_sales_orders_contract.sql": "DF42880CC03D5E315EDDC789BE108429C4FB75E8932A4016BA0CDC87E6279333",
-    "backend/package.json": "B75415FC81DD3A523661092639E8F8F64605AE5CDB06F39554A66F4807BAE7FF",
+    "backend/package.json": "587752BF5B27DD85509EE5630D8219BB9A11E07D4D09392C978C13BCBF7372B1",
     "backend/routes/auth.js": "DFF4CFF9C124A052F9A03453C21A2428E19C2F060958AC3580D948E1B035BE4A",
     "backend/routes/credit.js": "4FA36A2296E4A7AFC07AB45CB3F16FABE8EFAB6FE098F0FD502DBA5459ABB3A6",
     "backend/routes/giveaway.js": "348FE1DAD8C50999FCF3F153005BF3FA8B6FE54162482BD6598CFD370BD9B108",
@@ -339,15 +338,40 @@
     "e2e/evidence-reporter.cjs": "2027720E4D332D31AE308A644D2B5B5FA6480EF01FE2DBDB5D5ED59AFE5A5A56",
     "e2e/evidence.config.json": "E0A121A02496E47DF346DE5B84AC19D1783EADA19460239080D3D1A10AEC9FAB",
     "e2e/global-setup.ts": "74F92D253E8763C7B9C39B4828C9A5BF7D8490D5A0268518199967431A6F0D2C",
-    "e2e/helpers.ts": "63F2AF78EB18AA84E3B3881E806D3EC4EF92436ABA3B87D625E40ED8D490592B",
+    "e2e/helpers.ts": "41329873704235A9765185D7DF3A228170F0093F5D7308B8389D24E91F0A278B",
     "e2e/uat-full-loop.spec.ts": "5BF53477132672A267B29CB68775EC1E8A5BA060CB8DD343E1A5896EEEA20E75",
-    "e2e/workflow.spec.ts": "D973EDCAEEFE558FF8B3B577A1DA3A0CD76E0A2CAEF2CA5B2DB00DB7987F4E53",
-    "package.json": "EA0CC3463A46356F352E055D4B7A16E0DCB6AA7C0013B41BCC8B5E13D778D08B",
+    "e2e/workflow.spec.ts": "E60D094903CA60740AEA82B5F0D1246E44780D6F69A32AABCA54CADD343DF147",
+    "package.json": "5120E084FB221067919BA59C308B8C8193EB722E616AF6A5CCB55D1D1FABB773",
     "playwright.config.ts": "A1239FDD163F4A37E7CDE0C56B5EF4082EA5B2D6F7D3141D3B0B1FABC787ACE6",
     "run-e2e.bat": "7E204347C4D2960DE63641A1343F9A878C1C672B67E2021F46A675EE6CDA7EC6",
-    "run-e2e.ps1": "B8A742BBACA8F5D30979377EDDC24D98FB06124264781DAF07A9072B69AD0960"
+    "run-e2e.ps1": "0E21C688537B5B5A6D29A054ABD078611CA2158037A1A105A525A64F450F9CC3"
   },
   "tests": [
+    {
+      "id": "3cd50836bd7f62ac9888-c6ae3c257ed65c7c65c0",
+      "file": "e2e/comprehensive-sales.spec.ts",
+      "line": 7,
+      "title": "chromium > comprehensive-sales.spec.ts > Comprehensive Sales Trip E2E > multi-bill trip is traceable and blocked by the verification gate",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 61654,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "multi-bill-gate.json",
+          "contentType": "application/json",
+          "path": null
+        },
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
     {
       "id": "a78c4a1581d8f3c0dba6-173e4d92c3868270b26a",
       "file": "e2e/uat-full-loop.spec.ts",
@@ -357,7 +381,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 10316,
+      "durationMs": 47184,
       "errors": [],
       "attachments": [
         {
@@ -382,7 +406,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 11459,
+      "durationMs": 57772,
       "errors": [],
       "attachments": [
         {
@@ -407,7 +431,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 2565,
+      "durationMs": 9197,
       "errors": [],
       "attachments": [
         {
@@ -432,7 +456,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 23136,
+      "durationMs": 96630,
       "errors": [],
       "attachments": [
         {
@@ -457,7 +481,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 4063,
+      "durationMs": 24267,
       "errors": [],
       "attachments": [
         {
@@ -469,6 +493,91 @@
           "name": "screenshot",
           "contentType": "image/png",
           "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-26b9a--audit-trail-in-Paper-Trail-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "c601ceb5ecfc8efa4a14-db9b981441c6f07525bd",
+      "file": "e2e/workflow.spec.ts",
+      "line": 11,
+      "title": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > ADMIN can login, use Access As and return to ADMIN",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 26138,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "admin-access-as.txt",
+          "contentType": "text/plain",
+          "path": null
+        },
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/workflow-WS-Sale-App-V1-0--8b979-cess-As-and-return-to-ADMIN-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "c601ceb5ecfc8efa4a14-04d11070d9eea9169f61",
+      "file": "e2e/workflow.spec.ts",
+      "line": 26,
+      "title": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > SALES can access Quotation",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 17583,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/workflow-WS-Sale-App-V1-0--c0537--SALES-can-access-Quotation-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "c601ceb5ecfc8efa4a14-6be9e43a9e3c225ddd6c",
+      "file": "e2e/workflow.spec.ts",
+      "line": 33,
+      "title": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > COUNTER_SALES can access TruckScale with explicit health",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 40770,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/workflow-WS-Sale-App-V1-0--fb082-kScale-with-explicit-health-chromium/test-finished-1.png"
+        }
+      ],
+      "annotations": []
+    },
+    {
+      "id": "c601ceb5ecfc8efa4a14-8da8bce2365e3b609421",
+      "file": "e2e/workflow.spec.ts",
+      "line": 44,
+      "title": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > WAREHOUSE can access loading and scale queues",
+      "expectedStatus": "passed",
+      "status": "passed",
+      "outcome": "expected",
+      "retry": 0,
+      "durationMs": 38040,
+      "errors": [],
+      "attachments": [
+        {
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/workflow-WS-Sale-App-V1-0--0d684-ss-loading-and-scale-queues-chromium/test-finished-1.png"
         }
       ],
       "annotations": []
