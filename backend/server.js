@@ -177,6 +177,7 @@ app.use((err, req, res, _next) => {
     level: 'ERROR', source: 'express', message: err.message || 'Internal server error',
     detail: err.stack, method: req.method, path: req.originalUrl, status, userId: req.user?.sub,
   });
+  res.locals.__obsLogged = true;   // กัน requestTimer บันทึกซ้ำ
   res.status(status).json({ message: err.message || 'Internal server error' });
 });
 
