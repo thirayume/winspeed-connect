@@ -312,7 +312,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 </button>
                 <div
                   className={`nav-group-items space-y-0.5 ${isExpanded ? 'expanded' : 'collapsed'}`}
-                  style={isExpanded ? { maxHeight: `${visibleItems.length * 52}px` } : undefined}
+                  style={isExpanded ? { maxHeight: `${visibleItems.length * 64}px` } : undefined}
                 >
                   {visibleItems.map(n => {
                     const Icon = n.icon;
