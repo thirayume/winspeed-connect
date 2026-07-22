@@ -47,6 +47,6 @@ test.describe('WS-Sale-App V1.0 role navigation', () => {
     const scaleTab = page.getByRole('button', { name: 'เครื่องชั่ง (ชั่งออก)', exact: true });
     await expect(scaleTab).toBeVisible();
     await scaleTab.click();
-    await expect(page.getByText(/ไม่มีรายการรอชั่งออก|แสดง \d+ รายการ/)).toBeVisible();
+    await expect(page.getByTestId('store-queue-scale')).toBeVisible();
   });
 });

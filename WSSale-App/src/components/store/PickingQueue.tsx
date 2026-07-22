@@ -98,7 +98,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
 
   if (orders.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-gray-300">
+      <div data-testid={`store-queue-${mode.toLowerCase()}`} className="flex flex-col items-center justify-center py-20 text-gray-300">
         <Package size={48} className="mb-3" />
         <p className="text-sm">ไม่มีรายการ{mode === 'LOADING' ? 'รอรับสินค้า' : 'รอชั่งออก'}</p>
       </div>
@@ -106,7 +106,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3 sm:gap-4 p-2 sm:p-4">
+    <div data-testid={`store-queue-${mode.toLowerCase()}`} className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3 sm:gap-4 p-2 sm:p-4">
       {orders.map(order => {
         const orderId = Number(order.id);
         const productLines = (order.lines || []).filter(l => !l.isGiveaway);

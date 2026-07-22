@@ -113,7 +113,9 @@ test('accepts complete source-bound E2E evidence and rejects later source drift'
   fs.writeFileSync(path.join(repoRoot, 'e2e/spec.ts'), 'test source', 'utf8');
   const completedAt = '2026-07-22T04:58:47.000Z';
   const evidence = {
+    schemaVersion: 2,
     status: 'PASSED_COMPLETE', complete: true, playwrightStatus: 'passed', completedAt,
+    sourceStability: { stable: true, startGitCommit: 'abc', endGitCommit: 'abc', changedFiles: [] },
     counts: { total: 1, passed: 1, failed: 0, flaky: 0, skipped: 0, timedOut: 0, interrupted: 0, notRun: 0 },
     coverage: { selectedSpecs: ['e2e/spec.ts'] },
     environment: { frontend: { ok: true }, api: { ok: true, body: { db: { sqlserver: 'up' } } } },
@@ -129,6 +131,14 @@ test('accepts complete source-bound E2E evidence and rejects later source drift'
   const accepted = reviewE2eEvidence(config, { repoRoot, now });
   assert.equal(accepted.review.evidenceReviewed, true);
   assert.equal(accepted.gaps.length, 0);
+  evidence.sourceStability.stable = false;
+  evidence.sourceStability.changedFiles = ['e2e/spec.ts'];
+  fs.writeFileSync(path.join(repoRoot, 'test-results/e2e-evidence.json'), JSON.stringify(evidence), 'utf8');
+  const unstable = reviewE2eEvidence(config, { repoRoot, now });
+  assert.ok(unstable.gaps.some(gap => gap.code === 'E2E_SOURCE_CHANGED_DURING_RUN'));
+  evidence.sourceStability.stable = true;
+  evidence.sourceStability.changedFiles = [];
+  fs.writeFileSync(path.join(repoRoot, 'test-results/e2e-evidence.json'), JSON.stringify(evidence), 'utf8');
   fs.writeFileSync(path.join(repoRoot, 'e2e/spec.ts'), 'changed', 'utf8');
   const drifted = reviewE2eEvidence(config, { repoRoot, now });
   assert.equal(drifted.review.evidenceReviewed, false);

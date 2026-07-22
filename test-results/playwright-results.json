@@ -3,7 +3,8 @@
     "argv": [
       "C:\\Program Files\\nodejs\\node.exe",
       "C:\\MyWork\\WorldFert\\winspeed-frontend\\node_modules\\@playwright\\test\\cli.js",
-      "test"
+      "test",
+      "e2e/comprehensive-sales.spec.ts"
     ],
     "configFile": "C:\\MyWork\\WorldFert\\winspeed-frontend\\playwright.config.ts",
     "rootDir": "C:/MyWork/WorldFert/winspeed-frontend/e2e",
@@ -96,7 +97,7 @@
           "specs": [
             {
               "title": "multi-bill trip is traceable and blocked by the verification gate",
-              "ok": true,
+              "ok": false,
               "tags": [],
               "tests": [
                 {
@@ -109,29 +110,88 @@
                     {
                       "workerIndex": 0,
                       "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 9448,
-                      "errors": [],
+                      "status": "failed",
+                      "duration": 20214,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })\u001b[22m\n",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })\u001b[22m\n\n    at C:\\MyWork\\WorldFert\\winspeed-frontend\\e2e\\comprehensive-sales.spec.ts:31:32",
+                        "location": {
+                          "file": "C:\\MyWork\\WorldFert\\winspeed-frontend\\e2e\\comprehensive-sales.spec.ts",
+                          "column": 32,
+                          "line": 31
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 29 |\u001b[39m\n \u001b[90m 30 |\u001b[39m     \u001b[36mconst\u001b[39m addFromModal \u001b[33m=\u001b[39m page\u001b[33m.\u001b[39mgetByRole(\u001b[32m'button'\u001b[39m\u001b[33m,\u001b[39m { name\u001b[33m:\u001b[39m \u001b[32m'เพิ่มบิลใหม่ในทริปนี้'\u001b[39m })\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 31 |\u001b[39m     \u001b[36mawait\u001b[39m expect(addFromModal)\u001b[33m.\u001b[39mtoBeVisible({ timeout\u001b[33m:\u001b[39m \u001b[35m15\u001b[39m_000 })\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 32 |\u001b[39m     \u001b[36mawait\u001b[39m addFromModal\u001b[33m.\u001b[39mclick()\u001b[33m;\u001b[39m\n \u001b[90m 33 |\u001b[39m\n \u001b[90m 34 |\u001b[39m     \u001b[36mconst\u001b[39m prefix \u001b[33m=\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[32m'select'\u001b[39m)\u001b[33m.\u001b[39mfirst()\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "C:\\MyWork\\WorldFert\\winspeed-frontend\\e2e\\comprehensive-sales.spec.ts",
+                            "column": 32,
+                            "line": 31
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })\u001b[22m\n\n\n  29 |\n  30 |     const addFromModal = page.getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' });\n> 31 |     await expect(addFromModal).toBeVisible({ timeout: 15_000 });\n     |                                ^\n  32 |     await addFromModal.click();\n  33 |\n  34 |     const prefix = page.locator('select').first();\n    at C:\\MyWork\\WorldFert\\winspeed-frontend\\e2e\\comprehensive-sales.spec.ts:31:32"
+                        }
+                      ],
                       "stdout": [],
-                      "stderr": [],
+                      "stderr": [
+                        {
+                          "text": "[browser:console] Failed to load resource: the server responded with a status of 500 (Internal Server Error)\n"
+                        },
+                        {
+                          "text": "[browser:console] fetchSalesOrders failed Error: Invalid column name 'RequestedAt'.\n    at req (http://localhost:5173/src/services/api.ts:35:24)\n    at async http://localhost:5173/src/components/sales/SalesPortal.tsx:57:16\n"
+                        },
+                        {
+                          "text": "[browser:console] Failed to load resource: the server responded with a status of 500 (Internal Server Error)\n"
+                        },
+                        {
+                          "text": "[browser:console] fetchSalesOrders failed Error: Invalid column name 'RequestedAt'.\n    at req (http://localhost:5173/src/services/api.ts:35:24)\n    at async http://localhost:5173/src/components/sales/SalesPortal.tsx:57:16\n"
+                        },
+                        {
+                          "text": "[browser:console] Failed to load resource: the server responded with a status of 500 (Internal Server Error)\n"
+                        },
+                        {
+                          "text": "[browser:console] fetchSalesOrders failed Error: Invalid column name 'RequestedAt'.\n    at req (http://localhost:5173/src/services/api.ts:35:24)\n    at async http://localhost:5173/src/components/sales/SalesPortal.tsx:57:16\n"
+                        },
+                        {
+                          "text": "[browser:console] Failed to load resource: the server responded with a status of 500 (Internal Server Error)\n"
+                        },
+                        {
+                          "text": "[browser:console] fetchSalesOrders failed Error: Invalid column name 'RequestedAt'.\n    at req (http://localhost:5173/src/services/api.ts:35:24)\n    at async http://localhost:5173/src/components/sales/SalesPortal.tsx:57:16\n"
+                        }
+                      ],
                       "retry": 0,
-                      "startTime": "2026-07-22T04:58:03.399Z",
+                      "startTime": "2026-07-22T10:56:23.598Z",
                       "annotations": [],
                       "attachments": [
                         {
-                          "name": "multi-bill-gate.json",
-                          "contentType": "application/json",
-                          "body": "ewogICJwbGF0ZSI6ICJDTVAtTVJWTTM1S1giLAogICJvcmRlcnMiOiBbCiAgICB7CiAgICAgICJpZCI6ICIzMSIsCiAgICAgICJ3ZlJlZiI6ICJLNjktMDIwNDIiLAogICAgICAic3RhdHVzIjogIkRSQUZUIgogICAgfSwKICAgIHsKICAgICAgImlkIjogIjMwIiwKICAgICAgIndmUmVmIjogIkk2OS0wMjY3NCIsCiAgICAgICJzdGF0dXMiOiAiRFJBRlQiCiAgICB9CiAgXSwKICAiZ2F0ZXMiOiBbCiAgICB7CiAgICAgICJpZCI6ICIzMSIsCiAgICAgICJtZXNzYWdlIjogIuC4leC5ieC4reC4h+C4leC4o+C4p+C4iOC4i+C5ieC4syAoQ291bnRlci1TYWxlcykg4LiB4LmI4Lit4LiZ4Lii4Li34LiZ4Lii4Lix4LiZIOKAlCDguIHguJTguJvguLjguYjguKEg4oCc4LiV4Lij4Lin4LiI4LmB4Lil4LmJ4Lin4oCdIOC4geC5iOC4reC4mSAoRlItMDIyKSIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICIzMCIsCiAgICAgICJtZXNzYWdlIjogIuC4leC5ieC4reC4h+C4leC4o+C4p+C4iOC4i+C5ieC4syAoQ291bnRlci1TYWxlcykg4LiB4LmI4Lit4LiZ4Lii4Li34LiZ4Lii4Lix4LiZIOKAlCDguIHguJTguJvguLjguYjguKEg4oCc4LiV4Lij4Lin4LiI4LmB4Lil4LmJ4Lin4oCdIOC4geC5iOC4reC4mSAoRlItMDIyKSIKICAgIH0KICBdCn0="
-                        },
-                        {
                           "name": "screenshot",
                           "contentType": "image/png",
-                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\\test-finished-1.png"
+                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\\test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\\video.webm"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\\error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\\trace.zip"
                         }
-                      ]
+                      ],
+                      "errorLocation": {
+                        "file": "C:\\MyWork\\WorldFert\\winspeed-frontend\\e2e\\comprehensive-sales.spec.ts",
+                        "column": 32,
+                        "line": 31
+                      }
                     }
                   ],
-                  "status": "expected"
+                  "status": "unexpected"
                 }
               ],
               "id": "3cd50836bd7f62ac9888-c6ae3c257ed65c7c65c0",
@@ -142,439 +202,15 @@
           ]
         }
       ]
-    },
-    {
-      "title": "uat-full-loop.spec.ts",
-      "file": "uat-full-loop.spec.ts",
-      "column": 0,
-      "line": 0,
-      "specs": [],
-      "suites": [
-        {
-          "title": "UAT Full Loop E2E",
-          "file": "uat-full-loop.spec.ts",
-          "line": 18,
-          "column": 15,
-          "specs": [
-            {
-              "title": "1. SALES creates a traceable SO draft",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 120000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 6141,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-07-22T04:58:12.988Z",
-                      "annotations": [],
-                      "attachments": [
-                        {
-                          "name": "created-order.json",
-                          "contentType": "application/json",
-                          "body": "ewogICJpZCI6ICIzMiIsCiAgIndmUmVmIjogIkk2OS0wMjcwNyIsCiAgInBsYXRlIjogIlVBVC1NUlZNM0NaQiIsCiAgInN0YXR1cyI6ICJEUkFGVCIKfQ=="
-                        },
-                        {
-                          "name": "screenshot",
-                          "contentType": "image/png",
-                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\uat-full-loop-UAT-Full-Loo-4d721-reates-a-traceable-SO-draft-chromium\\test-finished-1.png"
-                        }
-                      ]
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "a78c4a1581d8f3c0dba6-173e4d92c3868270b26a",
-              "file": "uat-full-loop.spec.ts",
-              "line": 25,
-              "column": 7
-            },
-            {
-              "title": "2. MANAGER verifies and ADMIN confirms the SO",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 120000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 5747,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-07-22T04:58:19.142Z",
-                      "annotations": [],
-                      "attachments": [
-                        {
-                          "name": "confirmed-order.json",
-                          "contentType": "application/json",
-                          "body": "ewogICJpZCI6ICIyNzMxMjUiLAogICJ3ZlJlZiI6ICJJNjktMDI3MDciLAogICJzdGF0dXMiOiAiQ09ORklSTUVEIgp9"
-                        },
-                        {
-                          "name": "screenshot",
-                          "contentType": "image/png",
-                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\uat-full-loop-UAT-Full-Loo-e594d-s-and-ADMIN-confirms-the-SO-chromium\\test-finished-1.png"
-                        }
-                      ]
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "a78c4a1581d8f3c0dba6-6b3685cc8e0ea0cb9fd5",
-              "file": "uat-full-loop.spec.ts",
-              "line": 65,
-              "column": 7
-            },
-            {
-              "title": "3. COUNTER SALES sees the real TruckScale health state",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 120000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1522,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-07-22T04:58:24.897Z",
-                      "annotations": [],
-                      "attachments": [
-                        {
-                          "name": "truckscale-health.json",
-                          "contentType": "application/json",
-                          "body": "ewogICJteXNxbCI6ICJkb3duIiwKICAidWkiOiAi4LmA4LiK4Li34LmI4Lit4Lih4LiV4LmI4Lit4LmE4Lih4LmI4LmE4LiU4LmJIgp9"
-                        },
-                        {
-                          "name": "screenshot",
-                          "contentType": "image/png",
-                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\uat-full-loop-UAT-Full-Loo-29cb0-eal-TruckScale-health-state-chromium\\test-finished-1.png"
-                        }
-                      ]
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "a78c4a1581d8f3c0dba6-8b2e67fad78890575c18",
-              "file": "uat-full-loop.spec.ts",
-              "line": 96,
-              "column": 7
-            },
-            {
-              "title": "4. WAREHOUSE picks, loads and ships the SO",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 120000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 10476,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-07-22T04:58:26.429Z",
-                      "annotations": [],
-                      "attachments": [
-                        {
-                          "name": "shipped-order.json",
-                          "contentType": "application/json",
-                          "body": "ewogICJpZCI6ICIyNzMxMjUiLAogICJ3ZlJlZiI6ICJJNjktMDI3MDciLAogICJzdGF0dXMiOiAiU0hJUFBFRCIsCiAgIndlaWdoIjogewogICAgIklkIjogIjQiLAogICAgIlNvSWQiOiAiMjczMTI1IiwKICAgICJXZlJlZiI6ICJJNjktMDI3MDciLAogICAgIlRydWNrUGxhdGUiOiAiVUFULU1SVk0zQ1pCIiwKICAgICJHcm9zc0tnIjogMjAwMDAsCiAgICAiVGFyZUtnIjogMTAwMDAsCiAgICAiTmV0S2ciOiAxMDAwMCwKICAgICJTY2FsZU5vIjogMSwKICAgICJXZWlnaEluQXQiOiBudWxsLAogICAgIldlaWdoT3V0QXQiOiAiMjAyNi0wNy0yMlQwNDo1ODozNS43NDNaIiwKICAgICJTdGF0dXMiOiAiRE9ORSIsCiAgICAiTW92ZWJpbGwiOiBudWxsLAogICAgIk5vdGUiOiBudWxsLAogICAgIkNyZWF0ZWRCeSI6IDc4LAogICAgIkNyZWF0ZWRBdCI6ICIyMDI2LTA3LTIyVDA0OjU4OjM1Ljc0M1oiLAogICAgIlVwZGF0ZWRBdCI6ICIyMDI2LTA3LTIyVDA0OjU4OjM1Ljc0M1oiCiAgfQp9"
-                        },
-                        {
-                          "name": "screenshot",
-                          "contentType": "image/png",
-                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\uat-full-loop-UAT-Full-Loo-d38a5-icks-loads-and-ships-the-SO-chromium\\test-finished-1.png"
-                        }
-                      ]
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "a78c4a1581d8f3c0dba6-309415de19fac6059a0f",
-              "file": "uat-full-loop.spec.ts",
-              "line": 116,
-              "column": 7
-            },
-            {
-              "title": "5. ADMIN verifies SHIPPED state and audit trail in Paper Trail",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 120000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 2078,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-07-22T04:58:36.912Z",
-                      "annotations": [],
-                      "attachments": [
-                        {
-                          "name": "uat-final-audit.json",
-                          "contentType": "application/json",
-                          "body": "ewogICJpZCI6ICIyNzMxMjUiLAogICJ3ZlJlZiI6ICJJNjktMDI3MDciLAogICJzdGF0dXMiOiAiU0hJUFBFRCIsCiAgImF1ZGl0QWN0aW9ucyI6IFsKICAgICJTSElQUEVEIiwKICAgICJMT0FERUQiLAogICAgIlBJQ0tJTkciLAogICAgIkNPTkZJUk1FRCIKICBdCn0="
-                        },
-                        {
-                          "name": "screenshot",
-                          "contentType": "image/png",
-                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\uat-full-loop-UAT-Full-Loo-26b9a--audit-trail-in-Paper-Trail-chromium\\test-finished-1.png"
-                        }
-                      ]
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "a78c4a1581d8f3c0dba6-8afd006492b60736c227",
-              "file": "uat-full-loop.spec.ts",
-              "line": 154,
-              "column": 7
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "title": "workflow.spec.ts",
-      "file": "workflow.spec.ts",
-      "column": 0,
-      "line": 0,
-      "specs": [],
-      "suites": [
-        {
-          "title": "WS-Sale-App V1.0 role navigation",
-          "file": "workflow.spec.ts",
-          "line": 4,
-          "column": 6,
-          "specs": [
-            {
-              "title": "ADMIN can login, use Access As and return to ADMIN",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1863,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-07-22T04:58:39.001Z",
-                      "annotations": [],
-                      "attachments": [
-                        {
-                          "name": "admin-access-as.txt",
-                          "contentType": "text/plain",
-                          "body": "QURNSU4gLT4gU0FMRVMgLT4gQURNSU4="
-                        },
-                        {
-                          "name": "screenshot",
-                          "contentType": "image/png",
-                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\workflow-WS-Sale-App-V1-0--8b979-cess-As-and-return-to-ADMIN-chromium\\test-finished-1.png"
-                        }
-                      ]
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "c601ceb5ecfc8efa4a14-db9b981441c6f07525bd",
-              "file": "workflow.spec.ts",
-              "line": 9,
-              "column": 7
-            },
-            {
-              "title": "SALES can access Quotation",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1182,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-07-22T04:58:40.876Z",
-                      "annotations": [],
-                      "attachments": [
-                        {
-                          "name": "screenshot",
-                          "contentType": "image/png",
-                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\workflow-WS-Sale-App-V1-0--c0537--SALES-can-access-Quotation-chromium\\test-finished-1.png"
-                        }
-                      ]
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "c601ceb5ecfc8efa4a14-04d11070d9eea9169f61",
-              "file": "workflow.spec.ts",
-              "line": 24,
-              "column": 7
-            },
-            {
-              "title": "COUNTER_SALES can access TruckScale with explicit health",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 1520,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-07-22T04:58:42.067Z",
-                      "annotations": [],
-                      "attachments": [
-                        {
-                          "name": "screenshot",
-                          "contentType": "image/png",
-                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\workflow-WS-Sale-App-V1-0--fb082-kScale-with-explicit-health-chromium\\test-finished-1.png"
-                        }
-                      ]
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "c601ceb5ecfc8efa4a14-6be9e43a9e3c225ddd6c",
-              "file": "workflow.spec.ts",
-              "line": 31,
-              "column": 7
-            },
-            {
-              "title": "WAREHOUSE can access loading and scale queues",
-              "ok": true,
-              "tags": [],
-              "tests": [
-                {
-                  "timeout": 30000,
-                  "annotations": [],
-                  "expectedStatus": "passed",
-                  "projectId": "chromium",
-                  "projectName": "chromium",
-                  "results": [
-                    {
-                      "workerIndex": 0,
-                      "parallelIndex": 0,
-                      "status": "passed",
-                      "duration": 3795,
-                      "errors": [],
-                      "stdout": [],
-                      "stderr": [],
-                      "retry": 0,
-                      "startTime": "2026-07-22T04:58:43.596Z",
-                      "annotations": [],
-                      "attachments": [
-                        {
-                          "name": "screenshot",
-                          "contentType": "image/png",
-                          "path": "C:\\MyWork\\WorldFert\\winspeed-frontend\\test-results\\artifacts\\workflow-WS-Sale-App-V1-0--0d684-ss-loading-and-scale-queues-chromium\\test-finished-1.png"
-                        }
-                      ]
-                    }
-                  ],
-                  "status": "expected"
-                }
-              ],
-              "id": "c601ceb5ecfc8efa4a14-8da8bce2365e3b609421",
-              "file": "workflow.spec.ts",
-              "line": 42,
-              "column": 7
-            }
-          ]
-        }
-      ]
     }
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-07-22T04:58:02.860Z",
-    "duration": 44697.277,
-    "expected": 10,
+    "startTime": "2026-07-22T10:54:42.290Z",
+    "duration": 121846.00899999999,
+    "expected": 0,
     "skipped": 0,
-    "unexpected": 0,
+    "unexpected": 1,
     "flaky": 0
   }
 }

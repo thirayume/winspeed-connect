@@ -1,35 +1,93 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "WS-Sale-App Playwright E2E Evidence",
-  "runId": "2026-07-22T04-58-03-003Z",
-  "startedAt": "2026-07-22T04:58:03.003Z",
-  "completedAt": "2026-07-22T04:58:47.611Z",
-  "durationMs": 44608,
-  "status": "PASSED_COMPLETE",
-  "playwrightStatus": "passed",
-  "complete": true,
+  "runId": "2026-07-22T10-56-22-348Z",
+  "startedAt": "2026-07-22T10:56:22.348Z",
+  "completedAt": "2026-07-22T10:56:44.575Z",
+  "durationMs": 22227,
+  "status": "INCOMPLETE_OR_FAILED",
+  "playwrightStatus": "failed",
+  "complete": false,
   "policy": {
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "minimumTestCount": 10,
     "requiredSpecs": [
       "e2e/comprehensive-sales.spec.ts",
       "e2e/uat-full-loop.spec.ts",
       "e2e/workflow.spec.ts"
+    ],
+    "requiredEvidenceFiles": [
+      "package.json",
+      "backend/package.json",
+      "backend/migration-policy.json",
+      "WSSale-App/package.json",
+      "playwright.config.ts",
+      "e2e/evidence.config.json",
+      "e2e/evidence-reporter.cjs",
+      "run-e2e.ps1",
+      "run-e2e.bat",
+      "db-init/e2e-seed.sql",
+      "db-init/e2e-cleanup.sql",
+      "docker-compose.yml",
+      "deploy.ps1",
+      "DEPLOY.md"
+    ],
+    "trackedRoots": [
+      {
+        "root": "backend",
+        "extensions": [
+          ".js"
+        ],
+        "excludePrefixes": [
+          "node_modules/",
+          "coverage/",
+          "uploads/"
+        ],
+        "excludeNamePatterns": [
+          "^_",
+          "^scratch_",
+          "^uat_"
+        ]
+      },
+      {
+        "root": "backend/migrations",
+        "extensions": [
+          ".sql"
+        ],
+        "excludeNamePatterns": [
+          "^uat_"
+        ]
+      },
+      {
+        "root": "WSSale-App/src",
+        "extensions": [
+          ".ts",
+          ".tsx",
+          ".css"
+        ]
+      },
+      {
+        "root": "e2e",
+        "extensions": [
+          ".ts"
+        ]
+      }
     ]
   },
   "coverage": {
     "selectedSpecs": [
-      "e2e/comprehensive-sales.spec.ts",
+      "e2e/comprehensive-sales.spec.ts"
+    ],
+    "missingSpecs": [
       "e2e/uat-full-loop.spec.ts",
       "e2e/workflow.spec.ts"
     ],
-    "missingSpecs": [],
-    "selectedTestCount": 10
+    "selectedTestCount": 1
   },
   "counts": {
-    "total": 10,
-    "passed": 10,
-    "failed": 0,
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
     "flaky": 0,
     "skipped": 0,
     "timedOut": 0,
@@ -38,26 +96,26 @@
   },
   "environment": {
     "schemaVersion": 1,
-    "capturedAt": "2026-07-22T04:58:02.865Z",
+    "capturedAt": "2026-07-22T10:56:22.102Z",
     "frontend": {
       "url": "http://localhost:5173",
       "status": 200,
       "ok": true,
-      "durationMs": 26,
-      "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx?t=1784694397467\"></script>\n  </body>\n</html>\n"
+      "durationMs": 104,
+      "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx?t=1784717666440\"></script>\n  </body>\n</html>\n"
     },
     "api": {
       "url": "http://localhost:3000/api/health",
       "status": 200,
       "ok": true,
-      "durationMs": 100,
+      "durationMs": 147,
       "body": {
         "ok": true,
-        "ts": "2026-07-22T04:58:02.881Z",
+        "ts": "2026-07-22T10:56:22.188Z",
         "version": "1.0.0",
         "env": "development",
-        "uptimeSec": 895,
-        "requests": 706,
+        "uptimeSec": 1595,
+        "requests": 222,
         "errors": 0,
         "lastErrorAt": null,
         "db": {
@@ -68,27 +126,233 @@
     }
   },
   "git": {
-    "commit": "48d301796560086402a1208c947ece2a9acbe005",
+    "commit": "0d1e46b69b98698e5404bffbaccce7f9c76b5a53",
     "dirty": true
   },
+  "sourceStability": {
+    "stable": true,
+    "startGitCommit": "0d1e46b69b98698e5404bffbaccce7f9c76b5a53",
+    "endGitCommit": "0d1e46b69b98698e5404bffbaccce7f9c76b5a53",
+    "changedFiles": []
+  },
   "fileHashes": {
-    "playwright.config.ts": "A1239FDD163F4A37E7CDE0C56B5EF4082EA5B2D6F7D3141D3B0B1FABC787ACE6",
-    "e2e/evidence.config.json": "6764ABE8FB63ED606E3B9770145BE411D8ACF129AD264D07BD9EAB8736E98D53",
-    "e2e/helpers.ts": "75CD506221941C67712044191C03015D392E5384C8FD4BED317DBDD4333FC048",
-    "e2e/global-setup.ts": "74F92D253E8763C7B9C39B4828C9A5BF7D8490D5A0268518199967431A6F0D2C",
-    "e2e/evidence-reporter.cjs": "23309D72818828DB4322C6B814A3F518AE2B6512B5395DEF5AC27C68FCBA4DB3",
-    "run-e2e.ps1": "D48F9ED0B06D26310F18A47ABB86246BCBA4C49F217E84BF5DA4F0BF3B51BF07",
-    "db-init/e2e-seed.sql": "98BE1AACDA97CB4DEA314A67E2895F023BD8AC3E674C3D429E95DBE9FD0FEFB6",
-    "db-init/e2e-cleanup.sql": "81C9C1F996A23A96D1BBA929BB3D3031E7B9458A27F8B5CF6F19BDC6DE68641D",
-    "backend/routes/so.js": "36BA512A85C514361C0C58897314479710AD5B310C4A7196D4C49E891C84A678",
-    "backend/routes/papertrail.js": "5E8AD505AC4FF73F48EE4C7A4F4F644B3860129BE167E39951491605B05A64C7",
-    "backend/routes/reports.js": "3EDA8F07A05BFEC68F74B0490FA6D77338B5971CD8E47E6F94AF05E79BCB8CB8",
+    "DEPLOY.md": "6B917D1A0BEDD299CC113C2FF47D4291C7DA027D05E4A0D50159ABA37D1FB649",
+    "WSSale-App/package.json": "90402391383B4B751B3D8031678F7B0495FE144BD28B1EE2055FA8B69D4D7DE8",
+    "WSSale-App/src/App.css": "6E25A776D3E8102DA5BACB3CB99F4A5FC662A2E01E6143140671A556D28C3D5C",
+    "WSSale-App/src/App.tsx": "116CF2D77124067CE5202DC707FF922B3DA2A53F5F938A2B748BED63F056B8CA",
+    "WSSale-App/src/components/accounting/AccountingPage.tsx": "5BFA708634818C1069AEB67A51D13D2DBFFF77D875C2568DC45F1CCC32833C69",
+    "WSSale-App/src/components/admin/AdminUsersPage.tsx": "FDEC17112A9B5DC4B14F499FBF21B7EE752540348945492404DC58AE234646A9",
+    "WSSale-App/src/components/aging/AgingPage.tsx": "1CB9D28C7EE05DC6DC361E10A81D05296D85B7BB45AA743665D4ADA3171867AA",
+    "WSSale-App/src/components/common/DbModeSwitch.tsx": "D59EF2BE1883823E7A8DC3DF8A0CC6E51C8C329DACD3A1B0DCA1A867FF24E3E3",
+    "WSSale-App/src/components/common/GlobalLoader.tsx": "F6F383BF0B8D04801610A90AE07FB4FF157EC699114893C0B8284B41E344D941",
+    "WSSale-App/src/components/common/MobileDrawer.tsx": "1DBC9F9405A927A8CF26596A08271C5EA8A35448765F99666CEB08476C9925BD",
+    "WSSale-App/src/components/dashboard/DashboardPage.tsx": "F44A55B0FF3081D36A9003AC02C940B795540BDBD0B9FDD3827C18FC2524FEEF",
+    "WSSale-App/src/components/giveaway/GiveawayPage.tsx": "338529402ED600E725978887E5D556B21E92AFF74FD5728E2D6A9ACA9A8D38D5",
+    "WSSale-App/src/components/governance/DataGovernancePage.tsx": "6C3A5C02EB0A24F93EDB0EF959734777314E580EF020AAC6178EAC9B2B3BAC13",
+    "WSSale-App/src/components/master/ControlTicketPage.tsx": "E59CCDA68841DB409E991D753B57440C1D8DF75FBD514947FA9EABFB8C34B6FE",
+    "WSSale-App/src/components/master/CustomersManager.tsx": "776A1924CE2E5F5BB2B9C4DA6B9724295889B844BA95489FD86BBB26FD467A72",
+    "WSSale-App/src/components/master/GiveawaysManager.tsx": "63E1BD67BC894E89E348B6EC08D958D791DAA0E5A8D19049ECF7261162553AE6",
+    "WSSale-App/src/components/master/GoodsManager.tsx": "445E4A0B8066F916E9D552112E73523308DFFDFA36067D23D7C5482A5E5C4770",
+    "WSSale-App/src/components/master/MasterDataPortal.tsx": "9C10183A14644D91539C49D9E40A93940A7C9F2187E6DC62BCDC413FBC5422AD",
+    "WSSale-App/src/components/master/PriceBookManager.tsx": "0175730B5EA8E53358EBB92B8811BDFA724971BB024E90A1951602BF4892AB71",
+    "WSSale-App/src/components/master/PricesManager.tsx": "FA4610ED7750F81862F6F52E62D8327E3C6027D5DBE2A87B24D2049115F9F59F",
+    "WSSale-App/src/components/master/PricesPortal.tsx": "F2918B58B4599B6D1DABF2DFAA703BD25E3B50085552341637184E145E78B7C1",
+    "WSSale-App/src/components/master/TruckTypesManager.tsx": "2866F4B9F78CE869E8B9B6FAA6AED8BF5355C5A67EDB835B1BDD0FFA260BDCD6",
+    "WSSale-App/src/components/master/TrucksManager.tsx": "68B08C531B0E2A04013D356B807253A96BCCFD8CBAA7B9B58EE6465AD00AB0C5",
+    "WSSale-App/src/components/ops/OpsStatusPage.tsx": "412B42DFEE99912CD2E6157D3A479C968414FBDDE7CCC35D4CA972FBCEAA04D9",
+    "WSSale-App/src/components/papertrail/PaperDocModal.tsx": "A4CBE9945863EA7ECC7DFD422991772A2414B7AF4E5B16A26E71B0BB47955F68",
+    "WSSale-App/src/components/papertrail/PaperTrailPage.tsx": "B988B819F0E6E1F21EBA532030C2C2BB5E2FF4256A25A04834A0BB8C7FF966CC",
+    "WSSale-App/src/components/papertrail/RequestActionModal.tsx": "AE65FD8FE3CB82E1625D03E3E093A73675E1A449A6D355B6B7380666507655C6",
+    "WSSale-App/src/components/papertrail/ScanModal.tsx": "8BDC88F1ADBC9147D1AC89634868423BF5390D1FCE79778BD8C5F704BB034EF7",
+    "WSSale-App/src/components/papertrail/UnlockReviewModal.tsx": "9AEEA114DBF16791F0FA79141C342E6F936C1B842DA67635C7BF1B8A90CBB292",
+    "WSSale-App/src/components/policy/ApprovalPolicyPage.tsx": "53D9E4667E8762106B585B8936B1CABC125C3D0EB9B8E7C5C823AC05610057E4",
+    "WSSale-App/src/components/profile/ProfilePage.tsx": "2C08C15E91903B81AF08B4406CF52F41AD44FA42456A0135B168ED6D159593CF",
+    "WSSale-App/src/components/quotation/QuotationPage.tsx": "98A300EF24FCB70C14FA3EC0ECD9610C2EB6D2C1BEF5936D092A0ADD9C8FD7E2",
+    "WSSale-App/src/components/rebate/CnRebatePage.tsx": "396853103112615BE8F5FFD92BDAE7631898739E33B3E6CDF4BF272C089FAA3A",
+    "WSSale-App/src/components/rebate/RebatePage.tsx": "D18FDFE9450EB6D999B99ED4883A3593EF9D441376B9389E46CD4ED6F7604B7E",
+    "WSSale-App/src/components/rebate/RebatePlanPage.tsx": "5F9A71D38EF790A39689861422C3CF09CD9421E247742CDD5FB51DBCED15102A",
+    "WSSale-App/src/components/recon/ReconciliationPage.tsx": "156D1A5CCB6C5C29FD3A4A713A4691B105805F825A718262CD67DD04AB0CF704",
+    "WSSale-App/src/components/reports/ReportsPage.tsx": "A688E3EE668283E4CDD5750774D3181CFF45E50B6064A8D27F9C268317EDF7D3",
+    "WSSale-App/src/components/sales/BillEditorModal.tsx": "203A640898ABB8AF169640DA1FFC8A8D79E255B6C57976BD854687D0BD435E0C",
+    "WSSale-App/src/components/sales/CreateSODialog.tsx": "8D58E93B64D04C7573C1BBB98ABA061F7D57CB3A5475C72974BE37F661FB8C44",
+    "WSSale-App/src/components/sales/EditSODialog.tsx": "27CED0CF12FDFDF59A4B1B7EC3D1ECE7A6581064F184C0552C958ABEEA910C9F",
+    "WSSale-App/src/components/sales/GiveawayBorrowModal.tsx": "07AF38BF19344C3CCA0D189001F56A2387E11187EA9E638DBDF641E4E6662C6E",
+    "WSSale-App/src/components/sales/POSLayout.tsx": "310DA672D7AB7896773F74495D77BCBA27B692CA3A012D10FC5AEB6A2345A808",
+    "WSSale-App/src/components/sales/SODetailsPanel.tsx": "B0DBB6BFBC05A0BF7DE9388B24CA25261EE649911A957005BA31FB5DF17D2202",
+    "WSSale-App/src/components/sales/SOStatusBadge.tsx": "0193E5327C8ACC39449E0533EF07D64FC3C08C774DF6B7F1E71A3C8BD507F6C3",
     "WSSale-App/src/components/sales/SalesPortal.tsx": "38D157E4A0BCD4C3BA388500A05E2D4EEB377F752BC6FAF3E7657D24D0869FC4",
-    "WSSale-App/src/components/store/PickingQueue.tsx": "A9298FF12AA293AE1B686350CA9AFB622567ED3C8F29FC594FF795119B4DCFEB",
+    "WSSale-App/src/components/sales/TripSetupModal.tsx": "A9FA5E186524A55E6A4A344E16ABD92A628ECB3FC095DFC0B0D05FC185C5FE0D",
+    "WSSale-App/src/components/sales/TripSummaryModal.tsx": "575DCDA332258E62EADE1F378AEAC57FFD38F44E208CCF23C1D074E90C63C1F0",
+    "WSSale-App/src/components/sales/UnlockModal.tsx": "80921E2C3671C831031B266188040F873C8BB31FCB83A751C89B7F4389FFDD79",
+    "WSSale-App/src/components/store/PickingQueue.tsx": "CD6C33BC0C6E54A4267F7D57CD06435F35E68CDC574A08E987D528E24408A6A7",
+    "WSSale-App/src/components/store/ReceivingQueue.tsx": "64CFC23A0A0195C603817D4624DE3FA371F768CF10CC4EA6883B83234AFDA6F8",
+    "WSSale-App/src/components/store/StorePortal.tsx": "A7C4D257EC2BA9D9A1A77CEE4FE339DC945D4F859BEAB086F544E1D5B2BC11B7",
+    "WSSale-App/src/components/store/VisualTruckLoader.tsx": "9B5D7483D7CD18E8109131C78831329FA437C03C1CD11A7CCAC8BC6FBDA1FC8E",
     "WSSale-App/src/components/truckscale/TruckScalePage.tsx": "50AB1DB1F9809A8D0BC1F5F5B7CBCA11AF12FA1CD914A5F99B100CE0E740CB20",
+    "WSSale-App/src/components/truckscale/WeighInboxPage.tsx": "711A23C3F158F2E61FE2F972443A8DA48BA4C31C4F9E9E9E4AE1D1435618AAFF",
+    "WSSale-App/src/components/ui/AlertDialog.tsx": "95B93F34808B4FC97AD19BB7399DD3B081B9726CA4D8D8ECB94A9E6E4EEB9509",
+    "WSSale-App/src/components/ui/AppAlert.tsx": "31422FBC8149E29093746C98F5CBA063948AF886911359E48E0061DF6B56E008",
+    "WSSale-App/src/components/ui/Base.tsx": "034AB3AB5B30626218539514DFEB963596F93250A59903FBDA07BEB81EC3992E",
+    "WSSale-App/src/components/ui/ConfirmDialog.tsx": "C3C667DBE35A9E5FC5414FBA235BE6D6BF3AEE80A5EC670AFC77234E5D2961AB",
+    "WSSale-App/src/components/ui/DataSummaryCard.tsx": "F2A96A2DFD29654D20406D01B20E90A19179E30609384DC00B290E5A57161253",
+    "WSSale-App/src/components/ui/DeleteConfirmModal.tsx": "416CF562C461B973576E7A842440A9E266FBD3DF9605D5512962FF82B3A3C839",
+    "WSSale-App/src/components/ui/Modal.tsx": "5CEC104D2F2418A7A97516BFBA88D63270F3534E958BF6C2ABC7C0A221D37788",
+    "WSSale-App/src/components/ui/SearchableSelect.tsx": "48FC90CA06793586AB120176830DCF82F1FC85748B4652B4E40FB77074DD05D5",
+    "WSSale-App/src/components/ui/ThaiDatePicker.tsx": "13CADFB5CBC1F5203BF59DBCD7DBBD359AC6C0573AB9A50F6D5B839BB5828B49",
+    "WSSale-App/src/components/voucher/VoucherPage.tsx": "2D7296CF80DF3710C9EC3719D5C9172F2FDFE0E0F14294D73A6EC97E0A966CD2",
+    "WSSale-App/src/constants/soStatus.ts": "A8A2E60100814E7220C694016DD47AB87D57699F1481E537F84B51D2BAAF8498",
+    "WSSale-App/src/hooks/useSocket.ts": "1DC06AD150AC77D229AD0F8F5184CE7B7C3BCB833CA907E0AA18EB6868311725",
+    "WSSale-App/src/index.css": "9A01D54AE3DAF431651BA6F013DC4B961A752240C01F1B28CC2FA003E24F0C9F",
+    "WSSale-App/src/main.tsx": "AC4F116ED3697A141375CD24F68A09B91754A19AD35B433EFE5D1ADB95EF8C86",
+    "WSSale-App/src/pages/LoginPage.tsx": "2C7101CCF3F6652031FC46555D8A345E639274EB956619C9D98A40489941EEF1",
+    "WSSale-App/src/services/api.ts": "21D55CD8DC7BE900546A7A50372ACC194BA374D073B86814DA7E4B6D69C41A81",
+    "WSSale-App/src/services/socket.ts": "3E011BB558EF581A505364E3AF5FC39667555E741D2F13E96CCC5DE3552921FF",
+    "WSSale-App/src/store/app-store.ts": "7C9C0B269FD459D815C43E15C6284882EB3777DADB9780A9CF5B7B1B5B5246EE",
+    "WSSale-App/src/store/auth-store.ts": "493CE6285EA21B86E87738791D163ABECCFB69EE00B4356A51520F533FC4FB7E",
+    "WSSale-App/src/store/db-mode.ts": "C73D98EDD43513DCC544256F770EC2FCE67BAC34A873E325AE65386373E6AB39",
+    "WSSale-App/src/store/erp-store.ts": "8EDB001A41C79CDB107953784685327F0BDC4F097C46DB7FBCEB361AD9D0BA7E",
+    "WSSale-App/src/store/settings-store.ts": "B4766B85DB95C131F398BD224F5AB397AE44642E4BDDC743D79F68DD7A06FFB9",
+    "WSSale-App/src/store/trip-store.ts": "1314AAFBFEDE4489E4C80504220CD63E192E192F1224D1A68EE6EB58047EDA5F",
+    "WSSale-App/src/types/index.ts": "9BED85A2ECD8B94ACE7D419CC756EA63CE013153F33B299BFC51BABDBF88BAC0",
+    "WSSale-App/src/utils/date.ts": "CD8BC7E080B9A59AA13AD66D62308E69B203610CAB388A0059C9F0D56FFDFDF1",
+    "WSSale-App/src/utils/permissions.ts": "6444159B0A8C41199E48EB0E901D86C97900AB5E1175CC1EBE5F02CF67739955",
+    "WSSale-App/src/utils/truckAnalyzer.ts": "B6DAD7E8A6370A49AB3455EC0B859930B9653252B92608260E9A9FF28D1B5550",
+    "backend/check.js": "336B18869F8FE20E87A94592AA5C3E8C9C3CF14ED6CAB5F8E38CE4C7D448BB09",
+    "backend/check_admin.js": "A6D5F7324D07FCAB40A219BC38E7B1727709735ABC59E3881BBDF28512265311",
+    "backend/db.js": "6DECB061D78ECE43EE57F4B7259F978A179017AB81433BC83296A124D314F026",
+    "backend/gen_hash.js": "5D100747F97B15F12FB1AFE890F5EAFD1C35718F09A36B58F0B0D7675AB0304F",
+    "backend/middleware/apiAudit.js": "5EEFF5940A15A0489C596B1C052A2E9519AD85BA78BD801AF80666C53B7842F7",
+    "backend/middleware/auth.js": "0FDD8B35659A9A682FC2686EA58D80B3B0E0039300EC50FAD19DA2F810580356",
+    "backend/migration-policy.json": "270AF400E6FBB3D1FA2186232A2F0C1A7DC46896DD918B69B2C8744220A6F896",
+    "backend/migrations/000_logins.sql": "C4256F3FE8D379460A70406055B5CD6C68D081DD50F2266BBA89B577E7B9915D",
+    "backend/migrations/001_wf_schema.sql": "279B6D15719FB9BCEF8FA0871773FCEC745AFCAD012BC00CDF9C33AE47CF3347",
+    "backend/migrations/001_wf_schema_backup.sql": "0C5725C39053A0B506EA6893E2AE39FFCA572109B50DA15ACD24504C7A9EEB0C",
+    "backend/migrations/002_giveaway_quotation_papertrail.sql": "E2B51C045FA86B45A923847CD3B9D7CFC21CAFDEC077B288DCAA029F1AF579E5",
+    "backend/migrations/002_performance_indexes.sql": "4EDFF52748C1E800ED56D9606DE0C3C77BC8F18F74CB2E9D18BD6373525D435A",
+    "backend/migrations/002_wf_schema_v2.sql": "CE0CBFAD85B61CB2BA64B84E635035EDDC2BDB526D924591BAA1365D07D3966E",
+    "backend/migrations/003_schema_ext.sql": "1AB72CEE7C3ECE1952027C45AAD4FCDCBCDFB8C2DCC5C816465DFFB19ED4002B",
+    "backend/migrations/004_view_union.sql": "904F37030C40C9273E0F3DEDB528B0B33180462F55882A742249FD44C7F9A908",
+    "backend/migrations/006_customer_ext.sql": "E3731B2B7168906F2C4E9531338E56C74D2A431E290D4172AA71E53F59DEC287",
+    "backend/migrations/007_store_weigh_out.sql": "318E2C4B27FF871CAA14E4805D3A5DAF9B7450C2F8F2F8324B40E583A17622DE",
+    "backend/migrations/008_control_ticket_line_ref.sql": "ECCDC2C989A630AC39BECEA1A08E74F63C30222B16AA9C9C9C64EE14A228C873",
+    "backend/migrations/009_update_views.sql": "424A178ACFDA59FF78C7A4904EF0DD800E320319ED21EE23441509CF7BB2FC91",
+    "backend/migrations/010_add_loadsequence_to_views.sql": "DDFFF21BD6F8F4E835BE8A936E435C2F517D8AF894E3609C8A34B57501F16A8E",
+    "backend/migrations/010_rebate_usage.sql": "B2C69A0C9E6D6F25A1FED7CD1B68F8F42431918EDC8555B4D0F76075EA929C56",
+    "backend/migrations/011_seed_sales_users_giveaway.sql": "E753CECC4237EED8F7EC6CC866EEA379FD6AB194589AFA78343C9D41C715C9B3",
+    "backend/migrations/012_seed_giveaway_budget.sql": "324C65964109A24400EF30F39785E0CF5031F088D99990F8B04B7E5046D420FD",
+    "backend/migrations/013_comprehensive_indexes.sql": "C356AE9CB96ED9A9364CCB46A3CDCA1017866C1A8CD4C3E8B7BD1EC65D1852D0",
+    "backend/migrations/014_data_migration_ext.sql": "B7914E748854745A371BC288EE42058270803ED556C399B4AC51AB8F44C05DAF",
+    "backend/migrations/015_sp_confirm_so.sql": "6BA1C2B6ACB9A5C2F106C4F2506D3D54282C8D2D9183CEF866BFF24E1C98E810",
+    "backend/migrations/016_paper_copies.sql": "C327563BA3CE7DBD2BE448BF3778D06364EAB33CB6E57F9FDA2E3E0702914439",
+    "backend/migrations/016_truck_types.sql": "54F42A09DBB6747CBFBBC1316AF47DDB1E290478B567ADC941ED3FC003725022",
+    "backend/migrations/017_rebate_plan.sql": "F66BD33212639994182E212D2EDF841C0C26348F4475E69606FEB4861899079F",
+    "backend/migrations/018_verify_unlock.sql": "6138C4EA0E5C6EB8458F6D855A8C294F4D945FD5D553F7DB633E1FABD597C98D",
+    "backend/migrations/019_request_types.sql": "FEF9270BB4462E1F59D91CAD28553A140E8829C3A034FBC27BC8908B8BD83D78",
+    "backend/migrations/019_weigh_ticket.sql": "49DC27E0C541E7ECD969F3BD1D9A5470F82ACB0476BEAC971A097BA8E7206681",
+    "backend/migrations/020_migration_ledger.sql": "F51CF3A0B9D98FADB79BCC0D40416291C7FCE1DFF0D090313E74E2BF8F6D6079",
+    "backend/migrations/021_recon.sql": "AC76967BC27017542994B01C3F59EC227E8918FA17BAC3D8211A1490B0C18873",
+    "backend/migrations/022_error_log.sql": "AE83AFF27287100D05876E53B1A8C0FF1F5D2051FE232C4AC0A2B68B662EEC92",
+    "backend/migrations/023_approval_policy.sql": "0B7C67520D0CC79994D36DA72E4DA5C3FDF1445D25DEDDF2726294D9D11D0683",
+    "backend/migrations/024_outbox.sql": "4C04241CBB2F92792DEE480C3DBC1787F37E962D530AED7A8BB07A63D9C408C0",
+    "backend/migrations/025_price_book.sql": "62AEB685BBE1F01E1E20AB65E0550AD56EDDAD08A1ED80E77D56D662956EE6E2",
+    "backend/migrations/026_credit_master.sql": "BB52D0B3A9E6BF9DE40626D95A74A29DE70BF892846092EEF8E61BC6462E02AF",
+    "backend/migrations/027_operational_stock.sql": "CBED6388BAA15CB151924E01C5D0CCA1DC3E52AAEB21FFA5737BBC36FE825403",
+    "backend/migrations/028_retention_dsar.sql": "948364B9BD4DE22FF03E8CF74F9F9309E939713354FA56856791EED7D744D359",
+    "backend/migrations/029_truckscale_inbox.sql": "5EA03024B9709766D4C3BBDCCC346BFE41ADE190AC3646B89DB1F9E27E013093",
+    "backend/migrations/030_giveaway_borrow.sql": "AB075E325BE9E4CBCCC2DAB7C20D09695B5AE3AC02E7FA966585130FDD8365D9",
+    "backend/migrations/031_so_requested_transport_flags.sql": "5342C58910203A4906D895D8AEC935239CDCE69C4D05687BC2BB3CBFC261993E",
+    "backend/migrations/032_rebate_plan_ref_doc.sql": "6D0F19B6B2944AD1D86DDA2F8ECAB4D25DA4F86D72E84E6B64E2BC4E22E49B0F",
+    "backend/migrations/033_giveaway_line_approval.sql": "6A03733E5103F9D8F750747583E81D681ED4B74B0557B0A621EBBAEFDFE8F51C",
+    "backend/migrations/034_customer_request_flow.sql": "82C53D80A667BF8969BC8B1B0BDC7FEA7823BB362D300489713D5532FCF697ED",
+    "backend/migrations/035_line_login_app_user.sql": "5432FB96470F4E09DAEF432D914E5ABBB78301394F8A067FB452552EF6586D55",
+    "backend/migrations/036_align_winspeed_so_flow.sql": "BC3D3F411A08526B91A042DAEB50B0EB162D4AF2164C67DC604FA3AB203C3754",
+    "backend/migrations/037_so_credit_days_and_remarks.sql": "23D9D918A3E2CE923DFD531103B3D26DA353EA0E254D22D17583B3398ECAEDC7",
+    "backend/migrations/038_winspeed_so_data_entry_mapping.sql": "714A9D316AFCA8366BE60A8E8952A39F6A2E89617F1F5CF18177507E730BD69E",
+    "backend/migrations/039_so_transp_id.sql": "15872D572F70A3AF79824565077A69D66CE5F1EC37AA19661547D6272A734C5D",
+    "backend/migrations/040_deduplicate_winspeed_so.sql": "237C873C45BF5FA84A4DD4EBC6CBE55A833A292FD389CE333DFEB1FD8F6D4F31",
+    "backend/migrations/041_app_user_profile.sql": "27EA337D5A6296A5796CEF075E48574750B9A09E613FDCB819EE2045AD880628",
+    "backend/migrations/042_so_trip_quotation.sql": "3C12061338169B2CC0760DFCF5741E4D5797B7D430329DA676A467483FC829FF",
+    "backend/migrations/043_winspeed_estimate_link.sql": "DECF5AAC40CCEA0AE82DD11CB405D82DE592BB06D4CF2BF0329E5C0212AB4788",
+    "backend/migrations/044_winspeed_native_quotation_link.sql": "C6594DC0EB3DFB7CC8EA26C856BFA47E9D69C161B57D2D31888FD4096ECA1641",
+    "backend/migrations/045_access_as_audit.sql": "E30B21EBE0889F7831B7721D4C03232B8F84F41C3A32812F37BAA62F919C4C51",
+    "backend/migrations/046_truck_types_nolock.sql": "5EBA91FD7F0B6103078EF3B38D12A143FC158AACA995B8A5AB3EE08BD7DFFBA9",
+    "backend/migrations/047_seed_giveaway_items.sql": "315C851A484EEA40689994779ABE690617C25D1357BFD6F749F8E001555FF4DF",
+    "backend/migrations/048_seed_giveaway_withdrawals.sql": "D041CB673216A657B539C0ABA587D69AAFFEDF8DBE779CF8F40CED6FF025F83F",
+    "backend/migrations/049_giveaway_item_mapping.sql": "6E2C56AB845C673BF6A830FAAFEF5A8876F7EE00E9390E1C586E91EA196D1DE2",
+    "backend/migrations/049_seed_all_employees.sql": "C3242F9411DF16B16C163D15525A3A3A009E8301F4DA681677E6D4E8DADC091F",
+    "backend/migrations/050_cleanup_hardcoded_users.sql": "6D9ADA8781A22BAAA3D79B6B728F7E770DEE02245406865C58C1980A07550690",
+    "backend/migrations/050_fix_confirm_sp_truckplate.sql": "6BDD7444900686DEAF00BFB03F2B0AA1C284D948E1C7EDD2E8CD00933C328647",
+    "backend/migrations/051_update_so_status_check.sql": "A9D133319790D91C1CA98EF0EE117A804BC1C05279013EE1397DAC91000CBFF2",
+    "backend/migrations/052_sohd_remark_logistics.sql": "0490FC4AABA1F75968CE8146E82AE4E665EB7892BD467B3CAE0A27299C601009",
+    "backend/migrations/053_so_notified_at.sql": "68A2EE1ACD96BE6062678ADB1D0970F82A5CC52D0277D97B6A188FCAEB3F3CBF",
+    "backend/migrations/054_rebate_coupon_mirror.sql": "D8331274CB30AF20F42A8534DD26214A1A71AB6E41FA5A220CF995D10850F28C",
+    "backend/package.json": "B75415FC81DD3A523661092639E8F8F64605AE5CDB06F39554A66F4807BAE7FF",
+    "backend/routes/auth.js": "DFF4CFF9C124A052F9A03453C21A2428E19C2F060958AC3580D948E1B035BE4A",
+    "backend/routes/credit.js": "4FA36A2296E4A7AFC07AB45CB3F16FABE8EFAB6FE098F0FD502DBA5459ABB3A6",
+    "backend/routes/giveaway.js": "348FE1DAD8C50999FCF3F153005BF3FA8B6FE54162482BD6598CFD370BD9B108",
+    "backend/routes/line.js": "5F2B7735850695E9BAB54F33649F9C4A1BECB86F74E132EFDF025C45F8FDEED2",
+    "backend/routes/master.js": "0BA349208D78858CB912132E13702FAA89C648D52281C4492023D37F8A84B703",
+    "backend/routes/ops.js": "B9480F45690DCA2712839EDEE834F6595497B780CF850E39720ACCF823C08750",
+    "backend/routes/papertrail.js": "5E8AD505AC4FF73F48EE4C7A4F4F644B3860129BE167E39951491605B05A64C7",
+    "backend/routes/pdpa.js": "31C0252CD40BD253D5A9DD7F14DBFF058712A2744814186E9B4AC9E77FD4C93C",
+    "backend/routes/policy.js": "F3EF76C3B236C25D8B6D04EB67CC100095B223BE540BC792D93A065BB6CA4494",
+    "backend/routes/pricebook.js": "06D517ED1EB1433FE1086D83557258FBB7FA54838F26F34E0A67AB9EF9770B2C",
+    "backend/routes/quotation.js": "3B4E67C86011D371877EECC9515637B41BDC46D21FE270257BD947372F852054",
+    "backend/routes/rebate.js": "9F6867F6FD10415EACA581EAC7F96512B38E8EDDCF7B1CD4CD26DFE43A8A907D",
+    "backend/routes/recon.js": "87C72FB7618A2841B52B889CCC900687C23F31426E8F8105B2C1A70625F4D135",
+    "backend/routes/reports.js": "3EDA8F07A05BFEC68F74B0490FA6D77338B5971CD8E47E6F94AF05E79BCB8CB8",
+    "backend/routes/so.js": "36BA512A85C514361C0C58897314479710AD5B310C4A7196D4C49E891C84A678",
+    "backend/routes/stock.js": "260F110A61A1C33DCF2887F561B11D1B3FB72EB5460F2C194BBEA59F01E06CE9",
+    "backend/routes/truckscale.js": "636BF249905B9AE9CE013784A46067CF00419B7C82973AACCA4893FF35ECD22B",
+    "backend/run-migration-remote.js": "1F571612CC4EB944642AC7BC8C678B5F731AE8DC6165F87E74CFD55303131A50",
+    "backend/run-migration.js": "C5EF348877D5987D6A14101FF2837AEC65B0C9A574E783A45E4D4BF04F5944C7",
+    "backend/run_migration.js": "A3F5617BEA4034DBF4C4AE636477D13FE3AFBF61BDD4A04F4B5F03197DD37E64",
+    "backend/run_migrations.js": "C2CF98AD7154850A4AD51D4F24CE9E804914C9211334E9DEDE84ADAE89D95517",
+    "backend/run_migrations.test.js": "6BB8FA9C00138CCCF3701DCDAACF2F6FD33A74E77624C610F2D55E0A8409BDD5",
+    "backend/scripts/api_smoke.js": "505F7165149B91F183D050529AEE8E277DA1736F58909979C3D6BA36697C59F3",
+    "backend/scripts/check_aging_search_query.js": "35C0C41E30099BC9D609DC48DF8C983226E0BE85095BA1AA608F3F90B3429189",
+    "backend/scripts/check_dashboard_queries.js": "A31611FE49B893559190C4D89332272AB17AB580567103A0568440510FCA5517",
+    "backend/scripts/check_master_goods_query.js": "BDC3C911EBBB305097289F49B033C2849CAC422975CDEF35E724CF615780AA1A",
+    "backend/scripts/check_master_transports_query.js": "A3EF182B2162B6F0746C6A42C227BD1287CA771EA184398B8721A8EC5033463E",
+    "backend/scripts/check_papertrail_report_queries.js": "54105E56ED13218B97675E00E724B51201E5CD87BE82BCA8C21104442733D296",
+    "backend/scripts/check_quotation_migration.js": "CBAA54E631A0FDC1FC818B7C67D1445BB76BCAEE0BE323671B32DB1CC1A2EDDC",
+    "backend/scripts/cleanup_draft_ledgers.js": "C16F28A3F791D7B6B422EED1DD25BEA43428A506CEB21756AF5D38400EB963C9",
+    "backend/scripts/fix_log.js": "B8EC9FC822E27710F0531F80540E504801D91633C1E076F8CECC06BF2790AF4C",
+    "backend/scripts/inspect_so_performance.js": "44A0C6D5ED208479AB36CA1051CD2BA32CC0A2D812DC59A5AC201AECBCC0AAC9",
+    "backend/scripts/inspect_sohd_distribution.js": "FD65D5DA0DF3BD978AADDA4AB2034FEF9D28DE8B7F363FEA5C9F6FC6868F18A6",
+    "backend/scripts/local_user_recovery.js": "BE526F8FAD7557E5DE610A4CA7E194BB3CCE3A015F9D60BC2C9CACE1A6A9AC30",
+    "backend/scripts/recalc_rebate_pools.js": "024419C432FC6F7C3196021DFD7C425FED5A90E5605F9F0087D8D55DCE02F8A7",
+    "backend/scripts/run_local_api_smoke.js": "00A16A0EE31BD8F2EECEB647896DB3C6536FD9D7136C361EFFC1085E4A1A2E9D",
+    "backend/scripts/run_query_smoke.js": "0D98A5174A8F4F62A6AA6BA86738144CC8F71C41048B22722BBA74584A5BE350",
+    "backend/scripts/winspeed_quotation_lab.js": "A63B84401B94AE21983D5165F62302CCECF3E1267641894C68E691CA00C2E319",
+    "backend/scripts/winspeed_so_lab.js": "412E15AF7A070DD8FE3C6D113DF7D48E90876DFBFE1134717D6FAB16A1E7054D",
+    "backend/seed_admin.js": "783418984BADA8DC0DDBCF316A1C75A9102124901175980C6809E89150F3AC76",
+    "backend/seed_data.js": "65B6D02959A5A15338C0907F3D489A681512A3F715205D23C0202069631FBD3C",
+    "backend/seed_data_backup.js": "65B6D02959A5A15338C0907F3D489A681512A3F715205D23C0202069631FBD3C",
+    "backend/server.js": "77F1B39BC911A58307CE6C19A4663D28A5C8C313CE175867C5510D81C238E1CC",
+    "backend/services/approval.js": "83F6BC5857D5F7FE04B8C64751FB1724B50D67B842E8BA85D4B83CA432275BA6",
+    "backend/services/observability.js": "59CDC4411BBFFF51BE9A3F78CE6F566AA0F774E67AC8DB88C42A2ABD4B2927BB",
+    "backend/services/outbox.js": "14DFD9A8AED2C8D2540FFE56C85EB14F00B167B73A77CD7053A2BB452755001B",
+    "backend/services/polling.js": "98016B01E83CEF7D1F202C0D02EA32D28C34691B3C21CAECA1B6C40308A22FA6",
+    "backend/services/socket.js": "E68D6E9EA80BD310BDDE9A49219005A48343DDB93AC618096F36AEAF3AF4BEDC",
+    "backend/services/truckscale-db.js": "865C48629459A81A6F56719ADC5627212D7CE48B1FD31BA8E864F38B3EE69A47",
+    "backend/services/truckscale-sync.js": "9298CB46056A5F8DCBAAB06A3223F498F2E040DCAE9B411CFA35379848EF8779",
+    "backend/services/winspeed-import.service.js": "4016CE84B804F8DA82F433975AA719E4D0C702D77E0CFC4D026D92CCF0D2786F",
+    "db-init/e2e-cleanup.sql": "81C9C1F996A23A96D1BBA929BB3D3031E7B9458A27F8B5CF6F19BDC6DE68641D",
+    "db-init/e2e-seed.sql": "98BE1AACDA97CB4DEA314A67E2895F023BD8AC3E674C3D429E95DBE9FD0FEFB6",
+    "deploy.ps1": "77C00FE2352821FF50289F01EE28E3ECA8D0EFBD67C3AFBC7ACDE0AA75494353",
+    "docker-compose.yml": "BCDE1294AE17924D79815F49429CE82BCB9E9777A5C0EA79DD08B052E0A3D4C6",
     "e2e/comprehensive-sales.spec.ts": "335789DD1F298D9C38DC4B33D8E31526F9CB031B18B1B585A81F2D2673C7FBF6",
+    "e2e/evidence-reporter.cjs": "2027720E4D332D31AE308A644D2B5B5FA6480EF01FE2DBDB5D5ED59AFE5A5A56",
+    "e2e/evidence.config.json": "E0A121A02496E47DF346DE5B84AC19D1783EADA19460239080D3D1A10AEC9FAB",
+    "e2e/global-setup.ts": "74F92D253E8763C7B9C39B4828C9A5BF7D8490D5A0268518199967431A6F0D2C",
+    "e2e/helpers.ts": "63F2AF78EB18AA84E3B3881E806D3EC4EF92436ABA3B87D625E40ED8D490592B",
     "e2e/uat-full-loop.spec.ts": "5BF53477132672A267B29CB68775EC1E8A5BA060CB8DD343E1A5896EEEA20E75",
-    "e2e/workflow.spec.ts": "3F0A927A4C10144718C7D0E263AEF3FE92BF9CD41C7E28611E6FB06DB585CAF1"
+    "e2e/workflow.spec.ts": "D973EDCAEEFE558FF8B3B577A1DA3A0CD76E0A2CAEF2CA5B2DB00DB7987F4E53",
+    "package.json": "EA0CC3463A46356F352E055D4B7A16E0DCB6AA7C0013B41BCC8B5E13D778D08B",
+    "playwright.config.ts": "A1239FDD163F4A37E7CDE0C56B5EF4082EA5B2D6F7D3141D3B0B1FABC787ACE6",
+    "run-e2e.bat": "7E204347C4D2960DE63641A1343F9A878C1C672B67E2021F46A675EE6CDA7EC6",
+    "run-e2e.ps1": "B8A742BBACA8F5D30979377EDDC24D98FB06124264781DAF07A9072B69AD0960"
   },
   "tests": [
     {
@@ -97,231 +361,36 @@
       "line": 7,
       "title": "chromium > comprehensive-sales.spec.ts > Comprehensive Sales Trip E2E > multi-bill trip is traceable and blocked by the verification gate",
       "expectedStatus": "passed",
-      "status": "passed",
-      "outcome": "expected",
+      "status": "failed",
+      "outcome": "unexpected",
       "retry": 0,
-      "durationMs": 9448,
-      "errors": [],
+      "durationMs": 20214,
+      "errors": [
+        {
+          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })\u001b[22m\n",
+          "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: 'เพิ่มบิลใหม่ในทริปนี้' })\u001b[22m\n\n    at C:\\MyWork\\WorldFert\\winspeed-frontend\\e2e\\comprehensive-sales.spec.ts:31:32"
+        }
+      ],
       "attachments": [
         {
-          "name": "multi-bill-gate.json",
-          "contentType": "application/json",
-          "path": null
+          "name": "screenshot",
+          "contentType": "image/png",
+          "path": "test-results/artifacts/comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium/test-failed-1.png"
         },
         {
-          "name": "screenshot",
-          "contentType": "image/png",
-          "path": "test-results/artifacts/comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium/test-finished-1.png"
-        }
-      ],
-      "annotations": []
-    },
-    {
-      "id": "a78c4a1581d8f3c0dba6-173e4d92c3868270b26a",
-      "file": "e2e/uat-full-loop.spec.ts",
-      "line": 25,
-      "title": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 1. SALES creates a traceable SO draft",
-      "expectedStatus": "passed",
-      "status": "passed",
-      "outcome": "expected",
-      "retry": 0,
-      "durationMs": 6141,
-      "errors": [],
-      "attachments": [
-        {
-          "name": "created-order.json",
-          "contentType": "application/json",
-          "path": null
+          "name": "video",
+          "contentType": "video/webm",
+          "path": "test-results/artifacts/comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium/video.webm"
         },
         {
-          "name": "screenshot",
-          "contentType": "image/png",
-          "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-4d721-reates-a-traceable-SO-draft-chromium/test-finished-1.png"
-        }
-      ],
-      "annotations": []
-    },
-    {
-      "id": "a78c4a1581d8f3c0dba6-6b3685cc8e0ea0cb9fd5",
-      "file": "e2e/uat-full-loop.spec.ts",
-      "line": 65,
-      "title": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 2. MANAGER verifies and ADMIN confirms the SO",
-      "expectedStatus": "passed",
-      "status": "passed",
-      "outcome": "expected",
-      "retry": 0,
-      "durationMs": 5747,
-      "errors": [],
-      "attachments": [
-        {
-          "name": "confirmed-order.json",
-          "contentType": "application/json",
-          "path": null
+          "name": "error-context",
+          "contentType": "text/markdown",
+          "path": "test-results/artifacts/comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium/error-context.md"
         },
         {
-          "name": "screenshot",
-          "contentType": "image/png",
-          "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-e594d-s-and-ADMIN-confirms-the-SO-chromium/test-finished-1.png"
-        }
-      ],
-      "annotations": []
-    },
-    {
-      "id": "a78c4a1581d8f3c0dba6-8b2e67fad78890575c18",
-      "file": "e2e/uat-full-loop.spec.ts",
-      "line": 96,
-      "title": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 3. COUNTER SALES sees the real TruckScale health state",
-      "expectedStatus": "passed",
-      "status": "passed",
-      "outcome": "expected",
-      "retry": 0,
-      "durationMs": 1522,
-      "errors": [],
-      "attachments": [
-        {
-          "name": "truckscale-health.json",
-          "contentType": "application/json",
-          "path": null
-        },
-        {
-          "name": "screenshot",
-          "contentType": "image/png",
-          "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-29cb0-eal-TruckScale-health-state-chromium/test-finished-1.png"
-        }
-      ],
-      "annotations": []
-    },
-    {
-      "id": "a78c4a1581d8f3c0dba6-309415de19fac6059a0f",
-      "file": "e2e/uat-full-loop.spec.ts",
-      "line": 116,
-      "title": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 4. WAREHOUSE picks, loads and ships the SO",
-      "expectedStatus": "passed",
-      "status": "passed",
-      "outcome": "expected",
-      "retry": 0,
-      "durationMs": 10476,
-      "errors": [],
-      "attachments": [
-        {
-          "name": "shipped-order.json",
-          "contentType": "application/json",
-          "path": null
-        },
-        {
-          "name": "screenshot",
-          "contentType": "image/png",
-          "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-d38a5-icks-loads-and-ships-the-SO-chromium/test-finished-1.png"
-        }
-      ],
-      "annotations": []
-    },
-    {
-      "id": "a78c4a1581d8f3c0dba6-8afd006492b60736c227",
-      "file": "e2e/uat-full-loop.spec.ts",
-      "line": 154,
-      "title": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 5. ADMIN verifies SHIPPED state and audit trail in Paper Trail",
-      "expectedStatus": "passed",
-      "status": "passed",
-      "outcome": "expected",
-      "retry": 0,
-      "durationMs": 2078,
-      "errors": [],
-      "attachments": [
-        {
-          "name": "uat-final-audit.json",
-          "contentType": "application/json",
-          "path": null
-        },
-        {
-          "name": "screenshot",
-          "contentType": "image/png",
-          "path": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-26b9a--audit-trail-in-Paper-Trail-chromium/test-finished-1.png"
-        }
-      ],
-      "annotations": []
-    },
-    {
-      "id": "c601ceb5ecfc8efa4a14-db9b981441c6f07525bd",
-      "file": "e2e/workflow.spec.ts",
-      "line": 9,
-      "title": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > ADMIN can login, use Access As and return to ADMIN",
-      "expectedStatus": "passed",
-      "status": "passed",
-      "outcome": "expected",
-      "retry": 0,
-      "durationMs": 1863,
-      "errors": [],
-      "attachments": [
-        {
-          "name": "admin-access-as.txt",
-          "contentType": "text/plain",
-          "path": null
-        },
-        {
-          "name": "screenshot",
-          "contentType": "image/png",
-          "path": "test-results/artifacts/workflow-WS-Sale-App-V1-0--8b979-cess-As-and-return-to-ADMIN-chromium/test-finished-1.png"
-        }
-      ],
-      "annotations": []
-    },
-    {
-      "id": "c601ceb5ecfc8efa4a14-04d11070d9eea9169f61",
-      "file": "e2e/workflow.spec.ts",
-      "line": 24,
-      "title": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > SALES can access Quotation",
-      "expectedStatus": "passed",
-      "status": "passed",
-      "outcome": "expected",
-      "retry": 0,
-      "durationMs": 1182,
-      "errors": [],
-      "attachments": [
-        {
-          "name": "screenshot",
-          "contentType": "image/png",
-          "path": "test-results/artifacts/workflow-WS-Sale-App-V1-0--c0537--SALES-can-access-Quotation-chromium/test-finished-1.png"
-        }
-      ],
-      "annotations": []
-    },
-    {
-      "id": "c601ceb5ecfc8efa4a14-6be9e43a9e3c225ddd6c",
-      "file": "e2e/workflow.spec.ts",
-      "line": 31,
-      "title": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > COUNTER_SALES can access TruckScale with explicit health",
-      "expectedStatus": "passed",
-      "status": "passed",
-      "outcome": "expected",
-      "retry": 0,
-      "durationMs": 1520,
-      "errors": [],
-      "attachments": [
-        {
-          "name": "screenshot",
-          "contentType": "image/png",
-          "path": "test-results/artifacts/workflow-WS-Sale-App-V1-0--fb082-kScale-with-explicit-health-chromium/test-finished-1.png"
-        }
-      ],
-      "annotations": []
-    },
-    {
-      "id": "c601ceb5ecfc8efa4a14-8da8bce2365e3b609421",
-      "file": "e2e/workflow.spec.ts",
-      "line": 42,
-      "title": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > WAREHOUSE can access loading and scale queues",
-      "expectedStatus": "passed",
-      "status": "passed",
-      "outcome": "expected",
-      "retry": 0,
-      "durationMs": 3795,
-      "errors": [],
-      "attachments": [
-        {
-          "name": "screenshot",
-          "contentType": "image/png",
-          "path": "test-results/artifacts/workflow-WS-Sale-App-V1-0--0d684-ss-loading-and-scale-queues-chromium/test-finished-1.png"
+          "name": "trace",
+          "contentType": "application/zip",
+          "path": "test-results/artifacts/comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium/trace.zip"
         }
       ],
       "annotations": []

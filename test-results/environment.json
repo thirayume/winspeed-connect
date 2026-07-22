@@ -1,25 +1,25 @@
 {
   "schemaVersion": 1,
-  "capturedAt": "2026-07-22T10:43:49.132Z",
+  "capturedAt": "2026-07-22T10:56:22.102Z",
   "frontend": {
     "url": "http://localhost:5173",
     "status": 200,
     "ok": true,
-    "durationMs": 53,
-    "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx?t=1784716973661\"></script>\n  </body>\n</html>\n"
+    "durationMs": 104,
+    "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx?t=1784717666440\"></script>\n  </body>\n</html>\n"
   },
   "api": {
     "url": "http://localhost:3000/api/health",
     "status": 200,
     "ok": true,
-    "durationMs": 90,
+    "durationMs": 147,
     "body": {
       "ok": true,
-      "ts": "2026-07-22T10:43:49.171Z",
+      "ts": "2026-07-22T10:56:22.188Z",
       "version": "1.0.0",
       "env": "development",
-      "uptimeSec": 842,
-      "requests": 71,
+      "uptimeSec": 1595,
+      "requests": 222,
       "errors": 0,
       "lastErrorAt": null,
       "db": {

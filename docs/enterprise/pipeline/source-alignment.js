@@ -95,6 +95,9 @@ function reviewE2eEvidence(e2eConfig = {}, options = {}) {
   if (evidence.status !== requiredStatus || evidence.complete !== true || evidence.playwrightStatus !== 'passed') {
     issue('ERROR', 'E2E_EVIDENCE_NOT_COMPLETE', `E2E evidence must be ${requiredStatus} with complete=true and playwrightStatus=passed; received ${evidence.status || 'unknown'}.`, { path: e2eConfig.evidenceFile });
   }
+  if (Number(evidence.schemaVersion || 1) >= 2 && evidence.sourceStability?.stable !== true) {
+    issue('ERROR', 'E2E_SOURCE_CHANGED_DURING_RUN', 'Source files or Git commit changed while the E2E run was in progress.', { sourceStability: evidence.sourceStability || null });
+  }
   const counts = evidence.counts || {};
   const minimumTestCount = Number(e2eConfig.minimumTestCount || 1);
   const nonPassing = ['failed', 'flaky', 'skipped', 'timedOut', 'interrupted', 'notRun'].reduce((sum, key) => sum + Number(counts[key] || 0), 0);
