@@ -36,7 +36,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "SQL seed failed with exit code $LASTEXITCODE" }
 
     Write-Host '3. Starting API and frontend...' -ForegroundColor Yellow
-    $serverProcess = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'npm run dev' -WindowStyle Hidden -PassThru
+    $serverProcess = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'npm run dev:e2e' -WindowStyle Hidden -PassThru
     Wait-Endpoint 'http://localhost:3000/api/health'
     Wait-Endpoint 'http://localhost:5173'
 
