@@ -23,7 +23,8 @@
     "deploy:minor": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -BumpType minor",
     "deploy:major": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -BumpType major",
     "deploy:skip-migrate": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -SkipMigration",
-    "deploy:dry": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -DryRun"
+    "deploy:dry": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -DryRun",
+    "smoke": "node scripts/smoke-api.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
