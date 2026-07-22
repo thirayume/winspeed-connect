@@ -7,6 +7,30 @@ const root = process.cwd();
 const rel = value => path.relative(root, value).replaceAll('\\', '/');
 const sha256 = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex').toUpperCase();
 
+function walkFiles(directory) {
+  if (!fs.existsSync(directory)) return [];
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    const absolute = path.join(directory, entry.name);
+    return entry.isDirectory() ? walkFiles(absolute) : (entry.isFile() ? [absolute] : []);
+  });
+}
+
+function collectTrackedFiles(policy, repoRoot = root) {
+  const selected = new Set([...(policy.requiredEvidenceFiles || []), ...(policy.requiredSpecs || [])]);
+  for (const trackedRoot of policy.trackedRoots || []) {
+    const absoluteRoot = path.join(repoRoot, trackedRoot.root);
+    const excludedPatterns = (trackedRoot.excludeNamePatterns || []).map(pattern => new RegExp(pattern, 'i'));
+    for (const absolute of walkFiles(absoluteRoot)) {
+      const relativeToRoot = path.relative(absoluteRoot, absolute).replaceAll('\\', '/');
+      if ((trackedRoot.excludePrefixes || []).some(prefix => relativeToRoot.startsWith(prefix))) continue;
+      if (excludedPatterns.some(pattern => pattern.test(path.basename(absolute)))) continue;
+      if (trackedRoot.extensions && !trackedRoot.extensions.includes(path.extname(absolute).toLowerCase())) continue;
+      selected.add(rel(absolute));
+    }
+  }
+  return [...selected].sort();
+}
+
 class EvidenceReporter {
   constructor() {
     this.startedAt = null;
@@ -65,23 +89,7 @@ class EvidenceReporter {
       else counts.failed += 1;
     }
 
-    const trackedFiles = [
-      'playwright.config.ts',
-      'e2e/evidence.config.json',
-      'e2e/helpers.ts',
-      'e2e/global-setup.ts',
-      'e2e/evidence-reporter.cjs',
-      'run-e2e.ps1',
-      'db-init/e2e-seed.sql',
-      'db-init/e2e-cleanup.sql',
-      'backend/routes/so.js',
-      'backend/routes/papertrail.js',
-      'backend/routes/reports.js',
-      'WSSale-App/src/components/sales/SalesPortal.tsx',
-      'WSSale-App/src/components/store/PickingQueue.tsx',
-      'WSSale-App/src/components/truckscale/TruckScalePage.tsx',
-      ...policy.requiredSpecs,
-    ];
+    const trackedFiles = collectTrackedFiles(policy);
     const fileHashes = Object.fromEntries(trackedFiles.map(file => {
       const absolute = path.join(root, file);
       return [file, fs.existsSync(absolute) ? sha256(absolute) : null];
@@ -132,3 +140,4 @@ class EvidenceReporter {
 }
 
 module.exports = EvidenceReporter;
+module.exports.collectTrackedFiles = collectTrackedFiles;

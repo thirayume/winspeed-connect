@@ -235,7 +235,7 @@ function packageVersions() {
   return files.map(file => ({ file, version: readJson(path.join(REPO_ROOT, ...file.split('/'))).version || null }));
 }
 
-function migrationSummary(files) {
+function migrationSummary(files, policy = {}) {
   const migrations = files.filter(file => file.group === 'database-migrations').map(file => {
     const match = path.basename(file.path).match(/^(\d+)_/);
     return { path: file.path, sequence: match ? Number(match[1]) : null };
@@ -246,11 +246,29 @@ function migrationSummary(files) {
     acc[item.sequence].push(item.path);
     return acc;
   }, {});
+  const duplicates = Object.entries(grouped)
+    .filter(([, paths]) => paths.length > 1)
+    .map(([sequence, paths]) => ({ sequence: Number(sequence), paths }));
+  const expected = policy.legacyDuplicateSequences || {};
+  const sequences = new Set([...duplicates.map(item => item.sequence), ...Object.keys(expected).map(Number)]);
+  const duplicatePolicy = [...sequences].sort((a, b) => a - b).map(sequence => {
+    const actualPaths = duplicates.find(item => item.sequence === sequence)?.paths || [];
+    const actualFiles = actualPaths.map(item => path.basename(item)).sort();
+    const expectedFiles = [...(expected[String(sequence)] || [])].sort();
+    return {
+      sequence,
+      paths: actualPaths,
+      expectedFiles,
+      approved: actualFiles.length > 1 && actualFiles.join('\n') === expectedFiles.join('\n'),
+    };
+  });
   return {
     fileCount: migrations.length,
     sequencedCount: sequenced.length,
     latestSequence: sequenced.length ? Math.max(...sequenced.map(item => item.sequence)) : null,
-    duplicates: Object.entries(grouped).filter(([, paths]) => paths.length > 1).map(([sequence, paths]) => ({ sequence: Number(sequence), paths })),
+    duplicates,
+    approvedLegacyDuplicates: duplicatePolicy.filter(item => item.approved),
+    unapprovedDuplicates: duplicatePolicy.filter(item => !item.approved),
     unsequenced: migrations.filter(item => item.sequence === null).map(item => item.path),
   };
 }
@@ -282,7 +300,10 @@ function scanOnce(config = loadConfig()) {
   const roles = extractUnionValues(readSource('WSSale-App/src/types/index.ts'), 'UserRole');
   const portals = extractUnionValues(readSource('WSSale-App/src/App.tsx'), 'PortalKey');
   const versions = packageVersions();
-  const migrations = migrationSummary(sourceFiles);
+  const migrationPolicy = config.migrationPolicyFile
+    ? readJson(path.join(REPO_ROOT, ...config.migrationPolicyFile.split('/')))
+    : {};
+  const migrations = migrationSummary(sourceFiles, migrationPolicy);
   const git = gitSnapshot();
   return {
     schemaVersion: 1,
@@ -447,8 +468,8 @@ function buildAlignmentReport(source, docs, config, accepted, drift) {
     addGap(gaps, 'ERROR', 'SOURCE_DBO_BOUNDARY_MARKER_CONFLICT', `backend/db.js declares dbo READ-ONLY, but runtime source contains ${dboWrites.length} dbo write statement(s).`, { path: 'backend/db.js' });
   }
 
-  if (source.migrations.duplicates.length) {
-    addGap(gaps, 'WARNING', 'DUPLICATE_MIGRATION_SEQUENCE', `Duplicate migration sequence(s): ${source.migrations.duplicates.map(item => item.sequence).join(', ')}.`, { paths: source.migrations.duplicates.flatMap(item => item.paths) });
+  if (source.migrations.unapprovedDuplicates.length) {
+    addGap(gaps, 'WARNING', 'UNAPPROVED_DUPLICATE_MIGRATION_SEQUENCE', `Unapproved or changed duplicate migration sequence(s): ${source.migrations.unapprovedDuplicates.map(item => item.sequence).join(', ')}.`, { paths: source.migrations.unapprovedDuplicates.flatMap(item => item.paths) });
   }
   const diagramManifestPath = path.join(REPORT_ROOT, 'source-diagram-manifest.json');
   if (!fs.existsSync(diagramManifestPath)) {

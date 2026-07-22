@@ -311,12 +311,12 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                   )}
                 </button>
                 <div
-                  className={`nav-group-items space-y-0.5 ${isExpanded ? 'expanded' : 'collapsed'}`}
-                  style={isExpanded ? { maxHeight: `${visibleItems.length * 64}px` } : undefined}
+                  className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
                 >
-                  {visibleItems.map(n => {
-                    const Icon = n.icon;
-                    return (
+                  <div className="overflow-hidden space-y-0.5">
+                    {visibleItems.map(n => {
+                      const Icon = n.icon;
+                      return (
                       <button key={n.key} onClick={() => {
                         if (n.key === 'approvals') {
                           setShowUnlockReview(true);

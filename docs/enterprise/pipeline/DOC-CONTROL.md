@@ -121,6 +121,7 @@ outputs:
 - `source.ps1 sync-api` แก้เฉพาะ block ที่คั่นด้วย `GENERATED:SOURCE-API-INVENTORY` ใน API Reference; ตารางภายใน block ห้ามแก้ด้วยมือ
 - Fingerprint ครอบคลุม Markdown และ source ของ documentation pipeline ได้แก่ config, script, Mermaid/Draw.io/YAML ภายใต้ `pipeline/`
 - Source inventory ครอบคลุม runtime manifests, backend routes/services, migrations, frontend source และ deployment files พร้อม hash และ drift report แยกต่างหาก
+- Migration runner ใช้ `backend/migration-policy.json`, แยก UAT/manual SQL ออกจาก deploy, ยอมรับเลขซ้ำเฉพาะ legacy group ที่ระบุ และบล็อก checksum/batch drift ของไฟล์ที่ apply แล้ว; ใช้ `npm run migrate:plan:local` เพื่อตรวจ ledger แบบ read-only
 - Canonical diagram sources `09`–`12` ต้องมี `sourceInventorySha256` ตรงกับ source report; PNG/DOCX/PPTX จะยังไม่ถูกสร้างเมื่อ strict gate ไม่ผ่าน
 - E2E ต้องผ่าน policy `REQUIRED`: 10 tests/3 required specs, ไม่มี failed/flaky/skipped/not-run, health ที่กำหนดผ่าน และ source/test hashes ตรงกับ `test-results/e2e-evidence.json` จึงนับเป็น UAT/release evidence
 - การไม่มี accepted baseline เป็น warning ใน development แต่ทำให้ `release-check` ล้มเหลว

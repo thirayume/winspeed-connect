@@ -37,16 +37,21 @@ test('extracts SQL write boundaries with line evidence', () => {
   assert.equal(writes[0].line, 2);
 });
 
-test('summarizes migration sequences and duplicates', () => {
-  const summary = migrationSummary([
+test('summarizes migration sequences and validates exact legacy duplicate policy', () => {
+  const files = [
     { path: 'backend/migrations/001_a.sql', group: 'database-migrations' },
     { path: 'backend/migrations/002_b.sql', group: 'database-migrations' },
     { path: 'backend/migrations/002_c.sql', group: 'database-migrations' },
     { path: 'backend/migrations/manual.sql', group: 'database-migrations' },
-  ]);
-  assert.equal(summary.latestSequence, 2);
-  assert.equal(summary.duplicates.length, 1);
-  assert.deepEqual(summary.unsequenced, ['backend/migrations/manual.sql']);
+  ];
+  const approved = migrationSummary(files, { legacyDuplicateSequences: { 2: ['002_b.sql', '002_c.sql'] } });
+  assert.equal(approved.latestSequence, 2);
+  assert.equal(approved.duplicates.length, 1);
+  assert.equal(approved.approvedLegacyDuplicates.length, 1);
+  assert.equal(approved.unapprovedDuplicates.length, 0);
+  assert.deepEqual(approved.unsequenced, ['backend/migrations/manual.sql']);
+  const changed = migrationSummary(files, { legacyDuplicateSequences: { 2: ['002_b.sql', '002_other.sql'] } });
+  assert.deepEqual(changed.unapprovedDuplicates.map(item => item.sequence), [2]);
 });
 
 test('reads structured current claims without confusing historical provenance', () => {

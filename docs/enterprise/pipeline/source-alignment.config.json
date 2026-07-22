@@ -1,11 +1,13 @@
 {
   "schemaVersion": 1,
+  "migrationPolicyFile": "backend/migration-policy.json",
   "sourceSets": [
     {
       "name": "runtime-manifests",
       "files": [
         "package.json",
         "backend/package.json",
+        "backend/migration-policy.json",
         "WSSale-App/package.json",
         "docker-compose.yml",
         ".env.example",
