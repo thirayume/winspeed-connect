@@ -278,32 +278,25 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
           {NAV_GROUPS.map((group, gi) => {
             const visibleItems = getVisibleItems(group.items);
             if (visibleItems.length === 0) return null;
-            const isExpanded = expandedGroups[group.groupLabel] ?? false;
+            const isExpanded = isSidebarCollapsed ? true : (expandedGroups[group.groupLabel] ?? false);
             const groupActive = isGroupActive(group);
             return (
               <div key={group.groupLabel}>
-                {gi > 0 && <div className="nav-group-divider" />}
-                <button
-                  onClick={() => toggleGroup(group.groupLabel)}
-                  className={`w-full flex items-center cursor-pointer transition-colors ${
-                    isSidebarCollapsed 
-                      ? 'justify-center p-2 mb-1 rounded-lg hover:bg-accent/60' 
-                      : 'nav-group-label justify-between hover:text-foreground'
-                  } ${groupActive && isSidebarCollapsed ? 'bg-accent/40' : ''} ${groupActive && !isSidebarCollapsed ? group.color : 'text-muted-foreground'}`}
-                  title={isSidebarCollapsed ? group.groupLabel : ''}
-                >
-                  {isSidebarCollapsed ? (
-                    group.icon && <group.icon size={18} className={group.color} />
-                  ) : (
-                    <>
-                      <div className={`flex items-center gap-2 ${group.color}`}>
-                        {group.icon && <group.icon size={14} />}
-                        <span>{group.groupLabel}</span>
-                      </div>
-                      <ChevronDown size={12} className={`transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
-                    </>
-                  )}
-                </button>
+                {gi > 0 && <div className={`nav-group-divider ${isSidebarCollapsed ? 'mx-auto w-8 my-2' : ''}`} />}
+                
+                {!isSidebarCollapsed && (
+                  <button
+                    onClick={() => toggleGroup(group.groupLabel)}
+                    className={`w-full flex items-center cursor-pointer transition-colors nav-group-label justify-between hover:text-foreground ${groupActive ? group.color : 'text-muted-foreground'}`}
+                    title={group.groupLabel}
+                  >
+                    <div className={`flex items-center gap-2 ${group.color}`}>
+                      {group.icon && <group.icon size={14} />}
+                      <span>{group.groupLabel}</span>
+                    </div>
+                    <ChevronDown size={12} className={`transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
+                  </button>
+                )}
                 <div
                   className={`nav-group-items space-y-0.5 ${isExpanded ? 'expanded' : 'collapsed'}`}
                   style={isExpanded ? { maxHeight: `${visibleItems.length * 52}px` } : undefined}
