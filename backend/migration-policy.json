@@ -2,41 +2,10 @@
   "schemaVersion": 1,
   "checksumPolicy": "immutable-after-apply",
   "excludedFiles": [
-    "000_logins.sql",
-    "001_wf_schema_backup.sql"
+    "000_logins.sql"
   ],
   "excludedPatterns": [
     "^uat_"
   ],
-  "legacyDuplicateSequences": {
-    "1": [
-      "001_wf_schema.sql",
-      "001_wf_schema_backup.sql"
-    ],
-    "2": [
-      "002_giveaway_quotation_papertrail.sql",
-      "002_performance_indexes.sql",
-      "002_wf_schema_v2.sql"
-    ],
-    "10": [
-      "010_add_loadsequence_to_views.sql",
-      "010_rebate_usage.sql"
-    ],
-    "16": [
-      "016_paper_copies.sql",
-      "016_truck_types.sql"
-    ],
-    "19": [
-      "019_request_types.sql",
-      "019_weigh_ticket.sql"
-    ],
-    "49": [
-      "049_giveaway_item_mapping.sql",
-      "049_seed_all_employees.sql"
-    ],
-    "50": [
-      "050_cleanup_hardcoded_users.sql",
-      "050_fix_confirm_sp_truckplate.sql"
-    ]
-  }
+  "legacyDuplicateSequences": {}
 }
