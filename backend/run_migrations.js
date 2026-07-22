@@ -260,10 +260,12 @@ async function run(options = parseArgs(process.argv)) {
 }
 
 if (require.main === module) {
-  run().catch(error => {
-    console.error(`Migration failed: ${error.message}`);
-    process.exitCode = 1;
-  });
+  run()
+    .then(() => process.exit(0))
+    .catch(error => {
+      console.error(`Migration failed: ${error.message}`);
+      process.exit(1);
+    });
 }
 
 module.exports = {
