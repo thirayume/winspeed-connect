@@ -122,10 +122,25 @@ function getRecentErrors(limit = 50) {
   return state.recentErrors.slice(0, limit);
 }
 
-// middleware: นับ request + เวลา
+// middleware: นับ request + เวลา + จับ 5xx ที่ route จัดการเอง (ไม่ผ่าน global error handler)
 function requestTimer(req, res, next) {
   const start = Date.now();
-  res.on('finish', () => recordRequest(req.method, req.path, res.statusCode, Date.now() - start));
+  res.on('finish', () => {
+    recordRequest(req.method, req.path, res.statusCode, Date.now() - start);
+    // route ส่วนใหญ่ try/catch แล้วตอบ 500 เอง → ไม่ถึง error middleware
+    // ถ้ายังไม่ถูกบันทึก ให้บันทึกที่นี่ (กันซ้ำด้วย res.locals.__obsLogged)
+    if (res.statusCode >= 500 && !res.locals.__obsLogged) {
+      recordError({
+        level: 'ERROR',
+        source: 'http',
+        message: `HTTP ${res.statusCode} on ${req.method} ${req.originalUrl}`,
+        method: req.method,
+        path: req.originalUrl,
+        status: res.statusCode,
+        userId: req.user?.sub,
+      });
+    }
+  });
   next();
 }
 
