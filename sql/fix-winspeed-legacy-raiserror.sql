@@ -1,44 +1,63 @@
 /*==============================================================================
-  fix-winspeed-legacy-raiserror.sql
+  fix-winspeed-legacy-raiserror.sql          (สคริปต์เดียวจบ · รันซ้ำได้)
   ------------------------------------------------------------------------------
-  ปัญหา   : WINSpeed แสดง "Database error code: 102 — Incorrect syntax near '@errno'"
-            เมื่อ INSERT/UPDATE/DELETE (เช่น INSERT INTO SOHD)
+  ปัญหา
+      WINSpeed ขึ้น "Database error code: 102 — Incorrect syntax near '@errno'"
+      เวลาบันทึกข้อมูล (เช่น INSERT INTO SOHD) — เกิดได้ทุกโมดูล
 
-  สาเหตุ  : trigger ของ WINSpeed (ERwin generate ปี 2003) ปิดท้ายด้วย
-                error:
-                    raiserror @errno @errmsg
-                    rollback transaction
-            ซึ่งเป็น syntax ของ SQL Server 2000 และถูก "discontinued"
-            ตั้งแต่ SQL Server 2012 — parser รุ่นใหม่ไม่รู้จักอีกต่อไป
-            *** ไม่เกี่ยวกับ compatibility level *** (ตั้ง 100 ก็ยังพัง)
-            ฐานข้อมูลนี้ถูกย้ายมารันบน SQL Server 2022 จึงเริ่มมีอาการ
+  สาเหตุ
+      trigger ของ WINSpeed (ERwin generate ปี 2002–2003) ปิดท้ายด้วย
+          error:
+              raiserror @errno @errmsg
+              rollback transaction
+      ซึ่งเป็น syntax ของ SQL Server 2000 และถูก "discontinued" ตั้งแต่
+      SQL Server 2012 — parser รุ่นใหม่ไม่รู้จักอีกต่อไป
+      *** ไม่เกี่ยวกับ compatibility level *** (ตั้ง 100 ก็ยังพัง)
+      ฐานข้อมูลนี้ย้ายมารันบน SQL Server 2022 จึงเริ่มมีอาการ
 
-  วิธีแก้ : เปลี่ยนเป็น syntax ปัจจุบัน
-                raiserror @errno @errmsg      -->  raiserror(@errmsg, 16, 1)
+  วิธีแก้
+      raiserror @errno @errmsg   -->   raiserror(@errmsg, 16, 1)
 
-  ขอบเขต  : ตรวจพบ 1,283 triggers ทั้งฐานข้อมูล (ณ 22 ก.ค. 2569)
+  สคริปต์นี้ทำอะไร
+      1) สร้างตาราง wf.LegacyTriggerBackup แล้วสำรอง definition เดิม (ก่อนแก้)
+      2) ไล่แก้ทุก trigger ที่ยังใช้ syntax เก่า (ทีละตัว มี error handling)
+      3) สรุปผล + ตรวจว่าเหลือ 0
+      * รันซ้ำได้ ถ้าไม่มีอะไรค้างจะไม่ทำอะไรเลย
 
-  ⚠ คำเตือน
-     1. triggers เหล่านี้เป็นออบเจ็กต์ของ Prosoft/WINSpeed (vendor)
-        ควรแจ้ง Prosoft ด้วย เผื่อมี patch ทางการสำหรับ SQL Server 2012+
-     2. BACKUP ฐานข้อมูลก่อนเสมอ + ทดลองบนสำเนาที่ restore มาก่อนทำจริง
-     3. รันในช่วง maintenance (ALTER TRIGGER ใช้ schema lock)
+  ⚠ ก่อนรัน
+      1) BACKUP ฐานข้อมูลก่อนเสมอ (ดู STEP 0)
+      2) trigger เหล่านี้เป็นของ Prosoft/WINSpeed (vendor) — ควรแจ้ง Prosoft
+         และถ้าอัปเกรด WINSpeed ในอนาคต อาจถูก deploy ทับกลับ ให้รันสคริปต์นี้ซ้ำ
+      3) รันในช่วง maintenance (ALTER TRIGGER ใช้ schema lock)
 
-  หมายเหตุ: error number จะเปลี่ยนจาก 30002 -> 50000 (ข้อความเดิม)
-            trigger เหล่านี้เป็น FK guard ที่ปกติแทบไม่ยิง จึงไม่กระทบการใช้งาน
-            ถ้าต้องคงเลข 30002 ให้ใช้ sp_addmessage แล้วเรียก
-            raiserror(30002, 16, 1, @errmsg) แทน
+  หมายเหตุ
+      error number เปลี่ยนจาก 30002 -> 50000 (ข้อความเดิม)
+      trigger เหล่านี้เป็น FK guard ที่ปกติแทบไม่ยิง จึงไม่กระทบการใช้งาน
 
-  ผู้จัดทำ: 22 กรกฎาคม 2569
+  ผลการรันจริงบน REMOTE (dbwins_worldfert9) — ตรวจซ้ำ 23 ก.ค. 2569
+      trigger ทั้งหมด (user) ....... 1,289
+      ใช้ syntax ใหม่ .............. 1,283
+      เหลือ legacy syntax .......... 0
+      ถูก disable / หายไป .......... ไม่มี
+      wf.LegacyTriggerBackup ....... 1,283 แถว (ต้นฉบับก่อนแก้ ครบทุกตัว)
+
+  ⚠ ขอบเขต: การแก้รอบนี้ทำบน REMOTE เท่านั้น — ฐานข้อมูล LOCAL (dev) เป็นคนละตัว
+      และยังไม่ถูกแก้ ถ้าจะใช้กับ environment อื่นให้รันสคริปต์นี้ที่นั่นอีกครั้ง
+      (สคริปต์จะ backup ต้นฉบับลง wf.LegacyTriggerBackup ของ DB นั้นเองก่อนแก้)
+
+  หมายเหตุ rollback: ต้นฉบับทั้ง 1,283 ตัวถูกย้ายจากไฟล์ .sql เข้ามาเก็บใน
+      ตาราง wf.LegacyTriggerBackup เรียบร้อยแล้ว จึงไม่ต้องพึ่งไฟล์ภายนอกอีก
+      (ดูวิธี rollback ท้ายไฟล์)
 ==============================================================================*/
 
-USE dbwins_worldfert9;
+USE dbwins_worldfert9;      -- << แก้ชื่อฐานข้อมูลให้ตรงถ้าใช้ที่อื่น
 GO
 SET NOCOUNT ON;
 GO
 
 /*------------------------------------------------------------------------------
-  STEP 0 — BACKUP (บังคับ) : แก้ path ให้ตรงกับเครื่องเซิร์ฟเวอร์
+  STEP 0 — BACKUP ฐานข้อมูล (บังคับ) : แก้ path ให้ตรงกับเครื่องเซิร์ฟเวอร์
+           เอาคอมเมนต์ออกแล้วรันก่อน
 ------------------------------------------------------------------------------*/
 -- BACKUP DATABASE dbwins_worldfert9
 -- TO DISK = 'D:\Backup\dbwins_worldfert9_beforeTriggerFix.bak'
@@ -47,159 +66,152 @@ GO
 
 
 /*------------------------------------------------------------------------------
-  STEP 1 — สำรอง definition เดิมของ trigger ที่จะแก้ (ไว้ rollback)
-           คัดลอกผลลัพธ์เก็บเป็นไฟล์ .sql ก่อนไปขั้นถัดไป
+  STEP 1 — เตรียมตารางสำรอง definition เดิม (ใช้ rollback ได้)
 ------------------------------------------------------------------------------*/
-SELECT o.name AS TriggerName, m.definition AS OriginalDefinition
-FROM sys.sql_modules m
-JOIN sys.objects   o ON o.object_id = m.object_id
-WHERE o.type = 'TR'
-  AND m.definition LIKE '%raiserror @errno @errmsg%'
-ORDER BY o.name;
+IF SCHEMA_ID('wf') IS NULL
+    EXEC('CREATE SCHEMA wf');
+GO
+
+IF OBJECT_ID('wf.LegacyTriggerBackup','U') IS NULL
+BEGIN
+    CREATE TABLE wf.LegacyTriggerBackup (
+        Id                 INT IDENTITY(1,1) PRIMARY KEY,
+        SchemaName         sysname       NOT NULL,
+        TriggerName        sysname       NOT NULL,
+        OriginalDefinition nvarchar(max) NOT NULL,
+        BackedUpAt         datetime2     NOT NULL DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT UQ_LegacyTriggerBackup UNIQUE (TriggerName)
+    );
+    PRINT 'created wf.LegacyTriggerBackup';
+END
 GO
 
 
 /*------------------------------------------------------------------------------
-  STEP 2 — ตรวจขอบเขตก่อนแก้
+  STEP 2 — สำรอง + แก้ทุก trigger ที่ยังใช้ syntax เก่า
 ------------------------------------------------------------------------------*/
-SELECT
-    COUNT(*)                                                            AS TotalLegacyTriggers,
-    SUM(CASE WHEN CHARINDEX('create trigger', LOWER(m.definition)) > 0
-             THEN 1 ELSE 0 END)                                         AS FixableByThisScript
+DECLARE @sch sysname, @name sysname, @def nvarchar(max), @sql nvarchar(max), @pos int;
+DECLARE @ok int = 0, @fail int = 0, @manual int = 0, @total int = 0;
+
+SELECT @total = COUNT(*)
 FROM sys.sql_modules m
 JOIN sys.objects   o ON o.object_id = m.object_id
-WHERE o.type = 'TR'
-  AND m.definition LIKE '%raiserror @errno @errmsg%';
-GO
+WHERE o.type = 'TR' AND m.definition LIKE '%raiserror @errno @errmsg%';
 
-
-/*------------------------------------------------------------------------------
-  STEP 3A — แก้เฉพาะตารางขาย (ปลดล็อกให้เปิดบิลได้ก่อน)
-            SOHD / SODT : insert, update, delete
-------------------------------------------------------------------------------*/
-DECLARE @name sysname, @sql nvarchar(max), @ok int = 0, @fail int = 0;
+PRINT '--- legacy triggers found: ' + CAST(@total AS varchar(10));
 
 DECLARE curFix CURSOR LOCAL FAST_FORWARD FOR
-    SELECT o.name,
-           REPLACE(
-               STUFF(m.definition,
-                     CHARINDEX('create trigger', LOWER(m.definition)), 14, 'ALTER TRIGGER'),
-               'raiserror @errno @errmsg', 'raiserror(@errmsg, 16, 1)')
+    SELECT SCHEMA_NAME(o.schema_id), o.name, m.definition
     FROM sys.sql_modules m
     JOIN sys.objects   o ON o.object_id = m.object_id
     WHERE o.type = 'TR'
-      AND o.name IN ('tI_SOHD','tU_SOHD','tD_SOHD','tI_SODT','tU_SODT','tD_SODT')
       AND m.definition LIKE '%raiserror @errno @errmsg%'
-      AND CHARINDEX('create trigger', LOWER(m.definition)) > 0;
+    ORDER BY o.name;
 
 OPEN curFix;
-FETCH NEXT FROM curFix INTO @name, @sql;
+FETCH NEXT FROM curFix INTO @sch, @name, @def;
 WHILE @@FETCH_STATUS = 0
 BEGIN
-    BEGIN TRY
-        EXEC sp_executesql @sql;
-        SET @ok += 1;   PRINT '  OK      : ' + @name;
-    END TRY
-    BEGIN CATCH
-        SET @fail += 1; PRINT '  FAILED  : ' + @name + ' -> ' + ERROR_MESSAGE();
-    END CATCH
-    FETCH NEXT FROM curFix INTO @name, @sql;
+    /* 2.1 สำรองของเดิมก่อน (ครั้งเดียวต่อ trigger) */
+    IF NOT EXISTS (SELECT 1 FROM wf.LegacyTriggerBackup WHERE TriggerName = @name)
+        INSERT wf.LegacyTriggerBackup (SchemaName, TriggerName, OriginalDefinition)
+        VALUES (@sch, @name, @def);
+
+    /* 2.2 หาตำแหน่ง CREATE TRIGGER "ตัวจริง"
+           ต้องค้นแบบมีชื่อ trigger ต่อท้ายด้วย เพราะบาง trigger มีแบนเนอร์คอมเมนต์
+           เช่น  /**********  Create Trigger ****************/
+           อยู่ข้างบน ถ้าค้นแค่ 'create trigger' จะไปโดนในคอมเมนต์
+           (เคสจริงที่เจอ: tI_ICCountHD -> Msg 2714 There is already an object named ...) */
+    SET @pos = CHARINDEX('create trigger ' + LOWER(@name), LOWER(@def));
+
+    IF @pos = 0
+    BEGIN
+        SET @manual += 1;
+        PRINT '  MANUAL : ' + @name + '  (หา CREATE TRIGGER ตัวจริงไม่เจอ — ต้องแก้มือ)';
+    END
+    ELSE
+    BEGIN
+        SET @sql = STUFF(@def, @pos, 14, 'ALTER TRIGGER');                       -- create trigger -> ALTER TRIGGER
+        SET @sql = REPLACE(@sql, 'raiserror @errno @errmsg', 'raiserror(@errmsg, 16, 1)');
+
+        BEGIN TRY
+            EXEC sp_executesql @sql;
+            SET @ok += 1;
+        END TRY
+        BEGIN CATCH
+            SET @fail += 1;
+            PRINT '  FAILED : ' + @name + ' -> ' + ERROR_MESSAGE();
+        END CATCH
+    END
+
+    FETCH NEXT FROM curFix INTO @sch, @name, @def;
 END
-CLOSE curFix; DEALLOCATE curFix;
+CLOSE curFix;
+DEALLOCATE curFix;
 
-PRINT '--- STEP 3A done: fixed=' + CAST(@ok AS varchar(10)) + ' failed=' + CAST(@fail AS varchar(10));
-GO
--- ทดสอบ: เปิดบิลขายใน WINSpeed ต้องผ่านแล้ว
-
-
-/*------------------------------------------------------------------------------
-  STEP 3B — แก้ทั้งฐานข้อมูล (triggers ที่เหลือทั้งหมด)
-            รันหลังจากยืนยันว่า STEP 3A ใช้งานได้จริง
-------------------------------------------------------------------------------*/
-DECLARE @name2 sysname, @sql2 nvarchar(max), @ok2 int = 0, @fail2 int = 0;
-
-DECLARE curAll CURSOR LOCAL FAST_FORWARD FOR
-    SELECT o.name,
-           REPLACE(
-               STUFF(m.definition,
-                     CHARINDEX('create trigger', LOWER(m.definition)), 14, 'ALTER TRIGGER'),
-               'raiserror @errno @errmsg', 'raiserror(@errmsg, 16, 1)')
-    FROM sys.sql_modules m
-    JOIN sys.objects   o ON o.object_id = m.object_id
-    WHERE o.type = 'TR'
-      AND m.definition LIKE '%raiserror @errno @errmsg%'
-      AND CHARINDEX('create trigger', LOWER(m.definition)) > 0;
-
-OPEN curAll;
-FETCH NEXT FROM curAll INTO @name2, @sql2;
-WHILE @@FETCH_STATUS = 0
-BEGIN
-    BEGIN TRY
-        EXEC sp_executesql @sql2;
-        SET @ok2 += 1;
-    END TRY
-    BEGIN CATCH
-        SET @fail2 += 1; PRINT '  FAILED  : ' + @name2 + ' -> ' + ERROR_MESSAGE();
-    END CATCH
-    FETCH NEXT FROM curAll INTO @name2, @sql2;
-END
-CLOSE curAll; DEALLOCATE curAll;
-
-PRINT '--- STEP 3B done: fixed=' + CAST(@ok2 AS varchar(10)) + ' failed=' + CAST(@fail2 AS varchar(10));
+PRINT '';
+PRINT '=== SUMMARY ===';
+PRINT '  fixed  : ' + CAST(@ok     AS varchar(10));
+PRINT '  failed : ' + CAST(@fail   AS varchar(10));
+PRINT '  manual : ' + CAST(@manual AS varchar(10));
 GO
 
 
 /*------------------------------------------------------------------------------
-  STEP 4 — ตรวจผล (ต้องได้ 0)
+  STEP 3 — ตรวจผล (ต้องได้ RemainingLegacy = 0)
 ------------------------------------------------------------------------------*/
-SELECT COUNT(*) AS RemainingLegacyTriggers
-FROM sys.sql_modules
-WHERE definition LIKE '%raiserror @errno @errmsg%';
+SELECT
+    (SELECT COUNT(*) FROM sys.sql_modules m JOIN sys.objects o ON o.object_id=m.object_id
+      WHERE o.type='TR' AND m.definition LIKE '%raiserror @errno @errmsg%')      AS RemainingLegacy,
+    (SELECT COUNT(*) FROM sys.sql_modules
+      WHERE definition LIKE '%raiserror(@errmsg, 16, 1)%')                        AS UsingNewSyntax,
+    (SELECT COUNT(*) FROM sys.triggers WHERE is_ms_shipped = 0)                   AS TotalUserTriggers,
+    (SELECT COUNT(*) FROM sys.triggers WHERE is_ms_shipped = 0 AND is_disabled=1) AS DisabledTriggers,
+    (SELECT COUNT(*) FROM wf.LegacyTriggerBackup)                                 AS BackedUpOriginals;
 GO
 
-
-/*------------------------------------------------------------------------------
-  STEP 4B — ⚠ กรณีพิเศษ: trigger ที่มีแบนเนอร์คอมเมนต์ "Create Trigger" ข้างบน
-            ตัวอย่างจริง: tI_ICCountHD ขึ้นต้นด้วย
-                /**********  Create Trigger ****************/
-                 create trigger tI_ICCountHD on ICCountHD
-            CHARINDEX จะไปเจอคำในคอมเมนต์ก่อน -> แทนที่ผิดตำแหน่ง
-            -> statement จริงยังเป็น CREATE -> Msg 2714 "There is already an object named ..."
-
-            วิธีตรวจ: หลัง STEP 3B ถ้า STEP 4 ยังไม่เป็น 0 ให้ดูรายชื่อที่เหลือ
-            วิธีแก้: แก้ทีละตัวโดยแทนที่ "create trigger" ตัวที่เป็น statement จริง
-                     (ตัวสุดท้าย ไม่ใช่ตัวในคอมเมนต์) แล้วรัน ALTER
-------------------------------------------------------------------------------*/
+-- ถ้ายังเหลือ ให้ดูรายชื่อ แล้วแก้มือ (ดู STEP 4)
 SELECT o.name AS StillLegacy
 FROM sys.sql_modules m
 JOIN sys.objects   o ON o.object_id = m.object_id
 WHERE o.type = 'TR' AND m.definition LIKE '%raiserror @errno @errmsg%';
--- ถ้ามีรายชื่อ: SELECT definition ของตัวนั้น -> แก้ 'create trigger' ตัวจริงเป็น 'ALTER TRIGGER'
---              + แก้ raiserror -> raiserror(@errmsg, 16, 1) -> แล้วรัน
 GO
 
 
 /*------------------------------------------------------------------------------
-  STEP 5 — ตรวจรูปแบบอื่นที่สคริปต์นี้ไม่ครอบคลุม (ถ้ามี ให้แก้มือ)
-           เช่น raiserror ที่เว้นวรรค/ชื่อตัวแปรต่างออกไป
+  STEP 4 — แก้มือ (เฉพาะกรณีที่ STEP 2 รายงานว่า MANUAL / FAILED)
+           ดู definition แล้วเปลี่ยน 'create trigger' ตัวที่เป็น statement จริง
+           (ไม่ใช่ตัวในคอมเมนต์) เป็น 'ALTER TRIGGER' + แก้ raiserror แล้วรัน
 ------------------------------------------------------------------------------*/
-SELECT o.name AS TriggerName, m.definition
-FROM sys.sql_modules m
-JOIN sys.objects   o ON o.object_id = m.object_id
-WHERE m.definition LIKE '%raiserror%@errno%'
-  AND m.definition NOT LIKE '%raiserror(@errmsg, 16, 1)%';
-GO
+-- SELECT m.definition
+-- FROM sys.sql_modules m JOIN sys.objects o ON o.object_id = m.object_id
+-- WHERE o.name = '<ชื่อ trigger>';
+-- GO
 
 
 /*------------------------------------------------------------------------------
-  ROLLBACK — ถ้าต้องย้อนกลับ
-     ใช้ไฟล์ที่บันทึกไว้จาก STEP 1 (หรือ sql/_rollback/winspeed-triggers-ORIGINAL-*.sql)
-     แต่ละ trigger เป็น CREATE TRIGGER ให้ DROP ตัวปัจจุบันก่อนแล้วรัน CREATE เดิม:
+  ROLLBACK — ย้อน trigger กลับเป็นของเดิม (จาก wf.LegacyTriggerBackup)
+             ⚠ ย้อนแล้ว error 102 จะกลับมา
 
-         DROP TRIGGER dbo.tI_SOHD;
-         GO
-         <วาง CREATE TRIGGER เดิม>
-         GO
+  ตัวเดียว:
+      DECLARE @d nvarchar(max);
+      SELECT @d = OriginalDefinition FROM wf.LegacyTriggerBackup WHERE TriggerName = 'tI_SOHD';
+      DROP TRIGGER dbo.tI_SOHD;
+      EXEC sp_executesql @d;
 
-     หมายเหตุ: การย้อนกลับจะทำให้ error 102 กลับมาอีกครั้ง
+  ทั้งหมด:
+      DECLARE @n sysname, @d nvarchar(max);
+      DECLARE c CURSOR LOCAL FAST_FORWARD FOR
+          SELECT TriggerName, OriginalDefinition FROM wf.LegacyTriggerBackup;
+      OPEN c; FETCH NEXT FROM c INTO @n, @d;
+      WHILE @@FETCH_STATUS = 0
+      BEGIN
+          BEGIN TRY
+              EXEC('DROP TRIGGER dbo.' + @n);
+              EXEC sp_executesql @d;
+          END TRY
+          BEGIN CATCH PRINT 'rollback failed: ' + @n + ' -> ' + ERROR_MESSAGE(); END CATCH
+          FETCH NEXT FROM c INTO @n, @d;
+      END
+      CLOSE c; DEALLOCATE c;
 ------------------------------------------------------------------------------*/
