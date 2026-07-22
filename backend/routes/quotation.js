@@ -213,6 +213,17 @@ async function loadQuotationNativeContext(tx, quoteId, hasGiveaway) {
     `)).recordset?.[0];
   if (!q) throw new Error('ไม่พบใบเสนอราคาสำหรับ sync เข้า WINSpeed');
 
+  const sourceSoRows = (await tx.request()
+    .input('id', sql.Int, Number(quoteId))
+    .query(`
+      SELECT TOP 1 so.CreditDays, so.TruckPlate, so.Remark, so.TruckRemark, so.BillRemark, so.TranspId, so.IsOwnTruck
+      FROM wf.QuotationSourceSO src
+      INNER JOIN wf.SalesOrder so ON so.Id = src.SoId
+      WHERE src.QuoteId=@id
+      ORDER BY so.Id ASC
+    `)).recordset || [];
+  const sourceSo = sourceSoRows[0] || null;
+
   const lineRows = (await tx.request()
     .input('id', sql.Int, Number(quoteId))
     .query(`
@@ -263,12 +274,12 @@ async function loadQuotationNativeContext(tx, quoteId, hasGiveaway) {
   if (!defaults.BrchID) throw new Error('ไม่พบ dbo.EMBrch สำหรับสร้าง WINSpeed Quotation');
   if (!defaults.InveID || !defaults.LocaID) throw new Error('ไม่พบ dbo.EMLoca สำหรับสร้างรายการ WINSpeed Quotation');
 
-  return { q, lines, cust, defaults, custId };
+  return { q, lines, cust, defaults, custId, sourceSo };
 }
 
 async function syncNativeQuotation(tx, quoteId, sourceRefs = [], opts = {}) {
   const hasGiveaway = opts.hasGiveawayColumn === true;
-  const { q, lines, cust, defaults, custId } = await loadQuotationNativeContext(tx, quoteId, hasGiveaway);
+  const { q, lines, cust, defaults, custId, sourceSo } = await loadQuotationNativeContext(tx, quoteId, hasGiveaway);
   if (q.WinspeedQuoteSOID) {
     return { quoteSoid: q.WinspeedQuoteSOID, quoteNo: q.WinspeedQuoteNo };
   }
@@ -283,7 +294,12 @@ async function syncNativeQuotation(tx, quoteId, sourceRefs = [], opts = {}) {
   const saleAreaId = await keepNativeIdIfExists(tx, 'dbo.EMSaleArea', 'SaleAreaID', cust.SaleAreaID);
   const empId = await keepNativeIdIfExists(tx, 'dbo.EMEmp', 'EmpID', q.SalesEmpId);
   const vatType = cleanText(cust.VatType || cust.VATType || '3', 1) || '3';
-  const creditDays = Number(cust.CreditDays || 30);
+  const creditDays = sourceSo?.CreditDays != null ? Number(sourceSo.CreditDays) : Number(cust.CreditDays || 30);
+  const transpId = sourceSo?.TranspId != null ? await keepNativeIdIfExists(tx, 'dbo.EMTransp', 'TranspID', sourceSo.TranspId) : null;
+  const truckRemark = sourceSo?.TruckRemark || null;
+  const billRemark = sourceSo?.BillRemark || null;
+  const truckPlate = sourceSo?.TruckPlate || null;
+  
   const sohdColumns = await getTableColumnSet(tx, 'dbo.SOHD');
   const headerInsert = buildInsertParts(sohdColumns, [
     ['SOID', '@SOID'],
@@ -298,6 +314,10 @@ async function syncNativeQuotation(tx, quoteId, sourceRefs = [], opts = {}) {
     ['ShipDate', '@ShipDate'],
     ['CreditDays', '@CreditDays'],
     ['NetAmnt', '@NetAmnt'],
+    ['TranspID', '@TranspID'],
+    ['Desc1', '@Desc1'],
+    ['Desc2', '@Desc2'],
+    ['TransRegistration', '@TransRegistration'],
     ['AppvFlag', `'W'`],
     ['PkgStatus', `'N'`],
     ['clearflag', `'N'`],
@@ -362,6 +382,10 @@ async function syncNativeQuotation(tx, quoteId, sourceRefs = [], opts = {}) {
     .input('ShipDate', sql.DateTime, docDate)
     .input('CreditDays', sql.SmallInt, Number.isFinite(creditDays) ? creditDays : 30)
     .input('NetAmnt', sql.Decimal(18, 2), totalAmount)
+    .input('TranspID', sql.Int, transpId)
+    .input('Desc1', sql.NVarChar(500), cleanText(truckRemark, 500))
+    .input('Desc2', sql.NVarChar(500), cleanText(billRemark, 500))
+    .input('TransRegistration', sql.NVarChar(30), cleanText(truckPlate, 30))
     .input('EmpID', sql.Int, empId || 1000)
     .input('BrchID', sql.Int, Number(defaults.BrchID))
     .input('VATRate', sql.Float, 0)
@@ -997,13 +1021,44 @@ router.get('/:id', async (req, res) => {
     }
     const sourceSos = hasSource
       ? (await wfQuery(`
-          SELECT src.SoId, src.SourceWfRef, so.Status, so.CustId, so.CustName, so.TruckPlate
+          SELECT src.SoId, src.SourceWfRef, so.Status, so.CustId, so.CustName, so.TruckPlate, so.TranspId, so.CreditDays, so.IsOwnTruck, so.NoTruckRequired, so.PSling, so.DeliveryDate, so.TruckRemark, so.BillRemark
           FROM wf.QuotationSourceSO src
           LEFT JOIN wf.SalesOrder so ON so.Id = src.SoId
           WHERE src.QuoteId=@id
           ORDER BY src.Id
         `, { id: { type: sql.Int, value: q.Id } })).recordset || []
       : [];
+      
+    if (sourceSos.length > 0) {
+      const firstSo = sourceSos[0];
+      q.TruckPlate = firstSo.TruckPlate;
+      q.TranspId = firstSo.TranspId;
+      q.CreditDays = firstSo.CreditDays;
+      q.IsOwnTruck = !!firstSo.IsOwnTruck;
+      q.NoTruckRequired = !!firstSo.NoTruckRequired;
+      q.PSling = !!firstSo.PSling;
+      q.DeliveryDate = firstSo.DeliveryDate;
+      q.TruckRemark = firstSo.TruckRemark;
+      q.BillRemark = firstSo.BillRemark;
+
+      const soIds = sourceSos.map(s => Number(s.SoId)).filter(n => Number.isInteger(n));
+      if (soIds.length > 0) {
+        const sourceLines = (await wfQuery(`
+          SELECT GoodId, MasterQty, ChildQty, LoadSequence
+          FROM wf.SalesOrderLine
+          WHERE SoId IN (${soIds.join(',')})
+        `)).recordset || [];
+        for (const line of lines) {
+          const match = sourceLines.find(sl => String(sl.GoodId) === String(line.GoodId));
+          if (match) {
+            line.MasterQty = match.MasterQty;
+            line.ChildQty = match.ChildQty;
+            line.LoadSequence = match.LoadSequence;
+          }
+        }
+      }
+    }
+
     const totalTon = lines.reduce((sum, line) => sum + Number(line.QtyTon || 0), 0);
     const totalAmount = lines.reduce((sum, line) => sum + Number(line.LineAmount || (Number(line.QtyTon || 0) * Number(line.PricePerTon || 0))), 0);
     res.json({ ...q, lines, sourceSos, LineCount: lines.length, TotalTon: totalTon, TotalAmount: totalAmount });
@@ -1117,7 +1172,7 @@ router.post('/from-so-trip', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
             WHEN hd.DocuType = 104 THEN 'IMPORTED'
             WHEN ext.IsLoaded = 1 THEN 'LOADED'
             WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
+            WHEN ext.IsUnlocked = 1 THEN 'DRAFT'
             ELSE 'CONFIRMED'
           END AS Status,
           ext.SalesUserId,
@@ -1251,6 +1306,16 @@ router.post('/from-so-trip', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
           .input('s', sql.Int, o.Id)
           .input('ref', sql.NVarChar(30), o.WfRef || null)
           .query(`INSERT INTO wf.QuotationSourceSO (QuoteId, SoId, SourceWfRef) VALUES (@q,@s,@ref)`);
+      }
+
+      // Lock original draft SOs to QUOTATION status
+      const soIds = orders.map(o => Number(o.Id)).filter(n => Number.isInteger(n) && n > 0);
+      if (soIds.length > 0) {
+        await tx.request().query(`
+          UPDATE wf.SalesOrder
+          SET Status='QUOTATION', UpdatedAt=GETUTCDATE()
+          WHERE Id IN (${soIds.join(',')})
+        `);
       }
 
       const native = await syncNativeQuotation(tx, qid, orders.map(o => o.WfRef).filter(Boolean), { hasGiveawayColumn: false });

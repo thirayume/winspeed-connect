@@ -125,7 +125,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
             : 'border-amber-200 bg-white';
 
         return (
-          <div key={order.id || order.wfRef} className={`rounded-xl border p-3 sm:p-4 shadow-sm flex flex-col gap-3 ${cardTone}`}>
+          <div key={order.id || order.wfRef} data-testid={`store-order-${order.id}`} className={`rounded-xl border p-3 sm:p-4 shadow-sm flex flex-col gap-3 ${cardTone}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -274,7 +274,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
 
       {/* Weigh Out Modal */}
       {weighOrder && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+        <div data-testid="weigh-out-modal" className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl overflow-hidden">
             <div className="p-4 border-b border-gray-100 flex items-center justify-between">
               <h3 className="font-bold text-[#0C447C] flex items-center gap-2">
@@ -289,12 +289,12 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-gray-600">ชั่งเข้า / รถเปล่า (กก.)</label>
-                  <input type="number" step="1" value={weighTare} onChange={e => setWeighTare(e.target.value)} placeholder="0"
+                  <input data-testid="weigh-tare" type="number" step="1" value={weighTare} onChange={e => setWeighTare(e.target.value)} placeholder="0"
                     className="w-full text-center text-lg font-bold p-2.5 rounded-xl border border-gray-300 focus:border-[#0C447C] outline-none" />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-gray-600">ชั่งออก / รถ+สินค้า (กก.)</label>
-                  <input type="number" step="1" autoFocus value={weighWeight} onChange={e => setWeighWeight(e.target.value)} placeholder="0"
+                  <input data-testid="weigh-gross" type="number" step="1" autoFocus value={weighWeight} onChange={e => setWeighWeight(e.target.value)} placeholder="0"
                     className="w-full text-center text-lg font-bold p-2.5 rounded-xl border border-gray-300 focus:border-[#0C447C] outline-none" />
                 </div>
               </div>

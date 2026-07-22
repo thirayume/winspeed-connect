@@ -1,6 +1,6 @@
 {
   "name": "winspeed-erp-root",
-  "version": "5.0.25",
+  "version": "1.0.0",
   "description": "Root management for Sales Order app",
   "scripts": {
     "start:backend": "cd backend && nodemon server.js",
@@ -21,6 +21,7 @@
     "deploy:dry": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -DryRun"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "concurrently": "^10.0.3",
     "cross-env": "^10.1.0",
     "kill-port": "^2.0.1",
