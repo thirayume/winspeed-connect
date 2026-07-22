@@ -6,7 +6,13 @@ export function GlobalLoader() {
   if (globalLoadingCount === 0) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/20 backdrop-blur-sm transition-opacity duration-300">
+    <div
+      data-testid="global-loader"
+      role="status"
+      aria-live="polite"
+      aria-label="กำลังโหลดข้อมูล"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/20 backdrop-blur-sm transition-opacity duration-300"
+    >
       <div className="flex flex-col items-center gap-3 bg-white p-6 rounded-2xl shadow-2xl border border-gray-100">
         <div className="relative flex h-12 w-12 items-center justify-center">
           <div className="absolute inset-0 rounded-full border-4 border-gray-100"></div>
