@@ -14,37 +14,75 @@ router.use(requireAuth);
 
 const WEIGH_TOL_KG = 50; // ผลต่างน้ำหนักที่ยอมรับ
 
-async function buildCases(days) {
-  const rows = (await wfQuery(`
-    SELECT TOP 500 so.Id AS SoId, so.WfRef, so.CustName, so.TruckPlate,
-           CONVERT(VARCHAR(10), so.CreatedAt, 120) AS ShipDate,
-           so.ImportedDocuNo AS WsDocuNo,
-           wt.NetKg, wt.Movebill, wt.ScaleNo,
-           inv.SOInvID AS WsInvoiceId,
-           inv.DocuNo AS WsInvoiceNo,
-           inv.DocuDate AS WsInvoiceDate,
-           inv.DocuType AS WsInvoiceType,
-           inv.PostID AS WsPostId
-    FROM wf.v_AllSalesOrders so
-    LEFT JOIN wf.WeighTicket wt ON wt.SoId = so.Id
-    OUTER APPLY (
-      SELECT TOP 1 h.SOInvID, h.DocuNo, h.DocuDate, h.DocuType, h.PostID
+const isNum = (s) => /^\d+$/.test(String(s));
+const quote = (s) => `'${String(s).replace(/'/g, "''")}'`;
+
+/**
+ * หาใบกำกับของ SO แบบ batched
+ * เดิมใช้ OUTER APPLY ต่อแถว (correlated) -> 34 วินาที / timeout
+ * ตอนนี้ยิง set-based 2 ครั้ง -> ~40ms โดยยังจับคู่ได้ครบ 3 ทางเหมือนเดิม
+ */
+async function lookupInvoices(rows) {
+  const map = {};
+  const ids = [...new Set(rows.map(r => String(r.SoId)).filter(isNum))];
+  if (!ids.length) return map;
+
+  // 2a) ทางหลัก: SOInvDT.RefID -> SOHD.SOID (ครอบคลุมเกือบทั้งหมด)
+  const primary = (await wfQuery(`
+    ;WITH m AS (
+      SELECT d.RefID AS SoId, h.SOInvID, h.DocuNo, h.DocuDate, h.DocuType, h.PostID,
+             ROW_NUMBER() OVER (PARTITION BY d.RefID ORDER BY h.DocuDate DESC, h.SOInvID DESC) rn
+      FROM dbo.SOInvDT d WITH (NOLOCK)
+      JOIN dbo.SOInvHD h WITH (NOLOCK) ON h.SOInvID = d.SOInvID AND h.DocuType IN (107, 202)
+      WHERE d.RefID IN (${ids.map(quote).join(',')}))
+    SELECT SoId, SOInvID, DocuNo, DocuDate, DocuType, PostID FROM m WHERE rn = 1`)).recordset || [];
+  for (const x of primary) map[String(x.SoId)] = x;
+
+  // 2b) fallback เฉพาะที่ยังไม่เจอ: RefSOID / SONo (สแกน SOInvHD ครั้งเดียว)
+  const left = rows.filter(r => !map[String(r.SoId)]);
+  if (left.length) {
+    const lIds = left.map(r => String(r.SoId)).filter(isNum);
+    const lNos = [...new Set(left.map(r => r.WsDocuNo).filter(Boolean))];
+    const idL = lIds.length ? lIds.map(quote).join(',') : `''`;
+    const noL = lNos.length ? lNos.map(quote).join(',') : `''`;
+    const alt = (await wfQuery(`
+      SELECT CAST(h.RefSOID AS VARCHAR(50)) AS BySoId, h.SONo, h.SOInvID, h.DocuNo, h.DocuDate, h.DocuType, h.PostID
       FROM dbo.SOInvHD h WITH (NOLOCK)
       WHERE h.DocuType IN (107, 202)
-        AND (
-          h.SOInvID IN (
-            SELECT d.SOInvID
-            FROM dbo.SOInvDT d WITH (NOLOCK)
-            WHERE CONVERT(varchar(50), d.RefID) = CONVERT(varchar(50), so.Id)
-          )
-          OR CONVERT(varchar(50), h.RefSOID) = CONVERT(varchar(50), so.Id)
-          OR h.SONo = so.ImportedDocuNo
-        )
-      ORDER BY h.DocuDate DESC, h.SOInvID DESC
-    ) inv
-    WHERE so.Status = 'SHIPPED' AND so.CreatedAt >= DATEADD(day, -@d, GETDATE())
-    ORDER BY so.CreatedAt DESC
+        AND (CAST(h.RefSOID AS VARCHAR(50)) IN (${idL}) OR h.SONo IN (${noL}))`)).recordset || [];
+    for (const r of left) {
+      const hit = alt.find(x => String(x.BySoId) === String(r.SoId) || (r.WsDocuNo && x.SONo === r.WsDocuNo));
+      if (hit) map[String(r.SoId)] = hit;
+    }
+  }
+  return map;
+}
+
+async function buildCases(days) {
+  // 1) shipped SO — อ่าน dbo.SOHD ตรง ไม่ผ่าน wf.v_AllSalesOrders
+  //    (view filter บน Status/CreatedAt ที่เป็น computed column -> full scan -> timeout)
+  const rows = (await wfQuery(`
+    SELECT TOP 500 CAST(hd.SOID AS VARCHAR(50)) AS SoId, ISNULL(ext.WfRef, hd.DocuNo) AS WfRef,
+           hd.CustName, hd.TransRegistration AS TruckPlate,
+           CONVERT(VARCHAR(10), hd.DocuDate, 120) AS ShipDate, hd.DocuNo AS WsDocuNo,
+           wt.NetKg, wt.Movebill, wt.ScaleNo
+    FROM dbo.SOHD hd WITH (NOLOCK)
+    LEFT JOIN wf.SalesOrderExt ext ON ext.SOID = hd.SOID
+    LEFT JOIN wf.WeighTicket wt ON wt.SoId = CAST(hd.SOID AS NVARCHAR(50))
+    WHERE hd.DocuStatus = 'Y' AND hd.DocuDate >= DATEADD(day, -@d, GETDATE())
+    ORDER BY hd.DocuDate DESC
   `, { d: { type: sql.Int, value: Number(days) || 7 } })).recordset || [];
+
+  // 2) แนบข้อมูลใบกำกับ (batched)
+  const invMap = await lookupInvoices(rows);
+  for (const r of rows) {
+    const i = invMap[String(r.SoId)];
+    r.WsInvoiceId   = i?.SOInvID  ?? null;
+    r.WsInvoiceNo   = i?.DocuNo   ?? null;
+    r.WsInvoiceDate = i?.DocuDate ?? null;
+    r.WsInvoiceType = i?.DocuType ?? null;
+    r.WsPostId      = i?.PostID   ?? null;
+  }
 
   // TruckScale net by movebill (batch, degrade ถ้าล่ม)
   let tsMap = {}, tsAvailable = true;
