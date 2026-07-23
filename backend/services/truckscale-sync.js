@@ -12,34 +12,75 @@ const COLS = `sequence AS Sequence, s_id AS Sid, movebill AS Movebill, one_car_r
   one_cus_name AS CustName, weight_in AS WeightIn, weight_out AS WeightOut, weight_net AS WeightNet,
   Date_In AS DateIn, Date_Out AS DateOut, Computer_w AS ScaleNo, one_num AS OneNum`;
 
+// ── Plate helpers ────────────────────────────────────────────
+// SO.TransRegistration มักเก็บ "หลายคันในช่องเดียว" เช่น "นว 84-1291,2" ·
+// "นว84-0863/81-9513" · "ลย70-2999/3000" แต่ TruckScale เก็บคันละใบ
+// → ต้องแตกเป็นทะเบียนรายคันก่อนเทียบ ไม่งั้นคันที่ 2 จะไม่มีวัน match
+const normPlate = (s) => String(s || '').replace(/[\s\-\/\.]/g, '');
+const plateDigits = (s) => String(s || '').replace(/\D/g, '');
+
+function expandPlates(raw) {
+  const s = String(raw || '').trim().replace(/\.+$/, '');
+  if (!s) return [];
+  const parts = s.split(/[,\/]+/).map(x => x.trim()).filter(Boolean);
+  if (!parts.length) return [];
+  const out = new Set([normPlate(parts[0])]);
+  // จับ prefix จังหวัด + กลุ่มเลขของคันแรก เพื่อขยายทะเบียนแบบย่อ
+  const m = parts[0].match(/^([^\d]*)(\d{1,3})\s*-?\s*(\d{1,5})/);
+  const prov = m ? m[1].replace(/\s/g, '') : '';
+  const g1 = m ? m[2] : '', g2 = m ? m[3] : '';
+  for (let i = 1; i < parts.length; i++) {
+    const p = parts[i].replace(/\s/g, '');
+    if (/[^\d\-]/.test(p)) { out.add(normPlate(p)); continue; }        // มีตัวอักษร = ทะเบียนเต็ม
+    if (/^\d{1,3}-\d{1,5}$/.test(p)) { out.add(normPlate(prov + p)); continue; } // 82-0256 → เติมจังหวัด
+    if (/^\d{1,5}$/.test(p) && g2) {                                   // ย่อ: 2 → 1292, 3000 → 3000
+      out.add(normPlate(prov + g1 + (p.length >= g2.length ? p : g2.slice(0, g2.length - p.length) + p)));
+    }
+  }
+  return [...out].filter(Boolean);
+}
+
 async function matchSo(r) {
   const plate = r?.Plate || r; // fallback if passed string
-  const np = String(plate).replace(/[\s\-\/]/g, '');
+  const np = normPlate(plate);
   if (!np) return { id: null, status: 'UNMATCHED' };
-  
-  const candidates = [];
-  
+  // prefilter กว้างพอให้ดึง SO ที่เป็นทะเบียนรวม/ย่อมาด้วย แล้วค่อยกรองแม่นใน JS
+  const dg = plateDigits(np);
+  const pre = dg.length >= 5 ? dg.slice(0, 5) : (dg || np);
+
+  const raw = [];
+
   // 1. WebApp (wf.SalesOrder)
   const draftCand = (await wfQuery(
-    `SELECT so.Id, ISNULL(so.DeliveryDate, so.CreatedAt) AS RefDate, so.CustName,
+    `SELECT TOP 50 so.Id, ISNULL(so.DeliveryDate, so.CreatedAt) AS RefDate, so.CustName, so.TruckPlate AS RawPlate,
        (SELECT SUM(QtyTon) FROM wf.SalesOrderLine l WHERE l.SoId = so.Id) AS TotalQtyTon
      FROM wf.SalesOrder so
      WHERE so.Status IN ('DRAFT', 'CONFIRMED', 'PICKING', 'LOADED')
-       AND REPLACE(REPLACE(REPLACE(ISNULL(so.TruckPlate,''),' ',''),'-',''),'/','') LIKE @p`,
-    { p: { type: sql.NVarChar(80), value: `%${np}%` } })).recordset || [];
-  draftCand.forEach(c => candidates.push({ id: String(c.Id), ...c, source: 'DRAFT' }));
-    
+       AND REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(so.TruckPlate,''),' ',''),'-',''),'/',''),'.','') LIKE @p`,
+    { p: { type: sql.NVarChar(80), value: `%${pre}%` } })).recordset || [];
+  draftCand.forEach(c => raw.push({ id: String(c.Id), ...c, source: 'DRAFT' }));
+
   // 2. WINSpeed (dbo.SOHD)
   const hdCand = (await wfQuery(
-    `SELECT hd.SOID AS Id, hd.CustName, hd.DocuDate AS RefDate,
+    `SELECT TOP 50 hd.SOID AS Id, hd.CustName, hd.DocuDate AS RefDate, hd.TransRegistration AS RawPlate,
        (SELECT SUM(GoodQty2) FROM dbo.SODT dt WHERE dt.SOID = hd.SOID) AS TotalQtyTon
      FROM dbo.SOHD hd
      LEFT JOIN wf.SalesOrderExt ext ON ext.SOID = hd.SOID
      WHERE hd.DocuStatus NOT IN ('Y', 'C') AND ISNULL(hd.clearflag, 'N') <> 'Y'
-       AND REPLACE(REPLACE(REPLACE(ISNULL(hd.TransRegistration,''),' ',''),'-',''),'/','') LIKE @p`,
-    { p: { type: sql.NVarChar(80), value: `%${np}%` } })).recordset || [];
-  hdCand.forEach(c => candidates.push({ id: String(c.Id), ...c, source: 'SOHD' }));
-    
+       AND REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(hd.TransRegistration,''),' ',''),'-',''),'/',''),'.','') LIKE @p`,
+    { p: { type: sql.NVarChar(80), value: `%${pre}%` } })).recordset || [];
+  hdCand.forEach(c => raw.push({ id: String(c.Id), ...c, source: 'SOHD' }));
+
+  // กรองแม่น: ทะเบียนใบชั่งต้องตรงกับ "คันใดคันหนึ่ง" ที่แตกออกมาจาก SO
+  // (คง substring เดิมไว้ด้วย เพื่อความเข้ากันได้กับทะเบียนรวมที่มี prefix)
+  const candidates = raw.filter(c => {
+    const soNorm = normPlate(c.RawPlate);
+    if (!soNorm) return false;
+    if (soNorm === np) return true;
+    if (expandPlates(c.RawPlate).includes(np)) return true;
+    return soNorm.includes(np);
+  });
+
   if (candidates.length === 0) return { id: null, status: 'UNMATCHED' };
   if (candidates.length === 1) return { id: candidates[0].id, status: 'MATCHED' };
   
@@ -181,4 +222,4 @@ function startSync() {
   console.log(`[ts-sync] worker started (poll ${everyMs}ms)`);
 }
 
-module.exports = { syncOnce, startSync, matchSo, upsertRow };
+module.exports = { syncOnce, startSync, matchSo, upsertRow, expandPlates, normPlate };

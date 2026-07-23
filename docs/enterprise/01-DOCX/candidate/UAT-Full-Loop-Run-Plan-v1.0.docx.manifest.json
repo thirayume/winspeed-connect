@@ -1,0 +1,13 @@
+{
+  "documentId": "WF-QA-010",
+  "status": "Review",
+  "output": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\01-DOCX\\candidate\\UAT-Full-Loop-Run-Plan-v1.0.docx",
+  "sha256": "D800A40DA66D41A482AF6A097E2A49C80D1E49401E5E46C0772000CBDADEFDE5",
+  "sourceData": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\pipeline\\docgen\\uat-cases.json",
+  "sourceCommit": "8dc03bd0d6c6bdfc765c6b61158df6f2b1e12301",
+  "generatedAt": "2026-07-23T03:16:38+07:00",
+  "caseCount": 18,
+  "automatedCount": 10,
+  "manualCount": 8,
+  "e2eStatus": "RERUN REQUIRED — current repository source differs from the tracked E2E evidence; instructional screenshots are not acceptance evidence"
+}
