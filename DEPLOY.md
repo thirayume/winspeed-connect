@@ -204,8 +204,14 @@ ssh -N -L 14330:127.0.0.1:1433 -L 33060:127.0.0.1:3306 -i $env:USERPROFILE\.ssh\
 > จะขึ้น `bind [127.0.0.1]:14330: Permission denied` · port forwarding ที่พอร์ต > 1024 ไม่ต้องใช้สิทธิ์ admin
 | เครื่องมือ | ค่าเชื่อมต่อ |
 |---|---|
-| **SSMS** | `localhost,14330` ← **คอมมา ไม่ใช่ colon** · SQL Auth `sa` · ☑ Trust server certificate |
-| **DBeaver (MySQL)** | `localhost:33060` · db `db_truckscale` |
+| **SSMS** | **`127.0.0.1,14330`** ← **คอมมา ไม่ใช่ colon** · SQL Auth `sa` · ☑ Trust server certificate |
+| **DBeaver (MySQL)** | `127.0.0.1:33060` · db `db_truckscale` · user `wfapp` |
+
+> 🚨 **ห้ามใช้ `localhost` กับ SSMS** — Windows แปลง `localhost` เป็น **IPv6 `::1`** ก่อน
+> แต่ SSH tunnel ผูกเฉพาะ **IPv4 `127.0.0.1`** → ODBC ยิงไป IPv6 แล้วรอจน timeout
+> ขึ้น `TCP Provider: The wait operation timed out (Error 258)` ทั้งที่ tunnel ทำงานปกติ
+> วัดจริง: `127.0.0.1,14330` ต่อได้ 2.7 วิ · `localhost,14330` fail ที่ 21 วิ
+> (DBeaver/JDBC ไม่เจอปัญหานี้เพราะ fallback ไป IPv4 เองได้)
 
 > หรือรัน migration ในเครื่องปลายทางตรงๆ: `docker exec -it <backend-container> node run_migrations.js`
 
