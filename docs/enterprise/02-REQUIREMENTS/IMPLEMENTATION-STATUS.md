@@ -2,7 +2,7 @@
 documentId: "WF-REQ-IMPL-008"
 title: "Implementation Status & Feature Gap (vs SRS v8 FRs)"
 version: "v1.0"
-runtimeVersion: "1.0.1"
+runtimeVersion: "1.2.0"
 sourceMigrationSequence: 55
 status: Review
 statusDetail: "Merged from v8.0; source verification and approval required"

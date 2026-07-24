@@ -1,6 +1,6 @@
-<testsuites id="" name="" tests="10" failures="0" skipped="0" errors="0" time="52.20230899999999">
-<testsuite name="comprehensive-sales.spec.ts" timestamp="2026-07-23T09:56:59.217Z" hostname="chromium" tests="1" failures="0" skipped="0" time="10.849" errors="0">
-<testcase name="Comprehensive Sales Trip E2E › multi-bill trip is traceable and blocked by the verification gate" classname="comprehensive-sales.spec.ts" time="10.849">
+<testsuites id="" name="" tests="10" failures="0" skipped="0" errors="0" time="46.459334999999996">
+<testsuite name="comprehensive-sales.spec.ts" timestamp="2026-07-24T15:52:28.642Z" hostname="chromium" tests="1" failures="0" skipped="0" time="10.869" errors="0">
+<testcase name="Comprehensive Sales Trip E2E › multi-bill trip is traceable and blocked by the verification gate" classname="comprehensive-sales.spec.ts" time="10.869">
 <system-out>
 <![CDATA[
 [[ATTACHMENT|artifacts\comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium\test-finished-1.png]]
@@ -8,36 +8,36 @@
 </system-out>
 </testcase>
 </testsuite>
-<testsuite name="uat-full-loop.spec.ts" timestamp="2026-07-23T09:56:59.217Z" hostname="chromium" tests="5" failures="0" skipped="0" time="30.448" errors="0">
-<testcase name="UAT Full Loop E2E › 1. SALES creates a traceable SO draft" classname="uat-full-loop.spec.ts" time="6.749">
+<testsuite name="uat-full-loop.spec.ts" timestamp="2026-07-24T15:52:28.642Z" hostname="chromium" tests="5" failures="0" skipped="0" time="24.311" errors="0">
+<testcase name="UAT Full Loop E2E › 1. SALES creates a traceable SO draft" classname="uat-full-loop.spec.ts" time="6.518">
 <system-out>
 <![CDATA[
 [[ATTACHMENT|artifacts\uat-full-loop-UAT-Full-Loo-4d721-reates-a-traceable-SO-draft-chromium\test-finished-1.png]]
 ]]>
 </system-out>
 </testcase>
-<testcase name="UAT Full Loop E2E › 2. MANAGER verifies and ADMIN confirms the SO" classname="uat-full-loop.spec.ts" time="5.842">
+<testcase name="UAT Full Loop E2E › 2. MANAGER verifies and ADMIN confirms the SO" classname="uat-full-loop.spec.ts" time="4.614">
 <system-out>
 <![CDATA[
 [[ATTACHMENT|artifacts\uat-full-loop-UAT-Full-Loo-e594d-s-and-ADMIN-confirms-the-SO-chromium\test-finished-1.png]]
 ]]>
 </system-out>
 </testcase>
-<testcase name="UAT Full Loop E2E › 3. COUNTER SALES sees the real TruckScale health state" classname="uat-full-loop.spec.ts" time="2.043">
+<testcase name="UAT Full Loop E2E › 3. COUNTER SALES sees the real TruckScale health state" classname="uat-full-loop.spec.ts" time="2.067">
 <system-out>
 <![CDATA[
 [[ATTACHMENT|artifacts\uat-full-loop-UAT-Full-Loo-29cb0-eal-TruckScale-health-state-chromium\test-finished-1.png]]
 ]]>
 </system-out>
 </testcase>
-<testcase name="UAT Full Loop E2E › 4. WAREHOUSE picks, loads and ships the SO" classname="uat-full-loop.spec.ts" time="12.536">
+<testcase name="UAT Full Loop E2E › 4. WAREHOUSE picks, loads and ships the SO" classname="uat-full-loop.spec.ts" time="8.882">
 <system-out>
 <![CDATA[
 [[ATTACHMENT|artifacts\uat-full-loop-UAT-Full-Loo-d38a5-icks-loads-and-ships-the-SO-chromium\test-finished-1.png]]
 ]]>
 </system-out>
 </testcase>
-<testcase name="UAT Full Loop E2E › 5. ADMIN verifies SHIPPED state and audit trail in Paper Trail" classname="uat-full-loop.spec.ts" time="3.278">
+<testcase name="UAT Full Loop E2E › 5. ADMIN verifies SHIPPED state and audit trail in Paper Trail" classname="uat-full-loop.spec.ts" time="2.23">
 <system-out>
 <![CDATA[
 [[ATTACHMENT|artifacts\uat-full-loop-UAT-Full-Loo-26b9a--audit-trail-in-Paper-Trail-chromium\test-finished-1.png]]
@@ -45,29 +45,29 @@
 </system-out>
 </testcase>
 </testsuite>
-<testsuite name="workflow.spec.ts" timestamp="2026-07-23T09:56:59.217Z" hostname="chromium" tests="4" failures="0" skipped="0" time="9.606" errors="0">
-<testcase name="WS-Sale-App V1.0 role navigation › ADMIN can login, use Access As and return to ADMIN" classname="workflow.spec.ts" time="1.994">
+<testsuite name="workflow.spec.ts" timestamp="2026-07-24T15:52:28.642Z" hostname="chromium" tests="4" failures="0" skipped="0" time="9.044" errors="0">
+<testcase name="WS-Sale-App V1.0 role navigation › ADMIN can login, use Access As and return to ADMIN" classname="workflow.spec.ts" time="1.732">
 <system-out>
 <![CDATA[
 [[ATTACHMENT|artifacts\workflow-WS-Sale-App-V1-0--8b979-cess-As-and-return-to-ADMIN-chromium\test-finished-1.png]]
 ]]>
 </system-out>
 </testcase>
-<testcase name="WS-Sale-App V1.0 role navigation › SALES can access Quotation" classname="workflow.spec.ts" time="1.216">
+<testcase name="WS-Sale-App V1.0 role navigation › SALES can access Quotation" classname="workflow.spec.ts" time="1.326">
 <system-out>
 <![CDATA[
 [[ATTACHMENT|artifacts\workflow-WS-Sale-App-V1-0--c0537--SALES-can-access-Quotation-chromium\test-finished-1.png]]
 ]]>
 </system-out>
 </testcase>
-<testcase name="WS-Sale-App V1.0 role navigation › COUNTER_SALES can access TruckScale with explicit health" classname="workflow.spec.ts" time="1.873">
+<testcase name="WS-Sale-App V1.0 role navigation › COUNTER_SALES can access TruckScale with explicit health" classname="workflow.spec.ts" time="2.489">
 <system-out>
 <![CDATA[
 [[ATTACHMENT|artifacts\workflow-WS-Sale-App-V1-0--fb082-kScale-with-explicit-health-chromium\test-finished-1.png]]
 ]]>
 </system-out>
 </testcase>
-<testcase name="WS-Sale-App V1.0 role navigation › WAREHOUSE can access loading and scale queues" classname="workflow.spec.ts" time="4.523">
+<testcase name="WS-Sale-App V1.0 role navigation › WAREHOUSE can access loading and scale queues" classname="workflow.spec.ts" time="3.497">
 <system-out>
 <![CDATA[
 [[ATTACHMENT|artifacts\workflow-WS-Sale-App-V1-0--0d684-ss-loading-and-scale-queues-chromium\test-finished-1.png]]

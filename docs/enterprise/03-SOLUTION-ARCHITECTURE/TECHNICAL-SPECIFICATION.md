@@ -2,7 +2,7 @@
 documentId: "WF-TECH-001"
 title: "Technical Specification — Runtime 1.0.1 Candidate"
 version: "v1.0"
-runtimeVersion: "1.0.1"
+runtimeVersion: "1.2.0"
 sourceMigrationSequence: 55
 sourceInventorySha256: "12B9F964C7C90341859EDD6CDDE9B92BA35D797347F2AA64A1134E1E885FC343"
 truckScaleWriteTargets: "tbl_keyone"
@@ -134,8 +134,25 @@ Business operations enqueue integration/outbox records with idempotency key and 
 - Backend is built as an immutable container with environment-specific configuration and health endpoint.
 - SQL Server and TruckScale connectivity must use private network/VPN/allowlist appropriate to the environment.
 - Coolify deployment source includes `deploy/coolify/docker-compose.yml`, database backup script and `backend/.env.coolify.example`; production values must be supplied from secrets.
-- Preflight verifies required configuration/dependencies before deployment.
+- On-prem deployment source is `deploy/onprem/` — Caddy reverse proxy with automatic TLS, SQL Server, MySQL, backend and frontend in one compose, started by `up.ps1`/`up.sh` and initialised by `bootstrap.sh`.
+- Preflight verifies required configuration/dependencies before deployment (`backend/scripts/preflight-check.js`).
+- Schema migration targets `local`, `remote` and `remote_b` with **`all` as the default**, executed by `backend/scripts/migrate-targets.js`, which fails the release when any target fails.
 - Go-live requires migration dry run, backup plus restore test, monitoring/alert delivery, rollback or forward-fix decision, capacity check and signed operational handover.
+
+### 8.1 Mandatory first-run database sequence
+
+The WINSpeed `.bak` carries `dbo` only — schema `wf`, its database users and all application accounts are created by the deployment pipeline, so the following order is normative and must not be reordered:
+
+1. `migrations/000_logins.sql` — creates server logins `wf_reader` / `wf_owner` (sysadmin required; excluded from the migration policy by design).
+2. `node run_migrations.js` — creates schema `wf`.
+3. `GRANT CONTROL ON SCHEMA::wf TO wf_owner; GRANT SELECT ON SCHEMA::wf TO wf_reader;`
+4. `node seed_admin.js` — creates the administrator and maps every employee from `dbo.EMEmp` to a role plus the `EmpId` link required to export sales orders back to WINSpeed.
+
+`001_wf_schema.sql` guards its grants with `IF EXISTS (... sys.database_principals ...)`, so running migrations before step 1 **skips the grants silently without error** and leaves `wf_owner` unable to write schema `wf`. Omitting step 4 leaves only `SALES` accounts with no administrator, so every login is rejected.
+
+Any full restore repeats steps 1–4 because `RESTORE ... REPLACE` drops schema `wf` and its database users. `deploy/coolify/refresh-data.sh` and `deploy/onprem/bootstrap.sh` implement the full cycle.
+
+Default credentials issued by step 4 are shared across all seeded accounts and must be rotated before go-live; rotation is a release gate.
 
 ## 9. Observability and error behavior
 

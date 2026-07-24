@@ -2,7 +2,7 @@
 documentId: "WF-SAD-001"
 title: "Solution Architecture Document"
 version: "v1.0"
-runtimeVersion: "1.0.1"
+runtimeVersion: "1.2.0"
 sourceMigrationSequence: 55
 sourceInventorySha256: "12B9F964C7C90341859EDD6CDDE9B92BA35D797347F2AA64A1134E1E885FC343"
 truckScaleWriteTargets: "tbl_keyone"
@@ -134,12 +134,30 @@ sequenceDiagram
 
 ## Production topology target
 
-- Frontend through managed static hosting/CDN or on-prem Nginx
+- Frontend through managed static hosting/CDN, reverse proxy or on-prem Nginx
 - Backend as immutable container
-- SQL Server via private network/VPN/allowlist
+- SQL Server via private network/VPN/allowlist — **database ports bound to loopback only**, reached through SSH tunnel
 - TruckScale via private connectivity or managed replica
 - centralized secret management
 - monitoring/alerting/backup validation before Full Production
+
+### Implemented deployment targets (2026-07-24)
+
+รองรับ 3 ปลายทางพร้อมกัน ระหว่างประเมินต้นทุนดูแล ความง่ายในการแก้ไข การโอนย้าย และความปลอดภัย
+
+| | A · Cloud PaaS | B · Coolify + VPS | C · On-Prem |
+|---|---|---|---|
+| Frontend / Backend | Vercel / Railway | Coolify `wf-frontend` / `wf-backend` | container `wf-frontend` / `wf-backend` |
+| SQL Server · MySQL | VM แยก · remote | container `wf-databases` | container `wf-mssql` · `wf-mysql` |
+| TLS | platform | Coolify (Traefik) | Caddy (Let's Encrypt / DDNS) |
+| Deployment source | `vercel.json` | `deploy/coolify/` | `deploy/onprem/` |
+
+**ข้อจำกัดเชิงสถาปัตยกรรมที่ยืนยันแล้ว**
+- SQL Server 2022 รันบน Railway ไม่ได้ (`sqlpal` misaligned log IO / stack overflow จาก storage layer
+  ที่ไม่รองรับ IO alignment) → Railway ใช้ได้เฉพาะ backend tier
+- SQL Server ไม่มี container image สำหรับ **ARM64** → host ต้องเป็น x86-64 ทุกปลายทาง
+- แต่ละปลายทางมี persistence ของตัวเอง **ข้อมูลไม่ sync ข้ามปลายทาง** — ใช้เป็น staging/DR ได้
+  แต่ห้ามรับ transaction จริงพร้อมกันมากกว่าหนึ่งปลายทาง
 
 ## Current implementation view
 

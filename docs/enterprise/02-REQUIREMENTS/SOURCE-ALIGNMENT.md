@@ -2,7 +2,7 @@
 documentId: "WF-REQ-010"
 title: "Source Alignment v1.0.1 - WS-Sale-App"
 version: "v1.0"
-runtimeVersion: "1.0.1"
+runtimeVersion: "1.2.0"
 sourceMigrationSequence: 55
 truckScaleWriteTargets: "tbl_keyone"
 status: Review

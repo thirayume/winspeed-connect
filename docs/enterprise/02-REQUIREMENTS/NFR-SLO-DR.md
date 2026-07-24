@@ -78,3 +78,27 @@ normative: true
 | WINSpeed write | queue/retry/reconcile | uncontrolled duplicate replay |
 | App DB | documented WINSpeed/manual fallback | hidden local persistence |
 | Monitoring | retain local logs and restore observability | discard audit/security events |
+
+## Disaster recovery — implemented position (2026-07-24)
+
+ระบบมี 3 ปลายทาง deploy ที่แยกกันสมบูรณ์ ใช้เป็นชั้น resilience ได้ แต่ **ข้อมูลไม่ sync ข้ามปลายทาง**
+จึงนับเป็น *cold standby* ไม่ใช่ HA — ต้อง restore ข้อมูลก่อนจึงรับงานแทนกันได้
+
+| ชั้น | กลไก | สถานะ |
+|---|---|---|
+| Backup SQL Server + MySQL | `deploy/coolify/backup-databases.sh` — `BACKUP ... WITH CHECKSUM` + `RESTORE VERIFYONLY`, `mysqldump --single-transaction` + `gzip -t`, หมุนเวียนตามอายุ, rsync ออกนอกเครื่อง, webhook แจ้งเตือนเมื่อล้มเหลว | สคริปต์พร้อม · **cron ยังไม่เปิดบนเครื่อง dev** |
+| Restore + กลับมาให้บริการ | `refresh-data.sh` (Coolify) · `bootstrap.sh` (on-prem) — ทำ restore แล้วต่อด้วย first-run sequence ให้ครบ | พร้อม |
+| Cold standby ข้ามปลายทาง | deploy ปลายทางที่สองจาก repo เดียวกัน แล้ว restore backup ล่าสุด | พร้อม |
+
+**ขั้นตอนกู้คืน (ต้องทำครบ)**
+1. เตรียมปลายทาง (`up.sh` / RUNBOOK / `provision-customer`)
+2. Restore `.bak` + `.sql` ล่าสุด
+3. **รัน first-run sequence ขั้น 1–4** (`000_logins` → migrations → GRANT → `seed_admin`)
+   — `RESTORE ... REPLACE` ลบ schema `wf` และ database user ทิ้ง ถ้าข้ามขั้นนี้ระบบจะ login ไม่ได้เลย
+4. ตรวจ `preflight-check.js` + `/api/health` + ทดสอบ login ก่อนเปิดใช้
+
+**ช่องว่างที่ยังต้องปิดก่อนประกาศว่าบรรลุ NFR-009 (RTO <4h / RPO <1h)**
+- เปิด cron ของ `backup-databases.sh` และตั้ง `OFFSITE_RSYNC_TARGET` (backup บนเครื่องเดียวกับ DB ไม่ช่วยตอนดิสก์/เครื่องพัง)
+- ทดสอบ restore จริงและบันทึกหลักฐาน (SLI `Backup validation` กำหนดว่าต้องไม่เก่ากว่า 90 วัน)
+- SQL Server Express **ไม่มี SQL Agent** → backup ต้องพึ่ง host cron เท่านั้น
+- TruckScale เป็นระบบ production ที่ตาชั่งหน้างานเขียนอยู่ — การกู้คืนต้องวางแผน cutover ร่วมกับการ repoint ซอฟต์แวร์ตาชั่ง

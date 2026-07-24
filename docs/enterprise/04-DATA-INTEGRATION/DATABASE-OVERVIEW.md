@@ -33,9 +33,22 @@ normative: true
 
 | # | ระบบ | Engine | ที่อยู่ | สิทธิ์จาก App | ใช้ทำอะไร |
 |---|------|--------|---------|---------------|-----------|
-| 1 | **WINSpeed (dbo)** | SQL Server 2022 | `dbwins_worldfert9` (20.255.185.14 remote / SQLEXPRESS local) | **READ** (+เขียน SOHD/SODT ตรงตอน confirm/ship — ดู §7) | ERP หลัก: master, ใบสั่งขาย, ใบกำกับ, GL, WF Rebate Trail, คูปอง |
+| 1 | **WINSpeed (dbo)** | SQL Server 2022 | `dbwins_worldfert9` — ที่อยู่ต่างกันตามปลายทาง (ดูตารางถัดไป) | **READ** (+เขียน SOHD/SODT ตรงตอน confirm/ship — ดู §7) | ERP หลัก: master, ใบสั่งขาย, ใบกำกับ, GL, WF Rebate Trail, คูปอง |
 | 2 | **App (wf schema)** | SQL Server 2022 (DB เดียวกับ dbo) | schema `wf` ใน `dbwins_worldfert9` | **READ-WRITE** | ข้อมูลที่ WINSpeed ไม่มี: SO state, Rebate Plan/Pool/Ledger, Giveaway, Paper Trail, WeighTicket, Quotation, Unlock |
-| 3 | **TruckScale** | MySQL 5.7 | `db_truckscale` (Railway cloud: `reseau.proxy.rlwy.net:42508`) | **READ** | เครื่องชั่งน้ำหนักรถ: น้ำหนักเข้า/ออก/สุทธิ (403,908 ใบชั่ง) |
+| 3 | **TruckScale** | MySQL (ต้นทาง 5.7 · container ที่ self-host ใช้ 8.0) | `db_truckscale` — ที่อยู่ต่างกันตามปลายทาง | **READ** | เครื่องชั่งน้ำหนักรถ: น้ำหนักเข้า/ออก/สุทธิ (403,908 ใบชั่ง) |
+
+### ที่อยู่ฐานข้อมูลตามปลายทาง deploy
+
+| ปลายทาง | SQL Server | MySQL (TruckScale) |
+|---|---|---|
+| Local (dev) | `SQLEXPRESS` (`DB_MODE=local`, Windows Auth) | remote/ต้นทาง |
+| A · Cloud PaaS | VM แยก (private network/allowlist) | remote/ต้นทาง |
+| B · Coolify + VPS | container `mssql-<service-uuid>` | container `mysql-<service-uuid>` |
+| C · On-Prem | container `wf-mssql` | container `wf-mysql` |
+
+> ⚠️ ปลายทางที่ self-host **DB port ผูก `127.0.0.1` เท่านั้น** — เข้าถึงจากภายนอกผ่าน SSH tunnel
+> ⚠️ **ข้อมูลไม่ sync ข้ามปลายทาง** แต่ละที่มีสำเนาของตัวเอง
+> ⚠️ ค่าเชื่อมต่อกำหนดด้วย `REMOTE_DB_*` / `MYSQL_*` — โค้ด **ไม่รู้จัก** `DB_HOST` / `DB_PORT`
 
 **ข้อสังเกต:**
 - `wf` กับ `dbo` อยู่ใน **SQL Server ฐานเดียวกัน** → JOIN ข้าม schema ได้ตรง ไม่ต้อง sync/cache
@@ -48,10 +61,10 @@ normative: true
 
 ```mermaid
 flowchart LR
-  subgraph FE[Frontend - React 19 / Vite / Vercel]
+  subgraph FE[Frontend - React 19 / Vite - static hosting or nginx]
     UI[22 หน้า/โมดูล]
   end
-  subgraph API[Backend - Express / Railway]
+  subgraph API[Backend - Express - container]
     R1[routes: so, master, rebate, giveaway,\nquotation, papertrail, reports, truckscale, auth]
     P1[(SQL Server pool\nlocal/remote สลับด้วย X-DB-Target)]
     P2[(MySQL pool\nmysql2)]
@@ -60,7 +73,7 @@ flowchart LR
     DBO[(dbo = WINSpeed\nREAD + เขียน SOHD/SODT)]
     WF[(wf = App\nREAD-WRITE)]
   end
-  subgraph MY[MySQL - db_truckscale Railway]
+  subgraph MY[MySQL - db_truckscale]
     TS[(tblscale, tblproduct_detail, ...)]
   end
   UI -->|JWT + X-DB-Target| R1

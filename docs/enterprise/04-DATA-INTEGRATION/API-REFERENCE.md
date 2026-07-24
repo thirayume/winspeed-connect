@@ -41,7 +41,7 @@ normative: true
 <!-- BEGIN GENERATED:SOURCE-API-INVENTORY -->
 > ส่วนนี้สร้างจาก Express route source โดยอัตโนมัติ ห้ามแก้ตารางด้วยมือ; ให้รัน `../pipeline/source.ps1 sync-api` หลัง route เปลี่ยน
 
-- Source inventory: `12B9F964C7C90341859EDD6CDDE9B92BA35D797347F2AA64A1134E1E885FC343`
+- Source inventory: `CF11FE1496BB4A2D8ADDF5365F4A39285D0DB43A4A10CE8863C8DB7F31C2F310`
 - Route modules: 17
 - Endpoints: 160
 

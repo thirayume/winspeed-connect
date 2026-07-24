@@ -2,7 +2,7 @@
 documentId: "WF-REQ-STATE-008"
 title: "Current System State — Modules, Data Dictionary & API (v8)"
 version: "v1.0"
-runtimeVersion: "1.0.1"
+runtimeVersion: "1.2.0"
 sourceMigrationSequence: 55
 truckScaleWriteTargets: "tbl_keyone"
 status: Review
@@ -37,7 +37,7 @@ normative: true
 ---
 
 ## 1. สถาปัตยกรรมโดยย่อ
-3 ฐานข้อมูล: **WINSpeed dbo** (SQL Server, system of record บัญชี — อ่านเป็นหลัก, เขียนเฉพาะ flow ที่อนุมัติ), **wf schema** (SQL Server เดียวกัน — operational extension, read-write ผ่าน migration), **TruckScale** (MySQL/Railway — อ่าน `tblscale`/ตารางอ้างอิง และเขียนเฉพาะ pre-weigh queue `tbl_keyone`)
+3 ฐานข้อมูล: **WINSpeed dbo** (SQL Server, system of record บัญชี — อ่านเป็นหลัก, เขียนเฉพาะ flow ที่อนุมัติ), **wf schema** (SQL Server เดียวกัน — operational extension, read-write ผ่าน migration), **TruckScale** (MySQL — โฮสต์ต่างกันตามปลายทาง deploy; อ่าน `tblscale`/ตารางอ้างอิง และเขียนเฉพาะ pre-weigh queue `tbl_keyone`)
 
 รูปแบบสำคัญ: dual-pool DB switch (local/remote ผ่าน `X-DB-Target`), Socket.IO realtime, **migration ledger** (กันรันซ้ำ), **integration outbox** (event เชื่อถือได้), **approval policy engine** (อนุมัติ config ได้), **observability** (telemetry + alert), **TruckScale pull-sync** (ดึงข้อมูลชั่งกลับ)
 

@@ -2,7 +2,7 @@
 documentId: "WF-SRS-008"
 title: "Software Requirements Specification — Enterprise Production Baseline"
 version: "v1.0"
-runtimeVersion: "1.0.1"
+runtimeVersion: "1.2.0"
 sourceMigrationSequence: 55
 sourceInventorySha256: "12B9F964C7C90341859EDD6CDDE9B92BA35D797347F2AA64A1134E1E885FC343"
 status: Review
