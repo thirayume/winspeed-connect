@@ -1,0 +1,194 @@
+# =============================================================
+# WS-Sale-App — On-Prem / Self-Hosted (แผน C)
+# =============================================================
+# ครบทุกอย่างในไฟล์เดียว: reverse proxy + TLS · SQL Server · MySQL · backend · frontend
+# ใช้ได้ทั้ง Docker Desktop บน Windows และ Ubuntu server
+#
+# เริ่มใช้งาน:
+#   1) คัดลอก .env.example -> .env แล้วแก้ค่า
+#   2) วางไฟล์ backup ที่โฟลเดอร์ ./backup/
+#   3) Windows: ดับเบิลคลิก up.bat     |     Linux: bash up.sh
+#      (หรือ docker compose up -d --build  แล้ว  bash bootstrap.sh)
+#
+# เข้าถึงจากภายนอกด้วย DDNS:
+#   - ตั้ง DDNS ให้ชี้มาที่ IP สาธารณะของเครื่องนี้
+#   - forward port 80 + 443 จาก router มาที่เครื่องนี้
+#   - ใส่ APP_DOMAIN/API_DOMAIN ใน .env แล้ว Caddy จะขอใบรับรอง Let's Encrypt ให้เอง
+#
+# ⚠ ต่างจาก compose ที่ root:
+#   - MSSQL_COLLATION=Thai_CI_AS (กัน collation conflict ตอน join คอลัมน์ไทย)
+#   - TZ=Asia/Bangkok ทุก container (ข้อมูลเป็น พ.ศ./เวลาไทย)
+#   - DB ผูกกับ 127.0.0.1 เท่านั้น ไม่เปิดสู่ LAN/อินเทอร์เน็ต
+#   - มี Caddy ทำ TLS ให้อัตโนมัติ
+#   - ./backup bind-mount เข้า container โดยตรง (วางไฟล์ผ่าน File Explorer ได้เลย)
+# =============================================================
+
+services:
+
+  # ── Reverse proxy + TLS อัตโนมัติ ───────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: wf-caddy
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-localhost}
+      API_DOMAIN: ${API_DOMAIN:-localhost:3000}
+      TZ: ${TZ:-Asia/Bangkok}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data          # เก็บใบรับรอง — อย่าลบ ไม่งั้นต้องขอใหม่ (มี rate limit)
+      - caddy-config:/config
+    depends_on:
+      - frontend
+      - backend
+    networks: [wf-net]
+
+  # ── SQL Server (WINSpeed) ───────────────────────────────────
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: wf-mssql
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      MSSQL_PID: ${MSSQL_PID:-Express}        # Express ฟรี จำกัด 10GB/DB (วัดจริง 3.37GB → พอ)
+      MSSQL_COLLATION: Thai_CI_AS             # ต้องตรงกับ dbwins_worldfert9
+      MSSQL_MEMORY_LIMIT_MB: ${MSSQL_MEMORY_LIMIT_MB:-2048}
+      TZ: ${TZ:-Asia/Bangkok}
+    ports:
+      - "127.0.0.1:${MSSQL_LOCAL_PORT:-1433}:1433"   # loopback เท่านั้น
+    volumes:
+      - mssql-data:/var/opt/mssql
+      - ./backup:/var/opt/mssql/backup              # วางไฟล์ .bak ที่โฟลเดอร์นี้
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: ${MSSQL_MEM_LIMIT:-3G}
+    networks: [wf-net]
+
+  # ── MySQL (TruckScale) ──────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: wf-mysql
+    restart: unless-stopped
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+07:00
+      - --innodb-buffer-pool-size=${MYSQL_BUFFER_POOL:-256M}
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-db_truckscale}
+      MYSQL_USER: ${MYSQL_USER:-wfapp}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: ${TZ:-Asia/Bangkok}
+    ports:
+      - "127.0.0.1:${MYSQL_LOCAL_PORT:-3306}:3306"   # loopback เท่านั้น
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./backup:/backup                             # วางไฟล์ .sql ที่โฟลเดอร์นี้
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: ${MYSQL_MEM_LIMIT:-1G}
+    networks: [wf-net]
+
+  # ── Backend ─────────────────────────────────────────────────
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: wf-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      TZ: ${TZ:-Asia/Bangkok}
+      # ⚠ โค้ดไม่รู้จัก DB_HOST/DB_PORT — ต้องใช้ชื่อพวกนี้เท่านั้น
+      DB_MODE: remote
+      REMOTE_DB_SERVER: mssql
+      REMOTE_DB_PORT: 1433
+      REMOTE_DB_USER: sa
+      REMOTE_DB_PASSWORD: ${MSSQL_SA_PASSWORD}
+      DB_NAME: ${DB_NAME:-dbwins_worldfert9}
+      DB_USER: wf_reader
+      DB_PASSWORD: ${WF_READER_PASSWORD}
+      DB_OWNER_USER: wf_owner
+      DB_OWNER_PASSWORD: ${WF_OWNER_PASSWORD}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-db_truckscale}
+      MYSQL_USER: ${MYSQL_USER:-wfapp}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      EXPORT_OUTPUT_PATH: /app/exports
+      MIGRATE_SECRET: ${MIGRATE_SECRET}
+      TS_SYNC_INTERVAL_MS: ${TS_SYNC_INTERVAL_MS:-60000}
+      TS_INGEST_SECRET: ${TS_INGEST_SECRET}
+      APP_VERSION: ${APP_VERSION:-1.0.0}
+      # LINE Login (ไม่ใส่ก็ใช้งานได้ ยกเว้นปุ่ม Login with LINE) — ดู ../LINE-LOGIN-GUIDE.md
+      LINE_LOGIN_CHANNEL_ID: ${LINE_LOGIN_CHANNEL_ID:-}
+      LINE_LOGIN_CHANNEL_SECRET: ${LINE_LOGIN_CHANNEL_SECRET:-}
+      LINE_LOGIN_CALLBACK_URL: ${LINE_LOGIN_CALLBACK_URL:-}
+      LINE_LOGIN_SUCCESS_REDIRECT: ${LINE_LOGIN_SUCCESS_REDIRECT:-}
+    volumes:
+      - backend-exports:/app/exports
+    depends_on:
+      mssql:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks: [wf-net]
+
+  # ── Frontend ────────────────────────────────────────────────
+  # ⚠ VITE_API_BASE_URL ถูก bake ตอน build → เปลี่ยนโดเมนแล้วต้อง --build ใหม่
+  frontend:
+    build:
+      context: ../../WSSale-App
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+        VITE_USE_MOCKUP_DATA: "false"
+    container_name: wf-frontend
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Bangkok}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [wf-net]
+
+volumes:
+  mssql-data:
+  mysql-data:
+  backend-exports:
+  caddy-data:
+  caddy-config:
+
+networks:
+  wf-net:
+    driver: bridge
