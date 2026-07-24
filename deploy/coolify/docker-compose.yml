@@ -1,0 +1,105 @@
+# =============================================================
+# WS-Sale-App — Databases for Coolify (Hetzner VPS)
+# =============================================================
+# ใช้เป็น "Docker Compose resource" ใน Coolify
+#
+# ⚠ ปรับจูนไว้สำหรับ **Hetzner CX23 (2 vCPU / 4 GB RAM / 40 GB disk)**
+#   RAM 4GB ตึงมาก → จำกัดหน่วยความจำทุก container อย่างชัดเจน
+#   ถ้าอัปเป็น CX32 (8GB) ให้ปรับขึ้น: mssql 4G / MSSQL_MEMORY_LIMIT_MB 3072 / mysql 1536M
+#
+# สำคัญ:
+#   - port ผูกกับ 127.0.0.1 ของ VM เท่านั้น (loopback) → อินเทอร์เน็ตเข้าไม่ถึง
+#     แต่ SSH tunnel เข้าได้: ssh -L 1433:localhost:1433 root@IP
+#     (ถ้าไม่ใส่ ports เลย tunnel จะต่อไม่ได้ เพราะ port ไม่ได้อยู่บน host)
+#   - ห้ามเปลี่ยนเป็น "1433:1433" เด็ดขาด — นั่นคือเปิดสู่อินเทอร์เน็ต
+#   - MSSQL_COLLATION=Thai_CI_AS ให้ตรง DB (dbwins_worldfert9 = Thai_CI_AS)
+#     กัน tempdb collation conflict ตอน join คอลัมน์ภาษาไทย
+#   - TZ=Asia/Bangkok ทุก container (ข้อมูลใช้ พ.ศ. / เวลาไทย)
+#
+# ตัวแปรที่ต้องตั้งใน Coolify → Environment Variables:
+#   MSSQL_SA_PASSWORD, MYSQL_ROOT_PASSWORD, MYSQL_USER, MYSQL_PASSWORD
+# =============================================================
+
+services:
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mssql
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD}"
+      # Express = ฟรี, จำกัด 10GB/DB (วัดจริง: 3.37GB → พอ)
+      # ถ้าโตเกิน 10GB ค่อยเปลี่ยนเป็น Developer (ห้ามใช้ production) หรือซื้อ Standard
+      MSSQL_PID: "Express"
+      # ⚠ CX23 RAM 4GB — บอก SQL Server ให้จำกัดตัวเอง ไม่งั้นมันจะกินจนเครื่องโดน OOM
+      #   Express cap buffer pool ที่ 1410MB อยู่แล้ว · เผื่อ overhead เป็น 1800
+      MSSQL_MEMORY_LIMIT_MB: "1800"
+      # ให้ตรงกับ collation ของ dbwins_worldfert9
+      MSSQL_COLLATION: "Thai_CI_AS"
+      TZ: "Asia/Bangkok"
+    ports:
+      - "127.0.0.1:1433:1433"   # loopback ของ VM เท่านั้น → ใช้กับ ssh -L (SSMS)
+    volumes:
+      - mssql-data:/var/opt/mssql
+      - mssql-backup:/var/opt/mssql/backup
+    # ⚠ ห้ามใส่ trace flags / mssql.conf / custom entrypoint
+    #   ของพวกนั้นเป็น workaround เฉพาะ Railway — บน ext4 จริงไม่ต้องใช้
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 90s          # SQL Server ใช้เวลา boot นาน
+    deploy:
+      resources:
+        limits:
+          memory: 2560M          # CX23 4GB → กันไว้ให้ mysql/backend/OS
+    networks: [wf-net]
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: unless-stopped
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+07:00
+      # ── จูนสำหรับ CX23 RAM 4GB ──
+      - --innodb-buffer-pool-size=256M
+      - --performance-schema=OFF        # ประหยัด ~200MB
+      - --max-connections=60
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
+      MYSQL_DATABASE: "db_truckscale"
+      MYSQL_USER: "${MYSQL_USER:-wfapp}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD}"
+      TZ: "Asia/Bangkok"
+    ports:
+      - "127.0.0.1:3306:3306"   # loopback ของ VM เท่านั้น → ใช้กับ ssh -L (DBeaver)
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - mysql-backup:/backup
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 768M           # CX23 4GB
+    networks: [wf-net]
+
+volumes:
+  mssql-data:
+  mssql-backup:
+  mysql-data:
+  mysql-backup:
+
+networks:
+  wf-net:
+    driver: bridge
+# หมายเหตุ: ผูก backend เข้า network "wf-net" เดียวกันใน Coolify
+#   แล้วตั้ง REMOTE_DB_SERVER=mssql / MYSQL_HOST=mysql (ชื่อ service)
