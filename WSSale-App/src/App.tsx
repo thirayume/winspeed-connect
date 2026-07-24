@@ -18,6 +18,7 @@ import { MobileDrawer } from './components/common/MobileDrawer';
 import type { NavItem, NavGroup } from './components/common/MobileDrawer';
 import { UnlockReviewModal } from './components/papertrail/UnlockReviewModal';
 import { useSocketEvent } from './hooks/useSocket';
+import packageJson from '../package.json';
 
 export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'weigh-inbox' | 'policy' | 'governance' | 'ops' | 'admin' | 'master' | 'profile';
 
@@ -272,7 +273,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
             <div className="flex flex-col leading-tight animate-in fade-in duration-300">
               <span className="text-sm font-semibold flex items-center gap-1.5">
                 WS-Sale-App
-                <span className="text-[9px] bg-blue-100 text-blue-800 px-1 rounded font-bold">v1.0.0</span>
+                <span className="text-[9px] bg-blue-100 text-blue-800 px-1 rounded font-bold">v{packageJson.version}</span>
               </span>
               <span className="text-[11px] text-muted-foreground">World Fert</span>
             </div>
