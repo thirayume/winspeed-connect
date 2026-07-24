@@ -2,9 +2,12 @@
 documentId: "WF-SAD-001"
 title: "Solution Architecture Document"
 version: "v1.0"
+runtimeVersion: "1.0.1"
+sourceMigrationSequence: 55
+sourceInventorySha256: "12B9F964C7C90341859EDD6CDDE9B92BA35D797347F2AA64A1134E1E885FC343"
 truckScaleWriteTargets: "tbl_keyone"
 status: Review
-statusDetail: "Merged from v8.0; source verification and approval required"
+statusDetail: "Source-aligned architecture candidate; review and approval required"
 sourceVersion: "v8.0"
 sourceStatus: "Released"
 sourceStatusDetail: "Final — Commercial Delivery Baseline"
@@ -22,10 +25,11 @@ normative: true
 | Product | WS-Sale-App — Sales Order, Warehouse Execution & Rebate Management |
 | Client | World Fert Co., Ltd. |
 | Version | v1.0 |
-| Date | 28 มิถุนายน 2569 (28 June 2026) |
+| Date | 23 กรกฎาคม 2569 (23 July 2026) |
 | Owner | Solution Architect |
-| Status | Review — merged candidate; source verification required |
+| Status | Review — source-aligned architecture candidate; approval required |
 | Classification | Confidential — Client / Authorized Partner Use Only |
+| Source snapshot | runtime 1.0.1 · commit `79a10a28` · 17 route mounts / 160 endpoints / 22 portals / 55 migrations |
 
 > **Merge provenance — 21 July 2026:** เอกสารต้นทาง v8.0 ถูกคงไว้เป็น v1.0 review candidate ตามนโยบาย `latest-document-wins`; หากขัดกับเอกสารที่ใหม่กว่าหรือ source code ปัจจุบัน ให้ยึดหลักฐานล่าสุด และต้อง review/approve ก่อน baseline.
 
@@ -136,3 +140,22 @@ sequenceDiagram
 - TruckScale via private connectivity or managed replica
 - centralized secret management
 - monitoring/alerting/backup validation before Full Production
+
+## Current implementation view
+
+| View | Source-aligned fact |
+|---|---|
+| Runtime | frontend, backend and root packages declare version 1.0.1 |
+| Application surface | 22 portal keys, 8 roles, 17 mounted API route modules and 160 detected endpoints |
+| Persistence | SQL Server `wf` operational extension, controlled WINSpeed `dbo`, TruckScale MySQL |
+| Schema evolution | 55 sequenced migration files through sequence 055 with no duplicate sequence |
+| Controlled external writes | 33 detected `dbo` write statements require contract review; TruckScale writes are limited to 2 statements targeting `tbl_keyone` |
+| Automated evidence | E2E run `2026-07-23T09-56-59-217Z`: 10/10 passed, source stable, SQL Server/MySQL health `up` |
+
+## Architecture concerns and verification gates
+
+- Production connectivity, scale hardware, printing, QR scanning and manual recovery remain manual/integration test gates.
+- Direct WINSpeed writes are exceptions governed by ADR-003 and the approved integration contract; detection count is an inventory signal, not an approval.
+- Deployment secrets, backup restore, alert delivery and network failover require environment-specific evidence before go-live.
+- Architecture descriptions follow ISO/IEC/IEEE 42010:2022 concepts: stakeholder concerns, viewpoints, views, decisions and correspondence to implementation evidence.
+- Life-cycle deliverables and reviews are organized against ISO/IEC/IEEE 12207:2026 and information-item control follows ISO/IEC/IEEE 15289:2019; these references do not by themselves certify the solution.

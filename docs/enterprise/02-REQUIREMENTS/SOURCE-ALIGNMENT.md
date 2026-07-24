@@ -1,8 +1,8 @@
 ---
 documentId: "WF-REQ-010"
-title: "Source Alignment v1.0.0 - WS-Sale-App"
+title: "Source Alignment v1.0.1 - WS-Sale-App"
 version: "v1.0"
-runtimeVersion: "1.0.0"
+runtimeVersion: "1.0.1"
 sourceMigrationSequence: 55
 truckScaleWriteTargets: "tbl_keyone"
 status: Review
@@ -13,19 +13,19 @@ normative: true
 > **World Fert · WS-Sale-App — Enterprise Documentation v1.0**
 > Document ID: `WF-REQ-010` · Version: v1.0 · Date: 22 กรกฎาคม 2569 (22 July 2026) · Status: Review
 > Classification: Confidential — Client / Authorized Partner Use Only
-> Source of truth: package runtime v1.0.0 · source inventory verification recorded by the documentation pipeline
+> Source of truth: package runtime v1.0.1 · source inventory verification recorded by the documentation pipeline
 >
 > **Current review notice:** runtime version, API surface, migration baseline และ database write boundaries ถูก reconcile กับ source inventory ปัจจุบันแล้ว; Automated E2E เป็น `PASSED_COMPLETE` 10/10 และผ่าน source/hash evidence review ตาม [`source-alignment-report.md`](../pipeline/reports/source-alignment-report.md) แต่เอกสารยังอยู่สถานะ Review และ business UAT sign-off/accepted baseline ยังต้องอนุมัติแยกต่างหาก
 
 ---
-# Source Alignment v1.0.0 - WS-Sale-App
+# Source Alignment v1.0.1 - WS-Sale-App
 
 > Updated: 2026-07-13
 > Scope: align documentation with current source code and Meeting Minutes WorldFert 02072026.
 
 ## Highlight - What Changed
 
-- **Runtime aligned to v1.0.0**: root, backend and frontend package metadata use the same current runtime version; the Ops UI reads the backend health version.
+- **Runtime aligned to v1.0.1**: root, backend and frontend package metadata use the same current runtime version; the Ops UI reads the backend health version.
 - **Actual stack clarified**: current source code is **React 19 + Vite frontend** and **Express backend**. It is not NestJS in the current implementation.
 - **Database architecture clarified**: **Microsoft SQL Server is the primary system of record** for WINSpeed `dbo` and app-owned `wf`; **MySQL is used only for TruckScale** and is bridged by WS-Sale-App so weighing data can be matched and sent back into the WINSpeed workflow.
 - **WINSpeed custom build boundary documented**: WF-specific WINSpeed functions must be reused where they already exist. WS-Sale-App should not duplicate accounting or GL posting logic.
@@ -38,7 +38,7 @@ normative: true
 | Root package | `5.0.0` |
 | Backend package | `5.0.0` |
 | Frontend package | `5.0.0` |
-| Runtime version evidence | package metadata = `1.0.0`; Ops UI reads backend health version |
+| Runtime version evidence | package metadata = `1.0.1`; Ops UI reads backend health version |
 | Current branch | `main` / `origin/main` |
 | Latest reviewed commit | `d2b9b10 chore: bump version to 5.0.0 and update quotation flow` |
 
@@ -131,7 +131,7 @@ WS-Sale-App should focus on workflow assistance, UX, approval status, data visib
 
 ## Meeting Minutes 02072026 - Backlog
 
-| # | Requirement | Status in v1.0.0 source | Suggested implementation path | Risk |
+| # | Requirement | Status in v1.0.1 source | Suggested implementation path | Risk |
 |---|---|---|---|---|
 | 1 | Add requested date/time to SO | Implemented in code | Migration `031`, backend SO routes, create/edit/detail UI | Pending DB apply |
 | 2 | 5-level price color vs Set Price | Implemented in code | `CreateSODialog` price classifier | Build passed |

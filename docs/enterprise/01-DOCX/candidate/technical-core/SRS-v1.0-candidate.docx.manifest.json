@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "kind": "WS-Sale-App Technical Core DOCX Candidate",
+  "generatedAt": "2026-07-23T10:42:56.998762+00:00",
+  "status": "Review",
+  "documentId": "WF-SRS-008",
+  "title": "Software Requirements Specification",
+  "output": "docs/enterprise/01-DOCX/candidate/technical-core/SRS-v1.0-candidate.docx",
+  "sha256": "08EEA17A7ED9A5B7C37FECC32DBFFD231E0FAAE31A3029436F2E0CBE06EB884B",
+  "bytes": 733253,
+  "runtimeVersion": "1.0.1",
+  "sourceCommit": "79a10a28e6a2fba9b65dc85101ff8ab6d784b91c",
+  "sourceInventorySha256": "12B9F964C7C90341859EDD6CDDE9B92BA35D797347F2AA64A1134E1E885FC343",
+  "e2eRunId": "2026-07-23T09-56-59-217Z",
+  "designPreset": "standard_business_brief",
+  "namedOverrides": {
+    "page": "A4 portrait",
+    "bodyFont": "Prompt 9.4 pt",
+    "headingFont": "Kanit",
+    "contentWidthCm": 17.0
+  },
+  "headerPattern": "memo_masthead",
+  "sources": [
+    {
+      "path": "docs/enterprise/02-REQUIREMENTS/SRS-v8.md",
+      "sha256": "36233C153A69CD2DA3C87BC3A8FA24CBBFA7B681578B84DA7B73579614684C55",
+      "bytes": 12017,
+      "title": "Software Requirements Specification — Enterprise Production Baseline"
+    },
+    {
+      "path": "docs/enterprise/02-REQUIREMENTS/CURRENT-SYSTEM-STATE.md",
+      "sha256": "8DF910D72AD25EE1A9D070E200615010A27995D19E18023EFB6662F5DABF96B6",
+      "bytes": 10471,
+      "title": "Current System State — Modules, Data Dictionary & API (v8)"
+    },
+    {
+      "path": "docs/enterprise/01-BUSINESS-ANALYSIS/BUSINESS-RULES.md",
+      "sha256": "DF92927C77716F983E628E768085F3A62444516A47D5E10B9677E5485E20BDFF",
+      "bytes": 4824,
+      "title": "Business Rules Catalog"
+    },
+    {
+      "path": "docs/enterprise/02-REQUIREMENTS/NFR-SLO-DR.md",
+      "sha256": "A048CE123ACBA331C79270675906EA675C2770783913CDAE07A0CEDD9D0B826A",
+      "bytes": 4280,
+      "title": "Non-Functional Requirements, SLO และ Service Resilience"
+    },
+    {
+      "path": "docs/enterprise/02-REQUIREMENTS/IMPLEMENTATION-STATUS.md",
+      "sha256": "20714259F60A273F7C087C73E040FDB3AE751C8C60D16848CB9A109A00CF6097",
+      "bytes": 9736,
+      "title": "Implementation Status & Feature Gap (vs SRS v8 FRs)"
+    },
+    {
+      "path": "docs/enterprise/02-REQUIREMENTS/TRACEABILITY-MATRIX.md",
+      "sha256": "C7DE1FA682F2AA3F51C1A1B841D40DD5120AFEB73DBA9B145FCFD7243EC24805",
+      "bytes": 2725,
+      "title": "Requirements Traceability Matrix (RTM)"
+    },
+    {
+      "path": "docs/enterprise/02-REQUIREMENTS/ACCEPTANCE-CRITERIA.md",
+      "sha256": "5386CCC6F7F8BBFE6B66FB7E5D8CAD9C14189BA65A5E8E3CBC7C0BEEE6062CD8",
+      "bytes": 3053,
+      "title": "Acceptance Criteria and Definition of Done"
+    }
+  ],
+  "figures": [
+    {
+      "path": "docs/enterprise/04-DIAGRAMS-PNG/candidate/source-aligned/09-current-system-context.png",
+      "sha256": "94A40165B6DA932AEE19C79A04AEB650AB5F7BD8472C1CD161F551C9663B5938",
+      "bytes": 200661,
+      "caption": "ภาพที่ 1 — Current system context (source-aligned)"
+    },
+    {
+      "path": "docs/enterprise/04-DIAGRAMS-PNG/candidate/domain/14-so-lifecycle-source-aligned.png",
+      "sha256": "A640466870D01E334F1438E2278ACF5D45DF22A3EF920777530C8654AE5C15CC",
+      "bytes": 157082,
+      "caption": "ภาพที่ 2 — Sales Order lifecycle and controlled correction paths"
+    },
+    {
+      "path": "docs/enterprise/04-DIAGRAMS-PNG/candidate/domain/17-order-to-cash-workflow.png",
+      "sha256": "CC2288765EAE21DC86B1B927202EB2DA941677A6623579E16EC6C791555AC207",
+      "bytes": 195300,
+      "caption": "ภาพที่ 3 — End-to-end order-to-cash workflow and evidence points"
+    },
+    {
+      "path": "docs/enterprise/../../test-results/artifacts/uat-full-loop-UAT-Full-Loo-4d721-reates-a-traceable-SO-draft-chromium/test-finished-1.png",
+      "sha256": "1E45E598813DD743C17D4BE0D3CE85C0EA666C2595D38E3C5FB289C83019A2D1",
+      "bytes": 125597,
+      "caption": "ตัวอย่างหลักฐาน UI — SALES creates a traceable SO draft"
+    },
+    {
+      "path": "docs/enterprise/../../test-results/artifacts/uat-full-loop-UAT-Full-Loo-d38a5-icks-loads-and-ships-the-SO-chromium/test-finished-1.png",
+      "sha256": "732EF9E188382B5F41225BF9877ACABD5B06ED88D233BF7692CFEE46815A745B",
+      "bytes": 43012,
+      "caption": "ตัวอย่างหลักฐาน UI — WAREHOUSE picks, loads and ships the SO"
+    }
+  ],
+  "contentCounts": {
+    "headings": 46,
+    "tables": 23,
+    "paragraphs": 19,
+    "lists": 8,
+    "codeBlocks": 2
+  },
+  "approvalBoundary": "Candidate only; human review and baseline acceptance required"
+}

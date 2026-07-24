@@ -1,0 +1,21 @@
+flowchart TB
+  subgraph R["RBAC — 8 source-aligned roles"]
+    A["ADMIN"]
+    S["SALES"]
+    C["COUNTER_SALES"]
+    W["WAREHOUSE"]
+    AC["ACCOUNTING"]
+    M["MANAGER"]
+    AP["APPROVER"]
+    WB["WEIGHBRIDGE"]
+  end
+  A --> P1["Users · master · policy · ops<br/>controlled Access As"]
+  S --> P2["Quotation · create/edit SO<br/>customer follow-up"]
+  C --> P3["Counter workflow · TruckScale status<br/>paper hand-off"]
+  W --> P4["Picking · loading · warehouse queues"]
+  AC --> P5["Rebate/CN · reconciliation · reports"]
+  M --> P6["Verification · operational review"]
+  AP --> P7["Policy-controlled approvals"]
+  WB --> P8["Weigh Inbox · match · weigh-out evidence"]
+  G["Backend enforcement"] --> R
+  G --> X["token + role + context<br/>object authorization + audit"]

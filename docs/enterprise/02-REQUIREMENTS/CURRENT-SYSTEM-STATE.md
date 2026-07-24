@@ -2,7 +2,7 @@
 documentId: "WF-REQ-STATE-008"
 title: "Current System State — Modules, Data Dictionary & API (v8)"
 version: "v1.0"
-runtimeVersion: "1.0.0"
+runtimeVersion: "1.0.1"
 sourceMigrationSequence: 55
 truckScaleWriteTargets: "tbl_keyone"
 status: Review
@@ -28,7 +28,7 @@ normative: true
 | Owner | Solution Architect |
 | Status | Review — merged candidate; source verification required |
 | Classification | Confidential — Client / Authorized Partner Use Only |
-| Source snapshot | package runtime 1.0.0 · migration sequence through 055 · 17 route modules / 160 endpoints / 22 portal keys |
+| Source snapshot | package runtime 1.0.1 · migration sequence through 055 · 17 route modules / 160 endpoints / 22 portal keys |
 
 > **Merge provenance — 21 July 2026:** เอกสารต้นทาง v8.0 ถูกคงไว้เป็น v1.0 review candidate ตามนโยบาย `latest-document-wins`; หากขัดกับเอกสารที่ใหม่กว่าหรือ source code ปัจจุบัน ให้ยึดหลักฐานล่าสุด และต้อง review/approve ก่อน baseline.
 
@@ -107,7 +107,7 @@ normative: true
 
 **ทางเลือก push (เผื่ออนาคต):** `POST /api/truckscale/ingest` (header `X-Ingest-Secret`) ให้ agent ฝั่งโรงงานส่งเข้ามาได้ โดยไม่ต้องแก้สถาปัตยกรรม
 
-**ขอบเขตหลักฐานปัจจุบัน:** Automated E2E รอบ 2026-07-22 ผ่านครบและยืนยันว่า UI แสดง degraded state อย่างชัดเจนเมื่อ TruckScale MySQL down แต่ยังไม่ใช้แทนหลักฐาน production sync/watermark/matching เพราะ environment รอบนี้รายงาน MySQL เป็น `down`; ต้องทดสอบ integration กับ TruckScale ที่เชื่อมต่อจริงแยกต่างหาก.
+**ขอบเขตหลักฐานปัจจุบัน:** Automated E2E run `2026-07-23T09-56-59-217Z` ผ่าน 10/10 กรณี, source stable, runtime 1.0.1 และ health check รายงาน SQL Server/MySQL เป็น `up`. ผลนี้ยืนยัน full-loop ใน development test environment และการแสดงสถานะ TruckScale ตาม health response แต่ยังไม่ใช้แทนหลักฐาน production sync/watermark/matching, อุปกรณ์ชั่งจริง, network resilience หรือ manual fallback; ต้องทดสอบ integration กับ TruckScale และ hardware ที่เชื่อมต่อจริงแยกต่างหาก.
 
 ## 6. รูปแบบ integration ที่รองรับ ISO/enterprise
 - **Migration ledger** (FR-031): runner ข้ามไฟล์ที่ checksum ไม่เปลี่ยน + บันทึก applied → release ควบคุมได้

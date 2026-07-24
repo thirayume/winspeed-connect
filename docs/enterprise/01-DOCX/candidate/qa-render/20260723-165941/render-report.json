@@ -1,0 +1,16 @@
+{
+  "status": "PASSED",
+  "method": "microsoft-word-pdfium",
+  "document": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\01-DOCX\\candidate\\UAT-Full-Loop-Run-Plan-v1.0.docx",
+  "outputDir": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\01-DOCX\\candidate\\qa-render\\20260723-165941",
+  "pdf": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\01-DOCX\\candidate\\qa-render\\20260723-165941\\word-pdfium\\UAT-Full-Loop-Run-Plan-v1.0.pdf",
+  "pages": 22,
+  "preferredRenderer": {
+    "attempted": true,
+    "status": "timeout",
+    "exitCode": null,
+    "stdout": "",
+    "stderr": ""
+  },
+  "generatedAt": "2026-07-23T17:00:31.7994572+07:00"
+}

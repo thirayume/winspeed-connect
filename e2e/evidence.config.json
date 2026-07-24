@@ -20,7 +20,8 @@
     "db-init/e2e-cleanup.sql",
     "docker-compose.yml",
     "deploy.ps1",
-    "DEPLOY.md"
+    "DEPLOY.md",
+    "backend/.env.coolify.example"
   ],
   "trackedRoots": [
     {
@@ -45,6 +46,10 @@
     {
       "root": "e2e",
       "extensions": [".ts"]
+    },
+    {
+      "root": "deploy",
+      "extensions": [".yml", ".yaml", ".sh", ".ps1", ".md"]
     }
   ]
 }

@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "kind": "WS-Sale-App Technical Core DOCX Candidate",
+  "generatedAt": "2026-07-23T10:42:57.570938+00:00",
+  "status": "Review",
+  "documentId": "WF-SAD-001",
+  "title": "Analysis and Design Document",
+  "output": "docs/enterprise/01-DOCX/candidate/technical-core/Analysis-and-Design-v1.0-candidate.docx",
+  "sha256": "2EE398918CE699E939D6AFA6F871618CA1BFA64216567EE810B75CE640A1D853",
+  "bytes": 1070175,
+  "runtimeVersion": "1.0.1",
+  "sourceCommit": "79a10a28e6a2fba9b65dc85101ff8ab6d784b91c",
+  "sourceInventorySha256": "12B9F964C7C90341859EDD6CDDE9B92BA35D797347F2AA64A1134E1E885FC343",
+  "e2eRunId": "2026-07-23T09-56-59-217Z",
+  "designPreset": "standard_business_brief",
+  "namedOverrides": {
+    "page": "A4 portrait",
+    "bodyFont": "Prompt 9.4 pt",
+    "headingFont": "Kanit",
+    "contentWidthCm": 17.0
+  },
+  "headerPattern": "memo_masthead",
+  "sources": [
+    {
+      "path": "docs/enterprise/01-BUSINESS-ANALYSIS/BAD-v8.md",
+      "sha256": "1DEB832C9B5D1B425CF369720BBAF04955E934B1F5AB2382E7473F7BEDA2DD71",
+      "bytes": 7669,
+      "title": "Business Analysis Document — Sales Execution & Rebate Platform"
+    },
+    {
+      "path": "docs/enterprise/01-BUSINESS-ANALYSIS/RACI-AND-STAKEHOLDERS.md",
+      "sha256": "52D22376C6B1D1CC28DCF1D6DAB6F872970894A137313C7FEF52F206A9395798",
+      "bytes": 3153,
+      "title": "Stakeholder Map, RACI และ Approval Authority"
+    },
+    {
+      "path": "docs/enterprise/03-SOLUTION-ARCHITECTURE/SAD-v8.md",
+      "sha256": "751BD422F3E4C39DC4E43A6B8572CC48D87351775A5A4617D36FE5CA2CC49777",
+      "bytes": 6965,
+      "title": "Solution Architecture Document"
+    },
+    {
+      "path": "docs/enterprise/03-SOLUTION-ARCHITECTURE/C4-ARCHITECTURE.md",
+      "sha256": "101BACF722B8A600204A0B0106779C518BF0F43692D2A1CC6013EC1EB3DA4FD7",
+      "bytes": 3054,
+      "title": "C4 Architecture Views"
+    },
+    {
+      "path": "docs/enterprise/03-SOLUTION-ARCHITECTURE/ADR-001-LAYERED-NONINVASIVE.md",
+      "sha256": "DDD206566D005742700117157341B40C9BBD1435E609CF3A693B50C0804B0C82",
+      "bytes": 2265,
+      "title": "ADR-001 — Layered Non-Invasive Integration"
+    },
+    {
+      "path": "docs/enterprise/03-SOLUTION-ARCHITECTURE/ADR-002-DATABASE-TOPOLOGY.md",
+      "sha256": "7001AB6065F504C91B5CD841061AFE7BD6FE076166576C72EDE720244B9E6A62",
+      "bytes": 2351,
+      "title": "ADR-002 — Three-Database Topology and Environment Control"
+    },
+    {
+      "path": "docs/enterprise/03-SOLUTION-ARCHITECTURE/ADR-003-WINSPEED-WRITE-BOUNDARY.md",
+      "sha256": "42316FD65943B863B07F10908E11050644961DB9368466FCE9D9B29EE194557A",
+      "bytes": 3176,
+      "title": "ADR-003 — WINSpeed Write Boundary and Financial Safety"
+    },
+    {
+      "path": "docs/enterprise/03-SOLUTION-ARCHITECTURE/ADR-004-TRUCKSCALE-INTEGRATION.md",
+      "sha256": "DE63608F9127325F6F68F319B607FF71857BF63443FEE36BC932F630BBDBC0DF",
+      "bytes": 3049,
+      "title": "ADR-004 — TruckScale Controlled Pre-Weigh Integration and Matching Policy"
+    },
+    {
+      "path": "docs/enterprise/03-SOLUTION-ARCHITECTURE/ADR-005-REBATE-FIFO.md",
+      "sha256": "1C0C516C879AC8E39AFFAFDFF49B775A28794E33C45DF270E7E474454328F5C4",
+      "bytes": 2093,
+      "title": "ADR-005 — Rebate Ledger, FIFO and Compensation Model"
+    },
+    {
+      "path": "docs/enterprise/04-DATA-INTEGRATION/DATA-DESIGN.md",
+      "sha256": "02C1218BA62552576952B01A7ECDC7BA24741919B6174907C6620059213AF243",
+      "bytes": 4844,
+      "title": "Data Design, Ownership and Canonical Model"
+    },
+    {
+      "path": "docs/enterprise/03-SOLUTION-ARCHITECTURE/WORKFLOW-DIAGRAMS.md",
+      "sha256": "F9BC621DB5847A2EE61E616F963946B183B3C7C74E796EECA4AD14C8DAE16054",
+      "bytes": 4182,
+      "title": "11 - Workflow and Workprocess Diagrams"
+    }
+  ],
+  "figures": [
+    {
+      "path": "docs/enterprise/04-DIAGRAMS-PNG/candidate/domain/13-runtime-architecture.png",
+      "sha256": "B08C8F0563C3A84D538E52E28C74370BCDAF05744B2F358CFB60D90319D9E8D3",
+      "bytes": 320188,
+      "caption": "ภาพที่ 1 — Runtime architecture and system boundaries"
+    },
+    {
+      "path": "docs/enterprise/04-DIAGRAMS-PNG/candidate/domain/15-operational-erd.png",
+      "sha256": "21C695D3CF235B7CE22C49E1ACC3E97A9142D959D95A24BE0FD71A4BEE127D01",
+      "bytes": 253458,
+      "caption": "ภาพที่ 2 — Operational ERD and evidence relationships"
+    },
+    {
+      "path": "docs/enterprise/04-DIAGRAMS-PNG/candidate/domain/16-rbac-source-aligned.png",
+      "sha256": "A2FAF61E5FCB4E1EC0CB7DAC363119B89073677B1BE188DCD41CB9A1C0C78B4D",
+      "bytes": 199167,
+      "caption": "ภาพที่ 3 — Source-aligned RBAC responsibility map"
+    },
+    {
+      "path": "docs/enterprise/04-DIAGRAMS-PNG/candidate/domain/18-rebate-domain-uml.png",
+      "sha256": "481932EABE7CE15D8A4E76F25DD2D675002514F7ED99542B6DBED19AA9C4CCAE",
+      "bytes": 166638,
+      "caption": "ภาพที่ 4 — Rebate domain UML"
+    },
+    {
+      "path": "docs/enterprise/04-DIAGRAMS-PNG/candidate/domain/17-order-to-cash-workflow.png",
+      "sha256": "CC2288765EAE21DC86B1B927202EB2DA941677A6623579E16EC6C791555AC207",
+      "bytes": 195300,
+      "caption": "ภาพที่ 5 — Cross-role order-to-cash workflow"
+    }
+  ],
+  "contentCounts": {
+    "headings": 67,
+    "tables": 16,
+    "paragraphs": 18,
+    "lists": 16,
+    "codeBlocks": 10
+  },
+  "approvalBoundary": "Candidate only; human review and baseline acceptance required"
+}

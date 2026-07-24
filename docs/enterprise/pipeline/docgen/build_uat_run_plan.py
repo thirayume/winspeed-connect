@@ -223,7 +223,9 @@ def add_picture(doc, image_path: Path, caption: str, checks: list[str]):
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.keep_with_next = True
-    p.add_run().add_picture(str(image_path), width=Cm(16.7))
+    inline = p.add_run().add_picture(str(image_path), width=Cm(16.7))
+    inline._inline.docPr.set("descr", caption)
+    inline._inline.docPr.set("title", f"UI illustration — {caption}")
     cap = doc.add_paragraph()
     cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
     cap.paragraph_format.space_after = Pt(3)
@@ -299,7 +301,7 @@ def configure_page(doc: Document):
     footer = section.footer
     p = footer.paragraphs[0]
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    set_run_font(p.add_run("WF-QA-010  |  Review v1.0-candidate  |  Confidential  |  Page "), "Prompt", 8, color=MUTED)
+    set_run_font(p.add_run("WF-QA-022  |  Review v1.0-candidate  |  Confidential  |  Page "), "Prompt", 8, color=MUTED)
     add_field(p, "PAGE")
     set_run_font(p.add_run(" of "), "Prompt", 8, color=MUTED)
     add_field(p, "NUMPAGES")
@@ -321,9 +323,9 @@ def cover(doc, payload, source_commit, generated_at, e2e_status):
 
     doc.add_paragraph()
     add_meta_table(doc, [
-        ("Document ID", "WF-QA-010"),
+        ("Document ID", "WF-QA-022"),
         ("Version / Status", "v1.0-candidate / Review"),
-        ("Product / Runtime", f"{payload.get('product', 'WS-Sale-App')} / {payload.get('runtimeVersion', '1.0.0')}"),
+        ("Product / Runtime", f"{payload.get('product', 'WS-Sale-App')} / {payload.get('runtimeVersion', '1.0.1')}"),
         ("Client", payload.get("client", "World Fert Co., Ltd.")),
         ("Source commit", source_commit),
         ("Generated", generated_at),
@@ -437,7 +439,7 @@ def build_document(data_path: Path, output: Path, source_commit: str, generated_
 
     add_heading(doc, "3. Run control and evidence", 1)
     add_meta_table(doc, [
-        ("Run ID", ""), ("Environment / URL", ""), ("App build / source commit", f"1.0.0 / {source_commit}"),
+        ("Run ID", ""), ("Environment / URL", ""), ("App build / source commit", f"{payload.get('runtimeVersion', '1.0.1')} / {source_commit}"),
         ("Source hash / test hash", ""), ("Test data batch", ""), ("Start / End", ""),
         ("QA Lead / Business Owner", ""), ("Evidence root / defect tracker", ""),
         ("Dependency health", "Frontend: __  API: __  SQL: __  TruckScale: __  WINSpeed: __"),
@@ -561,7 +563,7 @@ def build_document(data_path: Path, output: Path, source_commit: str, generated_
     doc.save(output)
     digest = hashlib.sha256(output.read_bytes()).hexdigest().upper()
     manifest = {
-        "documentId": "WF-QA-010",
+        "documentId": "WF-QA-022",
         "status": "Review",
         "output": str(output),
         "sha256": digest,

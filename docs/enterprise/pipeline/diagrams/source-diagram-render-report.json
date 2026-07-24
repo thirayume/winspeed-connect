@@ -1,0 +1,52 @@
+{
+  "generatedAt": "2026-07-23T09:58:16.8443339Z",
+  "renderer": "11.16.0",
+  "fontPolicy": "Prompt body/labels; Kanit fallback; Arial fallback",
+  "outputs": [
+    {
+      "source": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\pipeline\\diagrams\\09-current-system-context.mmd",
+      "output": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\pipeline\\diagrams\\09-current-system-context.png",
+      "requestedViewport": {
+        "width": 2400,
+        "height": 1100,
+        "scale": 2
+      },
+      "actualPixels": {
+        "width": 4352,
+        "height": 1266
+      },
+      "bytes": 200661,
+      "sha256": "94A40165B6DA932AEE19C79A04AEB650AB5F7BD8472C1CD161F551C9663B5938"
+    },
+    {
+      "source": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\pipeline\\diagrams\\10-current-api-surface.mmd",
+      "output": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\pipeline\\diagrams\\10-current-api-surface.png",
+      "requestedViewport": {
+        "width": 2200,
+        "height": 2500,
+        "scale": 2
+      },
+      "actualPixels": {
+        "width": 3432,
+        "height": 1610
+      },
+      "bytes": 222787,
+      "sha256": "8A53A8C65431682F31B136F14719CF9F61E5A194D7CE8A7DD59C915636B229EB"
+    },
+    {
+      "source": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\pipeline\\diagrams\\11-document-evidence-flow.mmd",
+      "output": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\pipeline\\diagrams\\11-document-evidence-flow.png",
+      "requestedViewport": {
+        "width": 2600,
+        "height": 1200,
+        "scale": 2
+      },
+      "actualPixels": {
+        "width": 4042,
+        "height": 1130
+      },
+      "bytes": 199203,
+      "sha256": "548F911D8F984E57874697AC4D3FE838899F05350AF6EA8928148D7739DAA251"
+    }
+  ]
+}

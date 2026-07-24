@@ -1,0 +1,17 @@
+erDiagram
+  SALES_ORDER ||--|{ SALES_ORDER_LINE : contains
+  SALES_ORDER ||--o{ SALES_ORDER_AUDIT : records
+  SALES_ORDER ||--o{ UNLOCK_REQUEST : may_request
+  SALES_ORDER ||--o| WEIGH_TICKET : ships_with
+  SALES_ORDER ||--o{ PAPER_COPY : generates
+  PAPER_COPY ||--o{ PAPER_SCAN : custody_events
+  SALES_ORDER ||--o{ RECONCILIATION_CASE : reconciles
+  REBATE_PLAN ||--o{ REBATE_PLAN_ALLOCATION : allocates
+  REBATE_PLAN_ALLOCATION ||--o{ REBATE_LEDGER : funds
+  SALES_ORDER_LINE ||--o{ REBATE_LEDGER : accrues
+  REBATE_CLAIM ||--|{ REBATE_CLAIM_LINE : contains
+  REBATE_LEDGER ||--o{ REBATE_CLAIM_LINE : consumed_by
+  APPROVAL_POLICY ||--o{ UNLOCK_REQUEST : governs
+  SALES_ORDER ||--o{ OUTBOX_EVENT : emits
+  TRUCKSCALE_SYNC ||--o{ WEIGH_INBOX : imports
+  WEIGH_INBOX }o--o| SALES_ORDER : matches

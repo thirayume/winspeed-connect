@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "kind": "WS-Sale-App Technical Core Candidate Manifest",
+  "status": "Review",
+  "runtimeVersion": "1.0.1",
+  "sourceCommit": "79a10a28e6a2fba9b65dc85101ff8ab6d784b91c",
+  "sourceInventorySha256": "12B9F964C7C90341859EDD6CDDE9B92BA35D797347F2AA64A1134E1E885FC343",
+  "e2eRunId": "2026-07-23T09-56-59-217Z",
+  "documents": [
+    {
+      "key": "srs",
+      "documentId": "WF-SRS-008",
+      "title": "Software Requirements Specification",
+      "subtitle": "Business, Functional, Interface and Quality Requirements",
+      "output": "01-DOCX/candidate/technical-core/SRS-v1.0-candidate.docx",
+      "sources": [
+        "02-REQUIREMENTS/SRS-v8.md",
+        "02-REQUIREMENTS/CURRENT-SYSTEM-STATE.md",
+        "01-BUSINESS-ANALYSIS/BUSINESS-RULES.md",
+        "02-REQUIREMENTS/NFR-SLO-DR.md",
+        "02-REQUIREMENTS/IMPLEMENTATION-STATUS.md",
+        "02-REQUIREMENTS/TRACEABILITY-MATRIX.md",
+        "02-REQUIREMENTS/ACCEPTANCE-CRITERIA.md"
+      ],
+      "figures": [
+        {
+          "path": "04-DIAGRAMS-PNG/candidate/source-aligned/09-current-system-context.png",
+          "caption": "ภาพที่ 1 — Current system context (source-aligned)"
+        },
+        {
+          "path": "04-DIAGRAMS-PNG/candidate/domain/14-so-lifecycle-source-aligned.png",
+          "caption": "ภาพที่ 2 — Sales Order lifecycle and controlled correction paths"
+        },
+        {
+          "path": "04-DIAGRAMS-PNG/candidate/domain/17-order-to-cash-workflow.png",
+          "caption": "ภาพที่ 3 — End-to-end order-to-cash workflow and evidence points"
+        }
+      ],
+      "screenshots": [
+        {
+          "path": "../../test-results/artifacts/uat-full-loop-UAT-Full-Loo-4d721-reates-a-traceable-SO-draft-chromium/test-finished-1.png",
+          "caption": "ตัวอย่างหลักฐาน UI — SALES creates a traceable SO draft"
+        },
+        {
+          "path": "../../test-results/artifacts/uat-full-loop-UAT-Full-Loo-d38a5-icks-loads-and-ships-the-SO-chromium/test-finished-1.png",
+          "caption": "ตัวอย่างหลักฐาน UI — WAREHOUSE picks, loads and ships the SO"
+        }
+      ]
+    },
+    {
+      "key": "analysis-design",
+      "documentId": "WF-SAD-001",
+      "title": "Analysis and Design Document",
+      "subtitle": "Stakeholders, Architecture, Decisions, Data and Workflows",
+      "output": "01-DOCX/candidate/technical-core/Analysis-and-Design-v1.0-candidate.docx",
+      "sources": [
+        "01-BUSINESS-ANALYSIS/BAD-v8.md",
+        "01-BUSINESS-ANALYSIS/RACI-AND-STAKEHOLDERS.md",
+        "03-SOLUTION-ARCHITECTURE/SAD-v8.md",
+        "03-SOLUTION-ARCHITECTURE/C4-ARCHITECTURE.md",
+        "03-SOLUTION-ARCHITECTURE/ADR-001-LAYERED-NONINVASIVE.md",
+        "03-SOLUTION-ARCHITECTURE/ADR-002-DATABASE-TOPOLOGY.md",
+        "03-SOLUTION-ARCHITECTURE/ADR-003-WINSPEED-WRITE-BOUNDARY.md",
+        "03-SOLUTION-ARCHITECTURE/ADR-004-TRUCKSCALE-INTEGRATION.md",
+        "03-SOLUTION-ARCHITECTURE/ADR-005-REBATE-FIFO.md",
+        "04-DATA-INTEGRATION/DATA-DESIGN.md",
+        "03-SOLUTION-ARCHITECTURE/WORKFLOW-DIAGRAMS.md"
+      ],
+      "figures": [
+        {
+          "path": "04-DIAGRAMS-PNG/candidate/domain/13-runtime-architecture.png",
+          "caption": "ภาพที่ 1 — Runtime architecture and system boundaries"
+        },
+        {
+          "path": "04-DIAGRAMS-PNG/candidate/domain/15-operational-erd.png",
+          "caption": "ภาพที่ 2 — Operational ERD and evidence relationships"
+        },
+        {
+          "path": "04-DIAGRAMS-PNG/candidate/domain/16-rbac-source-aligned.png",
+          "caption": "ภาพที่ 3 — Source-aligned RBAC responsibility map"
+        },
+        {
+          "path": "04-DIAGRAMS-PNG/candidate/domain/18-rebate-domain-uml.png",
+          "caption": "ภาพที่ 4 — Rebate domain UML"
+        },
+        {
+          "path": "04-DIAGRAMS-PNG/candidate/domain/17-order-to-cash-workflow.png",
+          "caption": "ภาพที่ 5 — Cross-role order-to-cash workflow"
+        }
+      ]
+    },
+    {
+      "key": "technical-spec",
+      "documentId": "WF-TECH-001",
+      "title": "Technical Specification",
+      "subtitle": "Runtime, API, Data, Integration, Security and Operations",
+      "output": "01-DOCX/candidate/technical-core/Technical-Specification-v1.0-candidate.docx",
+      "sources": [
+        "03-SOLUTION-ARCHITECTURE/TECHNICAL-SPECIFICATION.md",
+        "04-DATA-INTEGRATION/API-REFERENCE.md",
+        "04-DATA-INTEGRATION/DATABASE-OVERVIEW.md",
+        "04-DATA-INTEGRATION/TRUCKSCALE-INTEGRATION-CONTRACT.md",
+        "04-DATA-INTEGRATION/WINSPEED-INTEGRATION-CONTRACT.md",
+        "05-SECURITY-DEVOPS/SECURITY-ARCHITECTURE.md",
+        "05-SECURITY-DEVOPS/DEPLOYMENT-AND-CI-CD.md",
+        "05-SECURITY-DEVOPS/OBSERVABILITY-INCIDENT-RUNBOOK.md",
+        "05-SECURITY-DEVOPS/PERFORMANCE-ENGINEERING.md",
+        "05-SECURITY-DEVOPS/BACKUP-DR-BCP.md"
+      ],
+      "figures": [
+        {
+          "path": "04-DIAGRAMS-PNG/candidate/domain/13-runtime-architecture.png",
+          "caption": "ภาพที่ 1 — Runtime components and integration boundaries"
+        },
+        {
+          "path": "04-DIAGRAMS-PNG/candidate/source-aligned/10-current-api-surface.png",
+          "caption": "ภาพที่ 2 — Current API surface: 17 route mounts / 160 endpoints"
+        },
+        {
+          "path": "04-DIAGRAMS-PNG/candidate/domain/15-operational-erd.png",
+          "caption": "ภาพที่ 3 — Core operational data relationships"
+        },
+        {
+          "path": "04-DIAGRAMS-PNG/candidate/source-aligned/11-document-evidence-flow.png",
+          "caption": "ภาพที่ 4 — Source-to-document evidence flow and approval boundary"
+        }
+      ]
+    }
+  ]
+}

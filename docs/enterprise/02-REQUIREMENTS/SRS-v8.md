@@ -2,8 +2,11 @@
 documentId: "WF-SRS-008"
 title: "Software Requirements Specification — Enterprise Production Baseline"
 version: "v1.0"
+runtimeVersion: "1.0.1"
+sourceMigrationSequence: 55
+sourceInventorySha256: "12B9F964C7C90341859EDD6CDDE9B92BA35D797347F2AA64A1134E1E885FC343"
 status: Review
-statusDetail: "Merged from v8.0; source verification and approval required"
+statusDetail: "Source-aligned candidate; business review and approval required"
 sourceVersion: "v8.0"
 sourceStatus: "Released"
 sourceStatusDetail: "Final — Commercial Delivery Baseline"
@@ -21,10 +24,11 @@ normative: true
 | Product | WS-Sale-App — Sales Order, Warehouse Execution & Rebate Management |
 | Client | World Fert Co., Ltd. |
 | Version | v1.0 |
-| Date | 28 มิถุนายน 2569 (28 June 2026) |
+| Date | 23 กรกฎาคม 2569 (23 July 2026) |
 | Owner | Product Owner / Solution Architect |
-| Status | Review — merged candidate; source verification required |
+| Status | Review — source-aligned candidate; business approval required |
 | Classification | Confidential — Client / Authorized Partner Use Only |
+| Source snapshot | runtime 1.0.1 · commit `79a10a28` · source SHA `12B9F964…FC343` · 220 files |
 
 > **Merge provenance — 21 July 2026:** เอกสารต้นทาง v8.0 ถูกคงไว้เป็น v1.0 review candidate ตามนโยบาย `latest-document-wins`; หากขัดกับเอกสารที่ใหม่กว่าหรือ source code ปัจจุบัน ให้ยึดหลักฐานล่าสุด และต้อง review/approve ก่อน baseline.
 
@@ -33,7 +37,7 @@ normative: true
 
 ## 1. Purpose
 
-เอกสารนี้กำหนด functional requirements, interface behavior, acceptance criteria และ production constraints สำหรับ WS-Sale-App v8.0 เพื่อใช้เป็น baseline เดียวกันของฝ่ายธุรกิจ ทีมพัฒนา QA, DBA, IT และผู้อนุมัติ
+เอกสารนี้กำหนด functional requirements, interface behavior, acceptance criteria และ production constraints สำหรับ WS-Sale-App runtime 1.0.1 เพื่อใช้เป็น review candidate ร่วมกันของฝ่ายธุรกิจ ทีมพัฒนา QA, DBA, IT และผู้อนุมัติ
 
 ## 2. Product perspective
 
@@ -145,3 +149,36 @@ stateDiagram-v2
 - App does not post GL entries directly.
 - App does not replace serial scale/hardware control.
 - App does not infer financial posting from UI status.
+
+## 8. Non-functional and quality requirements
+
+ข้อกำหนดคุณภาพโดยละเอียดอยู่ใน [NFR-SLO-DR](NFR-SLO-DR.md) และต้องพิจารณาร่วมกับ functional requirements ทุกข้อ โดยใช้กรอบคุณภาพ ISO/IEC 25010:2023 ในหัวข้อ functional suitability, performance efficiency, compatibility, interaction capability, reliability, security, maintainability, flexibility และ safety
+
+| Quality area | Requirement summary | Verification evidence |
+|---|---|---|
+| Availability and resilience | dependency failure ต้องแสดงสถานะจริง, degrade อย่างควบคุม และไม่สร้างผลลัพธ์ซ้ำ | health endpoint, failure-path tests, runbook |
+| Performance | business API และหน้าหลักต้องผ่าน SLO ที่กำหนดด้วยข้อมูลใกล้เคียง production | performance report and query plan |
+| Security and privacy | RBAC, object-level authorization, parameterized SQL, secret handling, audit, retention/DSAR | security test, access review, audit sample |
+| Data integrity | transaction, idempotency, reconciliation และ migration checksum ต้องรักษาความถูกต้องข้ามระบบ | migration ledger, recon cases, restore test |
+| Usability | tablet-first, Thai language, clear validation/error/recovery instructions | role-based UAT and accessibility review |
+| Maintainability | routes/services/data concerns แยกชัดเจนและ trace กลับ requirement/source ได้ | architecture review and traceability report |
+
+## 9. External interface requirements
+
+| Interface | Direction | Contract and constraint |
+|---|---|---|
+| Browser / React SPA | User ↔ App | responsive tablet-first UI; Thai/English content; authenticated role navigation |
+| REST API / Socket.IO | Frontend ↔ Backend | JSON contract, token/RBAC/context validation, consistent errors, correlation/audit |
+| SQL Server `wf` | Backend ↔ operational data | app-owned write boundary, sequenced migrations, checksum ledger |
+| WINSpeed `dbo` | Backend ↔ accounting source of truth | controlled read and explicitly approved write contract; invoice/CN/GL remain owned by WINSpeed |
+| TruckScale MySQL | Backend ↔ weighing source | completed-weigh data read-only; controlled pre-weigh queue writes limited to `tbl_keyone` |
+| Printer / QR scanner | Browser ↔ device | four-copy documents, unique QR nonce, controlled reprint and custody trail |
+| Alert / notification channel | Backend → operator | no secret/PII leakage; delivery attempt and operational owner visible |
+
+## 10. Verification and acceptance
+
+- Requirement IDs must map to implementation status, test case and retained evidence in the traceability matrix.
+- Automated E2E run `2026-07-23T09-56-59-217Z` passed 10/10 tests with source stable and SQL Server/MySQL health `up`; this is development-environment evidence, not production acceptance.
+- Manual UAT must cover the eight business roles, negative/exception paths, document custody, hardware/printing, reconciliation and production-like integration.
+- Open, partial or policy-dependent items must remain visible; they must not be converted to “passed” by document generation.
+- Final acceptance requires signed UAT, defect disposition, operational readiness, backup/restore evidence, security approval and document approval.

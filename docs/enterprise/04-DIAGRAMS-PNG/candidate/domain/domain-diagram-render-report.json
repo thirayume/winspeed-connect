@@ -1,0 +1,67 @@
+{
+  "generatedAt": "2026-07-23T10:42:55.6563286Z",
+  "renderer": "11.16.0",
+  "fontPolicy": "Prompt body/labels; Kanit fallback; Arial fallback",
+  "outputs": [
+    {
+      "source": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\pipeline\\diagrams\\13-runtime-architecture.mmd",
+      "output": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\04-DIAGRAMS-PNG\\candidate\\domain\\13-runtime-architecture.png",
+      "actualPixels": {
+        "width": 6530,
+        "height": 1438
+      },
+      "bytes": 320188,
+      "sha256": "B08C8F0563C3A84D538E52E28C74370BCDAF05744B2F358CFB60D90319D9E8D3"
+    },
+    {
+      "source": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\pipeline\\diagrams\\14-so-lifecycle-source-aligned.mmd",
+      "output": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\04-DIAGRAMS-PNG\\candidate\\domain\\14-so-lifecycle-source-aligned.png",
+      "actualPixels": {
+        "width": 1634,
+        "height": 2320
+      },
+      "bytes": 157082,
+      "sha256": "A640466870D01E334F1438E2278ACF5D45DF22A3EF920777530C8654AE5C15CC"
+    },
+    {
+      "source": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\pipeline\\diagrams\\15-operational-erd.mmd",
+      "output": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\04-DIAGRAMS-PNG\\candidate\\domain\\15-operational-erd.png",
+      "actualPixels": {
+        "width": 5568,
+        "height": 2044
+      },
+      "bytes": 253458,
+      "sha256": "21C695D3CF235B7CE22C49E1ACC3E97A9142D959D95A24BE0FD71A4BEE127D01"
+    },
+    {
+      "source": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\pipeline\\diagrams\\16-rbac-source-aligned.mmd",
+      "output": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\04-DIAGRAMS-PNG\\candidate\\domain\\16-rbac-source-aligned.png",
+      "actualPixels": {
+        "width": 6228,
+        "height": 1496
+      },
+      "bytes": 199167,
+      "sha256": "A2FAF61E5FCB4E1EC0CB7DAC363119B89073677B1BE188DCD41CB9A1C0C78B4D"
+    },
+    {
+      "source": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\pipeline\\diagrams\\17-order-to-cash-workflow.mmd",
+      "output": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\04-DIAGRAMS-PNG\\candidate\\domain\\17-order-to-cash-workflow.png",
+      "actualPixels": {
+        "width": 9668,
+        "height": 868
+      },
+      "bytes": 195300,
+      "sha256": "CC2288765EAE21DC86B1B927202EB2DA941677A6623579E16EC6C791555AC207"
+    },
+    {
+      "source": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\pipeline\\diagrams\\18-rebate-domain-uml.mmd",
+      "output": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\04-DIAGRAMS-PNG\\candidate\\domain\\18-rebate-domain-uml.png",
+      "actualPixels": {
+        "width": 1246,
+        "height": 2906
+      },
+      "bytes": 166638,
+      "sha256": "481932EABE7CE15D8A4E76F25DD2D675002514F7ED99542B6DBED19AA9C4CCAE"
+    }
+  ]
+}

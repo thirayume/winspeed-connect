@@ -2,8 +2,9 @@
 documentId: "WF-TRN-008"
 title: "Training and Adoption Plan"
 version: "v1.0"
-status: Review
-statusDetail: "Merged from v8.0; source verification and approval required"
+status: Superseded
+statusDetail: "Superseded by source-aligned WF-TRN-101; retained for history only"
+supersededBy: "WF-TRN-101"
 sourceVersion: "v8.0"
 sourceStatus: "Released"
 sourceStatusDetail: "Final — Commercial Delivery Baseline"

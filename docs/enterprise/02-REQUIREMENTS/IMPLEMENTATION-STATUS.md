@@ -2,7 +2,7 @@
 documentId: "WF-REQ-IMPL-008"
 title: "Implementation Status & Feature Gap (vs SRS v8 FRs)"
 version: "v1.0"
-runtimeVersion: "1.0.0"
+runtimeVersion: "1.0.1"
 sourceMigrationSequence: 55
 status: Review
 statusDetail: "Merged from v8.0; source verification and approval required"
@@ -27,7 +27,7 @@ normative: true
 | Owner | Solution Architect / Product Owner |
 | Status | Review — merged candidate; source verification required |
 | Classification | Confidential — Client / Authorized Partner Use Only |
-| Source snapshot | package runtime 1.0.0 · migration sequence through 055 · 17 route modules / 160 endpoints / 22 portal keys |
+| Source snapshot | package runtime 1.0.1 · migration sequence through 055 · 17 route modules / 160 endpoints / 22 portal keys |
 
 > **Merge provenance — 21 July 2026:** เอกสารต้นทาง v8.0 ถูกคงไว้เป็น v1.0 review candidate ตามนโยบาย `latest-document-wins`; หากขัดกับเอกสารที่ใหม่กว่าหรือ source code ปัจจุบัน ให้ยึดหลักฐานล่าสุด และต้อง review/approve ก่อน baseline.
 
@@ -78,7 +78,7 @@ normative: true
 | FR-003 | Credit Hold | ✅ | **wf.CreditMaster (v4.2.23)** — ตรวจตอน confirm, override ตามนโยบาย CREDIT_OVERRIDE |
 | FR-016 | LINE intake/notify | 🟡 | **scaffold (v4.2.23)** — webhook (verify signature) + push notify พร้อมใช้ · ต้องตั้ง LINE channel จริงก่อนเปิด |
 
-**สรุป candidate เทียบ source runtime v1.0.0:** ✅ 29 · 🟡 1 (FR-016 scaffold — รอตั้ง LINE channel) · ⛔ 0 — ✅ **P0 + P1 + P2 ครบทั้งหมด** · DG-04 มีแหล่ง wf แล้ว · **เพิ่ม TruckScale pull-back (Weigh Inbox + sync)** — ดู [CURRENT-SYSTEM-STATE](CURRENT-SYSTEM-STATE.md)
+**สรุป candidate เทียบ source runtime v1.0.1:** ✅ 29 · 🟡 1 (FR-016 scaffold — รอตั้ง LINE channel) · ⛔ 0 — ✅ **P0 + P1 + P2 ครบทั้งหมด** · DG-04 มีแหล่ง wf แล้ว · **เพิ่ม TruckScale pull-back (Weigh Inbox + sync)** — ดู [CURRENT-SYSTEM-STATE](CURRENT-SYSTEM-STATE.md)
 
 ## 2. Backlog ฟังก์ชันที่ต้อง implement รอบถัดไป (จัดลำดับ)
 

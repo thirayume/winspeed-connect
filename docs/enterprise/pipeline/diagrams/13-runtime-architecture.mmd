@@ -1,0 +1,26 @@
+flowchart LR
+  subgraph ACT["ผู้ใช้งาน 8 บทบาท"]
+    U["ADMIN · SALES · COUNTER_SALES · WAREHOUSE<br/>ACCOUNTING · MANAGER · APPROVER · WEIGHBRIDGE"]
+  end
+  subgraph FE["Experience Layer"]
+    SPA["React + TypeScript SPA<br/>22 role-aware portals · tablet-first"]
+  end
+  subgraph BE["Application Layer — Node.js / Express"]
+    API["17 mounted route modules<br/>160 detected endpoints"]
+    SEC["Authentication · RBAC · context<br/>API audit · validation"]
+    DOM["Sales · Rebate · Paper · Weigh<br/>Policy · Reconciliation"]
+    REL["Outbox · polling · telemetry<br/>idempotency · alerting"]
+  end
+  subgraph DATA["Data & External Systems"]
+    WF[("SQL Server schema wf<br/>operational write owner<br/>55 migrations")]
+    WS[("WINSpeed dbo<br/>accounting source of truth<br/>controlled contract")]
+    TS[("TruckScale MySQL<br/>completed weigh read-only<br/>queue write: tbl_keyone")]
+  end
+  U --> SPA --> API
+  API --> SEC --> DOM
+  DOM --> WF
+  DOM --> REL
+  REL --> WS
+  REL --> TS
+  WS -. "invoice / CN / GL evidence" .-> WF
+  TS -. "weigh / sync evidence" .-> WF

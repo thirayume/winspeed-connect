@@ -1,0 +1,192 @@
+{
+  "schemaVersion": 1,
+  "kind": "WS-Sale-App Learning Screenshot Evidence",
+  "generatedAt": "2026-07-23T12:00:56.650704+00:00",
+  "status": "Review",
+  "approvalBoundary": "Training/documentation candidate only; does not replace manual business UAT.",
+  "e2e": {
+    "runId": "2026-07-23T09-56-59-217Z",
+    "status": "PASSED_COMPLETE",
+    "commit": "79a10a28e6a2fba9b65dc85101ff8ab6d784b91c",
+    "sourceStable": true,
+    "counts": {
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "timedOut": 0,
+      "interrupted": 0,
+      "notRun": 0
+    },
+    "environment": {
+      "schemaVersion": 1,
+      "capturedAt": "2026-07-23T09:56:59.091Z",
+      "frontend": {
+        "url": "http://localhost:5174",
+        "status": 200,
+        "ok": true,
+        "durationMs": 23,
+        "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx\"></script>\n  </body>\n</html>\n"
+      },
+      "api": {
+        "url": "http://localhost:3100/api/health",
+        "status": 200,
+        "ok": true,
+        "durationMs": 92,
+        "body": {
+          "ok": true,
+          "ts": "2026-07-23T09:56:59.108Z",
+          "version": "1.0.1",
+          "env": "development",
+          "uptimeSec": 2,
+          "requests": 1,
+          "errors": 0,
+          "lastErrorAt": null,
+          "db": {
+            "sqlserver": "up",
+            "mysql": "up"
+          }
+        }
+      }
+    },
+    "evidenceSha256": "2DC6353FB3919DEB6ED571D63D9AB97F5473C8F2DEF70EB1515C8680718FBC03"
+  },
+  "summary": {
+    "total": 10,
+    "training": 5,
+    "boundary": 5
+  },
+  "screenshots": [
+    {
+      "sequence": 1,
+      "file": "docs/enterprise/05-UI-SCREENSHOTS/candidate/20260723-e2e-current/01-sales-multi-bill-verification-gate.png",
+      "sha256": "3342E52725A38D916E56536BA2228367BC424920B2E6C6D6DC84FBE34F1A535F",
+      "source": "test-results/artifacts/comprehensive-sales-Compre-71aeb-ed-by-the-verification-gate-chromium/test-finished-1.png",
+      "sourceSha256": "3342E52725A38D916E56536BA2228367BC424920B2E6C6D6DC84FBE34F1A535F",
+      "test": "chromium > comprehensive-sales.spec.ts > Comprehensive Sales Trip E2E > multi-bill trip is traceable and blocked by the verification gate",
+      "testStatus": "passed",
+      "role": "SALES / COUNTER_SALES",
+      "recommendedUse": "training",
+      "caption": "Multi-bill trip detail used to explain the verification gate and document grouping.",
+      "evidenceBoundary": "Automated synthetic data; not accounting sign-off."
+    },
+    {
+      "sequence": 2,
+      "file": "docs/enterprise/05-UI-SCREENSHOTS/candidate/20260723-e2e-current/02-sales-so-draft-loading-boundary.png",
+      "sha256": "1E45E598813DD743C17D4BE0D3CE85C0EA666C2595D38E3C5FB289C83019A2D1",
+      "source": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-4d721-reates-a-traceable-SO-draft-chromium/test-finished-1.png",
+      "sourceSha256": "1E45E598813DD743C17D4BE0D3CE85C0EA666C2595D38E3C5FB289C83019A2D1",
+      "test": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 1. SALES creates a traceable SO draft",
+      "testStatus": "passed",
+      "role": "SALES",
+      "recommendedUse": "boundary",
+      "caption": "Loading overlay after SO action; use only for the duplicate-action prevention drill.",
+      "evidenceBoundary": "Loading state does not prove that the SO was saved successfully."
+    },
+    {
+      "sequence": 3,
+      "file": "docs/enterprise/05-UI-SCREENSHOTS/candidate/20260723-e2e-current/03-manager-admin-paper-trail.png",
+      "sha256": "166163F27B99D3EB6546D4FE3B97F47D59387E30444A8238C109AEB6AEDA59A7",
+      "source": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-e594d-s-and-ADMIN-confirms-the-SO-chromium/test-finished-1.png",
+      "sourceSha256": "166163F27B99D3EB6546D4FE3B97F47D59387E30444A8238C109AEB6AEDA59A7",
+      "test": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 2. MANAGER verifies and ADMIN confirms the SO",
+      "testStatus": "passed",
+      "role": "MANAGER / ADMIN",
+      "recommendedUse": "training",
+      "caption": "Paper Trail card after verification/confirmation flow.",
+      "evidenceBoundary": "Supports navigation and trace examples; business approval remains manual."
+    },
+    {
+      "sequence": 4,
+      "file": "docs/enterprise/05-UI-SCREENSHOTS/candidate/20260723-e2e-current/04-counter-sales-truckscale-health.png",
+      "sha256": "E761DE367A25CE236CA26D7783BA200347A0FBD1E051D820078CB4BE13BB4DBD",
+      "source": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-29cb0-eal-TruckScale-health-state-chromium/test-finished-1.png",
+      "sourceSha256": "E761DE367A25CE236CA26D7783BA200347A0FBD1E051D820078CB4BE13BB4DBD",
+      "test": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 3. COUNTER SALES sees the real TruckScale health state",
+      "testStatus": "passed",
+      "role": "COUNTER_SALES",
+      "recommendedUse": "training",
+      "caption": "TruckScale health banner and lookup controls.",
+      "evidenceBoundary": "Development MySQL evidence; not production scale calibration."
+    },
+    {
+      "sequence": 5,
+      "file": "docs/enterprise/05-UI-SCREENSHOTS/candidate/20260723-e2e-current/05-warehouse-empty-result-boundary.png",
+      "sha256": "732EF9E188382B5F41225BF9877ACABD5B06ED88D233BF7692CFEE46815A745B",
+      "source": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-d38a5-icks-loads-and-ships-the-SO-chromium/test-finished-1.png",
+      "sourceSha256": "732EF9E188382B5F41225BF9877ACABD5B06ED88D233BF7692CFEE46815A745B",
+      "test": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 4. WAREHOUSE picks, loads and ships the SO",
+      "testStatus": "passed",
+      "role": "WAREHOUSE",
+      "recommendedUse": "boundary",
+      "caption": "Warehouse empty-result view used for exception and escalation training.",
+      "evidenceBoundary": "Empty result does not prove pick/load/ship completion."
+    },
+    {
+      "sequence": 6,
+      "file": "docs/enterprise/05-UI-SCREENSHOTS/candidate/20260723-e2e-current/06-admin-final-paper-trail-empty-boundary.png",
+      "sha256": "918381C04C45C0B81E443223E34090CE4832902E712119F39D6680F714C20554",
+      "source": "test-results/artifacts/uat-full-loop-UAT-Full-Loo-26b9a--audit-trail-in-Paper-Trail-chromium/test-finished-1.png",
+      "sourceSha256": "918381C04C45C0B81E443223E34090CE4832902E712119F39D6680F714C20554",
+      "test": "chromium > uat-full-loop.spec.ts > UAT Full Loop E2E > 5. ADMIN verifies SHIPPED state and audit trail in Paper Trail",
+      "testStatus": "passed",
+      "role": "ADMIN",
+      "recommendedUse": "boundary",
+      "caption": "Paper Trail search with no visible card, retained for evidence completeness.",
+      "evidenceBoundary": "Does not prove SHIPPED state or final audit completion."
+    },
+    {
+      "sequence": 7,
+      "file": "docs/enterprise/05-UI-SCREENSHOTS/candidate/20260723-e2e-current/07-admin-dashboard-after-access-as.png",
+      "sha256": "1F01441671C97612C32D188BBD30E46BAA146AB664B309DD306242FD3F1852A2",
+      "source": "test-results/artifacts/workflow-WS-Sale-App-V1-0--8b979-cess-As-and-return-to-ADMIN-chromium/test-finished-1.png",
+      "sourceSha256": "1F01441671C97612C32D188BBD30E46BAA146AB664B309DD306242FD3F1852A2",
+      "test": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > ADMIN can login, use Access As and return to ADMIN",
+      "testStatus": "passed",
+      "role": "ADMIN",
+      "recommendedUse": "training",
+      "caption": "Admin dashboard after the Access As navigation test.",
+      "evidenceBoundary": "The screenshot does not itself display START/STOP audit records."
+    },
+    {
+      "sequence": 8,
+      "file": "docs/enterprise/05-UI-SCREENSHOTS/candidate/20260723-e2e-current/08-sales-quotation-loading-boundary.png",
+      "sha256": "DDA1DC2A3BF30A7E3D40CCE9B0781A2D031B29890973E3A31CA43850C774F545",
+      "source": "test-results/artifacts/workflow-WS-Sale-App-V1-0--c0537--SALES-can-access-Quotation-chromium/test-finished-1.png",
+      "sourceSha256": "DDA1DC2A3BF30A7E3D40CCE9B0781A2D031B29890973E3A31CA43850C774F545",
+      "test": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > SALES can access Quotation",
+      "testStatus": "passed",
+      "role": "SALES",
+      "recommendedUse": "boundary",
+      "caption": "Quotation loading overlay used in safe retry training.",
+      "evidenceBoundary": "Loading state does not prove Quotation access or save completion."
+    },
+    {
+      "sequence": 9,
+      "file": "docs/enterprise/05-UI-SCREENSHOTS/candidate/20260723-e2e-current/09-counter-sales-truckscale-navigation.png",
+      "sha256": "E761DE367A25CE236CA26D7783BA200347A0FBD1E051D820078CB4BE13BB4DBD",
+      "source": "test-results/artifacts/workflow-WS-Sale-App-V1-0--fb082-kScale-with-explicit-health-chromium/test-finished-1.png",
+      "sourceSha256": "E761DE367A25CE236CA26D7783BA200347A0FBD1E051D820078CB4BE13BB4DBD",
+      "test": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > COUNTER_SALES can access TruckScale with explicit health",
+      "testStatus": "passed",
+      "role": "COUNTER_SALES",
+      "recommendedUse": "training",
+      "caption": "Counter Sales can reach TruckScale and see explicit health.",
+      "evidenceBoundary": "Navigation/health evidence only; no production ticket was matched."
+    },
+    {
+      "sequence": 10,
+      "file": "docs/enterprise/05-UI-SCREENSHOTS/candidate/20260723-e2e-current/10-warehouse-scale-queue-empty-boundary.png",
+      "sha256": "BCE58E168FDFA684D6C2D53669332FCD4D126E7A641562E0B69DDDB8DCA428D3",
+      "source": "test-results/artifacts/workflow-WS-Sale-App-V1-0--0d684-ss-loading-and-scale-queues-chromium/test-finished-1.png",
+      "sourceSha256": "BCE58E168FDFA684D6C2D53669332FCD4D126E7A641562E0B69DDDB8DCA428D3",
+      "test": "chromium > workflow.spec.ts > WS-Sale-App V1.0 role navigation > WAREHOUSE can access loading and scale queues",
+      "testStatus": "passed",
+      "role": "WAREHOUSE",
+      "recommendedUse": "boundary",
+      "caption": "Warehouse scale queue empty state used for exception handling.",
+      "evidenceBoundary": "Does not prove that loading or weighing completed."
+    }
+  ]
+}

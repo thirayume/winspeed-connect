@@ -1,0 +1,16 @@
+{
+  "status": "PASSED",
+  "method": "microsoft-word-pdfium",
+  "document": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\01-DOCX\\candidate\\technical-core\\Analysis-and-Design-v1.0-candidate.docx",
+  "outputDir": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\01-DOCX\\candidate\\technical-core\\qa-render-r3\\analysis-design",
+  "pdf": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\01-DOCX\\candidate\\technical-core\\qa-render-r3\\analysis-design\\word-pdfium\\Analysis-and-Design-v1.0-candidate.pdf",
+  "pages": 23,
+  "preferredRenderer": {
+    "attempted": false,
+    "status": "not-run",
+    "exitCode": null,
+    "stdout": "",
+    "stderr": ""
+  },
+  "generatedAt": "2026-07-23T17:32:33.0909639+07:00"
+}

@@ -1,0 +1,16 @@
+{
+  "status": "PASSED",
+  "method": "microsoft-word-pdfium",
+  "document": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\01-DOCX\\candidate\\technical-core\\SRS-v1.0-candidate.docx",
+  "outputDir": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\01-DOCX\\candidate\\technical-core\\qa-render-final\\srs",
+  "pdf": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\01-DOCX\\candidate\\technical-core\\qa-render-final\\srs\\word-pdfium\\SRS-v1.0-candidate.pdf",
+  "pages": 24,
+  "preferredRenderer": {
+    "attempted": false,
+    "status": "not-run",
+    "exitCode": null,
+    "stdout": "",
+    "stderr": ""
+  },
+  "generatedAt": "2026-07-23T17:28:21.4110071+07:00"
+}

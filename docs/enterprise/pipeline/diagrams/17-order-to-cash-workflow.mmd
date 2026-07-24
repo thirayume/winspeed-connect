@@ -1,0 +1,27 @@
+flowchart LR
+  subgraph SALES["Sales"]
+    S1["Quotation / request"] --> S2["Create SO draft"]
+    S2 --> S3["Complete data + verify"]
+  end
+  subgraph CONTROL["Manager / Approver"]
+    C1{"Verification and<br/>policy gates"}
+    C2["Approve / reject / return"]
+  end
+  subgraph WH["Warehouse"]
+    W1["Pick"] --> W2["Load"]
+  end
+  subgraph SCALE["Weighbridge"]
+    T1["Find or sync ticket"] --> T2["Match and validate"] --> T3["Ship"]
+  end
+  subgraph ACC["Accounting / Control"]
+    A1["WINSpeed invoice / CN"] --> A2["Reconcile"]
+    A2 --> A3["Close exception + retain evidence"]
+  end
+  S3 --> C1
+  C1 -->|pass| W1
+  C1 -->|exception| C2
+  C2 -->|approved| W1
+  C2 -->|returned| S2
+  W2 --> T1
+  T3 --> A1
+  T3 -. "audit · outbox · rebate accrual" .-> A2

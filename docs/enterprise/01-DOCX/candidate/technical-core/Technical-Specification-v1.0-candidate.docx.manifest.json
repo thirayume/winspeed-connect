@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "kind": "WS-Sale-App Technical Core DOCX Candidate",
+  "generatedAt": "2026-07-23T10:42:58.539556+00:00",
+  "status": "Review",
+  "documentId": "WF-TECH-001",
+  "title": "Technical Specification",
+  "output": "docs/enterprise/01-DOCX/candidate/technical-core/Technical-Specification-v1.0-candidate.docx",
+  "sha256": "0D2D655F8A719219889D7FE154725E489A60EFE0A5117E2EDBF9CCCA581147EA",
+  "bytes": 986714,
+  "runtimeVersion": "1.0.1",
+  "sourceCommit": "79a10a28e6a2fba9b65dc85101ff8ab6d784b91c",
+  "sourceInventorySha256": "12B9F964C7C90341859EDD6CDDE9B92BA35D797347F2AA64A1134E1E885FC343",
+  "e2eRunId": "2026-07-23T09-56-59-217Z",
+  "designPreset": "standard_business_brief",
+  "namedOverrides": {
+    "page": "A4 portrait",
+    "bodyFont": "Prompt 9.4 pt",
+    "headingFont": "Kanit",
+    "contentWidthCm": 17.0
+  },
+  "headerPattern": "memo_masthead",
+  "sources": [
+    {
+      "path": "docs/enterprise/03-SOLUTION-ARCHITECTURE/TECHNICAL-SPECIFICATION.md",
+      "sha256": "3B973BA9DD623E8DA9BCC83A7391FB718BFDFB5AC0ABE420936360A66960871F",
+      "bytes": 12791,
+      "title": "Technical Specification — Runtime 1.0.1 Candidate"
+    },
+    {
+      "path": "docs/enterprise/04-DATA-INTEGRATION/API-REFERENCE.md",
+      "sha256": "FC051E970DCEFAC17EAE616E2BF9150A65C8ADC81C397462F5A8A5B96DFEE245",
+      "bytes": 13934,
+      "title": "API Reference — Current Source Contract"
+    },
+    {
+      "path": "docs/enterprise/04-DATA-INTEGRATION/DATABASE-OVERVIEW.md",
+      "sha256": "FDE4E30AB4944A73C973A3AB26E3D4787D0DB6159994BB7146C759C82D95D9BB",
+      "bytes": 18201,
+      "title": "00 — ภาพรวมฐานข้อมูล & การ Mapping (Database Overview & Mapping)"
+    },
+    {
+      "path": "docs/enterprise/04-DATA-INTEGRATION/TRUCKSCALE-INTEGRATION-CONTRACT.md",
+      "sha256": "23457F3BE33F4B1E05E2ADCE2E376B3E8BB86D35F42A76DB252C583497CB3FC2",
+      "bytes": 5961,
+      "title": "TruckScale Integration and Data Quality Contract"
+    },
+    {
+      "path": "docs/enterprise/04-DATA-INTEGRATION/WINSPEED-INTEGRATION-CONTRACT.md",
+      "sha256": "C4B9B5C6BF6D5E41AA7A0F47C9B55AABF80B38BD01E7C6BCC07912B7345FBF31",
+      "bytes": 3438,
+      "title": "WINSpeed Integration Contract"
+    },
+    {
+      "path": "docs/enterprise/05-SECURITY-DEVOPS/SECURITY-ARCHITECTURE.md",
+      "sha256": "BD0FBC919CD9FA9AE7981296DE44B762BA087574E48ED44DBC4B33A4C08B006E",
+      "bytes": 3566,
+      "title": "Security Architecture and Hardening Standard"
+    },
+    {
+      "path": "docs/enterprise/05-SECURITY-DEVOPS/DEPLOYMENT-AND-CI-CD.md",
+      "sha256": "BAB94E26A0571D26875CCDB2E38BDF89BA2DA8D7A743E11ED7197186246642CC",
+      "bytes": 3393,
+      "title": "Deployment, CI/CD and Environment Management"
+    },
+    {
+      "path": "docs/enterprise/05-SECURITY-DEVOPS/OBSERVABILITY-INCIDENT-RUNBOOK.md",
+      "sha256": "032D5F4FED36D6E8929FA6E7D23C87C03D8DC128461C88E5548E4F0DD5A335B9",
+      "bytes": 3568,
+      "title": "Observability, Alerting and Incident Runbook"
+    },
+    {
+      "path": "docs/enterprise/05-SECURITY-DEVOPS/PERFORMANCE-ENGINEERING.md",
+      "sha256": "546887EAE5C0F4F9343797CC6E51D3EDE8BDFC2455A898F42E43ED5E962EC11C",
+      "bytes": 2802,
+      "title": "Performance Engineering and SQL Query Controls"
+    },
+    {
+      "path": "docs/enterprise/05-SECURITY-DEVOPS/BACKUP-DR-BCP.md",
+      "sha256": "C91E44F28E1624746AC13041B00BFC4D34B6044588AAEFB925E11FAF9AE7912D",
+      "bytes": 2904,
+      "title": "Backup, Disaster Recovery and Business Continuity Plan"
+    }
+  ],
+  "figures": [
+    {
+      "path": "docs/enterprise/04-DIAGRAMS-PNG/candidate/domain/13-runtime-architecture.png",
+      "sha256": "B08C8F0563C3A84D538E52E28C74370BCDAF05744B2F358CFB60D90319D9E8D3",
+      "bytes": 320188,
+      "caption": "ภาพที่ 1 — Runtime components and integration boundaries"
+    },
+    {
+      "path": "docs/enterprise/04-DIAGRAMS-PNG/candidate/source-aligned/10-current-api-surface.png",
+      "sha256": "8A53A8C65431682F31B136F14719CF9F61E5A194D7CE8A7DD59C915636B229EB",
+      "bytes": 222787,
+      "caption": "ภาพที่ 2 — Current API surface: 17 route mounts / 160 endpoints"
+    },
+    {
+      "path": "docs/enterprise/04-DIAGRAMS-PNG/candidate/domain/15-operational-erd.png",
+      "sha256": "21C695D3CF235B7CE22C49E1ACC3E97A9142D959D95A24BE0FD71A4BEE127D01",
+      "bytes": 253458,
+      "caption": "ภาพที่ 3 — Core operational data relationships"
+    },
+    {
+      "path": "docs/enterprise/04-DIAGRAMS-PNG/candidate/source-aligned/11-document-evidence-flow.png",
+      "sha256": "548F911D8F984E57874697AC4D3FE838899F05350AF6EA8928148D7739DAA251",
+      "bytes": 199203,
+      "caption": "ภาพที่ 4 — Source-to-document evidence flow and approval boundary"
+    }
+  ],
+  "contentCounts": {
+    "headings": 90,
+    "tables": 34,
+    "paragraphs": 27,
+    "lists": 30,
+    "codeBlocks": 3
+  },
+  "approvalBoundary": "Candidate only; human review and baseline acceptance required"
+}

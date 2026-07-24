@@ -1,14 +1,12 @@
 %% Documentation evidence and release flow
-%% generatedFromSourceInventory: DD5919B298128637E2FCEF56A2B663F0B09EE94206349E3B28C61E27569BE49F
-%% generatedAt: 2026-07-22T18:59:51.277Z
+%% generatedFromSourceInventory: 12B9F964C7C90341859EDD6CDDE9B92BA35D797347F2AA64A1134E1E885FC343
+%% generatedAt: 2026-07-23T09:58:12.433Z
 flowchart LR
-  SRC["Backend · Frontend · Migrations · Deployment"] --> INV["Deterministic source inventory<br/>SHA-256"]
-  INV --> GAP["Source ↔ document gap report"]
-  GAP --> REV["40 merged documents<br/>Review"]
-  REV --> APPROVE{"Technical / business approval"}
-  E2E["Automated E2E<br/>PASSED_COMPLETE<br/>10/10 passed"] --> REVIEW["Source/hash evidence review"]
-  REVIEW --> UAT["Business UAT sign-off (separate)"]
+  SRC["Source ปัจจุบัน<br/>Backend · Frontend · Migrations · Deployment"] --> DOC["ตรวจเอกสารเชิงเทคนิค<br/>Source inventory SHA-256<br/>Gap report · 40 merged documents"]
+  E2E["Automated E2E<br/>PASSED_COMPLETE<br/>10/10 passed"] --> TEST["ตรวจหลักฐานการทดสอบ<br/>Source/hash evidence review"]
+  DOC --> APPROVE{"Technical / business approval"}
+  TEST --> UAT["Business UAT sign-off<br/>(separate human gate)"]
   APPROVE --> GATE{"Strict documentation gate"}
   UAT --> GATE
-  GATE -->|"pass"| BASE["Accepted source + document baseline"]
-  GATE -->|"gap / drift"| BLOCK["Release blocked"]
+  GATE -->|"ผ่าน"| BASE["Accepted source + document baseline"]
+  GATE -->|"พบ gap / drift"| BLOCK["Release blocked<br/>แก้ไขแล้วตรวจใหม่"]

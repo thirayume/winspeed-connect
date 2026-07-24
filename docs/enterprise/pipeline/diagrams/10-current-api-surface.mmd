@@ -1,39 +1,17 @@
 %% Current Express API surface
-%% generatedFromSourceInventory: DD5919B298128637E2FCEF56A2B663F0B09EE94206349E3B28C61E27569BE49F
-%% generatedAt: 2026-07-22T18:59:51.277Z
+%% generatedFromSourceInventory: 12B9F964C7C90341859EDD6CDDE9B92BA35D797347F2AA64A1134E1E885FC343
+%% generatedAt: 2026-07-23T09:58:12.433Z
 flowchart TB
   API["Express API<br/>160 extracted endpoints"]
-  R_api_auth["/api/auth<br/>auth.js"]
-  API --> R_api_auth
-  R_api_credit["/api/credit<br/>credit.js"]
-  API --> R_api_credit
-  R_api_giveaway["/api/giveaway<br/>giveaway.js"]
-  API --> R_api_giveaway
-  R_api_line["/api/line<br/>line.js"]
-  API --> R_api_line
-  R_api_master["/api/master<br/>master.js"]
-  API --> R_api_master
-  R_api_ops["/api/ops<br/>ops.js"]
-  API --> R_api_ops
-  R_api_papertrail["/api/papertrail<br/>papertrail.js"]
-  API --> R_api_papertrail
-  R_api_pdpa["/api/pdpa<br/>pdpa.js"]
-  API --> R_api_pdpa
-  R_api_policy["/api/policy<br/>policy.js"]
-  API --> R_api_policy
-  R_api_pricebook["/api/pricebook<br/>pricebook.js"]
-  API --> R_api_pricebook
-  R_api_quotation["/api/quotation<br/>quotation.js"]
-  API --> R_api_quotation
-  R_api_rebate["/api/rebate<br/>rebate.js"]
-  API --> R_api_rebate
-  R_api_recon["/api/recon<br/>recon.js"]
-  API --> R_api_recon
-  R_api_reports["/api/reports<br/>reports.js"]
-  API --> R_api_reports
-  R_api_so["/api/so<br/>so.js"]
-  API --> R_api_so
-  R_api_stock["/api/stock<br/>stock.js"]
-  API --> R_api_stock
-  R_api_truckscale["/api/truckscale<br/>truckscale.js"]
-  API --> R_api_truckscale
+  API --> BUSINESS["Business, security & governance"]
+  API --> DELIVERY["Operations, integration & evidence"]
+  ACCESS["<b>Access & master data</b><br/>/api/auth · auth.js<br/>/api/master · master.js<br/>/api/policy · policy.js<br/>/api/pdpa · pdpa.js"]
+  BUSINESS --> ACCESS
+  COMMERCIAL["<b>Commercial documents</b><br/>/api/credit · credit.js<br/>/api/pricebook · pricebook.js<br/>/api/quotation · quotation.js<br/>/api/so · so.js"]
+  BUSINESS --> COMMERCIAL
+  PROMOTION["<b>Promotion controls</b><br/>/api/rebate · rebate.js<br/>/api/giveaway · giveaway.js"]
+  BUSINESS --> PROMOTION
+  OPERATIONS["<b>Operations & fulfilment</b><br/>/api/ops · ops.js<br/>/api/stock · stock.js<br/>/api/truckscale · truckscale.js<br/>/api/papertrail · papertrail.js"]
+  DELIVERY --> OPERATIONS
+  INTEGRATION["<b>Integration & reporting</b><br/>/api/line · line.js<br/>/api/recon · recon.js<br/>/api/reports · reports.js"]
+  DELIVERY --> INTEGRATION

@@ -110,18 +110,18 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 13667,
+                      "duration": 10849,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-22T18:57:49.898Z",
+                      "startTime": "2026-07-23T09:56:59.887Z",
                       "annotations": [],
                       "attachments": [
                         {
                           "name": "multi-bill-gate.json",
                           "contentType": "application/json",
-                          "body": "ewogICJwbGF0ZSI6ICJDTVAtTVJXRzM0MVUiLAogICJvcmRlcnMiOiBbCiAgICB7CiAgICAgICJpZCI6ICIzMSIsCiAgICAgICJ3ZlJlZiI6ICJLNjktMDIxNDUiLAogICAgICAic3RhdHVzIjogIkRSQUZUIgogICAgfSwKICAgIHsKICAgICAgImlkIjogIjMwIiwKICAgICAgIndmUmVmIjogIkk2OS0wMjc0OSIsCiAgICAgICJzdGF0dXMiOiAiRFJBRlQiCiAgICB9CiAgXSwKICAiZ2F0ZXMiOiBbCiAgICB7CiAgICAgICJpZCI6ICIzMSIsCiAgICAgICJtZXNzYWdlIjogIuC4leC5ieC4reC4h+C4leC4o+C4p+C4iOC4i+C5ieC4syAoQ291bnRlci1TYWxlcykg4LiB4LmI4Lit4LiZ4Lii4Li34LiZ4Lii4Lix4LiZIOKAlCDguIHguJTguJvguLjguYjguKEg4oCc4LiV4Lij4Lin4LiI4LmB4Lil4LmJ4Lin4oCdIOC4geC5iOC4reC4mSAoRlItMDIyKSIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICIzMCIsCiAgICAgICJtZXNzYWdlIjogIuC4leC5ieC4reC4h+C4leC4o+C4p+C4iOC4i+C5ieC4syAoQ291bnRlci1TYWxlcykg4LiB4LmI4Lit4LiZ4Lii4Li34LiZ4Lii4Lix4LiZIOKAlCDguIHguJTguJvguLjguYjguKEg4oCc4LiV4Lij4Lin4LiI4LmB4Lil4LmJ4Lin4oCdIOC4geC5iOC4reC4mSAoRlItMDIyKSIKICAgIH0KICBdCn0="
+                          "body": "ewogICJwbGF0ZSI6ICJDTVAtTVJYQzdHNE4iLAogICJvcmRlcnMiOiBbCiAgICB7CiAgICAgICJpZCI6ICIzNyIsCiAgICAgICJ3ZlJlZiI6ICJLNjktMDIyMTYiLAogICAgICAic3RhdHVzIjogIkRSQUZUIgogICAgfSwKICAgIHsKICAgICAgImlkIjogIjM2IiwKICAgICAgIndmUmVmIjogIkk2OS0wMjg4NSIsCiAgICAgICJzdGF0dXMiOiAiRFJBRlQiCiAgICB9CiAgXSwKICAiZ2F0ZXMiOiBbCiAgICB7CiAgICAgICJpZCI6ICIzNyIsCiAgICAgICJtZXNzYWdlIjogIuC4leC5ieC4reC4h+C4leC4o+C4p+C4iOC4i+C5ieC4syAoQ291bnRlci1TYWxlcykg4LiB4LmI4Lit4LiZ4Lii4Li34LiZ4Lii4Lix4LiZIOKAlCDguIHguJTguJvguLjguYjguKEg4oCc4LiV4Lij4Lin4LiI4LmB4Lil4LmJ4Lin4oCdIOC4geC5iOC4reC4mSAoRlItMDIyKSIKICAgIH0sCiAgICB7CiAgICAgICJpZCI6ICIzNiIsCiAgICAgICJtZXNzYWdlIjogIuC4leC5ieC4reC4h+C4leC4o+C4p+C4iOC4i+C5ieC4syAoQ291bnRlci1TYWxlcykg4LiB4LmI4Lit4LiZ4Lii4Li34LiZ4Lii4Lix4LiZIOKAlCDguIHguJTguJvguLjguYjguKEg4oCc4LiV4Lij4Lin4LiI4LmB4Lil4LmJ4Lin4oCdIOC4geC5iOC4reC4mSAoRlItMDIyKSIKICAgIH0KICBdCn0="
                         },
                         {
                           "name": "screenshot",
@@ -172,18 +172,18 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 6787,
+                      "duration": 6749,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-22T18:58:03.762Z",
+                      "startTime": "2026-07-23T09:57:10.904Z",
                       "annotations": [],
                       "attachments": [
                         {
                           "name": "created-order.json",
                           "contentType": "application/json",
-                          "body": "ewogICJpZCI6ICIzMiIsCiAgIndmUmVmIjogIkk2OS0wMjc4MSIsCiAgInBsYXRlIjogIlVBVC1NUldHM0VSMSIsCiAgInN0YXR1cyI6ICJEUkFGVCIKfQ=="
+                          "body": "ewogICJpZCI6ICIzOCIsCiAgIndmUmVmIjogIkk2OS0wMjkyMyIsCiAgInBsYXRlIjogIlVBVC1NUlhDN09NUiIsCiAgInN0YXR1cyI6ICJEUkFGVCIKfQ=="
                         },
                         {
                           "name": "screenshot",
@@ -217,18 +217,18 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 7123,
+                      "duration": 5842,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-22T18:58:10.568Z",
+                      "startTime": "2026-07-23T09:57:17.662Z",
                       "annotations": [],
                       "attachments": [
                         {
                           "name": "confirmed-order.json",
                           "contentType": "application/json",
-                          "body": "ewogICJpZCI6ICIyNzMxMzAiLAogICJ3ZlJlZiI6ICJJNjktMDI3ODEiLAogICJzdGF0dXMiOiAiQ09ORklSTUVEIgp9"
+                          "body": "ewogICJpZCI6ICIyNzMxMzIiLAogICJ3ZlJlZiI6ICJJNjktMDI5MjMiLAogICJzdGF0dXMiOiAiQ09ORklSTUVEIgp9"
                         },
                         {
                           "name": "screenshot",
@@ -262,25 +262,18 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 2255,
+                      "duration": 2043,
                       "errors": [],
                       "stdout": [],
-                      "stderr": [
-                        {
-                          "text": "[browser:console] Failed to load resource: the server responded with a status of 500 (Internal Server Error)\n"
-                        },
-                        {
-                          "text": "[browser:console] Failed to load resource: the server responded with a status of 500 (Internal Server Error)\n"
-                        }
-                      ],
+                      "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-22T18:58:17.710Z",
+                      "startTime": "2026-07-23T09:57:23.512Z",
                       "annotations": [],
                       "attachments": [
                         {
                           "name": "truckscale-health.json",
                           "contentType": "application/json",
-                          "body": "ewogICJteXNxbCI6ICJkb3duIiwKICAidWkiOiAi4LmA4LiK4Li34LmI4Lit4Lih4LiV4LmI4Lit4LmE4Lih4LmI4LmE4LiU4LmJIgp9"
+                          "body": "ewogICJteXNxbCI6ICJ1cCIsCiAgInVpIjogIuC5gOC4iuC4t+C5iOC4reC4oeC4leC5iOC4reC5geC4peC5ieC4pyDCtyA0MDMsOTA4IOC5g+C4muC4iuC4seC5iOC4hyIKfQ=="
                         },
                         {
                           "name": "screenshot",
@@ -314,18 +307,18 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 15814,
+                      "duration": 12536,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-22T18:58:19.982Z",
+                      "startTime": "2026-07-23T09:57:25.563Z",
                       "annotations": [],
                       "attachments": [
                         {
                           "name": "shipped-order.json",
                           "contentType": "application/json",
-                          "body": "ewogICJpZCI6ICIyNzMxMzAiLAogICJ3ZlJlZiI6ICJJNjktMDI3ODEiLAogICJzdGF0dXMiOiAiU0hJUFBFRCIsCiAgIndlaWdoIjogewogICAgIklkIjogIjkiLAogICAgIlNvSWQiOiAiMjczMTMwIiwKICAgICJXZlJlZiI6ICJJNjktMDI3ODEiLAogICAgIlRydWNrUGxhdGUiOiAiVUFULU1SV0czRVIxIiwKICAgICJHcm9zc0tnIjogMjAwMDAsCiAgICAiVGFyZUtnIjogMTAwMDAsCiAgICAiTmV0S2ciOiAxMDAwMCwKICAgICJTY2FsZU5vIjogMSwKICAgICJXZWlnaEluQXQiOiBudWxsLAogICAgIldlaWdoT3V0QXQiOiAiMjAyNi0wNy0yMlQxODo1ODozNC40NzBaIiwKICAgICJTdGF0dXMiOiAiRE9ORSIsCiAgICAiTW92ZWJpbGwiOiBudWxsLAogICAgIk5vdGUiOiBudWxsLAogICAgIkNyZWF0ZWRCeSI6IDY1LAogICAgIkNyZWF0ZWRBdCI6ICIyMDI2LTA3LTIyVDE4OjU4OjM0LjQ3MFoiLAogICAgIlVwZGF0ZWRBdCI6ICIyMDI2LTA3LTIyVDE4OjU4OjM0LjQ3MFoiCiAgfQp9"
+                          "body": "ewogICJpZCI6ICIyNzMxMzIiLAogICJ3ZlJlZiI6ICJJNjktMDI5MjMiLAogICJzdGF0dXMiOiAiU0hJUFBFRCIsCiAgIndlaWdoIjogewogICAgIklkIjogIjExIiwKICAgICJTb0lkIjogIjI3MzEzMiIsCiAgICAiV2ZSZWYiOiAiSTY5LTAyOTIzIiwKICAgICJUcnVja1BsYXRlIjogIlVBVC1NUlhDN09NUiIsCiAgICAiR3Jvc3NLZyI6IDIwMDAwLAogICAgIlRhcmVLZyI6IDEwMDAwLAogICAgIk5ldEtnIjogMTAwMDAsCiAgICAiU2NhbGVObyI6IDEsCiAgICAiV2VpZ2hJbkF0IjogbnVsbCwKICAgICJXZWlnaE91dEF0IjogIjIwMjYtMDctMjNUMDk6NTc6MzYuNzcwWiIsCiAgICAiU3RhdHVzIjogIkRPTkUiLAogICAgIk1vdmViaWxsIjogbnVsbCwKICAgICJOb3RlIjogbnVsbCwKICAgICJDcmVhdGVkQnkiOiA2NSwKICAgICJDcmVhdGVkQXQiOiAiMjAyNi0wNy0yM1QwOTo1NzozNi43NzBaIiwKICAgICJVcGRhdGVkQXQiOiAiMjAyNi0wNy0yM1QwOTo1NzozNi43NzBaIgogIH0KfQ=="
                         },
                         {
                           "name": "screenshot",
@@ -359,18 +352,18 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 2823,
+                      "duration": 3278,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-22T18:58:35.811Z",
+                      "startTime": "2026-07-23T09:57:38.110Z",
                       "annotations": [],
                       "attachments": [
                         {
                           "name": "uat-final-audit.json",
                           "contentType": "application/json",
-                          "body": "ewogICJpZCI6ICIyNzMxMzAiLAogICJ3ZlJlZiI6ICJJNjktMDI3ODEiLAogICJzdGF0dXMiOiAiU0hJUFBFRCIsCiAgImF1ZGl0QWN0aW9ucyI6IFsKICAgICJTSElQUEVEIiwKICAgICJMT0FERUQiLAogICAgIlBJQ0tJTkciLAogICAgIkNPTkZJUk1FRCIKICBdCn0="
+                          "body": "ewogICJpZCI6ICIyNzMxMzIiLAogICJ3ZlJlZiI6ICJJNjktMDI5MjMiLAogICJzdGF0dXMiOiAiU0hJUFBFRCIsCiAgImF1ZGl0QWN0aW9ucyI6IFsKICAgICJTSElQUEVEIiwKICAgICJMT0FERUQiLAogICAgIlBJQ0tJTkciLAogICAgIkNPTkZJUk1FRCIKICBdCn0="
                         },
                         {
                           "name": "screenshot",
@@ -421,12 +414,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 2218,
+                      "duration": 1994,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-22T18:58:38.660Z",
+                      "startTime": "2026-07-23T09:57:41.401Z",
                       "annotations": [],
                       "attachments": [
                         {
@@ -466,12 +459,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1470,
+                      "duration": 1216,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-22T18:58:40.897Z",
+                      "startTime": "2026-07-23T09:57:43.403Z",
                       "annotations": [],
                       "attachments": [
                         {
@@ -506,19 +499,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 1998,
+                      "duration": 1873,
                       "errors": [],
                       "stdout": [],
-                      "stderr": [
-                        {
-                          "text": "[browser:console] Failed to load resource: the server responded with a status of 500 (Internal Server Error)\n"
-                        },
-                        {
-                          "text": "[browser:console] Failed to load resource: the server responded with a status of 500 (Internal Server Error)\n"
-                        }
-                      ],
+                      "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-22T18:58:42.383Z",
+                      "startTime": "2026-07-23T09:57:44.631Z",
                       "annotations": [],
                       "attachments": [
                         {
@@ -553,12 +539,12 @@
                       "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 4375,
+                      "duration": 4523,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-07-22T18:58:44.398Z",
+                      "startTime": "2026-07-23T09:57:46.512Z",
                       "annotations": [],
                       "attachments": [
                         {
@@ -584,8 +570,8 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-07-22T18:57:48.665Z",
-    "duration": 60423.226,
+    "startTime": "2026-07-23T09:56:59.082Z",
+    "duration": 52202.308999999994,
     "expected": 10,
     "skipped": 0,
     "unexpected": 0,

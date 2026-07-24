@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "kind": "WS-Sale-App Playwright E2E Evidence",
-  "runId": "2026-07-22T18-57-48-900Z",
-  "startedAt": "2026-07-22T18:57:48.900Z",
-  "completedAt": "2026-07-22T18:58:49.223Z",
-  "durationMs": 60323,
+  "runId": "2026-07-23T09-56-59-217Z",
+  "startedAt": "2026-07-23T09:56:59.217Z",
+  "completedAt": "2026-07-23T09:57:51.346Z",
+  "durationMs": 52129,
   "status": "PASSED_COMPLETE",
   "playwrightStatus": "passed",
   "complete": true,
@@ -30,7 +30,8 @@
       "db-init/e2e-cleanup.sql",
       "docker-compose.yml",
       "deploy.ps1",
-      "DEPLOY.md"
+      "DEPLOY.md",
+      "backend/.env.coolify.example"
     ],
     "trackedRoots": [
       {
@@ -77,6 +78,16 @@
         "extensions": [
           ".ts"
         ]
+      },
+      {
+        "root": "deploy",
+        "extensions": [
+          ".yml",
+          ".yaml",
+          ".sh",
+          ".ps1",
+          ".md"
+        ]
       }
     ]
   },
@@ -101,23 +112,23 @@
   },
   "environment": {
     "schemaVersion": 1,
-    "capturedAt": "2026-07-22T18:57:48.677Z",
+    "capturedAt": "2026-07-23T09:56:59.091Z",
     "frontend": {
       "url": "http://localhost:5174",
       "status": 200,
       "ok": true,
-      "durationMs": 37,
+      "durationMs": 23,
       "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx\"></script>\n  </body>\n</html>\n"
     },
     "api": {
       "url": "http://localhost:3100/api/health",
       "status": 200,
       "ok": true,
-      "durationMs": 177,
+      "durationMs": 92,
       "body": {
         "ok": true,
-        "ts": "2026-07-22T18:57:48.697Z",
-        "version": "1.0.0",
+        "ts": "2026-07-23T09:56:59.108Z",
+        "version": "1.0.1",
         "env": "development",
         "uptimeSec": 2,
         "requests": 1,
@@ -125,24 +136,24 @@
         "lastErrorAt": null,
         "db": {
           "sqlserver": "up",
-          "mysql": "down"
+          "mysql": "up"
         }
       }
     }
   },
   "git": {
-    "commit": "c249bd7855c13c57a0174b380c138e4448538372",
+    "commit": "79a10a28e6a2fba9b65dc85101ff8ab6d784b91c",
     "dirty": true
   },
   "sourceStability": {
     "stable": true,
-    "startGitCommit": "c249bd7855c13c57a0174b380c138e4448538372",
-    "endGitCommit": "c249bd7855c13c57a0174b380c138e4448538372",
+    "startGitCommit": "79a10a28e6a2fba9b65dc85101ff8ab6d784b91c",
+    "endGitCommit": "79a10a28e6a2fba9b65dc85101ff8ab6d784b91c",
     "changedFiles": []
   },
   "fileHashes": {
     "DEPLOY.md": "6B917D1A0BEDD299CC113C2FF47D4291C7DA027D05E4A0D50159ABA37D1FB649",
-    "WSSale-App/package.json": "CB0BE0F03138EBCDA0DCBF3BE1B4FB52EF0D73CEFF4EA4512B724F010D95CBA4",
+    "WSSale-App/package.json": "7FDCB95D74CF2D5200E84004DACB2075CACE233363583711AEB2EC83BAD2EF38",
     "WSSale-App/src/App.css": "6E25A776D3E8102DA5BACB3CB99F4A5FC662A2E01E6143140671A556D28C3D5C",
     "WSSale-App/src/App.tsx": "116CF2D77124067CE5202DC707FF922B3DA2A53F5F938A2B748BED63F056B8CA",
     "WSSale-App/src/components/accounting/AccountingPage.tsx": "5BFA708634818C1069AEB67A51D13D2DBFFF77D875C2568DC45F1CCC32833C69",
@@ -222,6 +233,7 @@
     "WSSale-App/src/utils/date.ts": "CD8BC7E080B9A59AA13AD66D62308E69B203610CAB388A0059C9F0D56FFDFDF1",
     "WSSale-App/src/utils/permissions.ts": "6444159B0A8C41199E48EB0E901D86C97900AB5E1175CC1EBE5F02CF67739955",
     "WSSale-App/src/utils/truckAnalyzer.ts": "B6DAD7E8A6370A49AB3455EC0B859930B9653252B92608260E9A9FF28D1B5550",
+    "backend/.env.coolify.example": "8779FCCCBC4F8925C06839F0502987F434E50699EC3CF07E907895AF70C167CA",
     "backend/check.js": "336B18869F8FE20E87A94592AA5C3E8C9C3CF14ED6CAB5F8E38CE4C7D448BB09",
     "backend/check_admin.js": "A6D5F7324D07FCAB40A219BC38E7B1727709735ABC59E3881BBDF28512265311",
     "backend/db.js": "6DECB061D78ECE43EE57F4B7259F978A179017AB81433BC83296A124D314F026",
@@ -284,7 +296,7 @@
     "backend/migrations/053_so_notified_at.sql": "68A2EE1ACD96BE6062678ADB1D0970F82A5CC52D0277D97B6A188FCAEB3F3CBF",
     "backend/migrations/054_rebate_coupon_mirror.sql": "D8331274CB30AF20F42A8534DD26214A1A71AB6E41FA5A220CF995D10850F28C",
     "backend/migrations/055_restore_all_sales_orders_contract.sql": "DF42880CC03D5E315EDDC789BE108429C4FB75E8932A4016BA0CDC87E6279333",
-    "backend/package.json": "587752BF5B27DD85509EE5630D8219BB9A11E07D4D09392C978C13BCBF7372B1",
+    "backend/package.json": "7C1EFE6445992AAD7A7AAA0F14E60DCB838898594391F929F59F19DEF6F10F9C",
     "backend/routes/auth.js": "DFF4CFF9C124A052F9A03453C21A2428E19C2F060958AC3580D948E1B035BE4A",
     "backend/routes/credit.js": "4FA36A2296E4A7AFC07AB45CB3F16FABE8EFAB6FE098F0FD502DBA5459ABB3A6",
     "backend/routes/giveaway.js": "348FE1DAD8C50999FCF3F153005BF3FA8B6FE54162482BD6598CFD370BD9B108",
@@ -297,7 +309,7 @@
     "backend/routes/pricebook.js": "06D517ED1EB1433FE1086D83557258FBB7FA54838F26F34E0A67AB9EF9770B2C",
     "backend/routes/quotation.js": "3B4E67C86011D371877EECC9515637B41BDC46D21FE270257BD947372F852054",
     "backend/routes/rebate.js": "9F6867F6FD10415EACA581EAC7F96512B38E8EDDCF7B1CD4CD26DFE43A8A907D",
-    "backend/routes/recon.js": "87C72FB7618A2841B52B889CCC900687C23F31426E8F8105B2C1A70625F4D135",
+    "backend/routes/recon.js": "0DBC0E26DBC2FF7E4A1F46777899A920E03C7C93B55884C5E2B037701BE3DBD8",
     "backend/routes/reports.js": "3EDA8F07A05BFEC68F74B0490FA6D77338B5971CD8E47E6F94AF05E79BCB8CB8",
     "backend/routes/so.js": "36BA512A85C514361C0C58897314479710AD5B310C4A7196D4C49E891C84A678",
     "backend/routes/stock.js": "260F110A61A1C33DCF2887F561B11D1B3FB72EB5460F2C194BBEA59F01E06CE9",
@@ -308,6 +320,7 @@
     "backend/run_migrations.js": "C2CF98AD7154850A4AD51D4F24CE9E804914C9211334E9DEDE84ADAE89D95517",
     "backend/run_migrations.test.js": "6BB8FA9C00138CCCF3701DCDAACF2F6FD33A74E77624C610F2D55E0A8409BDD5",
     "backend/scripts/api_smoke.js": "505F7165149B91F183D050529AEE8E277DA1736F58909979C3D6BA36697C59F3",
+    "backend/scripts/backfill-weigh-inbox.js": "C52B37D78FFF4942305A88AB9C3BD436799CB1C7D8FD15B80116A39F49921237",
     "backend/scripts/check_aging_search_query.js": "35C0C41E30099BC9D609DC48DF8C983226E0BE85095BA1AA608F3F90B3429189",
     "backend/scripts/check_dashboard_queries.js": "A31611FE49B893559190C4D89332272AB17AB580567103A0568440510FCA5517",
     "backend/scripts/check_master_goods_query.js": "BDC3C911EBBB305097289F49B033C2849CAC422975CDEF35E724CF615780AA1A",
@@ -319,6 +332,8 @@
     "backend/scripts/inspect_so_performance.js": "44A0C6D5ED208479AB36CA1051CD2BA32CC0A2D812DC59A5AC201AECBCC0AAC9",
     "backend/scripts/inspect_sohd_distribution.js": "FD65D5DA0DF3BD978AADDA4AB2034FEF9D28DE8B7F363FEA5C9F6FC6868F18A6",
     "backend/scripts/local_user_recovery.js": "BE526F8FAD7557E5DE610A4CA7E194BB3CCE3A015F9D60BC2C9CACE1A6A9AC30",
+    "backend/scripts/make-test-dataset.js": "5C3706E90C8218F4A21219AF0B42A24BA0896F568012E73181D55576C8CD24AC",
+    "backend/scripts/preflight-check.js": "B808779B69EF00105E205E6E2FC236DABAA58633411374BD5B792D4E9C54567A",
     "backend/scripts/recalc_rebate_pools.js": "024419C432FC6F7C3196021DFD7C425FED5A90E5605F9F0087D8D55DCE02F8A7",
     "backend/scripts/run_local_api_smoke.js": "00A16A0EE31BD8F2EECEB647896DB3C6536FD9D7136C361EFFC1085E4A1A2E9D",
     "backend/scripts/run_query_smoke.js": "0D98A5174A8F4F62A6AA6BA86738144CC8F71C41048B22722BBA74584A5BE350",
@@ -334,20 +349,22 @@
     "backend/services/polling.js": "98016B01E83CEF7D1F202C0D02EA32D28C34691B3C21CAECA1B6C40308A22FA6",
     "backend/services/socket.js": "E68D6E9EA80BD310BDDE9A49219005A48343DDB93AC618096F36AEAF3AF4BEDC",
     "backend/services/truckscale-db.js": "865C48629459A81A6F56719ADC5627212D7CE48B1FD31BA8E864F38B3EE69A47",
-    "backend/services/truckscale-sync.js": "9298CB46056A5F8DCBAAB06A3223F498F2E040DCAE9B411CFA35379848EF8779",
+    "backend/services/truckscale-sync.js": "6ABC81514C4023F8E47A08A09B6F687237969611BE0AF10E5F9138C8C81A75CA",
     "backend/services/winspeed-import.service.js": "4016CE84B804F8DA82F433975AA719E4D0C702D77E0CFC4D026D92CCF0D2786F",
     "db-init/e2e-cleanup.sql": "81C9C1F996A23A96D1BBA929BB3D3031E7B9458A27F8B5CF6F19BDC6DE68641D",
     "db-init/e2e-seed.sql": "98BE1AACDA97CB4DEA314A67E2895F023BD8AC3E674C3D429E95DBE9FD0FEFB6",
     "deploy.ps1": "77C00FE2352821FF50289F01EE28E3ECA8D0EFBD67C3AFBC7ACDE0AA75494353",
+    "deploy/coolify/backup-databases.sh": "4C291DDE5BFBF3304A17510736C3A745C6563E04C956DA118998B0D2A97C63A5",
+    "deploy/coolify/docker-compose.yml": "C3C76860678250421FDE6C6509C3C45001BA321B68C270089D14B8D60AE47E61",
     "docker-compose.yml": "BCDE1294AE17924D79815F49429CE82BCB9E9777A5C0EA79DD08B052E0A3D4C6",
     "e2e/comprehensive-sales.spec.ts": "335789DD1F298D9C38DC4B33D8E31526F9CB031B18B1B585A81F2D2673C7FBF6",
     "e2e/evidence-reporter.cjs": "2027720E4D332D31AE308A644D2B5B5FA6480EF01FE2DBDB5D5ED59AFE5A5A56",
-    "e2e/evidence.config.json": "F206D8180BCAA2A17BFEF5DB7414C4CBDA7AAF9F1D7401494C2D236DD53061DA",
+    "e2e/evidence.config.json": "855DE67C6DE3260E3D884174648891CFA059FA8544EE789B7A6798ADC9A21CFA",
     "e2e/global-setup.ts": "74F92D253E8763C7B9C39B4828C9A5BF7D8490D5A0268518199967431A6F0D2C",
     "e2e/helpers.ts": "41329873704235A9765185D7DF3A228170F0093F5D7308B8389D24E91F0A278B",
     "e2e/uat-full-loop.spec.ts": "5BF53477132672A267B29CB68775EC1E8A5BA060CB8DD343E1A5896EEEA20E75",
     "e2e/workflow.spec.ts": "E60D094903CA60740AEA82B5F0D1246E44780D6F69A32AABCA54CADD343DF147",
-    "package.json": "5120E084FB221067919BA59C308B8C8193EB722E616AF6A5CCB55D1D1FABB773",
+    "package.json": "D32394C6DA4D59F77267226D609175E78285B56BD5CEC645CBC0CCF01EC65CA7",
     "playwright.config.ts": "A1239FDD163F4A37E7CDE0C56B5EF4082EA5B2D6F7D3141D3B0B1FABC787ACE6",
     "run-e2e.bat": "7E204347C4D2960DE63641A1343F9A878C1C672B67E2021F46A675EE6CDA7EC6",
     "run-e2e.ps1": "0E21C688537B5B5A6D29A054ABD078611CA2158037A1A105A525A64F450F9CC3",
@@ -363,7 +380,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 13667,
+      "durationMs": 10849,
       "errors": [],
       "attachments": [
         {
@@ -388,7 +405,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 6787,
+      "durationMs": 6749,
       "errors": [],
       "attachments": [
         {
@@ -413,7 +430,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 7123,
+      "durationMs": 5842,
       "errors": [],
       "attachments": [
         {
@@ -438,7 +455,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 2255,
+      "durationMs": 2043,
       "errors": [],
       "attachments": [
         {
@@ -463,7 +480,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 15814,
+      "durationMs": 12536,
       "errors": [],
       "attachments": [
         {
@@ -488,7 +505,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 2823,
+      "durationMs": 3278,
       "errors": [],
       "attachments": [
         {
@@ -513,7 +530,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 2218,
+      "durationMs": 1994,
       "errors": [],
       "attachments": [
         {
@@ -538,7 +555,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1470,
+      "durationMs": 1216,
       "errors": [],
       "attachments": [
         {
@@ -558,7 +575,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1998,
+      "durationMs": 1873,
       "errors": [],
       "attachments": [
         {
@@ -578,7 +595,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 4375,
+      "durationMs": 4523,
       "errors": [],
       "attachments": [
         {

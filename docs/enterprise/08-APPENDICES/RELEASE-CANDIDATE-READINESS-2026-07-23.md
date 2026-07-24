@@ -2,9 +2,10 @@
 documentId: WF-RC-001
 title: Release Candidate Readiness and Approval Packet
 version: 1.0-draft
-status: Draft
+status: Superseded
 owner: Release Manager / QA Lead / Solution Architect
 normative: false
+supersededBy: WF-RC-002
 runtimeVersion: 1.0.0
 sourceMigrationSequence: 55
 auditedCommit: 5916788c5150ecb70dba970c5742d56f33b76e2b
@@ -28,6 +29,8 @@ outputs:
 ---
 
 # Release Candidate Readiness and Approval Packet
+
+> **Superseded:** ใช้ WF-RC-002 (RELEASE-CANDIDATE-READINESS-2026-07-23-v2.md) เป็น memory/readiness ล่าสุดสำหรับ runtime v1.0.1 และ commit 79a10a28e6a2fba9b65dc85101ff8ab6d784b91c.
 
 วันที่จัดทำ: 23 กรกฎาคม 2026 เวลา 02:02 น. (Asia/Bangkok)
 ขอบเขต: repository `winspeed-frontend`, runtime v1.0.0, local SQL Server/MySQL test environment และเอกสารภายใต้ `docs/enterprise`

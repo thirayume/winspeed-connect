@@ -51,15 +51,34 @@ function nodeId(value) {
 }
 
 function renderApiSurface(report) {
+  const categories = [
+    { id: 'ACCESS', title: 'Access & master data', paths: ['/api/auth', '/api/master', '/api/policy', '/api/pdpa'] },
+    { id: 'COMMERCIAL', title: 'Commercial documents', paths: ['/api/credit', '/api/pricebook', '/api/quotation', '/api/so'] },
+    { id: 'PROMOTION', title: 'Promotion controls', paths: ['/api/rebate', '/api/giveaway'] },
+    { id: 'OPERATIONS', title: 'Operations & fulfilment', paths: ['/api/ops', '/api/stock', '/api/truckscale', '/api/papertrail'] },
+    { id: 'INTEGRATION', title: 'Integration & reporting', paths: ['/api/line', '/api/recon', '/api/reports'] },
+  ];
+  const mountsByPath = new Map(report.facts.routeMounts.map((mount) => [mount.basePath, mount]));
   const lines = [
     ...mermaidHeader(report, 'Current Express API surface'),
     'flowchart TB',
     `  API["Express API<br/>${report.facts.endpointCount} extracted endpoints"]`,
+    '  API --> BUSINESS["Business, security & governance"]',
+    '  API --> DELIVERY["Operations, integration & evidence"]',
   ];
-  for (const mount of report.facts.routeMounts) {
-    const id = nodeId(mount.basePath);
-    lines.push(`  ${id}["${mount.basePath}<br/>${mount.module}.js"]`);
-    lines.push(`  API --> ${id}`);
+
+  for (const category of categories) {
+    const mounts = category.paths.map((basePath) => mountsByPath.get(basePath)).filter(Boolean);
+    const label = [`<b>${category.title}</b>`, ...mounts.map((mount) => `${mount.basePath} · ${mount.module}.js`)].join('<br/>');
+    lines.push(`  ${category.id}["${label}"]`);
+    lines.push(`  ${['ACCESS', 'COMMERCIAL', 'PROMOTION'].includes(category.id) ? 'BUSINESS' : 'DELIVERY'} --> ${category.id}`);
+    mounts.forEach((mount) => mountsByPath.delete(mount.basePath));
+  }
+
+  if (mountsByPath.size > 0) {
+    const label = ['<b>Other detected route modules</b>', ...Array.from(mountsByPath.values()).map((mount) => `${mount.basePath} · ${mount.module}.js`)].join('<br/>');
+    lines.push(`  OTHER["${label}"]`);
+    lines.push('  DELIVERY --> OTHER');
   }
   return `${lines.join('\n')}\n`;
 }
@@ -68,16 +87,14 @@ function renderEvidenceFlow(report) {
   return `${[
     ...mermaidHeader(report, 'Documentation evidence and release flow'),
     'flowchart LR',
-    '  SRC["Backend · Frontend · Migrations · Deployment"] --> INV["Deterministic source inventory<br/>SHA-256"]',
-    '  INV --> GAP["Source ↔ document gap report"]',
-    '  GAP --> REV["40 merged documents<br/>Review"]',
-    '  REV --> APPROVE{"Technical / business approval"}',
-    `  E2E["Automated E2E<br/>${report.e2e.evidenceStatus || report.e2e.status}<br/>${report.e2e.counts ? `${report.e2e.counts.passed}/${report.e2e.counts.total} passed` : 'not reviewed'}"] --> REVIEW["Source/hash evidence review"]`,
-    '  REVIEW --> UAT["Business UAT sign-off (separate)"]',
+    '  SRC["Source ปัจจุบัน<br/>Backend · Frontend · Migrations · Deployment"] --> DOC["ตรวจเอกสารเชิงเทคนิค<br/>Source inventory SHA-256<br/>Gap report · 40 merged documents"]',
+    `  E2E["Automated E2E<br/>${report.e2e.evidenceStatus || report.e2e.status}<br/>${report.e2e.counts ? `${report.e2e.counts.passed}/${report.e2e.counts.total} passed` : 'not reviewed'}"] --> TEST["ตรวจหลักฐานการทดสอบ<br/>Source/hash evidence review"]`,
+    '  DOC --> APPROVE{"Technical / business approval"}',
+    '  TEST --> UAT["Business UAT sign-off<br/>(separate human gate)"]',
     '  APPROVE --> GATE{"Strict documentation gate"}',
     '  UAT --> GATE',
-    '  GATE -->|"pass"| BASE["Accepted source + document baseline"]',
-    '  GATE -->|"gap / drift"| BLOCK["Release blocked"]',
+    '  GATE -->|"ผ่าน"| BASE["Accepted source + document baseline"]',
+    '  GATE -->|"พบ gap / drift"| BLOCK["Release blocked<br/>แก้ไขแล้วตรวจใหม่"]',
   ].join('\n')}\n`;
 }
 

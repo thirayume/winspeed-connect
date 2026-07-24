@@ -3,22 +3,30 @@
 #  deploy.ps1  -  WinSpeed CI/CD Deploy Script
 #  ============================================================
 #  Usage:
-#    .\deploy.ps1                        -> patch bump + migrate + push
+#    .\deploy.ps1                        -> patch bump + migrate (ทุกปลายทาง) + push
 #    .\deploy.ps1 -BumpType minor        -> minor bump
 #    .\deploy.ps1 -BumpType major        -> major bump
+#    .\deploy.ps1 -Targets remote_b      -> migrate เฉพาะ Coolify
+#    .\deploy.ps1 -Targets local,remote  -> migrate เฉพาะที่ระบุ
 #    .\deploy.ps1 -SkipMigration         -> skip DB migration step
 #    .\deploy.ps1 -SkipMigration -DryRun -> preview only, no changes
 #
 #  What it does:
 #    1. Bump version in package.json (root, backend, frontend)
-#    2. Run DB migrations against Remote DB
+#    2. Run DB migrations to ALL targets (local + remote + remote_b) by default
+#         -> ระบบใกล้ production แล้ว schema ต้องไม่หลุดกันระหว่าง 3 สภาพแวดล้อม
+#         -> remote_b ต่อผ่าน SSH tunnel (สคริปต์เปิด/ปิดให้อัตโนมัติ)
+#         -> ปลายทางที่ยังไม่ตั้งค่าใน .env จะถูก "ข้าม" ไม่ทำให้ deploy ล้ม
 #    3. Commit + Push to GitHub
-#       -> Railway auto-deploys backend from GitHub
-#       -> Vercel  auto-deploys frontend from GitHub
+#       -> Railway auto-deploys backend  (ระบบหลัก)
+#       -> Vercel  auto-deploys frontend (ระบบหลัก)
+#       -> Coolify auto-deploys ทั้งคู่   (ระบบสำรอง · ต้องตั้ง webhook ครั้งเดียว)
 # ============================================================
 param(
   [ValidateSet("patch","minor","major")]
   [string] $BumpType     = "patch",
+  # local | remote | remote_b | all  (คั่นด้วย comma ได้)
+  [string] $Targets      = "all",
   [switch] $SkipMigration,
   [switch] $DryRun
 )
@@ -99,19 +107,18 @@ if (-not $DryRun) {
 Write-OK "Version bumped to v$newVersion"
 
 # -- Step 2: DB Migration -------------------------------------
-Write-Step "Step 2/4 - Run DB migrations (Remote)"
+Write-Step "Step 2/4 - Run DB migrations (targets: $Targets)"
 
 if ($SkipMigration) {
   Write-Warn "Skipped (--SkipMigration flag set)"
 } elseif ($DryRun) {
   Write-Warn "Skipped (dry run)"
 } else {
-  Push-Location (Join-Path $ROOT "backend")
+  Push-Location $ROOT
   try {
-    $env:DB_MODE = "remote"
-    node run_migrations.js
+    node backend/scripts/migrate-targets.js --targets $Targets
     if ($LASTEXITCODE -ne 0) { Write-Fail "Migration failed! Fix errors before deploying." }
-    Write-OK "Migrations applied to Remote DB"
+    Write-OK "Migrations applied (targets: $Targets)"
   } finally {
     Pop-Location
   }
@@ -140,8 +147,9 @@ if ($DryRun) {
 # -- Step 4: Summary ------------------------------------------
 Write-Step "Step 4/4 - Deployment triggered"
 Write-Host ""
-Write-Host "  Railway -> auto-deploy triggered on push" -ForegroundColor Blue
-Write-Host "  Vercel  -> auto-deploy triggered on push" -ForegroundColor Blue
+Write-Host "  [A] Railway -> backend  auto-deploy triggered on push" -ForegroundColor Blue
+Write-Host "  [A] Vercel  -> frontend auto-deploy triggered on push" -ForegroundColor Blue
+Write-Host "  [B] Coolify -> backend + frontend (needs GitHub webhook)" -ForegroundColor Blue
 Write-Host ""
 Write-Host "=============================================" -ForegroundColor Green
 Write-Host "   v$newVersion deploy pipeline complete!    " -ForegroundColor Green
@@ -150,4 +158,5 @@ Write-Host ""
 Write-Host "  Monitor deployments:" -ForegroundColor Gray
 Write-Host "  -> Railway : https://railway.com/dashboard" -ForegroundColor Gray
 Write-Host "  -> Vercel  : https://vercel.com/dashboard" -ForegroundColor Gray
+Write-Host "  -> Coolify : https://app.coolify.io" -ForegroundColor Gray
 Write-Host ""

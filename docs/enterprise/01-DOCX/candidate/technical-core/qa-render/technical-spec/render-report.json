@@ -1,0 +1,16 @@
+{
+  "status": "PASSED",
+  "method": "microsoft-word-pdfium",
+  "document": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\01-DOCX\\candidate\\technical-core\\Technical-Specification-v1.0-candidate.docx",
+  "outputDir": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\01-DOCX\\candidate\\technical-core\\qa-render\\technical-spec",
+  "pdf": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\01-DOCX\\candidate\\technical-core\\qa-render\\technical-spec\\word-pdfium\\Technical-Specification-v1.0-candidate.pdf",
+  "pages": 35,
+  "preferredRenderer": {
+    "attempted": false,
+    "status": "not-run",
+    "exitCode": null,
+    "stdout": "",
+    "stderr": ""
+  },
+  "generatedAt": "2026-07-23T17:24:13.8103857+07:00"
+}

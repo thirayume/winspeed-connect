@@ -1,5 +1,5 @@
 ---
-documentId: "WF-GOV-005"
+documentId: "WF-GOV-006"
 title: "Solution Development Deliverables and Documentation Quality Plan"
 version: "v1.0-candidate"
 status: Review
@@ -11,10 +11,10 @@ normative: true
 
 | รายการ | รายละเอียด |
 |---|---|
-| Document ID | `WF-GOV-005` |
+| Document ID | `WF-GOV-006` |
 | Product | WS-Sale-App — Sales Order, Warehouse Execution & Rebate Management |
 | Client | World Fert Co., Ltd. |
-| Runtime baseline | 1.0.0; source commit and hash must be recorded by each build |
+| Runtime baseline | 1.0.1; source commit and hash must be recorded by each build |
 | Status | Review — ยังไม่ใช่ Approved/Released baseline |
 | Classification | Confidential — Client / Authorized Partner Use Only |
 

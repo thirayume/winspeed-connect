@@ -117,12 +117,12 @@ function section(sheet, row, endCol, label) {
   const s = sheets.README;
   titleBand(s, "H", "WS-Sale-App — UAT Master Script", "Controlled candidate workbook • Source-driven from uat-cases.json • Business sign-off required");
   s.getRange("A4:B12").values = [
-    ["Document ID", "WF-QA-010-XLSX"],
+    ["Document ID", "WF-QA-022-XLSX"],
     ["Product", payload.product || "WS-Sale-App"],
     ["Client", payload.client || "World Fert Co., Ltd."],
     ["Runtime", payload.runtimeVersion || "1.0.0"],
     ["Source commit", sourceCommit],
-    ["Generated at", generatedAt],
+    ["Generated at", `UTC ${generatedAt}`],
     ["Status", "Review / Candidate"],
     ["Confidentiality", "Confidential — Client / Authorized Partner Use Only"],
     ["Authoritative data", path.basename(dataPath)],

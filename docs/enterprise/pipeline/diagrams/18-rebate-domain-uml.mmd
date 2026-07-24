@@ -1,0 +1,43 @@
+classDiagram
+  class RebatePlan {
+    +id
+    +effectivePeriod
+    +formulaOrGood
+    +priority
+    +state
+    +activate()
+    +close()
+  }
+  class RebatePlanAllocation {
+    +salesOrRegion
+    +allocatedAmount
+    +usedAmount
+    +available()
+  }
+  class RebateLedger {
+    +sourceOrderLine
+    +accrualAmount
+    +remainingAmount
+    +sequence
+    +reversed
+    +consumeFIFO()
+    +compensate()
+  }
+  class RebateClaim {
+    +customer
+    +claimAmount
+    +state
+    +cnReference
+    +submit()
+    +approve()
+    +close()
+  }
+  class RebateClaimLine {
+    +ledgerReference
+    +amount
+    +returnType
+  }
+  RebatePlan "1" --> "*" RebatePlanAllocation : allocates
+  RebatePlanAllocation "1" --> "*" RebateLedger : funds
+  RebateClaim "1" --> "*" RebateClaimLine : contains
+  RebateLedger "1" --> "*" RebateClaimLine : consumed by

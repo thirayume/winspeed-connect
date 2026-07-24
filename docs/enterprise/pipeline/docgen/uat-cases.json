@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "product": "WS-Sale-App",
   "client": "World Fert Co., Ltd.",
-  "runtimeVersion": "1.0.0",
+  "runtimeVersion": "1.0.1",
   "statusValues": ["Not Run", "Pass", "Fail", "Blocked", "N/A"],
   "cases": [
     {

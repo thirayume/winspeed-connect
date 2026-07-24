@@ -1,0 +1,14 @@
+stateDiagram-v2
+  [*] --> DRAFT
+  DRAFT --> DRAFT: verify / edit
+  DRAFT --> CONFIRMED: verification gate + confirm
+  CONFIRMED --> PICKING: start picking
+  PICKING --> LOADED: loading complete
+  LOADED --> SHIPPED: weigh-out + validation
+  SHIPPED --> IMPORTED: WINSpeed import / close evidence
+  DRAFT --> CANCELLED: approved cancel
+  CONFIRMED --> CANCELLED: controlled cancel
+  PICKING --> CONFIRMED: approved operational unlock
+  CONFIRMED --> DRAFT: approved edit unlock
+  IMPORTED --> [*]
+  CANCELLED --> [*]

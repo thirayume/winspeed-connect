@@ -2,12 +2,14 @@
 documentId: "WF-QA-012"
 title: "03 — คู่มือผู้ใช้งาน (User Guide & Manual)"
 version: "v1.0"
-status: Released
+status: Superseded
+statusDetail: "Superseded by source-aligned WF-UG-101; retained for history only"
+supersededBy: "WF-UG-101"
 owner: "QA Lead"
 normative: true
 ---
 > **World Fert · WS-Sale-App — Enterprise Documentation v1.0**
-> Document ID: `WF-QA-012` · Version: v1.0 · Date: 21 กรกฎาคม 2569 (21 July 2026) · Status: Released
+> Document ID: `WF-QA-012` · Version: v1.0 · Date: 21 กรกฎาคม 2569 (21 July 2026) · Status: Superseded
 > Classification: Confidential — Client / Authorized Partner Use Only
 > Source of truth: operational build v1.0 · verified against `dbwins_worldfert9`
 

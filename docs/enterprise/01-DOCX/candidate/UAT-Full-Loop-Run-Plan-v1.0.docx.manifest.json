@@ -1,13 +1,13 @@
 {
-  "documentId": "WF-QA-010",
+  "documentId": "WF-QA-022",
   "status": "Review",
   "output": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\01-DOCX\\candidate\\UAT-Full-Loop-Run-Plan-v1.0.docx",
-  "sha256": "D800A40DA66D41A482AF6A097E2A49C80D1E49401E5E46C0772000CBDADEFDE5",
+  "sha256": "A42E79AC00C62D55F7AADEDBD85FCA5AECD41556D8EB976D84DC1FF1EACCCFBB",
   "sourceData": "C:\\MyWork\\WorldFert\\winspeed-frontend\\docs\\enterprise\\pipeline\\docgen\\uat-cases.json",
-  "sourceCommit": "8dc03bd0d6c6bdfc765c6b61158df6f2b1e12301",
-  "generatedAt": "2026-07-23T03:16:38+07:00",
+  "sourceCommit": "79a10a28e6a2fba9b65dc85101ff8ab6d784b91c",
+  "generatedAt": "2026-07-23T16:59:40+07:00",
   "caseCount": 18,
   "automatedCount": 10,
   "manualCount": 8,
-  "e2eStatus": "RERUN REQUIRED — current repository source differs from the tracked E2E evidence; instructional screenshots are not acceptance evidence"
+  "e2eStatus": "PASSED_COMPLETE - 10/10 automated tests on 79a10a28e6a2fba9b65dc85101ff8ab6d784b91c; business/manual UAT still required"
 }

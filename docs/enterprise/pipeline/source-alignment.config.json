@@ -12,6 +12,7 @@
         "docker-compose.yml",
         ".env.example",
         ".env.docker.example",
+        "backend/.env.coolify.example",
         "vercel.json"
       ]
     },
@@ -82,6 +83,14 @@
       "files": [
         "deploy.ps1",
         "DEPLOY.md"
+      ],
+      "root": "deploy",
+      "extensions": [
+        ".yml",
+        ".yaml",
+        ".sh",
+        ".ps1",
+        ".md"
       ]
     }
   ],

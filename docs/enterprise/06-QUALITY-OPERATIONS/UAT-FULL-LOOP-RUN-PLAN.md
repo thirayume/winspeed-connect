@@ -1,5 +1,5 @@
 ---
-documentId: "WF-QA-010"
+documentId: "WF-QA-022"
 title: "UAT Full Loop Run Plan and Master Test Script"
 version: "v1.0-candidate"
 status: Review
@@ -11,9 +11,9 @@ normative: true
 
 | รายการ | รายละเอียด |
 |---|---|
-| Document ID | `WF-QA-010` |
+| Document ID | `WF-QA-022` |
 | Product | WS-Sale-App |
-| Runtime | 1.0.0 |
+| Runtime | 1.0.1 |
 | Scope | Sales → verification/approval → counter/scale → warehouse/shipping → Paper Trail/reconciliation |
 | Status | Review — ยังไม่ใช่ business UAT sign-off |
 | Test data | Synthetic/masked; ห้ามใช้ PII ที่ไม่จำเป็นในภาพหรือ evidence |
