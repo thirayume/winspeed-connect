@@ -18,10 +18,10 @@
 
 ตั้ง Environment Variables:
 ```
-MSSQL_SA_PASSWORD=<strong>
-MYSQL_ROOT_PASSWORD=<strong>
+MSSQL_SA_PASSWORD=<strong_password>
+MYSQL_ROOT_PASSWORD=<strong_password>
 MYSQL_USER=wfapp
-MYSQL_PASSWORD=<strong>
+MYSQL_PASSWORD=<strong_password>
 ```
 
 จุดที่ตั้งใจไว้ในไฟล์นี้:
@@ -80,3 +80,23 @@ crontab -e
 ## 5. Frontend
 
 `VITE_API_BASE_URL` ถูก **bake ตอน build** → เปลี่ยนโดเมน backend แล้วต้อง **rebuild** ไม่ใช่แค่ restart
+
+---
+
+## 6. ตั้งค่า Auto-Deploy ผ่าน GitHub Webhook (สำหรับ Coolify)
+
+ถ้าต้องการให้ Coolify ดึงโค้ดไป Build และ Deploy อัตโนมัติทุกครั้งที่เราพิมพ์คำสั่ง `npm run deploy` (เหมือนที่ Vercel และ Railway ทำได้) คุณต้องตั้งค่า Webhook ดังนี้:
+
+**ส่วนของ Coolify:**
+1. ไปที่โปรเจกต์ Frontend / Backend ใน Coolify Dashboard
+2. ไปที่เมนู **Configuration** → **Webhooks**
+3. คัดลอกลิงก์ **Push Webhook URL** (หรือ GitHub App webhook) มาเก็บไว้
+
+**ส่วนของ GitHub:**
+1. ไปที่ Repository ใน GitHub → **Settings** → **Webhooks**
+2. กดปุ่ม **Add webhook**
+3. ช่อง **Payload URL**: วางลิงก์ที่ก๊อปมาจาก Coolify
+4. ช่อง **Content type**: เลือก `application/json`
+5. เลื่อนลงมากด **Add webhook**
+
+เมื่อตั้งค่าเสร็จสิ้น เวลาเรารัน `npm run deploy` โค้ดที่ Push ขึ้น `main` จะไปสะกิด Coolify ให้เริ่ม Build ใหม่ทันทีครับ!
