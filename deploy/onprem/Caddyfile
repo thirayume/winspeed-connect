@@ -1,0 +1,43 @@
+# =============================================================
+# Caddyfile — reverse proxy + TLS อัตโนมัติ
+# =============================================================
+# Caddy ขอใบรับรอง Let's Encrypt ให้เองถ้า:
+#   - APP_DOMAIN / API_DOMAIN เป็นโดเมนจริง (หรือ DDNS) ที่ชี้มาที่ IP สาธารณะเครื่องนี้
+#   - port 80 และ 443 เข้าถึงได้จากอินเทอร์เน็ต (forward ที่ router)
+#
+# ถ้าใช้ในวง LAN อย่างเดียว ตั้ง APP_DOMAIN=localhost -> Caddy จะออกใบรับรอง
+# ภายในให้เอง (เบราว์เซอร์จะเตือน กด Advanced -> Proceed ได้)
+# =============================================================
+
+{
+	# อีเมลสำหรับ Let's Encrypt (แจ้งเตือนใบรับรองใกล้หมดอายุ)
+	email {$ACME_EMAIL:admin@example.com}
+}
+
+# ── หน้าเว็บ ──────────────────────────────────────────────────
+{$APP_DOMAIN} {
+	encode gzip
+	reverse_proxy frontend:80
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}
+
+# ── API ──────────────────────────────────────────────────────
+{$API_DOMAIN} {
+	encode gzip
+	reverse_proxy backend:3000 {
+		# Socket.IO / websocket ใช้ได้เลย Caddy ส่ง upgrade header ให้อัตโนมัติ
+		flush_interval -1
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}
