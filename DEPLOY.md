@@ -42,18 +42,31 @@ REMOTE_DB_PASSWORD=<<ใส่ sa password ที่นี่>>
 
 ---
 
-# 🎯 ปลายทาง Deploy — เลือกได้ 3 แบบ
+# 🎯 ปลายทาง Deploy — มี 3 แผน
 
-ทั้งสองระบบ trigger ด้วย **`git push origin main`** เหมือนกัน จึงเลือกได้ว่าจะขึ้นที่ไหน
+A และ B trigger ด้วย **`git push origin main`** เหมือนกัน · C สั่งจากเครื่องที่ติดตั้ง
 
-| | **A · ระบบหลัก (เดิม)** | **B · ระบบสำรอง (ใหม่)** |
-|---|---|---|
-| Frontend | **Vercel** | **Coolify** → `wf-frontend` |
-| Backend | **Railway** | **Coolify** → `wf-backend` |
-| SQL Server | **Azure VM** `20.255.185.14` | **Coolify** → `wf-databases` (container) |
-| MySQL (TruckScale) | remote เดิม | **Coolify** → `wf-databases` (container) |
-| Trigger | push → Vercel/Railway auto | push → Coolify webhook |
-| ค่าใช้จ่าย | Vercel free + Railway + Azure ~$32/ด. | Coolify $5 + Hetzner ~$8 = **~$13/ด.** |
+| | **A · ระบบหลัก (เดิม)** | **B · ระบบสำรอง** | **C · On-Prem** |
+|---|---|---|---|
+| Frontend | **Vercel** | **Coolify** → `wf-frontend` | container `wf-frontend` |
+| Backend | **Railway** | **Coolify** → `wf-backend` | container `wf-backend` |
+| SQL Server | **Azure VM** `20.255.185.14` | **Coolify** → `wf-databases` | container `wf-mssql` |
+| MySQL (TruckScale) | remote เดิม | **Coolify** → `wf-databases` | container `wf-mysql` |
+| TLS | Vercel/Railway จัดให้ | Coolify (Traefik) | **Caddy** (Let's Encrypt ผ่าน DDNS) |
+| Trigger | push → auto | push → Coolify webhook | `up.bat` / `bash up.sh` |
+| ค่าใช้จ่าย/เดือน | ~$32 | Coolify $5 + Hetzner ~$8 = **~$13** | **$0** (ค่าไฟ+เน็ต) |
+| เหมาะกับ | production ทั่วไป | production ประหยัด | ข้อมูลห้ามออกนอกบริษัท · dev/demo |
+
+**แผน C — On-Prem ครบชุดในคำสั่งเดียว** (Docker Desktop บน Windows หรือ Ubuntu server)
+```
+cd deploy/onprem
+cp .env.example .env      # แก้โดเมน + รหัสผ่าน
+# วางไฟล์ .bak / .sql ที่ ./backup/
+up.bat                    # Windows (ดับเบิลคลิกก็ได้)
+bash up.sh                # Ubuntu
+```
+ได้ครบ: Caddy + TLS · SQL Server (Thai_CI_AS) · MySQL · backend · frontend · restore + migrations + seed อัตโนมัติ
+รายละเอียด + วิธีตั้ง DDNS → **`deploy/onprem/README.md`**
 
 **วิธีเลือก**
 | ต้องการ | ทำอย่างไร |
