@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "kind": "WS-Sale-App Playwright E2E Evidence",
-  "runId": "2026-07-23T09-56-59-217Z",
-  "startedAt": "2026-07-23T09:56:59.217Z",
-  "completedAt": "2026-07-23T09:57:51.346Z",
-  "durationMs": 52129,
+  "runId": "2026-07-24T15-52-28-642Z",
+  "startedAt": "2026-07-24T15:52:28.642Z",
+  "completedAt": "2026-07-24T15:53:15.019Z",
+  "durationMs": 46377,
   "status": "PASSED_COMPLETE",
   "playwrightStatus": "passed",
   "complete": true,
@@ -112,23 +112,23 @@
   },
   "environment": {
     "schemaVersion": 1,
-    "capturedAt": "2026-07-23T09:56:59.091Z",
+    "capturedAt": "2026-07-24T15:52:28.522Z",
     "frontend": {
       "url": "http://localhost:5174",
       "status": 200,
       "ok": true,
-      "durationMs": 23,
+      "durationMs": 22,
       "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx\"></script>\n  </body>\n</html>\n"
     },
     "api": {
       "url": "http://localhost:3100/api/health",
       "status": 200,
       "ok": true,
-      "durationMs": 92,
+      "durationMs": 77,
       "body": {
         "ok": true,
-        "ts": "2026-07-23T09:56:59.108Z",
-        "version": "1.0.1",
+        "ts": "2026-07-24T15:52:28.538Z",
+        "version": "1.2.0",
         "env": "development",
         "uptimeSec": 2,
         "requests": 1,
@@ -142,20 +142,20 @@
     }
   },
   "git": {
-    "commit": "79a10a28e6a2fba9b65dc85101ff8ab6d784b91c",
+    "commit": "4ceadfa2fdf86ed55315dcca81a126bc700b8631",
     "dirty": true
   },
   "sourceStability": {
     "stable": true,
-    "startGitCommit": "79a10a28e6a2fba9b65dc85101ff8ab6d784b91c",
-    "endGitCommit": "79a10a28e6a2fba9b65dc85101ff8ab6d784b91c",
+    "startGitCommit": "4ceadfa2fdf86ed55315dcca81a126bc700b8631",
+    "endGitCommit": "4ceadfa2fdf86ed55315dcca81a126bc700b8631",
     "changedFiles": []
   },
   "fileHashes": {
-    "DEPLOY.md": "6B917D1A0BEDD299CC113C2FF47D4291C7DA027D05E4A0D50159ABA37D1FB649",
-    "WSSale-App/package.json": "7FDCB95D74CF2D5200E84004DACB2075CACE233363583711AEB2EC83BAD2EF38",
+    "DEPLOY.md": "8432FDDCE6520365641A1853DA1CDF237A03BACD3A56BD442C8B36F16ADDD9C9",
+    "WSSale-App/package.json": "6684DF75E5FCDCAD630AE629D8DD80BC4B26113D4256BD1DB7E327F7C975531D",
     "WSSale-App/src/App.css": "6E25A776D3E8102DA5BACB3CB99F4A5FC662A2E01E6143140671A556D28C3D5C",
-    "WSSale-App/src/App.tsx": "116CF2D77124067CE5202DC707FF922B3DA2A53F5F938A2B748BED63F056B8CA",
+    "WSSale-App/src/App.tsx": "59CE15C89829D8F201A77D9FC3B06EAD4F1099A6E28616B658979A6F6BEF75FA",
     "WSSale-App/src/components/accounting/AccountingPage.tsx": "5BFA708634818C1069AEB67A51D13D2DBFFF77D875C2568DC45F1CCC32833C69",
     "WSSale-App/src/components/admin/AdminUsersPage.tsx": "FDEC17112A9B5DC4B14F499FBF21B7EE752540348945492404DC58AE234646A9",
     "WSSale-App/src/components/aging/AgingPage.tsx": "1CB9D28C7EE05DC6DC361E10A81D05296D85B7BB45AA743665D4ADA3171867AA",
@@ -296,7 +296,7 @@
     "backend/migrations/053_so_notified_at.sql": "68A2EE1ACD96BE6062678ADB1D0970F82A5CC52D0277D97B6A188FCAEB3F3CBF",
     "backend/migrations/054_rebate_coupon_mirror.sql": "D8331274CB30AF20F42A8534DD26214A1A71AB6E41FA5A220CF995D10850F28C",
     "backend/migrations/055_restore_all_sales_orders_contract.sql": "DF42880CC03D5E315EDDC789BE108429C4FB75E8932A4016BA0CDC87E6279333",
-    "backend/package.json": "7C1EFE6445992AAD7A7AAA0F14E60DCB838898594391F929F59F19DEF6F10F9C",
+    "backend/package.json": "F0A3D0B8EDAD7EECC118D13C04C9436536AE6E61B565E56499031C285F33773F",
     "backend/routes/auth.js": "DFF4CFF9C124A052F9A03453C21A2428E19C2F060958AC3580D948E1B035BE4A",
     "backend/routes/credit.js": "4FA36A2296E4A7AFC07AB45CB3F16FABE8EFAB6FE098F0FD502DBA5459ABB3A6",
     "backend/routes/giveaway.js": "348FE1DAD8C50999FCF3F153005BF3FA8B6FE54162482BD6598CFD370BD9B108",
@@ -333,6 +333,7 @@
     "backend/scripts/inspect_sohd_distribution.js": "FD65D5DA0DF3BD978AADDA4AB2034FEF9D28DE8B7F363FEA5C9F6FC6868F18A6",
     "backend/scripts/local_user_recovery.js": "BE526F8FAD7557E5DE610A4CA7E194BB3CCE3A015F9D60BC2C9CACE1A6A9AC30",
     "backend/scripts/make-test-dataset.js": "5C3706E90C8218F4A21219AF0B42A24BA0896F568012E73181D55576C8CD24AC",
+    "backend/scripts/migrate-targets.js": "FE7D6B7FB9428B824DBA68C264BD02B209A9CB72927DD45B466DDFD509025C9B",
     "backend/scripts/preflight-check.js": "B808779B69EF00105E205E6E2FC236DABAA58633411374BD5B792D4E9C54567A",
     "backend/scripts/recalc_rebate_pools.js": "024419C432FC6F7C3196021DFD7C425FED5A90E5605F9F0087D8D55DCE02F8A7",
     "backend/scripts/run_local_api_smoke.js": "00A16A0EE31BD8F2EECEB647896DB3C6536FD9D7136C361EFFC1085E4A1A2E9D",
@@ -353,9 +354,24 @@
     "backend/services/winspeed-import.service.js": "4016CE84B804F8DA82F433975AA719E4D0C702D77E0CFC4D026D92CCF0D2786F",
     "db-init/e2e-cleanup.sql": "81C9C1F996A23A96D1BBA929BB3D3031E7B9458A27F8B5CF6F19BDC6DE68641D",
     "db-init/e2e-seed.sql": "98BE1AACDA97CB4DEA314A67E2895F023BD8AC3E674C3D429E95DBE9FD0FEFB6",
-    "deploy.ps1": "77C00FE2352821FF50289F01EE28E3ECA8D0EFBD67C3AFBC7ACDE0AA75494353",
-    "deploy/coolify/backup-databases.sh": "4C291DDE5BFBF3304A17510736C3A745C6563E04C956DA118998B0D2A97C63A5",
-    "deploy/coolify/docker-compose.yml": "C3C76860678250421FDE6C6509C3C45001BA321B68C270089D14B8D60AE47E61",
+    "deploy.ps1": "D28D44249EC6C78A59B4F69556DFB50FB62245F99E7F9D7C5D726B8C5AE0B026",
+    "deploy/LINE-LOGIN-GUIDE.md": "C131A452A05094D8BC32A0957FBC17424CA1A465D0966B52CAB8A62DAEAB8F4F",
+    "deploy/coolify/01-server-bootstrap.sh": "AD785B4868F50B916E2FBC558A73534910B81EC2CBE24529EA9C65CC7BD4314A",
+    "deploy/coolify/02-restore-mssql.sh": "7C4D8D6DA1BE32A44C57CAD79A97AA2C6A6F5BDFEFF2052F00BA7CA748D4A770",
+    "deploy/coolify/03-restore-mysql.sh": "955B1EFB6E3077148262F8F63E8BA1B925F278C95C7C5CA12688A16758BD94F9",
+    "deploy/coolify/CLONE-RECIPE.md": "4B08C6D9A24C426634B469F7FFD106E71DCD3ABAF54E5A2A1AE83EE1DE41EE1E",
+    "deploy/coolify/README.md": "EDE1EE64316CA46BD73382145541CB0AB291C0CA5A10BE2B4073D57CFD659084",
+    "deploy/coolify/RUNBOOK.md": "2B45643DBE74771919B684A340920D550F171CD81F82A6556A36769F55557837",
+    "deploy/coolify/backup-databases.sh": "29E7C2BB09BE4AAC6EF53C67F98371B28E6F29FB68C0E9949668041B01BCD19B",
+    "deploy/coolify/docker-compose.yml": "B59B27E92B529061E41BFED2505106D6CEBD7A8921ADBC02403254664B0090E7",
+    "deploy/coolify/provision-customer.ps1": "F54D37AB1913B708960119C5B2D5AE9B04BD578905A1E1AD265A809B80628C32",
+    "deploy/coolify/refresh-data.sh": "97E08597EA55626093F2A6F9BACEE88C4F8AF4E73B6DD24D86AA1A3D99693364",
+    "deploy/coolify/tunnel.ps1": "22910719BF3F2B5D72ED4FAECB3DB66D61FD9CD17CE59F67F6530468074924B8",
+    "deploy/onprem/README.md": "5684152B9585EFE258E51548592F4ADC0EE361E99EED26F880781FCD194F3FD9",
+    "deploy/onprem/bootstrap.sh": "E2C05D1EE87A909AA38AE28EEDAC22F6054C5E545BC9115DDA06A51E2BF7CC29",
+    "deploy/onprem/docker-compose.yml": "9C7D1CA6335F5E1BD93BD9F7BF4D44575903C0841898FDE5AFFA47CF0B446D7B",
+    "deploy/onprem/up.ps1": "801E159A0F6957481A24DBCA4B5E6851677FE5A185ED3E47232B5E650CE9131A",
+    "deploy/onprem/up.sh": "D945C5E1C794CD45D085FC91472A89A2F97298A31CBFF868619D85C4C6942E41",
     "docker-compose.yml": "BCDE1294AE17924D79815F49429CE82BCB9E9777A5C0EA79DD08B052E0A3D4C6",
     "e2e/comprehensive-sales.spec.ts": "335789DD1F298D9C38DC4B33D8E31526F9CB031B18B1B585A81F2D2673C7FBF6",
     "e2e/evidence-reporter.cjs": "2027720E4D332D31AE308A644D2B5B5FA6480EF01FE2DBDB5D5ED59AFE5A5A56",
@@ -364,7 +380,7 @@
     "e2e/helpers.ts": "41329873704235A9765185D7DF3A228170F0093F5D7308B8389D24E91F0A278B",
     "e2e/uat-full-loop.spec.ts": "5BF53477132672A267B29CB68775EC1E8A5BA060CB8DD343E1A5896EEEA20E75",
     "e2e/workflow.spec.ts": "E60D094903CA60740AEA82B5F0D1246E44780D6F69A32AABCA54CADD343DF147",
-    "package.json": "D32394C6DA4D59F77267226D609175E78285B56BD5CEC645CBC0CCF01EC65CA7",
+    "package.json": "AE26106DD70E5B5D679EE53ED3EE3C99F31B1AD0F0A3DEC8674EBFA88A27654A",
     "playwright.config.ts": "A1239FDD163F4A37E7CDE0C56B5EF4082EA5B2D6F7D3141D3B0B1FABC787ACE6",
     "run-e2e.bat": "7E204347C4D2960DE63641A1343F9A878C1C672B67E2021F46A675EE6CDA7EC6",
     "run-e2e.ps1": "0E21C688537B5B5A6D29A054ABD078611CA2158037A1A105A525A64F450F9CC3",
@@ -380,7 +396,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 10849,
+      "durationMs": 10869,
       "errors": [],
       "attachments": [
         {
@@ -405,7 +421,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 6749,
+      "durationMs": 6518,
       "errors": [],
       "attachments": [
         {
@@ -430,7 +446,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 5842,
+      "durationMs": 4614,
       "errors": [],
       "attachments": [
         {
@@ -455,7 +471,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 2043,
+      "durationMs": 2067,
       "errors": [],
       "attachments": [
         {
@@ -480,7 +496,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 12536,
+      "durationMs": 8882,
       "errors": [],
       "attachments": [
         {
@@ -505,7 +521,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 3278,
+      "durationMs": 2230,
       "errors": [],
       "attachments": [
         {
@@ -530,7 +546,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1994,
+      "durationMs": 1732,
       "errors": [],
       "attachments": [
         {
@@ -555,7 +571,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1216,
+      "durationMs": 1326,
       "errors": [],
       "attachments": [
         {
@@ -575,7 +591,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1873,
+      "durationMs": 2489,
       "errors": [],
       "attachments": [
         {
@@ -595,7 +611,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 4523,
+      "durationMs": 3497,
       "errors": [],
       "attachments": [
         {
