@@ -1,160 +1,181 @@
-# CLONE-RECIPE — โคลน / ส่งมอบระบบ WS-Sale-App (SaaS / per-customer)
+# CLONE-RECIPE — ติดตั้ง / ส่งมอบระบบ WS-Sale-App ให้ลูกค้า
 
-เอกสารนี้ตอบโจทย์ **"1 ลูกค้า = 1 instance แยกกันสมบูรณ์"** — โคลนซ้ำได้เร็ว, ส่งมอบให้ลูกค้าเป็นเจ้าของเองได้
+**1 ลูกค้า = 1 instance แยกกันสมบูรณ์** — ลูกค้าเป็นเจ้าของทุกอย่างเอง (บัญชี · เครื่อง · โดเมน · โค้ด · ข้อมูล)
+ผู้ติดตั้งเป็นแค่คนรันสคริปต์ให้ ไม่ถือ credential ของ production ลูกค้า
 
-> ระบบเราเป็น **Docker Compose ก้อนเดียว** (SQL Server + MySQL + backend + frontend) บน **self-host Coolify**
-> → หน่วยของการโคลนคือ "ทั้งเครื่อง" ไม่ใช่แค่โค้ด → ก็อปได้ทั้งชุด ไม่ผูกกับ provider ใด
+> ⚡ **ทางลัด:** ดับเบิลคลิก **`provision-customer.bat`** แล้วทำตาม wizard
+> เอกสารนี้อธิบายว่า wizard ทำอะไรบ้าง + ส่วนที่ต้องทำมือ
 
 ---
 
-## 1. หนึ่ง instance ประกอบด้วยอะไร
+## 1. โมเดลการส่งมอบ
 
-| ส่วน | แชร์ได้ไหม | หมายเหตุ |
+```
+ลูกค้าเตรียมเอง                    ผู้ติดตั้งทำให้                     ผลลัพธ์
+──────────────────                ─────────────────                  ──────────
+Coolify account                    รัน provision-customer.bat         ระบบพร้อมใช้
+Hetzner VPS + SSH key      ──►     (wizard 7 ขั้น)            ──►     + เอกสารส่งมอบ
+Domain (ถ้ามี)                     ตั้งค่า Coolify ให้                 + รหัสผ่านชุดเดียว
+Fork repo เป็น Private             ส่งมอบ + สอนใช้                     ของลูกค้ารายนั้น
+```
+
+**ทำไมให้ลูกค้าเปิดบัญชีเอง:** บิลไปที่ลูกค้าตรง · ลูกค้าคุมข้อมูลตัวเอง · ผู้ติดตั้งไม่ต้องรับผิดชอบ uptime/ค่าใช้จ่าย · ถอนตัวได้สะอาด (ลบ SSH key ของเราออกอย่างเดียว)
+
+---
+
+## 2. ใบสั่งงานสำหรับลูกค้า (ส่งให้ลูกค้าทำก่อน)
+
+- [ ] **Coolify Cloud** — สมัครที่ `app.coolify.io` (~$5/เดือน) แล้วเชิญอีเมลผู้ติดตั้งเข้า Team
+- [ ] **Hetzner Cloud** — สมัคร แล้วสร้าง server
+      - Type: **Shared vCPU → x86 → CX32** (4 vCPU / 8 GB / 80 GB)
+        ⚠️ **ห้ามเลือก Arm64/CAX** — SQL Server ไม่มี image ARM รันไม่ได้
+        ⚠️ CX23 (4 GB) พอสำหรับ dev แต่ตึงมากสำหรับ production
+      - Image: **Ubuntu 24.04** · Location: EU ถูกสุด (latency ไทย ~200ms) / Singapore เร็วกว่าแต่แพงกว่า
+      - ข้าม Volumes / Backups / Placement groups · เก็บ IPv4 ไว้
+      - ใส่ **SSH public key ของผู้ติดตั้ง** ตอนสร้าง
+- [ ] **Domain** (ถ้ามี) — ชี้ A record 2 ตัวมาที่ IP ของ server
+      `app.<domain>` และ `api.<domain>`
+      *ยังไม่มีก็ได้ — wizard จะใช้ sslip.io ให้ก่อน*
+- [ ] **Fork GitHub repo** เป็น **Private** แล้วเพิ่มผู้ติดตั้งเป็น Collaborator
+- [ ] **ไฟล์ข้อมูล** — `.bak` (SQL Server) + `.sql` (MySQL TruckScale) ของบริษัทลูกค้า
+
+> ส่ง IP · ชื่อ repo · โดเมน · ไฟล์ backup ให้ผู้ติดตั้ง แล้วรอรับมอบ
+
+---
+
+## 3. ผู้ติดตั้งรัน wizard
+
+```
+ดับเบิลคลิก  deploy\coolify\provision-customer.bat
+```
+⚠️ **ห้ามคลิกขวา Run as administrator** — ssh บน Windows จะ bind พอร์ต loopback ไม่ได้
+
+| ขั้น | ทำอะไร | อัตโนมัติ |
 |---|---|---|
-| VPS (Hetzner CX32 8GB) | ❌ ต่อลูกค้า 1 เครื่อง | แยก resource/ความปลอดภัยเด็ดขาด |
-| self-host Coolify | ❌ อยู่ในเครื่องนั้น | dashboard จัดการของลูกค้ารายนั้น |
-| SQL Server + MySQL (compose) | ❌ ข้อมูลลูกค้า | คนละ volume/รหัส |
-| backend + frontend | ✅ **โค้ดเดียวกัน** | ต่างกันแค่ env (domain, รหัส, LINE keys) |
-| `docker-compose.yml` + สคริปต์ `deploy/coolify/*` | ✅ ใช้ซ้ำทุก instance | คือ "แม่แบบ" |
+| 1 `init` | ถามข้อมูลลูกค้า · **สุ่มความลับทั้งชุด** · สร้างไฟล์ env ให้วางใน Coolify | ✅ |
+| 2 `bootstrap` | เตรียม VPS: swap 4GB · TZ Asia/Bangkok · ufw · fail2ban · key-only SSH | ✅ |
+| 3 `coolify` | **[ทำมือ]** เพิ่ม server + สร้าง 3 resource — wizard พิมพ์ค่าที่ต้องวางให้ครบ | ⛔ |
+| 4 `data` | หาชื่อ container · อัปโหลด backup · restore ทั้ง 2 ฐาน · ปรับ recovery เป็น SIMPLE | ✅ |
+| 5 `schema` | `000_logins` · `run_migrations.js` · GRANT · **`seed_admin.js`** | ✅ |
+| 6 `verify` | preflight · ทดสอบ URL จริง · ทดสอบ login | ✅ |
+| 7 `handover` | ออกไฟล์ `HANDOVER-<ลูกค้า>.md` | ✅ |
 
-**สรุป:** โค้ด + compose + สคริปต์ = แม่แบบใช้ซ้ำ · ต่างกันแค่ **ข้อมูล (backup) + env ต่อราย**
+**คุณสมบัติ**
+- ทำงานเป็นขั้น — ขั้นที่เสร็จแล้วจะข้าม · รันซ้ำได้ปลอดภัย
+- `-Stage status` ดูว่าถึงไหนแล้ว · `-Stage data` รันเฉพาะขั้นนั้น · `-Force` ทำซ้ำ
+- profile + ความลับเก็บที่ **`Documents\wf-customers\<ลูกค้า>.json`** (นอก repo · สิทธิ์ล็อกเฉพาะเจ้าของ)
+
+```powershell
+# ตัวอย่าง
+.\provision-customer.ps1 -Customer acme -Stage status
+.\provision-customer.ps1 -Customer acme -Stage data
+```
 
 ---
 
-## 2. สองวิธีโคลน — เลือกตามสถานการณ์
+## 4. ส่วนที่ต้องทำมือใน Coolify (ขั้น 3)
 
-### วิธี A — Snapshot clone (เร็วสุด · ลูกค้าใหม่ในไม่กี่นาที)
+wizard จะพิมพ์ค่าทั้งหมดให้ — สรุปคือ:
 
-ใช้เมื่อ **คุณเป็นคน provision ให้ลูกค้า** และอยู่ Hetzner เหมือนกัน
+**A. Servers → + Add** → IP ลูกค้า · port 22 · user root · เลือก private key → **Validate Server & Install Docker**
 
-1. ตั้งเครื่อง "golden" 1 ตัวให้เสร็จสมบูรณ์ (bootstrap + Coolify + compose + restore + migrate)
-   — จะ restore ข้อมูล demo หรือปล่อยว่างก็ได้ (แนะนำ **ว่าง** เพื่อไม่พาข้อมูลลูกค้าเก่าติดไป)
-2. ปิด container ให้ข้อมูล flush: `cd /data/coolify && docker compose stop` (หรือหยุดจาก Coolify UI)
-3. Hetzner Console → เครื่อง golden → **Snapshot → Create**
-4. ลูกค้าใหม่: **Create Server → Image = เลือก snapshot นั้น** → ได้เครื่องพร้อมทุกอย่าง
-5. เข้าเครื่องใหม่ ทำ **checklist ข้อ 3** (เปลี่ยนรหัส/โดเมน/กุญแจ) แล้ว restore backup ของลูกค้ารายนั้น
+**B. + Add Resource → Docker Compose Empty** → วาง `0-docker-compose.yml`
+- ชื่อ `wf-databases` → Save
+- Environment Variables → **Developer view** → วาง `1-env-databases.txt`
+- General → ☑ **Connect To Predefined Network** → Save → **Restart**
+- **Deploy**
 
-> ข้อดี: 5–10 นาที/ราย · ข้อจำกัด: snapshot ผูกกับ Hetzner (ข้ามเจ้าไม่ได้)
+**C/D. + Add Resource → Application** (backend และ frontend)
 
-### วิธี B — Script clone (พกพา · ข้าม provider ได้)
-
-ใช้เมื่อ **ลูกค้าเปิดบัญชี/เครื่องเอง** (คนละ provider ก็ได้) แล้วคุณ deploy ให้ หรือส่งสูตรให้ทีมลูกค้าทำเอง
-
-รันตาม `RUNBOOK.md` ตั้งแต่ต้น — ทุกอย่างเป็นสคริปต์อยู่แล้ว:
-```
-ขั้น1 สร้าง VPS  →  ขั้น2 bootstrap --mode self  →  ขั้น3 deploy compose
-  →  ขั้น5 restore 2 backup  →  ขั้น6 migrate + backend  →  ขั้น8 frontend  →  ขั้น9 backup cron
-```
-เวลารวม ~1–2 ชม./ราย (ส่วนใหญ่รอ restore)
-
-> ข้อดี: ไม่ผูก provider, ทำซ้ำได้ทุกที่ · ข้อจำกัด: ช้ากว่า snapshot
-
----
-
-## 3. Checklist ต่อ instance (⚠ ต้องเปลี่ยนทุกครั้ง — ห้ามใช้ค่าซ้ำ)
-
-ทุกอย่างในตารางนี้ **ต้องไม่ซ้ำระหว่างลูกค้า** ไม่งั้นข้อมูลรั่วข้ามกัน / โดนสวมสิทธิ์
-
-| ค่า | เปลี่ยนที่ | วิธีสร้างใหม่ |
+| | backend | frontend |
 |---|---|---|
-| `MSSQL_SA_PASSWORD` | Coolify env (compose) | รหัสสุ่ม ≥16 ตัว |
-| `MYSQL_ROOT_PASSWORD` / `MYSQL_PASSWORD` | Coolify env (compose) | รหัสสุ่ม ≥16 ตัว |
-| `JWT_SECRET` | Coolify env (backend) | `openssl rand -base64 48` |
-| `MIGRATE_SECRET` / `TS_INGEST_SECRET` | Coolify env (backend) | `openssl rand -hex 24` |
-| Domain (`VITE_API_BASE_URL`, `CORS_ORIGIN`) | frontend build + backend env | โดเมนของลูกค้ารายนั้น |
-| `LINE_LOGIN_*` | Coolify env (backend) | LINE channel ของลูกค้า (ถ้าใช้) |
-| Coolify admin password | หน้า `http://IP:8000` | ตั้งใหม่ตอนสร้าง admin |
-| `--admin-ip` (ufw) | ตอนรัน bootstrap | IP ของลูกค้า/ผู้ดูแลรายนั้น |
-| ข้อมูล (2 backup) | ขั้น 5 restore | **backup ของลูกค้ารายนั้นเท่านั้น** |
+| Source | **Private Repository (with Deploy Key)** | เหมือนกัน |
+| Build Pack | Dockerfile | Dockerfile |
+| Base Directory | `/backend` | `/WSSale-App` |
+| Ports Exposes | (ว่าง) | **80** |
+| Name | `wf-backend` | `wf-frontend` |
+| Domains | `https://api.<domain>` | `https://app.<domain>` |
+| Env | `2-env-backend.txt` | `3-env-frontend.txt` |
 
-### ⚠️ ขั้นที่ลืมไม่ได้ — `node seed_admin.js` หลัง migrate
+> 🔑 **repo Private → ต้องใช้ Deploy Key** (ไม่ใช่ Public Repository)
+> Coolify สร้าง key ให้ → คัดลอกไปใส่ GitHub repo → **Settings → Deploy keys → Add deploy key** (Read-only พอ)
 
-backup ของ WINSpeed **ไม่มี schema `wf`** → หลัง migrate ตาราง `wf.AppUser` จะมีแต่บัญชี `emp-XXXXX`
-จาก migration `011_seed_sales_users_giveaway.sql` ซึ่ง **เป็น role `SALES` ทั้งหมด และไม่มี ADMIN เลย**
-→ ไม่มีใคร login เข้าไปดูแลระบบได้
+> 🌐 **ให้ push แล้ว deploy อัตโนมัติ:** resource → **Webhooks** → คัดลอก GitHub webhook URL
+> → GitHub → Settings → Webhooks → Add · `application/json` · Just the push event
+> ⚠️ webhook URL มี token — **ห้าม commit ลง repo**
 
-**อย่า insert user เองด้วย SQL** — ใช้สคริปต์ที่ระบบเตรียมไว้ (ดู `DEPLOY.md`):
+---
+
+## 5. ⚠️ ความลับที่ห้ามซ้ำข้ามลูกค้า
+
+wizard สุ่มให้ทุกตัวอัตโนมัติ — ตารางนี้ไว้ตรวจทานตอนทำมือ
+
+| ค่า | อยู่ที่ |
+|---|---|
+| `MSSQL_SA_PASSWORD` · `MYSQL_ROOT_PASSWORD` · `MYSQL_PASSWORD` | Coolify env (compose) |
+| `WF_READER_PASSWORD` · `WF_OWNER_PASSWORD` | `000_logins.sql` + backend env |
+| `JWT_SECRET` · `MIGRATE_SECRET` · `TS_INGEST_SECRET` | Coolify env (backend) |
+| `CORS_ORIGIN` · `VITE_API_BASE_URL` | โดเมนของลูกค้ารายนั้น |
+| `LINE_LOGIN_*` | LINE channel ของลูกค้า (ถ้าใช้) |
+| ข้อมูล (2 backup) | **ของลูกค้ารายนั้นเท่านั้น** |
+
+> ❌ **ห้าม snapshot เครื่องที่มีข้อมูลลูกค้า A ไปสร้างลูกค้า B**
+
+---
+
+## 6. ⚠️ ขั้นที่ลืมไม่ได้ — `node seed_admin.js`
+
+*(wizard ทำให้ในขั้น 5 แล้ว — ส่วนนี้ไว้อ่านตอนแก้ปัญหา)*
+
+backup ของ WINSpeed **ไม่มี schema `wf`** → หลัง migrate ตาราง `wf.AppUser` มีแต่บัญชี `emp-XXXXX`
+จาก migration `011_seed_sales_users_giveaway.sql` ซึ่ง **เป็น role `SALES` ทั้งหมด ไม่มี ADMIN เลย**
+→ **login ไม่ผ่านทุกบัญชี ไม่มีใครเข้าไปดูแลระบบได้**
+
 ```bash
-cd backend
-node seed_admin.js
+docker exec -it <backend-container> node seed_admin.js
 ```
-สคริปต์นี้ทำ 3 อย่าง:
-1. สร้าง **`admin` / `W0rldF3rt`** (role ADMIN) — ⚠️ `W0rld` ใช้ **เลขศูนย์** ไม่ใช่ตัว O
-2. อ่าน `dbo.EMEmp` (พนักงานที่ยังไม่ลาออก) → สร้าง/อัปเดต user พร้อม **map role จริง**
-   (`EmpGroupID=2000`→MANAGER · `2001`/Dept `2004,2005`→WAREHOUSE · Dept `2000,2001`→ACCOUNTING · ที่เหลือ SALES)
-   และ map `EmpId` ให้ตรง `EMEmp.EmpID` — **จำเป็นสำหรับ export SO กลับเข้า WINSpeed**
-3. ตั้ง `IsActive=0` ให้ทุกบัญชีที่ไม่อยู่ในรายการ (ล้างบัญชีค้างเก่า)
+1. สร้าง **`admin` / `W0rldF3rt`** — ⚠️ `W0rld` ใช้ **เลขศูนย์** ไม่ใช่ตัว O
+2. อ่าน `dbo.EMEmp` → สร้าง/อัปเดต user พร้อม **role จริง**
+   (`EmpGroupID=2000`→MANAGER · `2001` หรือ Dept `2004/2005`→WAREHOUSE · Dept `2000/2001`→ACCOUNTING · ที่เหลือ SALES)
+   และผูก **`EmpId` ↔ `EMEmp.EmpID`** — จำเป็นต่อการ export SO กลับ WINSpeed
+3. ตั้ง `IsActive=0` ให้บัญชีที่ไม่อยู่ในรายการ
 
-> รหัสเริ่มต้นของพนักงานทุกคนคือ `W0rldF3rt` เช่นกัน — **ต้องบังคับเปลี่ยนก่อนใช้งานจริง**
-> login ตรวจ `IsActive` **ก่อน** `bcrypt.compare` → บัญชีที่ถูกปิดจะได้ 401 ทั้งที่รหัสถูก
-
-> ℹ️ `migrations/uat_create_admin.sql` ถูกกันออกจาก deploy path ด้วย pattern `^uat_` โดยตั้งใจ
-> (เป็นของ UAT · มีบั๊ก: เช็คชื่อ `uat_admin` แต่ insert `admin`) — **อย่าเอามาใช้ใน production**
-> ดูรายละเอียดที่ `docs/enterprise/08-APPENDICES/MIGRATION-LEDGER-AUDIT-2026-07-22.md`
-
-สคริปต์ช่วยสุ่มทั้งชุด:
-```bash
-echo "MSSQL_SA_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)Aa1!"
-echo "MYSQL_ROOT_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=' | head -c 24)"
-echo "MYSQL_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=' | head -c 24)"
-echo "JWT_SECRET=$(openssl rand -base64 48)"
-echo "MIGRATE_SECRET=$(openssl rand -hex 24)"
-echo "TS_INGEST_SECRET=$(openssl rand -hex 24)"
-```
+> ❌ **อย่า** insert `wf.AppUser` เองด้วย SQL — จะไม่ได้ role/EmpId ที่ถูกต้อง
+> ❌ **อย่า** ใช้ `migrations/uat_create_admin.sql` — ของ UAT ถูกกันด้วย pattern `^uat_` โดยตั้งใจ และมีบั๊ก
+>    (เช็คชื่อ `uat_admin` แต่ insert `admin`) · ดู `docs/enterprise/08-APPENDICES/MIGRATION-LEDGER-AUDIT-2026-07-22.md`
+> ℹ️ login เช็ค `IsActive` **ก่อน** `bcrypt.compare` → บัญชีถูกปิดจะได้ 401 ทั้งที่รหัสถูก
 
 ---
 
-## 4. ส่งมอบให้ลูกค้าเป็นเจ้าของ (Migrate Owner)
+## 7. หลังส่งมอบ
 
-เลือก 1 ใน 2 ตามความสัมพันธ์:
+**ลูกค้าต้องทำทันที**
+- [ ] เปลี่ยนรหัส `admin` · บังคับพนักงานเปลี่ยนรหัสครั้งแรก (ทุกคนได้ `W0rldF3rt` เหมือนกัน)
+- [ ] ตั้ง backup อัตโนมัติ — `/root/backup-databases.sh` + cron (ดู `RUNBOOK.md` ขั้น 9)
+- [ ] repoint ซอฟต์แวร์ตาชั่งหน้างานมา MySQL ตัวใหม่ (**ทำท้ายสุด** วางแผน cutover)
 
-**แบบ 1 — โอนทั้งเครื่อง (คุณเป็นคนตั้งให้ แล้วยกให้)**
-- Hetzner: **Project → Transfer** ไปยังบัญชีลูกค้า (หรือสร้าง project แยกต่อลูกค้าตั้งแต่แรก แล้วโอนทั้ง project)
-- เปลี่ยน SSH key เป็นของลูกค้า, เปลี่ยน Coolify admin, หมุนรหัสทั้งหมดในข้อ 3
-- ลบ key/สิทธิ์ของคุณออก → ลูกค้าถือครองสมบูรณ์
-
-**แบบ 2 — ลูกค้าเปิดบัญชีเอง (คุณแค่ deploy)**
-- ลูกค้าสร้าง Hetzner/provider account + VPS เอง (บิลไปที่ลูกค้าตรงๆ)
-- คุณ (หรือทีมลูกค้า) รัน **วิธี B** ในเครื่องนั้น
-- คุณไม่ถือ credential ใดๆ ของ production ลูกค้า = ปลอดภัย/ความรับผิดชอบชัด
-
-> 💡 สำหรับโมเดล "dev = คุณ / prod = ลูกค้ารับผิดชอบ" → **แบบ 2** เหมาะสุด
-> คุณพัฒนา/ทดสอบบนเครื่อง dev ของคุณ แล้วส่งสูตร (เอกสารนี้ + RUNBOOK) ให้ลูกค้า deploy prod เอง
+**ผู้ติดตั้งถอนตัว (ถ้าจบสัญญา)**
+- [ ] ลบ SSH public key ของเราออกจาก `/root/.ssh/authorized_keys`
+- [ ] ออกจาก Coolify Team ของลูกค้า · ถอนตัวจาก GitHub Collaborator
+- [ ] ส่งไฟล์ `<ลูกค้า>.json` (รหัสผ่านทั้งหมด) ให้ลูกค้าผ่านช่องทางปลอดภัย แล้วลบของเราทิ้ง
 
 ---
 
-## 5. อัปเดตโค้ดข้ามทุก instance (หลังโคลนไปหลายราย)
+## 8. อัปเดตโค้ดข้ามทุก instance
 
-เพราะทุก instance ใช้ **โค้ด/compose เดียวกัน** จาก git:
-- แก้โค้ด → push → แต่ละ Coolify ของลูกค้า **Redeploy** ดึง commit ใหม่ (ข้อมูลใน volume ไม่หาย)
-- migration ใหม่: รัน `npm run migrate` ต่อ instance หลัง redeploy (idempotent — รันซ้ำปลอดภัย)
-- แนะนำ: tag เวอร์ชัน (`v1.0.0`, `v1.1.0`) แล้วให้ลูกค้า prod ตรึงที่ tag ที่ทดสอบแล้ว ส่วน dev ตามล่าสุด
+ทุก instance ใช้ **โค้ดชุดเดียวกัน** ต่างกันแค่ env + ข้อมูล
 
----
-
-## 6. สิ่งที่ต้องระวัง (SaaS)
-
-- **ห้ามใช้รหัส/JWT/secret ซ้ำข้ามลูกค้า** — checklist ข้อ 3 คือหัวใจ
-- **ห้าม snapshot เครื่องที่มีข้อมูลลูกค้า A ไปสร้างลูกค้า B** — ใช้ golden ที่ข้อมูลว่างเท่านั้น
-- **backup แยกต่อ instance** — `backup.env` ของแต่ละเครื่องต้องมี `OFFSITE_RSYNC_TARGET` คนละปลายทาง
-- **TruckScale** เป็น production มีชีวิต — การโคลน DB นี้ = ก็อปสภาพ ณ เวลา backup เท่านั้น การใช้จริงต้อง repoint ซอฟต์แวร์ตาชั่งของลูกค้ารายนั้น (ทำท้ายสุด)
-- **โดเมน + TLS** — แต่ละ instance ต้องมีโดเมนของตัวเอง (Coolify ออก Let's Encrypt ให้อัตโนมัติ)
+- แก้โค้ด → push → Coolify ของแต่ละลูกค้า redeploy (ข้อมูลใน volume ไม่หาย)
+- มี migration ใหม่ → `docker exec -it <backend> node run_migrations.js` ต่อ instance (idempotent รันซ้ำปลอดภัย)
+- แนะนำ **tag เวอร์ชัน** (`v1.0.0`, `v1.1.0`) แล้วให้ prod ลูกค้าตรึงที่ tag ที่ผ่าน UAT แล้ว ส่วน dev ตามล่าสุด
 
 ---
 
-## สรุป flow สั้นสำหรับลูกค้าใหม่ 1 ราย
+## 9. ข้อควรระวัง (SaaS)
 
-```
-[Snapshot มี golden แล้ว]                    [ยังไม่มี / ข้าม provider]
-Create Server จาก snapshot                    RUNBOOK ขั้น 1–2 (bootstrap --mode self)
-        │                                              │
-        └──────────────┬───────────────────────────────┘
-                       ▼
-            Checklist ข้อ 3: หมุนรหัส/JWT/โดเมน/กุญแจ ทั้งหมด
-                       ▼
-            Restore backup ของลูกค้ารายนั้น (RUNBOOK ขั้น 5)
-                       ▼
-            migrate + backend + frontend + backup cron (ขั้น 6,8,9)
-                       ▼
-            (ถ้าส่งมอบ) โอน owner / เปลี่ยน key — ข้อ 4
-```
+- **ข้อมูลไม่ sync ข้าม instance** — แต่ละลูกค้ามี DB ของตัวเอง
+- **backup แยกต่อ instance** — `backup.env` ต้องมี `OFFSITE_RSYNC_TARGET` คนละปลายทาง
+- **TruckScale เป็น production มีชีวิต** — โคลน DB ได้แค่สภาพ ณ เวลา backup · ใช้จริงต้อง repoint ตาชั่ง
+- **sslip.io ใช้ชั่วคราวได้ แต่ production ควรใช้โดเมนจริง** — Let's Encrypt จำกัด rate ของ sslip.io
+  และ **ชื่อต้องมี IP อยู่ข้างใน** (`app.1-2-3-4.sslip.io` ✓ · `app.mycompany.sslip.io` ✗ NXDOMAIN)
+- **เปลี่ยนโดเมนต้อง redeploy frontend** — `VITE_API_BASE_URL` ถูก bake ตอน build ไม่ใช่ตอน run
