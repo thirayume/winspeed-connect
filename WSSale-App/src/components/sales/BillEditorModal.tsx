@@ -189,8 +189,8 @@ export function CreateSODialog({
 
     // Giveaway Quota Check
     if (isGiveaway) {
-      if (userRole === 'ACCOUNTING') {
-        setError('สิทธิ์การใช้งาน: บทบาท บัญชี (Accounting) ไม่สามารถแจกของแถมได้');
+      if (userRole === 'ACCOUNTING' || userRole === 'WAREHOUSE') {
+        setError('สิทธิ์การใช้งาน: บทบาท คลังสินค้า/บัญชี ไม่สามารถแจกของแถมได้');
         return;
       }
 
