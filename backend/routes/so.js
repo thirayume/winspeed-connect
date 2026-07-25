@@ -1536,7 +1536,8 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
     for (const gl of giveawayLines) {
       const mapRow = (await wfQuery(`SELECT Brand, ItemName FROM wf.GiveawayItemMapping WHERE GoodID=@g`, { g: { type: sql.VarChar(50), value: gl.GoodId } })).recordset[0];
       if (mapRow) {
-        const y = new Date().getFullYear();
+        let y = new Date().getFullYear();
+        if (y < 2500) y += 543;
         let regRow = (await wfQuery(`SELECT TOP 1 Region, EmpId, EmpCode FROM wf.GiveawayBudget WHERE SalesUserId=@su AND PeriodYear=@y`, { su: { type: sql.Int, value: targetSalesUserId }, y: { type: sql.Int, value: y } })).recordset[0];
         if (!regRow && req.user.sub) {
           regRow = (await wfQuery(`SELECT TOP 1 Region, EmpId, EmpCode FROM wf.GiveawayBudget WHERE SalesUserId=@su AND PeriodYear=@y`, { su: { type: sql.Int, value: req.user.sub }, y: { type: sql.Int, value: y } })).recordset[0];
