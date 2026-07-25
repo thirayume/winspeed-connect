@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "kind": "WS-Sale-App Playwright E2E Evidence",
-  "runId": "2026-07-25T13-19-21-363Z",
-  "startedAt": "2026-07-25T13:19:21.363Z",
-  "completedAt": "2026-07-25T13:20:03.480Z",
-  "durationMs": 42117,
+  "runId": "2026-07-25T16-21-43-404Z",
+  "startedAt": "2026-07-25T16:21:43.404Z",
+  "completedAt": "2026-07-25T16:22:26.121Z",
+  "durationMs": 42717,
   "status": "PASSED_COMPLETE",
   "playwrightStatus": "passed",
   "complete": true,
@@ -112,23 +112,23 @@
   },
   "environment": {
     "schemaVersion": 1,
-    "capturedAt": "2026-07-25T13:19:21.253Z",
+    "capturedAt": "2026-07-25T16:21:43.297Z",
     "frontend": {
       "url": "http://localhost:5174",
       "status": 200,
       "ok": true,
-      "durationMs": 21,
+      "durationMs": 23,
       "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx\"></script>\n  </body>\n</html>\n"
     },
     "api": {
       "url": "http://localhost:3100/api/health",
       "status": 200,
       "ok": true,
-      "durationMs": 73,
+      "durationMs": 72,
       "body": {
         "ok": true,
-        "ts": "2026-07-25T13:19:21.267Z",
-        "version": "1.2.2",
+        "ts": "2026-07-25T16:21:43.311Z",
+        "version": "1.2.4",
         "env": "development",
         "uptimeSec": 2,
         "requests": 1,
@@ -142,18 +142,18 @@
     }
   },
   "git": {
-    "commit": "cd450cecc10ff681368c85e48df5a4d9b9b269e0",
+    "commit": "950f228ccac54987a24a48d40ff5412550b8d642",
     "dirty": true
   },
   "sourceStability": {
     "stable": true,
-    "startGitCommit": "cd450cecc10ff681368c85e48df5a4d9b9b269e0",
-    "endGitCommit": "cd450cecc10ff681368c85e48df5a4d9b9b269e0",
+    "startGitCommit": "950f228ccac54987a24a48d40ff5412550b8d642",
+    "endGitCommit": "950f228ccac54987a24a48d40ff5412550b8d642",
     "changedFiles": []
   },
   "fileHashes": {
     "DEPLOY.md": "8432FDDCE6520365641A1853DA1CDF237A03BACD3A56BD442C8B36F16ADDD9C9",
-    "WSSale-App/package.json": "2829582DF30669B99D7F625CB55D0CCD667A77E5EDF9F11DAD005B4523BD9436",
+    "WSSale-App/package.json": "76775EADAF7C3F0189A3A71AFCAFBC03649AB3E0CCC4A5C0B2311235382198C6",
     "WSSale-App/src/App.css": "6E25A776D3E8102DA5BACB3CB99F4A5FC662A2E01E6143140671A556D28C3D5C",
     "WSSale-App/src/App.tsx": "59CE15C89829D8F201A77D9FC3B06EAD4F1099A6E28616B658979A6F6BEF75FA",
     "WSSale-App/src/components/accounting/AccountingPage.tsx": "5BFA708634818C1069AEB67A51D13D2DBFFF77D875C2568DC45F1CCC32833C69",
@@ -163,7 +163,7 @@
     "WSSale-App/src/components/common/GlobalLoader.tsx": "D70DEABCFC485A7AEC33B17CDD0F2938C518FBB519808714969C8D71AD06EE11",
     "WSSale-App/src/components/common/MobileDrawer.tsx": "1DBC9F9405A927A8CF26596A08271C5EA8A35448765F99666CEB08476C9925BD",
     "WSSale-App/src/components/dashboard/DashboardPage.tsx": "F44A55B0FF3081D36A9003AC02C940B795540BDBD0B9FDD3827C18FC2524FEEF",
-    "WSSale-App/src/components/giveaway/GiveawayPage.tsx": "338529402ED600E725978887E5D556B21E92AFF74FD5728E2D6A9ACA9A8D38D5",
+    "WSSale-App/src/components/giveaway/GiveawayPage.tsx": "3475E572E682F20ACC20A456A075B7B3E03BA0DA1B41D569A68DD3557EF8954B",
     "WSSale-App/src/components/governance/DataGovernancePage.tsx": "6C3A5C02EB0A24F93EDB0EF959734777314E580EF020AAC6178EAC9B2B3BAC13",
     "WSSale-App/src/components/master/ControlTicketPage.tsx": "E59CCDA68841DB409E991D753B57440C1D8DF75FBD514947FA9EABFB8C34B6FE",
     "WSSale-App/src/components/master/CustomersManager.tsx": "776A1924CE2E5F5BB2B9C4DA6B9724295889B844BA95489FD86BBB26FD467A72",
@@ -185,12 +185,12 @@
     "WSSale-App/src/components/profile/ProfilePage.tsx": "2C08C15E91903B81AF08B4406CF52F41AD44FA42456A0135B168ED6D159593CF",
     "WSSale-App/src/components/quotation/QuotationPage.tsx": "98A300EF24FCB70C14FA3EC0ECD9610C2EB6D2C1BEF5936D092A0ADD9C8FD7E2",
     "WSSale-App/src/components/rebate/CnRebatePage.tsx": "396853103112615BE8F5FFD92BDAE7631898739E33B3E6CDF4BF272C089FAA3A",
-    "WSSale-App/src/components/rebate/RebatePage.tsx": "D18FDFE9450EB6D999B99ED4883A3593EF9D441376B9389E46CD4ED6F7604B7E",
+    "WSSale-App/src/components/rebate/RebatePage.tsx": "6212DF14E2EE63221E41821242A0F133CA855C42BF9555F17126F49AD51D2721",
     "WSSale-App/src/components/rebate/RebatePlanPage.tsx": "5F9A71D38EF790A39689861422C3CF09CD9421E247742CDD5FB51DBCED15102A",
     "WSSale-App/src/components/recon/ReconciliationPage.tsx": "156D1A5CCB6C5C29FD3A4A713A4691B105805F825A718262CD67DD04AB0CF704",
     "WSSale-App/src/components/reports/ReportsPage.tsx": "A688E3EE668283E4CDD5750774D3181CFF45E50B6064A8D27F9C268317EDF7D3",
-    "WSSale-App/src/components/sales/BillEditorModal.tsx": "203A640898ABB8AF169640DA1FFC8A8D79E255B6C57976BD854687D0BD435E0C",
-    "WSSale-App/src/components/sales/CreateSODialog.tsx": "8D58E93B64D04C7573C1BBB98ABA061F7D57CB3A5475C72974BE37F661FB8C44",
+    "WSSale-App/src/components/sales/BillEditorModal.tsx": "F3C0804F44FA8373FC1061375435225CDA7B0DFF80B2D959EC4FD4FC210323DC",
+    "WSSale-App/src/components/sales/CreateSODialog.tsx": "B2D9586019F0963A5691918573523D1E54849322C0DA953AE3BB0D37AEE061E6",
     "WSSale-App/src/components/sales/EditSODialog.tsx": "27CED0CF12FDFDF59A4B1B7EC3D1ECE7A6581064F184C0552C958ABEEA910C9F",
     "WSSale-App/src/components/sales/GiveawayBorrowModal.tsx": "07AF38BF19344C3CCA0D189001F56A2387E11187EA9E638DBDF641E4E6662C6E",
     "WSSale-App/src/components/sales/POSLayout.tsx": "310DA672D7AB7896773F74495D77BCBA27B692CA3A012D10FC5AEB6A2345A808",
@@ -221,7 +221,7 @@
     "WSSale-App/src/index.css": "9A01D54AE3DAF431651BA6F013DC4B961A752240C01F1B28CC2FA003E24F0C9F",
     "WSSale-App/src/main.tsx": "AC4F116ED3697A141375CD24F68A09B91754A19AD35B433EFE5D1ADB95EF8C86",
     "WSSale-App/src/pages/LoginPage.tsx": "2C7101CCF3F6652031FC46555D8A345E639274EB956619C9D98A40489941EEF1",
-    "WSSale-App/src/services/api.ts": "21D55CD8DC7BE900546A7A50372ACC194BA374D073B86814DA7E4B6D69C41A81",
+    "WSSale-App/src/services/api.ts": "F00BD7AD8043F1E0C328DDA477D595064E44999C24674A9CEAC9FD00276D35BD",
     "WSSale-App/src/services/socket.ts": "3E011BB558EF581A505364E3AF5FC39667555E741D2F13E96CCC5DE3552921FF",
     "WSSale-App/src/store/app-store.ts": "7C9C0B269FD459D815C43E15C6284882EB3777DADB9780A9CF5B7B1B5B5246EE",
     "WSSale-App/src/store/auth-store.ts": "493CE6285EA21B86E87738791D163ABECCFB69EE00B4356A51520F533FC4FB7E",
@@ -296,12 +296,14 @@
     "backend/migrations/053_so_notified_at.sql": "68A2EE1ACD96BE6062678ADB1D0970F82A5CC52D0277D97B6A188FCAEB3F3CBF",
     "backend/migrations/054_rebate_coupon_mirror.sql": "D8331274CB30AF20F42A8534DD26214A1A71AB6E41FA5A220CF995D10850F28C",
     "backend/migrations/055_restore_all_sales_orders_contract.sql": "DF42880CC03D5E315EDDC789BE108429C4FB75E8932A4016BA0CDC87E6279333",
-    "backend/package.json": "163BBDD0E67C9CF0AEC931D6A6D962335AA40D164B55240A8CA16A782DE3F152",
+    "backend/migrations/056_align_giveaway_period_year.sql": "ACEFED5A1E04638C9C0087F6056397C12E9E005184CD74AEBCA9D49793C7E7E1",
+    "backend/migrations/057_reseed_giveaway_data.sql": "EC6F243EEFC9496719A47B82A7D023D8F6FA9366690D6152C4C27D6DC7951BED",
+    "backend/package.json": "6034A1CF3F977B4AC52ADFF31FEE5B079D408943AB68F9897A7A3D98A89CAE16",
     "backend/routes/auth.js": "813B4F843C5EEEDBE1C390F0264A11F4AC60D0CCE6DE5B8E4694D3B2CA1D9AC3",
     "backend/routes/credit.js": "4FA36A2296E4A7AFC07AB45CB3F16FABE8EFAB6FE098F0FD502DBA5459ABB3A6",
-    "backend/routes/giveaway.js": "348FE1DAD8C50999FCF3F153005BF3FA8B6FE54162482BD6598CFD370BD9B108",
+    "backend/routes/giveaway.js": "A92A3674FF8CFA03ADC51A0FD88E884F2467BC1AC006F65EF84D8B18FB98DB56",
     "backend/routes/line.js": "5F2B7735850695E9BAB54F33649F9C4A1BECB86F74E132EFDF025C45F8FDEED2",
-    "backend/routes/master.js": "0BA349208D78858CB912132E13702FAA89C648D52281C4492023D37F8A84B703",
+    "backend/routes/master.js": "9C84B4CAD25A14B2489934CCC2C8B456640F26459C4CB02F1D7DDA300F7C13AC",
     "backend/routes/ops.js": "B9480F45690DCA2712839EDEE834F6595497B780CF850E39720ACCF823C08750",
     "backend/routes/papertrail.js": "5E8AD505AC4FF73F48EE4C7A4F4F644B3860129BE167E39951491605B05A64C7",
     "backend/routes/pdpa.js": "31C0252CD40BD253D5A9DD7F14DBFF058712A2744814186E9B4AC9E77FD4C93C",
@@ -311,7 +313,7 @@
     "backend/routes/rebate.js": "9F6867F6FD10415EACA581EAC7F96512B38E8EDDCF7B1CD4CD26DFE43A8A907D",
     "backend/routes/recon.js": "0DBC0E26DBC2FF7E4A1F46777899A920E03C7C93B55884C5E2B037701BE3DBD8",
     "backend/routes/reports.js": "3EDA8F07A05BFEC68F74B0490FA6D77338B5971CD8E47E6F94AF05E79BCB8CB8",
-    "backend/routes/so.js": "90126694761EDA27A63536BCBC567DB5741868C6FA34CA091AC39B6D8DB4517C",
+    "backend/routes/so.js": "66AB9C42CB469A40CCEA1C939E26B5543E55B0A41618EAB75F2B4B5003F549C0",
     "backend/routes/stock.js": "260F110A61A1C33DCF2887F561B11D1B3FB72EB5460F2C194BBEA59F01E06CE9",
     "backend/routes/truckscale.js": "636BF249905B9AE9CE013784A46067CF00419B7C82973AACCA4893FF35ECD22B",
     "backend/run-migration-remote.js": "1F571612CC4EB944642AC7BC8C678B5F731AE8DC6165F87E74CFD55303131A50",
@@ -380,7 +382,7 @@
     "e2e/helpers.ts": "41329873704235A9765185D7DF3A228170F0093F5D7308B8389D24E91F0A278B",
     "e2e/uat-full-loop.spec.ts": "5BF53477132672A267B29CB68775EC1E8A5BA060CB8DD343E1A5896EEEA20E75",
     "e2e/workflow.spec.ts": "E60D094903CA60740AEA82B5F0D1246E44780D6F69A32AABCA54CADD343DF147",
-    "package.json": "EAB940ABEC29959C462B7273E76AF47AE22378A1E68D93B1E09427C0D088D54D",
+    "package.json": "29EFBE319C1CD0D51C5EC403C0D5D1F06C9636DAC718962E795443BC77856CA6",
     "playwright.config.ts": "A1239FDD163F4A37E7CDE0C56B5EF4082EA5B2D6F7D3141D3B0B1FABC787ACE6",
     "run-e2e.bat": "7E204347C4D2960DE63641A1343F9A878C1C672B67E2021F46A675EE6CDA7EC6",
     "run-e2e.ps1": "0E21C688537B5B5A6D29A054ABD078611CA2158037A1A105A525A64F450F9CC3",
@@ -396,7 +398,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 9320,
+      "durationMs": 10385,
       "errors": [],
       "attachments": [
         {
@@ -421,7 +423,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 5975,
+      "durationMs": 6138,
       "errors": [],
       "attachments": [
         {
@@ -446,7 +448,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 5070,
+      "durationMs": 4513,
       "errors": [],
       "attachments": [
         {
@@ -471,7 +473,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1867,
+      "durationMs": 1918,
       "errors": [],
       "attachments": [
         {
@@ -496,7 +498,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 8984,
+      "durationMs": 8016,
       "errors": [],
       "attachments": [
         {
@@ -521,7 +523,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1686,
+      "durationMs": 1748,
       "errors": [],
       "attachments": [
         {
@@ -546,7 +548,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1816,
+      "durationMs": 1723,
       "errors": [],
       "attachments": [
         {
@@ -571,7 +573,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1124,
+      "durationMs": 1212,
       "errors": [],
       "attachments": [
         {
@@ -591,7 +593,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1905,
+      "durationMs": 1845,
       "errors": [],
       "attachments": [
         {
@@ -611,7 +613,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 3095,
+      "durationMs": 3226,
       "errors": [],
       "attachments": [
         {
