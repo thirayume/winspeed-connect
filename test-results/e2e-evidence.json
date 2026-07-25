@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "kind": "WS-Sale-App Playwright E2E Evidence",
-  "runId": "2026-07-25T16-21-43-404Z",
-  "startedAt": "2026-07-25T16:21:43.404Z",
-  "completedAt": "2026-07-25T16:22:26.121Z",
-  "durationMs": 42717,
+  "runId": "2026-07-25T16-26-03-987Z",
+  "startedAt": "2026-07-25T16:26:03.987Z",
+  "completedAt": "2026-07-25T16:26:46.637Z",
+  "durationMs": 42650,
   "status": "PASSED_COMPLETE",
   "playwrightStatus": "passed",
   "complete": true,
@@ -112,25 +112,25 @@
   },
   "environment": {
     "schemaVersion": 1,
-    "capturedAt": "2026-07-25T16:21:43.297Z",
+    "capturedAt": "2026-07-25T16:26:03.875Z",
     "frontend": {
       "url": "http://localhost:5174",
       "status": 200,
       "ok": true,
-      "durationMs": 23,
+      "durationMs": 25,
       "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx\"></script>\n  </body>\n</html>\n"
     },
     "api": {
       "url": "http://localhost:3100/api/health",
       "status": 200,
       "ok": true,
-      "durationMs": 72,
+      "durationMs": 75,
       "body": {
         "ok": true,
-        "ts": "2026-07-25T16:21:43.311Z",
-        "version": "1.2.4",
+        "ts": "2026-07-25T16:26:03.894Z",
+        "version": "1.2.5",
         "env": "development",
-        "uptimeSec": 2,
+        "uptimeSec": 1,
         "requests": 1,
         "errors": 0,
         "lastErrorAt": null,
@@ -142,18 +142,18 @@
     }
   },
   "git": {
-    "commit": "950f228ccac54987a24a48d40ff5412550b8d642",
+    "commit": "cdd3db472a9815e3f1afce9feea7279f155aa3f5",
     "dirty": true
   },
   "sourceStability": {
     "stable": true,
-    "startGitCommit": "950f228ccac54987a24a48d40ff5412550b8d642",
-    "endGitCommit": "950f228ccac54987a24a48d40ff5412550b8d642",
+    "startGitCommit": "cdd3db472a9815e3f1afce9feea7279f155aa3f5",
+    "endGitCommit": "cdd3db472a9815e3f1afce9feea7279f155aa3f5",
     "changedFiles": []
   },
   "fileHashes": {
     "DEPLOY.md": "8432FDDCE6520365641A1853DA1CDF237A03BACD3A56BD442C8B36F16ADDD9C9",
-    "WSSale-App/package.json": "76775EADAF7C3F0189A3A71AFCAFBC03649AB3E0CCC4A5C0B2311235382198C6",
+    "WSSale-App/package.json": "77A5EF7164D4B99F0A2229903BB02044A5720664233B56C4C5103BB9468217DE",
     "WSSale-App/src/App.css": "6E25A776D3E8102DA5BACB3CB99F4A5FC662A2E01E6143140671A556D28C3D5C",
     "WSSale-App/src/App.tsx": "59CE15C89829D8F201A77D9FC3B06EAD4F1099A6E28616B658979A6F6BEF75FA",
     "WSSale-App/src/components/accounting/AccountingPage.tsx": "5BFA708634818C1069AEB67A51D13D2DBFFF77D875C2568DC45F1CCC32833C69",
@@ -177,7 +177,7 @@
     "WSSale-App/src/components/master/TrucksManager.tsx": "68B08C531B0E2A04013D356B807253A96BCCFD8CBAA7B9B58EE6465AD00AB0C5",
     "WSSale-App/src/components/ops/OpsStatusPage.tsx": "412B42DFEE99912CD2E6157D3A479C968414FBDDE7CCC35D4CA972FBCEAA04D9",
     "WSSale-App/src/components/papertrail/PaperDocModal.tsx": "A4CBE9945863EA7ECC7DFD422991772A2414B7AF4E5B16A26E71B0BB47955F68",
-    "WSSale-App/src/components/papertrail/PaperTrailPage.tsx": "B988B819F0E6E1F21EBA532030C2C2BB5E2FF4256A25A04834A0BB8C7FF966CC",
+    "WSSale-App/src/components/papertrail/PaperTrailPage.tsx": "B32E687B5D9E34381B905A6308F43FACA76A0AD066CFA682960D0CA6DE7A91A8",
     "WSSale-App/src/components/papertrail/RequestActionModal.tsx": "AE65FD8FE3CB82E1625D03E3E093A73675E1A449A6D355B6B7380666507655C6",
     "WSSale-App/src/components/papertrail/ScanModal.tsx": "8BDC88F1ADBC9147D1AC89634868423BF5390D1FCE79778BD8C5F704BB034EF7",
     "WSSale-App/src/components/papertrail/UnlockReviewModal.tsx": "9AEEA114DBF16791F0FA79141C342E6F936C1B842DA67635C7BF1B8A90CBB292",
@@ -298,14 +298,15 @@
     "backend/migrations/055_restore_all_sales_orders_contract.sql": "DF42880CC03D5E315EDDC789BE108429C4FB75E8932A4016BA0CDC87E6279333",
     "backend/migrations/056_align_giveaway_period_year.sql": "ACEFED5A1E04638C9C0087F6056397C12E9E005184CD74AEBCA9D49793C7E7E1",
     "backend/migrations/057_reseed_giveaway_data.sql": "EC6F243EEFC9496719A47B82A7D023D8F6FA9366690D6152C4C27D6DC7951BED",
-    "backend/package.json": "6034A1CF3F977B4AC52ADFF31FEE5B079D408943AB68F9897A7A3D98A89CAE16",
+    "backend/migrations/058_fix_shipped_status_clearflag.sql": "A11A1AD5F713EC1BE55426694B3F0F75D4759B0DE781241ED881CD5D5A2795D8",
+    "backend/package.json": "DF38835B3C65C3586C9542B6A496E9ACB7B25532496AC68A556789E3D4687EB2",
     "backend/routes/auth.js": "813B4F843C5EEEDBE1C390F0264A11F4AC60D0CCE6DE5B8E4694D3B2CA1D9AC3",
     "backend/routes/credit.js": "4FA36A2296E4A7AFC07AB45CB3F16FABE8EFAB6FE098F0FD502DBA5459ABB3A6",
     "backend/routes/giveaway.js": "A92A3674FF8CFA03ADC51A0FD88E884F2467BC1AC006F65EF84D8B18FB98DB56",
     "backend/routes/line.js": "5F2B7735850695E9BAB54F33649F9C4A1BECB86F74E132EFDF025C45F8FDEED2",
     "backend/routes/master.js": "9C84B4CAD25A14B2489934CCC2C8B456640F26459C4CB02F1D7DDA300F7C13AC",
     "backend/routes/ops.js": "B9480F45690DCA2712839EDEE834F6595497B780CF850E39720ACCF823C08750",
-    "backend/routes/papertrail.js": "5E8AD505AC4FF73F48EE4C7A4F4F644B3860129BE167E39951491605B05A64C7",
+    "backend/routes/papertrail.js": "8194F99B5570BDCD683B631ED42A22CF714650355DB60C2E1BC56CD2488F8B1F",
     "backend/routes/pdpa.js": "31C0252CD40BD253D5A9DD7F14DBFF058712A2744814186E9B4AC9E77FD4C93C",
     "backend/routes/policy.js": "F3EF76C3B236C25D8B6D04EB67CC100095B223BE540BC792D93A065BB6CA4494",
     "backend/routes/pricebook.js": "06D517ED1EB1433FE1086D83557258FBB7FA54838F26F34E0A67AB9EF9770B2C",
@@ -382,7 +383,7 @@
     "e2e/helpers.ts": "41329873704235A9765185D7DF3A228170F0093F5D7308B8389D24E91F0A278B",
     "e2e/uat-full-loop.spec.ts": "5BF53477132672A267B29CB68775EC1E8A5BA060CB8DD343E1A5896EEEA20E75",
     "e2e/workflow.spec.ts": "E60D094903CA60740AEA82B5F0D1246E44780D6F69A32AABCA54CADD343DF147",
-    "package.json": "29EFBE319C1CD0D51C5EC403C0D5D1F06C9636DAC718962E795443BC77856CA6",
+    "package.json": "E41D04FADFD4C7239F4EC931B8E9D8D32AFCBA057BEF28D79495B7956F0448A8",
     "playwright.config.ts": "A1239FDD163F4A37E7CDE0C56B5EF4082EA5B2D6F7D3141D3B0B1FABC787ACE6",
     "run-e2e.bat": "7E204347C4D2960DE63641A1343F9A878C1C672B67E2021F46A675EE6CDA7EC6",
     "run-e2e.ps1": "0E21C688537B5B5A6D29A054ABD078611CA2158037A1A105A525A64F450F9CC3",
@@ -398,7 +399,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 10385,
+      "durationMs": 9466,
       "errors": [],
       "attachments": [
         {
@@ -423,7 +424,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 6138,
+      "durationMs": 5857,
       "errors": [],
       "attachments": [
         {
@@ -448,7 +449,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 4513,
+      "durationMs": 4482,
       "errors": [],
       "attachments": [
         {
@@ -473,7 +474,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1918,
+      "durationMs": 1853,
       "errors": [],
       "attachments": [
         {
@@ -498,7 +499,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 8016,
+      "durationMs": 9213,
       "errors": [],
       "attachments": [
         {
@@ -523,7 +524,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1748,
+      "durationMs": 1946,
       "errors": [],
       "attachments": [
         {
@@ -548,7 +549,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1723,
+      "durationMs": 1967,
       "errors": [],
       "attachments": [
         {
@@ -573,7 +574,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1212,
+      "durationMs": 1188,
       "errors": [],
       "attachments": [
         {
@@ -593,7 +594,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1845,
+      "durationMs": 1932,
       "errors": [],
       "attachments": [
         {
@@ -613,7 +614,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 3226,
+      "durationMs": 3248,
       "errors": [],
       "attachments": [
         {
