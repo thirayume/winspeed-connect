@@ -293,6 +293,18 @@ export const shipSO = (id: number, weighOutWeight?: number, opts?: { tareKg?: nu
 export const fetchWeighTicket = (soId: number | string) =>
   req<import('../types').WeighTicket | null>(`/so/${soId}/weigh`, { silent: true });
 
+export const logItemWeighPass = (soId: number | string, data: { grossScaleKg: number; lineNum?: number; goodCode?: string; goodName?: string; note?: string; tareKg?: number }) =>
+  req<{ ok: boolean; passNo: number; grossScaleKg: number; incrementalNetKg: number | null }>(`/so/${soId}/weigh-item`, { method: 'POST', body: JSON.stringify(data) });
+
+export const fetchSoWeighHistory = (soId: number | string) =>
+  req<{ ticket: import('../types').WeighTicket | null; itemLogs: any[]; weightEval: any }>(`/so/${soId}/weigh-history`);
+
+export const fetchSystemSettings = () =>
+  req<{ settings: { minPct: number; maxPct: number; standardBagKg: number }; rows: any[] }>('/master/system-settings');
+
+export const updateSystemSettings = (updates: Record<string, string | number>) =>
+  req<{ ok: boolean; settings: { minPct: number; maxPct: number; standardBagKg: number } }>('/master/system-settings', { method: 'PATCH', body: JSON.stringify(updates) });
+
 export const syncImported = (id: number, docuNo: string) =>
   req<{ id: number; status: SOStatus }>(`/so/${id}/sync-imported`, {
     method: 'PATCH', body: JSON.stringify({ docuNo }),

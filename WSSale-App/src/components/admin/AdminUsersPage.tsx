@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Users, RefreshCw, Check, AlertTriangle, Plus, Edit2, X, Search, UserX, ArrowUpDown, Trash2 } from 'lucide-react';
+import { Users, RefreshCw, Check, AlertTriangle, Plus, Edit2, X, Search, UserX, ArrowUpDown, Trash2, Settings } from 'lucide-react';
 import { listUsers, fetchEmployees, updateUser, createUser, deleteUser } from '../../services/api';
 import { getDbMode, DB_MODE_META } from '../../store/db-mode';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import type { AdminUser, Employee } from '../../types';
+import { SystemSettingsModal } from './SystemSettingsModal';
 
 export const AdminUsersPage = () => {
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [users, setUsers]         = useState<AdminUser[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -200,6 +202,9 @@ export const AdminUsersPage = () => {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => setShowSettingsModal(true)} className="px-3 py-2 bg-blue-50 text-[#0C447C] border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1.5 text-xs font-bold" title="ตั้งค่า Error เครื่องชั่ง">
+              <Settings size={16} /> ตั้งค่าเครื่องชั่ง
+            </button>
             <button onClick={() => setModalUser({ Role: 'SALES', IsActive: true })} className="p-2 bg-[#0C447C] text-white rounded-lg hover:bg-[#0a3866] transition-colors flex items-center justify-center" title="เพิ่มผู้ใช้งาน">
               <Plus size={18} />
             </button>
@@ -498,6 +503,9 @@ export const AdminUsersPage = () => {
           </div>
         </div>
       )}
+
+      {/* System Settings Modal */}
+      <SystemSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
     </div>
   );
 };
