@@ -1666,7 +1666,7 @@ router.patch('/:id/load', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) =>
 router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'LOADED');
-    const { weighOutWeight, tareKg, scaleNo, movebill } = req.body;
+    const { weighOutWeight, tareKg, scaleNo, movebill, overrideReason, overrideApprovedBy, overrideApprovedByName, evidencePhotoUrl } = req.body;
     const gross = weighOutWeight != null ? Number(weighOutWeight) : null;
     const tare  = tareKg != null ? Number(tareKg) : null;
     const net   = (gross != null && tare != null) ? gross - tare : null;
@@ -1684,30 +1684,36 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) =>
       `UPDATE wf.SalesOrderExt SET WeighOutWeight=@weight, UpdatedAt=GETUTCDATE() WHERE SOID=@id`,
       { id: { type: sql.VarChar(50), value: so.Id }, weight: { type: sql.Decimal(10,2), value: gross } }
     );
-    // บันทึก WeighTicket (gross/tare/net/tolerance status) — รากฐาน TruckScale
+    // บันทึก WeighTicket (gross/tare/net/tolerance status + override details)
     await wfQuery(`
       INSERT INTO wf.WeighTicket (
         SoId, WfRef, TruckPlate, GrossKg, TareKg, NetKg, ScaleNo, WeighOutAt, Status, Movebill, CreatedBy,
-        ExpectedNetKg, VarianceKg, VariancePct, WeightStatus
+        ExpectedNetKg, VarianceKg, VariancePct, WeightStatus,
+        OverrideReason, OverrideApprovedBy, OverrideApprovedByName, EvidencePhotoUrl
       )
       VALUES (
         @so, @ref, @plate, @gross, @tare, @net, @scale, GETUTCDATE(), 'DONE', @mb, @uid,
-        @expNet, @varKg, @varPct, @wStatus
+        @expNet, @varKg, @varPct, @wStatus,
+        @ovReason, @ovApprovedBy, @ovApprovedByName, @evidencePhoto
       )`,
       {
-        so:      { type: sql.NVarChar(50), value: so.Id },
-        ref:     { type: sql.NVarChar(30), value: so.WfRef || null },
-        plate:   { type: sql.NVarChar(30), value: so.TruckPlate || null },
-        gross:   { type: sql.Decimal(10,2), value: gross },
-        tare:    { type: sql.Decimal(10,2), value: tare },
-        net:     { type: sql.Decimal(10,2), value: net },
-        scale:   { type: sql.Int, value: scaleNo != null ? Number(scaleNo) : null },
-        mb:      { type: sql.NVarChar(50), value: movebill || null },
-        uid:     { type: sql.Int, value: req.user.sub },
-        expNet:  { type: sql.Decimal(12,2), value: evalRes.expectedNetKg },
-        varKg:   { type: sql.Decimal(12,2), value: evalRes.varianceKg },
-        varPct:  { type: sql.Decimal(6,2), value: evalRes.variancePct },
-        wStatus: { type: sql.NVarChar(20), value: evalRes.status },
+        so:               { type: sql.NVarChar(50), value: so.Id },
+        ref:              { type: sql.NVarChar(30), value: so.WfRef || null },
+        plate:            { type: sql.NVarChar(30), value: so.TruckPlate || null },
+        gross:            { type: sql.Decimal(10,2), value: gross },
+        tare:             { type: sql.Decimal(10,2), value: tare },
+        net:              { type: sql.Decimal(10,2), value: net },
+        scale:            { type: sql.Int, value: scaleNo != null ? Number(scaleNo) : null },
+        mb:               { type: sql.NVarChar(50), value: movebill || null },
+        uid:              { type: sql.Int, value: req.user.sub },
+        expNet:           { type: sql.Decimal(12,2), value: evalRes.expectedNetKg },
+        varKg:            { type: sql.Decimal(12,2), value: evalRes.varianceKg },
+        varPct:           { type: sql.Decimal(6,2), value: evalRes.variancePct },
+        wStatus:          { type: sql.NVarChar(20), value: evalRes.status },
+        ovReason:         { type: sql.NVarChar(500), value: overrideReason || null },
+        ovApprovedBy:     { type: sql.Int, value: overrideApprovedBy != null ? Number(overrideApprovedBy) : req.user.sub },
+        ovApprovedByName: { type: sql.NVarChar(100), value: overrideApprovedByName || req.user.name || null },
+        evidencePhoto:    { type: sql.NVarChar(sql.MAX), value: evidencePhotoUrl || null },
       });
 
     // ตั้ง Rebate accrual เมื่อ SHIPPED (เรียกชำระเงินแล้ว)
