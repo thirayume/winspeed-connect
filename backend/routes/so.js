@@ -1716,6 +1716,23 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) =>
         evidencePhoto:    { type: sql.NVarChar(sql.MAX), value: evidencePhotoUrl || null },
       });
 
+    // ซิงค์ Write-Back ข้อมูลชั่งออกกลับไปยัง MySQL db_truckscale (TS-01 & TS-02)
+    const { writeBackWeighOutTicket } = require('../services/truckscale-db');
+    writeBackWeighOutTicket({
+      soId: so.Id,
+      wfRef: so.WfRef,
+      truckPlate: so.TruckPlate,
+      custName: so.CustName,
+      gross,
+      tare,
+      net,
+      scaleNo,
+      movebill,
+      overrideReason,
+      overrideApprovedByName,
+      operatorName: req.user.name,
+    }).catch(err => console.error('[truckscale-writeback]', err.message));
+
     // ตั้ง Rebate accrual เมื่อ SHIPPED (เรียกชำระเงินแล้ว)
     const lines = await getLines(so.Id);
     await bookRebateAccrual(so, lines, req.user.sub);
