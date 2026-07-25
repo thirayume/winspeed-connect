@@ -351,7 +351,8 @@ router.delete('/goods/:id', async (req, res) => {
 // GET /api/master/giveaway-goods — ของแถม (ดึงรายการที่ถูก Map หรือมี GoodGroupName='ของแถม' หรือรหัสของแถม)
 router.get('/giveaway-goods', async (req, res) => {
   try {
-    const y = new Date().getFullYear();
+    let y = new Date().getFullYear();
+    if (y < 2500) y += 543;
     const targetUserId = req.query.salesUserId ? Number(req.query.salesUserId) : req.user.sub;
     const isAdminOrManager = ['ADMIN', 'MANAGER'].includes(req.user.role);
 
