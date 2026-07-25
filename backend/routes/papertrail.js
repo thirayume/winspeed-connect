@@ -70,7 +70,7 @@ router.get('/board', async (req, res) => {
             ext.SalesUserId,
             CASE
               WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
-              WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
+              WHEN ext.WeighOutWeight IS NOT NULL OR hd.clearflag = 'Y' THEN 'SHIPPED'
               WHEN hd.DocuType = 104 THEN 'IMPORTED'
               WHEN ext.IsLoaded = 1 THEN 'LOADED'
               WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
