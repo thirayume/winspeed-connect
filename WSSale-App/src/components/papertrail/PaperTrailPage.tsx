@@ -104,7 +104,7 @@ export function PaperTrailPage() {
     try {
       if (card.status === 'DRAFT') await confirmSO(card.id);
       else if (card.status === 'CONFIRMED') await moveToPicking(card.id);
-      else if (card.status === 'PICKING') await shipSO(card.id);
+      else if (card.status === 'PICKING') await confirmLoading(Number(card.id), []);
       else if (card.status === 'LOADED') await shipSO(card.id);
       else if (card.status === 'SHIPPED') {
         const docuNo = await appPrompt(`กรอกเลขใบกำกับ WINSpeed สำหรับ ${card.wfRef}:`);
