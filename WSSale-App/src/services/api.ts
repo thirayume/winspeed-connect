@@ -285,8 +285,20 @@ export const unlockSO = (id: number, note?: string) =>
     method: 'PATCH', body: JSON.stringify({ note }),
   });
 
-export const shipSO = (id: number, weighOutWeight?: number, opts?: { tareKg?: number; scaleNo?: number; movebill?: string }) =>
-  req<{ id: number; status: SOStatus; netKg?: number; importFilePath?: string }>(`/so/${id}/ship`, {
+export const shipSO = (
+  id: number,
+  weighOutWeight?: number,
+  opts?: {
+    tareKg?: number;
+    scaleNo?: number;
+    movebill?: string;
+    overrideReason?: string;
+    overrideApprovedBy?: number;
+    overrideApprovedByName?: string;
+    evidencePhotoUrl?: string;
+  }
+) =>
+  req<{ id: number; status: SOStatus; netKg?: number; importFilePath?: string; weightEval?: any }>(`/so/${id}/ship`, {
     method: 'PATCH', body: JSON.stringify({ weighOutWeight, ...(opts || {}) }),
   });
 
