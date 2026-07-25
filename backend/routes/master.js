@@ -1098,4 +1098,36 @@ router.delete('/truck-types/:id', requireRole('ADMIN', 'MANAGER'), async (req, r
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
+// GET /api/master/system-settings — อ่านตั้งค่าระบบ (เช่น min/max error % ของเครื่องชั่ง)
+router.get('/system-settings', async (req, res) => {
+  try {
+    const { getWeightSettings } = require('../services/weight-reconciliation');
+    const settings = await getWeightSettings();
+    const rows = (await wfQuery(`SELECT SettingKey, SettingValue, Description, UpdatedAt FROM wf.SystemSetting`)).recordset || [];
+    res.json({ settings, rows });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// PATCH /api/master/system-settings — ปรับเปลี่ยนค่าตั้งค่าระบบ (ADMIN)
+router.patch('/system-settings', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const updates = req.body || {};
+    for (const [key, val] of Object.entries(updates)) {
+      if (val !== undefined && val !== null) {
+        await wfQuery(`
+          MERGE wf.SystemSetting AS t USING (SELECT @k AS SettingKey) AS s ON t.SettingKey = s.SettingKey
+          WHEN MATCHED THEN UPDATE SET SettingValue = @v, UpdatedAt = GETUTCDATE()
+          WHEN NOT MATCHED THEN INSERT (SettingKey, SettingValue) VALUES (@k, @v);
+        `, {
+          k: { type: sql.NVarChar(50), value: String(key) },
+          v: { type: sql.NVarChar(200), value: String(val) },
+        });
+      }
+    }
+    const { getWeightSettings } = require('../services/weight-reconciliation');
+    const settings = await getWeightSettings();
+    res.json({ ok: true, settings });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
 module.exports = router;
