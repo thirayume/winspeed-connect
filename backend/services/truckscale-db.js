@@ -97,4 +97,118 @@ async function removePreWeighTicket(wfRef) {
   }
 }
 
-module.exports = { getPool, tsQuery, insertPreWeighTicket, removePreWeighTicket };
+async function writeBackWeighOutTicket(ticketData) {
+  if (!getPool()) {
+    console.log('[truckscale] MySQL not configured. Skipping writeBackWeighOutTicket.');
+    return { success: false, reason: 'mysql_not_configured' };
+  }
+
+  const {
+    soId,
+    wfRef,
+    truckPlate,
+    custName,
+    gross,
+    tare,
+    net,
+    scaleNo,
+    movebill,
+    overrideReason,
+    overrideApprovedByName,
+    operatorName
+  } = ticketData;
+
+  const plate = String(truckPlate || '').trim();
+  const mb = movebill ? String(movebill).trim() : '';
+
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+  let remarkText = `WF-SO:${soId || wfRef || ''}`;
+  if (overrideReason) {
+    remarkText += ` | Discretion: ${overrideReason} (By: ${overrideApprovedByName || operatorName || 'N/A'})`;
+  }
+
+  try {
+    // 1. Search for existing OPEN ticket in tblscale
+    let existing = [];
+    if (mb) {
+      existing = await tsQuery(
+        `SELECT s_id, sequence, movebill FROM tblscale WHERE movebill = ? ORDER BY s_id DESC LIMIT 1`,
+        [mb]
+      );
+    }
+    if ((!existing || existing.length === 0) && plate) {
+      existing = await tsQuery(
+        `SELECT s_id, sequence, movebill FROM tblscale 
+         WHERE one_car_regis = ? AND (weight_out = 0 OR weight_out IS NULL) 
+         ORDER BY s_id DESC LIMIT 1`,
+        [plate]
+      );
+    }
+
+    if (existing && existing.length > 0) {
+      const sid = existing[0].s_id;
+      await tsQuery(
+        `UPDATE tblscale 
+         SET weight_out = ?, 
+             weight_net = ?, 
+             Date_Out = ?, 
+             Time_Out = ?, 
+             one_App = ?,
+             Computer_w = ?,
+             Remark = CONCAT(IFNULL(Remark, ''), ' ', ?)
+         WHERE s_id = ?`,
+        [
+          gross || 0,
+          net || 0,
+          dateStr,
+          timeStr,
+          String(wfRef || soId || '').substring(0, 100),
+          scaleNo || 1,
+          remarkText,
+          sid
+        ]
+      );
+      console.log(`[truckscale] Successfully updated tblscale s_id=${sid} for SO:${soId}`);
+      if (wfRef) await removePreWeighTicket(wfRef);
+      return { success: true, action: 'updated', s_id: sid };
+    } else {
+      // 2. Fallback: INSERT new record into tblscale (TS-02)
+      const genSeq = `WF-${Date.now().toString().slice(-8)}`;
+      const insertMb = mb || genSeq;
+
+      const res = await tsQuery(
+        `INSERT INTO tblscale 
+         (sequence, movebill, one_car_regis, one_cus_name, weight_in, weight_out, weight_net, Date_In, Date_Out, Time_In, Time_Out, Computer_w, one_App, Remark) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          genSeq,
+          insertMb,
+          plate.substring(0, 50),
+          String(custName || '').substring(0, 100),
+          tare || 0,
+          gross || 0,
+          net || 0,
+          dateStr,
+          dateStr,
+          timeStr,
+          timeStr,
+          scaleNo || 1,
+          String(wfRef || soId || '').substring(0, 100),
+          remarkText
+        ]
+      );
+      console.log(`[truckscale] Inserted fallback record into tblscale (seq: ${genSeq}) for SO:${soId}`);
+      if (wfRef) await removePreWeighTicket(wfRef);
+      return { success: true, action: 'inserted', insertId: res.insertId };
+    }
+  } catch (e) {
+    console.error(`[truckscale] writeBackWeighOutTicket failed: ${e.message}`);
+    return { success: false, error: e.message };
+  }
+}
+
+module.exports = { getPool, tsQuery, insertPreWeighTicket, removePreWeighTicket, writeBackWeighOutTicket };
