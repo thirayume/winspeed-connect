@@ -983,12 +983,12 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
         const wfRef = await allocateWorkflowRef(tx, soPrefix);
 
         const soReq = tx.request();
-        soReq.input('wfRef',            sql.NVarChar(30),  wfRef);
-        soReq.input('soPrefix',         sql.NVarChar(5),   soPrefix);
-        soReq.input('custId',           sql.NVarChar(20),  custId);
-        soReq.input('custName',         sql.NVarChar(200), custName || '');
-        soReq.input('truckPlate',       sql.NVarChar(30),  truckPlate || null);
-        soReq.input('controlTicketNo',  sql.NVarChar(20),  controlTicketNo || null);
+        soReq.input('wfRef',            sql.NVarChar(30),  String(wfRef));
+        soReq.input('soPrefix',         sql.NVarChar(5),   String(soPrefix));
+        soReq.input('custId',           sql.NVarChar(20),  String(custId));
+        soReq.input('custName',         sql.NVarChar(200), custName ? String(custName) : '');
+        soReq.input('truckPlate',       sql.NVarChar(30),  truckPlate ? String(truckPlate) : null);
+        soReq.input('controlTicketNo',  sql.NVarChar(20),  controlTicketNo ? String(controlTicketNo) : null);
         soReq.input('deliveryDate',     sql.Date,          deliveryDate ? new Date(deliveryDate) : null);
         soReq.input('requestedAt',      sql.DateTime2,     toSqlDateTime(requestedAt));
         soReq.input('isOwnTruck',       sql.Bit,           toBit(isOwnTruck));
@@ -1108,9 +1108,9 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
           const lr = tx.request();
           lr.input('soId',                 sql.Int,           soId);
           lr.input('lineNum',              sql.Int,           i + 1);
-          lr.input('goodId',               sql.NVarChar(20),  l.goodId);
-          lr.input('goodName',             sql.NVarChar(200), l.goodName || '');
-          lr.input('goodCode',             sql.NVarChar(50),  l.goodCode || '');
+          lr.input('goodId',               sql.NVarChar(20),  String(l.goodId));
+          lr.input('goodName',             sql.NVarChar(200), l.goodName ? String(l.goodName) : '');
+          lr.input('goodCode',             sql.NVarChar(50),  l.goodCode ? String(l.goodCode) : '');
           lr.input('qtyTon',               sql.Decimal(12,3), Number(l.qtyTon));
           lr.input('qtyBag',               sql.Int,           Number(l.qtyBag) || Math.round(l.qtyTon * 20));
           lr.input('masterQty',            sql.Decimal(12,3), l.masterQty === undefined || l.masterQty === null ? Number(l.qtyTon) : Number(l.masterQty));
@@ -1168,12 +1168,12 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
         const totalAmnt = lines.reduce((sum, l) => sum + (Number(l.qtyTon) * Number(l.pricePerTon)), 0) - safeRebateDiscountAmt;
 
         const soReq = tx.request();
-        soReq.input('id', sql.VarChar(50), so.Id);
-        soReq.input('soPrefix', sql.NVarChar(5), soPrefix);
-        soReq.input('custId', sql.NVarChar(20), custId);
-        soReq.input('custName', sql.NVarChar(200), custName || '');
-        soReq.input('truckPlate', sql.NVarChar(30), truckPlate || null);
-        soReq.input('controlTicketNo', sql.NVarChar(20), controlTicketNo || null);
+        soReq.input('id', sql.VarChar(50), String(so.Id));
+        soReq.input('soPrefix', sql.NVarChar(5), String(soPrefix));
+        soReq.input('custId', sql.NVarChar(20), String(custId));
+        soReq.input('custName', sql.NVarChar(200), custName ? String(custName) : '');
+        soReq.input('truckPlate', sql.NVarChar(30), truckPlate ? String(truckPlate) : null);
+        soReq.input('controlTicketNo', sql.NVarChar(20), controlTicketNo ? String(controlTicketNo) : null);
         soReq.input('deliveryDate', sql.Date, deliveryDate ? new Date(deliveryDate) : null);
         soReq.input('requestedAt', sql.DateTime2, toSqlDateTime(requestedAt));
         soReq.input('isOwnTruck', sql.Bit, toBit(isOwnTruck));
@@ -1224,8 +1224,8 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
           const lr = tx.request();
           lr.input('soId', sql.VarChar(50), so.Id);
           lr.input('lineNum', sql.Int, i + 1);
-          lr.input('goodId', sql.NVarChar(20), l.goodId);
-          lr.input('goodName', sql.NVarChar(200), l.goodName || '');
+          lr.input('goodId', sql.NVarChar(20), String(l.goodId));
+          lr.input('goodName', sql.NVarChar(200), l.goodName ? String(l.goodName) : '');
           lr.input('qtyTon', sql.Decimal(12,3), Number(l.qtyTon));
           lr.input('masterQty', sql.Decimal(12,3), l.masterQty === undefined || l.masterQty === null ? Number(l.qtyTon) : Number(l.masterQty));
           lr.input('childQty', sql.Decimal(12,3), l.childQty === undefined || l.childQty === null ? 0 : Number(l.childQty));
@@ -1293,12 +1293,12 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
 
       const soReq = tx.request();
       soReq.input('id',                sql.Int,           so.Id);
-      soReq.input('soPrefix',          sql.NVarChar(5),   soPrefix);
-      soReq.input('wfRef',             sql.NVarChar(30),  newWfRef);
-      soReq.input('custId',            sql.NVarChar(20),  custId);
-      soReq.input('custName',          sql.NVarChar(200), custName || '');
-      soReq.input('truckPlate',        sql.NVarChar(30),  truckPlate || null);
-      soReq.input('controlTicketNo',   sql.NVarChar(20),  controlTicketNo || null);
+      soReq.input('soPrefix',          sql.NVarChar(5),   String(soPrefix));
+      soReq.input('wfRef',             sql.NVarChar(30),  String(newWfRef));
+      soReq.input('custId',            sql.NVarChar(20),  String(custId));
+      soReq.input('custName',          sql.NVarChar(200), custName ? String(custName) : '');
+      soReq.input('truckPlate',        sql.NVarChar(30),  truckPlate ? String(truckPlate) : null);
+      soReq.input('controlTicketNo',   sql.NVarChar(20),  controlTicketNo ? String(controlTicketNo) : null);
       soReq.input('deliveryDate',      sql.Date,          deliveryDate ? new Date(deliveryDate) : null);
       soReq.input('requestedAt',       sql.DateTime2,     toSqlDateTime(requestedAt));
       soReq.input('isOwnTruck',        sql.Bit,           toBit(isOwnTruck));
@@ -1344,9 +1344,9 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
         const lr = tx.request();
         lr.input('soId',                 sql.Int,           so.Id);
         lr.input('lineNum',              sql.Int,           i + 1);
-        lr.input('goodId',               sql.NVarChar(20),  l.goodId);
-        lr.input('goodName',             sql.NVarChar(200), l.goodName || '');
-        lr.input('goodCode',             sql.NVarChar(50),  l.goodCode || '');
+        lr.input('goodId',               sql.NVarChar(20),  String(l.goodId));
+        lr.input('goodName',             sql.NVarChar(200), l.goodName ? String(l.goodName) : '');
+        lr.input('goodCode',             sql.NVarChar(50),  l.goodCode ? String(l.goodCode) : '');
         lr.input('qtyTon',               sql.Decimal(12,3), Number(l.qtyTon));
         lr.input('qtyBag',               sql.Int,           Number(l.qtyBag) || Math.round(l.qtyTon * 20));
         lr.input('masterQty',            sql.Decimal(12,3), l.masterQty === undefined || l.masterQty === null ? Number(l.qtyTon) : Number(l.masterQty));
