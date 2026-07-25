@@ -229,11 +229,22 @@ router.post('/login', async (req, res) => {
 router.get('/line/start', (req, res) => {
   const cfg = lineLoginConfig();
   if (!cfg.channelId || !cfg.channelSecret) return res.status(400).send('LINE Login is not configured');
+  
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.get('host');
+  const dynamicCallbackUrl = process.env.LINE_LOGIN_CALLBACK_URL || `${protocol}://${host}/api/auth/line/callback`;
+  
+  let dynamicSuccessRedirect = cfg.successRedirect;
+  const referer = req.get('referer');
+  if (referer && !process.env.LINE_LOGIN_SUCCESS_REDIRECT) {
+    try { dynamicSuccessRedirect = new URL(referer).origin; } catch(e) {}
+  }
+
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: cfg.channelId,
-    redirect_uri: cfg.callbackUrl,
-    state: encodeLineState(),
+    redirect_uri: dynamicCallbackUrl,
+    state: encodeLineState({ cb: dynamicCallbackUrl, rd: dynamicSuccessRedirect }),
     scope: 'profile openid',
   });
   res.redirect(`${LINE_AUTH_URL}?${params.toString()}`);
@@ -244,10 +255,16 @@ router.get('/line/callback', async (req, res) => {
   const cfg = lineLoginConfig();
   try {
     if (!cfg.channelId || !cfg.channelSecret) throw new Error('LINE Login is not configured');
+    
+    let statePayload = {};
+    try { statePayload = decodeLineState(req.query.state); } catch(e) { throw e; }
+    
+    const callbackUrl = statePayload.cb || cfg.callbackUrl;
+    const successRedirect = statePayload.rd || cfg.successRedirect;
+
     if (req.query.error) {
-      return res.redirect(appendHash(cfg.successRedirect, { line_error: String(req.query.error_description || req.query.error) }));
+      return res.redirect(appendHash(successRedirect, { line_error: String(req.query.error_description || req.query.error) }));
     }
-    decodeLineState(req.query.state);
     const code = String(req.query.code || '');
     if (!code) throw new Error('missing LINE code');
 
@@ -257,7 +274,7 @@ router.get('/line/callback', async (req, res) => {
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         code,
-        redirect_uri: cfg.callbackUrl,
+        redirect_uri: callbackUrl,
         client_id: cfg.channelId,
         client_secret: cfg.channelSecret,
       }),
@@ -279,7 +296,7 @@ router.get('/line/callback', async (req, res) => {
     );
     const user = users.recordset?.[0];
     if (!user || !user.IsActive) {
-      return res.redirect(appendHash(cfg.successRedirect, {
+      return res.redirect(appendHash(successRedirect, {
         line_link_token: signLineLinkToken(profile),
         line_name: profile.displayName || '',
       }));
@@ -296,10 +313,11 @@ router.get('/line/callback', async (req, res) => {
       }
     );
 
-    res.redirect(appendHash(cfg.successRedirect, { line_token: signAppToken(user) }));
+    res.redirect(appendHash(successRedirect, { line_token: signAppToken(user) }));
   } catch (e) {
     console.error('[line-login]', e.message);
-    res.redirect(appendHash(cfg.successRedirect, { line_error: e.message || 'line_login_failed' }));
+    const fallbackRedirect = process.env.LINE_LOGIN_SUCCESS_REDIRECT || 'http://localhost:5173';
+    res.redirect(appendHash(fallbackRedirect, { line_error: e.message || 'line_login_failed' }));
   }
 });
 
