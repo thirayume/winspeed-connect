@@ -348,21 +348,36 @@ router.delete('/goods/:id', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/master/giveaway-goods — ของแถม (ดึงเฉพาะรายการที่ถูก Map ไว้ในระบบโควต้าแล้วเท่านั้น)
+// GET /api/master/giveaway-goods — ของแถม (ดึงรายการที่ถูก Map หรือมี GoodGroupName='ของแถม' หรือรหัสของแถม)
 router.get('/giveaway-goods', async (req, res) => {
   try {
     const y = new Date().getFullYear();
+    const targetUserId = req.query.salesUserId ? Number(req.query.salesUserId) : req.user.sub;
+    const isAdminOrManager = ['ADMIN', 'MANAGER'].includes(req.user.role);
+
     const rows = await query(`
-      SELECT g.GoodID, g.GoodCode, g.GoodName1 AS GoodName, m.Brand, m.ItemName, u.GoodUnitName AS UnitName,
-             ISNULL(b.RemainingQty, 0) AS RemainingQty
+      SELECT g.GoodID, g.GoodCode, g.GoodName1 AS GoodName, 
+             ISNULL(m.Brand, N'ทั่วไป') AS Brand, 
+             ISNULL(m.ItemName, g.GoodName1) AS ItemName, 
+             u.GoodUnitName AS UnitName,
+             CASE 
+               WHEN @isAdmin = 1 THEN 999999
+               ELSE ISNULL(b.RemainingQty, 0)
+             END AS RemainingQty
       FROM dbo.EMGood g WITH (NOLOCK)
-      INNER JOIN wf.GiveawayItemMapping m WITH (NOLOCK) ON g.GoodID = m.GoodID
+      LEFT JOIN wf.GiveawayItemMapping m WITH (NOLOCK) ON g.GoodID = m.GoodID
+      LEFT JOIN dbo.EMGoodGroup gg WITH (NOLOCK) ON g.GoodGroupID = gg.GoodGroupID
       LEFT JOIN dbo.EMGoodUnit u WITH (NOLOCK) ON g.MainGoodUnitID = u.GoodUnitID
       LEFT JOIN wf.v_GiveawayBudgetStatus b WITH (NOLOCK) 
         ON b.Brand = m.Brand AND b.ItemName = m.ItemName 
         AND b.SalesUserId = @su AND b.PeriodYear = @y
-      ORDER BY m.Brand, m.ItemName
-    `, { su: { type: sql.Int, value: req.user.sub }, y: { type: sql.Int, value: y } });
+      WHERE m.GoodID IS NOT NULL OR gg.GoodGroupName = N'ของแถม' OR g.GoodCode LIKE 'P%' OR g.GoodCode LIKE 'N%'
+      ORDER BY ISNULL(m.Brand, N'ทั่วไป'), g.GoodName1
+    `, { 
+      su: { type: sql.Int, value: targetUserId }, 
+      y: { type: sql.Int, value: y },
+      isAdmin: { type: sql.Bit, value: isAdminOrManager ? 1 : 0 }
+    });
     res.json(rows);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
