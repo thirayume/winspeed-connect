@@ -63,28 +63,51 @@
 3. **Create a new channel** → เลือก **LINE Login**
 4. กรอกชื่อ/รูป/หมวดหมู่ → App types เลือก **Web app**
 
-### 3.2 ตั้ง Callback URL
-แท็บ **LINE Login** → **Callback URL** ใส่ให้ตรงกับ `LINE_LOGIN_CALLBACK_URL` เป๊ะๆ
+### 3.2 ลงทะเบียน Callback URL ใน LINE Console
 
-| ปลายทาง | Callback URL |
+แท็บ **LINE Login** → **Callback URL** — ต้องลงทะเบียน **ทุกโดเมนที่จะใช้จริง**
+
+| ปลายทาง | Callback URL ที่ต้องลงทะเบียน |
 |---|---|
 | B · Coolify | `https://api.178-104-120-21.sslip.io/api/auth/line/callback` |
 | C · On-Prem | `https://api.<ddns>/api/auth/line/callback` |
 | dev ในเครื่อง | `http://localhost:3000/api/auth/line/callback` |
 
-> ใส่ได้หลายบรรทัด (dev + production พร้อมกัน)
-> ⚠️ ต้องตรงทุกตัวอักษร รวม `https` และ `/api` — ผิดนิดเดียว LINE ตอบ `invalid_request`
+> ใส่ได้หลายบรรทัด (dev + production พร้อมกัน) — **ควรใส่ให้ครบทุกปลายทางตั้งแต่แรก**
+> ⚠️ ต้องตรงทุกตัวอักษร รวม `https` และ `/api` — LINE ตรวจ `redirect_uri` กับรายการนี้เสมอ
+> ผิดนิดเดียวได้ `invalid_request` **แม้จะไม่ได้ตั้ง env ก็ตาม** (ดูข้อ 3.3)
 
 ### 3.3 เอาค่ามาใส่ env
+
 แท็บ **Basic settings** → คัดลอก **Channel ID** และ **Channel secret**
 
 ```ini
+# บังคับ 2 ตัวนี้ — ไม่มีแล้ว /line/start ตอบ 400 "LINE Login is not configured"
 LINE_LOGIN_CHANNEL_ID=1234567890
 LINE_LOGIN_CHANNEL_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-LINE_LOGIN_CALLBACK_URL=https://api.<โดเมน>/api/auth/line/callback
-LINE_LOGIN_SUCCESS_REDIRECT=https://<โดเมนหน้าเว็บ>
+
+# 2 ตัวนี้ "ไม่บังคับ" — ไม่ตั้งระบบจะสร้างเองจาก request (ดูตารางด้านล่าง)
+LINE_LOGIN_CALLBACK_URL=
+LINE_LOGIN_SUCCESS_REDIRECT=
 ```
-- **Coolify** → wf-backend → Environment Variables → Developer view → เพิ่ม 4 บรรทัด → **Redeploy**
+
+> 🔄 **เปลี่ยนตั้งแต่ v1.2.1** — เดิม 2 ตัวหลังเป็นค่าบังคับ ตอนนี้มี dynamic fallback
+> ออกแบบมาเพื่อให้ backend ตัวเดียวรองรับหลายโดเมนได้ (เรามี 3 ปลายทาง deploy)
+
+| ตัวแปร | ไม่ตั้งแล้วเกิดอะไร |
+|---|---|
+| `LINE_LOGIN_CALLBACK_URL` | สร้างจาก request: `{x-forwarded-proto \|\| protocol}://{host}/api/auth/line/callback` |
+| `LINE_LOGIN_SUCCESS_REDIRECT` | ใช้ **origin ของ `Referer`** ที่กดปุ่มมา · ถ้าไม่มี → `http://localhost:5173` |
+
+**ตั้งเมื่อไรดี**
+- **ไม่ต้องตั้ง** — เมื่อมีปลายทางเดียว/หลายปลายทาง และ reverse proxy ส่ง `X-Forwarded-Proto` ถูก (Traefik ของ Coolify และ Caddy ของ on-prem ส่งให้อยู่แล้ว)
+- **ควรตั้ง** — เมื่อต้องการบังคับโดเมนตายตัว หรือ proxy ไม่ส่ง `X-Forwarded-Proto` (จะได้ `http://` ผิด)
+
+**กลไกภายใน:** ค่า callback/redirect ที่ตัดสินใจตอน `/line/start` ถูกฝังใน OAuth `state`
+ซึ่ง **เซ็นด้วย HMAC-SHA256 และหมดอายุใน 10 นาที** → ตอน `/line/callback` อ่านกลับจาก state
+ไม่ใช่จาก env ทำให้หลายโดเมนใช้ backend เดียวกันได้อย่างปลอดภัย
+
+- **Coolify** → wf-backend → Environment Variables → Developer view → เพิ่มค่า → **Redeploy**
 - **On-Prem** → แก้ `deploy/onprem/.env` → `docker compose up -d`
 
 ### 3.4 เปิด scope
@@ -131,8 +154,8 @@ LINE_CHANNEL_ACCESS_TOKEN=xxxxxxxxxxxx....
 |---|---|---|
 | `LINE_LOGIN_CHANNEL_ID` | Login | `1234567890` |
 | `LINE_LOGIN_CHANNEL_SECRET` | Login | (32 ตัวอักษร) |
-| `LINE_LOGIN_CALLBACK_URL` | Login | `https://api.<domain>/api/auth/line/callback` |
-| `LINE_LOGIN_SUCCESS_REDIRECT` | Login | `https://<domain>` |
+| `LINE_LOGIN_CALLBACK_URL` | Login | *(ไม่บังคับ)* `https://api.<domain>/api/auth/line/callback` |
+| `LINE_LOGIN_SUCCESS_REDIRECT` | Login | *(ไม่บังคับ)* `https://<domain>` |
 | `LINE_CHANNEL_SECRET` | OA | (32 ตัวอักษร) |
 | `LINE_CHANNEL_ACCESS_TOKEN` | OA | (ยาวมาก) |
 
@@ -168,9 +191,10 @@ LINE_CHANNEL_ACCESS_TOKEN=xxxxxxxxxxxx....
 
 | อาการ | สาเหตุ |
 |---|---|
-| `invalid_request` ตอน redirect ไป LINE | Callback URL ใน console ไม่ตรงกับ `LINE_LOGIN_CALLBACK_URL` |
+| `invalid_request` ตอน redirect ไป LINE | Callback URL **ไม่ได้ลงทะเบียนใน LINE Console** · ถ้าไม่ได้ตั้ง env ให้ดูว่า proxy ส่ง `X-Forwarded-Proto`/`Host` ถูกไหม (ได้ `http://` แทน `https://` จะไม่ตรงรายการ) |
 | กดปุ่มแล้วไม่มีอะไรเกิดขึ้น | ยังไม่ได้ตั้ง 4 ตัวแปร `LINE_LOGIN_*` (เช็คด้วย `/api/auth/line/status`) |
-| login ผ่านแต่เด้งกลับหน้า login | `LINE_LOGIN_SUCCESS_REDIRECT` ผิดโดเมน หรือชนกับ `CORS_ORIGIN` |
+| login ผ่านแต่เด้งกลับหน้า login | `LINE_LOGIN_SUCCESS_REDIRECT` ผิดโดเมน หรือชนกับ `CORS_ORIGIN` · ถ้าไม่ได้ตั้ง ระบบใช้ origin ของ `Referer` — เบราว์เซอร์ที่ตัด referer จะตกไป `localhost:5173` |
+| `invalid LINE state` / `LINE state expired` | ทิ้งหน้า login ค้างเกิน **10 นาที** แล้วค่อยกด · หรือ `JWT_SECRET` เปลี่ยนระหว่างทาง (state เซ็นด้วย secret เดียวกัน) |
 | ผูกบัญชีแล้วแต่ครั้งต่อไปยังให้ผูกอีก | `LineUserId` ไม่ได้ถูกบันทึก — ตรวจสิทธิ์ `wf_owner` เขียน `wf.AppUser` ได้ไหม |
 | webhook ขึ้น 401/403 | `LINE_CHANNEL_SECRET` ผิด → ตรวจ `x-line-signature` ไม่ผ่าน |
 | push ไม่ถึงผู้ใช้ | ผู้ใช้ยังไม่ได้เพิ่ม OA เป็นเพื่อน · หรือใช้ `LineUserId` ข้าม channel |
