@@ -1551,7 +1551,7 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
             br: { type: sql.NVarChar(50), value: mapRow.Brand },
             it: { type: sql.NVarChar(100), value: mapRow.ItemName },
             qy: { type: sql.Decimal(12,2), value: gl.QtyBag || 0 },
-            cu: { type: sql.NVarChar(20), value: so.CustId || null },
+            cu: { type: sql.NVarChar(20), value: so.CustId ? String(so.CustId) : null },
             so: { type: sql.Int, value: so.Id },
             nt: { type: sql.NVarChar(300), value: `ตัดโควต้าอัตโนมัติจากบิล ${so.WfRef || so.Id}` }
           });
@@ -1823,9 +1823,9 @@ async function bookRebateAccrual(so, lines, userId) {
         poolId:   { type: sql.Int,          value: activePool.Id },
         soId:     { type: sql.VarChar(50),  value: String(so.Id) },
         lineId:   { type: sql.Int,          value: l.Id },
-        custId:   { type: sql.NVarChar(20), value: so.CustId },
-        goodId:   { type: sql.NVarChar(20), value: l.GoodId },
-        goodCode: { type: sql.NVarChar(50), value: l.GoodCode },
+        custId:   { type: sql.NVarChar(20), value: String(so.CustId || '') },
+        goodId:   { type: sql.NVarChar(20), value: String(l.GoodId || '') },
+        goodCode: { type: sql.NVarChar(50), value: String(l.GoodCode || '') },
         qty:      { type: sql.Decimal(12,3),value: Number(l.QtyTon) },
         price:    { type: sql.Decimal(12,2),value: Number(l.PricePerTon) },
         net:      { type: sql.Decimal(12,2),value: Number(l.NetPricePerTon) },
@@ -1854,7 +1854,7 @@ async function consumeRebateAccrual(custId, newSoid, rebateDiscountAmt) {
     `SELECT Id, RemainingAmt FROM wf.RebateLedger 
      WHERE CustId = @custId AND Status = 'PENDING' AND RemainingAmt > 0 AND ReversedFlag = 0 
      ORDER BY CreatedAt ASC`,
-    { custId: { type: sql.VarChar(20), value: custId } }
+    { custId: { type: sql.VarChar(20), value: String(custId || '') } }
   );
 
   for (const ledger of ledgersR.recordset) {
