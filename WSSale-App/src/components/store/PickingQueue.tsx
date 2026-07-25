@@ -275,77 +275,138 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
       {/* Weigh Out Modal */}
       {weighOrder && (
         <div data-testid="weigh-out-modal" className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl overflow-hidden">
-            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-blue-50/50 shrink-0">
               <h3 className="font-bold text-[#0C447C] flex items-center gap-2">
-                <Scale size={18} /> ระบุน้ำหนักชั่งออก
+                <Scale size={18} /> ระบุน้ำหนักชั่งออก & ตรวจสอบ Error เครื่องชั่ง
               </h3>
             </div>
-            <div className="p-6">
-              <div className="mb-4 text-center">
-                <div className="text-xl font-bold font-mono text-gray-800">{weighOrder.truckPlate}</div>
-                <div className="text-sm text-gray-500">{weighOrder.custName}</div>
+            <div className="p-5 overflow-y-auto space-y-4 flex-1">
+              <div className="text-center bg-gray-50 p-2.5 rounded-xl border border-gray-100">
+                <div className="text-lg font-black font-mono text-gray-800">{weighOrder.truckPlate}</div>
+                <div className="text-xs text-gray-500">{weighOrder.custName} · เอกสาร {weighOrder.wfRef || weighOrder.importedDocuNo}</div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-gray-600">ชั่งเข้า / รถเปล่า (กก.)</label>
-                  <input data-testid="weigh-tare" type="number" step="1" value={weighTare} onChange={e => setWeighTare(e.target.value)} placeholder="0"
-                    className="w-full text-center text-lg font-bold p-2.5 rounded-xl border border-gray-300 focus:border-[#0C447C] outline-none" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-gray-600">ชั่งออก / รถ+สินค้า (กก.)</label>
-                  <input data-testid="weigh-gross" type="number" step="1" autoFocus value={weighWeight} onChange={e => setWeighWeight(e.target.value)} placeholder="0"
-                    className="w-full text-center text-lg font-bold p-2.5 rounded-xl border border-gray-300 focus:border-[#0C447C] outline-none" />
-                </div>
-              </div>
-              <div className="flex items-center justify-between mt-3">
+
+              {/* Theoretical Expected Target Weight */}
+              {(() => {
+                const pLines = (weighOrder.lines || []).filter(l => !l.isGiveaway);
+                const totalTon = pLines.reduce((s, l) => s + (Number(l.qtyTon) || 0), 0);
+                const expNet = totalTon * 1000; // 50kg bag standard
+                const minAllowed = expNet * 1.02; // +2%
+                const maxAllowed = expNet * 1.05; // +5%
+
+                const g = parseFloat(weighWeight);
+                const t = parseFloat(weighTare);
+                const actualNet = (!isNaN(g) && !isNaN(t)) ? g - t : null;
+
+                let badge = null;
+                if (actualNet !== null && actualNet > 0) {
+                  if (actualNet >= minAllowed && actualNet <= maxAllowed) {
+                    badge = (
+                      <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-2 text-xs font-semibold flex items-center justify-between">
+                        <span>🟢 ปกติ (ตรงตามเกณฑ์ Error เครื่องชั่ง +2% ถึง +5%)</span>
+                        <span className="font-mono">{actualNet.toLocaleString()} กก.</span>
+                      </div>
+                    );
+                  } else if (actualNet < minAllowed) {
+                    const diff = minAllowed - actualNet;
+                    badge = (
+                      <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2 text-xs font-semibold flex items-center justify-between">
+                        <span>🟡 น้ำหนักต่ำกว่าเกณฑ์ (-{diff.toLocaleString()} กก.)</span>
+                        <span className="font-mono">เกณฑ์ขั้นต่ำ: {minAllowed.toLocaleString()} กก.</span>
+                      </div>
+                    );
+                  } else {
+                    const diff = actualNet - maxAllowed;
+                    badge = (
+                      <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-2 text-xs font-semibold flex items-center justify-between">
+                        <span>🔴 น้ำหนักเกินเกณฑ์ (+{diff.toLocaleString()} กก.)</span>
+                        <span className="font-mono">เกณฑ์สูงสุด: {maxAllowed.toLocaleString()} กก.</span>
+                      </div>
+                    );
+                  }
+                }
+
+                return (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-gray-600">ชั่งเข้า / รถเปล่า (กก.)</label>
+                        <input data-testid="weigh-tare" type="number" step="1" value={weighTare} onChange={e => setWeighTare(e.target.value)} placeholder="0"
+                          className="w-full text-center text-lg font-bold p-2.5 rounded-xl border border-gray-300 focus:border-[#0C447C] outline-none" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-gray-600">ชั่งออก / รถ+สินค้า (กก.)</label>
+                        <input data-testid="weigh-gross" type="number" step="1" autoFocus value={weighWeight} onChange={e => setWeighWeight(e.target.value)} placeholder="0"
+                          className="w-full text-center text-lg font-bold p-2.5 rounded-xl border border-gray-300 focus:border-[#0C447C] outline-none" />
+                      </div>
+                    </div>
+
+                    {/* Weight Reconciliation Summary */}
+                    <div className="bg-blue-50/50 rounded-xl p-3 border border-blue-100 text-xs space-y-1.5">
+                      <div className="flex justify-between text-gray-600">
+                        <span>น้ำหนักคำนวณตามทฤษฎี (50 กก./กระสอบ):</span>
+                        <span className="font-bold text-gray-900 font-mono">{expNet.toLocaleString()} กก. ({totalTon} ตัน)</span>
+                      </div>
+                      <div className="flex justify-between text-gray-600">
+                        <span>ช่วงเกณฑ์ยอมรับ (+2% ถึง +5% Calibrate):</span>
+                        <span className="font-mono font-semibold text-blue-700">{minAllowed.toLocaleString()} - {maxAllowed.toLocaleString()} กก.</span>
+                      </div>
+                      <div className="flex justify-between text-gray-800 font-bold text-sm pt-1 border-t border-blue-100">
+                        <span>น้ำหนักสุทธิจริง (Net):</span>
+                        <span className="text-[#0C447C] font-mono">{actualNet !== null ? `${actualNet.toLocaleString()} กก.` : '—'}</span>
+                      </div>
+                    </div>
+
+                    {badge}
+                  </div>
+                );
+              })()}
+
+              <div className="flex items-center justify-between pt-1">
                 <div className="flex items-center gap-2">
                   <label className="text-xs text-gray-600">เครื่องชั่ง</label>
                   <select value={weighScale} onChange={e => setWeighScale(e.target.value)} className="border border-gray-200 rounded-lg px-2 py-1 text-sm">
-                    <option value="1">1</option><option value="2">2</option>
+                    <option value="1">เครื่องชั่ง 1</option><option value="2">เครื่องชั่ง 2</option>
                   </select>
                 </div>
-                <div className="text-right">
-                  <span className="text-xs text-gray-500">สุทธิ</span>
-                  <div className="text-lg font-bold text-[#0C447C]">
-                    {(() => { const g = parseFloat(weighWeight), t = parseFloat(weighTare); const n = (!isNaN(g) && !isNaN(t)) ? g - t : NaN;
-                      return isNaN(n) ? '—' : `${n.toLocaleString()} กก. (${(n/1000).toFixed(2)} ตัน)`; })()}
+              </div>
+
+              {/* TruckScale Pull Button */}
+              <div>
+                <button onClick={loadTsCandidates} disabled={tsLoading}
+                  className="w-full py-2 rounded-lg border border-[#0C447C] text-[#0C447C] text-xs font-semibold hover:bg-[#E6F1FB] flex items-center justify-center gap-1.5 disabled:opacity-50">
+                  {tsLoading ? '⏳ กำลังดึง...' : `🔗 ดึงน้ำหนักอัตโนมัติจาก db_truckscale (${weighOrder.truckPlate || '-'})`}
+                </button>
+                {weighMovebill && <div className="text-[11px] text-green-600 mt-1 text-center font-mono">✓ เชื่อม TruckScale · Movebill {weighMovebill}</div>}
+                {tsCandidates && (
+                  <div className="mt-2 max-h-40 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-50">
+                    {tsCandidates.length === 0 ? (
+                      <div className="text-xs text-gray-400 text-center py-3">ไม่พบใบชั่งของทะเบียนนี้</div>
+                    ) : tsCandidates.map(c => (
+                      <button key={c.Sequence} onClick={() => pickTs(c)} className="w-full text-left px-3 py-2 hover:bg-blue-50/50 text-xs flex items-center justify-between">
+                        <span><b className="font-mono">{c.Movebill}</b> · {c.DateOut !== '0' ? c.DateOut : '-'}</span>
+                        <span className="text-[#0C447C] font-bold">{Number(c.WeightNet).toLocaleString()} กก.</span>
+                      </button>
+                    ))}
                   </div>
-                </div>
+                )}
               </div>
             </div>
-            <div className="px-6 pb-2">
-              <button onClick={loadTsCandidates} disabled={tsLoading}
-                className="w-full py-2 rounded-lg border border-[#0C447C] text-[#0C447C] text-sm font-semibold hover:bg-[#E6F1FB] flex items-center justify-center gap-1.5 disabled:opacity-50">
-                {tsLoading ? '⏳ กำลังดึง...' : `🔗 ดึงน้ำหนักจาก TruckScale (${weighOrder.truckPlate || '-'})`}
-              </button>
-              {weighMovebill && <div className="text-[11px] text-green-600 mt-1 text-center">✓ จาก TruckScale · Movebill {weighMovebill}</div>}
-              {tsCandidates && (
-                <div className="mt-2 max-h-40 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-50">
-                  {tsCandidates.length === 0 ? (
-                    <div className="text-xs text-gray-400 text-center py-3">ไม่พบใบชั่งของทะเบียนนี้</div>
-                  ) : tsCandidates.map(c => (
-                    <button key={c.Sequence} onClick={() => pickTs(c)} className="w-full text-left px-3 py-2 hover:bg-blue-50/50 text-xs flex items-center justify-between">
-                      <span><b className="font-mono">{c.Movebill}</b> · {c.DateOut !== '0' ? c.DateOut : '-'}</span>
-                      <span className="text-[#0C447C] font-bold">{Number(c.WeightNet).toLocaleString()} กก.</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="p-4 border-t border-gray-100 flex gap-2 bg-gray-50">
+
+            <div className="p-4 border-t border-gray-100 flex gap-2 bg-gray-50 shrink-0">
               <button
                 onClick={() => { setWeighOrder(null); setWeighWeight(''); setWeighTare(''); setWeighScale('1'); setWeighMovebill(''); setTsCandidates(null); }}
-                className="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600 font-medium text-sm bg-white"
+                className="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600 font-medium text-sm bg-white hover:bg-gray-100"
               >
                 ยกเลิก
               </button>
               <button 
                 onClick={handleConfirmWeighOut}
                 disabled={busy !== null || !weighWeight}
-                className="flex-1 py-2.5 rounded-lg text-white font-medium text-sm bg-blue-600 disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-lg text-white font-medium text-sm bg-[#0C447C] hover:bg-[#093560] disabled:opacity-50"
               >
-                {busy ? 'กำลังบันทึก...' : 'ยืนยัน / ส่งออก'}
+                {busy ? 'กำลังบันทึก...' : 'บันทึกน้ำหนัก & ส่งออก'}
               </button>
             </div>
           </div>
