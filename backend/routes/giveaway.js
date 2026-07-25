@@ -74,7 +74,7 @@ router.get('/items', async (req, res) => {
 });
 
 // POST /api/giveaway/withdrawals — บันทึกการเบิกใหม่ (Source='APP')
-router.post('/withdrawals', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER', 'APPROVER', 'WAREHOUSE'), async (req, res) => {
+router.post('/withdrawals', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER', 'APPROVER'), async (req, res) => {
   try {
     const { region, brand, itemName, qty, issueMonth, custId, note } = req.body;
     if (!region || !brand || !itemName || !qty)
