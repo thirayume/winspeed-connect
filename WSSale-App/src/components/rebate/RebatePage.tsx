@@ -33,7 +33,7 @@ export function RebatePage() {
     catch (e) { console.error(e); setLedger([]); }
   }
 
-  const monthLabel = (p: RebatePool) => `${p.PeriodMonth}/${p.PeriodYear}`;
+  const monthLabel = (p: RebatePool) => `${p.PeriodMonth}/${p.PeriodYear < 2500 ? p.PeriodYear + 543 : p.PeriodYear}`;
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
