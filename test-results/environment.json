@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "capturedAt": "2026-07-25T11:35:14.984Z",
+  "capturedAt": "2026-07-25T13:19:21.253Z",
   "frontend": {
     "url": "http://localhost:5174",
     "status": 200,
@@ -12,10 +12,10 @@
     "url": "http://localhost:3100/api/health",
     "status": 200,
     "ok": true,
-    "durationMs": 78,
+    "durationMs": 73,
     "body": {
       "ok": true,
-      "ts": "2026-07-25T11:35:14.997Z",
+      "ts": "2026-07-25T13:19:21.267Z",
       "version": "1.2.2",
       "env": "development",
       "uptimeSec": 2,

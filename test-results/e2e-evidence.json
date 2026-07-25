@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "kind": "WS-Sale-App Playwright E2E Evidence",
-  "runId": "2026-07-25T11-35-15-101Z",
-  "startedAt": "2026-07-25T11:35:15.101Z",
-  "completedAt": "2026-07-25T11:36:06.269Z",
-  "durationMs": 51168,
+  "runId": "2026-07-25T13-19-21-363Z",
+  "startedAt": "2026-07-25T13:19:21.363Z",
+  "completedAt": "2026-07-25T13:20:03.480Z",
+  "durationMs": 42117,
   "status": "PASSED_COMPLETE",
   "playwrightStatus": "passed",
   "complete": true,
@@ -112,7 +112,7 @@
   },
   "environment": {
     "schemaVersion": 1,
-    "capturedAt": "2026-07-25T11:35:14.984Z",
+    "capturedAt": "2026-07-25T13:19:21.253Z",
     "frontend": {
       "url": "http://localhost:5174",
       "status": 200,
@@ -124,10 +124,10 @@
       "url": "http://localhost:3100/api/health",
       "status": 200,
       "ok": true,
-      "durationMs": 78,
+      "durationMs": 73,
       "body": {
         "ok": true,
-        "ts": "2026-07-25T11:35:14.997Z",
+        "ts": "2026-07-25T13:19:21.267Z",
         "version": "1.2.2",
         "env": "development",
         "uptimeSec": 2,
@@ -142,13 +142,13 @@
     }
   },
   "git": {
-    "commit": "d6e692e6f2df9343e10d7cff579f79b418deed29",
+    "commit": "cd450cecc10ff681368c85e48df5a4d9b9b269e0",
     "dirty": true
   },
   "sourceStability": {
     "stable": true,
-    "startGitCommit": "d6e692e6f2df9343e10d7cff579f79b418deed29",
-    "endGitCommit": "d6e692e6f2df9343e10d7cff579f79b418deed29",
+    "startGitCommit": "cd450cecc10ff681368c85e48df5a4d9b9b269e0",
+    "endGitCommit": "cd450cecc10ff681368c85e48df5a4d9b9b269e0",
     "changedFiles": []
   },
   "fileHashes": {
@@ -355,7 +355,7 @@
     "db-init/e2e-cleanup.sql": "81C9C1F996A23A96D1BBA929BB3D3031E7B9458A27F8B5CF6F19BDC6DE68641D",
     "db-init/e2e-seed.sql": "98BE1AACDA97CB4DEA314A67E2895F023BD8AC3E674C3D429E95DBE9FD0FEFB6",
     "deploy.ps1": "D28D44249EC6C78A59B4F69556DFB50FB62245F99E7F9D7C5D726B8C5AE0B026",
-    "deploy/LINE-LOGIN-GUIDE.md": "C131A452A05094D8BC32A0957FBC17424CA1A465D0966B52CAB8A62DAEAB8F4F",
+    "deploy/LINE-LOGIN-GUIDE.md": "46DECB6E830128CC4EBA4FB6C12635F5BFCAC66267F7E4D7014D24BCFE540452",
     "deploy/coolify/01-server-bootstrap.sh": "AD785B4868F50B916E2FBC558A73534910B81EC2CBE24529EA9C65CC7BD4314A",
     "deploy/coolify/02-restore-mssql.sh": "7C4D8D6DA1BE32A44C57CAD79A97AA2C6A6F5BDFEFF2052F00BA7CA748D4A770",
     "deploy/coolify/03-restore-mysql.sh": "955B1EFB6E3077148262F8F63E8BA1B925F278C95C7C5CA12688A16758BD94F9",
@@ -396,7 +396,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 12071,
+      "durationMs": 9320,
       "errors": [],
       "attachments": [
         {
@@ -421,7 +421,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 7636,
+      "durationMs": 5975,
       "errors": [],
       "attachments": [
         {
@@ -446,7 +446,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 5395,
+      "durationMs": 5070,
       "errors": [],
       "attachments": [
         {
@@ -471,7 +471,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 2206,
+      "durationMs": 1867,
       "errors": [],
       "attachments": [
         {
@@ -496,7 +496,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 11348,
+      "durationMs": 8984,
       "errors": [],
       "attachments": [
         {
@@ -521,7 +521,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1773,
+      "durationMs": 1686,
       "errors": [],
       "attachments": [
         {
@@ -546,7 +546,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1793,
+      "durationMs": 1816,
       "errors": [],
       "attachments": [
         {
@@ -571,7 +571,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1276,
+      "durationMs": 1124,
       "errors": [],
       "attachments": [
         {
@@ -591,7 +591,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1862,
+      "durationMs": 1905,
       "errors": [],
       "attachments": [
         {
@@ -611,7 +611,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 3190,
+      "durationMs": 3095,
       "errors": [],
       "attachments": [
         {
