@@ -86,12 +86,14 @@ export function CreateSODialog({
   useEffect(() => {
     if (!isOpen) return;
     fetchCustomers().then(setCustomers).catch(console.error);
-    Promise.all([fetchGoods(), fetchGiveawayGoods()])
+    const targetUserId = salesUserId ? String(salesUserId) : undefined;
+    Promise.all([fetchGoods(), fetchGiveawayGoods(targetUserId)])
       .then(([g, gw]) => setGoods([...g, ...gw.map(x => ({ ...x, GoodGroupName: 'ของแถม' }))]))
       .catch(console.error);
       
     const currentYear = new Date().getFullYear() + 543 - 2500 + 2500;
-    apiFetch(`/giveaway/my-quota?year=${currentYear}`).then(setMyQuota).catch(console.error);
+    const quotaUrl = targetUserId ? `/giveaway/my-quota?year=${currentYear}&salesUserId=${targetUserId}` : `/giveaway/my-quota?year=${currentYear}`;
+    apiFetch(quotaUrl).then(setMyQuota).catch(console.error);
     
     if (userRole === 'ADMIN') {
       listUsers().then(setSalesUsers).catch(console.error);
@@ -187,21 +189,29 @@ export function CreateSODialog({
 
     // Giveaway Quota Check
     if (isGiveaway) {
-      const quota = myQuota.find(q => good.GoodName.includes(q.ItemName) || q.ItemName.includes(good.GoodName));
-      const remaining = quota ? quota.RemainingQty : 0;
-      
-      const totalAdded = bills.reduce((sum, currB) => 
-        sum + currB.lines.filter(l => l.goodId === good.GoodID && l.isGiveaway).reduce((s, l) => s + l.qtyTon, 0)
-      , 0);
+      if (userRole === 'ACCOUNTING') {
+        setError('สิทธิ์การใช้งาน: บทบาท บัญชี (Accounting) ไม่สามารถแจกของแถมได้');
+        return;
+      }
 
-      if (totalAdded + 1 > remaining) {
-        const brandMatch = good.GoodName.match(/ตรา([^\s]+)/);
-        const parsedBrand = quota ? quota.Brand : (brandMatch ? `ตรา${brandMatch[1]}` : 'ทั่วไป');
-        const parsedItemName = quota ? quota.ItemName : good.GoodName;
+      const isPrivileged = ['ADMIN', 'MANAGER'].includes(userRole || '');
+      if (!isPrivileged) {
+        const quota = myQuota.find(q => good.GoodName.includes(q.ItemName) || q.ItemName.includes(good.GoodName));
+        const remaining = quota ? quota.RemainingQty : 0;
         
-        setBorrowReq({ brand: parsedBrand, itemName: parsedItemName, requiredQty: (totalAdded + 1) - remaining });
-        setBorrowModalOpen(true);
-        return; // Prevent adding
+        const totalAdded = bills.reduce((sum, currB) => 
+          sum + currB.lines.filter(l => l.goodId === good.GoodID && l.isGiveaway).reduce((s, l) => s + l.qtyTon, 0)
+        , 0);
+
+        if (totalAdded + 1 > remaining) {
+          const brandMatch = good.GoodName.match(/ตรา([^\s]+)/);
+          const parsedBrand = quota ? quota.Brand : (brandMatch ? `ตรา${brandMatch[1]}` : 'ทั่วไป');
+          const parsedItemName = quota ? quota.ItemName : good.GoodName;
+          
+          setBorrowReq({ brand: parsedBrand, itemName: parsedItemName, requiredQty: (totalAdded + 1) - remaining });
+          setBorrowModalOpen(true);
+          return; // Prevent adding
+        }
       }
     }
 

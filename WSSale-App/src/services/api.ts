@@ -162,9 +162,10 @@ export const fetchGoods = (q?: string) => {
   return cachedReq<EMGood[]>(`goods:${target}:${qs}`, () => req<EMGood[]>(`/master/goods${qs}`, { silent: true }));
 };
 
-export const fetchGiveawayGoods = () => {
+export const fetchGiveawayGoods = (salesUserId?: string) => {
   const target = dbTargetHeader()['X-DB-Target'] || '';
-  return cachedReq<EMGood[]>(`giveaway-goods:${target}`, () => req<EMGood[]>('/master/giveaway-goods', { silent: true }));
+  const qs = salesUserId ? `?salesUserId=${encodeURIComponent(salesUserId)}` : '';
+  return cachedReq<EMGood[]>(`giveaway-goods:${target}:${salesUserId || ''}`, () => req<EMGood[]>(`/master/giveaway-goods${qs}`, { silent: true }));
 };
 
 export const updateGood = (id: string, patch: Partial<EMGood>) =>
