@@ -1671,6 +1671,10 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) =>
     const tare  = tareKg != null ? Number(tareKg) : null;
     const net   = (gross != null && tare != null) ? gross - tare : null;
 
+    // คำนวณ reconciliation และ tolerance status จาก weight-reconciliation service
+    const { evaluateWeight } = require('../services/weight-reconciliation');
+    const evalRes = await evaluateWeight(so.Id, net);
+
     // ตั้งสถานะว่า SHIPPED ใน Winspeed
     await wfQuery(
       `UPDATE dbo.SOHD SET clearflag='Y', ClearDate=GETDATE() WHERE SOID=@id`,
@@ -1680,20 +1684,30 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) =>
       `UPDATE wf.SalesOrderExt SET WeighOutWeight=@weight, UpdatedAt=GETUTCDATE() WHERE SOID=@id`,
       { id: { type: sql.VarChar(50), value: so.Id }, weight: { type: sql.Decimal(10,2), value: gross } }
     );
-    // บันทึก WeighTicket (gross/tare/net) — รากฐาน TruckScale
+    // บันทึก WeighTicket (gross/tare/net/tolerance status) — รากฐาน TruckScale
     await wfQuery(`
-      INSERT INTO wf.WeighTicket (SoId, WfRef, TruckPlate, GrossKg, TareKg, NetKg, ScaleNo, WeighOutAt, Status, Movebill, CreatedBy)
-      VALUES (@so, @ref, @plate, @gross, @tare, @net, @scale, GETUTCDATE(), 'DONE', @mb, @uid)`,
+      INSERT INTO wf.WeighTicket (
+        SoId, WfRef, TruckPlate, GrossKg, TareKg, NetKg, ScaleNo, WeighOutAt, Status, Movebill, CreatedBy,
+        ExpectedNetKg, VarianceKg, VariancePct, WeightStatus
+      )
+      VALUES (
+        @so, @ref, @plate, @gross, @tare, @net, @scale, GETUTCDATE(), 'DONE', @mb, @uid,
+        @expNet, @varKg, @varPct, @wStatus
+      )`,
       {
-        so:   { type: sql.NVarChar(50), value: so.Id },
-        ref:  { type: sql.NVarChar(30), value: so.WfRef || null },
-        plate:{ type: sql.NVarChar(30), value: so.TruckPlate || null },
-        gross:{ type: sql.Decimal(10,2), value: gross },
-        tare: { type: sql.Decimal(10,2), value: tare },
-        net:  { type: sql.Decimal(10,2), value: net },
-        scale:{ type: sql.Int, value: scaleNo != null ? Number(scaleNo) : null },
-        mb:   { type: sql.NVarChar(50), value: movebill || null },
-        uid:  { type: sql.Int, value: req.user.sub },
+        so:      { type: sql.NVarChar(50), value: so.Id },
+        ref:     { type: sql.NVarChar(30), value: so.WfRef || null },
+        plate:   { type: sql.NVarChar(30), value: so.TruckPlate || null },
+        gross:   { type: sql.Decimal(10,2), value: gross },
+        tare:    { type: sql.Decimal(10,2), value: tare },
+        net:     { type: sql.Decimal(10,2), value: net },
+        scale:   { type: sql.Int, value: scaleNo != null ? Number(scaleNo) : null },
+        mb:      { type: sql.NVarChar(50), value: movebill || null },
+        uid:     { type: sql.Int, value: req.user.sub },
+        expNet:  { type: sql.Decimal(12,2), value: evalRes.expectedNetKg },
+        varKg:   { type: sql.Decimal(12,2), value: evalRes.varianceKg },
+        varPct:  { type: sql.Decimal(6,2), value: evalRes.variancePct },
+        wStatus: { type: sql.NVarChar(20), value: evalRes.status },
       });
 
     // ตั้ง Rebate accrual เมื่อ SHIPPED (เรียกชำระเงินแล้ว)
@@ -1702,8 +1716,72 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) =>
     await audit(null, so.Id, req.user.sub, 'SHIPPED', 'LOADED', 'SHIPPED', null, req.ip);
     broadcast('so_updated', { id: so.Id, action: 'shipped' });
     await enqueue('SO_SHIPPED', so.Id, { soId: so.Id, netKg: net, by: req.user.sub }, `SO_SHIPPED:${so.Id}`);
-    res.json({ id: so.Id, status: 'SHIPPED', netKg: net });
+    res.json({ id: so.Id, status: 'SHIPPED', netKg: net, weightEval: evalRes });
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
+});
+
+// ── POST /api/so/:id/weigh-item — บันทึกผลการชั่งวนรายรายการสินค้า ──
+router.post('/:id/weigh-item', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) => {
+  try {
+    const soId = String(req.params.id);
+    const { grossScaleKg, lineNum, goodCode, goodName, note, tareKg } = req.body || {};
+    const gross = Number(grossScaleKg);
+    if (isNaN(gross) || gross <= 0) return res.status(400).json({ message: 'กรุณาระบุน้ำหนักเครื่องชั่งที่ถูกต้อง' });
+
+    // ดึงประวัติการชั่งย่อยย้อนหลังเพื่อคำนวณ Incremental Net
+    const lastLogs = (await wfQuery(`
+      SELECT TOP 1 GrossScaleKg FROM wf.WeighTicketItemLog
+      WHERE SoId = @so ORDER BY PassNo DESC, Id DESC
+    `, { so: { type: sql.NVarChar(50), value: soId } })).recordset || [];
+
+    const passCnt = (await wfQuery(`
+      SELECT COUNT(*) AS cnt FROM wf.WeighTicketItemLog WHERE SoId = @so
+    `, { so: { type: sql.NVarChar(50), value: soId } })).recordset[0]?.cnt || 0;
+
+    const baseWeight = lastLogs.length > 0 ? Number(lastLogs[0].GrossScaleKg) : (Number(tareKg) || 0);
+    const incNet = baseWeight > 0 ? gross - baseWeight : null;
+
+    await wfQuery(`
+      INSERT INTO wf.WeighTicketItemLog (SoId, LineNum, GoodCode, GoodName, PassNo, GrossScaleKg, IncrementalNetKg, Note, WeighedBy)
+      VALUES (@so, @line, @code, @name, @pass, @gross, @inc, @note, @uid)
+    `, {
+      so:    { type: sql.NVarChar(50), value: soId },
+      line:  { type: sql.Int, value: lineNum != null ? Number(lineNum) : null },
+      code:  { type: sql.NVarChar(50), value: goodCode || null },
+      name:  { type: sql.NVarChar(200), value: goodName || null },
+      pass:  { type: sql.Int, value: passCnt + 1 },
+      gross: { type: sql.Decimal(10,2), value: gross },
+      inc:   { type: sql.Decimal(10,2), value: incNet },
+      note:  { type: sql.NVarChar(300), value: note || null },
+      uid:   { type: sql.Int, value: req.user.sub },
+    });
+
+    res.json({ ok: true, passNo: passCnt + 1, grossScaleKg: gross, incrementalNetKg: incNet });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// ── GET /api/so/:id/weigh-history — ประวัติใบชั่งและการชั่งวนรายรายการ ──
+router.get('/:id/weigh-history', async (req, res) => {
+  try {
+    const soId = String(req.params.id);
+    const ticket = (await wfQuery(`
+      SELECT TOP 1 * FROM wf.WeighTicket WHERE SoId = @so ORDER BY Id DESC
+    `, { so: { type: sql.NVarChar(50), value: soId } })).recordset[0] || null;
+
+    const itemLogs = (await wfQuery(`
+      SELECT l.*, u.DisplayName AS WeighedByName
+      FROM wf.WeighTicketItemLog l
+      LEFT JOIN wf.AppUser u ON u.Id = l.WeighedBy
+      WHERE l.SoId = @so
+      ORDER BY l.PassNo ASC, l.Id ASC
+    `, { so: { type: sql.NVarChar(50), value: soId } })).recordset || [];
+
+    const { evaluateWeight } = require('../services/weight-reconciliation');
+    const netKg = ticket ? ticket.NetKg : null;
+    const weightEval = await evaluateWeight(soId, netKg);
+
+    res.json({ ticket, itemLogs, weightEval });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
 // ── PATCH /api/so/:id/sync-imported — เลิกใช้ เพราะเข้า Winspeed อัตโนมัติตั้งแต่ CONFIRM แล้ว ─
