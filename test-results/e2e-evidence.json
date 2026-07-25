@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "kind": "WS-Sale-App Playwright E2E Evidence",
-  "runId": "2026-07-24T15-52-28-642Z",
-  "startedAt": "2026-07-24T15:52:28.642Z",
-  "completedAt": "2026-07-24T15:53:15.019Z",
-  "durationMs": 46377,
+  "runId": "2026-07-25T11-35-15-101Z",
+  "startedAt": "2026-07-25T11:35:15.101Z",
+  "completedAt": "2026-07-25T11:36:06.269Z",
+  "durationMs": 51168,
   "status": "PASSED_COMPLETE",
   "playwrightStatus": "passed",
   "complete": true,
@@ -112,23 +112,23 @@
   },
   "environment": {
     "schemaVersion": 1,
-    "capturedAt": "2026-07-24T15:52:28.522Z",
+    "capturedAt": "2026-07-25T11:35:14.984Z",
     "frontend": {
       "url": "http://localhost:5174",
       "status": 200,
       "ok": true,
-      "durationMs": 22,
+      "durationMs": 21,
       "body": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>wssale-app</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx\"></script>\n  </body>\n</html>\n"
     },
     "api": {
       "url": "http://localhost:3100/api/health",
       "status": 200,
       "ok": true,
-      "durationMs": 77,
+      "durationMs": 78,
       "body": {
         "ok": true,
-        "ts": "2026-07-24T15:52:28.538Z",
-        "version": "1.2.0",
+        "ts": "2026-07-25T11:35:14.997Z",
+        "version": "1.2.2",
         "env": "development",
         "uptimeSec": 2,
         "requests": 1,
@@ -142,18 +142,18 @@
     }
   },
   "git": {
-    "commit": "4ceadfa2fdf86ed55315dcca81a126bc700b8631",
+    "commit": "d6e692e6f2df9343e10d7cff579f79b418deed29",
     "dirty": true
   },
   "sourceStability": {
     "stable": true,
-    "startGitCommit": "4ceadfa2fdf86ed55315dcca81a126bc700b8631",
-    "endGitCommit": "4ceadfa2fdf86ed55315dcca81a126bc700b8631",
+    "startGitCommit": "d6e692e6f2df9343e10d7cff579f79b418deed29",
+    "endGitCommit": "d6e692e6f2df9343e10d7cff579f79b418deed29",
     "changedFiles": []
   },
   "fileHashes": {
     "DEPLOY.md": "8432FDDCE6520365641A1853DA1CDF237A03BACD3A56BD442C8B36F16ADDD9C9",
-    "WSSale-App/package.json": "6684DF75E5FCDCAD630AE629D8DD80BC4B26113D4256BD1DB7E327F7C975531D",
+    "WSSale-App/package.json": "2829582DF30669B99D7F625CB55D0CCD667A77E5EDF9F11DAD005B4523BD9436",
     "WSSale-App/src/App.css": "6E25A776D3E8102DA5BACB3CB99F4A5FC662A2E01E6143140671A556D28C3D5C",
     "WSSale-App/src/App.tsx": "59CE15C89829D8F201A77D9FC3B06EAD4F1099A6E28616B658979A6F6BEF75FA",
     "WSSale-App/src/components/accounting/AccountingPage.tsx": "5BFA708634818C1069AEB67A51D13D2DBFFF77D875C2568DC45F1CCC32833C69",
@@ -296,8 +296,8 @@
     "backend/migrations/053_so_notified_at.sql": "68A2EE1ACD96BE6062678ADB1D0970F82A5CC52D0277D97B6A188FCAEB3F3CBF",
     "backend/migrations/054_rebate_coupon_mirror.sql": "D8331274CB30AF20F42A8534DD26214A1A71AB6E41FA5A220CF995D10850F28C",
     "backend/migrations/055_restore_all_sales_orders_contract.sql": "DF42880CC03D5E315EDDC789BE108429C4FB75E8932A4016BA0CDC87E6279333",
-    "backend/package.json": "F0A3D0B8EDAD7EECC118D13C04C9436536AE6E61B565E56499031C285F33773F",
-    "backend/routes/auth.js": "DFF4CFF9C124A052F9A03453C21A2428E19C2F060958AC3580D948E1B035BE4A",
+    "backend/package.json": "163BBDD0E67C9CF0AEC931D6A6D962335AA40D164B55240A8CA16A782DE3F152",
+    "backend/routes/auth.js": "813B4F843C5EEEDBE1C390F0264A11F4AC60D0CCE6DE5B8E4694D3B2CA1D9AC3",
     "backend/routes/credit.js": "4FA36A2296E4A7AFC07AB45CB3F16FABE8EFAB6FE098F0FD502DBA5459ABB3A6",
     "backend/routes/giveaway.js": "348FE1DAD8C50999FCF3F153005BF3FA8B6FE54162482BD6598CFD370BD9B108",
     "backend/routes/line.js": "5F2B7735850695E9BAB54F33649F9C4A1BECB86F74E132EFDF025C45F8FDEED2",
@@ -311,7 +311,7 @@
     "backend/routes/rebate.js": "9F6867F6FD10415EACA581EAC7F96512B38E8EDDCF7B1CD4CD26DFE43A8A907D",
     "backend/routes/recon.js": "0DBC0E26DBC2FF7E4A1F46777899A920E03C7C93B55884C5E2B037701BE3DBD8",
     "backend/routes/reports.js": "3EDA8F07A05BFEC68F74B0490FA6D77338B5971CD8E47E6F94AF05E79BCB8CB8",
-    "backend/routes/so.js": "36BA512A85C514361C0C58897314479710AD5B310C4A7196D4C49E891C84A678",
+    "backend/routes/so.js": "90126694761EDA27A63536BCBC567DB5741868C6FA34CA091AC39B6D8DB4517C",
     "backend/routes/stock.js": "260F110A61A1C33DCF2887F561B11D1B3FB72EB5460F2C194BBEA59F01E06CE9",
     "backend/routes/truckscale.js": "636BF249905B9AE9CE013784A46067CF00419B7C82973AACCA4893FF35ECD22B",
     "backend/run-migration-remote.js": "1F571612CC4EB944642AC7BC8C678B5F731AE8DC6165F87E74CFD55303131A50",
@@ -380,7 +380,7 @@
     "e2e/helpers.ts": "41329873704235A9765185D7DF3A228170F0093F5D7308B8389D24E91F0A278B",
     "e2e/uat-full-loop.spec.ts": "5BF53477132672A267B29CB68775EC1E8A5BA060CB8DD343E1A5896EEEA20E75",
     "e2e/workflow.spec.ts": "E60D094903CA60740AEA82B5F0D1246E44780D6F69A32AABCA54CADD343DF147",
-    "package.json": "AE26106DD70E5B5D679EE53ED3EE3C99F31B1AD0F0A3DEC8674EBFA88A27654A",
+    "package.json": "EAB940ABEC29959C462B7273E76AF47AE22378A1E68D93B1E09427C0D088D54D",
     "playwright.config.ts": "A1239FDD163F4A37E7CDE0C56B5EF4082EA5B2D6F7D3141D3B0B1FABC787ACE6",
     "run-e2e.bat": "7E204347C4D2960DE63641A1343F9A878C1C672B67E2021F46A675EE6CDA7EC6",
     "run-e2e.ps1": "0E21C688537B5B5A6D29A054ABD078611CA2158037A1A105A525A64F450F9CC3",
@@ -396,7 +396,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 10869,
+      "durationMs": 12071,
       "errors": [],
       "attachments": [
         {
@@ -421,7 +421,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 6518,
+      "durationMs": 7636,
       "errors": [],
       "attachments": [
         {
@@ -446,7 +446,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 4614,
+      "durationMs": 5395,
       "errors": [],
       "attachments": [
         {
@@ -471,7 +471,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 2067,
+      "durationMs": 2206,
       "errors": [],
       "attachments": [
         {
@@ -496,7 +496,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 8882,
+      "durationMs": 11348,
       "errors": [],
       "attachments": [
         {
@@ -521,7 +521,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 2230,
+      "durationMs": 1773,
       "errors": [],
       "attachments": [
         {
@@ -546,7 +546,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1732,
+      "durationMs": 1793,
       "errors": [],
       "attachments": [
         {
@@ -571,7 +571,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 1326,
+      "durationMs": 1276,
       "errors": [],
       "attachments": [
         {
@@ -591,7 +591,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 2489,
+      "durationMs": 1862,
       "errors": [],
       "attachments": [
         {
@@ -611,7 +611,7 @@
       "status": "passed",
       "outcome": "expected",
       "retry": 0,
-      "durationMs": 3497,
+      "durationMs": 3190,
       "errors": [],
       "attachments": [
         {
