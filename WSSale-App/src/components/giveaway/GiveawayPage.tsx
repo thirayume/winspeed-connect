@@ -12,7 +12,7 @@ const TYPE_LABEL: Record<string, string> = { BAG: 'กระเป๋า(สู�
 
 export function GiveawayPage() {
   const role = useAuthStore(s => s.user?.role);
-  const canWithdraw = role !== 'ACCOUNTING';
+  const canWithdraw = role !== 'ACCOUNTING' && role !== 'WAREHOUSE';
   const [regions, setRegions]   = useState<GiveawayRegion[]>([]);
   const [selected, setSelected] = useState<GiveawayRegion | null>(null);
   const [lines, setLines]       = useState<GiveawayBudgetLine[]>([]);
