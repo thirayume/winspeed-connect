@@ -1532,17 +1532,21 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
 
     // 2.7 Auto-deduct Giveaway Quota (FR-AutoDeduct)
     const giveawayLines = lines.filter(l => l.IsGiveaway);
+    const targetSalesUserId = so.SalesUserId || req.user.sub;
     for (const gl of giveawayLines) {
       const mapRow = (await wfQuery(`SELECT Brand, ItemName FROM wf.GiveawayItemMapping WHERE GoodID=@g`, { g: { type: sql.VarChar(50), value: gl.GoodId } })).recordset[0];
       if (mapRow) {
         const y = new Date().getFullYear();
-        const regRow = (await wfQuery(`SELECT TOP 1 Region, EmpId, EmpCode FROM wf.GiveawayBudget WHERE SalesUserId=@su AND PeriodYear=@y`, { su: { type: sql.Int, value: req.user.sub }, y: { type: sql.Int, value: y } })).recordset[0];
+        let regRow = (await wfQuery(`SELECT TOP 1 Region, EmpId, EmpCode FROM wf.GiveawayBudget WHERE SalesUserId=@su AND PeriodYear=@y`, { su: { type: sql.Int, value: targetSalesUserId }, y: { type: sql.Int, value: y } })).recordset[0];
+        if (!regRow && req.user.sub) {
+          regRow = (await wfQuery(`SELECT TOP 1 Region, EmpId, EmpCode FROM wf.GiveawayBudget WHERE SalesUserId=@su AND PeriodYear=@y`, { su: { type: sql.Int, value: req.user.sub }, y: { type: sql.Int, value: y } })).recordset[0];
+        }
         if (regRow) {
           await wfQuery(`
             INSERT INTO wf.GiveawayWithdrawal (SalesUserId, EmpId, EmpCode, Region, PeriodYear, IssueMonth, Brand, ItemName, Qty, CustId, SoId, Note, Source)
             VALUES (@su, @ei, @ec, @rg, @y, @mo, @br, @it, @qy, @cu, @so, @nt, 'APP')
           `, {
-            su: { type: sql.Int, value: req.user.sub },
+            su: { type: sql.Int, value: targetSalesUserId },
             ei: { type: sql.NVarChar(20), value: regRow.EmpId || null },
             ec: { type: sql.NVarChar(20), value: regRow.EmpCode || null },
             rg: { type: sql.NVarChar(60), value: regRow.Region },
@@ -1550,7 +1554,7 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
             mo: { type: sql.Int, value: new Date().getMonth() + 1 },
             br: { type: sql.NVarChar(50), value: mapRow.Brand },
             it: { type: sql.NVarChar(100), value: mapRow.ItemName },
-            qy: { type: sql.Decimal(12,2), value: gl.QtyBag || 0 },
+            qy: { type: sql.Decimal(12,2), value: gl.QtyBag || gl.QtyTon || 0 },
             cu: { type: sql.NVarChar(20), value: so.CustId ? String(so.CustId) : null },
             so: { type: sql.Int, value: so.Id },
             nt: { type: sql.NVarChar(300), value: `ตัดโควต้าอัตโนมัติจากบิล ${so.WfRef || so.Id}` }
