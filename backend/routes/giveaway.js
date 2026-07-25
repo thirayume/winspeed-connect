@@ -74,7 +74,7 @@ router.get('/items', async (req, res) => {
 });
 
 // POST /api/giveaway/withdrawals — บันทึกการเบิกใหม่ (Source='APP')
-router.post('/withdrawals', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res) => {
+router.post('/withdrawals', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER', 'APPROVER', 'WAREHOUSE'), async (req, res) => {
   try {
     const { region, brand, itemName, qty, issueMonth, custId, note } = req.body;
     if (!region || !brand || !itemName || !qty)
@@ -137,14 +137,15 @@ router.post('/budgets', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/giveaway/my-quota — Get current user's quota
+// GET /api/giveaway/my-quota — Get user's quota (current user or target sales user)
 router.get('/my-quota', async (req, res) => {
   try {
     const year = YEAR(req.query.year);
+    const targetUserId = req.query.salesUserId ? Number(req.query.salesUserId) : req.user.id;
     const r = await wfQuery(`
       SELECT * FROM wf.v_GiveawayBudgetStatus
       WHERE SalesUserId = @u AND PeriodYear = @y
-    `, { u: { type: sql.Int, value: req.user.id }, y: { type: sql.Int, value: year } });
+    `, { u: { type: sql.Int, value: targetUserId }, y: { type: sql.Int, value: year } });
     res.json(r.recordset || []);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
