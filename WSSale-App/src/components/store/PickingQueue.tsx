@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Truck, Package, Unlock, ListOrdered, Scale, User, FileText, CalendarDays } from 'lucide-react';
+import { Truck, Package, Unlock, ListOrdered, Scale, User, FileText, CalendarDays, Camera, Upload, FileImage, X } from 'lucide-react';
 import { moveToPicking, confirmLoading, shipSO, unlockSO, fetchTruckScaleForSO } from '../../services/api';
 import type { TruckScaleWeigh } from '../../types';
 import type { SalesOrder } from '../../types';
@@ -20,6 +20,10 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
   const [weighMovebill, setWeighMovebill] = useState<string>(''); // จาก TruckScale
   const [tsCandidates, setTsCandidates] = useState<TruckScaleWeigh[] | null>(null);
   const [tsLoading, setTsLoading] = useState(false);
+
+  const [overrideReason, setOverrideReason] = useState<string>('');
+  const [overridePhotoUrl, setOverridePhotoUrl] = useState<string>('');
+  const [overrideApprovedByName, setOverrideApprovedByName] = useState<string>('');
 
   const [errorMsg, setErrorMsg] = useState<string>('');
 
@@ -85,9 +89,13 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
         tareKg: !isNaN(tare) && tare > 0 ? tare : undefined,
         scaleNo: weighScale ? Number(weighScale) : undefined,
         movebill: weighMovebill || undefined,
+        overrideReason: overrideReason || undefined,
+        overrideApprovedByName: overrideApprovedByName || undefined,
+        evidencePhotoUrl: overridePhotoUrl || undefined,
       });
       setWeighOrder(null);
       setWeighWeight(''); setWeighTare(''); setWeighScale('1'); setWeighMovebill(''); setTsCandidates(null);
+      setOverrideReason(''); setOverridePhotoUrl(''); setOverrideApprovedByName('');
       onUpdate();
     } catch (e: any) {
       setErrorMsg(e.message || 'Error');
@@ -300,6 +308,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
                 const actualNet = (!isNaN(g) && !isNaN(t)) ? g - t : null;
 
                 let badge = null;
+                let isAbnormal = false;
                 if (actualNet !== null && actualNet > 0) {
                   if (actualNet >= minAllowed && actualNet <= maxAllowed) {
                     badge = (
@@ -309,6 +318,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
                       </div>
                     );
                   } else if (actualNet < minAllowed) {
+                    isAbnormal = true;
                     const diff = minAllowed - actualNet;
                     badge = (
                       <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2 text-xs font-semibold flex items-center justify-between">
@@ -317,6 +327,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
                       </div>
                     );
                   } else {
+                    isAbnormal = true;
                     const diff = actualNet - maxAllowed;
                     badge = (
                       <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-2 text-xs font-semibold flex items-center justify-between">
@@ -359,6 +370,105 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
                     </div>
 
                     {badge}
+
+                    {/* Weighbridge Discretion & Evidence Photo Section (When Weight is Abnormal) */}
+                    {isAbnormal && (
+                      <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 space-y-3 animate-in fade-in">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                            <Scale size={15} /> บันทึกดุลยพินิจของนายด่านชั่ง (Weighbridge Discretion)
+                          </span>
+                          <span className="text-[10px] text-amber-700 font-medium">อนุญาตผ่านชั่งออก</span>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                            เหตุผลที่อนุญาตผ่าน <span className="text-red-500">*</span>
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={overrideReason}
+                            onChange={e => setOverrideReason(e.target.value)}
+                            placeholder="ระบุเหตุผล เช่น มีของแถมปนติดไปบนท้ายรถ, ชั่งรวมพาเลทไม้..."
+                            className="w-full text-xs p-2 rounded-lg border border-amber-300 focus:border-[#0C447C] outline-none bg-white"
+                          />
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {[
+                              'มีของแถม (เสื้อ/กระเป๋า/ป้าย) บรรทุกปนบนรถ',
+                              'ชั่งรวมพาเลทไม้/โครงเหล็กเสริม',
+                              'รถมีอุปกรณ์เสริม/ถังน้ำมันดัดแปลง',
+                              'ได้รับอนุมัติดุลยพินิจจากหัวหน้าคลัง'
+                            ].map((chip, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => setOverrideReason(chip)}
+                                className="text-[10px] px-2 py-0.5 bg-white border border-amber-200 text-amber-800 rounded-full hover:bg-amber-100 transition-colors"
+                              >
+                                + {chip}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-amber-200/50">
+                          <div>
+                            <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                              ผู้อนุญาตให้ผ่าน
+                            </label>
+                            <input
+                              type="text"
+                              value={overrideApprovedByName}
+                              onChange={e => setOverrideApprovedByName(e.target.value)}
+                              placeholder="ชื่อ-นามสกุล ผู้อนุญาต"
+                              className="w-full text-xs p-2 rounded-lg border border-amber-300 focus:border-[#0C447C] outline-none bg-white"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                              แนบหลักฐานภาพถ่าย
+                            </label>
+                            <label className="w-full flex items-center justify-center gap-1.5 py-1.5 px-2 bg-white border border-amber-300 rounded-lg text-xs text-amber-900 cursor-pointer hover:bg-amber-100 transition-colors font-medium">
+                              <Camera size={14} />
+                              <span>{overridePhotoUrl ? 'เปลี่ยนรูป' : 'ถ่าย/เลือกรูป'}</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={e => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => setOverridePhotoUrl(reader.result as string);
+                                    reader.readAsDataURL(file);
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Photo Evidence Preview */}
+                        {overridePhotoUrl && (
+                          <div className="relative mt-2 border border-amber-300 rounded-lg overflow-hidden bg-black/5 flex items-center justify-between p-2">
+                            <div className="flex items-center gap-2">
+                              <img src={overridePhotoUrl} alt="Evidence" className="w-12 h-12 object-cover rounded" />
+                              <span className="text-[11px] font-medium text-amber-900 flex items-center gap-1">
+                                <FileImage size={14} /> รูปภาพหลักฐานแนบเรียบร้อย
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setOverridePhotoUrl('')}
+                              className="p-1 rounded-full bg-white text-gray-500 hover:text-red-600 hover:bg-red-50"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })()}
