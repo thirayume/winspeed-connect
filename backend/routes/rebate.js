@@ -90,7 +90,7 @@ router.get('/claims', requireRebateAmountAccess, async (req, res) => {
 });
 
 // POST /api/rebate/claims — ยื่นเคลม (FIFO cut)
-router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN'), async (req, res) => {
+router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const { poolId, claimAmt, custId, note } = req.body;
     if (!poolId || !claimAmt) return res.status(400).json({ message: 'poolId และ claimAmt จำเป็น' });
@@ -148,7 +148,7 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN'), async (req, 
 });
 
 // PATCH /api/rebate/claims/:id/approve — ACCOUNTING/ADMIN อนุมัติ
-router.patch('/claims/:id/approve', requireRole('ACCOUNTING', 'ADMIN'), async (req, res) => {
+router.patch('/claims/:id/approve', requireRole('ACCOUNTING', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const { docuNo } = req.body; // WINSpeed reference document number after official processing
     await wfQuery(
@@ -164,7 +164,7 @@ router.patch('/claims/:id/approve', requireRole('ACCOUNTING', 'ADMIN'), async (r
 });
 
 // GET /api/rebate/summary — KPI ภาพรวมต่อพนักงานขาย (wf.RebatePool)
-router.get('/summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
+router.get('/summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const r = await wfQuery(`
       SELECT u.DisplayName AS SalesName,
@@ -212,7 +212,7 @@ router.get('/plans', async (req, res) => {
 });
 
 // POST /api/rebate/plans — สร้าง Plan (DRAFT)
-router.post('/plans', requireRole('MANAGER', 'ADMIN', 'APPROVER'), async (req, res) => {
+router.post('/plans', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'), async (req, res) => {
   try {
     const { title, refDoc, goodCodePattern, region, returnType, netPrice, validFrom, validTo, allocatedAmount, priority, note } = req.body || {};
     const yy = (new Date().getFullYear() + 543) % 100;
@@ -247,7 +247,7 @@ router.post('/plans', requireRole('MANAGER', 'ADMIN', 'APPROVER'), async (req, r
 });
 
 // PATCH /api/rebate/plans/:id — แก้ไข / เปลี่ยนสถานะ (DRAFT→ACTIVE→CLOSED)
-router.patch('/plans/:id', requireRole('MANAGER', 'ADMIN', 'APPROVER'), async (req, res) => {
+router.patch('/plans/:id', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'), async (req, res) => {
   try {
     const f = req.body || {};
     const sets = [], inputs = { id: { type: sql.Int, value: Number(req.params.id) } };
@@ -274,7 +274,7 @@ router.patch('/plans/:id', requireRole('MANAGER', 'ADMIN', 'APPROVER'), async (r
 });
 
 // POST /api/rebate/plans/:id/allocate — จัดสรรงบ Plan → Pool ของ Sales
-router.post('/plans/:id/allocate', requireRole('MANAGER', 'ADMIN', 'APPROVER'), async (req, res) => {
+router.post('/plans/:id/allocate', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'), async (req, res) => {
   try {
     const { salesUserId, periodYear, periodMonth, amount, note } = req.body || {};
     if (!salesUserId || !amount) return res.status(400).json({ message: 'salesUserId และ amount จำเป็น' });
@@ -326,7 +326,7 @@ router.get('/voucher-summary', async (req, res) => {
 });
 
 // ── Legacy Data Migration (Tons to Baht) ───────────────────────────────────
-router.post('/migrate-legacy', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+router.post('/migrate-legacy', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { rate } = req.body;
     if (!rate || isNaN(Number(rate)) || Number(rate) <= 0) {
@@ -421,7 +421,7 @@ router.post('/migrate-legacy', requireRole('ADMIN', 'MANAGER'), async (req, res)
 // SOHD(103 booking) -> SOHD(104 order) -> WFCoupon -> WFRedemtionDT
 // -> SOInvHD(107 invoice) / SOInvHD(202 cash flow) -> ARReceHD/DT -> GL/VAT.
 
-router.get('/wf-trail-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
+router.get('/wf-trail-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { year, empId } = req.query;
     const conditions = [`hd.DocuType = 104`];
@@ -460,7 +460,7 @@ router.get('/wf-trail-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), a
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-router.get('/wf-trail-list', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
+router.get('/wf-trail-list', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { year, empId, custId, q } = req.query;
     const conditions = [`hd.DocuType = 104`];
@@ -518,7 +518,7 @@ router.get('/wf-trail-list', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), asyn
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-router.get('/wf-trail-detail/:soId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
+router.get('/wf-trail-detail/:soId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const soId = Number(req.params.soId);
     if (!Number.isFinite(soId)) return res.status(400).json({ message: 'Invalid SOID' });
@@ -613,7 +613,7 @@ router.get('/wf-trail-detail/:soId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER
 // ── Legacy dbo CN Rebate endpoints (kept for compatibility; not WF main flow) ──
 
 // GET /api/rebate/cn-summary — สรุป CN rebate จาก dbo แยกตาม Sales/ลูกค้า
-router.get('/cn-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
+router.get('/cn-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { year, empId } = req.query;
     let where = `WHERE cn.Docutype = 109 AND cn.CNRemarkTypeID IN (6001, 1001)`;
@@ -642,7 +642,7 @@ router.get('/cn-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (
 });
 
 // GET /api/rebate/cn-list?year=&empId=&custId= — รายการ CN ทั้งหมด (header level)
-router.get('/cn-list', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
+router.get('/cn-list', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { year, empId, custId } = req.query;
     let where = `WHERE cn.Docutype = 109 AND cn.CNRemarkTypeID IN (6001, 1001)`;
@@ -678,7 +678,7 @@ router.get('/cn-list', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req
 });
 
 // GET /api/rebate/cn-detail/:soInvId — รายการสินค้าใน CN
-router.get('/cn-detail/:soInvId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
+router.get('/cn-detail/:soInvId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const r = await wfQuery(`
         SELECT
@@ -700,7 +700,7 @@ router.get('/cn-detail/:soInvId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'),
 });
 
 // POST /api/rebate/sync-mirror — ดึงข้อมูลคูปองจาก dbo สู่ wf.CouponMirror
-router.post('/sync-mirror', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
+router.post('/sync-mirror', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const r = await wfQuery(`
       MERGE wf.CouponMirror AS tgt

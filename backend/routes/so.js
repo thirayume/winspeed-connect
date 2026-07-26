@@ -320,7 +320,7 @@ let _statsCache = null;
 let _statsCacheAt = 0;
 const STATS_TTL = 5 * 60 * 1000;
 
-router.delete('/stats/cache', requireRole('ADMIN'), (req, res) => {
+router.delete('/stats/cache', requireRole('ADMIN', 'C_LEVEL'), (req, res) => {
   _statsCache = null; _statsCacheAt = 0;
   res.json({ ok: true, message: 'Stats cache cleared' });
 });
@@ -817,7 +817,7 @@ router.get('/unlock-reasons', async (req, res) => {
 });
 
 // GET /api/so/unlock-requests?status=PENDING — สำหรับ Approver
-router.get('/unlock-requests', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
+router.get('/unlock-requests', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'C_LEVEL'), async (req, res) => {
   try {
     const { status } = req.query;
     const where = status ? 'WHERE r.Status=@st' : '';
@@ -834,7 +834,7 @@ router.get('/unlock-requests', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCO
 });
 
 // PATCH /api/so/unlock-requests/:reqId/resolve — Approver อนุมัติ/ปฏิเสธ
-router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
+router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'C_LEVEL'), async (req, res) => {
   try {
     const { approve, note } = req.body || {};
     const reqRow = (await wfQuery(`SELECT * FROM wf.UnlockRequest WHERE Id=@id`,
@@ -919,7 +919,7 @@ router.get('/:id', async (req, res) => {
 
 // ── POST /api/so — Create DRAFT (Supports Single or Grouped Multi-Bill) ──
 // PATCH /api/so/:id/giveaway-lines/:lineNum/approve — manager approval for giveaway line
-router.patch('/:id/giveaway-lines/:lineNum/approve', requireRole('MANAGER', 'ADMIN'), async (req, res) => {
+router.patch('/:id/giveaway-lines/:lineNum/approve', requireRole('MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     if (!(await hasGiveawayApprovalColumns())) {
       return res.status(400).json({ message: 'ยังไม่ได้ apply migration สำหรับอนุมัติของแถมรายบรรทัด' });
@@ -955,7 +955,7 @@ router.patch('/:id/giveaway-lines/:lineNum/approve', requireRole('MANAGER', 'ADM
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
-router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res) => {
+router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const orders = Array.isArray(req.body) ? req.body : [req.body];
     if (orders.length === 0) return res.status(400).json({ message: 'ไม่มีข้อมูลคำสั่งซื้อ' });
@@ -1146,7 +1146,7 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
 });
 
 // ── PUT /api/so/:id — Update existing DRAFT SO ──
-router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res) => {
+router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'DRAFT');
     const order = req.body;
@@ -1375,7 +1375,7 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, r
 
 // ── PATCH /api/so/:id/confirm ────────────────────────────────
 // ── PATCH /api/so/:id/verify — Counter-Sales ตรวจซ้ำ (FR-022) ─────
-router.patch('/:id/verify', requireRole('COUNTER_SALES', 'ADMIN', 'MANAGER'), async (req, res) => {
+router.patch('/:id/verify', requireRole('COUNTER_SALES', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'DRAFT');
     await wfQuery(`UPDATE wf.SalesOrder SET VerifiedBy=@uid, VerifiedAt=GETUTCDATE() WHERE Id=@id`,
@@ -1386,7 +1386,7 @@ router.patch('/:id/verify', requireRole('COUNTER_SALES', 'ADMIN', 'MANAGER'), as
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
 
-router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res) => {
+router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const pendingQuote = await getPendingQuoteForSo(req.params.id);
     if (pendingQuote) {
@@ -1577,7 +1577,7 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
 });
 
 // ── PATCH /api/so/:id/picking ────────────────────────────────
-router.patch('/:id/picking', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) => {
+router.patch('/:id/picking', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'CONFIRMED');
     await wfQuery(`UPDATE dbo.SOHD SET PkgStatus='Y' WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: so.Id } });
@@ -1588,7 +1588,7 @@ router.patch('/:id/picking', requireRole('WAREHOUSE', 'ADMIN'), async (req, res)
 });
 
 // ── PATCH /api/so/:id/unlock — APPROVER เท่านั้น (EMP-00019) ─────
-router.patch('/:id/unlock', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
+router.patch('/:id/unlock', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'C_LEVEL'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'PICKING');
     const { note } = req.body;
@@ -1608,7 +1608,7 @@ router.patch('/:id/unlock', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNT
 });
 
 // ── POST /api/so/:id/unlock-request — ขอปลดล็อก/ขอแก้ไข/ขอยกเลิก ─────
-router.post('/:id/unlock-request', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN'), async (req, res) => {
+router.post('/:id/unlock-request', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id);
     const { reason, reqType = 'UNLOCK' } = req.body || {};
@@ -1639,7 +1639,7 @@ router.post('/:id/unlock-request', requireRole('SALES', 'COUNTER_SALES', 'WAREHO
 });
 
 // ── PATCH /api/so/:id/load — ยืนยันการโหลดสินค้า (Warehouse) ─────
-router.patch('/:id/load', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) => {
+router.patch('/:id/load', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'PICKING');
     const { sequences } = req.body; // [{ lineNum: 1, seq: 1 }, ...]
@@ -1663,7 +1663,7 @@ router.patch('/:id/load', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) =>
 });
 
 // ── PATCH /api/so/:id/ship — โอนข้อมูลสมบูรณ์ (Scale) ──────
-router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) => {
+router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'LOADED');
     const { weighOutWeight, tareKg, scaleNo, movebill, overrideReason, overrideApprovedBy, overrideApprovedByName, evidencePhotoUrl } = req.body;
@@ -1744,7 +1744,7 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) =>
 });
 
 // ── POST /api/so/:id/weigh-item — บันทึกผลการชั่งวนรายรายการสินค้า ──
-router.post('/:id/weigh-item', requireRole('WAREHOUSE', 'ADMIN'), async (req, res) => {
+router.post('/:id/weigh-item', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const soId = String(req.params.id);
     const { grossScaleKg, lineNum, goodCode, goodName, note, tareKg } = req.body || {};
@@ -1808,12 +1808,12 @@ router.get('/:id/weigh-history', async (req, res) => {
 });
 
 // ── PATCH /api/so/:id/sync-imported — เลิกใช้ เพราะเข้า Winspeed อัตโนมัติตั้งแต่ CONFIRM แล้ว ─
-router.patch('/:id/sync-imported', requireRole('ADMIN', 'ACCOUNTING'), async (req, res) => {
+router.patch('/:id/sync-imported', requireRole('ADMIN', 'ACCOUNTING', 'C_LEVEL'), async (req, res) => {
   res.status(400).json({ message: 'ฟังก์ชันนี้ถูกยกเลิก (ข้อมูลซิงค์ตรงเข้า Winspeed แล้ว)' });
 });
 
 // ── PATCH /api/so/:id/cancel ─────────────────────────────────
-router.patch('/:id/cancel', requireRole('SALES', 'ADMIN'), async (req, res) => {
+router.patch('/:id/cancel', requireRole('SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id);
     if (['SHIPPED', 'IMPORTED', 'CANCELLED'].includes(so.Status))
@@ -1848,7 +1848,7 @@ router.patch('/:id/cancel', requireRole('SALES', 'ADMIN'), async (req, res) => {
 });
 
 // ── DELETE /api/so/:id — Permanently remove DRAFT/CANCELLED SO ──
-router.delete('/:id', requireRole('SALES', 'ADMIN'), async (req, res) => {
+router.delete('/:id', requireRole('SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id);
     if (!['DRAFT', 'CANCELLED'].includes(so.Status))

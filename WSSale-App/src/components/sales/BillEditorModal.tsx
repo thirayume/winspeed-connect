@@ -194,7 +194,7 @@ export function CreateSODialog({
         return;
       }
 
-      const isPrivileged = ['ADMIN', 'MANAGER'].includes(userRole || '');
+      const isPrivileged = ['ADMIN', 'MANAGER', 'C_LEVEL'].includes(userRole || '');
       if (!isPrivileged) {
         const quota = myQuota.find(q => good.GoodName.includes(q.ItemName) || q.ItemName.includes(good.GoodName));
         const remaining = quota ? quota.RemainingQty : 0;
