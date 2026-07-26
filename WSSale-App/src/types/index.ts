@@ -3,6 +3,7 @@ export const SCHEMA_VERSION = '4.0';
 // ── Auth ──────────────────────────────────────────────────────
 export type UserRole =
   | 'ADMIN'
+  | 'C_LEVEL'
   | 'SALES'
   | 'COUNTER_SALES'
   | 'WAREHOUSE'

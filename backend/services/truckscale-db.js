@@ -17,7 +17,10 @@ function getPool() {
       database: process.env.MYSQL_DATABASE,
       waitForConnections: true,
       connectionLimit: 10,
-      queueLimit: 0,
+      queueLimit: 10,           // จำกัดจำนวนคิวรอเชื่อมต่อสูงสุด 10 คำขอ ป้องกันการค้างสะสม
+      connectTimeout: 5000,     // Timeout การเชื่อมต่อเริ่มต้น 5 วินาที
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0,
       charset: 'utf8mb4',
     });
   }
@@ -27,8 +30,23 @@ function getPool() {
 async function tsQuery(sql, params = []) {
   const p = getPool();
   if (!p) throw Object.assign(new Error('TruckScale MySQL ยังไม่ได้ตั้งค่า (MYSQL_HOST)'), { status: 503 });
-  const [rows] = await p.query(sql, params);
-  return rows;
+
+  // ป้องกันการแขวนค้างด้วย Promise.race Timeout 6 วินาที
+  const timeoutMs = 6000;
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(Object.assign(new Error('TruckScale MySQL query timeout (6s)'), { status: 504 }));
+    }, timeoutMs);
+  });
+
+  try {
+    const queryPromise = p.query(sql, params);
+    const [rows] = await Promise.race([queryPromise, timeoutPromise]);
+    return rows;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function insertPreWeighTicket(so) {
