@@ -115,6 +115,28 @@ async function removePreWeighTicket(wfRef) {
   }
 }
 
+function getThaiDateComponents(now = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const day = pad(now.getDate());
+  const month = pad(now.getMonth() + 1);
+  const fullThaiYear = now.getFullYear() + 543;
+  const shortThaiYear = String(fullThaiYear).slice(-2);
+
+  // DD/MM/YYYY in Thai Buddhist Era (พ.ศ.)
+  const dateStr = `${day}/${month}/${fullThaiYear}`;
+  const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+  // Date_Out2: OLE Automation Date Serial integer (Epoch: 1899-12-30 UTC)
+  const epoch = Date.UTC(1899, 11, 30);
+  const target = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const oleDateSerial = Math.floor((target - epoch) / 86400000);
+
+  // s_day: YYMM in Thai Buddhist Era (e.g. 6905 for May 2569)
+  const sDay = Number(`${shortThaiYear}${month}`);
+
+  return { dateStr, timeStr, oleDateSerial, sDay };
+}
+
 async function writeBackWeighOutTicket(ticketData) {
   if (!getPool()) {
     console.log('[truckscale] MySQL not configured. Skipping writeBackWeighOutTicket.');
@@ -140,14 +162,14 @@ async function writeBackWeighOutTicket(ticketData) {
   const mb = movebill ? String(movebill).trim() : '';
 
   const now = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const { dateStr, timeStr, oleDateSerial, sDay } = getThaiDateComponents(now);
 
-  let remarkText = `WF-SO:${soId || wfRef || ''}`;
+  // Format one_des (max 100 chars) instead of one_App or Remark
+  let oneDes = `WF-SO:${soId || wfRef || ''}`;
   if (overrideReason) {
-    remarkText += ` | Discretion: ${overrideReason} (By: ${overrideApprovedByName || operatorName || 'N/A'})`;
+    oneDes += ` | Discretion: ${overrideReason} (By: ${overrideApprovedByName || operatorName || 'N/A'})`;
   }
+  oneDes = oneDes.substring(0, 100);
 
   try {
     // 1. Search for existing OPEN ticket in tblscale
@@ -174,19 +196,19 @@ async function writeBackWeighOutTicket(ticketData) {
          SET weight_out = ?, 
              weight_net = ?, 
              Date_Out = ?, 
+             Date_Out2 = ?,
              Time_Out = ?, 
-             one_App = ?,
              Computer_w = ?,
-             Remark = CONCAT(IFNULL(Remark, ''), ' ', ?)
+             one_des = ?
          WHERE s_id = ?`,
         [
           gross || 0,
           net || 0,
           dateStr,
+          oleDateSerial,
           timeStr,
-          String(wfRef || soId || '').substring(0, 100),
           scaleNo || 1,
-          remarkText,
+          oneDes,
           sid
         ]
       );
@@ -194,14 +216,20 @@ async function writeBackWeighOutTicket(ticketData) {
       if (wfRef) await removePreWeighTicket(wfRef);
       return { success: true, action: 'updated', s_id: sid };
     } else {
-      // 2. Fallback: INSERT new record into tblscale (TS-02)
+      // 2. Fallback: INSERT new record into tblscale
+      const maxRes = await tsQuery(
+        `SELECT MAX(s_num) AS maxNum FROM tblscale WHERE s_day = ?`,
+        [sDay]
+      ).catch(() => [{ maxNum: 0 }]);
+
+      const sNum = ((maxRes && maxRes[0] && maxRes[0].maxNum) || 0) + 1;
+      const insertMb = mb || `${sDay}${String(sNum).padStart(4, '0')}`;
       const genSeq = `WF-${Date.now().toString().slice(-8)}`;
-      const insertMb = mb || genSeq;
 
       const res = await tsQuery(
         `INSERT INTO tblscale 
-         (sequence, movebill, one_car_regis, one_cus_name, weight_in, weight_out, weight_net, Date_In, Date_Out, Time_In, Time_Out, Computer_w, one_App, Remark) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (sequence, movebill, one_car_regis, one_cus_name, weight_in, weight_out, weight_net, Date_In, Date_In2, Date_Out, Date_Out2, Time_In, Time_Out, s_day, s_num, Computer_w, one_des) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           genSeq,
           insertMb,
@@ -211,15 +239,18 @@ async function writeBackWeighOutTicket(ticketData) {
           gross || 0,
           net || 0,
           dateStr,
+          oleDateSerial,
           dateStr,
+          oleDateSerial,
           timeStr,
           timeStr,
+          sDay,
+          sNum,
           scaleNo || 1,
-          String(wfRef || soId || '').substring(0, 100),
-          remarkText
+          oneDes
         ]
       );
-      console.log(`[truckscale] Inserted fallback record into tblscale (seq: ${genSeq}) for SO:${soId}`);
+      console.log(`[truckscale] Inserted fallback record into tblscale (seq: ${genSeq}, mb: ${insertMb}) for SO:${soId}`);
       if (wfRef) await removePreWeighTicket(wfRef);
       return { success: true, action: 'inserted', insertId: res.insertId };
     }
@@ -229,4 +260,4 @@ async function writeBackWeighOutTicket(ticketData) {
   }
 }
 
-module.exports = { getPool, tsQuery, insertPreWeighTicket, removePreWeighTicket, writeBackWeighOutTicket };
+module.exports = { getPool, tsQuery, insertPreWeighTicket, removePreWeighTicket, writeBackWeighOutTicket, getThaiDateComponents };
