@@ -35,9 +35,12 @@ async function handle(ev) {
   } catch { /* socket optional */ }
 
   if (ev.EventType === 'TRUCKSCALE_WRITEBACK' && ev.Payload) {
-    const { writeBackWeighOutTicket } = require('./truckscale-db');
+    const { writeBackWeighOutTicket, recordWriteBackResult } = require('./truckscale-db');
     const payload = typeof ev.Payload === 'string' ? JSON.parse(ev.Payload) : ev.Payload;
     const res = await writeBackWeighOutTicket(payload);
+    // บันทึกผลของการลองใหม่ด้วย มิฉะนั้นรายงาน R-3 จะยังเห็นใบนี้เป็น 'failed'
+    // ทั้งที่ retry สำเร็จไปแล้ว
+    await recordWriteBackResult(payload.soId || ev.AggregateId, res);
     if (!res || !res.success) {
       throw new Error(`TruckScale writeback failed: ${res?.error || res?.reason || 'unknown'}`);
     }

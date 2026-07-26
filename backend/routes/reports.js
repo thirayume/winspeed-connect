@@ -7,13 +7,31 @@
  */
 const router = require('express').Router();
 const XLSX = require('xlsx');
-const { wfQuery } = require('../db');
+const { wfQuery, sql } = require('../db');
+const { listScaleTicketsByDateRange } = require('../services/truckscale-db');
 const { requireAuth, canViewAllRebateAmounts } = require('../middleware/auth');
 
 router.use(requireAuth);
 
 // นิยามรายงาน: key → { title, columns:[{key,label}], sql }
 const REPORTS = {
+  'truckscale-writeback': {
+    title: 'กระทบยอดใบชั่งที่ระบบเขียนกลับ (รายวัน)',
+    columns: [
+      { key: 'Case', label: 'กรณี' },
+      { key: 'WfRef', label: 'เลขใบสั่งขาย' },
+      { key: 'CustName', label: 'ลูกค้า' },
+      { key: 'TruckPlate', label: 'ทะเบียนรถ' },
+      { key: 'WeighOutAt', label: 'เวลาชั่งออก' },
+      { key: 'NetKgApp', label: 'น้ำหนักสุทธิ (แอป)' },
+      { key: 'NetKgScale', label: 'น้ำหนักสุทธิ (เครื่องชั่ง)' },
+      { key: 'DiffKg', label: 'ส่วนต่าง (กก.)' },
+      { key: 'ScaleSequence', label: 'เลขใบชั่ง' },
+      { key: 'Movebill', label: 'movebill' },
+      { key: 'Note', label: 'หมายเหตุ' },
+    ],
+    run: (params) => runTruckScaleWritebackReport(params),
+  },
   'so-status': {
     title: 'สรุปใบสั่งขายตามสถานะ',
     columns: [{ key: 'Status', label: 'สถานะ' }, { key: 'Cnt', label: 'จำนวน' }],
@@ -484,9 +502,130 @@ const REPORTS = {
   },
 };
 
+
+// ── R-3 รายงานกระทบยอดใบชั่งที่แอปเขียนกลับ ────────────────────────────────
+// ตั้งแต่ v1.4.0 การชั่งออกเขียนกลับ tblscale ได้สองแบบ: อัปเดตใบที่ชั่งจริง
+// หรือสร้างใบใหม่ (sequence ขึ้นต้น WF) ซึ่ง "ไม่ได้เกิดจากการชั่งบนเครื่อง"
+// ใบสองแบบนี้ปนกันอยู่ในตารางเดียว จึงต้องมีคนกระทบยอดทุกสิ้นวัน
+//
+// กรณีที่รายงานแยกให้:
+//   A ใบที่แอปสร้างเอง · B เขียนทับใบที่ชั่งจริง · C เขียนกลับไม่สำเร็จ
+//   D ใบ WF ที่ไม่มีใบสั่งขายคู่กัน · E น้ำหนักสองระบบไม่ตรง
+
+function parseDateParam(value, fallback) {
+  if (!value) return fallback;
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+}
+
+const WRITEBACK_CASES = {
+  A: 'A · แอปสร้างใบชั่งเอง',
+  B: 'B · เขียนทับใบที่ชั่งจริง',
+  C: 'C · เขียนกลับไม่สำเร็จ',
+  D: 'D · ใบ WF ไม่มีใบสั่งขายคู่กัน',
+  E: 'E · น้ำหนักสองระบบไม่ตรง',
+};
+
+async function runTruckScaleWritebackReport(params = {}) {
+  const today = new Date();
+  const from = parseDateParam(params.from, today);
+  const to = parseDateParam(params.to, from);
+
+  const startOfDay = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const endOfDay = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999);
+
+  // ฝั่งแอป: ใบชั่งที่ชั่งออกในช่วงวันที่เลือก
+  const appRows = (await wfQuery(`
+    SELECT wt.Id, wt.SoId, wt.WfRef, wt.TruckPlate, wt.WeighOutAt, wt.NetKg, wt.Movebill,
+           wt.ScaleWriteAction, wt.ScaleSid, wt.ScaleSequence, wt.ScaleError, wt.OverrideReason,
+           so.CustName
+    FROM wf.WeighTicket wt WITH (NOLOCK)
+    LEFT JOIN wf.SalesOrder so WITH (NOLOCK) ON CONVERT(VARCHAR(50), so.Id) = CONVERT(VARCHAR(50), wt.SoId)
+    WHERE wt.WeighOutAt >= @from AND wt.WeighOutAt <= @to
+    ORDER BY wt.WeighOutAt DESC`,
+    { from: { type: sql.DateTime2, value: startOfDay }, to: { type: sql.DateTime2, value: endOfDay } }
+  )).recordset || [];
+
+  // ฝั่งเครื่องชั่ง: อ่านตามช่วงวันเดียวกัน (อ่านอย่างเดียว)
+  let scaleRows = [];
+  let scaleError = null;
+  try {
+    scaleRows = await listScaleTicketsByDateRange(startOfDay, endOfDay);
+  } catch (error) {
+    scaleError = error.message;   // รายงานยังต้องออกได้แม้เครื่องชั่งต่อไม่ได้
+  }
+  const scaleBySid = new Map(scaleRows.map(row => [Number(row.s_id), row]));
+  const matchedSids = new Set();
+
+  const rows = [];
+
+  for (const app of appRows) {
+    const scale = app.ScaleSid != null ? scaleBySid.get(Number(app.ScaleSid)) : null;
+    if (scale) matchedSids.add(Number(app.ScaleSid));
+
+    const netApp = app.NetKg != null ? Number(app.NetKg) : null;
+    const netScale = scale && scale.weight_net != null ? Number(scale.weight_net) : null;
+    const diff = netApp != null && netScale != null ? Math.round((netApp - netScale) * 100) / 100 : null;
+
+    let caseCode;
+    if (!app.ScaleWriteAction || app.ScaleWriteAction === 'failed') caseCode = 'C';
+    else if (diff != null && Math.abs(diff) > 0.01) caseCode = 'E';
+    else if (app.ScaleWriteAction === 'inserted') caseCode = 'A';
+    else caseCode = 'B';
+
+    rows.push({
+      Case: WRITEBACK_CASES[caseCode],
+      WfRef: app.WfRef || '',
+      CustName: app.CustName || '',
+      TruckPlate: app.TruckPlate || '',
+      WeighOutAt: app.WeighOutAt ? new Date(app.WeighOutAt).toISOString().replace('T', ' ').slice(0, 19) : '',
+      NetKgApp: netApp,
+      NetKgScale: netScale,
+      DiffKg: diff,
+      ScaleSequence: app.ScaleSequence || (scale ? scale.sequence : ''),
+      Movebill: app.Movebill || (scale ? scale.movebill : ''),
+      Note: app.ScaleError || app.OverrideReason || '',
+    });
+  }
+
+  // กรณี D: ใบที่แอปสร้าง (sequence ขึ้นต้น WF) แต่จับคู่กับใบชั่งของแอปไม่ได้
+  for (const scale of scaleRows) {
+    if (matchedSids.has(Number(scale.s_id))) continue;
+    if (!/^WF/i.test(String(scale.sequence || ''))) continue;
+    rows.push({
+      Case: WRITEBACK_CASES.D,
+      WfRef: (String(scale.one_des || '').match(/WF-SO:([^\s|]+)/) || [])[1] || '',
+      CustName: scale.one_cus_name || '',
+      TruckPlate: scale.one_car_regis || '',
+      WeighOutAt: `${scale.Date_Out || ''} ${scale.Time_Out || ''}`.trim(),
+      NetKgApp: null,
+      NetKgScale: scale.weight_net != null ? Number(scale.weight_net) : null,
+      DiffKg: null,
+      ScaleSequence: scale.sequence || '',
+      Movebill: scale.movebill || '',
+      Note: 'ไม่พบใบชั่งฝั่งแอปที่ตรงกัน — ตรวจสอบว่ามาจากการทดสอบหรือใบสั่งขายถูกลบ',
+    });
+  }
+
+  if (scaleError) {
+    rows.unshift({
+      Case: WRITEBACK_CASES.C,
+      WfRef: '', CustName: '', TruckPlate: '', WeighOutAt: '',
+      NetKgApp: null, NetKgScale: null, DiffKg: null, ScaleSequence: '', Movebill: '',
+      Note: 'อ่านข้อมูลเครื่องชั่งไม่ได้: ' + scaleError,
+    });
+  }
+
+  const order = { A: 0, C: 1, D: 2, E: 3, B: 4 };
+  const codeOf = label => String(label).charAt(0);
+  rows.sort((a, b) => (order[codeOf(a.Case)] ?? 9) - (order[codeOf(b.Case)] ?? 9));
+  return rows;
+}
+
 function canRunReport(req, type) {
   if (type === 'rebate-pools') return canViewAllRebateAmounts(req.user);
   if (type === 'cn-rebate') return ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'].includes(req.user?.role);
+  if (type === 'truckscale-writeback') return ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'].includes(req.user?.role);
   return true;
 }
 
@@ -496,17 +635,19 @@ router.get('/types', (req, res) => {
     .map(([key, r]) => ({ key, title: r.title })));
 });
 
-async function runReport(type) {
+// รายงานส่วนใหญ่เป็น SQL ตายตัวฝั่ง SQL Server แต่บางรายงานต้องอ่านสองฐาน
+// และรับช่วงวัน จึงรองรับ def.run(params) เพิ่ม โดยของเดิมที่มีแต่ def.sql ยังทำงานเหมือนเดิม
+async function runReport(type, params = {}) {
   const def = REPORTS[type];
   if (!def) return null;
-  const r = await wfQuery(def.sql);
-  return { type, title: def.title, columns: def.columns, rows: r.recordset || [] };
+  const rows = def.run ? await def.run(params) : ((await wfQuery(def.sql)).recordset || []);
+  return { type, title: def.title, columns: def.columns, rows };
 }
 
 router.get('/:type', async (req, res) => {
   try {
     if (!canRunReport(req, req.params.type)) return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูรายงานนี้' });
-    const data = await runReport(req.params.type);
+    const data = await runReport(req.params.type, req.query);
     if (!data) return res.status(404).json({ message: 'ไม่พบรายงาน' });
     res.json(data);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
@@ -515,7 +656,7 @@ router.get('/:type', async (req, res) => {
 router.get('/:type/export', async (req, res) => {
   try {
     if (!canRunReport(req, req.params.type)) return res.status(403).json({ message: 'ไม่มีสิทธิ์ export รายงานนี้' });
-    const data = await runReport(req.params.type);
+    const data = await runReport(req.params.type, req.query);
     if (!data) return res.status(404).json({ message: 'ไม่พบรายงาน' });
     // map rows → ภาษาไทย header ตาม columns
     const aoa = [data.columns.map(c => c.label)];
@@ -531,4 +672,6 @@ router.get('/:type/export', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
+// เปิดฟังก์ชันรายงานให้สคริปต์ตรวจเรียกได้โดยไม่ต้องยิงผ่าน HTTP
 module.exports = router;
+module.exports.__testing = { runTruckScaleWritebackReport };
