@@ -486,7 +486,7 @@ const REPORTS = {
 
 function canRunReport(req, type) {
   if (type === 'rebate-pools') return canViewAllRebateAmounts(req.user);
-  if (type === 'cn-rebate') return ['ACCOUNTING', 'ADMIN', 'MANAGER'].includes(req.user?.role);
+  if (type === 'cn-rebate') return ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'].includes(req.user?.role);
   return true;
 }
 

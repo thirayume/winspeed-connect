@@ -34,7 +34,7 @@ router.get('/resolve', async (req, res) => {
 });
 
 // POST /api/policy — สร้างนโยบาย (ADMIN/MANAGER)
-router.post('/', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+router.post('/', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { caseType, minAmount, maxAmount, requiredRole, effectiveFrom, effectiveTo, note } = req.body || {};
     if (!caseType || !requiredRole) return res.status(400).json({ message: 'caseType และ requiredRole จำเป็น' });
@@ -57,7 +57,7 @@ router.post('/', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
 });
 
 // PUT /api/policy/:id — แก้ไข (ADMIN/MANAGER)
-router.put('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+router.put('/:id', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { minAmount, maxAmount, requiredRole, effectiveTo, isActive, note } = req.body || {};
     await wfQuery(`

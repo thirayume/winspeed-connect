@@ -34,7 +34,7 @@ function requireRole(...roles) {
   };
 }
 
-const REBATE_ALL_ROLES = ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER'];
+const REBATE_ALL_ROLES = ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'C_LEVEL'];
 const REBATE_OWN_ROLES = ['SALES'];
 const REBATE_AMOUNT_ROLES = [...REBATE_ALL_ROLES, ...REBATE_OWN_ROLES];
 
