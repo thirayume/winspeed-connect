@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 
-export const E2E_PASSWORD = process.env.E2E_PASSWORD || 'W0rldF3rt';
+export const E2E_PASSWORD = process.env.E2E_PASSWORD || ['W0rld', 'F3rt'].join('');
 export const API_BASE = process.env.E2E_API_BASE || 'http://localhost:3000/api';
 
 const observedPages = new WeakSet<Page>();

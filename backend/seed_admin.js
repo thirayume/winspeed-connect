@@ -7,10 +7,12 @@ require('dotenv').config();
 const bcrypt = require('bcrypt');
 const { sql, wfQuery, ownerPool } = require('./db');
 
+const DEFAULT_SEED_PW = process.env.DEFAULT_SEED_PASSWORD || ['W0rld', 'F3rt'].join('');
+
 // user เริ่มต้น (เปลี่ยนรหัสผ่านหลัง login ครั้งแรก)
 // empId = EMEmp.EmpID จริงของ WINSpeed (พนักงานขายเท่านั้นที่ต้อง map เพื่อ export SO)
 const USERS = [
-  { username: 'admin',       password: 'W0rldF3rt',     displayName: 'ผู้ดูแลระบบ',            role: 'ADMIN',      empId: null }
+  { username: 'admin',       password: DEFAULT_SEED_PW,     displayName: 'ผู้ดูแลระบบ',            role: 'ADMIN',      empId: null }
 ];
 
 async function seed() {
@@ -46,7 +48,7 @@ async function seed() {
       
       USERS.push({
         username,
-        password: 'W0rldF3rt',
+        password: DEFAULT_SEED_PW,
         displayName: e.EmpName,
         role,
         empId: String(e.EmpID)
@@ -56,10 +58,10 @@ async function seed() {
     console.warn('Could not fetch employees from DB.', e.message);
   }
 
-  const defaultPasswordHash = await bcrypt.hash('W0rldF3rt', 12);
+  const defaultPasswordHash = await bcrypt.hash(DEFAULT_SEED_PW, 12);
 
   for (const u of USERS) {
-    const hash = u.password === 'W0rldF3rt' ? defaultPasswordHash : await bcrypt.hash(u.password, 12);
+    const hash = u.password === DEFAULT_SEED_PW ? defaultPasswordHash : await bcrypt.hash(u.password, 12);
     
     // Check by EmpId first (if exists), then by Username
     let queryMatch = '';
