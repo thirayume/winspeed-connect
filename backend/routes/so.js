@@ -1718,7 +1718,7 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (r
 
     // ซิงค์ Write-Back ข้อมูลชั่งออกกลับไปยัง MySQL db_truckscale (TS-01 & TS-02)
     const { writeBackWeighOutTicket } = require('../services/truckscale-db');
-    writeBackWeighOutTicket({
+    const ticketPayload = {
       soId: so.Id,
       wfRef: so.WfRef,
       truckPlate: so.TruckPlate,
@@ -1731,7 +1731,12 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (r
       overrideReason,
       overrideApprovedByName,
       operatorName: req.user.name,
-    }).catch(err => console.error('[truckscale-writeback]', err.message));
+    };
+    const wbRes = await writeBackWeighOutTicket(ticketPayload).catch(err => ({ success: false, error: err.message }));
+    if (!wbRes || !wbRes.success) {
+      console.warn('[truckscale-writeback] Immediate writeback failed/skipped. Queueing Outbox retry event.');
+      await enqueue('TRUCKSCALE_WRITEBACK', so.Id, ticketPayload, `TS_WRITEBACK:${so.Id}`).catch(() => {});
+    }
 
     // ตั้ง Rebate accrual เมื่อ SHIPPED (เรียกชำระเงินแล้ว)
     const lines = await getLines(so.Id);
