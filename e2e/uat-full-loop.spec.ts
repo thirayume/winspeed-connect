@@ -141,7 +141,7 @@ test.describe.serial('UAT Full Loop E2E', () => {
     await expect(weighModal).toBeVisible();
     await weighModal.getByTestId('weigh-tare').fill('10000');
     await weighModal.getByTestId('weigh-gross').fill('20000');
-    await weighModal.getByRole('button', { name: 'ยืนยัน / ส่งออก', exact: true }).click();
+    await weighModal.getByRole('button', { name: 'บันทึกน้ำหนัก & ส่งออก', exact: true }).click();
     const shipped = await waitForOrderStatus(page, sharedWfRef, 'SHIPPED');
     const weigh = await api<any>(page, `/so/${encodeURIComponent(String(sharedSoId))}/weigh`);
     expect(weigh.body?.netKg ?? weigh.body?.NetKg ?? 10_000).toBeTruthy();
