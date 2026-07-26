@@ -12,7 +12,7 @@ const TYPE_LABEL: Record<string, string> = { BAG: 'กระเป๋า(สู�
 
 export function GiveawayPage() {
   const role = useAuthStore(s => s.user?.role);
-  const canWithdraw = role !== 'ACCOUNTING' && role !== 'WAREHOUSE';
+  const canWithdraw = ['SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER', 'APPROVER', 'C_LEVEL'].includes(role || '');
   const [regions, setRegions]   = useState<GiveawayRegion[]>([]);
   const [selected, setSelected] = useState<GiveawayRegion | null>(null);
   const [lines, setLines]       = useState<GiveawayBudgetLine[]>([]);
@@ -200,7 +200,7 @@ export function GiveawayPage() {
                         <div className="text-sm mt-1">
                           <span className="font-semibold text-gray-600">เหตุผล: </span> <span className="text-gray-700">{r.Reason}</span>
                         </div>
-                        {r.Status === 'PENDING' && (r.LenderId === useAuthStore.getState().user?.id || ['ADMIN', 'MANAGER'].includes(role || '')) && (
+                        {r.Status === 'PENDING' && (r.LenderId === useAuthStore.getState().user?.id || ['ADMIN', 'MANAGER', 'C_LEVEL'].includes(role || '')) && (
                           <div className="mt-4 flex gap-2">
                             <button onClick={() => {
                               if(window.confirm('ยืนยันการอนุมัติ? ระบบจะหักโควต้าของคุณไปให้ผู้ขอยืม')) {

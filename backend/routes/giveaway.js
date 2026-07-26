@@ -78,7 +78,7 @@ router.get('/items', async (req, res) => {
 });
 
 // POST /api/giveaway/withdrawals — บันทึกการเบิกใหม่ (Source='APP')
-router.post('/withdrawals', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER', 'APPROVER'), async (req, res) => {
+router.post('/withdrawals', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER', 'APPROVER', 'C_LEVEL'), async (req, res) => {
   try {
     const { region, brand, itemName, qty, issueMonth, custId, note } = req.body;
     if (!region || !brand || !itemName || !qty)
@@ -203,8 +203,8 @@ router.post('/borrow-requests', async (req, res) => {
 // GET /api/giveaway/borrow-requests — Get pending borrow requests for the current user (either requester, lender, or approver)
 router.get('/borrow-requests', async (req, res) => {
   try {
-    const cond = req.user.role === 'ADMIN' || req.user.role === 'MANAGER' 
-      ? '1=1' // Admin/Manager sees all
+    const cond = ['ADMIN', 'MANAGER', 'C_LEVEL'].includes(req.user.role) 
+      ? '1=1' // Admin/Manager/C_LEVEL sees all
       : 'b.RequesterId = @u OR b.LenderId = @u';
     const r = await wfQuery(`
       SELECT b.*, req.DisplayName as RequesterName, len.DisplayName as LenderName
@@ -227,8 +227,8 @@ router.patch('/borrow-requests/:id/resolve', async (req, res) => {
     if (!bReq) return res.status(404).json({ message: 'Request not found' });
     if (bReq.Status !== 'PENDING') return res.status(400).json({ message: 'Request is already resolved' });
     
-    // Only Lender or Manager/Admin can approve
-    if (req.user.id !== bReq.LenderId && !['MANAGER', 'ADMIN'].includes(req.user.role)) {
+    // Only Lender or Manager/Admin/C_LEVEL can approve
+    if (req.user.id !== bReq.LenderId && !['MANAGER', 'ADMIN', 'C_LEVEL'].includes(req.user.role)) {
       return res.status(403).json({ message: 'You do not have permission to resolve this request' });
     }
 
