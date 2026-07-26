@@ -224,7 +224,10 @@ async function writeBackWeighOutTicket(ticketData) {
 
       const sNum = ((maxRes && maxRes[0] && maxRes[0].maxNum) || 0) + 1;
       const insertMb = mb || `${sDay}${String(sNum).padStart(4, '0')}`;
-      const genSeq = `WF-${Date.now().toString().slice(-8)}`;
+      // sequence เป็น varchar(10) และค่าจริงในตารางเป็นตัวเลข 8 หลัก (เช่น '02784996')
+      // รูปแบบเดิม 'WF-' + 8 หลัก ยาว 11 ตัวอักษร จึงถูกปฏิเสธด้วย Data too long
+      // ใช้ 'WF' + 8 หลัก = 10 ตัวอักษรพอดี และยังแยกออกจากใบที่ชั่งจริงได้
+      const genSeq = `WF${Date.now().toString().slice(-8)}`;
 
       const res = await tsQuery(
         `INSERT INTO tblscale 
