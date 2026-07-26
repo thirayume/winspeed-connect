@@ -8,11 +8,21 @@
 -- ชื่อคอลัมน์ทุกตัวตรวจกับ sys.columns ของฐานข้อมูลจริงแล้ว
 -- ลำดับการลบไล่จากตารางลูกไปตารางแม่เพื่อไม่ให้ติด foreign key
 
+-- sqlcmd ตั้ง QUOTED_IDENTIFIER OFF โดยปริยาย ซึ่งทำให้ DELETE บนตารางที่มี
+-- indexed view หรือ index บนคอลัมน์คำนวณล้มเหลว จึงต้องเปิดไว้ก่อนเสมอ
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
 SET NOCOUNT ON;
+GO
 
 DECLARE @SoIds TABLE (Id VARCHAR(50) PRIMARY KEY);
+-- รวมทั้งใบสั่งขายที่ยังอยู่ และใบชั่งที่กำพร้าจากรอบก่อน (ใบสั่งขายถูกลบไปแล้ว
+-- แต่ใบชั่งยังค้าง) การอิงใบสั่งขายอย่างเดียวจะเก็บไม่หมด
 INSERT INTO @SoIds (Id)
 SELECT CAST(Id AS VARCHAR(50)) FROM wf.SalesOrder
+WHERE TruckPlate LIKE 'UAT-%' OR TruckPlate LIKE 'CMP-%'
+UNION
+SELECT CAST(SoId AS VARCHAR(50)) FROM wf.WeighTicket
 WHERE TruckPlate LIKE 'UAT-%' OR TruckPlate LIKE 'CMP-%';
 
 DECLARE @SoCount INT = (SELECT COUNT(*) FROM @SoIds);
@@ -22,10 +32,12 @@ DELETE FROM wf.PaperScan
 WHERE PaperCopyId IN (SELECT Id FROM wf.PaperCopy WHERE CAST(SoId AS VARCHAR(50)) IN (SELECT Id FROM @SoIds));
 DELETE FROM wf.PaperCopy WHERE CAST(SoId AS VARCHAR(50)) IN (SELECT Id FROM @SoIds);
 
--- หลักฐานการชั่ง
+-- หลักฐานการชั่ง (เผื่อทะเบียนรถตรงๆ ด้วย กันใบที่กำพร้าไปแล้ว)
 DELETE FROM wf.WeighTicketItemLog WHERE CAST(SoId AS VARCHAR(50)) IN (SELECT Id FROM @SoIds);
-DELETE FROM wf.WeighTicket        WHERE CAST(SoId AS VARCHAR(50)) IN (SELECT Id FROM @SoIds);
-DELETE FROM wf.WeighInbox         WHERE Plate LIKE 'UAT-%' OR Plate LIKE 'CMP-%';
+DELETE FROM wf.WeighTicket
+WHERE CAST(SoId AS VARCHAR(50)) IN (SELECT Id FROM @SoIds)
+   OR TruckPlate LIKE 'UAT-%' OR TruckPlate LIKE 'CMP-%';
+DELETE FROM wf.WeighInbox WHERE Plate LIKE 'UAT-%' OR Plate LIKE 'CMP-%';
 
 -- รีเบท คำขอปลดล็อก และ audit
 DELETE FROM wf.RebateLedger     WHERE CAST(SoId AS VARCHAR(50)) IN (SELECT Id FROM @SoIds);
@@ -51,15 +63,17 @@ DELETE FROM wf.QuotationLine     WHERE QuoteId IN (SELECT Id FROM wf.Quotation W
 DELETE FROM wf.QuotationSourceSO WHERE QuoteId IN (SELECT Id FROM wf.Quotation WHERE SalesUserId IN (SELECT Id FROM @E2EUsers));
 DELETE FROM wf.Quotation         WHERE SalesUserId IN (SELECT Id FROM @E2EUsers);
 
--- เอกสารที่ sp_ConfirmSalesOrder เขียนลง WINSpeed ระหว่างเทสต์
--- ระบุด้วยทะเบียนรถโดยตรง จึงไม่ต้องพึ่ง SalesOrderExt ที่ถูกลบไปแล้ว
-DECLARE @TestSoid TABLE (SOID VARCHAR(50) PRIMARY KEY);
-INSERT INTO @TestSoid (SOID)
-SELECT DISTINCT CAST(SOID AS VARCHAR(50)) FROM dbo.SOHD
-WHERE TransRegistration LIKE 'UAT-%' OR TransRegistration LIKE 'CMP-%';
+-- ตั้งใจ *ไม่* ลบเอกสารใน dbo.SOHD / dbo.SODT ที่ sp_ConfirmSalesOrder สร้าง
+--
+-- เหตุผล: dbo เป็นของ WINSpeed ตามกฎเหล็กของระบบ แอปมีสิทธิ์เขียนเฉพาะ flow ที่อนุมัติ
+-- และเคยลองลบแล้วทำให้การ confirm รอบถัดไปตอบ 500 (เอกสารค้างสถานะ DRAFT)
+-- เพราะเอกสารเหล่านั้นยังถูกอ้างจากที่อื่นในฝั่ง WINSpeed
+--
+-- เอกสารทดสอบใน dbo ระบุได้จาก TransRegistration ขึ้นต้น 'UAT-' / 'CMP-'
+-- ให้ DBA เก็บกวาดเป็นรอบต่างหากพร้อมตรวจความสัมพันธ์ ไม่ใช่ลบจาก teardown ของเทสต์
+DECLARE @DboTestDocs INT = (
+  SELECT COUNT(*) FROM dbo.SOHD
+  WHERE TransRegistration LIKE 'UAT-%' OR TransRegistration LIKE 'CMP-%');
 
-DELETE FROM dbo.SODT WHERE CAST(SOID AS VARCHAR(50)) IN (SELECT SOID FROM @TestSoid);
-DELETE FROM dbo.SOHD WHERE CAST(SOID AS VARCHAR(50)) IN (SELECT SOID FROM @TestSoid);
-
-PRINT CONCAT('E2E cleanup: removed test data for ', @SoCount, ' sales order(s) and ',
-             (SELECT COUNT(*) FROM @TestSoid), ' WINSpeed document(s); e2e_* users retained as fixtures.');
+PRINT CONCAT('E2E cleanup: removed test data for ', @SoCount, ' sales order(s); ',
+             @DboTestDocs, ' WINSpeed test document(s) left for DBA review; e2e_* users retained as fixtures.');
