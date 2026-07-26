@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { BarChart3, RefreshCw, Download, FileSpreadsheet, FileText } from 'lucide-react';
 import { fetchReportTypes, fetchReport, exportReport } from '../../services/api';
 import type { ReportData } from '../../services/api';
+import { LegacyReportPdfModal } from './LegacyReportPdfModal';
 
 const isNum = (v: unknown) => typeof v === 'number' || (typeof v === 'string' && v !== '' && !isNaN(Number(v)));
 const fmt = (v: unknown) => isNum(v) ? Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }) : (v ?? '-');
@@ -12,6 +13,7 @@ export function ReportsPage() {
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [showPdfModal, setShowPdfModal] = useState(false);
 
   useEffect(() => {
     fetchReportTypes().then(t => { setTypes(t); if (t[0]) setActive(t[0].key); }).catch(console.error);
@@ -34,15 +36,18 @@ export function ReportsPage() {
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
+      {showPdfModal && data && (
+        <LegacyReportPdfModal data={data} onClose={() => setShowPdfModal(false)} />
+      )}
       <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}><BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> รายงาน (Reports)</h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">สรุปข้อมูล + ส่งออก Excel (FR-017)</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">สรุปข้อมูล + พิมพ์ PDF A4 / ส่งออก Excel (FR-017)</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => {}} disabled={!data || exporting}
-            className="px-3 py-2 rounded-lg text-white text-sm font-semibold flex items-center gap-1.5 disabled:opacity-50" style={{ background: '#E53935' }}>
-            <FileText size={16} /> Export PDF
+          <button onClick={() => setShowPdfModal(true)} disabled={!data || exporting}
+            className="px-3 py-2 rounded-lg text-white text-sm font-semibold flex items-center gap-1.5 disabled:opacity-50 hover:bg-red-700 transition-colors shadow-sm" style={{ background: '#E53935' }}>
+            <FileText size={16} /> พิมพ์ / Export PDF (A4)
           </button>
           <button onClick={doExport} disabled={!data || exporting}
             className="px-3 py-2 rounded-lg text-white text-sm font-semibold flex items-center gap-1.5 disabled:opacity-50" style={{ background: '#3B6D11' }}>

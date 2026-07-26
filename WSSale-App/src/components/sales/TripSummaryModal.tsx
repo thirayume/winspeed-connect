@@ -8,6 +8,7 @@ import { appConfirm } from '../ui/AppAlert';
 import { RequestActionModal, type RequestActionType } from '../papertrail/RequestActionModal';
 import { TripSetupModal } from './TripSetupModal';
 import { PaperDocModal } from '../papertrail/PaperDocModal';
+import { SOBookingDocModal } from './SOBookingDocModal';
 import { SO_STATUS_META, soStatusLabel } from '../../constants/soStatus';
 
 export function TripSummaryModal({
@@ -33,6 +34,7 @@ export function TripSummaryModal({
   
   const [isEditTripOpen, setIsEditTripOpen] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [selectedBookingSoId, setSelectedBookingSoId] = useState<string | number | null>(null);
 
   if (!isOpen || !trip) return null;
 
@@ -307,13 +309,22 @@ export function TripSummaryModal({
                     </div>
                   )}
 
-                  <button
-                    disabled={busy}
-                    onClick={() => setIsPrinting(true)}
-                    className="w-full py-2.5 rounded-xl border border-gray-300 bg-white text-[#0C447C] hover:bg-blue-50 text-sm sm:text-base font-bold shadow-sm disabled:opacity-50 flex items-center justify-center gap-2 transition-colors mt-1"
-                  >
-                    <Printer size={16} /> พิมพ์เอกสารทั้งหมด ({trip.orders.length} ใบ)
-                  </button>
+                  <div className="grid grid-cols-2 gap-2 mt-1">
+                    <button
+                      disabled={busy}
+                      onClick={() => setIsPrinting(true)}
+                      className="py-2.5 rounded-xl border border-gray-300 bg-white text-[#0C447C] hover:bg-blue-50 text-xs sm:text-sm font-bold shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5 transition-colors"
+                    >
+                      <Printer size={15} /> พิมพ์ใบจ่ายของ (4 สี)
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => setSelectedBookingSoId(trip.orders[0]?.id || null)}
+                      className="py-2.5 rounded-xl border border-blue-600 bg-blue-50 text-[#0C447C] hover:bg-blue-100 text-xs sm:text-sm font-bold shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5 transition-colors"
+                    >
+                      <FileText size={15} /> พิมพ์ใบสั่งจอง (A4)
+                    </button>
+                  </div>
                   
                   {onAddBill && !isQuoteLocked && (
                     <button
@@ -492,6 +503,14 @@ export function TripSummaryModal({
         <PaperDocModal
           soIds={trip.orders.map(o => o.id!)}
           onClose={() => setIsPrinting(false)}
+        />
+      )}
+
+      {selectedBookingSoId && (
+        <SOBookingDocModal
+          soId={selectedBookingSoId}
+          soIds={trip.orders.map(o => o.id!)}
+          onClose={() => setSelectedBookingSoId(null)}
         />
       )}
     </>
