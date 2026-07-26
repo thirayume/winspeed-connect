@@ -6,6 +6,7 @@ import {
 } from '../../services/api';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { useAppStore } from '../../store/app-store';
+import { formatThaiDate } from '../../utils/date';
 
 const MATCH_BADGE: Record<string, string> = {
   MATCHED: 'bg-green-100 text-green-700', MULTI: 'bg-amber-100 text-amber-700',
@@ -134,7 +135,7 @@ export function WeighInboxPage() {
                   <td className="px-4 py-3 whitespace-nowrap"><div className="font-semibold text-gray-800">{r.Sequence}</div><div className="text-xs text-gray-400">{r.Movebill || '–'}</div></td>
                   <td className="px-4 py-3 whitespace-nowrap"><div className="text-gray-700">{r.Plate}</div><div className="text-xs text-gray-400">{r.CustName}</div></td>
                   <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">{r.WeightNet != null ? `${(Number(r.WeightNet) / 1000).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} Ton` : '–'}</td>
-                  <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{r.DateOut || '–'}</td>
+                  <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{r.DateOut ? formatThaiDate(r.DateOut) : '–'}</td>
                   <td className="px-4 py-3 text-center whitespace-nowrap">
                     <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${MATCH_BADGE[r.MatchStatus || 'UNMATCHED']}`}>{r.MatchStatus || '—'}</span>
                     {r.MatchedSoId && (

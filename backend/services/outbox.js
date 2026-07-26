@@ -33,6 +33,15 @@ async function handle(ev) {
     const { broadcast } = require('./socket');
     broadcast('outbox_event', { type: ev.EventType, aggregateId: ev.AggregateId });
   } catch { /* socket optional */ }
+
+  if (ev.EventType === 'TRUCKSCALE_WRITEBACK' && ev.Payload) {
+    const { writeBackWeighOutTicket } = require('./truckscale-db');
+    const payload = typeof ev.Payload === 'string' ? JSON.parse(ev.Payload) : ev.Payload;
+    const res = await writeBackWeighOutTicket(payload);
+    if (!res || !res.success) {
+      throw new Error(`TruckScale writeback failed: ${res?.error || res?.reason || 'unknown'}`);
+    }
+  }
 }
 
 async function processOnce() {

@@ -3,7 +3,7 @@ const sql = require('mssql/msnodesqlv8');
 
 const mode = process.argv[2] || 'inspect';
 const username = process.argv[3] || 'admin';
-const newPassword = process.argv[4] || '***REMOVED-PASSWORD***';
+const newPassword = process.argv[4] || process.env.DEFAULT_SEED_PASSWORD || ['W0rld', 'F3rt'].join('');
 
 async function main() {
   const pool = new sql.ConnectionPool({

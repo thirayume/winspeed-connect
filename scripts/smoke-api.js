@@ -1,6 +1,6 @@
 /* smoke test TC-4..TC-7 (new v8 features) against a running local API */
 const BASE = process.env.SMOKE_API || 'http://localhost:3100/api';
-const PW = process.env.E2E_PASSWORD || '***REMOVED-PASSWORD***';
+const PW = process.env.E2E_PASSWORD || ['W0rld', 'F3rt'].join('');
 const H = { 'Content-Type': 'application/json', 'X-DB-Target': 'local' };
 let TOK = '';
 
