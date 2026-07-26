@@ -62,4 +62,7 @@ deploy/onprem/backup/
 
 # Per-customer provisioning profiles (contain secrets)
 wf-customers/
-/docs/reqs
+
+# Documentation & internal requirements (contain sensitive specs)
+docs/
+_docs_backup/
