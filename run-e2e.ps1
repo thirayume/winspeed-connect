@@ -56,11 +56,18 @@ try {
     Write-Host $_.Exception.Message -ForegroundColor Red
     $testExitCode = 1
 } finally {
-    Write-Host '5. Retaining stable E2E users for audit traceability...' -ForegroundColor Yellow
+    Write-Host '5. Cleaning up E2E test data (SQL Server + TruckScale MySQL)...' -ForegroundColor Yellow
     try {
         sqlcmd -S .\SQLEXPRESS -E -d dbwins_worldfert9 -i db-init\e2e-cleanup.sql -b
     } catch {
-        Write-Warning "E2E cleanup failed: $($_.Exception.Message)"
+        Write-Warning "E2E cleanup (SQL Server) failed: $($_.Exception.Message)"
+    }
+    # ตั้งแต่ v1.4.0 การ ship เขียนใบชั่งกลับเข้า db_truckscale ต้องล้างออกด้วย
+    # มิฉะนั้นใบชั่งของเทสต์จะสะสมในฐานข้อมูล UAT ทุกรอบที่รัน
+    try {
+        node backend\scripts\e2e-cleanup-truckscale.js
+    } catch {
+        Write-Warning "E2E cleanup (TruckScale MySQL) failed: $($_.Exception.Message)"
     }
     if (-not $KeepServers) {
         Write-Host '6. Stopping test server process tree...' -ForegroundColor Yellow
