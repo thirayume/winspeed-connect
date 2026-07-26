@@ -32,7 +32,11 @@ async function seed() {
       const d = String(e.DeptID).trim();
       const eId = String(e.EmpID).trim();
       
-      if (g === '2000' || ['1018', '9005', '8008'].includes(eId) || e.EmpCode === 'EMP-00012' || e.EmpCode === 'EMP-00059' || e.EmpCode === 'EMP-00008') {
+      if (g === '2000') {
+        role = 'C_LEVEL';
+      } else if (['1018', '9005', '8008'].includes(eId) || e.EmpCode === 'EMP-00012' || e.EmpCode === 'EMP-00059' || e.EmpCode === 'EMP-00008') {
+        role = 'C_LEVEL';
+      } else if (g === '2002') {
         role = 'MANAGER';
       } else if (g === '2001' || d === '2004' || d === '2005') {
         role = 'WAREHOUSE';

@@ -166,7 +166,7 @@ router.get('/cases', async (req, res) => {
 });
 
 // POST /api/recon/:soId/resolve  { checkType, action, note }
-router.post('/:soId/resolve', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER'), async (req, res) => {
+router.post('/:soId/resolve', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { checkType, action, note, wfRef } = req.body || {};
     if (!['WEIGH', 'INVOICE'].includes(checkType)) return res.status(400).json({ message: 'checkType ไม่ถูกต้อง' });
