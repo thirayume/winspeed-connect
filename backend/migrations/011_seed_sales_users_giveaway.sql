@@ -1,6 +1,6 @@
 -- =============================================================
 -- 011_seed_sales_users_giveaway.sql
--- Create 8 missing sales AppUsers (password: Sales@2026)
+-- Create missing sales AppUsers
 -- Safe to re-run: uses IF NOT EXISTS guards
 --
 -- NOTE: การ seed GiveawayBudget ย้ายไปอยู่ที่ 012_seed_giveaway_budget.sql
