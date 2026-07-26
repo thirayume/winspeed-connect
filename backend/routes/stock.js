@@ -20,7 +20,7 @@ router.get('/', async (req, res) => {
 });
 
 // PUT /api/stock — upsert (WAREHOUSE/MANAGER/ADMIN)
-router.put('/', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN'), async (req, res) => {
+router.put('/', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const { goodId, warehouseId, goodName, qtyOnHand, unit, source } = req.body || {};
     if (!goodId) return res.status(400).json({ message: 'goodId จำเป็น' });

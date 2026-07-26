@@ -188,7 +188,7 @@ function AllocateModal({ plan, onClose, onDone }: { plan: RebatePlan; onClose: (
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
 
-  useEffect(() => { listUsers().then(u => setUsers(u.filter(x => x.Role === 'SALES' || x.Role === 'ADMIN'))).catch(console.error); }, []);
+  useEffect(() => { listUsers().then(u => setUsers(u.filter(x => ['SALES', 'ADMIN', 'MANAGER', 'C_LEVEL'].includes(x.Role)))).catch(console.error); }, []);
 
   async function submit() {
     if (!salesUserId || !amount) { setErr('เลือกพนักงานและกรอกจำนวน'); return; }

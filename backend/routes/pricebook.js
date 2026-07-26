@@ -51,7 +51,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/pricebook — สร้าง DRAFT (+ seedFromCurrent)
-router.post('/', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN'), async (req, res) => {
+router.post('/', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const { name, effectiveMonth, note, seedFromCurrent } = req.body || {};
     if (!name || !effectiveMonth) return res.status(400).json({ message: 'name และ effectiveMonth (YYYY-MM) จำเป็น' });
@@ -87,7 +87,7 @@ router.post('/', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN'), async (req, res)
 });
 
 // POST /api/pricebook/:id/lines — แทนที่รายการ (เฉพาะ DRAFT)
-router.post('/:id/lines', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN'), async (req, res) => {
+router.post('/:id/lines', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const book = (await wfQuery(`SELECT Status FROM wf.PriceBook WHERE Id=@id`, { id: { type: sql.Int, value: id } })).recordset[0];
@@ -128,8 +128,8 @@ async function transition(req, res, { from, to, action, col }) {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 }
 
-router.post('/:id/approve',  requireRole('MANAGER', 'ADMIN'), (req, res) => transition(req, res, { from: 'DRAFT', to: 'APPROVED', action: 'APPROVE', col: { by: 'ApprovedBy', at: 'ApprovedAt' } }));
-router.post('/:id/activate', requireRole('MANAGER', 'ADMIN'), (req, res) => transition(req, res, { from: 'APPROVED', to: 'ACTIVE', action: 'ACTIVATE', col: { by: 'ActivatedBy', at: 'ActivatedAt' } }));
-router.post('/:id/archive',  requireRole('MANAGER', 'ADMIN'), (req, res) => transition(req, res, { from: 'ACTIVE', to: 'ARCHIVED', action: 'ARCHIVE', col: null }));
+router.post('/:id/approve',  requireRole('MANAGER', 'ADMIN', 'C_LEVEL'), (req, res) => transition(req, res, { from: 'DRAFT', to: 'APPROVED', action: 'APPROVE', col: { by: 'ApprovedBy', at: 'ApprovedAt' } }));
+router.post('/:id/activate', requireRole('MANAGER', 'ADMIN', 'C_LEVEL'), (req, res) => transition(req, res, { from: 'APPROVED', to: 'ACTIVE', action: 'ACTIVATE', col: { by: 'ActivatedBy', at: 'ActivatedAt' } }));
+router.post('/:id/archive',  requireRole('MANAGER', 'ADMIN', 'C_LEVEL'), (req, res) => transition(req, res, { from: 'ACTIVE', to: 'ARCHIVED', action: 'ARCHIVE', col: null }));
 
 module.exports = router;
