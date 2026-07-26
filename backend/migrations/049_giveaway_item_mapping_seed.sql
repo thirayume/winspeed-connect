@@ -38,7 +38,7 @@ GO
 -- =============================================================
 -- 049_seed_all_employees.sql
 -- Maps all remaining employees from dbo.EMEmp to wf.AppUser
--- Password for all is set to '***REMOVED-PASSWORD***'
+-- Default initial credentials set for new employees
 -- Username is derived from EmpCode (e.g. emp-00001)
 -- =============================================================
 
