@@ -1066,7 +1066,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/quotation
-router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res) => {
+router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     await assertNativeQuotationReady();
     const { custId, custName, validUntil, validDays, remark, lines, salesUserId: impersonatedId } = req.body;
@@ -1115,7 +1115,7 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res
 });
 
 // POST /api/quotation/from-so-trip
-router.post('/from-so-trip', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res) => {
+router.post('/from-so-trip', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const soIds = [...new Set(Array.isArray(req.body?.soIds)
       ? req.body.soIds.map(Number).filter(n => Number.isInteger(n) && n > 0)
@@ -1338,7 +1338,7 @@ router.post('/from-so-trip', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asy
 });
 
 // PATCH /api/quotation/:id/status
-router.patch('/:id/status', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res) => {
+router.patch('/:id/status', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const { status } = req.body;
     if (!['DRAFT', 'SENT', 'ACCEPTED', 'EXPIRED', 'CANCELLED'].includes(status))
@@ -1396,7 +1396,7 @@ router.patch('/:id/status', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), asyn
 });
 
 // PATCH /api/quotation/:id/valid-until
-router.patch('/:id/valid-until', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res) => {
+router.patch('/:id/valid-until', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const validUntil = normalizeValidUntil(req.body?.validUntil, req.body?.validDays);
     const ready = await getNativeQuotationReadiness();
@@ -1414,7 +1414,7 @@ router.patch('/:id/valid-until', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'),
 });
 
 // POST /api/quotation/:id/convert - create a draft app SO from an accepted quotation.
-router.post('/:id/convert', requireRole('SALES', 'COUNTER_SALES', 'ADMIN'), async (req, res) => {
+router.post('/:id/convert', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const { soPrefix } = req.body;
     const prefix = ['I', 'K', 'AI'].includes(soPrefix) ? soPrefix : 'I';
