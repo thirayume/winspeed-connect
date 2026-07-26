@@ -14,23 +14,35 @@ export function ReportsPage() {
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [showPdfModal, setShowPdfModal] = useState(false);
+  // รายงานบางตัวกรองตามวันชั่งออก ใช้วันที่ตามเวลาท้องถิ่น ไม่ใช่ UTC
+  const localToday = (() => {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  })();
+  const [from, setFrom] = useState(localToday);
+  const [to, setTo] = useState(localToday);
+  const DATE_RANGE_REPORTS = ['truckscale-writeback'];
+  const needsDateRange = DATE_RANGE_REPORTS.includes(active);
 
   useEffect(() => {
     fetchReportTypes().then(t => { setTypes(t); if (t[0]) setActive(t[0].key); }).catch(console.error);
   }, []);
 
-  const load = useCallback(async (type: string) => {
+  const load = useCallback(async (type: string, range?: { from: string; to: string }) => {
     if (!type) return;
     setLoading(true);
-    try { setData(await fetchReport(type)); } catch (e) { console.error(e); setData(null); }
+    try { setData(await fetchReport(type, range)); } catch (e) { console.error(e); setData(null); }
     setLoading(false);
   }, []);
-  useEffect(() => { load(active); }, [active, load]);
+  useEffect(() => {
+    load(active, DATE_RANGE_REPORTS.includes(active) ? { from, to } : undefined);
+  }, [active, from, to, load]);
 
   async function doExport() {
     if (!active) return;
     setExporting(true);
-    try { await exportReport(active); } catch (e) { alert((e as Error).message); }
+    try { await exportReport(active, needsDateRange ? { from, to } : undefined); } catch (e) { alert((e as Error).message); }
     setExporting(false);
   }
 
@@ -53,7 +65,16 @@ export function ReportsPage() {
             className="px-3 py-2 rounded-lg text-white text-sm font-semibold flex items-center gap-1.5 disabled:opacity-50" style={{ background: '#3B6D11' }}>
             <Download size={16} /> Export Excel
           </button>
-          <button onClick={() => load(active)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white"><RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} /></button>
+          {needsDateRange && (
+            <div className="flex items-center gap-1.5 mr-1">
+              <input type="date" value={from} max={to} onChange={e => setFrom(e.target.value)}
+                className="h-10 px-2 rounded-xl border border-gray-200 bg-white text-sm" aria-label="ตั้งแต่วันที่" />
+              <span className="text-gray-400 text-sm">ถึง</span>
+              <input type="date" value={to} min={from} onChange={e => setTo(e.target.value)}
+                className="h-10 px-2 rounded-xl border border-gray-200 bg-white text-sm" aria-label="ถึงวันที่" />
+            </div>
+          )}
+          <button onClick={() => load(active, needsDateRange ? { from, to } : undefined)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white"><RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} /></button>
         </div>
       </div>
 

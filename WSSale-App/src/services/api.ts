@@ -634,9 +634,14 @@ export const fetchLineStatus = () => req<{ webhookConfigured: boolean; pushConfi
 // ── Reports (FR-017) ──────────────────────────────────────────
 export type ReportData = { type: string; title: string; columns: { key: string; label: string }[]; rows: Record<string, unknown>[] };
 export const fetchReportTypes = () => req<{ key: string; title: string }[]>('/reports/types');
-export const fetchReport = (type: string) => req<ReportData>(`/reports/${type}`);
-export async function exportReport(type: string) {
-  const res = await fetch(`${API_BASE}/reports/${type}/export`, { headers: { ...authHeaders(), ...dbTargetHeader() } });
+// รายงานบางตัว (เช่น truckscale-writeback) รับช่วงวัน ส่วนตัวอื่นไม่สนใจพารามิเตอร์
+export const fetchReport = (type: string, params?: Record<string, string>) => {
+  const qs = params && Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';
+  return req<ReportData>(`/reports/${type}${qs}`);
+};
+export async function exportReport(type: string, params?: Record<string, string>) {
+  const qs = params && Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';
+  const res = await fetch(`${API_BASE}/reports/${type}/export${qs}`, { headers: { ...authHeaders(), ...dbTargetHeader() } });
   if (!res.ok) throw new Error('Export ล้มเหลว');
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);

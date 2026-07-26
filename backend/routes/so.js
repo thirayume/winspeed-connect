@@ -1733,6 +1733,10 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (r
       operatorName: req.user.name,
     };
     const wbRes = await writeBackWeighOutTicket(ticketPayload).catch(err => ({ success: false, error: err.message }));
+    // บันทึกผลลง wf.WeighTicket เสมอ เพื่อให้รายงานกระทบยอด R-3 แยกได้ว่าใบใด
+    // แอปสร้างเอง (inserted) ใบใดเขียนทับของจริง (updated) และใบใดเขียนไม่สำเร็จ
+    const { recordWriteBackResult } = require('../services/truckscale-db');
+    await recordWriteBackResult(so.Id, wbRes);
     if (!wbRes || !wbRes.success) {
       console.warn('[truckscale-writeback] Immediate writeback failed/skipped. Queueing Outbox retry event.');
       await enqueue('TRUCKSCALE_WRITEBACK', so.Id, ticketPayload, `TS_WRITEBACK:${so.Id}`).catch(() => {});

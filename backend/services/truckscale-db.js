@@ -214,7 +214,7 @@ async function writeBackWeighOutTicket(ticketData) {
       );
       console.log(`[truckscale] Successfully updated tblscale s_id=${sid} for SO:${soId}`);
       if (wfRef) await removePreWeighTicket(wfRef);
-      return { success: true, action: 'updated', s_id: sid };
+      return { success: true, action: 'updated', s_id: sid, sequence: existing[0].sequence || null };
     } else {
       // 2. Fallback: INSERT new record into tblscale
       const maxRes = await tsQuery(
@@ -255,7 +255,7 @@ async function writeBackWeighOutTicket(ticketData) {
       );
       console.log(`[truckscale] Inserted fallback record into tblscale (seq: ${genSeq}, mb: ${insertMb}) for SO:${soId}`);
       if (wfRef) await removePreWeighTicket(wfRef);
-      return { success: true, action: 'inserted', insertId: res.insertId };
+      return { success: true, action: 'inserted', insertId: res.insertId, sequence: genSeq };
     }
   } catch (e) {
     console.error(`[truckscale] writeBackWeighOutTicket failed: ${e.message}`);
@@ -263,4 +263,59 @@ async function writeBackWeighOutTicket(ticketData) {
   }
 }
 
-module.exports = { getPool, tsQuery, insertPreWeighTicket, removePreWeighTicket, writeBackWeighOutTicket, getThaiDateComponents };
+// บันทึกผลการเขียนกลับลง wf.WeighTicket เพื่อให้รายงานกระทบยอด R-3 ตรวจย้อนได้ว่า
+// ใบสั่งขายใดทำให้เกิดใบชั่งที่แอปสร้างเอง และใบใดเขียนกลับไม่สำเร็จ
+// เรียกจากทั้งเส้นทาง ship ตรงและ outbox retry จึงรวมไว้ที่เดียวไม่ให้ตรรกะซ้ำ
+async function recordWriteBackResult(soId, result) {
+  if (!soId) return;
+  try {
+    const { sql, wfQuery } = require('../db');
+    const ok = Boolean(result && result.success);
+    const sid = result && (result.s_id != null ? Number(result.s_id)
+      : (result.insertId != null ? Number(result.insertId) : null));
+    await wfQuery(`
+      UPDATE wf.WeighTicket
+      SET ScaleWriteAction = @action,
+          ScaleSid         = COALESCE(@sid, ScaleSid),
+          ScaleSequence    = COALESCE(@seq, ScaleSequence),
+          ScaleWrittenAt   = CASE WHEN @action IN ('updated','inserted') THEN GETUTCDATE() ELSE ScaleWrittenAt END,
+          ScaleError       = @err
+      WHERE Id = (SELECT TOP 1 Id FROM wf.WeighTicket WHERE SoId = @so ORDER BY WeighOutAt DESC, Id DESC)`,
+      {
+        so:     { type: sql.NVarChar(50), value: String(soId) },
+        action: { type: sql.VarChar(10), value: ok ? (result.action || 'updated') : 'failed' },
+        sid:    { type: sql.Int, value: Number.isFinite(sid) ? sid : null },
+        seq:    { type: sql.VarChar(10), value: (result && result.sequence) || null },
+        err:    { type: sql.NVarChar(500), value: ok ? null
+                  : String((result && (result.error || result.reason)) || 'unknown').slice(0, 500) },
+      });
+  } catch (error) {
+    // ไม่ให้การบันทึกผลทำให้การ ship ล้มเหลว แต่ต้องเห็นใน log
+    console.error('[truckscale] recordWriteBackResult failed: ' + error.message);
+  }
+}
+
+// อ่านใบชั่งฝั่งโรงงานตามช่วงวัน (อ่านอย่างเดียว) สำหรับรายงานกระทบยอด
+// ห้ามกรองด้วย Date_Out เพราะเป็น varchar 'DD/MM/YYYY' ปี พ.ศ. เทียบช่วงไม่ได้
+// ใช้ Date_Out2 ซึ่งเป็นเลข serial แบบ OLE (epoch 1899-12-30) แทน
+function oleDateSerial(date) {
+  return Math.floor((Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
+    - Date.UTC(1899, 11, 30)) / 86400000);
+}
+
+async function listScaleTicketsByDateRange(fromDate, toDate) {
+  if (!getPool()) return [];
+  return tsQuery(
+    `SELECT s_id, sequence, movebill, one_car_regis, one_cus_name,
+            weight_in, weight_out, weight_net, Date_Out, Date_Out2, Time_Out, one_des
+     FROM tblscale
+     WHERE Date_Out2 BETWEEN ? AND ?
+     ORDER BY s_id DESC`,
+    [oleDateSerial(fromDate), oleDateSerial(toDate)]
+  );
+}
+
+module.exports = {
+  getPool, tsQuery, insertPreWeighTicket, removePreWeighTicket, writeBackWeighOutTicket,
+  getThaiDateComponents, recordWriteBackResult, listScaleTicketsByDateRange, oleDateSerial,
+};
