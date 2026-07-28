@@ -629,10 +629,11 @@ router.delete('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUN
   try {
     const targetId = Number(req.params.id);
     if (targetId === req.user.id) return res.status(400).json({ message: 'ไม่สามารถลบบัญชีตัวเองได้' });
-    await wfQuery(
+    const __r = await wfQuery(
       `DELETE FROM wf.AppUser WHERE Id = @id`,
       { id: { type: sql.Int, value: targetId } }
     );
+    if (!__r.rowsAffected[0]) return res.status(404).json({ message: 'ไม่พบรายการที่ระบุ' });
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: 'Server error' }); }
 });

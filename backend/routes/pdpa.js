@@ -21,11 +21,12 @@ router.get('/policies', async (req, res) => {
 // PUT /api/pdpa/policies/:id — แก้ retention (ADMIN)
 router.put('/policies/:id', requireRole('ADMIN'), async (req, res) => {
   try {
-    await wfQuery(`UPDATE wf.RetentionPolicy SET RetentionDays=@d, Note=@n, UpdatedAt=GETUTCDATE() WHERE Id=@id`, {
+    const __r = await wfQuery(`UPDATE wf.RetentionPolicy SET RetentionDays=@d, Note=@n, UpdatedAt=GETUTCDATE() WHERE Id=@id`, {
       d: { type: sql.Int, value: Number(req.body?.retentionDays) || 0 },
       n: { type: sql.NVarChar(300), value: req.body?.note || null },
       id:{ type: sql.Int, value: Number(req.params.id) },
     });
+    if (!__r.rowsAffected[0]) return res.status(404).json({ message: 'ไม่พบรายการที่ระบุ' });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ message: e.message }); }
 });

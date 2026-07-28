@@ -60,7 +60,7 @@ router.post('/', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) =>
 router.put('/:id', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { minAmount, maxAmount, requiredRole, effectiveTo, isActive, note } = req.body || {};
-    await wfQuery(`
+    const __r = await wfQuery(`
       UPDATE wf.ApprovalPolicy SET
         MinAmount = @min, MaxAmount = @max, RequiredRole = COALESCE(@role, RequiredRole),
         EffectiveTo = @to, IsActive = COALESCE(@act, IsActive), Note = @note
@@ -74,6 +74,7 @@ router.put('/:id', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) 
         act:  { type: sql.Bit,           value: isActive == null ? null : (isActive ? 1 : 0) },
         note: { type: sql.NVarChar(300), value: note || null },
       });
+    if (!__r.rowsAffected[0]) return res.status(404).json({ message: 'ไม่พบรายการที่ระบุ' });
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -81,8 +82,9 @@ router.put('/:id', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) 
 // DELETE /api/policy/:id — ปิดใช้งาน (ADMIN)
 router.delete('/:id', requireRole('ADMIN'), async (req, res) => {
   try {
-    await wfQuery(`UPDATE wf.ApprovalPolicy SET IsActive = 0 WHERE Id = @id`,
+    const r = await wfQuery(`UPDATE wf.ApprovalPolicy SET IsActive = 0 WHERE Id = @id`,
       { id: { type: sql.Int, value: Number(req.params.id) } });
+    if (!r.rowsAffected[0]) return res.status(404).json({ message: 'ไม่พบนโยบายที่ระบุ' });
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });

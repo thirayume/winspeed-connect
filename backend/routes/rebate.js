@@ -1,5 +1,5 @@
 /**
- * rebate.js — Rebate Pool + FIFO Ledger + Claims
+ * rebate.js — Rebate Pool + FIFO Ledger + Claims (4-Tier Approval & Multi-Line Items)
  * ⚠ Writes ไปที่ wf schema เท่านั้น
  */
 const router = require('express').Router();
@@ -7,6 +7,88 @@ const { sql, wfQuery } = require('../db');
 const { requireAuth, requireRole, requireRebateAmountAccess, canViewAllRebateAmounts } = require('../middleware/auth');
 
 router.use(requireAuth);
+
+// Helper: Infer Region (01-06 or 99) from customer's SaleAreaID in WINSpeed
+/**
+ * ชื่อผู้ตัดสินที่จะบันทึกลงร่องรอยการอนุมัติ
+ *
+ * DecidedByName เป็น snapshot ณ เวลาที่ตัดสิน (เจตนาให้เป็นอย่างนั้น เพราะชื่อผู้ใช้
+ * อาจเปลี่ยนภายหลัง แต่หลักฐานการอนุมัติต้องคงเดิม) จึงต้องเก็บ "ชื่อ" ไม่ใช่รหัส
+ *
+ * เดิมใช้ req.user.name ซึ่ง token ไม่มีฟิลด์นี้ จึงตกไปใช้ req.user.sub แล้วได้ตัวเลข
+ * ทำให้เอกสารที่พิมพ์จากระบบแสดงรหัสแทนชื่อผู้อนุมัติ ใช้เป็นหลักฐานไม่ได้
+ */
+async function approverName(user) {
+  const fromToken = (user?.name || user?.displayName || '').trim();
+  if (fromToken) return fromToken.slice(0, 150);
+  const row = (await wfQuery(
+    `SELECT DisplayName, Username FROM wf.AppUser WHERE Id = @id`,
+    { id: { type: sql.Int, value: Number(user?.sub) } }
+  )).recordset?.[0];
+  return String(row?.DisplayName || row?.Username || `ผู้ใช้ #${user?.sub}`).slice(0, 150);
+}
+
+async function getCustomerRegion(custId) {
+  if (!custId) return '99';
+  try {
+    const r = await wfQuery(`
+      SELECT TOP 1 sa.SaleAreaCode
+      FROM dbo.EMCust c
+      JOIN dbo.EMSaleArea sa ON sa.SaleAreaID = c.SaleAreaID
+      WHERE c.CustID = @cid
+    `, { cid: { type: sql.NVarChar(20), value: String(custId) } });
+    const code = r.recordset?.[0]?.SaleAreaCode;
+    if (!code || code.length < 2) return '99';
+    const reg = code.substring(0, 2);
+    return ['01', '02', '03', '04', '05', '06'].includes(reg) ? reg : '99';
+  } catch (e) {
+    console.warn(`[rebate] Could not infer region for customer ${custId}: ${e.message}`);
+    return '99';
+  }
+}
+
+// GET /api/rebate/regions — ดึงรายการภูมิภาคและสิทธิ์การดูแลตามภาคของผู้ใช้
+router.get('/regions', async (req, res) => {
+  try {
+    const regions = (await wfQuery(`SELECT * FROM wf.SaleRegion ORDER BY RegionCode ASC`)).recordset || [];
+    const userAreas = (await wfQuery(`
+      SELECT ua.*, u.DisplayName, u.Username, u.Role, r.RegionName
+      FROM wf.UserSaleArea ua
+      JOIN wf.AppUser u ON u.Id = ua.UserId
+      JOIN wf.SaleRegion r ON r.RegionCode = ua.RegionCode
+      ORDER BY ua.RegionCode, u.DisplayName
+    `)).recordset || [];
+    res.json({ regions, userAreas });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/rebate/user-regions — จัดตั้ง/อัปเดตผู้ดูแลภาค
+router.post('/user-regions', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
+  try {
+    const { userId, regionCode, isPrimary } = req.body || {};
+    if (!userId || !regionCode) return res.status(400).json({ message: 'userId และ regionCode จำเป็น' });
+
+    const user = (await wfQuery(`SELECT Id FROM wf.AppUser WHERE Id = @uid`, { uid: { type: sql.Int, value: Number(userId) } })).recordset?.[0];
+    if (!user) return res.status(404).json({ message: 'ไม่พบบัญชีผู้ใช้' });
+
+    await wfQuery(`
+      IF EXISTS (SELECT 1 FROM wf.UserSaleArea WHERE UserId = @uid AND RegionCode = @rcode)
+      BEGIN
+        UPDATE wf.UserSaleArea SET IsPrimary = @prim WHERE UserId = @uid AND RegionCode = @rcode;
+      END
+      ELSE
+      BEGIN
+        INSERT INTO wf.UserSaleArea (UserId, RegionCode, IsPrimary) VALUES (@uid, @rcode, @prim);
+      END
+    `, {
+      uid:   { type: sql.Int,         value: Number(userId) },
+      rcode: { type: sql.VarChar(10), value: String(regionCode) },
+      prim:  { type: sql.Bit,         value: isPrimary ? 1 : 0 }
+    });
+
+    res.json({ success: true, message: 'บันทึกสิทธิ์ดูแลภาคสำเร็จ' });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
 
 // GET /api/rebate/pools — pool รายเดือนของ sales user
 router.get('/pools', requireRebateAmountAccess, async (req, res) => {
@@ -23,7 +105,6 @@ router.get('/pools', requireRebateAmountAccess, async (req, res) => {
     if (year)   { conditions.push(`p.PeriodYear = @y`);   inputs.y  = { type: sql.Int, value: Number(year) }; }
     if (month)  { conditions.push(`p.PeriodMonth = @m`);  inputs.m  = { type: sql.Int, value: Number(month) }; }
     
-    // Ignore empty phantom pools
     conditions.push(`(p.AccruedAmt > 0 OR p.ClaimedAmt > 0)`);
     
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -63,7 +144,7 @@ router.get('/ledger', requireRebateAmountAccess, async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/rebate/claims — เคลมที่เปิดอยู่
+// GET /api/rebate/claims — รายการเคลม
 router.get('/claims', requireRebateAmountAccess, async (req, res) => {
   try {
     const { status } = req.query;
@@ -79,9 +160,12 @@ router.get('/claims', requireRebateAmountAccess, async (req, res) => {
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const r = await wfQuery(`
-      SELECT c.*, u.DisplayName AS SalesName
+      SELECT c.*, u.DisplayName AS SalesName, r.RegionName,
+             (SELECT COUNT(*) FROM wf.RebateClaimLine l WHERE l.ClaimId = c.Id) AS LineCount,
+             (SELECT COUNT(*) FROM wf.RebateClaimInvoice i WHERE i.ClaimId = c.Id) AS InvoiceCount
       FROM wf.RebateClaim c
       JOIN wf.AppUser u ON u.Id = c.SalesUserId
+      LEFT JOIN wf.SaleRegion r ON r.RegionCode = c.RegionCode
       ${where}
       ORDER BY c.CreatedAt DESC
     `, inputs);
@@ -89,11 +173,64 @@ router.get('/claims', requireRebateAmountAccess, async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// POST /api/rebate/claims — ยื่นเคลม (FIFO cut)
-router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+// GET /api/rebate/claims/:id — ดึงใบขอเคลียร์ใบเดียวพร้อมรายการย่อย และประวัติการอนุมัติ
+router.get('/claims/:id', requireRebateAmountAccess, async (req, res) => {
   try {
-    const { poolId, claimAmt, custId, note } = req.body;
-    if (!poolId || !claimAmt) return res.status(400).json({ message: 'poolId และ claimAmt จำเป็น' });
+    const claimId = Number(req.params.id);
+    if (!Number.isFinite(claimId)) return res.status(400).json({ message: 'Invalid claim ID' });
+
+    const claimR = await wfQuery(`
+      SELECT c.*, u.DisplayName AS SalesName, r.RegionName, appvUser.DisplayName AS ApprovedByName
+      FROM wf.RebateClaim c
+      JOIN wf.AppUser u ON u.Id = c.SalesUserId
+      LEFT JOIN wf.SaleRegion r ON r.RegionCode = c.RegionCode
+      LEFT JOIN wf.AppUser appvUser ON appvUser.Id = c.ApprovedBy
+      WHERE c.Id = @id
+    `, { id: { type: sql.Int, value: claimId } });
+
+    const claim = claimR.recordset?.[0];
+    if (!claim) return res.status(404).json({ message: `ไม่พบใบขอเคลียร์ ID ${claimId}` });
+
+    // Customer Name lookup
+    if (claim.CustId) {
+      const custR = await wfQuery(`SELECT TOP 1 CustName FROM dbo.EMCust WHERE CustID = @cid`, { cid: { type: sql.NVarChar(20), value: claim.CustId } });
+      claim.CustName = custR.recordset?.[0]?.CustName || claim.CustId;
+    }
+
+    const lines = (await wfQuery(`
+      SELECT l.*, p.Title AS PlanTitle, p.PlanNo
+      FROM wf.RebateClaimLine l
+      LEFT JOIN wf.RebatePlan p ON p.PlanId = l.PlanId
+      WHERE l.ClaimId = @id
+      ORDER BY l.[LineNo] ASC
+    `, { id: { type: sql.Int, value: claimId } })).recordset || [];
+
+    const approvals = (await wfQuery(`
+      -- a.* มีคอลัมน์ DecidedByName อยู่แล้ว การ JOIN มาตั้งชื่อซ้ำทำให้ได้สองค่า
+      -- แล้ว driver รวมเป็น "ชื่อ,ชื่อ" — ใช้ค่าที่บันทึกไว้ตอนตัดสินเป็นหลัก
+      -- เพราะเป็น snapshot ของหลักฐาน ชื่อผู้ใช้อาจเปลี่ยนภายหลังได้
+      SELECT a.*, u.DisplayName AS CurrentDisplayName
+      FROM wf.RebateClaimApproval a
+      LEFT JOIN wf.AppUser u ON u.Id = a.DecidedBy
+      WHERE a.ClaimId = @id
+      ORDER BY a.Tier ASC, a.CreatedAt ASC
+    `, { id: { type: sql.Int, value: claimId } })).recordset || [];
+
+    const invoices = (await wfQuery(`
+      SELECT * FROM wf.RebateClaimInvoice WHERE ClaimId = @id ORDER BY Id ASC
+    `, { id: { type: sql.Int, value: claimId } })).recordset || [];
+
+    res.json({ claim, lines, approvals, invoices });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/rebate/claims — ยื่นเคลม (รองรับ Multi-line 6 บรรทัด & 4-Tier Approval parity)
+router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
+  try {
+    const { poolId, claimAmt, custId, note, lines, invoices } = req.body;
+    if (!poolId || (!claimAmt && (!lines || !lines.length))) {
+      return res.status(400).json({ message: 'poolId และ claimAmt (หรือรายการย่อย lines) จำเป็น' });
+    }
 
     const pool = (await wfQuery(`SELECT * FROM wf.RebatePool WHERE Id=@id`, { id: { type: sql.Int, value: poolId } })).recordset?.[0];
     if (!pool) return res.status(404).json({ message: 'ไม่พบ pool' });
@@ -101,27 +238,148 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL'), a
       return res.status(403).json({ message: 'ไม่มีสิทธิ์เคลม pool ของพนักงานขายอื่น' });
     }
 
-    const available = Number(pool.AccruedAmt) - Number(pool.ClaimedAmt);
-    if (Number(claimAmt) > available)
-      return res.status(400).json({ message: `ยอดเกิน: ขอ ฿${claimAmt} ใช้ได้ ฿${available.toFixed(2)}` });
+    // Determine lines & calculated total
+    let totalAmt = Number(claimAmt || 0);
+    const parsedLines = [];
 
-    // สร้าง Claim
+    if (Array.isArray(lines) && lines.length > 0) {
+      if (lines.length > 6) return res.status(400).json({ message: 'ใบขอเคลียร์รองรับสูงสุด 6 รายการย่อยต่อใบ' });
+      let calculatedSum = 0;
+      lines.forEach((l, idx) => {
+        const qtyTon = Number(l.qtyTon || 0);
+        const pricePerTon = Number(l.pricePerTon || 0);
+        const netPricePerTon = Number(l.netPricePerTon || 0);
+        const rebatePerTon = pricePerTon - netPricePerTon;
+        const lineAmount = Math.round(qtyTon * rebatePerTon * 100) / 100;
+        calculatedSum += lineAmount;
+
+        parsedLines.push({
+          lineNo: idx + 1,
+          goodCode: String(l.goodCode || 'GENERAL').trim(),
+          goodName: l.goodName ? String(l.goodName).trim() : null,
+          qtyTon,
+          pricePerTon,
+          netPricePerTon,
+          rebatePerTon,
+          planId: l.planId ? Number(l.planId) : null,
+          remark: l.remark ? String(l.remark).trim() : null
+        });
+      });
+      totalAmt = Math.round(calculatedSum * 100) / 100;
+    }
+
+    const available = Number(pool.AccruedAmt) - Number(pool.ClaimedAmt);
+    if (totalAmt > available) {
+      return res.status(400).json({ message: `ยอดเกิน: ขอ ฿${totalAmt.toFixed(2)} ใช้ได้ ฿${available.toFixed(2)}` });
+    }
+
+    // R6-05 — กระทบยอดกับการขนจริงก่อนรับใบขอเคลียร์
+    //
+    // เอกสารฉบับที่ 5 (รายงานการขนสินค้า) ใช้ยืนยันว่าลูกค้าขนครบตามที่ขอเคลียร์จริง
+    // ในระบบเรา "ยอดขนจริง" คือ QtyTon ใน wf.RebateLedger ซึ่งตั้งตอนชั่งออกเท่านั้น
+    //
+    // เจตนา: บล็อกและให้คนแก้ ไม่ตัดยอดให้อัตโนมัติ — การตัดเงียบ ๆ จะทำให้ผู้แทนขาย
+    // ไม่รู้ว่าถูกหักอะไรไป และตรวจย้อนกลับตอน ISO ไม่ได้ว่าหักด้วยเหตุใด
+    if (parsedLines.length) {
+      const delivered = (await wfQuery(`
+        SELECT GoodCode, SUM(QtyTon) AS DeliveredTon
+        FROM wf.RebateLedger
+        WHERE PoolId = @pid AND ISNULL(ReversedFlag, 0) = 0
+        GROUP BY GoodCode`,
+        { pid: { type: sql.Int, value: poolId } })).recordset || [];
+
+      const claimedBefore = (await wfQuery(`
+        SELECT l.GoodCode, SUM(l.QtyTon) AS ClaimedTon
+        FROM wf.RebateClaimLine l
+        JOIN wf.RebateClaim c ON c.Id = l.ClaimId
+        WHERE c.PoolId = @pid AND c.Status <> 'REJECTED'
+        GROUP BY l.GoodCode`,
+        { pid: { type: sql.Int, value: poolId } })).recordset || [];
+
+      const tons = (rows, code) => Number(rows.find(r => String(r.GoodCode) === String(code))?.DeliveredTon
+        ?? rows.find(r => String(r.GoodCode) === String(code))?.ClaimedTon ?? 0);
+
+      const problems = [];
+      for (const line of parsedLines) {
+        const shipped = tons(delivered, line.goodCode);
+        const used = tons(claimedBefore, line.goodCode);
+        const remain = Math.round((shipped - used) * 1000) / 1000;
+        if (line.qtyTon > remain + 0.001) {
+          problems.push(`${line.goodCode}: ขอเคลียร์ ${line.qtyTon} ตัน แต่ขนจริงคงเหลือ ${remain} ตัน`
+            + (shipped ? ` (ขนจริง ${shipped} ตัน · เคลียร์ไปแล้ว ${used} ตัน)` : ' (ไม่พบการขนจริงของสูตรนี้)'));
+        }
+      }
+      if (problems.length) {
+        return res.status(400).json({
+          message: 'ยอดขอเคลียร์ไม่ตรงกับยอดขนจริง',
+          reconciliation: problems,
+        });
+      }
+    }
+
+    // Infer RegionCode from Customer
+    const regionCode = await getCustomerRegion(custId);
+
+    // 1. Create RebateClaim Header
     const claimR = await wfQuery(
-      `INSERT INTO wf.RebateClaim (PoolId, SalesUserId, CustId, ClaimAmt, RemainingAmt, Status, Note)
+      `INSERT INTO wf.RebateClaim (PoolId, SalesUserId, CustId, ClaimAmt, RemainingAmt, Status, Note, RegionCode, CurrentTier)
        OUTPUT inserted.*
-       VALUES (@pid, @uid, @cid, @amt, @amt, 'PENDING', @note)`,
+       VALUES (@pid, @uid, @cid, @amt, @amt, 'TIER2_PENDING', @note, @rcode, 2)`,
       {
-        pid:  { type: sql.Int,          value: poolId },
-        uid:  { type: sql.Int,          value: req.user.sub },
-        cid:  { type: sql.NVarChar(20), value: custId || null },
-        amt:  { type: sql.Decimal(12,2),value: Number(claimAmt) },
-        note: { type: sql.NVarChar(500),value: note || null },
+        pid:   { type: sql.Int,          value: poolId },
+        uid:   { type: sql.Int,          value: req.user.sub },
+        cid:   { type: sql.NVarChar(20), value: custId || null },
+        amt:   { type: sql.Decimal(12,2),value: totalAmt },
+        note:  { type: sql.NVarChar(500),value: note || null },
+        rcode: { type: sql.VarChar(10),  value: regionCode }
       }
     );
     const claim = claimR.recordset[0];
 
-    // FIFO cut: ตัด RemainingAmt จาก ledger เรียงตาม CreatedAt
-    let remaining = Number(claimAmt);
+    // 2. Create RebateClaimLine records
+    for (const line of parsedLines) {
+      await wfQuery(
+        `INSERT INTO wf.RebateClaimLine (ClaimId, [LineNo], GoodCode, GoodName, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, PlanId, Remark)
+         VALUES (@cid, @lno, @gcode, @gname, @qty, @price, @netPrice, @rebate, @planId, @remark)`,
+        {
+          cid:      { type: sql.Int,           value: claim.Id },
+          lno:      { type: sql.Int,           value: line.lineNo },
+          gcode:    { type: sql.NVarChar(50),  value: line.goodCode },
+          gname:    { type: sql.NVarChar(200), value: line.goodName },
+          qty:      { type: sql.Decimal(18,3), value: line.qtyTon },
+          price:    { type: sql.Decimal(18,2), value: line.pricePerTon },
+          netPrice: { type: sql.Decimal(18,2), value: line.netPricePerTon },
+          rebate:   { type: sql.Decimal(18,2), value: line.rebatePerTon },
+          planId:   { type: sql.Int,           value: line.planId },
+          remark:   { type: sql.NVarChar(500), value: line.remark }
+        }
+      );
+    }
+
+    // 3. Create RebateClaimInvoice records if provided
+    if (Array.isArray(invoices) && invoices.length > 0) {
+      for (const invNo of invoices) {
+        if (!invNo) continue;
+        await wfQuery(
+          `INSERT INTO wf.RebateClaimInvoice (ClaimId, DocuNo) VALUES (@cid, @dno)`,
+          { cid: { type: sql.Int, value: claim.Id }, dno: { type: sql.NVarChar(50), value: String(invNo).trim() } }
+        );
+      }
+    }
+
+    // 4. Log Tier 1 Submission Approval Record
+    await wfQuery(
+      `INSERT INTO wf.RebateClaimApproval (ClaimId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
+       VALUES (@cid, 1, 'SALES', 'APPROVED', @uid, @uname, GETUTCDATE(), 'ยื่นใบขออนุมัติเคลียร์รีเบท')`,
+      {
+        cid:   { type: sql.Int,          value: claim.Id },
+        uid:   { type: sql.Int,          value: req.user.sub },
+        uname: { type: sql.NVarChar(150),value: await approverName(req.user) }
+      }
+    );
+
+    // 5. FIFO Cut on Ledger
+    let remaining = totalAmt;
     const ledger = (await wfQuery(
       `SELECT * FROM wf.RebateLedger WHERE PoolId=@pid AND RemainingAmt>0 AND ReversedFlag=0 ORDER BY CreatedAt ASC`,
       { pid: { type: sql.Int, value: poolId } }
@@ -137,29 +395,177 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL'), a
       remaining -= cut;
     }
 
-    // อัปเดต pool ClaimedAmt
+    // 6. Update Pool ClaimedAmt
     await wfQuery(
       `UPDATE wf.RebatePool SET ClaimedAmt=ClaimedAmt+@amt, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
-      { amt: { type: sql.Decimal(12,2), value: Number(claimAmt) }, id: { type: sql.Int, value: poolId } }
+      { amt: { type: sql.Decimal(12,2), value: totalAmt }, id: { type: sql.Int, value: poolId } }
     );
 
     res.json(claim);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-// PATCH /api/rebate/claims/:id/approve — ACCOUNTING/ADMIN อนุมัติ
-router.patch('/claims/:id/approve', requireRole('ACCOUNTING', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+// POST /api/rebate/claims/:id/approve — 4-Tier Progression Approval
+router.post('/claims/:id/approve', async (req, res) => {
   try {
-    const { docuNo } = req.body; // WINSpeed reference document number after official processing
-    await wfQuery(
-      `UPDATE wf.RebateClaim SET Status='APPROVED', ApprovedAt=GETUTCDATE(), ApprovedBy=@uid, CnDocuNo=@cn WHERE Id=@id`,
-      {
-        id:  { type: sql.Int,          value: Number(req.params.id) },
-        uid: { type: sql.Int,          value: req.user.sub },
-        cn:  { type: sql.NVarChar(20), value: docuNo || null },
+    const claimId = Number(req.params.id);
+    const { docuNo, note } = req.body || {};
+    if (!Number.isFinite(claimId)) return res.status(400).json({ message: 'Invalid claim ID' });
+
+    const claimR = await wfQuery(`SELECT * FROM wf.RebateClaim WHERE Id = @id`, { id: { type: sql.Int, value: claimId } });
+    const claim = claimR.recordset?.[0];
+    if (!claim) return res.status(404).json({ message: `ไม่พบใบขอเคลียร์ ID ${claimId}` });
+
+    if (claim.Status === 'APPROVED' || claim.Status === 'CN_ISSUED') {
+      return res.status(400).json({ message: 'ใบขอเคลียร์นี้ได้รับการอนุมัติสมบูรณ์แล้ว' });
+    }
+    if (claim.Status === 'REJECTED') {
+      return res.status(400).json({ message: 'ใบขอเคลียร์นี้ถูกไม่อนุมัติ (REJECTED) กรุณายื่นใหม่' });
+    }
+
+    const currentTier = claim.CurrentTier || 2;
+    const userRole = req.user.role || '';
+    const userId = Number(req.user.sub);
+    const userName = await approverName(req.user);
+
+    // Check Segregation of Duties: Don't allow same person to approve consecutive tiers if strict mode
+    const prevApproval = (await wfQuery(
+      `SELECT TOP 1 DecidedBy FROM wf.RebateClaimApproval WHERE ClaimId = @cid AND Decision = 'APPROVED' ORDER BY Tier DESC`,
+      { cid: { type: sql.Int, value: claimId } }
+    )).recordset?.[0];
+
+    const allowSameUserOverride = process.env.ALLOW_SINGLE_USER_MULTI_TIER_APPROVAL === 'true' || ['ADMIN', 'C_LEVEL'].includes(userRole);
+    if (prevApproval && Number(prevApproval.DecidedBy) === userId && !allowSameUserOverride) {
+      return res.status(403).json({ message: 'ไม่อนุญาตให้บุคคลเดิมอนุมัติซ้ำสองชั้นติดต่อกัน (Segregation of Duties)' });
+    }
+
+    // Tier 2: Regional Manager Approval
+    if (currentTier === 2) {
+      const regionCode = claim.RegionCode || '99';
+      // Check if caller is assigned to region in UserSaleArea or has elevated role
+      const isRegionalMgr = (await wfQuery(
+        `SELECT 1 FROM wf.UserSaleArea WHERE UserId = @uid AND RegionCode = @rcode`,
+        { uid: { type: sql.Int, value: userId }, rcode: { type: sql.VarChar(10), value: regionCode } }
+      )).recordset?.length > 0;
+
+      const canApproveTier2 = isRegionalMgr || ['MANAGER', 'APPROVER', 'ADMIN', 'C_LEVEL'].includes(userRole);
+      if (!canApproveTier2) {
+        return res.status(403).json({ message: `ไม่มีสิทธิ์อนุมัติชั้นที่ 2 (ผู้จัดการภาค ${regionCode})` });
       }
-    );
-    res.json({ id: Number(req.params.id), status: 'APPROVED' });
+
+      await wfQuery(`
+        INSERT INTO wf.RebateClaimApproval (ClaimId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
+        VALUES (@cid, 2, 'REGIONAL_MGR', 'APPROVED', @uid, @uname, GETUTCDATE(), @note)
+      `, {
+        cid:   { type: sql.Int,          value: claimId },
+        uid:   { type: sql.Int,          value: userId },
+        uname: { type: sql.NVarChar(150),value: userName },
+        note:  { type: sql.NVarChar(500),value: note || 'อนุมัติชั้นที่ 2 (ผู้จัดการภาค)' }
+      });
+
+      await wfQuery(`
+        UPDATE wf.RebateClaim SET Status = 'TIER3_PENDING', CurrentTier = 3 WHERE Id = @id
+      `, { id: { type: sql.Int, value: claimId } });
+
+      return res.json({ id: claimId, status: 'TIER3_PENDING', currentTier: 3, message: 'อนุมัติชั้นที่ 2 (ผู้จัดการภาค) เรียบร้อย' });
+    }
+
+    // Tier 3: Marketing Manager Approval
+    if (currentTier === 3) {
+      const canApproveTier3 = ['MARKETING', 'MANAGER', 'APPROVER', 'ADMIN', 'C_LEVEL'].includes(userRole);
+      if (!canApproveTier3) {
+        return res.status(403).json({ message: 'ไม่มีสิทธิ์อนุมัติชั้นที่ 3 (ผู้จัดการฝ่ายตลาด)' });
+      }
+
+      await wfQuery(`
+        INSERT INTO wf.RebateClaimApproval (ClaimId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
+        VALUES (@cid, 3, 'MARKETING_MGR', 'APPROVED', @uid, @uname, GETUTCDATE(), @note)
+      `, {
+        cid:   { type: sql.Int,          value: claimId },
+        uid:   { type: sql.Int,          value: userId },
+        uname: { type: sql.NVarChar(150),value: userName },
+        note:  { type: sql.NVarChar(500),value: note || 'อนุมัติชั้นที่ 3 (ผู้จัดการฝ่ายตลาด)' }
+      });
+
+      await wfQuery(`
+        UPDATE wf.RebateClaim SET Status = 'TIER4_PENDING', CurrentTier = 4 WHERE Id = @id
+      `, { id: { type: sql.Int, value: claimId } });
+
+      return res.json({ id: claimId, status: 'TIER4_PENDING', currentTier: 4, message: 'อนุมัติชั้นที่ 3 (ผู้จัดการฝ่ายตลาด) เรียบร้อย' });
+    }
+
+    // Tier 4: Executive (C_LEVEL / ADMIN) Final Approval
+    if (currentTier === 4) {
+      const canApproveTier4 = ['C_LEVEL', 'ADMIN', 'ACCOUNTING'].includes(userRole);
+      if (!canApproveTier4) {
+        return res.status(403).json({ message: 'ไม่มีสิทธิ์อนุมัติชั้นที่ 4 (กรรมการบริหาร / C_LEVEL)' });
+      }
+
+      await wfQuery(`
+        INSERT INTO wf.RebateClaimApproval (ClaimId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
+        VALUES (@cid, 4, 'EXECUTIVE', 'APPROVED', @uid, @uname, GETUTCDATE(), @note)
+      `, {
+        cid:   { type: sql.Int,          value: claimId },
+        uid:   { type: sql.Int,          value: userId },
+        uname: { type: sql.NVarChar(150),value: userName },
+        note:  { type: sql.NVarChar(500),value: note || 'อนุมัติชั้นที่ 4 (กรรมการบริหาร)' }
+      });
+
+      await wfQuery(`
+        UPDATE wf.RebateClaim 
+        SET Status = 'APPROVED', 
+            ApprovedAt = GETUTCDATE(), 
+            ApprovedBy = @uid, 
+            CnDocuNo = @cn
+        WHERE Id = @id
+      `, {
+        id:  { type: sql.Int,          value: claimId },
+        uid: { type: sql.Int,          value: userId },
+        cn:  { type: sql.NVarChar(20), value: docuNo || null }
+      });
+
+      return res.json({ id: claimId, status: 'APPROVED', currentTier: 4, message: 'อนุมัติชั้นที่ 4 (กรรมการบริหาร) เสร็จสมบูรณ์' });
+    }
+
+    res.status(400).json({ message: 'ขั้นตอนอนุมัติไม่ถูกต้อง' });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/rebate/claims/:id/reject — ตีกลับ/ไม่อนุมัติใบขออนุมัติ
+router.post('/claims/:id/reject', async (req, res) => {
+  try {
+    const claimId = Number(req.params.id);
+    const { reason } = req.body || {};
+    if (!Number.isFinite(claimId)) return res.status(400).json({ message: 'Invalid claim ID' });
+    if (!reason || !String(reason).trim()) {
+      return res.status(400).json({ message: 'กรุณาระบุเหตุผลการไม่อนุมัติ (Reason)' });
+    }
+
+    const claimR = await wfQuery(`SELECT * FROM wf.RebateClaim WHERE Id = @id`, { id: { type: sql.Int, value: claimId } });
+    const claim = claimR.recordset?.[0];
+    if (!claim) return res.status(404).json({ message: `ไม่พบใบขอเคลียร์ ID ${claimId}` });
+
+    const currentTier = claim.CurrentTier || 1;
+
+    // Log Rejection in approval trail
+    await wfQuery(`
+      INSERT INTO wf.RebateClaimApproval (ClaimId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
+      VALUES (@cid, @tier, @rrole, 'REJECTED', @uid, @uname, GETUTCDATE(), @reason)
+    `, {
+      cid:    { type: sql.Int,          value: claimId },
+      tier:   { type: sql.Int,          value: currentTier },
+      rrole:  { type: sql.VarChar(30),  value: req.user.role || 'APPROVER' },
+      uid:    { type: sql.Int,          value: req.user.sub },
+      uname:  { type: sql.NVarChar(150),value: await approverName(req.user) },
+      reason: { type: sql.NVarChar(500),value: String(reason).trim() }
+    });
+
+    // Revert status to REJECTED & reset CurrentTier = 1
+    await wfQuery(`
+      UPDATE wf.RebateClaim SET Status = 'REJECTED', CurrentTier = 1 WHERE Id = @id
+    `, { id: { type: sql.Int, value: claimId } });
+
+    res.json({ id: claimId, status: 'REJECTED', message: 'ไม่อนุมัติใบขอเคลียร์และบันทึกประวัติการปฏิเสธเรียบร้อย' });
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
@@ -249,8 +655,14 @@ router.post('/plans', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'), as
 // PATCH /api/rebate/plans/:id — แก้ไข / เปลี่ยนสถานะ (DRAFT→ACTIVE→CLOSED)
 router.patch('/plans/:id', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'), async (req, res) => {
   try {
+    const planId = Number(req.params.id);
+    if (!Number.isFinite(planId)) return res.status(400).json({ message: 'Invalid Plan ID' });
+
+    const existingPlan = (await wfQuery(`SELECT 1 FROM wf.RebatePlan WHERE PlanId = @id`, { id: { type: sql.Int, value: planId } })).recordset?.[0];
+    if (!existingPlan) return res.status(404).json({ message: `ไม่พบ Rebate Plan ID ${planId}` });
+
     const f = req.body || {};
-    const sets = [], inputs = { id: { type: sql.Int, value: Number(req.params.id) } };
+    const sets = [], inputs = { id: { type: sql.Int, value: planId } };
     const add = (col, key, type, val) => { sets.push(`${col}=@${key}`); inputs[key] = { type, value: val }; };
     if (f.title !== undefined)          add('Title','title',sql.NVarChar(200), f.title || null);
     if (f.refDoc !== undefined && await hasRebatePlanRefDoc())
@@ -269,13 +681,19 @@ router.patch('/plans/:id', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'
     if (!sets.length) return res.status(400).json({ message: 'ไม่มีข้อมูลแก้ไข' });
     sets.push('UpdatedAt=GETUTCDATE()');
     await wfQuery(`UPDATE wf.RebatePlan SET ${sets.join(', ')} WHERE PlanId=@id`, inputs);
-    res.json({ id: Number(req.params.id), ok: true });
+    res.json({ id: planId, ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
 // POST /api/rebate/plans/:id/allocate — จัดสรรงบ Plan → Pool ของ Sales
 router.post('/plans/:id/allocate', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'), async (req, res) => {
   try {
+    const planId = Number(req.params.id);
+    if (!Number.isFinite(planId)) return res.status(400).json({ message: 'Invalid Plan ID' });
+
+    const existingPlan = (await wfQuery(`SELECT 1 FROM wf.RebatePlan WHERE PlanId = @id`, { id: { type: sql.Int, value: planId } })).recordset?.[0];
+    if (!existingPlan) return res.status(404).json({ message: `ไม่พบ Rebate Plan ID ${planId}` });
+
     const { salesUserId, periodYear, periodMonth, amount, note } = req.body || {};
     if (!salesUserId || !amount) return res.status(400).json({ message: 'salesUserId และ amount จำเป็น' });
     const now = new Date();
@@ -292,7 +710,7 @@ router.post('/plans/:id/allocate', requireRole('MANAGER', 'ADMIN', 'APPROVER', '
     await wfQuery(`INSERT INTO wf.RebatePlanAllocation (PlanId, PoolId, SalesUserId, Amount, Note, CreatedBy)
       VALUES (@pid, @pool, @u, @amt, @note, @by)`,
       {
-        pid: { type: sql.Int, value: Number(req.params.id) },
+        pid: { type: sql.Int, value: planId },
         pool:{ type: sql.Int, value: pool.Id },
         u:   { type: sql.Int, value: Number(salesUserId) },
         amt: { type: sql.Decimal(14,2), value: Number(amount) },
@@ -302,8 +720,6 @@ router.post('/plans/:id/allocate', requireRole('MANAGER', 'ADMIN', 'APPROVER', '
     res.json({ ok: true, poolId: pool.Id, allocated: Number(amount) });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
-
-// ⚠ ทุก endpoint อ่าน dbo ใช้ wfQuery (ownerPool ของ target ปัจจุบัน) เพื่อให้ตามปุ่มสลับ LOCAL/REMOTE
 
 // GET /api/rebate/voucher-summary — WFCoupon summary by salesperson (for VoucherPage)
 router.get('/voucher-summary', async (req, res) => {
@@ -334,7 +750,6 @@ router.post('/migrate-legacy', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async
     }
     const conversionRate = Number(rate);
 
-    // 1. Get legacy remaining tons per EmpID
     const legacyR = await wfQuery(`
       SELECT
         hd.EmpID,
@@ -360,7 +775,6 @@ router.post('/migrate-legacy', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async
     for (const row of legacyBalances) {
       if (!row.EmpID) continue;
       
-      // 2. Map WINSpeed EmpID to Web App User
       const userR = await wfQuery(`SELECT Id FROM wf.AppUser WHERE EmpId = @empId`, {
         empId: { type: sql.NVarChar(20), value: String(row.EmpID) }
       });
@@ -376,7 +790,6 @@ router.post('/migrate-legacy', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async
 
       if (bahtAmount <= 0) continue;
 
-      // 3. Pool Injection
       let pool = (await wfQuery(`SELECT * FROM wf.RebatePool WHERE SalesUserId=@u AND PeriodYear=@y AND PeriodMonth=@m`,
         { u: { type: sql.Int, value: salesUserId }, y: { type: sql.Int, value: currentYear }, m: { type: sql.Int, value: currentMonth } })).recordset?.[0];
       
@@ -385,11 +798,9 @@ router.post('/migrate-legacy', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async
           { u: { type: sql.Int, value: salesUserId }, y: { type: sql.Int, value: currentYear }, m: { type: sql.Int, value: currentMonth } })).recordset[0];
       }
 
-      // Add to pool
       await wfQuery(`UPDATE wf.RebatePool SET AllocatedAmt = AllocatedAmt + @amt, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
         { amt: { type: sql.Decimal(14,2), value: bahtAmount }, id: { type: sql.Int, value: pool.Id } });
 
-      // Create Ledger Entry for traceability
       await wfQuery(`INSERT INTO wf.RebateLedger (PoolId, SoId, CustId, GoodId, GoodCode, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, RebateAmount, RemainingAmt, Status)
         VALUES (@pid, 0, 'LEGACY', '0', 'LEGACY_MIGRATION', @tons, 0, 0, @rate, @baht, @baht, 'ACCRUED')`,
         {
@@ -416,11 +827,7 @@ router.post('/migrate-legacy', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async
   }
 });
 
-// ── dbo WF Rebate Trail endpoints (read-only, WINSpeed-owned flow) ───────
-// Correct WF flow observed from production data:
-// SOHD(103 booking) -> SOHD(104 order) -> WFCoupon -> WFRedemtionDT
-// -> SOInvHD(107 invoice) / SOInvHD(202 cash flow) -> ARReceHD/DT -> GL/VAT.
-
+// GET /api/rebate/wf-trail-summary
 router.get('/wf-trail-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { year, empId } = req.query;
@@ -460,6 +867,7 @@ router.get('/wf-trail-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+// GET /api/rebate/wf-trail-list
 router.get('/wf-trail-list', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { year, empId, custId, q } = req.query;
@@ -518,6 +926,7 @@ router.get('/wf-trail-list', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LE
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+// GET /api/rebate/wf-trail-detail/:soId
 router.get('/wf-trail-detail/:soId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const soId = Number(req.params.soId);
@@ -528,7 +937,8 @@ router.get('/wf-trail-detail/:soId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER
       FROM dbo.SOHD h
       LEFT JOIN dbo.EMEmp emp ON emp.EmpID = h.EmpID
       WHERE h.SOID = @soId
-    `, { soId: { type: sql.Int, value: soId } })).recordset?.[0] || null;
+    `, { soId: { type: sql.Int, value: soId } })).recordset?.[0];
+    if (!so) return res.status(404).json({ message: `ไม่พบข้อมูล SOID ${soId}` });
 
     const booking = (await wfQuery(`
       SELECT TOP 1 b.*
@@ -610,9 +1020,7 @@ router.get('/wf-trail-detail/:soId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// ── Legacy dbo CN Rebate endpoints (kept for compatibility; not WF main flow) ──
-
-// GET /api/rebate/cn-summary — สรุป CN rebate จาก dbo แยกตาม Sales/ลูกค้า
+// GET /api/rebate/cn-summary
 router.get('/cn-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { year, empId } = req.query;
@@ -641,7 +1049,7 @@ router.get('/cn-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/rebate/cn-list?year=&empId=&custId= — รายการ CN ทั้งหมด (header level)
+// GET /api/rebate/cn-list?year=&empId=&custId=
 router.get('/cn-list', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { year, empId, custId } = req.query;
@@ -677,9 +1085,12 @@ router.get('/cn-list', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'),
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/rebate/cn-detail/:soInvId — รายการสินค้าใน CN
+// GET /api/rebate/cn-detail/:soInvId
 router.get('/cn-detail/:soInvId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
+    const soInvId = Number(req.params.soInvId);
+    if (!Number.isFinite(soInvId)) return res.status(400).json({ message: 'Invalid SOInvID' });
+
     const r = await wfQuery(`
         SELECT
           d.ListNo,
@@ -687,15 +1098,17 @@ router.get('/cn-detail/:soInvId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 
           d.GoodQty2     AS QtyTon,
           d.GoodPrice2   AS RebatePerTon,
           d.GoodAmnt     AS RebateAmt,
-          -- original invoice line
           inv_d.GoodPrice2 AS OrigPrice
         FROM dbo.SOInvDT d
         LEFT JOIN dbo.SOInvHD cn    ON cn.SOInvID = d.SOInvID
         LEFT JOIN dbo.SOInvDT inv_d ON inv_d.SOInvID = cn.RefSOID AND inv_d.GoodID = d.GoodID
         WHERE d.SOInvID = @id
         ORDER BY d.ListNo
-      `, { id: { type: sql.Int, value: Number(req.params.soInvId) } });
-    res.json(r.recordset || []);
+      `, { id: { type: sql.Int, value: soInvId } });
+    if (!r.recordset || r.recordset.length === 0) {
+      return res.status(404).json({ message: `ไม่พบข้อมูลรายละเอียด CN ID ${soInvId}` });
+    }
+    res.json(r.recordset);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
@@ -754,6 +1167,9 @@ router.get('/coupons', async (req, res) => {
 // GET /api/rebate/coupons/:custId — รายการคูปองของลูกค้า (ใช้ wf.CouponMirror)
 router.get('/coupons/:custId', async (req, res) => {
   try {
+    const custId = String(req.params.custId || '').trim();
+    if (!custId) return res.status(400).json({ message: 'Invalid customer ID' });
+
     const r = await wfQuery(`
         SELECT c.CouponID, c.CouponNo, c.SourceDocuNo AS SONo,
                CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
@@ -770,8 +1186,11 @@ router.get('/coupons/:custId', async (req, res) => {
         LEFT JOIN dbo.EMEmp emp ON emp.EmpID = c.SalesEmpId
         WHERE c.CustID = @cid AND c.RemainingTon > 0
         ORDER BY hd.DocuDate ASC
-      `, { cid: { type: sql.NVarChar(20), value: req.params.custId } });
-    res.json(r.recordset || []);
+      `, { cid: { type: sql.NVarChar(20), value: custId } });
+    if (!r.recordset || r.recordset.length === 0) {
+      return res.status(404).json({ message: `ไม่พบคูปองคงค้างสำหรับลูกค้า ID ${custId}` });
+    }
+    res.json(r.recordset);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
