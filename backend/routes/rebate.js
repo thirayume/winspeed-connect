@@ -624,6 +624,147 @@ async function hasRebatePlanRefDoc() {
 }
 
 // GET /api/rebate/plans?status= — รายการ Plan
+/**
+ * สายอนุมัติของแบบขออนุมัติรายการส่งเสริมการขาย
+ *
+ * ต่างจากใบขอเคลียร์ที่ชั้นที่ 3 — ฟอร์มจริงเขียน "ผู้จัดการฝ่ายขาย" ไม่ใช่ "ผู้จัดการฝ่ายตลาด"
+ * จึงประกาศแยกไว้ ไม่ใช้ค่าเดียวกันทั้งสองเอกสาร
+ */
+const PLAN_TIERS = {
+  2: { role: 'REGIONAL_MGR', label: 'ผู้จัดการภาค',      next: 'TIER3_PENDING' },
+  3: { role: 'SALES_MGR',    label: 'ผู้จัดการฝ่ายขาย',   next: 'TIER4_PENDING' },
+  4: { role: 'EXECUTIVE',    label: 'กรรมการบริหาร',      next: 'APPROVED' },
+};
+// บทบาทที่อนุมัติแต่ละชั้นได้ — ชั้น 2 เพิ่มผู้ดูแลภาคจาก wf.UserSaleArea อีกทาง
+const PLAN_TIER_ROLES = {
+  2: ['MANAGER', 'APPROVER', 'ADMIN', 'C_LEVEL'],
+  3: ['MANAGER', 'APPROVER', 'ADMIN', 'C_LEVEL'],
+  4: ['C_LEVEL', 'ADMIN'],
+};
+
+// GET /api/rebate/plans/:id/approvals — ร่องรอยการอนุมัติของโปรโมชั่น
+router.get('/plans/:id/approvals', async (req, res) => {
+  try {
+    const rows = (await wfQuery(
+      `SELECT * FROM wf.RebatePlanApproval WHERE PlanId = @id ORDER BY Tier ASC, CreatedAt ASC`,
+      { id: { type: sql.Int, value: Number(req.params.id) } })).recordset || [];
+    res.json(rows);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/rebate/plans/:id/submit — ยื่นขออนุมัติ (ชั้นที่ 1 = ผู้ยื่น)
+router.post('/plans/:id/submit', requireRole('SALES', 'MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'), async (req, res) => {
+  try {
+    const planId = Number(req.params.id);
+    const plan = (await wfQuery(`SELECT * FROM wf.RebatePlan WHERE PlanId=@id`,
+      { id: { type: sql.Int, value: planId } })).recordset?.[0];
+    if (!plan) return res.status(404).json({ message: 'ไม่พบโปรโมชั่นที่ระบุ' });
+    if (plan.Status && !['DRAFT', 'REJECTED'].includes(plan.Status)) {
+      return res.status(400).json({ message: `ยื่นได้เฉพาะสถานะร่างหรือถูกตีกลับ (ปัจจุบัน ${plan.Status})` });
+    }
+    if (!plan.NetPrice) return res.status(400).json({ message: 'ต้องระบุราคาสุทธิก่อนยื่นขออนุมัติ' });
+
+    const name = await approverName(req.user);
+    // ยื่นใหม่หลังถูกตีกลับ ต้องล้างลายเซ็นเดิมทิ้ง ไม่งั้นเอกสารที่แก้แล้ว
+    // จะยังถือลายเซ็นของฉบับก่อนแก้
+    await wfQuery(`DELETE FROM wf.RebatePlanApproval WHERE PlanId=@id`, { id: { type: sql.Int, value: planId } });
+    await wfQuery(`
+      INSERT INTO wf.RebatePlanApproval (PlanId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
+      VALUES (@id, 1, 'SALES', 'APPROVED', @uid, @uname, GETUTCDATE(), N'ยื่นแบบขออนุมัติรายการส่งเสริมการขาย')`,
+      { id: { type: sql.Int, value: planId }, uid: { type: sql.Int, value: req.user.sub },
+        uname: { type: sql.NVarChar(150), value: name } });
+    await wfQuery(`UPDATE wf.RebatePlan SET Status='TIER2_PENDING', CurrentTier=2, UpdatedAt=GETUTCDATE() WHERE PlanId=@id`,
+      { id: { type: sql.Int, value: planId } });
+
+    res.json({ id: planId, status: 'TIER2_PENDING', currentTier: 2, message: 'ยื่นขออนุมัติเรียบร้อย รอผู้จัดการภาค' });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/rebate/plans/:id/approve — อนุมัติทีละชั้น
+router.post('/plans/:id/approve', async (req, res) => {
+  try {
+    const planId = Number(req.params.id);
+    const { note } = req.body || {};
+    const plan = (await wfQuery(`SELECT * FROM wf.RebatePlan WHERE PlanId=@id`,
+      { id: { type: sql.Int, value: planId } })).recordset?.[0];
+    if (!plan) return res.status(404).json({ message: 'ไม่พบโปรโมชั่นที่ระบุ' });
+    if (['APPROVED', 'ACTIVE'].includes(plan.Status)) return res.status(400).json({ message: 'โปรโมชั่นนี้อนุมัติแล้ว' });
+    if (plan.Status === 'REJECTED') return res.status(400).json({ message: 'โปรโมชั่นนี้ถูกตีกลับ กรุณายื่นใหม่' });
+
+    const tier = Number(plan.CurrentTier || 0);
+    const spec = PLAN_TIERS[tier];
+    if (!spec) return res.status(400).json({ message: 'โปรโมชั่นนี้ยังไม่ได้ยื่นขออนุมัติ' });
+
+    const userId = Number(req.user.sub);
+    const userRole = String(req.user.role || '');
+
+    // กติกาเดียวกับใบขอเคลียร์ — คนเดิมอนุมัติสองชั้นติดกันไม่ได้
+    const prev = (await wfQuery(
+      `SELECT TOP 1 DecidedBy FROM wf.RebatePlanApproval WHERE PlanId=@id AND Decision='APPROVED' ORDER BY Tier DESC`,
+      { id: { type: sql.Int, value: planId } })).recordset?.[0];
+    const relaxed = process.env.ALLOW_SINGLE_USER_MULTI_TIER_APPROVAL === 'true';
+    if (prev && Number(prev.DecidedBy) === userId && !relaxed) {
+      return res.status(403).json({ message: 'ไม่อนุญาตให้บุคคลเดิมอนุมัติซ้ำสองชั้นติดต่อกัน (Segregation of Duties)' });
+    }
+
+    let allowed = PLAN_TIER_ROLES[tier].includes(userRole);
+    if (!allowed && tier === 2) {
+      // ผู้ดูแลภาคอนุมัติชั้น 2 ได้แม้บทบาทจะไม่ใช่ MANAGER (ดู wf.UserSaleArea)
+      allowed = (await wfQuery(
+        `SELECT 1 FROM wf.UserSaleArea WHERE UserId=@uid AND RegionCode=@r`,
+        { uid: { type: sql.Int, value: userId }, r: { type: sql.VarChar(10), value: plan.Region || '99' } })).recordset?.length > 0;
+    }
+    if (!allowed) return res.status(403).json({ message: `ไม่มีสิทธิ์อนุมัติชั้นที่ ${tier} (${spec.label})` });
+
+    const name = await approverName(req.user);
+    await wfQuery(`
+      INSERT INTO wf.RebatePlanApproval (PlanId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
+      VALUES (@id, @tier, @role, 'APPROVED', @uid, @uname, GETUTCDATE(), @note)`,
+      { id: { type: sql.Int, value: planId }, tier: { type: sql.Int, value: tier },
+        role: { type: sql.VarChar(30), value: spec.role }, uid: { type: sql.Int, value: userId },
+        uname: { type: sql.NVarChar(150), value: name },
+        note: { type: sql.NVarChar(500), value: note || `อนุมัติชั้นที่ ${tier} (${spec.label})` } });
+
+    const nextTier = spec.next === 'APPROVED' ? null : tier + 1;
+    await wfQuery(`UPDATE wf.RebatePlan SET Status=@st, CurrentTier=@ct, UpdatedAt=GETUTCDATE() WHERE PlanId=@id`,
+      { id: { type: sql.Int, value: planId }, st: { type: sql.NVarChar(20), value: spec.next },
+        ct: { type: sql.Int, value: nextTier } });
+
+    res.json({ id: planId, status: spec.next, currentTier: nextTier, message: `อนุมัติชั้นที่ ${tier} (${spec.label}) เรียบร้อย` });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/rebate/plans/:id/reject — ตีกลับ ต้องมีเหตุผลเสมอ
+router.post('/plans/:id/reject', async (req, res) => {
+  try {
+    const planId = Number(req.params.id);
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ message: 'การตีกลับต้องระบุเหตุผล' });
+
+    const plan = (await wfQuery(`SELECT * FROM wf.RebatePlan WHERE PlanId=@id`,
+      { id: { type: sql.Int, value: planId } })).recordset?.[0];
+    if (!plan) return res.status(404).json({ message: 'ไม่พบโปรโมชั่นที่ระบุ' });
+    const tier = Number(plan.CurrentTier || 0);
+    if (!PLAN_TIERS[tier]) return res.status(400).json({ message: 'โปรโมชั่นนี้ไม่ได้อยู่ระหว่างการอนุมัติ' });
+    if (!PLAN_TIER_ROLES[tier].includes(String(req.user.role || ''))) {
+      return res.status(403).json({ message: `ไม่มีสิทธิ์ตีกลับชั้นที่ ${tier}` });
+    }
+
+    await wfQuery(`
+      INSERT INTO wf.RebatePlanApproval (PlanId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
+      VALUES (@id, @tier, @role, 'REJECTED', @uid, @uname, GETUTCDATE(), @reason)`,
+      { id: { type: sql.Int, value: planId }, tier: { type: sql.Int, value: tier },
+        role: { type: sql.VarChar(30), value: PLAN_TIERS[tier].role },
+        uid: { type: sql.Int, value: req.user.sub },
+        uname: { type: sql.NVarChar(150), value: await approverName(req.user) },
+        reason: { type: sql.NVarChar(500), value: reason } });
+    await wfQuery(`UPDATE wf.RebatePlan SET Status='REJECTED', CurrentTier=NULL, UpdatedAt=GETUTCDATE() WHERE PlanId=@id`,
+      { id: { type: sql.Int, value: planId } });
+
+    res.json({ id: planId, status: 'REJECTED', message: 'ตีกลับเรียบร้อย' });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
 router.get('/plans', async (req, res) => {
   try {
     const { status } = req.query;
