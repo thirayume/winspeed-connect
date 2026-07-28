@@ -726,3 +726,8 @@ export const fetchWfRebateTrailList = (params: { year?: number; empId: number })
 
 export const fetchWfRebateTrailDetail = (orderId: string) =>
   req<import('../types').WfRebateTrailDetail>(`/rebate/wf-trail-detail/${orderId}`);
+
+// รายงานเครื่องชั่ง (T6-02) — แทน Crystal Reports เดิม
+export const fetchScaleReport = (report: string, from: string, to: string) =>
+  req<{ rows: any[]; count: number; from: number; to: number }>(
+    `/scale-reports/${report}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);

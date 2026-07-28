@@ -111,6 +111,8 @@ app.use('/api/quotation', require('./routes/quotation'));
 app.use('/api/papertrail', require('./routes/papertrail'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/truckscale', require('./routes/truckscale'));
+// รายงานเครื่องชั่งบนเว็บ แทน Crystal Reports เดิม (T6-02) — อ่านอย่างเดียว
+app.use('/api/scale-reports', require('./routes/scale-reports'));
 app.use('/api/recon', require('./routes/recon'));
 app.use('/api/ops', require('./routes/ops'));
 app.use('/api/policy', require('./routes/policy'));
