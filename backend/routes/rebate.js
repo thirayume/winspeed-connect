@@ -202,7 +202,7 @@ router.get('/claims/:id', requireRebateAmountAccess, async (req, res) => {
       FROM wf.RebateClaimLine l
       LEFT JOIN wf.RebatePlan p ON p.PlanId = l.PlanId
       WHERE l.ClaimId = @id
-      ORDER BY l.[LineNo] ASC
+      ORDER BY CASE l.LineType WHEN 'REBATE' THEN 0 ELSE 1 END, l.[LineNo] ASC
     `, { id: { type: sql.Int, value: claimId } })).recordset || [];
 
     const approvals = (await wfQuery(`
@@ -220,7 +220,12 @@ router.get('/claims/:id', requireRebateAmountAccess, async (req, res) => {
       SELECT * FROM wf.RebateClaimInvoice WHERE ClaimId = @id ORDER BY Id ASC
     `, { id: { type: sql.Int, value: claimId } })).recordset || [];
 
-    res.json({ claim, lines, approvals, invoices });
+    // แยกยอดสองตารางให้หน้าจอและแบบพิมพ์ใช้ได้ทันที ไม่ต้องรวมเองแล้วเสี่ยงไม่ตรงกัน
+    const totals = (await wfQuery(
+      `SELECT * FROM wf.v_RebateClaimTotals WHERE ClaimId = @id`,
+      { id: { type: sql.Int, value: claimId } })).recordset?.[0] || null;
+
+    res.json({ claim, lines, approvals, invoices, totals });
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
@@ -243,7 +248,15 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
     const parsedLines = [];
 
     if (Array.isArray(lines) && lines.length > 0) {
-      if (lines.length > 6) return res.status(400).json({ message: 'ใบขอเคลียร์รองรับสูงสุด 6 รายการย่อยต่อใบ' });
+      // แบบฟอร์มมี 6 บรรทัดต่อตาราง และมีสองตาราง จึงรวมได้ 12 บรรทัด
+      if (lines.length > 12) return res.status(400).json({ message: 'ใบขอเคลียร์รองรับสูงสุด 12 รายการย่อย (6 บรรทัดต่อตาราง)' });
+      const perTable = lines.reduce((m, l) => {
+        const k = String(l.lineType || 'REBATE').toUpperCase() === 'DIFF' ? 'DIFF' : 'REBATE';
+        m[k] = (m[k] || 0) + 1; return m;
+      }, {});
+      for (const [kind, n] of Object.entries(perTable)) {
+        if (n > 6) return res.status(400).json({ message: `ตาราง${kind === 'DIFF' ? 'คืนส่วนต่าง' : 'คืนรีเบท'}รองรับสูงสุด 6 บรรทัด` });
+      }
       let calculatedSum = 0;
       lines.forEach((l, idx) => {
         const qtyTon = Number(l.qtyTon || 0);
@@ -253,8 +266,13 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
         const lineAmount = Math.round(qtyTon * rebatePerTon * 100) / 100;
         calculatedSum += lineAmount;
 
+        // ใบขอเคลียร์มีสองตาราง: คืนรีเบท (เทียบราคาสุทธิโปรโมชั่น) และ
+        // คืนส่วนต่าง (เทียบราคาขายใน Pricelist) — รูปคำนวณเดียวกัน ต่างที่ราคาที่ใช้เทียบ
+        const lineType = String(l.lineType || 'REBATE').toUpperCase() === 'DIFF' ? 'DIFF' : 'REBATE';
         parsedLines.push({
           lineNo: idx + 1,
+          lineType,
+          invoiceNo: l.invoiceNo ? String(l.invoiceNo).trim().slice(0, 50) : null,
           goodCode: String(l.goodCode || 'GENERAL').trim(),
           goodName: l.goodName ? String(l.goodName).trim() : null,
           qtyTon,
@@ -289,23 +307,28 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
         { pid: { type: sql.Int, value: poolId } })).recordset || [];
 
       const claimedBefore = (await wfQuery(`
-        SELECT l.GoodCode, SUM(l.QtyTon) AS ClaimedTon
+        SELECT l.GoodCode, l.LineType, SUM(l.QtyTon) AS ClaimedTon
         FROM wf.RebateClaimLine l
         JOIN wf.RebateClaim c ON c.Id = l.ClaimId
         WHERE c.PoolId = @pid AND c.Status <> 'REJECTED'
-        GROUP BY l.GoodCode`,
+        GROUP BY l.GoodCode, l.LineType`,
         { pid: { type: sql.Int, value: poolId } })).recordset || [];
 
-      const tons = (rows, code) => Number(rows.find(r => String(r.GoodCode) === String(code))?.DeliveredTon
-        ?? rows.find(r => String(r.GoodCode) === String(code))?.ClaimedTon ?? 0);
+      const shippedTon = (code) =>
+        Number(delivered.find(r => String(r.GoodCode) === String(code))?.DeliveredTon || 0);
+      // โควตาแยกตามชนิด เพราะตันชุดเดียวกันขอได้ทั้งคืนรีเบทและคืนส่วนต่าง
+      const usedTon = (code, kind) =>
+        Number(claimedBefore.find(r => String(r.GoodCode) === String(code) && r.LineType === kind)?.ClaimedTon || 0)
+        + parsedLines.filter(p => p.goodCode === code && p.lineType === kind && p.lineNo < 0).reduce((a, b) => a + b.qtyTon, 0);
 
       const problems = [];
       for (const line of parsedLines) {
-        const shipped = tons(delivered, line.goodCode);
-        const used = tons(claimedBefore, line.goodCode);
+        const shipped = shippedTon(line.goodCode);
+        const used = usedTon(line.goodCode, line.lineType);
         const remain = Math.round((shipped - used) * 1000) / 1000;
         if (line.qtyTon > remain + 0.001) {
-          problems.push(`${line.goodCode}: ขอเคลียร์ ${line.qtyTon} ตัน แต่ขนจริงคงเหลือ ${remain} ตัน`
+          const kindLabel = line.lineType === 'DIFF' ? 'คืนส่วนต่าง' : 'คืนรีเบท';
+          problems.push(`${line.goodCode} (${kindLabel}): ขอเคลียร์ ${line.qtyTon} ตัน แต่ขนจริงคงเหลือ ${remain} ตัน`
             + (shipped ? ` (ขนจริง ${shipped} ตัน · เคลียร์ไปแล้ว ${used} ตัน)` : ' (ไม่พบการขนจริงของสูตรนี้)'));
         }
       }
@@ -339,9 +362,11 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
     // 2. Create RebateClaimLine records
     for (const line of parsedLines) {
       await wfQuery(
-        `INSERT INTO wf.RebateClaimLine (ClaimId, [LineNo], GoodCode, GoodName, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, PlanId, Remark)
-         VALUES (@cid, @lno, @gcode, @gname, @qty, @price, @netPrice, @rebate, @planId, @remark)`,
+        `INSERT INTO wf.RebateClaimLine (ClaimId, [LineNo], LineType, InvoiceNo, GoodCode, GoodName, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, PlanId, Remark)
+         VALUES (@cid, @lno, @ltype, @inv, @gcode, @gname, @qty, @price, @netPrice, @rebate, @planId, @remark)`,
         {
+          ltype:    { type: sql.NVarChar(10),  value: line.lineType },
+          inv:      { type: sql.NVarChar(50),  value: line.invoiceNo },
           cid:      { type: sql.Int,           value: claim.Id },
           lno:      { type: sql.Int,           value: line.lineNo },
           gcode:    { type: sql.NVarChar(50),  value: line.goodCode },
