@@ -267,21 +267,42 @@ async function writeBackWeighOutTicket(ticketData) {
   oneDes = oneDes.substring(0, 100);
 
   try {
-    // 1. Search for existing OPEN ticket in tblscale
+    // 1. หาใบชั่งที่ยังเปิดค้างอยู่ (T6-03 — movebill เป็นตัวจับคู่หลัก)
+    //
+    // movebill ระบุเที่ยวได้ตัวเดียวจริง ๆ ส่วนทะเบียนรถระบุไม่ได้ โดยเฉพาะรถพ่วง
+    // ที่ทะเบียนหัวลากกับหางถูกบันทึกต่างรูปแบบกัน จึงจับคู่ผิดคันได้ง่าย
+    //
+    // เดิมมีปัญหาสองข้อ
+    //   ก. ค้นด้วย movebill โดยไม่กรองว่าใบยังเปิดอยู่ จึงเขียนทับใบที่ปิดไปแล้วได้
+    //   ข. ค้นด้วยทะเบียนแล้วหยิบใบล่าสุดเงียบ ๆ ทั้งที่อาจมีหลายใบเปิดค้างพร้อมกัน
+    const OPEN = '(weight_out = 0 OR weight_out IS NULL)';
     let existing = [];
+    let matchedBy = null;
+
     if (mb) {
       existing = await tsQuery(
-        `SELECT s_id, sequence, movebill, one_num FROM tblscale WHERE movebill = ? ORDER BY s_id DESC LIMIT 1`,
-        [mb]
-      );
+        `SELECT s_id, sequence, movebill, one_num FROM tblscale
+         WHERE movebill = ? AND ${OPEN} ORDER BY s_id DESC LIMIT 1`, [mb]);
+      if (existing.length) matchedBy = 'movebill';
     }
-    if ((!existing || existing.length === 0) && plate) {
-      existing = await tsQuery(
-        `SELECT s_id, sequence, movebill, one_num FROM tblscale 
-         WHERE one_car_regis = ? AND (weight_out = 0 OR weight_out IS NULL) 
-         ORDER BY s_id DESC LIMIT 1`,
-        [plate]
-      );
+
+    if (!existing.length && plate) {
+      // ดึงมาสองใบเพื่อ "ตรวจความกำกวม" ไม่ใช่เพื่อเลือกใบใดใบหนึ่ง
+      const candidates = await tsQuery(
+        `SELECT s_id, sequence, movebill, one_num FROM tblscale
+         WHERE one_car_regis = ? AND ${OPEN} ORDER BY s_id DESC LIMIT 2`, [plate]);
+
+      if (candidates.length > 1) {
+        // ตัดสินใจแทนคนไม่ได้ — เดาผิดหมายถึงน้ำหนักไปลงใบของลูกค้ารายอื่น
+        console.error(`[truckscale] ambiguous open tickets for plate ${plate}: ${candidates.map(c => c.s_id).join(', ')}`);
+        return {
+          success: false,
+          reason: 'ambiguous_match',
+          error: `พบใบชั่งเปิดค้างของทะเบียน ${plate} มากกว่าหนึ่งใบ (s_id ${candidates.map(c => c.s_id).join(', ')}) — ระบุ movebill เพื่อชี้ใบที่ถูกต้อง`,
+          candidates: candidates.map(c => ({ s_id: c.s_id, sequence: c.sequence, movebill: c.movebill })),
+        };
+      }
+      if (candidates.length === 1) { existing = candidates; matchedBy = 'plate'; }
     }
 
     if (existing && existing.length > 0) {
@@ -320,7 +341,7 @@ async function writeBackWeighOutTicket(ticketData) {
       const detail = await writeProductDetailRows(oneNum, { ...ticketData, sequence: existing[0].sequence });
 
       return { success: true, action: 'updated', s_id: sid, sequence: existing[0].sequence || null,
-               one_num: oneNum, productLines: detail.written };
+               one_num: oneNum, productLines: detail.written, matchedBy };
     } else {
       // 2. Fallback: INSERT new record into tblscale
       const maxRes = await tsQuery(
@@ -366,7 +387,7 @@ async function writeBackWeighOutTicket(ticketData) {
       console.log(`[truckscale] Inserted fallback record into tblscale (seq: ${genSeq}, mb: ${insertMb}) for SO:${soId}`);
       if (wfRef) await removePreWeighTicket(wfRef);
       const detail = await writeProductDetailRows(newOneNum, { ...ticketData, sequence: genSeq });
-      return { success: true, action: 'inserted', insertId: res.insertId, sequence: genSeq, one_num: newOneNum, productLines: detail.written };
+      return { success: true, action: 'inserted', insertId: res.insertId, sequence: genSeq, one_num: newOneNum, productLines: detail.written, matchedBy: 'created' };
     }
   } catch (e) {
     console.error(`[truckscale] writeBackWeighOutTicket failed: ${e.message}`);
