@@ -109,6 +109,24 @@ async function query(text, inputs = {}) {
   const actualText = isWindows ? text : `SET ARITHABORT ON; SET ANSI_WARNINGS ON; ${text}`;
   return (await req.query(actualText)).recordset;
 }
+/**
+ * เขียนข้อมูลใน dbo (WINSpeed) — ต้องใช้ ownerPool ไม่ใช่ readerPool
+ *
+ * query() ด้านบนใช้ readerPool และคืนเฉพาะ .recordset จึงใช้เขียนไม่ได้ด้วยสองเหตุผล
+ *   1. readerPool อาจถูกตั้งสิทธิ์อ่านอย่างเดียวในบางสภาพแวดล้อม
+ *   2. ไม่มี rowsAffected ให้ตรวจว่ามีแถวถูกแก้จริงหรือไม่
+ *
+ * คืน result object เต็มเหมือน wfQuery เพื่อให้ตรวจ rowsAffected ได้
+ */
+async function dboWrite(text, inputs = {}) {
+  const pl = pools();
+  await pl.ready;
+  const req = pl.ownerPool.request();
+  for (const [k, { type, value }] of Object.entries(inputs)) req.input(k, type, value);
+  const actualText = isWindows ? text : `SET ARITHABORT ON; SET ANSI_WARNINGS ON; ${text}`;
+  return await req.query(actualText);
+}
+
 async function wfQuery(text, inputs = {}) {
   const pl = pools();
   await pl.ready;
@@ -133,7 +151,7 @@ function runWithTarget(target, fn) {
 }
 
 module.exports = {
-  sql, query, wfQuery, wfTransaction, runWithTarget, getTarget, pools,
+  sql, query, dboWrite, wfQuery, wfTransaction, runWithTarget, getTarget, pools,
   DEFAULT_TARGET,
   // backward-compat: pool ของ default target (ใช้โดย scripts + /admin/migrate)
   readerPool: def.readerPool, ownerPool: def.ownerPool,
