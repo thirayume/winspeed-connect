@@ -1,15 +1,25 @@
 import { useEffect, useState, useCallback } from 'react';
-import { ClipboardList, RefreshCw, Plus, X, Play, Square, Coins } from 'lucide-react';
+import { ClipboardList, RefreshCw, Plus, X, Square, Coins, FileSignature } from 'lucide-react';
 import { fetchRebatePlans, createRebatePlan, updateRebatePlan, allocateRebatePlan, listUsers } from '../../services/api';
 import type { RebatePlan, AdminUser } from '../../types';
+import { PlanApprovalDialog } from './RebatePlanApproval';
 
 const REGIONS = ['ALL', 'ใต้', 'กลาง', 'เหนือ', 'ตะวันออก'];
 const THB = (n?: number | null) => n != null ? `฿${Number(n).toLocaleString('th-TH', { maximumFractionDigits: 0 })}` : '-';
 const STATUS_META: Record<string, { label: string; cls: string }> = {
-  DRAFT:  { label: 'ร่าง',      cls: 'bg-gray-100 text-gray-600' },
-  ACTIVE: { label: 'ใช้งาน',    cls: 'bg-green-50 text-green-700' },
-  CLOSED: { label: 'ปิดแล้ว',   cls: 'bg-gray-200 text-gray-500' },
+  DRAFT:         { label: 'ร่าง',                cls: 'bg-gray-100 text-gray-600' },
+  TIER2_PENDING: { label: 'รอผู้จัดการภาค',       cls: 'bg-amber-50 text-amber-700' },
+  TIER3_PENDING: { label: 'รอผู้จัดการฝ่ายขาย',   cls: 'bg-amber-50 text-amber-700' },
+  TIER4_PENDING: { label: 'รอกรรมการบริหาร',      cls: 'bg-amber-50 text-amber-700' },
+  APPROVED:      { label: 'อนุมัติแล้ว',          cls: 'bg-emerald-50 text-emerald-700' },
+  ACTIVE:        { label: 'ใช้งาน',              cls: 'bg-green-50 text-green-700' },
+  REJECTED:      { label: 'ไม่อนุมัติ',           cls: 'bg-red-50 text-red-700' },
+  CLOSED:        { label: 'ปิดแล้ว',             cls: 'bg-gray-200 text-gray-500' },
+  INACTIVE:      { label: 'ยกเลิก',              cls: 'bg-gray-200 text-gray-500' },
 };
+// สถานะที่ยังไม่ได้ประกาศต้องไม่ทำให้ทั้งหน้าพัง
+const statusMeta = (s?: string) =>
+  STATUS_META[String(s || 'DRAFT')] || { label: String(s || '—'), cls: 'bg-gray-100 text-gray-600' };
 
 export function RebatePlanPage() {
   const [plans, setPlans]   = useState<RebatePlan[]>([]);
@@ -18,6 +28,7 @@ export function RebatePlanPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing]   = useState<RebatePlan | null>(null);
   const [allocFor, setAllocFor] = useState<RebatePlan | null>(null);
+  const [approvalFor, setApprovalFor] = useState<RebatePlan | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,7 +93,7 @@ export function RebatePlanPage() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {plans.map(p => {
-                  const sm = STATUS_META[p.Status];
+                  const sm = statusMeta(p.Status);
                   return (
                     <tr key={p.PlanId} className="hover:bg-gray-50/60">
                       <td className="px-4 py-2.5 whitespace-nowrap"><div className="font-mono font-bold text-[#0C447C]">{p.PlanNo}</div><div className="text-xs text-gray-500">{p.Title || '-'}</div></td>
@@ -97,8 +108,9 @@ export function RebatePlanPage() {
                       <td className="px-4 py-2.5 text-center whitespace-nowrap"><span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${sm.cls}`}>{sm.label}</span></td>
                       <td className="px-4 py-2.5 whitespace-nowrap">
                         <div className="flex items-center gap-1 justify-end">
-                          {p.Status === 'DRAFT' && <button onClick={() => setStatus(p, 'ACTIVE')} title="เปิดใช้งาน" className="h-7 w-7 flex items-center justify-center rounded-lg bg-green-50 text-green-700"><Play size={13} /></button>}
-                          {p.Status === 'ACTIVE' && <button onClick={() => setStatus(p, 'CLOSED')} title="ปิด" className="h-7 w-7 flex items-center justify-center rounded-lg bg-gray-100 text-gray-500"><Square size={13} /></button>}
+                          <button onClick={() => setApprovalFor(p)} title="สายอนุมัติ / ยื่นขออนุมัติ"
+                            className="h-7 w-7 flex items-center justify-center rounded-lg bg-blue-50 text-blue-700"><FileSignature size={13} /></button>
+                          {['APPROVED', 'ACTIVE'].includes(String(p.Status)) && <button onClick={() => setStatus(p, 'CLOSED')} title="ปิด" className="h-7 w-7 flex items-center justify-center rounded-lg bg-gray-100 text-gray-500"><Square size={13} /></button>}
                           {p.Status !== 'CLOSED' && <button onClick={() => setAllocFor(p)} title="จัดสรรงบ" className="h-7 w-7 flex items-center justify-center rounded-lg bg-amber-50 text-amber-700"><Coins size={13} /></button>}
                           <button onClick={() => { setEditing(p); setShowForm(true); }} className="text-xs text-gray-500 px-2 py-1 rounded-lg border border-gray-200">แก้</button>
                         </div>
@@ -114,6 +126,7 @@ export function RebatePlanPage() {
 
       {showForm && <PlanForm plan={editing} onClose={() => setShowForm(false)} onDone={() => { setShowForm(false); load(); }} />}
       {allocFor && <AllocateModal plan={allocFor} onClose={() => setAllocFor(null)} onDone={() => { setAllocFor(null); load(); }} />}
+      {approvalFor && <PlanApprovalDialog plan={approvalFor} onClose={() => setApprovalFor(null)} onChanged={() => { load(); setApprovalFor(null); }} />}
     </div>
   );
 }
