@@ -1401,10 +1401,12 @@ router.patch('/:id/valid-until', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 
     const validUntil = normalizeValidUntil(req.body?.validUntil, req.body?.validDays);
     const ready = await getNativeQuotationReadiness();
     await wfTransaction(async tx => {
-      await tx.request()
+      const r = await tx.request()
         .input('vu', sql.Date, validUntil)
         .input('id', sql.Int, Number(req.params.id))
         .query(`UPDATE wf.Quotation SET ValidUntil=@vu, UpdatedAt=GETUTCDATE() WHERE Id=@id`);
+      // ต้องตรวจในทรานแซกชัน เพื่อให้การอัปเดตฝั่ง native ถูกยกเลิกไปด้วยเมื่อไม่พบใบเสนอราคา
+      if (!r.rowsAffected[0]) { const err = new Error('ไม่พบใบเสนอราคาที่ระบุ'); err.statusCode = 404; throw err; }
       if (ready.hasNativeTables && ready.hasLinkColumns) {
         await updateNativeQuotationValidity(tx, Number(req.params.id), validUntil);
       }
