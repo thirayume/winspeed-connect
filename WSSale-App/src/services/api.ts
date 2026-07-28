@@ -360,13 +360,30 @@ export const fetchRebateLedger = (params?: { poolId?: number; soId?: number; cus
 export const fetchRebateClaims = (status?: string) =>
   req<RebateClaim[]>(`/rebate/claims${status ? `?status=${status}` : ''}`);
 
-export const createRebateClaim = (payload: { poolId: number; claimAmt: number; custId?: string; note?: string }) =>
+export const fetchRebateClaimDetail = (id: number) =>
+  req<{ claim: RebateClaim; lines: any[]; approvals: any[]; invoices: any[] }>(`/rebate/claims/${id}`);
+
+export const createRebateClaim = (payload: {
+  poolId: number; claimAmt?: number; custId?: string; note?: string;
+  lines?: any[]; invoices?: string[];
+}) =>
   req<RebateClaim>('/rebate/claims', { method: 'POST', body: JSON.stringify(payload) });
 
-export const approveRebateClaim = (id: number, docuNo?: string) =>
-  req<{ id: number; status: string }>(`/rebate/claims/${id}/approve`, {
-    method: 'PATCH', body: JSON.stringify({ docuNo }),
+export const approveRebateClaim = (id: number, docuNo?: string, note?: string) =>
+  req<{ id: number; status: string; currentTier?: number; message?: string }>(`/rebate/claims/${id}/approve`, {
+    method: 'POST', body: JSON.stringify({ docuNo, note }),
   });
+
+export const rejectRebateClaim = (id: number, reason: string) =>
+  req<{ id: number; status: string; message?: string }>(`/rebate/claims/${id}/reject`, {
+    method: 'POST', body: JSON.stringify({ reason }),
+  });
+
+export const fetchRebateRegions = () =>
+  req<{ regions: any[]; userAreas: any[] }>('/rebate/regions');
+
+export const setUserRegion = (payload: { userId: number; regionCode: string; isPrimary?: boolean }) =>
+  req<{ success: boolean; message: string }>('/rebate/user-regions', { method: 'POST', body: JSON.stringify(payload) });
 
 export const fetchRebateSummary = () => req<RebateSummary[]>('/rebate/summary');
 

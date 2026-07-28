@@ -1,10 +1,21 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Coins, RefreshCw, ArrowRight, ArrowLeft, Scissors, X, Info } from 'lucide-react';
+import { Coins, RefreshCw, ArrowLeft, Scissors, X, Info } from 'lucide-react';
 import {
-  fetchRebatePools, fetchRebateLedger, fetchRebateClaims, createRebateClaim,
+  fetchRebatePools, fetchRebateLedger, fetchRebateClaims,
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import type { RebatePool, RebateLedger, RebateClaim } from '../../types';
+import { ClaimDialog, ClaimDetailDialog } from './RebateClaimForm';
+
+const CLAIM_STATUS: Record<string, string> = {
+  DRAFT: 'ร่าง', PENDING: 'รอดำเนินการ',
+  TIER2_PENDING: 'รอผู้จัดการภาค', TIER3_PENDING: 'รอฝ่ายตลาด', TIER4_PENDING: 'รอกรรมการ',
+  APPROVED: 'อนุมัติแล้ว', REJECTED: 'ไม่อนุมัติ', CN_ISSUED: 'ออกใบลดหนี้',
+};
+const STATUS_TONE: Record<string, string> = {
+  APPROVED: 'bg-green-50 text-green-700', CN_ISSUED: 'bg-green-50 text-green-700',
+  REJECTED: 'bg-red-50 text-red-700',
+};
 
 export function RebatePage() {
   const role = useAuthStore(s => s.user?.role);
@@ -15,6 +26,7 @@ export function RebatePage() {
   const [loading, setLoading]   = useState(true);
   const [showClaim, setShowClaim] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [detailId, setDetailId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,15 +99,16 @@ export function RebatePage() {
               {claims.length === 0 ? (
                 <p className="text-xs text-gray-400 py-3 text-center">ยังไม่มีเคลม</p>
               ) : claims.slice(0, 10).map(c => (
-                <div key={c.Id} className="flex items-center justify-between p-2.5 rounded-lg bg-white border border-gray-100 mb-1.5">
+                <button key={c.Id} onClick={() => setDetailId(Number(c.Id))} type="button"
+                  className="w-full text-left flex items-center justify-between p-2.5 rounded-lg bg-white border border-gray-100 mb-1.5 hover:border-blue-300 hover:bg-blue-50/40 transition">
                   <div>
                     <div className="text-xs font-bold text-gray-700">฿{Number(c.ClaimAmt).toLocaleString('th-TH',{maximumFractionDigits:0})}</div>
                     <div className="text-[10px] text-gray-400">{c.SalesName} {c.CnDocuNo ? `· Ref ${c.CnDocuNo}` : ''}</div>
                   </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${c.Status==='APPROVED'?'bg-green-50 text-green-700':'bg-amber-50 text-amber-700'}`}>
-                    {c.Status === 'APPROVED' ? 'อนุมัติ' : 'รออนุมัติ'}
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${STATUS_TONE[String(c.Status)] || 'bg-amber-50 text-amber-700'}`}>
+                    {CLAIM_STATUS[String(c.Status)] || c.Status}
                   </span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -171,6 +184,11 @@ export function RebatePage() {
           onDone={() => { setShowClaim(false); load(); openPool(selectedPool); }} />
       )}
 
+      {detailId != null && (
+        <ClaimDetailDialog claimId={detailId} onClose={() => setDetailId(null)}
+          onChanged={() => { load(); if (selectedPool) openPool(selectedPool); }} />
+      )}
+
       {showInfo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowInfo(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
@@ -192,59 +210,6 @@ export function RebatePage() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function ClaimDialog({ pool, onClose, onDone }: { pool: RebatePool; onClose: () => void; onDone: () => void }) {
-  const available = Number(pool.AccruedAmt) - Number(pool.ClaimedAmt);
-  const [amt, setAmt] = useState(available);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-
-  async function submit() {
-    if (amt <= 0 || amt > available) { setErr(`ยอดต้องอยู่ระหว่าง 1 - ${available.toFixed(0)}`); return; }
-    setBusy(true); setErr('');
-    try {
-      await createRebateClaim({ poolId: pool.Id, claimAmt: amt });
-      onDone();
-    } catch (e: unknown) { setErr((e as Error).message || 'ผิดพลาด'); }
-    finally { setBusy(false); }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: '#0C447C' }}>
-            <Scissors size={18} /> ยื่นเคลมรีเบท
-          </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
-        </div>
-        <div className="space-y-3 text-sm">
-          <div className="flex justify-between text-gray-500">
-            <span>{pool.SalesName} · {pool.PeriodMonth}/{pool.PeriodYear}</span>
-          </div>
-          <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100">
-            <span className="text-xs text-gray-500">ใช้ได้</span>
-            <span className="font-bold" style={{ color: '#059669' }}>฿{available.toLocaleString('th-TH',{maximumFractionDigits:0})}</span>
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-500 block mb-1">ยอดที่ขอเคลม (บาท)</label>
-            <input type="number" min={1} max={available} value={amt}
-              onChange={e => setAmt(parseFloat(e.target.value) || 0)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-          </div>
-          <div className="flex items-center gap-2 text-[11px] text-gray-400">
-            <ArrowRight size={12} /> ระบบตัดยอด FIFO จากรายการเก่าสุด → บัญชีออก CN 109 ลดหนี้ลูกค้า
-          </div>
-          {err && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{err}</p>}
-          <button disabled={busy} onClick={submit}
-            className="w-full py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50" style={{ background: '#0C447C' }}>
-            {busy ? 'กำลังบันทึก...' : 'ยืนยันเคลม'}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
