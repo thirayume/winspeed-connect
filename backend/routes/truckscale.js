@@ -121,7 +121,7 @@ router.get('/sync/status', async (req, res) => {
 });
 
 // POST /api/truckscale/sync/run — รัน sync เดี๋ยวนี้ (ADMIN/MANAGER/WAREHOUSE)
-router.post('/sync/run', requireRole('ADMIN', 'MANAGER', 'WAREHOUSE', 'C_LEVEL'), async (req, res) => {
+router.post('/sync/run', requireRole('ADMIN', 'MANAGER', 'WAREHOUSE', 'WEIGHBRIDGE', 'C_LEVEL'), async (req, res) => {
   const r = await syncOnce();
   res.json(r);
 });
@@ -165,11 +165,12 @@ router.get('/inbox', async (req, res) => {
 });
 
 // POST /api/truckscale/inbox/:id/match/:soId — จับคู่ inbox กับ SO ด้วยมือ
-router.post('/inbox/:id/match/:soId', requireRole('ADMIN', 'MANAGER', 'WAREHOUSE', 'COUNTER_SALES', 'C_LEVEL'), async (req, res) => {
+router.post('/inbox/:id/match/:soId', requireRole('ADMIN', 'MANAGER', 'WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'C_LEVEL'), async (req, res) => {
   try {
-    await wfQuery(`UPDATE wf.WeighInbox SET MatchedSoId=@so, MatchStatus='MATCHED', UpdatedAt=GETUTCDATE() WHERE Id=@id`, {
+    const __r = await wfQuery(`UPDATE wf.WeighInbox SET MatchedSoId=@so, MatchStatus='MATCHED', UpdatedAt=GETUTCDATE() WHERE Id=@id`, {
       so: { type: sql.NVarChar(50), value: String(req.params.soId) }, id: { type: sql.BigInt, value: Number(req.params.id) },
     });
+    if (!__r.rowsAffected[0]) return res.status(404).json({ message: 'ไม่พบรายการที่ระบุ' });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ message: e.message }); }
 });

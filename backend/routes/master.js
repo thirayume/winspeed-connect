@@ -8,6 +8,18 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 
 router.use(requireAuth);
 
+/**
+ * ตรวจว่าคำสั่งแก้ไข/ลบ กระทบแถวจริงหรือไม่
+ *
+ * query() ในไฟล์นี้คืนค่าเป็น .recordset (อาร์เรย์ของแถว) ไม่ใช่ result object
+ * จึงใช้ result.rowsAffected แบบไฟล์อื่นไม่ได้ ต้องต่อท้ายคำสั่งด้วย SELECT @@ROWCOUNT
+ * แล้วอ่านค่าจากแถวที่คืนมาแทน
+ *
+ * ถ้าไม่ตรวจ endpoint จะตอบ 200 ทั้งที่ไม่มีอะไรเปลี่ยน = สร้างหลักฐานของสิ่งที่ไม่เคยเกิด
+ */
+const ROWCOUNT = '; SELECT @@ROWCOUNT AS n;';
+const affected = rows => Number(rows?.[0]?.n || 0);
+
 const CUSTOMER_FILTER_CANDIDATES = {
   salesperson: ['SalesID', 'SaleID', 'SalesEmpID', 'SaleEmpID', 'SalesmanID', 'SalesManID'],
   employee: ['EmpID', 'EmployeeID', 'StaffID'],
@@ -202,13 +214,13 @@ router.patch('/customers/:id', async (req, res) => {
     const id = req.params.id;
     const { CustName, Tel, Mobile, Remark } = req.body;
     // 1. Update ERP
-    await query(`
+    const __rows = await query(`
       UPDATE dbo.EMCust 
       SET CustName = COALESCE(@name, CustName), 
           ContTel = COALESCE(@tel, ContTel),
           ContTel1 = COALESCE(@mob, ContTel1)
       WHERE CustID = @id
-    `, {
+    ` + ROWCOUNT, {
       name: { type: sql.NVarChar(255), value: CustName },
       tel: { type: sql.NVarChar(50), value: Tel },
       mob: { type: sql.NVarChar(50), value: Mobile },
@@ -228,6 +240,7 @@ router.patch('/customers/:id', async (req, res) => {
       });
     }
     
+    if (!affected(__rows)) return res.status(404).json({ message: 'ไม่พบรหัสลูกค้านี้' });
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -236,9 +249,10 @@ router.patch('/customers/:id', async (req, res) => {
 router.delete('/customers/:id', async (req, res) => {
   try {
     const id = req.params.id;
-    await query(`UPDATE dbo.EMCust SET Inactive = 'I', InactiveDate = GETDATE() WHERE CustID = @id`, {
+    const __rows = await query(`UPDATE dbo.EMCust SET Inactive = 'I', InactiveDate = GETDATE() WHERE CustID = @id` + ROWCOUNT, {
       id: { type: sql.VarChar(20), value: id }
     });
+    if (!affected(__rows)) return res.status(404).json({ message: 'ไม่พบรหัสลูกค้านี้' });
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -309,7 +323,7 @@ router.patch('/goods/:id', async (req, res) => {
     const { GoodName, BagPerTon, WeightKgPerBag, ImageUrl } = req.body;
     
     if (GoodName !== undefined) {
-      await query(`UPDATE dbo.EMGood SET GoodName1 = @name WHERE GoodID = @id`, {
+      const __rows = await query(`UPDATE dbo.EMGood SET GoodName1 = @name WHERE GoodID = @id` + ROWCOUNT, {
         name: { type: sql.NVarChar(255), value: GoodName },
         id: { type: sql.VarChar(20), value: id }
       });
@@ -333,6 +347,7 @@ router.patch('/goods/:id', async (req, res) => {
         id: { type: sql.VarChar(20), value: id }
       });
     }
+    if (!affected(__rows)) return res.status(404).json({ message: 'ไม่พบรหัสสินค้านี้' });
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -341,9 +356,10 @@ router.patch('/goods/:id', async (req, res) => {
 router.delete('/goods/:id', async (req, res) => {
   try {
     const id = req.params.id;
-    await query(`UPDATE dbo.EMGood SET Inactive = 'I', InactiveDate = GETDATE() WHERE GoodID = @id`, {
+    const __rows = await query(`UPDATE dbo.EMGood SET Inactive = 'I', InactiveDate = GETDATE() WHERE GoodID = @id` + ROWCOUNT, {
       id: { type: sql.VarChar(20), value: id }
     });
+    if (!affected(__rows)) return res.status(404).json({ message: 'ไม่พบรหัสสินค้านี้' });
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -1070,18 +1086,19 @@ router.put('/truck-types/:id', requireRole('ADMIN', 'MANAGER'), async (req, res)
     const id = req.params.id;
     const { Name, MaxWeightMain, MaxWeightTrailer, IsActive } = req.body;
     
-    await wq(`
+    const __rows = await wq(`
       UPDATE wf.TruckType
       SET Name = @name, MaxWeightMain = @main, MaxWeightTrailer = @trailer, 
           IsActive = @active, UpdatedAt = GETUTCDATE()
       WHERE Id = @id
-    `, {
+    ` + ROWCOUNT, {
       id: { type: sql.VarChar(50), value: id },
       name: { type: sql.NVarChar(100), value: Name },
       main: { type: sql.Decimal(10,2), value: MaxWeightMain },
       trailer: { type: sql.Decimal(10,2), value: MaxWeightTrailer ?? null },
       active: { type: sql.Bit, value: IsActive ?? 1 }
     });
+    if (!affected(__rows)) return res.status(404).json({ message: 'ไม่พบประเภทรถนี้' });
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -1091,9 +1108,10 @@ router.delete('/truck-types/:id', requireRole('ADMIN', 'MANAGER'), async (req, r
   try {
     const { wfQuery: wq } = require('../db');
     const id = req.params.id;
-    await wq(`DELETE FROM wf.TruckType WHERE Id = @id`, {
+    const __rows = await wq(`DELETE FROM wf.TruckType WHERE Id = @id` + ROWCOUNT, {
       id: { type: sql.VarChar(50), value: id }
     });
+    if (!affected(__rows)) return res.status(404).json({ message: 'ไม่พบประเภทรถนี้' });
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });

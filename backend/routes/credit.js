@@ -32,6 +32,15 @@ router.get('/:custId', async (req, res) => {
 router.put('/:custId', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN'), async (req, res) => {
   try {
     const { custName, creditLimit, creditHold, note } = req.body || {};
+
+    // endpoint นี้เป็น MERGE จึงตอบสำเร็จเสมอแม้รหัสลูกค้าจะพิมพ์ผิด และจะสร้าง
+    // credit master ของลูกค้าที่ไม่มีตัวตนทิ้งไว้ในข้อมูลหลัก
+    // การตรวจ rowsAffected ไม่ช่วย เพราะ MERGE นับการ INSERT เป็นแถวที่ถูกกระทำด้วย
+    // จึงต้องยืนยันกับ WINSpeed ก่อนว่ารหัสลูกค้ามีอยู่จริง
+    const exists = await wfQuery('SELECT TOP 1 1 AS ok FROM dbo.EMCust WHERE CustID = @c',
+      { c: { type: sql.NVarChar(20), value: String(req.params.custId) } });
+    if (!exists.recordset.length) return res.status(404).json({ message: 'ไม่พบรหัสลูกค้านี้ใน WINSpeed' });
+
     await wfQuery(`
       MERGE wf.CreditMaster AS t USING (SELECT @c AS CustId) AS s ON t.CustId=s.CustId
       WHEN MATCHED THEN UPDATE SET CustName=COALESCE(@n,CustName), CreditLimit=@lim, CreditHold=@hold, Note=@note, UpdatedBy=@u, UpdatedAt=GETUTCDATE()

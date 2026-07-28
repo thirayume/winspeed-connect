@@ -5,6 +5,32 @@
  */
 const mysql = require('mysql2/promise');
 
+/**
+ * กันไม่ให้สภาพแวดล้อมที่ไม่ใช่ production เขียนลงฐานเครื่องชั่งของโรงงานจริง
+ *
+ * โค้ดเขียนกลับทำงานได้จริงแล้ว ถ้า .env ของ Dev/UAT ชี้ไปฐานจริงโดยไม่ตั้งใจ
+ * ข้อมูลทดสอบจะปนกับใบชั่งจริงและ "แยกออกจากกันไม่ได้ภายหลัง"
+ *
+ * ตั้งรายชื่อโฮสต์ของจริงไว้ใน TS_PRODUCTION_HOSTS (คั่นด้วยจุลภาค)
+ * ถ้าไม่ตั้งไว้ ตัวป้องกันจะไม่ทำงาน — จึงควรตั้งในทุกสภาพแวดล้อม
+ */
+function assertWritableTarget() {
+  const guarded = String(process.env.TS_PRODUCTION_HOSTS || '')
+    .split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
+  if (!guarded.length) return;                      // ยังไม่ประกาศโฮสต์ของจริง
+  if (process.env.NODE_ENV === 'production') return; // production เขียนได้ตามปกติ
+
+  const target = String(process.env.MYSQL_HOST || '').trim().toLowerCase();
+  if (guarded.includes(target)) {
+    const error = new Error(
+      `ปฏิเสธการเขียนฐานเครื่องชั่ง: NODE_ENV=${process.env.NODE_ENV || '(ไม่ได้ตั้ง)'} ` +
+      `แต่ MYSQL_HOST=${target} เป็นโฮสต์ของจริงตามที่ประกาศใน TS_PRODUCTION_HOSTS ` +
+      `— แก้ MYSQL_HOST ให้ชี้ฐานทดสอบก่อน`);
+    error.code = 'TS_WRITE_BLOCKED';
+    throw error;
+  }
+}
+
 let pool = null;
 function getPool() {
   if (!process.env.MYSQL_HOST) return null;     // ยังไม่ตั้งค่า
@@ -50,6 +76,7 @@ async function tsQuery(sql, params = []) {
 }
 
 async function insertPreWeighTicket(so) {
+  assertWritableTarget();
   if (!getPool()) return false;
   
   // Format datetime as YYYY-MM-DD HH:mm:ss
@@ -101,6 +128,7 @@ async function insertPreWeighTicket(so) {
 }
 
 async function removePreWeighTicket(wfRef) {
+  assertWritableTarget();
   if (!getPool() || !wfRef) return false;
   
   const sql = `DELETE FROM tbl_keyone WHERE one_App = ?`;
@@ -137,7 +165,74 @@ function getThaiDateComponents(now = new Date()) {
   return { dateStr, timeStr, oleDateSerial, sDay };
 }
 
+/**
+ * เขียนรายการสินค้าย่อยของเที่ยวชั่งลง tblproduct_detail (T6-01)
+ *
+ * รถหนึ่งเที่ยวบรรทุกได้หลายสูตร (พบจริงถึง 25 รายการต่อเที่ยว) ระบบเดิมของโรงงาน
+ * แตกรายการไว้ในตารางนี้ และรายงาน Crystal Reports ฝั่งโรงงานอ่านจากที่นี่
+ * ถ้าเราเขียนแต่หัวบิลลง tblscale รายงานแยกตามสูตรปุ๋ยจะขาดรายการของเรา
+ *
+ * ผูกกับใบชั่งด้วย one_num เท่านั้น (ไม่มี foreign key) — ค่านี้จึงต้องตรงกันเสมอ
+ *
+ * การจับคู่คอลัมน์อ้างอิงจากข้อมูลจริงในตาราง ไม่ได้เดาจากชื่อคอลัมน์:
+ *   pd_pro_name      = รหัสสูตรปุ๋ย เช่น 15-7-18   (ไม่ใช่ pd_pro_formula ซึ่งเก็บ "ประเภทรถ")
+ *   pd_pro_wantWeight= น้ำหนักเป็นตัน
+ *   pd_pro_weight    = น้ำหนักต่อถุง (กก.)
+ *   year             = OLE date serial เหมือน Date_Out2 (ไม่ใช่ปี ค.ศ.)
+ */
+/** เลข one_num ถัดไป — เป็นตัวนับรวมของทั้งตาราง ไม่ได้แยกตามวัน */
+async function nextOneNum() {
+  const r = await tsQuery(
+    `SELECT GREATEST(
+       (SELECT COALESCE(MAX(one_num),0) FROM tblscale),
+       (SELECT COALESCE(MAX(one_num),0) FROM tblproduct_detail)
+     ) AS maxNum`).catch(() => [{ maxNum: 0 }]);
+  return Number((r && r[0] && r[0].maxNum) || 0) + 1;
+}
+
+async function writeProductDetailRows(oneNum, ticketData) {
+  const lines = Array.isArray(ticketData.lines) ? ticketData.lines : [];
+  if (!oneNum || !lines.length) return { written: 0, skipped: lines.length };
+
+  const { oleDateSerial } = getThaiDateComponents(new Date());
+  const custName = String(ticketData.custName || '').substring(0, 50);
+  const invoid = String(ticketData.wfRef || ticketData.soId || '').substring(0, 100);
+  const refNo = String(ticketData.movebill || ticketData.sequence || '').substring(0, 100) || 'ไม่ระบุ';
+
+  let written = 0;
+  for (const line of lines) {
+    const qtyTon = Number(line.QtyTon || 0);
+    if (!(qtyTon > 0)) continue;                       // ข้ามบรรทัดที่ไม่มีน้ำหนัก
+    const bags = Number(line.QtyBag || 0);
+    // น้ำหนักต่อถุงคำนวณย้อนจากจำนวนถุงจริง ถ้าไม่ระบุถุงให้เป็น 0 ตาม default ของตาราง
+    const perBag = bags > 0 ? Math.round((qtyTon * 1000) / bags) : 0;
+
+    try {
+      await tsQuery(
+        `INSERT INTO tblproduct_detail
+         (pd_pro_code, pd_pro_name, pd_pro_weight, pd_pro_bag, pd_pro_wantWeight,
+          pd_pro_invoid, pd_pro_number, one_cus_id, cust_name, one_num, pd_unit, year)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          String(line.GoodCode || line.GoodId || '-').substring(0, 50),
+          String(line.GoodCode || line.GoodName || '-').substring(0, 100),
+          perBag, bags, qtyTon,
+          invoid, refNo, custName, custName,
+          oneNum, 'กิโลกรัม', oleDateSerial,
+        ]
+      );
+      written++;
+    } catch (e) {
+      // เขียนรายการย่อยไม่สำเร็จต้องไม่ทำให้การชั่งออกล้ม — หัวบิลสำคัญกว่า
+      console.error(`[truckscale] product detail insert failed (${line.GoodCode}): ${e.message}`);
+    }
+  }
+  console.log(`[truckscale] wrote ${written}/${lines.length} product detail rows for one_num=${oneNum}`);
+  return { written, skipped: lines.length - written };
+}
+
 async function writeBackWeighOutTicket(ticketData) {
+  assertWritableTarget();
   if (!getPool()) {
     console.log('[truckscale] MySQL not configured. Skipping writeBackWeighOutTicket.');
     return { success: false, reason: 'mysql_not_configured' };
@@ -176,13 +271,13 @@ async function writeBackWeighOutTicket(ticketData) {
     let existing = [];
     if (mb) {
       existing = await tsQuery(
-        `SELECT s_id, sequence, movebill FROM tblscale WHERE movebill = ? ORDER BY s_id DESC LIMIT 1`,
+        `SELECT s_id, sequence, movebill, one_num FROM tblscale WHERE movebill = ? ORDER BY s_id DESC LIMIT 1`,
         [mb]
       );
     }
     if ((!existing || existing.length === 0) && plate) {
       existing = await tsQuery(
-        `SELECT s_id, sequence, movebill FROM tblscale 
+        `SELECT s_id, sequence, movebill, one_num FROM tblscale 
          WHERE one_car_regis = ? AND (weight_out = 0 OR weight_out IS NULL) 
          ORDER BY s_id DESC LIMIT 1`,
         [plate]
@@ -214,7 +309,18 @@ async function writeBackWeighOutTicket(ticketData) {
       );
       console.log(`[truckscale] Successfully updated tblscale s_id=${sid} for SO:${soId}`);
       if (wfRef) await removePreWeighTicket(wfRef);
-      return { success: true, action: 'updated', s_id: sid, sequence: existing[0].sequence || null };
+      // รายการย่อยผูกด้วย one_num ของใบเดิม ถ้าใบนั้นยังไม่มีให้ตั้งใหม่ก่อน
+      let oneNum = Number(existing[0].one_num || 0);
+      if (!oneNum) {
+        oneNum = await nextOneNum();
+        await tsQuery(`UPDATE tblscale SET one_num = ? WHERE s_id = ?`, [oneNum, sid]);
+      }
+      // เขียนทับรายการย่อยของเที่ยวนี้ ไม่ให้สะสมซ้ำเมื่อชั่งออกใหม่
+      await tsQuery(`DELETE FROM tblproduct_detail WHERE one_num = ?`, [oneNum]).catch(() => {});
+      const detail = await writeProductDetailRows(oneNum, { ...ticketData, sequence: existing[0].sequence });
+
+      return { success: true, action: 'updated', s_id: sid, sequence: existing[0].sequence || null,
+               one_num: oneNum, productLines: detail.written };
     } else {
       // 2. Fallback: INSERT new record into tblscale
       const maxRes = await tsQuery(
@@ -228,11 +334,14 @@ async function writeBackWeighOutTicket(ticketData) {
       // รูปแบบเดิม 'WF-' + 8 หลัก ยาว 11 ตัวอักษร จึงถูกปฏิเสธด้วย Data too long
       // ใช้ 'WF' + 8 หลัก = 10 ตัวอักษรพอดี และยังแยกออกจากใบที่ชั่งจริงได้
       const genSeq = `WF${Date.now().toString().slice(-8)}`;
+      // ใบที่แอปสร้างเองต้องมี one_num ด้วย ไม่งั้นรายการย่อยใน tblproduct_detail
+      // จะผูกกลับมาหาใบนี้ไม่ได้ (ค่า default ของคอลัมน์คือ 0 ซึ่งชนกับใบอื่นทั้งหมด)
+      const newOneNum = await nextOneNum();
 
       const res = await tsQuery(
         `INSERT INTO tblscale 
-         (sequence, movebill, one_car_regis, one_cus_name, weight_in, weight_out, weight_net, Date_In, Date_In2, Date_Out, Date_Out2, Time_In, Time_Out, s_day, s_num, Computer_w, one_des) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (sequence, movebill, one_car_regis, one_cus_name, weight_in, weight_out, weight_net, Date_In, Date_In2, Date_Out, Date_Out2, Time_In, Time_Out, s_day, s_num, Computer_w, one_des, one_num) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           genSeq,
           insertMb,
@@ -250,12 +359,14 @@ async function writeBackWeighOutTicket(ticketData) {
           sDay,
           sNum,
           scaleNo || 1,
-          oneDes
+          oneDes,
+          newOneNum
         ]
       );
       console.log(`[truckscale] Inserted fallback record into tblscale (seq: ${genSeq}, mb: ${insertMb}) for SO:${soId}`);
       if (wfRef) await removePreWeighTicket(wfRef);
-      return { success: true, action: 'inserted', insertId: res.insertId, sequence: genSeq };
+      const detail = await writeProductDetailRows(newOneNum, { ...ticketData, sequence: genSeq });
+      return { success: true, action: 'inserted', insertId: res.insertId, sequence: genSeq, one_num: newOneNum, productLines: detail.written };
     }
   } catch (e) {
     console.error(`[truckscale] writeBackWeighOutTicket failed: ${e.message}`);
@@ -317,5 +428,6 @@ async function listScaleTicketsByDateRange(fromDate, toDate) {
 
 module.exports = {
   getPool, tsQuery, insertPreWeighTicket, removePreWeighTicket, writeBackWeighOutTicket,
+  writeProductDetailRows, nextOneNum,
   getThaiDateComponents, recordWriteBackResult, listScaleTicketsByDateRange, oleDateSerial,
 };

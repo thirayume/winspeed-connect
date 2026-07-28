@@ -1663,13 +1663,28 @@ router.patch('/:id/load', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (r
 });
 
 // ── PATCH /api/so/:id/ship — โอนข้อมูลสมบูรณ์ (Scale) ──────
-router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+// WEIGHBRIDGE ทำได้ถึงขั้นชั่งออก/ส่งของ แต่ไม่ได้สิทธิ์ picking/load ซึ่งเป็นงานคลัง
+// (ดู SOP-03 — ผู้ปฏิบัติงานเครื่องชั่งเป็นคนปิดน้ำหนักจริงและออกใบส่งของ)
+router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'LOADED');
     const { weighOutWeight, tareKg, scaleNo, movebill, overrideReason, overrideApprovedBy, overrideApprovedByName, evidencePhotoUrl } = req.body;
     const gross = weighOutWeight != null ? Number(weighOutWeight) : null;
     const tare  = tareKg != null ? Number(tareKg) : null;
     const net   = (gross != null && tare != null) ? gross - tare : null;
+
+    // ต้องมีน้ำหนักจริงก่อนเสมอ — เดิมไม่ตรวจเลย จึงส่งของได้โดยไม่มีน้ำหนัก
+    // แล้วระบบตั้ง clearflag='Y' ใน WINSpeed ทันที ได้ใบสั่งขายสถานะ SHIPPED
+    // ที่ไม่มีหลักฐานน้ำหนักใด ๆ ซึ่งขัดกับ SOP-03 และใช้เป็นหลักฐาน ISO ไม่ได้
+    if (gross == null || tare == null || !Number.isFinite(gross) || !Number.isFinite(tare)) {
+      return res.status(400).json({ message: 'ต้องระบุน้ำหนักชั่งออก (weighOutWeight) และน้ำหนักรถเปล่า (tareKg)' });
+    }
+    if (gross <= 0 || tare < 0) {
+      return res.status(400).json({ message: 'น้ำหนักต้องเป็นค่าบวก' });
+    }
+    if (net <= 0) {
+      return res.status(400).json({ message: `น้ำหนักสุทธิต้องมากกว่า 0 (ชั่งออก ${gross} − รถเปล่า ${tare} = ${net})` });
+    }
 
     // คำนวณ reconciliation และ tolerance status จาก weight-reconciliation service
     const { evaluateWeight } = require('../services/weight-reconciliation');
@@ -1717,6 +1732,8 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (r
       });
 
     // ซิงค์ Write-Back ข้อมูลชั่งออกกลับไปยัง MySQL db_truckscale (TS-01 & TS-02)
+    const lines = await getLines(so.Id);
+
     const { writeBackWeighOutTicket } = require('../services/truckscale-db');
     const ticketPayload = {
       soId: so.Id,
@@ -1731,6 +1748,9 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (r
       overrideReason,
       overrideApprovedByName,
       operatorName: req.user.name,
+      // รายการสินค้าของใบสั่งขาย ใช้เขียนลง tblproduct_detail (T6-01)
+      // รถเที่ยวเดียวบรรทุกได้หลายสูตร รายงานฝั่งโรงงานแยกตามสูตรจากตารางนี้
+      lines,
     };
     const wbRes = await writeBackWeighOutTicket(ticketPayload).catch(err => ({ success: false, error: err.message }));
     // บันทึกผลลง wf.WeighTicket เสมอ เพื่อให้รายงานกระทบยอด R-3 แยกได้ว่าใบใด
@@ -1743,8 +1763,10 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (r
     }
 
     // ตั้ง Rebate accrual เมื่อ SHIPPED (เรียกชำระเงินแล้ว)
-    const lines = await getLines(so.Id);
-    await bookRebateAccrual(so, lines, req.user.sub);
+    // รีเบทเป็นของ "พนักงานขายเจ้าของใบสั่งขาย" ไม่ใช่คนที่กดปุ่มชั่งออก
+    // เดิมส่ง req.user.sub ทำให้ยอดรีเบทไปเข้ากระเป๋าของเจ้าหน้าที่เครื่องชั่ง/คลัง
+    // ซึ่งผิดทั้งทางบัญชีและทำให้เส้นทางอนุมัติตามภาคผิดไปด้วย
+    await bookRebateAccrual(so, lines, so.SalesUserId || req.user.sub);
     await audit(null, so.Id, req.user.sub, 'SHIPPED', 'LOADED', 'SHIPPED', null, req.ip);
     broadcast('so_updated', { id: so.Id, action: 'shipped' });
     await enqueue('SO_SHIPPED', so.Id, { soId: so.Id, netKg: net, by: req.user.sub }, `SO_SHIPPED:${so.Id}`);
@@ -1753,7 +1775,7 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (r
 });
 
 // ── POST /api/so/:id/weigh-item — บันทึกผลการชั่งวนรายรายการสินค้า ──
-router.post('/:id/weigh-item', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.post('/:id/weigh-item', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const soId = String(req.params.id);
     const { grossScaleKg, lineNum, goodCode, goodName, note, tareKg } = req.body || {};
