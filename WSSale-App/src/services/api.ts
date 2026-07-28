@@ -731,3 +731,19 @@ export const fetchWfRebateTrailDetail = (orderId: string) =>
 export const fetchScaleReport = (report: string, from: string, to: string) =>
   req<{ rows: any[]; count: number; from: number; to: number }>(
     `/scale-reports/${report}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+
+// สายอนุมัติของแบบขออนุมัติรายการส่งเสริมการขาย (ชั้น 3 = ผู้จัดการฝ่ายขาย)
+export const fetchRebatePlanApprovals = (planId: number) =>
+  req<any[]>(`/rebate/plans/${planId}/approvals`);
+
+export const submitRebatePlan = (planId: number) =>
+  req<{ id: number; status: string; currentTier?: number; message?: string }>(
+    `/rebate/plans/${planId}/submit`, { method: 'POST', body: '{}' });
+
+export const approveRebatePlan = (planId: number, note?: string) =>
+  req<{ id: number; status: string; currentTier?: number; message?: string }>(
+    `/rebate/plans/${planId}/approve`, { method: 'POST', body: JSON.stringify({ note }) });
+
+export const rejectRebatePlan = (planId: number, reason: string) =>
+  req<{ id: number; status: string; message?: string }>(
+    `/rebate/plans/${planId}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
