@@ -30,7 +30,16 @@ USING (VALUES
   ('e2e_counter',  'E2E Counter',   'COUNTER_SALES'),
   ('e2e_warehouse','E2E Warehouse', 'WAREHOUSE'),
   ('e2e_manager',  'E2E Manager',   'MANAGER'),
-  ('e2e_approver', 'E2E Approver',  'APPROVER')
+  ('e2e_approver', 'E2E Approver',  'APPROVER'),
+  -- ACCOUNTING มีคู่มือและ SOP อยู่แล้ว แต่ไม่เคยมีบัญชีทดสอบ จึงทดสอบสิทธิ์
+  -- และถ่ายภาพหน้าจอไม่ได้เลย
+  --
+  -- ต้องครบทั้ง 9 บทบาทตาม type UserRole ใน WSSale-App/src/types/index.ts
+  -- ไม่งั้นบทบาทที่ขาดจะทดสอบสิทธิ์ไม่ได้และไม่มีภาพหน้าจอในคู่มือ
+  -- (C_LEVEL และ WEIGHBRIDGE ใช้ได้หลัง migration 062 ขยาย chk_AppUser_Role แล้ว)
+  ('e2e_accounting','E2E Accounting','ACCOUNTING'),
+  ('e2e_weighbridge','E2E Weighbridge','WEIGHBRIDGE'),
+  ('e2e_clevel',   'E2E C-Level',   'C_LEVEL')
 ) AS source (Username, DisplayName, Role)
 ON target.Username = source.Username
 WHEN MATCHED THEN UPDATE SET
