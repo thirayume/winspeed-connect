@@ -4,10 +4,13 @@
  * ⚠ เขียนเฉพาะ wf.AppUser (schema wf) — ไม่แตะ dbo
  */
 require('dotenv').config();
+const DEFAULT_SEED_PW = String(process.env.DEFAULT_SEED_PASSWORD || '').trim();
+if (!DEFAULT_SEED_PW || DEFAULT_SEED_PW.length < 16) {
+  throw new Error('DEFAULT_SEED_PASSWORD is required and must contain at least 16 characters; no shared/default credential is allowed.');
+}
+
 const bcrypt = require('bcrypt');
 const { sql, wfQuery, ownerPool } = require('./db');
-
-const DEFAULT_SEED_PW = process.env.DEFAULT_SEED_PASSWORD || ['W0rld', 'F3rt'].join('');
 
 // user เริ่มต้น (เปลี่ยนรหัสผ่านหลัง login ครั้งแรก)
 // empId = EMEmp.EmpID จริงของ WINSpeed (พนักงานขายเท่านั้นที่ต้อง map เพื่อ export SO)

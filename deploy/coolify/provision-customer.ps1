@@ -1,4 +1,4 @@
-﻿<#
+<#
   provision-customer.ps1 - Wizard ติดตั้งระบบให้ลูกค้าใหม่ (WS-Sale-App)
   =====================================================================
   รันจากเครื่องผู้ติดตั้ง (Windows) -> ทำงานกับ VPS ของลูกค้าผ่าน SSH
@@ -165,7 +165,7 @@ function Stage-Init($cfg) {
     jwtSecret        = (New-Secret 64)
     tsIngestSecret   = (New-Secret 48)
     migrateSecret    = (New-Secret 48)
-    adminPassword    = 'W0rldF3rt'
+    adminPassword    = ("Ad" + (New-Secret 24) + "8z")
     tunnelPort       = 14330
     createdAt        = (Get-Date -Format 'yyyy-MM-dd HH:mm')
     done             = @()
@@ -202,6 +202,7 @@ function Stage-Init($cfg) {
     "MYSQL_DATABASE=$($obj.mysqlDb)",
     "MYSQL_USER=$($obj.mysqlUser)",
     "MYSQL_PASSWORD=$($obj.mysqlPassword)",
+    "DEFAULT_SEED_PASSWORD=$($obj.adminPassword)",
     "TS_SYNC_INTERVAL_MS=60000",
     "TS_INGEST_SECRET=$($obj.tsIngestSecret)",
     "JWT_SECRET=$($obj.jwtSecret)",
@@ -432,7 +433,7 @@ rm -f /tmp/000_logins.sql
 
   Step "seed ผู้ใช้ (admin + พนักงานจาก dbo.EMEmp)"
   if ((Remote $cfg "docker exec $beName node seed_admin.js") -ne 0) { Die "seed_admin ล้มเหลว" }
-  Ok "สร้างผู้ใช้แล้ว - admin / $($cfg.adminPassword)"
+  Ok "สร้างผู้ใช้แล้ว - admin (credential จัดเก็บใน protected customer profile; ไม่แสดงใน log)"
 
   $cfg | Add-Member -NotePropertyName backendContainer -NotePropertyValue $beName -Force
   Save-Profile $cfg
@@ -491,10 +492,10 @@ function Stage-Handover($cfg) {
     "|---|---|",
     "| หน้าเว็บ | https://$($cfg.appDomain) |",
     "| API | https://$($cfg.apiDomain) |",
-    "| ผู้ดูแลระบบ | ``admin`` / ``$($cfg.adminPassword)`` |",
+    "| ผู้ดูแลระบบ | ``admin`` — ส่งมอบ credential ผ่านช่องทางปลอดภัยแยกจากเอกสารนี้ |",
     "",
-    "> **W0rld ใช้เลขศูนย์** ไม่ใช่ตัวอักษร O",
-    "> พนักงานทุกคน (``emp-XXXXX``) ใช้รหัสเริ่มต้นเดียวกัน",
+    "> Initial credential ถูกสร้างแบบสุ่มต่อ customer และจัดเก็บใน protected customer profile",
+    "> ห้ามบันทึก credential ลงเอกสารส่งมอบ, log, Git หรือช่องทางสื่อสารทั่วไป",
     "",
     "## สิ่งที่ต้องทำทันทีหลังรับมอบ",
     "",

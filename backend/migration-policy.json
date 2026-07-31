@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "checksumPolicy": "immutable-after-apply",
   "excludedFiles": [
     "000_logins.sql"
@@ -7,5 +7,270 @@
   "excludedPatterns": [
     "^uat_"
   ],
-  "legacyDuplicateSequences": {}
+  "legacyDuplicateSequences": {},
+  "driftEvidence": {
+    "011_seed_sales_users_giveaway.sql": {
+      "historicalEvidence": "git:8a8a3bdd ledger-matching revision; applied checksum 11f2241c3d10e645b4a030f6253e23ca0266de5fa6cddf9d0d32cf30ba1d7372",
+      "decision": "Existing database evidence only; new-install seed policy is separate; shared/default credentials are prohibited."
+    }
+  },
+  "legacyAliases": {
+    "002_schema_v2_and_indexes.sql": {
+      "currentChecksum": "493b67ebeaca963baff2b065ba2f97c02d6289ae7dafebc2aed3b0dd66e204c5",
+      "historicalEvidence": "git:0a868ba consolidation of legacy 002 files",
+      "legacyFiles": [
+        { "file": "002_giveaway_quotation_papertrail.sql", "checksum": "e41ce4c6cd669c51663e1047caad3178dbcfb49ba6a0a47c58f686a5bcb4207b", "batchCount": 15 },
+        { "file": "002_performance_indexes.sql", "checksum": "d763262755564273f0fa61cec5f91e999b06e050015d0ccd068f9b5847e67cae", "batchCount": 7 },
+        { "file": "002_wf_schema_v2.sql", "checksum": "ff2f40d5d20bd0ba38a6260d899a9390b22391f9c6fc3a36fd2f61e9dc115191", "batchCount": 1 }
+      ],
+      "probes": [
+        { "id": "wf.GiveawayItem table", "kind": "object", "schema": "wf", "object": "GiveawayItem", "types": ["U"] },
+        { "id": "wf.GiveawayBudget table", "kind": "object", "schema": "wf", "object": "GiveawayBudget", "types": ["U"] },
+        { "id": "wf.GiveawayWithdrawal table", "kind": "object", "schema": "wf", "object": "GiveawayWithdrawal", "types": ["U"] },
+        { "id": "wf.Quotation table", "kind": "object", "schema": "wf", "object": "Quotation", "types": ["U"] },
+        { "id": "wf.QuotationLine table", "kind": "object", "schema": "wf", "object": "QuotationLine", "types": ["U"] },
+        { "id": "wf.PaperTrail table", "kind": "object", "schema": "wf", "object": "PaperTrail", "types": ["U"] },
+        { "id": "wf.v_GiveawayBudgetStatus view", "kind": "object", "schema": "wf", "object": "v_GiveawayBudgetStatus", "types": ["V"] },
+        { "id": "IX_GBudget_Emp", "kind": "index", "schema": "wf", "object": "GiveawayBudget", "index": "IX_GBudget_Emp" },
+        { "id": "IX_GWd_Region", "kind": "index", "schema": "wf", "object": "GiveawayWithdrawal", "index": "IX_GWd_Region" },
+        { "id": "IX_PaperTrail_So", "kind": "index", "schema": "wf", "object": "PaperTrail", "index": "IX_PaperTrail_So" },
+        { "id": "IX_SOHD_ControlTicket", "kind": "index", "schema": "dbo", "object": "SOHD", "index": "IX_SOHD_ControlTicket" },
+        { "id": "IX_SOHD_DeliveryByRefNo", "kind": "index", "schema": "dbo", "object": "SOHD", "index": "IX_SOHD_DeliveryByRefNo" },
+        { "id": "IX_SOHD_DeliveryByRefNo2", "kind": "index", "schema": "dbo", "object": "SOHD", "index": "IX_SOHD_DeliveryByRefNo2" },
+        { "id": "IX_SODT_SOID_Qty", "kind": "index", "schema": "dbo", "object": "SODT", "index": "IX_SODT_SOID_Qty" },
+        { "id": "IX_SOLine_SoId_LineNum_RefCtrl", "kind": "index", "schema": "wf", "object": "SalesOrderLine", "index": "IX_SOLine_SoId_LineNum_RefCtrl" },
+        { "id": "IX_SOLine_RefControlTicketNo", "kind": "index", "schema": "wf", "object": "SalesOrderLine", "index": "IX_SOLine_RefControlTicketNo" },
+        { "id": "IX_RebateLedger_CustBalance", "kind": "index", "schema": "wf", "object": "RebateLedger", "index": "IX_RebateLedger_CustBalance" }
+      ]
+    },
+    "010_rebate_and_loadsequence.sql": {
+      "currentChecksum": "b9b811443eb879f20a475d4acacf4ebe5bc8d3983560f150b69c42db5e1542dd",
+      "historicalEvidence": "git:0a868ba consolidation of legacy 010 files",
+      "legacyFiles": [
+        { "file": "010_add_loadsequence_to_views.sql", "checksum": "d6dac7798033986e87cf571858182d6b1b2732ed62a78c829f376d61031a8e7e", "batchCount": 1 },
+        { "file": "010_rebate_usage.sql", "checksum": "a2a59b0eaade48117c6612360ca299fd410f2dd4d7a48c3fcf868f2115bdc0fb", "batchCount": 1 }
+      ],
+      "probes": [
+        { "id": "v_AllSalesOrderLines LoadSequence", "kind": "definitionContains", "schema": "wf", "object": "v_AllSalesOrderLines", "tokens": ["loadsequence"] },
+        { "id": "wf.RebateUsage table", "kind": "object", "schema": "wf", "object": "RebateUsage", "types": ["U"] },
+        { "id": "SalesOrderExt.RebateDiscountAmt", "kind": "column", "schema": "wf", "object": "SalesOrderExt", "column": "RebateDiscountAmt" },
+        { "id": "SalesOrder.RebateDiscountAmt", "kind": "column", "schema": "wf", "object": "SalesOrder", "column": "RebateDiscountAmt" },
+        { "id": "IX_RebateUsage_LedgerId", "kind": "index", "schema": "wf", "object": "RebateUsage", "index": "IX_RebateUsage_LedgerId" },
+        { "id": "IX_RebateUsage_AppliedSOID", "kind": "index", "schema": "wf", "object": "RebateUsage", "index": "IX_RebateUsage_AppliedSOID" }
+      ]
+    },
+    "016_paper_copies_truck_types.sql": {
+      "currentChecksum": "fbf25ac799d06f9c8cdd43d6aa1554eb133c83e5531a73a5f56a6b50627e35dc",
+      "historicalEvidence": "git:0a868ba consolidation of legacy 016 files",
+      "legacyFiles": [
+        { "file": "016_paper_copies.sql", "checksum": "7dc0408d57cf2d7e0ff18e130faf26bd94a0aab5cd393359947445cce5fa4641", "batchCount": 4 },
+        { "file": "016_truck_types.sql", "checksum": "5ae3e51b9d0496adde35a7d980e6069d156a295b96ef768fc6840168c72377c3", "batchCount": 1 }
+      ],
+      "probes": [
+        { "id": "wf.PaperCopy table", "kind": "object", "schema": "wf", "object": "PaperCopy", "types": ["U"] },
+        { "id": "wf.PaperScan table", "kind": "object", "schema": "wf", "object": "PaperScan", "types": ["U"] },
+        { "id": "wf.TruckType table", "kind": "object", "schema": "wf", "object": "TruckType", "types": ["U"] },
+        { "id": "IX_PaperCopy_So", "kind": "index", "schema": "wf", "object": "PaperCopy", "index": "IX_PaperCopy_So" },
+        { "id": "IX_PaperCopy_Status", "kind": "index", "schema": "wf", "object": "PaperCopy", "index": "IX_PaperCopy_Status" },
+        { "id": "IX_PaperScan_Copy", "kind": "index", "schema": "wf", "object": "PaperScan", "index": "IX_PaperScan_Copy" }
+      ]
+    },
+    "019_request_and_weigh_ticket.sql": {
+      "currentChecksum": "bedf93bd51719b11df59c57d1ee4950eb5e46ce7c715a5ab53ff43ecda39685b",
+      "historicalEvidence": "git:0a868ba consolidation of legacy 019 files",
+      "legacyFiles": [
+        { "file": "019_request_types.sql", "checksum": "fef9270bb4462e1f59d91cad28553a140e8829c3a034fbc27bc8908b8bd83d78", "batchCount": 3 },
+        { "file": "019_weigh_ticket.sql", "checksum": "45b8df6d276fc6744f69b97185a6861ec19a52c9a29bead4d1629ecb47c8b589", "batchCount": 3 }
+      ],
+      "probes": [
+        { "id": "UnlockRequest.ReqType", "kind": "column", "schema": "wf", "object": "UnlockRequest", "column": "ReqType" },
+        { "id": "chk_UnlockReq_ReqType", "kind": "constraintContains", "schema": "wf", "object": "UnlockRequest", "constraint": "chk_UnlockReq_ReqType", "tokens": ["unlock", "edit", "cancel"] },
+        { "id": "wf.WeighTicket table", "kind": "object", "schema": "wf", "object": "WeighTicket", "types": ["U"] },
+        { "id": "IX_WeighTicket_So", "kind": "index", "schema": "wf", "object": "WeighTicket", "index": "IX_WeighTicket_So" }
+      ]
+    }
+  },
+  "preflightMigrations": {
+    "046_truck_types_nolock.sql": {
+      "dependency": "016_paper_copies_truck_types.sql",
+      "dataImpact": "Transforms TruckType capacity fields and removes three legacy slot columns.",
+      "risk": "CRITICAL",
+      "riskReason": "UNGUARDED_DESTRUCTIVE_COLUMN_CHANGE",
+      "unsafe": true,
+      "safeAction": "Back up TruckType, validate all six type mappings, and replace with an idempotent additive transition.",
+      "probes": [
+        { "id": "TruckType.MaxWeightMain", "kind": "column", "schema": "wf", "object": "TruckType", "column": "MaxWeightMain" },
+        { "id": "TruckType.MaxWeightTrailer", "kind": "column", "schema": "wf", "object": "TruckType", "column": "MaxWeightTrailer" },
+        { "id": "TruckType.SlotCount removed", "kind": "columnAbsent", "schema": "wf", "object": "TruckType", "column": "SlotCount" }
+      ]
+    },
+    "047_seed_giveaway_items.sql": {
+      "dependency": "002_schema_v2_and_indexes.sql",
+      "dataImpact": "Adds guarded GiveawayItem reference rows from current budgets.",
+      "risk": "MEDIUM",
+      "unsafe": false,
+      "safeAction": "Reconcile distinct budget item pairs with the approved giveaway master before insert.",
+      "probes": [
+        { "id": "GiveawayItem seeded", "kind": "rowCountAtLeast", "schema": "wf", "object": "GiveawayItem", "minimum": 1 }
+      ]
+    },
+    "048_seed_giveaway_withdrawals.sql": {
+      "dependency": "047_seed_giveaway_items.sql",
+      "dataImpact": "Adds 129 guarded business seed rows across giveaway tables.",
+      "risk": "HIGH",
+      "unsafe": false,
+      "safeAction": "Validate source ownership and exact row signatures in an isolated clone.",
+      "probes": [
+        { "id": "GiveawayWithdrawal seeded", "kind": "rowCountAtLeast", "schema": "wf", "object": "GiveawayWithdrawal", "minimum": 1 }
+      ]
+    },
+    "049_giveaway_item_mapping_seed.sql": {
+      "dependency": "048_seed_giveaway_withdrawals.sql",
+      "dataImpact": "Creates mapping data and contains employee-account seed behavior.",
+      "risk": "CRITICAL",
+      "riskReason": "DEFAULT_CREDENTIAL_AND_USER_SEED_REVIEW_REQUIRED",
+      "unsafe": true,
+      "safeAction": "Remove shared/default credential behavior and approve a new-install identity provisioning policy.",
+      "probes": [
+        { "id": "wf.GiveawayItemMapping table", "kind": "object", "schema": "wf", "object": "GiveawayItemMapping", "types": ["U"] }
+      ]
+    },
+    "050_cleanup_and_truckplate_fix.sql": {
+      "dependency": "049_giveaway_item_mapping_seed.sql",
+      "dataImpact": "Deletes selected users and replaces sp_ConfirmSalesOrder.",
+      "risk": "CRITICAL",
+      "riskReason": "DESTRUCTIVE_DATA_CLEANUP_MIXED_WITH_OBJECT_REMEDIATION",
+      "unsafe": true,
+      "safeAction": "Separate data cleanup from procedure remediation and diff the live procedure first.",
+      "probes": [
+        { "id": "sp_ConfirmSalesOrder logistics contract", "kind": "definitionContains", "schema": "wf", "object": "sp_ConfirmSalesOrder", "tokens": ["sohdremark", "sodtremark"] }
+      ]
+    },
+    "051_update_so_status_check.sql": {
+      "dependency": "050_cleanup_and_truckplate_fix.sql",
+      "dataImpact": "Replaces the SalesOrder status check constraint.",
+      "risk": "HIGH",
+      "riskReason": "UNGUARDED_NAMED_CONSTRAINT_DROP",
+      "unsafe": true,
+      "safeAction": "Probe the current constraint name and definition before an idempotent replacement.",
+      "probes": [
+        { "id": "chk_SO_Status includes QUOTATION", "kind": "constraintContains", "schema": "wf", "object": "SalesOrder", "constraint": "chk_SO_Status", "tokens": ["quotation"] }
+      ]
+    },
+    "052_sohd_remark_logistics.sql": {
+      "dependency": "050_cleanup_and_truckplate_fix.sql",
+      "dataImpact": "Replaces sp_ConfirmSalesOrder with logistics remark writes.",
+      "risk": "HIGH",
+      "riskReason": "LIVE_PROCEDURE_REPLACEMENT",
+      "unsafe": true,
+      "safeAction": "Archive and diff the live definition, then design an additive object deployment.",
+      "probes": [
+        { "id": "sp_ConfirmSalesOrder remark contract", "kind": "definitionContains", "schema": "wf", "object": "sp_ConfirmSalesOrder", "tokens": ["sohdremark", "sodtremark", "truckremark", "billremark"] }
+      ]
+    },
+    "053_so_notified_at.sql": {
+      "dependency": "052_sohd_remark_logistics.sql",
+      "dataImpact": "Adds nullable NotifiedAt columns.",
+      "risk": "LOW",
+      "unsafe": false,
+      "safeAction": "Apply only after alias/drift blockers are resolved and backup evidence is captured.",
+      "probes": [
+        { "id": "SalesOrder.NotifiedAt", "kind": "column", "schema": "wf", "object": "SalesOrder", "column": "NotifiedAt" },
+        { "id": "SalesOrderExt.NotifiedAt", "kind": "column", "schema": "wf", "object": "SalesOrderExt", "column": "NotifiedAt" }
+      ]
+    },
+    "054_rebate_coupon_mirror.sql": {
+      "dependency": "053_so_notified_at.sql",
+      "dataImpact": "Creates coupon mirror tables and indexes.",
+      "risk": "MEDIUM",
+      "unsafe": false,
+      "safeAction": "Confirm the source-system contract and retention owner before creation.",
+      "probes": [
+        { "id": "wf.CouponMirror table", "kind": "object", "schema": "wf", "object": "CouponMirror", "types": ["U"] },
+        { "id": "wf.CouponRedemptionMirror table", "kind": "object", "schema": "wf", "object": "CouponRedemptionMirror", "types": ["U"] }
+      ]
+    },
+    "055_restore_all_sales_orders_contract.sql": {
+      "dependency": "053_so_notified_at.sql, 052_sohd_remark_logistics.sql",
+      "dataImpact": "Adds extension columns and replaces two views plus one procedure.",
+      "risk": "CRITICAL",
+      "riskReason": "KNOWN_PARTIAL_APPLICATION_AND_OBJECT_DEFINITION_DRIFT",
+      "unsafe": true,
+      "safeAction": "Use object-definition diff and additive repair; do not rerun the mixed migration.",
+      "probes": [
+        { "id": "SalesOrderExt.NotifiedAt via 055", "kind": "column", "schema": "wf", "object": "SalesOrderExt", "column": "NotifiedAt" },
+        { "id": "SalesOrderLineExt.MasterQty", "kind": "column", "schema": "wf", "object": "SalesOrderLineExt", "column": "MasterQty" },
+        { "id": "SalesOrderLineExt.GiveawayApprovalStatus", "kind": "column", "schema": "wf", "object": "SalesOrderLineExt", "column": "GiveawayApprovalStatus" },
+        { "id": "v_AllSalesOrderLines full contract", "kind": "definitionContains", "schema": "wf", "object": "v_AllSalesOrderLines", "tokens": ["masterqty", "childqty", "giveawayapprovalstatus"] },
+        { "id": "sp_ConfirmSalesOrder 055 contract", "kind": "definitionContains", "schema": "wf", "object": "sp_ConfirmSalesOrder", "tokens": ["sohdremark", "sodtremark", "truckremark", "billremark"] }
+      ]
+    },
+    "056_align_giveaway_period_year.sql": {
+      "dependency": "055_restore_all_sales_orders_contract.sql",
+      "dataImpact": "Updates Gregorian period years to Buddhist Era values in three tables.",
+      "risk": "HIGH",
+      "riskReason": "BUSINESS_DATA_UPDATE_REQUIRES_RECONCILIATION",
+      "unsafe": true,
+      "safeAction": "Approve year-conversion rules and capture before/after row sets in an isolated clone.",
+      "probes": []
+    },
+    "057_reseed_giveaway_data.sql": {
+      "dependency": "056_align_giveaway_period_year.sql",
+      "dataImpact": "Adds 179 guarded business seed rows.",
+      "risk": "HIGH",
+      "unsafe": false,
+      "safeAction": "Validate row signatures and business owner approval before isolated execution.",
+      "probes": []
+    },
+    "058_fix_shipped_status_clearflag.sql": {
+      "dependency": "055_restore_all_sales_orders_contract.sql",
+      "dataImpact": "Replaces v_AllSalesOrders status derivation.",
+      "risk": "HIGH",
+      "riskReason": "LIVE_VIEW_REPLACEMENT",
+      "unsafe": true,
+      "safeAction": "Diff normalized live/source definitions and validate the response contract.",
+      "probes": [
+        { "id": "v_AllSalesOrders shipped Clearflag contract", "kind": "definitionContains", "schema": "wf", "object": "v_AllSalesOrders", "tokens": ["clearflag", "shipped"] }
+      ]
+    },
+    "059_weight_tolerance_and_item_weighing.sql": {
+      "dependency": "058_fix_shipped_status_clearflag.sql",
+      "dataImpact": "Adds settings, weight-tolerance columns, item log and index.",
+      "risk": "MEDIUM",
+      "unsafe": false,
+      "safeAction": "Confirm tolerance defaults and UAT evidence before additive deployment.",
+      "probes": [
+        { "id": "wf.SystemSetting table", "kind": "object", "schema": "wf", "object": "SystemSetting", "types": ["U"] },
+        { "id": "WeighTicket.ExpectedNetKg", "kind": "column", "schema": "wf", "object": "WeighTicket", "column": "ExpectedNetKg" },
+        { "id": "wf.WeighTicketItemLog table", "kind": "object", "schema": "wf", "object": "WeighTicketItemLog", "types": ["U"] }
+      ]
+    },
+    "060_weigh_override_and_evidence.sql": {
+      "dependency": "059_weight_tolerance_and_item_weighing.sql",
+      "dataImpact": "Adds four override/evidence columns.",
+      "risk": "MEDIUM",
+      "unsafe": false,
+      "safeAction": "Approve override authority and evidence retention before additive deployment.",
+      "probes": [
+        { "id": "WeighTicket.OverrideReason", "kind": "column", "schema": "wf", "object": "WeighTicket", "column": "OverrideReason" },
+        { "id": "WeighTicket.OverrideApprovedBy", "kind": "column", "schema": "wf", "object": "WeighTicket", "column": "OverrideApprovedBy" },
+        { "id": "WeighTicket.EvidencePhotoUrl", "kind": "column", "schema": "wf", "object": "WeighTicket", "column": "EvidencePhotoUrl" }
+      ]
+    },
+    "061_weighticket_scale_writeback_result.sql": {
+      "dependency": "060_weigh_override_and_evidence.sql",
+      "dataImpact": "Adds five TruckScale write-back result columns and an index.",
+      "risk": "HIGH",
+      "unsafe": false,
+      "safeAction": "Deploy only after isolated TruckScale write-back UAT and rollback evidence.",
+      "probes": [
+        { "id": "WeighTicket.ScaleWriteAction", "kind": "column", "schema": "wf", "object": "WeighTicket", "column": "ScaleWriteAction" },
+        { "id": "WeighTicket.ScaleSid", "kind": "column", "schema": "wf", "object": "WeighTicket", "column": "ScaleSid" },
+        { "id": "WeighTicket.ScaleSequence", "kind": "column", "schema": "wf", "object": "WeighTicket", "column": "ScaleSequence" },
+        { "id": "WeighTicket.ScaleWrittenAt", "kind": "column", "schema": "wf", "object": "WeighTicket", "column": "ScaleWrittenAt" },
+        { "id": "WeighTicket.ScaleError", "kind": "column", "schema": "wf", "object": "WeighTicket", "column": "ScaleError" },
+        { "id": "IX_WeighTicket_ScaleWriteAction", "kind": "index", "schema": "wf", "object": "WeighTicket", "index": "IX_WeighTicket_ScaleWriteAction" }
+      ]
+    }
+  }
 }

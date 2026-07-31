@@ -4,17 +4,24 @@
  * WinSpeed migration runner.
  *
  * Safety properties:
- * - selection and legacy duplicate sequences are governed by migration-policy.json;
- * - UAT/manual SQL is excluded from the normal deployment path;
+ * - migration selection, exclusions and legacy aliases are governed by migration-policy.json;
+ * - old consolidated migrations require exact ledger evidence and read-only object probes;
  * - an applied file is immutable: checksum or batch-count drift stops the run;
  * - ledger read/write failures are fatal rather than treated as an empty ledger;
- * - --plan is read-only and never bootstraps or changes the ledger.
+ * - --plan uses the reader pool and never bootstraps or changes the ledger.
  */
 require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const {
+  STATUSES,
+  classifyCurrentMigration,
+  statusForPendingFile,
+  knownLegacyFiles,
+  collectProbeResults,
+} = require('./migration-reconciliation');
 
 const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
 const POLICY_PATH = path.join(__dirname, 'migration-policy.json');
@@ -27,12 +34,18 @@ function readJson(file) {
 
 function loadPolicy(file = POLICY_PATH) {
   const policy = readJson(file);
-  if (policy.schemaVersion !== 1) throw new Error(`Unsupported migration policy schemaVersion: ${policy.schemaVersion}`);
+  if (policy.schemaVersion !== 2) throw new Error(`Unsupported migration policy schemaVersion: ${policy.schemaVersion}`);
   if (!Array.isArray(policy.excludedFiles) || !Array.isArray(policy.excludedPatterns)) {
     throw new Error('migration-policy.json must define excludedFiles and excludedPatterns arrays.');
   }
   if (!policy.legacyDuplicateSequences || typeof policy.legacyDuplicateSequences !== 'object') {
     throw new Error('migration-policy.json must define legacyDuplicateSequences.');
+  }
+  if (!policy.legacyAliases || typeof policy.legacyAliases !== 'object') {
+    throw new Error('migration-policy.json must define legacyAliases.');
+  }
+  if (!policy.preflightMigrations || typeof policy.preflightMigrations !== 'object') {
+    throw new Error('migration-policy.json must define preflightMigrations.');
   }
   if (policy.checksumPolicy !== 'immutable-after-apply') {
     throw new Error('Only checksumPolicy=immutable-after-apply is supported.');
@@ -87,6 +100,17 @@ function validateMigrationPolicy(fileNames, policy) {
     }
   }
 
+  for (const [currentFile, alias] of Object.entries(policy.legacyAliases || {})) {
+    if (!activeFiles.includes(currentFile)) errors.push(`Legacy alias target is not an active migration: ${currentFile}`);
+    if (!/^[a-f0-9]{64}$/i.test(String(alias.currentChecksum || ''))) errors.push(`Legacy alias currentChecksum is invalid: ${currentFile}`);
+    if (!Array.isArray(alias.legacyFiles) || alias.legacyFiles.length === 0) errors.push(`Legacy alias has no legacyFiles: ${currentFile}`);
+    if (!Array.isArray(alias.probes) || alias.probes.length === 0) errors.push(`Legacy alias has no required probes: ${currentFile}`);
+  }
+
+  for (const file of Object.keys(policy.preflightMigrations || {})) {
+    if (!activeFiles.includes(file)) errors.push(`Preflight migration is not active: ${file}`);
+  }
+
   if (errors.length) throw new Error(`Migration policy validation failed:\n- ${errors.join('\n- ')}`);
   return {
     allFiles: files,
@@ -104,10 +128,7 @@ function discoverMigrations(directory = MIGRATIONS_DIR, policy = loadPolicy()) {
 }
 
 function classifyMigration(applied, checksum, batchCount) {
-  if (!applied) return 'PENDING';
-  if (String(applied.checksum || '').toLowerCase() !== checksum.toLowerCase()) return 'CHECKSUM_DRIFT';
-  if (Number(applied.batchCount) !== Number(batchCount)) return 'BATCHCOUNT_DRIFT';
-  return 'UNCHANGED';
+  return classifyCurrentMigration(applied, checksum, batchCount).status;
 }
 
 async function ensureLedger(pool) {
@@ -142,11 +163,7 @@ async function recordApplied(pool, fileName, checksum, batchCount) {
     .query('INSERT INTO wf.SchemaMigration (FileName, Checksum, BatchCount) VALUES (@f, @c, @b);');
 }
 
-const IGNORABLE_CODES = [
-  1913, // index already exists after a recoverable partial run
-  2714, // object already exists after a recoverable partial run
-  2705, // column already exists after a recoverable partial run
-];
+const IGNORABLE_CODES = [1913, 2714, 2705];
 
 function sqlErrorCode(error) {
   return error?.originalError?.info?.number
@@ -176,25 +193,52 @@ async function runFile(pool, fileName, batches) {
   return { successCount, ignoredCount, batchCount: batches.length };
 }
 
-function buildPlan(inventory, applied, directory = MIGRATIONS_DIR) {
+function buildPlan(inventory, applied, directory = MIGRATIONS_DIR, policy = { legacyAliases: {}, preflightMigrations: {} }, probeState = {}) {
+  const aliasResults = probeState.aliases || new Map();
+  const preflightResults = probeState.preflight || new Map();
   const entries = inventory.activeFiles.map(file => {
     const sql = fs.readFileSync(path.join(directory, file), 'utf8');
     const checksum = sha256(sql);
     const batches = splitBatches(sql);
+    const appliedRow = applied.get(file) || null;
+    let detail = classifyCurrentMigration(appliedRow, checksum, batches.length);
+    if (detail.status === STATUSES.PENDING) {
+      detail = statusForPendingFile({
+        file,
+        currentChecksum: checksum,
+        policy,
+        applied,
+        aliasProbeResults: aliasResults.get(file),
+        preflightProbeResults: preflightResults.get(file),
+      });
+    }
     return {
       file,
       batches,
       checksum,
       batchCount: batches.length,
-      status: classifyMigration(applied.get(file), checksum, batches.length),
-      applied: applied.get(file) || null,
+      status: detail.status,
+      reason: detail.reason || null,
+      evidence: detail,
+      applied: appliedRow,
+      historicalEvidence: policy.driftEvidence?.[file]?.historicalEvidence || detail.historicalEvidence || null,
     };
   });
   const diskSet = new Set(inventory.allFiles);
+  const recognizedLegacy = knownLegacyFiles(policy);
   return {
     entries,
-    ledgerOnly: [...applied.keys()].filter(file => !diskSet.has(file)).sort(),
+    excludedEntries: inventory.excludedFiles.map(file => ({ file, status: STATUSES.EXCLUDED, applied: applied.get(file) || null })),
+    legacyLedger: [...applied.keys()].filter(file => recognizedLegacy.has(file)).sort(),
+    ledgerOnly: [...applied.keys()].filter(file => !diskSet.has(file) && !recognizedLegacy.has(file)).sort(),
     excludedApplied: inventory.excludedFiles.filter(file => applied.has(file)).sort(),
+  };
+}
+
+async function collectPlanProbeState(pool, policy) {
+  return {
+    aliases: await collectProbeResults(pool, policy.legacyAliases),
+    preflight: await collectProbeResults(pool, policy.preflightMigrations),
   };
 }
 
@@ -215,10 +259,24 @@ function printPlan(plan, inventory, target, readOnly) {
   }, {});
   console.log(`\nMigration ${readOnly ? 'read-only plan' : 'preflight'} for ${String(target).toUpperCase()}`);
   console.log(`  active: ${inventory.activeFiles.length}; excluded: ${inventory.excludedFiles.length}`);
-  console.log(`  unchanged: ${counts.UNCHANGED || 0}; pending: ${counts.PENDING || 0}; drift: ${(counts.CHECKSUM_DRIFT || 0) + (counts.BATCHCOUNT_DRIFT || 0)}`);
-  for (const entry of plan.entries.filter(item => item.status !== 'UNCHANGED')) console.log(`  ${entry.status.padEnd(16)} ${entry.file}`);
-  for (const file of plan.excludedApplied) console.log(`  EXCLUDED_APPLIED ${file}`);
-  for (const file of plan.ledgerOnly) console.log(`  LEDGER_ONLY      ${file}`);
+  for (const status of Object.values(STATUSES)) {
+    const count = status === STATUSES.EXCLUDED ? inventory.excludedFiles.length : counts[status] || 0;
+    if (count > 0) console.log(`  ${status}: ${count}`);
+  }
+  for (const entry of plan.entries.filter(item => item.status !== STATUSES.APPLIED_CURRENT)) {
+    console.log(`  ${entry.status.padEnd(24)} ${entry.file}${entry.reason ? ` (${entry.reason})` : ''}`);
+    if (entry.status === STATUSES.CHECKSUM_DRIFT) {
+      console.log(`    applied checksum: ${entry.applied?.checksum || 'none'}`);
+      console.log(`    current checksum: ${entry.checksum}`);
+      if (entry.historicalEvidence) console.log(`    historical evidence: ${entry.historicalEvidence}`);
+    }
+    if (entry.status === STATUSES.APPLIED_VIA_LEGACY_ALIAS && entry.historicalEvidence) {
+      console.log(`    historical evidence: ${entry.historicalEvidence}`);
+    }
+  }
+  for (const file of plan.excludedApplied) console.log(`  ${STATUSES.EXCLUDED.padEnd(24)} ${file} (ledger row exists)`);
+  for (const file of plan.legacyLedger) console.log(`  LEGACY_ALIAS_EVIDENCE    ${file}`);
+  for (const file of plan.ledgerOnly) console.log(`  UNSAFE_LEDGER_ONLY       ${file}`);
   return counts;
 }
 
@@ -231,32 +289,35 @@ async function run(options = parseArgs(process.argv)) {
   const policy = loadPolicy();
   const inventory = discoverMigrations(MIGRATIONS_DIR, policy);
   const db = require('./db');
-  await db.ownerReady;
-  const pool = db.ownerPool;
+  if (options.plan) await db.readerReady;
+  else await db.ownerReady;
+  const pool = options.plan ? db.readerPool : db.ownerPool;
   const target = db.getTarget();
 
   if (!options.plan) await ensureLedger(pool);
   const applied = await loadApplied(pool);
-  const plan = buildPlan(inventory, applied);
+  const probeState = await collectPlanProbeState(pool, policy);
+  const plan = buildPlan(inventory, applied, MIGRATIONS_DIR, policy, probeState);
   const counts = printPlan(plan, inventory, target, options.plan);
 
-  if (plan.ledgerOnly.length) throw new Error(`Applied migration file(s) are missing from disk: ${plan.ledgerOnly.join(', ')}`);
-  const drifted = plan.entries.filter(entry => entry.status.endsWith('_DRIFT'));
-  if (drifted.length) {
-    throw new Error(`Applied migrations are immutable. Create a new migration instead of editing: ${drifted.map(entry => entry.file).join(', ')}`);
+  if (plan.ledgerOnly.length) throw new Error(`Unknown ledger-only migration(s): ${plan.ledgerOnly.join(', ')}`);
+  const blockers = plan.entries.filter(entry => [STATUSES.CHECKSUM_DRIFT, STATUSES.PARTIALLY_APPLIED, STATUSES.UNSAFE].includes(entry.status));
+  if (blockers.length) {
+    throw new Error(`Migration safety blocker(s): ${blockers.map(entry => `${entry.file}:${entry.status}`).join(', ')}`);
   }
   if (options.plan) {
-    console.log('  read-only: no schema, data, or ledger changes were made.');
-    return;
+    console.log('  read-only: no schema, data, transaction, or ledger changes were made.');
+    return plan;
   }
 
-  for (const entry of plan.entries.filter(item => item.status === 'PENDING')) {
+  for (const entry of plan.entries.filter(item => item.status === STATUSES.PENDING)) {
     console.log(`\nApplying ${entry.file}`);
     const result = await runFile(pool, entry.file, entry.batches);
     await recordApplied(pool, entry.file, entry.checksum, entry.batchCount);
     console.log(`  ${result.successCount} OK; ${result.ignoredCount} recoverable duplicate(s); ledger recorded`);
   }
-  console.log(`\nMigration complete: ${counts.UNCHANGED || 0} unchanged; ${counts.PENDING || 0} applied; ${inventory.excludedFiles.length} excluded.`);
+  console.log(`\nMigration complete: ${counts[STATUSES.APPLIED_CURRENT] || 0} current; ${counts[STATUSES.PENDING] || 0} applied; ${inventory.excludedFiles.length} excluded.`);
+  return plan;
 }
 
 if (require.main === module) {
@@ -277,6 +338,8 @@ module.exports = {
   discoverMigrations,
   classifyMigration,
   buildPlan,
+  collectPlanProbeState,
   parseArgs,
   runFile,
+  STATUSES,
 };

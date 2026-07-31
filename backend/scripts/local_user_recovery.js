@@ -3,7 +3,10 @@ const sql = require('mssql/msnodesqlv8');
 
 const mode = process.argv[2] || 'inspect';
 const username = process.argv[3] || 'admin';
-const newPassword = process.argv[4] || process.env.DEFAULT_SEED_PASSWORD || ['W0rld', 'F3rt'].join('');
+const newPassword = String(process.env.LOCAL_RECOVERY_PASSWORD || process.env.DEFAULT_SEED_PASSWORD || '').trim();
+if (mode === 'reset' && newPassword.length < 16) {
+  throw new Error('LOCAL_RECOVERY_PASSWORD or DEFAULT_SEED_PASSWORD is required with at least 16 characters for reset mode.');
+}
 
 async function main() {
   const pool = new sql.ConnectionPool({
