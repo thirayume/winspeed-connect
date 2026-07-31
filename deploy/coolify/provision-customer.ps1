@@ -212,7 +212,7 @@ function Stage-Init($cfg) {
     "CORS_ORIGIN=https://$($obj.appDomain)",
     "EXPORT_OUTPUT_PATH=/app/exports",
     "MIGRATE_SECRET=$($obj.migrateSecret)",
-    "APP_VERSION=1.0.0"
+    "APP_VERSION=1.5.0"
   )
   $feEnv = @(
     "VITE_API_BASE_URL=https://$($obj.apiDomain)/api",

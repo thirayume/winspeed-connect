@@ -187,7 +187,7 @@ export function LegacyReportPdfModal({ data, onClose }: { data: ReportData; onCl
             <div className="flex items-center justify-between text-xs bg-gray-50 border border-gray-200 rounded-lg p-2.5 mb-4">
               <div><span className="text-gray-500">จำนวนรายการทั้งหมด:</span> <b className="font-semibold text-gray-800">{data.rows.length.toLocaleString()} รายการ</b></div>
               <div><span className="text-gray-500">สถานะข้อมูล:</span> <b className="font-semibold text-emerald-700">ตรวจสอบความถูกต้องแล้ว</b></div>
-              <div><span className="text-gray-500">ระบบอ้างอิง:</span> <b className="font-mono text-gray-800">WINSpeed-Connect v1.4.0</b></div>
+              <div><span className="text-gray-500">ระบบอ้างอิง:</span> <b className="font-mono text-gray-800">WINSpeed-Connect v1.5.0</b></div>
             </div>
 
             {/* Data Table */}

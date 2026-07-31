@@ -3,6 +3,12 @@ import { X, Search, Truck, MapPin } from 'lucide-react';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { fetchCustomers, fetchTruckPlates } from '../../services/api';
 import type { EMCust } from '../../types';
+function getLocalDate() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+
 
 export function TripSetupModal({
   isOpen,
@@ -26,7 +32,7 @@ export function TripSetupModal({
   const [truckPlate, setTruckPlate] = useState(initialData?.truckPlate || '');
   const [isTruckOpen, setIsTruckOpen] = useState(false);
 
-  const [deliveryDate, setDeliveryDate] = useState(initialData?.deliveryDate || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10));
+  const [deliveryDate, setDeliveryDate] = useState(() => initialData?.deliveryDate || getLocalDate());
 
   const [creditDays, setCreditDays] = useState(Number(initialData?.creditDays || 0));
   const [pSling, setPSling] = useState(initialData?.pSling || false);
@@ -40,7 +46,7 @@ export function TripSetupModal({
       setCustId(initialData?.custId || '');
       setCustSearch(initialData?.custName || '');
       setTruckPlate(initialData?.truckPlate || '');
-      setDeliveryDate(initialData?.deliveryDate || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10));
+      setDeliveryDate(initialData?.deliveryDate || getLocalDate());
       setCreditDays(Number(initialData?.creditDays || 0));
       setPSling(initialData?.pSling || false);
       setLoadInOrder(initialData?.loadInOrder || false);
