@@ -73,6 +73,8 @@ docker exec -it <backend> node run_migrations.js
 docker exec -it <backend> node seed_admin.js
 ```
 
+ก่อนรัน ต้องกำหนด `DEFAULT_SEED_PASSWORD` ผ่าน environment/secret manager ของ backend โดยไม่มีค่า default fallback ค่าต้องยาวอย่างน้อย 16 ตัวอักษร และห้ามพิมพ์ credential ลง log หรือเอกสารส่งมอบ
+
 ## 3. Backend
 
 เปิด **Connect To Predefined Network** ให้ทั้ง `wf-databases` และ backend → ทั้งคู่จะอยู่ network `coolify`

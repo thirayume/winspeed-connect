@@ -134,7 +134,7 @@ backup ของ WINSpeed **ไม่มี schema `wf`** → หลัง migra
 ```bash
 docker exec -it <backend-container> node seed_admin.js
 ```
-1. สร้าง **`admin` / `W0rldF3rt`** — ⚠️ `W0rld` ใช้ **เลขศูนย์** ไม่ใช่ตัว O
+1. สร้างบัญชี `admin` โดยใช้ `DEFAULT_SEED_PASSWORD` จาก secure runtime input เท่านั้น ค่าต้องยาวอย่างน้อย 16 ตัวอักษรและห้ามใช้ shared/default credential
 2. อ่าน `dbo.EMEmp` → สร้าง/อัปเดต user พร้อม **role จริง**
    (`EmpGroupID=2000`→MANAGER · `2001` หรือ Dept `2004/2005`→WAREHOUSE · Dept `2000/2001`→ACCOUNTING · ที่เหลือ SALES)
    และผูก **`EmpId` ↔ `EMEmp.EmpID`** — จำเป็นต่อการ export SO กลับ WINSpeed
@@ -150,7 +150,7 @@ docker exec -it <backend-container> node seed_admin.js
 ## 7. หลังส่งมอบ
 
 **ลูกค้าต้องทำทันที**
-- [ ] เปลี่ยนรหัส `admin` · บังคับพนักงานเปลี่ยนรหัสครั้งแรก (ทุกคนได้ `W0rldF3rt` เหมือนกัน)
+- [ ] เปลี่ยนรหัส `admin` และบังคับพนักงานเปลี่ยนรหัสครั้งแรก โดยส่งมอบ initial credential ผ่านช่องทางปลอดภัย
 - [ ] ตั้ง backup อัตโนมัติ — `/root/backup-databases.sh` + cron (ดู `RUNBOOK.md` ขั้น 9)
 - [ ] repoint ซอฟต์แวร์ตาชั่งหน้างานมา MySQL ตัวใหม่ (**ทำท้ายสุด** วางแผน cutover)
 
@@ -166,8 +166,8 @@ docker exec -it <backend-container> node seed_admin.js
 ทุก instance ใช้ **โค้ดชุดเดียวกัน** ต่างกันแค่ env + ข้อมูล
 
 - แก้โค้ด → push → Coolify ของแต่ละลูกค้า redeploy (ข้อมูลใน volume ไม่หาย)
-- มี migration ใหม่ → `docker exec -it <backend> node run_migrations.js` ต่อ instance (idempotent รันซ้ำปลอดภัย)
-- แนะนำ **tag เวอร์ชัน** (`v1.0.0`, `v1.1.0`) แล้วให้ prod ลูกค้าตรึงที่ tag ที่ผ่าน UAT แล้ว ส่วน dev ตามล่าสุด
+- มี migration ใหม่ → รัน `docker exec -it <backend> node run_migrations.js --plan` ก่อนทุก instance; การ Apply ต้องมี change approval, backup และ rollback evidence ห้ามถือว่า migration แบบผสมทุกไฟล์รันซ้ำได้อย่างปลอดภัย
+- แนะนำ **tag เวอร์ชัน** (`v1.5.0`, `v1.5.x`) แล้วให้ prod ลูกค้าตรึงที่ tag ที่ผ่าน UAT แล้ว ส่วน dev ตามล่าสุด
 
 ---
 

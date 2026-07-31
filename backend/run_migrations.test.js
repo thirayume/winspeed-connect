@@ -215,3 +215,9 @@ test('coolify provisioning generates and injects a unique seed credential withou
   assert.doesNotMatch(source, /Ok\s+"[^"]*\$\(\$cfg\.adminPassword\)/);
   assert.doesNotMatch(source, /"\|[^"]*\$\(\$cfg\.adminPassword\)/);
 });
+test('auth middleware requires a strong runtime JWT secret without a literal fallback', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'middleware', 'auth.js'), 'utf8');
+  assert.doesNotMatch(source, /process\.env\.JWT_SECRET\s*(?:\|\||\?\?)\s*['"][^'"]+['"]/);
+  assert.match(source, /String\(process\.env\.JWT_SECRET \|\| ''\)\.trim\(\)/);
+  assert.match(source, /SECRET\.length < 32/);
+});

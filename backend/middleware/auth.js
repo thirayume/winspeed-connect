@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 
-const SECRET = process.env.JWT_SECRET || 'dev_secret_change_in_production';
+const SECRET = String(process.env.JWT_SECRET || '').trim();
+if (SECRET.length < 32) throw new Error('JWT_SECRET is required and must contain at least 32 characters; no fallback secret is allowed.');
 
 function requireAuth(req, res, next) {
   const header = req.headers['authorization'] || '';
