@@ -500,6 +500,86 @@ const REPORTS = {
           GROUP BY emp.EmpName
           ORDER BY ActualTon DESC`,
   },
+  'rebate-claim-detail': {
+    title: 'รายงานรายละเอียดใบขอเคลียร์รีเบทและการอนุมัติ (Rebate Claim Detail)',
+    columns: [
+      { key: 'ClaimId', label: 'เลขที่เคลม' },
+      { key: 'CustId', label: 'รหัสลูกค้า' },
+      { key: 'RegionCode', label: 'ภาค' },
+      { key: 'SalesName', label: 'ผู้ยื่นเคลม' },
+      { key: 'Status', label: 'สถานะ' },
+      { key: 'ClaimAmt', label: 'ยอดขอเคลม' },
+      { key: 'LineType', label: 'ประเภทรายการ' },
+      { key: 'InvoiceNo', label: 'เลขที่ใบกำกับ' },
+      { key: 'GoodCode', label: 'รหัสสินค้า' },
+      { key: 'GoodName', label: 'ชื่อสินค้า' },
+      { key: 'QtyTon', label: 'จำนวน (ตัน)' },
+      { key: 'PricePerTon', label: 'ราคาขาย' },
+      { key: 'NetPricePerTon', label: 'ราคาสุทธิ' },
+      { key: 'RebatePerTon', label: 'ส่วนลด/ตัน' },
+      { key: 'LineRebateAmt', label: 'ยอดรวมส่วนลด' },
+    ],
+    sql: `SELECT c.Id AS ClaimId, c.CustId, ISNULL(c.RegionCode, N'99') AS RegionCode,
+                 u.DisplayName AS SalesName,
+                 c.Status, c.ClaimAmt,
+                 ISNULL(l.LineType, N'REBATE') AS LineType, l.InvoiceNo, l.GoodCode, l.GoodName,
+                 l.QtyTon, l.PricePerTon, l.NetPricePerTon, l.RebatePerTon,
+                 CAST(ISNULL(l.QtyTon * l.RebatePerTon, 0) AS DECIMAL(12,2)) AS LineRebateAmt
+          FROM wf.RebateClaim c WITH (NOLOCK)
+          LEFT JOIN wf.RebateClaimLine l WITH (NOLOCK) ON l.ClaimId = c.Id
+          LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = c.SalesUserId
+          ORDER BY c.Id DESC, l.LineNo ASC`,
+  },
+  'special-price-detail': {
+    title: 'รายงานรายละเอียดคำขอราคาพิเศษรายร้านค้า (Special Price Audit)',
+    columns: [
+      { key: 'Id', label: 'ID' },
+      { key: 'PriceBookName', label: 'PriceBook' },
+      { key: 'EffectiveMonth', label: 'เดือน' },
+      { key: 'CustId', label: 'รหัสลูกค้า' },
+      { key: 'CustName', label: 'ชื่อร้านค้า' },
+      { key: 'GoodName', label: 'สูตรปุ๋ย' },
+      { key: 'RequestedPrice', label: 'ราคาที่ขอ' },
+      { key: 'ApprovedPrice', label: 'ราคาอนุมัติ' },
+      { key: 'RequestedByName', label: 'ผู้ยื่นคำขอ' },
+      { key: 'ApprovedByName', label: 'ผู้อนุมัติ' },
+      { key: 'Note', label: 'หมายเหตุ' },
+    ],
+    sql: `SELECT sp.Id, pb.Name AS PriceBookName, pb.EffectiveMonth,
+                 sp.CustId, sp.CustName, ISNULL(sp.GoodName, sp.GoodId) AS GoodName,
+                 sp.RequestedPrice, sp.ApprovedPrice,
+                 reqU.DisplayName AS RequestedByName,
+                 appvU.DisplayName AS ApprovedByName,
+                 sp.Note
+          FROM wf.PriceBookSpecialPrice sp WITH (NOLOCK)
+          JOIN wf.PriceBook pb WITH (NOLOCK) ON pb.Id = sp.PriceBookId
+          LEFT JOIN wf.AppUser reqU WITH (NOLOCK) ON reqU.Id = sp.RequestedBy
+          LEFT JOIN wf.AppUser appvU WITH (NOLOCK) ON appvU.Id = sp.ApprovedBy
+          ORDER BY sp.Id DESC`,
+  },
+  'weighbridge-detail': {
+    title: 'รายงานรายละเอียดการชั่งน้ำหนักโรงงานเข้า-ออก (Factory Weigh Detail)',
+    columns: [
+      { key: 'Id', label: 'ID' },
+      { key: 'WfRef', label: 'เลขที่ SO/อ้างอิง' },
+      { key: 'TruckPlate', label: 'ทะเบียนรถ' },
+      { key: 'Movebill', label: 'ใบชั่ง' },
+      { key: 'ScaleNo', label: 'เครื่องชั่ง' },
+      { key: 'WeightIn', label: 'น้ำหนักเข้า (กก.)' },
+      { key: 'WeightOut', label: 'น้ำหนักออก (กก.)' },
+      { key: 'NetKg', label: 'สุทธิ (กก.)' },
+      { key: 'WeighOutAt', label: 'เวลาชั่งออก' },
+      { key: 'ScaleWriteAction', label: 'การเขียนกลับ' },
+      { key: 'Note', label: 'หมายเหตุ' },
+    ],
+    sql: `SELECT wt.Id, wt.WfRef, wt.TruckPlate, wt.Movebill, wt.ScaleNo,
+                 wt.WeightIn, wt.WeightOut, wt.NetKg,
+                 CONVERT(VARCHAR(19), wt.WeighOutAt, 120) AS WeighOutAt,
+                 wt.ScaleWriteAction,
+                 ISNULL(wt.OverrideReason, wt.ScaleError) AS Note
+          FROM wf.WeighTicket wt WITH (NOLOCK)
+          ORDER BY wt.Id DESC`,
+  },
 };
 
 
