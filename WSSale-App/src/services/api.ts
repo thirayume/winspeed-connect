@@ -607,8 +607,21 @@ export interface PriceBook {
   Id: number; Name: string; EffectiveMonth: string; Status: 'DRAFT' | 'APPROVED' | 'ACTIVE' | 'ARCHIVED';
   Note?: string; LineCount?: number; CreatedByName?: string; ApprovedByName?: string; ActivatedByName?: string; CreatedAt?: string;
 }
-export interface PriceBookLine { Id?: number; GoodId: string; GoodName?: string; Unit?: string; Price: number; }
+export interface PriceBookLine {
+  Id?: number; GoodId: string; GoodName?: string; Unit?: string; Price: number | null;
+  LineStatus?: 'ACTIVE' | 'DISCONTINUING' | 'SUSPENDED'; Note?: string | null;
+}
 export interface PriceBookAuditRow { Action: string; FromStatus: string | null; ToStatus: string | null; ByName: string | null; Note: string | null; At: string; }
+export interface PriceBookSpecialPrice {
+  Id: number; PriceBookId: number; CustId: string; CustName?: string; GoodId?: string; GoodName?: string;
+  RequestedPrice?: number; ApprovedPrice?: number; Note?: string; RequestedBy?: number; RequestedByName?: string;
+  ApprovedBy?: number; ApprovedByName?: string; ApprovedAt?: string; CreatedAt?: string;
+}
+export interface EffectivePriceRow {
+  GoodId: string; GoodName: string; Unit: string; LineStatus: 'ACTIVE' | 'DISCONTINUING' | 'SUSPENDED';
+  StandardPrice: number | null; SpecialPrice: number | null; EffectivePrice: number | null; Sellable: 0 | 1;
+}
+
 export const fetchPriceBooks = () => req<PriceBook[]>('/pricebook');
 export const fetchPriceBook = (id: number) => req<PriceBook & { lines: PriceBookLine[]; audit: PriceBookAuditRow[] }>(`/pricebook/${id}`);
 export const createPriceBook = (b: { name: string; effectiveMonth: string; note?: string; seedFromCurrent?: boolean }) =>
@@ -617,6 +630,13 @@ export const setPriceBookLines = (id: number, lines: PriceBookLine[]) =>
   req<{ ok: boolean; count: number }>(`/pricebook/${id}/lines`, { method: 'POST', body: JSON.stringify({ lines }) });
 export const priceBookAction = (id: number, action: 'approve' | 'activate' | 'archive', note?: string) =>
   req<{ ok: boolean; status: string }>(`/pricebook/${id}/${action}`, { method: 'POST', body: JSON.stringify({ note }) });
+export const fetchPriceBookSpecial = (id: number) => req<PriceBookSpecialPrice[]>(`/pricebook/${id}/special`);
+export const requestPriceBookSpecial = (id: number, data: { custId: string; custName?: string; goodId?: string; goodName?: string; requestedPrice?: number; note?: string }) =>
+  req<{ id: number }>(`/pricebook/${id}/special`, { method: 'POST', body: JSON.stringify(data) });
+export const approvePriceBookSpecial = (spId: number, approvedPrice: number) =>
+  req<{ id: number; approvedPrice: number }>(`/pricebook/special/${spId}`, { method: 'PATCH', body: JSON.stringify({ approvedPrice }) });
+export const fetchEffectivePrices = (priceBookId: number, custId?: string) =>
+  req<EffectivePriceRow[]>(`/pricebook/${priceBookId}/effective${custId ? `?custId=${encodeURIComponent(custId)}` : ''}`);
 
 // ── Ops outbox (FR-029) ───────────────────────────────────────
 export interface OutboxRow { Id: number; EventType: string; AggregateId: string | null; Status: string; RetryCount: number; LastError: string | null; CreatedAt: string; ProcessedAt: string | null; }
