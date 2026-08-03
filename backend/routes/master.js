@@ -449,7 +449,7 @@ router.patch('/prices', async (req, res) => {
     const { SetPriceID, ListNo, GoodPriceNet, BeginDate, EndDate } = req.body;
     if (!SetPriceID || !ListNo) return res.status(400).json({ message: 'Missing SetPriceID or ListNo' });
     
-    await query(`
+    const dtRes = await dboWrite(`
       UPDATE dbo.EMSetPriceDT 
       SET GoodPriceNet = @price 
       WHERE SetPriceID = @setId AND ListNo = @listNo
@@ -458,6 +458,7 @@ router.patch('/prices', async (req, res) => {
       setId: { type: sql.Int, value: SetPriceID },
       listNo: { type: sql.Int, value: ListNo }
     });
+    if (!affected(dtRes)) return res.status(404).json({ message: 'ไม่พบรายการราคาที่ระบุ (SetPriceID หรือ ListNo ไม่ถูกต้อง)' });
     
     if (BeginDate || EndDate) {
       const sets = [];
@@ -472,7 +473,7 @@ router.patch('/prices', async (req, res) => {
         hdInputs.endDate = { type: sql.Date, value: EndDate };
       }
       
-      await query(`
+      await dboWrite(`
         UPDATE dbo.EMSetPriceHD
         SET ${sets.join(', ')}
         WHERE SetPriceID = @setId

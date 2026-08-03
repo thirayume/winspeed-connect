@@ -232,8 +232,9 @@ router.patch('/borrow-requests/:id/resolve', async (req, res) => {
     }
 
     if (!approve) {
-      await wfQuery(`UPDATE wf.GiveawayBorrowRequest SET Status='REJECTED', ApproverId=@u, Note=@n, ResolvedAt=GETUTCDATE() WHERE Id=@id`,
+      const __r = await wfQuery(`UPDATE wf.GiveawayBorrowRequest SET Status='REJECTED', ApproverId=@u, Note=@n, ResolvedAt=GETUTCDATE() WHERE Id=@id AND Status='PENDING'`,
         { id: { type: sql.Int, value: reqId }, u: { type: sql.Int, value: req.user.id }, n: { type: sql.NVarChar(500), value: note || null } });
+      if (!__r.rowsAffected?.[0]) return res.status(409).json({ message: 'คำขอนี้ถูกดำเนินการไปแล้วหรือไม่พบข้อมูล' });
       return res.json({ ok: true, status: 'REJECTED' });
     }
 
@@ -267,8 +268,9 @@ router.patch('/borrow-requests/:id/resolve', async (req, res) => {
     }
 
     // Mark as approved
-    await wfQuery(`UPDATE wf.GiveawayBorrowRequest SET Status='APPROVED', ApproverId=@u, Note=@n, ResolvedAt=GETUTCDATE() WHERE Id=@id`,
+    const __r2 = await wfQuery(`UPDATE wf.GiveawayBorrowRequest SET Status='APPROVED', ApproverId=@u, Note=@n, ResolvedAt=GETUTCDATE() WHERE Id=@id AND Status='PENDING'`,
       { id: { type: sql.Int, value: reqId }, u: { type: sql.Int, value: req.user.id }, n: { type: sql.NVarChar(500), value: note || null } });
+    if (!__r2.rowsAffected?.[0]) return res.status(409).json({ message: 'คำขอนี้ถูกดำเนินการไปแล้วหรือไม่พบข้อมูล' });
     
     res.json({ ok: true, status: 'APPROVED' });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
