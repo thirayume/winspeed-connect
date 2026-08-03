@@ -196,9 +196,13 @@ async function main() {
   console.log('\n4.1 กระทบยอดกับการขนจริง (R6-05)');
   // ยอดขนจริงสะสมข้ามรอบทดสอบได้ จึงต้องอ่านค่าจริงมาแล้วบวกเกินไปเล็กน้อย
   // ถ้า hardcode ไว้ เทสจะผ่านหรือไม่ผ่านตามจำนวนครั้งที่เคยรัน ไม่ใช่ตามความถูกต้อง
+  // ต้องอ่านจากแหล่งเดียวกับที่ endpoint ใช้ (dbo ของ WINSpeed) ไม่ใช่ ledger ของแอป
+  // ไม่งั้นเทสจะเทียบกับตัวเลขคนละชุดแล้วผ่าน/ไม่ผ่านโดยไม่เกี่ยวกับความถูกต้อง
   const shipped = (await wfQuery(
-    `SELECT SUM(QtyTon) AS n FROM wf.RebateLedger WHERE PoolId=@p AND GoodCode=@g AND ISNULL(ReversedFlag,0)=0`,
-    { p: { type: sql.Int, value: poolId }, g: { type: sql.NVarChar(50), value: goods[0].GoodCode } }
+    `SELECT SUM(d.GoodQty2) AS n
+     FROM dbo.SOHD h JOIN dbo.SODT d ON d.SOID=h.SOID JOIN dbo.EMGood g ON g.GoodID=d.GoodID
+     WHERE h.CustID=@c AND h.clearflag='Y' AND d.GoodQty2>0 AND g.GoodCode=@g`,
+    { c: { type: sql.NVarChar(20), value: String(cust.CustID) }, g: { type: sql.NVarChar(50), value: goods[0].GoodCode } }
   )).recordset[0].n || 0;
   const overTon = Number(shipped) + 5;
   const over = await call(tSales, 'POST', '/api/rebate/claims', {
