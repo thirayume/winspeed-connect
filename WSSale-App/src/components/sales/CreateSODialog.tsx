@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X, Plus, Minus, Truck, AlertTriangle, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown } from 'lucide-react';
-import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation } from '../../services/api';
+import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices } from '../../services/api';
+import type { EffectivePriceRow } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { GiveawayBorrowModal } from './GiveawayBorrowModal';
 import { useAuthStore } from '../../store/auth-store';
@@ -62,6 +63,8 @@ export function CreateSODialog({
   const [customers, setCustomers] = useState<EMCust[]>([]);
   const [goods, setGoods] = useState<EMGood[]>([]);
   const [prices, setPrices] = useState<CurrentPrice[]>([]);
+  const [effectivePrices, setEffectivePrices] = useState<EffectivePriceRow[]>([]);
+  const [activePriceBookId, setActivePriceBookId] = useState<number | null>(null);
   const [truckPlates, setTruckPlates] = useState<string[]>([]);
   const [transports, setTransports] = useState<{TranspID: number; TranspName: string}[]>([]);
   const [controlTickets, setControlTickets] = useState<{ DocuNo: string; DocuDate: string; TruckPlate?: string; Desc1?: string }[]>([]);
@@ -250,8 +253,24 @@ export function CreateSODialog({
     }
   }, [isOpen, userRole, editSoId, activeTrip, convertFromQuoteId, canSeeRebate]);
 
+  // Load active PriceBook ID once on open
+  useEffect(() => {
+    if (!isOpen) return;
+    fetchPriceBooks().then(books => {
+      const active = books.find(b => b.Status === 'ACTIVE');
+      setActivePriceBookId(active?.Id ?? null);
+    }).catch(console.error);
+  }, [isOpen]);
+
   useEffect(() => {
     fetchPrices({ custId }).then(setPrices).catch(console.error);
+    // Effective prices from PriceBook — overlays legacy prices when available
+    if (activePriceBookId) {
+      fetchEffectivePrices(activePriceBookId, custId || undefined)
+        .then(setEffectivePrices).catch(() => setEffectivePrices([]));
+    } else {
+      setEffectivePrices([]);
+    }
     if (custId) {
       fetchTruckPlates(custId).then(setTruckPlates).catch(console.error);
       fetchControlTickets(custId).then(setControlTickets).catch(console.error);
@@ -263,12 +282,26 @@ export function CreateSODialog({
     } else {
       setTruckPlates([]); setControlTickets([]); setAvailableRebate(0);
     }
-  }, [custId, canSeeRebate]);
+  }, [custId, canSeeRebate, activePriceBookId]);
 
   const priceObj = useCallback((goodId: string) => prices.find(p => p.GoodID === goodId), [prices]);
+  const effectivePriceObj = useCallback((goodId: string) => effectivePrices.find(p => p.GoodId === goodId), [effectivePrices]);
   const getNetPrice = useCallback((goodId: string, _qtyTon: number) => {
     return priceObj(goodId)?.GoodPriceNet ?? 0;
   }, [priceObj]);
+  /** Best available price: PriceBook effective → WINSpeed legacy fallback */
+  const getBestPrice = useCallback((goodId: string) => {
+    const ep = effectivePriceObj(goodId);
+    if (ep?.EffectivePrice != null && ep.Sellable) return { price: ep.EffectivePrice, source: ep.SpecialPrice != null ? 'special' as const : 'pricebook' as const, lineStatus: ep.LineStatus };
+    const legacy = priceObj(goodId);
+    if (legacy?.GoodPriceNet) return { price: legacy.GoodPriceNet, source: 'legacy' as const, lineStatus: 'ACTIVE' as const };
+    return { price: 0, source: 'none' as const, lineStatus: 'ACTIVE' as const };
+  }, [effectivePriceObj, priceObj]);
+  /** Check if a good is suspended in the active PriceBook */
+  const isSuspended = useCallback((goodId: string) => {
+    const ep = effectivePriceObj(goodId);
+    return ep?.LineStatus === 'SUSPENDED' || (ep != null && !ep.Sellable);
+  }, [effectivePriceObj]);
 
   // Fetch ticket details when a ticket is selected for drawing
   useEffect(() => {
@@ -298,7 +331,13 @@ export function CreateSODialog({
 
   function addGoodToActiveBill(good: EMGood) {
     if (!activeBill) return;
-    const net = getNetPrice(good.GoodID, 1);
+    // Block SUSPENDED items from being added
+    if (isSuspended(good.GoodID)) {
+      setError(`สินค้า ${good.GoodName} อยู่ในสถานะ "งดขาย" ไม่สามารถเพิ่มได้`);
+      return;
+    }
+    const best = getBestPrice(good.GoodID);
+    const net = best.price || getNetPrice(good.GoodID, 1);
     
     // Auto-collapse truck info on mobile when starting to add products
     if (window.innerWidth < 1024) setIsTruckInfoCollapsed(true);
@@ -936,16 +975,23 @@ export function CreateSODialog({
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 flex-1 content-start overflow-y-auto scrollbar-hide pb-2">
                   {paginatedGoods.map(g => {
                     const pObj = priceObj(g.GoodID);
-                    const net = pObj?.GoodPriceNet ?? 0;
+                    const epObj = effectivePriceObj(g.GoodID);
+                    const bestP = getBestPrice(g.GoodID);
+                    const net = bestP.price || pObj?.GoodPriceNet || 0;
                     const isExpired = pObj?.IsExpired === 1;
                     const isGiveaway = g.GoodGroupName === GIVEAWAY_GROUP;
                     const inCart = activeBill?.lines.some(l => l.goodId === g.GoodID && l.isGiveaway === isGiveaway);
+                    const suspended = isSuspended(g.GoodID);
+                    const discontinuing = epObj?.LineStatus === 'DISCONTINUING';
                     return (
                       <button
                         key={goodListKey(g)}
                         onClick={() => addGoodToActiveBill(g)}
+                        disabled={suspended}
                         className={`text-left p-3 rounded-xl border transition-all ${
-                          inCart 
+                          suspended
+                            ? 'border-red-200 bg-red-50/70 opacity-60 cursor-not-allowed'
+                            : inCart 
                             ? 'border-blue-300 bg-blue-50' 
                             : isGiveaway && (g.RemainingQty || 0) <= 0
                               ? 'border-red-200 bg-red-50 hover:border-red-300 hover:bg-red-100'
@@ -953,11 +999,25 @@ export function CreateSODialog({
                         }`}
                       >
                         <div className="text-sm font-bold text-[#0C447C] line-clamp-2 leading-tight mb-1.5 h-10" title={g.GoodName}>{g.GoodName}</div>
+                        {suspended && (
+                          <div className="text-[10px] font-bold text-red-600 mb-0.5">⛔ งดขาย</div>
+                        )}
+                        {discontinuing && !suspended && (
+                          <div className="text-[10px] font-bold text-amber-600 mb-0.5">⚠ กำลังยกเลิก</div>
+                        )}
                         {!isGiveaway ? (
                           <>
                             {net > 0 ? (
-                              <div className="text-xs font-bold" style={{ color: isExpired ? '#DC2626' : '#0C447C' }}>
-                                ฿{net.toLocaleString()}<span className="text-[9px] font-normal text-gray-400">/ตัน</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold" style={{ color: isExpired ? '#DC2626' : '#0C447C' }}>
+                                  ฿{net.toLocaleString()}<span className="text-[9px] font-normal text-gray-400">/ตัน</span>
+                                </span>
+                                {bestP.source === 'pricebook' && (
+                                  <span className="text-[8px] px-1 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">PB</span>
+                                )}
+                                {bestP.source === 'special' && (
+                                  <span className="text-[8px] px-1 py-0.5 rounded bg-purple-100 text-purple-700 font-bold">พิเศษ</span>
+                                )}
                               </div>
                             ) : (
                               <div className="text-[10px] text-orange-400">ไม่มีราคา NET</div>

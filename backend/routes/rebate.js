@@ -299,12 +299,30 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
     // เจตนา: บล็อกและให้คนแก้ ไม่ตัดยอดให้อัตโนมัติ — การตัดเงียบ ๆ จะทำให้ผู้แทนขาย
     // ไม่รู้ว่าถูกหักอะไรไป และตรวจย้อนกลับตอน ISO ไม่ได้ว่าหักด้วยเหตุใด
     if (parsedLines.length) {
-      const delivered = (await wfQuery(`
-        SELECT GoodCode, SUM(QtyTon) AS DeliveredTon
-        FROM wf.RebateLedger
-        WHERE PoolId = @pid AND ISNULL(ReversedFlag, 0) = 0
-        GROUP BY GoodCode`,
-        { pid: { type: sql.Int, value: poolId } })).recordset || [];
+      // ยอดขนจริงต้องมาจาก dbo (WINSpeed) ไม่ใช่ wf.RebateLedger
+      //
+      // ledger ตั้งตอนชั่งออก "ผ่านแอปเรา" เท่านั้น ใบที่ยืนยันและส่งของนอกแอป
+      // จะไม่มี ledger เลย การกระทบยอดจึงมองไม่เห็นของที่ขนไปแล้วจริง ๆ
+      // เอกสารฉบับที่ 5 (รายงานการขนสินค้า) ที่ฝ่ายบัญชีใช้ตรวจ ก็อ่านจาก dbo
+      //
+      // clearflag='Y' คือใบที่ปิดการขนแล้ว · GoodQty2 คือน้ำหนักเป็นตัน
+      // จับคู่สูตรผ่าน dbo.EMGood เพราะใบขอเคลียร์อ้างด้วย GoodCode แต่ SODT เก็บ GoodID
+      const delivered = custId
+        ? (await wfQuery(`
+            SELECT g.GoodCode, SUM(d.GoodQty2) AS DeliveredTon
+            FROM dbo.SOHD h
+            JOIN dbo.SODT d ON d.SOID = h.SOID
+            JOIN dbo.EMGood g ON g.GoodID = d.GoodID
+            WHERE h.CustID = @cust AND h.clearflag = 'Y' AND d.GoodQty2 > 0
+            GROUP BY g.GoodCode`,
+            { cust: { type: sql.NVarChar(20), value: String(custId) } })).recordset || []
+        // ไม่ระบุลูกค้าก็เทียบกับ ledger ของ pool ไปก่อน ดีกว่าไม่ตรวจอะไรเลย
+        : (await wfQuery(`
+            SELECT GoodCode, SUM(QtyTon) AS DeliveredTon
+            FROM wf.RebateLedger
+            WHERE PoolId = @pid AND ISNULL(ReversedFlag, 0) = 0
+            GROUP BY GoodCode`,
+            { pid: { type: sql.Int, value: poolId } })).recordset || [];
 
       const claimedBefore = (await wfQuery(`
         SELECT l.GoodCode, l.LineType, SUM(l.QtyTon) AS ClaimedTon
@@ -335,6 +353,7 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
       if (problems.length) {
         return res.status(400).json({
           message: 'ยอดขอเคลียร์ไม่ตรงกับยอดขนจริง',
+          source: custId ? 'WINSpeed (ใบที่ปิดการขนแล้วของลูกค้ารายนี้)' : 'ยอดรีเบทค้างรับในระบบ',
           reconciliation: problems,
         });
       }
