@@ -77,6 +77,7 @@ function toClientUser(user, actor = null) {
     actorDisplayName: actor ? (actor.DisplayName ?? actor.displayName) : (user.DisplayName ?? user.displayName),
     actorRole: actor ? getUserRole(actor) : getUserRole(user),
     isImpersonating,
+    mustChangePassword: Boolean(user.MustChangePassword ?? user.mustChangePassword),
   };
   return out;
 }
@@ -104,7 +105,7 @@ function signAppToken(user, actor = null) {
 
 async function loadAppUserById(id) {
   const rows = await wfQuery(
-    `SELECT Id, Username, DisplayName, Role, EmpId, IsActive,
+    `SELECT Id, Username, DisplayName, Role, EmpId, IsActive, MustChangePassword,
             Address, Phone, Email, IdCardNo, TaxId, SignatureFile,
             LineUserId, LineDisplayName, LineLinkedAt
      FROM wf.AppUser
@@ -205,7 +206,7 @@ router.post('/login', async (req, res) => {
     if (!username || !password) return res.status(400).json({ message: 'username และ password จำเป็น' });
 
     const rows = await wfQuery(
-      `SELECT Id, Username, PasswordHash, DisplayName, Role, IsActive FROM wf.AppUser WHERE Username = @u`,
+      `SELECT Id, Username, PasswordHash, DisplayName, Role, IsActive, MustChangePassword FROM wf.AppUser WHERE Username = @u`,
       { u: { type: sql.NVarChar(50), value: username } }
     );
     const user = rows.recordset?.[0];
@@ -612,10 +613,11 @@ router.patch('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNT
     }
     if (!sets.length) return res.status(400).json({ message: 'ไม่มีข้อมูลที่จะแก้ไข' });
     sets.push('UpdatedAt = GETUTCDATE()');
-    await wfQuery(
+    const __r = await wfQuery(
       `UPDATE wf.AppUser SET ${sets.join(', ')} WHERE Id = @id`,
       inputs
     );
+    if (!__r.rowsAffected?.[0]) return res.status(404).json({ message: 'ไม่พบผู้ใช้นี้' });
     res.json({ ok: true, id: Number(req.params.id) });
   } catch (e) {
     if (e.number === 2601) return res.status(409).json({ message: 'พนักงานรหัสนี้ถูกผูกกับผู้ใช้อื่นไปแล้ว' });

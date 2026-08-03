@@ -17,7 +17,21 @@ const num = (v: unknown, digits = 0) =>
 
 type Col = { key: string; label: string; align?: 'right'; fmt?: (v: unknown, row: any) => string };
 
-const TABS: { key: string; label: string; legacy: string; cols: Col[] }[] = [
+const DETAIL_COLS: Col[] = [
+  { key: 'DateOut', label: 'วันที่' },
+  { key: 'Movebill', label: 'เลขที่เที่ยว' },
+  { key: 'Sequence', label: 'เลขใบชั่ง' },
+  { key: 'Plate', label: 'ทะเบียนรถ' },
+  { key: 'CustName', label: 'ลูกค้า' },
+  { key: 'Formula', label: 'สูตรปุ๋ย' },
+  { key: 'Godown', label: 'คลัง' },
+  { key: 'Tons', label: 'ตัน', align: 'right', fmt: v => num(v, 3) },
+  { key: 'Bags', label: 'ถุง', align: 'right', fmt: v => num(v) },
+];
+
+type Tab = { key: string; label: string; legacy: string; cols: Col[]; filterParam?: string; filterLabel?: string };
+
+const TABS: Tab[] = [
   {
     key: 'by-date', label: 'ตามวัน', legacy: 'Report_ByDate',
     cols: [
@@ -57,6 +71,23 @@ const TABS: { key: string; label: string; legacy: string; cols: Col[] }[] = [
       { key: 'Tons', label: 'น้ำหนัก (ตัน)', align: 'right', fmt: v => num(v, 3) },
     ],
   },
+  {
+    key: 'by-customer', label: 'ตามลูกค้า', legacy: 'Report_ByCustomerGroup',
+    cols: [
+      { key: 'CustName', label: 'ลูกค้า' },
+      { key: 'Trips', label: 'จำนวนเที่ยว', align: 'right', fmt: v => num(v) },
+      { key: 'NetKg', label: 'น้ำหนักสุทธิ (ตัน)', align: 'right', fmt: v => num(Number(v) / 1000, 3) },
+    ],
+  },
+  // ระดับแจกแจง — ยอดรวมบอกว่าเท่าไร แต่ตอนตรวจสอบต้องเห็นว่ามาจากเที่ยวไหน
+  ...(['detail-by-date', 'detail-by-product', 'detail-by-godown', 'detail-by-customer'] as const).map((key, i) => ({
+    key,
+    label: ['แจกแจงตามวัน', 'แจกแจงตามสูตร', 'แจกแจงตามคลัง', 'แจกแจงตามลูกค้า'][i],
+    legacy: ['Report_ByDateDetail', 'Report_ByProductDetail', 'Report_ByGodownDetail', 'Report_ByCustomerDetail'][i],
+    filterParam: [undefined, 'formula', 'godown', 'customer'][i],
+    filterLabel: [undefined, 'กรองสูตรปุ๋ย', 'กรองคลัง', 'กรองลูกค้า'][i],
+    cols: DETAIL_COLS,
+  })),
 ];
 
 const isoDaysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
@@ -66,6 +97,7 @@ export function ScaleReportsPage() {
   const [from, setFrom] = useState(isoDaysAgo(30));
   const [to, setTo] = useState(isoDaysAgo(0));
   const [rows, setRows] = useState<any[]>([]);
+  const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
 
@@ -74,14 +106,14 @@ export function ScaleReportsPage() {
   const load = useCallback(async () => {
     setLoading(true); setErr('');
     try {
-      const r = await fetchScaleReport(tab, from, to);
+      const r = await fetchScaleReport(tab, from, to, active.filterParam, filter.trim());
       setRows(r.rows || []);
     } catch (e) {
       setErr((e as Error).message || 'โหลดรายงานไม่สำเร็จ');
       setRows([]);
     }
     setLoading(false);
-  }, [tab, from, to]);
+  }, [tab, from, to, active.filterParam, filter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -130,6 +162,11 @@ export function ScaleReportsPage() {
               <input type="date" value={to} min={from} onChange={e => setTo(e.target.value)}
                 className="bg-transparent text-sm outline-none w-[8.5rem]" aria-label="ถึงวันที่" />
             </div>
+            {active.filterParam && (
+              <input value={filter} onChange={e => setFilter(e.target.value)}
+                placeholder={active.filterLabel}
+                className="h-10 border border-gray-200 rounded-xl px-3 text-sm w-44" />
+            )}
             <button onClick={exportCsv} disabled={!rows.length}
               className="h-10 inline-flex items-center gap-1.5 px-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold disabled:opacity-40"
               style={{ color: NAVY }}>
@@ -144,7 +181,7 @@ export function ScaleReportsPage() {
 
         <div className="flex gap-1.5 mt-3 overflow-x-auto">
           {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
+            <button key={t.key} onClick={() => { setTab(t.key); setFilter(''); }}
               className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold whitespace-nowrap border transition
                 ${tab === t.key ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
               style={tab === t.key ? { background: NAVY } : undefined}>

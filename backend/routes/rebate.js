@@ -865,7 +865,8 @@ router.patch('/plans/:id', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'
                                         add('Status','status',sql.NVarChar(20), f.status);
     if (!sets.length) return res.status(400).json({ message: 'ไม่มีข้อมูลแก้ไข' });
     sets.push('UpdatedAt=GETUTCDATE()');
-    await wfQuery(`UPDATE wf.RebatePlan SET ${sets.join(', ')} WHERE PlanId=@id`, inputs);
+    const __r = await wfQuery(`UPDATE wf.RebatePlan SET ${sets.join(', ')} WHERE PlanId=@id`, inputs);
+    if (!__r.rowsAffected?.[0]) return res.status(404).json({ message: `ไม่พบ Rebate Plan ID ${planId}` });
     res.json({ id: planId, ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
