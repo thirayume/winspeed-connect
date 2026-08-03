@@ -130,9 +130,11 @@ async function transition(req, res, { from, to, action, col }) {
         { id: { type: sql.Int, value: id } });
     }
     const setCol = col ? `, ${col.by}=@u, ${col.at}=GETUTCDATE()` : '';
-    await wfQuery(`UPDATE wf.PriceBook SET Status=@s ${setCol} WHERE Id=@id`, {
+    const __r = await wfQuery(`UPDATE wf.PriceBook SET Status=@s ${setCol} WHERE Id=@id AND Status=@from`, {
       s: { type: sql.NVarChar(20), value: to }, u: { type: sql.Int, value: req.user.sub }, id: { type: sql.Int, value: id },
+      from: { type: sql.NVarChar(20), value: from },
     });
+    if (!__r.rowsAffected?.[0]) return res.status(409).json({ message: `เปลี่ยนสถานะไม่สำเร็จ: สถานะต้องเป็น ${from} และไม่ถูกแก้ไขโดยผู้อื่น` });
     await logAudit(id, action, from, to, req.user.sub, req.body?.note);
     res.json({ ok: true, status: to });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }

@@ -131,4 +131,50 @@ router.get('/by-godown', guard(async (req, res) => {
   send(res, rows, { from, to });
 }));
 
+// ── รายงานระดับ Detail — แจกแจงรายเที่ยว ไม่ใช่ยอดรวม ───────────────
+//
+// รายงาน Group บอกว่ารวมได้เท่าไร แต่ตอนตรวจสอบต้องเห็นว่ามาจากเที่ยวไหนบ้าง
+// ทุกฉบับ join tblproduct_detail เพราะรายละเอียดสูตร/คลังอยู่ที่รายการย่อย
+
+const DETAIL_COLS = `s.Date_Out AS DateOut, s.movebill AS Movebill, s.sequence AS Sequence,
+  s.one_car_regis AS Plate, s.one_cus_name AS CustName,
+  d.pd_pro_name AS Formula, d.pd_pro_wantWeight AS Tons, d.pd_pro_bag AS Bags,
+  COALESCE(NULLIF(d.pd_pro_Godown,''), '-') AS Godown, s.weight_net AS NetKg`;
+
+// สร้าง endpoint แบบแจกแจงจากเงื่อนไขที่ต่างกันเฉพาะการกรอง
+const detail = (path, extraWhere, param) => router.get(path, guard(async (req, res) => {
+  const { from, to } = range(req);
+  const params = [from, to];
+  let where = DONE;
+  if (extraWhere && req.query[param]) { where += ` AND ${extraWhere}`; params.push(String(req.query[param])); }
+  const rows = await tsQuery(`
+    SELECT ${DETAIL_COLS}
+    FROM tblscale s
+    JOIN tblproduct_detail d ON d.one_num = s.one_num AND s.one_num <> 0
+    WHERE ${where}
+    ORDER BY s.Date_Out2 DESC, s.s_id DESC, d.pd_id
+    LIMIT ${LIMIT}`, params);
+  send(res, rows, { from, to, filter: req.query[param] || null });
+}));
+
+detail('/detail-by-date', null, null);                              // Report_ByDateDetail
+detail('/detail-by-product', 'd.pd_pro_name = ?', 'formula');       // Report_ByProductDetail
+detail('/detail-by-godown', "COALESCE(NULLIF(d.pd_pro_Godown,''),'-') = ?", 'godown'); // Report_ByGodownDetail
+detail('/detail-by-customer', 's.one_cus_name LIKE ?', 'customer'); // Report_ByCustomerDetail
+
+// สรุปตามลูกค้า (Report_ByCustomerGroup) — มิติที่ยังไม่มีในชุดแรก
+router.get('/by-customer', guard(async (req, res) => {
+  const { from, to } = range(req);
+  const rows = await tsQuery(`
+    SELECT s.one_cus_name AS CustName,
+           COUNT(DISTINCT s.s_id) AS Trips,
+           SUM(s.weight_net) AS NetKg
+    FROM tblscale s
+    WHERE ${DONE} AND s.one_cus_name <> ''
+    GROUP BY s.one_cus_name
+    ORDER BY NetKg DESC
+    LIMIT ${LIMIT}`, [from, to]);
+  send(res, rows, { from, to });
+}));
+
 module.exports = router;

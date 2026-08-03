@@ -7,7 +7,7 @@
  */
 const router = require('express').Router();
 const { sql, wfQuery } = require('../db');
-const { getPool, tsQuery } = require('../services/truckscale-db');
+const { getPool, tsQuery, oleDateSerial } = require('../services/truckscale-db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 
 router.use(requireAuth);
@@ -84,16 +84,49 @@ async function buildCases(days) {
     r.WsPostId      = i?.PostID   ?? null;
   }
 
-  // TruckScale net by movebill (batch, degrade ถ้าล่ม)
+  // T6-03: Primary match by movebill, fallback to plate + Date_Out2
   let tsMap = {}, tsAvailable = true;
   const movebills = [...new Set(rows.map(r => r.Movebill).filter(Boolean))];
   if (movebills.length && getPool()) {
     try {
       const placeholders = movebills.map(() => '?').join(',');
       const ts = await tsQuery(`SELECT movebill, weight_net FROM tblscale WHERE movebill IN (${placeholders})`, movebills);
-      for (const t of ts) tsMap[String(t.movebill)] = Number(t.weight_net);
+      for (const t of ts) {
+        tsMap[String(t.movebill)] = { net: Number(t.weight_net), matchBy: 'movebill' };
+      }
     } catch { tsAvailable = false; }
   } else if (!getPool()) { tsAvailable = false; }
+
+  // Fallback matching for rows missing movebill or unmatched movebill
+  const unmatched = rows.filter(r => !r.Movebill || tsMap[String(r.Movebill)] == null);
+  if (unmatched.length && getPool() && tsAvailable) {
+    try {
+      const dates = unmatched.map(r => r.ShipDate ? new Date(r.ShipDate) : null).filter(Boolean);
+      if (dates.length) {
+        const minSerial = Math.min(...dates.map(d => oleDateSerial(d))) - 1;
+        const maxSerial = Math.max(...dates.map(d => oleDateSerial(d))) + 1;
+        const fallbackRows = await tsQuery(
+          `SELECT one_car_regis, Date_Out2, weight_net, movebill FROM tblscale WHERE Date_Out2 BETWEEN ? AND ? ORDER BY s_id DESC`,
+          [minSerial, maxSerial]
+        );
+        for (const r of unmatched) {
+          if (!r.TruckPlate || !r.ShipDate) continue;
+          const targetSerial = oleDateSerial(new Date(r.ShipDate));
+          const hit = fallbackRows.find(t =>
+            String(t.one_car_regis || '').trim() === String(r.TruckPlate || '').trim() &&
+            Math.abs(Number(t.Date_Out2) - targetSerial) <= 1
+          );
+          if (hit) {
+            tsMap[`plate:${r.SoId}`] = {
+              net: Number(hit.weight_net),
+              matchBy: 'plate_date',
+              fallbackMovebill: hit.movebill || null
+            };
+          }
+        }
+      }
+    } catch { /* retain tsAvailable status */ }
+  }
 
   // resolutions
   const resRows = (await wfQuery(`SELECT SoId, CheckType, Status, Note FROM wf.ReconResolution`)).recordset || [];
@@ -102,13 +135,17 @@ async function buildCases(days) {
 
   return rows.map(r => {
     const netApp = r.NetKg != null ? Number(r.NetKg) : null;
+    const tsHit = r.Movebill && tsMap[String(r.Movebill)] != null
+      ? tsMap[String(r.Movebill)]
+      : tsMap[`plate:${r.SoId}`];
+
     // WEIGH check
     let weigh;
     if (netApp == null) weigh = 'NO_WEIGH';
-    else if (!r.Movebill) weigh = 'UNLINKED';
     else if (!tsAvailable) weigh = 'TS_UNAVAILABLE';
-    else if (tsMap[String(r.Movebill)] == null) weigh = 'TS_NOT_FOUND';
-    else weigh = Math.abs(netApp - tsMap[String(r.Movebill)]) <= WEIGH_TOL_KG ? 'MATCHED' : 'VARIANCE';
+    else if (!tsHit) weigh = r.Movebill ? 'TS_NOT_FOUND' : 'UNLINKED';
+    else weigh = Math.abs(netApp - tsHit.net) <= WEIGH_TOL_KG ? 'MATCHED' : 'VARIANCE';
+
     // INVOICE check
     const invoice = r.WsInvoiceNo ? 'MATCHED' : 'PENDING';
     const postInvoiceStatus = r.WsInvoiceNo ? 'POSTED' : 'READY';
@@ -128,8 +165,11 @@ async function buildCases(days) {
       wsPostId: r.WsPostId || null,
       postInvoiceStatus,
       readyForPostInvoice: postInvoiceStatus === 'READY',
-      netApp, netTs: r.Movebill ? (tsMap[String(r.Movebill)] ?? null) : null,
-      variance: (netApp != null && r.Movebill && tsMap[String(r.Movebill)] != null) ? Math.round(netApp - tsMap[String(r.Movebill)]) : null,
+      netApp,
+      netTs: tsHit ? tsHit.net : null,
+      tsMatchBy: tsHit ? tsHit.matchBy : null,
+      tsFallbackMovebill: (tsHit && tsHit.fallbackMovebill) || null,
+      variance: (netApp != null && tsHit) ? Math.round(netApp - tsHit.net) : null,
       movebill: r.Movebill, scaleNo: r.ScaleNo,
       weigh, invoice,
       weighResolution: wRes || null, invoiceResolution: iRes || null,
