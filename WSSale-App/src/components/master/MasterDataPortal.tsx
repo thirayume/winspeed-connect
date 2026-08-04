@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { Database, Package, Users, Tag, Truck, Gift } from 'lucide-react';
+import { Database, Package, Users, Tag, Truck, Gift, Map } from 'lucide-react';
 import { GoodsManager } from './GoodsManager';
 import { CustomersManager } from './CustomersManager';
 import { TrucksManager } from './TrucksManager';
 import { TruckTypesManager } from './TruckTypesManager';
 import { GiveawaysManager } from './GiveawaysManager';
 import { PricesPortal } from './PricesPortal';
+import { SaleRegionManager } from './SaleRegionManager';
 import { DbModeSwitch } from '../common/DbModeSwitch';
 
-type Tab = 'goods' | 'prices' | 'customers' | 'truck-types' | 'trucks' | 'giveaways';
+type Tab = 'goods' | 'prices' | 'customers' | 'truck-types' | 'trucks' | 'giveaways' | 'regions';
 
 export const MasterDataPortal = () => {
   const [activeTab, setActiveTab] = useState<Tab>('goods');
@@ -90,9 +91,22 @@ export const MasterDataPortal = () => {
         >
           <Gift size={16} /> ของแถม
         </button>
+        <button
+          onClick={() => setActiveTab('regions')}
+          className={`py-3 text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap ${
+            activeTab === 'regions' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Map size={16} /> ผู้อนุมัติรายภาค
+        </button>
       </div>
 
       <div className="flex-1 overflow-hidden p-2 sm:p-4 bg-white/50">
+        {activeTab === 'regions' && (
+          <div className="h-full rounded-none sm:rounded-2xl border-y sm:border border-gray-200 overflow-hidden shadow-sm bg-white">
+            <SaleRegionManager />
+          </div>
+        )}
         {activeTab === 'goods' && <GoodsManager onViewPrices={handleViewPrices} />}
         {activeTab === 'prices' && (
           <div className="h-full rounded-none sm:rounded-2xl border-y sm:border border-gray-200 overflow-hidden shadow-sm">

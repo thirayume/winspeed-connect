@@ -3,7 +3,7 @@
  * ⚠ Writes ไปที่ wf schema เท่านั้น
  */
 const router = require('express').Router();
-const { sql, wfQuery } = require('../db');
+const { sql, wfQuery, query } = require('../db');
 const { requireAuth, requireRole, requireRebateAmountAccess, canViewAllRebateAmounts } = require('../middleware/auth');
 
 router.use(requireAuth);
@@ -87,6 +87,47 @@ router.post('/user-regions', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (
     });
 
     res.json({ success: true, message: 'บันทึกสิทธิ์ดูแลภาคสำเร็จ' });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// DELETE /api/rebate/user-regions/:userId/:regionCode — ถอดผู้ดูแลภาค
+//
+// ต้องมีคู่กับ POST เพราะการแต่งตั้งผิดคนแก้ไม่ได้ถ้าถอดไม่ได้ — ที่ผ่านมา
+// มนัส ถูกผูกกับภาคใต้ทั้งที่ยอดขายอยู่ภาคอีสาน และไม่มีทางแก้จากหน้าจอเลย
+router.delete('/user-regions/:userId/:regionCode', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
+  try {
+    const r = await wfQuery(
+      `DELETE FROM wf.UserSaleArea WHERE UserId = @uid AND RegionCode = @rc`,
+      { uid: { type: sql.Int, value: Number(req.params.userId) },
+        rc:  { type: sql.VarChar(10), value: String(req.params.regionCode) } });
+    if (!r.rowsAffected?.[0]) return res.status(404).json({ message: 'ไม่พบการผูกภาคนี้กับผู้ใช้รายนี้' });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/rebate/regions/coverage — ภาค · ผู้ดูแล · จำนวนลูกค้าที่ได้รับผลกระทบ
+//
+// จำนวนลูกค้าเป็นตัวเลขที่ทำให้เห็นน้ำหนักของช่องที่ยังว่าง — ภาคที่ไม่มีผู้ดูแล
+// ไม่ได้แปลว่าใบค้าง แต่แปลว่าชั้นที่ 2 ตกไปให้ผู้จัดการคนใดก็ได้อนุมัติแทน
+router.get('/regions/coverage', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
+  try {
+    const regions = (await wfQuery(`
+      SELECT r.RegionCode, r.RegionName,
+             u.Id AS UserId, u.Username, u.DisplayName, u.Role, u.IsActive, ua.IsPrimary
+      FROM wf.SaleRegion r
+      LEFT JOIN wf.UserSaleArea ua ON ua.RegionCode = r.RegionCode
+      LEFT JOIN wf.AppUser u ON u.Id = ua.UserId
+      ORDER BY r.RegionCode, ua.IsPrimary DESC, u.DisplayName`)).recordset || [];
+
+    // นับลูกค้าต่อภาคจาก WINSpeed — อ่านอย่างเดียว
+    const counts = (await query(`
+      SELECT ISNULL(LEFT(a.SaleAreaCode, 2), '99') AS RegionCode, COUNT(*) AS Customers
+      FROM dbo.EMCust c
+      LEFT JOIN dbo.EMSaleArea a ON a.SaleAreaID = c.SaleAreaID
+      GROUP BY ISNULL(LEFT(a.SaleAreaCode, 2), '99')`)) || [];
+    const byRegion = new Map(counts.map(c => [String(c.RegionCode), Number(c.Customers)]));
+
+    res.json(regions.map(r => ({ ...r, Customers: byRegion.get(String(r.RegionCode)) || 0 })));
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 

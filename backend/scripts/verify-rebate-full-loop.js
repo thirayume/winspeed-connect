@@ -123,7 +123,16 @@ async function main() {
 
   const tSales = await login('e2e_sales'), tMgr = await login('e2e_manager');
   const tWh = await login('e2e_warehouse'), tWb = await login('e2e_weighbridge');
-  const tRegion = await login('emp-00036'), tMkt = await login(MARKETING_USER), tCL = await login('e2e_clevel');
+  // ชั้นที่ 2 ใช้บัญชีทดสอบ ไม่ใช่บัญชีพนักงานจริง
+  //
+  // เดิมใช้ emp-00036 (คุณมนัส) เพราะเคยถูกผูกกับภาค 05 — ซึ่งเป็นการผูกที่ผิด
+  // ยอดขายของเขาอยู่ภาค 03 และถูกแก้แล้วเมื่อ 4 ส.ค. 2569 ภาค 05 เป็นของบุญฤทธิ์
+  //
+  // ไม่เปลี่ยนไปใช้บัญชีพนักงานจริงคนใหม่ เพราะเมื่อเปิด ENFORCE_PASSWORD_CHANGE
+  // บัญชีพนักงานทั้ง 41 คนจะเขียนข้อมูลไม่ได้จนกว่าจะเปลี่ยนรหัสเอง เทสจะล้มทันที
+  // โดยไม่มีอะไรผิดในระบบ · e2e_manager มีสิทธิ์ MANAGER ซึ่งผ่านชั้นที่ 2 ได้ตามกติกา
+  // ส่วนความถูกต้องของการผูกภาคตรวจที่ GET /api/rebate/regions/coverage และหน้าจอผู้อนุมัติรายภาค
+  const tRegion = tMgr, tMkt = await login(MARKETING_USER), tCL = await login('e2e_clevel');
 
   const QTY = 19, PRICE = 18200, NET = 17000;   // คืนรีเบท 1,200/ตัน → 22,800 บาท
 
@@ -233,7 +242,7 @@ async function main() {
   ok(`ใบขอเคลียร์ #${claimId} · ${d.status || d.Status}`);
 
   console.log('\n6. อนุมัติ 4 ชั้น');
-  await step('ชั้น 2 ผู้จัดการภาค (คุณมนัส)', tRegion, 'POST', `/api/rebate/claims/${claimId}/approve`, { note: `${TAG} ชั้น 2` });
+  await step('ชั้น 2 ผู้จัดการ (สิทธิ์ระดับผู้จัดการ)', tRegion, 'POST', `/api/rebate/claims/${claimId}/approve`, { note: `${TAG} ชั้น 2` });
   const dup = await call(tRegion, 'POST', `/api/rebate/claims/${claimId}/approve`, {});
   dup.status === 403 ? ok('กันคนเดิมอนุมัติซ้ำชั้น (403)') : bad(`ควรได้ 403 ได้ ${dup.status}`);
   await step('ชั้น 3 ผู้จัดการฝ่ายตลาด', tMkt, 'POST', `/api/rebate/claims/${claimId}/approve`, { note: `${TAG} ชั้น 3` });
