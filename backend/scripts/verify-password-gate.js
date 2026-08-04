@@ -51,8 +51,13 @@ async function cleanup() {
     { u: { type: sql.NVarChar(100), value: USERNAME } });
 }
 
+const ENFORCED = String(process.env.ENFORCE_PASSWORD_CHANGE || '').toLowerCase() === 'true';
+
 (async () => {
-  console.log('ตรวจการบังคับเปลี่ยนรหัสผ่าน (D6-02)\n');
+  console.log('ตรวจการบังคับเปลี่ยนรหัสผ่าน (D6-02)');
+  console.log(ENFORCED
+    ? '  โหมด: บังคับ (ENFORCE_PASSWORD_CHANGE=true) — ตรวจว่าบล็อกการเขียนจริง\n'
+    : '  โหมด: ไม่บังคับ (ค่าปริยายของเครื่องนักพัฒนา) — ตรวจว่าไม่ไปกีดขวางการทำงาน\n');
 
   await cleanup();
   const hash = await bcrypt.hash(START_PASSWORD, 12);
@@ -70,17 +75,25 @@ async function cleanup() {
     if (!token) throw new Error('เข้าระบบไม่สำเร็จ ตรวจต่อไม่ได้');
 
     const me = await call('/api/auth/me', { token });
-    check(me.status === 200 && me.json?.mustChangePassword === true,
-      'ระบบบอกหน้าจอว่าบัญชีนี้ต้องเปลี่ยนรหัส', `mustChangePassword=${me.json?.mustChangePassword}`);
+    check(me.status === 200 && me.json?.mustChangePassword === ENFORCED,
+      ENFORCED ? 'ระบบบอกหน้าจอว่าบัญชีนี้ต้องเปลี่ยนรหัส (จะขึ้นหน้าบังคับ)'
+               : 'ระบบไม่สั่งหน้าจอให้บังคับเปลี่ยนรหัส (โหมดไม่บังคับ)',
+      `mustChangePassword=${me.json?.mustChangePassword}`);
 
-    // 1 · เขียนไม่ได้
+    // 1 · เขียนได้หรือไม่ ตามโหมดที่ตั้งไว้
     const write = await call('/api/so', { method: 'POST', token, body: {} });
-    check(write.status === 403 && write.json?.code === 'PASSWORD_CHANGE_REQUIRED',
-      'คำสั่งเขียนถูกบล็อกด้วย 403 PASSWORD_CHANGE_REQUIRED', `ได้ ${write.status} ${write.json?.code || ''}`);
-
     const del = await call('/api/rebate/claims/999999999', { method: 'DELETE', token });
-    check(del.status === 403 && del.json?.code === 'PASSWORD_CHANGE_REQUIRED',
-      'DELETE ก็ถูกบล็อกเช่นกัน', `ได้ ${del.status}`);
+    if (ENFORCED) {
+      check(write.status === 403 && write.json?.code === 'PASSWORD_CHANGE_REQUIRED',
+        'คำสั่งเขียนถูกบล็อกด้วย 403 PASSWORD_CHANGE_REQUIRED', `ได้ ${write.status} ${write.json?.code || ''}`);
+      check(del.status === 403 && del.json?.code === 'PASSWORD_CHANGE_REQUIRED',
+        'DELETE ก็ถูกบล็อกเช่นกัน', `ได้ ${del.status}`);
+    } else {
+      check(write.json?.code !== 'PASSWORD_CHANGE_REQUIRED',
+        'ไม่บล็อกการเขียนบนเครื่องที่ไม่ได้เปิดบังคับ', `ได้ ${write.status}`);
+      check(del.json?.code !== 'PASSWORD_CHANGE_REQUIRED',
+        'DELETE ก็ไม่ถูกบล็อกเช่นกัน', `ได้ ${del.status}`);
+    }
 
     // 2 · อ่านได้
     const read = await call('/api/so?limit=1', { token });
@@ -104,13 +117,31 @@ async function cleanup() {
 
     const freshToken = changed.json?.accessToken;
     const afterWrite = await call('/api/so', { method: 'POST', token: freshToken, body: {} });
-    check(afterWrite.status !== 403 || afterWrite.json?.code !== 'PASSWORD_CHANGE_REQUIRED',
+    check(afterWrite.json?.code !== 'PASSWORD_CHANGE_REQUIRED',
       'token ใหม่เขียนได้แล้ว ไม่ต้องรอ token เดิมหมดอายุ',
       `ได้ ${afterWrite.status} (400 = ผ่านด่านนี้แล้ว ติดที่ข้อมูลว่าง ซึ่งถูกต้อง)`);
 
-    const staleWrite = await call('/api/so', { method: 'POST', token, body: {} });
-    check(staleWrite.status === 403,
-      'token เดิมยังถูกบล็อกอยู่ตามที่ควรเป็น (ต้องใช้ใบใหม่)', `ได้ ${staleWrite.status}`);
+    if (ENFORCED) {
+      const staleWrite = await call('/api/so', { method: 'POST', token, body: {} });
+      check(staleWrite.status === 403,
+        'token เดิมยังถูกบล็อกอยู่ตามที่ควรเป็น (ต้องใช้ใบใหม่)', `ได้ ${staleWrite.status}`);
+    }
+
+    // ผู้ดูแลตั้งรหัสให้คนอื่น ต้องบังคับให้เจ้าของบัญชีตั้งใหม่เอง
+    const adminToken = await login('e2e_admin', '***REMOVED-PASSWORD***');
+    const probeId = (await wfQuery(`SELECT Id FROM wf.AppUser WHERE Username=@u`,
+      { u: { type: sql.NVarChar(100), value: USERNAME } })).recordset[0]?.Id;
+    if (adminToken && probeId) {
+      const reset = await call(`/api/auth/users/${probeId}`, {
+        method: 'PATCH', token: adminToken, body: { password: 'Adm1nSet!' + Date.now() } });
+      const after = (await wfQuery(`SELECT MustChangePassword FROM wf.AppUser WHERE Id=@id`,
+        { id: { type: sql.Int, value: probeId } })).recordset[0];
+      check(reset.status === 200 && Number(after?.MustChangePassword) === 1,
+        'ผู้ดูแลรีเซ็ตรหัสให้คนอื่น แล้วธงถูกตั้งกลับเป็น 1 อัตโนมัติ',
+        `สถานะ ${reset.status} · ธง=${after?.MustChangePassword}`);
+    } else {
+      bad('ทดสอบการรีเซ็ตรหัสโดยผู้ดูแลไม่ได้ (ไม่พบบัญชี e2e_admin)');
+    }
 
     // 5 · บัญชีทดสอบต้องไม่ถูกบล็อก
     const e2eFlag = (await wfQuery(

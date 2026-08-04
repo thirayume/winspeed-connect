@@ -18,7 +18,21 @@ const SECRET = process.env.JWT_SECRET || 'dev_secret_change_in_production';
  */
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+/**
+ * เปิดใช้เฉพาะเครื่องที่ deploy จริง — ตั้ง ENFORCE_PASSWORD_CHANGE=true ใน .env ของเซิร์ฟเวอร์
+ *
+ * บนเครื่องนักพัฒนา บัญชีทดสอบใช้รหัสผ่านร่วมกันโดยเจตนาและไม่มีใครเปลี่ยน
+ * ถ้าบังคับด้วย งานพัฒนาและการเดินชุดทดสอบจะติดขัดโดยไม่ได้ลดความเสี่ยงจริงลงเลย
+ * เพราะความเสี่ยงอยู่ที่ฐานของโรงงาน ไม่ใช่ฐานบนเครื่องตัวเอง
+ *
+ * ค่าปริยายคือปิด — เปิดโดยตั้งใจเท่านั้น ไม่ใช่เปิดเพราะเผลอ
+ */
+function passwordChangeEnforced() {
+  return String(process.env.ENFORCE_PASSWORD_CHANGE || '').toLowerCase() === 'true';
+}
+
 function blockWriteWhenPasswordStale(req, res) {
+  if (!passwordChangeEnforced()) return false;
   if (!req.user?.mustChangePassword) return false;
   if (!WRITE_METHODS.has(req.method)) return false;
   if (String(req.baseUrl || '').startsWith('/api/auth')) return false;
@@ -86,6 +100,7 @@ function requireRebateAmountAccess(req, res, next) {
 module.exports = {
   requireAuth,
   blockWriteWhenPasswordStale,
+  passwordChangeEnforced,
   requireRole,
   requireRebateAmountAccess,
   canViewAllRebateAmounts,
