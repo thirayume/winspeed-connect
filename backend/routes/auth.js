@@ -96,6 +96,12 @@ function appUserPayload(user, actor = null) {
     actorRole: effective.actorRole,
     actorDisplayName: effective.actorDisplayName,
     impersonating: effective.isImpersonating,
+    // ธงของ "บัญชีที่ใช้เข้าระบบจริง" ไม่ใช่บัญชีที่ถูกสวมสิทธิ์ — ตอน Access As
+    // คนที่ยืนยันตัวตนคือผู้ดูแล ถ้าเขาเปลี่ยนรหัสแล้วก็ไม่ควรถูกบล็อกเพราะ
+    // บัญชีปลายทางยังไม่เปลี่ยน (middleware/auth.js ใช้ค่านี้กันการเขียน)
+    mustChangePassword: actor
+      ? Boolean(actor.MustChangePassword ?? actor.mustChangePassword)
+      : effective.mustChangePassword,
   };
 }
 
@@ -520,7 +526,14 @@ router.put('/profile/password', requireAuth, async (req, res) => {
       id: { type: sql.Int, value: req.user.sub },
       ph: { type: sql.NVarChar(255), value: hash },
     });
-    res.json({ ok: true });
+    // ต้องออก token ใหม่ ไม่งั้นผู้ใช้ยังถือ token ที่บอกว่า mustChangePassword=1
+    // แล้วถูกบล็อกการเขียนต่อไปอีกจนกว่า token เดิมหมดอายุ ทั้งที่เปลี่ยนรหัสแล้ว
+    const fresh = await loadAppUserById(req.user.sub);
+    res.json({
+      ok: true,
+      accessToken: fresh ? signAppToken(fresh) : undefined,
+      user: fresh ? toClientUser(fresh) : undefined,
+    });
   } catch (e) {
     res.status(500).json({ message: 'Server error' });
   }
