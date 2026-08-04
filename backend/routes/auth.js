@@ -516,7 +516,7 @@ router.put('/profile/password', requireAuth, async (req, res) => {
     if (!valid) return res.status(401).json({ message: 'รหัสผ่านเดิมไม่ถูกต้อง' });
 
     const hash = await bcrypt.hash(newPassword, 12);
-    await wfQuery(`UPDATE wf.AppUser SET PasswordHash=@ph, UpdatedAt=GETUTCDATE() WHERE Id=@id`, {
+    await wfQuery(`UPDATE wf.AppUser SET PasswordHash=@ph, MustChangePassword=0, UpdatedAt=GETUTCDATE() WHERE Id=@id`, {
       id: { type: sql.Int, value: req.user.sub },
       ph: { type: sql.NVarChar(255), value: hash },
     });

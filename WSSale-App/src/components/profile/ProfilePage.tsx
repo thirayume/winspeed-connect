@@ -5,7 +5,7 @@ import { Camera, Lock, User, Save, Upload, Info } from 'lucide-react';
 
 export default function ProfilePage() {
   const { user, login } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'info' | 'security'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'security'>(user?.mustChangePassword ? 'security' : 'info');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -213,6 +213,12 @@ export default function ProfilePage() {
 
       {activeTab === 'security' && (
         <form onSubmit={handlePasswordSubmit} className="space-y-6 max-w-md">
+          {user?.mustChangePassword && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs">
+              <div className="font-bold mb-1">⚠️ คำแนะนำด้านความปลอดภัย (Audit Trail Compliance)</div>
+              <div>ระบบตรวจพบว่าคุณใช้รหัสผ่านตั้งต้น กรุณาตั้งรหัสผ่านใหม่ที่ไม่ซ้ำกับผู้ใช้อื่น เพื่อความถูกต้องในการยืนยันตัวตนของผู้ทำธุรกรรมในระบบ</div>
+            </div>
+          )}
           <div className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">รหัสผ่านปัจจุบัน</label>
