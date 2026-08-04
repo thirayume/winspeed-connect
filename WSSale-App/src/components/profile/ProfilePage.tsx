@@ -89,10 +89,13 @@ export default function ProfilePage() {
     setError('');
     setSuccess('');
     try {
-      await req('/auth/profile/password', {
+      const r = await req<{ ok: boolean; accessToken?: string; user?: any }>('/auth/profile/password', {
         method: 'PUT',
         body: JSON.stringify({ oldPassword, newPassword }),
       });
+      // token เดิมยังบอกว่าต้องเปลี่ยนรหัส ซึ่งทำให้เซิร์ฟเวอร์บล็อกการเขียนต่อไป
+      // แม้เปลี่ยนรหัสสำเร็จแล้ว จึงต้องรับ token ใหม่มาใช้ทันที
+      if (r?.accessToken && r?.user) login(r.accessToken, r.user);
       setSuccess('เปลี่ยนรหัสผ่านเรียบร้อยแล้ว');
       setOldPassword('');
       setNewPassword('');
