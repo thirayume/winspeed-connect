@@ -11,6 +11,7 @@ import { useAuthStore } from './store/auth-store';
 import { getMe, listAccessAsCandidates, listUnlockRequests, startAccessAs, stopAccessAs } from './services/api';
 import type { AdminUser, UserRole } from './types';
 import LoginPage from './pages/LoginPage';
+import ForcePasswordChange from './components/auth/ForcePasswordChange';
 import { DbModeSwitch } from './components/common/DbModeSwitch';
 import { useAppStore } from './store/app-store';
 import { GlobalLoader } from './components/common/GlobalLoader';
@@ -160,6 +161,10 @@ function App() {
       </div>
     );
   }
+
+  // บัญชีที่ยังใช้รหัสตั้งต้นต้องเปลี่ยนก่อน จึงเข้าหน้าอื่นของแอปไม่ได้เลย
+  // (เซิร์ฟเวอร์ส่งธงนี้มาเฉพาะเมื่อเปิด ENFORCE_PASSWORD_CHANGE — บนเครื่องนักพัฒนาจะไม่ขึ้น)
+  if (user.mustChangePassword) return <ForcePasswordChange />;
 
   return <AppShell user={user} logout={logout} />;
 }
@@ -488,20 +493,8 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
 
         {/* Main Content */}
         <main className="flex-1 overflow-hidden min-w-0 max-w-full flex flex-col">
-          {user?.mustChangePassword && (
-            <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between text-amber-900 text-xs shadow-sm shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="font-bold">⚠️ แจ้งเตือนความปลอดภัย:</span>
-                <span>รหัสผ่านของคุณเป็นรหัสผ่านตั้งต้นของระบบ กรุณาเปลี่ยนรหัสผ่านเพื่อความปลอดภัยและกติกาตรวจสอบสิทธิ์ (Audit Trail Compliance)</span>
-              </div>
-              <button
-                onClick={() => navigate('profile')}
-                className="bg-amber-600 hover:bg-amber-700 text-white font-semibold px-3 py-1 rounded-md transition-colors shrink-0"
-              >
-                เปลี่ยนรหัสผ่านทันที
-              </button>
-            </div>
-          )}
+          {/* แถบเตือนรหัสผ่านถูกถอดออก — ผู้ใช้ที่ต้องเปลี่ยนรหัสไม่ได้เข้ามาถึงหน้านี้แล้ว
+              เพราะถูกพาไปหน้าบังคับเปลี่ยนรหัส (components/auth/ForcePasswordChange.tsx) ตั้งแต่ล็อกอิน */}
           <Suspense fallback={<PageFallback />}>
             {activePortal === 'sales' ? (
               <SalesPortal />

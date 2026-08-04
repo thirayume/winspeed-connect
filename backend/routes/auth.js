@@ -6,7 +6,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { sql, wfQuery } = require('../db');
-const { requireAuth, requireRole, SECRET } = require('../middleware/auth');
+const { requireAuth, requireRole, passwordChangeEnforced, SECRET } = require('../middleware/auth');
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -77,7 +77,10 @@ function toClientUser(user, actor = null) {
     actorDisplayName: actor ? (actor.DisplayName ?? actor.displayName) : (user.DisplayName ?? user.displayName),
     actorRole: actor ? getUserRole(actor) : getUserRole(user),
     isImpersonating,
-    mustChangePassword: Boolean(user.MustChangePassword ?? user.mustChangePassword),
+    // บอกหน้าจอเฉพาะเมื่อเซิร์ฟเวอร์บังคับจริง — บนเครื่องนักพัฒนาจะไม่ขึ้นหน้าบังคับ
+    // เปลี่ยนรหัสมากั้นงาน ทั้งที่ธงในฐานข้อมูลยังอยู่ตามเดิม
+    mustChangePassword: passwordChangeEnforced()
+      && Boolean(user.MustChangePassword ?? user.mustChangePassword),
   };
   return out;
 }
@@ -623,6 +626,15 @@ router.patch('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNT
       const hash = await bcrypt.hash(password, 12);
       sets.push('PasswordHash = @ph');
       inputs.ph = { type: sql.NVarChar(255), value: hash };
+      // ผู้ดูแลตั้งรหัสให้คนอื่น = ผู้ดูแลรู้รหัสของคนนั้น ถ้าปล่อยไว้อย่างนั้น
+      // ชื่อผู้ทำรายการในหลักฐานก็ไม่ได้พิสูจน์ว่าเจ้าของบัญชีเป็นคนทำ (D6-02)
+      // จึงบังคับให้เจ้าของบัญชีตั้งรหัสใหม่ก่อนบันทึกข้อมูลได้อีก
+      // ยกเว้นกรณีเปลี่ยนรหัสของตัวเอง ซึ่งไม่มีใครอื่นรู้รหัสนั้น
+      if (Number(req.params.id) !== Number(req.user.sub)) {
+        sets.push('MustChangePassword = 1');
+      } else {
+        sets.push('MustChangePassword = 0');
+      }
     }
     if (!sets.length) return res.status(400).json({ message: 'ไม่มีข้อมูลที่จะแก้ไข' });
     sets.push('UpdatedAt = GETUTCDATE()');
