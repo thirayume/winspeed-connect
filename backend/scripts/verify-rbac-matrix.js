@@ -33,7 +33,14 @@ const CASES = [
   { role: 'WEIGHBRIDGE', expect: 'deny',  name: 'จัดของ (picking)',       method: 'PATCH', path: `/api/so/${GHOST}/picking`, body: {} },
   { role: 'WEIGHBRIDGE', expect: 'deny',  name: 'ขึ้นของ (load)',         method: 'PATCH', path: `/api/so/${GHOST}/load`, body: {} },
   // WEIGHBRIDGE — ห้ามงานเงินและงานระบบ
-  { role: 'WEIGHBRIDGE', expect: 'deny',  name: 'อนุมัติเคลมรีเบท',       method: 'PATCH', path: `/api/rebate/claims/${GHOST}/approve`, body: {} },
+  // เดิมเคสนี้ยิง PATCH ซึ่งไม่มี route รองรับตั้งแต่ตอนทำอนุมัติ 4 ชั้น (route เปลี่ยนเป็น POST
+  // และย้ายการตรวจสิทธิ์เข้าไปตรวจรายชั้นข้างใน) จึงได้ 404 ของ Express ทุกครั้งโดยไม่เคยแตะโค้ดจริง
+  // — เป็นการทดสอบที่เขียวปลอมมาตลอด
+  //
+  // เมื่อยิง POST ด้วยรหัสใบที่ไม่มีจริง ทุกบทบาทจะได้ 404 เหมือนกันหมด เพราะ handler
+  // หาใบก่อนแล้วค่อยตรวจสิทธิ์รายชั้น เคสนี้จึงพิสูจน์การปฏิเสธตามบทบาทไม่ได้ด้วยรหัสผี
+  // การปฏิเสธจริงพิสูจน์ใน verify-rebate-4tier.js ซึ่งใช้ใบจริง
+  { role: 'WEIGHBRIDGE', expect: 'allow', name: 'อนุมัติเคลมรีเบท (ดูหมายเหตุ)', method: 'POST', path: `/api/rebate/claims/${GHOST}/approve`, body: {} },
   { role: 'WEIGHBRIDGE', expect: 'deny',  name: 'แก้ไขนโยบายอนุมัติ',     method: 'POST',  path: '/api/policy', body: {} },
 
   // WAREHOUSE — ยังทำงานคลังได้ครบเหมือนเดิม (กันการแก้สิทธิ์ WEIGHBRIDGE ไปกระทบของเดิม)
@@ -43,7 +50,7 @@ const CASES = [
 
   // C_LEVEL — สิทธิ์ธุรกิจเต็ม
   { role: 'C_LEVEL',     expect: 'allow', name: 'แก้ไขนโยบายอนุมัติ',     method: 'POST',  path: '/api/policy', body: {} },
-  { role: 'C_LEVEL',     expect: 'allow', name: 'อนุมัติเคลมรีเบท',       method: 'PATCH', path: `/api/rebate/claims/${GHOST}/approve`, body: {} },
+  { role: 'C_LEVEL',     expect: 'allow', name: 'อนุมัติเคลมรีเบท',       method: 'POST',  path: `/api/rebate/claims/${GHOST}/approve`, body: {} },
 
   // SALES — ห้ามข้ามไปทำงานคลังและงานอนุมัติ
   { role: 'SALES',       expect: 'deny',  name: 'จัดของ (picking)',       method: 'PATCH', path: `/api/so/${GHOST}/picking`, body: {} },

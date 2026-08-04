@@ -63,10 +63,15 @@ async function main() {
     console.log('\n[MODE: --fix] กำลังเพิ่ม MustChangePassword และตั้งค่าเป็น 1 ให้กับบัญชีที่ใช้รหัสผ่านซ้ำ...');
     await ensureMustChangePasswordColumn();
 
+    // ข้ามบัญชีทดสอบ e2e_* — ตั้งแต่ v1.6.0 ธงนี้บล็อกคำสั่งเขียนที่เซิร์ฟเวอร์
+    // ถ้าตั้งให้บัญชีชุดนี้ ชุด E2E จะล้มทั้งชุดตั้งแต่ขั้นสร้างใบสั่งขาย
+    // โดยที่ไม่มีอะไรผิดในโค้ดที่กำลังทดสอบ · บัญชีชุดนี้ไม่ควรอยู่บน production
+    // อยู่แล้ว ล้างด้วย sql/maintenance/cleanup-e2e-users.sql
     const updateRes = await dboWrite(`
       UPDATE wf.AppUser
       SET MustChangePassword = 1, UpdatedAt = GETUTCDATE()
       WHERE IsActive = 1
+        AND Username NOT LIKE 'e2e[_]%'
         AND PasswordHash IN (
           SELECT PasswordHash
           FROM wf.AppUser
@@ -78,6 +83,13 @@ async function main() {
 
     const affected = Number(updateRes?.rowsAffected?.[0] || 0);
     console.log(`✔ ตั้งค่า MustChangePassword = 1 เรียบร้อยสำหรับ ${affected} บัญชี`);
+
+    const cleared = await dboWrite(`
+      UPDATE wf.AppUser SET MustChangePassword = 0, UpdatedAt = GETUTCDATE()
+      WHERE Username LIKE 'e2e[_]%' AND MustChangePassword = 1
+    `);
+    const clearedCount = Number(cleared?.rowsAffected?.[0] || 0);
+    if (clearedCount) console.log(`✔ ล้างธงของบัญชีทดสอบ e2e_* ${clearedCount} บัญชี (ยกเว้นไว้โดยเจตนา)`);
   } else {
     console.log('\nคำแนะนำ: รัน "node backend/scripts/audit-duplicate-passwords.js --fix" เพื่อเปิด flag MustChangePassword = 1');
   }

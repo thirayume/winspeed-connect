@@ -42,10 +42,20 @@ USING (VALUES
   ('e2e_clevel',   'E2E C-Level',   'C_LEVEL')
 ) AS source (Username, DisplayName, Role)
 ON target.Username = source.Username
+-- MustChangePassword = 0 เสมอสำหรับบัญชีทดสอบ
+--
+-- ตั้งแต่ v1.6.0 เซิร์ฟเวอร์บล็อกคำสั่งเขียนของบัญชีที่ธงนี้เป็น 1 (D6-02)
+-- บัญชีชุดนี้ใช้รหัสผ่านร่วมกันโดยเจตนา และ audit-duplicate-passwords.js --fix
+-- จะตั้งธงให้ทุกครั้งที่รัน ถ้าไม่ล้างกลับตรงนี้ ชุด E2E จะล้มทั้งชุดตั้งแต่
+-- ขั้นสร้างใบสั่งขาย โดยที่ไม่มีอะไรผิดในโค้ดที่กำลังทดสอบ
+--
+-- ปลอดภัยเพราะบัญชีเหล่านี้ไม่ควรมีอยู่บน production อยู่แล้ว —
+-- ล้างด้วย sql/maintenance/cleanup-e2e-users.sql
 WHEN MATCHED THEN UPDATE SET
   PasswordHash = '$2b$10$Vx2BFiZ9eALMWjJfAM.cb.dza0KWsB3D9JLRYyhw9Cu6fZfbThFwm',
   DisplayName = source.DisplayName,
   Role = source.Role,
-  EmpId = @E2EEmpId
-WHEN NOT MATCHED THEN INSERT (Username, PasswordHash, DisplayName, Role, EmpId)
-VALUES (source.Username, '$2b$10$Vx2BFiZ9eALMWjJfAM.cb.dza0KWsB3D9JLRYyhw9Cu6fZfbThFwm', source.DisplayName, source.Role, @E2EEmpId);
+  EmpId = @E2EEmpId,
+  MustChangePassword = 0
+WHEN NOT MATCHED THEN INSERT (Username, PasswordHash, DisplayName, Role, EmpId, MustChangePassword)
+VALUES (source.Username, '$2b$10$Vx2BFiZ9eALMWjJfAM.cb.dza0KWsB3D9JLRYyhw9Cu6fZfbThFwm', source.DisplayName, source.Role, @E2EEmpId, 0);
