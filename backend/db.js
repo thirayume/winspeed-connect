@@ -140,8 +140,14 @@ async function wfTransaction(fn) {
   await pl.ready;
   const tx = new sql.Transaction(pl.ownerPool);
   await tx.begin();
-  try { const r = await fn(tx); await tx.commit(); return r; }
-  catch (e) { await tx.rollback(); throw e; }
+  try {
+    const r = await fn(tx);
+    await tx.commit();
+    return r;
+  } catch (e) {
+    try { await tx.rollback(); } catch (_) {}
+    throw e;
+  }
 }
 
 // รัน callback ภายใต้ DB target ที่กำหนด (ใช้ใน middleware)

@@ -385,6 +385,18 @@ export const fetchRebateRegions = () =>
 export const setUserRegion = (payload: { userId: number; regionCode: string; isPrimary?: boolean }) =>
   req<{ success: boolean; message: string }>('/rebate/user-regions', { method: 'POST', body: JSON.stringify(payload) });
 
+export type RegionCoverage = {
+  RegionCode: string; RegionName: string;
+  UserId: number | null; Username: string | null; DisplayName: string | null;
+  Role: string | null; IsActive: boolean | null; IsPrimary: boolean | null;
+  Customers: number;
+};
+
+export const fetchRegionCoverage = () => req<RegionCoverage[]>('/rebate/regions/coverage');
+
+export const removeUserRegion = (userId: number, regionCode: string) =>
+  req<{ ok: boolean }>(`/rebate/user-regions/${userId}/${encodeURIComponent(regionCode)}`, { method: 'DELETE' });
+
 export const fetchRebateSummary = () => req<RebateSummary[]>('/rebate/summary');
 
 // ── Rebate Plan (FR-008/009) ──────────────────────────────────
