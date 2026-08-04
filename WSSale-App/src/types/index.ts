@@ -33,6 +33,7 @@ export type AppUser = {
   lineUserId?: string | null;
   lineDisplayName?: string | null;
   lineLinkedAt?: string | null;
+  mustChangePassword?: boolean;
 };
 
 /** WINSpeed employee (dbo.EMEmp) — for mapping AppUser.empId */

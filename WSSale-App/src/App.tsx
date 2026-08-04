@@ -488,6 +488,20 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
 
         {/* Main Content */}
         <main className="flex-1 overflow-hidden min-w-0 max-w-full flex flex-col">
+          {user?.mustChangePassword && (
+            <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between text-amber-900 text-xs shadow-sm shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="font-bold">⚠️ แจ้งเตือนความปลอดภัย:</span>
+                <span>รหัสผ่านของคุณเป็นรหัสผ่านตั้งต้นของระบบ กรุณาเปลี่ยนรหัสผ่านเพื่อความปลอดภัยและกติกาตรวจสอบสิทธิ์ (Audit Trail Compliance)</span>
+              </div>
+              <button
+                onClick={() => navigate('profile')}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-semibold px-3 py-1 rounded-md transition-colors shrink-0"
+              >
+                เปลี่ยนรหัสผ่านทันที
+              </button>
+            </div>
+          )}
           <Suspense fallback={<PageFallback />}>
             {activePortal === 'sales' ? (
               <SalesPortal />
