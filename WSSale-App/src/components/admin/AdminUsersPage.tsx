@@ -387,6 +387,12 @@ export const AdminUsersPage = () => {
                         placeholder={modalUser.Id ? "••••••••" : ""}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#0C447C]/20 outline-none"
                       />
+                      {modalUser.Id ? (
+                        <p className="mt-1 text-[11px] text-amber-700">
+                          ตั้งรหัสให้ผู้ใช้คนอื่นแล้ว ระบบจะบังคับให้เจ้าของบัญชีตั้งรหัสใหม่เองก่อนบันทึกข้อมูลได้อีก
+                          — เพราะผู้ดูแลรู้รหัสนี้ ชื่อผู้ทำรายการในหลักฐานจึงยังไม่ยืนยันตัวเจ้าของบัญชี
+                        </p>
+                      ) : null}
                     </div>
 
                     <div>
