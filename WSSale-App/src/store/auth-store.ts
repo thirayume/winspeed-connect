@@ -26,6 +26,7 @@ function getStoredUser(): AppUser | null {
       lineUserId: (parsed.lineUserId ?? parsed.LineUserId ?? null) as string | null,
       lineDisplayName: (parsed.lineDisplayName ?? parsed.LineDisplayName ?? null) as string | null,
       lineLinkedAt: (parsed.lineLinkedAt ?? parsed.LineLinkedAt ?? null) as string | null,
+      mustChangePassword: Boolean(parsed.mustChangePassword ?? parsed.MustChangePassword ?? false),
     } as AppUser;
   } catch {
     localStorage.removeItem(USER_KEY);
