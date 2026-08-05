@@ -70,6 +70,18 @@ router.get('/scale/:sequence', async (req, res) => {
 
 // GET /api/truckscale/for-so/:soId — หาน้ำหนักชั่งที่ match SO + ranking score (FR-025)
 const normPlate = (s) => String(s || '').replace(/[\s-]/g, '').toLowerCase();
+
+/**
+ * 'DD/MM/BBBB' (พ.ศ. ตามที่ฐานเครื่องชั่งเก็บ) → 'YYYY-MM-DD' (ค.ศ. แบบที่ SQL Server ใช้)
+ * คืน null เมื่อรูปแบบไม่ถูก เพื่อให้การเปรียบเทียบเป็นเท็จ แทนที่จะเทียบขยะกับขยะแล้วบังเอิญตรง
+ */
+function beDateToIso(value) {
+  const m = String(value || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const year = Number(m[3]) - 543;
+  if (year < 1900 || year > 2200) return null;
+  return `${year}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+}
 const firstToken = (s) => String(s || '').trim().split(/\s+/)[0] || '';
 
 router.get('/for-so/:soId', async (req, res) => {
@@ -87,6 +99,8 @@ router.get('/for-so/:soId', async (req, res) => {
       [`%${plate}%`]);
 
     // คำนวณ score + เหตุผล (evidence) ต่อ candidate
+    // RefDate เป็น 'YYYY-MM-DD' ค.ศ. ส่วน Date_Out ของเครื่องชั่งเป็น 'DD/MM/BBBB' พ.ศ.
+    // เดิมเทียบสองค่านี้ตรง ๆ จึงไม่มีทางตรงกันได้เลย คะแนน "วันที่ชั่งตรงกับ SO" ไม่เคยถูกบวก
     const soPlate = normPlate(so.TruckPlate);
     const soCust = firstToken(so.CustName);
     const scored = rows.map(r => {
@@ -97,7 +111,7 @@ router.get('/for-so/:soId', async (req, res) => {
       if (soCust && r.CustName && (String(r.CustName).includes(soCust) || soCust.includes(firstToken(r.CustName)))) {
         score += 25; reasons.push('ชื่อลูกค้าตรง');
       }
-      if (so.RefDate && r.DateOut && String(r.DateOut).slice(0, 10) === so.RefDate) { score += 20; reasons.push('วันที่ชั่งตรงกับ SO'); }
+      if (so.RefDate && beDateToIso(r.DateOut) === so.RefDate) { score += 20; reasons.push('วันที่ชั่งตรงกับ SO'); }
       if (Number(r.WeightNet) > 0) { score += 15; reasons.push('มีน้ำหนักสุทธิ'); }
       return { ...r, matchScore: Math.min(score, 100), matchReasons: reasons };
     }).sort((a, b) => b.matchScore - a.matchScore);
