@@ -25,14 +25,37 @@
 SET NOCOUNT ON;
 GO
 
--- ตัดคำนำหน้าและช่องว่างออกก่อนเทียบ เพราะข้อมูลจริงมีทั้ง "นนทบุรี" และ "จังหวัดนนทบุรี"
-IF OBJECT_ID('tempdb..#Cust') IS NOT NULL DROP TABLE #Cust;
-IF OBJECT_ID('tempdb..#Area') IS NOT NULL DROP TABLE #Area;
+IF OBJECT_ID('tempdb..#Cust')  IS NOT NULL DROP TABLE #Cust;
+IF OBJECT_ID('tempdb..#Area')  IS NOT NULL DROP TABLE #Area;
+IF OBJECT_ID('tempdb..#Alias') IS NOT NULL DROP TABLE #Alias;
 
-SELECT CustID, CustName, Province,
-       REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(Province)), N'จ.', N''), N'จังหวัด', N''), N' ', N'') AS P
+-- ── ตารางชื่อพ้อง — ยืนยันโดยเจ้าของระบบเมื่อ 5 ส.ค. 2569 ────────────────
+--
+-- ทั้งสามแบบคือกรุงเทพมหานครเหมือนกัน ต่างกันแค่วิธีสะกดในระเบียนลูกค้า
+-- เพิ่มบรรทัดใหม่ได้เมื่อพบการสะกดแบบอื่น — ทั้งไฟล์ review และ apply ใช้ตารางนี้ชุดเดียวกัน
+-- ค่าที่ใส่ต้องเป็นค่า "หลังตัดคำนำหน้าและช่องว่างแล้ว" เช่น '  BANGKOK' เขียนเป็น 'BANGKOK'
+
+-- COLLATE DATABASE_DEFAULT จำเป็น เพราะตารางชั่วคราวเกิดใน tempdb ซึ่งใช้ collation
+-- ของเซิร์ฟเวอร์ (มักเป็น SQL_Latin1_General_CP1_CI_AS) ส่วนคอลัมน์ในฐานนี้เป็น Thai_CI_AS
+-- ถ้าไม่บังคับ การเทียบข้อความจะล้มด้วย Msg 468 collation conflict
+CREATE TABLE #Alias (
+  Variant   NVARCHAR(100) COLLATE DATABASE_DEFAULT PRIMARY KEY,
+  Canonical NVARCHAR(100) COLLATE DATABASE_DEFAULT NOT NULL);
+INSERT INTO #Alias (Variant, Canonical) VALUES
+  (N'กรุงเทพ',   N'กรุงเทพมหานคร'),
+  (N'กรุงเทพฯ',  N'กรุงเทพมหานคร'),
+  (N'BANGKOK', N'กรุงเทพมหานคร');
+GO
+
+-- ตัดคำนำหน้าและช่องว่างออกก่อนเทียบ เพราะข้อมูลจริงมีทั้ง "นนทบุรี" และ "จังหวัดนนทบุรี"
+-- แล้วจึงแปลงชื่อพ้องเป็นชื่อทางการ
+SELECT c.CustID, c.CustName, c.Province,
+       ISNULL(al.Canonical, n.P) AS P
 INTO #Cust
-FROM dbo.EMCust WHERE SaleAreaID IS NULL;
+FROM dbo.EMCust c
+CROSS APPLY (SELECT REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(c.Province)), N'จ.', N''), N'จังหวัด', N''), N' ', N'') AS P) n
+LEFT JOIN #Alias al ON al.Variant = n.P
+WHERE c.SaleAreaID IS NULL;
 
 SELECT SaleAreaID, SaleAreaCode, SaleAreaName,
        REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(SaleAreaName)), N'จ.', N''), N'จังหวัด', N''), N' ', N'') AS P
@@ -78,6 +101,20 @@ ELSE
            AS [หมายเหตุ], DB_NAME() AS [ฐานที่กำลังรัน];
 GO
 
+-- ── 2.2 · รายที่จับคู่ได้เพราะตารางชื่อพ้อง ─────────────────────────────
+--
+-- แยกออกมาให้เห็นชัด เพราะเป็นการตัดสินใจของคน ไม่ใช่การจับคู่ตรงตัว
+
+SELECT c.CustID AS [รหัสลูกค้า], c.CustName AS [ชื่อลูกค้า],
+       c.Province AS [ที่เขียนไว้ในระเบียน], c.P AS [ตีความเป็นจังหวัด],
+       a.SaleAreaCode AS [รหัสเขตที่จะเติม], a.SaleAreaName AS [ชื่อเขต]
+-- แถวที่ถูกแปลงชื่อ = ค่าหลังตัดคำนำหน้าไม่เท่ากับค่าที่ใช้จับคู่จริง
+FROM #Cust c
+JOIN #Area a ON a.P = c.P
+WHERE REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(c.Province)), N'จ.', N''), N'จังหวัด', N''), N' ', N'') <> c.P
+ORDER BY c.CustID;
+GO
+
 -- ── 3 · รายชื่อเต็มให้ฝ่ายขายตรวจ (ส่งออกเป็น Excel ได้จากผลลัพธ์นี้) ──
 
 SELECT c.CustID       AS [รหัสลูกค้า],
@@ -97,10 +134,26 @@ SELECT c.CustID AS [รหัสลูกค้า], c.CustName AS [ชื่อ
        ISNULL(NULLIF(c.Province, N''), N'(ไม่ระบุจังหวัด)') AS [จังหวัดในระเบียน],
        (SELECT COUNT(*) FROM dbo.SOHD h WHERE h.CustID = c.CustID) AS [ใบสั่งขายที่เคยมี],
        CASE WHEN NULLIF(c.P, N'') IS NULL THEN N'ไม่มีจังหวัด - ต้องกรอกที่อยู่ก่อน'
-            ELSE N'จังหวัดไม่ตรงเขตใด - สะกดต่างกัน หรือยังไม่มีเขตขายของจังหวัดนี้' END AS [เหตุผล]
+            ELSE N'จังหวัดไม่ตรงเขตใด - สะกดต่างกัน (เพิ่มใน #Alias) หรือยังไม่มีเขตขายของจังหวัดนี้' END AS [เหตุผล]
 FROM #Cust c
 WHERE NOT EXISTS (SELECT 1 FROM #Area a WHERE a.P = c.P)
 ORDER BY [ใบสั่งขายที่เคยมี] DESC, c.CustID;
+GO
+
+-- ── 4.1 · จังหวัดที่ยังไม่มีเขตขายในระบบเลย ─────────────────────────────
+--
+-- ต่างจากการสะกดผิด: จังหวัดเหล่านี้ไม่มีแถวใน dbo.EMSaleArea จริง ๆ
+-- ต้องเพิ่มเขตขายก่อนจึงจะเติมให้ลูกค้าได้ — apply ขั้นที่ 0 เพิ่มบึงกาฬให้แล้ว
+
+SELECT c.P AS [จังหวัด], COUNT(*) AS [ลูกค้าที่รออยู่],
+       CASE WHEN c.P = N'บึงกาฬ'
+            THEN N'จังหวัดใหม่แยกจากหนองคาย อยู่ภาค 03 - apply ขั้นที่ 0 เพิ่มเขต 03380102 ให้'
+            ELSE N'ต้องตัดสินว่าจะเพิ่มเขตขายใหม่ หรือผูกกับเขตที่มีอยู่' END AS [ทางแก้]
+FROM #Cust c
+WHERE NULLIF(c.P, N'') IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM #Area a WHERE a.P = c.P)
+GROUP BY c.P
+ORDER BY [ลูกค้าที่รออยู่] DESC;
 GO
 
 -- ── 5 · ความปลอดภัย: จังหวัดที่ตรงกับมากกว่าหนึ่งเขต ──────────────────
@@ -109,10 +162,11 @@ GO
 -- จะข้ามลูกค้ากลุ่มนี้ไปโดยอัตโนมัติ ต้องให้คนเลือกเอง
 
 SELECT a.P AS [จังหวัด], COUNT(*) AS [จำนวนเขตที่ชนกัน],
-       STRING_AGG(a.SaleAreaCode + N' ' + a.SaleAreaName, N' / ') AS [เขตที่ชนกัน]
+       STRING_AGG(CAST(a.SaleAreaCode AS NVARCHAR(50)) + N' ' + a.SaleAreaName, N' / ') AS [เขตที่ชนกัน]
 FROM #Area a GROUP BY a.P HAVING COUNT(*) > 1;
 GO
 
 DROP TABLE #Cust;
 DROP TABLE #Area;
+DROP TABLE #Alias;
 GO
