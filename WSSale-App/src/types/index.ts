@@ -719,3 +719,15 @@ export type PaginatedResult<T> = {
   page: number;
   limit: number;
 };
+
+export interface PendingGiveaway {
+  SoId: number;
+  LineNum: number;
+  GoodName: string;
+  QtyTon: number;
+  QtyBag: number;
+  WfRef: string;
+  CustName: string;
+  CreatedAt: string;
+  CreatedByName: string;
+}

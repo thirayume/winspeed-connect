@@ -331,6 +331,8 @@ export const createUnlockRequest = (soId: number | string, reason: string, reqTy
   req<{ id: string; ok: boolean }>(`/so/${soId}/unlock-request`, { method: 'POST', body: JSON.stringify({ reason, reqType }) });
 export const listUnlockRequests = (status = 'PENDING', silent = false) =>
   req<import('../types').UnlockReq[]>(`/so/unlock-requests?status=${status}`, { silent });
+export const listPendingGiveaways = (silent = false) =>
+  req<import('../types').PendingGiveaway[]>('/so/giveaways/pending', { silent });
 export const fetchUnlockReasons = (type: 'EDIT' | 'CANCEL') =>
   req<string[]>(`/so/unlock-reasons?type=${type}`);
 export const resolveUnlockReq = (reqId: number, approve: boolean, note?: string) =>
