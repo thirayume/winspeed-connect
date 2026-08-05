@@ -11,6 +11,7 @@ import { PaperDocModal } from './PaperDocModal';
 import { ScanModal } from './ScanModal';
 import { RequestActionModal, type RequestActionType } from './RequestActionModal';
 import { useSocketEvent } from '../../hooks/useSocket';
+import { QuickShipModal } from '../sales/QuickShipModal';
 
 import { UnlockReviewModal } from './UnlockReviewModal';
 import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
@@ -41,6 +42,7 @@ export function PaperTrailPage() {
   
   // New States for Edit and Cancel requests
   const [requestModalConfig, setRequestModalConfig] = useState<{ isOpen: boolean, type: RequestActionType, card: PaperCard | null }>({ isOpen: false, type: 'EDIT', card: null });
+  const [shipModalConfig, setShipModalConfig] = useState<{ isOpen: boolean; soIds: (string | number)[] }>({ isOpen: false, soIds: [] });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,7 +107,10 @@ export function PaperTrailPage() {
       if (card.status === 'DRAFT') await confirmSO(card.id);
       else if (card.status === 'CONFIRMED') await moveToPicking(card.id);
       else if (card.status === 'PICKING') await confirmLoading(Number(card.id), []);
-      else if (card.status === 'LOADED') await shipSO(card.id);
+      else if (card.status === 'LOADED') {
+        setShipModalConfig({ isOpen: true, soIds: [card.id] });
+        return; // wait for modal to finish
+      }
       else if (card.status === 'SHIPPED') {
         const docuNo = await appPrompt(`กรอกเลขใบกำกับ WINSpeed สำหรับ ${card.wfRef}:`);
         if (!docuNo) { setBusyId(null); return; }
@@ -355,6 +360,12 @@ export function PaperTrailPage() {
         wfRef={requestModalConfig.card?.wfRef || ''}
         onClose={() => setRequestModalConfig({ isOpen: false, type: 'EDIT', card: null })}
         onSubmit={handleRequestSubmit}
+      />
+      <QuickShipModal
+        isOpen={shipModalConfig.isOpen}
+        onClose={() => setShipModalConfig({ isOpen: false, soIds: [] })}
+        soIds={shipModalConfig.soIds}
+        onSuccess={load}
       />
       {showUnlockReview && <UnlockReviewModal onClose={() => setShowUnlockReview(false)} onDone={load} />}
     </div>

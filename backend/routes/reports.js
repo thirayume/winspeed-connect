@@ -528,7 +528,8 @@ const REPORTS = {
           FROM wf.RebateClaim c WITH (NOLOCK)
           LEFT JOIN wf.RebateClaimLine l WITH (NOLOCK) ON l.ClaimId = c.Id
           LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = c.SalesUserId
-          ORDER BY c.Id DESC, l.LineNo ASC`,
+          -- LineNo เป็นคำสงวนของ SQL Server ต้องครอบด้วยวงเล็บเหลี่ยมเสมอ
+          ORDER BY c.Id DESC, l.[LineNo] ASC`,
   },
   'special-price-detail': {
     title: 'รายงานรายละเอียดคำขอราคาพิเศษรายร้านค้า (Special Price Audit)',
@@ -565,15 +566,18 @@ const REPORTS = {
       { key: 'TruckPlate', label: 'ทะเบียนรถ' },
       { key: 'Movebill', label: 'ใบชั่ง' },
       { key: 'ScaleNo', label: 'เครื่องชั่ง' },
-      { key: 'WeightIn', label: 'น้ำหนักเข้า (กก.)' },
-      { key: 'WeightOut', label: 'น้ำหนักออก (กก.)' },
+      // wf.WeighTicket เก็บน้ำหนักเป็น รวม / รถเปล่า / สุทธิ ไม่ใช่ เข้า / ออก
+      { key: 'GrossKg', label: 'น้ำหนักรวม (กก.)' },
+      { key: 'TareKg', label: 'น้ำหนักรถเปล่า (กก.)' },
       { key: 'NetKg', label: 'สุทธิ (กก.)' },
+      { key: 'VarianceKg', label: 'ส่วนต่างจากที่สั่ง (กก.)' },
+      { key: 'WeightStatus', label: 'สถานะน้ำหนัก' },
       { key: 'WeighOutAt', label: 'เวลาชั่งออก' },
       { key: 'ScaleWriteAction', label: 'การเขียนกลับ' },
       { key: 'Note', label: 'หมายเหตุ' },
     ],
     sql: `SELECT wt.Id, wt.WfRef, wt.TruckPlate, wt.Movebill, wt.ScaleNo,
-                 wt.WeightIn, wt.WeightOut, wt.NetKg,
+                 wt.GrossKg, wt.TareKg, wt.NetKg, wt.VarianceKg, wt.WeightStatus,
                  CONVERT(VARCHAR(19), wt.WeighOutAt, 120) AS WeighOutAt,
                  wt.ScaleWriteAction,
                  ISNULL(wt.OverrideReason, wt.ScaleError) AS Note
