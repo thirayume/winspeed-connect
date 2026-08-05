@@ -918,6 +918,25 @@ router.get('/:id', async (req, res) => {
 });
 
 // ── POST /api/so — Create DRAFT (Supports Single or Grouped Multi-Bill) ──
+// GET /api/so/giveaways/pending — list all pending giveaways
+router.get('/giveaways/pending', requireRole('MANAGER', 'ADMIN', 'C_LEVEL', 'APPROVER'), async (req, res) => {
+  try {
+    if (!(await hasGiveawayApprovalColumns())) return res.json([]);
+    const r = await wfQuery(`
+      SELECT l.SoId, l.LineNum, l.GoodName, l.QtyTon, l.QtyBag, 
+             s.WfRef, s.CustName, s.CreatedAt, u.Username AS CreatedByName
+      FROM wf.SalesOrderLine l
+      INNER JOIN wf.SalesOrder s ON s.Id = l.SoId
+      LEFT JOIN wf.Users u ON u.Id = s.CreatedBy
+      WHERE l.IsGiveaway = 1 AND ISNULL(l.GiveawayApprovalStatus, 'PENDING') = 'PENDING' AND s.Status = 'DRAFT'
+      ORDER BY s.CreatedAt ASC
+    `);
+    res.json(r.recordset || []);
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
+});
+
 // PATCH /api/so/:id/giveaway-lines/:lineNum/approve — manager approval for giveaway line
 router.patch('/:id/giveaway-lines/:lineNum/approve', requireRole('MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {

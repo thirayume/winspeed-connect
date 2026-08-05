@@ -10,6 +10,7 @@ import { TripSetupModal } from './TripSetupModal';
 import { PaperDocModal } from '../papertrail/PaperDocModal';
 import { SOBookingDocModal } from './SOBookingDocModal';
 import { SO_STATUS_META, soStatusLabel } from '../../constants/soStatus';
+import { QuickShipModal } from './QuickShipModal';
 
 export function TripSummaryModal({
   isOpen,
@@ -35,6 +36,7 @@ export function TripSummaryModal({
   const [isEditTripOpen, setIsEditTripOpen] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [selectedBookingSoId, setSelectedBookingSoId] = useState<string | number | null>(null);
+  const [shipModalConfig, setShipModalConfig] = useState<{ isOpen: boolean; soIds: (string | number)[] }>({ isOpen: false, soIds: [] });
 
   if (!isOpen || !trip) return null;
 
@@ -279,7 +281,7 @@ export function TripSummaryModal({
                       {allPicking && (
                         <button
                           disabled={busy}
-                          onClick={() => handleBulkAction(shipSO, `ยืนยันส่งออกสินค้าทั้งทริปใช่หรือไม่?`)}
+                          onClick={() => setShipModalConfig({ isOpen: true, soIds: trip.orders.filter(o => o.id && String(o.id) !== 'undefined').map(o => o.id!) })}
                           className="w-full py-2.5 sm:py-3 rounded-xl text-white text-sm sm:text-base font-bold shadow-sm disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
                           style={{ background: '#059669' }}
                         >
@@ -513,6 +515,16 @@ export function TripSummaryModal({
           onClose={() => setSelectedBookingSoId(null)}
         />
       )}
+
+      <QuickShipModal
+        isOpen={shipModalConfig.isOpen}
+        onClose={() => setShipModalConfig({ isOpen: false, soIds: [] })}
+        soIds={shipModalConfig.soIds}
+        onSuccess={() => {
+          setShipModalConfig({ isOpen: false, soIds: [] });
+          if (onUpdate) onUpdate();
+        }}
+      />
     </>
   );
 }

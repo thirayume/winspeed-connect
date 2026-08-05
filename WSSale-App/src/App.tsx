@@ -8,7 +8,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useErpStore } from './store/erp-store';
 import { useAuthStore } from './store/auth-store';
-import { getMe, listAccessAsCandidates, listUnlockRequests, startAccessAs, stopAccessAs } from './services/api';
+import { getMe, listAccessAsCandidates, listUnlockRequests, listPendingGiveaways, startAccessAs, stopAccessAs } from './services/api';
 import type { AdminUser, UserRole } from './types';
 import LoginPage from './pages/LoginPage';
 import ForcePasswordChange from './components/auth/ForcePasswordChange';
@@ -180,7 +180,10 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
   const [accessAsSearch, setAccessAsSearch] = useState('');
   const { activePortal, navigate } = useAppStore();
   const setUnlockRequests = useErpStore(s => s.setUnlockRequests);
+  const setPendingGiveaways = useErpStore(s => s.setPendingGiveaways);
   const pendingUnlocks = useErpStore(s => s.unlockRequests.length);
+  const pendingGiveaways = useErpStore(s => s.pendingGiveaways.length);
+  const pendingApprovals = pendingUnlocks + pendingGiveaways;
   const role = user?.role;
   const actorRole = user?.actorRole || role;
   const canReviewUnlocks = ['APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '');
@@ -196,19 +199,32 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
   useEffect(() => {
     if (!canReviewUnlocks) {
       setUnlockRequests([]);
+      setPendingGiveaways([]);
       return;
     }
     const fetchReqs = async () => {
-      try { setUnlockRequests(await listUnlockRequests('PENDING', true)); }
-      catch (e) { console.error('Fetch unlock requests failed', e); }
+      try {
+        const [unlocks, giveaways] = await Promise.all([
+          listUnlockRequests('PENDING', true),
+          listPendingGiveaways(true)
+        ]);
+        setUnlockRequests(unlocks);
+        setPendingGiveaways(giveaways);
+      } catch (e) { console.error('Fetch approvals failed', e); }
     };
     fetchReqs();
-  }, [canReviewUnlocks, setUnlockRequests]);
+  }, [canReviewUnlocks, setUnlockRequests, setPendingGiveaways]);
 
   useSocketEvent('so_updated', async () => {
     if (!canReviewUnlocks) return;
-    try { setUnlockRequests(await listUnlockRequests('PENDING', true)); }
-    catch (e) { console.error('Fetch unlock requests failed', e); }
+    try {
+      const [unlocks, giveaways] = await Promise.all([
+        listUnlockRequests('PENDING', true),
+        listPendingGiveaways(true)
+      ]);
+      setUnlockRequests(unlocks);
+      setPendingGiveaways(giveaways);
+    } catch (e) { console.error('Fetch approvals failed', e); }
   });
 
   useEffect(() => {
@@ -345,10 +361,10 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                             <span className="text-[11px] text-muted-foreground">{n.sub}</span>
                           </div>
                         )}
-                        {n.badge && pendingUnlocks > 0 && (
+                        {n.badge && pendingApprovals > 0 && (
                           <span className={`absolute bg-amber-500 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${
                             isSidebarCollapsed ? 'top-1.5 right-1.5 h-3.5 w-3.5' : 'top-3 right-3 h-4 w-4'}`}>
-                            {pendingUnlocks}
+                            {pendingApprovals}
                           </span>
                         )}
                       </button>
@@ -397,9 +413,9 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
             {canReviewUnlocks && (
               <button className="relative rounded-lg p-2 text-muted-foreground hover:bg-amber-50 hover:text-amber-700 transition-colors" onClick={() => setShowUnlockReview(true)} title="คำขออนุมัติ">
                 <Unlock className="h-5 w-5" />
-                {pendingUnlocks > 0 && (
+                {pendingApprovals > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-white">
-                    {pendingUnlocks}
+                    {pendingApprovals}
                   </span>
                 )}
               </button>
@@ -565,9 +581,9 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 isActive ? 'text-foreground' : 'text-muted-foreground'}`}>
               <Icon className="h-5 w-5" />
               {n.label}
-              {n.badge && pendingUnlocks > 0 && (
+              {n.badge && pendingApprovals > 0 && (
                 <span className="absolute top-1 right-1/4 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-white">
-                  {pendingUnlocks}
+                  {pendingApprovals}
                 </span>
               )}
             </button>
@@ -592,7 +608,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
         groups={NAV_GROUPS}
         activePortal={activePortal}
         userRole={role}
-        pendingUnlocks={pendingUnlocks}
+        pendingUnlocks={pendingApprovals}
         onNavigate={(key) => {
           if (key === 'approvals') {
             setShowUnlockReview(true);
@@ -605,7 +621,10 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
       {showUnlockReview && (
         <UnlockReviewModal
           onClose={() => setShowUnlockReview(false)}
-          onDone={() => setUnlockRequests([]) /* Force repoll logic by clearing local state */}
+          onDone={() => {
+            setUnlockRequests([]);
+            setPendingGiveaways([]);
+          }}
         />
       )}
 
