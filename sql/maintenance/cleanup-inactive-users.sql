@@ -1,4 +1,4 @@
--- =============================================================
+﻿-- =============================================================
 -- cleanup-inactive-users.sql — จัดการบัญชีที่ปิดใช้งานแล้วแต่รหัสผ่านยังใช้ร่วมกับคนอื่น
 --
 -- ปัญหาที่แก้ (D6-02 ส่วนที่ยังค้าง)
@@ -25,7 +25,7 @@ GO
 
 -- ── ขั้นที่ 1 · ภาพรวมของปัญหา (อ่านอย่างเดียว) ────────────────────────
 
-SELECT N'บัญชีทั้งหมด' AS รายการ, COUNT(*) AS จำนวน FROM wf.AppUser
+SELECT N'บัญชีทั้งหมด' AS [รายการ], COUNT(*) AS [จำนวน] FROM wf.AppUser
 UNION ALL SELECT N'ใช้งานอยู่',   COUNT(*) FROM wf.AppUser WHERE IsActive = 1
 UNION ALL SELECT N'ปิดใช้งาน',    COUNT(*) FROM wf.AppUser WHERE IsActive = 0
 UNION ALL SELECT N'รหัสผ่านซ้ำกับบัญชีอื่น', COUNT(*) FROM wf.AppUser
@@ -34,10 +34,10 @@ UNION ALL SELECT N'รหัสผ่านซ้ำกับบัญชีอ�
 UNION ALL SELECT N'ตั้งธงบังคับเปลี่ยนแล้ว', COUNT(*) FROM wf.AppUser WHERE MustChangePassword = 1;
 
 -- กลุ่มรหัสผ่านที่ใช้ร่วมกัน — ตัวเลขนี้คือขนาดของช่องโหว่
-SELECT COUNT(*) AS จำนวนบัญชีในกลุ่ม,
-       SUM(CASE WHEN IsActive = 1 THEN 1 ELSE 0 END) AS ยังใช้งาน,
-       SUM(CASE WHEN IsActive = 0 THEN 1 ELSE 0 END) AS ปิดใช้งาน,
-       MIN(Username) AS ตัวอย่างบัญชี
+SELECT COUNT(*) AS [จำนวนบัญชีในกลุ่ม],
+       SUM(CASE WHEN IsActive = 1 THEN 1 ELSE 0 END) AS [ยังใช้งาน],
+       SUM(CASE WHEN IsActive = 0 THEN 1 ELSE 0 END) AS [ปิดใช้งาน],
+       MIN(Username) AS [ตัวอย่างบัญชี]
 FROM wf.AppUser
 GROUP BY PasswordHash
 HAVING COUNT(*) > 1
@@ -46,7 +46,7 @@ ORDER BY COUNT(*) DESC;
 -- บัญชีที่ปิดใช้งาน แต่ยังถือรหัสผ่านร่วมกับคนที่ยังทำงานอยู่ — กลุ่มเป้าหมายของสคริปต์นี้
 SELECT u.Username, u.DisplayName, u.Role, u.EmpId, u.MustChangePassword,
        (SELECT COUNT(*) FROM wf.AppUser p
-        WHERE p.PasswordHash = u.PasswordHash AND p.IsActive = 1) AS คนที่ยังทำงานและใช้รหัสเดียวกัน
+        WHERE p.PasswordHash = u.PasswordHash AND p.IsActive = 1) AS [คนที่ยังทำงานและใช้รหัสเดียวกัน]
 FROM wf.AppUser u
 WHERE u.IsActive = 0
   AND u.PasswordHash IN (SELECT PasswordHash FROM wf.AppUser
@@ -71,19 +71,19 @@ WHERE IsActive = 0
   AND PasswordHash IN (SELECT PasswordHash FROM wf.AppUser
                        GROUP BY PasswordHash HAVING COUNT(*) > 1);
 
-SELECT N'ตัดรหัสผ่านของบัญชีที่ปิดใช้งาน' AS ผลลัพธ์, @@ROWCOUNT AS จำนวนบัญชี;
+SELECT N'ตัดรหัสผ่านของบัญชีที่ปิดใช้งาน' AS [ผลลัพธ์], @@ROWCOUNT AS [จำนวนบัญชี];
 GO
 
 -- ── ขั้นที่ 3 · ตรวจผล ─────────────────────────────────────────────────
 
-SELECT N'บัญชีปิดใช้งานที่รหัสยังซ้ำ' AS ตรวจสอบ, COUNT(*) AS จำนวน
+SELECT N'บัญชีปิดใช้งานที่รหัสยังซ้ำ' AS [ตรวจสอบ], COUNT(*) AS [จำนวน]
 FROM wf.AppUser
 WHERE IsActive = 0
   AND PasswordHash IN (SELECT PasswordHash FROM wf.AppUser
                        GROUP BY PasswordHash HAVING COUNT(*) > 1);
 -- ต้องได้ 0
 
-SELECT N'บัญชีที่ยังใช้งานและรหัสยังซ้ำ' AS ตรวจสอบ, COUNT(*) AS จำนวน
+SELECT N'บัญชีที่ยังใช้งานและรหัสยังซ้ำ' AS [ตรวจสอบ], COUNT(*) AS [จำนวน]
 FROM wf.AppUser
 WHERE IsActive = 1
   AND PasswordHash IN (SELECT PasswordHash FROM wf.AppUser
@@ -96,11 +96,11 @@ GO
 -- ใช้รันซ้ำเป็นระยะ เพื่อรายงานต่อผู้ตรวจว่าเหลืออีกกี่คน
 
 SELECT u.Role,
-       COUNT(*)                                             AS ทั้งหมด,
-       SUM(CASE WHEN u.MustChangePassword = 1 THEN 1 ELSE 0 END) AS ยังไม่เปลี่ยน,
-       SUM(CASE WHEN u.MustChangePassword = 0 THEN 1 ELSE 0 END) AS เปลี่ยนแล้ว
+       COUNT(*)                                             AS [ทั้งหมด],
+       SUM(CASE WHEN u.MustChangePassword = 1 THEN 1 ELSE 0 END) AS [ยังไม่เปลี่ยน],
+       SUM(CASE WHEN u.MustChangePassword = 0 THEN 1 ELSE 0 END) AS [เปลี่ยนแล้ว]
 FROM wf.AppUser u
 WHERE u.IsActive = 1
 GROUP BY u.Role
-ORDER BY ยังไม่เปลี่ยน DESC;
+ORDER BY [ยังไม่เปลี่ยน] DESC;
 GO
