@@ -1,4 +1,4 @@
--- =============================================================
+﻿-- =============================================================
 -- cleanup-e2e-users.sql — ล้างบัญชีทดสอบ e2e_* ออกจาก wf.AppUser
 --
 -- ใช้เมื่อ: จะส่งมอบระบบขึ้นใช้งานจริง หรือส่งหลักฐานให้ผู้ตรวจ
@@ -29,34 +29,34 @@ DECLARE @Targets TABLE (Id INT PRIMARY KEY, Username NVARCHAR(100), Role NVARCHA
 INSERT INTO @Targets (Id, Username, Role)
 SELECT Id, Username, Role FROM wf.AppUser WHERE Username LIKE 'e2e[_]%';
 
-SELECT N'บัญชีทดสอบที่พบ' AS รายการ, COUNT(*) AS จำนวน FROM @Targets;
+SELECT N'บัญชีทดสอบที่พบ' AS [รายการ], COUNT(*) AS [จำนวน] FROM @Targets;
 SELECT Username, Role FROM @Targets ORDER BY Username;
 
 -- นับการอ้างถึงจากทุกตารางที่มี foreign key มาที่ wf.AppUser
 -- ตัวเลขนี้คือเหตุผลว่าทำไมบางบัญชีลบไม่ได้
 SELECT t.Username, t.Role,
-       (SELECT COUNT(*) FROM wf.SalesOrder        x WHERE x.SalesUserId       = t.Id) AS ใบสั่งขาย,
-       (SELECT COUNT(*) FROM wf.SalesOrderAudit   x WHERE x.UserId            = t.Id) AS ประวัติใบสั่งขาย,
+       (SELECT COUNT(*) FROM wf.SalesOrder        x WHERE x.SalesUserId       = t.Id) AS [ใบสั่งขาย],
+       (SELECT COUNT(*) FROM wf.SalesOrderAudit   x WHERE x.UserId            = t.Id) AS [ประวัติใบสั่งขาย],
        (SELECT COUNT(*) FROM wf.RebateClaim       x WHERE x.SalesUserId       = t.Id
-                                                      OR x.ApprovedBy         = t.Id) AS ใบขอเคลียร์,
-       (SELECT COUNT(*) FROM wf.RebateClaimApproval x WHERE x.DecidedBy       = t.Id) AS อนุมัติเคลียร์,
-       (SELECT COUNT(*) FROM wf.RebatePlanApproval  x WHERE x.DecidedBy       = t.Id) AS อนุมัติโปรโมชั่น,
+                                                      OR x.ApprovedBy         = t.Id) AS [ใบขอเคลียร์],
+       (SELECT COUNT(*) FROM wf.RebateClaimApproval x WHERE x.DecidedBy       = t.Id) AS [อนุมัติเคลียร์],
+       (SELECT COUNT(*) FROM wf.RebatePlanApproval  x WHERE x.DecidedBy       = t.Id) AS [อนุมัติโปรโมชั่น],
        (SELECT COUNT(*) FROM wf.PriceBook         x WHERE x.CreatedBy         = t.Id
                                                       OR x.ApprovedBy         = t.Id
-                                                      OR x.ActivatedBy        = t.Id) AS ตารางราคา,
+                                                      OR x.ActivatedBy        = t.Id) AS [ตารางราคา],
        (SELECT COUNT(*) FROM wf.PriceBookSpecialPrice x WHERE x.RequestedBy   = t.Id
-                                                          OR x.ApprovedBy     = t.Id) AS ราคาพิเศษ,
+                                                          OR x.ApprovedBy     = t.Id) AS [ราคาพิเศษ],
        (SELECT COUNT(*) FROM wf.WeighTicket       x WHERE x.CreatedBy         = t.Id
-                                                      OR x.OverrideApprovedBy = t.Id) AS ใบชั่ง,
-       (SELECT COUNT(*) FROM wf.PaperTrail        x WHERE x.HolderUserId      = t.Id) AS เอกสารในมือ,
-       (SELECT COUNT(*) FROM wf.Quotation         x WHERE x.SalesUserId       = t.Id) AS ใบเสนอราคา,
+                                                      OR x.OverrideApprovedBy = t.Id) AS [ใบชั่ง],
+       (SELECT COUNT(*) FROM wf.PaperTrail        x WHERE x.HolderUserId      = t.Id) AS [เอกสารในมือ],
+       (SELECT COUNT(*) FROM wf.Quotation         x WHERE x.SalesUserId       = t.Id) AS [ใบเสนอราคา],
        (SELECT COUNT(*) FROM wf.GiveawayBorrowRequest x WHERE x.RequesterId   = t.Id
                                                           OR x.ApproverId     = t.Id
-                                                          OR x.LenderId       = t.Id) AS ขอยืมของแถม,
+                                                          OR x.LenderId       = t.Id) AS [ขอยืมของแถม],
        (SELECT COUNT(*) FROM wf.UnlockRequest     x WHERE x.RequesterId       = t.Id
-                                                      OR x.ApproverId         = t.Id) AS คำขอปลดล็อก,
+                                                      OR x.ApproverId         = t.Id) AS [คำขอปลดล็อก],
        (SELECT COUNT(*) FROM wf.ApiAuditLog       x WHERE x.ActorUserId       = t.Id
-                                                      OR x.EffectiveUserId    = t.Id) AS บันทึกเรียก_API
+                                                      OR x.EffectiveUserId    = t.Id) AS [บันทึกเรียก_API]
 FROM @Targets t
 ORDER BY t.Username;
 GO
@@ -75,7 +75,7 @@ SET IsActive           = 0,
 WHERE Username LIKE 'e2e[_]%'
   AND IsActive = 1;
 
-SELECT N'ปิดใช้งานแล้ว' AS ผลลัพธ์, @@ROWCOUNT AS จำนวนบัญชี;
+SELECT N'ปิดใช้งานแล้ว' AS [ผลลัพธ์], @@ROWCOUNT AS [จำนวนบัญชี];
 GO
 
 -- ── ขั้นที่ 3 · ลบบัญชีที่ไม่มีใครอ้างถึงเลย (เอาคอมเมนต์ออกเมื่อพอใจผลขั้นที่ 1) ──
@@ -115,19 +115,19 @@ WHERE u.Username LIKE 'e2e[_]%'
   AND NOT EXISTS (SELECT 1 FROM wf.ReconResolution       x WHERE x.ResolvedBy        = u.Id)
   AND NOT EXISTS (SELECT 1 FROM wf.DsarLog               x WHERE x.RequestedBy       = u.Id);
 
-SELECT N'ลบออกแล้ว' AS ผลลัพธ์, @@ROWCOUNT AS จำนวนบัญชี;
+SELECT N'ลบออกแล้ว' AS [ผลลัพธ์], @@ROWCOUNT AS [จำนวนบัญชี];
 */
 GO
 
 -- ── ขั้นที่ 4 · ตรวจผล ─────────────────────────────────────────────────
 
 SELECT Username, Role, IsActive, MustChangePassword,
-       CASE WHEN PasswordHash LIKE N'disabled-e2e-%' THEN N'ตัดรหัสผ่านแล้ว' ELSE N'ยังใช้รหัสเดิม' END AS สถานะรหัสผ่าน
+       CASE WHEN PasswordHash LIKE N'disabled-e2e-%' THEN N'ตัดรหัสผ่านแล้ว' ELSE N'ยังใช้รหัสเดิม' END AS [สถานะรหัสผ่าน]
 FROM wf.AppUser
 WHERE Username LIKE 'e2e[_]%'
 ORDER BY Username;
 
-SELECT N'บัญชี e2e ที่ยังเข้าระบบได้' AS ตรวจสอบ, COUNT(*) AS จำนวน
+SELECT N'บัญชี e2e ที่ยังเข้าระบบได้' AS [ตรวจสอบ], COUNT(*) AS [จำนวน]
 FROM wf.AppUser WHERE Username LIKE 'e2e[_]%' AND IsActive = 1;
 -- ต้องได้ 0
 GO
