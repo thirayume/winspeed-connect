@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Scale, RefreshCw, Search, X, Wifi, WifiOff, Package } from 'lucide-react';
 import { pingTruckScale, fetchTruckScaleWeigh, fetchTruckScaleDetail } from '../../services/api';
 import type { TruckScaleWeigh, TruckScaleDetail } from '../../types';
-import { formatThaiDate } from '../../utils/date';
+import { formatBuddhistDateString } from '../../utils/date';
 
 const kg = (n: number) => `${Number(n).toLocaleString()} กก.`;
 const ton = (n: number) => `${(Number(n) / 1000).toLocaleString('th-TH', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ตัน`;
@@ -90,7 +90,7 @@ export function TruckScalePage() {
                     <td className="px-4 py-2.5 text-right text-gray-500 whitespace-nowrap">{fmtTon(r.WeightIn)}</td>
                     <td className="px-4 py-2.5 text-right text-gray-500 whitespace-nowrap">{fmtTon(r.WeightOut)}</td>
                     <td className="px-4 py-2.5 text-right font-bold text-[#0C447C] whitespace-nowrap">{fmtTon(r.WeightNet)}</td>
-                    <td className="px-4 py-2.5 text-center text-xs text-gray-400 whitespace-nowrap">{r.DateOut && r.DateOut !== '0' ? formatThaiDate(r.DateOut) : '—'}</td>
+                    <td className="px-4 py-2.5 text-center text-xs text-gray-400 whitespace-nowrap">{formatBuddhistDateString(r.DateOut, '—')}</td>
                     <td className="px-4 py-2.5 text-center text-xs whitespace-nowrap">{r.WeighType}</td>
                   </tr>
                 ))}
