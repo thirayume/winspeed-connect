@@ -72,6 +72,23 @@ const BE_PATTERN = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
       ? `ไม่ตรง ${mismatched.length} ใบ เช่น ${mismatched[0].Date_Out} vs serial ${mismatched[0].Date_Out2}`
       : `ตรวจ ${scale.length} ใบ`);
 
+  // ── 1.1 · ใบที่ชั่งออกแล้วต้องมีวันที่ชั่งออกเสมอ ───────────────────
+  //
+  // ใบที่ weight_out > 0 แต่ Date_Out ว่าง จะหายไปจากรายงานที่กรองด้วยวันที่
+  // และหน้าจอแสดงเป็นขีดกลางเหมือนใบที่ยังไม่ชั่งออก ซึ่งคนละความหมายกัน
+  // ซ่อมด้วย migrations/mysql/002 ซึ่งคำนวณกลับจาก Date_Out2
+  const missing = await tsQuery(`
+    SELECT COUNT(*) AS total,
+           SUM(CASE WHEN Date_Out2 > 0 THEN 1 ELSE 0 END) AS repairable
+    FROM tblscale
+    WHERE weight_out > 0
+      AND (Date_Out IS NULL OR TRIM(Date_Out) = '' OR TRIM(Date_Out) = '0')`);
+  const missTotal = Number(missing[0]?.total || 0);
+  const missRepairable = Number(missing[0]?.repairable || 0);
+  check(missTotal === 0, 'ใบที่ชั่งออกแล้วมีวันที่ชั่งออกครบทุกใบ',
+    missTotal === 0 ? '' :
+      `พบ ${missTotal} ใบ · ซ่อมได้จาก Date_Out2 ${missRepairable} ใบ — รัน migrations/mysql/002`);
+
   // ── 2 · สำเนาใน wf.WeighInbox ────────────────────────────────────
   console.log('\nสำเนาใน wf.WeighInbox');
   const inbox = (await wfQuery(`
@@ -96,6 +113,12 @@ const BE_PATTERN = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
         ? `ผิด ${inboxBad.length} แถว เช่น ${inboxBad[0].DateOut}`
         : `ตรวจ ${dated.length} แถว · ยังไม่ชั่งออก ${sentinels} แถว`);
   }
+
+  const copyMissing = (await wfQuery(`
+    SELECT COUNT(*) AS n FROM wf.WeighInbox
+    WHERE WeightOut > 0 AND (DateOut IS NULL OR LTRIM(RTRIM(DateOut)) IN (N'', N'0'))`)).recordset[0].n;
+  check(Number(copyMissing) === 0, 'สำเนาที่ชั่งออกแล้วมีวันที่ครบทุกแถว',
+    Number(copyMissing) === 0 ? '' : `พบ ${copyMissing} แถว — รัน migration 073`);
 
   // ── 3 · ฝั่ง SQL Server ต้องเป็น ค.ศ. ─────────────────────────────
   console.log('\nตารางของแอปและ WINSpeed (ต้องเป็น ค.ศ.)');
