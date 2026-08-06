@@ -924,10 +924,10 @@ router.get('/giveaways/pending', requireRole('MANAGER', 'ADMIN', 'C_LEVEL', 'APP
     if (!(await hasGiveawayApprovalColumns())) return res.json([]);
     const r = await wfQuery(`
       SELECT l.SoId, l.LineNum, l.GoodName, l.QtyTon, l.QtyBag, 
-             s.WfRef, s.CustName, s.CreatedAt, u.Username AS CreatedByName
+             s.WfRef, s.CustName, s.CreatedAt, u.DisplayName AS CreatedByName
       FROM wf.SalesOrderLine l
       INNER JOIN wf.SalesOrder s ON s.Id = l.SoId
-      LEFT JOIN wf.Users u ON u.Id = s.CreatedBy
+      LEFT JOIN wf.AppUser u ON u.Id = s.CreatedBy
       WHERE l.IsGiveaway = 1 AND ISNULL(l.GiveawayApprovalStatus, 'PENDING') = 'PENDING' AND s.Status = 'DRAFT'
       ORDER BY s.CreatedAt ASC
     `);
