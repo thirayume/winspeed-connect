@@ -6,6 +6,7 @@ import {
 } from '../../services/api';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { useAppStore } from '../../store/app-store';
+import { appPrompt } from '../ui/AppAlert';
 import { formatBuddhistDateString } from '../../utils/date';
 
 const MATCH_BADGE: Record<string, string> = {
@@ -52,7 +53,7 @@ export function WeighInboxPage() {
     finally { setSyncing(false); }
   }
   async function doMatch(row: WeighInboxRow) {
-    const soId = prompt(`จับคู่ใบชั่ง ${row.Sequence} (ทะเบียน ${row.Plate}) กับ SO Id:`);
+    const soId = await appPrompt(`จับคู่ใบชั่ง ${row.Sequence} (ทะเบียน ${row.Plate}) กับ SO Id:`);
     if (!soId) return;
     try { await matchWeighInbox(row.Id, soId.trim()); await load(filter); }
     catch (e: unknown) { alert((e as Error).message); }
