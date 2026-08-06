@@ -4,6 +4,7 @@ import { fetchSoStats, fetchAgingOrders, fetchRebateSummary, fetchSalesOrders } 
 import { useSocketEvent } from '../../hooks/useSocket';
 import { useAuthStore } from '../../store/auth-store';
 import { canViewAllRebateAmounts } from '../../utils/permissions';
+import { formatThaiDate } from '../../utils/date';
 import type { AgingRow, RebateSummary, SalesOrder } from '../../types';
 import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
 
@@ -235,8 +236,8 @@ export function DashboardPage() {
                           <td className="py-2 pr-3 font-mono font-bold text-[#0C447C] whitespace-nowrap">{row.wfRef || row.importedDocuNo || row.id}</td>
                           <td className="py-2 px-3 max-w-[220px] truncate" title={row.custName}>{row.custName}</td>
                           <td className="py-2 px-3 font-mono whitespace-nowrap">{row.truckPlate || (row.noTruckRequired ? 'ไม่ต้องระบุรถ' : '-')}</td>
-                          <td className="py-2 px-3 whitespace-nowrap">{row.requestedAt ? new Date(row.requestedAt).toLocaleString('th-TH') : '-'}</td>
-                          <td className="py-2 px-3 whitespace-nowrap">{row.deliveryDate ? new Date(row.deliveryDate).toLocaleDateString('th-TH') : '-'}</td>
+                          <td className="py-2 px-3 whitespace-nowrap">{row.requestedAt ? formatThaiDate(row.requestedAt, true) : '-'}</td>
+                          <td className="py-2 px-3 whitespace-nowrap">{row.deliveryDate ? formatThaiDate(row.deliveryDate) : '-'}</td>
                           <td className="py-2 pl-3 whitespace-nowrap">{SO_STATUS_META[row.status]?.label || row.status}</td>
                         </tr>
                       ))}

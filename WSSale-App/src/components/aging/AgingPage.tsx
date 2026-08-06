@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Search, RefreshCw, X, Clock, Package, ChevronLeft, ChevronRight, Truck } from 'lucide-react';
 import { searchAgingOrders } from '../../services/api';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
+import { useAppStore } from '../../store/app-store';
 import type { AgingRow, SOStatus } from '../../types';
 import { SO_STATUS_META } from '../../constants/soStatus';
 
@@ -18,6 +19,7 @@ export const AgingPage = () => {
   const [total, setTotal]     = useState(0);
   const [page, setPage]       = useState(1);
   const [loading, setLoading] = useState(false);
+  const navigate = useAppStore(s => s.navigate);
 
   const [search, setSearch]       = useState('');
   const [inputVal, setInputVal]   = useState('');
@@ -66,7 +68,7 @@ export const AgingPage = () => {
       truckPlate: string;
       custName: string;
       maxDays: number;
-      wfRefs: Set<string>;
+      wfRefs: Map<string, string>;
       items: { code: string; name?: string; qty: number; wfRef: string }[];
       totalQty: number;
     }> = {};
@@ -82,7 +84,7 @@ export const AgingPage = () => {
           truckPlate: truck,
           custName: a.CustName,
           maxDays: a.DaysOpen,
-          wfRefs: new Set<string>(),
+          wfRefs: new Map<string, string>(),
           items: [],
           totalQty: 0
         };
@@ -90,7 +92,7 @@ export const AgingPage = () => {
       if (a.DaysOpen > groups[key].maxDays) {
         groups[key].maxDays = a.DaysOpen;
       }
-      if (a.WfRef) groups[key].wfRefs.add(a.WfRef);
+      if (a.WfRef) groups[key].wfRefs.set(a.WfRef, String(a.SoId));
       
       const qty = Number(a.QtyTon || 0);
       groups[key].totalQty += qty;
@@ -109,7 +111,7 @@ export const AgingPage = () => {
     }
     return Object.values(groups).map(g => ({
       ...g,
-      wfRefs: Array.from(g.wfRefs)
+      wfRefs: Array.from(g.wfRefs.entries()).map(([ref, id]) => ({ ref, id }))
     })).sort((a, b) => b.maxDays - a.maxDays);
   }, [data]);
 
@@ -233,7 +235,19 @@ export const AgingPage = () => {
                     
                     {g.wfRefs.length > 0 && (
                       <div className="mt-1 text-[10px] text-gray-400 font-mono flex gap-1 flex-wrap">
-                        {g.wfRefs.map(ref => <span key={ref} className="bg-gray-100 border border-gray-200 text-gray-600 px-1.5 py-0.5 rounded shadow-sm">{ref}</span>)}
+                        {g.wfRefs.map(({ ref, id }) => (
+                          <button 
+                            key={ref} 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate('sales', { action: 'edit', soId: id });
+                            }}
+                            title="เปิดเอกสารต้นทาง (Sales Portal)"
+                            className="bg-gray-100 border border-gray-200 text-[#0C447C] font-semibold hover:bg-blue-50 hover:border-blue-200 hover:underline px-1.5 py-0.5 rounded shadow-sm cursor-pointer transition-colors"
+                          >
+                            {ref}
+                          </button>
+                        ))}
                       </div>
                     )}
                     

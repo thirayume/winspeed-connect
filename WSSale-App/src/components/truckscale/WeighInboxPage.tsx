@@ -7,7 +7,7 @@ import {
 import { useSocketEvent } from '../../hooks/useSocket';
 import { useAppStore } from '../../store/app-store';
 import { appPrompt } from '../ui/AppAlert';
-import { formatBuddhistDateString } from '../../utils/date';
+import { formatBuddhistDateString, formatThaiDate } from '../../utils/date';
 
 const MATCH_BADGE: Record<string, string> = {
   MATCHED: 'bg-green-100 text-green-700', MULTI: 'bg-amber-100 text-amber-700',
@@ -118,7 +118,7 @@ export function WeighInboxPage() {
               <button key={v} onClick={() => { setFilter(v); setPage(1); }} className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-semibold ${filter === v ? 'bg-[#0C447C] text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>{l}</button>
             ))}
           </div>
-          <div className="text-xs text-gray-400">sync ล่าสุด: {status?.watermark?.LastSyncAt ? new Date(status.watermark.LastSyncAt).toLocaleString('th-TH') : '–'}</div>
+          <div className="text-xs text-gray-400">sync ล่าสุด: {status?.watermark?.LastSyncAt ? formatThaiDate(status.watermark.LastSyncAt, true) : '–'}</div>
         </div>
 
         <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
