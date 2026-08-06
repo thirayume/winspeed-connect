@@ -12,6 +12,16 @@ normative: true
 >
 > ตั้งแต่ 1.6.0 เป็นต้นไป ชุดเอกสาร **v1.5.0 ถือเป็นฐานที่สมบูรณ์แล้วและจะไม่ถูกแก้ในที่เดิม** — การเปลี่ยนแปลงทุกอย่างบันทึกเป็นส่วนต่างในไฟล์นี้และใน [CHANGES-v1.5.0-TO-v1.6.0](CHANGES-v1.5.0-TO-v1.6.0.md)
 
+## [1.6.1] - 2026-08-06
+
+### Added
+- **Legacy Rebate Data Migration**: Added a migration script and a backend route to migrate old WINSpeed coupon data (`dbo.WFCoupon`) into the new `wf.RebatePlan` architecture.
+- Added a "Migrate to App" button in the CN Rebate page (for ADMIN, MANAGER, C_LEVEL roles) to trigger the legacy data migration with a dynamic Baht/Ton conversion rate.
+
+### Fixed
+- Fixed TypeScript errors in `SalesPortal.tsx` related to `navParams.soId` coercion when setting `selectedId` and fetching order details.
+- Fixed `AppAlert` missing export in `CnRebatePage.tsx` by reverting to standard `window.alert()`.
+
 ## [1.6.0] - 2026-08-06
 
 รุ่นนี้ทำตาม [V1.6.0-IMPLEMENTATION-PLAN](../09-ROADMAP-AND-BACKLOG/V1.6.0-IMPLEMENTATION-PLAN.md) — ต้นทางคือเอกสารกระดาษจริงของฝ่ายขาย (ใบขอเคลียร์รีเบท ใบขออนุมัติโปรโมชั่น ฟอร์มราคาประจำเดือน) และรายงาน Crystal Reports เดิมของเครื่องชั่ง รายละเอียดระดับเอกสารและสิ่งที่ต้องรีวิวอยู่ใน [CHANGES-v1.5.0-TO-v1.6.0](CHANGES-v1.5.0-TO-v1.6.0.md)

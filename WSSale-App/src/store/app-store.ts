@@ -3,10 +3,11 @@ import { create } from 'zustand';
 type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'weigh-inbox' | 'policy' | 'governance' | 'ops' | 'admin' | 'master' | 'profile';
 
 type NavParams = {
-  soId?: number;
+  soId?: number | string;
   quoteId?: number;
   quoteNo?: string;
   action?: 'edit' | 'view';
+  search?: string;
 };
 
 type AppState = {

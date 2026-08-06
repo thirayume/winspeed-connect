@@ -8,17 +8,12 @@ import { appConfirm, appPrompt } from '../ui/AppAlert';
 import { RequestActionModal, type RequestActionType } from '../papertrail/RequestActionModal';
 import { useAuthStore } from '../../store/auth-store';
 import { canViewRebateAmounts } from '../../utils/permissions';
+import { formatThaiDate } from '../../utils/date';
 import type { SalesOrder } from '../../types';
 
 function formatDateTime(value?: string | null) {
   if (!value) return '-';
-  return new Date(value).toLocaleString('th-TH', {
-    year: '2-digit',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatThaiDate(value, true);
 }
 
 export function SODetailsPanel({
@@ -127,7 +122,7 @@ export function SODetailsPanel({
               <CalendarClock size={15} className="text-blue-500 shrink-0" />
               <div>
                 <p className="text-xs text-blue-500">วันที่แจ้ง/เวลานัด</p>
-                <p className="font-bold text-blue-900">{new Date(so.requestedAt).toLocaleString('th-TH')}</p>
+                <p className="font-bold text-blue-900">{formatThaiDate(so.requestedAt, true)}</p>
               </div>
             </div>
           )}

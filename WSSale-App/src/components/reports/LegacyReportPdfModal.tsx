@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { Printer, X, FileText, Settings } from 'lucide-react';
 import type { ReportData } from '../../services/api';
+import { formatThaiDate } from '../../utils/date';
 import { getDocHeaderConfig, type DocHeaderConfig, DEFAULT_WF_LOGO_DATA_URL } from '../../utils/docHeaderSettings';
 import { DocHeaderSettingsModal } from '../common/DocHeaderSettingsModal';
 import { useAuthStore } from '../../store/auth-store';
@@ -75,7 +76,7 @@ export function LegacyReportPdfModal({ data, onClose }: { data: ReportData; onCl
 
   if (!data) return null;
 
-  const nowStr = new Date().toLocaleString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const nowStr = formatThaiDate(new Date(), true);
 
   // Calculate column totals for numeric columns
   const totals: Record<string, number> = {};

@@ -5,7 +5,8 @@ import {
   fetchGiveawayItems, createGiveawayWithdrawal, fetchGiveawayBorrowRequests, resolveGiveawayBorrowRequest
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
-import { appPrompt } from '../ui/AppAlert';
+import { formatThaiDate } from '../../utils/date';
+import { appPrompt, appConfirm } from '../ui/AppAlert';
 import type { GiveawayRegion, GiveawayBudgetLine, GiveawayWithdrawal, GiveawayItem } from '../../types';
 
 const TH_MONTHS = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
@@ -190,7 +191,7 @@ export function GiveawayPage() {
                             </span>
                             <span className="ml-2 text-sm font-bold text-gray-700">{r.RequesterName} ขอยืมจาก {r.LenderName}</span>
                           </div>
-                          <div className="text-xs text-gray-400">{new Date(r.RequestedAt).toLocaleString()}</div>
+                          <div className="text-xs text-gray-400">{formatThaiDate(r.RequestedAt, true)}</div>
                         </div>
                         <div className="text-sm mt-2">
                           <span className="font-semibold text-gray-600">รายการ: </span> <span className="text-[#0C447C] font-bold">{r.Brand} - {r.ItemName}</span>
@@ -203,8 +204,8 @@ export function GiveawayPage() {
                         </div>
                         {r.Status === 'PENDING' && (r.LenderId === useAuthStore.getState().user?.id || ['ADMIN', 'MANAGER', 'C_LEVEL'].includes(role || '')) && (
                           <div className="mt-4 flex gap-2">
-                            <button onClick={() => {
-                              if(window.confirm('ยืนยันการอนุมัติ? ระบบจะหักโควต้าของคุณไปให้ผู้ขอยืม')) {
+                            <button onClick={async () => {
+                              if(await appConfirm('ยืนยันการอนุมัติ? ระบบจะหักโควต้าของคุณไปให้ผู้ขอยืม')) {
                                 resolveGiveawayBorrowRequest(r.Id, true).then(() => load()).catch(e => alert(e.message));
                               }
                             }} className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded hover:bg-green-700">อนุมัติให้ยืม</button>

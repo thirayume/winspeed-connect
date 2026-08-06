@@ -12,6 +12,7 @@ import { SODetailsPanel } from './SODetailsPanel';
 import { TripSetupModal } from './TripSetupModal';
 import { TripSummaryModal } from './TripSummaryModal';
 import { useTripStore } from '../../store/trip-store';
+import { formatThaiDate } from '../../utils/date';
 import { CheckCircle } from 'lucide-react';
 import type { SalesOrder, SOStatus } from '../../types';
 import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
@@ -94,7 +95,7 @@ export const SalesPortal = () => {
       return;
     }
 
-    if (window.confirm(`ต้องการยืนยันออร์เดอร์ทริปนี้ทั้ง ${tripOrders.length} บิลใช่หรือไม่?`)) {
+    if (await appConfirm(`ต้องการยืนยันออร์เดอร์ทริปนี้ทั้ง ${tripOrders.length} บิลใช่หรือไม่?`)) {
       try {
         setLoading(true);
         // Using existing confirmSO endpoint for each bill
@@ -152,10 +153,12 @@ export const SalesPortal = () => {
       if (navParams.action === 'edit') {
         setEditingSoId(navParams.soId ? String(navParams.soId) : null);
       } else {
-        setSelectedId(navParams.soId);
-        fetchSalesOrder(navParams.soId).then(so => {
-          setExternalSelectedSo(so);
-        }).catch(console.error);
+        setSelectedId(navParams.soId ? Number(navParams.soId) : null);
+        if (navParams.soId) {
+          fetchSalesOrder(Number(navParams.soId)).then(so => {
+            setExternalSelectedSo(so);
+          }).catch(console.error);
+        }
       }
       clearNavParams();
     }
@@ -172,7 +175,7 @@ export const SalesPortal = () => {
     const map = new Map<string, { dateDisplay: string; cust: string; truck: string; orders: SalesOrder[]; totalAmt: number; totalTon: number }>();
     for (const o of orders) {
       const dateRaw = o.deliveryDate ? o.deliveryDate.split('T')[0] : '9999-12-31';
-      const dateDisplay = o.deliveryDate ? new Date(o.deliveryDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : 'ไม่ระบุวันรับ';
+      const dateDisplay = o.deliveryDate ? formatThaiDate(o.deliveryDate) : 'ไม่ระบุวันรับ';
       const truck = o.truckPlate || 'ไม่ระบุทะเบียนรถ';
       const custId = o.custId || 'ไม่ระบุลูกค้า';
       const cust = customersMap[custId] || o.custName || custId;
@@ -204,7 +207,7 @@ export const SalesPortal = () => {
     const totalTon = tripOrders.reduce((s, l) => s + (l.lines || []).reduce((ss, ll) => ss + (ll.isGiveaway ? 0 : ll.qtyTon), 0), 0);
     
     return {
-      dateDisplay: activeTrip.deliveryDate ? new Date(activeTrip.deliveryDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : 'ไม่ระบุวันรับ',
+      dateDisplay: activeTrip.deliveryDate ? formatThaiDate(activeTrip.deliveryDate) : 'ไม่ระบุวันรับ',
       cust: activeTrip.custName,
       truck: activeTrip.truckPlate || 'ตั๋วคุม',
       orders: tripOrders,
@@ -318,7 +321,7 @@ export const SalesPortal = () => {
                     <div className="flex justify-between">
                       <span className="text-gray-500">กำหนดส่ง:</span>
                       <span className="font-bold text-gray-900">
-                        {activeTrip.deliveryDate ? new Date(activeTrip.deliveryDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : 'ไม่ระบุ'}
+                        {activeTrip.deliveryDate ? formatThaiDate(activeTrip.deliveryDate) : 'ไม่ระบุ'}
                       </span>
                     </div>
                   </div>

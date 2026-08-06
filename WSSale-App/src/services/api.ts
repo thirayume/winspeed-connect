@@ -751,6 +751,13 @@ export const fetchWfRebateTrailSummary = (params?: { year?: number }) => {
   return req<import('../types').WfRebateTrailSummary[]>(`/rebate/wf-trail-summary${suffix ? `?${suffix}` : ''}`);
 };
 
+export const migrateLegacyRebate = (rate: number) => {
+  return req<{ message: string; processedSalespersons: number; totalInjectedBaht: number }>(
+    `/rebate/migrate-legacy`,
+    { method: 'POST', body: JSON.stringify({ rate }) }
+  );
+};
+
 export const fetchWfRebateTrailList = (params: { year?: number; empId: number }) => {
   const qs = new URLSearchParams();
   if (params.year) qs.set('year', String(params.year));

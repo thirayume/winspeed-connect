@@ -4,7 +4,10 @@ import {
   fetchWfRebateTrailDetail,
   fetchWfRebateTrailList,
   fetchWfRebateTrailSummary,
+  migrateLegacyRebate,
 } from '../../services/api';
+import { useAuthStore } from '../../store/auth-store';
+import { appPrompt, appConfirm } from '../ui/AppAlert';
 import type { WfRebateTrailDetail, WfRebateTrailRow, WfRebateTrailSummary } from '../../types';
 
 type View = 'summary' | 'list' | 'detail';
@@ -72,6 +75,7 @@ export function CnRebatePage() {
   const [selectedOrder, setSelectedOrder] = useState<WfRebateTrailRow | null>(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const user = useAuthStore(s => s.user);
 
   const yearOptions = useMemo(() => Array.from({ length: 10 }, (_, i) => currentYear - i), []);
 
@@ -131,6 +135,37 @@ export function CnRebatePage() {
     }
   }
 
+  async function handleMigrate() {
+    const rateStr = await appPrompt({
+      title: 'Migrate Legacy Coupons',
+      message: 'กรุณาระบุอัตราแปลงตันเป็นบาท (Baht/Ton):',
+      placeholder: 'เช่น 100, 150',
+    });
+    if (!rateStr) return;
+    const rate = Number(rateStr);
+    if (isNaN(rate) || rate <= 0) {
+      alert('อัตราแลกเปลี่ยนไม่ถูกต้อง');
+      return;
+    }
+    
+    const confirm = await appConfirm({
+      title: 'Confirm Migration',
+      message: `คุณกำลังจะ Migrate คูปองคงเหลือทั้งหมดเป็น Plan: LEGACY-WS-COUPON ด้วยอัตรา ${rate} บาท/ตัน ดำเนินการต่อหรือไม่?`,
+    });
+    if (!confirm) return;
+
+    setLoading(true);
+    try {
+      const res = await migrateLegacyRebate(rate);
+      alert(`Migrate สำเร็จ ${res.processedSalespersons} คน (มูลค่ารวม: ${res.totalInjectedBaht.toLocaleString('th-TH')} บาท)`);
+      loadSummary();
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const totalOrders = summary.reduce((s, r) => s + Number(r.OrderCount || 0), 0);
   const totalCoupons = summary.reduce((s, r) => s + Number(r.CouponCount || 0), 0);
   const totalRedeemed = summary.reduce((s, r) => s + Number(r.RedeemedTon || 0), 0);
@@ -169,6 +204,15 @@ export function CnRebatePage() {
               {yearOptions.map(y => <option key={y} value={y - 543}>{y}</option>)}
             </select>
           </div>
+          {user && ['ADMIN', 'MANAGER', 'C_LEVEL'].includes(user.Role) && view === 'summary' && (
+            <button
+              onClick={handleMigrate}
+              disabled={loading}
+              className="px-3 py-2 text-sm font-medium bg-amber-500 text-white rounded-xl hover:bg-amber-600 transition-colors shadow-sm disabled:opacity-50"
+            >
+              Migrate to App
+            </button>
+          )}
           <button onClick={view === 'summary' ? loadSummary : () => runSearch(search)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
             <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
           </button>
