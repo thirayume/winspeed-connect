@@ -927,7 +927,7 @@ router.get('/giveaways/pending', requireRole('MANAGER', 'ADMIN', 'C_LEVEL', 'APP
              s.WfRef, s.CustName, s.CreatedAt, u.DisplayName AS CreatedByName
       FROM wf.SalesOrderLine l
       INNER JOIN wf.SalesOrder s ON s.Id = l.SoId
-      LEFT JOIN wf.AppUser u ON u.Id = s.CreatedBy
+      LEFT JOIN wf.AppUser u ON u.Id = s.SalesUserId
       WHERE l.IsGiveaway = 1 AND ISNULL(l.GiveawayApprovalStatus, 'PENDING') = 'PENDING' AND s.Status = 'DRAFT'
       ORDER BY s.CreatedAt ASC
     `);
