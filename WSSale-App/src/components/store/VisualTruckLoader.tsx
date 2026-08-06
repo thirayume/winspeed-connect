@@ -335,15 +335,29 @@ export const VisualTruckLoader = ({
           <div className="text-xs sm:text-sm font-medium text-slate-500">
             {unassigned.length > 0 ? (
               <span className="text-amber-600 flex items-center justify-center gap-1"><Package size={16}/> เหลืออีก {unassigned.length} รายการที่ต้องจัดวาง</span>
-            ) : (
-              <span className="text-emerald-600 flex items-center justify-center gap-1"><CheckCircle2 size={16}/> จัดวางครบทุกรายการแล้ว</span>
-            )}
+            ) : (() => {
+              const mainWeight = assigned.main.reduce((acc, curr) => acc + curr.qtyTon, 0);
+              const trailerWeight = assigned.trailer.reduce((acc, curr) => acc + curr.qtyTon, 0);
+              const isOver = mainWeight > (truckType?.MaxWeightMain || 15) || trailerWeight > (truckType?.MaxWeightTrailer || 0);
+              if (isOver) {
+                return <span className="text-red-600 flex items-center justify-center gap-1 font-bold">⚠️ น้ำหนักเกินที่รถบรรทุกรับได้</span>;
+              }
+              return <span className="text-emerald-600 flex items-center justify-center gap-1"><CheckCircle2 size={16}/> จัดวางครบทุกรายการแล้ว</span>;
+            })()}
           </div>
           <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
             <Button variant="outline" onClick={onCancel} className="flex-1 sm:w-32 py-2">ยกเลิก</Button>
-            <Button onClick={handleConfirm} disabled={unassigned.length > 0} className={cn("flex-1 sm:w-48 gap-2 py-2", unassigned.length > 0 ? "bg-slate-300" : "bg-emerald-600 hover:bg-emerald-700 text-white")}>
-              ยืนยัน <ArrowRight size={18} className="hidden sm:block" />
-            </Button>
+            {(() => {
+              const mainWeight = assigned.main.reduce((acc, curr) => acc + curr.qtyTon, 0);
+              const trailerWeight = assigned.trailer.reduce((acc, curr) => acc + curr.qtyTon, 0);
+              const isOver = mainWeight > (truckType?.MaxWeightMain || 15) || trailerWeight > (truckType?.MaxWeightTrailer || 0);
+              const isDisabled = unassigned.length > 0 || isOver;
+              return (
+                <Button onClick={handleConfirm} disabled={isDisabled} className={cn("flex-1 sm:w-48 gap-2 py-2", isDisabled ? "bg-slate-300" : "bg-emerald-600 hover:bg-emerald-700 text-white")}>
+                  ยืนยัน <ArrowRight size={18} className="hidden sm:block" />
+                </Button>
+              );
+            })()}
           </div>
         </div>
       </motion.div>

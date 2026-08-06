@@ -373,7 +373,7 @@ router.get('/stats', async (req, res) => {
             END AS OldStatus,
             CASE
               WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
-              WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
+              WHEN ext.WeighOutWeight IS NOT NULL OR hd.clearflag = 'Y' THEN 'SHIPPED'
               WHEN hd.DocuType = 104 THEN 'IMPORTED'
               WHEN ext.IsLoaded = 1 THEN 'LOADED'
               WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
@@ -402,7 +402,7 @@ router.get('/stats', async (req, res) => {
             END AS OldStatus,
             CASE
               WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
-              WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
+              WHEN ext.WeighOutWeight IS NOT NULL OR hd.clearflag = 'Y' THEN 'SHIPPED'
               WHEN hd.DocuType = 104 THEN 'IMPORTED'
               WHEN ext.IsLoaded = 1 THEN 'LOADED'
               WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
@@ -525,7 +525,7 @@ router.get('/', async (req, res) => {
           hd.TransRegistration AS TruckPlate,
           CASE
             WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
-            WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
+            WHEN ext.WeighOutWeight IS NOT NULL OR hd.clearflag = 'Y' THEN 'SHIPPED'
             WHEN hd.DocuType = 104 THEN 'IMPORTED'
             WHEN ext.IsLoaded = 1 THEN 'LOADED'
             WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
@@ -613,7 +613,7 @@ router.get('/', async (req, res) => {
           hd.Remark,
           CASE
             WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
-            WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
+            WHEN ext.WeighOutWeight IS NOT NULL OR hd.clearflag = 'Y' THEN 'SHIPPED'
             WHEN hd.DocuType = 104 THEN 'IMPORTED'
             WHEN ext.IsLoaded = 1 THEN 'LOADED'
             WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
@@ -1708,12 +1708,8 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'ADMIN', 'C_LE
     // คำนวณ reconciliation และ tolerance status จาก weight-reconciliation service
     const { evaluateWeight } = require('../services/weight-reconciliation');
     const evalRes = await evaluateWeight(so.Id, net);
-
-    // ตั้งสถานะว่า SHIPPED ใน Winspeed
-    await wfQuery(
-      `UPDATE dbo.SOHD SET clearflag='Y', ClearDate=GETDATE() WHERE SOID=@id`,
-      { id: { type: sql.VarChar(50), value: so.Id } }
-    );
+    // [REMOVED] DO NOT set clearflag='Y' here as it hides the SO from Winspeed's Post Invoice screen.
+    // We now rely solely on WeighOutWeight in wf.SalesOrderExt.
     await wfQuery(
       `UPDATE wf.SalesOrderExt SET WeighOutWeight=@weight, UpdatedAt=GETUTCDATE() WHERE SOID=@id`,
       { id: { type: sql.VarChar(50), value: so.Id }, weight: { type: sql.Decimal(10,2), value: gross } }
