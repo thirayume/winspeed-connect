@@ -3,6 +3,7 @@ import { Search, Edit2, Save, X, RefreshCw, Truck, Trash2, Users, ArrowUpDown, P
 import { fetchCustomers, fetchCustomerFilters, updateCustomer, getToken, fetchCustomerRequests, createCustomerRequest, reviewCustomerRequest } from '../../services/api';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { DeleteConfirmModal } from '../ui/DeleteConfirmModal';
+import { appPrompt } from '../ui/AppAlert';
 import type { CustomerRequest, EMCust } from '../../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
@@ -85,8 +86,8 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
   };
 
   const closeCustomerRequest = async (reqRow: CustomerRequest, status: 'COMPLETED' | 'REJECTED') => {
-    const winspeedCustId = status === 'COMPLETED' ? window.prompt('รหัสลูกค้าใน WINSpeed (ถ้ามี):', reqRow.WinspeedCustId || '') || undefined : undefined;
-    const reviewNote = window.prompt('หมายเหตุ:', reqRow.ReviewNote || '') || undefined;
+    const winspeedCustId = status === 'COMPLETED' ? (await appPrompt('รหัสลูกค้าใน WINSpeed (ถ้ามี):', reqRow.WinspeedCustId || '')) || undefined : undefined;
+    const reviewNote = (await appPrompt('หมายเหตุ:', reqRow.ReviewNote || '')) || undefined;
     try {
       await reviewCustomerRequest(reqRow.Id, { status, winspeedCustId, reviewNote });
       await loadCustomerRequests();

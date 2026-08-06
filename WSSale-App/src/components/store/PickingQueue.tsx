@@ -6,6 +6,7 @@ import type { SalesOrder } from '../../types';
 import { AlertDialog } from '../ui/AlertDialog';
 import { VisualTruckLoader } from './VisualTruckLoader';
 import { SO_STATUS_META } from '../../constants/soStatus';
+import { appPrompt } from '../ui/AppAlert';
 
 export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[]; onUpdate: () => void, mode: 'LOADING' | 'SCALE' }) => {
   const [busy, setBusy] = useState<number | null>(null);
@@ -245,8 +246,8 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
                   </button>
                   <button
                     disabled={isBusy}
-                    onClick={() => {
-                      const note = prompt('เหตุผลในการปลดล็อก (รออนุมัติสุรชัย):');
+                    onClick={async () => {
+                      const note = await appPrompt('เหตุผลในการปลดล็อก (รออนุมัติสุรชัย):');
                       if (note !== null) doAction(orderId, () => unlockSO(orderId, note));
                     }}
                     className="px-3 py-2 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-50 flex items-center gap-1"

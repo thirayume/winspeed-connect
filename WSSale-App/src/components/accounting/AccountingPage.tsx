@@ -4,6 +4,7 @@ import {
   fetchRebateClaims, approveRebateClaim, fetchShippedToday,
 } from '../../services/api';
 import { useSocketEvent } from '../../hooks/useSocket';
+import { appPrompt } from '../ui/AppAlert';
 import type { RebateClaim, ShippedRow } from '../../types';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -52,7 +53,7 @@ export function AccountingPage() {
   useSocketEvent('so_updated', () => { load(date); });
 
   async function doApprove(claim: RebateClaim) {
-    const cn = prompt(`กรอกเลขอ้างอิงเอกสาร WINSpeed สำหรับเคลม ฿${Number(claim.ClaimAmt).toLocaleString()}:\n(เว้นว่างได้ ถ้ายังไม่มีเลขเอกสาร)`);
+    const cn = await appPrompt(`กรอกเลขอ้างอิงเอกสาร WINSpeed สำหรับเคลม ฿${Number(claim.ClaimAmt).toLocaleString()}:\n(เว้นว่างได้ ถ้ายังไม่มีเลขเอกสาร)`);
     if (cn === null) return;
     setBusyId(claim.Id);
     try { await approveRebateClaim(claim.Id, cn || undefined); await load(date); }
