@@ -1005,6 +1005,12 @@ router.post('/migrate-legacy', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async
       return res.json({ message: 'ไม่พบยอดค้างในระบบเดิม', processed: 0 });
     }
 
+    const legacyPlan = await wfQuery(`SELECT PlanId FROM wf.RebatePlan WHERE PlanNo = 'LEGACY-WS-COUPON'`);
+    if (!legacyPlan.recordset || legacyPlan.recordset.length === 0) {
+      return res.status(500).json({ message: 'ไม่พบแผน RebatePlan (LEGACY-WS-COUPON) กรุณารัน Migration 075' });
+    }
+    const legacyPlanId = legacyPlan.recordset[0].PlanId;
+
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1;
@@ -1041,9 +1047,10 @@ router.post('/migrate-legacy', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async
       await wfQuery(`UPDATE wf.RebatePool SET AllocatedAmt = AllocatedAmt + @amt, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
         { amt: { type: sql.Decimal(14,2), value: bahtAmount }, id: { type: sql.Int, value: pool.Id } });
 
-      await wfQuery(`INSERT INTO wf.RebateLedger (PoolId, SoId, CustId, GoodId, GoodCode, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, RebateAmount, RemainingAmt, Status)
-        VALUES (@pid, 0, 'LEGACY', '0', 'LEGACY_MIGRATION', @tons, 0, 0, @rate, @baht, @baht, 'ACCRUED')`,
+      await wfQuery(`INSERT INTO wf.RebateLedger (PlanId, Region, PoolId, SoId, CustId, GoodId, GoodCode, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, RebateAmount, RemainingAmt, Status)
+        VALUES (@planId, 'ALL', @pid, NULL, 'LEGACY', '0', 'LEGACY_MIGRATION', @tons, 0, 0, @rate, @baht, @baht, 'ACCRUED')`,
         {
+          planId: { type: sql.Int, value: legacyPlanId },
           pid: { type: sql.Int, value: pool.Id },
           tons: { type: sql.Decimal(12,3), value: tons },
           rate: { type: sql.Decimal(10,2), value: conversionRate },

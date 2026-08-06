@@ -4,6 +4,7 @@ import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, 
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { GiveawayBorrowModal } from './GiveawayBorrowModal';
 import { useAuthStore } from '../../store/auth-store';
+import { appConfirm } from '../ui/AppAlert';
 import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser } from '../../types';
 
 type DraftLine = SalesOrderLine & { tempId: string; refControlTicketNo?: string; isControlTicketDrawn?: boolean; maxQtyTon?: number };
@@ -366,14 +367,14 @@ export function CreateSODialog({
     if (!custId) { setError('กรุณาเลือกลูกค้าจากรายการ'); return; }
 
     if (totalPayable === 0) {
-      if (!window.confirm(`ยอดรวมเป็น 0 บาท\n\nต้องการบันทึกเอกสารนี้หรือไม่?`)) {
+      if (!(await appConfirm(`ยอดรวมเป็น 0 บาท\n\nต้องการบันทึกเอกสารนี้หรือไม่?`))) {
         return;
       }
     }
 
     const isNewTruck = truckPlate && truckPlates.length > 0 && !truckPlates.includes(truckPlate);
     if (isNewTruck) {
-      if (!window.confirm(`ทะเบียนรถ "${truckPlate}" เป็นรถใหม่ที่ไม่เคยเข้ารับบริการ\n\nระบบจะบันทึกเป็นรถคันใหม่ให้โดยอัตโนมัติ\n\nคุณแน่ใจหรือไม่ที่จะใช้ทะเบียนนี้?`)) {
+      if (!(await appConfirm(`ทะเบียนรถ "${truckPlate}" เป็นรถใหม่ที่ไม่เคยเข้ารับบริการ\n\nระบบจะบันทึกเป็นรถคันใหม่ให้โดยอัตโนมัติ\n\nคุณแน่ใจหรือไม่ที่จะใช้ทะเบียนนี้?`))) {
         return;
       }
     }
