@@ -17,6 +17,24 @@
       "actor": "Thirayu M. (owner)",
       "reason": "security cleanup c11333c removed plaintext password comments; executable SQL unchanged",
       "repairedAt": "2026-07-26T19:09:24.829Z"
+    },
+    {
+      "file": "011_seed_sales_users_giveaway.sql",
+      "previousChecksum": "e753cecc4237eed8f7ec6cc866eea379fd6ab194589afa78343c9d41c715c9b3",
+      "newChecksum": "ebbf678c8f9e05d29c0b245d3d141143c89562a2bce64ffdc4dc13357149b280",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "Release Manager",
+      "reason": "v1.6.0 deployment - comments-only change in seed files",
+      "repairedAt": "2026-08-06T08:11:41.205Z"
+    },
+    {
+      "file": "049_giveaway_item_mapping_seed.sql",
+      "previousChecksum": "d47432289bc88389c88bc0219311a1c15050f1b559400d709339eed4541d06bf",
+      "newChecksum": "2ebecbd38e15f363eae89d207d0cd76f9dc0989d62ed3c187b938c000a0ec325",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "Release Manager",
+      "reason": "v1.6.0 deployment - comments-only change in seed files",
+      "repairedAt": "2026-08-06T08:11:41.319Z"
     }
   ]
 }
