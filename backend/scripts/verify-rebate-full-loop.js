@@ -113,13 +113,41 @@ async function main() {
     INSERT INTO wf.AppUser (Username, PasswordHash, DisplayName, Role, EmpId) VALUES (@u,@h,N'E2E Marketing','MARKETING',@e)`,
     { u: { type: sql.NVarChar(50), value: MARKETING_USER }, h: { type: sql.NVarChar(200), value: hash.PasswordHash }, e: { type: sql.Int, value: hash.EmpId } });
 
-  // ลูกค้าภาคใต้ + สินค้าจริง 1 รายการ (อ้างอิงอย่างเดียว ไม่แก้ข้อมูลหลัก)
-  const cust = (await wfQuery(`SELECT TOP 1 c.CustID, c.CustName FROM dbo.EMCust c
-    JOIN dbo.EMSaleArea a ON a.SaleAreaID=c.SaleAreaID WHERE LEFT(a.SaleAreaCode,2)='05'`)).recordset[0];
-  const goods = (await wfQuery(`SELECT TOP 3 GoodID, GoodCode, GoodName1 FROM dbo.EMGood WHERE StockFlag='Y'`)).recordset;
+  // ต้องเลือกลูกค้าและสูตรที่ **มีการขนจริงใน WINSpeed** (เอกสาร DocuType 104)
+  //
+  // เดิมหยิบลูกค้าภาคใต้รายแรกกับสินค้ารายแรกมาใช้ ซึ่งไม่มีการขนจริงเลย
+  // เทสผ่านได้เพราะตอนนั้นการกระทบยอดอ่าน clearflag ที่ปลายทาง ship ไปตั้งให้เอง
+  // — เทสจึงรับรองตัวเอง พอแก้ให้อ่านเอกสาร 104 ที่เป็นหลักฐานจริง เทสก็ล้มทันที
+  //
+  // เลือกจากยอดขนจริงจึงเป็นการทดสอบประตูกระทบยอดด้วยข้อมูลที่ประตูนั้นตรวจจริง
+  // ต้องได้ลูกค้าหนึ่งรายที่มีการขนจริงอย่างน้อย 3 สูตร เพราะใบสั่งขายทดสอบมี 3 บรรทัด
+  const custRow = (await wfQuery(`
+    SELECT TOP 1 h.CustID, MAX(c.CustName) AS CustName
+    FROM dbo.SOHD h
+    JOIN dbo.SODT d ON d.SOID = h.SOID
+    JOIN dbo.EMGood g ON g.GoodID = d.GoodID
+    JOIN dbo.EMCust c ON c.CustID = h.CustID
+    WHERE h.DocuType = 104 AND d.GoodQty2 > 0 AND g.StockFlag = 'Y'
+    GROUP BY h.CustID
+    HAVING COUNT(DISTINCT g.GoodID) >= 3
+    ORDER BY SUM(d.GoodQty2) DESC`)).recordset[0];
+  if (!custRow) return bad('ไม่พบลูกค้าที่มีการขนจริงครบ 3 สูตรใน WINSpeed');
+
+  const goods = (await wfQuery(`
+    SELECT TOP 3 g.GoodID, g.GoodCode, MAX(g.GoodName1) AS GoodName1,
+           CAST(SUM(d.GoodQty2) AS DECIMAL(18,2)) AS DeliveredTon
+    FROM dbo.SOHD h
+    JOIN dbo.SODT d ON d.SOID = h.SOID
+    JOIN dbo.EMGood g ON g.GoodID = d.GoodID
+    WHERE h.DocuType = 104 AND h.CustID = @c AND d.GoodQty2 > 0 AND g.StockFlag = 'Y'
+    GROUP BY g.GoodID, g.GoodCode
+    ORDER BY SUM(d.GoodQty2) DESC`,
+    { c: { type: sql.NVarChar(20), value: String(custRow.CustID) } })).recordset;
+
+  const cust = { CustID: custRow.CustID, CustName: custRow.CustName };
   const good = goods[0];
-  if (!cust || !good) return bad('ไม่พบลูกค้าหรือสินค้าสำหรับทดสอบ');
-  console.log(`  ลูกค้า ${cust.CustID} (ภาค 05) · สินค้า ${good.GoodCode}`);
+  console.log(`  ลูกค้า ${cust.CustID} · 3 สูตรที่ขนจริงแล้ว: ` +
+    goods.map(g => `${g.GoodCode} (${g.DeliveredTon} ตัน)`).join(' · '));
 
   const tSales = await login('e2e_sales'), tMgr = await login('e2e_manager');
   const tWh = await login('e2e_warehouse'), tWb = await login('e2e_weighbridge');
@@ -205,19 +233,26 @@ async function main() {
   console.log('\n4.1 กระทบยอดกับการขนจริง (R6-05)');
   // ยอดขนจริงสะสมข้ามรอบทดสอบได้ จึงต้องอ่านค่าจริงมาแล้วบวกเกินไปเล็กน้อย
   // ถ้า hardcode ไว้ เทสจะผ่านหรือไม่ผ่านตามจำนวนครั้งที่เคยรัน ไม่ใช่ตามความถูกต้อง
+  // ใช้สูตรที่ขนจริง "น้อยที่สุด" ในการทดสอบขอเกินยอดขน
+  // ถ้าใช้สูตรที่ขนไปแล้วเป็นแสนตัน ยอดที่ต้องขอเกินจะใหญ่จนด่าน "ยอดเงินเกินวงเงิน pool"
+  // ยิงก่อน แล้วด่านกระทบยอดจะไม่ถูกทดสอบเลย
+  const probe = goods[goods.length - 1];
+
   // ต้องอ่านจากแหล่งเดียวกับที่ endpoint ใช้ (dbo ของ WINSpeed) ไม่ใช่ ledger ของแอป
   // ไม่งั้นเทสจะเทียบกับตัวเลขคนละชุดแล้วผ่าน/ไม่ผ่านโดยไม่เกี่ยวกับความถูกต้อง
+  // ต้องใช้นิยามเดียวกับที่ rebate.js ตรวจ — เอกสาร DocuType 104 คือหลักฐานการขนจริง
+  // เดิมนับด้วย clearflag='Y' ซึ่งเป็นธงที่ปลายทาง ship ตั้งเอง เทสจึงวัดผลงานของตัวเอง
   const shipped = (await wfQuery(
     `SELECT SUM(d.GoodQty2) AS n
      FROM dbo.SOHD h JOIN dbo.SODT d ON d.SOID=h.SOID JOIN dbo.EMGood g ON g.GoodID=d.GoodID
-     WHERE h.CustID=@c AND h.clearflag='Y' AND d.GoodQty2>0 AND g.GoodCode=@g`,
-    { c: { type: sql.NVarChar(20), value: String(cust.CustID) }, g: { type: sql.NVarChar(50), value: goods[0].GoodCode } }
+     WHERE h.CustID=@c AND h.DocuType=104 AND d.GoodQty2>0 AND g.GoodCode=@g`,
+    { c: { type: sql.NVarChar(20), value: String(cust.CustID) }, g: { type: sql.NVarChar(50), value: probe.GoodCode } }
   )).recordset[0].n || 0;
   const overTon = Number(shipped) + 5;
   const over = await call(tSales, 'POST', '/api/rebate/claims', {
     poolId, custId: cust.CustID, note: TAG + ' ทดสอบขอเกินยอดขน',
     // ใช้ส่วนต่างราคา 1 บาท/ตัน เพื่อให้ด่าน 'ยอดเกิน' ไม่บังหน้าด่านกระทบยอด
-    lines: [{ goodCode: goods[0].GoodCode, qtyTon: overTon, pricePerTon: 1, netPricePerTon: 0 }],
+    lines: [{ goodCode: probe.GoodCode, qtyTon: overTon, pricePerTon: 1, netPricePerTon: 0 }],
   });
   const od = await body(over);
   over.status === 400 && /ขนจริง/.test(JSON.stringify(od))

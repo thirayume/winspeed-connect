@@ -346,15 +346,28 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
       // จะไม่มี ledger เลย การกระทบยอดจึงมองไม่เห็นของที่ขนไปแล้วจริง ๆ
       // เอกสารฉบับที่ 5 (รายงานการขนสินค้า) ที่ฝ่ายบัญชีใช้ตรวจ ก็อ่านจาก dbo
       //
-      // clearflag='Y' คือใบที่ปิดการขนแล้ว · GoodQty2 คือน้ำหนักเป็นตัน
-      // จับคู่สูตรผ่าน dbo.EMGood เพราะใบขอเคลียร์อ้างด้วย GoodCode แต่ SODT เก็บ GoodID
+      // นิยาม "ขนจริงแล้ว" = มีเอกสาร DocuType 104 (ใบส่งของ/ใบกำกับ) ออกแล้ว
+      //
+      // WINSpeed เก็บใบสั่งขายเป็น DocuType 103 และใบส่งของ/ใบกำกับเป็น 104
+      // โดยใช้ DocuNo เดียวกัน ส่วน RefNo ของใบ 104 คือเลขใบกำกับภาษี (AI69-xxxxx)
+      // ปริมาณที่ส่งจริงจึงอ่านจาก SODT ของเอกสาร 104 ไม่ใช่ของใบสั่งขาย
+      // เพราะใบสั่งขายคือ "สั่งเท่าไร" ส่วนใบ 104 คือ "ส่งจริงเท่าไร" ซึ่งอาจไม่เท่ากัน
+      //
+      // เดิมใช้ h.clearflag='Y' ซึ่งผิด — วัดจากฐานจริงเมื่อ 6 ส.ค. 2569:
+      // ทั้งฐานมี 2,065,989 ตัน · เอกสาร 104 ครอบคลุม 2,037,465 ตัน (61,319 ใบ)
+      // แต่ clearflag='Y' มีเพียง 337 ตัน (24 ใบ ซึ่งเป็นใบทดสอบที่แอปเราตั้งค่าเองทั้งหมด)
+      // การกระทบยอดจึงเทียบกับ 0.016% ของความจริง และบล็อกการยื่นเคลมเกือบทุกใบ
+      //
+      // ไม่ใช้ DocuStatus='Y' เพราะเป็นธงสถานะที่เลื่อนได้ และ migration 072 ตั้งเป็น 'Y'
+      // ตั้งแต่ตอนสร้างใบก่อนส่งของ · เอกสาร 104 เป็นหลักฐานที่มีอยู่จริงหรือไม่มี
+      // ซึ่งเป็นสิ่งที่ผู้ตรวจยอมรับได้
       const delivered = custId
         ? (await wfQuery(`
             SELECT g.GoodCode, SUM(d.GoodQty2) AS DeliveredTon
             FROM dbo.SOHD h
             JOIN dbo.SODT d ON d.SOID = h.SOID
             JOIN dbo.EMGood g ON g.GoodID = d.GoodID
-            WHERE h.CustID = @cust AND h.clearflag = 'Y' AND d.GoodQty2 > 0
+            WHERE h.CustID = @cust AND h.DocuType = 104 AND d.GoodQty2 > 0
             GROUP BY g.GoodCode`,
             { cust: { type: sql.NVarChar(20), value: String(custId) } })).recordset || []
         // ไม่ระบุลูกค้าก็เทียบกับ ledger ของ pool ไปก่อน ดีกว่าไม่ตรวจอะไรเลย
