@@ -4,7 +4,7 @@ import { cn } from '../ui/Base';
 import { SOStatusBadge } from './SOStatusBadge';
 import { useErpStore } from '../../store/erp-store';
 import { approveGiveawayLine, confirmSO, cancelSO, shipSO, moveToPicking, createUnlockRequest } from '../../services/api';
-import { appConfirm } from '../ui/AppAlert';
+import { appConfirm, appPrompt } from '../ui/AppAlert';
 import { RequestActionModal, type RequestActionType } from '../papertrail/RequestActionModal';
 import { useAuthStore } from '../../store/auth-store';
 import { canViewRebateAmounts } from '../../utils/permissions';
@@ -71,7 +71,7 @@ export function SODetailsPanel({
   }
 
   async function approveLine(lineNum: number) {
-    const note = window.prompt('หมายเหตุการอนุมัติของแถม (ไม่บังคับ):') || undefined;
+    const note = await appPrompt('หมายเหตุการอนุมัติของแถม (ไม่บังคับ):') || undefined;
     await doAction(() => approveGiveawayLine(so.id!, lineNum, note));
   }
 

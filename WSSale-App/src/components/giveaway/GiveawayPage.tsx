@@ -5,6 +5,7 @@ import {
   fetchGiveawayItems, createGiveawayWithdrawal, fetchGiveawayBorrowRequests, resolveGiveawayBorrowRequest
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
+import { appPrompt } from '../ui/AppAlert';
 import type { GiveawayRegion, GiveawayBudgetLine, GiveawayWithdrawal, GiveawayItem } from '../../types';
 
 const TH_MONTHS = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
@@ -207,8 +208,8 @@ export function GiveawayPage() {
                                 resolveGiveawayBorrowRequest(r.Id, true).then(() => load()).catch(e => alert(e.message));
                               }
                             }} className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded hover:bg-green-700">อนุมัติให้ยืม</button>
-                            <button onClick={() => {
-                              const note = window.prompt('เหตุผลที่ปฏิเสธ (ไม่บังคับ):');
+                            <button onClick={async () => {
+                              const note = await appPrompt('เหตุผลที่ปฏิเสธ (ไม่บังคับ):');
                               if (note !== null) {
                                 resolveGiveawayBorrowRequest(r.Id, false, note).then(() => load()).catch(e => alert(e.message));
                               }

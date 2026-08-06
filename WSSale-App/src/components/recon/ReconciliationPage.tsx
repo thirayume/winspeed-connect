@@ -5,6 +5,7 @@ import {
   type ReconCase, type ReconSummary, type ReconCheck,
 } from '../../services/api';
 import { useSocketEvent } from '../../hooks/useSocket';
+import { appPrompt } from '../ui/AppAlert';
 
 const WEIGH_LABEL: Record<ReconCase['weigh'], string> = {
   MATCHED: 'ตรงกัน', VARIANCE: 'น้ำหนักต่าง', NO_WEIGH: 'ไม่มีตั๋วชั่ง',
@@ -50,7 +51,7 @@ export function ReconciliationPage() {
 
   async function doResolve(c: ReconCase, checkType: ReconCheck, action: 'RESOLVE' | 'IGNORE') {
     const verb = action === 'IGNORE' ? 'ละเว้น (ไม่ถือเป็นปัญหา)' : 'แก้ไขแล้ว';
-    const note = prompt(`บันทึกเหตุผลการ${verb} — ${c.wfRef || c.soId} (${checkType === 'WEIGH' ? 'น้ำหนัก' : 'ใบกำกับ'}):`);
+    const note = await appPrompt(`บันทึกเหตุผลการ${verb} — ${c.wfRef || c.soId} (${checkType === 'WEIGH' ? 'น้ำหนัก' : 'ใบกำกับ'}):`);
     if (note === null) return;
     setBusy(`${c.soId}|${checkType}`);
     try { await resolveReconCase(c.soId, { checkType, action, note: note || undefined, wfRef: c.wfRef }); await load(days, filter); }
