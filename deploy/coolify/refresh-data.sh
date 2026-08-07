@@ -146,7 +146,7 @@ if [ -n "$MSSQL_FILE" ]; then
 
     log "5/6 seed ผู้ใช้ (admin + พนักงานจาก dbo.EMEmp)"
     docker exec "$BACKEND_C" node seed_admin.js || { bad "seed_admin ล้มเหลว"; exit 1; }
-    ok "ผู้ใช้พร้อม — admin / W0rldF3rt"
+    ok "ผู้ใช้พร้อม — admin / (รหัสตั้งต้นถูกพิมพ์ตอนรัน seed_admin (ไม่เขียนไว้ในซอร์สสาธารณะ))"
   else
     bad "ข้ามขั้น migrations/seed — ไม่พบ backend container"
     echo "   ทำเองด้วย: docker exec -it <backend> node run_migrations.js && docker exec -it <backend> node seed_admin.js"
@@ -184,6 +184,6 @@ if [ -n "$MSSQL_FILE" ]; then
 fi
 echo ""
 echo "============================================================"
-echo " เสร็จสิ้น — ทดสอบ login ที่หน้าเว็บด้วย admin / W0rldF3rt"
+echo " เสร็จสิ้น — ทดสอบ login ที่หน้าเว็บด้วย admin / (รหัสตั้งต้นถูกพิมพ์ตอนรัน seed_admin (ไม่เขียนไว้ในซอร์สสาธารณะ))"
 echo " (พนักงานทุกคนได้รหัสเริ่มต้นเดียวกัน ต้องบังคับเปลี่ยนก่อนใช้จริง)"
 echo "============================================================"

@@ -18,7 +18,12 @@
  */
 
 const API = process.env.WF_API || 'http://localhost:3000';
-const PASSWORD = process.env.E2E_PASSWORD || 'W0rldF3rt';
+const PASSWORD = process.env.E2E_PASSWORD;
+if (!PASSWORD) {
+  // ไม่ใส่ค่าปริยายเป็นรหัสจริง — ที่เก็บซอร์สนี้เป็นสาธารณะ
+  console.error('ต้องตั้ง E2E_PASSWORD ก่อนรัน (ใส่ใน backend/.env ซึ่งไม่ถูก commit)');
+  process.exit(1);
+}
 const GHOST = 999999999;   // id ที่ไม่มีจริง ใช้กันผลข้างเคียง
 
 // ความคาดหวังมาจากการตัดสินใจของเจ้าของระบบ ไม่ใช่จากการอ่านโค้ด

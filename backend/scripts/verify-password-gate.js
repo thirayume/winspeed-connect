@@ -19,7 +19,12 @@ const { sql, wfQuery } = require('../db');
 
 const API = process.env.E2E_API_BASE?.replace(/\/api$/, '') || 'http://localhost:3000';
 const USERNAME = 'pwgate_probe';
-const START_PASSWORD = 'W0rldF3rt';
+const START_PASSWORD = process.env.E2E_PASSWORD;
+if (!START_PASSWORD) {
+  // ไม่ใส่ค่าปริยายเป็นรหัสจริง — ที่เก็บซอร์สนี้เป็นสาธารณะ
+  console.error('ต้องตั้ง E2E_PASSWORD ก่อนรัน (ใส่ใน backend/.env ซึ่งไม่ถูก commit)');
+  process.exit(1);
+}
 const NEW_PASSWORD = 'Ch4nged!' + Date.now();
 
 let failures = 0;
@@ -128,7 +133,7 @@ const ENFORCED = String(process.env.ENFORCE_PASSWORD_CHANGE || '').toLowerCase()
     }
 
     // ผู้ดูแลตั้งรหัสให้คนอื่น ต้องบังคับให้เจ้าของบัญชีตั้งใหม่เอง
-    const adminToken = await login('e2e_admin', 'W0rldF3rt');
+    const adminToken = await login('e2e_admin', START_PASSWORD);
     const probeId = (await wfQuery(`SELECT Id FROM wf.AppUser WHERE Username=@u`,
       { u: { type: sql.NVarChar(100), value: USERNAME } })).recordset[0]?.Id;
     if (adminToken && probeId) {

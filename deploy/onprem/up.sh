@@ -83,7 +83,7 @@ docker compose ps --format "table {{.Name}}\t{{.Status}}"
 APP=$(grep -E '^APP_DOMAIN=' .env | cut -d= -f2-)
 echo
 echo "  หน้าเว็บ : https://${APP}"
-echo "  login    : admin / W0rldF3rt   (W0rld ใช้เลขศูนย์)"
+echo "  login    : admin / (รหัสตั้งต้นถูกพิมพ์ตอนรัน seed_admin (ไม่เขียนไว้ในซอร์สสาธารณะ))"
 echo
 echo "  ดู log   : docker compose logs -f backend"
 echo "  หยุด     : bash up.sh --down"

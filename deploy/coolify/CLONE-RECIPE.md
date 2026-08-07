@@ -134,7 +134,7 @@ backup ของ WINSpeed **ไม่มี schema `wf`** → หลัง migra
 ```bash
 docker exec -it <backend-container> node seed_admin.js
 ```
-1. สร้าง **`admin` / `W0rldF3rt`** — ⚠️ `W0rld` ใช้ **เลขศูนย์** ไม่ใช่ตัว O
+1. สร้าง **`admin` / (รหัสที่ seed_admin พิมพ์ให้ตอนติดตั้ง)** — ⚠️ `W0rld` ใช้ **เลขศูนย์** ไม่ใช่ตัว O
 2. อ่าน `dbo.EMEmp` → สร้าง/อัปเดต user พร้อม **role จริง**
    (`EmpGroupID=2000`→MANAGER · `2001` หรือ Dept `2004/2005`→WAREHOUSE · Dept `2000/2001`→ACCOUNTING · ที่เหลือ SALES)
    และผูก **`EmpId` ↔ `EMEmp.EmpID`** — จำเป็นต่อการ export SO กลับ WINSpeed
@@ -150,7 +150,7 @@ docker exec -it <backend-container> node seed_admin.js
 ## 7. หลังส่งมอบ
 
 **ลูกค้าต้องทำทันที**
-- [ ] เปลี่ยนรหัส `admin` · บังคับพนักงานเปลี่ยนรหัสครั้งแรก (ทุกคนได้ `W0rldF3rt` เหมือนกัน)
+- [ ] เปลี่ยนรหัส `admin` · บังคับพนักงานเปลี่ยนรหัสครั้งแรก (ทุกคนได้ (รหัสที่ seed_admin พิมพ์ให้ตอนติดตั้ง) เหมือนกัน)
 - [ ] ตั้ง backup อัตโนมัติ — `/root/backup-databases.sh` + cron (ดู `RUNBOOK.md` ขั้น 9)
 - [ ] repoint ซอฟต์แวร์ตาชั่งหน้างานมา MySQL ตัวใหม่ (**ทำท้ายสุด** วางแผน cutover)
 

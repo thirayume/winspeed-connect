@@ -14,13 +14,53 @@ normative: true
 
 ## [1.6.1] - 2026-08-06
 
-### Added
-- **Legacy Rebate Data Migration**: Added a migration script and a backend route to migrate old WINSpeed coupon data (`dbo.WFCoupon`) into the new `wf.RebatePlan` architecture.
-- Added a "Migrate to App" button in the CN Rebate page (for ADMIN, MANAGER, C_LEVEL roles) to trigger the legacy data migration with a dynamic Baht/Ton conversion rate.
+รายละเอียดระดับเอกสารและสิ่งที่ต้องรีวิวอยู่ใน [CHANGES-v1.6.0-TO-v1.6.1](CHANGES-v1.6.0-TO-v1.6.1.md)
+
+### Changed
+
+**รีเบทใช้แหล่งข้อมูลเดียว — เลิกคัดลอกยอดสะสมมาไว้ในแอป**
+
+- `wf.v_RebateAccrualLot` / `wf.v_RebateAccrualRemaining` (migration 076) — ยอดสะสมและยอดคงเหลืออ่านจาก `dbo.SOHD`/`SODT` (เอกสาร DocuType 104) โดยตรง **ไม่มีสำเนา ไม่มีปุ่ม sync** · วัดจากฐานจริงเมื่อ 6 ส.ค. 2569: view ให้ 111,192 ล็อต 2,037,464.97 ตัน เท่ากับ `dbo.WFCoupon` ทั้งชุดพอดี
+- `SourceSOID` / `SourceListNo` / `SourceDocuNo` / `SourceDocuDate` / `SourceCouponNo` บน `wf.RebateClaimLine` (076) — ทุกบรรทัดที่ตัดสิทธิ์ชี้กลับไปยัง**บรรทัดใบส่งของ**ต้นทางได้ · เดิมชี้ไปที่ `LedgerId` ซึ่งเป็นสำเนา จึงตอบผู้ตรวจไม่ได้ว่าเงินที่คืนมาจากการขนเที่ยวใด
+- **ตัด FIFO จากใบส่งของจริง** — หนึ่งบรรทัดบนแบบฟอร์มถูกกระจายลงล็อตที่เก่าที่สุดก่อน โดยเซิร์ฟเวอร์เป็นผู้จัดสรร · ผู้ยื่นระบุใบเองก็ได้ (`sourceSOID`/`sourceListNo`) เพราะแบบฟอร์มกระดาษมีช่อง "เลขที่ INV" ให้เขียนเจาะจง
+- **รองรับทั้งตันและบาท** — ตันมาจากใบส่งของ · ราคาขายมาจากใบส่งของ · ราคาสุทธิมาจากแบบขออนุมัติรายการส่งเสริมการขายที่อนุมัติแล้ว · คืนรีเบท/ตัน = ราคาขาย − ราคาสุทธิ ตรงตามแบบฟอร์ม RBD68-049 · **ล็อตที่ยังไม่มีแผนครอบคลุมจะเป็นค่าว่าง ไม่ใช่ศูนย์** เพราะ 0 แปลว่า "ไม่ได้คืน" ส่วนว่างแปลว่า "ยังระบุไม่ได้" ซึ่งคนละความหมายและต้องแยกให้ออกตอนตรวจ
+- `PoolId` บน `wf.RebateClaim` ไม่บังคับแล้ว (migration 077) — `wf.RebatePool` คือ "งบที่ผู้บริหารจัดสรรรายเดือน" ซึ่งเป็นคนละเรื่องกับยอดสะสม ใบขอเคลียร์ที่อ้างการขนจริงจึงยื่นได้แม้ยังไม่มีการจัดสรรงบ
+- หน้าจอใบขอเคลียร์มีปุ่ม **ดึงยอดขนจริง (FIFO)** แสดงล็อตเรียงเก่าก่อน — ลำดับเดียวกับที่เซิร์ฟเวอร์ตัดจริง ผู้ใช้จึงเห็นสิ่งที่จะเกิดขึ้นก่อนกดยื่น
+
+### Removed
+
+- **ถอดการย้ายยอดคูปองเดิมเข้าแอป** — ทั้ง `POST /api/rebate/migrate-legacy` ปุ่ม "Migrate to App" และแผน `LEGACY-WS-COUPON` (ปลดใน migration 076) · การย้ายแปลงตันเป็นบาทด้วย**อัตราที่ผู้ดูแลพิมพ์เอง** ซึ่งไม่มีเอกสารรองรับ และ WINSpeed ยังออกคูปองใหม่ทุกวัน (ปี 2569 ออกไปแล้ว 7,652 ใบ) สำเนาจึงแยกจากต้นทางอีกภายในไม่กี่วัน — ตรงข้ามกับเป้าหมาย
+- `POST /api/rebate/sync-mirror` ตอบ 410 พร้อมบอกเส้นทางแทน · `wf.CouponMirror` เป็นสำเนาที่ต้องกดปุ่มให้ตรงกันเองและ**ไม่เคยถูก sync เลย (0 แถว)** หน้าจอคูปองจึงว่างทั้งที่ในระบบมีคูปองอยู่จริง
 
 ### Fixed
+
+- หน้าจอคูปอง (`GET /api/rebate/coupons`, `/coupons/:custId`) อ่านจาก `dbo.WFCoupon` โดยตรง — เดิมอ่านจากสำเนาที่ว่างเปล่า
+- ประกาศชนิด `WfRebateTrailSummary` / `WfRebateTrailRow` / `WfRebateTrailDetail` ที่ถูก import โดยไม่มีการประกาศ (tsc ฟ้อง 6 ข้อ · `vite build` ไม่ typecheck จึงไม่พังตอน build)
+- ชุดทดสอบ `verify-rebate-4tier` / `verify-rebate-plan-approval` เลิกผูกชื่อผู้จัดการภาคไว้ตายตัว — อ่านผู้อนุมัติจาก `wf.UserSaleArea` และผูกผู้ใช้ทดสอบให้เองถ้ายังไม่ได้ตั้ง · เดิมล้มทันทีที่ผู้ดูแลย้ายผู้จัดการภาคจากหน้าจอ ซึ่งเป็นสิ่งที่ระบบตั้งใจให้ทำได้
+- `verify-rebate-4tier` ใช้สูตรปุ๋ยจริงที่ลูกค้าขนไปแล้วแทนรหัสสมมติ `TEST-*` — ยอดรวมยังต้องได้ ฿55,800 ตรงตามใบ RBD68-049
 - Fixed TypeScript errors in `SalesPortal.tsx` related to `navParams.soId` coercion when setting `selectedId` and fetching order details.
 - Fixed `AppAlert` missing export in `CnRebatePage.tsx` by reverting to standard `window.alert()`.
+
+### Added
+
+**เอกสารคืนรีเบทของ WINSpeed (`RB*`) — ผูกเข้ากับใบขอเคลียร์ในแอป**
+
+- **พบว่าปลายทางของกระดาษคือ `dbo.SOInvHD` Docutype 106** เลขที่ `RB<รหัสผู้ขอ><ปี พ.ศ.>-<ลำดับ>` · 16,195 ใบ · ยืนยันกับใบกระดาษ `RBD68-049` ตรงทุกช่อง (วันที่ 7/05/2568 · สุทธิรักษ์การเกษตร · 55,800 บาท)
+- **WINSpeed ไม่บันทึกว่าใครเป็นผู้ขอ** — `EmpID` ว่างทั้ง 16,195 ใบ · อักษรในเลขที่เอกสารเป็นร่องรอยเดียว จึงเพิ่ม `wf.AppUser.RebateDocCode` (A-Z 1-2 ตัว ห้ามซ้ำ · migration 079) ตั้งได้จากหน้าจอ **ข้อมูลหลัก → ผู้อนุมัติรายภาค**
+- `wf.v_RebateDocCodeEvidence` — แสดงว่าอักษรใดเคยออกให้ลูกค้าของพนักงานขายคนไหน · **ไม่ตั้งรหัสให้อัตโนมัติ** เพราะ D และ S ในอดีตคาบเกี่ยว 2-3 คน การเดาแล้วผิดจะทำให้เลขที่เอกสารชี้ผิดคนถาวร
+- `GET /api/rebate/next-rb-no` เสนอเลขที่ถัดไป โดยอ่านลำดับล่าสุดจาก `dbo.SOInvHD` ตรง ๆ — ไม่เก็บตัวนับของตัวเอง เพราะตัวนับที่แยกกันจะเดินคนละทางทันทีที่มีคนคีย์ใบตรงในโปรแกรมเดิม
+- `wf.RebateClaim.PeriodYear` / `PeriodMonth` / `RbSOInvID` / `RbDocDate` / `RbMatchedAt` (079) — รีเบทเบิกย้อนหลัง ใบ RB เดิมเขียนงวดไว้ในหมายเหตุซึ่งค้นไม่ได้
+- อนุมัติชั้น 4 ค้นใบ RB ให้อัตโนมัติ **แต่ไม่บล็อกถ้ายังไม่มี** — ลำดับงานจริงคืออนุมัติกระดาษก่อน บัญชีจึงคีย์ใบลดหนี้ทีหลัง
+- `wf.v_RebateRbReconciliation` + `GET /api/rebate/rb-reconciliation` — ใบที่อนุมัติแล้วออกใบ RB ครบหรือยัง และใบ RB ที่ออกไปมีใบขอเคลียร์รองรับหรือไม่
+
+### Fixed (เพิ่มเติม)
+
+- **migration 078** ถอด `FK_RebateLedger_SalesOrder` ที่ migration 075 ใส่กลับเข้ามา · migration 003 ถอดไว้ตั้งใจแล้วเพราะใบที่ยืนยันแล้วเก็บ SOID ของ WINSpeed ไม่ใช่ Id ของ `wf.SalesOrder` · FK นี้ทำให้**ชั่งออกล้มด้วย 500 ทุกใบ** และตั้งยอดรีเบทค้างรับไม่ได้เลย
+
+### Verification
+
+- `backend/scripts/verify-rebate-single-source.js` — 21 ข้อ ผ่านทั้งหมด (ยอดตรงกับ WINSpeed · FIFO ข้ามล็อต · ผูกต้นทางครบ · ขอเกินถูกปฏิเสธ · ใบที่ถูกปฏิเสธคืนตันทันที · เส้นทางเก่าถูกปิด · รหัสผู้ขอซ้ำถูกปฏิเสธ · เลขที่ RB ที่เสนอถูกรูปแบบ · รายงานกระทบยอดทำงาน)
+- `verify-rebate-4tier` · `verify-rebate-plan-approval` · `verify-rebate-full-loop` · `verify-reports` (23 ฉบับ) — ผ่านทั้งหมด
 
 ## [1.6.0] - 2026-08-06
 
