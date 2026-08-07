@@ -35,6 +35,24 @@
       "actor": "Release Manager",
       "reason": "v1.6.0 deployment - comments-only change in seed files",
       "repairedAt": "2026-08-06T08:11:41.319Z"
+    },
+    {
+      "file": "079_rebate_request_and_rb_document.sql",
+      "previousChecksum": "daf47265b04df8be2f635abb4709c233c917aad0656f423ec738af062f497efe",
+      "newChecksum": "f3ac9042c7d3d68aa477ea8ee5da51f9a8ceeb3b72cee08d256dd5cfa151d8f3",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "Thirayu M. (owner)",
+      "reason": "privacy cleanup: replaced employee names with employee codes in comments before publishing to the public repo; executable SQL unchanged",
+      "repairedAt": "2026-08-07T04:36:43.491Z"
+    },
+    {
+      "file": "079_rebate_request_and_rb_document.sql",
+      "previousChecksum": "daf47265b04df8be2f635abb4709c233c917aad0656f423ec738af062f497efe",
+      "newChecksum": "f3ac9042c7d3d68aa477ea8ee5da51f9a8ceeb3b72cee08d256dd5cfa151d8f3",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "Thirayu M. (owner)",
+      "reason": "privacy cleanup: replaced employee names with employee codes in comments before publishing to the public repo; executable SQL unchanged",
+      "repairedAt": "2026-08-07T04:36:52.086Z"
     }
   ]
 }
