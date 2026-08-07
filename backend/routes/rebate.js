@@ -93,7 +93,7 @@ router.post('/user-regions', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (
 // DELETE /api/rebate/user-regions/:userId/:regionCode — ถอดผู้ดูแลภาค
 //
 // ต้องมีคู่กับ POST เพราะการแต่งตั้งผิดคนแก้ไม่ได้ถ้าถอดไม่ได้ — ที่ผ่านมา
-// มนัส ถูกผูกกับภาคใต้ทั้งที่ยอดขายอยู่ภาคอีสาน และไม่มีทางแก้จากหน้าจอเลย
+// เคยมีผู้ดูแลภาคหนึ่งถูกผูกกับภาคใต้ทั้งที่ยอดขายอยู่ภาคอีสาน และไม่มีทางแก้จากหน้าจอเลย
 router.delete('/user-regions/:userId/:regionCode', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
   try {
     const r = await wfQuery(
@@ -273,15 +273,20 @@ router.get('/claims/:id', requireRebateAmountAccess, async (req, res) => {
 // POST /api/rebate/claims — ยื่นเคลม (รองรับ Multi-line 6 บรรทัด & 4-Tier Approval parity)
 router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
   try {
-    const { poolId, claimAmt, custId, note, lines, invoices } = req.body;
-    if (!poolId || (!claimAmt && (!lines || !lines.length))) {
-      return res.status(400).json({ message: 'poolId และ claimAmt (หรือรายการย่อย lines) จำเป็น' });
+    const { poolId, claimAmt, custId, note, lines, invoices, periodYear, periodMonth } = req.body;
+    if (!claimAmt && (!lines || !lines.length)) {
+      return res.status(400).json({ message: 'ต้องระบุ claimAmt หรือรายการย่อย lines' });
     }
 
-    const pool = (await wfQuery(`SELECT * FROM wf.RebatePool WHERE Id=@id`, { id: { type: sql.Int, value: poolId } })).recordset?.[0];
-    if (!pool) return res.status(404).json({ message: 'ไม่พบ pool' });
-    if (!canViewAllRebateAmounts(req.user) && Number(pool.SalesUserId) !== Number(req.user.sub)) {
-      return res.status(403).json({ message: 'ไม่มีสิทธิ์เคลม pool ของพนักงานขายอื่น' });
+    // poolId ไม่บังคับแล้ว — ยอดสะสมอ่านจาก WINSpeed ตรง ๆ (ดู migration 076)
+    // ยังรับไว้เพื่อความเข้ากันได้กับใบเก่าและงบที่จัดสรรรายพนักงานขาย
+    let pool = null;
+    if (poolId) {
+      pool = (await wfQuery(`SELECT * FROM wf.RebatePool WHERE Id=@id`, { id: { type: sql.Int, value: poolId } })).recordset?.[0];
+      if (!pool) return res.status(404).json({ message: 'ไม่พบ pool' });
+      if (!canViewAllRebateAmounts(req.user) && Number(pool.SalesUserId) !== Number(req.user.sub)) {
+        return res.status(403).json({ message: 'ไม่มีสิทธิ์เคลม pool ของพนักงานขายอื่น' });
+      }
     }
 
     // Determine lines & calculated total
@@ -298,136 +303,159 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
       for (const [kind, n] of Object.entries(perTable)) {
         if (n > 6) return res.status(400).json({ message: `ตาราง${kind === 'DIFF' ? 'คืนส่วนต่าง' : 'คืนรีเบท'}รองรับสูงสุด 6 บรรทัด` });
       }
-      let calculatedSum = 0;
-      lines.forEach((l, idx) => {
-        const qtyTon = Number(l.qtyTon || 0);
-        const pricePerTon = Number(l.pricePerTon || 0);
-        const netPricePerTon = Number(l.netPricePerTon || 0);
-        const rebatePerTon = pricePerTon - netPricePerTon;
-        const lineAmount = Math.round(qtyTon * rebatePerTon * 100) / 100;
-        calculatedSum += lineAmount;
-
-        // ใบขอเคลียร์มีสองตาราง: คืนรีเบท (เทียบราคาสุทธิโปรโมชั่น) และ
-        // คืนส่วนต่าง (เทียบราคาขายใน Pricelist) — รูปคำนวณเดียวกัน ต่างที่ราคาที่ใช้เทียบ
-        const lineType = String(l.lineType || 'REBATE').toUpperCase() === 'DIFF' ? 'DIFF' : 'REBATE';
-        parsedLines.push({
-          lineNo: idx + 1,
-          lineType,
-          invoiceNo: l.invoiceNo ? String(l.invoiceNo).trim().slice(0, 50) : null,
-          goodCode: String(l.goodCode || 'GENERAL').trim(),
-          goodName: l.goodName ? String(l.goodName).trim() : null,
-          qtyTon,
-          pricePerTon,
-          netPricePerTon,
-          rebatePerTon,
-          planId: l.planId ? Number(l.planId) : null,
-          remark: l.remark ? String(l.remark).trim() : null
+      if (!custId) {
+        return res.status(400).json({
+          message: 'ต้องระบุลูกค้า (custId) เมื่อยื่นรายการย่อย — ยอดสะสมอ่านจากใบส่งของของลูกค้ารายนั้น'
         });
-      });
-      totalAmt = Math.round(calculatedSum * 100) / 100;
-    }
+      }
 
-    const available = Number(pool.AccruedAmt) - Number(pool.ClaimedAmt);
-    if (totalAmt > available) {
-      return res.status(400).json({ message: `ยอดเกิน: ขอ ฿${totalAmt.toFixed(2)} ใช้ได้ ฿${available.toFixed(2)}` });
-    }
+      // ── ตัดสิทธิ์แบบ FIFO จากใบส่งของจริงใน WINSpeed ─────────────────────────
+      //
+      // แต่ละบรรทัดบนแบบฟอร์ม (สูตรปุ๋ย + ตัน) ถูกกระจายลงล็อตที่เก่าที่สุดก่อน
+      // ล็อต = หนึ่งบรรทัดของใบส่งของ (SOID + ListNo) จึงตอบได้เสมอว่าเงินที่คืน
+      // มาจากการขนเที่ยวใด ใบกำกับเลขใด ซึ่งเป็นสิ่งที่ผู้ตรวจ ISO ขอดู
+      //
+      // ผู้ยื่นระบุใบเองก็ได้ (ส่ง sourceSOID/sourceListNo มา) ระบบจะตัดใบนั้นตรง ๆ
+      // เพราะแบบฟอร์มกระดาษมีช่อง "เลขที่ INV" ให้เขียนเจาะจงอยู่แล้ว
+      const lotRows = (await wfQuery(`
+        SELECT SourceSOID, SourceListNo, SourceDocuNo, SourceDocuDate, CouponNo,
+               GoodCode, GoodName, ListPricePerTon, NetPricePerTon, RebatePerTon, PlanId,
+               RemainingTonRebate, RemainingTonDiff
+        FROM wf.v_RebateAccrualRemaining
+        WHERE CustId = @cid AND (RemainingTonRebate > 0 OR RemainingTonDiff > 0)
+        ORDER BY SourceDocuDate ASC, SourceDocuNo ASC, SourceListNo ASC`,
+        { cid: { type: sql.NVarChar(20), value: String(custId) } })).recordset || [];
 
-    // R6-05 — กระทบยอดกับการขนจริงก่อนรับใบขอเคลียร์
-    //
-    // เอกสารฉบับที่ 5 (รายงานการขนสินค้า) ใช้ยืนยันว่าลูกค้าขนครบตามที่ขอเคลียร์จริง
-    // ในระบบเรา "ยอดขนจริง" คือ QtyTon ใน wf.RebateLedger ซึ่งตั้งตอนชั่งออกเท่านั้น
-    //
-    // เจตนา: บล็อกและให้คนแก้ ไม่ตัดยอดให้อัตโนมัติ — การตัดเงียบ ๆ จะทำให้ผู้แทนขาย
-    // ไม่รู้ว่าถูกหักอะไรไป และตรวจย้อนกลับตอน ISO ไม่ได้ว่าหักด้วยเหตุใด
-    if (parsedLines.length) {
-      // ยอดขนจริงต้องมาจาก dbo (WINSpeed) ไม่ใช่ wf.RebateLedger
-      //
-      // ledger ตั้งตอนชั่งออก "ผ่านแอปเรา" เท่านั้น ใบที่ยืนยันและส่งของนอกแอป
-      // จะไม่มี ledger เลย การกระทบยอดจึงมองไม่เห็นของที่ขนไปแล้วจริง ๆ
-      // เอกสารฉบับที่ 5 (รายงานการขนสินค้า) ที่ฝ่ายบัญชีใช้ตรวจ ก็อ่านจาก dbo
-      //
-      // นิยาม "ขนจริงแล้ว" = มีเอกสาร DocuType 104 (ใบส่งของ/ใบกำกับ) ออกแล้ว
-      //
-      // WINSpeed เก็บใบสั่งขายเป็น DocuType 103 และใบส่งของ/ใบกำกับเป็น 104
-      // โดยใช้ DocuNo เดียวกัน ส่วน RefNo ของใบ 104 คือเลขใบกำกับภาษี (AI69-xxxxx)
-      // ปริมาณที่ส่งจริงจึงอ่านจาก SODT ของเอกสาร 104 ไม่ใช่ของใบสั่งขาย
-      // เพราะใบสั่งขายคือ "สั่งเท่าไร" ส่วนใบ 104 คือ "ส่งจริงเท่าไร" ซึ่งอาจไม่เท่ากัน
-      //
-      // เดิมใช้ h.clearflag='Y' ซึ่งผิด — วัดจากฐานจริงเมื่อ 6 ส.ค. 2569:
-      // ทั้งฐานมี 2,065,989 ตัน · เอกสาร 104 ครอบคลุม 2,037,465 ตัน (61,319 ใบ)
-      // แต่ clearflag='Y' มีเพียง 337 ตัน (24 ใบ ซึ่งเป็นใบทดสอบที่แอปเราตั้งค่าเองทั้งหมด)
-      // การกระทบยอดจึงเทียบกับ 0.016% ของความจริง และบล็อกการยื่นเคลมเกือบทุกใบ
-      //
-      // ไม่ใช้ DocuStatus='Y' เพราะเป็นธงสถานะที่เลื่อนได้ และ migration 072 ตั้งเป็น 'Y'
-      // ตั้งแต่ตอนสร้างใบก่อนส่งของ · เอกสาร 104 เป็นหลักฐานที่มีอยู่จริงหรือไม่มี
-      // ซึ่งเป็นสิ่งที่ผู้ตรวจยอมรับได้
-      const delivered = custId
-        ? (await wfQuery(`
-            SELECT g.GoodCode, SUM(d.GoodQty2) AS DeliveredTon
-            FROM dbo.SOHD h
-            JOIN dbo.SODT d ON d.SOID = h.SOID
-            JOIN dbo.EMGood g ON g.GoodID = d.GoodID
-            WHERE h.CustID = @cust AND h.DocuType = 104 AND d.GoodQty2 > 0
-            GROUP BY g.GoodCode`,
-            { cust: { type: sql.NVarChar(20), value: String(custId) } })).recordset || []
-        // ไม่ระบุลูกค้าก็เทียบกับ ledger ของ pool ไปก่อน ดีกว่าไม่ตรวจอะไรเลย
-        : (await wfQuery(`
-            SELECT GoodCode, SUM(QtyTon) AS DeliveredTon
-            FROM wf.RebateLedger
-            WHERE PoolId = @pid AND ISNULL(ReversedFlag, 0) = 0
-            GROUP BY GoodCode`,
-            { pid: { type: sql.Int, value: poolId } })).recordset || [];
-
-      const claimedBefore = (await wfQuery(`
-        SELECT l.GoodCode, l.LineType, SUM(l.QtyTon) AS ClaimedTon
-        FROM wf.RebateClaimLine l
-        JOIN wf.RebateClaim c ON c.Id = l.ClaimId
-        WHERE c.PoolId = @pid AND c.Status <> 'REJECTED'
-        GROUP BY l.GoodCode, l.LineType`,
-        { pid: { type: sql.Int, value: poolId } })).recordset || [];
-
-      const shippedTon = (code) =>
-        Number(delivered.find(r => String(r.GoodCode) === String(code))?.DeliveredTon || 0);
-      // โควตาแยกตามชนิด เพราะตันชุดเดียวกันขอได้ทั้งคืนรีเบทและคืนส่วนต่าง
-      const usedTon = (code, kind) =>
-        Number(claimedBefore.find(r => String(r.GoodCode) === String(code) && r.LineType === kind)?.ClaimedTon || 0)
-        + parsedLines.filter(p => p.goodCode === code && p.lineType === kind && p.lineNo < 0).reduce((a, b) => a + b.qtyTon, 0);
+      // ตันที่ถูกจองไปแล้วภายในคำขอฉบับนี้ — กันสองบรรทัดของใบเดียวกันแย่งล็อตซ้ำ
+      const takenInRequest = new Map();
+      const keyOf = (lot, kind) => `${lot.SourceSOID}|${lot.SourceListNo}|${kind}`;
+      const lotRemaining = (lot, kind) =>
+        Math.round((Number(kind === 'DIFF' ? lot.RemainingTonDiff : lot.RemainingTonRebate)
+          - (takenInRequest.get(keyOf(lot, kind)) || 0)) * 1000) / 1000;
 
       const problems = [];
-      for (const line of parsedLines) {
-        const shipped = shippedTon(line.goodCode);
-        const used = usedTon(line.goodCode, line.lineType);
-        const remain = Math.round((shipped - used) * 1000) / 1000;
-        if (line.qtyTon > remain + 0.001) {
-          const kindLabel = line.lineType === 'DIFF' ? 'คืนส่วนต่าง' : 'คืนรีเบท';
-          problems.push(`${line.goodCode} (${kindLabel}): ขอเคลียร์ ${line.qtyTon} ตัน แต่ขนจริงคงเหลือ ${remain} ตัน`
-            + (shipped ? ` (ขนจริง ${shipped} ตัน · เคลียร์ไปแล้ว ${used} ตัน)` : ' (ไม่พบการขนจริงของสูตรนี้)'));
+      let calculatedSum = 0;
+      let seq = 0;
+
+      for (const l of lines) {
+        const lineType = String(l.lineType || 'REBATE').toUpperCase() === 'DIFF' ? 'DIFF' : 'REBATE';
+        const goodCode = String(l.goodCode || '').trim();
+        let want = Math.round(Number(l.qtyTon || 0) * 1000) / 1000;
+        if (want <= 0) continue;
+
+        const wantedFrom = (l.sourceSOID && l.sourceListNo)
+          ? lotRows.filter(r => Number(r.SourceSOID) === Number(l.sourceSOID)
+                             && Number(r.SourceListNo) === Number(l.sourceListNo))
+          : lotRows.filter(r => String(r.GoodCode) === goodCode);
+
+        if (!wantedFrom.length) {
+          problems.push(`${goodCode || '(ไม่ระบุสูตร)'}: ไม่พบยอดขนจริงคงเหลือของสูตรนี้`);
+          continue;
+        }
+
+        for (const lot of wantedFrom) {
+          if (want <= 0) break;
+          const avail = lotRemaining(lot, lineType);
+          if (avail <= 0) continue;
+          const take = Math.min(want, avail);
+          takenInRequest.set(keyOf(lot, lineType), (takenInRequest.get(keyOf(lot, lineType)) || 0) + take);
+
+          // ราคาที่ใช้: ถ้าผู้ยื่นกรอกมา ใช้ตามที่กรอก (แบบฟอร์มกระดาษเป็นเอกสารต้นทาง)
+          // ถ้าไม่กรอก ดึงจากใบส่งของ (ราคาขาย) และแผนส่งเสริมการขายที่อนุมัติแล้ว (ราคาสุทธิ)
+          const pricePerTon = Number(l.pricePerTon) > 0 ? Number(l.pricePerTon) : Number(lot.ListPricePerTon || 0);
+          const netPricePerTon = Number(l.netPricePerTon) > 0 ? Number(l.netPricePerTon)
+            : (lot.NetPricePerTon === null || lot.NetPricePerTon === undefined ? 0 : Number(lot.NetPricePerTon));
+          const rebatePerTon = Math.round((pricePerTon - netPricePerTon) * 100) / 100;
+          const lineAmount = Math.round(take * rebatePerTon * 100) / 100;
+          calculatedSum += lineAmount;
+
+          // ใบขอเคลียร์มีสองตาราง: คืนรีเบท (เทียบราคาสุทธิโปรโมชั่น) และ
+          // คืนส่วนต่าง (เทียบราคาขายใน Pricelist) — รูปคำนวณเดียวกัน ต่างที่ราคาที่ใช้เทียบ
+          parsedLines.push({
+            lineNo: ++seq,
+            lineType,
+            invoiceNo: (l.invoiceNo ? String(l.invoiceNo).trim() : String(lot.SourceDocuNo || '')).slice(0, 50) || null,
+            goodCode: String(lot.GoodCode || goodCode || 'GENERAL').trim(),
+            goodName: l.goodName ? String(l.goodName).trim() : (lot.GoodName || null),
+            qtyTon: take,
+            pricePerTon,
+            netPricePerTon,
+            rebatePerTon,
+            planId: l.planId ? Number(l.planId) : (lot.PlanId ? Number(lot.PlanId) : null),
+            remark: l.remark ? String(l.remark).trim() : null,
+            sourceSOID: Number(lot.SourceSOID),
+            sourceListNo: Number(lot.SourceListNo),
+            sourceDocuNo: lot.SourceDocuNo || null,
+            sourceDocuDate: lot.SourceDocuDate || null,
+            sourceCouponNo: lot.CouponNo || null,
+          });
+          want = Math.round((want - take) * 1000) / 1000;
+        }
+
+        if (want > 0.001) {
+          const kindLabel = lineType === 'DIFF' ? 'คืนส่วนต่าง' : 'คืนรีเบท';
+          const totalAvail = wantedFrom.reduce((a, r) => a + Math.max(0, lotRemaining(r, lineType)), 0);
+          problems.push(`${goodCode} (${kindLabel}): ขอเคลียร์ ${Number(l.qtyTon)} ตัน แต่ขนจริงคงเหลือ `
+            + `${Math.round(totalAvail * 1000) / 1000} ตัน — ขาดอีก ${want} ตัน`);
         }
       }
+
+      // เจตนา: บล็อกและให้คนแก้ ไม่ตัดยอดให้อัตโนมัติ — การตัดเงียบ ๆ จะทำให้ผู้แทนขาย
+      // ไม่รู้ว่าถูกหักอะไรไป และตรวจย้อนกลับตอน ISO ไม่ได้ว่าหักด้วยเหตุใด
       if (problems.length) {
         return res.status(400).json({
           message: 'ยอดขอเคลียร์ไม่ตรงกับยอดขนจริง',
-          source: custId ? 'WINSpeed (ใบที่ปิดการขนแล้วของลูกค้ารายนี้)' : 'ยอดรีเบทค้างรับในระบบ',
+          source: 'WINSpeed — ใบส่งของ/ใบกำกับ (DocuType 104) ของลูกค้ารายนี้',
           reconciliation: problems,
         });
+      }
+      if (!parsedLines.length) {
+        return res.status(400).json({ message: 'ไม่มีรายการที่ตัดสิทธิ์ได้' });
+      }
+      totalAmt = Math.round(calculatedSum * 100) / 100;
+    }
+
+    // งบที่จัดสรรให้พนักงานขาย (ถ้าใบนี้ผูกกับ pool) ยังเป็นเพดานอีกชั้น
+    // แยกจากการตัดสิทธิ์ตามตัน — คนละเรื่องกัน ตันมาจากการขน เงินมาจากงบที่อนุมัติ
+    if (pool) {
+      const available = Number(pool.AccruedAmt) - Number(pool.ClaimedAmt);
+      if (totalAmt > available) {
+        return res.status(400).json({ message: `ยอดเกิน: ขอ ฿${totalAmt.toFixed(2)} ใช้ได้ ฿${available.toFixed(2)}` });
       }
     }
 
     // Infer RegionCode from Customer
     const regionCode = await getCustomerRegion(custId);
 
+    // งวดที่ขอเบิก — รีเบทเบิกย้อนหลัง ใบ RB ในระบบเดิมเขียนเดือนไว้ในหมายเหตุ
+    // ถ้าผู้ยื่นไม่ระบุ ใช้เดือนของใบส่งของที่ใหม่ที่สุดในใบนี้ ซึ่งเป็นงวดที่เบิกจริง
+    let pYear = Number(periodYear) || null;
+    let pMonth = Number(periodMonth) || null;
+    if ((!pYear || !pMonth) && parsedLines.length) {
+      const latest = parsedLines
+        .map(l => l.sourceDocuDate).filter(Boolean)
+        .sort().pop();
+      if (latest) {
+        const d = new Date(latest);
+        pYear = pYear || d.getFullYear();
+        pMonth = pMonth || (d.getMonth() + 1);
+      }
+    }
+
     // 1. Create RebateClaim Header
     const claimR = await wfQuery(
-      `INSERT INTO wf.RebateClaim (PoolId, SalesUserId, CustId, ClaimAmt, RemainingAmt, Status, Note, RegionCode, CurrentTier)
+      `INSERT INTO wf.RebateClaim (PoolId, SalesUserId, CustId, ClaimAmt, RemainingAmt, Status, Note, RegionCode, CurrentTier, PeriodYear, PeriodMonth)
        OUTPUT inserted.*
-       VALUES (@pid, @uid, @cid, @amt, @amt, 'TIER2_PENDING', @note, @rcode, 2)`,
+       VALUES (@pid, @uid, @cid, @amt, @amt, 'TIER2_PENDING', @note, @rcode, 2, @py, @pm)`,
       {
-        pid:   { type: sql.Int,          value: poolId },
+        pid:   { type: sql.Int,          value: pool ? pool.Id : null },
         uid:   { type: sql.Int,          value: req.user.sub },
         cid:   { type: sql.NVarChar(20), value: custId || null },
         amt:   { type: sql.Decimal(12,2),value: totalAmt },
         note:  { type: sql.NVarChar(500),value: note || null },
-        rcode: { type: sql.VarChar(10),  value: regionCode }
+        rcode: { type: sql.VarChar(10),  value: regionCode },
+        py:    { type: sql.Int,          value: pYear },
+        pm:    { type: sql.Int,          value: pMonth }
       }
     );
     const claim = claimR.recordset[0];
@@ -435,8 +463,10 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
     // 2. Create RebateClaimLine records
     for (const line of parsedLines) {
       await wfQuery(
-        `INSERT INTO wf.RebateClaimLine (ClaimId, [LineNo], LineType, InvoiceNo, GoodCode, GoodName, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, PlanId, Remark)
-         VALUES (@cid, @lno, @ltype, @inv, @gcode, @gname, @qty, @price, @netPrice, @rebate, @planId, @remark)`,
+        `INSERT INTO wf.RebateClaimLine (ClaimId, [LineNo], LineType, InvoiceNo, GoodCode, GoodName, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, PlanId, Remark,
+                                        SourceSOID, SourceListNo, SourceDocuNo, SourceDocuDate, SourceCouponNo)
+         VALUES (@cid, @lno, @ltype, @inv, @gcode, @gname, @qty, @price, @netPrice, @rebate, @planId, @remark,
+                 @sSoid, @sList, @sDocu, @sDate, @sCoup)`,
         {
           ltype:    { type: sql.NVarChar(10),  value: line.lineType },
           inv:      { type: sql.NVarChar(50),  value: line.invoiceNo },
@@ -449,7 +479,13 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
           netPrice: { type: sql.Decimal(18,2), value: line.netPricePerTon },
           rebate:   { type: sql.Decimal(18,2), value: line.rebatePerTon },
           planId:   { type: sql.Int,           value: line.planId },
-          remark:   { type: sql.NVarChar(500), value: line.remark }
+          remark:   { type: sql.NVarChar(500), value: line.remark },
+          // ร่องรอยกลับไปยังบรรทัดใบส่งของที่ถูกตัดสิทธิ์ — ตัวที่ทำให้ FIFO ตรวจย้อนกลับได้
+          sSoid:    { type: sql.Int,           value: line.sourceSOID ?? null },
+          sList:    { type: sql.Int,           value: line.sourceListNo ?? null },
+          sDocu:    { type: sql.NVarChar(25),  value: line.sourceDocuNo ?? null },
+          sDate:    { type: sql.Date,          value: line.sourceDocuDate ?? null },
+          sCoup:    { type: sql.NVarChar(25),  value: line.sourceCouponNo ?? null }
         }
       );
     }
@@ -476,30 +512,56 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
       }
     );
 
-    // 5. FIFO Cut on Ledger
-    let remaining = totalAmt;
-    const ledger = (await wfQuery(
-      `SELECT * FROM wf.RebateLedger WHERE PoolId=@pid AND RemainingAmt>0 AND ReversedFlag=0 ORDER BY CreatedAt ASC`,
-      { pid: { type: sql.Int, value: poolId } }
-    )).recordset || [];
+    // 5. ตัดงบที่จัดสรร (เฉพาะใบที่ผูกกับ pool)
+    //
+    // การตัด "สิทธิ์เป็นตัน" ไม่ได้อยู่ตรงนี้แล้ว — บันทึกไว้ที่ Source* ของแต่ละบรรทัด
+    // และ view wf.v_RebateAccrualRemaining หักให้เองโดยไม่ต้องมีสำเนายอดคงเหลือ
+    // ที่เหลือตรงนี้คือการตัด "งบเป็นบาท" ที่ผู้บริหารจัดสรรให้พนักงานขายรายเดือน
+    if (pool) {
+      let remaining = totalAmt;
+      const ledger = (await wfQuery(
+        `SELECT * FROM wf.RebateLedger WHERE PoolId=@pid AND RemainingAmt>0 AND ReversedFlag=0 ORDER BY CreatedAt ASC`,
+        { pid: { type: sql.Int, value: pool.Id } }
+      )).recordset || [];
 
-    for (const row of ledger) {
-      if (remaining <= 0) break;
-      const cut = Math.min(remaining, Number(row.RemainingAmt));
+      for (const row of ledger) {
+        if (remaining <= 0) break;
+        const cut = Math.min(remaining, Number(row.RemainingAmt));
+        await wfQuery(
+          `UPDATE wf.RebateLedger SET RemainingAmt = RemainingAmt - @cut, Status = CASE WHEN RemainingAmt - @cut <= 0 THEN 'CLAIMED' ELSE Status END WHERE Id=@id`,
+          { cut: { type: sql.Decimal(12,2), value: cut }, id: { type: sql.Int, value: row.Id } }
+        );
+        remaining -= cut;
+      }
+
       await wfQuery(
-        `UPDATE wf.RebateLedger SET RemainingAmt = RemainingAmt - @cut, Status = CASE WHEN RemainingAmt - @cut <= 0 THEN 'CLAIMED' ELSE Status END WHERE Id=@id`,
-        { cut: { type: sql.Decimal(12,2), value: cut }, id: { type: sql.Int, value: row.Id } }
+        `UPDATE wf.RebatePool SET ClaimedAmt=ClaimedAmt+@amt, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
+        { amt: { type: sql.Decimal(12,2), value: totalAmt }, id: { type: sql.Int, value: pool.Id } }
       );
-      remaining -= cut;
     }
 
-    // 6. Update Pool ClaimedAmt
-    await wfQuery(
-      `UPDATE wf.RebatePool SET ClaimedAmt=ClaimedAmt+@amt, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
-      { amt: { type: sql.Decimal(12,2), value: totalAmt }, id: { type: sql.Int, value: poolId } }
-    );
+    // เอกสารที่รองรับการขอใช้รีเบท — ผู้อนุมัติต้องเห็นว่าอ้างแผนฉบับใด
+    //
+    // บรรทัดที่ไม่มีแผนรองรับไม่ถูกบล็อก เพราะแผนบางฉบับยังเป็นกระดาษที่ยังไม่ถูกคีย์เข้าระบบ
+    // แต่ต้องแจ้งให้ผู้ยื่นและผู้อนุมัติเห็น ไม่งั้นจะอนุมัติเงินที่ไม่มีเอกสารต้นทางโดยไม่รู้ตัว
+    const planIds = [...new Set(parsedLines.map(l => l.planId).filter(Boolean))];
+    const plans = planIds.length
+      ? (await wfQuery(
+          `SELECT PlanId, PlanNo, Title, NetPrice, ValidFrom, ValidTo FROM wf.RebatePlan
+           WHERE PlanId IN (${planIds.map(Number).join(',')})`)).recordset || []
+      : [];
+    const linesWithoutPlan = parsedLines.filter(l => !l.planId).length;
 
-    res.json(claim);
+    res.json({
+      ...claim,
+      periodYear: pYear,
+      periodMonth: pMonth,
+      plans,
+      linesWithoutPlan,
+      warnings: linesWithoutPlan
+        ? [`${linesWithoutPlan} บรรทัดยังไม่มีแบบขออนุมัติรายการส่งเสริมการขายรองรับ — ผู้อนุมัติควรตรวจเอกสารกระดาษประกอบ`]
+        : [],
+    });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
@@ -609,20 +671,50 @@ router.post('/claims/:id/approve', async (req, res) => {
         note:  { type: sql.NVarChar(500),value: note || 'อนุมัติชั้นที่ 4 (กรรมการบริหาร)' }
       });
 
+      // เลขที่ใบคืนรีเบทของ WINSpeed (RB<รหัสผู้ขอ><ปี พ.ศ.>-<ลำดับ>)
+      //
+      // **ไม่บล็อกถ้ายังหาไม่เจอ** — ลำดับงานจริงคืออนุมัติกระดาษก่อน แล้วบัญชีจึงคีย์
+      // ใบลดหนี้เข้า WINSpeed ตอนอนุมัติจึงมักยังไม่มีใบนั้น การบังคับจะทำให้อนุมัติไม่ได้เลย
+      // แต่ถ้าเจอแล้ว ผูก SOInvID ไว้ทันทีเพื่อให้รายงานกระทบยอดตรวจได้
+      const rb = docuNo
+        ? (await wfQuery(
+            `SELECT TOP 1 SOInvID, DocuDate, NetAmnt FROM dbo.SOInvHD
+             WHERE DocuNo = @dn AND Docutype = 106`,
+            { dn: { type: sql.NVarChar(25), value: String(docuNo).trim() } })).recordset?.[0]
+        : null;
+
       await wfQuery(`
         UPDATE wf.RebateClaim 
         SET Status = 'APPROVED', 
             ApprovedAt = GETUTCDATE(), 
             ApprovedBy = @uid, 
-            CnDocuNo = @cn
+            CnDocuNo = @cn,
+            RbSOInvID = @rbid,
+            RbDocDate = @rbdate,
+            RbMatchedAt = CASE WHEN @rbid IS NULL THEN NULL ELSE GETUTCDATE() END
         WHERE Id = @id
       `, {
-        id:  { type: sql.Int,          value: claimId },
-        uid: { type: sql.Int,          value: userId },
-        cn:  { type: sql.NVarChar(20), value: docuNo || null }
+        id:     { type: sql.Int,          value: claimId },
+        uid:    { type: sql.Int,          value: userId },
+        cn:     { type: sql.NVarChar(20), value: docuNo || null },
+        rbid:   { type: sql.Int,          value: rb ? rb.SOInvID : null },
+        rbdate: { type: sql.Date,         value: rb ? rb.DocuDate : null }
       });
 
-      return res.json({ id: claimId, status: 'APPROVED', currentTier: 4, message: 'อนุมัติชั้นที่ 4 (กรรมการบริหาร) เสร็จสมบูรณ์' });
+      const warnings = [];
+      if (!docuNo) warnings.push('ยังไม่ได้ระบุเลขที่ใบคืนรีเบท — ต้องกลับมาเติมเมื่อบัญชีออกใบแล้ว');
+      else if (!rb) warnings.push(`ยังไม่พบใบ ${docuNo} ใน WINSpeed — จะขึ้นในรายงานกระทบยอดจนกว่าจะออกใบจริง`);
+      else if (Math.abs(Number(rb.NetAmnt) - Number(claim.ClaimAmt)) > 0.01) {
+        warnings.push(`ยอดไม่ตรง: ใบขอเคลียร์ ฿${Number(claim.ClaimAmt).toFixed(2)} · ใบ ${docuNo} ใน WINSpeed ฿${Number(rb.NetAmnt).toFixed(2)}`);
+      }
+
+      return res.json({
+        id: claimId, status: 'APPROVED', currentTier: 4,
+        message: 'อนุมัติชั้นที่ 4 (กรรมการบริหาร) เสร็จสมบูรณ์',
+        rbDocuNo: docuNo || null,
+        rbMatched: !!rb,
+        warnings,
+      });
     }
 
     res.status(400).json({ message: 'ขั้นตอนอนุมัติไม่ถูกต้อง' });
@@ -981,97 +1073,231 @@ router.get('/voucher-summary', async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// ── Legacy Data Migration (Tons to Baht) ───────────────────────────────────
-router.post('/migrate-legacy', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
+// ── ยอดสะสมรีเบท — อ่านจาก WINSpeed โดยตรง (แหล่งข้อมูลเดียว) ─────────────────
+//
+// ไม่มีการคัดลอกยอดมาเก็บในแอป · WINSpeed ยังออกคูปองใหม่ทุกวัน สำเนาจึงแยกกัน
+// ทันทีที่คัดลอกเสร็จ · view wf.v_RebateAccrualRemaining อ่านจาก dbo.SOHD/SODT
+// (เอกสาร DocuType 104) แล้วหักตันที่ถูกขอเคลียร์ไปแล้วออก — ดูรายละเอียดใน
+// migration 076
+
+// GET /api/rebate/accrual — สรุปยอดคงเหลือรายลูกค้า (พร้อมกรองตามพนักงานขาย/ช่วงวันที่)
+router.get('/accrual', async (req, res) => {
   try {
-    const { rate } = req.body;
-    if (!rate || isNaN(Number(rate)) || Number(rate) <= 0) {
-      return res.status(400).json({ message: 'กรุณาระบุอัตราการแปลง (rate) เช่น 100 บาท/ตัน' });
-    }
-    const conversionRate = Number(rate);
+    const { custId, empId, from, to } = req.query;
+    const inputs = {};
+    let where = 'WHERE RemainingTonRebate > 0';
+    if (custId) { where += ' AND CustId = @custId'; inputs.custId = { type: sql.NVarChar(20), value: String(custId) }; }
+    if (empId)  { where += ' AND SalesEmpId = @empId'; inputs.empId = { type: sql.Int, value: Number(empId) }; }
+    if (from)   { where += ' AND SourceDocuDate >= @from'; inputs.from = { type: sql.Date, value: from }; }
+    if (to)     { where += ' AND SourceDocuDate <= @to'; inputs.to = { type: sql.Date, value: to }; }
 
-    const legacyR = await wfQuery(`
-      SELECT
-        hd.EmpID,
-        SUM(c.RemaQty) AS RemainingTon
-      FROM dbo.WFCoupon c
-      JOIN dbo.SOHD hd ON hd.SOID = c.DocuID
-      WHERE hd.DocuType = 104 AND c.RemaQty > 0
-      GROUP BY hd.EmpID
-    `);
-    const legacyBalances = legacyR.recordset || [];
+    const r = await wfQuery(`
+      SELECT CustId, MAX(CustName) AS CustName, MAX(CustCode) AS CustCode, MAX(RegionCode) AS RegionCode,
+             MAX(SalesEmpId) AS SalesEmpId, MAX(SalesEmpName) AS SalesEmpName,
+             COUNT(*)                       AS LotCount,
+             SUM(RemainingTonRebate)        AS RemainingTon,
+             SUM(CASE WHEN RebatePerTon IS NULL THEN 0
+                      ELSE RemainingTonRebate * RebatePerTon END) AS RemainingAmt,
+             SUM(CASE WHEN RebatePerTon IS NULL THEN RemainingTonRebate ELSE 0 END) AS TonWithoutPlan,
+             MIN(SourceDocuDate)            AS OldestDate
+      FROM wf.v_RebateAccrualRemaining
+      ${where}
+      GROUP BY CustId
+      ORDER BY SUM(RemainingTonRebate) DESC`, inputs);
+    res.json(r.recordset || []);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
 
-    if (legacyBalances.length === 0) {
-      return res.json({ message: 'ไม่พบยอดค้างในระบบเดิม', processed: 0 });
-    }
+// GET /api/rebate/accrual/:custId — ล็อตของลูกค้ารายนี้ เรียงแบบ FIFO (เก่าก่อน)
+//
+// หนึ่งแถว = หนึ่งบรรทัดของใบส่งของ · เป็นหน่วยที่ตัดสิทธิ์ ทำให้ตรวจย้อนกลับได้ว่า
+// เงินที่คืนไปมาจากการขนเที่ยวใด ใบกำกับเลขใด
+router.get('/accrual/:custId', async (req, res) => {
+  try {
+    const custId = String(req.params.custId || '').trim();
+    if (!custId) return res.status(400).json({ message: 'ต้องระบุรหัสลูกค้า' });
+    const kind = String(req.query.lineType || 'REBATE').toUpperCase() === 'DIFF' ? 'DIFF' : 'REBATE';
+    const inputs = { cid: { type: sql.NVarChar(20), value: custId } };
+    let where = `WHERE CustId = @cid AND ${kind === 'DIFF' ? 'RemainingTonDiff' : 'RemainingTonRebate'} > 0`;
+    if (req.query.goodCode) { where += ' AND GoodCode = @gc'; inputs.gc = { type: sql.NVarChar(50), value: String(req.query.goodCode) }; }
+    if (req.query.from)     { where += ' AND SourceDocuDate >= @from'; inputs.from = { type: sql.Date, value: req.query.from }; }
+    if (req.query.to)       { where += ' AND SourceDocuDate <= @to'; inputs.to = { type: sql.Date, value: req.query.to }; }
 
-    const legacyPlan = await wfQuery(`SELECT PlanId FROM wf.RebatePlan WHERE PlanNo = 'LEGACY-WS-COUPON'`);
-    if (!legacyPlan.recordset || legacyPlan.recordset.length === 0) {
-      return res.status(500).json({ message: 'ไม่พบแผน RebatePlan (LEGACY-WS-COUPON) กรุณารัน Migration 075' });
-    }
-    const legacyPlanId = legacyPlan.recordset[0].PlanId;
+    const r = await wfQuery(`
+      SELECT SourceSOID, SourceListNo, SourceDocuNo, SourceDocuDate, TaxInvoiceNo, CouponNo,
+             CustId, CustName, RegionCode, SalesEmpId, SalesEmpName,
+             GoodID, GoodCode, GoodName, QtyTon,
+             ListPricePerTon, NetPricePerTon, RebatePerTon, PlanId, PlanNo,
+             ${kind === 'DIFF' ? 'RemainingTonDiff' : 'RemainingTonRebate'} AS RemainingTon,
+             CASE WHEN RebatePerTon IS NULL THEN NULL
+                  ELSE ${kind === 'DIFF' ? 'RemainingTonDiff' : 'RemainingTonRebate'} * RebatePerTon END AS RemainingAmt
+      FROM wf.v_RebateAccrualRemaining
+      ${where}
+      ORDER BY SourceDocuDate ASC, SourceDocuNo ASC, SourceListNo ASC`, inputs);
+    res.json(r.recordset || []);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
 
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1;
-    let processed = 0;
-    let totalInjectedBaht = 0;
-    const errors = [];
+// ── เอกสารคืนรีเบทของ WINSpeed (RB<รหัสผู้ขอ><ปี พ.ศ.>-<ลำดับ>) ───────────────
+//
+// dbo.SOInvHD Docutype 106 · 16,195 ใบ · **EmpID ว่างทุกใบ** WINSpeed ไม่ได้บันทึก
+// ว่าใครเป็นผู้ขอ อักษรในเลขที่เอกสารจึงเป็นร่องรอยเดียวที่บอกได้ ดู migration 079
 
-    for (const row of legacyBalances) {
-      if (!row.EmpID) continue;
-      
-      const userR = await wfQuery(`SELECT Id FROM wf.AppUser WHERE EmpId = @empId`, {
-        empId: { type: sql.NVarChar(20), value: String(row.EmpID) }
-      });
-      const user = userR.recordset?.[0];
-      if (!user) {
-        errors.push(`ไม่พบบัญชี Web App สำหรับ EmpID: ${row.EmpID}`);
-        continue;
-      }
+/** ปี พ.ศ. 2 หลักที่ใช้ในเลขที่เอกสาร */
+const beYY = (d = new Date()) => String((d.getFullYear() + 543) % 100).padStart(2, '0');
 
-      const salesUserId = user.Id;
-      const tons = Number(row.RemainingTon);
-      const bahtAmount = Math.round(tons * conversionRate * 100) / 100;
+/**
+ * เดารหัสผู้ขอจากชื่อไทย — ตัวแรกของชื่อ + ตัวแรกของนามสกุล เป็นอักษรโรมัน
+ *
+ * เป็น "ข้อเสนอ" ให้ผู้ดูแลกดยืนยัน ไม่ใช่การตั้งค่าอัตโนมัติ
+ * เพราะอักษรที่ใช้อยู่เดิมไม่ได้มาจากตัวแรกของชื่อจริง — วัดจากฐานจริงพบว่า 7 ใน 10 คน
+ * อักษรไม่ตรงกับตัวแรกของชื่อเลย น่าจะมาจากชื่อเล่นซึ่งไม่มีในฐานข้อมูล
+ * การเดาแล้วตั้งให้เองจะทำให้เลขที่เอกสารชี้ผิดคนอย่างถาวร
+ */
+const THAI_INITIAL = {
+  'ก':'K','ข':'K','ฃ':'K','ค':'K','ฅ':'K','ฆ':'K','ง':'N','จ':'C','ฉ':'C','ช':'C',
+  'ซ':'S','ฌ':'C','ญ':'Y','ฎ':'D','ฏ':'T','ฐ':'T','ฑ':'T','ฒ':'T','ณ':'N','ด':'D',
+  'ต':'T','ถ':'T','ท':'T','ธ':'T','น':'N','บ':'B','ป':'P','ผ':'P','ฝ':'F','พ':'P',
+  'ฟ':'F','ภ':'P','ม':'M','ย':'Y','ร':'R','ล':'L','ว':'W','ศ':'S','ษ':'S','ส':'S',
+  'ห':'H','ฬ':'L','อ':'A','ฮ':'H',
+};
 
-      if (bahtAmount <= 0) continue;
-
-      let pool = (await wfQuery(`SELECT * FROM wf.RebatePool WHERE SalesUserId=@u AND PeriodYear=@y AND PeriodMonth=@m`,
-        { u: { type: sql.Int, value: salesUserId }, y: { type: sql.Int, value: currentYear }, m: { type: sql.Int, value: currentMonth } })).recordset?.[0];
-      
-      if (!pool) {
-        pool = (await wfQuery(`INSERT INTO wf.RebatePool (SalesUserId, PeriodYear, PeriodMonth, AllocatedAmt) OUTPUT inserted.* VALUES (@u,@y,@m,0)`,
-          { u: { type: sql.Int, value: salesUserId }, y: { type: sql.Int, value: currentYear }, m: { type: sql.Int, value: currentMonth } })).recordset[0];
-      }
-
-      await wfQuery(`UPDATE wf.RebatePool SET AllocatedAmt = AllocatedAmt + @amt, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
-        { amt: { type: sql.Decimal(14,2), value: bahtAmount }, id: { type: sql.Int, value: pool.Id } });
-
-      await wfQuery(`INSERT INTO wf.RebateLedger (PlanId, Region, PoolId, SoId, CustId, GoodId, GoodCode, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, RebateAmount, RemainingAmt, Status)
-        VALUES (@planId, 'ALL', @pid, NULL, 'LEGACY', '0', 'LEGACY_MIGRATION', @tons, 0, 0, @rate, @baht, @baht, 'ACCRUED')`,
-        {
-          planId: { type: sql.Int, value: legacyPlanId },
-          pid: { type: sql.Int, value: pool.Id },
-          tons: { type: sql.Decimal(12,3), value: tons },
-          rate: { type: sql.Decimal(10,2), value: conversionRate },
-          baht: { type: sql.Decimal(12,2), value: bahtAmount }
-        });
-
-      processed++;
-      totalInjectedBaht += bahtAmount;
-    }
-
-    res.json({
-      message: 'Migration completed',
-      processedSalespersons: processed,
-      totalInjectedBaht,
-      conversionRate,
-      errors
-    });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: e.message });
+/** ตัวอักษรโรมันจากพยางค์แรก — ข้ามสระหน้า เ แ โ ใ ไ ที่เขียนก่อนพยัญชนะ */
+function initialOf(word) {
+  for (const ch of String(word || '')) {
+    if (/[A-Za-z]/.test(ch)) return ch.toUpperCase();
+    if (THAI_INITIAL[ch]) return THAI_INITIAL[ch];
   }
+  return '';
+}
+
+function suggestDocCode(fullName, taken) {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  const first = initialOf(parts[0]);
+  const last = initialOf(parts[1]);
+  if (!first) return null;
+  // ชื่อ+นามสกุล ถ้ามี · ไม่มีนามสกุลก็ใช้ตัวเดียว แล้วเติมตัวเลขเมื่อชน
+  const candidates = [first + last, first, first + 'A'].filter(c => c && c.length <= 2);
+  for (const c of candidates) if (!taken.has(c)) return c;
+  for (let i = 1; i <= 9; i++) if (!taken.has(first + i)) return first + i;
+  return null;
+}
+
+// GET /api/rebate/doc-codes — รหัสผู้ขอที่ตั้งไว้แล้ว + หลักฐานจากเอกสารในอดีต
+router.get('/doc-codes', requireRole('ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
+  try {
+    const assigned = (await wfQuery(`
+      SELECT Id AS UserId, Username, DisplayName, EmpId, Role, RebateDocCode
+      FROM wf.AppUser
+      WHERE IsActive = 1 AND (RebateDocCode IS NOT NULL OR Role IN ('SALES','MANAGER'))
+      ORDER BY CASE WHEN RebateDocCode IS NULL THEN 1 ELSE 0 END, RebateDocCode, Username`)).recordset || [];
+
+    // หลักฐาน: อักษรชุดใดเคยออกให้ลูกค้าของพนักงานขายคนไหนบ้าง
+    // ใช้ช่วยผู้ดูแลตั้งรหัส ไม่ได้ตั้งให้อัตโนมัติ เพราะบางอักษรคาบเกี่ยวหลายคน
+    const evidence = (await wfQuery(`
+      SELECT SeriesCode, EmpCode, EmpName, DocCount, FirstDoc, LastDoc, TotalAmnt
+      FROM wf.v_RebateDocCodeEvidence
+      WHERE DocCount >= 20
+      ORDER BY SeriesCode, DocCount DESC`)).recordset || [];
+
+    // เติมข้อเสนอรหัสให้คนที่ยังไม่มี — ผู้ดูแลกดยืนยันเองในหน้าจอ
+    const taken = new Set(assigned.map(u => u.RebateDocCode).filter(Boolean));
+    const withSuggestion = assigned.map(u => {
+      if (u.RebateDocCode) return { ...u, suggested: null };
+      const code = suggestDocCode(u.DisplayName || u.Username, taken);
+      if (code) taken.add(code);
+      return { ...u, suggested: code };
+    });
+
+    res.json({ assigned: withSuggestion, evidence });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// PATCH /api/rebate/doc-codes/:userId — ตั้ง/ล้างรหัสผู้ขอของผู้ใช้รายหนึ่ง
+router.patch('/doc-codes/:userId', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (!Number.isFinite(userId)) return res.status(400).json({ message: 'userId ไม่ถูกต้อง' });
+
+    const raw = req.body?.code;
+    const code = raw === null || raw === undefined || String(raw).trim() === ''
+      ? null : String(raw).trim().toUpperCase();
+    // A-Z เท่านั้น เพราะเลขที่เอกสารต้องอ่านออกและพิมพ์ตามได้จากกระดาษ
+    if (code !== null && !/^[A-Z]{1,2}$/.test(code)) {
+      return res.status(400).json({ message: 'รหัสผู้ขอต้องเป็นตัวอักษร A-Z 1-2 ตัว' });
+    }
+
+    if (code) {
+      const taken = (await wfQuery(
+        `SELECT Username FROM wf.AppUser WHERE RebateDocCode = @c AND Id <> @id`,
+        { c: { type: sql.NVarChar(2), value: code }, id: { type: sql.Int, value: userId } })).recordset?.[0];
+      // ปล่อยให้ซ้ำไม่ได้ — เลขที่เอกสารสองคนจะชนกันและตรวจย้อนกลับไม่ได้ว่าใครขอ
+      if (taken) return res.status(409).json({ message: `รหัส ${code} ถูกใช้โดย ${taken.Username} แล้ว` });
+    }
+
+    const r = await wfQuery(
+      `UPDATE wf.AppUser SET RebateDocCode = @c OUTPUT inserted.Id, inserted.Username, inserted.RebateDocCode WHERE Id = @id`,
+      { c: { type: sql.NVarChar(2), value: code }, id: { type: sql.Int, value: userId } });
+    if (!r.recordset?.length) return res.status(404).json({ message: 'ไม่พบผู้ใช้' });
+    res.json(r.recordset[0]);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/rebate/next-rb-no — เสนอเลขที่ใบคืนรีเบทใบถัดไปของผู้ขอรายนั้น
+//
+// อ่านลำดับล่าสุดจาก dbo.SOInvHD ตรง ๆ ไม่เก็บตัวนับของตัวเอง — ตัวนับที่แยกกัน
+// จะเดินคนละทางกับ WINSpeed ทันทีที่มีคนคีย์ใบตรงในโปรแกรมเดิม
+router.get('/next-rb-no', async (req, res) => {
+  try {
+    const userId = Number(req.query.userId) || Number(req.user.sub);
+    const u = (await wfQuery(
+      `SELECT Username, DisplayName, RebateDocCode FROM wf.AppUser WHERE Id = @id`,
+      { id: { type: sql.Int, value: userId } })).recordset?.[0];
+    if (!u) return res.status(404).json({ message: 'ไม่พบผู้ใช้' });
+    if (!u.RebateDocCode) {
+      return res.status(409).json({
+        code: 'NO_DOC_CODE',
+        message: `${u.DisplayName || u.Username} ยังไม่ได้ตั้งรหัสผู้ขอใช้รีเบท — ตั้งที่ ข้อมูลหลัก → ผู้อนุมัติรายภาค`,
+      });
+    }
+
+    const yy = String(req.query.beYear || beYY()).slice(-2);
+    const prefix = `RB${u.RebateDocCode}${yy}-`;
+    const last = (await wfQuery(`
+      SELECT TOP 1 DocuNo FROM dbo.SOInvHD
+      WHERE Docutype = 106 AND DocuNo LIKE @p
+      ORDER BY DocuNo DESC`,
+      { p: { type: sql.NVarChar(25), value: `${prefix}%` } })).recordset?.[0];
+
+    const lastSeq = last ? parseInt(String(last.DocuNo).slice(prefix.length), 10) : 0;
+    const nextSeq = Number.isFinite(lastSeq) ? lastSeq + 1 : 1;
+    res.json({
+      docCode: u.RebateDocCode,
+      beYear: yy,
+      lastDocuNo: last?.DocuNo || null,
+      suggested: `${prefix}${String(nextSeq).padStart(3, '0')}`,
+    });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/rebate/rb-reconciliation — ใบขอเคลียร์ในแอป ↔ ใบคืนรีเบทใน WINSpeed
+router.get('/rb-reconciliation', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
+  try {
+    const inputs = {};
+    let where = 'WHERE 1=1';
+    if (req.query.from) { where += ' AND (RbDocDate IS NULL OR RbDocDate >= @from)'; inputs.from = { type: sql.Date, value: req.query.from }; }
+    if (req.query.to)   { where += ' AND (RbDocDate IS NULL OR RbDocDate <= @to)';   inputs.to   = { type: sql.Date, value: req.query.to }; }
+    if (req.query.onlyProblems === 'true') where += ` AND MatchStatus <> N'ตรงกัน'`;
+
+    const rows = (await wfQuery(`
+      SELECT Side, ClaimId, RbDocuNo, CustId, AppAmt, WinAmt, RbDocDate, PeriodYear, PeriodMonth, Status, MatchStatus
+      FROM wf.v_RebateRbReconciliation
+      ${where}
+      ORDER BY CASE WHEN MatchStatus = N'ตรงกัน' THEN 1 ELSE 0 END, RbDocDate DESC, RbDocuNo`, inputs)).recordset || [];
+
+    const summary = rows.reduce((m, r) => { m[r.MatchStatus] = (m[r.MatchStatus] || 0) + 1; return m; }, {});
+    res.json({ summary, rows: rows.slice(0, 500), truncated: rows.length > 500 });
+  } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
 // GET /api/rebate/wf-trail-summary
@@ -1359,80 +1585,73 @@ router.get('/cn-detail/:soInvId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// POST /api/rebate/sync-mirror — ดึงข้อมูลคูปองจาก dbo สู่ wf.CouponMirror
+// POST /api/rebate/sync-mirror — เลิกใช้แล้ว
+//
+// wf.CouponMirror เป็นสำเนาของ dbo.WFCoupon ที่ต้องกดปุ่มให้ตรงกันเอง ซึ่งเป็นต้นเหตุ
+// ที่ข้อมูลรีเบทแยกกันเป็นสองชุด · ตั้งแต่ v1.6.1 ทุกหน้าจออ่านจาก dbo โดยตรง
+// คงเส้นทางไว้เพื่อไม่ให้ไคลเอนต์รุ่นเก่าพัง แต่ตอบ 410 พร้อมบอกว่าให้ไปใช้อะไรแทน
 router.post('/sync-mirror', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
-  try {
-    const r = await wfQuery(`
-      MERGE wf.CouponMirror AS tgt
-      USING (
-        SELECT c.CouponID, c.CouponNo, c.DocuID AS SourceSOID, src.DocuNo AS SourceDocuNo,
-               src.CustID, src.EmpID AS SalesEmpId, c.GoodID,
-               c.GoodQty AS IssuedTon, c.RemaQty AS RemainingTon, c.GoodPrice
-        FROM dbo.WFCoupon c WITH (NOLOCK)
-        JOIN dbo.SOHD src   WITH (NOLOCK) ON src.SOID = c.DocuID
-      ) AS s ON tgt.CouponID = s.CouponID
-      WHEN MATCHED AND (tgt.RemainingTon <> s.RemainingTon) THEN
-        UPDATE SET tgt.RemainingTon = s.RemainingTon, tgt.LastSyncAt = SYSUTCDATETIME()
-      WHEN NOT MATCHED THEN
-        INSERT (CouponID, CouponNo, SourceSOID, SourceDocuNo, CustId, SalesEmpId, GoodId, IssuedTon, RemainingTon, GoodPrice)
-        VALUES (s.CouponID, s.CouponNo, s.SourceSOID, s.SourceDocuNo, s.CustID, s.SalesEmpId, s.GoodID, s.IssuedTon, s.RemainingTon, s.GoodPrice);
-    `);
-    res.json({ message: 'Sync WFCoupon to CouponMirror completed.', rowsAffected: r.rowsAffected });
-  } catch (e) {
-    console.error('[rebate-sync]', e.message);
-    res.status(500).json({ message: e.message });
-  }
+  res.status(410).json({
+    message: 'ไม่ต้อง sync แล้ว — ยอดคูปองอ่านจาก WINSpeed โดยตรง',
+    use: 'GET /api/rebate/coupons หรือ GET /api/rebate/accrual',
+  });
 });
 
-// GET /api/rebate/coupons — รายลูกค้า สรุปยอดคูปองคงค้าง (ใช้ wf.CouponMirror)
+// GET /api/rebate/coupons — คูปองคงค้างใน WINSpeed สรุปรายลูกค้า
+//
+// อ่านจาก dbo.WFCoupon โดยตรง · เดิมอ่านจาก wf.CouponMirror ซึ่งเป็นสำเนาที่ต้อง
+// กดปุ่ม sync และไม่เคยถูก sync เลย (0 แถว) หน้าจอจึงว่างทั้งที่ในระบบมีคูปองอยู่จริง
+// สำเนาที่ต้องกดปุ่มให้ตรงกันคือสิ่งที่ทำให้ข้อมูลรีเบทแยกกันตั้งแต่แรก
 router.get('/coupons', async (req, res) => {
   try {
     const { custId, empId } = req.query;
-    let where = 'WHERE c.RemainingTon > 0';
+    let where = 'WHERE c.RemaQty > 0';
     const inputs = {};
-    if (custId) { where += ` AND c.CustID = @custId`; inputs.custId = { type: sql.NVarChar(20), value: custId }; }
-    if (empId)  { where += ` AND c.SalesEmpId = @empId`;  inputs.empId  = { type: sql.Int,          value: Number(empId) }; }
+    if (custId) { where += ` AND hd.CustID = @custId`; inputs.custId = { type: sql.NVarChar(20), value: custId }; }
+    if (empId)  { where += ` AND hd.EmpID  = @empId`;  inputs.empId  = { type: sql.Int,          value: Number(empId) }; }
 
     const r = await wfQuery(`
-      SELECT c.CustID, ISNULL(MAX(hd.CustName), c.CustID) AS CustName,
-             c.SalesEmpId AS EmpID,
-             ISNULL(MAX(emp.EmpName), CAST(c.SalesEmpId AS NVARCHAR(20))) AS EmpName,
+      SELECT CAST(hd.CustID AS NVARCHAR(20)) AS CustID,
+             ISNULL(MAX(cu.CustName), MAX(hd.CustName)) AS CustName,
+             hd.EmpID AS EmpID,
+             ISNULL(MAX(emp.EmpName), CAST(hd.EmpID AS NVARCHAR(20))) AS EmpName,
              COUNT(c.CouponID)   AS CouponCount,
-             SUM(c.RemainingTon) AS OutstandingTon,
+             SUM(c.RemaQty)      AS OutstandingTon,
              MIN(hd.DocuDate)    AS OldestDate
-      FROM wf.CouponMirror c
-      LEFT JOIN dbo.SOHD hd ON hd.SOID = c.SourceSOID
-      LEFT JOIN dbo.EMEmp emp ON emp.EmpID = c.SalesEmpId
+      FROM dbo.WFCoupon c
+      JOIN dbo.SOHD hd        ON hd.SOID  = c.DocuID
+      LEFT JOIN dbo.EMCust cu ON cu.CustID = hd.CustID
+      LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
       ${where}
-      GROUP BY c.CustID, c.SalesEmpId
+      GROUP BY hd.CustID, hd.EmpID
       ORDER BY OutstandingTon DESC
     `, inputs);
     res.json(r.recordset || []);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/rebate/coupons/:custId — รายการคูปองของลูกค้า (ใช้ wf.CouponMirror)
+// GET /api/rebate/coupons/:custId — คูปองคงค้างของลูกค้ารายนี้ เรียงเก่าก่อน (FIFO)
 router.get('/coupons/:custId', async (req, res) => {
   try {
     const custId = String(req.params.custId || '').trim();
     if (!custId) return res.status(400).json({ message: 'Invalid customer ID' });
 
     const r = await wfQuery(`
-        SELECT c.CouponID, c.CouponNo, c.SourceDocuNo AS SONo,
+        SELECT c.CouponID, c.CouponNo, c.SONo,
                CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
-               c.CustID, hd.CustName,
-               c.SalesEmpId AS EmpID,
-               ISNULL(emp.EmpName, CAST(c.SalesEmpId AS NVARCHAR(20))) AS EmpName,
-               c.GoodID, hd_dt.GoodName,
-               c.IssuedTon AS GoodQty,
-               c.RemainingTon AS RemaQty,
-               c.IssuedTon - c.RemainingTon AS RedeemedQty
-        FROM wf.CouponMirror c
-        LEFT JOIN dbo.SOHD hd ON hd.SOID = c.SourceSOID
-        LEFT JOIN dbo.SODT hd_dt ON hd_dt.SOID = c.SourceSOID AND hd_dt.GoodID = c.GoodId
-        LEFT JOIN dbo.EMEmp emp ON emp.EmpID = c.SalesEmpId
-        WHERE c.CustID = @cid AND c.RemainingTon > 0
-        ORDER BY hd.DocuDate ASC
+               CAST(hd.CustID AS NVARCHAR(20)) AS CustID,
+               ISNULL(cu.CustName, hd.CustName) AS CustName,
+               hd.EmpID AS EmpID,
+               ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS EmpName,
+               c.GoodID, c.GoodName, c.GoodPrice,
+               c.GoodQty, c.RemaQty,
+               c.GoodQty - c.RemaQty AS RedeemedQty
+        FROM dbo.WFCoupon c
+        JOIN dbo.SOHD hd        ON hd.SOID  = c.DocuID
+        LEFT JOIN dbo.EMCust cu ON cu.CustID = hd.CustID
+        LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
+        WHERE hd.CustID = @cid AND c.RemaQty > 0
+        ORDER BY hd.DocuDate ASC, c.CouponNo ASC
       `, { cid: { type: sql.NVarChar(20), value: custId } });
     if (!r.recordset || r.recordset.length === 0) {
       return res.status(404).json({ message: `ไม่พบคูปองคงค้างสำหรับลูกค้า ID ${custId}` });

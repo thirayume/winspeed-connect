@@ -12,12 +12,13 @@
  * คอลัมน์แรกของทั้งสองตารางคือ "เลขที่ INV" — ใบกำกับผูกรายบรรทัด
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Scissors, X, Plus, Trash2, Printer, Check, Ban, Loader2 } from 'lucide-react';
+import { Scissors, X, Plus, Trash2, Printer, Check, Ban, Loader2, Download } from 'lucide-react';
 import {
   createRebateClaim, fetchRebateClaimDetail, approveRebateClaim, rejectRebateClaim,
+  fetchRebateAccrualLots, fetchNextRbNo,
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
-import type { RebatePool, RebateClaim } from '../../types';
+import type { RebatePool, RebateClaim, RebateAccrualLot } from '../../types';
 
 const NAVY = '#0C447C';
 const baht = (n: unknown) => Number(n ?? 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -37,7 +38,12 @@ const TABLE: Record<Kind, { title: string; compare: string; rate: string; amount
   },
 };
 
-type Line = { invoiceNo: string; goodCode: string; qtyTon: string; pricePerTon: string; netPricePerTon: string };
+// sourceSOID/sourceListNo = บรรทัดใบส่งของที่บรรทัดนี้ตัดสิทธิ์ — ผูกไว้เมื่อผู้ใช้
+// เลือกจากรายการยอดขนจริง · ถ้าไม่ผูก เซิร์ฟเวอร์จะตัด FIFO ให้เองจากใบเก่าสุด
+type Line = {
+  invoiceNo: string; goodCode: string; qtyTon: string; pricePerTon: string; netPricePerTon: string;
+  sourceSOID?: number; sourceListNo?: number;
+};
 const emptyLine = (): Line => ({ invoiceNo: '', goodCode: '', qtyTon: '', pricePerTon: '', netPricePerTon: '' });
 
 const calc = (l: Line) => {
@@ -62,6 +68,39 @@ export function ClaimDialog({ pool, onClose, onDone }:
   const [diff, setDiff] = useState<Line[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [lots, setLots] = useState<RebateAccrualLot[] | null>(null);
+  const [lotsBusy, setLotsBusy] = useState(false);
+
+  // ยอดขนจริงมาจาก WINSpeed ตรง ๆ (ใบส่งของ/ใบกำกับ DocuType 104) ไม่ใช่สำเนาในแอป
+  // เรียงเก่าก่อน = ลำดับเดียวกับที่เซิร์ฟเวอร์ตัด FIFO ผู้ใช้จึงเห็นสิ่งที่จะเกิดขึ้นจริง
+  async function loadLots() {
+    const cid = custId.trim();
+    if (!cid) { setErr('กรอกรหัสลูกค้าก่อน จึงจะดึงยอดขนจริงได้'); return; }
+    setLotsBusy(true); setErr('');
+    try {
+      setLots(await fetchRebateAccrualLots(cid, { lineType: 'REBATE' }));
+    } catch (e: unknown) { setErr((e as Error).message || 'ดึงยอดขนจริงไม่สำเร็จ'); }
+    finally { setLotsBusy(false); }
+  }
+
+  /** เติมล็อตลงตารางคืนรีเบท พร้อมผูกบรรทัดใบส่งของต้นทางไว้ */
+  function useLot(lot: RebateAccrualLot) {
+    const row: Line = {
+      invoiceNo: lot.SourceDocuNo,
+      goodCode: lot.GoodCode,
+      qtyTon: String(lot.RemainingTon),
+      pricePerTon: String(lot.ListPricePerTon ?? ''),
+      // ราคาสุทธิเว้นว่างได้ ถ้ายังไม่มีแบบขออนุมัติรายการส่งเสริมการขายครอบคลุมล็อตนี้
+      netPricePerTon: lot.NetPricePerTon === null || lot.NetPricePerTon === undefined ? '' : String(lot.NetPricePerTon),
+      sourceSOID: lot.SourceSOID,
+      sourceListNo: lot.SourceListNo,
+    };
+    setRebate(prev => {
+      const blank = prev.findIndex(l => !l.goodCode && !l.qtyTon);
+      if (blank >= 0) return prev.map((l, i) => (i === blank ? row : l));
+      return [...prev, row];
+    });
+  }
 
   const totals = useMemo(() => ({ rebate: sum(rebate), diff: sum(diff) }), [rebate, diff]);
   const grand = totals.rebate + totals.diff;
@@ -77,6 +116,8 @@ export function ClaimDialog({ pool, onClose, onDone }:
         qtyTon: calc(l).qty,
         pricePerTon: calc(l).price,
         netPricePerTon: calc(l).compare,
+        sourceSOID: l.sourceSOID,
+        sourceListNo: l.sourceListNo,
       }));
     const lines = [...pack(rebate, 'REBATE'), ...pack(diff, 'DIFF')];
     if (!lines.length) { setErr('ต้องมีรายการอย่างน้อย 1 บรรทัดที่มียอดขนและส่วนต่างราคา'); return; }
@@ -84,7 +125,7 @@ export function ClaimDialog({ pool, onClose, onDone }:
 
     setBusy(true); setErr('');
     try {
-      await createRebateClaim({ poolId: pool.Id, custId: custId.trim() || undefined, note: note.trim() || undefined, lines });
+      await createRebateClaim({ poolId: pool.Id, custId: custId.trim(), note: note.trim() || undefined, lines });
       onDone();
     } catch (e: unknown) { setErr((e as Error).message || 'บันทึกไม่สำเร็จ'); }
     finally { setBusy(false); }
@@ -106,12 +147,21 @@ export function ClaimDialog({ pool, onClose, onDone }:
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          <label className="block max-w-xs">
-            <span className="text-xs font-semibold text-gray-500">รหัสลูกค้า</span>
-            <input value={custId} onChange={e => setCustId(e.target.value)} placeholder="เช่น 0592004"
-              className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-            <span className="text-[11px] text-gray-400">ใช้อนุมานภาคเพื่อส่งอนุมัติชั้นที่ 2</span>
-          </label>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="block max-w-xs flex-1 min-w-[200px]">
+              <span className="text-xs font-semibold text-gray-500">รหัสลูกค้า</span>
+              <input value={custId} onChange={e => { setCustId(e.target.value); setLots(null); }} placeholder="เช่น 0592004"
+                className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+              <span className="text-[11px] text-gray-400">ใช้อนุมานภาคเพื่อส่งอนุมัติชั้นที่ 2 และดึงยอดขนจริง</span>
+            </label>
+            <button onClick={loadLots} disabled={lotsBusy || !custId.trim()}
+              className="px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1.5">
+              {lotsBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              ดึงยอดขนจริง (FIFO)
+            </button>
+          </div>
+
+          {lots !== null && <LotPicker lots={lots} onUse={useLot} />}
 
           <LineTable kind="REBATE" rows={rebate} setRows={setRebate} total={totals.rebate} />
           <LineTable kind="DIFF" rows={diff} setRows={setDiff} total={totals.diff} />
@@ -146,6 +196,74 @@ export function ClaimDialog({ pool, onClose, onDone }:
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * ยอดขนจริงคงเหลือของลูกค้า เรียงเก่าก่อน — ลำดับเดียวกับที่เซิร์ฟเวอร์ตัด FIFO
+ *
+ * อ่านจาก WINSpeed โดยตรง (ใบส่งของ/ใบกำกับ DocuType 104) ไม่มีสำเนาในแอป
+ * ตันที่ยังไม่มีแผนส่งเสริมการขายครอบคลุมจะไม่มีราคาสุทธิ ต้องกรอกเองหรือรออนุมัติแผนก่อน
+ */
+function LotPicker({ lots, onUse }: { lots: RebateAccrualLot[]; onUse: (lot: RebateAccrualLot) => void }) {
+  const totalTon = lots.reduce((s, l) => s + Number(l.RemainingTon || 0), 0);
+  const noPlan = lots.filter(l => l.RebatePerTon === null || l.RebatePerTon === undefined).length;
+
+  if (!lots.length) {
+    return (
+      <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+        ไม่พบยอดขนจริงคงเหลือของลูกค้ารายนี้ — อาจขนไม่ครบ หรือถูกขอเคลียร์ไปหมดแล้ว
+      </p>
+    );
+  }
+
+  return (
+    <section className="border border-gray-200 rounded-xl overflow-hidden">
+      <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 flex items-baseline justify-between gap-2">
+        <h3 className="text-sm font-bold" style={{ color: NAVY }}>ยอดขนจริงคงเหลือ (WINSpeed)</h3>
+        <span className="text-[11px] text-gray-500">
+          {lots.length} ใบ · {ton(totalTon)} ตัน{noPlan ? ` · ${noPlan} ใบยังไม่มีราคาสุทธิจากแผนส่งเสริมการขาย` : ''}
+        </span>
+      </div>
+      <div className="overflow-x-auto max-h-56 overflow-y-auto">
+        <table className="w-full text-sm min-w-[720px]">
+          <thead className="bg-white text-gray-500 text-xs sticky top-0">
+            <tr className="text-left">
+              <th className="px-2 py-1.5">วันที่</th>
+              <th className="px-2 py-1.5">เลขที่ INV</th>
+              <th className="px-2 py-1.5">สูตรปุ๋ย</th>
+              <th className="px-2 py-1.5 text-right">คงเหลือ (ตัน)</th>
+              <th className="px-2 py-1.5 text-right">ราคาขาย</th>
+              <th className="px-2 py-1.5 text-right">ราคาสุทธิ</th>
+              <th className="px-2 py-1.5 text-right">คืนรีเบท/ตัน</th>
+              <th className="px-2 py-1.5 w-16"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {lots.map(l => (
+              <tr key={`${l.SourceSOID}-${l.SourceListNo}`} className="border-t border-gray-100 hover:bg-blue-50/40">
+                <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap">{String(l.SourceDocuDate || '').slice(0, 10)}</td>
+                <td className="px-2 py-1.5 whitespace-nowrap">{l.SourceDocuNo}</td>
+                <td className="px-2 py-1.5 text-gray-700">{l.GoodName || l.GoodCode}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{ton(l.RemainingTon)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{baht(l.ListPricePerTon)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">
+                  {l.NetPricePerTon === null || l.NetPricePerTon === undefined ? '—' : baht(l.NetPricePerTon)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums font-semibold">
+                  {l.RebatePerTon === null || l.RebatePerTon === undefined ? '—' : baht(l.RebatePerTon)}
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  <button onClick={() => onUse(l)} className="px-2 py-1 text-xs rounded-lg border border-gray-200 hover:bg-white">
+                    ใช้
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -268,6 +386,7 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
   const [err, setErr] = useState('');
   const [docuNo, setDocuNo] = useState('');
   const [reason, setReason] = useState('');
+  const [rbHint, setRbHint] = useState('');
 
   const load = async () => {
     try { setData(await fetchRebateClaimDetail(claimId)); }
@@ -289,8 +408,12 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
     if (kind === 'reject' && !reason.trim()) { setErr('การตีกลับต้องระบุเหตุผล'); return; }
     setBusy(true); setErr('');
     try {
-      if (kind === 'approve') await approveRebateClaim(claimId, docuNo.trim() || undefined);
-      else await rejectRebateClaim(claimId, reason.trim());
+      if (kind === 'approve') {
+        const r = await approveRebateClaim(claimId, docuNo.trim() || undefined);
+        // เตือนอย่างเดียว ไม่บล็อก — บัญชีคีย์ใบลดหนี้เข้า WINSpeed หลังอนุมัติ
+        // ตอนอนุมัติจึงมักยังไม่มีใบนั้น การบังคับจะทำให้อนุมัติไม่ได้เลย
+        setRbHint(((r as { warnings?: string[] }).warnings || []).join(' · '));
+      } else await rejectRebateClaim(claimId, reason.trim());
       await load(); onChanged();
     } catch (e: unknown) { setErr((e as Error).message || 'ดำเนินการไม่สำเร็จ'); }
     finally { setBusy(false); }
@@ -444,9 +567,26 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
         {canAct && (
           <div className="px-5 py-3 border-t border-gray-200 space-y-2 print:hidden">
             {tier === 4 && (
-              <input value={docuNo} onChange={e => setDocuNo(e.target.value)}
-                placeholder="เลขที่ใบลดหนี้ (CN) — กรอกได้เมื่ออนุมัติชั้นสุดท้าย"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+              <div className="space-y-1">
+                <div className="flex gap-2">
+                  <input value={docuNo} onChange={e => setDocuNo(e.target.value)}
+                    placeholder="เลขที่ใบคืนรีเบท เช่น RBD69-050"
+                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                  <button type="button"
+                    onClick={async () => {
+                      // ลำดับล่าสุดอ่านจาก WINSpeed ตรง ๆ จึงไม่เดินคนละทางกับใบที่คีย์ในโปรแกรมเดิม
+                      try {
+                        const n = await fetchNextRbNo(claim.SalesUserId);
+                        setDocuNo(n.suggested);
+                        setRbHint(`ใบล่าสุดของรหัส ${n.docCode} คือ ${n.lastDocuNo || '(ยังไม่มี)'}`);
+                      } catch (e) { setRbHint((e as Error).message); }
+                    }}
+                    className="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 whitespace-nowrap">
+                    เสนอเลขที่ถัดไป
+                  </button>
+                </div>
+                {rbHint && <p className="text-[11px] text-amber-700">{rbHint}</p>}
+              </div>
             )}
             <div className="flex flex-col sm:flex-row gap-2">
               <input value={reason} onChange={e => setReason(e.target.value)}

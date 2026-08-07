@@ -63,6 +63,12 @@ async function cleanup(quiet) {
   for (const p of pools) await wfQuery(`DELETE FROM wf.RebatePool WHERE Id=@id`, { id: { type: sql.Int, value: p.Id } });
   say(`ลบ rebate pool ทดสอบ ${pools.length} รายการ`);
 
+  // ถอดการผูกภาคชั่วคราวของผู้ใช้ทดสอบ — ไม่แตะการแต่งตั้งจริงของพนักงาน
+  const areas = await wfQuery(`
+    DELETE FROM wf.UserSaleArea
+    WHERE UserId IN (SELECT Id FROM wf.AppUser WHERE Username LIKE 'e2e[_]%')`);
+  say(`ถอดการผูกภาคของผู้ใช้ทดสอบ ${areas.rowsAffected?.[0] ?? 0} รายการ`);
+
   await wfQuery(`DELETE FROM wf.UserSaleArea WHERE UserId IN (SELECT Id FROM wf.AppUser WHERE Username=@u)`,
     { u: { type: sql.NVarChar(50), value: MARKETING_USER } });
   await wfQuery(`DELETE FROM wf.AppUser WHERE Username=@u`, { u: { type: sql.NVarChar(50), value: MARKETING_USER } });
@@ -93,13 +99,57 @@ async function seed() {
     VALUES (@uid, 2999, 12, 100000, 0, 0)`,
     { uid: { type: sql.Int, value: sales.Id } })).recordset[0];
 
-  // ลูกค้าในภาค 05 (ภาคใต้) เพื่อให้ระบบอนุมานภาคได้ — อ่านอย่างเดียว ไม่แก้ข้อมูลลูกค้า
+  // ลูกค้าในภาค 05 (ภาคใต้) ที่มียอดขนจริงคงเหลืออย่างน้อย 6 สูตร สูตรละ 19 ตันขึ้นไป
+  //
+  // ต้องเป็นลูกค้าที่ขนจริง เพราะตั้งแต่ v1.6.1 ใบขอเคลียร์ตัดสิทธิ์จากใบส่งของใน WINSpeed
+  // โดยตรง (แหล่งข้อมูลเดียว) รหัสสินค้าสมมติจะถูกปฏิเสธที่ขั้นกระทบยอด ซึ่งถูกต้องแล้ว
+  // — อ่านอย่างเดียว ไม่แก้ข้อมูลลูกค้าและไม่แตะข้อมูลใน dbo
   const cust = (await wfQuery(`
-    SELECT TOP 1 c.CustID FROM dbo.EMCust c
-    JOIN dbo.EMSaleArea a ON a.SaleAreaID = c.SaleAreaID
-    WHERE LEFT(a.SaleAreaCode,2)='05'`)).recordset[0];
+    SELECT TOP 1 CustId FROM (
+      SELECT CustId, GoodCode, SUM(RemainingTonRebate) AS Ton
+      FROM wf.v_RebateAccrualRemaining
+      WHERE RegionCode = '05'
+      GROUP BY CustId, GoodCode
+      HAVING SUM(RemainingTonRebate) >= 19
+    ) t
+    GROUP BY CustId
+    HAVING COUNT(*) >= 6
+    ORDER BY COUNT(*) DESC`)).recordset[0];
 
-  return { poolId: pool.Id, custId: cust ? cust.CustID : null, salesId: sales.Id, mgrId: mgr ? mgr.Id : null };
+  // 6 สูตรแรกของลูกค้ารายนั้น ใช้แทนชื่อสูตรบนใบ RBD68-049
+  const goods = cust ? (await wfQuery(`
+    SELECT TOP 6 GoodCode
+    FROM wf.v_RebateAccrualRemaining
+    WHERE CustId = @c AND RegionCode = '05'
+    GROUP BY GoodCode
+    HAVING SUM(RemainingTonRebate) >= 19
+    ORDER BY GoodCode`, { c: { type: sql.NVarChar(20), value: String(cust.CustId) } })).recordset : [];
+
+  // ผู้อนุมัติชั้น 2 ของภาค 05
+  //
+  // ถ้าระบบจริงตั้งไว้แล้ว ใช้ของจริง (เทสต์จะได้ทดสอบสิ่งที่ผู้ใช้เห็นจริง)
+  // ถ้ายังไม่ตั้ง ผูกผู้ใช้ทดสอบให้ชั่วคราวแล้วถอดออกตอนล้าง — เทสต์ต้องรันได้บนฐานเปล่า
+  let approver = (await wfQuery(`
+    SELECT TOP 1 u.Username
+    FROM wf.UserSaleArea a JOIN wf.AppUser u ON u.Id = a.UserId
+    WHERE a.RegionCode = '05' AND u.IsActive = 1
+    ORDER BY a.IsPrimary DESC, a.UserId`)).recordset[0];
+
+  if (!approver) {
+    await wfQuery(`
+      INSERT INTO wf.UserSaleArea (UserId, RegionCode, IsPrimary)
+      SELECT Id, '05', 1 FROM wf.AppUser WHERE Username = 'e2e_manager'`);
+    approver = (await wfQuery(`SELECT Username FROM wf.AppUser WHERE Username = 'e2e_manager'`)).recordset[0];
+  }
+
+  return {
+    poolId: pool.Id,
+    regionApprover: approver ? approver.Username : null,
+    custId: cust ? cust.CustId : null,
+    goodCodes: goods.map(g => g.GoodCode),
+    salesId: sales.Id,
+    mgrId: mgr ? mgr.Id : null,
+  };
 }
 
 // ---------- ทดสอบ ----------
@@ -114,22 +164,31 @@ async function main() {
   console.log('เตรียมข้อมูลตั้งต้น');
   await cleanup(true);                 // กันข้อมูลค้างจากรอบก่อน
   const ctx = await seed();
-  console.log(`  pool #${ctx.poolId} ยอดตั้งไว้ 100,000 · ลูกค้าภาค 05 = ${ctx.custId || '(ไม่พบ)'}`);
+  console.log(`  pool #${ctx.poolId} ยอดตั้งไว้ 100,000 · ลูกค้าภาค 05 = ${ctx.custId || '(ไม่พบ)'}`
+    + ` · ผู้อนุมัติภาค 05 = ${ctx.regionApprover || '(ยังไม่ตั้ง)'}`);
 
   const tSales = await login('e2e_sales');
-  const tMgr = await login('emp-00036');       // คุณมนัส — ผู้จัดการภาค 05
+  // ผู้อนุมัติชั้น 2 ต้องอ่านจากข้อมูลจริง ไม่ผูกชื่อไว้ในเทสต์
+  // การผูก emp-00036 ไว้ตายตัวทำให้เทสต์ล้มทันทีที่ผู้ดูแลย้ายผู้จัดการภาคจากหน้าจอ
+  // ซึ่งเป็นสิ่งที่ระบบตั้งใจให้ทำได้ (หน้าจอ ข้อมูลหลัก → ผู้อนุมัติรายภาค)
+  if (!ctx.regionApprover) return bad('ยังไม่มีผู้อนุมัติชั้นที่ 2 ของภาค 05 — ตั้งค่าที่ ข้อมูลหลัก → ผู้อนุมัติรายภาค ก่อน');
+  const tMgr = await login(ctx.regionApprover);
   const tMkt = await login(MARKETING_USER);
   const tCL = await login('e2e_clevel');
 
-  // ตารางเดียวกับใบ RBD68-049 แต่เป็นข้อมูลจำลอง ไม่ใช่ของลูกค้าจริง
-  const lines = [
-    { goodCode: 'TEST-18-4-5',  qtyTon: 8,  pricePerTon: 12700, netPricePerTon: 12300 },
-    { goodCode: 'TEST-15-5-35', qtyTon: 19, pricePerTon: 18200, netPricePerTon: 17000 },
-    { goodCode: 'TEST-14-4-9',  qtyTon: 12, pricePerTon: 12700, netPricePerTon: 12300 },
-    { goodCode: 'TEST-15-7-18', qtyTon: 14, pricePerTon: 16200, netPricePerTon: 15500 },
-    { goodCode: 'TEST-21-0-0',  qtyTon: 8,  pricePerTon: 8200,  netPricePerTon: 7700 },
-    { goodCode: 'TEST-0-0-60',  qtyTon: 16, pricePerTon: 13200, netPricePerTon: 12500 },
+  // ตัน/ราคา ตรงกับใบ RBD68-049 ทุกบรรทัด (ยอดรวมต้องได้ 55,800 บาท)
+  // ต่างจากเดิมตรงที่สูตรปุ๋ยเป็นสูตรจริงที่ลูกค้ารายนี้ขนไปแล้ว ไม่ใช่รหัสสมมติ
+  // ราคาขาย/ราคาสุทธิยังกรอกตามกระดาษ เพราะกระดาษคือเอกสารต้นทางของตัวเลขสองช่องนี้
+  if (ctx.goodCodes.length < 6) return bad('หาลูกค้าภาค 05 ที่มียอดขนจริงครบ 6 สูตรไม่ได้');
+  const paper = [
+    { qtyTon: 8,  pricePerTon: 12700, netPricePerTon: 12300 },
+    { qtyTon: 19, pricePerTon: 18200, netPricePerTon: 17000 },
+    { qtyTon: 12, pricePerTon: 12700, netPricePerTon: 12300 },
+    { qtyTon: 14, pricePerTon: 16200, netPricePerTon: 15500 },
+    { qtyTon: 8,  pricePerTon: 8200,  netPricePerTon: 7700 },
+    { qtyTon: 16, pricePerTon: 13200, netPricePerTon: 12500 },
   ];
+  const lines = paper.map((row, i) => ({ goodCode: ctx.goodCodes[i], ...row }));
   const expectTotal = 55800;
 
   console.log('\n1. ยื่นใบขอเคลียร์ (SALES)');
@@ -148,14 +207,22 @@ async function main() {
   head.Status === 'TIER2_PENDING' ? ok('สถานะเริ่มต้นเป็น TIER2_PENDING') : bad(`สถานะเริ่มต้นผิด: ${head.Status}`);
   ok(`ภาคที่ระบบอนุมานได้: ${head.RegionCode}`);
 
-  const ln = (await wfQuery(`SELECT [LineNo], RebatePerTon, LineAmount FROM wf.RebateClaimLine WHERE ClaimId=@id ORDER BY [LineNo]`,
+  // หนึ่งบรรทัดบนกระดาษถูกกระจายลงหลายล็อตตามการตัด FIFO จึงนับเป็น "กลุ่มสูตร"
+  // ไม่ใช่จำนวนแถว · ยอดรวมต่อสูตรต้องเท่ากับกระดาษเป๊ะ ๆ
+  const ln = (await wfQuery(`
+    SELECT GoodCode, SUM(QtyTon) AS QtyTon, SUM(LineAmount) AS LineAmount,
+           COUNT(*) AS Lots, SUM(CASE WHEN SourceSOID IS NULL THEN 1 ELSE 0 END) AS Unbound
+    FROM wf.RebateClaimLine WHERE ClaimId=@id GROUP BY GoodCode`,
     { id: { type: sql.Int, value: claimId } })).recordset;
-  ln.length === 6 ? ok('บันทึกรายการย่อยครบ 6 บรรทัด') : bad(`รายการย่อยได้ ${ln.length} บรรทัด`);
-  const l2 = ln.find(x => x.LineNo === 2);
-  Number(l2?.LineAmount) === 22800 ? ok('LineAmount ที่ฐานข้อมูลคำนวณเองถูกต้อง (19 × 1,200 = 22,800)')
-    : bad(`LineAmount บรรทัด 2 ผิด: ${l2?.LineAmount}`);
+  ln.length === 6 ? ok(`บันทึกครบ 6 สูตร (กระจายเป็น ${ln.reduce((a, x) => a + Number(x.Lots), 0)} ล็อตตาม FIFO)`)
+    : bad(`ควรได้ 6 สูตร แต่ได้ ${ln.length}`);
+  ln.every(x => Number(x.Unbound) === 0) ? ok('ทุกล็อตชี้กลับไปยังบรรทัดใบส่งของต้นทางได้')
+    : bad('มีล็อตที่ไม่มี SourceSOID — ตรวจย้อนกลับตาม ISO ไม่ได้');
+  const g2 = ln.find(x => x.GoodCode === ctx.goodCodes[1]);
+  Number(g2?.LineAmount) === 22800 ? ok('ยอดต่อสูตรที่ฐานข้อมูลคำนวณเองถูกต้อง (19 × 1,200 = 22,800)')
+    : bad(`ยอดสูตรที่ 2 ผิด: ${g2?.LineAmount} (ตัน ${g2?.QtyTon})`);
 
-  console.log('\n2. อนุมัติชั้นที่ 2 — ผู้จัดการภาค (คุณมนัส บทบาท SALES แต่ดูแลภาค 05)');
+  console.log('\n2. อนุมัติชั้นที่ 2 — ผู้อนุมัติที่ผูกกับภาค 05 (สิทธิ์มาจากการผูกภาค ไม่ใช่จากบทบาท)');
   r = await call(tMgr, 'POST', `/api/rebate/claims/${claimId}/approve`, { note: `${TAG} ชั้น 2` });
   let d = await r.json();
   r.ok && d.currentTier === 3 ? ok(`ผ่านไปชั้น 3 (${d.status})`) : bad(`ชั้น 2 ล้มเหลว (${r.status}) ${JSON.stringify(d).slice(0, 140)}`);
