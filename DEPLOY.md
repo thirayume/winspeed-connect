@@ -149,13 +149,13 @@ REMOTE_B_SSH_KEY=C:\Users\<you>\.ssh\wf-key
 ## A · ระบบหลัก — Vercel + Railway + Azure
 
 ### Environment Variables
-- **Vercel (Frontend)**: `VITE_API_BASE_URL=https://<your-railway-domain>/api` และ `VITE_USE_MOCKUP_DATA=false`
+- **Vercel (Frontend)**: `VITE_API_BASE_URL=https://<your-railway-domain>/api`
 - **Railway (Backend)**: `DB_MODE=remote` + `REMOTE_DB_SERVER=20.255.185.14` + credentials + `CORS_ORIGIN=https://<your-vercel-domain>`
 
 > `VITE_*` ถูก **bake ตอน build** → เปลี่ยนค่าแล้วต้อง **rebuild** ไม่ใช่ restart
 
 ### โหมด Demo Mock (ไม่ต้องมี backend)
-`vercel.json` ตั้ง `VITE_USE_MOCKUP_DATA=true` เป็นค่าเริ่มต้น → ใช้ข้อมูลตัวอย่างจาก `src/mock/sample-data.json`
+แอปอ่านข้อมูลจากฐานจริงเสมอ — ไม่มีโหมดข้อมูลตัวอย่างแล้ว (ถอดออกเมื่อ 7 ส.ค. 2569 เพราะไฟล์ตัวอย่างเป็นข้อมูลลูกค้าจริงที่ dump มา)
 รีเฟรช sample data: `cd backend && node export_sample.js` (DB_MODE=local) แล้ว commit
 
 ### ข้อควรระวัง

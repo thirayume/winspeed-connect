@@ -217,7 +217,6 @@ function Stage-Init($cfg) {
   )
   $feEnv = @(
     "VITE_API_BASE_URL=https://$($obj.apiDomain)/api",
-    "VITE_USE_MOCKUP_DATA=false"
   )
   ($dbEnv -join "`r`n") | Set-Content (Join-Path $outDir '1-env-databases.txt') -Encoding UTF8
   ($beEnv -join "`r`n") | Set-Content (Join-Path $outDir '2-env-backend.txt')   -Encoding UTF8
