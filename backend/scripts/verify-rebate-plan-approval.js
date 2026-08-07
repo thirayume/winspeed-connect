@@ -41,6 +41,30 @@ async function cleanup(quiet) {
     await wfQuery(`DELETE FROM wf.RebatePlan WHERE PlanId=@id`, id).catch(() => {});
   }
   if (!quiet) console.log(`  ลบโปรโมชั่นทดสอบ ${plans.length} รายการ`);
+
+  // ถอดการผูกภาคชั่วคราวของผู้ใช้ทดสอบ — ไม่แตะการแต่งตั้งจริงของพนักงาน
+  await wfQuery(`
+    DELETE FROM wf.UserSaleArea
+    WHERE UserId IN (SELECT Id FROM wf.AppUser WHERE Username LIKE 'e2e[_]%')`).catch(() => {});
+}
+
+/**
+ * ผู้อนุมัติชั้น 2 ของภาค 05
+ *
+ * ใช้ของจริงถ้าผู้ดูแลตั้งไว้แล้ว ไม่งั้นผูกผู้ใช้ทดสอบให้ชั่วคราว
+ * การผูกชื่อพนักงานไว้ตายตัวทำให้เทสต์ล้มทันทีที่ผู้ดูแลย้ายผู้จัดการภาคจากหน้าจอ
+ * ซึ่งเป็นสิ่งที่ระบบตั้งใจให้ทำได้
+ */
+async function regionApprover() {
+  const found = (await wfQuery(`
+    SELECT TOP 1 u.Username FROM wf.UserSaleArea a JOIN wf.AppUser u ON u.Id = a.UserId
+    WHERE a.RegionCode = '05' AND u.IsActive = 1
+    ORDER BY a.IsPrimary DESC, a.UserId`)).recordset[0];
+  if (found) return found.Username;
+  await wfQuery(`
+    INSERT INTO wf.UserSaleArea (UserId, RegionCode, IsPrimary)
+    SELECT Id, '05', 1 FROM wf.AppUser WHERE Username = 'e2e_approver'`);
+  return 'e2e_approver';
 }
 
 async function main() {
@@ -48,7 +72,7 @@ async function main() {
   await cleanup(true);
 
   const tSales = await login('e2e_sales');
-  const tRegion = await login('emp-00036');    // ผู้ดูแลภาค 05 บทบาท SALES
+  const tRegion = await login(await regionApprover());   // ผู้ที่ถูกผูกกับภาค 05
   const tMgr = await login('e2e_manager');     // ผู้จัดการฝ่ายขาย
   const tCL = await login('e2e_clevel');
 

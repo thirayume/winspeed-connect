@@ -4,14 +4,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { Map as MapIcon, RefreshCw, Plus, Trash2, AlertTriangle, Users } from 'lucide-react';
 import {
   fetchRegionCoverage, setUserRegion, removeUserRegion, listUsers,
-  type RegionCoverage, type AdminUser,
+  fetchRebateDocCodes, setRebateDocCode,
+  type RegionCoverage, type RebateDocCodeRow, type RebateDocCodeEvidence,
 } from '../../services/api';
+// AdminUser ประกาศไว้ที่ types ไม่ใช่ที่ api.ts — api.ts เพียง import มาใช้ต่อ
+import type { AdminUser } from '../../types';
 
 /**
  * จัดการผู้อนุมัติรายภาค — ผู้อนุมัติชั้นที่ 2 ของใบขอเคลียร์รีเบท
  *
  * มีหน้าจอนี้เพราะที่ผ่านมาการผูกภาคทำได้จากฐานข้อมูลเท่านั้น และเคยผูกผิดจริง
- * (EMP-00036 ถูกผูกกับภาคใต้ ทั้งที่ยอดขายอยู่ภาคอีสาน) โดยไม่มีทางแก้จากระบบเลย
+ * (ผู้ดูแลภาคหนึ่งถูกผูกกับภาคใต้ ทั้งที่ยอดขายอยู่ภาคอีสาน) โดยไม่มีทางแก้จากระบบเลย
  *
  * ภาคที่ยังว่างไม่ได้ทำให้ใบค้าง แต่ทำให้ชั้นที่ 2 ตกไปเป็น "ผู้จัดการคนใดก็ได้"
  * ตามเงื่อนไขใน backend/routes/rebate.js จึงต้องเห็นชัดว่าภาคไหนยังว่าง
@@ -149,7 +152,123 @@ export function SaleRegionManager() {
         {!loading && regions.length === 0 && (
           <div className="text-center text-gray-400 text-sm py-12">ยังไม่มีข้อมูลภาค</div>
         )}
+
+        <RebateDocCodeSection />
       </div>
     </div>
+  );
+}
+
+/**
+ * รหัสผู้ขอใช้รีเบทบนเลขที่เอกสาร RB
+ *
+ * เอกสารคืนรีเบทใน WINSpeed คือ RB<รหัสผู้ขอ><ปี พ.ศ.>-<ลำดับ> เช่น RBD68-049
+ * ตรวจจากฐานจริง 16,195 ใบ พบว่า **EmpID ว่างทุกใบ** — WINSpeed ไม่ได้บันทึกว่าใครขอ
+ * อักษรในเลขที่เอกสารจึงเป็นร่องรอยเดียวที่บอกได้ ต้องผูกกับบัญชีผู้ใช้ให้ชัด
+ *
+ * ตารางหลักฐานด้านล่างคือความสัมพันธ์ในอดีต (นับจากพนักงานขายประจำของลูกค้า)
+ * ระบบไม่ตั้งรหัสให้อัตโนมัติ เพราะบางอักษรในอดีตคาบเกี่ยวหลายคน การเดาแล้วผิด
+ * จะทำให้เลขที่เอกสารชี้ไปผิดคนอย่างถาวร
+ */
+function RebateDocCodeSection() {
+  const [assigned, setAssigned] = useState<RebateDocCodeRow[]>([]);
+  const [evidence, setEvidence] = useState<RebateDocCodeEvidence[]>([]);
+  const [draft, setDraft] = useState<Record<number, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      const d = await fetchRebateDocCodes();
+      setAssigned(d.assigned);
+      setEvidence(d.evidence);
+      setDraft(Object.fromEntries(d.assigned.map(u => [u.UserId, u.RebateDocCode || ''])));
+    } catch (e: unknown) { setMsg((e as Error).message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function save(userId: number) {
+    setBusy(true); setMsg('');
+    try {
+      await setRebateDocCode(userId, (draft[userId] || '').trim().toUpperCase() || null);
+      await load();
+      setMsg('บันทึกแล้ว');
+    } catch (e: unknown) { setMsg((e as Error).message); }
+    setBusy(false);
+  }
+
+  const hintFor = (code: string | null) => {
+    if (!code) return '';
+    const top = evidence.filter(e => e.SeriesCode === code[0]).sort((a, b) => b.DocCount - a.DocCount)[0];
+    return top ? `เดิม ${top.EmpName} ออก ${top.DocCount.toLocaleString()} ใบ` : '';
+  };
+
+  return (
+    <section className="mt-8 border-t border-gray-200 pt-6">
+      <h2 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+        <Users size={15} /> รหัสผู้ขอใช้รีเบท (บนเลขที่เอกสาร RB)
+      </h2>
+      <p className="text-xs text-gray-500 mt-1">
+        เลขที่ใบคืนรีเบทใน WINSpeed คือ <code>RB&lt;รหัส&gt;&lt;ปี พ.ศ.&gt;-&lt;ลำดับ&gt;</code> เช่น <code>RBD68-049</code> ·
+        WINSpeed ไม่ได้บันทึกว่าใครเป็นผู้ขอ อักษรนี้จึงเป็นร่องรอยเดียว · ตัวอักษร A-Z 1-2 ตัว ห้ามซ้ำกัน ·
+        คนที่มีเอกสารเดิมอยู่แล้วให้คงอักษรเดิมไว้ · คนใหม่ใช้ตัวแรกของชื่อ + ตัวแรกของนามสกุล
+      </p>
+      {msg && <p className="text-xs mt-2 text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">{msg}</p>}
+
+      <div className="mt-3 border border-gray-200 rounded-xl overflow-hidden">
+        <div className="overflow-x-auto max-h-80 overflow-y-auto">
+          <table className="w-full text-sm min-w-[560px]">
+            <thead className="bg-gray-50 text-xs text-gray-500 sticky top-0">
+              <tr className="text-left">
+                <th className="px-3 py-2">ผู้ใช้</th>
+                <th className="px-3 py-2">บทบาท</th>
+                <th className="px-3 py-2 w-32">รหัส</th>
+                <th className="px-3 py-2">หลักฐานจากเอกสารเดิม</th>
+                <th className="px-3 py-2 w-20"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {assigned.map(u => (
+                <tr key={u.UserId} className="hover:bg-gray-50/70">
+                  <td className="px-3 py-2">
+                    <span className="font-medium text-gray-700">{u.DisplayName || u.Username}</span>
+                    <span className="text-[11px] text-gray-400 ml-2">{u.Username}</span>
+                  </td>
+                  <td className="px-3 py-2 text-xs text-gray-500">{u.Role}</td>
+                  <td className="px-3 py-2">
+                    <input value={draft[u.UserId] ?? ''} maxLength={2}
+                      onChange={e => setDraft({ ...draft, [u.UserId]: e.target.value.toUpperCase() })}
+                      placeholder="—"
+                      className="w-16 border border-gray-200 rounded px-2 py-1 text-sm uppercase tracking-widest text-center" />
+                  </td>
+                  <td className="px-3 py-2 text-[11px] text-gray-400">
+                    {u.RebateDocCode
+                      ? hintFor(draft[u.UserId] || u.RebateDocCode)
+                      : u.suggested && (
+                        <button onClick={() => setDraft({ ...draft, [u.UserId]: u.suggested! })}
+                          className="text-blue-600 hover:underline">
+                          เสนอ {u.suggested} (จากชื่อ)
+                        </button>
+                      )}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {(draft[u.UserId] ?? '') !== (u.RebateDocCode ?? '') && (
+                      <button onClick={() => save(u.UserId)} disabled={busy}
+                        className="px-2.5 py-1 text-xs rounded-lg text-white font-bold disabled:opacity-40"
+                        style={{ background: '#0C447C' }}>
+                        บันทึก
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {!assigned.length && (
+                <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-300">ไม่มีผู้ใช้ที่ต้องตั้งรหัส</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   );
 }
