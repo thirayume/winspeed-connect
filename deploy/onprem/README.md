@@ -68,7 +68,7 @@ deploy/onprem/backup/
 | **Windows** | ดับเบิลคลิก **`up.bat`** |
 | **Ubuntu** | `bash up.sh` |
 
-ครั้งแรกใช้เวลา ~5–15 นาที (build image + restore) เสร็จแล้วเข้า `https://<APP_DOMAIN>` login ด้วย **`admin` / `***REMOVED-PASSWORD***`**
+ครั้งแรกใช้เวลา ~5–15 นาที (build image + restore) เสร็จแล้วเข้า `https://<APP_DOMAIN>` login ด้วย **`admin` / (รหัสที่ seed_admin พิมพ์ให้ตอนติดตั้ง)**
 
 ---
 
@@ -137,7 +137,7 @@ ssh -N -L 14330:127.0.0.1:1433 user@<เครื่องนี้>
 - **`RESTORE` ทับแล้ว schema `wf` หายทั้งหมด** — `.bak` ของ WINSpeed ไม่มี `wf`
   `bootstrap.sh` จึงสร้าง user + migrate + GRANT + seed ให้ใหม่ทุกครั้งหลัง restore
 - **`VITE_API_BASE_URL` ถูก bake ตอน build** — เปลี่ยนโดเมนแล้วต้อง `--build` ใหม่ ไม่ใช่แค่ restart
-- **พนักงานทุกคนได้รหัสเริ่มต้น `***REMOVED-PASSWORD***` เหมือนกัน** — บังคับเปลี่ยนก่อนใช้จริง
+- **พนักงานทุกคนได้รหัสเริ่มต้น (รหัสที่ seed_admin พิมพ์ให้ตอนติดตั้ง) เหมือนกัน** — บังคับเปลี่ยนก่อนใช้จริง
 - **SQL Server ไม่มี image ARM64** — Mac M1/M2 หรือ Raspberry Pi รันไม่ได้ ต้องเป็น x86-64
 - **สำรองข้อมูลเอง** — ไม่มีใครทำให้ ใช้ `../coolify/backup-databases.sh` ปรับชื่อ container เป็น `wf-mssql`/`wf-mysql`
 - **ไฟดับ/เน็ตหลุด = ระบบล่ม** — ต่างจาก cloud ควรมี UPS ถ้าใช้จริงจัง

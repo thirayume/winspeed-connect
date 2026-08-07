@@ -116,7 +116,7 @@ docker compose ps --format "table {{.Name}}\t{{.Status}}"
 $appDomain = ([regex]::Match($envText, '(?m)^\s*APP_DOMAIN\s*=\s*(.+)$')).Groups[1].Value.Trim()
 Write-Host ""
 Write-Host "  หน้าเว็บ : https://$appDomain" -ForegroundColor Green
-Write-Host "  login    : admin / ***REMOVED-PASSWORD***   (W0rld ใช้เลขศูนย์)" -ForegroundColor Green
+Write-Host "  login    : admin / (รหัสตั้งต้นถูกพิมพ์ตอนรัน seed_admin (ไม่เขียนไว้ในซอร์สสาธารณะ))" -ForegroundColor Green
 Write-Host ""
 Write-Host "  ดู log   : docker compose logs -f backend" -ForegroundColor DarkGray
 Write-Host "  หยุด     : up.bat -Down" -ForegroundColor DarkGray

@@ -10,7 +10,7 @@ npm run dev
 - ปิด: **Ctrl+C**
 
 > ครั้งแรก/หลัง clone: รัน `npm install` ใน `backend` และ `WSSale-App` ก่อน
-> **Login เริ่มต้น: `admin` / `***REMOVED-PASSWORD***`** — ⚠️ `W0rld` ใช้ **เลขศูนย์ (0)** ไม่ใช่ตัวอักษร O
+> **Login เริ่มต้น: `admin` / (รหัสที่ seed_admin พิมพ์ให้ตอนติดตั้ง)** — ⚠️ `W0rld` ใช้ **เลขศูนย์ (0)** ไม่ใช่ตัวอักษร O
 > พนักงาน (`emp-XXXXX`) ใช้รหัสเริ่มต้นเดียวกัน · ทั้งหมดสร้างโดย `backend/seed_admin.js`
 > ดูสิทธิ์แต่ละ role เพิ่มเติมใน README หรือ UAT Workbook
 
@@ -252,7 +252,7 @@ node seed_admin.js
 role `SALES` ทั้งหมด **ไม่มี ADMIN สักบัญชี** → login ไม่ผ่านทุกบัญชี ระบบไม่มีใครดูแลได้
 
 `seed_admin.js` ทำ 3 อย่าง:
-1. สร้าง **`admin` / `***REMOVED-PASSWORD***`** (role ADMIN)
+1. สร้าง **`admin` / (รหัสที่ seed_admin พิมพ์ให้ตอนติดตั้ง)** (role ADMIN)
 2. อ่าน `dbo.EMEmp` (พนักงานที่ยังไม่ลาออก) → สร้าง/อัปเดต user พร้อม **role จริง**
    (`EmpGroupID=2000`→MANAGER · `2001` หรือ Dept `2004/2005`→WAREHOUSE · Dept `2000/2001`→ACCOUNTING · ที่เหลือ SALES)
    และผูก **`EmpId` ↔ `EMEmp.EmpID`** — จำเป็นต่อการ export SO กลับ WINSpeed
