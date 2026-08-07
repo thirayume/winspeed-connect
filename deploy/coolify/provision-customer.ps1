@@ -165,7 +165,8 @@ function Stage-Init($cfg) {
     jwtSecret        = (New-Secret 64)
     tsIngestSecret   = (New-Secret 48)
     migrateSecret    = (New-Secret 48)
-    adminPassword    = '***REMOVED-PASSWORD***'
+    # สุ่มให้ลูกค้าแต่ละราย — เดิมใช้ค่าเดียวกันทุกรายและเขียนไว้ในซอร์สสาธารณะ
+    adminPassword    = ('Wf' + (New-Secret 14) + '7q')
     tunnelPort       = 14330
     createdAt        = (Get-Date -Format 'yyyy-MM-dd HH:mm')
     done             = @()

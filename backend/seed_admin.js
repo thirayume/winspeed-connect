@@ -7,7 +7,23 @@ require('dotenv').config();
 const bcrypt = require('bcrypt');
 const { sql, wfQuery, ownerPool } = require('./db');
 
-const DEFAULT_SEED_PW = process.env.DEFAULT_SEED_PASSWORD || ['W0rld', 'F3rt'].join('');
+/**
+ * รหัสผ่านตั้งต้น — **ไม่เก็บค่าจริงไว้ในซอร์ส** เพราะที่เก็บนี้เป็นสาธารณะ
+ *
+ * เดิมมีค่าปริยายเขียนไว้ตรง ๆ (ต่อสตริงเพื่อพรางไว้ ซึ่งอ่านออกอยู่ดี) ทำให้
+ * ทุก deployment ใช้รหัส admin เดียวกันและใครก็อ่านได้จาก GitHub
+ *
+ * ตอนนี้: ตั้ง DEFAULT_SEED_PASSWORD เอง หรือปล่อยว่างแล้วระบบสุ่มให้
+ * แล้ว **พิมพ์ออกหน้าจอครั้งเดียว** ผู้ติดตั้งจดไปเปลี่ยนทันทีหลัง login
+ */
+const crypto = require('crypto');
+let seedPasswordWasGenerated = false;
+const DEFAULT_SEED_PW = process.env.DEFAULT_SEED_PASSWORD || (() => {
+  seedPasswordWasGenerated = true;
+  // อ่านออก พิมพ์ตามได้ แต่เดาไม่ได้ — ตัดอักขระที่สับสน (0/O, 1/l/I)
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  return Array.from(crypto.randomBytes(16)).map(b => alphabet[b % alphabet.length]).join('');
+})();
 
 // user เริ่มต้น (เปลี่ยนรหัสผ่านหลัง login ครั้งแรก)
 // empId = EMEmp.EmpID จริงของ WINSpeed (พนักงานขายเท่านั้นที่ต้อง map เพื่อ export SO)
@@ -120,6 +136,15 @@ async function seed() {
   
   await ownerPool.close();
   console.log('\n✓ Seed เสร็จสิ้น');
+  // พิมพ์ครั้งเดียวเมื่อระบบสุ่มให้ — ไม่มีที่อื่นเก็บค่านี้ไว้ ต้องจดตอนนี้
+  if (seedPasswordWasGenerated) {
+    console.log('\n' + '='.repeat(60));
+    console.log('  รหัสผ่านตั้งต้นของทุกบัญชี (สุ่มให้ · แสดงครั้งเดียว):');
+    console.log('    ' + DEFAULT_SEED_PW);
+    console.log('  จดไว้แล้วเปลี่ยนทันทีหลัง login ครั้งแรก');
+    console.log('  ถ้าต้องการกำหนดเอง ตั้ง DEFAULT_SEED_PASSWORD ก่อนรัน');
+    console.log('='.repeat(60) + '\n');
+  }
   process.exit(0);
 }
 

@@ -1,5 +1,7 @@
 -- E2E Test Data Seed
--- Creates test users for all roles with password ***REMOVED-PASSWORD***
+-- Creates test users for all roles.
+-- PasswordHash ด้านล่างคือ bcrypt ของรหัสตั้งต้น — ไม่เขียนรหัสจริงไว้ในไฟล์นี้
+-- เพราะที่เก็บซอร์สนี้เป็นสาธารณะ · ค่าจริงอยู่ใน backend/.env (E2E_PASSWORD)
 
 SET ANSI_NULLS ON;
 SET QUOTED_IDENTIFIER ON;

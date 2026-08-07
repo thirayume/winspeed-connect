@@ -244,9 +244,9 @@ docker exec -it <backend-container> node seed_admin.js
 > 🚨 **migration อย่างเดียวยังเข้าระบบไม่ได้** — `011_seed_sales_users_giveaway.sql` สร้างแต่บัญชี
 > `emp-XXXXX` role `SALES` ทั้งหมด **ไม่มี ADMIN สักบัญชี** → login ไม่ได้ทั้งระบบ
 >
-> `seed_admin.js` สร้าง **`admin` / `***REMOVED-PASSWORD***`** (⚠️ `W0rld` = **เลขศูนย์**) + map role จริงจาก `dbo.EMEmp`
+> `seed_admin.js` สร้าง **`admin` / (รหัสที่ seed_admin พิมพ์ให้ตอนติดตั้ง)** (⚠️ `W0rld` = **เลขศูนย์**) + map role จริงจาก `dbo.EMEmp`
 > (MANAGER/WAREHOUSE/ACCOUNTING) + ผูก `EmpId` ที่จำเป็นต่อการ export SO กลับ WINSpeed
-> พนักงานทุกคนได้รหัสเริ่มต้น `***REMOVED-PASSWORD***` เหมือนกัน — **ต้องบังคับเปลี่ยนก่อน go-live**
+> พนักงานทุกคนได้รหัสเริ่มต้น (รหัสที่ seed_admin พิมพ์ให้ตอนติดตั้ง) เหมือนกัน — **ต้องบังคับเปลี่ยนก่อน go-live**
 >
 > ❌ **อย่า** ใช้ `migrations/uat_create_admin.sql` (ของ UAT · ถูกกันด้วย pattern `^uat_` · มีบั๊ก)
 > ❌ **อย่า** insert `wf.AppUser` เองด้วย SQL — จะไม่ได้ role/EmpId ที่ถูกต้อง
