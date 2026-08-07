@@ -731,3 +731,80 @@ export interface PendingGiveaway {
   CreatedAt: string;
   CreatedByName: string;
 }
+
+// ── ยอดสะสมรีเบท (อ่านจาก WINSpeed โดยตรง — ไม่มีสำเนาในแอป) ──────────────────
+// รูปร่างตรงกับ view wf.v_RebateAccrualRemaining ดู migration 076
+export interface RebateAccrualSummary {
+  CustId: string;
+  CustName: string | null;
+  CustCode: string | null;
+  RegionCode: string | null;
+  SalesEmpId: number | null;
+  SalesEmpName: string | null;
+  LotCount: number;
+  RemainingTon: number;
+  RemainingAmt: number;
+  /** ตันที่ยังไม่มีแบบขออนุมัติรายการส่งเสริมการขายครอบคลุม — คิดเป็นเงินไม่ได้ */
+  TonWithoutPlan: number;
+  OldestDate: string | null;
+}
+
+/** หนึ่งล็อต = หนึ่งบรรทัดของใบส่งของ (DocuType 104) = หน่วยที่ตัดสิทธิ์แบบ FIFO */
+export interface RebateAccrualLot {
+  SourceSOID: number;
+  SourceListNo: number;
+  SourceDocuNo: string;
+  SourceDocuDate: string;
+  TaxInvoiceNo: string | null;
+  CouponNo: string | null;
+  CustId: string;
+  CustName: string | null;
+  RegionCode: string | null;
+  SalesEmpId: number | null;
+  SalesEmpName: string | null;
+  GoodID: number;
+  GoodCode: string;
+  GoodName: string | null;
+  QtyTon: number;
+  ListPricePerTon: number;
+  /** null = ยังไม่มีแผนส่งเสริมการขายที่อนุมัติแล้วครอบคลุมล็อตนี้ */
+  NetPricePerTon: number | null;
+  RebatePerTon: number | null;
+  PlanId: number | null;
+  PlanNo: string | null;
+  RemainingTon: number;
+  RemainingAmt: number | null;
+}
+
+// ── WF Rebate Trail (เส้นทางเอกสารรีเบทฝั่ง WINSpeed — อ่านอย่างเดียว) ─────────
+// เดิมถูก import โดยไม่มีการประกาศ ทำให้ tsc ฟ้อง 6 ข้อ (vite build ไม่ typecheck จึงไม่พัง)
+export interface WfRebateTrailSummary {
+  EmpID: number;
+  SalesName: string;
+  OrderCount: number;
+  CouponCount: number;
+  CouponTon: number;
+  RedeemedTon: number;
+  RemainingTon: number;
+  RedemptionCount: number;
+  InvoiceCount: number;
+  FirstDocuDate: string | null;
+  LastDocuDate: string | null;
+}
+
+// หน้าจอนี้แสดงผลดิบจากหลายตารางของ WINSpeed จึงเปิด index signature ไว้
+// (ไม่ได้ตั้งใจให้หลวม — คอลัมน์มาจาก SELECT ที่เปลี่ยนได้ตามเอกสารที่ผูกกัน)
+export interface WfRebateTrailRow {
+  SOID: number;
+  SONo: string;
+  DocuDate: string | null;
+  CustID: string | number | null;
+  CustName: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
+
+export interface WfRebateTrailDetail {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}

@@ -366,10 +366,49 @@ export const fetchRebateClaimDetail = (id: number) =>
   req<{ claim: RebateClaim; lines: any[]; approvals: any[]; invoices: any[] }>(`/rebate/claims/${id}`);
 
 export const createRebateClaim = (payload: {
-  poolId: number; claimAmt?: number; custId?: string; note?: string;
+  /** ไม่บังคับแล้ว — ยอดสะสมอ่านจาก WINSpeed ส่วน pool คือ "งบที่จัดสรร" คนละเรื่อง */
+  poolId?: number; claimAmt?: number; custId?: string; note?: string;
   lines?: any[]; invoices?: string[];
 }) =>
   req<RebateClaim>('/rebate/claims', { method: 'POST', body: JSON.stringify(payload) });
+
+// ── เอกสารคืนรีเบทของ WINSpeed (RB<รหัสผู้ขอ><ปี พ.ศ.>-<ลำดับ>) ──────────────
+// WINSpeed ไม่ได้บันทึกว่าใครเป็นผู้ขอ (EmpID ว่างทุกใบ) อักษรในเลขที่เอกสาร
+// จึงเป็นร่องรอยเดียว — ตั้งค่าที่บัญชีผู้ใช้ ดู migration 079
+
+export type RebateDocCodeRow = {
+  UserId: number; Username: string; DisplayName: string | null;
+  EmpId: string | null; Role: string; RebateDocCode: string | null;
+  /** ข้อเสนอจากชื่อไทย (ตัวแรกชื่อ + ตัวแรกนามสกุล) — ต้องกดยืนยัน ไม่ได้ตั้งให้เอง */
+  suggested?: string | null;
+};
+export type RebateDocCodeEvidence = {
+  SeriesCode: string; EmpCode: string; EmpName: string;
+  DocCount: number; FirstDoc: string; LastDoc: string; TotalAmnt: number;
+};
+
+export const fetchRebateDocCodes = () =>
+  req<{ assigned: RebateDocCodeRow[]; evidence: RebateDocCodeEvidence[] }>('/rebate/doc-codes');
+
+export const setRebateDocCode = (userId: number, code: string | null) =>
+  req<{ Id: number; Username: string; RebateDocCode: string | null }>(`/rebate/doc-codes/${userId}`, {
+    method: 'PATCH', body: JSON.stringify({ code }),
+  });
+
+/** เลขที่ใบคืนรีเบทใบถัดไป อ่านลำดับล่าสุดจาก WINSpeed ไม่เก็บตัวนับของตัวเอง */
+export const fetchNextRbNo = (userId?: number) => {
+  const qs = userId ? `?userId=${userId}` : '';
+  return req<{ docCode: string; beYear: string; lastDocuNo: string | null; suggested: string }>(`/rebate/next-rb-no${qs}`);
+};
+
+export const fetchRbReconciliation = (params: { from?: string; to?: string; onlyProblems?: boolean } = {}) => {
+  const qs = new URLSearchParams();
+  if (params.from) qs.set('from', params.from);
+  if (params.to) qs.set('to', params.to);
+  if (params.onlyProblems) qs.set('onlyProblems', 'true');
+  const suffix = qs.toString();
+  return req<{ summary: Record<string, number>; rows: any[]; truncated: boolean }>(`/rebate/rb-reconciliation${suffix ? `?${suffix}` : ''}`);
+};
 
 export const approveRebateClaim = (id: number, docuNo?: string, note?: string) =>
   req<{ id: number; status: string; currentTier?: number; message?: string }>(`/rebate/claims/${id}/approve`, {
@@ -751,11 +790,29 @@ export const fetchWfRebateTrailSummary = (params?: { year?: number }) => {
   return req<import('../types').WfRebateTrailSummary[]>(`/rebate/wf-trail-summary${suffix ? `?${suffix}` : ''}`);
 };
 
-export const migrateLegacyRebate = (rate: number) => {
-  return req<{ message: string; processedSalespersons: number; totalInjectedBaht: number }>(
-    `/rebate/migrate-legacy`,
-    { method: 'POST', body: JSON.stringify({ rate }) }
-  );
+// ยอดสะสมรีเบท — อ่านจาก WINSpeed โดยตรง ไม่มีสำเนาในแอป (ดู migration 076)
+export const fetchRebateAccrual = (params: { custId?: string; empId?: number; from?: string; to?: string } = {}) => {
+  const qs = new URLSearchParams();
+  if (params.custId) qs.set('custId', params.custId);
+  if (params.empId) qs.set('empId', String(params.empId));
+  if (params.from) qs.set('from', params.from);
+  if (params.to) qs.set('to', params.to);
+  const suffix = qs.toString();
+  return req<import('../types').RebateAccrualSummary[]>(`/rebate/accrual${suffix ? `?${suffix}` : ''}`);
+};
+
+// ล็อตของลูกค้ารายนี้ เรียงเก่าก่อน — เป็นลำดับเดียวกับที่เซิร์ฟเวอร์ตัด FIFO
+export const fetchRebateAccrualLots = (
+  custId: string,
+  params: { lineType?: 'REBATE' | 'DIFF'; goodCode?: string; from?: string; to?: string } = {}
+) => {
+  const qs = new URLSearchParams();
+  if (params.lineType) qs.set('lineType', params.lineType);
+  if (params.goodCode) qs.set('goodCode', params.goodCode);
+  if (params.from) qs.set('from', params.from);
+  if (params.to) qs.set('to', params.to);
+  const suffix = qs.toString();
+  return req<import('../types').RebateAccrualLot[]>(`/rebate/accrual/${encodeURIComponent(custId)}${suffix ? `?${suffix}` : ''}`);
 };
 
 export const fetchWfRebateTrailList = (params: { year?: number; empId: number }) => {
