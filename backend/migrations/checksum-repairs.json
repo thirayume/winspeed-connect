@@ -449,6 +449,87 @@
       "actor": "Thirayu M. (owner)",
       "reason": "line-ending normalisation to LF per .gitattributes after the git history purge; executable SQL byte-identical, proven against every revision in the pre-purge history",
       "repairedAt": "2026-08-10T10:49:43.706Z"
+    },
+    {
+      "file": "001_wf_schema.sql",
+      "previousChecksum": "279b6d15719fb9bcef8fa0871773fcec745afcad012bc00cdf9c33ae47cf3347",
+      "newChecksum": "1f86ad93b5272ca27363d5f6cff9ee716a0ff048468cdb1cbd92c1df0d511cf5",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "Thirayu M. (owner)",
+      "reason": "line-ending normalisation to LF per .gitattributes after the git history purge; executable SQL byte-identical",
+      "repairedAt": "2026-08-10T11:02:13.255Z"
+    },
+    {
+      "file": "002_schema_v2_and_indexes.sql",
+      "previousChecksum": "34791fa20f1ba83fb06ca3ab2a37668eef14d610245c9bdc641815e1b5be5772",
+      "newChecksum": "30f7a3cfaf0536766a1a202b65c2bbdb9cebf8d2c28ad06eb3cce40bc0d5ad96",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "Thirayu M. (owner)",
+      "reason": "line-ending normalisation to LF per .gitattributes after the git history purge; executable SQL byte-identical",
+      "repairedAt": "2026-08-10T11:02:13.651Z"
+    },
+    {
+      "file": "003_schema_ext.sql",
+      "previousChecksum": "1ab72cee7c3ece1952027c45aad4fcdcbcdfb8c2dcc5c816465dffb19ed4002b",
+      "newChecksum": "b134793fba8eef023af6f8bb62374eac382c9013dd26830d1f5843a493a3bd11",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "Thirayu M. (owner)",
+      "reason": "line-ending normalisation to LF per .gitattributes after the git history purge; executable SQL byte-identical",
+      "repairedAt": "2026-08-10T11:02:14.046Z"
+    },
+    {
+      "file": "008_control_ticket_line_ref.sql",
+      "previousChecksum": "eccdc2c989a630ac39becea1a08e74f63c30222b16aa9c9c9c64ee14a228c873",
+      "newChecksum": "bc77dae2c4e51f429d4483e60db61d62cdb02b5805fae306add1588ec968251f",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "Thirayu M. (owner)",
+      "reason": "line-ending normalisation to LF per .gitattributes after the git history purge; executable SQL byte-identical",
+      "repairedAt": "2026-08-10T11:02:14.444Z"
+    },
+    {
+      "file": "009_update_views.sql",
+      "previousChecksum": "424a178acfda59ff78c7a4904ef0dd800e320319ed21ee23441509cf7bb2fc91",
+      "newChecksum": "cc6624bf9af9ad297752b2225f54a2d7db7c8f310817d829bb34debcbda3d91e",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "Thirayu M. (owner)",
+      "reason": "line-ending normalisation to LF per .gitattributes after the git history purge; executable SQL byte-identical",
+      "repairedAt": "2026-08-10T11:02:14.840Z"
+    },
+    {
+      "file": "019_request_and_weigh_ticket.sql",
+      "previousChecksum": "7e1ba081ac2826c964836bc69615045aba9bf49f2bf0a43466e8112756f8d0c1",
+      "newChecksum": "aff36c3d6b5169eba9ed996b3f311473b695d8cb0211ace6e3ac710601ad64e2",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "Thirayu M. (owner)",
+      "reason": "line-ending normalisation to LF per .gitattributes after the git history purge; executable SQL byte-identical",
+      "repairedAt": "2026-08-10T11:02:15.239Z"
+    },
+    {
+      "file": "031_so_requested_transport_flags.sql",
+      "previousChecksum": "5342c58910203a4906d895d8aec935239cdce69c4d05687bc2bb3cbfc261993e",
+      "newChecksum": "e9cce429ee2e4def316105f9c60a8281e19cb4e6f13e2ebe2a17ac8460a928e9",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "Thirayu M. (owner)",
+      "reason": "line-ending normalisation to LF per .gitattributes after the git history purge; executable SQL byte-identical",
+      "repairedAt": "2026-08-10T11:02:15.634Z"
+    },
+    {
+      "file": "032_rebate_plan_ref_doc.sql",
+      "previousChecksum": "6d0f19b6b2944ad1d86dda2f8ecab4d25da4f86d72e84e6b64e2bc4e22e49b0f",
+      "newChecksum": "26bdf0601811911c45e2a0b2add0b7deb7d0ad1e8cebe523a2aff60ef9382ed1",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "Thirayu M. (owner)",
+      "reason": "line-ending normalisation to LF per .gitattributes after the git history purge; executable SQL byte-identical",
+      "repairedAt": "2026-08-10T11:02:16.031Z"
+    },
+    {
+      "file": "033_giveaway_line_approval.sql",
+      "previousChecksum": "6a03733e5103f9d8f750747583e81d681ed4b74b0557b0a621ebbaefdfe8f51c",
+      "newChecksum": "2662d1e2687523e2d4b46d397540e383e9d58a0d9dea46af7d260558cfae0440",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "Thirayu M. (owner)",
+      "reason": "line-ending normalisation to LF per .gitattributes after the git history purge; executable SQL byte-identical",
+      "repairedAt": "2026-08-10T11:02:16.431Z"
     }
   ]
 }
