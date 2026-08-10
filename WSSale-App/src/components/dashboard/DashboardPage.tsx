@@ -5,6 +5,7 @@ import { useSocketEvent } from '../../hooks/useSocket';
 import { useAuthStore } from '../../store/auth-store';
 import { canViewAllRebateAmounts } from '../../utils/permissions';
 import { formatThaiDate } from '../../utils/date';
+import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import type { AgingRow, RebateSummary, SalesOrder } from '../../types';
 import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
 
@@ -192,11 +193,11 @@ export function DashboardPage() {
             <div className="grid grid-cols-2 gap-2 lg:w-[320px]">
               <label className="block">
                 <span className="text-[10px] font-bold text-gray-500 block mb-1"><Calendar size={10} className="inline mr-0.5" />จากวันที่</span>
-                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]" />
+                <ThaiDatePicker value={dateFrom} onChange={setDateFrom} max={dateTo} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]" />
               </label>
               <label className="block">
                 <span className="text-[10px] font-bold text-gray-500 block mb-1">ถึงวันที่</span>
-                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]" />
+                <ThaiDatePicker value={dateTo} onChange={setDateTo} min={dateFrom} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]" />
               </label>
             </div>
             <div className="flex gap-2">

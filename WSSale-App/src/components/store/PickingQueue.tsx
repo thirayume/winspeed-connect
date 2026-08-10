@@ -37,7 +37,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
     finally { setBusy(null); }
   }
 
-  const handleConfirmSequence = async (seqMapping: Record<number, number>) => {
+  const handleConfirmSequence = async (seqMapping: Record<number, number>, overloadReason?: string) => {
     if (!sequenceOrder) return;
     
     const seqArray = Object.entries(seqMapping).map(([lineNo, seq]) => ({
@@ -47,7 +47,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
     
     setBusy(Number(sequenceOrder.id));
     try {
-      await confirmLoading(Number(sequenceOrder.id), seqArray);
+      await confirmLoading(Number(sequenceOrder.id), seqArray, overloadReason);
       setSequenceOrder(null);
       onUpdate();
     } catch (e: any) {

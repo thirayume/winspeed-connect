@@ -23,10 +23,12 @@ const getColorForProduct = (goodCode: string) => {
   return ITEM_COLORS[Math.abs(hash) % ITEM_COLORS.length];
 };
 
+import { appPrompt } from '../ui/AppAlert';
+
 export const VisualTruckLoader = ({ 
   order, onConfirm, onCancel 
 }: { 
-  order: SalesOrder; onConfirm: (sequences: Record<number, number>) => void; onCancel: () => void;
+  order: SalesOrder; onConfirm: (sequences: Record<number, number>, overloadReason?: string) => void; onCancel: () => void;
 }) => {
   const linesWithId = useMemo(() => {
     return (order.lines || []).filter(l => !l.isGiveaway).map((l, idx) => ({
@@ -118,11 +120,23 @@ export const VisualTruckLoader = ({
     setSelectedLine(null);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (unassigned.length > 0) {
       alert('กรุณาจัดวางสินค้าให้ครบทุกรายการ');
       return;
     }
+
+    const mainWeight = assigned.main.reduce((acc, curr) => acc + curr.qtyTon, 0);
+    const trailerWeight = assigned.trailer.reduce((acc, curr) => acc + curr.qtyTon, 0);
+    const isOver = mainWeight > (truckType?.MaxWeightMain || 15) || trailerWeight > (truckType?.MaxWeightTrailer || 0);
+
+    let reason: string | undefined = undefined;
+    if (isOver) {
+      const note = await appPrompt('น้ำหนักรวมเกินขีดจำกัดของรถ คุณต้องการยืนยันการจัดเรียงนี้หรือไม่? กรุณาระบุเหตุผล (เช่น มีของแถม):');
+      if (note === null) return; // User cancelled
+      reason = note;
+    }
+
     const seqMapping: Record<number, number> = {};
     
     assigned.main.forEach((l, idx) => {
@@ -132,7 +146,7 @@ export const VisualTruckLoader = ({
       if (l.lineNum) seqMapping[l.lineNum] = idx + 201; // 201 to 299
     });
     
-    onConfirm(seqMapping);
+    onConfirm(seqMapping, reason);
   };
 
   const renderBed = (zone: 'main'|'trailer', label: string, maxWeight: number) => {
@@ -348,10 +362,7 @@ export const VisualTruckLoader = ({
           <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
             <Button variant="outline" onClick={onCancel} className="flex-1 sm:w-32 py-2">ยกเลิก</Button>
             {(() => {
-              const mainWeight = assigned.main.reduce((acc, curr) => acc + curr.qtyTon, 0);
-              const trailerWeight = assigned.trailer.reduce((acc, curr) => acc + curr.qtyTon, 0);
-              const isOver = mainWeight > (truckType?.MaxWeightMain || 15) || trailerWeight > (truckType?.MaxWeightTrailer || 0);
-              const isDisabled = unassigned.length > 0 || isOver;
+              const isDisabled = unassigned.length > 0;
               return (
                 <Button onClick={handleConfirm} disabled={isDisabled} className={cn("flex-1 sm:w-48 gap-2 py-2", isDisabled ? "bg-slate-300" : "bg-emerald-600 hover:bg-emerald-700 text-white")}>
                   ยืนยัน <ArrowRight size={18} className="hidden sm:block" />

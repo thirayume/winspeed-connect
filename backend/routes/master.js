@@ -65,6 +65,7 @@ async function getCustomerFilterOptionsFor(key, column) {
     ${joins}
     WHERE c.${col} IS NOT NULL AND CONVERT(NVARCHAR(50), c.${col}) <> ''
       AND ISNULL(c.Inactive, 'A') <> 'I'
+      AND c.CustName NOT LIKE N'%ไม่ใช้%' AND c.CustName NOT LIKE N'%ยกเลิก%'
     GROUP BY CONVERT(NVARCHAR(50), c.${col})
     ORDER BY MAX(${labelExpr})
   `);
@@ -90,7 +91,7 @@ router.get('/customers', async (req, res) => {
     const { q, salesperson, area, group, employee } = req.query;
     const limit = Math.min(Math.max(Number(req.query.limit) || 500, 50), 2000);
     const columns = await getCustomerFilterColumns();
-    const conditions = [`ISNULL(c.Inactive, 'A') <> 'I'`];
+    const conditions = [`ISNULL(c.Inactive, 'A') <> 'I'`, `c.CustName NOT LIKE N'%ไม่ใช้%'`, `c.CustName NOT LIKE N'%ยกเลิก%'`];
     const inputs = { limit: { type: sql.Int, value: limit } };
     if (q) {
       conditions.push(`(c.CustName LIKE N'%' + @q + '%' OR c.CustID LIKE N'%' + @q + '%')`);
@@ -282,6 +283,7 @@ router.get('/goods', async (req, res) => {
       LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = g.GoodID
       LEFT JOIN dbo.EMGoodGroup gg WITH (NOLOCK) ON g.GoodGroupID = gg.GoodGroupID
       WHERE g.StockFlag = 'Y' AND g.MainGoodUnitID = 1002 AND g.Inactive = 'A'
+        AND g.GoodName1 NOT LIKE N'%ไม่ใช้%' AND g.GoodName1 NOT LIKE N'%ยกเลิก%'
       ${whereClause}
       ORDER BY g.GoodCode
     `, inputs);
@@ -386,7 +388,9 @@ router.get('/giveaway-goods', async (req, res) => {
       LEFT JOIN wf.v_GiveawayBudgetStatus b WITH (NOLOCK) 
         ON b.Brand = m.Brand AND b.ItemName = m.ItemName 
         AND b.SalesUserId = @su AND b.PeriodYear = @y
-      WHERE m.GoodID IS NOT NULL OR gg.GoodGroupName = N'ของแถม' OR g.GoodCode LIKE 'P%' OR g.GoodCode LIKE 'N%'
+      WHERE (m.GoodID IS NOT NULL OR gg.GoodGroupName = N'ของแถม' OR g.GoodCode LIKE 'P%' OR g.GoodCode LIKE 'N%')
+        AND ISNULL(g.Inactive, 'A') = 'A'
+        AND g.GoodName1 NOT LIKE N'%ไม่ใช้%' AND g.GoodName1 NOT LIKE N'%ยกเลิก%'
       ORDER BY ISNULL(m.Brand, N'ทั่วไป'), g.GoodName1
     `, { 
       su: { type: sql.Int, value: targetUserId }, 

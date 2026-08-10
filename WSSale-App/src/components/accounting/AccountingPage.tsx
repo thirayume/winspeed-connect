@@ -5,6 +5,7 @@ import {
 } from '../../services/api';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { appPrompt } from '../ui/AppAlert';
+import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import type { RebateClaim, ShippedRow } from '../../types';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -77,12 +78,13 @@ export function AccountingPage() {
           <button onClick={() => setShowInfo(true)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600">
             <Info size={18} />
           </button>
-          <input
-            type="date"
-            value={date}
-            onChange={e => { setDate(e.target.value); load(e.target.value); }}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
-          />
+          <div className="w-36">
+            <ThaiDatePicker
+              value={date}
+              onChange={v => { setDate(v); load(v); }}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+            />
+          </div>
           <button onClick={() => load(date)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
             <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
           </button>
