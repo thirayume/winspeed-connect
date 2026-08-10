@@ -12,7 +12,12 @@ test.describe('Comprehensive Sales Trip E2E', () => {
     await openSidebar(page, 'ขาย');
     await page.getByRole('button', { name: 'สร้างบิล' }).click();
     await page.getByPlaceholder('ค้นหาชื่อลูกค้า...').fill('ทดสอบ');
-    const customerOption = page.locator('.max-h-60 .font-bold', { hasText: 'คุณEMP-00026 ทดสอบ' });
+    // ชื่อลูกค้าทดสอบเป็นข้อมูลจริงในฐาน จึงไม่เขียนไว้ในซอร์ส (ที่เก็บนี้เป็นสาธารณะ)
+    // ตั้ง E2E_CUSTOMER เพื่อเจาะจงราย · ไม่ตั้งก็ใช้รายแรกที่ค้นเจอจากคำว่า "ทดสอบ"
+    const wantedCustomer = process.env.E2E_CUSTOMER;
+    const customerOption = wantedCustomer
+      ? page.locator('.max-h-60 .font-bold', { hasText: wantedCustomer })
+      : page.locator('.max-h-60 .font-bold').first();
     await expect(customerOption).toHaveCount(1);
     await customerOption.click();
     await page.getByPlaceholder('เช่น กจ70-4088').fill(tripPlate);
