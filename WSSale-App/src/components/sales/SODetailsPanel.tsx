@@ -148,7 +148,7 @@ export function SODetailsPanel({
             <Unlock className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
             <div>
               <p className="font-bold text-red-700">รอการอนุมัติปลดล็อก</p>
-              <p className="text-red-500 mt-0.5">รอEMP-00019อนุมัติก่อนแก้ไขได้</p>
+              <p className="text-red-500 mt-0.5">รอผู้มีสิทธิ์อนุมัติปลดล็อกก่อนจึงแก้ไขได้</p>
             </div>
           </div>
         )}

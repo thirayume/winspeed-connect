@@ -247,7 +247,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
                   <button
                     disabled={isBusy}
                     onClick={async () => {
-                      const note = await appPrompt('เหตุผลในการปลดล็อก (รออนุมัติEMP-00019):');
+                      const note = await appPrompt('เหตุผลในการปลดล็อก (รอผู้มีสิทธิ์อนุมัติ):');
                       if (note !== null) doAction(orderId, () => unlockSO(orderId, note));
                     }}
                     className="px-3 py-2 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-50 flex items-center gap-1"

@@ -1606,7 +1606,7 @@ router.patch('/:id/picking', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
 
-// ── PATCH /api/so/:id/unlock — APPROVER เท่านั้น (EMP-00019) ─────
+// ── PATCH /api/so/:id/unlock — บทบาท APPROVER เท่านั้น ─────
 router.patch('/:id/unlock', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'C_LEVEL'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'PICKING');
