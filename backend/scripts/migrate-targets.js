@@ -37,6 +37,8 @@ const BACKEND_DIR = path.join(__dirname, '..');
 require('dotenv').config({ path: path.join(BACKEND_DIR, '.env') });
 
 const RUNNER = path.join(BACKEND_DIR, 'run_migrations.js');
+const REPAIRER = path.join(__dirname, 'repair-migration-checksum.js');
+const PROBER = path.join(__dirname, 'schema-fingerprint.js');
 const ALL_TARGETS = ['local', 'remote', 'remote_b'];
 
 const c = {
@@ -50,7 +52,8 @@ const c = {
 
 // ── args ────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const o = { plan: false, targets: null, stopOnError: false, help: false };
+  const o = { plan: false, targets: null, stopOnError: false, help: false,
+              repair: false, actor: '', reason: '', probe: false };
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
@@ -59,7 +62,15 @@ function parseArgs(argv) {
     else if (a === '--help' || a === '-h') o.help = true;
     else if (a === '--targets') o.targets = rest[++i];
     else if (a.startsWith('--targets=')) o.targets = a.slice('--targets='.length);
+    else if (a === '--repair-checksums') o.repair = true;
+    else if (a === '--probe-schema') o.probe = true;
+    else if (a === '--actor') o.actor = rest[++i] || '';
+    else if (a === '--reason') o.reason = rest[++i] || '';
     else throw new Error(`ไม่รู้จัก argument: ${a}`);
+  }
+  // ซ่อม ledger เป็นการแก้บันทึกที่ควรตรวจย้อนได้ จึงบังคับให้ระบุคนสั่งและเหตุผล
+  if (o.repair && !o.plan && (!o.actor || !o.reason)) {
+    throw new Error('--repair-checksums ต้องมี --actor และ --reason (หรือใส่ --plan เพื่อดูอย่างเดียว)');
   }
   return o;
 }
@@ -163,10 +174,17 @@ async function ensureTunnel(env) {
 }
 
 // ── รัน run_migrations.js หนึ่งครั้ง ──────────────────────────────
-function runMigrator(env, plan) {
+//
+// โหมด --repair-checksums จะเรียก repair-migration-checksum.js แทน
+// มีเพราะเครื่องมือซ่อม checksum ต่อฐานผ่าน db.js ตรง ๆ จึงเปิด SSH tunnel เองไม่ได้
+// ทำให้ remote_b ซ่อมไม่ได้เลยและติด drift ค้างจนรัน migration ต่อไม่ได้
+function runMigrator(env, plan, repair, probe) {
   return new Promise(resolve => {
-    const args = [RUNNER];
-    if (plan) args.push('--plan');
+    const args = probe
+      ? [PROBER]
+      : repair
+        ? [REPAIRER, ...(plan ? [] : ['--apply', '--actor', repair.actor, '--reason', repair.reason])]
+        : [RUNNER, ...(plan ? ['--plan'] : [])];
     const p = spawn(process.execPath, args, { cwd: BACKEND_DIR, env, stdio: 'inherit' });
     p.on('close', code => resolve(code ?? 1));
     p.on('error', () => resolve(1));
@@ -186,6 +204,9 @@ async function main() {
   --targets <list>   local,remote,remote_b หรือ all   (ค่าเริ่มต้น: all)
   --plan             dry-run อ่านอย่างเดียว ไม่แก้ ledger
   --stop-on-error    หยุดทันทีที่ปลายทางใดพลาด (ค่าเริ่มต้น: รันต่อจนครบแล้วสรุป)
+  --repair-checksums ซ่อม checksum ที่เพี้ยนเพราะท้ายบรรทัด/คอมเมนต์ แทนการรัน migration
+                     ต้องมี --actor และ --reason · ใส่ --plan เพื่อดูก่อนว่าจะซ่อมอะไร
+  --probe-schema     พิมพ์ลายนิ้วมือ schema ของแต่ละปลายทาง (อ่านอย่างเดียว) ไว้เทียบกัน
   -h, --help         แสดงข้อความนี้
 `);
     process.exit(0);
@@ -224,7 +245,8 @@ async function main() {
       continue;
     }
 
-    const code = await runMigrator(built.env, opts.plan);
+    const code = await runMigrator(built.env, opts.plan,
+      opts.repair ? { actor: opts.actor, reason: opts.reason } : null, opts.probe);
     if (tunnel.proc) { tunnel.proc.kill(); console.log(c.dim('   ปิด tunnel แล้ว')); }
 
     if (code === 0) {
