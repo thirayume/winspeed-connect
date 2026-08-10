@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   ล้างข้อมูลอ่อนไหว (ชื่อพนักงาน · ชื่อลูกค้า · รหัสผ่านตั้งต้น · ไฟล์ mock)
   ออกจาก git history ทั้งหมดของ winspeed-connect แล้ว force-push
@@ -27,6 +27,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Windows PowerShell 5.1 ใช้ code page เดิมของ Windows ในการพิมพ์ออกหน้าจอ
+# ทำให้ข้อความไทยขึ้นเป็น ? — บังคับเป็น UTF-8 ก่อน (PowerShell 7 เป็น UTF-8 อยู่แล้ว)
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+
 $step = 0
 function Say-Step($t) { $script:step++; Write-Host "`n[$script:step] $t" -ForegroundColor Cyan }
 function Say-Ok($t)   { Write-Host "    ok   $t" -ForegroundColor Green }
