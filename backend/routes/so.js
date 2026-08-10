@@ -1661,7 +1661,7 @@ router.post('/:id/unlock-request', requireRole('SALES', 'COUNTER_SALES', 'WAREHO
 router.patch('/:id/load', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'PICKING');
-    const { sequences } = req.body; // [{ lineNum: 1, seq: 1 }, ...]
+    const { sequences, overloadReason } = req.body; // [{ lineNum: 1, seq: 1 }, ...]
     
     if (sequences && Array.isArray(sequences)) {
       for (const item of sequences) {
@@ -1676,7 +1676,9 @@ router.patch('/:id/load', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (r
       `UPDATE wf.SalesOrderExt SET IsLoaded=1, UpdatedAt=GETUTCDATE() WHERE SOID=@id`,
       { id: { type: sql.VarChar(50), value: so.Id } }
     );
-    await audit(null, so.Id, req.user.sub, 'LOADED', 'PICKING', 'LOADED', null, req.ip);
+    
+    const note = overloadReason ? `อนุญาตโหลดเกินขีดจำกัด: ${overloadReason}` : null;
+    await audit(null, so.Id, req.user.sub, 'LOADED', 'PICKING', 'LOADED', note, req.ip);
     res.json({ id: so.Id, status: 'LOADED' });
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });

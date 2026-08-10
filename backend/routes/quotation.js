@@ -1078,8 +1078,8 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
       const quoteNo = await nextNativeDocNo(tx, 'QU');
       const qr = tx.request();
       qr.input('no', sql.NVarChar(30), quoteNo);
-      qr.input('cid', sql.NVarChar(20), custId);
-      qr.input('cnm', sql.NVarChar(200), custName || '');
+      qr.input('cid', sql.NVarChar(20), String(custId || ''));
+      qr.input('cnm', sql.NVarChar(200), String(custName || ''));
       qr.input('vu', sql.Date, normalizedValidUntil);
       qr.input('rm', sql.NVarChar(500), remark || null);
       const actualSalesUserId = (req.user.role === 'ADMIN' && impersonatedId) ? Number(impersonatedId) : req.user.sub;
@@ -1437,7 +1437,7 @@ router.post('/:id/convert', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
     const soId = await wfTransaction(async tx => {
       const sr = tx.request();
       sr.input('ref', sql.NVarChar(30), ref); sr.input('pfx', sql.NVarChar(5), prefix);
-      sr.input('cid', sql.NVarChar(20), q.CustId); sr.input('cnm', sql.NVarChar(200), q.CustName);
+      sr.input('cid', sql.NVarChar(20), String(q.CustId || '')); sr.input('cnm', sql.NVarChar(200), String(q.CustName || ''));
       sr.input('rm', sql.NVarChar(500), `จากใบเสนอราคา ${q.QuoteNo}`); sr.input('su', sql.Int, q.SalesUserId);
       const sres = await sr.query(`
         INSERT INTO wf.SalesOrder (WfRef, SoPrefix, CustId, CustName, Remark, SalesUserId, Status)

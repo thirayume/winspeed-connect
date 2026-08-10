@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Search, RefreshCw, X, Clock, Package, ChevronLeft, ChevronRight, Truck } from 'lucide-react';
 import { searchAgingOrders } from '../../services/api';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
+import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { useAppStore } from '../../store/app-store';
 import type { AgingRow, SOStatus } from '../../types';
 import { SO_STATUS_META } from '../../constants/soStatus';
@@ -188,12 +189,14 @@ export const AgingPage = () => {
             {/* Date from */}
             <div className="flex items-center gap-1.5 text-sm text-gray-500 bg-white border border-gray-200 rounded-lg px-2 py-1 shrink-0">
               <span className="text-[10px] hidden sm:inline">จาก</span>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-                className="text-xs focus:outline-none bg-transparent"
-              />
+              <div className="w-[7.5rem]">
+                <ThaiDatePicker
+                  value={dateFrom}
+                  onChange={v => { setDateFrom(v); setPage(1); }}
+                  className="text-xs focus:outline-none bg-transparent w-full"
+                  placeholder="วันที่"
+                />
+              </div>
             </div>
 
             <button

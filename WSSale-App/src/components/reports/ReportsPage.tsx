@@ -3,6 +3,7 @@ import { BarChart3, RefreshCw, Download, FileSpreadsheet, FileText } from 'lucid
 import { fetchReportTypes, fetchReport, exportReport } from '../../services/api';
 import type { ReportData } from '../../services/api';
 import { LegacyReportPdfModal } from './LegacyReportPdfModal';
+import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 
 const isNum = (v: unknown) => typeof v === 'number' || (typeof v === 'string' && v !== '' && !isNaN(Number(v)));
 const fmt = (v: unknown) => isNum(v) ? Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }) : (v ?? '-');
@@ -67,11 +68,15 @@ export function ReportsPage() {
           </button>
           {needsDateRange && (
             <div className="flex items-center gap-1.5 mr-1">
-              <input type="date" value={from} max={to} onChange={e => setFrom(e.target.value)}
-                className="h-10 px-2 rounded-xl border border-gray-200 bg-white text-sm" aria-label="ตั้งแต่วันที่" />
+              <div className="w-[8.5rem]">
+                <ThaiDatePicker value={from} max={to} onChange={setFrom}
+                  className="h-10 px-2 rounded-xl border border-gray-200 bg-white text-sm w-full" placeholder="ตั้งแต่วันที่" />
+              </div>
               <span className="text-gray-400 text-sm">ถึง</span>
-              <input type="date" value={to} min={from} onChange={e => setTo(e.target.value)}
-                className="h-10 px-2 rounded-xl border border-gray-200 bg-white text-sm" aria-label="ถึงวันที่" />
+              <div className="w-[8.5rem]">
+                <ThaiDatePicker value={to} min={from} onChange={setTo}
+                  className="h-10 px-2 rounded-xl border border-gray-200 bg-white text-sm w-full" placeholder="ถึงวันที่" />
+              </div>
             </div>
           )}
           <button onClick={() => load(active, needsDateRange ? { from, to } : undefined)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white"><RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} /></button>

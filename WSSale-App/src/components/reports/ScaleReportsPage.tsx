@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BarChart3, RefreshCw, Download, CalendarDays } from 'lucide-react';
 import { fetchScaleReport } from '../../services/api';
+import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 
 const NAVY = '#0C447C';
 const num = (v: unknown, digits = 0) =>
@@ -156,11 +157,15 @@ export function ScaleReportsPage() {
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-1.5">
               <CalendarDays size={15} className="text-gray-400 shrink-0" />
-              <input type="date" value={from} max={to} onChange={e => setFrom(e.target.value)}
-                className="bg-transparent text-sm outline-none w-[8.5rem]" aria-label="ตั้งแต่วันที่" />
+              <div className="w-[8.5rem]">
+                <ThaiDatePicker value={from} max={to} onChange={setFrom}
+                  className="bg-transparent text-sm outline-none w-full" placeholder="ตั้งแต่วันที่" />
+              </div>
               <span className="text-gray-400 text-sm">–</span>
-              <input type="date" value={to} min={from} onChange={e => setTo(e.target.value)}
-                className="bg-transparent text-sm outline-none w-[8.5rem]" aria-label="ถึงวันที่" />
+              <div className="w-[8.5rem]">
+                <ThaiDatePicker value={to} min={from} onChange={setTo}
+                  className="bg-transparent text-sm outline-none w-full" placeholder="ถึงวันที่" />
+              </div>
             </div>
             {active.filterParam && (
               <input value={filter} onChange={e => setFilter(e.target.value)}

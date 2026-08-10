@@ -3,6 +3,7 @@ import { ClipboardList, RefreshCw, Plus, X, Square, Coins, FileSignature } from 
 import { fetchRebatePlans, createRebatePlan, updateRebatePlan, allocateRebatePlan, listUsers } from '../../services/api';
 import type { RebatePlan, AdminUser } from '../../types';
 import { PlanApprovalDialog } from './RebatePlanApproval';
+import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 
 const REGIONS = ['ALL', 'ใต้', 'กลาง', 'เหนือ', 'ตะวันออก'];
 const THB = (n?: number | null) => n != null ? `฿${Number(n).toLocaleString('th-TH', { maximumFractionDigits: 0 })}` : '-';
@@ -176,8 +177,8 @@ function PlanForm({ plan, onClose, onDone }: { plan: RebatePlan | null; onClose:
             <Field label="ราคา NET (อ้างอิง)"><input type="number" value={f.netPrice} onChange={e => set('netPrice', e.target.value)} className="inp" /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="เริ่ม"><input type="date" value={f.validFrom} onChange={e => set('validFrom', e.target.value)} className="inp" /></Field>
-            <Field label="ถึง"><input type="date" value={f.validTo} onChange={e => set('validTo', e.target.value)} className="inp" /></Field>
+            <Field label="เริ่ม"><ThaiDatePicker value={f.validFrom} onChange={v => set('validFrom', v)} className="inp" /></Field>
+            <Field label="ถึง"><ThaiDatePicker value={f.validTo} onChange={v => set('validTo', v)} className="inp" /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="งบจัดสรร (฿)"><input type="number" value={f.allocatedAmount} onChange={e => set('allocatedAmount', e.target.value)} className="inp" /></Field>

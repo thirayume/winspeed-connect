@@ -275,9 +275,9 @@ export const approveGiveawayLine = (id: number | string, lineNum: number, note?:
 export const moveToPicking = (id: number | string) =>
   req<{ id: number; status: SOStatus }>(`/so/${id}/picking`, { method: 'PATCH', body: '{}' });
 
-export const confirmLoading = (id: number, sequences: { lineNum: number, seq: number }[]) =>
+export const confirmLoading = (id: number, sequences: { lineNum: number, seq: number }[], overloadReason?: string) =>
   req<{ id: number; status: SOStatus }>(`/so/${id}/load`, {
-    method: 'PATCH', body: JSON.stringify({ sequences }),
+    method: 'PATCH', body: JSON.stringify({ sequences, overloadReason }),
   });
 
 export const unlockSO = (id: number, note?: string) =>

@@ -111,7 +111,7 @@ export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; on
             <div className="py-10 flex justify-center">
               <RefreshCw size={22} className="animate-spin text-gray-300" />
             </div>
-          ) : reqs.length === 0 ? (
+          ) : (activeTab === 'unlocks' && reqs.length === 0) || (activeTab === 'giveaways' && giveaways.length === 0) ? (
             <p className="py-8 text-center text-sm text-gray-400">ไม่มีคำขอที่รออนุมัติ</p>
           ) : activeTab === 'unlocks' ? reqs.map(r => {
             const reqTypeStr = r.ReqType === 'EDIT' ? 'ขอแก้ไขเอกสาร' : r.ReqType === 'CANCEL' ? 'ขอยกเลิกเอกสาร' : 'ขอปลดล็อก';
