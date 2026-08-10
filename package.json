@@ -5,8 +5,8 @@
   "scripts": {
     "start:backend": "cd backend && nodemon server.js",
     "start:frontend": "cd WSSale-App && npm run dev",
-    "predev": "kill-port 3000 5173 || true",
-    "predev:e2e": "kill-port 3100 5174 || true",
+    "predev": "kill-port 3000 5173 || exit 0",
+    "predev:e2e": "kill-port 3100 5174 || exit 0",
     "dev": "concurrently -n API,WEB -c blue,green \"npm run start:backend\" \"npm run start:frontend\"",
     "dev:e2e": "cross-env PORT=3100 VITE_API_BASE_URL=http://localhost:3100/api concurrently -n API,WEB -c blue,green \"npm run start:backend\" \"cd WSSale-App && npm run dev -- --force --port 5174 --strictPort\"",
     "build": "cd WSSale-App && npm install && npm run build",
