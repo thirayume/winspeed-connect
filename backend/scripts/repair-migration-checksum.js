@@ -75,6 +75,26 @@ function findRevisionMatchingChecksum(fileName, storedChecksum) {
   return null;
 }
 
+/** เนื้อหาไฟล์นี้ทุก revision ในประวัติ git (ใช้พิสูจน์ว่าคำสั่งไม่เคยเปลี่ยน) */
+function allRevisionContents(fileName) {
+  const { execFileSync } = require('child_process');
+  const repoRoot = path.resolve(__dirname, '..', '..');
+  const relative = `backend/migrations/${fileName}`;
+  let revisions = [];
+  try {
+    revisions = execFileSync('git', ['log', '--all', '--format=%H', '--', relative],
+      { cwd: repoRoot, encoding: 'utf8' }).split('\n').map(l => l.trim()).filter(Boolean);
+  } catch { return []; }
+  const out = [];
+  for (const revision of revisions) {
+    try {
+      out.push(execFileSync('git', ['show', `${revision}:${relative}`],
+        { cwd: repoRoot, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }).replace(/^﻿/, ''));
+    } catch { /* ไฟล์ยังไม่มีใน revision นั้น */ }
+  }
+  return out;
+}
+
 async function main() {
   const options = parseArgs(process.argv);
   if (options.apply && (!options.actor || !options.reason)) {
@@ -101,7 +121,24 @@ async function main() {
     // ไฟล์เปลี่ยน — ต้องหาเนื้อหาเวอร์ชันที่ checksum ตรงกับ ledger จากประวัติ git
     // เพื่อพิสูจน์ว่าต่างกันเฉพาะคอมเมนต์ ไม่ใช่เดาจาก HEAD ซึ่งเป็นเนื้อหาใหม่ไปแล้ว
     const record = { file: row.FileName, storedChecksum: row.Checksum, currentChecksum: current };
-    const previous = findRevisionMatchingChecksum(row.FileName, row.Checksum);
+    let previous = findRevisionMatchingChecksum(row.FileName, row.Checksum);
+
+    // เส้นทางพิสูจน์ที่สอง — ใช้เมื่อหา revision ที่ checksum ตรงไม่เจอ
+    //
+    // เกิดเมื่อ ledger บันทึกไว้ตอนไฟล์ในเครื่องเป็น CRLF (หรือปนกัน) แล้วภายหลัง
+    // ไฟล์ถูก normalize เป็น LF ตาม .gitattributes — ไบต์เปลี่ยนแต่คำสั่งไม่เปลี่ยน
+    // git เก็บ blob เป็น LF เสมอ จึงไม่มี revision ไหน hash ตรงกับ ledger เลย
+    //
+    // ถ้าไฟล์นี้ "ทุก revision ในประวัติ" เหมือนกับไฟล์ปัจจุบันเมื่อตัดท้ายบรรทัดออก
+    // แปลว่าคำสั่งไม่เคยเปลี่ยนเลย ไบต์ชุดที่ให้ checksum ใน ledger จึงเป็นคำสั่งเดียวกัน
+    if (previous == null) {
+      const all = allRevisionContents(row.FileName);
+      const target = executableOnly(sql);
+      if (all.length && all.every(c => executableOnly(c) === target)) {
+        previous = sql;
+      }
+    }
+
     if (previous == null) {
       blocked.push({ ...record, why: 'หาเวอร์ชันในประวัติ git ที่ checksum ตรงกับ ledger ไม่เจอ จึงพิสูจน์ไม่ได้ว่าคำสั่งไม่เปลี่ยน' });
     } else if (executableOnly(previous) === executableOnly(sql)) {
