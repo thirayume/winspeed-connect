@@ -1,199 +1,106 @@
-# ล้างข้อมูลอ่อนไหวออกจาก git history — คู่มือรันเอง
+# ล้างข้อมูลอ่อนไหวออกจาก git history
 
-> จัดทำ 7 ส.ค. 2569 · คำสั่งเขียนประวัติใหม่ถูกระบบความปลอดภัยของผู้ช่วยบล็อก
-> เจ้าของที่เก็บต้องรันเอง เพราะจบด้วย **force-push** ซึ่งกระทบทุกคนที่ clone ไปแล้ว
+> 7 ส.ค. 2569 · **มีสคริปต์ให้แล้ว รันสองคำสั่งจบ** — ดูหัวข้อ "วิธีทำ" ด้านล่าง
 >
-> **คัดลอกทีละบล็อก วางใน Terminal ตามลำดับ** · บล็อกไหนผลลัพธ์ไม่ตรงที่เขียนไว้ ให้หยุดแล้วถามก่อน
+> ผู้ช่วยรันคำสั่งเขียนประวัติใหม่เองไม่ได้ (ระบบความปลอดภัยบล็อก) จึงเตรียมทุกอย่างไว้ให้
+> เหลือแค่คุณกดรัน
 
 ---
 
-## สรุปก่อนเริ่ม
+## สรุปสถานะ
 
-**ทำไปแล้ว — ไม่ต้องทำซ้ำ**
+### เตรียมไว้ให้แล้ว — ไม่ต้องทำเอง
 
 | | |
 |---|---|
-| ซอร์สปัจจุบันสะอาดแล้ว | push ขึ้น `origin/main` เรียบร้อย |
-| ลบ `WSSale-App/src/mock/` ทั้งโฟลเดอร์ | ไม่มีโค้ดไหนอ่านไฟล์นี้เลย · ถอด `VITE_USE_MOCKUP_DATA` ที่ตายแล้วออกจาก 7 ไฟล์ config ด้วย |
+| ซอร์สปัจจุบันสะอาด | push ขึ้น `origin/main` แล้ว |
+| ลบ `WSSale-App/src/mock/` | ไม่มีโค้ดไหนอ่านไฟล์นี้ · ถอด `VITE_USE_MOCKUP_DATA` ที่ตายแล้วออกจาก 7 config |
 | รหัสผ่านตั้งต้นออกจากซอร์ส 23 จุด | `seed_admin.js` สุ่มให้และพิมพ์ครั้งเดียวตอนติดตั้ง |
-| สำรองประวัติทั้งหมด | ดูขั้นที่ 0 |
+| **สำรองประวัติเดิมทั้งหมด** | `C:\MyWork\_backup\winspeed-connect-purge-20260807\` (bundle 16.7 MB) |
+| **รายการแทนที่ 13 บรรทัด** | อยู่ในโฟลเดอร์สำรองเดียวกัน |
+| **สคริปต์ล้างประวัติ** | `tools\purge-history.ps1` |
 
-**ยังเหลือในประวัติ — คือสิ่งที่คู่มือนี้ล้าง**
+### ยังเหลือในประวัติ — คือสิ่งที่สคริปต์นี้ล้าง
 
-| ข้อมูล | จำนวน commit ที่แตะ |
+| ข้อมูล | commit ที่แตะ |
 |---|---|
 | รหัสผ่านตั้งต้น (admin ของทุก deployment) | **41** |
 | ชื่อพนักงาน 10 คน | 3–20 ต่อคน |
 | ชื่อลูกค้าจากใบรีเบท | 1 |
 | `sample-data.json` — ชื่อลูกค้า 73 · เลขนิติบุคคล 7 · ชื่อบริษัท 48 · เลขใบกำกับ 57 | ทุก revision |
 
-**ทำไมยังต้องล้าง** — การแก้ไฟล์ทำให้ `HEAD` สะอาด แต่ commit เก่ายังเก็บของเดิมครบ
-ใครก็ตามที่ `git clone` ยังได้ประวัติทั้งหมดไป และ GitHub ยังเสิร์ฟ blob เก่าผ่าน URL ตรงได้
+การแก้ไฟล์ทำให้ `HEAD` สะอาด แต่ commit เก่ายังเก็บของเดิมครบ — `git clone` ยังได้ประวัติทั้งหมดไป
 
 ---
 
-## ⚠️ ก่อนเริ่ม — สองอย่างที่ต้องทำก่อน
+## ตรวจแล้ว: สองเรื่องที่เคยกังวล แทบไม่ต้องทำ
 
-**1. แจ้งทีมและหยุด push ทุกคน**
+เดิมเขียนไว้ว่าต้อง "แจ้งทีม" และ "ปิด branch protection" — ตรวจของจริงบน GitHub แล้วพบว่า
 
-การเขียนประวัติใหม่ทำให้ **SHA ของทุก commit เปลี่ยน** — ใครที่ยัง clone เดิมอยู่จะ push/pull ไม่ได้
-ทุกคนต้อง clone ใหม่หลังทำเสร็จ (คำสั่งอยู่ท้ายเอกสาร) · **ห้ามใคร push ระหว่างทำ**
+| เรื่อง | ผลตรวจ | ต้องทำไหม |
+|---|---|---|
+| **Branch protection ของ `main`** | ไม่ได้เปิดไว้เลย (API ตอบ 404) | ❌ **ไม่ต้องทำ** — ข้ามได้ |
+| **Fork ของที่เก็บนี้** | 0 fork | ❌ **ไม่ต้องทำ** — ไม่มีใครต้องตาม |
+| **คนที่ commit เข้ามา 6 เดือนล่าสุด** | `thirayu.m` **คนเดียว** 433 commit (+ bot 9) | ⚠️ ดูด้านล่าง |
 
-**2. ปิด branch protection ของ `main` บน GitHub ชั่วคราว** (ถ้าเปิดไว้)
-`Settings → Branches → main → Edit` แล้วปิด *Require a pull request* / *Do not allow force pushes*
+**เรื่องเดียวที่ยังต้องตัดสินใจ:** ไม่มีใครนอกจากคุณ commit เข้ามาเลย แต่ถ้าในทีมมีใคร
+`git clone` ไปไว้ในเครื่อง (ถึงจะยังไม่เคย push) **เขาจะ pull ต่อไม่ได้หลังล้างประวัติ**
+
+- ถ้าไม่มีใคร clone ไปเลย → **ข้ามได้ทั้งข้อ** รันสคริปต์ได้เลย
+- ถ้ามี → ส่งข้อความในหัวข้อ "คำสั่งสำหรับทีม" ท้ายเอกสารให้เขาก่อน
 
 ---
 
-## ขั้นที่ 0 — สำรองไว้ก่อน (ทำแล้ว แต่ให้ย้ายที่เก็บ)
+## วิธีทำ
 
-สำรองประวัติเดิมทั้งหมด (ทุก branch ทุก tag) ไว้แล้วที่โฟลเดอร์ชั่วคราวของเซสชัน
-**ย้ายออกมาเก็บที่ปลอดภัยก่อน** เพราะโฟลเดอร์นั้นถูกล้างเมื่อไรก็ได้
+เปิด **PowerShell** แล้ว
 
-```powershell
-$src = "$env:LOCALAPPDATA\Temp\claude\C--MyWork-WorldFert\03dc0041-0676-4340-9ac4-9bb2b037c722\scratchpad\backup"
-$dst = "D:\Backup\winspeed-connect-purge-20260807"
-New-Item -ItemType Directory -Force $dst | Out-Null
-Copy-Item "$src\*" $dst -Force
-Get-ChildItem $dst
-```
-
-ต้องเห็น 3 ไฟล์ — `winspeed-connect-before-purge.bundle` (~17.5 MB) · `HEAD-before-purge.txt` · `replacements.txt`
-
-ถ้าโฟลเดอร์ต้นทางหายไปแล้ว สร้าง bundle ใหม่จาก repo ปัจจุบันได้:
+### ขั้นที่ 1 — ซ้อมก่อน (ไม่แตะ GitHub เลย)
 
 ```powershell
 cd C:\MyWork\WorldFert\winspeed-frontend
-git bundle create "D:\Backup\winspeed-connect-before-purge.bundle" --all
+.\tools\purge-history.ps1
 ```
+
+สคริปต์จะ clone สำเนาใหม่ไปที่ `C:\MyWork\_purge-work` ล้างประวัติในสำเนานั้น แล้วตรวจให้ว่าเหลือ 0 จริง
+**ยังไม่ push อะไรทั้งสิ้น** · ถ้าขั้นไหนไม่ผ่านจะหยุดและบอกเหตุผล
+
+ต้องเห็นท้ายผลลัพธ์ประมาณนี้
+
+```
+[6] ตรวจว่าไม่เหลืออะไรในประวัติ
+    ok   รหัสผ่านตั้งต้น = 0 commit
+    ok   ชื่อพนักงาน (1) = 0 commit
+    ok   ชื่อพนักงาน (2) = 0 commit
+    ok   ชื่อลูกค้า = 0 commit
+    ok   ไฟล์ mock = 0 commit
+
+  ซ้อมผ่านทุกขั้น — ยังไม่ได้ push
+```
+
+### ขั้นที่ 2 — ทำจริง
+
+```powershell
+.\tools\purge-history.ps1 -Execute
+```
+
+ทำซ้ำทั้งหมดอีกรอบ แล้ว**ถามยืนยันหนึ่งครั้ง** ก่อน force-push — ต้องพิมพ์ `PUSH` ตัวใหญ่
+พิมพ์อย่างอื่นคือยกเลิก ไม่มีอะไรเปลี่ยนบน GitHub
+
+เสร็จแล้วสคริปต์ clone ใหม่จาก GitHub มาตรวจซ้ำให้เอง แล้วบอกขั้นต่อไป
 
 ---
 
-## ขั้นที่ 1 — ทำในสำเนาใหม่ ไม่ใช่ของที่ทำงานอยู่
+## หลังสคริปต์ทำงานเสร็จ
 
-`git filter-repo` ออกแบบมาให้รันบน clone สด และมันจะ **ถอด remote ออก** เพื่อกัน push พลาด
-ทำในสำเนาแยกจึงปลอดภัยกว่า และถ้าพลาดก็แค่ลบโฟลเดอร์ทิ้ง
+### ก. ตั้งโฟลเดอร์ทำงานเดิมใหม่
 
-```powershell
-cd C:\MyWork
-git clone https://github.com/thirayume/winspeed-connect.git purge-work
-cd purge-work
-git log --oneline -1
-```
-
-จดเลข commit ล่าสุดไว้ — จะใช้ตรวจตอนท้าย
-
----
-
-## ขั้นที่ 2 — เก็บไฟล์รายการแทนที่ไว้ในเครื่อง
-
-```powershell
-Copy-Item "D:\Backup\winspeed-connect-purge-20260807\replacements.txt" C:\MyWork\replacements.txt
-Get-Content C:\MyWork\replacements.txt
-```
-
-ต้องเห็น 13 บรรทัด รูปแบบ `ของเดิม==>ของใหม่` — ชื่อพนักงาน 10 · ชื่อลูกค้า 2 · รหัสผ่าน 1
-
-ถ้าไฟล์หาย สร้างใหม่ได้ (ไฟล์ต้องเป็น UTF-8):
-
-```powershell
-@'
-EMP-00027==>EMP-00027
-EMP-00035==>EMP-00035
-EMP-00037==>EMP-00037
-EMP-00034==>EMP-00034
-EMP-00021==>EMP-00021
-EMP-00033==>EMP-00033
-EMP-00042==>EMP-00042
-EMP-00030==>EMP-00030
-EMP-00041==>EMP-00041
-EMP-00036==>EMP-00036
-CUST-23037==>CUST-23037
-CUST-23037==>CUST-23037
-***REMOVED-PASSWORD***==>***REMOVED-PASSWORD***
-'@ | Set-Content -Encoding utf8 C:\MyWork\replacements.txt
-```
-
----
-
-## ขั้นที่ 3 — ลบไฟล์ mock ออกจากทุก commit
-
-ลบทั้งไฟล์ ไม่ใช่แค่แทนคำ เพราะ**ทุก revision** ของไฟล์นี้เป็นข้อมูลลูกค้าจริง
-
-```powershell
-cd C:\MyWork\purge-work
-git filter-repo --force --invert-paths --path WSSale-App/src/mock/sample-data.json
-```
-
-รอจนขึ้น `Completely finished after ...` (ประมาณ 1–3 นาที)
-
----
-
-## ขั้นที่ 4 — แทนชื่อและรหัสผ่านในทุก commit
-
-```powershell
-git filter-repo --force --replace-text C:\MyWork\replacements.txt
-```
-
----
-
-## ขั้นที่ 5 — ตรวจว่าสะอาดจริง
-
-```powershell
-git log --all --oneline -S"***REMOVED-PASSWORD***" -- | Measure-Object -Line
-git log --all --oneline -S"EMP-00036" -- | Measure-Object -Line
-git log --all --oneline -S"EMP-00027" -- | Measure-Object -Line
-git log --all --oneline -- WSSale-App/src/mock/sample-data.json | Measure-Object -Line
-```
-
-**ทั้ง 4 คำสั่งต้องได้ `Lines : 0`** · ถ้ายังไม่ใช่ 0 หยุดที่นี่ อย่า push
-
----
-
-## ขั้นที่ 6 — ต่อ remote กลับแล้ว force-push
-
-`filter-repo` ถอด remote ออกไปแล้ว ต้องต่อกลับเอง
-
-```powershell
-git remote add origin https://github.com/thirayume/winspeed-connect.git
-git remote -v
-git push --force --all origin
-git push --force --tags origin
-```
-
----
-
-## ขั้นที่ 7 — ยืนยันบน GitHub
-
-```powershell
-cd C:\MyWork
-git clone https://github.com/thirayume/winspeed-connect.git verify-clone
-cd verify-clone
-git log --all --oneline -S"***REMOVED-PASSWORD***" -- | Measure-Object -Line
-Test-Path WSSale-App\src\mock\sample-data.json
-```
-
-ต้องได้ `Lines : 0` และ `False` · เสร็จแล้วลบโฟลเดอร์ตรวจทิ้ง
-
-```powershell
-cd C:\MyWork
-Remove-Item -Recurse -Force verify-clone, purge-work
-```
-
----
-
-## ขั้นที่ 8 — เอาโฟลเดอร์ทำงานเดิมให้ตรงกับของใหม่
-
-โฟลเดอร์ `C:\MyWork\WorldFert\winspeed-frontend` ยังชี้ประวัติเก่าอยู่ · **วิธีที่ปลอดภัยที่สุดคือ clone ใหม่**
+โฟลเดอร์ `C:\MyWork\WorldFert\winspeed-frontend` ยังชี้ประวัติเก่า ใช้ต่อไม่ได้
 
 ```powershell
 cd C:\MyWork\WorldFert
 Rename-Item winspeed-frontend winspeed-frontend-old
 git clone https://github.com/thirayume/winspeed-connect.git winspeed-frontend
-```
-
-แล้วคัดลอกไฟล์ที่ไม่ได้อยู่ใน git กลับมา (สำคัญ — มีรหัสผ่านฐานข้อมูลอยู่ในนี้)
-
-```powershell
 Copy-Item winspeed-frontend-old\backend\.env winspeed-frontend\backend\.env
 Copy-Item -Recurse winspeed-frontend-old\docs winspeed-frontend\docs -ErrorAction SilentlyContinue
 cd winspeed-frontend\backend
@@ -203,31 +110,31 @@ npm install
 npm run build
 ```
 
-ตรวจว่าใช้ได้แล้วค่อยลบของเก่า
+> ⚠️ `backend\.env` ไม่ได้อยู่ใน git และมีรหัสผ่านฐานข้อมูล — **ต้องคัดลอกกลับ** ไม่งั้นระบบไม่ทำงาน
+> `docs\` ก็เช่นกัน (gitignore ไว้)
+
+ใช้ได้แล้วค่อยลบของเก่า
 
 ```powershell
-cd C:\MyWork\WorldFert
-Remove-Item -Recurse -Force winspeed-frontend-old
+Remove-Item -Recurse -Force C:\MyWork\WorldFert\winspeed-frontend-old
+Remove-Item -Recurse -Force C:\MyWork\_purge-work, C:\MyWork\_purge-work-verify
 ```
 
----
+### ข. คำสั่งสำหรับทีม (ถ้ามีใคร clone ไปแล้ว)
 
-## ขั้นที่ 9 — คำสั่งสำหรับทีม (ส่งข้อความนี้ให้ทุกคน)
+ส่งข้อความนี้ให้
 
 > ประวัติ git ของ winspeed-connect ถูกเขียนใหม่เพื่อลบข้อมูลลูกค้าและรหัสผ่านที่หลุด
-> **`git pull` จะใช้ไม่ได้** — ต้อง clone ใหม่ครับ
+> **`git pull` จะใช้ไม่ได้แล้ว ต้อง clone ใหม่ครับ**
 >
-> 1. เช็คว่ามีงานค้างที่ยังไม่ push หรือไม่: `git status` และ `git log origin/main..HEAD`
->    ถ้ามี ให้เก็บเป็นไฟล์ patch ไว้ก่อน: `git format-patch origin/main`
+> 1. เช็คงานค้างก่อน: `git status` และ `git log origin/main..HEAD`
+>    ถ้ามี เก็บเป็น patch ไว้: `git format-patch origin/main`
 > 2. เปลี่ยนชื่อโฟลเดอร์เดิมเก็บไว้ อย่าเพิ่งลบ
-> 3. clone ใหม่:
->    ```
->    git clone https://github.com/thirayume/winspeed-connect.git
->    ```
-> 4. คัดลอก `backend/.env` จากโฟลเดอร์เดิมมาใส่ แล้ว `npm install` ทั้ง `backend` และ `WSSale-App`
+> 3. `git clone https://github.com/thirayume/winspeed-connect.git`
+> 4. คัดลอก `backend/.env` จากของเดิมมาใส่ แล้ว `npm install` ทั้ง `backend` และ `WSSale-App`
 > 5. ถ้ามี patch จากข้อ 1 ให้ `git am *.patch` แล้วตรวจว่าไม่ได้ดึงชื่อ/รหัสเก่ากลับเข้ามา
 
-**ถ้าใครยืนยันว่าไม่มีงานค้าง** สั่งให้ตรงกับ remote ได้เลย (ยังต้องระวัง — ทับงานในเครื่องทั้งหมด)
+ถ้าใครยืนยันว่าไม่มีงานค้าง สั่งแบบสั้นได้ (ทับงานในเครื่องทั้งหมด)
 
 ```powershell
 git fetch origin
@@ -239,17 +146,15 @@ git clean -fd
 
 ## ⚠️ สิ่งที่การล้างประวัติ **ไม่ได้** แก้
 
-**รหัสผ่านตั้งต้นเคยเผยแพร่สาธารณะไปแล้ว ต้องถือว่ารั่ว** — การลบออกจาก GitHub ไม่ได้ทำให้สิ่งที่ถูกอ่านไปแล้วหายไป
+**รหัสผ่านตั้งต้นเคยเผยแพร่สาธารณะไปแล้ว ต้องถือว่ารั่ว** — การลบออกจาก GitHub
+ไม่ได้ทำให้สิ่งที่ถูกอ่านไปแล้วหายไป
 
-ต้องทำเพิ่ม:
-
-| # | เรื่อง |
+| # | ต้องทำเพิ่ม |
 |---|---|
 | 1 | เปลี่ยนรหัส `admin` บนระบบที่ deploy แล้วทุกตัว (UAT · on-prem · ของลูกค้าทุกราย) |
-| 2 | บังคับพนักงานที่ยังใช้รหัสตั้งต้นเปลี่ยนรหัส — ตั้ง `ENFORCE_PASSWORD_CHANGE=true` บนเซิร์ฟเวอร์ |
-| 3 | แจ้ง GitHub Support ให้ล้าง cache ของ commit ที่ unreachable — ไม่งั้น GitHub ยังเสิร์ฟผ่าน URL ตรงได้อีกระยะ |
-| 4 | ถ้ามี fork ต้องขอให้เจ้าของลบหรือ re-fork |
-| 5 | พิจารณาแจ้งลูกค้าตาม PDPA — ข้อมูลที่หลุดมีชื่อ เบอร์โทร และเลขนิติบุคคลของลูกค้าจริง |
+| 2 | ตั้ง `ENFORCE_PASSWORD_CHANGE=true` บนเซิร์ฟเวอร์ บังคับพนักงานที่ยังใช้รหัสตั้งต้น |
+| 3 | แจ้ง GitHub Support ให้ล้าง cache ของ commit ที่ unreachable — ไม่งั้นยังเสิร์ฟผ่าน URL ตรงได้อีกระยะ |
+| 4 | พิจารณาแจ้งลูกค้าตาม PDPA — ข้อมูลที่หลุดมีชื่อ เบอร์โทร และเลขนิติบุคคลของลูกค้าจริง |
 
 ตรวจแล้วว่า **UAT ไม่มีบัญชี `e2e_*`** จึงยังไม่มีช่องเข้าจากบัญชีทดสอบ
 แต่บัญชี `admin` ของทุก deployment ที่ยังใช้รหัสตั้งต้น ต้องเปลี่ยนทันที
@@ -260,9 +165,11 @@ git clean -fd
 
 ```powershell
 cd C:\MyWork
-git clone "D:\Backup\winspeed-connect-purge-20260807\winspeed-connect-before-purge.bundle" recovered
+git clone "C:\MyWork\_backup\winspeed-connect-purge-20260807\winspeed-connect-before-purge.bundle" recovered
 cd recovered
 git log --oneline -1
 ```
 
-เทียบกับเลขใน `HEAD-before-purge.txt` · ถ้าตรงคือกู้ครบ แล้ว force-push กลับขึ้น GitHub ได้
+เทียบกับเลขใน `HEAD-before-purge.txt` — ตรงกันคือกู้ครบ แล้ว force-push กลับขึ้น GitHub ได้
+
+**อย่าลบโฟลเดอร์สำรองจนกว่าจะมั่นใจว่าทุกอย่างเรียบร้อยแล้วอย่างน้อยหนึ่งสัปดาห์**
