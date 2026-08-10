@@ -30,11 +30,24 @@ async function main() {
   const led = rs(await wfQuery(
     `SELECT COUNT(*) AS c, MAX(FileName) AS last FROM wf.SchemaMigration`))[0];
 
+  // จำนวนแถวของทุกตารางใน wf — ใช้ตัดสินว่าปลายทางนี้มีข้อมูลจริงหรือเป็นฐานเปล่า
+  // อ่านจาก dm_db_partition_stats ไม่ใช่ COUNT(*) เพราะไม่ต้องสแกนตาราง
+  const rows = rs(await wfQuery(`
+    SELECT t.name AS n, SUM(ps.row_count) AS c
+    FROM sys.tables t
+    JOIN sys.schemas s ON s.schema_id = t.schema_id
+    JOIN sys.dm_db_partition_stats ps ON ps.object_id = t.object_id AND ps.index_id IN (0,1)
+    WHERE s.name = 'wf'
+    GROUP BY t.name HAVING SUM(ps.row_count) > 0
+    ORDER BY SUM(ps.row_count) DESC`));
+  const totalRows = rows.reduce((a, r) => a + Number(r.c), 0);
+
   // พิมพ์บรรทัดเดียวต่อหนึ่งอย่าง เพื่อให้ diff ระหว่างปลายทางอ่านง่าย
   console.log(`FINGERPRINT tables=${tables.length} views=${views.length} ` +
-              `ledger=${led.c} last=${led.last}`);
+              `ledger=${led.c} last=${led.last} rows=${totalRows}`);
   for (const t of tables) console.log(`  T ${t.n} (${t.cols})`);
   for (const v of views) console.log(`  V ${v.n}`);
+  for (const r of rows) console.log(`  R ${r.n} = ${Number(r.c).toLocaleString()}`);
   process.exit(0);
 }
 

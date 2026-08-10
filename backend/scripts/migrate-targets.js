@@ -39,6 +39,7 @@ require('dotenv').config({ path: path.join(BACKEND_DIR, '.env') });
 const RUNNER = path.join(BACKEND_DIR, 'run_migrations.js');
 const REPAIRER = path.join(__dirname, 'repair-migration-checksum.js');
 const PROBER = path.join(__dirname, 'schema-fingerprint.js');
+const RESETTER = path.join(__dirname, 'reset-wf-schema.js');
 const ALL_TARGETS = ['local', 'remote', 'remote_b'];
 
 const c = {
@@ -53,7 +54,7 @@ const c = {
 // ── args ────────────────────────────────────────────────────────
 function parseArgs(argv) {
   const o = { plan: false, targets: null, stopOnError: false, help: false,
-              repair: false, actor: '', reason: '', probe: false };
+              repair: false, actor: '', reason: '', probe: false, reset: false };
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
@@ -64,6 +65,8 @@ function parseArgs(argv) {
     else if (a.startsWith('--targets=')) o.targets = a.slice('--targets='.length);
     else if (a === '--repair-checksums') o.repair = true;
     else if (a === '--probe-schema') o.probe = true;
+    else if (a === '--reset-wf-schema') o.reset = true;
+    else if (a === '--confirm-reset') o.confirmReset = true;
     else if (a === '--actor') o.actor = rest[++i] || '';
     else if (a === '--reason') o.reason = rest[++i] || '';
     else throw new Error(`ไม่รู้จัก argument: ${a}`);
@@ -71,6 +74,13 @@ function parseArgs(argv) {
   // ซ่อม ledger เป็นการแก้บันทึกที่ควรตรวจย้อนได้ จึงบังคับให้ระบุคนสั่งและเหตุผล
   if (o.repair && !o.plan && (!o.actor || !o.reason)) {
     throw new Error('--repair-checksums ต้องมี --actor และ --reason (หรือใส่ --plan เพื่อดูอย่างเดียว)');
+  }
+  // ล้าง schema เป็นการลบข้อมูล จึงบังคับให้พิมพ์ยืนยันอีกชั้น และทำได้ทีละปลายทาง
+  if (o.reset && !o.plan) {
+    if (!o.confirmReset) throw new Error('--reset-wf-schema ต้องใส่ --confirm-reset ด้วย (หรือ --plan เพื่อดูก่อน)');
+    if (!o.targets || o.targets.includes(',')) {
+      throw new Error('--reset-wf-schema ต้องระบุ --targets ทีละปลายทางเท่านั้น');
+    }
   }
   return o;
 }
@@ -178,10 +188,12 @@ async function ensureTunnel(env) {
 // โหมด --repair-checksums จะเรียก repair-migration-checksum.js แทน
 // มีเพราะเครื่องมือซ่อม checksum ต่อฐานผ่าน db.js ตรง ๆ จึงเปิด SSH tunnel เองไม่ได้
 // ทำให้ remote_b ซ่อมไม่ได้เลยและติด drift ค้างจนรัน migration ต่อไม่ได้
-function runMigrator(env, plan, repair, probe) {
+function runMigrator(env, plan, repair, probe, reset) {
   return new Promise(resolve => {
     const args = probe
       ? [PROBER]
+      : reset
+      ? [RESETTER, ...(plan ? [] : ['--confirm-reset'])]
       : repair
         ? [REPAIRER, ...(plan ? [] : ['--apply', '--actor', repair.actor, '--reason', repair.reason])]
         : [RUNNER, ...(plan ? ['--plan'] : [])];
@@ -207,6 +219,9 @@ async function main() {
   --repair-checksums ซ่อม checksum ที่เพี้ยนเพราะท้ายบรรทัด/คอมเมนต์ แทนการรัน migration
                      ต้องมี --actor และ --reason · ใส่ --plan เพื่อดูก่อนว่าจะซ่อมอะไร
   --probe-schema     พิมพ์ลายนิ้วมือ schema ของแต่ละปลายทาง (อ่านอย่างเดียว) ไว้เทียบกัน
+  --reset-wf-schema  ลบ schema wf ทั้งหมดเพื่อสร้างใหม่จาก migration ชุดเต็ม
+                     ต้องมี --confirm-reset และระบุ --targets ทีละปลายทาง
+                     ปฏิเสธเองถ้าพบข้อมูลที่สร้างใหม่ไม่ได้ (ใบสั่งขาย/ใบขอเคลียร์ ฯลฯ)
   -h, --help         แสดงข้อความนี้
 `);
     process.exit(0);
@@ -246,7 +261,7 @@ async function main() {
     }
 
     const code = await runMigrator(built.env, opts.plan,
-      opts.repair ? { actor: opts.actor, reason: opts.reason } : null, opts.probe);
+      opts.repair ? { actor: opts.actor, reason: opts.reason } : null, opts.probe, opts.reset);
     if (tunnel.proc) { tunnel.proc.kill(); console.log(c.dim('   ปิด tunnel แล้ว')); }
 
     if (code === 0) {
