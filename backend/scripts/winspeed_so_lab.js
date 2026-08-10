@@ -188,7 +188,7 @@ async function normalizeDoc(docNo = DOC_NO) {
           Tel = ISNULL(Tel, ''),
           PostCode = ISNULL(PostCode, ''),
           Fax = ISNULL(Fax, ''),
-          ContactName = N'EMP-00021',
+          ContactName = N'ผู้ติดต่อทดสอบ',
           ShipDays = 30,
           CreditDays = 60,
           ShipDate = @shipDate,
@@ -299,11 +299,15 @@ async function createDoc(docNo = DOC_NO) {
   );
   if (!custRows.length) throw new Error('Customer 0110012 not found');
 
+  // เดิมค้นด้วยชื่อพนักงานจริง — เปลี่ยนมาใช้รหัสพนักงาน เพราะที่เก็บซอร์สนี้เป็นสาธารณะ
+  // ตั้ง LAB_EMP_CODE เพื่อเจาะจงคน · ไม่ตั้งก็ใช้คนแรกที่ยังไม่ลาออก
   const empRows = await db.query(
     `SELECT TOP 1 EmpID, EmpCode, EmpName
      FROM dbo.EMEmp
-     WHERE EmpName LIKE N'%EMP-00021%'
-     ORDER BY EmpID`
+     WHERE EmpResignDate IS NULL
+       AND (@empCode IS NULL OR EmpCode = @empCode)
+     ORDER BY EmpID`,
+    { empCode: { type: db.sql.NVarChar, value: process.env.LAB_EMP_CODE || null } }
   );
   const empId = Number(empRows[0]?.EmpID || 1000);
 
@@ -358,7 +362,7 @@ async function createDoc(docNo = DOC_NO) {
           'W', 'N', 'N', @EmpID, '1',
           '103', 'N', 0, '3', '1', 1,
           2, 30, '', '', '', '', '', '', '', '',
-          N'EMP-00021', 30, 60, '2026-08-07',
+          N'ผู้ติดต่อทดสอบ', 30, 60, '2026-08-07',
           0, 0, @NetAmnt, 0, '', 0,
           @NetAmnt, 0, 0, 0,
           'NO-PO', '2026-07-06', NULL, NULL, 0, 0,
