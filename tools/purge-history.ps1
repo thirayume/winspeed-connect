@@ -69,8 +69,15 @@ Say-Ok "clone แล้ว · commit ล่าสุดก่อนล้าง 
 
 # ── 4. ลบไฟล์ mock ออกจากทุก commit ──────────────────────────────────────
 # ลบทั้งไฟล์ ไม่ใช่แค่แทนคำ เพราะทุก revision ของไฟล์นี้เป็นข้อมูลลูกค้าจริง
-Say-Step 'ลบ WSSale-App/src/mock/sample-data.json ออกจากทุก commit'
-git filter-repo --force --invert-paths --path WSSale-App/src/mock/sample-data.json
+Say-Step 'ลบไฟล์ที่มีข้อมูลจริงออกจากทุก commit'
+# sample-data.json — ทุก revision เป็นข้อมูลลูกค้าจริง
+# refs/ — เอกสารอ้างอิง (SRS/Presentation/Diagrams/xlsx) ไม่ได้อยู่ใน HEAD แล้ว
+#         และ giveaway_budget.xlsx มีชื่อพนักงาน 7 คน · SRS มีอีก 2 คน
+#         ต้องลบทั้งไฟล์ ไม่ใช่แทนคำ เพราะ .xlsx/.docx เป็น ZIP ที่บีบอัดไว้
+#         การแทนข้อความระดับไบต์จึงมองไม่เห็นข้อความข้างใน
+git filter-repo --force --invert-paths `
+    --path WSSale-App/src/mock/sample-data.json `
+    --path refs/
 if ($LASTEXITCODE -ne 0) { Pop-Location; Die 'filter-repo (ลบไฟล์) ไม่สำเร็จ' }
 Say-Ok 'เสร็จ'
 
@@ -91,13 +98,30 @@ $needles = @{
 }
 $dirty = $false
 foreach ($k in $needles.Keys) {
-    $hits = @(git log --all --oneline -S $needles[$k] --).Count
+    # --no-textconv สำคัญ: ถ้าไม่ใส่ git จะเรียก astextplain แปลง .docx เป็นข้อความก่อนค้น
+    # ซึ่งบนเครื่องนี้ไม่มี docx2txt.exe จึงคืนค่าว่าง แล้วรายงานว่า "0 commit" ทั้งที่ยังไม่ได้ค้นจริง
+    $hits = @(git --no-pager log --all --oneline --no-textconv -S $needles[$k] --).Count
     if ($hits -eq 0) { Say-Ok "$k = 0 commit" }
     else { Write-Host "    เหลือ $k = $hits commit" -ForegroundColor Red; $dirty = $true }
 }
-$mockHits = @(git log --all --oneline -- WSSale-App/src/mock/sample-data.json).Count
-if ($mockHits -eq 0) { Say-Ok 'ไฟล์ mock = 0 commit' }
-else { Write-Host "    เหลือ ไฟล์ mock = $mockHits commit" -ForegroundColor Red; $dirty = $true }
+foreach ($path in @('WSSale-App/src/mock/sample-data.json', 'refs/')) {
+    $h = @(git --no-pager log --all --oneline -- $path).Count
+    if ($h -eq 0) { Say-Ok "$path = 0 commit" }
+    else { Write-Host "    เหลือ $path = $h commit" -ForegroundColor Red; $dirty = $true }
+}
+
+# ค้นซ้ำในไฟล์ที่บีบอัด (.docx/.xlsx/.pptx) — การค้นแบบไบต์มองไม่เห็นข้อความข้างใน
+# ถ้าไม่เหลือไฟล์แบบนี้ในประวัติแล้วก็ไม่ต้องกังวล จึงตรวจแค่ว่าเหลือหรือไม่
+$binLeft = @(git --no-pager log --all --pretty=format: --name-only |
+             Sort-Object -Unique |
+             Where-Object { $_ -match '\.(docx|xlsx|pptx|doc|xls|ppt)$' })
+if ($binLeft.Count -eq 0) { Say-Ok 'ไม่มีไฟล์เอกสารบีบอัดเหลือในประวัติ' }
+else {
+    Write-Host "    เหลือไฟล์บีบอัดที่ค้นข้างในไม่ได้ $($binLeft.Count) ไฟล์:" -ForegroundColor Red
+    $binLeft | ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
+    $dirty = $true
+}
+
 if ($dirty) { Pop-Location; Die 'ยังไม่สะอาด — ไม่ push · ตรวจรายการแทนที่แล้วรันใหม่' }
 
 # ── 7. push ─────────────────────────────────────────────────────────────
@@ -129,11 +153,12 @@ $verify = "$WorkDir-verify"
 if (Test-Path $verify) { Remove-Item -Recurse -Force $verify }
 git clone --quiet $RepoUrl $verify
 Push-Location $verify
-$left = @(git log --all --oneline -S ('W0rld' + 'F3rt') --).Count
-$mockLeft = Test-Path 'WSSale-App\src\mock\sample-data.json'
+$left = @(git --no-pager log --all --oneline --no-textconv -S ('W0rld' + 'F3rt') --).Count
+$mockLeft = @(git --no-pager log --all --oneline -- WSSale-App/src/mock/sample-data.json).Count
+$refsLeft = @(git --no-pager log --all --oneline -- refs/).Count
 Pop-Location
-if ($left -eq 0 -and -not $mockLeft) { Say-Ok 'ของจริงบน GitHub สะอาดแล้ว' }
-else { Die "บน GitHub ยังเหลือ: รหัสผ่าน $left commit · ไฟล์ mock $mockLeft" }
+if ($left -eq 0 -and $mockLeft -eq 0 -and $refsLeft -eq 0) { Say-Ok 'ของจริงบน GitHub สะอาดแล้ว' }
+else { Die "บน GitHub ยังเหลือ: รหัสผ่าน $left · mock $mockLeft · refs/ $refsLeft commit" }
 
 Write-Host "`n=== เสร็จสิ้น ===" -ForegroundColor Green
 Write-Host @"
