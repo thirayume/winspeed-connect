@@ -40,6 +40,7 @@ const RUNNER = path.join(BACKEND_DIR, 'run_migrations.js');
 const REPAIRER = path.join(__dirname, 'repair-migration-checksum.js');
 const PROBER = path.join(__dirname, 'schema-fingerprint.js');
 const RESETTER = path.join(__dirname, 'reset-wf-schema.js');
+const TRACER = path.join(__dirname, 'trace-document.js');
 const ALL_TARGETS = ['local', 'remote', 'remote_b'];
 
 const c = {
@@ -54,7 +55,7 @@ const c = {
 // ── args ────────────────────────────────────────────────────────
 function parseArgs(argv) {
   const o = { plan: false, targets: null, stopOnError: false, help: false,
-              repair: false, actor: '', reason: '', probe: false, reset: false };
+              repair: false, actor: '', reason: '', probe: false, reset: false, trace: '' };
   const rest = argv.slice(2);
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
@@ -65,6 +66,7 @@ function parseArgs(argv) {
     else if (a.startsWith('--targets=')) o.targets = a.slice('--targets='.length);
     else if (a === '--repair-checksums') o.repair = true;
     else if (a === '--probe-schema') o.probe = true;
+    else if (a === '--trace-document') o.trace = rest[++i] || '';
     else if (a === '--reset-wf-schema') o.reset = true;
     else if (a === '--confirm-reset') o.confirmReset = true;
     else if (a === '--actor') o.actor = rest[++i] || '';
@@ -188,16 +190,20 @@ async function ensureTunnel(env) {
 // โหมด --repair-checksums จะเรียก repair-migration-checksum.js แทน
 // มีเพราะเครื่องมือซ่อม checksum ต่อฐานผ่าน db.js ตรง ๆ จึงเปิด SSH tunnel เองไม่ได้
 // ทำให้ remote_b ซ่อมไม่ได้เลยและติด drift ค้างจนรัน migration ต่อไม่ได้
-function runMigrator(env, plan, repair, probe, reset) {
+function runMigrator(env, plan, repair, probe, reset, trace) {
   return new Promise(resolve => {
-    const args = probe
+    const args = trace
+      ? [TRACER]
+      : probe
       ? [PROBER]
       : reset
       ? [RESETTER, ...(plan ? [] : ['--confirm-reset'])]
       : repair
         ? [REPAIRER, ...(plan ? [] : ['--apply', '--actor', repair.actor, '--reason', repair.reason])]
         : [RUNNER, ...(plan ? ['--plan'] : [])];
-    const p = spawn(process.execPath, args, { cwd: BACKEND_DIR, env, stdio: 'inherit' });
+    // ส่งเลขที่เอกสารให้ trace-document.js ทาง env ไม่ผ่าน argv
+    const childEnv = trace ? { ...env, TRACE_DOCUNO: trace } : env;
+    const p = spawn(process.execPath, args, { cwd: BACKEND_DIR, env: childEnv, stdio: 'inherit' });
     p.on('close', code => resolve(code ?? 1));
     p.on('error', () => resolve(1));
   });
@@ -219,6 +225,7 @@ async function main() {
   --repair-checksums ซ่อม checksum ที่เพี้ยนเพราะท้ายบรรทัด/คอมเมนต์ แทนการรัน migration
                      ต้องมี --actor และ --reason · ใส่ --plan เพื่อดูก่อนว่าจะซ่อมอะไร
   --probe-schema     พิมพ์ลายนิ้วมือ schema ของแต่ละปลายทาง (อ่านอย่างเดียว) ไว้เทียบกัน
+  --trace-document <เลขที่>  ตามรอยเอกสารหนึ่งใบ (รัน sql/maintenance/trace-document.sql)
   --reset-wf-schema  ลบ schema wf ทั้งหมดเพื่อสร้างใหม่จาก migration ชุดเต็ม
                      ต้องมี --confirm-reset และระบุ --targets ทีละปลายทาง
                      ปฏิเสธเองถ้าพบข้อมูลที่สร้างใหม่ไม่ได้ (ใบสั่งขาย/ใบขอเคลียร์ ฯลฯ)
@@ -261,7 +268,8 @@ async function main() {
     }
 
     const code = await runMigrator(built.env, opts.plan,
-      opts.repair ? { actor: opts.actor, reason: opts.reason } : null, opts.probe, opts.reset);
+      opts.repair ? { actor: opts.actor, reason: opts.reason } : null,
+      opts.probe, opts.reset, opts.trace);
     if (tunnel.proc) { tunnel.proc.kill(); console.log(c.dim('   ปิด tunnel แล้ว')); }
 
     if (code === 0) {
