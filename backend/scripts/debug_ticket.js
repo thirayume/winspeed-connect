@@ -2,32 +2,22 @@ const { query } = require('../db');
 
 async function run() {
   try {
-    const docuNo = 'I69-02473';
-    console.log(`Debugging ticket: ${docuNo}`);
+    const q = `
+      SELECT so.SOID, so.WfRef, so.ControlTicketNo
+      FROM wf.SalesOrderExt so WITH (NOLOCK)
+      WHERE so.WfRef IN ('I69-02473', 'I69-02484', 'I69-02496')
+    `;
+    const res = await query(q);
+    console.log('SalesOrderExt:', res);
     
-    // Get SOID
-    const hd = await query(`SELECT SOID, DocuType, TransRegistration, DocuNo, CustName FROM dbo.SOHD WHERE DocuNo = '${docuNo}'`);
-    console.log('SOHD:', hd);
-    
-    if (hd.length > 0) {
-      const soid = hd[0].SOID;
-      
-      const dt = await query(`SELECT ListNo, GoodID, GoodQty2 FROM dbo.SODT WHERE SOID = ${soid}`);
-      console.log('SODT:', dt);
-      
-      const ext = await query(`SELECT SOID, ListNo, IsGiveaway FROM wf.SalesOrderLineExt WHERE SOID = '${soid}'`);
-      console.log('SalesOrderLineExt:', ext);
-      
-      const joined = await query(`
-        SELECT dt.ListNo, dt.GoodQty2, sle.IsGiveaway 
-        FROM dbo.SODT dt
-        LEFT JOIN wf.SalesOrderLineExt sle ON CONVERT(VARCHAR(50), sle.SOID) = CONVERT(VARCHAR(50), dt.SOID) AND sle.ListNo = dt.ListNo
-        WHERE dt.SOID = ${soid}
-      `);
-      console.log('Joined:', joined);
-    }
-    
-  } catch(e) {
+    const q2 = `
+      SELECT so.Id, so.WfRef, so.ControlTicketNo
+      FROM wf.SalesOrder so WITH (NOLOCK)
+      WHERE so.WfRef IN ('I69-02473', 'I69-02484', 'I69-02496') OR so.ControlTicketNo = 'I69-02473'
+    `;
+    const res2 = await query(q2);
+    console.log('SalesOrder:', res2);
+  } catch (e) {
     console.error(e);
   } finally {
     process.exit(0);

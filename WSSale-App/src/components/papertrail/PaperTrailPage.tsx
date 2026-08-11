@@ -187,9 +187,13 @@ export function PaperTrailPage() {
       <div className="flex-1 overflow-x-auto overflow-y-hidden p-4 min-w-0 print:hidden">
         <div className="flex gap-4 h-full w-max min-w-full pb-2">
           {stages.map(stage => {
+            const isControlTicket = (c: PaperCard) => 
+              (c.docuType === 103 || c.truckPlate === 'ตั๋วคุม') && 
+              ['DRAFT', 'CONFIRMED', 'IMPORTED'].includes(c.status);
+
             const allCards = stage === 'CONTROL_TICKET'
-              ? Object.values(data?.board || {}).flat().filter(c => c.docuType === 103 || c.truckPlate === 'ตั๋วคุม')
-              : (data?.board[stage] || []).filter(c => c.docuType !== 103 && c.truckPlate !== 'ตั๋วคุม');
+              ? Object.values(data?.board || {}).flat().filter(isControlTicket)
+              : (data?.board[stage] || []).filter(c => !isControlTicket(c));
 
             const cards = allCards.filter(c => {
               if (!searchQuery) return true;
