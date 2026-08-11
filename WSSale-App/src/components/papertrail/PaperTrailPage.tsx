@@ -188,8 +188,8 @@ export function PaperTrailPage() {
         <div className="flex gap-4 h-full w-max min-w-full pb-2">
           {stages.map(stage => {
             const allCards = stage === 'CONTROL_TICKET'
-              ? Object.values(data?.board || {}).flat().filter(c => c.truckPlate === 'ตั๋วคุม')
-              : (data?.board[stage] || []).filter(c => c.truckPlate !== 'ตั๋วคุม');
+              ? Object.values(data?.board || {}).flat().filter(c => c.docuType === 103 || c.truckPlate === 'ตั๋วคุม')
+              : (data?.board[stage] || []).filter(c => c.docuType !== 103 && c.truckPlate !== 'ตั๋วคุม');
 
             const cards = allCards.filter(c => {
               if (!searchQuery) return true;
@@ -212,7 +212,8 @@ export function PaperTrailPage() {
               const dateDisplay = card.deliveryDate ? new Date(card.deliveryDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : 'ไม่ระบุวันรับ';
               const truck = card.truckPlate || 'ไม่ระบุทะเบียนรถ';
               const cust = card.custName || 'ไม่ระบุลูกค้า';
-              const key = `${dateRaw}::${cust}::${truck}`;
+              // For CONTROL_TICKET, group individually by ID so independent tickets don't merge, unless they share the exact same ID
+              const key = stage === 'CONTROL_TICKET' ? `CT::${card.id}` : `${dateRaw}::${cust}::${truck}`;
               
               if (!map.has(key)) map.set(key, { dateDisplay, cust, truck, cards: [], totalTon: 0 });
               const g = map.get(key)!;
@@ -277,7 +278,13 @@ export function PaperTrailPage() {
                                 })()}
                               </div>
                               <div className="flex flex-wrap gap-1 text-[9px] text-gray-500 mb-2 pl-1">
-                                <span className="bg-gray-100 px-1 rounded">{Number(card.qtyTon || 0).toFixed(2)} ตัน</span>
+                                {card.drawnQtyTon && card.drawnQtyTon > 0 ? (
+                                  <span className="bg-blue-50 text-[#0C447C] font-bold px-1 rounded border border-blue-100">
+                                    {Number(card.qtyTon || 0).toFixed(2)} / {Number(card.totalQtyTon || 0).toFixed(2)} ตัน
+                                  </span>
+                                ) : (
+                                  <span className="bg-gray-100 px-1 rounded">{Number(card.qtyTon || 0).toFixed(2)} ตัน</span>
+                                )}
                                 {card.controlTicketNo && <span className="flex items-center gap-0.5 bg-gray-100 px-1 rounded"><FileText size={9} />{card.controlTicketNo}</span>}
                                 {card.importedDocuNo && <span className="text-emerald-600 font-medium">{card.importedDocuNo}</span>}
                                 <span className={`flex items-center gap-0.5 ${overdue}`}><Clock size={9} />{card.daysOpen}ว</span>

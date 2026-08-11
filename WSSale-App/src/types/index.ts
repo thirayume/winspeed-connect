@@ -524,6 +524,9 @@ export type PaperCard = {
   createdAt: string;
   deliveryDate?: string;
   salesName?: string;
+  docuType?: number;
+  totalQtyTon?: number;
+  drawnQtyTon?: number;
   qtyTon: number;
   lineCnt: number;
   daysOpen: number;
