@@ -38,7 +38,8 @@ router.get('/board', async (req, res) => {
           so.CreatedAt,
           so.DeliveryDate,
           so.SalesUserId,
-          CAST('DRAFT' AS VARCHAR(20)) AS SourceType
+          CAST('DRAFT' AS VARCHAR(20)) AS SourceType,
+          CAST(NULL AS INT) AS DocuType
         FROM wf.SalesOrder so WITH (NOLOCK)
         WHERE so.Status IN ('DRAFT', 'CONFIRMED', 'PICKING', 'LOADED', 'SHIPPED', 'IMPORTED')
 
@@ -55,7 +56,8 @@ router.get('/board', async (req, res) => {
           w.CreatedAt,
           w.DeliveryDate,
           w.SalesUserId,
-          CAST('WINSPEED' AS VARCHAR(20)) AS SourceType
+          CAST('WINSPEED' AS VARCHAR(20)) AS SourceType,
+          w.DocuType
         FROM (
           SELECT
             hd.SOID,
@@ -77,6 +79,7 @@ router.get('/board', async (req, res) => {
               WHEN ext.IsUnlocked = 1 THEN 'DRAFT'
               ELSE 'CONFIRMED'
             END AS Status,
+            hd.DocuType,
             ROW_NUMBER() OVER(PARTITION BY hd.DocuNo ORDER BY hd.DocuType DESC, hd.SOID DESC) AS DedupRN
           FROM dbo.SOHD hd WITH (NOLOCK)
           LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
@@ -94,11 +97,19 @@ router.get('/board', async (req, res) => {
       ActiveSO AS ( SELECT * FROM RankedSO WHERE RN <= 100 )
       SELECT so.Id, so.WfRef, so.CustName, so.Status, so.TruckPlate, so.ControlTicketNo,
              so.ImportedDocuNo, so.CreatedAt, so.DeliveryDate, u.DisplayName AS SalesName,
+             so.DocuType,
              SUM(CASE
                    WHEN so.SourceType = 'DRAFT' AND ISNULL(sol.IsGiveaway, 0) = 0 THEN ISNULL(sol.QtyTon, 0)
                    WHEN so.SourceType = 'WINSPEED' AND ISNULL(sle.IsGiveaway, CASE WHEN dt.FreeFlag = 'Y' THEN 1 ELSE 0 END) = 0 THEN ISNULL(dt.GoodQty2, 0)
                    ELSE 0
-                 END) AS QtyTon,
+                 END) AS TotalQtyTon,
+             (
+                SELECT SUM(d2.GoodQty2)
+                FROM dbo.SOHD h2 WITH (NOLOCK)
+                JOIN dbo.SODT d2 WITH (NOLOCK) ON h2.SOID = d2.SOID
+                WHERE h2.DocuType IN (103, 104) AND h2.DocuStatus <> 'C'
+                  AND (h2.RefNo = so.ImportedDocuNo OR h2.AppvDocuNo = so.ImportedDocuNo OR h2.Remark LIKE '%' + so.ImportedDocuNo + '%')
+             ) AS DrawnQtyTon,
              COUNT(CASE WHEN so.SourceType = 'DRAFT' THEN sol.SoId ELSE dt.SOID END) AS LineCnt,
              (SELECT COUNT(*) FROM wf.PaperCopy pc WHERE pc.SoId = so.Id) AS CopyCnt,
              (SELECT COUNT(*) FROM wf.PaperCopy pc WHERE pc.SoId = so.Id AND pc.Status='LOST') AS LostCnt,
@@ -112,7 +123,7 @@ router.get('/board', async (req, res) => {
       LEFT JOIN wf.SalesOrderLineExt sle WITH (NOLOCK)
         ON so.SourceType = 'WINSPEED' AND CONVERT(VARCHAR(50), sle.SOID) = so.Id AND sle.ListNo = dt.ListNo
       GROUP BY so.Id, so.WfRef, so.CustName, so.Status, so.TruckPlate, so.ControlTicketNo,
-               so.ImportedDocuNo, so.CreatedAt, so.DeliveryDate, u.DisplayName
+               so.ImportedDocuNo, so.CreatedAt, so.DeliveryDate, u.DisplayName, so.DocuType
       ORDER BY so.CreatedAt DESC
     `);
     const board = {};
@@ -122,7 +133,9 @@ router.get('/board', async (req, res) => {
         id: row.Id, wfRef: row.WfRef, custName: row.CustName, status: row.Status,
         truckPlate: row.TruckPlate, controlTicketNo: row.ControlTicketNo,
         importedDocuNo: row.ImportedDocuNo, createdAt: row.CreatedAt,
-        deliveryDate: row.DeliveryDate, salesName: row.SalesName, qtyTon: row.QtyTon, 
+        deliveryDate: row.DeliveryDate, salesName: row.SalesName, docuType: row.DocuType,
+        totalQtyTon: row.TotalQtyTon, drawnQtyTon: row.DrawnQtyTon,
+        qtyTon: Math.max(0, (row.TotalQtyTon || 0) - (row.DrawnQtyTon || 0)),
         lineCnt: row.LineCnt, copyCnt: row.CopyCnt, lostCnt: row.LostCnt, verifiedAt: row.VerifiedAt,
         daysOpen: row.CreatedAt ? Math.floor((Date.now() - new Date(row.CreatedAt).getTime()) / 86400000) : 0,
       };
