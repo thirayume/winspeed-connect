@@ -124,7 +124,8 @@ async function main() {
   ok(`ยื่นใบขอเคลียร์สำเร็จ #${claim.Id} · ${want} ตัน`);
 
   const claimLines = (await wfQuery(
-    `SELECT [LineNo], QtyTon, SourceSOID, SourceListNo, SourceDocuNo, SourceDocuDate, SourceCouponNo
+    `SELECT [LineNo], QtyTon, SourceSOID, SourceListNo, SourceDocuNo, SourceDocuDate, SourceCouponNo,
+            SourceRefSOID, SourceRefListNo, SourceBookingDocuNo
      FROM wf.RebateClaimLine WHERE ClaimId = @id ORDER BY [LineNo]`,
     { id: { type: sql.Int, value: claim.Id } })).recordset || [];
 
@@ -133,6 +134,11 @@ async function main() {
 
   if (claimLines.every(l => l.SourceSOID && l.SourceListNo)) ok('ทุกบรรทัดชี้กลับไปยังบรรทัดใบส่งของต้นทางได้');
   else bad('มีบรรทัดที่ไม่มี SourceSOID/SourceListNo — ตรวจย้อนกลับตาม ISO ไม่ได้');
+
+  // สืบต่ออีกขั้น — จากใบส่งของไปถึงใบสั่งขาย (migration 081)
+  const traced = claimLines.filter(l => l.SourceRefSOID && l.SourceBookingDocuNo).length;
+  if (traced === claimLines.length) ok(`ทุกบรรทัดสืบถึงใบสั่งขายต้นทางได้ (${claimLines[0]?.SourceBookingDocuNo})`);
+  else bad(`สืบถึงใบสั่งขายได้ ${traced} จาก ${claimLines.length} บรรทัด`);
 
   if (String(claimLines[0]?.SourceDocuNo) === String(first.SourceDocuNo)) ok(`ตัดใบเก่าที่สุดก่อน (${first.SourceDocuNo})`);
   else bad(`ตัดผิดลำดับ — ควรเริ่มที่ ${first.SourceDocuNo} แต่ได้ ${claimLines[0]?.SourceDocuNo}`);

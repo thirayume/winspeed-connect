@@ -319,6 +319,7 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
       // เพราะแบบฟอร์มกระดาษมีช่อง "เลขที่ INV" ให้เขียนเจาะจงอยู่แล้ว
       const lotRows = (await wfQuery(`
         SELECT SourceSOID, SourceListNo, SourceDocuNo, SourceDocuDate, CouponNo,
+               SourceRefSOID, SourceRefListNo, SourceBookingDocuNo,
                GoodCode, GoodName, ListPricePerTon, NetPricePerTon, RebatePerTon, PlanId,
                RemainingTonRebate, RemainingTonDiff
         FROM wf.v_RebateAccrualRemaining
@@ -388,6 +389,10 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
             sourceDocuNo: lot.SourceDocuNo || null,
             sourceDocuDate: lot.SourceDocuDate || null,
             sourceCouponNo: lot.CouponNo || null,
+            // ใบสั่งขายต้นทางของบรรทัดใบส่งของนี้ (dbo.SODT.RefSOID) — ดู migration 081
+            sourceRefSOID: lot.SourceRefSOID ?? null,
+            sourceRefListNo: lot.SourceRefListNo ?? null,
+            sourceBookingDocuNo: lot.SourceBookingDocuNo || null,
           });
           want = Math.round((want - take) * 1000) / 1000;
         }
@@ -464,9 +469,10 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
     for (const line of parsedLines) {
       await wfQuery(
         `INSERT INTO wf.RebateClaimLine (ClaimId, [LineNo], LineType, InvoiceNo, GoodCode, GoodName, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, PlanId, Remark,
-                                        SourceSOID, SourceListNo, SourceDocuNo, SourceDocuDate, SourceCouponNo)
+                                        SourceSOID, SourceListNo, SourceDocuNo, SourceDocuDate, SourceCouponNo,
+                                        SourceRefSOID, SourceRefListNo, SourceBookingDocuNo)
          VALUES (@cid, @lno, @ltype, @inv, @gcode, @gname, @qty, @price, @netPrice, @rebate, @planId, @remark,
-                 @sSoid, @sList, @sDocu, @sDate, @sCoup)`,
+                 @sSoid, @sList, @sDocu, @sDate, @sCoup, @sRefSoid, @sRefList, @sBook)`,
         {
           ltype:    { type: sql.NVarChar(10),  value: line.lineType },
           inv:      { type: sql.NVarChar(50),  value: line.invoiceNo },
@@ -485,7 +491,11 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
           sList:    { type: sql.Int,           value: line.sourceListNo ?? null },
           sDocu:    { type: sql.NVarChar(25),  value: line.sourceDocuNo ?? null },
           sDate:    { type: sql.Date,          value: line.sourceDocuDate ?? null },
-          sCoup:    { type: sql.NVarChar(25),  value: line.sourceCouponNo ?? null }
+          sCoup:    { type: sql.NVarChar(25),  value: line.sourceCouponNo ?? null },
+          // สืบต่อไปถึงใบสั่งขาย — ตอบผู้ตรวจได้ว่าเงินก้อนนี้มาจากคำสั่งซื้อฉบับไหน
+          sRefSoid: { type: sql.Int,           value: line.sourceRefSOID ?? null },
+          sRefList: { type: sql.Int,           value: line.sourceRefListNo ?? null },
+          sBook:    { type: sql.NVarChar(25),  value: line.sourceBookingDocuNo ?? null }
         }
       );
     }
