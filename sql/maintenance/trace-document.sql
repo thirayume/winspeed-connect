@@ -11,10 +11,20 @@
 --   เอกสารที่คีย์ใน WINSpeed โดยตรงจะไม่มีร่องรอยใน wf เลย และกลับกัน
 --   การแยกดูจึงบอกได้ทันทีว่าใบนี้เกิดจากทางไหน
 --
--- ⚠ ข้อควรระวังเรื่องเลข ID ชนกัน
---   SOID · SOInvID · GLID · stockdetailid เป็นลำดับ "คนละชุด" ที่เดินแยกกัน
---   เลขเดียวกันจึงไปตรงกับเอกสารคนละใบคนละปีได้ ต้องเปิดดู DocuNo/DocuDate
---   ประกอบเสมอ ห้ามสรุปว่าเกี่ยวข้องกันเพราะเลขตรงกันเฉย ๆ
+-- ⚠ ข้อควรระวังเรื่องเลข ID ชนกัน (วัดจากฐานจริง 11 ส.ค. 2569)
+--   SOID · SOInvID · GLID ไม่ใช่ IDENTITY และ **ไม่ได้ unique ข้ามตาราง**
+--   แต่ละตารางมีเลขของตัวเองที่ช่วงทับกันเป็นปกติ:
+--       SOHD.SOID        132,260 – 274,001   (125,182 แถว)
+--       SOInvHD.SOInvID    1,000 – 331,002   (304,537 แถว)
+--       GLHD.GLID          1,000 – 478,001   (412,933 แถว)
+--   **120,652 จาก 125,182 SOID (96.4%) มีเลขเดียวกันอยู่ใน SOInvID ด้วย**
+--   การชนกันจึงเป็นเรื่องปกติ ไม่ใช่ความผิดปกติ และไม่ได้แปลว่าเอกสารเกี่ยวข้องกัน
+--   ต้องดู DocuNo และ DocuDate ประกอบเสมอ
+--
+-- ⚠ RunCode ใน EMRunBrch ไม่ใช่ DocuType
+--   RunCode 103 = ชุดเลข I (Iyy-00000) · RunCode 104 = ชุดเลข K (Kyy-00000)
+--   ทั้งสองชุดมีเอกสารทั้ง DocuType 103 และ 104 ปนกัน — ไม่ได้แบ่งตามชนิดเอกสาร
+--   จึงต้องเทียบกับชุดเลขที่ตรงกับตัวอักษรนำหน้าของใบที่กำลังตามเท่านั้น
 -- =============================================================
 SET NOCOUNT ON;
 
@@ -63,10 +73,23 @@ SELECT N'บันทึกเหตุการณ์' AS [ส่วน],
        eventid, docudate, docuno, username, totalamnt, docuid, systemid
 FROM dbo.SMEvent WHERE docuno = @DocuNo;
 
--- 1.5 ตัวนับเลขที่เอกสาร — บอกว่าใบนี้เป็นใบล่าสุดหรือยัง
+-- 1.5 ตัวนับเลขที่เอกสาร — เทียบเฉพาะชุดเลขที่ตรงกับตัวอักษรนำหน้าของใบนี้
+--
+-- RunCode ไม่ใช่ DocuType · RunFormat บอกรูปแบบเลขของชุดนั้น เช่น Iyy-00000
+-- ต้องเทียบ "คำนำหน้าทั้งคำ" ไม่ใช่ตัวอักษรแรก มิฉะนั้น I จะไปตรงกับ IS · IQ · IB ด้วย
+--   คำนำหน้าของ RunFormat = ตัวอักษรก่อน y ตัวแรก   (Iyy-00000 → I · ISyymm → IS)
+--   คำนำหน้าของ DocuNo    = ตัวอักษรก่อนตัวเลขตัวแรก (I69-02420 → I)
+DECLARE @Prefix VARCHAR(10) =
+    LEFT(@DocuNo, NULLIF(PATINDEX('%[0-9]%', @DocuNo), 0) - 1);
+
 SELECT N'ตัวนับเลขที่' AS [ส่วน], RunCode, BrchID, LastNo, RunFormat,
-       CASE WHEN LastNo = @DocuNo THEN N'ใบนี้คือใบล่าสุดที่ระบบออก' ELSE N'มีใบใหม่กว่าแล้ว' END AS [สถานะ]
-FROM dbo.EMRunBrch WHERE RunCode IN ('103','104');
+       CASE WHEN LastNo = @DocuNo THEN N'ใบนี้คือใบล่าสุดของชุดนี้'
+            ELSE N'ชุดเดียวกัน แต่มีใบใหม่กว่าแล้ว: ' + LastNo
+       END AS [สถานะ]
+FROM dbo.EMRunBrch
+WHERE RunFormat IS NOT NULL
+  AND PATINDEX('%y%', RunFormat) > 1
+  AND LEFT(RunFormat, PATINDEX('%y%', RunFormat) - 1) = @Prefix;
 
 -- 1.6 เอกสารปลายน้ำ — ยังไม่มีถ้าใบยังไม่ถูกส่งของ
 SELECT N'ใบส่งของที่ใช้เลขเดียวกัน (DocuType 104)' AS [ส่วน],
@@ -79,15 +102,25 @@ FROM dbo.SOHD WHERE RefSOID = @SOID;
 SELECT N'คูปอง (เกิดตอนออกใบส่งของ)' AS [ส่วน], CouponID, CouponNo, GoodQty, RemaQty
 FROM dbo.WFCoupon WHERE DocuID = @SOID;
 
--- 1.7 ตารางที่เลข ID ไปชนกัน — ต้องเปิดดูว่าเป็นคนละใบหรือไม่
-SELECT N'⚠ เลข ID ชนกัน (คนละลำดับ)' AS [ส่วน], 'SOInvHD.SOInvID' AS [ที่ไหน],
-       DocuNo, DocuDate, Docutype FROM dbo.SOInvHD WHERE SOInvID = @SOID
-UNION ALL
-SELECT N'⚠ เลข ID ชนกัน (คนละลำดับ)', 'GLHD.GLID',
-       DocuNo, DocuDate, Docutype FROM dbo.GLHD WHERE GLID = @SOID
-UNION ALL
-SELECT DISTINCT N'⚠ เลข ID ชนกัน (คนละลำดับ)', 'ICStockDetail.DocuID',
-       DocuNo, DocuDate, DocuType FROM dbo.ICStockDetail WHERE DocuID = @SOID;
+-- 1.7 ตารางอื่นที่บังเอิญมีเลข ID เดียวกัน
+--
+-- ส่วนนี้ **ไม่ใช่เอกสารที่เกี่ยวข้อง** — แสดงไว้เพื่อกันคนอ่านไปเจอเองแล้วเข้าใจผิด
+-- คอลัมน์ [ผลตัดสิน] คำนวณจากวันที่: ถ้าเป็นเอกสารคนละใบ จะบอกว่าไม่เกี่ยวข้อง
+SELECT N'เลข ID ชนกัน' AS [ส่วน], x.[ที่ไหน], x.DocuNo, x.DocuDate, x.Docutype,
+       CASE WHEN x.DocuNo = @DocuNo THEN N'⚠ เลขเอกสารตรงกันด้วย — ต้องตรวจ'
+            ELSE N'ไม่เกี่ยวข้อง (คนละใบ ต่างกัน '
+                 + CAST(ABS(DATEDIFF(DAY, x.DocuDate,
+                     (SELECT DocuDate FROM dbo.SOHD WHERE SOID = @SOID))) AS VARCHAR(10)) + N' วัน)'
+       END AS [ผลตัดสิน]
+FROM (
+    SELECT 'SOInvHD.SOInvID' AS [ที่ไหน], DocuNo, DocuDate, Docutype
+    FROM dbo.SOInvHD WHERE SOInvID = @SOID
+    UNION ALL
+    SELECT 'GLHD.GLID', DocuNo, DocuDate, Docutype FROM dbo.GLHD WHERE GLID = @SOID
+    UNION ALL
+    SELECT DISTINCT 'ICStockDetail.DocuID', DocuNo, DocuDate, DocuType
+    FROM dbo.ICStockDetail WHERE DocuID = @SOID
+) x;
 
 PRINT '';
 PRINT '=================================================================';
