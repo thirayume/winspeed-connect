@@ -18,7 +18,22 @@ const isWindows = os.platform() === 'win32';
 // Use msnodesqlv8 on Windows for Windows Auth support, standard tedious on Linux (Railway/Render)
 const sql = isWindows ? require('mssql/msnodesqlv8') : require('mssql');
 
-const DEFAULT_TARGET = (process.env.DB_MODE || (isWindows ? 'local' : 'remote')).toLowerCase() === 'remote' ? 'remote' : 'local';
+/**
+ * ปลายทางที่รองรับ — ต้องตรงกับรายชื่อใน scripts/migrate-targets.js
+ *
+ * เดิมโค้ดเขียนว่า `... === 'remote' ? 'remote' : 'local'` ซึ่งแปลว่า **ค่าอะไรก็ตาม
+ * ที่ไม่ใช่ 'remote' จะกลายเป็น 'local' โดยไม่เตือน** · `DB_MODE=remote_b` จึงไปลง
+ * ฐานเครื่องพัฒนาเงียบ ๆ ทั้งที่ผู้สั่งตั้งใจแก้ฐานบน Coolify
+ * สคริปต์ที่เขียนข้อมูล (เช่น audit-duplicate-passwords --fix) จะแก้ผิดฐานได้
+ * โดยไม่มีใครรู้ จึงเปลี่ยนเป็นรายชื่อชัดเจน และ **ค่าที่ไม่รู้จักให้ล้มทันที**
+ */
+const VALID_TARGETS = ['local', 'remote', 'remote_b'];
+const RAW_MODE = (process.env.DB_MODE || (isWindows ? 'local' : 'remote')).toLowerCase().trim();
+if (!VALID_TARGETS.includes(RAW_MODE)) {
+  throw new Error(
+    `DB_MODE="${RAW_MODE}" ไม่ถูกต้อง — รองรับเฉพาะ ${VALID_TARGETS.join(' | ')}`);
+}
+const DEFAULT_TARGET = RAW_MODE;
 const DB = process.env.DB_NAME || 'dbwins_worldfert9';
 const als = new AsyncLocalStorage();
 
@@ -70,10 +85,46 @@ function remoteConfig() {
   }
 }
 
+/**
+ * remote_b — ฐานบน Coolify/Hetzner · ปกติต่อผ่าน SSH tunnel ที่ deploy/coolify/tunnel.bat เปิดไว้
+ * (REMOTE_B_DB_SERVER มักเป็น 127.0.0.1 และ REMOTE_B_DB_PORT เป็นพอร์ตฝั่ง local ของ tunnel)
+ *
+ * แยกฟังก์ชันไว้ต่างหากแทนที่จะแมป REMOTE_B_* ทับ REMOTE_* เหมือนที่ migrate-targets.js ทำ
+ * เพราะการแมปทับทำให้ปลายทางทั้งสองใช้ชื่อเดียวกันในหน่วยความจำ แยกไม่ออกเวลามีปัญหา
+ */
+function remoteBConfig() {
+  const server = process.env.REMOTE_B_DB_SERVER;
+  const port   = parseInt(process.env.REMOTE_B_DB_PORT || '1433', 10);
+  const user   = process.env.REMOTE_B_DB_USER || 'sa';
+  const pwd    = process.env.REMOTE_B_DB_PASSWORD || '';
+  const db     = process.env.REMOTE_B_DB_NAME || DB;
+
+  if (!server || !pwd) {
+    throw new Error('DB_MODE=remote_b แต่ยังไม่ได้ตั้ง REMOTE_B_DB_SERVER / REMOTE_B_DB_PASSWORD');
+  }
+
+  if (isWindows) {
+    // tunnel เป็น loopback จึงไม่บังคับเข้ารหัส แต่ยอมรับได้ถ้าเซิร์ฟเวอร์บังคับเอง
+    const connectionString =
+      `Driver={ODBC Driver 17 for SQL Server};Server=${server},${port};Database=${db};` +
+      `Uid=${user};Pwd={${pwd}};Encrypt=yes;TrustServerCertificate=yes;`;
+    return { connectionString, pool: { max: 10, min: 0, idleTimeoutMillis: 30000 } };
+  }
+  return {
+    user, password: pwd, server, port, database: db,
+    requestTimeout: 30000,
+    connectionTimeout: 15000,
+    options: { encrypt: true, trustServerCertificate: true, enableArithAbort: true },
+    pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
+  };
+}
+
 // registry: target -> { readerPool, ownerPool, ready }
+const CONFIG_BY_TARGET = { local: localConfig, remote: remoteConfig, remote_b: remoteBConfig };
 const registry = {};
 function makeTarget(target) {
-  const cfgFn = target === 'remote' ? remoteConfig : localConfig;
+  const cfgFn = CONFIG_BY_TARGET[target];
+  if (!cfgFn) throw new Error(`ปลายทางฐานข้อมูลไม่รู้จัก: ${target}`);
   // ⚠ ต้องสร้าง config แยก object ต่อ pool — msnodesqlv8 mutate config (แชร์ object → pool ที่ 2 hang)
   const readerPool = new sql.ConnectionPool(cfgFn());
   const ownerPool  = new sql.ConnectionPool(cfgFn());
