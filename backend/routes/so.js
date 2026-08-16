@@ -284,6 +284,56 @@ async function getSoOrThrow(id, expectedStatus = null) {
   return so;
 }
 
+/**
+ * สร้างแถว wf.SalesOrderExt ให้ใบที่เกิดใน WINSpeed ถ้ายังไม่มี
+ *
+ * ใบที่เปิดจากแอปได้แถวนี้มาจาก wf.sp_ConfirmSalesOrder ตอนกดยืนยัน
+ * แต่ใบที่พนักงานคีย์ใน WINSpeed โดยตรง — ซึ่งเป็นใบ **ส่วนใหญ่ของระบบจริง** —
+ * ไม่มีใครสร้างให้เลย
+ *
+ * ผลคือขั้นโหลดสินค้าสั่ง `UPDATE wf.SalesOrderExt SET IsLoaded=1` แล้วโดน 0 แถว
+ * โดยไม่มี error ใด ๆ สถานะจึงค้างที่ PICKING ตลอดไป และขั้นชั่งออกซึ่งบังคับ
+ * ให้อยู่ในสถานะ LOADED ก็ตอบ 400 ทุกครั้ง = ใบที่คีย์จาก WINSpeed เดินไม่จบสาย
+ *
+ * SalesUserId เทียบจาก dbo.SOHD.EmpID → wf.AppUser.EmpId เพื่อให้รีเบทเข้าของ
+ * พนักงานขายเจ้าของใบ ไม่ใช่คนที่กดปุ่มชั่งออก (ดูหมายเหตุที่ขั้น SHIPPED)
+ *
+ * **อ่าน dbo อย่างเดียว** — คัดลอกค่าเริ่มต้นออกมา ไม่เขียนกลับแม้แต่คอลัมน์เดียว
+ * ทำงานซ้ำได้ (idempotent): ถ้ามีแถวอยู่แล้วจะไม่แตะของเดิม
+ */
+async function ensureSalesOrderExt(soid) {
+  const r = await wfQuery(`
+    INSERT INTO wf.SalesOrderExt (SOID, WfRef, SoPrefix, SalesUserId, CreditDays, TruckRemark, BillRemark, TranspId)
+    SELECT CONVERT(VARCHAR(50), hd.SOID),
+           hd.DocuNo,
+           CASE WHEN LEFT(hd.DocuNo, 2) = 'AI'          THEN 'AI'
+                WHEN LEFT(hd.DocuNo, 1) IN ('I', 'K')   THEN LEFT(hd.DocuNo, 1)
+                ELSE 'W' END,
+           u.Id, hd.CreditDays, hd.Desc1, hd.Desc2, hd.TranspID
+    FROM dbo.SOHD hd WITH (NOLOCK)
+    OUTER APPLY (
+      SELECT TOP 1 a.Id FROM wf.AppUser a
+      WHERE RTRIM(a.EmpId) = RTRIM(CONVERT(NVARCHAR(20), hd.EmpID))
+      ORDER BY a.IsActive DESC, a.Id
+    ) u
+    WHERE CONVERT(VARCHAR(50), hd.SOID) = @id
+      AND NOT EXISTS (SELECT 1 FROM wf.SalesOrderExt e WHERE e.SOID = CONVERT(VARCHAR(50), hd.SOID))`,
+    { id: { type: sql.VarChar(50), value: String(soid) } }
+  ).catch(err => {
+    // คำขอสองรายการพร้อมกันอาจ insert ชนกันที่ primary key — ถือว่าสำเร็จ
+    if (/PRIMARY KEY|duplicate key/i.test(err.message)) return { rowsAffected: [0] };
+    throw err;
+  });
+  const created = (r.rowsAffected?.[0] || 0) > 0;
+  if (created) console.log(`[so] สร้าง wf.SalesOrderExt ให้ใบที่คีย์จาก WINSpeed (SOID ${soid})`);
+
+  // ผู้เรียกมักถือ so ที่อ่านมาก่อนแถวนี้จะเกิด ค่า SalesUserId ในมือจึงเป็น null
+  // ส่งค่าที่เพิ่งได้กลับไปด้วย เพื่อไม่ให้ตกไปใช้ผู้ใช้ที่กดปุ่มแทนเจ้าของใบ
+  const cur = await wfQuery(`SELECT SalesUserId FROM wf.SalesOrderExt WHERE SOID=@id`,
+    { id: { type: sql.VarChar(50), value: String(soid) } });
+  return { created, salesUserId: cur.recordset?.[0]?.SalesUserId ?? null };
+}
+
 async function getLines(soId) {
   const isString = typeof soId === 'string' && isNaN(Number(soId));
   const idValue = isString ? soId : Number(soId);
@@ -1599,6 +1649,7 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
 router.patch('/:id/picking', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'CONFIRMED');
+    await ensureSalesOrderExt(so.Id);
     await wfQuery(`UPDATE dbo.SOHD SET PkgStatus='Y' WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: so.Id } });
     await wfQuery(`UPDATE wf.SalesOrderExt SET UpdatedAt=GETUTCDATE() WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: so.Id } });
     await audit(null, so.Id, req.user.sub, 'PICKING', 'CONFIRMED', 'PICKING', null, req.ip);
@@ -1661,8 +1712,11 @@ router.post('/:id/unlock-request', requireRole('SALES', 'COUNTER_SALES', 'WAREHO
 router.patch('/:id/load', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'PICKING');
+    // ใบที่คีย์จาก WINSpeed ยังไม่มีแถว Ext — ถ้าไม่สร้างก่อน UPDATE ข้างล่างจะโดน 0 แถว
+    // แล้วสถานะค้างที่ PICKING โดยที่ผู้ใช้เห็นว่า "กดสำเร็จ"
+    await ensureSalesOrderExt(so.Id);
     const { sequences, overloadReason } = req.body; // [{ lineNum: 1, seq: 1 }, ...]
-    
+
     if (sequences && Array.isArray(sequences)) {
       for (const item of sequences) {
         await wfQuery(
@@ -1689,6 +1743,10 @@ router.patch('/:id/load', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (r
 router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'LOADED');
+    // กันไว้ เผื่อแถวถูกลบระหว่างทาง — น้ำหนักต้องมีที่ลงเสมอ
+    // และ so ถูกอ่านมาก่อนหน้านี้ จึงต้องรับ SalesUserId ที่แท้จริงกลับมาใช้ตอนตั้งรีเบท
+    const extInfo = await ensureSalesOrderExt(so.Id);
+    if (!so.SalesUserId && extInfo.salesUserId) so.SalesUserId = extInfo.salesUserId;
     const { weighOutWeight, tareKg, scaleNo, movebill, overrideReason, overrideApprovedBy, overrideApprovedByName, evidencePhotoUrl } = req.body;
     const gross = weighOutWeight != null ? Number(weighOutWeight) : null;
     const tare  = tareKg != null ? Number(tareKg) : null;
