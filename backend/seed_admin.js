@@ -31,13 +31,43 @@ const USERS = [
   { username: 'admin',       password: DEFAULT_SEED_PW,     displayName: 'ผู้ดูแลระบบ',            role: 'ADMIN',      empId: null }
 ];
 
+/**
+ * บทบาทตั้งต้นของพนักงานหนึ่งคน — ต้องให้ผลตรงกับ migration 082
+ *
+ * เกณฑ์เดิมใช้ `EmpGroupID === '2000'` แล้วให้ C_LEVEL ซึ่ง **ผิด**
+ * กลุ่ม 2000 คือ "สำนักงานใหญ่" ซึ่งเป็น *สถานที่ทำงาน* ไม่ใช่ระดับตำแหน่ง
+ * ผลคือพนักงานบัญชีและธุรการ 22 คนได้สิทธิ์สูงสุดของระบบ และทำให้ลายเซ็น
+ * อนุมัติสี่ชั้นไม่มีความหมาย (ดู DECISIONS-v1.6.0 ข้อ 2)
+ *
+ * เกณฑ์ใหม่อ่านจากตำแหน่งและแผนกจริง · ค่าตั้งต้นคือ SALES เสมอ
+ * สิทธิ์ที่สูงกว่านั้นต้องมีหลักฐานใน dbo รองรับ
+ */
+const MANAGER_EMP_CODES = ['EMP-00021', 'EMP-00024', 'EMP-00025'];
+
+function roleFor(e) {
+  const post  = String(e.PostName     || '').trim();
+  const dept  = String(e.DeptName     || '').trim();
+  const group = String(e.EmpGroupName || '').trim();
+  const code  = String(e.EmpCode      || '').trim().toUpperCase();
+
+  if (post === 'กรรมการบริหาร')                       return 'C_LEVEL';
+  if (MANAGER_EMP_CODES.includes(code))               return 'MANAGER';
+  if (dept === 'บัญชี')                                return 'ACCOUNTING';
+  if (group === 'คลังสินค้า' || dept === 'ห้องชั่ง')    return 'WAREHOUSE';
+  return 'SALES';
+}
+
 async function seed() {
   console.log('Fetching active employees from WINSpeed...');
   try {
     const empRes = await wfQuery(`
-      SELECT EmpID, EmpCode, EmpName, DeptID, EmpGroupID 
-      FROM dbo.EMEmp 
-      WHERE EmpResignDate IS NULL
+      SELECT e.EmpID, e.EmpCode, e.EmpName,
+             p.PostName, d.DeptName, g.EmpGroupName
+      FROM dbo.EMEmp e
+      LEFT JOIN dbo.EMPost     p ON p.PostID     = e.PostID
+      LEFT JOIN dbo.EMDept     d ON d.DeptID     = e.DeptID
+      LEFT JOIN dbo.EMEmpGroup g ON g.EmpGroupID = e.EmpGroupID
+      WHERE e.EmpResignDate IS NULL
     `);
     const empsFromDb = empRes.recordset || [];
     console.log(`Found ${empsFromDb.length} active employees.`);
@@ -45,22 +75,7 @@ async function seed() {
     for (const e of empsFromDb) {
       const username = (e.EmpCode || `emp-${e.EmpID}`).toLowerCase().trim();
       
-      let role = 'SALES'; // Default
-      const g = String(e.EmpGroupID).trim();
-      const d = String(e.DeptID).trim();
-      const eId = String(e.EmpID).trim();
-      
-      if (g === '2000') {
-        role = 'C_LEVEL';
-      } else if (['1018', '9005', '8008'].includes(eId) || e.EmpCode === 'EMP-00012' || e.EmpCode === 'EMP-00059' || e.EmpCode === 'EMP-00008') {
-        role = 'C_LEVEL';
-      } else if (g === '2002') {
-        role = 'MANAGER';
-      } else if (g === '2001' || d === '2004' || d === '2005') {
-        role = 'WAREHOUSE';
-      } else if (d === '2000' || d === '2001') {
-        role = 'ACCOUNTING';
-      }
+      const role = roleFor(e);
       
       USERS.push({
         username,
@@ -97,20 +112,27 @@ async function seed() {
     
     if (exists.recordset.length) {
       const targetId = exists.recordset[0].Id;
+      // บัญชีที่มีอยู่แล้ว — อัปเดตเฉพาะข้อมูลที่ปลอดภัย
+      //
+      // เดิมเขียนทับ PasswordHash และ Role ทุกครั้งที่รัน ซึ่งทำลายสองอย่าง
+      //   1. รหัสผ่านที่ผู้ใช้เปลี่ยนไปแล้ว ถูกรีเซ็ตกลับเป็นค่าเดียวกันหมดทั้งบริษัท
+      //      (นี่คือที่มาของบัญชีรหัสซ้ำ 41 รายการที่ audit-duplicate-passwords ตรวจพบ)
+      //   2. บทบาทที่จัดไว้ตาม migration 082 ถูกย้อนกลับเป็นเกณฑ์เดิมทั้งหมด
+      //
+      // ลำดับใน bootstrap คือ migrate -> seed_admin ถ้า seed เขียนทับ
+      // สภาพแวดล้อมที่ติดตั้งใหม่จะได้บทบาทคนละชุดกับที่ใช้งานอยู่จริง
       await wfQuery(
-        `UPDATE wf.AppUser 
-         SET Username = @u, PasswordHash = @h, DisplayName = @d, Role = @r, EmpId = @e, UpdatedAt = GETUTCDATE() 
+        `UPDATE wf.AppUser
+         SET Username = @u, DisplayName = @d, EmpId = @e, UpdatedAt = GETUTCDATE()
          WHERE Id = @id`,
         {
           id: { type: sql.Int, value: targetId },
           u: { type: sql.NVarChar(50),  value: u.username },
-          h: { type: sql.NVarChar(255), value: hash },
           d: { type: sql.NVarChar(100), value: u.displayName },
-          r: { type: sql.NVarChar(30),  value: u.role },
           e: { type: sql.NVarChar(20),  value: u.empId },
         }
       );
-      console.log(`↻ อัปเดต ${u.username} (${u.role}) EmpId=${u.empId ?? '(none)'}`);
+      console.log(`↻ อัปเดต ${u.username} (คงบทบาทและรหัสผ่านเดิมไว้) EmpId=${u.empId ?? '(none)'}`);
     } else {
       await wfQuery(
         `INSERT INTO wf.AppUser (Username, PasswordHash, DisplayName, Role, EmpId)
