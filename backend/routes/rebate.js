@@ -604,7 +604,14 @@ router.post('/claims/:id/approve', async (req, res) => {
       { cid: { type: sql.Int, value: claimId } }
     )).recordset?.[0];
 
-    const allowSameUserOverride = process.env.ALLOW_SINGLE_USER_MULTI_TIER_APPROVAL === 'true' || ['ADMIN', 'C_LEVEL'].includes(userRole);
+    // เดิมเขียนว่า `... === 'true' || ['ADMIN','C_LEVEL'].includes(userRole)`
+    // ซึ่งแปลว่า **ผู้ใช้ C_LEVEL หรือ ADMIN คนเดียวเซ็นครบทั้งสี่ชั้นได้ด้วยตัวเอง**
+    // ตอนนั้น C_LEVEL มี 20 บัญชี ใครคนใดคนหนึ่งก็อนุมัติใบทั้งใบได้คนเดียว
+    // ซึ่งทำให้การมีสี่ลายเซ็นไม่มีความหมายเลย
+    //
+    // เหลือทางยกเว้นเดียวคือตัวแปรสภาพแวดล้อม ซึ่งตั้งได้เฉพาะผู้ดูแลเซิร์ฟเวอร์
+    // และควรเปิดเฉพาะกรณีฉุกเฉินที่บันทึกเหตุผลไว้แล้วเท่านั้น
+    const allowSameUserOverride = process.env.ALLOW_SINGLE_USER_MULTI_TIER_APPROVAL === 'true';
     if (prevApproval && Number(prevApproval.DecidedBy) === userId && !allowSameUserOverride) {
       return res.status(403).json({ message: 'ไม่อนุญาตให้บุคคลเดิมอนุมัติซ้ำสองชั้นติดต่อกัน (Segregation of Duties)' });
     }
@@ -642,9 +649,20 @@ router.post('/claims/:id/approve', async (req, res) => {
 
     // Tier 3: Marketing Manager Approval
     if (currentTier === 3) {
-      const canApproveTier3 = ['MARKETING', 'MANAGER', 'APPROVER', 'ADMIN', 'C_LEVEL'].includes(userRole);
+      // ชั้นที่ 3 = กรรมการบริหาร (DECISIONS-v1.6.0 ข้อ 2 · ทางเลือก 2ก)
+      //
+      // เดิมรับ MARKETING/MANAGER/APPROVER ด้วย ซึ่งเป็นชุดคนเดียวกับที่ชั้น 2 รับ
+      // ชั้นที่เพิ่มมาจึงไม่ได้เพิ่มการตรวจสอบจริง เพียงเพิ่มจำนวนลายเซ็น
+      //
+      // ไม่ใช้ MARKETING เพราะบริษัทไม่มีฝ่ายการตลาด — ตรวจ dbo.EMPost ครบทั้ง 10 ตำแหน่ง
+      // แล้วไม่มีตำแหน่งใดเกี่ยวกับการตลาดเลย · ฟอร์มกระดาษเขียนว่า "ผู้จัดการฝ่ายตลาด"
+      // แต่ผู้ที่เซ็นจริงคือกรรมการบริหาร ซึ่งบริษัทมีสองคนพอดีสำหรับชั้น 3 และ 4
+      //
+      // ⚠ ต้องใช้คู่กับ migration 082 ที่ลด C_LEVEL จาก 20 บัญชีเหลือกรรมการบริหารสองคน
+      //   ถ้าบทบาทยังถูกแจกกว้าง การบีบตรงนี้จะไม่เปลี่ยนอะไรเลย
+      const canApproveTier3 = ['ADMIN', 'C_LEVEL'].includes(userRole);
       if (!canApproveTier3) {
-        return res.status(403).json({ message: 'ไม่มีสิทธิ์อนุมัติชั้นที่ 3 (ผู้จัดการฝ่ายตลาด)' });
+        return res.status(403).json({ message: 'ไม่มีสิทธิ์อนุมัติชั้นที่ 3 (กรรมการบริหาร)' });
       }
 
       await wfQuery(`
@@ -654,14 +672,14 @@ router.post('/claims/:id/approve', async (req, res) => {
         cid:   { type: sql.Int,          value: claimId },
         uid:   { type: sql.Int,          value: userId },
         uname: { type: sql.NVarChar(150),value: userName },
-        note:  { type: sql.NVarChar(500),value: note || 'อนุมัติชั้นที่ 3 (ผู้จัดการฝ่ายตลาด)' }
+        note:  { type: sql.NVarChar(500),value: note || 'อนุมัติชั้นที่ 3 (กรรมการบริหาร)' }
       });
 
       await wfQuery(`
         UPDATE wf.RebateClaim SET Status = 'TIER4_PENDING', CurrentTier = 4 WHERE Id = @id
       `, { id: { type: sql.Int, value: claimId } });
 
-      return res.json({ id: claimId, status: 'TIER4_PENDING', currentTier: 4, message: 'อนุมัติชั้นที่ 3 (ผู้จัดการฝ่ายตลาด) เรียบร้อย' });
+      return res.json({ id: claimId, status: 'TIER4_PENDING', currentTier: 4, message: 'อนุมัติชั้นที่ 3 (กรรมการบริหาร) เรียบร้อย' });
     }
 
     // Tier 4: Executive (C_LEVEL / ADMIN) Final Approval

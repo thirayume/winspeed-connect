@@ -22,7 +22,10 @@ if (!PASSWORD) {
   process.exit(1);
 }
 const TAG = 'UAT4TIER';          // เครื่องหมายระบุข้อมูลทดสอบ ใช้ทั้งตอนค้นและตอนล้าง
-const MARKETING_USER = 'e2e_marketing';
+// ชั้นที่ 3 เปลี่ยนเป็นกรรมการบริหารตั้งแต่ DECISIONS-v1.6.0 ข้อ 2 (ทางเลือก 2ก)
+// บริษัทไม่มีฝ่ายการตลาด — ตรวจ dbo.EMPost ครบทั้ง 10 ตำแหน่งแล้วไม่มีตำแหน่งนี้
+// จึงใช้ผู้ใช้ C_LEVEL คนที่สอง แทนบัญชี MARKETING ที่เคยสร้างขึ้นมาเพื่อทดสอบเท่านั้น
+const TIER3_USER = 'e2e_exec2';
 
 const ok = (m) => console.log('  ok   ' + m);
 const bad = (m) => { console.log('  FAIL ' + m); failed++; };
@@ -75,24 +78,32 @@ async function cleanup(quiet) {
   say(`ถอดการผูกภาคของผู้ใช้ทดสอบ ${areas.rowsAffected?.[0] ?? 0} รายการ`);
 
   await wfQuery(`DELETE FROM wf.UserSaleArea WHERE UserId IN (SELECT Id FROM wf.AppUser WHERE Username=@u)`,
-    { u: { type: sql.NVarChar(50), value: MARKETING_USER } });
-  await wfQuery(`DELETE FROM wf.AppUser WHERE Username=@u`, { u: { type: sql.NVarChar(50), value: MARKETING_USER } });
-  say(`ลบผู้ใช้ทดสอบ ${MARKETING_USER}`);
+    { u: { type: sql.NVarChar(50), value: TIER3_USER } });
+  await wfQuery(`DELETE FROM wf.AppUser WHERE Username=@u`, { u: { type: sql.NVarChar(50), value: TIER3_USER } });
+  say(`ลบผู้ใช้ทดสอบ ${TIER3_USER}`);
 }
 
 // ---------- เตรียมข้อมูลตั้งต้น ----------
 async function seed() {
-  // ผู้ใช้ MARKETING สำหรับอนุมัติชั้นที่ 3 (ใช้ hash เดียวกับบัญชี e2e อื่น)
+  // กรรมการบริหารคนที่สองสำหรับอนุมัติชั้นที่ 3 (ใช้ hash เดียวกับบัญชี e2e อื่น)
+  // ต้องเป็นคนละคนกับผู้อนุมัติชั้นที่ 4 ไม่งั้นติดกฎแบ่งแยกหน้าที่
   const hash = (await wfQuery(
     `SELECT TOP 1 PasswordHash, EmpId FROM wf.AppUser WHERE Username='e2e_sales'`)).recordset[0];
   if (!hash) throw new Error('ยังไม่ได้ seed บัญชี e2e — สั่ง node _seed.js ก่อน');
   await wfQuery(`
     IF NOT EXISTS (SELECT 1 FROM wf.AppUser WHERE Username=@u)
       INSERT INTO wf.AppUser (Username, PasswordHash, DisplayName, Role, EmpId)
-      VALUES (@u, @h, N'E2E Marketing', 'MARKETING', @e)`,
-    { u: { type: sql.NVarChar(50), value: MARKETING_USER },
+      VALUES (@u, @h, N'E2E Executive 2', 'C_LEVEL', @e)`,
+    { u: { type: sql.NVarChar(50), value: TIER3_USER },
       h: { type: sql.NVarChar(200), value: hash.PasswordHash },
       e: { type: sql.Int, value: hash.EmpId } });
+
+  // ชุดทดสอบต้องตั้งบทบาทของตัวประกอบเอง ไม่พึ่งบทบาทที่อยู่ในฐานจริง
+  //
+  // migration 082 ลด C_LEVEL ให้เหลือเฉพาะกรรมการบริหารสองคนตามหลักสิทธิ์ต่ำสุด
+  // ซึ่งกวาดบัญชีทดสอบ e2e_clevel ไปด้วย ทำให้ชั้นที่ 4 ล้มทั้งที่โค้ดถูกต้อง
+  // การให้ชุดทดสอบยืนยันบทบาทเองทำให้ผลการทดสอบไม่ผูกกับการจัดบทบาทของผู้ดูแล
+  await wfQuery(`UPDATE wf.AppUser SET Role='C_LEVEL' WHERE Username='e2e_clevel' AND Role <> 'C_LEVEL'`);
 
   const sales = (await wfQuery(`SELECT Id FROM wf.AppUser WHERE Username='e2e_sales'`)).recordset[0];
   const mgr = (await wfQuery(`SELECT Id FROM wf.AppUser WHERE Username='emp-00036'`)).recordset[0];
@@ -178,7 +189,7 @@ async function main() {
   // ซึ่งเป็นสิ่งที่ระบบตั้งใจให้ทำได้ (หน้าจอ ข้อมูลหลัก → ผู้อนุมัติรายภาค)
   if (!ctx.regionApprover) return bad('ยังไม่มีผู้อนุมัติชั้นที่ 2 ของภาค 05 — ตั้งค่าที่ ข้อมูลหลัก → ผู้อนุมัติรายภาค ก่อน');
   const tMgr = await login(ctx.regionApprover);
-  const tMkt = await login(MARKETING_USER);
+  const tT3 = await login(TIER3_USER);
   const tCL = await login('e2e_clevel');
 
   // ตัน/ราคา ตรงกับใบ RBD68-049 ทุกบรรทัด (ยอดรวมต้องได้ 55,800 บาท)
@@ -236,12 +247,12 @@ async function main() {
   r = await call(tMgr, 'POST', `/api/rebate/claims/${claimId}/approve`, {});
   r.status === 403 ? ok('ระบบปฏิเสธคนเดิมอนุมัติชั้นถัดไป (403)') : bad(`ควรได้ 403 แต่ได้ ${r.status}`);
 
-  console.log('\n4. อนุมัติชั้นที่ 3 — ผู้จัดการฝ่ายตลาด (MARKETING)');
-  r = await call(tMkt, 'POST', `/api/rebate/claims/${claimId}/approve`, { note: `${TAG} ชั้น 3` });
+  console.log('\n4. อนุมัติชั้นที่ 3 — กรรมการบริหาร คนที่ 1 (C_LEVEL)');
+  r = await call(tT3, 'POST', `/api/rebate/claims/${claimId}/approve`, { note: `${TAG} ชั้น 3` });
   d = await r.json();
   r.ok && d.currentTier === 4 ? ok(`ผ่านไปชั้น 4 (${d.status})`) : bad(`ชั้น 3 ล้มเหลว (${r.status}) ${JSON.stringify(d).slice(0, 140)}`);
 
-  console.log('\n5. อนุมัติชั้นที่ 4 — กรรมการบริหาร (C_LEVEL) พร้อมเลขใบลดหนี้');
+  console.log('\n5. อนุมัติชั้นที่ 4 — กรรมการบริหาร คนที่ 2 (C_LEVEL) พร้อมเลขใบลดหนี้');
   r = await call(tCL, 'POST', `/api/rebate/claims/${claimId}/approve`, { docuNo: `CN-${TAG}-001`, note: `${TAG} ชั้น 4` });
   d = await r.json();
   r.ok ? ok(`อนุมัติครบทุกชั้น (${d.status})`) : bad(`ชั้น 4 ล้มเหลว (${r.status}) ${JSON.stringify(d).slice(0, 140)}`);
