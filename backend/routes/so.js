@@ -13,6 +13,7 @@ const { enqueue } = require('../services/outbox');
 const { resolveApprovalPolicy } = require('../services/approval');
 const { insertPreWeighTicket, removePreWeighTicket } = require('../services/truckscale-db');
 const { writeAudit, auditUser, SCREEN } = require('../services/winspeed-audit');
+const { advanceDocuNoCounter } = require('../services/winspeed-counter');
 
 router.use(requireAuth);
 
@@ -45,6 +46,9 @@ function toBit(value) {
 async function allocateWorkflowRef(tx, soPrefix) {
   const yy = (new Date().getFullYear() + 543 - 2500).toString().slice(-2);
   const prefixYear = `${soPrefix}${yy}`;
+  // UPDLOCK + HOLDLOCK บน wf.SalesOrder ทำให้คำขอที่เข้ามาพร้อมกันเข้าคิวกัน
+  // ตัวที่สองจะรอจนตัวแรก commit แล้วจึงเห็นแถวใหม่และคำนวณ MAX ได้ถูก
+  // dbo.SOHD อ่านด้วย NOLOCK เท่านั้น — ห้ามล็อกตารางของ WINSpeed
   const maxResult = await tx.request()
     .input('prefixYear', sql.NVarChar(10), prefixYear)
     .query(`
@@ -54,21 +58,32 @@ async function allocateWorkflowRef(tx, soPrefix) {
           WHEN ISNUMERIC(SUBSTRING(WfRef, LEN(@prefixYear) + 2, 20)) = 1
           THEN CONVERT(BIGINT, SUBSTRING(WfRef, LEN(@prefixYear) + 2, 20))
         END AS RefSuffix
-        FROM wf.SalesOrder
+        FROM wf.SalesOrder WITH (UPDLOCK, HOLDLOCK)
         WHERE WfRef LIKE @prefixYear + '-%'
         UNION ALL
         SELECT CASE
           WHEN ISNUMERIC(SUBSTRING(DocuNo, LEN(@prefixYear) + 2, 20)) = 1
           THEN CONVERT(BIGINT, SUBSTRING(DocuNo, LEN(@prefixYear) + 2, 20))
         END AS RefSuffix
-        FROM dbo.SOHD
+        FROM dbo.SOHD WITH (NOLOCK)
         WHERE DocuType = 103 AND DocuNo LIKE @prefixYear + '-%'
       ) refs
       WHERE RefSuffix IS NOT NULL;
     `);
-  const sequenceResult = await tx.request().query('SELECT NEXT VALUE FOR wf.WfRefSeq AS Seq');
-  const nextSuffix = Number(maxResult.recordset?.[0]?.MaxSuffix || 0)
-    + Number(sequenceResult.recordset?.[0]?.Seq || 1);
+  // เดินทีละหนึ่ง
+  //
+  // เดิมเป็น MAX + NEXT VALUE FOR wf.WfRefSeq ซึ่ง WfRefSeq เป็นตัวนับที่โตขึ้นเรื่อย ๆ
+  // ไม่เคยรีเซ็ต ผลคือช่องว่างของเลขที่เอกสาร **ขยายแบบทวีคูณ** เพราะเลขที่เพิ่งจอง
+  // กลายเป็น MAX ของรอบถัดไป แล้วถูกบวกด้วยค่าลำดับที่โตขึ้นอีก
+  //
+  //   วัดจริงบน UAT — เริ่มที่ I69-02422 สร้างสามใบติดกันได้
+  //     I69-02425 · I69-02428 · I69-02432
+  //   สามใบกินเลขไป 10 หมายเลข ข้ามทิ้ง 7 หมายเลข
+  //
+  // เลขที่เอกสารขายเป็นหลักฐานทางภาษี ช่องว่างต้องอธิบายได้เสมอว่าหายไปไหน
+  // ความปลอดภัยจากการชนกันมาจาก unique index บน WfRef คู่กับการล็อกด้านบน
+  // ไม่ใช่จากการเว้นช่วงเลขทิ้งไว้
+  const nextSuffix = Number(maxResult.recordset?.[0]?.MaxSuffix || 0) + 1;
   return `${prefixYear}-${String(nextSuffix).padStart(5, '0')}`;
 }
 
@@ -1640,6 +1655,10 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
     // Insert to TruckScale Pre-weigh
     insertPreWeighTicket(so).catch(err => console.error('[truckscale] Push error:', err));
     
+    // เดินตัวนับของ WINSpeed ให้ทันเลขที่แอปเพิ่งออกไป ไม่งั้นหน้าจอ WINSpeed
+    // จะเสนอเลขที่ถูกใช้ไปแล้วให้พนักงานคนถัดไป
+    await advanceDocuNoCounter(so.WfRef);
+
     // ขั้นนี้สร้างแถวใหม่ใน dbo.SOHD ผ่าน sp_ConfirmSalesOrder — เอกสารที่โผล่ใน
     // WINSpeed โดยไม่มีรอยว่าใครสร้าง คือสิ่งที่ผู้ตรวจถามหาเป็นอันดับแรก
     await writeAudit({ screen: SCREEN.SO_CONFIRM, action: 'I', docuNo: so.WfRef,
