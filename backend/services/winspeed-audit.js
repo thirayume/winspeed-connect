@@ -14,8 +14,9 @@
  * ข้อเท็จจริงที่ตรวจจากฐานจริงก่อนออกแบบ
  *   • ไม่มี trigger ตัวไหนเขียน SMAudit — โปรแกรม WINSpeed เขียนเองจากฝั่ง client
  *     (ค้น trigger ทั้ง 1,289 ตัวใน dbo แล้ว)
- *   • audit_id **ไม่ใช่ IDENTITY** ต้องคำนวณ MAX+1 เอง เหมือน SOID/SOInvID
- *     จึงต้องมีการลองใหม่เมื่อชนคีย์ ไม่งั้นสองคำขอพร้อมกันจะล้มหนึ่งอัน
+ *   • audit_id **ไม่ใช่ IDENTITY** · WINSpeed แจกเป็นบล็อกละ 1000 ต่อเครื่องผ่าน dbo.SMID
+ *     จึงขอเลขผ่าน wf.usp_AllocateWinspeedId (migration 089) แทน MAX+1 ของทั้งตาราง
+ *     ซึ่งจะไปนั่งทับบล็อกที่ SMID จองให้เครื่องอื่นไว้แล้ว · ยังลองใหม่เมื่อชนคีย์เหมือนเดิม
  *   • audit_screen ที่ WINSpeed ใช้มี 76 ค่า · ช่วง 900000000–999999999 **ว่างสนิท**
  *     จึงจองช่วงนี้ให้แอป แยกออกจากของเดิมชัดเจนและกรองออกจากรายงานได้
  *   • audit_system ที่ใช้อยู่: 1,2,3,5,19,20,21,22,415,431,548,-1,10540045 → เลือก 990
@@ -55,9 +56,10 @@ function version() {
 async function writeAudit({ screen, action, docuNo, docuDate, refId, username, note }) {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      // MAX+1 ต้องอยู่ในคำสั่งเดียวกับ INSERT เพื่อให้ช่วงเวลาที่ชนกันแคบที่สุด
+      // ขอเลขจากบล็อกของแอปเอง แล้ว INSERT ในคำสั่งเดียวกัน ให้ช่วงที่ชนกันแคบที่สุด
       const r = await dboWrite(`
-        DECLARE @id INT = (SELECT ISNULL(MAX(audit_id), 0) + 1 FROM dbo.SMAudit);
+        DECLARE @id INT;
+        EXEC wf.usp_AllocateWinspeedId @TableName = 'SMAudit', @NewId = @id OUTPUT;
         INSERT INTO dbo.SMAudit
           (audit_id, audit_system, audit_screen, audit_datetime, audit_username,
            audit_action, audit_docuno, audit_docudate, audit_columnid, brchid,
@@ -81,7 +83,7 @@ async function writeAudit({ screen, action, docuNo, docuDate, refId, username, n
         });
       return r.recordset?.[0]?.auditId ?? null;
     } catch (e) {
-      // audit_id ไม่ใช่ IDENTITY — คำขอพร้อมกันจึงคว้าเลขเดียวกันได้ ลองใหม่ได้เลย
+      // สองคำขอที่เข้ามาชิดกันมากยังคว้าเลขเดียวกันได้ ลองใหม่ได้เลย
       const isDup = /PRIMARY KEY|duplicate key|UNIQUE KEY/i.test(e.message || '');
       if (isDup && attempt < MAX_ATTEMPTS) continue;
       console.error(`[smaudit] เขียนรอยลง dbo.SMAudit ไม่สำเร็จ (${action} ${docuNo}): ${e.message}`);
