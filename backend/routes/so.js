@@ -12,6 +12,7 @@ const { broadcast } = require('../services/socket');
 const { enqueue } = require('../services/outbox');
 const { resolveApprovalPolicy } = require('../services/approval');
 const { insertPreWeighTicket, removePreWeighTicket } = require('../services/truckscale-db');
+const { writeAudit, auditUser, SCREEN } = require('../services/winspeed-audit');
 
 router.use(requireAuth);
 
@@ -1639,6 +1640,12 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
     // Insert to TruckScale Pre-weigh
     insertPreWeighTicket(so).catch(err => console.error('[truckscale] Push error:', err));
     
+    // ขั้นนี้สร้างแถวใหม่ใน dbo.SOHD ผ่าน sp_ConfirmSalesOrder — เอกสารที่โผล่ใน
+    // WINSpeed โดยไม่มีรอยว่าใครสร้าง คือสิ่งที่ผู้ตรวจถามหาเป็นอันดับแรก
+    await writeAudit({ screen: SCREEN.SO_CONFIRM, action: 'I', docuNo: so.WfRef,
+      docuDate: so.DeliveryDate || new Date(), refId: newSoid, username: auditUser(req.user),
+      note: `ยืนยันใบสั่งขายจากแอป (ลูกค้า ${so.CustId})` });
+
     // FR-029 outbox: reliable integration event (idempotent ต่อ SO)
     await enqueue('SO_CONFIRMED', newSoid, { soId: newSoid, custId: so.CustId, by: req.user.sub }, `SO_CONFIRMED:${newSoid}`);
     res.json({ id: newSoid, status: 'CONFIRMED' });
@@ -1653,6 +1660,10 @@ router.patch('/:id/picking', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async
     await wfQuery(`UPDATE dbo.SOHD SET PkgStatus='Y' WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: so.Id } });
     await wfQuery(`UPDATE wf.SalesOrderExt SET UpdatedAt=GETUTCDATE() WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: so.Id } });
     await audit(null, so.Id, req.user.sub, 'PICKING', 'CONFIRMED', 'PICKING', null, req.ip);
+    // ขั้นนี้เขียน dbo.SOHD.PkgStatus จึงต้องมีรอยฝั่ง WINSpeed ด้วย
+    await writeAudit({ screen: SCREEN.SO_PICKING, action: 'U', docuNo: so.WfRef,
+      docuDate: so.CreatedAt, refId: so.Id, username: auditUser(req.user),
+      note: 'PkgStatus=Y (จัดสินค้าจากแอป)' });
     res.json({ id: so.Id, status: 'PICKING' });
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
@@ -1673,6 +1684,9 @@ router.patch('/:id/unlock', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNT
     await wfQuery(`UPDATE dbo.SOHD SET PkgStatus='N' WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: so.Id } });
     await wfQuery(`UPDATE wf.SalesOrderExt SET UpdatedAt=GETUTCDATE() WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: so.Id } });
     await audit(null, so.Id, req.user.sub, 'UNLOCKED', 'PICKING', 'CONFIRMED', note, req.ip);
+    await writeAudit({ screen: SCREEN.SO_UNLOCK, action: 'U', docuNo: so.WfRef,
+      docuDate: so.CreatedAt, refId: so.Id, username: auditUser(req.user),
+      note: `PkgStatus=N (ปลดล็อกจากแอป) ${note || ''}`.trim() });
     res.json({ id: so.Id, status: 'CONFIRMED' });
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
@@ -1843,6 +1857,11 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'ADMIN', 'C_LE
     // ซึ่งผิดทั้งทางบัญชีและทำให้เส้นทางอนุมัติตามภาคผิดไปด้วย
     await bookRebateAccrual(so, lines, so.SalesUserId || req.user.sub);
     await audit(null, so.Id, req.user.sub, 'SHIPPED', 'LOADED', 'SHIPPED', null, req.ip);
+    // ไม่ได้เขียน dbo แต่เป็นเหตุการณ์ที่ทำให้เกิดน้ำหนักบนเอกสาร — ผู้ตรวจฝั่ง
+    // WINSpeed ต้องสืบได้ว่าน้ำหนักนี้มาจากไหนและใครเป็นคนปิด
+    await writeAudit({ screen: SCREEN.SO_SHIP, action: 'U', docuNo: so.WfRef,
+      docuDate: so.CreatedAt, refId: so.Id, username: auditUser(req.user),
+      note: `ชั่งออกจากแอป สุทธิ ${net} กก. (${evalRes.status})` });
     broadcast('so_updated', { id: so.Id, action: 'shipped' });
     await enqueue('SO_SHIPPED', so.Id, { soId: so.Id, netKg: net, by: req.user.sub }, `SO_SHIPPED:${so.Id}`);
     res.json({ id: so.Id, status: 'SHIPPED', netKg: net, weightEval: evalRes });
