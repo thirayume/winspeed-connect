@@ -22,7 +22,7 @@ export function TripSummaryModal({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  trip: { dateDisplay: string; cust: string; truck: string; orders: SalesOrder[]; totalAmt: number; totalTon: number } | null;
+  trip: { dateDisplay: string; cust: string; custCount?: number; truck: string; orders: SalesOrder[]; totalAmt: number; totalTon: number } | null;
   onUpdate?: () => void;
   onEditBill?: (soId: string | number) => void;
   onAddBill?: () => void;
@@ -188,7 +188,18 @@ export function TripSummaryModal({
                     </div>
                     <div>
                       <div className="font-bold text-lg text-gray-900">{trip.truck}</div>
-                      <div className="text-sm text-gray-500">{trip.orders[0]?.custName || trip.cust}</div>
+                      {/* เที่ยวเดียวส่งได้หลายลูกค้า — ต้องเห็นครบทุกราย ไม่ใช่รายแรกรายเดียว */}
+                      {(() => {
+                        const names = Array.from(new Set(trip.orders.map(o => o.custName || String(o.custId || '')))).filter(Boolean);
+                        if (names.length <= 1) return <div className="text-sm text-gray-500">{names[0] || trip.cust}</div>;
+                        return (
+                          <div className="text-sm text-gray-500">
+                            <span className="font-semibold text-gray-700">{names.length} ลูกค้า</span>
+                            <span className="mx-1.5 text-gray-300">·</span>
+                            <span title={names.join(' · ')}>{names.join(' · ')}</span>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                   {/* Edit Trip Metadata */}

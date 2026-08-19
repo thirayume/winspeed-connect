@@ -78,11 +78,11 @@ export const SalesPortal = () => {
     
     // Find all draft orders that match the active trip's criteria
     const tripOrders = orders.filter(so => {
-      const matchCust = String(so.custId) === String(activeTrip.custId);
+      // ไม่กรองด้วยลูกค้า — เที่ยวเดียวกันรับได้หลายลูกค้า (ดูหมายเหตุที่ groupedOrders)
       const matchTruck = so.truckPlate === activeTrip.truckPlate || (so.truckPlate === 'ตั๋วคุม');
       const soDate = so.deliveryDate ? so.deliveryDate.split('T')[0] : '';
       const matchDate = soDate === activeTrip.deliveryDate;
-      return so.status === 'DRAFT' && matchCust && matchTruck && matchDate;
+      return so.status === 'DRAFT' && matchTruck && matchDate;
     });
 
     if (tripOrders.length === 0) {
@@ -172,21 +172,37 @@ export const SalesPortal = () => {
   const selectedSo = orders.find(o => o.id === selectedId) || externalSelectedSo;
 
   const groupedOrders = useMemo(() => {
-    const map = new Map<string, { dateDisplay: string; cust: string; truck: string; orders: SalesOrder[]; totalAmt: number; totalTon: number }>();
+    const map = new Map<string, { dateDisplay: string; cust: string; custCount: number; truck: string; orders: SalesOrder[]; totalAmt: number; totalTon: number }>();
     for (const o of orders) {
       const dateRaw = o.deliveryDate ? o.deliveryDate.split('T')[0] : '9999-12-31';
       const dateDisplay = o.deliveryDate ? formatThaiDate(o.deliveryDate) : 'ไม่ระบุวันรับ';
       const truck = o.truckPlate || 'ไม่ระบุทะเบียนรถ';
-      const custId = o.custId || 'ไม่ระบุลูกค้า';
-      const cust = customersMap[custId] || o.custName || custId;
-      // Group by date, customer ID, truck AND status to match Paper Trail's column separation
-      const key = `${dateRaw}::${custId}::${truck}::${o.status}`;
-      
-      if (!map.has(key)) map.set(key, { dateDisplay, cust, truck, orders: [], totalAmt: 0, totalTon: 0 });
+      // เที่ยวรถ = วันที่ + ทะเบียน + สถานะ  — **ไม่รวมลูกค้า**
+      //
+      // รถหนึ่งคันวิ่งเที่ยวเดียวส่งลูกค้าหลายรายที่อยู่เส้นทางเดียวกันได้
+      // และนั่นคือเรื่องปกติ ไม่ใช่ข้อยกเว้น — วัดจากใบสั่งขายจริงตั้งแต่ ม.ค. 2568:
+      //   เที่ยวรถทั้งหมด           9,849
+      //   เที่ยวที่มีมากกว่าหนึ่งใบ  1,297
+      //   ในนั้นส่งหลายลูกค้า       1,203  (93%)
+      //
+      // เดิม key มี custId อยู่ด้วย ทำให้เที่ยวจริงหนึ่งเที่ยวถูกแตกเป็นหลายกลุ่มตามลูกค้า
+      // คนจัดลำดับขึ้นของจึงมองไม่เห็นว่ารถคันนี้ต้องบรรทุกอะไรบ้างในเที่ยวเดียวกัน
+      // ซึ่งเป็นเหตุผลทั้งหมดที่ฟีเจอร์นี้มีอยู่ (WINSpeed ทำ Sale Trip ไม่ได้)
+      const key = `${dateRaw}::${truck}::${o.status}`;
+
+      if (!map.has(key)) map.set(key, { dateDisplay, cust: '', custCount: 0, truck, orders: [], totalAmt: 0, totalTon: 0 });
       const g = map.get(key)!;
       g.orders.push(o);
       g.totalAmt += (o.lines || []).reduce((s, l) => s + (l.qtyTon * l.pricePerTon), 0);
       g.totalTon += (o.lines || []).reduce((s, l) => s + (l.isGiveaway ? 0 : l.qtyTon), 0);
+    }
+    // สรุปชื่อลูกค้าหลังจัดกลุ่มเสร็จ — เที่ยวหลายลูกค้าต้องบอกจำนวน ไม่ใช่โชว์รายแรกรายเดียว
+    for (const g of map.values()) {
+      const ids = Array.from(new Set(g.orders.map(o => String(o.custId || 'ไม่ระบุลูกค้า'))));
+      g.custCount = ids.length;
+      g.cust = ids.length === 1
+        ? (customersMap[ids[0]] || g.orders[0]?.custName || ids[0])
+        : `${ids.length} ลูกค้า`;
     }
     return Array.from(map.values());
   }, [orders, customersMap]);
@@ -208,7 +224,11 @@ export const SalesPortal = () => {
     
     return {
       dateDisplay: activeTrip.deliveryDate ? formatThaiDate(activeTrip.deliveryDate) : 'ไม่ระบุวันรับ',
-      cust: activeTrip.custName,
+      cust: (() => {
+        const ids = Array.from(new Set(tripOrders.map(o => String(o.custId || ''))));
+        return ids.length === 1 ? (activeTrip.custName || ids[0]) : `${ids.length} ลูกค้า`;
+      })(),
+      custCount: new Set(tripOrders.map(o => String(o.custId || ''))).size,
       truck: activeTrip.truckPlate || 'ตั๋วคุม',
       orders: tripOrders,
       totalAmt,
@@ -242,8 +262,7 @@ export const SalesPortal = () => {
       } else if (returnToTripKey) {
         const group = groupedOrders.find(g => {
           const dateRaw = g.orders[0]?.deliveryDate ? g.orders[0].deliveryDate.split('T')[0] : '9999-12-31';
-          const custId = g.orders[0]?.custId || g.cust;
-          const key = `${dateRaw}::${custId}::${g.truck}::${g.orders[0]?.status}`;
+          const key = `${dateRaw}::${g.truck}::${g.orders[0]?.status}`;
           return key === returnToTripKey;
         });
         if (group) setViewingTrip(group);
@@ -467,7 +486,7 @@ export const SalesPortal = () => {
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="font-bold text-sm text-gray-900 truncate" title={g.truck}>{g.truck}</div>
-                            <div className="text-[10px] text-gray-500 truncate" title={customersMap[g.orders[0]?.custId] || g.orders[0]?.custName || g.cust}>{customersMap[g.orders[0]?.custId] || g.orders[0]?.custName || g.cust}</div>
+                            <div className="text-[10px] text-gray-500 truncate" title={g.custCount > 1 ? g.orders.map(o => customersMap[o.custId] || o.custName || o.custId).join(' · ') : g.cust}>{g.cust}</div>
                           </div>
                           <button 
                             onClick={() => setViewingTrip(g)}
@@ -588,8 +607,7 @@ export const SalesPortal = () => {
               deliveryDate: viewingTrip.orders[0]?.deliveryDate?.split('T')[0] || ''
             });
             const dateRaw = viewingTrip.orders[0]?.deliveryDate ? viewingTrip.orders[0].deliveryDate.split('T')[0] : '9999-12-31';
-            const custId = viewingTrip.orders[0]?.custId || viewingTrip.cust;
-            setReturnToTripKey(`${dateRaw}::${custId}::${viewingTrip.truck}::${viewingTrip.orders[0]?.status}`);
+            setReturnToTripKey(`${dateRaw}::${viewingTrip.truck}::${viewingTrip.orders[0]?.status}`);
             setViewingTrip(null);
             setIsCreating(true);
           }
