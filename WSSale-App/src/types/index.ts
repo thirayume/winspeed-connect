@@ -154,6 +154,9 @@ export type CurrentPrice = {
 // ── wf.SalesOrder State Machine ───────────────────────────────
 export type SOStatus =
   | 'DRAFT'
+  // ยืนยันในแอปแล้ว แต่ยังรอผู้มีอำนาจกดอนุมัติในหน้าจอ Approve Confirm Order (WF)
+  // ใบยังไม่มีเลข AI จึงยังไม่เกิดใบส่งของและคูปอง
+  | 'PENDING_APPROVAL'
   | 'CONFIRMED'
   | 'PICKING'
   | 'LOADED'
