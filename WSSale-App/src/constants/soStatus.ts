@@ -2,6 +2,7 @@ import type { SOStatus } from '../types';
 
 export const SO_STATUS_ORDER: SOStatus[] = [
   'DRAFT',
+  'PENDING_APPROVAL',
   'CONFIRMED',
   'PICKING',
   'LOADED',
@@ -21,6 +22,12 @@ export const SO_STATUS_META: Record<SOStatus, {
     color: '#9CA3AF',
     bg: '#F3F4F6',
     badgeClass: 'bg-gray-100 text-gray-600 border-gray-200',
+  },
+  PENDING_APPROVAL: {
+    label: 'รออนุมัติใน WINSpeed',
+    color: '#D97706',
+    bg: '#FFF7ED',
+    badgeClass: 'bg-orange-50 text-orange-700 border-orange-200',
   },
   CONFIRMED: {
     label: 'รอจัดส่ง',
