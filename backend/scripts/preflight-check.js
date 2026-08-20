@@ -139,6 +139,26 @@ const isLinux = os.platform() !== 'win32';
           'ตรวจ REMOTE_DB_SERVER (ชื่อ service), password, และ backend อยู่ Docker network เดียวกับ mssql');
   }
 
+  // ── 4b. ตัวนับเลขที่เอกสารของ WINSpeed ───────────────────────
+  //
+  // ตัวนับที่ล้าหลังทำให้ WINSpeed ออกเลขที่ถูกใช้ไปแล้ว → ผู้ใช้บันทึกเอกสารไม่ได้เลย
+  // และไม่มีสัญญาณใด ๆ จนกว่าจะมีคนไปกดบันทึกแล้วเจอ error (เจอจริง 19/08/2569 กับชุด J/N)
+  // ตรวจตรงนี้เพื่อให้เห็นก่อน ไม่ใช่ตอนผู้ใช้กำลังออกบิลให้ลูกค้า
+  head('ตัวนับเลขที่เอกสาร (EMRunBrch)');
+  try {
+    const { pools, DEFAULT_TARGET } = require('../db');
+    const entry = pools(DEFAULT_TARGET);
+    await entry.ready;
+    const { checkCounters } = require('./audit-docuno-counters');
+    const { behind } = await checkCounters(entry.readerPool);
+    if (!behind.length) ok('ตัวนับทุกชุดในสายขายตรงกับเอกสารจริง');
+    else for (const b of behind)
+      warn(`${b.runCode} (${b.label}) ล้าหลัง: ${b.lastNo} แต่มีเอกสารถึง ${b.maxNo} แล้ว (${b.above} ใบ)`,
+           'รัน node scripts/audit-docuno-counters.js --fix แล้วให้ผู้ใช้ปิด/เปิดหน้าจอนั้นใหม่');
+  } catch (e) {
+    warn(`ตรวจตัวนับไม่สำเร็จ: ${e.message}`, 'รัน node scripts/audit-docuno-counters.js ดูรายละเอียด');
+  }
+
   // ── 5. MySQL live check ─────────────────────────────────────
   head('TruckScale (MySQL) — live');
   if (!E('MYSQL_HOST')) warn('ข้าม (MYSQL_HOST ไม่ได้ตั้ง)');
