@@ -1040,6 +1040,59 @@ router.patch('/:id/giveaway-lines/:lineNum/approve', requireRole('MANAGER', 'ADM
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
+/**
+ * บทบาทที่เปิดใบ "แทน" พนักงานขายคนอื่นได้
+ *
+ * เจ้าของระบบระบุว่ายอดขายต้องเข้าพนักงานขายตามที่ระบุไว้ ไม่ใช่คนที่นั่งคีย์
+ * เช่นเคาน์เตอร์ขายคีย์แทนพนักงานขายภาค ใบต้องเป็นของพนักงานขายภาค
+ *
+ * SALES คีย์แทน SALES ด้วยกันไม่ได้ — ยอดและรีเบทจะไหลไปผิดคน
+ * และไม่มีทางรู้ทีหลังว่าตั้งใจหรือพลาด
+ */
+const CAN_ENTER_FOR_OTHERS = ['ADMIN', 'C_LEVEL', 'MANAGER', 'COUNTER_SALES'];
+
+/**
+ * ตัดสินว่าใบนี้เป็นยอดของใคร และคนคีย์คือใคร
+ * โยน 403 เมื่อผู้ใช้ระบุคนอื่นทั้งที่ไม่มีสิทธิ์ — เงียบแล้วบันทึกเป็นชื่อตัวเองอันตรายกว่า
+ * เพราะยอดจะเข้าผิดคนโดยไม่มีใครเห็น
+ */
+function resolveSalesOwner(req, impersonatedId) {
+  const enteredBy = req.user.sub;
+  const wanted = impersonatedId ? Number(impersonatedId) : null;
+  if (!wanted || wanted === enteredBy) return { salesUserId: enteredBy, enteredByUserId: enteredBy };
+  if (!CAN_ENTER_FOR_OTHERS.includes(req.user.role)) {
+    const e = new Error('บทบาทของคุณเปิดใบแทนพนักงานขายคนอื่นไม่ได้');
+    e.status = 403;
+    throw e;
+  }
+  return { salesUserId: wanted, enteredByUserId: enteredBy };
+}
+
+/**
+ * เตือนเมื่อพนักงานขายของใบยังไม่ขึ้นทะเบียนใน dbo.EMSales
+ *
+ * WINSpeed ปฏิเสธใบตอนกดอนุมัติด้วย "Salesman is not vaid!" ถ้า EmpID ไม่อยู่ในทะเบียน
+ * เดิมผู้เปิดใบไม่รู้ตัวจนใบไปค้างที่ขั้นอนุมัติ · วัดเมื่อ 20/08/2569 พบพนักงานขาย
+ * 11 จาก 27 คนอยู่ในสภาพนี้ จึงต้องบอกตั้งแต่ตอนเปิดใบ
+ *
+ * เตือนอย่างเดียว ไม่บล็อก — ใบยังมีประโยชน์และผู้อนุมัติเลือกพนักงานขายบนหน้าจอเองได้
+ */
+async function salesmanWarning(salesUserId) {
+  try {
+    const r = await wfQuery(
+      `SELECT TOP 1 DisplayName, Username, IsRegistered, Reason FROM wf.v_SalesmanStatus WHERE UserId = @id`,
+      { id: { type: sql.Int, value: Number(salesUserId) } });
+    const row = r.recordset?.[0];
+    if (!row || row.IsRegistered) return null;
+    const who = (row.DisplayName || row.Username || '').trim();
+    return `${who} ${row.Reason} — WINSpeed จะไม่ยอมให้อนุมัติใบนี้จนกว่าจะขึ้นทะเบียนพนักงานขายให้เรียบร้อย`;
+  } catch (e) {
+    // การเตือนล้มต้องไม่ทำให้เปิดใบไม่ได้ แต่ต้องเห็นใน log เสมอ
+    console.error('[so] ตรวจทะเบียนพนักงานขายไม่สำเร็จ:', e.message);
+    return null;
+  }
+}
+
 router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const orders = Array.isArray(req.body) ? req.body : [req.body];
@@ -1052,6 +1105,7 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
 
     const createdIds = [];
     const createdRefs = [];
+    const salesOwnerIds = new Set();
     let anyNeedsApproval = false;
 
     await wfTransaction(async tx => {
@@ -1081,8 +1135,10 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
         soReq.input('pSling',           sql.Bit,           toBit(pSling));
         soReq.input('remark',           sql.NVarChar(500), remark || null);
         soReq.input('rebateDiscountAmt', sql.Decimal(12,2), normalizeRebateDiscount(req, rebateDiscountAmt));
-        const actualSalesUserId = (req.user.role === 'ADMIN' && impersonatedId) ? Number(impersonatedId) : req.user.sub;
+        const { salesUserId: actualSalesUserId, enteredByUserId } = resolveSalesOwner(req, impersonatedId);
         soReq.input('salesUserId',      sql.Int,           actualSalesUserId);
+        soReq.input('enteredByUserId',  sql.Int,           enteredByUserId);
+        salesOwnerIds.add(actualSalesUserId);
         soReq.input('creditDays',       sql.Int,           creditDays || 30);
         soReq.input('truckRemark',      sql.NVarChar(500), truckRemark || null);
         soReq.input('billRemark',       sql.NVarChar(500), billRemark || null);
@@ -1090,9 +1146,9 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
 
         const soR = await soReq.query(`
           INSERT INTO wf.SalesOrder
-            (WfRef, SoPrefix, CustId, CustName, TruckPlate, ControlTicketNo, DeliveryDate, RequestedAt, IsOwnTruck, NoTruckRequired, PSling, Remark, SalesUserId, RebateDiscountAmt, Status, CreditDays, TruckRemark, BillRemark, TranspId)
+            (WfRef, SoPrefix, CustId, CustName, TruckPlate, ControlTicketNo, DeliveryDate, RequestedAt, IsOwnTruck, NoTruckRequired, PSling, Remark, SalesUserId, EnteredByUserId, RebateDiscountAmt, Status, CreditDays, TruckRemark, BillRemark, TranspId)
             OUTPUT inserted.Id
-          VALUES (@wfRef, @soPrefix, @custId, @custName, @truckPlate, @controlTicketNo, @deliveryDate, @requestedAt, @isOwnTruck, @noTruckRequired, @pSling, @remark, @salesUserId, @rebateDiscountAmt, 'DRAFT', @creditDays, @truckRemark, @billRemark, @transpId)
+          VALUES (@wfRef, @soPrefix, @custId, @custName, @truckPlate, @controlTicketNo, @deliveryDate, @requestedAt, @isOwnTruck, @noTruckRequired, @pSling, @remark, @salesUserId, @enteredByUserId, @rebateDiscountAmt, 'DRAFT', @creditDays, @truckRemark, @billRemark, @transpId)
         `);
         const soId = soR.recordset[0].Id;
         createdIds.push(soId);
@@ -1221,11 +1277,18 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
       await audit(null, soId, req.user.sub, 'CREATED', null, 'DRAFT', null, req.ip);
     }
 
+    // เตือนเรื่องทะเบียนพนักงานขายหลัง commit — ใบเปิดสำเร็จแล้ว คำเตือนไม่ย้อนกลับไปยกเลิก
+    const warnings = [];
+    for (const ownerId of salesOwnerIds) {
+      const w = await salesmanWarning(ownerId);
+      if (w) warnings.push(w);
+    }
+
     // For backwards compatibility, if they sent an array, return array format. Otherwise return single object format.
     if (Array.isArray(req.body)) {
-      res.json({ ids: createdIds, wfRefs: createdRefs, needsApproval: anyNeedsApproval });
+      res.json({ ids: createdIds, wfRefs: createdRefs, needsApproval: anyNeedsApproval, warnings });
     } else {
-      res.json({ id: createdIds[0], wfRef: createdRefs[0], needsApproval: anyNeedsApproval });
+      res.json({ id: createdIds[0], wfRef: createdRefs[0], needsApproval: anyNeedsApproval, warnings });
     }
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
