@@ -1093,6 +1093,62 @@ async function salesmanWarning(salesUserId) {
   }
 }
 
+/**
+ * เตือนเมื่อใบนี้ทำให้ลูกค้าเกินวงเงินเครดิต
+ *
+ * WINSpeed เตือนสองจุด ("Sale Order Confirm Over Approve Credit AR" ตอนบันทึกใบส่งของ
+ * และ "Sale Exceed Receiptable Credit Term" ตอนออกใบแจ้งหนี้) แต่ยอมให้บันทึกต่อได้
+ * เราเตือนตั้งแต่ตอนจองเพื่อให้รู้เร็วกว่า และไม่บล็อกเหมือนกัน
+ *
+ * **เตือนเฉพาะเมื่อมีการกำหนดวงเงินไว้จริง**
+ *   สำรวจเมื่อ 20/08/2569: dbo.EMCust.CreditAmnt = 0 ทั้ง 823 ราย ·
+ *   วงเงินระดับกลุ่มใน EMCustGroup เป็น NULL ทุกกลุ่ม ·
+ *   dbo.SOCreditApprov (วงเงินอนุมัติ) และ dbo.EMCustTempCreditDT (วงเงินชั่วคราว) ว่างเปล่า
+ *   แปลว่าทั้งระบบยังไม่มีใครตั้งวงเงิน คำเตือนของ WINSpeed จึงขึ้นกับทุกใบของทุกราย
+ *   ซึ่งเป็นเสียงรบกวน ไม่ใช่สัญญาณ
+ *
+ *   เจ้าของระบบสั่งไว้ว่า "ถ้ายังไม่มีการกำหนด Limit ไม่ต้องเตือน" — โค้ดนี้จึงเงียบสนิท
+ *   จนกว่าจะมีคนตั้ง CreditAmnt ให้ลูกค้ารายใดรายหนึ่ง แล้วจึงเริ่มทำงานเองทันที
+ */
+async function creditWarning(custId, orderAmount) {
+  try {
+    const r = await wfQuery(`
+      SELECT TOP 1
+        c.CreditAmnt AS CustLimit,
+        g.CreditAmnt AS GroupLimit,
+        ISNULL((SELECT SUM(i.NetAmnt - ISNULL((SELECT SUM(d.ReceAmnt) FROM dbo.ARReceDT d WITH (NOLOCK)
+                                               WHERE d.SOInvID = i.SOInvID), 0))
+                FROM dbo.SOInvHD i WITH (NOLOCK)
+                WHERE i.CustID = c.CustID AND i.Docutype IN ('202','107')
+                  AND i.NetAmnt > ISNULL((SELECT SUM(d.ReceAmnt) FROM dbo.ARReceDT d WITH (NOLOCK)
+                                          WHERE d.SOInvID = i.SOInvID), 0)), 0) AS Outstanding
+      FROM dbo.EMCust c WITH (NOLOCK)
+      LEFT JOIN dbo.EMCustGroup g WITH (NOLOCK) ON g.CustGroupID = c.CustGroupID
+      WHERE c.CustID = @cid`,
+      { cid: { type: sql.NVarChar(20), value: String(custId) } });
+
+    const row = r.recordset?.[0];
+    if (!row) return null;
+
+    // วงเงินของลูกค้ามาก่อน ถ้าไม่ได้ตั้งจึงใช้ของกลุ่ม · 0 หรือ NULL = ยังไม่ได้กำหนด
+    const limit = Number(row.CustLimit) > 0 ? Number(row.CustLimit)
+                : Number(row.GroupLimit) > 0 ? Number(row.GroupLimit)
+                : 0;
+    if (limit <= 0) return null;
+
+    const outstanding = Number(row.Outstanding || 0);
+    const total = outstanding + Number(orderAmount || 0);
+    if (total <= limit) return null;
+
+    const fmt = n => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return `เกินวงเงินเครดิต ${fmt(total - limit)} บาท `
+         + `(วงเงิน ${fmt(limit)} · ค้างชำระ ${fmt(outstanding)} · ใบนี้ ${fmt(orderAmount)})`;
+  } catch (e) {
+    console.error('[so] ตรวจวงเงินเครดิตไม่สำเร็จ:', e.message);
+    return null;
+  }
+}
+
 router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const orders = Array.isArray(req.body) ? req.body : [req.body];
@@ -1106,6 +1162,7 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
     const createdIds = [];
     const createdRefs = [];
     const salesOwnerIds = new Set();
+    const creditChecks = [];
     let anyNeedsApproval = false;
 
     await wfTransaction(async tx => {
@@ -1139,6 +1196,12 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
         soReq.input('salesUserId',      sql.Int,           actualSalesUserId);
         soReq.input('enteredByUserId',  sql.Int,           enteredByUserId);
         salesOwnerIds.add(actualSalesUserId);
+        // ยอดของใบนี้ ใช้ตรวจวงเงินเครดิตหลัง commit — ของแถมไม่นับเป็นยอดขาย
+        creditChecks.push({
+          custId,
+          amount: (lines || []).reduce(
+            (sum, l) => sum + (l.isGiveaway ? 0 : Number(l.qtyTon || 0) * Number(l.pricePerTon || 0)), 0),
+        });
         soReq.input('creditDays',       sql.Int,           creditDays || 30);
         soReq.input('truckRemark',      sql.NVarChar(500), truckRemark || null);
         soReq.input('billRemark',       sql.NVarChar(500), billRemark || null);
@@ -1277,10 +1340,17 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
       await audit(null, soId, req.user.sub, 'CREATED', null, 'DRAFT', null, req.ip);
     }
 
-    // เตือนเรื่องทะเบียนพนักงานขายหลัง commit — ใบเปิดสำเร็จแล้ว คำเตือนไม่ย้อนกลับไปยกเลิก
+    // เตือนหลัง commit — ใบเปิดสำเร็จแล้ว คำเตือนไม่ย้อนกลับไปยกเลิก
     const warnings = [];
     for (const ownerId of salesOwnerIds) {
       const w = await salesmanWarning(ownerId);
+      if (w) warnings.push(w);
+    }
+    // รวมยอดต่อลูกค้าก่อน — สั่งหลายใบให้ลูกค้ารายเดียวกันต้องนับรวมกัน ไม่ใช่ตรวจทีละใบ
+    const byCust = new Map();
+    for (const c of creditChecks) byCust.set(c.custId, (byCust.get(c.custId) || 0) + c.amount);
+    for (const [custId, amount] of byCust) {
+      const w = await creditWarning(custId, amount);
       if (w) warnings.push(w);
     }
 
