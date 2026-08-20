@@ -49,7 +49,10 @@ const SERIES = [
   { runCode: 'creditsale_invno',   table: 'dbo.SOInvHD',        column: 'InvNo',       where: "Docutype = '107'",  label: 'ขายเชื่อ (เลขใบกำกับภาษี)' },
   { runCode: '106',                table: 'dbo.SOInvHD',        column: 'DocuNo',      where: "Docutype = '106'",  label: 'รับเงินมัดจำ / RB' },
   { runCode: '109',                table: 'dbo.SOInvHD',        column: 'DocuNo',      where: "Docutype = '109'",  label: 'รับคืน/ลดหนี้' },
+  // ใบรับชำระหนี้หนึ่งใบกินเลขสองชุด — DocuNo (RVyy) และ RecpNo (REyy) เดินคนละตัวนับ
+  // ถ้าตรวจแต่ 206 จะพลาด 209 ไปเงียบ ๆ แล้วไปตายตอนบันทึกเหมือนกัน
   { runCode: '206',                table: 'dbo.ARReceHD',       column: 'DocuNo',      where: null,                label: 'รับชำระหนี้' },
+  { runCode: '209',                table: 'dbo.ARReceHD',       column: 'RecpNo',      where: null,                label: 'รับชำระหนี้ (เลขที่ใบเสร็จ)' },
   { runCode: 'redemption',         table: 'dbo.WFRedemtionHD',  column: 'DocuNo',      where: null,                label: 'ตัดตั๋วปุ๋ย' },
 ];
 
