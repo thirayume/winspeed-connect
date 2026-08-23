@@ -266,7 +266,40 @@ router.get('/claims/:id', requireRebateAmountAccess, async (req, res) => {
       `SELECT * FROM wf.v_RebateClaimTotals WHERE ClaimId = @id`,
       { id: { type: sql.Int, value: claimId } })).recordset?.[0] || null;
 
-    res.json({ claim, lines, approvals, invoices, totals });
+    // เลขเอกสารสำหรับใบพิมพ์
+    //
+    // CnDocuNo ถูกตั้งตอน "อนุมัติ" เท่านั้น (ดูเหตุผลที่ POST /claims/:id/approve)
+    // แต่ใบที่พิมพ์ไปให้ผู้บริหารเซ็นเกิดขึ้น *ก่อน* อนุมัติ — เดิมจึงพิมพ์
+    // 'RBD-{Id}' ซึ่งเป็นเลขที่ระบบสมมติขึ้น ไม่มีอยู่จริงในบัญชี ตามรอยกลับไม่ได้
+    //
+    // ที่ทำใหม่: ถ้ายังไม่มีเลขจริง ให้คำนวณ "เลขที่จะได้" จากรหัสผู้ขอของเจ้าของใบ
+    // ส่งไปเป็น SuggestedRbNo แยกจาก CnDocuNo ชัดเจน — หน้าจอจะได้ติดป้ายว่ายังไม่ยืนยัน
+    // ไม่จองเลขไว้ล่วงหน้า เพราะสาย RB ไม่มีตัวนับในระบบ และข้อมูลจริงไม่มีเลขข้ามเลย
+    // การจองแล้วใบถูกปฏิเสธจะทำให้เกิดช่องว่างที่ไม่เคยมีมาก่อน
+    let suggestedRbNo = null;
+    if (!claim.CnDocuNo) {
+      const owner = (await wfQuery(
+        `SELECT RebateDocCode FROM wf.AppUser WHERE Id = @uid`,
+        { uid: { type: sql.Int, value: claim.SalesUserId } })).recordset?.[0];
+      if (owner?.RebateDocCode) {
+        const yy = String(beYY()).slice(-2);
+        const prefix = `RB${owner.RebateDocCode}${yy}-`;
+        const last = (await wfQuery(`
+          SELECT TOP 1 TRY_CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS INT) AS Seq
+          FROM   dbo.SOInvHD
+          WHERE  Docutype = 106 AND DocuNo LIKE @p
+            AND  TRY_CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS INT) IS NOT NULL
+          ORDER  BY TRY_CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS INT) DESC`,
+          {
+            p:    { type: sql.NVarChar(25), value: `${prefix}%` },
+            plen: { type: sql.Int, value: prefix.length },
+          })).recordset?.[0];
+        const next = (last ? Number(last.Seq) : 0) + 1;
+        suggestedRbNo = `${prefix}${String(next).padStart(3, '0')}`;
+      }
+    }
+
+    res.json({ claim, lines, approvals, invoices, totals, suggestedRbNo });
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
@@ -335,6 +368,8 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
           - (takenInRequest.get(keyOf(lot, kind)) || 0)) * 1000) / 1000;
 
       const problems = [];
+      // ล็อตที่ขนจริงแต่ไม่มีแผนอนุมัติคุ้มครอง — ข้ามไป แต่ต้องรายงานให้ผู้ยื่นเห็น
+      const skippedNoPlan = [];
       let calculatedSum = 0;
       let seq = 0;
 
@@ -359,13 +394,38 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
           const avail = lotRemaining(lot, lineType);
           if (avail <= 0) continue;
           const take = Math.min(want, avail);
-          takenInRequest.set(keyOf(lot, lineType), (takenInRequest.get(keyOf(lot, lineType)) || 0) + take);
 
           // ราคาที่ใช้: ถ้าผู้ยื่นกรอกมา ใช้ตามที่กรอก (แบบฟอร์มกระดาษเป็นเอกสารต้นทาง)
           // ถ้าไม่กรอก ดึงจากใบส่งของ (ราคาขาย) และแผนส่งเสริมการขายที่อนุมัติแล้ว (ราคาสุทธิ)
           const pricePerTon = Number(l.pricePerTon) > 0 ? Number(l.pricePerTon) : Number(lot.ListPricePerTon || 0);
-          const netPricePerTon = Number(l.netPricePerTon) > 0 ? Number(l.netPricePerTon)
-            : (lot.NetPricePerTon === null || lot.NetPricePerTon === undefined ? 0 : Number(lot.NetPricePerTon));
+
+          // ราคาสุทธิ "ไม่มี" กับ "เป็นศูนย์" ไม่เหมือนกัน — ห้ามยุบเป็นค่าเดียว
+          //
+          // เดิมเขียนว่า  lot.NetPricePerTon === null ? 0 : ...
+          // ล็อตที่ไม่มีแผนอนุมัติ (NetPricePerTon = NULL) จึงกลายเป็นราคาสุทธิ 0
+          // แล้ว rebatePerTon = ราคาขาย − 0 = **คืนเต็มราคาขาย**
+          //
+          // วัดจริง 22/08/2569 — ยื่นขอ 15-5-35 จำนวน 12 ตัน ได้ใบเคลม 163,400 บาท
+          // ทั้งที่ยอดที่ถูกต้องคือ 14,400 (12 ตัน × 1,200) เพราะ FIFO ไปตัดล็อตปี 2562
+          // ที่ไม่มีแผนคุ้มครอง แล้วคิดรีเบท 13,700/ตัน = ราคาขายทั้งก้อน
+          //
+          // กฎธุรกิจที่พิสูจน์จากเอกสารกระดาษแล้ว: สูตรที่ขนจริงแต่ไม่มีแผนอนุมัติ
+          // **ไม่เข้าการคำนวณ** (ในใบ RBD68-019 สูตร 15-15-15 และ 46-0-0 ถูกตัดออก)
+          const userNet = Number(l.netPricePerTon);
+          const lotNet  = (lot.NetPricePerTon === null || lot.NetPricePerTon === undefined)
+            ? null : Number(lot.NetPricePerTon);
+          const netPricePerTon = userNet > 0 ? userNet : lotNet;
+
+          if (netPricePerTon === null) {
+            // ไม่มีแผนคุ้มครองล็อตนี้ และผู้ยื่นก็ไม่ได้ระบุราคาเปรียบเทียบมา → ข้ามล็อต
+            // ไม่คืนเงินให้ตันที่ไม่มีสิทธิ์ และไม่เงียบ — บอกให้ผู้ยื่นรู้ว่าทำไมได้ไม่ครบ
+            skippedNoPlan.push(`${lot.SourceDocuNo}/${lot.SourceListNo} — ${lot.GoodCode} ${avail} ตัน`);
+            continue;
+          }
+
+          // ผ่านการตรวจแล้วถึงจองล็อต — จองก่อนตรวจจะทำให้ล็อตที่ถูกข้ามค้างสถานะจอง
+          takenInRequest.set(keyOf(lot, lineType), (takenInRequest.get(keyOf(lot, lineType)) || 0) + take);
+
           const rebatePerTon = Math.round((pricePerTon - netPricePerTon) * 100) / 100;
           const lineAmount = Math.round(take * rebatePerTon * 100) / 100;
           calculatedSum += lineAmount;
@@ -399,9 +459,14 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
 
         if (want > 0.001) {
           const kindLabel = lineType === 'DIFF' ? 'คืนส่วนต่าง' : 'คืนรีเบท';
-          const totalAvail = wantedFrom.reduce((a, r) => a + Math.max(0, lotRemaining(r, lineType)), 0);
-          problems.push(`${goodCode} (${kindLabel}): ขอเคลียร์ ${Number(l.qtyTon)} ตัน แต่ขนจริงคงเหลือ `
-            + `${Math.round(totalAvail * 1000) / 1000} ตัน — ขาดอีก ${want} ตัน`);
+          // นับเฉพาะล็อตที่ "มีสิทธิ์จริง" — ล็อตที่ไม่มีแผนคุ้มครองไม่ใช่ยอดที่เคลมได้
+          // ถ้านับรวมเข้าไปด้วย ข้อความจะขัดแย้งกันเอง (บอกว่าเหลือ 600 ตัน แต่เคลมไม่ได้)
+          const hasUserNet = Number(l.netPricePerTon) > 0;
+          const totalAvail = wantedFrom.reduce((a, r) =>
+            (hasUserNet || r.NetPricePerTon !== null && r.NetPricePerTon !== undefined)
+              ? a + Math.max(0, lotRemaining(r, lineType)) : a, 0);
+          problems.push(`${goodCode} (${kindLabel}): ขอเคลียร์ ${Number(l.qtyTon)} ตัน แต่ยอดขนจริงที่มีแผนคุ้มครองคงเหลือ `
+            + `${Math.round(totalAvail * 1000) / 1000} ตัน — ขาดอีก ${Math.round(want * 1000) / 1000} ตัน`);
         }
       }
 
@@ -412,6 +477,12 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
           message: 'ยอดขอเคลียร์ไม่ตรงกับยอดขนจริง',
           source: 'WINSpeed — ใบส่งของ/ใบกำกับ (DocuType 104) ของลูกค้ารายนี้',
           reconciliation: problems,
+          // ล็อตที่ขนจริงแต่ไม่มีแผนอนุมัติ — บอกให้รู้ว่าทำไมยอดถึงไม่พอ
+          // ไม่งั้นผู้แทนขายจะเห็นว่ามีของขนอยู่ แต่ระบบบอกว่าไม่มี แล้วหาสาเหตุไม่เจอ
+          skippedNoPlan: skippedNoPlan.length ? skippedNoPlan : undefined,
+          skippedNoPlanHint: skippedNoPlan.length
+            ? 'ล็อตเหล่านี้ไม่มีแผนส่งเสริมการขายที่อนุมัติแล้วครอบคลุม (สูตร/ภาค/ช่วงวันที่) จึงไม่มีสิทธิ์รีเบท'
+            : undefined,
         });
       }
       if (!parsedLines.length) {
@@ -1291,13 +1362,26 @@ router.get('/next-rb-no', async (req, res) => {
 
     const yy = String(req.query.beYear || beYY()).slice(-2);
     const prefix = `RB${u.RebateDocCode}${yy}-`;
+    // เรียงตาม "ตัวเลขลำดับ" ไม่ใช่ตามสตริง และตัดใบที่ส่วนท้ายไม่ใช่ตัวเลขทิ้ง
+    //
+    // ทำไมต้องกรอง: เคยมีใบ RBT69-TEST อยู่ในระบบ พอ ORDER BY DocuNo DESC
+    // สตริง 'TEST' ชนะ '053' จึงถูกเลือกมาเป็นใบล่าสุด แล้ว parseInt('TEST') = NaN
+    // ตกไปที่ nextSeq = 1 → เสนอเลข RBT69-001 ที่ถูกใช้ไปแล้ว (ของจริงต้องเป็น 054)
+    // วัดจริง 22/08/2569 — ชุด T พังชุดเดียว อีก 7 ชุดถูกเพราะไม่มีใบที่ท้ายเป็นตัวอักษร
+    //
+    // TRY_CAST คืน NULL เมื่อแปลงไม่ได้ จึงคัดใบแบบ TEST ออกได้โดยไม่ต้อง hardcode คำว่า TEST
     const last = (await wfQuery(`
-      SELECT TOP 1 DocuNo FROM dbo.SOInvHD
-      WHERE Docutype = 106 AND DocuNo LIKE @p
-      ORDER BY DocuNo DESC`,
-      { p: { type: sql.NVarChar(25), value: `${prefix}%` } })).recordset?.[0];
+      SELECT TOP 1 DocuNo, TRY_CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS INT) AS Seq
+      FROM   dbo.SOInvHD
+      WHERE  Docutype = 106 AND DocuNo LIKE @p
+        AND  TRY_CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS INT) IS NOT NULL
+      ORDER  BY TRY_CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS INT) DESC`,
+      {
+        p:    { type: sql.NVarChar(25), value: `${prefix}%` },
+        plen: { type: sql.Int, value: prefix.length },
+      })).recordset?.[0];
 
-    const lastSeq = last ? parseInt(String(last.DocuNo).slice(prefix.length), 10) : 0;
+    const lastSeq = last ? Number(last.Seq) : 0;
     const nextSeq = Number.isFinite(lastSeq) ? lastSeq + 1 : 1;
     res.json({
       docCode: u.RebateDocCode,

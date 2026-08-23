@@ -584,6 +584,36 @@ const REPORTS = {
           FROM wf.WeighTicket wt WITH (NOLOCK)
           ORDER BY wt.Id DESC`,
   },
+
+  // ── R-4 รายงานการขนสินค้าตามรายชื่อลูกค้า ────────────────────────────────
+  // ใบส่งของ (DocuType 104) = หลักฐานว่า "ขนออกจากโกดังจริงแล้ว" ไม่ใช่แค่จอง
+  // จึงเป็นฐานเดียวที่ใช้ตอบลูกค้าได้ว่าเดือนนี้รับของไปเท่าไร และตรงกับยอดรีเบทสะสม
+  // (wf.v_RebateAccrualLot ก็นับจาก 104 เหมือนกัน — ตัวเลขสองที่จึงกระทบยอดกันได้)
+  //
+  // พารามิเตอร์ (ทุกตัวไม่บังคับ):
+  //   ?from=2025-04-01&to=2025-04-30   ช่วงวันที่เอกสาร · ไม่ส่งมา = ย้อนหลัง 30 วัน
+  //   &custCode=0123456                รหัสหรือชื่อลูกค้า (บางส่วนก็ได้)
+  'customer-dispatch': {
+    title: 'รายงานการขนสินค้าตามรายชื่อลูกค้า',
+    columns: [
+      { key: 'CustCode', label: 'รหัสลูกค้า' },
+      { key: 'CustName', label: 'ชื่อลูกค้า' },
+      { key: 'DocuDate', label: 'วันที่ขน' },
+      { key: 'DocuNo', label: 'เลขที่ใบส่งของ' },
+      { key: 'BookingDocuNo', label: 'เลขที่ใบจอง' },
+      { key: 'TaxInvoiceNo', label: 'เลขที่ใบกำกับภาษี' },
+      { key: 'TruckPlate', label: 'ทะเบียนรถ' },
+      { key: 'CouponNo', label: 'เลขตั๋วปุ๋ย' },
+      { key: 'ControlTicketNo', label: 'ตั๋วคุมอ้างอิง' },
+      { key: 'GoodCode', label: 'รหัสสินค้า' },
+      { key: 'GoodName', label: 'สูตรปุ๋ย' },
+      { key: 'QtyTon', label: 'จำนวน (ตัน)' },
+      { key: 'PricePerTon', label: 'ราคา/ตัน' },
+      { key: 'Amount', label: 'เป็นเงิน' },
+      { key: 'SalesEmpName', label: 'ผู้แทนขาย' },
+    ],
+    run: (params) => runCustomerDispatchReport(params),
+  },
 };
 
 
@@ -756,6 +786,86 @@ router.get('/:type/export', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
+// ── R-4 รายงานการขนสินค้าตามรายชื่อลูกค้า ────────────────────────────────────
+//
+// ทำไมต้องเป็น stored query ที่รับพารามิเตอร์ ไม่ใช่ SQL ตายตัวเหมือนรายงานอื่น
+//   ตาราง dbo.SODT ของฐานจริงมีหลายแสนบรรทัด การ SELECT ทั้งตารางแล้วค่อยกรอง
+//   ฝั่งแอปจะช้าจนใช้ไม่ได้ · ช่วงวันที่จึงต้องเข้าไปอยู่ใน WHERE
+//
+// เลขตั๋วคุม: อ่านจากหัวใบก่อน (wf.SalesOrderExt.ControlTicketNo) ถ้าไม่มีค่อยรวบ
+// จากบรรทัดที่เบิกตั๋ว — ลำดับเดียวกับ wf.usp_WriteControlTicketRemark (migration 093)
+// เพื่อให้เลขบนรายงานตรงกับเลขที่ประทับลง SOHDRemark ใน WINSpeed เสมอ
+async function runCustomerDispatchReport(params = {}) {
+  const today = new Date();
+  const defaultFrom = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30);
+  const from = parseDateParam(params.from, defaultFrom);
+  const to   = parseDateParam(params.to, today);
+
+  const startOfDay = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const endOfDay   = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 997);
+
+  const custFilter = String(params.custCode || '').trim();
+
+  return (await wfQuery(`
+    SELECT TOP 5000
+           cu.CustCode,
+           ISNULL(cu.CustName, h.CustName)                AS CustName,
+           CONVERT(VARCHAR(10), h.DocuDate, 120)          AS DocuDate,
+           h.DocuNo,
+           bk.DocuNo                                      AS BookingDocuNo,
+           h.RefNo                                        AS TaxInvoiceNo,
+           -- ทะเบียนรถอยู่บนใบจอง (103) ไม่ใช่ใบส่งของ — วัดจริง: ใบ 104 เดือน เม.ย.2568
+           -- ทั้ง 610 ใบมี TransRegistration ว่างหมด จึงต้องถอยไปอ่านจากใบจองต้นทาง
+           ISNULL(h.TransRegistration, bk.TransRegistration) AS TruckPlate,
+           cp.CouponNo,
+           ISNULL(ext.ControlTicketNo, drawn.TicketNos)   AS ControlTicketNo,
+           g.GoodCode,
+           d.GoodName,
+           CAST(d.GoodQty2 AS DECIMAL(18,3))              AS QtyTon,
+           CAST(d.GoodPrice2 AS DECIMAL(18,2))            AS PricePerTon,
+           CAST(d.GoodQty2 * d.GoodPrice2 AS DECIMAL(18,2)) AS Amount,
+           emp.EmpName                                    AS SalesEmpName
+    FROM   dbo.SOHD h WITH (NOLOCK)
+    JOIN   dbo.SODT d WITH (NOLOCK)      ON d.SOID   = h.SOID
+    JOIN   dbo.EMGood g WITH (NOLOCK)    ON g.GoodID = d.GoodID
+    LEFT JOIN dbo.EMCust cu WITH (NOLOCK)  ON cu.CustID = h.CustID
+    LEFT JOIN dbo.EMEmp emp WITH (NOLOCK)  ON emp.EmpID = h.EmpID
+    LEFT JOIN dbo.SOHD bk WITH (NOLOCK)    ON bk.SOID = d.RefSOID AND bk.DocuType = 103
+    -- ตั๋วปุ๋ยผูกรายบรรทัด ไม่ใช่รายใบ (ดู worldfert-rebate-model)
+    LEFT JOIN dbo.WFCoupon cp WITH (NOLOCK)
+           ON cp.DocuID = h.SOID AND cp.RefListno = d.ListNo
+    LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
+           ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), h.SOID)
+    -- ตั๋วคุมของใบที่ยืนยันไปแล้วอ่านจาก WINSpeed ไม่ใช่จาก wf.SalesOrderLine
+    -- เพราะ sp_ConfirmSalesOrder ลบบรรทัดฝั่งแอปทิ้งหลังโอนเข้า WINSpeed สำเร็จ
+    -- (ดู migration 093 — เขียน SOHDRemark ก่อน DELETE FROM wf.SalesOrderLine เสมอ)
+    -- ฉะนั้น SOHDRemark คือที่เดียวที่เลขตั๋วคุมอยู่ถาวร
+    OUTER APPLY (
+        SELECT TOP 1
+               -- เก็บมาสองแบบ: '[ตั๋วคุม] I69-01141' ที่ระบบเขียน กับ 'ตั๋วคุม' เปล่า ๆ ที่คนคีย์เอง
+               CASE WHEN r.Remark LIKE N'[[]ตั๋วคุม]%'
+                    THEN LTRIM(REPLACE(r.Remark, N'[ตั๋วคุม]', N''))
+                    ELSE LTRIM(RTRIM(r.Remark)) END AS TicketNos
+        FROM   dbo.SOHDRemark r WITH (NOLOCK)
+        WHERE  r.SOID = h.SOID AND r.Remark LIKE N'%ตั๋วคุม%'
+        ORDER BY CASE WHEN r.Remark LIKE N'[[]ตั๋วคุม]%' THEN 0 ELSE 1 END, r.ListNo
+    ) drawn
+    WHERE  h.DocuType = 104                 -- ขนออกจริงแล้วเท่านั้น ไม่นับใบจอง 103
+      AND  h.DocuStatus <> 'C'              -- ใบที่ถูกยกเลิกไม่ใช่การขน
+      AND  d.GoodQty2 > 0
+      AND  h.DocuDate >= @from AND h.DocuDate <= @to
+      AND  (@cust = '' OR cu.CustCode LIKE @custLike
+                       OR ISNULL(cu.CustName, h.CustName) LIKE @custLike)
+    ORDER BY CustName, h.DocuDate, h.DocuNo, d.ListNo`,
+    {
+      from:     { type: sql.DateTime2,   value: startOfDay },
+      to:       { type: sql.DateTime2,   value: endOfDay },
+      cust:     { type: sql.NVarChar(60), value: custFilter },
+      custLike: { type: sql.NVarChar(64), value: '%' + custFilter + '%' },
+    }
+  )).recordset || [];
+}
+
 // เปิดฟังก์ชันรายงานให้สคริปต์ตรวจเรียกได้โดยไม่ต้องยิงผ่าน HTTP
 module.exports = router;
-module.exports.__testing = { runTruckScaleWritebackReport };
+module.exports.__testing = { runTruckScaleWritebackReport, runCustomerDispatchReport };

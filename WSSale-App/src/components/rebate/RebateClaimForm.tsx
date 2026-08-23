@@ -399,7 +399,7 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
       <Loader2 className="animate-spin text-white" size={28} /></div>;
   }
 
-  const { claim, lines, approvals, invoices, totals } = data;
+  const { claim, lines, approvals, invoices, totals, suggestedRbNo } = data;
   const tier = Number(claim.CurrentTier || 0);
   const open = !['APPROVED', 'REJECTED', 'CN_ISSUED'].includes(String(claim.Status));
   const canAct = open && ['MANAGER', 'MARKETING', 'APPROVER', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'SALES'].includes(String(role));
@@ -488,9 +488,22 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 print:overflow-visible">
+          {/*
+            เลขที่บนใบพิมพ์ต้องเป็นเลขสาย RB จริง (RB<รหัสผู้ขอ><ปี พ.ศ.>-<ลำดับ>)
+            เดิมพิมพ์ 'RBD-{Id}' ซึ่ง hardcode ตัว D ให้ทุกคนและใช้ Id ภายในของแอป
+            ทำให้ใบที่ส่งไปเซ็นมีเลขที่ไม่มีอยู่ในระบบบัญชี ตามรอยกลับไม่ได้
+
+            CnDocuNo จะมีค่าหลังอนุมัติเท่านั้น ก่อนหน้านั้นใช้ SuggestedRbNo
+            ที่ backend คำนวณจากรหัสผู้ขอของเจ้าของใบ และติดป้ายว่ายังไม่ยืนยัน
+          */}
           <div className="text-center print:block hidden">
             <h1 className="text-xl font-bold">แบบขออนุมัติเคลียร์รายการส่งเสริมการขาย</h1>
-            <p className="text-sm text-gray-600">เลขที่ RBD-{String(claim.Id).padStart(5, '0')}</p>
+            <p className="text-sm text-gray-600">
+              เลขที่ {claim.CnDocuNo || suggestedRbNo || '—'}
+              {!claim.CnDocuNo && suggestedRbNo && (
+                <span className="text-xs text-gray-500"> (เลขที่จะใช้ · ยืนยันเมื่ออนุมัติ)</span>
+              )}
+            </p>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Plus, Minus, Truck, AlertTriangle, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown } from 'lucide-react';
+import { X, Plus, Minus, Truck, AlertTriangle, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp } from 'lucide-react';
 import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices } from '../../services/api';
 import type { EffectivePriceRow } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
@@ -77,6 +77,9 @@ export function CreateSODialog({
   const [custSearch, setCustSearch] = useState('');
   const [isCustOpen, setIsCustOpen] = useState(false);
   const [truckPlate, setTruckPlate] = useState('');
+  // เลขตั๋วคุมระดับหัวบิล — ใช้เมื่ออ้างอิงตั๋วโดยไม่ได้เบิกรายบรรทัด
+  // ถ้าเว้นว่าง wf.usp_WriteControlTicketRemark จะรวบเลขจากรายบรรทัดให้เอง (migration 093)
+  const [controlTicketNo, setControlTicketNo] = useState('');
   const [transpId, setTranspId] = useState<number | ''>('');
   const [isTruckOpen, setIsTruckOpen] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState('');
@@ -201,6 +204,7 @@ export function CreateSODialog({
         setCustId((so as any).custId || (so as any).custID || (so as any).CustId || (so as any).CustID || '');
         setCustSearch((so as any).custName || (so as any).CustName || '');
         setTruckPlate((so as any).truckPlate || (so as any).TruckPlate || '');
+        setControlTicketNo((so as any).controlTicketNo || (so as any).ControlTicketNo || '');
         setTranspId((so as any).transpId || (so as any).TranspId || '');
         setSalesUserId((so as any).salesUserId || (so as any).salesUserID || (so as any).SalesUserId || (so as any).SalesUserID || '');
         setDeliveryDate(so.deliveryDate ? so.deliveryDate.split('T')[0] : '');
@@ -517,6 +521,12 @@ export function CreateSODialog({
   // Totals calculation
   const totalTons = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isGiveaway ? 0 : (Number(l.qtyTon) || 0)), 0), 0);
   const totalRebateDiscount = canSeeRebate ? bills.reduce((s, b) => s + (Number(b.rebateDiscountAmt) || 0), 0) : 0;
+  // เลขตั๋วที่ถูกเบิกจริงในบิลทั้งหมด — ใช้เป็น placeholder ให้ผู้ใช้เห็นว่าถ้าเว้นว่างจะได้อะไร
+  const drawnTicketNos = Array.from(new Set(
+    bills.flatMap(b => b.lines.filter(l => l.isControlTicketDrawn && l.refControlTicketNo)
+                              .map(l => l.refControlTicketNo as string))
+  )).join(', ');
+
   const totalPayable = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isControlTicketDrawn ? 0 : (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0)), 0), 0) - totalRebateDiscount;
   const totalOffset = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isControlTicketDrawn ? (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0) : 0), 0), 0);
   const totalCartItems = bills.reduce((s, b) => s + b.lines.length, 0);
@@ -551,6 +561,8 @@ export function CreateSODialog({
           custId,
           custName: selectedCust?.CustName || activeTrip?.custName || custId,
           truckPlate: b.isControlTicket ? 'ตั๋วคุม' : (truckPlate || undefined),
+          // เว้นว่างได้ — ฝั่ง WINSpeed จะรวบเลขจากบรรทัดที่เบิกมาแทน
+          controlTicketNo: controlTicketNo.trim() || undefined,
           deliveryDate: deliveryDate || undefined,
           notifiedAt: notifiedAt || undefined,
           isOwnTruck,
@@ -586,6 +598,8 @@ export function CreateSODialog({
           custId,
           custName: selectedCust?.CustName || activeTrip?.custName || custId,
           truckPlate: b.isControlTicket ? 'ตั๋วคุม' : (truckPlate || undefined),
+          // เว้นว่างได้ — ฝั่ง WINSpeed จะรวบเลขจากบรรทัดที่เบิกมาแทน
+          controlTicketNo: controlTicketNo.trim() || undefined,
           deliveryDate: deliveryDate || undefined,
           notifiedAt: notifiedAt || undefined,
           isOwnTruck,
@@ -732,6 +746,25 @@ export function CreateSODialog({
                 onChange={e => setNotifiedAt(e.target.value)}
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+            <div className="min-w-[190px]">
+              <label className="text-[10px] font-bold text-gray-500 block mb-0.5">
+                <Stamp size={10} className="inline mr-0.5"/>เลขที่ตั๋วคุมอ้างอิง
+              </label>
+              <input
+                list="ct-ref-list"
+                value={controlTicketNo}
+                onChange={e => setControlTicketNo(e.target.value.toUpperCase())}
+                placeholder={drawnTicketNos || 'ไม่ระบุ'}
+                className="w-full text-sm font-mono border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              <datalist id="ct-ref-list">
+                {controlTickets.map(t => <option key={t.DocuNo} value={t.DocuNo}>{t.DocuDate?.slice(0, 10)}</option>)}
+              </datalist>
+              {/* เว้นว่างไว้ได้ — ถ้ามีบรรทัดเบิกตั๋ว ระบบจะรวบเลขให้เองตอนยืนยันบิล */}
+              {!controlTicketNo && drawnTicketNos && (
+                <p className="text-[9px] text-purple-600 mt-0.5">ระบบจะใช้ {drawnTicketNos} จากบรรทัดที่เบิก</p>
+              )}
             </div>
             <div className="min-w-[260px] flex flex-wrap items-center gap-2 pb-1">
               <label className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5">

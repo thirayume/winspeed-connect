@@ -23,27 +23,40 @@ export function ReportsPage() {
   })();
   const [from, setFrom] = useState(localToday);
   const [to, setTo] = useState(localToday);
-  const DATE_RANGE_REPORTS = ['truckscale-writeback'];
+  const DATE_RANGE_REPORTS = ['truckscale-writeback', 'customer-dispatch'];
   const needsDateRange = DATE_RANGE_REPORTS.includes(active);
+  // รายงานการขนสินค้ากรองรายลูกค้าได้ด้วย — พิมพ์รหัสหรือชื่อบางส่วนก็พอ
+  const CUST_FILTER_REPORTS = ['customer-dispatch'];
+  const needsCustFilter = CUST_FILTER_REPORTS.includes(active);
+  const [custCode, setCustCode] = useState('');
 
   useEffect(() => {
     fetchReportTypes().then(t => { setTypes(t); if (t[0]) setActive(t[0].key); }).catch(console.error);
   }, []);
 
-  const load = useCallback(async (type: string, range?: { from: string; to: string }) => {
+  const load = useCallback(async (type: string, range?: Record<string, string>) => {
     if (!type) return;
     setLoading(true);
     try { setData(await fetchReport(type, range)); } catch (e) { console.error(e); setData(null); }
     setLoading(false);
   }, []);
+  // รวมพารามิเตอร์ที่รายงานนั้น ๆ ต้องใช้ไว้ที่เดียว ให้ทั้งการโหลด ปุ่มรีเฟรช และ export ใช้ชุดเดียวกัน
+  // ไม่งั้นไฟล์ Excel ที่โหลดออกมาจะไม่ตรงกับตารางที่เห็นบนจอ
+  const reportParams = useCallback((): Record<string, string> | undefined => {
+    const p: Record<string, string> = {};
+    if (DATE_RANGE_REPORTS.includes(active)) { p.from = from; p.to = to; }
+    if (CUST_FILTER_REPORTS.includes(active) && custCode.trim()) p.custCode = custCode.trim();
+    return Object.keys(p).length ? p : undefined;
+  }, [active, from, to, custCode]);
+
   useEffect(() => {
-    load(active, DATE_RANGE_REPORTS.includes(active) ? { from, to } : undefined);
-  }, [active, from, to, load]);
+    load(active, reportParams());
+  }, [active, load, reportParams]);
 
   async function doExport() {
     if (!active) return;
     setExporting(true);
-    try { await exportReport(active, needsDateRange ? { from, to } : undefined); } catch (e) { alert((e as Error).message); }
+    try { await exportReport(active, reportParams()); } catch (e) { alert((e as Error).message); }
     setExporting(false);
   }
 
@@ -66,6 +79,14 @@ export function ReportsPage() {
             className="px-3 py-2 rounded-lg text-white text-sm font-semibold flex items-center gap-1.5 disabled:opacity-50" style={{ background: '#3B6D11' }}>
             <Download size={16} /> Export Excel
           </button>
+          {needsCustFilter && (
+            <input
+              value={custCode}
+              onChange={e => setCustCode(e.target.value)}
+              placeholder="รหัส/ชื่อลูกค้า (เว้นว่าง = ทุกราย)"
+              className="px-2 py-2 rounded-lg border border-gray-200 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          )}
           {needsDateRange && (
             <div className="flex items-center gap-1.5 mr-1">
               <div className="w-[8.5rem]">
@@ -79,7 +100,7 @@ export function ReportsPage() {
               </div>
             </div>
           )}
-          <button onClick={() => load(active, needsDateRange ? { from, to } : undefined)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white"><RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} /></button>
+          <button onClick={() => load(active, reportParams())} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white"><RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} /></button>
         </div>
       </div>
 

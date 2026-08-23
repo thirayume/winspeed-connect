@@ -363,7 +363,12 @@ export const fetchRebateClaims = (status?: string) =>
   req<RebateClaim[]>(`/rebate/claims${status ? `?status=${status}` : ''}`);
 
 export const fetchRebateClaimDetail = (id: number) =>
-  req<{ claim: RebateClaim; lines: any[]; approvals: any[]; invoices: any[] }>(`/rebate/claims/${id}`);
+  req<{
+    claim: RebateClaim; lines: any[]; approvals: any[]; invoices: any[];
+    totals?: any;
+    /** เลขสาย RB ที่ใบนี้จะได้ — มีค่าเฉพาะตอนที่ยังไม่อนุมัติ (CnDocuNo ยังว่าง) */
+    suggestedRbNo?: string | null;
+  }>(`/rebate/claims/${id}`);
 
 export const createRebateClaim = (payload: {
   /** ไม่บังคับแล้ว — ยอดสะสมอ่านจาก WINSpeed ส่วน pool คือ "งบที่จัดสรร" คนละเรื่อง */
