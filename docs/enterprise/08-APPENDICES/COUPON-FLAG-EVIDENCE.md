@@ -153,6 +153,54 @@ normative: false
 > และเลขเดียวกันใช้ได้ทั้งใบจอง 103 และใบส่งของ 104 การกรองด้วยเลขอย่างเดียว
 > จึงดึงรอยของอีกเอกสารติดมาด้วย ต้องดูที่ `audit_screen` ประกอบเสมอ
 
+## หลักฐานที่ 6 — พบ ROOT CAUSE ที่เป็นรูปธรรม: ฟอร์มตั๋วปุ๋ยโหลดไม่ได้ (path ไม่ตรง)
+
+ทดสอบสด 20/08/2569 บนเครื่องนี้ (ทำในฐานะ USER-B): เปิด `K69-01854` ในหน้าจอ Sale Order (WF) →
+กด **Print** → หน้าต่าง Select Form → เลือกฟอร์ม **`dr_so_ticket_pre` (ตั๋วปุ๋ย)** → OK
+
+**ผล:** ขึ้น error ทันที
+> `Can not setting form ~dr_so_ticket_pre!!, please check form existance`
+
+ตามรอยจากฐานข้อมูล `dbo.SMForm` (ตารางลงทะเบียนฟอร์ม):
+
+| ฟอร์ม | Library ที่ลงทะเบียน |
+|---|---|
+| `dr_so_ticket_pre` (ตั๋วปุ๋ย) | `C:\Program Files\Prosoft\WINSpeed\Forms\worldfertdaotai.pbl` |
+| `dr_so_delivery_order_pre` (ใบส่งของ · default) | `C:\Program Files\Prosoft\WINSpeed\Forms\worldfertdaotai.pbl` |
+
+ตรวจดิสก์เครื่องนี้:
+- **`C:\Program Files\Prosoft\` (non-x86) ไม่มีอยู่เลย**
+- WINSpeed ติดตั้งจริงที่ **`C:\Program Files (x86)\Prosoft\WINSpeed\`** (exe: `...(x86)\...\bin\erp.exe`)
+- ไฟล์ `worldfertdaotai.pbl` (ที่มีฟอร์มตั๋วปุ๋ย) **มีจริง แต่อยู่ที่ x86** — คนละที่กับที่ลงทะเบียน
+
+**สรุป root cause:** เครื่องนี้ติดตั้ง WINSpeed ที่ `Program Files (x86)` แต่ `dbo.SMForm` (config ที่ใช้
+ร่วมกับเครื่องผลิต) ชี้ library ฟอร์มไปที่ `Program Files` (non-x86) → เครื่องนี้โหลด library ตั๋วปุ๋ยไม่ได้
+เครื่องผลิตจริงติดตั้งที่ path non-x86 (ตรงกับ SMForm) จึงทำงานได้ **นี่คือ "ความต่างของเครื่อง"
+(หลักฐานที่ 5) ที่เป็นรูปธรรม — ต่างกันที่ตำแหน่งติดตั้ง WINSpeed**
+
+> **ทดสอบแล้ว — สมมติฐานนี้ผิด (21/08/2569):** เจ้าของระบบสร้าง junction
+> `C:\Program Files\Prosoft` → `...(x86)\Prosoft` และ restart WINSpeed แล้ว
+> - **ฟอร์มพิมพ์ตั๋วปุ๋ยโหลดได้จริง** — Print `dr_so_ticket_pre` ขึ้น preview ปกติ (ไม่ error แล้ว) ✅
+> - **แต่การออกเลขตั๋วตอนบันทึกยังพลาด** — บันทึกใบใหม่ **K69-01855** ได้ `CouponFlag='N'`,
+>   คูปองไม่มีเลข, ไม่เกิดใบ 202, ตัวนับ `couponno` ไม่เดิน — **เหมือนเดิมทุกอย่าง**
+>
+> **สรุป: form path เป็นคนละเรื่องกับการออกเลขตั๋ว** ฟอร์มพิมพ์ (`dr_so_ticket_pre`) กับ logic
+> ออกเลข/ตั้ง CouponFlag ตอนบันทึก **แยกกัน** · junction แก้ได้แค่ฟอร์มพิมพ์ · การออกตั๋วตอนบันทึก
+> ยังติดด้วย **ปัจจัยฝั่งเครื่องอีกตัวที่ยังหาไม่พบ** (registry/INI ต่อเครื่อง, build/patch ของ client,
+> หรือ library อื่นที่มี save-time logic) — **ยังเป็นเรื่องฝั่งเครื่อง แต่คนละตัวกับ form path**
+
+### วิธีแก้ + ทดสอบ (ต้องรันในฐานะ Administrator)
+
+ทางเร็วและย้อนกลับได้ — ทำ junction ให้ path non-x86 ชี้ไปที่ x86:
+```cmd
+mklink /J "C:\Program Files\Prosoft" "C:\Program Files (x86)\Prosoft"
+```
+(ถอนออกได้ด้วย `rmdir "C:\Program Files\Prosoft"` — เป็น junction ไม่ใช่สำเนา ไม่แตะไฟล์จริง)
+
+ทางถาวร: ติดตั้ง/คัดลอก WINSpeed ให้อยู่ที่ `C:\Program Files\Prosoft\WINSpeed\` ตรงกับ SMForm
+(เหมือนเครื่องผลิต) **หลังแก้แล้ว** บันทึกใบส่งของใหม่ 1 ใบ แล้วตรวจ `CouponFlag` — ถ้าเป็น `'Y'`
+= ปิดปมได้ครบโดยไม่ต้องพึ่ง Prosoft
+
 ## สิ่งที่ตรวจแล้วและตัดออกได้
 
 ทุกข้อตรวจด้วยการนับจากฐาน ไม่ใช่การอนุมาน

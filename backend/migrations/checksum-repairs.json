@@ -530,6 +530,33 @@
       "actor": "Thirayu M. (owner)",
       "reason": "line-ending normalisation to LF per .gitattributes after the git history purge; executable SQL byte-identical",
       "repairedAt": "2026-08-10T11:02:16.431Z"
+    },
+    {
+      "file": "089_smid_id_blocks.sql",
+      "previousChecksum": "d85c7c2d1d8f4e98db54d009d00a2f8e4623c8bf9d47da12dff81d9b36ef1710",
+      "newChecksum": "d8ee23a88eedbe24b157a7af2c9be086281d565226a4e809cfc376a5cb5b96b1",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "claude",
+      "reason": "ปิดชื่อผู้ใช้/เครื่องในคอมเมนต์ก่อนเผยแพร่ repo สาธารณะ — เนื้อคำสั่ง SQL ไม่เปลี่ยน",
+      "repairedAt": "2026-08-23T15:04:32.987Z"
+    },
+    {
+      "file": "089_smid_id_blocks.sql",
+      "previousChecksum": "d85c7c2d1d8f4e98db54d009d00a2f8e4623c8bf9d47da12dff81d9b36ef1710",
+      "newChecksum": "d8ee23a88eedbe24b157a7af2c9be086281d565226a4e809cfc376a5cb5b96b1",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "claude",
+      "reason": "ปิดชื่อผู้ใช้/เครื่องในคอมเมนต์ก่อนเผยแพร่ repo สาธารณะ — เนื้อคำสั่ง SQL ไม่เปลี่ยน",
+      "repairedAt": "2026-08-23T15:04:33.759Z"
+    },
+    {
+      "file": "089_smid_id_blocks.sql",
+      "previousChecksum": "d85c7c2d1d8f4e98db54d009d00a2f8e4623c8bf9d47da12dff81d9b36ef1710",
+      "newChecksum": "d8ee23a88eedbe24b157a7af2c9be086281d565226a4e809cfc376a5cb5b96b1",
+      "verified": "executable SQL identical after stripping comments and whitespace",
+      "actor": "claude",
+      "reason": "ปิดชื่อผู้ใช้/เครื่องในคอมเมนต์ก่อนเผยแพร่ repo สาธารณะ — เนื้อคำสั่ง SQL ไม่เปลี่ยน",
+      "repairedAt": "2026-08-23T15:04:39.011Z"
     }
   ]
 }
