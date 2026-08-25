@@ -19,10 +19,22 @@
  *   node scripts/audit-docuno-counters.js --fix            # เดินตัวนับที่ล้าหลังให้ตรงเอกสารจริง
  *   DB_MODE=remote_b node scripts/audit-docuno-counters.js # เลือกปลายทาง
  *
- * EXIT: 0 = ตัวนับตรงหมด · 1 = พบตัวนับล้าหลัง (หรือแก้ไม่สำเร็จ)
+ * ตรวจสองอาการที่คนละเรื่องกัน
+ *   **ล้าหลัง** — ตัวนับต่ำกว่าเอกสารจริง → ออกเลขซ้ำ → บันทึกไม่ผ่าน (ผู้ใช้เห็นทันที)
+ *   **ล้ำหน้า** — ตัวนับสูงกว่าเอกสารจริง → เลขถัดไปข้าม → ช่องว่างถาวรในลำดับ
+ *                 ไม่ทำให้บันทึกพลาดจึงไม่มีใครสังเกต แต่ร้ายแรงกว่าสำหรับใบกำกับภาษี
+ *                 ที่กฎหมายกำหนดให้เรียงต่อเนื่อง
+ *
+ *   เจอจริง 24/08/2569: creditsale_invno = N69-01961 แต่เอกสารล่าสุดคือ N69-01960
+ *   WINSpeed เตือนเองตอนบันทึกว่า "เลขที่ใบกำกับข้ามเลขที่ N69-01961"
+ *   สคริปต์รุ่นก่อนหน้ารายงานชุดนี้ว่า "ตรง" เพราะตรวจแค่ทิศล้าหลัง
+ *
+ * EXIT: 0 = ตัวนับตรงหมด · 1 = พบล้าหลังหรือล้ำหน้า (หรือแก้ไม่สำเร็จ)
  *
  * ⚠ --fix เขียน dbo.EMRunBrch.LastNo เท่านั้น ซึ่งอยู่ในรายการ dbo write ที่ได้รับอนุมัติ
  *   และเดินไปข้างหน้าอย่างเดียว ไม่มีทางถอยเลขกลับ
+ *   **จึงแก้ได้เฉพาะกรณีล้าหลัง** — กรณีล้ำหน้าต้องถอยเลข ซึ่งเป็นการตัดสินใจทางบัญชี
+ *   สคริปต์จะรายงานอย่างเดียว ไม่แตะให้
  *
  * ⚠ แก้ตารางแล้วยังไม่พอ — โปรแกรม WINSpeed จำเลขที่ออกไว้ตั้งแต่ตอนเปิดหน้าจอ
  *   ผู้ใช้ต้องปิดแล้วเปิดหน้าจอนั้นใหม่ ตัวนับที่แก้จึงจะมีผล
@@ -68,6 +80,7 @@ function alphaPrefix(no) {
  */
 async function checkCounters(read) {
   const behind = [];
+  const ahead  = [];
   const rows = [];
 
   for (const s of SERIES) {
@@ -121,18 +134,25 @@ async function checkCounters(read) {
       }
 
       // เทียบแบบข้อความ — รูปแบบเลขกว้างคงที่และปีอยู่ตำแหน่งเดิม การเรียงจึงตรงกับลำดับจริง
-      const isBehind = String(c.LastNo).trim() < String(maxNo).trim();
+      const last = String(c.LastNo).trim();
+      const top  = String(maxNo).trim();
+      const isBehind = last < top;
+      // ตัวนับ "ล้ำหน้า" เอกสารจริง = เลขถูกกินไปโดยไม่มีเอกสารเกิด
+      // (มีคนกดบันทึกแล้วยกเลิกกลางคัน) เลขถัดไปจะข้าม ทิ้งช่องว่างถาวรในลำดับ
+      // ไม่ทำให้บันทึกพลาดจึงไม่มีใครสังเกต แต่ร้ายแรงกว่าสำหรับชุดใบกำกับภาษี
+      const isAhead = last > top;
       const above = Number(actual?.Above || 0);
-      const status = isBehind
-        ? C.red(`ล้าหลัง · มีเอกสารเหนือตัวนับ ${above} ใบ`)
-        : C.grn('ตรง');
+      const status = isBehind ? C.red(`ล้าหลัง · มีเอกสารเหนือตัวนับ ${above} ใบ`)
+                   : isAhead  ? C.yel('ล้ำหน้า · เลขถัดไปจะข้าม')
+                   :            C.grn('ตรง');
 
       rows.push({ ชุด: s.runCode, งาน: s.label, ตัวนับ: c.LastNo, เอกสารล่าสุด: maxNo, สถานะ: status });
       if (isBehind) behind.push({ ...s, brchId: c.BrchID, lastNo: c.LastNo, maxNo, above });
+      if (isAhead)  ahead.push({ ...s, brchId: c.BrchID, lastNo: c.LastNo, maxNo });
     }
   }
 
-  return { rows, behind };
+  return { rows, behind, ahead };
 }
 
 async function main() {
@@ -145,12 +165,29 @@ async function main() {
   console.log(C.cyn(`\n=== ตรวจตัวนับเลขที่เอกสาร · ปลายทาง ${target} ===`));
   if (FIX) console.log(C.yel('โหมด --fix : ตัวนับที่ล้าหลังจะถูกเดินให้ตรงเอกสารจริง'));
 
-  const { rows, behind } = await checkCounters(read);
+  const { rows, behind, ahead } = await checkCounters(read);
   console.table(rows);
 
+  // รายงานตัวนับล้ำหน้าเสมอ — คนละอาการ คนละความเสียหายกับตัวล้าหลัง
+  if (ahead.length) {
+    console.log(C.yel(`
+! พบตัวนับล้ำหน้าเอกสารจริง ${ahead.length} ชุด — เลขที่ออกครั้งถัดไปจะข้าม`));
+    for (const a of ahead) {
+      const taxy = /inv/i.test(a.runCode) || /ใบกำกับ|ใบเสร็จ/.test(a.label || '');
+      console.log(`    ${a.runCode} (${a.label}) : ตัวนับ ${a.lastNo} · เอกสารล่าสุด ${a.maxNo}`
+        + (taxy ? C.red('   ← ชุดนี้ต้องเรียงต่อเนื่องตามกฎหมาย') : ''));
+    }
+    console.log(C.dim('  เลขถูกกินไปโดยไม่มีเอกสารเกิด (กดบันทึกแล้วยกเลิกกลางคัน)'));
+    console.log(C.dim('  --fix ไม่แตะกรณีนี้ — การถอยเลขเป็นการตัดสินใจทางบัญชี'));
+    console.log(C.dim('  ถ้าจะปิดช่องว่าง ให้ออกเอกสารถัดไปโดยระบุเลขที่ค้างนั้นเอง'));
+  }
+
   if (!behind.length) {
-    console.log(C.grn('\n✓ ตัวนับตรงกับเอกสารจริงทุกชุด'));
-    return 0;
+    if (!ahead.length) {
+      console.log(C.grn('\n✓ ตัวนับตรงกับเอกสารจริงทุกชุด'));
+      return 0;
+    }
+    return 1;   // ล้ำหน้าอย่างเดียวก็ยังต้องมีคนดู
   }
 
   console.log(C.red(`\n✗ พบตัวนับล้าหลัง ${behind.length} ชุด — เอกสารชุดนี้จะบันทึกไม่ผ่านเพราะออกเลขซ้ำ`));
