@@ -33,7 +33,6 @@ function runApiSmoke() {
       stdio: 'inherit',
       env: {
         ...process.env,
-        DB_MODE: process.env.DB_MODE || 'local',
         API_SMOKE_BASE_URL: baseUrl,
       },
     });
@@ -51,7 +50,6 @@ async function main() {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
-      DB_MODE: process.env.DB_MODE || 'local',
       PORT: String(port),
     },
   });

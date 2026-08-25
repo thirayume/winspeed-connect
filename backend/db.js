@@ -28,7 +28,7 @@ const sql = isWindows ? require('mssql/msnodesqlv8') : require('mssql');
  * โดยไม่มีใครรู้ จึงเปลี่ยนเป็นรายชื่อชัดเจน และ **ค่าที่ไม่รู้จักให้ล้มทันที**
  */
 const VALID_TARGETS = ['local', 'remote', 'remote_b'];
-const RAW_MODE = (process.env.DB_MODE || (isWindows ? 'local' : 'remote')).toLowerCase().trim();
+const RAW_MODE = (process.env.DB_MODE || 'remote').toLowerCase().trim();
 if (!VALID_TARGETS.includes(RAW_MODE)) {
   throw new Error(
     `DB_MODE="${RAW_MODE}" ไม่ถูกต้อง — รองรับเฉพาะ ${VALID_TARGETS.join(' | ')}`);

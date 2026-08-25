@@ -19,7 +19,7 @@ function run(script) {
     const child = spawn(process.execPath, [script], {
       cwd: ROOT,
       stdio: 'inherit',
-      env: { ...process.env, DB_MODE: process.env.DB_MODE || 'local' },
+      env: { ...process.env },
     });
     child.on('error', reject);
     child.on('exit', (code) => {

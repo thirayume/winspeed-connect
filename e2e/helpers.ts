@@ -1,7 +1,8 @@
 import { expect, type Page } from '@playwright/test';
 
 export const E2E_PASSWORD = process.env.E2E_PASSWORD || ['W0rld', 'F3rt'].join('');
-export const API_BASE = process.env.E2E_API_BASE || 'http://localhost:3000/api';
+export const E2E_DB_TARGET = process.env.E2E_DB_TARGET || 'local';
+const API_BASE = process.env.E2E_API_BASE || 'http://localhost:3000/api';
 
 const observedPages = new WeakSet<Page>();
 
@@ -62,7 +63,7 @@ export async function api<T>(
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
-      'X-DB-Target': 'local',
+      'X-DB-Target': E2E_DB_TARGET,
     },
   });
   const text = await response.text();
@@ -77,7 +78,7 @@ export async function api<T>(
 }
 
 export async function publicApi<T>(page: Page, path: string): Promise<ApiResult<T>> {
-  const response = await page.request.get(`${API_BASE}${path}`, { headers: { 'X-DB-Target': 'local' } });
+  const response = await page.request.get(`${API_BASE}${path}`, { headers: { 'X-DB-Target': E2E_DB_TARGET } });
   const text = await response.text();
   let body: unknown = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
