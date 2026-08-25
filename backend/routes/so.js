@@ -1716,6 +1716,11 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
     const newSoid = spRes.output.NewSoid;
     if (!newSoid) throw new Error('ย้ายข้อมูลไปยัง Winspeed ไม่สำเร็จ (ไม่ได้ SOID กลับมา)');
 
+    // ตั๋วปุ๋ยไม่ได้ออกที่ขั้นนี้ — sp_ConfirmSalesOrder สร้างใบสั่งจอง (103)
+    // และตั๋วผูกกับใบส่งขาย (104) เท่านั้น (111,210 แถวในระบบเป็น 104 ล้วน
+    // ส่วนใบสั่งจองจริง 61,439 ใบเป็น CouponFlag='N' ทุกใบ ซึ่งถูกต้องแล้ว)
+    // ใบส่งขายกับตั๋วเกิดตอนเจ้าหน้าที่เปิดเอกสารต่อใน WINSpeed · ดู 098/099
+
     if (await hasQuoteSourceTable()) {
       await wfQuery(`
         UPDATE q
