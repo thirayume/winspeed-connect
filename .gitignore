@@ -76,3 +76,6 @@ _minutes.txt
 *_minutes.txt
 debug.txt
 tmp.txt
+
+# ฐานตั้งต้นที่ Setup-Replication.ps1 ดัมป์ออกมา — สร้างใหม่ได้เสมอ
+deploy/truckscale-replica/baseline.sql

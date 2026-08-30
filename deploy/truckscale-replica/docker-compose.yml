@@ -1,0 +1,63 @@
+# ชุดทดสอบ replication ของ TruckScale บน localhost
+#
+# จำลองสองฝั่งให้ตรงกับของจริง:
+#   ts-source  = MySQL ที่เครื่องชั่ง (โปรแกรม WorldFerth.exe เขียนผ่าน ODBC DSN "TruckScales")
+#   ts-replica = MySQL ปลายทางบนคลาวด์ (Railway)
+#
+# ใช้ MySQL 9 ให้ตรงรุ่นกับ Railway (9.7.1) เพราะไวยากรณ์ replication
+# เปลี่ยนไปตั้งแต่ 8.0.23 (CHANGE REPLICATION SOURCE TO) และ 8.4 ตัดคำสั่งเก่าทิ้ง
+#
+# พอร์ตบนโฮสต์เลี่ยง 3306 ไว้ เผื่อเครื่องมี MySQL ของตัวเองอยู่แล้ว
+
+services:
+  ts-source:
+    image: mysql:9
+    container_name: ts-source
+    command:
+      - --server-id=1
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+      # เก็บ binlog 7 วัน — เครื่องชั่งอาจหลุดเน็ตข้ามคืนแล้วค่อยตามเก็บ
+      - --binlog-expire-logs-seconds=604800
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_DATABASE: db_truckscale
+    ports:
+      - "33061:3306"
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - ts-source-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-prootpw"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  ts-replica:
+    image: mysql:9
+    container_name: ts-replica
+    command:
+      - --server-id=2
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+      # ไม่ตั้ง read-only ตรงนี้ — entrypoint ต้องเขียนตอน init ไม่งั้นคอนเทนเนอร์บูตไม่ขึ้น
+      # Setup-Replication.ps1 จะเปิดให้หลังต่อสายเสร็จ
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+    ports:
+      - "33062:3306"
+    volumes:
+      - ts-replica-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-prootpw"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  ts-source-data:
+  ts-replica-data:
