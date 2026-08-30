@@ -1,0 +1,51 @@
+WorldFert client connection reference
+=====================================
+
+This file contains no passwords. Actual values are in the ignored, protected file:
+  .local-secrets\CREDENTIALS.txt
+
+MSSQL / WinSpeed
+----------------
+HOST=mssql.thirayu.online
+PORT=1433
+DATABASE=dbwins_worldfert9
+READ_ONLY_USERNAME=wf_reader
+READ_ONLY_PASSWORD_KEY=WF_READER_PASSWORD
+CONTROLLED_WRITE_USERNAME=wf_owner
+CONTROLLED_WRITE_PASSWORD_KEY=WF_OWNER_PASSWORD
+ADMIN_USERNAME=sa
+ADMIN_PASSWORD_KEY=MSSQL_SA_PASSWORD
+TLS_CA=.local-secrets\worldfert-db-ca.crt
+
+MySQL / TruckScale
+------------------
+HOST=mysql.thirayu.online
+PORT=3306
+DATABASE=db_truckscale
+APP_USERNAME=wfapp
+APP_PASSWORD_KEY=MYSQL_PASSWORD
+ADMIN_USERNAME=root
+ADMIN_PASSWORD_KEY=MYSQL_ROOT_PASSWORD
+TLS_CA=.local-secrets\worldfert-db-ca.crt
+
+SFTP
+----
+HOST=76.13.190.104
+PORT=22
+USERNAME=wfbackup
+AUTHENTICATION=Ed25519 private key; no password
+PATHS=/incoming,/outgoing,/manifests
+
+Portainer
+---------
+URL=https://portainer.thirayu.online
+PORT=443
+USERNAME=admin
+PASSWORD_COMMAND=windows\11-manage-stack.bat portainer-credentials
+
+Security notes
+--------------
+- Keep Hostinger Firewall rules for 22/1433/3306 restricted to approved /32 public IPs.
+- Never paste passwords into tickets, chat, source files or this example file.
+- Use wf_reader for routine inspection and reporting.
+- Use wf_owner, sa and MySQL root only for approved maintenance.

@@ -1,0 +1,4261 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/1m6xml",
+    "id": "1m6xml",
+    "slide": 4,
+    "layoutId": "00fda768-8145-4867-a0b5-199700a0c31c",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "a167fc03-637d-41b9-acbb-5a9b6538f145",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#FFFFFF",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "Noto Sans Thai"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "00fda768-8145-4867-a0b5-199700a0c31c",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "a167fc03-637d-41b9-acbb-5a9b6538f145",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "a167fc03-637d-41b9-acbb-5a9b6538f145",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/h87md47q",
+      "id": "1",
+      "bbox": [
+        48,
+        30,
+        500,
+        24
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.0"
+      },
+      "geometry": "rect",
+      "text": "WORLDFERT / CLOUD MIGRATION",
+      "textPreview": "WORLDFERT / CLOUD MIGRATION",
+      "resolvedFontSize": 13,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 13,
+        "typeface": "Noto Sans Thai",
+        "color": "#2E74B5",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "WORLDFERT / CLOUD MIGRATION"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "WORLDFERT / CLOUD MIGRATION",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 13,
+            "typeface": "Noto Sans Thai",
+            "color": "#2E74B5",
+            "bold": true,
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "WORLDFERT / CLOUD MIGRATION",
+              "anchor": 1,
+              "fontSize": 13,
+              "typeface": "Noto Sans Thai",
+              "color": "#2E74B5",
+              "bold": true,
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/u5gn2p8z",
+      "id": "2",
+      "bbox": [
+        48,
+        78,
+        8,
+        54
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.1"
+      },
+      "geometry": "rect",
+      "fillColor": "#2E74B5",
+      "lineColor": "#2E74B5",
+      "lineWidth": 0
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/v6p4bupk",
+      "id": "3",
+      "bbox": [
+        76,
+        76,
+        1110,
+        60
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.2"
+      },
+      "geometry": "rect",
+      "text": "Public IP: ใช้ง่าย โดยคุมสิทธิ์อย่างชัดเจน",
+      "textPreview": "Public IP: ใช้ง่าย โดยคุมสิทธิ์อย่างชัดเจน",
+      "resolvedFontSize": 34,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 34,
+        "typeface": "Noto Sans Thai",
+        "color": "#17212B",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Public IP: ใช้ง่าย โดยคุมสิทธิ์อย่างชัดเจน"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Public IP: ใช้ง่าย โดยคุมสิทธิ์อย่างชัดเจน",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 34,
+            "typeface": "Noto Sans Thai",
+            "color": "#17212B",
+            "bold": true,
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "none",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Public IP: ใช้ง่าย โดยคุมสิทธิ์อย่างชัดเจน",
+              "anchor": 1,
+              "fontSize": 34,
+              "typeface": "Noto Sans Thai",
+              "color": "#17212B",
+              "bold": true,
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "none",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/4bi58zqh",
+      "id": "4",
+      "bbox": [
+        48,
+        670,
+        1184,
+        0.03
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.3"
+      },
+      "geometry": "straightConnector1",
+      "lineColor": "#D9E2EA",
+      "lineWidth": 1
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/5crmh47m",
+      "id": "5",
+      "bbox": [
+        48,
+        682,
+        350,
+        18
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.4"
+      },
+      "geometry": "rect",
+      "text": "C‑LEVEL DECISION BRIEF",
+      "textPreview": "C‑LEVEL DECISION BRIEF",
+      "resolvedFontSize": 11,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 11,
+        "typeface": "Noto Sans Thai",
+        "color": "#5F6F7F",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "C‑LEVEL DECISION BRIEF"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "C‑LEVEL DECISION BRIEF",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 11,
+            "typeface": "Noto Sans Thai",
+            "color": "#5F6F7F",
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "C‑LEVEL DECISION BRIEF",
+              "anchor": 1,
+              "fontSize": 11,
+              "typeface": "Noto Sans Thai",
+              "color": "#5F6F7F",
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/i9gn698b",
+      "id": "6",
+      "bbox": [
+        1170,
+        680,
+        62,
+        20
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.5"
+      },
+      "geometry": "rect",
+      "text": "04",
+      "textPreview": "04",
+      "resolvedFontSize": 12,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 12,
+        "typeface": "Noto Sans Thai",
+        "color": "#5F6F7F",
+        "alignment": "right",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "04"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "04",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 12,
+            "typeface": "Noto Sans Thai",
+            "color": "#5F6F7F",
+            "alignment": "right",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "04",
+              "anchor": 1,
+              "fontSize": 12,
+              "typeface": "Noto Sans Thai",
+              "color": "#5F6F7F",
+              "alignment": "right",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/jap4fepw",
+      "id": "7",
+      "bbox": [
+        72,
+        170,
+        260,
+        24
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.6"
+      },
+      "geometry": "rect",
+      "text": "PORT POLICY",
+      "textPreview": "PORT POLICY",
+      "resolvedFontSize": 14,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 14,
+        "typeface": "Noto Sans Thai",
+        "color": "#2E74B5",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "PORT POLICY"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "PORT POLICY",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 14,
+            "typeface": "Noto Sans Thai",
+            "color": "#2E74B5",
+            "bold": true,
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "PORT POLICY",
+              "anchor": 1,
+              "fontSize": 14,
+              "typeface": "Noto Sans Thai",
+              "color": "#2E74B5",
+              "bold": true,
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/szi5cjqd",
+      "id": "8",
+      "bbox": [
+        72,
+        208,
+        526,
+        316
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.7"
+      },
+      "geometry": "rect",
+      "fillColor": "#F6F8FA",
+      "lineColor": "#F6F8FA",
+      "lineWidth": 0
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/t0rmlo7y",
+      "id": "9",
+      "bbox": [
+        98,
+        232,
+        150,
+        32
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.8"
+      },
+      "geometry": "rect",
+      "text": "80 / 443",
+      "textPreview": "80 / 443",
+      "resolvedFontSize": 26.67,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 27,
+        "typeface": "Noto Sans Thai",
+        "color": "#17212B",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 0.99,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "80 / 443"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "80 / 443",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 27,
+            "typeface": "Noto Sans Thai",
+            "color": "#17212B",
+            "bold": true,
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "80 / 443",
+              "anchor": 1,
+              "fontSize": 27,
+              "typeface": "Noto Sans Thai",
+              "color": "#17212B",
+              "bold": true,
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/tk3ydc3m",
+      "id": "10",
+      "bbox": [
+        266,
+        237,
+        300,
+        28
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.9"
+      },
+      "geometry": "rect",
+      "text": "เปิดสู่ Internet สำหรับ Web/API",
+      "textPreview": "เปิดสู่ Internet สำหรับ Web/API",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 18,
+        "typeface": "Noto Sans Thai",
+        "color": "#5F6F7F",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "เปิดสู่ Internet สำหรับ Web/API"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "เปิดสู่ Internet สำหรับ Web/API",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 18,
+            "typeface": "Noto Sans Thai",
+            "color": "#5F6F7F",
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "เปิดสู่ Internet สำหรับ Web/API",
+              "anchor": 1,
+              "fontSize": 18,
+              "typeface": "Noto Sans Thai",
+              "color": "#5F6F7F",
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/sjaxk7m1",
+      "id": "11",
+      "bbox": [
+        98,
+        282,
+        472,
+        0.03
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.10"
+      },
+      "geometry": "straightConnector1",
+      "lineColor": "#D9E2EA",
+      "lineWidth": 1
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/7i1gbmlg",
+      "id": "12",
+      "bbox": [
+        98,
+        305,
+        150,
+        32
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.11"
+      },
+      "geometry": "rect",
+      "text": "22",
+      "textPreview": "22",
+      "resolvedFontSize": 26.67,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 27,
+        "typeface": "Noto Sans Thai",
+        "color": "#17212B",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 0.99,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "22"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "22",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 27,
+            "typeface": "Noto Sans Thai",
+            "color": "#17212B",
+            "bold": true,
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "22",
+              "anchor": 1,
+              "fontSize": 27,
+              "typeface": "Noto Sans Thai",
+              "color": "#17212B",
+              "bold": true,
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 13,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/6xsfih4b",
+      "id": "13",
+      "bbox": [
+        266,
+        310,
+        300,
+        48
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.12"
+      },
+      "geometry": "rect",
+      "text": "เฉพาะ IP ผู้ดูแล • Key only • Chroot",
+      "textPreview": "เฉพาะ IP ผู้ดูแล • Key only • Chroot",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 18,
+        "typeface": "Noto Sans Thai",
+        "color": "#5F6F7F",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "เฉพาะ IP ผู้ดูแล • Key only • Chroot"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "เฉพาะ IP ผู้ดูแล • Key only • Chroot",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 18,
+            "typeface": "Noto Sans Thai",
+            "color": "#5F6F7F",
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "เฉพาะ IP ผู้ดูแล • Key only • Chroot",
+              "anchor": 1,
+              "fontSize": 18,
+              "typeface": "Noto Sans Thai",
+              "color": "#5F6F7F",
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 14,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ho3yhw3y",
+      "id": "14",
+      "bbox": [
+        98,
+        374,
+        472,
+        0.03
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.13"
+      },
+      "geometry": "straightConnector1",
+      "lineColor": "#D9E2EA",
+      "lineWidth": 1
+    },
+    {
+      "order": 15,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/gnuxormd",
+      "id": "15",
+      "bbox": [
+        98,
+        397,
+        150,
+        40
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.14"
+      },
+      "geometry": "rect",
+      "text": "1433 / 3306",
+      "textPreview": "1433 / 3306",
+      "resolvedFontSize": 25,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 25,
+        "typeface": "Noto Sans Thai",
+        "color": "#17212B",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "1433 / 3306"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "1433 / 3306",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 25,
+            "typeface": "Noto Sans Thai",
+            "color": "#17212B",
+            "bold": true,
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "1433 / 3306",
+              "anchor": 1,
+              "fontSize": 25,
+              "typeface": "Noto Sans Thai",
+              "color": "#17212B",
+              "bold": true,
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 16,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/fmlgfmls",
+      "id": "16",
+      "bbox": [
+        266,
+        402,
+        300,
+        42
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.15"
+      },
+      "geometry": "rect",
+      "text": "เฉพาะ Client IP ที่อนุมัติ • TLS",
+      "textPreview": "เฉพาะ Client IP ที่อนุมัติ • TLS",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 18,
+        "typeface": "Noto Sans Thai",
+        "color": "#5F6F7F",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "เฉพาะ Client IP ที่อนุมัติ • TLS"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "เฉพาะ Client IP ที่อนุมัติ • TLS",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 18,
+            "typeface": "Noto Sans Thai",
+            "color": "#5F6F7F",
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "เฉพาะ Client IP ที่อนุมัติ • TLS",
+              "anchor": 1,
+              "fontSize": 18,
+              "typeface": "Noto Sans Thai",
+              "color": "#5F6F7F",
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 17,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ulcfmh47",
+      "id": "17",
+      "bbox": [
+        98,
+        463,
+        472,
+        0.03
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.16"
+      },
+      "geometry": "straightConnector1",
+      "lineColor": "#D9E2EA",
+      "lineWidth": 1
+    },
+    {
+      "order": 18,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/xszy5sne",
+      "id": "18",
+      "bbox": [
+        98,
+        482,
+        150,
+        28
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.17"
+      },
+      "geometry": "rect",
+      "text": "Default",
+      "textPreview": "Default",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 20,
+        "typeface": "Noto Sans Thai",
+        "color": "#173F67",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Default"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Default",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 20,
+            "typeface": "Noto Sans Thai",
+            "color": "#173F67",
+            "bold": true,
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Default",
+              "anchor": 1,
+              "fontSize": 20,
+              "typeface": "Noto Sans Thai",
+              "color": "#173F67",
+              "bold": true,
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 19,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wrqxcnmt",
+      "id": "19",
+      "bbox": [
+        266,
+        484,
+        300,
+        28
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.18"
+      },
+      "geometry": "rect",
+      "text": "Deny พอร์ตอื่นทั้งหมด",
+      "textPreview": "Deny พอร์ตอื่นทั้งหมด",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 18,
+        "typeface": "Noto Sans Thai",
+        "color": "#5F6F7F",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Deny พอร์ตอื่นทั้งหมด"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Deny พอร์ตอื่นทั้งหมด",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 18,
+            "typeface": "Noto Sans Thai",
+            "color": "#5F6F7F",
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Deny พอร์ตอื่นทั้งหมด",
+              "anchor": 1,
+              "fontSize": 18,
+              "typeface": "Noto Sans Thai",
+              "color": "#5F6F7F",
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 20,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/obuxs7up",
+      "id": "20",
+      "bbox": [
+        650,
+        170,
+        300,
+        24
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.19"
+      },
+      "geometry": "rect",
+      "text": "WEEKLY BACKUP",
+      "textPreview": "WEEKLY BACKUP",
+      "resolvedFontSize": 14,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 14,
+        "typeface": "Noto Sans Thai",
+        "color": "#2E74B5",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "WEEKLY BACKUP"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "WEEKLY BACKUP",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 14,
+            "typeface": "Noto Sans Thai",
+            "color": "#2E74B5",
+            "bold": true,
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "WEEKLY BACKUP",
+              "anchor": 1,
+              "fontSize": 14,
+              "typeface": "Noto Sans Thai",
+              "color": "#2E74B5",
+              "bold": true,
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 21,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/9c3ylcva",
+      "id": "21",
+      "bbox": [
+        650,
+        208,
+        558,
+        316
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.20"
+      },
+      "geometry": "rect",
+      "fillColor": "#EAF2F8",
+      "lineColor": "#EAF2F8",
+      "lineWidth": 0
+    },
+    {
+      "order": 22,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/m9cfqxcz",
+      "id": "22",
+      "bbox": [
+        678,
+        232,
+        210,
+        34
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.21"
+      },
+      "geometry": "rect",
+      "text": "อาทิตย์ 02:00",
+      "textPreview": "อาทิตย์ 02:00",
+      "resolvedFontSize": 27,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 27,
+        "typeface": "Noto Sans Thai",
+        "color": "#17212B",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "อาทิตย์ 02:00"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "อาทิตย์ 02:00",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 27,
+            "typeface": "Noto Sans Thai",
+            "color": "#17212B",
+            "bold": true,
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "อาทิตย์ 02:00",
+              "anchor": 1,
+              "fontSize": 27,
+              "typeface": "Noto Sans Thai",
+              "color": "#17212B",
+              "bold": true,
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 23,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/nalgj2d4",
+      "id": "23",
+      "bbox": [
+        936,
+        237,
+        230,
+        28
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.22"
+      },
+      "geometry": "rect",
+      "text": "Asia/Bangkok",
+      "textPreview": "Asia/Bangkok",
+      "resolvedFontSize": 17,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 17,
+        "typeface": "Noto Sans Thai",
+        "color": "#5F6F7F",
+        "alignment": "right",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Asia/Bangkok"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Asia/Bangkok",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 17,
+            "typeface": "Noto Sans Thai",
+            "color": "#5F6F7F",
+            "alignment": "right",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Asia/Bangkok",
+              "anchor": 1,
+              "fontSize": 17,
+              "typeface": "Noto Sans Thai",
+              "color": "#5F6F7F",
+              "alignment": "right",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 24,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wzehw7u1",
+      "id": "24",
+      "bbox": [
+        682,
+        305,
+        38,
+        38
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.23"
+      },
+      "geometry": "rect",
+      "text": "1",
+      "textPreview": "1",
+      "resolvedFontSize": 23,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 23,
+        "typeface": "Noto Sans Thai",
+        "color": "#2E74B5",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "1"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "1",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 23,
+            "typeface": "Noto Sans Thai",
+            "color": "#2E74B5",
+            "bold": true,
+            "alignment": "center",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "1",
+              "anchor": 1,
+              "fontSize": 23,
+              "typeface": "Noto Sans Thai",
+              "color": "#2E74B5",
+              "bold": true,
+              "alignment": "center",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 25,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/x0nypcbm",
+      "id": "25",
+      "bbox": [
+        742,
+        308,
+        410,
+        30
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.24"
+      },
+      "geometry": "rect",
+      "text": "สร้าง MSSQL + MySQL backup",
+      "textPreview": "สร้าง MSSQL + MySQL backup",
+      "resolvedFontSize": 19,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 19,
+        "typeface": "Noto Sans Thai",
+        "color": "#17212B",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "สร้าง MSSQL + MySQL backup"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "สร้าง MSSQL + MySQL backup",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 19,
+            "typeface": "Noto Sans Thai",
+            "color": "#17212B",
+            "bold": true,
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "สร้าง MSSQL + MySQL backup",
+              "anchor": 1,
+              "fontSize": 19,
+              "typeface": "Noto Sans Thai",
+              "color": "#17212B",
+              "bold": true,
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 26,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/adcfuxcv",
+      "id": "26",
+      "bbox": [
+        682,
+        363,
+        38,
+        38
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.25"
+      },
+      "geometry": "rect",
+      "text": "2",
+      "textPreview": "2",
+      "resolvedFontSize": 23,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 23,
+        "typeface": "Noto Sans Thai",
+        "color": "#2E74B5",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "2"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "2",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 23,
+            "typeface": "Noto Sans Thai",
+            "color": "#2E74B5",
+            "bold": true,
+            "alignment": "center",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "2",
+              "anchor": 1,
+              "fontSize": 23,
+              "typeface": "Noto Sans Thai",
+              "color": "#2E74B5",
+              "bold": true,
+              "alignment": "center",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 27,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/by5gn2dg",
+      "id": "27",
+      "bbox": [
+        742,
+        366,
+        410,
+        30
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.26"
+      },
+      "geometry": "rect",
+      "text": "VERIFY / gzip test / SHA‑256",
+      "textPreview": "VERIFY / gzip test / SHA‑256",
+      "resolvedFontSize": 19,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 19,
+        "typeface": "Noto Sans Thai",
+        "color": "#17212B",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "VERIFY / gzip test / SHA‑256"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "VERIFY / gzip test / SHA‑256",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 19,
+            "typeface": "Noto Sans Thai",
+            "color": "#17212B",
+            "bold": true,
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "VERIFY / gzip test / SHA‑256",
+              "anchor": 1,
+              "fontSize": 19,
+              "typeface": "Noto Sans Thai",
+              "color": "#17212B",
+              "bold": true,
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 28,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/k3eh0rux",
+      "id": "28",
+      "bbox": [
+        682,
+        421,
+        38,
+        38
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.27"
+      },
+      "geometry": "rect",
+      "text": "3",
+      "textPreview": "3",
+      "resolvedFontSize": 23,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 23,
+        "typeface": "Noto Sans Thai",
+        "color": "#2E74B5",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "3"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "3",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 23,
+            "typeface": "Noto Sans Thai",
+            "color": "#2E74B5",
+            "bold": true,
+            "alignment": "center",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "3",
+              "anchor": 1,
+              "fontSize": 23,
+              "typeface": "Noto Sans Thai",
+              "color": "#2E74B5",
+              "bold": true,
+              "alignment": "center",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 29,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/l4nytwbi",
+      "id": "29",
+      "bbox": [
+        742,
+        424,
+        410,
+        30
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.28"
+      },
+      "geometry": "rect",
+      "text": "เก็บ 70 วัน และวางใน /outgoing",
+      "textPreview": "เก็บ 70 วัน และวางใน /outgoing",
+      "resolvedFontSize": 19,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 19,
+        "typeface": "Noto Sans Thai",
+        "color": "#17212B",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "เก็บ 70 วัน และวางใน /outgoing"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "เก็บ 70 วัน และวางใน /outgoing",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 19,
+            "typeface": "Noto Sans Thai",
+            "color": "#17212B",
+            "bold": true,
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "เก็บ 70 วัน และวางใน /outgoing",
+              "anchor": 1,
+              "fontSize": 19,
+              "typeface": "Noto Sans Thai",
+              "color": "#17212B",
+              "bold": true,
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 30,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/vy90jqdk",
+      "id": "30",
+      "bbox": [
+        682,
+        479,
+        38,
+        38
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.29"
+      },
+      "geometry": "rect",
+      "text": "4",
+      "textPreview": "4",
+      "resolvedFontSize": 23,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 23,
+        "typeface": "Noto Sans Thai",
+        "color": "#2E74B5",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "4"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "4",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 23,
+            "typeface": "Noto Sans Thai",
+            "color": "#2E74B5",
+            "bold": true,
+            "alignment": "center",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "4",
+              "anchor": 1,
+              "fontSize": 23,
+              "typeface": "Noto Sans Thai",
+              "color": "#2E74B5",
+              "bold": true,
+              "alignment": "center",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 31,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ux0jqlwz",
+      "id": "31",
+      "bbox": [
+        742,
+        482,
+        410,
+        30
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.30"
+      },
+      "geometry": "rect",
+      "text": "ดาวน์โหลดผ่าน SFTP ไปบริษัท/NAS",
+      "textPreview": "ดาวน์โหลดผ่าน SFTP ไปบริษัท/NAS",
+      "resolvedFontSize": 19,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 19,
+        "typeface": "Noto Sans Thai",
+        "color": "#17212B",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "ดาวน์โหลดผ่าน SFTP ไปบริษัท/NAS"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "ดาวน์โหลดผ่าน SFTP ไปบริษัท/NAS",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 19,
+            "typeface": "Noto Sans Thai",
+            "color": "#17212B",
+            "bold": true,
+            "alignment": "left",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "ดาวน์โหลดผ่าน SFTP ไปบริษัท/NAS",
+              "anchor": 1,
+              "fontSize": 19,
+              "typeface": "Noto Sans Thai",
+              "color": "#17212B",
+              "bold": true,
+              "alignment": "left",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    },
+    {
+      "order": 32,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/h0rilgvq",
+      "id": "32",
+      "bbox": [
+        72,
+        560,
+        1136,
+        72
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.31"
+      },
+      "geometry": "rect",
+      "fillColor": "#FFF0C2",
+      "lineColor": "#FFF0C2",
+      "lineWidth": 0
+    },
+    {
+      "order": 33,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/gzi1sve5",
+      "id": "33",
+      "bbox": [
+        96,
+        580,
+        1088,
+        34
+      ],
+      "composeSource": {
+        "run": 1,
+        "path": "0.32"
+      },
+      "geometry": "rect",
+      "text": "หลักการ: Public endpoint ช่วยให้เชื่อมต่อง่าย — แต่ไม่เปิด 0.0.0.0/0 ให้ฐานข้อมูลเป็นค่าเริ่มต้น",
+      "textPreview": "หลักการ: Public endpoint ช่วยให้เชื่อมต่อง่าย — แต่ไม่เปิด 0.0.0.0/0 ให้ฐานข้อมูลเป็นค่าเริ่มต้น",
+      "resolvedFontSize": 22,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 22,
+        "typeface": "Noto Sans Thai",
+        "color": "#173F67",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "หลักการ: Public endpoint ช่วยให้เชื่อมต่อง่าย — แต่ไม่เปิด 0.0.0.0/0 ให้ฐานข้อมูลเป็นค่าเริ่มต้น"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "หลักการ: Public endpoint ช่วยให้เชื่อมต่อง่าย — แต่ไม่เปิด 0.0.0.0/0 ให้ฐานข้อมูลเป็นค่าเริ่มต้น",
+          "resolvedTextStyle": {
+            "anchor": 1,
+            "fontSize": 22,
+            "typeface": "Noto Sans Thai",
+            "color": "#173F67",
+            "bold": true,
+            "alignment": "center",
+            "verticalAlignment": "top",
+            "wrap": "square",
+            "autoFit": "shrinkText",
+            "insets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "หลักการ: Public endpoint ช่วยให้เชื่อมต่อง่าย — แต่ไม่เปิด 0.0.0.0/0 ให้ฐานข้อมูลเป็นค่าเริ่มต้น",
+              "anchor": 1,
+              "fontSize": 22,
+              "typeface": "Noto Sans Thai",
+              "color": "#173F67",
+              "bold": true,
+              "alignment": "center",
+              "verticalAlignment": "top",
+              "wrap": "square",
+              "autoFit": "shrinkText",
+              "insets": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ],
+          "marginLeft": 0
+        }
+      ]
+    }
+  ],
+  "composeRuns": [
+    {
+      "index": 1,
+      "frame": {
+        "left": 0,
+        "top": 0,
+        "width": 1280,
+        "height": 720
+      },
+      "baseUnit": 1,
+      "root": {
+        "path": "0",
+        "kind": "layers",
+        "name": "worldfert-codex-grid",
+        "requestedSize": {
+          "width": {
+            "mode": "fill",
+            "value": 1
+          },
+          "height": {
+            "mode": "fill",
+            "value": 1
+          }
+        },
+        "intrinsicSize": {
+          "width": 1232,
+          "height": 700
+        },
+        "frame": {
+          "left": 0,
+          "top": 0,
+          "width": 1280,
+          "height": 720
+        },
+        "children": [
+          {
+            "path": "0.0",
+            "kind": "text",
+            "position": {
+              "left": 48,
+              "top": 30
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 500
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 24
+              }
+            },
+            "intrinsicSize": {
+              "width": 500,
+              "height": 24
+            },
+            "frame": {
+              "left": 48,
+              "top": 30,
+              "width": 500,
+              "height": 24
+            },
+            "snappedFrame": {
+              "left": 48,
+              "top": 30,
+              "width": 500,
+              "height": 24
+            },
+            "children": [],
+            "text": "WORLDFERT / CLOUD MIGRATION",
+            "transform": "none",
+            "element": {
+              "aid": "sh/h87md47q",
+              "id": "1",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.1",
+            "kind": "shape",
+            "position": {
+              "left": 48,
+              "top": 78
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 8
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 54
+              }
+            },
+            "intrinsicSize": {
+              "width": 8,
+              "height": 54
+            },
+            "frame": {
+              "left": 48,
+              "top": 78,
+              "width": 8,
+              "height": 54
+            },
+            "snappedFrame": {
+              "left": 48,
+              "top": 78,
+              "width": 8,
+              "height": 54
+            },
+            "children": [],
+            "geometry": "rect",
+            "element": {
+              "aid": "sh/u5gn2p8z",
+              "id": "2",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.2",
+            "kind": "text",
+            "position": {
+              "left": 76,
+              "top": 76
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 1110
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 60
+              }
+            },
+            "intrinsicSize": {
+              "width": 1110,
+              "height": 60
+            },
+            "frame": {
+              "left": 76,
+              "top": 76,
+              "width": 1110,
+              "height": 60
+            },
+            "snappedFrame": {
+              "left": 76,
+              "top": 76,
+              "width": 1110,
+              "height": 60
+            },
+            "children": [],
+            "text": "Public IP: ใช้ง่าย โดยคุมสิทธิ์อย่างชัดเจน",
+            "transform": "none",
+            "element": {
+              "aid": "sh/v6p4bupk",
+              "id": "3",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.3",
+            "kind": "shape",
+            "position": {
+              "left": 48,
+              "top": 670
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 1184
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 0.03
+              }
+            },
+            "intrinsicSize": {
+              "width": 1184,
+              "height": 0.03
+            },
+            "frame": {
+              "left": 48,
+              "top": 670,
+              "width": 1184,
+              "height": 0.03
+            },
+            "snappedFrame": {
+              "left": 48,
+              "top": 670,
+              "width": 1184,
+              "height": 0.03
+            },
+            "children": [],
+            "geometry": "straightConnector1",
+            "element": {
+              "aid": "sh/4bi58zqh",
+              "id": "4",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.4",
+            "kind": "text",
+            "position": {
+              "left": 48,
+              "top": 682
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 350
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 18
+              }
+            },
+            "intrinsicSize": {
+              "width": 350,
+              "height": 18
+            },
+            "frame": {
+              "left": 48,
+              "top": 682,
+              "width": 350,
+              "height": 18
+            },
+            "snappedFrame": {
+              "left": 48,
+              "top": 682,
+              "width": 350,
+              "height": 18
+            },
+            "children": [],
+            "text": "C‑LEVEL DECISION BRIEF",
+            "transform": "none",
+            "element": {
+              "aid": "sh/5crmh47m",
+              "id": "5",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.5",
+            "kind": "text",
+            "position": {
+              "left": 1170,
+              "top": 680
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 62
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 20
+              }
+            },
+            "intrinsicSize": {
+              "width": 62,
+              "height": 20
+            },
+            "frame": {
+              "left": 1170,
+              "top": 680,
+              "width": 62,
+              "height": 20
+            },
+            "snappedFrame": {
+              "left": 1170,
+              "top": 680,
+              "width": 62,
+              "height": 20
+            },
+            "children": [],
+            "text": "04",
+            "transform": "none",
+            "element": {
+              "aid": "sh/i9gn698b",
+              "id": "6",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.6",
+            "kind": "text",
+            "position": {
+              "left": 72,
+              "top": 170
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 260
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 24
+              }
+            },
+            "intrinsicSize": {
+              "width": 260,
+              "height": 24
+            },
+            "frame": {
+              "left": 72,
+              "top": 170,
+              "width": 260,
+              "height": 24
+            },
+            "snappedFrame": {
+              "left": 72,
+              "top": 170,
+              "width": 260,
+              "height": 24
+            },
+            "children": [],
+            "text": "PORT POLICY",
+            "transform": "none",
+            "element": {
+              "aid": "sh/jap4fepw",
+              "id": "7",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.7",
+            "kind": "shape",
+            "position": {
+              "left": 72,
+              "top": 208
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 526
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 316
+              }
+            },
+            "intrinsicSize": {
+              "width": 526,
+              "height": 316
+            },
+            "frame": {
+              "left": 72,
+              "top": 208,
+              "width": 526,
+              "height": 316
+            },
+            "snappedFrame": {
+              "left": 72,
+              "top": 208,
+              "width": 526,
+              "height": 316
+            },
+            "children": [],
+            "geometry": "rect",
+            "element": {
+              "aid": "sh/szi5cjqd",
+              "id": "8",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.8",
+            "kind": "text",
+            "position": {
+              "left": 98,
+              "top": 232
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 150
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 32
+              }
+            },
+            "intrinsicSize": {
+              "width": 150,
+              "height": 32
+            },
+            "frame": {
+              "left": 98,
+              "top": 232,
+              "width": 150,
+              "height": 32
+            },
+            "snappedFrame": {
+              "left": 98,
+              "top": 232,
+              "width": 150,
+              "height": 32
+            },
+            "children": [],
+            "text": "80 / 443",
+            "transform": "none",
+            "element": {
+              "aid": "sh/t0rmlo7y",
+              "id": "9",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.9",
+            "kind": "text",
+            "position": {
+              "left": 266,
+              "top": 237
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 300
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 28
+              }
+            },
+            "intrinsicSize": {
+              "width": 300,
+              "height": 28
+            },
+            "frame": {
+              "left": 266,
+              "top": 237,
+              "width": 300,
+              "height": 28
+            },
+            "snappedFrame": {
+              "left": 266,
+              "top": 237,
+              "width": 300,
+              "height": 28
+            },
+            "children": [],
+            "text": "เปิดสู่ Internet สำหรับ Web/API",
+            "transform": "none",
+            "element": {
+              "aid": "sh/tk3ydc3m",
+              "id": "10",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.10",
+            "kind": "shape",
+            "position": {
+              "left": 98,
+              "top": 282
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 472
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 0.03
+              }
+            },
+            "intrinsicSize": {
+              "width": 472,
+              "height": 0.03
+            },
+            "frame": {
+              "left": 98,
+              "top": 282,
+              "width": 472,
+              "height": 0.03
+            },
+            "snappedFrame": {
+              "left": 98,
+              "top": 282,
+              "width": 472,
+              "height": 0.03
+            },
+            "children": [],
+            "geometry": "straightConnector1",
+            "element": {
+              "aid": "sh/sjaxk7m1",
+              "id": "11",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.11",
+            "kind": "text",
+            "position": {
+              "left": 98,
+              "top": 305
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 150
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 32
+              }
+            },
+            "intrinsicSize": {
+              "width": 150,
+              "height": 32
+            },
+            "frame": {
+              "left": 98,
+              "top": 305,
+              "width": 150,
+              "height": 32
+            },
+            "snappedFrame": {
+              "left": 98,
+              "top": 305,
+              "width": 150,
+              "height": 32
+            },
+            "children": [],
+            "text": "22",
+            "transform": "none",
+            "element": {
+              "aid": "sh/7i1gbmlg",
+              "id": "12",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.12",
+            "kind": "text",
+            "position": {
+              "left": 266,
+              "top": 310
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 300
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 48
+              }
+            },
+            "intrinsicSize": {
+              "width": 300,
+              "height": 48
+            },
+            "frame": {
+              "left": 266,
+              "top": 310,
+              "width": 300,
+              "height": 48
+            },
+            "snappedFrame": {
+              "left": 266,
+              "top": 310,
+              "width": 300,
+              "height": 48
+            },
+            "children": [],
+            "text": "เฉพาะ IP ผู้ดูแล • Key only • Chroot",
+            "transform": "none",
+            "element": {
+              "aid": "sh/6xsfih4b",
+              "id": "13",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.13",
+            "kind": "shape",
+            "position": {
+              "left": 98,
+              "top": 374
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 472
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 0.03
+              }
+            },
+            "intrinsicSize": {
+              "width": 472,
+              "height": 0.03
+            },
+            "frame": {
+              "left": 98,
+              "top": 374,
+              "width": 472,
+              "height": 0.03
+            },
+            "snappedFrame": {
+              "left": 98,
+              "top": 374,
+              "width": 472,
+              "height": 0.03
+            },
+            "children": [],
+            "geometry": "straightConnector1",
+            "element": {
+              "aid": "sh/ho3yhw3y",
+              "id": "14",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.14",
+            "kind": "text",
+            "position": {
+              "left": 98,
+              "top": 397
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 150
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 40
+              }
+            },
+            "intrinsicSize": {
+              "width": 150,
+              "height": 40
+            },
+            "frame": {
+              "left": 98,
+              "top": 397,
+              "width": 150,
+              "height": 40
+            },
+            "snappedFrame": {
+              "left": 98,
+              "top": 397,
+              "width": 150,
+              "height": 40
+            },
+            "children": [],
+            "text": "1433 / 3306",
+            "transform": "none",
+            "element": {
+              "aid": "sh/gnuxormd",
+              "id": "15",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.15",
+            "kind": "text",
+            "position": {
+              "left": 266,
+              "top": 402
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 300
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 42
+              }
+            },
+            "intrinsicSize": {
+              "width": 300,
+              "height": 42
+            },
+            "frame": {
+              "left": 266,
+              "top": 402,
+              "width": 300,
+              "height": 42
+            },
+            "snappedFrame": {
+              "left": 266,
+              "top": 402,
+              "width": 300,
+              "height": 42
+            },
+            "children": [],
+            "text": "เฉพาะ Client IP ที่อนุมัติ • TLS",
+            "transform": "none",
+            "element": {
+              "aid": "sh/fmlgfmls",
+              "id": "16",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.16",
+            "kind": "shape",
+            "position": {
+              "left": 98,
+              "top": 463
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 472
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 0.03
+              }
+            },
+            "intrinsicSize": {
+              "width": 472,
+              "height": 0.03
+            },
+            "frame": {
+              "left": 98,
+              "top": 463,
+              "width": 472,
+              "height": 0.03
+            },
+            "snappedFrame": {
+              "left": 98,
+              "top": 463,
+              "width": 472,
+              "height": 0.03
+            },
+            "children": [],
+            "geometry": "straightConnector1",
+            "element": {
+              "aid": "sh/ulcfmh47",
+              "id": "17",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.17",
+            "kind": "text",
+            "position": {
+              "left": 98,
+              "top": 482
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 150
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 28
+              }
+            },
+            "intrinsicSize": {
+              "width": 150,
+              "height": 28
+            },
+            "frame": {
+              "left": 98,
+              "top": 482,
+              "width": 150,
+              "height": 28
+            },
+            "snappedFrame": {
+              "left": 98,
+              "top": 482,
+              "width": 150,
+              "height": 28
+            },
+            "children": [],
+            "text": "Default",
+            "transform": "none",
+            "element": {
+              "aid": "sh/xszy5sne",
+              "id": "18",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.18",
+            "kind": "text",
+            "position": {
+              "left": 266,
+              "top": 484
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 300
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 28
+              }
+            },
+            "intrinsicSize": {
+              "width": 300,
+              "height": 28
+            },
+            "frame": {
+              "left": 266,
+              "top": 484,
+              "width": 300,
+              "height": 28
+            },
+            "snappedFrame": {
+              "left": 266,
+              "top": 484,
+              "width": 300,
+              "height": 28
+            },
+            "children": [],
+            "text": "Deny พอร์ตอื่นทั้งหมด",
+            "transform": "none",
+            "element": {
+              "aid": "sh/wrqxcnmt",
+              "id": "19",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.19",
+            "kind": "text",
+            "position": {
+              "left": 650,
+              "top": 170
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 300
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 24
+              }
+            },
+            "intrinsicSize": {
+              "width": 300,
+              "height": 24
+            },
+            "frame": {
+              "left": 650,
+              "top": 170,
+              "width": 300,
+              "height": 24
+            },
+            "snappedFrame": {
+              "left": 650,
+              "top": 170,
+              "width": 300,
+              "height": 24
+            },
+            "children": [],
+            "text": "WEEKLY BACKUP",
+            "transform": "none",
+            "element": {
+              "aid": "sh/obuxs7up",
+              "id": "20",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.20",
+            "kind": "shape",
+            "position": {
+              "left": 650,
+              "top": 208
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 558
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 316
+              }
+            },
+            "intrinsicSize": {
+              "width": 558,
+              "height": 316
+            },
+            "frame": {
+              "left": 650,
+              "top": 208,
+              "width": 558,
+              "height": 316
+            },
+            "snappedFrame": {
+              "left": 650,
+              "top": 208,
+              "width": 558,
+              "height": 316
+            },
+            "children": [],
+            "geometry": "rect",
+            "element": {
+              "aid": "sh/9c3ylcva",
+              "id": "21",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.21",
+            "kind": "text",
+            "position": {
+              "left": 678,
+              "top": 232
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 210
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 34
+              }
+            },
+            "intrinsicSize": {
+              "width": 210,
+              "height": 34
+            },
+            "frame": {
+              "left": 678,
+              "top": 232,
+              "width": 210,
+              "height": 34
+            },
+            "snappedFrame": {
+              "left": 678,
+              "top": 232,
+              "width": 210,
+              "height": 34
+            },
+            "children": [],
+            "text": "อาทิตย์ 02:00",
+            "transform": "none",
+            "element": {
+              "aid": "sh/m9cfqxcz",
+              "id": "22",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.22",
+            "kind": "text",
+            "position": {
+              "left": 936,
+              "top": 237
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 230
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 28
+              }
+            },
+            "intrinsicSize": {
+              "width": 230,
+              "height": 28
+            },
+            "frame": {
+              "left": 936,
+              "top": 237,
+              "width": 230,
+              "height": 28
+            },
+            "snappedFrame": {
+              "left": 936,
+              "top": 237,
+              "width": 230,
+              "height": 28
+            },
+            "children": [],
+            "text": "Asia/Bangkok",
+            "transform": "none",
+            "element": {
+              "aid": "sh/nalgj2d4",
+              "id": "23",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.23",
+            "kind": "text",
+            "position": {
+              "left": 682,
+              "top": 305
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 38
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 38
+              }
+            },
+            "intrinsicSize": {
+              "width": 38,
+              "height": 38
+            },
+            "frame": {
+              "left": 682,
+              "top": 305,
+              "width": 38,
+              "height": 38
+            },
+            "snappedFrame": {
+              "left": 682,
+              "top": 305,
+              "width": 38,
+              "height": 38
+            },
+            "children": [],
+            "text": "1",
+            "transform": "none",
+            "element": {
+              "aid": "sh/wzehw7u1",
+              "id": "24",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.24",
+            "kind": "text",
+            "position": {
+              "left": 742,
+              "top": 308
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 410
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 30
+              }
+            },
+            "intrinsicSize": {
+              "width": 410,
+              "height": 30
+            },
+            "frame": {
+              "left": 742,
+              "top": 308,
+              "width": 410,
+              "height": 30
+            },
+            "snappedFrame": {
+              "left": 742,
+              "top": 308,
+              "width": 410,
+              "height": 30
+            },
+            "children": [],
+            "text": "สร้าง MSSQL + MySQL backup",
+            "transform": "none",
+            "element": {
+              "aid": "sh/x0nypcbm",
+              "id": "25",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.25",
+            "kind": "text",
+            "position": {
+              "left": 682,
+              "top": 363
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 38
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 38
+              }
+            },
+            "intrinsicSize": {
+              "width": 38,
+              "height": 38
+            },
+            "frame": {
+              "left": 682,
+              "top": 363,
+              "width": 38,
+              "height": 38
+            },
+            "snappedFrame": {
+              "left": 682,
+              "top": 363,
+              "width": 38,
+              "height": 38
+            },
+            "children": [],
+            "text": "2",
+            "transform": "none",
+            "element": {
+              "aid": "sh/adcfuxcv",
+              "id": "26",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.26",
+            "kind": "text",
+            "position": {
+              "left": 742,
+              "top": 366
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 410
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 30
+              }
+            },
+            "intrinsicSize": {
+              "width": 410,
+              "height": 30
+            },
+            "frame": {
+              "left": 742,
+              "top": 366,
+              "width": 410,
+              "height": 30
+            },
+            "snappedFrame": {
+              "left": 742,
+              "top": 366,
+              "width": 410,
+              "height": 30
+            },
+            "children": [],
+            "text": "VERIFY / gzip test / SHA‑256",
+            "transform": "none",
+            "element": {
+              "aid": "sh/by5gn2dg",
+              "id": "27",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.27",
+            "kind": "text",
+            "position": {
+              "left": 682,
+              "top": 421
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 38
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 38
+              }
+            },
+            "intrinsicSize": {
+              "width": 38,
+              "height": 38
+            },
+            "frame": {
+              "left": 682,
+              "top": 421,
+              "width": 38,
+              "height": 38
+            },
+            "snappedFrame": {
+              "left": 682,
+              "top": 421,
+              "width": 38,
+              "height": 38
+            },
+            "children": [],
+            "text": "3",
+            "transform": "none",
+            "element": {
+              "aid": "sh/k3eh0rux",
+              "id": "28",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.28",
+            "kind": "text",
+            "position": {
+              "left": 742,
+              "top": 424
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 410
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 30
+              }
+            },
+            "intrinsicSize": {
+              "width": 410,
+              "height": 30
+            },
+            "frame": {
+              "left": 742,
+              "top": 424,
+              "width": 410,
+              "height": 30
+            },
+            "snappedFrame": {
+              "left": 742,
+              "top": 424,
+              "width": 410,
+              "height": 30
+            },
+            "children": [],
+            "text": "เก็บ 70 วัน และวางใน /outgoing",
+            "transform": "none",
+            "element": {
+              "aid": "sh/l4nytwbi",
+              "id": "29",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.29",
+            "kind": "text",
+            "position": {
+              "left": 682,
+              "top": 479
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 38
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 38
+              }
+            },
+            "intrinsicSize": {
+              "width": 38,
+              "height": 38
+            },
+            "frame": {
+              "left": 682,
+              "top": 479,
+              "width": 38,
+              "height": 38
+            },
+            "snappedFrame": {
+              "left": 682,
+              "top": 479,
+              "width": 38,
+              "height": 38
+            },
+            "children": [],
+            "text": "4",
+            "transform": "none",
+            "element": {
+              "aid": "sh/vy90jqdk",
+              "id": "30",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.30",
+            "kind": "text",
+            "position": {
+              "left": 742,
+              "top": 482
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 410
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 30
+              }
+            },
+            "intrinsicSize": {
+              "width": 410,
+              "height": 30
+            },
+            "frame": {
+              "left": 742,
+              "top": 482,
+              "width": 410,
+              "height": 30
+            },
+            "snappedFrame": {
+              "left": 742,
+              "top": 482,
+              "width": 410,
+              "height": 30
+            },
+            "children": [],
+            "text": "ดาวน์โหลดผ่าน SFTP ไปบริษัท/NAS",
+            "transform": "none",
+            "element": {
+              "aid": "sh/ux0jqlwz",
+              "id": "31",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.31",
+            "kind": "shape",
+            "position": {
+              "left": 72,
+              "top": 560
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 1136
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 72
+              }
+            },
+            "intrinsicSize": {
+              "width": 1136,
+              "height": 72
+            },
+            "frame": {
+              "left": 72,
+              "top": 560,
+              "width": 1136,
+              "height": 72
+            },
+            "snappedFrame": {
+              "left": 72,
+              "top": 560,
+              "width": 1136,
+              "height": 72
+            },
+            "children": [],
+            "geometry": "rect",
+            "element": {
+              "aid": "sh/h0rilgvq",
+              "id": "32",
+              "kind": "shape"
+            }
+          },
+          {
+            "path": "0.32",
+            "kind": "text",
+            "position": {
+              "left": 96,
+              "top": 580
+            },
+            "requestedSize": {
+              "width": {
+                "mode": "fixed",
+                "value": 1088
+              },
+              "height": {
+                "mode": "fixed",
+                "value": 34
+              }
+            },
+            "intrinsicSize": {
+              "width": 1088,
+              "height": 34
+            },
+            "frame": {
+              "left": 96,
+              "top": 580,
+              "width": 1088,
+              "height": 34
+            },
+            "snappedFrame": {
+              "left": 96,
+              "top": 580,
+              "width": 1088,
+              "height": 34
+            },
+            "children": [],
+            "text": "หลักการ: Public endpoint ช่วยให้เชื่อมต่อง่าย — แต่ไม่เปิด 0.0.0.0/0 ให้ฐานข้อมูลเป็นค่าเริ่มต้น",
+            "transform": "none",
+            "element": {
+              "aid": "sh/gzi1sve5",
+              "id": "33",
+              "kind": "shape"
+            }
+          }
+        ],
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "alignItems": "stretch",
+        "justifyItems": "stretch",
+        "contentFrame": {
+          "left": 0,
+          "top": 0,
+          "width": 1280,
+          "height": 720
+        },
+        "items": [
+          {
+            "path": "0.0",
+            "frame": {
+              "left": 48,
+              "top": 30,
+              "width": 500,
+              "height": 24
+            }
+          },
+          {
+            "path": "0.1",
+            "frame": {
+              "left": 48,
+              "top": 78,
+              "width": 8,
+              "height": 54
+            }
+          },
+          {
+            "path": "0.2",
+            "frame": {
+              "left": 76,
+              "top": 76,
+              "width": 1110,
+              "height": 60
+            }
+          },
+          {
+            "path": "0.3",
+            "frame": {
+              "left": 48,
+              "top": 670,
+              "width": 1184,
+              "height": 0.03
+            }
+          },
+          {
+            "path": "0.4",
+            "frame": {
+              "left": 48,
+              "top": 682,
+              "width": 350,
+              "height": 18
+            }
+          },
+          {
+            "path": "0.5",
+            "frame": {
+              "left": 1170,
+              "top": 680,
+              "width": 62,
+              "height": 20
+            }
+          },
+          {
+            "path": "0.6",
+            "frame": {
+              "left": 72,
+              "top": 170,
+              "width": 260,
+              "height": 24
+            }
+          },
+          {
+            "path": "0.7",
+            "frame": {
+              "left": 72,
+              "top": 208,
+              "width": 526,
+              "height": 316
+            }
+          },
+          {
+            "path": "0.8",
+            "frame": {
+              "left": 98,
+              "top": 232,
+              "width": 150,
+              "height": 32
+            }
+          },
+          {
+            "path": "0.9",
+            "frame": {
+              "left": 266,
+              "top": 237,
+              "width": 300,
+              "height": 28
+            }
+          },
+          {
+            "path": "0.10",
+            "frame": {
+              "left": 98,
+              "top": 282,
+              "width": 472,
+              "height": 0.03
+            }
+          },
+          {
+            "path": "0.11",
+            "frame": {
+              "left": 98,
+              "top": 305,
+              "width": 150,
+              "height": 32
+            }
+          },
+          {
+            "path": "0.12",
+            "frame": {
+              "left": 266,
+              "top": 310,
+              "width": 300,
+              "height": 48
+            }
+          },
+          {
+            "path": "0.13",
+            "frame": {
+              "left": 98,
+              "top": 374,
+              "width": 472,
+              "height": 0.03
+            }
+          },
+          {
+            "path": "0.14",
+            "frame": {
+              "left": 98,
+              "top": 397,
+              "width": 150,
+              "height": 40
+            }
+          },
+          {
+            "path": "0.15",
+            "frame": {
+              "left": 266,
+              "top": 402,
+              "width": 300,
+              "height": 42
+            }
+          },
+          {
+            "path": "0.16",
+            "frame": {
+              "left": 98,
+              "top": 463,
+              "width": 472,
+              "height": 0.03
+            }
+          },
+          {
+            "path": "0.17",
+            "frame": {
+              "left": 98,
+              "top": 482,
+              "width": 150,
+              "height": 28
+            }
+          },
+          {
+            "path": "0.18",
+            "frame": {
+              "left": 266,
+              "top": 484,
+              "width": 300,
+              "height": 28
+            }
+          },
+          {
+            "path": "0.19",
+            "frame": {
+              "left": 650,
+              "top": 170,
+              "width": 300,
+              "height": 24
+            }
+          },
+          {
+            "path": "0.20",
+            "frame": {
+              "left": 650,
+              "top": 208,
+              "width": 558,
+              "height": 316
+            }
+          },
+          {
+            "path": "0.21",
+            "frame": {
+              "left": 678,
+              "top": 232,
+              "width": 210,
+              "height": 34
+            }
+          },
+          {
+            "path": "0.22",
+            "frame": {
+              "left": 936,
+              "top": 237,
+              "width": 230,
+              "height": 28
+            }
+          },
+          {
+            "path": "0.23",
+            "frame": {
+              "left": 682,
+              "top": 305,
+              "width": 38,
+              "height": 38
+            }
+          },
+          {
+            "path": "0.24",
+            "frame": {
+              "left": 742,
+              "top": 308,
+              "width": 410,
+              "height": 30
+            }
+          },
+          {
+            "path": "0.25",
+            "frame": {
+              "left": 682,
+              "top": 363,
+              "width": 38,
+              "height": 38
+            }
+          },
+          {
+            "path": "0.26",
+            "frame": {
+              "left": 742,
+              "top": 366,
+              "width": 410,
+              "height": 30
+            }
+          },
+          {
+            "path": "0.27",
+            "frame": {
+              "left": 682,
+              "top": 421,
+              "width": 38,
+              "height": 38
+            }
+          },
+          {
+            "path": "0.28",
+            "frame": {
+              "left": 742,
+              "top": 424,
+              "width": 410,
+              "height": 30
+            }
+          },
+          {
+            "path": "0.29",
+            "frame": {
+              "left": 682,
+              "top": 479,
+              "width": 38,
+              "height": 38
+            }
+          },
+          {
+            "path": "0.30",
+            "frame": {
+              "left": 742,
+              "top": 482,
+              "width": 410,
+              "height": 30
+            }
+          },
+          {
+            "path": "0.31",
+            "frame": {
+              "left": 72,
+              "top": 560,
+              "width": 1136,
+              "height": 72
+            }
+          },
+          {
+            "path": "0.32",
+            "frame": {
+              "left": 96,
+              "top": 580,
+              "width": 1088,
+              "height": 34
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

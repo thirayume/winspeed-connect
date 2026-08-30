@@ -1,0 +1,65 @@
+{$ROOT_DOMAIN}, www.{$ROOT_DOMAIN} {
+	redir https://{$APP_DOMAIN}{uri} permanent
+}
+
+{$APP_DOMAIN} {
+	encode gzip
+	reverse_proxy frontend:80
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}
+
+{$PORTAINER_DOMAIN} {
+	encode gzip
+	reverse_proxy portainer:9000
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		-Server
+	}
+}
+
+{$API_DOMAIN} {
+	encode gzip
+	reverse_proxy backend:3000 {
+		flush_interval -1
+	}
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}
+
+# Isolated application containers backed by *_test databases. These hostnames
+# are derived from ROOT_DOMAIN so the production .env needs no duplicate domain
+# settings: test.example.com and api-test.example.com.
+test.{$ROOT_DOMAIN} {
+	encode gzip
+	reverse_proxy wf-frontend-test:80
+	header {
+		X-WorldFert-Environment test
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}
+
+api-test.{$ROOT_DOMAIN} {
+	encode gzip
+	reverse_proxy wf-backend-test:3000 {
+		flush_interval -1
+	}
+	header {
+		X-WorldFert-Environment test
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}

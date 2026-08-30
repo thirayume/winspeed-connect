@@ -670,124 +670,140 @@ export function CreateSODialog({
             {isTruckInfoCollapsed ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronUp size={16} className="text-gray-400" />}
           </div>
           
-          <div className={`px-4 sm:px-6 py-2 sm:py-3 transition-all overflow-hidden ${isTruckInfoCollapsed ? 'hidden lg:block' : 'block'}`}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:flex lg:flex-wrap items-end gap-2 sm:gap-4">
-            {userRole === 'ADMIN' && (
-              <div className="min-w-[200px]">
-                <label className="text-[10px] font-bold text-amber-700 block mb-0.5">ทำรายการแทน (Admin)</label>
-                <select value={salesUserId} onChange={e => setSalesUserId(e.target.value)}
-                  className="w-full border border-amber-200 rounded-lg px-2 py-1.5 text-sm bg-amber-50 text-amber-900 focus:ring-amber-500 focus:outline-none">
-                  <option value="">-- เป็นตัวเอง --</option>
-                  {salesUsers.map(u => <option key={u.Id} value={u.Id}>{u.DisplayName} ({u.Username})</option>)}
-                </select>
-              </div>
-            )}
-            <div className="relative flex-1 min-w-[200px] max-w-xs">
-              <label className="text-[10px] font-bold text-gray-500 block mb-0.5">ลูกค้า <span className="text-red-500">*</span></label>
-              <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  value={custSearch}
-                  onChange={e => { setCustSearch(e.target.value); if (custId) setCustId(''); }}
-                  onFocus={() => setIsCustOpen(true)} onBlur={() => setTimeout(() => setIsCustOpen(false), 200)}
-                  placeholder="ค้นหาชื่อลูกค้า..."
-                  className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                {isCustOpen && (
-                  <div className="absolute z-30 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                    {customers.map(c => (
-                      <div key={c.CustID} className="px-3 py-2 text-sm hover:bg-blue-50 cursor-pointer border-b" onClick={() => { setCustId(c.CustID); setCustSearch(c.CustName); setBills(prev => prev.map(b => ({ ...b, creditDays: c.CreditDays || 0 }))); setIsCustOpen(false); }}>
-                        <div className="font-bold">{c.CustName}</div><div className="text-[10px] text-gray-500">{c.CustID}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="relative min-w-[140px]">
-              <label className="text-[10px] font-bold text-gray-500 block mb-0.5"><Truck size={10} className="inline mr-0.5"/>ทะเบียนรถ</label>
-              <input
-                value={truckPlate} onChange={e => setTruckPlate(e.target.value)}
-                onFocus={() => setIsTruckOpen(true)} onBlur={() => setTimeout(() => setIsTruckOpen(false), 200)}
-                placeholder="70-1087/88"
-                disabled={noTruckRequired}
-                className={`w-full border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none disabled:bg-gray-100 disabled:text-gray-400 ${truckPlate && truckPlates.length > 0 && !truckPlates.includes(truckPlate) ? 'border-red-400 text-red-600 bg-red-50' : 'border-gray-200'}`}
-              />
-              {isTruckOpen && !noTruckRequired && truckPlates.length > 0 && (
-                <div className="absolute z-30 w-full mt-1 bg-white border rounded shadow max-h-32 overflow-y-auto">
-                  {truckPlates.filter(p => p.toLowerCase().includes(truckPlate.toLowerCase())).map(p => (
-                    <div key={p} className="px-3 py-2 text-sm hover:bg-gray-100 cursor-pointer font-mono" onClick={() => { setTruckPlate(p); setIsTruckOpen(false); }}>{p}</div>
-                  ))}
+          <div className={`px-4 sm:px-6 py-3 transition-all overflow-hidden bg-gray-50/50 ${isTruckInfoCollapsed ? 'hidden lg:block' : 'block'}`}>
+            <div className="flex flex-col xl:flex-row gap-6">
+              {/* SECTION 1: Customer & Document Info */}
+              <div className="flex-1 bg-white p-4 rounded-xl border border-blue-100 shadow-sm relative">
+                <div className="absolute -top-3 left-4 bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold border border-blue-200">
+                  ข้อมูลลูกค้า & เอกสาร
                 </div>
-              )}
-            </div>
-            <div className="min-w-[150px]">
-              <label className="text-[10px] font-bold text-gray-500 block mb-0.5">ขนส่งโดย</label>
-              <select
-                value={transpId}
-                onChange={e => setTranspId(e.target.value ? Number(e.target.value) : '')}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">-- ไม่ระบุ (ใช้ค่าดั้งเดิม) --</option>
-                {transports.map(t => (
-                  <option key={t.TranspID} value={t.TranspID}>{t.TranspName}</option>
-                ))}
-              </select>
-            </div>
-            <div className="min-w-[150px]">
-              <label className="text-[10px] font-bold text-gray-500 block mb-0.5">วันที่เอกสาร</label>
-              <ThaiDatePicker value={deliveryDate} onChange={setDeliveryDate} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none" />
-            </div>
-            <div className="min-w-[190px]">
-              <label className="text-[10px] font-bold text-gray-500 block mb-0.5"><Calendar size={10} className="inline mr-0.5"/>วันที่แจ้ง/เวลานัด</label>
-              <input
-                type="datetime-local"
-                value={notifiedAt}
-                onChange={e => setNotifiedAt(e.target.value)}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div className="min-w-[190px]">
-              <label className="text-[10px] font-bold text-gray-500 block mb-0.5">
-                <Stamp size={10} className="inline mr-0.5"/>เลขที่ตั๋วคุมอ้างอิง
-              </label>
-              <input
-                list="ct-ref-list"
-                value={controlTicketNo}
-                onChange={e => setControlTicketNo(e.target.value.toUpperCase())}
-                placeholder={drawnTicketNos || 'ไม่ระบุ'}
-                className="w-full text-sm font-mono border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-              <datalist id="ct-ref-list">
-                {controlTickets.map(t => <option key={t.DocuNo} value={t.DocuNo}>{t.DocuDate?.slice(0, 10)}</option>)}
-              </datalist>
-              {/* เว้นว่างไว้ได้ — ถ้ามีบรรทัดเบิกตั๋ว ระบบจะรวบเลขให้เองตอนยืนยันบิล */}
-              {!controlTicketNo && drawnTicketNos && (
-                <p className="text-[9px] text-purple-600 mt-0.5">ระบบจะใช้ {drawnTicketNos} จากบรรทัดที่เบิก</p>
-              )}
-            </div>
-            <div className="min-w-[260px] flex flex-wrap items-center gap-2 pb-1">
-              <label className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5">
-                <input type="checkbox" checked={isOwnTruck} onChange={e => setIsOwnTruck(e.target.checked)} className="h-3.5 w-3.5 accent-[#0C447C]" />
-                ขึ้นรถตัวเอง
-              </label>
-              <label className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5">
-                <input
-                  type="checkbox"
-                  checked={noTruckRequired}
-                  onChange={e => {
-                    setNoTruckRequired(e.target.checked);
-                    if (e.target.checked) setTruckPlate('');
-                  }}
-                  className="h-3.5 w-3.5 accent-[#0C447C]"
-                />
-                ไม่ต้องระบุรถ
-              </label>
-              <label className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5">
-                <input type="checkbox" checked={pSling} onChange={e => setPSling(e.target.checked)} className="h-3.5 w-3.5 accent-[#0C447C]" />
-                P-Sling
-              </label>
-            </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-2">
+                  {userRole === 'ADMIN' && (
+                    <div className="min-w-[180px]">
+                      <label className="text-[10px] font-bold text-amber-700 block mb-1">ทำรายการแทน (Admin)</label>
+                      <select value={salesUserId} onChange={e => setSalesUserId(e.target.value)}
+                        className="w-full border border-amber-200 rounded-lg px-2 py-1.5 text-sm bg-amber-50 text-amber-900 focus:ring-amber-500 focus:outline-none">
+                        <option value="">-- เป็นตัวเอง --</option>
+                        {salesUsers.map(u => <option key={u.Id} value={u.Id}>{u.DisplayName} ({u.Username})</option>)}
+                      </select>
+                    </div>
+                  )}
+                  <div className="relative min-w-[200px]">
+                    <label className="text-[10px] font-bold text-gray-700 block mb-1">ลูกค้า <span className="text-red-500">*</span></label>
+                    <div className="relative">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        value={custSearch}
+                        onChange={e => { setCustSearch(e.target.value); if (custId) setCustId(''); }}
+                        onFocus={() => setIsCustOpen(true)} onBlur={() => setTimeout(() => setIsCustOpen(false), 200)}
+                        placeholder="ค้นหาชื่อลูกค้า..."
+                        className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C] bg-gray-50 focus:bg-white transition-colors"
+                      />
+                      {isCustOpen && (
+                        <div className="absolute z-30 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                          {customers.map(c => (
+                            <div key={c.CustID} className="px-3 py-2 text-sm hover:bg-blue-50 cursor-pointer border-b" onClick={() => { setCustId(c.CustID); setCustSearch(c.CustName); setBills(prev => prev.map(b => ({ ...b, creditDays: c.CreditDays || 0 }))); setIsCustOpen(false); }}>
+                              <div className="font-bold text-[#0C447C]">{c.CustName}</div><div className="text-[10px] text-gray-500">{c.CustID}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="min-w-[150px]">
+                    <label className="text-[10px] font-bold text-gray-700 block mb-1">วันที่เอกสาร</label>
+                    <ThaiDatePicker value={deliveryDate} onChange={setDeliveryDate} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] bg-gray-50 focus:bg-white" />
+                  </div>
+                  <div className="min-w-[170px]">
+                    <label className="text-[10px] font-bold text-gray-700 block mb-1"><Calendar size={10} className="inline mr-1 text-gray-400"/>วันที่แจ้ง/เวลานัด</label>
+                    <input
+                      type="datetime-local"
+                      value={notifiedAt}
+                      onChange={e => setNotifiedAt(e.target.value)}
+                      className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] bg-gray-50 focus:bg-white"
+                    />
+                  </div>
+                  <div className="min-w-[170px]">
+                    <label className="text-[10px] font-bold text-gray-700 block mb-1">
+                      <Stamp size={10} className="inline mr-1 text-gray-400"/>เลขที่ตั๋วคุมอ้างอิง
+                    </label>
+                    <input
+                      list="ct-ref-list"
+                      value={controlTicketNo}
+                      onChange={e => setControlTicketNo(e.target.value.toUpperCase())}
+                      placeholder={drawnTicketNos || 'ไม่ระบุ'}
+                      className="w-full text-sm font-mono border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-500 bg-gray-50 focus:bg-white"
+                    />
+                    <datalist id="ct-ref-list">
+                      {controlTickets.map(t => <option key={t.DocuNo} value={t.DocuNo}>{t.DocuDate?.slice(0, 10)}</option>)}
+                    </datalist>
+                    {!controlTicketNo && drawnTicketNos && (
+                      <p className="text-[9px] text-purple-600 mt-1">ระบบจะใช้ {drawnTicketNos} จากบรรทัดที่เบิก</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: Truck & Transport Info */}
+              <div className="flex-1 bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative">
+                <div className="absolute -top-3 left-4 bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[10px] font-bold border border-gray-200">
+                  ข้อมูลรถบรรทุก & ขนส่ง (เว้นได้หากเป็น Draft)
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-2">
+                  <div className="relative min-w-[140px]">
+                    <label className="text-[10px] font-bold text-gray-700 block mb-1"><Truck size={10} className="inline mr-1 text-gray-400"/>ทะเบียนรถ</label>
+                    <input
+                      value={truckPlate} onChange={e => setTruckPlate(e.target.value)}
+                      onFocus={() => setIsTruckOpen(true)} onBlur={() => setTimeout(() => setIsTruckOpen(false), 200)}
+                      placeholder="เช่น 70-1087"
+                      disabled={noTruckRequired}
+                      className={`w-full border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none disabled:bg-gray-100 disabled:text-gray-400 ${truckPlate && truckPlates.length > 0 && !truckPlates.includes(truckPlate) ? 'border-amber-400 text-amber-700 bg-amber-50 focus:ring-amber-500' : 'border-gray-200 focus:ring-2 focus:ring-[#0C447C] bg-gray-50 focus:bg-white'}`}
+                    />
+                    {isTruckOpen && !noTruckRequired && truckPlates.length > 0 && (
+                      <div className="absolute z-30 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-32 overflow-y-auto">
+                        {truckPlates.filter(p => p.toLowerCase().includes(truckPlate.toLowerCase())).map(p => (
+                          <div key={p} className="px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer font-mono border-b border-gray-50" onClick={() => { setTruckPlate(p); setIsTruckOpen(false); }}>{p}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-[150px]">
+                    <label className="text-[10px] font-bold text-gray-700 block mb-1">ขนส่งโดย</label>
+                    <select
+                      value={transpId}
+                      onChange={e => setTranspId(e.target.value ? Number(e.target.value) : '')}
+                      className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] bg-gray-50 focus:bg-white"
+                    >
+                      <option value="">-- ไม่ระบุ (ใช้ค่าดั้งเดิม) --</option>
+                      {transports.map(t => (
+                        <option key={t.TranspID} value={t.TranspID}>{t.TranspName}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="col-span-1 sm:col-span-2 lg:col-span-3 flex flex-wrap items-center gap-3 pt-1">
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200 rounded-lg px-3 py-2 cursor-pointer">
+                      <input type="checkbox" checked={isOwnTruck} onChange={e => setIsOwnTruck(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]" />
+                      ขึ้นรถตัวเอง
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200 rounded-lg px-3 py-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={noTruckRequired}
+                        onChange={e => {
+                          setNoTruckRequired(e.target.checked);
+                          if (e.target.checked) setTruckPlate('');
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]"
+                      />
+                      ไม่ต้องระบุรถ
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200 rounded-lg px-3 py-2 cursor-pointer">
+                      <input type="checkbox" checked={pSling} onChange={e => setPSling(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]" />
+                      P-Sling
+                    </label>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -6,15 +6,12 @@
 
 | Field | Current value |
 |---|---|
-| Refreshed at | 2026-07-23 17:47:52 +07:00 (Asia/Bangkok) |
+| Refreshed at | 2026-08-30 20:58:28 +07:00 (Asia/Bangkok) |
 | Repository | `C:\MyWork\WorldFert\winspeed-frontend` |
-| Git commit | `79a10a28e6a2fba9b65dc85101ff8ab6d784b91c` (`chore: release v1.0.1`) |
-| Git state | dirty — มี source/deployment additions ของผู้ใช้, E2E evidence, Markdown/pipeline changes และ generated Review candidates; ยังไม่ได้ commit/accept baseline |
-| Runtime version | `1.0.1` in root, backend and frontend packages |
-| Source inventory | 220 files; `12B9F964C7C90341859EDD6CDDE9B92BA35D797347F2AA64A1134E1E885FC343` |
-| Document inventory | 86 documents + 50 control files; `74D45716F6F373BF9A5A5B3DCDC6B27983404C4C1B27495F20116C52240B2745` |
-| E2E evidence | `PASSED_COMPLETE`; 10/10 passed; source stable; SQL Server/MySQL up |
-| Technical Core QA | run `20260723-final2`; 3 documents; 83 pages; 45 checks; 0 failed |
+| Runtime version | `1.7.0` in root, backend and frontend packages |
+| Migration inventory | 101 sequenced files, latest sequence `101_salestrip_and_rebate_ratio.sql` |
+| Phased Progress | Phase 1 to Phase 5 **100% COMPLETED** (DB, Backend, UI, Trips, Rebate Ratio, Reports, Export, E2E & UAT Docs) |
+| Release Readiness | Ready for UAT Sign-off & Production Deployment |
 
 หาก `HEAD`, Git status, รายการไฟล์, source inventory หรือ document inventory เปลี่ยน ค่าในไฟล์นี้ถือว่าหมดอายุและต้อง refresh ก่อนใช้อ้างอิงต่อ
 

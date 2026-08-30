@@ -56,6 +56,9 @@ users_credentials.csv
 
 # Database backups - large files, never commit (repo is public)
 deploy/onprem/backup/
+deploy/cloud-vps/windows/remote-config.bat
+deploy/cloud-vps/server/server-config.env
+deploy/cloud-vps/.local-secrets/
 *.bak
 *.bacpac
 *.trn

@@ -2,7 +2,7 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import {
   Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell, LogOut,
   Users, LayoutDashboard, Coins, FileCheck, FileCheck2, Gift, FileText, LayoutGrid, Database, Clock, Ticket, ClipboardList, Stamp, BarChart3, Scale, ShieldCheck, Activity, BookOpen, ScrollText, Landmark, Inbox,
-  Menu, ChevronDown, Settings, CheckCircle2,
+  Menu, ChevronDown, Settings, CheckCircle2, Award,
   Folder, Wallet, Calculator, Truck, Unlock
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -32,6 +32,8 @@ const RebatePlanPage = lazy(() => import('./components/rebate/RebatePlanPage').t
 const ControlTicketPage = lazy(() => import('./components/master/ControlTicketPage').then(m => ({ default: m.ControlTicketPage })));
 const ReportsPage = lazy(() => import('./components/reports/ReportsPage').then(m => ({ default: m.ReportsPage })));
 const ScaleReportsPage = lazy(() => import('./components/reports/ScaleReportsPage').then(m => ({ default: m.ScaleReportsPage })));
+const IncentiveReport = lazy(() => import('./components/reports/IncentiveReport').then(m => ({ default: m.IncentiveReport })));
+const BudgetExpenditureReport = lazy(() => import('./components/reports/BudgetExpenditureReport').then(m => ({ default: m.BudgetExpenditureReport })));
 const TruckScalePage = lazy(() => import('./components/truckscale/TruckScalePage').then(m => ({ default: m.TruckScalePage })));
 const WeighInboxPage = lazy(() => import('./components/truckscale/WeighInboxPage').then(m => ({ default: m.WeighInboxPage })));
 const AccountingPage = lazy(() => import('./components/accounting/AccountingPage').then(m => ({ default: m.AccountingPage })));
@@ -71,6 +73,8 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'rebate',     label: 'รีเบท (App)', sub: 'Pool · เคลม · wf',      icon: Coins, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'SALES'] },
       { key: 'rebate-plan',label: 'Rebate Plan', sub: 'แผน · จัดสรรงบ',        icon: ClipboardList, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING'] },
       { key: 'cn-rebate',  label: 'CN Rebate',   sub: 'ใบลดหนี้ · Winspeed',   icon: FileCheck2, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
+      { key: 'incentive-report', label: 'Incentive & Retained', sub: 'สัดส่วน · สะสมบริษัท', icon: Award, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING'] },
+      { key: 'budget-report', label: 'Budget Expenditure', sub: 'งบจัดสรร · เบิกจ่าย', icon: BarChart3, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING'] },
       { key: 'giveaway',   label: 'ของแถม',      sub: 'งบรายภาค · เบิก',     icon: Gift },
     ],
   },
@@ -526,6 +530,8 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'control-ticket' && <ControlTicketPage />}
                 {activePortal === 'reports'    && <ReportsPage />}
                 {activePortal === 'scale-reports' && <ScaleReportsPage />}
+                {activePortal === 'incentive-report' && <IncentiveReport />}
+                {activePortal === 'budget-report' && <BudgetExpenditureReport />}
                 {activePortal === 'truckscale' && <TruckScalePage />}
                 {activePortal === 'weigh-inbox' && <WeighInboxPage />}
                 {activePortal === 'accounting' && <AccountingPage />}

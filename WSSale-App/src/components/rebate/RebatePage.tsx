@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Coins, RefreshCw, ArrowLeft, Scissors, X, Info } from 'lucide-react';
+import { Coins, RefreshCw, ArrowLeft, Scissors, X, Info, Download } from 'lucide-react';
 import {
   fetchRebatePools, fetchRebateLedger, fetchRebateClaims,
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
+import { useExport } from '../../hooks/useExport';
 import type { RebatePool, RebateLedger, RebateClaim } from '../../types';
 import { ClaimDialog, ClaimDetailDialog } from './RebateClaimForm';
 
@@ -27,6 +28,32 @@ export function RebatePage() {
   const [showClaim, setShowClaim] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [detailId, setDetailId] = useState<number | null>(null);
+  const { exportData } = useExport();
+
+  const handleExportClaims = () => {
+    const rows = claims.map(c => ({
+      id: c.Id,
+      cnDocuNo: c.CnDocuNo || `RBD-${c.Id}`,
+      salesName: c.SalesName || c.CustName || '',
+      period: `${c.PeriodMonth}/${c.PeriodYear}`,
+      claimAmt: Number(c.ClaimAmt) || 0,
+      customerAmt: Number((c as any).CustomerAmount) || 0,
+      retainedAmt: Number((c as any).RetainedAmount) || 0,
+      status: CLAIM_STATUS[String(c.Status)] || c.Status,
+      createdAt: c.CreatedAt ? new Date(c.CreatedAt).toLocaleDateString('th-TH') : '',
+    }));
+
+    exportData('excel', 'Rebate_Claims_Export', [
+      { key: 'cnDocuNo', label: 'เลขที่เอกสาร' },
+      { key: 'salesName', label: 'ผู้เสนอ / ลูกค้า' },
+      { key: 'period', label: 'งวดเดือน/ปี' },
+      { key: 'claimAmt', label: 'ยอดเคลมรวม (บาท)' },
+      { key: 'customerAmt', label: 'ยอดคืนลูกค้า (บาท)' },
+      { key: 'retainedAmt', label: 'ยอดสะสมบริษัท (บาท)' },
+      { key: 'status', label: 'สถานะ' },
+      { key: 'createdAt', label: 'วันที่ยื่น' },
+    ], rows, 'RebateClaims');
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,6 +84,10 @@ export function RebatePage() {
           <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">ส่วนต่างราคา (฿) · Pool รายเดือน · Ledger FIFO · เคลม → WINSpeed Ref</p>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={handleExportClaims} disabled={claims.length === 0}
+            className="px-3 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-bold text-[#0C447C] flex items-center gap-1.5 shadow-sm disabled:opacity-50">
+            <Download size={14} /> Export Claims (Excel)
+          </button>
           <button onClick={() => setShowInfo(true)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600">
             <Info size={18} />
           </button>

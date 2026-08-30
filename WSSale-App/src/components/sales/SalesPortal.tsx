@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Plus, Search, RefreshCw, ChevronRight, Filter, ChevronLeft, Package, Calendar, User, X, Clock, Truck, Gift, Trash2, FileText } from 'lucide-react';
+import { Plus, Search, RefreshCw, ChevronRight, Filter, ChevronLeft, Package, Calendar, User, X, Clock, Truck, Gift, Trash2, FileText, Download } from 'lucide-react';
 import { Button, Card, cn } from '../ui/Base';
+import { useExport } from '../../hooks/useExport';
 import { useErpStore } from '../../store/erp-store';
 import { useAppStore } from '../../store/app-store';
 import { fetchSalesOrders, fetchSalesOrder, cancelSO, deleteSO, fetchCustomers, confirmSO } from '../../services/api';
@@ -11,6 +12,7 @@ import { CreateSODialog } from './CreateSODialog';
 import { SODetailsPanel } from './SODetailsPanel';
 import { TripSetupModal } from './TripSetupModal';
 import { TripSummaryModal } from './TripSummaryModal';
+import { SaleTripManager } from './SaleTripManager';
 import { useTripStore } from '../../store/trip-store';
 import { formatThaiDate } from '../../utils/date';
 import { CheckCircle } from 'lucide-react';
@@ -49,6 +51,33 @@ export const SalesPortal = () => {
 
   const unlockRequests  = useErpStore(s => s.unlockRequests);
   const setUnlockRequests = useErpStore(s => s.setUnlockRequests);
+  const { exportData } = useExport();
+
+  const handleExportOrders = () => {
+    const rows = orders.map(o => {
+      const totalAmt = (o.lines || []).reduce((s, l) => s + (l.qtyTon * l.pricePerTon), 0);
+      const totalTon = (o.lines || []).reduce((s, l) => s + (l.isGiveaway ? 0 : l.qtyTon), 0);
+      return {
+        wfRef: o.wfRef || (o as any).docuNo || `#${o.id}`,
+        custName: customersMap[o.custId] || o.custName || o.custId,
+        truckPlate: o.truckPlate || 'ไม่ระบุ',
+        status: SO_STATUS_META[o.status as SOStatus]?.label || o.status,
+        totalTon,
+        totalAmt,
+        deliveryDate: o.deliveryDate ? o.deliveryDate.split('T')[0] : '',
+      };
+    });
+
+    exportData('excel', 'Sales_Orders_Export', [
+      { key: 'wfRef', label: 'เลขที่ใบสั่งขาย' },
+      { key: 'custName', label: 'ชื่อลูกค้า' },
+      { key: 'truckPlate', label: 'ทะเบียนรถ' },
+      { key: 'status', label: 'สถานะ' },
+      { key: 'totalTon', label: 'น้ำหนัก (ตัน)' },
+      { key: 'totalAmt', label: 'ยอดเงิน (บาท)' },
+      { key: 'deliveryDate', label: 'กำหนดส่ง' },
+    ], rows, 'SalesOrders');
+  };
 
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedSearch(searchQuery); setPage(1); }, 500);
@@ -378,23 +407,32 @@ export const SalesPortal = () => {
                 </button>
               )}
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowFilters(f => !f)}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
-                  statusFilter ? 'text-white border-transparent' : 'text-gray-600 border-gray-200 bg-white hover:bg-gray-50'
-                )}
-                style={statusFilter ? { background: '#0C447C' } : {}}
-              >
-                <Filter size={12} /> ตัวกรอง
-              </button>
-              {statusFilter && (
-                <button onClick={() => setStatusFilter('')}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                  {statusFilter ? SO_STATUS_META[statusFilter]?.label : ''} x
+            <div className="flex gap-2 items-center justify-between">
+              <div className="flex gap-2 items-center">
+                <button
+                  onClick={() => setShowFilters(f => !f)}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
+                    statusFilter ? 'text-white border-transparent' : 'text-gray-600 border-gray-200 bg-white hover:bg-gray-50'
+                  )}
+                  style={statusFilter ? { background: '#0C447C' } : {}}
+                >
+                  <Filter size={12} /> ตัวกรอง
                 </button>
-              )}
+                {statusFilter && (
+                  <button onClick={() => setStatusFilter('')}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                    {statusFilter ? SO_STATUS_META[statusFilter]?.label : ''} x
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={handleExportOrders}
+                disabled={orders.length === 0}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-bold text-[#0C447C] shadow-sm disabled:opacity-50"
+              >
+                <Download size={13} /> Export SO (Excel)
+              </button>
             </div>
             {showFilters && (
               <div className="p-3 rounded-xl bg-gray-50 border border-gray-100">
@@ -413,146 +451,17 @@ export const SalesPortal = () => {
             )}
           </div>
 
-            {/* Group orders into Trips */}
-            <div className="flex-1 overflow-y-auto p-2 sm:p-4 bg-gray-50/50">
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 auto-rows-max">
-                {loading ? (
-                  Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="h-32 bg-white rounded-xl animate-pulse border border-gray-100" />
-                  ))
-                ) : orders.length === 0 ? (
-                  <div className="py-20 flex flex-col items-center justify-center opacity-30 text-center col-span-full">
-                    <Package size={48} className="mb-3" />
-                    <p className="font-semibold">ไม่พบบิล</p>
-                  </div>
-                ) : displayGroupedOrders.map((g, idx) => {
-                  const linkedQuoteOrder = g.orders.find(o => o.linkedQuoteId && ['DRAFT', 'SENT', 'EXPIRED'].includes(String(o.linkedQuoteStatus || '')));
-                  const isQuoteLocked = !!linkedQuoteOrder;
-                  const openQuote = () => {
-                    if (!linkedQuoteOrder?.linkedQuoteId) return;
-                    navigate('quotation', {
-                      quoteId: Number(linkedQuoteOrder.linkedQuoteId),
-                      quoteNo: linkedQuoteOrder.linkedQuoteNo || undefined,
-                    });
-                  };
-
-                  return (
-                      <div key={idx} className="rounded-xl border border-gray-200 shadow-sm bg-[#F9F9FB] flex flex-col">
-                        <div className="px-3 py-2 border-b border-gray-100 bg-white flex items-center justify-between rounded-t-xl shrink-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <SOStatusBadge status={g.orders[0]?.status || 'DRAFT'} isUnlockRequested={unlockRequests.some(r => g.orders.some(o => r.SoId === o.id))} />
-                            <div className="text-[11px] font-bold text-[#0C447C] flex items-center gap-1 bg-[#F0F4F8] px-2 py-0.5 rounded-md">
-                              <Clock size={10} /> {g.dateDisplay}
-                            </div>
-                            <div className="text-[11px] font-bold text-gray-700 bg-[#F1F3F5] px-2 py-0.5 rounded-md">
-                              รวม {g.totalTon.toLocaleString('th-TH', { maximumFractionDigits: 2 })} ตัน
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-xs font-bold text-[#0C447C]">
-                              ฿{g.totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
-                            </div>
-                            <button
-                              disabled={isQuoteLocked}
-                              onClick={async () => {
-                                if (isQuoteLocked) return;
-                                if (await appConfirm(`ยืนยันลบ Sale Trip นี้ (รวม ${g.orders.length} บิล)?`)) {
-                                  setLoading(true);
-                                  try {
-                                    for (const o of g.orders) {
-                                      if (['DRAFT', 'CANCELLED'].includes(o.status)) {
-                                        await deleteSO(o.id!);
-                                      } else {
-                                        await cancelSO(o.id!, 'ลบทั้งทริป');
-                                      }
-                                    }
-                                    loadData();
-                                  } catch (e: any) {
-                                    alert('เกิดข้อผิดพลาดในการลบทริป: ' + (e?.message || ''));
-                                    setLoading(false);
-                                  }
-                                }
-                              }}
-                              className="text-gray-400 hover:text-red-500 transition-colors shrink-0 disabled:opacity-30 disabled:hover:text-gray-400"
-                              title={isQuoteLocked ? 'ต้องยกเลิกใบเสนอราคาก่อน' : 'ลบ Sale Trip นี้'}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </div>
-                        <div className="px-3 py-2 bg-white flex items-center gap-2 border-b border-gray-100 transition-colors shrink-0">
-                          <div className="bg-[#1F2937] text-white p-1.5 rounded-lg shrink-0 flex items-center justify-center">
-                            <Truck size={14} />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="font-bold text-sm text-gray-900 truncate" title={g.truck}>{g.truck}</div>
-                            <div className="text-[10px] text-gray-500 truncate" title={g.custCount > 1 ? g.orders.map(o => customersMap[o.custId] || o.custName || o.custId).join(' · ') : g.cust}>{g.cust}</div>
-                          </div>
-                          <button 
-                            onClick={() => setViewingTrip(g)}
-                            className="shrink-0 text-xs text-blue-600 font-medium px-3 py-1.5 bg-blue-50 rounded-full hover:bg-blue-100 transition-colors cursor-pointer active:scale-95 flex items-center gap-1 border border-blue-100 shadow-sm"
-                          >
-                            ดูสรุปทริป
-                          </button>
-                        </div>
-                        {isQuoteLocked && (
-                          <div className="mx-2 mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-bold flex items-center gap-1">
-                                <FileText size={12} /> รอใบเสนอราคา {linkedQuoteOrder?.linkedQuoteNo} ยืนยัน
-                              </span>
-                              <button
-                                type="button"
-                                onClick={openQuote}
-                                className="shrink-0 rounded-md bg-white px-2 py-1 font-bold text-[#0C447C] border border-amber-200 hover:bg-amber-100"
-                              >
-                                เปิดใบเสนอราคา
-                              </button>
-                            </div>
-                            {linkedQuoteOrder?.linkedQuoteRemark && (
-                              <div className="mt-1 line-clamp-2 text-amber-700">{linkedQuoteOrder.linkedQuoteRemark}</div>
-                            )}
-                          </div>
-                        )}
-                        <div className="p-1.5 space-y-1.5 overflow-y-auto custom-scrollbar xl:h-36 min-h-[80px]">
-                          {g.orders.length === 0 ? (
-                            <div className="flex items-center justify-center h-full text-xs text-gray-400 py-4">ไม่มีบิลในทริปนี้</div>
-                          ) : g.orders.map(order => {
-                            const totalAmt = (order.lines || []).reduce((s, l) => s + (l.qtyTon * l.pricePerTon), 0);
-                            
-                            return (
-                              <div
-                                key={order.id}
-                                className={`relative p-3 rounded-lg border ${order.truckPlate === 'ตั๋วคุม' ? 'border-purple-200 bg-purple-50/50' : 'border-gray-100 bg-white'}`}
-                              >
-                                <div className="flex items-start justify-between mb-1.5">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className={`font-mono text-xs font-bold ${order.truckPlate === 'ตั๋วคุม' ? 'text-purple-700' : 'text-gray-700'}`}>{order.wfRef || (order as any).docuNo || (order as any).importedDocuNo || `#${order.id}`}</span>
-                                    {order.truckPlate === 'ตั๋วคุม' && <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">ตั๋วคุม</span>}
-                                  </div>
-                                  <span className={`text-xs font-bold ${order.truckPlate === 'ตั๋วคุม' ? 'text-purple-700' : 'text-[#0C447C]'}`}>
-                                    ฿{totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between text-xs text-gray-400">
-                                  <div className="flex items-center gap-3">
-                                    <span className="flex items-center gap-1">
-                                      <Package size={11} /> {(order.lines || []).filter(l => !l.isGiveaway).length} รายการ
-                                    </span>
-                                    {(order.lines || []).some(l => l.isGiveaway) && (
-                                      <span className="flex items-center gap-1 text-green-600 bg-green-50 px-1.5 py-0.5 rounded text-[10px] font-bold">
-                                        <Gift size={10} /> ของแถม
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
+            <div className="flex-1 overflow-hidden flex flex-col bg-gray-50/50">
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <SaleTripManager
+                  groupedOrders={displayGroupedOrders}
+                  loading={loading}
+                  unlockRequests={unlockRequests}
+                  customersMap={customersMap}
+                  onViewTrip={setViewingTrip}
+                  onOpenQuote={(quoteId, quoteNo) => navigate('quotation', { quoteId, quoteNo })}
+                  onLoadData={loadData}
+                />
               </div>
             </div>
 

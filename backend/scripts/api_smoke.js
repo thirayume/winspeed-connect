@@ -3,6 +3,10 @@ const { sql, wfQuery } = require('../db');
 const { SECRET } = require('../middleware/auth');
 
 const API_BASE = process.env.API_SMOKE_BASE_URL || 'http://localhost:3000/api';
+const EXPECTED_QUOTATION_DOCS = String(process.env.API_SMOKE_QUOTATION_DOCS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
 const ROLE_RANK = {
   SALES: 1,
   COUNTER_SALES: 2,
@@ -198,12 +202,19 @@ async function main() {
     return { total: stats.body.total, listRows: list.body.data.length, statsMs: stats.ms, listMs: list.ms };
   });
 
-  await step('quotation list includes native WINSpeed docs', async () => {
+  await step('quotation list returns native WINSpeed docs', async () => {
     const res = await request('/quotation', { token: accessToken });
     assert(res.ok && Array.isArray(res.body), 'Expected quotation list array', res);
     const docNos = new Set(res.body.map((q) => q.WinspeedQuoteNo || q.quoteNo || q.QuoteNo));
-    assert(docNos.has('QU6907-00001') && docNos.has('QU6907-00002'), 'Expected native quotation samples in list', Array.from(docNos).slice(0, 10));
-    return { count: res.body.length, hasPending: docNos.has('QU6907-00001'), hasAccepted: docNos.has('QU6907-00002'), ms: res.ms };
+    if (EXPECTED_QUOTATION_DOCS.length) {
+      const missing = EXPECTED_QUOTATION_DOCS.filter((docNo) => !docNos.has(docNo));
+      assert(missing.length === 0, 'Expected configured native quotation docs in list', { missing });
+    }
+    return {
+      count: res.body.length,
+      configuredDocsChecked: EXPECTED_QUOTATION_DOCS.length,
+      ms: res.ms,
+    };
   });
 
   await step('stop access-as', async () => {

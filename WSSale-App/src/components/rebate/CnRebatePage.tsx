@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, FileCheck2, RefreshCw, Search } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, FileCheck2, RefreshCw, Search, Download } from 'lucide-react';
+import { useExport } from '../../hooks/useExport';
 import {
   fetchWfRebateTrailDetail,
   fetchWfRebateTrailList,
@@ -72,6 +73,27 @@ export function CnRebatePage() {
   const [selectedOrder, setSelectedOrder] = useState<WfRebateTrailRow | null>(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const { exportData } = useExport();
+
+  const handleExportSummary = () => {
+    const rows = summary.map(r => ({
+      salesName: r.SalesName,
+      orderCount: Number(r.OrderCount || 0),
+      couponCount: Number(r.CouponCount || 0),
+      redeemedTon: Number(r.RedeemedTon || 0),
+      remainingTon: Number(r.RemainingTon || 0),
+      lastDate: r.LastDocuDate ? String(r.LastDocuDate).slice(0, 10) : '',
+    }));
+
+    exportData('excel', 'WF_Rebate_Trail_Summary', [
+      { key: 'salesName', label: 'พนักงานขาย / Salesperson' },
+      { key: 'orderCount', label: 'จำนวนออเดอร์ (บิล)' },
+      { key: 'couponCount', label: 'จำนวนคูปอง (ใบ)' },
+      { key: 'redeemedTon', label: 'เบิกแล้ว (ตัน)' },
+      { key: 'remainingTon', label: 'คงเหลือ (ตัน)' },
+      { key: 'lastDate', label: 'วันที่ล่าสุด' },
+    ], rows, 'RebateTrailSummary');
+  };
 
   const yearOptions = useMemo(() => Array.from({ length: 10 }, (_, i) => currentYear - i), []);
 
@@ -169,6 +191,10 @@ export function CnRebatePage() {
               {yearOptions.map(y => <option key={y} value={y - 543}>{y}</option>)}
             </select>
           </div>
+          <button onClick={handleExportSummary} disabled={summary.length === 0}
+            className="px-3 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-bold text-[#0C447C] flex items-center gap-1.5 shadow-sm disabled:opacity-50">
+            <Download size={14} /> Export (Excel)
+          </button>
           <button onClick={view === 'summary' ? loadSummary : () => runSearch(search)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
             <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
           </button>

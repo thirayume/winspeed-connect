@@ -142,16 +142,16 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="h-full flex flex-col w-full overflow-hidden max-w-full" style={{ background: '#F1EFE8' }}>
-      <div className="px-4 py-3 sm:px-6 sm:py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between shrink-0">
+    <div className="h-full flex flex-col w-full overflow-hidden max-w-full bg-gradient-to-br from-[#f8fafc] to-[#e2e8f0]">
+      <div className="px-4 py-3 sm:px-6 sm:py-5 border-b border-gray-200/50 bg-white/70 backdrop-blur-md shadow-sm flex items-center justify-between shrink-0 sticky top-0 z-10 transition-all duration-300">
         <div>
-          <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2" style={{ color: '#0C447C' }}>
+          <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 bg-gradient-to-r from-[#0C447C] to-[#2563EB] bg-clip-text text-transparent">
             <LayoutDashboard className="w-5 h-5 sm:w-6 sm:h-6" /> Dashboard
           </h1>
-          <p className="hidden sm:block text-sm text-gray-500 mt-0.5">ภาพรวมใบสั่งขาย · SO ค้างจัดส่ง · รีเบท</p>
+          <p className="hidden sm:block text-sm text-gray-500 mt-0.5 font-medium tracking-wide">ภาพรวมใบสั่งขาย · SO ค้างจัดส่ง · รีเบท</p>
         </div>
-        <button onClick={() => load(true)} className="h-9 w-9 sm:h-10 sm:w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white shrink-0">
-          <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
+        <button onClick={() => load(true)} className="h-9 w-9 sm:h-10 sm:w-10 flex items-center justify-center rounded-xl border border-gray-200/50 bg-white/50 backdrop-blur-sm hover:bg-white/80 hover:shadow-md transition-all duration-300 hover:scale-105 active:scale-95 shrink-0">
+          <RefreshCw size={16} className={loading ? 'animate-spin text-blue-500' : 'text-gray-500 hover:text-[#0C447C] transition-colors'} />
         </button>
       </div>
 
@@ -355,15 +355,15 @@ export function DashboardPage() {
 
 function KpiCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number | string; color: string }) {
   return (
-    <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 p-3 sm:p-4 shadow-sm flex flex-col justify-between">
+    <div className="bg-white/80 backdrop-blur-sm hover:bg-white rounded-none sm:rounded-2xl border-y sm:border border-white/40 p-3 sm:p-4 shadow-sm hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 flex flex-col justify-between group">
       <div className="flex items-center gap-2 mb-2">
-        <div className="h-7 w-7 sm:h-9 sm:w-9 rounded-lg sm:rounded-xl flex items-center justify-center text-white" style={{ background: color }}>
+        <div className="h-7 w-7 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl flex items-center justify-center text-white shadow-md group-hover:scale-110 transition-transform duration-300" style={{ background: `linear-gradient(135deg, ${color}, ${color}dd)` }}>
           {icon}
         </div>
       </div>
       <div>
-        <div className="text-xl sm:text-2xl font-black text-gray-800 tabular-nums leading-none">{value}</div>
-        <div className="text-[10px] sm:text-xs text-gray-400 mt-1 line-clamp-1">{label}</div>
+        <div className="text-xl sm:text-3xl font-black text-gray-800 tabular-nums leading-none tracking-tight">{value}</div>
+        <div className="text-[10px] sm:text-xs text-gray-500 mt-1 line-clamp-1 font-medium group-hover:text-gray-700 transition-colors">{label}</div>
       </div>
     </div>
   );

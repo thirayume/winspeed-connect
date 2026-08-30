@@ -1,0 +1,107 @@
+{"kind":"deck","id":"pr/0dlckm","name":"Deck"}
+{"kind":"layout","layoutId":"/ppt/slideMasters/slideMaster1.xml","name":"","type":"master","placeholders":[{"name":"title","type":"title","textPreview":"Click to edit Master title style"},{"name":"body","type":"body","textPreview":"Click to edit Master text styles | Second level | Third level | Fourth level | Fifth level"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout1.xml","name":"Title Slide","placeholders":[{"name":"title","type":"title","textPreview":"Click to edit Master title style"},{"name":"subtitle","type":"subtitle","textPreview":"Click to edit Master subtitle style"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout2.xml","name":"Title and Content","placeholders":[{"name":"text placeholder 2","textPreview":"Click to edit Master text styles | Second level | Third level | Fourth level | Fifth level"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"},{"name":"title","type":"title","textPreview":"Click to edit Master title style"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout3.xml","name":"Two Content","placeholders":[{"name":"text placeholder 2","textPreview":"Click to edit Master text styles | Second level | Third level | Fourth level | Fifth level"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"},{"name":"text placeholder 2","textPreview":"Click to edit Master text styles | Second level | Third level | Fourth level | Fifth level"},{"name":"title","type":"title","textPreview":"Click to edit Master title style"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout4.xml","name":"Three Content","placeholders":[{"name":"text placeholder 2","textPreview":"Click to edit Master text styles | Second level | Third level | Fourth level | Fifth level"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"},{"name":"text placeholder 2","textPreview":"Click to edit Master text styles | Second level | Third level | Fourth level | Fifth level"},{"name":"text placeholder 2","textPreview":"Click to edit Master text styles | Second level | Third level | Fourth level | Fifth level"},{"name":"title","type":"title","textPreview":"Click to edit Master title style"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout5.xml","name":"Four Content","placeholders":[{"name":"text placeholder 2","textPreview":"Click to edit Master"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"},{"name":"title","type":"title","textPreview":"Click to edit Master title style"},{"name":"body","type":"body","textPreview":"Click to edit Master"},{"name":"text placeholder 2","textPreview":"Click to edit Master"},{"name":"body","type":"body","textPreview":"Click to edit Master"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout6.xml","name":"Title Only","placeholders":[{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"},{"name":"title","type":"title","textPreview":"Click to edit Master title style"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout7.xml","name":"Footer Only","placeholders":[{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout8.xml","name":"Blank"}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout9.xml","name":"36 Field Grid"}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout10.xml","name":"48 Field Grid"}
+{"kind":"slide","id":"sl/y90nupkv","slide":1,"title":"SOP TruckScale","textShapes":2}
+{"kind":"textbox","id":"sh/7qp4be9c","slide":1,"name":"Title 3","placeholder":"title","text":"SOP TruckScale\nชั่งเข้า–ชั่งออก","textPreview":"SOP TruckScale | ชั่งเข้า–ชั่งออก","textChars":31,"textLines":2,"bbox":[65.76,47.21,706.61,252.12]}
+{"kind":"textbox","id":"sh/65g3298r","slide":1,"name":"Subtitle 4","placeholder":"subtitle","text":"WF-SOP-TS-001  |  ฉบับ 1.0\n25 สิงหาคม 2569","textPreview":"WF-SOP-TS-001  |  ฉบับ 1.0 | 25 สิงหาคม 2569","textChars":42,"textLines":2,"bbox":[67.47,374.27,394.58,64.53]}
+{"kind":"image","id":"im/cj21o7ed","slide":1,"name":"Picture 2","bbox":[0,500.09,1279.85,219.91]}
+{"kind":"notes","id":"nt/y90nupkv","slide":1,"text":""}
+{"kind":"slide","id":"sl/hwbqtkby","slide":2,"title":"2","textShapes":2}
+{"kind":"textbox","id":"sh/9072xkry","slide":2,"name":"Slide Number Placeholder 1","placeholder":"slideNumber","text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/ozy1ofad","slide":2,"name":"Title 2","placeholder":"title","text":"สิ่งที่ต้องใช้บน TruckScale","textPreview":"สิ่งที่ต้องใช้บน TruckScale","textChars":27,"textLines":1,"bbox":[41.33,92.75,822.67,66.68]}
+{"kind":"table","id":"tb/sjil0vu9","slide":2,"name":"Table 3","rows":6,"cols":2,"preview":"01 | ขอบเขตและผลลัพธ์","bbox":[41.33,177.33,1197.33,452]}
+{"kind":"notes","id":"nt/hwbqtkby","slide":2,"text":""}
+{"kind":"slide","id":"sl/ofy9wn61","slide":3,"title":"3","textShapes":4}
+{"kind":"textbox","id":"sh/4zex8bux","slide":3,"name":"Google Shape;532;p58","placeholder":"slideNumber","text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/507y1gbi","slide":3,"name":"Google Shape;533;p58","placeholder":"title","text":"หนึ่งบัตร = หนึ่งรอบชั่ง\nห้ามเดาเมื่อ match กำกวม","textPreview":"หนึ่งบัตร = หนึ่งรอบชั่ง | ห้ามเดาเมื่อ match กำกวม","textChars":49,"textLines":2,"bbox":[41.33,36.12,992,385.22]}
+{"kind":"textbox","id":"sh/298ryl4v","slide":3,"name":"Content Placeholder 15","text":"Vehicle identity\nsequence + plate + customer + เอกสารต้องตรง","textPreview":"Vehicle identity | sequence + plate + customer + เอกสารต้องตรง","textChars":60,"textLines":2,"bbox":[452,506.67,374.67,122.67]}
+{"kind":"textbox","id":"sh/pcjqtg36","slide":3,"name":"Text Placeholder 16","text":"Weight integrity\nnet = weight_out − weight_in และค่าต้องสมเหตุผล","textPreview":"Weight integrity | net = weight_out − weight_in และค่าต้องสมเหตุผล","textChars":64,"textLines":2,"bbox":[864,506.67,374.67,122.67]}
+{"kind":"shape","id":"sh/m5cra54z","slide":3,"name":"Google Shape;340;p61","bbox":[452,457.33,27,26.99]}
+{"kind":"shape","id":"sh/n6ls3alk","slide":3,"name":"Google Shape;340;p61","bbox":[863.43,457.33,27,26.99]}
+{"kind":"notes","id":"nt/ofy9wn61","slide":3,"text":""}
+{"kind":"slide","id":"sl/jyx0ra1s","slide":4,"title":"รับรถ","textShapes":8}
+{"kind":"textbox","id":"sh/a5kr2xg3","slide":4,"name":"Content Placeholder 15","text":"รับรถ","textPreview":"รับรถ","textChars":5,"textLines":1,"bbox":[41.33,607.93,272.54,21.86]}
+{"kind":"textbox","id":"sh/rm1k7yt4","slide":4,"name":"Slide Number Placeholder 3","placeholder":"slideNumber","text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/5cva1cfq","slide":4,"name":"Title 10","placeholder":"title","text":"วงจรบัตรชั่ง 3 ช่วง","textPreview":"วงจรบัตรชั่ง 3 ช่วง","textChars":19,"textLines":1,"bbox":[41.33,36.12,1197.33,73.22]}
+{"kind":"textbox","id":"sh/v6tsv2xo","slide":4,"name":"Text Placeholder 16","placeholder":"body","text":"ปฏิบัติ","textPreview":"ปฏิบัติ","textChars":7,"textLines":1,"bbox":[453.24,607.93,272.54,21.86]}
+{"kind":"textbox","id":"sh/g36tgryd","slide":4,"name":"Content Placeholder 17","text":"ปิดงาน","textPreview":"ปิดงาน","textChars":6,"textLines":1,"bbox":[865.15,607.93,272.54,21.86]}
+{"kind":"shape","id":"sh/jm5gze1g","slide":4,"name":"Google Shape;2259;p159","bbox":[35.46,560.8,1285.61,0.03]}
+{"kind":"shape","id":"sh/0ba143al","slide":4,"name":"Google Shape;2260;p159","bbox":[35.46,555.18,11.24,11.24]}
+{"kind":"shape","id":"sh/ql8jytsj","slide":4,"name":"Google Shape;2261;p159","bbox":[446.38,555.18,11.24,11.24]}
+{"kind":"shape","id":"sh/doj29oba","slide":4,"name":"Google Shape;2262;p159","bbox":[858.38,555.18,11.24,11.24]}
+{"kind":"shape","id":"sh/p0batw72","slide":4,"name":"Rounded Rectangle 19","bbox":[41.33,147.17,374.67,380]}
+{"kind":"textbox","id":"sh/oz29krqh","slide":4,"name":"Content Placeholder 8","text":"เตรียมและชั่งเข้า\nตรวจศูนย์ ระบุตัวรถ บันทึก weight_in\nOwner: Weighbridge","textPreview":"เตรียมและชั่งเข้า | ตรวจศูนย์ ระบุตัวรถ บันทึก weight_in | Owner: Weighbridge","textChars":73,"textLines":3,"bbox":[73.85,189.69,309.64,269.48]}
+{"kind":"shape","id":"sh/3ytsrmpw","slide":4,"name":"Rounded Rectangle 21","bbox":[452.33,147.17,374.67,380]}
+{"kind":"textbox","id":"sh/2xkrih8b","slide":4,"name":"Content Placeholder 8","text":"โหลดและชั่งออก\nเรียกบัตร OPEN เดิม ยืนยันสินค้า บันทึก weight_out","textPreview":"โหลดและชั่งออก | เรียกบัตร OPEN เดิม ยืนยันสินค้า บันทึก weight_out","textChars":65,"textLines":2,"bbox":[484.85,189.69,309.64,269.48]}
+{"kind":"shape","id":"sh/1wbapc7q","slide":4,"name":"Rounded Rectangle 23","bbox":[864.83,147.17,374.67,380]}
+{"kind":"textbox","id":"sh/gv29g7q5","slide":4,"name":"Content Placeholder 8","text":"ปิดและกระทบยอด\nตรวจ net, Move Bill, one_num และเวลาออก","textPreview":"ปิดและกระทบยอด | ตรวจ net, Move Bill, one_num และเวลาออก","textChars":54,"textLines":2,"bbox":[897.35,189.69,309.64,269.48]}
+{"kind":"notes","id":"nt/jyx0ra1s","slide":4,"text":""}
+{"kind":"slide","id":"sl/i107q5of","slide":5,"title":"5","textShapes":6}
+{"kind":"textbox","id":"sh/z2tcnm5s","slide":5,"name":"Slide Number Placeholder 3","placeholder":"slideNumber","text":"5","textPreview":"5","textChars":1,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/n6dcr65o","slide":5,"name":"Title 7","placeholder":"title","text":"บทบาทที่ต้องประสานกัน","textPreview":"บทบาทที่ต้องประสานกัน","textChars":21,"textLines":1,"bbox":[41.33,36.12,1198.09,54.55]}
+{"kind":"shape","id":"sh/yhkbe1o7","slide":5,"name":"Rounded Rectangle 4","bbox":[41.33,249.33,374.67,380]}
+{"kind":"shape","id":"sh/l4bupwny","slide":5,"name":"Rounded Rectangle 5","bbox":[452.67,249.33,374.67,380]}
+{"kind":"shape","id":"sh/032tgr6d","slide":5,"name":"Rounded Rectangle 6","bbox":[864.28,249.33,374.67,380]}
+{"kind":"textbox","id":"sh/m5kbi1oj","slide":5,"name":"Content Placeholder 8","text":"Weighbridge\nระบุตัวรถ ตรวจเครื่องชั่ง บันทึกน้ำหนักและปิดบัตร","textPreview":"Weighbridge | ระบุตัวรถ ตรวจเครื่องชั่ง บันทึกน้ำหนักและปิดบัตร","textChars":61,"textLines":2,"bbox":[73.85,353.33,309.64,208]}
+{"kind":"textbox","id":"sh/w32dkbuh","slide":5,"name":"Content Placeholder 9","text":"Warehouse\nยืนยันสินค้า ตัน/ถุง คลัง ปลายทาง และลำดับโหลด","textPreview":"Warehouse | ยืนยันสินค้า ตัน/ถุง คลัง ปลายทาง และลำดับโหลด","textChars":56,"textLines":2,"bbox":[485.85,353.33,309.64,208]}
+{"kind":"textbox","id":"sh/x4vedgvm","slide":5,"name":"Content Placeholder 10","text":"Supervisor / IT\nอนุมัติ deviation จัดการ ambiguity, sync และ outbox","textPreview":"Supervisor / IT | อนุมัติ deviation จัดการ ambiguity, sync และ outbox","textChars":67,"textLines":2,"bbox":[896.79,353.33,309.64,208]}
+{"kind":"shape","id":"sh/dgbulwnm","slide":5,"name":"Google Shape;303;p29","bbox":[897.6,289.73,24.19,26.88]}
+{"kind":"shape","id":"sh/ahkvi1cb","slide":5,"name":"Google Shape;304;p29","bbox":[486.35,289.73,26.88,26.88]}
+{"kind":"shape","id":"sh/v2twb6dw","slide":5,"name":"Google Shape;305;p29","bbox":[72.84,289.73,26.88,26.88]}
+{"kind":"textbox","id":"sh/k7mxovud","slide":5,"name":"Content Placeholder 15","text":"ผู้ชั่ง ผู้อนุมัติน้ำหนักผิดปกติ และผู้แก้ incident ควรแยกคนเมื่อทำได้","textPreview":"ผู้ชั่ง ผู้อนุมัติน้ำหนักผิดปกติ และผู้แก้ incident ควรแยกคนเมื่อทำได้","textChars":70,"textLines":1,"bbox":[42.09,108.93,1197.33,109.97]}
+{"kind":"notes","id":"nt/i107q5of","slide":5,"text":""}
+{"kind":"slide","id":"sl/x8f69ofe","slide":6,"title":"ใช้ฟิลด์และผลหลังบันทึก ไม่ผูกกับชื่อปุ่มเฉพาะรุ่น","textShapes":9}
+{"kind":"textbox","id":"sh/47yh0ve5","slide":6,"name":"Google Shape;534;p58","text":"ใช้ฟิลด์และผลหลังบันทึก ไม่ผูกกับชื่อปุ่มเฉพาะรุ่น","textPreview":"ใช้ฟิลด์และผลหลังบันทึก ไม่ผูกกับชื่อปุ่มเฉพาะรุ่น","textChars":50,"textLines":1,"bbox":[41.33,180.86,581.33,90.86]}
+{"kind":"textbox","id":"sh/q9gz25wb","slide":6,"name":"Google Shape;532;p58","placeholder":"slideNumber","text":"6","textPreview":"6","textChars":1,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/rapgbaxw","slide":6,"name":"Google Shape;533;p58","placeholder":"title","text":"Checklist ก่อนปล่อยรถ","textPreview":"Checklist ก่อนปล่อยรถ","textChars":21,"textLines":1,"bbox":[41.33,36.12,822.67,109.22]}
+{"kind":"textbox","id":"sh/yhg7epsj","slide":6,"name":"Content Placeholder 10","text":"เครื่องชั่งศูนย์/คงที่","textPreview":"เครื่องชั่งศูนย์/คงที่","textChars":22,"textLines":1,"bbox":[828,313.94,410.67,57.61]}
+{"kind":"shape","id":"sh/zi98nu94","slide":6,"name":"Google Shape;340;p61","bbox":[788.21,316.55,22.32,22.31]}
+{"kind":"textbox","id":"sh/v2tcn650","slide":6,"name":"TextBox 11","text":"Pass condition\nบัตรเดิม • เครื่องชั่งพร้อม • ตัวรถและสินค้าตรง • น้ำหนักครบ • ไม่มี exception ค้าง","textPreview":"Pass condition | บัตรเดิม • เครื่องชั่งพร้อม • ตัวรถและสินค้าตรง • น้ำหนักครบ • ไม่มี exception ค้าง","textChars":98,"textLines":2,"bbox":[41.33,313.94,581.33,302.85]}
+{"kind":"textbox","id":"sh/j6dcr65c","slide":6,"name":"Content Placeholder 10","text":"บัตร OPEN เดิม","textPreview":"บัตร OPEN เดิม","textChars":14,"textLines":1,"bbox":[828,377.94,410.67,57.61]}
+{"kind":"shape","id":"sh/i54bylor","slide":6,"name":"Google Shape;340;p61","bbox":[788.21,380.55,22.32,22.31]}
+{"kind":"textbox","id":"sh/twfux0ne","slide":6,"name":"Content Placeholder 10","text":"gross > tare","textPreview":"gross > tare","textChars":12,"textLines":1,"bbox":[828,442.5,410.67,57.61]}
+{"kind":"shape","id":"sh/svmt4v6t","slide":6,"name":"Google Shape;340;p61","bbox":[788.21,445.1,22.32,22.31]}
+{"kind":"textbox","id":"sh/cbe5g3ih","slide":6,"name":"Content Placeholder 10","text":"Move Bill + สินค้าตรง","textPreview":"Move Bill + สินค้าตรง","textChars":21,"textLines":1,"bbox":[828,506.49,410.67,57.61]}
+{"kind":"shape","id":"sh/dcnm98zm","slide":6,"name":"Google Shape;340;p61","bbox":[788.21,509.1,22.32,22.31]}
+{"kind":"textbox","id":"sh/bq547yhw","slide":6,"name":"Content Placeholder 10","text":"one_num + เวลาออกครบ","textPreview":"one_num + เวลาออกครบ","textChars":20,"textLines":1,"bbox":[828,571.83,410.67,57.61]}
+{"kind":"shape","id":"sh/0fy5k3id","slide":6,"name":"Google Shape;340;p61","bbox":[788.21,574.44,22.32,22.31]}
+{"kind":"notes","id":"nt/x8f69ofe","slide":6,"text":""}
+{"kind":"slide","id":"sl/gnmp4jqx","slide":7,"title":"7","textShapes":7}
+{"kind":"textbox","id":"sh/sra9kfyx","slide":7,"name":"Google Shape;532;p58","placeholder":"slideNumber","text":"7","textPreview":"7","textChars":1,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/tsjad0z2","slide":7,"name":"Google Shape;533;p58","placeholder":"title","text":"Stop Work — กักรถและตรวจ","textPreview":"Stop Work — กักรถและตรวจ","textChars":24,"textLines":1,"bbox":[41.33,36.12,1197.33,62.55]}
+{"kind":"shape","id":"sh/l0vuh0rm","slide":7,"name":"Rounded Rectangle 6","bbox":[657.68,248.8,580.99,172]}
+{"kind":"textbox","id":"sh/eh0ba1sr","slide":7,"name":"Content Placeholder 10","text":"Scale unstable\nหยุดใช้และแจ้งผู้ดูแลเครื่องมือวัด","textPreview":"Scale unstable | หยุดใช้และแจ้งผู้ดูแลเครื่องมือวัด","textChars":49,"textLines":2,"bbox":[688.89,279.77,523.56,110.07]}
+{"kind":"shape","id":"sh/fi9c369c","slide":7,"name":"Rounded Rectangle 8","bbox":[42.94,248.8,580.99,172]}
+{"kind":"textbox","id":"sh/baxkjqlk","slide":7,"name":"Content Placeholder 10","text":"Duplicate OPEN\nห้ามเลือกจากทะเบียนอย่างเดียว","textPreview":"Duplicate OPEN | ห้ามเลือกจากทะเบียนอย่างเดียว","textChars":44,"textLines":2,"bbox":[74.15,279.77,523.56,110.07]}
+{"kind":"shape","id":"sh/cb2tkvap","slide":7,"name":"Rounded Rectangle 1","bbox":[657.68,458.8,580.99,172]}
+{"kind":"textbox","id":"sh/dcbud0ra","slide":7,"name":"Content Placeholder 10","text":"Data mismatch\nกักรถและให้เจ้าของงานยืนยัน","textPreview":"Data mismatch | กักรถและให้เจ้าของงานยืนยัน","textChars":41,"textLines":2,"bbox":[688.89,489.77,523.56,110.07]}
+{"kind":"shape","id":"sh/ydkbm5sv","slide":7,"name":"Rounded Rectangle 3","bbox":[42.94,458.8,580.99,172]}
+{"kind":"textbox","id":"sh/zedcfa9g","slide":7,"name":"Content Placeholder 10","text":"Abnormal / outbox\nชั่งซ้ำ เก็บ approval และติดตามจนปิด","textPreview":"Abnormal / outbox | ชั่งซ้ำ เก็บ approval และติดตามจนปิด","textChars":54,"textLines":2,"bbox":[74.15,489.77,523.56,110.07]}
+{"kind":"textbox","id":"sh/kzmdova1","slide":7,"name":"Content Placeholder 15","text":"Critical controls\nห้ามชั่งต่อหรือปิดบัตรเมื่อเครื่องชั่ง ข้อมูลตัวรถ หรือค่าน้ำหนักไม่น่าเชื่อถือ","textPreview":"Critical controls | ห้ามชั่งต่อหรือปิดบัตรเมื่อเครื่องชั่ง ข้อมูลตัวรถ หรือค่าน้ำหนักไม่น่าเชื่อถือ","textChars":97,"textLines":2,"bbox":[42.09,111.02,1197.33,106.27]}
+{"kind":"notes","id":"nt/gnmp4jqx","slide":7,"text":""}
+{"kind":"slide","id":"sl/fu1gfa1s","slide":8,"title":"Records","textShapes":5}
+{"kind":"textbox","id":"sh/1c7qpcbe","slide":8,"name":"Google Shape;558;p61","text":"Records\nsequence • one_num • movebill • in/out/net • product","textPreview":"Records | sequence • one_num • movebill • in/out/net • product","textChars":60,"textLines":2,"bbox":[41.33,421.33,374.67,208]}
+{"kind":"textbox","id":"sh/nep8rmtk","slide":8,"name":"Google Shape;556;p61","placeholder":"slideNumber","text":"8","textPreview":"8","textChars":1,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/0rypw7u9","slide":8,"name":"Google Shape;559;p61","text":"KPI\nOpen เกินเวลา = 0\nUnapproved abnormal = 0\nTraceability = 100%","textPreview":"KPI | Open เกินเวลา = 0 | Unapproved abnormal = 0 | Traceability = 100%","textChars":65,"textLines":4,"bbox":[453.33,421.33,374.67,208]}
+{"kind":"textbox","id":"sh/svi9c725","slide":8,"name":"Google Shape;560;p61","text":"Shift action\nปิดบัตรค้าง บัตรฉุกเฉิน ambiguity และ outbox ก่อนส่งกะ","textPreview":"Shift action | ปิดบัตรค้าง บัตรฉุกเฉิน ambiguity และ outbox ก่อนส่งกะ","textChars":67,"textLines":2,"bbox":[864.28,421.33,374.67,208]}
+{"kind":"textbox","id":"sh/mdg7yhcz","slide":8,"name":"Google Shape;557;p61","placeholder":"title","text":"Records • KPI • Shift action","textPreview":"Records • KPI • Shift action","textChars":28,"textLines":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/dwbq5cja","slide":8,"name":"Google Shape;561;p61","bbox":[449.33,355.1,33.13,37.15]}
+{"kind":"shape","id":"sh/qt0rahkz","slide":8,"name":"Google Shape;562;p61","bbox":[42.14,354.67,34.34,38.01]}
+{"kind":"shape","id":"sh/ru98321k","slide":8,"name":"Google Shape;563;p61","bbox":[864.21,357.67,35.55,28.44]}
+{"kind":"notes","id":"nt/fu1gfa1s","slide":8,"text":""}
+{"kind":"slide","id":"sl/udsvah03","slide":9,"title":"ชั่งถูกบัตร","textShapes":2}
+{"kind":"textbox","id":"sh/nex4jq5k","slide":9,"name":"Title 3","placeholder":"title","text":"ชั่งถูกบัตร\nจึงปล่อยรถได้","textPreview":"ชั่งถูกบัตร | จึงปล่อยรถได้","textChars":25,"textLines":2,"bbox":[65.76,47.21,706.61,252.12]}
+{"kind":"textbox","id":"sh/mdonql4z","slide":9,"name":"Subtitle 4","placeholder":"subtitle","text":"อบรมการระบุตัวรถ + Stop Work\nตรวจสอบเทียบเครื่องชั่งและบัตรค้างทุกกะ","textPreview":"อบรมการระบุตัวรถ + Stop Work | ตรวจสอบเทียบเครื่องชั่งและบัตรค้างทุกกะ","textChars":68,"textLines":2,"bbox":[67.47,374.27,394.58,64.53]}
+{"kind":"shape","id":"sh/1cfmhgne","slide":9,"name":"TextBox 1","bbox":[718.34,-549.52,19.39,38.78]}
+{"kind":"shape","id":"sh/9gzml0nq","slide":9,"name":"TextBox 5","bbox":[-268.14,-324.41,19.39,38.78]}
+{"kind":"image","id":"im/psf21cve","slide":9,"name":"Picture 7","bbox":[0,500.09,1280,219.91]}
+{"kind":"notes","id":"nt/udsvah03","slide":9,"text":""}

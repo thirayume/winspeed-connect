@@ -1,0 +1,3 @@
+display_name: WorldFert Enterprise Context
+short_description: Verified context for WS-Sale-App, WINSpeed, TruckScale, and integrated operations
+default_prompt: Use the WorldFert enterprise context pack to keep system behavior, workflows, controls, and terminology aligned with current source code and verified operating evidence.

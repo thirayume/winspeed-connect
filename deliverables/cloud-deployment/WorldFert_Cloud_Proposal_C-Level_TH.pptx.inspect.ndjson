@@ -1,0 +1,372 @@
+{"kind":"deck","id":"pr/4mb8v9","name":"Deck"}
+{"kind":"layout","layoutId":"a167fc03-637d-41b9-acbb-5a9b6538f145","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"00fda768-8145-4867-a0b5-199700a0c31c","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/ymlrsl","slide":1,"title":"WORLDFERT","textShapes":8}
+{"kind":"textbox","id":"sh/n29gz2hk","slide":1,"text":"WORLDFERT","textPreview":"WORLDFERT","textChars":9,"textLines":1,"bbox":[56,42,300,28]}
+{"kind":"shape","id":"sh/o32x87i5","slide":1,"bbox":[56,142,10,310]}
+{"kind":"textbox","id":"sh/poby1czq","slide":1,"text":"Cloud Migration\nDecision Brief","textPreview":"Cloud Migration | Decision Brief","textChars":30,"textLines":2,"bbox":[92,132,900,210]}
+{"kind":"textbox","id":"sh/apkzah0b","slide":1,"text":"Docker Compose • Public IP/Domain • Direct SFTP • No Coolify • No Tunnel","textPreview":"Docker Compose • Public IP/Domain • Direct SFTP • No Coolify • No Tunnel","textChars":72,"textLines":1,"bbox":[94,370,1080,46]}
+{"kind":"shape","id":"sh/bqtg3mhg","slide":1,"bbox":[94,482,1080,104]}
+{"kind":"textbox","id":"sh/cr2hcri1","slide":1,"text":"ข้อเสนอ","textPreview":"ข้อเสนอ","textChars":7,"textLines":1,"bbox":[118,502,150,28]}
+{"kind":"textbox","id":"sh/xsby5czm","slide":1,"text":"รวม Frontend, Backend, MSSQL และ MySQL บน Cloud VPS เดียว","textPreview":"รวม Frontend, Backend, MSSQL และ MySQL บน Cloud VPS เดียว","textChars":57,"textLines":1,"bbox":[118,538,650,34]}
+{"kind":"textbox","id":"sh/ytkzeh07","slide":1,"text":"CUTOVER","textPreview":"CUTOVER","textChars":7,"textLines":1,"bbox":[840,501,120,24]}
+{"kind":"textbox","id":"sh/zutg7mhs","slide":1,"text":"≤ 4 ชั่วโมง","textPreview":"≤ 4 ชั่วโมง","textChars":11,"textLines":1,"bbox":[840,535,270,42]}
+{"kind":"textbox","id":"sh/fixwvi5c","slide":1,"text":"26 สิงหาคม 2026","textPreview":"26 สิงหาคม 2026","textChars":15,"textLines":1,"bbox":[56,668,220,20]}
+{"kind":"notes","id":"nt/ymlrsl","slide":1,"text":"เปิดด้วยผลลัพธ์ทางธุรกิจ: ลดจุดบริหารระบบให้เหลือ Cloud VPS เดียว โดยยังคงการเชื่อมต่อฐานข้อมูลและรับส่ง backup ผ่าน Public IP ได้ตามข้อกำหนด.\n\n[Sources]\n- Internal: WorldFert repository, backup inventory, and user requirements (26 Aug 2026)"}
+{"kind":"slide","id":"sl/gvkpro","slide":2,"title":"WORLDFERT / CLOUD MIGRATION","textShapes":17}
+{"kind":"textbox","id":"sh/5432loz6","slide":2,"text":"WORLDFERT / CLOUD MIGRATION","textPreview":"WORLDFERT / CLOUD MIGRATION","textChars":27,"textLines":1,"bbox":[48,30,500,24]}
+{"kind":"shape","id":"sh/i1sjq9gv","slide":2,"bbox":[48,78,8,54]}
+{"kind":"textbox","id":"sh/j210jehg","slide":2,"text":"ข้อเสนอที่แนะนำ","textPreview":"ข้อเสนอที่แนะนำ","textChars":15,"textLines":1,"bbox":[76,76,1110,60]}
+{"kind":"shape","id":"sh/sru1wjyx","slide":2,"bbox":[48,670,1184,0.03]}
+{"kind":"textbox","id":"sh/ts32pozi","slide":2,"text":"C‑LEVEL DECISION BRIEF","textPreview":"C‑LEVEL DECISION BRIEF","textChars":22,"textLines":1,"bbox":[48,682,350,18]}
+{"kind":"textbox","id":"sh/6pcju9gr","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1170,680,62,20]}
+{"kind":"textbox","id":"sh/7qlknehc","slide":2,"text":"Hostinger KVM 4","textPreview":"Hostinger KVM 4","textChars":15,"textLines":1,"bbox":[72,174,580,62]}
+{"kind":"textbox","id":"sh/gve103yt","slide":2,"text":"Singapore • 4 vCPU • RAM 16 GB • NVMe 200 GB","textPreview":"Singapore • 4 vCPU • RAM 16 GB • NVMe 200 GB","textChars":44,"textLines":1,"bbox":[74,246,620,36]}
+{"kind":"shape","id":"sh/hwn2t8ze","slide":2,"bbox":[72,316,337,160]}
+{"kind":"textbox","id":"sh/9svip0fu","slide":2,"text":"งบฐานต่อเดือน","textPreview":"งบฐานต่อเดือน","textChars":13,"textLines":1,"bbox":[96,338,220,26]}
+{"kind":"textbox","id":"sh/8rmhwve9","slide":2,"text":"≈ ฿957","textPreview":"≈ ฿957","textChars":6,"textLines":1,"bbox":[96,377,260,58]}
+{"kind":"textbox","id":"sh/n6d0nqxo","slide":2,"text":"คิดจาก Renewal $28.99","textPreview":"คิดจาก Renewal $28.99","textChars":21,"textLines":1,"bbox":[96,442,260,24]}
+{"kind":"shape","id":"sh/m5kzulw3","slide":2,"bbox":[431,316,337,160]}
+{"kind":"textbox","id":"sh/hwvit0fq","slide":2,"text":"รูปแบบปฏิบัติการ","textPreview":"รูปแบบปฏิบัติการ","textChars":16,"textLines":1,"bbox":[455,338,240,26]}
+{"kind":"textbox","id":"sh/wvmh0vel","slide":2,"text":"1 VPS","textPreview":"1 VPS","textChars":5,"textLines":1,"bbox":[455,376,250,56]}
+{"kind":"textbox","id":"sh/vud0rax0","slide":2,"text":"Docker Compose / ไม่มี Coolify","textPreview":"Docker Compose / ไม่มี Coolify","textChars":30,"textLines":1,"bbox":[455,442,286,24]}
+{"kind":"shape","id":"sh/ut4zy5wf","slide":2,"bbox":[790,316,418,160]}
+{"kind":"textbox","id":"sh/d0bihgfm","slide":2,"text":"เงื่อนไขอนุมัติ","textPreview":"เงื่อนไขอนุมัติ","textChars":15,"textLines":1,"bbox":[814,338,250,26]}
+{"kind":"textbox","id":"sh/cz2hobe1","slide":2,"text":"Pilot 7 วัน","textPreview":"Pilot 7 วัน","textChars":11,"textLines":1,"bbox":[814,376,320,52]}
+{"kind":"textbox","id":"sh/4jmh4bmx","slide":2,"text":"วัด IOPS • latency • backup • support","textPreview":"วัด IOPS • latency • backup • support","textChars":37,"textLines":1,"bbox":[814,442,350,24]}
+{"kind":"shape","id":"sh/pkfixgni","slide":2,"bbox":[72,518,1136,104]}
+{"kind":"textbox","id":"sh/2h4z214r","slide":2,"text":"ทางสำรอง","textPreview":"ทางสำรอง","textChars":8,"textLines":1,"bbox":[96,540,150,24]}
+{"kind":"textbox","id":"sh/3id0v65c","slide":2,"text":"Vultr หรือ DigitalOcean หากผล Pilot ไม่ผ่านเกณฑ์ก่อน Go‑Live","textPreview":"Vultr หรือ DigitalOcean หากผล Pilot ไม่ผ่านเกณฑ์ก่อน Go‑Live","textChars":60,"textLines":1,"bbox":[96,573,1030,32]}
+{"kind":"notes","id":"nt/gvkpro","slide":2,"text":"เสนออนุมัติ Hostinger โดยใช้งบราคา renewal ไม่ใช่ราคาโปรโมชั่น และกำหนด Pilot 7 วันก่อนย้ายจริง.\n\n[Sources]\n- https://www.hostinger.com/vps-hosting?lang=en\n- https://support.hostinger.com/en/articles/1583267-where-are-hostinger-servers-located\n- https://support.hostinger.com/en/articles/1583232-how-to-back-up-or-restore-a-vps\n- https://www.bot.or.th/en/statistics/exchange-rate.html"}
+{"kind":"slide","id":"sl/pv9p7g","slide":3,"title":"WORLDFERT / CLOUD MIGRATION","textShapes":22}
+{"kind":"textbox","id":"sh/1g76pone","slide":3,"text":"WORLDFERT / CLOUD MIGRATION","textPreview":"WORLDFERT / CLOUD MIGRATION","textChars":27,"textLines":1,"bbox":[48,30,500,24]}
+{"kind":"shape","id":"sh/etg7e943","slide":3,"bbox":[48,78,8,54]}
+{"kind":"textbox","id":"sh/zupone5o","slide":3,"text":"สถาปัตยกรรมเป้าหมาย: Cloud เดียว แยกชั้นควบคุม","textPreview":"สถาปัตยกรรมเป้าหมาย: Cloud เดียว แยกชั้นควบคุม","textChars":46,"textLines":1,"bbox":[76,76,1110,60]}
+{"kind":"shape","id":"sh/crypcjmx","slide":3,"bbox":[48,670,1184,0.03]}
+{"kind":"textbox","id":"sh/ds76loni","slide":3,"text":"C‑LEVEL DECISION BRIEF","textPreview":"C‑LEVEL DECISION BRIEF","textChars":22,"textLines":1,"bbox":[48,682,350,18]}
+{"kind":"textbox","id":"sh/qpw7a94r","slide":3,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1170,680,62,20]}
+{"kind":"shape","id":"sh/rq5oje5c","slide":3,"bbox":[66,176,180,126]}
+{"kind":"textbox","id":"sh/4nep8zm1","slide":3,"text":"ผู้ใช้เว็บ","textPreview":"ผู้ใช้เว็บ","textChars":10,"textLines":1,"bbox":[88,198,136,32]}
+{"kind":"textbox","id":"sh/pon6h4n6","slide":3,"text":"HTTPS\n80 / 443","textPreview":"HTTPS | 80 / 443","textChars":14,"textLines":2,"bbox":[88,243,136,44]}
+{"kind":"shape","id":"sh/dknut4vi","slide":3,"bbox":[66,334,180,126]}
+{"kind":"textbox","id":"sh/cjedkzux","slide":3,"text":"DB Clients","textPreview":"DB Clients","textChars":10,"textLines":1,"bbox":[88,356,136,32]}
+{"kind":"textbox","id":"sh/bi5credc","slide":3,"text":"1433 / 3306\nIP allowlist","textPreview":"1433 / 3306 | IP allowlist","textChars":24,"textLines":2,"bbox":[82,399,148,48]}
+{"kind":"shape","id":"sh/qhwvi9cr","slide":3,"bbox":[66,492,180,126]}
+{"kind":"textbox","id":"sh/pgnup4v6","slide":3,"text":"SFTP Operator","textPreview":"SFTP Operator","textChars":13,"textLines":1,"bbox":[82,514,150,32]}
+{"kind":"textbox","id":"sh/ovudgzul","slide":3,"text":"Port 22\nKey only","textPreview":"Port 22 | Key only","textChars":16,"textLines":2,"bbox":[88,557,136,46]}
+{"kind":"shape","id":"sh/3ulcnud0","slide":3,"bbox":[246,238,92,0.03]}
+{"kind":"shape","id":"sh/2tcvepcv","slide":3,"bbox":[246,397,92,0.03]}
+{"kind":"shape","id":"sh/1s3ulkva","slide":3,"bbox":[246,555,92,0.03]}
+{"kind":"shape","id":"sh/grudcfup","slide":3,"bbox":[338,176,196,442]}
+{"kind":"textbox","id":"sh/s7i5oj6h","slide":3,"text":"Provider Firewall\n+ UFW","textPreview":"Provider Firewall | + UFW","textChars":23,"textLines":2,"bbox":[362,212,148,72]}
+{"kind":"textbox","id":"sh/t8rmho72","slide":3,"text":"Source CIDR\n2 ชั้น","textPreview":"Source CIDR | 2 ชั้น","textChars":18,"textLines":2,"bbox":[370,344,132,66]}
+{"kind":"textbox","id":"sh/6lg3m9or","slide":3,"text":"Public endpoint\n≠ open to all","textPreview":"Public endpoint | ≠ open to all","textChars":29,"textLines":2,"bbox":[362,500,148,62]}
+{"kind":"shape","id":"sh/r6p4fepc","slide":3,"bbox":[534,397,78,0.03]}
+{"kind":"shape","id":"sh/4jylkj6l","slide":3,"bbox":[612,176,274,196]}
+{"kind":"textbox","id":"sh/5k7mdo76","slide":3,"text":"Caddy + Application","textPreview":"Caddy + Application","textChars":19,"textLines":1,"bbox":[638,201,224,36]}
+{"kind":"textbox","id":"sh/ihg3i98f","slide":3,"text":"TLS อัตโนมัติ\nFrontend + Backend","textPreview":"TLS อัตโนมัติ | Frontend + Backend","textChars":32,"textLines":2,"bbox":[646,262,208,72]}
+{"kind":"shape","id":"sh/jip4bep0","slide":3,"bbox":[612,402,274,216]}
+{"kind":"textbox","id":"sh/of25w36p","slide":3,"text":"Database Containers","textPreview":"Database Containers","textChars":19,"textLines":1,"bbox":[638,429,224,36]}
+{"kind":"textbox","id":"sh/pgbmp87a","slide":3,"text":"SQL Server 2022\nMySQL 8.0\nEncrypted connections","textPreview":"SQL Server 2022 | MySQL 8.0 | Encrypted connections","textChars":47,"textLines":3,"bbox":[646,486,208,96]}
+{"kind":"shape","id":"sh/zadof29c","slide":3,"bbox":[886,270,62,0.03]}
+{"kind":"shape","id":"sh/y947mx87","slide":3,"bbox":[886,510,62,0.03]}
+{"kind":"shape","id":"sh/lwvqhcri","slide":3,"bbox":[948,176,260,442]}
+{"kind":"textbox","id":"sh/0bmpo7qx","slide":3,"text":"Persistent Data","textPreview":"Persistent Data","textChars":15,"textLines":1,"bbox":[976,210,204,36]}
+{"kind":"textbox","id":"sh/nyx8jm9o","slide":3,"text":"Docker volumes","textPreview":"Docker volumes","textChars":14,"textLines":1,"bbox":[980,278,196,30]}
+{"kind":"shape","id":"sh/mx47qh83","slide":3,"bbox":[982,332,190,0.03]}
+{"kind":"textbox","id":"sh/90fqlcru","slide":3,"text":"SFTP folders","textPreview":"SFTP folders","textChars":12,"textLines":1,"bbox":[980,365,196,30]}
+{"kind":"textbox","id":"sh/8z6psrq9","slide":3,"text":"/incoming\n/outgoing\n/manifests","textPreview":"/incoming | /outgoing | /manifests","textChars":30,"textLines":3,"bbox":[994,414,168,100]}
+{"kind":"textbox","id":"sh/32to7i9k","slide":3,"text":"No S3","textPreview":"No S3","textChars":5,"textLines":1,"bbox":[1018,554,120,34]}
+{"kind":"notes","id":"nt/pv9p7g","slide":3,"text":"ทุกบริการอยู่บน VPS เดียว แต่แยก network path, containers, volumes และบัญชี SFTP ชัดเจน. Backend เชื่อม DB ผ่าน Docker network ภายใน.\n\n[Sources]\n- https://learn.microsoft.com/en-us/sql/linux/quickstart-install-connect-docker\n- https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html"}
+{"kind":"slide","id":"sl/1m6xml","slide":4,"title":"WORLDFERT / CLOUD MIGRATION","textShapes":25}
+{"kind":"textbox","id":"sh/h87md47q","slide":4,"text":"WORLDFERT / CLOUD MIGRATION","textPreview":"WORLDFERT / CLOUD MIGRATION","textChars":27,"textLines":1,"bbox":[48,30,500,24]}
+{"kind":"shape","id":"sh/u5gn2p8z","slide":4,"bbox":[48,78,8,54]}
+{"kind":"textbox","id":"sh/v6p4bupk","slide":4,"text":"Public IP: ใช้ง่าย โดยคุมสิทธิ์อย่างชัดเจน","textPreview":"Public IP: ใช้ง่าย โดยคุมสิทธิ์อย่างชัดเจน","textChars":42,"textLines":1,"bbox":[76,76,1110,60]}
+{"kind":"shape","id":"sh/4bi58zqh","slide":4,"bbox":[48,670,1184,0.03]}
+{"kind":"textbox","id":"sh/5crmh47m","slide":4,"text":"C‑LEVEL DECISION BRIEF","textPreview":"C‑LEVEL DECISION BRIEF","textChars":22,"textLines":1,"bbox":[48,682,350,18]}
+{"kind":"textbox","id":"sh/i9gn698b","slide":4,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1170,680,62,20]}
+{"kind":"textbox","id":"sh/jap4fepw","slide":4,"text":"PORT POLICY","textPreview":"PORT POLICY","textChars":11,"textLines":1,"bbox":[72,170,260,24]}
+{"kind":"shape","id":"sh/szi5cjqd","slide":4,"bbox":[72,208,526,316]}
+{"kind":"textbox","id":"sh/t0rmlo7y","slide":4,"text":"80 / 443","textPreview":"80 / 443","textChars":8,"textLines":1,"bbox":[98,232,150,32]}
+{"kind":"textbox","id":"sh/tk3ydc3m","slide":4,"text":"เปิดสู่ Internet สำหรับ Web/API","textPreview":"เปิดสู่ Internet สำหรับ Web/API","textChars":31,"textLines":1,"bbox":[266,237,300,28]}
+{"kind":"shape","id":"sh/sjaxk7m1","slide":4,"bbox":[98,282,472,0.03]}
+{"kind":"textbox","id":"sh/7i1gbmlg","slide":4,"text":"22","textPreview":"22","textChars":2,"textLines":1,"bbox":[98,305,150,32]}
+{"kind":"textbox","id":"sh/6xsfih4b","slide":4,"text":"เฉพาะ IP ผู้ดูแล • Key only • Chroot","textPreview":"เฉพาะ IP ผู้ดูแล • Key only • Chroot","textChars":36,"textLines":1,"bbox":[266,310,300,48]}
+{"kind":"shape","id":"sh/ho3yhw3y","slide":4,"bbox":[98,374,472,0.03]}
+{"kind":"textbox","id":"sh/gnuxormd","slide":4,"text":"1433 / 3306","textPreview":"1433 / 3306","textChars":11,"textLines":1,"bbox":[98,397,150,40]}
+{"kind":"textbox","id":"sh/fmlgfmls","slide":4,"text":"เฉพาะ Client IP ที่อนุมัติ • TLS","textPreview":"เฉพาะ Client IP ที่อนุมัติ • TLS","textChars":32,"textLines":1,"bbox":[266,402,300,42]}
+{"kind":"shape","id":"sh/ulcfmh47","slide":4,"bbox":[98,463,472,0.03]}
+{"kind":"textbox","id":"sh/xszy5sne","slide":4,"text":"Default","textPreview":"Default","textChars":7,"textLines":1,"bbox":[98,482,150,28]}
+{"kind":"textbox","id":"sh/wrqxcnmt","slide":4,"text":"Deny พอร์ตอื่นทั้งหมด","textPreview":"Deny พอร์ตอื่นทั้งหมด","textChars":21,"textLines":1,"bbox":[266,484,300,28]}
+{"kind":"textbox","id":"sh/obuxs7up","slide":4,"text":"WEEKLY BACKUP","textPreview":"WEEKLY BACKUP","textChars":13,"textLines":1,"bbox":[650,170,300,24]}
+{"kind":"shape","id":"sh/9c3ylcva","slide":4,"bbox":[650,208,558,316]}
+{"kind":"textbox","id":"sh/m9cfqxcz","slide":4,"text":"อาทิตย์ 02:00","textPreview":"อาทิตย์ 02:00","textChars":13,"textLines":1,"bbox":[678,232,210,34]}
+{"kind":"textbox","id":"sh/nalgj2d4","slide":4,"text":"Asia/Bangkok","textPreview":"Asia/Bangkok","textChars":12,"textLines":1,"bbox":[936,237,230,28]}
+{"kind":"textbox","id":"sh/wzehw7u1","slide":4,"text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[682,305,38,38]}
+{"kind":"textbox","id":"sh/x0nypcbm","slide":4,"text":"สร้าง MSSQL + MySQL backup","textPreview":"สร้าง MSSQL + MySQL backup","textChars":26,"textLines":1,"bbox":[742,308,410,30]}
+{"kind":"textbox","id":"sh/adcfuxcv","slide":4,"text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[682,363,38,38]}
+{"kind":"textbox","id":"sh/by5gn2dg","slide":4,"text":"VERIFY / gzip test / SHA‑256","textPreview":"VERIFY / gzip test / SHA‑256","textChars":28,"textLines":1,"bbox":[742,366,410,30]}
+{"kind":"textbox","id":"sh/k3eh0rux","slide":4,"text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[682,421,38,38]}
+{"kind":"textbox","id":"sh/l4nytwbi","slide":4,"text":"เก็บ 70 วัน และวางใน /outgoing","textPreview":"เก็บ 70 วัน และวางใน /outgoing","textChars":30,"textLines":1,"bbox":[742,424,410,30]}
+{"kind":"textbox","id":"sh/vy90jqdk","slide":4,"text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[682,479,38,38]}
+{"kind":"textbox","id":"sh/ux0jqlwz","slide":4,"text":"ดาวน์โหลดผ่าน SFTP ไปบริษัท/NAS","textPreview":"ดาวน์โหลดผ่าน SFTP ไปบริษัท/NAS","textChars":31,"textLines":1,"bbox":[742,482,410,30]}
+{"kind":"shape","id":"sh/h0rilgvq","slide":4,"bbox":[72,560,1136,72]}
+{"kind":"textbox","id":"sh/gzi1sve5","slide":4,"text":"หลักการ: Public endpoint ช่วยให้เชื่อมต่อง่าย — แต่ไม่เปิด 0.0.0.0/0 ให้ฐานข้อมูลเป็นค่าเริ่มต้น","textPreview":"หลักการ: Public endpoint ช่วยให้เชื่อมต่อง่าย — แต่ไม่เปิด 0.0.0.0/0 ให้ฐานข้อมูลเป็นค่าเริ่มต้น","textChars":96,"textLines":1,"bbox":[96,580,1088,34]}
+{"kind":"notes","id":"nt/1m6xml","slide":4,"text":"ใช้ Provider Firewall และ UFW เป็น source-IP allowlist สองชั้น. Backup ที่ผู้ให้บริการมีไว้เสริม แต่ฐานข้อมูลต้องมี verified backup และสำเนานอก VPS.\n\n[Sources]\n- https://support.hostinger.com/en/articles/8172641-how-to-use-a-managed-vps-firewall\n- https://support.hostinger.com/en/articles/8868611-how-to-connect-to-vps-using-sftp\n- https://learn.microsoft.com/en-us/sql/linux/quickstart-install-connect-docker\n- https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html"}
+{"kind":"slide","id":"sl/23l629","slide":5,"title":"WORLDFERT / CLOUD MIGRATION","textShapes":42}
+{"kind":"textbox","id":"sh/y5sbq5kz","slide":5,"text":"WORLDFERT / CLOUD MIGRATION","textPreview":"WORLDFERT / CLOUD MIGRATION","textChars":27,"textLines":1,"bbox":[48,30,500,24]}
+{"kind":"shape","id":"sh/l8ja10jq","slide":5,"bbox":[48,78,8,54]}
+{"kind":"textbox","id":"sh/07atsv25","slide":5,"text":"Cloud ต่างประเทศ 5 ราย — เรียงตามความคุ้มค่า","textPreview":"Cloud ต่างประเทศ 5 ราย — เรียงตามความคุ้มค่า","textChars":44,"textLines":1,"bbox":[76,76,1110,60]}
+{"kind":"shape","id":"sh/b2hsvq1o","slide":5,"bbox":[48,670,1184,0.03]}
+{"kind":"textbox","id":"sh/qh8bmlk3","slide":5,"text":"C‑LEVEL DECISION BRIEF","textPreview":"C‑LEVEL DECISION BRIEF","textChars":22,"textLines":1,"bbox":[48,682,350,18]}
+{"kind":"textbox","id":"sh/d4zax0je","slide":5,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1170,680,62,20]}
+{"kind":"textbox","id":"sh/c3qtov29","slide":5,"text":"เกณฑ์เดียวกัน: x86‑64, Public IPv4, Singapore/SEA, 4 vCPU, RAM ≥8 GB, Disk ≥160 GB","textPreview":"เกณฑ์เดียวกัน: x86‑64, Public IPv4, Singapore/SEA, 4 vCPU, RAM ≥8 GB, Disk ≥160 GB","textChars":82,"textLines":1,"bbox":[72,152,1136,30]}
+{"kind":"shape","id":"sh/3ehsr61c","slide":5,"bbox":[72,198,1136,42]}
+{"kind":"textbox","id":"sh/2d8rilkr","slide":5,"text":"#","textPreview":"#","textChars":1,"textLines":1,"bbox":[80,206,46,28]}
+{"kind":"textbox","id":"sh/0n6dcb6x","slide":5,"text":"Provider","textPreview":"Provider","textChars":8,"textLines":1,"bbox":[142,206,194,28]}
+{"kind":"textbox","id":"sh/1ofu5g7i","slide":5,"text":"Spec","textPreview":"Spec","textChars":4,"textLines":1,"bbox":[352,206,244,28]}
+{"kind":"textbox","id":"sh/elovalor","slide":5,"text":"Base / เดือน","textPreview":"Base / เดือน","textChars":12,"textLines":1,"bbox":[612,206,149,28]}
+{"kind":"textbox","id":"sh/zmxc3qpc","slide":5,"text":"Backup","textPreview":"Backup","textChars":6,"textLines":1,"bbox":[777,206,164,28]}
+{"kind":"textbox","id":"sh/cj6d8b6l","slide":5,"text":"มุมมอง","textPreview":"มุมมอง","textChars":6,"textLines":1,"bbox":[957,206,243,28]}
+{"kind":"shape","id":"sh/dkfu1g76","slide":5,"bbox":[72,240,1136,70]}
+{"kind":"textbox","id":"sh/qhov61ov","slide":5,"text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[80,248,46,54]}
+{"kind":"textbox","id":"sh/rixcz6pg","slide":5,"text":"Hostinger KVM 4","textPreview":"Hostinger KVM 4","textChars":15,"textLines":1,"bbox":[142,248,194,54]}
+{"kind":"shape","id":"sh/wfqdkv65","slide":5,"bbox":[134,240,0.03,70]}
+{"kind":"textbox","id":"sh/xgjed07q","slide":5,"text":"4 / 16 GB / 200 GB","textPreview":"4 / 16 GB / 200 GB","textChars":18,"textLines":1,"bbox":[352,248,244,54]}
+{"kind":"shape","id":"sh/5wfux0zu","slide":5,"bbox":[344,240,0.03,70]}
+{"kind":"textbox","id":"sh/kv6dovy9","slide":5,"text":"$28.99 ≈ ฿957","textPreview":"$28.99 ≈ ฿957","textChars":13,"textLines":1,"bbox":[612,248,149,54]}
+{"kind":"shape","id":"sh/judcvqho","slide":5,"bbox":[604,240,0.03,70]}
+{"kind":"textbox","id":"sh/i94vmlg3","slide":5,"text":"Weekly รวม","textPreview":"Weekly รวม","textChars":10,"textLines":1,"bbox":[777,248,164,54]}
+{"kind":"shape","id":"sh/x8vut0zi","slide":5,"bbox":[769,240,0.03,70]}
+{"kind":"textbox","id":"sh/w7mdkvyx","slide":5,"text":"Best value • Pilot 7 วัน","textPreview":"Best value • Pilot 7 วัน","textChars":24,"textLines":1,"bbox":[957,248,243,54]}
+{"kind":"shape","id":"sh/v6dcrqhs","slide":5,"bbox":[949,240,0.03,70]}
+{"kind":"shape","id":"sh/a54bilg7","slide":5,"bbox":[72,310,1136,70]}
+{"kind":"textbox","id":"sh/94vupgzm","slide":5,"text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[80,318,46,54]}
+{"kind":"textbox","id":"sh/832tgby1","slide":5,"text":"Vultr VC2","textPreview":"Vultr VC2","textChars":9,"textLines":1,"bbox":[142,318,194,54]}
+{"kind":"shape","id":"sh/exgjaxsn","slide":5,"bbox":[134,310,0.03,70]}
+{"kind":"textbox","id":"sh/fyp03it8","slide":5,"text":"4 / 8 GB / 160 GB","textPreview":"4 / 8 GB / 160 GB","textChars":17,"textLines":1,"bbox":[352,318,244,54]}
+{"kind":"shape","id":"sh/0zi1cnat","slide":5,"bbox":[344,310,0.03,70]}
+{"kind":"textbox","id":"sh/10ri5sbe","slide":5,"text":"$40 ≈ ฿1,320","textPreview":"$40 ≈ ฿1,320","textChars":12,"textLines":1,"bbox":[612,318,149,54]}
+{"kind":"shape","id":"sh/qtgj6dsb","slide":5,"bbox":[604,310,0.03,70]}
+{"kind":"textbox","id":"sh/rup0zitw","slide":5,"text":"+20% → ฿1,584","textPreview":"+20% → ฿1,584","textChars":13,"textLines":1,"bbox":[777,318,164,54]}
+{"kind":"shape","id":"sh/svy18nah","slide":5,"bbox":[769,310,0.03,70]}
+{"kind":"textbox","id":"sh/dw7i1sb2","slide":5,"text":"ทางสำรองที่ยืดหยุ่น","textPreview":"ทางสำรองที่ยืดหยุ่น","textChars":19,"textLines":1,"bbox":[957,318,243,54]}
+{"kind":"shape","id":"sh/i5wz2dsf","slide":5,"bbox":[949,310,0.03,70]}
+{"kind":"shape","id":"sh/3650vyt0","slide":5,"bbox":[72,380,1136,70]}
+{"kind":"textbox","id":"sh/vipw7exw","slide":5,"text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[80,388,46,54]}
+{"kind":"textbox","id":"sh/uhgfe9wb","slide":5,"text":"DigitalOcean Basic","textPreview":"DigitalOcean Basic","textChars":18,"textLines":1,"bbox":[142,388,194,54]}
+{"kind":"shape","id":"sh/hkre9ofm","slide":5,"bbox":[134,380,0.03,70]}
+{"kind":"textbox","id":"sh/wjyxgje1","slide":5,"text":"4 / 8 GiB / 160 GiB","textPreview":"4 / 8 GiB / 160 GiB","textChars":19,"textLines":1,"bbox":[352,388,244,54]}
+{"kind":"shape","id":"sh/7upw3uxk","slide":5,"bbox":[344,380,0.03,70]}
+{"kind":"textbox","id":"sh/mtgfapwz","slide":5,"text":"$48 ≈ ฿1,584","textPreview":"$48 ≈ ฿1,584","textChars":12,"textLines":1,"bbox":[612,388,149,54]}
+{"kind":"shape","id":"sh/9g7e54fq","slide":5,"bbox":[604,380,0.03,70]}
+{"kind":"textbox","id":"sh/8vyxcze5","slide":5,"text":"+20% → ฿1,901","textPreview":"+20% → ฿1,901","textChars":13,"textLines":1,"bbox":[777,388,164,54]}
+{"kind":"shape","id":"sh/zq5wzuxo","slide":5,"bbox":[769,380,0.03,70]}
+{"kind":"textbox","id":"sh/ypwf6pw3","slide":5,"text":"ใช้ง่าย / เอกสารดี","textPreview":"ใช้ง่าย / เอกสารดี","textChars":18,"textLines":1,"bbox":[957,388,243,54]}
+{"kind":"shape","id":"sh/ovutgvu1","slide":5,"bbox":[949,380,0.03,70]}
+{"kind":"shape","id":"sh/pw3u90v6","slide":5,"bbox":[72,450,1136,70]}
+{"kind":"textbox","id":"sh/2tsbelcv","slide":5,"text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[80,458,46,54]}
+{"kind":"textbox","id":"sh/nulc7qdg","slide":5,"text":"Hetzner CPX32","textPreview":"Hetzner CPX32","textChars":13,"textLines":1,"bbox":[142,458,194,54]}
+{"kind":"shape","id":"sh/czudkvux","slide":5,"bbox":[134,450,0.03,70]}
+{"kind":"textbox","id":"sh/x03ud0vi","slide":5,"text":"4 / 8 GB / 160 GB","textPreview":"4 / 8 GB / 160 GB","textChars":17,"textLines":1,"bbox":[352,458,244,54]}
+{"kind":"shape","id":"sh/axcbi5cr","slide":5,"bbox":[344,450,0.03,70]}
+{"kind":"textbox","id":"sh/bylcbqdc","slide":5,"text":"≈ ฿1,933 + IPv4","textPreview":"≈ ฿1,933 + IPv4","textChars":15,"textLines":1,"bbox":[612,458,149,54]}
+{"kind":"shape","id":"sh/s3at8but","slide":5,"bbox":[604,450,0.03,70]}
+{"kind":"textbox","id":"sh/t4ju1gvy","slide":5,"text":"+20% → ฿2,316","textPreview":"+20% → ฿2,316","textChars":13,"textLines":1,"bbox":[777,458,164,54]}
+{"kind":"shape","id":"sh/tkba5sn2","slide":5,"bbox":[769,450,0.03,70]}
+{"kind":"textbox","id":"sh/8z29wnmh","slide":5,"text":"Controls ดี • SG traffic ต่ำ","textPreview":"Controls ดี • SG traffic ต่ำ","textChars":28,"textLines":1,"bbox":[957,458,243,54]}
+{"kind":"shape","id":"sh/7yts325w","slide":5,"bbox":[949,450,0.03,70]}
+{"kind":"shape","id":"sh/6x0rux4b","slide":5,"bbox":[72,520,1136,70]}
+{"kind":"textbox","id":"sh/hoba9cny","slide":5,"text":"5","textPreview":"5","textChars":1,"textLines":1,"bbox":[80,528,46,54]}
+{"kind":"textbox","id":"sh/gn2907md","slide":5,"text":"AWS Lightsail CO","textPreview":"AWS Lightsail CO","textChars":16,"textLines":1,"bbox":[142,528,194,54]}
+{"kind":"shape","id":"sh/vmts7258","slide":5,"bbox":[134,520,0.03,70]}
+{"kind":"textbox","id":"sh/ulkryx4n","slide":5,"text":"4 / 8 GB / 320 GB","textPreview":"4 / 8 GB / 320 GB","textChars":17,"textLines":1,"bbox":[352,528,244,54]}
+{"kind":"shape","id":"sh/5svadcna","slide":5,"bbox":[344,520,0.03,70]}
+{"kind":"textbox","id":"sh/4rm94rmp","slide":5,"text":"$84 ≈ ฿2,772","textPreview":"$84 ≈ ฿2,772","textChars":12,"textLines":1,"bbox":[612,528,149,54]}
+{"kind":"shape","id":"sh/2lcfipgv","slide":5,"bbox":[604,520,0.03,70]}
+{"kind":"textbox","id":"sh/nm5gbuhg","slide":5,"text":"$0.05/GB‑mo","textPreview":"$0.05/GB‑mo","textChars":11,"textLines":1,"bbox":[777,528,164,54]}
+{"kind":"shape","id":"sh/onexkzy1","slide":5,"bbox":[769,520,0.03,70]}
+{"kind":"textbox","id":"sh/ponydkzm","slide":5,"text":"Ecosystem ดี • ต้นทุนสูง","textPreview":"Ecosystem ดี • ต้นทุนสูง","textChars":24,"textLines":1,"bbox":[957,528,243,54]}
+{"kind":"shape","id":"sh/apwfmpgr","slide":5,"bbox":[949,520,0.03,70]}
+{"kind":"textbox","id":"sh/bq5gfuhc","slide":5,"text":"อัตราแผน 33 บาท/USD • ไม่รวม VAT/ภาษี/โดเมน/egress เกินโควตา • ราคา ณ 26 ส.ค. 2026","textPreview":"อัตราแผน 33 บาท/USD • ไม่รวม VAT/ภาษี/โดเมน/egress เกินโควตา • ราคา ณ 26 ส.ค. 2026","textChars":82,"textLines":1,"bbox":[72,610,1136,32]}
+{"kind":"notes","id":"nt/23l629","slide":5,"text":"ตารางใช้ราคา renewal/on-demand เพื่อไม่ให้ผู้บริหารตัดสินใจจากราคาโปรโมชัน. Provider backup แสดงแยกจาก DB backup ผ่าน SFTP.\n\n[Sources]\n- https://www.hostinger.com/vps-hosting?lang=en\n- https://api.vultr.com/v2/plans?type=vc2&per_page=100\n- https://docs.vultr.com/support/platform/billing/how-much-does-it-cost-to-enable-automatic-backups\n- https://www.digitalocean.com/pricing/droplets\n- https://docs.digitalocean.com/products/backups/details/pricing/\n- https://docs.hetzner.com/general/infrastructure-and-availability/price-adjustment/\n- https://docs.hetzner.com/cloud/servers/primary-ips/overview/\n- https://docs.aws.amazon.com/lightsail/latest/userguide/amazon-lightsail-bundles.html\n- https://docs.aws.amazon.com/lightsail/latest/userguide/amazon-lightsail-faq-snapshots.html\n- https://www.bot.or.th/en/statistics/exchange-rate.html"}
+{"kind":"slide","id":"sl/h6p5jk","slide":6,"title":"WORLDFERT / CLOUD MIGRATION","textShapes":11}
+{"kind":"textbox","id":"sh/oz2tkzyd","slide":6,"text":"WORLDFERT / CLOUD MIGRATION","textPreview":"WORLDFERT / CLOUD MIGRATION","textChars":27,"textLines":1,"bbox":[48,30,500,24]}
+{"kind":"shape","id":"sh/3ytsruhs","slide":6,"bbox":[48,78,8,54]}
+{"kind":"textbox","id":"sh/2dkbipgn","slide":6,"text":"งบรายเดือน: ส่วนต่างที่เห็นได้ทันที","textPreview":"งบรายเดือน: ส่วนต่างที่เห็นได้ทันที","textChars":35,"textLines":1,"bbox":[76,76,1110,60]}
+{"kind":"shape","id":"sh/d4vaxoza","slide":6,"bbox":[48,670,1184,0.03]}
+{"kind":"textbox","id":"sh/c3mtojyp","slide":6,"text":"C‑LEVEL DECISION BRIEF","textPreview":"C‑LEVEL DECISION BRIEF","textChars":22,"textLines":1,"bbox":[48,682,350,18]}
+{"kind":"textbox","id":"sh/b2dsveh4","slide":6,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[1170,680,62,20]}
+{"kind":"textbox","id":"sh/q14bm9gj","slide":6,"text":"บาท / เดือน (ค่าเครื่องฐาน)","textPreview":"บาท / เดือน (ค่าเครื่องฐาน)","textChars":27,"textLines":1,"bbox":[78,155,360,28]}
+{"kind":"shape","id":"sh/l8fu1oz6","slide":6,"bbox":[842,190,360,122]}
+{"kind":"textbox","id":"sh/07mtsjyl","slide":6,"text":"Hostinger","textPreview":"Hostinger","textChars":9,"textLines":1,"bbox":[868,214,300,26]}
+{"kind":"textbox","id":"sh/elk7y1gz","slide":6,"text":"ประหยัด ≈ 65%","textPreview":"ประหยัด ≈ 65%","textChars":13,"textLines":1,"bbox":[868,250,300,42]}
+{"kind":"shape","id":"sh/zmt8r6xk","slide":6,"bbox":[842,338,360,122]}
+{"kind":"textbox","id":"sh/072p0by5","slide":6,"text":"Budget baseline","textPreview":"Budget baseline","textChars":15,"textLines":1,"bbox":[868,362,300,26]}
+{"kind":"textbox","id":"sh/l8vqtgfa","slide":6,"text":"ใช้ Renewal","textPreview":"ใช้ Renewal","textChars":11,"textLines":1,"bbox":[868,398,300,42]}
+{"kind":"shape","id":"sh/m9472lgv","slide":6,"bbox":[842,486,360,122]}
+{"kind":"textbox","id":"sh/nad8vqxg","slide":6,"text":"หมายเหตุ","textPreview":"หมายเหตุ","textChars":8,"textLines":1,"bbox":[868,510,300,24]}
+{"kind":"textbox","id":"sh/8bmp4vy1","slide":6,"text":"Snapshot ≠ DB backup","textPreview":"Snapshot ≠ DB backup","textChars":20,"textLines":1,"bbox":[868,546,300,36]}
+{"kind":"chart","id":"ch/p4ryt0fa","slide":6,"name":"","chartType":"bar","bbox":[78,190,700,430]}
+{"kind":"notes","id":"nt/h6p5jk","slide":6,"text":"ต้นทุนฐาน Hostinger ต่ำสุดใน shortlist นี้. ค่าที่แสดงไม่รวม VAT, ภาษี, โดเมน และ snapshot เพิ่มเติมของบางราย.\n\n[Sources]\n- https://www.hostinger.com/vps-hosting?lang=en\n- https://www.digitalocean.com/pricing/droplets\n- https://docs.aws.amazon.com/lightsail/latest/userguide/amazon-lightsail-bundles.html\n- https://www.bot.or.th/en/statistics/exchange-rate.html"}
+{"kind":"slide","id":"sl/tw8m1w","slide":7,"title":"WORLDFERT / CLOUD MIGRATION","textShapes":36}
+{"kind":"textbox","id":"sh/ozets3mp","slide":7,"text":"WORLDFERT / CLOUD MIGRATION","textPreview":"WORLDFERT / CLOUD MIGRATION","textChars":27,"textLines":1,"bbox":[48,30,500,24]}
+{"kind":"shape","id":"sh/ny5szyl4","slide":7,"bbox":[48,78,8,54]}
+{"kind":"textbox","id":"sh/mxwbqt4j","slide":7,"text":"Cloud ไทย 5 ราย","textPreview":"Cloud ไทย 5 ราย","textChars":15,"textLines":1,"bbox":[76,76,1110,60]}
+{"kind":"shape","id":"sh/1wnaxo3y","slide":7,"bbox":[48,670,1184,0.03]}
+{"kind":"textbox","id":"sh/0vetojmt","slide":7,"text":"C‑LEVEL DECISION BRIEF","textPreview":"C‑LEVEL DECISION BRIEF","textChars":22,"textLines":1,"bbox":[48,682,350,18]}
+{"kind":"textbox","id":"sh/zulsvel8","slide":7,"text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[1170,680,62,20]}
+{"kind":"textbox","id":"sh/etcbm94n","slide":7,"text":"2 รายมีราคาสาธารณะ • 3 รายต้อง RFQ/TOR","textPreview":"2 รายมีราคาสาธารณะ • 3 รายต้อง RFQ/TOR","textChars":38,"textLines":1,"bbox":[72,152,1136,30]}
+{"kind":"shape","id":"sh/ls7u9s3i","slide":7,"bbox":[72,198,1136,42]}
+{"kind":"textbox","id":"sh/kryt0n2x","slide":7,"text":"Provider","textPreview":"Provider","textChars":8,"textLines":1,"bbox":[80,206,194,28]}
+{"kind":"textbox","id":"sh/i10zql07","slide":7,"text":"ตัวอย่างสเปก/บริการ","textPreview":"ตัวอย่างสเปก/บริการ","textChars":19,"textLines":1,"bbox":[290,206,254,28]}
+{"kind":"textbox","id":"sh/j29gjq1c","slide":7,"text":"งบ/เดือน","textPreview":"งบ/เดือน","textChars":8,"textLines":1,"bbox":[560,206,220,28]}
+{"kind":"textbox","id":"sh/43ihsvix","slide":7,"text":"สถานะราคา","textPreview":"สถานะราคา","textChars":9,"textLines":1,"bbox":[796,206,194,28]}
+{"kind":"textbox","id":"sh/54ryl0ji","slide":7,"text":"เหมาะกับ","textPreview":"เหมาะกับ","textChars":8,"textLines":1,"bbox":[1006,206,194,28]}
+{"kind":"shape","id":"sh/udgzml0v","slide":7,"bbox":[72,240,1136,68]}
+{"kind":"textbox","id":"sh/ve9gfq1g","slide":7,"text":"ReadyIDC","textPreview":"ReadyIDC","textChars":8,"textLines":1,"bbox":[80,248,194,52]}
+{"kind":"textbox","id":"sh/wfihovi1","slide":7,"text":"4 vCPU / 12 GB / 240 GB","textPreview":"4 vCPU / 12 GB / 240 GB","textChars":23,"textLines":1,"bbox":[290,248,254,52]}
+{"kind":"shape","id":"sh/hgryhgjm","slide":7,"bbox":[282,240,0.03,68]}
+{"kind":"textbox","id":"sh/e9kzy50z","slide":7,"text":"฿1,070 incl VAT","textPreview":"฿1,070 incl VAT","textChars":15,"textLines":1,"bbox":[560,248,220,52]}
+{"kind":"shape","id":"sh/fat0ra1k","slide":7,"bbox":[552,240,0.03,68]}
+{"kind":"textbox","id":"sh/b2l43id0","slide":7,"text":"Public","textPreview":"Public","textChars":6,"textLines":1,"bbox":[796,248,194,52]}
+{"kind":"shape","id":"sh/q1snudcf","slide":7,"bbox":[788,240,0.03,68]}
+{"kind":"textbox","id":"sh/d43m5svq","slide":7,"text":"คุ้มค่า / POC ก่อน","textPreview":"คุ้มค่า / POC ก่อน","textChars":18,"textLines":1,"bbox":[1006,248,194,52]}
+{"kind":"shape","id":"sh/c3u5wnul","slide":7,"bbox":[998,240,0.03,68]}
+{"kind":"shape","id":"sh/z6l47idw","slide":7,"bbox":[72,308,1136,68]}
+{"kind":"textbox","id":"sh/y5cnydcb","slide":7,"text":"NIPA Cloud","textPreview":"NIPA Cloud","textChars":10,"textLines":1,"bbox":[80,316,194,52]}
+{"kind":"textbox","id":"sh/l83m9sv2","slide":7,"text":"4 vCPU / 16 GB / 200 GB","textPreview":"4 vCPU / 16 GB / 200 GB","textChars":23,"textLines":1,"bbox":[290,316,254,52]}
+{"kind":"shape","id":"sh/07u50nuh","slide":7,"bbox":[282,308,0.03,68]}
+{"kind":"textbox","id":"sh/na5ob2d8","slide":7,"text":"≈ ฿5,072 incl VAT","textPreview":"≈ ฿5,072 incl VAT","textChars":17,"textLines":1,"bbox":[560,316,220,52]}
+{"kind":"shape","id":"sh/m9wn2xcn","slide":7,"bbox":[552,308,0.03,68]}
+{"kind":"textbox","id":"sh/kzels7al","slide":7,"text":"Public • IIG extra","textPreview":"Public • IIG extra","textChars":18,"textLines":1,"bbox":[796,316,194,52]}
+{"kind":"shape","id":"sh/50nm1cr6","slide":7,"bbox":[788,308,0.03,68]}
+{"kind":"textbox","id":"sh/ixw3qxsv","slide":7,"text":"Thai cloud / governance","textPreview":"Thai cloud / governance","textChars":23,"textLines":1,"bbox":[1006,316,194,52]}
+{"kind":"shape","id":"sh/jy54z290","slide":7,"bbox":[998,308,0.03,68]}
+{"kind":"shape","id":"sh/wbelonap","slide":7,"bbox":[72,376,1136,68]}
+{"kind":"textbox","id":"sh/xcnmxsra","slide":7,"text":"INET","textPreview":"INET","textChars":4,"textLines":1,"bbox":[80,384,194,52]}
+{"kind":"textbox","id":"sh/a9w3mxsj","slide":7,"text":"VM + Backup + DRaaS","textPreview":"VM + Backup + DRaaS","textChars":19,"textLines":1,"bbox":[290,384,254,52]}
+{"kind":"shape","id":"sh/va54vi94","slide":7,"bbox":[282,376,0.03,68]}
+{"kind":"textbox","id":"sh/87ulknad","slide":7,"text":"RFQ • plan 5–15k","textPreview":"RFQ • plan 5–15k","textChars":16,"textLines":1,"bbox":[560,384,220,52]}
+{"kind":"shape","id":"sh/983mtsry","slide":7,"bbox":[552,376,0.03,68]}
+{"kind":"textbox","id":"sh/dcji1o7q","slide":7,"text":"Quote required","textPreview":"Quote required","textChars":14,"textLines":1,"bbox":[796,384,194,52]}
+{"kind":"shape","id":"sh/cba1sjq5","slide":7,"bbox":[788,376,0.03,68]}
+{"kind":"textbox","id":"sh/ba10zepk","slide":7,"text":"Enterprise / SLA 99.95","textPreview":"Enterprise / SLA 99.95","textChars":22,"textLines":1,"bbox":[1006,384,194,52]}
+{"kind":"shape","id":"sh/q98jq98f","slide":7,"bbox":[998,376,0.03,68]}
+{"kind":"shape","id":"sh/lgj25o72","slide":7,"bbox":[72,444,1136,68]}
+{"kind":"textbox","id":"sh/0fa1wjqh","slide":7,"text":"True IDC","textPreview":"True IDC","textChars":8,"textLines":1,"bbox":[80,452,194,52]}
+{"kind":"textbox","id":"sh/ze103ypw","slide":7,"text":"Cloud+ + Elastic IP","textPreview":"Cloud+ + Elastic IP","textChars":19,"textLines":1,"bbox":[290,452,254,52]}
+{"kind":"shape","id":"sh/ydsjut8b","slide":7,"bbox":[282,444,0.03,68]}
+{"kind":"textbox","id":"sh/hkzit4ri","slide":7,"text":"RFQ • plan 5–15k","textPreview":"RFQ • plan 5–15k","textChars":16,"textLines":1,"bbox":[560,452,220,52]}
+{"kind":"shape","id":"sh/gjq1kzqx","slide":7,"bbox":[552,444,0.03,68]}
+{"kind":"textbox","id":"sh/6p4fu5ov","slide":7,"text":"Quote required","textPreview":"Quote required","textChars":14,"textLines":1,"bbox":[796,452,194,52]}
+{"kind":"shape","id":"sh/7qdgna5g","slide":7,"bbox":[788,444,0.03,68]}
+{"kind":"textbox","id":"sh/sr6xwv61","slide":7,"text":"Data residency ไทย","textPreview":"Data residency ไทย","textChars":18,"textLines":1,"bbox":[1006,452,194,52]}
+{"kind":"shape","id":"sh/tsfyp0nm","slide":7,"bbox":[998,444,0.03,68]}
+{"kind":"shape","id":"sh/utozy5o7","slide":7,"bbox":[72,512,1136,68]}
+{"kind":"textbox","id":"sh/fexgra5c","slide":7,"text":"Cloud HM","textPreview":"Cloud HM","textChars":8,"textLines":1,"bbox":[80,520,194,52]}
+{"kind":"textbox","id":"sh/gf6h0f6x","slide":7,"text":"VMware IaaS + Firewall","textPreview":"VMware IaaS + Firewall","textChars":22,"textLines":1,"bbox":[290,520,254,52]}
+{"kind":"shape","id":"sh/hgfytkni","slide":7,"bbox":[282,512,0.03,68]}
+{"kind":"textbox","id":"sh/axkfmlon","slide":7,"text":"RFQ • plan 7–20k","textPreview":"RFQ • plan 7–20k","textChars":16,"textLines":1,"bbox":[560,520,220,52]}
+{"kind":"shape","id":"sh/vitgfqp8","slide":7,"bbox":[552,512,0.03,68]}
+{"kind":"textbox","id":"sh/z29cnm50","slide":7,"text":"Quote required","textPreview":"Quote required","textChars":14,"textLines":1,"bbox":[796,520,194,52]}
+{"kind":"shape","id":"sh/y10vuh4f","slide":7,"bbox":[788,512,0.03,68]}
+{"kind":"textbox","id":"sh/lorupcn6","slide":7,"text":"Managed infrastructure","textPreview":"Managed infrastructure","textChars":22,"textLines":1,"bbox":[1006,520,194,52]}
+{"kind":"shape","id":"sh/03idwrml","slide":7,"bbox":[998,512,0.03,68]}
+{"kind":"shape","id":"sh/bypcj254","slide":7,"bbox":[72,598,1136,52]}
+{"kind":"textbox","id":"sh/qxgvqx4j","slide":7,"text":"ช่วงงบ RFQ เป็น planning envelope ภายใน — ไม่ใช่ใบเสนอราคาจากผู้ให้บริการ","textPreview":"ช่วงงบ RFQ เป็น planning envelope ภายใน — ไม่ใช่ใบเสนอราคาจากผู้ให้บริการ","textChars":73,"textLines":1,"bbox":[94,612,1092,28]}
+{"kind":"notes","id":"nt/tw8m1w","slide":7,"text":"ReadyIDC และ NIPA มีราคาสาธารณะที่ใช้ประมาณการได้. INET, True IDC และ Cloud HM ต้องส่ง TOR เพื่อยืนยัน Public IPv4, พอร์ต, Docker/MSSQL Linux, backup, bandwidth และ SLA.\n\n[Sources]\n- https://www.readyidc.com/en/products/cloud-server/\n- https://nipa.cloud/th/pricing/nipa-space/compute-instance\n- https://nipa.cloud/pricing/nipa-space/block-storage\n- https://nipa.cloud/pricing/nipa-space/external-ip\n- https://www.inet.co.th/th/services/cloud-solution\n- https://www.trueidc.com/en/service/67/True-IDC-Cloud%2B\n- https://www.cloudhm.co.th/en/secured-infrastructure"}
+{"kind":"slide","id":"sl/749zkl","slide":8,"title":"WORLDFERT / CLOUD MIGRATION","textShapes":25}
+{"kind":"textbox","id":"sh/jyl4v6dk","slide":8,"text":"WORLDFERT / CLOUD MIGRATION","textPreview":"WORLDFERT / CLOUD MIGRATION","textChars":27,"textLines":1,"bbox":[48,30,500,24]}
+{"kind":"shape","id":"sh/kze5obe5","slide":8,"bbox":[48,78,8,54]}
+{"kind":"textbox","id":"sh/50n6xgvq","slide":8,"text":"Cutover 4 ชั่วโมง — เมื่อ Pre‑stage พร้อม","textPreview":"Cutover 4 ชั่วโมง — เมื่อ Pre‑stage พร้อม","textChars":41,"textLines":1,"bbox":[76,76,1110,60]}
+{"kind":"shape","id":"sh/a9cni1w3","slide":8,"bbox":[48,670,1184,0.03]}
+{"kind":"textbox","id":"sh/vul4r6d8","slide":8,"text":"C‑LEVEL DECISION BRIEF","textPreview":"C‑LEVEL DECISION BRIEF","textChars":22,"textLines":1,"bbox":[48,682,350,18]}
+{"kind":"textbox","id":"sh/wvu5kbet","slide":8,"text":"08","textPreview":"08","textChars":2,"textLines":1,"bbox":[1170,680,62,20]}
+{"kind":"textbox","id":"sh/xw3mtgve","slide":8,"text":"T‑24h ถึง T‑2h: เตรียม VPS, DNS TTL 300, Firewall, keys, .env และ empty stack","textPreview":"T‑24h ถึง T‑2h: เตรียม VPS, DNS TTL 300, Firewall, keys, .env และ empty stack","textChars":77,"textLines":1,"bbox":[72,156,1136,32]}
+{"kind":"shape","id":"sh/m5sne1wr","slide":8,"bbox":[72,232,250,264]}
+{"kind":"textbox","id":"sh/n614nmdc","slide":8,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[94,250,54,30]}
+{"kind":"textbox","id":"sh/jqpgbuhk","slide":8,"text":"00:00–00:45","textPreview":"00:00–00:45","textChars":11,"textLines":1,"bbox":[94,294,206,30]}
+{"kind":"textbox","id":"sh/ipgzi90z","slide":8,"text":"Freeze + Upload","textPreview":"Freeze + Upload","textChars":15,"textLines":1,"bbox":[94,348,206,52]}
+{"kind":"textbox","id":"sh/5s7id4zq","slide":8,"text":"Final backup\nSFTP + SHA‑256","textPreview":"Final backup | SFTP + SHA‑256","textChars":27,"textLines":2,"bbox":[94,420,206,60]}
+{"kind":"shape","id":"sh/4ryhkzi5","slide":8,"bbox":[340,232,250,264]}
+{"kind":"textbox","id":"sh/ru90fehg","slide":8,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[362,250,54,30]}
+{"kind":"textbox","id":"sh/qt0zm90v","slide":8,"text":"00:45–01:55","textPreview":"00:45–01:55","textChars":11,"textLines":1,"bbox":[362,294,206,30]}
+{"kind":"textbox","id":"sh/dwrihozm","slide":8,"text":"Restore DB","textPreview":"Restore DB","textChars":10,"textLines":1,"bbox":[362,348,206,52]}
+{"kind":"textbox","id":"sh/svihoji1","slide":8,"text":"MSSQL + DBCC\nMySQL + row checks","textPreview":"MSSQL + DBCC | MySQL + row checks","textChars":31,"textLines":2,"bbox":[362,420,206,60]}
+{"kind":"shape","id":"sh/7y5g3ahc","slide":8,"bbox":[608,232,250,264]}
+{"kind":"textbox","id":"sh/mxwzap0r","slide":8,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[630,250,54,30]}
+{"kind":"textbox","id":"sh/ad4jidkf","slide":8,"text":"01:55–03:10","textPreview":"01:55–03:10","textChars":11,"textLines":1,"bbox":[630,294,206,30]}
+{"kind":"textbox","id":"sh/bedkbi10","slide":8,"text":"Deploy + UAT","textPreview":"Deploy + UAT","textChars":12,"textLines":1,"bbox":[630,348,206,52]}
+{"kind":"textbox","id":"sh/cfmlkn2l","slide":8,"text":"Containers/API\nCritical business flows","textPreview":"Containers/API | Critical business flows","textChars":38,"textLines":2,"bbox":[630,420,206,60]}
+{"kind":"shape","id":"sh/xgv2dsjq","slide":8,"bbox":[876,232,332,264]}
+{"kind":"textbox","id":"sh/2pkjedk3","slide":8,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[898,250,54,30]}
+{"kind":"textbox","id":"sh/nqtk7i1o","slide":8,"text":"03:10–04:00","textPreview":"03:10–04:00","textChars":11,"textLines":1,"bbox":[898,294,288,30]}
+{"kind":"textbox","id":"sh/ob21gn29","slide":8,"text":"Go‑Live + Monitor","textPreview":"Go‑Live + Monitor","textChars":17,"textLines":1,"bbox":[898,348,288,52]}
+{"kind":"textbox","id":"sh/pcv29sju","slide":8,"text":"DNS / clients\nPost‑cutover backup","textPreview":"DNS / clients | Post‑cutover backup","textChars":33,"textLines":2,"bbox":[898,420,288,60]}
+{"kind":"shape","id":"sh/elkjatk7","slide":8,"bbox":[72,536,552,88]}
+{"kind":"textbox","id":"sh/fmtk3y1s","slide":8,"text":"GO","textPreview":"GO","textChars":2,"textLines":1,"bbox":[96,555,88,36]}
+{"kind":"textbox","id":"sh/hgzmpg3a","slide":8,"text":"DB checks + API + Critical UAT ผ่าน","textPreview":"DB checks + API + Critical UAT ผ่าน","textChars":35,"textLines":1,"bbox":[188,557,412,34]}
+{"kind":"shape","id":"sh/wfq5gbmp","slide":8,"bbox":[646,536,562,88]}
+{"kind":"textbox","id":"sh/veh4n6l4","slide":8,"text":"NO‑GO","textPreview":"NO‑GO","textChars":5,"textLines":1,"bbox":[670,555,116,36]}
+{"kind":"textbox","id":"sh/ud8ne14j","slide":8,"text":"เหลือ <30 นาทีและ Critical UAT ยังไม่ผ่าน","textPreview":"เหลือ <30 นาทีและ Critical UAT ยังไม่ผ่าน","textChars":41,"textLines":1,"bbox":[796,557,388,46]}
+{"kind":"notes","id":"nt/749zkl","slide":8,"text":"4 ชั่วโมงเป็น cutover window ไม่รวมการจัดซื้อและเตรียม DNS. หาก uplink ต่ำกว่า 20 Mbps ให้ pre-stage full backup และส่งเฉพาะ backup ล่าสุดใน window.\n\n[Sources]\n- Internal: WorldFert cutover plan and current backup inventory (MSSQL ~3.45 GB; MySQL ~466 MB)"}
+{"kind":"slide","id":"sl/sbjcin","slide":9,"title":"WORLDFERT / CLOUD MIGRATION","textShapes":17}
+{"kind":"textbox","id":"sh/h0vm9gbq","slide":9,"text":"WORLDFERT / CLOUD MIGRATION","textPreview":"WORLDFERT / CLOUD MIGRATION","textChars":27,"textLines":1,"bbox":[48,30,500,24]}
+{"kind":"shape","id":"sh/ux43elcf","slide":9,"bbox":[48,78,8,54]}
+{"kind":"textbox","id":"sh/vyd47qt0","slide":9,"text":"4 ความเสี่ยงหลักและมาตรการควบคุม","textPreview":"4 ความเสี่ยงหลักและมาตรการควบคุม","textChars":32,"textLines":1,"bbox":[76,76,1110,60]}
+{"kind":"shape","id":"sh/8b2lcbu9","slide":9,"bbox":[48,670,1184,0.03]}
+{"kind":"textbox","id":"sh/twvm5gbu","slide":9,"text":"C‑LEVEL DECISION BRIEF","textPreview":"C‑LEVEL DECISION BRIEF","textChars":22,"textLines":1,"bbox":[48,682,350,18]}
+{"kind":"textbox","id":"sh/69k3a1c3","slide":9,"text":"09","textPreview":"09","textChars":2,"textLines":1,"bbox":[1170,680,62,20]}
+{"kind":"shape","id":"sh/7at436to","slide":9,"bbox":[72,172,558,194]}
+{"kind":"textbox","id":"sh/sr658fud","slide":9,"text":"Single VPS","textPreview":"Single VPS","textChars":10,"textLines":1,"bbox":[96,192,200,34]}
+{"kind":"textbox","id":"sh/dsfmh0by","slide":9,"text":"มี Single Point of Failure","textPreview":"มี Single Point of Failure","textChars":26,"textLines":1,"bbox":[96,237,510,28]}
+{"kind":"shape","id":"sh/9wny1gbq","slide":9,"bbox":[96,276,510,0.03]}
+{"kind":"textbox","id":"sh/8vehsbu5","slide":9,"text":"Snapshot เสริม + SFTP copy นอก VPS\nพิจารณาแยก DB/HA ภายใน 90 วัน","textPreview":"Snapshot เสริม + SFTP copy นอก VPS | พิจารณาแยก DB/HA ภายใน 90 วัน","textChars":64,"textLines":2,"bbox":[96,292,510,58]}
+{"kind":"shape","id":"sh/7u5gz6tk","slide":9,"bbox":[650,172,558,194]}
+{"kind":"textbox","id":"sh/mtwzqlcf","slide":9,"text":"Public DB","textPreview":"Public DB","textChars":9,"textLines":1,"bbox":[674,192,200,34]}
+{"kind":"textbox","id":"sh/lsnyxgbu","slide":9,"text":"เพิ่มพื้นที่โจมตี","textPreview":"เพิ่มพื้นที่โจมตี","textChars":17,"textLines":1,"bbox":[674,237,510,28]}
+{"kind":"shape","id":"sh/krexobu9","slide":9,"bbox":[674,276,510,0.03]}
+{"kind":"textbox","id":"sh/zq5gv6to","slide":9,"text":"Provider Firewall + UFW allowlist\nTLS + login เฉพาะงาน","textPreview":"Provider Firewall + UFW allowlist | TLS + login เฉพาะงาน","textChars":54,"textLines":2,"bbox":[674,292,510,58]}
+{"kind":"shape","id":"sh/ypcfm1c3","slide":9,"bbox":[72,402,558,194]}
+{"kind":"textbox","id":"sh/5ory90by","slide":9,"text":"SQL Express","textPreview":"SQL Express","textChars":11,"textLines":1,"bbox":[96,422,200,34]}
+{"kind":"textbox","id":"sh/4nyh0vad","slide":9,"text":"เพดาน 10 GB ต่อฐาน","textPreview":"เพดาน 10 GB ต่อฐาน","textChars":18,"textLines":1,"bbox":[96,467,510,28]}
+{"kind":"shape","id":"sh/o3q9s3m1","slide":9,"bbox":[96,506,510,0.03]}
+{"kind":"textbox","id":"sh/p4zal8n6","slide":9,"text":"Alert ที่ 8 GB\nอนุมัติ Edition ก่อนชนเพดาน","textPreview":"Alert ที่ 8 GB | อนุมัติ Edition ก่อนชนเพดาน","textChars":42,"textLines":2,"bbox":[96,522,510,58]}
+{"kind":"shape","id":"sh/2h8rqt4v","slide":9,"bbox":[650,402,558,194]}
+{"kind":"textbox","id":"sh/3ihsjy5g","slide":9,"text":"Backup / Recovery","textPreview":"Backup / Recovery","textChars":17,"textLines":1,"bbox":[674,422,200,34]}
+{"kind":"textbox","id":"sh/gfq9o3mp","slide":9,"text":"Weekly RPO สูงสุด 7 วัน","textPreview":"Weekly RPO สูงสุด 7 วัน","textChars":23,"textLines":1,"bbox":[674,467,510,28]}
+{"kind":"shape","id":"sh/1gzah8na","slide":9,"bbox":[674,506,510,0.03]}
+{"kind":"textbox","id":"sh/edormt4j","slide":9,"text":"Final backup ก่อน cutover\nRestore Drill เพื่อยืนยัน RTO","textPreview":"Final backup ก่อน cutover | Restore Drill เพื่อยืนยัน RTO","textChars":55,"textLines":2,"bbox":[674,522,510,58]}
+{"kind":"textbox","id":"sh/fehsfy54","slide":9,"text":"Recovery target: RTO ต้องยืนยันจาก Restore Drill — ไม่ควรตั้งสมมติฐานจากสเปกเพียงอย่างเดียว","textPreview":"Recovery target: RTO ต้องยืนยันจาก Restore Drill — ไม่ควรตั้งสมมติฐานจากสเปกเพียงอย่างเดียว","textChars":91,"textLines":1,"bbox":[72,626,1136,30]}
+{"kind":"notes","id":"nt/sbjcin","slide":9,"text":"ความเสี่ยงสองจุดที่ต้องมี owner ชัดเจนคือ Public DB และ SQL Express growth. Weekly schedule ให้ RPO สูงสุด 7 วันในภาวะปกติ; cutover ใช้ final backup แยกต่างหาก.\n\n[Sources]\n- https://learn.microsoft.com/en-us/sql/sql-server/editions-and-components-of-sql-server-2022\n- https://support.hostinger.com/en/articles/1583232-how-to-back-up-or-restore-a-vps\n- Internal: WorldFert backup and recovery operating model"}
+{"kind":"slide","id":"sl/v37fee","slide":10,"title":"WORLDFERT / CLOUD MIGRATION","textShapes":20}
+{"kind":"textbox","id":"sh/mlcbu143","slide":10,"text":"WORLDFERT / CLOUD MIGRATION","textPreview":"WORLDFERT / CLOUD MIGRATION","textChars":27,"textLines":1,"bbox":[48,30,500,24]}
+{"kind":"shape","id":"sh/983upwne","slide":10,"bbox":[48,78,8,54]}
+{"kind":"textbox","id":"sh/87udwrmt","slide":10,"text":"มติที่ต้องการและขั้นตอนถัดไป","textPreview":"มติที่ต้องการและขั้นตอนถัดไป","textChars":28,"textLines":1,"bbox":[76,76,1110,60]}
+{"kind":"shape","id":"sh/zi1cjm5c","slide":10,"bbox":[48,670,1184,0.03]}
+{"kind":"textbox","id":"sh/yhsbqh4r","slide":10,"text":"C‑LEVEL DECISION BRIEF","textPreview":"C‑LEVEL DECISION BRIEF","textChars":22,"textLines":1,"bbox":[48,682,350,18]}
+{"kind":"textbox","id":"sh/lk3ulwni","slide":10,"text":"10","textPreview":"10","textChars":2,"textLines":1,"bbox":[1170,680,62,20]}
+{"kind":"shape","id":"sh/0jutsrmx","slide":10,"bbox":[72,168,704,438]}
+{"kind":"textbox","id":"sh/je5cvq5g","slide":10,"text":"ขออนุมัติ","textPreview":"ขออนุมัติ","textChars":9,"textLines":1,"bbox":[104,198,300,34]}
+{"kind":"textbox","id":"sh/idwv2l4v","slide":10,"text":"Hostinger KVM 4\nProduction Pilot 7 วัน","textPreview":"Hostinger KVM 4 | Production Pilot 7 วัน","textChars":38,"textLines":2,"bbox":[104,254,610,116]}
+{"kind":"shape","id":"sh/8z2dcnup","slide":10,"bbox":[104,400,610,0.03]}
+{"kind":"textbox","id":"sh/90be5svu","slide":10,"text":"งบฐาน","textPreview":"งบฐาน","textChars":5,"textLines":1,"bbox":[104,428,160,24]}
+{"kind":"textbox","id":"sh/md0vadcj","slide":10,"text":"≈ ฿957 / เดือน","textPreview":"≈ ฿957 / เดือน","textChars":14,"textLines":1,"bbox":[104,462,330,42]}
+{"kind":"textbox","id":"sh/ne9c3id4","slide":10,"text":"เงื่อนไขผ่าน Pilot","textPreview":"เงื่อนไขผ่าน Pilot","textChars":18,"textLines":1,"bbox":[104,532,200,24]}
+{"kind":"textbox","id":"sh/0bid83ed","slide":10,"text":"IOPS • latency • backup • support","textPreview":"IOPS • latency • backup • support","textChars":33,"textLines":1,"bbox":[304,530,410,30]}
+{"kind":"textbox","id":"sh/lcru18vy","slide":10,"text":"NEXT","textPreview":"NEXT","textChars":4,"textLines":1,"bbox":[824,168,150,24]}
+{"kind":"textbox","id":"sh/e90v6dw7","slide":10,"text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[824,220,42,42]}
+{"kind":"textbox","id":"sh/za9czids","slide":10,"text":"Provision + Firewall + DNS","textPreview":"Provision + Firewall + DNS","textChars":26,"textLines":1,"bbox":[888,224,320,34]}
+{"kind":"shape","id":"sh/c7id43eh","slide":10,"bbox":[846,273,0.03,48]}
+{"kind":"textbox","id":"sh/d8rux8vm","slide":10,"text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[824,326,42,42]}
+{"kind":"textbox","id":"sh/t4ja1knq","slide":10,"text":"Deploy empty stack + Pre‑stage","textPreview":"Deploy empty stack + Pre‑stage","textChars":30,"textLines":1,"bbox":[888,330,320,44]}
+{"kind":"shape","id":"sh/s3at8z65","slide":10,"bbox":[846,379,0.03,48]}
+{"kind":"textbox","id":"sh/r2hszu5k","slide":10,"text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[824,432,42,42]}
+{"kind":"textbox","id":"sh/618b6poz","slide":10,"text":"Restore Drill + UAT rehearsal","textPreview":"Restore Drill + UAT rehearsal","textChars":29,"textLines":1,"bbox":[888,436,320,42]}
+{"kind":"shape","id":"sh/50zaxkne","slide":10,"bbox":[846,485,0.03,48]}
+{"kind":"textbox","id":"sh/4zqt4f69","slide":10,"text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[824,538,42,42]}
+{"kind":"textbox","id":"sh/jyhsva5o","slide":10,"text":"Go / No‑Go ภายใน 4 ชั่วโมง","textPreview":"Go / No‑Go ภายใน 4 ชั่วโมง","textChars":26,"textLines":1,"bbox":[888,542,320,44]}
+{"kind":"shape","id":"sh/ix8b25o3","slide":10,"bbox":[824,614,384,42]}
+{"kind":"textbox","id":"sh/pw3u9ony","slide":10,"text":"Fallback: Vultr / DigitalOcean","textPreview":"Fallback: Vultr / DigitalOcean","textChars":30,"textLines":1,"bbox":[840,625,352,24]}
+{"kind":"notes","id":"nt/v37fee","slide":10,"text":"มติที่ขอคืออนุมัติ Pilot พร้อมเกณฑ์ผ่าน ไม่ใช่อนุมัติ Go-Live โดยอัตโนมัติ. เอกสาร runbook และ BAT scripts พร้อมใช้สำหรับ remote deploy, restore, backup และ SFTP transfer.\n\n[Sources]\n- https://www.hostinger.com/vps-hosting?lang=en\n- Internal: WorldFert deployment runbook and automation scripts"}

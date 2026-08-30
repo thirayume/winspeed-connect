@@ -4,6 +4,7 @@
  * ตั้งค่าใน .env: MYSQL_HOST / MYSQL_PORT / MYSQL_DATABASE / MYSQL_USER / MYSQL_PASSWORD
  */
 const mysql = require('mysql2/promise');
+const fs = require('fs');
 
 /**
  * กันไม่ให้สภาพแวดล้อมที่ไม่ใช่ production เขียนลงฐานเครื่องชั่งของโรงงานจริง
@@ -35,6 +36,10 @@ let pool = null;
 function getPool() {
   if (!process.env.MYSQL_HOST) return null;     // ยังไม่ตั้งค่า
   if (!pool) {
+    const caPath = String(process.env.MYSQL_SSL_CA_PATH || '').trim();
+    const ssl = caPath
+      ? { ca: fs.readFileSync(caPath), rejectUnauthorized: true }
+      : undefined;
     pool = mysql.createPool({
       host: process.env.MYSQL_HOST,
       port: Number(process.env.MYSQL_PORT || 3306),
@@ -48,6 +53,7 @@ function getPool() {
       enableKeepAlive: true,
       keepAliveInitialDelay: 0,
       charset: 'utf8mb4',
+      ssl,
     });
   }
   return pool;

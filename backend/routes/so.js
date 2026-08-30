@@ -1632,6 +1632,10 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
 
     let so = await getSoOrThrow(req.params.id, 'DRAFT');
 
+    if (!so.TruckPlate && !so.NoTruckRequired) {
+      return res.status(400).json({ message: 'ต้องระบุทะเบียนรถ หรือทำเครื่องหมาย "ไม่ใช้รถ" ก่อนทำการยืนยัน SO' });
+    }
+
     if (await hasQuoteSourceTable()) {
       const pendingQuote = (await wfQuery(`
         SELECT TOP 1 q.Id, q.QuoteNo, q.Status

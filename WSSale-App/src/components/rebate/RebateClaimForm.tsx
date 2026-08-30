@@ -70,6 +70,10 @@ export function ClaimDialog({ pool, onClose, onDone }:
   const [err, setErr] = useState('');
   const [lots, setLots] = useState<RebateAccrualLot[] | null>(null);
   const [lotsBusy, setLotsBusy] = useState(false);
+  
+  // Ratio & Self-Claim states
+  const [customerRatio, setCustomerRatio] = useState<number>(100);
+  const [isSelfClaim, setIsSelfClaim] = useState<boolean>(false);
 
   // ยอดขนจริงมาจาก WINSpeed ตรง ๆ (ใบส่งของ/ใบกำกับ DocuType 104) ไม่ใช่สำเนาในแอป
   // เรียงเก่าก่อน = ลำดับเดียวกับที่เซิร์ฟเวอร์ตัด FIFO ผู้ใช้จึงเห็นสิ่งที่จะเกิดขึ้นจริง
@@ -106,6 +110,11 @@ export function ClaimDialog({ pool, onClose, onDone }:
   const grand = totals.rebate + totals.diff;
   const overBudget = grand > available;
 
+  const activeCustomerRatio = isSelfClaim ? 0 : customerRatio;
+  const companyRatio = 100 - activeCustomerRatio;
+  const customerAmount = Math.round(grand * (activeCustomerRatio / 100) * 100) / 100;
+  const retainedAmount = Math.round(grand * (companyRatio / 100) * 100) / 100;
+
   async function submit() {
     const pack = (rows: Line[], lineType: Kind) => rows
       .filter(l => calc(l).qty > 0 && calc(l).perTon !== 0)
@@ -125,7 +134,19 @@ export function ClaimDialog({ pool, onClose, onDone }:
 
     setBusy(true); setErr('');
     try {
-      await createRebateClaim({ poolId: pool.Id, custId: custId.trim(), note: note.trim() || undefined, lines });
+      await createRebateClaim({
+        poolId: pool.Id,
+        custId: custId.trim(),
+        note: note.trim() || undefined,
+        lines,
+        ...({
+          customerRatio: activeCustomerRatio,
+          companyRatio,
+          customerAmount,
+          retainedAmount,
+          isSelfClaim,
+        } as any),
+      });
       onDone();
     } catch (e: unknown) { setErr((e as Error).message || 'บันทึกไม่สำเร็จ'); }
     finally { setBusy(false); }
@@ -165,6 +186,51 @@ export function ClaimDialog({ pool, onClose, onDone }:
 
           <LineTable kind="REBATE" rows={rebate} setRows={setRebate} total={totals.rebate} />
           <LineTable kind="DIFF" rows={diff} setRows={setDiff} total={totals.diff} />
+
+          {/* Ratio Adjustment & Self Claim Section */}
+          <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[#0C447C]">กำหนดสัดส่วนการคืนเงิน (Rebate Ratio)</span>
+              <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-gray-700 bg-white px-2.5 py-1 rounded-lg border border-gray-200 shadow-sm">
+                <input
+                  type="checkbox"
+                  checked={isSelfClaim}
+                  onChange={e => setIsSelfClaim(e.target.checked)}
+                  className="rounded text-[#0C447C] focus:ring-[#0C447C]"
+                />
+                เบิกสะสมบริษัท (Self Claim 100%)
+              </label>
+            </div>
+
+            {!isSelfClaim && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-gray-600 font-medium">
+                  <span>สัดส่วนลูกค้า: <strong className="text-[#0C447C]">{customerRatio}%</strong></span>
+                  <span>สะสมบริษัท: <strong className="text-emerald-700">{100 - customerRatio}%</strong></span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={customerRatio}
+                  onChange={e => setCustomerRatio(Number(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#0C447C]"
+                />
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3 pt-1 text-xs">
+              <div className="bg-white p-2.5 rounded-lg border border-blue-100">
+                <div className="text-gray-500 font-medium">ยอดคืนลูกค้า ({activeCustomerRatio}%)</div>
+                <div className="text-base font-bold text-[#0C447C]">฿{baht(customerAmount)}</div>
+              </div>
+              <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
+                <div className="text-gray-500 font-medium">สะสมเข้าบริษัท ({companyRatio}%)</div>
+                <div className="text-base font-bold text-emerald-700">฿{baht(retainedAmount)}</div>
+              </div>
+            </div>
+          </div>
 
           <div className="flex items-center justify-end gap-4 border-t-2 border-gray-200 pt-3">
             <span className="text-sm text-gray-500">ยอดรวมทั้งใบ</span>

@@ -208,22 +208,28 @@ export function PaperTrailPage() {
             const m = stage === 'CONTROL_TICKET' 
               ? { label: 'ตั๋วคุม (ล่วงหน้า)', color: '#6D28D9', bg: '#F5F3FF' }
               : SO_STATUS_META[stage as SOStatus] || { label: stage, color: '#6B7280', bg: '#F3F4F6' };
-            
-            // Group cards by DeliveryDate + Customer + TruckPlate
-            const map = new Map<string, { dateDisplay: string; cust: string; truck: string; cards: PaperCard[]; totalTon: number }>();
+
+            // Group cards by DeliveryDate + TruckPlate (Sale Trip)
+            const map = new Map<string, { dateDisplay: string; cust: string; custCount: number; truck: string; cards: PaperCard[]; totalTon: number }>();
             for (const card of cards) {
               const dateRaw = card.deliveryDate ? card.deliveryDate.split('T')[0] : '9999-12-31';
               const dateDisplay = card.deliveryDate ? new Date(card.deliveryDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : 'ไม่ระบุวันรับ';
               const truck = card.truckPlate || 'ไม่ระบุทะเบียนรถ';
-              const cust = card.custName || 'ไม่ระบุลูกค้า';
               // For CONTROL_TICKET, group individually by ID so independent tickets don't merge, unless they share the exact same ID
-              const key = stage === 'CONTROL_TICKET' ? `CT::${card.id}` : `${dateRaw}::${cust}::${truck}`;
+              const key = stage === 'CONTROL_TICKET' ? `CT::${card.id}` : `${dateRaw}::${truck}`;
               
-              if (!map.has(key)) map.set(key, { dateDisplay, cust, truck, cards: [], totalTon: 0 });
+              if (!map.has(key)) map.set(key, { dateDisplay, cust: '', custCount: 0, truck, cards: [], totalTon: 0 });
               const g = map.get(key)!;
               g.cards.push(card);
               g.totalTon += Number(card.qtyTon || 0);
             }
+
+            for (const g of map.values()) {
+              const names = Array.from(new Set(g.cards.map(c => c.custName || 'ไม่ระบุลูกค้า')));
+              g.custCount = names.length;
+              g.cust = names.length === 1 ? names[0] : `${names.length} จุดหมาย`;
+            }
+
             const groups = Array.from(map.values());
 
             return (
@@ -247,17 +253,19 @@ export function PaperTrailPage() {
                         {g.cards.length > 1 && (
                           <button onClick={() => setPrintSoIds(g.cards.map(c => c.id))}
                             className="text-[10px] flex items-center gap-1 text-gray-600 hover:text-[#0C447C] bg-gray-50 hover:bg-blue-50 px-2 py-1 rounded border border-gray-200 transition-colors">
-                            <Printer size={10} /> พิมพ์ทั้งหมด ({g.cards.length})
+                            <Printer size={10} /> พิมพ์ ({g.cards.length})
                           </button>
                         )}
                       </div>
                       <div className="px-3 py-2 bg-white flex items-start gap-2">
-                        <div className="bg-[#1F2937] text-white p-1.5 rounded-lg shrink-0 flex items-center justify-center">
+                        <div className="bg-[#1F2937] text-white p-1.5 rounded-lg shrink-0 flex items-center justify-center shadow-sm">
                           <Truck size={14} />
                         </div>
                         <div className="min-w-0">
                           <div className="font-bold text-sm text-gray-900 truncate" title={g.truck}>{g.truck}</div>
-                          <div className="text-[10px] text-gray-500 truncate" title={g.cust}>{g.cust}</div>
+                          <div className={`text-[10px] truncate ${g.custCount > 1 ? 'text-blue-700 font-semibold' : 'text-gray-500'}`} title={g.cards.map(c => c.custName).join(' · ')}>
+                            {g.cust}
+                          </div>
                         </div>
                       </div>
                       <div className="p-1.5 space-y-1.5">
@@ -453,4 +461,3 @@ function CancelledOrdersView({ onBack }: { onBack: () => void }) {
     </div>
   );
 }
-

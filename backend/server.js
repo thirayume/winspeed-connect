@@ -28,17 +28,27 @@ const server = http.createServer(app);
 const { initSocket } = require('./services/socket');
 const { startPolling } = require('./services/polling');
 
+const backgroundWorkersDisabled = String(process.env.DISABLE_BACKGROUND_WORKERS || '')
+  .toLowerCase() === 'true';
+
 // Initialize Socket.IO
 initSocket(server);
 
-// Start Database Polling
-startPolling();
+if (backgroundWorkersDisabled) {
+  // Test/UAT clones must not process copied outbox rows or run production-like
+  // synchronisation jobs. Interactive API requests still work against the
+  // isolated test databases.
+  console.log('[workers] background polling, outbox and TruckScale sync are disabled');
+} else {
+  // Start Database Polling
+  startPolling();
 
-// FR-029 — start integration outbox worker
-require('./services/outbox').startWorker();
+  // FR-029 — start integration outbox worker
+  require('./services/outbox').startWorker();
 
-// TruckScale pull/sync worker — ดึงข้อมูลชั่งกลับเข้า wf.WeighInbox
-require('./services/truckscale-sync').startSync();
+  // TruckScale pull/sync worker — ดึงข้อมูลชั่งกลับเข้า wf.WeighInbox
+  require('./services/truckscale-sync').startSync();
+}
 // CORS — supports comma-separated origins or '*'
 // Set CORS_ORIGIN in env, e.g.: https://winspeed-connect.vercel.app,http://localhost:5173
 const rawOrigins = (process.env.CORS_ORIGIN || '*').split(',').map(s => s.trim());
@@ -108,6 +118,8 @@ app.use('/api/so',     require('./routes/so'));
 app.use('/api/rebate', require('./routes/rebate'));
 app.use('/api/giveaway', require('./routes/giveaway'));
 app.use('/api/quotation', require('./routes/quotation'));
+app.use('/api/trips',     require('./routes/trips'));
+app.use('/api/budget',    require('./routes/budget'));
 app.use('/api/papertrail', require('./routes/papertrail'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/truckscale', require('./routes/truckscale'));
