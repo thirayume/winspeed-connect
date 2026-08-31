@@ -79,3 +79,6 @@ tmp.txt
 
 # ฐานตั้งต้นที่ Setup-Replication.ps1 ดัมป์ออกมา — สร้างใหม่ได้เสมอ
 deploy/truckscale-replica/baseline.sql
+
+# สภาพ DSN ของเครื่องแต่ละเครื่อง ไม่ใช่ของโครงการ
+deploy/truckscale-replica/dsn-backup/

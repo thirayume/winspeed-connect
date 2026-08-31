@@ -1,4 +1,31 @@
-# TruckScale — ชุดทดสอบ replication
+# TruckScale — ย้ายฐานขึ้นคลาวด์
+
+อ่าน [PLAN-move-to-cloud.md](PLAN-move-to-cloud.md) ก่อน — มีสองทางเลือกและต้องเลือกก่อนเริ่ม
+
+| ไฟล์ | ใช้ทำอะไร | ใช้กับทาง |
+|---|---|---|
+| `Set-TruckScaleDSN.ps1` | ย้าย DSN ของเครื่องลูกข่ายไปฐานใหม่ (ไม่แตะตัวโปรแกรม) | ก. ย้าย 100% |
+| `Harden-CloudMySQL.sql` | เตรียมบัญชีที่ปลายทางให้ปลอดภัยเท่าที่ทำได้ | ก. ย้าย 100% |
+| `push-agent/` | ตัวผลักข้อมูลออกจากโรงงานขึ้นคลาวด์ | ข. คงฐานที่โรงงาน |
+| `docker-compose.yml` + `Setup-Replication.ps1` | ชุดทดสอบ replication บน localhost | ข. (ทางเลือกเมื่อมีอุโมงค์) |
+
+## ย้าย DSN ของเครื่องลูกข่าย
+
+`WorldFerth.exe` ไม่มี IP หรือชื่อโฮสต์อยู่ในไบนารีเลย ปลายทางฐานถูกกำหนดโดย ODBC DSN ล้วน ๆ
+เปลี่ยน DSN = ย้ายฐาน โดยไม่ต้องแก้ source หรือ config ของ TruckScale
+
+```powershell
+.\Set-TruckScaleDSN.ps1 -TestOnly                              # ดูว่าตอนนี้ชี้ไปไหน
+.\Set-TruckScaleDSN.ps1 -Server ts.example.com -Scope Machine  # ย้าย (ต้องรันแบบผู้ดูแล)
+.\Set-TruckScaleDSN.ps1 -Restore                               # ถอยกลับสภาพก่อนแตะเครื่อง
+```
+
+ต้องติดตั้ง MySQL Connector/ODBC **แบบ 32 บิต** ก่อน เพราะ `WorldFerth.exe` เป็น x86
+สคริปต์สำรองค่าเดิมแบบประทับเวลาทุกครั้ง และคงไดรเวอร์กับ CHARSET เดิมของเครื่องไว้
+
+---
+
+## ชุดทดสอบ replication
 
 ยก MySQL สองตัวบน localhost แล้วต่อสาย replication ให้เหมือนของจริง
 เพื่อพิสูจน์ขั้นตอนก่อนเอาไปใช้กับเครื่องชั่งจริงและ Railway
