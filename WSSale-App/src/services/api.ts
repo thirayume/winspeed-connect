@@ -728,6 +728,25 @@ export const fetchLineStatus = () => req<{ webhookConfigured: boolean; pushConfi
 
 // ── Reports (FR-017) ──────────────────────────────────────────
 export type ReportData = { type: string; title: string; columns: { key: string; label: string }[]; rows: Record<string, unknown>[] };
+// ใบจ่ายสินค้าของ TruckScale — แทน RptSaYPan.rpt ของโปรแกรมชั่ง
+// หัวเอกสารมาจาก tblscale · บรรทัดสินค้ามาจาก tblproduct_detail (ผูกกันด้วย one_num)
+export type DeliveryNoteItem = {
+  Id: number; GoodCode: string; GoodName: string; Brand: string;
+  Bag: number; KgPerBag: number; Ton: number;
+  IssueNo: string; Destination: string; Godown: string; StoreNote: string;
+};
+export type DeliveryNote = {
+  Sequence: string; Movebill: string; Plate: string; CustName: string;
+  DateIn: string; TimeIn: string; DateOut: string; TimeOut: string;
+  WeightIn: number; WeightOut: number; WeightNet: number;
+  OneNum: number; Note: string;
+  issueNo: string | null; issueNoAll: string[];
+  items: DeliveryNoteItem[];
+  totals: { bag: number; ton: number };
+};
+export const fetchDeliveryNote = (sequence: string) =>
+  req<DeliveryNote>(`/truckscale/delivery-note/${encodeURIComponent(sequence)}`);
+
 export const fetchReportTypes = () => req<{ key: string; title: string }[]>('/reports/types');
 // รายงานบางตัว (เช่น truckscale-writeback) รับช่วงวัน ส่วนตัวอื่นไม่สนใจพารามิเตอร์
 export const fetchReport = (type: string, params?: Record<string, string>) => {

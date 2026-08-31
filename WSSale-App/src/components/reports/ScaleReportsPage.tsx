@@ -8,9 +8,10 @@
  * จะกินเวลาและรบกวนฐานของโรงงาน
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, RefreshCw, Download, CalendarDays } from 'lucide-react';
+import { BarChart3, RefreshCw, Download, CalendarDays, Printer } from 'lucide-react';
 import { fetchScaleReport } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
+import { DeliveryNotePrint } from './DeliveryNotePrint';
 
 const NAVY = '#0C447C';
 const num = (v: unknown, digits = 0) =>
@@ -99,6 +100,8 @@ export function ScaleReportsPage() {
   const [to, setTo] = useState(isoDaysAgo(0));
   const [rows, setRows] = useState<any[]>([]);
   const [filter, setFilter] = useState('');
+  // ใบชั่งที่กำลังเปิดใบจ่ายสินค้าอยู่ · null = ไม่ได้เปิด
+  const [noteSeq, setNoteSeq] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
 
@@ -141,6 +144,8 @@ export function ScaleReportsPage() {
     }
     return out;
   }, [rows, active]);
+
+  const hasSequence = active.cols.some(c => c.key === 'Sequence');
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
@@ -211,13 +216,14 @@ export function ScaleReportsPage() {
                       {c.label}
                     </th>
                   ))}
+                  {hasSequence && <th className="px-3 py-2.5 w-12" />}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={active.cols.length} className="px-3 py-10 text-center text-gray-400">กำลังโหลด…</td></tr>
+                  <tr><td colSpan={active.cols.length + (hasSequence ? 1 : 0)} className="px-3 py-10 text-center text-gray-400">กำลังโหลด…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={active.cols.length} className="px-3 py-10 text-center text-gray-400">
+                  <tr><td colSpan={active.cols.length + (hasSequence ? 1 : 0)} className="px-3 py-10 text-center text-gray-400">
                     ไม่พบข้อมูลในช่วงวันที่ที่เลือก
                   </td></tr>
                 ) : rows.map((r, i) => (
@@ -227,6 +233,17 @@ export function ScaleReportsPage() {
                         {c.fmt ? c.fmt(r[c.key], r) : (r[c.key] ?? '—')}
                       </td>
                     ))}
+                    {hasSequence && (
+                      <td className="px-3 py-2">
+                        {r.Sequence ? (
+                          <button onClick={() => setNoteSeq(String(r.Sequence))}
+                            title="พิมพ์ใบจ่ายสินค้า"
+                            className="text-gray-400 hover:text-blue-600">
+                            <Printer size={15} />
+                          </button>
+                        ) : null}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -241,6 +258,7 @@ export function ScaleReportsPage() {
                             : ''}
                       </td>
                     ))}
+                    {hasSequence && <td />}
                   </tr>
                 </tfoot>
               )}
@@ -252,6 +270,8 @@ export function ScaleReportsPage() {
           นับเฉพาะใบที่ชั่งออกเสร็จแล้ว · แสดงสูงสุด 500 รายการต่อครั้ง · ข้อมูลจากฐานเครื่องชั่งโดยตรง (อ่านอย่างเดียว)
         </p>
       </div>
+
+      {noteSeq && <DeliveryNotePrint sequence={noteSeq} onClose={() => setNoteSeq(null)} />}
     </div>
   );
 }
