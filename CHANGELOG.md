@@ -1,13 +1,22 @@
 # Changelog — WorldFert WS-Sale-App
 
-All notable changes to the WorldFert WS-Sale-App project will be documented in this file.
+> ⚠️ **ไฟล์นี้ไม่ใช่ทะเบียนรุ่นฉบับจริงแล้ว — อย่าเพิ่มรุ่นใหม่ที่นี่**
+>
+> ทะเบียนรุ่นฉบับจริงคือ [docs/enterprise/08-APPENDICES/CHANGELOG-APP.md](docs/enterprise/08-APPENDICES/CHANGELOG-APP.md)
+> ซึ่งอยู่ภายใต้การควบคุมเอกสาร มีประวัติต่อเนื่องครบทุกรุ่น และตรงกับ `backend/package.json`
+>
+> **ที่มาของปัญหา:** ไฟล์นี้เดินเลขคู่ขนานกับไฟล์นั้นโดยไม่รู้กัน
+> จึงบันทึก `[1.7.0]` ไว้ที่ 30/08/2569 ทั้งที่ **1.7.4 ออกไปแล้วตั้งแต่ 23/08/2569**
+> เลขจึงเดินถอยหลัง งานชุดนั้นถูกตั้งเลขใหม่เป็น **1.8.0** ในทะเบียนฉบับจริง
+>
+> รายการข้างล่างคงไว้เพื่อการสืบย้อน ไม่ลบ แต่ **เลขรุ่นในนี้เชื่อถือไม่ได้**
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [1.7.0] - 2026-08-30
+## [1.7.0] - 2026-08-30 — *ตั้งเลขใหม่เป็น [1.8.0]*
 
 ### 🚀 Added
 - **Sale Trip Logistics Management (`wf.SalesTrip`):**
