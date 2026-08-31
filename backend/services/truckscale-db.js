@@ -12,21 +12,38 @@ const fs = require('fs');
  * โค้ดเขียนกลับทำงานได้จริงแล้ว ถ้า .env ของ Dev/UAT ชี้ไปฐานจริงโดยไม่ตั้งใจ
  * ข้อมูลทดสอบจะปนกับใบชั่งจริงและ "แยกออกจากกันไม่ได้ภายหลัง"
  *
- * ตั้งรายชื่อโฮสต์ของจริงไว้ใน TS_PRODUCTION_HOSTS (คั่นด้วยจุลภาค)
+ * ตั้งรายชื่อของจริงไว้ใน TS_PRODUCTION_HOSTS (คั่นด้วยจุลภาค) รับสองรูปแบบ
+ *
+ *   host                 กันทุกฐานบนโฮสต์นั้น
+ *   host/database        กันเฉพาะฐานนั้นบนโฮสต์นั้น
+ *
+ * รูปแบบที่สองจำเป็นเพราะชุดทดสอบบน VPS ใช้ **MySQL ตัวเดียวกับ production**
+ * ต่างกันแค่ชื่อฐาน (`db_truckscale` กับ `db_truckscale_test`)
+ * ถ้ากันทั้งโฮสต์ ชุดทดสอบจะเขียนอะไรไม่ได้เลย ถ้าไม่กันเลยก็เขียนทับของจริงได้
+ * ระบุเป็น `mysql/db_truckscale` จึงกันได้ตรงจุดโดยไม่ขวางการทดสอบ
+ *
  * ถ้าไม่ตั้งไว้ ตัวป้องกันจะไม่ทำงาน — จึงควรตั้งในทุกสภาพแวดล้อม
  */
 function assertWritableTarget() {
   const guarded = String(process.env.TS_PRODUCTION_HOSTS || '')
     .split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
-  if (!guarded.length) return;                      // ยังไม่ประกาศโฮสต์ของจริง
+  if (!guarded.length) return;                      // ยังไม่ประกาศของจริง
   if (process.env.NODE_ENV === 'production') return; // production เขียนได้ตามปกติ
 
-  const target = String(process.env.MYSQL_HOST || '').trim().toLowerCase();
-  if (guarded.includes(target)) {
+  const host = String(process.env.MYSQL_HOST || '').trim().toLowerCase();
+  const database = String(process.env.MYSQL_DATABASE || '').trim().toLowerCase();
+
+  const hit = guarded.find(entry => {
+    const slash = entry.indexOf('/');
+    if (slash === -1) return entry === host;        // ระบุแค่โฮสต์ = กันทั้งโฮสต์
+    return entry.slice(0, slash) === host && entry.slice(slash + 1) === database;
+  });
+
+  if (hit) {
     const error = new Error(
       `ปฏิเสธการเขียนฐานเครื่องชั่ง: NODE_ENV=${process.env.NODE_ENV || '(ไม่ได้ตั้ง)'} ` +
-      `แต่ MYSQL_HOST=${target} เป็นโฮสต์ของจริงตามที่ประกาศใน TS_PRODUCTION_HOSTS ` +
-      `— แก้ MYSQL_HOST ให้ชี้ฐานทดสอบก่อน`);
+      `แต่ ${host}/${database || '(ไม่ได้ตั้งชื่อฐาน)'} ตรงกับ "${hit}" ที่ประกาศไว้ใน TS_PRODUCTION_HOSTS ` +
+      `— แก้ MYSQL_HOST หรือ MYSQL_DATABASE ให้ชี้ฐานทดสอบก่อน`);
     error.code = 'TS_WRITE_BLOCKED';
     throw error;
   }
@@ -457,4 +474,7 @@ module.exports = {
   getPool, tsQuery, insertPreWeighTicket, removePreWeighTicket, writeBackWeighOutTicket,
   writeProductDetailRows, nextOneNum,
   getThaiDateComponents, recordWriteBackResult, listScaleTicketsByDateRange, oleDateSerial,
+  // export ไว้ให้ทดสอบตรง ๆ ได้ — ตัวกันเขียนฐานจริงเคยตายเงียบมาแล้วครั้งหนึ่ง
+  // เพราะไม่มีใครยิงเทสต์ใส่มันได้โดยไม่ต้องต่อฐาน
+  assertWritableTarget,
 };
