@@ -6,8 +6,18 @@
  * จึงเขียนแยกแต่ **ใช้คลาสสำหรับพิมพ์ชุดเดียวกัน** (report-modal-root / report-print-area /
  * report-page / report-no-print) เพื่อให้พฤติกรรมตอนสั่งพิมพ์เหมือนรายงานอื่นทุกใบ
  *
- * หัวเรื่องเปลี่ยนได้ผ่าน prop `variant` — ต้นฉบับมีหกใบที่หน้าตาเหมือนกันหมด
- * ต่างแค่หัวเรื่องกับเงื่อนไขกรอง (สายพาน · BULK · คลังสินค้า · อื่น ๆ · ส่ง · กางฉาง)
+ * หัวเรื่องเปลี่ยนได้ผ่าน prop `variant`
+ *
+ * **แก้ข้อสรุปเดิม** — เคยเขียนไว้ว่าต้นฉบับหกใบหน้าตาเหมือนกันหมด ซึ่งไม่จริง
+ * เทียบฟิลด์ที่แต่ละ .rpt อ่านจริง แล้วแยกได้เป็นสามแบบ:
+ *   1. RptBULK · RptOther                 — 19 ฟิลด์ จาก tblproduct_detail อย่างเดียว
+ *   2. RptSaYPan · RptKlungSinKa          — 19 ฟิลด์เดียวกัน + sto_text (ประเภทโกดัง)
+ *   3. RptSent · ReportKangChang          — 39 ฟิลด์ join tblscale (น้ำหนัก วันที่ คนขับ ทะเบียน)
+ *
+ * คอมโพเนนต์นี้ทำแบบที่ 1 กับ 2 เท่านั้น แบบที่ 3 เป็นเอกสารคนละใบ ต้องทำแยก
+ * จึงไม่รับ variant 'sent' / 'kangchang' อีกต่อไป — ให้หัวเรื่องถูกแต่ข้อมูลขาดครึ่ง แย่กว่าไม่ทำ
+ *
+ * ตัวแยกว่าใบไหนเป็นรายงานใด คือ `pd_pro_Godown` (ตรวจกับข้อมูลจริง 550,054 แถว)
  */
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -44,16 +54,30 @@ function thaiLongDate(raw?: string): string {
   return `${day}/${TH_MONTHS[mon - 1]}/${m[3]}`;
 }
 
-export type DeliveryNoteVariant = 'saypan' | 'bulk' | 'klungsinka' | 'other' | 'sent' | 'kangchang';
+export type DeliveryNoteVariant = 'saypan' | 'bulk' | 'klungsinka' | 'other';
 
 const VARIANT_TITLE: Record<DeliveryNoteVariant, string> = {
   saypan: 'สายพาน',
   bulk: 'BULK',
   klungsinka: 'คลังสินค้า',
   other: 'อื่น ๆ',
-  sent: 'ส่งสินค้า',
-  kangchang: 'กางฉาง',
 };
+
+/** ต้นฉบับแสดงประเภทโกดังเฉพาะสองใบนี้ อีกสองใบไม่ได้อ่าน sto_text เลย */
+const SHOWS_GODOWN_TYPE: DeliveryNoteVariant[] = ['saypan', 'klungsinka'];
+
+/**
+ * เดาว่าใบชั่งนี้ควรเป็นรายงานใบไหน จาก `pd_pro_Godown` ของบรรทัดแรก
+ * ใช้เตือนเมื่อผู้ใช้เลือกหัวเรื่องไม่ตรงกับข้อมูล ไม่ได้บังคับเปลี่ยนให้
+ */
+function variantFromGodown(godown?: string): DeliveryNoteVariant | null {
+  const g = String(godown || '');
+  if (g.startsWith('สายพาน')) return 'saypan';
+  if (g.startsWith('คลัง')) return 'klungsinka';
+  if (/^โกดัง/.test(g)) return 'bulk';
+  if (g === 'ห้องกระสอบ' || g === 'ท่าน้ำ') return 'other';
+  return null;
+}
 
 export function DeliveryNotePrint({
   sequence, variant = 'saypan', onClose,
@@ -74,6 +98,11 @@ export function DeliveryNotePrint({
   const keyedKg = data ? data.items.reduce((s, i) => s + Number(i.Bag || 0) * Number(i.KgPerBag || 0), 0) : 0;
   const scaleKg = Number(data?.WeightNet || 0);
   const mismatch = data && scaleKg > 0 && Math.abs(keyedKg - scaleKg) > 1;
+
+  // หัวเรื่องที่ผู้ใช้เลือก ตรงกับโกดังที่ข้อมูลบอกไหม — เตือนบนจอเท่านั้น ไม่บังคับเปลี่ยน
+  // เพราะโกดังปนกันในใบเดียวได้ และคนหน้างานอาจมีเหตุผลที่เราไม่รู้
+  const godowns = data ? [...new Set(data.items.map(i => variantFromGodown(i.Godown)).filter(Boolean))] : [];
+  const wrongVariant = godowns.length === 1 && godowns[0] !== variant ? godowns[0] : null;
 
   const body = (
     <div className="report-modal-root fixed inset-0 z-50 overflow-auto bg-black/50 p-4">
@@ -106,6 +135,14 @@ export function DeliveryNotePrint({
                 <div className="pt-1">วันที่ {thaiLongDate(data.DateOut || data.DateIn)}</div>
               </div>
 
+              {wrongVariant && (
+                <p className="report-no-print mt-2 flex items-center gap-1 text-sm text-amber-700">
+                  <AlertTriangle size={14} />
+                  ข้อมูลใบนี้อยู่โกดัง “{data.items[0]?.Godown}” ซึ่งตรงกับใบ “{VARIANT_TITLE[wrongVariant]}”
+                  ไม่ใช่ “{VARIANT_TITLE[variant]}” ที่เลือกไว้
+                </p>
+              )}
+
               {data.issueNoAll.length > 1 && (
                 <p className="report-no-print mt-2 flex items-center gap-1 text-sm text-amber-700">
                   <AlertTriangle size={14} />
@@ -135,9 +172,17 @@ export function DeliveryNotePrint({
                     <span>จำนวน</span>
                     <span className="min-w-[70px] border-b border-dotted px-1 text-right">{nf(i.Ton)}</span>
                     <span>ตัน</span>
+                    {SHOWS_GODOWN_TYPE.includes(variant) && (
+                      <>
+                        <span>โกดัง</span>
+                        <span className="min-w-[90px] border-b border-dotted px-1">
+                          {i.GodownType && i.GodownType !== '-' && i.GodownType !== '0' ? i.GodownType : ''}
+                        </span>
+                      </>
+                    )}
                     <span>หมายเหตุ</span>
                     <span className="min-w-[80px] border-b border-dotted px-1">
-                      {[i.Destination, i.StoreNote].find(v => v && v !== '-' && v !== '0') || ''}
+                      {i.Destination && i.Destination !== '-' && i.Destination !== '0' ? i.Destination : ''}
                     </span>
                   </div>
                 ))}

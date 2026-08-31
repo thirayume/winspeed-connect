@@ -82,6 +82,16 @@ router.get('/scale/:sequence', async (req, res) => {
 //   จำนวนกระสอบ     pd_pro_bag       · จำนวนตัน pd_pro_wantWeight
 //
 // pd_pro_wantWeight คือตันจริง ไม่ต้องคำนวณเอง — ตรวจแล้วเท่ากับ bag × pd_pro_weight ÷ 1000
+//
+// pd_pro_Godown คือตัวแยกว่าใบนี้เป็นรายงานใบไหนในต้นฉบับ (ตรวจกับข้อมูลจริง 550,054 แถว):
+//   สายพาน(B/B) · สายพาน(H/P)  → RptSaYPan
+//   คลัง(B/B) · คลัง(H/P)        → RptKlungSinKa
+//   โกดัง1..6                    → RptBULK      (sto_text = 'เทกอง' ทั้งหมด)
+//   ห้องกระสอบ · ท่าน้ำ · '-'      → RptOther
+// sto_text คือประเภทโกดัง (เชิงผสม=B/B · แฮนแพ็ค=H/P · เทกอง · ห้องกระสอบ · ท่าน้ำ)
+// ต้นฉบับอ่าน sto_text เฉพาะ RptSaYPan กับ RptKlungSinKa เพราะสองใบนั้นครอบคลุมโกดังสองแบบ
+//
+// ไม่ส่ง sto_des เพราะมีแค่ค่า '0'/'1' ไม่ใช่ข้อความหมายเหตุ เคยเอาไปแสดงเป็นหมายเหตุแล้วได้เลขลอย ๆ
 router.get('/delivery-note/:sequence', async (req, res) => {
   try {
     const seq = String(req.params.sequence).trim();
@@ -94,7 +104,8 @@ router.get('/delivery-note/:sequence', async (req, res) => {
       `SELECT pd_id AS Id, pd_pro_code AS GoodCode, pd_pro_name AS GoodName,
               pd_pro_formula AS Brand, pd_pro_bag AS Bag, pd_pro_weight AS KgPerBag,
               pd_pro_wantWeight AS Ton, pd_pro_invoid AS IssueNo,
-              pd_Destination AS Destination, pd_pro_Godown AS Godown, sto_des AS StoreNote
+              pd_Destination AS Destination, pd_pro_Godown AS Godown,
+              sto_text AS GodownType
          FROM tblproduct_detail WHERE one_num = ? ORDER BY pd_id`, [head[0].OneNum]);
 
     // เลขที่ใบสั่งจ่ายอยู่ที่บรรทัดสินค้า ไม่ใช่หัวเอกสาร — ปกติทุกบรรทัดเป็นเลขเดียวกัน

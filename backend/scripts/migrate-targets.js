@@ -6,7 +6,7 @@
  *   ระบบมี 3 ปลายทางที่ต้อง schema ตรงกัน (กำลังเทียบต้นทุน/ความง่ายในการดูแล)
  *     local    — SQLEXPRESS บนเครื่อง dev
  *     remote   — Azure VM (ระบบหลักเดิม · Vercel + Railway)
- *     remote_b — Coolify/Hetzner (ระบบสำรองใหม่ · ต่อผ่าน SSH tunnel)
+ *     remote_b — Hostinger VPS (ต่อตรงพอร์ต 1433 · ไม่ใช้ tunnel ตั้งแต่ 31/08/2569)
  *   ค่าเริ่มต้นคือ "all" เพราะใกล้ production แล้ว — schema ต้องไม่หลุดกัน
  *
  * ออกแบบให้ "ไม่แตะ" run_migrations.js และ db.js:
@@ -23,7 +23,7 @@
  *   local     LOCAL_DB_SERVER
  *   remote    REMOTE_DB_SERVER / _PORT / _USER / _PASSWORD
  *   remote_b  REMOTE_B_DB_SERVER / _PORT / _USER / _PASSWORD [/ _NAME]
- *             + (ถ้าต้องใช้ tunnel) REMOTE_B_SSH_HOST / _USER / _KEY / _REMOTE_PORT
+ *             tunnel มีไว้เผื่อเท่านั้น และใช้ได้เมื่อ REMOTE_B_DB_SERVER=127.0.0.1 เท่านั้น
  * ================================================================
  */
 'use strict';
@@ -128,7 +128,7 @@ function buildEnv(target) {
     REMOTE_DB_PASSWORD: process.env.REMOTE_B_DB_PASSWORD,
     DB_NAME: process.env.REMOTE_B_DB_NAME || process.env.DB_NAME || 'dbwins_worldfert9',
   };
-  return { env, label: `${env.REMOTE_DB_SERVER}:${env.REMOTE_DB_PORT} (Coolify)` };
+  return { env, label: `${env.REMOTE_DB_SERVER}:${env.REMOTE_DB_PORT} (Hostinger)` };
 }
 
 // ── SSH tunnel (เฉพาะ remote_b) ─────────────────────────────────
@@ -160,6 +160,15 @@ async function ensureTunnel(env) {
 
   const sshHost = process.env.REMOTE_B_SSH_HOST;
   if (!sshHost) {
+    // ปลายทางที่ไม่ใช่ localhost = ต่อตรง (เช่น Hostinger) — ต่อไม่ได้แทบทุกครั้งคือไฟร์วอลล์
+    // ไม่ใช่เรื่อง tunnel การชี้ไป tunnel ตรงนี้เคยทำให้ไล่ผิดทาง
+    if (host !== '127.0.0.1' && host !== 'localhost') {
+      throw new Error(
+        `ต่อ ${host}:${port} ไม่ได้ — ปลายทางนี้ตั้งให้ต่อตรง ไม่ได้ใช้ tunnel\n` +
+        `     สาเหตุที่พบบ่อยที่สุดคือไฟร์วอลล์ของ VPS อนุญาตเฉพาะบาง IP และ IP ของเครื่องนี้เปลี่ยนไปแล้ว\n` +
+        `     แก้ที่เซิร์ฟเวอร์: ufw allow from <ip ปัจจุบัน> to any port ${port} proto tcp`
+      );
+    }
     throw new Error(`ต่อ ${host}:${port} ไม่ได้ และไม่ได้ตั้ง REMOTE_B_SSH_HOST ให้เปิด tunnel อัตโนมัติ`);
   }
   const sshUser = process.env.REMOTE_B_SSH_USER || 'root';

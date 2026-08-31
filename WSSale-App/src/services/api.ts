@@ -733,7 +733,9 @@ export type ReportData = { type: string; title: string; columns: { key: string; 
 export type DeliveryNoteItem = {
   Id: number; GoodCode: string; GoodName: string; Brand: string;
   Bag: number; KgPerBag: number; Ton: number;
-  IssueNo: string; Destination: string; Godown: string; StoreNote: string;
+  // Godown แยกว่าใบนี้ตรงกับรายงานต้นฉบับใบไหน (สายพาน / คลัง / โกดัง1-6 / อื่น ๆ)
+  // GodownType = ประเภทโกดัง (เชิงผสม · แฮนแพ็ค · เทกอง · ห้องกระสอบ · ท่าน้ำ)
+  IssueNo: string; Destination: string; Godown: string; GodownType: string;
 };
 export type DeliveryNote = {
   Sequence: string; Movebill: string; Plate: string; CustName: string;
