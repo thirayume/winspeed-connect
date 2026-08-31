@@ -33,6 +33,7 @@ CREATE TABLE #Known (
 );
 INSERT INTO #Known (Sequence, DateOut) VALUES
     (N'02619863', N'18/04/2563');
+GO
 
 DECLARE @before INT = (
     SELECT COUNT(*) FROM wf.WeighInbox
@@ -55,6 +56,7 @@ DECLARE @after INT = (
 PRINT N'ใบที่ชั่งออกแล้วแต่ไม่มีวันที่: ก่อน ' + CAST(@before AS NVARCHAR(10))
     + N' · ซ่อม ' + CAST(@fixed AS NVARCHAR(10))
     + N' · เหลือ ' + CAST(@after AS NVARCHAR(10));
+GO
 
 DROP TABLE #Known;
 GO
