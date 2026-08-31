@@ -226,3 +226,39 @@ jobs:
 | **MSSQL Database** | `mssql.thirayu.online` | 1433 | DB Engine |
 | **MySQL Database** | `mysql.thirayu.online` | 3306 | DB Engine |
 | **SFTP Server** | `76.13.190.104` | 22 | File Transfer |
+
+---
+
+## 🎯 ชี้ stack ทดสอบไปฐานที่หน้างานใช้จริง
+
+ค่าปริยายของ `docker-compose.test.yml` ให้ test ใช้คอนเทนเนอร์ `mssql`/`mysql` บน VPS
+ซึ่งเป็นสำเนาที่โคลนมา ไม่ใช่ฐานที่ WINSpeed บนเครื่องผู้ดูแลใช้อยู่
+
+ถ้าต้องการให้ test ตรงกับหน้างาน ตั้งค่าเหล่านี้ใน `deploy/cloud-vps/.env`
+แล้ว deploy stack ทดสอบใหม่ (`13-deploy-test-app.bat`) — **ไม่กระทบ production**
+
+```env
+TEST_MSSQL_SERVER=20.255.185.14
+TEST_MSSQL_PORT=1433
+MSSQL_TEST_DATABASE=dbwins_worldfert9
+
+TEST_MYSQL_HOST=reseau.proxy.rlwy.net
+TEST_MYSQL_PORT=42508
+MYSQL_TEST_DATABASE=db_truckscale
+
+TS_PRODUCTION_HOSTS=reseau.proxy.rlwy.net
+```
+
+### สิ่งที่ต้องรู้ก่อนทำ
+
+**test จะเขียนลงฐานจริง** — ไม่ใช่แค่อ่าน แอปเขียนคิวก่อนชั่งและ write-back ลง
+`db_truckscale` เหมือนโปรแกรมชั่ง `TS_PRODUCTION_HOSTS` จึงต้องตั้งให้ครบ
+ตัว `assertWritableTarget()` จะปฏิเสธการเขียนเมื่อ `NODE_ENV` ไม่ใช่ `production`
+และปลายทางอยู่ในรายชื่อ — test ตั้ง `NODE_ENV: test` ไว้แล้ว ตัวกันจึงทำงาน
+
+**เดิมตัวกันนี้ไม่เคยทำงานเลย** — `TS_PRODUCTION_HOSTS` ประกาศไว้ใน `.env.example`
+แต่ไม่ถูกส่งเข้าคอนเทนเนอร์ทั้ง prod และ test แก้แล้วในทั้งสองไฟล์
+
+**ชื่อฐานของ test เคยไม่มีค่าปริยาย** — `${MSSQL_TEST_DATABASE}` กับ `${MYSQL_TEST_DATABASE}`
+ถ้า `.env` ไม่ได้ตั้ง (ซึ่งตอนนี้ไม่ได้ตั้ง) จะได้ชื่อฐานว่าง แล้วต่อไม่ติดแบบไม่มีข้อความบอก
+ใส่ค่าปริยาย `dbwins_worldfert9_test` / `db_truckscale_test` ไว้แล้ว

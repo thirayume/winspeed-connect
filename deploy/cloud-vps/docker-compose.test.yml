@@ -17,18 +17,21 @@ services:
       PORT: 3000
       TZ: ${TZ:-Asia/Bangkok}
       DB_MODE: remote
-      REMOTE_DB_SERVER: mssql
-      REMOTE_DB_PORT: 1433
+      # ปลายทางฐานของ test ตั้งค่าได้ · ไม่ตั้ง = ใช้คอนเทนเนอร์บน VPS เหมือนเดิม
+      # ตั้ง TEST_MSSQL_SERVER ให้ชี้ Azure ได้เมื่ออยากให้ test ตรงกับ WINSpeed ที่หน้างานใช้
+      REMOTE_DB_SERVER: ${TEST_MSSQL_SERVER:-mssql}
+      REMOTE_DB_PORT: ${TEST_MSSQL_PORT:-1433}
       REMOTE_DB_USER: sa
       REMOTE_DB_PASSWORD: ${MSSQL_SA_PASSWORD}
-      DB_NAME: ${MSSQL_TEST_DATABASE}
+      # ไม่มีค่าปริยายมาก่อน — ถ้า .env ไม่ได้ตั้ง ชื่อฐานจะว่างแล้วต่อไม่ติดแบบเงียบ ๆ
+      DB_NAME: ${MSSQL_TEST_DATABASE:-dbwins_worldfert9_test}
       DB_USER: wf_reader
       DB_PASSWORD: ${WF_READER_PASSWORD}
       DB_OWNER_USER: wf_owner
       DB_OWNER_PASSWORD: ${WF_OWNER_PASSWORD}
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_DATABASE: ${MYSQL_TEST_DATABASE}
+      MYSQL_HOST: ${TEST_MYSQL_HOST:-mysql}
+      MYSQL_PORT: ${TEST_MYSQL_PORT:-3306}
+      MYSQL_DATABASE: ${MYSQL_TEST_DATABASE:-db_truckscale_test}
       MYSQL_USER: ${MYSQL_USER:-wfapp}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_SSL_CA_PATH: /app/secrets/mysql-ca.crt
@@ -40,6 +43,9 @@ services:
       MIGRATE_SECRET: ${TEST_MIGRATE_SECRET}
       TS_INGEST_SECRET: ${TEST_TS_INGEST_SECRET}
       TS_SYNC_INTERVAL_MS: ${TS_SYNC_INTERVAL_MS:-60000}
+      # กันไม่ให้ test เขียนทับฐานเครื่องชั่งของจริง (assertWritableTarget)
+      # ประกาศไว้ใน .env.example ตั้งแต่แรกแต่ไม่เคยส่งเข้าคอนเทนเนอร์ ตัวกันจึงไม่เคยทำงาน
+      TS_PRODUCTION_HOSTS: ${TS_PRODUCTION_HOSTS:-}
       APP_VERSION: ${APP_VERSION:-1.0.0}-test
       DISABLE_BACKGROUND_WORKERS: "true"
       DISABLE_EXTERNAL_INTEGRATIONS: "true"

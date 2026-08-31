@@ -138,6 +138,9 @@ services:
       DB_PASSWORD: ${WF_READER_PASSWORD}
       DB_OWNER_USER: wf_owner
       DB_OWNER_PASSWORD: ${WF_OWNER_PASSWORD}
+      # รายชื่อฐานเครื่องชั่งของจริง — production ข้ามการตรวจอยู่แล้ว
+      # แต่ส่งเข้าไปด้วยเพื่อให้ทุกสภาพแวดล้อมอ่านค่าจากที่เดียวกัน
+      TS_PRODUCTION_HOSTS: ${TS_PRODUCTION_HOSTS:-}
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_DATABASE: ${MYSQL_DATABASE:-db_truckscale}
