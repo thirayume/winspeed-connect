@@ -557,6 +557,18 @@
       "actor": "claude",
       "reason": "ปิดชื่อผู้ใช้/เครื่องในคอมเมนต์ก่อนเผยแพร่ repo สาธารณะ — เนื้อคำสั่ง SQL ไม่เปลี่ยน",
       "repairedAt": "2026-08-23T15:04:39.011Z"
+    },
+    {
+      "file": "073_repair_weighinbox_missing_dateout.sql",
+      "target": "remote_b (Hostinger)",
+      "previousChecksum": "cc7984eb1fb8c2723d55b90b3fc3275598861ceba6c751070f80f8f53db8c67c",
+      "newChecksum": "e6adf52ec76e3872e67eec34d1af8c3816670683c331b04ccc5f51288d0650fe",
+      "previousBatchCount": 2,
+      "newBatchCount": 4,
+      "verified": "release cc2a0bb ลบ GO สองบรรทัดออกจาก migration ที่รันไปแล้ว · GO ทั้งสองอยู่ระหว่างแบตช์ที่ไม่มีตัวแปรข้ามกัน คำสั่งที่ทำงานจริงจึงเหมือนเดิมทุกประการ · คืนไฟล์กลับเป็นเวอร์ชันที่รันจริงแล้ว (commit 4d23a69) ledger ของ local และ Azure ตรงอยู่แล้ว เหลือ Hostinger ที่บันทึกเวอร์ชันที่ถูกแก้ไว้เมื่อ 27/08/2569",
+      "actor": "Thirayu M. (owner)",
+      "reason": "อนุมัติ 01/09/2569 · repair-migration-checksum.js ทำให้ไม่ได้เพราะจำนวนแบตช์เปลี่ยน ซึ่งมันปฏิเสธโดยออกแบบ",
+      "repairedAt": "2026-08-31T17:25:27.000Z"
     }
   ]
 }
