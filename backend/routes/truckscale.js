@@ -68,6 +68,53 @@ router.get('/scale/:sequence', async (req, res) => {
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
 
+// GET /api/truckscale/delivery-note/:sequence — ใบจ่ายสินค้า (แทน RptSaYPan.rpt ของ TruckScale)
+//
+// ต้นฉบับเป็น Crystal Report ที่อ่าน tblproduct_detail ผ่าน DSN เดียวกับโปรแกรมชั่ง
+// การจับคู่ช่องมาจากคอมเมนต์ในตารางจริงและเอกสารที่พิมพ์ออกมาเทียบกัน:
+//
+//   เลขที่ใบสั่งจ่าย  pd_pro_invoid   (คอมเมนต์ในตารางเขียนว่า "เลขที่ใบสั่งจ่าย")
+//                                    เอกสารเก่าเป็นเลขรัน 6 หลัก · ใบที่ App สร้างจะเป็นเลข SO
+//   ชื่อร้านลูกค้า    tblscale.one_cus_name
+//   ทะเบียนรถ       tblscale.one_car_regis
+//   วันที่            tblscale.Date_Out (เก็บเป็นข้อความ dd/mm/yyyy พ.ศ.)
+//   ปุ๋ยสูตร          pd_pro_name · ตรา pd_pro_formula
+//   จำนวนกระสอบ     pd_pro_bag       · จำนวนตัน pd_pro_wantWeight
+//
+// pd_pro_wantWeight คือตันจริง ไม่ต้องคำนวณเอง — ตรวจแล้วเท่ากับ bag × pd_pro_weight ÷ 1000
+router.get('/delivery-note/:sequence', async (req, res) => {
+  try {
+    const seq = String(req.params.sequence).trim();
+    const head = await tsQuery(
+      `SELECT ${SCALE_COLS}, one_des AS Note, s_day AS ScaleDay, s_num AS ScaleNum
+         FROM tblscale WHERE sequence = ? ORDER BY s_id DESC LIMIT 1`, [seq]);
+    if (!head.length) return res.status(404).json({ message: 'ไม่พบใบชั่ง' });
+
+    const items = await tsQuery(
+      `SELECT pd_id AS Id, pd_pro_code AS GoodCode, pd_pro_name AS GoodName,
+              pd_pro_formula AS Brand, pd_pro_bag AS Bag, pd_pro_weight AS KgPerBag,
+              pd_pro_wantWeight AS Ton, pd_pro_invoid AS IssueNo,
+              pd_Destination AS Destination, pd_pro_Godown AS Godown, sto_des AS StoreNote
+         FROM tblproduct_detail WHERE one_num = ? ORDER BY pd_id`, [head[0].OneNum]);
+
+    // เลขที่ใบสั่งจ่ายอยู่ที่บรรทัดสินค้า ไม่ใช่หัวเอกสาร — ปกติทุกบรรทัดเป็นเลขเดียวกัน
+    // ถ้าเจอมากกว่าหนึ่งค่า ส่งไปทั้งหมดให้ผู้ใช้เห็น ดีกว่าเลือกมาใบเดียวเงียบ ๆ
+    const issueNos = [...new Set(items.map(i => String(i.IssueNo || '').trim())
+      .filter(v => v && v !== '-'))];
+
+    res.json({
+      ...head[0],
+      issueNo: issueNos[0] || null,
+      issueNoAll: issueNos,
+      items,
+      totals: {
+        bag: items.reduce((s, i) => s + Number(i.Bag || 0), 0),
+        ton: items.reduce((s, i) => s + Number(i.Ton || 0), 0),
+      },
+    });
+  } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
+});
+
 // GET /api/truckscale/for-so/:soId — หาน้ำหนักชั่งที่ match SO + ranking score (FR-025)
 const normPlate = (s) => String(s || '').replace(/[\s-]/g, '').toLowerCase();
 
