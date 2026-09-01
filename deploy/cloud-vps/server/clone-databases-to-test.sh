@@ -336,8 +336,33 @@ clone_mysql() {
     restore_mysql_safety_or_remove "$safety_file"
     fail "MySQL table-count validation failed: source=$source_tables target=$target_tables"
   fi
-  docker exec -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" wf-mysql mysqlcheck \
-    -u root --ssl-mode=REQUIRED --check --quick "$MYSQL_TARGET"
+  # ตรวจความสมบูรณ์ของทุกตาราง
+  #
+  # เดิมใช้ mysqlcheck แต่ **อิมเมจ mysql:8.0.46 ที่ใช้อยู่ไม่มีคำสั่งนี้แล้ว**
+  # (มีแค่ mysql · mysqladmin · mysqldump · mysqlpump · mysqlsh)
+  # ผลคือขั้นตรวจสอบล้มทุกครั้ง และล้มหลังจากโคลนฐานเสร็จแล้ว
+  # ทำให้ deploy-full-test-stack.sh หยุดก่อนจะสร้าง container ทดสอบ — ฐานถูกสร้างแต่แอปไม่ขึ้น
+  #
+  # ยังเรียก mysqlcheck ก่อนถ้ามี เผื่อสภาพแวดล้อมอื่นที่ยังมีอยู่
+  # ไม่มีก็ใช้ CHECK TABLE ผ่าน client mysql ซึ่งให้ผลอย่างเดียวกันและมีอยู่แน่นอน
+  if docker exec wf-mysql sh -c 'command -v mysqlcheck >/dev/null 2>&1'; then
+    docker exec -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" wf-mysql mysqlcheck \
+      -u root --ssl-mode=REQUIRED --check --quick "$MYSQL_TARGET"
+  else
+    log "mysqlcheck ไม่มีในอิมเมจนี้ — ใช้ CHECK TABLE แทน"
+    check_out="$(mysql_admin -N -B -e "
+      SELECT CONCAT('CHECK TABLE \`$MYSQL_TARGET\`.\`', table_name, '\` QUICK;')
+        FROM information_schema.tables
+       WHERE table_schema='$MYSQL_TARGET' AND table_type='BASE TABLE';" \
+      | mysql_admin -N -B | tr -d '\r')"
+    # ผลของ CHECK TABLE คือ  ตาราง<TAB>check<TAB>status<TAB>ข้อความ
+    # ทุกบรรทัดต้องลงท้ายด้วย OK ไม่งั้นถือว่าโคลนมาไม่สมบูรณ์
+    if bad="$(printf '%s\n' "$check_out" | awk -F'\t' 'NF && $NF != "OK"')" && [ -n "$bad" ]; then
+      restore_mysql_safety_or_remove "$safety_file"
+      fail "MySQL CHECK TABLE พบตารางที่ไม่ผ่าน:\n$bad"
+    fi
+    echo "$check_out" | awk -F'\t' 'END { print "CHECK TABLE ผ่าน " NR " ตาราง" }'
+  fi
   rm -f -- "$MYSQL_SOURCE_DUMP"
   MYSQL_SOURCE_DUMP=""
   echo "MYSQL CLONE OK: $MYSQL_TARGET ($target_tables tables/views; $event_count events disabled)"

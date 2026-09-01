@@ -79,8 +79,13 @@ function variantFromGodown(godown?: string): DeliveryNoteVariant | null {
   return null;
 }
 
+/**
+ * `variant` ไม่ต้องส่งก็ได้ — ถ้าไม่ส่ง จะเลือกจากโกดังของบรรทัดสินค้าให้เอง
+ * ต้นฉบับให้คนเลือกเองว่าจะพิมพ์ใบไหน แต่ข้อมูลบอกอยู่แล้วว่าเป็นใบไหน
+ * ให้คนเลือกซ้ำอีกทีมีแต่จะเลือกผิด
+ */
 export function DeliveryNotePrint({
-  sequence, variant = 'saypan', onClose,
+  sequence, variant: variantProp, onClose,
 }: { sequence: string; variant?: DeliveryNoteVariant; onClose: () => void }) {
   const [data, setData] = useState<DeliveryNote | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -99,10 +104,20 @@ export function DeliveryNotePrint({
   const scaleKg = Number(data?.WeightNet || 0);
   const mismatch = data && scaleKg > 0 && Math.abs(keyedKg - scaleKg) > 1;
 
-  // หัวเรื่องที่ผู้ใช้เลือก ตรงกับโกดังที่ข้อมูลบอกไหม — เตือนบนจอเท่านั้น ไม่บังคับเปลี่ยน
-  // เพราะโกดังปนกันในใบเดียวได้ และคนหน้างานอาจมีเหตุผลที่เราไม่รู้
+  // โกดังที่ปรากฏในใบนี้ — ปกติเป็นโกดังเดียว
   const godowns = data ? [...new Set(data.items.map(i => variantFromGodown(i.Godown)).filter(Boolean))] : [];
-  const wrongVariant = godowns.length === 1 && godowns[0] !== variant ? godowns[0] : null;
+
+  // ไม่ได้ระบุ variant มา = ให้ข้อมูลเป็นคนบอก · ถ้าใบนี้ปนหลายโกดังจนตัดสินไม่ได้ ค่อยตกไปที่สายพาน
+  const variant: DeliveryNoteVariant =
+    variantProp ?? (godowns.length === 1 ? godowns[0]! : 'saypan');
+
+  // เตือนเฉพาะกรณีที่ผู้เรียกยืนกรานหัวเรื่องมาเอง แล้วไม่ตรงกับข้อมูล
+  // เตือนบนจอเท่านั้น ไม่บังคับเปลี่ยน — คนหน้างานอาจมีเหตุผลที่เราไม่รู้
+  const wrongVariant =
+    variantProp && godowns.length === 1 && godowns[0] !== variantProp ? godowns[0] : null;
+
+  // ใบเดียวมีหลายโกดัง = เลือกหัวเรื่องให้อัตโนมัติไม่ได้ ต้องบอกคนอ่านตรง ๆ
+  const mixedGodowns = !variantProp && godowns.length > 1;
 
   const body = (
     <div className="report-modal-root fixed inset-0 z-50 overflow-auto bg-black/50 p-4">
@@ -134,6 +149,14 @@ export function DeliveryNotePrint({
                 <h1 className="mt-1 text-3xl font-bold">{VARIANT_TITLE[variant]}</h1>
                 <div className="pt-1">วันที่ {thaiLongDate(data.DateOut || data.DateIn)}</div>
               </div>
+
+              {mixedGodowns && (
+                <p className="report-no-print mt-2 flex items-center gap-1 text-sm text-amber-700">
+                  <AlertTriangle size={14} />
+                  ใบนี้มีสินค้าจากหลายโกดัง ({[...new Set(data.items.map(i => i.Godown).filter(Boolean))].join(' · ')})
+                  — ต้นฉบับแยกเป็นคนละใบ เลือกหัวเรื่องให้อัตโนมัติไม่ได้ จึงใช้ “{VARIANT_TITLE[variant]}”
+                </p>
+              )}
 
               {wrongVariant && (
                 <p className="report-no-print mt-2 flex items-center gap-1 text-sm text-amber-700">
