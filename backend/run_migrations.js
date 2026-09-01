@@ -134,7 +134,33 @@ async function loadApplied(pool) {
   }]));
 }
 
+/**
+ * บันทึกว่า migration ไฟล์นี้ถูกใช้แล้ว
+ *
+ * ต้องบังคับ USE ก่อนเสมอ เพราะ **migration บางไฟล์มีคำสั่ง `USE` ฝังอยู่ข้างใน**
+ * (074_fix_winspeed_legacy_raiserror.sql บรรทัด 53 เขียน `USE dbwins_worldfert9;` ตายตัว)
+ * พอรันกับฐานที่ชื่ออื่น — เช่น dbwins_worldfert9_test — session จะสลับไปฐาน production
+ * แล้วทุกอย่างหลังจากนั้น รวมทั้งการเขียน ledger บรรทัดนี้ ไปลงผิดฐาน
+ *
+ * อาการที่เห็นคือ PRIMARY KEY ชนที่ wf.SchemaMigration ทั้งที่ฐานเป้าหมายไม่มีแถวนั้น
+ * (ชื่อ constraint ในข้อความ error เป็นของอีกฐานหนึ่ง — เป็นเบาะแสเดียวที่มองเห็น)
+ *
+ * แก้ที่ตัวรันแทนการแก้ไฟล์ migration เพราะไฟล์ที่ใช้ไปแล้วเป็น immutable
+ * การแก้ไฟล์จะทำให้ทุกปลายทางที่ใช้ 074 ไปแล้วเกิด checksum drift พร้อมกัน
+ */
+/** ชื่อฐานที่ตัวรันกำลังทำงานอยู่ — เก็บไว้ตอนเริ่ม run() ก่อน migration ตัวใดจะสลับฐานได้ */
+let targetDatabase = null;
+
+async function resolveTargetDatabase(pool) {
+  const r = await pool.request().query('SELECT DB_NAME() AS n');
+  targetDatabase = r.recordset[0].n;
+  return targetDatabase;
+}
+
 async function recordApplied(pool, fileName, checksum, batchCount) {
+  if (targetDatabase) {
+    await pool.request().query(`USE [${targetDatabase.replace(/]/g, ']]')}];`);
+  }
   await pool.request()
     .input('f', fileName)
     .input('c', checksum)
@@ -155,7 +181,35 @@ function sqlErrorCode(error) {
     ?? error?.originalError?.code;
 }
 
+/**
+ * migration ต้องไม่สลับฐานเอง — ตัวรันเป็นคนเลือกฐานปลายทางแล้ว
+ *
+ * `074_fix_winspeed_legacy_raiserror.sql` มี `USE dbwins_worldfert9;` ฝังไว้ตายตัว
+ * รันกับฐานชื่ออื่นเมื่อไร คำสั่งที่เหลือทั้งไฟล์จะไปลงฐาน production เงียบ ๆ
+ * — ในเคสจริงคือไปแก้ trigger ที่ production ขณะที่ตั้งใจจะทำ UAT
+ *
+ * หยุดดังดีกว่าเขียนผิดฐานโดยไม่มีใครรู้ ถ้าต้องใช้ไฟล์แบบนี้กับฐานชื่ออื่นจริง ๆ
+ * ให้แก้ที่ไฟล์ migration (สร้างไฟล์ใหม่) ไม่ใช่ปล่อยให้ข้ามไป
+ */
+function assertNoDatabaseSwitch(fileName, batches, database) {
+  if (!database) return;
+  // ต้องเผื่อคอมเมนต์ท้ายบรรทัด — ของจริงเขียนว่า
+  //   USE dbwins_worldfert9;      -- << แก้ชื่อฐานข้อมูลให้ตรงถ้าใช้ที่อื่น
+  const re = /^[ \t]*USE\s+\[?([A-Za-z0-9_]+)\]?[ \t]*;?[ \t]*(?:--.*)?$/gim;
+  for (const batch of batches) {
+    for (const m of batch.matchAll(re)) {
+      if (m[1].toLowerCase() !== database.toLowerCase()) {
+        throw new Error(
+          `${fileName} มีคำสั่ง "USE ${m[1]}" อยู่ข้างใน แต่กำลังรันกับฐาน "${database}" — ` +
+          `ถ้าปล่อยไป คำสั่งที่เหลือจะไปลงฐาน ${m[1]} แทน ` +
+          `แก้ที่ไฟล์ migration ให้ไม่ต้องสลับฐาน แล้วค่อยรันใหม่`);
+      }
+    }
+  }
+}
+
 async function runFile(pool, fileName, batches) {
+  assertNoDatabaseSwitch(fileName, batches, targetDatabase);
   let successCount = 0;
   let ignoredCount = 0;
   for (let index = 0; index < batches.length; index += 1) {
@@ -235,6 +289,7 @@ async function run(options = parseArgs(process.argv)) {
   const pool = db.ownerPool;
   const target = db.getTarget();
 
+  await resolveTargetDatabase(pool);
   if (!options.plan) await ensureLedger(pool);
   const applied = await loadApplied(pool);
   const plan = buildPlan(inventory, applied);
