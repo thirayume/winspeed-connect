@@ -569,6 +569,30 @@
       "actor": "Thirayu M. (owner)",
       "reason": "อนุมัติ 01/09/2569 · repair-migration-checksum.js ทำให้ไม่ได้เพราะจำนวนแบตช์เปลี่ยน ซึ่งมันปฏิเสธโดยออกแบบ",
       "repairedAt": "2026-08-31T17:25:27.000Z"
+    },
+    {
+      "file": "074_fix_winspeed_legacy_raiserror.sql",
+      "target": "remote",
+      "previousChecksum": "5eaa90a2660af41fa6524630f36bc0e64f0339161450a363c4898ec0924e86e4",
+      "newChecksum": "76190fc2ea9933fe1ce088d8173c49ea5080ea5e8da54e486034f0ce1f1d0ce9",
+      "previousBatchCount": 8,
+      "newBatchCount": 7,
+      "verified": "เอาบรรทัด `USE dbwins_worldfert9;` กับ GO ที่ตามมาออก — เป็นข้อบกพร่องที่ทำให้ migration ไปเขียนผิดฐานเมื่อรันกับฐานชื่ออื่น · คำสั่งที่ทำงานจริงเหมือนเดิมทุกตัวอักษร ตัวรันเลือกฐานให้อยู่แล้ว",
+      "actor": "Thirayu M. (owner)",
+      "reason": "อนุมัติ 01/09/2569 · repair-migration-checksum.js ทำให้ไม่ได้เพราะ batch count เปลี่ยน ซึ่งมันปฏิเสธโดยออกแบบ",
+      "repairedAt": "2026-09-01T15:41:50.286Z"
+    },
+    {
+      "file": "074_fix_winspeed_legacy_raiserror.sql",
+      "target": "remote_b",
+      "previousChecksum": "5eaa90a2660af41fa6524630f36bc0e64f0339161450a363c4898ec0924e86e4",
+      "newChecksum": "76190fc2ea9933fe1ce088d8173c49ea5080ea5e8da54e486034f0ce1f1d0ce9",
+      "previousBatchCount": 8,
+      "newBatchCount": 7,
+      "verified": "เอาบรรทัด `USE dbwins_worldfert9;` กับ GO ที่ตามมาออก — เป็นข้อบกพร่องที่ทำให้ migration ไปเขียนผิดฐานเมื่อรันกับฐานชื่ออื่น · คำสั่งที่ทำงานจริงเหมือนเดิมทุกตัวอักษร ตัวรันเลือกฐานให้อยู่แล้ว",
+      "actor": "Thirayu M. (owner)",
+      "reason": "อนุมัติ 01/09/2569 · repair-migration-checksum.js ทำให้ไม่ได้เพราะ batch count เปลี่ยน ซึ่งมันปฏิเสธโดยออกแบบ",
+      "repairedAt": "2026-09-01T15:41:50.286Z"
     }
   ]
 }
