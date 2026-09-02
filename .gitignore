@@ -82,3 +82,7 @@ deploy/truckscale-replica/baseline.sql
 
 # สภาพ DSN ของเครื่องแต่ละเครื่อง ไม่ใช่ของโครงการ
 deploy/truckscale-replica/dsn-backup/
+
+# Python build artifacts — เคยมี IP ผู้ดูแลหลุดออกไปกับไฟล์ .pyc
+__pycache__/
+*.pyc

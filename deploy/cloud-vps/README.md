@@ -10,7 +10,9 @@ This package deploys the frontend, backend, SQL Server, MySQL and Portainer on o
 - Frontend/API/Portainer: `app.thirayu.online`, `api.thirayu.online`, `portainer.thirayu.online`.
 - MSSQL/MySQL: `mssql.thirayu.online:1433`, `mysql.thirayu.online:3306`.
 - The original `*.srv1935135.hstgr.cloud` names remain certificate aliases during the transition.
-- Allowlisted management/SFTP/database CIDR at test time: `58.11.84.165/32`.
+- Allowlisted management/SFTP/database CIDR: the administrator's current public address as `/32`.
+  The live value lives in `deploy/cloud-vps/.local-secrets/CREDENTIALS.txt` under `[NETWORK]`, which
+  is not in this repository. It is a dynamic address, so treat any value written down here as stale.
 - Hostinger Firewall: 22/1433/3306 from the allowlist, 80/443 from Any, default Drop.
   **Editing rules in hPanel does nothing until you press Synchronize.** The rule list updates
   immediately and looks correct, but the server keeps enforcing the previous set until the sync

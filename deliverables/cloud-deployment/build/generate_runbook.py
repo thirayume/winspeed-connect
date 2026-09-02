@@ -455,7 +455,7 @@ for step in [
     "รอ VPS เป็น Running แล้วบันทึก Public IPv4 และ Hostname. Pilot นี้คือ 76.13.190.104 และ srv1935135.hstgr.cloud.",
     "ไปที่ Settings → SSH keys แล้วเพิ่ม public key worldfert-hostinger-deploy.pub; ทดสอบ SSH แบบ key-only ก่อนปิดหน้า.",
     "สร้าง Hostinger Firewall ชื่อ WorldFert Production: 22/1433/3306 รับเฉพาะ Public IP ผู้ดูแลแบบ /32, 80/443 รับจาก Any และ Default policy เป็น Drop.",
-    "Apply firewall ให้ VPS ที่สร้างใหม่และทดสอบ SSH ทันที. Pilot ใช้ allowlist 58.11.84.165/32; หาก ISP เปลี่ยน IP ต้องแก้ rule ก่อนเชื่อมต่อ.",
+    "Apply firewall ให้ VPS ที่สร้างใหม่และทดสอบ SSH ทันที. allowlist ใช้ IP สาธารณะของผู้ดูแลแบบ /32 (ดูค่าจริงใน .local-secrets/CREDENTIALS.txt หัวข้อ [NETWORK]); เป็น IP ไม่คงที่ หาก ISP เปลี่ยนต้องแก้ rule ก่อนเชื่อมต่อ. กด Synchronize ทุกครั้ง มิฉะนั้นกฎจะยังไม่มีผลบนเซิร์ฟเวอร์.",
 ]:
     add_number(doc, step)
 
@@ -498,7 +498,7 @@ add_number(doc, "เปิด Optional Feature: OpenSSH Client หรือย�
 add_number(doc, "รัน deploy\\cloud-vps\\windows\\00-check-prerequisites.bat.")
 add_number(doc, "สร้าง key คู่ deploy และ SFTP ด้วย ssh-keygen -t ed25519; เก็บ private key เฉพาะเครื่องผู้ดูแล.")
 add_number(doc, "เก็บ deploy key และ SFTP key ใน deploy\\cloud-vps\\.local-secrets; ห้าม commit โฟลเดอร์นี้.")
-add_number(doc, "รัน PowerShell: 09-generate-hostinger-profile.ps1 -ServerIp 76.13.190.104 -ServerHostname srv1935135.hstgr.cloud -AllowedCidr 58.11.84.165/32 เพื่อสร้าง .env, server-config.env, remote-config.bat และ CREDENTIALS.txt.")
+add_number(doc, "รัน PowerShell: 09-generate-hostinger-profile.ps1 -ServerIp 76.13.190.104 -ServerHostname srv1935135.hstgr.cloud -AllowedCidr <IP ผู้ดูแล>/32 เพื่อสร้าง .env, server-config.env, remote-config.bat และ CREDENTIALS.txt.")
 add_number(doc, "ตรวจเฉพาะชื่อ field ในไฟล์ config โดยไม่พิมพ์ secret ลง terminal; ห้ามรัน generator ซ้ำบนระบบใช้งานจริงเพราะจะสร้าง secret ชุดใหม่.")
 
 heading(doc, "4. ขั้นตอน Deploy ระบบจากระยะไกล", 1)
