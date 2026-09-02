@@ -4,7 +4,7 @@
  */
 const router = require('express').Router();
 const { query, wfQuery } = require('../db');
-const { getPool, tsQuery } = require('../services/truckscale-db');
+const { MYSQL_ENABLED, getPool, tsQuery } = require('../services/truckscale-db');
 const obs = require('../services/observability');
 const { requireAuth, requireRole } = require('../middleware/auth');
 
@@ -14,10 +14,13 @@ router.use(requireAuth, requireRole('ADMIN', 'MANAGER'));
 router.get('/status', async (req, res) => {
   const db = { sqlserver: 'unknown', mysql: 'unknown' };
   try { await query('SELECT 1 AS ok'); db.sqlserver = 'up'; } catch { db.sqlserver = 'down'; }
+  // 'disabled' = ตั้งใจปิด (ยกเลิก MySQL TruckScale 03/09/2569) ไม่ใช่ระบบล่ม
   try {
-    if (!getPool()) db.mysql = 'not-configured';
+    if (!MYSQL_ENABLED) db.mysql = 'disabled';
+    else if (!getPool()) db.mysql = 'not-configured';
     else { await tsQuery('SELECT 1 AS ok'); db.mysql = 'up'; }
   } catch { db.mysql = 'down'; }
+  db.weighing = db.sqlserver === 'up' ? 'winspeed:WGHD' : 'unknown';
   res.json({ ...obs.getStatus(), db });
 });
 

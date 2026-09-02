@@ -852,11 +852,87 @@ export const fetchWfRebateTrailDetail = (orderId: string) =>
   req<import('../types').WfRebateTrailDetail>(`/rebate/wf-trail-detail/${orderId}`);
 
 // รายงานเครื่องชั่ง (T6-02) — แทน Crystal Reports เดิม
+/**
+ * @deprecated อ่าน MySQL ของ TruckScale — เลิกใช้แล้ว 02/09/2569
+ * เส้นทาง `/scale-reports` ถูกปิดที่ backend (ดู server.js) ใช้ `fetchWeighingReport` แทน
+ * ไม่ลบทิ้งเพื่อให้ถอยกลับได้ถ้าจำเป็น
+ */
+/**
+ * @deprecated เลิกใช้ 03/09/2569 — `/api/scale-reports` ถูกปิดใน server.js พร้อมกับ
+ * การยกเลิก MySQL TruckScale ทั้งหมด · เรียกแล้วจะได้ 404 · ใช้ `fetchWeighingReport` แทน
+ * ไม่ลบทิ้งตามคำสั่งเจ้าของระบบ เผื่อต้องถอยกลับ
+ */
 export const fetchScaleReport = (report: string, from: string, to: string, filterParam?: string, filterValue?: string) => {
   const q = new URLSearchParams({ from, to });
   if (filterParam && filterValue) q.set(filterParam, filterValue);
   return req<{ rows: any[]; count: number; from: number; to: number }>(`/scale-reports/${report}?${q}`);
 };
+
+// ── สถานะการชั่งรถ อ่านจาก WINSpeed (WGHD/WGDT) — อ่านอย่างเดียว ─────
+// แอปไม่เขียนสามตารางนี้เลย เครื่องชั่งเป็นผู้เขียน เราอ่านมาแสดงสถานะ
+export type WgType = 'SO' | 'PO' | 'MO';
+
+export type WeighCoverage = {
+  Registered: number; Waiting: number; WeighedIn: number; WeighedOut: number;
+  TypeSO: number; TypePO: number; TypeMO: number; WithNetWeight: number;
+  FirstDate: string | null; LastDate: string | null; LastWeighOut: string | null;
+  DetailRows: number; WithCoupon: number;
+};
+export const fetchWeighCoverage = () => req<WeighCoverage>('/weighing/coverage');
+
+/** หนึ่งคันในคิวชั่ง · `Status` มาเป็นสตริงจากฐาน จึงประกาศเป็น number|string */
+export type WeighLiveRow = {
+  Id: number; WGType: WgType | null; Status: number | string; StatusText: string;
+  MoveBill: string | null; Plate: string | null; DriverName: string | null;
+  CVCode: string | null; PartyName: string | null;
+  DateReg: string | null; DateIn: string | null; DateOut: string | null;
+  WeightIn: number | null; WeightOut: number | null; WeightNet: number | null;
+  TotalTon: number | null; TotalKasob: number | null;
+  SPID: number | null; SODocuNo: string | null; SODocuType: number | string | null;
+  SODate: string | null; AppvDocuNo: string | null; CouponFlag: string | null; clearflag: string | null;
+  SoStage: 'WAITING' | 'LOADING' | 'SHIPPED' | null;
+  Lines: number; CouponLines: number;
+};
+export type WeighTally = { waiting: number; weighedIn: number; weighedOut: number; unknown: number };
+
+export const fetchWeighLive = (type?: WgType, sinceHours = 24) => {
+  const q = new URLSearchParams({ sinceHours: String(sinceHours) });
+  if (type) q.set('type', type);
+  return req<{ rows: WeighLiveRow[]; count: number; tally: WeighTally; sinceHours: number; serverTime: string }>(
+    `/weighing/live?${q}`);
+};
+
+export const fetchWeighAnomalies = () =>
+  req<{ rows: any[]; count: number }>('/weighing/anomalies');
+
+export const fetchWeighingReport = (report: string, from: string, to: string, type?: WgType) => {
+  const q = new URLSearchParams({ from, to });
+  if (type) q.set('type', type);
+  return req<{ rows: any[]; count: number; from: string; to: string }>(`/weighing/${report}?${q}`);
+};
+
+export type WeighingTicketItem = {
+  Id: number; ListNo: number; GoodID: number; GoodName: string;
+  GoodQty2: number | null; GoodTon: number | null; GoodKasob: number | null; GoodKG: number | null;
+  StoreCode: string | null; StoreName: string | null;
+  StoreCode2: string | null; StoreName2: string | null;
+  CouponNo: string | null; RefNo: string | null;
+};
+/** ใบชั่งของ WINSpeed (dbo.WGHD) — คนละตัวกับ `WeighTicket` ใน ../types ซึ่งเป็นใบชั่งของแอปเอง */
+export type WeighingTicket = {
+  Id: number; WGType: WgType | null; Status: number | string; StatusText: string;
+  MoveBill: string | null; CarNo: string | null; DriverName: string | null;
+  CVCode: string | null; CVName: string | null; SPID: number | null; DocuNo: string | null;
+  DateReg: string | null;
+  DateInText: string | null; WeightIn: number | null;
+  DateOutText: string | null; WeightOut: number | null; WeightNet: number | null;
+  TotalTon: number | null; TotalKasob: number | null;
+  SODocuNo: string | null; SODocuType: number | string | null; SODate: string | null;
+  AppvDocuNo: string | null; CouponFlag: string | null; SOPlate: string | null;
+  items: WeighingTicketItem[];
+  totals: { ton: number; kasob: number; kgFromSacks: number };
+};
+export const fetchWeighingTicket = (id: number) => req<WeighingTicket>(`/weighing/tickets/${id}`);
 
 // สายอนุมัติของแบบขออนุมัติรายการส่งเสริมการขาย (ชั้น 3 = ผู้จัดการฝ่ายขาย)
 export const fetchRebatePlanApprovals = (planId: number) =>

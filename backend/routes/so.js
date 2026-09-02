@@ -11,7 +11,8 @@ const { generateImportFiles } = require('../services/winspeed-import.service');
 const { broadcast } = require('../services/socket');
 const { enqueue } = require('../services/outbox');
 const { resolveApprovalPolicy } = require('../services/approval');
-const { insertPreWeighTicket, removePreWeighTicket } = require('../services/truckscale-db');
+// ยกเลิก 03/09/2569 — ชั้น MySQL ของ TruckScale ปิดแล้ว ไฟล์ยังอยู่ครบ
+// const { insertPreWeighTicket, removePreWeighTicket } = require('../services/truckscale-db');
 const { writeAudit, auditUser, SCREEN } = require('../services/winspeed-audit');
 const { advanceDocuNoCounter } = require('../services/winspeed-counter');
 
@@ -1624,7 +1625,8 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
       await audit(null, req.params.id, req.user.sub, 'CONFIRMED', 'DRAFT', 'CONFIRMED', null, req.ip);
       
       const soExt = await getSoOrThrow(req.params.id);
-      insertPreWeighTicket(soExt).catch(err => console.error('[truckscale] Push error:', err));
+      // ยกเลิก 03/09/2569 — ไม่ผลักใบชั่งล่วงหน้าเข้า MySQL อีกแล้ว
+      // insertPreWeighTicket(soExt).catch(err => console.error('[truckscale] Push error:', err));
       
       broadcast('so_updated', { id: req.params.id, action: 'confirmed' });
       return res.json({ id: req.params.id, status: 'CONFIRMED' });
@@ -1794,8 +1796,8 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
     // 3. Audit log (บันทึกโดยใช้ newSoid)
     await audit(null, newSoid, req.user.sub, 'CONFIRMED', 'DRAFT', 'CONFIRMED', null, req.ip);
     
-    // Insert to TruckScale Pre-weigh
-    insertPreWeighTicket(so).catch(err => console.error('[truckscale] Push error:', err));
+    // ยกเลิก 03/09/2569 — ไม่ผลักใบชั่งล่วงหน้าเข้า MySQL อีกแล้ว
+    // insertPreWeighTicket(so).catch(err => console.error('[truckscale] Push error:', err));
     
     // เดินตัวนับของ WINSpeed ให้ทันเลขที่แอปเพิ่งออกไป ไม่งั้นหน้าจอ WINSpeed
     // จะเสนอเลขที่ถูกใช้ไปแล้วให้พนักงานคนถัดไป
@@ -1875,8 +1877,8 @@ router.post('/:id/unlock-request', requireRole('SALES', 'COUNTER_SALES', 'WAREHO
         reqType: { type: sql.NVarChar(20), value: reqType }
       });
       
-    // Hold at TruckScale (remove pre-weigh ticket)
-    removePreWeighTicket(so.WfRef || so.Id).catch(err => console.error('[truckscale] Push error (remove):', err));
+    // ยกเลิก 03/09/2569 — ไม่แตะ MySQL อีกแล้ว
+    // removePreWeighTicket(so.WfRef || so.Id).catch(err => console.error('[truckscale] Push error (remove):', err));
     
     broadcast('so_updated', { id: so.Id, action: 'unlock_requested' });
     res.json({ id: so.Id, ok: true });
@@ -1981,36 +1983,16 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'ADMIN', 'C_LE
         evidencePhoto:    { type: sql.NVarChar(sql.MAX), value: evidencePhotoUrl || null },
       });
 
-    // ซิงค์ Write-Back ข้อมูลชั่งออกกลับไปยัง MySQL db_truckscale (TS-01 & TS-02)
     const lines = await getLines(so.Id);
 
-    const { writeBackWeighOutTicket } = require('../services/truckscale-db');
-    const ticketPayload = {
-      soId: so.Id,
-      wfRef: so.WfRef,
-      truckPlate: so.TruckPlate,
-      custName: so.CustName,
-      gross,
-      tare,
-      net,
-      scaleNo,
-      movebill,
-      overrideReason,
-      overrideApprovedByName,
-      operatorName: req.user.name,
-      // รายการสินค้าของใบสั่งขาย ใช้เขียนลง tblproduct_detail (T6-01)
-      // รถเที่ยวเดียวบรรทุกได้หลายสูตร รายงานฝั่งโรงงานแยกตามสูตรจากตารางนี้
-      lines,
-    };
-    const wbRes = await writeBackWeighOutTicket(ticketPayload).catch(err => ({ success: false, error: err.message }));
-    // บันทึกผลลง wf.WeighTicket เสมอ เพื่อให้รายงานกระทบยอด R-3 แยกได้ว่าใบใด
-    // แอปสร้างเอง (inserted) ใบใดเขียนทับของจริง (updated) และใบใดเขียนไม่สำเร็จ
-    const { recordWriteBackResult } = require('../services/truckscale-db');
-    await recordWriteBackResult(so.Id, wbRes);
-    if (!wbRes || !wbRes.success) {
-      console.warn('[truckscale-writeback] Immediate writeback failed/skipped. Queueing Outbox retry event.');
-      await enqueue('TRUCKSCALE_WRITEBACK', so.Id, ticketPayload, `TS_WRITEBACK:${so.Id}`).catch(() => {});
-    }
+    // ── ยกเลิก 03/09/2569: ไม่เขียนกลับ MySQL db_truckscale อีกแล้ว ────────
+    // เจ้าของระบบสั่งยกเลิกงานที่ทำร่วมกับ MySQL TruckScale ทั้งหมด
+    // การชั่งจริงบันทึกโดยเครื่องชั่งลงตาราง dbo.WGHD/WGDT ของ WINSpeed เอง
+    // แอปอ่านสถานะจากที่นั่นผ่าน /api/weighing และไม่เขียนกลับที่ใดทั้งสิ้น
+    // โค้ดเดิมยังอยู่ครบใน services/truckscale-db.js (ปิดด้วย TRUCKSCALE_MYSQL)
+    // const wbRes = await writeBackWeighOutTicket(ticketPayload) ...
+    // await recordWriteBackResult(so.Id, wbRes) ...
+    // await enqueue('TRUCKSCALE_WRITEBACK', ...) ...
 
     // ตั้ง Rebate accrual เมื่อ SHIPPED (เรียกชำระเงินแล้ว)
     // รีเบทเป็นของ "พนักงานขายเจ้าของใบสั่งขาย" ไม่ใช่คนที่กดปุ่มชั่งออก

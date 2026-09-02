@@ -49,8 +49,29 @@ function assertWritableTarget() {
   }
 }
 
+/**
+ * ── สวิตช์ปิดทั้งชั้น MySQL ของ TruckScale ─────────────────────────
+ *
+ * เจ้าของระบบสั่งยกเลิกงานทุกอย่างที่ทำร่วมกับ MySQL db_truckscale เมื่อ 03/09/2569
+ * แหล่งข้อมูลการชั่งย้ายไปที่ `dbo.WGHD` / `dbo.WGDT` / `dbo.WGDTReport` ของ WINSpeed
+ *
+ * **ไม่ลบโค้ด** — ปิดที่จุดเดียวตรงนี้ เพราะทุกฟังก์ชันเขียนในไฟล์นี้
+ * ตรวจ `getPool()` เป็น null อยู่แล้ว การคืน null จึงทำให้ทั้งชั้นเฉยโดยไม่โยน error
+ *
+ * เปิดกลับ: ตั้ง `TRUCKSCALE_MYSQL=on` ใน .env (ต้องมี MYSQL_HOST ด้วย)
+ */
+const MYSQL_ENABLED = String(process.env.TRUCKSCALE_MYSQL || '').toLowerCase() === 'on';
+let warnedDisabled = false;
+
 let pool = null;
 function getPool() {
+  if (!MYSQL_ENABLED) {
+    if (!warnedDisabled) {
+      warnedDisabled = true;
+      console.log('[truckscale] ชั้น MySQL ปิดอยู่ (ยกเลิก 03/09/2569) — ใช้ dbo.WGHD/WGDT แทน · เปิดกลับด้วย TRUCKSCALE_MYSQL=on');
+    }
+    return null;
+  }
   if (!process.env.MYSQL_HOST) return null;     // ยังไม่ตั้งค่า
   if (!pool) {
     const caPath = String(process.env.MYSQL_SSL_CA_PATH || '').trim();
@@ -471,6 +492,7 @@ async function listScaleTicketsByDateRange(fromDate, toDate) {
 }
 
 module.exports = {
+  MYSQL_ENABLED,
   getPool, tsQuery, insertPreWeighTicket, removePreWeighTicket, writeBackWeighOutTicket,
   writeProductDetailRows, nextOneNum,
   getThaiDateComponents, recordWriteBackResult, listScaleTicketsByDateRange, oleDateSerial,

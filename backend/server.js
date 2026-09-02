@@ -46,8 +46,11 @@ if (backgroundWorkersDisabled) {
   // FR-029 — start integration outbox worker
   require('./services/outbox').startWorker();
 
-  // TruckScale pull/sync worker — ดึงข้อมูลชั่งกลับเข้า wf.WeighInbox
-  require('./services/truckscale-sync').startSync();
+  // ── ปิดไว้: worker ดึงข้อมูลชั่งจาก MySQL ของ TruckScale ────────
+  // เจ้าของระบบสั่งยกเลิกงาน MySQL TruckScale ทั้งหมด 03/09/2569
+  // แหล่งข้อมูลการชั่งย้ายไป dbo.WGHD/WGDT ซึ่งอ่านผ่าน /api/weighing (อ่านอย่างเดียว)
+  // ไฟล์ services/truckscale-sync.js ยังอยู่ครบ · เปิดกลับได้ด้วยการเอาคอมเมนต์ออก
+  // require('./services/truckscale-sync').startSync();
 }
 // CORS — supports comma-separated origins or '*'
 // Set CORS_ORIGIN in env, e.g.: https://winspeed-connect.vercel.app,http://localhost:5173
@@ -122,9 +125,18 @@ app.use('/api/trips',     require('./routes/trips'));
 app.use('/api/budget',    require('./routes/budget'));
 app.use('/api/papertrail', require('./routes/papertrail'));
 app.use('/api/reports', require('./routes/reports'));
-app.use('/api/truckscale', require('./routes/truckscale'));
+// ── ปิดไว้: API ที่อ่าน/เขียน MySQL ของ TruckScale ─────────────────
+// ยกเลิก 03/09/2569 · ไฟล์ routes/truckscale.js ยังอยู่ครบ
+// app.use('/api/truckscale', require('./routes/truckscale'));
 // รายงานเครื่องชั่งบนเว็บ แทน Crystal Reports เดิม (T6-02) — อ่านอย่างเดียว
-app.use('/api/scale-reports', require('./routes/scale-reports'));
+// เอกสารชั่งเข้า/ชั่งออก อ่านจาก WINSpeed (WGHD/WGDT) — เจ้าของตัดสิน 02/09/2569
+app.use('/api/weighing', require('./routes/weighing'));
+
+// ── ซ่อนไว้: เส้นทางเดิมที่อ่าน MySQL ของ TruckScale ──────────────
+// ไม่ลบทิ้งตามคำสั่งเจ้าของ — เก็บไว้เผื่อต้องถอยกลับ
+// ไฟล์ routes/scale-reports.js กับ services/truckscale-db.js ยังอยู่ครบและยังมีเทสต์คุมอยู่
+// เปิดใช้ใหม่: เอาคอมเมนต์บรรทัดล่างออก แล้วสลับหน้าจอกลับใน WSSale-App/src/App.tsx
+// app.use('/api/scale-reports', require('./routes/scale-reports'));
 app.use('/api/recon', require('./routes/recon'));
 app.use('/api/ops', require('./routes/ops'));
 app.use('/api/policy', require('./routes/policy'));
@@ -149,11 +161,16 @@ app.get('/api/health', async (req, res) => {
     await query('SELECT 1 AS ok');
     out.db.sqlserver = 'up';
   } catch { out.db.sqlserver = 'down'; }
+  // MySQL ของ TruckScale ยกเลิกแล้ว 03/09/2569 — 'disabled' ไม่ใช่ความผิดปกติ
+  // ต้องแยกจาก 'down' ให้ชัด ไม่งั้น monitor จะเตือนทุกนาทีเรื่องที่เราตั้งใจปิดเอง
   try {
-    const { getPool, tsQuery } = require('./services/truckscale-db');
-    if (!getPool()) out.db.mysql = 'not-configured';
+    const { MYSQL_ENABLED, getPool, tsQuery } = require('./services/truckscale-db');
+    if (!MYSQL_ENABLED) out.db.mysql = 'disabled';
+    else if (!getPool()) out.db.mysql = 'not-configured';
     else { await tsQuery('SELECT 1 AS ok'); out.db.mysql = 'up'; }
   } catch { out.db.mysql = 'down'; }
+  // แหล่งข้อมูลการชั่งปัจจุบัน — อ่านจาก WINSpeed ไม่ใช่ MySQL
+  out.db.weighing = out.db.sqlserver === 'up' ? 'winspeed:WGHD' : 'unknown';
   res.json(out);
 });
 

@@ -1,0 +1,119 @@
+---
+documentId: "WF-GOV-002"
+title: "ตรวจความเป็นปัจจุบันของเอกสารทุกฉบับ — 2 กันยายน 2569"
+version: "v1.0"
+status: Draft
+owner: "Solution Architect"
+normative: false
+---
+
+# ตรวจความเป็นปัจจุบันของเอกสารทุกฉบับ
+
+> **คำถามที่ตอบ:** *"เอกสารอัพเดทครบถ้วน ล่าสุด ทุกฉบับแล้วหรือยัง"*
+> **คำตอบสั้น: ยัง** — ชุดเอกสารหลัก 84 ฉบับหยุดอยู่ที่ v1.0 และไม่รู้จักงานตั้งแต่ 18 ส.ค. 2569 เป็นต้นมา
+
+---
+
+## 1. เรามีเอกสารสองชุด ไม่ใช่ชุดเดียว
+
+| ชุด | ที่อยู่ | จำนวน | แก้ล่าสุด | pipeline คุมไหม | git ติดตามไหม |
+|---|---|---|---|---|---|
+| **ชุดหลัก (enterprise v1.0)** | `docs/docs/enterprise/` | **84 ฉบับ** (ไม่นับ archive และ pipeline) | **18 ส.ค. 2569** | ✅ manifest + `docs.ps1` | ❌ |
+| **ชุดทำงาน (active)** | `docs/enterprise/` | **21 ฉบับ** | **2 ก.ย. 2569** | ❌ **ไม่มี gate ใด ๆ** | บางส่วน (8 ไฟล์ `git add -f`) |
+
+**นี่คือปัญหาเชิงโครงสร้าง ไม่ใช่แค่เอกสารเก่า** — `doc-control.js` ตั้ง `ENTERPRISE_ROOT` ไว้ที่ `docs/docs/enterprise`
+เอกสารที่เราเขียนจริงในสองเดือนหลังจึง**ไม่เคยผ่าน validate, impact analysis หรือ accept baseline เลยสักฉบับ**
+
+---
+
+## 2. ชุดหลัก 84 ฉบับ — ทุกฉบับเป็น v1.0
+
+| หมวด | ฉบับ | ช่วงวันที่แก้ล่าสุด |
+|---|---|---|
+| 00-GOVERNANCE | 5 | 21–25 ก.ค. |
+| 01-BUSINESS-ANALYSIS | 4 | 25–27 ก.ค. |
+| 02-REQUIREMENTS | 7 | 25 ก.ค. – 4 ส.ค. |
+| 03-SOLUTION-ARCHITECTURE | 9 | 21 ก.ค. – 4 ส.ค. |
+| 04-DATA-INTEGRATION | 9 | 21 ก.ค. – 4 ส.ค. |
+| 05-SECURITY-DEVOPS | 11 | 21–27 ก.ค. |
+| 05-UI-SCREENSHOTS | 3 | 25–27 ก.ค. |
+| 06-QUALITY-OPERATIONS | 15 | 21 ก.ค. – 6 ส.ค. |
+| 07-SALES-ENABLEMENT | 3 | 22–26 ก.ค. |
+| 08-APPENDICES | 8 | 22 ก.ค. – 18 ส.ค. |
+| 09-ROADMAP-AND-BACKLOG | 7 | 22 ก.ค. – 4 ส.ค. |
+| ระดับราก (README · DOCUMENT-INDEX · MANIFEST-SHA256) | 3 | 25–27 ก.ค. |
+
+ในจำนวนนี้มีเพียง **1 ฉบับ** ที่ไม่ใช่ v1.0 คือ `MANUAL-TEST-REBATE-4TIER.md` (v2.1)
+
+---
+
+## 3. เอกสาร 14 ฉบับที่ **ผิดข้อเท็จจริงแล้ว** ไม่ใช่แค่เก่า
+
+จัดลำดับตามความเสี่ยงถ้าเอาไปใช้จริง
+
+| # | เอกสาร | ไม่รู้จักอะไร | ผลถ้าใช้ตามนั้น |
+|---|---|---|---|
+| 1 | `03/ADR-004-TRUCKSCALE-INTEGRATION` | เอกสารชั่งย้ายมาอ่าน `dbo.WGHD` แล้ว (2 ก.ย.) · ไม่มีคำว่า `WGHD` เลย | ออกแบบต่อจากสถาปัตยกรรมที่เลิกใช้แล้ว |
+| 2 | `04/TRUCKSCALE-INTEGRATION-CONTRACT` | เหมือนข้อ 1 · ยังบอกว่ารายงานชั่งมาจาก MySQL | นักพัฒนาคนถัดไปต่อผิดฐาน |
+| 3 | `03/ADR-002-DATABASE-TOPOLOGY` | การย้ายฐานขึ้นคลาวด์ · **ไม่มีคำว่า Hostinger เลย** · ยังไม่รู้ว่ามี 4 เป้าหมาย (DEV/UAT/PROD-A/PROD-B) | วางแผน DR ผิดภูมิประเทศ |
+| 4 | `05/DEPLOYMENT-AND-CI-CD` | ลำดับบังคับ `logins → migrate → seed_admin` · การเลิกใช้ Coolify ที่ remote_b | deploy แล้ว migration 002 ล้ม |
+| 5 | `05/BACKUP-DR-BCP` | ขั้นตอน restore + rebuild ที่ใช้จริง (`rebuild-remote-mssql.js`) | กู้ระบบไม่ได้ตามคู่มือ |
+| 6 | `04/API-REFERENCE` | `/api/trips` · `/api/weighing` · การซ่อน `/api/scale-reports` | เรียก endpoint ที่ไม่มี / ไม่รู้จักที่มีจริง |
+| 7 | `04/PAGES-SQL-MAP` | หน้าจอใหม่ 4 หน้า (SaleTrip · Weighing · Incentive · Budget) | แผนที่หน้าจอ↔SQL ไม่ครบ |
+| 8 | `02/SRS` · `01/REQUIREMENTS-CATALOG` | Sale Trip · สัดส่วนรีเบท · การเคลมเอง · export | ขอบเขตงานไม่ตรงของที่ส่งมอบ |
+| 9 | `02/IMPLEMENTATION-STATUS` | หยุดที่ 4 ส.ค. · ไม่รู้จัก 1.7.x และ 1.8.0 ทั้งหมด | รายงานความคืบหน้าผิด |
+| 10 | `06/SOP-DETAIL` | ด่านบังคับน้ำหนักตอนชั่งออก · SOP-09 · SOP-10 | **พนักงานทำตามขั้นตอนที่ระบบไม่ยอมรับแล้ว** |
+| 11 | `04/DATA-QUALITY-AND-MIGRATION` | migration 074 · guard `assertNoDatabaseSwitch()` · นโยบาย `immutable-after-apply` | แก้ migration เก่าแล้ว runner หยุดทั้งชุด |
+| 12 | `03/C4-ARCHITECTURE` · `03/SAD` | โมดูลชั่งของ WINSpeed · หน้าจอใหม่ | ภาพสถาปัตยกรรมขาดองค์ประกอบ |
+| 13 | `06/TEST-CASES-DETAIL` · `06/TEST-CATALOG-CURRENT` | เทสต์ write-guard 9 เคส · เทสต์รวม 19 เคส | แผนทดสอบไม่ครอบคลุมของที่มี |
+| 14 | `06/USER-MANUAL-CURRENT` | หน้าจอ **เอกสารชั่งเข้า–ออก** ที่เพิ่งแทนที่หน้าเดิม | คู่มือชี้ไปหน้าที่ถูกซ่อนแล้ว |
+
+---
+
+## 4. เอกสารชุดทำงาน 21 ฉบับ — ปัจจุบัน แต่ไม่มี gate
+
+| เอกสาร | แก้ล่าสุด | สถานะเนื้อหา |
+|---|---|---|
+| `DOCUMENT-FLOW-TRACEABLE-V1.8.0` 🆕 | 2 ก.ย. | ปัจจุบัน · ทุกจุดเชื่อมรัน SQL จริงวันนี้ |
+| `SOP-V1.8.0` 🆕 | 2 ก.ย. | ปัจจุบัน |
+| `CHANGELOG-APP` | 2 ก.ย. | ปัจจุบัน (มีหัวข้อ "ยังไม่ออกรุ่น") |
+| `TRUCKSCALE-REPORT-PLAN` | 1 ก.ย. | ปัจจุบัน |
+| `WINSPEED-WEIGHING-MODULE` | 31 ส.ค. | ปัจจุบัน |
+| `TRUCKSCALE-REPORT-INVENTORY` | 31 ส.ค. | ปัจจุบัน (ค้าง `RptSent`/`ReportKangChang`) |
+| `V1.7.0-CONTEXT-PACK` | 26 ส.ค. | ⚠ ชื่อเป็น 1.7.0 แต่ของจริงคือ 1.8.0 |
+| `WINSPEED-FLOW-VERIFIED` | 25 ส.ค. | ปัจจุบัน |
+| `DOCUMENT-FLOW-QA-GUIDE` | 23 ส.ค. | ⚠ ยังบอกว่ารายงานชั่งใช้ MySQL |
+| `WINSPEED-DOCUMENT-FLOW` | 18 ส.ค. | ⚠ ตัวเลขนับ ณ 11 ส.ค. · ยังไม่มีกฎ `SOInvHD.SONo` |
+| `DOC-CURRENCY-AUDIT-2026-09-02` 🆕 (ฉบับนี้) | 2 ก.ย. | — |
+| อีก 10 ฉบับ | 10–24 ส.ค. | ยังใช้ได้ (เป็นบันทึกการตรวจเฉพาะเรื่อง ผูกกับวันที่ตรวจ) |
+
+---
+
+## 5. ข้อเสนอ — 3 ทาง ให้เจ้าของระบบเลือก
+
+| ทาง | ทำอะไร | แรงที่ใช้ | ได้อะไร |
+|---|---|---|---|
+| **ก. แก้เฉพาะที่ผิด** | อัปเดต 14 ฉบับใน §3 แล้วออกเป็น `CHANGES-v1.6.1-TO-v1.8.0.md` | ปานกลาง | เอกสารไม่ทำให้คนทำงานผิด · ยังคงกติกา "ไม่แก้ฐานในที่เดิม" |
+| **ข. รวมสองชุดเป็นชุดเดียว** | ย้าย `docs/enterprise/` เข้าไปใน `docs/docs/enterprise/` ให้ pipeline คุมทั้งหมด แล้ว accept baseline ใหม่ | สูง | มี gate เดียว · ไม่มีเอกสารนอกสายตาอีก |
+| **ค. ปล่อยไว้** | ใช้ชุดทำงานเป็นหลัก ชุด v1.0 เป็นเอกสารอ้างอิงประวัติ | ต่ำ | เสี่ยง — ผู้ตรวจ ISO จะเจอ SOP สองฉบับที่ขัดกัน |
+
+**คำแนะนำ: ทาง ก. ก่อน แล้วค่อยทาง ข.**
+เหตุผล — §3 ข้อ 10 (`SOP-DETAIL`) เป็นเอกสารที่พนักงานใช้ทำงานจริง และตอนนี้บอกขั้นตอนที่ระบบปฏิเสธไปแล้ว
+นั่นคือความเสี่ยงที่ต้องปิดก่อน ส่วนการรวมชุดเอกสารเป็นงานโครงสร้างที่รอได้
+
+---
+
+## 6. วิธีตรวจซ้ำ
+
+```powershell
+# ชุดหลัก — ต้องผ่าน gate ก่อน release
+cd docs/docs/enterprise/pipeline
+./source.ps1  preflight
+./docs.ps1    preflight
+
+# ดูว่าเอกสารฉบับไหนแก้ล่าสุดเมื่อไร
+Get-ChildItem -Recurse -Filter *.md docs/docs/enterprise |
+  Where-Object FullName -notmatch '_archive|\\pipeline\\' |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object LastWriteTime, Name
+```

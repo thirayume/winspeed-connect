@@ -31,7 +31,9 @@ const CnRebatePage = lazy(() => import('./components/rebate/CnRebatePage').then(
 const RebatePlanPage = lazy(() => import('./components/rebate/RebatePlanPage').then(m => ({ default: m.RebatePlanPage })));
 const ControlTicketPage = lazy(() => import('./components/master/ControlTicketPage').then(m => ({ default: m.ControlTicketPage })));
 const ReportsPage = lazy(() => import('./components/reports/ReportsPage').then(m => ({ default: m.ReportsPage })));
-const ScaleReportsPage = lazy(() => import('./components/reports/ScaleReportsPage').then(m => ({ default: m.ScaleReportsPage })));
+const WeighingReportsPage = lazy(() => import('./components/reports/WeighingReportsPage').then(m => ({ default: m.WeighingReportsPage })));
+// ซ่อนไว้: หน้าเดิมที่อ่าน MySQL ของ TruckScale — เลิกใช้ 02/09/2569 แต่ไม่ลบ เผื่อถอยกลับ
+// const ScaleReportsPage = lazy(() => import('./components/reports/ScaleReportsPage').then(m => ({ default: m.ScaleReportsPage })));
 const IncentiveReport = lazy(() => import('./components/reports/IncentiveReport').then(m => ({ default: m.IncentiveReport })));
 const BudgetExpenditureReport = lazy(() => import('./components/reports/BudgetExpenditureReport').then(m => ({ default: m.BudgetExpenditureReport })));
 const TruckScalePage = lazy(() => import('./components/truckscale/TruckScalePage').then(m => ({ default: m.TruckScalePage })));
@@ -86,7 +88,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'accounting', label: 'บัญชี',       sub: 'Sync · อนุมัติ CN',    icon: FileCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
       { key: 'recon',      label: 'กระทบยอด',    sub: 'Recon · ตรวจออกของ',   icon: ShieldCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
       { key: 'reports',    label: 'รายงาน',      sub: 'สรุป · Export Excel',  icon: BarChart3, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER'] },
-      { key: 'scale-reports', label: 'รายงานเครื่องชั่ง', sub: 'วัน · สูตร · เที่ยว · คลัง', icon: BarChart3, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE'] },
+      { key: 'scale-reports', label: 'สถานะการชั่งรถ', sub: 'สด · WGHD · ชั่งเข้า–ออก', icon: Truck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE'] },
       { key: 'control-ticket', label: 'ชุดตั๋วคุม', sub: 'คงเหลือ · ตัดออก',   icon: Stamp },
     ],
   },
@@ -529,7 +531,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'cn-rebate'  && <CnRebatePage />}
                 {activePortal === 'control-ticket' && <ControlTicketPage />}
                 {activePortal === 'reports'    && <ReportsPage />}
-                {activePortal === 'scale-reports' && <ScaleReportsPage />}
+                {activePortal === 'scale-reports' && <WeighingReportsPage />}
                 {activePortal === 'incentive-report' && <IncentiveReport />}
                 {activePortal === 'budget-report' && <BudgetExpenditureReport />}
                 {activePortal === 'truckscale' && <TruckScalePage />}

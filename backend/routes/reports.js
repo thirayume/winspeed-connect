@@ -15,8 +15,11 @@ router.use(requireAuth);
 
 // นิยามรายงาน: key → { title, columns:[{key,label}], sql }
 const REPORTS = {
+  // ── ซ่อนไว้: รายงานนี้เทียบใบชั่งที่แอปเขียนกลับ MySQL กับของจริง ─────
+  // ยกเลิก 03/09/2569 — แอปไม่เขียนกลับ MySQL อีกแล้ว จึงไม่มีอะไรให้กระทบยอด
+  // นิยามยังอยู่ครบ · `canRunReport` คืน false จึงไม่โผล่ในรายการและเรียกไม่ได้
   'truckscale-writeback': {
-    title: 'กระทบยอดใบชั่งที่ระบบเขียนกลับ (รายวัน)',
+    title: 'กระทบยอดใบชั่งที่ระบบเขียนกลับ (รายวัน) — เลิกใช้',
     columns: [
       { key: 'Case', label: 'กรณี' },
       { key: 'WfRef', label: 'เลขใบสั่งขาย' },
@@ -128,8 +131,10 @@ const REPORTS = {
           GROUP BY hd.EmpID, emp.EmpName
           ORDER BY RedeemedTon DESC, CouponCount DESC`,
   },
-  'truckscale-log': {
-    title: 'รายงานใบนั่งชั่งชั่งเข้า-ชั่งออก (TruckScale Weighbridge Log)',
+  // แหล่งข้อมูลย้ายจาก wf.WeighInbox (ซิงค์จาก MySQL) มาที่ dbo.WGHD ของ WINSpeed
+  // เมื่อ 03/09/2569 · WeighInbox หยุดไหลแล้วเพราะปิด sync worker
+  'weighbridge-log': {
+    title: 'รายงานใบชั่งเข้า–ชั่งออก (จาก WINSpeed)',
     columns: [
       { key: 'Movebill', label: 'เลขที่ใบชั่ง' },
       { key: 'Plate', label: 'ทะเบียนรถ' },
@@ -138,21 +143,24 @@ const REPORTS = {
       { key: 'WeightOut', label: 'ชั่งออก (กก.)' },
       { key: 'WeightNet', label: 'สุทธิ (กก.)' },
       { key: 'DateOut', label: 'วันที่ชั่งออก' },
-      { key: 'ScaleNo', label: 'เครื่องชั่ง' },
+      { key: 'ScaleNo', label: 'ประเภท (SO/PO/MO)' },
       { key: 'Status', label: 'สถานะ' },
     ],
-    sql: `SELECT TOP 200 
-            Sequence AS Movebill, 
-            Plate, 
-            CustName, 
-            WeightIn, 
-            WeightOut, 
-            WeightNet, 
-            COALESCE(DateOut, DateIn) AS DateOut, 
-            ScaleNo, 
-            Status
-          FROM wf.WeighInbox WITH (NOLOCK)
-          ORDER BY IngestedAt DESC`,
+    sql: `SELECT TOP 200
+            w.MoveBill                       AS Movebill,
+            w.CarNo                          AS Plate,
+            w.CVName                         AS CustName,
+            w.WeightIn,
+            w.WeightOut,
+            w.WeightNet,
+            CONVERT(varchar(16), COALESCE(w.DateOut, w.DateIn, w.DateReg), 120) AS DateOut,
+            w.WGType                         AS ScaleNo,
+            CASE w.Status WHEN 1 THEN N'1 · ลงทะเบียนรอชั่ง'
+                          WHEN 2 THEN N'2 · ชั่งเข้าแล้ว'
+                          WHEN 3 THEN N'3 · ชั่งออกแล้ว'
+                          ELSE CONCAT(N'? · ', w.Status) END AS Status
+          FROM dbo.WGHD w WITH (NOLOCK)
+          ORDER BY w.DateReg DESC, w.Id DESC`,
   },
   'wh-dispatch-daily': {
     title: 'รายงานการเบิกจ่ายและคิวจัดโหลดสินค้าประจำวัน (Daily Dispatch & Loading)',
@@ -739,7 +747,9 @@ async function runTruckScaleWritebackReport(params = {}) {
 function canRunReport(req, type) {
   if (type === 'rebate-pools') return canViewAllRebateAmounts(req.user);
   if (type === 'cn-rebate') return ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'].includes(req.user?.role);
-  if (type === 'truckscale-writeback') return ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'].includes(req.user?.role);
+  // เลิกใช้ 03/09/2569 พร้อมกับการยกเลิก MySQL TruckScale — ปิดไม่ให้เรียกและไม่ให้โผล่ในรายการ
+  if (type === 'truckscale-writeback') return false;
+  if (type === 'weighbridge-log') return ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL', 'WAREHOUSE', 'WEIGHBRIDGE'].includes(req.user?.role);
   return true;
 }
 

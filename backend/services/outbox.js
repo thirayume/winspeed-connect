@@ -34,6 +34,8 @@ async function handle(ev) {
     broadcast('outbox_event', { type: ev.EventType, aggregateId: ev.AggregateId });
   } catch { /* socket optional */ }
 
+  // ยกเลิก 03/09/2569 — ไม่เขียนกลับ MySQL อีกแล้ว
+  // เหตุการณ์เก่าที่ค้างคิวจะถูกทำเครื่องหมายว่าจบโดยไม่ทำอะไร (ชั้น MySQL ปิดอยู่)
   if (ev.EventType === 'TRUCKSCALE_WRITEBACK' && ev.Payload) {
     const { writeBackWeighOutTicket, recordWriteBackResult } = require('./truckscale-db');
     const payload = typeof ev.Payload === 'string' ? JSON.parse(ev.Payload) : ev.Payload;
