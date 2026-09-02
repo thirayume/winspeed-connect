@@ -12,6 +12,15 @@ This package deploys the frontend, backend, SQL Server, MySQL and Portainer on o
 - The original `*.srv1935135.hstgr.cloud` names remain certificate aliases during the transition.
 - Allowlisted management/SFTP/database CIDR at test time: `58.11.84.165/32`.
 - Hostinger Firewall: 22/1433/3306 from the allowlist, 80/443 from Any, default Drop.
+  **Editing rules in hPanel does nothing until you press Synchronize.** The rule list updates
+  immediately and looks correct, but the server keeps enforcing the previous set until the sync
+  completes (up to 5 minutes). This cost us an afternoon on 2026-09-02: the rules read as expected
+  while every connection still timed out.
+  `deploy/cloud-vps/server/allowlist.sh` manages **ufw**, which this profile leaves inactive — it has
+  no effect here. The authoritative control is the hPanel firewall.
+  Diagnosing it: port 80/443 open while 22/1433/3306 time out means the host is up and only the
+  allowlist is wrong. Check your current address with `curl -sS https://api.ipify.org` — the ISP
+  hands out a new one periodically, and a stale entry looks identical to a missing one.
 - All six containers, HTTPS, public database TLS authentication, SFTP key-only transfer, restore, manual backup, download and SHA-256 verification passed.
 
 ## Public endpoints
