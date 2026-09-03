@@ -10,7 +10,6 @@ sourceRefs:
   - WSSale-App/src/App.tsx
   - docs/enterprise/02-REQUIREMENTS/CURRENT-SYSTEM-STATE.md
   - docs/enterprise/06-QUALITY-OPERATIONS/UAT-FULL-LOOP-RUN-PLAN.md
-  - test-results/e2e-evidence.json
 ---
 # WS-Sale-App User Manual — คู่มือผู้ใช้ฉบับปัจจุบัน
 
