@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Database, Package, Users, Tag, Truck, Gift, Map } from 'lucide-react';
+import { Database, Package, Users, Tag, Truck, Gift, Map, ListChecks } from 'lucide-react';
 import { GoodsManager } from './GoodsManager';
 import { CustomersManager } from './CustomersManager';
 import { TrucksManager } from './TrucksManager';
@@ -7,9 +7,10 @@ import { TruckTypesManager } from './TruckTypesManager';
 import { GiveawaysManager } from './GiveawaysManager';
 import { PricesPortal } from './PricesPortal';
 import { SaleRegionManager } from './SaleRegionManager';
+import { EditReasonsManager } from './EditReasonsManager';
 import { DbModeSwitch } from '../common/DbModeSwitch';
 
-type Tab = 'goods' | 'prices' | 'customers' | 'truck-types' | 'trucks' | 'giveaways' | 'regions';
+type Tab = 'goods' | 'prices' | 'customers' | 'truck-types' | 'trucks' | 'giveaways' | 'regions' | 'edit-reasons';
 
 export const MasterDataPortal = () => {
   const [activeTab, setActiveTab] = useState<Tab>('goods');
@@ -99,6 +100,14 @@ export const MasterDataPortal = () => {
         >
           <Map size={16} /> ผู้อนุมัติรายภาค
         </button>
+        <button
+          onClick={() => setActiveTab('edit-reasons')}
+          className={`py-3 text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap ${
+            activeTab === 'edit-reasons' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <ListChecks size={16} /> เหตุผลขอแก้ไข
+        </button>
       </div>
 
       <div className="flex-1 overflow-hidden p-2 sm:p-4 bg-white/50">
@@ -117,6 +126,11 @@ export const MasterDataPortal = () => {
         {activeTab === 'truck-types' && <TruckTypesManager />}
         {activeTab === 'trucks' && <TrucksManager initialSearch={truckSearch} />}
         {activeTab === 'giveaways' && <GiveawaysManager />}
+        {activeTab === 'edit-reasons' && (
+          <div className="h-full overflow-auto rounded-none sm:rounded-2xl border-y sm:border border-gray-200 shadow-sm bg-white">
+            <EditReasonsManager />
+          </div>
+        )}
       </div>
     </div>
   );

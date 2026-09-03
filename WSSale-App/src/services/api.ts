@@ -1184,3 +1184,35 @@ export const rejectEditRequest = (id: number | string, note: string) =>
 export const cancelEditRequest = (id: number | string, note?: string) =>
   req<{ id: number; status: string; message: string }>(
     `/edit-requests/${id}/cancel`, { method: 'PATCH', body: JSON.stringify({ note }) });
+
+// ── Master Settings: รายการเหตุผลการขอแก้ไข ────────────────────
+export type EditReasonAdmin = EditReason & {
+  isActive: boolean | number;
+  createdAt: string;
+  usageCount: number;
+  pendingCount: number;
+};
+
+export const fetchEditReasonsAdmin = () =>
+  req<{ data: EditReasonAdmin[]; validStages: EditStage[] }>('/edit-requests/admin/reasons');
+
+export type EditReasonInput = {
+  reasonCode: string;
+  reasonText: string;
+  appliesTo: string[];
+  requiresHold: boolean;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+export const createEditReason = (body: EditReasonInput) =>
+  req<{ reasonCode: string; message: string }>(
+    '/edit-requests/admin/reasons', { method: 'POST', body: JSON.stringify(body) });
+
+export const updateEditReason = (code: string, body: Omit<EditReasonInput, 'reasonCode'>) =>
+  req<{ reasonCode: string; message: string }>(
+    `/edit-requests/admin/reasons/${encodeURIComponent(code)}`, { method: 'PUT', body: JSON.stringify(body) });
+
+export const deleteEditReason = (code: string) =>
+  req<{ reasonCode: string; message: string }>(
+    `/edit-requests/admin/reasons/${encodeURIComponent(code)}`, { method: 'DELETE' });

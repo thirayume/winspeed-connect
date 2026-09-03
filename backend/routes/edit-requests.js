@@ -362,4 +362,161 @@ router.patch('/:id/cancel', async (req, res) => {
   }
 });
 
+
+// ═══════════════════════════════════════════════════════════════
+// Master Settings — จัดการรายการเหตุผลการขอแก้ไข (wf.EditReason)
+//
+// ทำไมต้องมีหน้าจอ ไม่ใช่แก้ใน SQL
+//   รายการนี้เป็นตัวกำหนดว่า "แก้ในขั้นไหนได้บ้าง" และ "เหตุผลไหนต้อง Hold รถ"
+//   ซึ่งเป็นกติกาทางธุรกิจ ไม่ใช่โครงสร้างระบบ เจ้าของกระบวนการต้องปรับเองได้
+//
+// ⚠ ห้ามลบเหตุผลที่เคยถูกใช้
+//   wf.EditRequest มี FK มาที่ตารางนี้ ถ้าลบทิ้ง ประวัติคำขอเดิมจะอ่านไม่ออก
+//   ว่าเคยขอด้วยเหตุผลอะไร ให้ปิดใช้งาน (IsActive=0) แทน ซึ่งจะหายจาก
+//   ตัวเลือกของผู้ขอ แต่ประวัติยังอ่านได้
+// ═══════════════════════════════════════════════════════════════
+const VALID_STAGES = ['CONFIRMED', 'REGISTERED', 'LOADING'];
+
+/** ตรวจ AppliesTo ให้เหลือเฉพาะขั้นที่มีจริง ไม่ซ้ำ และเรียงตามลำดับกระบวนการ */
+function normalizeStages(input) {
+  const list = Array.isArray(input) ? input : String(input || '').split(',');
+  const seen = [];
+  for (const raw of list) {
+    const s = String(raw || '').trim().toUpperCase();
+    if (!s) continue;
+    if (!VALID_STAGES.includes(s)) return { error: `ขั้นตอน "${s}" ไม่ถูกต้อง` };
+    if (!seen.includes(s)) seen.push(s);
+  }
+  if (seen.length === 0) return { error: 'ต้องเลือกอย่างน้อยหนึ่งขั้นตอน' };
+  // เรียงตามลำดับจริงของกระบวนการ ไม่ใช่ตามที่ผู้ใช้กดเลือก
+  // เพราะ AppliesTo ถูกอ่านด้วย LIKE ที่ครอบจุลภาค ลำดับจึงมีผลกับการอ่านของคน
+  seen.sort((a, b) => VALID_STAGES.indexOf(a) - VALID_STAGES.indexOf(b));
+  return { value: seen.join(',') };
+}
+
+// GET /api/edit-requests/admin/reasons — รวมตัวที่ปิดใช้งานแล้ว + จำนวนที่ถูกใช้
+router.get('/admin/reasons', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
+  try {
+    const r = await wfQuery(`
+      SELECT e.ReasonCode, e.ReasonText, e.AppliesTo, e.RequiresHold,
+             e.SortOrder, e.IsActive, e.CreatedAt,
+             (SELECT COUNT(*) FROM wf.EditRequest q WHERE q.ReasonCode = e.ReasonCode) AS UsageCount,
+             (SELECT COUNT(*) FROM wf.EditRequest q WHERE q.ReasonCode = e.ReasonCode AND q.Status = 'PENDING') AS PendingCount
+      FROM wf.EditReason e
+      ORDER BY e.SortOrder, e.ReasonCode`);
+    res.json({ data: camelizeRows(r.recordset || []), validStages: VALID_STAGES });
+  } catch (e) {
+    console.error('[edit-requests/admin/reasons]', e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// POST /api/edit-requests/admin/reasons
+router.post('/admin/reasons', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  try {
+    const { reasonCode, reasonText, appliesTo, requiresHold, sortOrder, isActive } = req.body || {};
+    const code = String(reasonCode || '').trim().toUpperCase();
+
+    if (!/^[A-Z][A-Z0-9_]{1,29}$/.test(code))
+      return res.status(400).json({ message: 'รหัสต้องเป็น A-Z 0-9 _ ขึ้นต้นด้วยตัวอักษร ยาว 2-30 ตัว' });
+    if (!String(reasonText || '').trim())
+      return res.status(400).json({ message: 'ต้องระบุข้อความเหตุผล' });
+
+    const stages = normalizeStages(appliesTo);
+    if (stages.error) return res.status(400).json({ message: stages.error });
+
+    const dup = (await wfQuery(`SELECT 1 AS x FROM wf.EditReason WHERE ReasonCode = @c`,
+      { c: { type: sql.VarChar(30), value: code } })).recordset[0];
+    if (dup) return res.status(409).json({ message: `รหัส ${code} มีอยู่แล้ว` });
+
+    await wfQuery(`
+      INSERT INTO wf.EditReason (ReasonCode, ReasonText, AppliesTo, RequiresHold, SortOrder, IsActive)
+      VALUES (@c, @t, @a, @h, @s, @i)`, {
+        c: { type: sql.VarChar(30),   value: code },
+        t: { type: sql.NVarChar(400), value: String(reasonText).trim() },
+        a: { type: sql.VarChar(100),  value: stages.value },
+        h: { type: sql.Bit,           value: requiresHold ? 1 : 0 },
+        s: { type: sql.SmallInt,      value: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : 100 },
+        i: { type: sql.Bit,           value: isActive === false ? 0 : 1 },
+      });
+
+    res.json({ reasonCode: code, message: `เพิ่มเหตุผล ${code} แล้ว` });
+  } catch (e) {
+    console.error('[edit-requests/admin/reasons:create]', e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// PUT /api/edit-requests/admin/reasons/:code
+router.put('/admin/reasons/:code', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  try {
+    const code = String(req.params.code || '').trim().toUpperCase();
+    const { reasonText, appliesTo, requiresHold, sortOrder, isActive } = req.body || {};
+
+    const cur = (await wfQuery(`SELECT * FROM wf.EditReason WHERE ReasonCode = @c`,
+      { c: { type: sql.VarChar(30), value: code } })).recordset[0];
+    if (!cur) return res.status(404).json({ message: 'ไม่พบเหตุผลนี้' });
+
+    if (!String(reasonText || '').trim())
+      return res.status(400).json({ message: 'ต้องระบุข้อความเหตุผล' });
+
+    const stages = normalizeStages(appliesTo);
+    if (stages.error) return res.status(400).json({ message: stages.error });
+
+    // ปิดใช้งานเหตุผลที่ยังมีคำขอค้างอยู่ไม่ได้
+    // ไม่งั้นคำขอนั้นจะลอยอยู่โดยไม่มีนิยามที่ใช้งานอยู่รองรับ
+    // และผู้อนุมัติจะตัดสินใจโดยไม่รู้ว่ากติกาของเหตุผลนั้นยังใช้อยู่ไหม
+    if (isActive === false) {
+      const open = (await wfQuery(`
+        SELECT COUNT(*) AS n FROM wf.EditRequest WHERE ReasonCode = @c AND Status = 'PENDING'`,
+        { c: { type: sql.VarChar(30), value: code } })).recordset[0];
+      if (Number(open.n) > 0)
+        return res.status(409).json({
+          message: `ปิดใช้งานไม่ได้ — ยังมีคำขอที่ใช้เหตุผลนี้รออนุมัติอยู่ ${open.n} รายการ`,
+        });
+    }
+
+    await wfQuery(`
+      UPDATE wf.EditReason
+      SET ReasonText = @t, AppliesTo = @a, RequiresHold = @h, SortOrder = @s, IsActive = @i
+      WHERE ReasonCode = @c`, {
+        c: { type: sql.VarChar(30),   value: code },
+        t: { type: sql.NVarChar(400), value: String(reasonText).trim() },
+        a: { type: sql.VarChar(100),  value: stages.value },
+        h: { type: sql.Bit,           value: requiresHold ? 1 : 0 },
+        s: { type: sql.SmallInt,      value: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : cur.SortOrder },
+        i: { type: sql.Bit,           value: isActive === false ? 0 : 1 },
+      });
+
+    res.json({ reasonCode: code, message: 'บันทึกแล้ว' });
+  } catch (e) {
+    console.error('[edit-requests/admin/reasons:update]', e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// DELETE /api/edit-requests/admin/reasons/:code — ลบได้เฉพาะตัวที่ไม่เคยถูกใช้
+router.delete('/admin/reasons/:code', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  try {
+    const code = String(req.params.code || '').trim().toUpperCase();
+    const used = (await wfQuery(`SELECT COUNT(*) AS n FROM wf.EditRequest WHERE ReasonCode = @c`,
+      { c: { type: sql.VarChar(30), value: code } })).recordset[0];
+
+    if (Number(used.n) > 0)
+      return res.status(409).json({
+        message: `ลบไม่ได้ — เคยถูกใช้ไปแล้ว ${used.n} คำขอ ถ้าไม่ต้องการให้เลือกอีก ให้ปิดใช้งานแทน`,
+        usageCount: Number(used.n),
+      });
+
+    const del = await wfQuery(`DELETE FROM wf.EditReason WHERE ReasonCode = @c`,
+      { c: { type: sql.VarChar(30), value: code } });
+    if (!(del.rowsAffected[0] || 0)) return res.status(404).json({ message: 'ไม่พบเหตุผลนี้' });
+
+    res.json({ reasonCode: code, message: `ลบเหตุผล ${code} แล้ว` });
+  } catch (e) {
+    console.error('[edit-requests/admin/reasons:delete]', e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
 module.exports = router;
