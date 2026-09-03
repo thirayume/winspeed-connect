@@ -64,6 +64,18 @@ export type AdminUser = {
   IdCardNo?: string | null;
   TaxId?: string | null;
   SignatureFile?: string | null;
+  // ── ตำแหน่งในผังองค์กร (wf.OrgPosition) — เติมโดย GET /auth/users ──
+  PositionCode?: string | null;
+  PositionName?: string | null;
+  OrgUnit?: string | null;
+  Tier?: number | null;
+  /** บทบาทที่ตำแหน่งนี้ "ควร" ได้ — ใช้เทียบกับ Role จริงเพื่อหาความไม่ตรงกัน */
+  PositionDefaultRole?: string | null;
+  CanApprove?: boolean | null;
+  // ผู้อนุมัติที่ใกล้ที่สุด คำนวณจาก wf.v_NearestApprover (ไต่ ReportsTo ขึ้นไป)
+  ApproverPosition?: string | null;
+  ApproverName?: string | null;
+  ApproverRole?: string | null;
 };
 
 // ── Master Data (maps to dbo views — READ ONLY) ───────────────

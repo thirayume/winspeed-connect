@@ -590,9 +590,14 @@ router.get('/users', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'),
       `SELECT u.Id, u.Username, u.DisplayName, u.Role, u.EmpId, u.IsActive, u.CreatedAt,
               u.Address, u.Phone, u.Email, u.IdCardNo, u.TaxId, u.SignatureFile,
               u.LineUserId, u.LineDisplayName, u.LineLinkedAt,
-              e.EmpCode, e.EmpName
+              e.EmpCode, e.EmpName,
+              u.PositionCode, p.PositionName, p.OrgUnit, p.Tier,
+              p.DefaultRole AS PositionDefaultRole, p.CanApprove,
+              na.ApproverPosition, na.ApproverName, na.ApproverRole
        FROM wf.AppUser u
        LEFT JOIN dbo.EMEmp e WITH (NOLOCK) ON e.EmpID = u.EmpId
+       LEFT JOIN wf.OrgPosition p ON p.PositionCode = u.PositionCode
+       LEFT JOIN wf.v_NearestApprover na ON na.PositionCode = u.PositionCode
        ORDER BY u.DisplayName`
     );
     res.json(result.recordset);
@@ -605,10 +610,12 @@ router.get('/users', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'),
 // PATCH /api/auth/users/:id — แก้ไข ADMIN/MANAGER/ACCOUNTING
 router.patch('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
   try {
-    const { empId, role, displayName, isActive, password, lineUserId, address, phone, email, idCardNo, taxId } = req.body;
+    const { empId, role, displayName, isActive, password, lineUserId, address, phone, email, idCardNo, taxId, positionCode } = req.body;
     const sets = [];
     const inputs = { id: { type: sql.Int, value: Number(req.params.id) } };
     if (empId !== undefined)       { sets.push('EmpId = @empId');        inputs.empId       = { type: sql.NVarChar(20),  value: empId || null }; }
+    // ตำแหน่งในผังองค์กร — ส่งค่าว่างมาเพื่อถอดออกได้ · FK กันรหัสที่ไม่มีจริงอยู่แล้ว
+    if (positionCode !== undefined) { sets.push('PositionCode = @pos');   inputs.pos         = { type: sql.VarChar(30),   value: positionCode || null }; }
     if (role !== undefined)        { sets.push('Role = @role');          inputs.role        = { type: sql.NVarChar(30),  value: role }; }
     if (displayName !== undefined) { sets.push('DisplayName = @dn');      inputs.dn          = { type: sql.NVarChar(100), value: displayName }; }
     if (isActive !== undefined)    { sets.push('IsActive = @act');       inputs.act         = { type: sql.Bit,          value: isActive ? 1 : 0 }; }
@@ -646,6 +653,27 @@ router.patch('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNT
     res.json({ ok: true, id: Number(req.params.id) });
   } catch (e) {
     if (e.number === 2601) return res.status(409).json({ message: 'พนักงานรหัสนี้ถูกผูกกับผู้ใช้อื่นไปแล้ว' });
+    console.error(e);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/auth/org-positions — ผังตำแหน่งสำหรับหน้าจับคู่ผู้ใช้ ↔ ตำแหน่ง
+//
+// คืนจำนวนคนที่ถือแต่ละตำแหน่งมาด้วย เพราะบางตำแหน่งมีได้คนเดียว (ผจก.ฝ่าย)
+// แต่บางตำแหน่งมีได้หลายคน (พนักงานขายเขต) — หน้าจอต้องเห็นก่อนตัดสินใจ
+router.get('/org-positions', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
+  try {
+    const r = await wfQuery(`
+      SELECT p.PositionCode, p.PositionName, p.ReportsTo, p.OrgUnit, p.Tier,
+             p.DefaultRole, p.CanApprove, p.IsActive, p.Note,
+             mgr.PositionName AS ReportsToName,
+             (SELECT COUNT(*) FROM wf.AppUser u WHERE u.PositionCode = p.PositionCode) AS AssignedCount
+      FROM   wf.OrgPosition p
+      LEFT   JOIN wf.OrgPosition mgr ON mgr.PositionCode = p.ReportsTo
+      ORDER  BY p.OrgUnit, p.Tier, p.PositionName`);
+    res.json(r.recordset);
+  } catch (e) {
     console.error(e);
     res.status(500).json({ message: 'Server error' });
   }

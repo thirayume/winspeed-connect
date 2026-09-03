@@ -104,6 +104,8 @@ export const updateUser = (id: number, patch: {
   password?: string; lineUserId?: string | null;
   address?: string | null; phone?: string | null; email?: string | null;
   idCardNo?: string | null; taxId?: string | null;
+  /** รหัสตำแหน่งใน wf.OrgPosition · ส่ง null เพื่อถอดออก */
+  positionCode?: string | null;
 }) =>
   req<{ ok: boolean; id: number }>(`/auth/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
 
@@ -111,6 +113,16 @@ export const deleteUser = (id: number) =>
   req<{ ok: boolean }>(`/auth/users/${id}`, { method: 'DELETE' });
 
 export const fetchEmployees = () => req<Employee[]>('/master/employees');
+
+// ── ผังตำแหน่ง (wf.OrgPosition) — จากผังองค์กร 2568 ────────────
+export type OrgPosition = {
+  PositionCode: string; PositionName: string;
+  ReportsTo: string | null; ReportsToName: string | null;
+  OrgUnit: string; Tier: number;
+  DefaultRole: string | null; CanApprove: boolean; IsActive: boolean;
+  Note: string | null; AssignedCount: number;
+};
+export const listOrgPositions = () => req<OrgPosition[]>('/auth/org-positions');
 
 // ── Master data ───────────────────────────────────────────────
 const MASTER_CACHE_TTL = 5 * 60 * 1000;
