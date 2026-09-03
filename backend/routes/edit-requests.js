@@ -23,6 +23,7 @@ const router = require('express').Router();
 const { sql, wfQuery } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { broadcast } = require('../services/socket');
+const truckHold = require('../services/truck-hold');
 
 router.use(requireAuth);
 
@@ -117,6 +118,18 @@ router.get('/reasons', async (req, res) => {
     res.json({ data: camelizeRows(r.recordset || []) });
   } catch (e) {
     console.error('[edit-requests/reasons]', e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// ── GET /api/edit-requests/hold-capability ────────────────────
+// บอกว่า "Hold" ตอนนี้แปลว่าอะไรกันแน่ หน้าจอต้องใช้ค่านี้พูด
+// ไม่ใช่สมมติเอาเองว่ารถถูกหยุดแล้ว
+router.get('/hold-capability', async (req, res) => {
+  try {
+    res.json(await truckHold.getHoldCapability());
+  } catch (e) {
+    console.error('[edit-requests/hold-capability]', e);
     res.status(500).json({ message: e.message });
   }
 });
@@ -241,12 +254,24 @@ router.post('/', requireRole(...REQUESTER_ROLES), async (req, res) => {
       });
 
     const id = ins.recordset[0].Id;
+
+    // Hold ที่มีผลถึง WINSpeed — ปิดไว้เป็นค่าเริ่มต้น
+    // ถ้าสวิตช์ปิดจะได้ applied=false ซึ่งไม่ใช่ error แต่แปลว่า Hold มีผลเฉพาะในแอป
+    let winspeedHold = null;
+    if (hold) {
+      winspeedHold = await truckHold.applyHold(soid, {
+        editRequestId: id, note: reason.ReasonText, actedBy: req.user.sub,
+      });
+    }
+
     broadcast('edit_request', { id, soid: String(soid), action: 'created', hold: !!hold });
 
     res.json({
       id, stage: st.stage, stageLabel: STAGE_LABEL[st.stage], holdTruck: !!hold,
+      winspeedHold,
       message: hold
-        ? `ส่งคำขอ #${id} แล้ว — รถถูก Hold จนกว่าจะมีการอนุมัติ`
+        ? `ส่งคำขอ #${id} แล้ว — รถถูก Hold จนกว่าจะมีการอนุมัติ` +
+          (winspeedHold && winspeedHold.applied ? ' · ส่งถึง WINSpeed แล้ว' : '')
         : `ส่งคำขอ #${id} แล้ว รออนุมัติ`,
     });
   } catch (e) {
@@ -291,6 +316,11 @@ router.patch('/:id/approve', requireRole(...APPROVER_ROLES), async (req, res) =>
       unlocked = (up.rowsAffected[0] || 0) > 0;
     }
 
+    // ปิดคำขอแล้วต้องปลดพักฝั่ง WINSpeed ด้วย ไม่งั้นใบจะค้างพักอยู่ตลอด
+    if (r.HoldTruck && r.SOID) {
+      await truckHold.releaseHold(r.SOID, { editRequestId: r.Id, actedBy: req.user.sub });
+    }
+
     broadcast('edit_request', { id: r.Id, soid: r.SOID, action: 'approved' });
     res.json({
       id: r.Id, status: 'APPROVED', unlocked,
@@ -321,6 +351,13 @@ router.patch('/:id/reject', requireRole(...APPROVER_ROLES), async (req, res) => 
       });
     if (!(up.rowsAffected[0] || 0))
       return res.status(409).json({ message: 'ไม่พบคำขอที่รออนุมัติ (อาจถูกปิดไปแล้ว)' });
+
+    // ปิดคำขอแล้วต้องปลดพักฝั่ง WINSpeed ด้วย ไม่งั้นใบจะค้างพักอยู่ตลอด
+    const rej = (await wfQuery(`SELECT SOID, HoldTruck FROM wf.EditRequest WHERE Id = @id`,
+      { id: { type: sql.Int, value: Number(req.params.id) } })).recordset[0];
+    if (rej && rej.HoldTruck && rej.SOID) {
+      await truckHold.releaseHold(rej.SOID, { editRequestId: Number(req.params.id), actedBy: req.user.sub });
+    }
 
     broadcast('edit_request', { id: Number(req.params.id), action: 'rejected' });
     res.json({ id: Number(req.params.id), status: 'REJECTED', message: 'ปฏิเสธคำขอแล้ว — ยกเลิก Hold รถ' });
@@ -353,6 +390,11 @@ router.patch('/:id/cancel', async (req, res) => {
         by:   { type: sql.Int, value: req.user.sub },
         note: { type: sql.NVarChar(1000), value: (req.body && req.body.note) || 'ผู้ขอถอนคำขอเอง' },
       });
+
+    // ปิดคำขอแล้วต้องปลดพักฝั่ง WINSpeed ด้วย ไม่งั้นใบจะค้างพักอยู่ตลอด
+    if (r.HoldTruck && r.SOID) {
+      await truckHold.releaseHold(r.SOID, { editRequestId: r.Id, actedBy: req.user.sub });
+    }
 
     broadcast('edit_request', { id: r.Id, soid: r.SOID, action: 'cancelled' });
     res.json({ id: r.Id, status: 'CANCELLED', message: 'ถอนคำขอแล้ว — ยกเลิก Hold รถ' });
