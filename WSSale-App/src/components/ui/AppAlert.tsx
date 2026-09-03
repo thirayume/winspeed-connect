@@ -1,4 +1,4 @@
-import { createRoot, Root } from 'react-dom/client';
+import { createRoot, type Root } from 'react-dom/client';
 import { AlertTriangle, CheckCircle, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
@@ -188,8 +188,8 @@ export const setupGlobalAlert = () => {
     if (!alertContainer) {
       alertContainer = document.createElement('div');
       document.body.appendChild(alertContainer);
-      alertRoot = createRoot(alertContainer);
     }
+    const root = alertRoot ?? (alertRoot = createRoot(alertContainer));
     
     const cleanup = () => {
       if (alertRoot) {
@@ -202,6 +202,6 @@ export const setupGlobalAlert = () => {
       }
     };
 
-    alertRoot.render(<AlertComponent message={msgString} type={type} onClose={cleanup} />);
+    root.render(<AlertComponent message={msgString} type={type} onClose={cleanup} />);
   };
 };

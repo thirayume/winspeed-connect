@@ -14,12 +14,31 @@ import {
   X
 } from 'lucide-react';
 import { Button, Card, Badge, cn } from '../ui/Base';
-import type { EMGood, SOLine } from '../types';
+
+/**
+ * Prototype POS surface. It consumes the raw WINSpeed column names
+ * (GoodName1/Category/GoodPrice1), not the mapped EMGood/SalesOrderLine shapes,
+ * so its props are described here rather than pulled from ../../types.
+ */
+export interface POSItem {
+  GoodID: string;
+  GoodName?: string;
+  GoodName1?: string;
+  Category?: string;
+  GoodPrice1?: number;
+  StockQty?: number;
+}
+
+export interface POSLine {
+  GoodID: string;
+  GoodQty1: number;
+  GoodPrice1: number;
+}
 
 interface POSLayoutProps {
-  items: EMGood[];
-  lines: SOLine[];
-  onAddLine: (item: EMGood) => void;
+  items: POSItem[];
+  lines: POSLine[];
+  onAddLine: (item: POSItem) => void;
   onUpdateQty: (goodId: string, qty: number) => void;
   onRemoveLine: (goodId: string) => void;
   onConfirm: () => void;
@@ -84,7 +103,7 @@ export const POSLayout = ({
 
           <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
             <Button
-              variant={selectedCategory === null ? 'default' : 'outline'}
+              variant={selectedCategory === null ? 'primary' : 'outline'}
               size="sm"
               onClick={() => setSelectedCategory(null)}
               className="rounded-full px-4 h-9 whitespace-nowrap"
@@ -94,7 +113,7 @@ export const POSLayout = ({
             {categories.map(cat => (
               <Button
                 key={cat}
-                variant={selectedCategory === cat ? 'default' : 'outline'}
+                variant={selectedCategory === cat ? 'primary' : 'outline'}
                 size="sm"
                 onClick={() => setSelectedCategory(cat)}
                 className="rounded-full px-4 h-9 whitespace-nowrap"
@@ -160,7 +179,7 @@ export const POSLayout = ({
               <ShoppingCart size={20} className="text-primary" />
               Order Summary
             </h2>
-            <Badge variant="secondary" className="rounded-lg">{lines.length} items</Badge>
+            <Badge variant="info" className="rounded-lg">{lines.length} items</Badge>
           </div>
         </div>
 

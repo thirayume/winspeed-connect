@@ -4,14 +4,14 @@ import { fetchGoods, updateGood, fetchPrices, getToken } from '../../services/ap
 import { useAppStore } from '../../store/app-store';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { DeleteConfirmModal } from '../ui/DeleteConfirmModal';
-import type { EMGood, EMSetPriceDT } from '../../types';
+import type { EMGood, CurrentPrice } from '../../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 
 export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: string) => void }) => {
   const [goods, setGoods] = useState<EMGood[]>([]);
-  const [prices, setPrices] = useState<EMSetPriceDT[]>([]);
+  const [prices, setPrices] = useState<CurrentPrice[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
@@ -35,7 +35,8 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
         fetchGoods(),
         fetchPrices({ custId: '' })
       ]);
-      setGoods(goodsData.filter(g => g.Inactive !== 'I'));
+      // Backend /master/goods already filters to g.Inactive = 'A'
+      setGoods(goodsData);
       setPrices(pricesData);
     } catch (err) {
       console.error(err);

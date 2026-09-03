@@ -15,7 +15,7 @@ export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; on
   const [note, setNote] = useState('');
   
   const [viewSo, setViewSo] = useState<SalesOrder | null>(null);
-  const [loadingSoId, setLoadingSoId] = useState<number | null>(null);
+  const [loadingSoId, setLoadingSoId] = useState<number | string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -65,7 +65,7 @@ export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; on
     }
   }
 
-  async function openDetails(soId: number) {
+  async function openDetails(soId: number | string) {
     setLoadingSoId(soId);
     try {
       const so = await fetchSalesOrder(soId);

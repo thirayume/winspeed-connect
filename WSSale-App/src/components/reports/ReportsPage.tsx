@@ -6,7 +6,7 @@ import { LegacyReportPdfModal } from './LegacyReportPdfModal';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 
 const isNum = (v: unknown) => typeof v === 'number' || (typeof v === 'string' && v !== '' && !isNaN(Number(v)));
-const fmt = (v: unknown) => isNum(v) ? Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }) : (v ?? '-');
+const fmt = (v: unknown): string => isNum(v) ? Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }) : (v == null ? '-' : String(v));
 
 export function ReportsPage() {
   const [types, setTypes] = useState<{ key: string; title: string }[]>([]);

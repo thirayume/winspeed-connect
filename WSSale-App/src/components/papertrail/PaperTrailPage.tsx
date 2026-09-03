@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { LayoutGrid, RefreshCw, Truck, FileText, ArrowRight, ArrowLeft, Clock, Printer, ScanLine, AlertTriangle, ShieldCheck, Unlock, X, Check, Search, Trash2, Edit } from 'lucide-react';
-import { fetchPaperBoard, confirmSO, moveToPicking, shipSO, syncImported, fetchLostPapers, verifySO, createUnlockRequest, listUnlockRequests, resolveUnlockReq, cancelSO } from '../../services/api';
+import { fetchPaperBoard, confirmSO, moveToPicking, confirmLoading, shipSO, syncImported, fetchLostPapers, verifySO, createUnlockRequest, listUnlockRequests, resolveUnlockReq, cancelSO } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import { useAppStore } from '../../store/app-store';
 import type { SalesOrder, UnlockReq } from '../../types';
@@ -30,7 +30,7 @@ export function PaperTrailPage() {
   const role = useAuthStore(s => s.user?.role);
   const [data, setData]       = useState<PaperBoard | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId]   = useState<number | null>(null);
+  const [busyId, setBusyId]   = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'board' | 'cancelled'>('board');
   const [printSoIds, setPrintSoIds] = useState<(string | number)[] | null>(null);
   const [showScan, setShowScan]   = useState(false);
@@ -60,7 +60,7 @@ export function PaperTrailPage() {
   useSocketEvent('so_updated', load);
 
   async function doVerify(card: PaperCard) {
-    setBusyId(card.id);
+    setBusyId(String(card.id));
     try { await verifySO(Number(card.id)); await load(); }
     catch (e) { alert((e as Error).message); }
     finally { setBusyId(null); }
@@ -71,7 +71,7 @@ export function PaperTrailPage() {
     const note = await appPrompt(`เหตุผลที่ยกเลิกเอกสาร ${card.wfRef}:`, 'ยกเลิกเอกสาร/ลบทิ้ง');
     if (note === null) return;
     
-    setBusyId(card.id);
+    setBusyId(String(card.id));
     try {
       await cancelSO(card.id, note);
       await load();
@@ -102,7 +102,7 @@ export function PaperTrailPage() {
       }
     }
 
-    setBusyId(card.id);
+    setBusyId(String(card.id));
     try {
       if (card.status === 'DRAFT') await confirmSO(card.id);
       else if (card.status === 'CONFIRMED') await moveToPicking(card.id);
@@ -114,7 +114,7 @@ export function PaperTrailPage() {
       else if (card.status === 'SHIPPED') {
         const docuNo = await appPrompt(`กรอกเลขใบกำกับ WINSpeed สำหรับ ${card.wfRef}:`);
         if (!docuNo) { setBusyId(null); return; }
-        await syncImported(card.id, docuNo);
+        await syncImported(Number(card.id), docuNo);
       }
       await load();
     } catch (e: unknown) { alert((e as Error).message); }
@@ -315,11 +315,11 @@ export function PaperTrailPage() {
                               <div className="flex flex-wrap items-center gap-1 mt-2 pl-1">
                                 {card.status === 'DRAFT' && (
                                   <>
-                                    <button disabled={busyId === card.id} onClick={() => useAppStore.getState().navigate('sales', { soId: card.id as number, action: 'edit' })} title="แก้ไขเอกสาร"
+                                    <button disabled={busyId === String(card.id)} onClick={() => useAppStore.getState().navigate('sales', { soId: card.id as number, action: 'edit' })} title="แก้ไขเอกสาร"
                                       className="flex-1 h-7 px-1.5 rounded-md text-[#0C447C] hover:text-white bg-blue-50 hover:bg-[#0C447C] border border-blue-200 flex items-center justify-center gap-1 shrink-0 disabled:opacity-50 text-[10px] font-bold whitespace-nowrap transition-colors">
                                       <Edit size={11} /> แก้ไข
                                     </button>
-                                    <button disabled={busyId === card.id} onClick={() => doCancel(card)} title="ลบเอกสารร่าง"
+                                    <button disabled={busyId === String(card.id)} onClick={() => doCancel(card)} title="ลบเอกสารร่าง"
                                       className="flex-1 h-7 px-1.5 rounded-md text-red-500 hover:text-white bg-red-50 hover:bg-red-500 border border-red-200 flex items-center justify-center gap-1 shrink-0 disabled:opacity-50 text-[10px] font-bold whitespace-nowrap transition-colors">
                                       <Trash2 size={11} /> ยกเลิก
                                     </button>
@@ -344,13 +344,13 @@ export function PaperTrailPage() {
                                   <Printer size={11} /> พิมพ์
                                 </button>
                                 {card.status === 'DRAFT' && !card.verifiedAt && role && CAN_VERIFY.includes(role) && (
-                                  <button disabled={busyId === card.id} onClick={() => doVerify(card)}
+                                  <button disabled={busyId === String(card.id)} onClick={() => doVerify(card)}
                                     className="flex-1 h-7 px-1.5 rounded-md text-white text-[10px] font-semibold disabled:opacity-50 flex items-center justify-center gap-1 bg-emerald-600 shadow-sm whitespace-nowrap">
                                     <ShieldCheck size={11} /> ตรวจ
                                   </button>
                                 )}
                                 {canAdvance && !(card.truckPlate === 'ตั๋วคุม' && card.status !== 'DRAFT') && (
-                                  <button disabled={busyId === card.id} onClick={() => advance(card)}
+                                  <button disabled={busyId === String(card.id)} onClick={() => advance(card)}
                                     className="flex-1 h-7 px-1.5 rounded-md text-white text-[10px] font-semibold disabled:opacity-50 flex items-center justify-center gap-1 shadow-sm whitespace-nowrap"
                                     style={{ background: m.color }}>
                                     {next!.label} <ArrowRight size={11} />
@@ -440,10 +440,10 @@ function CancelledOrdersView({ onBack }: { onBack: () => void }) {
                     <td className="px-6 py-4 font-mono font-bold text-gray-700 whitespace-nowrap">{o.wfRef}</td>
                     <td className="px-6 py-4 text-gray-600 whitespace-nowrap">{o.custName}</td>
                     <td className="px-6 py-4 text-right text-gray-500 whitespace-nowrap">
-                      {new Date(o.createdAt).toLocaleString('th-TH', { 
+                      {o.createdAt ? new Date(o.createdAt).toLocaleString('th-TH', { 
                         year: 'numeric', month: 'short', day: 'numeric',
                         hour: '2-digit', minute: '2-digit'
-                      })}
+                      }) : '—'}
                     </td>
                   </tr>
                 ))}

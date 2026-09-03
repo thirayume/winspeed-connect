@@ -32,7 +32,7 @@ export const VisualTruckLoader = ({
 }) => {
   const linesWithId = useMemo(() => {
     return (order.lines || []).filter(l => !l.isGiveaway).map((l, idx) => ({
-      ...l, uid: l.lineNum || l.id || `fallback-${idx}`
+      ...l, uid: String(l.lineNum || l.id || `fallback-${idx}`)
     }));
   }, [order.lines]);
 
@@ -186,7 +186,7 @@ export const VisualTruckLoader = ({
                  layoutId={`line-${line.uid}`}
                  key={line.uid} 
                  draggable
-                 onDragStart={e => {
+                 onDragStartCapture={e => {
                    e.dataTransfer.setData('uid', String(line.uid));
                    setDraggedUid(String(line.uid));
                  }}
@@ -273,7 +273,7 @@ export const VisualTruckLoader = ({
                     layoutId={`line-${l.uid}`}
                     key={l.uid}
                     draggable
-                    onDragStart={e => {
+                    onDragStartCapture={e => {
                       e.dataTransfer.setData('uid', String(l.uid));
                       setDraggedUid(String(l.uid));
                       setSelectedLine(l);

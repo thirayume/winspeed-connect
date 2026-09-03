@@ -4,6 +4,18 @@ import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { fetchCustomers, fetchTruckPlates } from '../../services/api';
 import type { EMCust } from '../../types';
 
+/** Trip metadata collected by TripSetupModal and applied to every SO in the trip. */
+export type TripSetupData = {
+  custId: string;
+  custName: string;
+  truckPlate: string;
+  deliveryDate: string;
+  creditDays?: number;
+  pSling?: boolean;
+  loadInOrder?: boolean;
+  remark?: string;
+};
+
 export function TripSetupModal({
   isOpen,
   onClose,
@@ -12,8 +24,8 @@ export function TripSetupModal({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (data: { custId: string; custName: string; truckPlate: string; deliveryDate: string; creditDays?: number; pSling?: boolean; loadInOrder?: boolean; }) => void;
-  initialData?: { custId: string; custName: string; truckPlate: string; deliveryDate: string; creditDays?: number; pSling?: boolean; loadInOrder?: boolean; };
+  onConfirm: (data: TripSetupData) => void;
+  initialData?: TripSetupData;
 }) {
   const [customers, setCustomers] = useState<EMCust[]>([]);
   const [truckPlates, setTruckPlates] = useState<string[]>([]);

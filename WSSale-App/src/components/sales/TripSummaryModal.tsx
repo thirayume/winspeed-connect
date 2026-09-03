@@ -6,7 +6,7 @@ import { useAppStore } from '../../store/app-store';
 import { confirmSO, cancelSO, shipSO, moveToPicking, createUnlockRequest, fetchSalesOrder, updateSO, createQuotationFromSoTrip } from '../../services/api';
 import { appConfirm } from '../ui/AppAlert';
 import { RequestActionModal, type RequestActionType } from '../papertrail/RequestActionModal';
-import { TripSetupModal } from './TripSetupModal';
+import { TripSetupModal, type TripSetupData } from './TripSetupModal';
 import { PaperDocModal } from '../papertrail/PaperDocModal';
 import { SOBookingDocModal } from './SOBookingDocModal';
 import { SO_STATUS_META, soStatusLabel } from '../../constants/soStatus';
@@ -115,7 +115,7 @@ export function TripSummaryModal({
     });
   };
 
-  const handleEditTripMetadata = async (data: { custId: string; custName: string; truckPlate: string; deliveryDate: string; creditDays?: number; pSling?: boolean; loadInOrder?: boolean; remark?: string }) => {
+  const handleEditTripMetadata = async (data: TripSetupData) => {
     setBusy(true);
     try {
       for (const o of trip.orders) {

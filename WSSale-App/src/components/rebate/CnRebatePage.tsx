@@ -295,7 +295,7 @@ export function CnRebatePage() {
                       <tr key={row.SOID} onClick={() => drillOrder(row)} className="hover:bg-blue-50/40 cursor-pointer">
                         <td className="px-4 py-3 font-mono text-xs font-bold text-[#0C447C]">{row.SONo}</td>
                         <td className="px-4 py-3 font-mono text-xs text-gray-600">{row.ControlNo || '-'}</td>
-                        <td className="px-4 py-3 text-gray-700 max-w-[220px] truncate" title={row.CustName}>{row.CustName}</td>
+                        <td className="px-4 py-3 text-gray-700 max-w-[220px] truncate" title={row.CustName ?? undefined}>{row.CustName}</td>
                         <td className="px-4 py-3 text-right tabular-nums">{Number(row.CouponCount || 0).toLocaleString()}</td>
                         <td className="px-4 py-3 text-right tabular-nums font-bold text-green-700">{fmtTon(row.RedeemedTon)}</td>
                         <td className="px-4 py-3 text-right tabular-nums text-amber-700">{fmtTon(row.RemainingTon)}</td>

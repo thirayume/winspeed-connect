@@ -516,7 +516,7 @@ function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; onDone: (
           qtyTon: Number(l.qtyTon) || 0,
           pricePerTon: Number(l.pricePerTon) || 0
         })),
-        salesUserId: salesUserId || undefined
+        salesUserId: salesUserId ? Number(salesUserId) : undefined
       });
       alert(`✓ สร้างใบเสนอราคาสำเร็จ: ${r.quoteNo}`); onDone();
     } catch (e: unknown) { setErr((e as Error).message || 'เกิดข้อผิดพลาด'); }

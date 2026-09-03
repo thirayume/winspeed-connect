@@ -5,7 +5,7 @@ import {
   fetchPriceBookSpecial, requestPriceBookSpecial, approvePriceBookSpecial,
   type PriceBook, type PriceBookLine, type PriceBookAuditRow, type PriceBookSpecialPrice,
 } from '../../services/api';
-import { useAppStore } from '../../store/app-store';
+import { useAuthStore } from '../../store/auth-store';
 
 const STATUS_COLOR: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-600', APPROVED: 'bg-amber-100 text-amber-700',
@@ -21,7 +21,7 @@ const LINE_STATUS_BADGE: Record<string, { label: string; style: string }> = {
 type Detail = PriceBook & { lines: PriceBookLine[]; audit: PriceBookAuditRow[] };
 
 export function PriceBookManager() {
-  const user = useAppStore(s => s.user);
+  const user = useAuthStore(s => s.user);
   const [books, setBooks] = useState<PriceBook[]>([]);
   const [sel, setSel] = useState<Detail | null>(null);
   const [editableLines, setEditableLines] = useState<PriceBookLine[]>([]);
@@ -247,7 +247,6 @@ export function PriceBookManager() {
                                     updated[idx] = {
                                       ...updated[idx],
                                       LineStatus: nextStatus,
-                                      lineStatus: nextStatus,
                                       Price: nextStatus === 'SUSPENDED' ? null : (updated[idx].Price ?? 0),
                                     };
                                     setEditableLines(updated);
@@ -296,7 +295,7 @@ export function PriceBookManager() {
                                   placeholder="หมายเหตุ..."
                                   onChange={e => {
                                     const updated = [...editableLines];
-                                    updated[idx] = { ...updated[idx], Note: e.target.value, note: e.target.value };
+                                    updated[idx] = { ...updated[idx], Note: e.target.value };
                                     setEditableLines(updated);
                                   }}
                                   className="w-full border border-gray-200 rounded px-2 py-1 text-xs text-gray-600"

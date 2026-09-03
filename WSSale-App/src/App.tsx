@@ -160,7 +160,8 @@ function App() {
   }, [logout]);
 
   if (!isAuthenticated) return <LoginPage />;
-  if (isAuthenticated && !user) {
+  // isAuthenticated is already true here; the extra conjunct blocked narrowing of `user`
+  if (!user) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-[#F1EFE8]">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0C447C]" />

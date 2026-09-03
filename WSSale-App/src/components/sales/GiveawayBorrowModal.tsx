@@ -18,7 +18,7 @@ interface GiveawayBorrowModalProps {
   itemName: string;
   requiredQty: number;
   region: string;
-  periodYear: parseInt;
+  periodYear: number;
   onSuccess: () => void;
 }
 
@@ -33,7 +33,7 @@ export function GiveawayBorrowModal({ isOpen, onClose, brand, itemName, required
   useEffect(() => {
     if (isOpen && brand && itemName) {
       setLoading(true);
-      apiFetch(`/giveaway/available-lenders?brand=${encodeURIComponent(brand)}&itemName=${encodeURIComponent(itemName)}&year=${periodYear}`)
+      apiFetch<Lender[]>(`/giveaway/available-lenders?brand=${encodeURIComponent(brand)}&itemName=${encodeURIComponent(itemName)}&year=${periodYear}`)
         .then(res => setLenders(res))
         .catch(err => console.error(err))
         .finally(() => setLoading(false));

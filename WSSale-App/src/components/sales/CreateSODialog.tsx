@@ -8,7 +8,7 @@ import { useAuthStore } from '../../store/auth-store';
 import { useTripStore } from '../../store/trip-store';
 import { canViewRebateAmounts } from '../../utils/permissions';
 import { appConfirm } from '../ui/AppAlert';
-import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser } from '../../types';
+import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser, GiveawayQuota } from '../../types';
 
 type DraftLine = SalesOrderLine & { tempId: string; refControlTicketNo?: string; isControlTicketDrawn?: boolean; maxQtyTon?: number; loadSequence?: number; };
 type DraftBill = { id: string; soPrefix: SOPrefix; lines: DraftLine[]; remark: string; rebateDiscountAmt?: number; creditDays?: number; truckRemark?: string; billRemark?: string; isControlTicket?: boolean; wfRef?: string; };
@@ -113,7 +113,7 @@ export function CreateSODialog({
   const [debouncedCustSearch, setDebouncedCustSearch] = useState('');
   
   // Giveaway Quota State
-  const [myQuota, setMyQuota] = useState<{ Brand: string; ItemName: string; RemainingQty: number }[]>([]);
+  const [myQuota, setMyQuota] = useState<GiveawayQuota[]>([]);
   const [borrowModalOpen, setBorrowModalOpen] = useState(false);
   const [borrowReq, setBorrowReq] = useState({ brand: '', itemName: '', requiredQty: 0 });
   const [currentPage, setCurrentPage] = useState(1);
@@ -134,7 +134,7 @@ export function CreateSODialog({
       
     const currentYear = new Date().getFullYear() + 543 - 2500 + 2500;
     const quotaUrl = targetUserId ? `/giveaway/my-quota?year=${currentYear}&salesUserId=${targetUserId}` : `/giveaway/my-quota?year=${currentYear}`;
-    apiFetch(quotaUrl).then(setMyQuota).catch(console.error);
+    apiFetch<GiveawayQuota[]>(quotaUrl).then(setMyQuota).catch(console.error);
     
     if (userRole === 'ADMIN') {
       listUsers().then(setSalesUsers).catch(console.error);
@@ -1341,7 +1341,7 @@ export function CreateSODialog({
           setBorrowModalOpen(false);
           // Refetch quota after borrowing
           const currentYear = new Date().getFullYear() + 543 - 2500 + 2500;
-          apiFetch(`/giveaway/my-quota?year=${currentYear}`).then(setMyQuota).catch(console.error);
+          apiFetch<GiveawayQuota[]>(`/giveaway/my-quota?year=${currentYear}`).then(setMyQuota).catch(console.error);
           alert('ส่งคำขอยืมเรียบร้อยแล้ว กรุณารอการอนุมัติ');
         }}
       />

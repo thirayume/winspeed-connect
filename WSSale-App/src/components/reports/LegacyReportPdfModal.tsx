@@ -10,7 +10,7 @@ import { useAuthStore } from '../../store/auth-store';
 import { canManageDocHeaderSettings } from '../../utils/permissions';
 
 const isNum = (v: unknown) => typeof v === 'number' || (typeof v === 'string' && v !== '' && !isNaN(Number(v)));
-const fmt = (v: unknown) => isNum(v) ? Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }) : (v ?? '-');
+const fmt = (v: unknown): string => isNum(v) ? Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }) : (v == null ? '-' : String(v));
 
 const PRINT_CSS = `
 @media print {
@@ -38,7 +38,7 @@ export function LegacyReportPdfModal({ data, onClose }: { data: ReportData; onCl
   const currentUser = useAuthStore(s => s.user);
   const canManageHeader = canManageDocHeaderSettings(currentUser);
 
-  const reportId = data?.key || data?.title;
+  const reportId = data?.type || data?.title;
   const [headerConfig, setHeaderConfig] = useState<DocHeaderConfig>(() => getDocHeaderConfig(reportId));
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
@@ -101,6 +101,19 @@ export function LegacyReportPdfModal({ data, onClose }: { data: ReportData; onCl
   };
 
   const activeLogo = headerConfig.logoUrl || DEFAULT_WF_LOGO_DATA_URL;
+
+  // Signature-block derivations, same rules as SOBookingDocModal
+  const showSalesBox = Boolean(headerConfig.signatureSalesLabel && headerConfig.signatureSalesLabel.trim() !== '');
+  const showApproverBox = Boolean(headerConfig.signatureApprovedLabel && headerConfig.signatureApprovedLabel.trim() !== '');
+  const showWarehouseBox = Boolean(headerConfig.signatureWarehouseLabel && headerConfig.signatureWarehouseLabel.trim() !== '');
+  const activeSigBoxesCount = (showSalesBox ? 1 : 0) + (showApproverBox ? 1 : 0) + (showWarehouseBox ? 1 : 0);
+  const showSignaturesSection = Boolean(headerConfig.showSignatures && activeSigBoxesCount > 0);
+
+  const getGridColsClass = (count: number) => {
+    if (count === 3) return 'grid-cols-3';
+    if (count === 2) return 'grid-cols-2';
+    return 'grid-cols-1 max-w-xs mx-auto';
+  };
 
   return createPortal(
     <div className="report-modal-root fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 print:static print:p-0 print:bg-transparent print:block" onClick={onClose}>

@@ -66,6 +66,7 @@ export function SODetailsPanel({
   }
 
   async function approveLine(lineNum: number) {
+    if (!so) return; // narrowing from the early return above does not reach this closure
     const note = await appPrompt('หมายเหตุการอนุมัติของแถม (ไม่บังคับ):') || undefined;
     await doAction(() => approveGiveawayLine(so.id!, lineNum, note));
   }
@@ -78,7 +79,7 @@ export function SODetailsPanel({
           <div className="flex items-center gap-2">
             <h2 className="text-base font-bold" style={{ color: '#0C447C' }}>
               <span className="text-sm px-1.5 py-0.5 rounded bg-blue-100 text-[#0C447C] mr-2">{so.soPrefix}</span>
-              {so.docuNo || (so as any).importedDocuNo || so.wfRef || `#${so.id}`}
+              {so.importedDocuNo || so.wfRef || `#${so.id}`}
             </h2>
             <SOStatusBadge status={so.status} isUnlockRequested={!!pendingReq} />
             {isWinspeedPosted && (

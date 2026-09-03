@@ -485,7 +485,8 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
           title="ราคาทั้งหมด"
           value={groupedPrices.length.toLocaleString()}
           icon={<Tag />}
-          trend="รวมสินค้าและรายลูกค้า"
+          subtitle="รวมสินค้าและรายลูกค้า"
+          colorClass="bg-blue-100 text-blue-600"
         />
         <DataSummaryCard
           title="ใช้งานอยู่"

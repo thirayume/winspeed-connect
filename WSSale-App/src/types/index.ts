@@ -128,7 +128,6 @@ export type EMGood = {
   BagPerTon: number;        // 20 ถ้าไม่มีใน wf.GoodExtra
   WeightKgPerBag: number;   // 50
   ImageUrl?: string;
-  GoodGroupName?: string;
   StockQty?: number;
   RemaQty?: number;
   TotalQtyTon?: number;
@@ -168,7 +167,10 @@ export type SOPrefix = 'I' | 'K' | 'AI';
 
 export type SalesOrderLine = {
   id?: number;
+  /** client-side ordering used when composing a save payload */
   lineNo: number;
+  /** server-assigned (wf.v_AllSalesOrderLines.LineNum); present on lines read back */
+  lineNum?: number;
   goodId: string;
   goodCode: string;
   goodName: string;
@@ -228,6 +230,19 @@ export type SalesOrder = {
   weighOutAt?: string | null;
   isLoaded?: boolean;
   statusTimeline?: StatusTimelineItem[];
+  /**
+   * WINSpeed posting info consumed by SODetailsPanel. GET /so/:id does not
+   * populate these yet, so the "WINSpeed Posted" badge stays hidden until it does.
+   */
+  winspeedInvoices?: WinspeedInvoiceRef[];
+  isWinspeedPosted?: boolean;
+};
+
+export type WinspeedInvoiceRef = {
+  docuNo?: string;
+  soInvID?: number | string;
+  docuDate?: string;
+  postID?: number | string;
 };
 
 export type StatusTimelineItem = {
@@ -280,11 +295,16 @@ export type RebateClaim = {
   PoolId: number;
   SalesName?: string;
   CustId?: string;
+  /** attached by GET /rebate/claims/:id via an EMCust lookup; absent on the list endpoint */
+  CustName?: string;
   ClaimAmt: number;
   RemainingAmt: number;
   Status: 'PENDING' | 'APPROVED';
   CnDocuNo?: string;
   Note?: string;
+  /** wf.RebateClaim.PeriodYear / PeriodMonth — nullable since migration 079 */
+  PeriodYear?: number | null;
+  PeriodMonth?: number | null;
   CreatedAt: string;
 };
 
@@ -724,6 +744,13 @@ export type PaginatedResult<T> = {
   total: number;
   page: number;
   limit: number;
+};
+
+/** Row of wf.v_GiveawayBudgetStatus as returned by GET /giveaway/my-quota */
+export type GiveawayQuota = {
+  Brand: string;
+  ItemName: string;
+  RemainingQty: number;
 };
 
 export interface PendingGiveaway {

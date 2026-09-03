@@ -99,7 +99,12 @@ export const createUser = (payload: {
 
 export const listUsers = () => req<AdminUser[]>('/auth/users');
 
-export const updateUser = (id: number, patch: { empId?: string | null; role?: string; displayName?: string; isActive?: boolean; password?: string; lineUserId?: string | null }) =>
+export const updateUser = (id: number, patch: {
+  empId?: string | null; role?: string; displayName?: string; isActive?: boolean;
+  password?: string; lineUserId?: string | null;
+  address?: string | null; phone?: string | null; email?: string | null;
+  idCardNo?: string | null; taxId?: string | null;
+}) =>
   req<{ ok: boolean; id: number }>(`/auth/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
 
 export const deleteUser = (id: number) =>
@@ -286,7 +291,7 @@ export const unlockSO = (id: number, note?: string) =>
   });
 
 export const shipSO = (
-  id: number,
+  id: number | string,
   weighOutWeight?: number,
   opts?: {
     tareKg?: number;
@@ -523,7 +528,9 @@ export const fetchQuotations = (status?: string) =>
 export const fetchQuotation = (id: number) => req<Quotation>(`/quotation/${id}`);
 
 export const createQuotation = (payload: {
-  custId: string; custName: string; validUntil?: string; remark?: string;
+  custId: string; custName: string; validUntil?: string; validDays?: number; remark?: string;
+  /** ADMIN-only: create the quotation on behalf of another sales user */
+  salesUserId?: number;
   lines: { goodId: string; goodCode: string; goodName: string; qtyTon: number; pricePerTon: number; netPricePerTon: number }[];
 }) => req<{
   id: number;
@@ -611,14 +618,21 @@ export interface ReconResolutionInfo { status: 'RESOLVED' | 'IGNORED'; note: str
 export interface ReconCase {
   soId: string; wfRef: string | null; custName: string; truckPlate: string | null;
   shipDate: string; wsDocuNo: string | null; wsInvoiceNo: string | null;
+  wsInvoiceId: number | null; wsInvoiceDate: string | null;
+  wsInvoiceType: string | null; wsPostId: number | string | null;
+  postInvoiceStatus: 'READY' | 'POSTED'; readyForPostInvoice: boolean;
   netApp: number | null; netTs: number | null; variance: number | null;
+  tsMatchBy: string | null; tsFallbackMovebill: string | null;
   movebill: string | null; scaleNo: number | null;
   weigh: 'MATCHED' | 'VARIANCE' | 'NO_WEIGH' | 'UNLINKED' | 'TS_NOT_FOUND' | 'TS_UNAVAILABLE';
   invoice: 'MATCHED' | 'PENDING';
   weighResolution: ReconResolutionInfo | null; invoiceResolution: ReconResolutionInfo | null;
   overall: 'OK' | 'EXCEPTION' | 'RESOLVED'; tsAvailable: boolean;
 }
-export interface ReconSummary { total: number; ok: number; exception: number; resolved: number; tsAvailable: boolean; }
+export interface ReconSummary {
+  total: number; ok: number; exception: number; resolved: number;
+  readyForPostInvoice: number; postedInvoice: number; tsAvailable: boolean;
+}
 export const fetchReconSummary = (days = 7) =>
   req<ReconSummary>(`/recon/summary?days=${days}`, { silent: true });
 export const fetchReconCases = (days = 7, status?: string) =>
@@ -684,8 +698,20 @@ export const fetchPriceBooks = () => req<PriceBook[]>('/pricebook');
 export const fetchPriceBook = (id: number) => req<PriceBook & { lines: PriceBookLine[]; audit: PriceBookAuditRow[] }>(`/pricebook/${id}`);
 export const createPriceBook = (b: { name: string; effectiveMonth: string; note?: string; seedFromCurrent?: boolean }) =>
   req<{ id: number }>('/pricebook', { method: 'POST', body: JSON.stringify(b) });
+/** POST /pricebook/:id/lines reads camelCase; GET returns PascalCase. Convert at the boundary. */
+export interface PriceBookLineInput {
+  goodId: string; goodName?: string; unit?: string; price: number | null;
+  lineStatus?: 'ACTIVE' | 'DISCONTINUING' | 'SUSPENDED'; note?: string | null;
+}
+export const toPriceBookLineInput = (l: PriceBookLine): PriceBookLineInput => ({
+  goodId: l.GoodId, goodName: l.GoodName, unit: l.Unit, price: l.Price,
+  lineStatus: l.LineStatus, note: l.Note,
+});
 export const setPriceBookLines = (id: number, lines: PriceBookLine[]) =>
-  req<{ ok: boolean; count: number }>(`/pricebook/${id}/lines`, { method: 'POST', body: JSON.stringify({ lines }) });
+  req<{ ok: boolean; count: number }>(`/pricebook/${id}/lines`, {
+    method: 'POST',
+    body: JSON.stringify({ lines: lines.map(toPriceBookLineInput) }),
+  });
 export const priceBookAction = (id: number, action: 'approve' | 'activate' | 'archive', note?: string) =>
   req<{ ok: boolean; status: string }>(`/pricebook/${id}/${action}`, { method: 'POST', body: JSON.stringify({ note }) });
 export const fetchPriceBookSpecial = (id: number) => req<PriceBookSpecialPrice[]>(`/pricebook/${id}/special`);
@@ -841,14 +867,16 @@ export const fetchRebateAccrualLots = (
   return req<import('../types').RebateAccrualLot[]>(`/rebate/accrual/${encodeURIComponent(custId)}${suffix ? `?${suffix}` : ''}`);
 };
 
-export const fetchWfRebateTrailList = (params: { year?: number; empId: number }) => {
+export const fetchWfRebateTrailList = (params: { year?: number; empId?: number; custId?: string; q?: string }) => {
   const qs = new URLSearchParams();
   if (params.year) qs.set('year', String(params.year));
-  qs.set('empId', String(params.empId));
+  if (params.empId != null) qs.set('empId', String(params.empId));
+  if (params.custId) qs.set('custId', params.custId);
+  if (params.q) qs.set('q', params.q);
   return req<import('../types').WfRebateTrailRow[]>(`/rebate/wf-trail-list?${qs}`);
 };
 
-export const fetchWfRebateTrailDetail = (orderId: string) =>
+export const fetchWfRebateTrailDetail = (orderId: number | string) =>
   req<import('../types').WfRebateTrailDetail>(`/rebate/wf-trail-detail/${orderId}`);
 
 // รายงานเครื่องชั่ง (T6-02) — แทน Crystal Reports เดิม
