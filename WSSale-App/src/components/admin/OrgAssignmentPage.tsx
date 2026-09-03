@@ -15,7 +15,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Network, Search, RefreshCw, AlertTriangle, Check, Users, ShieldCheck, Download,
 } from 'lucide-react';
-import { listUsers, listOrgPositions, updateUser, type OrgPosition } from '../../services/api';
+import { listUsers, listOrgPositions, updateUser, fetchOrgHints,
+         type OrgPosition, type OrgHintUser } from '../../services/api';
 import type { AdminUser } from '../../types';
 
 const NAVY = '#0C447C';
@@ -36,6 +37,8 @@ const unitClass = (u?: string | null) =>
 export function OrgAssignmentPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [positions, setPositions] = useState<OrgPosition[]>([]);
+  const [hints, setHints] = useState<Map<number, OrgHintUser>>(new Map());
+  const [hintNote, setHintNote] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<number | null>(null);
@@ -48,8 +51,10 @@ export function OrgAssignmentPage() {
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      const [u, p] = await Promise.all([listUsers(), listOrgPositions()]);
+      const [u, p, h] = await Promise.all([listUsers(), listOrgPositions(), fetchOrgHints()]);
       setUsers(u); setPositions(p);
+      setHints(new Map((h.data || []).map(x => [Number(x.id), x])));
+      setHintNote(h.summary?.note || null);
     } catch (e: any) {
       setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ');
     }
@@ -130,6 +135,14 @@ export function OrgAssignmentPage() {
 
   return (
     <div className="flex h-full flex-col bg-gray-50">
+      {hintNote && (
+        <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>
+            <b>ระบบระบุตำแหน่งให้อัตโนมัติไม่ได้</b> — {hintNote.replace('ระบบระบุตำแหน่งให้อัตโนมัติไม่ได้ — ', '')}
+          </span>
+        </div>
+      )}
       <div className="border-b border-gray-200 bg-white px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="mr-auto flex items-center gap-2 text-lg font-bold" style={{ color: NAVY }}>
@@ -233,6 +246,24 @@ export function OrgAssignmentPage() {
                       <td className="px-3 py-2">
                         <div className="font-medium text-gray-800">{u.DisplayName}</div>
                         <div className="text-xs text-gray-400">{u.Username}</div>
+                        {(() => {
+                          const h = hints.get(Number(u.Id));
+                          if (!h || (!h.winspeed.dept && !h.winspeed.post)) return null;
+                          return (
+                            <div className="mt-0.5 flex flex-wrap gap-1">
+                              {h.winspeed.dept && (
+                                <span className="rounded border border-gray-200 bg-gray-50 px-1 py-px text-[10px] text-gray-500">
+                                  แผนก {h.winspeed.dept}
+                                </span>
+                              )}
+                              {h.winspeed.post && (
+                                <span className="rounded border border-gray-200 bg-gray-50 px-1 py-px text-[10px] text-gray-500">
+                                  WINSpeed: {h.winspeed.post}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-3 py-2">
                         <span className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold ${
@@ -267,6 +298,35 @@ export function OrgAssignmentPage() {
                           {savingId === u.Id && <RefreshCw size={15} className="shrink-0 animate-spin text-gray-400" />}
                           {savedId === u.Id && <Check size={16} className="shrink-0 text-emerald-600" />}
                         </div>
+                        {(() => {
+                          const h = hints.get(Number(u.Id));
+                          if (u.PositionCode || !h || h.candidates.length === 0) return null;
+                          // ปุ่มลัดคือ "ตัวเลือกที่เป็นไปได้ตามบทบาทและแผนก" ไม่ใช่คำตอบ
+                          // ถ้าเหลือมากกว่า 8 ตัว แปลว่ากรองไม่ได้จริง อย่าหลอกว่าแคบแล้ว
+                          if (h.candidates.length > 8) {
+                            return (
+                              <p className="mt-1 text-[10px] text-gray-400">
+                                กรองไม่ได้ — บทบาท {u.Role} มีได้ {h.candidates.length} ตำแหน่ง ต้องเลือกเอง
+                              </p>
+                            );
+                          }
+                          return (
+                            <div className="mt-1 flex flex-wrap items-center gap-1">
+                              <span className="text-[10px] text-gray-400">น่าจะเป็น:</span>
+                              {h.candidates.map(c => (
+                                <button
+                                  key={c.positionCode}
+                                  type="button"
+                                  disabled={savingId === u.Id}
+                                  onClick={() => assign(u, c.positionCode)}
+                                  className="rounded border border-blue-200 bg-blue-50 px-1.5 py-px text-[10px] text-blue-800 hover:bg-blue-100 disabled:opacity-50"
+                                >
+                                  {c.positionName}
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-3 py-2">
                         {u.OrgUnit

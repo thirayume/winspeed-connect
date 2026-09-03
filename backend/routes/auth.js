@@ -679,6 +679,108 @@ router.get('/org-positions', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOU
   }
 });
 
+
+// GET /api/auth/org-hints — ตัวช่วยจับคู่ผู้ใช้ ↔ ตำแหน่ง
+//
+// ทำไมต้องมี
+//   ผังองค์กรมี 43 ตำแหน่ง ผู้ใช้ที่ต้องผูกมี 42 คน ถ้าให้เลือกจากรายการเต็ม
+//   ทุกครั้ง คนกรอกต้องอ่าน 43 บรรทัดต่อคน รวม ~1,800 ครั้ง ซึ่งพลาดง่าย
+//   endpoint นี้ตัดตัวเลือกให้เหลือเฉพาะที่เป็นไปได้ตามข้อมูลที่ระบบมีจริง
+//
+// ⚠ นี่คือ "ตัวช่วยกรอง" ไม่ใช่การระบุตำแหน่ง
+//   ระบบไม่รู้ว่าใครถือตำแหน่งไหน — dbo.EMEmp มี PostID แค่ 9 คนจาก 61
+//   และตำแหน่งของ WINSpeed (10 รายการ) หยาบกว่าผังเรา (43 รายการ) มาก
+//   เช่น "กรรมการบริหาร" ตัวเดียวตรงกับผังเราได้ 3 ตำแหน่ง
+//   คนที่กรอกต้องเป็นผู้ตัดสินเสมอ ระบบทำได้แค่ย่นรายการให้สั้นลง
+//
+// อ่านอย่างเดียวทั้งหมด ไม่เขียนอะไรทั้งสิ้น
+//
+// แผนก WINSpeed → สายงานในผังของเรา
+// จับคู่ตามความหมายของชื่อแผนก ไม่ได้เดารายบุคคล
+const DEPT_TO_UNIT = {
+  'ตรารถเกษตร':   'ขาย-การตลาด',
+  'ตรา ปุ๋ยเทพ':  'ขาย-การตลาด',
+  'บัญชี':        'บัญชี-การเงิน',
+  'การเงิน':      'บัญชี-การเงิน',
+  'งานผลิต':      'โรงงาน',
+  'งานซ่อมบำรุง': 'โรงงาน',
+  'ห้องชั่ง':     'โรงงาน',
+  'คลังสำเร็จรูป': 'โรงงาน',
+  'ห้องกระสอบ':   'โรงงาน',
+};
+
+router.get('/org-hints', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
+  try {
+    // จับคู่ AppUser กับทะเบียนพนักงานด้วยชื่อ — ทางเดียวที่ใช้ได้จริง
+    // (EmpID / EmpCode / EMEmp.username จับคู่ไม่ได้เลยสักคน ตรวจแล้ว 3 ทาง)
+    const users = (await wfQuery(`
+      SELECT u.Id, u.Username, u.DisplayName, u.Role, u.PositionCode,
+             RTRIM(d.DeptName) AS WsDept,
+             RTRIM(po.PostName) AS WsPost
+      FROM   wf.AppUser u
+      LEFT   JOIN dbo.EMEmp  e  ON RTRIM(e.EmpName) = u.DisplayName
+      LEFT   JOIN dbo.EMDept d  ON d.DeptID = e.DeptID
+      LEFT   JOIN dbo.EMPost po ON po.PostID = e.PostID
+      WHERE  u.IsActive = 1
+      ORDER  BY u.Id`)).recordset;
+
+    const positions = (await wfQuery(`
+      SELECT PositionCode, PositionName, OrgUnit, Tier, DefaultRole, CanApprove
+      FROM   wf.OrgPosition
+      WHERE  IsActive = 1
+      ORDER  BY Tier, OrgUnit, PositionCode`)).recordset;
+
+    const data = users.map(u => {
+      const unitHint = u.WsDept ? DEPT_TO_UNIT[String(u.WsDept).trim()] || null : null;
+
+      // ผู้สมัครที่เป็นไปได้ = ตำแหน่งที่บทบาทเริ่มต้นตรงกับบทบาทจริงของผู้ใช้
+      // บทบาทคือสิ่งเดียวที่ระบบ "รู้จริง" เกี่ยวกับคนคนนี้
+      let candidates = positions.filter(p => p.DefaultRole && p.DefaultRole === u.Role);
+
+      // ถ้ารู้แผนกจาก WINSpeed ให้แคบลงอีกชั้น แต่ไม่ตัดทิ้งถ้าเหลือศูนย์
+      if (unitHint) {
+        const narrowed = candidates.filter(p => p.OrgUnit === unitHint);
+        if (narrowed.length > 0) candidates = narrowed;
+      }
+
+      return {
+        id: u.Id,
+        username: u.Username,
+        displayName: u.DisplayName,
+        role: u.Role,
+        positionCode: u.PositionCode,
+        // สิ่งที่ WINSpeed บอกได้ — ส่วนใหญ่จะว่าง
+        winspeed: { dept: u.WsDept || null, post: u.WsPost || null, unitHint },
+        candidates: candidates.map(p => ({
+          positionCode: p.PositionCode,
+          positionName: p.PositionName,
+          orgUnit: p.OrgUnit,
+          tier: p.Tier,
+          canApprove: p.CanApprove,
+        })),
+      };
+    });
+
+    const withDept = data.filter(x => x.winspeed.dept).length;
+    const withPost = data.filter(x => x.winspeed.post).length;
+
+    res.json({
+      data,
+      summary: {
+        activeUsers: data.length,
+        assigned: data.filter(x => x.positionCode).length,
+        winspeedDeptKnown: withDept,
+        winspeedPostKnown: withPost,
+        // บอกตรง ๆ ว่าระบบยืนยันตำแหน่งเองไม่ได้ หน้าจอจะได้ไม่แสดงเกินจริง
+        note: 'ระบบระบุตำแหน่งให้อัตโนมัติไม่ได้ — WINSpeed บันทึกตำแหน่งไว้ไม่ครบ และตำแหน่งของ WINSpeed หยาบกว่าผังองค์กร รายการที่แนะนำเป็นเพียงตัวช่วยกรอง ผู้ดูแลต้องเป็นผู้ตัดสิน',
+      },
+    });
+  } catch (e) {
+    console.error('[auth/org-hints]', e);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // DELETE /api/auth/users/:id — ลบผู้ใช้ (ADMIN/MANAGER/ACCOUNTING, ห้ามลบตัวเอง)
 router.delete('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
   try {

@@ -1216,3 +1216,27 @@ export const updateEditReason = (code: string, body: Omit<EditReasonInput, 'reas
 export const deleteEditReason = (code: string) =>
   req<{ reasonCode: string; message: string }>(
     `/edit-requests/admin/reasons/${encodeURIComponent(code)}`, { method: 'DELETE' });
+
+// ── ตัวช่วยจับคู่ผู้ใช้ ↔ ตำแหน่ง (อ่านอย่างเดียว) ──────────────
+// ⚠ เป็น "ตัวช่วยกรอง" ไม่ใช่การระบุตำแหน่ง — ระบบไม่รู้ว่าใครถือตำแหน่งไหน
+export type OrgHintUser = {
+  id: number;
+  username: string;
+  displayName: string;
+  role: string;
+  positionCode: string | null;
+  winspeed: { dept: string | null; post: string | null; unitHint: string | null };
+  candidates: {
+    positionCode: string; positionName: string;
+    orgUnit: string | null; tier: number; canApprove: boolean | number;
+  }[];
+};
+
+export const fetchOrgHints = () =>
+  req<{
+    data: OrgHintUser[];
+    summary: {
+      activeUsers: number; assigned: number;
+      winspeedDeptKnown: number; winspeedPostKnown: number; note: string;
+    };
+  }>('/auth/org-hints');
