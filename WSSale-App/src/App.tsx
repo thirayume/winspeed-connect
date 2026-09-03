@@ -21,9 +21,10 @@ import { UnlockReviewModal } from './components/papertrail/UnlockReviewModal';
 import { useSocketEvent } from './hooks/useSocket';
 import packageJson from '../package.json';
 
-export type PortalKey = 'dashboard' | 'sales' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'weigh-inbox' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'master' | 'profile';
+export type PortalKey = 'dashboard' | 'sales' | 'trip-board' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'weigh-inbox' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'master' | 'profile';
 
 const SalesPortal = lazy(() => import('./components/sales/SalesPortal').then(m => ({ default: m.SalesPortal })));
+const SaleTripBoardPage = lazy(() => import('./components/sales/SaleTripBoardPage').then(m => ({ default: m.SaleTripBoardPage })));
 const StorePortal = lazy(() => import('./components/store/StorePortal').then(m => ({ default: m.StorePortal })));
 const DashboardPage = lazy(() => import('./components/dashboard/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const RebatePage = lazy(() => import('./components/rebate/RebatePage').then(m => ({ default: m.RebatePage })));
@@ -65,6 +66,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: 'dashboard',  label: 'Dashboard',  sub: 'ภาพรวม',              icon: LayoutDashboard },
       { key: 'sales',      label: 'ขาย',         sub: 'ใบสั่งขาย (POS)',     icon: ShoppingCart },
+      { key: 'trip-board', label: 'Sale Trip',   sub: 'กระดานเที่ยวรถ',      icon: Truck },
       { key: 'quotation',  label: 'เสนอราคา',    sub: 'Quotation → SO',      icon: FileText },
       { key: 'store',      label: 'คลัง',        sub: 'รับสินค้า/ส่งออก',     icon: Warehouse, badge: true },
       { key: 'papertrail', label: 'Paper Trail', sub: 'Kanban เอกสาร',       icon: LayoutGrid },
@@ -538,6 +540,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
             ) : (
               <div className="h-full w-full overflow-auto custom-scrollbar">
                 {activePortal === 'dashboard'  && <DashboardPage />}
+                {activePortal === 'trip-board' && <SaleTripBoardPage />}
                 {activePortal === 'quotation'  && <QuotationPage />}
                 {activePortal === 'store'      && <StorePortal />}
                 {activePortal === 'papertrail' && <PaperTrailPage />}

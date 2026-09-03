@@ -989,3 +989,105 @@ export const approveRebatePlan = (planId: number, note?: string) =>
 export const rejectRebatePlan = (planId: number, reason: string) =>
   req<{ id: number; status: string; message?: string }>(
     `/rebate/plans/${planId}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
+
+// ── Sale Trip Board (เฟส 4) ───────────────────────────────────
+// ลำดับชั้น เที่ยวรถ → ลูกค้า → ใบจอง → รายการสินค้า
+// ทุกอย่างเป็นการอ่านอย่างเดียว ไม่มีการเขียน dbo
+export type TripLine = {
+  memberKind: 'DRAFT' | 'CONFIRMED';
+  memberId: string;
+  listNo: number;
+  goodCode: string | null;
+  goodName: string | null;
+  qtyTon: number | null;
+  qtyBag: number | null;
+  pricePerTon: number | null;
+  netPricePerTon: number | null;
+  lineAmount: number | null;
+  isGiveaway: boolean | number;
+  loadSequence: number | null;
+  masterQty: number | null;
+  childQty: number | null;
+  refControlTicketNo: string | null;
+  isControlTicketDrawn: boolean | number | null;
+  giveawayApprovalStatus: string | null;
+};
+
+export type TripWeighRow = {
+  id: number; carNo: string | null; dateReg: string | null;
+  status: number | string; wgType: string | null;
+  weightIn: number | null; weightOut: number | null; weightNet: number | null;
+  tONNet: number | null; docuNo: string | null; moveBill: string | null;
+};
+
+export type TripBooking = {
+  memberKind: 'DRAFT' | 'CONFIRMED';
+  memberId: string;
+  docuNo: string | null;
+  soPrefix: string | null;
+  status: string | null;
+  soid: number | null;
+  deliveryDate: string | null;
+  totalTon: number;
+  weighing: TripWeighRow[];
+  lines: TripLine[];
+};
+
+export type TripCustomer = { custId: string | null; custName: string | null; bookings: TripBooking[] };
+
+export type TripBoardRow = {
+  tripId: number | string;
+  tripCode: string;
+  transRegistration: string | null;
+  driverName: string | null;
+  status: string | null;
+  pickupDueDate: string | null;
+  preSlingRequired: boolean | number;
+  tripRemark: string | null;
+  createdByName: string | null;
+  orderCount: number;
+  capacity: {
+    capacityTon: number; tolerancePct: number; maxTon: number;
+    plannedTon: number; giveawayTon: number;
+    remainingTon: number | null; usedPct: number | null; over: boolean;
+  };
+  weighing: {
+    phase: 'PLANNED' | 'REGISTERED' | 'LOADING' | 'SHIPPED' | 'PARTIAL';
+    label: string;
+    rows: TripWeighRow[];
+  };
+  customers: TripCustomer[];
+};
+
+export const fetchTripBoard = (params?: { status?: string; search?: string }) => {
+  const q = new URLSearchParams();
+  if (params?.status) q.set('status', params.status);
+  if (params?.search) q.set('search', params.search);
+  const qs = q.toString();
+  return req<{ data: TripBoardRow[] }>(`/trips/board${qs ? `?${qs}` : ''}`);
+};
+
+export type LoadingPlanRow = TripLine & {
+  step: number;
+  docuNo: string | null;
+  soPrefix: string | null;
+  custId: string | null;
+  custName: string | null;
+  preSling: boolean;
+  truckRemark: string | null;
+  remark: string | null;
+  split: { masterQty: number; childQty: number } | null;
+};
+
+export type LoadingPlan = {
+  trip: TripBoardRow;
+  totals: {
+    totalTon: number; capacityTon: number; tolerancePct: number;
+    maxTon: number; over: boolean; lineCount: number;
+  };
+  alerts: { level: 'info' | 'warn' | 'error'; text: string }[];
+  plan: LoadingPlanRow[];
+};
+
+export const fetchLoadingPlan = (tripId: number | string) =>
+  req<LoadingPlan>(`/trips/${tripId}/loading-plan`);
