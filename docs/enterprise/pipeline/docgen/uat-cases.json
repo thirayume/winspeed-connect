@@ -1,0 +1,1697 @@
+{
+  "schemaVersion": 1,
+  "product": "WS-Sale-App",
+  "client": "World Fert Co., Ltd.",
+  "runtimeVersion": "1.0.1",
+  "statusValues": [
+    "Not Run",
+    "Pass",
+    "Fail",
+    "Blocked",
+    "N/A"
+  ],
+  "cases": [
+    {
+      "id": "UAT-ACC-054",
+      "type": "Manual",
+      "area": "Accounting / กระทบยอด",
+      "critical": true,
+      "titleTh": "ใบสั่งขายที่ออกใบกำกับแล้ว ต้องแก้ย้อนหลังไม่ได้",
+      "actor": "ACCOUNTING / QA",
+      "requirementIds": [
+        "FR-024"
+      ],
+      "preconditions": "มีใบสั่งขายที่ post ใบกำกับใน WINSpeed แล้ว",
+      "testData": "ใบสั่งขายที่มี invoice reference",
+      "steps": [
+        "เปิดใบสั่งขายที่ออกใบกำกับแล้ว",
+        "ลองแก้ปริมาณหรือราคา",
+        "ลองลบรายการ"
+      ],
+      "expected": "ถูกปฏิเสธทุกกรณีพร้อมข้อความอธิบายว่าเหตุใดจึงแก้ไม่ได้ และเสนอเส้นทางที่ถูกต้อง (ใบลดหนี้)",
+      "evidence": "ภาพหน้าจอ + audit",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-APV-052",
+      "type": "Manual",
+      "area": "Approver / ปลดล็อก",
+      "critical": true,
+      "titleTh": "ปลดล็อกใบสั่งขายที่ตั้งรีเบทแล้ว ต้องตั้งรายการหักล้าง ไม่ลบของเดิม",
+      "actor": "APPROVER / ACCOUNTING",
+      "requirementIds": [
+        "FR-025",
+        "FR-021"
+      ],
+      "preconditions": "มีใบสั่งขายที่ SHIPPED และตั้งยอดรีเบทค้างรับแล้ว",
+      "testData": "ใบสั่งขายที่มียอดรีเบทมากกว่าศูนย์",
+      "steps": [
+        "จดยอดรีเบทก่อนปลดล็อก",
+        "ยื่นคำขอปลดล็อกพร้อมเหตุผล",
+        "อนุมัติคำขอ",
+        "ตรวจยอดรีเบทและรายการเคลื่อนไหว"
+      ],
+      "expected": "รายการเดิมยังอยู่ และมีรายการหักล้างเพิ่มเข้ามา ยอดคงเหลือถูกต้อง ตรวจย้อนได้ทั้งสองรายการ",
+      "evidence": "ยอดก่อน/หลัง + รายการเคลื่อนไหว + audit",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-CL-055",
+      "type": "Manual",
+      "area": "C-Level / ความน่าเชื่อของตัวเลข",
+      "critical": false,
+      "titleTh": "ทุกตัวเลขบน Dashboard และรายงานกดลงไปถึงเอกสารต้นทางได้",
+      "actor": "C_LEVEL / BUSINESS OWNER",
+      "requirementIds": [
+        "FR-050"
+      ],
+      "preconditions": "มีข้อมูลอย่างน้อยหนึ่งเดือนเต็ม",
+      "testData": "ช่วงเวลาเดือนล่าสุด",
+      "steps": [
+        "เปิด Dashboard",
+        "เลือกตัวชี้วัด 3 ตัว",
+        "กดลงไปถึงรายการต้นทางของแต่ละตัว",
+        "สุ่มตรวจ 1 รายการกับเอกสารจริง"
+      ],
+      "expected": "ทุกตัวเลขกดลงไปถึงเอกสารต้นทางได้ และยอดที่สุ่มตรวจตรงกับเอกสารจริง",
+      "evidence": "ภาพหน้าจอเส้นทางการกด + เอกสารที่สุ่มตรวจ",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-CS-053",
+      "type": "Manual",
+      "area": "Counter Sales / verification gate",
+      "critical": true,
+      "titleTh": "ผู้สร้างกับผู้ตรวจต้องไม่ใช่คนเดียวกันเมื่อ policy กำหนด",
+      "actor": "COUNTER_SALES / MANAGER",
+      "requirementIds": [
+        "FR-022",
+        "FR-041"
+      ],
+      "preconditions": "เปิดกติกาแบ่งแยกหน้าที่ในนโยบายอนุมัติ",
+      "testData": "ใบสั่งขายที่สร้างโดยผู้ใช้ที่มีทั้งสองสิทธิ์",
+      "steps": [
+        "สร้างใบสั่งขายด้วยผู้ใช้ A",
+        "ลองตรวจซ้ำด้วยผู้ใช้ A คนเดิม",
+        "ตรวจซ้ำด้วยผู้ใช้ B"
+      ],
+      "expected": "ผู้ใช้ A ถูกปฏิเสธพร้อมเหตุผล · ผู้ใช้ B ทำได้ · audit บันทึกทั้งสองความพยายาม",
+      "evidence": "ภาพหน้าจอการปฏิเสธ + audit log",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-DAT-060",
+      "type": "Manual",
+      "area": "Data / การล้างข้อมูลทดสอบ",
+      "critical": true,
+      "titleTh": "ทุกการทดสอบต้องล้างข้อมูลของตัวเองจนไม่เหลือร่องรอย",
+      "actor": "QA / DBA",
+      "requirementIds": [
+        "NFR-007"
+      ],
+      "preconditions": "รันชุดทดสอบอัตโนมัติครบรอบ",
+      "testData": "ข้อมูลทดสอบทั้งหมดของรอบนั้น",
+      "steps": [
+        "รันชุด E2E ทั้งหมด",
+        "รันสคริปต์ล้างข้อมูล",
+        "ตรวจนับข้อมูลค้างทั้งใน SQL Server และ MySQL"
+      ],
+      "expected": "ไม่มีข้อมูลทดสอบค้างในทั้งสองฐาน และไม่มีการลบข้อมูลจริงของลูกค้า",
+      "evidence": "ผลการนับก่อน/หลัง ทั้งสองฐาน",
+      "automationRef": "backend/scripts/e2e-cleanup-truckscale.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-DEF-040",
+      "type": "Automated",
+      "area": "API / ความถูกต้องของคำตอบ",
+      "critical": true,
+      "titleTh": "API ต้องไม่ตอบสำเร็จเมื่อไม่มีแถวใดถูกเปลี่ยนแปลง",
+      "actor": "QA / DEVELOPER",
+      "requirementIds": [
+        "NFR-006"
+      ],
+      "preconditions": "ทราบข้อบกพร่อง: approve เคลมและจับคู่ใบชั่งด้วย id ที่ไม่มีจริงคืน 200",
+      "testData": "id 999999999 ที่ไม่มีอยู่จริง",
+      "steps": [
+        "เรียก PATCH /api/rebate/claims/999999999/approve ด้วยบทบาท ACCOUNTING",
+        "เรียก POST /api/truckscale/inbox/999999999/match/999999999 ด้วยบทบาท WAREHOUSE",
+        "ตรวจรหัสสถานะที่ได้"
+      ],
+      "expected": "ต้องได้ 404 ไม่ใช่ 200 — เพราะการตอบสำเร็จทั้งที่ไม่มีอะไรเปลี่ยน คือการสร้างหลักฐานของสิ่งที่ไม่เคยเกิด",
+      "evidence": "รหัสสถานะและ body ที่ได้รับ พร้อมการนับแถวก่อน/หลัง",
+      "automationRef": "backend/scripts/verify-rbac-matrix.js",
+      "status": "Not Run",
+      "knownIssue": true
+    },
+    {
+      "id": "UAT-E2E-001",
+      "type": "Automated",
+      "area": "Sales / Verification",
+      "titleTh": "ทริปหลายบิลถูกบันทึกครบและถูกกั้นก่อนยืนยันเมื่อยังไม่ตรวจซ้ำ",
+      "requirementIds": [
+        "FR-001",
+        "FR-002",
+        "FR-022"
+      ],
+      "actor": "SALES / COUNTER_SALES",
+      "critical": true,
+      "preconditions": "มีผู้ใช้ทดสอบ SALES, ลูกค้าทดสอบ และสินค้าอย่างน้อย 2 รายการ",
+      "testData": "ทะเบียนรถรูปแบบ CMP-<run>; สองบิลในทริปเดียว; ปริมาณทศนิยม",
+      "steps": [
+        "เข้าสู่ระบบด้วย SALES และเปิด Sales Portal",
+        "สร้างบิลแรก เลือกลูกค้า สินค้า ปริมาณ และทะเบียนรถ",
+        "เพิ่มบิลที่สองในทริปเดียวด้วย prefix ต่างกัน",
+        "ตรวจว่าทั้งสองบิลอยู่สถานะ DRAFT",
+        "ลอง confirm ก่อน verification"
+      ],
+      "expected": "ทั้งสองบิล trace ได้ด้วยทะเบียนเดียวกันและ API ปฏิเสธการ confirm พร้อมข้อความให้ตรวจซ้ำ",
+      "evidence": "Playwright attachment multi-bill-gate.json + screenshot + API response",
+      "automationRef": "e2e/comprehensive-sales.spec.ts",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-E2E-002",
+      "type": "Automated",
+      "area": "Sales Order",
+      "titleTh": "SALES สร้าง SO draft ที่ตรวจสอบย้อนกลับได้",
+      "requirementIds": [
+        "FR-001",
+        "FR-002"
+      ],
+      "actor": "SALES",
+      "critical": true,
+      "preconditions": "มีสิทธิ์ SALES, ลูกค้าและสินค้าทดสอบพร้อมใช้",
+      "testData": "ทะเบียน UAT-<run>; ลูกค้า คุณสมศักดิ์ ทดสอบ; ปริมาณ 2",
+      "steps": [
+        "เข้าสู่ระบบด้วย SALES",
+        "เปิดเมนูขายและกดสร้างบิล",
+        "เลือกลูกค้า ระบุทะเบียน และเริ่มจัดออร์เดอร์",
+        "เลือกสินค้า ระบุจำนวน และบันทึกการจัดรถ",
+        "ตรวจ WfRef, line item และสถานะผ่าน API"
+      ],
+      "expected": "ได้ WfRef รูปแบบที่กำหนด มีอย่างน้อย 1 line และสถานะ DRAFT",
+      "evidence": "created-order.json + screenshot + SalesOrder audit",
+      "automationRef": "e2e/uat-full-loop.spec.ts:25",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-E2E-003",
+      "type": "Automated",
+      "area": "Approval / Paper Trail",
+      "titleTh": "MANAGER ตรวจและ ADMIN ยืนยัน SO เป็นรอจัดส่ง",
+      "requirementIds": [
+        "FR-001",
+        "FR-018",
+        "FR-022"
+      ],
+      "actor": "MANAGER / ADMIN",
+      "critical": true,
+      "preconditions": "UAT-E2E-002 ผ่านและมี WfRef ที่สร้างใน run เดียวกัน",
+      "testData": "WfRef/Order ID จาก UAT-E2E-002",
+      "steps": [
+        "MANAGER เปิด Paper Trail และค้นหา WfRef",
+        "กดตรวจและยืนยันว่ามี audit action VERIFIED",
+        "ออกจากระบบและเข้าสู่ระบบด้วย ADMIN",
+        "ค้นหาเอกสารเดิมและยืนยันเป็นรอจัดส่ง",
+        "ตรวจสถานะผ่าน API"
+      ],
+      "expected": "Audit มี VERIFIED และ SO เปลี่ยนเป็น CONFIRMED โดยผู้มีสิทธิ์",
+      "evidence": "confirmed-order.json + screenshot + audit log",
+      "automationRef": "e2e/uat-full-loop.spec.ts:65",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-E2E-004",
+      "type": "Automated",
+      "area": "TruckScale",
+      "titleTh": "COUNTER_SALES เห็นสถานะ TruckScale ตรงกับ health API",
+      "requirementIds": [
+        "FR-024",
+        "FR-030"
+      ],
+      "actor": "COUNTER_SALES",
+      "critical": true,
+      "preconditions": "Frontend/API พร้อม; MySQL อาจ up หรือ down ตาม environment จริง",
+      "testData": "ค่าจาก GET /api/health",
+      "steps": [
+        "เข้าสู่ระบบด้วย COUNTER_SALES",
+        "เปิดกลุ่มคลัง/ชั่งและหน้า TruckScale",
+        "อ่านค่า db.mysql จาก health API",
+        "เปรียบเทียบกับข้อความสถานะบนหน้าจอ"
+      ],
+      "expected": "UI แสดงเชื่อมต่อแล้วเมื่อ mysql=up หรือเชื่อมต่อไม่ได้เมื่อ mysql=down โดยไม่แสดงสถานะเท็จ",
+      "evidence": "truckscale-health.json + screenshot + health response",
+      "automationRef": "e2e/uat-full-loop.spec.ts:96",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-E2E-005",
+      "type": "Automated",
+      "area": "Warehouse / Weigh-out",
+      "titleTh": "WAREHOUSE หยิบ จัดโหลด ชั่งออก และส่งสินค้า",
+      "requirementIds": [
+        "FR-001",
+        "FR-019",
+        "FR-024",
+        "FR-025",
+        "FR-026"
+      ],
+      "actor": "WAREHOUSE",
+      "critical": true,
+      "preconditions": "SO จาก UAT-E2E-003 อยู่สถานะ CONFIRMED",
+      "testData": "Tare 10,000 kg; Gross 20,000 kg; Order ID/WfRef จาก run เดียวกัน",
+      "steps": [
+        "ค้นหา SO ในหน้าคลัง",
+        "เริ่มรับสินค้าและตรวจสถานะ PICKING",
+        "จัดลำดับและยืนยันโหลดให้ครบทุก line",
+        "เปิดแท็บเครื่องชั่งและบันทึก tare/gross",
+        "ยืนยันส่งออกและอ่าน weigh result ผ่าน API"
+      ],
+      "expected": "สถานะเปลี่ยน PICKING → LOADED → SHIPPED และมีน้ำหนักสุทธิที่ตรวจสอบได้",
+      "evidence": "shipped-order.json + screenshot + WeighTicket/API",
+      "automationRef": "e2e/uat-full-loop.spec.ts:116",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-E2E-006",
+      "type": "Automated",
+      "area": "Audit / Paper Trail",
+      "titleTh": "ADMIN ตรวจสถานะ SHIPPED และ audit trail ครบลำดับ",
+      "requirementIds": [
+        "FR-001",
+        "FR-004",
+        "FR-012",
+        "FR-013",
+        "FR-030"
+      ],
+      "actor": "ADMIN",
+      "critical": true,
+      "preconditions": "UAT-E2E-005 ผ่าน",
+      "testData": "Order ID/WfRef จาก full-loop run",
+      "steps": [
+        "เข้าสู่ระบบด้วย ADMIN และเปิด Paper Trail",
+        "ค้นหา WfRef",
+        "ตรวจข้อความส่งออกจากตาชั่ง",
+        "อ่านรายละเอียด SO และ audit actions ผ่าน API"
+      ],
+      "expected": "สถานะเป็น SHIPPED และ audit มี CONFIRMED, PICKING, LOADED, SHIPPED",
+      "evidence": "uat-final-audit.json + screenshot + audit log",
+      "automationRef": "e2e/uat-full-loop.spec.ts:154",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-MAN-001",
+      "type": "Manual",
+      "area": "TruckScale Live",
+      "titleTh": "ทดสอบ TruckScale online ด้วยข้อมูลน้ำหนักจริง",
+      "requirementIds": [
+        "FR-024",
+        "FR-025",
+        "FR-026"
+      ],
+      "actor": "WEIGHBRIDGE / WAREHOUSE / IT",
+      "critical": true,
+      "preconditions": "MySQL TruckScale online; connection target และข้อมูลทดสอบได้รับอนุมัติ",
+      "testData": "ทะเบียน/ใบชั่งที่เจ้าของระบบอนุมัติ",
+      "steps": [
+        "ยืนยัน health mysql=up",
+        "ค้นหาใบชั่งจริง",
+        "ผูกกับ SO ทดสอบ",
+        "ยืนยันน้ำหนักและ source timestamp",
+        "ตรวจ duplicate/ambiguous handling"
+      ],
+      "expected": "แหล่งข้อมูล ใบชั่ง น้ำหนัก และเวลาเชื่อมโยงถูกต้องโดยไม่สร้างข้อมูลซ้ำ",
+      "evidence": "Screenshot + API response + DB query result ที่ mask แล้ว + ผู้ทดสอบลงนาม",
+      "automationRef": "Manual — current E2E validates degraded state only",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-MAN-002",
+      "type": "Manual",
+      "area": "Reconciliation",
+      "titleTh": "กระทบยอดตัวอย่าง SO/น้ำหนัก/เอกสารกับ WINSpeed",
+      "requirementIds": [
+        "FR-015",
+        "FR-027",
+        "FR-030"
+      ],
+      "actor": "ACCOUNTING / DBA / QA",
+      "critical": true,
+      "preconditions": "เลือก sample ที่เจ้าของข้อมูลอนุมัติ; query เป็น read-only",
+      "testData": "อย่างน้อย 10 SO ครอบคลุม normal, partial, exception",
+      "steps": [
+        "Export sample identifiers",
+        "เทียบ wf กับ dbo/WINSpeed",
+        "เทียบน้ำหนัก",
+        "บันทึก difference",
+        "review โดย Accounting"
+      ],
+      "expected": "ค่าหลักตรงกันหรือมี exception case/owner/due date ที่อนุมัติ",
+      "evidence": "Reconciliation workbook/report + query hash + Accounting sign-off",
+      "automationRef": "Manual; scripts/smoke-api.js supports API smoke only",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-MAN-003",
+      "type": "Manual",
+      "area": "Rebate / CN",
+      "titleTh": "Rebate plan → allocation/FIFO → claim → CN evidence",
+      "requirementIds": [
+        "FR-008",
+        "FR-009",
+        "FR-010",
+        "FR-011"
+      ],
+      "actor": "SALES / MANAGER / ACCOUNTING",
+      "critical": true,
+      "preconditions": "มีแผนทดสอบและวงเงินที่ไม่กระทบ production",
+      "testData": "ลูกค้า/สินค้า/แผนจำลอง 1 ชุด ครอบคลุม partial claim",
+      "steps": [
+        "สร้าง/อนุมัติแผน",
+        "จัดสรร pool",
+        "สร้างรายการใช้แบบ FIFO",
+        "ยื่น claim",
+        "ตรวจ CN/reconciliation"
+      ],
+      "expected": "ยอดคงเหลือและลำดับ FIFO ถูกต้อง มี audit และหลักฐาน CN ที่อ้างอิงกลับได้",
+      "evidence": "Screenshots + ledger export + claim/CN references + Accounting sign-off",
+      "automationRef": "Manual critical business acceptance",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-MAN-004",
+      "type": "Manual",
+      "area": "Giveaway",
+      "titleTh": "ของแถมเกินงบถูกเตือน/กั้นและต้องมีการอนุมัติ",
+      "requirementIds": [
+        "FR-020",
+        "FR-028"
+      ],
+      "actor": "SALES / MANAGER / ACCOUNTING",
+      "critical": true,
+      "preconditions": "ตั้งงบทดสอบและ approval policy",
+      "testData": "รายการในงบ 1 รายการ; เกินงบ 1 รายการ",
+      "steps": [
+        "ทดสอบเบิกในงบ",
+        "ทดสอบเกินงบ",
+        "ตรวจ block/warning",
+        "อนุมัติ/ปฏิเสธ",
+        "ตรวจ audit และยอดคงเหลือ"
+      ],
+      "expected": "รายการเกินงบไม่ผ่านโดยไม่มีผู้อนุมัติและทุกการตัดสินใจ trace ได้",
+      "evidence": "Screenshots + approval/audit record + budget balance",
+      "automationRef": "Manual critical business acceptance",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-MAN-005",
+      "type": "Manual",
+      "area": "Paper / Unlock",
+      "titleTh": "เอกสารสูญหายและคำขอปลดล็อกหลัง Picking ถูกควบคุม",
+      "requirementIds": [
+        "FR-004",
+        "FR-006",
+        "FR-007",
+        "FR-012",
+        "FR-013"
+      ],
+      "actor": "COUNTER_SALES / WAREHOUSE / APPROVER",
+      "critical": true,
+      "preconditions": "มี SO ทดสอบที่เข้าสู่ Picking และ approval authority พร้อม",
+      "testData": "Paper copy 4 สี/QR และเหตุผล lost/unlock จำลอง",
+      "steps": [
+        "บันทึกเอกสารแต่ละสี",
+        "จำลอง lost",
+        "ยื่น unlock พร้อมเหตุผล",
+        "อนุมัติ/ปฏิเสธ",
+        "ตรวจ state compensation และ audit"
+      ],
+      "expected": "ไม่แก้ state แบบเงียบ; lost/unlock มีผู้ขอ ผู้อนุมัติ เหตุผล เวลา และหลักฐาน",
+      "evidence": "Paper Trail screenshot + UnlockRequest/audit + approver sign-off",
+      "automationRef": "Manual extension of automated Paper Trail flow",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-MAN-006",
+      "type": "Manual",
+      "area": "BCP / DR",
+      "titleTh": "ซ้อม dependency outage, fallback และ restore ใน non-production",
+      "requirementIds": [
+        "FR-030",
+        "FR-031"
+      ],
+      "actor": "IT / DBA / QA / BUSINESS OWNER",
+      "critical": true,
+      "preconditions": "อนุมัติ tabletop/restore scope; ห้าม restore ทับ active database",
+      "testData": "สถานการณ์ API down, MySQL down, SQL read-only, backup test set",
+      "steps": [
+        "ประกาศ incident",
+        "ใช้ manual fallback ตาม process",
+        "เก็บรายการธุรกรรมค้าง",
+        "restore side-by-side",
+        "reconcile และอนุมัติกลับระบบ"
+      ],
+      "expected": "RTO/RPO ถูกวัดจริง ไม่มีข้อมูลสูญหายหรือซ้ำ และมี decision record",
+      "evidence": "Tabletop log + restore report + reconciliation + approval",
+      "automationRef": "Manual operational assurance",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-MAN-007",
+      "type": "Manual",
+      "area": "Security",
+      "titleTh": "ผู้ใช้ที่ไม่มีสิทธิ์ถูกปฏิเสธในธุรกรรมสำคัญ",
+      "requirementIds": [
+        "FR-018",
+        "FR-028",
+        "FR-032"
+      ],
+      "actor": "QA / IT / PROCESS OWNER",
+      "critical": true,
+      "preconditions": "มีบัญชีทดสอบทุก role และ role matrix ที่อนุมัติ",
+      "testData": "Denied actions: confirm, unlock, price, user admin, direct data access",
+      "steps": [
+        "ทดสอบ positive access",
+        "ทดสอบ denied action ข้าม role",
+        "ตรวจ HTTP/UI response",
+        "ตรวจ audit",
+        "ยืนยันไม่มีข้อมูลลับรั่ว"
+      ],
+      "expected": "deny-by-default ทำงานและการปฏิเสธสำคัญถูกบันทึก",
+      "evidence": "Access matrix + screenshots/API responses + audit query",
+      "automationRef": "Manual negative/security acceptance",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-MAN-008",
+      "type": "Manual",
+      "area": "Performance",
+      "titleTh": "Reconciliation และหน้าหลักตอบสนองบนข้อมูลขนาดใช้งานจริง",
+      "requirementIds": [
+        "FR-017",
+        "FR-027",
+        "FR-030"
+      ],
+      "actor": "QA / DBA / SOLUTION ARCHITECT",
+      "critical": false,
+      "preconditions": "ชุดข้อมูลใกล้เคียง production ที่ mask แล้ว; monitoring พร้อม",
+      "testData": "Historical range และ filter ที่ตกลงร่วมกัน",
+      "steps": [
+        "Warm-up",
+        "รัน query/API sample",
+        "บันทึก p50/p95/error",
+        "ตรวจ DB load",
+        "ทวนกับ SLO"
+      ],
+      "expected": "ผ่าน SLO ที่อนุมัติหรือมี capacity action/risk acceptance",
+      "evidence": "Performance report + request IDs + DB plan/metrics",
+      "automationRef": "scripts/smoke-api.js + manual performance run",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-MGR-050",
+      "type": "Manual",
+      "area": "Manager / อำนาจอนุมัติ",
+      "critical": true,
+      "titleTh": "การแบ่งรายการเพื่อเลี่ยงวงเงินอนุมัติถูกตรวจพบได้",
+      "actor": "MANAGER / QA",
+      "requirementIds": [
+        "FR-041"
+      ],
+      "preconditions": "ตั้งวงเงินอนุมัติในหน้านโยบายแล้ว",
+      "testData": "ใบสั่งขายสองใบที่ยอดรวมเกินวงเงินแต่แยกใบละไม่เกิน",
+      "steps": [
+        "สร้างใบสั่งขายสองใบให้ลูกค้าเดียวกันในวันเดียวกัน",
+        "อนุมัติทีละใบ",
+        "ตรวจรายงานและ audit"
+      ],
+      "expected": "ระบบอนุมัติได้ตามวงเงินรายใบ แต่รายงาน/audit ต้องทำให้ผู้ตรวจเห็นรูปแบบการแบ่งรายการได้",
+      "evidence": "รายงาน + audit log + บันทึกการตัดสินของผู้ตรวจ",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-MGR-051",
+      "type": "Manual",
+      "area": "Manager / Access As",
+      "critical": true,
+      "titleTh": "Access As บันทึกทั้งผู้สวมสิทธิ์และเจ้าของสิทธิ์ และต้องปิดเมื่อจบงาน",
+      "actor": "MANAGER / ADMIN",
+      "requirementIds": [
+        "FR-042"
+      ],
+      "preconditions": "มีผู้ใช้เป้าหมายสำหรับ Access As",
+      "testData": "ผู้ใช้ SALES หนึ่งราย",
+      "steps": [
+        "เริ่ม Access As พร้อมระบุเหตุผล",
+        "ทำรายการหนึ่งอย่าง",
+        "ตรวจ audit",
+        "กด Stop Access As",
+        "ตรวจ audit อีกครั้ง"
+      ],
+      "expected": "audit แสดงทั้งผู้กระทำจริงและผู้ถูกสวมสิทธิ์ในทุกรายการ และแสดงเวลาเริ่ม/สิ้นสุดชัดเจน",
+      "evidence": "audit log ก่อน/ระหว่าง/หลัง + ภาพหน้าจอ",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-OPS-062",
+      "type": "Manual",
+      "area": "Operations / สำรองข้อมูล",
+      "critical": true,
+      "titleTh": "ฐานข้อมูลเครื่องชั่งมีการสำรองและกู้คืนได้จริง",
+      "actor": "IT / DBA",
+      "requirementIds": [
+        "NFR-005"
+      ],
+      "preconditions": "ยังไม่มีการสำรองฐานเครื่องชั่ง — ต้องจัดให้มีก่อนทดสอบ",
+      "testData": "ฐานเครื่องชั่งทั้งฐาน (ราว 9.5 แสนแถว)",
+      "steps": [
+        "รัน node backend/scripts/backup-truckscale.js",
+        "ตรวจว่าสคริปต์รายงานจำนวนแถวต่อตารางและจบด้วยสถานะสำเร็จ",
+        "กู้คืนไฟล์ .sql.gz ลงฐานทดสอบแยก (gunzip -c <ไฟล์> | mysql …)",
+        "เทียบจำนวนใบชั่ง จำนวนรายการย่อย และใบล่าสุดกับฐานต้นทาง",
+        "จับเวลาที่ใช้ทั้งสำรองและกู้คืน"
+      ],
+      "expected": "กู้คืนได้ครบทุกตาราง จำนวนแถวตรงกับต้นทางทุกตาราง ข้อความภาษาไทยและทะเบียนรถไม่เพี้ยน และเวลาที่ใช้อยู่ในเกณฑ์ RTO ที่ตกลงไว้ · ไฟล์สำรองต้องไม่ถูก commit เพราะมีข้อมูลลูกค้าจริง",
+      "evidence": "log การสำรอง/กู้คืน + ผลเทียบข้อมูล + เวลาที่ใช้",
+      "automationRef": "backend/scripts/backup-truckscale.js",
+      "status": "Not Run",
+      "knownIssue": true
+    },
+    {
+      "id": "UAT-RBAC-001",
+      "type": "Automated",
+      "area": "RBAC",
+      "titleTh": "ADMIN ใช้ Access As และกลับเป็น ADMIN ได้",
+      "requirementIds": [
+        "FR-018"
+      ],
+      "actor": "ADMIN",
+      "critical": true,
+      "preconditions": "มีผู้ใช้ e2e_admin และ e2e_sales",
+      "testData": "ADMIN → SALES → ADMIN",
+      "steps": [
+        "Login ADMIN",
+        "Access As SALES",
+        "ยืนยันชื่อผู้ใช้",
+        "กลับเป็น ADMIN"
+      ],
+      "expected": "บริบทผู้ใช้เปลี่ยนและคืนกลับถูกต้องพร้อม audit ที่ตรวจสอบได้",
+      "evidence": "admin-access-as.txt + screenshot",
+      "automationRef": "e2e/workflow.spec.ts:11",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBAC-002",
+      "type": "Automated",
+      "area": "Quotation",
+      "titleTh": "SALES เข้าถึงหน้าและคำสั่งสร้างใบเสนอราคาได้",
+      "requirementIds": [
+        "FR-005",
+        "FR-018"
+      ],
+      "actor": "SALES",
+      "critical": false,
+      "preconditions": "มีสิทธิ์ SALES",
+      "testData": "ผู้ใช้ e2e_sales",
+      "steps": [
+        "Login SALES",
+        "เปิดเมนูเสนอราคา",
+        "ตรวจ heading และปุ่มสร้างใบเสนอราคา"
+      ],
+      "expected": "หน้า Quotation และคำสั่งสร้างแสดงตามสิทธิ์",
+      "evidence": "Screenshot + Playwright result",
+      "automationRef": "e2e/workflow.spec.ts:26",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBAC-003",
+      "type": "Automated",
+      "area": "TruckScale / RBAC",
+      "titleTh": "COUNTER_SALES เข้าถึง TruckScale และเห็น health ที่ชัดเจน",
+      "requirementIds": [
+        "FR-018",
+        "FR-024",
+        "FR-030"
+      ],
+      "actor": "COUNTER_SALES",
+      "critical": true,
+      "preconditions": "มีสิทธิ์ COUNTER_SALES",
+      "testData": "ผู้ใช้ e2e_counter + health API",
+      "steps": [
+        "Login COUNTER_SALES",
+        "เปิด TruckScale",
+        "เทียบ UI กับ db.mysql"
+      ],
+      "expected": "เข้าถึงได้และสถานะ integration ไม่กำกวม",
+      "evidence": "Screenshot + health response",
+      "automationRef": "e2e/workflow.spec.ts:33",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBAC-004",
+      "type": "Automated",
+      "area": "Warehouse / RBAC",
+      "titleTh": "WAREHOUSE เข้าถึงคิวโหลดและคิวชั่งออกได้",
+      "requirementIds": [
+        "FR-018",
+        "FR-019",
+        "FR-025"
+      ],
+      "actor": "WAREHOUSE",
+      "critical": true,
+      "preconditions": "มีสิทธิ์ WAREHOUSE",
+      "testData": "ผู้ใช้ e2e_warehouse",
+      "steps": [
+        "Login WAREHOUSE",
+        "เปิดหน้าคลัง",
+        "ตรวจปุ่มโกดัง",
+        "สลับคิวเครื่องชั่ง"
+      ],
+      "expected": "เมนูและคิวที่จำเป็นแสดงตามสิทธิ์",
+      "evidence": "Screenshot + Playwright result",
+      "automationRef": "e2e/workflow.spec.ts:44",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBAC-010",
+      "type": "Automated",
+      "area": "RBAC / Weighbridge",
+      "critical": true,
+      "titleTh": "WEIGHBRIDGE ชั่งออกและออกใบส่งของได้ แต่ถูกกั้นจากงานคลัง",
+      "actor": "WEIGHBRIDGE",
+      "requirementIds": [
+        "FR-030",
+        "FR-031"
+      ],
+      "preconditions": "seed บัญชี e2e_weighbridge แล้ว (db-init/e2e-seed.sql) และ migration 062 ถูกใช้แล้ว",
+      "testData": "เรียก endpoint ด้วย id ที่ไม่มีจริง เพื่อไม่ให้เกิดผลข้างเคียงกับข้อมูล",
+      "steps": [
+        "เข้าระบบด้วย e2e_weighbridge ผ่าน /api/auth/login",
+        "เรียก PATCH /api/so/:id/ship และ POST /api/so/:id/weigh-item",
+        "เรียก POST /api/truckscale/sync/run และ POST /api/truckscale/inbox/:id/match/:soId",
+        "เรียก PATCH /api/so/:id/picking และ PATCH /api/so/:id/load"
+      ],
+      "expected": "สี่รายการแรกต้องไม่ถูกปฏิเสธด้วย 401/403 · สองรายการหลังต้องได้ 403 ทุกครั้ง",
+      "evidence": "ผลลัพธ์ verify-rbac-matrix.js พร้อมรหัสสถานะรายรายการ",
+      "automationRef": "backend/scripts/verify-rbac-matrix.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBAC-011",
+      "type": "Automated",
+      "area": "RBAC / Warehouse",
+      "critical": true,
+      "titleTh": "WAREHOUSE ยังทำงานคลังได้ครบหลังเพิ่มสิทธิ์ WEIGHBRIDGE (regression)",
+      "actor": "WAREHOUSE",
+      "requirementIds": [
+        "FR-030"
+      ],
+      "preconditions": "seed บัญชีทดสอบครบ",
+      "testData": "id ที่ไม่มีจริง",
+      "steps": [
+        "เข้าระบบด้วย e2e_warehouse",
+        "เรียก picking, load และ ship"
+      ],
+      "expected": "ทั้งสามรายการต้องไม่ถูกปฏิเสธด้วย 401/403",
+      "evidence": "ผลลัพธ์ verify-rbac-matrix.js",
+      "automationRef": "backend/scripts/verify-rbac-matrix.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBAC-012",
+      "type": "Automated",
+      "area": "RBAC / C-Level",
+      "critical": false,
+      "titleTh": "C_LEVEL ใช้สิทธิ์ธุรกิจเต็มได้ (นโยบายอนุมัติและเคลมรีเบท)",
+      "actor": "C_LEVEL",
+      "requirementIds": [
+        "FR-040"
+      ],
+      "preconditions": "migration 062 ถูกใช้แล้ว จึงมีผู้ใช้บทบาท C_LEVEL ได้",
+      "testData": "id ที่ไม่มีจริง",
+      "steps": [
+        "เข้าระบบด้วย e2e_clevel",
+        "เรียก POST /api/policy",
+        "เรียก PATCH /api/rebate/claims/:id/approve"
+      ],
+      "expected": "ไม่ถูกปฏิเสธด้วย 401/403",
+      "evidence": "ผลลัพธ์ verify-rbac-matrix.js",
+      "automationRef": "backend/scripts/verify-rbac-matrix.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBAC-013",
+      "type": "Automated",
+      "area": "RBAC / Segregation of duties",
+      "critical": true,
+      "titleTh": "SALES ถูกกั้นจากงานคลัง งานชั่ง และการแก้นโยบาย",
+      "actor": "SALES",
+      "requirementIds": [
+        "FR-030",
+        "FR-041"
+      ],
+      "preconditions": "seed บัญชีทดสอบครบ",
+      "testData": "id ที่ไม่มีจริง",
+      "steps": [
+        "เข้าระบบด้วย e2e_sales",
+        "เรียก picking, ship และ POST /api/policy"
+      ],
+      "expected": "ทั้งสามรายการต้องได้ 403",
+      "evidence": "ผลลัพธ์ verify-rbac-matrix.js",
+      "automationRef": "backend/scripts/verify-rbac-matrix.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBAC-014",
+      "type": "Automated",
+      "area": "RBAC / Counter Sales",
+      "critical": false,
+      "titleTh": "COUNTER_SALES จับคู่ Weigh Inbox ได้ แต่ไม่ใช่ผู้ปิดน้ำหนัก",
+      "actor": "COUNTER_SALES",
+      "requirementIds": [
+        "FR-030"
+      ],
+      "preconditions": "seed บัญชีทดสอบครบ",
+      "testData": "id ที่ไม่มีจริง",
+      "steps": [
+        "เข้าระบบด้วย e2e_counter",
+        "เรียก inbox match",
+        "เรียก ship"
+      ],
+      "expected": "จับคู่ผ่านด่านสิทธิ์ · ship ต้องได้ 403",
+      "evidence": "ผลลัพธ์ verify-rbac-matrix.js",
+      "automationRef": "backend/scripts/verify-rbac-matrix.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBAC-015",
+      "type": "Automated",
+      "area": "RBAC / Approver",
+      "critical": false,
+      "titleTh": "APPROVER เห็นคำขอปลดล็อกได้ แต่ไม่ได้สิทธิ์ปฏิบัติงานคลัง",
+      "actor": "APPROVER",
+      "requirementIds": [
+        "FR-030",
+        "FR-025"
+      ],
+      "preconditions": "seed บัญชีทดสอบครบ",
+      "testData": "id ที่ไม่มีจริง",
+      "steps": [
+        "เข้าระบบด้วย e2e_approver",
+        "เรียก GET /api/so/unlock-requests",
+        "เรียก picking"
+      ],
+      "expected": "ดูคำขอได้ · picking ต้องได้ 403",
+      "evidence": "ผลลัพธ์ verify-rbac-matrix.js",
+      "automationRef": "backend/scripts/verify-rbac-matrix.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBAC-016",
+      "type": "Automated",
+      "area": "RBAC / Accounting",
+      "critical": false,
+      "titleTh": "ACCOUNTING อนุมัติเคลมได้ แต่ถูกกั้นจากงานคลัง",
+      "actor": "ACCOUNTING",
+      "requirementIds": [
+        "FR-030"
+      ],
+      "preconditions": "seed บัญชี e2e_accounting แล้ว",
+      "testData": "id ที่ไม่มีจริง",
+      "steps": [
+        "เข้าระบบด้วย e2e_accounting",
+        "เรียก rebate claim approve",
+        "เรียก load"
+      ],
+      "expected": "อนุมัติเคลมผ่านด่านสิทธิ์ · load ต้องได้ 403",
+      "evidence": "ผลลัพธ์ verify-rbac-matrix.js",
+      "automationRef": "backend/scripts/verify-rbac-matrix.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBAC-017",
+      "type": "Manual",
+      "area": "RBAC / เมนู",
+      "critical": true,
+      "titleTh": "เมนูที่แต่ละบทบาทเห็น ตรงกับสิทธิ์ที่ backend บังคับใช้จริง",
+      "actor": "QA / PROCESS OWNER",
+      "requirementIds": [
+        "FR-030"
+      ],
+      "preconditions": "มีบัญชีทดสอบครบ 9 บทบาท และมีภาพหน้าจอชุดล่าสุด",
+      "testData": "ภาพหน้าจอ 126 ไฟล์ใน 05-UI-SCREENSHOTS/generated",
+      "steps": [
+        "เข้าระบบทีละบทบาทจนครบ 9 บทบาท",
+        "จดรายการเมนูที่เห็นของแต่ละบทบาท",
+        "เทียบกับผัง RBAC (ไดอะแกรม 16-rbac-source-aligned)",
+        "สุ่มเมนูที่ \"ไม่ควรเห็น\" แล้วลองเข้าถึงผ่าน URL ตรง"
+      ],
+      "expected": "เมนูที่เห็นตรงกับผัง และการเข้าถึงผ่าน URL ตรงของเมนูที่ไม่มีสิทธิ์ต้องถูกปฏิเสธ",
+      "evidence": "ภาพหน้าจอรายบทบาท + ผลการเข้าถึงผ่าน URL ตรง",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBT-070",
+      "type": "Automated",
+      "area": "Rebate / วงจรเต็ม",
+      "critical": true,
+      "titleTh": "วงจรเต็มจากใบสั่งขายถึงอนุมัติรีเบทครบ 4 ชั้น",
+      "actor": "SALES / MANAGER / WAREHOUSE / WEIGHBRIDGE / MARKETING / C_LEVEL",
+      "requirementIds": [
+        "FR-008",
+        "FR-009",
+        "FR-031"
+      ],
+      "preconditions": "ใช้ migration ครบถึง 067 · seed บัญชีทดสอบครบ 9 บทบาท · ตั้งผู้ดูแลภาคใน wf.UserSaleArea",
+      "testData": "ลูกค้าภาคใต้ (ภาค 05) · สินค้า 3 สูตรในรถเที่ยวเดียว รวม 19 ตัน",
+      "steps": [
+        "สร้างใบสั่งขาย 3 บรรทัด แล้วตรวจซ้ำและยืนยัน",
+        "อ่านรหัสใหม่ของใบสั่งขาย เพราะการยืนยันย้ายใบไป dbo.SOHD แล้วเปลี่ยน SOID",
+        "จัดของ ขึ้นของ และชั่งออก",
+        "ตรวจยอดรีเบทที่ระบบตั้งให้อัตโนมัติ",
+        "ยื่นใบขอเคลียร์ แล้วอนุมัติตามลำดับชั้น 2 → 3 → 4"
+      ],
+      "expected": "ใบสั่งขายเป็น SHIPPED · ตั้งยอดรีเบทตามสูตร (ราคาขาย − ราคาสุทธิ) × ตัน ครบทุกบรรทัด · ใบขอเคลียร์เป็น APPROVED พร้อมเลขใบลดหนี้ · บันทึกการอนุมัติครบ 4 ชั้น",
+      "evidence": "ผลลัพธ์ verify-rebate-full-loop.js",
+      "automationRef": "backend/scripts/verify-rebate-full-loop.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBT-071",
+      "type": "Automated",
+      "area": "Rebate / เจ้าของยอด",
+      "critical": true,
+      "titleTh": "ยอดรีเบทต้องเข้ากระเป๋าพนักงานขายเจ้าของใบ ไม่ใช่ผู้กดชั่งออก",
+      "actor": "SALES / WEIGHBRIDGE",
+      "requirementIds": [
+        "FR-008"
+      ],
+      "preconditions": "ผู้ชั่งออกต้องเป็นคนละคนกับพนักงานขายเจ้าของใบสั่งขาย",
+      "testData": "ชั่งออกด้วยบัญชี WEIGHBRIDGE บนใบที่สร้างโดย SALES",
+      "steps": [
+        "สร้างใบสั่งขายด้วย SALES",
+        "ชั่งออกด้วย WEIGHBRIDGE",
+        "ตรวจเจ้าของ pool ที่ระบบสร้าง"
+      ],
+      "expected": "เจ้าของยอดรีเบทมีบทบาท SALES และเป็นผู้สร้างใบสั่งขาย · พนักงานขายยื่นเคลมยอดของตนได้ไม่ติด 403",
+      "evidence": "ผลการ query wf.RebatePool join wf.AppUser",
+      "automationRef": "backend/scripts/verify-rebate-full-loop.js",
+      "status": "Not Run",
+      "knownIssue": true
+    },
+    {
+      "id": "UAT-RBT-075",
+      "type": "Automated",
+      "area": "Rebate / กระทบยอด",
+      "critical": true,
+      "titleTh": "ขอเคลียร์เกินยอดขนจริงต้องถูกบล็อก ไม่ใช่ตัดยอดให้เอง",
+      "actor": "SALES / ACCOUNTING",
+      "requirementIds": [
+        "FR-009"
+      ],
+      "preconditions": "มียอดรีเบทค้างรับจากการขนจริง",
+      "testData": "ขอเคลียร์จำนวนตันมากกว่าที่ขนจริงของสูตรนั้น",
+      "steps": [
+        "อ่านยอดขนจริงรายสูตรจาก wf.RebateLedger",
+        "ยื่นใบขอเคลียร์ด้วยจำนวนตันที่มากกว่า",
+        "อ่านข้อความที่ระบบตอบ"
+      ],
+      "expected": "ได้ 400 พร้อมบอกว่าขอเท่าไร ขนจริงคงเหลือเท่าไร และเคลียร์ไปแล้วเท่าไร · ไม่มีใบขอเคลียร์เกิดขึ้น",
+      "evidence": "ข้อความ reconciliation ที่ระบบคืน",
+      "automationRef": "backend/scripts/verify-rebate-full-loop.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBT-076",
+      "type": "Automated",
+      "area": "Rebate / ใบกำกับ",
+      "critical": false,
+      "titleTh": "ใบขอเคลียร์ผูกกับใบกำกับได้หลายใบ",
+      "actor": "SALES / ACCOUNTING",
+      "requirementIds": [
+        "FR-009"
+      ],
+      "preconditions": "มี pool ที่มียอดใช้ได้",
+      "testData": "ยื่นพร้อมเลขใบกำกับ 2 ใบ",
+      "steps": [
+        "ยื่นใบขอเคลียร์พร้อมรายการใบกำกับ",
+        "อ่าน wf.RebateClaimInvoice"
+      ],
+      "expected": "บันทึกใบกำกับครบทุกใบและผูกกับใบขอเคลียร์ที่ถูกต้อง",
+      "evidence": "แถวใน wf.RebateClaimInvoice",
+      "automationRef": "backend/scripts/verify-rebate-full-loop.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBT-077",
+      "type": "Automated",
+      "area": "Rebate / แบ่งแยกหน้าที่",
+      "critical": true,
+      "titleTh": "คนเดิมอนุมัติสองชั้นติดกันไม่ได้",
+      "actor": "MANAGER / MARKETING / C_LEVEL",
+      "requirementIds": [
+        "FR-041"
+      ],
+      "preconditions": "ปิดสวิตช์ ALLOW_SINGLE_USER_MULTI_TIER_APPROVAL",
+      "testData": "ใบขอเคลียร์ที่รออนุมัติชั้นที่ 2",
+      "steps": [
+        "อนุมัติชั้นที่ 2",
+        "ผู้ใช้คนเดิมกดอนุมัติชั้นที่ 3 ทันที"
+      ],
+      "expected": "ครั้งที่สองได้ 403 พร้อมเหตุผลเรื่องการแบ่งแยกหน้าที่",
+      "evidence": "รหัสสถานะและข้อความ",
+      "automationRef": "backend/scripts/verify-rebate-4tier.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBT-078",
+      "type": "Manual",
+      "area": "Rebate / หลักฐานการอนุมัติ",
+      "critical": true,
+      "titleTh": "ชื่อผู้อนุมัติในเอกสารต้องเป็นชื่อคน ไม่ใช่รหัสผู้ใช้",
+      "actor": "ACCOUNTING / QA",
+      "requirementIds": [
+        "NFR-006"
+      ],
+      "preconditions": "มีใบขอเคลียร์ที่อนุมัติครบ 4 ชั้น",
+      "testData": "ใบขอเคลียร์ที่อนุมัติแล้ว",
+      "steps": [
+        "เปิดหน้ารายละเอียดใบขอเคลียร์",
+        "ตรวจชื่อผู้อนุมัติทั้ง 4 ชั้น",
+        "สั่งพิมพ์แล้วตรวจช่องลงนาม"
+      ],
+      "expected": "ทุกชั้นแสดงชื่อผู้อนุมัติเป็นข้อความ ไม่ใช่ตัวเลข · แบบพิมพ์มีช่องลงนามครบ 4 ตำแหน่ง",
+      "evidence": "ภาพหน้าจอ + เอกสารที่พิมพ์",
+      "automationRef": "",
+      "status": "Not Run",
+      "knownIssue": true
+    },
+    {
+      "id": "UAT-RPT-079",
+      "type": "Manual",
+      "area": "Reports / รายงานเครื่องชั่ง",
+      "critical": false,
+      "titleTh": "รายงานเครื่องชั่งบนเว็บให้ตัวเลขตรงกับรายงานเดิม",
+      "actor": "ACCOUNTING / WAREHOUSE",
+      "requirementIds": [
+        "FR-030"
+      ],
+      "preconditions": "เลือกช่วงวันที่ที่มีข้อมูลทั้งสองระบบ",
+      "testData": "ช่วงเดือนที่ผ่านมา",
+      "steps": [
+        "เปิดรายงานสรุปทั้ง 5 แท็บบนเว็บ (วัน · สูตร · เที่ยว · คลัง · ลูกค้า)",
+        "เปิดรายงานเดิมในโปรแกรมเครื่องชั่งช่วงเดียวกัน",
+        "เทียบยอดรวมและจำนวนเที่ยว",
+        "ส่งออก CSV แล้วเปิดใน Excel"
+      ],
+      "expected": "ยอดรวมและจำนวนเที่ยวตรงกัน · CSV เปิดใน Excel แล้วภาษาไทยไม่เพี้ยน · SALES เข้าถึงไม่ได้",
+      "evidence": "ภาพหน้าจอทั้งสองระบบ + ไฟล์ CSV",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-SEC-061",
+      "type": "Manual",
+      "area": "Security / รหัสผ่าน",
+      "critical": true,
+      "titleTh": "บัญชีผู้ใช้จริงต้องไม่ใช้รหัสผ่านซ้ำกันทั้งองค์กร",
+      "actor": "IT / SECURITY",
+      "requirementIds": [
+        "NFR-002"
+      ],
+      "preconditions": "ทราบข้อบกพร่องว่ามีบัญชีจำนวนมากใช้ hash เดียวกัน",
+      "testData": "รายการ hash ของรหัสผ่านทั้งหมด (ไม่เปิดเผยค่า)",
+      "steps": [
+        "นับจำนวนบัญชีที่ใช้ hash เดียวกัน",
+        "บังคับเปลี่ยนรหัสผ่านครั้งแรกเข้าใช้งาน",
+        "ตรวจซ้ำหลังเปลี่ยน"
+      ],
+      "expected": "ไม่มีกลุ่มบัญชีที่ใช้รหัสผ่านซ้ำกันเกินหนึ่งบัญชี ก่อนเปิดใช้งานจริง",
+      "evidence": "ผลการนับก่อน/หลัง (ไม่เปิดเผยค่า hash)",
+      "automationRef": "",
+      "status": "Not Run",
+      "knownIssue": true
+    },
+    {
+      "id": "UAT-TS-020",
+      "type": "Automated",
+      "area": "TruckScale / รูปแบบวันที่",
+      "critical": true,
+      "titleTh": "Date_Out เขียนเป็น พ.ศ. รูปแบบ DD/MM/YYYY ไม่ใช่ ค.ศ.",
+      "actor": "WAREHOUSE / WEIGHBRIDGE",
+      "requirementIds": [
+        "FR-031",
+        "IR-002"
+      ],
+      "preconditions": "เชื่อมต่อ MySQL db_truckscale ได้",
+      "testData": "ใบสั่งขายทดสอบที่ชั่งออกในวันปัจจุบัน",
+      "steps": [
+        "ทำการชั่งออกให้ครบขั้นตอน",
+        "อ่านค่า Date_Out กลับจาก tblscale",
+        "ตรวจปีว่าเป็น พ.ศ."
+      ],
+      "expected": "Date_Out ตรงรูปแบบ DD/MM/YYYY และปี = ค.ศ. + 543 · Date_Out2 เป็น OLE serial (epoch 1899-12-30)",
+      "evidence": "ค่าที่อ่านกลับจากฐานเครื่องชั่งพร้อม timestamp",
+      "automationRef": "backend/scripts/verify-truckscale-writeback.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-TS-021",
+      "type": "Automated",
+      "area": "TruckScale / ความยาวคอลัมน์",
+      "critical": true,
+      "titleTh": "sequence ที่แอปสร้างต้องยาวไม่เกิน 10 ตัวอักษร",
+      "actor": "WAREHOUSE / WEIGHBRIDGE",
+      "requirementIds": [
+        "IR-002"
+      ],
+      "preconditions": "เชื่อมต่อ MySQL ได้",
+      "testData": "ใบชั่งที่แอปสร้างเอง (ไม่มีใบเปิดค้าง)",
+      "steps": [
+        "ทำให้เกิดกรณี INSERT ใบใหม่",
+        "อ่าน sequence กลับมา",
+        "นับความยาว"
+      ],
+      "expected": "sequence ขึ้นต้น WF และยาว 10 ตัวพอดี ไม่ถูกตัดและไม่เกิดข้อผิดพลาด data truncation",
+      "evidence": "ค่า sequence ที่อ่านกลับ + ความยาว",
+      "automationRef": "backend/scripts/verify-truckscale-writeback.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-TS-022",
+      "type": "Automated",
+      "area": "TruckScale / movebill",
+      "critical": true,
+      "titleTh": "movebill ประกอบจาก s_day (YYMM พ.ศ.) ต่อด้วย s_num เติมศูนย์ 4 หลัก",
+      "actor": "WAREHOUSE / WEIGHBRIDGE",
+      "requirementIds": [
+        "IR-002"
+      ],
+      "preconditions": "เชื่อมต่อ MySQL ได้",
+      "testData": "ใบชั่งที่แอปสร้างเอง",
+      "steps": [
+        "สร้างใบชั่งใหม่จากแอป",
+        "อ่าน s_day, s_num และ movebill",
+        "ประกอบค่าแล้วเทียบ"
+      ],
+      "expected": "movebill = s_day + s_num ที่เติมศูนย์เป็น 4 หลัก และไม่ซ้ำกับใบอื่นในวันเดียวกัน",
+      "evidence": "ค่า s_day/s_num/movebill ที่อ่านกลับ",
+      "automationRef": "backend/scripts/verify-truckscale-writeback.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-TS-023",
+      "type": "Automated",
+      "area": "TruckScale / กรณีพบใบเปิดค้าง",
+      "critical": true,
+      "titleTh": "พบใบเปิดค้างตามทะเบียนรถ ระบบต้อง UPDATE ไม่ใช่ INSERT ใบใหม่",
+      "actor": "WAREHOUSE / WEIGHBRIDGE",
+      "requirementIds": [
+        "FR-031"
+      ],
+      "preconditions": "มีใบเปิดค้างในฐานเครื่องชั่งที่ตรงทะเบียนรถ",
+      "testData": "ทะเบียนรถที่มีใบชั่งเข้าแล้วแต่ยังไม่ชั่งออก",
+      "steps": [
+        "ชั่งออกด้วยทะเบียนที่มีใบเปิดค้าง",
+        "ตรวจว่าใบเดิมถูกอัปเดต",
+        "ตรวจว่าไม่มีใบใหม่เกิดขึ้น"
+      ],
+      "expected": "weight_out/weight_net/Date_Out/Time_Out ถูกเขียนลงใบเดิม และจำนวนใบในวันนั้นไม่เพิ่ม",
+      "evidence": "จำนวนแถวก่อน/หลัง + ค่าที่อัปเดต",
+      "automationRef": "backend/scripts/verify-truckscale-writeback.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-TS-024",
+      "type": "Automated",
+      "area": "TruckScale / รายงานกระทบยอด",
+      "critical": true,
+      "titleTh": "รายงานกระทบยอดการเขียนกลับแยกได้ครบ 5 กรณี (A–E)",
+      "actor": "ACCOUNTING / QA",
+      "requirementIds": [
+        "FR-032"
+      ],
+      "preconditions": "มีข้อมูลการเขียนกลับทั้งสำเร็จและล้มเหลวในช่วงที่ทดสอบ",
+      "testData": "ช่วงวันที่ที่มีทั้ง updated, inserted และ failed",
+      "steps": [
+        "เปิดรายงานกระทบยอดใบชั่ง",
+        "เลือกช่วงวันที่ทดสอบ",
+        "ตรวจการจัดกลุ่มทั้ง 5 กรณี"
+      ],
+      "expected": "แยกได้ถูกต้องทั้งกรณีจับคู่ได้ เขียนใหม่ ล้มเหลว ไม่มีคู่ และกำกวม",
+      "evidence": "ผลลัพธ์ verify-writeback-report.js",
+      "automationRef": "backend/scripts/verify-writeback-report.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-TS-025",
+      "type": "Manual",
+      "area": "TruckScale / ทะเบียนพ่วง",
+      "critical": true,
+      "titleTh": "ทะเบียนรถพ่วง (compound plate) จับคู่กับใบชั่งได้ถูกต้อง",
+      "actor": "WEIGHBRIDGE / QA",
+      "requirementIds": [
+        "FR-031"
+      ],
+      "preconditions": "มีรถพ่วงจริงเข้าชั่งในวันทดสอบ",
+      "testData": "ทะเบียนที่มีทั้งหัวลากและหาง เช่น 70-1234/71-5678",
+      "steps": [
+        "บันทึกทะเบียนพ่วงในใบสั่งขาย",
+        "ให้รถเข้าชั่งจริง",
+        "ตรวจการจับคู่ใน Weigh Inbox",
+        "ตรวจว่าไม่จับคู่ผิดคัน"
+      ],
+      "expected": "จับคู่ได้ถูกคัน หรือแจ้งกำกวมให้คนตัดสิน ไม่จับคู่ผิดเงียบ ๆ",
+      "evidence": "ภาพหน้าจอการจับคู่ + ทะเบียนจริง + ใบชั่ง",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-TS-026",
+      "type": "Manual",
+      "area": "TruckScale / ระบบไม่พร้อม",
+      "critical": true,
+      "titleTh": "เมื่อฐานเครื่องชั่งไม่ตอบ ระบบยังตอบผู้ใช้ได้และไม่ทำข้อมูลเสีย",
+      "actor": "WEIGHBRIDGE / IT",
+      "requirementIds": [
+        "FR-031",
+        "NFR-004"
+      ],
+      "preconditions": "ทำให้ MySQL ไม่พร้อมชั่วคราวในสภาพแวดล้อมทดสอบเท่านั้น",
+      "testData": "ใบสั่งขายที่พร้อมชั่งออก",
+      "steps": [
+        "ตัดการเชื่อมต่อฐานเครื่องชั่ง",
+        "ทำการชั่งออก",
+        "ดูข้อความและสถานะที่ผู้ใช้ได้รับ",
+        "เปิดการเชื่อมต่อกลับแล้วตรวจการบันทึกผลล้มเหลว"
+      ],
+      "expected": "ผู้ใช้ได้รับคำตอบ SHIPPED ตามปกติ · ผลการเขียนกลับถูกบันทึกเป็น failed พร้อมเหตุผล · ไม่มีข้อมูลครึ่ง ๆ กลาง ๆ",
+      "evidence": "ภาพหน้าจอ + ค่า ScaleWriteAction/ScaleError ใน wf.WeighTicket",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-TS-073",
+      "type": "Manual",
+      "area": "TruckScale / รายการย่อย",
+      "critical": true,
+      "titleTh": "รถเที่ยวเดียวหลายสูตร เขียนลง tblproduct_detail ครบทุกรายการ",
+      "actor": "WEIGHBRIDGE / IT",
+      "requirementIds": [
+        "IR-002"
+      ],
+      "preconditions": "เชื่อมต่อฐานเครื่องชั่งได้",
+      "testData": "ใบสั่งขาย 3 สูตร 10 + 6 + 3 ตัน",
+      "steps": [
+        "ชั่งออกใบที่มีหลายสูตร",
+        "อ่าน tblscale หา one_num",
+        "อ่าน tblproduct_detail ตาม one_num",
+        "รวมน้ำหนักรายการย่อยเทียบกับน้ำหนักสุทธิ"
+      ],
+      "expected": "จำนวนรายการย่อยเท่าจำนวนบรรทัดในใบสั่งขาย · ผลรวมน้ำหนักตรงกับ weight_net ของใบชั่ง · one_num ไม่เป็น 0",
+      "evidence": "ค่าที่อ่านกลับจากทั้งสองตาราง",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-TS-074",
+      "type": "Manual",
+      "area": "TruckScale / จับคู่ใบชั่ง",
+      "critical": true,
+      "titleTh": "ทะเบียนที่มีใบเปิดค้างหลายใบต้องไม่ถูกจับคู่โดยการเดา",
+      "actor": "WEIGHBRIDGE / QA",
+      "requirementIds": [
+        "FR-031"
+      ],
+      "preconditions": "มีใบชั่งเปิดค้างของทะเบียนเดียวกันมากกว่าหนึ่งใบ",
+      "testData": "ทะเบียนทดสอบที่มีใบเปิดค้าง 2 ใบ",
+      "steps": [
+        "ชั่งออกโดยไม่ระบุ movebill",
+        "ชั่งออกใหม่โดยระบุ movebill ที่ถูกต้อง"
+      ],
+      "expected": "กรณีแรกถูกปฏิเสธพร้อมรายการใบที่ชนกัน · กรณีที่สองเขียนถูกใบและรายงานว่าจับคู่ด้วย movebill",
+      "evidence": "ข้อความปฏิเสธ + ค่า matchedBy ที่ระบบคืน",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-WT-030",
+      "type": "Manual",
+      "area": "Warehouse / พิกัดน้ำหนัก",
+      "critical": true,
+      "titleTh": "น้ำหนักสุทธิเกินพิกัดที่ยอมรับ ต้องเตือนและต้องมีผู้อนุมัติ",
+      "actor": "WEIGHBRIDGE / MANAGER",
+      "requirementIds": [
+        "FR-033"
+      ],
+      "preconditions": "ตั้งค่าพิกัดน้ำหนักไว้แล้ว",
+      "testData": "ชั่งออกให้ได้สุทธิต่างจากยอดสั่งเกินพิกัด",
+      "steps": [
+        "บันทึก gross/tare ให้สุทธิเกินพิกัด",
+        "ดูการเตือน",
+        "ลองยืนยันโดยไม่มีเหตุผล",
+        "ใส่เหตุผลแล้วให้ผู้มีอำนาจอนุมัติ"
+      ],
+      "expected": "ระบบเตือนและไม่ให้ผ่านจนกว่าจะมีเหตุผลและผู้อนุมัติที่ตรวจย้อนได้",
+      "evidence": "ภาพหน้าจอการเตือน + บันทึกเหตุผล + audit",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-WT-031",
+      "type": "Manual",
+      "area": "Warehouse / ค่าขอบเขต",
+      "critical": false,
+      "titleTh": "ปริมาณทศนิยมและน้ำหนักติดลบถูกจัดการอย่างถูกต้อง",
+      "actor": "WEIGHBRIDGE / QA",
+      "requirementIds": [
+        "FR-033"
+      ],
+      "preconditions": "ใบสั่งขายทดสอบ",
+      "testData": "ปริมาณ 0.5 ตัน · tare มากกว่า gross · gross เท่ากับ tare",
+      "steps": [
+        "ทดลองบันทึก tare มากกว่า gross",
+        "ทดลองบันทึก gross เท่ากับ tare",
+        "ทดลองปริมาณทศนิยม"
+      ],
+      "expected": "สองกรณีแรกถูกปฏิเสธพร้อมข้อความชัดเจน · ทศนิยมคำนวณและปัดถูกต้องตามกติกา",
+      "evidence": "ภาพหน้าจอข้อความผิดพลาด + ค่าที่บันทึกจริง",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-WT-072",
+      "type": "Automated",
+      "area": "Warehouse / น้ำหนัก",
+      "critical": true,
+      "titleTh": "ส่งของโดยไม่มีน้ำหนักต้องถูกปฏิเสธ",
+      "actor": "WEIGHBRIDGE",
+      "requirementIds": [
+        "FR-033",
+        "NFR-006"
+      ],
+      "preconditions": "ใบสั่งขายอยู่สถานะ LOADED",
+      "testData": "เรียกชั่งออกโดยไม่ส่งน้ำหนัก และส่งชื่อฟิลด์ผิด",
+      "steps": [
+        "เรียกชั่งออกโดยไม่ส่ง weighOutWeight และ tareKg",
+        "ตรวจสถานะใบสั่งขายและ dbo.SOHD"
+      ],
+      "expected": "ได้ 400 · ใบสั่งขายไม่เปลี่ยนเป็น SHIPPED · dbo.SOHD ไม่ถูกตั้ง clearflag · ไม่มีใบชั่งเกิดขึ้น",
+      "evidence": "รหัสสถานะ + สถานะใบสั่งขายหลังเรียก",
+      "automationRef": "backend/scripts/verify-rebate-full-loop.js",
+      "status": "Not Run",
+      "knownIssue": true
+    },
+    {
+      "id": "UAT-PRC-080",
+      "type": "Manual",
+      "area": "Price Book / งดขาย",
+      "critical": true,
+      "titleTh": "สูตรที่ \"งดขาย\" ต้องไม่มีราคา และต้องขายไม่ได้",
+      "actor": "ACCOUNTING / MANAGER",
+      "requirementIds": [
+        "FR-023"
+      ],
+      "preconditions": "มี Price Book สถานะ DRAFT",
+      "testData": "สูตรใดก็ได้ 1 รายการ",
+      "steps": [
+        "เปิด Price Book ที่เป็น DRAFT",
+        "เปลี่ยนสถานะบรรทัดของสูตรหนึ่งเป็น \"งดขาย\"",
+        "บันทึกรายการราคา",
+        "เปิด wf.v_PriceBookEffective ของเล่มนั้น"
+      ],
+      "expected": "ช่องราคาว่างและแก้ไม่ได้ · ในวิวได้ Sellable = 0 · ไม่มีทางที่ราคาว่างจะถูกอ่านเป็นศูนย์บาท",
+      "evidence": "ภาพหน้าจอ + คิวรีฐานข้อมูล",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-PRC-081",
+      "type": "Manual",
+      "area": "Price Book / กำลังยกเลิก",
+      "critical": false,
+      "titleTh": "สูตรที่ทำเครื่องหมาย *** ยังต้องมีราคาและยังขายได้",
+      "actor": "ACCOUNTING",
+      "requirementIds": [
+        "FR-023"
+      ],
+      "preconditions": "มี Price Book สถานะ DRAFT",
+      "testData": "สูตรใดก็ได้ 1 รายการ",
+      "steps": [
+        "ตั้งสถานะบรรทัดเป็น \"กำลังยกเลิก (***)\"",
+        "ลองบันทึกโดยเว้นราคาไว้",
+        "ใส่ราคาแล้วบันทึกอีกครั้ง"
+      ],
+      "expected": "บันทึกไม่ผ่านเมื่อไม่มีราคา พร้อมบอกว่าต้องใส่ราคาหรือเปลี่ยนเป็นงดขาย · เมื่อมีราคาแล้วบันทึกผ่านและยังได้ Sellable = 1",
+      "evidence": "ภาพหน้าจอ + คิวรีฐานข้อมูล",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-PRC-082",
+      "type": "Automated",
+      "area": "Price Book / ราคาพิเศษ",
+      "critical": true,
+      "titleTh": "ราคาพิเศษรายร้านค้าต้องมีผู้อนุมัติที่ไม่ใช่ผู้ยื่นคำขอ",
+      "actor": "SALES + MANAGER",
+      "requirementIds": [
+        "FR-023",
+        "NFR-005"
+      ],
+      "preconditions": "มี Price Book สถานะ ACTIVE และผู้ใช้สองคนคนละสิทธิ์",
+      "testData": "รหัสลูกค้าจริง 1 ราย + สูตร 1 รายการ",
+      "steps": [
+        "SALES ยื่นคำขอราคาพิเศษต่ำกว่าราคามาตรฐาน",
+        "ให้คนเดิมที่ยื่นคำขอกดอนุมัติ",
+        "ให้ MANAGER คนอื่นกดอนุมัติ",
+        "เรียกราคาที่ใช้จริงของลูกค้ารายนั้น"
+      ],
+      "expected": "ผู้ยื่นอนุมัติตนเองถูกปฏิเสธด้วย 403 · เมื่อคนอื่นอนุมัติจึงสำเร็จ · ราคาที่ใช้จริงเปลี่ยนเป็นราคาพิเศษเฉพาะลูกค้ารายนั้น ลูกค้ารายอื่นยังได้ราคามาตรฐาน",
+      "evidence": "ภาพหน้าจอ + คิวรีฐานข้อมูล",
+      "automationRef": "backend/scripts/verify-pricebook-special.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBT-083",
+      "type": "Automated",
+      "area": "Rebate / อนุมัติโปรโมชั่น",
+      "critical": true,
+      "titleTh": "โปรโมชั่นรีเบทต้องผ่านการอนุมัติ 4 ชั้นก่อนใช้ตัดยอดได้",
+      "actor": "MANAGER / SALES_MGR / C_LEVEL",
+      "requirementIds": [
+        "FR-021",
+        "NFR-005"
+      ],
+      "preconditions": "มีผู้ใช้ครบทุกสิทธิ์ที่แต่ละชั้นต้องการ",
+      "testData": "โปรโมชั่นทดสอบ 1 รายการ",
+      "steps": [
+        "สร้างโปรโมชั่นใหม่และส่งขออนุมัติ",
+        "อนุมัติทีละชั้นด้วยผู้ใช้คนละคน",
+        "ระหว่างทางลองใช้โปรโมชั่นที่ยังไม่อนุมัติครบตัดยอดรีเบท",
+        "ตรวจ wf.RebatePlanApproval ทั้ง 4 แถว"
+      ],
+      "expected": "ใช้ตัดยอดไม่ได้จนกว่าจะครบทั้ง 4 ชั้น · ทุกแถวเก็บชื่อผู้อนุมัติเป็นชื่อคน · ชั้นที่ 3 ต้องเป็นผู้จัดการฝ่ายขาย ไม่ใช่สิทธิ์เดียวกับชั้นอื่น",
+      "evidence": "ภาพหน้าจอ + คิวรีฐานข้อมูล",
+      "automationRef": "backend/scripts/verify-rebate-plan-approval.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RBT-084",
+      "type": "Manual",
+      "area": "Rebate / สองตารางในใบเดียว",
+      "critical": true,
+      "titleTh": "ใบขอเคลียร์แยกยอดรีเบทกับยอดส่วนต่างออกจากกัน",
+      "actor": "SALES / ACCOUNTING",
+      "requirementIds": [
+        "FR-021"
+      ],
+      "preconditions": "ลูกค้ามียอดขนที่เข้าเงื่อนไขทั้งสองแบบ",
+      "testData": "ใบขอเคลียร์ 1 ใบที่มีทั้งบรรทัดรีเบทและบรรทัดส่วนต่าง",
+      "steps": [
+        "กรอกตารางบนเป็นรายการรีเบท และตารางล่างเป็นรายการส่วนต่างราคา",
+        "ผูกเลขใบกำกับรายบรรทัด",
+        "บันทึกแล้วเปิด wf.v_RebateClaimTotals",
+        "สั่งพิมพ์ใบขอเคลียร์"
+      ],
+      "expected": "ยอดรีเบทกับยอดส่วนต่างแยกกันคนละคอลัมน์ ไม่รวมเป็นก้อนเดียว · หัวตารางของแต่ละแบบต่างกันตามฟอร์มกระดาษ · ใบพิมพ์แสดงเลขใบกำกับของทุกบรรทัด",
+      "evidence": "ภาพหน้าจอ + คิวรีฐานข้อมูล",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RPT-085",
+      "type": "Manual",
+      "area": "Reports / แจกแจงรายเที่ยว",
+      "critical": false,
+      "titleTh": "รายงานแจกแจงต้องกระทบกลับไปหายอดรวมของรายงานสรุปได้",
+      "actor": "ACCOUNTING / WAREHOUSE",
+      "requirementIds": [
+        "FR-030"
+      ],
+      "preconditions": "เลือกช่วงวันที่ที่มีข้อมูลจริง",
+      "testData": "สูตรปุ๋ยที่มียอดขนหลายเที่ยวในช่วงนั้น",
+      "steps": [
+        "เปิดแท็บ \"ตามสูตรปุ๋ย\" แล้วจดยอดตันของสูตรหนึ่ง",
+        "เปิดแท็บ \"แจกแจงตามสูตร\" แล้วกรองด้วยสูตรเดียวกัน",
+        "รวมคอลัมน์ตันของรายการที่แจกแจง",
+        "สลับไปแท็บอื่นแล้วกลับมา",
+        "ส่งออก CSV"
+      ],
+      "expected": "ยอดรวมของรายการแจกแจงเท่ากับยอดในรายงานสรุป · ทุกแถวเป็นสูตรที่กรองเท่านั้น · ค่ากรองถูกล้างเมื่อสลับแท็บ ไม่ติดค้างไปแท็บถัดไป · CSV เปิดใน Excel แล้วภาษาไทยไม่เพี้ยน",
+      "evidence": "ภาพหน้าจอ + คิวรีฐานข้อมูล",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-SEC-086",
+      "type": "Manual",
+      "area": "Security / รหัสผ่านตั้งต้น",
+      "critical": true,
+      "titleTh": "ผู้ใช้ที่ยังใช้รหัสผ่านตั้งต้นต้องถูกเตือนและเปลี่ยนได้จริง",
+      "actor": "ผู้ใช้ทุกบทบาท",
+      "requirementIds": [
+        "NFR-005"
+      ],
+      "preconditions": "บัญชีที่มี MustChangePassword = 1",
+      "testData": "บัญชีพนักงานที่ยังใช้รหัสตั้งต้น 1 บัญชี",
+      "steps": [
+        "เข้าระบบด้วยบัญชีที่ถูกตั้งธง",
+        "ดูแถบบนสุดของแอป",
+        "กดปุ่มเปลี่ยนรหัสผ่านทันที",
+        "เปลี่ยนรหัสผ่านให้สำเร็จ",
+        "ออกแล้วเข้าใหม่"
+      ],
+      "expected": "เห็นแถบเตือนสีเหลือง · กดแล้วเข้าหน้าโปรไฟล์แท็บความปลอดภัยทันที · เปลี่ยนสำเร็จแล้วแถบหายและ MustChangePassword เป็น 0 · เข้าใหม่ไม่เห็นแถบอีก",
+      "evidence": "ภาพหน้าจอ + คิวรีฐานข้อมูล",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-SEC-087",
+      "type": "Automated",
+      "area": "Security / ขอบเขตการบังคับ",
+      "critical": true,
+      "titleTh": "บัญชีที่ยังใช้รหัสผ่านตั้งต้นต้องบันทึกข้อมูลไม่ได้ แต่ยังเปิดดูงานได้",
+      "actor": "ผู้ตรวจ / QA",
+      "requirementIds": [
+        "NFR-005"
+      ],
+      "preconditions": "บัญชีที่มี MustChangePassword = 1 และยังไม่เปลี่ยนรหัส",
+      "testData": "บัญชีเดียวกับ UAT-SEC-086",
+      "steps": [
+        "เข้าระบบด้วยบัญชีที่ถูกตั้งธง แต่ยังไม่เปลี่ยนรหัส",
+        "เปิดดูรายการใบสั่งขาย (การอ่าน)",
+        "ลองสร้างหรือแก้ไขใบสั่งขาย (การเขียน)",
+        "เข้าหน้าโปรไฟล์แล้วเปลี่ยนรหัสผ่านให้สำเร็จ",
+        "กลับไปสร้างใบสั่งขายอีกครั้งโดยไม่ออกจากระบบ"
+      ],
+      "expected": "อ่านได้ตามปกติ · เขียนถูกปฏิเสธด้วย 403 พร้อมข้อความให้ไปเปลี่ยนรหัสผ่าน (code PASSWORD_CHANGE_REQUIRED) · เปลี่ยนรหัสแล้วเขียนได้ทันทีโดยไม่ต้องออกจากระบบ เพราะระบบออก token ใหม่ให้",
+      "evidence": "ภาพหน้าจอ + คิวรีฐานข้อมูล",
+      "automationRef": "backend/scripts/verify-password-gate.js",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-RPT-088",
+      "type": "Manual",
+      "area": "Reports / รายงานระดับ detail",
+      "critical": false,
+      "titleTh": "รายงาน detail 3 ฉบับในระบบรายงานเดิมพิมพ์และส่งออกได้",
+      "actor": "ACCOUNTING / MANAGER",
+      "requirementIds": [
+        "FR-017"
+      ],
+      "preconditions": "มีใบขอเคลียร์ คำขอราคาพิเศษ และใบชั่งอย่างละอย่างน้อย 1 รายการ",
+      "testData": "ข้อมูลที่สร้างจาก UAT-V1.6.0-DELTA-TEST-SCRIPT",
+      "steps": [
+        "เปิดรายงาน rebate-claim-detail",
+        "เปิดรายงาน special-price-detail",
+        "เปิดรายงาน weighbridge-detail",
+        "สั่งพิมพ์ A4 และส่งออก Excel ทุกฉบับ"
+      ],
+      "expected": "ทุกฉบับแสดงข้อมูลระดับบรรทัด · ใบขอเคลียร์แสดง LineType และเลขใบกำกับ · ราคาพิเศษแสดงทั้งผู้ยื่นและผู้อนุมัติเป็นชื่อคน · ไฟล์ Excel เปิดแล้วภาษาไทยไม่เพี้ยน",
+      "evidence": "ภาพหน้าจอ + คิวรีฐานข้อมูล",
+      "automationRef": "",
+      "status": "Not Run"
+    },
+    {
+      "id": "UAT-PRC-089",
+      "type": "Manual",
+      "area": "Price Book / ราคาไหลเข้าใบสั่งขาย",
+      "critical": true,
+      "titleTh": "ราคาที่ใช้จริงถูกเติมให้ในใบสั่งขาย และสินค้างดขายเลือกไม่ได้",
+      "actor": "SALES / COUNTER_SALES",
+      "requirementIds": [
+        "FR-023",
+        "FR-001"
+      ],
+      "preconditions": "มี Price Book สถานะ ACTIVE ที่มีทั้งสินค้าปกติ สินค้างดขาย และลูกค้าที่มีราคาพิเศษ",
+      "testData": "ลูกค้าที่ได้รับอนุมัติราคาพิเศษจากหัวข้อ 1.3 ของสคริปต์ทดสอบ",
+      "steps": [
+        "เปิดหน้าสร้างใบสั่งขาย เลือกลูกค้าที่มีราคาพิเศษ",
+        "เลือกสินค้าที่มีราคาพิเศษ",
+        "เลือกสินค้าที่มีเฉพาะราคามาตรฐาน",
+        "ลองเลือกสินค้าที่งดขาย",
+        "เปลี่ยนเป็นลูกค้าทั่วไปแล้วเลือกสินค้าเดิม"
+      ],
+      "expected": "ราคาถูกเติมให้เองพร้อมป้ายบอกแหล่ง (พิเศษ/มาตรฐาน/ราคาเดิม) · สินค้างดขายเลือกไม่ได้ · เปลี่ยนลูกค้าแล้วราคาพิเศษหายไป เหลือราคามาตรฐาน",
+      "evidence": "ภาพหน้าจอ + คิวรีฐานข้อมูล",
+      "automationRef": "",
+      "status": "Not Run"
+    }
+  ],
+  "confidentiality": "เอกสารลับ — ใช้ภายในบริษัทและคู่ค้าที่ได้รับอนุญาตเท่านั้น",
+  "lookups": {
+    "สถานะการทดสอบ": [
+      "Not Run",
+      "Pass",
+      "Fail",
+      "Blocked",
+      "N/A"
+    ],
+    "ระดับข้อบกพร่อง": [
+      "Sev-1",
+      "Sev-2",
+      "Sev-3",
+      "Sev-4"
+    ],
+    "สถานะข้อบกพร่อง": [
+      "Open",
+      "In Progress",
+      "Ready for Retest",
+      "Closed",
+      "Rejected"
+    ],
+    "ผลการตัดสิน": [
+      "Pending",
+      "Accept",
+      "Conditional Accept",
+      "Reject"
+    ],
+    "ชนิดหลักฐาน": [
+      "ภาพหน้าจอ",
+      "Playwright attachment",
+      "ผลจาก API/Query",
+      "Log",
+      "เอกสารกระทบยอด",
+      "แบบฟอร์มที่ลงนาม",
+      "อื่น ๆ"
+    ],
+    "เคสวิกฤต": [
+      "ใช่",
+      "ไม่ใช่"
+    ]
+  },
+  "entryControls": [
+    {
+      "id": "ENT-01",
+      "control": "บันทึก build/commit/source hash/test hash และตรวจว่าตรงกัน",
+      "owner": "QA"
+    },
+    {
+      "id": "ENT-02",
+      "control": "Frontend/API/SQL health ผ่าน และระบุสถานะของระบบที่พึ่งพาไว้ชัดเจน",
+      "owner": "IT"
+    },
+    {
+      "id": "ENT-03",
+      "control": "บัญชีทดสอบครบทุกบทบาทและใช้สิทธิ์เท่าที่จำเป็น",
+      "owner": "Admin / Security"
+    },
+    {
+      "id": "ENT-04",
+      "control": "ข้อมูลทดสอบเป็นข้อมูลจำลองหรือปกปิดแล้ว และรีเซ็ตกลับได้",
+      "owner": "Data Owner"
+    },
+    {
+      "id": "ENT-05",
+      "control": "ที่เก็บหลักฐาน ระบบติดตามข้อบกพร่อง และช่องทางสื่อสารพร้อม",
+      "owner": "QA"
+    },
+    {
+      "id": "ENT-06",
+      "control": "มีเจ้าภาพการสำรอง/ย้อนกลับ และเงื่อนไขการกู้คืนพร้อม",
+      "owner": "IT"
+    },
+    {
+      "id": "ENT-07",
+      "control": "ยืนยันผู้ตรวจทานที่ต้องมีและตารางเวลาการทดสอบแล้ว",
+      "owner": "Business Owner"
+    },
+    {
+      "id": "ENT-08",
+      "control": "ใช้ migration ครบและ ledger ไม่มี drift",
+      "owner": "DBA"
+    },
+    {
+      "id": "ENT-09",
+      "control": "seed บัญชีทดสอบครบทั้ง 9 บทบาทตาม RBAC ในโค้ด",
+      "owner": "DBA"
+    }
+  ],
+  "manualGates": [
+    "TruckScale ออนไลน์ด้วยน้ำหนักจริง",
+    "กระทบยอดกับ WINSpeed",
+    "รีเบทและใบลดหนี้",
+    "ของแถมเกินงบ",
+    "เอกสารสูญหายและการปลดล็อก",
+    "สำรองและกู้คืนข้อมูล",
+    "สิทธิ์และความปลอดภัย",
+    "สมรรถนะบนข้อมูลขนาดจริง",
+    "การทบทวนหลักฐาน",
+    "การลงนาม"
+  ],
+  "fullLoop": [
+    "UAT-E2E-002",
+    "UAT-E2E-003",
+    "UAT-CS-053",
+    "UAT-E2E-004",
+    "UAT-E2E-005",
+    "UAT-WT-030",
+    "UAT-TS-023",
+    "UAT-TS-020",
+    "UAT-TS-021",
+    "UAT-TS-022",
+    "UAT-E2E-006",
+    "UAT-TS-024",
+    "UAT-MAN-001",
+    "UAT-TS-025",
+    "UAT-TS-026",
+    "UAT-MAN-002",
+    "UAT-ACC-054",
+    "UAT-MAN-003",
+    "UAT-APV-052",
+    "UAT-MAN-004",
+    "UAT-MAN-005",
+    "UAT-MGR-050",
+    "UAT-MGR-051",
+    "UAT-RBAC-010",
+    "UAT-RBAC-011",
+    "UAT-RBAC-013",
+    "UAT-RBAC-017",
+    "UAT-MAN-007",
+    "UAT-DEF-040",
+    "UAT-SEC-061",
+    "UAT-MAN-006",
+    "UAT-OPS-062",
+    "UAT-DAT-060",
+    "UAT-CL-055",
+    "UAT-MAN-008",
+    "UAT-WT-072",
+    "UAT-TS-073",
+    "UAT-TS-074",
+    "UAT-RBT-071",
+    "UAT-RBT-075",
+    "UAT-RBT-076",
+    "UAT-RBT-077",
+    "UAT-RBT-078",
+    "UAT-RPT-079"
+  ]
+}

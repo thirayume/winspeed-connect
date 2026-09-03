@@ -67,7 +67,26 @@ deploy/cloud-vps/.local-secrets/
 wf-customers/
 
 # Documentation & internal requirements (contain sensitive specs)
-docs/
+#
+# เอกสารไม่เข้า git โดยปริยาย เพราะมีชื่อพนักงานและสเปกภายใน
+# ยกเว้น pipeline ซึ่งเป็น "เครื่องมือ" ไม่ใช่ "เอกสาร" — ต้องอยู่ใน git
+# ไม่งั้น gate ที่ซ่อมบนเครื่องหนึ่งจะไม่ถึงอีกเครื่อง (พบปัญหานี้ 03/09/2569)
+# git ไม่ยอมให้ re-include ไฟล์ถ้าโฟลเดอร์แม่ถูก exclude จึงต้องไล่เปิดทีละชั้น
+docs/*
+!docs/enterprise/
+docs/enterprise/*
+!docs/enterprise/pipeline/
+
+# ผลลัพธ์ที่สร้างใหม่ได้ ไม่ต้องเก็บ
+docs/enterprise/pipeline/baselines/
+docs/enterprise/pipeline/reports/
+docs/enterprise/pipeline/diagrams/
+docs/enterprise/pipeline/uicap/
+docs/enterprise/pipeline/docgen/_legacy/
+docs/enterprise/pipeline/last-run-report.md
+
+# ที่รวมไฟล์สำหรับส่งให้ทีมแบบออฟไลน์ (Credentials.txt ฯลฯ) — ห้ามเข้า git เด็ดขาด
+docs/_offline-share/
 _docs_backup/
 
 # บันทึกการประชุม / ไฟล์ทิ้งขว้าง — เคยหลุดขึ้น repo สาธารณะมาแล้ว (ล้างประวัติ 23/08/2569)

@@ -1,0 +1,370 @@
+{
+  "$comment": [
+    "โครงเอกสาร DOCX — แก้ไฟล์นี้เท่านั้น ห้าม hardcode ใน build_docx.py",
+    "sections = path ของ .md (relative จาก docs/enterprise) — เนื้อหาอ่านจาก markdown จริง",
+    "diagrams = ชื่อไฟล์ PNG (ไม่ใส่นามสกุล) ใน pipeline/diagrams",
+    "docDate  = ว่างไว้ = ใช้วันที่ปัจจุบัน (พ.ศ. + ค.ศ.) อัตโนมัติ"
+  ],
+  "schemaVersion": 1,
+  "font": "Prompt",
+  "docDate": "",
+  "outputDir": "01-DOCX/generated",
+  "roleBaseSections": [
+    "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md",
+    "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md"
+  ],
+  "documents": [
+    {
+      "id": "SRS-{VERSION}",
+      "title": "Software Requirements Specification (SRS)",
+      "docid": "WF-SRS-001",
+      "audience": "Product Owner · BA · Dev · QA",
+      "scope": "Full",
+      "sections": [
+        "02-REQUIREMENTS/SRS.md",
+        "02-REQUIREMENTS/ACCEPTANCE-CRITERIA.md",
+        "02-REQUIREMENTS/NFR-SLO-DR.md",
+        "01-BUSINESS-ANALYSIS/BUSINESS-RULES.md",
+        "02-REQUIREMENTS/TRACEABILITY-MATRIX.md"
+      ],
+      "diagrams": [
+        "01-architecture",
+        "02-so-lifecycle",
+        "05-erd",
+        "06-rbac",
+        "07-swimlane-order-to-cash",
+        "19-truckscale-as-is",
+        "20-truckscale-to-be"
+      ]
+    },
+    {
+      "id": "Technical-Spec-{VERSION}",
+      "title": "Technical Specification",
+      "docid": "WF-TECH-001",
+      "audience": "Solution Architect · Dev · DBA · Support",
+      "scope": "Full",
+      "sections": [
+        "03-SOLUTION-ARCHITECTURE/SAD.md",
+        "03-SOLUTION-ARCHITECTURE/TECHNICAL-SPECIFICATION.md",
+        "03-SOLUTION-ARCHITECTURE/C4-ARCHITECTURE.md",
+        "04-DATA-INTEGRATION/DATA-DESIGN.md",
+        "04-DATA-INTEGRATION/DATABASE-OVERVIEW.md",
+        "04-DATA-INTEGRATION/WINSPEED-SO-FLOW.md",
+        "04-DATA-INTEGRATION/REBATE-COUPON-SYSTEM.md",
+        "04-DATA-INTEGRATION/API-REFERENCE.md",
+        "05-SECURITY-DEVOPS/DEPLOYMENT-AND-CI-CD.md",
+        "05-SECURITY-DEVOPS/DOCKER-DEPLOY.md"
+      ],
+      "diagrams": [
+        "13-runtime-architecture",
+        "15-operational-erd",
+        "16-rbac-source-aligned",
+        "18-rebate-domain-uml",
+        "10-current-api-surface",
+        "21-truckscale-ship-sequence"
+      ]
+    },
+    {
+      "id": "User-Guide-Full-{VERSION}",
+      "title": "User Guide — ฉบับเต็ม (Full)",
+      "docid": "WF-UG-FULL-001",
+      "audience": "ผู้ใช้ทุก Role",
+      "scope": "Full",
+      "sections": [
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md"
+      ],
+      "diagrams": [
+        "01-architecture",
+        "02-so-lifecycle",
+        "17-order-to-cash-workflow",
+        "11-document-evidence-flow",
+        "19-truckscale-as-is",
+        "20-truckscale-to-be"
+      ]
+    },
+    {
+      "id": "User-Guide-Brief-{VERSION}",
+      "title": "User Guide — ฉบับย่อ (Quick Reference)",
+      "docid": "WF-UG-BRIEF-001",
+      "audience": "ผู้ใช้ทุก Role",
+      "scope": "Brief",
+      "brief": true,
+      "sections": [
+        "06-QUALITY-OPERATIONS/TEST-CATALOG-CURRENT.md"
+      ],
+      "diagrams": [
+        "07-swimlane-order-to-cash"
+      ]
+    },
+    {
+      "id": "User-Guide-Combined-Summary-{VERSION}",
+      "title": "User Guide — สรุปรวมทุก Role",
+      "docid": "WF-UG-SUM-001",
+      "audience": "ผู้บริหาร · หัวหน้างาน",
+      "scope": "Summary",
+      "roles_summary": true,
+      "sections": [],
+      "diagrams": [
+        "06-rbac",
+        "07-swimlane-order-to-cash"
+      ]
+    },
+    {
+      "id": "UAT-Full-Loop-Run-Plan-{VERSION}",
+      "title": "แผนทดสอบการใช้งานจริงแบบครบวงจร (UAT Full Loop Run Plan)",
+      "docid": "WF-QA-022",
+      "audience": "QA Lead · Process Owner ทุกบทบาท · Business Sponsor",
+      "scope": "UAT",
+      "sections": [
+        "06-QUALITY-OPERATIONS/UAT-FULL-LOOP-RUN-PLAN.md",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#1. Role map"
+      ],
+      "diagrams": [
+        "17-order-to-cash-workflow",
+        "16-rbac-source-aligned",
+        "02-so-lifecycle",
+        "21-truckscale-ship-sequence",
+        "20-truckscale-to-be"
+      ]
+    }
+  ],
+  "roles": {
+    "Sales": {
+      "docid": "WF-UG-SALES-001",
+      "groups": [
+        "หลัก",
+        "การเงิน"
+      ],
+      "diagrams": [
+        "02-so-lifecycle",
+        "17-order-to-cash-workflow",
+        "03-rebate-coupon-flow",
+        "06-rbac"
+      ],
+      "sections": [
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#1. Role map",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#2. SALES",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-01",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-02",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#เริ่มต้นอย่างปลอดภัย",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#ขายและใบเสนอราคา",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#11. Cross-role",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#12. 60-second"
+      ],
+      "rbac": "SALES",
+      "titleTh": "ฝ่ายขาย"
+    },
+    "CounterSales": {
+      "docid": "WF-UG-CS-001",
+      "groups": [
+        "หลัก",
+        "เอกสาร"
+      ],
+      "diagrams": [
+        "17-order-to-cash-workflow",
+        "11-document-evidence-flow",
+        "16-rbac-source-aligned"
+      ],
+      "sections": [
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#1. Role map",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#3. COUNTER_SALES",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-01",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-04",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#เริ่มต้นอย่างปลอดภัย",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#Verification, approval",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#Paper Trail",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#11. Cross-role",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#12. 60-second"
+      ],
+      "rbac": "COUNTER_SALES",
+      "titleTh": "ตรวจซ้ำหน้าร้าน (Counter Sales)"
+    },
+    "Manager": {
+      "docid": "WF-UG-MGR-001",
+      "groups": [
+        "หลัก",
+        "การเงิน",
+        "บัญชี",
+        "คลัง/ชั่ง"
+      ],
+      "diagrams": [
+        "17-order-to-cash-workflow",
+        "16-rbac-source-aligned",
+        "03-rebate-coupon-flow",
+        "20-truckscale-to-be"
+      ],
+      "sections": [
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#1. Role map",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#4. MANAGER",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-02",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-05",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#อ่าน Dashboard",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#Verification, approval",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#Reports และการส่งออก",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#11. Cross-role",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#12. 60-second"
+      ],
+      "rbac": "MANAGER",
+      "titleTh": "ผู้จัดการ"
+    },
+    "Approver": {
+      "docid": "WF-UG-APV-001",
+      "groups": [
+        "หลัก",
+        "การเงิน"
+      ],
+      "diagrams": [
+        "16-rbac-source-aligned",
+        "17-order-to-cash-workflow",
+        "11-document-evidence-flow"
+      ],
+      "sections": [
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#1. Role map",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#5. APPROVER",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-05",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-02",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#เริ่มต้นอย่างปลอดภัย",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#Verification, approval",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#11. Cross-role",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#12. 60-second"
+      ],
+      "rbac": "APPROVER",
+      "titleTh": "ผู้อนุมัติ"
+    },
+    "Warehouse": {
+      "docid": "WF-UG-WH-001",
+      "groups": [
+        "หลัก"
+      ],
+      "diagrams": [
+        "02-so-lifecycle",
+        "19-truckscale-as-is",
+        "20-truckscale-to-be",
+        "21-truckscale-ship-sequence",
+        "11-document-evidence-flow"
+      ],
+      "sections": [
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#1. Role map",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#6. WAREHOUSE",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-01",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-03",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-04",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#เริ่มต้นอย่างปลอดภัย",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#คลัง, TruckScale",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#11. Cross-role",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#12. 60-second"
+      ],
+      "rbac": "WAREHOUSE",
+      "titleTh": "คลังสินค้า"
+    },
+    "Weighbridge": {
+      "docid": "WF-UG-WB-001",
+      "groups": [
+        "คลัง/ชั่ง"
+      ],
+      "diagrams": [
+        "19-truckscale-as-is",
+        "20-truckscale-to-be",
+        "21-truckscale-ship-sequence"
+      ],
+      "sections": [
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#1. Role map",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#7. WEIGHBRIDGE",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-03",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#เริ่มต้นอย่างปลอดภัย",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#คลัง, TruckScale",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#11. Cross-role",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#12. 60-second"
+      ],
+      "rbac": "WEIGHBRIDGE",
+      "titleTh": "เครื่องชั่ง"
+    },
+    "Accounting": {
+      "docid": "WF-UG-ACC-001",
+      "groups": [
+        "การเงิน",
+        "บัญชี"
+      ],
+      "diagrams": [
+        "03-rebate-coupon-flow",
+        "04-rebate-sequence",
+        "18-rebate-domain-uml",
+        "17-order-to-cash-workflow"
+      ],
+      "sections": [
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#1. Role map",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#8. ACCOUNTING",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-02",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#เริ่มต้นอย่างปลอดภัย",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#Accounting, reconciliation",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#11. Cross-role",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#12. 60-second"
+      ],
+      "rbac": "ACCOUNTING",
+      "titleTh": "บัญชีและการเงิน"
+    },
+    "Admin": {
+      "docid": "WF-UG-ADM-001",
+      "groups": [
+        "หลัก",
+        "การเงิน",
+        "บัญชี",
+        "คลัง/ชั่ง",
+        "ตั้งค่าระบบ"
+      ],
+      "diagrams": [
+        "01-architecture",
+        "13-runtime-architecture",
+        "15-operational-erd",
+        "16-rbac-source-aligned",
+        "19-truckscale-as-is",
+        "20-truckscale-to-be"
+      ],
+      "sections": [
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#1. Role map",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#9. ADMIN",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#3. COUNTER_SALES",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#4. MANAGER",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#5. APPROVER",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-01",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-04",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#เริ่มต้นอย่างปลอดภัย",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#งานผู้ดูแลระบบ",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#11. Cross-role"
+      ],
+      "rbac": "ADMIN",
+      "titleTh": "ผู้ดูแลระบบ"
+    },
+    "CLevel": {
+      "docid": "WF-UG-CL-001",
+      "rbac": "C_LEVEL",
+      "titleTh": "ผู้บริหาร (C-Level)",
+      "groups": [
+        "หลัก",
+        "การเงิน",
+        "บัญชี",
+        "คลัง/ชั่ง",
+        "ตั้งค่าระบบ"
+      ],
+      "diagrams": [
+        "01-architecture",
+        "16-rbac-source-aligned",
+        "17-order-to-cash-workflow",
+        "03-rebate-coupon-flow",
+        "15-operational-erd"
+      ],
+      "sections": [
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#1. Role map",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#10. C_LEVEL",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#อ่าน Dashboard",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#Reports และการส่งออก",
+        "06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md#Accounting, reconciliation",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-02",
+        "06-QUALITY-OPERATIONS/SOP-DETAIL.md#SOP-06",
+        "06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md#11. Cross-role"
+      ]
+    }
+  }
+}
