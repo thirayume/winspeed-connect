@@ -2,8 +2,8 @@
 documentId: "WF-OPS-021"
 title: "ขั้นตอนซิงค์ข้อมูลจาก PROD-A ไป PROD-B (ตัวสำรอง)"
 version: "v1.0"
-status: Hold
-statusDetail: "ร่าง 3 กันยายน 2569 · เจ้าของระบบสั่ง PENDING & HOLD วันเดียวกัน — อาจใช้ private network + VPN แทน · ยังไม่เคยรันจริง"
+status: Draft
+statusDetail: "🛑 PENDING & HOLD — ร่าง 3 กันยายน 2569 · เจ้าของระบบสั่ง วันเดียวกัน — อาจใช้ private network + VPN แทน · ยังไม่เคยรันจริง"
 owner: "Solution Architect"
 normative: false
 ---

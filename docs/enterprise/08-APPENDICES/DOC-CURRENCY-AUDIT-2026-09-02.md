@@ -1,5 +1,5 @@
 ---
-documentId: "WF-GOV-002"
+documentId: "WF-GOV-007"
 title: "ตรวจความเป็นปัจจุบันของเอกสารทุกฉบับ — 2 กันยายน 2569"
 version: "v1.0"
 status: Draft
