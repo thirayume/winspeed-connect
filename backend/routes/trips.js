@@ -83,7 +83,7 @@ router.get('/board', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN',
     // กรอง Number.isInteger ไว้อีกชั้นกันพลาด
     const idList = trips.map(t => Number(t.tripId)).filter(Number.isInteger).join(',');
 
-    const [membersRes, draftLinesRes, confLinesRes, weighRes] = await Promise.all([
+    const [membersRes, draftLinesRes, confLinesRes, weighRes, holdRes] = await Promise.all([
       wfQuery(`SELECT * FROM wf.v_TripMember WHERE TripId IN (${idList})`),
 
       wfQuery(`
@@ -124,7 +124,18 @@ router.get('/board', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN',
                w.WeightIn, w.WeightOut, w.WeightNet, w.TONNet, w.DocuNo, w.MoveBill
         FROM wf.SalesOrderExt e
         JOIN dbo.WGHD w ON w.SPID = TRY_CAST(e.SOID AS INT)
-        WHERE e.TripId IN (${idList})`)
+        WHERE e.TripId IN (${idList})`),
+
+      // คำขอแก้ไขที่ยังรออนุมัติ (เฟส 5) — ตัวที่ Hold รถต้องเด่นบนกระดาน
+      // คนคุมลานต้องเห็นก่อนสั่งขึ้นของ ไม่ใช่ไปรู้เอาตอนรถจอดรอ
+      wfQuery(`
+        SELECT r.Id, r.SOID AS MemberId, r.TripId, r.StageAtRequest, r.ReasonCode,
+               r.ReasonDetail, r.HoldTruck, r.RequestedAt,
+               rs.ReasonText, u.DisplayName AS RequestedByName
+        FROM wf.EditRequest r
+        LEFT JOIN wf.EditReason rs ON rs.ReasonCode = r.ReasonCode
+        LEFT JOIN wf.AppUser  u  ON u.Id = r.RequestedBy
+        WHERE r.Status = 'PENDING' AND r.TripId IN (${idList})`)
     ]);
 
     const members   = camelizeRows(membersRes.recordset || []);
@@ -153,6 +164,14 @@ router.get('/board', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN',
     // กระดานจะว่างเปล่าบนแพลตฟอร์มหนึ่งแต่ปกติดีอีกแพลตฟอร์มหนึ่ง
     // แปลงเป็นสตริงทั้งสองฝั่งเสมอ
     const tripKey = (v) => String(v);
+    // คำขอค้างจับคู่กับใบจองด้วย SOID (สตริงทั้งคู่)
+    const reqBy = new Map();
+    for (const q of camelizeRows(holdRes.recordset || [])) {
+      const k = key('CONFIRMED', q.memberId);
+      if (!reqBy.has(k)) reqBy.set(k, []);
+      reqBy.get(k).push(q);
+    }
+
     const membersByTrip = new Map();
     for (const m of members) {
       const k = tripKey(m.tripId);
@@ -175,6 +194,7 @@ router.get('/board', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN',
     const data = trips.map(t => {
       const mem = membersByTrip.get(tripKey(t.tripId)) || [];
       const tripWeigh = [];
+      const tripReqs = [];
       const byCust = new Map();
       let plannedTon = 0;
       let giveawayTon = 0;
@@ -184,6 +204,8 @@ router.get('/board', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN',
           .sort((a, b) => (a.loadSequence ?? 9999) - (b.loadSequence ?? 9999) || a.listNo - b.listNo);
         const w = weighBy.get(key(m.memberKind, m.memberId)) || [];
         tripWeigh.push(...w);
+        const reqs = reqBy.get(key(m.memberKind, m.memberId)) || [];
+        tripReqs.push(...reqs);
 
         const bookingTon = lines.reduce((s, l) => s + Number(l.qtyTon || 0), 0);
         plannedTon  += bookingTon;
@@ -201,6 +223,7 @@ router.get('/board', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN',
           deliveryDate: m.deliveryDate,
           totalTon: Number(bookingTon.toFixed(3)),
           weighing: w,
+          pendingRequests: reqs,
           lines
         });
       }
@@ -222,6 +245,13 @@ router.get('/board', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN',
           over: maxTon > 0 && plannedTon > maxTon
         },
         weighing: { ...tripPhase(tripWeigh, mem.length), rows: tripWeigh },
+        // Hold เป็นจริงระหว่างที่คำขอยัง PENDING เท่านั้น
+        // อนุมัติ/ปฏิเสธ/ถอน = จบการรอ รถไปต่อได้
+        hold: {
+          held: tripReqs.some(q => q.holdTruck),
+          pendingCount: tripReqs.length,
+          requests: tripReqs,
+        },
         orderCount: mem.length,
         customers: Array.from(byCust.values())
       };

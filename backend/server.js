@@ -122,6 +122,7 @@ app.use('/api/rebate', require('./routes/rebate'));
 app.use('/api/giveaway', require('./routes/giveaway'));
 app.use('/api/quotation', require('./routes/quotation'));
 app.use('/api/trips',     require('./routes/trips'));
+app.use('/api/edit-requests', require('./routes/edit-requests'));
 app.use('/api/budget',    require('./routes/budget'));
 app.use('/api/papertrail', require('./routes/papertrail'));
 app.use('/api/reports', require('./routes/reports'));

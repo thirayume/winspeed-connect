@@ -20,7 +20,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Truck, RefreshCw, Search, ChevronRight, ChevronDown, AlertTriangle,
-  Package, Gift, Layers, ClipboardList, Ticket, X, Info, CircleAlert,
+  Package, Gift, Layers, ClipboardList, Ticket, X, Info, CircleAlert, PauseOctagon,
 } from 'lucide-react';
 import {
   fetchTripBoard, fetchLoadingPlan,
@@ -145,6 +145,11 @@ function BookingBlock({ b }: { b: TripBooking }) {
         {b.memberKind === 'DRAFT' && (
           <span className="rounded border border-gray-300 bg-gray-50 px-1.5 py-px text-[10px] text-gray-600">
             ฉบับร่าง
+          </span>
+        )}
+        {(b.pendingRequests?.length ?? 0) > 0 && (
+          <span className="inline-flex items-center gap-0.5 rounded border border-amber-300 bg-amber-50 px-1.5 py-px text-[10px] text-amber-900">
+            <PauseOctagon size={9} /> รอแก้ไข {b.pendingRequests.length}
           </span>
         )}
         {b.status === 'PENDING_APPROVAL' && (
@@ -346,6 +351,17 @@ function TripCard({ t }: { t: TripBoardRow }) {
           {t.weighing.label}
         </span>
 
+        {t.hold?.held && (
+          <span className="inline-flex items-center gap-1 rounded border border-red-300 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+            <PauseOctagon size={12} /> รถถูก Hold
+          </span>
+        )}
+        {!t.hold?.held && (t.hold?.pendingCount ?? 0) > 0 && (
+          <span className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-900">
+            คำขอแก้ไขรออนุมัติ {t.hold.pendingCount}
+          </span>
+        )}
+
         {!!t.preSlingRequired && (
           <span className="rounded border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] text-orange-800">
             Pre-Sling
@@ -376,6 +392,27 @@ function TripCard({ t }: { t: TripBoardRow }) {
         <div className="space-y-3 border-t border-gray-100 bg-gray-50/50 px-3 py-2.5">
           {t.tripRemark && (
             <p className="text-xs text-gray-600">หมายเหตุเที่ยว: {t.tripRemark}</p>
+          )}
+
+          {(t.hold?.requests?.length ?? 0) > 0 && (
+            <div className="rounded border border-amber-200 bg-amber-50/70 px-2.5 py-2">
+              <p className="mb-1 flex items-center gap-1 text-[11px] font-semibold text-amber-900">
+                <PauseOctagon size={12} /> คำขอแก้ไขที่รออนุมัติ
+              </p>
+              {t.hold.requests.map(q => (
+                <div key={String(q.id)} className="flex flex-wrap items-center gap-x-2 text-[11px] text-amber-900">
+                  <span className="font-mono text-amber-700">#{q.id}</span>
+                  <span>{q.reasonText || q.reasonCode}</span>
+                  {q.reasonDetail && <span className="text-amber-800/80">— {q.reasonDetail}</span>}
+                  <span className="text-amber-700/70">โดย {q.requestedByName || '—'}</span>
+                  {!!q.holdTruck && (
+                    <span className="rounded border border-red-300 bg-red-50 px-1 font-semibold text-red-700">
+                      ห้ามเคลื่อนรถ
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
           {t.customers.length === 0 ? (
             <p className="py-2 text-xs text-gray-400">

@@ -1020,6 +1020,18 @@ export type TripWeighRow = {
   tONNet: number | null; docuNo: string | null; moveBill: string | null;
 };
 
+export type TripPendingRequest = {
+  id: number | string;
+  memberId: string;
+  stageAtRequest: string;
+  reasonCode: string;
+  reasonText: string | null;
+  reasonDetail: string | null;
+  holdTruck: boolean | number;
+  requestedByName: string | null;
+  requestedAt: string;
+};
+
 export type TripBooking = {
   memberKind: 'DRAFT' | 'CONFIRMED';
   memberId: string;
@@ -1030,6 +1042,7 @@ export type TripBooking = {
   deliveryDate: string | null;
   totalTon: number;
   weighing: TripWeighRow[];
+  pendingRequests: TripPendingRequest[];
   lines: TripLine[];
 };
 
@@ -1056,6 +1069,7 @@ export type TripBoardRow = {
     label: string;
     rows: TripWeighRow[];
   };
+  hold: { held: boolean; pendingCount: number; requests: TripPendingRequest[] };
   customers: TripCustomer[];
 };
 
@@ -1091,3 +1105,82 @@ export type LoadingPlan = {
 
 export const fetchLoadingPlan = (tripId: number | string) =>
   req<LoadingPlan>(`/trips/${tripId}/loading-plan`);
+
+// ── คำขอแก้ไขหลังยืนยัน + Hold รถ (เฟส 5) ─────────────────────
+export type EditStage = 'CONFIRMED' | 'REGISTERED' | 'LOADING' | 'SHIPPED';
+
+export type EditReason = {
+  reasonCode: string;
+  reasonText: string;
+  appliesTo: string;
+  requiresHold: boolean | number;
+  sortOrder: number;
+};
+
+export type EditRequestRow = {
+  id: number | string;
+  soid: string | null;
+  tripId: number | string | null;
+  stageAtRequest: EditStage;
+  reasonCode: string;
+  reasonText: string | null;
+  reasonDetail: string | null;
+  holdTruck: boolean | number;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  requestedBy: number | string;
+  requestedByName: string | null;
+  requestedAt: string;
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  docuNo: string | null;
+  custName: string | null;
+  tripCode: string | null;
+  transRegistration: string | null;
+};
+
+export type EditStageInfo = {
+  soid: string;
+  docuNo: string | null;
+  custName: string | null;
+  tripId: number | string | null;
+  tripCode: string | null;
+  transRegistration: string | null;
+  stage: EditStage;
+  stageLabel: string;
+  editable: boolean;
+  weighRows: number;
+  pendingRequest: { id: number | string; reasonCode: string; holdTruck: boolean | number } | null;
+};
+
+export const fetchEditReasons = (stage?: EditStage) =>
+  req<{ data: EditReason[] }>(`/edit-requests/reasons${stage ? `?stage=${stage}` : ''}`);
+
+export const fetchEditStage = (soid: string | number) =>
+  req<EditStageInfo>(`/edit-requests/stage/${soid}`);
+
+export const fetchEditRequests = (params?: { status?: string; soid?: string; tripId?: number | string; mine?: boolean }) => {
+  const q = new URLSearchParams();
+  if (params?.status) q.set('status', params.status);
+  if (params?.soid) q.set('soid', String(params.soid));
+  if (params?.tripId) q.set('tripId', String(params.tripId));
+  if (params?.mine) q.set('mine', '1');
+  const qs = q.toString();
+  return req<{ data: EditRequestRow[] }>(`/edit-requests${qs ? `?${qs}` : ''}`);
+};
+
+export const createEditRequest = (body: { soid: string | number; reasonCode: string; reasonDetail?: string }) =>
+  req<{ id: number; stage: EditStage; stageLabel: string; holdTruck: boolean; message: string }>(
+    '/edit-requests', { method: 'POST', body: JSON.stringify(body) });
+
+export const approveEditRequest = (id: number | string, note?: string) =>
+  req<{ id: number; status: string; unlocked: boolean; message: string }>(
+    `/edit-requests/${id}/approve`, { method: 'PATCH', body: JSON.stringify({ note }) });
+
+export const rejectEditRequest = (id: number | string, note: string) =>
+  req<{ id: number; status: string; message: string }>(
+    `/edit-requests/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ note }) });
+
+export const cancelEditRequest = (id: number | string, note?: string) =>
+  req<{ id: number; status: string; message: string }>(
+    `/edit-requests/${id}/cancel`, { method: 'PATCH', body: JSON.stringify({ note }) });
