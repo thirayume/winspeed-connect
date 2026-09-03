@@ -27,17 +27,20 @@ const SalesPortal = lazy(() => import('./components/sales/SalesPortal').then(m =
 const StorePortal = lazy(() => import('./components/store/StorePortal').then(m => ({ default: m.StorePortal })));
 const DashboardPage = lazy(() => import('./components/dashboard/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const RebatePage = lazy(() => import('./components/rebate/RebatePage').then(m => ({ default: m.RebatePage })));
-const CnRebatePage = lazy(() => import('./components/rebate/CnRebatePage').then(m => ({ default: m.CnRebatePage })));
+// ── ปิด lazy import 03/09/2569 — หน้าเหล่านี้ถูกตัด/ซ่อนออกจากเมนูแล้ว ──
+// ปิดที่นี่ด้วยเพื่อไม่ให้ vite สร้าง chunk ที่ไม่มีใครเรียก
+// ไฟล์ทั้งหมดยังอยู่ครบ · เปิดกลับได้ด้วยการเอาคอมเมนต์ออกทั้งบรรทัดนี้และในเมนู/render
+// const CnRebatePage = lazy(() => import('./components/rebate/CnRebatePage').then(m => ({ default: m.CnRebatePage })));
 const RebatePlanPage = lazy(() => import('./components/rebate/RebatePlanPage').then(m => ({ default: m.RebatePlanPage })));
 const ControlTicketPage = lazy(() => import('./components/master/ControlTicketPage').then(m => ({ default: m.ControlTicketPage })));
 const ReportsPage = lazy(() => import('./components/reports/ReportsPage').then(m => ({ default: m.ReportsPage })));
 const WeighingReportsPage = lazy(() => import('./components/reports/WeighingReportsPage').then(m => ({ default: m.WeighingReportsPage })));
 // ซ่อนไว้: หน้าเดิมที่อ่าน MySQL ของ TruckScale — เลิกใช้ 02/09/2569 แต่ไม่ลบ เผื่อถอยกลับ
 // const ScaleReportsPage = lazy(() => import('./components/reports/ScaleReportsPage').then(m => ({ default: m.ScaleReportsPage })));
-const IncentiveReport = lazy(() => import('./components/reports/IncentiveReport').then(m => ({ default: m.IncentiveReport })));
-const BudgetExpenditureReport = lazy(() => import('./components/reports/BudgetExpenditureReport').then(m => ({ default: m.BudgetExpenditureReport })));
-const TruckScalePage = lazy(() => import('./components/truckscale/TruckScalePage').then(m => ({ default: m.TruckScalePage })));
-const WeighInboxPage = lazy(() => import('./components/truckscale/WeighInboxPage').then(m => ({ default: m.WeighInboxPage })));
+// const IncentiveReport = lazy(() => import('./components/reports/IncentiveReport').then(m => ({ default: m.IncentiveReport })));
+// const BudgetExpenditureReport = lazy(() => import('./components/reports/BudgetExpenditureReport').then(m => ({ default: m.BudgetExpenditureReport })));
+// const TruckScalePage = lazy(() => import('./components/truckscale/TruckScalePage').then(m => ({ default: m.TruckScalePage })));
+// const WeighInboxPage = lazy(() => import('./components/truckscale/WeighInboxPage').then(m => ({ default: m.WeighInboxPage })));
 const AccountingPage = lazy(() => import('./components/accounting/AccountingPage').then(m => ({ default: m.AccountingPage })));
 const GiveawayPage = lazy(() => import('./components/giveaway/GiveawayPage').then(m => ({ default: m.GiveawayPage })));
 const QuotationPage = lazy(() => import('./components/quotation/QuotationPage').then(m => ({ default: m.QuotationPage })));
@@ -51,7 +54,7 @@ const AgingPage = lazy(() => import('./components/aging/AgingPage').then(m => ({
 const ReconciliationPage = lazy(() => import('./components/recon/ReconciliationPage').then(m => ({ default: m.ReconciliationPage })));
 const OpsStatusPage = lazy(() => import('./components/ops/OpsStatusPage').then(m => ({ default: m.OpsStatusPage })));
 const ApprovalPolicyPage = lazy(() => import('./components/policy/ApprovalPolicyPage').then(m => ({ default: m.ApprovalPolicyPage })));
-const DataGovernancePage = lazy(() => import('./components/governance/DataGovernancePage').then(m => ({ default: m.DataGovernancePage })));
+// const DataGovernancePage = lazy(() => import('./components/governance/DataGovernancePage').then(m => ({ default: m.DataGovernancePage })));
 
 // ── Grouped Navigation ──────────────────────────────────────
 const NAV_GROUPS: NavGroup[] = [
@@ -75,9 +78,13 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: 'rebate',     label: 'รีเบท (App)', sub: 'Pool · เคลม · wf',      icon: Coins, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'SALES'] },
       { key: 'rebate-plan',label: 'Rebate Plan', sub: 'แผน · จัดสรรงบ',        icon: ClipboardList, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING'] },
-      { key: 'cn-rebate',  label: 'CN Rebate',   sub: 'ใบลดหนี้ · Winspeed',   icon: FileCheck2, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
-      { key: 'incentive-report', label: 'Incentive & Retained', sub: 'สัดส่วน · สะสมบริษัท', icon: Award, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING'] },
-      { key: 'budget-report', label: 'Budget Expenditure', sub: 'งบจัดสรร · เบิกจ่าย', icon: BarChart3, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING'] },
+      // ── ซ่อนชั่วคราว 03/09/2569 — รอเจ้าของระบบยืนยันว่ายังใช้อยู่ไหม ──
+      // CN Rebate: อ่านใบ RB ซึ่งหยุดออกตั้งแต่ 5 มี.ค. 2569
+      // Incentive & Retained: ขึ้นกับสัดส่วนรีเบท ซึ่งตอนนี้ยังเป็น 100/0 (บริษัทไม่เก็บ)
+      // Budget Expenditure: wf.BudgetPlan มี 0 แถว
+      // { key: 'cn-rebate',  label: 'CN Rebate',   sub: 'ใบลดหนี้ · Winspeed',   icon: FileCheck2, roles: [...] },
+      // { key: 'incentive-report', label: 'Incentive & Retained', sub: 'สัดส่วน · สะสมบริษัท', icon: Award, roles: [...] },
+      // { key: 'budget-report', label: 'Budget Expenditure', sub: 'งบจัดสรร · เบิกจ่าย', icon: BarChart3, roles: [...] },
       { key: 'giveaway',   label: 'ของแถม',      sub: 'งบรายภาค · เบิก',     icon: Gift },
     ],
   },
@@ -89,7 +96,6 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'accounting', label: 'บัญชี',       sub: 'Sync · อนุมัติ CN',    icon: FileCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
       { key: 'recon',      label: 'กระทบยอด',    sub: 'Recon · ตรวจออกของ',   icon: ShieldCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
       { key: 'reports',    label: 'รายงาน',      sub: 'สรุป · Export Excel',  icon: BarChart3, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER'] },
-      { key: 'scale-reports', label: 'สถานะการชั่งรถ', sub: 'สด · WGHD · ชั่งเข้า–ออก', icon: Truck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE'] },
       { key: 'control-ticket', label: 'ชุดตั๋วคุม', sub: 'คงเหลือ · ตัดออก',   icon: Stamp },
     ],
   },
@@ -98,8 +104,13 @@ const NAV_GROUPS: NavGroup[] = [
     icon: Truck,
     color: 'text-orange-600',
     items: [
-      { key: 'truckscale', label: 'TruckScale',  sub: 'เครื่องชั่ง · MySQL',  icon: Scale, roles: ['C_LEVEL', 'WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ADMIN', 'MANAGER'] },
-      { key: 'weigh-inbox',label: 'Weigh Inbox', sub: 'ดึงชั่ง · จับคู่ SO',     icon: Inbox, roles: ['C_LEVEL', 'WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ADMIN', 'MANAGER'] },
+      // หน้าชั่งย้ายมาอยู่กลุ่มนี้ เดิมไปอยู่ใต้ "บัญชี" ซึ่งไม่ใช่ที่ที่คนหน้างานจะมองหา
+      { key: 'scale-reports', label: 'สถานะการชั่งรถ', sub: 'สด · WGHD · ชั่งเข้า–ออก', icon: Truck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE'] },
+      // ── ตัดออก 03/09/2569 — ทั้งสองหน้าอ่าน MySQL ของ TruckScale ที่ยกเลิกแล้ว ──
+      // endpoint ฝั่ง backend ตอบ 404 อยู่แล้ว · wf.WeighInbox เป็นข้อมูลตาย
+      // ไฟล์ยังอยู่ครบตามคำสั่งเจ้าของระบบ ("อย่าเพิ่งลบ Codes ให้ซ่อนไป")
+      // { key: 'truckscale', label: 'TruckScale',  sub: 'เครื่องชั่ง · MySQL',  icon: Scale, roles: [...] },
+      // { key: 'weigh-inbox',label: 'Weigh Inbox', sub: 'ดึงชั่ง · จับคู่ SO',     icon: Inbox, roles: [...] },
     ],
   },
   {
@@ -109,7 +120,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: 'master',     label: 'ข้อมูลหลัก',  sub: 'สินค้า · ลูกค้า',       icon: Database, roles: ['C_LEVEL', 'ADMIN'] },
       { key: 'policy',     label: 'นโยบายอนุมัติ', sub: 'อำนาจ · วงเงิน',       icon: ScrollText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
-      { key: 'governance', label: 'กำกับข้อมูล',  sub: 'เครดิต · สต๊อก · PDPA',  icon: Landmark, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
+      // ซ่อนชั่วคราว 03/09/2569 — wf.DsarLog มี 0 แถว ยังไม่มีใครใช้
+      // { key: 'governance', label: 'กำกับข้อมูล',  sub: 'เครดิต · สต๊อก · PDPA',  icon: Landmark, roles: [...] },
       { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · error · alert', icon: Activity, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
       { key: 'admin',      label: 'User Management',    sub: 'ผู้ใช้งานระบบ',         icon: Users, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
       { key: 'org',        label: 'ผังองค์กร',    sub: 'ผูกผู้ใช้ ↔ ตำแหน่ง',   icon: Network, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
@@ -531,19 +543,19 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'papertrail' && <PaperTrailPage />}
                 {activePortal === 'rebate'     && <RebatePage />}
                 {activePortal === 'rebate-plan' && <RebatePlanPage />}
-                {activePortal === 'cn-rebate'  && <CnRebatePage />}
+                {/* ปิดไว้ 03/09/2569 — CnRebatePage */}
                 {activePortal === 'control-ticket' && <ControlTicketPage />}
                 {activePortal === 'reports'    && <ReportsPage />}
                 {activePortal === 'scale-reports' && <WeighingReportsPage />}
-                {activePortal === 'incentive-report' && <IncentiveReport />}
-                {activePortal === 'budget-report' && <BudgetExpenditureReport />}
-                {activePortal === 'truckscale' && <TruckScalePage />}
-                {activePortal === 'weigh-inbox' && <WeighInboxPage />}
+                {/* ปิดไว้ 03/09/2569 — IncentiveReport */}
+                {/* ปิดไว้ 03/09/2569 — BudgetExpenditureReport */}
+                {/* ปิดไว้ 03/09/2569 — TruckScalePage */}
+                {/* ปิดไว้ 03/09/2569 — WeighInboxPage */}
                 {activePortal === 'accounting' && <AccountingPage />}
                 {activePortal === 'recon'      && <ReconciliationPage />}
 
                 {activePortal === 'policy'     && <ApprovalPolicyPage />}
-                {activePortal === 'governance' && <DataGovernancePage />}
+                {/* ปิดไว้ 03/09/2569 — DataGovernancePage */}
                 {activePortal === 'ops'        && <OpsStatusPage />}
                 {activePortal === 'giveaway'   && <GiveawayPage />}
                 {activePortal === 'aging'      && <AgingPage />}
