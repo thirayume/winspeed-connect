@@ -36,8 +36,11 @@ const TRIPS = [
 async function main() {
   const env = (await wfQuery('SELECT DB_NAME() db, @@SERVERNAME srv')).recordset[0];
   console.log(`ฐานข้อมูล: ${env.db} @ ${env.srv}`);
-  if (String(process.env.DB_MODE || '').toLowerCase() === 'remote') {
-    console.error('หยุด: DB_MODE=remote คือ PROD-A ห้าม seed ข้อมูลทดสอบ');
+  // PROD-A มีผู้ใช้จริง ต้องตั้งใจถึงจะรันได้ — กันพิมพ์คำสั่งผิด ไม่ใช่ห้ามทำ
+  // (เจ้าของเปิดสิทธิ์ seed ข้อมูลทดสอบบน PROD-A เมื่อ 04/09/2569)
+  if (String(process.env.DB_MODE || '').toLowerCase() === 'remote'
+      && !process.argv.includes('--allow-prod-a')) {
+    console.error('หยุด: เป้าหมายคือ PROD-A ซึ่งมีผู้ใช้จริง — ถ้าตั้งใจจริง ใส่ --allow-prod-a');
     process.exit(1);
   }
 
