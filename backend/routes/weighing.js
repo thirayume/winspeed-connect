@@ -244,7 +244,9 @@ router.get('/tickets', guard(async (req, res) => {
 router.get('/for-so/:soid', guard(async (req, res) => {
   const soid = Number(req.params.soid);
   if (!Number.isInteger(soid)) return res.status(400).json({ message: 'soid ต้องเป็นตัวเลข' });
-  const r = await query(`
+  // ⚠ query() ของโปรเจกต์นี้คืน **array ตรง ๆ** ไม่ใช่ผลลัพธ์ที่มี .recordset
+  //   เขียน r.recordset จะได้ undefined แล้วกลายเป็นรายการว่างแบบเงียบ ๆ
+  const rows = await query(`
     SELECT h.Id, h.MoveBill, h.CarNo AS Plate, h.WGType, h.Status, ${STATUS_SQL} AS StatusText,
            h.WeightIn, h.WeightOut, h.WeightNet, h.TotalTon, h.TotalKasob,
            CONVERT(varchar(16), h.DateIn, 120)  AS DateIn,
@@ -253,7 +255,8 @@ router.get('/for-so/:soid', guard(async (req, res) => {
       FROM dbo.WGHD h
      WHERE h.SPID = @soid
      ORDER BY h.Id DESC`, { soid: { type: sql.Int, value: soid } });
-  res.json({ soid, candidates: r.recordset || [], count: (r.recordset || []).length });
+  const candidates = Array.isArray(rows) ? rows : (rows.recordset || []);
+  res.json({ soid, candidates, count: candidates.length });
 }));
 
 /** ใบเดียวพร้อมบรรทัดสินค้า — ใช้กับหน้าพิมพ์ */
