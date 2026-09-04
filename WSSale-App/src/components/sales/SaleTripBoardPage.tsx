@@ -25,7 +25,11 @@ import {
 import {
   fetchTripBoard, fetchLoadingPlan,
   type TripBoardRow, type TripBooking, type TripLine, type LoadingPlan,
+  type HoldCapability,
 } from '../../services/api';
+import {
+  useHoldCapability, HoldCapabilityBanner, HoldScopeChip,
+} from '../common/HoldCapabilityBanner';
 
 const NAVY = '#0C447C';
 
@@ -325,7 +329,7 @@ function LoadingPlanPanel({ tripId, onClose }: { tripId: number | string; onClos
   );
 }
 
-function TripCard({ t }: { t: TripBoardRow }) {
+function TripCard({ t, cap }: { t: TripBoardRow; cap: HoldCapability | null }) {
   const [open, setOpen] = useState(false);
   const [planFor, setPlanFor] = useState<number | string | null>(null);
   const phase = PHASE_STYLE[t.weighing.phase] || PHASE_STYLE.PLANNED;
@@ -352,8 +356,11 @@ function TripCard({ t }: { t: TripBoardRow }) {
         </span>
 
         {t.hold?.held && (
-          <span className="inline-flex items-center gap-1 rounded border border-red-300 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
-            <PauseOctagon size={12} /> รถถูก Hold
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center gap-1 rounded border border-red-300 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+              <PauseOctagon size={12} /> รถถูก Hold
+            </span>
+            <HoldScopeChip cap={cap} />
           </span>
         )}
         {!t.hold?.held && (t.hold?.pendingCount ?? 0) > 0 && (
@@ -450,6 +457,7 @@ export function SaleTripBoardPage() {
   const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const [phaseFilter, setPhaseFilter] = useState('');
+  const cap = useHoldCapability();
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -540,8 +548,11 @@ export function SaleTripBoardPage() {
         </div>
       )}
 
+      {/* บอกความหมายของ Hold เฉพาะตอนมีเที่ยวที่ถูก Hold จริง ไม่งั้นเป็นเสียงรบกวน */}
+      {shown.some(t => t.hold?.held) && <HoldCapabilityBanner cap={cap} />}
+
       <div className="space-y-2">
-        {shown.map(t => <TripCard key={String(t.tripId)} t={t} />)}
+        {shown.map(t => <TripCard key={String(t.tripId)} t={t} cap={cap} />)}
       </div>
     </div>
   );

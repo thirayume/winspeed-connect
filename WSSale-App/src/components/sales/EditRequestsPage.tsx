@@ -23,6 +23,10 @@ import {
   type EditRequestRow,
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
+import {
+  useHoldCapability, HoldCapabilityBanner, HoldScopeChip,
+} from '../common/HoldCapabilityBanner';
+import type { HoldCapability } from '../../services/api';
 
 const NAVY = '#0C447C';
 
@@ -57,7 +61,7 @@ const thTime = (v?: string | null) => {
     : d.toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 };
 
-function RequestCard({ r, onDone }: { r: EditRequestRow; onDone: () => void }) {
+function RequestCard({ r, onDone, cap }: { r: EditRequestRow; onDone: () => void; cap: HoldCapability | null }) {
   const user = useAuthStore(s => s.user);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -82,8 +86,11 @@ function RequestCard({ r, onDone }: { r: EditRequestRow; onDone: () => void }) {
         <span className="font-mono text-xs text-gray-400">#{r.id}</span>
 
         {!!r.holdTruck && pending && (
-          <span className="inline-flex items-center gap-1 rounded border border-red-300 bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-700">
-            <PauseOctagon size={12} /> รถถูก Hold
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center gap-1 rounded border border-red-300 bg-red-50 px-1.5 py-0.5 text-[11px] font-semibold text-red-700">
+              <PauseOctagon size={12} /> รถถูก Hold
+            </span>
+            <HoldScopeChip cap={cap} />
           </span>
         )}
 
@@ -206,6 +213,7 @@ export function EditRequestsPage() {
   const [err, setErr] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('PENDING');
   const [onlyMine, setOnlyMine] = useState(false);
+  const cap = useHoldCapability();
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -290,8 +298,10 @@ export function EditRequestsPage() {
         </div>
       )}
 
+      <HoldCapabilityBanner cap={cap} />
+
       <div className="space-y-2">
-        {sorted.map(r => <RequestCard key={String(r.id)} r={r} onDone={load} />)}
+        {sorted.map(r => <RequestCard key={String(r.id)} r={r} onDone={load} cap={cap} />)}
       </div>
     </div>
   );

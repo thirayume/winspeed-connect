@@ -1240,3 +1240,13 @@ export const fetchOrgHints = () =>
       winspeedDeptKnown: number; winspeedPostKnown: number; note: string;
     };
   }>('/auth/org-hints');
+
+// ── สถานะกลไก Hold รถ ─────────────────────────────────────────
+// หน้าจอต้องใช้ค่านี้พูด ไม่ใช่สมมติเองว่า "Hold" แปลว่ารถหยุดแล้ว
+export type HoldCapability = {
+  writesToWinspeed: boolean;
+  verifiedOnRealTruck: boolean;
+  label: string;
+};
+
+export const fetchHoldCapability = () => req<HoldCapability>('/edit-requests/hold-capability');
