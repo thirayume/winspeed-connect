@@ -93,18 +93,8 @@ async function cleanup(quiet) {
     { u: { type: sql.NVarChar(50), value: MARKETING_USER } });
   say('ลบ pool ทดสอบและผู้ใช้ e2e_marketing');
 
-  try {
-    const { tsQuery } = require('../services/truckscale-db');
-    // จำกัดที่ทะเบียนทดสอบเท่านั้น — เดิมมี OR sequence LIKE 'WF%' ซึ่งสแกนทั้งตาราง
-    // 400,000 แถวผ่านเน็ต ทำให้ค้างนานมาก และเสี่ยงล็อกตารางของโรงงาน
-    // ลบรายการย่อยก่อน แล้วค่อยลบใบชั่ง เพราะรายการย่อยผูกด้วย one_num ของใบนั้น
-    const nums = await tsQuery(`SELECT one_num FROM tblscale WHERE one_car_regis = ?`, [PLATE]);
-    for (const row of nums) {
-      if (row.one_num) await tsQuery(`DELETE FROM tblproduct_detail WHERE one_num = ?`, [row.one_num]);
-    }
-    const r = await tsQuery(`DELETE FROM tblscale WHERE one_car_regis = ?`, [PLATE]);
-    say(`ลบใบชั่งฝั่ง MySQL ${r?.affectedRows ?? 0} แถว`);
-  } catch (e) { say('ข้ามการล้างฝั่ง MySQL: ' + e.message.slice(0, 60)); }
+  // เดิมมีขั้นล้างใบชั่งฝั่ง MySQL ด้วย — MySQL ถูกลบออกถาวรเมื่อ 04/09/2569
+  // ใบชั่งทดสอบใน dbo.WGHD ล้างด้วย scripts/seed-wgxx-testdata.js --clean แทน
 }
 
 async function main() {

@@ -21,7 +21,7 @@ import { UnlockReviewModal } from './components/papertrail/UnlockReviewModal';
 import { useSocketEvent } from './hooks/useSocket';
 import packageJson from '../package.json';
 
-export type PortalKey = 'dashboard' | 'sales' | 'trip-board' | 'edit-requests' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'truckscale' | 'weigh-inbox' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'master' | 'profile';
+export type PortalKey = 'dashboard' | 'sales' | 'trip-board' | 'edit-requests' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'master' | 'profile';
 
 const SalesPortal = lazy(() => import('./components/sales/SalesPortal').then(m => ({ default: m.SalesPortal })));
 const SaleTripBoardPage = lazy(() => import('./components/sales/SaleTripBoardPage').then(m => ({ default: m.SaleTripBoardPage })));
@@ -37,12 +37,9 @@ const RebatePlanPage = lazy(() => import('./components/rebate/RebatePlanPage').t
 const ControlTicketPage = lazy(() => import('./components/master/ControlTicketPage').then(m => ({ default: m.ControlTicketPage })));
 const ReportsPage = lazy(() => import('./components/reports/ReportsPage').then(m => ({ default: m.ReportsPage })));
 const WeighingReportsPage = lazy(() => import('./components/reports/WeighingReportsPage').then(m => ({ default: m.WeighingReportsPage })));
-// ซ่อนไว้: หน้าเดิมที่อ่าน MySQL ของ TruckScale — เลิกใช้ 02/09/2569 แต่ไม่ลบ เผื่อถอยกลับ
 // const ScaleReportsPage = lazy(() => import('./components/reports/ScaleReportsPage').then(m => ({ default: m.ScaleReportsPage })));
 // const IncentiveReport = lazy(() => import('./components/reports/IncentiveReport').then(m => ({ default: m.IncentiveReport })));
 // const BudgetExpenditureReport = lazy(() => import('./components/reports/BudgetExpenditureReport').then(m => ({ default: m.BudgetExpenditureReport })));
-// const TruckScalePage = lazy(() => import('./components/truckscale/TruckScalePage').then(m => ({ default: m.TruckScalePage })));
-// const WeighInboxPage = lazy(() => import('./components/truckscale/WeighInboxPage').then(m => ({ default: m.WeighInboxPage })));
 const AccountingPage = lazy(() => import('./components/accounting/AccountingPage').then(m => ({ default: m.AccountingPage })));
 const GiveawayPage = lazy(() => import('./components/giveaway/GiveawayPage').then(m => ({ default: m.GiveawayPage })));
 const QuotationPage = lazy(() => import('./components/quotation/QuotationPage').then(m => ({ default: m.QuotationPage })));
@@ -110,11 +107,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       // หน้าชั่งย้ายมาอยู่กลุ่มนี้ เดิมไปอยู่ใต้ "บัญชี" ซึ่งไม่ใช่ที่ที่คนหน้างานจะมองหา
       { key: 'scale-reports', label: 'สถานะการชั่งรถ', sub: 'สด · WGHD · ชั่งเข้า–ออก', icon: Truck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE'] },
-      // ── ตัดออก 03/09/2569 — ทั้งสองหน้าอ่าน MySQL ของ TruckScale ที่ยกเลิกแล้ว ──
-      // endpoint ฝั่ง backend ตอบ 404 อยู่แล้ว · wf.WeighInbox เป็นข้อมูลตาย
-      // ไฟล์ยังอยู่ครบตามคำสั่งเจ้าของระบบ ("อย่าเพิ่งลบ Codes ให้ซ่อนไป")
-      // { key: 'truckscale', label: 'TruckScale',  sub: 'เครื่องชั่ง · MySQL',  icon: Scale, roles: [...] },
-      // { key: 'weigh-inbox',label: 'Weigh Inbox', sub: 'ดึงชั่ง · จับคู่ SO',     icon: Inbox, roles: [...] },
     ],
   },
   {
@@ -555,8 +547,6 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'scale-reports' && <WeighingReportsPage />}
                 {/* ปิดไว้ 03/09/2569 — IncentiveReport */}
                 {/* ปิดไว้ 03/09/2569 — BudgetExpenditureReport */}
-                {/* ปิดไว้ 03/09/2569 — TruckScalePage */}
-                {/* ปิดไว้ 03/09/2569 — WeighInboxPage */}
                 {activePortal === 'accounting' && <AccountingPage />}
                 {activePortal === 'recon'      && <ReconciliationPage />}
 

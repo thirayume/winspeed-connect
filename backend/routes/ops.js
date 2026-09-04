@@ -4,7 +4,6 @@
  */
 const router = require('express').Router();
 const { query, wfQuery } = require('../db');
-const { MYSQL_ENABLED, getPool, tsQuery } = require('../services/truckscale-db');
 const obs = require('../services/observability');
 const { requireAuth, requireRole } = require('../middleware/auth');
 
@@ -12,14 +11,9 @@ router.use(requireAuth, requireRole('ADMIN', 'MANAGER'));
 
 // GET /api/ops/status — telemetry + DB health รวม
 router.get('/status', async (req, res) => {
-  const db = { sqlserver: 'unknown', mysql: 'unknown' };
+  // MySQL ถูกลบออกถาวรเมื่อ 04/09/2569 · แหล่งข้อมูลการชั่งคือ dbo.WGHD เท่านั้น
+  const db = { sqlserver: 'unknown' };
   try { await query('SELECT 1 AS ok'); db.sqlserver = 'up'; } catch { db.sqlserver = 'down'; }
-  // 'disabled' = ตั้งใจปิด (ยกเลิก MySQL TruckScale 03/09/2569) ไม่ใช่ระบบล่ม
-  try {
-    if (!MYSQL_ENABLED) db.mysql = 'disabled';
-    else if (!getPool()) db.mysql = 'not-configured';
-    else { await tsQuery('SELECT 1 AS ok'); db.mysql = 'up'; }
-  } catch { db.mysql = 'down'; }
   db.weighing = db.sqlserver === 'up' ? 'winspeed:WGHD' : 'unknown';
   res.json({ ...obs.getStatus(), db });
 });

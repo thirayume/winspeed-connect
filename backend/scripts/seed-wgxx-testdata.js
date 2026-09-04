@@ -1,12 +1,16 @@
 /**
  * seed-wgxx-testdata.js — ใส่ข้อมูลชั่งทดสอบลง dbo.WGHD / dbo.WGDT
  *
- * ⚠ เขียนลง dbo ซึ่งปกติเป็น read-only — เจ้าของระบบอนุญาตเฉพาะข้อมูลทดสอบ 03/09/2569
- *   "สามารถลบทิ้งได้ครับ แต่อย่าปรับเปลี่ยนโครงสร้างใดๆ"
+ * สิทธิ์
+ *   04/09/2569 เจ้าของระบบเปิดสิทธิ์อ่าน–เขียน dbo.WGHD/WGDT/WGDTReport เต็มรูปแบบ
+ *   และยืนยันว่า 181 แถวที่เคยมีเป็นข้อมูลทดสอบล้วน จำลองใหม่ได้
+ *   (ยังคงห้ามแก้ **โครงสร้าง** ของ schema dbo เหมือนเดิม — เขียนได้เฉพาะข้อมูล)
  *
- * ⚠ ห้ามรันบน PROD-A (Azure) — เป็นระบบที่ใช้งานจริง
- *   เคยเสียเวลาแยกข้อมูลทดสอบออกจากของจริงมาแล้วรอบหนึ่ง อย่าสร้างปัญหาเดิมซ้ำ
- *   ใช้กับ local และ PROD-B (สำรอง ยังไม่มีคนใช้) เท่านั้น
+ * ⚠ PROD-A (Azure) เป็นระบบที่มีผู้ใช้จริง ต้องใส่ --allow-prod-a ถึงจะยอมรัน
+ *   ไม่ใช่เพราะห้าม แต่เพราะไม่ควรเกิดจากการพิมพ์คำสั่งผิด
+ *
+ * แถวที่สร้างจากสคริปต์นี้มี UpdateBy = 'SEED-TEST' และทะเบียนขึ้นต้น TEST-
+ * จึงแยกออกจากข้อมูลจริงได้เสมอ และล้างคืนได้ด้วย --clean
  *
  * ครอบคลุมอะไร
  *   TEST-01  3 SO คันเดียว · สถานะ 1 รอเข้าชั่ง      ← เคส "รถคันเดียวหลาย SO"
@@ -24,6 +28,8 @@
 require('dotenv').config({path:require('path').join(__dirname,'..','.env')});
 const { query, dboWrite, sql } = require('../db');
 const APPLY = process.argv.includes('--apply');
+const CLEAN = process.argv.includes('--clean');
+const ALLOW_PROD_A = process.argv.includes('--allow-prod-a');
 
 // เที่ยวทดสอบ 3 เที่ยว ครอบคลุมสถานะ 1/2/3 และเคส "รถคันเดียวหลาย SO"
 // ทะเบียนขึ้นต้น TEST- เพื่อให้แยกออกจากข้อมูลจริงได้ทันทีถ้าหลุดไปที่ไหน
@@ -43,12 +49,36 @@ const TRIPS = [
 
 (async()=>{
   const db=(await query('SELECT @@SERVERNAME s, DB_NAME() d'))[0];
+  const isProdA = String(process.env.DB_MODE||'').toLowerCase()==='remote';
+  if (isProdA && !ALLOW_PROD_A) {
+    console.error(`หยุด: เป้าหมายคือ PROD-A (${db.s}) ซึ่งมีผู้ใช้จริง`);
+    console.error('      ถ้าตั้งใจจริง ใส่ --allow-prod-a');
+    process.exit(1);
+  }
+
   const rows = TRIPS.reduce((n,t)=>n+t.sos.length,0);
-  console.log(`เป้าหมาย: ${db.s}/${db.d}  โหมด: ${APPLY?'APPLY':'DRY-RUN'}  จะสร้าง ${rows} แถว WGHD`);
+  console.log(`เป้าหมาย: ${db.s}/${db.d}  โหมด: ${CLEAN?'CLEAN':APPLY?'APPLY':'DRY-RUN'}`);
+
   const cur=(await query('SELECT COUNT(*) n FROM dbo.WGHD'))[0].n;
-  console.log(`  WGHD ปัจจุบัน: ${cur} แถว`);
+  const seeded=(await query(`SELECT COUNT(*) n FROM dbo.WGHD WHERE UpdateBy='SEED-TEST'`))[0].n;
+  console.log(`  WGHD ปัจจุบัน: ${cur} แถว (เป็นข้อมูลทดสอบ ${seeded})`);
+
+  // ── ล้างเฉพาะแถวที่สคริปต์นี้สร้าง ──────────────────────────
+  // ลบลูกก่อนแม่ เพราะ WGDT/WGDTReport อ้าง WGHDId
+  if (CLEAN) {
+    const d1 = await dboWrite(`DELETE FROM dbo.WGDTReport WHERE WGHDId IN (SELECT Id FROM dbo.WGHD WHERE UpdateBy='SEED-TEST')`);
+    const d2 = await dboWrite(`DELETE FROM dbo.WGDT       WHERE WGHDId IN (SELECT Id FROM dbo.WGHD WHERE UpdateBy='SEED-TEST')`);
+    const d3 = await dboWrite(`DELETE FROM dbo.WGHD WHERE UpdateBy='SEED-TEST'`);
+    console.log(`  ลบแล้ว — WGDTReport ${d1.rowsAffected?.[0]??0} · WGDT ${d2.rowsAffected?.[0]??0} · WGHD ${d3.rowsAffected?.[0]??0}`);
+    process.exit(0);
+  }
+
+  console.log(`  จะสร้าง ${rows} แถว WGHD`);
   if(!APPLY){ console.log('  (ยังไม่ใส่ — ใส่ --apply)'); process.exit(0); }
-  if(cur>0){ console.log('  ⚠ มีข้อมูลอยู่แล้ว หยุดเพื่อไม่ให้ปน — ล้างก่อนถ้าต้องการ seed ใหม่'); process.exit(1); }
+
+  // กันข้อมูลจริงเท่านั้น ข้อมูลทดสอบเดิมให้ล้างด้วย --clean ก่อน
+  if(cur-seeded>0){ console.log(`  ⚠ มีข้อมูลจริงอยู่ ${cur-seeded} แถว หยุดเพื่อไม่ให้ปน`); process.exit(1); }
+  if(seeded>0){ console.log('  ⚠ มีข้อมูลทดสอบเดิมอยู่ — รัน --clean ก่อน'); process.exit(1); }
 
   let mb=6909001;
   for(const t of TRIPS){

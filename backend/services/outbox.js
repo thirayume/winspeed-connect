@@ -34,18 +34,12 @@ async function handle(ev) {
     broadcast('outbox_event', { type: ev.EventType, aggregateId: ev.AggregateId });
   } catch { /* socket optional */ }
 
-  // ยกเลิก 03/09/2569 — ไม่เขียนกลับ MySQL อีกแล้ว
-  // เหตุการณ์เก่าที่ค้างคิวจะถูกทำเครื่องหมายว่าจบโดยไม่ทำอะไร (ชั้น MySQL ปิดอยู่)
-  if (ev.EventType === 'TRUCKSCALE_WRITEBACK' && ev.Payload) {
-    const { writeBackWeighOutTicket, recordWriteBackResult } = require('./truckscale-db');
-    const payload = typeof ev.Payload === 'string' ? JSON.parse(ev.Payload) : ev.Payload;
-    const res = await writeBackWeighOutTicket(payload);
-    // บันทึกผลของการลองใหม่ด้วย มิฉะนั้นรายงาน R-3 จะยังเห็นใบนี้เป็น 'failed'
-    // ทั้งที่ retry สำเร็จไปแล้ว
-    await recordWriteBackResult(payload.soId || ev.AggregateId, res);
-    if (!res || !res.success) {
-      throw new Error(`TruckScale writeback failed: ${res?.error || res?.reason || 'unknown'}`);
-    }
+  // TRUCKSCALE_WRITEBACK ถูกยกเลิกถาวรเมื่อ 04/09/2569 พร้อมกับการเลิกใช้ MySQL
+  // เหตุการณ์เก่าที่ยังค้างอยู่ในคิวจะถูกทำเครื่องหมายว่าจบโดยไม่ทำอะไร
+  // ไม่ throw เพื่อไม่ให้คิวติดค้างเพราะงานที่ไม่มีปลายทางแล้ว
+  if (ev.EventType === 'TRUCKSCALE_WRITEBACK') {
+    console.log(`[outbox] ข้าม TRUCKSCALE_WRITEBACK #${ev.Id || ev.AggregateId} — เลิกใช้ MySQL แล้ว`);
+    return;
   }
 }
 

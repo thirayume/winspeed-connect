@@ -7,7 +7,10 @@
  */
 const router = require('express').Router();
 const { sql, wfQuery } = require('../db');
-const { getPool, tsQuery, oleDateSerial } = require('../services/truckscale-db');
+// เดิมเทียบยอดกับตาราง tblscale ใน MySQL ของ TruckScale
+// MySQL ถูกลบออกถาวรเมื่อ 04/09/2569 — ย้ายมาอ่าน dbo.WGHD ซึ่งเป็นแหล่งเดียวแล้ว
+// dbo.WGHD มีครบทั้ง MoveBill · CarNo · WeightNet · DateOut จึงเทียบได้เหมือนเดิม
+// และดีกว่าเดิมตรงที่อยู่ฐานเดียวกัน ไม่ต้องข้ามเครื่อง
 const { requireAuth, requireRole } = require('../middleware/auth');
 
 router.use(requireAuth);
@@ -84,48 +87,65 @@ async function buildCases(days) {
     r.WsPostId      = i?.PostID   ?? null;
   }
 
-  // T6-03: Primary match by movebill, fallback to plate + Date_Out2
+  // T6-03: จับคู่ด้วย MoveBill เป็นหลัก ถ้าไม่เจอค่อยถอยไปใช้ ทะเบียน + วันชั่งออก
+  //
+  // แหล่งข้อมูลคือ dbo.WGHD (อ่านอย่างเดียวในเส้นทางนี้)
+  // ไม่ใช้ OLE date serial อีกแล้ว เพราะ WGHD.DateOut เป็น datetime ปกติ
+  // จึงเทียบวันตรง ๆ ได้ ลดโอกาสพลาดจากการแปลงเลขวันที่
   let tsMap = {}, tsAvailable = true;
-  const movebills = [...new Set(rows.map(r => r.Movebill).filter(Boolean))];
-  if (movebills.length && getPool()) {
-    try {
-      const placeholders = movebills.map(() => '?').join(',');
-      const ts = await tsQuery(`SELECT movebill, weight_net FROM tblscale WHERE movebill IN (${placeholders})`, movebills);
-      for (const t of ts) {
-        tsMap[String(t.movebill)] = { net: Number(t.weight_net), matchBy: 'movebill' };
-      }
-    } catch { tsAvailable = false; }
-  } else if (!getPool()) { tsAvailable = false; }
+  const movebills = [...new Set(rows.map(r => r.Movebill).filter(Boolean))].map(String);
 
-  // Fallback matching for rows missing movebill or unmatched movebill
-  const unmatched = rows.filter(r => !r.Movebill || tsMap[String(r.Movebill)] == null);
-  if (unmatched.length && getPool() && tsAvailable) {
-    try {
-      const dates = unmatched.map(r => r.ShipDate ? new Date(r.ShipDate) : null).filter(Boolean);
-      if (dates.length) {
-        const minSerial = Math.min(...dates.map(d => oleDateSerial(d))) - 1;
-        const maxSerial = Math.max(...dates.map(d => oleDateSerial(d))) + 1;
-        const fallbackRows = await tsQuery(
-          `SELECT one_car_regis, Date_Out2, weight_net, movebill FROM tblscale WHERE Date_Out2 BETWEEN ? AND ? ORDER BY s_id DESC`,
-          [minSerial, maxSerial]
+  try {
+    if (movebills.length) {
+      // สร้างตัวแปรทีละตัว ไม่ต่อสตริงค่าเข้า SQL
+      const inputs = {};
+      const names = movebills.map((mb, i) => {
+        inputs[`mb${i}`] = { type: sql.VarChar(50), value: mb };
+        return `@mb${i}`;
+      });
+      const ts = (await wfQuery(`
+        SELECT RTRIM(w.MoveBill) AS MoveBill, w.WeightNet
+        FROM dbo.WGHD w
+        WHERE RTRIM(w.MoveBill) IN (${names.join(',')})`, inputs)).recordset || [];
+      for (const t of ts) {
+        tsMap[String(t.MoveBill)] = { net: Number(t.WeightNet), matchBy: 'movebill' };
+      }
+    }
+
+    // ใบที่ยังจับคู่ไม่ได้ — ลองด้วยทะเบียนรถกับวันชั่งออก ยอมคลาดได้ 1 วัน
+    const unmatched = rows.filter(r => !r.Movebill || tsMap[String(r.Movebill)] == null);
+    const dates = unmatched.map(r => (r.ShipDate ? new Date(r.ShipDate) : null)).filter(Boolean);
+    if (unmatched.length && dates.length) {
+      const min = new Date(Math.min(...dates.map(d => d.getTime())) - 86400000);
+      const max = new Date(Math.max(...dates.map(d => d.getTime())) + 86400000);
+      const fallbackRows = (await wfQuery(`
+        SELECT RTRIM(w.CarNo) AS CarNo, w.DateOut, w.WeightNet, RTRIM(w.MoveBill) AS MoveBill
+        FROM dbo.WGHD w
+        WHERE w.DateOut BETWEEN @min AND @max
+        ORDER BY w.Id DESC`, {
+          min: { type: sql.DateTime, value: min },
+          max: { type: sql.DateTime, value: max },
+        })).recordset || [];
+
+      for (const r of unmatched) {
+        if (!r.TruckPlate || !r.ShipDate) continue;
+        const target = new Date(r.ShipDate).getTime();
+        const hit = fallbackRows.find(t =>
+          String(t.CarNo || '').trim() === String(r.TruckPlate || '').trim() &&
+          t.DateOut && Math.abs(new Date(t.DateOut).getTime() - target) <= 86400000
         );
-        for (const r of unmatched) {
-          if (!r.TruckPlate || !r.ShipDate) continue;
-          const targetSerial = oleDateSerial(new Date(r.ShipDate));
-          const hit = fallbackRows.find(t =>
-            String(t.one_car_regis || '').trim() === String(r.TruckPlate || '').trim() &&
-            Math.abs(Number(t.Date_Out2) - targetSerial) <= 1
-          );
-          if (hit) {
-            tsMap[`plate:${r.SoId}`] = {
-              net: Number(hit.weight_net),
-              matchBy: 'plate_date',
-              fallbackMovebill: hit.movebill || null
-            };
-          }
+        if (hit) {
+          tsMap[`plate:${r.SoId}`] = {
+            net: Number(hit.WeightNet),
+            matchBy: 'plate_date',
+            fallbackMovebill: hit.MoveBill || null,
+          };
         }
       }
-    } catch { /* retain tsAvailable status */ }
+    }
+  } catch (e) {
+    console.error('[recon] อ่าน dbo.WGHD ไม่สำเร็จ:', e.message);
+    tsAvailable = false;
   }
 
   // resolutions

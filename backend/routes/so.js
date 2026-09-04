@@ -11,8 +11,6 @@ const { generateImportFiles } = require('../services/winspeed-import.service');
 const { broadcast } = require('../services/socket');
 const { enqueue } = require('../services/outbox');
 const { resolveApprovalPolicy } = require('../services/approval');
-// ยกเลิก 03/09/2569 — ชั้น MySQL ของ TruckScale ปิดแล้ว ไฟล์ยังอยู่ครบ
-// const { insertPreWeighTicket, removePreWeighTicket } = require('../services/truckscale-db');
 const { writeAudit, auditUser, SCREEN } = require('../services/winspeed-audit');
 const { advanceDocuNoCounter } = require('../services/winspeed-counter');
 
@@ -1985,14 +1983,9 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'ADMIN', 'C_LE
 
     const lines = await getLines(so.Id);
 
-    // ── ยกเลิก 03/09/2569: ไม่เขียนกลับ MySQL db_truckscale อีกแล้ว ────────
-    // เจ้าของระบบสั่งยกเลิกงานที่ทำร่วมกับ MySQL TruckScale ทั้งหมด
     // การชั่งจริงบันทึกโดยเครื่องชั่งลงตาราง dbo.WGHD/WGDT ของ WINSpeed เอง
-    // แอปอ่านสถานะจากที่นั่นผ่าน /api/weighing และไม่เขียนกลับที่ใดทั้งสิ้น
-    // โค้ดเดิมยังอยู่ครบใน services/truckscale-db.js (ปิดด้วย TRUCKSCALE_MYSQL)
-    // const wbRes = await writeBackWeighOutTicket(ticketPayload) ...
-    // await recordWriteBackResult(so.Id, wbRes) ...
-    // await enqueue('TRUCKSCALE_WRITEBACK', ...) ...
+    // แอปอ่านสถานะจากที่นั่นผ่าน /api/weighing
+    // (ชั้น MySQL db_truckscale และการเขียนกลับ ถูกลบออกถาวรเมื่อ 04/09/2569)
 
     // ตั้ง Rebate accrual เมื่อ SHIPPED (เรียกชำระเงินแล้ว)
     // รีเบทเป็นของ "พนักงานขายเจ้าของใบสั่งขาย" ไม่ใช่คนที่กดปุ่มชั่งออก

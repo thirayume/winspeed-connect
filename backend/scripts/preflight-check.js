@@ -58,15 +58,9 @@ const isLinux = os.platform() !== 'win32';
   if (!E('DB_NAME')) block('DB_NAME ไม่ได้ตั้ง', 'DB_NAME=dbwins_worldfert9');
   else ok(`DB_NAME=${E('DB_NAME')}`);
 
-  // ── 2. MySQL env ────────────────────────────────────────────
-  head('TruckScale (MySQL) config');
-  if (!E('MYSQL_HOST')) warn('MYSQL_HOST ไม่ได้ตั้ง — ฟีเจอร์ TruckScale จะปิดทำงาน (getPool() = null)',
-                             'ตั้งถ้าต้องใช้ Weigh Inbox / ชั่งออก');
-  else {
-    ok(`MYSQL_HOST=${E('MYSQL_HOST')}:${E('MYSQL_PORT') || 3306}`);
-    if (!E('MYSQL_DATABASE')) block('MYSQL_DATABASE ไม่ได้ตั้ง', 'ปกติคือ db_truckscale');
-    if (!E('MYSQL_PASSWORD')) warn('MYSQL_PASSWORD ว่าง');
-  }
+  // ── 2. (ว่าง) เดิมตรวจค่า MySQL ของ TruckScale ───────────────
+  // MySQL ถูกลบออกถาวรเมื่อ 04/09/2569 · ไม่มี env ให้ตรวจอีกแล้ว
+  // การตรวจแหล่งข้อมูลการชั่งย้ายไปอยู่หัวข้อ "การชั่ง — dbo.WGHD" ด้านล่าง
 
   // ── 3. security / server ────────────────────────────────────
   head('Security & server');
@@ -159,18 +153,18 @@ const isLinux = os.platform() !== 'win32';
     warn(`ตรวจตัวนับไม่สำเร็จ: ${e.message}`, 'รัน node scripts/audit-docuno-counters.js ดูรายละเอียด');
   }
 
-  // ── 5. MySQL live check ─────────────────────────────────────
-  head('TruckScale (MySQL) — live');
-  if (!E('MYSQL_HOST')) warn('ข้าม (MYSQL_HOST ไม่ได้ตั้ง)');
-  else {
-    try {
-      const { tsQuery } = require('../services/truckscale-db');
-      const n = (await tsQuery('SELECT COUNT(*) AS n FROM tblscale'))[0].n;
-      ok(`เชื่อมต่อได้ · tblscale = ${Number(n).toLocaleString()} แถว`);
-      if (Number(n) === 0) warn('tblscale ว่าง', 'ตรวจว่า restore/ชี้ host ถูกฐาน');
-    } catch (e) {
-      block(`เชื่อมต่อ MySQL ไม่ได้: ${e.message}`, 'ตรวจ MYSQL_HOST/USER/PASSWORD และ network');
+  // ── 5. แหล่งข้อมูลการชั่ง ────────────────────────────────────
+  // MySQL TruckScale ถูกลบออกถาวรเมื่อ 04/09/2569 · แหล่งเดียวคือ dbo.WGHD
+  head('การชั่ง — dbo.WGHD');
+  try {
+    const { wfQuery } = require('../db');
+    const n = (await wfQuery('SELECT COUNT(*) AS n FROM dbo.WGHD')).recordset[0].n;
+    ok(`อ่าน dbo.WGHD ได้ · ${Number(n).toLocaleString()} ใบ`);
+    if (Number(n) === 0) {
+      warn('dbo.WGHD ว่าง', 'ระบบชั่งยังไม่ป้อนข้อมูล — กระดานเที่ยวรถจะขึ้น "ยังไม่เข้าชั่ง" ทุกเที่ยว');
     }
+  } catch (e) {
+    block(`อ่าน dbo.WGHD ไม่ได้: ${e.message}`, 'ตรวจสิทธิ์ของ wf_reader บน schema dbo');
   }
 
   finish();

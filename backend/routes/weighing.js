@@ -232,6 +232,30 @@ router.get('/tickets', guard(async (req, res) => {
      ORDER BY h.DateReg DESC, h.Id DESC`, extra));
 }));
 
+/**
+ * ใบชั่งของใบสั่งขายใบเดียว — ใช้ตอนคลังกดชั่งออกเพื่อดึงน้ำหนักมาเติมให้
+ *
+ * เดิมหน้าจอดึงจาก MySQL ของ TruckScale (`/api/truckscale/for-so/:id`)
+ * ซึ่งถูกลบออกถาวรเมื่อ 04/09/2569 — ย้ายมาอ่าน dbo.WGHD ด้วย SPID
+ * ซึ่งเป็นกุญแจที่ถูกต้องระหว่างใบชั่งกับใบสั่งขาย (ไม่ใช่ DocuNo)
+ *
+ * อ่านอย่างเดียว
+ */
+router.get('/for-so/:soid', guard(async (req, res) => {
+  const soid = Number(req.params.soid);
+  if (!Number.isInteger(soid)) return res.status(400).json({ message: 'soid ต้องเป็นตัวเลข' });
+  const r = await query(`
+    SELECT h.Id, h.MoveBill, h.CarNo AS Plate, h.WGType, h.Status, ${STATUS_SQL} AS StatusText,
+           h.WeightIn, h.WeightOut, h.WeightNet, h.TotalTon, h.TotalKasob,
+           CONVERT(varchar(16), h.DateIn, 120)  AS DateIn,
+           CONVERT(varchar(16), h.DateOut, 120) AS DateOut,
+           h.LocationName AS ScaleNo
+      FROM dbo.WGHD h
+     WHERE h.SPID = @soid
+     ORDER BY h.Id DESC`, { soid: { type: sql.Int, value: soid } });
+  res.json({ soid, candidates: r.recordset || [], count: (r.recordset || []).length });
+}));
+
 /** ใบเดียวพร้อมบรรทัดสินค้า — ใช้กับหน้าพิมพ์ */
 router.get('/tickets/:id', guard(async (req, res) => {
   const id = Number(req.params.id);

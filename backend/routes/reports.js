@@ -8,7 +8,8 @@
 const router = require('express').Router();
 const XLSX = require('xlsx');
 const { wfQuery, sql } = require('../db');
-const { listScaleTicketsByDateRange } = require('../services/truckscale-db');
+// ชั้น MySQL TruckScale ถูกลบถาวรเมื่อ 04/09/2569
+// รายงานกระทบยอดฝั่งเครื่องชั่งจึงไม่มีข้อมูลเปรียบเทียบอีกต่อไป (ดูจุดที่ใช้ด้านล่าง)
 const { requireAuth, canViewAllRebateAmounts } = require('../middleware/auth');
 
 router.use(requireAuth);
@@ -668,14 +669,13 @@ async function runTruckScaleWritebackReport(params = {}) {
     { from: { type: sql.DateTime2, value: startOfDay }, to: { type: sql.DateTime2, value: endOfDay } }
   )).recordset || [];
 
-  // ฝั่งเครื่องชั่ง: อ่านตามช่วงวันเดียวกัน (อ่านอย่างเดียว)
-  let scaleRows = [];
-  let scaleError = null;
-  try {
-    scaleRows = await listScaleTicketsByDateRange(startOfDay, endOfDay);
-  } catch (error) {
-    scaleError = error.message;   // รายงานยังต้องออกได้แม้เครื่องชั่งต่อไม่ได้
-  }
+  // ฝั่งเครื่องชั่งเคยอ่านจาก MySQL ซึ่งถูกยกเลิกถาวรเมื่อ 04/09/2569
+  //
+  // รายงานนี้ยังออกได้ แต่คอลัมน์ฝั่งเครื่องชั่งจะว่างทั้งหมด และทุกใบจะตกเป็น
+  // เคส C (ไม่มีผลการเขียนกลับ) ซึ่งเป็นความจริง — ไม่มีการเขียนกลับอีกแล้ว
+  // ถ้าต้องการกระทบยอดกับเครื่องชั่งอีกครั้ง ต้องเขียนใหม่ให้อ่านจาก dbo.WGHD
+  const scaleRows = [];
+  const scaleError = 'ยกเลิกการเชื่อมต่อ MySQL แล้ว — ไม่มีข้อมูลฝั่งเครื่องชั่งให้เทียบ';
   const scaleBySid = new Map(scaleRows.map(row => [Number(row.s_id), row]));
   const matchedSids = new Set();
 

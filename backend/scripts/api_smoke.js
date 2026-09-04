@@ -138,7 +138,7 @@ async function main() {
   await step('health', async () => {
     const res = await request('/health');
     assert(res.ok && res.body?.ok === true, 'Health endpoint failed', res);
-    return { http: res.status, sqlserver: res.body.db?.sqlserver, mysql: res.body.db?.mysql, ms: res.ms };
+    return { http: res.status, sqlserver: res.body.db?.sqlserver, weighing: res.body.db?.weighing, ms: res.ms };
   });
 
   await step('auth guard rejects missing token', async () => {

@@ -83,7 +83,7 @@ export function OpsStatusPage() {
           <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4">
             <div className="text-xs text-gray-400 mb-2 flex items-center gap-1.5"><Database size={14} /> ฐานข้อมูล</div>
             <div className="flex items-center justify-between py-1"><span className="text-sm text-gray-600">SQL Server (WINSpeed/wf)</span>{dbBadge(status?.db.sqlserver ?? 'unknown')}</div>
-            <div className="flex items-center justify-between py-1"><span className="text-sm text-gray-600">MySQL (TruckScale)</span>{dbBadge(status?.db.mysql ?? 'unknown')}</div>
+            <div className="flex items-center justify-between py-1"><span className="text-sm text-gray-600">แหล่งข้อมูลการชั่ง</span>{dbBadge(status?.db.weighing ?? 'unknown')}</div>
           </div>
           <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4">
             <div className="text-xs text-gray-400 mb-2">สภาพแวดล้อม</div>

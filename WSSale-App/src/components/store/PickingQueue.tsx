@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Truck, Package, Unlock, ListOrdered, Scale, User, FileText, CalendarDays, Camera, Upload, FileImage, X } from 'lucide-react';
-import { moveToPicking, confirmLoading, shipSO, unlockSO, fetchTruckScaleForSO } from '../../services/api';
-import type { TruckScaleWeigh } from '../../types';
+import { moveToPicking, confirmLoading, shipSO, unlockSO,
+         fetchWeighCandidatesForSO, type WeighCandidate } from '../../services/api';
 import type { SalesOrder } from '../../types';
 import { AlertDialog } from '../ui/AlertDialog';
 import { VisualTruckLoader } from './VisualTruckLoader';
@@ -19,7 +19,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
   const [weighTare, setWeighTare] = useState<string>('');       // Tare (kg)
   const [weighScale, setWeighScale] = useState<string>('1');    // เครื่องชั่ง
   const [weighMovebill, setWeighMovebill] = useState<string>(''); // จาก TruckScale
-  const [tsCandidates, setTsCandidates] = useState<TruckScaleWeigh[] | null>(null);
+  const [tsCandidates, setTsCandidates] = useState<WeighCandidate[] | null>(null);
   const [tsLoading, setTsLoading] = useState(false);
 
   const [overrideReason, setOverrideReason] = useState<string>('');
@@ -61,17 +61,17 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
     if (!weighOrder) return;
     setTsLoading(true);
     try {
-      const r = await fetchTruckScaleForSO(Number(weighOrder.id));
+      const r = await fetchWeighCandidatesForSO(Number(weighOrder.id));
       setTsCandidates(r.candidates || []);
-    } catch (e: any) { setErrorMsg(e.message || 'ดึงข้อมูล TruckScale ไม่สำเร็จ'); setTsCandidates([]); }
+    } catch (e: any) { setErrorMsg(e.message || 'ดึงใบชั่งจาก WINSpeed ไม่สำเร็จ'); setTsCandidates([]); }
     finally { setTsLoading(false); }
   };
 
-  const pickTs = (c: TruckScaleWeigh) => {
-    setWeighTare(String(c.WeightIn));
-    setWeighWeight(String(c.WeightOut));
+  const pickTs = (c: WeighCandidate) => {
+    setWeighTare(String(c.WeightIn ?? ''));
+    setWeighWeight(String(c.WeightOut ?? ''));
     setWeighScale(String(c.ScaleNo || 1));
-    setWeighMovebill(c.Movebill);
+    setWeighMovebill(c.MoveBill || '');
     setTsCandidates(null);
   };
 
@@ -489,15 +489,18 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
                   className="w-full py-2 rounded-lg border border-[#0C447C] text-[#0C447C] text-xs font-semibold hover:bg-[#E6F1FB] flex items-center justify-center gap-1.5 disabled:opacity-50">
                   {tsLoading ? '⏳ กำลังดึง...' : `🔗 ดึงน้ำหนักอัตโนมัติจาก db_truckscale (${weighOrder.truckPlate || '-'})`}
                 </button>
-                {weighMovebill && <div className="text-[11px] text-green-600 mt-1 text-center font-mono">✓ เชื่อม TruckScale · Movebill {weighMovebill}</div>}
+                {weighMovebill && <div className="text-[11px] text-green-600 mt-1 text-center font-mono">✓ เชื่อมใบชั่ง WINSpeed · Movebill {weighMovebill}</div>}
                 {tsCandidates && (
                   <div className="mt-2 max-h-40 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-50">
                     {tsCandidates.length === 0 ? (
                       <div className="text-xs text-gray-400 text-center py-3">ไม่พบใบชั่งของทะเบียนนี้</div>
                     ) : tsCandidates.map(c => (
-                      <button key={c.Sequence} onClick={() => pickTs(c)} className="w-full text-left px-3 py-2 hover:bg-blue-50/50 text-xs flex items-center justify-between">
-                        <span><b className="font-mono">{c.Movebill}</b> · {c.DateOut !== '0' ? c.DateOut : '-'}</span>
-                        <span className="text-[#0C447C] font-bold">{Number(c.WeightNet).toLocaleString()} กก.</span>
+                      <button key={c.Id} onClick={() => pickTs(c)} className="w-full text-left px-3 py-2 hover:bg-blue-50/50 text-xs flex items-center justify-between">
+                        <span>
+                          <b className="font-mono">{c.MoveBill || `#${c.Id}`}</b> · {c.DateOut || '-'}
+                          <span className="ml-1 text-gray-400">{c.StatusText}</span>
+                        </span>
+                        <span className="text-[#0C447C] font-bold">{Number(c.WeightNet ?? 0).toLocaleString()} กก.</span>
                       </button>
                     ))}
                   </div>

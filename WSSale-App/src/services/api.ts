@@ -583,46 +583,16 @@ export const createQuotationFromSoTrip = (payload: {
 export const extendQuotationValidity = (id: number, payload: { validDays?: 7 | 15 | 20 | 30 | 45; validUntil?: string }) =>
   req<{ id: number; validUntil: string }>(`/quotation/${id}/valid-until`, { method: 'PATCH', body: JSON.stringify(payload) });
 
-// ── TruckScale (FR-024/025/026) ───────────────────────────────
-export const pingTruckScale = () =>
-  req<{ ok: boolean; configured: boolean; totalWeighings?: number; completed?: number }>('/truckscale/ping', { silent: true });
-export const fetchTruckScaleWeigh = (params: { plate?: string; movebill?: string; limit?: number }) => {
-  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))).toString();
-  return req<import('../types').TruckScaleWeigh[]>(`/truckscale/weigh?${qs}`);
-};
-export const fetchTruckScaleDetail = (sequence: string) =>
-  req<import('../types').TruckScaleDetail>(`/truckscale/scale/${encodeURIComponent(sequence)}`);
-export const fetchTruckScaleForSO = (soId: number | string) =>
-  req<{ so: { Id: string; WfRef: string; TruckPlate?: string; CustName: string }; candidates: import('../types').TruckScaleWeigh[]; note?: string }>(`/truckscale/for-so/${soId}`);
+// ── TruckScale (MySQL) ถูกลบออกถาวรเมื่อ 04/09/2569 ───────────
+// เดิมมี pingTruckScale · fetchTruckScaleWeigh · fetchTruckScaleDetail ·
+// fetchTruckScaleForSO · fetchTsSyncStatus · runTsSync · fetchWeighInbox ·
+// matchWeighInbox — ทั้งหมดเรียก /api/truckscale ซึ่งไม่มีอยู่แล้ว
+// แหล่งข้อมูลการชั่งเดียวคือ dbo.WGHD อ่านผ่าน fetchWeighingReport / fetchWeighLive
 
-// ── TruckScale inbox / sync (pull) ────────────────────────────
-export interface WeighInboxRow {
-  Id: number; Sequence: string; Movebill?: string; Plate?: string; CustName?: string;
-  WeightIn?: number; WeightOut?: number; WeightNet?: number; DateIn?: string; DateOut?: string; ScaleNo?: string;
-  Status: 'OPEN' | 'COMPLETED'; MatchedSoId?: string | null; MatchedDocuNo?: string | null; MatchStatus?: 'MATCHED' | 'MULTI' | 'UNMATCHED' | null;
-  IngestedAt: string; UpdatedAt: string;
-}
-export interface TsSyncStatus {
-  watermark: { LastSid: number; LastSyncAt: string | null; TotalIngested: number; LastError: string | null } | null;
-  counts: { Status: string; n: number }[]; matched: { MatchStatus: string; n: number }[]; configured: boolean; intervalMs: number;
-}
-export const fetchTsSyncStatus = () => req<TsSyncStatus>('/truckscale/sync/status', { silent: true });
-export const runTsSync = () => req<{ ingested?: number; refreshed?: number; lastSid?: number; error?: string }>('/truckscale/sync/run', { method: 'POST', body: '{}' });
 export interface PaginatedResponse<T> {
   data: T[];
   pagination: { page: number; limit: number; total: number; totalPages: number };
 }
-
-export const fetchWeighInbox = (status?: string, match?: string, search?: string, page = 1, limit = 20) =>
-  req<PaginatedResponse<WeighInboxRow>>(`/truckscale/inbox?${new URLSearchParams({ 
-    ...(status ? { status } : {}), 
-    ...(match ? { match } : {}),
-    ...(search ? { search } : {}),
-    page: String(page),
-    limit: String(limit)
-  }).toString()}`);
-export const matchWeighInbox = (id: number, soId: string) =>
-  req<{ ok: boolean }>(`/truckscale/inbox/${id}/match/${encodeURIComponent(soId)}`, { method: 'POST', body: '{}' });
 
 // ── Reconciliation Workbench (FR-027) ─────────────────────────
 export type ReconCheck = 'WEIGH' | 'INVOICE';
@@ -661,7 +631,7 @@ export interface OpsStatus {
   version: string; env: string; startedAt: string; uptimeSec: number;
   requests: number; errors: number; lastErrorAt: string | null;
   byStatus: Record<string, number>; alertConfigured: boolean;
-  db: { sqlserver: string; mysql: string };
+  db: { sqlserver: string; weighing?: string };
 }
 export interface OpsError {
   Id?: number; OccurredAt?: string; at?: string;
@@ -1250,3 +1220,18 @@ export type HoldCapability = {
 };
 
 export const fetchHoldCapability = () => req<HoldCapability>('/edit-requests/hold-capability');
+
+/**
+ * ใบชั่งของใบสั่งขายใบเดียว — ใช้ตอนคลังกดชั่งออกเพื่อดึงน้ำหนักมาเติม
+ * แทน fetchTruckScaleForSO เดิมที่อ่าน MySQL (ลบออกถาวร 04/09/2569)
+ */
+export type WeighCandidate = {
+  Id: number; MoveBill: string | null; Plate: string | null;
+  WGType: string | null; Status: number | string; StatusText: string;
+  WeightIn: number | null; WeightOut: number | null; WeightNet: number | null;
+  TotalTon: number | null; TotalKasob: number | null;
+  DateIn: string | null; DateOut: string | null; ScaleNo: string | null;
+};
+
+export const fetchWeighCandidatesForSO = (soid: number | string) =>
+  req<{ soid: number; candidates: WeighCandidate[]; count: number }>(`/weighing/for-so/${soid}`);

@@ -23,7 +23,6 @@
     "jsonwebtoken": "^9.0.3",
     "mssql": "^12.5.2",
     "multer": "^2.2.0",
-    "mysql2": "^3.22.5",
     "socket.io": "^4.8.3",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
