@@ -1,14 +1,14 @@
 ---
 documentId: "WF-CTX-001"
-title: "Context Pack — อ่านแผ่นเดียวแล้วเริ่มงานต่อได้ (v1.9.0)"
-version: "v1.9.0"
+title: "Context Pack — อ่านแผ่นเดียวแล้วเริ่มงานต่อได้ (v1.9.7)"
+version: "v1.9.7"
 status: Draft
 statusDetail: "จัดทำ 3 กันยายน 2569 · แทน V1.7.0-CONTEXT-PACK.md · ตัวเลขทุกตัววัดจากเครื่องจริงวันเดียวกัน"
 owner: "Solution Architect"
 normative: true
 ---
 
-# Context Pack — v1.9.0
+# Context Pack — v1.9.7
 
 > **เอกสารนี้มีไว้ให้เปิดเป็นอันดับแรกทุกครั้งที่เริ่มงานใหม่**
 > ไม่ว่าจะเป็นคนหรือ AI · อ่านจบแล้วต้องรู้พอที่จะไม่ทำพลาดซ้ำรอยเดิม
@@ -33,9 +33,11 @@ World Fert ใช้ **Prosoft WINSpeed 9.0** เป็น ERP หลัก
 | 1 | **ห้าม `CREATE/ALTER/DROP` บน `dbo`** — เพิ่ม object ใหม่ให้ไปอยู่ใน `wf` |
 | 2 | **ห้าม `DELETE FROM dbo.SOHD`** ไม่ว่ากรณีใด |
 | 3 | **แก้ schema ผ่าน migration ใหม่เท่านั้น** — `checksumPolicy=immutable-after-apply` · ห้ามมี `USE` ในไฟล์ |
-| 4 | **ห้ามเขียน `dbo.WGHD` / `WGDT` / `WGDTReport`** — อ่านอย่างเดียว เครื่องชั่งเป็นเจ้าของ |
+| 4 | `dbo.WGHD`/`WGDT`/`WGDTReport` **เขียนข้อมูลได้แล้ว** (04/09/2569) — แต่เครื่องชั่งยังเป็นเจ้าของ state machine 1→2→3 อย่าใส่ปุ่มให้ผู้ใช้เลื่อนสถานะเอง |
 | 5 | **repo เป็นสาธารณะ** — ห้ามมีชื่อพนักงาน · ความลับ · IP ส่วนบุคคล ในไฟล์ใด |
 | 6 | **deploy production ต้องได้รับอนุญาตทุกครั้ง** — ไม่มีการอนุมัติล่วงหน้าแบบถาวร |
+| 7 | **ห้ามอักขระไทยในไฟล์ `.bat`/`.cmd`** — cmd.exe ตีความเพี้ยนแล้วรันคำสั่งขยะ เคยทำไฟล์หาย 19 ไฟล์ |
+| 8 | **ห้าม `===` เทียบค่าที่มาจาก DB driver** — คืนชนิดไม่สม่ำเสมอ ด่านความปลอดภัยเคยพังเงียบ |
 
 ---
 
@@ -53,17 +55,18 @@ World Fert ใช้ **Prosoft WINSpeed 9.0** เป็น ERP หลัก
 
 ---
 
-## 4. สถานะ ณ 3 ก.ย. 2569
+## 4. สถานะ ณ 4 ก.ย. 2569
 
 | | |
 |---|---|
-| รุ่น | **1.9.0** · commit `main` |
-| migration | **101 ไฟล์** · ตรงกันทั้ง 3 ฐาน (`unchanged: 101; pending: 0; drift: 0`) |
-| เทสต์ | **19/19 ผ่าน** |
+| รุ่น | **1.9.7** · ขึ้นครบ PROD-A และ PROD-B |
+| migration | **105 ไฟล์** · ตรงกันทั้ง 3 ฐาน (`unchanged: 105; pending: 0; drift: 0`) |
+| เทสต์ | **8/8 ผ่าน** (ชุดเดิม 19 ตัวมีเทส MySQL ที่ถูกลบไปพร้อมฟีเจอร์) |
 | typecheck | **0 error** · `npm run build` = `tsc -b && vite build` |
-| MySQL TruckScale | 🔴 **ยกเลิกทั้งหมด** · `/api/health` ต้องขึ้น `mysql: "disabled"` |
-| แหล่งข้อมูลการชั่ง | `dbo.WGHD` / `WGDT` / `WGDTReport` — **อ่านอย่างเดียว** |
-| `wf` schema | 60 ตาราง · 62 FK · 24 view · 6 procedure |
+| MySQL TruckScale | 🔴 **ลบออกจากระบบแล้ว** ไม่ใช่แค่ปิด · `/api/health` **ไม่มีคีย์ `mysql`** อีกต่อไป |
+| แหล่งข้อมูลการชั่ง | `dbo.WGHD`/`WGDT`/`WGDTReport` — **อ่าน-เขียนได้** |
+| ข้อมูลชั่ง | ทั้ง 3 ฐานมีชุดทดสอบ WGHD 6 · เที่ยว 3 (`UpdateBy='SEED-TEST'`) |
+| `wf` schema | ลบ `WeighInbox` · เพิ่ม `EditReason`/`EditRequest`/`TruckHoldLog`/`CouponRedemptionRef` + view |
 
 ---
 
@@ -101,6 +104,13 @@ World Fert ใช้ **Prosoft WINSpeed 9.0** เป็น ERP หลัก
 | RESTORE ลบ `wf` + database user | ลำดับ **logins → migrate → seed_admin** |
 | `PortalKey` ประกาศไว้ 2 ที่ | แก้ทั้ง `App.tsx` และ `store/app-store.ts` |
 | ข้อมูลหลัง 31 มี.ค. 2569 เชื่อไม่ได้ | กรอง `DocuDate < '2026-04-01'` |
+| **อักขระไทยในไฟล์ `.bat`** ทำ cmd.exe รันคำสั่งขยะ (ไฟล์หาย 19 ตัว) | คอมเมนต์อังกฤษล้วน · ตรวจ `grep -P '[-ÿ]'` ก่อนรัน |
+| **driver คืนชนิดไม่สม่ำเสมอ** — `===` ทำด่านความปลอดภัยพังเงียบ | `Number()` เทียบ id · `String()` เป็นคีย์ Map |
+| `query()` คืน array ส่วน `wfQuery()` คืน `.recordset` | ดูบรรทัด `require('../db')` ของไฟล์นั้นก่อนใช้ |
+| `npm run deploy` ไม่ใช่คำสั่งตรวจสอบ (bump+push ถาวร) | ตรวจด้วย `npm run migrate:plan` |
+| `tar` ที่ PROD-B ไม่ลบไฟล์ที่หายจากต้นทาง | แก้แล้วใน `03-remote-deploy.bat` (ล้าง src ก่อนแตก) |
+| Vite เอา `api.ts` ไปไว้ใน chunk ชื่อ `jsx-runtime-*.js` | grep ให้ถูกไฟล์ตอนตรวจ bundle จริง |
+| ฟีเจอร์ที่อ่านตารางภายนอกอาจเป็นหมันบน production | เช็คก่อนว่าตารางนั้น**มีข้อมูลจริง**ไหม (`WGHD` เคยเป็น 0 แถว) |
 
 ---
 
@@ -131,11 +141,17 @@ curl -sS https://api.ipify.org
 
 | # | งาน | สถานะ |
 |---|---|---|
-| 1 | **ผูกผู้ใช้ 42 คนเข้ากับตำแหน่ง** | 📌 หน้าจอพร้อมแล้ว — งานของเจ้าของระบบ |
-| 2 | **ย้ายผู้ใช้ไปเขตการขายใหม่** | 📌 `SaleRegion` มีทั้งชุดเก่า (01–06) และใหม่ (10–16) |
-| 3 | **ซิงค์ข้อมูล PROD-A → PROD-B / SSH key Azure** | 🛑 **PENDING & HOLD** — อาจใช้ private network + VPN แทน |
-| 4 | ให้ปุ่มชั่งออกดึงน้ำหนักจาก `WGHD` อัตโนมัติ | 🟡 เสนอไว้ ยังไม่ทำ |
-| 5 | `WGDT.CouponNo` ว่างทั้ง 311 บรรทัด | 🟡 รอข้อมูลจริงจากโรงงาน |
+| 1 | **ผูกผู้ใช้เข้ากับตำแหน่ง (0/43)** | 📌 **งานของเจ้าของระบบ** — ระบบทำเองไม่ได้ ดู WF-REL-010 · หน้าจอมีตัวช่วยกรองเหลือ ~7.9 ตัวเลือก/คน |
+| 2 | **ทดสอบ Hold กับรถจริง** | 📌 กลไกพร้อม สวิตช์ปิดอยู่ · ทดสอบแล้วตั้ง `TRUCK_HOLD_VERIFIED=true` |
+| 3 | **สำรอง `.local-secrets` ออกนอกเครื่อง** | 🔴 **ยังไม่มีสำเนาเลย** — ใช้ `windows/15-backup-secrets.bat` |
+| 4 | **ถอด `wf-mysql` container ออกจาก PROD-B** | 🟡 แอปไม่ใช้แล้ว แต่ container ยังรัน — เป็นการเปลี่ยน infra |
+| 5 | **ย้ายผู้ใช้ไปเขตการขายใหม่** | 📌 `SaleRegion` มีทั้งชุดเก่า (01–06) และใหม่ (10–16) |
+| 6 | ซิงค์ PROD-A → PROD-B / SSH key Azure | 🛑 **PENDING & HOLD** — อาจใช้ private network + VPN แทน |
+| 7 | `WGDT.CouponNo` ว่าง | 🟡 รอข้อมูลจริงจากโรงงาน |
+| 8 | เฟส 6+ ของ Sale Trip (Quotation ↔ SO, pricelist, rebate pool) | 🟡 ยังไม่เริ่ม |
+
+> **ที่ทำเสร็จแล้วในรอบ 3–4 ก.ย.** — เฟส 2/3/4/5 ของ Sale Trip · Master Settings เหตุผล ·
+> กลไก Hold ถึง WINSpeed · ลบ MySQL ทั้งหมด · seed ข้อมูลชั่งครบ 3 ฐาน
 
 ---
 
