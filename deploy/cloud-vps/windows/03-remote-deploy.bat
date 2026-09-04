@@ -40,7 +40,28 @@ if "%NEED_ENV%"=="1" (
 )
 
 echo Deploying remotely. Sudo may ask for a password.
-ssh -tt -p %SSH_PORT% -i "%DEPLOY_KEY%" %DEPLOY_USER%@%SERVER_HOST% "sudo mkdir -p %APP_ROOT%/app; sudo tar -xzf /tmp/worldfert-release.tgz -C %APP_ROOT%/app; %ENV_INSTALL% sudo chown -R %DEPLOY_USER%:%DEPLOY_USER% %APP_ROOT%/app; sudo chmod 600 %APP_ROOT%/app/deploy/cloud-vps/.env; rm -f /tmp/worldfert-release.tgz; sudo chmod +x %APP_ROOT%/app/deploy/cloud-vps/server/*.sh; sudo %APP_ROOT%/app/deploy/cloud-vps/server/deploy-release.sh %APP_ROOT%/app"
+rem -- Purge stale sources before extracting -----------------------------
+rem tar -xzf overwrites files but never DELETES files that are gone from
+rem the source tree. Anything removed from the repo lingers on the server
+rem forever, and if a stale file still imports something that no longer
+rem exists, the container build fails even though it passes locally.
+rem
+rem Hit for real on 2026-09-04: WSSale-App/src/components/truckscale was
+rem deleted from the repo, the stale copy on the VPS survived, and tsc
+rem failed on imports that api.ts no longer exports.
+rem
+rem Purge only pure-source trees that the archive replaces in full.
+rem NEVER purge deploy/ wholesale - it holds the protected .env file.
+rem NOTE: ASCII comments only in .bat files. Thai text here corrupts how
+rem cmd.exe parses the file and it starts executing garbage.
+set "PURGE=%APP_ROOT%/app/WSSale-App/src"
+set "PURGE=%PURGE% %APP_ROOT%/app/backend/routes"
+set "PURGE=%PURGE% %APP_ROOT%/app/backend/services"
+set "PURGE=%PURGE% %APP_ROOT%/app/backend/scripts"
+set "PURGE=%PURGE% %APP_ROOT%/app/backend/tests"
+set "PURGE=%PURGE% %APP_ROOT%/app/backend/migrations"
+
+ssh -tt -p %SSH_PORT% -i "%DEPLOY_KEY%" %DEPLOY_USER%@%SERVER_HOST% "sudo mkdir -p %APP_ROOT%/app; sudo rm -rf %PURGE%; sudo tar -xzf /tmp/worldfert-release.tgz -C %APP_ROOT%/app; %ENV_INSTALL% sudo chown -R %DEPLOY_USER%:%DEPLOY_USER% %APP_ROOT%/app; sudo chmod 600 %APP_ROOT%/app/deploy/cloud-vps/.env; rm -f /tmp/worldfert-release.tgz; sudo chmod +x %APP_ROOT%/app/deploy/cloud-vps/server/*.sh; sudo %APP_ROOT%/app/deploy/cloud-vps/server/deploy-release.sh %APP_ROOT%/app"
 set "RC=%errorlevel%"
 del /q "%ARCHIVE%" >nul 2>&1
 exit /b %RC%
