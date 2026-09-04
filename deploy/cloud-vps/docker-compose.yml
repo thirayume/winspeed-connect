@@ -80,44 +80,6 @@ services:
           memory: ${MSSQL_MEM_LIMIT:-8G}
     networks: [wf-net]
 
-  mysql:
-    image: mysql:8.0
-    container_name: wf-mysql
-    restart: unless-stopped
-    command:
-      - --default-authentication-plugin=mysql_native_password
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-      - --default-time-zone=+07:00
-      - --innodb-buffer-pool-size=${MYSQL_BUFFER_POOL:-1G}
-      - --require-secure-transport=ON
-      - --ssl-ca=/etc/mysql/certs/ca.crt
-      - --ssl-cert=/etc/mysql/certs/server.crt
-      - --ssl-key=/etc/mysql/certs/server.key
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-db_truckscale}
-      MYSQL_USER: ${MYSQL_USER:-wfapp}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      TZ: ${TZ:-Asia/Bangkok}
-    ports:
-      - "${DB_BIND_IP:-0.0.0.0}:${MYSQL_PUBLIC_PORT:-3306}:3306"
-    volumes:
-      - mysql-data:/var/lib/mysql
-      - ${TRANSFER_ROOT:-/srv/wf-transfer}/incoming/mysql:/backup/incoming:ro
-      - ${MYSQL_CERT_DIR:-/opt/worldfert/secrets/mysql}:/etc/mysql/certs:ro
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$$MYSQL_ROOT_PASSWORD\" --ssl-mode=REQUIRED --silent || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 45s
-    deploy:
-      resources:
-        limits:
-          memory: ${MYSQL_MEM_LIMIT:-2G}
-    networks: [wf-net]
-
   backend:
     build:
       context: ../../backend
@@ -138,23 +100,12 @@ services:
       DB_PASSWORD: ${WF_READER_PASSWORD}
       DB_OWNER_USER: wf_owner
       DB_OWNER_PASSWORD: ${WF_OWNER_PASSWORD}
-      # รายชื่อฐานเครื่องชั่งของจริง — production ข้ามการตรวจอยู่แล้ว
-      # แต่ส่งเข้าไปด้วยเพื่อให้ทุกสภาพแวดล้อมอ่านค่าจากที่เดียวกัน
-      TS_PRODUCTION_HOSTS: ${TS_PRODUCTION_HOSTS:-}
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-db_truckscale}
-      MYSQL_USER: ${MYSQL_USER:-wfapp}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_SSL_CA_PATH: /app/secrets/mysql-ca.crt
       DEFAULT_SEED_PASSWORD: ${DEFAULT_SEED_PASSWORD:-}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       CORS_ORIGIN: ${CORS_ORIGIN}
       EXPORT_OUTPUT_PATH: /app/exports
       MIGRATE_SECRET: ${MIGRATE_SECRET}
-      TS_SYNC_INTERVAL_MS: ${TS_SYNC_INTERVAL_MS:-60000}
-      TS_INGEST_SECRET: ${TS_INGEST_SECRET}
       APP_VERSION: ${APP_VERSION:-1.0.0}
       LINE_LOGIN_CHANNEL_ID: ${LINE_LOGIN_CHANNEL_ID:-}
       LINE_LOGIN_CHANNEL_SECRET: ${LINE_LOGIN_CHANNEL_SECRET:-}
@@ -162,11 +113,8 @@ services:
       LINE_LOGIN_SUCCESS_REDIRECT: ${LINE_LOGIN_SUCCESS_REDIRECT:-}
     volumes:
       - backend-exports:/app/exports
-      - ${MYSQL_CERT_DIR:-/opt/worldfert/secrets/mysql}/ca.crt:/app/secrets/mysql-ca.crt:ro
     depends_on:
       mssql:
-        condition: service_healthy
-      mysql:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
@@ -193,6 +141,9 @@ services:
 
 volumes:
   mssql-data:
+  # MySQL service removed 2026-09-04 when the integration was dropped.
+  # The volume declaration stays so existing data is preserved as an
+  # orphan rather than deleted. Remove only when confirmed unneeded.
   mysql-data:
   backend-exports:
   caddy-data:
