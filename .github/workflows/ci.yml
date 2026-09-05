@@ -1,0 +1,74 @@
+# ตรวจโค้ดทุกครั้งที่ push หรือเปิด PR
+#
+# ใช้ runner ของ GitHub ได้ตามปกติ เพราะขั้นตอนนี้ไม่ต้องต่อเข้า VPS
+# จึงไม่ติดปัญหาไฟร์วอลล์เหมือน job deploy
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: build + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # ── backend ──────────────────────────────────────────────
+      # ไม่มี lockfile ที่ใช้ ci ได้เสมอไป จึง fallback เป็น install
+      - name: ติดตั้ง dependency ของ backend
+        working-directory: backend
+        run: npm ci || npm install
+
+      - name: เทส backend
+        working-directory: backend
+        run: npm test
+
+      # ── frontend ─────────────────────────────────────────────
+      - name: ติดตั้ง dependency ของ frontend
+        working-directory: WSSale-App
+        run: npm ci || npm install
+
+      # build = tsc -b && vite build จึงครอบ typecheck ไปด้วย
+      # (อย่าเปลี่ยนเป็น tsc --noEmit เด็ดขาด — tsconfig ใช้ "files": []
+      #  ทำให้ --noEmit ไม่ตรวจไฟล์ใดเลย เคยหลุด error ขึ้น production มาแล้ว)
+      - name: build frontend (รวม typecheck)
+        working-directory: WSSale-App
+        run: npm run build
+
+      # ── กติกาที่เคยเสียหายจริง ────────────────────────────────
+      - name: ห้ามอักขระนอก ASCII ในไฟล์ .bat / .cmd
+        run: |
+          # cmd.exe อ่านไฟล์แบตช์ทีละไบต์ตาม codepage ไม่ใช่ UTF-8
+          # ไบต์ไทยทำให้ตีความบรรทัดเพี้ยนแล้วรันคำสั่งขยะ
+          # 04/09/2569 เคยทำไฟล์ในโฟลเดอร์ deploy หายไป 19 ไฟล์
+          bad=$(grep -rlP '[\x80-\xFF]' --include='*.bat' --include='*.cmd' . || true)
+          if [ -n "$bad" ]; then
+            echo "พบอักขระนอก ASCII ในไฟล์แบตช์:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "ไฟล์แบตช์เป็น ASCII ล้วนทั้งหมด"
+
+      - name: ห้ามความลับหลุดเข้า repo
+        run: |
+          # repo นี้เป็นสาธารณะ
+          leak=$(git ls-files | grep -E '(^|/)(remote-config\.bat|\.local-secrets/|.*\.pem$|server-config\.env$)' || true)
+          if [ -n "$leak" ]; then
+            echo "ไฟล์ที่ไม่ควรถูก track:"
+            echo "$leak"
+            exit 1
+          fi
+          echo "ไม่มีไฟล์ความลับถูก track"

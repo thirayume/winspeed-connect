@@ -2,13 +2,23 @@
 setlocal EnableExtensions
 set "SCRIPT_DIR=%~dp0"
 call :load_config || exit /b 1
+
+rem -- Keep the SSH session alive during long remote work --------------
+rem The container rebuild on the VPS can run for several minutes with no
+rem traffic on the channel. Without keepalives the connection gets reset
+rem mid-run and ssh exits 255, which looks like a deploy failure even
+rem though the remote work already finished.
+rem Seen twice on 2026-09-04 and 2026-09-05: "client_loop: send disconnect:
+rem Connection reset" right after the containers came up healthy.
+rem 20s x 15 tolerates 5 minutes of silence before giving up.
+set "SSHOPT=-o ServerAliveInterval=20 -o ServerAliveCountMax=15 -o TCPKeepAlive=yes"
 for %%I in ("%SCRIPT_DIR%..\..\..") do set "REPO_ROOT=%%~fI"
 set "ENV_FILE=%REPO_ROOT%\deploy\cloud-vps\.env"
 set "SYNC_ENV=0"
 if /i "%~1"=="--sync-env" set "SYNC_ENV=1"
 
 set "NEED_ENV=0"
-ssh -p %SSH_PORT% -i "%DEPLOY_KEY%" %DEPLOY_USER%@%SERVER_HOST% "sudo test -f %APP_ROOT%/app/deploy/cloud-vps/.env"
+ssh %SSHOPT% -p %SSH_PORT% -i "%DEPLOY_KEY%" %DEPLOY_USER%@%SERVER_HOST% "sudo test -f %APP_ROOT%/app/deploy/cloud-vps/.env"
 if errorlevel 1 set "NEED_ENV=1"
 if "%SYNC_ENV%"=="1" set "NEED_ENV=1"
 if "%NEED_ENV%"=="1" if not exist "%ENV_FILE%" (
@@ -22,7 +32,7 @@ tar -czf "%ARCHIVE%" --exclude=node_modules --exclude=.git --exclude=deliverable
 if errorlevel 1 exit /b 1
 
 echo Uploading release archive...
-scp -P %SSH_PORT% -i "%DEPLOY_KEY%" "%ARCHIVE%" %DEPLOY_USER%@%SERVER_HOST%:/tmp/worldfert-release.tgz
+scp %SSHOPT% -P %SSH_PORT% -i "%DEPLOY_KEY%" "%ARCHIVE%" %DEPLOY_USER%@%SERVER_HOST%:/tmp/worldfert-release.tgz
 if errorlevel 1 (
   del /q "%ARCHIVE%" >nul 2>&1
   exit /b 1
@@ -31,7 +41,7 @@ if errorlevel 1 (
 set "ENV_INSTALL="
 if "%NEED_ENV%"=="1" (
   echo Uploading protected environment configuration...
-  scp -P %SSH_PORT% -i "%DEPLOY_KEY%" "%ENV_FILE%" %DEPLOY_USER%@%SERVER_HOST%:/tmp/worldfert.env
+  scp %SSHOPT% -P %SSH_PORT% -i "%DEPLOY_KEY%" "%ENV_FILE%" %DEPLOY_USER%@%SERVER_HOST%:/tmp/worldfert.env
   if errorlevel 1 (
     del /q "%ARCHIVE%" >nul 2>&1
     exit /b 1
@@ -61,9 +71,33 @@ set "PURGE=%PURGE% %APP_ROOT%/app/backend/scripts"
 set "PURGE=%PURGE% %APP_ROOT%/app/backend/tests"
 set "PURGE=%PURGE% %APP_ROOT%/app/backend/migrations"
 
-ssh -tt -p %SSH_PORT% -i "%DEPLOY_KEY%" %DEPLOY_USER%@%SERVER_HOST% "sudo mkdir -p %APP_ROOT%/app; sudo rm -rf %PURGE%; sudo tar -xzf /tmp/worldfert-release.tgz -C %APP_ROOT%/app; %ENV_INSTALL% sudo chown -R %DEPLOY_USER%:%DEPLOY_USER% %APP_ROOT%/app; sudo chmod 600 %APP_ROOT%/app/deploy/cloud-vps/.env; rm -f /tmp/worldfert-release.tgz; sudo chmod +x %APP_ROOT%/app/deploy/cloud-vps/server/*.sh; sudo %APP_ROOT%/app/deploy/cloud-vps/server/deploy-release.sh %APP_ROOT%/app"
+ssh %SSHOPT% -tt -p %SSH_PORT% -i "%DEPLOY_KEY%" %DEPLOY_USER%@%SERVER_HOST% "sudo mkdir -p %APP_ROOT%/app; sudo rm -rf %PURGE%; sudo tar -xzf /tmp/worldfert-release.tgz -C %APP_ROOT%/app; %ENV_INSTALL% sudo chown -R %DEPLOY_USER%:%DEPLOY_USER% %APP_ROOT%/app; sudo chmod 600 %APP_ROOT%/app/deploy/cloud-vps/.env; rm -f /tmp/worldfert-release.tgz; sudo chmod +x %APP_ROOT%/app/deploy/cloud-vps/server/*.sh; sudo %APP_ROOT%/app/deploy/cloud-vps/server/deploy-release.sh %APP_ROOT%/app"
 set "RC=%errorlevel%"
 del /q "%ARCHIVE%" >nul 2>&1
+
+rem -- ssh exit 255 means the CONNECTION broke, not that the deploy failed.
+rem The remote script may well have finished. Re-check in a fresh short
+rem session before reporting failure, so a dropped link does not send
+rem someone chasing a deploy that actually worked.
+rem NOTE: no parentheses around the "set RC=0" below. Inside a ( ) block cmd
+rem expands %RC% at parse time, so the later "exit /b %RC%" would still see
+rem the old value. goto labels avoid that trap entirely.
+if not "%RC%"=="255" goto :report
+echo.
+echo WARNING: ssh exited 255 - the connection dropped.
+echo Re-checking the real state on the server...
+ssh %SSHOPT% -o ConnectTimeout=20 -p %SSH_PORT% -i "%DEPLOY_KEY%" %DEPLOY_USER%@%SERVER_HOST% "docker ps --filter name=wf-backend --filter health=healthy --format {{.Names}} | grep -q wf-backend && docker ps --filter name=wf-frontend --format {{.Names}} | grep -q wf-frontend"
+if errorlevel 1 goto :really_failed
+echo RESULT: wf-backend healthy and wf-frontend running.
+echo The deploy completed; only the ssh session was cut. Treating as success.
+set "RC=0"
+goto :report
+
+:really_failed
+echo RESULT: containers are NOT healthy - the deploy really did fail.
+
+:report
+if "%RC%"=="255" echo Confirm over HTTPS too:  curl -s https://api.thirayu.online/api/health
 exit /b %RC%
 
 rem By default, the protected .env on the VPS is preserved.

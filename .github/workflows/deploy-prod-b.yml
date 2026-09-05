@@ -1,0 +1,125 @@
+# Deploy PROD-B (Hostinger) ด้วย self-hosted runner ที่ติดตั้งบน VPS เอง
+#
+# ทำไมต้องเป็น self-hosted ไม่ใช่ runner ของ GitHub
+#   ไฟร์วอลล์ hPanel เปิดพอร์ต 22/1433 ให้เฉพาะ IP ที่ allowlist ไว้
+#   runner ของ GitHub ใช้ IP จากช่วงใหญ่มากที่เปลี่ยนทุกสัปดาห์
+#   จะ allowlist ให้ครบไม่ไหว และเปิดกว้างขนาดนั้นก็ไม่ควร
+#
+#   self-hosted runner ที่รันอยู่บน VPS ต่อ *ออก* ไปหา GitHub
+#   จึงไม่ต้องเปิดพอร์ตเข้าเลยแม้แต่พอร์ตเดียว และเลิกพึ่ง IP ของเครื่องผู้พัฒนา
+#   ซึ่ง ISP เปลี่ยนให้ 4 ครั้งในสองวัน (4–5 ก.ย. 2569)
+#
+#   ผลพลอยได้ — deploy ด้วย git checkout บนเครื่องปลายทางโดยตรง
+#   ไม่ต้อง tar/scp อีก จึงไม่มีปัญหา "ไฟล์ที่ลบแล้วยังค้างบนเซิร์ฟเวอร์"
+#
+# ⚠ ความปลอดภัย — repo นี้เป็นสาธารณะ
+#   self-hosted runner บน repo สาธารณะเป็นความเสี่ยงที่รู้จักกันดี
+#   ถ้ายอมให้ทริกเกอร์จาก pull_request คนนอกจะ fork แล้วส่ง PR
+#   ที่รันโค้ดอะไรก็ได้บนเครื่อง production ของเรา
+#
+#   workflow นี้จึงทริกเกอร์ได้แค่ push เข้า main และการกดมือเท่านั้น
+#   **ห้ามเพิ่ม pull_request หรือ pull_request_target เด็ดขาด**
+name: Deploy PROD-B
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'เหตุผลที่ deploy (บันทึกไว้ใน log)'
+        required: false
+        default: 'manual'
+
+permissions:
+  contents: read
+
+concurrency:
+  # deploy ซ้อนกันจะทำให้ container ขึ้น ๆ ลง ๆ — ให้รอคิวแทน
+  group: deploy-prod-b
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy ไป Hostinger
+    # label นี้ต้องตรงกับที่ตั้งไว้ตอนติดตั้ง runner
+    # (deploy/cloud-vps/server/install-github-runner.sh)
+    runs-on: [self-hosted, linux, prod-b]
+    timeout-minutes: 30
+
+    steps:
+      - name: บอกว่ากำลัง deploy อะไร
+        run: |
+          echo "commit : ${{ github.sha }}"
+          echo "โดย    : ${{ github.actor }}"
+          echo "เหตุผล : ${{ github.event.inputs.reason || 'push to main' }}"
+
+      - uses: actions/checkout@v4
+        with:
+          # ต้องการประวัติแค่ commit เดียว — เร็วกว่าและพอใช้
+          fetch-depth: 1
+
+      # ── ตรวจก่อนแตะ production ────────────────────────────────
+      # runner อยู่บนเครื่องเดียวกับ production ถ้า build พังต้องรู้ก่อน
+      # ไม่ใช่ไปพังตอน docker build แล้วทิ้ง container ค้างครึ่ง ๆ กลาง ๆ
+      - name: เทส backend
+        working-directory: backend
+        run: npm ci || npm install && npm test
+
+      - name: build frontend
+        working-directory: WSSale-App
+        run: |
+          npm ci || npm install
+          npm run build
+
+      # ── deploy จริง ───────────────────────────────────────────
+      # deploy-release.sh อยู่บนเครื่องนี้อยู่แล้ว รันตรงได้เลย
+      # ไม่ต้อง ssh ไม่ต้อง scp ไม่ต้องมี IP ที่ allowlist
+      - name: ติดตั้งลง /opt/worldfert/app แล้ว deploy
+        env:
+          APP_ROOT: /opt/worldfert
+        run: |
+          set -euo pipefail
+
+          # ล้างซอร์สเก่าก่อนคัดลอกทับ ด้วยเหตุผลเดียวกับที่ 03-remote-deploy.bat ทำ
+          # ไฟล์ที่ถูกลบจาก repo ต้องหายจากเครื่องปลายทางด้วย
+          # ห้ามล้าง deploy/ ทั้งก้อน เพราะมี deploy/cloud-vps/.env ที่ต้องคงไว้
+          sudo rm -rf \
+            "$APP_ROOT/app/WSSale-App/src" \
+            "$APP_ROOT/app/backend/routes" \
+            "$APP_ROOT/app/backend/services" \
+            "$APP_ROOT/app/backend/scripts" \
+            "$APP_ROOT/app/backend/tests" \
+            "$APP_ROOT/app/backend/migrations"
+
+          sudo mkdir -p "$APP_ROOT/app"
+          sudo rsync -a --delete-excluded \
+            --exclude 'node_modules' \
+            --exclude '.git' \
+            --exclude 'deploy/cloud-vps/.env' \
+            --exclude 'deploy/cloud-vps/.local-secrets' \
+            backend WSSale-App deploy "$APP_ROOT/app/"
+
+          sudo chmod 600 "$APP_ROOT/app/deploy/cloud-vps/.env"
+          sudo chmod +x "$APP_ROOT/app/deploy/cloud-vps/server/"*.sh
+          sudo "$APP_ROOT/app/deploy/cloud-vps/server/deploy-release.sh" "$APP_ROOT/app"
+
+      - name: ยืนยันผลจากภายนอก
+        run: |
+          set -euo pipefail
+          # เช็คผ่าน HTTPS สาธารณะ ไม่ใช่ localhost
+          # เพื่อพิสูจน์ว่า Caddy กับ container คุยกันได้จริง ไม่ใช่แค่ process ขึ้น
+          for i in $(seq 1 12); do
+            v=$(curl -sf -m 10 https://api.thirayu.online/api/health | sed -n 's/.*"version":"\([^"]*\)".*/\1/p' || true)
+            if [ -n "$v" ]; then
+              echo "PROD-B ตอบแล้ว — เวอร์ชัน $v"
+              exit 0
+            fi
+            echo "รอ API ตอบ... ($i/12)"
+            sleep 10
+          done
+          echo "API ไม่ตอบภายใน 2 นาที"
+          exit 1
