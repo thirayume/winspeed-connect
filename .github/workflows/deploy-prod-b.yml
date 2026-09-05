@@ -102,13 +102,33 @@ jobs:
             "$APP_ROOT/app/backend/migrations"
 
           sudo mkdir -p "$APP_ROOT/app"
-          sudo rsync -a --delete-excluded \
+
+          # 🔴 ห้ามใช้ --delete-excluded เด็ดขาด
+          #
+          #   --exclude แปลว่า "ไม่ต้องคัดลอกไฟล์นี้ไป"
+          #   --delete-excluded แปลว่า "แถมลบไฟล์ที่ถูก exclude ออกจากปลายทางด้วย"
+          #   สองอันรวมกันคือ **ลบไฟล์ที่เราตั้งใจจะรักษาไว้**
+          #
+          #   deploy ครั้งแรกผ่าน runner (5 ก.ย. 2569) ลบ .env ของ production ทิ้งจริง ๆ
+          #   พร้อม .local-secrets ระบบไม่ล่มทันทีเพราะคอนเทนเนอร์อ่าน env ไปตั้งแต่
+          #   ตอนสตาร์ทแล้ว แต่ถ้ามีอะไรรีสตาร์ทจะขึ้นไม่ได้เลย และไฟล์นั้นไม่มีใน git
+          #   กู้ได้เพราะบังเอิญมีสำเนาบนเครื่องผู้พัฒนา
+          #
+          #   --delete ธรรมดาลบเฉพาะไฟล์ที่หายจากต้นทางและไม่ได้ถูก exclude
+          #   ซึ่งเป็นสิ่งที่ต้องการจริง (ไฟล์ที่ลบจาก repo ต้องหายจากเซิร์ฟเวอร์ด้วย)
+          sudo rsync -a --delete \
             --exclude 'node_modules' \
             --exclude '.git' \
             --exclude 'deploy/cloud-vps/.env' \
             --exclude 'deploy/cloud-vps/.local-secrets' \
             backend WSSale-App deploy "$APP_ROOT/app/"
 
+          # .env หายแปลว่ามีอะไรผิดพลาดร้ายแรง — หยุดก่อน deploy ทับของที่ใช้งานอยู่
+          if [ ! -f "$APP_ROOT/app/deploy/cloud-vps/.env" ]; then
+            echo "::error::.env ของ production หายไป - หยุด deploy" >&2
+            echo "กู้คืน: deploy/cloud-vps/windows/03-remote-deploy.bat --sync-env" >&2
+            exit 1
+          fi
           sudo chmod 600 "$APP_ROOT/app/deploy/cloud-vps/.env"
           sudo chmod +x "$APP_ROOT/app/deploy/cloud-vps/server/"*.sh
           sudo "$APP_ROOT/app/deploy/cloud-vps/server/deploy-release.sh" "$APP_ROOT/app"
