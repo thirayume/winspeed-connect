@@ -135,8 +135,16 @@ if ($DryRun) {
     git add -A
     $commitMsg = "chore: release v$newVersion"
     git commit -m $commitMsg
+    # git ไม่โยน exception ใน PowerShell มันคืน exit code เฉย ๆ
+    # try/catch จึงไม่มีวันจับ push ที่ล้ม และสคริปต์เคยรายงาน "Pushed" ทั้งที่
+    # ถูก GitHub ปฏิเสธ (OAuth ไม่มี scope workflow) — พบจริง 5 ก.ย. 2569
+    # ต้องอ่าน $LASTEXITCODE เสมอเมื่อเรียกโปรแกรมภายนอก
     git push origin main
-    Write-OK "Pushed: '$commitMsg'"
+    if ($LASTEXITCODE -ne 0) {
+      Write-Fail "Git push failed (exit $LASTEXITCODE) - ยังไม่ได้ push commit ขึ้น GitHub"
+    } else {
+      Write-OK "Pushed: '$commitMsg'"
+    }
   } catch {
     Write-Fail "Git push failed: $_"
   } finally {

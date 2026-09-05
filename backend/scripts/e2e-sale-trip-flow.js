@@ -26,6 +26,13 @@ const jwt = require('jsonwebtoken');
 const { sql, query, wfQuery, dboWrite } = require('../db');
 
 const API = process.env.E2E_API || 'http://localhost:3000/api';
+
+// สคริปต์เซ็น JWT เองแทนการล็อกอิน จึงต้องใช้ secret ตัวเดียวกับ backend ที่จะคุยด้วย
+// ยิงข้ามเครื่อง (เช่น เขียนฐาน PROD-B แล้วเรียก api.thirayu.online) ต้องตั้ง
+// E2E_JWT_SECRET ให้ตรงกับของปลายทาง ไม่งั้น token จะโดนปฏิเสธ 401 ทุกครั้ง
+// และอาการจะดูเหมือน "API มองไม่เห็นข้อมูล" ทั้งที่จริงคือยืนยันตัวตนไม่ผ่าน
+//   PROD-B: ค่าอยู่ใน deploy/cloud-vps/.env บรรทัด JWT_SECRET
+const SIGNING_SECRET = process.env.E2E_JWT_SECRET || process.env.JWT_SECRET;
 const KEEP = process.argv.includes('--keep');
 const PLATE = 'E2E-FLOW/0001';
 const TRIP_CODE = 'E2E-FLOW-TRIP';
@@ -70,11 +77,14 @@ async function tokenFor(username, role) {
   const id = Number(u.Id);
   return jwt.sign({ sub: id, id, username: u.Username, role: u.Role, displayName: u.DisplayName,
     actorSub: id, actorId: id, actorUsername: u.Username, actorRole: u.Role,
-    impersonating: false, mustChangePassword: false }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    impersonating: false, mustChangePassword: false }, SIGNING_SECRET, { expiresIn: '1h' });
 }
 
 async function cleanup(silent) {
-  // ลบลูกก่อนแม่เสมอ
+  // ลบลูกก่อนแม่เสมอ — WGDTReport → WGDT → WGHD
+  // ทุกคำสั่งผูกกับ CarNo ของรถทดสอบเท่านั้น จะไม่แตะใบชั่งจริงของโรงงาน
+  await dboWrite(`DELETE FROM dbo.WGDTReport WHERE WGHDId IN (SELECT Id FROM dbo.WGHD WHERE CarNo=@p)`,
+    { p: { type: sql.VarChar(50), value: PLATE } });
   await dboWrite(`DELETE FROM dbo.WGDT WHERE WGHDId IN (SELECT Id FROM dbo.WGHD WHERE CarNo=@p)`,
     { p: { type: sql.VarChar(50), value: PLATE } });
   await dboWrite(`DELETE FROM dbo.WGHD WHERE CarNo=@p`, { p: { type: sql.VarChar(50), value: PLATE } });
@@ -101,9 +111,21 @@ async function cleanup(silent) {
 
 (async () => {
   const env = (await wfQuery('SELECT DB_NAME() d, @@SERVERNAME s')).recordset[0];
-  if (String(process.env.DB_MODE || '').toLowerCase() !== 'local') {
-    console.error('หยุด: สคริปต์นี้เขียนข้อมูลทดสอบ รันบน local เท่านั้น');
+  const mode = String(process.env.DB_MODE || '').toLowerCase();
+
+  // สคริปต์นี้เขียนข้อมูลลง dbo.WGHD / WGDT / WGDTReport ของจริง
+  // ค่าเริ่มต้นจึงยังเป็น local เท่านั้น การรันบนฐาน production ต้องตั้งใจสองชั้น:
+  // ตั้ง DB_MODE ให้ตรงปลายทาง **และ** ส่ง --yes-write-production มาด้วย
+  // (เจ้าของระบบอนุญาตให้ทดสอบบน production เหมือน UAT เมื่อ 5 ก.ย. 2569)
+  if (mode !== 'local' && !process.argv.includes('--yes-write-production')) {
+    console.error(`หยุด: DB_MODE=${mode || '(ไม่ได้ตั้ง)'} ไม่ใช่ local`);
+    console.error(`      ฐานที่จะถูกเขียนคือ ${env.d} @ ${env.s}`);
+    console.error('      ถ้าตั้งใจจริง ให้เพิ่ม --yes-write-production');
     process.exit(1);
+  }
+  if (mode !== 'local') {
+    console.log(`⚠  กำลังเขียนข้อมูลทดสอบลงฐาน ${mode.toUpperCase()} — ${env.d} @ ${env.s}`);
+    console.log(`   ทุกแถวถูกกำกับด้วย CarNo='${PLATE}' และ UpdateBy='E2E-FLOW' เพื่อให้ล้างคืนได้ครบ\n`);
   }
   console.log(`ฐาน: ${env.d} @ ${env.s}\nAPI : ${API}\n`);
 
@@ -151,6 +173,58 @@ async function cleanup(silent) {
     i: { type: sql.Int, value: SOID },
   });
 
+  // ── ใบชั่งรายรายการ ────────────────────────────────────────────
+  // ทิศทางน้ำหนักของการ "ขายออก": รถเข้ามาเปล่า ออกไปหนัก
+  //   WeightIn  = รถเปล่า            15,000 กก.
+  //   WeightOut = รถ + สินค้า        25,000 กก.
+  //   WeightNet = ออก - เข้า         10,000 กก. = 10 ตัน = 200 กระสอบ (1 กระสอบ 50 กก.)
+  // ถ้าเป็นการซื้อเข้า (PO) ทิศทางกลับกัน — สคริปต์นี้จำลองเฉพาะขาขาย
+  const NET_KG = 10000, SACK_KG = 50;
+
+  const wghdId = async () => (await query(
+    `SELECT TOP 1 Id FROM dbo.WGHD WHERE CarNo=@p ORDER BY Id DESC`,
+    { p: { type: sql.VarChar(50), value: PLATE } }))[0].Id;
+
+  // รายการสินค้าบนรถ — คัดมาจากบรรทัดจริงของใบสั่งขาย
+  const fillWgdt = async () => {
+    const id = await wghdId();
+    const has = (await query(`SELECT COUNT(*) n FROM dbo.WGDT WHERE WGHDId=@i`,
+      { i: { type: sql.Int, value: Number(id) } }))[0].n;
+    if (Number(has) > 0) return id;
+    await dboWrite(`
+      INSERT INTO dbo.WGDT (WGHDId, SPID, ListNo, GoodID, GoodName, GoodQty2,
+                            GoodTon, GoodKasob, GoodKG, RefNo)
+      SELECT TOP 1 @i, @s, d.ListNo, d.GoodID,
+             (SELECT TOP 1 GoodName1 FROM dbo.EMGood g WHERE g.GoodID=d.GoodID),
+             d.GoodQty2, @ton, @sack, @kg, @ref
+      FROM dbo.SODT d WHERE d.SOID=@s AND d.DocuType=103 ORDER BY d.ListNo`, {
+        i: { type: sql.Int, value: Number(id) },
+        s: { type: sql.Int, value: SOID },
+        ton: { type: sql.Decimal(18, 4), value: NET_KG / 1000 },
+        sack: { type: sql.Decimal(18, 4), value: NET_KG / SACK_KG },
+        kg: { type: sql.Decimal(18, 4), value: NET_KG },
+        ref: { type: sql.NVarChar(50), value: 'E2E-FLOW' },
+      });
+    return id;
+  };
+
+  // สรุปสำหรับรายงาน — WINSpeed อ่านตารางนี้ ไม่ได้ join WGHD/WGDT เอง
+  const fillWgdtReport = async () => {
+    const id = await wghdId();
+    const has = (await query(`SELECT COUNT(*) n FROM dbo.WGDTReport WHERE WGHDId=@i`,
+      { i: { type: sql.Int, value: Number(id) } }))[0].n;
+    if (Number(has) > 0) return;
+    await dboWrite(`
+      INSERT INTO dbo.WGDTReport (WGDTId, WGHDId, DateReg, CarNo, MoveBill, CVCode, CVName,
+                                  DocuNo, WGType, DateIn, DateOut, GoodID, GoodName,
+                                  GoodWeight, GoodKasobNet, GoodTonNet, CouponNo)
+      SELECT t.Id, h.Id, h.DateReg, h.CarNo, h.MoveBill, h.CVCode, h.CVName,
+             h.DocuNo, h.WGType, h.DateIn, h.DateOut, t.GoodID, t.GoodName,
+             t.GoodKG, t.GoodKasob, t.GoodTon, t.CouponNo
+      FROM dbo.WGDT t JOIN dbo.WGHD h ON h.Id = t.WGHDId
+      WHERE t.WGHDId = @i`, { i: { type: sql.Int, value: Number(id) } });
+  };
+
   const board = async () => {
     const r = await api('/trips/board', {}, admin);
     return (r.body.data || []).find(t => t.tripCode === TRIP_CODE);
@@ -173,6 +247,39 @@ async function cleanup(silent) {
       });
     }
   };
+
+  // ── ด่านกัน "เขียนฐานหนึ่ง แต่ถาม API อีกฐานหนึ่ง" ──────────────
+  //
+  // สคริปต์เลือกฐานด้วย DB_MODE ส่วน API อยู่คนละตัวแปร (E2E_API)
+  // ตั้งพลาดข้างใดข้างหนึ่งแล้วจะเขียนลงฐาน A แต่ไปถาม backend ที่ต่อฐาน B
+  // ผลคือ assertion ระดับฐานผ่านหมด แต่ระดับ API ล้มหมด และ **เขียนข้อมูล
+  // ทดสอบทิ้งไว้ในฐาน production ไปแล้ว** ก่อนจะรู้ตัว
+  // เกิดขึ้นจริง 5 ก.ย. 2569 (ตั้ง API_BASE แทน E2E_API)
+  //
+  // เที่ยวเพิ่งถูกสร้างในฐานที่สคริปต์ต่ออยู่ ถ้า API มองไม่เห็น แปลว่าคนละฐาน
+  // หยุดทันทีตรงนี้ ก่อนแตะ dbo.WGHD
+  {
+    const probe = await api('/trips/board', {}, admin);
+    const seen = (probe.body.data || []).find(t => t.tripCode === TRIP_CODE);
+    if (!seen) {
+      console.error('\nหยุด: API ไม่คืนเที่ยวที่เพิ่งสร้าง — ยังไม่แตะ dbo.WGHD');
+      console.error(`   สคริปต์เขียนที่ : ${env.d} @ ${env.s}  (DB_MODE=${mode || 'local'})`);
+      console.error(`   ถาม API ที่     : ${API}`);
+      console.error(`   API ตอบ         : HTTP ${probe.status}`);
+      if (probe.status === 401 || probe.status === 403) {
+        // สองอาการนี้หน้าตาเหมือนกันมาก ต้องแยกให้ชัด ไม่งั้นไล่ผิดทางเป็นชั่วโมง
+        console.error('   → ยืนยันตัวตนไม่ผ่าน ไม่ใช่เรื่องฐานข้อมูล');
+        console.error('     token ถูกเซ็นด้วย secret คนละตัวกับ backend ปลายทาง');
+        console.error('     ตั้ง E2E_JWT_SECRET ให้ตรงกับ JWT_SECRET ของ backend นั้น');
+        console.error('     (PROD-B อยู่ใน deploy/cloud-vps/.env)');
+      } else {
+        console.error('   → ยืนยันตัวตนผ่านแล้วแต่ไม่เจอข้อมูล = คนละฐานข้อมูล');
+        console.error('     ตั้ง E2E_API ให้ชี้ backend ที่ต่อฐานเดียวกับ DB_MODE');
+      }
+      await cleanup(true);
+      process.exit(1);
+    }
+  }
 
   console.log('ผลการทดสอบ:');
 
@@ -215,17 +322,41 @@ async function cleanup(silent) {
 
   // 5 — สถานะ 2 + ผังการจัดของ
   await setWg(2, ', WeightIn=15000, DateIn=GETDATE()');
+  await fillWgdt();
   b = await board();
   check('5. WGHD สถานะ 2 → LOADING', b && b.weighing.phase === 'LOADING', b && b.weighing.label);
+  const dt = (await query(`SELECT GoodID, GoodTon, GoodKasob, GoodKG FROM dbo.WGDT
+                            WHERE WGHDId=(SELECT TOP 1 Id FROM dbo.WGHD WHERE CarNo=@p ORDER BY Id DESC)`,
+    { p: { type: sql.VarChar(50), value: PLATE } }));
+  check('   ใบชั่งรายรายการลง dbo.WGDT', dt.length > 0,
+        dt.length ? `${dt.length} รายการ · ${Number(dt[0].GoodTon)} ตัน · ${Number(dt[0].GoodKasob)} กระสอบ` : 'ไม่มีแถว');
   const plan = await api(`/trips/${trip}/loading-plan`, {}, admin);
   check('   ผังการจัดของออกได้', plan.status === 200 && plan.body.plan.length > 0,
         plan.body && plan.body.plan ? `${plan.body.plan.length} รายการ` : '');
   check('   เรียงตามลำดับใน SO', plan.body.plan && plan.body.plan[0].step === 1, '');
 
   // 6 — สถานะ 3 ปิดการแก้ไข
-  await setWg(3, ', WeightOut=25000, WeightNet=10000, DateOut=GETDATE()');
+  await setWg(3, `, WeightOut=25000, WeightNet=${NET_KG}, TONNet=${NET_KG / 1000}, `
+              + `KGNet=${NET_KG}, KasobNet=${NET_KG / SACK_KG}, DateOut=GETDATE()`);
+  await fillWgdtReport();
   b = await board();
   check('6. WGHD สถานะ 3 → SHIPPED', b && b.weighing.phase === 'SHIPPED', b && b.weighing.label);
+  const wh = (await query(`SELECT WeightIn, WeightOut, WeightNet, TONNet, KasobNet
+                            FROM dbo.WGHD WHERE CarNo=@p`,
+    { p: { type: sql.VarChar(50), value: PLATE } }))[0];
+  // ขายออก: สุทธิ = ชั่งออก - ชั่งเข้า  (ซื้อเข้าจะกลับทิศ)
+  check('   น้ำหนักสุทธิ = ชั่งออก - ชั่งเข้า',
+        Number(wh.WeightOut) - Number(wh.WeightIn) === Number(wh.WeightNet),
+        `${Number(wh.WeightOut)} - ${Number(wh.WeightIn)} = ${Number(wh.WeightNet)} กก.`);
+  check('   แปลงเป็นตัน/กระสอบถูกต้อง',
+        Number(wh.TONNet) === NET_KG / 1000 && Number(wh.KasobNet) === NET_KG / SACK_KG,
+        `${Number(wh.TONNet)} ตัน · ${Number(wh.KasobNet)} กระสอบ`);
+  const rep = (await query(`SELECT GoodTonNet, GoodKasobNet, DateOut FROM dbo.WGDTReport
+                             WHERE WGHDId=(SELECT TOP 1 Id FROM dbo.WGHD WHERE CarNo=@p ORDER BY Id DESC)`,
+    { p: { type: sql.VarChar(50), value: PLATE } }));
+  check('   สรุปลง dbo.WGDTReport พร้อมเวลาชั่งออก',
+        rep.length > 0 && !!rep[0].DateOut,
+        rep.length ? `${rep.length} แถว · ${Number(rep[0].GoodTonNet)} ตัน` : 'ไม่มีแถว');
   const late = await api('/edit-requests', { method: 'POST', body: JSON.stringify({
     soid: String(SOID), reasonCode: 'DATA_ERROR', reasonDetail: 'ควรถูกปฏิเสธ' }) }, sales);
   check('   ชั่งออกแล้วขอแก้ไขไม่ได้ (409)', late.status === 409, late.body && late.body.message);
