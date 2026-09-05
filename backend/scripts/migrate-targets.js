@@ -43,6 +43,18 @@ const RESETTER = path.join(__dirname, 'reset-wf-schema.js');
 const TRACER = path.join(__dirname, 'trace-document.js');
 const ALL_TARGETS = ['local', 'remote', 'remote_b'];
 
+// ── ปลายทางที่ปิดใช้ชั่วคราว ──────────────────────────────────
+//
+// 5 ก.ย. 2569 เจ้าของระบบสั่งปิด Railway + Azure + Vercel ชั่วคราว
+// เหลือใช้งานจริงแค่ local · Docker (deploy/onprem) · Hostinger (remote_b)
+//
+// ไม่ลบ 'remote' ออกจาก ALL_TARGETS เพราะจะเปิดกลับมาอีก
+// แค่กันไม่ให้ `all` ลากไปด้วย มิฉะนั้น `npm run deploy` จะล้มทั้ง pipeline
+// ตอนต่อ Azure ไม่ได้ ทั้งที่งานจริงไม่ได้เกี่ยวกับ Azure เลย
+//
+// เปิดกลับ: ลบ 'remote' ออกจากรายการนี้บรรทัดเดียว
+const SUSPENDED_TARGETS = ['remote'];
+
 const c = {
   dim: s => `\x1b[2m${s}\x1b[0m`,
   cyan: s => `\x1b[36m${s}\x1b[0m`,
@@ -88,10 +100,24 @@ function parseArgs(argv) {
 }
 
 function resolveTargets(spec) {
-  if (!spec || spec.toLowerCase() === 'all') return [...ALL_TARGETS];
+  const active = ALL_TARGETS.filter(t => !SUSPENDED_TARGETS.includes(t));
+
+  if (!spec || spec.toLowerCase() === 'all') {
+    if (SUSPENDED_TARGETS.length) {
+      console.log(c.yellow(`หมายเหตุ: ข้ามปลายทางที่ปิดใช้ชั่วคราว — ${SUSPENDED_TARGETS.join(', ')}`));
+    }
+    return [...active];
+  }
+
   const picked = spec.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
   const bad = picked.filter(t => !ALL_TARGETS.includes(t));
   if (bad.length) throw new Error(`target ไม่ถูกต้อง: ${bad.join(', ')} (ใช้ได้: ${ALL_TARGETS.join(', ')} หรือ all)`);
+
+  // ระบุชื่อปลายทางที่ปิดอยู่มาตรง ๆ = ตั้งใจ ให้ผ่านได้แต่ต้องเตือนให้เห็นก่อน
+  const suspended = picked.filter(t => SUSPENDED_TARGETS.includes(t));
+  if (suspended.length) {
+    console.log(c.yellow(`คำเตือน: ${suspended.join(', ')} ถูกปิดใช้ชั่วคราวอยู่ แต่คุณระบุมาเอง จะดำเนินการต่อ`));
+  }
   return picked;
 }
 

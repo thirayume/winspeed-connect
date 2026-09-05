@@ -43,12 +43,18 @@ World Fert ใช้ **Prosoft WINSpeed 9.0** เป็น ERP หลัก
 
 ## 3. สภาพแวดล้อม — 4 ปลายทาง
 
+> 🔴 **5 ก.ย. 2569 — เจ้าของสั่งปิด Railway + Azure + Vercel ชั่วคราว**
+> เหลือใช้งานจริงแค่ **Local · Docker (on-prem) · Hostinger** จะแจ้งเมื่อพร้อมเปิดกลับ
+> `npm run migrate` และ `npm run deploy` **ข้าม `remote` (Azure) ให้อัตโนมัติแล้ว**
+> เปิดกลับ: ลบ `'remote'` ออกจาก `SUSPENDED_TARGETS` ใน `backend/scripts/migrate-targets.js` บรรทัดเดียว
+
 | ชื่อ | ที่อยู่ | บทบาท | deploy |
 |---|---|---|---|
-| DEV | เครื่องตัวเอง `:5173` / `:3000` | พัฒนา | — |
+| **DEV** | เครื่องตัวเอง `:5173` / `:3000` · `DB_MODE=local` | 🟢 ใช้งาน | — |
+| **Docker (on-prem)** | `deploy/onprem/` · `up.ps1` / `up.sh` | 🟢 ใช้งาน | มือ |
+| **PROD-B (Hostinger)** | ทั้งกอง `76.13.190.104` | 🟢 **ใช้งานจริง** | `03-remote-deploy.bat` |
+| ~~PROD-A~~ | ~~Vercel + Railway + Azure~~ | ⏸️ **ปิดชั่วคราว** | ข้าม |
 | UAT | `dbwins_worldfert9_test` @ Hostinger | ทดสอบ | มือ |
-| **PROD-A** | Vercel + Railway + **Azure** `20.255.185.14` | 🟢 **ใช้งานจริง** | **อัตโนมัติจาก `git push`** |
-| **PROD-B** | Hostinger ทั้งกอง `76.13.190.104` | 🟡 **สำรอง ยังไม่มีคนใช้** | **มือ** (tar → scp → `deploy-release.sh`) |
 
 > 🔴 **สวิตช์เลือกฐานคือ `DB_MODE` ไม่ใช่ `DB_TARGET`** — ค่าเริ่มต้น `remote` = **Azure production**
 > `DB_TARGET` ถูกเพิกเฉยเงียบ ๆ · **อ่านบรรทัด `Migration preflight for <TARGET>` ก่อนปล่อยให้เดินต่อเสมอ**
@@ -59,9 +65,9 @@ World Fert ใช้ **Prosoft WINSpeed 9.0** เป็น ERP หลัก
 
 | | |
 |---|---|
-| รุ่น | **1.9.7** · ขึ้นครบ PROD-A และ PROD-B |
-| migration | **105 ไฟล์** · ตรงกันทั้ง 3 ฐาน (`unchanged: 105; pending: 0; drift: 0`) |
-| เทสต์ | **8/8 ผ่าน** (ชุดเดิม 19 ตัวมีเทส MySQL ที่ถูกลบไปพร้อมฟีเจอร์) |
+| รุ่น | **1.9.10** · ขึ้นที่ PROD-B (PROD-A ปิดชั่วคราว ค้างที่ 1.9.8) |
+| migration | **105 ไฟล์** · ตรงกัน local + remote_b (`unchanged: 105; pending: 0; drift: 0`) |
+| เทสต์ | unit **8/8** · e2e Document Flow **15/15** (`scripts/e2e-sale-trip-flow.js`) |
 | typecheck | **0 error** · `npm run build` = `tsc -b && vite build` |
 | MySQL TruckScale | 🔴 **ลบออกจากระบบแล้ว** ไม่ใช่แค่ปิด · `/api/health` **ไม่มีคีย์ `mysql`** อีกต่อไป |
 | แหล่งข้อมูลการชั่ง | `dbo.WGHD`/`WGDT`/`WGDTReport` — **อ่าน-เขียนได้** |
