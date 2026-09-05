@@ -1,6 +1,6 @@
 name: worldfert-test
 
-# Test application only. MSSQL and MySQL remain in the production Compose
+# Test application only. MSSQL remains in the production Compose
 # project, but these containers connect exclusively to separately named test
 # databases. They share the existing Docker network so no database port needs
 # to be added.
@@ -29,12 +29,6 @@ services:
       DB_PASSWORD: ${WF_READER_PASSWORD}
       DB_OWNER_USER: wf_owner
       DB_OWNER_PASSWORD: ${WF_OWNER_PASSWORD}
-      MYSQL_HOST: ${TEST_MYSQL_HOST:-mysql}
-      MYSQL_PORT: ${TEST_MYSQL_PORT:-3306}
-      MYSQL_DATABASE: ${MYSQL_TEST_DATABASE:-db_truckscale_test}
-      MYSQL_USER: ${MYSQL_USER:-wfapp}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_SSL_CA_PATH: /app/secrets/mysql-ca.crt
       DEFAULT_SEED_PASSWORD: ""
       JWT_SECRET: ${TEST_JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
@@ -59,14 +53,17 @@ services:
     volumes:
       - backend-test-exports:/app/exports
       - backend-test-uploads:/app/uploads
-      - ${MYSQL_CERT_DIR:-/opt/worldfert/secrets/mysql}/ca.crt:/app/secrets/mysql-ca.crt:ro
+    # ⚠ healthcheck เคยบังคับ db.mysql === 'up' ด้วย
+    #   พอถอด MySQL ออกทั้งระบบเมื่อ 5 ก.ย. 2569 เงื่อนไขนี้เป็นจริงไม่ได้อีก
+    #   คอนเทนเนอร์ UAT จึงขึ้น unhealthy ติดต่อกัน 3 วัน (FailingStreak 1658)
+    #   ทั้งที่ตัวแอปเองตอบ ok:true ตามปกติ — เป็นเงื่อนไขที่ค้าง ไม่ใช่แอปพัง
     healthcheck:
       test:
         - CMD
         - node
         - -e
         - >-
-          fetch('http://localhost:3000/api/health').then(r=>r.json()).then(j=>process.exit(j.ok===true&&j.db?.sqlserver==='up'&&j.db?.mysql==='up'?0:1)).catch(()=>process.exit(1))
+          fetch('http://localhost:3000/api/health').then(r=>r.json()).then(j=>process.exit(j.ok===true&&j.db?.sqlserver==='up'?0:1)).catch(()=>process.exit(1))
       interval: 20s
       timeout: 10s
       retries: 12
