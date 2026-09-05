@@ -29,7 +29,12 @@ set -euo pipefail
 REPO_URL="https://github.com/thirayume/winspeed-connect"
 RUNNER_USER="ghrunner"
 RUNNER_DIR="/opt/github-runner"
-RUNNER_VERSION="2.321.0"
+# ⚠ runner ที่เก่าเกินไปจะถูก GitHub ปฏิเสธไม่ให้เชื่อมต่อ
+#   ตรวจรุ่นล่าสุดก่อนติดตั้งเสมอ:
+#     curl -s https://api.github.com/repos/actions/runner/releases/latest | grep tag_name
+#   แล้วอัปเดตทั้ง RUNNER_VERSION และ RUNNER_SHA256 ให้ตรงกัน (SHA256 อยู่ในหน้า release)
+RUNNER_VERSION="2.337.0"
+RUNNER_SHA256="70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613"
 LABELS="self-hosted,linux,prod-b"
 
 TOKEN="${1:-}"
@@ -73,6 +78,13 @@ cd "$RUNNER_DIR"
 if [ ! -f ./config.sh ]; then
   curl -fsSL -o runner.tar.gz \
     "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
+  # ตรวจ checksum ก่อนแตกไฟล์ — สคริปต์นี้ดาวน์โหลดโค้ดมารันบนเครื่อง production
+  # ถ้าไฟล์ถูกสับเปลี่ยนระหว่างทาง เราจะได้รู้ตรงนี้ ไม่ใช่ตอนมันรันไปแล้ว
+  echo "${RUNNER_SHA256}  runner.tar.gz" | sha256sum -c - || {
+    echo "ERROR: checksum ของไฟล์ที่โหลดมาไม่ตรง — หยุดทันที" >&2
+    rm -f runner.tar.gz
+    exit 1
+  }
   tar xzf runner.tar.gz && rm -f runner.tar.gz
 fi
 chown -R "$RUNNER_USER":"$RUNNER_USER" "$RUNNER_DIR"
