@@ -2,19 +2,22 @@
  * แถบบอกว่า "Hold รถ" ในระบบนี้แปลว่าอะไรกันแน่
  *
  * ทำไมต้องมี
- *   คำว่า Hold มีสามความหมายที่ต่างกันมาก และคนใช้งานต้องรู้ว่าตอนนี้อยู่แบบไหน
- *     1. ธงฝั่งแอปเท่านั้น       — คนคุมลานเห็น แต่ระบบไม่ได้หยุดอะไร
- *     2. ส่งถึง WINSpeed แล้ว    — ตั้ง dbo.SOHD.OnHold='Y' แต่ยังไม่รู้ว่าเครื่องชั่งสนใจไหม
- *     3. ยืนยันแล้วว่าหยุดจริง   — ทดสอบกับรถจริงแล้ว
- *
- *   ถ้าหน้าจอบอกลอย ๆ ว่า "รถถูก Hold" ในแบบที่ 1 หรือ 2 คนจะเข้าใจว่ารถหยุดแน่
+ *   ถ้าหน้าจอบอกลอย ๆ ว่า "รถถูก Hold" คนจะเข้าใจว่ารถหยุดแน่นอน
  *   แล้วไม่ไปห้ามรถที่ลาน ซึ่งอันตรายกว่าไม่มีฟีเจอร์นี้เลย
+ *
+ * 🔴 ปิดคำถามแล้ว 5 ก.ย. 2569 — ทีม TruckScale ยืนยันว่า**ไม่ได้อ่าน**
+ *   `dbo.SOHD.OnHold` ซึ่งเป็นคันโยกเดียวที่เรามี
+ *   ฉะนั้นไม่ว่าสวิตช์ TRUCK_HOLD_WRITE_WINSPEED จะเปิดหรือปิด
+ *   **รถก็ไม่ถูกหยุดโดยอัตโนมัติ** เหลือได้แค่สองสถานะจริง ๆ คือ
+ *     1. Hold เป็นการแจ้งเตือนในแอป (สวิตช์ปิด — ค่าเริ่มต้นและควรเป็นแบบนี้)
+ *     2. เขียน OnHold ลง WINSpeed ด้วย แต่ก็ยังไม่มีใครอ่าน (สวิตช์เปิด)
+ *   สถานะ "เครื่องชั่งหยุดตาม" ที่เคยมีในไฟล์นี้ถูกถอดออก เพราะเกิดขึ้นไม่ได้
  *
  * ข้อความมาจาก backend (`getHoldCapability()`) ไม่ได้ประกอบเองที่นี่
  * เพื่อให้ตรรกะกับถ้อยคำอยู่ที่เดียวกัน แก้ที่เดียวไม่เพี้ยน
  */
 import { useEffect, useState } from 'react';
-import { ShieldAlert, ShieldCheck, Info } from 'lucide-react';
+import { ShieldAlert, Info } from 'lucide-react';
 import { fetchHoldCapability, type HoldCapability } from '../../services/api';
 
 export function useHoldCapability() {
@@ -32,32 +35,20 @@ export function useHoldCapability() {
 /** ป้ายสั้นสำหรับติดข้างคำว่า Hold ในรายการ */
 export function HoldScopeChip({ cap }: { cap: HoldCapability | null }) {
   if (!cap) return null;
-  if (!cap.writesToWinspeed) {
-    return (
-      <span
-        title={cap.label}
-        className="rounded border border-gray-300 bg-gray-50 px-1 py-px text-[10px] text-gray-500"
-      >
-        เฉพาะในแอป
-      </span>
-    );
-  }
-  if (!cap.verifiedOnRealTruck) {
-    return (
-      <span
-        title={cap.label}
-        className="rounded border border-amber-300 bg-amber-50 px-1 py-px text-[10px] text-amber-800"
-      >
-        ส่งถึง WINSpeed · ยังไม่ยืนยัน
-      </span>
-    );
-  }
-  return (
+  // ไม่มีกรณีสีเขียว — เครื่องชั่งไม่อ่านฟิลด์นี้ จึงไม่มีสถานะ "หยุดตาม"
+  return cap.writesToWinspeed ? (
     <span
       title={cap.label}
-      className="rounded border border-emerald-300 bg-emerald-50 px-1 py-px text-[10px] text-emerald-800"
+      className="rounded border border-amber-300 bg-amber-50 px-1 py-px text-[10px] text-amber-800"
     >
-      เครื่องชั่งหยุดตาม
+      เขียน WINSpeed · เครื่องชั่งไม่อ่าน
+    </span>
+  ) : (
+    <span
+      title={cap.label}
+      className="rounded border border-gray-300 bg-gray-50 px-1 py-px text-[10px] text-gray-500"
+    >
+      เฉพาะในแอป
     </span>
   );
 }
@@ -65,26 +56,20 @@ export function HoldScopeChip({ cap }: { cap: HoldCapability | null }) {
 export function HoldCapabilityBanner({ cap }: { cap: HoldCapability | null }) {
   if (!cap) return null;
 
-  const verified = cap.writesToWinspeed && cap.verifiedOnRealTruck;
-  const style = verified
-    ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-    : cap.writesToWinspeed
-      ? 'border-amber-200 bg-amber-50 text-amber-900'
-      : 'border-gray-200 bg-gray-50 text-gray-700';
-  const Icon = verified ? ShieldCheck : cap.writesToWinspeed ? ShieldAlert : Info;
+  const style = cap.writesToWinspeed
+    ? 'border-amber-200 bg-amber-50 text-amber-900'
+    : 'border-gray-200 bg-gray-50 text-gray-700';
+  const Icon = cap.writesToWinspeed ? ShieldAlert : Info;
 
   return (
     <div className={`flex items-start gap-2 rounded border px-3 py-2 text-xs ${style}`}>
       <Icon size={14} className="mt-0.5 shrink-0" />
       <div>
         <b>Hold รถ:</b> {cap.label}
-        {!verified && (
-          <div className="mt-0.5 opacity-80">
-            {cap.writesToWinspeed
-              ? 'ยังต้องมีคนที่ลานห้ามรถอยู่ จนกว่าจะทดสอบกับรถจริงแล้วบันทึกผล'
-              : 'การหยุดรถจริงยังเป็นขั้นตอนของคน ระบบทำได้แค่แจ้งให้รู้เร็วที่สุด'}
-          </div>
-        )}
+        <div className="mt-0.5 opacity-80">
+          การหยุดรถจริงเป็นขั้นตอนของคนเสมอ — ระบบทำได้แค่แจ้งให้รู้เร็วที่สุด
+          และเก็บหลักฐานว่าใครสั่ง Hold เมื่อไร ด้วยเหตุผลอะไร
+        </div>
       </div>
     </div>
   );

@@ -1213,9 +1213,13 @@ export const fetchOrgHints = () =>
 
 // ── สถานะกลไก Hold รถ ─────────────────────────────────────────
 // หน้าจอต้องใช้ค่านี้พูด ไม่ใช่สมมติเองว่า "Hold" แปลว่ารถหยุดแล้ว
+// 🔴 winspeedFieldIsRead เป็น false เสมอ — ทีม TruckScale ยืนยัน 5 ก.ย. 2569
+//    ว่าไม่ได้อ่าน dbo.SOHD.OnHold ซึ่งเป็นคันโยกเดียวที่เรามี
+//    verifiedOnRealTruck จึงเลิกใช้แล้ว เก็บไว้เพื่อความเข้ากันได้ของ payload เท่านั้น
 export type HoldCapability = {
   writesToWinspeed: boolean;
   verifiedOnRealTruck: boolean;
+  winspeedFieldIsRead: boolean;
   label: string;
 };
 
