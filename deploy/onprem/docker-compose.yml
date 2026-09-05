@@ -76,39 +76,6 @@ services:
     networks: [wf-net]
 
   # ── MySQL (TruckScale) ──────────────────────────────────────
-  mysql:
-    image: mysql:8.0
-    container_name: wf-mysql
-    restart: unless-stopped
-    command:
-      - --default-authentication-plugin=mysql_native_password
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-      - --default-time-zone=+07:00
-      - --innodb-buffer-pool-size=${MYSQL_BUFFER_POOL:-256M}
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-db_truckscale}
-      MYSQL_USER: ${MYSQL_USER:-wfapp}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      TZ: ${TZ:-Asia/Bangkok}
-    ports:
-      - "127.0.0.1:${MYSQL_LOCAL_PORT:-3306}:3306"   # loopback เท่านั้น
-    volumes:
-      - mysql-data:/var/lib/mysql
-      - ./backup:/backup                             # วางไฟล์ .sql ที่โฟลเดอร์นี้
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: ${MYSQL_MEM_LIMIT:-1G}
-    networks: [wf-net]
-
   # ── Backend ─────────────────────────────────────────────────
   backend:
     build:
@@ -131,11 +98,6 @@ services:
       DB_PASSWORD: ${WF_READER_PASSWORD}
       DB_OWNER_USER: wf_owner
       DB_OWNER_PASSWORD: ${WF_OWNER_PASSWORD}
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-db_truckscale}
-      MYSQL_USER: ${MYSQL_USER:-wfapp}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       CORS_ORIGIN: ${CORS_ORIGIN}
@@ -153,8 +115,6 @@ services:
       - backend-exports:/app/exports
     depends_on:
       mssql:
-        condition: service_healthy
-      mysql:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
@@ -183,6 +143,9 @@ services:
 
 volumes:
   mssql-data:
+  # MySQL service removed 2026-09-05, matching PROD-B.
+  # Volume declaration kept so any existing data becomes an orphan
+  # instead of being dropped. Remove only when confirmed unneeded.
   mysql-data:
   backend-exports:
   caddy-data:
