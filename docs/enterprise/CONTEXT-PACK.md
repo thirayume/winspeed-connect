@@ -148,10 +148,14 @@ curl -sS https://api.ipify.org
 | 5 | **ย้ายผู้ใช้ไปเขตการขายใหม่** | 📌 `SaleRegion` มีทั้งชุดเก่า (01–06) และใหม่ (10–16) |
 | 6 | ซิงค์ PROD-A → PROD-B / SSH key Azure | 🛑 **PENDING & HOLD** — อาจใช้ private network + VPN แทน |
 | 7 | `WGDT.CouponNo` ว่าง | 🟡 รอข้อมูลจริงจากโรงงาน |
-| 8 | เฟส 6+ ของ Sale Trip (Quotation ↔ SO, pricelist, rebate pool) | 🟡 ยังไม่เริ่ม |
+| 8 | งานใหม่นอกแผนเดิม (Quotation ↔ SO · pricelist รายเดือน · rebate pool) | 🟡 ยังไม่เริ่ม — **ไม่ใช่เฟส 6** ตามที่เคยเขียนผิดไว้ |
 
-> **ที่ทำเสร็จแล้วในรอบ 3–4 ก.ย.** — เฟส 2/3/4/5 ของ Sale Trip · Master Settings เหตุผล ·
-> กลไก Hold ถึง WINSpeed · ลบ MySQL ทั้งหมด · seed ข้อมูลชั่งครบ 3 ฐาน
+> **ที่ทำเสร็จแล้วในรอบ 3–5 ก.ย.** — เฟส 2/3/4/5/**6** ของ Sale Trip · Master Settings เหตุผล ·
+> กลไก Hold ถึง WINSpeed · ลบ MySQL ทั้งหมด (รวม container บน PROD-B) · seed ข้อมูลชั่งครบ 3 ฐาน
+>
+> **เฟส 6 = ทดสอบทั้งเส้น** (ไม่ใช่ Quotation/pricelist ตามที่เคยสรุปผิด)
+> `backend/scripts/e2e-sale-trip-flow.js` ตรวจ 15 จุดตั้งแต่เที่ยวว่างจนชั่งออก **ผ่าน 15/15**
+> รันก่อน deploy ทุกครั้ง: `DB_MODE=local node scripts/e2e-sale-trip-flow.js`
 
 ---
 
