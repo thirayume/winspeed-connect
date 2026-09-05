@@ -22,11 +22,20 @@
 name: Deploy PROD-B
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
+  # ⚠ ทริกเกอร์ push ถูกปิดไว้ชั่วคราวจนกว่าจะติดตั้ง self-hosted runner เสร็จ
+  #
+  #   ไม่มี runner = job เข้าคิวแล้วค้างอยู่อย่างนั้นไม่มีวันเริ่ม
+  #   ทุก push จะสะสมคิวค้างเพิ่มขึ้นเรื่อย ๆ และ Actions ขึ้นสีเหลืองตลอดเวลา
+  #   จนแยกไม่ออกว่าอันไหนพังจริง — เกิดขึ้นแล้วกับ push แรกเมื่อ 5 ก.ย. 2569
+  #
+  #   เปิดคืนโดยเอาคอมเมนต์ 5 บรรทัดล่างนี้ออก **หลังจาก** runner ขึ้นแล้วเท่านั้น
+  #   ตรวจก่อนว่ามี runner จริง: Settings → Actions → Runners ต้องเห็นสถานะ Idle
+  #
+  # push:
+  #   branches: [main]
+  #   paths-ignore:
+  #     - 'docs/**'
+  #     - '**/*.md'
   workflow_dispatch:
     inputs:
       reason:
@@ -57,7 +66,7 @@ jobs:
           echo "โดย    : ${{ github.actor }}"
           echo "เหตุผล : ${{ github.event.inputs.reason || 'push to main' }}"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # ต้องการประวัติแค่ commit เดียว — เร็วกว่าและพอใช้
           fetch-depth: 1
