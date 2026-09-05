@@ -22,20 +22,17 @@
 name: Deploy PROD-B
 
 on:
-  # ⚠ ทริกเกอร์ push ถูกปิดไว้ชั่วคราวจนกว่าจะติดตั้ง self-hosted runner เสร็จ
+  # runner 'prod-b-hostinger' ติดตั้งบน VPS แล้วเมื่อ 5 ก.ย. 2569 (service active + enabled)
+  # จึงเปิดทริกเกอร์ push กลับได้
   #
-  #   ไม่มี runner = job เข้าคิวแล้วค้างอยู่อย่างนั้นไม่มีวันเริ่ม
-  #   ทุก push จะสะสมคิวค้างเพิ่มขึ้นเรื่อย ๆ และ Actions ขึ้นสีเหลืองตลอดเวลา
-  #   จนแยกไม่ออกว่าอันไหนพังจริง — เกิดขึ้นแล้วกับ push แรกเมื่อ 5 ก.ย. 2569
-  #
-  #   เปิดคืนโดยเอาคอมเมนต์ 5 บรรทัดล่างนี้ออก **หลังจาก** runner ขึ้นแล้วเท่านั้น
-  #   ตรวจก่อนว่ามี runner จริง: Settings → Actions → Runners ต้องเห็นสถานะ Idle
-  #
-  # push:
-  #   branches: [main]
-  #   paths-ignore:
-  #     - 'docs/**'
-  #     - '**/*.md'
+  # ⚠ ถ้าถอน runner ออกเมื่อไร ต้องปิดบล็อก push นี้กลับด้วย
+  #   ไม่มี runner = job เข้าคิวค้างตลอดไป และ Actions จะเหลืองถาวรจนแยกไม่ออก
+  #   ว่าอันไหนพังจริง — เคยเกิดแล้วกับ push แรก
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   workflow_dispatch:
     inputs:
       reason:
