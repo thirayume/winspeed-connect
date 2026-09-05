@@ -1,6 +1,6 @@
 {
   "name": "winspeed-erp-root",
-  "version": "1.9.10",
+  "version": "1.9.11",
   "description": "Root management for Sales Order app",
   "scripts": {
     "start:backend": "cd backend && nodemon server.js",
