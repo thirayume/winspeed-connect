@@ -37,7 +37,11 @@ echo "[2/4] Build and start containers"
 docker compose up -d --build --remove-orphans
 
 echo "[3/4] Wait for database and API health"
-containers=(wf-mssql wf-mysql wf-backend wf-portainer)
+# wf-mysql was removed on 2026-09-04 when the MySQL integration was dropped.
+# Keeping it in this list made the health loop fail with
+#   "Error response from daemon: No such container: wf-mysql"
+# even though every remaining container had already come up healthy.
+containers=(wf-mssql wf-backend wf-frontend wf-portainer)
 for container in "${containers[@]}"; do
   healthy=0
   for _ in $(seq 1 60); do

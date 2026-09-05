@@ -43,7 +43,9 @@ FREE_GB=$(df -Pm "$TRANSFER_ROOT" | awk 'NR==2{printf "%d",$4/1024}')
 log "disk free ${FREE_GB} GB; required minimum ${MIN_FREE_GB} GB"
 [ "$FREE_GB" -ge "$MIN_FREE_GB" ] || fail "insufficient free disk"
 
-for container in wf-mssql wf-mysql; do
+# MySQL was removed on 2026-09-04. This script runs from the weekly cron,
+# so leaving wf-mysql here would fail the backup every Sunday.
+for container in wf-mssql; do
   status=$(docker inspect -f '{{.State.Health.Status}}' "$container" 2>/dev/null || true)
   [ "$status" = healthy ] || fail "$container is not healthy"
 done
@@ -76,18 +78,7 @@ rm -f "$MSSQL_HOST_RAW"
 (cd "$OUT/mssql" && sha256sum "$MSSQL_BASE.gz" > "$MSSQL_BASE.gz.sha256")
 chmod 644 "$OUT/mssql/$MSSQL_BASE.gz" "$OUT/mssql/$MSSQL_BASE.gz.sha256"
 
-MYSQL_BASE="${MYSQL_DB}_${TAG}_${STAMP}.sql.gz"
-log "MySQL backup -> $MYSQL_BASE"
-docker exec -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" wf-mysql mysqldump \
-  -u root --single-transaction --quick --routines --triggers --events \
-  --default-character-set=utf8mb4 "$MYSQL_DB" \
-  | gzip -1 > "$OUT/mysql/$MYSQL_BASE.part"
-gzip -t "$OUT/mysql/$MYSQL_BASE.part"
-MYSQL_SIZE=$(stat -c%s "$OUT/mysql/$MYSQL_BASE.part")
-[ "$MYSQL_SIZE" -ge 10240 ] || fail "MySQL dump is unexpectedly small: $MYSQL_SIZE bytes"
-mv -f "$OUT/mysql/$MYSQL_BASE.part" "$OUT/mysql/$MYSQL_BASE"
-(cd "$OUT/mysql" && sha256sum "$MYSQL_BASE" > "$MYSQL_BASE.sha256")
-chmod 644 "$OUT/mysql/$MYSQL_BASE" "$OUT/mysql/$MYSQL_BASE.sha256"
+# MySQL backup block removed 2026-09-04 with the MySQL integration.
 
 find "$OUT/mssql" "$OUT/mysql" -type f -mtime +"$RETAIN_DAYS" -delete
 

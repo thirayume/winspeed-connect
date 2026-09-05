@@ -13,7 +13,11 @@ set +a
 cd "$APP_DIR/deploy/cloud-vps"
 docker compose ps
 
-for c in wf-mssql wf-mysql wf-backend; do
+# wf-mysql was removed on 2026-09-04 with the MySQL integration.
+# Leaving it here made every deploy fail at the health gate with
+#   ERROR: wf-mysql health=
+# long after the containers had all come up fine.
+for c in wf-mssql wf-backend; do
   status=$(docker inspect -f '{{.State.Health.Status}}' "$c" 2>/dev/null || true)
   [ "$status" = healthy ] || { echo "ERROR: $c health=$status" >&2; exit 1; }
 done

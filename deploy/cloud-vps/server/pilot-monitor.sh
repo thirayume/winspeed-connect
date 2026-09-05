@@ -73,7 +73,8 @@ collect_metrics() {
   containers_running="$(docker ps -q | wc -l | tr -d ' ')"
   backend_health="$(container_health wf-backend)"
   mssql_health="$(container_health wf-mssql)"
-  mysql_health="$(container_health wf-mysql)"
+  # wf-mysql removed 2026-09-04 - nothing to watch
+  mysql_health="n/a"
   api_fields="$(docker exec wf-backend node -e 'fetch("http://127.0.0.1:3000/api/health").then(r=>r.json()).then(j=>process.stdout.write([j.ok===true,j.db?.sqlserver||"down",j.db?.mysql||"down"].join("|"))).catch(()=>process.stdout.write("false|down|down"))' 2>/dev/null || printf 'false|down|down')"
   IFS='|' read -r api_ok api_sql api_mysql <<< "$api_fields"
 
