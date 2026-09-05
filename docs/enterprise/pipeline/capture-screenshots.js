@@ -40,7 +40,13 @@ const ACCOUNTS = [
 
 // ดึง { key, label, roles } จาก nav literal ใน App.tsx — key/label เปลี่ยนที่เดียวคือโค้ด
 function readNavConfig() {
-  const text = fs.readFileSync(APP_TSX, 'utf8');
+  // ตัดบรรทัดที่ถูก comment ปิดไว้ออกก่อน
+  //
+  // ⚠ App.tsx เก็บเมนูที่ยังไม่เปิดใช้ไว้เป็นคอมเมนต์ (cn-rebate · governance ·
+  //   incentive-report · budget-report) โดยเขียน roles เป็น placeholder `[...]`
+  //   ถ้าไม่ตัดออก ตัวแยกจะนับเป็นเมนูจริง แล้วดัชนีภาพหน้าจอจะโฆษณาฟีเจอร์ที่ปิดอยู่
+  //   ว่า "มีเมนูนี้แต่ยังไม่มีภาพ" ซึ่งไม่จริง — พบ 5 ก.ย. 2569
+  const text = fs.readFileSync(APP_TSX, 'utf8').replace(/^[ \t]*\/\/.*$/gm, '');
   const entries = [];
   // ตำแหน่งของ groupLabel แต่ละอันบอกว่า entry ที่ตามมาอยู่กลุ่มไหน — ต้องรู้กลุ่ม
   // เพราะกลุ่มที่พับอยู่ทำให้ปุ่มภายในอยู่ใน DOM แต่คลิกไม่ได้
@@ -86,7 +92,23 @@ async function isLoading(page) {
     if (visible) return true;
   }
   // ข้อความ "กำลังโหลด..." ที่ component ย่อยแสดงเอง
-  const text = await page.locator('text=/กำลังโหลด/').first().isVisible().catch(() => false);
+  //
+  // ⚠ ตรวจด้วย page.evaluate ไม่ใช่ selector `text=/.../` ของ Playwright
+  //   text engine ของ Playwright ไม่ได้เทียบ regex กับ "ข้อความของ element นั้นเอง"
+  //   อย่างที่คาด — 5 ก.ย. 2569 มันคืนทั้ง <span> ตัวนับ
+  //   "3 เที่ยว · 125 ตัน · กำลังโหลด 1 · ชั่งออกแล้ว 1" และ <span>กำลังโหลดสินค้า</span>
+  //   ว่าตรงกับ regex ที่ไม่ควรตรง ทำให้หน้า trip-board ถูกมองว่าโหลดไม่จบตลอดกาล
+  //
+  // ⚠ "กำลังโหลด" เป็นคำศัพท์ของงานด้วย ไม่ใช่แค่ spinner
+  //   ป้ายสถานะรถ "กำลังโหลดสินค้า" (WGHD.Status = 2) · ตัวนับในกระดานเที่ยวรถ
+  //   spinner จริงทุกตัวลงท้ายด้วย ... / … หรือมีคำว่า ข้อมูล/หน้า/ตั้งค่า ตามหลัง
+  //   จึงตรวจเฉพาะ element ที่เป็นใบ (ไม่มีลูก) และมองเห็นจริงเท่านั้น
+  const text = await page.evaluate(() => {
+    const re = /กำลังโหลด(\.\.\.|…|ข้อมูล|หน้า|ตั้งค่า)/;
+    const visible = el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+    return [...document.querySelectorAll('*')]
+      .some(el => el.children.length === 0 && re.test(el.textContent || '') && visible(el));
+  }).catch(() => false);
   return text;
 }
 
@@ -98,7 +120,11 @@ async function isLoading(page) {
  * จึงต้องรอให้ไม่พบตัวบ่งชี้การโหลดติดต่อกันหลายครั้ง ไม่ใช่ครั้งเดียว
  */
 async function waitForIdle(page, timeoutMs = 30_000) {
-  await page.waitForLoadState('networkidle', { timeout: timeoutMs }).catch(() => {});
+  // networkidle ใช้กับ dev server ของ Vite ไม่ได้ — HMR เปิด websocket ค้างไว้ตลอด
+  // เครือข่ายจึงไม่มีวัน "ว่าง" และคำสั่งนี้จะรอจนหมดเวลาเสมอ
+  // รอบวันที่ 5 ก.ย. 2569 เสียเวลาไปหน้าละ ~60 วินาทีเพราะเรื่องนี้ (2 ครั้ง x 30 วินาที)
+  // รอสั้น ๆ พอเป็นมารยาทแล้วไปเชื่อตัวชี้วัดการโหลดจริงด้านล่างแทน
+  await page.waitForLoadState('networkidle', { timeout: 3_000 }).catch(() => {});
   const deadline = Date.now() + timeoutMs;
   let calmStreak = 0;
   while (Date.now() < deadline) {
@@ -118,7 +144,15 @@ async function login(page, account) {
   await page.locator('input[type="text"]').first().fill(account.username);
   await page.locator('input[type="password"]').first().fill(PASSWORD);
   await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
-  await page.getByText(account.displayName, { exact: true }).waitFor({ timeout: 20_000 });
+  // รอ "เมนูข้างโผล่ + ช่องรหัสผ่านหายไป" แทนการรอชื่อที่แสดง
+  //
+  // ⚠ ของเดิมรอ getByText(account.displayName) ซึ่งผูกกับ DisplayName ในฐานข้อมูล
+  //   บัญชีที่ถูกสร้างไว้ก่อนหน้าด้วยชื่ออื่น (e2e_admin = "E2E Testing Admin",
+  //   e2e_approver = "E2E ผู้อนุมัติ") จึงหมดเวลา 20 วินาทีแล้วถูกข้ามทั้งบทบาท
+  //   ทั้งที่ล็อกอินสำเร็จ — เกิดขึ้นจริง 5 ก.ย. 2569
+  //   สิ่งที่ต้องพิสูจน์คือ "เข้าระบบได้แล้ว" ไม่ใช่ "ชื่อสะกดตรงตามที่คาด"
+  await page.locator('aside').first().waitFor({ state: 'visible', timeout: 20_000 });
+  await page.locator('input[type="password"]').first().waitFor({ state: 'detached', timeout: 10_000 });
   await waitForIdle(page);
 }
 
@@ -137,6 +171,17 @@ async function isReallyClickable(page, label) {
 }
 
 async function openPortal(page, portal) {
+  // ⚠ ต้องรอให้หน้าปัจจุบัน "โหลดเสร็จ" ก่อนจะไปกดเมนูถัดไป
+  //
+  //   บางหน้า (เช่น ขาย/POS) แสดง overlay เต็มจอ `fixed inset-0 z-[9999]`
+  //   พร้อมข้อความ "กำลังโหลดข้อมูล..." ซึ่ง **คลุมแถบเมนูด้านซ้ายไปด้วย**
+  //   ปุ่มยังอยู่ใน DOM และมี bounding box ปกติ แต่ elementFromPoint คืน overlay
+  //   isReallyClickable จึงเป็นเท็จ แล้ว openPortal คืน false = "เมนูไม่ปรากฏ"
+  //
+  //   ผลจริง 5 ก.ย. 2569: หน้า trip-board และ edit-requests ซึ่งอยู่ถัดจาก "ขาย"
+  //   ในลำดับเมนู ถูกข้ามครบทุกบทบาท ทั้งที่ทั้งสองหน้าทำงานปกติดี
+  await waitForIdle(page, 20_000);
+
   // sidebar ย่ออยู่โดยปริยาย ปุ่มจึงมีแต่ attribute title ไม่มี text node
   const button = page.locator(`aside button[title="${portal.label}"]`).first();
   if (!(await button.count())) return false;

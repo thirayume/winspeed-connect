@@ -143,10 +143,10 @@ services:
 
 volumes:
   mssql-data:
-  # MySQL service removed 2026-09-05, matching PROD-B.
-  # Volume declaration kept so any existing data becomes an orphan
-  # instead of being dropped. Remove only when confirmed unneeded.
-  mysql-data:
+  # MySQL service and its volume were removed 2026-09-05, matching PROD-B.
+  # Dropping the declaration does not delete data: an existing mysql-data
+  # volume simply stops being compose-managed and survives `down -v`.
+  # This stack never ran MySQL, so there was nothing to preserve.
   backend-exports:
   caddy-data:
   caddy-config:

@@ -1115,12 +1115,17 @@ async function creditWarning(custId, orderAmount) {
       SELECT TOP 1
         c.CreditAmnt AS CustLimit,
         g.CreditAmnt AS GroupLimit,
-        ISNULL((SELECT SUM(i.NetAmnt - ISNULL((SELECT SUM(d.ReceAmnt) FROM dbo.ARReceDT d WITH (NOLOCK)
-                                               WHERE d.SOInvID = i.SOInvID), 0))
+        -- ⚠ ห้ามเขียน SUM(i.NetAmnt - (SELECT SUM(...))) — SQL Server ปฏิเสธด้วย
+        --   "Cannot perform an aggregate function on an expression containing
+        --    an aggregate or a subquery" ทำให้ฟังก์ชันนี้โยน error ทุกครั้งและ
+        --   คืน null เสมอ = คำเตือนวงเงินไม่เคยทำงานเลย (พบ 5 ก.ย. 2569 จาก log UAT)
+        --   ต้องดึงยอดรับชำระออกมาเป็นคอลัมน์ด้วย OUTER APPLY ก่อน แล้วค่อย SUM
+        ISNULL((SELECT SUM(CASE WHEN i.NetAmnt - ISNULL(r.Received, 0) > 0
+                                THEN i.NetAmnt - ISNULL(r.Received, 0) ELSE 0 END)
                 FROM dbo.SOInvHD i WITH (NOLOCK)
-                WHERE i.CustID = c.CustID AND i.Docutype IN ('202','107')
-                  AND i.NetAmnt > ISNULL((SELECT SUM(d.ReceAmnt) FROM dbo.ARReceDT d WITH (NOLOCK)
-                                          WHERE d.SOInvID = i.SOInvID), 0)), 0) AS Outstanding
+                OUTER APPLY (SELECT SUM(d.ReceAmnt) AS Received FROM dbo.ARReceDT d WITH (NOLOCK)
+                             WHERE d.SOInvID = i.SOInvID) r
+                WHERE i.CustID = c.CustID AND i.Docutype IN ('202','107')), 0) AS Outstanding
       FROM dbo.EMCust c WITH (NOLOCK)
       LEFT JOIN dbo.EMCustGroup g WITH (NOLOCK) ON g.CustGroupID = c.CustGroupID
       WHERE c.CustID = @cid`,

@@ -1,14 +1,14 @@
 ---
 documentId: "WF-GUIDE-001"
-title: "คู่มือฉบับสมบูรณ์ — วิเคราะห์ · ออกแบบ · ติดตั้ง · ทดสอบ · Deploy (v1.9.0)"
-version: "v1.0"
+title: "คู่มือฉบับสมบูรณ์ — วิเคราะห์ · ออกแบบ · ติดตั้ง · ทดสอบ · Deploy (v1.9.10)"
+version: "v1.1"
 status: Draft
-statusDetail: "จัดทำ 3 กันยายน 2569 · ทุกตัวเลขและผลทดสอบรันจริงบนเครื่องจริงวันเดียวกัน"
+statusDetail: "ปรับเป็น v1.9.10 เมื่อ 5 กันยายน 2569 · ทุกตัวเลขและผลทดสอบในฉบับนี้รันจริงบนเครื่องจริงวันเดียวกัน"
 owner: "Solution Architect"
 normative: true
 ---
 
-# คู่มือฉบับสมบูรณ์ — WS-Sale-App v1.9.0
+# คู่มือฉบับสมบูรณ์ — WS-Sale-App v1.9.10
 
 > **เอกสารนี้เขียนให้คนสองกลุ่ม**
 > **ผู้ใช้งาน** — อ่าน §1, §8, §9 (ข้ามส่วนเทคนิคได้)
@@ -26,7 +26,7 @@ normative: true
 | 4 | ขั้นออกแบบ — ตัดสินใจอะไรไว้บ้าง เพราะอะไร | นักพัฒนา |
 | 5 | ขั้นติดตั้งเครื่องนักพัฒนา | นักพัฒนา |
 | 6 | ขั้นทดสอบ — วิธีและผลจริง | นักพัฒนา · QA |
-| 7 | ขั้น Deploy — 4 ปลายทาง | นักพัฒนา · IT |
+| 7 | ขั้น Deploy — 3 ปลายทางที่เปิดใช้ | นักพัฒนา · IT |
 | 8 | Flow การทำงานประจำวัน (หลังเลิกใช้ MySQL) | **ผู้ใช้งาน** |
 | 9 | คู่มือรายหน้าจอ | **ผู้ใช้งาน** |
 | 10 | กับดัก 10 ข้อที่เคยทำให้เสียเวลาจริง | นักพัฒนา |
@@ -71,19 +71,25 @@ flowchart TD
 | Frontend | React + TypeScript + Vite + Tailwind | หน้าจอทั้งหมด |
 | Backend | Node.js + Express | API · กติกาธุรกิจ · ด่านตรวจ |
 | ฐานข้อมูล | SQL Server (`dbwins_worldfert9`) | `dbo` = WINSpeed · `wf` = ของเรา |
-| ~~MySQL~~ | ~~`db_truckscale`~~ | 🔴 **ยกเลิกทั้งหมด 3 ก.ย. 2569** |
+| ~~MySQL~~ | ~~`db_truckscale`~~ | 🔴 **ถอดออกหมดแล้ว** — โค้ดเลิกเรียก 3 ก.ย. · ตารางตกค้าง (`wf.WeighInbox` 220,396 แถว + `WGxxBackup_*` 3 ตาราง) ถูก DROP ด้วย migration 106 เมื่อ 5 ก.ย. 2569 |
 
 ### 2.2 สภาพแวดล้อมทั้งหมด
 
-| ชื่อ | Frontend | Backend | ฐานข้อมูล | บทบาท |
+| ชื่อ | Frontend | Backend | ฐานข้อมูล | สถานะ 5 ก.ย. 2569 |
 |---|---|---|---|---|
-| **DEV** | Vite `:5173` | `:3000` | เลือกได้ด้วย `DB_MODE` | เครื่องนักพัฒนา |
-| **UAT** | — | บน VPS | `dbwins_worldfert9_test` @ Hostinger | ทดสอบ |
-| **PROD-A** | Vercel | Railway | **Azure** `20.255.185.14` | 🟢 **ใช้งานจริง** |
-| **PROD-B** | Hostinger | Hostinger | **Hostinger** `76.13.190.104` | 🟡 **สำรอง — ยังไม่มีคนใช้** |
+| **Localhost** | Vite `:5173` | `:3000` | เลือกด้วย `DB_MODE` | 🟢 เปิดใช้ — เครื่องนักพัฒนา |
+| **Docker on-prem** | `wf-frontend` | `wf-backend` | `mssql` ในคอนเทนเนอร์ | 🟢 เปิดใช้ — ชุดติดตั้งในโรงงาน |
+| **PROD-B** | Hostinger | Hostinger | **Hostinger** `76.13.190.104` | 🟢 เปิดใช้ |
+| **UAT** | — | บน VPS | `dbwins_worldfert9_test` @ Hostinger | 🟢 เปิดใช้ — ทดสอบ |
+| ~~PROD-A~~ | ~~Vercel~~ | ~~Railway~~ | ~~Azure~~ | ⏸ **พักใช้งานชั่วคราว** |
 
-> PROD-A deploy **อัตโนมัติ** เมื่อ push ขึ้น `main` (Railway/Vercel ผูก Git ไว้)
+> ⏸ **PROD-A (Railway + Vercel + Azure) ถูกพักตามคำสั่งเจ้าของระบบเมื่อ 5 ก.ย. 2569**
+> จะเปิดกลับเมื่อได้รับแจ้ง · ระหว่างนี้ข้าม deploy และ test ช่องทางนี้ทั้งหมด
+> ในโค้ดสะท้อนด้วย `SUSPENDED_TARGETS = ['remote']` ใน `backend/scripts/migrate-targets.js`
+> — **จงใจไม่ลบ `'remote'` ออกจาก `ALL_TARGETS`** เพื่อให้เปิดกลับได้ด้วยการแก้บรรทัดเดียว
+
 > PROD-B **ต้อง deploy มือ** — `/opt/worldfert/app` ไม่ใช่ git repo
+> ตั้งแต่ v1.9.10 มี GitHub Actions (`deploy-prod-b.yml`) ทำแทนได้ แต่ยังต้องติดตั้ง self-hosted runner ก่อน
 
 ### 2.3 ที่เก็บความลับ
 
@@ -144,9 +150,12 @@ flowchart TD
 | D6 | เดินตัวนับ `dbo.EMRunBrch` ตามหลังออกเลข | ไม่งั้นหน้าจอ WINSpeed เสนอเลขที่ถูกใช้ไปแล้ว |
 | D7 | ตั้งรีเบทตอน `SHIPPED` ไม่ใช่ `CONFIRMED` | ของออกจากโรงงานจริงแล้วค่อยตั้งยอด |
 | D8 | รีเบทเป็นของ `SalesUserId` | เคยผิดจนยอดไปเข้ากระเป๋าเจ้าหน้าที่เครื่องชั่ง |
-| D9 | **อ่านการชั่งจาก `dbo.WGHD` อย่างเดียว ไม่เขียน** | เครื่องชั่งเป็นเจ้าของข้อมูล · มีปุ่มเขียนเมื่อไรจะได้แหล่งความจริงสองแหล่ง |
-| D10 | **ยกเลิก MySQL ทั้งชั้นด้วยสวิตช์เดียว ไม่ลบไฟล์** | ถอยกลับได้ใน 2 บรรทัด |
+| D9 | **แอปอ่าน `dbo.WGHD` อย่างเดียว** แม้จะได้สิทธิ์เขียนแล้ว | เครื่องชั่งเป็นเจ้าของข้อมูล · เจ้าของระบบเปิดสิทธิ์เขียน 5 ก.ย. 2569 เพื่อ **seed ข้อมูลทดสอบ** ไม่ใช่ให้แอปเขียนตอนทำงานจริง · มีปุ่มเขียนเมื่อไรจะได้แหล่งความจริงสองแหล่ง |
+| D10 | ยกเลิก MySQL เป็น 2 จังหวะ — ปิดด้วยสวิตช์ก่อน แล้วค่อยลบ | 3 ก.ย. ปิดสวิตช์เพื่อให้ถอยกลับได้ใน 2 บรรทัด · เมื่อพิสูจน์ว่าไม่มีอะไรเรียกใช้แล้ว 5 ก.ย. จึงลบโค้ดและ DROP ตารางด้วย migration 106 |
 | D11 | หน้าผังองค์กรไม่แก้ `Role` ให้เอง | เปลี่ยนบทบาท = เปลี่ยนสิทธิ์เข้าถึง ต้องเป็นการตัดสินใจของคน |
+| D12 | Sale Trip เป็น **ก้อนขนส่ง** ไม่ใช่ใบสั่งขายที่ใหญ่ขึ้น | รถหนึ่งคันบรรทุกให้หลายลูกค้าได้ · ผูก `TripId` ไว้ที่ `wf.SalesOrderExt` แล้วให้ `sp_ConfirmSalesOrder` พาข้ามขั้นยืนยันไปด้วย (migration 104) |
+| D13 | แก้เอกสารหลังยืนยันต้อง**ขออนุมัติพร้อมเหตุผล** | เอกสารที่ยืนยันแล้วไปโผล่ใน WINSpeed แล้ว · เหตุผลเก็บเป็นรายการแก้ได้ใน Master Settings ไม่ฝังในโค้ด |
+| D14 | Hold รถเขียนที่ `dbo.SOHD.OnHold` เท่านั้น | เป็นช่องเดียวที่ WINSpeed มีให้ · **ยังพิสูจน์ไม่ได้ว่าเครื่องชั่งอ่านช่องนี้จริง** จึงตั้งค่าเริ่มต้นเป็นปิด และมีแบนเนอร์บอกผู้ใช้ตรง ๆ |
 
 ---
 
@@ -200,7 +209,10 @@ cd WSSale-App && npm run dev   # :5173
 curl -s http://localhost:3000/api/health
 ```
 
-ต้องได้ `"version":"1.9.0"` · `"sqlserver":"up"` · **`"mysql":"disabled"`** · `"weighing":"winspeed:WGHD"`
+ต้องได้ `"version":"1.9.10"` · `"sqlserver":"up"` · `"weighing":"winspeed:WGHD"`
+
+> 🔵 **ไม่มีคีย์ `mysql` ในคำตอบแล้ว** — ก่อน 5 ก.ย. 2569 เคยได้ `"mysql":"disabled"`
+> ถ้ายังเห็นคีย์นี้ แปลว่ากำลังคุยกับ build เก่า
 
 ---
 
@@ -212,9 +224,16 @@ curl -s http://localhost:3000/api/health
 cd backend && node --test
 ```
 
-**ผลจริง 3 ก.ย. 2569 — `# tests 19 · # pass 19 · # fail 0`**
+**ผลจริง 5 ก.ย. 2569 — `# tests 8 · # pass 8 · # fail 0`**
 
-ครอบคลุมอะไร: ตัวกันเขียนฐานเครื่องชั่ง 9 เคส · guard ของ migration runner · การคำนวณรายงาน
+ครอบคลุมอะไร: guard ของ migration runner · การคำนวณรีเบท · การกระทบยอดน้ำหนัก
+(3 ไฟล์: `run_migrations.test.js` · `tests/rebate.test.js` · `tests/weight-reconciliation.test.js`)
+
+> **ทำไมเหลือ 8 จาก 19** — 11 เคสที่หายไปอยู่ในสองไฟล์ที่ถูกลบพร้อม MySQL
+> `tests/truckscale-write-guard.test.js` (9 เคส) และ `tests/truckscale-db.test.js` (2 เคส)
+> ทั้งคู่เฝ้าไม่ให้แอปเขียนฐาน MySQL ของเครื่องชั่ง — เมื่อไม่มีฐานนั้นแล้วก็ไม่มีอะไรให้เฝ้า
+> ตรวจซ้ำได้: `git log --diff-filter=D --name-only -- "backend/**/*.test.js"`
+> **ตัวเลขที่ลดลงในที่นี้ไม่ได้แปลว่าความครอบคลุมลดลง** — ขอบเขตที่ต้องเฝ้าเล็กลงต่างหาก
 
 ### 6.2 Typecheck และ build
 
@@ -228,22 +247,24 @@ cd WSSale-App && npm run build     # = tsc -b && vite build
 > `tsconfig.json` ตั้ง `"files": []` กับ project references — คำสั่งนั้นตรวจศูนย์ไฟล์แล้วผ่านเงียบ ๆ
 > ต้องใช้ `tsc -b` เท่านั้น · ก่อน 3 ก.ย. 2569 มี ~70 error สะสมเพราะเรื่องนี้
 
-### 6.3 ตรวจสถานะฐานข้อมูลทั้ง 3 เครื่อง
+### 6.3 ตรวจสถานะฐานข้อมูลทุกเครื่องที่เปิดใช้
 
 ```bash
 cd backend
-for M in local remote remote_b; do
+for M in local remote_b; do
   printf "%-9s " "$M"; DB_MODE=$M node run_migrations.js --plan | grep "unchanged:"
 done
 ```
 
-**ผลจริง**
+**ผลจริง 5 ก.ย. 2569**
 
 ```
-local       unchanged: 101; pending: 0; drift: 0
-remote      unchanged: 101; pending: 0; drift: 0
-remote_b    unchanged: 101; pending: 0; drift: 0
+local       unchanged: 105; pending: 0; drift: 0
+remote_b    unchanged: 105; pending: 0; drift: 0
 ```
+
+> ⏸ **ไม่ตรวจ `remote` (Azure) แล้ว** เพราะถูกพักใช้งาน — `npm run migrate:all` ก็ข้ามให้เอง
+> ตัวเลขขยับจาก 101 เป็น 105 เพราะ migration 103–106 ของเฟส 4–6
 
 ### 6.4 ตรวจ API บนของจริง
 
@@ -290,19 +311,32 @@ remote_b    unchanged: 101; pending: 0; drift: 0
 
 ## 7. ขั้น Deploy
 
-### 7.1 PROD-A — อัตโนมัติ
+> ⏸ **PROD-A (Railway/Vercel) ถูกพักตั้งแต่ 5 ก.ย. 2569** — ข้ามการ deploy และ test ช่องทางนี้
+> ขั้นตอนเดิมคือ `git push origin main` แล้วปล่อยให้ Railway/Vercel deploy เอง เก็บไว้ใช้เมื่อเปิดกลับ
+
+### 7.1 Docker on-prem — ชุดติดตั้งในโรงงาน
 
 ```bash
-git push origin main
+cd deploy/onprem
+cp .env.example .env      # เติมรหัสผ่านจริง — ไฟล์นี้ gitignored
+docker compose up -d
 ```
 
-Railway และ Vercel ผูก Git ไว้ · deploy เองภายในไม่กี่นาที
+4 คอนเทนเนอร์: `caddy` · `mssql` · `backend` · `frontend`
 
-**ตรวจ**
+> 🔴 **Caddy แยกเส้นทางด้วย "โดเมน" ไม่ใช่ path** ตั้ง `APP_DOMAIN` กับ `API_DOMAIN` ให้ครบเสมอ
+> ยิงที่ `https://<host>/api/...` ตรง ๆ จะไม่ถึง backend
+>
+> 🔵 **ถ้าพอร์ต 80/443 ถูกจับอยู่** (บน Windows มัก
+> เป็น PID 4 = `http.sys`) ให้ตั้ง `HTTP_PORT` / `HTTPS_PORT` เป็นพอร์ตอื่น
 
-```bash
-curl -s https://winspeed-connect-backend.up.railway.app/api/health
-```
+**ผลทดสอบจริง 5 ก.ย. 2569 บนเครื่องพัฒนา** — ตั้ง `APP_DOMAIN=localhost`,
+`API_DOMAIN=api.localhost`, `HTTPS_PORT=8443`
+
+| ตรวจ | ผล |
+|---|---|
+| `https://localhost:8443/` | **200** · `<title>wssale-app</title>` |
+| `https://api.localhost:8443/api/health` | `{"ok":true,"version":"1.9.10","db":{"sqlserver":"up","weighing":"winspeed:WGHD"}}` |
 
 ### 7.2 PROD-B — ทำมือ
 
@@ -343,13 +377,23 @@ ssh -i $K root@76.13.190.104 '
 > **Downtime ~20 วินาที** เฉพาะ `wf-backend` และ `wf-frontend` · ฐานข้อมูลไม่ถูกแตะ
 > ถ้าแก้แต่ frontend คอนเทนเนอร์ backend จะไม่ถูกสร้างใหม่เลย
 
-### 7.3 ตรวจหลัง deploy ทั้งสองฝั่ง
+### 7.3 ตรวจหลัง deploy
 
 ```bash
-for U in https://winspeed-connect-backend.up.railway.app/api https://api.thirayu.online/api; do
-  curl -s $U/health | grep -oE '"version":"[^"]+"|"mysql":"[^"]+"'
-done
+curl -s https://api.thirayu.online/api/health
 ```
+
+ต้องได้ `version` ตรงกับที่เพิ่ง deploy · `"sqlserver":"up"` · `"weighing":"winspeed:WGHD"`
+
+### 7.4 GitHub Actions (v1.9.10)
+
+| workflow | ทำอะไร | เงื่อนไข |
+|---|---|---|
+| `ci.yml` | ตรวจโค้ดทุก push/PR | พร้อมใช้ |
+| `deploy-prod-b.yml` | deploy PROD-B ผ่าน self-hosted runner | 🔴 **ยังใช้ไม่ได้ — ยังไม่ได้ติดตั้ง runner** ต้องใช้ token จากเจ้าของ repo |
+
+เหตุผลที่ต้องใช้ self-hosted runner: ไฟร์วอลล์ hPanel เปิดพอร์ตให้เฉพาะ IP ที่ allowlist ไว้
+และ IP ของ runner ฝั่ง GitHub มาจากช่วงใหญ่มากและเปลี่ยนทุกสัปดาห์ จึง allowlist ไม่ได้
 
 ---
 
@@ -411,9 +455,11 @@ flowchart TD
 | **CN Rebate** | ใบลดหนี้ | C_LEVEL · ACCOUNTING · ADMIN · MANAGER |
 | **ของแถม** | งบรายภาค · เบิก | ทุกบทบาท |
 | **บัญชี · กระทบยอด · รายงาน** | งานบัญชี | C_LEVEL · ACCOUNTING · ADMIN · MANAGER |
-| 🆕 **สถานะการชั่งรถ** | คิวรถสด · ใบชั่ง · สรุป 8 แท็บ | + WAREHOUSE · WEIGHBRIDGE |
+| **สถานะการชั่งรถ** | คิวรถสด · ใบชั่ง · สรุป 8 แท็บ | + WAREHOUSE · WEIGHBRIDGE |
+| 🆕 **กระดาน Sale Trip** | จัดรถหนึ่งคันต่อหลายลูกค้า · ผังการจัดของ | SALES · COUNTER_SALES · WAREHOUSE · MANAGER · ADMIN · C_LEVEL |
+| 🆕 **คำขอแก้ไข** | ขอแก้เอกสารที่ยืนยันแล้ว · อนุมัติ · Hold รถ | ผู้ขอ = ทุกบทบาท · ผู้อนุมัติ = APPROVER · MANAGER · C_LEVEL · ADMIN |
 | **ชุดตั๋วคุม** | คงเหลือ · ตัดออก | ทุกบทบาท |
-| **ข้อมูลหลัก** | สินค้า · ลูกค้า · ราคา | C_LEVEL · ADMIN |
+| **ข้อมูลหลัก** | สินค้า · ลูกค้า · ราคา · 🆕 **เหตุผลการขอแก้ไข** | C_LEVEL · ADMIN |
 | **นโยบายอนุมัติ** | อำนาจ · วงเงิน | C_LEVEL · ADMIN · MANAGER |
 | **สถานะระบบ** | health · error · alert | C_LEVEL · ADMIN · MANAGER |
 | **User Management** | ผู้ใช้งาน | ADMIN · MANAGER · ACCOUNTING |
@@ -438,9 +484,76 @@ flowchart TD
 > **ระบบเตือนเมื่อบทบาทไม่ตรงกับตำแหน่ง แต่ไม่แก้ให้เอง**
 > สิทธิ์จริงที่ระบบใช้ตรวจคือ **บทบาท** ไม่ใช่ตำแหน่ง — ถ้าต้องการแก้ให้ไปที่ User Management
 
+### 9.3 หน้า "กระดาน Sale Trip" 🆕 v1.9.10
+
+**Sale Trip = รถหนึ่งคันหนึ่งเที่ยว** ไม่ใช่ใบสั่งขายที่ใหญ่ขึ้น
+รถคันเดียวบรรทุกของให้ **หลายลูกค้า หลายใบจอง** ในเที่ยวเดียวได้
+
+| ส่วน | ตอบอะไร |
+|---|---|
+| แถบความจุ | บรรทุกไปแล้วกี่ตัน จากพิกัดเท่าไร เกินหรือยัง |
+| รายชื่อลูกค้าในเที่ยว | ใครบ้าง · ใบจองใบไหน · เครดิตพอไหม |
+| ผังการจัดของ | ขึ้นของลำดับไหนก่อน · ของแถม · หมายเหตุ · Pre-sling |
+| สถานะรถ | ผูกกับ `dbo.WGHD` — ลงทะเบียน → โหลด → ชั่งออก |
+
+**พิกัดบรรทุกไม่ได้ฝังในโค้ด** — เก็บต่อเที่ยวที่ `truckCapacityTon`
+ส่วนเปอร์เซ็นต์ที่ยอมให้เกินอยู่ใน Master Settings คีย์ `TRIP_CAPACITY_TOLERANCE_PCT`
+**ค่าเริ่มต้น 5%** (50 ตัน → รับได้ถึง 52.5 ตัน)
+
+> **`TripId` อยู่ที่ `wf.SalesOrderExt` และถูกพาข้ามขั้นยืนยันไปด้วย**
+> `sp_ConfirmSalesOrder` ถูกแก้ใน migration 104 ให้คัดลอกค่านี้ต่อ
+> ถ้าไม่ทำ ใบที่ยืนยันแล้วจะหลุดออกจากเที่ยวเงียบ ๆ
+
 ---
 
-## 10. กับดัก 10 ข้อที่เคยทำให้เสียเวลาจริง
+### 9.4 หน้า "คำขอแก้ไข" 🆕 v1.9.10
+
+เอกสารที่**ยืนยันแล้ว**ไปโผล่ใน WINSpeed แล้ว จะแก้ตรง ๆ ไม่ได้ ต้องขออนุมัติพร้อมเหตุผล
+
+**ขั้นของเอกสารที่ระบบใช้ตัดสิน** — อ่านจาก `dbo.WGHD.Status` ของรถที่ผูกกับใบนั้น
+
+| ขั้น | มาจาก | แก้ได้ไหม |
+|---|---|---|
+| `DRAFT` | ยังไม่ยืนยัน | แก้ได้เลย |
+| `CONFIRMED` | ยืนยันแล้ว ยังไม่มีรถ | ต้องขออนุมัติ |
+| `REGISTERED` | `WGHD.Status = 1` รถมาลงทะเบียน | ต้องขออนุมัติ **+ Hold รถ** |
+| `LOADING` | `WGHD.Status = 2` กำลังโหลด | ต้องขออนุมัติ **+ Hold รถ** |
+| `SHIPPED` | `WGHD.Status = 3` ชั่งออกแล้ว | แก้ไม่ได้ |
+
+**เหตุผลการขอแก้ไขเป็นข้อมูลหลัก ไม่ใช่ค่าคงที่ในโค้ด** — เพิ่ม/แก้/ปิดได้ที่
+**ข้อมูลหลัก → เหตุผลการขอแก้ไข** (`/api/edit-requests/admin/reasons`)
+
+> 🔒 **ผู้ขอไม่สามารถอนุมัติคำขอของตัวเองได้**
+> ด่านนี้เคยพังจริง เพราะ driver ฝั่ง Windows กับ Linux คืน `Id` เป็นคนละชนิด
+> (สตริง vs ตัวเลข) ทำให้ `===` ไม่มีวันจริง ตอนนี้เทียบด้วย `Number()` ทั้งสองข้าง
+
+---
+
+### 9.5 Hold รถที่เครื่องชั่ง — ต้องอ่านก่อนใช้ 🆕 v1.9.10
+
+เมื่ออนุมัติให้แก้เอกสารที่รถมาถึงแล้ว ระบบจะ **Hold** รถไว้ไม่ให้โหลดต่อ
+โดยเขียนที่ **`dbo.SOHD.OnHold`** ซึ่งเป็นช่องเดียวที่ WINSpeed มีให้ใช้
+
+**พิสูจน์แล้ว** — เขียน `OnHold` และคืนค่าเดิมได้ครบวงจร โดยคืนจากค่าที่บันทึกไว้ใน
+`wf.TruckHoldLog` ไม่ใช่เดาว่าเป็น `'N'`
+
+**ยังพิสูจน์ไม่ได้** — **โปรแกรมเครื่องชั่งอ่านช่องนี้จริงหรือไม่**
+เราแก้ซอร์สโค้ดหรือ config ของ TruckScale ไม่ได้ จึงยืนยันได้ทางเดียวคือทดลองกับรถจริง
+
+ด้วยเหตุนี้กลไกจึง **ปิดไว้เป็นค่าเริ่มต้น** และมีแบนเนอร์บอกผู้ใช้ตรง ๆ ว่าสถานะเป็นอย่างไร
+
+| คีย์ใน Master Settings | ความหมาย | ค่าเริ่มต้น |
+|---|---|---|
+| `TRUCK_HOLD_WRITE_WINSPEED` | ให้เขียน `dbo.SOHD.OnHold` จริงหรือไม่ | **ปิด** |
+| `TRUCK_HOLD_VERIFIED` | มีคนทดสอบกับรถจริงแล้วยืนยันว่าได้ผล | **ปิด** |
+| `TRUCK_HOLD_REMARK_PREFIX` | คำนำหน้าหมายเหตุที่เขียนกำกับไว้ | — |
+
+> ⚠️ **ตราบใดที่ `TRUCK_HOLD_VERIFIED` ยังปิด ให้ถือว่า Hold เป็นการแจ้งเตือนในแอปเท่านั้น**
+> อย่าใช้แทนการเดินไปบอกพนักงานเครื่องชั่ง
+
+---
+
+## 10. กับดักที่เคยทำให้เสียเวลาจริง
 
 | # | กับดัก | อาการ | ทางที่ถูก |
 |---|---|---|---|
@@ -454,6 +567,15 @@ flowchart TD
 | 8 | **`SOInvHD.RefNo` เป็น NULL ทั้งคอลัมน์** | สรุปว่าใบกำกับไม่ผูกกับใบส่งขาย | ใช้ `SOInvHD.SONo` |
 | 9 | **RESTORE ลบ schema `wf` และ database user** | migration 002 ล้ม | ลำดับ logins → migrate → seed_admin |
 | 10 | **`PortalKey` ประกาศไว้สองที่** | เพิ่มหน้าใหม่แล้ว build พัง | แก้ทั้ง `App.tsx` และ `store/app-store.ts` |
+| 11 | **driver คนละตัวคืนชนิดข้อมูลไม่เหมือนกัน** | `msnodesqlv8` (Windows) คืนสตริง · `tedious` (Linux) คืนตัวเลข — คอลัมน์เดียวกัน **และไม่สม่ำเสมอแม้ในตารางเดียวกัน** (`wf.EditRequest.Id` เป็นสตริง แต่ `RequestedBy` เป็นตัวเลข) · ทำให้ **ด่านห้ามอนุมัติคำขอของตัวเองไม่เคยทำงาน** | อย่าใช้ `===` กับค่าที่มาจากฐาน — แปลงชนิดทั้งสองข้างก่อน (`Number()` / `String()`) |
+| 12 | **`query()` กับ `wfQuery()` คืนรูปแบบต่างกัน** | `query()` คืน array เปล่า ๆ · `wfQuery()` คืน `{recordset:[...]}` · ใช้ผิดแล้วได้ผลลัพธ์ว่างแบบเงียบ ๆ | `const rows = Array.isArray(r) ? r : (r.recordset \|\| [])` |
+| 13 | **SQL Server เก็บ `CREATE OR ALTER PROCEDURE` เป็น `CREATE   PROCEDURE` (เว้น 3 ช่อง)** | migration ที่ใช้ `REPLACE` สตริงตายตัวไม่แก้อะไรเลย แล้วรายงานว่าสำเร็จ | ค้นถอยหลังข้ามช่องว่างแทนการเทียบสตริงตรง ๆ |
+| 14 | **`tar -xzf` เขียนทับแต่ไม่เคยลบ** | ไฟล์ที่ลบจาก repo แล้วยังค้างบนเซิร์ฟเวอร์ตลอดไป จน build พังทั้งที่ build ในเครื่องผ่าน | ล้างโฟลเดอร์ซอร์สล้วนก่อนแตกไฟล์ (`PURGE` ใน `03-remote-deploy.bat`) · **ห้ามล้าง `deploy/` ทั้งก้อน** |
+| 15 | **อักขระไทยในไฟล์ `.bat`** | `cmd.exe` อ่านทีละไบต์ตาม codepage ไม่ใช่ UTF-8 · ตีความบรรทัดเพี้ยนแล้วรันเศษข้อความเป็นคำสั่ง — **เคยทำไฟล์หาย 19 ตัว** | `.bat`/`.cmd` ใช้ ASCII เท่านั้น แม้ในบรรทัด `rem` · ตรวจด้วย `grep -n '[^ -~]' file.bat` (ต้องไม่เจออะไร) |
+| 16 | **ssh จบด้วยรหัส 255 คือสายหลุด ไม่ใช่ deploy ล้ม** | งานฝั่งเซิร์ฟเวอร์เสร็จแล้ว แต่รายงานว่าล้ม | ตั้ง keepalive และตรวจสถานะคอนเทนเนอร์จริงก่อนสรุป |
+| 17 | **Caddy แยกเส้นทางด้วยโดเมน ไม่ใช่ path** | ยิง `https://host/api/...` แล้วไม่ถึง backend | ตั้ง `APP_DOMAIN` และ `API_DOMAIN` ให้ครบ |
+| 18 | **`networkidle` ใช้กับ Vite dev server ไม่ได้** | HMR เปิด websocket ค้าง เครือข่ายไม่มีวันว่าง — สคริปต์ถ่ายภาพเสียเวลาหน้าละ ~60 วินาที | รอสั้น ๆ แล้วเชื่อตัวชี้วัดการโหลดของแอปแทน |
+| 19 | **"กำลังโหลด" เป็นคำศัพท์ของงาน ไม่ใช่แค่ spinner** | ป้ายสถานะรถ "กำลังโหลดสินค้า" ทำให้เครื่องมือเข้าใจว่าหน้าโหลดไม่จบตลอดกาล | regex ต้องเจาะจง — และใน**สตริง JS ต้องเขียน `\.` ไม่ใช่ `\.`** ไม่งั้น `\.` กลายเป็นจุดธรรมดา = "อักษรใดก็ได้" |
 
 **ข้อที่ 11 ที่ไม่ใช่เรื่องเทคนิค** — เคยมีการแก้ไฟล์ด้วย `replace` โดยไม่ตรวจว่าแก้ติดจริง
 แล้วสตริงไม่ตรง จึงไม่ทำอะไรเลยแบบเงียบ ๆ · และเคยเชื่อว่า API รีสตาร์ทแล้วทั้งที่พอร์ตถูกจับอยู่
@@ -463,18 +585,22 @@ flowchart TD
 
 ## 11. ตรวจรับ
 
-| # | ตรวจ | ค่าที่ต้องได้ |
-|---|---|---|
-| 1 | `node --test` (backend) | **19 pass · 0 fail** |
-| 2 | `npm run build` (frontend) | ผ่าน · 0 type error |
-| 3 | migration ทั้ง 3 เครื่อง | `unchanged: 101; pending: 0; drift: 0` เลขเท่ากัน |
-| 4 | `/api/health` ทุกปลายทาง | `version 1.9.0` · `sqlserver: up` · **`mysql: disabled`** · `weighing: winspeed:WGHD` |
-| 5 | `/api/weighing/*` · `/api/auth/org-positions` | **401** |
-| 6 | `/api/scale-reports/*` · `/api/truckscale/*` | **404** |
-| 7 | frontend bundle | มี `WeighingReportsPage` · `OrgAssignmentPage` · **ไม่มี `ScaleReportsPage`** |
-| 8 | `check_triggers_raiserror.sql` | `0` |
-| 9 | recovery model | `SIMPLE` |
-| 10 | ไม่มีความลับใน git | `git ls-files \| grep -iE "\.env$\|local-secrets\|\.pem$"` → ว่าง |
+| # | ตรวจ | ค่าที่ต้องได้ | ผลจริง 5 ก.ย. 2569 |
+|---|---|---|---|
+| 1 | `node --test` (backend) | 0 fail | ✅ **8 pass · 0 fail** |
+| 2 | `npm run build` (frontend) | ผ่าน · 0 type error | ⬜ ต้องรันซ้ำเมื่อปิดรุ่น |
+| 3 | migration ทุกเครื่องที่เปิดใช้ | เลขเท่ากันทุกเครื่อง · `pending: 0` · `drift: 0` | ✅ local และ remote_b ได้ `105; 0; 0` เท่ากัน |
+| 4 | `/api/health` ทุกปลายทาง | `sqlserver: up` · `weighing: winspeed:WGHD` · **ไม่มีคีย์ `mysql`** | ✅ dev :3000 และ Docker on-prem ได้ `1.9.10` |
+| 5 | `/api/weighing/*` · `/api/auth/org-positions` | **401** | ⬜ ต้องตรวจซ้ำหลัง deploy |
+| 6 | `/api/scale-reports/*` · `/api/truckscale/*` | **404** | ⬜ ต้องตรวจซ้ำหลัง deploy |
+| 7 | frontend bundle | มี `WeighingReportsPage` · `OrgAssignmentPage` · `SaleTripBoardPage` · `EditRequestsPage` · **ไม่มี `ScaleReportsPage`** | ⬜ ต้องตรวจซ้ำหลัง build |
+| 8 | `check_triggers_raiserror.sql` | `0` | ⬜ |
+| 9 | recovery model | `SIMPLE` | ⬜ |
+| 10 | ไม่มีความลับใน git | `git ls-files \| grep -iE "\.env$\|local-secrets\|\.pem$"` → ว่าง | ⬜ |
+| 11 | Docker on-prem ขึ้นครบ | `https://<APP_DOMAIN>/` = 200 · `/api/health` ตอบ | ✅ ทดสอบแล้ว (ดู §7.1) |
+| 12 | ไม่เหลือร่องรอย MySQL | `wf.WeighInbox` และ `WGxxBackup_*` ต้องไม่มีแล้ว | ✅ DROP ด้วย migration 106 |
+
+> ⬜ = ยังไม่ได้ตรวจในรอบนี้ ไม่ใช่ "ตรวจแล้วไม่ผ่าน" — ต้องตรวจให้ครบก่อนปิดรุ่น
 
 ---
 
