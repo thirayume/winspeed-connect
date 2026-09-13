@@ -84,7 +84,7 @@ SELECT N'หัวใบ' AS [ส่วน],
        sa.SaleAreaCode, LEFT(sa.SaleAreaCode, 2) AS [ภาค], sa.SaleAreaName,
        h.EmpID, e.EmpCode, h.ContactName, h.TransRegistration,
        h.SumGoodAmnt, h.VATAmnt, h.NetAmnt,
-       h.DocuStatus, h.AppvFlag, h.QuotStatus, h.OnHold,
+       h.DocuStatus, h.AppvFlag, h.AppvDocuNo, h.AppvDate, h.QuotStatus, h.OnHold,
        h.clearflag, h.CouponFlag, h.ClearSO, h.PkgStatus, h.RefSOID, h.RefNo
 FROM dbo.SOHD h
 LEFT JOIN dbo.EMCust c      ON c.CustID = h.CustID
@@ -113,7 +113,7 @@ SELECT N'หมายเหตุ' AS [ส่วน], ListNo, Remark FROM dbo.SO
 -- 1.4 ใครสร้าง/แก้ และจากเครื่องไหน
 SELECT N'ร่องรอยการแก้ไข' AS [ส่วน],
        audit_id, audit_datetime, audit_username, audit_action,
-       audit_computername, audit_system, Version
+       audit_computername, audit_system, audit_screen, audit_refid, Version
 FROM dbo.SMAudit WHERE audit_docuno = @DocuNo ORDER BY audit_datetime;
 
 SELECT N'บันทึกเหตุการณ์' AS [ส่วน],

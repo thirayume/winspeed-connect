@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { LayoutGrid, RefreshCw, Truck, FileText, ArrowRight, ArrowLeft, Clock, Printer, ScanLine, AlertTriangle, ShieldCheck, Unlock, X, Check, Search, Trash2, Edit } from 'lucide-react';
-import { fetchPaperBoard, confirmSO, moveToPicking, confirmLoading, shipSO, syncImported, fetchLostPapers, verifySO, createUnlockRequest, listUnlockRequests, resolveUnlockReq, cancelSO } from '../../services/api';
+import { fetchPaperBoard, confirmSO, moveToPicking, confirmLoading, shipSO, syncImported, fetchLostPapers, verifySO, createUnlockRequest, listUnlockRequests, resolveUnlockReq, cancelSO, deleteSO } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import { useAppStore } from '../../store/app-store';
 import type { SalesOrder, UnlockReq } from '../../types';
@@ -10,6 +10,7 @@ import type { PaperBoard, PaperCard, SOStatus } from '../../types';
 import { PaperDocModal } from './PaperDocModal';
 import { ScanModal } from './ScanModal';
 import { RequestActionModal, type RequestActionType } from './RequestActionModal';
+import { SOCancelDeleteModal } from '../common/SOCancelDeleteModal';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { QuickShipModal } from '../sales/QuickShipModal';
 
@@ -23,7 +24,7 @@ const STATUS_NEXT: Record<string, { label: string; roles: string[] } | undefined
   DRAFT:     { label: 'ยืนยันเป็นรอจัดส่ง', roles: ['SALES', 'COUNTER_SALES', 'ADMIN'] },
   CONFIRMED: { label: 'เริ่มรอรับสินค้า', roles: ['WAREHOUSE', 'ADMIN'] },
   PICKING:   { label: 'โหลดสินค้า', roles: ['WAREHOUSE', 'ADMIN'] },
-  LOADED:    { label: 'ส่งออกจากตาชั่ง', roles: ['WAREHOUSE', 'ADMIN'] },
+  LOADED:    { label: 'ส่งออกจากตาชั่ง', roles: ['WAREHOUSE', 'ADMIN', 'MANAGER', 'C_LEVEL'] },
 };
 
 export function PaperTrailPage() {
@@ -43,6 +44,7 @@ export function PaperTrailPage() {
   // New States for Edit and Cancel requests
   const [requestModalConfig, setRequestModalConfig] = useState<{ isOpen: boolean, type: RequestActionType, card: PaperCard | null }>({ isOpen: false, type: 'EDIT', card: null });
   const [shipModalConfig, setShipModalConfig] = useState<{ isOpen: boolean; soIds: (string | number)[] }>({ isOpen: false, soIds: [] });
+  const [cancelModalConfig, setCancelModalConfig] = useState<{ isOpen: boolean; card: PaperCard | null; mode: 'CANCEL' | 'DELETE' }>({ isOpen: false, card: null, mode: 'CANCEL' });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -66,20 +68,9 @@ export function PaperTrailPage() {
     finally { setBusyId(null); }
   }
 
-  async function doCancel(card: PaperCard) {
-    if (!(await appConfirm(`⚠️ คุณแน่ใจหรือไม่ที่จะยกเลิก/ลบทิ้งเอกสาร ${card.wfRef} ?`))) return;
-    const note = await appPrompt(`เหตุผลที่ยกเลิกเอกสาร ${card.wfRef}:`, 'ยกเลิกเอกสาร/ลบทิ้ง');
-    if (note === null) return;
-    
-    setBusyId(String(card.id));
-    try {
-      await cancelSO(card.id, note);
-      await load();
-    } catch (e) {
-      alert((e as Error).message);
-    } finally {
-      setBusyId(null);
-    }
+  function doCancel(card: PaperCard) {
+    const mode = card.status === 'DRAFT' ? 'DELETE' : 'CANCEL';
+    setCancelModalConfig({ isOpen: true, card, mode });
   }
 
   async function handleRequestSubmit(reason: string, type: RequestActionType) {
@@ -350,7 +341,10 @@ export function PaperTrailPage() {
                                   </button>
                                 )}
                                 {canAdvance && !(card.truckPlate === 'ตั๋วคุม' && card.status !== 'DRAFT') && (
-                                  <button disabled={busyId === String(card.id)} onClick={() => advance(card)}
+                                  <button
+                                    data-testid={`btn-advance-so-${card.id}`}
+                                    disabled={busyId === String(card.id)}
+                                    onClick={() => advance(card)}
                                     className="flex-1 h-7 px-1.5 rounded-md text-white text-[10px] font-semibold disabled:opacity-50 flex items-center justify-center gap-1 shadow-sm whitespace-nowrap"
                                     style={{ background: m.color }}>
                                     {next!.label} <ArrowRight size={11} />
@@ -387,6 +381,27 @@ export function PaperTrailPage() {
         onSuccess={load}
       />
       {showUnlockReview && <UnlockReviewModal onClose={() => setShowUnlockReview(false)} onDone={load} />}
+      <SOCancelDeleteModal
+        isOpen={cancelModalConfig.isOpen}
+        mode={cancelModalConfig.mode}
+        targetTitle={cancelModalConfig.card?.wfRef || 'เอกสาร'}
+        onClose={() => setCancelModalConfig({ isOpen: false, card: null, mode: 'CANCEL' })}
+        onConfirm={async (reasonCode, reasonText) => {
+          const card = cancelModalConfig.card;
+          if (!card) return;
+          setBusyId(String(card.id));
+          try {
+            if (cancelModalConfig.mode === 'DELETE') {
+              await deleteSO(card.id, { reasonCode, reasonText });
+            } else {
+              await cancelSO(card.id, { reasonCode, reasonText });
+            }
+            await load();
+          } finally {
+            setBusyId(null);
+          }
+        }}
+      />
     </div>
   );
 }

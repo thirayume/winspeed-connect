@@ -1,17 +1,27 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Plus, Minus, Truck, AlertTriangle, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp } from 'lucide-react';
-import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices } from '../../services/api';
-import type { EffectivePriceRow } from '../../services/api';
+import { X, Plus, Minus, Truck, AlertTriangle, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket } from 'lucide-react';
+import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation } from '../../services/api';
+import type { EffectivePriceRow, AtpStockRow } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { GiveawayBorrowModal } from './GiveawayBorrowModal';
+import { CouponPickerModal, type CouponItem } from './CouponPickerModal';
 import { useAuthStore } from '../../store/auth-store';
 import { useTripStore } from '../../store/trip-store';
 import { canViewRebateAmounts } from '../../utils/permissions';
 import { appConfirm } from '../ui/AppAlert';
 import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser, GiveawayQuota } from '../../types';
 
-type DraftLine = SalesOrderLine & { tempId: string; refControlTicketNo?: string; isControlTicketDrawn?: boolean; maxQtyTon?: number; loadSequence?: number; };
-type DraftBill = { id: string; soPrefix: SOPrefix; lines: DraftLine[]; remark: string; rebateDiscountAmt?: number; creditDays?: number; truckRemark?: string; billRemark?: string; isControlTicket?: boolean; wfRef?: string; };
+type DraftLine = SalesOrderLine & {
+  tempId: string;
+  refControlTicketNo?: string;
+  isControlTicketDrawn?: boolean;
+  maxQtyTon?: number;
+  loadSequence?: number;
+  couponReservationId?: number;
+  refCouponDocuNo?: string;
+  isCouponDrawn?: boolean;
+};
+type DraftBill = { id: string; soPrefix: SOPrefix; lines: DraftLine[]; remark: string; rebateDiscountAmt?: number; creditDays?: number; truckRemark?: string; billRemark?: string; isControlTicket?: boolean; wfRef?: string; custId?: string; custName?: string; };
 
 const PREFIX_LABELS: Record<SOPrefix, string> = {
   I: 'I — ขายปกติ (Invoice)',
@@ -65,6 +75,7 @@ export function CreateSODialog({
   const [goods, setGoods] = useState<EMGood[]>([]);
   const [prices, setPrices] = useState<CurrentPrice[]>([]);
   const [effectivePrices, setEffectivePrices] = useState<EffectivePriceRow[]>([]);
+  const [atpStock, setAtpStock] = useState<AtpStockRow[]>([]);
   const [activePriceBookId, setActivePriceBookId] = useState<number | null>(null);
   const [truckPlates, setTruckPlates] = useState<string[]>([]);
   const [transports, setTransports] = useState<{TranspID: number; TranspName: string}[]>([]);
@@ -72,10 +83,9 @@ export function CreateSODialog({
   
   const activeTrip = useTripStore(s => s.activeTrip);
 
-  // Grouped Order State
-  const [custId, setCustId] = useState('');
-  const [custSearch, setCustSearch] = useState('');
-  const [isCustOpen, setIsCustOpen] = useState(false);
+  // Per-Bill Customer Search State
+  const [billCustSearch, setBillCustSearch] = useState('');
+  const [isBillCustOpen, setIsBillCustOpen] = useState(false);
   const [truckPlate, setTruckPlate] = useState('');
   // เลขตั๋วคุมระดับหัวบิล — ใช้เมื่ออ้างอิงตั๋วโดยไม่ได้เบิกรายบรรทัด
   // ถ้าเว้นว่าง wf.usp_WriteControlTicketRemark จะรวบเลขจากรายบรรทัดให้เอง (migration 093)
@@ -100,6 +110,9 @@ export function CreateSODialog({
   const [isTicketOpen, setIsTicketOpen] = useState(false);
   const [ticketDetails, setTicketDetails] = useState<{ ListNo: number; GoodID: string; GoodCode: string; GoodName: string; QtyTon: number; PricePerTon: number; NetPricePerTon: number; BagPerTon: number }[]>([]);
   const [ticketLoading, setTicketLoading] = useState(false);
+  const [isCouponPickerOpen, setIsCouponPickerOpen] = useState(false);
+  const [persistedReservationIds, setPersistedReservationIds] = useState<Set<string | number>>(new Set());
+  const [isSaveCommitted, setIsSaveCommitted] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -126,8 +139,11 @@ export function CreateSODialog({
   useEffect(() => {
     if (!isOpen) return;
     const targetUserId = salesUserId ? String(salesUserId) : undefined;
-    Promise.all([fetchGoods(), fetchGiveawayGoods(targetUserId)])
-      .then(([g, gw]) => setGoods(mergeGoods(g, gw)))
+    Promise.all([fetchGoods(), fetchGiveawayGoods(targetUserId), fetchAtpStock()])
+      .then(([g, gw, atpRes]) => {
+        setGoods(mergeGoods(g, gw));
+        setAtpStock(atpRes.data || []);
+      })
       .catch(console.error);
       
     fetchTransports().then(setTransports).catch(console.error);
@@ -142,9 +158,9 @@ export function CreateSODialog({
   }, [isOpen, userRole, salesUserId]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedCustSearch(custSearch), 300);
+    const timer = setTimeout(() => setDebouncedCustSearch(billCustSearch), 300);
     return () => clearTimeout(timer);
-  }, [custSearch]);
+  }, [billCustSearch]);
 
   useEffect(() => {
     if (isOpen) {
@@ -155,8 +171,6 @@ export function CreateSODialog({
   useEffect(() => {
     if (convertFromQuoteId) {
       fetchQuotation(convertFromQuoteId).then(q => {
-          setCustId(q.CustId || '');
-          setCustSearch(q.CustName || '');
           setSalesUserId(q.SalesUserId || '');
           
           if (q.TruckPlate) setTruckPlate(q.TruckPlate);
@@ -175,7 +189,9 @@ export function CreateSODialog({
             id: 'bill-1',
             soPrefix: 'I',
             remark: q.Remark || `จากใบเสนอราคา ${q.QuoteNo}`,
-            creditDays: q.CreditDays || 0,
+            creditDays: (q as any).CreditDays || 0,
+            custId: (q as any).CustId || (q as any).custId || '',
+            custName: (q as any).CustName || (q as any).custName || '',
             truckRemark: q.TruckRemark || '',
             billRemark: q.BillRemark || '',
             isControlTicket: false,
@@ -201,8 +217,9 @@ export function CreateSODialog({
         }).catch(console.error);
     } else if (editSoId && editSoId !== 'undefined') {
       fetchSalesOrder(editSoId).then(so => {
-        setCustId((so as any).custId || (so as any).custID || (so as any).CustId || (so as any).CustID || '');
-        setCustSearch((so as any).custName || (so as any).CustName || '');
+        const soCustId = (so as any).custId || (so as any).custID || (so as any).CustId || (so as any).CustID || '';
+        const soCustName = (so as any).custName || (so as any).CustName || '';
+        const soCreditDays = (so as any).creditDays || (so as any).CreditDays || 0;
         setTruckPlate((so as any).truckPlate || (so as any).TruckPlate || '');
         setControlTicketNo((so as any).controlTicketNo || (so as any).ControlTicketNo || '');
         setTranspId((so as any).transpId || (so as any).TranspId || '');
@@ -213,6 +230,16 @@ export function CreateSODialog({
         setNoTruckRequired(!!(so as any).noTruckRequired);
         setPSling(!!(so as any).pSling);
         setLoadInOrder((so.lines || []).some((l: any) => l.loadSequence && Number(l.loadSequence) > 0));
+        const persistedIds = new Set<string | number>();
+        (so.lines || []).forEach((l: any) => {
+          const resId = l.couponReservationId || l.CouponReservationId;
+          if (resId) {
+            persistedIds.add(Number(resId));
+            persistedIds.add(String(resId));
+          }
+        });
+        setPersistedReservationIds(persistedIds);
+        setActiveBillId('bill-1');
         setBills([{
           id: 'bill-1',
           soPrefix: so.soPrefix as SOPrefix,
@@ -220,20 +247,33 @@ export function CreateSODialog({
           remark: so.remark || '',
           rebateDiscountAmt: canSeeRebate ? so.rebateDiscountAmt || 0 : 0,
           wfRef: (so as any).wfRef || (so as any).WfRef || '',
-          creditDays: (so as any).creditDays || (so as any).CreditDays || 0,
-          lines: (so.lines || []).map((l, i) => ({
+          creditDays: soCreditDays,
+          custId: soCustId,
+          custName: soCustName,
+          lines: (so.lines || []).map((l: any, i: number) => ({
             ...l,
-            tempId: `${l.goodId}-${i}`,
+            tempId: `${l.goodId || l.GoodId}-${i}`,
+            goodId: String(l.goodId || l.GoodId),
+            goodName: l.goodName || l.GoodName,
+            goodCode: l.goodCode || l.GoodCode || '',
+            qtyTon: Number(l.qtyTon || l.QtyTon) || 0,
+            qtyBag: Number(l.qtyBag || l.QtyBag) || 0,
+            pricePerTon: Number(l.pricePerTon || l.PricePerTon) || 0,
+            netPricePerTon: Number(l.netPricePerTon || l.NetPricePerTon) || 0,
             lineNo: i + 1,
-            isGiveaway: !!l.isGiveaway,
-            isControlTicketDrawn: !!l.isControlTicketDrawn
+            isGiveaway: !!(l.isGiveaway || l.IsGiveaway),
+            isControlTicketDrawn: !!(l.isControlTicketDrawn || l.IsControlTicketDrawn),
+            isCouponDrawn: !!(l.isCouponDrawn || l.IsCouponDrawn),
+            refCouponDocuNo: l.refCouponDocuNo || l.RefCouponDocuNo,
+            couponReservationId: l.couponReservationId || l.CouponReservationId
           }))
         }]);
       }).catch(console.error);
     } else {
-      setBills([{ id: 'bill-1', soPrefix: 'I', lines: [], remark: activeTrip?.remark || '', creditDays: activeTrip?.creditDays || 0, isControlTicket: false }]);
+      setPersistedReservationIds(new Set());
+      setBills([{ id: 'bill-1', soPrefix: 'I', lines: [], remark: activeTrip?.remark || '', creditDays: 0, isControlTicket: false }]);
       setActiveBillId('bill-1');
-      setCustId(''); setTruckPlate(''); setTranspId(''); setSalesUserId('');
+      setTruckPlate(''); setTranspId(''); setSalesUserId('');
       setNotifiedAt(''); setIsOwnTruck(false); 
       setNoTruckRequired(activeTrip?.isControlTicket ? true : false); 
       setPSling(activeTrip?.pSling ? true : false);
@@ -244,13 +284,11 @@ export function CreateSODialog({
       const local = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
       
       if (activeTrip) {
-        setCustId(activeTrip.custId);
-        setCustSearch(activeTrip.custName);
-        setTruckPlate(activeTrip.truckPlate);
+        setTruckPlate(activeTrip.truckPlate || '');
         setDeliveryDate(activeTrip.deliveryDate || local.toISOString().slice(0, 10));
       } else {
         setDeliveryDate(local.toISOString().slice(0, 10));
-        setCustSearch(''); setTruckPlates([]);
+        setTruckPlates([]);
       }
       
       setError('');
@@ -267,27 +305,30 @@ export function CreateSODialog({
     }).catch(console.error);
   }, [isOpen]);
 
+  const activeBill = bills.find(b => b.id === activeBillId) || bills[0];
+  const currentBillCustId = activeBill?.custId || '';
+
   useEffect(() => {
-    fetchPrices({ custId }).then(setPrices).catch(console.error);
+    fetchPrices({ custId: currentBillCustId }).then(setPrices).catch(console.error);
     // Effective prices from PriceBook — overlays legacy prices when available
     if (activePriceBookId) {
-      fetchEffectivePrices(activePriceBookId, custId || undefined)
+      fetchEffectivePrices(activePriceBookId, currentBillCustId || undefined)
         .then(setEffectivePrices).catch(() => setEffectivePrices([]));
     } else {
       setEffectivePrices([]);
     }
-    if (custId) {
-      fetchTruckPlates(custId).then(setTruckPlates).catch(console.error);
-      fetchControlTickets(custId).then(setControlTickets).catch(console.error);
+    if (currentBillCustId) {
+      fetchTruckPlates(currentBillCustId).then(setTruckPlates).catch(console.error);
+      fetchControlTickets(currentBillCustId).then(setControlTickets).catch(console.error);
       if (canSeeRebate) {
-        getRebateBalance(custId).then(r => setAvailableRebate(r.availableRebate)).catch(console.error);
+        getRebateBalance(currentBillCustId).then(r => setAvailableRebate(r.availableRebate)).catch(console.error);
       } else {
         setAvailableRebate(0);
       }
     } else {
       setTruckPlates([]); setControlTickets([]); setAvailableRebate(0);
     }
-  }, [custId, canSeeRebate, activePriceBookId]);
+  }, [currentBillCustId, canSeeRebate, activePriceBookId]);
 
   const priceObj = useCallback((goodId: string) => prices.find(p => p.GoodID === goodId), [prices]);
   const effectivePriceObj = useCallback((goodId: string) => effectivePrices.find(p => p.GoodId === goodId), [effectivePrices]);
@@ -331,8 +372,6 @@ export function CreateSODialog({
   const paginatedGoods = filteredGoods.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   useEffect(() => { setCurrentPage(1); }, [activeTab, goodSearch]);
-
-  const activeBill = bills.find(b => b.id === activeBillId) || bills[0];
 
   function addGoodToActiveBill(good: EMGood) {
     if (!activeBill) return;
@@ -489,9 +528,53 @@ export function CreateSODialog({
     }));
   }
 
-  function removeActiveLine(tempId: string) {
+  function handleCouponReserved(result: any, coupon: CouponItem) {
+    if (!activeBill) return;
+    const qty = Number(result.reservedQty) || 0;
+    const newLine: DraftLine = {
+      tempId: `coupon-${coupon.couponId}-${Date.now()}`,
+      lineNo: activeBill.lines.length + 1,
+      goodId: String(coupon.goodId),
+      goodName: coupon.goodName,
+      goodCode: '',
+      qtyTon: qty,
+      qtyBag: Math.round(qty * 20),
+      pricePerTon: 0,
+      netPricePerTon: 0,
+      isGiveaway: false,
+      isControlTicketDrawn: false,
+      isCouponDrawn: true,
+      refCouponDocuNo: coupon.sourceDocuNo,
+      couponReservationId: result.id,
+      masterQty: qty,
+      childQty: 0
+    };
+    setBills(prev => prev.map(b => b.id === activeBillId ? { ...b, lines: [...b.lines, newLine] } : b));
+    setIsCouponPickerOpen(false);
+  }
+
+  async function removeActiveLine(tempId: string) {
+    const lineToRemove = activeBill?.lines.find(l => l.tempId === tempId);
+    if (lineToRemove?.isCouponDrawn && lineToRemove.couponReservationId) {
+      const resId = lineToRemove.couponReservationId;
+      // If this reservation was already persisted in DB, do NOT cancel it in DB now.
+      // It will only be cancelled on save via backend SO_LINE_REMOVED_ON_EDIT.
+      // If user discards/closes the dialog without saving, the persisted reservation remains intact.
+      const isPersisted = persistedReservationIds.has(resId) || persistedReservationIds.has(Number(resId)) || persistedReservationIds.has(String(resId));
+      if (!isPersisted && !isSaveCommitted) {
+        try {
+          await cancelCouponReservation(resId, 'ผู้ใช้ลบรายการเบิกตั๋วร่างออกจากบิล');
+        } catch (err: any) {
+          const msg = err?.message || 'ไม่สามารถยกเลิกการจองตั๋วร่างได้';
+          alert(`เกิดข้อผิดพลาดในการยกเลิกตั๋วร่าง: ${msg}`);
+          console.error('Failed to cancel reservation on line delete:', err);
+          return; // Do not remove line from UI if cancel failed
+        }
+      }
+    }
     setBills(prevBills => prevBills.map(b => {
-      if (b.id !== activeBillId) return b;
+      const isTarget = prevBills.length === 1 || b.id === activeBillId;
+      if (!isTarget) return b;
       return {
         ...b,
         lines: b.lines.filter(l => l.tempId !== tempId).map((l, i) => ({ ...l, lineNo: i + 1 }))
@@ -501,12 +584,32 @@ export function CreateSODialog({
 
   function addNewBill() {
     const newId = `bill-${Date.now()}`;
-    setBills(prev => [...prev, { id: newId, soPrefix: 'I', lines: [], remark: '', isControlTicket: false }]);
+    setBills(prev => [...prev, { id: newId, soPrefix: 'I', lines: [], remark: '', isControlTicket: false, creditDays: 0 }]);
     setActiveBillId(newId);
+    setBillCustSearch('');
+    setIsBillCustOpen(false);
   }
 
-  function removeBill(id: string) {
+  async function removeBill(id: string) {
     if (bills.length === 1) return;
+    const billToRemove = bills.find(b => b.id === id);
+    if (billToRemove) {
+      for (const l of billToRemove.lines) {
+        if (l.isCouponDrawn && l.couponReservationId) {
+          const resId = l.couponReservationId;
+          if (!persistedReservationIds.has(resId)) {
+            try {
+              await cancelCouponReservation(resId, 'ผู้ใช้ลบบิลออกจากกลุ่มบิล');
+            } catch (err: any) {
+              const msg = err?.message || 'ไม่สามารถยกเลิกการจองตั๋วร่างได้';
+              alert(`เกิดข้อผิดพลาดในการยกเลิกตั๋วร่าง: ${msg}`);
+              console.error('Failed to cancel coupon on bill delete:', err);
+              return; // Abort removing bill if cancel failed
+            }
+          }
+        }
+      }
+    }
     const newBills = bills.filter(b => b.id !== id);
     setBills(newBills);
     if (activeBillId === id) setActiveBillId(newBills[0].id);
@@ -515,8 +618,6 @@ export function CreateSODialog({
   function updateBillInfo(id: string, patch: Partial<DraftBill>) {
     setBills(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
   }
-
-  const selectedCust = customers.find(c => c.CustID === custId);
 
   // Totals calculation
   const totalTons = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isGiveaway ? 0 : (Number(l.qtyTon) || 0)), 0), 0);
@@ -532,11 +633,10 @@ export function CreateSODialog({
   const totalCartItems = bills.reduce((s, b) => s + b.lines.length, 0);
 
   async function handleSubmit() {
-    if (!custId) { setError('กรุณาเลือกลูกค้า'); return; }
+    const hasInvalidCust = bills.some(b => !b.custId);
+    if (hasInvalidCust) { setError('กรุณาเลือกลูกค้าให้ครบถ้วนทุกบิล'); return; }
     const emptyBills = bills.filter(b => b.lines.length === 0);
     if (emptyBills.length > 0) { setError(`มีบิลที่ยังไม่ได้เลือกสินค้า (${emptyBills.length} บิล)`); return; }
-
-    if (!custId) { setError('กรุณาเลือกลูกค้าจากรายการ'); return; }
 
     if (totalPayable === 0) {
       if (!(await appConfirm(`ยอดรวมเป็น 0 บาท\n\nต้องการบันทึกเอกสารนี้หรือไม่?`))) {
@@ -556,10 +656,14 @@ export function CreateSODialog({
       if (editSoId) {
         // EditSODialog — การแก้ไขบิลทำผ่าน SO state machine (cancel + create ใหม่)
         const b = bills[0];
+        const billCustId = b.custId!;
+        const foundCust = customers.find(c => c.CustID === billCustId);
+        const billCustName = b.custName || foundCust?.CustName || billCustId;
         const payload = {
           soPrefix: b.soPrefix,
-          custId,
-          custName: selectedCust?.CustName || activeTrip?.custName || custId,
+          custId: billCustId,
+          custName: billCustName,
+          tripId: (activeTrip as any)?.tripId ? Number((activeTrip as any).tripId) : undefined,
           truckPlate: b.isControlTicket ? 'ตั๋วคุม' : (truckPlate || undefined),
           // เว้นว่างได้ — ฝั่ง WINSpeed จะรวบเลขจากบรรทัดที่เบิกมาแทน
           controlTicketNo: controlTicketNo.trim() || undefined,
@@ -583,50 +687,64 @@ export function CreateSODialog({
             pricePerTon: Number(l.pricePerTon) || 0,
             isControlTicketDrawn: l.isControlTicketDrawn,
             refControlTicketNo: l.refControlTicketNo,
+            isCouponDrawn: l.isCouponDrawn,
+            refCouponDocuNo: l.refCouponDocuNo,
+            couponReservationId: l.couponReservationId,
             masterQty: l.masterQty,
             childQty: l.childQty,
             loadSequence: l.loadSequence
           }))
         };
         const res = await updateSO(editSoId, payload);
+        setIsSaveCommitted(true);
         if (res.needsApproval) alert(`⚠ มีรายการที่ราคาต่ำกว่า NET\nต้องการอนุมัติจาก ผจก. ก่อน confirm`);
         else alert(`✓ แก้ไขบิลสำเร็จ`);
       } else {
-        // Build grouped payload (Array of orders)
-        const payload = bills.map(b => ({
-          soPrefix: b.soPrefix,
-          custId,
-          custName: selectedCust?.CustName || activeTrip?.custName || custId,
-          truckPlate: b.isControlTicket ? 'ตั๋วคุม' : (truckPlate || undefined),
-          // เว้นว่างได้ — ฝั่ง WINSpeed จะรวบเลขจากบรรทัดที่เบิกมาแทน
-          controlTicketNo: controlTicketNo.trim() || undefined,
-          deliveryDate: deliveryDate || undefined,
-          notifiedAt: notifiedAt || undefined,
-          isOwnTruck,
-          noTruckRequired,
-          pSling,
-          loadInOrder,
-          remark: b.remark || undefined,
-          rebateDiscountAmt: canSeeRebate ? b.rebateDiscountAmt || 0 : 0,
-          salesUserId: salesUserId || undefined,
-          creditDays: b.creditDays,
-          truckRemark: b.truckRemark,
-          billRemark: b.billRemark,
-          transpId: transpId || undefined,
-          convertFromQuoteId,
-          lines: b.lines.map(({ tempId, ...l }) => ({
-            ...l,
-            qtyTon: Number(l.qtyTon) || 0,
-            pricePerTon: Number(l.pricePerTon) || 0,
-            isControlTicketDrawn: l.isControlTicketDrawn,
-            refControlTicketNo: l.refControlTicketNo,
-            masterQty: l.masterQty,
-            childQty: l.childQty,
-            loadSequence: l.loadSequence
-          }))
-        }));
+        // Build grouped payload (Array of orders) with customer per bill (P1 Finding 1)
+        const payload = bills.map(b => {
+          const billCustId = b.custId!;
+          const foundCust = customers.find(c => c.CustID === billCustId);
+          const billCustName = b.custName || foundCust?.CustName || billCustId;
+          return {
+            soPrefix: b.soPrefix,
+            custId: billCustId,
+            custName: billCustName,
+            tripId: (activeTrip as any)?.tripId ? Number((activeTrip as any).tripId) : undefined,
+            truckPlate: b.isControlTicket ? 'ตั๋วคุม' : (truckPlate || undefined),
+            // เว้นว่างได้ — ฝั่ง WINSpeed จะรวบเลขจากบรรทัดที่เบิกมาแทน
+            controlTicketNo: controlTicketNo.trim() || undefined,
+            deliveryDate: deliveryDate || undefined,
+            notifiedAt: notifiedAt || undefined,
+            isOwnTruck,
+            noTruckRequired,
+            pSling,
+            loadInOrder,
+            remark: b.remark || undefined,
+            rebateDiscountAmt: canSeeRebate ? b.rebateDiscountAmt || 0 : 0,
+            salesUserId: salesUserId || undefined,
+            creditDays: b.creditDays,
+            truckRemark: b.truckRemark,
+            billRemark: b.billRemark,
+            transpId: transpId || undefined,
+            convertFromQuoteId,
+            lines: b.lines.map(({ tempId, ...l }) => ({
+              ...l,
+              qtyTon: Number(l.qtyTon) || 0,
+              pricePerTon: Number(l.pricePerTon) || 0,
+              isControlTicketDrawn: l.isControlTicketDrawn,
+              refControlTicketNo: l.refControlTicketNo,
+              isCouponDrawn: l.isCouponDrawn,
+              refCouponDocuNo: l.refCouponDocuNo,
+              couponReservationId: l.couponReservationId,
+              masterQty: l.masterQty,
+              childQty: l.childQty,
+              loadSequence: l.loadSequence
+            }))
+          };
+        });
 
         const res = await createSO(payload);
+        setIsSaveCommitted(true);
         if (res.needsApproval) alert(`⚠ มีรายการที่ราคาต่ำกว่า NET\nต้องการอนุมัติจาก ผจก. ก่อน confirm`);
         else alert(`✓ สร้างกลุ่มบิลสำเร็จ (จำนวน ${payload.length} บิล)`);
       }
@@ -639,17 +757,77 @@ export function CreateSODialog({
     }
   }
 
+  async function handleCloseModal() {
+    // If save was already committed to DB, do NOT cancel any reservations
+    if (isSaveCommitted) {
+      onClose();
+      return;
+    }
+
+    // Cancel only unpersisted draft reservations (reservations not yet saved to DB)
+    const unpersistedResIds: number[] = [];
+    for (const b of bills) {
+      for (const l of b.lines) {
+        if (l.isCouponDrawn && l.couponReservationId) {
+          const resId = Number(l.couponReservationId);
+          if (!persistedReservationIds.has(resId)) {
+            unpersistedResIds.push(resId);
+          }
+        }
+      }
+    }
+
+    let serverAlreadyBound = false;
+    const failedCancels: { id: number; error: string }[] = [];
+    for (const resId of unpersistedResIds) {
+      try {
+        await cancelCouponReservation(resId, editSoId ? 'ผู้ใช้ยกเลิกการแก้ไขและทิ้งการจองตั๋วใหม่' : 'ผู้ใช้ยกเลิกการเปิดบิลร่าง');
+      } catch (err: any) {
+        console.error('Failed to cancel draft coupon reservation on modal close:', err);
+        const isAttached = err?.status === 409 ||
+          err?.code === 'RESERVATION_ALREADY_ATTACHED_TO_SO' ||
+          err?.message?.includes('ถูกผูกกับใบสั่งขาย') ||
+          err?.message?.includes('RESERVATION_ALREADY_ATTACHED_TO_SO');
+        if (isAttached) {
+          serverAlreadyBound = true;
+        } else {
+          failedCancels.push({ id: resId, error: err?.message || 'เชื่อมต่อล้มเหลว' });
+        }
+      }
+    }
+
+    if (serverAlreadyBound) {
+      setIsSaveCommitted(true);
+      alert('ใบสั่งขายได้รับการบันทึกบนเซิร์ฟเวอร์เรียบร้อยแล้ว (ตรวจพบรายการผูกกับใบสั่งขายสำเร็จ)');
+      onCreated?.();
+      onClose();
+      return;
+    }
+
+    if (failedCancels.length > 0) {
+      const detail = failedCancels.map(f => `#${f.id}: ${f.error}`).join('\n');
+      const forceClose = window.confirm(
+        `เกิดข้อผิดพลาดในการคืนยอดการจองตั๋วร่าง (${failedCancels.length} รายการ):\n${detail}\n\nกด "ตกลง" หากต้องการบังคับปิดหน้าจอ (ระบบจะคงสถานะการจองไว้เพื่อตรวจสอบ)\nกด "ยกเลิก" เพื่ออยู่ต่อและลองใหม่`
+      );
+      if (!forceClose) {
+        setError(`ไม่สามารถยกเลิกการจองตั๋วร่างได้: ${failedCancels.map(f => f.id).join(', ')} กรุณาลองใหม่อีกครั้ง`);
+        return;
+      }
+    }
+    onClose();
+  }
+
   if (!isOpen) return null;
 
   return (
     <>
-      <div className="flex-1 flex flex-col h-full bg-white relative w-full overflow-hidden max-w-full">
+      <div className="flex-1 flex flex-col h-full bg-white relative w-full overflow-hidden max-w-full" data-testid="create-so-dialog">
         <div className="flex items-center justify-between px-4 py-2 sm:px-6 sm:py-3 border-b border-gray-100 bg-[#0C447C] text-white shrink-0">
           <div>
             <h2 className="text-base sm:text-xl font-bold flex items-center gap-2"><Truck size={20} className="sm:w-6 sm:h-6"/> {(activeTrip && !editSoId) ? 'เพิ่มบิลในทริป' : 'บิล'}</h2>
-            <p className="hidden sm:block text-xs text-blue-200 mt-1">{(activeTrip || editSoId) ? `ลูกค้า: ${custSearch} | ทะเบียนรถ: ${truckPlate || '-'} | เครดิต: ${bills[0]?.creditDays || 0} วัน | วันที่: ${deliveryDate || '-'} | Pre-Sling: ${pSling ? 'ใช่' : 'ไม่'}` : 'จัดเรียงบิล I, K ในรถคันเดียวกัน และจัดการเบิกตั๋วคุม'}</p>
+            <p className="hidden sm:block text-xs text-blue-200 mt-1">{(activeTrip || editSoId) ? `ทะเบียนรถ: ${truckPlate || 'ไม่ระบุ'} | วันที่: ${deliveryDate || '-'} | จำนวน ${bills.length} บิล | Pre-Sling: ${pSling ? 'ใช่' : 'ไม่'}` : 'จัดเรียงบิล I, K ในรถคันเดียวกัน และจัดการเบิกตั๋วคุม'}</p>
           </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white rounded-full p-1.5 sm:p-2 hover:bg-white/10">
+          <button onClick={handleCloseModal} data-testid="btn-close-dialog" className="text-white/80 hover:text-white rounded-full p-1.5 sm:p-2 hover:bg-white/10">
             <X size={20} />
           </button>
         </div>
@@ -664,7 +842,7 @@ export function CreateSODialog({
             <div className="flex items-center gap-2">
               <Truck size={14} className="text-gray-500" />
               <span className="text-xs font-bold text-gray-700">
-                ลูกค้า {custSearch ? `(${custSearch})` : ''} {truckPlate ? `[${truckPlate}]` : ''}
+                เที่ยวรถ {truckPlate ? `[${truckPlate}]` : ''} ({bills.length} บิล)
               </span>
             </div>
             {isTruckInfoCollapsed ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronUp size={16} className="text-gray-400" />}
@@ -672,10 +850,10 @@ export function CreateSODialog({
           
           <div className={`px-4 sm:px-6 py-3 transition-all overflow-hidden bg-gray-50/50 ${isTruckInfoCollapsed ? 'hidden lg:block' : 'block'}`}>
             <div className="flex flex-col xl:flex-row gap-6">
-              {/* SECTION 1: Customer & Document Info */}
+              {/* SECTION 1: Document & Schedule Info */}
               <div className="flex-1 bg-white p-4 rounded-xl border border-blue-100 shadow-sm relative">
                 <div className="absolute -top-3 left-4 bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold border border-blue-200">
-                  ข้อมูลลูกค้า & เอกสาร
+                  ข้อมูลเอกสาร & การนัดหมาย
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-2">
                   {userRole === 'ADMIN' && (
@@ -688,28 +866,6 @@ export function CreateSODialog({
                       </select>
                     </div>
                   )}
-                  <div className="relative min-w-[200px]">
-                    <label className="text-[10px] font-bold text-gray-700 block mb-1">ลูกค้า <span className="text-red-500">*</span></label>
-                    <div className="relative">
-                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                      <input
-                        value={custSearch}
-                        onChange={e => { setCustSearch(e.target.value); if (custId) setCustId(''); }}
-                        onFocus={() => setIsCustOpen(true)} onBlur={() => setTimeout(() => setIsCustOpen(false), 200)}
-                        placeholder="ค้นหาชื่อลูกค้า..."
-                        className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C] bg-gray-50 focus:bg-white transition-colors"
-                      />
-                      {isCustOpen && (
-                        <div className="absolute z-30 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                          {customers.map(c => (
-                            <div key={c.CustID} className="px-3 py-2 text-sm hover:bg-blue-50 cursor-pointer border-b" onClick={() => { setCustId(c.CustID); setCustSearch(c.CustName); setBills(prev => prev.map(b => ({ ...b, creditDays: c.CreditDays || 0 }))); setIsCustOpen(false); }}>
-                              <div className="font-bold text-[#0C447C]">{c.CustName}</div><div className="text-[10px] text-gray-500">{c.CustID}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
                   <div className="min-w-[150px]">
                     <label className="text-[10px] font-bold text-gray-700 block mb-1">วันที่เอกสาร</label>
                     <ThaiDatePicker value={deliveryDate} onChange={setDeliveryDate} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] bg-gray-50 focus:bg-white" />
@@ -849,12 +1005,12 @@ export function CreateSODialog({
               <span>บิลที่ {i+1} ({b.soPrefix})</span>
               {b.isControlTicket && <span className="ml-1 text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">ตั๋วคุม</span>}
               <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full border ${billTotal > 0 ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>฿{billTotal.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
-              {!editSoId && !activeTrip && (
+              {!editSoId && (
                 <X size={14} className="ml-2 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); removeBill(b.id); }} />
               )}
             </div>
           )})}
-          {!editSoId && !activeTrip && (
+          {!editSoId && (
             <button onClick={addNewBill} className="ml-2 px-3 py-2 text-sm text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 shrink-0">
               <Plus size={16} /> เพิ่มบิล
             </button>
@@ -886,12 +1042,12 @@ export function CreateSODialog({
                       <span>บิลที่ {i+1} {b.wfRef ? `(เลขที่: ${b.wfRef})` : `(${b.soPrefix})`}</span>
                       {b.isControlTicket && <span className="ml-1 text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">ตั๋วคุม</span>}
                       <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full border ${billTotal > 0 ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>฿{billTotal.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
-                      {!editSoId && !activeTrip && bills.length > 1 && (
+                      {!editSoId && bills.length > 1 && (
                         <X size={14} className="ml-2 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); removeBill(b.id); }} />
                       )}
                     </div>
                 )})}
-                {!editSoId && !activeTrip && (
+                {!editSoId && (
                   <button onClick={addNewBill} className="ml-2 px-3 py-2 text-sm text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1">
                     <Plus size={16} /> เพิ่มบิลในรถคันนี้
                   </button>
@@ -1036,6 +1192,7 @@ export function CreateSODialog({
                     return (
                       <button
                         key={goodListKey(g)}
+                        data-testid={`card-good-${g.GoodID}`}
                         onClick={() => addGoodToActiveBill(g)}
                         disabled={suspended}
                         className={`text-left p-3 rounded-xl border transition-all ${
@@ -1055,6 +1212,20 @@ export function CreateSODialog({
                         {discontinuing && !suspended && (
                           <div className="text-[10px] font-bold text-amber-600 mb-0.5">⚠ กำลังยกเลิก</div>
                         )}
+                        {(() => {
+                           const atp = atpStock.find(a => a.goodId === g.GoodID);
+                           if (!atp || isGiveaway) return null;
+                           if (atp.state === 'UNKNOWN') {
+                             return <div className="text-[9px] text-gray-500 mb-1" title="ขาดข้อมูล Reservation Authority ไม่สามารถสรุปได้ว่าพร้อมจ่ายหรือไม่">❓ สถานะคลังไม่ชัดเจน (As of {atp.asOf})</div>;
+                           }
+                           if (atp.state === 'FULLY_READY') {
+                             return <div className="text-[9px] text-emerald-600 font-bold mb-1">✅ พร้อมครบ ({atp.atpQty}t) - คลัง {atp.warehouseId}</div>;
+                           }
+                           if (atp.state === 'PARTIALLY_READY') {
+                             return <div className="text-[9px] text-amber-600 font-bold mb-1">⚠ พร้อมบางส่วน ({atp.atpQty}t) - คลัง {atp.warehouseId}</div>;
+                           }
+                           return <div className="text-[9px] text-red-600 font-bold mb-1">⏳ รอผลิต/รอจัดหา (As of {atp.asOf})</div>;
+                        })()}
                         {!isGiveaway ? (
                           <>
                             {net > 0 ? (
@@ -1105,32 +1276,130 @@ export function CreateSODialog({
 
               {/* Active Bill Config */}
               <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-sm border-t-4 border-t-[#0C447C] flex flex-col flex-1 min-h-[300px]">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-bold text-[#0C447C]">รายการในบิล {activeBill?.wfRef ? `(เลขที่: ${activeBill?.wfRef})` : activeBill?.soPrefix}</h3>
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] text-gray-500 font-bold hidden sm:inline">ประเภทบิล</span>
-                      <select 
-                        value={activeBill?.soPrefix} 
-                        onChange={e => updateBillInfo(activeBillId, { soPrefix: e.target.value as SOPrefix })}
-                        className="border border-gray-200 rounded text-sm px-2 py-1 font-bold bg-gray-50"
+                <div className="flex flex-col gap-2.5 mb-3 pb-3 border-b border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-[#0C447C] text-sm">
+                      รายการในบิล {activeBill?.wfRef ? `(เลขที่: ${activeBill?.wfRef})` : activeBill?.soPrefix}
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!activeBill?.custId) {
+                            setError('กรุณาเลือกลูกค้าประจำบิลนี้ก่อนเลือกใช้ตั๋วปุ๋ย');
+                            return;
+                          }
+                          setIsCouponPickerOpen(true);
+                        }}
+                        className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-[#0C447C] hover:bg-blue-100 transition-colors shadow-sm"
+                        data-testid="btn-open-coupon-picker"
+                        title="เลือกใช้ตั๋วปุ๋ยที่มีสิทธิ์สำหรับลูกค้ารายนี้"
                       >
-                        <option value="I">I - บัญชี 1</option>
-                        <option value="K">K - บัญชี 2</option>
-                      </select>
+                        <Ticket size={14} className="text-blue-600" />
+                        <span>ใช้ตั๋วปุ๋ย</span>
+                      </button>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-gray-500 font-bold">ประเภทบิล</span>
+                        <select 
+                          value={activeBill?.soPrefix} 
+                          onChange={e => updateBillInfo(activeBillId, { soPrefix: e.target.value as SOPrefix })}
+                          className="border border-gray-200 rounded text-xs px-2 py-1 font-bold bg-gray-50"
+                        >
+                          <option value="I">I - บัญชี 1</option>
+                          <option value="K">K - บัญชี 2</option>
+                        </select>
+                      </div>
+                      <label className="flex items-center gap-1.5 text-[10px] text-gray-500 font-bold cursor-pointer hover:text-amber-600 transition-colors ml-1" title="ติ๊กเพื่อระบุว่าบิลนี้เป็นตั๋วคุม (ไม่ต้องใช้ทะเบียนรถ)">
+                        <input type="checkbox" checked={!!activeBill?.isControlTicket} onChange={e => updateBillInfo(activeBillId, { isControlTicket: e.target.checked })} className="w-3.5 h-3.5 accent-amber-500" />
+                        เป็นตั๋วคุม
+                      </label>
                     </div>
-                    <label className="flex items-center gap-1.5 text-[10px] text-gray-500 font-bold cursor-pointer hover:text-amber-600 transition-colors ml-1" title="ติ๊กเพื่อระบุว่าบิลนี้เป็นตั๋วคุม (ไม่ต้องใช้ทะเบียนรถ)">
-                      <input type="checkbox" checked={!!activeBill?.isControlTicket} onChange={e => updateBillInfo(activeBillId, { isControlTicket: e.target.checked })} className="w-3.5 h-3.5 accent-amber-500" />
-                      เป็นตั๋วคุม
-                    </label>
-                    <div className="flex items-center gap-1 ml-2" title="ระยะเวลาเครดิต (วัน) จะถูกบวกเข้ากับวันที่ชั่งออกเพื่อหาวันครบกำหนดชำระ">
-                      <span className="text-[10px] text-gray-500 font-bold hidden sm:inline">เครดิต(วัน)</span>
+                  </div>
+
+                  {/* Customer and Credit for this Bill */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-blue-50/50 p-2 rounded-lg border border-blue-100">
+                    <div className="flex-1 relative">
+                      <div className="flex items-center justify-between text-[10px] font-bold text-gray-600 mb-0.5">
+                        <span>ลูกค้าประจำบิลนี้ <span className="text-red-500">*</span></span>
+                        {activeBill?.custId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateBillInfo(activeBillId, { custId: undefined, custName: undefined });
+                              setBillCustSearch('');
+                              setIsBillCustOpen(true);
+                            }}
+                            className="text-[10px] text-blue-600 hover:text-red-600 underline"
+                          >
+                            เปลี่ยนลูกค้า
+                          </button>
+                        )}
+                      </div>
+                      {activeBill?.custId ? (
+                        <div className="flex items-center justify-between bg-white border border-blue-200 rounded-lg px-2.5 py-1 text-xs text-[#0C447C] font-semibold">
+                          <span className="truncate">
+                            [{activeBill.custId}] {activeBill.custName || customers.find(c => c.CustID === activeBill.custId)?.CustName || activeBill.custId}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="relative">
+                          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                          <input
+                            type="text"
+                            value={billCustSearch}
+                            onChange={e => {
+                              setBillCustSearch(e.target.value);
+                              setIsBillCustOpen(true);
+                            }}
+                            onFocus={() => setIsBillCustOpen(true)}
+                            placeholder="ค้นหารหัสหรือชื่อลูกค้า..."
+                            className="w-full border border-gray-200 rounded-lg pl-8 pr-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#0C447C] bg-white"
+                          />
+                          {isBillCustOpen && (
+                            <>
+                              <div className="fixed inset-0 z-30" onClick={() => setIsBillCustOpen(false)} />
+                              <div className="absolute z-40 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                                {customers
+                                  .filter(c => !billCustSearch || String(c.CustID || '').toLowerCase().includes(billCustSearch.toLowerCase()) || String(c.CustName || '').toLowerCase().includes(billCustSearch.toLowerCase()))
+                                  .slice(0, 30)
+                                  .map(c => (
+                                    <div
+                                      key={c.CustID}
+                                      className="px-3 py-1.5 text-xs hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-0 flex justify-between items-center"
+                                      onClick={() => {
+                                        updateBillInfo(activeBillId, {
+                                          custId: c.CustID,
+                                          custName: c.CustName,
+                                          creditDays: c.CreditDays !== undefined ? c.CreditDays : activeBill?.creditDays
+                                        });
+                                        setBillCustSearch('');
+                                        setIsBillCustOpen(false);
+                                      }}
+                                    >
+                                      <div>
+                                        <div className="font-bold text-[#0C447C]">{c.CustName}</div>
+                                        <div className="text-[10px] text-gray-400">{c.CustID}</div>
+                                      </div>
+                                      <div className="text-[10px] text-gray-500 font-medium">
+                                        เครดิต {c.CreditDays || 0} วัน
+                                      </div>
+                                    </div>
+                                  ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="shrink-0 flex items-center gap-1.5 sm:self-end sm:pb-0.5">
+                      <span className="text-[10px] text-gray-600 font-bold whitespace-nowrap">เครดิต(วัน):</span>
                       <input 
                         type="number" 
                         min="0"
                         value={activeBill?.creditDays !== undefined ? activeBill.creditDays : ''} 
                         onChange={e => updateBillInfo(activeBillId, { creditDays: e.target.value ? Number(e.target.value) : 0 })}
-                        className="border border-gray-200 rounded text-sm px-2 py-1 font-bold bg-white w-16 text-center focus:ring-1 focus:ring-[#0C447C] outline-none"
+                        className="border border-gray-200 rounded text-xs px-2 py-1 font-bold bg-white w-14 text-center focus:ring-1 focus:ring-[#0C447C] outline-none"
                         placeholder="0"
                       />
                     </div>
@@ -1148,27 +1417,40 @@ export function CreateSODialog({
                       const good = goods.find(g => g.GoodID === l.goodId);
                       const priceBand = getPriceBand(l.pricePerTon, good?.SetPrice || 0);
                       return (
-                      <div key={l.tempId} className={`p-3 rounded-lg border ${l.isControlTicketDrawn ? 'border-amber-200 bg-amber-50' : 'border-gray-100 bg-white'}`}>
+                      <div key={l.tempId} data-testid={l.isCouponDrawn ? 'cart-coupon-line' : `cart-line-${l.goodId}`} className={`p-3 rounded-lg border ${l.isControlTicketDrawn ? 'border-amber-200 bg-amber-50' : l.isCouponDrawn ? 'border-blue-200 bg-blue-50/70' : 'border-gray-100 bg-white'}`}>
                         <div className="flex justify-between items-start mb-2">
                           <div>
                             <div className="text-xs font-bold text-gray-800 line-clamp-2">{l.goodName}</div>
                             {l.isControlTicketDrawn && (
                               <div className="text-[10px] text-amber-700 font-bold bg-amber-100 inline-block px-1.5 py-0.5 rounded mt-1">
-                                เบิกตั๋ว: {l.refControlTicketNo}
+                                เบิกตั๋วคุม: {l.refControlTicketNo}
+                              </div>
+                            )}
+                            {l.isCouponDrawn && (
+                              <div className="text-[10px] text-blue-700 font-bold bg-blue-100 inline-flex items-center gap-1 px-1.5 py-0.5 rounded mt-1">
+                                <Ticket size={11} className="inline mr-0.5" />
+                                <span>ตั๋วปุ๋ย: {l.refCouponDocuNo || 'ตั๋วร่วม'}</span>
                               </div>
                             )}
                           </div>
-                          <button onClick={() => removeActiveLine(l.tempId)} className="text-gray-400 hover:text-red-500 shrink-0"><X size={14}/></button>
+                          <button onClick={() => removeActiveLine(l.tempId)} data-testid={l.isCouponDrawn ? 'btn-remove-coupon-line' : 'btn-remove-line'} className="text-gray-400 hover:text-red-500 shrink-0"><X size={14}/></button>
                         </div>
                         <div className="flex flex-col gap-1.5 mt-2">
                           <div className="flex justify-between items-end">
                             <div className="flex flex-col gap-1.5">
                               <div className="flex items-center gap-2">
-                                <div className="flex items-center border border-gray-200 rounded bg-white">
-                                  <button onClick={() => updateActiveLine(l.tempId, { qtyTon: Math.max(0.001, l.qtyTon - 1) })} className="px-2 py-1 text-gray-500 hover:bg-gray-100"><Minus size={12} /></button>
-                                  <input type="number" step="0.001" max={l.maxQtyTon} value={l.qtyTon || ''} onChange={e => updateActiveLine(l.tempId, { qtyTon: Number(e.target.value) })} onBlur={e => e.target.value = parseFloat(e.target.value || '0').toFixed(3)} className="w-16 text-center text-xs font-mono font-bold py-1 focus:outline-none" />
-                                  <button onClick={() => updateActiveLine(l.tempId, { qtyTon: l.qtyTon + 1 })} disabled={l.maxQtyTon !== undefined && l.qtyTon >= l.maxQtyTon} className="px-2 py-1 text-gray-500 hover:bg-gray-100 disabled:opacity-30"><Plus size={12} /></button>
-                                </div>
+                                {l.isCouponDrawn ? (
+                                  <div className="flex items-center border border-blue-200 rounded bg-white px-2 py-1">
+                                    <span className="text-xs font-mono font-bold text-blue-900">{l.qtyTon}</span>
+                                    <span className="text-[9px] text-blue-500 ml-1 font-medium">(ล็อกตามยอดจอง)</span>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center border border-gray-200 rounded bg-white">
+                                    <button onClick={() => updateActiveLine(l.tempId, { qtyTon: Math.max(0.001, l.qtyTon - 1) })} className="px-2 py-1 text-gray-500 hover:bg-gray-100"><Minus size={12} /></button>
+                                    <input type="number" step="0.001" max={l.maxQtyTon} value={l.qtyTon || ''} onChange={e => updateActiveLine(l.tempId, { qtyTon: Number(e.target.value) })} onBlur={e => e.target.value = parseFloat(e.target.value || '0').toFixed(3)} className="w-16 text-center text-xs font-mono font-bold py-1 focus:outline-none" />
+                                    <button onClick={() => updateActiveLine(l.tempId, { qtyTon: l.qtyTon + 1 })} disabled={l.maxQtyTon !== undefined && l.qtyTon >= l.maxQtyTon} className="px-2 py-1 text-gray-500 hover:bg-gray-100 disabled:opacity-30"><Plus size={12} /></button>
+                                  </div>
+                                )}
                                 <span className="text-[10px] text-gray-500 font-medium">{l.isGiveaway ? (goods.find(g => g.GoodID === l.goodId)?.UnitName || 'ชิ้น') : 'ตัน'}</span>
                               </div>
                               <div className="flex items-center gap-2 mt-1.5 flex-wrap">
@@ -1316,10 +1598,11 @@ export function CreateSODialog({
 
           <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2 sm:gap-3">
             {error && <div className="text-red-500 text-[10px] sm:text-xs font-bold bg-red-50 px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg border border-red-100">{error}</div>}
-            <button onClick={onClose} className="px-4 py-2 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg sm:rounded-xl transition-colors">ยกเลิก</button>
+            <button onClick={handleCloseModal} data-testid="btn-cancel-dialog" className="px-4 py-2 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg sm:rounded-xl transition-colors">ยกเลิก</button>
             <button
               onClick={handleSubmit}
               disabled={submitting}
+              data-testid="btn-save-so"
               className="px-4 py-2 text-sm font-bold text-white bg-[#0C447C] hover:bg-[#0a3663] rounded-lg sm:rounded-xl flex items-center gap-2 shadow-lg disabled:opacity-50 transition-colors"
             >
               {submitting ? 'กำลังบันทึก...' : <><CheckCircle2 size={16}/> บันทึกการจัดรถ</>}
@@ -1344,6 +1627,17 @@ export function CreateSODialog({
           apiFetch<GiveawayQuota[]>(`/giveaway/my-quota?year=${currentYear}`).then(setMyQuota).catch(console.error);
           alert('ส่งคำขอยืมเรียบร้อยแล้ว กรุณารอการอนุมัติ');
         }}
+      />
+
+      <CouponPickerModal
+        isOpen={isCouponPickerOpen}
+        onClose={() => setIsCouponPickerOpen(false)}
+        carrierSoId={editSoId || (activeTrip ? `TRIP-${activeTrip.tripId}-DRAFT` : 'DRAFT')}
+        carrierDocuNo={activeBill?.wfRef || (editSoId ? undefined : 'บิลร่าง')}
+        tripId={activeTrip?.tripId ? Number(activeTrip.tripId) : undefined}
+        customerId={activeBill?.custId || ''}
+        customerName={activeBill?.custName || customers.find(c => c.CustID === activeBill?.custId)?.CustName}
+        onReserved={handleCouponReserved}
       />
     </>
   );

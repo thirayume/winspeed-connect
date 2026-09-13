@@ -101,13 +101,12 @@ sed -i 's/\r$//' "/etc/ssh/authorized_keys/$SFTP_USER"
 log "Create SFTP transfer directories"
 install -d -m 755 -o root -g root "$TRANSFER_ROOT"
 for path in \
-  incoming/mssql incoming/mysql \
-  outgoing/mssql outgoing/mysql \
+  incoming/mssql \
+  outgoing/mssql \
   manifests manifests/certs rejected; do
   install -d -m 755 -o "$SFTP_USER" -g "$SFTP_USER" "$TRANSFER_ROOT/$path"
 done
 install -d -m 770 -o 10001 -g root "$TRANSFER_ROOT/work/mssql"
-install -d -m 770 -o root -g root "$TRANSFER_ROOT/work/mysql"
 
 log "Configure a chrooted, SFTP-only account"
 SSHD_SNIPPET="/etc/ssh/sshd_config.d/60-worldfert-sftp.conf"
@@ -135,8 +134,7 @@ systemctl reload ssh
 log "Generate a private database CA and TLS server certificates"
 CA_DIR="$APP_ROOT/secrets/db-ca"
 MSSQL_DIR="$APP_ROOT/secrets/mssql"
-MYSQL_DIR="$APP_ROOT/secrets/mysql"
-install -d -m 700 "$CA_DIR" "$MSSQL_DIR" "$MYSQL_DIR"
+install -d -m 700 "$CA_DIR" "$MSSQL_DIR"
 
 if [ ! -f "$CA_DIR/ca.key" ] || [ ! -f "$CA_DIR/ca.crt" ]; then
   openssl req -x509 -newkey rsa:4096 -sha256 -nodes -days 3650 \
@@ -161,7 +159,6 @@ make_server_cert() {
 }
 
 make_server_cert "$MSSQL_DIR" "${MSSQL_DOMAIN:-mssql.local}" "mssql"
-make_server_cert "$MYSQL_DIR" "${MYSQL_DOMAIN:-mysql.local}" "mysql"
 
 cat > "$MSSQL_DIR/mssql.conf" <<EOF
 [network]
@@ -173,9 +170,6 @@ EOF
 chown -R 10001:root "$MSSQL_DIR"
 chmod 600 "$MSSQL_DIR/server.key"
 chmod 644 "$MSSQL_DIR/server.crt" "$MSSQL_DIR/ca.crt" "$MSSQL_DIR/mssql.conf"
-chown -R 999:999 "$MYSQL_DIR"
-chmod 600 "$MYSQL_DIR/server.key"
-chmod 644 "$MYSQL_DIR/server.crt" "$MYSQL_DIR/ca.crt"
 install -m 644 -o "$SFTP_USER" -g "$SFTP_USER" "$CA_DIR/ca.crt" "$TRANSFER_ROOT/manifests/certs/worldfert-db-ca.crt"
 
 log "Leave UFW unchanged; Hostinger Firewall is managed separately before containers start"
@@ -186,5 +180,5 @@ install -d -m 755 -o root -g root "$APP_ROOT/app"
 log "Preparation complete"
 echo "Deploy user : root (existing Hostinger account, SSH key only for automation)"
 echo "SFTP user  : $SFTP_USER (chroot $TRANSFER_ROOT)"
-echo "Firewall   : Hostinger Firewall must allow 80/443 publicly and 22/1433/3306 from approved CIDRs"
+echo "Firewall   : Hostinger Firewall must allow 80/443 publicly and 22/1433 from approved CIDRs"
 echo "Next       : copy deploy/cloud-vps/.env, then run 03-remote-deploy.bat"

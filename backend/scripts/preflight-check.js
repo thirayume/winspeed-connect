@@ -1,8 +1,8 @@
 /**
- * preflight-check.js — ตรวจความพร้อมก่อน/หลัง deploy (Coolify, Docker, หรือ local)
+ * preflight-check.js — ตรวจความพร้อมก่อน/หลัง deploy (Hostinger, Docker, หรือ local)
  *
  * ตรวจ: env vars ที่โค้ดอ่านจริง · SQL Server (เชื่อมต่อ/DB/collation/ขนาด/wf migrations)
- *       · MySQL TruckScale · ความปลอดภัย (JWT/CORS) · timezone · กับดักที่เคยเจอ
+ *       · WINSpeed weighing · ความปลอดภัย (JWT/CORS) · timezone · กับดักที่เคยเจอ
  *
  * USAGE:
  *   node scripts/preflight-check.js            # ตรวจทั้งหมด
@@ -33,7 +33,7 @@ const isLinux = os.platform() !== 'win32';
   head('SQL Server config');
   const mode = E('DB_MODE').toLowerCase();
   if (!mode) block('DB_MODE ไม่ได้ตั้ง', 'ตั้ง DB_MODE=remote สำหรับ container/Linux');
-  else if (isLinux && mode !== 'remote')
+  else if (isLinux && !['remote', 'remote_b'].includes(mode))
     block(`DB_MODE="${mode}" บน Linux ใช้ไม่ได้ (local = Windows Trusted Connection)`, 'ตั้ง DB_MODE=remote');
   else ok(`DB_MODE=${mode}`);
 
@@ -47,7 +47,7 @@ const isLinux = os.platform() !== 'win32';
     else {
       ok(`REMOTE_DB_SERVER=${srv}`);
       if (/^\d+\.\d+\.\d+\.\d+$/.test(srv))
-        warn(`REMOTE_DB_SERVER เป็น IP (${srv})`, 'ใน Coolify ควรใช้ชื่อ service ใน Docker network');
+        warn(`REMOTE_DB_SERVER เป็น IP (${srv})`, 'ใน Hostinger ควรใช้ชื่อ service ใน Docker network');
       if (srv === '20.255.185.14')
         block('REMOTE_DB_SERVER ยังชี้ IP Azure เดิม', 'เปลี่ยนเป็น "mssql"');
     }

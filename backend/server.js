@@ -1,12 +1,4 @@
-/**
- * WS-Sale-App — Express API Server
- * ─────────────────────────────────────────────────────────────────
- * ⚠ IRON RULES:
- *   1. dbo = READ-ONLY — ห้าม CREATE/ALTER/DROP/INSERT/UPDATE/DELETE บน dbo เด็ดขาด
- *   2. เขียนได้เฉพาะ schema wf เท่านั้น
- *   3. ก่อนรัน query ที่ไม่ใช่ SELECT ต้องถามยืนยัน (ทำในส่วน UI)
- * ─────────────────────────────────────────────────────────────────
- */
+/** Express API. Native dbo writes are limited to implemented, authorized workflows; weighing tables remain read-only. */
 require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
 const express = require('express');
 const cors    = require('cors');
@@ -14,7 +6,7 @@ const helmet  = require('helmet');
 const rateLimit = require('express-rate-limit');
 const http = require('http');
 
-// ── Global error guards — exit so Railway can restart cleanly ─
+// ── Global error guards — exit so Docker can restart cleanly ─
 function fatal(kind, info) {
   console.error(`[FATAL] ${kind}:`, info);
   try { require('./services/observability').alert(`💥 ${kind}: ${info?.message || info}`, 'fatal', 'error'); } catch { /* ignore */ }
@@ -48,7 +40,7 @@ if (backgroundWorkersDisabled) {
 
 }
 // CORS — supports comma-separated origins or '*'
-// Set CORS_ORIGIN in env, e.g.: https://winspeed-connect.vercel.app,http://localhost:5173
+// Set CORS_ORIGIN in env, e.g.: https://app.example.com,http://localhost:5173
 const rawOrigins = (process.env.CORS_ORIGIN || '*').split(',').map(s => s.trim());
 const isWildcard = rawOrigins.includes('*');
 
@@ -87,12 +79,17 @@ app.use('/api/auth/line/link', rateLimit({
 }));
 
 // ── DB target switch (per-request) ────────────────────────────
-// frontend (ADMIN) ส่ง header X-DB-Target: local|remote → เลือก pool
+// frontend (ADMIN) ส่ง header X-DB-Target: local|remote|remote_b → เลือก pool
 const { runWithTarget, getTarget, DEFAULT_TARGET } = require('./db');
+const { requestTarget } = require('./db-target-policy');
 app.use((req, res, next) => {
-  const t = String(req.headers['x-db-target'] || '').toLowerCase();
-  if (t === 'remote' || t === 'local') return runWithTarget(t, next);
-  return next();
+  let target;
+  try {
+    target = requestTarget(req.headers['x-db-target'], DEFAULT_TARGET, process.env.NODE_ENV === 'production');
+  } catch (error) {
+    return res.status(400).json({ message: error.message });
+  }
+  return runWithTarget(target, next);
 });
 app.get('/api/dbinfo', (req, res) => res.json({ target: getTarget(), default: DEFAULT_TARGET }));
 app.use(require('./middleware/apiAudit')());
@@ -121,6 +118,8 @@ app.use('/api/edit-requests', require('./routes/edit-requests'));
 app.use('/api/budget',    require('./routes/budget'));
 app.use('/api/papertrail', require('./routes/papertrail'));
 app.use('/api/reports', require('./routes/reports'));
+app.use('/api/admin/reports', require('./routes/admin-reports'));
+app.use('/api/admin', require('./routes/admin-reports'));
 // เอกสารชั่งเข้า/ชั่งออก อ่านจาก WINSpeed (WGHD/WGDT) — แหล่งเดียวตั้งแต่ 04/09/2569
 app.use('/api/weighing', require('./routes/weighing'));
 app.use('/api/recon', require('./routes/recon'));
@@ -129,6 +128,7 @@ app.use('/api/policy', require('./routes/policy'));
 app.use('/api/pricebook', require('./routes/pricebook'));
 app.use('/api/credit', require('./routes/credit'));
 app.use('/api/stock', require('./routes/stock'));
+app.use('/api/coupons', require('./routes/coupons'));
 app.use('/api/pdpa', require('./routes/pdpa'));
 app.use('/api/line', require('./routes/line').router);
 

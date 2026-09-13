@@ -2,11 +2,14 @@
 documentId: "WF-DATA-002"
 title: "โครงสร้าง schema wf พร้อม ERD — v1.9.0"
 version: "v1.0"
-status: Draft
+status: Archived
 statusDetail: "จัดทำ 3 กันยายน 2569 · นับจากฐานจริงบน Azure วันเดียวกัน · 60 ตาราง · 62 FK · 24 view · 6 procedure"
 owner: "Solution Architect"
-normative: true
+normative: false
 ---
+
+> สถานะ: เอกสารย้อนหลัง/รอทบทวนรายหัวข้อ ณ 2026-09-06 — ไม่ใช่ข้อกำหนดปัจจุบัน โปรดเริ่มที่ [เอกสารกลาง](../../README.md). เนื้อหาเดิมคงไว้เพื่อสืบย้อน; คำอ้าง Released/SSOT ภายในเป็นสถานะเดิม.
+
 
 # โครงสร้าง schema `wf` พร้อม ERD
 

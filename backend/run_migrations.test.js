@@ -70,3 +70,35 @@ test('buildPlan identifies pending, excluded-applied, and ledger-only rows witho
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+const { loadApplied } = require('./run_migrations');
+test('fresh database plan accepts proven absent ledger without issuing writes', async () => {
+ const statements=[]; const pool={request:()=>({query:async q=>{statements.push(q);return {recordset:[{LedgerId:null,CanInspect:1}]};}})};
+ assert.equal((await loadApplied(pool)).size,0);assert.equal(statements.length,1);assert.match(statements[0],/^SELECT /);
+});
+test('ledger invisibility and read failure cannot look like a fresh database', async () => {
+ await assert.rejects(loadApplied({request:()=>({query:async()=>({recordset:[{LedgerId:null,CanInspect:0}]})})}),/VIEW DEFINITION/);
+ await assert.rejects(loadApplied({request:()=>({query:async()=>{throw new Error('read denied');}})}),/read denied/);
+});
+
+const { executionBatches } = require('./run_migrations');
+test('only checksum-pinned legacy context directive is removed; arbitrary cross-database SQL fails', () => {
+ const text='USE dbwins_worldfert9; -- legacy\nSELECT DB_NAME();';
+ const overrides={'074.sql':{checksum:sha256(text),database:'dbwins_worldfert9'}};
+ assert.doesNotMatch(executionBatches('074.sql',text,'dbwins_worldfert9_test_v2',overrides).join(''),/^USE /m);
+ assert.throws(()=>executionBatches('other.sql',text,'dbwins_worldfert9_test_v2',overrides),/USE/);
+ assert.throws(()=>executionBatches('074.sql',text+' ', 'dbwins_worldfert9_test_v2',overrides),/checksum/);
+});
+
+const { runFile } = require('./run_migrations');
+test('temporary-table batches share one transaction and batch scope', async () => {
+ const events=[];const session={begin:async()=>events.push('begin'),commit:async()=>events.push('commit'),rollback:async()=>events.push('rollback'),request:()=>({batch:async text=>events.push(text)})};
+ const batches=['CREATE TABLE #Known (Id int);','SELECT * FROM #Known;','DROP TABLE #Known;'];
+ const result=await runFile({transaction:()=>session,request:()=>{throw Error('Pooled query loses temp scope');}},'fixture.sql',batches);
+ assert.deepEqual(events,['begin',...batches,'commit']);assert.equal(result.successCount,3);
+});
+test('temporary-table batch failure rolls back and cannot report migration success', async () => {
+ const events=[];const session={begin:async()=>events.push('begin'),commit:async()=>events.push('commit'),rollback:async()=>events.push('rollback'),request:()=>({batch:async()=>{throw Error('bad SQL');}})};
+ await assert.rejects(runFile({transaction:()=>session},'fixture.sql',['CREATE TABLE #Known (Id int);']),/bad SQL/);
+ assert.deepEqual(events,['begin','rollback']);
+});

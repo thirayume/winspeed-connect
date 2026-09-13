@@ -1,3 +1,9 @@
+IF DB_NAME() <> N'dbwins_worldfert9_test_v2'
+BEGIN
+ RAISERROR('E2E SQL requires dbwins_worldfert9_test_v2',16,1);
+ SET NOEXEC ON;
+END;
+GO
 -- ล้างข้อมูลที่ E2E สร้างขึ้น ออกจาก SQL Server หลังจบการทดสอบทุกครั้ง
 --
 -- ขอบเขต: ลบเฉพาะรายการที่เกิดจากการรันเทสต์ ระบุด้วยทะเบียนรถที่ helpers.runSuffix() สร้าง
@@ -37,7 +43,6 @@ DELETE FROM wf.WeighTicketItemLog WHERE CAST(SoId AS VARCHAR(50)) IN (SELECT Id 
 DELETE FROM wf.WeighTicket
 WHERE CAST(SoId AS VARCHAR(50)) IN (SELECT Id FROM @SoIds)
    OR TruckPlate LIKE 'UAT-%' OR TruckPlate LIKE 'CMP-%';
-DELETE FROM wf.WeighInbox WHERE Plate LIKE 'UAT-%' OR Plate LIKE 'CMP-%';
 
 -- รีเบท คำขอปลดล็อก และ audit
 DELETE FROM wf.RebateLedger     WHERE CAST(SoId AS VARCHAR(50)) IN (SELECT Id FROM @SoIds);

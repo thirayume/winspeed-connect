@@ -1,12 +1,15 @@
 import React, { useMemo, useState } from 'react';
 import { Package, Truck, Clock, Trash2, FileText, Gift, Settings, Activity, Download } from 'lucide-react';
 import { SOStatusBadge } from './SOStatusBadge';
-import { cancelSO, deleteSO } from '../../services/api';
+import { cancelSO, deleteSO, bulkCancelDeleteSO } from '../../services/api';
 import { appConfirm } from '../ui/AppAlert';
 import { useExport } from '../../hooks/useExport';
+import { SOCancelDeleteModal } from '../common/SOCancelDeleteModal';
 import type { SalesOrder } from '../../types';
 
 interface GroupedTrip {
+  tripId?: number;
+  tripCode?: string;
   dateDisplay: string;
   cust: string;
   custCount: number;
@@ -34,6 +37,11 @@ export function SaleTripManager({
   onLoadData: () => void;
 }) {
   const [capacityMap, setCapacityMap] = useState<Record<string, number>>({});
+  const [deleteTripModal, setDeleteTripModal] = useState<{
+    isOpen: boolean;
+    trip: GroupedTrip | null;
+    mode: 'CANCEL' | 'DELETE';
+  }>({ isOpen: false, trip: null, mode: 'DELETE' });
   const { exportData } = useExport();
 
   const handleSetCapacity = (truckPlate: string, currentTotal: number) => {
@@ -120,22 +128,19 @@ export function SaleTripManager({
                   </div>
                   <button
                     disabled={isQuoteLocked}
-                    onClick={async () => {
+                    onClick={() => {
                       if (isQuoteLocked) return;
-                      if (await appConfirm(`ยืนยันลบ Sale Trip นี้ (รวม ${g.orders.length} บิล)?`)) {
-                        try {
-                          for (const o of g.orders) {
-                            if (['DRAFT', 'CANCELLED'].includes(o.status)) {
-                              await deleteSO(o.id!);
-                            } else {
-                              await cancelSO(o.id!, 'ลบทั้งทริป');
-                            }
-                          }
-                          onLoadData();
-                        } catch (e: any) {
-                          alert('เกิดข้อผิดพลาดในการลบทริป: ' + (e?.message || ''));
-                        }
+                      const invalidOrder = g.orders.find(o => ['SHIPPED', 'IMPORTED'].includes(o.status));
+                      if (invalidOrder) {
+                        alert(`ไม่สามารถลบทริปนี้ได้ เนื่องจากบิล ${invalidOrder.wfRef || invalidOrder.id} อยู่ในสถานะ ${invalidOrder.status} ซึ่งไม่สามารถยกเลิก/ลบได้`);
+                        return;
                       }
+                      const allDraftOrCancelled = g.orders.every(o => ['DRAFT', 'CANCELLED'].includes(o.status));
+                      setDeleteTripModal({
+                        isOpen: true,
+                        trip: g,
+                        mode: allDraftOrCancelled ? 'DELETE' : 'CANCEL',
+                      });
                     }}
                     className="text-gray-400 hover:text-red-500 transition-colors shrink-0 disabled:opacity-30 p-1 rounded-md hover:bg-red-50"
                     title={isQuoteLocked ? 'ต้องยกเลิกใบเสนอราคาก่อน' : 'ลบ Sale Trip นี้'}
@@ -152,7 +157,7 @@ export function SaleTripManager({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="font-bold text-sm text-gray-900 truncate flex items-center gap-2">
-                    {g.truck}
+                    {g.tripCode ? `[${g.tripCode}] ` : ''}{g.truck}
                     {g.truck !== 'ตั๋วคุม' && (
                       <button onClick={() => handleSetCapacity(g.truck, g.totalTon)} className="text-gray-400 hover:text-[#0C447C]" title="ตั้งค่าน้ำหนักบรรทุกสูงสุด">
                         <Settings size={12} />
@@ -252,6 +257,32 @@ export function SaleTripManager({
         );
       })}
       </div>
+
+      <SOCancelDeleteModal
+        isOpen={deleteTripModal.isOpen}
+        mode={deleteTripModal.mode}
+        targetTitle={`Sale Trip ${deleteTripModal.trip?.truck || ''} (${deleteTripModal.trip?.orders.length || 0} บิล)`}
+        itemCount={deleteTripModal.trip?.orders.length || 1}
+        onClose={() => setDeleteTripModal({ isOpen: false, trip: null, mode: 'DELETE' })}
+        onConfirm={async (reasonCode, reasonText) => {
+          const trip = deleteTripModal.trip;
+          if (!trip || !trip.orders.length) return;
+
+          const soIds = trip.orders.map(o => o.id!).filter(Boolean);
+          try {
+            await bulkCancelDeleteSO({
+              soIds,
+              action: deleteTripModal.mode,
+              reasonCode,
+              reasonText,
+            });
+            onLoadData();
+          } catch (err: any) {
+            onLoadData();
+            throw new Error(`การยกเลิก/ลบทริปไม่สำเร็จ: ${err?.message || 'ข้อผิดพลาดของระบบ'}`);
+          }
+        }}
+      />
     </div>
   );
 }

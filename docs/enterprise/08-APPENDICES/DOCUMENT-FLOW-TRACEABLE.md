@@ -2,11 +2,14 @@
 documentId: "WF-REF-002"
 title: "Document Flow ที่สืบย้อนได้ — ทุกขั้นตอน ทุกจุดเชื่อม (v1.9.0)"
 version: "v1.1"
-status: Draft
+status: Archived
 statusDetail: "จัดทำ 2 กันยายน 2569 · ปรับ §9 ทั้งหมด 3 กันยายน 2569 หลังได้พจนานุกรม WGxx จากเจ้าของระบบ · ทุกจุดเชื่อมรันจริงบนฐาน Azure"
 owner: "Solution Architect"
-normative: true
+normative: false
 ---
+
+> สถานะ: เอกสารย้อนหลัง/รอทบทวนรายหัวข้อ ณ 2026-09-06 — ไม่ใช่ข้อกำหนดปัจจุบัน โปรดเริ่มที่ [เอกสารกลาง](../../README.md). เนื้อหาเดิมคงไว้เพื่อสืบย้อน; คำอ้าง Released/SSOT ภายในเป็นสถานะเดิม.
+
 
 # Document Flow ที่สืบย้อนได้ — ทุกขั้นตอน ทุกจุดเชื่อม
 

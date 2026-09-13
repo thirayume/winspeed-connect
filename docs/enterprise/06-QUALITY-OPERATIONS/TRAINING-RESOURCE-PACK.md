@@ -2,16 +2,19 @@
 documentId: "WF-TRN-101"
 title: "WS-Sale-App Training Resource Pack"
 version: "v1.0"
-status: Approved
+status: Archived
 statusDetail: "Facilitator and learner resource candidate aligned to runtime 1.2.2; reviewed and accepted 2026-07-25"
 owner: "Training Lead / Process Owners / QA Lead"
-normative: true
+normative: false
 sourceRefs:
   - docs/enterprise/06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md
   - docs/enterprise/06-QUALITY-OPERATIONS/ROLE-BASED-QUICK-GUIDES.md
   - docs/enterprise/06-QUALITY-OPERATIONS/UAT-FULL-LOOP-RUN-PLAN.md
   - docs/enterprise/pipeline/docgen/uat-cases.json
 ---
+
+> สถานะ: เอกสารย้อนหลัง/รอทบทวนรายหัวข้อ ณ 2026-09-06 — ไม่ใช่ข้อกำหนดปัจจุบัน โปรดเริ่มที่ [เอกสารกลาง](../../README.md). เนื้อหาเดิมคงไว้เพื่อสืบย้อน; คำอ้าง Released/SSOT ภายในเป็นสถานะเดิม.
+
 # WS-Sale-App Training Resource Pack
 
 > 🖼️ **ภาพหน้าจอในเอกสารนี้ไม่ได้เก็บใน git** — สร้างบนเครื่องตัวเองด้วย `node docs/enterprise/pipeline/capture-screenshots.js` (เปิดแอปไว้ก่อน) เพราะภาพสร้างจากฐานข้อมูลจริงจึงมีชื่อลูกค้าและทะเบียนรถของจริง
@@ -95,15 +98,15 @@ sourceRefs:
 
 **Ask:** หลักฐานใดพิสูจน์ว่าระบบบล็อกก่อนผ่าน control และใครเป็น real actor เมื่อใช้ Access As
 
-### Module C — TruckScale health and matching
+### Module C — Live Weighing Status & Scale Monitoring
 
-![หน้า TruckScale](../05-UI-SCREENSHOTS/generated/counter-sales--truckscale.png)
+![หน้าสถานะการชั่งรถ](../05-UI-SCREENSHOTS/generated/weighbridge--scale-reports.png)
 
-**Prompt:** ตรวจ health ก่อนค้นทะเบียน เปรียบเทียบ ticket และเลือกว่าจะ proceed หรือ stop
+**Prompt:** ตรวจสถานะการชั่งรถสดจาก WINSpeed (`dbo.WGHD`/`WGDT`) ค้นทะเบียนรถ ตรวจสอบสถานะ 1→2→3 และตรวจการเชื่อมโยงกับ SO
 
-**Observe:** banner, timestamp, plate/movebill, uniqueness, weight units, fallback decision
+**Observe:** live table, timestamp, plate, WGType (SO/PO), weight in/out/net, status transition (1: รอชั่ง, 2: กำลังโหลด, 3: ชั่งออกแล้ว)
 
-**Inject:** dependency down หรือมี ticket สองรายการคล้ายกัน ผู้เรียนต้องไม่เดา
+**Inject:** กรณีน้ำหนักผิดปกติ หรือรถมีสถานะ Hold ในแอป ผู้เรียนต้องรู้ว่าการ Hold ในแอปไม่ได้หยุดเครื่องชั่งอัตโนมัติ ต้องประสานงานเจ้าหน้าที่ลานชั่งจริงเสมอ
 
 ### Module D — WAREHOUSE picks, loads and ships
 

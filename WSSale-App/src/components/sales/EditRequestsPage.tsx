@@ -20,7 +20,8 @@ import {
 } from 'lucide-react';
 import {
   fetchEditRequests, approveEditRequest, rejectEditRequest, cancelEditRequest,
-  type EditRequestRow,
+  fetchPriceApprovals, approvePriceApproval, rejectPriceApproval,
+  type EditRequestRow, type PriceApprovalRow,
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import {
@@ -207,8 +208,167 @@ function RequestCard({ r, onDone, cap }: { r: EditRequestRow; onDone: () => void
   );
 }
 
+function PriceApprovalCard({ pa, onDone }: { pa: PriceApprovalRow; onDone: () => void }) {
+  const user = useAuthStore(s => s.user);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const [mode, setMode] = useState<null | 'approve' | 'reject'>(null);
+
+  const canApprove = APPROVER_ROLES.includes(String(user?.role || ''))
+    && (user?.role === 'ADMIN' || user?.role === 'C_LEVEL' || Number(pa.requestedBy) !== Number(user?.id));
+  const pending = pa.status === 'PENDING';
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true); setErr(null);
+    try { await fn(); onDone(); }
+    catch (e: any) { setErr(e?.message || 'ทำรายการไม่สำเร็จ'); }
+    setBusy(false);
+  };
+
+  return (
+    <div className={`rounded-lg border bg-white p-3 shadow-sm ${pending ? 'border-amber-300' : 'border-gray-200'}`}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <span className="font-mono text-xs text-gray-400">#{pa.id}</span>
+        <span className="font-bold text-sm text-[#0C447C]">{pa.wfRef || pa.soDocuNo || `SO #${pa.soId}`}</span>
+        {pa.custName && <span className="text-xs text-gray-700 font-medium">ลูกค้า: {pa.custName}</span>}
+        <span className={`rounded border px-2 py-0.5 text-[11px] font-bold ${STATUS_STYLE[pa.status] || ''}`}>
+          {STATUS_LABEL[pa.status] || pa.status}
+        </span>
+      </div>
+
+      <div className="mt-2.5 rounded-lg bg-gray-50 p-2.5 border border-gray-100 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+        <div>
+          <span className="text-gray-500 block text-[10px]">สินค้า:</span>
+          <span className="font-bold text-gray-800">{pa.goodCode}</span>
+          <span className="text-gray-500 text-[10px] block truncate">{pa.goodName}</span>
+        </div>
+        <div>
+          <span className="text-gray-500 block text-[10px]">จำนวน:</span>
+          <span className="font-bold text-gray-800">{Number(pa.qtyTon).toLocaleString('th-TH', { maximumFractionDigits: 3 })} ตัน</span>
+        </div>
+        <div>
+          <span className="text-gray-500 block text-[10px]">ราคาเสนอ / ราคาประกาศ:</span>
+          <span className="font-bold text-red-600">฿{Number(pa.requestedPrice).toLocaleString()}</span>
+          <span className="text-gray-400 text-[10px]"> / ฿{Number(pa.announcedPrice).toLocaleString()}</span>
+        </div>
+        <div>
+          <span className="text-gray-500 block text-[10px]">ส่วนต่างรวม:</span>
+          <span className="font-bold text-amber-700">฿{Number(pa.totalDeviationAmt).toLocaleString()}</span>
+          <span className="text-gray-500 text-[10px] block">(-฿{Number(pa.priceDeviationPerTon).toLocaleString()}/ตัน)</span>
+        </div>
+      </div>
+
+      {pa.reasonText && (
+        <div className="mt-2 text-xs text-gray-600 bg-amber-50/60 p-2 rounded border border-amber-100">
+          <span className="font-semibold text-amber-800">เหตุผล/รายละเอียด:</span> {pa.reasonText}
+        </div>
+      )}
+
+      <div className="mt-2 flex flex-wrap items-center justify-between text-[11px] text-gray-400">
+        <span>ขอโดย <strong className="text-gray-600">{pa.requestedByName || `User #${pa.requestedBy}`}</strong> · {thTime(pa.createdAt)}</span>
+        {pa.approvedAt && (
+          <span>
+            {pa.status === 'APPROVED' ? 'อนุมัติ' : 'ปฏิเสธ'}โดย <strong className="text-gray-600">{pa.approvedByName || `User #${pa.approvedBy}`}</strong> · {thTime(pa.approvedAt)}
+            {pa.approvalNote && <span className="ml-1 text-gray-500">({pa.approvalNote})</span>}
+          </span>
+        )}
+      </div>
+
+      {err && (
+        <div className="mt-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">{err}</div>
+      )}
+
+      {pending && canApprove && (
+        <div className="mt-2 border-t border-gray-100 pt-2">
+          {mode === null && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setMode('approve')}
+                className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+              >
+                <Check size={12} /> อนุมัติราคา
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('reject')}
+                className="flex items-center gap-1 rounded border border-red-300 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-100"
+              >
+                <X size={12} /> ปฏิเสธ
+              </button>
+            </div>
+          )}
+
+          {mode === 'approve' && (
+            <div className="space-y-1.5 rounded border border-emerald-200 bg-emerald-50/50 p-2 text-xs">
+              <div className="font-semibold text-emerald-900">ยืนยันอนุมัติราคาขายต่ำกว่าประกาศ</div>
+              <input
+                type="text"
+                placeholder="หมายเหตุการอนุมัติ (ไม่บังคับ)"
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs outline-none"
+              />
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => run(() => approvePriceApproval(pa.id, note))}
+                  className="rounded bg-emerald-600 px-2.5 py-1 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {busy ? 'กำลังบันทึก...' : 'ยืนยันอนุมัติ'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMode(null); setNote(''); }}
+                  className="rounded border border-gray-300 bg-white px-2.5 py-1 text-gray-700 hover:bg-gray-50"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          )}
+
+          {mode === 'reject' && (
+            <div className="space-y-1.5 rounded border border-red-200 bg-red-50/50 p-2 text-xs">
+              <div className="font-semibold text-red-900">ปฏิเสธราคาขาย (ต้องระบุเหตุผลอย่างน้อย 5 ตัวอักษร)</div>
+              <input
+                type="text"
+                placeholder="ระบุเหตุผลที่ปฏิเสธ..."
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs outline-none"
+              />
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  disabled={busy || note.trim().length < 5}
+                  onClick={() => run(() => rejectPriceApproval(pa.id, note))}
+                  className="rounded bg-red-600 px-2.5 py-1 font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {busy ? 'กำลังบันทึก...' : 'ยืนยันปฏิเสธ'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMode(null); setNote(''); }}
+                  className="rounded border border-gray-300 bg-white px-2.5 py-1 text-gray-700 hover:bg-gray-50"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function EditRequestsPage() {
+  const [activeTab, setActiveTab] = useState<'stage' | 'price'>('stage');
   const [rows, setRows] = useState<EditRequestRow[]>([]);
+  const [priceRows, setPriceRows] = useState<PriceApprovalRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('PENDING');
@@ -218,11 +378,18 @@ export function EditRequestsPage() {
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      const r = await fetchEditRequests({
-        status: statusFilter || undefined,
-        mine: onlyMine || undefined,
-      });
+      const [r, p] = await Promise.all([
+        fetchEditRequests({
+          status: statusFilter || undefined,
+          mine: onlyMine || undefined,
+        }),
+        fetchPriceApprovals({
+          status: statusFilter || undefined,
+          mine: onlyMine || undefined,
+        }),
+      ]);
       setRows(r.data || []);
+      setPriceRows(p.data || []);
     } catch (e: any) {
       setErr(e?.message || 'โหลดคำขอไม่สำเร็จ');
     }
@@ -241,16 +408,38 @@ export function EditRequestsPage() {
 
   const heldCount = rows.filter(r => r.status === 'PENDING' && r.holdTruck).length;
   const pendingCount = rows.filter(r => r.status === 'PENDING').length;
+  const pricePendingCount = priceRows.filter(r => r.status === 'PENDING').length;
 
   return (
     <div className="space-y-3 p-4">
+      {/* Tab Switcher */}
+      <div className="flex border-b border-gray-200 gap-6">
+        <button
+          type="button"
+          onClick={() => setActiveTab('stage')}
+          className={`pb-2 text-sm font-bold flex items-center gap-1.5 border-b-2 transition-all ${activeTab === 'stage' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          <PauseOctagon size={16} /> ขอแก้ไขขั้นตอน / Hold รถ
+          {pendingCount > 0 && <span className="bg-amber-100 text-amber-800 text-[11px] px-2 py-0.5 rounded-full font-bold">{pendingCount}</span>}
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('price')}
+          className={`pb-2 text-sm font-bold flex items-center gap-1.5 border-b-2 transition-all ${activeTab === 'price' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          <ClipboardCheck size={16} /> ขออนุมัติราคาต่ำกว่าประกาศ
+          {pricePendingCount > 0 && <span className="bg-amber-100 text-amber-800 text-[11px] px-2 py-0.5 rounded-full font-bold">{pricePendingCount}</span>}
+        </button>
+      </div>
+
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="flex items-center gap-2 text-lg font-semibold" style={{ color: NAVY }}>
-          <ClipboardCheck size={19} /> คำขอแก้ไขหลังยืนยัน
+          {activeTab === 'stage' ? <PauseOctagon size={19} /> : <ClipboardCheck size={19} />}
+          {activeTab === 'stage' ? 'คำขอแก้ไขหลังยืนยัน / Hold รถ' : 'คำขออนุมัติราคาขายต่ำกว่าราคาประกาศ'}
         </h2>
         <span className="text-xs text-gray-500">
-          รออนุมัติ {pendingCount} รายการ
-          {heldCount > 0 && (
+          รออนุมัติ {activeTab === 'stage' ? pendingCount : pricePendingCount} รายการ
+          {activeTab === 'stage' && heldCount > 0 && (
             <span className="ml-2 inline-flex items-center gap-1 font-semibold text-red-600">
               <PauseOctagon size={12} /> มีรถถูก Hold {heldCount} คัน
             </span>
@@ -272,7 +461,7 @@ export function EditRequestsPage() {
               <option value="PENDING">รออนุมัติ</option>
               <option value="APPROVED">อนุมัติแล้ว</option>
               <option value="REJECTED">ปฏิเสธ</option>
-              <option value="CANCELLED">ถอนแล้ว</option>
+              {activeTab === 'stage' && <option value="CANCELLED">ถอนแล้ว</option>}
               <option value="">ทั้งหมด</option>
             </select>
           </div>
@@ -291,18 +480,37 @@ export function EditRequestsPage() {
         </div>
       )}
 
-      {!loading && sorted.length === 0 && !err && (
-        <div className="rounded border border-dashed border-gray-300 bg-white px-4 py-10 text-center">
-          <ClipboardCheck size={26} className="mx-auto mb-2 text-gray-300" />
-          <p className="text-sm text-gray-500">ไม่มีคำขอที่ตรงกับเงื่อนไข</p>
-        </div>
+      {activeTab === 'stage' && (
+        <>
+          {!loading && sorted.length === 0 && !err && (
+            <div className="rounded border border-dashed border-gray-300 bg-white px-4 py-10 text-center">
+              <ClipboardCheck size={26} className="mx-auto mb-2 text-gray-300" />
+              <p className="text-sm text-gray-500">ไม่มีคำขอที่ตรงกับเงื่อนไข</p>
+            </div>
+          )}
+
+          <HoldCapabilityBanner cap={cap} />
+
+          <div className="space-y-2">
+            {sorted.map(r => <RequestCard key={String(r.id)} r={r} onDone={load} cap={cap} />)}
+          </div>
+        </>
       )}
 
-      <HoldCapabilityBanner cap={cap} />
+      {activeTab === 'price' && (
+        <>
+          {!loading && priceRows.length === 0 && !err && (
+            <div className="rounded border border-dashed border-gray-300 bg-white px-4 py-10 text-center">
+              <ClipboardCheck size={26} className="mx-auto mb-2 text-gray-300" />
+              <p className="text-sm text-gray-500">ไม่มีคำขออนุมัติราคาที่ตรงกับเงื่อนไข</p>
+            </div>
+          )}
 
-      <div className="space-y-2">
-        {sorted.map(r => <RequestCard key={String(r.id)} r={r} onDone={load} cap={cap} />)}
-      </div>
+          <div className="space-y-2">
+            {priceRows.map(pa => <PriceApprovalCard key={String(pa.id)} pa={pa} onDone={load} />)}
+          </div>
+        </>
+      )}
     </div>
   );
 }

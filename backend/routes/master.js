@@ -430,6 +430,7 @@ router.get('/prices', async (req, res) => {
                ROW_NUMBER() OVER (
                  PARTITION BY dt.ListID
                  ORDER BY CASE WHEN hd.CustID = @custId THEN 0 ELSE 1 END,
+                          CASE WHEN hd.BeginDate <= CAST(GETDATE() AS DATE) AND (hd.EndDate IS NULL OR hd.EndDate >= CAST(GETDATE() AS DATE)) THEN 0 ELSE 1 END,
                           hd.BeginDate DESC, dt.startgoodqty ASC
                ) AS rn
         FROM dbo.EMSetPriceHD hd WITH (NOLOCK)
@@ -651,6 +652,11 @@ router.get('/control-tickets', async (req, res) => {
       SELECT * FROM (
         SELECT 
           t.*,
+          ov.ExpiryDate,
+          ov.ExpiryType,
+          ov.StrictOverrideFlag,
+          ov.ReasonCode,
+          ov.ReasonText,
           ISNULL((
             SELECT SUM(d.GoodQty2)
             FROM dbo.SODT d WITH (NOLOCK)
@@ -685,12 +691,95 @@ router.get('/control-tickets', async (req, res) => {
             ), 0)
           ) AS DrawnQtyTon
         FROM AllTickets t
+        LEFT JOIN wf.ControlTicketOverlay ov ON ov.DocuNo = t.DocuNo OR ov.DocuNo = t.AppvDocuNo
       ) final
       ${condition}
       ORDER BY DocuDate DESC
     `, inputs);
-    res.json(rows);
+
+    const { resolveTicketPolicy, evaluateTicketExpiry } = require('../services/ticket-policy');
+    const policy = await resolveTicketPolicy();
+
+    const enrichedRows = (rows || []).map(r => {
+      const expiryEval = evaluateTicketExpiry(
+        r.ExpiryDate,
+        null,
+        policy.alertDays,
+        policy.strictMode
+      );
+      return {
+        ...r,
+        expiry: expiryEval,
+        expiryStatus: expiryEval.status,
+        expiryDate: expiryEval.expiryDate,
+        daysRemaining: expiryEval.daysRemaining,
+        strictMode: policy.strictMode,
+        strictOverride: Boolean(r.StrictOverrideFlag),
+        isBlocked: expiryEval.blocked,
+        warning: expiryEval.warning || null,
+        error: expiryEval.error || null,
+        customerCandidate: {
+          candidateCustId: r.CustID,
+          candidateCustName: r.CustName,
+          isPrefixCandidateOnly: true,
+          note: 'Prefix ลูกค้าเป็น candidate เท่านั้น ไม่ใช่สิทธิ์เบิกข้ามลูกค้าอัตโนมัติ',
+        },
+      };
+    });
+
+    res.json(enrichedRows);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// ── GET /api/master/control-tickets/alerts — รายการแจ้งเตือนตั๋วคุมใกล้หมดอายุ / หมดอายุ (SO-04) ──
+router.get('/control-tickets/alerts', async (req, res) => {
+  try {
+    const { listTicketAlerts } = require('../services/ticket-policy');
+    const alerts = await listTicketAlerts();
+    res.json(alerts);
+  } catch (e) {
+    console.error('[master/control-tickets/alerts]', e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// ── GET /api/master/control-tickets/:docuNo/trace — สืบย้อนเส้นทาง native chain (SO-04) ──
+router.get('/control-tickets/:docuNo/trace', async (req, res) => {
+  try {
+    const { traceNativeTicketChain } = require('../services/ticket-policy');
+    const trace = await traceNativeTicketChain(req.params.docuNo);
+    if (!trace) {
+      return res.status(404).json({ message: `ไม่พบข้อมูลตั๋วคุม ${req.params.docuNo}` });
+    }
+    res.json(trace);
+  } catch (e) {
+    console.error('[master/control-tickets/trace]', e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// ── PATCH /api/master/control-tickets/:docuNo/expiry — บันทึก/แก้ไขวันหมดอายุและ Strict Override (SO-04) ──
+router.patch('/control-tickets/:docuNo/expiry', requireRole('SALES', 'ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
+  try {
+    const { updateTicketExpiryOverlay } = require('../services/ticket-policy');
+    const { expiryDate, strictOverride, reasonCode, reasonText } = req.body || {};
+
+    const result = await updateTicketExpiryOverlay({
+      docuNo: req.params.docuNo,
+      expiryDate,
+      strictOverride: Boolean(strictOverride),
+      reasonCode,
+      reasonText,
+      userId: req.user?.sub || req.user?.username || 'SYSTEM',
+      userRole: req.user?.role,
+      ipAddress: req.ip,
+    });
+
+    res.json(result);
+  } catch (e) {
+    console.error('[master/control-tickets/expiry]', e);
+    res.status(400).json({ message: e.message });
+  }
 });
 
 // GET /api/master/control-tickets/:docuNo — ดึงรายการสินค้าของตั๋วคุม
@@ -1119,36 +1208,76 @@ router.delete('/truck-types/:id', requireRole('ADMIN', 'MANAGER'), async (req, r
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/master/system-settings — อ่านตั้งค่าระบบ (เช่น min/max error % ของเครื่องชั่ง)
+// GET /api/master/system-settings — อ่านตั้งค่าระบบครบทุกนโยบาย พร้อมข้อมูล Version และคำอธิบาย
 router.get('/system-settings', async (req, res) => {
   try {
-    const { getWeightSettings } = require('../services/weight-reconciliation');
-    const settings = await getWeightSettings();
-    const rows = (await wfQuery(`SELECT SettingKey, SettingValue, Description, UpdatedAt FROM wf.SystemSetting`)).recordset || [];
-    res.json({ settings, rows });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+    const { getPolicySettings } = require('../services/policy-contract');
+    const result = await getPolicySettings();
+    res.json({
+      ok: true,
+      settings: result.settings,
+      raw: result.raw,
+      rows: result.rows,
+      versions: result.versions,
+      snapshots: result.snapshots,
+      currentRevision: result.currentRevision,
+      definitions: result.definitions,
+    });
+  } catch (e) {
+    console.error('[master/system-settings:get]', e);
+    res.status(500).json({ message: e.message });
+  }
 });
 
-// PATCH /api/master/system-settings — ปรับเปลี่ยนค่าตั้งค่าระบบ (ADMIN)
-router.patch('/system-settings', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+// PATCH /api/master/system-settings — ปรับเปลี่ยนค่าตั้งค่าระบบ (ADMIN Only + Whitelist + Versioned + Audit)
+router.patch('/system-settings', requireRole('ADMIN'), async (req, res) => {
   try {
-    const updates = req.body || {};
-    for (const [key, val] of Object.entries(updates)) {
-      if (val !== undefined && val !== null) {
-        await wfQuery(`
-          MERGE wf.SystemSetting AS t USING (SELECT @k AS SettingKey) AS s ON t.SettingKey = s.SettingKey
-          WHEN MATCHED THEN UPDATE SET SettingValue = @v, UpdatedAt = GETUTCDATE()
-          WHEN NOT MATCHED THEN INSERT (SettingKey, SettingValue) VALUES (@k, @v);
-        `, {
-          k: { type: sql.NVarChar(50), value: String(key) },
-          v: { type: sql.NVarChar(200), value: String(val) },
-        });
+    const { getPolicySettings, updatePolicySettings } = require('../services/policy-contract');
+    const body = req.body || {};
+
+    // Support payload as { updates: { ... }, reasonCode, reasonText } or flat { ...updates, reasonCode, reasonText }
+    let updates = {};
+    let reasonCode = body.reasonCode || body.reason || null;
+    let reasonText = body.reasonText || body.note || null;
+    let expectedRevision = body.expectedRevision;
+    let effectiveFrom = body.effectiveFrom || null;
+
+    if (body.updates && typeof body.updates === 'object') {
+      updates = { ...body.updates };
+    } else {
+      for (const [k, v] of Object.entries(body)) {
+        if (!['reasonCode', 'reasonText', 'reason', 'note', 'expectedRevision', 'effectiveFrom'].includes(k)) {
+          updates[k] = v;
+        }
       }
     }
-    const { getWeightSettings } = require('../services/weight-reconciliation');
-    const settings = await getWeightSettings();
-    res.json({ ok: true, settings });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+
+    const userId = req.user?.sub || req.user?.username || req.user?.id || 'ADMIN';
+    const auditRes = await updatePolicySettings({
+      updates,
+      userId,
+      reasonCode,
+      reasonText,
+      expectedRevision,
+      effectiveFrom,
+      ipAddress: req.ip,
+    });
+
+    const refreshed = await getPolicySettings();
+    res.json({
+      ok: true,
+      ...auditRes,
+      settings: refreshed.settings,
+      raw: refreshed.raw,
+      versions: refreshed.versions,
+      snapshots: refreshed.snapshots,
+      currentRevision: refreshed.currentRevision,
+    });
+  } catch (e) {
+    console.error('[master/system-settings:patch]', e);
+    const status = e.status || 500;
+    res.status(status).json({ message: e.message || 'เกิดข้อผิดพลาดในการบันทึกการตั้งค่า' });
+  }
 });
 
 module.exports = router;

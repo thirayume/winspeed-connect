@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="${WORLD_FERT_APP_ROOT:-$(realpath "$SCRIPT_DIR/../../..")}"
 STATE_DIR="/var/lib/worldfert-pilot"
 LOG_DIR="/var/log/worldfert-pilot"
-METRICS_FILE="$LOG_DIR/metrics.csv"
+METRICS_FILE="$LOG_DIR/metrics-sqlserver.csv"
 CRON_FILE="/etc/cron.d/worldfert-pilot-monitor"
 
 require_root() {
@@ -54,7 +54,7 @@ collect_metrics() {
   }
 
   local now end_epoch timestamp load1 mem_available_mb swap_used_mb disk_used_pct
-  local containers_running backend_health mssql_health mysql_health api_fields api_ok api_sql api_mysql
+  local containers_running backend_health mssql_health api_fields api_ok api_sql
   now="$(date +%s)"
   end_epoch="$(<"$STATE_DIR/end_epoch")"
   if (( now > end_epoch )); then
@@ -74,17 +74,16 @@ collect_metrics() {
   backend_health="$(container_health wf-backend)"
   mssql_health="$(container_health wf-mssql)"
   # wf-mysql removed 2026-09-04 - nothing to watch
-  mysql_health="n/a"
-  api_fields="$(docker exec wf-backend node -e 'fetch("http://127.0.0.1:3000/api/health").then(r=>r.json()).then(j=>process.stdout.write([j.ok===true,j.db?.sqlserver||"down",j.db?.mysql||"down"].join("|"))).catch(()=>process.stdout.write("false|down|down"))' 2>/dev/null || printf 'false|down|down')"
-  IFS='|' read -r api_ok api_sql api_mysql <<< "$api_fields"
+  api_fields="$(docker exec wf-backend node -e 'fetch("http://127.0.0.1:3000/api/health").then(r=>r.json()).then(j=>process.stdout.write([j.ok===true,j.db?.sqlserver||"down"].join("|"))).catch(()=>process.stdout.write("false|down"))' 2>/dev/null || printf 'false|down')"
+  IFS='|' read -r api_ok api_sql <<< "$api_fields"
 
   if [[ ! -s "$METRICS_FILE" ]]; then
-    echo 'timestamp,epoch,load1,mem_available_mb,swap_used_mb,disk_used_pct,containers_running,backend_health,mssql_health,mysql_health,api_ok,api_sqlserver,api_mysql' > "$METRICS_FILE"
+    echo 'timestamp,epoch,load1,mem_available_mb,swap_used_mb,disk_used_pct,containers_running,backend_health,mssql_health,api_ok,api_sqlserver' > "$METRICS_FILE"
   fi
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$timestamp" "$now" "$load1" "$mem_available_mb" "$swap_used_mb" "$disk_used_pct" \
-    "$containers_running" "$backend_health" "$mssql_health" "$mysql_health" \
-    "$api_ok" "$api_sql" "$api_mysql" >> "$METRICS_FILE"
+    "$containers_running" "$backend_health" "$mssql_health" \
+    "$api_ok" "$api_sql" >> "$METRICS_FILE"
 }
 
 report_metrics() {
@@ -111,8 +110,7 @@ report_metrics() {
       if ($3 > max_load) max_load=$3;
       if ($8 != "healthy") backend_fail++;
       if ($9 != "healthy") mssql_fail++;
-      if ($10 != "healthy") mysql_fail++;
-      if ($11 != "true" || $12 != "up" || $13 != "up") api_fail++;
+      if ($10 != "true" || $11 != "up") api_fail++;
     }
     END {
       printf "Samples: %d\n", samples;
@@ -121,7 +119,6 @@ report_metrics() {
       printf "Maximum root disk usage: %d%%\n", max_disk;
       printf "Backend unhealthy samples: %d\n", backend_fail+0;
       printf "MSSQL unhealthy samples: %d\n", mssql_fail+0;
-      printf "MySQL unhealthy samples: %d\n", mysql_fail+0;
       printf "API/DB failed samples: %d\n", api_fail+0;
     }
   ' "$METRICS_FILE"

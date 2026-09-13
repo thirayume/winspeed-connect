@@ -1,11 +1,10 @@
 import { create } from 'zustand';
 
 export type TripContext = {
-  custId: string;
-  custName: string;
-  truckPlate: string;
+  tripId?: number;
+  tripCode?: string;
+  truckPlate?: string;
   deliveryDate: string;
-  creditDays?: number;
   isControlTicket?: boolean;
   pSling?: boolean;
   loadInOrder?: boolean;

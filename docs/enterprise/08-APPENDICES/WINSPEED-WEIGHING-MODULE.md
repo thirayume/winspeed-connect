@@ -2,10 +2,13 @@
 documentId: "WF-RPT-004"
 title: "โมดูลชั่งของ WINSpeed (WGHD/WGDT) — ใช้แทน TruckScale ได้ไหม"
 version: "v1.0"
-status: Draft
+status: Archived
 owner: "Integration"
 normative: false
 ---
+
+> สถานะ: เอกสารย้อนหลัง/รอทบทวนรายหัวข้อ ณ 2026-09-06 — ไม่ใช่ข้อกำหนดปัจจุบัน โปรดเริ่มที่ [เอกสารกลาง](../../README.md). เนื้อหาเดิมคงไว้เพื่อสืบย้อน; คำอ้าง Released/SSOT ภายในเป็นสถานะเดิม.
+
 
 # โมดูลชั่งของ WINSpeed — `WGHD` / `WGDT` / `WGDTReport`
 
@@ -120,7 +123,7 @@ normative: false
 ## ข้อเสนอ
 
 **ระยะสั้น — ไม่เปลี่ยนแหล่งข้อมูล** เดินหน้าย้าย TruckScale ไป Hostinger ตาม
-[CUTOVER-to-hostinger](../../../deploy/truckscale-replica/CUTOVER-to-hostinger.md)
+CUTOVER-to-hostinger (historical reference; retired file removed)
 เพราะ `WGHD` ยังไม่ได้ต่อกับสาย SO และน้ำหนักยังไม่ไหล จึงยังพึ่งไม่ได้
 ส่วนการย้ายฐานถอยกลับได้ ทำไปก่อนไม่เสียของ
 

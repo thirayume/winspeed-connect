@@ -2,10 +2,13 @@
 documentId: "WF-REL-001"
 title: "Changelog"
 version: "v1.0"
-status: Released
+status: Archived
 owner: "Release Manager"
-normative: true
+normative: false
 ---
+
+> สถานะ: เอกสารย้อนหลัง/รอทบทวนรายหัวข้อ ณ 2026-09-06 — ไม่ใช่ข้อกำหนดปัจจุบัน โปรดเริ่มที่ [เอกสารกลาง](../../README.md). เนื้อหาเดิมคงไว้เพื่อสืบย้อน; คำอ้าง Released/SSOT ภายในเป็นสถานะเดิม.
+
 # Changelog
 
 > **หมายเหตุ:** เวอร์ชันปัจจุบัน = **1.9.11** · รายการ `[v5.x]` ด้านล่างเป็น**ประวัติ build ภายในก่อน reset** (คงไว้เพื่อ traceability ตาม ISO — ไม่ลบ)
@@ -238,7 +241,7 @@ CSV ที่มี UTF-8 BOM และ Excel แบบ HTML ให้ภาษ�
 - `Harden-CloudMySQL.sql` จำกัดสิทธิ์บัญชีที่โปรแกรมฝังรหัสไว้ (รหัสอ่อนมาก เลี่ยงไม่ได้)
 - `push-agent/` ตัวผลักข้อมูลออกจากโรงงาน สำหรับกรณีที่ยังคงฐานไว้ที่โรงงาน
 
-ทั้งสองทางเลือกและข้อแลกเปลี่ยนอยู่ใน [PLAN-move-to-cloud.md](../../../deploy/truckscale-replica/PLAN-move-to-cloud.md)
+ทั้งสองทางเลือกและข้อแลกเปลี่ยนอยู่ใน PLAN-move-to-cloud.md (historical reference; retired file removed)
 
 ### Fixed
 

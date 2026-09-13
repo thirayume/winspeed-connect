@@ -1,31 +1,10 @@
 #!/usr/bin/env pwsh
-# ============================================================
-#  deploy.ps1  -  WinSpeed CI/CD Deploy Script
-#  ============================================================
-#  Usage:
-#    .\deploy.ps1                        -> patch bump + migrate (ทุกปลายทาง) + push
-#    .\deploy.ps1 -BumpType minor        -> minor bump
-#    .\deploy.ps1 -BumpType major        -> major bump
-#    .\deploy.ps1 -Targets remote_b      -> migrate เฉพาะ Coolify
-#    .\deploy.ps1 -Targets local,remote  -> migrate เฉพาะที่ระบุ
-#    .\deploy.ps1 -SkipMigration         -> skip DB migration step
-#    .\deploy.ps1 -SkipMigration -DryRun -> preview only, no changes
-#
-#  What it does:
-#    1. Bump version in package.json (root, backend, frontend)
-#    2. Run DB migrations to ALL targets (local + remote + remote_b) by default
-#         -> ระบบใกล้ production แล้ว schema ต้องไม่หลุดกันระหว่าง 3 สภาพแวดล้อม
-#         -> remote_b ต่อผ่าน SSH tunnel (สคริปต์เปิด/ปิดให้อัตโนมัติ)
-#         -> ปลายทางที่ยังไม่ตั้งค่าใน .env จะถูก "ข้าม" ไม่ทำให้ deploy ล้ม
-#    3. Commit + Push to GitHub
-#       -> Railway auto-deploys backend  (ระบบหลัก)
-#       -> Vercel  auto-deploys frontend (ระบบหลัก)
-#       -> Coolify auto-deploys ทั้งคู่   (ระบบสำรอง · ต้องตั้ง webhook ครั้งเดียว)
-# ============================================================
+# Local release helper: version bump, migrations, commit and push to Hostinger Actions.
+# On-prem deploy is manual; see docs/DEPLOYMENT.md.
 param(
   [ValidateSet("patch","minor","major")]
   [string] $BumpType     = "patch",
-  # local | remote | remote_b | all  (คั่นด้วย comma ได้)
+  # local | remote_b | all
   [string] $Targets      = "all",
   [switch] $SkipMigration,
   [switch] $DryRun
@@ -96,7 +75,7 @@ if (-not $DryRun) {
   Update-PackageJson $fePkg  $newVersion
 
   # Update CHANGELOG.md date stamp
-  $changelog = Join-Path $ROOT "docs\CHANGELOG.md"
+  $changelog = Join-Path $ROOT "docs\enterprise\08-APPENDICES\CHANGELOG-APP.md"
   if (Test-Path $changelog) {
     $date    = Get-Date -Format "yyyy-MM-dd"
     $content = Get-Content $changelog -Raw
@@ -155,16 +134,6 @@ if ($DryRun) {
 # -- Step 4: Summary ------------------------------------------
 Write-Step "Step 4/4 - Deployment triggered"
 Write-Host ""
-Write-Host "  [A] Railway -> backend  auto-deploy triggered on push" -ForegroundColor Blue
-Write-Host "  [A] Vercel  -> frontend auto-deploy triggered on push" -ForegroundColor Blue
-Write-Host "  [B] Coolify -> backend + frontend (needs GitHub webhook)" -ForegroundColor Blue
-Write-Host ""
-Write-Host "=============================================" -ForegroundColor Green
-Write-Host "   v$newVersion deploy pipeline complete!    " -ForegroundColor Green
-Write-Host "=============================================" -ForegroundColor Green
-Write-Host ""
-Write-Host "  Monitor deployments:" -ForegroundColor Gray
-Write-Host "  -> Railway : https://railway.com/dashboard" -ForegroundColor Gray
-Write-Host "  -> Vercel  : https://vercel.com/dashboard" -ForegroundColor Gray
-Write-Host "  -> Coolify : https://app.coolify.io" -ForegroundColor Gray
-Write-Host ""
+Write-Host "  Hostinger: GitHub Actions deploy-prod-b.yml after push to main" -ForegroundColor Blue
+Write-Host "  On-prem: deploy/onprem/up.ps1 or up.sh (manual)" -ForegroundColor Blue
+Write-Host "  Verify the workflow result and /api/health before declaring deployment complete."

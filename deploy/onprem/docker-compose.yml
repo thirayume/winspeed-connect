@@ -1,28 +1,4 @@
-# =============================================================
-# WS-Sale-App — On-Prem / Self-Hosted (แผน C)
-# =============================================================
-# ครบทุกอย่างในไฟล์เดียว: reverse proxy + TLS · SQL Server · MySQL · backend · frontend
-# ใช้ได้ทั้ง Docker Desktop บน Windows และ Ubuntu server
-#
-# เริ่มใช้งาน:
-#   1) คัดลอก .env.example -> .env แล้วแก้ค่า
-#   2) วางไฟล์ backup ที่โฟลเดอร์ ./backup/
-#   3) Windows: ดับเบิลคลิก up.bat     |     Linux: bash up.sh
-#      (หรือ docker compose up -d --build  แล้ว  bash bootstrap.sh)
-#
-# เข้าถึงจากภายนอกด้วย DDNS:
-#   - ตั้ง DDNS ให้ชี้มาที่ IP สาธารณะของเครื่องนี้
-#   - forward port 80 + 443 จาก router มาที่เครื่องนี้
-#   - ใส่ APP_DOMAIN/API_DOMAIN ใน .env แล้ว Caddy จะขอใบรับรอง Let's Encrypt ให้เอง
-#
-# ⚠ ต่างจาก compose ที่ root:
-#   - MSSQL_COLLATION=Thai_CI_AS (กัน collation conflict ตอน join คอลัมน์ไทย)
-#   - TZ=Asia/Bangkok ทุก container (ข้อมูลเป็น พ.ศ./เวลาไทย)
-#   - DB ผูกกับ 127.0.0.1 เท่านั้น ไม่เปิดสู่ LAN/อินเทอร์เน็ต
-#   - มี Caddy ทำ TLS ให้อัตโนมัติ
-#   - ./backup bind-mount เข้า container โดยตรง (วางไฟล์ผ่าน File Explorer ได้เลย)
-# =============================================================
-
+# On-prem Docker: Caddy, SQL Server, API and frontend. See docs/DEPLOYMENT.md.
 services:
 
   # ── Reverse proxy + TLS อัตโนมัติ ───────────────────────────
@@ -37,6 +13,7 @@ services:
       APP_DOMAIN: ${APP_DOMAIN:-localhost}
       API_DOMAIN: ${API_DOMAIN:-localhost:3000}
       TZ: ${TZ:-Asia/Bangkok}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data          # เก็บใบรับรอง — อย่าลบ ไม่งั้นต้องขอใหม่ (มี rate limit)
@@ -75,7 +52,6 @@ services:
           memory: ${MSSQL_MEM_LIMIT:-3G}
     networks: [wf-net]
 
-  # ── MySQL (TruckScale) ──────────────────────────────────────
   # ── Backend ─────────────────────────────────────────────────
   backend:
     build:
@@ -103,9 +79,6 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN}
       EXPORT_OUTPUT_PATH: /app/exports
       MIGRATE_SECRET: ${MIGRATE_SECRET}
-      TS_SYNC_INTERVAL_MS: ${TS_SYNC_INTERVAL_MS:-60000}
-      TS_INGEST_SECRET: ${TS_INGEST_SECRET}
-      APP_VERSION: ${APP_VERSION:-1.0.0}
       # LINE Login (ไม่ใส่ก็ใช้งานได้ ยกเว้นปุ่ม Login with LINE) — ดู ../LINE-LOGIN-GUIDE.md
       LINE_LOGIN_CHANNEL_ID: ${LINE_LOGIN_CHANNEL_ID:-}
       LINE_LOGIN_CHANNEL_SECRET: ${LINE_LOGIN_CHANNEL_SECRET:-}
@@ -143,10 +116,6 @@ services:
 
 volumes:
   mssql-data:
-  # MySQL service and its volume were removed 2026-09-05, matching PROD-B.
-  # Dropping the declaration does not delete data: an existing mysql-data
-  # volume simply stops being compose-managed and survives `down -v`.
-  # This stack never ran MySQL, so there was nothing to preserve.
   backend-exports:
   caddy-data:
   caddy-config:

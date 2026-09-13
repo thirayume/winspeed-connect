@@ -125,6 +125,12 @@ async function ensureLedger(pool) {
 }
 
 async function loadApplied(pool) {
+  const metadata = (await pool.request().query("SELECT OBJECT_ID('wf.SchemaMigration','U') AS LedgerId, HAS_PERMS_BY_NAME(DB_NAME(),'DATABASE','VIEW DEFINITION') AS CanInspect")).recordset?.[0];
+  if (!metadata) throw new Error('Cannot inspect migration ledger metadata');
+  if (metadata.LedgerId == null) {
+    if (Number(metadata.CanInspect) !== 1) throw new Error('Cannot prove migration ledger is absent: VIEW DEFINITION required');
+    return new Map();
+  }
   const result = await pool.request().query('SELECT FileName, Checksum, BatchCount, AppliedAt, AppliedBy FROM wf.SchemaMigration');
   return new Map((result.recordset || []).map(row => [row.FileName, {
     checksum: row.Checksum,
@@ -208,13 +214,36 @@ function assertNoDatabaseSwitch(fileName, batches, database) {
   }
 }
 
+function executionBatches(fileName, text, database, overrides = {}) {
+  const override = overrides[fileName];
+  let executable = text;
+  if (override) {
+    if (sha256(text) !== override.checksum) throw new Error('Database-context override checksum mismatch: ' + fileName);
+    executable = text.replace(/^[ \t]*USE\s+\[?([A-Za-z0-9_]+)\]?[ \t]*;?[ \t]*(?:--.*)?$/gim, (line, name) => {
+      if (name.toLowerCase() !== override.database.toLowerCase()) throw new Error('Unexpected database directive: ' + name);
+      return '-- Database context remains pinned by migration runner.';
+    });
+  }
+  const batches = splitBatches(executable);
+  assertNoDatabaseSwitch(fileName, batches, database);
+  return batches;
+}
+
 async function runFile(pool, fileName, batches) {
+  const overrides = loadPolicy().databaseContextOverrides || {};
+  if (overrides[fileName]) batches = executionBatches(fileName, fs.readFileSync(path.join(MIGRATIONS_DIR,fileName),'utf8'), targetDatabase, overrides);
+
   assertNoDatabaseSwitch(fileName, batches, targetDatabase);
+  // Local temporary tables require both one connection and SQL batches, not RPC query scope.
+  const session = batches.some(text => /\bCREATE\s+TABLE\s+#/i.test(text)) ? pool.transaction() : null;
+  if (session) await session.begin();
   let successCount = 0;
   let ignoredCount = 0;
+  try {
   for (let index = 0; index < batches.length; index += 1) {
     try {
-      await pool.request().query(batches[index]);
+      if (session) await session.request().batch(batches[index]);
+      else await pool.request().query(batches[index]);
       successCount += 1;
     } catch (error) {
       const code = sqlErrorCode(error);
@@ -226,6 +255,11 @@ async function runFile(pool, fileName, batches) {
       wrapped.cause = error;
       throw wrapped;
     }
+  }
+  if (session) await session.commit();
+  } catch (error) {
+    if (session) await session.rollback().catch(() => {});
+    throw error;
   }
   return { successCount, ignoredCount, batchCount: batches.length };
 }
@@ -334,4 +368,6 @@ module.exports = {
   buildPlan,
   parseArgs,
   runFile,
+  loadApplied,
+  executionBatches,
 };

@@ -1,9 +1,9 @@
 /**
  * recon.js — Reconciliation Workbench (FR-027)
- * กระทบยอด shipped SO ↔ WINSpeed invoice (dbo.SOInvHD) ↔ TruckScale weigh (MySQL)
+ * กระทบยอด shipped SO ↔ WINSpeed invoice (dbo.SOInvHD) ↔ WINSpeed weigh (dbo.WGHD)
  *   - case คำนวณสด · degrade ได้ถ้า TruckScale ล่ม
  *   - คนตัดสิน exception ผ่าน wf.ReconResolution (resolve/ignore + owner)
- * เขียนเฉพาะ wf (ReconResolution) · อ่าน dbo/MySQL
+ * เขียนเฉพาะ wf (ReconResolution) · อ่าน dbo
  */
 const router = require('express').Router();
 const { sql, wfQuery } = require('../db');

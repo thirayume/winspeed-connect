@@ -20,7 +20,7 @@
  *   และกันไม่ให้แอปเดินงานต่อ — การหยุดรถจริงยังเป็นขั้นตอนของคน
  */
 const router = require('express').Router();
-const { sql, wfQuery } = require('../db');
+const { sql, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { broadcast } = require('../services/socket');
 const truckHold = require('../services/truck-hold');
@@ -558,6 +558,163 @@ router.delete('/admin/reasons/:code', requireRole('ADMIN', 'C_LEVEL'), async (re
   } catch (e) {
     console.error('[edit-requests/admin/reasons:delete]', e);
     res.status(500).json({ message: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Price Approvals — คำขออนุมัติราคาขายต่ำกว่าราคาประกาศ (P0)
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/edit-requests/price-approvals
+router.get('/price-approvals', async (req, res) => {
+  try {
+    const { status, soId, custId, mine } = req.query;
+    const inputs = {};
+    let where = 'WHERE 1=1';
+    if (status) { where += ' AND pa.Status = @status'; inputs.status = { type: sql.VarChar(20), value: String(status).toUpperCase() }; }
+    if (soId) { where += ' AND pa.SoId = @soId'; inputs.soId = { type: sql.Int, value: Number(soId) }; }
+    if (custId) { where += ' AND pa.CustId = @custId'; inputs.custId = { type: sql.NVarChar(20), value: String(custId) }; }
+    if (String(mine) === '1') { where += ' AND pa.RequestedBy = @me'; inputs.me = { type: sql.Int, value: req.user.sub }; }
+
+    const r = await wfQuery(`
+      SELECT pa.*,
+             ru.DisplayName AS RequestedByName,
+             au.DisplayName AS ApprovedByName,
+             so.WfRef AS SoWfRef, so.SoPrefix, so.ImportedDocuNo AS SoDocuNo, so.DeliveryDate
+      FROM wf.PriceApproval pa
+      LEFT JOIN wf.AppUser ru ON ru.Id = pa.RequestedBy
+      LEFT JOIN wf.AppUser au ON au.Id = pa.ApprovedBy
+      LEFT JOIN wf.SalesOrder so ON so.Id = pa.SoId
+      ${where}
+      ORDER BY CASE WHEN pa.Status = 'PENDING' THEN 0 ELSE 1 END, pa.Id DESC
+    `, inputs);
+
+    res.json({ data: camelizeRows(r.recordset || []) });
+  } catch (e) {
+    console.error('[price-approvals/list]', e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// PATCH /api/edit-requests/price-approvals/:id/approve
+router.patch('/price-approvals/:id/approve', requireRole(...APPROVER_ROLES), async (req, res) => {
+  try {
+    const { note } = req.body || {};
+    const approvalId = Number(req.params.id);
+    const target = (await wfQuery(`SELECT * FROM wf.PriceApproval WHERE Id = @id`, { id: { type: sql.Int, value: approvalId } })).recordset[0];
+    if (!target) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติราคานี้' });
+    if (target.Status !== 'PENDING') return res.status(409).json({ message: `คำขอนี้อยู่ในสถานะ ${target.Status} แล้ว` });
+
+    if (sameUser(target.RequestedBy, req.user.sub) && !['ADMIN', 'C_LEVEL'].includes(req.user.role)) {
+      return res.status(403).json({ message: 'ไม่อนุญาตให้อนุมัติคำขอของตัวเอง' });
+    }
+
+    await wfTransaction(async tx => {
+      // Validate current DocumentRevision of the sales order
+      const soRes = await tx.request()
+        .input('soId', sql.Int, target.SoId)
+        .query('SELECT DocumentRevision, Status FROM wf.SalesOrder WHERE Id = @soId');
+      const soRow = soRes.recordset[0];
+      if (!soRow) throw new Error('ไม่พบใบสั่งขายที่ผูกกับคำขอนี้');
+      if (Number(soRow.DocumentRevision) !== Number(target.DocumentRevision)) {
+        await tx.request().input('id', sql.Int, approvalId).query("UPDATE wf.PriceApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE Id = @id");
+        throw new Error(`คำขอนี้ถูกยกเลิกแล้ว (Superseded) เนื่องจากใบสั่งขายมีการแก้ไขเป็นฉบับใหม่ (Revision ${soRow.DocumentRevision} != ${target.DocumentRevision})`);
+      }
+
+      const updateRes = await tx.request()
+        .input('id', sql.Int, approvalId)
+        .input('by', sql.Int, req.user.sub)
+        .input('note', sql.NVarChar(500), note || null)
+        .query(`
+          UPDATE wf.PriceApproval
+          SET Status = 'APPROVED', ApprovedBy = @by, ApprovedAt = SYSUTCDATETIME(), ApprovalNote = @note, UpdatedAt = SYSUTCDATETIME()
+          WHERE Id = @id AND Status = 'PENDING'
+        `);
+
+      if (Number(updateRes?.rowsAffected?.[0] || 0) === 0) {
+        throw new Error('ไม่สามารถอนุมัติได้เนื่องจากสถานะคำขอเปลี่ยนแปลงไปแล้ว');
+      }
+
+      // Check if any other PENDING items remain for this SoId at current revision
+      const remainingPending = (await tx.request()
+        .input('soId', sql.Int, target.SoId)
+        .input('rev', sql.Int, target.DocumentRevision)
+        .query(`SELECT COUNT(*) AS Cnt FROM wf.PriceApproval WHERE SoId = @soId AND DocumentRevision = @rev AND Status = 'PENDING'`)).recordset[0].Cnt;
+
+      if (remainingPending === 0) {
+        const remainingRejected = (await tx.request()
+          .input('soId', sql.Int, target.SoId)
+          .input('rev', sql.Int, target.DocumentRevision)
+          .query(`SELECT COUNT(*) AS Cnt FROM wf.PriceApproval WHERE SoId = @soId AND DocumentRevision = @rev AND Status = 'REJECTED'`)).recordset[0].Cnt;
+
+        const finalStatus = remainingRejected > 0 ? 'REJECTED' : 'APPROVED';
+        await tx.request()
+          .input('soId', sql.Int, target.SoId)
+          .input('status', sql.VarChar(20), finalStatus)
+          .query(`UPDATE wf.SalesOrder SET PriceApprovalStatus = @status WHERE Id = @soId`);
+      }
+    });
+
+    broadcast('price_approval', { id: approvalId, soId: target.SoId, action: 'approved' });
+    res.json({ id: approvalId, status: 'APPROVED', message: 'อนุมัติราคาขายสำเร็จ' });
+  } catch (e) {
+    console.error('[price-approvals/approve]', e);
+    res.status(e.status || 500).json({ message: e.message });
+  }
+});
+
+// PATCH /api/edit-requests/price-approvals/:id/reject
+router.patch('/price-approvals/:id/reject', requireRole(...APPROVER_ROLES), async (req, res) => {
+  try {
+    const { note } = req.body || {};
+    if (!note || String(note).trim().length < 5) {
+      return res.status(400).json({ message: 'ปฏิเสธคำขอต้องระบุเหตุผลอย่างน้อย 5 ตัวอักษร' });
+    }
+    const approvalId = Number(req.params.id);
+    const target = (await wfQuery(`SELECT * FROM wf.PriceApproval WHERE Id = @id`, { id: { type: sql.Int, value: approvalId } })).recordset[0];
+    if (!target) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติราคานี้' });
+    if (target.Status !== 'PENDING') return res.status(409).json({ message: `คำขอนี้อยู่ในสถานะ ${target.Status} แล้ว` });
+
+    if (sameUser(target.RequestedBy, req.user.sub) && !['ADMIN', 'C_LEVEL'].includes(req.user.role)) {
+      return res.status(403).json({ message: 'ไม่อนุญาตให้ปฏิเสธคำขอของตัวเอง' });
+    }
+
+    await wfTransaction(async tx => {
+      // Validate current DocumentRevision of the sales order
+      const soRes = await tx.request()
+        .input('soId', sql.Int, target.SoId)
+        .query('SELECT DocumentRevision, Status FROM wf.SalesOrder WHERE Id = @soId');
+      const soRow = soRes.recordset[0];
+      if (!soRow) throw new Error('ไม่พบใบสั่งขายที่ผูกกับคำขอนี้');
+      if (Number(soRow.DocumentRevision) !== Number(target.DocumentRevision)) {
+        await tx.request().input('id', sql.Int, approvalId).query("UPDATE wf.PriceApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE Id = @id");
+        throw new Error(`คำขอนี้ถูกยกเลิกแล้ว (Superseded) เนื่องจากใบสั่งขายมีการแก้ไขเป็นฉบับใหม่ (Revision ${soRow.DocumentRevision} != ${target.DocumentRevision})`);
+      }
+
+      const updateRes = await tx.request()
+        .input('id', sql.Int, approvalId)
+        .input('by', sql.Int, req.user.sub)
+        .input('note', sql.NVarChar(500), String(note).trim())
+        .query(`
+          UPDATE wf.PriceApproval
+          SET Status = 'REJECTED', ApprovedBy = @by, ApprovedAt = SYSUTCDATETIME(), ApprovalNote = @note, UpdatedAt = SYSUTCDATETIME()
+          WHERE Id = @id AND Status = 'PENDING'
+        `);
+
+      if (Number(updateRes?.rowsAffected?.[0] || 0) === 0) {
+        throw new Error('ไม่สามารถปฏิเสธได้เนื่องจากสถานะคำขอเปลี่ยนแปลงไปแล้ว');
+      }
+
+      await tx.request()
+        .input('soId', sql.Int, target.SoId)
+        .query(`UPDATE wf.SalesOrder SET PriceApprovalStatus = 'REJECTED' WHERE Id = @soId`);
+    });
+
+    broadcast('price_approval', { id: approvalId, soId: target.SoId, action: 'rejected' });
+    res.json({ id: approvalId, status: 'REJECTED', message: 'ปฏิเสธราคาขายเรียบร้อย' });
+  } catch (e) {
+    console.error('[price-approvals/reject]', e);
+    res.status(e.status || 500).json({ message: e.message });
   }
 });
 

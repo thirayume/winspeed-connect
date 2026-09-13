@@ -37,7 +37,6 @@ const RebatePlanPage = lazy(() => import('./components/rebate/RebatePlanPage').t
 const ControlTicketPage = lazy(() => import('./components/master/ControlTicketPage').then(m => ({ default: m.ControlTicketPage })));
 const ReportsPage = lazy(() => import('./components/reports/ReportsPage').then(m => ({ default: m.ReportsPage })));
 const WeighingReportsPage = lazy(() => import('./components/reports/WeighingReportsPage').then(m => ({ default: m.WeighingReportsPage })));
-// const ScaleReportsPage = lazy(() => import('./components/reports/ScaleReportsPage').then(m => ({ default: m.ScaleReportsPage })));
 // const IncentiveReport = lazy(() => import('./components/reports/IncentiveReport').then(m => ({ default: m.IncentiveReport })));
 // const BudgetExpenditureReport = lazy(() => import('./components/reports/BudgetExpenditureReport').then(m => ({ default: m.BudgetExpenditureReport })));
 const AccountingPage = lazy(() => import('./components/accounting/AccountingPage').then(m => ({ default: m.AccountingPage })));
@@ -58,55 +57,58 @@ const ApprovalPolicyPage = lazy(() => import('./components/policy/ApprovalPolicy
 // ── Grouped Navigation ──────────────────────────────────────
 const NAV_GROUPS: NavGroup[] = [
   {
-    groupLabel: 'หลัก',
-    icon: Folder,
+    groupLabel: 'ภาพรวม',
+    icon: LayoutDashboard,
     color: 'text-blue-600',
     items: [
-      { key: 'dashboard',  label: 'Dashboard',  sub: 'ภาพรวม',              icon: LayoutDashboard },
-      { key: 'sales',      label: 'ขาย',         sub: 'ใบสั่งขาย (POS)',     icon: ShoppingCart },
-      { key: 'trip-board', label: 'Sale Trip',   sub: 'กระดานเที่ยวรถ',      icon: Truck },
-      { key: 'edit-requests', label: 'คำขอแก้ไข', sub: 'หลังยืนยัน · Hold รถ', icon: ClipboardCheck },
-      { key: 'quotation',  label: 'เสนอราคา',    sub: 'Quotation → SO',      icon: FileText },
-      { key: 'store',      label: 'คลัง',        sub: 'รับสินค้า/ส่งออก',     icon: Warehouse, badge: true },
-      { key: 'papertrail', label: 'Paper Trail', sub: 'Kanban เอกสาร',       icon: LayoutGrid },
-      { key: 'aging',      label: 'ตั๋วคงค้าง',   sub: 'SO คงค้าง · ค้นหา',   icon: Clock },
+      { key: 'dashboard',  label: 'Dashboard',  sub: 'ภาพรวมระบบ · แจ้งเตือน', icon: LayoutDashboard },
     ],
   },
   {
-    groupLabel: 'การเงิน',
+    groupLabel: 'ขายและอนุมัติ',
+    icon: ShoppingCart,
+    color: 'text-indigo-600',
+    items: [
+      { key: 'sales',      label: 'ขาย',         sub: 'POS · สั่งขายปุ๋ย',     icon: ShoppingCart },
+      { key: 'trip-board', label: 'Sale Trip',   sub: 'กระดานเที่ยวรถ',      icon: Truck },
+      { key: 'edit-requests', label: 'คำขอแก้ไขและอนุมัติ', sub: 'แก้ไข · อนุมัติราคา · Hold รถ', icon: ClipboardCheck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'SALES'] },
+      { key: 'quotation',  label: 'เสนอราคา',    sub: 'Quotation → SO',      icon: FileText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'SALES'] },
+    ],
+  },
+  {
+    groupLabel: 'คลัง/ขนส่ง/ชั่ง',
+    icon: Warehouse,
+    color: 'text-orange-600',
+    items: [
+      { key: 'store',      label: 'คลัง',        sub: 'รับสินค้า · ตรวจจ่าย · จัดโหลด', icon: Warehouse, badge: true, roles: ['C_LEVEL', 'ADMIN', 'WAREHOUSE', 'COUNTER_SALES'] },
+      { key: 'papertrail', label: 'Paper Trail', sub: 'Kanban เอกสาร 4 สี',   icon: LayoutGrid, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE'] },
+      { key: 'control-ticket', label: 'ชุดตั๋วคุม', sub: 'คงเหลือ · ตัดจ่ายตั๋วคุม', icon: Stamp, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'SALES'] },
+      { key: 'scale-reports', label: 'สถานะการชั่งรถ', sub: 'ชั่งสด WGHD · เข้า-ออก', icon: Truck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE'] },
+      { key: 'aging',      label: 'ตั๋วคงค้าง',   sub: 'SO คงค้าง · Aging ตั๋ว', icon: Clock, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'SALES'] },
+    ],
+  },
+  {
+    groupLabel: 'การเงิน/บัญชี',
     icon: Wallet,
     color: 'text-emerald-600',
     items: [
-      { key: 'rebate',     label: 'รีเบท (App)', sub: 'Pool · เคลม · wf',      icon: Coins, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'SALES'] },
-      { key: 'rebate-plan',label: 'Rebate Plan', sub: 'แผน · จัดสรรงบ',        icon: ClipboardList, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING'] },
-      // ── ซ่อนชั่วคราว 03/09/2569 — รอเจ้าของระบบยืนยันว่ายังใช้อยู่ไหม ──
-      // CN Rebate: อ่านใบ RB ซึ่งหยุดออกตั้งแต่ 5 มี.ค. 2569
-      // Incentive & Retained: ขึ้นกับสัดส่วนรีเบท ซึ่งตอนนี้ยังเป็น 100/0 (บริษัทไม่เก็บ)
-      // Budget Expenditure: wf.BudgetPlan มี 0 แถว
+      { key: 'rebate',     label: 'รีเบท (App)', sub: 'กองทุนรีเบท · คำขอเคลม', icon: Coins, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'SALES'] },
+      { key: 'rebate-plan',label: 'Rebate Plan', sub: 'แผนจัดสรรงบรีเบท',        icon: ClipboardList, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING'] },
+      // ── ซ่อนชั่วคราว — คง requirement และ source component ไว้ ไม่ลบ ──
       // { key: 'cn-rebate',  label: 'CN Rebate',   sub: 'ใบลดหนี้ · Winspeed',   icon: FileCheck2, roles: [...] },
       // { key: 'incentive-report', label: 'Incentive & Retained', sub: 'สัดส่วน · สะสมบริษัท', icon: Award, roles: [...] },
       // { key: 'budget-report', label: 'Budget Expenditure', sub: 'งบจัดสรร · เบิกจ่าย', icon: BarChart3, roles: [...] },
-      { key: 'giveaway',   label: 'ของแถม',      sub: 'งบรายภาค · เบิก',     icon: Gift },
+      { key: 'giveaway',   label: 'ของแถม',      sub: 'งบของแถมรายภาค · เบิก', icon: Gift, roles: ['C_LEVEL', 'ADMIN', 'APPROVER', 'ACCOUNTING', 'SALES'] },
+      { key: 'accounting', label: 'บัญชี',       sub: 'Sync WINSpeed · อนุมัติ CN', icon: FileCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
+      { key: 'recon',      label: 'กระทบยอด',    sub: 'ตรวจบิล ↔ ชั่ง ↔ บัญชี', icon: ShieldCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
     ],
   },
   {
-    groupLabel: 'บัญชี',
-    icon: Calculator,
+    groupLabel: 'รายงาน',
+    icon: BarChart3,
     color: 'text-purple-600',
     items: [
-      { key: 'accounting', label: 'บัญชี',       sub: 'Sync · อนุมัติ CN',    icon: FileCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
-      { key: 'recon',      label: 'กระทบยอด',    sub: 'Recon · ตรวจออกของ',   icon: ShieldCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
-      { key: 'reports',    label: 'รายงาน',      sub: 'สรุป · Export Excel',  icon: BarChart3, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER'] },
-      { key: 'control-ticket', label: 'ชุดตั๋วคุม', sub: 'คงเหลือ · ตัดออก',   icon: Stamp },
-    ],
-  },
-  {
-    groupLabel: 'คลัง/ชั่ง',
-    icon: Truck,
-    color: 'text-orange-600',
-    items: [
-      // หน้าชั่งย้ายมาอยู่กลุ่มนี้ เดิมไปอยู่ใต้ "บัญชี" ซึ่งไม่ใช่ที่ที่คนหน้างานจะมองหา
-      { key: 'scale-reports', label: 'สถานะการชั่งรถ', sub: 'สด · WGHD · ชั่งเข้า–ออก', icon: Truck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE'] },
+      { key: 'reports',    label: 'รายงาน',      sub: 'ศูนย์รายงาน 23 ฉบับ · Export', icon: BarChart3, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER'] },
     ],
   },
   {
@@ -114,13 +116,12 @@ const NAV_GROUPS: NavGroup[] = [
     icon: Settings,
     color: 'text-slate-600',
     items: [
-      { key: 'master',     label: 'ข้อมูลหลัก',  sub: 'สินค้า · ลูกค้า',       icon: Database, roles: ['C_LEVEL', 'ADMIN'] },
-      { key: 'policy',     label: 'นโยบายอนุมัติ', sub: 'อำนาจ · วงเงิน',       icon: ScrollText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
-      // ซ่อนชั่วคราว 03/09/2569 — wf.DsarLog มี 0 แถว ยังไม่มีใครใช้
+      { key: 'master',     label: 'ข้อมูลหลัก',  sub: 'สินค้า · ลูกค้า · ราคาขาย', icon: Database, roles: ['C_LEVEL', 'ADMIN'] },
+      { key: 'policy',     label: 'นโยบายอนุมัติ', sub: 'อำนาจอนุมัติ · วงเงิน', icon: ScrollText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
       // { key: 'governance', label: 'กำกับข้อมูล',  sub: 'เครดิต · สต๊อก · PDPA',  icon: Landmark, roles: [...] },
-      { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · error · alert', icon: Activity, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
-      { key: 'admin',      label: 'User Management',    sub: 'ผู้ใช้งานระบบ',         icon: Users, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
-      { key: 'org',        label: 'ผังองค์กร',    sub: 'ผูกผู้ใช้ ↔ ตำแหน่ง',   icon: Network, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
+      { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · Watchdog · Alert', icon: Activity, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
+      { key: 'admin',      label: 'User Management',    sub: 'จัดการผู้ใช้งาน · รหัสผ่าน', icon: Users, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
+      { key: 'org',        label: 'ผังองค์กร',    sub: 'ผูกผู้ใช้ ↔ ตำแหน่ง ↔ สายงาน', icon: Network, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
     ],
   },
 ];
@@ -188,7 +189,14 @@ function App() {
 
 function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAuthStore.getState>['user']>; logout: () => void }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ 'หลัก': true });
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
+    'ภาพรวม': true,
+    'ขายและอนุมัติ': true,
+    'คลัง/ขนส่ง/ชั่ง': true,
+    'การเงิน/บัญชี': true,
+    'รายงาน': true,
+    'ตั้งค่าระบบ': true,
+  });
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [showUnlockReview, setShowUnlockReview] = useState(false);
   const [showAccessAs, setShowAccessAs] = useState(false);
@@ -336,7 +344,8 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                       ? 'justify-center p-2 mb-1 rounded-lg hover:bg-accent/60 relative' 
                       : 'nav-group-label justify-between hover:text-foreground'
                   } ${groupActive && isSidebarCollapsed ? 'bg-accent/40' : ''} ${groupActive && !isSidebarCollapsed ? group.color : 'text-muted-foreground'}`}
-                  title={group.groupLabel}
+                  title={`กลุ่ม${group.groupLabel}`}
+                  aria-label={`หมวด ${group.groupLabel}`}
                 >
                   {isSidebarCollapsed ? (
                     <>
@@ -344,7 +353,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                       <ChevronDown 
                         size={10} 
                         className={`absolute right-1 bottom-1 text-muted-foreground transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} 
-                      />
+                        />
                     </>
                   ) : (
                     <>
@@ -370,7 +379,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                         }
                         navigate(n.key as PortalKey);
                       }}
-                        title={isSidebarCollapsed ? n.label : ''} className={navBtnClass(activePortal === n.key, isSidebarCollapsed)}>
+                        title={n.label} className={navBtnClass(activePortal === n.key, isSidebarCollapsed)}>
                         <Icon className={`shrink-0 ${isSidebarCollapsed ? 'h-5 w-5' : 'h-4 w-4'} ${activePortal === n.key ? '' : (group.color || '')}`} />
                         {!isSidebarCollapsed && (
                           <div className="flex flex-col text-left animate-in fade-in slide-in-from-left-2 duration-300">

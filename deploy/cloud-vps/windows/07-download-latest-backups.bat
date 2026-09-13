@@ -4,7 +4,7 @@ set "SCRIPT_DIR=%~dp0"
 call :load_config || exit /b 1
 if not exist "%DOWNLOAD_DIR%" mkdir "%DOWNLOAD_DIR%"
 
-for %%D in (mssql mysql) do (
+for %%D in (mssql) do (
   set "LATEST="
   for /f "usebackq delims=" %%F in (`ssh -p %SSH_PORT% -i "%DEPLOY_KEY%" %DEPLOY_USER%@%SERVER_HOST% "ls -1t /srv/wf-transfer/outgoing/%%D/*.gz"`) do if not defined LATEST set "LATEST=%%F"
   if not defined LATEST (

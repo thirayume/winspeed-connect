@@ -3,10 +3,62 @@
  * ⚠ Writes ไปที่ wf schema เท่านั้น
  */
 const router = require('express').Router();
-const { sql, wfQuery, query } = require('../db');
+const crypto = require('crypto');
+const { sql, wfQuery, query, wfTransaction } = require('../db');
 const { requireAuth, requireRole, requireRebateAmountAccess, canViewAllRebateAmounts } = require('../middleware/auth');
+const { getPolicySettings, logChangeEvent, validateReasonCode } = require('../services/policy-contract');
 
 router.use(requireAuth);
+
+/**
+ * Normalizes claim record ensuring scalar types and monetary totals
+ */
+function normalizeClaim(c) {
+  if (!c) return c;
+  const rawCRatio = Array.isArray(c.CustomerRatio) ? c.CustomerRatio[0] : c.CustomerRatio;
+  const rawWRatio = Array.isArray(c.CompanyRatio) ? c.CompanyRatio[0] : c.CompanyRatio;
+  const rawCAmt   = Array.isArray(c.CustomerAmount) ? c.CustomerAmount[0] : c.CustomerAmount;
+  const rawRAmt   = Array.isArray(c.RetainedAmount) ? c.RetainedAmount[0] : c.RetainedAmount;
+  const rawSelf   = Array.isArray(c.IsSelfClaim) ? c.IsSelfClaim[0] : c.IsSelfClaim;
+
+  return {
+    ...c,
+    ClaimNo: c.ClaimNo || c.CnDocuNo || `RC-${c.Id}`,
+    ClaimDate: c.ClaimDate || c.CreatedAt,
+    CustomerRatio: Number(rawCRatio !== null && rawCRatio !== undefined ? rawCRatio : 100.00),
+    CompanyRatio: Number(rawWRatio !== null && rawWRatio !== undefined ? rawWRatio : 0.00),
+    CustomerAmount: Number(rawCAmt !== null && rawCAmt !== undefined ? rawCAmt : (c.ClaimAmt || 0)),
+    RetainedAmount: Number(rawRAmt !== null && rawRAmt !== undefined ? rawRAmt : 0.00),
+    IsSelfClaim: Boolean(rawSelf),
+  };
+}
+
+/**
+ * Builds canonical SHA-256 hash covering all financial and transactional parameters (C5)
+ */
+function buildCanonicalPayloadHash(body) {
+  const { custId, poolId, claimAmt, periodYear, periodMonth, reasonCode, reasonText, invoices, note, lines } = body || {};
+  const payloadObj = {
+    custId: custId ? String(custId).trim() : null,
+    poolId: poolId ? Number(poolId) : null,
+    claimAmt: claimAmt !== undefined && claimAmt !== null ? Number(claimAmt) : null,
+    periodYear: periodYear ? Number(periodYear) : null,
+    periodMonth: periodMonth ? Number(periodMonth) : null,
+    reasonCode: reasonCode ? String(reasonCode).trim() : null,
+    reasonText: reasonText ? String(reasonText).trim() : null,
+    invoices: (Array.isArray(invoices) ? invoices : []).map(inv => String(inv).trim()).sort(),
+    note: note ? String(note).trim() : null,
+    lines: (lines || []).map(l => ({
+      goodCode: l.goodCode ? String(l.goodCode).trim() : null,
+      qtyTon: l.qtyTon !== undefined && l.qtyTon !== null ? Number(l.qtyTon) : null,
+      lineType: l.lineType ? String(l.lineType).trim().toUpperCase() : 'REBATE',
+      sourceSOID: l.sourceSOID ? Number(l.sourceSOID) : null,
+      sourceListNo: l.sourceListNo ? Number(l.sourceListNo) : null,
+      netPricePerTon: l.netPricePerTon !== undefined && l.netPricePerTon !== null ? Number(l.netPricePerTon) : null,
+    })),
+  };
+  return crypto.createHash('sha256').update(JSON.stringify(payloadObj)).digest('hex');
+}
 
 // Helper: Infer Region (01-06 or 99) from customer's SaleAreaID in WINSpeed
 /**
@@ -201,7 +253,8 @@ router.get('/claims', requireRebateAmountAccess, async (req, res) => {
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const r = await wfQuery(`
-      SELECT c.*, u.DisplayName AS SalesName, r.RegionName,
+      SELECT c.*,
+             u.DisplayName AS SalesName, r.RegionName,
              (SELECT COUNT(*) FROM wf.RebateClaimLine l WHERE l.ClaimId = c.Id) AS LineCount,
              (SELECT COUNT(*) FROM wf.RebateClaimInvoice i WHERE i.ClaimId = c.Id) AS InvoiceCount
       FROM wf.RebateClaim c
@@ -210,7 +263,7 @@ router.get('/claims', requireRebateAmountAccess, async (req, res) => {
       ${where}
       ORDER BY c.CreatedAt DESC
     `, inputs);
-    res.json(r.recordset || []);
+    res.json((r.recordset || []).map(normalizeClaim));
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
@@ -221,7 +274,8 @@ router.get('/claims/:id', requireRebateAmountAccess, async (req, res) => {
     if (!Number.isFinite(claimId)) return res.status(400).json({ message: 'Invalid claim ID' });
 
     const claimR = await wfQuery(`
-      SELECT c.*, u.DisplayName AS SalesName, r.RegionName, appvUser.DisplayName AS ApprovedByName
+      SELECT c.*,
+             u.DisplayName AS SalesName, r.RegionName, appvUser.DisplayName AS ApprovedByName
       FROM wf.RebateClaim c
       JOIN wf.AppUser u ON u.Id = c.SalesUserId
       LEFT JOIN wf.SaleRegion r ON r.RegionCode = c.RegionCode
@@ -229,8 +283,9 @@ router.get('/claims/:id', requireRebateAmountAccess, async (req, res) => {
       WHERE c.Id = @id
     `, { id: { type: sql.Int, value: claimId } });
 
-    const claim = claimR.recordset?.[0];
-    if (!claim) return res.status(404).json({ message: `ไม่พบใบขอเคลียร์ ID ${claimId}` });
+    const rawClaim = claimR.recordset?.[0];
+    if (!rawClaim) return res.status(404).json({ message: `ไม่พบใบขอเคลียร์ ID ${claimId}` });
+    const claim = normalizeClaim(rawClaim);
 
     // Customer Name lookup
     if (claim.CustId) {
@@ -267,15 +322,6 @@ router.get('/claims/:id', requireRebateAmountAccess, async (req, res) => {
       { id: { type: sql.Int, value: claimId } })).recordset?.[0] || null;
 
     // เลขเอกสารสำหรับใบพิมพ์
-    //
-    // CnDocuNo ถูกตั้งตอน "อนุมัติ" เท่านั้น (ดูเหตุผลที่ POST /claims/:id/approve)
-    // แต่ใบที่พิมพ์ไปให้ผู้บริหารเซ็นเกิดขึ้น *ก่อน* อนุมัติ — เดิมจึงพิมพ์
-    // 'RBD-{Id}' ซึ่งเป็นเลขที่ระบบสมมติขึ้น ไม่มีอยู่จริงในบัญชี ตามรอยกลับไม่ได้
-    //
-    // ที่ทำใหม่: ถ้ายังไม่มีเลขจริง ให้คำนวณ "เลขที่จะได้" จากรหัสผู้ขอของเจ้าของใบ
-    // ส่งไปเป็น SuggestedRbNo แยกจาก CnDocuNo ชัดเจน — หน้าจอจะได้ติดป้ายว่ายังไม่ยืนยัน
-    // ไม่จองเลขไว้ล่วงหน้า เพราะสาย RB ไม่มีตัวนับในระบบ และข้อมูลจริงไม่มีเลขข้ามเลย
-    // การจองแล้วใบถูกปฏิเสธจะทำให้เกิดช่องว่างที่ไม่เคยมีมาก่อน
     let suggestedRbNo = null;
     if (!claim.CnDocuNo) {
       const owner = (await wfQuery(
@@ -306,325 +352,462 @@ router.get('/claims/:id', requireRebateAmountAccess, async (req, res) => {
 // POST /api/rebate/claims — ยื่นเคลม (รองรับ Multi-line 6 บรรทัด & 4-Tier Approval parity)
 router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
   try {
-    const { poolId, claimAmt, custId, note, lines, invoices, periodYear, periodMonth } = req.body;
+    const { poolId, claimAmt, custId, note, lines, invoices, periodYear, periodMonth } = req.body || {};
     if (!claimAmt && (!lines || !lines.length)) {
       return res.status(400).json({ message: 'ต้องระบุ claimAmt หรือรายการย่อย lines' });
     }
 
-    // poolId ไม่บังคับแล้ว — ยอดสะสมอ่านจาก WINSpeed ตรง ๆ (ดู migration 076)
-    // ยังรับไว้เพื่อความเข้ากันได้กับใบเก่าและงบที่จัดสรรรายพนักงานขาย
-    let pool = null;
-    if (poolId) {
-      pool = (await wfQuery(`SELECT * FROM wf.RebatePool WHERE Id=@id`, { id: { type: sql.Int, value: poolId } })).recordset?.[0];
-      if (!pool) return res.status(404).json({ message: 'ไม่พบ pool' });
-      if (!canViewAllRebateAmounts(req.user) && Number(pool.SalesUserId) !== Number(req.user.sub)) {
-        return res.status(403).json({ message: 'ไม่มีสิทธิ์เคลม pool ของพนักงานขายอื่น' });
+    const isAmountOnly = !lines || !lines.length;
+    let authorizedAdjustment = false;
+    let adjReasonCode = 'CLAIM_SUBMITTED';
+    let adjReasonText = note || 'ยื่นคำขออนุมัติเคลียร์รายการส่งเสริมการขาย';
+
+    if (isAmountOnly) {
+      // Amount-only requests bypass delivery lot matching.
+      // MUST be an authorized adjustment requiring elevated roles, valid reasonCode, and explicit note.
+      const hasElevatedRole = ['ADMIN', 'ACCOUNTING', 'C_LEVEL'].some(r => (req.user?.roles || []).includes(r) || req.user?.role === r);
+      if (!hasElevatedRole) {
+        return res.status(403).json({
+          message: 'การยื่นคำขอแบบไม่ระบุรายการย่อย (Amount-only) สงวนไว้สำหรับการปรับปรุงยอดพิเศษโดย ADMIN, ACCOUNTING หรือ C_LEVEL เท่านั้น',
+        });
+      }
+      if (!custId) {
+        return res.status(400).json({ message: 'ต้องระบุรหัสลูกค้า (custId) สำหรับรายการปรับปรุงยอดพิเศษ' });
+      }
+      const numAmt = Number(claimAmt);
+      if (!Number.isFinite(numAmt) || numAmt <= 0) {
+        return res.status(400).json({ message: 'ยอดเงินเคลมต้องเป็นตัวเลขจำนวนบวก' });
+      }
+      adjReasonCode = req.body?.reasonCode || 'MANUAL_ADJUSTMENT';
+      adjReasonText = req.body?.reasonText || note;
+      if (!adjReasonText || String(adjReasonText).trim().length < 5) {
+        return res.status(400).json({ message: 'ต้องระบุเหตุผลและคำอธิบายสำหรับการปรับปรุงยอดพิเศษอย่างน้อย 5 ตัวอักษร' });
+      }
+      authorizedAdjustment = true;
+    }
+
+    // Extract idempotency key from header or body (C5)
+    const rawIdemKey = req.headers['idempotency-key'] || req.body?.idempotencyKey;
+    let idempotencyKey = null;
+    if (rawIdemKey !== undefined && rawIdemKey !== null) {
+      const trimmedKey = String(rawIdemKey).trim();
+      if (trimmedKey.length > 100) {
+        return res.status(400).json({ message: 'Idempotency-Key มีความยาวเกินกำหนด (สูงสุด 100 ตัวอักษร ห้ามตัดทอนอัตโนมัติ)' });
+      }
+      if (trimmedKey.length > 0) {
+        idempotencyKey = trimmedKey;
+      }
+    }
+    let payloadHash = null;
+
+    if (idempotencyKey) {
+      // Canonical payload hash covering all financial and transactional parameters (C5)
+      payloadHash = buildCanonicalPayloadHash(req.body);
+
+      // Pre-check before transaction for quick idempotent replay
+      const preCheck = await wfQuery(`SELECT * FROM wf.RebateClaim WHERE IdempotencyKey = @k`, {
+        k: { type: sql.VarChar(100), value: idempotencyKey }
+      });
+      const existingPre = preCheck.recordset?.[0];
+      if (existingPre) {
+        // Enforce authorization scope before returning replay (C5)
+        const creatorId = existingPre.SalesUserId || existingPre.CreatedBy;
+        const isAuthorized = req.user.role === 'ADMIN' ||
+                             req.user.role === 'ACCOUNTING' ||
+                             req.user.role === 'C_LEVEL' ||
+                             (String(creatorId) === String(req.user.sub));
+        if (!isAuthorized) {
+          return res.status(403).json({ message: 'ไม่มีสิทธิ์เข้าถึงหรือใช้ Idempotency-Key ของผู้ใช้อื่น' });
+        }
+        if (existingPre.RequestPayloadHash && existingPre.RequestPayloadHash !== payloadHash) {
+          return res.status(409).json({ message: 'Idempotency key reused with different payload' });
+        }
+        const normalized = normalizeClaim(existingPre);
+        return res.json({ claim: normalized, ...normalized, replayed: true });
       }
     }
 
-    // Determine lines & calculated total
-    let totalAmt = Number(claimAmt || 0);
+    const regionCode = await getCustomerRegion(custId);
     const parsedLines = [];
+    let pYear = Number(periodYear) || null;
+    let pMonth = Number(periodMonth) || null;
 
-    if (Array.isArray(lines) && lines.length > 0) {
-      // แบบฟอร์มมี 6 บรรทัดต่อตาราง และมีสองตาราง จึงรวมได้ 12 บรรทัด
-      if (lines.length > 12) return res.status(400).json({ message: 'ใบขอเคลียร์รองรับสูงสุด 12 รายการย่อย (6 บรรทัดต่อตาราง)' });
-      const perTable = lines.reduce((m, l) => {
-        const k = String(l.lineType || 'REBATE').toUpperCase() === 'DIFF' ? 'DIFF' : 'REBATE';
-        m[k] = (m[k] || 0) + 1; return m;
-      }, {});
-      for (const [kind, n] of Object.entries(perTable)) {
-        if (n > 6) return res.status(400).json({ message: `ตาราง${kind === 'DIFF' ? 'คืนส่วนต่าง' : 'คืนรีเบท'}รองรับสูงสุด 6 บรรทัด` });
+    // Wrap header, lines, invoice links, pool deduction, and audit inside single atomic wfTransaction (A2, R2, R6, C5)
+    const newClaim = await wfTransaction(async (tx) => {
+      // A2, C5. Acquire Application Lock on customer AND pool to prevent race conditions across shared budgets
+      const lockKeys = [];
+      if (custId) lockKeys.push(`RebateCust_${String(custId).trim()}`);
+      if (poolId) lockKeys.push(`RebatePool_${poolId}`);
+      if (lockKeys.length === 0) lockKeys.push(`RebateUser_${req.user.sub}`);
+
+      for (const lKey of lockKeys) {
+        const lockReq = tx.request();
+        lockReq.input('rname', sql.NVarChar(255), lKey);
+        await lockReq.query(`
+          DECLARE @lockRes INT;
+          EXEC @lockRes = sp_getapplock @Resource = @rname, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
+          IF @lockRes < 0
+          BEGIN
+            DECLARE @msg NVARCHAR(200) = CASE 
+              WHEN @lockRes = -1 THEN 'Lock request timed out for rebate allocation'
+              WHEN @lockRes = -2 THEN 'Lock request canceled'
+              WHEN @lockRes = -3 THEN 'Deadlock victim during rebate allocation'
+              ELSE 'Unable to acquire allocation lock for rebate claim'
+            END;
+            THROW 50001, @msg, 1;
+          END;
+        `);
       }
-      if (!custId) {
-        return res.status(400).json({
-          message: 'ต้องระบุลูกค้า (custId) เมื่อยื่นรายการย่อย — ยอดสะสมอ่านจากใบส่งของของลูกค้ารายนั้น'
-        });
+
+      // If idempotencyKey, recheck under lock with authorization verification (C5)
+      if (idempotencyKey) {
+        const lockedCheckReq = tx.request();
+        lockedCheckReq.input('k', sql.VarChar(100), idempotencyKey);
+        const lockedCheckRes = await lockedCheckReq.query(`SELECT * FROM wf.RebateClaim WITH (UPDLOCK, HOLDLOCK) WHERE IdempotencyKey = @k`);
+        const lockedExisting = lockedCheckRes.recordset?.[0];
+        if (lockedExisting) {
+          const creatorId = lockedExisting.SalesUserId || lockedExisting.CreatedBy;
+          const isAuthorized = req.user.role === 'ADMIN' ||
+                               req.user.role === 'ACCOUNTING' ||
+                               req.user.role === 'C_LEVEL' ||
+                               (String(creatorId) === String(req.user.sub));
+          if (!isAuthorized) {
+            throw { status: 403, message: 'ไม่มีสิทธิ์เข้าถึงหรือใช้ Idempotency-Key ของผู้ใช้อื่น' };
+          }
+          if (lockedExisting.RequestPayloadHash && lockedExisting.RequestPayloadHash !== payloadHash) {
+            throw { status: 409, message: 'Idempotency key reused with different payload' };
+          }
+          return { ...lockedExisting, _replayed: true };
+        }
       }
 
-      // ── ตัดสิทธิ์แบบ FIFO จากใบส่งของจริงใน WINSpeed ─────────────────────────
-      //
-      // แต่ละบรรทัดบนแบบฟอร์ม (สูตรปุ๋ย + ตัน) ถูกกระจายลงล็อตที่เก่าที่สุดก่อน
-      // ล็อต = หนึ่งบรรทัดของใบส่งของ (SOID + ListNo) จึงตอบได้เสมอว่าเงินที่คืน
-      // มาจากการขนเที่ยวใด ใบกำกับเลขใด ซึ่งเป็นสิ่งที่ผู้ตรวจ ISO ขอดู
-      //
-      // ผู้ยื่นระบุใบเองก็ได้ (ส่ง sourceSOID/sourceListNo มา) ระบบจะตัดใบนั้นตรง ๆ
-      // เพราะแบบฟอร์มกระดาษมีช่อง "เลขที่ INV" ให้เขียนเจาะจงอยู่แล้ว
-      const lotRows = (await wfQuery(`
-        SELECT SourceSOID, SourceListNo, SourceDocuNo, SourceDocuDate, CouponNo,
-               SourceRefSOID, SourceRefListNo, SourceBookingDocuNo,
-               GoodCode, GoodName, ListPricePerTon, NetPricePerTon, RebatePerTon, PlanId,
-               RemainingTonRebate, RemainingTonDiff
-        FROM wf.v_RebateAccrualRemaining
-        WHERE CustId = @cid AND (RemainingTonRebate > 0 OR RemainingTonDiff > 0)
-        ORDER BY SourceDocuDate ASC, SourceDocuNo ASC, SourceListNo ASC`,
-        { cid: { type: sql.NVarChar(20), value: String(custId) } })).recordset || [];
+      // A3. Policy Snapshot MUST fail closed (no fallback to 100/0 and null snapshot id)
+      const snapReq = tx.request();
+      const snapRes = await snapReq.query(`
+        SELECT TOP 1 SnapshotId, RevisionNumber, CustomerRatio, CompanyRatio
+        FROM wf.PolicySnapshot WITH (UPDLOCK, HOLDLOCK)
+        WHERE PolicyName = 'REBATE_POLICY'
+          AND EffectiveFrom <= SYSUTCDATETIME()
+          AND (EffectiveTo IS NULL OR EffectiveTo > SYSUTCDATETIME())
+        ORDER BY EffectiveFrom DESC, RevisionNumber DESC
+      `);
+      const snap = snapRes.recordset?.[0];
+      if (!snap) {
+        throw {
+          status: 500,
+          message: 'ไม่พบนโยบายรีเบทที่มีผลบังคับใช้ (Active Policy Snapshot) ในระบบ ไม่สามารถสร้างใบขอเคลียร์ได้',
+        };
+      }
+      const customerRatio = Number(snap.CustomerRatio);
+      const companyRatio = Number(snap.CompanyRatio);
+      const policySnapshotId = snap.SnapshotId;
 
-      // ตันที่ถูกจองไปแล้วภายในคำขอฉบับนี้ — กันสองบรรทัดของใบเดียวกันแย่งล็อตซ้ำ
-      const takenInRequest = new Map();
-      const keyOf = (lot, kind) => `${lot.SourceSOID}|${lot.SourceListNo}|${kind}`;
-      const lotRemaining = (lot, kind) =>
-        Math.round((Number(kind === 'DIFF' ? lot.RemainingTonDiff : lot.RemainingTonRebate)
-          - (takenInRequest.get(keyOf(lot, kind)) || 0)) * 1000) / 1000;
+      // Pool validation under lock
+      let pool = null;
+      if (poolId) {
+        const poolReq = tx.request();
+        poolReq.input('pid', sql.Int, poolId);
+        const poolRes = await poolReq.query(`SELECT * FROM wf.RebatePool WITH (UPDLOCK, HOLDLOCK) WHERE Id = @pid`);
+        pool = poolRes.recordset?.[0];
+        if (!pool) throw { status: 404, message: 'ไม่พบ pool' };
+        if (!canViewAllRebateAmounts(req.user) && Number(pool.SalesUserId) !== Number(req.user.sub)) {
+          throw { status: 403, message: 'ไม่มีสิทธิ์เคลม pool ของพนักงานขายอื่น' };
+        }
+      }
 
-      const problems = [];
-      // ล็อตที่ขนจริงแต่ไม่มีแผนอนุมัติคุ้มครอง — ข้ามไป แต่ต้องรายงานให้ผู้ยื่นเห็น
-      const skippedNoPlan = [];
-      let calculatedSum = 0;
-      let seq = 0;
+      let totalAmt = Number(claimAmt || 0);
 
-      for (const l of lines) {
-        const lineType = String(l.lineType || 'REBATE').toUpperCase() === 'DIFF' ? 'DIFF' : 'REBATE';
-        const goodCode = String(l.goodCode || '').trim();
-        let want = Math.round(Number(l.qtyTon || 0) * 1000) / 1000;
-        if (want <= 0) continue;
-
-        const wantedFrom = (l.sourceSOID && l.sourceListNo)
-          ? lotRows.filter(r => Number(r.SourceSOID) === Number(l.sourceSOID)
-                             && Number(r.SourceListNo) === Number(l.sourceListNo))
-          : lotRows.filter(r => String(r.GoodCode) === goodCode);
-
-        if (!wantedFrom.length) {
-          problems.push(`${goodCode || '(ไม่ระบุสูตร)'}: ไม่พบยอดขนจริงคงเหลือของสูตรนี้`);
-          continue;
+      // A2. Lots validation & FIFO calculation under lock
+      if (!isAmountOnly) {
+        if (lines.length > 12) throw { status: 400, message: 'ใบขอเคลียร์รองรับสูงสุด 12 รายการย่อย (6 บรรทัดต่อตาราง)' };
+        const perTable = lines.reduce((m, l) => {
+          const k = String(l.lineType || 'REBATE').toUpperCase() === 'DIFF' ? 'DIFF' : 'REBATE';
+          m[k] = (m[k] || 0) + 1; return m;
+        }, {});
+        for (const [kind, n] of Object.entries(perTable)) {
+          if (n > 6) throw { status: 400, message: `ตาราง${kind === 'DIFF' ? 'คืนส่วนต่าง' : 'คืนรีเบท'}รองรับสูงสุด 6 บรรทัด` };
+        }
+        if (!custId) {
+          throw { status: 400, message: 'ต้องระบุลูกค้า (custId) เมื่อยื่นรายการย่อย — ยอดสะสมอ่านจากใบส่งของของลูกค้ารายนั้น' };
         }
 
-        for (const lot of wantedFrom) {
-          if (want <= 0) break;
-          const avail = lotRemaining(lot, lineType);
-          if (avail <= 0) continue;
-          const take = Math.min(want, avail);
+        const lotReq = tx.request();
+        lotReq.input('cid', sql.NVarChar(20), String(custId));
+        const lotRes = await lotReq.query(`
+          SELECT SourceSOID, SourceListNo, SourceDocuNo, SourceDocuDate, CouponNo,
+                 SourceRefSOID, SourceRefListNo, SourceBookingDocuNo,
+                 GoodCode, GoodName, ListPricePerTon, NetPricePerTon, RebatePerTon, PlanId,
+                 RemainingTonRebate, RemainingTonDiff
+          FROM wf.v_RebateAccrualRemaining
+          WHERE CustId = @cid AND (RemainingTonRebate > 0 OR RemainingTonDiff > 0)
+          ORDER BY SourceDocuDate ASC, SourceDocuNo ASC, SourceListNo ASC
+        `);
+        const lotRows = lotRes.recordset || [];
 
-          // ราคาที่ใช้: ถ้าผู้ยื่นกรอกมา ใช้ตามที่กรอก (แบบฟอร์มกระดาษเป็นเอกสารต้นทาง)
-          // ถ้าไม่กรอก ดึงจากใบส่งของ (ราคาขาย) และแผนส่งเสริมการขายที่อนุมัติแล้ว (ราคาสุทธิ)
-          const pricePerTon = Number(l.pricePerTon) > 0 ? Number(l.pricePerTon) : Number(lot.ListPricePerTon || 0);
+        const takenInRequest = new Map();
+        const keyOf = (lot, kind) => `${lot.SourceSOID}|${lot.SourceListNo}|${kind}`;
+        const lotRemaining = (lot, kind) =>
+          Math.round((Number(kind === 'DIFF' ? lot.RemainingTonDiff : lot.RemainingTonRebate)
+            - (takenInRequest.get(keyOf(lot, kind)) || 0)) * 1000) / 1000;
 
-          // ราคาสุทธิ "ไม่มี" กับ "เป็นศูนย์" ไม่เหมือนกัน — ห้ามยุบเป็นค่าเดียว
-          //
-          // เดิมเขียนว่า  lot.NetPricePerTon === null ? 0 : ...
-          // ล็อตที่ไม่มีแผนอนุมัติ (NetPricePerTon = NULL) จึงกลายเป็นราคาสุทธิ 0
-          // แล้ว rebatePerTon = ราคาขาย − 0 = **คืนเต็มราคาขาย**
-          //
-          // วัดจริง 22/08/2569 — ยื่นขอ 15-5-35 จำนวน 12 ตัน ได้ใบเคลม 163,400 บาท
-          // ทั้งที่ยอดที่ถูกต้องคือ 14,400 (12 ตัน × 1,200) เพราะ FIFO ไปตัดล็อตปี 2562
-          // ที่ไม่มีแผนคุ้มครอง แล้วคิดรีเบท 13,700/ตัน = ราคาขายทั้งก้อน
-          //
-          // กฎธุรกิจที่พิสูจน์จากเอกสารกระดาษแล้ว: สูตรที่ขนจริงแต่ไม่มีแผนอนุมัติ
-          // **ไม่เข้าการคำนวณ** (ในใบ RBD68-019 สูตร 15-15-15 และ 46-0-0 ถูกตัดออก)
-          const userNet = Number(l.netPricePerTon);
-          const lotNet  = (lot.NetPricePerTon === null || lot.NetPricePerTon === undefined)
-            ? null : Number(lot.NetPricePerTon);
-          const netPricePerTon = userNet > 0 ? userNet : lotNet;
+        const problems = [];
+        const skippedNoPlan = [];
+        let calculatedSum = 0;
+        let seq = 0;
 
-          if (netPricePerTon === null) {
-            // ไม่มีแผนคุ้มครองล็อตนี้ และผู้ยื่นก็ไม่ได้ระบุราคาเปรียบเทียบมา → ข้ามล็อต
-            // ไม่คืนเงินให้ตันที่ไม่มีสิทธิ์ และไม่เงียบ — บอกให้ผู้ยื่นรู้ว่าทำไมได้ไม่ครบ
-            skippedNoPlan.push(`${lot.SourceDocuNo}/${lot.SourceListNo} — ${lot.GoodCode} ${avail} ตัน`);
+        for (const l of lines) {
+          const lineType = String(l.lineType || 'REBATE').toUpperCase() === 'DIFF' ? 'DIFF' : 'REBATE';
+          const goodCode = String(l.goodCode || '').trim();
+          let want = Math.round(Number(l.qtyTon || 0) * 1000) / 1000;
+          if (want <= 0) continue;
+
+          const wantedFrom = (l.sourceSOID && l.sourceListNo)
+            ? lotRows.filter(r => Number(r.SourceSOID) === Number(l.sourceSOID)
+                               && Number(r.SourceListNo) === Number(l.sourceListNo))
+            : lotRows.filter(r => String(r.GoodCode) === goodCode);
+
+          if (!wantedFrom.length) {
+            problems.push(`${goodCode || '(ไม่ระบุสูตร)'}: ไม่พบยอดขนจริงคงเหลือของสูตรนี้`);
             continue;
           }
 
-          // ผ่านการตรวจแล้วถึงจองล็อต — จองก่อนตรวจจะทำให้ล็อตที่ถูกข้ามค้างสถานะจอง
-          takenInRequest.set(keyOf(lot, lineType), (takenInRequest.get(keyOf(lot, lineType)) || 0) + take);
+          for (const lot of wantedFrom) {
+            if (want <= 0) break;
+            const avail = lotRemaining(lot, lineType);
+            if (avail <= 0) continue;
+            const take = Math.min(want, avail);
 
-          const rebatePerTon = Math.round((pricePerTon - netPricePerTon) * 100) / 100;
-          const lineAmount = Math.round(take * rebatePerTon * 100) / 100;
-          calculatedSum += lineAmount;
+            const pricePerTon = Number(l.pricePerTon) > 0 ? Number(l.pricePerTon) : Number(lot.ListPricePerTon || 0);
+            const userNet = Number(l.netPricePerTon);
+            const lotNet  = (lot.NetPricePerTon === null || lot.NetPricePerTon === undefined)
+              ? null : Number(lot.NetPricePerTon);
+            const netPricePerTon = userNet > 0 ? userNet : lotNet;
 
-          // ใบขอเคลียร์มีสองตาราง: คืนรีเบท (เทียบราคาสุทธิโปรโมชั่น) และ
-          // คืนส่วนต่าง (เทียบราคาขายใน Pricelist) — รูปคำนวณเดียวกัน ต่างที่ราคาที่ใช้เทียบ
-          parsedLines.push({
-            lineNo: ++seq,
-            lineType,
-            invoiceNo: (l.invoiceNo ? String(l.invoiceNo).trim() : String(lot.SourceDocuNo || '')).slice(0, 50) || null,
-            goodCode: String(lot.GoodCode || goodCode || 'GENERAL').trim(),
-            goodName: l.goodName ? String(l.goodName).trim() : (lot.GoodName || null),
-            qtyTon: take,
-            pricePerTon,
-            netPricePerTon,
-            rebatePerTon,
-            planId: l.planId ? Number(l.planId) : (lot.PlanId ? Number(lot.PlanId) : null),
-            remark: l.remark ? String(l.remark).trim() : null,
-            sourceSOID: Number(lot.SourceSOID),
-            sourceListNo: Number(lot.SourceListNo),
-            sourceDocuNo: lot.SourceDocuNo || null,
-            sourceDocuDate: lot.SourceDocuDate || null,
-            sourceCouponNo: lot.CouponNo || null,
-            // ใบสั่งขายต้นทางของบรรทัดใบส่งของนี้ (dbo.SODT.RefSOID) — ดู migration 081
-            sourceRefSOID: lot.SourceRefSOID ?? null,
-            sourceRefListNo: lot.SourceRefListNo ?? null,
-            sourceBookingDocuNo: lot.SourceBookingDocuNo || null,
-          });
-          want = Math.round((want - take) * 1000) / 1000;
+            if (netPricePerTon === null) {
+              skippedNoPlan.push(`${lot.SourceDocuNo}/${lot.SourceListNo} — ${lot.GoodCode} ${avail} ตัน`);
+              continue;
+            }
+
+            takenInRequest.set(keyOf(lot, lineType), (takenInRequest.get(keyOf(lot, lineType)) || 0) + take);
+
+            const rebatePerTon = Math.round((pricePerTon - netPricePerTon) * 100) / 100;
+            const lineAmount = Math.round(take * rebatePerTon * 100) / 100;
+            calculatedSum += lineAmount;
+
+            parsedLines.push({
+              lineNo: ++seq,
+              lineType,
+              invoiceNo: (l.invoiceNo ? String(l.invoiceNo).trim() : String(lot.SourceDocuNo || '')).slice(0, 50) || null,
+              goodCode: String(lot.GoodCode || l.goodCode).slice(0, 50),
+              goodName: String(lot.GoodName || l.goodName || '').slice(0, 200),
+              qtyTon: take,
+              pricePerTon,
+              netPricePerTon,
+              rebatePerTon,
+              planId: lot.PlanId ?? l.planId ?? null,
+              remark: (l.remark ? String(l.remark).trim() : '').slice(0, 500) || null,
+              sourceSOID: lot.SourceSOID,
+              sourceListNo: lot.SourceListNo,
+              sourceDocuNo: lot.SourceDocuNo,
+              sourceDocuDate: lot.SourceDocuDate,
+              sourceCouponNo: lot.CouponNo,
+              sourceRefSOID: lot.SourceRefSOID,
+              sourceRefListNo: lot.SourceRefListNo,
+              sourceBookingDocuNo: lot.SourceBookingDocuNo,
+            });
+            want = Math.round((want - take) * 1000) / 1000;
+          }
+
+          if (want > 0.001) {
+            const kindLabel = lineType === 'DIFF' ? 'คืนส่วนต่าง' : 'คืนรีเบท';
+            const hasUserNet = Number(l.netPricePerTon) > 0;
+            const totalAvail = wantedFrom.reduce((a, r) =>
+              (hasUserNet || r.NetPricePerTon !== null && r.NetPricePerTon !== undefined)
+                ? a + Math.max(0, lotRemaining(r, lineType)) : a, 0);
+            problems.push(`${goodCode} (${kindLabel}): ขอเคลียร์ ${Number(l.qtyTon)} ตัน แต่ยอดขนจริงที่มีแผนคุ้มครองคงเหลือ `
+              + `${Math.round(totalAvail * 1000) / 1000} ตัน — ขาดอีก ${Math.round(want * 1000) / 1000} ตัน`);
+          }
         }
 
-        if (want > 0.001) {
-          const kindLabel = lineType === 'DIFF' ? 'คืนส่วนต่าง' : 'คืนรีเบท';
-          // นับเฉพาะล็อตที่ "มีสิทธิ์จริง" — ล็อตที่ไม่มีแผนคุ้มครองไม่ใช่ยอดที่เคลมได้
-          // ถ้านับรวมเข้าไปด้วย ข้อความจะขัดแย้งกันเอง (บอกว่าเหลือ 600 ตัน แต่เคลมไม่ได้)
-          const hasUserNet = Number(l.netPricePerTon) > 0;
-          const totalAvail = wantedFrom.reduce((a, r) =>
-            (hasUserNet || r.NetPricePerTon !== null && r.NetPricePerTon !== undefined)
-              ? a + Math.max(0, lotRemaining(r, lineType)) : a, 0);
-          problems.push(`${goodCode} (${kindLabel}): ขอเคลียร์ ${Number(l.qtyTon)} ตัน แต่ยอดขนจริงที่มีแผนคุ้มครองคงเหลือ `
-            + `${Math.round(totalAvail * 1000) / 1000} ตัน — ขาดอีก ${Math.round(want * 1000) / 1000} ตัน`);
+        if (problems.length) {
+          throw {
+            status: 400,
+            message: 'ยอดขอเคลียร์ไม่ตรงกับยอดขนจริง',
+            source: 'WINSpeed — ใบส่งของ/ใบกำกับ (DocuType 104) ของลูกค้ารายนี้',
+            reconciliation: problems,
+            skippedNoPlan: skippedNoPlan.length ? skippedNoPlan : undefined,
+          };
+        }
+        if (!parsedLines.length) {
+          throw { status: 400, message: 'ไม่มีรายการที่ตัดสิทธิ์ได้' };
+        }
+        totalAmt = Math.round(calculatedSum * 100) / 100;
+      }
+
+      if (pool) {
+        const available = Number(pool.AccruedAmt) - Number(pool.ClaimedAmt);
+        if (totalAmt > available) {
+          throw { status: 400, message: `ยอดเกิน: ขอ ฿${totalAmt.toFixed(2)} ใช้ได้ ฿${available.toFixed(2)}` };
         }
       }
 
-      // เจตนา: บล็อกและให้คนแก้ ไม่ตัดยอดให้อัตโนมัติ — การตัดเงียบ ๆ จะทำให้ผู้แทนขาย
-      // ไม่รู้ว่าถูกหักอะไรไป และตรวจย้อนกลับตอน ISO ไม่ได้ว่าหักด้วยเหตุใด
-      if (problems.length) {
-        return res.status(400).json({
-          message: 'ยอดขอเคลียร์ไม่ตรงกับยอดขนจริง',
-          source: 'WINSpeed — ใบส่งของ/ใบกำกับ (DocuType 104) ของลูกค้ารายนี้',
-          reconciliation: problems,
-          // ล็อตที่ขนจริงแต่ไม่มีแผนอนุมัติ — บอกให้รู้ว่าทำไมยอดถึงไม่พอ
-          // ไม่งั้นผู้แทนขายจะเห็นว่ามีของขนอยู่ แต่ระบบบอกว่าไม่มี แล้วหาสาเหตุไม่เจอ
-          skippedNoPlan: skippedNoPlan.length ? skippedNoPlan : undefined,
-          skippedNoPlanHint: skippedNoPlan.length
-            ? 'ล็อตเหล่านี้ไม่มีแผนส่งเสริมการขายที่อนุมัติแล้วครอบคลุม (สูตร/ภาค/ช่วงวันที่) จึงไม่มีสิทธิ์รีเบท'
-            : undefined,
-        });
-      }
-      if (!parsedLines.length) {
-        return res.status(400).json({ message: 'ไม่มีรายการที่ตัดสิทธิ์ได้' });
-      }
-      totalAmt = Math.round(calculatedSum * 100) / 100;
-    }
-
-    // งบที่จัดสรรให้พนักงานขาย (ถ้าใบนี้ผูกกับ pool) ยังเป็นเพดานอีกชั้น
-    // แยกจากการตัดสิทธิ์ตามตัน — คนละเรื่องกัน ตันมาจากการขน เงินมาจากงบที่อนุมัติ
-    if (pool) {
-      const available = Number(pool.AccruedAmt) - Number(pool.ClaimedAmt);
-      if (totalAmt > available) {
-        return res.status(400).json({ message: `ยอดเกิน: ขอ ฿${totalAmt.toFixed(2)} ใช้ได้ ฿${available.toFixed(2)}` });
-      }
-    }
-
-    // Infer RegionCode from Customer
-    const regionCode = await getCustomerRegion(custId);
-
-    // งวดที่ขอเบิก — รีเบทเบิกย้อนหลัง ใบ RB ในระบบเดิมเขียนเดือนไว้ในหมายเหตุ
-    // ถ้าผู้ยื่นไม่ระบุ ใช้เดือนของใบส่งของที่ใหม่ที่สุดในใบนี้ ซึ่งเป็นงวดที่เบิกจริง
-    let pYear = Number(periodYear) || null;
-    let pMonth = Number(periodMonth) || null;
-    if ((!pYear || !pMonth) && parsedLines.length) {
-      const latest = parsedLines
-        .map(l => l.sourceDocuDate).filter(Boolean)
-        .sort().pop();
-      if (latest) {
-        const d = new Date(latest);
-        pYear = pYear || d.getFullYear();
-        pMonth = pMonth || (d.getMonth() + 1);
-      }
-    }
-
-    // 1. Create RebateClaim Header
-    const claimR = await wfQuery(
-      `INSERT INTO wf.RebateClaim (PoolId, SalesUserId, CustId, ClaimAmt, RemainingAmt, Status, Note, RegionCode, CurrentTier, PeriodYear, PeriodMonth)
-       OUTPUT inserted.*
-       VALUES (@pid, @uid, @cid, @amt, @amt, 'TIER2_PENDING', @note, @rcode, 2, @py, @pm)`,
-      {
-        pid:   { type: sql.Int,          value: pool ? pool.Id : null },
-        uid:   { type: sql.Int,          value: req.user.sub },
-        cid:   { type: sql.NVarChar(20), value: custId || null },
-        amt:   { type: sql.Decimal(12,2),value: totalAmt },
-        note:  { type: sql.NVarChar(500),value: note || null },
-        rcode: { type: sql.VarChar(10),  value: regionCode },
-        py:    { type: sql.Int,          value: pYear },
-        pm:    { type: sql.Int,          value: pMonth }
-      }
-    );
-    const claim = claimR.recordset[0];
-
-    // 2. Create RebateClaimLine records
-    for (const line of parsedLines) {
-      await wfQuery(
-        `INSERT INTO wf.RebateClaimLine (ClaimId, [LineNo], LineType, InvoiceNo, GoodCode, GoodName, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, PlanId, Remark,
-                                        SourceSOID, SourceListNo, SourceDocuNo, SourceDocuDate, SourceCouponNo,
-                                        SourceRefSOID, SourceRefListNo, SourceBookingDocuNo)
-         VALUES (@cid, @lno, @ltype, @inv, @gcode, @gname, @qty, @price, @netPrice, @rebate, @planId, @remark,
-                 @sSoid, @sList, @sDocu, @sDate, @sCoup, @sRefSoid, @sRefList, @sBook)`,
-        {
-          ltype:    { type: sql.NVarChar(10),  value: line.lineType },
-          inv:      { type: sql.NVarChar(50),  value: line.invoiceNo },
-          cid:      { type: sql.Int,           value: claim.Id },
-          lno:      { type: sql.Int,           value: line.lineNo },
-          gcode:    { type: sql.NVarChar(50),  value: line.goodCode },
-          gname:    { type: sql.NVarChar(200), value: line.goodName },
-          qty:      { type: sql.Decimal(18,3), value: line.qtyTon },
-          price:    { type: sql.Decimal(18,2), value: line.pricePerTon },
-          netPrice: { type: sql.Decimal(18,2), value: line.netPricePerTon },
-          rebate:   { type: sql.Decimal(18,2), value: line.rebatePerTon },
-          planId:   { type: sql.Int,           value: line.planId },
-          remark:   { type: sql.NVarChar(500), value: line.remark },
-          // ร่องรอยกลับไปยังบรรทัดใบส่งของที่ถูกตัดสิทธิ์ — ตัวที่ทำให้ FIFO ตรวจย้อนกลับได้
-          sSoid:    { type: sql.Int,           value: line.sourceSOID ?? null },
-          sList:    { type: sql.Int,           value: line.sourceListNo ?? null },
-          sDocu:    { type: sql.NVarChar(25),  value: line.sourceDocuNo ?? null },
-          sDate:    { type: sql.Date,          value: line.sourceDocuDate ?? null },
-          sCoup:    { type: sql.NVarChar(25),  value: line.sourceCouponNo ?? null },
-          // สืบต่อไปถึงใบสั่งขาย — ตอบผู้ตรวจได้ว่าเงินก้อนนี้มาจากคำสั่งซื้อฉบับไหน
-          sRefSoid: { type: sql.Int,           value: line.sourceRefSOID ?? null },
-          sRefList: { type: sql.Int,           value: line.sourceRefListNo ?? null },
-          sBook:    { type: sql.NVarChar(25),  value: line.sourceBookingDocuNo ?? null }
+      if ((!pYear || !pMonth) && parsedLines.length) {
+        const latest = parsedLines
+          .map(l => l.sourceDocuDate).filter(Boolean)
+          .sort().pop();
+        if (latest) {
+          const d = new Date(latest);
+          pYear = pYear || d.getFullYear();
+          pMonth = pMonth || (d.getMonth() + 1);
         }
-      );
-    }
-
-    // 3. Create RebateClaimInvoice records if provided
-    if (Array.isArray(invoices) && invoices.length > 0) {
-      for (const invNo of invoices) {
-        if (!invNo) continue;
-        await wfQuery(
-          `INSERT INTO wf.RebateClaimInvoice (ClaimId, DocuNo) VALUES (@cid, @dno)`,
-          { cid: { type: sql.Int, value: claim.Id }, dno: { type: sql.NVarChar(50), value: String(invNo).trim() } }
-        );
-      }
-    }
-
-    // 4. Log Tier 1 Submission Approval Record
-    await wfQuery(
-      `INSERT INTO wf.RebateClaimApproval (ClaimId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
-       VALUES (@cid, 1, 'SALES', 'APPROVED', @uid, @uname, GETUTCDATE(), 'ยื่นใบขออนุมัติเคลียร์รีเบท')`,
-      {
-        cid:   { type: sql.Int,          value: claim.Id },
-        uid:   { type: sql.Int,          value: req.user.sub },
-        uname: { type: sql.NVarChar(150),value: await approverName(req.user) }
-      }
-    );
-
-    // 5. ตัดงบที่จัดสรร (เฉพาะใบที่ผูกกับ pool)
-    //
-    // การตัด "สิทธิ์เป็นตัน" ไม่ได้อยู่ตรงนี้แล้ว — บันทึกไว้ที่ Source* ของแต่ละบรรทัด
-    // และ view wf.v_RebateAccrualRemaining หักให้เองโดยไม่ต้องมีสำเนายอดคงเหลือ
-    // ที่เหลือตรงนี้คือการตัด "งบเป็นบาท" ที่ผู้บริหารจัดสรรให้พนักงานขายรายเดือน
-    if (pool) {
-      let remaining = totalAmt;
-      const ledger = (await wfQuery(
-        `SELECT * FROM wf.RebateLedger WHERE PoolId=@pid AND RemainingAmt>0 AND ReversedFlag=0 ORDER BY CreatedAt ASC`,
-        { pid: { type: sql.Int, value: pool.Id } }
-      )).recordset || [];
-
-      for (const row of ledger) {
-        if (remaining <= 0) break;
-        const cut = Math.min(remaining, Number(row.RemainingAmt));
-        await wfQuery(
-          `UPDATE wf.RebateLedger SET RemainingAmt = RemainingAmt - @cut, Status = CASE WHEN RemainingAmt - @cut <= 0 THEN 'CLAIMED' ELSE Status END WHERE Id=@id`,
-          { cut: { type: sql.Decimal(12,2), value: cut }, id: { type: sql.Int, value: row.Id } }
-        );
-        remaining -= cut;
       }
 
-      await wfQuery(
-        `UPDATE wf.RebatePool SET ClaimedAmt=ClaimedAmt+@amt, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
-        { amt: { type: sql.Decimal(12,2), value: totalAmt }, id: { type: sql.Int, value: pool.Id } }
-      );
-    }
+      // Self-claim and hostile client ratio injection overridden: system policy ratio is strictly enforced
+      // Minor-unit financial rounding (R7): total must equal ClaimAmt down to the cent
+      const totalCents = Math.round(Number(totalAmt) * 100);
+      const customerCents = Math.round(totalCents * (customerRatio / 100));
+      const retainedCents = totalCents - customerCents;
+      const customerAmount = customerCents / 100;
+      const retainedAmount = retainedCents / 100;
+
+      // 1. Create RebateClaim Header
+      const headerReq = tx.request();
+      headerReq.input('pid', sql.Int, pool ? pool.Id : null);
+      headerReq.input('uid', sql.Int, req.user.sub);
+      headerReq.input('cid', sql.NVarChar(20), custId || null);
+      headerReq.input('amt', sql.Decimal(12,2), totalAmt);
+      headerReq.input('note', sql.NVarChar(500), note || null);
+      headerReq.input('rcode', sql.VarChar(10), regionCode);
+      headerReq.input('py', sql.Int, pYear);
+      headerReq.input('pm', sql.Int, pMonth);
+      headerReq.input('cRatio', sql.Decimal(5,2), customerRatio);
+      headerReq.input('compRatio', sql.Decimal(5,2), companyRatio);
+      headerReq.input('cAmt', sql.Decimal(18,2), customerAmount);
+      headerReq.input('retAmt', sql.Decimal(18,2), retainedAmount);
+      headerReq.input('psId', sql.Int, policySnapshotId);
+      headerReq.input('idemKey', sql.VarChar(100), idempotencyKey);
+      headerReq.input('payHash', sql.VarChar(64), payloadHash);
+
+      const claimR = await headerReq.query(`
+        INSERT INTO wf.RebateClaim (
+          PoolId, SalesUserId, CustId, ClaimAmt, RemainingAmt, Status, Note, RegionCode, CurrentTier, PeriodYear, PeriodMonth,
+          CustomerRatio, CompanyRatio, CustomerAmount, RetainedAmount, IsSelfClaim, PolicySnapshotId,
+          IdempotencyKey, RequestPayloadHash
+        )
+        OUTPUT inserted.*
+        VALUES (
+          @pid, @uid, @cid, @amt, @amt, 'TIER2_PENDING', @note, @rcode, 2, @py, @pm,
+          @cRatio, @compRatio, @cAmt, @retAmt, 0, @psId,
+          @idemKey, @payHash
+        )
+      `);
+      const claim = claimR.recordset[0];
+
+      // 2. Create RebateClaimLine records
+      for (const line of parsedLines) {
+        const lineReq = tx.request();
+        lineReq.input('ltype', sql.NVarChar(10), line.lineType);
+        lineReq.input('inv', sql.NVarChar(50), line.invoiceNo);
+        lineReq.input('cid', sql.Int, claim.Id);
+        lineReq.input('lno', sql.Int, line.lineNo);
+        lineReq.input('gcode', sql.NVarChar(50), line.goodCode);
+        lineReq.input('gname', sql.NVarChar(200), line.goodName);
+        lineReq.input('qty', sql.Decimal(18,3), line.qtyTon);
+        lineReq.input('price', sql.Decimal(18,2), line.pricePerTon);
+        lineReq.input('netPrice', sql.Decimal(18,2), line.netPricePerTon);
+        lineReq.input('rebate', sql.Decimal(18,2), line.rebatePerTon);
+        lineReq.input('planId', sql.Int, line.planId);
+        lineReq.input('remark', sql.NVarChar(500), line.remark);
+        lineReq.input('sSoid', sql.Int, line.sourceSOID ?? null);
+        lineReq.input('sList', sql.Int, line.sourceListNo ?? null);
+        lineReq.input('sDocu', sql.NVarChar(25), line.sourceDocuNo ?? null);
+        lineReq.input('sDate', sql.Date, line.sourceDocuDate ?? null);
+        lineReq.input('sCoup', sql.NVarChar(25), line.sourceCouponNo ?? null);
+        lineReq.input('sRefSoid', sql.Int, line.sourceRefSOID ?? null);
+        lineReq.input('sRefList', sql.Int, line.sourceRefListNo ?? null);
+        lineReq.input('sBook', sql.NVarChar(25), line.sourceBookingDocuNo ?? null);
+
+        await lineReq.query(`
+          INSERT INTO wf.RebateClaimLine (ClaimId, [LineNo], LineType, InvoiceNo, GoodCode, GoodName, QtyTon, PricePerTon, NetPricePerTon, RebatePerTon, PlanId, Remark,
+                                          SourceSOID, SourceListNo, SourceDocuNo, SourceDocuDate, SourceCouponNo,
+                                          SourceRefSOID, SourceRefListNo, SourceBookingDocuNo)
+          VALUES (@cid, @lno, @ltype, @inv, @gcode, @gname, @qty, @price, @netPrice, @rebate, @planId, @remark,
+                  @sSoid, @sList, @sDocu, @sDate, @sCoup, @sRefSoid, @sRefList, @sBook)
+        `);
+      }
+
+      // 3. Create RebateClaimInvoice records if provided
+      if (Array.isArray(invoices) && invoices.length > 0) {
+        for (const invNo of invoices) {
+          if (!invNo) continue;
+          const invReq = tx.request();
+          invReq.input('cid', sql.Int, claim.Id);
+          invReq.input('dno', sql.NVarChar(50), String(invNo).trim());
+          await invReq.query(`INSERT INTO wf.RebateClaimInvoice (ClaimId, DocuNo) VALUES (@cid, @dno)`);
+        }
+      }
+
+      // 4. Log Tier 1 Submission Approval Record
+      const appReq = tx.request();
+      appReq.input('cid', sql.Int, claim.Id);
+      appReq.input('uid', sql.Int, req.user.sub);
+      appReq.input('uname', sql.NVarChar(150), await approverName(req.user));
+      await appReq.query(`
+        INSERT INTO wf.RebateClaimApproval (ClaimId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
+        VALUES (@cid, 1, 'SALES', 'APPROVED', @uid, @uname, GETUTCDATE(), 'ยื่นใบขออนุมัติเคลียร์รีเบท')
+      `);
+
+      // 5. ตัดงบที่จัดสรร (เฉพาะใบที่ผูกกับ pool)
+      if (pool) {
+        let remaining = totalAmt;
+        const ledReq = tx.request();
+        ledReq.input('pid', sql.Int, pool.Id);
+        const ledger = (await ledReq.query(`
+          SELECT * FROM wf.RebateLedger WITH (UPDLOCK)
+          WHERE PoolId=@pid AND RemainingAmt>0 AND ReversedFlag=0
+          ORDER BY CreatedAt ASC
+        `)).recordset || [];
+
+        for (const row of ledger) {
+          if (remaining <= 0) break;
+          const cut = Math.min(remaining, Number(row.RemainingAmt));
+          const cutReq = tx.request();
+          cutReq.input('cut', sql.Decimal(12,2), cut);
+          cutReq.input('id', sql.Int, row.Id);
+          await cutReq.query(`
+            UPDATE wf.RebateLedger 
+            SET RemainingAmt = RemainingAmt - @cut, 
+                Status = CASE WHEN RemainingAmt - @cut <= 0 THEN 'CLAIMED' ELSE Status END 
+            WHERE Id=@id
+          `);
+          remaining -= cut;
+        }
+
+        const poolUpdReq = tx.request();
+        poolUpdReq.input('amt', sql.Decimal(12,2), totalAmt);
+        poolUpdReq.input('id', sql.Int, pool.Id);
+        await poolUpdReq.query(`
+          UPDATE wf.RebatePool 
+          SET ClaimedAmt = ClaimedAmt + @amt, UpdatedAt = GETUTCDATE() 
+          WHERE Id=@id
+        `);
+      }
+
+      // 6. Audit log inside transaction
+      await logChangeEvent(tx, {
+        entityType: 'REBATE_CLAIM',
+        entityId: String(claim.Id),
+        action: 'CREATE_CLAIM',
+        beforeJson: null,
+        afterJson: JSON.stringify({ id: claim.Id, claimAmt: totalAmt, custId }),
+        reason: adjReasonText,
+        userId: Number(req.user.sub),
+      });
+
+      return claim;
+    });
 
     // เอกสารที่รองรับการขอใช้รีเบท — ผู้อนุมัติต้องเห็นว่าอ้างแผนฉบับใด
-    //
-    // บรรทัดที่ไม่มีแผนรองรับไม่ถูกบล็อก เพราะแผนบางฉบับยังเป็นกระดาษที่ยังไม่ถูกคีย์เข้าระบบ
-    // แต่ต้องแจ้งให้ผู้ยื่นและผู้อนุมัติเห็น ไม่งั้นจะอนุมัติเงินที่ไม่มีเอกสารต้นทางโดยไม่รู้ตัว
     const planIds = [...new Set(parsedLines.map(l => l.planId).filter(Boolean))];
     const plans = planIds.length
       ? (await wfQuery(
@@ -633,8 +816,10 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
       : [];
     const linesWithoutPlan = parsedLines.filter(l => !l.planId).length;
 
+    const normalized = normalizeClaim(newClaim);
     res.json({
-      ...claim,
+      ...normalized,
+      claim: normalized,
       periodYear: pYear,
       periodMonth: pMonth,
       plans,
@@ -643,219 +828,500 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
         ? [`${linesWithoutPlan} บรรทัดยังไม่มีแบบขออนุมัติรายการส่งเสริมการขายรองรับ — ผู้อนุมัติควรตรวจเอกสารกระดาษประกอบ`]
         : [],
     });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) {
+    console.error(e);
+    const status = e.status || (e.number === 50001 ? 409 : 500);
+    res.status(status).json({ message: e.message || 'เกิดข้อผิดพลาดในการยื่นเคลม' });
+  }
 });
 
 // POST /api/rebate/claims/:id/approve — 4-Tier Progression Approval
 router.post('/claims/:id/approve', async (req, res) => {
   try {
     const claimId = Number(req.params.id);
-    const { docuNo, note } = req.body || {};
+    const { docuNo, note, expectedTier } = req.body || {};
+    const operationKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'] || req.body?.idempotencyKey || req.body?.operationKey;
     if (!Number.isFinite(claimId)) return res.status(400).json({ message: 'Invalid claim ID' });
 
-    const claimR = await wfQuery(`SELECT * FROM wf.RebateClaim WHERE Id = @id`, { id: { type: sql.Int, value: claimId } });
-    const claim = claimR.recordset?.[0];
-    if (!claim) return res.status(404).json({ message: `ไม่พบใบขอเคลียร์ ID ${claimId}` });
-
-    if (claim.Status === 'APPROVED' || claim.Status === 'CN_ISSUED') {
-      return res.status(400).json({ message: 'ใบขอเคลียร์นี้ได้รับการอนุมัติสมบูรณ์แล้ว' });
-    }
-    if (claim.Status === 'REJECTED') {
-      return res.status(400).json({ message: 'ใบขอเคลียร์นี้ถูกไม่อนุมัติ (REJECTED) กรุณายื่นใหม่' });
-    }
-
-    const currentTier = claim.CurrentTier || 2;
-    const userRole = req.user.role || '';
+    const userRole = String(req.user.role || '').toUpperCase();
     const userId = Number(req.user.sub);
     const userName = await approverName(req.user);
 
-    // Check Segregation of Duties: Don't allow same person to approve consecutive tiers if strict mode
-    const prevApproval = (await wfQuery(
-      `SELECT TOP 1 DecidedBy FROM wf.RebateClaimApproval WHERE ClaimId = @cid AND Decision = 'APPROVED' ORDER BY Tier DESC`,
-      { cid: { type: sql.Int, value: claimId } }
-    )).recordset?.[0];
+    const result = await wfTransaction(async (tx) => {
+      // 1. Transaction-scoped Application Lock on Claim ID
+      const claimLockKey = `RebateClaim_${claimId}`;
+      const lockReq = tx.request();
+      lockReq.input('rname', sql.NVarChar(255), claimLockKey);
+      await lockReq.query(`
+        DECLARE @lockRes INT;
+        EXEC @lockRes = sp_getapplock @Resource = @rname, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 5000;
+        IF @lockRes < 0
+        BEGIN
+          THROW 50001, 'Unable to acquire lock on rebate claim for decision (timeout/conflict)', 1;
+        END;
+      `);
 
-    // เดิมเขียนว่า `... === 'true' || ['ADMIN','C_LEVEL'].includes(userRole)`
-    // ซึ่งแปลว่า **ผู้ใช้ C_LEVEL หรือ ADMIN คนเดียวเซ็นครบทั้งสี่ชั้นได้ด้วยตัวเอง**
-    // ตอนนั้น C_LEVEL มี 20 บัญชี ใครคนใดคนหนึ่งก็อนุมัติใบทั้งใบได้คนเดียว
-    // ซึ่งทำให้การมีสี่ลายเซ็นไม่มีความหมายเลย
-    //
-    // เหลือทางยกเว้นเดียวคือตัวแปรสภาพแวดล้อม ซึ่งตั้งได้เฉพาะผู้ดูแลเซิร์ฟเวอร์
-    // และควรเปิดเฉพาะกรณีฉุกเฉินที่บันทึกเหตุผลไว้แล้วเท่านั้น
-    const allowSameUserOverride = process.env.ALLOW_SINGLE_USER_MULTI_TIER_APPROVAL === 'true';
-    if (prevApproval && Number(prevApproval.DecidedBy) === userId && !allowSameUserOverride) {
-      return res.status(403).json({ message: 'ไม่อนุญาตให้บุคคลเดิมอนุมัติซ้ำสองชั้นติดต่อกัน (Segregation of Duties)' });
-    }
-
-    // Tier 2: Regional Manager Approval
-    if (currentTier === 2) {
-      const regionCode = claim.RegionCode || '99';
-      // Check if caller is assigned to region in UserSaleArea or has elevated role
-      const isRegionalMgr = (await wfQuery(
-        `SELECT 1 FROM wf.UserSaleArea WHERE UserId = @uid AND RegionCode = @rcode`,
-        { uid: { type: sql.Int, value: userId }, rcode: { type: sql.VarChar(10), value: regionCode } }
-      )).recordset?.length > 0;
-
-      const canApproveTier2 = isRegionalMgr || ['MANAGER', 'APPROVER', 'ADMIN', 'C_LEVEL'].includes(userRole);
-      if (!canApproveTier2) {
-        return res.status(403).json({ message: `ไม่มีสิทธิ์อนุมัติชั้นที่ 2 (ผู้จัดการภาค ${regionCode})` });
+      // 2. Fetch locked claim row
+      const claimR = await tx.request()
+        .input('id', sql.Int, claimId)
+        .query(`SELECT * FROM wf.RebateClaim WITH (UPDLOCK, ROWLOCK) WHERE Id = @id`);
+      const claim = claimR.recordset?.[0];
+      if (!claim) {
+        throw Object.assign(new Error(`ไม่พบใบขอเคลียร์ ID ${claimId}`), { status: 404 });
       }
 
-      await wfQuery(`
-        INSERT INTO wf.RebateClaimApproval (ClaimId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
-        VALUES (@cid, 2, 'REGIONAL_MGR', 'APPROVED', @uid, @uname, GETUTCDATE(), @note)
-      `, {
-        cid:   { type: sql.Int,          value: claimId },
-        uid:   { type: sql.Int,          value: userId },
-        uname: { type: sql.NVarChar(150),value: userName },
-        note:  { type: sql.NVarChar(500),value: note || 'อนุมัติชั้นที่ 2 (ผู้จัดการภาค)' }
-      });
+      // 3. Decision Replay Check BEFORE terminal guard
+      if (expectedTier) {
+        const targetTier = Number(expectedTier);
+        const existingDec = (await tx.request()
+          .input('cid', sql.Int, claimId)
+          .input('tier', sql.Int, targetTier)
+          .query(`SELECT TOP 1 * FROM wf.RebateClaimApproval WITH (UPDLOCK, ROWLOCK) WHERE ClaimId = @cid AND Tier = @tier ORDER BY ApprovalId DESC`)
+        ).recordset?.[0];
 
-      await wfQuery(`
-        UPDATE wf.RebateClaim SET Status = 'TIER3_PENDING', CurrentTier = 3 WHERE Id = @id
-      `, { id: { type: sql.Int, value: claimId } });
-
-      return res.json({ id: claimId, status: 'TIER3_PENDING', currentTier: 3, message: 'อนุมัติชั้นที่ 2 (ผู้จัดการภาค) เรียบร้อย' });
-    }
-
-    // Tier 3: Marketing Manager Approval
-    if (currentTier === 3) {
-      // ชั้นที่ 3 = กรรมการบริหาร (DECISIONS-v1.6.0 ข้อ 2 · ทางเลือก 2ก)
-      //
-      // เดิมรับ MARKETING/MANAGER/APPROVER ด้วย ซึ่งเป็นชุดคนเดียวกับที่ชั้น 2 รับ
-      // ชั้นที่เพิ่มมาจึงไม่ได้เพิ่มการตรวจสอบจริง เพียงเพิ่มจำนวนลายเซ็น
-      //
-      // ไม่ใช้ MARKETING เพราะบริษัทไม่มีฝ่ายการตลาด — ตรวจ dbo.EMPost ครบทั้ง 10 ตำแหน่ง
-      // แล้วไม่มีตำแหน่งใดเกี่ยวกับการตลาดเลย · ฟอร์มกระดาษเขียนว่า "ผู้จัดการฝ่ายตลาด"
-      // แต่ผู้ที่เซ็นจริงคือกรรมการบริหาร ซึ่งบริษัทมีสองคนพอดีสำหรับชั้น 3 และ 4
-      //
-      // ⚠ ต้องใช้คู่กับ migration 082 ที่ลด C_LEVEL จาก 20 บัญชีเหลือกรรมการบริหารสองคน
-      //   ถ้าบทบาทยังถูกแจกกว้าง การบีบตรงนี้จะไม่เปลี่ยนอะไรเลย
-      const canApproveTier3 = ['ADMIN', 'C_LEVEL'].includes(userRole);
-      if (!canApproveTier3) {
-        return res.status(403).json({ message: 'ไม่มีสิทธิ์อนุมัติชั้นที่ 3 (กรรมการบริหาร)' });
+        if (existingDec) {
+          if (existingDec.Decision === 'APPROVED') {
+            const isActor = Number(existingDec.DecidedBy) === userId || ['ADMIN', 'C_LEVEL'].includes(userRole);
+            if (!isActor) {
+              throw Object.assign(new Error(`ไม่มีสิทธิ์เข้าถึงหรือเรียกซ้ำการตัดสินของผู้อนุมัติท่านอื่น (DecidedBy: #${existingDec.DecidedBy})`), { status: 403 });
+            }
+            return {
+              id: claimId,
+              status: claim.Status,
+              currentTier: claim.CurrentTier,
+              message: `รายการนี้ได้รับการอนุมัติชั้นที่ ${targetTier} เรียบร้อยแล้ว (Idempotent)`,
+              idempotent: true,
+              decision: 'APPROVED',
+              decidedBy: existingDec.DecidedBy,
+              decidedAt: existingDec.DecidedAt
+            };
+          } else {
+            throw Object.assign(new Error(`รายการนี้ได้รับการตัดสินในชั้นที่ ${targetTier} ไปแล้ว (${existingDec.Decision} โดย #${existingDec.DecidedBy})`), { status: 409 });
+          }
+        }
+      } else if (claim.Status === 'APPROVED' || claim.Status === 'CN_ISSUED') {
+        const lastApp = (await tx.request()
+          .input('cid', sql.Int, claimId)
+          .query(`SELECT TOP 1 * FROM wf.RebateClaimApproval WITH (UPDLOCK, ROWLOCK) WHERE ClaimId = @cid AND Tier = 4 AND Decision = 'APPROVED' ORDER BY ApprovalId DESC`)
+        ).recordset?.[0];
+        if (lastApp && (Number(lastApp.DecidedBy) === userId || ['ADMIN', 'C_LEVEL'].includes(userRole))) {
+          return {
+            id: claimId,
+            status: claim.Status,
+            currentTier: claim.CurrentTier,
+            message: 'รายการนี้ได้รับการอนุมัติสมบูรณ์แล้ว (Idempotent)',
+            idempotent: true,
+            decision: 'APPROVED',
+            decidedBy: lastApp.DecidedBy,
+            decidedAt: lastApp.DecidedAt
+          };
+        }
       }
 
-      await wfQuery(`
-        INSERT INTO wf.RebateClaimApproval (ClaimId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
-        VALUES (@cid, 3, 'MARKETING_MGR', 'APPROVED', @uid, @uname, GETUTCDATE(), @note)
-      `, {
-        cid:   { type: sql.Int,          value: claimId },
-        uid:   { type: sql.Int,          value: userId },
-        uname: { type: sql.NVarChar(150),value: userName },
-        note:  { type: sql.NVarChar(500),value: note || 'อนุมัติชั้นที่ 3 (กรรมการบริหาร)' }
-      });
-
-      await wfQuery(`
-        UPDATE wf.RebateClaim SET Status = 'TIER4_PENDING', CurrentTier = 4 WHERE Id = @id
-      `, { id: { type: sql.Int, value: claimId } });
-
-      return res.json({ id: claimId, status: 'TIER4_PENDING', currentTier: 4, message: 'อนุมัติชั้นที่ 3 (กรรมการบริหาร) เรียบร้อย' });
-    }
-
-    // Tier 4: Executive (C_LEVEL / ADMIN) Final Approval
-    if (currentTier === 4) {
-      const canApproveTier4 = ['C_LEVEL', 'ADMIN', 'ACCOUNTING'].includes(userRole);
-      if (!canApproveTier4) {
-        return res.status(403).json({ message: 'ไม่มีสิทธิ์อนุมัติชั้นที่ 4 (กรรมการบริหาร / C_LEVEL)' });
+      // 4. Terminal states check
+      if (claim.Status === 'APPROVED' || claim.Status === 'CN_ISSUED') {
+        throw Object.assign(new Error('ใบขอเคลียร์นี้ได้รับการอนุมัติสมบูรณ์แล้ว ไม่สามารถอนุมัติซ้ำได้'), { status: 400 });
+      }
+      if (claim.Status === 'REJECTED') {
+        throw Object.assign(new Error('ใบขอเคลียร์นี้ถูกไม่อนุมัติ (REJECTED) กรุณายื่นใหม่'), { status: 400 });
+      }
+      if (claim.Status === 'CANCELLED') {
+        throw Object.assign(new Error('ใบขอเคลียร์นี้ถูกยกเลิกแล้ว'), { status: 400 });
       }
 
-      await wfQuery(`
+      const currentTier = Number(claim.CurrentTier || 2);
+      if (expectedTier && Number(expectedTier) !== currentTier) {
+        throw Object.assign(new Error(`คำขอนี้ไม่อยู่ในชั้นที่ ${expectedTier} (ปัจจุบันอยู่ในชั้นที่ ${currentTier})`), { status: 409 });
+      }
+
+      const expectedStatus = currentTier === 2 ? 'TIER2_PENDING'
+                           : currentTier === 3 ? 'TIER3_PENDING'
+                           : currentTier === 4 ? 'TIER4_PENDING'
+                           : null;
+      if (!expectedStatus || claim.Status !== expectedStatus) {
+        throw Object.assign(new Error(`สถานะของคำขอ (${claim.Status}) ไม่ตรงกับขั้นตอนอนุมัติชั้นที่ ${currentTier}`), { status: 400 });
+      }
+
+      // 5. Check Segregation of Duties: Creator cannot approve their own claim unless elevated
+      if (Number(claim.SalesUserId) === userId && !['ADMIN', 'C_LEVEL'].includes(userRole)) {
+        throw Object.assign(new Error('ไม่อนุญาตให้ผู้ยื่นคำขออนุมัติคำขอของตนเอง (Segregation of Duties)'), { status: 403 });
+      }
+
+      // Check consecutive tiers SoD
+      const prevApproval = (await tx.request()
+        .input('cid', sql.Int, claimId)
+        .query(`SELECT TOP 1 DecidedBy, Tier FROM wf.RebateClaimApproval WHERE ClaimId = @cid AND Decision = 'APPROVED' ORDER BY Tier DESC`)
+      ).recordset?.[0];
+
+      const allowSameUserOverride = process.env.ALLOW_SINGLE_USER_MULTI_TIER_APPROVAL === 'true';
+      if (prevApproval && Number(prevApproval.DecidedBy) === userId && !allowSameUserOverride) {
+        throw Object.assign(new Error('ไม่อนุญาตให้บุคคลเดิมอนุมัติซ้ำสองชั้นติดต่อกัน (Segregation of Duties)'), { status: 403 });
+      }
+
+      // 6. Tier & Region Authorization
+      let requiredRole = '';
+      let nextStatus = '';
+      let nextTier = currentTier;
+
+      if (currentTier === 2) {
+        const regionCode = claim.RegionCode || '99';
+        const isRegionalMgr = (await tx.request()
+          .input('uid', sql.Int, userId)
+          .input('rcode', sql.VarChar(10), regionCode)
+          .query(`SELECT 1 FROM wf.UserSaleArea WHERE UserId = @uid AND RegionCode = @rcode`)
+        ).recordset?.length > 0;
+
+        const canApproveTier2 = isRegionalMgr || ['ADMIN', 'C_LEVEL'].includes(userRole);
+        if (!canApproveTier2) {
+          throw Object.assign(new Error(`ไม่มีสิทธิ์อนุมัติชั้นที่ 2 (ผู้จัดการภาค ${regionCode})`), { status: 403 });
+        }
+        requiredRole = 'REGIONAL_MGR';
+        nextStatus = 'TIER3_PENDING';
+        nextTier = 3;
+      } else if (currentTier === 3) {
+        const canApproveTier3 = ['ADMIN', 'C_LEVEL'].includes(userRole);
+        if (!canApproveTier3) {
+          throw Object.assign(new Error('ไม่มีสิทธิ์อนุมัติชั้นที่ 3 (กรรมการบริหาร)'), { status: 403 });
+        }
+        requiredRole = 'MARKETING_MGR';
+        nextStatus = 'TIER4_PENDING';
+        nextTier = 4;
+      } else if (currentTier === 4) {
+        const canApproveTier4 = ['C_LEVEL', 'ADMIN', 'ACCOUNTING'].includes(userRole);
+        if (!canApproveTier4) {
+          throw Object.assign(new Error('ไม่มีสิทธิ์อนุมัติชั้นที่ 4 (กรรมการบริหาร / C_LEVEL)'), { status: 403 });
+        }
+        requiredRole = 'EXECUTIVE';
+        nextStatus = 'APPROVED';
+        nextTier = 4;
+      } else {
+        throw Object.assign(new Error('ขั้นตอนอนุมัติไม่ถูกต้อง'), { status: 400 });
+      }
+
+      // 7. Tier 4 optional WINSpeed RB check
+      let rb = null;
+      if (currentTier === 4 && docuNo) {
+        rb = (await tx.request()
+          .input('dn', sql.NVarChar(25), String(docuNo).trim())
+          .query(`SELECT TOP 1 SOInvID, DocuDate, NetAmnt FROM dbo.SOInvHD WHERE DocuNo = @dn AND Docutype = 106`)
+        ).recordset?.[0];
+      }
+
+      // 8. Conditional State Update
+      const updateReq = tx.request();
+      updateReq.input('id', sql.Int, claimId);
+      updateReq.input('expStatus', sql.VarChar(20), expectedStatus);
+      updateReq.input('expTier', sql.Int, currentTier);
+      updateReq.input('newStatus', sql.VarChar(20), nextStatus);
+      updateReq.input('newTier', sql.Int, nextTier);
+      updateReq.input('uid', sql.Int, userId);
+
+      let sqlUpdate = '';
+      if (currentTier === 4) {
+        updateReq.input('cn', sql.NVarChar(20), docuNo || null);
+        updateReq.input('rbid', sql.Int, rb ? rb.SOInvID : null);
+        updateReq.input('rbdate', sql.Date, rb ? rb.DocuDate : null);
+        sqlUpdate = `
+          UPDATE wf.RebateClaim 
+          SET Status = @newStatus, 
+              CurrentTier = @newTier,
+              ApprovedAt = GETUTCDATE(), 
+              ApprovedBy = @uid, 
+              CnDocuNo = @cn,
+              RbSOInvID = @rbid,
+              RbDocDate = @rbdate,
+              RbMatchedAt = CASE WHEN @rbid IS NULL THEN NULL ELSE GETUTCDATE() END
+          WHERE Id = @id AND Status = @expStatus AND CurrentTier = @expTier
+        `;
+      } else {
+        sqlUpdate = `
+          UPDATE wf.RebateClaim 
+          SET Status = @newStatus, CurrentTier = @newTier 
+          WHERE Id = @id AND Status = @expStatus AND CurrentTier = @expTier
+        `;
+      }
+
+      const updateRes = await updateReq.query(sqlUpdate);
+      if (updateRes.rowsAffected[0] !== 1) {
+        throw Object.assign(new Error('สถานะของคำขอเปลี่ยนแปลงไปแล้ว กรุณารีเฟรชเพื่อดูสถานะล่าสุด'), { status: 409 });
+      }
+
+      // 9. Insert approval record
+      const appReq = tx.request();
+      appReq.input('cid', sql.Int, claimId);
+      appReq.input('tier', sql.Int, currentTier);
+      appReq.input('rrole', sql.VarChar(30), requiredRole);
+      appReq.input('uid', sql.Int, userId);
+      appReq.input('uname', sql.NVarChar(150), userName);
+      appReq.input('note', sql.NVarChar(500), note || `อนุมัติชั้นที่ ${currentTier}`);
+      await appReq.query(`
         INSERT INTO wf.RebateClaimApproval (ClaimId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
-        VALUES (@cid, 4, 'EXECUTIVE', 'APPROVED', @uid, @uname, GETUTCDATE(), @note)
-      `, {
-        cid:   { type: sql.Int,          value: claimId },
-        uid:   { type: sql.Int,          value: userId },
-        uname: { type: sql.NVarChar(150),value: userName },
-        note:  { type: sql.NVarChar(500),value: note || 'อนุมัติชั้นที่ 4 (กรรมการบริหาร)' }
-      });
+        VALUES (@cid, @tier, @rrole, 'APPROVED', @uid, @uname, GETUTCDATE(), @note)
+      `);
 
-      // เลขที่ใบคืนรีเบทของ WINSpeed (RB<รหัสผู้ขอ><ปี พ.ศ.>-<ลำดับ>)
-      //
-      // **ไม่บล็อกถ้ายังหาไม่เจอ** — ลำดับงานจริงคืออนุมัติกระดาษก่อน แล้วบัญชีจึงคีย์
-      // ใบลดหนี้เข้า WINSpeed ตอนอนุมัติจึงมักยังไม่มีใบนั้น การบังคับจะทำให้อนุมัติไม่ได้เลย
-      // แต่ถ้าเจอแล้ว ผูก SOInvID ไว้ทันทีเพื่อให้รายงานกระทบยอดตรวจได้
-      const rb = docuNo
-        ? (await wfQuery(
-            `SELECT TOP 1 SOInvID, DocuDate, NetAmnt FROM dbo.SOInvHD
-             WHERE DocuNo = @dn AND Docutype = 106`,
-            { dn: { type: sql.NVarChar(25), value: String(docuNo).trim() } })).recordset?.[0]
-        : null;
-
-      await wfQuery(`
-        UPDATE wf.RebateClaim 
-        SET Status = 'APPROVED', 
-            ApprovedAt = GETUTCDATE(), 
-            ApprovedBy = @uid, 
-            CnDocuNo = @cn,
-            RbSOInvID = @rbid,
-            RbDocDate = @rbdate,
-            RbMatchedAt = CASE WHEN @rbid IS NULL THEN NULL ELSE GETUTCDATE() END
-        WHERE Id = @id
-      `, {
-        id:     { type: sql.Int,          value: claimId },
-        uid:    { type: sql.Int,          value: userId },
-        cn:     { type: sql.NVarChar(20), value: docuNo || null },
-        rbid:   { type: sql.Int,          value: rb ? rb.SOInvID : null },
-        rbdate: { type: sql.Date,         value: rb ? rb.DocuDate : null }
+      // 10. Audit log
+      await logChangeEvent(tx, {
+        entityType: 'REBATE_CLAIM',
+        entityId: String(claimId),
+        action: `APPROVE_TIER_${currentTier}`,
+        beforeJson: JSON.stringify({ status: claim.Status, currentTier: claim.CurrentTier }),
+        afterJson: JSON.stringify({ status: nextStatus, currentTier: nextTier }),
+        reason: note || `อนุมัติชั้นที่ ${currentTier}`,
+        userId,
       });
 
       const warnings = [];
-      if (!docuNo) warnings.push('ยังไม่ได้ระบุเลขที่ใบคืนรีเบท — ต้องกลับมาเติมเมื่อบัญชีออกใบแล้ว');
-      else if (!rb) warnings.push(`ยังไม่พบใบ ${docuNo} ใน WINSpeed — จะขึ้นในรายงานกระทบยอดจนกว่าจะออกใบจริง`);
-      else if (Math.abs(Number(rb.NetAmnt) - Number(claim.ClaimAmt)) > 0.01) {
-        warnings.push(`ยอดไม่ตรง: ใบขอเคลียร์ ฿${Number(claim.ClaimAmt).toFixed(2)} · ใบ ${docuNo} ใน WINSpeed ฿${Number(rb.NetAmnt).toFixed(2)}`);
+      if (currentTier === 4) {
+        if (!docuNo) warnings.push('ยังไม่ได้ระบุเลขที่ใบคืนรีเบท — ต้องกลับมาเติมเมื่อบัญชีออกใบแล้ว');
+        else if (!rb) warnings.push(`ยังไม่พบใบ ${docuNo} ใน WINSpeed — จะขึ้นในรายงานกระทบยอดจนกว่าจะออกใบจริง`);
+        else if (Math.abs(Number(rb.NetAmnt) - Number(claim.ClaimAmt)) > 0.01) {
+          warnings.push(`ยอดไม่ตรง: ใบขอเคลียร์ ฿${Number(claim.ClaimAmt).toFixed(2)} · ใบ ${docuNo} ใน WINSpeed ฿${Number(rb.NetAmnt).toFixed(2)}`);
+        }
       }
 
-      return res.json({
-        id: claimId, status: 'APPROVED', currentTier: 4,
-        message: 'อนุมัติชั้นที่ 4 (กรรมการบริหาร) เสร็จสมบูรณ์',
+      return {
+        id: claimId,
+        status: nextStatus,
+        currentTier: nextTier,
+        message: currentTier === 4 ? 'อนุมัติชั้นที่ 4 (กรรมการบริหาร) เสร็จสมบูรณ์' : `อนุมัติชั้นที่ ${currentTier} เรียบร้อย`,
         rbDocuNo: docuNo || null,
         rbMatched: !!rb,
         warnings,
-      });
-    }
+      };
+    });
 
-    res.status(400).json({ message: 'ขั้นตอนอนุมัติไม่ถูกต้อง' });
-  } catch (e) { res.status(500).json({ message: e.message }); }
+    res.json(result);
+  } catch (e) {
+    console.error('[POST /claims/:id/approve error]', e.message || e);
+    const statusCode = e.status || (e.number === 50001 ? 409 : 500);
+    res.status(statusCode).json({ message: e.message || 'เกิดข้อผิดพลาดในการอนุมัติใบขอเคลียร์' });
+  }
 });
 
 // POST /api/rebate/claims/:id/reject — ตีกลับ/ไม่อนุมัติใบขออนุมัติ
 router.post('/claims/:id/reject', async (req, res) => {
   try {
     const claimId = Number(req.params.id);
-    const { reason } = req.body || {};
+    const { reason, expectedTier } = req.body || {};
+    const operationKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'] || req.body?.idempotencyKey || req.body?.operationKey;
     if (!Number.isFinite(claimId)) return res.status(400).json({ message: 'Invalid claim ID' });
-    if (!reason || !String(reason).trim()) {
-      return res.status(400).json({ message: 'กรุณาระบุเหตุผลการไม่อนุมัติ (Reason)' });
+
+    const trimmedReason = String(reason || '').trim();
+    if (trimmedReason.length < 5) {
+      return res.status(400).json({ message: 'กรุณาระบุเหตุผลการไม่อนุมัติ (อย่างน้อย 5 ตัวอักษร)' });
     }
 
-    const claimR = await wfQuery(`SELECT * FROM wf.RebateClaim WHERE Id = @id`, { id: { type: sql.Int, value: claimId } });
-    const claim = claimR.recordset?.[0];
-    if (!claim) return res.status(404).json({ message: `ไม่พบใบขอเคลียร์ ID ${claimId}` });
+    const userRole = String(req.user.role || '').toUpperCase();
+    const userId = Number(req.user.sub);
+    const userName = await approverName(req.user);
 
-    const currentTier = claim.CurrentTier || 1;
+    const result = await wfTransaction(async (tx) => {
+      // 1. Transaction-scoped Application Lock on Claim ID
+      const claimLockKey = `RebateClaim_${claimId}`;
+      const lockReq = tx.request();
+      lockReq.input('rname', sql.NVarChar(255), claimLockKey);
+      await lockReq.query(`
+        DECLARE @lockRes INT;
+        EXEC @lockRes = sp_getapplock @Resource = @rname, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 5000;
+        IF @lockRes < 0
+        BEGIN
+          THROW 50001, 'Unable to acquire lock on rebate claim for decision (timeout/conflict)', 1;
+        END;
+      `);
 
-    // Log Rejection in approval trail
-    await wfQuery(`
-      INSERT INTO wf.RebateClaimApproval (ClaimId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
-      VALUES (@cid, @tier, @rrole, 'REJECTED', @uid, @uname, GETUTCDATE(), @reason)
-    `, {
-      cid:    { type: sql.Int,          value: claimId },
-      tier:   { type: sql.Int,          value: currentTier },
-      rrole:  { type: sql.VarChar(30),  value: req.user.role || 'APPROVER' },
-      uid:    { type: sql.Int,          value: req.user.sub },
-      uname:  { type: sql.NVarChar(150),value: await approverName(req.user) },
-      reason: { type: sql.NVarChar(500),value: String(reason).trim() }
+      // 2. Fetch locked claim row
+      const claimR = await tx.request()
+        .input('id', sql.Int, claimId)
+        .query(`SELECT * FROM wf.RebateClaim WITH (UPDLOCK, ROWLOCK) WHERE Id = @id`);
+      const claim = claimR.recordset?.[0];
+      if (!claim) {
+        throw Object.assign(new Error(`ไม่พบใบขอเคลียร์ ID ${claimId}`), { status: 404 });
+      }
+
+      // 3. Replay check BEFORE terminal state check
+      if (claim.Status === 'REJECTED') {
+        const lastRejection = (await tx.request()
+          .input('cid', sql.Int, claimId)
+          .query(`SELECT TOP 1 * FROM wf.RebateClaimApproval WITH (UPDLOCK, ROWLOCK) WHERE ClaimId = @cid AND Decision = 'REJECTED' ORDER BY ApprovalId DESC`)
+        ).recordset?.[0];
+        if (lastRejection) {
+          const isActor = Number(lastRejection.DecidedBy) === userId || ['ADMIN', 'C_LEVEL'].includes(userRole);
+          if (!isActor) {
+            throw Object.assign(new Error(`ไม่มีสิทธิ์เข้าถึงหรือเรียกซ้ำการตัดสินของผู้อนุมัติท่านอื่น (DecidedBy: #${lastRejection.DecidedBy})`), { status: 403 });
+          }
+          if (expectedTier && Number(lastRejection.Tier) !== Number(expectedTier)) {
+            throw Object.assign(new Error(`รายการนี้ถูกปฏิเสธในชั้นที่ ${lastRejection.Tier} ไม่ตรงกับ expectedTier=${expectedTier}`), { status: 409 });
+          }
+          if (lastRejection.Reason && trimmedReason && lastRejection.Reason !== trimmedReason) {
+            throw Object.assign(new Error('Payload conflict: เหตุผลการปฏิเสธไม่ตรงกับข้อมูลเดิมที่ได้รับการตัดสินไปแล้ว'), { status: 409 });
+          }
+          return {
+            id: claimId,
+            status: 'REJECTED',
+            currentTier: lastRejection.Tier,
+            message: 'รายการนี้ได้รับการปฏิเสธไปแล้ว (Idempotent)',
+            idempotent: true,
+            decision: 'REJECTED',
+            decidedBy: lastRejection.DecidedBy,
+            decidedAt: lastRejection.DecidedAt
+          };
+        }
+        throw Object.assign(new Error('คำขอนี้ถูกไม่อนุมัติ (REJECTED) ไปแล้ว'), { status: 400 });
+      }
+
+      if (expectedTier) {
+        const targetTier = Number(expectedTier);
+        const existingDec = (await tx.request()
+          .input('cid', sql.Int, claimId)
+          .input('tier', sql.Int, targetTier)
+          .query(`SELECT TOP 1 * FROM wf.RebateClaimApproval WITH (UPDLOCK, ROWLOCK) WHERE ClaimId = @cid AND Tier = @tier ORDER BY ApprovalId DESC`)
+        ).recordset?.[0];
+
+        if (existingDec) {
+          if (existingDec.Decision === 'REJECTED') {
+            const isActor = Number(existingDec.DecidedBy) === userId || ['ADMIN', 'C_LEVEL'].includes(userRole);
+            if (!isActor) {
+              throw Object.assign(new Error(`ไม่มีสิทธิ์เข้าถึงหรือเรียกซ้ำการตัดสินของผู้อนุมัติท่านอื่น (DecidedBy: #${existingDec.DecidedBy})`), { status: 403 });
+            }
+            if (existingDec.Reason && trimmedReason && existingDec.Reason !== trimmedReason) {
+              throw Object.assign(new Error('Payload conflict: เหตุผลการปฏิเสธไม่ตรงกับข้อมูลเดิมที่ได้รับการตัดสินไปแล้ว'), { status: 409 });
+            }
+            return {
+              id: claimId,
+              status: claim.Status,
+              currentTier: existingDec.Tier,
+              message: 'รายการนี้ได้รับการปฏิเสธไปแล้ว (Idempotent)',
+              idempotent: true,
+              decision: 'REJECTED',
+              decidedBy: existingDec.DecidedBy,
+              decidedAt: existingDec.DecidedAt
+            };
+          } else {
+            throw Object.assign(new Error(`รายการนี้ได้รับการตัดสินในชั้นที่ ${targetTier} ไปแล้ว (${existingDec.Decision} โดย #${existingDec.DecidedBy})`), { status: 409 });
+          }
+        }
+      }
+
+      // Terminal states check
+      if (claim.Status === 'APPROVED' || claim.Status === 'CN_ISSUED') {
+        throw Object.assign(new Error('ไม่สามารถตีกลับคำขอที่อนุมัติแล้วหรือออกใบลดหนี้แล้ว (Terminal State)'), { status: 400 });
+      }
+      if (claim.Status === 'CANCELLED') {
+        throw Object.assign(new Error('คำขอนี้ถูกยกเลิกแล้ว'), { status: 400 });
+      }
+
+      const currentTier = Number(claim.CurrentTier || 2);
+      if (expectedTier && Number(expectedTier) !== currentTier) {
+        throw Object.assign(new Error(`สถานะคำขอไม่อยู่ในชั้นที่ระบุ (คำขออยู่ในชั้นที่ ${currentTier} แต่ส่ง expectedTier=${expectedTier})`), { status: 409 });
+      }
+
+      const validPendingStates = ['TIER2_PENDING', 'TIER3_PENDING', 'TIER4_PENDING', 'PENDING'];
+      if (!validPendingStates.includes(claim.Status)) {
+        throw Object.assign(new Error(`ไม่สามารถปฏิเสธคำขอในสถานะ ${claim.Status}`), { status: 400 });
+      }
+
+      // 4. Segregation of Duties: Submitter cannot reject their own claim as an approver
+      if (Number(claim.SalesUserId) === userId && !['ADMIN', 'C_LEVEL'].includes(userRole)) {
+        throw Object.assign(new Error('ไม่อนุญาตให้ผู้ยื่นคำขอปฏิเสธแทนผู้อนุมัติ (Segregation of Duties)'), { status: 403 });
+      }
+
+      // 5. Tier & Region Authorization for Rejection
+      let requiredRole = '';
+      if (currentTier === 2) {
+        const regionCode = claim.RegionCode || '99';
+        const isRegionalMgr = (await tx.request()
+          .input('uid', sql.Int, userId)
+          .input('rcode', sql.VarChar(10), regionCode)
+          .query(`SELECT 1 FROM wf.UserSaleArea WHERE UserId = @uid AND RegionCode = @rcode`)
+        ).recordset?.length > 0;
+
+        const canRejectTier2 = isRegionalMgr || ['ADMIN', 'C_LEVEL'].includes(userRole);
+        if (!canRejectTier2) {
+          throw Object.assign(new Error(`ไม่มีสิทธิ์ปฏิเสธชั้นที่ 2 (ผู้จัดการภาค ${regionCode})`), { status: 403 });
+        }
+        requiredRole = 'REGIONAL_MGR';
+      } else if (currentTier === 3) {
+        const canRejectTier3 = ['ADMIN', 'C_LEVEL'].includes(userRole);
+        if (!canRejectTier3) {
+          throw Object.assign(new Error('ไม่มีสิทธิ์ปฏิเสธชั้นที่ 3 (กรรมการบริหาร)'), { status: 403 });
+        }
+        requiredRole = 'MARKETING_MGR';
+      } else if (currentTier === 4) {
+        const canRejectTier4 = ['C_LEVEL', 'ADMIN', 'ACCOUNTING'].includes(userRole);
+        if (!canRejectTier4) {
+          throw Object.assign(new Error('ไม่มีสิทธิ์ปฏิเสธชั้นที่ 4 (กรรมการบริหาร / บัญชี)'), { status: 403 });
+        }
+        requiredRole = 'EXECUTIVE';
+      } else {
+        throw Object.assign(new Error('ขั้นตอนอนุมัติไม่ถูกต้อง'), { status: 400 });
+      }
+
+      // 7. Conditional State Update to REJECTED
+      const updateRes = await tx.request()
+        .input('id', sql.Int, claimId)
+        .input('expStatus', sql.VarChar(20), claim.Status)
+        .input('expTier', sql.Int, currentTier)
+        .query(`
+          UPDATE wf.RebateClaim 
+          SET Status = 'REJECTED', CurrentTier = 1 
+          WHERE Id = @id AND Status = @expStatus AND CurrentTier = @expTier
+        `);
+
+      if (updateRes.rowsAffected[0] !== 1) {
+        throw Object.assign(new Error('สถานะของคำขอเปลี่ยนแปลงไปแล้ว กรุณารีเฟรชเพื่อดูสถานะล่าสุด'), { status: 409 });
+      }
+
+      // 8. Reversal of Pool ClaimedAmt if attached to a pool
+      if (claim.PoolId && Number(claim.ClaimAmt) > 0) {
+        await tx.request()
+          .input('pid', sql.Int, claim.PoolId)
+          .input('amt', sql.Decimal(12, 2), Number(claim.ClaimAmt))
+          .query(`
+            UPDATE wf.RebatePool
+            SET ClaimedAmt = CASE WHEN ClaimedAmt >= @amt THEN ClaimedAmt - @amt ELSE 0 END,
+                UpdatedAt = GETUTCDATE()
+            WHERE Id = @pid
+          `);
+      }
+
+      // 9. Insert rejection record into approval trail
+      await tx.request()
+        .input('cid', sql.Int, claimId)
+        .input('tier', sql.Int, currentTier)
+        .input('rrole', sql.VarChar(30), requiredRole)
+        .input('uid', sql.Int, userId)
+        .input('uname', sql.NVarChar(150), userName)
+        .input('reason', sql.NVarChar(500), trimmedReason)
+        .query(`
+          INSERT INTO wf.RebateClaimApproval (ClaimId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
+          VALUES (@cid, @tier, @rrole, 'REJECTED', @uid, @uname, GETUTCDATE(), @reason)
+        `);
+
+      // 10. Audit log
+      await logChangeEvent(tx, {
+        entityType: 'REBATE_CLAIM',
+        entityId: String(claimId),
+        action: `REJECT_TIER_${currentTier}`,
+        beforeJson: JSON.stringify({ status: claim.Status, currentTier: claim.CurrentTier }),
+        afterJson: JSON.stringify({ status: 'REJECTED', currentTier: 1 }),
+        reason: trimmedReason,
+        userId,
+      });
+
+      return {
+        id: claimId,
+        status: 'REJECTED',
+        currentTier: 1,
+        message: 'ไม่อนุมัติใบขอเคลียร์และบันทึกประวัติการปฏิเสธเรียบร้อย',
+      };
     });
 
-    // Revert status to REJECTED & reset CurrentTier = 1
-    await wfQuery(`
-      UPDATE wf.RebateClaim SET Status = 'REJECTED', CurrentTier = 1 WHERE Id = @id
-    `, { id: { type: sql.Int, value: claimId } });
-
-    res.json({ id: claimId, status: 'REJECTED', message: 'ไม่อนุมัติใบขอเคลียร์และบันทึกประวัติการปฏิเสธเรียบร้อย' });
-  } catch (e) { res.status(500).json({ message: e.message }); }
+    res.json(result);
+  } catch (e) {
+    console.error('[POST /claims/:id/reject error]', e.message || e);
+    const statusCode = e.status || (e.number === 50001 ? 409 : 500);
+    res.status(statusCode).json({ message: e.message || 'เกิดข้อผิดพลาดในการไม่อนุมัติใบขอเคลียร์' });
+  }
 });
 
 // GET /api/rebate/summary — KPI ภาพรวมต่อพนักงานขาย (wf.RebatePool)
@@ -1772,4 +2238,6 @@ router.get('/coupons/:custId', async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+router.normalizeClaim = normalizeClaim;
+router.buildCanonicalPayloadHash = buildCanonicalPayloadHash;
 module.exports = router;

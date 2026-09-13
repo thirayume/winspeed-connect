@@ -7,5 +7,11 @@
   "excludedPatterns": [
     "^uat_"
   ],
-  "legacyDuplicateSequences": {}
+  "legacyDuplicateSequences": {},
+  "databaseContextOverrides": {
+    "074_fix_winspeed_legacy_raiserror.sql": {
+      "checksum": "76190fc2ea9933fe1ce088d8173c49ea5080ea5e8da54e486034f0ce1f1d0ce9",
+      "database": "dbwins_worldfert9"
+    }
+  }
 }

@@ -33,7 +33,6 @@ const check = (name, ok, detail) => {
   check('GET /ops/status = 200', st.status === 200);
   check('มี version + uptime', !!st.body?.version, `v${st.body?.version}, up ${st.body?.uptimeSec}s`);
   check('SQL Server = up', st.body?.db?.sqlserver === 'up', st.body?.db?.sqlserver);
-  check('MySQL (TruckScale) = up', st.body?.db?.mysql === 'up', st.body?.db?.mysql);
   const ob = await api('/ops/outbox');
   check('GET /ops/outbox = 200', ob.status === 200, `events=${ob.body?.recent?.length ?? 0}`);
   const er = await api('/ops/errors?limit=5');

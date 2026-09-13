@@ -1,18 +1,21 @@
 ---
 documentId: "WF-CTX-001"
-title: "Context Pack — อ่านแผ่นเดียวแล้วเริ่มงานต่อได้ (v1.9.10)"
-version: "v1.9.10"
-status: Draft
-statusDetail: "ปรับ 5 กันยายน 2569 · แทน V1.7.0-CONTEXT-PACK.md · ตัวเลขทุกตัววัดจากเครื่องจริง"
+title: "Context Pack — อ่านแผ่นเดียวแล้วเริ่มงานต่อได้ (v1.9.11)"
+version: "v1.9.11"
+status: Archived
+statusDetail: "ปรับ 5 กันยายน 2569 · Single Source of Truth ฉบับสมบูรณ์ · ตัวเลขทุกตัววัดจากเครื่องจริง"
 owner: "Solution Architect"
-normative: true
+normative: false
 ---
 
-# Context Pack — v1.9.10
+> สถานะ: เอกสารย้อนหลัง/รอทบทวนรายหัวข้อ ณ 2026-09-06 — ไม่ใช่ข้อกำหนดปัจจุบัน โปรดเริ่มที่ [เอกสารกลาง](../README.md). เนื้อหาเดิมคงไว้เพื่อสืบย้อน; คำอ้าง Released/SSOT ภายในเป็นสถานะเดิม.
 
-> **เอกสารนี้มีไว้ให้เปิดเป็นอันดับแรกทุกครั้งที่เริ่มงานใหม่**
-> ไม่ว่าจะเป็นคนหรือ AI · อ่านจบแล้วต้องรู้พอที่จะไม่ทำพลาดซ้ำรอยเดิม
-> **แทนที่ `V1.7.0-CONTEXT-PACK.md` ซึ่งชื่อไม่ตรงรุ่นแล้ว**
+
+# Context Pack — v1.9.11
+
+> **เอกสารนี้คือ Single Source of Truth (SSOT) ประจำโปรเจกต์**
+> สำหรับให้ทีมงานและ AI เปิดอ่านเป็นอันดับแรกทุกครั้งที่เริ่มเซสชันใหม่
+> รวบรวมข้อเท็จจริง สถาปัตยกรรม กฎเหล็ก และจุดเชื่อมต่อของรุ่นที่ Release ล่าสุด (**v1.9.11**)
 
 ---
 
@@ -22,57 +25,57 @@ World Fert ใช้ **Prosoft WINSpeed 9.0** เป็น ERP หลัก
 **WS-Sale-App** เป็นชั้นเว็บที่คร่อมอยู่บน WINSpeed ไม่ใช่ระบบที่มาแทน
 ฐานข้อมูลเดียวกัน — `dbo` เป็นของ WINSpeed · `wf` เป็นของเรา
 เพิ่มงานที่ WINSpeed ไม่มีที่เก็บ: รีเบท · ของแถม · ตั๋วคุม · Paper Trail · การชั่ง
-รุ่นปัจจุบัน **1.9.0** (3 ก.ย. 2569)
+รุ่นปัจจุบัน **1.9.11** (5 ก.ย. 2569)
 
 ---
 
-## 2. กติกาเหล็ก 6 ข้อ — ผิดข้อใดข้อหนึ่งคือพังทั้งระบบ
+## 2. กติกาเหล็ก 8 ข้อ — ผิดข้อใดข้อหนึ่งคือพังทั้งระบบ
 
 | # | กติกา |
 |---|---|
-| 1 | **ห้าม `CREATE/ALTER/DROP` บน `dbo`** — เพิ่ม object ใหม่ให้ไปอยู่ใน `wf` |
+| 1 | **ห้าม `CREATE/ALTER/DROP` บน `dbo`** — เพิ่ม object ใหม่ให้ไปอยู่ใน `wf` เท่านั้น |
 | 2 | **ห้าม `DELETE FROM dbo.SOHD`** ไม่ว่ากรณีใด |
 | 3 | **แก้ schema ผ่าน migration ใหม่เท่านั้น** — `checksumPolicy=immutable-after-apply` · ห้ามมี `USE` ในไฟล์ |
-| 4 | `dbo.WGHD`/`WGDT`/`WGDTReport` **เขียนข้อมูลได้แล้ว** (04/09/2569) — แต่เครื่องชั่งยังเป็นเจ้าของ state machine 1→2→3 อย่าใส่ปุ่มให้ผู้ใช้เลื่อนสถานะเอง |
-| 5 | **repo เป็นสาธารณะ** — ห้ามมีชื่อพนักงาน · ความลับ · IP ส่วนบุคคล ในไฟล์ใด |
-| 6 | **deploy production ต้องได้รับอนุญาตทุกครั้ง** — ไม่มีการอนุมัติล่วงหน้าแบบถาวร |
-| 7 | **ห้ามอักขระไทยในไฟล์ `.bat`/`.cmd`** — cmd.exe ตีความเพี้ยนแล้วรันคำสั่งขยะ เคยทำไฟล์หาย 19 ไฟล์ |
-| 8 | **ห้าม `===` เทียบค่าที่มาจาก DB driver** — คืนชนิดไม่สม่ำเสมอ ด่านความปลอดภัยเคยพังเงียบ |
+| 4 | **การชั่งอ่านสดจาก `dbo.WGHD`/`WGDT`** — API `/api/weighing` เป็น Read-only 100% เชื่อมด้วย `SPID = SOHD.SOID` |
+| 5 | **TruckScale ไม่ได้อ่าน `dbo.SOHD.OnHold`** — การ Hold ในแอปเป็นการแจ้งเตือนในระบบเท่านั้น การหยุดรถจริงต้องเป็นขั้นตอนทางกายภาพของคน |
+| 6 | **repo เป็นสาธารณะ** — ห้ามมีชื่อพนักงานจริง · ความลับ · IP ส่วนบุคคล ในไฟล์ใด |
+| 7 | **ห้ามอักขระไทยในไฟล์ `.bat`/`.cmd`** — cmd.exe ตีความเพี้ยนแล้วรันคำสั่งขยะ |
+| 8 | **ห้าม `===` เทียบค่าที่มาจาก DB driver** — คืนชนิดไม่สม่ำเสมอ (`Number()` สำหรับ id, `String()` สำหรับ key) |
 
 ---
 
-## 3. สภาพแวดล้อม — 3 ปลายทางที่เปิดใช้
+## 3. สภาพแวดล้อม — ปลายทางที่เปิดใช้
 
 > 🔴 **5 ก.ย. 2569 — เจ้าของสั่งปิด Railway + Azure + Vercel ชั่วคราว**
-> เหลือใช้งานจริงแค่ **Local · Docker (on-prem) · Hostinger** จะแจ้งเมื่อพร้อมเปิดกลับ
+> เหลือใช้งานจริงแค่ **Local · Docker (on-prem) · Hostinger (PROD-B)** จะแจ้งเมื่อพร้อมเปิดกลับ
 > `npm run migrate` และ `npm run deploy` **ข้าม `remote` (Azure) ให้อัตโนมัติแล้ว**
 > เปิดกลับ: ลบ `'remote'` ออกจาก `SUSPENDED_TARGETS` ใน `backend/scripts/migrate-targets.js` บรรทัดเดียว
 
 | ชื่อ | ที่อยู่ | บทบาท | deploy |
 |---|---|---|---|
 | **DEV** | เครื่องตัวเอง `:5173` / `:3000` · `DB_MODE=local` | 🟢 ใช้งาน | — |
-| **Docker (on-prem)** | `deploy/onprem/` · `up.ps1` / `up.sh` | 🟢 ใช้งาน | มือ |
-| **PROD-B (Hostinger)** | ทั้งกอง `76.13.190.104` | 🟢 **ใช้งานจริง** | `03-remote-deploy.bat` |
-| ~~PROD-A~~ | ~~Vercel + Railway + Azure~~ | ⏸️ **ปิดชั่วคราว** | ข้าม |
-| UAT | `dbwins_worldfert9_test` @ Hostinger | ทดสอบ | มือ |
+| **Docker (on-prem)** | `deploy/onprem/` · `up.ps1` / `up.sh` | 🟢 ใช้งาน | มือ (`up.ps1`) |
+| **PROD-B (Hostinger)** | ทั้งกอง `76.13.190.104` | 🟢 **ใช้งานจริง** | GitHub Actions Runner (`prod-b-hostinger`) เมื่อ push `main` |
+| ~~PROD-A~~ | ~~Vercel + Railway + Azure~~ | ⏸️ **ปิดชั่วคราว** | ข้ามอัตโนมัติ |
+| UAT | `dbwins_worldfert9_test` @ Hostinger | 🟢 ทดสอบ | deploy v1.9.11 แล้ว |
 
-> 🔴 **สวิตช์เลือกฐานคือ `DB_MODE` ไม่ใช่ `DB_TARGET`** — ค่าเริ่มต้น `remote` = **Azure production**
-> `DB_TARGET` ถูกเพิกเฉยเงียบ ๆ · **อ่านบรรทัด `Migration preflight for <TARGET>` ก่อนปล่อยให้เดินต่อเสมอ**
+> 🔴 **สวิตช์เลือกฐานคือ `DB_MODE` ไม่ใช่ `DB_TARGET`** — ค่าเริ่มต้น `local` (บนเครื่อง) / `remote` (บนโฮสต์)
 
 ---
 
-## 4. สถานะ ณ 5 ก.ย. 2569
+## 4. สถานะ ณ 5 ก.ย. 2569 (v1.9.11)
 
-| | |
+| รายการ | ค่าปัจจุบัน |
 |---|---|
-| รุ่น | **1.9.10** · ขึ้นที่ PROD-B (PROD-A ปิดชั่วคราว ค้างที่ 1.9.8) |
-| migration | **105 ไฟล์** · ตรงกัน local + remote_b (`unchanged: 105; pending: 0; drift: 0`) |
-| เทสต์ | unit **8/8** · e2e Document Flow **15/15** (`scripts/e2e-sale-trip-flow.js`) |
+| รุ่นแอป | **1.9.11** (ทั้ง Root, Backend, Frontend packages) |
+| migration | **107 ไฟล์** · ล่าสุด `107_truck_hold_field_not_read.sql` (ตรงกัน local + remote_b) |
+| เทสต์ | unit **8/8** · e2e Document Flow **19/19** ผ่านครบทั้ง local และ PROD-B |
 | typecheck | **0 error** · `npm run build` = `tsc -b && vite build` |
-| MySQL TruckScale | 🔴 **ลบออกจากระบบแล้ว** ไม่ใช่แค่ปิด · `/api/health` **ไม่มีคีย์ `mysql`** อีกต่อไป |
-| แหล่งข้อมูลการชั่ง | `dbo.WGHD`/`WGDT`/`WGDTReport` — **อ่าน-เขียนได้** |
-| ข้อมูลชั่ง | ทั้ง 3 ฐานมีชุดทดสอบ WGHD 6 · เที่ยว 3 (`UpdateBy='SEED-TEST'`) |
-| `wf` schema | ลบ `WeighInbox` · เพิ่ม `EditReason`/`EditRequest`/`TruckHoldLog`/`CouponRedemptionRef` + view |
+| MySQL TruckScale | 🔴 **ลบออกจากระบบถาวรแล้ว** · migration 106 ลบ `wf.WeighInbox` และ settings ทิ้ง |
+| แหล่งข้อมูลการชั่ง | `dbo.WGHD`/`WGDT`/`WGDTReport` — อ่านสดผ่าน `SPID = SOHD.SOID` (DocuType 103) |
+| การแจ้งเตือน Hold | Hold ในแอปเท่านั้น (`wf.TruckHoldLog`) — เครื่องชั่งไม่อ่านฟิลด์นี้ |
+| การตรวจเครดิต | แก้ไข bug `SUM()` over subquery ใน `backend/routes/so.js` ด้วย `OUTER APPLY` |
+| ตำแหน่งผู้ใช้ | ผูกผู้ใช้ 41 คนกับตำแหน่งใน `wf.UserPosition` — สายอนุมัติเดินได้ 39 สาย |
 
 ---
 
@@ -96,21 +99,21 @@ World Fert ใช้ **Prosoft WINSpeed 9.0** เป็น ERP หลัก
 
 | กับดัก | ทางที่ถูก |
 |---|---|
-| `DB_TARGET` ไม่ทำงาน | ใช้ `DB_MODE` |
-| `tsc --noEmit` ตรวจศูนย์ไฟล์ (`"files": []`) | ใช้ `tsc -b` |
-| กฎไฟร์วอลล์ hPanel ต้องกด **Synchronize** ถึงมีผล | `allowlist.sh` (ufw) ไม่ใช่ตัวคุมบนเครื่องนี้ |
-| IP ผู้ดูแลเป็น dynamic — โดนล็อกออกมาแล้ว 2 ครั้ง | `curl https://api.ipify.org` ก่อนสรุปว่าอะไรพัง |
-| `DocuNo` ไม่ unique ข้าม `DocuType` | ใส่ `DocuType` ในทุก join |
-| `SOInvHD.RefNo` NULL ทั้งคอลัมน์ | ใช้ `SONo` |
-| `SOHD.RefSOID` NULL ทั้ง 60,038 ใบ | 103→104 เชื่อด้วย `DocuNo` |
-| `WGHD.DocuNo` ตรง SOHD แค่ 117/141 | ใช้ `SPID` |
-| `WGHD.Status` เป็นสตริง | `Number(r.Status)` |
-| `GLDT.AccID` ไม่ใช่รหัสบัญชี | join `EMAcc` เอา `AccCode` |
-| `SMID` ไม่ใช่ IDENTITY | ขอ id ผ่าน `usp_AllocateWinspeedId` |
-| RESTORE ลบ `wf` + database user | ลำดับ **logins → migrate → seed_admin** |
-| `PortalKey` ประกาศไว้ 2 ที่ | แก้ทั้ง `App.tsx` และ `store/app-store.ts` |
-| ข้อมูลหลัง 31 มี.ค. 2569 เชื่อไม่ได้ | กรอง `DocuDate < '2026-04-01'` |
-| **อักขระไทยในไฟล์ `.bat`** ทำ cmd.exe รันคำสั่งขยะ (ไฟล์หาย 19 ตัว) | คอมเมนต์อังกฤษล้วน · ตรวจ `grep -n '[^ -~]' file.bat` ต้องไม่เจออะไร |
+| `DB_| 1 | ผูกผู้ใช้เข้ากับตำแหน่ง | 🟡 **41/41 ใช้งานแล้ว** · สายอนุมัติเดินได้ 39 (อีก 2 คือกรรมการบริหารที่อยู่บนสุด = ถูกต้อง) · 17 คนมาจากการสุ่มเพื่อเริ่มสายอนุมัติได้ — ต้องให้หัวหน้าฝ่ายขายยืนยันก่อนใช้ตัดสินใจจริง |
+| 2 | ~~ทดสอบ Hold กับรถจริง~~ | ✅ **ปิดเคสแล้ว 5 ก.ย. 2569** — ทีม TruckScale ยืนยันว่า**ไม่ได้อ่าน** `dbo.SOHD.OnHold` · Hold = แจ้งเตือนในแอปเท่านั้น การหยุดรถจริงเป็นขั้นตอนของคน · `TRUCK_HOLD_VERIFIED` เลิกใช้ |
+| 3 | สำรอง `.local-secrets` ออกนอกเครื่อง | 🟢 แก้สคริปต์ตรวจขนาดไฟล์ก่อนรายงานผล (แก้บั๊ก NTFS stream บน Win 11 24H2) แล้วนำสำเนาเก็บออฟไลน์ปลอดภัย |
+| 4 | ~~UAT ค้างที่ v1.8.0 / unhealthy~~ | ✅ **ปิดเคสแล้ว 5 ก.ย. 2569** — แก้ไข healthcheck ที่เคยบังคับ `db.mysql` และ deploy ใหม่เป็น **v1.9.11** เรียบร้อยแล้ว |
+| 5 | **ย้ายผู้ใช้ไปเขตการขายใหม่** | 📌 `SaleRegion` มีทั้งชุดเก่า (01–06) และใหม่ (10–16) |
+| 6 | ซิงค์ PROD-A → PROD-B / SSH key Azure | 🛑 **PENDING & HOLD** — PROD-A ปิดชั่วคราว |
+| 7 | `WGDT.CouponNo` ว่าง | 🟡 รอข้อมูลจริงจากโรงงาน |
+| 8 | งานใหม่นอกแผนเดิม (Quotation ↔ SO · pricelist รายเดือน · rebate pool) | 🟡 แผนในอนาคต — ไม่ใช่เฟส 6 |
+
+> **ที่ทำเสร็จแล้วใน v1.9.11** — เฟส 2/3/4/5/6 ของ Sale Trip · Master Settings เหตุผล ·
+> กลไก Hold พร้อมข้อเท็จจริงเครื่องชั่ง · ลบ MySQL ทั้งหมด (รวม container บน PROD-B) · CI/CD self-hosted runner `prod-b-hostinger` บน VPS · แก้คำเตือนเครดิต `OUTER APPLY`
+>
+> **เฟส 6 = ทดสอบทั้งเส้น (Document Flow)**
+> `backend/scripts/e2e-sale-trip-flow.js` ตรวจครบจุดตั้งแต่เที่ยวว่างจนชั่งออก **ผ่าน 19/19**
+> รันก่อน deploy ทุกครั้ง: `DB_MODE=local node scripts/e2e-sale-trip-flow.js`�ต์อังกฤษล้วน · ตรวจ `grep -n '[^ -~]' file.bat` ต้องไม่เจออะไร |
 | **driver คืนชนิดไม่สม่ำเสมอ** — `===` ทำด่านความปลอดภัยพังเงียบ | `Number()` เทียบ id · `String()` เป็นคีย์ Map |
 | `query()` คืน array ส่วน `wfQuery()` คืน `.recordset` | ดูบรรทัด `require('../db')` ของไฟล์นั้นก่อนใช้ |
 | `npm run deploy` ไม่ใช่คำสั่งตรวจสอบ (bump+push ถาวร) | ตรวจด้วย `npm run migrate:plan` |

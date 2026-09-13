@@ -1,6 +1,6 @@
 {
   "name": "winspeed-erp-root",
-  "version": "1.9.11",
+  "version": "2.0.0",
   "description": "Root management for Sales Order app",
   "scripts": {
     "start:backend": "cd backend && nodemon server.js",
@@ -16,11 +16,9 @@
     "migrate": "node backend/scripts/migrate-targets.js",
     "migrate:all": "node backend/scripts/migrate-targets.js --targets all",
     "migrate:local": "node backend/scripts/migrate-targets.js --targets local",
-    "migrate:remote": "node backend/scripts/migrate-targets.js --targets remote",
     "migrate:remote_b": "node backend/scripts/migrate-targets.js --targets remote_b",
     "migrate:plan": "node backend/scripts/migrate-targets.js --plan",
     "migrate:plan:local": "node backend/scripts/migrate-targets.js --targets local --plan",
-    "migrate:plan:remote": "node backend/scripts/migrate-targets.js --targets remote --plan",
     "migrate:plan:remote_b": "node backend/scripts/migrate-targets.js --targets remote_b --plan",
     "test:migrations": "node --test backend/run_migrations.test.js",
     "deploy": "powershell -ExecutionPolicy Bypass -File deploy.ps1",
@@ -28,13 +26,18 @@
     "deploy:major": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -BumpType major",
     "deploy:skip-migrate": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -SkipMigration",
     "deploy:dry": "powershell -ExecutionPolicy Bypass -File deploy.ps1 -DryRun",
-    "smoke": "node scripts/smoke-api.js"
+    "smoke": "node scripts/smoke-api.js",
+    "test:hostinger": "playwright test --config playwright.hostinger.config.ts",
+    "smoke:hostinger": "playwright test --config playwright.hostinger.config.ts e2e/v2-environment.spec.ts",
+    "test:so08": "node --test backend/tests/integration-so-08.test.js",
+    "test:so09": "node --test backend/tests/integration-so-09.test.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "concurrently": "^9.2.4",
     "cross-env": "^10.1.0",
     "kill-port": "^2.0.1",
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "pdf-parse": "^2.4.5"
   }
 }

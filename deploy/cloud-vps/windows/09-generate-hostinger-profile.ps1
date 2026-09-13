@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^\d{1,3}(\.\d{1,3}){3}$')]
@@ -54,19 +54,15 @@ function New-Password {
 }
 
 $mssqlSaPassword = New-Password
-$mysqlRootPassword = New-Password
-$mysqlAppPassword = New-Password
 $readerPassword = New-Password
 $ownerPassword = New-Password
 $jwtSecret = New-SafeSecret -Length 64
 $migrateSecret = New-SafeSecret -Length 48
-$ingestSecret = New-SafeSecret -Length 48
 $appAdminPassword = New-Password
 
 $appDomain = "app.$ServerHostname"
 $apiDomain = "api.$ServerHostname"
 $mssqlDomain = "mssql.$ServerHostname"
-$mysqlDomain = "mysql.$ServerHostname"
 
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 $envPath = Join-Path $DeployRoot '.env'
@@ -84,38 +80,28 @@ VITE_API_BASE_URL=https://$apiDomain/api
 CORS_ORIGIN=https://$appDomain
 
 DB_NAME=dbwins_worldfert9
-MYSQL_DATABASE=db_truckscale
 MSSQL_PID=Express
 MSSQL_SA_PASSWORD=$mssqlSaPassword
-MYSQL_ROOT_PASSWORD=$mysqlRootPassword
-MYSQL_USER=wfapp
-MYSQL_PASSWORD=$mysqlAppPassword
 WF_READER_PASSWORD=$readerPassword
 WF_OWNER_PASSWORD=$ownerPassword
 
 JWT_SECRET=$jwtSecret
 JWT_EXPIRES_IN=8h
 MIGRATE_SECRET=$migrateSecret
-TS_INGEST_SECRET=$ingestSecret
 DEFAULT_SEED_PASSWORD=$appAdminPassword
-TS_SYNC_INTERVAL_MS=60000
 APP_VERSION=1.0.0
 
 TZ=Asia/Bangkok
 MSSQL_MEMORY_LIMIT_MB=4096
 MSSQL_MEM_LIMIT=5G
-MYSQL_BUFFER_POOL=768M
-MYSQL_MEM_LIMIT=1500M
 
 DB_BIND_IP=0.0.0.0
 MSSQL_PUBLIC_PORT=1433
-MYSQL_PUBLIC_PORT=3306
 HTTP_PORT=80
 HTTPS_PORT=443
 
 TRANSFER_ROOT=/srv/wf-transfer
 MSSQL_CERT_DIR=/opt/worldfert/secrets/mssql
-MYSQL_CERT_DIR=/opt/worldfert/secrets/mysql
 MSSQL_CONFIG_FILE=/opt/worldfert/secrets/mssql/mssql.conf
 
 BACKUP_RETAIN_DAYS=35
@@ -125,7 +111,6 @@ LINE_LOGIN_CHANNEL_ID=
 LINE_LOGIN_CHANNEL_SECRET=
 LINE_LOGIN_CALLBACK_URL=
 LINE_LOGIN_SUCCESS_REDIRECT=
-TS_PRODUCTION_HOSTS=
 "@
 
 $serverConfigText = @"
@@ -138,7 +123,6 @@ SERVER_TIMEZONE=Asia/Bangkok
 
 SERVER_PUBLIC_IP=$ServerIp
 MSSQL_DOMAIN=$mssqlDomain
-MYSQL_DOMAIN=$mysqlDomain
 
 ADMIN_ALLOWED_CIDRS=$AllowedCidr
 SFTP_ALLOWED_CIDRS=$AllowedCidr
@@ -187,9 +171,7 @@ User=wfbackup
 Password=DISABLED_KEY_ONLY
 PrivateKey=$SftpKey
 UploadMSSQL=/incoming/mssql
-UploadMySQL=/incoming/mysql
 DownloadMSSQL=/outgoing/mssql
-DownloadMySQL=/outgoing/mysql
 
 [MSSQL]
 Host=$mssqlDomain
@@ -203,15 +185,6 @@ OwnerUser=wf_owner
 OwnerPassword=$ownerPassword
 Encrypt=true
 
-[MYSQL]
-Host=$mysqlDomain
-Port=3306
-Database=db_truckscale
-RootUser=root
-RootPassword=$mysqlRootPassword
-AppUser=wfapp
-AppPassword=$mysqlAppPassword
-SslMode=VERIFY_CA
 
 [APPLICATION]
 Frontend=https://$appDomain
@@ -220,14 +193,12 @@ InitialAdminUser=admin
 InitialAdminPassword=$appAdminPassword
 JwtSecret=$jwtSecret
 MigrateSecret=$migrateSecret
-TruckScaleIngestSecret=$ingestSecret
 
 [NETWORK]
 AllowedAdminSftpDatabaseCIDR=$AllowedCidr
 HTTP=80/tcp public
 HTTPS=443/tcp public
 MSSQL=1433/tcp allowlist only
-MySQL=3306/tcp allowlist only
 "@
 
 [System.IO.File]::WriteAllText($envPath, ($envText.Trim() + "`n"), $utf8NoBom)

@@ -1,44 +1,30 @@
 /**
- * reports.js — รายงาน + export Excel (FR-017)
- *  - GET /api/reports/types           → รายการรายงาน
- *  - GET /api/reports/:type           → { title, columns, rows }
- *  - GET /api/reports/:type/export    → ไฟล์ .xlsx
+ * reports.js — รายงาน + export Excel (FR-017 / SO-10)
+ *  - GET /api/reports/types           → รายการรายงานตามสิทธิ์
+ *  - GET /api/reports/:type           → { type, title, columns, rows }
+ *  - GET /api/reports/:type/export    → ไฟล์ .xlsx พร้อม typed cells และ total row
  * อ่านอย่างเดียว (wf views/tables + dbo ผ่าน wfQuery → ตามปุ่มสลับ DB)
  */
 const router = require('express').Router();
 const XLSX = require('xlsx');
 const { wfQuery, sql } = require('../db');
-// ชั้น MySQL TruckScale ถูกลบถาวรเมื่อ 04/09/2569
-// รายงานกระทบยอดฝั่งเครื่องชั่งจึงไม่มีข้อมูลเปรียบเทียบอีกต่อไป (ดูจุดที่ใช้ด้านล่าง)
 const { requireAuth, canViewAllRebateAmounts } = require('../middleware/auth');
 
 router.use(requireAuth);
 
-// นิยามรายงาน: key → { title, columns:[{key,label}], sql }
+/**
+ * นิยามรายงาน 23 ฉบับตามแคตตาล็อกระบบ
+ * คอลัมน์ระบุ Type ชัดเจน: identifier | text | date | datetime | money | quantity | integer | percent
+ * ป้องกันการแปลงสตริงรหัสเป็นตัวเลข (คง leading zeros เช่น CustCode "0462002")
+ */
 const REPORTS = {
-  // ── ซ่อนไว้: รายงานนี้เทียบใบชั่งที่แอปเขียนกลับ MySQL กับของจริง ─────
-  // ยกเลิก 03/09/2569 — แอปไม่เขียนกลับ MySQL อีกแล้ว จึงไม่มีอะไรให้กระทบยอด
-  // นิยามยังอยู่ครบ · `canRunReport` คืน false จึงไม่โผล่ในรายการและเรียกไม่ได้
-  'truckscale-writeback': {
-    title: 'กระทบยอดใบชั่งที่ระบบเขียนกลับ (รายวัน) — เลิกใช้',
-    columns: [
-      { key: 'Case', label: 'กรณี' },
-      { key: 'WfRef', label: 'เลขใบสั่งขาย' },
-      { key: 'CustName', label: 'ลูกค้า' },
-      { key: 'TruckPlate', label: 'ทะเบียนรถ' },
-      { key: 'WeighOutAt', label: 'เวลาชั่งออก' },
-      { key: 'NetKgApp', label: 'น้ำหนักสุทธิ (แอป)' },
-      { key: 'NetKgScale', label: 'น้ำหนักสุทธิ (เครื่องชั่ง)' },
-      { key: 'DiffKg', label: 'ส่วนต่าง (กก.)' },
-      { key: 'ScaleSequence', label: 'เลขใบชั่ง' },
-      { key: 'Movebill', label: 'movebill' },
-      { key: 'Note', label: 'หมายเหตุ' },
-    ],
-    run: (params) => runTruckScaleWritebackReport(params),
-  },
   'so-status': {
     title: 'สรุปใบสั่งขายตามสถานะ',
-    columns: [{ key: 'Status', label: 'สถานะ' }, { key: 'Cnt', label: 'จำนวน' }],
+    category: 'sales',
+    columns: [
+      { key: 'Status', label: 'สถานะ', type: 'text' },
+      { key: 'Cnt', label: 'จำนวน (ใบ)', type: 'integer', unit: 'ใบ', aggregation: 'sum' },
+    ],
     sql: `
       WITH WfDraft AS (
         SELECT Status, COUNT_BIG(*) AS Cnt
@@ -83,10 +69,14 @@ const REPORTS = {
   },
   'rebate-pools': {
     title: 'Rebate Pool ต่อพนักงานขาย',
+    category: 'rebate',
     columns: [
-      { key: 'SalesName', label: 'พนักงานขาย' }, { key: 'Period', label: 'งวด' },
-      { key: 'AllocatedAmt', label: 'จัดสรร' }, { key: 'AccruedAmt', label: 'สะสม' },
-      { key: 'ClaimedAmt', label: 'เคลมแล้ว' }, { key: 'Available', label: 'คงเหลือ' },
+      { key: 'SalesName', label: 'พนักงานขาย', type: 'text' },
+      { key: 'Period', label: 'งวด (เดือน/ปี)', type: 'text' },
+      { key: 'AllocatedAmt', label: 'จัดสรร (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'AccruedAmt', label: 'สะสม (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'ClaimedAmt', label: 'เคลมแล้ว (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'Available', label: 'คงเหลือ (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
     ],
     sql: `SELECT u.DisplayName AS SalesName,
                  CAST(p.PeriodMonth AS VARCHAR)+'/'+CAST(p.PeriodYear AS VARCHAR) AS Period,
@@ -98,24 +88,37 @@ const REPORTS = {
   },
   'giveaway': {
     title: 'ของแถม — งบ/เบิก/คงเหลือ รายภาค',
+    category: 'sales',
     columns: [
-      { key: 'Region', label: 'ภาค' }, { key: 'Brand', label: 'ตรา' }, { key: 'ItemName', label: 'รายการ' },
-      { key: 'BudgetQty', label: 'งบ' }, { key: 'WithdrawnQty', label: 'เบิกแล้ว' }, { key: 'RemainingQty', label: 'คงเหลือ' },
+      { key: 'Region', label: 'ภาค', type: 'text' },
+      { key: 'Brand', label: 'ตรา', type: 'text' },
+      { key: 'ItemName', label: 'รายการของแถม', type: 'text' },
+      { key: 'BudgetQty', label: 'งบจัดสรร', type: 'integer', unit: 'ชิ้น', aggregation: 'sum' },
+      { key: 'WithdrawnQty', label: 'เบิกแล้ว', type: 'integer', unit: 'ชิ้น', aggregation: 'sum' },
+      { key: 'RemainingQty', label: 'คงเหลือ', type: 'integer', unit: 'ชิ้น', aggregation: 'sum' },
     ],
     sql: `SELECT Region, Brand, ItemName, BudgetQty, WithdrawnQty, RemainingQty
           FROM wf.v_GiveawayBudgetStatus ORDER BY Region, Brand, ItemName`,
   },
   'paper-status': {
     title: 'สถานะเอกสาร (Paper Trail)',
-    columns: [{ key: 'Status', label: 'สถานะ' }, { key: 'Cnt', label: 'จำนวนสำเนา' }],
+    category: 'logistics',
+    columns: [
+      { key: 'Status', label: 'สถานะเอกสาร', type: 'text' },
+      { key: 'Cnt', label: 'จำนวนสำเนา (ใบ)', type: 'integer', unit: 'ใบ', aggregation: 'sum' },
+    ],
     sql: `SELECT Status, COUNT(*) AS Cnt FROM wf.PaperCopy GROUP BY Status ORDER BY Cnt DESC`,
   },
   'cn-rebate': {
     title: 'WF Rebate Trail (WINSpeed coupon redemption)',
+    category: 'rebate',
     columns: [
-      { key: 'SalesName', label: 'พนักงานขาย' }, { key: 'OrderCount', label: 'จำนวน SO' },
-      { key: 'CouponCount', label: 'จำนวน Coupon' }, { key: 'RedeemedTon', label: 'ตัดแล้ว (ตัน)' },
-      { key: 'RemainingTon', label: 'คงเหลือ (ตัน)' }, { key: 'InvoiceCount', label: 'Invoice' },
+      { key: 'SalesName', label: 'พนักงานขาย', type: 'text' },
+      { key: 'OrderCount', label: 'จำนวน SO (ใบ)', type: 'integer', unit: 'ใบ', aggregation: 'sum' },
+      { key: 'CouponCount', label: 'จำนวน Coupon (ใบ)', type: 'integer', unit: 'ใบ', aggregation: 'sum' },
+      { key: 'RedeemedTon', label: 'ตัดแล้ว (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
+      { key: 'RemainingTon', label: 'คงเหลือ (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
+      { key: 'InvoiceCount', label: 'Invoice (ใบ)', type: 'integer', unit: 'ใบ', aggregation: 'sum' },
     ],
     sql: `SELECT ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS SalesName,
                  COUNT(DISTINCT hd.SOID) AS OrderCount,
@@ -132,20 +135,19 @@ const REPORTS = {
           GROUP BY hd.EmpID, emp.EmpName
           ORDER BY RedeemedTon DESC, CouponCount DESC`,
   },
-  // แหล่งข้อมูลย้ายจาก wf.WeighInbox (ซิงค์จาก MySQL) มาที่ dbo.WGHD ของ WINSpeed
-  // เมื่อ 03/09/2569 · WeighInbox หยุดไหลแล้วเพราะปิด sync worker
   'weighbridge-log': {
     title: 'รายงานใบชั่งเข้า–ชั่งออก (จาก WINSpeed)',
+    category: 'weighing',
     columns: [
-      { key: 'Movebill', label: 'เลขที่ใบชั่ง' },
-      { key: 'Plate', label: 'ทะเบียนรถ' },
-      { key: 'CustName', label: 'ลูกค้า' },
-      { key: 'WeightIn', label: 'ชั่งเข้า (กก.)' },
-      { key: 'WeightOut', label: 'ชั่งออก (กก.)' },
-      { key: 'WeightNet', label: 'สุทธิ (กก.)' },
-      { key: 'DateOut', label: 'วันที่ชั่งออก' },
-      { key: 'ScaleNo', label: 'ประเภท (SO/PO/MO)' },
-      { key: 'Status', label: 'สถานะ' },
+      { key: 'Movebill', label: 'เลขที่ใบชั่ง', type: 'identifier' },
+      { key: 'Plate', label: 'ทะเบียนรถ', type: 'identifier' },
+      { key: 'CustName', label: 'ลูกค้า', type: 'text' },
+      { key: 'WeightIn', label: 'ชั่งเข้า (กก.)', type: 'integer', unit: 'กก.' },
+      { key: 'WeightOut', label: 'ชั่งออก (กก.)', type: 'integer', unit: 'กก.' },
+      { key: 'WeightNet', label: 'สุทธิ (กก.)', type: 'integer', unit: 'กก.', aggregation: 'sum' },
+      { key: 'DateOut', label: 'วันที่ชั่งออก', type: 'datetime' },
+      { key: 'ScaleNo', label: 'ประเภท (SO/PO/MO)', type: 'text' },
+      { key: 'Status', label: 'สถานะ', type: 'text' },
     ],
     sql: `SELECT TOP 200
             w.MoveBill                       AS Movebill,
@@ -165,16 +167,17 @@ const REPORTS = {
   },
   'wh-dispatch-daily': {
     title: 'รายงานการเบิกจ่ายและคิวจัดโหลดสินค้าประจำวัน (Daily Dispatch & Loading)',
+    category: 'logistics',
     columns: [
-      { key: 'SOID', label: 'เลขที่ SO' },
-      { key: 'DocuDate', label: 'วันที่เอกสาร' },
-      { key: 'CustName', label: 'ลูกค้า' },
-      { key: 'TruckPlate', label: 'ทะเบียนรถ' },
-      { key: 'GoodName', label: 'สินค้า/สูตรปุ๋ย' },
-      { key: 'QtyTon', label: 'จำนวน (ตัน)' },
-      { key: 'QtyBag', label: 'กระสอบ' },
-      { key: 'LoadSequence', label: 'คิวโหลด' },
-      { key: 'Status', label: 'สถานะ' },
+      { key: 'SOID', label: 'เลขที่ SO', type: 'identifier' },
+      { key: 'DocuDate', label: 'วันที่เอกสาร', type: 'date' },
+      { key: 'CustName', label: 'ลูกค้า', type: 'text' },
+      { key: 'TruckPlate', label: 'ทะเบียนรถ', type: 'identifier' },
+      { key: 'GoodName', label: 'สินค้า/สูตรปุ๋ย', type: 'text' },
+      { key: 'QtyTon', label: 'จำนวน (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
+      { key: 'QtyBag', label: 'กระสอบ', type: 'integer', unit: 'กระสอบ', aggregation: 'sum' },
+      { key: 'LoadSequence', label: 'คิวโหลด', type: 'integer' },
+      { key: 'Status', label: 'สถานะ', type: 'text' },
     ],
     sql: `SELECT TOP 200 
             CAST(hd.SOID AS VARCHAR(50)) AS SOID,
@@ -200,15 +203,16 @@ const REPORTS = {
   },
   'sales-order-detail': {
     title: 'รายงานสรุปรายละเอียดใบสั่งซื้อสินค้า (Sales Order Line Detail)',
+    category: 'sales',
     columns: [
-      { key: 'SOID', label: 'เลขที่ SO' },
-      { key: 'DocuDate', label: 'วันที่' },
-      { key: 'CustName', label: 'ลูกค้า' },
-      { key: 'SalesName', label: 'พนักงานขาย' },
-      { key: 'GoodName', label: 'สินค้า' },
-      { key: 'QtyTon', label: 'ตัน' },
-      { key: 'PricePerTon', label: 'ราคา/ตัน' },
-      { key: 'TotalAmt', label: 'จำนวนเงิน' },
+      { key: 'SOID', label: 'เลขที่ SO', type: 'identifier' },
+      { key: 'DocuDate', label: 'วันที่', type: 'date' },
+      { key: 'CustName', label: 'ลูกค้า', type: 'text' },
+      { key: 'SalesName', label: 'พนักงานขาย', type: 'text' },
+      { key: 'GoodName', label: 'สินค้า', type: 'text' },
+      { key: 'QtyTon', label: 'ตัน', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
+      { key: 'PricePerTon', label: 'ราคา/ตัน', type: 'money', precision: 2, unit: 'บาท' },
+      { key: 'TotalAmt', label: 'จำนวนเงิน (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
     ],
     sql: `SELECT TOP 200 
             CAST(hd.SOID AS VARCHAR(50)) AS SOID,
@@ -227,14 +231,15 @@ const REPORTS = {
   },
   'ar-aging-summary': {
     title: 'รายงานสรุปวิเคราะห์อายุลูกหนี้และการควบคุมเครดิต (AR Credit & Aging)',
+    category: 'finance',
     columns: [
-      { key: 'CustId', label: 'รหัสลูกค้า' },
-      { key: 'CustName', label: 'ชื่อลูกค้า' },
-      { key: 'CreditLimit', label: 'วงเงินเครดิต' },
-      { key: 'CreditHold', label: 'สถานะ Hold' },
-      { key: 'OutstandingBal', label: 'ยอดค้างส่ง/หนี้คงค้าง' },
-      { key: 'Overdue1_30', label: 'ค้าง 1-30 วัน' },
-      { key: 'OverdueOver30', label: 'ค้าง > 30 วัน' },
+      { key: 'CustId', label: 'รหัสลูกค้า', type: 'identifier' },
+      { key: 'CustName', label: 'ชื่อลูกค้า', type: 'text' },
+      { key: 'CreditLimit', label: 'วงเงินเครดิต', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'CreditHold', label: 'สถานะ Hold', type: 'text' },
+      { key: 'OutstandingBal', label: 'ยอดค้างส่ง/หนี้คงค้าง', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'Overdue1_30', label: 'ค้าง 1-30 วัน', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'OverdueOver30', label: 'ค้าง > 30 วัน', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
     ],
     sql: `SELECT 
             cm.CustId,
@@ -261,15 +266,16 @@ const REPORTS = {
   },
   'so-backlog': {
     title: 'รายงานสินค้าค้างส่งแยกตามลูกค้า (Unfilled Sales Orders / Backlog)',
+    category: 'sales',
     columns: [
-      { key: 'SOID', label: 'เลขที่ SO' },
-      { key: 'DocuDate', label: 'วันที่เอกสาร' },
-      { key: 'CustName', label: 'ลูกค้า' },
-      { key: 'TruckPlate', label: 'ทะเบียนรถ' },
-      { key: 'GoodName', label: 'สินค้า' },
-      { key: 'OrderedTon', label: 'สั่งซื้อ (ตัน)' },
-      { key: 'ShippedTon', label: 'ส่งแล้ว (ตัน)' },
-      { key: 'BacklogTon', label: 'ค้างส่ง (ตัน)' },
+      { key: 'SOID', label: 'เลขที่ SO', type: 'identifier' },
+      { key: 'DocuDate', label: 'วันที่เอกสาร', type: 'date' },
+      { key: 'CustName', label: 'ลูกค้า', type: 'text' },
+      { key: 'TruckPlate', label: 'ทะเบียนรถ', type: 'identifier' },
+      { key: 'GoodName', label: 'สินค้า', type: 'text' },
+      { key: 'OrderedTon', label: 'สั่งซื้อ (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
+      { key: 'ShippedTon', label: 'ส่งแล้ว (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
+      { key: 'BacklogTon', label: 'ค้างส่ง (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
     ],
     sql: `SELECT TOP 200 
             CAST(hd.SOID AS VARCHAR(50)) AS SOID,
@@ -288,14 +294,15 @@ const REPORTS = {
   },
   'cn-returns': {
     title: 'รายงานใบลดหนี้และการรับคืนสินค้า (Credit Note & Return Register)',
+    category: 'finance',
     columns: [
-      { key: 'DocuNo', label: 'เลขที่ใบลดหนี้' },
-      { key: 'DocuDate', label: 'วันที่' },
-      { key: 'CustName', label: 'ลูกค้า' },
-      { key: 'RefSOID', label: 'อ้างอิง SO' },
-      { key: 'ReturnTon', label: 'ปริมาณรับคืน (ตัน)' },
-      { key: 'TotalAmt', label: 'มูลค่าลดหนี้' },
-      { key: 'Reason', label: 'สาเหตุการลดหนี้' },
+      { key: 'DocuNo', label: 'เลขที่ใบลดหนี้', type: 'identifier' },
+      { key: 'DocuDate', label: 'วันที่', type: 'date' },
+      { key: 'CustName', label: 'ลูกค้า', type: 'text' },
+      { key: 'RefSOID', label: 'อ้างอิง SO', type: 'identifier' },
+      { key: 'ReturnTon', label: 'ปริมาณรับคืน (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
+      { key: 'TotalAmt', label: 'มูลค่าลดหนี้ (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'Reason', label: 'สาเหตุการลดหนี้', type: 'text' },
     ],
     sql: `SELECT TOP 200 
             CAST(c.CouponID AS VARCHAR(50)) AS DocuNo,
@@ -312,13 +319,14 @@ const REPORTS = {
   },
   'wh-stock-balance': {
     title: 'รายงานสรุปสต็อกสินค้าปุ๋ยคงเหลือรายโกดัง (Daily Warehouse Stock Balance)',
+    category: 'logistics',
     columns: [
-      { key: 'GoodId', label: 'รหัสสินค้า' },
-      { key: 'GoodName', label: 'ชื่อสูตรปุ๋ย' },
-      { key: 'WarehouseId', label: 'โกดัง/คลัง' },
-      { key: 'QtyOnHand', label: 'คงเหลือ (ตัน)' },
-      { key: 'QtyBag', label: 'กระสอบ' },
-      { key: 'Unit', label: 'หน่วย' },
+      { key: 'GoodId', label: 'รหัสสินค้า', type: 'identifier' },
+      { key: 'GoodName', label: 'ชื่อสูตรปุ๋ย', type: 'text' },
+      { key: 'WarehouseId', label: 'โกดัง/คลัง', type: 'text' },
+      { key: 'QtyOnHand', label: 'คงเหลือ (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
+      { key: 'QtyBag', label: 'กระสอบ', type: 'integer', unit: 'กระสอบ', aggregation: 'sum' },
+      { key: 'Unit', label: 'หน่วย', type: 'text' },
     ],
     sql: `SELECT 
             s.GoodId,
@@ -332,12 +340,13 @@ const REPORTS = {
   },
   'sales-performance': {
     title: 'รายงานสรุปยอดขายแยกรายพนักงานและรายภาค (Sales Performance Breakdown)',
+    category: 'sales',
     columns: [
-      { key: 'SalesName', label: 'พนักงานขาย' },
-      { key: 'OrderCount', label: 'จำนวน SO' },
-      { key: 'TotalTon', label: 'ปริมาณรวม (ตัน)' },
-      { key: 'TotalBag', label: 'กระสอบ' },
-      { key: 'TotalAmount', label: 'มูลค่ายอดขาย' },
+      { key: 'SalesName', label: 'พนักงานขาย', type: 'text' },
+      { key: 'OrderCount', label: 'จำนวน SO', type: 'integer', unit: 'ใบ', aggregation: 'sum' },
+      { key: 'TotalTon', label: 'ปริมาณรวม (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
+      { key: 'TotalBag', label: 'กระสอบ', type: 'integer', unit: 'กระสอบ', aggregation: 'sum' },
+      { key: 'TotalAmount', label: 'มูลค่ายอดขาย (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
     ],
     sql: `SELECT 
             ISNULL(emp.EmpName, N'พนักงานขายทั่วไป') AS SalesName,
@@ -354,15 +363,16 @@ const REPORTS = {
   },
   'weighbridge-variance': {
     title: 'รายงานวิเคราะห์ส่วนต่างน้ำหนักชั่ง (Weighbridge Variance & Discretion Log)',
+    category: 'weighing',
     columns: [
-      { key: 'Movebill', label: 'ใบชั่ง' },
-      { key: 'Plate', label: 'ทะเบียนรถ' },
-      { key: 'CustName', label: 'ลูกค้า' },
-      { key: 'TargetWeight', label: 'น้ำหนักตามสั่ง (กก.)' },
-      { key: 'ActualNet', label: 'ชั่งสุทธิ (กก.)' },
-      { key: 'DiffKg', label: 'ส่วนต่าง (กก.)' },
-      { key: 'VariancePct', label: 'ส่วนต่าง %' },
-      { key: 'OverrideReason', label: 'เหตุผลขอผ่าน' },
+      { key: 'Movebill', label: 'ใบชั่ง', type: 'identifier' },
+      { key: 'Plate', label: 'ทะเบียนรถ', type: 'identifier' },
+      { key: 'CustName', label: 'ลูกค้า', type: 'text' },
+      { key: 'TargetWeight', label: 'น้ำหนักตามสั่ง (กก.)', type: 'integer', unit: 'กก.' },
+      { key: 'ActualNet', label: 'ชั่งสุทธิ (กก.)', type: 'integer', unit: 'กก.' },
+      { key: 'DiffKg', label: 'ส่วนต่าง (กก.)', type: 'integer', unit: 'กก.' },
+      { key: 'VariancePct', label: 'ส่วนต่าง %', type: 'percent', precision: 2, unit: '%' },
+      { key: 'OverrideReason', label: 'เหตุผลขอผ่าน', type: 'text' },
     ],
     sql: `SELECT TOP 200 
             ISNULL(t.Movebill, CAST(ext.SOID AS VARCHAR(50))) AS Movebill,
@@ -386,13 +396,14 @@ const REPORTS = {
   },
   'ar-receipt-history': {
     title: 'รายงานรายละเอียดการรับชำระเงินลูกหนี้ (AR Receipt & Payment History)',
+    category: 'finance',
     columns: [
-      { key: 'ReceiptNo', label: 'เลขที่ใบรับเงิน' },
-      { key: 'ReceiptDate', label: 'วันที่รับเงิน' },
-      { key: 'CustName', label: 'ลูกค้า' },
-      { key: 'RefDocNo', label: 'อ้างอิง SO/บิล' },
-      { key: 'PayType', label: 'ประเภทการชำระ' },
-      { key: 'Amount', label: 'จำนวนเงิน (บาท)' },
+      { key: 'ReceiptNo', label: 'เลขที่ใบรับเงิน', type: 'identifier' },
+      { key: 'ReceiptDate', label: 'วันที่รับเงิน', type: 'date' },
+      { key: 'CustName', label: 'ลูกค้า', type: 'text' },
+      { key: 'RefDocNo', label: 'อ้างอิง SO/บิล', type: 'identifier' },
+      { key: 'PayType', label: 'ประเภทการชำระ', type: 'text' },
+      { key: 'Amount', label: 'จำนวนเงิน (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
     ],
     sql: `SELECT TOP 200
             CAST(hd.SOID AS VARCHAR(50)) AS ReceiptNo,
@@ -409,13 +420,14 @@ const REPORTS = {
   },
   'ap-liabilities': {
     title: 'รายงานสรุปเจ้าหนี้การค้าและค้างชำระค่าวัตถุดิบ (AP Aging & Material Liabilities)',
+    category: 'finance',
     columns: [
-      { key: 'VendorId', label: 'รหัสเจ้าหนี้' },
-      { key: 'VendorName', label: 'ชื่อเจ้าหนี้/ผู้จัดส่ง' },
-      { key: 'TotalCredit', label: 'วงเงินเครดิต' },
-      { key: 'OutstandingBal', label: 'ยอดค้างชำระรวม' },
-      { key: 'CurrentBal', label: 'ยังไม่ถึงกำหนด' },
-      { key: 'OverdueBal', label: 'เกินกำหนดชำระ' },
+      { key: 'VendorId', label: 'รหัสเจ้าหนี้', type: 'identifier' },
+      { key: 'VendorName', label: 'ชื่อเจ้าหนี้/ผู้จัดส่ง', type: 'text' },
+      { key: 'TotalCredit', label: 'วงเงินเครดิต', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'OutstandingBal', label: 'ยอดค้างชำระรวม', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'CurrentBal', label: 'ยังไม่ถึงกำหนด', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'OverdueBal', label: 'เกินกำหนดชำระ', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
     ],
     sql: `SELECT 
             v.VendorID AS VendorId,
@@ -439,14 +451,15 @@ const REPORTS = {
   },
   'gl-sales-journal': {
     title: 'รายงานสรุปสมุดรายวันขายและการลงบัญชี (Sales Journal & Ledger Posting Log)',
+    category: 'finance',
     columns: [
-      { key: 'JournalNo', label: 'เลขที่สมุดรายวัน' },
-      { key: 'DocuDate', label: 'วันที่ลงบัญชี' },
-      { key: 'AccountCode', label: 'รหัสบัญชี' },
-      { key: 'AccountName', label: 'ชื่อบัญชี' },
-      { key: 'Debit', label: 'เดบิต' },
-      { key: 'Credit', label: 'เครดิต' },
-      { key: 'RefSO', label: 'อ้างอิง SO' },
+      { key: 'JournalNo', label: 'เลขที่สมุดรายวัน', type: 'identifier' },
+      { key: 'DocuDate', label: 'วันที่ลงบัญชี', type: 'date' },
+      { key: 'AccountCode', label: 'รหัสบัญชี', type: 'identifier' },
+      { key: 'AccountName', label: 'ชื่อบัญชี', type: 'text' },
+      { key: 'Debit', label: 'เดบิต (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'Credit', label: 'เครดิต (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'RefSO', label: 'อ้างอิง SO', type: 'identifier' },
     ],
     sql: `SELECT TOP 200
             N'SJ-' + CONVERT(VARCHAR(10), hd.DocuDate, 112) AS JournalNo,
@@ -464,13 +477,14 @@ const REPORTS = {
   },
   'cq-cheque-register': {
     title: 'รายงานสถานะเช็ครับค้างนำฝาก (Cheque Register & Clearance Status)',
+    category: 'finance',
     columns: [
-      { key: 'ChequeNo', label: 'เลขที่เช็ค' },
-      { key: 'ChequeDate', label: 'วันที่หน้าเช็ค' },
-      { key: 'BankName', label: 'ธนาคาร' },
-      { key: 'CustName', label: 'ลูกค้าผู้สั่งจ่าย' },
-      { key: 'Amount', label: 'จำนวนเงิน (บาท)' },
-      { key: 'Status', label: 'สถานะเช็ค' },
+      { key: 'ChequeNo', label: 'เลขที่เช็ค', type: 'identifier' },
+      { key: 'ChequeDate', label: 'วันที่หน้าเช็ค', type: 'date' },
+      { key: 'BankName', label: 'ธนาคาร', type: 'text' },
+      { key: 'CustName', label: 'ลูกค้าผู้สั่งจ่าย', type: 'text' },
+      { key: 'Amount', label: 'จำนวนเงิน (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'Status', label: 'สถานะเช็ค', type: 'text' },
     ],
     sql: `SELECT TOP 200
             N'CQ-' + CAST(hd.SOID AS VARCHAR(30)) AS ChequeNo,
@@ -487,13 +501,14 @@ const REPORTS = {
   },
   'sales-target-comparison': {
     title: 'รายงานเปรียบเทียบยอดขายกับเป้าหมาย (Sales vs Target Breakdown)',
+    category: 'sales',
     columns: [
-      { key: 'SalesName', label: 'พนักงานขาย' },
-      { key: 'TargetTon', label: 'เป้าหมาย (ตัน)' },
-      { key: 'ActualTon', label: 'ยอดขายจริง (ตัน)' },
-      { key: 'AchievedPct', label: 'บรรลุเป้า %' },
-      { key: 'TargetAmt', label: 'เป้าหมาย (บาท)' },
-      { key: 'ActualAmt', label: 'ยอดขายจริง (บาท)' },
+      { key: 'SalesName', label: 'พนักงานขาย', type: 'text' },
+      { key: 'TargetTon', label: 'เป้าหมาย (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
+      { key: 'ActualTon', label: 'ยอดขายจริง (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
+      { key: 'AchievedPct', label: 'บรรลุเป้า %', type: 'percent', precision: 2, unit: '%' },
+      { key: 'TargetAmt', label: 'เป้าหมาย (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'ActualAmt', label: 'ยอดขายจริง (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
     ],
     sql: `SELECT 
             ISNULL(emp.EmpName, N'พนักงานขายทั่วไป') AS SalesName,
@@ -511,22 +526,23 @@ const REPORTS = {
   },
   'rebate-claim-detail': {
     title: 'รายงานรายละเอียดใบขอเคลียร์รีเบทและการอนุมัติ (Rebate Claim Detail)',
+    category: 'rebate',
     columns: [
-      { key: 'ClaimId', label: 'เลขที่เคลม' },
-      { key: 'CustId', label: 'รหัสลูกค้า' },
-      { key: 'RegionCode', label: 'ภาค' },
-      { key: 'SalesName', label: 'ผู้ยื่นเคลม' },
-      { key: 'Status', label: 'สถานะ' },
-      { key: 'ClaimAmt', label: 'ยอดขอเคลม' },
-      { key: 'LineType', label: 'ประเภทรายการ' },
-      { key: 'InvoiceNo', label: 'เลขที่ใบกำกับ' },
-      { key: 'GoodCode', label: 'รหัสสินค้า' },
-      { key: 'GoodName', label: 'ชื่อสินค้า' },
-      { key: 'QtyTon', label: 'จำนวน (ตัน)' },
-      { key: 'PricePerTon', label: 'ราคาขาย' },
-      { key: 'NetPricePerTon', label: 'ราคาสุทธิ' },
-      { key: 'RebatePerTon', label: 'ส่วนลด/ตัน' },
-      { key: 'LineRebateAmt', label: 'ยอดรวมส่วนลด' },
+      { key: 'ClaimId', label: 'เลขที่เคลม', type: 'identifier' },
+      { key: 'CustId', label: 'รหัสลูกค้า', type: 'identifier' },
+      { key: 'RegionCode', label: 'ภาค', type: 'identifier' },
+      { key: 'SalesName', label: 'ผู้ยื่นเคลม', type: 'text' },
+      { key: 'Status', label: 'สถานะ', type: 'text' },
+      { key: 'ClaimAmt', label: 'ยอดขอเคลม (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'LineType', label: 'ประเภทรายการ', type: 'text' },
+      { key: 'InvoiceNo', label: 'เลขที่ใบกำกับ', type: 'identifier' },
+      { key: 'GoodCode', label: 'รหัสสินค้า', type: 'identifier' },
+      { key: 'GoodName', label: 'ชื่อสินค้า', type: 'text' },
+      { key: 'QtyTon', label: 'จำนวน (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
+      { key: 'PricePerTon', label: 'ราคาขาย', type: 'money', precision: 2, unit: 'บาท' },
+      { key: 'NetPricePerTon', label: 'ราคาสุทธิ', type: 'money', precision: 2, unit: 'บาท' },
+      { key: 'RebatePerTon', label: 'ส่วนลด/ตัน', type: 'money', precision: 2, unit: 'บาท' },
+      { key: 'LineRebateAmt', label: 'ยอดรวมส่วนลด (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
     ],
     sql: `SELECT c.Id AS ClaimId, c.CustId, ISNULL(c.RegionCode, N'99') AS RegionCode,
                  u.DisplayName AS SalesName,
@@ -542,18 +558,19 @@ const REPORTS = {
   },
   'special-price-detail': {
     title: 'รายงานรายละเอียดคำขอราคาพิเศษรายร้านค้า (Special Price Audit)',
+    category: 'sales',
     columns: [
-      { key: 'Id', label: 'ID' },
-      { key: 'PriceBookName', label: 'PriceBook' },
-      { key: 'EffectiveMonth', label: 'เดือน' },
-      { key: 'CustId', label: 'รหัสลูกค้า' },
-      { key: 'CustName', label: 'ชื่อร้านค้า' },
-      { key: 'GoodName', label: 'สูตรปุ๋ย' },
-      { key: 'RequestedPrice', label: 'ราคาที่ขอ' },
-      { key: 'ApprovedPrice', label: 'ราคาอนุมัติ' },
-      { key: 'RequestedByName', label: 'ผู้ยื่นคำขอ' },
-      { key: 'ApprovedByName', label: 'ผู้อนุมัติ' },
-      { key: 'Note', label: 'หมายเหตุ' },
+      { key: 'Id', label: 'ID', type: 'identifier' },
+      { key: 'PriceBookName', label: 'PriceBook', type: 'text' },
+      { key: 'EffectiveMonth', label: 'เดือน', type: 'text' },
+      { key: 'CustId', label: 'รหัสลูกค้า', type: 'identifier' },
+      { key: 'CustName', label: 'ชื่อร้านค้า', type: 'text' },
+      { key: 'GoodName', label: 'สูตรปุ๋ย', type: 'text' },
+      { key: 'RequestedPrice', label: 'ราคาที่ขอ (บาท)', type: 'money', precision: 2, unit: 'บาท' },
+      { key: 'ApprovedPrice', label: 'ราคาอนุมัติ (บาท)', type: 'money', precision: 2, unit: 'บาท' },
+      { key: 'RequestedByName', label: 'ผู้ยื่นคำขอ', type: 'text' },
+      { key: 'ApprovedByName', label: 'ผู้อนุมัติ', type: 'text' },
+      { key: 'Note', label: 'หมายเหตุ', type: 'text' },
     ],
     sql: `SELECT sp.Id, pb.Name AS PriceBookName, pb.EffectiveMonth,
                  sp.CustId, sp.CustName, ISNULL(sp.GoodName, sp.GoodId) AS GoodName,
@@ -569,71 +586,83 @@ const REPORTS = {
   },
   'weighbridge-detail': {
     title: 'รายงานรายละเอียดการชั่งน้ำหนักโรงงานเข้า-ออก (Factory Weigh Detail)',
+    category: 'weighing',
     columns: [
-      { key: 'Id', label: 'ID' },
-      { key: 'WfRef', label: 'เลขที่ SO/อ้างอิง' },
-      { key: 'TruckPlate', label: 'ทะเบียนรถ' },
-      { key: 'Movebill', label: 'ใบชั่ง' },
-      { key: 'ScaleNo', label: 'เครื่องชั่ง' },
-      // wf.WeighTicket เก็บน้ำหนักเป็น รวม / รถเปล่า / สุทธิ ไม่ใช่ เข้า / ออก
-      { key: 'GrossKg', label: 'น้ำหนักรวม (กก.)' },
-      { key: 'TareKg', label: 'น้ำหนักรถเปล่า (กก.)' },
-      { key: 'NetKg', label: 'สุทธิ (กก.)' },
-      { key: 'VarianceKg', label: 'ส่วนต่างจากที่สั่ง (กก.)' },
-      { key: 'WeightStatus', label: 'สถานะน้ำหนัก' },
-      { key: 'WeighOutAt', label: 'เวลาชั่งออก' },
-      { key: 'ScaleWriteAction', label: 'การเขียนกลับ' },
-      { key: 'Note', label: 'หมายเหตุ' },
+      { key: 'Id', label: 'ID', type: 'identifier' },
+      { key: 'WfRef', label: 'เลขที่ SO/อ้างอิง', type: 'identifier' },
+      { key: 'TruckPlate', label: 'ทะเบียนรถ', type: 'identifier' },
+      { key: 'Movebill', label: 'ใบชั่ง', type: 'identifier' },
+      { key: 'ScaleNo', label: 'เครื่องชั่ง', type: 'identifier' },
+      { key: 'GrossKg', label: 'น้ำหนักรวม (กก.)', type: 'integer', unit: 'กก.' },
+      { key: 'TareKg', label: 'น้ำหนักรถเปล่า (กก.)', type: 'integer', unit: 'กก.' },
+      { key: 'NetKg', label: 'สุทธิ (กก.)', type: 'integer', unit: 'กก.', aggregation: 'sum' },
+      { key: 'VarianceKg', label: 'ส่วนต่างจากที่สั่ง (กก.)', type: 'integer', unit: 'กก.' },
+      { key: 'WeightStatus', label: 'สถานะน้ำหนัก', type: 'text' },
+      { key: 'WeighOutAt', label: 'เวลาชั่งออก', type: 'datetime' },
+      { key: 'Note', label: 'หมายเหตุ', type: 'text' },
     ],
     sql: `SELECT wt.Id, wt.WfRef, wt.TruckPlate, wt.Movebill, wt.ScaleNo,
                  wt.GrossKg, wt.TareKg, wt.NetKg, wt.VarianceKg, wt.WeightStatus,
                  CONVERT(VARCHAR(19), wt.WeighOutAt, 120) AS WeighOutAt,
-                 wt.ScaleWriteAction,
-                 ISNULL(wt.OverrideReason, wt.ScaleError) AS Note
+                 wt.OverrideReason AS Note
           FROM wf.WeighTicket wt WITH (NOLOCK)
           ORDER BY wt.Id DESC`,
   },
-
-  // ── R-4 รายงานการขนสินค้าตามรายชื่อลูกค้า ────────────────────────────────
-  // ใบส่งของ (DocuType 104) = หลักฐานว่า "ขนออกจากโกดังจริงแล้ว" ไม่ใช่แค่จอง
-  // จึงเป็นฐานเดียวที่ใช้ตอบลูกค้าได้ว่าเดือนนี้รับของไปเท่าไร และตรงกับยอดรีเบทสะสม
-  // (wf.v_RebateAccrualLot ก็นับจาก 104 เหมือนกัน — ตัวเลขสองที่จึงกระทบยอดกันได้)
-  //
-  // พารามิเตอร์ (ทุกตัวไม่บังคับ):
-  //   ?from=2025-04-01&to=2025-04-30   ช่วงวันที่เอกสาร · ไม่ส่งมา = ย้อนหลัง 30 วัน
-  //   &custCode=0123456                รหัสหรือชื่อลูกค้า (บางส่วนก็ได้)
   'customer-dispatch': {
     title: 'รายงานการขนสินค้าตามรายชื่อลูกค้า',
+    category: 'sales',
     columns: [
-      { key: 'CustCode', label: 'รหัสลูกค้า' },
-      { key: 'CustName', label: 'ชื่อลูกค้า' },
-      { key: 'DocuDate', label: 'วันที่ขน' },
-      { key: 'DocuNo', label: 'เลขที่ใบส่งของ' },
-      { key: 'BookingDocuNo', label: 'เลขที่ใบจอง' },
-      { key: 'TaxInvoiceNo', label: 'เลขที่ใบกำกับภาษี' },
-      { key: 'TruckPlate', label: 'ทะเบียนรถ' },
-      { key: 'CouponNo', label: 'เลขตั๋วปุ๋ย' },
-      { key: 'ControlTicketNo', label: 'ตั๋วคุมอ้างอิง' },
-      { key: 'GoodCode', label: 'รหัสสินค้า' },
-      { key: 'GoodName', label: 'สูตรปุ๋ย' },
-      { key: 'QtyTon', label: 'จำนวน (ตัน)' },
-      { key: 'PricePerTon', label: 'ราคา/ตัน' },
-      { key: 'Amount', label: 'เป็นเงิน' },
-      { key: 'SalesEmpName', label: 'ผู้แทนขาย' },
+      { key: 'CustCode', label: 'รหัสลูกค้า', type: 'identifier' },
+      { key: 'CustName', label: 'ชื่อลูกค้า', type: 'text' },
+      { key: 'DocuDate', label: 'วันที่ขน', type: 'date' },
+      { key: 'DocuNo', label: 'เลขที่ใบส่งของ', type: 'identifier' },
+      { key: 'BookingDocuNo', label: 'เลขที่ใบจอง', type: 'identifier' },
+      { key: 'TaxInvoiceNo', label: 'เลขที่ใบกำกับภาษี', type: 'identifier' },
+      { key: 'TruckPlate', label: 'ทะเบียนรถ', type: 'identifier' },
+      { key: 'CouponNo', label: 'เลขตั๋วปุ๋ย', type: 'identifier' },
+      { key: 'ControlTicketNo', label: 'ตั๋วคุมอ้างอิง', type: 'identifier' },
+      { key: 'GoodCode', label: 'รหัสสินค้า', type: 'identifier' },
+      { key: 'GoodName', label: 'สูตรปุ๋ย', type: 'text' },
+      { key: 'QtyTon', label: 'จำนวน (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
+      { key: 'PricePerTon', label: 'ราคา/ตัน', type: 'money', precision: 2, unit: 'บาท' },
+      { key: 'Amount', label: 'เป็นเงิน (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'SalesEmpName', label: 'ผู้แทนขาย', type: 'text' },
     ],
     run: (params) => runCustomerDispatchReport(params),
   },
 };
 
-
-// ── R-3 รายงานกระทบยอดใบชั่งที่แอปเขียนกลับ ────────────────────────────────
-// ตั้งแต่ v1.4.0 การชั่งออกเขียนกลับ tblscale ได้สองแบบ: อัปเดตใบที่ชั่งจริง
-// หรือสร้างใบใหม่ (sequence ขึ้นต้น WF) ซึ่ง "ไม่ได้เกิดจากการชั่งบนเครื่อง"
-// ใบสองแบบนี้ปนกันอยู่ในตารางเดียว จึงต้องมีคนกระทบยอดทุกสิ้นวัน
-//
-// กรณีที่รายงานแยกให้:
-//   A ใบที่แอปสร้างเอง · B เขียนทับใบที่ชั่งจริง · C เขียนกลับไม่สำเร็จ
-//   D ใบ WF ที่ไม่มีใบสั่งขายคู่กัน · E น้ำหนักสองระบบไม่ตรง
+/**
+ * กำหนดสิทธิ์เข้าถึงรายงานแต่ละฉบับตาม Role Security Matrix
+ * null = ผู้ใช้ที่ล็อกอินแล้วทุกคนเข้าถึงได้
+ * array = เฉพาะบทบาทที่ระบุ
+ * function = ตรวจสอบเชิงลึก
+ */
+const REPORT_ROLES = {
+  'so-status': null,
+  'rebate-pools': (user) => canViewAllRebateAmounts(user),
+  'giveaway': null,
+  'paper-status': null,
+  'cn-rebate': ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
+  'weighbridge-log': ['WEIGHBRIDGE', 'WAREHOUSE', 'ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
+  'wh-dispatch-daily': null,
+  'sales-order-detail': null,
+  'ar-aging-summary': ['ACCOUNTING', 'MANAGER', 'ADMIN', 'C_LEVEL'],
+  'so-backlog': null,
+  'cn-returns': ['ACCOUNTING', 'MANAGER', 'ADMIN', 'C_LEVEL'],
+  'wh-stock-balance': ['WAREHOUSE', 'ACCOUNTING', 'ADMIN', 'C_LEVEL'],
+  'sales-performance': null,
+  'weighbridge-variance': ['WEIGHBRIDGE', 'WAREHOUSE', 'ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
+  'ar-receipt-history': ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
+  'ap-liabilities': ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
+  'gl-sales-journal': ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
+  'cq-cheque-register': ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
+  'sales-target-comparison': null,
+  'rebate-claim-detail': (user) => canViewAllRebateAmounts(user) || ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'].includes(user?.role),
+  'special-price-detail': ['MANAGER', 'APPROVER', 'ADMIN', 'C_LEVEL'],
+  'weighbridge-detail': ['WEIGHBRIDGE', 'WAREHOUSE', 'ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
+  'customer-dispatch': null,
+};
 
 function parseDateParam(value, fallback) {
   if (!value) return fallback;
@@ -641,170 +670,265 @@ function parseDateParam(value, fallback) {
   return Number.isNaN(parsed.getTime()) ? fallback : parsed;
 }
 
-const WRITEBACK_CASES = {
-  A: 'A · แอปสร้างใบชั่งเอง',
-  B: 'B · เขียนทับใบที่ชั่งจริง',
-  C: 'C · เขียนกลับไม่สำเร็จ',
-  D: 'D · ใบ WF ไม่มีใบสั่งขายคู่กัน',
-  E: 'E · น้ำหนักสองระบบไม่ตรง',
-};
-
-async function runTruckScaleWritebackReport(params = {}) {
-  const today = new Date();
-  const from = parseDateParam(params.from, today);
-  const to = parseDateParam(params.to, from);
-
-  const startOfDay = new Date(from.getFullYear(), from.getMonth(), from.getDate());
-  const endOfDay = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999);
-
-  // ฝั่งแอป: ใบชั่งที่ชั่งออกในช่วงวันที่เลือก
-  const appRows = (await wfQuery(`
-    SELECT wt.Id, wt.SoId, wt.WfRef, wt.TruckPlate, wt.WeighOutAt, wt.NetKg, wt.Movebill,
-           wt.ScaleWriteAction, wt.ScaleSid, wt.ScaleSequence, wt.ScaleError, wt.OverrideReason,
-           so.CustName
-    FROM wf.WeighTicket wt WITH (NOLOCK)
-    LEFT JOIN wf.SalesOrder so WITH (NOLOCK) ON CONVERT(VARCHAR(50), so.Id) = CONVERT(VARCHAR(50), wt.SoId)
-    WHERE wt.WeighOutAt >= @from AND wt.WeighOutAt <= @to
-    ORDER BY wt.WeighOutAt DESC`,
-    { from: { type: sql.DateTime2, value: startOfDay }, to: { type: sql.DateTime2, value: endOfDay } }
-  )).recordset || [];
-
-  // ฝั่งเครื่องชั่งเคยอ่านจาก MySQL ซึ่งถูกยกเลิกถาวรเมื่อ 04/09/2569
-  //
-  // รายงานนี้ยังออกได้ แต่คอลัมน์ฝั่งเครื่องชั่งจะว่างทั้งหมด และทุกใบจะตกเป็น
-  // เคส C (ไม่มีผลการเขียนกลับ) ซึ่งเป็นความจริง — ไม่มีการเขียนกลับอีกแล้ว
-  // ถ้าต้องการกระทบยอดกับเครื่องชั่งอีกครั้ง ต้องเขียนใหม่ให้อ่านจาก dbo.WGHD
-  const scaleRows = [];
-  const scaleError = 'ยกเลิกการเชื่อมต่อ MySQL แล้ว — ไม่มีข้อมูลฝั่งเครื่องชั่งให้เทียบ';
-  const scaleBySid = new Map(scaleRows.map(row => [Number(row.s_id), row]));
-  const matchedSids = new Set();
-
-  const rows = [];
-
-  for (const app of appRows) {
-    const scale = app.ScaleSid != null ? scaleBySid.get(Number(app.ScaleSid)) : null;
-    if (scale) matchedSids.add(Number(app.ScaleSid));
-
-    const netApp = app.NetKg != null ? Number(app.NetKg) : null;
-    const netScale = scale && scale.weight_net != null ? Number(scale.weight_net) : null;
-    const diff = netApp != null && netScale != null ? Math.round((netApp - netScale) * 100) / 100 : null;
-
-    let caseCode;
-    if (!app.ScaleWriteAction || app.ScaleWriteAction === 'failed') caseCode = 'C';
-    else if (diff != null && Math.abs(diff) > 0.01) caseCode = 'E';
-    else if (app.ScaleWriteAction === 'inserted') caseCode = 'A';
-    else caseCode = 'B';
-
-    rows.push({
-      Case: WRITEBACK_CASES[caseCode],
-      WfRef: app.WfRef || '',
-      CustName: app.CustName || '',
-      TruckPlate: app.TruckPlate || '',
-      WeighOutAt: app.WeighOutAt ? new Date(app.WeighOutAt).toISOString().replace('T', ' ').slice(0, 19) : '',
-      NetKgApp: netApp,
-      NetKgScale: netScale,
-      DiffKg: diff,
-      ScaleSequence: app.ScaleSequence || (scale ? scale.sequence : ''),
-      Movebill: app.Movebill || (scale ? scale.movebill : ''),
-      Note: app.ScaleError || app.OverrideReason || '',
-    });
-  }
-
-  // กรณี D: ใบที่แอปสร้าง (sequence ขึ้นต้น WF) แต่จับคู่กับใบชั่งของแอปไม่ได้
-  for (const scale of scaleRows) {
-    if (matchedSids.has(Number(scale.s_id))) continue;
-    if (!/^WF/i.test(String(scale.sequence || ''))) continue;
-    rows.push({
-      Case: WRITEBACK_CASES.D,
-      WfRef: (String(scale.one_des || '').match(/WF-SO:([^\s|]+)/) || [])[1] || '',
-      CustName: scale.one_cus_name || '',
-      TruckPlate: scale.one_car_regis || '',
-      WeighOutAt: `${scale.Date_Out || ''} ${scale.Time_Out || ''}`.trim(),
-      NetKgApp: null,
-      NetKgScale: scale.weight_net != null ? Number(scale.weight_net) : null,
-      DiffKg: null,
-      ScaleSequence: scale.sequence || '',
-      Movebill: scale.movebill || '',
-      Note: 'ไม่พบใบชั่งฝั่งแอปที่ตรงกัน — ตรวจสอบว่ามาจากการทดสอบหรือใบสั่งขายถูกลบ',
-    });
-  }
-
-  if (scaleError) {
-    rows.unshift({
-      Case: WRITEBACK_CASES.C,
-      WfRef: '', CustName: '', TruckPlate: '', WeighOutAt: '',
-      NetKgApp: null, NetKgScale: null, DiffKg: null, ScaleSequence: '', Movebill: '',
-      Note: 'อ่านข้อมูลเครื่องชั่งไม่ได้: ' + scaleError,
-    });
-  }
-
-  const order = { A: 0, C: 1, D: 2, E: 3, B: 4 };
-  const codeOf = label => String(label).charAt(0);
-  rows.sort((a, b) => (order[codeOf(a.Case)] ?? 9) - (order[codeOf(b.Case)] ?? 9));
-  return rows;
-}
-
 function canRunReport(req, type) {
-  if (type === 'rebate-pools') return canViewAllRebateAmounts(req.user);
-  if (type === 'cn-rebate') return ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'].includes(req.user?.role);
-  // เลิกใช้ 03/09/2569 พร้อมกับการยกเลิก MySQL TruckScale — ปิดไม่ให้เรียกและไม่ให้โผล่ในรายการ
-  if (type === 'truckscale-writeback') return false;
-  if (type === 'weighbridge-log') return ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL', 'WAREHOUSE', 'WEIGHBRIDGE'].includes(req.user?.role);
-  return true;
+  const rule = REPORT_ROLES[type];
+  if (rule === undefined) return false;
+  if (rule === null) return Boolean(req.user);
+  if (typeof rule === 'function') return Boolean(rule(req.user));
+  if (Array.isArray(rule)) return rule.includes(req.user?.role);
+  return false;
 }
 
 router.get('/types', (req, res) => {
   res.json(Object.entries(REPORTS)
     .filter(([key]) => canRunReport(req, key))
-    .map(([key, r]) => ({ key, title: r.title })));
+    .map(([key, r]) => ({ key, title: r.title, category: r.category || 'general' })));
 });
 
-// รายงานส่วนใหญ่เป็น SQL ตายตัวฝั่ง SQL Server แต่บางรายงานต้องอ่านสองฐาน
-// และรับช่วงวัน จึงรองรับ def.run(params) เพิ่ม โดยของเดิมที่มีแต่ def.sql ยังทำงานเหมือนเดิม
 async function runReport(type, params = {}) {
   const def = REPORTS[type];
   if (!def) return null;
   const rows = def.run ? await def.run(params) : ((await wfQuery(def.sql)).recordset || []);
-  return { type, title: def.title, columns: def.columns, rows };
+  return { type, title: def.title, category: def.category || 'general', columns: def.columns, rows };
 }
 
 router.get('/:type', async (req, res) => {
   try {
-    if (!canRunReport(req, req.params.type)) return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูรายงานนี้' });
+    if (!canRunReport(req, req.params.type)) {
+      return res.status(403).json({ message: 'ไม่มีสิทธิ์เข้าถึงรายงานนี้' });
+    }
     const data = await runReport(req.params.type, req.query);
     if (!data) return res.status(404).json({ message: 'ไม่พบรายงาน' });
     res.json(data);
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+async function resolveReportTemplate(reportKey) {
+  const normKey = String(reportKey || '').trim().toLowerCase();
+  const q = `
+    SELECT TOP 1
+      a.ReportKey,
+      t.TemplateId, t.TemplateCode, t.TemplateName, t.ReportCategory,
+      t.Orientation, t.PaperSize, t.ShowPageNumber, t.ShowSignatures,
+      t.SignatureSalesLabel, t.SignatureApprovedLabel, t.SignatureWarehouseLabel,
+      t.CustomCss, t.Version AS TemplateVersion,
+      h.HeaderId, h.HeaderCode, h.HeaderName, h.CompanyNameTh, h.CompanyNameEn,
+      h.BranchNameTh, h.BranchCode, h.AddressTh, h.Tel, h.Fax, h.TaxId,
+      h.LogoUrl, h.FooterNote, h.TermsAndConditions, h.Version AS HeaderVersion
+    FROM wf.ReportTemplateAssignment a WITH (NOLOCK)
+    JOIN wf.ReportTemplate t WITH (NOLOCK) ON t.TemplateId = a.TemplateId AND t.IsActive = 1
+    JOIN wf.ReportHeaderMaster h WITH (NOLOCK) ON h.HeaderId = t.HeaderId AND h.IsActive = 1
+    WHERE a.ReportKey = @key AND a.IsActive = 1
+  `;
+  let res = await wfQuery(q, { key: { type: sql.VarChar(50), value: normKey } });
+  let assignmentType = 'DIRECT';
+  if (!res.recordset || res.recordset.length === 0) {
+    // Fallback to 'default'
+    assignmentType = 'SYSTEM_DEFAULT';
+    res = await wfQuery(q, { key: { type: sql.VarChar(50), value: 'default' } });
+  }
+
+  let r = res.recordset?.[0];
+  if (!r) {
+    // Resolve standard active template directly from DB master data
+    assignmentType = 'FALLBACK_ACTIVE_MASTER';
+    const fallbackQ = `
+      SELECT TOP 1
+        CAST(NULL AS INT) AS AssignmentId,
+        CAST(NULL AS VARCHAR(50)) AS AssignedReportKey,
+        CAST(NULL AS INT) AS AssignmentVersion,
+        t.TemplateId, t.TemplateCode, t.TemplateName, t.ReportCategory,
+        t.Orientation, t.PaperSize, t.ShowPageNumber, t.ShowSignatures,
+        t.SignatureSalesLabel, t.SignatureApprovedLabel, t.SignatureWarehouseLabel,
+        t.CustomCss, t.Version AS TemplateVersion,
+        h.HeaderId, h.HeaderCode, h.HeaderName, h.CompanyNameTh, h.CompanyNameEn,
+        h.BranchNameTh, h.BranchCode, h.AddressTh, h.Tel, h.Fax, h.TaxId,
+        h.LogoUrl, h.FooterNote, h.TermsAndConditions, h.Version AS HeaderVersion
+      FROM wf.ReportTemplate t WITH (NOLOCK)
+      JOIN wf.ReportHeaderMaster h WITH (NOLOCK) ON h.HeaderId = t.HeaderId AND h.IsActive = 1
+      WHERE t.IsActive = 1
+      ORDER BY (CASE WHEN t.TemplateCode = 'TPL_STANDARD_TABLE' THEN 0 ELSE 1 END), t.TemplateId ASC
+    `;
+    const fallbackRes = await wfQuery(fallbackQ);
+    r = fallbackRes.recordset?.[0];
+  }
+
+  if (!r) {
+    const err = new Error('ระบบไม่พบแม่แบบรายงานหรือหัวกระดาษที่เปิดใช้งานในฐานข้อมูล กรุณาติดต่อผู้ดูแลระบบ');
+    err.status = 503;
+    throw err;
+  }
+
+  return {
+    assignmentType,
+    assignmentId: r.AssignmentId ?? null,
+    assignmentVersion: r.AssignmentVersion ?? null,
+    templateId: r.TemplateId,
+    templateCode: r.TemplateCode,
+    templateName: r.TemplateName,
+    reportCategory: r.ReportCategory,
+    orientation: r.Orientation,
+    paperSize: r.PaperSize,
+    showPageNumber: Boolean(r.ShowPageNumber),
+    showSignatures: Boolean(r.ShowSignatures),
+    signatureSalesLabel: r.SignatureSalesLabel ?? '',
+    signatureApprovedLabel: r.SignatureApprovedLabel ?? '',
+    signatureWarehouseLabel: r.SignatureWarehouseLabel ?? '',
+    customCss: r.CustomCss || null,
+    version: r.TemplateVersion,
+    header: {
+      headerId: r.HeaderId,
+      headerCode: r.HeaderCode,
+      headerName: r.HeaderName,
+      companyNameTh: r.CompanyNameTh,
+      companyNameEn: r.CompanyNameEn,
+      branchNameTh: r.BranchNameTh || '',
+      branchCode: r.BranchCode || '',
+      addressTh: r.AddressTh,
+      tel: r.Tel || '',
+      fax: r.Fax || '',
+      taxId: r.TaxId,
+      logoUrl: r.LogoUrl || null,
+      footerNote: r.FooterNote || '',
+      termsAndConditions: r.TermsAndConditions || '',
+      version: r.HeaderVersion,
+    }
+  };
+}
+
+router.get('/:type/template', async (req, res) => {
+  try {
+    if (!canRunReport(req, req.params.type)) {
+      return res.status(403).json({ message: 'ไม่มีสิทธิ์เข้าถึงเทมเพลตของรายงานนี้' });
+    }
+    const def = REPORTS[req.params.type];
+    if (!def) return res.status(404).json({ message: 'ไม่พบรายงาน' });
+
+    const template = await resolveReportTemplate(req.params.type);
+    res.json({
+      reportKey: req.params.type,
+      reportTitle: def.title,
+      category: def.category || 'general',
+      template,
+    });
+  } catch (e) {
+    const status = e.status || 500;
+    if (status >= 500) console.error(e);
+    res.status(status).json({ message: e.message });
+  }
 });
 
 router.get('/:type/export', async (req, res) => {
   try {
-    if (!canRunReport(req, req.params.type)) return res.status(403).json({ message: 'ไม่มีสิทธิ์ export รายงานนี้' });
+    if (!canRunReport(req, req.params.type)) {
+      return res.status(403).json({ message: 'ไม่มีสิทธิ์ export รายงานนี้' });
+    }
     const data = await runReport(req.params.type, req.query);
     if (!data) return res.status(404).json({ message: 'ไม่พบรายงาน' });
-    // map rows → ภาษาไทย header ตาม columns
-    const aoa = [data.columns.map(c => c.label)];
-    for (const row of data.rows) aoa.push(data.columns.map(c => row[c.key] ?? ''));
+
+    const template = await resolveReportTemplate(req.params.type);
+    const header = template.header || {};
+
+    // 1. หัวกระดาษบริษัทตาม Header Master มาตรฐาน (เคารพค่าจริง ไม่ fallback ทับค่าว่าง)
+    const companyTitle = header.companyNameTh != null ? header.companyNameTh : 'บริษัท เวิลด์ เฟอท จำกัด';
+    const subLineParts = [];
+    if (header.companyNameEn) subLineParts.push(header.companyNameEn);
+    if (header.branchNameTh) subLineParts.push(`สาขา: ${header.branchNameTh}${header.branchCode ? ` (${header.branchCode})` : ''}`);
+    if (header.taxId) subLineParts.push(`เลขประจำตัวผู้เสียภาษี: ${header.taxId}`);
+    
+    const contactParts = [];
+    if (header.addressTh) contactParts.push(`ที่อยู่: ${header.addressTh}`);
+    if (header.tel) contactParts.push(`โทร: ${header.tel}`);
+    if (header.fax) contactParts.push(`แฟกซ์: ${header.fax}`);
+
+    const headerRows = [
+      [companyTitle],
+      [subLineParts.join('  |  ')],
+      [contactParts.join('  |  ')],
+      [`รายงาน: ${data.title}  |  พิมพ์เมื่อ: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}  |  ระบบอ้างอิง: WINSpeed ERP · แม่แบบ: ${template.templateCode} (v${template.version})`],
+      [], // บรรทัดว่างคั่นหัวกระดาษกับตาราง
+    ];
+
+    // 2. หัวตารางภาษาไทย
+    const aoa = [...headerRows, data.columns.map(c => c.label)];
+    const dataStartRowIdx = aoa.length;
+
+    // 3. ข้อมูลแถว แปลงให้ตรงกับ Column Contract
+    for (const row of data.rows) {
+      const rowArr = data.columns.map(c => {
+        const val = row[c.key];
+        if (val === null || val === undefined) return '';
+        if (c.type === 'identifier' || c.type === 'text') return String(val);
+        if (c.type === 'integer' || c.type === 'money' || c.type === 'quantity' || c.type === 'percent') {
+          const n = Number(val);
+          return Number.isNaN(n) ? String(val) : n;
+        }
+        return String(val);
+      });
+      aoa.push(rowArr);
+    }
+
+    // 4. แถวสรุปผลรวม (Total Row) เฉพาะคอลัมน์ที่มี aggregation: 'sum' (ไม่รวม ID หรือรหัส)
+    const hasSumAgg = data.columns.some(c => c.aggregation === 'sum');
+    if (hasSumAgg && data.rows.length > 0) {
+      const totalRow = data.columns.map((c, colIdx) => {
+        if (colIdx === 0) return 'รวมทั้งสิ้น (Total)';
+        if (c.aggregation === 'sum') {
+          const sum = data.rows.reduce((acc, r) => {
+            const n = Number(r[c.key]);
+            return acc + (Number.isNaN(n) ? 0 : n);
+          }, 0);
+          return c.precision != null ? Number(sum.toFixed(c.precision)) : sum;
+        }
+        return '';
+      });
+      aoa.push(totalRow);
+    }
+
     const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    // บังคับ cell type 's' สำหรับ identifier เพื่อรักษา leading zeros เสมอในทุกโปรแกรม spreadsheet
+    data.columns.forEach((c, colIdx) => {
+      if (c.type === 'identifier') {
+        for (let rowIdx = dataStartRowIdx; rowIdx < dataStartRowIdx + data.rows.length; rowIdx++) {
+          const cellRef = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx });
+          if (ws[cellRef] && ws[cellRef].v !== undefined) {
+            ws[cellRef].t = 's';
+            ws[cellRef].v = String(ws[cellRef].v);
+          }
+        }
+      }
+    });
+
+    const format = String(req.query.format || 'xlsx').toLowerCase();
+    const dateStr = new Date().toISOString().slice(0, 10);
+
+    if (format === 'csv') {
+      const csvContent = XLSX.utils.sheet_to_csv(ws);
+      const bomCsv = '\uFEFF' + csvContent;
+      const fname = `${data.type}_${dateStr}.csv`;
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
+      return res.send(Buffer.from(bomCsv, 'utf8'));
+    }
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Report');
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    const fname = `${data.type}_${new Date().toISOString().slice(0,10)}.xlsx`;
+    const fname = `${data.type}_${dateStr}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
     res.send(buf);
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: e.message });
+  }
 });
 
 // ── R-4 รายงานการขนสินค้าตามรายชื่อลูกค้า ────────────────────────────────────
-//
-// ทำไมต้องเป็น stored query ที่รับพารามิเตอร์ ไม่ใช่ SQL ตายตัวเหมือนรายงานอื่น
-//   ตาราง dbo.SODT ของฐานจริงมีหลายแสนบรรทัด การ SELECT ทั้งตารางแล้วค่อยกรอง
-//   ฝั่งแอปจะช้าจนใช้ไม่ได้ · ช่วงวันที่จึงต้องเข้าไปอยู่ใน WHERE
-//
-// เลขตั๋วคุม: อ่านจากหัวใบก่อน (wf.SalesOrderExt.ControlTicketNo) ถ้าไม่มีค่อยรวบ
-// จากบรรทัดที่เบิกตั๋ว — ลำดับเดียวกับ wf.usp_WriteControlTicketRemark (migration 093)
-// เพื่อให้เลขบนรายงานตรงกับเลขที่ประทับลง SOHDRemark ใน WINSpeed เสมอ
 async function runCustomerDispatchReport(params = {}) {
   const today = new Date();
   const defaultFrom = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30);
@@ -824,8 +948,6 @@ async function runCustomerDispatchReport(params = {}) {
            h.DocuNo,
            bk.DocuNo                                      AS BookingDocuNo,
            h.RefNo                                        AS TaxInvoiceNo,
-           -- ทะเบียนรถอยู่บนใบจอง (103) ไม่ใช่ใบส่งของ — วัดจริง: ใบ 104 เดือน เม.ย.2568
-           -- ทั้ง 610 ใบมี TransRegistration ว่างหมด จึงต้องถอยไปอ่านจากใบจองต้นทาง
            ISNULL(h.TransRegistration, bk.TransRegistration) AS TruckPlate,
            cp.CouponNo,
            ISNULL(ext.ControlTicketNo, drawn.TicketNos)   AS ControlTicketNo,
@@ -841,18 +963,12 @@ async function runCustomerDispatchReport(params = {}) {
     LEFT JOIN dbo.EMCust cu WITH (NOLOCK)  ON cu.CustID = h.CustID
     LEFT JOIN dbo.EMEmp emp WITH (NOLOCK)  ON emp.EmpID = h.EmpID
     LEFT JOIN dbo.SOHD bk WITH (NOLOCK)    ON bk.SOID = d.RefSOID AND bk.DocuType = 103
-    -- ตั๋วปุ๋ยผูกรายบรรทัด ไม่ใช่รายใบ (ดู worldfert-rebate-model)
     LEFT JOIN dbo.WFCoupon cp WITH (NOLOCK)
            ON cp.DocuID = h.SOID AND cp.RefListno = d.ListNo
     LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
            ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), h.SOID)
-    -- ตั๋วคุมของใบที่ยืนยันไปแล้วอ่านจาก WINSpeed ไม่ใช่จาก wf.SalesOrderLine
-    -- เพราะ sp_ConfirmSalesOrder ลบบรรทัดฝั่งแอปทิ้งหลังโอนเข้า WINSpeed สำเร็จ
-    -- (ดู migration 093 — เขียน SOHDRemark ก่อน DELETE FROM wf.SalesOrderLine เสมอ)
-    -- ฉะนั้น SOHDRemark คือที่เดียวที่เลขตั๋วคุมอยู่ถาวร
     OUTER APPLY (
         SELECT TOP 1
-               -- เก็บมาสองแบบ: '[ตั๋วคุม] I69-01141' ที่ระบบเขียน กับ 'ตั๋วคุม' เปล่า ๆ ที่คนคีย์เอง
                CASE WHEN r.Remark LIKE N'[[]ตั๋วคุม]%'
                     THEN LTRIM(REPLACE(r.Remark, N'[ตั๋วคุม]', N''))
                     ELSE LTRIM(RTRIM(r.Remark)) END AS TicketNos
@@ -860,8 +976,8 @@ async function runCustomerDispatchReport(params = {}) {
         WHERE  r.SOID = h.SOID AND r.Remark LIKE N'%ตั๋วคุม%'
         ORDER BY CASE WHEN r.Remark LIKE N'[[]ตั๋วคุม]%' THEN 0 ELSE 1 END, r.ListNo
     ) drawn
-    WHERE  h.DocuType = 104                 -- ขนออกจริงแล้วเท่านั้น ไม่นับใบจอง 103
-      AND  h.DocuStatus <> 'C'              -- ใบที่ถูกยกเลิกไม่ใช่การขน
+    WHERE  h.DocuType = 104
+      AND  h.DocuStatus <> 'C'
       AND  d.GoodQty2 > 0
       AND  h.DocuDate >= @from AND h.DocuDate <= @to
       AND  (@cust = '' OR cu.CustCode LIKE @custLike
@@ -876,6 +992,5 @@ async function runCustomerDispatchReport(params = {}) {
   )).recordset || [];
 }
 
-// เปิดฟังก์ชันรายงานให้สคริปต์ตรวจเรียกได้โดยไม่ต้องยิงผ่าน HTTP
 module.exports = router;
-module.exports.__testing = { runTruckScaleWritebackReport, runCustomerDispatchReport };
+module.exports.__testing = { runCustomerDispatchReport, resolveReportTemplate };

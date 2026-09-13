@@ -1,7 +1,6 @@
 /**
  * สร้างฐาน WINSpeed ใหม่จาก .bak ต้นฉบับ — ทำงานผ่าน TCP อย่างเดียว
  *
- * มีตัวนี้เพราะ **Azure เข้าได้แค่พอร์ต 1433** ไม่มี SSH ให้รันสคริปต์บนเครื่อง
  * ตัวนี้จึงทำทุกอย่างผ่านการเชื่อมต่อ SQL ล้วน ๆ และใช้ได้กับ Hostinger ด้วย
  *
  * ทำอะไรบ้าง
@@ -15,7 +14,7 @@
  * ยังต้องรันต่อเอง: run_migrations.js แล้ว seed_admin.js
  * เพราะ .bak ไม่มี schema wf และไม่มี database user
  *
- * ใช้:  node rebuild-remote-mssql.js <azure|hostinger|hostinger-uat> [--apply]
+ * ใช้:  node rebuild-remote-mssql.js <hostinger|hostinger-uat> [--apply]
  */
 const path = require('path');
 const fs = require('fs');
@@ -50,14 +49,6 @@ const vpsEnv = () => {
 const E = process.env;
 const V = vpsEnv();
 const TARGETS = {
-  azure: {
-    label: 'Azure (PROD-A)', server: E.REMOTE_DB_SERVER, port: +(E.REMOTE_DB_PORT || 1433),
-    user: E.REMOTE_DB_USER, password: E.REMOTE_DB_PASSWORD, encrypt: false,
-    database: 'dbwins_worldfert9',
-    backup: '/var/opt/mssql/backup/dbwins_worldfert9_db.bak',
-    dataDir: '/var/opt/mssql/data',
-    readerPw: E.DB_PASSWORD, ownerPw: E.DB_OWNER_PASSWORD,
-  },
   hostinger: {
     label: 'Hostinger (PROD-B)', server: E.REMOTE_B_DB_SERVER, port: +(E.REMOTE_B_DB_PORT || 1433),
     user: E.REMOTE_B_DB_USER, password: E.REMOTE_B_DB_PASSWORD, encrypt: true,

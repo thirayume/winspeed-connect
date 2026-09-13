@@ -1,16 +1,13 @@
 import { useState, useEffect } from 'react';
-import { X, Search, Truck, MapPin } from 'lucide-react';
+import { X, Truck, MapPin } from 'lucide-react';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
-import { fetchCustomers, fetchTruckPlates } from '../../services/api';
-import type { EMCust } from '../../types';
+import { fetchTruckStats, createTrip } from '../../services/api';
 
-/** Trip metadata collected by TripSetupModal and applied to every SO in the trip. */
 export type TripSetupData = {
-  custId: string;
-  custName: string;
-  truckPlate: string;
+  tripId?: number;
+  tripCode?: string;
+  truckPlate?: string;
   deliveryDate: string;
-  creditDays?: number;
   pSling?: boolean;
   loadInOrder?: boolean;
   remark?: string;
@@ -27,73 +24,60 @@ export function TripSetupModal({
   onConfirm: (data: TripSetupData) => void;
   initialData?: TripSetupData;
 }) {
-  const [customers, setCustomers] = useState<EMCust[]>([]);
   const [truckPlates, setTruckPlates] = useState<string[]>([]);
-
-  const [custId, setCustId] = useState(initialData?.custId || '');
-  const [custSearch, setCustSearch] = useState(initialData?.custName || '');
-  const [debouncedSearch, setDebouncedSearch] = useState(initialData?.custName || '');
-  const [isCustOpen, setIsCustOpen] = useState(false);
-
   const [truckPlate, setTruckPlate] = useState(initialData?.truckPlate || '');
   const [isTruckOpen, setIsTruckOpen] = useState(false);
 
   const [deliveryDate, setDeliveryDate] = useState(initialData?.deliveryDate || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10));
 
-  const [creditDays, setCreditDays] = useState(Number(initialData?.creditDays || 0));
   const [pSling, setPSling] = useState(initialData?.pSling || false);
   const [loadInOrder, setLoadInOrder] = useState(initialData?.loadInOrder || false);
   const [remark, setRemark] = useState(initialData?.remark || '');
 
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setCustId(initialData?.custId || '');
-      setCustSearch(initialData?.custName || '');
       setTruckPlate(initialData?.truckPlate || '');
       setDeliveryDate(initialData?.deliveryDate || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10));
-      setCreditDays(Number(initialData?.creditDays || 0));
       setPSling(initialData?.pSling || false);
       setLoadInOrder(initialData?.loadInOrder || false);
       setRemark(initialData?.remark || '');
       setError('');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+      setSubmitting(false);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(custSearch);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [custSearch]);
-
-  useEffect(() => {
-    if (isOpen) {
-      fetchCustomers(debouncedSearch.length >= 2 ? debouncedSearch : undefined).then(setCustomers).catch(console.error);
+      fetchTruckStats().then(stats => {
+        setTruckPlates(stats.map(s => s.truckPlate).filter(Boolean));
+      }).catch(console.error);
     }
-  }, [debouncedSearch, isOpen]);
+  }, [isOpen, initialData]);
 
-  useEffect(() => {
-    if (custId) {
-      fetchTruckPlates(custId).then(setTruckPlates).catch(console.error);
-    } else {
-      setTruckPlates([]);
-    }
-  }, [custId]);
+  const handleConfirm = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const plate = (!truckPlate || truckPlate === 'ยังไม่ระบุรถ') ? null : truckPlate;
+      const res = await createTrip({
+        transRegistration: plate,
+        deliveryDate,
+        truckCapacityTon: 30,
+      });
 
-  const handleConfirm = () => {
-    if (!custId) {
-      setError('กรุณาเลือกลูกค้าจากรายการ');
-      return;
+      onConfirm({
+        tripId: res.tripId,
+        tripCode: res.tripCode,
+        truckPlate: truckPlate || 'ยังไม่ระบุรถ',
+        deliveryDate,
+        pSling,
+        loadInOrder,
+        remark
+      });
+    } catch (e: any) {
+      setError(e.message || 'สร้างเที่ยวรถไม่สำเร็จ');
+      setSubmitting(false);
     }
-    onConfirm({
-      custId, custName: custSearch,
-      truckPlate,
-      deliveryDate,
-      creditDays, pSling, loadInOrder, remark
-    });
   };
 
   if (!isOpen) return null;
@@ -118,41 +102,16 @@ export function TripSetupModal({
           )}
 
           <div className="space-y-1 relative">
-            <label className="text-sm font-bold text-gray-700">ลูกค้า *</label>
-            <div className="relative">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                value={custSearch}
-                onChange={e => { setCustSearch(e.target.value); if (custId) setCustId(''); }}
-                onFocus={() => setIsCustOpen(true)}
-                onBlur={() => setTimeout(() => setIsCustOpen(false), 200)}
-                placeholder="ค้นหาชื่อลูกค้า..."
-                className="w-full border border-gray-300 rounded-xl pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] focus:border-transparent transition-all"
-              />
-              {isCustOpen && (
-                <div className="absolute z-30 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-                  {customers.map(c => (
-                    <div key={c.CustID} className="px-4 py-3 text-sm hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-0" onClick={() => { setCustId(c.CustID); setCustSearch(c.CustName); setCreditDays(c.CreditDays || 0); setIsCustOpen(false); }}>
-                      <div className="font-bold text-gray-900">{c.CustName}</div>
-                      <div className="text-xs text-gray-500 font-mono mt-0.5">{c.CustID}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-1 relative">
             <div className="flex items-center justify-between">
               <label className="text-sm font-bold text-gray-700 flex items-center gap-1.5">
-                <Truck size={14} /> ทะเบียนรถ
+                <Truck size={14} /> ทะเบียนรถ (เว้นว่างได้ — ยังไม่ระบุรถ)
               </label>
             </div>
             <input
               value={truckPlate} onChange={e => setTruckPlate(e.target.value)}
               onFocus={() => setIsTruckOpen(true)}
               onBlur={() => setTimeout(() => setIsTruckOpen(false), 200)}
-              placeholder="เช่น กจ70-4088"
+              placeholder="เช่น กจ70-4088 (เว้นว่างได้สำหรับ Draft Trip)"
               className={`w-full border rounded-xl px-4 py-2.5 font-mono focus:outline-none transition-all ${truckPlate && truckPlates.length > 0 && !truckPlates.includes(truckPlate) ? 'border-amber-400 focus:ring-2 focus:ring-amber-500 bg-amber-50' : 'border-gray-300 focus:ring-2 focus:ring-[#0C447C]'}`}
             />
             {truckPlate && truckPlates.length > 0 && !truckPlates.includes(truckPlate) && (
@@ -169,19 +128,9 @@ export function TripSetupModal({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-sm font-bold text-gray-700">เครดิต (วัน)</label>
-              <input
-                type="number" min="0"
-                value={creditDays.toString()} onChange={e => setCreditDays(e.target.value === '' ? 0 : parseInt(e.target.value, 10))}
-                className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] transition-all"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-bold text-gray-700">วันที่เอกสาร</label>
-              <ThaiDatePicker value={deliveryDate} onChange={setDeliveryDate} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] transition-all" />
-            </div>
+          <div className="space-y-1">
+            <label className="text-sm font-bold text-gray-700">วันที่เอกสารเที่ยวรถ</label>
+            <ThaiDatePicker value={deliveryDate} onChange={setDeliveryDate} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] transition-all" />
           </div>
 
           <div className="flex gap-6 items-center pt-2">
@@ -210,8 +159,8 @@ export function TripSetupModal({
           <button onClick={onClose} className="px-5 py-2.5 text-gray-600 font-bold hover:bg-gray-200 rounded-xl transition-colors">
             ยกเลิก
           </button>
-          <button onClick={handleConfirm} className="px-6 py-2.5 bg-[#0C447C] text-white font-bold rounded-xl hover:bg-blue-800 transition-colors shadow-md">
-            ยืนยันและเริ่มจัดออร์เดอร์
+          <button onClick={handleConfirm} disabled={submitting} className="px-6 py-2.5 bg-[#0C447C] text-white font-bold rounded-xl hover:bg-blue-800 transition-colors shadow-md disabled:opacity-50">
+            {submitting ? 'กำลังสร้างเที่ยวรถ...' : 'ยืนยันและเริ่มจัดออร์เดอร์'}
           </button>
         </div>
       </div>

@@ -5,7 +5,7 @@ call :load_config || exit /b 1
 
 set "DB_TYPE=%~1"
 set "LOCAL_FILE=%~2"
-if /i not "%DB_TYPE%"=="mssql" if /i not "%DB_TYPE%"=="mysql" goto :usage
+if /i not "%DB_TYPE%"=="mssql" goto :usage
 if "%LOCAL_FILE%"=="" goto :usage
 if not exist "%LOCAL_FILE%" (
   echo ERROR: file not found: %LOCAL_FILE%
@@ -35,12 +35,11 @@ if not "%RC%"=="0" exit /b %RC%
 
 echo.
 echo UPLOAD OK. The file is staged only; no database was restored.
-echo Next: run 04-restore-mssql.bat or 05-restore-mysql.bat with %FILE_NAME%.
+echo Next: run 04-restore-mssql.bat with %FILE_NAME%.
 exit /b 0
 
 :usage
 echo Usage: %~nx0 mssql C:\backup\database.bak[.gz]
-echo    or: %~nx0 mysql C:\backup\database.sql[.gz]
 exit /b 2
 
 :load_config

@@ -9,6 +9,7 @@ interface ThaiDatePickerProps {
   placeholder?: string;
   min?: string;
   max?: string;
+  disabled?: boolean;
 }
 
 const THAI_MONTHS = [
@@ -24,7 +25,8 @@ export const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
   className = "w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C] focus:border-transparent",
   placeholder = "วว/ดด/ปปปป",
   min,
-  max
+  max,
+  disabled = false
 }) => {
   const [displayValue, setDisplayValue] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -210,14 +212,15 @@ export const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
           onChange={handleChange}
           onBlur={handleBlur}
           placeholder={placeholder}
-          onClick={() => setIsOpen(true)}
-          className={`${className} pl-3 pr-8 w-full`}
+          disabled={disabled}
+          onClick={() => !disabled && setIsOpen(true)}
+          className={`${className} pl-3 pr-8 w-full ${disabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}
           maxLength={10}
         />
         <Calendar 
           size={16} 
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 cursor-pointer" 
-          onClick={() => setIsOpen(!isOpen)}
+          className={`absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+          onClick={() => !disabled && setIsOpen(!isOpen)}
         />
       </div>
 

@@ -2,15 +2,18 @@
 documentId: "WF-UG-102"
 title: "WS-Sale-App Role-based Quick Guides"
 version: "v1.0"
-status: Approved
+status: Archived
 statusDetail: "Nine-role source-aligned quick-reference; reviewed and accepted 2026-07-25"
 owner: "Training Lead / Role Process Owners / QA Lead"
-normative: true
+normative: false
 sourceRefs:
   - WSSale-App/src/App.tsx
   - docs/enterprise/06-QUALITY-OPERATIONS/USER-MANUAL-CURRENT.md
   - docs/enterprise/06-QUALITY-OPERATIONS/UAT-FULL-LOOP-RUN-PLAN.md
 ---
+
+> สถานะ: เอกสารย้อนหลัง/รอทบทวนรายหัวข้อ ณ 2026-09-06 — ไม่ใช่ข้อกำหนดปัจจุบัน โปรดเริ่มที่ [เอกสารกลาง](../../README.md). เนื้อหาเดิมคงไว้เพื่อสืบย้อน; คำอ้าง Released/SSOT ภายในเป็นสถานะเดิม.
+
 # WS-Sale-App Role-based Quick Guides
 
 > 🖼️ **ภาพหน้าจอในเอกสารนี้ไม่ได้เก็บใน git** — สร้างบนเครื่องตัวเองด้วย `node docs/enterprise/pipeline/capture-screenshots.js` (เปิดแอปไว้ก่อน) เพราะภาพสร้างจากฐานข้อมูลจริงจึงมีชื่อลูกค้าและทะเบียนรถของจริง
@@ -111,20 +114,20 @@ sourceRefs:
 
 ## 7. WEIGHBRIDGE — ใช้น้ำหนักที่สดและตรงรถ
 
-![หน้า TruckScale ของบทบาท WEIGHBRIDGE](../05-UI-SCREENSHOTS/generated/weighbridge--truckscale.png)
+![หน้าสถานะการชั่งรถของบทบาท WEIGHBRIDGE](../05-UI-SCREENSHOTS/generated/weighbridge--scale-reports.png)
 
-1. อ่านสถานะเชื่อมต่อและจำนวนใบชั่ง
-2. ค้นด้วยทะเบียนหรือ movebill
-3. ตรวจ timestamp, รถ, สินค้า, ชั่งเข้า, ชั่งออก และสุทธิ
-4. จับคู่ SO เมื่อข้อมูลเป็นเอกลักษณ์และตรงกัน
-5. บันทึกน้ำหนักและปิดการชั่งออก ระบบจะเขียนน้ำหนักกลับเข้า TruckScale ให้เอง
-6. หากระบบล่ม/ข้อมูลคลุมเครือ ให้ใช้ fallback SOP และเก็บหลักฐาน
+1. เปิดหน้า **สถานะการชั่งรถ** (scale-reports) อ่านข้อมูลสดจาก `dbo.WGHD`/`dbo.WGDT` ของ WINSpeed
+2. ตรวจสอบคิวรถ สถานะการชั่ง 1 (รอเข้าชั่ง) → 2 (กำลังโหลดสินค้า/ชั่งเข้า) → 3 (ชั่งออกแล้ว)
+3. ตรวจสอบทะเบียนรถ, สินค้า, น้ำหนักชั่งเข้า, ชั่งออก และน้ำหนักสุทธิ (`WeightNet`)
+4. ตรวจสอบการเชื่อมโยงกับใบสั่งจอง SO ผ่าน `SPID = SOHD.SOID`
+5. เมื่อรถผ่านสถานะ 3 ระบบแอปจะถือว่า SO มีสถานะส่งออกจากตาชั่ง (`SHIPPED`)
+6. หากน้ำหนักผิดปกติหรือรถถูกสั่ง Hold ให้ประสานงานและบันทึกดุลยพินิจตามระเบียบ (การสั่ง Hold ในแอปไม่ได้หยุดเครื่องชั่งอัตโนมัติ ต้องแจ้งทางกายภาพ)
 
-**ขอบเขตสิทธิ์:** ทำได้ถึงชั่งออก ออกใบส่งของ sync TruckScale และจับคู่ Weigh Inbox — **ไม่มีสิทธิ์จัดของ (pick) และขึ้นของ (load)** ซึ่งเป็นงานของ WAREHOUSE เพื่อคงการแบ่งแยกหน้าที่ระหว่างผู้เตรียมของกับผู้ปิดน้ำหนัก
+**ขอบเขตสิทธิ์:** ตรวจสอบและติดตามสถานะการชั่งรถจาก WINSpeed และบันทึกผลการส่งมอบ — **ไม่มีสิทธิ์จัดของ (pick) และขึ้นของ (load)** ซึ่งเป็นงานของ WAREHOUSE เพื่อคงการแบ่งแยกหน้าที่ระหว่างผู้เตรียมของกับผู้ปิดน้ำหนัก
 
-**ห้ามยืนยัน:** banner ไม่พร้อม, ข้อมูลเก่า, น้ำหนักผิดปกติ, รถไม่ตรง, มี ticket ซ้ำที่แยกไม่ได้
+**ห้ามยืนยัน:** ข้อมูลเก่า, น้ำหนักสุทธิติดลบหรือไม่สมเหตุสมผล, รถไม่ตรง, รายการสินค้าไม่ตรงกับ SO
 
-**Done when:** ticket/source/timestamp/SO และผู้ปฏิบัติ trace ถึงกันได้
+**Done when:** สถานะการชั่งใน WINSpeed (`WGHD`), SO, น้ำหนักสุทธิ และผู้ปฏิบัติ trace ถึงกันได้อย่างถูกต้อง
 
 ## 8. ACCOUNTING — รักษาความตรงกันของ app และ WINSpeed
 

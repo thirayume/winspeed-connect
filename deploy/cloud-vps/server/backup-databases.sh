@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verified weekly backup for MSSQL + MySQL. Output is downloadable through SFTP.
+# Verified weekly backup for MSSQL. Output is downloadable through SFTP.
 set -euo pipefail
 
 APP_DIR="${1:-/opt/worldfert/app}"
@@ -28,7 +28,6 @@ WORK="$TRANSFER_ROOT/work"
 RETAIN_DAYS="${BACKUP_RETAIN_DAYS:-70}"
 MIN_FREE_GB="${BACKUP_MIN_FREE_GB:-12}"
 MSSQL_DB="${DB_NAME:-dbwins_worldfert9}"
-MYSQL_DB="${MYSQL_DATABASE:-db_truckscale}"
 STAMP="$(date '+%Y%m%d_%H%M%S')"
 LOCK=/run/lock/worldfert-db-backup.lock
 
@@ -37,7 +36,7 @@ fail() { log "ERROR: $*"; exit 1; }
 
 exec 9>"$LOCK"
 flock -n 9 || fail "another backup is already running"
-install -d -m 755 "$OUT/mssql" "$OUT/mysql" "$TRANSFER_ROOT/manifests" "$WORK/mssql"
+install -d -m 755 "$OUT/mssql" "$TRANSFER_ROOT/manifests" "$WORK/mssql"
 
 FREE_GB=$(df -Pm "$TRANSFER_ROOT" | awk 'NR==2{printf "%d",$4/1024}')
 log "disk free ${FREE_GB} GB; required minimum ${MIN_FREE_GB} GB"
@@ -80,13 +79,12 @@ chmod 644 "$OUT/mssql/$MSSQL_BASE.gz" "$OUT/mssql/$MSSQL_BASE.gz.sha256"
 
 # MySQL backup block removed 2026-09-04 with the MySQL integration.
 
-find "$OUT/mssql" "$OUT/mysql" -type f -mtime +"$RETAIN_DAYS" -delete
+find "$OUT/mssql" -type f -mtime +"$RETAIN_DAYS" -delete
 
 cat > "$TRANSFER_ROOT/manifests/last-backup-status.txt" <<EOF
 status=OK
 completed_at=$(date --iso-8601=seconds)
 mssql=/outgoing/mssql/$MSSQL_BASE.gz
-mysql=/outgoing/mysql/$MYSQL_BASE
 retention_days=$RETAIN_DAYS
 EOF
 chmod 644 "$TRANSFER_ROOT/manifests/last-backup-status.txt"

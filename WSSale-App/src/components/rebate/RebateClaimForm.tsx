@@ -15,7 +15,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Scissors, X, Plus, Trash2, Printer, Check, Ban, Loader2, Download } from 'lucide-react';
 import {
   createRebateClaim, fetchRebateClaimDetail, approveRebateClaim, rejectRebateClaim,
-  fetchRebateAccrualLots, fetchNextRbNo,
+  fetchRebateAccrualLots, fetchNextRbNo, fetchSystemSettings,
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import type { RebatePool, RebateClaim, RebateAccrualLot } from '../../types';
@@ -71,9 +71,18 @@ export function ClaimDialog({ pool, onClose, onDone }:
   const [lots, setLots] = useState<RebateAccrualLot[] | null>(null);
   const [lotsBusy, setLotsBusy] = useState(false);
   
-  // Ratio & Self-Claim states
+  // Ratio & Policy states (Rebate policy: Customer 100% / WF 0% default)
   const [customerRatio, setCustomerRatio] = useState<number>(100);
-  const [isSelfClaim, setIsSelfClaim] = useState<boolean>(false);
+
+  useEffect(() => {
+    fetchSystemSettings()
+      .then(res => {
+        if (res?.settings?.CUSTOMER_RATIO !== undefined) {
+          setCustomerRatio(Number(res.settings.CUSTOMER_RATIO));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // ยอดขนจริงมาจาก WINSpeed ตรง ๆ (ใบส่งของ/ใบกำกับ DocuType 104) ไม่ใช่สำเนาในแอป
   // เรียงเก่าก่อน = ลำดับเดียวกับที่เซิร์ฟเวอร์ตัด FIFO ผู้ใช้จึงเห็นสิ่งที่จะเกิดขึ้นจริง
@@ -110,7 +119,7 @@ export function ClaimDialog({ pool, onClose, onDone }:
   const grand = totals.rebate + totals.diff;
   const overBudget = grand > available;
 
-  const activeCustomerRatio = isSelfClaim ? 0 : customerRatio;
+  const activeCustomerRatio = customerRatio;
   const companyRatio = 100 - activeCustomerRatio;
   const customerAmount = Math.round(grand * (activeCustomerRatio / 100) * 100) / 100;
   const retainedAmount = Math.round(grand * (companyRatio / 100) * 100) / 100;
@@ -139,13 +148,11 @@ export function ClaimDialog({ pool, onClose, onDone }:
         custId: custId.trim(),
         note: note.trim() || undefined,
         lines,
-        ...({
-          customerRatio: activeCustomerRatio,
-          companyRatio,
-          customerAmount,
-          retainedAmount,
-          isSelfClaim,
-        } as any),
+        customerRatio: activeCustomerRatio,
+        companyRatio,
+        customerAmount,
+        retainedAmount,
+        isSelfClaim: false,
       });
       onDone();
     } catch (e: unknown) { setErr((e as Error).message || 'บันทึกไม่สำเร็จ'); }
@@ -171,11 +178,11 @@ export function ClaimDialog({ pool, onClose, onDone }:
           <div className="flex flex-wrap items-end gap-3">
             <label className="block max-w-xs flex-1 min-w-[200px]">
               <span className="text-xs font-semibold text-gray-500">รหัสลูกค้า</span>
-              <input value={custId} onChange={e => { setCustId(e.target.value); setLots(null); }} placeholder="เช่น 0592004"
+              <input data-testid="claim-cust-id-input" value={custId} onChange={e => { setCustId(e.target.value); setLots(null); }} placeholder="เช่น 0592004"
                 className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
               <span className="text-[11px] text-gray-400">ใช้อนุมานภาคเพื่อส่งอนุมัติชั้นที่ 2 และดึงยอดขนจริง</span>
             </label>
-            <button onClick={loadLots} disabled={lotsBusy || !custId.trim()}
+            <button data-testid="fetch-lots-button" onClick={loadLots} disabled={lotsBusy || !custId.trim()}
               className="px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1.5">
               {lotsBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
               ดึงยอดขนจริง (FIFO)
@@ -187,47 +194,28 @@ export function ClaimDialog({ pool, onClose, onDone }:
           <LineTable kind="REBATE" rows={rebate} setRows={setRebate} total={totals.rebate} />
           <LineTable kind="DIFF" rows={diff} setRows={setDiff} total={totals.diff} />
 
-          {/* Ratio Adjustment & Self Claim Section */}
+          {/* Rebate Policy Distribution Section (SO-02: 100/0 Rule) */}
           <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#0C447C]">กำหนดสัดส่วนการคืนเงิน (Rebate Ratio)</span>
-              <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-gray-700 bg-white px-2.5 py-1 rounded-lg border border-gray-200 shadow-sm">
-                <input
-                  type="checkbox"
-                  checked={isSelfClaim}
-                  onChange={e => setIsSelfClaim(e.target.checked)}
-                  className="rounded text-[#0C447C] focus:ring-[#0C447C]"
-                />
-                เบิกสะสมบริษัท (Self Claim 100%)
-              </label>
+              <span className="text-xs font-bold text-[#0C447C]">สัดส่วนการคืนเงินตามนโยบายระบบ (Rebate Policy Distribution)</span>
+              <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                นโยบายคืนลูกค้า 100% (ปิด Self Claim ตามกฎ)
+              </span>
             </div>
 
-            {!isSelfClaim && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-gray-600 font-medium">
-                  <span>สัดส่วนลูกค้า: <strong className="text-[#0C447C]">{customerRatio}%</strong></span>
-                  <span>สะสมบริษัท: <strong className="text-emerald-700">{100 - customerRatio}%</strong></span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="5"
-                  value={customerRatio}
-                  onChange={e => setCustomerRatio(Number(e.target.value))}
-                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#0C447C]"
-                />
-              </div>
-            )}
+            <div className="flex items-center justify-between text-xs text-gray-600 font-medium">
+              <span>สัดส่วนลูกค้า: <strong className="text-[#0C447C]">{customerRatio}%</strong></span>
+              <span>สะสมบริษัท: <strong className="text-gray-500">{companyRatio}%</strong></span>
+            </div>
 
             <div className="grid grid-cols-2 gap-3 pt-1 text-xs">
-              <div className="bg-white p-2.5 rounded-lg border border-blue-100">
+              <div className="bg-white p-2.5 rounded-lg border border-blue-100 shadow-xs">
                 <div className="text-gray-500 font-medium">ยอดคืนลูกค้า ({activeCustomerRatio}%)</div>
                 <div className="text-base font-bold text-[#0C447C]">฿{baht(customerAmount)}</div>
               </div>
-              <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
-                <div className="text-gray-500 font-medium">สะสมเข้าบริษัท ({companyRatio}%)</div>
-                <div className="text-base font-bold text-emerald-700">฿{baht(retainedAmount)}</div>
+              <div className="bg-white p-2.5 rounded-lg border border-gray-100 shadow-xs">
+                <div className="text-gray-400 font-medium">สะสมเข้าบริษัท ({companyRatio}%)</div>
+                <div className="text-base font-bold text-gray-500">฿{baht(retainedAmount)}</div>
               </div>
             </div>
           </div>
@@ -241,7 +229,7 @@ export function ClaimDialog({ pool, onClose, onDone }:
 
           <label className="block">
             <span className="text-xs font-semibold text-gray-500">หมายเหตุ</span>
-            <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+            <textarea data-testid="claim-note-input" value={note} onChange={e => setNote(e.target.value)} rows={2}
               className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
           </label>
 
@@ -255,7 +243,7 @@ export function ClaimDialog({ pool, onClose, onDone }:
 
         <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-between gap-3">
           <p className="text-[11px] text-gray-400">ยื่นแล้วจะเข้าสู่การอนุมัติชั้นที่ 2 (ผู้จัดการภาค)</p>
-          <button disabled={busy || overBudget} onClick={submit}
+          <button data-testid="submit-claim-button" disabled={busy || overBudget} onClick={submit}
             className="px-5 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50" style={{ background: NAVY }}>
             {busy ? 'กำลังบันทึก…' : 'ยื่นใบขอเคลียร์'}
           </button>
@@ -320,7 +308,7 @@ function LotPicker({ lots, onUse }: { lots: RebateAccrualLot[]; onUse: (lot: Reb
                   {l.RebatePerTon === null || l.RebatePerTon === undefined ? '—' : baht(l.RebatePerTon)}
                 </td>
                 <td className="px-2 py-1.5 text-right">
-                  <button onClick={() => onUse(l)} className="px-2 py-1 text-xs rounded-lg border border-gray-200 hover:bg-white">
+                  <button data-testid="use-lot-button" onClick={() => onUse(l)} className="px-2 py-1 text-xs rounded-lg border border-gray-200 hover:bg-white">
                     ใช้
                   </button>
                 </td>
@@ -386,6 +374,7 @@ function LineTable({ kind, rows, setRows, total }:
                         {(['qtyTon', 'pricePerTon', 'netPricePerTon'] as const).map(field => (
                           <td key={field} className="px-2 py-1.5">
                             <input type="number" inputMode="decimal" value={l[field]}
+                              data-testid={`line-${field}-${i}`}
                               onChange={e => setLine(i, { [field]: e.target.value } as Partial<Line>)}
                               className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm text-right" />
                           </td>
@@ -446,7 +435,8 @@ const STATUS_LABEL: Record<string, string> = {
 export function ClaimDetailDialog({ claimId, onClose, onChanged }:
   { claimId: number; onClose: () => void; onChanged: () => void }) {
 
-  const role = useAuthStore(s => s.user?.role);
+  const user = useAuthStore(s => s.user);
+  const role = user?.role;
   const [data, setData] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -461,14 +451,31 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [claimId]);
 
   if (!data) {
-    return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <Loader2 className="animate-spin text-white" size={28} /></div>;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+        <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl" onClick={e => e.stopPropagation()}>
+          {err ? (
+            <>
+              <p className="text-sm font-bold text-red-600 mb-2">ไม่สามารถโหลดข้อมูลได้</p>
+              <p className="text-xs text-gray-500 mb-4">{err}</p>
+              <button onClick={onClose} data-testid="close-claim-detail" className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-xs font-semibold rounded-lg text-gray-700">ปิด</button>
+            </>
+          ) : (
+            <div className="flex flex-col items-center gap-2 py-4">
+              <Loader2 className="animate-spin text-blue-800" size={32} />
+              <p className="text-xs text-gray-500">กำลังโหลดข้อมูล…</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
 
   const { claim, lines, approvals, invoices, totals, suggestedRbNo } = data;
   const tier = Number(claim.CurrentTier || 0);
-  const open = !['APPROVED', 'REJECTED', 'CN_ISSUED'].includes(String(claim.Status));
-  const canAct = open && ['MANAGER', 'MARKETING', 'APPROVER', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'SALES'].includes(String(role));
+  const isOpen = !['APPROVED', 'REJECTED', 'CN_ISSUED'].includes(String(claim.Status));
+  const isSubmitter = Number(claim.SalesUserId) === Number(user?.id);
+  const canAct = isOpen && (!isSubmitter || ['ADMIN', 'C_LEVEL'].includes(String(role))) && ['MANAGER', 'MARKETING', 'APPROVER', 'ACCOUNTING', 'ADMIN', 'C_LEVEL'].includes(String(role));
 
   async function act(kind: 'approve' | 'reject') {
     if (kind === 'reject' && !reason.trim()) { setErr('การตีกลับต้องระบุเหตุผล'); return; }
@@ -537,19 +544,19 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 sm:p-4 print:static print:bg-white print:p-0"
+    <div data-testid="claim-detail-dialog" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 sm:p-4 print:static print:bg-white print:p-0"
       onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col print:max-h-none print:shadow-none print:rounded-none"
         onClick={e => e.stopPropagation()}>
 
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 print:hidden">
-          <h2 className="text-lg font-bold" style={{ color: NAVY }}>ใบขอเคลียร์รีเบท #{claim.Id}</h2>
+          <h2 data-testid="claim-detail-title" className="text-lg font-bold" style={{ color: NAVY }}>ใบขอเคลียร์รีเบท #{claim.Id}</h2>
           <div className="flex items-center gap-2">
             <button onClick={() => window.print()}
               className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">
               <Printer size={15} /> พิมพ์
             </button>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            <button onClick={onClose} data-testid="close-claim-detail" aria-label="close-modal" className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
           </div>
         </div>
 
@@ -606,7 +613,7 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
             <div className="space-y-2">
               {[1, 2, 3, 4].map(t => {
                 const a = (approvals || []).find((x: any) => Number(x.Tier) === t);
-                const isCurrent = open && tier === t;
+                const isCurrent = isOpen && tier === t;
                 return (
                   <div key={t}
                     className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 border text-sm
@@ -669,13 +676,16 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
             )}
             <div className="flex flex-col sm:flex-row gap-2">
               <input value={reason} onChange={e => setReason(e.target.value)}
+                data-testid="reject-reason-input"
                 placeholder="เหตุผล (บังคับกรอกเมื่อตีกลับ)"
                 className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" />
               <button disabled={busy} onClick={() => act('reject')}
+                data-testid="reject-claim-button"
                 className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-red-200 text-red-700 text-sm font-bold disabled:opacity-50">
                 <Ban size={15} /> ตีกลับ
               </button>
               <button disabled={busy} onClick={() => act('approve')}
+                data-testid="approve-claim-button"
                 className="inline-flex items-center justify-center gap-1.5 px-5 py-2 rounded-xl text-white text-sm font-bold disabled:opacity-50"
                 style={{ background: '#059669' }}>
                 <Check size={15} /> อนุมัติชั้นที่ {tier}

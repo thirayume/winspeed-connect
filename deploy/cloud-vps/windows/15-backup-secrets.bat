@@ -21,7 +21,7 @@ rem
 rem WHAT IT DOES NOT BACK UP
 rem   .local-secrets\downloads\ is EXCLUDED. It holds database dumps
 rem   pulled from the VPS (a full dbwins_worldfert9 .bak plus the old
-rem   TruckScale MySQL dump - about 711 MB). Those are production DATA,
+rem   database backup archives). Those are production DATA,
 rem   not credentials. Including them made the archive 140,000x larger
 rem   and put a complete copy of the production database into whatever
 rem   USB stick or file server this archive gets carried to.

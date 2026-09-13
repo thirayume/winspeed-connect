@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [ValidateSet('status','health','connections','env-show','env-get','env-set','env-edit','env-backups','env-rollback','domain-set','deploy','rebuild','restart','logs','rotate-db-certs','portainer-restart','portainer-credentials','backup-now')]
     [string]$Action = 'status',
@@ -27,8 +27,8 @@ foreach ($required in 'SERVER_HOST','SSH_PORT','DEPLOY_USER','DEPLOY_KEY','APP_R
 
 if ($Action -in 'rebuild','restart','logs') {
     if (-not $Target) { $Target = if ($Action -eq 'logs') { 'backend' } else { 'all' } }
-    if ($Target -notin 'caddy','frontend','backend','mssql','mysql','portainer','all') {
-        throw 'Target must be caddy, frontend, backend, mssql, mysql, portainer or all.'
+    if ($Target -notin 'caddy','frontend','backend','mssql','portainer','all') {
+        throw 'Target must be caddy, frontend, backend, mssql, portainer or all.'
     }
 }
 if ($Action -eq 'domain-set' -and $Target -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$') {

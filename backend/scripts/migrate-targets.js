@@ -1,31 +1,5 @@
 #!/usr/bin/env node
-/**
- * migrate-targets.js — รัน migration ไปหลายปลายทางในคำสั่งเดียว
- * ================================================================
- * ทำไมต้องมี:
- *   ระบบมี 3 ปลายทางที่ต้อง schema ตรงกัน (กำลังเทียบต้นทุน/ความง่ายในการดูแล)
- *     local    — SQLEXPRESS บนเครื่อง dev
- *     remote   — Azure VM (ระบบหลักเดิม · Vercel + Railway)
- *     remote_b — Hostinger VPS (ต่อตรงพอร์ต 1433 · ไม่ใช้ tunnel ตั้งแต่ 31/08/2569)
- *   ค่าเริ่มต้นคือ "all" เพราะใกล้ production แล้ว — schema ต้องไม่หลุดกัน
- *
- * ออกแบบให้ "ไม่แตะ" run_migrations.js และ db.js:
- *   db.js อ่าน env ตอน module load → จึง spawn process ใหม่ต่อ target
- *   พร้อม env ที่แมปแล้ว ทำให้ safety property ของ run_migrations.js คงเดิมทุกประการ
- *
- * ใช้งาน:
- *   node scripts/migrate-targets.js                        # = all
- *   node scripts/migrate-targets.js --plan                 # dry-run ทุกปลายทาง
- *   node scripts/migrate-targets.js --targets local,remote_b
- *   node scripts/migrate-targets.js --stop-on-error        # หยุดทันทีที่พลาด
- *
- * ค่า env ที่ต้องมี (ดู .env.example):
- *   local     LOCAL_DB_SERVER
- *   remote    REMOTE_DB_SERVER / _PORT / _USER / _PASSWORD
- *   remote_b  REMOTE_B_DB_SERVER / _PORT / _USER / _PASSWORD [/ _NAME]
- *             tunnel มีไว้เผื่อเท่านั้น และใช้ได้เมื่อ REMOTE_B_DB_SERVER=127.0.0.1 เท่านั้น
- * ================================================================
- */
+/** Migration CLI: local Windows and Hostinger (remote_b). On-prem migrations run inside its Docker backend. */
 'use strict';
 
 const path = require('path');
@@ -41,19 +15,7 @@ const REPAIRER = path.join(__dirname, 'repair-migration-checksum.js');
 const PROBER = path.join(__dirname, 'schema-fingerprint.js');
 const RESETTER = path.join(__dirname, 'reset-wf-schema.js');
 const TRACER = path.join(__dirname, 'trace-document.js');
-const ALL_TARGETS = ['local', 'remote', 'remote_b'];
-
-// ── ปลายทางที่ปิดใช้ชั่วคราว ──────────────────────────────────
-//
-// 5 ก.ย. 2569 เจ้าของระบบสั่งปิด Railway + Azure + Vercel ชั่วคราว
-// เหลือใช้งานจริงแค่ local · Docker (deploy/onprem) · Hostinger (remote_b)
-//
-// ไม่ลบ 'remote' ออกจาก ALL_TARGETS เพราะจะเปิดกลับมาอีก
-// แค่กันไม่ให้ `all` ลากไปด้วย มิฉะนั้น `npm run deploy` จะล้มทั้ง pipeline
-// ตอนต่อ Azure ไม่ได้ ทั้งที่งานจริงไม่ได้เกี่ยวกับ Azure เลย
-//
-// เปิดกลับ: ลบ 'remote' ออกจากรายการนี้บรรทัดเดียว
-const SUSPENDED_TARGETS = ['remote'];
+const ALL_TARGETS = ['local', 'remote_b'];
 
 const c = {
   dim: s => `\x1b[2m${s}\x1b[0m`,
@@ -100,23 +62,10 @@ function parseArgs(argv) {
 }
 
 function resolveTargets(spec) {
-  const active = ALL_TARGETS.filter(t => !SUSPENDED_TARGETS.includes(t));
-
-  if (!spec || spec.toLowerCase() === 'all') {
-    if (SUSPENDED_TARGETS.length) {
-      console.log(c.yellow(`หมายเหตุ: ข้ามปลายทางที่ปิดใช้ชั่วคราว — ${SUSPENDED_TARGETS.join(', ')}`));
-    }
-    return [...active];
-  }
-
-  const picked = spec.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-  const bad = picked.filter(t => !ALL_TARGETS.includes(t));
-  if (bad.length) throw new Error(`target ไม่ถูกต้อง: ${bad.join(', ')} (ใช้ได้: ${ALL_TARGETS.join(', ')} หรือ all)`);
-
-  // ระบุชื่อปลายทางที่ปิดอยู่มาตรง ๆ = ตั้งใจ ให้ผ่านได้แต่ต้องเตือนให้เห็นก่อน
-  const suspended = picked.filter(t => SUSPENDED_TARGETS.includes(t));
-  if (suspended.length) {
-    console.log(c.yellow(`คำเตือน: ${suspended.join(', ')} ถูกปิดใช้ชั่วคราวอยู่ แต่คุณระบุมาเอง จะดำเนินการต่อ`));
+  if (!spec || spec.toLowerCase() === 'all') return [...ALL_TARGETS];
+  const picked = [...new Set(spec.split(',').map(s => s.trim().toLowerCase()).filter(Boolean))];
+  if (!picked.length || picked.some(t => !ALL_TARGETS.includes(t))) {
+    throw new Error('Unsupported migration target. Use local, remote_b or all. On-prem: docker compose exec backend node run_migrations.js');
   }
   return picked;
 }
@@ -131,17 +80,7 @@ function buildEnv(target) {
     return { env: { ...base, DB_MODE: 'local' }, label: process.env.LOCAL_DB_SERVER || 'localhost\\SQLEXPRESS' };
   }
 
-  if (target === 'remote') {
-    if (!process.env.REMOTE_DB_SERVER || !process.env.REMOTE_DB_PASSWORD) {
-      return { skip: 'ยังไม่ได้ตั้ง REMOTE_DB_SERVER / REMOTE_DB_PASSWORD' };
-    }
-    return {
-      env: { ...base, DB_MODE: 'remote' },
-      label: `${process.env.REMOTE_DB_SERVER}:${process.env.REMOTE_DB_PORT || 1433}`,
-    };
-  }
-
-  // remote_b — แมป REMOTE_B_* ทับ REMOTE_* เพราะ db.js รู้จักแค่ REMOTE_*
+  // Hostinger credentials mapped to the Docker SQL-auth connection in the child process.
   if (!process.env.REMOTE_B_DB_SERVER || !process.env.REMOTE_B_DB_PASSWORD) {
     return { skip: 'ยังไม่ได้ตั้ง REMOTE_B_DB_SERVER / REMOTE_B_DB_PASSWORD' };
   }
@@ -254,7 +193,7 @@ async function main() {
     console.log(`
 ใช้งาน: node scripts/migrate-targets.js [options]
 
-  --targets <list>   local,remote,remote_b หรือ all   (ค่าเริ่มต้น: all)
+  --targets <list>   local,remote_b หรือ all   (ค่าเริ่มต้น: all)
   --plan             dry-run อ่านอย่างเดียว ไม่แก้ ledger
   --stop-on-error    หยุดทันทีที่ปลายทางใดพลาด (ค่าเริ่มต้น: รันต่อจนครบแล้วสรุป)
   --repair-checksums ซ่อม checksum ที่เพี้ยนเพราะท้ายบรรทัด/คอมเมนต์ แทนการรัน migration

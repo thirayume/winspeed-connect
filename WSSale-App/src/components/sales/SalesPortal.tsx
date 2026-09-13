@@ -4,7 +4,7 @@ import { Button, Card, cn } from '../ui/Base';
 import { useExport } from '../../hooks/useExport';
 import { useErpStore } from '../../store/erp-store';
 import { useAppStore } from '../../store/app-store';
-import { fetchSalesOrders, fetchSalesOrder, cancelSO, deleteSO, fetchCustomers, confirmSO } from '../../services/api';
+import { fetchSalesOrders, fetchSalesOrder, cancelSO, deleteSO, fetchCustomers, confirmSO, fetchTripBoard } from '../../services/api';
 import { appConfirm } from '../ui/AppAlert';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { SOStatusBadge } from './SOStatusBadge';
@@ -87,13 +87,40 @@ export const SalesPortal = () => {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetchSalesOrders({
-        status: statusFilter || undefined,
-        search: debouncedSearch || undefined,
-        page,
-        limit,
+      const [res, boardRes] = await Promise.all([
+        fetchSalesOrders({
+          status: statusFilter || undefined,
+          search: debouncedSearch || undefined,
+          page,
+          limit,
+        }),
+        fetchTripBoard().catch(() => ({ data: [] })),
+      ]);
+
+      const orderTripMap = new Map<string, { tripId: number; tripCode?: string }>();
+      for (const trip of (boardRes.data || [])) {
+        for (const cust of (trip.customers || [])) {
+          for (const booking of (cust.bookings || [])) {
+            if (booking.memberId) {
+              orderTripMap.set(String(booking.memberId), {
+                tripId: Number(trip.tripId),
+                tripCode: trip.tripCode,
+              });
+            }
+          }
+        }
+      }
+
+      const mappedOrders = (res.data || []).map(o => {
+        const tripInfo = orderTripMap.get(String(o.id));
+        return {
+          ...o,
+          tripId: tripInfo ? tripInfo.tripId : o.tripId,
+          tripCode: tripInfo ? tripInfo.tripCode : o.tripCode,
+        };
       });
-      setOrders(res.data || []);
+
+      setOrders(mappedOrders);
       setTotalOrders(res.total || 0);
     } catch (e) {
       console.error('fetchSalesOrders failed', e);
@@ -102,41 +129,14 @@ export const SalesPortal = () => {
     setLoading(false);
   }, [page, limit, debouncedSearch, statusFilter, setUnlockRequests]);
 
-  const handleConfirmTrip = async () => {
-    if (!activeTrip) return;
-    
-    // Find all draft orders that match the active trip's criteria
-    const tripOrders = orders.filter(so => {
-      // ไม่กรองด้วยลูกค้า — เที่ยวเดียวกันรับได้หลายลูกค้า (ดูหมายเหตุที่ groupedOrders)
-      const matchTruck = so.truckPlate === activeTrip.truckPlate || (so.truckPlate === 'ตั๋วคุม');
-      const soDate = so.deliveryDate ? so.deliveryDate.split('T')[0] : '';
-      const matchDate = soDate === activeTrip.deliveryDate;
-      return so.status === 'DRAFT' && matchTruck && matchDate;
-    });
-
-    if (tripOrders.length === 0) {
+  const handleConfirmTrip = () => {
+    if (!activeTripGroup) {
       alert('ไม่พบบิลในทริปนี้ กรุณาเพิ่มบิลก่อนยืนยัน');
       return;
     }
-    const lockedByQuote = tripOrders.find(so => so.linkedQuoteId && ['DRAFT', 'SENT', 'EXPIRED'].includes(String(so.linkedQuoteStatus || '')));
-    if (lockedByQuote) {
-      alert(`ทริปนี้ผูกกับใบเสนอราคา ${lockedByQuote.linkedQuoteNo || ''} ที่ยังรอการยืนยันอยู่`);
-      return;
-    }
-
-    if (await appConfirm(`ต้องการยืนยันออร์เดอร์ทริปนี้ทั้ง ${tripOrders.length} บิลใช่หรือไม่?`)) {
-      try {
-        setLoading(true);
-        // Using existing confirmSO endpoint for each bill
-        await Promise.all(tripOrders.map(so => confirmSO(so.id as number)));
-        alert('ยืนยันออร์เดอร์ทริปสำเร็จ');
-        clearTrip();
-        loadData();
-      } catch (e: any) {
-        alert(e.message || 'เกิดข้อผิดพลาดในการยืนยัน');
-        setLoading(false);
-      }
-    }
+    // เปิด TripSummaryModal เพื่อยืนยันผ่าน atomic confirmTrip route (POST /api/trips/:id/confirm)
+    // ปิด legacy confirmation bypass ที่เคยใช้ Promise.all(confirmSO)
+    setViewingTrip(activeTripGroup);
   };
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -201,25 +201,20 @@ export const SalesPortal = () => {
   const selectedSo = orders.find(o => o.id === selectedId) || externalSelectedSo;
 
   const groupedOrders = useMemo(() => {
-    const map = new Map<string, { dateDisplay: string; cust: string; custCount: number; truck: string; orders: SalesOrder[]; totalAmt: number; totalTon: number }>();
+    const map = new Map<string, { tripId?: number; tripCode?: string; dateDisplay: string; cust: string; custCount: number; truck: string; orders: SalesOrder[]; totalAmt: number; totalTon: number }>();
     for (const o of orders) {
       const dateRaw = o.deliveryDate ? o.deliveryDate.split('T')[0] : '9999-12-31';
       const dateDisplay = o.deliveryDate ? formatThaiDate(o.deliveryDate) : 'ไม่ระบุวันรับ';
       const truck = o.truckPlate || 'ไม่ระบุทะเบียนรถ';
-      // เที่ยวรถ = วันที่ + ทะเบียน + สถานะ  — **ไม่รวมลูกค้า**
-      //
-      // รถหนึ่งคันวิ่งเที่ยวเดียวส่งลูกค้าหลายรายที่อยู่เส้นทางเดียวกันได้
-      // และนั่นคือเรื่องปกติ ไม่ใช่ข้อยกเว้น — วัดจากใบสั่งขายจริงตั้งแต่ ม.ค. 2568:
-      //   เที่ยวรถทั้งหมด           9,849
-      //   เที่ยวที่มีมากกว่าหนึ่งใบ  1,297
-      //   ในนั้นส่งหลายลูกค้า       1,203  (93%)
-      //
-      // เดิม key มี custId อยู่ด้วย ทำให้เที่ยวจริงหนึ่งเที่ยวถูกแตกเป็นหลายกลุ่มตามลูกค้า
-      // คนจัดลำดับขึ้นของจึงมองไม่เห็นว่ารถคันนี้ต้องบรรทุกอะไรบ้างในเที่ยวเดียวกัน
-      // ซึ่งเป็นเหตุผลทั้งหมดที่ฟีเจอร์นี้มีอยู่ (WINSpeed ทำ Sale Trip ไม่ได้)
-      const key = `${dateRaw}::${truck}::${o.status}`;
+      
+      // P1 Finding 2: จัดกลุ่มตาม tripId จริงเป็นหลักเมื่อมี tripId เพื่อคง identity เดียวกันตลอด workflow
+      const tripId = o.tripId;
+      const tripCode = o.tripCode;
+      const key = (tripId && Number(tripId) > 0)
+        ? `trip::${tripId}`
+        : `${dateRaw}::${truck}::${o.status}`;
 
-      if (!map.has(key)) map.set(key, { dateDisplay, cust: '', custCount: 0, truck, orders: [], totalAmt: 0, totalTon: 0 });
+      if (!map.has(key)) map.set(key, { tripId: (tripId && Number(tripId) > 0) ? Number(tripId) : undefined, tripCode, dateDisplay, cust: '', custCount: 0, truck, orders: [], totalAmt: 0, totalTon: 0 });
       const g = map.get(key)!;
       g.orders.push(o);
       g.totalAmt += (o.lines || []).reduce((s, l) => s + (l.qtyTon * l.pricePerTon), 0);
@@ -239,11 +234,14 @@ export const SalesPortal = () => {
   const activeTripGroup = useMemo(() => {
     if (!activeTrip) return null;
     const tripOrders = orders.filter(so => {
-      const matchCust = String(so.custId) === String(activeTrip.custId);
-      const matchTruck = so.truckPlate === activeTrip.truckPlate || (so.truckPlate === 'ตั๋วคุม');
+      // P1 Finding 2: หากมี tripId ให้จัดกลุ่มตาม tripId เป็นหลัก
+      if (activeTrip.tripId && (so as any).tripId) {
+        return Number((so as any).tripId) === Number(activeTrip.tripId);
+      }
+      const matchTruck = so.truckPlate === (activeTrip.truckPlate || '') || (so.truckPlate === 'ตั๋วคุม');
       const soDate = so.deliveryDate ? so.deliveryDate.split('T')[0] : '';
       const matchDate = soDate === activeTrip.deliveryDate;
-      return so.status === 'DRAFT' && matchCust && matchTruck && matchDate;
+      return so.status === 'DRAFT' && matchTruck && matchDate;
     });
     
     if (tripOrders.length === 0) return null;
@@ -252,12 +250,14 @@ export const SalesPortal = () => {
     const totalTon = tripOrders.reduce((s, l) => s + (l.lines || []).reduce((ss, ll) => ss + (ll.isGiveaway ? 0 : ll.qtyTon), 0), 0);
     
     return {
+      tripId: activeTrip.tripId,
+      tripCode: activeTrip.tripCode,
       dateDisplay: activeTrip.deliveryDate ? formatThaiDate(activeTrip.deliveryDate) : 'ไม่ระบุวันรับ',
       cust: (() => {
-        const ids = Array.from(new Set(tripOrders.map(o => String(o.custId || ''))));
-        return ids.length === 1 ? (activeTrip.custName || ids[0]) : `${ids.length} ลูกค้า`;
+        const ids = Array.from(new Set(tripOrders.map(o => String(o.custId || '')))).filter(Boolean);
+        return ids.length === 1 ? (tripOrders[0]?.custName || ids[0]) : `${ids.length} ลูกค้า`;
       })(),
-      custCount: new Set(tripOrders.map(o => String(o.custId || ''))).size,
+      custCount: new Set(tripOrders.map(o => String(o.custId || '')).filter(Boolean)).size,
       truck: activeTrip.truckPlate || 'ตั๋วคุม',
       orders: tripOrders,
       totalAmt,
@@ -359,8 +359,8 @@ export const SalesPortal = () => {
                   </div>
                   <div className="bg-white rounded-lg p-3 text-sm shadow-sm border border-blue-100/50 flex flex-col gap-1.5">
                     <div className="flex justify-between">
-                      <span className="text-gray-500">ลูกค้า:</span>
-                      <span className="font-bold text-gray-900">{activeTrip.custName}</span>
+                      <span className="text-gray-500">จำนวนลูกค้า:</span>
+                      <span className="font-bold text-gray-900">{activeTripGroup?.custCount ?? 0} ลูกค้า ({activeTripGroup?.orders.length ?? 0} บิล)</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-500">ทะเบียนรถ:</span>
@@ -510,8 +510,8 @@ export const SalesPortal = () => {
         onAddBill={() => {
           if (viewingTrip) {
             setTrip({
-              custId: viewingTrip.orders[0]?.custId || '',
-              custName: viewingTrip.orders[0]?.custName || '',
+              tripId: viewingTrip.tripId,
+              tripCode: viewingTrip.tripCode,
               truckPlate: viewingTrip.truck,
               deliveryDate: viewingTrip.orders[0]?.deliveryDate?.split('T')[0] || ''
             });

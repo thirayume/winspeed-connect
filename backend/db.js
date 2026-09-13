@@ -1,34 +1,15 @@
-/**
- * db.js — SQL Server แบบ dual-pool สลับได้ runtime (local ↔ remote)
- * ──────────────────────────────────────────────────────────────
- * ใช้ msnodesqlv8 ทั้งคู่ (driver เดียว → type เดียว → routes ไม่ต้องแก้):
- *   local  = Windows Authentication (.\SQLEXPRESS, named-pipe)
- *   remote = SQL Server Authentication (sa) ผ่าน ODBC Driver 17 / TCP (public IP)
- *
- * เลือก target ต่อ request ผ่าน header X-DB-Target: local|remote (AsyncLocalStorage)
- * ค่า default = DB_MODE ใน .env (ใช้กับ scripts: seed/import/export)
- *
- * ⚠ DATA BOUNDARY: wf.* is app-owned; dbo reads are the default, while only explicitly approved master, quotation, and SO workflows may write dbo (see ADR-003).
- */
+/** SQL Server pools. local = Windows; remote = Docker SQL auth; remote_b = Hostinger. */
 require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
 const { AsyncLocalStorage } = require('async_hooks');
 const os = require('os');
 const isWindows = os.platform() === 'win32';
 
-// Use msnodesqlv8 on Windows for Windows Auth support, standard tedious on Linux (Railway/Render)
+// Use msnodesqlv8 on Windows for Windows Auth support, standard tedious on Linux (Docker)
 const sql = isWindows ? require('mssql/msnodesqlv8') : require('mssql');
 
-/**
- * ปลายทางที่รองรับ — ต้องตรงกับรายชื่อใน scripts/migrate-targets.js
- *
- * เดิมโค้ดเขียนว่า `... === 'remote' ? 'remote' : 'local'` ซึ่งแปลว่า **ค่าอะไรก็ตาม
- * ที่ไม่ใช่ 'remote' จะกลายเป็น 'local' โดยไม่เตือน** · `DB_MODE=remote_b` จึงไปลง
- * ฐานเครื่องพัฒนาเงียบ ๆ ทั้งที่ผู้สั่งตั้งใจแก้ฐานบน Coolify
- * สคริปต์ที่เขียนข้อมูล (เช่น audit-duplicate-passwords --fix) จะแก้ผิดฐานได้
- * โดยไม่มีใครรู้ จึงเปลี่ยนเป็นรายชื่อชัดเจน และ **ค่าที่ไม่รู้จักให้ล้มทันที**
- */
-const VALID_TARGETS = ['local', 'remote', 'remote_b'];
-const RAW_MODE = (process.env.DB_MODE || 'remote').toLowerCase().trim();
+/** Explicit configured database targets; never silently fall back to another database. */
+const { VALID_TARGETS, validateTarget } = require('./db-target-policy');
+const RAW_MODE = (process.env.DB_MODE || 'local').toLowerCase().trim();
 if (!VALID_TARGETS.includes(RAW_MODE)) {
   throw new Error(
     `DB_MODE="${RAW_MODE}" ไม่ถูกต้อง — รองรับเฉพาะ ${VALID_TARGETS.join(' | ')}`);
@@ -60,10 +41,11 @@ function localConfig() {
   };
 }
 function remoteConfig() {
-  const server = process.env.REMOTE_DB_SERVER || '20.255.185.14';
+  const server = process.env.REMOTE_DB_SERVER;
   const port   = parseInt(process.env.REMOTE_DB_PORT || '1433', 10);
   const user   = process.env.REMOTE_DB_USER || 'sa';
   const pwd    = process.env.REMOTE_DB_PASSWORD || '';
+  if (!server || !pwd) throw new Error('DB_MODE=remote requires explicit REMOTE_DB_SERVER / REMOTE_DB_PASSWORD (Docker SQL Server)');
   
   if (isWindows) {
     const connectionString =
@@ -85,13 +67,7 @@ function remoteConfig() {
   }
 }
 
-/**
- * remote_b — ฐานบน Coolify/Hetzner · ปกติต่อผ่าน SSH tunnel ที่ deploy/coolify/tunnel.bat เปิดไว้
- * (REMOTE_B_DB_SERVER มักเป็น 127.0.0.1 และ REMOTE_B_DB_PORT เป็นพอร์ตฝั่ง local ของ tunnel)
- *
- * แยกฟังก์ชันไว้ต่างหากแทนที่จะแมป REMOTE_B_* ทับ REMOTE_* เหมือนที่ migrate-targets.js ทำ
- * เพราะการแมปทับทำให้ปลายทางทั้งสองใช้ชื่อเดียวกันในหน่วยความจำ แยกไม่ออกเวลามีปัญหา
- */
+/** Explicit configured database targets; never silently fall back to another database. */
 function remoteBConfig() {
   const server = process.env.REMOTE_B_DB_SERVER;
   const port   = parseInt(process.env.REMOTE_B_DB_PORT || '1433', 10);
@@ -203,7 +179,7 @@ async function wfTransaction(fn) {
 
 // รัน callback ภายใต้ DB target ที่กำหนด (ใช้ใน middleware)
 function runWithTarget(target, fn) {
-  const t = target === 'remote' ? 'remote' : 'local';
+  const t = validateTarget(target);
   return als.run({ target: t }, fn);
 }
 

@@ -2,10 +2,13 @@
 documentId: "WF-TST-002"
 title: "แผนทดสอบการเชื่อมต่อกับ WINSpeed"
 version: "v2.0"
-status: Draft
+status: Archived
 owner: "Project Owner"
 normative: false
 ---
+
+> สถานะ: เอกสารย้อนหลัง/รอทบทวนรายหัวข้อ ณ 2026-09-06 — ไม่ใช่ข้อกำหนดปัจจุบัน โปรดเริ่มที่ [เอกสารกลาง](../../README.md). เนื้อหาเดิมคงไว้เพื่อสืบย้อน; คำอ้าง Released/SSOT ภายในเป็นสถานะเดิม.
+
 
 # แผนทดสอบการเชื่อมต่อกับ WINSpeed (ฉบับแก้ลำดับ)
 

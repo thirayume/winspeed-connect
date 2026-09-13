@@ -11,7 +11,6 @@
 #
 # วางไฟล์ backup ที่ ./backup/ ก่อน:
 #   *.bak  -> SQL Server (WINSpeed)
-#   *.sql  -> MySQL (TruckScale)
 # =============================================================
 set -uo pipefail
 cd "$(dirname "$0")"
@@ -20,10 +19,8 @@ cd "$(dirname "$0")"
 set -a; . ./.env; set +a
 
 MSSQL_C=wf-mssql
-MYSQL_C=wf-mysql
 BACKEND_C=wf-backend
 DB="${DB_NAME:-dbwins_worldfert9}"
-MYDB="${MYSQL_DATABASE:-db_truckscale}"
 
 FORCE_RESTORE=0; SKIP_RESTORE=0
 for a in "$@"; do
@@ -41,7 +38,7 @@ sq(){  docker exec "$MSSQL_C" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -
 
 # ── 0) รอ container พร้อม ────────────────────────────────────
 log "0/6 รอฐานข้อมูลพร้อม (SQL Server ใช้เวลา boot ~90 วินาที)"
-for c in "$MSSQL_C" "$MYSQL_C"; do
+for c in "$MSSQL_C"; do
   for i in $(seq 1 60); do
     st=$(docker inspect -f '{{.State.Health.Status}}' "$c" 2>/dev/null || echo none)
     [ "$st" = "healthy" ] && { ok "$c พร้อม"; break; }
@@ -99,29 +96,11 @@ ALTER ROLE db_datareader ADD MEMBER wf_reader;
 ALTER ROLE db_datareader ADD MEMBER wf_owner;" >/dev/null 2>&1 \
   && ok "database user พร้อม" || bad "สร้าง database user ไม่สำเร็จ"
 
-# ── 3) restore MySQL ────────────────────────────────────────
-SQLDUMP=$(ls -1 ./backup/*.sql 2>/dev/null | head -1)
-MY_ROWS=$(docker exec "$MYSQL_C" mysql -u root -p"$MYSQL_ROOT_PASSWORD" -N -e "SELECT COUNT(*) FROM tblscale;" "$MYDB" 2>/dev/null | tr -d '\r')
-if [ -z "$SQLDUMP" ]; then
-  log "3/6 ไม่พบไฟล์ .sql ใน ./backup/ — ข้าม MySQL"
-elif [ -n "${MY_ROWS:-}" ] && [ "${MY_ROWS:-0}" -gt 0 ] && [ "$FORCE_RESTORE" = "0" ]; then
-  log "3/6 $MYDB มีข้อมูลแล้ว (${MY_ROWS} แถว) — ข้าม (ใช้ --restore เพื่อทับ)"
-else
-  log "3/6 นำเข้า MySQL จาก $(basename "$SQLDUMP")"
-  docker exec "$MYSQL_C" mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e \
-    "CREATE DATABASE IF NOT EXISTS \`$MYDB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>/dev/null
-  docker exec -i "$MYSQL_C" mysql -u root -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 "$MYDB" < "$SQLDUMP" 2>/dev/null
-  N=$(docker exec "$MYSQL_C" mysql -u root -p"$MYSQL_ROOT_PASSWORD" -N -e "SELECT COUNT(*) FROM tblscale;" "$MYDB" 2>/dev/null | tr -d '\r')
-  ok "นำเข้าเสร็จ — tblscale = ${N:-?} แถว"
-  docker exec "$MYSQL_C" mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e \
-    "CREATE USER IF NOT EXISTS '${MYSQL_USER:-wfapp}'@'%' IDENTIFIED BY '$MYSQL_PASSWORD';
-     GRANT SELECT,INSERT,UPDATE,DELETE ON \`$MYDB\`.* TO '${MYSQL_USER:-wfapp}'@'%'; FLUSH PRIVILEGES;" 2>/dev/null
-  ok "คืนสิทธิ์ให้ ${MYSQL_USER:-wfapp}"
-fi
+# Legacy MySQL restore removed; weighing comes from WINSpeed.
 
 # ── 4) migrations ───────────────────────────────────────────
 log "4/6 รัน migrations (สร้าง schema wf)"
-docker exec "$BACKEND_C" node run_migrations.js || { bad "migrations ล้มเหลว"; exit 1; }
+docker compose run --rm --no-deps backend node run_migrations.js || { bad "migrations ล้มเหลว"; exit 1; }
 
 # ── 5) GRANT ────────────────────────────────────────────────
 log "5/6 GRANT สิทธิ์ schema wf"
@@ -131,7 +110,7 @@ sq -h -1 -W -d "$DB" -Q "SET NOCOUNT ON; SELECT dp.name + ' -> ' + p.permission_
 
 # ── 6) seed ผู้ใช้ ──────────────────────────────────────────
 log "6/6 seed ผู้ใช้ (admin + พนักงานจาก dbo.EMEmp)"
-docker exec "$BACKEND_C" node seed_admin.js || { bad "seed_admin ล้มเหลว"; exit 1; }
+docker compose run --rm --no-deps backend node seed_admin.js || { bad "seed_admin ล้มเหลว"; exit 1; }
 
 # ── สรุป ────────────────────────────────────────────────────
 log "ตรวจผลลัพธ์"

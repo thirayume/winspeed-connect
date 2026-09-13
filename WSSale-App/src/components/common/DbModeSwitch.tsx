@@ -2,7 +2,7 @@ import { Database } from 'lucide-react';
 import { getDbMode, setDbMode, DB_MODE_META, type DbMode } from '../../store/db-mode';
 import { clearToken } from '../../services/api';
 
-const ORDER: DbMode[] = import.meta.env?.PROD ? ['remote'] : ['local', 'remote'];
+const ORDER: DbMode[] = import.meta.env?.PROD ? ['server'] : ['server', 'local', 'remote', 'remote_b'];
 
 /**
  * สลับแหล่งข้อมูล (ADMIN เท่านั้น) — เปลี่ยนแล้ว reload
@@ -12,6 +12,7 @@ export function DbModeSwitch({ collapsed }: { collapsed?: boolean }) {
 
   function switchTo(m: DbMode) {
     if (m === cur) return;
+    clearToken();
     setDbMode(m);
     window.location.reload();
   }

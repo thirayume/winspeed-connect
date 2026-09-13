@@ -12,8 +12,8 @@
         "docker-compose.yml",
         ".env.example",
         ".env.docker.example",
-        "backend/.env.coolify.example",
-        "vercel.json"
+        "deploy/cloud-vps/docker-compose.test.yml",
+        "playwright.hostinger.config.ts"
       ]
     },
     {
@@ -82,7 +82,7 @@
       "name": "deployment",
       "files": [
         "deploy.ps1",
-        "DEPLOY.md"
+        "docs/DEPLOYMENT.md"
       ],
       "root": "deploy",
       "extensions": [

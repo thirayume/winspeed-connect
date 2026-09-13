@@ -110,6 +110,7 @@ export function RebatePage() {
                 const isSel = selectedPool?.Id === p.Id;
                 return (
                   <div key={p.Id} onClick={() => openPool(p)}
+                    data-testid={`pool-card-${p.Id}`}
                     className={`p-3 rounded-xl border cursor-pointer mb-2 transition-all ${isSel ? 'border-blue-700 bg-white shadow-md' : 'border-gray-100 bg-white hover:border-gray-200'}`}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm font-bold text-gray-700">{p.SalesName}</span>
@@ -131,10 +132,11 @@ export function RebatePage() {
                 <p className="text-xs text-gray-400 py-3 text-center">ยังไม่มีเคลม</p>
               ) : claims.slice(0, 10).map(c => (
                 <button key={c.Id} onClick={() => setDetailId(Number(c.Id))} type="button"
+                  data-testid={`claim-card-${c.Id}`}
                   className="w-full text-left flex items-center justify-between p-2.5 rounded-lg bg-white border border-gray-100 mb-1.5 hover:border-blue-300 hover:bg-blue-50/40 transition">
                   <div>
                     <div className="text-xs font-bold text-gray-700">฿{Number(c.ClaimAmt).toLocaleString('th-TH',{maximumFractionDigits:0})}</div>
-                    <div className="text-[10px] text-gray-400">{c.SalesName} {c.CnDocuNo ? `· Ref ${c.CnDocuNo}` : ''}</div>
+                    <div className="text-[10px] text-gray-400">{c.SalesName} · #{c.Id} {c.CnDocuNo ? `(Ref ${c.CnDocuNo})` : ''}</div>
                   </div>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${STATUS_TONE[String(c.Status)] || 'bg-amber-50 text-amber-700'}`}>
                     {CLAIM_STATUS[String(c.Status)] || c.Status}
@@ -161,6 +163,7 @@ export function RebatePage() {
                   </div>
                   {(role === 'SALES' || role === 'ACCOUNTING' || role === 'ADMIN' || role === 'C_LEVEL') && (
                     <button onClick={() => setShowClaim(true)}
+                      data-testid="open-claim-dialog-button"
                       className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-xs font-semibold" style={{ background: '#0C447C' }}>
                       <Scissors size={13} /> ยื่นเคลม (FIFO)
                     </button>

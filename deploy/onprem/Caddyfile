@@ -17,7 +17,13 @@
 # ── หน้าเว็บ ──────────────────────────────────────────────────
 {$APP_DOMAIN} {
 	encode gzip
-	reverse_proxy frontend:80
+	@api path /api/* /socket.io/* /uploads/*
+	handle @api {
+		reverse_proxy backend:3000
+	}
+	handle {
+		reverse_proxy frontend:80
+	}
 
 	header {
 		X-Content-Type-Options nosniff

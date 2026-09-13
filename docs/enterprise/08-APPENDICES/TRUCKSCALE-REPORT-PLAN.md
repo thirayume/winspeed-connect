@@ -2,10 +2,13 @@
 documentId: "WF-RPT-003"
 title: "แผนสร้างรายงาน TruckScale ใน App"
 version: "v1.0"
-status: Draft
+status: Archived
 owner: "Integration"
 normative: false
 ---
+
+> สถานะ: เอกสารย้อนหลัง/รอทบทวนรายหัวข้อ ณ 2026-09-06 — ไม่ใช่ข้อกำหนดปัจจุบัน โปรดเริ่มที่ [เอกสารกลาง](../../README.md). เนื้อหาเดิมคงไว้เพื่อสืบย้อน; คำอ้าง Released/SSOT ภายในเป็นสถานะเดิม.
+
 
 # แผนสร้างรายงาน TruckScale ใน App
 

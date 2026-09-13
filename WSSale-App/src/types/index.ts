@@ -213,6 +213,9 @@ export type SalesOrder = {
   soPrefix: SOPrefix;
   custId: string;
   custName: string;
+  creditDays?: number;
+  tripId?: number;
+  tripCode?: string;
   truckPlate?: string;
   controlTicketNo?: string;
   deliveryDate?: string;
@@ -232,6 +235,8 @@ export type SalesOrder = {
   lines: SalesOrderLine[];
   auditLogs?: AuditLog[];
   needsApproval?: boolean;
+  requiresPriceApproval?: boolean;
+  priceApprovalStatus?: string;
   linkedQuoteId?: number | null;
   linkedQuoteNo?: string | null;
   linkedQuoteStatus?: QuoteStatus | null;
@@ -248,6 +253,14 @@ export type SalesOrder = {
    */
   winspeedInvoices?: WinspeedInvoiceRef[];
   isWinspeedPosted?: boolean;
+  pickupDueDate?: string | null;
+  pickupDueType?: 'EXPLICIT' | 'DEFAULT' | 'UNKNOWN' | null;
+  confirmedAt?: string | null;
+  pickupPolicySnapshotId?: number | null;
+  pickupEvaluation?: {
+    in?: { status: 'EARLY' | 'ON_TIME' | 'LATE' | 'UNKNOWN'; deltaDays: number | null; actualDate?: string | null; dueDate?: string | null; provenance?: string };
+    out?: { status: 'EARLY' | 'ON_TIME' | 'LATE' | 'UNKNOWN'; deltaDays: number | null; actualDate?: string | null; dueDate?: string | null; provenance?: string };
+  } | null;
 };
 
 export type WinspeedInvoiceRef = {
@@ -311,7 +324,13 @@ export type RebateClaim = {
   CustName?: string;
   ClaimAmt: number;
   RemainingAmt: number;
-  Status: 'PENDING' | 'APPROVED';
+  CustomerRatio?: number;
+  CompanyRatio?: number;
+  CustomerAmount?: number;
+  RetainedAmount?: number;
+  IsSelfClaim?: boolean;
+  PolicyVersionId?: number | null;
+  Status: 'PENDING' | 'APPROVED' | 'TIER2_PENDING' | 'TIER3_PENDING' | 'TIER4_PENDING' | 'REJECTED';
   CnDocuNo?: string;
   Note?: string;
   /** wf.RebateClaim.PeriodYear / PeriodMonth — nullable since migration 079 */

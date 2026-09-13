@@ -216,6 +216,23 @@ export const fetchControlTicketDraws = (docuNo: string) =>
 export const fetchControlTicketDetails = (docuNo: string) =>
   req<{ ListNo: number; GoodID: string; GoodCode: string; GoodName: string; QtyTon: number; PricePerTon: number; NetPricePerTon: number; BagPerTon: number }[]>(`/master/control-tickets/${encodeURIComponent(docuNo)}`);
 
+export const fetchControlTicketTrace = (docuNo: string) =>
+  req<any>(`/master/control-tickets/${encodeURIComponent(docuNo)}/trace`);
+
+export const fetchControlTicketAlerts = () =>
+  req<{ AlertId: number; DocuNo: string; AlertType: string; LeadDays: number; AlertDate: string; ExpiryDate: string; Status: string }[]>('/master/control-tickets/alerts');
+
+export const updateControlTicketExpiry = (docuNo: string, params: {
+  expiryDate?: string | null;
+  strictOverride?: boolean;
+  reasonCode: string;
+  reasonText?: string;
+}) =>
+  req<{ success: boolean; docuNo: string; expiryDate: string | null; strictOverride: boolean }>(`/master/control-tickets/${encodeURIComponent(docuNo)}/expiry`, {
+    method: 'PATCH',
+    body: JSON.stringify(params),
+  });
+
 export const fetchTruckPlates = (custId: string) =>
   req<string[]>(`/master/truck-plates?custId=${custId}`);
 
@@ -309,6 +326,7 @@ export const shipSO = (
     tareKg?: number;
     scaleNo?: number;
     movebill?: string;
+    isManualOverride?: boolean;
     overrideReason?: string;
     overrideApprovedBy?: number;
     overrideApprovedByName?: string;
@@ -329,10 +347,37 @@ export const fetchSoWeighHistory = (soId: number | string) =>
   req<{ ticket: import('../types').WeighTicket | null; itemLogs: any[]; weightEval: any }>(`/so/${soId}/weigh-history`);
 
 export const fetchSystemSettings = () =>
-  req<{ settings: { minPct: number; maxPct: number; standardBagKg: number }; rows: any[] }>('/master/system-settings');
+  req<{
+    ok: boolean;
+    settings: Record<string, any>;
+    raw: Record<string, string>;
+    rows: any[];
+    versions: any[];
+    snapshots?: any[];
+    currentRevision?: number;
+    definitions: Record<string, any>;
+  }>('/master/system-settings');
 
-export const updateSystemSettings = (updates: Record<string, string | number>) =>
-  req<{ ok: boolean; settings: { minPct: number; maxPct: number; standardBagKg: number } }>('/master/system-settings', { method: 'PATCH', body: JSON.stringify(updates) });
+export const updateSystemSettings = (payload: {
+  updates: Record<string, any>;
+  expectedRevision?: number;
+  effectiveFrom?: string;
+  reasonCode?: string;
+  reasonText?: string;
+  reason?: string;
+}) =>
+  req<{
+    ok: boolean;
+    updatedKeys: string[];
+    updatedCount: number;
+    settings: Record<string, any>;
+    versions: any[];
+    snapshots?: any[];
+    currentRevision?: number;
+  }>('/master/system-settings', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
 
 export const syncImported = (id: number, docuNo: string) =>
   req<{ id: number; status: SOStatus }>(`/so/${id}/sync-imported`, {
@@ -355,14 +400,40 @@ export const fetchUnlockReasons = (type: 'EDIT' | 'CANCEL') =>
 export const resolveUnlockReq = (reqId: number, approve: boolean, note?: string) =>
   req<{ id: number; status: string }>(`/so/unlock-requests/${reqId}/resolve`, { method: 'PATCH', body: JSON.stringify({ approve, note }) });
 
-export const cancelSO = (id: number | string, note?: string) =>
+export interface CancelOrDeleteSoParams {
+  reasonCode: string;
+  reasonText?: string;
+}
+
+export const cancelSO = (id: number | string, params: CancelOrDeleteSoParams) =>
   req<{ id: number; status: SOStatus }>(`/so/${id}/cancel`, {
-    method: 'PATCH', body: JSON.stringify({ note }),
+    method: 'PATCH',
+    body: JSON.stringify({
+      reasonCode: params.reasonCode,
+      reasonText: params.reasonText || '',
+    }),
   });
 
-export const deleteSO = (id: number | string) =>
+export const deleteSO = (id: number | string, params: CancelOrDeleteSoParams) =>
   req<{ id: number; deleted: boolean }>(`/so/${id}`, {
     method: 'DELETE',
+    body: JSON.stringify({
+      reasonCode: params.reasonCode,
+      reasonText: params.reasonText || '',
+    }),
+  });
+
+export interface BulkCancelDeleteSoParams {
+  soIds: (number | string)[];
+  action?: 'CANCEL' | 'DELETE' | 'AUTO';
+  reasonCode: string;
+  reasonText?: string;
+}
+
+export const bulkCancelDeleteSO = (params: BulkCancelDeleteSoParams) =>
+  req<{ success: boolean; processedCount: number; soIds: number[]; operations: { id: number; op: string }[] }>('/so/bulk-cancel-delete', {
+    method: 'POST',
+    body: JSON.stringify(params),
   });
 
 // ── Rebate ────────────────────────────────────────────────────
@@ -391,6 +462,9 @@ export const createRebateClaim = (payload: {
   /** ไม่บังคับแล้ว — ยอดสะสมอ่านจาก WINSpeed ส่วน pool คือ "งบที่จัดสรร" คนละเรื่อง */
   poolId?: number; claimAmt?: number; custId?: string; note?: string;
   lines?: any[]; invoices?: string[];
+  customerRatio?: number; companyRatio?: number;
+  customerAmount?: number; retainedAmount?: number;
+  isSelfClaim?: boolean;
 }) =>
   req<RebateClaim>('/rebate/claims', { method: 'POST', body: JSON.stringify(payload) });
 
@@ -716,7 +790,9 @@ export const setCredit = (custId: string, b: { custName?: string; creditLimit?: 
 
 // ── Operational stock (DG-04) ─────────────────────────────────
 export interface StockRow { GoodId: string; WarehouseId: string; GoodName?: string; QtyOnHand: number; Unit?: string; Source?: string; AsOf?: string; UpdatedByName?: string; }
+export interface AtpStockRow { goodId: string; warehouseId: string; goodName?: string; qtyOnHand: number; reservedQty: number; atpQty: number; unit?: string; state: 'FULLY_READY' | 'PARTIALLY_READY' | 'WAITING_PRODUCTION' | 'UNKNOWN'; asOf?: string; }
 export const fetchStock = () => req<StockRow[]>('/stock');
+export const fetchAtpStock = () => req<{ data: AtpStockRow[] }>('/stock/atp');
 export const setStock = (b: { goodId: string; warehouseId?: string; goodName?: string; qtyOnHand: number; unit?: string; source?: string }) =>
   req<{ ok: boolean }>('/stock', { method: 'PUT', body: JSON.stringify(b) });
 
@@ -734,8 +810,33 @@ export const runRetention = () => req<{ ok: boolean; ranAt: string; result: Reco
 // ── LINE (FR-016) ─────────────────────────────────────────────
 export const fetchLineStatus = () => req<{ webhookConfigured: boolean; pushConfigured: boolean }>('/line/status', { silent: true });
 
-// ── Reports (FR-017) ──────────────────────────────────────────
-export type ReportData = { type: string; title: string; columns: { key: string; label: string }[]; rows: Record<string, unknown>[] };
+// ── Reports (FR-017 / SO-10) ───────────────────────────────────
+export type ColumnType = 'identifier' | 'text' | 'date' | 'datetime' | 'money' | 'quantity' | 'integer' | 'percent';
+
+export type ReportColumn = {
+  key: string;
+  label: string;
+  type?: ColumnType;
+  unit?: string;
+  precision?: number;
+  nullable?: boolean;
+  aggregation?: 'sum' | 'avg' | 'count' | 'none';
+};
+
+export type ReportTypeItem = {
+  key: string;
+  title: string;
+  category?: string;
+};
+
+export type ReportData = {
+  type: string;
+  title: string;
+  category?: string;
+  columns: ReportColumn[];
+  rows: Record<string, unknown>[];
+};
+
 // ใบจ่ายสินค้าของ TruckScale — แทน RptSaYPan.rpt ของโปรแกรมชั่ง
 // หัวเอกสารมาจาก tblscale · บรรทัดสินค้ามาจาก tblproduct_detail (ผูกกันด้วย one_num)
 export type DeliveryNoteItem = {
@@ -757,11 +858,11 @@ export type DeliveryNote = {
 export const fetchDeliveryNote = (sequence: string) =>
   req<DeliveryNote>(`/truckscale/delivery-note/${encodeURIComponent(sequence)}`);
 
-export const fetchReportTypes = () => req<{ key: string; title: string }[]>('/reports/types');
-// รายงานบางตัว (เช่น truckscale-writeback) รับช่วงวัน ส่วนตัวอื่นไม่สนใจพารามิเตอร์
-export const fetchReport = (type: string, params?: Record<string, string>) => {
+export const fetchReportTypes = () => req<ReportTypeItem[]>('/reports/types');
+// รายงานบางตัว (เช่น customer-dispatch) รับช่วงวัน ส่วนตัวอื่นไม่สนใจพารามิเตอร์
+export const fetchReport = (type: string, params?: Record<string, string>, init?: RequestInit) => {
   const qs = params && Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';
-  return req<ReportData>(`/reports/${type}${qs}`);
+  return req<ReportData>(`/reports/${type}${qs}`, init);
 };
 export async function exportReport(type: string, params?: Record<string, string>) {
   const qs = params && Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';
@@ -774,6 +875,208 @@ export async function exportReport(type: string, params?: Record<string, string>
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }
+
+// ── SO-10 Report Templates & Admin Header Masters ──────────────
+export interface ReportHeaderMasterItem {
+  HeaderId: number;
+  HeaderCode: string;
+  HeaderName: string;
+  CompanyNameTh: string;
+  CompanyNameEn: string;
+  BranchNameTh?: string;
+  BranchCode?: string;
+  AddressTh: string;
+  Tel?: string;
+  Fax?: string;
+  TaxId: string;
+  LogoUrl?: string;
+  FooterNote?: string;
+  TermsAndConditions?: string;
+  Version: number;
+  IsActive: boolean;
+  CreatedBy: string;
+  CreatedAt: string;
+  UpdatedBy: string;
+  UpdatedAt: string;
+}
+
+export interface ReportTemplateItem {
+  TemplateId: number;
+  TemplateCode: string;
+  TemplateName: string;
+  HeaderId: number;
+  ReportCategory?: string;
+  Orientation: 'portrait' | 'landscape';
+  PaperSize: string;
+  ShowPageNumber: boolean;
+  ShowSignatures: boolean;
+  SignatureSalesLabel?: string;
+  SignatureApprovedLabel?: string;
+  SignatureWarehouseLabel?: string;
+  CustomCss?: string;
+  Version: number;
+  IsActive: boolean;
+  HeaderCode?: string;
+  HeaderName?: string;
+  CompanyNameTh?: string;
+  TaxId?: string;
+  header?: Partial<ReportHeaderMasterItem>;
+}
+
+export interface ReportAssignmentItem {
+  AssignmentId: number;
+  ReportKey: string;
+  TemplateId: number;
+  Version: number;
+  IsActive: boolean;
+  UpdatedBy: string;
+  UpdatedAt: string;
+  TemplateCode?: string;
+  TemplateName?: string;
+  Orientation?: 'portrait' | 'landscape';
+  PaperSize?: string;
+  HeaderId?: number;
+  HeaderCode?: string;
+  HeaderName?: string;
+  CompanyNameTh?: string;
+}
+
+export interface ResolvedReportHeaderDto {
+  headerId: number;
+  headerCode: string;
+  headerName: string;
+  companyNameTh: string;
+  companyNameEn: string;
+  branchNameTh?: string;
+  branchCode?: string;
+  addressTh: string;
+  tel?: string;
+  fax?: string;
+  taxId: string;
+  logoUrl?: string | null;
+  footerNote?: string;
+  termsAndConditions?: string;
+  version: number;
+}
+
+export interface ResolvedReportTemplateDto {
+  assignmentType: 'DIRECT' | 'SYSTEM_DEFAULT' | 'FALLBACK_ACTIVE_MASTER';
+  assignmentId?: number | null;
+  assignmentVersion?: number | null;
+  templateId: number;
+  templateCode: string;
+  templateName: string;
+  reportCategory?: string;
+  orientation: 'portrait' | 'landscape';
+  paperSize: string;
+  showPageNumber: boolean;
+  showSignatures: boolean;
+  signatureSalesLabel?: string;
+  signatureApprovedLabel?: string;
+  signatureWarehouseLabel?: string;
+  customCss?: string | null;
+  version: number;
+  header: ResolvedReportHeaderDto;
+}
+
+export interface ReportTemplateResponse {
+  reportKey: string;
+  reportTitle: string;
+  category: string;
+  template: ResolvedReportTemplateDto;
+}
+
+export function normalizeResolvedTemplate(raw: any): ResolvedReportTemplateDto {
+  if (!raw) {
+    throw new Error('ไม่พบข้อมูลแม่แบบรายงาน');
+  }
+  const h = raw.header || {};
+  return {
+    assignmentType: raw.assignmentType || 'DIRECT',
+    assignmentId: raw.assignmentId ?? null,
+    assignmentVersion: raw.assignmentVersion ?? null,
+    templateId: Number(raw.templateId ?? raw.TemplateId ?? 0),
+    templateCode: String(raw.templateCode ?? raw.TemplateCode ?? ''),
+    templateName: String(raw.templateName ?? raw.TemplateName ?? ''),
+    reportCategory: raw.reportCategory ?? raw.ReportCategory ?? undefined,
+    orientation: (raw.orientation ?? raw.Orientation) === 'landscape' ? 'landscape' : 'portrait',
+    paperSize: String(raw.paperSize ?? raw.PaperSize ?? 'A4'),
+    showPageNumber: typeof raw.showPageNumber === 'boolean' ? raw.showPageNumber : (raw.ShowPageNumber !== false),
+    showSignatures: typeof raw.showSignatures === 'boolean' ? raw.showSignatures : (raw.ShowSignatures !== false),
+    signatureSalesLabel: raw.signatureSalesLabel ?? raw.SignatureSalesLabel ?? '',
+    signatureApprovedLabel: raw.signatureApprovedLabel ?? raw.SignatureApprovedLabel ?? '',
+    signatureWarehouseLabel: raw.signatureWarehouseLabel ?? raw.SignatureWarehouseLabel ?? '',
+    customCss: raw.customCss ?? raw.CustomCss ?? null,
+    version: Number(raw.version ?? raw.Version ?? 1),
+    header: {
+      headerId: Number(h.headerId ?? h.HeaderId ?? 0),
+      headerCode: String(h.headerCode ?? h.HeaderCode ?? ''),
+      headerName: String(h.headerName ?? h.HeaderName ?? ''),
+      companyNameTh: String(h.companyNameTh ?? h.CompanyNameTh ?? ''),
+      companyNameEn: String(h.companyNameEn ?? h.CompanyNameEn ?? ''),
+      branchNameTh: h.branchNameTh !== undefined ? (h.branchNameTh ?? '') : (h.BranchNameTh ?? ''),
+      branchCode: h.branchCode !== undefined ? (h.branchCode ?? '') : (h.BranchCode ?? ''),
+      addressTh: String(h.addressTh ?? h.AddressTh ?? ''),
+      tel: h.tel !== undefined ? (h.tel ?? '') : (h.Tel ?? ''),
+      fax: h.fax !== undefined ? (h.fax ?? '') : (h.Fax ?? ''),
+      taxId: String(h.taxId ?? h.TaxId ?? ''),
+      logoUrl: h.logoUrl !== undefined ? h.logoUrl : (h.LogoUrl ?? null),
+      footerNote: h.footerNote !== undefined ? (h.footerNote ?? '') : (h.FooterNote ?? ''),
+      termsAndConditions: h.termsAndConditions !== undefined ? (h.termsAndConditions ?? '') : (h.TermsAndConditions ?? ''),
+      version: Number(h.version ?? h.Version ?? 1),
+    }
+  };
+}
+
+export interface ReportAuditEventItem {
+  EventId: number;
+  EntityType: string;
+  EntityId: string;
+  Action: string;
+  ReasonCode?: string;
+  ReasonText?: string;
+  UserId: string;
+  IpAddress?: string;
+  CreatedAt: string;
+  BeforeJson?: string;
+  AfterJson?: string;
+}
+
+export const fetchReportTemplate = async (type: string): Promise<ReportTemplateResponse> => {
+  const res = await req<any>(`/reports/${type}/template`);
+  return {
+    ...res,
+    template: normalizeResolvedTemplate(res.template)
+  };
+};
+
+export const fetchAdminReportHeaders = () =>
+  req<ReportHeaderMasterItem[]>('/admin/reports/headers');
+
+export const createAdminReportHeader = (data: Partial<ReportHeaderMasterItem> & { reason: string }) =>
+  req<ReportHeaderMasterItem>('/admin/reports/headers', { method: 'POST', body: JSON.stringify(data) });
+
+export const updateAdminReportHeader = (id: number, data: Partial<ReportHeaderMasterItem> & { expectedVersion: number; reason: string }) =>
+  req<ReportHeaderMasterItem>(`/admin/reports/headers/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+
+export const fetchAdminReportTemplates = () =>
+  req<ReportTemplateItem[]>('/admin/reports/templates');
+
+export const createAdminReportTemplate = (data: Partial<ReportTemplateItem> & { reason: string }) =>
+  req<ReportTemplateItem>('/admin/reports/templates', { method: 'POST', body: JSON.stringify(data) });
+
+export const updateAdminReportTemplate = (id: number, data: Partial<ReportTemplateItem> & { expectedVersion: number; reason: string }) =>
+  req<ReportTemplateItem>(`/admin/reports/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+
+export const fetchAdminReportAssignments = () =>
+  req<ReportAssignmentItem[]>('/admin/reports/assignments');
+
+export const updateAdminReportAssignment = (reportKey: string, data: { templateId: number; isActive?: boolean; expectedVersion?: number; reason: string }) =>
+  req<ReportAssignmentItem>(`/admin/reports/assignments/${reportKey}`, { method: 'PUT', body: JSON.stringify(data) });
+
+export const fetchAdminReportAudit = (limit = 100) =>
+  req<ReportAuditEventItem[]>(`/admin/reports/audit?limit=${limit}`);
+
 
 // ── Paper Trail ───────────────────────────────────────────────
 export const fetchPaperBoard = () => req<PaperBoard>('/papertrail/board');
@@ -1041,6 +1344,9 @@ export type TripBoardRow = {
   };
   hold: { held: boolean; pendingCount: number; requests: TripPendingRequest[] };
   customers: TripCustomer[];
+  loadPlanStatus?: string | null;
+  loadPlanRevision?: number | null;
+  warehouseAckAt?: string | null;
 };
 
 export const fetchTripBoard = (params?: { status?: string; search?: string }) => {
@@ -1065,6 +1371,7 @@ export type LoadingPlanRow = TripLine & {
 
 export type LoadingPlan = {
   trip: TripBoardRow;
+  capacityInfo?: any;
   totals: {
     totalTon: number; capacityTon: number; tolerancePct: number;
     maxTon: number; over: boolean; lineCount: number;
@@ -1077,7 +1384,7 @@ export const fetchLoadingPlan = (tripId: number | string) =>
   req<LoadingPlan>(`/trips/${tripId}/loading-plan`);
 
 // ── คำขอแก้ไขหลังยืนยัน + Hold รถ (เฟส 5) ─────────────────────
-export type EditStage = 'CONFIRMED' | 'REGISTERED' | 'LOADING' | 'SHIPPED';
+export type EditStage = 'CONFIRMED' | 'REGISTERED' | 'LOADING' | 'SHIPPED' | 'POLICY' | 'SO_CANCEL' | 'SO_DELETE';
 
 export type EditReason = {
   reasonCode: string;
@@ -1123,7 +1430,7 @@ export type EditStageInfo = {
   pendingRequest: { id: number | string; reasonCode: string; holdTruck: boolean | number } | null;
 };
 
-export const fetchEditReasons = (stage?: EditStage) =>
+export const fetchEditReasons = (stage?: EditStage | string) =>
   req<{ data: EditReason[] }>(`/edit-requests/reasons${stage ? `?stage=${stage}` : ''}`);
 
 export const fetchEditStage = (soid: string | number) =>
@@ -1154,6 +1461,127 @@ export const rejectEditRequest = (id: number | string, note: string) =>
 export const cancelEditRequest = (id: number | string, note?: string) =>
   req<{ id: number; status: string; message: string }>(
     `/edit-requests/${id}/cancel`, { method: 'PATCH', body: JSON.stringify({ note }) });
+
+// ── Price Approvals (P0) ──────────────────────────────────────
+export type PriceApprovalRow = {
+  id: number;
+  soId: number;
+  wfRef: string | null;
+  docuNo: string | null;
+  soDocuNo: string | null;
+  custId: string;
+  custName: string | null;
+  goodId: string;
+  goodCode: string;
+  goodName: string | null;
+  qtyTon: number;
+  announcedPrice: number;
+  requestedPrice: number;
+  priceDeviationPerTon: number;
+  totalDeviationAmt: number;
+  priceSource: string;
+  documentRevision: number;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED';
+  requestedBy: number;
+  requestedByName?: string;
+  reasonText: string | null;
+  approvedBy: number | null;
+  approvedByName?: string;
+  approvedAt: string | null;
+  approvalNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const fetchPriceApprovals = (params?: { status?: string; soId?: number | string; custId?: string; mine?: boolean }) => {
+  const q = new URLSearchParams();
+  if (params?.status) q.set('status', params.status);
+  if (params?.soId) q.set('soId', String(params.soId));
+  if (params?.custId) q.set('custId', params.custId);
+  if (params?.mine) q.set('mine', '1');
+  const qs = q.toString();
+  return req<{ data: PriceApprovalRow[] }>(`/edit-requests/price-approvals${qs ? `?${qs}` : ''}`);
+};
+
+export const approvePriceApproval = (id: number | string, note?: string) =>
+  req<{ id: number; status: string; message: string }>(
+    `/edit-requests/price-approvals/${id}/approve`, { method: 'PATCH', body: JSON.stringify({ note }) });
+
+export const rejectPriceApproval = (id: number | string, note: string) =>
+  req<{ id: number; status: string; message: string }>(
+    `/edit-requests/price-approvals/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ note }) });
+
+// ── Sale Trip Confirm & Residual Split (SO-05) ────────────────
+export const createTrip = (data: {
+  tripCode?: string;
+  transRegistration?: string | null;
+  driverName?: string | null;
+  truckCapacityTon?: number;
+  orderIds?: (number | string)[];
+  scheduledDate?: string;
+  deliveryDate?: string;
+}) => req<{
+  message: string;
+  tripId: number;
+  tripCode: string;
+  warning?: string | null;
+}>('/trips', { method: 'POST', body: JSON.stringify(data) });
+
+export const fetchTrip = (id: number | string) =>
+  req<{
+    trip: any;
+    orders: any[];
+  }>(`/trips/${id}`);
+
+export const confirmTrip = (tripId: number | string, data: {
+  confirmedOrderIds: (number | string)[];
+  transRegistration: string;
+  driverName?: string;
+  pickupDueDate?: string;
+  idempotencyKey?: string;
+  expectedRevision?: number;
+}) => req<{
+  message: string;
+  tripId: number;
+  confirmedOrderCount: number;
+  residualTripId: number | null;
+  residualTripCode: string | null;
+  residualOrderCount: number;
+  warning?: string | null;
+}>(`/trips/${tripId}/confirm`, { method: 'POST', body: JSON.stringify(data) });
+
+// ── Transactional Load Plan & Acknowledgements (SO-07) ────────
+export const updateLoadPlan = (tripId: number | string, data: {
+  expectedPlanRevision?: number;
+  truckTypeId?: string;
+  lines: Array<{
+    memberKind: 'DRAFT' | 'CONFIRMED';
+    memberId: string;
+    lineNum: number;
+    loadSequence: number;
+    masterQty?: number;
+    childQty?: number;
+  }>;
+  reason?: string;
+}) => req<{
+  tripId: number;
+  loadPlanStatus: string;
+  loadPlanRevision: number;
+  linesCount: number;
+  message: string;
+}>(`/trips/${tripId}/load-plan`, { method: 'PUT', body: JSON.stringify(data) });
+
+export const acknowledgeLoadPlan = (tripId: number | string, data: {
+  expectedPlanRevision: number;
+  note?: string;
+}) => req<{
+  tripId: number;
+  loadPlanStatus: string;
+  loadPlanRevision: number;
+  warehouseAckAt: string;
+  warehouseAckBy: number;
+  message: string;
+}>(`/trips/${tripId}/load-plan/ack`, { method: 'POST', body: JSON.stringify(data) });
 
 // ── Master Settings: รายการเหตุผลการขอแก้ไข ────────────────────
 export type EditReasonAdmin = EditReason & {
@@ -1239,3 +1667,83 @@ export type WeighCandidate = {
 
 export const fetchWeighCandidatesForSO = (soid: number | string) =>
   req<{ soid: number; candidates: WeighCandidate[]; count: number }>(`/weighing/for-so/${soid}`);
+
+// ── SO-08 Coupon Engine ───────────────────────────────────────
+export type AvailableCoupon = {
+  couponId: number;
+  couponNo: string;
+  sourceDocuNo: string;
+  docuDate: string;
+  goodId: number;
+  goodCode: string;
+  goodName: string;
+  nativeRemainingQty: number;
+  activeReservedQty: number;
+  availableQty: number;
+  ownerCustId: string;
+  ownerCustName: string;
+  isOwner: boolean;
+  isBeneficiary: boolean;
+};
+
+export type CouponReservationResult = {
+  id: number;
+  couponId: number;
+  carrierSoId: string;
+  beneficiaryCustId: string;
+  reservedQty: number;
+  status: string;
+  idempotent?: boolean;
+};
+
+export type CouponReconcileResult = {
+  couponId: number;
+  sourceDocuNo: string;
+  nativeRemainingQty: number;
+  activeReservedQty: number;
+  nativeRedeemedQty: number;
+  availableQty: number;
+  hasConflict: boolean;
+  conflictDetails: string | null;
+  reservations: any[];
+};
+
+export const fetchAvailableCoupons = (custId: string, goodId?: number) => {
+  const qs = new URLSearchParams({ customerId: custId });
+  if (goodId) qs.set('goodId', String(goodId));
+  return req<{ data: AvailableCoupon[]; count: number }>(`/coupons?${qs.toString()}`).then(r => r.data || []);
+};
+
+export const reserveCoupon = (payload: {
+  couponId: number;
+  carrierSoId: string;
+  beneficiaryCustId: string;
+  reservedQty: number;
+  idempotencyKey?: string;
+}) => req<CouponReservationResult>('/coupons/reserve', { method: 'POST', body: JSON.stringify(payload) });
+
+export const cancelCouponReservation = (reservationId: number, reason?: string) =>
+  req<{ ok: boolean; status: string; idempotent: boolean }>('/coupons/cancel', {
+    method: 'POST',
+    body: JSON.stringify({ reservationId, reason }),
+  });
+
+export const reconcileCoupon = (couponId: number) =>
+  req<CouponReconcileResult>(`/coupons/reconcile/${couponId}`);
+
+export const fetchCouponBeneficiaries = (ownerCustId?: string) => {
+  const qs = ownerCustId ? `?ownerCustId=${encodeURIComponent(ownerCustId)}` : '';
+  return req<any[]>(`/coupons/beneficiaries${qs}`);
+};
+
+export const grantCouponBeneficiary = (payload: {
+  ownerCustId: string;
+  beneficiaryCustId: string;
+  reason?: string;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+}) => req<any>('/coupons/beneficiaries', { method: 'POST', body: JSON.stringify(payload) });
+
+export const revokeCouponBeneficiary = (id: number, reason?: string) =>
+  req<any>(`/coupons/beneficiaries/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) });
+

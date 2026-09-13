@@ -12,7 +12,7 @@ sed -i 's/\r$//' .env
 chmod 600 .env
 bash "$DEPLOY_DIR/server/prepare-portainer.sh" "$APP_DIR"
 
-required=(ROOT_DOMAIN APP_DOMAIN API_DOMAIN PORTAINER_DOMAIN MSSQL_DOMAIN MYSQL_DOMAIN VITE_API_BASE_URL CORS_ORIGIN MSSQL_SA_PASSWORD MYSQL_ROOT_PASSWORD MYSQL_PASSWORD JWT_SECRET)
+required=(ROOT_DOMAIN APP_DOMAIN API_DOMAIN PORTAINER_DOMAIN MSSQL_DOMAIN VITE_API_BASE_URL CORS_ORIGIN MSSQL_SA_PASSWORD JWT_SECRET)
 for key in "${required[@]}"; do
   value=$(sed -n "s/^${key}=//p" .env | tail -1)
   if [ -z "$value" ] || [[ "$value" == CHANGE_ME* ]]; then
@@ -21,7 +21,7 @@ for key in "${required[@]}"; do
   fi
 done
 
-secret_keys=(MSSQL_SA_PASSWORD MYSQL_ROOT_PASSWORD MYSQL_PASSWORD WF_READER_PASSWORD WF_OWNER_PASSWORD JWT_SECRET MIGRATE_SECRET TS_INGEST_SECRET)
+secret_keys=(MSSQL_SA_PASSWORD WF_READER_PASSWORD WF_OWNER_PASSWORD JWT_SECRET MIGRATE_SECRET )
 for key in "${secret_keys[@]}"; do
   value=$(sed -n "s/^${key}=//p" .env | tail -1)
   if [[ ! "$value" =~ ^[A-Za-z0-9_.:@%+,=-]+$ ]]; then

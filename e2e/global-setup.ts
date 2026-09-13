@@ -3,7 +3,7 @@ import path from 'node:path';
 
 async function readEndpoint(url: string) {
   const startedAt = Date.now();
-  const response = await fetch(url, { headers: { 'X-DB-Target': process.env.E2E_DB_TARGET || 'local' } });
+  const response = await fetch(url, { headers: process.env.E2E_DB_TARGET && process.env.E2E_DB_TARGET !== 'server' ? { 'X-DB-Target': process.env.E2E_DB_TARGET } : {} });
   const text = await response.text();
   let body: unknown = text;
   try { body = text ? JSON.parse(text) : null; } catch { /* keep text */ }

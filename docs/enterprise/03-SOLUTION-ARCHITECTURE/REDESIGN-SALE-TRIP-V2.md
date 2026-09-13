@@ -2,11 +2,14 @@
 documentId: "WF-ARC-010"
 title: "แบบ Re-Design รอบ 2 — Sale Trip เป็นแกนกลาง (ร่างเพื่อตรวจ)"
 version: "v0.1"
-status: Draft
+status: Archived
 statusDetail: "ร่าง 3 กันยายน 2569 · ยังไม่อนุมัติ ยังไม่เริ่มเขียนโค้ด · รอเจ้าของระบบตรวจโครงก่อน"
 owner: "Solution Architect"
 normative: false
 ---
+
+> สถานะ: เอกสารย้อนหลัง/รอทบทวนรายหัวข้อ ณ 2026-09-06 — ไม่ใช่ข้อกำหนดปัจจุบัน โปรดเริ่มที่ [เอกสารกลาง](../../README.md). เนื้อหาเดิมคงไว้เพื่อสืบย้อน; คำอ้าง Released/SSOT ภายในเป็นสถานะเดิม.
+
 
 # แบบ Re-Design รอบ 2 — Sale Trip เป็นแกนกลาง
 

@@ -56,9 +56,7 @@ ok ".env พร้อม"
 
 mkdir -p ./backup
 BAK=$(ls -1 ./backup/*.bak 2>/dev/null | head -1)
-SQLD=$(ls -1 ./backup/*.sql 2>/dev/null | head -1)
 [ -n "$BAK" ]  && ok "พบ .bak : $(basename "$BAK")"  || warn "ไม่มี .bak ใน ./backup/ — จะข้าม restore SQL Server"
-[ -n "$SQLD" ] && ok "พบ .sql : $(basename "$SQLD")" || warn "ไม่มี .sql ใน ./backup/ — จะข้าม restore MySQL"
 
 # SQL Server ใน container รันเป็น uid 10001 ต้องอ่าน/เขียนโฟลเดอร์ backup ได้
 if [ "$(id -u)" = "0" ] || sudo -n true 2>/dev/null; then
@@ -68,7 +66,8 @@ chmod 775 ./backup 2>/dev/null || true
 
 step "build + start (ครั้งแรกใช้เวลานาน ~5-15 นาที)"
 [ "$REBUILD" = "1" ] && { docker compose build --no-cache || die "build ล้มเหลว"; }
-docker compose up -d --build || die "docker compose up ล้มเหลว" "ดู log: docker compose logs --tail 50"
+docker compose build backend frontend || die "build failed"
+docker compose up -d mssql || die "docker compose up ล้มเหลว" "ดู log: docker compose logs --tail 50"
 ok "container สตาร์ทแล้ว"
 
 if [ "$SKIP_BOOT" = "1" ]; then
@@ -77,6 +76,8 @@ else
   step "ตั้งค่าฐานข้อมูล (restore + migrations + seed)"
   bash ./bootstrap.sh || die "bootstrap ล้มเหลว" "แก้แล้วรันซ้ำได้: bash bootstrap.sh"
 fi
+
+docker compose up -d || die "application start failed"
 
 head "เสร็จสิ้น"
 docker compose ps --format "table {{.Name}}\t{{.Status}}"

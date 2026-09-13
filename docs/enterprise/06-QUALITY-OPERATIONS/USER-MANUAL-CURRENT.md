@@ -2,15 +2,18 @@
 documentId: "WF-UG-101"
 title: "WS-Sale-App User Manual — Current Runtime"
 version: "v1.0"
-status: Approved
+status: Archived
 statusDetail: "Source-aligned learning candidate; reviewed and accepted 2026-07-25"
 owner: "Business Process Owners / Training Lead / QA Lead"
-normative: true
+normative: false
 sourceRefs:
   - WSSale-App/src/App.tsx
   - docs/enterprise/02-REQUIREMENTS/CURRENT-SYSTEM-STATE.md
   - docs/enterprise/06-QUALITY-OPERATIONS/UAT-FULL-LOOP-RUN-PLAN.md
 ---
+
+> สถานะ: เอกสารย้อนหลัง/รอทบทวนรายหัวข้อ ณ 2026-09-06 — ไม่ใช่ข้อกำหนดปัจจุบัน โปรดเริ่มที่ [เอกสารกลาง](../../README.md). เนื้อหาเดิมคงไว้เพื่อสืบย้อน; คำอ้าง Released/SSOT ภายในเป็นสถานะเดิม.
+
 # WS-Sale-App User Manual — คู่มือผู้ใช้ฉบับปัจจุบัน
 
 > 🖼️ **ภาพหน้าจอในเอกสารนี้ไม่ได้เก็บใน git** — สร้างบนเครื่องตัวเองด้วย `node docs/enterprise/pipeline/capture-screenshots.js` (เปิดแอปไว้ก่อน) เพราะภาพสร้างจากฐานข้อมูลจริงจึงมีชื่อลูกค้าและทะเบียนรถของจริง
@@ -136,18 +139,18 @@ Dashboard ใช้ดูภาพรวม SO และภาระงาน �
 4. ทำ transition ตามลำดับที่หน้าจออนุญาต; ห้ามข้ามสถานะ
 5. ตรวจยอดคงเหลือและสถานะหลังแต่ละ action
 
-### 7.2 WEIGHBRIDGE / COUNTER_SALES: ตรวจน้ำหนัก
+### 7.2 WEIGHBRIDGE / WAREHOUSE: ตรวจสถานะการชั่งรถสด (WINSpeed WGHD)
 
-![หน้า Weigh Inbox](../05-UI-SCREENSHOTS/generated/warehouse--weigh-inbox.png)
+![หน้าสถานะการชั่งรถ](../05-UI-SCREENSHOTS/generated/warehouse--scale-reports.png)
 
-1. เปิด **TruckScale** และอ่าน health banner ก่อนค้นหา
-2. ค้นด้วยทะเบียนรถหรือ movebill และตรวจ timestamp/source
-3. เทียบรถ สินค้า และคิวกับ SO ก่อนจับคู่
-4. ตรวจชั่งเข้า ชั่งออก และน้ำหนักสุทธิ; หน่วยหลักเป็นกิโลกรัมตามหน้าจอ
-5. หาก dependency down/stale/ambiguous ให้หยุดการยืนยันและใช้ fallback SOP
-6. เมื่อจับคู่ถูกต้อง จึงบันทึก/ส่งต่อให้ขั้น ship
+1. เปิดหน้า **สถานะการชั่งรถ** (scale-reports) เพื่ออ่านข้อมูลการชั่งสดจาก WINSpeed (`dbo.WGHD`/`WGDT`)
+2. ค้นหาด้วยทะเบียนรถ ตรวจสอบประเภทเอกสาร (SO/PO) และเวลาชั่งเข้า-ชั่งออก
+3. ตรวจสอบสถานะการชั่ง: 1 (รอเข้าชั่ง) → 2 (กำลังโหลดสินค้า/ชั่งเข้า) → 3 (ชั่งออกแล้ว)
+4. ตรวจสอบการผูกกับใบสั่งจอง SO ผ่าน `SPID = SOHD.SOID`
+5. ตรวจสอบน้ำหนักชั่งเข้า ชั่งออก และน้ำหนักสุทธิ (`WeightNet`)
+6. การสั่ง Hold รถในแอปเป็นเพียงการแจ้งเตือนในระบบ หากต้องการระงับรถจริงต้องประสานงานพนักงานลานชั่งทางกายภาพเสมอ
 
-**จุดหยุดงาน:** health ไม่ชัด, ทะเบียนซ้ำ, timestamp เก่า, น้ำหนักสุทธิติดลบ/ผิดปกติ, สินค้าไม่ตรง หรือพบใบชั่งมากกว่าหนึ่งใบที่ตัดสินไม่ได้
+**จุดหยุดงาน:** น้ำหนักสุทธิติดลบ, รถไม่ตรงกับเอกสาร, สินค้าไม่ตรงกับใบสั่งขาย หรือน้ำหนักสุทธิคลาดเคลื่อนเกินเกณฑ์พิกัด
 
 ## 8. Paper Trail และเอกสาร
 

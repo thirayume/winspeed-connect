@@ -141,10 +141,6 @@ services:
 
 volumes:
   mssql-data:
-  # MySQL service removed 2026-09-04 when the integration was dropped.
-  # The volume declaration stays so existing data is preserved as an
-  # orphan rather than deleted. Remove only when confirmed unneeded.
-  mysql-data:
   backend-exports:
   caddy-data:
   caddy-config:

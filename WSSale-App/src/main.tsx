@@ -14,11 +14,11 @@ createRoot(document.getElementById('root')!).render(
     <App />
     {isTestEnvironment && (
       <div
-        className="fixed bottom-3 right-3 z-[9999] rounded-full border-2 border-amber-950 bg-amber-300 px-4 py-2 text-sm font-bold tracking-wide text-amber-950 shadow-xl"
+        className="pointer-events-none fixed top-1 left-1/2 z-[9999] -translate-x-1/2 whitespace-nowrap rounded-full border border-amber-700 bg-amber-100/95 px-2 py-0.5 text-[10px] font-semibold leading-4 tracking-wide text-amber-950 shadow-sm print:hidden"
         role="status"
-        aria-label="Test environment"
+        aria-label="ระบบทดสอบ — ข้อมูลสำหรับทดสอบ"
       >
-        {environmentLabel} · ข้อมูลสำหรับทดสอบ
+        {environmentLabel}
       </div>
     )}
   </StrictMode>,

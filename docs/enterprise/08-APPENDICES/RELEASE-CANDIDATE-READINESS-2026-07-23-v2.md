@@ -2,7 +2,7 @@
 documentId: WF-RC-002
 title: Current Documentation and UAT Candidate Readiness Packet
 version: "v1.0"
-status: Review
+status: Archived
 owner: Release Manager / QA Lead / Solution Architect
 normative: false
 runtimeVersion: 1.0.1
@@ -23,6 +23,9 @@ outputs:
   - uat-candidate-readiness
   - technical-core-candidate-readiness
 ---
+
+> สถานะ: เอกสารย้อนหลัง/รอทบทวนรายหัวข้อ ณ 2026-09-06 — ไม่ใช่ข้อกำหนดปัจจุบัน โปรดเริ่มที่ [เอกสารกลาง](../../README.md). เนื้อหาเดิมคงไว้เพื่อสืบย้อน; คำอ้าง Released/SSOT ภายในเป็นสถานะเดิม.
+
 
 # Current Documentation and UAT Candidate Readiness Packet
 

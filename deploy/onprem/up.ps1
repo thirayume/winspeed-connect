@@ -6,7 +6,9 @@
   ทำอะไรบ้าง:
     1. ตรวจ Docker
     2. ตรวจ .env (ถ้ายังไม่มี สร้างจาก .env.example ให้แล้วหยุดรอคุณแก้)
-    3. docker compose up -d --build
+    3. docker compose build backend frontend
+if ($LASTEXITCODE -ne 0) { Die "build failed" @() }
+docker compose up -d mssql
     4. รอ container พร้อม
     5. bootstrap.sh — restore + migrations + seed ผู้ใช้
 
@@ -78,16 +80,15 @@ Ok ".env พร้อม"
 # --- โฟลเดอร์ backup ---
 if (-not (Test-Path .\backup)) { New-Item -ItemType Directory -Path .\backup | Out-Null }
 $baks = @(Get-ChildItem .\backup -Filter *.bak -ErrorAction SilentlyContinue)
-$sqls = @(Get-ChildItem .\backup -Filter *.sql -ErrorAction SilentlyContinue)
 if ($baks.Count -eq 0) { Warn "ไม่มีไฟล์ .bak ใน .\backup\ — จะข้ามการ restore SQL Server" }
 else { Ok "พบ .bak : $($baks[0].Name)" }
-if ($sqls.Count -eq 0) { Warn "ไม่มีไฟล์ .sql ใน .\backup\ — จะข้ามการ restore MySQL" }
-else { Ok "พบ .sql : $($sqls[0].Name)" }
 
 # --- 3) build + up ---
 Step "build + start (ครั้งแรกใช้เวลานาน ~5-15 นาที)"
 if ($Rebuild) { docker compose build --no-cache; if ($LASTEXITCODE -ne 0) { Die "build ล้มเหลว" @() } }
-docker compose up -d --build
+docker compose build backend frontend
+if ($LASTEXITCODE -ne 0) { Die "build failed" @() }
+docker compose up -d mssql
 if ($LASTEXITCODE -ne 0) { Die "docker compose up ล้มเหลว" @("ดู log: docker compose logs --tail 50") }
 Ok "container สตาร์ทแล้ว"
 
@@ -109,6 +110,10 @@ if ($SkipBootstrap) {
     if ($LASTEXITCODE -ne 0) { Die "bootstrap ล้มเหลว" @("แก้แล้วรันซ้ำได้: bash bootstrap.sh") }
   }
 }
+
+# Start application after bootstrap has restored the database.
+docker compose up -d
+if ($LASTEXITCODE -ne 0) { Die "application start failed" @() }
 
 # --- สรุป ---
 Head "เสร็จสิ้น"

@@ -1,3 +1,9 @@
+IF DB_NAME() <> N'dbwins_worldfert9_test_v2'
+BEGIN
+ RAISERROR('E2E SQL requires dbwins_worldfert9_test_v2',16,1);
+ SET NOEXEC ON;
+END;
+GO
 -- E2E Test Data Seed
 -- Creates test users for all roles.
 -- PasswordHash ด้านล่างคือ bcrypt ของรหัสตั้งต้น — ไม่เขียนรหัสจริงไว้ในไฟล์นี้

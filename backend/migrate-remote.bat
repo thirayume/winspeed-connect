@@ -1,7 +1,4 @@
 @echo off
-echo ==========================================
-echo Running Migrations on REMOTE Environment
-echo ==========================================
-set DB_MODE=remote
-node run_migrations.js
-pause
+cd /d "%~dp0"
+node scripts/migrate-targets.js --targets remote_b
+exit /b %errorlevel%

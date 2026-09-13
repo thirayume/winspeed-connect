@@ -2,7 +2,7 @@
 documentId: WF-AUD-MIG-001
 title: Migration Ledger and Schema Drift Audit
 version: 1.0-draft
-status: Draft
+status: Archived
 owner: Solution Architect / DBA
 normative: false
 runtimeVersion: 1.0.0
@@ -16,6 +16,9 @@ sourceRefs:
 outputs:
   - migration-audit-evidence
 ---
+
+> สถานะ: เอกสารย้อนหลัง/รอทบทวนรายหัวข้อ ณ 2026-09-06 — ไม่ใช่ข้อกำหนดปัจจุบัน โปรดเริ่มที่ [เอกสารกลาง](../../README.md). เนื้อหาเดิมคงไว้เพื่อสืบย้อน; คำอ้าง Released/SSOT ภายในเป็นสถานะเดิม.
+
 
 # Migration Ledger and Schema Drift Audit
 

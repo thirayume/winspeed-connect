@@ -15,8 +15,8 @@ cd "$DEPLOY_DIR"
 
 valid_service() {
   case "${1:-}" in
-    caddy|frontend|backend|mssql|mysql|portainer|all) return 0 ;;
-    *) echo "ERROR: service must be caddy, frontend, backend, mssql, mysql, portainer or all" >&2; return 1 ;;
+    caddy|frontend|backend|mssql|portainer|all) return 0 ;;
+    *) echo "ERROR: service must be caddy, frontend, backend, mssql, portainer or all" >&2; return 1 ;;
   esac
 }
 
@@ -71,8 +71,6 @@ API=https://$(env_value API_DOMAIN)/api
 Portainer=https://$(env_value PORTAINER_DOMAIN)  USERNAME=admin  PASSWORD_COMMAND=11-manage-stack.bat portainer-credentials
 MSSQL_HOST=$(env_value MSSQL_DOMAIN)  PORT=$(env_value MSSQL_PUBLIC_PORT)  DATABASE=$(env_value DB_NAME)
 MSSQL_USERS=wf_reader[WF_READER_PASSWORD],wf_owner[WF_OWNER_PASSWORD],sa[MSSQL_SA_PASSWORD]
-MYSQL_HOST=$(env_value MYSQL_DOMAIN)  PORT=$(env_value MYSQL_PUBLIC_PORT)  DATABASE=$(env_value MYSQL_DATABASE)
-MYSQL_USERS=$(env_value MYSQL_USER)[MYSQL_PASSWORD],root[MYSQL_ROOT_PASSWORD]
 SFTP_HOST=76.13.190.104  PORT=22  USERNAME=wfbackup  AUTH=Ed25519_key
 PASSWORD_SOURCE=protected .local-secrets/CREDENTIALS.txt; secret values are not printed by this command
 EOF
@@ -93,7 +91,7 @@ EOF
     key="${1:-}"
     value="${2:-}"
     case "$key" in
-      ROOT_DOMAIN|APP_DOMAIN|API_DOMAIN|PORTAINER_DOMAIN|MSSQL_DOMAIN|MYSQL_DOMAIN|MSSQL_ALT_DOMAINS|MYSQL_ALT_DOMAINS|ACME_EMAIL|VITE_API_BASE_URL|CORS_ORIGIN|DB_NAME|MYSQL_DATABASE|MYSQL_USER|MSSQL_PID|JWT_EXPIRES_IN|TS_SYNC_INTERVAL_MS|APP_VERSION|TZ|MSSQL_MEMORY_LIMIT_MB|MSSQL_MEM_LIMIT|MYSQL_BUFFER_POOL|MYSQL_MEM_LIMIT|DB_BIND_IP|MSSQL_PUBLIC_PORT|MYSQL_PUBLIC_PORT|HTTP_PORT|HTTPS_PORT|TRANSFER_ROOT|BACKUP_RETAIN_DAYS|BACKUP_MIN_FREE_GB|LINE_LOGIN_CALLBACK_URL|LINE_LOGIN_SUCCESS_REDIRECT) ;;
+      ROOT_DOMAIN|APP_DOMAIN|API_DOMAIN|PORTAINER_DOMAIN|MSSQL_DOMAIN|MSSQL_ALT_DOMAINS|ACME_EMAIL|VITE_API_BASE_URL|CORS_ORIGIN|DB_NAME|MSSQL_PID|JWT_EXPIRES_IN|APP_VERSION|TZ|MSSQL_MEMORY_LIMIT_MB|MSSQL_MEM_LIMIT|DB_BIND_IP|MSSQL_PUBLIC_PORT|HTTP_PORT|HTTPS_PORT|TRANSFER_ROOT|BACKUP_RETAIN_DAYS|BACKUP_MIN_FREE_GB|LINE_LOGIN_CALLBACK_URL|LINE_LOGIN_SUCCESS_REDIRECT) ;;
       *) echo "ERROR: $key is not in the non-secret allowlist; use env-edit for secrets" >&2; exit 3 ;;
     esac
     [ -n "$value" ] || { echo "ERROR: value is required" >&2; exit 3; }
@@ -140,7 +138,6 @@ EOF
     set_env_value API_DOMAIN "api.$base"
     set_env_value PORTAINER_DOMAIN "portainer.$base"
     set_env_value MSSQL_DOMAIN "mssql.$base"
-    set_env_value MYSQL_DOMAIN "mysql.$base"
     set_env_value VITE_API_BASE_URL "https://api.$base/api"
     set_env_value CORS_ORIGIN "https://app.$base"
     if ! validate_config; then cp -p "$copy" "$ENV_FILE"; exit 4; fi

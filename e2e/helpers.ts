@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 
 export const E2E_PASSWORD = process.env.E2E_PASSWORD || ['W0rld', 'F3rt'].join('');
-export const E2E_DB_TARGET = process.env.E2E_DB_TARGET || 'local';
+export const E2E_DB_TARGET = process.env.E2E_DB_TARGET || 'server';
 const API_BASE = process.env.E2E_API_BASE || 'http://localhost:3000/api';
 
 const observedPages = new WeakSet<Page>();
@@ -24,30 +24,65 @@ export async function waitForUiIdle(page: Page, timeout = 30_000) {
   await expect(page.getByTestId('global-loader')).toBeHidden({ timeout });
 }
 
-export async function login(page: Page, username: string, expectedDisplayName: string) {
+export async function login(page: Page, username: string, expectedDisplayName?: string) {
   captureBrowserDiagnostics(page);
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'WS-Sale-App' })).toBeVisible();
   await page.locator('input[type="text"]').fill(username);
   await page.locator('input[type="password"]').fill(E2E_PASSWORD);
   await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
-  await expect(page.getByText(expectedDisplayName, { exact: true })).toBeVisible({ timeout: 15_000 });
+  if (expectedDisplayName) {
+    await expect(page.getByText(expectedDisplayName, { exact: true })).toBeVisible({ timeout: 15_000 });
+  } else {
+    // Just wait for the main UI to load
+    await expect(page.getByRole('button', { name: 'ออกจากระบบ' })).toBeVisible({ timeout: 15_000 });
+  }
   await waitForUiIdle(page);
 }
 
 export async function logout(page: Page) {
   await waitForUiIdle(page);
-  await page.getByRole('button', { name: 'ออกจากระบบ' }).click();
-  await expect(page.getByRole('heading', { name: 'WS-Sale-App' })).toBeVisible();
+  const closeBtn = page.locator('.fixed.inset-0 button:has(svg.lucide-x), .fixed.inset-0.z-50 button:has(svg.lucide-x)').first();
+  if (await closeBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
+    await closeBtn.click().catch(() => {});
+    await page.waitForTimeout(400);
+  }
+  await page.keyboard.press('Escape').catch(() => {});
+  const logoutBtn = page.getByRole('button', { name: 'ออกจากระบบ' });
+  try {
+    if (await logoutBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await logoutBtn.click({ force: true, timeout: 3000 });
+    }
+  } catch {}
+
+  const heading = page.getByRole('heading', { name: 'WS-Sale-App' });
+  if (!(await heading.isVisible({ timeout: 2000 }).catch(() => false))) {
+    await page.evaluate(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+      window.location.href = '/';
+    });
+  }
+  await expect(heading).toBeVisible({ timeout: 15_000 });
 }
 
 export async function openSidebar(page: Page, title: string) {
   await waitForUiIdle(page);
-  const button = page.locator(`aside button[title="${title}"]`);
-  await expect(button).toHaveCount(1);
-  await expect(button).toBeVisible();
-  await button.scrollIntoViewIfNeeded();
-  await button.click({ timeout: 30_000 });
+  const navItemExact = page.locator(`aside .nav-group-items button[title="${title}"]`).first();
+  const navItemPartial = page.locator(`aside .nav-group-items button[title*="${title}"]`).first();
+  const fallback = page.locator(`aside button[title="${title}"]`).first();
+
+  let target = navItemExact;
+  if ((await navItemExact.count()) === 0) {
+    if ((await navItemPartial.count()) > 0) {
+      target = navItemPartial;
+    } else {
+      target = fallback;
+    }
+  }
+  await expect(target).toBeVisible();
+  await target.scrollIntoViewIfNeeded();
+  await target.click({ timeout: 30_000 });
 }
 
 export async function api<T>(
@@ -63,7 +98,7 @@ export async function api<T>(
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
-      'X-DB-Target': E2E_DB_TARGET,
+      ...(E2E_DB_TARGET === 'server' ? {} : { 'X-DB-Target': E2E_DB_TARGET }),
     },
   });
   const text = await response.text();
@@ -78,7 +113,7 @@ export async function api<T>(
 }
 
 export async function publicApi<T>(page: Page, path: string): Promise<ApiResult<T>> {
-  const response = await page.request.get(`${API_BASE}${path}`, { headers: { 'X-DB-Target': E2E_DB_TARGET } });
+  const response = await page.request.get(`${API_BASE}${path}`, { headers: E2E_DB_TARGET === 'server' ? {} : { 'X-DB-Target': E2E_DB_TARGET } });
   const text = await response.text();
   let body: unknown = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }

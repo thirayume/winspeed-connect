@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { X, Lock, Unlock, Truck, Package, FileText, CalendarClock, CheckCircle2, Clock3, ShieldCheck } from 'lucide-react';
+import { X, Lock, Unlock, Truck, Package, FileText, CalendarClock, CheckCircle2, Clock3, ShieldCheck, Calendar } from 'lucide-react';
 import { cn } from '../ui/Base';
 import { SOStatusBadge } from './SOStatusBadge';
 import { useErpStore } from '../../store/erp-store';
 import { approveGiveawayLine, confirmSO, cancelSO, shipSO, moveToPicking, createUnlockRequest } from '../../services/api';
 import { appConfirm, appPrompt } from '../ui/AppAlert';
 import { RequestActionModal, type RequestActionType } from '../papertrail/RequestActionModal';
+import { SOCancelDeleteModal } from '../common/SOCancelDeleteModal';
 import { useAuthStore } from '../../store/auth-store';
 import { canViewRebateAmounts } from '../../utils/permissions';
 import { formatThaiDate } from '../../utils/date';
@@ -35,6 +36,7 @@ export function SODetailsPanel({
   const canApproveGiveaway = currentUser?.role === 'MANAGER' || currentUser?.role === 'ADMIN';
   const [busy, setBusy] = useState(false);
   const [requestModalConfig, setRequestModalConfig] = useState<{ isOpen: boolean, type: RequestActionType }>({ isOpen: false, type: 'EDIT' });
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
   if (!so) {
     if (isInline) {
@@ -116,6 +118,37 @@ export function SODetailsPanel({
                 <p className="text-xs text-gray-400">ตั๋วคุม</p>
                 <p className="font-mono text-xs font-bold text-gray-700">{so.controlTicketNo}</p>
               </div>
+            </div>
+          )}
+          {so.pickupDueDate && (
+            <div className="col-span-2 flex items-center justify-between p-3 rounded-xl bg-blue-50/70 border border-blue-100">
+              <div className="flex items-center gap-2">
+                <Calendar size={15} className="text-[#0C447C] shrink-0" />
+                <div>
+                  <p className="text-xs text-gray-500">กำหนดรับสินค้า (Pickup Due)</p>
+                  <p className="font-bold text-xs text-gray-800">
+                    {so.pickupDueDate?.slice(0, 10)}
+                    <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-[#0C447C]">
+                      {so.pickupDueType === 'EXPLICIT' ? 'กำหนดเอง' : 'ค่าเริ่มต้น 7 วัน'}
+                    </span>
+                  </p>
+                </div>
+              </div>
+              {so.pickupEvaluation && (
+                <div className="text-right">
+                  {so.pickupEvaluation.in?.status && so.pickupEvaluation.in.status !== 'UNKNOWN' && (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      so.pickupEvaluation.in.status === 'ON_TIME' ? 'bg-emerald-100 text-emerald-700' :
+                      so.pickupEvaluation.in.status === 'EARLY' ? 'bg-amber-100 text-amber-800' :
+                      'bg-red-100 text-red-700'
+                    }`}>
+                      ชั่งเข้า: {so.pickupEvaluation.in.status === 'ON_TIME' ? 'ตรงเวลา' :
+                               so.pickupEvaluation.in.status === 'EARLY' ? `ก่อนกำหนด ${Math.abs(so.pickupEvaluation.in.deltaDays!)} วัน` :
+                               `ล่าช้า ${so.pickupEvaluation.in.deltaDays} วัน`}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           )}
           {so.requestedAt && (
@@ -353,15 +386,23 @@ export function SODetailsPanel({
         {(so.status === 'DRAFT') && (
           <button
             disabled={busy}
-            onClick={async () => {
-              if (await appConfirm('ยืนยันยกเลิกบิล?')) doAction(() => cancelSO(so.id!, 'ยกเลิกเอกสารร่าง'));
-            }}
+            onClick={() => setShowCancelModal(true)}
             className="w-full py-2 rounded-xl border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50"
           >
             ยกเลิกเอกสารร่าง
           </button>
         )}
       </div>
+
+      <SOCancelDeleteModal
+        isOpen={showCancelModal}
+        mode="CANCEL"
+        targetTitle={so.wfRef || `SO #${so.id}`}
+        onClose={() => setShowCancelModal(false)}
+        onConfirm={async (reasonCode, reasonText) => {
+          await doAction(() => cancelSO(so.id!, { reasonCode, reasonText }));
+        }}
+      />
 
       <RequestActionModal
         isOpen={requestModalConfig.isOpen}

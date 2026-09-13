@@ -7,7 +7,6 @@ ENV_FILE="$DEPLOY_DIR/.env"
 SECRETS_ROOT="${SECRETS_ROOT:-$(dirname "$APP_DIR")/secrets}"
 CA_DIR="$SECRETS_ROOT/db-ca"
 MSSQL_DIR="$SECRETS_ROOT/mssql"
-MYSQL_DIR="$SECRETS_ROOT/mysql"
 TRANSFER_ROOT="${TRANSFER_ROOT:-/srv/wf-transfer}"
 
 [ "$(id -u)" -eq 0 ] || { echo "ERROR: run with sudo/root" >&2; exit 1; }
@@ -23,13 +22,11 @@ set -a
 set +a
 
 : "${MSSQL_DOMAIN:?MSSQL_DOMAIN is required in .env}"
-: "${MYSQL_DOMAIN:?MYSQL_DOMAIN is required in .env}"
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="$SECRETS_ROOT/db-cert-backups/$STAMP"
-install -d -m 700 "$BACKUP_DIR/mssql" "$BACKUP_DIR/mysql"
+install -d -m 700 "$BACKUP_DIR/mssql"
 cp -a "$MSSQL_DIR/server.crt" "$MSSQL_DIR/server.key" "$MSSQL_DIR/ca.crt" "$BACKUP_DIR/mssql/"
-cp -a "$MYSQL_DIR/server.crt" "$MYSQL_DIR/server.key" "$MYSQL_DIR/ca.crt" "$BACKUP_DIR/mysql/"
 
 existing_dns_names() {
   local cert="$1"
@@ -100,28 +97,22 @@ make_server_cert() {
 rollback() {
   echo "ERROR: certificate rollout failed; restoring $BACKUP_DIR" >&2
   cp -a "$BACKUP_DIR/mssql/." "$MSSQL_DIR/"
-  cp -a "$BACKUP_DIR/mysql/." "$MYSQL_DIR/"
   chown -R 10001:root "$MSSQL_DIR"
-  chown -R 999:999 "$MYSQL_DIR"
-  docker restart wf-mssql wf-mysql wf-backend >/dev/null 2>&1 || true
+  docker restart wf-mssql wf-backend >/dev/null 2>&1 || true
 }
 trap rollback ERR
 
 make_server_cert "$MSSQL_DIR" "$MSSQL_DOMAIN" "mssql" "${MSSQL_ALT_DOMAINS:-}"
-make_server_cert "$MYSQL_DIR" "$MYSQL_DOMAIN" "mysql" "${MYSQL_ALT_DOMAINS:-}"
 
 chown -R 10001:root "$MSSQL_DIR"
 chmod 600 "$MSSQL_DIR/server.key"
 chmod 644 "$MSSQL_DIR/server.crt" "$MSSQL_DIR/ca.crt" "$MSSQL_DIR/mssql.conf"
-chown -R 999:999 "$MYSQL_DIR"
-chmod 600 "$MYSQL_DIR/server.key"
-chmod 644 "$MYSQL_DIR/server.crt" "$MYSQL_DIR/ca.crt"
 install -d -m 755 "$TRANSFER_ROOT/manifests/certs"
 install -m 644 "$CA_DIR/ca.crt" "$TRANSFER_ROOT/manifests/certs/worldfert-db-ca.crt"
 
 cd "$DEPLOY_DIR"
-docker compose restart mssql mysql
-for container in wf-mssql wf-mysql; do
+docker compose restart mssql
+for container in wf-mssql; do
   healthy=0
   for _ in $(seq 1 60); do
     status=$(docker inspect -f '{{.State.Health.Status}}' "$container" 2>/dev/null || true)
@@ -143,6 +134,4 @@ find "$SECRETS_ROOT/db-cert-backups" -mindepth 1 -maxdepth 1 -type d -mtime +90 
 echo "DB CERTIFICATES UPDATED"
 echo "MSSQL SAN:"
 openssl x509 -in "$MSSQL_DIR/server.crt" -noout -ext subjectAltName
-echo "MYSQL SAN:"
-openssl x509 -in "$MYSQL_DIR/server.crt" -noout -ext subjectAltName
 echo "Rollback copy: $BACKUP_DIR"

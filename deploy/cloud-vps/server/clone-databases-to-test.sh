@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Clone the live MSSQL/MySQL databases to isolated test database names on the
+# Clone the live MSSQL databases to isolated test database names on the
 # same Docker host. Production database names are never dropped or replaced.
 set -euo pipefail
 
@@ -7,8 +7,7 @@ APP_DIR="${APP_DIR:-/opt/worldfert/app}"
 ENV_FILE="$APP_DIR/deploy/cloud-vps/.env"
 MODE="${1:-all}"
 MSSQL_TARGET_ARG="${2:-}"
-MYSQL_TARGET_ARG="${3:-}"
-CONFIRM="${4:-}"
+CONFIRM="${3:-}"
 
 [ "$(id -u)" -eq 0 ] || { echo "ERROR: run with sudo/root" >&2; exit 1; }
 [ -f "$ENV_FILE" ] || { echo "ERROR: missing $ENV_FILE" >&2; exit 2; }
@@ -19,14 +18,12 @@ set -a
 set +a
 
 case "$MODE" in
-  all|mssql|mysql) ;;
-  *) echo "ERROR: mode must be all, mssql or mysql" >&2; exit 2 ;;
+  all|mssql) ;;
+  *) echo "ERROR: mode must be all or mssql" >&2; exit 2 ;;
 esac
 
 MSSQL_SOURCE="${DB_NAME:-dbwins_worldfert9}"
-MYSQL_SOURCE="${MYSQL_DATABASE:-db_truckscale}"
 MSSQL_TARGET="${MSSQL_TARGET_ARG:-${MSSQL_TEST_DATABASE:-${MSSQL_SOURCE}_test}}"
-MYSQL_TARGET="${MYSQL_TARGET_ARG:-${MYSQL_TEST_DATABASE:-${MYSQL_SOURCE}_test}}"
 TRANSFER_ROOT="${TRANSFER_ROOT:-/srv/wf-transfer}"
 WORK="$TRANSFER_ROOT/work"
 OUT="$TRANSFER_ROOT/outgoing"
@@ -61,26 +58,21 @@ validate_target() {
 }
 
 validate_target MSSQL "$MSSQL_SOURCE" "$MSSQL_TARGET"
-validate_target MySQL "$MYSQL_SOURCE" "$MYSQL_TARGET"
 
-install -d -m 755 "$WORK/mssql" "$WORK/mysql" "$OUT/mssql" "$OUT/mysql" "$TRANSFER_ROOT/manifests"
+install -d -m 755 "$WORK/mssql" "$OUT/mssql" "$TRANSFER_ROOT/manifests"
 
 # Share the production backup lock so a weekly backup and a test clone cannot
 # compete for disk and database I/O at the same time.
 exec 9>/run/lock/worldfert-db-backup.lock
 flock -n 9 || fail "another backup or clone operation is already running"
 
-for container in wf-mssql wf-mysql; do
-  case "$MODE:$container" in
-    mssql:wf-mysql|mysql:wf-mssql) continue ;;
-  esac
+for container in wf-mssql; do
   health="$(docker inspect -f '{{.State.Health.Status}}' "$container" 2>/dev/null || true)"
   [ "$health" = healthy ] || fail "$container is not healthy"
 done
 
 SQLCMD=""
 MSSQL_SOURCE_HOST=""
-MYSQL_SOURCE_DUMP=""
 clone_status="FAILED"
 
 write_status() {
@@ -90,15 +82,12 @@ completed_at=$(date --iso-8601=seconds)
 mode=$MODE
 mssql_source=$MSSQL_SOURCE
 mssql_target=$MSSQL_TARGET
-mysql_source=$MYSQL_SOURCE
-mysql_target=$MYSQL_TARGET
 EOF
   chmod 644 "$STATUS_FILE"
 }
 
 cleanup() {
   [ -z "$MSSQL_SOURCE_HOST" ] || rm -f -- "$MSSQL_SOURCE_HOST"
-  [ -z "$MYSQL_SOURCE_DUMP" ] || rm -f -- "$MYSQL_SOURCE_DUMP" "$MYSQL_SOURCE_DUMP.part"
   if [ "$DRY_RUN" -eq 0 ] && [ "$clone_status" != "OK" ]; then
     write_status || true
   fi
@@ -237,146 +226,14 @@ clone_mssql() {
   echo "MSSQL CLONE OK: $MSSQL_TARGET ($target_tables user tables)"
 }
 
-mysql_admin() {
-  docker exec -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" -i wf-mysql mysql -u root --ssl-mode=REQUIRED "$@"
-}
-
-mysql_scalar() {
-  mysql_admin -N -e "$1" | tr -d '\r' | sed '/^[[:space:]]*$/d' | tail -1
-}
-
-mysql_dump_gzip() {
-  local database="$1" output="$2"
-  docker exec -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" wf-mysql mysqldump \
-    -u root --single-transaction --quick --routines --triggers --events \
-    --no-tablespaces --set-gtid-purged=OFF --default-character-set=utf8mb4 "$database" \
-    | gzip -1 > "$output"
-  gzip -t "$output"
-  [ "$(stat -c%s "$output")" -ge 1024 ] || fail "MySQL dump is unexpectedly small"
-}
-
-restore_mysql_safety_or_remove() {
-  local safety_file="$1"
-  log "Rollback incomplete MySQL test clone"
-  mysql_admin -e "DROP DATABASE IF EXISTS \`$MYSQL_TARGET\`;"
-  if [ -n "$safety_file" ] && [ -f "$safety_file" ]; then
-    mysql_admin -e "CREATE DATABASE \`$MYSQL_TARGET\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-    gunzip -c "$safety_file" | mysql_admin --default-character-set=utf8mb4 "$MYSQL_TARGET"
-    echo "Previous MySQL test database restored from safety backup."
-  fi
-}
-
-clone_mysql() {
-  log "MySQL preflight: $MYSQL_SOURCE -> $MYSQL_TARGET"
-  source_exists="$(mysql_scalar "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name='$MYSQL_SOURCE';")"
-  [ "$source_exists" = "1" ] || fail "MySQL production database not found: $MYSQL_SOURCE"
-  target_exists="$(mysql_scalar "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name='$MYSQL_TARGET';")"
-  source_tables="$(mysql_scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$MYSQL_SOURCE';")"
-  source_mb="$(mysql_scalar "SELECT COALESCE(CEIL(SUM(data_length+index_length)/1024/1024),0) FROM information_schema.tables WHERE table_schema='$MYSQL_SOURCE';")"
-  target_mb=0
-  if [ "$target_exists" = "1" ]; then
-    target_mb="$(mysql_scalar "SELECT COALESCE(CEIL(SUM(data_length+index_length)/1024/1024),0) FROM information_schema.tables WHERE table_schema='$MYSQL_TARGET';")"
-  fi
-  free_mb="$(df -Pm "$TRANSFER_ROOT" | awk 'NR==2{print $4}')"
-  required_mb=$((source_mb * 2 + target_mb + 2048))
-  printf 'MySQL source size: %s MB; existing test size: %s MB; free: %s MB; required: %s MB\n' \
-    "$source_mb" "$target_mb" "$free_mb" "$required_mb"
-  [ "$free_mb" -ge "$required_mb" ] || fail "insufficient disk for a safe MySQL clone"
-
-  if [ "$DRY_RUN" -eq 1 ]; then
-    echo "MySQL DRY RUN OK; target_exists=$target_exists"
-    return
-  fi
-
-  safety_file=""
-  if [ "$target_exists" = "1" ]; then
-    existing_tables="$(mysql_scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$MYSQL_TARGET';")"
-    if [ "$existing_tables" -gt 0 ]; then
-      log "Create safety backup of existing MySQL test database"
-      safe_base="${MYSQL_TARGET}_pre-clone_${STAMP}.sql.gz"
-      safety_file="$OUT/mysql/$safe_base"
-      mysql_dump_gzip "$MYSQL_TARGET" "$safety_file.part"
-      mv -f "$safety_file.part" "$safety_file"
-      (cd "$OUT/mysql" && sha256sum "$safe_base" > "$safe_base.sha256")
-      chmod 644 "$safety_file" "$safety_file.sha256"
-    fi
-  fi
-
-  log "Create verified online snapshot of MySQL production"
-  MYSQL_SOURCE_DUMP="$WORK/mysql/${MYSQL_SOURCE}_clone-source_${STAMP}.sql.gz"
-  mysql_dump_gzip "$MYSQL_SOURCE" "$MYSQL_SOURCE_DUMP.part"
-  mv -f "$MYSQL_SOURCE_DUMP.part" "$MYSQL_SOURCE_DUMP"
-
-  log "Restore MySQL snapshot as test database only"
-  mysql_admin -e "DROP DATABASE IF EXISTS \`$MYSQL_TARGET\`; CREATE DATABASE \`$MYSQL_TARGET\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-  if ! gunzip -c "$MYSQL_SOURCE_DUMP" | mysql_admin --default-character-set=utf8mb4 "$MYSQL_TARGET"; then
-    restore_mysql_safety_or_remove "$safety_file"
-    fail "MySQL test import failed; production was not replaced"
-  fi
-
-  log "Disable copied MySQL scheduled events in the test database"
-  event_count=0
-  while IFS= read -r event_name; do
-    [ -n "$event_name" ] || continue
-    escaped_event="${event_name//\`/\`\`}"
-    mysql_admin "$MYSQL_TARGET" -e "ALTER EVENT \`$escaped_event\` DISABLE;"
-    event_count=$((event_count + 1))
-  done < <(mysql_admin -N -e "SELECT EVENT_NAME FROM information_schema.EVENTS WHERE EVENT_SCHEMA='$MYSQL_TARGET';" | tr -d '\r')
-
-  log "Grant the existing application account access to the MySQL test database"
-  app_user_sql="${MYSQL_USER//\'/\'\'}"
-  app_password_sql="${MYSQL_PASSWORD//\'/\'\'}"
-  mysql_admin -e "CREATE USER IF NOT EXISTS '$app_user_sql'@'%' IDENTIFIED BY '$app_password_sql';
-    ALTER USER '$app_user_sql'@'%' IDENTIFIED BY '$app_password_sql';
-    GRANT SELECT,INSERT,UPDATE,DELETE ON \`$MYSQL_TARGET\`.* TO '$app_user_sql'@'%'; FLUSH PRIVILEGES;"
-
-  log "Validate MySQL test clone"
-  target_tables="$(mysql_scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$MYSQL_TARGET';")"
-  if [ "$target_tables" != "$source_tables" ]; then
-    restore_mysql_safety_or_remove "$safety_file"
-    fail "MySQL table-count validation failed: source=$source_tables target=$target_tables"
-  fi
-  # ตรวจความสมบูรณ์ของทุกตาราง
-  #
-  # เดิมใช้ mysqlcheck แต่ **อิมเมจ mysql:8.0.46 ที่ใช้อยู่ไม่มีคำสั่งนี้แล้ว**
-  # (มีแค่ mysql · mysqladmin · mysqldump · mysqlpump · mysqlsh)
-  # ผลคือขั้นตรวจสอบล้มทุกครั้ง และล้มหลังจากโคลนฐานเสร็จแล้ว
-  # ทำให้ deploy-full-test-stack.sh หยุดก่อนจะสร้าง container ทดสอบ — ฐานถูกสร้างแต่แอปไม่ขึ้น
-  #
-  # ยังเรียก mysqlcheck ก่อนถ้ามี เผื่อสภาพแวดล้อมอื่นที่ยังมีอยู่
-  # ไม่มีก็ใช้ CHECK TABLE ผ่าน client mysql ซึ่งให้ผลอย่างเดียวกันและมีอยู่แน่นอน
-  if docker exec wf-mysql sh -c 'command -v mysqlcheck >/dev/null 2>&1'; then
-    docker exec -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" wf-mysql mysqlcheck \
-      -u root --ssl-mode=REQUIRED --check --quick "$MYSQL_TARGET"
-  else
-    log "mysqlcheck ไม่มีในอิมเมจนี้ — ใช้ CHECK TABLE แทน"
-    check_out="$(mysql_admin -N -B -e "
-      SELECT CONCAT('CHECK TABLE \`$MYSQL_TARGET\`.\`', table_name, '\` QUICK;')
-        FROM information_schema.tables
-       WHERE table_schema='$MYSQL_TARGET' AND table_type='BASE TABLE';" \
-      | mysql_admin -N -B | tr -d '\r')"
-    # ผลของ CHECK TABLE คือ  ตาราง<TAB>check<TAB>status<TAB>ข้อความ
-    # ทุกบรรทัดต้องลงท้ายด้วย OK ไม่งั้นถือว่าโคลนมาไม่สมบูรณ์
-    if bad="$(printf '%s\n' "$check_out" | awk -F'\t' 'NF && $NF != "OK"')" && [ -n "$bad" ]; then
-      restore_mysql_safety_or_remove "$safety_file"
-      fail "MySQL CHECK TABLE พบตารางที่ไม่ผ่าน:\n$bad"
-    fi
-    echo "$check_out" | awk -F'\t' 'END { print "CHECK TABLE ผ่าน " NR " ตาราง" }'
-  fi
-  rm -f -- "$MYSQL_SOURCE_DUMP"
-  MYSQL_SOURCE_DUMP=""
-  echo "MYSQL CLONE OK: $MYSQL_TARGET ($target_tables tables/views; $event_count events disabled)"
-}
-
 if [ "$DRY_RUN" -eq 0 ]; then
   clone_status="RUNNING"
   write_status
 fi
 
 case "$MODE" in
-  all) clone_mssql; clone_mysql ;;
+  all) clone_mssql ;;
   mssql) clone_mssql ;;
-  mysql) clone_mysql ;;
 esac
 
 if [ "$DRY_RUN" -eq 1 ]; then
@@ -392,7 +249,5 @@ cat <<EOF
 TEST DATABASE CLONE OK
 MSSQL: ${MSSQL_DOMAIN:-localhost}:${MSSQL_PUBLIC_PORT:-1433} / $MSSQL_TARGET
   users: wf_reader, wf_owner or sa (existing passwords)
-MySQL: ${MYSQL_DOMAIN:-localhost}:${MYSQL_PUBLIC_PORT:-3306} / $MYSQL_TARGET
-  users: ${MYSQL_USER:-wfapp} or root (existing passwords)
 Production databases were backed up online and were not replaced.
 EOF
