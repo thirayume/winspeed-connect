@@ -1128,3 +1128,4 @@ SELECT max(couponid) FROM WFCoupon WHERE (couponid >= 242000 and couponid < 2430
 
 
 
+

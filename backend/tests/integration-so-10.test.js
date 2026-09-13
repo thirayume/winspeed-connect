@@ -31,11 +31,12 @@ function trackDedicatedAssignment(key) {
   const k = String(key).toLowerCase();
   if (k && !trackedDedicatedAssignmentKeys.includes(k)) trackedDedicatedAssignmentKeys.push(k);
 }
-function trackSharedAssignment(reportKey, priorState, trackedAssignmentId, expectedTestVersion) {
+function trackSharedAssignment(reportKey, priorState, trackedAssignmentId, expectedTestVersion, currentTestTemplateId) {
   trackedSharedAssignments.set(String(reportKey).toLowerCase(), {
     priorState,
     trackedAssignmentId: String(trackedAssignmentId),
     expectedTestVersion: Number(expectedTestVersion),
+    currentTestTemplateId: Number(currentTestTemplateId),
   });
 }
 
@@ -49,15 +50,16 @@ async function cleanTrackedEntities() {
         const result = await wfQuery(`
           UPDATE wf.ReportTemplateAssignment
           SET TemplateId = @tId, IsActive = @active, Version = Version + 1, UpdatedBy = 'TEST_CLEANUP', UpdatedAt = SYSUTCDATETIME()
-          WHERE AssignmentId = @aId AND Version = @v
+          WHERE AssignmentId = @aId AND Version = @v AND TemplateId = @currentTestTemplateId
         `, {
           tId: { type: sql.Int, value: item.priorState.TemplateId },
           active: { type: sql.Bit, value: item.priorState.IsActive ? 1 : 0 },
           aId: { type: sql.Int, value: item.trackedAssignmentId },
-          v: { type: sql.Int, value: item.expectedTestVersion }
+          v: { type: sql.Int, value: item.expectedTestVersion },
+          currentTestTemplateId: { type: sql.Int, value: item.currentTestTemplateId }
         });
         if (result.rowsAffected[0] !== 1) {
-           throw new Error(`Cleanup conflict: Shared assignment '${reportKey}' was modified by another process (Version != ${item.expectedTestVersion}). Restoration failed.`);
+           throw new Error(`Cleanup conflict: Shared assignment '${reportKey}' was modified by another process (Version != ${item.expectedTestVersion} or TemplateId != ${item.currentTestTemplateId}). Restoration failed.`);
         }
       } catch (e) {
         throw new Error(`[cleanTrackedEntities] Fatal error restoring shared assignment '${reportKey}': ${e.message}`);
@@ -482,7 +484,7 @@ test('SO-10.4: Template Config, Template Assignment & Concurrency OCC', async ()
   assert.equal(assignRes.status, 200);
   const updatedAssign = await assignRes.json();
   assert.equal(updatedAssign.Version, priorVersion + 1, 'Version must increment on successful assignment update');
-  trackSharedAssignment('customer-dispatch', priorAssignment, priorAssignment.AssignmentId, updatedAssign.Version);
+  trackSharedAssignment('customer-dispatch', priorAssignment, priorAssignment.AssignmentId, updatedAssign.Version, template.TemplateId);
 
   // 5. Test Dedicated New Assignment Lifecycle
   const dedicatedKey = `test-key-${Date.now().toString().slice(-6)}`;
