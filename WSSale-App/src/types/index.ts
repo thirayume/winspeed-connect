@@ -10,13 +10,15 @@ export type UserRole =
   | 'ACCOUNTING'
   | 'MANAGER'
   | 'APPROVER'
-  | 'WEIGHBRIDGE';
+  | 'WEIGHBRIDGE'
+  | 'REPORT_PILOT';
 
 export type AppUser = {
   id: number;
   username: string;
   displayName: string;
   role: UserRole;
+  isPilot?: boolean;
   actorId?: number;
   actorUsername?: string;
   actorDisplayName?: string;
@@ -705,6 +707,8 @@ export type ControlTicket = {
   DocuNo: string;
   AppvDocuNo?: string;
   DisplayDocuNo: string;
+  BookingDocuNo?: string;
+  DeliveryDocuNo?: string;
   DocuDate: string;
   CustID: string;
   CustName: string;
@@ -714,6 +718,35 @@ export type ControlTicket = {
   DocuStatus?: string;
   TotalQtyTon: number;
   DrawnQtyTon: number;
+  CouponID?: number;
+  CouponNo?: string;
+  GoodID?: number;
+  GoodCode?: string;
+  GoodName?: string;
+  GoodPrice?: number;
+  GoodUnitName?: string;
+  IssuedQtyTon?: number;
+  NativeRemainingQtyTon?: number;
+  ReservedQtyTon?: number;
+  AvailableQtyTon?: number;
+  BalanceState?: 'POSITIVE' | 'RESERVED_FULL' | 'ZERO' | 'NEGATIVE' | 'UNKNOWN';
+  Lifecycle?: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED_NOT_ISSUED' | 'ISSUED' | 'CANCELLED' | 'UNKNOWN';
+  ExpiryState?: 'VALID' | 'EXPIRING' | 'EXPIRED' | 'UNKNOWN';
+  Eligibility?: 'ELIGIBLE' | 'WARNING' | 'BLOCKED' | 'UNKNOWN';
+  Reasons?: string[];
+  expiryDate?: string | null;
+  expiryStatus?: string;
+  daysRemaining?: number | null;
+  strictMode?: boolean;
+  strictOverride?: boolean;
+  isBlocked?: boolean;
+  isSpendable?: boolean;
+  entityType?: 'COUPON' | 'BOOKING' | 'DRAFT' | string;
+  exactId?: number;
+  entityKey?: string;
+  warning?: string | null;
+  error?: string | null;
+  customerCandidate?: any;
 };
 export type ControlTicketDraw = {
   SOID: string | number;

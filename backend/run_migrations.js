@@ -310,7 +310,7 @@ function printPlan(plan, inventory, target, readOnly) {
   return counts;
 }
 
-async function run(options = parseArgs(process.argv)) {
+async function run(options = parseArgs(process.argv), customPool = null, customTarget = null) {
   if (options.help) {
     console.log('Usage: node run_migrations.js [--plan|--verify-only]');
     return;
@@ -318,10 +318,17 @@ async function run(options = parseArgs(process.argv)) {
 
   const policy = loadPolicy();
   const inventory = discoverMigrations(MIGRATIONS_DIR, policy);
-  const db = require('./db');
-  await db.ownerReady;
-  const pool = db.ownerPool;
-  const target = db.getTarget();
+  let pool;
+  let target;
+  if (customPool) {
+    pool = customPool;
+    target = customTarget || await resolveTargetDatabase(pool);
+  } else {
+    const db = require('./db');
+    await db.ownerReady;
+    pool = db.ownerPool;
+    target = db.getTarget();
+  }
 
   await resolveTargetDatabase(pool);
   if (!options.plan) await ensureLedger(pool);
@@ -336,16 +343,19 @@ async function run(options = parseArgs(process.argv)) {
   }
   if (options.plan) {
     console.log('  read-only: no schema, data, or ledger changes were made.');
-    return;
+    return { plan, counts, inventory };
   }
 
+  const appliedList = [];
   for (const entry of plan.entries.filter(item => item.status === 'PENDING')) {
     console.log(`\nApplying ${entry.file}`);
     const result = await runFile(pool, entry.file, entry.batches);
     await recordApplied(pool, entry.file, entry.checksum, entry.batchCount);
     console.log(`  ${result.successCount} OK; ${result.ignoredCount} recoverable duplicate(s); ledger recorded`);
+    appliedList.push(entry.file);
   }
   console.log(`\nMigration complete: ${counts.UNCHANGED || 0} unchanged; ${counts.PENDING || 0} applied; ${inventory.excludedFiles.length} excluded.`);
+  return { plan, counts, inventory, appliedList };
 }
 
 if (require.main === module) {
@@ -358,6 +368,9 @@ if (require.main === module) {
 }
 
 module.exports = {
+  run,
+  ensureLedger,
+  recordApplied,
   sha256,
   splitBatches,
   loadPolicy,

@@ -50,7 +50,7 @@ function remoteConfig() {
   if (isWindows) {
     const connectionString =
       `Driver={ODBC Driver 17 for SQL Server};Server=${server},${port};Database=${DB};` +
-      `Uid=${user};Pwd={${pwd}};Encrypt=yes;TrustServerCertificate=yes;`;
+      `Uid=${user};Pwd={${pwd}};Encrypt=yes;TrustServerCertificate=yes;Login Timeout=5;Connection Timeout=5;`;
     return { connectionString, pool: { max: 10, min: 0, idleTimeoutMillis: 30000 } };
   } else {
     return {
@@ -83,7 +83,7 @@ function remoteBConfig() {
     // tunnel เป็น loopback จึงไม่บังคับเข้ารหัส แต่ยอมรับได้ถ้าเซิร์ฟเวอร์บังคับเอง
     const connectionString =
       `Driver={ODBC Driver 17 for SQL Server};Server=${server},${port};Database=${db};` +
-      `Uid=${user};Pwd={${pwd}};Encrypt=yes;TrustServerCertificate=yes;`;
+      `Uid=${user};Pwd={${pwd}};Encrypt=yes;TrustServerCertificate=yes;Login Timeout=5;Connection Timeout=5;`;
     return { connectionString, pool: { max: 10, min: 0, idleTimeoutMillis: 30000 } };
   }
   return {
@@ -183,8 +183,28 @@ function runWithTarget(target, fn) {
   return als.run({ target: t }, fn);
 }
 
+async function closeAll() {
+  const promises = [];
+  let closedPools = 0;
+  const closedTargets = [];
+  for (const [target, entry] of Object.entries(registry)) {
+    if (entry?.readerPool) {
+      promises.push(entry.readerPool.close().catch(() => {}));
+      closedPools++;
+    }
+    if (entry?.ownerPool) {
+      promises.push(entry.ownerPool.close().catch(() => {}));
+      closedPools++;
+    }
+    closedTargets.push(target);
+    delete registry[target];
+  }
+  await Promise.all(promises);
+  return { success: true, closedPools, closedTargets };
+}
+
 module.exports = {
-  sql, query, dboWrite, wfQuery, wfTransaction, runWithTarget, getTarget, pools,
+  sql, query, dboWrite, wfQuery, wfTransaction, runWithTarget, getTarget, pools, closeAll,
   DEFAULT_TARGET,
   // backward-compat: pool ของ default target (ใช้โดย scripts + /admin/migrate)
   readerPool: def.readerPool, ownerPool: def.ownerPool,
