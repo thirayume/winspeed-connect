@@ -5,9 +5,13 @@
     "000_logins.sql"
   ],
   "excludedPatterns": [
-    "^uat_"
+    "^uat_",
+    "\\.down\\.sql$"
   ],
   "legacyDuplicateSequences": {},
+  "transactionalFiles": [
+    "124_backfill_control_ticket_overlay.sql"
+  ],
   "databaseContextOverrides": {
     "074_fix_winspeed_legacy_raiserror.sql": {
       "checksum": "76190fc2ea9933fe1ce088d8173c49ea5080ea5e8da54e486034f0ce1f1d0ce9",

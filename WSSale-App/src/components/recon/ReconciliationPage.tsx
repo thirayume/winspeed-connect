@@ -10,21 +10,49 @@ import { appPrompt } from '../ui/AppAlert';
 const WEIGH_LABEL: Record<ReconCase['weigh'], string> = {
   MATCHED: 'ตรงกัน', VARIANCE: 'น้ำหนักต่าง', NO_WEIGH: 'ไม่มีตั๋วชั่ง',
   UNLINKED: 'ไม่ผูก movebill', TS_NOT_FOUND: 'ไม่พบใน TruckScale', TS_UNAVAILABLE: 'TruckScale ไม่พร้อม',
+  CANDIDATE_MATCH: 'จับคู่ด้วยทะเบียน/วัน (Candidate)',
 };
-const INVOICE_LABEL: Record<ReconCase['invoice'], string> = { MATCHED: 'Post แล้ว', PENDING: 'พร้อม Post Invoice' };
 
-function badge(kind: 'ok' | 'warn' | 'exc' | 'muted' | 'resolved') {
+const INVOICE_STATUS_LABEL: Record<ReconCase['invoiceStatus'], string> = {
+  INVOICE_FOUND: 'พบใบกำกับ',
+  PARTIAL_INVOICED: 'ใบกำกับบางส่วน',
+  NO_INVOICE: 'ยังไม่มีใบกำกับ',
+  CANCELLED: 'ใบกำกับยกเลิก',
+  CANDIDATE_INVOICE: 'พบ Candidate',
+};
+
+const GL_STATUS_LABEL: Record<ReconCase['verifiedGlStatus'], string> = {
+  VERIFIED_GL: 'GL ลงบัญชีแล้ว',
+  UNPOSTED_GL: 'ยังไม่ Post GL',
+  FLAGGED_BUT_NO_GL: 'PostGL=Y แต่ไม่พบ Journal',
+  INCONSISTENT: 'สถานะ GL ขัดแย้ง',
+  NO_GL: 'ไม่มี GL',
+  PARTIAL_GL: 'GL บางส่วน',
+};
+
+function badge(kind: 'ok' | 'warn' | 'exc' | 'muted' | 'resolved' | 'info') {
   return {
-    ok: 'bg-green-100 text-green-700',
-    warn: 'bg-amber-100 text-amber-700',
-    exc: 'bg-red-100 text-red-600',
-    muted: 'bg-gray-100 text-gray-500',
-    resolved: 'bg-blue-100 text-blue-700',
+    ok: 'bg-green-100 text-green-700 border border-green-200',
+    warn: 'bg-amber-100 text-amber-700 border border-amber-200',
+    exc: 'bg-red-100 text-red-600 border border-red-200',
+    muted: 'bg-gray-100 text-gray-500 border border-gray-200',
+    resolved: 'bg-blue-100 text-blue-700 border border-blue-200',
+    info: 'bg-cyan-100 text-cyan-700 border border-cyan-200',
   }[kind];
 }
+
 function weighKind(s: ReconCase['weigh']) {
   if (s === 'MATCHED') return 'ok';
+  if (s === 'CANDIDATE_MATCH') return 'warn';
   if (s === 'VARIANCE' || s === 'TS_NOT_FOUND' || s === 'NO_WEIGH') return 'exc';
+  return 'muted';
+}
+
+function glKind(s: ReconCase['verifiedGlStatus']) {
+  if (s === 'VERIFIED_GL') return 'ok';
+  if (s === 'UNPOSTED_GL') return 'muted';
+  if (s === 'INCONSISTENT' || s === 'FLAGGED_BUT_NO_GL') return 'exc';
+  if (s === 'PARTIAL_GL') return 'warn';
   return 'muted';
 }
 
@@ -33,7 +61,7 @@ export function ReconciliationPage() {
   const [summary, setSummary] = useState<ReconSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [days, setDays]       = useState(7);
-  const [filter, setFilter]   = useState<'' | 'EXCEPTION' | 'RESOLVED' | 'OK'>('');
+  const [filter, setFilter]   = useState<'' | 'EXCEPTION' | 'RESOLVED' | 'OK' | 'AMBIGUOUS'>('');
   const [busy, setBusy]       = useState<string | null>(null);
 
   const load = useCallback(async (d = days, f = filter) => {
@@ -51,7 +79,8 @@ export function ReconciliationPage() {
 
   async function doResolve(c: ReconCase, checkType: ReconCheck, action: 'RESOLVE' | 'IGNORE') {
     const verb = action === 'IGNORE' ? 'ละเว้น (ไม่ถือเป็นปัญหา)' : 'แก้ไขแล้ว';
-    const note = await appPrompt(`บันทึกเหตุผลการ${verb} — ${c.wfRef || c.soId} (${checkType === 'WEIGH' ? 'น้ำหนัก' : 'ใบกำกับ'}):`);
+    const docLabel = c.soDocuNo || c.wsDocuNo || c.wfRef || c.soId;
+    const note = await appPrompt(`บันทึกเหตุผลการ${verb} — ${docLabel} (${checkType === 'WEIGH' ? 'น้ำหนัก' : 'ใบกำกับ'}):`);
     if (note === null) return;
     setBusy(`${c.soId}|${checkType}`);
     try { await resolveReconCase(c.soId, { checkType, action, note: note || undefined, wfRef: c.wfRef }); await load(days, filter); }
@@ -84,14 +113,14 @@ export function ReconciliationPage() {
       <div className="px-4 py-3 sm:px-6 sm:py-5 border-b border-gray-200 bg-white shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
         <div>
           <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
-            <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> กระทบยอด (Reconciliation)
+            <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> กระทบยอด (Reconciliation Workbench)
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">SHIPPED → Ready for WINSpeed Post Invoice → Invoice/GL reconciliation · FR-027</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">ส่งสินค้า · ตรวจชั่งน้ำหนัก · สอบทานใบกำกับ WINSpeed · ตรวจสอบสมุดรายวัน GL จริง · FR-027</p>
         </div>
         <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
           <select value={days} onChange={e => setDays(Number(e.target.value))}
             className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C] flex-1 sm:flex-none">
-            <option value={7}>7 วันล่าสุด</option><option value={14}>14 วัน</option><option value={30}>30 วัน</option>
+            <option value={7}>7 วันล่าสุด</option><option value={14}>14 วัน</option><option value={30}>30 วัน</option><option value={60}>60 วัน</option>
           </select>
           <button onClick={() => load(days, filter)} className="h-10 w-10 shrink-0 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
             <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
@@ -102,21 +131,21 @@ export function ReconciliationPage() {
       <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
         {summary && !summary.tsAvailable && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3 text-sm text-amber-700">
-            <Info size={18} className="mt-0.5 shrink-0" /> TruckScale (MySQL) ไม่พร้อมใช้งาน — การกระทบยอดน้ำหนักจะแสดงเป็น "ไม่พร้อม" จนกว่าจะเชื่อมต่อได้
+            <Info size={18} className="mt-0.5 shrink-0" /> TruckScale ไม่พร้อมใช้งาน — การกระทบยอดน้ำหนักจะแสดงเป็น "ไม่พร้อม" จนกว่าจะเชื่อมต่อได้
           </div>
         )}
 
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-          {card(<Scale size={20} />, 'ออกของทั้งหมด', summary?.total ?? '–', 'bg-blue-50 text-blue-600')}
-          {card(<FileCheck2 size={20} />, 'พร้อม Post Invoice', summary?.readyForPostInvoice ?? '–', 'bg-amber-50 text-amber-600')}
-          {card(<CheckCircle size={20} />, 'Post แล้ว', summary?.postedInvoice ?? '–', 'bg-green-50 text-green-600')}
-          {card(<AlertTriangle size={20} />, 'ต้องตรวจ (Exception)', summary?.exception ?? '–', 'bg-red-50 text-red-500')}
-          {card(<CheckCircle size={20} />, 'ปกติ (OK)', summary?.ok ?? '–', 'bg-green-50 text-green-600')}
-          {card(<FileCheck2 size={20} />, 'จัดการแล้ว', summary?.resolved ?? '–', 'bg-blue-50 text-blue-600')}
+          {card(<Scale size={20} />, 'ใบสั่งขายทั้งหมด (SOHD)', summary !== null ? summary.total : '–', 'bg-blue-50 text-blue-600')}
+          {card(<FileCheck2 size={20} />, 'ผ่านเกณฑ์ปฏิบัติการ', summary !== null ? summary.operationallyQualified : '–', 'bg-cyan-50 text-cyan-600')}
+          {card(<FileCheck2 size={20} />, 'พบใบกำกับ', summary !== null ? (summary.invoiceFound + (summary.partialInvoiced ?? 0)) : '–', 'bg-amber-50 text-amber-600')}
+          {card(<CheckCircle size={20} />, 'GL ยืนยันแล้ว', summary !== null ? summary.glVerified : '–', 'bg-green-50 text-green-600')}
+          {card(<AlertTriangle size={20} />, 'ต้องตรวจ / กำกวม', summary !== null ? ((summary.exception ?? 0) + (summary.ambiguous ?? 0)) : '–', 'bg-red-50 text-red-500')}
+          {card(<CheckCircle size={20} />, 'ปกติ (OK)', summary !== null ? summary.ok : '–', 'bg-emerald-50 text-emerald-600')}
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {([['', 'ทั้งหมด'], ['EXCEPTION', 'ต้องตรวจ'], ['RESOLVED', 'จัดการแล้ว'], ['OK', 'ปกติ']] as const).map(([v, l]) => (
+          {([['', 'ทั้งหมด'], ['EXCEPTION', 'ต้องตรวจ'], ['AMBIGUOUS', 'กำกวม (Candidate)'], ['RESOLVED', 'จัดการแล้ว'], ['OK', 'ปกติ']] as const).map(([v, l]) => (
             <button key={v} onClick={() => setFilter(v)}
               className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition ${filter === v ? 'bg-[#0C447C] text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>{l}</button>
           ))}
@@ -130,25 +159,32 @@ export function ReconciliationPage() {
                 <th className="text-left px-4 py-3 whitespace-nowrap">SO / วันที่</th>
                 <th className="text-left px-4 py-3 whitespace-nowrap">ลูกค้า / ทะเบียน</th>
                 <th className="text-left px-4 py-3 whitespace-nowrap">น้ำหนัก (App ↔ TS)</th>
-                <th className="text-left px-4 py-3 whitespace-nowrap">ใบกำกับ Winspeed</th>
+                <th className="text-left px-4 py-3 whitespace-nowrap">ใบกำกับ & Native GL</th>
+                <th className="text-left px-4 py-3 whitespace-nowrap">เกณฑ์ปฏิบัติการ</th>
                 <th className="text-right px-4 py-3 whitespace-nowrap">การจัดการ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {loading && <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400 whitespace-nowrap">กำลังโหลด…</td></tr>}
-              {!loading && cases.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400 whitespace-nowrap">ไม่พบรายการ</td></tr>}
+              {loading && <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400 whitespace-nowrap">กำลังโหลด…</td></tr>}
+              {!loading && cases.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400 whitespace-nowrap">ไม่พบรายการ</td></tr>}
               {!loading && cases.map(c => (
-                <tr key={c.soId} className={c.overall === 'EXCEPTION' ? 'bg-red-50/40' : ''}>
+                <tr key={c.soId} className={c.overall === 'EXCEPTION' ? 'bg-red-50/40' : (c.overall === 'AMBIGUOUS' ? 'bg-amber-50/30' : '')}>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <div className="font-semibold text-gray-800">{c.wfRef || c.soId}</div>
+                    <div className="font-semibold text-gray-800">{c.soDocuNo || c.wsDocuNo || c.wfRef || c.soId}</div>
                     <div className="text-xs text-gray-400">{c.shipDate}</div>
+                    {c.wfRef && c.wfRef !== (c.soDocuNo || c.wsDocuNo) && (
+                      <div className="text-[10px] text-gray-400">Ref: {c.wfRef}</div>
+                    )}
+                    {c.fulfillmentStatus === 'UNKNOWN' && (
+                      <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">หลักฐานส่งไม่ครบ</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <div className="text-gray-700">{c.custName}</div>
+                    <div className="text-gray-700 font-medium">{c.custName}</div>
                     <div className="text-xs text-gray-400">{c.truckPlate || '–'} · movebill {c.movebill || '–'}</div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge(weighKind(c.weigh) as 'ok' | 'exc' | 'muted')}`}>{WEIGH_LABEL[c.weigh]}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge(weighKind(c.weigh) as 'ok' | 'exc' | 'muted' | 'warn')}`}>{WEIGH_LABEL[c.weigh]}</span>
                     <div className="text-xs text-gray-500 mt-1">
                       {c.netApp != null ? `${c.netApp.toLocaleString()} kg` : '–'}
                       {c.netTs != null && <> ↔ {c.netTs.toLocaleString()} kg</>}
@@ -156,22 +192,53 @@ export function ReconciliationPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge(c.invoice === 'MATCHED' ? 'ok' : 'warn')}`}>{INVOICE_LABEL[c.invoice]}</span>
-                    {c.wsInvoiceNo ? (
-                      <div className="text-xs text-gray-400 mt-1">
-                        {c.wsInvoiceNo}
-                        {c.wsInvoiceDate ? ` · ${String(c.wsInvoiceDate).slice(0, 10)}` : ''}
-                        {c.wsPostId ? ` · PostID ${c.wsPostId}` : ''}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge(c.invoiceStatus === 'INVOICE_FOUND' ? 'info' : (c.invoiceStatus === 'PARTIAL_INVOICED' ? 'warn' : (c.invoiceStatus === 'CANCELLED' ? 'exc' : 'muted')))}`}>
+                        {INVOICE_STATUS_LABEL[c.invoiceStatus] || c.invoiceStatus}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge(glKind(c.verifiedGlStatus) as 'ok' | 'exc' | 'muted' | 'warn')}`}>
+                        {GL_STATUS_LABEL[c.verifiedGlStatus] || c.verifiedGlStatus}
+                      </span>
+                    </div>
+                    {c.invoices && c.invoices.length > 0 ? (
+                      <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+                        {c.invoices.map((inv, idx) => (
+                          <div key={idx} className="font-mono text-[11px] flex items-center gap-1">
+                            <span className={inv.docuStatus === 'C' ? 'line-through text-red-500' : ''}>{inv.docuNo}</span>
+                            {inv.docuStatus === 'C' && (
+                              <span className="text-[10px] px-1 py-0.2 rounded bg-red-100 text-red-700 font-sans">ยกเลิก</span>
+                            )}
+                            {inv.provenance === 'CANDIDATE_FALLBACK' && (
+                              <span className="text-[10px] px-1 py-0.2 rounded bg-amber-100 text-amber-700 font-sans">Candidate</span>
+                            )}
+                            {inv.provenance === 'HEADER_SO_REF_UNALLOCATED' && (
+                              <span className="text-[10px] px-1 py-0.2 rounded bg-gray-100 text-gray-600 font-sans">ยอดไม่ระบุบรรทัด</span>
+                            )}
+                            {inv.lineQty != null ? ` · ${inv.lineQty} ตัน` : ''}
+                            {inv.lineAmnt != null ? ` · ฿${inv.lineAmnt.toLocaleString()}` : ''}
+                            {inv.postGL ? ` · GL:${inv.postGL}` : ''}
+                          </div>
+                        ))}
                       </div>
                     ) : (
-                      <div className="text-xs text-amber-600 mt-1">ให้บัญชีไป Post Invoice (WF) ใน WINSpeed</div>
+                      <div className="text-xs text-gray-400 mt-1">ยังไม่มีเอกสารใบกำกับ</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${badge(c.operationalReadiness === 'QUALIFIED' ? 'ok' : 'muted')}`}>
+                      {c.operationalReadiness === 'QUALIFIED' ? 'ผ่านเกณฑ์ปฏิบัติการ' : 'ยังไม่พร้อม'}
+                    </span>
+                    {c.readinessReasons && c.readinessReasons.length > 0 && (
+                      <div className="text-[11px] text-amber-700 mt-1 max-w-[200px] truncate" title={c.readinessReasons.join(' | ')}>
+                        {c.readinessReasons[0]}{c.readinessReasons.length > 1 ? ` (+${c.readinessReasons.length - 1})` : ''}
+                      </div>
                     )}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex flex-col items-end gap-1.5">
-                      {(['VARIANCE', 'TS_NOT_FOUND', 'NO_WEIGH'].includes(c.weigh) || c.weighResolution) &&
+                      {(['VARIANCE', 'TS_NOT_FOUND', 'NO_WEIGH', 'UNLINKED', 'TS_UNAVAILABLE', 'CANDIDATE_MATCH'].includes(c.weigh) || c.weighResolution) &&
                         <div className="flex items-center gap-1"><span className="text-[10px] text-gray-400">น้ำหนัก</span><ResolveBtns c={c} type="WEIGH" info={c.weighResolution} /></div>}
-                      {(c.invoice === 'PENDING' || c.invoiceResolution) &&
+                      {(c.invoiceStatus === 'NO_INVOICE' || c.invoiceStatus === 'CANCELLED' || c.invoiceResolution) &&
                         <div className="flex items-center gap-1"><span className="text-[10px] text-gray-400">ใบกำกับ</span><ResolveBtns c={c} type="INVOICE" info={c.invoiceResolution} /></div>}
                       {c.overall === 'OK' && <CheckCircle size={16} className="text-green-500" />}
                     </div>

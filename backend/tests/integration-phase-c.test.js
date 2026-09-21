@@ -38,11 +38,15 @@ test('C1: Native weighing linkage uses typed SPID to SOID foreign key and counts
   await runRemote(async () => {
     await assertTestDatabase();
 
-    // Query dbo.WGHD directly for an actual weighing record
+    // Query dbo.WGHD directly for an actual Sales Order weighing record (exclude PO weighings)
     const wghdRows = await query(`
-      SELECT TOP 1 Id, SPID, Status, DateIn, DateOut
-      FROM dbo.WGHD
-      WHERE SPID IS NOT NULL AND Status = '3'
+      SELECT TOP 1 wg.Id, wg.SPID, wg.Status, wg.DateIn, wg.DateOut
+      FROM dbo.WGHD wg
+      JOIN dbo.SOHD so ON so.SOID = wg.SPID
+      WHERE wg.SPID IS NOT NULL 
+        AND wg.Status = '3'
+        AND wg.DocuNo NOT LIKE 'PO%'
+      ORDER BY wg.Id ASC
     `);
 
     assert.ok(wghdRows.length > 0, 'Must find completed weighing row in WGHD');

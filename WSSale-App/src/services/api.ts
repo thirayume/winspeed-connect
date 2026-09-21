@@ -202,27 +202,72 @@ export const createPrice = (payload: { GoodID: string; CustID: string | null; Go
 export const bulkExtendPrices = (payloads: { GoodID: string; CustID: string | null; GoodPriceNet: number; BeginDate: string; EndDate: string; startgoodqty: number; endgoodqty: number }[]) =>
   req<{ ok: boolean; createdCount: number }>('/master/prices/bulk-extend', { method: 'POST', body: JSON.stringify({ items: payloads }) });
 
-export const fetchControlTickets = (custId?: string, includeCompleted?: boolean) => {
+export interface ControlTicketPaginationEnvelope {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  data: import('../types').ControlTicket[];
+}
+
+export const fetchControlTickets = (
+  params?: string | {
+    custId?: string;
+    includeCompleted?: boolean;
+    tab?: string;
+    q?: string;
+    page?: number;
+    pageSize?: number;
+    paginated?: boolean;
+  },
+  includeCompleted?: boolean
+) => {
   const qs = new URLSearchParams();
-  if (custId) qs.set('custId', custId);
-  if (includeCompleted) qs.set('includeCompleted', 'true');
+  if (typeof params === 'object' && params !== null) {
+    if (params.custId) qs.set('custId', params.custId);
+    if (params.includeCompleted) qs.set('includeCompleted', 'true');
+    if (params.tab) qs.set('tab', params.tab);
+    if (params.q) qs.set('q', params.q);
+    if (params.page !== undefined) qs.set('page', String(params.page));
+    if (params.pageSize !== undefined) qs.set('pageSize', String(params.pageSize));
+    if (params.paginated !== undefined) qs.set('paginated', String(params.paginated));
+  } else {
+    if (params) qs.set('custId', params);
+    if (includeCompleted) qs.set('includeCompleted', 'true');
+  }
   const str = qs.toString();
-  return req<import('../types').ControlTicket[]>(`/master/control-tickets${str ? `?${str}` : ''}`);
+  return req<any>(`/master/control-tickets${str ? `?${str}` : ''}`);
 };
 
-export const fetchControlTicketDraws = (docuNo: string) =>
-  req<import('../types').ControlTicketDraw[]>(`/master/control-tickets/${encodeURIComponent(docuNo)}/draws`);
+export const fetchControlTicketDraws = (docuNo: string, params?: { exactId?: number; entityType?: string }) => {
+  const query = new URLSearchParams();
+  if (params?.exactId) query.set('exactId', String(params.exactId));
+  if (params?.entityType) query.set('entityType', params.entityType);
+  const qs = query.toString();
+  return req<import('../types').ControlTicketDraw[]>(`/master/control-tickets/${encodeURIComponent(docuNo)}/draws${qs ? `?${qs}` : ''}`);
+};
 
-export const fetchControlTicketDetails = (docuNo: string) =>
-  req<{ ListNo: number; GoodID: string; GoodCode: string; GoodName: string; QtyTon: number; PricePerTon: number; NetPricePerTon: number; BagPerTon: number }[]>(`/master/control-tickets/${encodeURIComponent(docuNo)}`);
+export const fetchControlTicketDetails = (docuNo: string, params?: { exactId?: number; entityType?: string }) => {
+  const query = new URLSearchParams();
+  if (params?.exactId) query.set('exactId', String(params.exactId));
+  if (params?.entityType) query.set('entityType', params.entityType);
+  const qs = query.toString();
+  return req<{ ListNo: number; GoodID: string; GoodCode: string; GoodName: string; QtyTon: number; PricePerTon: number; NetPricePerTon: number; BagPerTon: number }[]>(`/master/control-tickets/${encodeURIComponent(docuNo)}${qs ? `?${qs}` : ''}`);
+};
 
-export const fetchControlTicketTrace = (docuNo: string) =>
-  req<any>(`/master/control-tickets/${encodeURIComponent(docuNo)}/trace`);
+export const fetchControlTicketTrace = (docuNo: string, params?: { exactId?: number; entityType?: string }) => {
+  const query = new URLSearchParams();
+  if (params?.exactId) query.set('exactId', String(params.exactId));
+  if (params?.entityType) query.set('entityType', params.entityType);
+  const qs = query.toString();
+  return req<any>(`/master/control-tickets/${encodeURIComponent(docuNo)}/trace${qs ? `?${qs}` : ''}`);
+};
 
 export const fetchControlTicketAlerts = () =>
   req<{ AlertId: number; DocuNo: string; AlertType: string; LeadDays: number; AlertDate: string; ExpiryDate: string; Status: string }[]>('/master/control-tickets/alerts');
 
 export const updateControlTicketExpiry = (docuNo: string, params: {
+  exactId?: number;
   expiryDate?: string | null;
   strictOverride?: boolean;
   reasonCode: string;
@@ -671,23 +716,84 @@ export interface PaginatedResponse<T> {
 // ── Reconciliation Workbench (FR-027) ─────────────────────────
 export type ReconCheck = 'WEIGH' | 'INVOICE';
 export interface ReconResolutionInfo { status: 'RESOLVED' | 'IGNORED'; note: string | null; }
+export interface ReconInvoiceItem {
+  soInvId: number;
+  docuNo: string;
+  docuDate: string | null;
+  docuType: number;
+  docuStatus: string;
+  postGL: string | null;
+  postGLDate: string | null;
+  postId: string | null;
+  lineQty: number | null;
+  lineAmnt: number | null;
+  provenance: string;
+}
+
 export interface ReconCase {
   soId: string; wfRef: string | null; custName: string; truckPlate: string | null;
-  shipDate: string; wsDocuNo: string | null; wsInvoiceNo: string | null;
+  shipDate: string; wsDocuNo: string | null; soDocuNo: string | null; wsInvoiceNo: string | null;
   wsInvoiceId: number | null; wsInvoiceDate: string | null;
   wsInvoiceType: string | null; wsPostId: number | string | null;
-  postInvoiceStatus: 'READY' | 'POSTED'; readyForPostInvoice: boolean;
+
+  // 1. Fulfillment
+  fulfillmentStatus: 'SHIPPED' | 'NOT_SHIPPED' | 'CANCELLED' | 'UNKNOWN';
   netApp: number | null; netTs: number | null; variance: number | null;
   tsMatchBy: string | null; tsFallbackMovebill: string | null;
   movebill: string | null; scaleNo: number | null;
-  weigh: 'MATCHED' | 'VARIANCE' | 'NO_WEIGH' | 'UNLINKED' | 'TS_NOT_FOUND' | 'TS_UNAVAILABLE';
-  invoice: 'MATCHED' | 'PENDING';
-  weighResolution: ReconResolutionInfo | null; invoiceResolution: ReconResolutionInfo | null;
-  overall: 'OK' | 'EXCEPTION' | 'RESOLVED'; tsAvailable: boolean;
+  weigh: 'MATCHED' | 'VARIANCE' | 'NO_WEIGH' | 'UNLINKED' | 'TS_NOT_FOUND' | 'TS_UNAVAILABLE' | 'CANDIDATE_MATCH';
+
+  // 2. Invoices
+  invoiceStatus: 'INVOICE_FOUND' | 'PARTIAL_INVOICED' | 'NO_INVOICE' | 'CANCELLED' | 'CANDIDATE_INVOICE';
+  invoices: ReconInvoiceItem[];
+  invoiceCount: number;
+  totalOrderedQty?: number;
+  totalInvoicedQty: number;
+  totalInvoicedAmount: number;
+
+  // 3. GL
+  nativeGlPostingFlag: 'Y' | 'N' | 'MIXED' | null;
+  verifiedGlStatus: 'VERIFIED_GL' | 'UNPOSTED_GL' | 'FLAGGED_BUT_NO_GL' | 'INCONSISTENT' | 'NO_GL' | 'PARTIAL_GL';
+  glDocuNo: string | null;
+  glDocuDate: string | null;
+  glJourId: string | null;
+  glTotalAmnt: number | null;
+
+  // 4. Operational & Posting Readiness
+  operationalReadiness: 'QUALIFIED' | 'BLOCKED';
+  readinessReasons: string[];
+  nativePostingReadiness: 'UNVERIFIED_CONTRACT';
+
+  // Resolutions & Overall
+  weighResolution: ReconResolutionInfo | null;
+  invoiceResolution: ReconResolutionInfo | null;
+  overall: 'OK' | 'EXCEPTION' | 'RESOLVED' | 'AMBIGUOUS';
+  tsAvailable: boolean;
+
+  // Legacy compatibility fields
+  postInvoiceStatus: 'READY' | 'POSTED' | 'UNVERIFIED';
+  readyForPostInvoice: boolean;
+  invoice: 'MATCHED' | 'PENDING' | 'CANCELLED';
 }
+
 export interface ReconSummary {
-  total: number; ok: number; exception: number; resolved: number;
-  readyForPostInvoice: number; postedInvoice: number; tsAvailable: boolean;
+  total: number;
+  ok: number;
+  exception: number;
+  resolved: number;
+  ambiguous: number;
+  operationallyQualified: number;
+  operationallyBlocked: number;
+  invoiceFound: number;
+  partialInvoiced?: number;
+  noInvoice: number;
+  glVerified: number;
+  glUnposted: number;
+  glInconsistent: number;
+  tsAvailable: boolean;
+  // Legacy compatibility:
+  readyForPostInvoice: number;
+  postedInvoice: number;
 }
 export const fetchReconSummary = (days = 7) =>
   req<ReconSummary>(`/recon/summary?days=${days}`, { silent: true });
@@ -1062,11 +1168,24 @@ export const updateAdminReportHeader = (id: number, data: Partial<ReportHeaderMa
 export const fetchAdminReportTemplates = () =>
   req<ReportTemplateItem[]>('/admin/reports/templates');
 
-export const createAdminReportTemplate = (data: Partial<ReportTemplateItem> & { reason: string }) =>
-  req<ReportTemplateItem>('/admin/reports/templates', { method: 'POST', body: JSON.stringify(data) });
+export const createAdminReportTemplate = (data: Partial<ReportTemplateItem> & { reason: string }) => {
+  const payload = {
+    ...data,
+    headerId: data.HeaderId ?? (data as any).headerId,
+    templateCode: data.TemplateCode ?? (data as any).templateCode,
+    templateName: data.TemplateName ?? (data as any).templateName,
+  };
+  return req<ReportTemplateItem>('/admin/reports/templates', { method: 'POST', body: JSON.stringify(payload) });
+};
 
-export const updateAdminReportTemplate = (id: number, data: Partial<ReportTemplateItem> & { expectedVersion: number; reason: string }) =>
-  req<ReportTemplateItem>(`/admin/reports/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const updateAdminReportTemplate = (id: number, data: Partial<ReportTemplateItem> & { expectedVersion: number; reason: string }) => {
+  const payload = {
+    ...data,
+    headerId: data.HeaderId ?? (data as any).headerId,
+    templateName: data.TemplateName ?? (data as any).templateName,
+  };
+  return req<ReportTemplateItem>(`/admin/reports/templates/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+};
 
 export const fetchAdminReportAssignments = () =>
   req<ReportAssignmentItem[]>('/admin/reports/assignments');

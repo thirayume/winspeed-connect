@@ -608,116 +608,352 @@ router.post('/prices/bulk-extend', async (req, res) => {
   }
 });
 
-// GET /api/master/control-tickets — ตั๋วคุม (AppvDocuNo ขึ้นต้นด้วย 'AI', DocuStatus='Y')
+// GET /api/master/control-tickets — ตั๋วคุม & คูปอง (Universal Native Control Tickets)
 router.get('/control-tickets', async (req, res) => {
   try {
-    const { custId, includeCompleted } = req.query;
-    const where = custId ? `AND h.CustID = @custId` : '';
-    const inputs = custId ? { custId: { type: sql.NVarChar(20), value: custId } } : {};
-    const condition = includeCompleted === 'true' ? '' : 'WHERE TotalQtyTon > DrawnQtyTon';
-    const rows = await query(`
-      WITH Tickets AS (
-        SELECT TOP 300
-          h.SOID, h.DocuNo, h.AppvDocuNo, ISNULL(h.AppvDocuNo, h.DocuNo) AS DisplayDocuNo, h.DocuDate, h.CustID,
-          h.CustName, h.TransRegistration AS TruckPlate,
-          h.AppvFlag, h.AppvDate, h.Desc1, h.Desc2, h.DocuStatus
-        FROM dbo.SOHD h WITH (NOLOCK)
-        WHERE h.DocuType = 103 AND h.DocuStatus = 'Y' AND (h.AppvDocuNo LIKE 'AI%' OR h.TransRegistration = N'ตั๋วคุม') ${where}
-        ORDER BY h.DocuDate DESC
-      ),
-      DraftTickets AS (
-        SELECT 
-          so.Id AS SOID,
-          so.WfRef AS DocuNo,
-          so.WfRef AS AppvDocuNo,
-          so.WfRef AS DisplayDocuNo,
-          so.CreatedAt AS DocuDate,
-          so.CustId AS CustID,
-          so.CustName AS CustName,
-          so.TruckPlate AS TruckPlate,
-          'N' AS AppvFlag,
-          NULL AS AppvDate,
-          N'(แบบร่าง / ยังไม่ยืนยัน)' AS Desc1,
-          NULL AS Desc2,
-          'DRAFT' AS DocuStatus
-        FROM wf.SalesOrder so WITH (NOLOCK)
-        WHERE so.SoPrefix = 'AI' AND so.Status = 'DRAFT'
-        ${custId ? `AND so.CustId = @custId` : ''}
-      ),
-      AllTickets AS (
-        SELECT * FROM Tickets
-        UNION ALL
-        SELECT * FROM DraftTickets
-      )
-      SELECT * FROM (
-        SELECT 
-          t.*,
+    const { custId, includeCompleted, tab, q, page, pageSize, paginated } = req.query;
+    const isPaginated = paginated === 'true' || page !== undefined || pageSize !== undefined;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    // Allow higher limit for customer-scoped queries to prevent silent truncation in CreateSODialog (R3-03 Point B)
+    const maxLimit = custId ? 2000 : 500;
+    const defaultLimit = custId ? 1000 : (isPaginated ? 50 : 200);
+    const limit = Math.min(maxLimit, Math.max(1, parseInt(pageSize, 10) || defaultLimit));
+    const offset = (pageNum - 1) * limit;
+
+    const inputs = {};
+    if (custId) inputs.custId = { type: sql.NVarChar(50), value: String(custId).trim() };
+    if (q) inputs.q = { type: sql.NVarChar(100), value: `%${String(q).trim()}%` };
+
+    // 1. Query Issued Coupons from WFCoupon linked to 104 and 103
+    const couponQuery = `
+      SELECT 
+        c.CouponID,
+        c.CouponNo,
+        c.CouponNo AS DocuNo,
+        c.CouponNo AS DisplayDocuNo,
+        h103.DocuNo AS BookingDocuNo,
+        h103.AppvDocuNo,
+        h104.DocuNo AS DeliveryDocuNo,
+        c.DocuID AS DeliverySOID,
+        ISNULL(h103.SOID, h104.SOID) AS SOID,
+        c.RefListno AS ListNo,
+        h104.CustID,
+        h104.CustName,
+        ISNULL(h104.TransRegistration, h103.TransRegistration) AS TruckPlate,
+        h104.DocuDate,
+        h103.AppvFlag,
+        h103.AppvDate,
+        h104.DocuStatus,
+        c.GoodID,
+        g.GoodCode,
+        c.GoodName,
+        c.GoodPrice,
+        u.GoodUnitName,
+        CAST(c.GoodQty AS DECIMAL(12, 3)) AS TotalQtyTon,
+        CAST(c.GoodQty AS DECIMAL(12, 3)) AS IssuedQtyTon,
+        CAST(c.RemaQty AS DECIMAL(12, 3)) AS NativeRemainingQtyTon,
+        CAST(ISNULL(res.TotalReserved, 0) AS DECIMAL(12, 3)) AS ReservedQtyTon,
+        CAST(c.RemaQty - ISNULL(res.TotalReserved, 0) AS DECIMAL(12, 3)) AS AvailableQtyTon,
+        CAST(c.GoodQty - (c.RemaQty - ISNULL(res.TotalReserved, 0)) AS DECIMAL(12, 3)) AS DrawnQtyTon,
+        CASE
+          WHEN c.RemaQty < 0 OR (c.RemaQty - ISNULL(res.TotalReserved, 0)) < 0 THEN 'NEGATIVE'
+          WHEN c.RemaQty = 0 THEN 'ZERO'
+          WHEN (c.RemaQty - ISNULL(res.TotalReserved, 0)) = 0 AND c.RemaQty > 0 THEN 'RESERVED_FULL'
+          WHEN (c.RemaQty - ISNULL(res.TotalReserved, 0)) > 0 THEN 'POSITIVE'
+          ELSE 'UNKNOWN'
+        END AS BalanceState,
+        CASE
+          WHEN h104.DocuStatus = 'C' THEN 'CANCELLED'
+          ELSE 'ISSUED'
+        END AS Lifecycle,
+        ov.ExpiryDate,
+        ov.ExpiryType,
+        ov.StrictOverrideFlag,
+        ov.ReasonCode,
+        ov.ReasonText
+      FROM dbo.WFCoupon c WITH (NOLOCK)
+      JOIN dbo.SOHD h104 WITH (NOLOCK) ON h104.SOID = c.DocuID AND h104.DocuType = 104
+      LEFT JOIN dbo.SODT d104 WITH (NOLOCK) ON d104.SOID = c.DocuID AND d104.ListNo = c.RefListno
+      LEFT JOIN dbo.SOHD h103 WITH (NOLOCK) ON h103.SOID = d104.RefSOID AND h103.DocuType = 103
+      LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = c.GoodID
+      LEFT JOIN dbo.EMGoodUnit u WITH (NOLOCK) ON u.GoodUnitID = c.GoodUnitID
+      LEFT JOIN (
+        SELECT CouponId, SUM(ReservedQty) AS TotalReserved
+        FROM wf.CouponReservation WITH (NOLOCK)
+        WHERE Status = 'RESERVED' AND (ExpiresAt IS NULL OR ExpiresAt > GETUTCDATE())
+        GROUP BY CouponId
+      ) res ON res.CouponId = c.CouponID
+      OUTER APPLY (
+        SELECT TOP 1
           ov.ExpiryDate,
           ov.ExpiryType,
           ov.StrictOverrideFlag,
           ov.ReasonCode,
-          ov.ReasonText,
-          ISNULL((
-            SELECT SUM(d.GoodQty2)
-            FROM dbo.SODT d WITH (NOLOCK)
-            WHERE d.SOID = t.SOID
-          ), 
-            ISNULL((SELECT SUM(wfl.QtyTon) FROM wf.SalesOrderLine wfl WHERE wfl.SoId = t.SOID), 0)
-          ) AS TotalQtyTon,
-          (
-            ISNULL((
-              SELECT SUM(d2.GoodQty2)
-              FROM dbo.SOHD h2 WITH (NOLOCK)
-              JOIN dbo.SODT d2 WITH (NOLOCK) ON h2.SOID = d2.SOID
-              WHERE h2.DocuType = 104 AND h2.DocuStatus <> 'C'
-                AND (h2.RefNo = t.DocuNo OR h2.RefNo = t.AppvDocuNo)
-            ), 0)
-            +
-            ISNULL((
-              SELECT SUM(d2.GoodQty2)
-              FROM dbo.SOHD h2 WITH (NOLOCK)
-              JOIN dbo.SODT d2 WITH (NOLOCK) ON h2.SOID = d2.SOID
-              JOIN wf.SalesOrderLine wfl WITH (NOLOCK) ON wfl.SoId = h2.SOID AND wfl.LineNum = d2.ListNo
-              WHERE h2.DocuType = 104 AND h2.DocuStatus <> 'C'
-                AND (wfl.RefControlTicketNo = t.DocuNo OR wfl.RefControlTicketNo = t.AppvDocuNo)
-                AND (h2.RefNo IS NULL OR (h2.RefNo <> t.DocuNo AND h2.RefNo <> t.AppvDocuNo))
-            ), 0)
-            +
-            ISNULL((
-              SELECT SUM(wfl.QtyTon)
-              FROM wf.SalesOrderLine wfl
-              JOIN wf.SalesOrder so2 ON so2.Id = wfl.SoId
-              WHERE so2.Status = 'DRAFT' AND (wfl.RefControlTicketNo = t.DocuNo OR wfl.RefControlTicketNo = t.AppvDocuNo)
-            ), 0)
-          ) AS DrawnQtyTon
-        FROM AllTickets t
-        LEFT JOIN wf.ControlTicketOverlay ov ON ov.DocuNo = t.DocuNo OR ov.DocuNo = t.AppvDocuNo
-      ) final
-      ${condition}
-      ORDER BY DocuDate DESC
-    `, inputs);
+          ov.ReasonText
+        FROM wf.ControlTicketOverlay ov WITH (NOLOCK)
+        WHERE (ov.DocuId = c.CouponID)
+           OR (ov.DocuNo = c.CouponNo AND (ov.DocuId IS NULL OR ov.DocuId = 0 OR ov.DocuId = c.CouponID))
+           OR (h103.DocuNo IS NOT NULL AND ov.DocuNo = h103.DocuNo)
+           OR (h103.AppvDocuNo IS NOT NULL AND ov.DocuNo = h103.AppvDocuNo)
+        ORDER BY
+          CASE
+            WHEN ov.DocuId = c.CouponID THEN 1
+            WHEN ov.DocuNo = c.CouponNo THEN 2
+            WHEN h103.DocuNo IS NOT NULL AND ov.DocuNo = h103.DocuNo THEN 3
+            WHEN h103.AppvDocuNo IS NOT NULL AND ov.DocuNo = h103.AppvDocuNo THEN 4
+            ELSE 5
+          END ASC,
+          ov.UpdatedAt DESC
+      ) ov
+      WHERE 1=1
+        ${custId ? `AND (h104.CustID = @custId OR h103.CustID = @custId)` : ''}
+        ${q ? `AND (c.CouponNo LIKE @q OR h103.DocuNo LIKE @q OR h103.AppvDocuNo LIKE @q OR h104.DocuNo LIKE @q OR h104.CustName LIKE @q OR c.GoodName LIKE @q)` : ''}
+    `;
 
-    const { resolveTicketPolicy, evaluateTicketExpiry } = require('../services/ticket-policy');
+    // 2. Query Pending Approved Booking (103 with AI but no 104 issued)
+    const pendingQuery = `
+      SELECT
+        NULL AS CouponID,
+        NULL AS CouponNo,
+        h.DocuNo,
+        ISNULL(h.AppvDocuNo, h.DocuNo) AS DisplayDocuNo,
+        h.DocuNo AS BookingDocuNo,
+        h.AppvDocuNo,
+        NULL AS DeliveryDocuNo,
+        NULL AS DeliverySOID,
+        h.SOID,
+        dt.ListNo AS ListNo,
+        h.CustID,
+        h.CustName,
+        h.TransRegistration AS TruckPlate,
+        h.DocuDate,
+        h.AppvFlag,
+        h.AppvDate,
+        h.DocuStatus,
+        dt.GoodID,
+        g.GoodCode,
+        dt.GoodName,
+        dt.GoodPrice2 AS GoodPrice,
+        u.GoodUnitName,
+        CAST(ISNULL(dt.GoodQty2, 0) AS DECIMAL(12, 3)) AS TotalQtyTon,
+        CAST(ISNULL(dt.GoodQty2, 0) AS DECIMAL(12, 3)) AS IssuedQtyTon,
+        NULL AS NativeRemainingQtyTon,
+        CAST(0 AS DECIMAL(12, 3)) AS ReservedQtyTon,
+        NULL AS AvailableQtyTon,
+        CAST(0 AS DECIMAL(12, 3)) AS DrawnQtyTon,
+        'PENDING_ISSUE' AS BalanceState,
+        'APPROVED_NOT_ISSUED' AS Lifecycle,
+        ov.ExpiryDate,
+        ov.ExpiryType,
+        ov.StrictOverrideFlag,
+        ov.ReasonCode,
+        ov.ReasonText
+      FROM dbo.SOHD h WITH (NOLOCK)
+      JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = h.SOID
+      LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = dt.GoodID
+      LEFT JOIN dbo.EMGoodUnit u WITH (NOLOCK) ON u.GoodUnitID = dt.GoodUnitID2
+      OUTER APPLY (
+        SELECT TOP 1
+          ov.ExpiryDate,
+          ov.ExpiryType,
+          ov.StrictOverrideFlag,
+          ov.ReasonCode,
+          ov.ReasonText
+        FROM wf.ControlTicketOverlay ov WITH (NOLOCK)
+        WHERE (ov.DocuNo = h.DocuNo)
+           OR (h.AppvDocuNo IS NOT NULL AND ov.DocuNo = h.AppvDocuNo)
+        ORDER BY
+          CASE
+            WHEN ov.DocuNo = h.DocuNo THEN 1
+            WHEN h.AppvDocuNo IS NOT NULL AND ov.DocuNo = h.AppvDocuNo THEN 2
+            ELSE 3
+          END ASC,
+          ov.UpdatedAt DESC
+      ) ov
+      WHERE h.DocuType = 103 AND h.DocuStatus = 'Y' 
+        AND (h.AppvDocuNo LIKE 'AI%' OR h.TransRegistration = N'ตั๋วคุม')
+        AND NOT EXISTS (
+          SELECT 1 FROM dbo.SODT d2 WITH (NOLOCK)
+          JOIN dbo.SOHD h2 WITH (NOLOCK) ON h2.SOID = d2.SOID AND h2.DocuType = 104 AND h2.DocuStatus <> 'C'
+          WHERE d2.RefSOID = h.SOID
+        )
+        ${custId ? `AND h.CustID = @custId` : ''}
+        ${q ? `AND (h.DocuNo LIKE @q OR h.AppvDocuNo LIKE @q OR h.CustName LIKE @q OR dt.GoodName LIKE @q)` : ''}
+    `;
+
+    // 3. Query Draft Tickets from wf.SalesOrder
+    const draftQuery = `
+      SELECT
+        NULL AS CouponID,
+        NULL AS CouponNo,
+        so.WfRef AS DocuNo,
+        so.WfRef AS DisplayDocuNo,
+        so.WfRef AS BookingDocuNo,
+        so.WfRef AS AppvDocuNo,
+        NULL AS DeliveryDocuNo,
+        NULL AS DeliverySOID,
+        so.Id AS SOID,
+        wfl.LineNum AS ListNo,
+        so.CustId AS CustID,
+        so.CustName,
+        so.TruckPlate,
+        so.CreatedAt AS DocuDate,
+        'N' AS AppvFlag,
+        NULL AS AppvDate,
+        'DRAFT' AS DocuStatus,
+        wfl.GoodId AS GoodID,
+        g.GoodCode,
+        wfl.GoodName,
+        wfl.PricePerTon AS GoodPrice,
+        N'ตัน' AS GoodUnitName,
+        CAST(ISNULL(wfl.QtyTon, 0) AS DECIMAL(12, 3)) AS TotalQtyTon,
+        CAST(ISNULL(wfl.QtyTon, 0) AS DECIMAL(12, 3)) AS IssuedQtyTon,
+        NULL AS NativeRemainingQtyTon,
+        CAST(0 AS DECIMAL(12, 3)) AS ReservedQtyTon,
+        NULL AS AvailableQtyTon,
+        CAST(0 AS DECIMAL(12, 3)) AS DrawnQtyTon,
+        'DRAFT' AS BalanceState,
+        'DRAFT' AS Lifecycle,
+        NULL AS ExpiryDate,
+        NULL AS ExpiryType,
+        CAST(0 AS BIT) AS StrictOverrideFlag,
+        NULL AS ReasonCode,
+        NULL AS ReasonText
+      FROM wf.SalesOrder so WITH (NOLOCK)
+      JOIN wf.SalesOrderLine wfl WITH (NOLOCK) ON wfl.SoId = so.Id
+      LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = wfl.GoodId
+      WHERE so.SoPrefix = 'AI' AND so.Status = 'DRAFT'
+        ${custId ? `AND so.CustId = @custId` : ''}
+        ${q ? `AND (so.WfRef LIKE @q OR so.CustName LIKE @q OR wfl.GoodName LIKE @q)` : ''}
+    `;
+
+    const selectedTab = String(tab || (includeCompleted === 'true' ? 'ALL' : 'ACTIVE')).toUpperCase();
+
+    let subqueries = [];
+    if (selectedTab === 'PENDING') {
+      subqueries = [pendingQuery, draftQuery];
+    } else if (selectedTab === 'HISTORY' || selectedTab === 'USED_UP') {
+      // HISTORY: normally exhausted (RemaQty = 0 AND NetAvailable = 0) OR cancelled, strictly excluding anomalies (R3-03 Point 3)
+      const historyCouponQuery = `${couponQuery} AND (((c.RemaQty = 0 AND (c.RemaQty - ISNULL(res.TotalReserved, 0)) = 0)) OR (c.RemaQty > 0 AND h104.DocuStatus = 'C')) AND (c.RemaQty - ISNULL(res.TotalReserved, 0)) >= 0 AND c.RemaQty >= 0`;
+      subqueries = [historyCouponQuery];
+    } else if (selectedTab === 'ACTIVE') {
+      const activeCouponQuery = `${couponQuery} AND (c.RemaQty - ISNULL(res.TotalReserved, 0)) > 0 AND c.RemaQty > 0 AND h104.DocuStatus <> 'C'`;
+      subqueries = [activeCouponQuery];
+    } else if (selectedTab === 'RESERVED_FULL') {
+      const reservedCouponQuery = `${couponQuery} AND (c.RemaQty - ISNULL(res.TotalReserved, 0)) = 0 AND c.RemaQty > 0 AND h104.DocuStatus <> 'C'`;
+      subqueries = [reservedCouponQuery];
+    } else if (selectedTab === 'ALERTS' || selectedTab === 'EXPIRED_ALERT') {
+      inputs.alertDays = { type: sql.Int, value: parseInt(req.query.alertDays, 10) || 7 };
+      const alertCouponQuery = `${couponQuery} 
+        AND ov.ExpiryDate IS NOT NULL 
+        AND ov.ExpiryDate <= DATEADD(day, @alertDays, CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
+        AND (ov.StrictOverrideFlag IS NULL OR ov.StrictOverrideFlag = 0)
+        AND (c.RemaQty - ISNULL(res.TotalReserved, 0)) > 0 
+        AND c.RemaQty > 0 
+        AND h104.DocuStatus <> 'C'`;
+      subqueries = [alertCouponQuery];
+    } else if (selectedTab === 'UNKNOWN' || selectedTab === 'REVIEW') {
+      // REVIEW: anomaly remaining or negative available (R3-03 Point 3)
+      const reviewCouponQuery = `${couponQuery} AND (c.RemaQty < 0 OR (c.RemaQty - ISNULL(res.TotalReserved, 0)) < 0)`;
+      subqueries = [reviewCouponQuery];
+    } else {
+      subqueries = [couponQuery, pendingQuery, draftQuery];
+    }
+
+    inputs.offset = { type: sql.Int, value: offset };
+    inputs.limit = { type: sql.Int, value: limit };
+
+    const fullUnionSql = `
+      WITH AllControlItems AS (
+        ${subqueries.join('\n UNION ALL \n')}
+      ),
+      PagingCTE AS (
+        SELECT 
+          *,
+          COUNT(*) OVER() AS TotalFilteredCount
+        FROM AllControlItems
+      )
+      SELECT * FROM PagingCTE
+      ORDER BY 
+        DocuDate DESC, 
+        DocuNo DESC, 
+        ISNULL(CouponID, 0) DESC, 
+        ISNULL(SOID, 0) DESC, 
+        ISNULL(ListNo, 0) ASC
+      OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+    `;
+
+    const rawRows = await query(fullUnionSql, inputs);
+    let totalCount = 0;
+    if (rawRows && rawRows.length > 0) {
+      totalCount = Number(rawRows[0].TotalFilteredCount || rawRows.length);
+    } else if (isPaginated && pageNum > 1) {
+      const countRes = await query(`
+        WITH AllControlItems AS (
+          ${subqueries.join('\n UNION ALL \n')}
+        )
+        SELECT COUNT(*) AS TotalCount FROM AllControlItems
+      `, inputs);
+      totalCount = Number(countRes[0]?.TotalCount || 0);
+    }
+
+    const { resolveTicketPolicy, evaluateTicketExpiry, evaluateTicketEligibility } = require('../services/ticket-policy');
     const policy = await resolveTicketPolicy();
 
-    const enrichedRows = (rows || []).map(r => {
+    // Enrich with multi-axis status & policy
+    const enriched = (rawRows || []).map(r => {
       const expiryEval = evaluateTicketExpiry(
         r.ExpiryDate,
         null,
         policy.alertDays,
-        policy.strictMode
+        policy.strictMode,
+        Boolean(r.StrictOverrideFlag)
       );
+
+      const eligibilityEval = evaluateTicketEligibility({
+        couponId: r.CouponID,
+        lifecycle: r.Lifecycle,
+        balanceState: r.BalanceState,
+        availableQtyTon: r.AvailableQtyTon,
+        nativeRemainingQtyTon: r.NativeRemainingQtyTon,
+        expiryEval,
+        strictOverride: Boolean(r.StrictOverrideFlag),
+        strictMode: policy.strictMode,
+      });
+
+      const balanceState = r.BalanceState;
+      const lifecycle = r.Lifecycle;
+      const expiryState = expiryEval.status === 'EXPIRED' ? 'EXPIRED' : (expiryEval.status === 'NEAR_EXPIRY' ? 'EXPIRING' : (r.ExpiryDate ? 'VALID' : 'UNKNOWN'));
+
+      const isCoupon = r.CouponID != null;
+      const entityType = isCoupon ? 'COUPON' : (lifecycle === 'APPROVED_NOT_ISSUED' ? 'BOOKING' : 'DRAFT');
+      const exactId = r.CouponID || r.SOID;
+      const entityKey = isCoupon 
+        ? `coupon:${r.CouponID}` 
+        : (lifecycle === 'APPROVED_NOT_ISSUED' 
+            ? `booking:${r.SOID}:${r.ListNo || 1}` 
+            : `draft:${r.SOID}:${r.ListNo || 1}`);
+
       return {
         ...r,
+        entityType,
+        exactId,
+        entityKey,
+        BalanceState: balanceState,
+        Lifecycle: lifecycle,
+        ExpiryState: expiryState,
+        Eligibility: eligibilityEval.eligibility,
+        Reasons: eligibilityEval.reasons,
         expiry: expiryEval,
         expiryStatus: expiryEval.status,
         expiryDate: expiryEval.expiryDate,
         daysRemaining: expiryEval.daysRemaining,
         strictMode: policy.strictMode,
         strictOverride: Boolean(r.StrictOverrideFlag),
-        isBlocked: expiryEval.blocked,
-        warning: expiryEval.warning || null,
-        error: expiryEval.error || null,
+        isBlocked: eligibilityEval.isBlocked,
+        isSpendable: eligibilityEval.isSpendable,
+        warning: eligibilityEval.warnings?.length > 0 ? eligibilityEval.warnings.join('; ') : null,
+        error: eligibilityEval.isBlocked ? (eligibilityEval.reasons?.join('; ') || eligibilityEval.error) : null,
         customerCandidate: {
           candidateCustId: r.CustID,
           candidateCustName: r.CustName,
@@ -727,8 +963,28 @@ router.get('/control-tickets', async (req, res) => {
       };
     });
 
-    res.json(enrichedRows);
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+    res.setHeader('X-Total-Count', totalCount);
+    if (totalCount > limit) {
+      res.setHeader('X-Truncated', 'true');
+    }
+
+    if (isPaginated) {
+      return res.json({
+        total: totalCount,
+        page: pageNum,
+        pageSize: limit,
+        totalPages: Math.ceil(totalCount / limit) || 1,
+        data: enriched
+      });
+    }
+
+    // Preserve plain array return for non-paginated callers (e.g. CreateSODialog.tsx:322)
+    res.json(enriched);
+
+  } catch (e) {
+    console.error('[master/control-tickets]', e);
+    res.status(500).json({ message: e.message });
+  }
 });
 
 // ── GET /api/master/control-tickets/alerts — รายการแจ้งเตือนตั๋วคุมใกล้หมดอายุ / หมดอายุ (SO-04) ──
@@ -747,7 +1003,22 @@ router.get('/control-tickets/alerts', async (req, res) => {
 router.get('/control-tickets/:docuNo/trace', async (req, res) => {
   try {
     const { traceNativeTicketChain } = require('../services/ticket-policy');
-    const trace = await traceNativeTicketChain(req.params.docuNo);
+    const { exactId, entityType } = req.query;
+
+    let cleanExactId = null;
+    if (exactId !== undefined && exactId !== null) {
+      const rawStr = String(exactId).trim();
+      if (!/^\d+$/.test(rawStr)) {
+        return res.status(400).json({ message: `INVALID_EXACT_ID: exactId "${exactId}" ต้องเป็นเลขจำนวนเต็มบวก 32-bit เท่านั้น` });
+      }
+      const parsed = Number(rawStr);
+      if (!Number.isSafeInteger(parsed) || parsed <= 0 || parsed > 2147483647) {
+        return res.status(400).json({ message: `INVALID_EXACT_ID: exactId "${exactId}" อยู่นอกช่วงจำนวนเต็มบวก 32-bit` });
+      }
+      cleanExactId = parsed;
+    }
+
+    const trace = await traceNativeTicketChain(req.params.docuNo, { exactId: cleanExactId, entityType });
     if (!trace) {
       return res.status(404).json({ message: `ไม่พบข้อมูลตั๋วคุม ${req.params.docuNo}` });
     }
@@ -762,10 +1033,12 @@ router.get('/control-tickets/:docuNo/trace', async (req, res) => {
 router.patch('/control-tickets/:docuNo/expiry', requireRole('SALES', 'ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
   try {
     const { updateTicketExpiryOverlay } = require('../services/ticket-policy');
-    const { expiryDate, strictOverride, reasonCode, reasonText } = req.body || {};
+    const { expiryDate, strictOverride, reasonCode, reasonText, exactId } = req.body || {};
+    const exactCouponId = exactId || req.query?.exactId;
 
     const result = await updateTicketExpiryOverlay({
       docuNo: req.params.docuNo,
+      exactId: exactCouponId,
       expiryDate,
       strictOverride: Boolean(strictOverride),
       reasonCode,
@@ -782,12 +1055,128 @@ router.patch('/control-tickets/:docuNo/expiry', requireRole('SALES', 'ADMIN', 'C
   }
 });
 
+// ── GET /api/master/control-tickets/typed/:entityType/:id — Resolve by typed identity ──
+router.get('/control-tickets/typed/:entityType/:id', async (req, res) => {
+  try {
+    const { entityType, id } = req.params;
+    const { resolveNativeDocumentChain } = require('../services/native-document-resolver');
+    const result = await resolveNativeDocumentChain({
+      entityType: String(entityType).toUpperCase(),
+      exactId: id
+    });
+    if (!result.resolved) {
+      return res.status(404).json(result);
+    }
+    res.json(result);
+  } catch (e) {
+    console.error('[master/control-tickets/typed]', e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// GET /api/master/control-tickets/:docuNo/draws — ประวัติการตัด (SO 104 หรือ WFRedemtion 116)
+router.get('/control-tickets/:docuNo/draws', async (req, res) => {
+  try {
+    const docuNo = String(req.params.docuNo).trim();
+    const { exactId, entityType } = req.query;
+    let parsedExactId = null;
+    if (exactId !== undefined && exactId !== null) {
+      const rawStr = String(exactId).trim();
+      if (!/^\d+$/.test(rawStr)) {
+        return res.status(400).json({ message: `INVALID_EXACT_ID: exactId "${exactId}" ต้องเป็นเลขจำนวนเต็มบวก 32-bit เท่านั้น` });
+      }
+      const parsed = Number(rawStr);
+      if (!Number.isSafeInteger(parsed) || parsed <= 0 || parsed > 2147483647) {
+        return res.status(400).json({ message: `INVALID_EXACT_ID: exactId "${exactId}" อยู่นอกช่วงจำนวนเต็มบวก 32-bit` });
+      }
+      parsedExactId = parsed;
+    }
+
+    // Check 1: If coupon (C or D), query WFRedemtionDT (116)
+    if (/^[CD]\d+/i.test(docuNo) || entityType === 'COUPON') {
+      const redInputs = {
+        docuNo: { type: sql.NVarChar(50), value: docuNo },
+        exactId: { type: sql.Int, value: parsedExactId },
+      };
+      const redRows = await query(`
+        SELECT 
+          rh.RedemtionID AS SOID, rh.DocuNo,
+          CONVERT(VARCHAR(10), rh.DocuDate, 120) AS DocuDate,
+          ISNULL(h104.CustName, rh.IssueName) AS CustName,
+          rh.CarLicense AS TruckPlate,
+          CAST(rd.GoodQty AS DECIMAL(12, 3)) AS DrawnQtyTon,
+          1 AS LineCnt
+        FROM dbo.WFRedemtionDT rd WITH (NOLOCK)
+        JOIN dbo.WFRedemtionHD rh WITH (NOLOCK) ON rh.RedemtionID = rd.RedemtionID
+        JOIN dbo.WFCoupon c WITH (NOLOCK) ON c.CouponID = rd.CouponID
+        LEFT JOIN dbo.SOHD h104 WITH (NOLOCK) ON h104.SOID = c.DocuID
+        WHERE (@exactId IS NOT NULL AND c.CouponID = @exactId)
+           OR (@exactId IS NULL AND (c.CouponNo = @docuNo OR rd.CouponNo = @docuNo))
+        ORDER BY rh.DocuDate DESC
+      `, redInputs);
+
+      if (redRows.length > 0 || (parsedExactId && entityType === 'COUPON')) {
+        return res.json(redRows);
+      }
+    }
+
+    // Check 2: Native 104 deliveries
+    const delInputs = {
+      docuNo: { type: sql.NVarChar(30), value: docuNo },
+      exactId: { type: sql.Int, value: parsedExactId },
+    };
+    const rows = await query(`
+      SELECT h2.SOID, h2.DocuNo,
+             CONVERT(VARCHAR(10), h2.DocuDate, 120) AS DocuDate,
+             h2.CustName, h2.TransRegistration AS TruckPlate,
+             SUM(d2.GoodQty2) AS DrawnQtyTon,
+             COUNT(d2.ListNo) AS LineCnt
+      FROM dbo.SOHD h2 WITH (NOLOCK)
+      JOIN dbo.SODT d2 WITH (NOLOCK) ON h2.SOID = d2.SOID
+      LEFT JOIN wf.SalesOrderLine wfl WITH (NOLOCK) ON wfl.SoId = h2.SOID AND wfl.LineNum = d2.ListNo
+      WHERE h2.DocuType = 104 AND h2.DocuStatus <> 'C'
+        AND (
+          (@exactId IS NOT NULL AND d2.RefSOID = @exactId)
+          OR (@exactId IS NULL AND (RTRIM(h2.RefNo) = RTRIM(@docuNo) OR wfl.RefControlTicketNo = RTRIM(@docuNo)))
+        )
+      GROUP BY h2.SOID, h2.DocuNo, h2.DocuDate, h2.CustName, h2.TransRegistration
+      ORDER BY h2.DocuDate DESC
+    `, delInputs);
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
 // GET /api/master/control-tickets/:docuNo — ดึงรายการสินค้าของตั๋วคุม
 router.get('/control-tickets/:docuNo', async (req, res) => {
   try {
     const docuNo = String(req.params.docuNo).trim();
-    if (docuNo.startsWith('AI') && docuNo.includes('-')) {
-      // Might be a Draft WfRef
+    const { exactId, entityType } = req.query;
+    const parsedExactId = exactId ? parseInt(exactId, 10) : null;
+
+    // Check 1: Coupon (C or D prefix or entityType === 'COUPON')
+    if (/^[CD]\d+/i.test(docuNo) || entityType === 'COUPON') {
+      const cpRows = await query(`
+        SELECT 
+          1 AS ListNo, c.GoodID, g.GoodCode, c.GoodName,
+          CAST(c.RemaQty AS DECIMAL(12, 3)) AS QtyTon,
+          CAST(c.GoodPrice AS DECIMAL(12, 2)) AS PricePerTon,
+          ISNULL(gx.BagPerTon, 20) AS BagPerTon
+        FROM dbo.WFCoupon c WITH (NOLOCK)
+        LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = c.GoodID
+        LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = c.GoodID
+        WHERE (@exactId IS NOT NULL AND c.CouponID = @exactId)
+           OR (@exactId IS NULL AND c.CouponNo = @docuNo)
+      `, {
+        docuNo: { type: sql.NVarChar(50), value: docuNo },
+        exactId: { type: sql.Int, value: parsedExactId },
+      });
+      if (cpRows.length > 0 || (parsedExactId && entityType === 'COUPON')) {
+        return res.json(cpRows);
+      }
+    }
+
+    if ((docuNo.startsWith('AI') && docuNo.includes('-')) || entityType === 'DRAFT') {
+      // Draft WfRef
       const draftCheck = await query(`
         SELECT 
           d.LineNum AS ListNo, d.GoodID, g.GoodCode, g.GoodName1 AS GoodName, 
@@ -797,11 +1186,15 @@ router.get('/control-tickets/:docuNo', async (req, res) => {
         JOIN wf.SalesOrderLine d WITH (NOLOCK) ON h.Id = d.SoId
         JOIN dbo.EMGood g WITH (NOLOCK) ON d.GoodId = g.GoodID
         LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = g.GoodID
-        WHERE h.WfRef = @docuNo AND h.Status = 'DRAFT'
+        WHERE (@exactId IS NOT NULL AND h.Id = @exactId)
+           OR (@exactId IS NULL AND h.WfRef = @docuNo AND h.Status = 'DRAFT')
         ORDER BY d.LineNum ASC
-      `, { docuNo: { type: sql.NVarChar(30), value: docuNo } });
+      `, {
+        docuNo: { type: sql.NVarChar(30), value: docuNo },
+        exactId: { type: sql.Int, value: parsedExactId },
+      });
 
-      if (draftCheck.length > 0) {
+      if (draftCheck.length > 0 || (parsedExactId && entityType === 'DRAFT')) {
         return res.json(draftCheck);
       }
     }
@@ -815,30 +1208,15 @@ router.get('/control-tickets/:docuNo', async (req, res) => {
       JOIN dbo.SODT d WITH (NOLOCK) ON h.SOID = d.SOID
       JOIN dbo.EMGood g WITH (NOLOCK) ON d.GoodID = g.GoodID
       LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = g.GoodID
-      WHERE (RTRIM(h.AppvDocuNo) = RTRIM(@docuNo) OR RTRIM(h.DocuNo) = RTRIM(@docuNo)) AND h.DocuType = 103 AND h.DocuStatus = 'Y'
+      WHERE (
+        (@exactId IS NOT NULL AND h.SOID = @exactId)
+        OR (@exactId IS NULL AND (RTRIM(h.AppvDocuNo) = RTRIM(@docuNo) OR RTRIM(h.DocuNo) = RTRIM(@docuNo)))
+      ) AND h.DocuType = 103 AND h.DocuStatus = 'Y'
       ORDER BY d.ListNo ASC
-    `, { docuNo: { type: sql.NVarChar(30), value: docuNo } });
-    res.json(rows);
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
-});
-
-// GET /api/master/control-tickets/:docuNo/draws — ประวัติการตัด (SO 104 ที่ตัดจากตั๋วคุมนี้) FR-021
-router.get('/control-tickets/:docuNo/draws', async (req, res) => {
-  try {
-    const rows = await query(`
-      SELECT h2.SOID, h2.DocuNo,
-             CONVERT(VARCHAR(10), h2.DocuDate, 120) AS DocuDate,
-             h2.CustName, h2.TransRegistration AS TruckPlate,
-             SUM(d2.GoodQty2) AS DrawnQtyTon,
-             COUNT(d2.ListNo) AS LineCnt
-      FROM dbo.SOHD h2 WITH (NOLOCK)
-      JOIN dbo.SODT d2 WITH (NOLOCK) ON h2.SOID = d2.SOID
-      LEFT JOIN wf.SalesOrderLine wfl WITH (NOLOCK) ON wfl.SoId = h2.SOID AND wfl.LineNum = d2.ListNo
-      WHERE h2.DocuType = 104 AND h2.DocuStatus <> 'C'
-        AND (RTRIM(h2.RefNo) = RTRIM(@docuNo) OR wfl.RefControlTicketNo = RTRIM(@docuNo))
-      GROUP BY h2.SOID, h2.DocuNo, h2.DocuDate, h2.CustName, h2.TransRegistration
-      ORDER BY h2.DocuDate DESC
-    `, { docuNo: { type: sql.NVarChar(30), value: String(req.params.docuNo).trim() } });
+    `, {
+      docuNo: { type: sql.NVarChar(30), value: docuNo },
+      exactId: { type: sql.Int, value: parsedExactId },
+    });
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
