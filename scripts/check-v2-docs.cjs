@@ -22,7 +22,7 @@ while (queue.length) {
 for (const directory of ['','backend','WSSale-App']) {
   for (const name of ['package.json','package-lock.json']) {
     const p=path.join(root,directory,name),j=JSON.parse(fs.readFileSync(p));
-    if (j.version !== '2.0.0' || (j.packages && j.packages[''].version !== '2.0.0')) errors.push(p+': version mismatch');
+    if (j.version !== '2.0.1' || (j.packages && j.packages[''].version !== '2.0.1')) errors.push(p+': version mismatch');
   }
 }
 errors.forEach(x=>console.error(x));

@@ -100,7 +100,7 @@ const NAV_GROUPS: NavGroup[] = [
       // { key: 'budget-report', label: 'Budget Expenditure', sub: 'งบจัดสรร · เบิกจ่าย', icon: BarChart3, roles: [...] },
       { key: 'giveaway',   label: 'ของแถม',      sub: 'งบของแถมรายภาค · เบิก', icon: Gift, roles: ['C_LEVEL', 'ADMIN', 'APPROVER', 'ACCOUNTING', 'SALES'] },
       { key: 'accounting', label: 'บัญชี',       sub: 'Sync WINSpeed · อนุมัติ CN', icon: FileCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
-      { key: 'recon',      label: 'กระทบยอด',    sub: 'ตรวจบิล ↔ ชั่ง ↔ บัญชี', icon: ShieldCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
+      { key: 'recon',      label: 'กระทบยอด',    sub: 'ตรวจบิล ↔ ชั่ง ↔ บัญชี', icon: ShieldCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER', 'REPORT_PILOT'] },
     ],
   },
   {
@@ -108,7 +108,7 @@ const NAV_GROUPS: NavGroup[] = [
     icon: BarChart3,
     color: 'text-purple-600',
     items: [
-      { key: 'reports',    label: 'รายงาน',      sub: 'ศูนย์รายงาน 23 ฉบับ · Export', icon: BarChart3, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER'] },
+      { key: 'reports',    label: 'รายงาน',      sub: 'ศูนย์รายงาน 23 ฉบับ · Export', icon: BarChart3, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'REPORT_PILOT'] },
     ],
   },
   {
@@ -212,6 +212,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
   const role = user?.role;
   const actorRole = user?.actorRole || role;
   const canReviewUnlocks = ['APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '');
+  const canReviewGiveaways = ['APPROVER', 'ADMIN', 'MANAGER', 'C_LEVEL'].includes(role || '');
   const canUseAccessAs = Boolean(actorRole && ACCESS_AS_ROLES.includes(actorRole));
 
   useEffect(() => {
@@ -220,6 +221,15 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
       setExpandedGroups(prev => ({ ...prev, [activeGroup.groupLabel]: true }));
     }
   }, [activePortal, expandedGroups]);
+
+  useEffect(() => {
+    if (role === 'REPORT_PILOT') {
+      const allowedPortals = ['reports', 'recon', 'profile'];
+      if (!allowedPortals.includes(activePortal)) {
+        navigate('reports');
+      }
+    }
+  }, [role, activePortal, navigate]);
 
   useEffect(() => {
     if (!canReviewUnlocks) {
@@ -231,21 +241,21 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
       try {
         const [unlocks, giveaways] = await Promise.all([
           listUnlockRequests('PENDING', true),
-          listPendingGiveaways(true)
+          canReviewGiveaways ? listPendingGiveaways(true) : Promise.resolve([]),
         ]);
         setUnlockRequests(unlocks);
         setPendingGiveaways(giveaways);
       } catch (e) { console.error('Fetch approvals failed', e); }
     };
     fetchReqs();
-  }, [canReviewUnlocks, setUnlockRequests, setPendingGiveaways]);
+  }, [canReviewUnlocks, canReviewGiveaways, setUnlockRequests, setPendingGiveaways]);
 
   useSocketEvent('so_updated', async () => {
     if (!canReviewUnlocks) return;
     try {
       const [unlocks, giveaways] = await Promise.all([
         listUnlockRequests('PENDING', true),
-        listPendingGiveaways(true)
+        canReviewGiveaways ? listPendingGiveaways(true) : Promise.resolve([]),
       ]);
       setUnlockRequests(unlocks);
       setPendingGiveaways(giveaways);

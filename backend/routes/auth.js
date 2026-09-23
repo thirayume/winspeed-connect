@@ -52,15 +52,32 @@ function canAccessAs(actorRole, targetRole) {
   return actorRank > 0 && targetRank > 0 && actorRank >= targetRank;
 }
 
+function isPilotUser(user) {
+  if (String(process.env.REPORTING_PILOT_ENFORCED || '').toLowerCase() === 'true') {
+    return true;
+  }
+  const role = getUserRole(user);
+  if (role === 'REPORT_PILOT') return true;
+  const pilotUsers = (process.env.REPORTING_PILOT_USERNAMES || '')
+    .split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+  const username = String(user?.Username ?? user?.username ?? '').toLowerCase();
+  return pilotUsers.length > 0 && Boolean(username) && pilotUsers.includes(username);
+}
+
 function toClientUser(user, actor = null) {
   const effectiveId = getUserId(user);
   const actorId = actor ? getUserId(actor) : effectiveId;
   const isImpersonating = actorId && effectiveId && Number(actorId) !== Number(effectiveId);
+  const isPilot = isPilotUser(user);
+  const effectiveRole = isPilot && getUserRole(user) !== 'REPORT_PILOT' ? 'REPORT_PILOT' : getUserRole(user);
   const out = {
     id: effectiveId,
     username: user.Username ?? user.username,
     displayName: user.DisplayName ?? user.displayName,
-    role: getUserRole(user),
+    role: effectiveRole,
+    isPilot,
     empId: user.EmpId ?? user.empId ?? null,
     isActive: user.IsActive === undefined ? true : Boolean(user.IsActive),
     address: user.Address ?? user.address ?? null,
@@ -75,7 +92,7 @@ function toClientUser(user, actor = null) {
     actorId,
     actorUsername: actor ? (actor.Username ?? actor.username) : (user.Username ?? user.username),
     actorDisplayName: actor ? (actor.DisplayName ?? actor.displayName) : (user.DisplayName ?? user.displayName),
-    actorRole: actor ? getUserRole(actor) : getUserRole(user),
+    actorRole: actor ? (isPilotUser(actor) ? 'REPORT_PILOT' : getUserRole(actor)) : effectiveRole,
     isImpersonating,
     // บอกหน้าจอเฉพาะเมื่อเซิร์ฟเวอร์บังคับจริง — บนเครื่องนักพัฒนาจะไม่ขึ้นหน้าบังคับ
     // เปลี่ยนรหัสมากั้นงาน ทั้งที่ธงในฐานข้อมูลยังอยู่ตามเดิม
@@ -92,6 +109,7 @@ function appUserPayload(user, actor = null) {
     id: effective.id,
     username: effective.username,
     role: effective.role,
+    isPilot: effective.isPilot,
     displayName: effective.displayName,
     actorSub: effective.actorId,
     actorId: effective.actorId,

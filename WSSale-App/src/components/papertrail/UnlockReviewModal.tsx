@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, Check, Unlock, RefreshCw, Eye } from 'lucide-react';
 import { listUnlockRequests, resolveUnlockReq, fetchSalesOrder, listPendingGiveaways, approveGiveawayLine } from '../../services/api';
+import { useAuthStore } from '../../store/auth-store';
 import type { UnlockReq, SalesOrder, PendingGiveaway } from '../../types';
 import { SODetailsPanel } from '../sales/SODetailsPanel';
 
 export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; onDone?: () => void }) {
+  const user = useAuthStore(s => s.user);
+  const role = user?.role;
+  const canReviewGiveaways = ['APPROVER', 'ADMIN', 'MANAGER', 'C_LEVEL'].includes(role || '');
+
   const [reqs, setReqs] = useState<UnlockReq[]>([]);
   const [giveaways, setGiveaways] = useState<PendingGiveaway[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,13 +27,13 @@ export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; on
     try { 
       const [u, g] = await Promise.all([
         listUnlockRequests('PENDING'),
-        listPendingGiveaways()
+        canReviewGiveaways ? listPendingGiveaways() : Promise.resolve([])
       ]);
       setReqs(u);
       setGiveaways(g);
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, []);
+  }, [canReviewGiveaways]);
   useEffect(() => { reload(); }, [reload]);
 
   async function submitResolve(r: UnlockReq, approve: boolean) {
@@ -93,13 +98,15 @@ export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; on
                 คำขอปลดล็อก
                 {reqs.length > 0 && <span className="bg-red-500 text-white px-1.5 py-0.5 rounded-full text-[10px] leading-none">{reqs.length}</span>}
               </button>
-              <button
-                onClick={() => setActiveTab('giveaways')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 ${activeTab === 'giveaways' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                อนุมัติของแถม
-                {giveaways.length > 0 && <span className="bg-red-500 text-white px-1.5 py-0.5 rounded-full text-[10px] leading-none">{giveaways.length}</span>}
-              </button>
+              {canReviewGiveaways && (
+                <button
+                  onClick={() => setActiveTab('giveaways')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 ${activeTab === 'giveaways' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  อนุมัติของแถม
+                  {giveaways.length > 0 && <span className="bg-red-500 text-white px-1.5 py-0.5 rounded-full text-[10px] leading-none">{giveaways.length}</span>}
+                </button>
+              )}
             </div>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">

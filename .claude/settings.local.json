@@ -34,7 +34,18 @@
       "Bash(node -p \"require\\('./package.json'\\).version\")",
       "Bash(pandoc WorldFert_SRS_v5_0.docx -o /tmp/srs5.md)",
       "Read(//tmp/**)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(git check-ignore *)",
+      "Bash(gh repo *)",
+      "Bash(node -e \"const db=require\\('./backend/db'\\); db.wfQuery\\('SELECT TOP 20 * FROM wf.SchemaMigration ORDER BY 1 DESC'\\).then\\(r=>{console.log\\(JSON.stringify\\(r.recordset,null,1\\).slice\\(0,1500\\)\\); return db.closeAll\\(\\);}\\).catch\\(e=>{console.error\\('ERR:',e.message\\); process.exit\\(0\\);}\\)\")",
+      "Bash(node -e \"const db=require\\('./backend/db'\\); db.wfQuery\\(\\\\\"SELECT i.name, i.is_unique, i.has_filter, i.filter_definition FROM sys.indexes i WHERE i.object_id = OBJECT_ID\\('wf.ControlTicketOverlay'\\)\\\\\"\\).then\\(r=>{console.log\\('INDEXES:', JSON.stringify\\(r.recordset,null,1\\)\\); return db.wfQuery\\(\\\\\"SELECT COUNT\\(*\\) AS n FROM sys.tables WHERE name LIKE '%Pre005%'\\\\\"\\);}\\).then\\(r=>{console.log\\('BACKUP TABLE COUNT:', r.recordset[0].n\\); return db.closeAll\\(\\);}\\).catch\\(e=>{console.error\\('ERR:',e.message\\);process.exit\\(0\\);}\\)\")",
+      "Bash(node -e \"const db=require\\('./backend/db'\\); db.wfQuery\\(\\\\\"SELECT FileName, AppliedAt FROM wf.SchemaMigration WHERE FileName LIKE '%005%' OR FileName LIKE '%backfill%'\\\\\"\\).then\\(r=>{console.log\\('MATCHES:',JSON.stringify\\(r.recordset\\)\\); return db.closeAll\\(\\);}\\).catch\\(e=>{console.error\\(e.message\\);process.exit\\(0\\);}\\)\")",
+      "Bash(node backend/run_migrations.js --plan)",
+      "Bash(node -e \"const db=require\\('./backend/db'\\); db.query\\(\\\\\"SELECT CouponID, CouponNo, DocuID FROM dbo.WFCoupon WHERE CouponNo = 'D6302477' ORDER BY CouponID\\\\\"\\).then\\(r=>{console.log\\('COUPONS for D6302477:', JSON.stringify\\(r\\)\\); return db.closeAll\\(\\);}\\).catch\\(e=>{console.error\\('ERR',e.message\\);process.exit\\(0\\);}\\)\")",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(node -e \"const db=require\\('./backend/db'\\); \\(async\\(\\)=>{const l=await db.wfQuery\\(\\\\\"SELECT FileName,Checksum,AppliedAt FROM wf.SchemaMigration WHERE FileName LIKE '%124%'\\\\\"\\); console.log\\('LEDGER:',JSON.stringify\\(l.recordset\\)\\); const i=await db.wfQuery\\(\\\\\"SELECT name,is_unique FROM sys.indexes WHERE name='UQ_ControlTicketOverlay_DocuId'\\\\\"\\); console.log\\('INDEX:',JSON.stringify\\(i.recordset\\)\\); const b=await db.wfQuery\\(\\\\\"SELECT name FROM sys.tables WHERE name LIKE '%Pre124%' OR name LIKE '%Pre005%'\\\\\"\\); console.log\\('BACKUP:',JSON.stringify\\(b.recordset\\)\\); const f=await db.wfQuery\\(\\\\\"SELECT COUNT\\(*\\) n FROM wf.ControlTicketOverlay\\\\\"\\); console.log\\('OVERLAY ROWS:',f.recordset[0].n\\); await db.closeAll\\(\\);}\\)\\(\\).catch\\(e=>{console.error\\(e.message\\);process.exit\\(0\\);}\\)\")",
+      "Bash(node -e \"const db=require\\('./backend/db'\\); \\(async\\(\\)=>{const a=await db.wfQuery\\('SELECT COUNT\\(*\\) n FROM wf.ControlTicketOverlay'\\); console.log\\('total overlay rows:',a.recordset[0].n\\); const b=await db.wfQuery\\('SELECT COUNT\\(*\\) n FROM wf.ControlTicketOverlay WHERE DocuId IS NULL OR DocuId=0'\\); console.log\\('legacy rows \\(DocuId null/0\\):',b.recordset[0].n\\); await db.closeAll\\(\\);}\\)\\(\\).catch\\(e=>{console.error\\(e.message\\);process.exit\\(0\\);}\\)\")",
+      "Bash(node -e \"const db=require\\('./backend/db'\\); db.query\\('SELECT @@VERSION AS v, SERVERPROPERTY\\(\\\\'ProductMajorVersion\\\\'\\) AS major, SERVERPROPERTY\\(\\\\'ProductLevel\\\\'\\) AS lvl'\\).then\\(r=>{console.log\\('MAJOR:',r[0].major,'LEVEL:',r[0].lvl\\); console.log\\(String\\(r[0].v\\).split\\('\\\\n'\\)[0]\\); return db.closeAll\\(\\);}\\).catch\\(e=>{console.error\\(e.message\\);process.exit\\(0\\);}\\)\")"
     ]
   }
 }

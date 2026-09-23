@@ -29,7 +29,7 @@ export function LegacyReportPdfModal({
 @media print {
   @page { 
     size: A4 ${isLandscape ? 'landscape' : 'portrait'}; 
-    margin: 8mm; 
+    margin: 6mm; 
   }
   body { 
     margin: 0; 
@@ -55,6 +55,8 @@ export function LegacyReportPdfModal({
   }
   .report-page-container {
     width: 100% !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
     page-break-after: always !important;
     break-after: page !important;
     margin: 0 !important;
@@ -67,13 +69,22 @@ export function LegacyReportPdfModal({
     break-after: avoid !important;
   }
   .report-page { 
-    width: ${isLandscape ? '281mm' : '194mm'};
-    min-height: ${isLandscape ? '194mm' : '281mm'};
+    width: ${isLandscape ? '285mm' : '198mm'};
+    min-height: 0 !important;
+    max-height: ${isLandscape ? '198mm' : '285mm'} !important;
     box-sizing: border-box;
     margin: 0 auto !important;
-    padding: 4mm !important;
+    padding: 2mm !important;
     border: none !important;
     box-shadow: none !important;
+  }
+  .report-page table {
+    font-size: 8.5px !important;
+  }
+  .report-page td, .report-page th {
+    padding-top: 1px !important;
+    padding-bottom: 1px !important;
+    line-height: 1.1 !important;
   }
   thead { display: table-header-group !important; }
   tfoot { display: table-row-group !important; }
@@ -187,6 +198,7 @@ export function LegacyReportPdfModal({
   return createPortal(
     <div className="report-modal-root fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 print:static print:p-0 print:bg-transparent print:block" onClick={onClose}>
       <style>{PRINT_CSS}</style>
+      {template?.customCss && <style>{template.customCss}</style>}
       <div className={`bg-white rounded-2xl shadow-2xl w-full ${isLandscape ? 'max-w-6xl' : 'max-w-5xl'} max-h-[92vh] flex flex-col print:max-w-none print:max-h-none print:shadow-none print:rounded-none print:bg-transparent print:block`} onClick={e => e.stopPropagation()}>
         
         {/* Modal Toolbar (No Print) */}

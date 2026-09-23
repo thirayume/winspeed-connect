@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { X, Truck, Package, Clock, FileText, CheckCircle2, ShieldAlert, Printer, Edit, AlertTriangle, Plus, ChevronDown } from 'lucide-react';
 import type { SalesOrder } from '../../types';
 import { useErpStore } from '../../store/erp-store';
@@ -63,6 +63,8 @@ export function TripSummaryModal({
     });
   };
 
+  const tripKey = trip ? `${(trip as any).tripId || trip.orders?.[0]?.tripId || ''}-${trip.truck}-${(trip.orders || []).map(o => `${o.id}:${o.status}`).join(',')}` : '';
+
   useEffect(() => {
     if (trip?.orders) {
       const draftIds = trip.orders
@@ -99,7 +101,7 @@ export function TripSummaryModal({
         }
       }
     }
-  }, [trip]);
+  }, [tripKey]);
 
   const handleWarehouseAck = async () => {
     const effectiveTripId = (trip as any)?.tripId || (trip?.orders[0] as any)?.tripId;
@@ -129,6 +131,22 @@ export function TripSummaryModal({
   const [shipModalConfig, setShipModalConfig] = useState<{ isOpen: boolean; soIds: (string | number)[] }>({ isOpen: false, soIds: [] });
   const [cancelModalConfig, setCancelModalConfig] = useState<{ isOpen: boolean; order: SalesOrder | null }>({ isOpen: false, order: null });
   const [isSequencerOpen, setIsSequencerOpen] = useState(false);
+
+  const editTripInitialData = useMemo(() => {
+    if (!trip) return undefined;
+    return {
+      truckPlate: trip.truck,
+      deliveryDate: trip.orders[0]?.deliveryDate?.split('T')[0] || '',
+      pSling: trip.orders.some(o => !!o.pSling),
+      loadInOrder: trip.orders.some(o => (o.lines || []).some((l: any) => l.loadSequence && Number(l.loadSequence) > 0)),
+      remark: trip.orders[0]?.remark || ''
+    };
+  }, [trip?.truck, trip?.orders]);
+
+  const sequencedDraftOrders = useMemo(() => {
+    if (!trip?.orders) return [];
+    return trip.orders.filter(o => o.status === 'DRAFT' && selectedSoIds.has(o.id!));
+  }, [trip?.orders, selectedSoIds]);
 
   if (!isOpen || !trip) return null;
 
@@ -401,6 +419,7 @@ export function TripSummaryModal({
                   </div>
                   {/* Edit Trip Metadata */}
                   <button
+                    data-testid="btn-edit-trip-metadata"
                     disabled={busy || isQuoteLocked}
                     onClick={() => setIsEditTripOpen(true)}
                     title={isQuoteLocked ? 'ต้องยืนยันหรือยกเลิกใบเสนอราคาก่อน' : undefined}
@@ -491,6 +510,7 @@ export function TripSummaryModal({
                     <div className="flex flex-col gap-2 sm:gap-3">
                       {allDraft && !isQuoteLocked && (
                         <button
+                          data-testid="btn-confirm-trip"
                           disabled={busy || selectedSoIds.size === 0}
                           onClick={handleConfirmTripOrders}
                           className="w-full bg-green-600 text-white py-2.5 sm:py-3 rounded-xl font-bold text-sm sm:text-base flex items-center justify-center gap-2 hover:bg-green-700 shadow-sm disabled:opacity-50 transition-colors"
@@ -524,6 +544,7 @@ export function TripSummaryModal({
                       )}
                       {allConfirmed && (
                         <button
+                          data-testid="btn-trip-picking"
                           disabled={busy}
                           onClick={() => handleBulkAction(moveToPicking, `เริ่มรับสินค้า (Picking) ทั้งทริปใช่หรือไม่?`)}
                           className="w-full py-2.5 sm:py-3 rounded-xl text-white text-sm sm:text-base font-bold shadow-sm disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
@@ -585,6 +606,7 @@ export function TripSummaryModal({
                   
                   {onAddBill && !isQuoteLocked && (
                     <button
+                      data-testid="btn-add-bill-to-trip"
                       disabled={busy}
                       onClick={onAddBill}
                       className="w-full py-2.5 sm:py-3 rounded-xl border-2 border-dashed border-[#0C447C] bg-white text-[#0C447C] hover:bg-[#0C447C] hover:text-white text-sm sm:text-base font-bold shadow-sm disabled:opacity-50 flex items-center justify-center gap-2 transition-colors mt-2"
@@ -756,12 +778,13 @@ export function TripSummaryModal({
                   const hasTicket = (order.lines || []).some(l => l.isControlTicketDrawn);
                   
                   return (
-                    <div key={order.id} className={`border rounded-xl shadow-sm flex flex-col ${order.truckPlate === 'ตั๋วคุม' ? 'border-purple-200 bg-purple-50' : 'border-gray-200 bg-white'}`}>
+                    <div key={order.id} data-testid={`trip-order-card-${order.id}`} className={`border rounded-xl shadow-sm flex flex-col ${order.truckPlate === 'ตั๋วคุม' ? 'border-purple-200 bg-purple-50' : 'border-gray-200 bg-white'}`}>
                       <div className="p-3 sm:p-4 relative flex flex-col flex-1">
                         <div className="flex justify-between items-start mb-2">
                           <div className={`font-bold text-sm font-mono flex items-center gap-1.5 ${order.truckPlate === 'ตั๋วคุม' ? 'text-purple-800' : 'text-[#0C447C]'}`}>
                             {order.status === 'DRAFT' && !isQuoteLocked && (
                               <input
+                                data-testid={`checkbox-select-so-${order.id}`}
                                 type="checkbox"
                                 checked={selectedSoIds.has(order.id!)}
                                 onChange={() => {
@@ -909,18 +932,14 @@ export function TripSummaryModal({
         }}
       />
 
-      <TripSetupModal
-        isOpen={isEditTripOpen}
-        onClose={() => setIsEditTripOpen(false)}
-        initialData={{
-          truckPlate: trip.truck,
-          deliveryDate: trip.orders[0]?.deliveryDate?.split('T')[0] || '',
-          pSling: trip.orders.some(o => !!o.pSling),
-          loadInOrder: trip.orders.some(o => (o.lines || []).some((l: any) => l.loadSequence && Number(l.loadSequence) > 0)),
-          remark: trip.orders[0]?.remark || ''
-        }}
-        onConfirm={handleEditTripMetadata}
-      />
+      {isEditTripOpen && (
+        <TripSetupModal
+          isOpen={isEditTripOpen}
+          onClose={() => setIsEditTripOpen(false)}
+          initialData={editTripInitialData}
+          onConfirm={handleEditTripMetadata}
+        />
+      )}
 
       {isPrinting && (
         <PaperDocModal
@@ -933,7 +952,7 @@ export function TripSummaryModal({
         <LoadSequencer
           isOpen={isSequencerOpen}
           onClose={() => setIsSequencerOpen(false)}
-          tripOrders={trip.orders.filter(o => o.status === 'DRAFT' && selectedSoIds.has(o.id!))}
+          tripOrders={sequencedDraftOrders}
           onConfirm={async (sequencedLines) => {
              setIsSequencerOpen(false);
              const draftOrders = trip.orders.filter(o => o.status === 'DRAFT');

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/auth-store';
 import { getMe, lineLoginUrl, linkLineLogin, login as apiLogin, setToken } from '../services/api';
 import { Eye, EyeOff } from 'lucide-react';
+import { DbModeSwitch } from '../components/common/DbModeSwitch';
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -157,6 +158,12 @@ export default function LoginPage() {
         <p className="text-center text-xs text-gray-400 mt-6">
           ติดต่อผู้ดูแลระบบหากลืมรหัสผ่าน
         </p>
+
+        {!import.meta.env?.PROD && (
+          <div className="mt-5 pt-3 border-t border-gray-100">
+            <DbModeSwitch />
+          </div>
+        )}
       </div>
     </div>
   );

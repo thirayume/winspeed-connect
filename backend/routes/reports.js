@@ -9,6 +9,7 @@ const router = require('express').Router();
 const XLSX = require('xlsx');
 const { wfQuery, sql } = require('../db');
 const { requireAuth, canViewAllRebateAmounts } = require('../middleware/auth');
+const { evaluateJournalHeader } = require('../services/native-gl-linkage');
 
 router.use(requireAuth);
 
@@ -450,30 +451,352 @@ const REPORTS = {
           ORDER BY OutstandingBal DESC`,
   },
   'gl-sales-journal': {
-    title: 'รายงานสรุปสมุดรายวันขายและการลงบัญชี (Sales Journal & Ledger Posting Log)',
+    title: 'รายงานสมุดรายวันขาย GL จริง (Native WinSpeed Sales Journal & Ledger)',
     category: 'finance',
     columns: [
       { key: 'JournalNo', label: 'เลขที่สมุดรายวัน', type: 'identifier' },
       { key: 'DocuDate', label: 'วันที่ลงบัญชี', type: 'date' },
+      { key: 'JourName', label: 'สมุดรายวัน', type: 'text' },
       { key: 'AccountCode', label: 'รหัสบัญชี', type: 'identifier' },
       { key: 'AccountName', label: 'ชื่อบัญชี', type: 'text' },
       { key: 'Debit', label: 'เดบิต (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
       { key: 'Credit', label: 'เครดิต (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
-      { key: 'RefSO', label: 'อ้างอิง SO', type: 'identifier' },
+      { key: 'BalanceStatus', label: 'สถานะสมดุล', type: 'text' },
+      { key: 'PostingStatus', label: 'สถานะ Posting', type: 'text' },
+      { key: 'RefInvoiceNo', label: 'อ้างอิงใบกำกับ', type: 'identifier' },
     ],
-    sql: `SELECT TOP 200
-            N'SJ-' + CONVERT(VARCHAR(10), hd.DocuDate, 112) AS JournalNo,
-            CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
-            N'1130-01' AS AccountCode,
-            N'ลูกหนี้การค้า (AR Trade)' AS AccountName,
-            CAST(SUM(dt.GoodAmnt) AS DECIMAL(12,2)) AS Debit,
-            CAST(0 AS DECIMAL(12,2)) AS Credit,
-            CAST(hd.SOID AS VARCHAR(50)) AS RefSO
-          FROM dbo.SOHD hd WITH (NOLOCK)
-          JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
-          WHERE hd.DocuType IN (103, 104) AND hd.DocuStatus <> 'C'
-          GROUP BY hd.SOID, hd.DocuDate
-          ORDER BY hd.DocuDate DESC, hd.SOID DESC`,
+    limit: 50,
+    run: async (params = {}) => {
+      const days = Math.max(1, Math.min(365, Number(params.days) || 60));
+      // 1. ดึง Journal Headers ภายในช่วงวันที่ที่ระบุเท่านั้น โดยไม่ JOIN SOInvHD ก่อน TOP 50 เพื่อป้องกันแถวซ้ำ
+      const finalHeaders = (await wfQuery(`
+        SELECT TOP 50 gl.GLID, gl.DocuNo, CONVERT(VARCHAR(10), gl.DocuDate, 120) AS DocuDate,
+               gl.JourID, ISNULL(jour.JourName, N'รายวันขาย') AS JourName,
+               gl.DocuType, gl.FromID, gl.FromFlag, gl.DocuStatus, gl.TotaAmnt
+        FROM dbo.GLHD gl WITH (NOLOCK)
+        LEFT JOIN dbo.EMAccJour jour WITH (NOLOCK) ON jour.JourID = gl.JourID
+        WHERE gl.JourID = '1001'
+          AND gl.DocuDate >= DATEADD(day, -@d, GETDATE())
+        ORDER BY gl.DocuDate DESC, gl.GLID DESC
+      `, { d: { type: sql.Int, value: days } })).recordset || [];
+
+      if (finalHeaders.length === 0) return [];
+
+      const glids = finalHeaders.map(h => Number(h.GLID)).filter(Number.isFinite);
+      if (!glids.length) return [];
+
+      // 2. ดึง Lines ครบถ้วนทุกรายการสำหรับ Headers ที่เลือก (ไม่มีการตัดด้านเดบิต/เครดิต)
+      const lines = (await wfQuery(`
+        SELECT dt.GLID, dt.ListNo, dt.AccID, ISNULL(acc.AccCode, N'-') AS AccCode,
+               ISNULL(acc.AccName, N'ไม่ระบุชื่อบัญชี') AS AccName,
+               CAST(dt.DrAmnt AS DECIMAL(14,2)) AS Debit,
+               CAST(dt.CrAmnt AS DECIMAL(14,2)) AS Credit,
+               dt.DocuStatus
+        FROM dbo.GLDT dt WITH (NOLOCK)
+        LEFT JOIN dbo.EMAcc acc WITH (NOLOCK) ON acc.AccID = dt.AccID
+        WHERE dt.GLID IN (${glids.join(',')})
+        ORDER BY dt.GLID DESC, dt.ListNo ASC
+      `)).recordset || [];
+
+      // 3. ดึง Invoices และ candidate GL ทั้งหมดที่เชื่อมโยงด้วย Typed Identity (FromID = PostID AND FromFlag = CAST(DocuType AS VARCHAR(10)))
+      const fromIds = [...new Set(finalHeaders.map(h => Number(h.FromID)).filter(Number.isFinite))];
+      const invoicesByFrom = new Map();
+      const allGlByFrom = new Map();
+
+      if (fromIds.length > 0) {
+        const [invRows, glCandidates] = await Promise.all([
+          wfQuery(`
+            SELECT inv.SOInvID, inv.DocuNo, inv.PostID, CAST(inv.DocuType AS VARCHAR(10)) AS DocuType,
+                   inv.DocuStatus, inv.PostGL
+            FROM dbo.SOInvHD inv WITH (NOLOCK)
+            WHERE inv.PostID IN (${fromIds.join(',')})
+              AND inv.DocuStatus <> 'C'
+          `),
+          wfQuery(`
+            SELECT gl.GLID, gl.DocuNo, CONVERT(VARCHAR(10), gl.DocuDate, 120) AS JournalDate,
+                   gl.JourID, gl.DocuType, gl.FromID, gl.FromFlag, gl.DocuStatus, gl.TotaAmnt,
+                   COUNT(dt.ListNo) AS LineCount,
+                   ISNULL(SUM(dt.DrAmnt), 0) AS SumDebit,
+                   ISNULL(SUM(dt.CrAmnt), 0) AS SumCredit,
+                   SUM(CASE WHEN dt.ListNo IS NOT NULL AND (dt.DrAmnt IS NULL OR dt.CrAmnt IS NULL) THEN 1 ELSE 0 END) AS InvalidLineCount
+            FROM dbo.GLHD gl WITH (NOLOCK)
+            LEFT JOIN dbo.GLDT dt WITH (NOLOCK) ON dt.GLID = gl.GLID
+            WHERE gl.JourID = '1001'
+              AND gl.FromFlag IN ('107', '202')
+              AND gl.FromID IN (${fromIds.join(',')})
+            GROUP BY gl.GLID, gl.DocuNo, gl.DocuDate, gl.JourID, gl.DocuType, gl.FromID, gl.FromFlag, gl.DocuStatus, gl.TotaAmnt
+          `)
+        ]);
+
+        for (const row of (invRows.recordset || [])) {
+          const key = `${row.PostID}|${row.DocuType}`;
+          if (!invoicesByFrom.has(key)) {
+            invoicesByFrom.set(key, []);
+          }
+          invoicesByFrom.get(key).push(row);
+        }
+
+        for (const g of (glCandidates.recordset || [])) {
+          const key = `${g.FromID}|${g.FromFlag}`;
+          if (!allGlByFrom.has(key)) {
+            allGlByFrom.set(key, []);
+          }
+          allGlByFrom.get(key).push(g);
+        }
+      }
+
+      // 4. ใช้ shared GL evaluation service สำหรับ header แต่ละตัว
+      const resultRows = [];
+      for (const h of finalHeaders) {
+        const hLines = lines.filter(l => String(l.GLID) === String(h.GLID));
+        const key = `${h.FromID}|${h.FromFlag}`;
+        const matchedInvs = invoicesByFrom.get(key) || [];
+        const allCandidates = allGlByFrom.get(key) || [];
+        const evalResult = evaluateJournalHeader(h, hLines, matchedInvs, allCandidates);
+
+        if (hLines.length === 0) {
+          resultRows.push({
+            GLID: h.GLID,
+            JournalNo: h.DocuNo,
+            DocuDate: h.DocuDate,
+            JourName: h.JourName,
+            AccountCode: '-',
+            AccountName: 'ไม่มีรายการบัญชี (No GL Lines)',
+            Debit: 0,
+            Credit: 0,
+            BalanceStatus: evalResult.balanceStatus,
+            PostingStatus: evalResult.postingStatus,
+            RefInvoiceNo: evalResult.refInvoiceNo,
+          });
+        } else {
+          for (const line of hLines) {
+            resultRows.push({
+              GLID: h.GLID,
+              JournalNo: h.DocuNo,
+              DocuDate: h.DocuDate,
+              JourName: h.JourName,
+              AccountCode: line.AccCode,
+              AccountName: line.AccName,
+              Debit: Number(line.Debit),
+              Credit: Number(line.Credit),
+              BalanceStatus: evalResult.balanceStatus,
+              PostingStatus: evalResult.postingStatus,
+              RefInvoiceNo: evalResult.refInvoiceNo,
+            });
+          }
+        }
+      }
+      return resultRows;
+    },
+  },
+  'so-sales-billing-projection': {
+    title: 'รายงานประมาณการขายก่อนลงบัญชี (SO Sales Billing Projection — Not a Posted GL)',
+    category: 'sales',
+    limit: 200,
+    columns: [
+      { key: 'DocuNo', label: 'เลขที่เอกสาร SO', type: 'identifier' },
+      { key: 'DocuDate', label: 'วันที่เอกสาร SO', type: 'date' },
+      { key: 'CustName', label: 'ชื่อลูกค้า', type: 'text' },
+      { key: 'EstimatedAmount', label: 'มูลค่าขายประมาณการ (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'AllocationStatus', label: 'สถานะการจัดสรร', type: 'text' },
+      { key: 'Note', label: 'หมายเหตุความหมายข้อมูล', type: 'text' },
+      { key: 'RefSO', label: 'อ้างอิง SO ID', type: 'identifier' },
+    ],
+    sql: `WITH InvoicedLines AS (
+            -- 1. Direct invoice lines (enforcing DocuType IN (107, 202))
+            SELECT 
+              d.SOID AS SOID,
+              d.ListNo AS SOListNo,
+              idt.SOInvID,
+              idt.ListNo AS InvListNo,
+              idt.GoodAmnt AS InvoicedAmnt
+            FROM dbo.SODT d WITH (NOLOCK)
+            JOIN dbo.SOInvDT idt WITH (NOLOCK) ON idt.RefID = d.SOID AND idt.RefListNo = d.ListNo
+            JOIN dbo.SOInvHD ih WITH (NOLOCK) ON ih.SOInvID = idt.SOInvID AND ih.DocuType IN (107, 202) AND ih.DocuStatus <> 'C'
+
+            UNION
+
+            -- 2. Delivery Order (104) invoice lines (enforcing DocuType IN (107, 202))
+            SELECT 
+              d.SOID AS SOID,
+              d.ListNo AS SOListNo,
+              idt104.SOInvID,
+              idt104.ListNo AS InvListNo,
+              idt104.GoodAmnt AS InvoicedAmnt
+            FROM dbo.SODT d WITH (NOLOCK)
+            JOIN dbo.SODT dt104 WITH (NOLOCK) ON dt104.RefSOID = d.SOID AND dt104.RefListNo = d.ListNo
+            JOIN dbo.SOHD hd104 WITH (NOLOCK) ON hd104.SOID = dt104.SOID AND hd104.DocuType = 104 AND hd104.DocuStatus <> 'C'
+            JOIN dbo.SOInvDT idt104 WITH (NOLOCK) ON idt104.RefID = dt104.SOID AND idt104.RefListNo = dt104.ListNo
+            JOIN dbo.SOInvHD ih104 WITH (NOLOCK) ON ih104.SOInvID = idt104.SOInvID AND ih104.DocuType IN (107, 202) AND ih104.DocuStatus <> 'C'
+          ),
+          UnallocatedInvoices AS (
+            -- Branch 1: Line has direct RefID pointing to SO 103, but line is not in InvoicedLines
+            SELECT 
+              ih.SOInvID,
+              idt.ListNo AS InvListNo,
+              idt.RefID AS SOID,
+              idt.GoodAmnt AS UnallocatedAmnt
+            FROM dbo.SOInvDT idt WITH (NOLOCK)
+            JOIN dbo.SOInvHD ih WITH (NOLOCK) ON ih.SOInvID = idt.SOInvID AND ih.DocuType IN (107, 202) AND ih.DocuStatus <> 'C'
+            JOIN dbo.SOHD h WITH (NOLOCK) ON h.SOID = idt.RefID AND h.DocuType = 103
+            WHERE NOT EXISTS (
+              SELECT 1 FROM InvoicedLines il 
+              WHERE il.SOInvID = idt.SOInvID AND il.InvListNo = idt.ListNo AND il.SOID = idt.RefID
+            )
+
+            UNION
+
+            -- Branch 2: Line has RefID pointing to Delivery 104, but line is not in InvoicedLines
+            SELECT 
+              ih.SOInvID,
+              idt.ListNo AS InvListNo,
+              COALESCE(dt104_exact.RefSOID, dt104_any.RefSOID) AS SOID,
+              idt.GoodAmnt AS UnallocatedAmnt
+            FROM dbo.SOInvDT idt WITH (NOLOCK)
+            JOIN dbo.SOInvHD ih WITH (NOLOCK) ON ih.SOInvID = idt.SOInvID AND ih.DocuType IN (107, 202) AND ih.DocuStatus <> 'C'
+            JOIN dbo.SOHD hd104 WITH (NOLOCK) ON hd104.SOID = idt.RefID AND hd104.DocuType = 104 AND hd104.DocuStatus <> 'C'
+            LEFT JOIN dbo.SODT dt104_exact WITH (NOLOCK) ON dt104_exact.SOID = idt.RefID AND dt104_exact.ListNo = idt.RefListNo
+            LEFT JOIN (
+              SELECT DISTINCT SOID AS DeliverySOID, RefSOID
+              FROM dbo.SODT WITH (NOLOCK)
+              WHERE RefSOID IS NOT NULL
+            ) dt104_any ON dt104_any.DeliverySOID = hd104.SOID
+            WHERE COALESCE(dt104_exact.RefSOID, dt104_any.RefSOID) IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM InvoicedLines il 
+                WHERE il.SOInvID = idt.SOInvID AND il.InvListNo = idt.ListNo AND il.SOID = COALESCE(dt104_exact.RefSOID, dt104_any.RefSOID)
+              )
+
+            UNION
+
+            -- Branch 3: Line does NOT have a valid line-level RefID, but invoice header ih.RefSOID points to SO 103
+            SELECT 
+              ih.SOInvID,
+              idt.ListNo AS InvListNo,
+              ih.RefSOID AS SOID,
+              idt.GoodAmnt AS UnallocatedAmnt
+            FROM dbo.SOInvDT idt WITH (NOLOCK)
+            JOIN dbo.SOInvHD ih WITH (NOLOCK) ON ih.SOInvID = idt.SOInvID AND ih.DocuType IN (107, 202) AND ih.DocuStatus <> 'C'
+            JOIN dbo.SOHD h WITH (NOLOCK) ON h.SOID = ih.RefSOID AND h.DocuType = 103 AND h.DocuStatus <> 'C'
+            WHERE (idt.RefID IS NULL OR NOT EXISTS (SELECT 1 FROM dbo.SOHD refH WITH (NOLOCK) WHERE refH.SOID = idt.RefID))
+              AND NOT EXISTS (
+                SELECT 1 FROM InvoicedLines il 
+                WHERE il.SOInvID = idt.SOInvID AND il.InvListNo = idt.ListNo AND il.SOID = ih.RefSOID
+              )
+
+            UNION
+
+            -- Branch 4: Line does NOT have a valid line-level RefID, but invoice header ih.RefSOID points to Delivery 104
+            SELECT 
+              ih.SOInvID,
+              idt.ListNo AS InvListNo,
+              dt104_any.RefSOID AS SOID,
+              idt.GoodAmnt AS UnallocatedAmnt
+            FROM dbo.SOInvDT idt WITH (NOLOCK)
+            JOIN dbo.SOInvHD ih WITH (NOLOCK) ON ih.SOInvID = idt.SOInvID AND ih.DocuType IN (107, 202) AND ih.DocuStatus <> 'C'
+            JOIN dbo.SOHD hd104 WITH (NOLOCK) ON hd104.SOID = ih.RefSOID AND hd104.DocuType = 104 AND hd104.DocuStatus <> 'C'
+            JOIN (
+              SELECT DISTINCT SOID AS DeliverySOID, RefSOID
+              FROM dbo.SODT WITH (NOLOCK)
+              WHERE RefSOID IS NOT NULL
+            ) dt104_any ON dt104_any.DeliverySOID = hd104.SOID
+            WHERE (idt.RefID IS NULL OR NOT EXISTS (SELECT 1 FROM dbo.SOHD refH WITH (NOLOCK) WHERE refH.SOID = idt.RefID))
+              AND NOT EXISTS (
+                SELECT 1 FROM InvoicedLines il 
+                WHERE il.SOInvID = idt.SOInvID AND il.InvListNo = idt.ListNo AND il.SOID = dt104_any.RefSOID
+              )
+
+            UNION
+
+            -- Branch 5: Genuine header-only invoice without any lines in SOInvDT (direct to SO 103)
+            SELECT 
+              ih.SOInvID,
+              0 AS InvListNo,
+              ih.RefSOID AS SOID,
+              CAST(0 AS decimal(12,2)) AS UnallocatedAmnt
+            FROM dbo.SOInvHD ih WITH (NOLOCK)
+            JOIN dbo.SOHD h WITH (NOLOCK) ON h.SOID = ih.RefSOID AND h.DocuType = 103 AND h.DocuStatus <> 'C'
+            WHERE ih.DocuType IN (107, 202) AND ih.DocuStatus <> 'C'
+              AND NOT EXISTS (
+                SELECT 1 FROM dbo.SOInvDT idt WITH (NOLOCK) WHERE idt.SOInvID = ih.SOInvID
+              )
+
+            UNION
+
+            -- Branch 6: Genuine header-only invoice without any lines in SOInvDT (via Delivery 104)
+            SELECT 
+              ih.SOInvID,
+              0 AS InvListNo,
+              dt104_any.RefSOID AS SOID,
+              CAST(0 AS decimal(12,2)) AS UnallocatedAmnt
+            FROM dbo.SOInvHD ih WITH (NOLOCK)
+            JOIN dbo.SOHD hd104 WITH (NOLOCK) ON hd104.SOID = ih.RefSOID AND hd104.DocuType = 104 AND hd104.DocuStatus <> 'C'
+            JOIN (
+              SELECT DISTINCT SOID AS DeliverySOID, RefSOID
+              FROM dbo.SODT WITH (NOLOCK)
+              WHERE RefSOID IS NOT NULL
+            ) dt104_any ON dt104_any.DeliverySOID = hd104.SOID
+            WHERE ih.DocuType IN (107, 202) AND ih.DocuStatus <> 'C'
+              AND NOT EXISTS (
+                SELECT 1 FROM dbo.SOInvDT idt WITH (NOLOCK) WHERE idt.SOInvID = ih.SOInvID
+              )
+          ),
+          UnallocatedBySO AS (
+            SELECT SOID, COUNT_BIG(*) AS UnallocatedCnt, SUM(UnallocatedAmnt) AS UnallocatedTotalAmnt
+            FROM (
+              SELECT DISTINCT SOID, SOInvID, InvListNo, UnallocatedAmnt
+              FROM UnallocatedInvoices
+            ) u
+            GROUP BY SOID
+          ),
+          DedupedInvoicedLines AS (
+            SELECT SOID, SOListNo, SUM(InvoicedAmnt) AS TotalLineInvoicedAmnt
+            FROM (
+              SELECT DISTINCT SOID, SOListNo, SOInvID, InvListNo, InvoicedAmnt
+              FROM InvoicedLines
+            ) sub
+            GROUP BY SOID, SOListNo
+          ),
+          SOBalances AS (
+            SELECT 
+              h.SOID,
+              h.DocuNo,
+              CONVERT(VARCHAR(10), h.DocuDate, 120) AS DocuDate,
+              h.CustName,
+              SUM(d.GoodAmnt) AS TotalOrderAmnt,
+              SUM(ISNULL(inv.TotalLineInvoicedAmnt, 0)) AS TotalInvoicedAmnt,
+              SUM(d.GoodAmnt) - SUM(ISNULL(inv.TotalLineInvoicedAmnt, 0)) AS OutstandingAmnt,
+              ISNULL(u.UnallocatedCnt, 0) AS UnallocatedCount,
+              ISNULL(u.UnallocatedTotalAmnt, 0) AS UnallocatedTotalAmnt
+            FROM dbo.SOHD h WITH (NOLOCK)
+            JOIN dbo.SODT d WITH (NOLOCK) ON d.SOID = h.SOID
+            LEFT JOIN DedupedInvoicedLines inv ON inv.SOID = d.SOID AND inv.SOListNo = d.ListNo
+            LEFT JOIN UnallocatedBySO u ON u.SOID = h.SOID
+            WHERE h.DocuType = 103 AND h.DocuStatus <> 'C'
+            GROUP BY h.SOID, h.DocuNo, h.DocuDate, h.CustName, u.UnallocatedCnt, u.UnallocatedTotalAmnt
+          )
+          SELECT TOP 200
+            DocuNo,
+            DocuDate,
+            CustName,
+            CASE
+              WHEN UnallocatedCount > 0 THEN NULL
+              ELSE CAST(OutstandingAmnt AS DECIMAL(12,2))
+            END AS EstimatedAmount,
+            CASE
+              WHEN UnallocatedCount > 0 THEN 'UNKNOWN'
+              WHEN OutstandingAmnt < -0.009 THEN 'OVER_INVOICED'
+              ELSE 'NORMAL'
+            END AS AllocationStatus,
+            CASE
+              WHEN UnallocatedCount > 0 THEN N'พบรายการใบกำกับที่ไม่สามารถระบุรายการสั่งซื้อได้ (UNKNOWN Allocation)'
+              WHEN OutstandingAmnt < -0.009 THEN N'ออกใบกำกับเกินยอดสั่งซื้อ (Over-invoiced exception)'
+              ELSE N'ประมาณการยอดขายค้างออกใบกำกับ (ไม่ใช่หลักฐาน GL)'
+            END AS Note,
+            CAST(SOID AS VARCHAR(50)) AS RefSO
+          FROM SOBalances
+          WHERE (OutstandingAmnt >= 0.01 OR OutstandingAmnt < -0.009 OR UnallocatedCount > 0)
+          ORDER BY DocuDate DESC, SOID DESC`,
   },
   'cq-cheque-register': {
     title: 'รายงานสถานะเช็ครับค้างนำฝาก (Cheque Register & Clearance Status)',
@@ -643,20 +966,21 @@ const REPORT_ROLES = {
   'rebate-pools': (user) => canViewAllRebateAmounts(user),
   'giveaway': null,
   'paper-status': null,
-  'cn-rebate': ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
+  'cn-rebate': ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL', 'REPORT_PILOT'],
   'weighbridge-log': ['WEIGHBRIDGE', 'WAREHOUSE', 'ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
   'wh-dispatch-daily': null,
   'sales-order-detail': null,
-  'ar-aging-summary': ['ACCOUNTING', 'MANAGER', 'ADMIN', 'C_LEVEL'],
+  'ar-aging-summary': ['ACCOUNTING', 'MANAGER', 'ADMIN', 'C_LEVEL', 'REPORT_PILOT'],
   'so-backlog': null,
-  'cn-returns': ['ACCOUNTING', 'MANAGER', 'ADMIN', 'C_LEVEL'],
+  'cn-returns': ['ACCOUNTING', 'MANAGER', 'ADMIN', 'C_LEVEL', 'REPORT_PILOT'],
   'wh-stock-balance': ['WAREHOUSE', 'ACCOUNTING', 'ADMIN', 'C_LEVEL'],
   'sales-performance': null,
   'weighbridge-variance': ['WEIGHBRIDGE', 'WAREHOUSE', 'ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
-  'ar-receipt-history': ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
-  'ap-liabilities': ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
-  'gl-sales-journal': ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
-  'cq-cheque-register': ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
+  'ar-receipt-history': ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL', 'REPORT_PILOT'],
+  'ap-liabilities': ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL', 'REPORT_PILOT'],
+  'gl-sales-journal': ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL', 'REPORT_PILOT'],
+  'so-sales-billing-projection': ['SALES', 'ACCOUNTING', 'MANAGER', 'ADMIN', 'C_LEVEL', 'REPORT_PILOT'],
+  'cq-cheque-register': ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL', 'REPORT_PILOT'],
   'sales-target-comparison': null,
   'rebate-claim-detail': (user) => canViewAllRebateAmounts(user) || ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'].includes(user?.role),
   'special-price-detail': ['MANAGER', 'APPROVER', 'ADMIN', 'C_LEVEL'],
@@ -689,7 +1013,12 @@ async function runReport(type, params = {}) {
   const def = REPORTS[type];
   if (!def) return null;
   const rows = def.run ? await def.run(params) : ((await wfQuery(def.sql)).recordset || []);
-  return { type, title: def.title, category: def.category || 'general', columns: def.columns, rows };
+  const meta = {
+    limit: def.limit || (type === 'gl-sales-journal' ? 50 : 200),
+    returnedCount: rows.length,
+    coverage: type === 'gl-sales-journal' ? 'TOP 50 latest within requested window' : undefined,
+  };
+  return { type, title: def.title, category: def.category || 'general', columns: def.columns, rows, meta };
 }
 
 router.get('/:type', async (req, res) => {
@@ -821,6 +1150,85 @@ router.get('/:type/template', async (req, res) => {
   }
 });
 
+function buildReportWorkbook(data, template = {}) {
+  const header = template.header || {};
+
+  // 1. หัวกระดาษบริษัทตาม Header Master มาตรฐาน (เคารพค่าจริง ไม่ fallback ทับค่าว่าง)
+  const companyTitle = header.companyNameTh != null ? header.companyNameTh : 'บริษัท เวิลด์ เฟอท จำกัด';
+  const subLineParts = [];
+  if (header.companyNameEn) subLineParts.push(header.companyNameEn);
+  if (header.branchNameTh) subLineParts.push(`สาขา: ${header.branchNameTh}${header.branchCode ? ` (${header.branchCode})` : ''}`);
+  if (header.taxId) subLineParts.push(`เลขประจำตัวผู้เสียภาษี: ${header.taxId}`);
+  
+  const contactParts = [];
+  if (header.addressTh) contactParts.push(`ที่อยู่: ${header.addressTh}`);
+  if (header.tel) contactParts.push(`โทร: ${header.tel}`);
+  if (header.fax) contactParts.push(`แฟกซ์: ${header.fax}`);
+
+  const headerRows = [
+    [companyTitle],
+    [subLineParts.join('  |  ')],
+    [contactParts.join('  |  ')],
+    [`รายงาน: ${data.title}  |  พิมพ์เมื่อ: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}  |  ระบบอ้างอิง: WINSpeed ERP · แม่แบบ: ${template.templateCode || 'TPL_STANDARD_TABLE'} (v${template.version || 1})`],
+    [], // บรรทัดว่างคั่นหัวกระดาษกับตาราง
+  ];
+
+  // 2. หัวตารางภาษาไทย
+  const aoa = [...headerRows, data.columns.map(c => c.label)];
+  const dataStartRowIdx = aoa.length;
+
+  // 3. ข้อมูลแถว แปลงให้ตรงกับ Column Contract
+  for (const row of data.rows) {
+    const rowArr = data.columns.map(c => {
+      const val = row[c.key];
+      if (val === null || val === undefined) return '';
+      if (c.type === 'identifier' || c.type === 'text') return String(val);
+      if (c.type === 'integer' || c.type === 'money' || c.type === 'quantity' || c.type === 'percent') {
+        const n = Number(val);
+        return Number.isNaN(n) ? String(val) : n;
+      }
+      return String(val);
+    });
+    aoa.push(rowArr);
+  }
+
+  // 4. แถวสรุปผลรวม (Total Row) เฉพาะคอลัมน์ที่มี aggregation: 'sum' (ไม่รวม ID หรือรหัส)
+  const hasSumAgg = data.columns.some(c => c.aggregation === 'sum');
+  if (hasSumAgg && data.rows.length > 0) {
+    const totalRow = data.columns.map((c, colIdx) => {
+      if (colIdx === 0) return 'รวมทั้งสิ้น (Total)';
+      if (c.aggregation === 'sum') {
+        const sum = data.rows.reduce((acc, r) => {
+          const n = Number(r[c.key]);
+          return acc + (Number.isNaN(n) ? 0 : n);
+        }, 0);
+        return c.precision != null ? Number(sum.toFixed(c.precision)) : sum;
+      }
+      return '';
+    });
+    aoa.push(totalRow);
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // บังคับ cell type 's' สำหรับ identifier เพื่อรักษา leading zeros เสมอในทุกโปรแกรม spreadsheet
+  data.columns.forEach((c, colIdx) => {
+    if (c.type === 'identifier') {
+      for (let rowIdx = dataStartRowIdx; rowIdx < dataStartRowIdx + data.rows.length; rowIdx++) {
+        const cellRef = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx });
+        if (ws[cellRef] && ws[cellRef].v !== undefined) {
+          ws[cellRef].t = 's';
+          ws[cellRef].v = String(ws[cellRef].v);
+        }
+      }
+    }
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Report');
+  return { wb, ws, aoa };
+}
+
 router.get('/:type/export', async (req, res) => {
   try {
     if (!canRunReport(req, req.params.type)) {
@@ -830,78 +1238,7 @@ router.get('/:type/export', async (req, res) => {
     if (!data) return res.status(404).json({ message: 'ไม่พบรายงาน' });
 
     const template = await resolveReportTemplate(req.params.type);
-    const header = template.header || {};
-
-    // 1. หัวกระดาษบริษัทตาม Header Master มาตรฐาน (เคารพค่าจริง ไม่ fallback ทับค่าว่าง)
-    const companyTitle = header.companyNameTh != null ? header.companyNameTh : 'บริษัท เวิลด์ เฟอท จำกัด';
-    const subLineParts = [];
-    if (header.companyNameEn) subLineParts.push(header.companyNameEn);
-    if (header.branchNameTh) subLineParts.push(`สาขา: ${header.branchNameTh}${header.branchCode ? ` (${header.branchCode})` : ''}`);
-    if (header.taxId) subLineParts.push(`เลขประจำตัวผู้เสียภาษี: ${header.taxId}`);
-    
-    const contactParts = [];
-    if (header.addressTh) contactParts.push(`ที่อยู่: ${header.addressTh}`);
-    if (header.tel) contactParts.push(`โทร: ${header.tel}`);
-    if (header.fax) contactParts.push(`แฟกซ์: ${header.fax}`);
-
-    const headerRows = [
-      [companyTitle],
-      [subLineParts.join('  |  ')],
-      [contactParts.join('  |  ')],
-      [`รายงาน: ${data.title}  |  พิมพ์เมื่อ: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}  |  ระบบอ้างอิง: WINSpeed ERP · แม่แบบ: ${template.templateCode} (v${template.version})`],
-      [], // บรรทัดว่างคั่นหัวกระดาษกับตาราง
-    ];
-
-    // 2. หัวตารางภาษาไทย
-    const aoa = [...headerRows, data.columns.map(c => c.label)];
-    const dataStartRowIdx = aoa.length;
-
-    // 3. ข้อมูลแถว แปลงให้ตรงกับ Column Contract
-    for (const row of data.rows) {
-      const rowArr = data.columns.map(c => {
-        const val = row[c.key];
-        if (val === null || val === undefined) return '';
-        if (c.type === 'identifier' || c.type === 'text') return String(val);
-        if (c.type === 'integer' || c.type === 'money' || c.type === 'quantity' || c.type === 'percent') {
-          const n = Number(val);
-          return Number.isNaN(n) ? String(val) : n;
-        }
-        return String(val);
-      });
-      aoa.push(rowArr);
-    }
-
-    // 4. แถวสรุปผลรวม (Total Row) เฉพาะคอลัมน์ที่มี aggregation: 'sum' (ไม่รวม ID หรือรหัส)
-    const hasSumAgg = data.columns.some(c => c.aggregation === 'sum');
-    if (hasSumAgg && data.rows.length > 0) {
-      const totalRow = data.columns.map((c, colIdx) => {
-        if (colIdx === 0) return 'รวมทั้งสิ้น (Total)';
-        if (c.aggregation === 'sum') {
-          const sum = data.rows.reduce((acc, r) => {
-            const n = Number(r[c.key]);
-            return acc + (Number.isNaN(n) ? 0 : n);
-          }, 0);
-          return c.precision != null ? Number(sum.toFixed(c.precision)) : sum;
-        }
-        return '';
-      });
-      aoa.push(totalRow);
-    }
-
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-    // บังคับ cell type 's' สำหรับ identifier เพื่อรักษา leading zeros เสมอในทุกโปรแกรม spreadsheet
-    data.columns.forEach((c, colIdx) => {
-      if (c.type === 'identifier') {
-        for (let rowIdx = dataStartRowIdx; rowIdx < dataStartRowIdx + data.rows.length; rowIdx++) {
-          const cellRef = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx });
-          if (ws[cellRef] && ws[cellRef].v !== undefined) {
-            ws[cellRef].t = 's';
-            ws[cellRef].v = String(ws[cellRef].v);
-          }
-        }
-      }
-    });
+    const { wb, ws } = buildReportWorkbook(data, template);
 
     const format = String(req.query.format || 'xlsx').toLowerCase();
     const dateStr = new Date().toISOString().slice(0, 10);
@@ -915,8 +1252,6 @@ router.get('/:type/export', async (req, res) => {
       return res.send(Buffer.from(bomCsv, 'utf8'));
     }
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Report');
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     const fname = `${data.type}_${dateStr}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -992,5 +1327,7 @@ async function runCustomerDispatchReport(params = {}) {
   )).recordset || [];
 }
 
+router.REPORTS = REPORTS;
 module.exports = router;
-module.exports.__testing = { runCustomerDispatchReport, resolveReportTemplate };
+module.exports.REPORTS = REPORTS;
+module.exports.__testing = { runCustomerDispatchReport, resolveReportTemplate, buildReportWorkbook };

@@ -1345,6 +1345,7 @@ export function CreateSODialog({
                         <div className="relative">
                           <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
                           <input
+                            data-testid="input-bill-cust-search"
                             type="text"
                             value={billCustSearch}
                             onChange={e => {
@@ -1365,6 +1366,7 @@ export function CreateSODialog({
                                   .map(c => (
                                     <div
                                       key={c.CustID}
+                                      data-testid={`option-cust-${c.CustID}`}
                                       className="px-3 py-1.5 text-xs hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-0 flex justify-between items-center"
                                       onClick={() => {
                                         updateBillInfo(activeBillId, {
@@ -1447,7 +1449,7 @@ export function CreateSODialog({
                                 ) : (
                                   <div className="flex items-center border border-gray-200 rounded bg-white">
                                     <button onClick={() => updateActiveLine(l.tempId, { qtyTon: Math.max(0.001, l.qtyTon - 1) })} className="px-2 py-1 text-gray-500 hover:bg-gray-100"><Minus size={12} /></button>
-                                    <input type="number" step="0.001" max={l.maxQtyTon} value={l.qtyTon || ''} onChange={e => updateActiveLine(l.tempId, { qtyTon: Number(e.target.value) })} onBlur={e => e.target.value = parseFloat(e.target.value || '0').toFixed(3)} className="w-16 text-center text-xs font-mono font-bold py-1 focus:outline-none" />
+                                    <input data-testid={`input-cart-qty-${l.goodId}`} type="number" step="0.001" max={l.maxQtyTon} value={l.qtyTon || ''} onChange={e => updateActiveLine(l.tempId, { qtyTon: Number(e.target.value) })} onBlur={e => e.target.value = parseFloat(e.target.value || '0').toFixed(3)} className="w-16 text-center text-xs font-mono font-bold py-1 focus:outline-none" />
                                     <button onClick={() => updateActiveLine(l.tempId, { qtyTon: l.qtyTon + 1 })} disabled={l.maxQtyTon !== undefined && l.qtyTon >= l.maxQtyTon} className="px-2 py-1 text-gray-500 hover:bg-gray-100 disabled:opacity-30"><Plus size={12} /></button>
                                   </div>
                                 )}
@@ -1487,7 +1489,7 @@ export function CreateSODialog({
                               ) : (
                                   <div className="flex items-center gap-1">
                                     <span className="text-[10px] text-gray-500">฿/ตัน</span>
-                                    <input type="number" value={l.pricePerTon || ''} onChange={e => updateActiveLine(l.tempId, { pricePerTon: Number(e.target.value) })} className={`w-20 text-right border rounded px-1.5 py-1 text-xs font-mono font-bold focus:outline-none focus:border-blue-400 ${priceBand.className}`} />
+                                    <input data-testid={`input-cart-price-${l.goodId}`} type="number" value={l.pricePerTon || ''} onChange={e => updateActiveLine(l.tempId, { pricePerTon: Number(e.target.value) })} className={`w-20 text-right border rounded px-1.5 py-1 text-xs font-mono font-bold focus:outline-none focus:border-blue-400 ${priceBand.className}`} />
                                   </div>
                               )}
                               {!l.isControlTicketDrawn && !l.isGiveaway && priceBand.label && (

@@ -51,7 +51,7 @@ export function TripSetupModal({
         setTruckPlates(stats.map(s => s.truckPlate).filter(Boolean));
       }).catch(console.error);
     }
-  }, [isOpen, initialData]);
+  }, [isOpen]);
 
   const handleConfirm = async () => {
     if (submitting) return;
@@ -108,6 +108,7 @@ export function TripSetupModal({
               </label>
             </div>
             <input
+              data-testid="input-trip-truck-plate"
               value={truckPlate} onChange={e => setTruckPlate(e.target.value)}
               onFocus={() => setIsTruckOpen(true)}
               onBlur={() => setTimeout(() => setIsTruckOpen(false), 200)}
@@ -159,7 +160,7 @@ export function TripSetupModal({
           <button onClick={onClose} className="px-5 py-2.5 text-gray-600 font-bold hover:bg-gray-200 rounded-xl transition-colors">
             ยกเลิก
           </button>
-          <button onClick={handleConfirm} disabled={submitting} className="px-6 py-2.5 bg-[#0C447C] text-white font-bold rounded-xl hover:bg-blue-800 transition-colors shadow-md disabled:opacity-50">
+          <button data-testid="btn-confirm-trip-setup" onClick={handleConfirm} disabled={submitting} className="px-6 py-2.5 bg-[#0C447C] text-white font-bold rounded-xl hover:bg-blue-800 transition-colors shadow-md disabled:opacity-50">
             {submitting ? 'กำลังสร้างเที่ยวรถ...' : 'ยืนยันและเริ่มจัดออร์เดอร์'}
           </button>
         </div>

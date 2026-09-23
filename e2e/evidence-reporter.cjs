@@ -120,16 +120,22 @@ class EvidenceReporter {
       changedFiles,
     };
 
-    const complete = result.status === 'passed'
-      && sourceStability.stable
-      && counts.total >= policy.minimumTestCount
-      && missingSpecs.length === 0
-      && counts.failed === 0
-      && counts.flaky === 0
-      && counts.skipped === 0
-      && counts.timedOut === 0
-      && counts.interrupted === 0
-      && counts.notRun === 0;
+    const hasFailures = counts.failed > 0 || counts.timedOut > 0 || counts.interrupted > 0;
+    const allSelectedPassed = result.status === 'passed' && !hasFailures && counts.total > 0;
+    const isFullSuite = counts.total >= policy.minimumTestCount && missingSpecs.length === 0;
+
+    const requestedScope = (
+      String(process.env.PW_SCOPE || process.env.EXECUTION_SCOPE || '').toUpperCase() === 'FOCUSED'
+    ) ? 'FOCUSED_SUITE' : 'FULL_RELEASE';
+
+    const { status, complete } = computeEvidenceStatus({
+      resultStatus: result.status,
+      counts,
+      sourceStability,
+      isFullSuite,
+      requestedScope,
+    });
+
     const evidence = {
       schemaVersion: 2,
       kind: 'WS-Sale-App Playwright E2E Evidence',
@@ -137,9 +143,14 @@ class EvidenceReporter {
       startedAt: this.startedAt.toISOString(),
       completedAt: completedAt.toISOString(),
       durationMs: completedAt - this.startedAt,
-      status: complete ? 'PASSED_COMPLETE' : 'INCOMPLETE_OR_FAILED',
+      status,
       playwrightStatus: result.status,
       complete,
+      executionScope: {
+        requested: requestedScope,
+        actual: isFullSuite ? 'FULL_RELEASE' : 'FOCUSED_SUITE',
+        isFullSuite,
+      },
       policy,
       coverage: { selectedSpecs, missingSpecs, selectedTestCount: counts.total },
       counts,
@@ -156,5 +167,52 @@ class EvidenceReporter {
   }
 }
 
+function computeEvidenceStatus({
+  resultStatus,
+  counts,
+  sourceStability,
+  isFullSuite,
+  requestedScope,
+}) {
+  const hasFailures = counts.failed > 0 || counts.timedOut > 0 || counts.interrupted > 0;
+  const allSelectedPassed = resultStatus === 'passed' && !hasFailures && counts.total > 0;
+
+  const complete = allSelectedPassed
+    && sourceStability.stable
+    && isFullSuite
+    && counts.flaky === 0
+    && counts.skipped === 0;
+
+  let status = 'INCOMPLETE_OR_FAILED';
+
+  if (requestedScope === 'FULL_RELEASE') {
+    if (complete) {
+      status = 'PASSED_COMPLETE';
+    } else {
+      // An incomplete requested full release must NEVER be relabeled PASSED_FOCUSED
+      status = 'INCOMPLETE_OR_FAILED';
+    }
+  } else if (requestedScope === 'FOCUSED_SUITE') {
+    const focusedPass = allSelectedPassed
+      && sourceStability.stable
+      && counts.flaky === 0
+      && counts.skipped === 0;
+    if (focusedPass) {
+      status = 'PASSED_FOCUSED';
+    } else {
+      status = 'INCOMPLETE_OR_FAILED';
+    }
+  } else {
+    if (complete) {
+      status = 'PASSED_COMPLETE';
+    } else {
+      status = 'INCOMPLETE_OR_FAILED';
+    }
+  }
+
+  return { status, complete };
+}
+
 module.exports = EvidenceReporter;
 module.exports.collectTrackedFiles = collectTrackedFiles;
+module.exports.computeEvidenceStatus = computeEvidenceStatus;

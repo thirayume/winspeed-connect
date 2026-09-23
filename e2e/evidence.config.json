@@ -21,7 +21,7 @@
     "docker-compose.yml",
     "deploy.ps1",
     "DEPLOY.md",
-    "backend/.env.coolify.example"
+    "backend/.env.example"
   ],
   "trackedRoots": [
     {

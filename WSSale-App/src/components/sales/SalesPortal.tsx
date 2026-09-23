@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Plus, Search, RefreshCw, ChevronRight, Filter, ChevronLeft, Package, Calendar, User, X, Clock, Truck, Gift, Trash2, FileText, Download } from 'lucide-react';
 import { Button, Card, cn } from '../ui/Base';
 import { useExport } from '../../hooks/useExport';
@@ -151,15 +151,15 @@ export const SalesPortal = () => {
     }).catch(console.error);
   }, []);
 
-  const [attemptedCustIds] = useState(() => new Set<string>());
+  const attemptedCustIdsRef = useRef(new Set<string>());
 
   useEffect(() => {
     const missingIds = Array.from(new Set(
-      orders.map(o => o.custId).filter(id => id && !customersMap[id] && !attemptedCustIds.has(id))
+      orders.map(o => o.custId).filter(id => id && !customersMap[id] && !attemptedCustIdsRef.current.has(id))
     ));
     if (missingIds.length > 0) {
       missingIds.forEach(id => {
-        attemptedCustIds.add(id);
+        attemptedCustIdsRef.current.add(id);
         fetchCustomers(id).then(res => {
           const match = res.find(c => String(c.CustID) === String(id));
           if (match) {
@@ -168,7 +168,7 @@ export const SalesPortal = () => {
         }).catch(console.error);
       });
     }
-  }, [orders, customersMap, attemptedCustIds]);
+  }, [orders, customersMap]);
 
   // Listen for real-time updates
   useSocketEvent('so_updated', () => {
@@ -523,16 +523,18 @@ export const SalesPortal = () => {
         }}
       />
 
-      <TripSetupModal
-        isOpen={isTripSetupOpen}
-        onClose={() => setIsTripSetupOpen(false)}
-        initialData={activeTrip || undefined}
-        onConfirm={(data) => {
-          setTrip(data);
-          setIsTripSetupOpen(false);
-          setIsCreating(true);
-        }}
-      />
+      {isTripSetupOpen && (
+        <TripSetupModal
+          isOpen={isTripSetupOpen}
+          onClose={() => setIsTripSetupOpen(false)}
+          initialData={activeTrip || undefined}
+          onConfirm={(data) => {
+            setTrip(data);
+            setIsTripSetupOpen(false);
+            setIsCreating(true);
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -106,6 +106,10 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── Reporting Pilot Scope Boundary (Scope A) ──────────────────
+const { reportingPilotBoundary } = require('./middleware/reporting-pilot');
+app.use(reportingPilotBoundary);
+
 // ── Routes ────────────────────────────────────────────────────
 app.use('/api/auth',   require('./routes/auth'));
 app.use('/api/master', require('./routes/master'));

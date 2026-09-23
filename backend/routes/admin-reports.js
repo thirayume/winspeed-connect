@@ -398,7 +398,7 @@ router.post(['/templates', '/report-templates'], async (req, res) => {
     const newRecord = await wfTransaction(async (tx) => {
       // Validate active header under lock
       const headerCheck = (await tx.request()
-        .input('headerId', sql.Int, Number(headerId))
+        .input('headerId', sql.Int, Number(fHeaderId))
         .query(`SELECT HeaderId, IsActive FROM wf.ReportHeaderMaster WITH (HOLDLOCK) WHERE HeaderId = @headerId`)).recordset;
 
       if (!headerCheck || headerCheck.length === 0 || !headerCheck[0].IsActive) {
@@ -508,7 +508,7 @@ router.put(['/templates/:id', '/report-templates/:id'], async (req, res) => {
       return res.status(400).json({ message: 'ต้องระบุเหตุผลในการแก้ไขแม่แบบ (reason is required)' });
     }
 
-    if (expectedVersion === undefined || expectedVersion === null || isNaN(Number(expectedVersion))) {
+    if (finalExpectedVersion === undefined || finalExpectedVersion === null || isNaN(Number(finalExpectedVersion))) {
       return res.status(400).json({ message: 'ต้องระบุ expectedVersion สำหรับการตรวจสอบความสอดคล้องของข้อมูล (Optimistic Concurrency Control)' });
     }
 

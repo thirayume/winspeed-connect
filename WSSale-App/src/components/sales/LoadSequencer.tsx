@@ -71,7 +71,7 @@ export function LoadSequencer({
       initialLines.forEach((l, i) => l.newSequence = i + 1);
       setLines(initialLines);
     }
-  }, [isOpen, tripOrders]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
