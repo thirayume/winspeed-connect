@@ -1,0 +1,4 @@
+const d=require('../db');
+(async()=>{await d.runWithTarget('remote_b',async()=>{
+for(const q of ["SELECT t.name,c.name col,TYPE_NAME(c.user_type_id) typ,c.max_length,c.is_nullable,c.is_identity FROM sys.tables t JOIN sys.columns c ON c.object_id=t.object_id WHERE t.name IN ('WGHD','WGDT','WGDTReport') ORDER BY t.name,c.column_id", "SELECT TOP 4 h.SOID,h.DocuNo,d.ListNo,d.GoodID,d.GoodQty2,u.GoodUnitName FROM dbo.SOHD h JOIN dbo.SODT d ON d.SOID=h.SOID JOIN dbo.EMGoodUnit u ON u.GoodUnitID=d.GoodUnitID2 WHERE h.DocuType=103 AND h.DocuStatus<>'C' AND d.GoodQty2>=10 AND RTRIM(u.GoodUnitName)=N'ตัน' ORDER BY h.SOID DESC,d.ListNo"]) console.log(JSON.stringify(await d.query(q)));
+});})().catch(e=>{console.error(e.message);process.exitCode=1}).finally(async()=>{for(const p of Object.values(d.pools('remote_b')))if(p&&p.close)await p.close()});

@@ -1,0 +1,32 @@
+{
+  "runId": "rehearsal_1789911273439",
+  "targetDbName": "dbwins_worldfert9_rehearsal_1789911273439",
+  "targetHost": "Amyou-Yoga7\\SQLEXPRESS",
+  "serverIdentity": {
+    "ServerName": "Amyou-Yoga7\\SQLEXPRESS",
+    "MachineName": "Amyou-Yoga7",
+    "InstanceName": "SQLEXPRESS"
+  },
+  "clientBackupPath": "C:\\MyWork\\WorldFert\\dbwins_worldfert9_20260906.bak",
+  "serverBackupPath": "C:\\MyWork\\WorldFert\\dbwins_worldfert9_20260906.bak",
+  "backupSha256": "41C36EA663A172C0C98060032FBD29F3C62621DC39B4C9DFD1165289A812CD0F",
+  "backupSetGuid": "C2DED8ED-07CD-4C8C-9D4A-BFD0DB80FB3D",
+  "mappedFiles": [
+    {
+      "logicalName": "dbERP_New_Data",
+      "type": "D",
+      "size": 3855351808,
+      "physPath": "C:\\Program Files\\Microsoft SQL Server\\MSSQL16.SQLEXPRESS\\MSSQL\\DATA\\dbwins_worldfert9_rehearsal_1789911273439_dbERP_New_Data.mdf",
+      "volume": "C:\\"
+    },
+    {
+      "logicalName": "dbERP_New_Log",
+      "type": "L",
+      "size": 10979966976,
+      "physPath": "C:\\Program Files\\Microsoft SQL Server\\MSSQL16.SQLEXPRESS\\MSSQL\\DATA\\dbwins_worldfert9_rehearsal_1789911273439_dbERP_New_Log.ldf",
+      "volume": "C:\\"
+    }
+  ],
+  "status": "PLAN_VERIFIED",
+  "createdAt": "2026-09-20T13:34:33.553Z"
+}
