@@ -103,8 +103,8 @@ async function getCouponsForCustomer(customerId, options = {}) {
       b.OwnerCustId = CAST(s.CustID AS VARCHAR(50))
       AND b.BeneficiaryCustId = @custId
       AND b.Status = 'ACTIVE'
-      AND (b.EffectiveFrom IS NULL OR b.EffectiveFrom <= GETUTCDATE())
-      AND (b.EffectiveTo IS NULL OR b.EffectiveTo >= GETUTCDATE())
+      AND (b.EffectiveFrom IS NULL OR b.EffectiveFrom <= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
+      AND (b.EffectiveTo IS NULL OR b.EffectiveTo >= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
       AND (b.Scope = 'ALL' OR b.Scope = CAST(c.GoodID AS VARCHAR(50)))
     WHERE (
       CAST(s.CustID AS VARCHAR(50)) = @custId
@@ -137,8 +137,8 @@ async function getCouponsForCustomer(customerId, options = {}) {
             WHERE b.OwnerCustId = CAST(s.CustID AS VARCHAR(50))
               AND b.BeneficiaryCustId = @custId
               AND b.Status = 'ACTIVE'
-              AND (b.EffectiveFrom IS NULL OR b.EffectiveFrom <= GETUTCDATE())
-              AND (b.EffectiveTo IS NULL OR b.EffectiveTo >= GETUTCDATE())
+              AND (b.EffectiveFrom IS NULL OR b.EffectiveFrom <= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
+              AND (b.EffectiveTo IS NULL OR b.EffectiveTo >= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
               AND (b.Scope = 'ALL' OR b.Scope = CAST(c.GoodID AS VARCHAR(50)))
           )
         )
@@ -207,8 +207,8 @@ async function getCouponsForCustomer(customerId, options = {}) {
           SELECT OwnerCustId, BeneficiaryCustId, BeneficiaryCustName, Scope, EffectiveTo, Reason
           FROM wf.CouponBeneficiary WITH (NOLOCK)
           WHERE OwnerCustId IN (${idList}) AND Status = 'ACTIVE'
-            AND (EffectiveFrom IS NULL OR EffectiveFrom <= GETUTCDATE())
-            AND (EffectiveTo IS NULL OR EffectiveTo >= GETUTCDATE())
+            AND (EffectiveFrom IS NULL OR EffectiveFrom <= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
+            AND (EffectiveTo IS NULL OR EffectiveTo >= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
         `);
         for (const b of bRes.recordset || []) {
           const arr = beneficiariesMap.get(String(b.OwnerCustId)) || [];
@@ -314,8 +314,8 @@ async function checkBeneficiaryAuthorization(ownerCustId, beneficiaryCustId = nu
     WHERE OwnerCustId = @owner
       AND BeneficiaryCustId = @ben
       AND Status = 'ACTIVE'
-      AND (EffectiveFrom IS NULL OR EffectiveFrom <= GETUTCDATE())
-      AND (EffectiveTo IS NULL OR EffectiveTo >= GETUTCDATE())
+      AND (EffectiveFrom IS NULL OR EffectiveFrom <= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
+      AND (EffectiveTo IS NULL OR EffectiveTo >= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
       AND (Scope = 'ALL' OR Scope = @goodIdStr)
     ORDER BY Id DESC
   `;

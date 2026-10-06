@@ -2536,8 +2536,8 @@ router.get('/coupons-worklist', async (req, res) => {
       FROM wf.CouponBeneficiary b WITH (NOLOCK)
       LEFT JOIN dbo.EMCust cu ON CAST(cu.CustID AS NVARCHAR(50)) = b.BeneficiaryCustId OR cu.CustCode = b.BeneficiaryCustCode
       WHERE b.Status = 'ACTIVE'
-        AND (b.EffectiveFrom IS NULL OR b.EffectiveFrom <= GETUTCDATE())
-        AND (b.EffectiveTo IS NULL OR b.EffectiveTo >= GETUTCDATE())
+        AND (b.EffectiveFrom IS NULL OR b.EffectiveFrom <= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
+        AND (b.EffectiveTo IS NULL OR b.EffectiveTo >= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
     `);
     const beneMap = new Map();
     for (const b of benesRes.recordset || []) {
@@ -2663,8 +2663,8 @@ router.get('/coupons/:custId', async (req, res) => {
       FROM wf.CouponBeneficiary b WITH (NOLOCK)
       LEFT JOIN dbo.EMCust cu ON CAST(cu.CustID AS NVARCHAR(50)) = b.BeneficiaryCustId OR cu.CustCode = b.BeneficiaryCustCode
       WHERE b.OwnerCustId = @cid AND b.Status = 'ACTIVE'
-        AND (b.EffectiveFrom IS NULL OR b.EffectiveFrom <= GETUTCDATE())
-        AND (b.EffectiveTo IS NULL OR b.EffectiveTo >= GETUTCDATE())
+        AND (b.EffectiveFrom IS NULL OR b.EffectiveFrom <= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
+        AND (b.EffectiveTo IS NULL OR b.EffectiveTo >= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
     `, { cid: { type: sql.NVarChar(20), value: custId } })).recordset || [];
 
     const isSales = req.user?.role === 'SALES';

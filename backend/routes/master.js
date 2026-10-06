@@ -1224,7 +1224,30 @@ router.get('/control-tickets/:docuNo/trace', async (req, res) => {
 });
 
 // ── PATCH /api/master/control-tickets/:docuNo/expiry — บันทึก/แก้ไขวันหมดอายุและ Strict Override (SO-04) ──
-router.patch('/control-tickets/:docuNo/expiry', requireRole('SALES', 'ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
+// R12 O-4: a team-scoped user changes the expiry only of a ticket sold by someone in their scope. The ticket is a
+// WFCoupon row; its owner is the salesperson of the document that issued it (UAT batch 8, F-03: one salesperson
+// could move another's ticket expiry).
+async function requireTicketInScope(req, res, next) {
+  try {
+    const { getVisibleScope, inScope } = require('../services/visible-scope');
+    const scope = await getVisibleScope(req.user);
+    if (scope.all) return next();
+    const exactId = req.body?.exactId || req.query?.exactId;
+    const rows = (await query(`
+      SELECT CAST(s.EmpID AS VARCHAR(20)) AS EmpID
+      FROM dbo.WFCoupon c WITH (NOLOCK) JOIN dbo.SOHD s WITH (NOLOCK) ON s.SOID = c.DocuID
+      WHERE ${exactId ? 'c.CouponID = @cid' : 'c.CouponNo = @no'}`, {
+      cid: { type: sql.Int, value: Number(exactId) || 0 },
+      no: { type: sql.VarChar(30), value: String(req.params.docuNo || '').trim() },
+    })) || [];
+    if (!rows.length || !rows.every(r => inScope(scope, { empId: r.EmpID }))) {
+      return res.status(404).json({ message: 'ไม่พบตั๋วคุมนี้' });
+    }
+    next();
+  } catch (e) { res.status(500).json({ message: e.message }); }
+}
+
+router.patch('/control-tickets/:docuNo/expiry', requireRole('SALES', 'ADMIN', 'C_LEVEL', 'MANAGER'), requireTicketInScope, async (req, res) => {
   try {
     const { updateTicketExpiryOverlay } = require('../services/ticket-policy');
     const { expiryDate, strictOverride, reasonCode, reasonText, exactId } = req.body || {};
