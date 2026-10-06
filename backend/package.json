@@ -1,6 +1,6 @@
 {
   "name": "backend",
-  "version": "2.0.1",
+  "version": "1.0.0-beta.1",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -9,7 +9,8 @@
     "test:unit": "node --test tests/policy-contract.test.js tests/db-target-policy.test.js tests/rebate.test.js tests/weight-reconciliation.test.js",
     "test:integration": "node --test tests/integration-phase-c.test.js tests/integration-so-04.test.js tests/integration-so-03.test.js tests/integration-phase-a.test.js tests/integration-so-01-02.test.js",
     "test:all": "node --test tests/*.test.js",
-    "migrate:plan": "node run_migrations.js --plan"
+    "migrate:plan": "node run_migrations.js --plan",
+    "test:rehearsal:offline": "node --require ./tests/helpers/offline-db-sentinel.cjs --test run_migrations.test.js tests/package-a-offline.test.js tests/test-safety-guard.test.js tests/package-b-sql-compat.test.js tests/package-b-oracle-error.test.js tests/package-c-rehearsal-offline.test.js tests/env-audit.test.js"
   },
   "keywords": [],
   "author": "",
