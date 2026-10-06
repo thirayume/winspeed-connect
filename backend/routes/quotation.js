@@ -13,6 +13,7 @@ const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-s
 const { broadcast } = require('../services/socket');
 const { getNextSequenceValue } = require('../services/sequence-service');
 const { advanceRunCounter, RUN_CODE_BY_DOC_KIND } = require('../services/winspeed-counter');
+const { toBangkokDateString } = require('../services/coupon-settlement-matcher');
 
 router.use(requireAuth);
 
@@ -65,12 +66,14 @@ async function assertNativeQuotationReady() {
   }
 }
 
+// A date-only value at UTC midnight so sql.Date stores exactly that day. The business day is Bangkok's:
+// before 07:00 local time UTC is still on the previous day, which made "+45 days" one day short (UAT SO-21).
 function normalizeValidUntil(validUntil, validDays) {
-  if (validUntil) return new Date(validUntil);
+  if (validUntil) return new Date(String(validUntil).slice(0, 10) + 'T00:00:00Z');
   const allowed = [7, 15, 20, 30, 45];
   const days = allowed.includes(Number(validDays)) ? Number(validDays) : 15;
-  const d = new Date();
-  d.setDate(d.getDate() + days);
+  const d = new Date(toBangkokDateString(new Date()) + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
   return d;
 }
 

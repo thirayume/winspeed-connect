@@ -101,3 +101,17 @@ test('QT-F1 (live finding): the QU number counts WINSpeed\'s 102 counter and adv
   assert.equal(adv.inputs.rc, '102');
   assert.equal(adv.inputs.no, r.body.quoteNo);
 });
+
+test('UAT SO-21: "+N days" counts from the Bangkok business day, stored as a date-only value', async () => {
+  const before = db.calls.length;
+  const r = await app.call('POST', '/api/quotation', {
+    body: { custId: '1141', custName: 'ร้านสุวรรณภัณฑ์', validDays: 45, lines: [{ goodId: '1114', goodName: '15-15-15', qtyTon: 1, pricePerTon: 19000 }] },
+    user: { sub: 25, role: 'MANAGER' },
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const ins = db.calls.slice(before).find(c => /INSERT INTO wf\.Quotation \(/.test(c.text));
+  const stored = new Date(ins.inputs.vu);
+  const bkkToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const expected = new Date(bkkToday + 'T00:00:00Z'); expected.setUTCDate(expected.getUTCDate() + 45);
+  assert.equal(stored.toISOString(), expected.toISOString());
+});

@@ -58,3 +58,16 @@ test('U-5: a giveaway within quota is stored as pieces (QtyTon 0, MasterQty 0, Q
   assert.equal(Number(lineInsert.inputs.qtyBag), 250, 'pieces, not pieces × BagPerTon');
   assert.equal(Number(lineInsert.inputs.isGiveaway), 1);
 });
+
+test('UAT SO-20: a rebate discount sent by SALES is ignored; ADMIN may set it (same roles as the bill editor)', async () => {
+  state.remaining = 300;
+  const withRebate = { ...order(10), rebateDiscountAmt: 500 };
+  let before = db.calls.length;
+  await app.call('POST', '/api/so', { body: withRebate, user: { sub: 34, role: 'SALES' } });
+  const salesInsert = db.calls.slice(before).find(c => /INSERT INTO wf\.SalesOrder\s*\(/.test(c.text));
+  assert.equal(Number(salesInsert.inputs.rebateDiscountAmt), 0);
+  before = db.calls.length;
+  await app.call('POST', '/api/so', { body: { ...withRebate, salesUserId: 34 }, user: { sub: 1, role: 'ADMIN' } });
+  const adminInsert = db.calls.slice(before).find(c => /INSERT INTO wf\.SalesOrder\s*\(/.test(c.text));
+  assert.equal(Number(adminInsert.inputs.rebateDiscountAmt), 500);
+});

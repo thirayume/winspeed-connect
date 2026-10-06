@@ -8,7 +8,12 @@ const { validateBookingNotes } = require('../services/booking-notes');
 const router = require('express').Router();
 const { sql, wfQuery, wfTransaction, getTarget } = require('../db');
 const { toHttpError } = require('../services/error-adapter');
-const { requireAuth, requireRole, requireCapability, requireRebateAmountAccess, canViewRebateAmounts } = require('../middleware/auth');
+const { requireAuth, requireRole, requireCapability, requireRebateAmountAccess, canViewAllRebateAmounts } = require('../middleware/auth');
+
+// Rebate on bills (amounts, discount at create/edit): the roles the bill editor shows it to. SALES lost rebate
+// visibility at go-live (frontend permissions.ts REBATE_OWN_ROLES = []); the API used the wider rebate-report rule
+// and still accepted a SALES discount sent directly (UAT batch 4, SO-20).
+const canViewRebateAmounts = canViewAllRebateAmounts;
 const { generateImportFiles } = require('../services/winspeed-import.service');
 const { broadcast } = require('../services/socket');
 const { enqueue } = require('../services/outbox');
@@ -3001,6 +3006,10 @@ router.post('/bulk-cancel-delete', requireRole('SALES', 'ADMIN', 'C_LEVEL'), asy
         if (op === 'DELETE') {
           const isWebDraft = !so.ImportedDocuNo;
           if (isWebDraft) {
+            // a deleted draft closes its open price approvals; otherwise managers keep approving a bill
+            // that no longer exists (UAT batch 4, SO-14)
+            await tx.request().input('id', sql.Int, so.Id)
+              .query(`UPDATE wf.PriceApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE SoId = @id AND Status = 'PENDING'`);
             const reqLine = tx.request();
             reqLine.input('id', sql.Int, so.Id);
             await reqLine.query(`DELETE FROM wf.SalesOrderLine WHERE SoId=@id`);
@@ -3242,6 +3251,9 @@ router.delete('/:id', requireRole('SALES', 'ADMIN', 'C_LEVEL'), requireSoInScope
     await wfTransaction(async (tx) => {
       const isWebDraft = !so.ImportedDocuNo;
       if (isWebDraft) {
+        // a deleted draft closes its open price approvals (UAT batch 4, SO-14)
+        await tx.request().input('id', sql.Int, so.Id)
+          .query(`UPDATE wf.PriceApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE SoId = @id AND Status = 'PENDING'`);
         const reqLine = tx.request();
         reqLine.input('id', sql.Int, so.Id);
         await reqLine.query(`DELETE FROM wf.SalesOrderLine WHERE SoId=@id`);
