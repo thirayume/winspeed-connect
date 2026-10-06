@@ -49,9 +49,19 @@ router.post('/dsar/export', async (req, res) => {
     if (subjectType === 'CUSTOMER') {
       data.master = (await query(`SELECT TOP 1 * FROM dbo.EMCust WHERE CAST(CustID AS NVARCHAR(20))=@c`,
         { c: { type: sql.NVarChar(20), value: String(subjectId) } }))[0] || null;
-      data.salesOrders = (await wfQuery(`SELECT TOP 200 Id, WfRef, Status, CONVERT(VARCHAR(10),CreatedAt,120) AS CreatedAt
-        FROM wf.v_AllSalesOrders WHERE CAST(CustId AS NVARCHAR(20))=@c ORDER BY CreatedAt DESC`,
-        { c: { type: sql.NVarChar(20), value: String(subjectId) } })).recordset;
+      // Read the two base tables by customer id instead of wf.v_AllSalesOrders with CAST(CustId …): the view
+      // spans every native booking/sales order and the cast defeats the CustID index, so the export timed out
+      // on real data (UAT batch 7, ADM-06).
+      const custNo = /^\d{1,10}$/.test(String(subjectId)) ? Number(subjectId) : null;
+      data.salesOrders = (await wfQuery(`SELECT TOP 200 Id, WfRef, DocuType, Status, CONVERT(VARCHAR(10), CreatedAt, 120) AS CreatedAt FROM (
+          SELECT CAST(s.Id AS VARCHAR(50)) AS Id, s.WfRef, CAST(NULL AS INT) AS DocuType, s.Status, s.CreatedAt
+          FROM wf.SalesOrder s WHERE CAST(s.CustId AS NVARCHAR(20)) = @c
+          UNION ALL
+          SELECT CAST(h.SOID AS VARCHAR(50)), h.DocuNo, h.DocuType,
+                 CASE WHEN h.DocuStatus = 'C' THEN 'CANCELLED' ELSE 'NATIVE' END, h.DocuDate
+          FROM dbo.SOHD h WITH (NOLOCK) WHERE @cid IS NOT NULL AND h.CustID = @cid AND h.DocuType IN (103, 104)
+        ) x ORDER BY CreatedAt DESC`,
+        { c: { type: sql.NVarChar(20), value: String(subjectId) }, cid: { type: sql.Int, value: custNo } })).recordset;
       data.creditMaster = (await wfQuery(`SELECT CustId, CreditLimit, CreditHold, Note FROM wf.CreditMaster WHERE CustId=@c`,
         { c: { type: sql.NVarChar(20), value: String(subjectId) } })).recordset[0] || null;
     } else if (subjectType === 'USER') {
