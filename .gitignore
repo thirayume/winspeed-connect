@@ -105,3 +105,8 @@ deploy/truckscale-replica/dsn-backup/
 # Python build artifacts — เคยมี IP ผู้ดูแลหลุดออกไปกับไฟล์ .pyc
 __pycache__/
 *.pyc
+
+# Local-only work products — never in this public repo (business data, scratch tooling, run evidence)
+scratch/
+/evidence/
+backend/scripts/116-baseline*.json
