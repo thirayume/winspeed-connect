@@ -3,6 +3,7 @@
  * อ่าน wf.ApprovalPolicy แทน hardcode role · คืน role ที่มีอำนาจอนุมัติตาม case + จำนวนเงิน + วันที่
  */
 const { sql, wfQuery } = require('../db');
+const { toBangkokDateString } = require('./coupon-settlement-matcher');
 
 async function resolveApprovalPolicy(caseType, amount = null, atDate = null) {
   const r = await wfQuery(`
@@ -15,7 +16,9 @@ async function resolveApprovalPolicy(caseType, amount = null, atDate = null) {
     {
       c: { type: sql.NVarChar(40),  value: caseType },
       a: { type: sql.Decimal(18, 2), value: amount },
-      d: { type: sql.Date,          value: atDate || new Date() },
+      // policies take effect on Bangkok business dates; a JS Date would be sent as its UTC date, which is the
+      // previous day before 07:00 and made a policy effective "today" invisible until then (UAT APV-06)
+      d: { type: sql.Date,          value: new Date(toBangkokDateString(atDate || new Date()) + 'T00:00:00Z') },
     });
   return r.recordset[0] || null;
 }

@@ -207,7 +207,9 @@ router.post('/customer-requests', requireRole('SALES', 'COUNTER_SALES', 'ADMIN',
     if (!CustName || !String(CustName).trim()) {
       return res.status(400).json({ message: 'กรุณาระบุชื่อลูกค้า' });
     }
-    const r = await query(`
+    // query() returns the recordset itself; reading .recordset[0] threw after the row was saved, so the screen
+    // showed an error and people sent the same request again (UAT APV-07)
+    const rows = await query(`
       INSERT INTO wf.CustomerRequest
         (CustName, ContactName, Tel, Mobile, TaxId, Address, Note, RequestedBy)
       OUTPUT inserted.Id
@@ -223,7 +225,7 @@ router.post('/customer-requests', requireRole('SALES', 'COUNTER_SALES', 'ADMIN',
       note: { type: sql.NVarChar(500), value: Note || null },
       uid: { type: sql.Int, value: req.user.sub },
     });
-    res.status(201).json({ id: r.recordset[0].Id });
+    res.status(201).json({ id: rows[0]?.Id });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 

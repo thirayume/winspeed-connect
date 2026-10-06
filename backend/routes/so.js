@@ -2349,7 +2349,11 @@ router.post('/:id/unlock-request', requireRole('SALES', 'COUNTER_SALES', 'WAREHO
       return res.status(400).json({ message: 'ต้องระบุเหตุผลอย่างน้อย 5 ตัวอักษร' });
     if (!['UNLOCK', 'EDIT', 'CANCEL'].includes(reqType))
       return res.status(400).json({ message: 'ประเภทคำขอไม่ถูกต้อง' });
-      
+    // the approver can unlock only a bill in PICKING; a request taken at any other stage could never be
+    // approved and sat in accounting's queue for good (UAT APV-02)
+    if (reqType === 'UNLOCK' && so.Status !== 'PICKING')
+      return res.status(409).json({ message: `ขอปลดล็อกได้เมื่อบิลอยู่ระหว่างจัดของ (PICKING) เท่านั้น — ตอนนี้ ${so.Status}` });
+
     const dup = (await wfQuery(`SELECT TOP 1 Id FROM wf.UnlockRequest WHERE SoId=@so AND Status='PENDING'`,
       { so: { type: sql.NVarChar(50), value: so.Id } })).recordset[0];
     if (dup) return res.status(400).json({ message: 'มีคำขอที่รออนุมัติอยู่แล้ว' });
