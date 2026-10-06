@@ -179,17 +179,22 @@ export const fetchGoods = (q?: string) => {
   return cachedReq<EMGood[]>(`goods:${target}:${qs}`, () => req<EMGood[]>(`/master/goods${qs}`, { silent: true }));
 };
 
-export const fetchGiveawayGoods = (salesUserId?: string) => {
-  const target = dbTargetHeader()['X-DB-Target'] || '';
-  const qs = salesUserId ? `?salesUserId=${encodeURIComponent(salesUserId)}` : '';
-  return cachedReq<EMGood[]>(`giveaway-goods:${target}:${salesUserId || ''}`, () => req<EMGood[]>(`/master/giveaway-goods${qs}`, { silent: true }));
+// ไม่แคช: โควต้าคงเหลือเปลี่ยนทุกครั้งที่มีบิลร่าง/ยืนยัน/ยืม (R11 U-7)
+export const fetchGiveawayGoods = (salesUserId?: string, excludeSoId?: string) => {
+  const params = new URLSearchParams();
+  if (salesUserId) params.set('salesUserId', salesUserId);
+  if (excludeSoId) params.set('excludeSoId', excludeSoId);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return req<EMGood[]>(`/master/giveaway-goods${qs}`, { silent: true });
 };
 
 export const updateGood = (id: string, patch: Partial<EMGood>) =>
   req<{ ok: boolean }>(`/master/goods/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
 
-export const fetchPrices = (params?: { custId?: string; goodId?: string }) => {
-  const qs = new URLSearchParams(params as Record<string, string>).toString();
+export const fetchPrices = (params?: { custId?: string; goodId?: string; asOf?: string }) => {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params || {}).filter(([, v]) => v !== undefined && v !== ''))
+  ).toString();
   return req<CurrentPrice[]>(`/master/prices${qs ? `?${qs}` : ''}`);
 };
 
@@ -202,27 +207,72 @@ export const createPrice = (payload: { GoodID: string; CustID: string | null; Go
 export const bulkExtendPrices = (payloads: { GoodID: string; CustID: string | null; GoodPriceNet: number; BeginDate: string; EndDate: string; startgoodqty: number; endgoodqty: number }[]) =>
   req<{ ok: boolean; createdCount: number }>('/master/prices/bulk-extend', { method: 'POST', body: JSON.stringify({ items: payloads }) });
 
-export const fetchControlTickets = (custId?: string, includeCompleted?: boolean) => {
+export interface ControlTicketPaginationEnvelope {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  data: import('../types').ControlTicket[];
+}
+
+export const fetchControlTickets = (
+  params?: string | {
+    custId?: string;
+    includeCompleted?: boolean;
+    tab?: string;
+    q?: string;
+    page?: number;
+    pageSize?: number;
+    paginated?: boolean;
+  },
+  includeCompleted?: boolean
+) => {
   const qs = new URLSearchParams();
-  if (custId) qs.set('custId', custId);
-  if (includeCompleted) qs.set('includeCompleted', 'true');
+  if (typeof params === 'object' && params !== null) {
+    if (params.custId) qs.set('custId', params.custId);
+    if (params.includeCompleted) qs.set('includeCompleted', 'true');
+    if (params.tab) qs.set('tab', params.tab);
+    if (params.q) qs.set('q', params.q);
+    if (params.page !== undefined) qs.set('page', String(params.page));
+    if (params.pageSize !== undefined) qs.set('pageSize', String(params.pageSize));
+    if (params.paginated !== undefined) qs.set('paginated', String(params.paginated));
+  } else {
+    if (params) qs.set('custId', params);
+    if (includeCompleted) qs.set('includeCompleted', 'true');
+  }
   const str = qs.toString();
-  return req<import('../types').ControlTicket[]>(`/master/control-tickets${str ? `?${str}` : ''}`);
+  return req<any>(`/master/control-tickets${str ? `?${str}` : ''}`);
 };
 
-export const fetchControlTicketDraws = (docuNo: string) =>
-  req<import('../types').ControlTicketDraw[]>(`/master/control-tickets/${encodeURIComponent(docuNo)}/draws`);
+export const fetchControlTicketDraws = (docuNo: string, params?: { exactId?: number; entityType?: string }) => {
+  const query = new URLSearchParams();
+  if (params?.exactId) query.set('exactId', String(params.exactId));
+  if (params?.entityType) query.set('entityType', params.entityType);
+  const qs = query.toString();
+  return req<import('../types').ControlTicketDraw[]>(`/master/control-tickets/${encodeURIComponent(docuNo)}/draws${qs ? `?${qs}` : ''}`);
+};
 
-export const fetchControlTicketDetails = (docuNo: string) =>
-  req<{ ListNo: number; GoodID: string; GoodCode: string; GoodName: string; QtyTon: number; PricePerTon: number; NetPricePerTon: number; BagPerTon: number }[]>(`/master/control-tickets/${encodeURIComponent(docuNo)}`);
+export const fetchControlTicketDetails = (docuNo: string, params?: { exactId?: number; entityType?: string }) => {
+  const query = new URLSearchParams();
+  if (params?.exactId) query.set('exactId', String(params.exactId));
+  if (params?.entityType) query.set('entityType', params.entityType);
+  const qs = query.toString();
+  return req<{ ListNo: number; GoodID: string; GoodCode: string; GoodName: string; QtyTon: number; PricePerTon: number; NetPricePerTon: number; BagPerTon: number }[]>(`/master/control-tickets/${encodeURIComponent(docuNo)}${qs ? `?${qs}` : ''}`);
+};
 
-export const fetchControlTicketTrace = (docuNo: string) =>
-  req<any>(`/master/control-tickets/${encodeURIComponent(docuNo)}/trace`);
+export const fetchControlTicketTrace = (docuNo: string, params?: { exactId?: number; entityType?: string }) => {
+  const query = new URLSearchParams();
+  if (params?.exactId) query.set('exactId', String(params.exactId));
+  if (params?.entityType) query.set('entityType', params.entityType);
+  const qs = query.toString();
+  return req<any>(`/master/control-tickets/${encodeURIComponent(docuNo)}/trace${qs ? `?${qs}` : ''}`);
+};
 
 export const fetchControlTicketAlerts = () =>
   req<{ AlertId: number; DocuNo: string; AlertType: string; LeadDays: number; AlertDate: string; ExpiryDate: string; Status: string }[]>('/master/control-tickets/alerts');
 
 export const updateControlTicketExpiry = (docuNo: string, params: {
+  exactId?: number;
   expiryDate?: string | null;
   strictOverride?: boolean;
   reasonCode: string;
@@ -573,6 +623,119 @@ export const fetchCouponCustomers = (params?: { empId?: number }) => {
 export const fetchCouponDetail = (custId: string) =>
   req<import('../types').CouponRow[]>(`/rebate/coupons/${encodeURIComponent(custId)}`);
 
+export const fetchCouponWorklist = (params?: { warningDays?: number }) => {
+  const qs = params?.warningDays ? `?warningDays=${params.warningDays}` : '';
+  return req<import('../types').CouponWorklistRow[]>(`/rebate/coupons-worklist${qs}`);
+};
+
+export const applyRebateClaimToBill = (claimId: number, targetSoId: number | string, discountAmt?: number) =>
+  req<{ success: boolean; message: string; data: any }>(`/rebate/claims/${claimId}/apply-to-bill`, {
+    method: 'POST',
+    body: JSON.stringify({ soId: targetSoId, targetSoId, discountAmt })
+  });
+
+export interface CouponSettlementResult {
+  settledCount: number;
+  settlements: Array<{
+    reservationId?: number;
+    redemptionId: number;
+    docuNo?: string;
+    qty?: number;
+    redemptionDocuNo?: string;
+    nativeDocuNo?: string;
+    matchedQty?: number;
+    settledQty?: number;
+  }>;
+  ambiguous?: Array<{
+    redemptionId?: number | string;
+    docuNo?: string;
+    qty?: number;
+    reason?: string;
+  }>;
+  unmatched?: UnmatchedCut[];
+  processedCoupons?: number;
+  note?: string;
+}
+
+export interface CandidateReservation {
+  id: string | number;
+  carrierSoId?: string;
+  carrierDocuNo?: string;
+  plate?: string;
+  reservedQty?: number;
+  remainingReservedQty?: number;
+  confirmDate?: string;
+  beneficiaryCustId?: string;
+  beneficiaryName?: string;
+  beneficiaryCode?: string;
+}
+
+export interface UnmatchedCut {
+  redemptionId: string | number;
+  docuNo: string;
+  docuDate: string;
+  goodQty: number;
+  receiver?: string;
+  plate?: string;
+  reason: 'CUT_BEFORE_CONFIRM' | 'QTY_MISMATCH' | 'RECEIVER_MISMATCH' | 'NO_CANDIDATE';
+  candidateReservations: CandidateReservation[];
+}
+
+// R12 K-F4 — account books (read-only)
+export type ActiveBooks = {
+  books: { runCode: string; label: string; runFormat: string; lastNo: string; activeBook: 'I' | 'K' | null; activeAccount: 1 | 2 | null }[];
+  cutsAwaitingInvoice: { account1: number; account2: number };
+  note: string;
+};
+export type AccountMismatch = {
+  RedemtionID: number; CutNo: string; CutDate: string; CouponNo: string; CouponSoNo: string;
+  SOInvID: number; InvoiceNo: string; InvoiceDate: string; NetAmnt: number;
+  book: 'I' | 'K'; account: 1 | 2; expectedInvoiceSeries: string; actualInvoiceSeries: string; message: string;
+};
+export const fetchActiveBooks = () => req<ActiveBooks>('/recon/active-books');
+export const fetchAccountMismatches = (days = 60) =>
+  req<{ days: number; count: number; data: AccountMismatch[] }>(`/recon/account-mismatches?days=${days}`);
+
+export const settleCouponCuts = (couponId?: number) =>
+  req<CouponSettlementResult>('/coupons/settle-cuts', {
+    method: 'POST',
+    body: JSON.stringify(couponId ? { couponId } : {}),
+  });
+
+export const manualSettleCouponCut = (payload: {
+  reservationId: string | number;
+  redemptionId: string | number;
+  reason: string;
+  qty?: number;
+  beneficiaryCustId?: string;
+  overridePlate?: boolean;
+}) =>
+  req<{
+    success: boolean;
+    settledQty: number;
+    reservationId: string | number;
+    redemptionId: string | number;
+    status: string;
+  }>('/coupons/manual-settle', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const fetchCouponReconcile = (couponId: number) =>
+  req<any>(`/coupons/reconcile/${couponId}`);
+
+export const fetchCouponExpiry = (couponId: number) =>
+  req<{
+    couponId: number;
+    docuDate: string;
+    expiryDate: string;
+    daysRemaining: number;
+    isExpired: boolean;
+    isWarning: boolean;
+    isPolicyOverridden?: boolean;
+    remainingTon: number;
+  }>(`/coupons/${couponId}/expiry`);
+
 // ── Giveaway (qty model) ──────────────────────────────────────
 export const fetchGiveawayRegions = (year?: number) =>
   req<GiveawayRegion[]>(`/giveaway/regions${year ? `?year=${year}` : ''}`);
@@ -604,8 +767,16 @@ export const createGiveawayWithdrawal = (payload: {
   '/giveaway/withdrawals', { method: 'POST', body: JSON.stringify(payload) });
 
 export const setGiveawayBudgetLine = (payload: {
-  region: string; brand: string; itemName: string; budgetQty: number; periodYear?: number; empCode?: string;
-}) => req<{ ok: boolean }>('/giveaway/budgets', { method: 'POST', body: JSON.stringify(payload) });
+  region: string; brand: string; itemName: string; budgetQty: number; periodYear?: number; empCode?: string; reason?: string;
+}) => req<{ ok: boolean; warning?: string | null }>('/giveaway/budgets', { method: 'POST', body: JSON.stringify(payload) });
+
+// R12 item 8 — quota settings audit trail
+export type GiveawayBudgetHistory = {
+  changes: { Id: number; EntityId: string; Action: string; BeforeJson: string | null; AfterJson: string | null; ReasonText: string | null; UserId: string; UserName?: string; CreatedAt: string }[];
+  borrows: { Id: number; Status: string; Brand: string; ItemName: string; Qty: number; RequestedAt: string; RequesterName: string; LenderName: string }[];
+};
+export const fetchGiveawayBudgetHistory = (region: string, year?: number) =>
+  req<GiveawayBudgetHistory>(`/giveaway/budget-history?region=${encodeURIComponent(region)}${year ? `&year=${year}` : ''}`);
 
 // ── Quotation ─────────────────────────────────────────────────
 export const fetchQuotations = (status?: string) =>
@@ -671,23 +842,84 @@ export interface PaginatedResponse<T> {
 // ── Reconciliation Workbench (FR-027) ─────────────────────────
 export type ReconCheck = 'WEIGH' | 'INVOICE';
 export interface ReconResolutionInfo { status: 'RESOLVED' | 'IGNORED'; note: string | null; }
+export interface ReconInvoiceItem {
+  soInvId: number;
+  docuNo: string;
+  docuDate: string | null;
+  docuType: number;
+  docuStatus: string;
+  postGL: string | null;
+  postGLDate: string | null;
+  postId: string | null;
+  lineQty: number | null;
+  lineAmnt: number | null;
+  provenance: string;
+}
+
 export interface ReconCase {
   soId: string; wfRef: string | null; custName: string; truckPlate: string | null;
-  shipDate: string; wsDocuNo: string | null; wsInvoiceNo: string | null;
+  shipDate: string; wsDocuNo: string | null; soDocuNo: string | null; wsInvoiceNo: string | null;
   wsInvoiceId: number | null; wsInvoiceDate: string | null;
   wsInvoiceType: string | null; wsPostId: number | string | null;
-  postInvoiceStatus: 'READY' | 'POSTED'; readyForPostInvoice: boolean;
+
+  // 1. Fulfillment
+  fulfillmentStatus: 'SHIPPED' | 'NOT_SHIPPED' | 'CANCELLED' | 'UNKNOWN';
   netApp: number | null; netTs: number | null; variance: number | null;
   tsMatchBy: string | null; tsFallbackMovebill: string | null;
   movebill: string | null; scaleNo: number | null;
-  weigh: 'MATCHED' | 'VARIANCE' | 'NO_WEIGH' | 'UNLINKED' | 'TS_NOT_FOUND' | 'TS_UNAVAILABLE';
-  invoice: 'MATCHED' | 'PENDING';
-  weighResolution: ReconResolutionInfo | null; invoiceResolution: ReconResolutionInfo | null;
-  overall: 'OK' | 'EXCEPTION' | 'RESOLVED'; tsAvailable: boolean;
+  weigh: 'MATCHED' | 'VARIANCE' | 'NO_WEIGH' | 'UNLINKED' | 'TS_NOT_FOUND' | 'TS_UNAVAILABLE' | 'CANDIDATE_MATCH';
+
+  // 2. Invoices
+  invoiceStatus: 'INVOICE_FOUND' | 'PARTIAL_INVOICED' | 'NO_INVOICE' | 'CANCELLED' | 'CANDIDATE_INVOICE';
+  invoices: ReconInvoiceItem[];
+  invoiceCount: number;
+  totalOrderedQty?: number;
+  totalInvoicedQty: number;
+  totalInvoicedAmount: number;
+
+  // 3. GL
+  nativeGlPostingFlag: 'Y' | 'N' | 'MIXED' | null;
+  verifiedGlStatus: 'VERIFIED_GL' | 'UNPOSTED_GL' | 'FLAGGED_BUT_NO_GL' | 'INCONSISTENT' | 'NO_GL' | 'PARTIAL_GL';
+  glDocuNo: string | null;
+  glDocuDate: string | null;
+  glJourId: string | null;
+  glTotalAmnt: number | null;
+
+  // 4. Operational & Posting Readiness
+  operationalReadiness: 'QUALIFIED' | 'BLOCKED';
+  readinessReasons: string[];
+  nativePostingReadiness: 'UNVERIFIED_CONTRACT';
+
+  // Resolutions & Overall
+  weighResolution: ReconResolutionInfo | null;
+  invoiceResolution: ReconResolutionInfo | null;
+  overall: 'OK' | 'EXCEPTION' | 'RESOLVED' | 'AMBIGUOUS';
+  tsAvailable: boolean;
+
+  // Legacy compatibility fields
+  postInvoiceStatus: 'READY' | 'POSTED' | 'UNVERIFIED';
+  readyForPostInvoice: boolean;
+  invoice: 'MATCHED' | 'PENDING' | 'CANCELLED';
 }
+
 export interface ReconSummary {
-  total: number; ok: number; exception: number; resolved: number;
-  readyForPostInvoice: number; postedInvoice: number; tsAvailable: boolean;
+  total: number;
+  ok: number;
+  exception: number;
+  resolved: number;
+  ambiguous: number;
+  operationallyQualified: number;
+  operationallyBlocked: number;
+  invoiceFound: number;
+  partialInvoiced?: number;
+  noInvoice: number;
+  glVerified: number;
+  glUnposted: number;
+  glInconsistent: number;
+  tsAvailable: boolean;
+  // Legacy compatibility:
+  readyForPostInvoice: number;
+  postedInvoice: number;
 }
 export const fetchReconSummary = (days = 7) =>
   req<ReconSummary>(`/recon/summary?days=${days}`, { silent: true });
@@ -829,12 +1061,38 @@ export type ReportTypeItem = {
   category?: string;
 };
 
+export type ReportMeta = {
+  page?: number;
+  offset?: number;
+  voucherLimit?: number;
+  voucherCount?: number;
+  totalMatchingVouchers?: number;
+  rowCount?: number;
+  totalPages?: number;
+  hasPrev?: boolean;
+  hasMore?: boolean;
+  isTruncated?: boolean;
+  isCompleteScope?: boolean;
+  isPartialScope?: boolean;
+  scope?: string;
+  missingDetailCount?: number;
+  missingDetailVouchers?: Array<{
+    GLID: number;
+    JournalNo: string;
+    DocuDate: string;
+  }>;
+  jourId?: string;
+  fromFlag?: string;
+  status?: string;
+};
+
 export type ReportData = {
   type: string;
   title: string;
   category?: string;
   columns: ReportColumn[];
   rows: Record<string, unknown>[];
+  meta?: ReportMeta;
 };
 
 // ใบจ่ายสินค้าของ TruckScale — แทน RptSaYPan.rpt ของโปรแกรมชั่ง
@@ -1062,11 +1320,24 @@ export const updateAdminReportHeader = (id: number, data: Partial<ReportHeaderMa
 export const fetchAdminReportTemplates = () =>
   req<ReportTemplateItem[]>('/admin/reports/templates');
 
-export const createAdminReportTemplate = (data: Partial<ReportTemplateItem> & { reason: string }) =>
-  req<ReportTemplateItem>('/admin/reports/templates', { method: 'POST', body: JSON.stringify(data) });
+export const createAdminReportTemplate = (data: Partial<ReportTemplateItem> & { reason: string }) => {
+  const payload = {
+    ...data,
+    headerId: data.HeaderId ?? (data as any).headerId,
+    templateCode: data.TemplateCode ?? (data as any).templateCode,
+    templateName: data.TemplateName ?? (data as any).templateName,
+  };
+  return req<ReportTemplateItem>('/admin/reports/templates', { method: 'POST', body: JSON.stringify(payload) });
+};
 
-export const updateAdminReportTemplate = (id: number, data: Partial<ReportTemplateItem> & { expectedVersion: number; reason: string }) =>
-  req<ReportTemplateItem>(`/admin/reports/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const updateAdminReportTemplate = (id: number, data: Partial<ReportTemplateItem> & { expectedVersion: number; reason: string }) => {
+  const payload = {
+    ...data,
+    headerId: data.HeaderId ?? (data as any).headerId,
+    templateName: data.TemplateName ?? (data as any).templateName,
+  };
+  return req<ReportTemplateItem>(`/admin/reports/templates/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+};
 
 export const fetchAdminReportAssignments = () =>
   req<ReportAssignmentItem[]>('/admin/reports/assignments');
@@ -1513,6 +1784,8 @@ export const rejectPriceApproval = (id: number | string, note: string) =>
 
 // ── Sale Trip Confirm & Residual Split (SO-05) ────────────────
 export const createTrip = (data: {
+  pSling?: boolean;
+  remark?: string;
   tripCode?: string;
   transRegistration?: string | null;
   driverName?: string | null;
@@ -1529,13 +1802,15 @@ export const createTrip = (data: {
 
 export const fetchTrip = (id: number | string) =>
   req<{
-    trip: any;
-    orders: any[];
+    tripId: number; tripCode: string; transRegistration: string | null;
+    tripRemark: string | null; preSlingRequired: boolean; documentRevision: number;
+    pickupDueDate: string | null;
+    orders: { id: number; status: string }[];
   }>(`/trips/${id}`);
 
 export const confirmTrip = (tripId: number | string, data: {
   confirmedOrderIds: (number | string)[];
-  transRegistration: string;
+  transRegistration: string | null;
   driverName?: string;
   pickupDueDate?: string;
   idempotencyKey?: string;
@@ -1549,6 +1824,14 @@ export const confirmTrip = (tripId: number | string, data: {
   residualOrderCount: number;
   warning?: string | null;
 }>(`/trips/${tripId}/confirm`, { method: 'POST', body: JSON.stringify(data) });
+
+export const submitTripPlan = (tripId: number | string) =>
+  req<{
+    tripId: number;
+    loadPlanStatus: string;
+    loadPlanRevision: number;
+    message: string;
+  }>(`/trips/${tripId}/submit-plan`, { method: 'POST' });
 
 // ── Transactional Load Plan & Acknowledgements (SO-07) ────────
 export const updateLoadPlan = (tripId: number | string, data: {
@@ -1747,3 +2030,29 @@ export const grantCouponBeneficiary = (payload: {
 export const revokeCouponBeneficiary = (id: number, reason?: string) =>
   req<any>(`/coupons/beneficiaries/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) });
 
+export const postNativeCoupon = (payload: {
+  reservationId: number;
+  deliveryDocuNo?: string;
+  docuNo?: string;
+  carLicense?: string;
+  expectedRevision?: number;
+}) => req<{ id: number; status: string; nativeDocuNo: string; nativeRedemptionId: number; idempotent: boolean }>('/coupons/post-native', {
+  method: 'POST',
+  body: JSON.stringify(payload),
+});
+
+export const postNativeDelivery = (payload: {
+  deliveryDocuNo: string;
+  reservationIds: number[];
+  carLicense?: string;
+}) => req<{ success: boolean; deliveryDocuNo: string; redemptionId: number; postedReservations: number[]; idempotent: boolean }>('/coupons/post-native-delivery', {
+  method: 'POST',
+  body: JSON.stringify(payload),
+});
+
+
+export const updateTrip = (tripId: number, data: {
+  transRegistration: string | null; deliveryDate: string; pSling: boolean;
+  loadInOrder: boolean; remark: string; expectedRevision: number;
+}) => req<{ tripId: number; tripCode: string; documentRevision: number; warning?: string | null }>(
+  `/trips/${tripId}`, { method: 'PUT', body: JSON.stringify(data) });

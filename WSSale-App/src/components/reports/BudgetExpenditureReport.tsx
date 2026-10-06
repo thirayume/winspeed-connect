@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { BarChart3, RefreshCw, DollarSign, TrendingUp, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { BarChart3, RefreshCw, AlertCircle } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 
 export function BudgetExpenditureReport() {

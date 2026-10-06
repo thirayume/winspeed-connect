@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { X, Lock, Unlock, Truck, Package, FileText, CalendarClock, CheckCircle2, Clock3, ShieldCheck, Calendar } from 'lucide-react';
+import { X, Lock, Unlock, Truck, Package, FileText, CalendarClock, CheckCircle2, Clock3, ShieldCheck, Calendar, Ticket } from 'lucide-react';
 import { cn } from '../ui/Base';
 import { SOStatusBadge } from './SOStatusBadge';
 import { useErpStore } from '../../store/erp-store';
 import { approveGiveawayLine, confirmSO, cancelSO, shipSO, moveToPicking, createUnlockRequest } from '../../services/api';
-import { appConfirm, appPrompt } from '../ui/AppAlert';
+import { appPrompt } from '../ui/AppAlert';
 import { RequestActionModal, type RequestActionType } from '../papertrail/RequestActionModal';
 import { SOCancelDeleteModal } from '../common/SOCancelDeleteModal';
 import { useAuthStore } from '../../store/auth-store';
@@ -54,7 +54,7 @@ export function SODetailsPanel({
   const winspeedInvoices = so.winspeedInvoices || [];
   const firstInvoice = winspeedInvoices[0];
   const isWinspeedPosted = !!so.isWinspeedPosted || winspeedInvoices.length > 0;
-  const totalAmt   = (so.lines || []).filter(l => !l.isGiveaway).reduce((s, l) => s + l.qtyTon * l.pricePerTon, 0);
+  const totalAmt   = (so.lines || []).filter(l => !l.isGiveaway && !(l as any).isCouponDrawn && !(l as any).couponReservationId && l.pricePerTon > 0).reduce((s, l) => s + l.qtyTon * l.pricePerTon, 0);
   const totalTon   = (so.lines || []).filter(l => !l.isGiveaway).reduce((s, l) => s + l.qtyTon, 0);
   const totalRebate = canSeeRebate
     ? (so.lines || []).filter(l => !l.isGiveaway && (l.rebateAmount || 0) > 0).reduce((s, l) => s + (l.rebateAmount || 0), 0)
@@ -287,10 +287,50 @@ export function SODetailsPanel({
                         {canSeeRebate && (l.rebatePerTon || 0) > 0 && (
                           <div className="text-[9px] text-orange-500">รีเบท ฿{(l.rebatePerTon || 0).toFixed(0)}/ตัน</div>
                         )}
+                        {((l as any).isCouponDrawn || (l as any).couponReservationId) && (
+                          <div className="mt-1 text-[10px] text-blue-700 bg-blue-50/80 border border-blue-200/60 rounded px-1.5 py-0.5 space-y-0.5 whitespace-normal">
+                            <div className="font-semibold flex items-center justify-between gap-1 flex-wrap">
+                              <span className="flex items-center gap-1">
+                                <Ticket size={10} className="text-blue-600 shrink-0" />
+                                ตัดตั๋วคูปอง: <span className="font-mono">{(l as any).refCouponDocuNo || '-'}</span>
+                              </span>
+                              <span className="rounded bg-blue-100 text-blue-800 px-1.5 py-0.2 text-[9px] font-bold">
+                                ✓ ไม่ต้องอนุมัติราคา (เบิกตั๋วปุ๋ย)
+                              </span>
+                            </div>
+                            {(l as any).beneficiaryCustName && (
+                              <div className="text-[9px] text-blue-900 truncate">
+                                สมาชิกผู้รับ: <span className="font-medium">{(l as any).beneficiaryCustName}</span> ({(l as any).beneficiaryCustCode || (l as any).beneficiaryCustId})
+                              </div>
+                            )}
+                            {(l as any).ownerCustName && (
+                              <div className="text-[9px] text-blue-800 truncate">
+                                เจ้าของตั๋ว: <span className="font-medium">{(l as any).ownerCustName}</span> ({(l as any).ownerCustCode || (l as any).ownerCustId})
+                              </div>
+                            )}
+                            {((l as any).couponExpireDate || (l as any).refCouponExpireDate) && (() => {
+                              const expStr = (l as any).couponExpireDate || (l as any).refCouponExpireDate;
+                              const daysLeft = Math.ceil((new Date(expStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                              return (
+                                <div className="text-[9px] text-gray-600 flex items-center gap-1.5 pt-0.5 border-t border-blue-100">
+                                  <span>หมดอายุ: {expStr.slice(0, 10)}</span>
+                                  <span className={`px-1 py-0.2 rounded font-bold ${daysLeft <= 0 ? 'bg-red-100 text-red-700' : daysLeft <= 30 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'}`}>
+                                    {daysLeft <= 0 ? 'หมดอายุแล้ว' : `เหลือ ${daysLeft} วัน`}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 text-right text-xs text-gray-600 tabular-nums whitespace-nowrap">{l.qtyTon.toFixed(3)}</td>
                       <td className="px-3 py-2.5 text-right text-xs font-medium text-gray-800 tabular-nums whitespace-nowrap">
-                        {l.isGiveaway ? '–' : `฿${(l.qtyTon * l.pricePerTon).toLocaleString('th-TH', { maximumFractionDigits: 0 })}`}
+                        {l.isGiveaway ? '–' : ((l as any).isCouponDrawn || (l as any).couponReservationId || l.pricePerTon === 0) ? (
+                          <div>
+                            <span className="text-gray-500 font-bold">฿0</span>
+                            <div className="text-[9px] text-blue-600 font-semibold">เบิกตั๋วปุ๋ย</div>
+                          </div>
+                        ) : `฿${(l.qtyTon * l.pricePerTon).toLocaleString('th-TH', { maximumFractionDigits: 0 })}`}
                       </td>
                     </tr>
                   );
@@ -303,9 +343,21 @@ export function SODetailsPanel({
         {/* Totals */}
         <div className="space-y-1.5 pt-3 border-t border-gray-100">
           <div className="flex justify-between text-sm text-gray-500">
-            <span>ยอดรวม</span>
+            <span>ยอดรวมสินค้า</span>
             <span className="font-bold text-gray-800">฿{totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
           </div>
+          {((so.rebateDiscountAmt || 0) > 0 || Number((so as any).claimDiscountAmt || 0) > 0) && (
+            <div className="flex justify-between text-xs text-emerald-700">
+              <span>หักส่วนลดรีเบท / เคลม</span>
+              <span className="font-bold">-฿{(Number(so.rebateDiscountAmt) || Number((so as any).claimDiscountAmt) || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+            </div>
+          )}
+          {((so.rebateDiscountAmt || 0) > 0 || Number((so as any).claimDiscountAmt || 0) > 0) && (
+            <div className="flex justify-between text-sm font-bold text-gray-900 pt-1 border-t border-gray-100">
+              <span>ยอดสุทธิชำระ</span>
+              <span className="font-black text-emerald-800">฿{Math.max(0, totalAmt - (Number(so.rebateDiscountAmt) || Number((so as any).claimDiscountAmt) || 0)).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+            </div>
+          )}
           {totalRebate > 0 && (
             <div className="flex justify-between text-xs text-orange-500">
               <span>รีเบทสะสม (accrual)</span>
@@ -324,20 +376,38 @@ export function SODetailsPanel({
       {/* Actions */}
       <div className="border-t border-gray-100 p-4 space-y-2.5">
         {so.status === 'DRAFT' && (
-          <div className="flex gap-2">
-            <button
-              disabled={busy}
-              onClick={() => doAction(() => confirmSO(so.id!))}
-              className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-60 transition-opacity"
-              style={{ background: '#0C447C' }}
-            >
-              {busy ? 'กำลังยืนยัน...' : 'ยืนยันบิล'}
-            </button>
-            {onEdit && (
+          <div className="flex flex-col gap-2">
+            {so.tripId && Number(so.tripId) > 0 && so.truckPlate !== 'ตั๋วคุม' ? (
+              <div className="py-2.5 px-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold flex items-center justify-center gap-2">
+                <Truck size={14} className="text-amber-600 shrink-0" />
+                บิลนี้อยู่ในเที่ยวรถ — ต้องยืนยันพร้อมกันทั้งคัน (ไม่อนุญาตให้ยืนยันรายบิล)
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  disabled={busy}
+                  onClick={() => doAction(() => confirmSO(so.id!))}
+                  className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-60 transition-opacity shadow-sm"
+                  style={{ background: '#0C447C' }}
+                >
+                  {busy ? 'กำลังยืนยัน...' : (so.truckPlate === 'ตั๋วคุม' ? 'ยืนยันตั๋วคุม (บิลเดี่ยว)' : 'ยืนยันบิล')}
+                </button>
+                {onEdit && (
+                  <button
+                    disabled={busy}
+                    onClick={onEdit}
+                    className="flex-1 py-2.5 rounded-xl border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 text-sm font-bold disabled:opacity-60 transition-colors"
+                  >
+                    แก้ไขข้อมูล
+                  </button>
+                )}
+              </div>
+            )}
+            {so.tripId && Number(so.tripId) > 0 && so.truckPlate !== 'ตั๋วคุม' && onEdit && (
               <button
                 disabled={busy}
                 onClick={onEdit}
-                className="flex-1 py-2.5 rounded-xl border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 text-sm font-bold disabled:opacity-60 transition-colors"
+                className="w-full py-2 rounded-xl border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 text-xs font-bold disabled:opacity-60 transition-colors"
               >
                 แก้ไขข้อมูล
               </button>

@@ -1,9 +1,35 @@
+const { validateBookingNotes } = require('../services/booking-notes');
 const router = require('express').Router();
 const { sql, wfQuery, wfTransaction } = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
 const { broadcast } = require('../services/socket');
 
 router.use(requireAuth);
+
+// R12 O-4: a trip is visible when its creator or any of its bills belongs to the user's own + team scope
+const { getVisibleScope, scopeFilter } = require('../services/visible-scope');
+async function tripScopeSql(user, alias = 't') {
+  const scope = await getVisibleScope(user);
+  if (scope.all) return { sql: '1=1', inputs: {} };
+  const created = scopeFilter(scope, { userCol: `${alias}.CreatedBy`, prefix: 'tc' });
+  const member = scopeFilter(scope, { userCol: 'm.SalesUserId', prefix: 'tm' });
+  return {
+    sql: `(${created.sql} OR EXISTS (SELECT 1 FROM wf.v_TripMember m WHERE m.TripId = ${alias}.TripId AND ${member.sql}))`,
+    inputs: { ...created.inputs, ...member.inputs },
+  };
+}
+
+// Actions by trip id obey the same scope as the detail view (out of scope → 404)
+async function requireTripInScope(req, res, next) {
+  try {
+    const ts = await tripScopeSql(req.user);
+    if (ts.sql === '1=1') return next();
+    const r = await wfQuery(`SELECT 1 AS ok FROM wf.SalesTrip t WHERE t.TripId = @tid AND ${ts.sql}`,
+      { tid: { type: sql.Int, value: Number(req.params.id) || 0 }, ...ts.inputs });
+    if (!r.recordset?.[0]) return res.status(404).json({ message: 'ไม่พบ Trip นี้' });
+    next();
+  } catch (e) { res.status(500).json({ message: e.message }); }
+}
 
 const camel = (s) => s.charAt(0).toLowerCase() + s.slice(1);
 const camelizeRow = (row) => {
@@ -15,7 +41,7 @@ const camelizeRow = (row) => {
 const camelizeRows = (rows) => (rows || []).map(camelizeRow);
 
 // GET /api/trips
-router.get('/', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
+router.get('/', requireCapability('trip.view'), async (req, res) => {
   try {
     const { status, search } = req.query;
     let where = 'WHERE 1=1';
@@ -29,6 +55,9 @@ router.get('/', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'MAN
       inputs.search = { type: sql.NVarChar(100), value: `%${search}%` };
     }
 
+    const ts = await tripScopeSql(req.user);
+    where += ` AND ${ts.sql}`;
+    Object.assign(inputs, ts.inputs);
     const result = await wfQuery(`
       SELECT t.*, u.DisplayName AS CreatedByName,
              (SELECT COUNT(*) FROM wf.v_TripMember WHERE TripId = t.TripId) as OrderCount
@@ -41,7 +70,7 @@ router.get('/', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'MAN
     res.json({ data: camelizeRows(result.recordset || []) });
   } catch (error) {
     console.error('[trips]', error);
-    res.status(500).json({ message: error.message });
+    res.status(error.status || 500).json({ message: error.message });
   }
 });
 
@@ -57,7 +86,7 @@ router.get('/', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'MAN
 // (หลังยืนยัน แถวใน wf.SalesOrder ถูกลบทิ้ง ตัวที่เหลือคือ wf.SalesOrderExt)
 //
 // อ่านอย่างเดียว ไม่เขียน dbo ทั้ง WGHD/WGDT และ SOHD/SODT
-router.get('/board', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
+router.get('/board', requireCapability('trip.view'), async (req, res) => {
   try {
     const { status, search } = req.query;
     const inputs = {};
@@ -68,6 +97,9 @@ router.get('/board', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN',
       inputs.search = { type: sql.NVarChar(100), value: `%${search}%` };
     }
 
+    const bs = await tripScopeSql(req.user);
+    where += ` AND ${bs.sql}`;
+    Object.assign(inputs, bs.inputs);
     const tripsRes = await wfQuery(`
       SELECT t.*, u.DisplayName AS CreatedByName
       FROM wf.SalesTrip t
@@ -112,7 +144,19 @@ router.get('/board', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN',
                ISNULL(le.ChildQty,  d.ChildQty)  AS ChildQty,
                le.RefControlTicketNo, le.IsControlTicketDrawn, le.GiveawayApprovalStatus
         FROM wf.SalesOrderExt e
-        JOIN dbo.SODT d ON d.SOID = TRY_CAST(e.SOID AS INT) AND d.DocuType = 103
+        JOIN dbo.SODT d ON d.SOID = (
+          CASE 
+            WHEN e.SOID IS NOT NULL 
+             AND LTRIM(RTRIM(e.SOID)) NOT LIKE '%[^0-9]%' 
+             AND LTRIM(RTRIM(e.SOID)) <> '' 
+             AND (
+               LEN(LTRIM(RTRIM(e.SOID))) <= 9 
+               OR (LEN(LTRIM(RTRIM(e.SOID))) = 10 AND CAST(LTRIM(RTRIM(e.SOID)) AS BIGINT) <= 2147483647)
+             )
+            THEN CAST(LTRIM(RTRIM(e.SOID)) AS INT) 
+            ELSE NULL 
+          END
+        ) AND d.DocuType = 103
         LEFT JOIN dbo.EMGood g ON g.GoodID = d.GoodID
         LEFT JOIN wf.SalesOrderLineExt le ON le.SOID = e.SOID AND le.ListNo = d.ListNo
         WHERE e.TripId IN (${idList})`),
@@ -123,7 +167,19 @@ router.get('/board', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN',
                w.Id, w.CarNo, w.DateReg, w.Status, w.WGType,
                w.WeightIn, w.WeightOut, w.WeightNet, w.TONNet, w.DocuNo, w.MoveBill
         FROM wf.SalesOrderExt e
-        JOIN dbo.WGHD w ON w.SPID = TRY_CAST(e.SOID AS INT)
+        JOIN dbo.WGHD w ON w.SPID = (
+          CASE 
+            WHEN e.SOID IS NOT NULL 
+             AND LTRIM(RTRIM(e.SOID)) NOT LIKE '%[^0-9]%' 
+             AND LTRIM(RTRIM(e.SOID)) <> '' 
+             AND (
+               LEN(LTRIM(RTRIM(e.SOID))) <= 9 
+               OR (LEN(LTRIM(RTRIM(e.SOID))) = 10 AND CAST(LTRIM(RTRIM(e.SOID)) AS BIGINT) <= 2147483647)
+             )
+            THEN CAST(LTRIM(RTRIM(e.SOID)) AS INT) 
+            ELSE NULL 
+          END
+        )
         WHERE e.TripId IN (${idList})`),
 
       // คำขอแก้ไขที่ยังรออนุมัติ (เฟส 5) — ตัวที่ Hold รถต้องเด่นบนกระดาน
@@ -265,17 +321,23 @@ router.get('/board', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN',
 });
 
 // GET /api/trips/:id
-router.get('/:id', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
+router.get('/:id', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'), async (req, res) => {
   try {
-    const trip = await wfQuery(`SELECT * FROM wf.SalesTrip WHERE TripId = @id`, {
-      id: { type: sql.Int, value: req.params.id }
+    const ds = await tripScopeSql(req.user, 'st');
+    const trip = await wfQuery(`SELECT * FROM wf.SalesTrip st WHERE st.TripId = @id AND ${ds.sql}`, {
+      id: { type: sql.Int, value: req.params.id }, ...ds.inputs,
     });
     if (!trip.recordset[0]) return res.status(404).json({ message: 'ไม่พบ Trip นี้' });
 
     const orders = await wfQuery(`
-      SELECT Id, WfRef, SoPrefix, CustName, TruckPlate, Status, CreatedAt
+      SELECT Id, WfRef, SoPrefix, CustId, CustName, TruckPlate, Status, CreatedAt, NoTruckRequired, PSling, DeliveryDate, TripId
       FROM wf.SalesOrder
       WHERE TripId = @id
+      UNION ALL
+      SELECT soe.SOID AS Id, ISNULL(soe.WfRef, soh.DocuNo) AS WfRef, soe.SoPrefix, soh.CustID AS CustId, soh.CustName, soh.TransRegistration AS TruckPlate, 'CONFIRMED' AS Status, soh.DocuDate AS CreatedAt, soe.NoTruckRequired, soe.PSling, soe.DeliveryDate, soe.TripId
+      FROM wf.SalesOrderExt soe
+      JOIN dbo.SOHD soh ON soh.SOID = soe.SOID
+      WHERE soe.TripId = @id
     `, { id: { type: sql.Int, value: req.params.id } });
 
     const data = camelizeRow(trip.recordset[0]);
@@ -354,7 +416,7 @@ async function resolveVehicleCapacity(transRegistration, truckTypeId, clientCapa
 // และต้องเด้ง Pre-Sling / หมายเหตุ / ของแถม ให้คนคุมลานเห็นก่อนเริ่ม
 //
 // อ่านอย่างเดียว ไม่เขียนอะไรทั้งสิ้น
-router.get('/:id/loading-plan', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
+router.get('/:id/loading-plan', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'), requireTripInScope, async (req, res) => {
   try {
     const id = { type: sql.Int, value: req.params.id };
 
@@ -389,8 +451,32 @@ router.get('/:id/loading-plan', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE
                le.RefControlTicketNo, e.PSling, e.TruckRemark,
                CAST(s.Remark AS NVARCHAR(500)) AS Remark
         FROM wf.SalesOrderExt e
-        JOIN dbo.SODT d ON d.SOID = TRY_CAST(e.SOID AS INT) AND d.DocuType = 103
-        LEFT JOIN dbo.SOHD s ON s.SOID = TRY_CAST(e.SOID AS INT) AND s.DocuType = 103
+        JOIN dbo.SODT d ON d.SOID = (
+          CASE 
+            WHEN e.SOID IS NOT NULL 
+             AND LTRIM(RTRIM(e.SOID)) NOT LIKE '%[^0-9]%' 
+             AND LTRIM(RTRIM(e.SOID)) <> '' 
+             AND (
+               LEN(LTRIM(RTRIM(e.SOID))) <= 9 
+               OR (LEN(LTRIM(RTRIM(e.SOID))) = 10 AND CAST(LTRIM(RTRIM(e.SOID)) AS BIGINT) <= 2147483647)
+             )
+            THEN CAST(LTRIM(RTRIM(e.SOID)) AS INT) 
+            ELSE NULL 
+          END
+        ) AND d.DocuType = 103
+        LEFT JOIN dbo.SOHD s ON s.SOID = (
+          CASE 
+            WHEN e.SOID IS NOT NULL 
+             AND LTRIM(RTRIM(e.SOID)) NOT LIKE '%[^0-9]%' 
+             AND LTRIM(RTRIM(e.SOID)) <> '' 
+             AND (
+               LEN(LTRIM(RTRIM(e.SOID))) <= 9 
+               OR (LEN(LTRIM(RTRIM(e.SOID))) = 10 AND CAST(LTRIM(RTRIM(e.SOID)) AS BIGINT) <= 2147483647)
+             )
+            THEN CAST(LTRIM(RTRIM(e.SOID)) AS INT) 
+            ELSE NULL 
+          END
+        ) AND s.DocuType = 103
         LEFT JOIN dbo.EMGood g ON g.GoodID = d.GoodID
         LEFT JOIN wf.SalesOrderLineExt le ON le.SOID = e.SOID AND le.ListNo = d.ListNo
         WHERE e.TripId = @id`, { id })
@@ -400,16 +486,20 @@ router.get('/:id/loading-plan', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE
     const rows = camelizeRows([...(draftRes.recordset || []), ...(confRes.recordset || [])])
       .map(l => {
         const m = memberInfo.get(l.memberKind + '#' + String(l.memberId)) || {};
+        const isGw = !!l.isGiveaway;
+        const pieceQty = isGw ? (Number(l.qtyBag || 0) || Math.round(Number(l.qtyTon || 0) * 20) || Number(l.qtyTon || 0)) : 0;
         return {
           ...l,
           docuNo: m.docuNo,
           soPrefix: m.soPrefix,
           custId: m.custId,
           custName: m.custName,
-          isGiveaway: !!l.isGiveaway,
+          isGiveaway: isGw,
+          qtyPiece: pieceQty,
+          qtyTon: isGw ? 0 : Number(l.qtyTon || 0),
           preSling: !!l.pSling,
-          // แยกตัวแม่/ตัวลูกเป็นรายบรรทัด ตามที่ยืนยันไว้ว่าแยกที่ระดับ line
-          split: (Number(l.masterQty || 0) > 0 || Number(l.childQty || 0) > 0)
+          // แยกตัวแม่/ตัวลูกเป็นรายบรรทัด ตามที่ยืนยันไว้ว่าแยกที่ระดับ line (ของแถมไม่แยกตัวแม่เป็นตัน)
+          split: (!isGw && (Number(l.masterQty || 0) > 0 || Number(l.childQty || 0) > 0))
             ? { masterQty: Number(l.masterQty || 0), childQty: Number(l.childQty || 0) }
             : null
         };
@@ -422,7 +512,8 @@ router.get('/:id/loading-plan', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE
 
     const plan = [...sequenced, ...unsequenced].map((r, i) => ({ step: i + 1, ...r }));
 
-    const totalTon = plan.reduce((s, r) => s + Number(r.qtyTon || 0), 0);
+    // U-5: น้ำหนักรวมคิดเฉพาะสินค้าที่ไม่ใช่ของแถม
+    const totalTon = plan.reduce((s, r) => s + (r.isGiveaway ? 0 : Number(r.qtyTon || 0)), 0);
     
     // Resolve authoritative vehicle capacity
     const capacityInfo = await resolveVehicleCapacity(trip.transRegistration, trip.truckTypeId, trip.truckCapacityTon);
@@ -438,8 +529,10 @@ router.get('/:id/loading-plan', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE
     if (unsequenced.length > 0 && sequenced.length > 0)
       alerts.push({ level: 'warn', text: `มี ${unsequenced.length} รายการที่ไม่ได้ระบุลำดับ ระบบเรียงต่อท้ายให้` });
     const giveaways = plan.filter(r => r.isGiveaway);
-    if (giveaways.length > 0)
-      alerts.push({ level: 'info', text: `มีของแถม ${giveaways.length} รายการ รวม ${giveaways.reduce((s, r) => s + Number(r.qtyTon || 0), 0).toFixed(3)} ตัน` });
+    if (giveaways.length > 0) {
+      const totalPieces = giveaways.reduce((s, r) => s + (Number(r.qtyPiece) || Number(r.qtyBag) || 0), 0);
+      alerts.push({ level: 'info', text: `มีของแถม ${giveaways.length} รายการ รวม ${totalPieces} ชิ้น` });
+    }
     const tickets = [...new Set(plan.filter(r => r.refControlTicketNo).map(r => r.refControlTicketNo))];
     if (tickets.length > 0)
       alerts.push({ level: 'info', text: `เบิกจากตั๋วคุม ${tickets.join(', ')}` });
@@ -479,7 +572,7 @@ router.get('/:id/loading-plan', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE
 });
 
 // PUT /api/trips/:id/load-plan — Transactional Load Plan Confirmation (SO-07)
-router.put('/:id/load-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.put('/:id/load-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), requireTripInScope, async (req, res) => {
   const tripId = Number(req.params.id);
   if (!Number.isInteger(tripId) || tripId <= 0) {
     return res.status(400).json({ message: 'รหัส Trip ไม่ถูกต้อง' });
@@ -529,7 +622,19 @@ router.put('/:id/load-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
         SELECT CAST(d.SOID AS VARCHAR(50)) AS MemberId, d.ListNo AS LineNum, 
                CAST(ISNULL(d.GoodQty2, 0) AS DECIMAL(18,3)) AS QtyTon, d.GoodName
         FROM wf.SalesOrderExt e
-        JOIN dbo.SODT d ON d.SOID = TRY_CAST(e.SOID AS INT) AND d.DocuType = 103
+        JOIN dbo.SODT d ON d.SOID = (
+          CASE 
+            WHEN e.SOID IS NOT NULL 
+             AND LTRIM(RTRIM(e.SOID)) NOT LIKE '%[^0-9]%' 
+             AND LTRIM(RTRIM(e.SOID)) <> '' 
+             AND (
+               LEN(LTRIM(RTRIM(e.SOID))) <= 9 
+               OR (LEN(LTRIM(RTRIM(e.SOID))) = 10 AND CAST(LTRIM(RTRIM(e.SOID)) AS BIGINT) <= 2147483647)
+             )
+            THEN CAST(LTRIM(RTRIM(e.SOID)) AS INT) 
+            ELSE NULL 
+          END
+        ) AND d.DocuType = 103
         WHERE e.TripId = @tripId
       `);
 
@@ -729,6 +834,7 @@ router.post('/:id/load-plan/ack', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', '
 // POST /api/trips
 router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
+    validateBookingNotes(req.body, ['remark']);
     const { tripCode, transRegistration, driverName, truckCapacityTon, orderIds, scheduledDate, deliveryDate } = req.body || {};
     let effectiveTripCode = tripCode;
     if (!effectiveTripCode) {
@@ -754,7 +860,8 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
       }
     }
 
-    const cleanPlate = (transRegistration && transRegistration !== 'ยังไม่ระบุรถ') ? transRegistration : null;
+    const rawPlate = String(transRegistration || '').trim();
+    const cleanPlate = !rawPlate || ['ยังไม่ระบุรถ','ตั๋วคุม','ไม่ระบุทะเบียนรถ'].includes(rawPlate) ? null : rawPlate;
 
     let newTripId = null;
     await wfTransaction(async tx => {
@@ -769,12 +876,14 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
       tripReq.input('truckCapacityTon', sql.Decimal(18,2), masterCapacity || null);
       tripReq.input('truckTypeId', sql.NVarChar(50), capacityInfo.truckTypeId || req.body?.truckTypeId || null);
       tripReq.input('createdBy', sql.Int, req.user.sub);
+      tripReq.input('tripRemark',sql.NVarChar(500),req.body?.remark ?? null);
+      tripReq.input('preSling',sql.Bit,!!req.body?.pSling);
       tripReq.input('pickupDueDate', sql.Date, targetDate ? new Date(targetDate) : null);
 
       const tripRes = await tripReq.query(`
-        INSERT INTO wf.SalesTrip (TripCode, TransRegistration, DriverName, TruckCapacityTon, TruckTypeId, CreatedBy, PickupDueDate, DocumentRevision)
+        INSERT INTO wf.SalesTrip (TripCode, TransRegistration, DriverName, TruckCapacityTon, TruckTypeId, CreatedBy, PickupDueDate, DocumentRevision, TripRemark, PreSlingRequired)
         OUTPUT inserted.TripId
-        VALUES (@tripCode, @transRegistration, @driverName, @truckCapacityTon, @truckTypeId, @createdBy, @pickupDueDate, 1)
+        VALUES (@tripCode, @transRegistration, @driverName, @truckCapacityTon, @truckTypeId, @createdBy, @pickupDueDate, 1, @tripRemark, @preSling)
       `);
       newTripId = tripRes.recordset[0].TripId;
 
@@ -791,81 +900,69 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
     res.json({ message: 'สร้าง Trip สำเร็จ', tripId: newTripId, tripCode: effectiveTripCode, warning: leadTimeWarning });
   } catch (error) {
     console.error('[trips]', error);
-    res.status(500).json({ message: error.message });
+    res.status(error.status || 500).json({ message: error.message });
   }
 });
 
 // PUT /api/trips/:id
-router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), requireTripInScope, async (req, res) => {
   try {
-    const { transRegistration, driverName, truckCapacityTon, truckTypeId, orderIds, scheduledDate, deliveryDate } = req.body || {};
-
-    // Lead-time evaluation (SO-03)
+    const body = validateBookingNotes(req.body || {}, ['remark']);
+    const tripId = Number(req.params.id);
+    if (!Number.isInteger(tripId) || !Number.isInteger(body.expectedRevision))
+      return res.status(400).json({ message: 'ต้องระบุ TripId และ expectedRevision' });
+    // Membership changes belong to the explicit assignment workflow, not metadata editing.
+    if (body.orderIds !== undefined) return res.status(400).json({message:'การแก้ไขข้อมูลเที่ยวรถไม่รองรับการเปลี่ยนสมาชิก'});
     const { resolvePickupPolicy, evaluateTripLeadTime } = require('../services/so-pickup-policy');
     const policy = await resolvePickupPolicy();
-    let leadTimeWarning = null;
-
-    const targetDate = scheduledDate || deliveryDate;
-    if (targetDate) {
-      const leadCheck = evaluateTripLeadTime(targetDate, policy.leadTimeDays, policy.strictMode);
-      if (!leadCheck.valid) {
-        if (leadCheck.blocked) {
-          return res.status(400).json({ message: leadCheck.error });
-        }
-        leadTimeWarning = leadCheck.warning;
+    const targetDate = body.scheduledDate || body.deliveryDate;
+    const check = targetDate ? evaluateTripLeadTime(targetDate, policy.leadTimeDays, policy.strictMode) : null;
+    if (check?.blocked) return res.status(400).json({message:check.error});
+    const result = await wfTransaction(async tx => {
+      const { lockConfirmationResource } = require('../services/draft-confirmation');
+      await lockConfirmationResource(tx, 'ConfirmTrip_' + tripId);
+      const trip = (await tx.request().input('id',sql.Int,tripId).query(
+        'SELECT * FROM wf.SalesTrip WITH (UPDLOCK,HOLDLOCK) WHERE TripId=@id')).recordset[0];
+      if (!trip) throw Object.assign(new Error('ไม่พบเที่ยวรถ'),{status:404});
+      if (!['ADMIN','C_LEVEL'].includes(req.user.role) && Number(trip.CreatedBy)!==Number(req.user.sub))
+        throw Object.assign(new Error('ไม่มีสิทธิ์แก้ไขเที่ยวรถของผู้อื่น'),{status:403});
+      if (trip.Status!=='DRAFT' || Number(trip.DocumentRevision)!==body.expectedRevision)
+        throw Object.assign(new Error('สถานะหรือ revision เปลี่ยนแล้ว กรุณาโหลดข้อมูลใหม่'),{status:409});
+      const members = (await tx.request().input('id',sql.Int,tripId).query(
+        'SELECT Id,Status FROM wf.SalesOrder WITH (UPDLOCK,HOLDLOCK) WHERE TripId=@id ORDER BY Id')).recordset;
+      if (members.some(m=>m.Status!=='DRAFT')) throw Object.assign(new Error('แก้ไขได้เฉพาะทริปแบบร่าง'),{status:409});
+      const value = body.transRegistration === undefined ? trip.TransRegistration : body.transRegistration;
+      const plate = String(value || '').trim();
+      const cleanPlate = !plate || ['ยังไม่ระบุรถ','ตั๋วคุม','ไม่ระบุทะเบียนรถ'].includes(plate) ? null : plate;
+      const cap = await resolveVehicleCapacity(cleanPlate,body.truckTypeId ?? trip.TruckTypeId,body.truckCapacityTon ?? trip.TruckCapacityTon);
+      await tx.request().input('id',sql.Int,tripId).input('plate',sql.NVarChar(50),cleanPlate)
+        .input('driver',sql.NVarChar(100),body.driverName === undefined ? trip.DriverName : body.driverName)
+        .input('cap',sql.Decimal(18,2),cap.ratedCapacityTon || trip.TruckCapacityTon || null)
+        .input('type',sql.NVarChar(50),cap.truckTypeId || trip.TruckTypeId || null)
+        .input('tripRemark',sql.NVarChar(500),body.remark === undefined ? trip.TripRemark : body.remark)
+        .input('preSling',sql.Bit,body.pSling === undefined ? trip.PreSlingRequired : !!body.pSling)
+        .query(`UPDATE wf.SalesTrip SET TransRegistration=@plate, DriverName=@driver, TripRemark=@tripRemark, PreSlingRequired=@preSling,
+          TruckCapacityTon=@cap, TruckTypeId=@type, WarehouseAckAt=NULL, WarehouseAckBy=NULL,
+          DocumentRevision=DocumentRevision+1 WHERE TripId=@id`);
+      for (const member of members) {
+        await tx.request().input('id',sql.Int,member.Id).input('plate',sql.NVarChar(30),cleanPlate)
+          .input('date',sql.Date,targetDate ? new Date(targetDate) : null)
+          .input('ps',sql.Bit,body.pSling === undefined ? null : !!body.pSling)
+          .query(`UPDATE wf.SalesOrder SET TruckPlate=@plate, DeliveryDate=COALESCE(@date,DeliveryDate),
+            PSling=COALESCE(@ps,PSling),
+            UpdatedAt=GETUTCDATE() WHERE Id=@id`);
+        if (body.loadInOrder !== undefined) await tx.request().input('id',sql.Int,member.Id)
+          .input('ordered',sql.Bit,!!body.loadInOrder).query(`UPDATE wf.SalesOrderLine
+            SET LoadSequence=CASE WHEN @ordered=0 THEN NULL ELSE COALESCE(LoadSequence,LineNum) END WHERE SoId=@id`);
       }
-    }
-    
-    await wfTransaction(async tx => {
-      const tripReq = tx.request();
-      tripReq.input('tripId', sql.Int, req.params.id);
-      const cleanPlate = (transRegistration && transRegistration !== 'ยังไม่ระบุรถ') ? transRegistration : null;
-      
-      // Authoritative capacity resolution
-      const capacityInfo = await resolveVehicleCapacity(cleanPlate, truckTypeId, truckCapacityTon);
-      const masterCapacity = capacityInfo.ratedCapacityTon > 0 ? capacityInfo.ratedCapacityTon : (Number(truckCapacityTon) || null);
-
-      tripReq.input('transRegistration', sql.VarChar(50), cleanPlate);
-      tripReq.input('driverName', sql.VarChar(100), driverName || null);
-      tripReq.input('truckCapacityTon', sql.Decimal(18,2), masterCapacity || null);
-      tripReq.input('truckTypeId', sql.NVarChar(50), capacityInfo.truckTypeId || truckTypeId || null);
-
-      await tripReq.query(`
-        UPDATE wf.SalesTrip
-        SET TransRegistration = @transRegistration,
-            DriverName = @driverName,
-            TruckCapacityTon = @truckCapacityTon,
-            TruckTypeId = @truckTypeId,
-            WarehouseAckAt = NULL,
-            WarehouseAckBy = NULL,
-            DocumentRevision = DocumentRevision + 1
-        WHERE TripId = @tripId
-      `);
-
-      // Clear existing links
-      await tx.request().input('tripId', sql.Int, req.params.id)
-        .query(`UPDATE wf.SalesOrder SET TripId = NULL WHERE TripId = @tripId`);
-
-      // Re-link
-      if (orderIds && orderIds.length > 0) {
-        for (const orderId of orderIds) {
-          const soReq = tx.request();
-          soReq.input('tripId', sql.Int, req.params.id);
-          soReq.input('soId', sql.Int, orderId);
-          await soReq.query(`UPDATE wf.SalesOrder SET TripId = @tripId WHERE Id = @soId`);
-        }
-      }
+      return {tripId,tripCode:trip.TripCode,documentRevision:trip.DocumentRevision+1};
     });
-
-    res.json({ message: 'อัปเดต Trip สำเร็จ', warning: leadTimeWarning });
-  } catch (error) {
-    console.error('[trips]', error);
-    res.status(500).json({ message: error.message });
-  }
+    res.json({...result,warning:check?.warning || null});
+  } catch (error) { res.status(error.status || 500).json({message:error.message}); }
 });
 
 // POST /api/trips/:id/confirm — Atomic Trip Confirmation and Residual Split (SO-05)
-router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), requireTripInScope, async (req, res) => {
   const tripId = Number(req.params.id);
   if (!Number.isInteger(tripId) || tripId <= 0) {
     return res.status(400).json({ message: 'รหัส Trip ไม่ถูกต้อง' });
@@ -877,28 +974,88 @@ router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
     return res.status(400).json({ message: 'กรุณาเลือกใบสั่งขาย (SO) ที่ต้องการยืนยันในเที่ยวนี้อย่างน้อย 1 รายการ' });
   }
 
-  const cleanTruckPlate = String(transRegistration || '').trim();
-  if (!cleanTruckPlate || cleanTruckPlate === 'ยังไม่ระบุรถ' || cleanTruckPlate === 'ไม่ระบุทะเบียนรถ') {
-    return res.status(400).json({ message: 'การยืนยันเที่ยวรถจำเป็นต้องระบุทะเบียนรถ (ไม่สามารถยืนยันแบบไม่ระบุรถได้)' });
+  // R5-1 / F-06: Inspect member orders to determine if this is a control-ticket / no-truck trip
+  const cleanOrderIds = confirmedOrderIds.map(id => String(id).replace(/^(DRAFT|NATIVE):/, '').trim()).filter(Boolean);
+  const numericIds = cleanOrderIds.map(Number).filter(n => Number.isInteger(n) && n > 0);
+
+  let memberOrders = [];
+  if (numericIds.length > 0) {
+    const idList = numericIds.join(',');
+    memberOrders = (await wfQuery(`
+      SELECT Id, NoTruckRequired, TruckPlate, SoPrefix FROM wf.SalesOrder WHERE Id IN (${idList})
+      UNION ALL
+      SELECT soe.SOID AS Id, soe.NoTruckRequired, soh.TransRegistration AS TruckPlate, soe.SoPrefix
+      FROM wf.SalesOrderExt soe
+      LEFT JOIN dbo.SOHD soh ON soh.SOID = soe.SOID
+      WHERE soe.SOID IN (${idList})
+    `)).recordset || [];
   }
 
-  // P1 Finding 4: วันรับห้ามเดา (pickupDueDate บังคับส่ง ไม่ default เป็น today)
-  if (!pickupDueDate || typeof pickupDueDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(pickupDueDate.trim())) {
-    return res.status(400).json({ message: 'กรุณาระบุวันรับสินค้า (pickupDueDate ในรูปแบบ YYYY-MM-DD) ให้ชัดเจน ห้ามเว้นว่าง' });
+  const isTicketBill = (b) => Boolean(
+    b.TruckPlate === 'ตั๋วคุม' ||
+    b.SoPrefix === 'AI'
+  );
+  const isNoTruckBill = (b) => Boolean(b.NoTruckRequired === 1 || b.NoTruckRequired === true) && !isTicketBill(b);
+  const isNormalTruckBill = (b) => !isTicketBill(b) && !isNoTruckBill(b);
+
+  const ticketCount = memberOrders.filter(isTicketBill).length;
+  const noTruckCount = memberOrders.filter(isNoTruckBill).length;
+  const normalTruckCount = memberOrders.filter(isNormalTruckBill).length;
+
+  const isAllControlTicket = memberOrders.length > 0 && ticketCount === memberOrders.length;
+  const isAllNoTruck = memberOrders.length > 0 && noTruckCount === memberOrders.length;
+  const isMixedTicketTrip = ticketCount > 0 && ticketCount < memberOrders.length;
+
+  if (isMixedTicketTrip) {
+    return res.status(400).json({
+      code: 'MIXED_CONTROL_TICKET_TRIP',
+      message: 'เที่ยวนี้มีทั้งตั๋วคุมและบิลประเภทอื่นปนกัน กรุณาแยกเที่ยวรถสำหรับตั๋วคุม'
+    });
   }
-  const targetPickupDate = pickupDueDate.trim();
+
+  let cleanTruckPlate = null;
+  if (isAllControlTicket) {
+    cleanTruckPlate = 'ตั๋วคุม';
+  } else if (isAllNoTruck) {
+    const raw = String(transRegistration || '').trim();
+    cleanTruckPlate = (raw && raw !== 'ตั๋วคุม' && raw !== 'ยังไม่ระบุรถ' && raw !== 'ไม่ระบุทะเบียนรถ') ? raw : null;
+  } else {
+    cleanTruckPlate = String(transRegistration || '').trim() || null;
+  }
+
+  if (!isAllControlTicket && !isAllNoTruck) {
+    if (!cleanTruckPlate || cleanTruckPlate === 'ยังไม่ระบุรถ' || cleanTruckPlate === 'ไม่ระบุทะเบียนรถ' || cleanTruckPlate === 'ตั๋วคุม') {
+      return res.status(400).json({ message: 'การยืนยันเที่ยวรถจำเป็นต้องระบุทะเบียนรถ (ไม่สามารถยืนยันแบบไม่ระบุรถได้)' });
+    }
+  }
+
+  // P1 Finding 4: วันรับห้ามเดา (สำหรับเที่ยวปกติบังคับส่ง pickupDueDate; สำหรับตั๋วคุม/ไม่ใช้รถไม่บังคับ)
+  let targetPickupDate = null;
+  if (isAllControlTicket || isAllNoTruck) {
+    targetPickupDate = (pickupDueDate && typeof pickupDueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(pickupDueDate.trim()))
+      ? pickupDueDate.trim()
+      : new Date().toISOString().slice(0, 10);
+  } else {
+    if (!pickupDueDate || typeof pickupDueDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(pickupDueDate.trim())) {
+      return res.status(400).json({ message: 'กรุณาระบุวันรับสินค้า (pickupDueDate ในรูปแบบ YYYY-MM-DD) ให้ชัดเจน ห้ามเว้นว่าง' });
+    }
+    targetPickupDate = pickupDueDate.trim();
+  }
 
   // P1 Finding 4: Validate expectedRevision when provided
   if (expectedRevision != null && (!Number.isInteger(Number(expectedRevision)) || Number(expectedRevision) <= 0)) {
     return res.status(400).json({ message: 'expectedRevision ต้องเป็นจำนวนเต็มบวก' });
   }
 
-  // Lead-time policy check
-  const { resolvePickupPolicy, evaluateTripLeadTime, calculateConfirmationPickupDue, normalizeDateString } = require('../services/so-pickup-policy');
-  const policy = await resolvePickupPolicy();
-  const leadCheck = evaluateTripLeadTime(targetPickupDate, policy.leadTimeDays, policy.strictMode);
-  if (!leadCheck.valid && leadCheck.blocked) {
-    return res.status(400).json({ message: leadCheck.error, leadCheck });
+  // Lead-time policy check (ข้ามสำหรับตั๋วคุมและไม่ใช้รถเนื่องจากไม่มีรถบรรทุก)
+  let leadCheck = null;
+  if (!isAllControlTicket && !isAllNoTruck) {
+    const { resolvePickupPolicy, evaluateTripLeadTime } = require('../services/so-pickup-policy');
+    const policy = await resolvePickupPolicy();
+    leadCheck = evaluateTripLeadTime(targetPickupDate, policy.leadTimeDays, policy.strictMode);
+    if (!leadCheck.valid && leadCheck.blocked) {
+      return res.status(400).json({ message: leadCheck.error, leadCheck });
+    }
   }
 
   // Canonical payload hash calculation
@@ -948,6 +1105,7 @@ router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
     let residualTripId = null;
     let residualTripCode = null;
     let residualOrderCount = 0;
+    let replayed = false;
 
     await wfTransaction(async tx => {
       // 1. Transaction-owned applock
@@ -973,6 +1131,13 @@ router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
         const err = new Error('ไม่พบเที่ยวรถนี้');
         err.status = 404;
         throw err;
+      }
+      if (tripRow.Status === 'CONFIRMED' && idempotencyKey && tripRow.IdempotencyKey === idempotencyKey && String(tripRow.PayloadHash || '').trim() === canonicalPayloadHash) {
+        if (!['ADMIN','MANAGER','C_LEVEL'].includes(req.user.role) && Number(tripRow.CreatedBy)!==Number(req.user.sub))
+          throw Object.assign(new Error('ไม่มีสิทธิ์ยืนยันเที่ยวรถของผู้อื่น'),{status:403});
+        const residual=(await tx.request().input('id',sql.Int,tripId).query('SELECT TripId,TripCode FROM wf.SalesTrip WHERE ParentTripId=@id AND IsResidual=1')).recordset[0];
+        residualTripId=residual?.TripId || null;residualTripCode=residual?.TripCode || null;replayed=true;
+        return;
       }
       if (tripRow.Status === 'CONFIRMED') {
         const err = new Error('เที่ยวนี้ได้รับการยืนยันไปแล้ว');
@@ -1048,91 +1213,10 @@ router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
         }
       }
 
-      // 5. Check quotation, credit hold, giveaway, and price approval on draft members (Finding 5)
-      const draftMembers = confirmedMembers.filter(m => m.MemberKind === 'DRAFT');
-      if (draftMembers.length > 0) {
-        const draftIds = draftMembers.map(m => Number(m.MemberId)).filter(Number.isInteger);
-        const draftOrdersReq = tx.request();
-        const draftOrders = (await draftOrdersReq.query(`
-          SELECT Id, WfRef, CustId, CustName, RequiresPriceApproval, PriceApprovalStatus, DocumentRevision, PickupDueDate, PickupDueType
-          FROM wf.SalesOrder
-          WHERE Id IN (${draftIds.join(',')})
-        `)).recordset || [];
-
-        const draftOrderMap = new Map(draftOrders.map(o => [o.Id, o]));
-
-        for (const ord of draftOrders) {
-          // 5.1 Quotation status check
-          const pendingQuote = (await tx.request().input('soId', sql.Int, ord.Id).query(`
-            SELECT TOP 1 q.Id, q.QuoteNo, q.Status
-            FROM wf.QuotationSourceSO src
-            INNER JOIN wf.Quotation q ON q.Id = src.QuoteId
-            WHERE src.SoId = @soId
-              AND q.Status IN ('DRAFT', 'SENT', 'EXPIRED')
-              AND NOT EXISTS (
-                SELECT 1 FROM wf.QuotationSourceSO acceptedSrc
-                INNER JOIN wf.Quotation acceptedQ ON acceptedQ.Id = acceptedSrc.QuoteId
-                WHERE acceptedSrc.SoId = @soId AND acceptedQ.Status = 'ACCEPTED'
-              )
-            ORDER BY q.Id DESC
-          `)).recordset?.[0];
-
-          if (pendingQuote) {
-            const err = new Error(`ใบสั่งขาย ${ord.WfRef || '#' + ord.Id} ผูกกับใบเสนอราคา ${pendingQuote.QuoteNo} (${pendingQuote.Status}) ต้องยืนยันใบเสนอราคาก่อน`);
-            err.status = 400;
-            throw err;
-          }
-
-          // 5.2 Giveaway approval check
-          const giveawayLines = (await tx.request().input('soId', sql.Int, ord.Id).query(`
-            SELECT LineNum, IsGiveaway, GiveawayApprovalStatus FROM wf.SalesOrderLine WHERE SoId = @soId
-          `)).recordset || [];
-          const pendingGiveaway = giveawayLines.find(l => l.IsGiveaway && l.GiveawayApprovalStatus !== 'APPROVED');
-          if (pendingGiveaway) {
-            const err = new Error(`ใบสั่งขาย ${ord.WfRef || '#' + ord.Id} รายการของแถมบรรทัด ${pendingGiveaway.LineNum} ยังไม่ได้รับอนุมัติ`);
-            err.status = 400;
-            throw err;
-          }
-
-          // 5.3 Credit hold check
-          const credit = (await tx.request().input('c', sql.NVarChar(20), String(ord.CustId)).query(`
-            SELECT CreditHold FROM wf.CreditMaster WHERE CustId = @c
-          `)).recordset?.[0];
-          if (credit?.CreditHold) {
-            const { resolveApprovalPolicy } = require('../services/approval-policy');
-            const pol = await resolveApprovalPolicy('CREDIT_OVERRIDE');
-            const allowed = req.user.role === 'ADMIN' || (pol && req.user.role === pol.RequiredRole);
-            if (!allowed) {
-              const err = new Error(`ลูกค้า ${ord.CustName || ord.CustId} ถูกระงับเครดิต (Credit Hold) — ต้องได้รับอนุมัติก่อนยืนยัน`);
-              err.status = 400;
-              throw err;
-            }
-          }
-
-          // 5.4 Price approval check
-          if (ord.RequiresPriceApproval) {
-            if (ord.PriceApprovalStatus !== 'APPROVED') {
-              const err = new Error(`ไม่สามารถยืนยันเที่ยวได้: ใบสั่งขาย ${ord.WfRef || '#' + ord.Id} (${ord.CustName}) มีรายการราคาต่ำกว่าประกาศที่ยังรอการอนุมัติ (สถานะ: ${ord.PriceApprovalStatus})`);
-              err.status = 400;
-              throw err;
-            }
-            const aprReq = tx.request();
-            aprReq.input('soId', sql.Int, ord.Id);
-            aprReq.input('rev', sql.Int, ord.DocumentRevision);
-            const aprCount = (await aprReq.query(`
-              SELECT COUNT(*) AS Cnt
-              FROM wf.PriceApproval
-              WHERE SoId = @soId AND DocumentRevision = @rev AND Status = 'APPROVED'
-            `)).recordset[0]?.Cnt || 0;
-            if (aprCount === 0) {
-              const err = new Error(`ไม่สามารถยืนยันเที่ยวได้: ใบสั่งขาย ${ord.WfRef || '#' + ord.Id} การอนุมัติราคาไม่ตรงกับ revision ปัจจุบัน (Revision ${ord.DocumentRevision})`);
-              err.status = 400;
-              throw err;
-            }
-          }
-        }
-      }
-
+      // Lock every draft member in ascending order before splitting or converting.
+      const {confirmDraft,lockConfirmationResource}=require('../services/draft-confirmation');
+      for(const m of allMembers.filter(m=>m.MemberKind==='DRAFT').sort((a,b)=>Number(a.MemberId)-Number(b.MemberId)))
+        await lockConfirmationResource(tx,'ConfirmSO_'+m.MemberId);
       // 6. Handle residual unselected members
       const residualMembers = allMembers.filter(m => !confirmedTypedKeySet.has(`${m.MemberKind}:${m.MemberId}`));
       residualOrderCount = residualMembers.length;
@@ -1165,7 +1249,7 @@ router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
             await tx.request()
               .input('resTripId', sql.Int, residualTripId)
               .input('soId', sql.Int, Number(rm.MemberId))
-              .query(`UPDATE wf.SalesOrder SET TripId = @resTripId WHERE Id = @soId`);
+              .query(`UPDATE wf.SalesOrder SET TripId = @resTripId, TruckPlate = NULL WHERE Id = @soId`);
           } else {
             await tx.request()
               .input('resTripId', sql.Int, residualTripId)
@@ -1176,67 +1260,10 @@ router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
       }
 
       // 7. Process confirmed selected members
-      for (const m of confirmedMembers) {
+      for (const m of [...confirmedMembers].sort((a,b)=>Number(a.MemberId)-Number(b.MemberId))) {
         if (m.MemberKind === 'DRAFT') {
-          // Calculate SO PickupDueDate independently from Trip PickupDueDate (Finding 5)
-          const draftOrd = (await tx.request().input('soId', sql.Int, Number(m.MemberId)).query(`
-            SELECT Id, PickupDueDate, PickupDueType FROM wf.SalesOrder WHERE Id = @soId
-          `)).recordset?.[0];
-
-          const explicitPickup = (draftOrd?.PickupDueType === 'EXPLICIT' && draftOrd?.PickupDueDate
-            ? normalizeDateString(draftOrd.PickupDueDate, { isWallClock: true }) : null);
-
-          const soPickupResult = await calculateConfirmationPickupDue({
-            explicitDate: explicitPickup,
-            confirmedAt: new Date(),
-          });
-
-          // Update draft with truck plate & SO pickup due snapshot
-          await tx.request()
-            .input('plate', sql.NVarChar(30), cleanTruckPlate)
-            .input('soDueDate', sql.Date, soPickupResult.pickupDueDate ? new Date(soPickupResult.pickupDueDate) : null)
-            .input('soDueType', sql.VarChar(20), soPickupResult.pickupDueType)
-            .input('confirmedAt', sql.DateTime2, soPickupResult.confirmedAt)
-            .input('pSnapId', sql.Int, soPickupResult.pickupPolicySnapshotId)
-            .input('soId', sql.Int, Number(m.MemberId))
-            .query(`
-              UPDATE wf.SalesOrder
-              SET TruckPlate = @plate,
-                  PickupDueDate = @soDueDate,
-                  PickupDueType = @soDueType,
-                  ConfirmedAt = @confirmedAt,
-                  PickupPolicySnapshotId = @pSnapId
-              WHERE Id = @soId
-            `);
-
-          // Execute native conversion procedure
-          const spReq = tx.request();
-          spReq.input('SoId', sql.Int, Number(m.MemberId));
-          spReq.output('NewSoid', sql.VarChar(50));
-          const spRes = await spReq.execute('wf.sp_ConfirmSalesOrder');
-          const newSoid = spRes.output?.NewSoid;
-          if (!newSoid) {
-            throw new Error(`ย้ายข้อมูลใบสั่งขาย #${m.MemberId} ไปยัง WINSpeed ไม่สำเร็จ`);
-          }
-
-          // Ensure native record in wf.SalesOrderExt has TripId & SO PickupDueDate snapshot
-          await tx.request()
-            .input('newSoid', sql.VarChar(50), String(newSoid))
-            .input('soDueDate', sql.Date, soPickupResult.pickupDueDate ? new Date(soPickupResult.pickupDueDate) : null)
-            .input('soDueType', sql.VarChar(20), soPickupResult.pickupDueType)
-            .input('confirmedAt', sql.DateTime2, soPickupResult.confirmedAt)
-            .input('pSnapId', sql.Int, soPickupResult.pickupPolicySnapshotId)
-            .input('tripId', sql.Int, tripId)
-            .query(`
-              UPDATE wf.SalesOrderExt
-              SET TripId = @tripId,
-                  PickupDueDate = @soDueDate,
-                  PickupDueType = @soDueType,
-                  ConfirmedAt = @confirmedAt,
-                  PickupPolicySnapshotId = @pSnapId,
-                  UpdatedAt = SYSUTCDATETIME()
-              WHERE SOID = @newSoid
-            `);
+          await confirmDraft({tx,draftId:Number(m.MemberId),user:req.user,ip:req.ip,
+            expectedTripId:tripId,explicitPickup:targetPickupDate,truckPlate:cleanTruckPlate});
         } else {
           // Already CONFIRMED native member: DO NOT overwrite original SO PickupDueDate! Only set TripId (Finding 5)
           await tx.request()
@@ -1254,6 +1281,7 @@ router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
       confirmTripReq.input('pDate', sql.Date, new Date(targetPickupDate));
       confirmTripReq.input('idemKey', sql.VarChar(100), idempotencyKey || null);
       confirmTripReq.input('payloadHash', sql.VarChar(64), canonicalPayloadHash);
+      confirmTripReq.input('userId', sql.Int, req.user?.sub || null);
 
       await confirmTripReq.query(`
         UPDATE wf.SalesTrip
@@ -1264,7 +1292,14 @@ router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
             ConfirmedAt = SYSUTCDATETIME(),
             IdempotencyKey = @idemKey,
             PayloadHash = @payloadHash,
-            DocumentRevision = DocumentRevision + 1
+            DocumentRevision = DocumentRevision + 1,
+            LoadPlanStatus = CASE 
+              WHEN LoadPlanStatus IN ('SALE_CONFIRMED', 'WAREHOUSE_ACK', 'LOADING', 'COMPLETED') THEN LoadPlanStatus 
+              ELSE 'SALE_CONFIRMED' 
+            END,
+            LoadPlanRevision = ISNULL(LoadPlanRevision, 1),
+            SaleConfirmedAt = ISNULL(SaleConfirmedAt, GETUTCDATE()),
+            SaleConfirmedBy = ISNULL(SaleConfirmedBy, @userId)
         WHERE TripId = @tripId
       `);
     });
@@ -1275,10 +1310,11 @@ router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
       message: 'ยืนยันเที่ยวรถสำเร็จ' + (residualTripId ? ` (ย้ายบิลที่ไม่ได้เลือกไปยังเที่ยวตกค้าง ${residualTripCode})` : ''),
       tripId,
       confirmedOrderCount: sortedOrderIds.length,
+      isIdempotent: replayed,
       residualTripId,
       residualTripCode,
       residualOrderCount,
-      warning: leadCheck.warning || null,
+      warning: leadCheck?.warning || null,
     });
   } catch (err) {
     console.error('[trips/confirm]', err);
@@ -1286,5 +1322,90 @@ router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
   }
 });
 
+// POST /api/trips/:id/submit-plan — Submit load plan for already-confirmed trip (F-15)
+router.post('/:id/submit-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER', 'C_LEVEL'), requireTripInScope, async (req, res) => {
+  const tripId = Number(req.params.id);
+  if (!Number.isInteger(tripId) || tripId <= 0) {
+    return res.status(400).json({ message: 'รหัส Trip ไม่ถูกต้อง' });
+  }
+
+  try {
+    const result = await wfTransaction(async (tx) => {
+      const trip = (await tx.request()
+        .input('tripId', sql.Int, tripId)
+        .query(`SELECT * FROM wf.SalesTrip WITH (UPDLOCK, ROWLOCK) WHERE TripId = @tripId`)).recordset?.[0];
+
+      if (!trip) {
+        throw Object.assign(new Error('ไม่พบ Trip นี้'), { status: 404 });
+      }
+
+      // R7-5: Restrict submit-plan to trip sales owner and elevated roles
+      const isElevated = ['ADMIN', 'MANAGER', 'C_LEVEL'].includes(req.user?.role);
+      if (!isElevated) {
+        const userId = Number(req.user?.sub || req.user?.userId);
+        let isOwner = Number(trip.SaleConfirmedBy) === userId || Number(trip.CreatedBy) === userId;
+        if (!isOwner) {
+          // Check if user owns any order or draft in this trip
+          const memberCheck = await tx.request()
+            .input('tripId', sql.Int, tripId)
+            .input('uid', sql.Int, userId)
+            .query(`
+              SELECT TOP 1 1 
+              FROM wf.SalesOrder 
+              WHERE TripId = @tripId 
+                AND (SalesUserId = @uid OR EnteredByUserId = @uid)
+            `);
+          if (memberCheck.recordset?.length > 0) {
+            isOwner = true;
+          }
+        }
+        if (!isOwner) {
+          throw Object.assign(
+            new Error('ไม่มีสิทธิ์ส่งแผนการโหลดของเที่ยวรถนี้ (จำกัดเฉพาะเจ้าของเที่ยวรถและผู้มีสิทธิ์ระดับบริหาร)'),
+            { status: 403 }
+          );
+        }
+      }
+
+      if (['SALE_CONFIRMED', 'WAREHOUSE_ACK', 'LOADING', 'COMPLETED'].includes(trip.LoadPlanStatus)) {
+        return {
+          tripId,
+          loadPlanStatus: trip.LoadPlanStatus,
+          message: `แผนการโหลดอยู่ในสถานะ ${trip.LoadPlanStatus} อยู่แล้ว`
+        };
+      }
+
+      const rev = Number(trip.LoadPlanRevision || 1);
+      await tx.request()
+        .input('tripId', sql.Int, tripId)
+        .input('rev', sql.Int, rev)
+        .input('uid', sql.Int, req.user?.sub || null)
+        .query(`
+          UPDATE wf.SalesTrip
+          SET LoadPlanStatus = 'SALE_CONFIRMED',
+              LoadPlanRevision = @rev,
+              SaleConfirmedAt = ISNULL(SaleConfirmedAt, GETUTCDATE()),
+              SaleConfirmedBy = ISNULL(SaleConfirmedBy, @uid)
+          WHERE TripId = @tripId
+        `);
+
+      return {
+        tripId,
+        loadPlanStatus: 'SALE_CONFIRMED',
+        loadPlanRevision: rev,
+        message: 'ส่งแผนการโหลดให้ฝ่ายคลังสำเร็จ'
+      };
+    });
+
+    broadcast('trip_updated', { tripId, action: 'plan_submitted' });
+    res.json(result);
+  } catch (err) {
+    console.error('[trips/submit-plan]', err);
+    res.status(err.status || 500).json({ message: err.message });
+  }
+});
+
 module.exports = router;
+
+
 

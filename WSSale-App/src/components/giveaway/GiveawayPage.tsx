@@ -5,6 +5,8 @@ import {
   fetchGiveawayItems, createGiveawayWithdrawal, fetchGiveawayBorrowRequests, resolveGiveawayBorrowRequest
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
+import { useCan } from '../../utils/capabilities';
+import { GiveawayQuotaSettings } from './GiveawayQuotaSettings';
 import { formatThaiDate } from '../../utils/date';
 import { appPrompt, appConfirm } from '../ui/AppAlert';
 import type { GiveawayRegion, GiveawayBudgetLine, GiveawayWithdrawal, GiveawayItem } from '../../types';
@@ -21,7 +23,8 @@ export function GiveawayPage() {
   const [log, setLog]           = useState<GiveawayWithdrawal[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
-  const [tab, setTab]           = useState<'budget' | 'log' | 'requests'>('budget');
+  const [tab, setTab]           = useState<'budget' | 'log' | 'requests' | 'settings'>('budget');
+  const can = useCan();
   const [showWd, setShowWd]     = useState(false);
 
   const load = useCallback(async () => {
@@ -119,6 +122,9 @@ export function GiveawayPage() {
                   <button onClick={() => setTab('budget')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${tab==='budget'?'text-white':'text-gray-500 hover:bg-gray-100'}`} style={tab==='budget'?{background:'#0C447C'}:{}}>งบ + คงเหลือ</button>
                   <button onClick={() => setTab('log')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${tab==='log'?'text-white':'text-gray-500 hover:bg-gray-100'}`} style={tab==='log'?{background:'#0C447C'}:{}}>ประวัติเบิก ({log.length})</button>
                   <button onClick={() => setTab('requests')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${tab==='requests'?'text-white':'text-gray-500 hover:bg-gray-100'}`} style={tab==='requests'?{background:'#0C447C'}:{}}>คำขอยืม ({requests.filter(r => r.Status === 'PENDING').length})</button>
+                  {can('giveaway.budget') && (
+                    <button onClick={() => setTab('settings')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${tab==='settings'?'text-white':'text-gray-500 hover:bg-gray-100'}`} style={tab==='settings'?{background:'#0C447C'}:{}}>ตั้งค่าโควต้า</button>
+                  )}
                 </div>
                 {canWithdraw && (
                   <button onClick={() => setShowWd(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-xs font-semibold" style={{ background: '#0C447C' }}>
@@ -180,6 +186,8 @@ export function GiveawayPage() {
                       {log.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-gray-300 whitespace-nowrap">ยังไม่มีการเบิก</td></tr>}
                     </tbody>
                   </table>
+                ) : tab === 'settings' && selected ? (
+                  <GiveawayQuotaSettings region={selected.Region} empCode={selected.EmpCode || undefined} lines={lines} onSaved={() => openRegion(selected)} />
                 ) : tab === 'requests' ? (
                   <div className="space-y-4">
                     {requests.map(r => (

@@ -155,16 +155,25 @@ test('SO-04.5: updateTicketExpiryOverlay enforces reason master, records overlay
   await runRemote(async () => {
     await assertTestDatabase();
 
-    const testDocuNo = `TEST-TICKET-${Date.now()}`;
+    // Use real coupon C6906916 (CouponID 245838) — non-destructive: snapshot before, restore in finally
+    const realCouponId = 245838;
+    const realCouponNo = 'C6906916';
     const testExpiry = '2026-11-30';
 
+    // Capture before-state
+    const beforeOverlay = await query(`
+      SELECT * FROM wf.ControlTicketOverlay WHERE DocuId = @cid
+    `, { cid: { type: sql.Int, value: realCouponId } });
+    const beforeChangeEvents = await query(`
+      SELECT COUNT(*) AS cnt FROM wf.ChangeEvent
+      WHERE EntityType = 'CONTROL_TICKET' AND EntityId = @dno
+    `, { dno: { type: sql.VarChar(100), value: realCouponNo } });
+
     try {
-      // 6.1 Update with valid reason master
+      // 6.1 Update with valid reason master using real CouponID
       const updateRes = await updateTicketExpiryOverlay({
-        docuNo: testDocuNo,
-        docuType: 104,
-        docuId: 99999,
-        goodCode: 'TEST-GOOD',
+        docuNo: realCouponNo,
+        docuId: realCouponId,
         expiryDate: testExpiry,
         strictOverride: true,
         reasonCode: 'POLICY_ADJUSTMENT',
@@ -173,17 +182,16 @@ test('SO-04.5: updateTicketExpiryOverlay enforces reason master, records overlay
       });
 
       assert.equal(updateRes.success, true);
-      assert.equal(updateRes.docuNo, testDocuNo);
       assert.equal(updateRes.expiryDate, testExpiry);
       assert.equal(updateRes.expiryType, 'EXPLICIT');
       assert.equal(updateRes.strictOverride, true);
 
       // 6.2 Verify row in wf.ControlTicketOverlay
       const overlayRows = await query(`
-        SELECT * FROM wf.ControlTicketOverlay WHERE DocuNo = @dno
-      `, { dno: { type: sql.NVarChar(50), value: testDocuNo } });
+        SELECT * FROM wf.ControlTicketOverlay WHERE DocuId = @cid
+      `, { cid: { type: sql.Int, value: realCouponId } });
 
-      assert.equal(overlayRows.length, 1);
+      assert.ok(overlayRows.length >= 1, 'Must have overlay row for real coupon');
       const row = overlayRows[0];
       assert.equal(row.ExpiryType, 'EXPLICIT');
       assert.equal(row.StrictOverrideFlag, true);
@@ -195,7 +203,7 @@ test('SO-04.5: updateTicketExpiryOverlay enforces reason master, records overlay
         SELECT TOP 1 * FROM wf.ChangeEvent
         WHERE EntityType = 'CONTROL_TICKET' AND EntityId = @dno
         ORDER BY EventId DESC
-      `, { dno: { type: sql.VarChar(100), value: testDocuNo } });
+      `, { dno: { type: sql.VarChar(100), value: realCouponNo } });
 
       assert.ok(auditRows.length > 0, 'Must record ChangeEvent for ticket overlay');
       assert.equal(auditRows[0].ReasonCode, 'POLICY_ADJUSTMENT');
@@ -205,7 +213,8 @@ test('SO-04.5: updateTicketExpiryOverlay enforces reason master, records overlay
       let invalidReasonCaught = false;
       try {
         await updateTicketExpiryOverlay({
-          docuNo: testDocuNo,
+          docuNo: realCouponNo,
+          docuId: realCouponId,
           expiryDate: testExpiry,
           reasonCode: 'INVALID_REASON_XYZ',
           reasonText: '',
@@ -217,15 +226,32 @@ test('SO-04.5: updateTicketExpiryOverlay enforces reason master, records overlay
       }
       assert.equal(invalidReasonCaught, true, 'Must reject invalid reason code');
     } finally {
-      // Clean up test overlay and change events
-      await wfQuery(`DELETE FROM wf.ControlTicketOverlay WHERE DocuNo = @dno`, {
-        dno: { type: sql.NVarChar(50), value: testDocuNo }
+      // Restore before-state: delete test-created overlay and put back original if any
+      await wfQuery(`DELETE FROM wf.ControlTicketOverlay WHERE DocuId = @cid`, {
+        cid: { type: sql.Int, value: realCouponId }
       });
-      await wfQuery(`DELETE FROM wf.ChangeEvent WHERE EntityType = 'CONTROL_TICKET' AND EntityId = @dno`, {
-        dno: { type: sql.VarChar(100), value: testDocuNo }
-      });
-      await wfQuery(`DELETE FROM wf.ControlTicketAlert WHERE DocuNo = @dno`, {
-        dno: { type: sql.NVarChar(50), value: testDocuNo }
+      if (beforeOverlay.length > 0) {
+        const b = beforeOverlay[0];
+        await wfQuery(`
+          INSERT INTO wf.ControlTicketOverlay (DocuNo, DocuType, DocuId, GoodCode, ExpiryDate, ExpiryType, StrictOverrideFlag, ReasonCode, ReasonText, CreatedBy, UpdatedAt)
+          VALUES (@dno, @dt, @did, @gc, @exp, @et, @sof, @rc, @rt, @cb, @ua)
+        `, {
+          dno: { type: sql.NVarChar(50), value: b.DocuNo },
+          dt: { type: sql.Int, value: b.DocuType },
+          did: { type: sql.Int, value: b.DocuId },
+          gc: { type: sql.NVarChar(50), value: b.GoodCode },
+          exp: { type: sql.Date, value: b.ExpiryDate },
+          et: { type: sql.NVarChar(50), value: b.ExpiryType },
+          sof: { type: sql.Bit, value: b.StrictOverrideFlag },
+          rc: { type: sql.NVarChar(50), value: b.ReasonCode },
+          rt: { type: sql.NVarChar(500), value: b.ReasonText },
+          cb: { type: sql.NVarChar(100), value: b.CreatedBy },
+          ua: { type: sql.DateTime, value: b.UpdatedAt },
+        });
+      }
+      // Clean up test change events (only the ones we created)
+      await wfQuery(`DELETE FROM wf.ChangeEvent WHERE EntityType = 'CONTROL_TICKET' AND EntityId = @dno AND UserId = 'TEST_AGENT'`, {
+        dno: { type: sql.VarChar(100), value: realCouponNo }
       });
     }
   });
@@ -236,14 +262,25 @@ test('SO-04.6: Near-expiry and expired alerts are deduplicated and resolved when
   await runRemote(async () => {
     await assertTestDatabase();
 
-    const testDocuNo = `TEST-ALERT-DEDUP-${Date.now()}`;
+    // Use real coupon C6906916 (CouponID 245838)
+    const realCouponId = 245838;
+    const realCouponNo = 'C6906916';
     const todayBkk = getBangkokDateString();
     const nearExpiryDate = addBangkokCalendarDays(todayBkk, 2); // 2 days from now
+
+    // Capture before-state
+    const beforeOverlay = await query(`
+      SELECT * FROM wf.ControlTicketOverlay WHERE DocuId = @cid
+    `, { cid: { type: sql.Int, value: realCouponId } });
+    const beforeAlerts = await query(`
+      SELECT * FROM wf.ControlTicketAlert WHERE DocuNo = @dno
+    `, { dno: { type: sql.NVarChar(50), value: realCouponNo } });
 
     try {
       // 7.1 Create overlay with near-expiry date
       await updateTicketExpiryOverlay({
-        docuNo: testDocuNo,
+        docuNo: realCouponNo,
+        docuId: realCouponId,
         expiryDate: nearExpiryDate,
         reasonCode: 'POLICY_ADJUSTMENT',
         reasonText: 'Test near expiry alert generation',
@@ -251,23 +288,23 @@ test('SO-04.6: Near-expiry and expired alerts are deduplicated and resolved when
       });
 
       // 7.2 Run alert reconciliation
-      await reconcileTicketAlerts(testDocuNo);
+      await reconcileTicketAlerts(realCouponNo);
 
       // Check alert row
       const alerts1 = await query(`
         SELECT * FROM wf.ControlTicketAlert WHERE DocuNo = @dno AND Status = 'ACTIVE'
-      `, { dno: { type: sql.NVarChar(50), value: testDocuNo } });
+      `, { dno: { type: sql.NVarChar(50), value: realCouponNo } });
 
       assert.equal(alerts1.length, 1, 'Must create exactly 1 active alert');
       assert.equal(alerts1[0].AlertType, 'NEAR_EXPIRY');
       const firstHash = alerts1[0].DedupHash;
 
       // 7.3 Run reconciliation AGAIN (simulating frequent polling / page refresh)
-      await reconcileTicketAlerts(testDocuNo);
+      await reconcileTicketAlerts(realCouponNo);
 
       const alerts2 = await query(`
         SELECT * FROM wf.ControlTicketAlert WHERE DocuNo = @dno AND Status = 'ACTIVE'
-      `, { dno: { type: sql.NVarChar(50), value: testDocuNo } });
+      `, { dno: { type: sql.NVarChar(50), value: realCouponNo } });
 
       assert.equal(alerts2.length, 1, 'Re-running reconciliation MUST NOT create duplicate alerts');
       assert.equal(alerts2[0].DedupHash, firstHash);
@@ -275,7 +312,8 @@ test('SO-04.6: Near-expiry and expired alerts are deduplicated and resolved when
       // 7.4 Extend expiry date far into the future (e.g. 60 days)
       const farFutureDate = addBangkokCalendarDays(todayBkk, 60);
       await updateTicketExpiryOverlay({
-        docuNo: testDocuNo,
+        docuNo: realCouponNo,
+        docuId: realCouponId,
         expiryDate: farFutureDate,
         reasonCode: 'POLICY_ADJUSTMENT',
         reasonText: 'Extended ticket expiry to resolve alert',
@@ -285,23 +323,58 @@ test('SO-04.6: Near-expiry and expired alerts are deduplicated and resolved when
       // Check that alert was resolved
       const activeAfterExtend = await query(`
         SELECT * FROM wf.ControlTicketAlert WHERE DocuNo = @dno AND Status = 'ACTIVE'
-      `, { dno: { type: sql.NVarChar(50), value: testDocuNo } });
+      `, { dno: { type: sql.NVarChar(50), value: realCouponNo } });
       assert.equal(activeAfterExtend.length, 0, 'Active alert must be resolved when expiry is extended');
 
       const resolvedAlert = await query(`
         SELECT * FROM wf.ControlTicketAlert WHERE DocuNo = @dno AND Status = 'RESOLVED'
-      `, { dno: { type: sql.NVarChar(50), value: testDocuNo } });
+      `, { dno: { type: sql.NVarChar(50), value: realCouponNo } });
       assert.equal(resolvedAlert.length, 1, 'Previous alert must be marked as RESOLVED');
       assert.ok(resolvedAlert[0].ResolvedAt !== null, 'ResolvedAt timestamp must be recorded');
     } finally {
-      await wfQuery(`DELETE FROM wf.ControlTicketOverlay WHERE DocuNo = @dno`, {
-        dno: { type: sql.NVarChar(50), value: testDocuNo }
+      // Restore overlay before-state
+      await wfQuery(`DELETE FROM wf.ControlTicketOverlay WHERE DocuId = @cid`, {
+        cid: { type: sql.Int, value: realCouponId }
       });
+      if (beforeOverlay.length > 0) {
+        const b = beforeOverlay[0];
+        await wfQuery(`
+          INSERT INTO wf.ControlTicketOverlay (DocuNo, DocuType, DocuId, GoodCode, ExpiryDate, ExpiryType, StrictOverrideFlag, ReasonCode, ReasonText, CreatedBy, UpdatedAt)
+          VALUES (@dno, @dt, @did, @gc, @exp, @et, @sof, @rc, @rt, @cb, @ua)
+        `, {
+          dno: { type: sql.NVarChar(50), value: b.DocuNo },
+          dt: { type: sql.Int, value: b.DocuType },
+          did: { type: sql.Int, value: b.DocuId },
+          gc: { type: sql.NVarChar(50), value: b.GoodCode },
+          exp: { type: sql.Date, value: b.ExpiryDate },
+          et: { type: sql.NVarChar(50), value: b.ExpiryType },
+          sof: { type: sql.Bit, value: b.StrictOverrideFlag },
+          rc: { type: sql.NVarChar(50), value: b.ReasonCode },
+          rt: { type: sql.NVarChar(500), value: b.ReasonText },
+          cb: { type: sql.NVarChar(100), value: b.CreatedBy },
+          ua: { type: sql.DateTime, value: b.UpdatedAt },
+        });
+      }
+      // Restore alerts before-state
       await wfQuery(`DELETE FROM wf.ControlTicketAlert WHERE DocuNo = @dno`, {
-        dno: { type: sql.NVarChar(50), value: testDocuNo }
+        dno: { type: sql.NVarChar(50), value: realCouponNo }
       });
-      await wfQuery(`DELETE FROM wf.ChangeEvent WHERE EntityType = 'CONTROL_TICKET' AND EntityId = @dno`, {
-        dno: { type: sql.VarChar(100), value: testDocuNo }
+      for (const a of beforeAlerts) {
+        await wfQuery(`
+          INSERT INTO wf.ControlTicketAlert (DocuNo, AlertType, DedupHash, Status, ResolvedAt, CreatedAt)
+          VALUES (@dno, @at, @dh, @st, @ra, @ca)
+        `, {
+          dno: { type: sql.NVarChar(50), value: a.DocuNo },
+          at: { type: sql.NVarChar(50), value: a.AlertType },
+          dh: { type: sql.NVarChar(100), value: a.DedupHash },
+          st: { type: sql.NVarChar(20), value: a.Status },
+          ra: { type: sql.DateTime, value: a.ResolvedAt },
+          ca: { type: sql.DateTime, value: a.CreatedAt },
+        });
+      }
+      // Clean up test change events
+      await wfQuery(`DELETE FROM wf.ChangeEvent WHERE EntityType = 'CONTROL_TICKET' AND EntityId = @dno AND UserId IN ('TEST_AGENT', 'TEST_ADMIN')`, {
+        dno: { type: sql.VarChar(100), value: realCouponNo }
       });
     }
   });

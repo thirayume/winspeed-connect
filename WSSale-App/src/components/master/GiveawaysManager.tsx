@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Gift, Search, RefreshCw, History, Plus, X, Calendar, MapPin, Tag, Layers, User, ArrowUpDown, AlertCircle } from 'lucide-react';
+import { Gift, Search, RefreshCw, History, X, Calendar, MapPin, User, ArrowUpDown, AlertCircle } from 'lucide-react';
 import { fetchGiveawayItems, fetchGiveawayWithdrawals, fetchGiveawayRegions } from '../../services/api';
 import { formatThaiDate } from '../../utils/date';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
@@ -106,8 +106,8 @@ export const GiveawaysManager = () => {
     </th>
   );
 
-  const uniqueBrands = new Set(items.map(i => i.Brand)).size;
-  const uniqueTypes = new Set(items.map(i => i.ItemType)).size;
+
+
   return (
     <div className="h-full flex flex-col gap-4 overflow-hidden">
       {/* Summary Cards */}

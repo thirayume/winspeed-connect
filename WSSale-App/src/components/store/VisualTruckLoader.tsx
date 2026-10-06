@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Truck, X, ArrowRight, CheckCircle2, Package, Info, Weight } from 'lucide-react';
 import { Button, cn } from '../ui/Base';
-import type { SalesOrder, SalesOrderLine, TruckType } from '../../types';
+import type { SalesOrder, TruckType } from '../../types';
 import { predictTruckCategory } from '../../utils/truckAnalyzer';
 import { fetchTruckTypes } from '../../services/api';
 
@@ -66,17 +66,24 @@ export const VisualTruckLoader = ({
     const hasTrailer = (truckType.MaxWeightTrailer || 0) > 0;
     const maxMain = truckType.MaxWeightMain || 15;
 
-    const withSeq = linesWithId.filter(l => l.loadSequence && l.loadSequence > 0);
-    const withoutSeq = linesWithId.filter(l => !l.loadSequence || l.loadSequence === 0);
+    const withZoneSeq = linesWithId.filter(l => l.loadSequence && l.loadSequence >= 100);
+    const withSalesSeqOrNoSeq = linesWithId.filter(l => !l.loadSequence || l.loadSequence < 100);
 
-    withSeq.forEach(l => {
+    // 1. Explicit 100s / 200s zone sequences
+    withZoneSeq.forEach(l => {
        if (l.loadSequence! >= 100 && l.loadSequence! < 200) initialMain.push(l);
        else if (l.loadSequence! >= 200) initialTrailer.push(l);
     });
-    initialMain.sort((a,b) => (a.loadSequence || 0) - (b.loadSequence || 0));
-    initialTrailer.sort((a,b) => (a.loadSequence || 0) - (b.loadSequence || 0));
 
-    withoutSeq.forEach(l => {
+    // 2. Sales sequences (1..99) or unsequenced items
+    // Sort items with sales sequence first (1..99) so they preserve sales load-in-order
+    withSalesSeqOrNoSeq.sort((a, b) => {
+       const seqA = (a.loadSequence && a.loadSequence > 0) ? a.loadSequence : 999;
+       const seqB = (b.loadSequence && b.loadSequence > 0) ? b.loadSequence : 999;
+       return seqA - seqB;
+    });
+
+    withSalesSeqOrNoSeq.forEach(l => {
        const currentMainWeight = initialMain.reduce((sum, item) => sum + item.qtyTon, 0);
        if (currentMainWeight + l.qtyTon <= maxMain || !hasTrailer) {
           initialMain.push(l);
@@ -84,6 +91,9 @@ export const VisualTruckLoader = ({
           initialTrailer.push(l);
        }
     });
+
+    initialMain.sort((a,b) => (a.loadSequence || 0) - (b.loadSequence || 0));
+    initialTrailer.sort((a,b) => (a.loadSequence || 0) - (b.loadSequence || 0));
 
     setAssigned({ main: initialMain, trailer: initialTrailer });
     setUnassigned(initialUnassigned);

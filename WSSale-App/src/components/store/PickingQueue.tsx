@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Truck, Package, Unlock, ListOrdered, Scale, User, FileText, CalendarDays, Camera, Upload, FileImage, X } from 'lucide-react';
+import { Truck, Package, Unlock, ListOrdered, Scale, User, FileText, CalendarDays, Camera, FileImage, X } from 'lucide-react';
 import { moveToPicking, confirmLoading, shipSO, unlockSO,
          fetchWeighCandidatesForSO, type WeighCandidate } from '../../services/api';
 import type { SalesOrder } from '../../types';

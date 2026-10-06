@@ -9,6 +9,7 @@ const router = require('express').Router();
 const crypto = require('crypto');
 const { sql, wfQuery } = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { getVisibleScope, scopeFilter } = require('../services/visible-scope');
 const { broadcast } = require('../services/socket');
 
 router.use(requireAuth);
@@ -25,6 +26,9 @@ const ISSUE_COPIES = [
 // ── GET /api/papertrail/board ──────────────────────────────────
 router.get('/board', async (req, res) => {
   try {
+    // R12 O-4: SALES/MANAGER see their own + team bills; operational roles and ADMIN/C_LEVEL/ACCOUNTING see all
+    const scope = await getVisibleScope(req.user);
+    const sf = scopeFilter(scope, { userCol: 'SalesUserId', empCol: 'OwnerEmpId', prefix: 'pt' });
     const r = await wfQuery(`
       WITH Orders AS (
         SELECT
@@ -39,7 +43,11 @@ router.get('/board', async (req, res) => {
           so.DeliveryDate,
           so.SalesUserId,
           CAST('DRAFT' AS VARCHAR(20)) AS SourceType,
-          CAST(NULL AS INT) AS DocuType
+          CAST(NULL AS INT) AS DocuType,
+          so.TripId,
+          so.SoPrefix,
+          so.NoTruckRequired,
+          CAST(NULL AS VARCHAR(20)) AS OwnerEmpId
         FROM wf.SalesOrder so WITH (NOLOCK)
         WHERE so.Status IN ('DRAFT', 'CONFIRMED', 'PICKING', 'LOADED', 'SHIPPED', 'IMPORTED')
 
@@ -57,7 +65,11 @@ router.get('/board', async (req, res) => {
           w.DeliveryDate,
           w.SalesUserId,
           CAST('WINSPEED' AS VARCHAR(20)) AS SourceType,
-          w.DocuType
+          w.DocuType,
+          w.TripId,
+          w.SoPrefix,
+          w.NoTruckRequired,
+          w.OwnerEmpId
         FROM (
           SELECT
             hd.SOID,
@@ -70,6 +82,10 @@ router.get('/board', async (req, res) => {
             ISNULL(ext.CreatedAt, hd.DocuDate) AS CreatedAt,
             ext.DeliveryDate,
             ext.SalesUserId,
+            ext.TripId,
+            ext.SoPrefix,
+            ext.NoTruckRequired,
+            CAST(hd.EmpID AS VARCHAR(20)) AS OwnerEmpId,
             CASE
               WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
               WHEN ext.WeighOutWeight IS NOT NULL OR hd.clearflag = 'Y' THEN 'SHIPPED'
@@ -93,11 +109,12 @@ router.get('/board', async (req, res) => {
       RankedSO AS (
         SELECT *, ROW_NUMBER() OVER(PARTITION BY Status ORDER BY CreatedAt DESC, Id DESC) as RN
         FROM Orders
+        WHERE ${sf.sql}
       ),
       ActiveSO AS ( SELECT * FROM RankedSO WHERE RN <= 100 )
       SELECT so.Id, so.WfRef, so.CustName, so.Status, so.TruckPlate, so.ControlTicketNo,
              so.ImportedDocuNo, so.CreatedAt, so.DeliveryDate, u.DisplayName AS SalesName,
-             so.DocuType,
+             so.DocuType, so.TripId, so.SoPrefix, so.NoTruckRequired,
              SUM(CASE
                    WHEN so.SourceType = 'DRAFT' AND ISNULL(sol.IsGiveaway, 0) = 0 THEN ISNULL(sol.QtyTon, 0)
                    WHEN so.SourceType = 'WINSPEED' AND ISNULL(sle.IsGiveaway, CASE WHEN dt.FreeFlag = 'Y' THEN 1 ELSE 0 END) = 0 THEN ISNULL(dt.GoodQty2, 0)
@@ -113,7 +130,24 @@ router.get('/board', async (req, res) => {
              COUNT(CASE WHEN so.SourceType = 'DRAFT' THEN sol.SoId ELSE dt.SOID END) AS LineCnt,
              (SELECT COUNT(*) FROM wf.PaperCopy pc WHERE pc.SoId = so.Id) AS CopyCnt,
              (SELECT COUNT(*) FROM wf.PaperCopy pc WHERE pc.SoId = so.Id AND pc.Status='LOST') AS LostCnt,
-             (SELECT TOP 1 dso.VerifiedAt FROM wf.SalesOrder dso WHERE CAST(dso.Id AS NVARCHAR(50)) = so.Id) AS VerifiedAt
+             (SELECT TOP 1 dso.VerifiedAt FROM wf.SalesOrder dso WHERE CAST(dso.Id AS NVARCHAR(50)) = so.Id) AS VerifiedAt,
+             (
+               SELECT TOP 1 cr.CouponNo
+               FROM wf.CouponReservation cr WITH (NOLOCK)
+               WHERE CAST(cr.CarrierSoId AS VARCHAR(50)) = so.Id OR cr.CarrierDocuNo = so.WfRef OR cr.CarrierDocuNo = so.ImportedDocuNo
+             ) AS CouponNo,
+             (
+               SELECT TOP 1 b.BeneficiaryCustName
+               FROM wf.CouponBeneficiary b WITH (NOLOCK)
+               JOIN wf.CouponReservation cr2 WITH (NOLOCK) ON cr2.BeneficiaryCustId = b.BeneficiaryCustId
+               WHERE CAST(cr2.CarrierSoId AS VARCHAR(50)) = so.Id OR cr2.CarrierDocuNo = so.WfRef OR cr2.CarrierDocuNo = so.ImportedDocuNo
+             ) AS BeneficiaryCustName,
+             (
+               SELECT TOP 1 ISNULL(cu.CustCode, cr3.OwnerCustId)
+               FROM wf.CouponReservation cr3 WITH (NOLOCK)
+               LEFT JOIN dbo.EMCust cu WITH (NOLOCK) ON cu.CustID = CASE WHEN ISNUMERIC(cr3.OwnerCustId) = 1 THEN CAST(cr3.OwnerCustId AS INT) END
+               WHERE CAST(cr3.CarrierSoId AS VARCHAR(50)) = so.Id OR cr3.CarrierDocuNo = so.WfRef OR cr3.CarrierDocuNo = so.ImportedDocuNo
+             ) AS OwnerCustCode
       FROM ActiveSO so
       LEFT JOIN wf.AppUser u ON u.Id = so.SalesUserId
       LEFT JOIN wf.SalesOrderLine sol WITH (NOLOCK)
@@ -123,9 +157,10 @@ router.get('/board', async (req, res) => {
       LEFT JOIN wf.SalesOrderLineExt sle WITH (NOLOCK)
         ON so.SourceType = 'WINSPEED' AND CONVERT(VARCHAR(50), sle.SOID) = so.Id AND sle.ListNo = dt.ListNo
       GROUP BY so.Id, so.WfRef, so.CustName, so.Status, so.TruckPlate, so.ControlTicketNo,
-               so.ImportedDocuNo, so.CreatedAt, so.DeliveryDate, u.DisplayName, so.DocuType
+               so.ImportedDocuNo, so.CreatedAt, so.DeliveryDate, u.DisplayName, so.DocuType,
+               so.TripId, so.SoPrefix, so.NoTruckRequired
       ORDER BY so.CreatedAt DESC
-    `);
+    `, sf.inputs);
     const board = {};
     for (const st of STAGES) board[st] = [];
     for (const row of r.recordset || []) {
@@ -134,10 +169,14 @@ router.get('/board', async (req, res) => {
         truckPlate: row.TruckPlate, controlTicketNo: row.ControlTicketNo,
         importedDocuNo: row.ImportedDocuNo, createdAt: row.CreatedAt,
         deliveryDate: row.DeliveryDate, salesName: row.SalesName, docuType: row.DocuType,
+        tripId: row.TripId, soPrefix: row.SoPrefix, noTruckRequired: row.NoTruckRequired,
         totalQtyTon: row.TotalQtyTon, drawnQtyTon: row.DrawnQtyTon,
         qtyTon: Math.max(0, (row.TotalQtyTon || 0) - (row.DrawnQtyTon || 0)),
         lineCnt: row.LineCnt, copyCnt: row.CopyCnt, lostCnt: row.LostCnt, verifiedAt: row.VerifiedAt,
         daysOpen: row.CreatedAt ? Math.floor((Date.now() - new Date(row.CreatedAt).getTime()) / 86400000) : 0,
+        couponNo: row.CouponNo || null,
+        beneficiaryCustName: row.BeneficiaryCustName || null,
+        ownerCustCode: row.OwnerCustCode || null,
       };
       (board[row.Status] ||= []).push(card);
     }
@@ -161,6 +200,33 @@ router.get('/document/:soId', async (req, res) => {
       SELECT LineNum, GoodCode, GoodName, QtyTon, QtyBag, PricePerTon, NetPricePerTon, IsGiveaway, LoadSequence
       FROM wf.v_AllSalesOrderLines WHERE SoId = @id ORDER BY LineNum
     `, { id: { type: sql.VarChar(50), value: soId } })).recordset;
+
+    if (lines && lines.length > 0 && !isNaN(Number(soId))) {
+      const couponLines = (await wfQuery(`
+        SELECT 
+          cl.LineNum, cl.CouponReservationId, cl.RefCouponDocuNo, cl.IsCouponDrawn,
+          ben.CustName AS BeneficiaryCustName,
+          own.CustCode AS OwnerCustCode, own.CustName AS OwnerCustName
+        FROM wf.SalesOrderLine cl WITH (NOLOCK)
+        LEFT JOIN wf.CouponReservation cr WITH (NOLOCK) ON cr.Id = cl.CouponReservationId
+        LEFT JOIN dbo.EMCust ben WITH (NOLOCK) ON ben.CustID = CASE WHEN ISNUMERIC(cr.BeneficiaryCustId) = 1 THEN CAST(cr.BeneficiaryCustId AS INT) END
+        LEFT JOIN dbo.EMCust own WITH (NOLOCK) ON own.CustID = CASE WHEN ISNUMERIC(cr.OwnerCustId) = 1 THEN CAST(cr.OwnerCustId AS INT) END
+        WHERE cl.SoId = @id
+      `, { id: { type: sql.Int, value: Number(soId) } })).recordset || [];
+      const cMap = new Map(couponLines.map(cl => [cl.LineNum, cl]));
+      for (const line of lines) {
+        const match = cMap.get(line.LineNum);
+        if (match) {
+          line.CouponReservationId = match.CouponReservationId;
+          line.RefCouponDocuNo = match.RefCouponDocuNo;
+          line.IsCouponDrawn = match.IsCouponDrawn;
+          line.BeneficiaryCustName = match.BeneficiaryCustName;
+          line.OwnerCustCode = match.OwnerCustCode;
+          line.OwnerCustName = match.OwnerCustName;
+        }
+      }
+    }
+
     res.json({ ...hd, lines });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });

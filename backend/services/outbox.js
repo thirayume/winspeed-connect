@@ -9,9 +9,9 @@ const { sql, wfQuery } = require('../db');
 
 const MAX_RETRY = 5;
 
-async function enqueue(eventType, aggregateId, payload, idempotencyKey = null) {
+async function enqueue(eventType, aggregateId, payload, idempotencyKey = null, options = {}) {
   try {
-    await wfQuery(`
+    await (options.query || wfQuery)(`
       INSERT INTO wf.OutboxEvent (EventType, AggregateId, Payload, IdempotencyKey)
       VALUES (@t, @a, @p, @k)`,
       {
@@ -21,6 +21,7 @@ async function enqueue(eventType, aggregateId, payload, idempotencyKey = null) {
         k: { type: sql.NVarChar(120), value: idempotencyKey },
       });
   } catch (e) {
+    if (options.strict) throw e;
     // 2601/2627 = duplicate idempotency key → ถือว่า enqueue ไปแล้ว (idempotent)
     const code = e?.number ?? e?.originalError?.code;
     if (code !== 2601 && code !== 2627) console.error('[outbox] enqueue failed:', e.message);

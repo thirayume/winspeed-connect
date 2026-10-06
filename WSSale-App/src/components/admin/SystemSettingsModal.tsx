@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Settings,
   Save,
@@ -12,6 +12,7 @@ import {
   Truck,
   History,
   Info,
+  Ticket,
 } from 'lucide-react';
 import { fetchSystemSettings, updateSystemSettings, fetchEditReasons } from '../../services/api';
 
@@ -20,7 +21,7 @@ interface SystemSettingsModalProps {
   onClose: () => void;
 }
 
-type TabKey = 'pickup' | 'ticket' | 'rebate' | 'weight' | 'history';
+type TabKey = 'pickup' | 'ticket' | 'rebate' | 'weight' | 'settle' | 'history';
 
 const DEFAULT_REASON_OPTIONS = [
   { code: 'POLICY_ADJUSTMENT', label: 'ปรับปรุงตามนโยบายบริษัท' },
@@ -60,6 +61,10 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
   const [standardBagKg, setStandardBagKg] = useState<string>('50.0');
   const [minPct, setMinPct] = useState<string>('2.0');
   const [maxPct, setMaxPct] = useState<string>('5.0');
+
+  const [settleWindowDays, setSettleWindowDays] = useState<string>('3');
+  const [goLiveCutoff, setGoLiveCutoff] = useState<string>('2000-01-01');
+  const [borrowMaxPct, setBorrowMaxPct] = useState<string>('100');
 
   // Concurrency & Original Settings Tracking
   const [loadedRevision, setLoadedRevision] = useState<number | undefined>(undefined);
@@ -120,6 +125,10 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
             setStandardBagKg(String(raw.STANDARD_BAG_WEIGHT_KG ?? set.standardBagKg ?? '50.0'));
             setMinPct(String(raw.WEIGHT_TOLERANCE_MIN_PCT ?? set.minPct ?? '2.0'));
             setMaxPct(String(raw.WEIGHT_TOLERANCE_MAX_PCT ?? set.maxPct ?? '5.0'));
+
+            setSettleWindowDays(String(raw.COUPON_SETTLEMENT_WINDOW_DAYS ?? set.COUPON_SETTLEMENT_WINDOW_DAYS ?? '3'));
+            setGoLiveCutoff(String(raw.COUPON_GOLIVE_CUTOFF_DATE ?? set.COUPON_GOLIVE_CUTOFF_DATE ?? '2000-01-01'));
+            setBorrowMaxPct(String(raw.GIVEAWAY_BORROW_MAX_PCT ?? set.GIVEAWAY_BORROW_MAX_PCT ?? '100'));
           }
           if (res.currentRevision !== undefined) {
             setLoadedRevision(res.currentRevision);
@@ -183,6 +192,17 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
       if (alertDays < 0) {
         throw new Error('วันแจ้งเตือนตั๋วคุมหมดอายุต้องไม่ติดลบ');
       }
+      const windowDays = parseStrictInt(settleWindowDays, 3);
+      if (windowDays < 0 || windowDays > 60) {
+        throw new Error('ช่วงวันย้อนหลังของการตัดตั๋วต้องอยู่ระหว่าง 0 ถึง 60 วัน');
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(goLiveCutoff.trim())) {
+        throw new Error('วันเริ่มใช้งานระบบต้องเป็นวันที่รูปแบบ YYYY-MM-DD');
+      }
+      const borrowPct = parseStrictInt(borrowMaxPct, 100);
+      if (borrowPct < 0 || borrowPct > 100) {
+        throw new Error('เพดานการยืมของแถมต้องอยู่ระหว่าง 0 ถึง 100%');
+      }
       const overloadPct = parseStrictFloat(tripTolerancePct, 0);
       if (overloadPct < 0) {
         throw new Error('Overload Tolerance % ต้องไม่ติดลบ');
@@ -203,6 +223,9 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
         STANDARD_BAG_WEIGHT_KG: bag,
         WEIGHT_TOLERANCE_MIN_PCT: minP,
         WEIGHT_TOLERANCE_MAX_PCT: maxP,
+        COUPON_SETTLEMENT_WINDOW_DAYS: windowDays,
+        COUPON_GOLIVE_CUTOFF_DATE: goLiveCutoff.trim(),
+        GIVEAWAY_BORROW_MAX_PCT: borrowPct,
       };
 
       // Only submit dirty (modified) keys
@@ -326,6 +349,17 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
             }`}
           >
             <Truck size={15} /> เที่ยวรถ & เครื่องชั่ง
+          </button>
+
+          <button
+            onClick={() => setActiveTab('settle')}
+            className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
+              activeTab === 'settle'
+                ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
+                : 'border-transparent text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            <Ticket size={15} /> ตัดตั๋ว & ของแถม
           </button>
 
           <button
@@ -644,6 +678,58 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
                       </div>
                       <p className="text-[10px] text-gray-400 mt-1">เกณฑ์ส่วนต่างสูงสุด (ค่าเริ่มต้น +5.0%)</p>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB: ตัดตั๋ว & ของแถม */}
+              {activeTab === 'settle' && (
+                <div className="space-y-4 text-xs">
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-blue-900 flex items-start gap-2">
+                    <Info size={16} className="text-[#0C447C] shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold text-[#0C447C] mb-0.5">การจับคู่ใบตัดตั๋ว และการยืมของแถม</div>
+                      ใบตัดตั๋วที่เก่ากว่าช่วงนี้จะไม่แสดงในรายการรอจับคู่ และตัดแบบแมนนวลไม่ได้
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-bold text-gray-700 mb-1">ช่วงวันย้อนหลังก่อนวันสร้างรายการจอง (วัน)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="60"
+                        value={settleWindowDays}
+                        onChange={e => setSettleWindowDays(e.target.value)}
+                        className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none"
+                      />
+                      <p className="text-[11px] text-gray-500 mt-1">ค่าเริ่มต้น 3 วัน</p>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-gray-700 mb-1">วันเริ่มใช้งานระบบ (Go-Live)</label>
+                      <input
+                        type="date"
+                        value={goLiveCutoff}
+                        onChange={e => setGoLiveCutoff(e.target.value)}
+                        className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none"
+                      />
+                      <p className="text-[11px] text-gray-500 mt-1">ใบตัดตั๋วก่อนวันนี้จะไม่ถูกแสดงหรือจับคู่</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">ยืมของแถมได้สูงสุด (% ของโควต้าคงเหลือของผู้ให้ยืม)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={borrowMaxPct}
+                      onChange={e => setBorrowMaxPct(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none"
+                    />
+                    <p className="text-[11px] text-gray-500 mt-1">ค่าเริ่มต้น 100% ตรวจทั้งตอนขอยืมและตอนอนุมัติ</p>
                   </div>
                 </div>
               )}

@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
+import { bookingNoteError } from '../../utils/bookingNotes';
+import { useState, useEffect, useRef } from 'react';
 import { X, Truck, MapPin } from 'lucide-react';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
-import { fetchTruckStats, createTrip } from '../../services/api';
+import { fetchTruckStats, createTrip, updateTrip } from '../../services/api';
 
 export type TripSetupData = {
   tripId?: number;
   tripCode?: string;
+  expectedRevision?: number;
   truckPlate?: string;
   deliveryDate: string;
   pSling?: boolean;
@@ -28,7 +30,7 @@ export function TripSetupModal({
   const [truckPlate, setTruckPlate] = useState(initialData?.truckPlate || '');
   const [isTruckOpen, setIsTruckOpen] = useState(false);
 
-  const [deliveryDate, setDeliveryDate] = useState(initialData?.deliveryDate || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10));
+  const [deliveryDate, setDeliveryDate] = useState(initialData?.deliveryDate || '');
 
   const [pSling, setPSling] = useState(initialData?.pSling || false);
   const [loadInOrder, setLoadInOrder] = useState(initialData?.loadInOrder || false);
@@ -37,9 +39,12 @@ export function TripSetupModal({
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (isOpen) {
-      setTruckPlate(initialData?.truckPlate || '');
+    const opening = isOpen && !wasOpen.current;
+    wasOpen.current = isOpen;
+    if (opening) {
+      setTruckPlate(['ยังไม่ระบุรถ', 'ตั๋วคุม', 'ไม่ระบุทะเบียนรถ'].includes(initialData?.truckPlate || '') ? '' : initialData?.truckPlate || '');
       setDeliveryDate(initialData?.deliveryDate || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10));
       setPSling(initialData?.pSling || false);
       setLoadInOrder(initialData?.loadInOrder || false);
@@ -55,20 +60,26 @@ export function TripSetupModal({
 
   const handleConfirm = async () => {
     if (submitting) return;
+    const noteError = bookingNoteError(remark);
+    if (noteError) { setError(noteError); return; }
     setSubmitting(true);
     setError('');
     try {
-      const plate = (!truckPlate || truckPlate === 'ยังไม่ระบุรถ') ? null : truckPlate;
-      const res = await createTrip({
+      const plate = (!truckPlate.trim() || ['ยังไม่ระบุรถ', 'ตั๋วคุม', 'ไม่ระบุทะเบียนรถ'].includes(truckPlate.trim())) ? null : truckPlate.trim();
+      const res = initialData?.tripId
+        ? await updateTrip(initialData.tripId, { transRegistration: plate, deliveryDate, pSling, loadInOrder, remark, expectedRevision: initialData.expectedRevision! })
+        : await createTrip({
         transRegistration: plate,
         deliveryDate,
         truckCapacityTon: 30,
+        pSling, remark,
       });
 
       onConfirm({
+        expectedRevision: 'documentRevision' in res ? res.documentRevision : undefined,
         tripId: res.tripId,
         tripCode: res.tripCode,
-        truckPlate: truckPlate || 'ยังไม่ระบุรถ',
+        truckPlate: plate || undefined,
         deliveryDate,
         pSling,
         loadInOrder,
@@ -146,12 +157,13 @@ export function TripSetupModal({
 
           <div className="space-y-1">
             <label className="text-sm font-bold text-gray-700">หมายเหตุทริป</label>
-            <textarea
+            <textarea maxLength={255}
               value={remark} onChange={e => setRemark(e.target.value)}
-              placeholder="ระบุหมายเหตุสำหรับทริปนี้ (ถ้ามี)..."
+              placeholder="แสดงใน Description ทุกบิลของเที่ยว"
               rows={2}
               className="w-full border border-gray-300 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#0C447C] transition-all resize-none text-sm"
             />
+            <div className="text-xs text-gray-500">แสดงใน Description ทุกบิลของเที่ยว · {Array.from(remark).length}/255</div>
           </div>
         </div>
 
@@ -160,7 +172,7 @@ export function TripSetupModal({
             ยกเลิก
           </button>
           <button onClick={handleConfirm} disabled={submitting} className="px-6 py-2.5 bg-[#0C447C] text-white font-bold rounded-xl hover:bg-blue-800 transition-colors shadow-md disabled:opacity-50">
-            {submitting ? 'กำลังสร้างเที่ยวรถ...' : 'ยืนยันและเริ่มจัดออร์เดอร์'}
+            {submitting ? 'กำลังบันทึก...' : initialData?.tripId ? 'บันทึกการแก้ไขเที่ยวรถ' : 'ยืนยันและเริ่มจัดออร์เดอร์'}
           </button>
         </div>
       </div>

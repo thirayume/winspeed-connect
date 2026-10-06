@@ -5,6 +5,9 @@ const root = path.resolve(__dirname, '..');
 const queue = ['docs/README.md','docs/CURRENT-STATE.md','docs/DEPLOYMENT.md'];
 const seen = new Set();
 const errors = [];
+// Design baseline v2.0.0 is historical; release manifests must agree with root.
+const releaseVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(releaseVersion || '')) errors.push('Invalid root release version');
 while (queue.length) {
   const file = queue.shift();
   if (seen.has(file)) continue;
@@ -22,7 +25,7 @@ while (queue.length) {
 for (const directory of ['','backend','WSSale-App']) {
   for (const name of ['package.json','package-lock.json']) {
     const p=path.join(root,directory,name),j=JSON.parse(fs.readFileSync(p));
-    if (j.version !== '2.0.0' || (j.packages && j.packages[''].version !== '2.0.0')) errors.push(p+': version mismatch');
+    if (j.version !== releaseVersion || (j.packages && j.packages['']?.version !== releaseVersion)) errors.push(p+': version mismatch');
   }
 }
 errors.forEach(x=>console.error(x));

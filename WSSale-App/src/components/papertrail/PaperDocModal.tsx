@@ -192,7 +192,20 @@ export function PaperDocModal({ soIds, onClose }: { soIds: (string | number)[]; 
                               return (
                                 <tr key={l.LineNum} className="border-b" style={{ borderColor: '#F0F0F0' }}>
                                   <td className="px-1 py-1.5 text-center whitespace-nowrap">{l.LineNum}</td>
-                                  <td className="px-2 py-1.5 whitespace-nowrap font-medium">{l.GoodName || l.GoodCode}{l.IsGiveaway ? ' (แถม)' : ''}</td>
+                                  <td className="px-2 py-1.5 whitespace-nowrap font-medium">
+                                    <div>{l.GoodName || l.GoodCode}{l.IsGiveaway ? ' (แถม)' : ''}</div>
+                                    {Boolean((l as any).IsCouponDrawn || (l as any).RefCouponDocuNo || (l as any).isCouponDrawn || (l as any).refCouponDocuNo) && (
+                                      <div className="text-[10px] text-emerald-700 font-normal mt-0.5">
+                                        ตัดตั๋วคูปอง: <span className="font-mono font-semibold">{(l as any).RefCouponDocuNo || (l as any).refCouponDocuNo || 'ตั๋วร่วม'}</span>
+                                        {Boolean((l as any).BeneficiaryCustName || (l as any).beneficiaryCustName) && (
+                                          <span> · ผู้รับ: {(l as any).BeneficiaryCustName || (l as any).beneficiaryCustName}</span>
+                                        )}
+                                        {Boolean((l as any).OwnerCustCode || (l as any).ownerCustCode || (l as any).OwnerCustName || (l as any).ownerCustName) && (
+                                          <span> · เจ้าของตั๋ว: {(l as any).OwnerCustCode || (l as any).ownerCustCode || (l as any).OwnerCustName || (l as any).ownerCustName}</span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </td>
                                   <td className="px-2 py-1.5 text-right whitespace-nowrap">{Number(l.QtyTon).toFixed(2)}</td>
                                   <td className="px-2 py-1.5 text-right whitespace-nowrap">{l.QtyBag}</td>
                                   {showPrices && <td className="px-2 py-1.5 text-right whitespace-nowrap">{price > 0 ? price.toLocaleString(undefined, {minimumFractionDigits: 2}) : '-'}</td>}

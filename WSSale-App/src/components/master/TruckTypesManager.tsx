@@ -1,8 +1,8 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { fetchTruckTypes, createTruckType, updateTruckType, deleteTruckType } from '../../services/api';
 import { Truck, Plus, RefreshCw, X, Save, Edit2, Trash2, Settings } from 'lucide-react';
 import type { TruckType } from '../../types';
-import { appConfirm, appPrompt } from '../ui/AppAlert';
+import { appConfirm } from '../ui/AppAlert';
 
 export const TruckTypesManager = () => {
   const [loading, setLoading] = useState(true);

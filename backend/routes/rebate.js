@@ -6,7 +6,10 @@ const router = require('express').Router();
 const crypto = require('crypto');
 const { sql, wfQuery, query, wfTransaction } = require('../db');
 const { requireAuth, requireRole, requireRebateAmountAccess, canViewAllRebateAmounts } = require('../middleware/auth');
+const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
 const { getPolicySettings, logChangeEvent, validateReasonCode } = require('../services/policy-contract');
+const { mapDatabaseError } = require('../services/error-adapter');
+const { applyClaimToDraft } = require('../services/rebate-claim-apply');
 
 router.use(requireAuth);
 
@@ -80,21 +83,80 @@ async function approverName(user) {
   return String(row?.DisplayName || row?.Username || `ผู้ใช้ #${user?.sub}`).slice(0, 150);
 }
 
-async function getCustomerRegion(custId) {
-  if (!custId) return '99';
+/**
+ * Resolves a customer identifier (either CustID or CustCode) to the internal EMCust record.
+ * @param {string|number} custKey - Customer code (e.g. '0330005') or CustID (e.g. 1079)
+ * @param {Function} [queryFn] - Optional query function (defaults to wfQuery)
+ * @returns {Promise<{ custId: number, custCode: string, custName: string, saleAreaId: number|null } | null>}
+ */
+async function resolveCustomer(custKey, queryFn = wfQuery) {
+  const raw = String(custKey || '').trim();
+  if (!raw) return null;
+
+  const isNumeric = /^[0-9]+$/.test(raw) && raw.length <= 10;
+  const numVal = isNumeric ? Number(raw) : null;
+
+  const result = await queryFn(`
+    SELECT TOP 1 CustID, CustCode, CustName, SaleAreaID
+    FROM dbo.EMCust WITH (NOLOCK)
+    WHERE CustCode = @raw
+       OR (@numVal IS NOT NULL AND CustID = @numVal)
+    ORDER BY CASE WHEN CustCode = @raw THEN 0 ELSE 1 END, CustID ASC
+  `, {
+    raw: { type: sql.NVarChar(50), value: raw },
+    numVal: { type: sql.Int, value: numVal },
+  });
+
+  const row = result?.recordset?.[0];
+  if (!row) return null;
+  return {
+    custId: Number(row.CustID),
+    custCode: String(row.CustCode || '').trim(),
+    custName: String(row.CustName || '').trim(),
+    saleAreaId: row.SaleAreaID != null ? Number(row.SaleAreaID) : null,
+  };
+}
+
+async function getCustomerRegion(custOrId, queryFn = wfQuery) {
+  if (!custOrId) return '99';
   try {
-    const r = await wfQuery(`
+    let saleAreaId = null;
+    let custKey = null;
+    if (typeof custOrId === 'object' && custOrId !== null) {
+      saleAreaId = custOrId.saleAreaId;
+      custKey = custOrId.custId;
+    } else {
+      custKey = custOrId;
+    }
+
+    if (saleAreaId != null) {
+      const r = await queryFn(`
+        SELECT TOP 1 SaleAreaCode
+        FROM dbo.EMSaleArea WITH (NOLOCK)
+        WHERE SaleAreaID = @aid
+      `, { aid: { type: sql.Int, value: saleAreaId } });
+      const code = r?.recordset?.[0]?.SaleAreaCode;
+      if (code && code.length >= 2) {
+        const reg = code.substring(0, 2);
+        if (['01', '02', '03', '04', '05', '06'].includes(reg)) return reg;
+      }
+    }
+
+    const r = await queryFn(`
       SELECT TOP 1 sa.SaleAreaCode
-      FROM dbo.EMCust c
-      JOIN dbo.EMSaleArea sa ON sa.SaleAreaID = c.SaleAreaID
-      WHERE c.CustID = @cid
-    `, { cid: { type: sql.NVarChar(20), value: String(custId) } });
-    const code = r.recordset?.[0]?.SaleAreaCode;
+      FROM dbo.EMCust c WITH (NOLOCK)
+      JOIN dbo.EMSaleArea sa WITH (NOLOCK) ON sa.SaleAreaID = c.SaleAreaID
+      WHERE c.CustID = @cid OR c.CustCode = @code
+    `, {
+      cid: { type: sql.NVarChar(20), value: String(custKey) },
+      code: { type: sql.NVarChar(50), value: String(custKey) }
+    });
+    const code = r?.recordset?.[0]?.SaleAreaCode;
     if (!code || code.length < 2) return '99';
     const reg = code.substring(0, 2);
     return ['01', '02', '03', '04', '05', '06'].includes(reg) ? reg : '99';
   } catch (e) {
-    console.warn(`[rebate] Could not infer region for customer ${custId}: ${e.message}`);
+    console.warn(`[rebate] Could not infer region for customer: ${e.message}`);
     return '99';
   }
 }
@@ -189,12 +251,13 @@ router.get('/pools', requireRebateAmountAccess, async (req, res) => {
     const { userId, year, month } = req.query;
     const conditions = [];
     const inputs = {};
-    if (canViewAllRebateAmounts(req.user)) {
-      if (userId) { conditions.push(`p.SalesUserId = @uid`); inputs.uid = { type: sql.Int, value: Number(userId) }; }
-    } else {
-      conditions.push(`p.SalesUserId = @uid`);
-      inputs.uid = { type: sql.Int, value: Number(req.user.sub) };
+    // R12 O-4: own + team (org chart); ADMIN/C_LEVEL/ACCOUNTING/APPROVER see all
+    const scope = await getVisibleScope(req.user);
+    if (!scope.all) {
+      const f = scopeFilter(scope, { userCol: 'p.SalesUserId', prefix: 'rp' });
+      conditions.push(f.sql); Object.assign(inputs, f.inputs);
     }
+    if (userId && (scope.all || scope.userIds.includes(Number(userId)))) { conditions.push(`p.SalesUserId = @uid`); inputs.uid = { type: sql.Int, value: Number(userId) }; }
     if (year)   { conditions.push(`p.PeriodYear = @y`);   inputs.y  = { type: sql.Int, value: Number(year) }; }
     if (month)  { conditions.push(`p.PeriodMonth = @m`);  inputs.m  = { type: sql.Int, value: Number(month) }; }
     
@@ -202,9 +265,30 @@ router.get('/pools', requireRebateAmountAccess, async (req, res) => {
     
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const r = await wfQuery(`
-      SELECT p.*, u.DisplayName AS SalesName
+      SELECT p.*,
+             u.DisplayName AS SalesName,
+             ISNULL(u_usage.UsedAmt, 0) AS UsedAmt,
+             ISNULL(l_remain.LedgerRemainingAmt, 0) AS LedgerRemainingAmt,
+             CASE 
+               WHEN (p.AccruedAmt - p.ClaimedAmt - ISNULL(u_usage.UsedAmt, 0)) < ISNULL(l_remain.LedgerRemainingAmt, 0)
+               THEN CASE WHEN (p.AccruedAmt - p.ClaimedAmt - ISNULL(u_usage.UsedAmt, 0)) > 0 THEN (p.AccruedAmt - p.ClaimedAmt - ISNULL(u_usage.UsedAmt, 0)) ELSE 0 END
+               ELSE CASE WHEN ISNULL(l_remain.LedgerRemainingAmt, 0) > 0 THEN ISNULL(l_remain.LedgerRemainingAmt, 0) ELSE 0 END
+             END AS AvailableAmt
       FROM wf.RebatePool p
       JOIN wf.AppUser u ON u.Id = p.SalesUserId
+      LEFT JOIN (
+        SELECT l.PoolId, SUM(u.DeductedAmt) AS UsedAmt
+        FROM wf.RebateUsage u
+        JOIN wf.RebateLedger l ON l.Id = u.LedgerId
+        WHERE l.ReversedFlag = 0
+        GROUP BY l.PoolId
+      ) u_usage ON u_usage.PoolId = p.Id
+      LEFT JOIN (
+        SELECT l.PoolId, SUM(l.RemainingAmt) AS LedgerRemainingAmt
+        FROM wf.RebateLedger l
+        WHERE l.ReversedFlag = 0
+        GROUP BY l.PoolId
+      ) l_remain ON l_remain.PoolId = p.Id
       ${where}
       ORDER BY p.PeriodYear DESC, p.PeriodMonth DESC
     `, inputs);
@@ -218,9 +302,10 @@ router.get('/ledger', requireRebateAmountAccess, async (req, res) => {
     const { poolId, soId, custId } = req.query;
     const conditions = ['l.ReversedFlag = 0'];
     const inputs = {};
-    if (!canViewAllRebateAmounts(req.user)) {
-      conditions.push(`p.SalesUserId = @salesUserId`);
-      inputs.salesUserId = { type: sql.Int, value: Number(req.user.sub) };
+    const scope = await getVisibleScope(req.user);
+    if (!scope.all) {
+      const f = scopeFilter(scope, { userCol: 'p.SalesUserId', prefix: 'rl' });
+      conditions.push(f.sql); Object.assign(inputs, f.inputs);
     }
     if (poolId) { conditions.push(`l.PoolId = @pid`);  inputs.pid  = { type: sql.Int,          value: Number(poolId) }; }
     if (soId)   { conditions.push(`l.SoId = @soId`);   inputs.soId = { type: sql.VarChar(50),  value: String(soId) }; }
@@ -247,9 +332,12 @@ router.get('/claims', requireRebateAmountAccess, async (req, res) => {
       conditions.push(`c.Status = @status`);
       inputs.status = { type: sql.NVarChar(20), value: status };
     }
-    if (!canViewAllRebateAmounts(req.user)) {
-      conditions.push(`c.SalesUserId = @salesUserId`);
-      inputs.salesUserId = { type: sql.Int, value: Number(req.user.sub) };
+    const scope = await getVisibleScope(req.user);
+    if (!scope.all) {
+      // own + team claims, plus claims in a region the user approves at tier 2 (wf.UserSaleArea)
+      const f = scopeFilter(scope, { userCol: 'c.SalesUserId', prefix: 'rc' });
+      conditions.push(`(${f.sql} OR c.RegionCode IN (SELECT RegionCode FROM wf.UserSaleArea WHERE UserId = @rcMe))`);
+      Object.assign(inputs, f.inputs, { rcMe: { type: sql.Int, value: Number(req.user.sub) } });
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const r = await wfQuery(`
@@ -285,6 +373,15 @@ router.get('/claims/:id', requireRebateAmountAccess, async (req, res) => {
 
     const rawClaim = claimR.recordset?.[0];
     if (!rawClaim) return res.status(404).json({ message: `ไม่พบใบขอเคลียร์ ID ${claimId}` });
+    // R12 O-4: own + team claims, plus claims in a region the user approves (wf.UserSaleArea)
+    const claimScope = await getVisibleScope(req.user);
+    if (!claimScope.all && !inScope(claimScope, { userId: rawClaim.SalesUserId })) {
+      const regionApprover = rawClaim.RegionCode && (await wfQuery(
+        `SELECT 1 AS ok FROM wf.UserSaleArea WHERE UserId = @uid AND RegionCode = @rc`,
+        { uid: { type: sql.Int, value: Number(req.user.sub) }, rc: { type: sql.VarChar(10), value: String(rawClaim.RegionCode) } }
+      )).recordset?.[0];
+      if (!regionApprover) return res.status(404).json({ message: `ไม่พบใบขอเคลียร์ ID ${claimId}` });
+    }
     const claim = normalizeClaim(rawClaim);
 
     // Customer Name lookup
@@ -331,11 +428,25 @@ router.get('/claims/:id', requireRebateAmountAccess, async (req, res) => {
         const yy = String(beYY()).slice(-2);
         const prefix = `RB${owner.RebateDocCode}${yy}-`;
         const last = (await wfQuery(`
-          SELECT TOP 1 TRY_CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS INT) AS Seq
-          FROM   dbo.SOInvHD
-          WHERE  Docutype = 106 AND DocuNo LIKE @p
-            AND  TRY_CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS INT) IS NOT NULL
-          ORDER  BY TRY_CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS INT) DESC`,
+          WITH CandidateDocs AS (
+            SELECT DocuNo,
+                   CASE 
+                     WHEN SUBSTRING(DocuNo, @plen + 1, 10) NOT LIKE '%[^0-9]%'
+                      AND SUBSTRING(DocuNo, @plen + 1, 10) <> ''
+                      AND (
+                        LEN(SUBSTRING(DocuNo, @plen + 1, 10)) <= 9
+                        OR (LEN(SUBSTRING(DocuNo, @plen + 1, 10)) = 10 AND CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS BIGINT) <= 2147483647)
+                      )
+                     THEN CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS INT)
+                     ELSE NULL
+                   END AS Seq
+            FROM   dbo.SOInvHD WITH (NOLOCK)
+            WHERE  Docutype = 106 AND DocuNo LIKE @p
+          )
+          SELECT TOP 1 DocuNo, Seq
+          FROM   CandidateDocs
+          WHERE  Seq IS NOT NULL
+          ORDER  BY Seq DESC, DocuNo DESC`,
           {
             p:    { type: sql.NVarChar(25), value: `${prefix}%` },
             plen: { type: sql.Int, value: prefix.length },
@@ -352,9 +463,20 @@ router.get('/claims/:id', requireRebateAmountAccess, async (req, res) => {
 // POST /api/rebate/claims — ยื่นเคลม (รองรับ Multi-line 6 บรรทัด & 4-Tier Approval parity)
 router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
   try {
-    const { poolId, claimAmt, custId, note, lines, invoices, periodYear, periodMonth } = req.body || {};
+    const { poolId, claimAmt, custId: rawCustId, note, lines, invoices, periodYear, periodMonth } = req.body || {};
     if (!claimAmt && (!lines || !lines.length)) {
       return res.status(400).json({ message: 'ต้องระบุ claimAmt หรือรายการย่อย lines' });
+    }
+
+    // Resolve customer code/ID to internal EMCust record
+    let cust = null;
+    let custId = null;
+    if (rawCustId) {
+      cust = await resolveCustomer(rawCustId);
+      if (!cust) {
+        return res.status(404).json({ message: `ไม่พบข้อมูลลูกค้า '${rawCustId}'` });
+      }
+      custId = cust.custId;
     }
 
     const isAmountOnly = !lines || !lines.length;
@@ -427,7 +549,7 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
       }
     }
 
-    const regionCode = await getCustomerRegion(custId);
+    const regionCode = await getCustomerRegion(cust || custId);
     const parsedLines = [];
     let pYear = Number(periodYear) || null;
     let pMonth = Number(periodMonth) || null;
@@ -448,13 +570,14 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
           EXEC @lockRes = sp_getapplock @Resource = @rname, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
           IF @lockRes < 0
           BEGIN
-            DECLARE @msg NVARCHAR(200) = CASE 
-              WHEN @lockRes = -1 THEN 'Lock request timed out for rebate allocation'
-              WHEN @lockRes = -2 THEN 'Lock request canceled'
-              WHEN @lockRes = -3 THEN 'Deadlock victim during rebate allocation'
-              ELSE 'Unable to acquire allocation lock for rebate claim'
+            DECLARE @msg NVARCHAR(200);
+            SET @msg = CASE 
+              WHEN @lockRes = -1 THEN '[ERR:50001] Lock request timed out for rebate allocation'
+              WHEN @lockRes = -2 THEN '[ERR:50001] Lock request canceled'
+              WHEN @lockRes = -3 THEN '[ERR:50001] Deadlock victim during rebate allocation'
+              ELSE '[ERR:50001] Unable to acquire allocation lock for rebate claim'
             END;
-            THROW 50001, @msg, 1;
+            RAISERROR (@msg, 16, 1);
           END;
         `);
       }
@@ -507,7 +630,26 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
       if (poolId) {
         const poolReq = tx.request();
         poolReq.input('pid', sql.Int, poolId);
-        const poolRes = await poolReq.query(`SELECT * FROM wf.RebatePool WITH (UPDLOCK, HOLDLOCK) WHERE Id = @pid`);
+        const poolRes = await poolReq.query(`
+          SELECT p.*,
+                 ISNULL(u_usage.UsedAmt, 0) AS UsedAmt,
+                 ISNULL(l_remain.LedgerRemainingAmt, 0) AS LedgerRemainingAmt
+          FROM wf.RebatePool p WITH (UPDLOCK, HOLDLOCK)
+          LEFT JOIN (
+            SELECT l.PoolId, SUM(u.DeductedAmt) AS UsedAmt
+            FROM wf.RebateUsage u
+            JOIN wf.RebateLedger l ON l.Id = u.LedgerId
+            WHERE l.PoolId = @pid AND l.ReversedFlag = 0
+            GROUP BY l.PoolId
+          ) u_usage ON u_usage.PoolId = p.Id
+          LEFT JOIN (
+            SELECT l.PoolId, SUM(l.RemainingAmt) AS LedgerRemainingAmt
+            FROM wf.RebateLedger l WITH (UPDLOCK)
+            WHERE l.PoolId = @pid AND l.ReversedFlag = 0
+            GROUP BY l.PoolId
+          ) l_remain ON l_remain.PoolId = p.Id
+          WHERE p.Id = @pid
+        `);
         pool = poolRes.recordset?.[0];
         if (!pool) throw { status: 404, message: 'ไม่พบ pool' };
         if (!canViewAllRebateAmounts(req.user) && Number(pool.SalesUserId) !== Number(req.user.sub)) {
@@ -645,7 +787,10 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
       }
 
       if (pool) {
-        const available = Number(pool.AccruedAmt) - Number(pool.ClaimedAmt);
+        const usedAmt = Number(pool.UsedAmt || 0);
+        const ledgerRemaining = pool.LedgerRemainingAmt != null ? Number(pool.LedgerRemainingAmt) : null;
+        const poolUnclaimed = Number(pool.AccruedAmt) - Number(pool.ClaimedAmt) - usedAmt;
+        const available = Math.max(0, ledgerRemaining != null ? Math.min(poolUnclaimed, ledgerRemaining) : poolUnclaimed);
         if (totalAmt > available) {
           throw { status: 400, message: `ยอดเกิน: ขอ ฿${totalAmt.toFixed(2)} ใช้ได้ ฿${available.toFixed(2)}` };
         }
@@ -830,8 +975,8 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
     });
   } catch (e) {
     console.error(e);
-    const status = e.status || (e.number === 50001 ? 409 : 500);
-    res.status(status).json({ message: e.message || 'เกิดข้อผิดพลาดในการยื่นเคลม' });
+    const { status, message } = mapDatabaseError(e, 'เกิดข้อผิดพลาดในการยื่นเคลม');
+    res.status(status).json({ message });
   }
 });
 
@@ -857,7 +1002,7 @@ router.post('/claims/:id/approve', async (req, res) => {
         EXEC @lockRes = sp_getapplock @Resource = @rname, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 5000;
         IF @lockRes < 0
         BEGIN
-          THROW 50001, 'Unable to acquire lock on rebate claim for decision (timeout/conflict)', 1;
+          RAISERROR ('[ERR:50001] Unable to acquire lock on rebate claim for decision (timeout/conflict)', 16, 1);
         END;
       `);
 
@@ -1093,8 +1238,8 @@ router.post('/claims/:id/approve', async (req, res) => {
     res.json(result);
   } catch (e) {
     console.error('[POST /claims/:id/approve error]', e.message || e);
-    const statusCode = e.status || (e.number === 50001 ? 409 : 500);
-    res.status(statusCode).json({ message: e.message || 'เกิดข้อผิดพลาดในการอนุมัติใบขอเคลียร์' });
+    const httpErr = mapDatabaseError(e, 'เกิดข้อผิดพลาดในการอนุมัติใบขอเคลียร์');
+    res.status(httpErr.status).json({ message: httpErr.message });
   }
 });
 
@@ -1125,7 +1270,7 @@ router.post('/claims/:id/reject', async (req, res) => {
         EXEC @lockRes = sp_getapplock @Resource = @rname, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 5000;
         IF @lockRes < 0
         BEGIN
-          THROW 50001, 'Unable to acquire lock on rebate claim for decision (timeout/conflict)', 1;
+          RAISERROR ('[ERR:50001] Unable to acquire lock on rebate claim for decision (timeout/conflict)', 16, 1);
         END;
       `);
 
@@ -1319,8 +1464,8 @@ router.post('/claims/:id/reject', async (req, res) => {
     res.json(result);
   } catch (e) {
     console.error('[POST /claims/:id/reject error]', e.message || e);
-    const statusCode = e.status || (e.number === 50001 ? 409 : 500);
-    res.status(statusCode).json({ message: e.message || 'เกิดข้อผิดพลาดในการไม่อนุมัติใบขอเคลียร์' });
+    const httpErr = mapDatabaseError(e, 'เกิดข้อผิดพลาดในการไม่อนุมัติใบขอเคลียร์');
+    res.status(httpErr.status).json({ message: httpErr.message });
   }
 });
 
@@ -1331,10 +1476,28 @@ router.get('/summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'),
       SELECT u.DisplayName AS SalesName,
              SUM(p.AccruedAmt) AS TotalAccrued,
              SUM(p.ClaimedAmt) AS TotalClaimed,
-             SUM(p.AccruedAmt - p.ClaimedAmt) AS TotalAvailable,
+             SUM(ISNULL(u_usage.UsedAmt, 0)) AS TotalUsed,
+             SUM(CASE 
+               WHEN (p.AccruedAmt - p.ClaimedAmt - ISNULL(u_usage.UsedAmt, 0)) < ISNULL(l_remain.LedgerRemainingAmt, 0)
+               THEN CASE WHEN (p.AccruedAmt - p.ClaimedAmt - ISNULL(u_usage.UsedAmt, 0)) > 0 THEN (p.AccruedAmt - p.ClaimedAmt - ISNULL(u_usage.UsedAmt, 0)) ELSE 0 END
+               ELSE CASE WHEN ISNULL(l_remain.LedgerRemainingAmt, 0) > 0 THEN ISNULL(l_remain.LedgerRemainingAmt, 0) ELSE 0 END
+             END) AS TotalAvailable,
              SUM(p.AllocatedAmt) AS TotalAllocated
       FROM wf.RebatePool p
       JOIN wf.AppUser u ON u.Id = p.SalesUserId
+      LEFT JOIN (
+        SELECT l.PoolId, SUM(u.DeductedAmt) AS UsedAmt
+        FROM wf.RebateUsage u
+        JOIN wf.RebateLedger l ON l.Id = u.LedgerId
+        WHERE l.ReversedFlag = 0
+        GROUP BY l.PoolId
+      ) u_usage ON u_usage.PoolId = p.Id
+      LEFT JOIN (
+        SELECT l.PoolId, SUM(l.RemainingAmt) AS LedgerRemainingAmt
+        FROM wf.RebateLedger l
+        WHERE l.ReversedFlag = 0
+        GROUP BY l.PoolId
+      ) l_remain ON l_remain.PoolId = p.Id
       WHERE (p.AccruedAmt > 0 OR p.ClaimedAmt > 0)
       GROUP BY u.DisplayName
       ORDER BY TotalAccrued DESC
@@ -1513,6 +1676,61 @@ router.get('/plans', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
+const CANONICAL_SALE_REGIONS = [
+  { RegionCode: '01', RegionName: 'กรุงเทพและปริมณฑล' },
+  { RegionCode: '02', RegionName: 'ภาคกลาง-ตะวันตก' },
+  { RegionCode: '03', RegionName: 'ภาคตะวันออกเฉียงเหนือ' },
+  { RegionCode: '04', RegionName: 'ภาคเหนือ' },
+  { RegionCode: '05', RegionName: 'ภาคใต้' },
+  { RegionCode: '06', RegionName: 'ภาคตะวันออก' },
+  { RegionCode: '10', RegionName: 'ภาคอีสานบน' },
+  { RegionCode: '11', RegionName: 'ภาคอีสานกลาง' },
+  { RegionCode: '12', RegionName: 'ภาคอีสานล่าง' },
+  { RegionCode: '13', RegionName: 'ภาคปุ๋ยเทพ 1' },
+  { RegionCode: '14', RegionName: 'ภาคปุ๋ยเทพ 2' },
+  { RegionCode: '15', RegionName: 'โรงงานและหน่วยงานราชการ' },
+  { RegionCode: '16', RegionName: 'เคาน์เตอร์เซลล์' },
+  { RegionCode: '99', RegionName: 'ไม่ระบุ' },
+];
+
+function normalizePlanRegion(r, regionRows = CANONICAL_SALE_REGIONS) {
+  if (!r) return 'ALL';
+  const s = String(r).trim();
+  if (s === 'ALL') return 'ALL';
+
+  const rows = Array.isArray(regionRows) && regionRows.length > 0 ? regionRows : CANONICAL_SALE_REGIONS;
+
+  // 1. Exact match on RegionCode
+  const byCode = rows.find(row => String(row.RegionCode).trim() === s);
+  if (byCode) return byCode.RegionCode;
+
+  // 2. Exact match on RegionName
+  const byName = rows.find(row => String(row.RegionName).trim() === s);
+  if (byName) return byName.RegionCode;
+
+  const err = new Error(`รหัสหรือชื่อภาคไม่ถูกต้อง (พบ: ${s})`);
+  err.status = 400;
+  err.code = 'INVALID_REGION';
+  throw err;
+}
+
+function normalizeGoodPattern(p) {
+  if (!p) return null;
+  const s = String(p).trim();
+  if (!s || s === 'ALL' || s === 'ทุกสูตร') return null;
+  if (s.includes('%')) return s;
+
+  // Formula patterns: e.g. 15-5-35, 16-8-8, 0-0-60, 15-15-15
+  const formulaMatch = s.match(/^(\d{1,2})\s*[-/]\s*(\d{1,2})\s*[-/]\s*(\d{1,2})(?:\s*[-/]\s*(\d{1,2}))?$/);
+  if (formulaMatch) {
+    const parts = [formulaMatch[1], formulaMatch[2], formulaMatch[3]];
+    if (formulaMatch[4]) parts.push(formulaMatch[4]);
+    const padded = parts.map(part => part.padStart(2, '0')).join('');
+    return `%${padded}%`;
+  }
+  return s;
+}
+
 // POST /api/rebate/plans — สร้าง Plan (DRAFT)
 router.post('/plans', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'), async (req, res) => {
   try {
@@ -1524,11 +1742,13 @@ router.post('/plans', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'), as
     const hasRefDoc = await hasRebatePlanRefDoc();
     const refDocColumn = hasRefDoc ? ', RefDoc' : '';
     const refDocValue = hasRefDoc ? ', @refDoc' : '';
+    const cleanPattern = normalizeGoodPattern(goodCodePattern);
+    const cleanRegion = normalizePlanRegion(region);
     const inputs = {
       no:    { type: sql.NVarChar(30),  value: planNo },
       title: { type: sql.NVarChar(200), value: title || null },
-      gcp:   { type: sql.NVarChar(50),  value: goodCodePattern || null },
-      region:{ type: sql.NVarChar(20),  value: region || 'ALL' },
+      gcp:   { type: sql.NVarChar(50),  value: cleanPattern },
+      region:{ type: sql.NVarChar(20),  value: cleanRegion },
       rt:    { type: sql.NVarChar(20),  value: returnType === 'PRICEDIFF' ? 'PRICEDIFF' : 'REBATE' },
       net:   { type: sql.Decimal(12,2), value: netPrice != null ? Number(netPrice) : null },
       vf:    { type: sql.Date,          value: validFrom || null },
@@ -1545,7 +1765,7 @@ router.post('/plans', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'), as
       VALUES (@no, @title${refDocValue}, @gcp, @region, @rt, @net, @vf, @vt, @alloc, @prio, 'DRAFT', @note, @uid)`,
       inputs);
     res.json(r.recordset[0]);
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // PATCH /api/rebate/plans/:id — แก้ไข / เปลี่ยนสถานะ (DRAFT→ACTIVE→CLOSED)
@@ -1563,8 +1783,8 @@ router.patch('/plans/:id', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'
     if (f.title !== undefined)          add('Title','title',sql.NVarChar(200), f.title || null);
     if (f.refDoc !== undefined && await hasRebatePlanRefDoc())
                                         add('RefDoc','refDoc',sql.NVarChar(100), f.refDoc || null);
-    if (f.goodCodePattern !== undefined)add('GoodCodePattern','gcp',sql.NVarChar(50), f.goodCodePattern || null);
-    if (f.region !== undefined)         add('Region','region',sql.NVarChar(20), f.region || 'ALL');
+    if (f.goodCodePattern !== undefined)add('GoodCodePattern','gcp',sql.NVarChar(50), normalizeGoodPattern(f.goodCodePattern));
+    if (f.region !== undefined)         add('Region','region',sql.NVarChar(20), normalizePlanRegion(f.region));
     if (f.returnType !== undefined)     add('ReturnType','rt',sql.NVarChar(20), f.returnType === 'PRICEDIFF' ? 'PRICEDIFF':'REBATE');
     if (f.netPrice !== undefined)       add('NetPrice','net',sql.Decimal(12,2), f.netPrice != null ? Number(f.netPrice):null);
     if (f.validFrom !== undefined)      add('ValidFrom','vf',sql.Date, f.validFrom || null);
@@ -1579,7 +1799,7 @@ router.patch('/plans/:id', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'
     const __r = await wfQuery(`UPDATE wf.RebatePlan SET ${sets.join(', ')} WHERE PlanId=@id`, inputs);
     if (!__r.rowsAffected?.[0]) return res.status(404).json({ message: `ไม่พบ Rebate Plan ID ${planId}` });
     res.json({ id: planId, ok: true });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // POST /api/rebate/plans/:id/allocate — จัดสรรงบ Plan → Pool ของ Sales
@@ -1618,9 +1838,40 @@ router.post('/plans/:id/allocate', requireRole('MANAGER', 'ADMIN', 'APPROVER', '
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
+async function resolveSalesEmpId(user) {
+  if (!user || user.role !== 'SALES') return null;
+  if (user.empId) return Number(user.empId);
+  try {
+    const u = (await wfQuery('SELECT EmpId FROM wf.AppUser WHERE Id = @id', { id: { type: sql.Int, value: Number(user.sub || user.id) } })).recordset?.[0];
+    return u?.EmpId ? Number(u.EmpId) : null;
+  } catch {
+    return null;
+  }
+}
+
+// R12 O-4: SALES/MANAGER see their own + team (org chart) coupons — same rule as bills.
+// Returns null when everything is visible, otherwise the EmpIDs in scope ([] = nothing).
+async function resolveScopeEmpIds(user) {
+  const { getVisibleScope } = require('../services/visible-scope');
+  const scope = await getVisibleScope(user);
+  if (scope.all) return null;
+  return scope.empIds.map(Number).filter(Number.isFinite);
+}
+function empInClause(col, empIds, inputs, prefix = 'se') {
+  const names = empIds.map((id, i) => { inputs[`${prefix}${i}`] = { type: sql.Int, value: id }; return `@${prefix}${i}`; });
+  return ` AND ${col} IN (${names.join(', ')})`;
+}
+
 // GET /api/rebate/voucher-summary — WFCoupon summary by salesperson (for VoucherPage)
+// R9-6: Scoped to salesperson's own EmpID if role is SALES
 router.get('/voucher-summary', async (req, res) => {
   try {
+    const scopeEmpIds = await resolveScopeEmpIds(req.user);
+    if (scopeEmpIds && !scopeEmpIds.length) return res.json([]);
+    const inputs = {};
+    let where = 'WHERE c.RemaQty > 0';
+    if (scopeEmpIds) where += empInClause('hd.EmpID', scopeEmpIds, inputs);
+
     const r = await wfQuery(`
       SELECT hd.EmpID,
              ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS EmpName,
@@ -1630,10 +1881,10 @@ router.get('/voucher-summary', async (req, res) => {
       FROM dbo.WFCoupon c
       JOIN dbo.SOHD hd  ON hd.SOID = c.DocuID
       LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
-      WHERE c.RemaQty > 0
+      ${where}
       GROUP BY hd.EmpID, emp.EmpName
       ORDER BY OutstandingTon DESC
-    `);
+    `, inputs);
     res.json(r.recordset || []);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
@@ -1679,10 +1930,16 @@ router.get('/accrual', async (req, res) => {
 // เงินที่คืนไปมาจากการขนเที่ยวใด ใบกำกับเลขใด
 router.get('/accrual/:custId', async (req, res) => {
   try {
-    const custId = String(req.params.custId || '').trim();
-    if (!custId) return res.status(400).json({ message: 'ต้องระบุรหัสลูกค้า' });
+    const rawCust = String(req.params.custId || '').trim();
+    if (!rawCust) return res.status(400).json({ message: 'ต้องระบุรหัสลูกค้า' });
+
+    const cust = await resolveCustomer(rawCust);
+    if (!cust) {
+      return res.status(404).json({ message: `ไม่พบข้อมูลลูกค้า '${rawCust}'` });
+    }
+
     const kind = String(req.query.lineType || 'REBATE').toUpperCase() === 'DIFF' ? 'DIFF' : 'REBATE';
-    const inputs = { cid: { type: sql.NVarChar(20), value: custId } };
+    const inputs = { cid: { type: sql.NVarChar(20), value: String(cust.custId) } };
     let where = `WHERE CustId = @cid AND ${kind === 'DIFF' ? 'RemainingTonDiff' : 'RemainingTonRebate'} > 0`;
     if (req.query.goodCode) { where += ' AND GoodCode = @gc'; inputs.gc = { type: sql.NVarChar(50), value: String(req.query.goodCode) }; }
     if (req.query.from)     { where += ' AND SourceDocuDate >= @from'; inputs.from = { type: sql.Date, value: req.query.from }; }
@@ -1837,11 +2094,25 @@ router.get('/next-rb-no', async (req, res) => {
     //
     // TRY_CAST คืน NULL เมื่อแปลงไม่ได้ จึงคัดใบแบบ TEST ออกได้โดยไม่ต้อง hardcode คำว่า TEST
     const last = (await wfQuery(`
-      SELECT TOP 1 DocuNo, TRY_CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS INT) AS Seq
-      FROM   dbo.SOInvHD
-      WHERE  Docutype = 106 AND DocuNo LIKE @p
-        AND  TRY_CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS INT) IS NOT NULL
-      ORDER  BY TRY_CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS INT) DESC`,
+      WITH CandidateDocs AS (
+        SELECT DocuNo,
+               CASE 
+                 WHEN SUBSTRING(DocuNo, @plen + 1, 10) NOT LIKE '%[^0-9]%'
+                  AND SUBSTRING(DocuNo, @plen + 1, 10) <> ''
+                  AND (
+                    LEN(SUBSTRING(DocuNo, @plen + 1, 10)) <= 9
+                    OR (LEN(SUBSTRING(DocuNo, @plen + 1, 10)) = 10 AND CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS BIGINT) <= 2147483647)
+                  )
+                 THEN CAST(SUBSTRING(DocuNo, @plen + 1, 10) AS INT)
+                 ELSE NULL
+               END AS Seq
+        FROM   dbo.SOInvHD WITH (NOLOCK)
+        WHERE  Docutype = 106 AND DocuNo LIKE @p
+      )
+      SELECT TOP 1 DocuNo, Seq
+      FROM   CandidateDocs
+      WHERE  Seq IS NOT NULL
+      ORDER  BY Seq DESC, DocuNo DESC`,
       {
         p:    { type: sql.NVarChar(25), value: `${prefix}%` },
         plen: { type: sql.Int, value: prefix.length },
@@ -2180,13 +2451,19 @@ router.post('/sync-mirror', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEV
 // อ่านจาก dbo.WFCoupon โดยตรง · เดิมอ่านจาก wf.CouponMirror ซึ่งเป็นสำเนาที่ต้อง
 // กดปุ่ม sync และไม่เคยถูก sync เลย (0 แถว) หน้าจอจึงว่างทั้งที่ในระบบมีคูปองอยู่จริง
 // สำเนาที่ต้องกดปุ่มให้ตรงกันคือสิ่งที่ทำให้ข้อมูลรีเบทแยกกันตั้งแต่แรก
+// GET /api/rebate/coupons — คูปองคงค้างใน WINSpeed สรุปรายลูกค้า
+// R9-6: Scoped to salesperson's own EmpID if role is SALES
 router.get('/coupons', async (req, res) => {
   try {
+    const scopeEmpIds = await resolveScopeEmpIds(req.user);
+    if (scopeEmpIds && !scopeEmpIds.length) return res.json([]);
     const { custId, empId } = req.query;
     let where = 'WHERE c.RemaQty > 0';
     const inputs = {};
     if (custId) { where += ` AND hd.CustID = @custId`; inputs.custId = { type: sql.NVarChar(20), value: custId }; }
-    if (empId)  { where += ` AND hd.EmpID  = @empId`;  inputs.empId  = { type: sql.Int,          value: Number(empId) }; }
+
+    if (scopeEmpIds) where += empInClause('hd.EmpID', scopeEmpIds, inputs);
+    if (empId && (!scopeEmpIds || scopeEmpIds.includes(Number(empId)))) { where += ` AND hd.EmpID = @empId`; inputs.empId = { type: sql.Int, value: Number(empId) }; }
 
     const r = await wfQuery(`
       SELECT CAST(hd.CustID AS NVARCHAR(20)) AS CustID,
@@ -2208,11 +2485,152 @@ router.get('/coupons', async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/rebate/coupons/:custId — คูปองคงค้างของลูกค้ารายนี้ เรียงเก่าก่อน (FIFO)
+// GET /api/rebate/coupons-worklist — Cross-customer near-expiry / expired coupon worklist (R9-6, R10-6)
+router.get('/coupons-worklist', async (req, res) => {
+  try {
+    const scopeEmpIds = await resolveScopeEmpIds(req.user);
+    if (scopeEmpIds && !scopeEmpIds.length) return res.json([]);
+    const inputs = {};
+    let where = 'WHERE c.RemaQty > 0';
+    if (scopeEmpIds) where += empInClause('hd.EmpID', scopeEmpIds, inputs);
+
+    let defaultDays = 180;
+    let warningLeadDays = 30;
+    try {
+      const s = await wfQuery(`
+        SELECT SettingKey, SettingValue 
+        FROM wf.SystemSetting WITH (NOLOCK) 
+        WHERE SettingKey IN ('TICKET_EXPIRY_DEFAULT_DAYS', 'TICKET_EXPIRY_WARNING_LEAD_DAYS')
+      `);
+      for (const row of s.recordset || []) {
+        if (row.SettingKey === 'TICKET_EXPIRY_DEFAULT_DAYS') defaultDays = Number(row.SettingValue) || 180;
+        if (row.SettingKey === 'TICKET_EXPIRY_WARNING_LEAD_DAYS') warningLeadDays = Number(row.SettingValue) || 30;
+      }
+    } catch { /* fallback */ }
+
+    const r = await wfQuery(`
+      SELECT c.CouponID, c.CouponNo, c.SONo,
+             CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
+             CAST(hd.CustID AS NVARCHAR(20)) AS CustID,
+             cu.CustCode,
+             ISNULL(cu.CustName, hd.CustName) AS CustName,
+             hd.EmpID AS EmpID,
+             ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS EmpName,
+             c.GoodID, c.GoodName,
+             c.GoodQty, c.RemaQty,
+             CONVERT(VARCHAR(10), exp.ExpiryDate, 120) AS CustomExpiryDate,
+             exp.Source AS ExpirySource
+      FROM dbo.WFCoupon c
+      JOIN dbo.SOHD hd        ON hd.SOID  = c.DocuID
+      LEFT JOIN dbo.EMCust cu ON cu.CustID = hd.CustID
+      LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
+      LEFT JOIN wf.CouponExpiry exp ON exp.CouponId = c.CouponID
+      ${where}
+      ORDER BY hd.DocuDate ASC, c.CouponNo ASC
+    `, inputs);
+
+    const benesRes = await wfQuery(`
+      SELECT b.OwnerCustId, b.BeneficiaryCustId, b.BeneficiaryCustCode,
+             ISNULL(NULLIF(b.BeneficiaryCustName, ''), ISNULL(cu.CustName, ISNULL(b.BeneficiaryCustCode, b.BeneficiaryCustId))) AS BeneficiaryCustName,
+             b.Scope, b.EffectiveTo, b.Reason
+      FROM wf.CouponBeneficiary b WITH (NOLOCK)
+      LEFT JOIN dbo.EMCust cu ON CAST(cu.CustID AS NVARCHAR(50)) = b.BeneficiaryCustId OR cu.CustCode = b.BeneficiaryCustCode
+      WHERE b.Status = 'ACTIVE'
+        AND (b.EffectiveFrom IS NULL OR b.EffectiveFrom <= GETUTCDATE())
+        AND (b.EffectiveTo IS NULL OR b.EffectiveTo >= GETUTCDATE())
+    `);
+    const beneMap = new Map();
+    for (const b of benesRes.recordset || []) {
+      const arr = beneMap.get(String(b.OwnerCustId)) || [];
+      arr.push({
+        beneficiaryCustId: b.BeneficiaryCustId,
+        beneficiaryCustCode: b.BeneficiaryCustCode,
+        beneficiaryCustName: b.BeneficiaryCustName || b.BeneficiaryCustCode || b.BeneficiaryCustId,
+        scope: b.Scope,
+        reason: b.Reason
+      });
+      beneMap.set(String(b.OwnerCustId), arr);
+    }
+
+    const rows = (r.recordset || []).map(row => {
+      let expiryDate = row.CustomExpiryDate || null;
+      let source = row.ExpirySource || 'DEFAULT';
+      if (!expiryDate && row.DocuDate) {
+        const issueDate = new Date(row.DocuDate);
+        const exp = new Date(issueDate.getTime() + defaultDays * 24 * 60 * 60 * 1000);
+        expiryDate = exp.toISOString().slice(0, 10);
+      }
+      const daysLeft = expiryDate ? Math.ceil((new Date(expiryDate).getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : null;
+      const ownerBenes = beneMap.get(String(row.CustID)) || [];
+      const relevantBenes = ownerBenes.filter(b => b.scope === 'ALL' || b.scope === String(row.GoodID));
+
+      return {
+        couponId: row.CouponID,
+        couponNo: row.CouponNo,
+        soNo: row.SONo,
+        docuDate: row.DocuDate,
+        custId: row.CustID,
+        custCode: row.CustCode,
+        ownerCustCode: row.CustCode,
+        custName: row.CustName,
+        empId: row.EmpID,
+        empName: row.EmpName,
+        goodId: row.GoodID,
+        goodName: row.GoodName,
+        goodQty: Number(row.GoodQty || 0),
+        remaQty: Number(row.RemaQty || 0),
+        redeemedQty: Math.max(0, Number(row.GoodQty || 0) - Number(row.RemaQty || 0)),
+        customExpiryDate: row.CustomExpiryDate,
+        expiryDate,
+        expirySource: source,
+        daysLeft,
+        isExpired: daysLeft !== null ? daysLeft < 0 : false,
+        isExpiringSoon: daysLeft !== null ? (daysLeft >= 0 && daysLeft <= warningLeadDays) : false,
+        warningLeadDays,
+        beneficiaries: relevantBenes
+      };
+    });
+
+    res.json(rows);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/rebate/coupons/:custId — คูปองคงค้างของลูกค้ารายนี้ เรียงเก่าก่อน (FIFO) พร้อมวันหมดอายุ
 router.get('/coupons/:custId', async (req, res) => {
   try {
     const custId = String(req.params.custId || '').trim();
     if (!custId) return res.status(400).json({ message: 'Invalid customer ID' });
+
+    const scopeEmpIds = await resolveScopeEmpIds(req.user);
+    if (scopeEmpIds) {
+      if (!scopeEmpIds.length) {
+        return res.status(403).json({ message: 'ไม่มีสิทธิ์เข้าถึงข้อมูลคูปอง (ไม่พบรหัสพนักงานขายที่ผูกกับบัญชี)' });
+      }
+      const ci = { cid: { type: sql.NVarChar(20), value: custId } };
+      const inList = empInClause('EmpID', scopeEmpIds, ci).replace(/^ AND /, '');
+      const authCust = await wfQuery(`
+        SELECT TOP 1 1 FROM dbo.SOHD WHERE CustID = @cid AND ${inList}
+        UNION
+        SELECT TOP 1 1 FROM dbo.EMCust WHERE CustID = @cid AND ${inList}
+      `, ci);
+      if (!authCust.recordset?.length) {
+        return res.status(403).json({ message: 'ไม่มีสิทธิ์เข้าถึงข้อมูลคูปองของลูกค้ารายนี้' });
+      }
+    }
+
+    let defaultDays = 180;
+    let warningLeadDays = 30;
+    try {
+      const s = await wfQuery(`
+        SELECT SettingKey, SettingValue 
+        FROM wf.SystemSetting WITH (NOLOCK) 
+        WHERE SettingKey IN ('TICKET_EXPIRY_DEFAULT_DAYS', 'TICKET_EXPIRY_WARNING_LEAD_DAYS')
+      `);
+      for (const row of s.recordset || []) {
+        if (row.SettingKey === 'TICKET_EXPIRY_DEFAULT_DAYS') defaultDays = Number(row.SettingValue) || 180;
+        if (row.SettingKey === 'TICKET_EXPIRY_WARNING_LEAD_DAYS') warningLeadDays = Number(row.SettingValue) || 30;
+      }
+    } catch { /* fallback */ }
 
     const r = await wfQuery(`
         SELECT c.CouponID, c.CouponNo, c.SONo,
@@ -2223,21 +2641,99 @@ router.get('/coupons/:custId', async (req, res) => {
                ISNULL(emp.EmpName, CAST(hd.EmpID AS NVARCHAR(20))) AS EmpName,
                c.GoodID, c.GoodName, c.GoodPrice,
                c.GoodQty, c.RemaQty,
-               c.GoodQty - c.RemaQty AS RedeemedQty
+               c.GoodQty - c.RemaQty AS RedeemedQty,
+               CONVERT(VARCHAR(10), exp.ExpiryDate, 120) AS CustomExpiryDate,
+               exp.Source AS ExpirySource
         FROM dbo.WFCoupon c
         JOIN dbo.SOHD hd        ON hd.SOID  = c.DocuID
         LEFT JOIN dbo.EMCust cu ON cu.CustID = hd.CustID
         LEFT JOIN dbo.EMEmp emp ON emp.EmpID = hd.EmpID
+        LEFT JOIN wf.CouponExpiry exp ON exp.CouponId = c.CouponID
         WHERE hd.CustID = @cid AND c.RemaQty > 0
         ORDER BY hd.DocuDate ASC, c.CouponNo ASC
       `, { cid: { type: sql.NVarChar(20), value: custId } });
     if (!r.recordset || r.recordset.length === 0) {
       return res.status(404).json({ message: `ไม่พบคูปองคงค้างสำหรับลูกค้า ID ${custId}` });
     }
-    res.json(r.recordset);
+
+    const benes = (await wfQuery(`
+      SELECT b.BeneficiaryCustId, b.BeneficiaryCustCode,
+             ISNULL(NULLIF(b.BeneficiaryCustName, ''), ISNULL(cu.CustName, ISNULL(b.BeneficiaryCustCode, b.BeneficiaryCustId))) AS BeneficiaryCustName,
+             b.Scope, b.EffectiveTo, b.Reason
+      FROM wf.CouponBeneficiary b WITH (NOLOCK)
+      LEFT JOIN dbo.EMCust cu ON CAST(cu.CustID AS NVARCHAR(50)) = b.BeneficiaryCustId OR cu.CustCode = b.BeneficiaryCustCode
+      WHERE b.OwnerCustId = @cid AND b.Status = 'ACTIVE'
+        AND (b.EffectiveFrom IS NULL OR b.EffectiveFrom <= GETUTCDATE())
+        AND (b.EffectiveTo IS NULL OR b.EffectiveTo >= GETUTCDATE())
+    `, { cid: { type: sql.NVarChar(20), value: custId } })).recordset || [];
+
+    const isSales = req.user?.role === 'SALES';
+
+    const rows = r.recordset.map(row => {
+      let expiryDate = row.CustomExpiryDate || null;
+      let source = row.ExpirySource || 'DEFAULT';
+      if (!expiryDate && row.DocuDate) {
+        const issueDate = new Date(row.DocuDate);
+        const exp = new Date(issueDate.getTime() + defaultDays * 24 * 60 * 60 * 1000);
+        expiryDate = exp.toISOString().slice(0, 10);
+      }
+      const daysLeft = expiryDate ? Math.ceil((new Date(expiryDate).getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : null;
+      const relevantBenes = benes.filter(b => b.Scope === 'ALL' || b.Scope === String(row.GoodID)).map(b => ({
+        beneficiaryCustId: b.BeneficiaryCustId,
+        beneficiaryCustCode: b.BeneficiaryCustCode,
+        beneficiaryCustName: b.BeneficiaryCustName || b.BeneficiaryCustCode || b.BeneficiaryCustId,
+        scope: b.Scope,
+        reason: b.Reason
+      }));
+
+      const out = {
+        ...row,
+        expiryDate,
+        expirySource: source,
+        daysLeft,
+        isExpired: daysLeft !== null ? daysLeft < 0 : false,
+        isExpiringSoon: daysLeft !== null ? (daysLeft >= 0 && daysLeft <= warningLeadDays) : false,
+        warningLeadDays,
+        beneficiaries: relevantBenes
+      };
+      if (isSales) delete out.GoodPrice;
+      return out;
+    });
+
+    res.json(rows);
   } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+/**
+ * POST /api/rebate/claims/:id/apply-to-bill
+ * D7/D8 & R9-1: Apply approved rebate claim as a discount to a draft SO
+ * Restricted to ACCOUNTING, ADMIN, C_LEVEL
+ */
+router.post('/claims/:id/apply-to-bill', requireRole('ACCOUNTING', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+  const claimId = Number(req.params.id);
+  const { soId, targetSoId } = req.body || {};
+
+  try {
+    const result = await wfTransaction(async (tx) => {
+      return await applyClaimToDraft(tx, { claimId, soId: soId ?? targetSoId, targetSoId, user: req.user });
+    });
+
+    res.json({
+      success: true,
+      message: `นำยอดรีเบท ฿${result.discountApplied.toLocaleString()} จากเคลม ${result.claimNo} ไปหักลดใน SO #${result.soId} เรียบร้อยแล้ว`,
+      data: result
+    });
+  } catch (err) {
+    console.error('[rebate/claims/apply-to-bill]', err);
+    res.status(err.status || 500).json({ message: err.message, code: err.code });
+  }
 });
 
 router.normalizeClaim = normalizeClaim;
 router.buildCanonicalPayloadHash = buildCanonicalPayloadHash;
+router.resolveCustomer = resolveCustomer;
+router.getCustomerRegion = getCustomerRegion;
+router.normalizePlanRegion = normalizePlanRegion;
+router.normalizeGoodPattern = normalizeGoodPattern;
+router.CANONICAL_SALE_REGIONS = CANONICAL_SALE_REGIONS;
 module.exports = router;

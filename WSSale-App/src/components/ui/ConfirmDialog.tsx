@@ -1,6 +1,6 @@
-import React from 'react';
+import 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, X, Info } from 'lucide-react';
+import { AlertTriangle, Info } from 'lucide-react';
 import { Button } from './Base';
 
 interface ConfirmDialogProps {

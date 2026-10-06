@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Plus, Search, RefreshCw, ChevronRight, Filter, ChevronLeft, Package, Calendar, User, X, Clock, Truck, Gift, Trash2, FileText, Download } from 'lucide-react';
-import { Button, Card, cn } from '../ui/Base';
+import { Plus, Search, RefreshCw, ChevronRight, Filter, ChevronLeft, Package, X, Truck, Download } from 'lucide-react';
+import { cn } from '../ui/Base';
 import { useExport } from '../../hooks/useExport';
 import { useErpStore } from '../../store/erp-store';
 import { useAppStore } from '../../store/app-store';
-import { fetchSalesOrders, fetchSalesOrder, cancelSO, deleteSO, fetchCustomers, confirmSO, fetchTripBoard } from '../../services/api';
-import { appConfirm } from '../ui/AppAlert';
+import { fetchSalesOrders, fetchSalesOrder, fetchCustomers, fetchTripBoard, fetchTrip } from '../../services/api';
+import '../ui/AppAlert';
 import { useSocketEvent } from '../../hooks/useSocket';
-import { SOStatusBadge } from './SOStatusBadge';
+import './SOStatusBadge';
 import { CreateSODialog } from './CreateSODialog';
-import { SODetailsPanel } from './SODetailsPanel';
+import './SODetailsPanel';
 import { TripSetupModal } from './TripSetupModal';
 import { TripSummaryModal } from './TripSummaryModal';
 import { SaleTripManager } from './SaleTripManager';
@@ -26,7 +26,7 @@ export const SalesPortal = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [editingSoId, setEditingSoId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [externalSelectedSo, setExternalSelectedSo] = useState<SalesOrder | null>(null);
+  const [, setExternalSelectedSo] = useState<SalesOrder | null>(null);
   const [returnToTripFromSoId, setReturnToTripFromSoId] = useState<string | null>(null);
   const [returnToTripKey, setReturnToTripKey] = useState<string | null>(null);
   const [shouldOpenActiveTripSummary, setShouldOpenActiveTripSummary] = useState(false);
@@ -38,6 +38,8 @@ export const SalesPortal = () => {
   const navigate = useAppStore(s => s.navigate);
 
   const { activeTrip, setTrip, clearTrip } = useTripStore();
+  const [activeOrders, setActiveOrders] = useState<SalesOrder[]>([]);
+  const [activeLoading, setActiveLoading] = useState(false);
   const [isTripSetupOpen, setIsTripSetupOpen] = useState(false);
 
   const [page, setPage]               = useState(1);
@@ -129,16 +131,6 @@ export const SalesPortal = () => {
     setLoading(false);
   }, [page, limit, debouncedSearch, statusFilter, setUnlockRequests]);
 
-  const handleConfirmTrip = () => {
-    if (!activeTripGroup) {
-      alert('ไม่พบบิลในทริปนี้ กรุณาเพิ่มบิลก่อนยืนยัน');
-      return;
-    }
-    // เปิด TripSummaryModal เพื่อยืนยันผ่าน atomic confirmTrip route (POST /api/trips/:id/confirm)
-    // ปิด legacy confirmation bypass ที่เคยใช้ Promise.all(confirmSO)
-    setViewingTrip(activeTripGroup);
-  };
-
   useEffect(() => { loadData(); }, [loadData]);
   
   useEffect(() => {
@@ -198,7 +190,7 @@ export const SalesPortal = () => {
   }, [selectedId]);
 
   const totalPages = Math.ceil(totalOrders / limit) || 1;
-  const selectedSo = orders.find(o => o.id === selectedId) || externalSelectedSo;
+
 
   const groupedOrders = useMemo(() => {
     const map = new Map<string, { tripId?: number; tripCode?: string; dateDisplay: string; cust: string; custCount: number; truck: string; orders: SalesOrder[]; totalAmt: number; totalTon: number }>();
@@ -231,39 +223,81 @@ export const SalesPortal = () => {
     return Array.from(map.values());
   }, [orders, customersMap]);
 
+  useEffect(() => {
+    let disposed = false;
+    if (!activeTrip?.tripId) { setActiveOrders([]); return; }
+    setActiveLoading(true);
+    fetchTrip(activeTrip.tripId).then(async res => {
+      // F-03/F-05: If trip is already CONFIRMED or CANCELLED, it is no longer an active draft trip
+      if ((res as any).status === 'CONFIRMED' || (res as any).status === 'CANCELLED') {
+        clearTrip();
+        if (!disposed) setActiveOrders([]);
+        return;
+      }
+      const members = await Promise.all(res.orders.map(o => fetchSalesOrder(o.id)));
+      if (!disposed) {
+        setActiveOrders(members);
+        const store = useTripStore.getState();
+        if (Number(store.activeTrip?.tripId) === Number(res.tripId)) {
+          store.updateTrip({
+            truckPlate: res.transRegistration || undefined,
+            remark: res.tripRemark || '',
+            pSling: !!res.preSlingRequired,
+            deliveryDate: res.pickupDueDate || store.activeTrip?.deliveryDate,
+          });
+        }
+      }
+    }).catch(() => { if (!disposed) setActiveOrders([]); })
+      .finally(() => { if (!disposed) setActiveLoading(false); });
+    return () => { disposed = true; };
+  }, [activeTrip?.tripId, orders, clearTrip]);
+
   const activeTripGroup = useMemo(() => {
     if (!activeTrip) return null;
-    const tripOrders = orders.filter(so => {
-      // P1 Finding 2: หากมี tripId ให้จัดกลุ่มตาม tripId เป็นหลัก
-      if (activeTrip.tripId && (so as any).tripId) {
-        return Number((so as any).tripId) === Number(activeTrip.tripId);
+    const candidates = activeTrip.tripId
+      ? (activeOrders.length > 0 ? activeOrders : orders)
+      : orders;
+    const tripOrders = candidates.filter(so => {
+      if (activeTrip.tripId) {
+        if (activeOrders.length > 0) return true;
+        return Number(so.tripId) === Number(activeTrip.tripId);
       }
-      const matchTruck = so.truckPlate === (activeTrip.truckPlate || '') || (so.truckPlate === 'ตั๋วคุม');
+      const matchTruck = (so.truckPlate || '') === (activeTrip.truckPlate || '');
       const soDate = so.deliveryDate ? so.deliveryDate.split('T')[0] : '';
       const matchDate = soDate === activeTrip.deliveryDate;
-      return so.status === 'DRAFT' && matchTruck && matchDate;
+      return (so.status === 'DRAFT' || !so.status) && matchTruck && matchDate;
     });
     
     if (tripOrders.length === 0) return null;
     
     const totalAmt = tripOrders.reduce((s, l) => s + (l.lines || []).reduce((ss, ll) => ss + (ll.qtyTon * ll.pricePerTon), 0), 0);
     const totalTon = tripOrders.reduce((s, l) => s + (l.lines || []).reduce((ss, ll) => ss + (ll.isGiveaway ? 0 : ll.qtyTon), 0), 0);
-    
+    const custIds = Array.from(new Set(tripOrders.map(o => String(o.custId || o.custName || '')).filter(Boolean)));
+    const custLabel = custIds.length === 1 ? (tripOrders[0]?.custName || custIds[0]) : `${custIds.length} ลูกค้า`;
+
     return {
       tripId: activeTrip.tripId,
       tripCode: activeTrip.tripCode,
       dateDisplay: activeTrip.deliveryDate ? formatThaiDate(activeTrip.deliveryDate) : 'ไม่ระบุวันรับ',
-      cust: (() => {
-        const ids = Array.from(new Set(tripOrders.map(o => String(o.custId || '')))).filter(Boolean);
-        return ids.length === 1 ? (tripOrders[0]?.custName || ids[0]) : `${ids.length} ลูกค้า`;
-      })(),
-      custCount: new Set(tripOrders.map(o => String(o.custId || '')).filter(Boolean)).size,
-      truck: activeTrip.truckPlate || 'ตั๋วคุม',
+      cust: custLabel,
+      custCount: custIds.length,
+      truck: activeTrip.truckPlate || '',
       orders: tripOrders,
       totalAmt,
       totalTon
     };
-  }, [activeTrip, orders]);
+  }, [activeTrip, orders, activeOrders]);
+
+  const handleConfirmTrip = () => {
+    if (activeLoading) return;
+    if (!activeTripGroup) {
+      alert('ไม่พบบิลในทริปนี้ กรุณาเพิ่มบิลก่อนยืนยัน');
+      return;
+    }
+    // เปิด TripSummaryModal เพื่อยืนยันผ่าน atomic confirmTrip route (POST /api/trips/:id/confirm)
+    // ปิด legacy confirmation bypass ที่เคยใช้ Promise.all(confirmSO)
+    setViewingTrip(activeTripGroup);
+  };
 
   const displayGroupedOrders = useMemo(() => {
     if (!activeTripGroup) return groupedOrders;
@@ -320,7 +354,12 @@ export const SalesPortal = () => {
           </button>
           {!isCreating && !editingSoId && (
             <button
-              onClick={() => setIsTripSetupOpen(true)}
+              onClick={() => {
+                if (!activeTripGroup && activeTrip) {
+                  clearTrip();
+                }
+                setIsTripSetupOpen(true);
+              }}
               className="h-10 px-5 flex items-center gap-2 rounded-xl text-white text-sm font-semibold hover:bg-blue-800 transition-colors shadow-sm"
               style={{ background: '#0C447C' }}
             >
@@ -360,7 +399,7 @@ export const SalesPortal = () => {
                   <div className="bg-white rounded-lg p-3 text-sm shadow-sm border border-blue-100/50 flex flex-col gap-1.5">
                     <div className="flex justify-between">
                       <span className="text-gray-500">จำนวนลูกค้า:</span>
-                      <span className="font-bold text-gray-900">{activeTripGroup?.custCount ?? 0} ลูกค้า ({activeTripGroup?.orders.length ?? 0} บิล)</span>
+                      <span className="font-bold text-gray-900">{activeLoading ? 'กำลังโหลด...' : `${activeTripGroup?.custCount ?? 0} ลูกค้า (${activeTripGroup?.orders.length ?? 0} บิล)`}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-500">ทะเบียนรถ:</span>

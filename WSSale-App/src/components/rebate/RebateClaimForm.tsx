@@ -15,10 +15,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Scissors, X, Plus, Trash2, Printer, Check, Ban, Loader2, Download } from 'lucide-react';
 import {
   createRebateClaim, fetchRebateClaimDetail, approveRebateClaim, rejectRebateClaim,
-  fetchRebateAccrualLots, fetchNextRbNo, fetchSystemSettings,
+  fetchRebateAccrualLots, fetchNextRbNo, fetchSystemSettings, applyRebateClaimToBill,
+  fetchSalesOrders,
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
-import type { RebatePool, RebateClaim, RebateAccrualLot } from '../../types';
+import type { RebatePool, RebateAccrualLot } from '../../types';
 
 const NAVY = '#0C447C';
 const baht = (n: unknown) => Number(n ?? 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -61,7 +62,7 @@ const sum = (rows: Line[]) => rows.reduce((s, l) => s + calc(l).amount, 0);
 export function ClaimDialog({ pool, onClose, onDone }:
   { pool: RebatePool; onClose: () => void; onDone: () => void }) {
 
-  const available = Number(pool.AccruedAmt) - Number(pool.ClaimedAmt);
+  const available = pool.AvailableAmt !== undefined ? Number(pool.AvailableAmt) : (Number(pool.AccruedAmt) - Number(pool.ClaimedAmt) - Number(pool.UsedAmt || 0));
   const [custId, setCustId] = useState('');
   const [note, setNote] = useState('');
   const [rebate, setRebate] = useState<Line[]>([emptyLine()]);
@@ -443,6 +444,13 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
   const [docuNo, setDocuNo] = useState('');
   const [reason, setReason] = useState('');
   const [rbHint, setRbHint] = useState('');
+  const [applyModalOpen, setApplyModalOpen] = useState(false);
+  const [targetSoId, setTargetSoId] = useState('');
+  const [candidateBills, setCandidateBills] = useState<any[]>([]);
+  const [applyDiscount, setApplyDiscount] = useState('');
+  const [applying, setApplying] = useState(false);
+  const [applyErr, setApplyErr] = useState('');
+  const [applySuccess, setApplySuccess] = useState('');
 
   const load = async () => {
     try { setData(await fetchRebateClaimDetail(claimId)); }
@@ -476,6 +484,22 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
   const isOpen = !['APPROVED', 'REJECTED', 'CN_ISSUED'].includes(String(claim.Status));
   const isSubmitter = Number(claim.SalesUserId) === Number(user?.id);
   const canAct = isOpen && (!isSubmitter || ['ADMIN', 'C_LEVEL'].includes(String(role))) && ['MANAGER', 'MARKETING', 'APPROVER', 'ACCOUNTING', 'ADMIN', 'C_LEVEL'].includes(String(role));
+  const canApplyToBill = String(claim.Status) === 'APPROVED' && ['ACCOUNTING', 'ADMIN', 'C_LEVEL'].includes(String(role));
+
+  async function handleApplyToBill() {
+    if (!targetSoId.trim()) { setApplyErr('กรุณาระบุเลขที่ SO'); return; }
+    setApplying(true); setApplyErr(''); setApplySuccess('');
+    try {
+      const res = await applyRebateClaimToBill(claimId, targetSoId.trim(), Number(applyDiscount) || undefined);
+      setApplySuccess(res.message || 'หักลดในบิล SO สำเร็จ');
+      await load(); onChanged();
+      setTimeout(() => { setApplyModalOpen(false); }, 1500);
+    } catch (e: any) {
+      setApplyErr(e.message || 'การตัดยอดเข้าบิลล้มเหลว');
+    } finally {
+      setApplying(false);
+    }
+  }
 
   async function act(kind: 'approve' | 'reject') {
     if (kind === 'reject' && !reason.trim()) { setErr('การตีกลับต้องระบุเหตุผล'); return; }
@@ -600,6 +624,96 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
             <span className="text-sm text-gray-500">ยอดรวมทั้งใบ</span>
             <span className="text-xl font-black tabular-nums" style={{ color: NAVY }}>฿{baht(claim.ClaimAmt)}</span>
           </div>
+
+          {canApplyToBill && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2 print:hidden">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-emerald-900">นำไปหักลดในบิล SO (สำหรับฝ่ายบัญชี/ผู้บริหาร)</div>
+                  <div className="text-[11px] text-emerald-700">
+                    {claim.AppliedDraftSoId ? `ผูกเข้าบิล SO #${claim.AppliedDraftSoId} แล้ว (สถานะ APPROVED จะเปลี่ยนเป็น CN_ISSUED เมื่อบิลยืนยัน)` : 'สามารถนำยอดเคลมที่ได้รับอนุมัตินี้ ไปเป็นส่วนลดในบิล SO'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  data-testid="btn-toggle-apply-so"
+                  onClick={() => {
+                    const nextOpen = !applyModalOpen;
+                    setApplyModalOpen(nextOpen);
+                    if (nextOpen) {
+                      setTargetSoId(claim.AppliedDraftSoId ? String(claim.AppliedDraftSoId) : '');
+                      setApplyDiscount(String(claim.ClaimAmt || ''));
+                      if (claim.CustId) {
+                        fetchSalesOrders({ status: 'DRAFT', custId: String(claim.CustId), silent: true })
+                          .then(res => setCandidateBills(res.data || []))
+                          .catch(() => setCandidateBills([]));
+                      }
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-colors"
+                >
+                  {applyModalOpen ? 'ปิดฟอร์ม' : (claim.AppliedDraftSoId ? 'แก้ไขการผูกบิล' : 'หักลดในบิล SO')}
+                </button>
+              </div>
+
+              {applyModalOpen && (
+                <div className="pt-2 border-t border-emerald-200 space-y-2">
+                  {candidateBills.length > 0 && (
+                    <div>
+                      <label className="text-[10px] font-bold text-emerald-900 block mb-1">เลือกจากใบสั่งขายร่างของลูกค้า:</label>
+                      <select
+                        className="w-full border border-emerald-300 rounded px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                        onChange={e => { if (e.target.value) setTargetSoId(e.target.value); }}
+                        value={candidateBills.some(b => String(b.id) === targetSoId || b.wfRef === targetSoId) ? targetSoId : ''}
+                      >
+                        <option value="">-- เลือกใบสั่งขายร่างของลูกค้านี้ --</option>
+                        {candidateBills.map((b: any) => (
+                          <option key={b.id} value={String(b.id)}>
+                            SO #{b.id} {b.wfRef ? `· ${b.wfRef}` : ''} {b.totalAmount ? `(฿${Number(b.totalAmount).toLocaleString()})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-emerald-900 block mb-1">เลขที่ SO หรือเลขที่เอกสาร:</label>
+                      <input
+                        type="text"
+                        placeholder="เช่น 117 หรือ I69-04233 หรือ WF69I-00117"
+                        value={targetSoId}
+                        onChange={e => setTargetSoId(e.target.value)}
+                        className="w-full border border-emerald-300 rounded px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-emerald-900 block mb-1">ยอดส่วนลดที่ต้องการหัก (บาท):</label>
+                      <input
+                        type="number"
+                        placeholder="ยอดเงิน (บาท)"
+                        value={applyDiscount}
+                        onChange={e => setApplyDiscount(e.target.value)}
+                        className="w-full border border-emerald-300 rounded px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                      />
+                    </div>
+                  </div>
+                  {applyErr && <p className="text-xs text-red-600 font-medium">{applyErr}</p>}
+                  {applySuccess && <p className="text-xs text-emerald-700 font-bold">{applySuccess}</p>}
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      disabled={applying}
+                      data-testid="btn-confirm-apply-so"
+                      onClick={handleApplyToBill}
+                      className="px-4 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold disabled:opacity-50"
+                    >
+                      {applying ? 'กำลังบันทึก...' : 'ยืนยันหักลดในบิล'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {invoices?.length > 0 && (
             <p className="text-sm text-gray-600">

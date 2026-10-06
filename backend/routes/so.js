@@ -1,19 +1,34 @@
+const { validateBookingNotes } = require('../services/booking-notes');
 /**
  * so.js — wf.SalesOrder state machine
  * DRAFT → CONFIRMED → PICKING → SHIPPED → IMPORTED | CANCELLED
  *
- * ⚠ ไม่มีการเขียน dbo ใดๆ — writes ไปที่ wf schema เท่านั้น
+ * Native writes use reviewed WinSpeed procedures and scoped table permissions.
  */
 const router = require('express').Router();
 const { sql, wfQuery, wfTransaction, getTarget } = require('../db');
-const { requireAuth, requireRole, requireRebateAmountAccess, canViewRebateAmounts } = require('../middleware/auth');
+const { toHttpError } = require('../services/error-adapter');
+const { requireAuth, requireRole, requireCapability, requireRebateAmountAccess, canViewRebateAmounts } = require('../middleware/auth');
 const { generateImportFiles } = require('../services/winspeed-import.service');
 const { broadcast } = require('../services/socket');
 const { enqueue } = require('../services/outbox');
-const { resolveApprovalPolicy } = require('../services/approval');
 const { writeAudit, auditUser, SCREEN } = require('../services/winspeed-audit');
-const { advanceDocuNoCounter } = require('../services/winspeed-counter');
-const { evaluateLinePrice, createPriceApprovalRequest, calculatePricingFingerprint } = require('../services/price-authority');
+const { evaluateLinePrice, createPriceApprovalRequest, calculatePricingFingerprint, resolveAuthoritativePrice } = require('../services/price-authority');
+
+let _has141Cache = null;
+async function checkMigration141() {
+  if (_has141Cache === true) return true;
+  try {
+    const res = await wfQuery(`
+      SELECT 1 FROM sys.columns 
+      WHERE object_id = OBJECT_ID('wf.SalesOrder') AND name = 'AppliedRebateClaimId'
+    `);
+    _has141Cache = Boolean(res.recordset?.length > 0);
+  } catch {
+    _has141Cache = false;
+  }
+  return _has141Cache;
+}
 
 router.use(requireAuth);
 
@@ -23,6 +38,9 @@ const camelizeRow = (row) => {
   if (!row) return row;
   const out = {};
   for (const [k, v] of Object.entries(row)) out[camel(k)] = v;
+  if ('truckPlate' in out) {
+    out.isControlTicket = Boolean(out.truckPlate === 'ตั๋วคุม');
+  }
   return out;
 };
 const camelizeRows = (rows) => (rows || []).map(camelizeRow);
@@ -43,80 +61,7 @@ function toBit(value) {
 
 // Keep workflow references compatible with WINSpeed DocuNo while avoiding
 // collisions with both existing native documents and concurrent app drafts.
-async function allocateWorkflowRef(tx, soPrefix) {
-  const yy = (new Date().getFullYear() + 543 - 2500).toString().slice(-2);
-  const prefixYear = `${soPrefix}${yy}`;
-  // UPDLOCK + HOLDLOCK บน wf.SalesOrder ทำให้คำขอที่เข้ามาพร้อมกันเข้าคิวกัน
-  // ตัวที่สองจะรอจนตัวแรก commit แล้วจึงเห็นแถวใหม่และคำนวณ MAX ได้ถูก
-  // dbo.SOHD อ่านด้วย NOLOCK เท่านั้น — ห้ามล็อกตารางของ WINSpeed
-  const maxResult = await tx.request()
-    .input('prefixYear', sql.NVarChar(10), prefixYear)
-    .query(`
-      SELECT ISNULL(MAX(RefSuffix), 0) AS MaxSuffix
-      FROM (
-        SELECT CASE
-          WHEN ISNUMERIC(SUBSTRING(WfRef, LEN(@prefixYear) + 2, 20)) = 1
-          THEN CONVERT(BIGINT, SUBSTRING(WfRef, LEN(@prefixYear) + 2, 20))
-        END AS RefSuffix
-        FROM wf.SalesOrder WITH (UPDLOCK, HOLDLOCK)
-        WHERE WfRef LIKE @prefixYear + '-%'
-        UNION ALL
-        SELECT CASE
-          WHEN ISNUMERIC(SUBSTRING(DocuNo, LEN(@prefixYear) + 2, 20)) = 1
-          THEN CONVERT(BIGINT, SUBSTRING(DocuNo, LEN(@prefixYear) + 2, 20))
-        END AS RefSuffix
-        FROM dbo.SOHD WITH (NOLOCK)
-        WHERE DocuType = 103 AND DocuNo LIKE @prefixYear + '-%'
-      ) refs
-      WHERE RefSuffix IS NOT NULL;
-    `);
-  // เดินทีละหนึ่ง
-  //
-  // เดิมเป็น MAX + NEXT VALUE FOR wf.WfRefSeq ซึ่ง WfRefSeq เป็นตัวนับที่โตขึ้นเรื่อย ๆ
-  // ไม่เคยรีเซ็ต ผลคือช่องว่างของเลขที่เอกสาร **ขยายแบบทวีคูณ** เพราะเลขที่เพิ่งจอง
-  // กลายเป็น MAX ของรอบถัดไป แล้วถูกบวกด้วยค่าลำดับที่โตขึ้นอีก
-  //
-  //   วัดจริงบน UAT — เริ่มที่ I69-02422 สร้างสามใบติดกันได้
-  //     I69-02425 · I69-02428 · I69-02432
-  //   สามใบกินเลขไป 10 หมายเลข ข้ามทิ้ง 7 หมายเลข
-  //
-  // เลขที่เอกสารขายเป็นหลักฐานทางภาษี ช่องว่างต้องอธิบายได้เสมอว่าหายไปไหน
-  // ความปลอดภัยจากการชนกันมาจาก unique index บน WfRef คู่กับการล็อกด้านบน
-  // ไม่ใช่จากการเว้นช่วงเลขทิ้งไว้
-  const nextSuffix = Number(maxResult.recordset?.[0]?.MaxSuffix || 0) + 1;
-  return `${prefixYear}-${String(nextSuffix).padStart(5, '0')}`;
-}
-
-async function reassignCollidingDraftRef(so, userId, ip) {
-  const collision = await wfQuery(`
-    SELECT CASE WHEN EXISTS (
-      SELECT 1 FROM dbo.SOHD WITH (NOLOCK)
-      WHERE DocuType = 103 AND DocuNo = @wfRef
-    ) THEN 1 ELSE 0 END AS HasCollision
-  `, { wfRef: { type: sql.NVarChar(30), value: so.WfRef } });
-  if (!Number(collision.recordset?.[0]?.HasCollision || 0)) return so;
-
-  const oldRef = so.WfRef;
-  const newRef = await wfTransaction(async tx => {
-    const allocated = await allocateWorkflowRef(tx, so.SoPrefix);
-    const result = await tx.request()
-      .input('id', sql.Int, Number(so.Id))
-      .input('oldRef', sql.NVarChar(30), oldRef)
-      .input('newRef', sql.NVarChar(30), allocated)
-      .query(`
-        UPDATE wf.SalesOrder SET WfRef=@newRef, UpdatedAt=GETUTCDATE()
-        WHERE Id=@id AND WfRef=@oldRef;
-        SELECT @@ROWCOUNT AS Affected;
-      `);
-    if (Number(result.recordset?.[0]?.Affected || 0) !== 1) {
-      throw new Error('ไม่สามารถแก้เลข WfRef ที่ซ้ำได้');
-    }
-    return allocated;
-  });
-  await audit(null, so.Id, userId, 'WFREF_REASSIGNED', 'DRAFT', 'DRAFT', `${oldRef} -> ${newRef}`, ip);
-  broadcast('so_updated', { id: so.Id, action: 'wfref_reassigned', oldRef, newRef });
-  return { ...so, WfRef: newRef };
-}
+const {allocateWorkflowRef,confirmDraft,lockConfirmationResource}=require('../services/draft-confirmation');
 
 let giveawayApprovalColumns = null;
 async function hasGiveawayApprovalColumns() {
@@ -315,104 +260,71 @@ async function getSoOrThrow(id, expectedStatus = null) {
  * - ReservedQty matches order line QtyTon
  * - CarrierSoId is either null, starts with 'DRAFT:', 'SO-TEST-', or matches current SO ID
  */
-async function validateAndLockCouponReservations(tx, lines, orderCustId, targetSoId = null, actor = null) {
-  const seenResIds = new Set();
-  const custStr = String(orderCustId).trim();
-  // 1. Check duplicate reservation IDs in the order lines first
-  for (let idx = 0; idx < lines.length; idx++) {
-    const line = lines[idx];
-    if (!line.couponReservationId) continue;
-    const resId = Number(line.couponReservationId);
-    if (isNaN(resId) || resId <= 0) {
-      throw Object.assign(new Error(`บรรทัดที่ ${idx + 1}: รหัสการจองตั๋วไม่ถูกต้อง (${line.couponReservationId})`), { status: 400 });
+const { validateAndLockCouponReservations } = require('../services/coupon-service');
+const { checkGiveawayQuota, quotaErrorMessage, linePieces } = require('../services/giveaway-quota');
+const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
+
+// R12 O-4: is this bill (draft or native) inside the user's own + team scope?
+async function soVisibleTo(user, so, knownScope = null) {
+  const scope = knownScope || await getVisibleScope(user);
+  if (scope.all) return true;
+  if (inScope(scope, { userId: so.SalesUserId })) return true;
+  if (!so.ImportedDocuNo || !scope.empIds.length) return false;
+  // The owner of a native bill is the EmpID of that very document (SOID). DocuNo is not unique:
+  // a 103 booking and a 104 sales order can carry the same number for different salespeople
+  // (live finding SR-6: I69-03697 is 7004's booking and 4000's sales order).
+  const r = await wfQuery(
+    `SELECT TOP 1 CAST(EmpID AS VARCHAR(20)) AS EmpID FROM dbo.SOHD WITH (NOLOCK)
+     WHERE SOID = @soid AND DocuNo = @no AND DocuType IN (103, 104)`,
+    {
+      soid: { type: sql.Int, value: Number(so.Id) || 0 },
+      no: { type: sql.NVarChar(30), value: String(so.ImportedDocuNo) },
     }
-    if (seenResIds.has(resId)) {
-      throw Object.assign(new Error(`พบการใช้รหัสการจองตั๋วซ้ำ (${resId}) ในมากกว่าหนึ่งบรรทัด`), { status: 400 });
-    }
-    seenResIds.add(resId);
+  );
+  return inScope(scope, { empId: r.recordset?.[0]?.EmpID });
+}
+
+// R12 O-4: actions by id obey the detail view's scope — a bill outside the user's own + team
+// scope answers 404 to edit / verify / confirm / cancel / approve just as it does to GET
+async function requireSoInScope(req, res, next) {
+  try {
+    const scope = await getVisibleScope(req.user);
+    if (scope.all) return next();
+    const so = await getSoOrThrow(req.params.id);
+    if (!(await soVisibleTo(req.user, so, scope))) return res.status(404).json({ message: `SO id ${req.params.id} ไม่พบ` });
+    next();
+  } catch (e) {
+    res.status(e.status || 500).json({ message: e.message });
   }
+}
 
-  // 2. Lock and validate each reservation against the line
-  for (let idx = 0; idx < lines.length; idx++) {
-    const line = lines[idx];
-    if (!line.couponReservationId) continue;
+// (sqlText, inputs) runner bound to an open transaction, for services that take a query function
+function txQueryFn(tx) {
+  return (text, inputs = {}) => {
+    const r = tx.request();
+    for (const [k, v] of Object.entries(inputs)) r.input(k, v.type, v.value);
+    return r.query(text);
+  };
+}
 
-    const resId = Number(line.couponReservationId);
-    const r = await tx.request()
-      .input('resId', sql.Int, resId)
-      .query(`
-        SELECT Id, CouponId, CouponNo, GoodId, GoodUnit, ReservedQty, Status,
-               BeneficiaryCustId, OwnerCustId, CarrierSoId, ExpiresAt, CreatedBy
-        FROM wf.CouponReservation WITH (UPDLOCK, ROWLOCK)
-        WHERE Id = @resId
-      `);
-
-    const resRow = r.recordset?.[0];
-    if (!resRow) {
-      throw Object.assign(new Error(`ไม่พบรายการจองตั๋วรหัส ${resId}`), { status: 400 });
-    }
-
-    if (resRow.Status !== 'RESERVED') {
-      throw Object.assign(new Error(`รายการจองตั๋วรหัส ${resId} ไม่อยู่ในสถานะ RESERVED (ปัจจุบัน: ${resRow.Status})`), { status: 400 });
-    }
-
-    // Actor Authorization check: non-elevated users can only bind their own reservations
-    if (actor && actor.userId) {
-      const isElevated = ['ADMIN', 'MANAGER', 'C_LEVEL'].includes(String(actor.role || '').toUpperCase());
-      if (!isElevated && resRow.CreatedBy && Number(resRow.CreatedBy) !== Number(actor.userId)) {
-        throw Object.assign(new Error(`รายการจองตั๋วรหัส ${resId} ถูกสร้างโดยผู้ใช้อื่น (#${resRow.CreatedBy})`), { status: 403 });
-      }
-    }
-
-    if (resRow.ExpiresAt && new Date(resRow.ExpiresAt) <= new Date()) {
-      throw Object.assign(new Error(`รายการจองตั๋วรหัส ${resId} หมดอายุแล้ว`), { status: 400 });
-    }
-
-    const resCust = String(resRow.BeneficiaryCustId).trim();
-    if (resCust !== custStr) {
-      throw Object.assign(new Error(`รายการจองตั๋วรหัส ${resId} ถูกจองให้ลูกค้า ${resCust} ไม่ตรงกับลูกค้าของบิล (${custStr})`), { status: 400 });
-    }
-
-    if (Number(resRow.GoodId) !== Number(line.goodId)) {
-      throw Object.assign(new Error(`สินค้าของการจองตั๋ว (${resRow.GoodId}) ไม่ตรงกับสินค้าในบิล (${line.goodId})`), { status: 400 });
-    }
-
-    // Exact metric ton quantity check using integer-scaled kilograms (1 metric ton = 1,000 kg, 0.001 ton = 1 kg)
-    const numQtyTon = Number(line.qtyTon);
-    if (!Number.isFinite(numQtyTon) || numQtyTon <= 0) {
-      throw Object.assign(new Error(`จำนวนตันในบิล (${line.qtyTon}) ไม่ถูกต้อง`), { status: 400 });
-    }
-    if (Math.abs(numQtyTon * 1000 - Math.round(numQtyTon * 1000)) > 1e-4) {
-      throw Object.assign(new Error(`จำนวนตันต้องมีความละเอียดไม่เกิน 3 ตำแหน่งทศนิยม (1 กิโลกรัม)`), { status: 400 });
-    }
-    const lineTonScaled = Math.round(numQtyTon * 1000);
-    const resTonScaled = Math.round(Number(resRow.ReservedQty) * 1000);
-    if (lineTonScaled !== resTonScaled) {
-      throw Object.assign(new Error(`จำนวนตันในบิล (${line.qtyTon}) ไม่ตรงกับจำนวนที่จองตั๋วไว้ (${resRow.ReservedQty})`), { status: 400 });
-    }
-
-    // Unit comparison when provided
-    if (line.goodUnit && resRow.GoodUnit) {
-      const lu = String(line.goodUnit).trim().toLowerCase();
-      const ru = String(resRow.GoodUnit).trim().toLowerCase();
-      const isTon = (u) => u === 'ตัน' || u === 'tonne' || u === 'ton' || u === 't';
-      if (lu !== ru && !(isTon(lu) && isTon(ru))) {
-        throw Object.assign(new Error(`หน่วยสินค้าในบิล (${line.goodUnit}) ไม่ตรงกับหน่วยที่จองตั๋วไว้ (${resRow.GoodUnit})`), { status: 400 });
-      }
-    }
-
-    if (resRow.CarrierSoId) {
-      const boundSo = String(resRow.CarrierSoId).trim();
-      const isCurrentSo = targetSoId != null && boundSo === String(targetSoId);
-      // Canonical server-owned draft carrier patterns:
-      // TRIP-{tripId}-DRAFT or DRAFT / DRAFT:{id} / DRAFT-{id} or SO-TEST- in test environments
-      const isDraftCarrier = /^TRIP-\d+-DRAFT$/i.test(boundSo) || /^DRAFT([:-].*)?$/i.test(boundSo) || boundSo.startsWith('SO-TEST-');
-      if (!isDraftCarrier && !isCurrentSo) {
-        throw Object.assign(new Error(`รายการจองตั๋วรหัส ${resId} ถูกผูกกับบิลอื่นไปแล้ว (${boundSo})`), { status: 400 });
+/**
+ * R6-1: Sanitizes order lines at request boundary by removing any client-supplied _-prefixed fields.
+ */
+function stripPrivateLineFields(lines) {
+  if (!Array.isArray(lines)) return;
+  for (const l of lines) {
+    if (l && typeof l === 'object') {
+      for (const k of Object.keys(l)) {
+        if (k.startsWith('_')) {
+          delete l[k];
+        }
       }
     }
   }
 }
+router.stripPrivateLineFields = stripPrivateLineFields;
+router.validateAndLockCouponReservations = validateAndLockCouponReservations;
+
 
 /**
  * สร้างแถว wf.SalesOrderExt ให้ใบที่เกิดใน WINSpeed ถ้ายังไม่มี
@@ -485,14 +397,21 @@ async function getLines(soId) {
     }
   }
 
-  // Enrich with Coupon fields from wf.SalesOrderLine
+  // Enrich with Coupon and Beneficiary fields from wf.SalesOrderLine & wf.CouponReservation (Q7)
   if (r.recordset && r.recordset.length > 0) {
     const numId = Number(idValue);
     if (!isNaN(numId)) {
       const couponLines = (await wfQuery(`
-        SELECT LineNum, CouponReservationId, RefCouponDocuNo, IsCouponDrawn
-        FROM wf.SalesOrderLine WITH (NOLOCK)
-        WHERE SoId = @soId
+        SELECT 
+          cl.LineNum, cl.CouponReservationId, cl.RefCouponDocuNo, cl.IsCouponDrawn,
+          cr.BeneficiaryCustId, cr.OwnerCustId,
+          ben.CustCode AS BeneficiaryCustCode, ben.CustName AS BeneficiaryCustName,
+          own.CustCode AS OwnerCustCode, own.CustName AS OwnerCustName
+        FROM wf.SalesOrderLine cl WITH (NOLOCK)
+        LEFT JOIN wf.CouponReservation cr WITH (NOLOCK) ON cr.Id = cl.CouponReservationId
+        LEFT JOIN dbo.EMCust ben WITH (NOLOCK) ON ben.CustID = CASE WHEN ISNUMERIC(cr.BeneficiaryCustId) = 1 THEN CAST(cr.BeneficiaryCustId AS INT) END
+        LEFT JOIN dbo.EMCust own WITH (NOLOCK) ON own.CustID = CASE WHEN ISNUMERIC(cr.OwnerCustId) = 1 THEN CAST(cr.OwnerCustId AS INT) END
+        WHERE cl.SoId = @soId
       `, { soId: { type: sql.Int, value: numId } })).recordset || [];
       
       if (couponLines.length > 0) {
@@ -503,6 +422,12 @@ async function getLines(soId) {
             line.CouponReservationId = match.CouponReservationId;
             line.RefCouponDocuNo = match.RefCouponDocuNo;
             line.IsCouponDrawn = match.IsCouponDrawn;
+            line.BeneficiaryCustId = match.BeneficiaryCustId;
+            line.BeneficiaryCustCode = match.BeneficiaryCustCode;
+            line.BeneficiaryCustName = match.BeneficiaryCustName;
+            line.OwnerCustId = match.OwnerCustId;
+            line.OwnerCustCode = match.OwnerCustCode;
+            line.OwnerCustName = match.OwnerCustName;
           }
         }
       }
@@ -514,11 +439,18 @@ async function getLines(soId) {
 
 // audit — เขียน log การเปลี่ยนสถานะ (immutable). รองรับ transaction เมื่อส่ง tx เข้ามา
 async function audit(tx, soId, userId, action, fromStatus, toStatus, note, ipAddress) {
-  const sqlStr = `
+  // R12 item 4: record the Access As actor next to the effective user (column from migration 144)
+  const { currentActorId, hasColumn } = require('../services/request-context');
+  const withActor = await hasColumn(wfQuery, 'wf.SalesOrderAudit', 'ActorUserId');
+  const sqlStr = withActor ? `
+    INSERT INTO wf.SalesOrderAudit (SoId, UserId, Action, FromStatus, ToStatus, Note, IpAddress, ActorUserId)
+    VALUES (@soId, @userId, @action, @fromStatus, @toStatus, @note, @ip, @actorUserId)
+  ` : `
     INSERT INTO wf.SalesOrderAudit (SoId, UserId, Action, FromStatus, ToStatus, Note, IpAddress)
     VALUES (@soId, @userId, @action, @fromStatus, @toStatus, @note, @ip)
   `;
   const params = {
+    ...(withActor ? { actorUserId: { type: sql.Int, value: currentActorId() ?? userId } } : {}),
     soId:       { type: sql.VarChar(50),  value: String(soId) },
     userId:     { type: sql.Int,          value: userId },
     action:     { type: sql.NVarChar(50), value: action },
@@ -552,6 +484,23 @@ router.get('/stats', async (req, res) => {
   try {
     const now = Date.now();
     const bust = req.query.bust === '1';
+    // R12 O-4: a scoped user's counts cover only their own and their team's bills
+    const scope = await getVisibleScope(req.user);
+    if (!scope.all) {
+      const f = scopeFilter(scope, { userCol: 'q.SalesUserId', prefix: 'sc' });
+      const e = scopeFilter({ ...scope, userIds: [] }, { empCol: 'h.EmpID', prefix: 'se' });
+      const sr = await wfQuery(`
+        SELECT q.Status, COUNT(*) AS Cnt
+        FROM wf.v_AllSalesOrders q
+        WHERE ${f.sql}
+           OR (q.ImportedDocuNo IS NOT NULL AND EXISTS (
+                SELECT 1 FROM dbo.SOHD h WITH (NOLOCK)
+                WHERE h.DocuNo = q.ImportedDocuNo AND h.DocuType IN (103, 104) AND ${e.sql}))
+        GROUP BY q.Status`, { ...f.inputs, ...e.inputs });
+      const byStatus = {};
+      for (const row of sr.recordset || []) byStatus[row.Status] = row.Cnt;
+      return res.json({ byStatus, total: Object.values(byStatus).reduce((t, n) => t + n, 0), scope: scope.basis, cachedAt: new Date().toISOString() });
+    }
     if (!bust && _statsCache && now - _statsCacheAt < STATS_TTL) return res.json(_statsCache);
 
     const extCountResult = await wfQuery(`SELECT COUNT_BIG(*) AS Cnt FROM wf.SalesOrderExt WITH (NOLOCK)`);
@@ -717,6 +666,13 @@ router.get('/', async (req, res) => {
       if (dateFrom) inputs.dateFrom = { type: sql.Date, value: new Date(String(dateFrom)) };
       if (dateTo) inputs.dateTo = { type: sql.Date, value: new Date(String(dateTo)) };
     }
+    // R12 O-4: own records + team (org chart) — ADMIN/C_LEVEL/ACCOUNTING see all
+    const scope = await getVisibleScope(req.user);
+    if (!scope.all) {
+      const f = scopeFilter(scope, { userCol: 'q.SalesUserId', empCol: 'q.OwnerEmpId', prefix: 'sc' });
+      conditions.push(f.sql);
+      Object.assign(inputs, f.inputs);
+    }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const pageNumber = Math.max(1, Number.parseInt(String(page), 10) || 1);
     const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(limit), 10) || 50));
@@ -735,7 +691,9 @@ router.get('/', async (req, res) => {
           so.CreatedAt,
           so.DeliveryDate,
           so.RequestedAt,
-          so.ImportedAt
+          so.ImportedAt,
+          so.SalesUserId,
+          CAST(NULL AS VARCHAR(20)) AS OwnerEmpId
         FROM wf.SalesOrder so WITH (NOLOCK)
 
         UNION ALL
@@ -759,7 +717,9 @@ router.get('/', async (req, res) => {
           CAST(hd.DocuDate AS DATETIME2) AS CreatedAt,
           ext.DeliveryDate,
           ext.RequestedAt,
-          ext.ImportedAt
+          ext.ImportedAt,
+          ext.SalesUserId,
+          CAST(hd.EmpID AS VARCHAR(20)) AS OwnerEmpId
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
           ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
@@ -810,7 +770,8 @@ router.get('/', async (req, res) => {
           pq.Status AS LinkedQuoteStatus,
           pq.Remark AS LinkedQuoteRemark,
           pq.ValidUntil AS LinkedQuoteValidUntil,
-          CASE WHEN pq.Id IS NOT NULL THEN CONCAT('Waiting for quotation ', pq.QuoteNo, ' confirmation') ELSE NULL END AS QuotationLockReason
+          CASE WHEN pq.Id IS NOT NULL THEN 'Waiting for quotation ' + ISNULL(pq.QuoteNo, '') + ' confirmation' ELSE NULL END AS QuotationLockReason,
+          CAST(NULL AS VARCHAR(20)) AS OwnerEmpId
         FROM wf.SalesOrder so WITH (NOLOCK)
         OUTER APPLY (
           SELECT TOP 1 q.Id, q.QuoteNo, q.Status, q.Remark, q.ValidUntil
@@ -867,7 +828,8 @@ router.get('/', async (req, res) => {
           pq.Status AS LinkedQuoteStatus,
           pq.Remark AS LinkedQuoteRemark,
           pq.ValidUntil AS LinkedQuoteValidUntil,
-          CASE WHEN pq.Id IS NOT NULL THEN CONCAT('Waiting for quotation ', pq.QuoteNo, ' confirmation') ELSE NULL END AS QuotationLockReason
+          CASE WHEN pq.Id IS NOT NULL THEN 'Waiting for quotation ' + ISNULL(pq.QuoteNo, '') + ' confirmation' ELSE NULL END AS QuotationLockReason,
+          CAST(hd.EmpID AS VARCHAR(20)) AS OwnerEmpId
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
           ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
@@ -876,20 +838,32 @@ router.get('/', async (req, res) => {
           FROM wf.QuotationSourceSO src WITH (NOLOCK)
           INNER JOIN wf.Quotation q WITH (NOLOCK) ON q.Id = src.QuoteId
           WHERE src.SoId = CASE
-              WHEN ISNUMERIC(CONVERT(VARCHAR(50), hd.SOID)) = 1 THEN CAST(hd.SOID AS INT)
+              WHEN hd.SOID IS NOT NULL
+               AND LTRIM(RTRIM(CONVERT(VARCHAR(50), hd.SOID))) NOT LIKE '%[^0-9]%'
+               AND LTRIM(RTRIM(CONVERT(VARCHAR(50), hd.SOID))) <> ''
+               AND (
+                 LEN(LTRIM(RTRIM(CONVERT(VARCHAR(50), hd.SOID)))) <= 9
+                 OR (LEN(LTRIM(RTRIM(CONVERT(VARCHAR(50), hd.SOID)))) = 10 AND CAST(LTRIM(RTRIM(CONVERT(VARCHAR(50), hd.SOID))) AS BIGINT) <= 2147483647)
+               )
+              THEN CAST(hd.SOID AS INT)
               ELSE NULL
             END
             AND q.Status IN ('DRAFT', 'SENT', 'EXPIRED')
           ORDER BY q.Id DESC
         ) pq
         WHERE hd.DocuType IN (103, 104)
+      ),
+      FilteredOrders AS (
+        SELECT q.*, u.DisplayName AS SalesName,
+               ROW_NUMBER() OVER (ORDER BY q.CreatedAt DESC, q.Id DESC) AS RowNum
+        FROM Orders q
+        LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = q.SalesUserId
+        ${where}
       )
-      SELECT q.*, u.DisplayName AS SalesName
-      FROM Orders q
-      LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = q.SalesUserId
-      ${where}
-      ORDER BY q.CreatedAt DESC, q.Id DESC
-      OFFSET ${offset} ROWS FETCH NEXT ${pageSize} ROWS ONLY
+      SELECT *
+      FROM FilteredOrders
+      WHERE RowNum > ${offset} AND RowNum <= (${offset} + ${pageSize})
+      ORDER BY RowNum ASC
     `, inputs);
     const rows = r.recordset || [];
 
@@ -1049,8 +1023,17 @@ router.get('/unlock-reasons', async (req, res) => {
 router.get('/unlock-requests', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'C_LEVEL'), async (req, res) => {
   try {
     const { status } = req.query;
-    const where = status ? 'WHERE r.Status=@st' : '';
-    const inputs = status ? { st: { type: sql.NVarChar(20), value: status } } : {};
+    const conds = [];
+    const inputs = {};
+    if (status) { conds.push('r.Status=@st'); inputs.st = { type: sql.NVarChar(20), value: status }; }
+    // R12 O-4: a MANAGER sees unlock requests of their own team only
+    const scope = await getVisibleScope(req.user);
+    if (!scope.all) {
+      const f = scopeFilter(scope, { userCol: 'r.RequesterId', prefix: 'ur' });
+      conds.push(f.sql);
+      Object.assign(inputs, f.inputs);
+    }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     const r = await wfQuery(`
       SELECT r.*, ru.DisplayName AS RequesterName, au.DisplayName AS ApproverName
       FROM wf.UnlockRequest r
@@ -1106,7 +1089,7 @@ router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN',
 });
 
 // ── GET /api/so/:id/weigh — WeighTicket ของ SO ───────────────
-router.get('/:id/weigh', async (req, res) => {
+router.get('/:id/weigh', requireSoInScope, async (req, res) => {
   try {
     const r = await wfQuery(`SELECT TOP 1 * FROM wf.WeighTicket WHERE SoId=@id ORDER BY Id DESC`,
       { id: { type: sql.NVarChar(50), value: String(req.params.id) } });
@@ -1118,6 +1101,7 @@ router.get('/:id/weigh', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id);
+    if (!(await soVisibleTo(req.user, so))) return res.status(404).json({ message: `SO id ${req.params.id} ไม่พบ` });
     const lines = await getLines(so.Id);
     const auditR = await wfQuery(
       `SELECT a.*, u.DisplayName FROM wf.SalesOrderAudit a JOIN wf.AppUser u ON u.Id = a.UserId WHERE a.SoId = @id ORDER BY a.CreatedAt DESC`,
@@ -1159,15 +1143,20 @@ router.get('/:id', async (req, res) => {
 router.get('/giveaways/pending', requireRole('MANAGER', 'ADMIN', 'C_LEVEL', 'APPROVER'), async (req, res) => {
   try {
     if (!(await hasGiveawayApprovalColumns())) return res.json([]);
+    // R12 O-4: a manager on the org chart approves only the team's giveaways
+    const sf = scopeFilter(await getVisibleScope(req.user), { userCol: 's.SalesUserId', prefix: 'gp' });
     const r = await wfQuery(`
       SELECT l.SoId, l.LineNum, l.GoodName, l.QtyTon, l.QtyBag, 
+             ISNULL(l.QtyBag, CAST(l.QtyTon AS INT)) AS QtyPiece,
+             l.GiveawayApprovalNote,
              s.WfRef, s.CustName, s.CreatedAt, u.DisplayName AS CreatedByName
       FROM wf.SalesOrderLine l
       INNER JOIN wf.SalesOrder s ON s.Id = l.SoId
       LEFT JOIN wf.AppUser u ON u.Id = s.SalesUserId
       WHERE l.IsGiveaway = 1 AND ISNULL(l.GiveawayApprovalStatus, 'PENDING') = 'PENDING' AND s.Status = 'DRAFT'
+        AND ${sf.sql}
       ORDER BY s.CreatedAt ASC
-    `);
+    `, sf.inputs);
     res.json(r.recordset || []);
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -1175,7 +1164,7 @@ router.get('/giveaways/pending', requireRole('MANAGER', 'ADMIN', 'C_LEVEL', 'APP
 });
 
 // PATCH /api/so/:id/giveaway-lines/:lineNum/approve — manager approval for giveaway line
-router.patch('/:id/giveaway-lines/:lineNum/approve', requireRole('MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.patch('/:id/giveaway-lines/:lineNum/approve', requireRole('MANAGER', 'ADMIN', 'C_LEVEL'), requireSoInScope, async (req, res) => {
   try {
     if (!(await hasGiveawayApprovalColumns())) {
       return res.status(400).json({ message: 'ยังไม่ได้ apply migration สำหรับอนุมัติของแถมรายบรรทัด' });
@@ -1189,6 +1178,18 @@ router.patch('/:id/giveaway-lines/:lineNum/approve', requireRole('MANAGER', 'ADM
     const lineColumn = isDraft ? 'LineNum' : 'ListNo';
     const idType = isDraft ? sql.Int : sql.VarChar(50);
     const idValue = isDraft ? Number(so.Id) : String(so.Id);
+
+    // R11 U-7/U-8: ตรวจโควต้าอีกครั้งตอนอนุมัติ — บิลอื่นอาจใช้โควต้าไปแล้วหลังบันทึกบิลนี้
+    if (isDraft) {
+      const draftLines = (await wfQuery(
+        `SELECT LineNum, GoodId, GoodName, QtyTon, QtyBag, IsGiveaway FROM wf.SalesOrderLine WHERE SoId = @soId ORDER BY LineNum`,
+        { soId: { type: sql.Int, value: Number(so.Id) } }
+      )).recordset || [];
+      const quota = await checkGiveawayQuota({ queryFn: wfQuery, salesUserId: so.SalesUserId, lines: draftLines, excludeSoId: so.Id });
+      if (!quota.ok) {
+        return res.status(400).json({ message: quotaErrorMessage(quota.problems), code: 'GIVEAWAY_OVER_QUOTA', problems: quota.problems });
+      }
+    }
 
     const r = await wfQuery(`
       UPDATE ${targetTable}
@@ -1325,14 +1326,23 @@ async function creditWarning(custId, orderAmount) {
   }
 }
 
-router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.post('/', requireCapability('so.create'), async (req, res) => {
   try {
     const orders = Array.isArray(req.body) ? req.body : [req.body];
     if (orders.length === 0) return res.status(400).json({ message: 'ไม่มีข้อมูลคำสั่งซื้อ' });
 
     for (const order of orders) {
+      validateBookingNotes(order);
       if (!order.custId || !order.lines?.length) return res.status(400).json({ message: 'custId และ lines จำเป็น' });
       if (!['I', 'K', 'AI'].includes(order.soPrefix)) return res.status(400).json({ message: 'soPrefix ต้องเป็น I / K / AI' });
+      for (const l of order.lines) {
+        const master = l.masterQty === undefined || l.masterQty === null ? Number(l.qtyTon) : Number(l.masterQty);
+        const child = l.childQty === undefined || l.childQty === null ? 0 : Number(l.childQty);
+        const qtyTon = Number(l.qtyTon);
+        if (Math.abs(master + child - qtyTon) > 0.001) {
+          return res.status(400).json({ message: 'ผลรวมยอดแม่ + ยอดลูก ต้องเท่ากับจำนวนตันในแต่ละรายการ' });
+        }
+      }
     }
 
     const createdIds = [];
@@ -1343,21 +1353,26 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
 
     await wfTransaction(async tx => {
       for (const order of orders) {
-        const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, salesUserId: impersonatedId, rebateDiscountAmt, convertFromQuoteId, creditDays, truckRemark, billRemark, transpId } = order;
+        const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, salesUserId: impersonatedId, rebateDiscountAmt, convertFromQuoteId, creditDays, truckRemark, billRemark, transpId, loadInOrder } = order;
         const truckPlate = order.truckPlate || null;
+
+        // R6-1: Sanitize client-supplied lines by stripping private internal markers
+        stripPrivateLineFields(lines);
 
         // Validate and lock all coupon reservations for this order before pricing and line generation
         const actor = {
           userId: impersonatedId || req.user?.sub || req.user?.id,
           role: req.user?.role
         };
-        await validateAndLockCouponReservations(tx, lines, custId, null, actor);
+        const validatedLineIndexes = await validateAndLockCouponReservations(tx, lines, custId, null, actor, soPrefix);
 
         // Evaluate line prices against authoritative server master (dbo.EMSetPriceDT / HD)
         let orderNeedsApproval = false;
         const lineEvaluations = [];
-        for (const l of lines) {
-          const evalResult = await evaluateLinePrice(l, custId, deliveryDate || null);
+        for (let lIdx = 0; lIdx < lines.length; lIdx++) {
+          const l = lines[lIdx];
+          const isCouponValidated = validatedLineIndexes instanceof Set && validatedLineIndexes.has(lIdx);
+          const evalResult = await evaluateLinePrice(l, custId, deliveryDate || null, { isCouponValidated });
           lineEvaluations.push(evalResult);
           if (evalResult.requiresApproval) {
             orderNeedsApproval = true;
@@ -1373,12 +1388,18 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
         soReq.input('soPrefix',         sql.NVarChar(5),   String(soPrefix));
         soReq.input('custId',           sql.NVarChar(20),  String(custId));
         soReq.input('custName',         sql.NVarChar(200), custName ? String(custName) : '');
-        soReq.input('truckPlate',       sql.NVarChar(30),  truckPlate ? String(truckPlate) : null);
+        const isControlTicket = Boolean(order.isControlTicket || String(truckPlate || '').trim() === 'ตั๋วคุม' || soPrefix === 'AI');
+        const effectiveTruckPlate = isControlTicket
+          ? 'ตั๋วคุม'
+          : (truckPlate && !['ยังไม่ระบุรถ','ตั๋วคุม','ไม่ระบุทะเบียนรถ'].includes(String(truckPlate).trim()) ? String(truckPlate).trim() || null : null);
+        const effectiveNoTruckRequired = isControlTicket ? 1 : toBit(noTruckRequired);
+
+        soReq.input('truckPlate',       sql.NVarChar(30),  effectiveTruckPlate);
         soReq.input('controlTicketNo',  sql.NVarChar(20),  controlTicketNo ? String(controlTicketNo) : null);
         soReq.input('deliveryDate',     sql.Date,          deliveryDate ? new Date(deliveryDate) : null);
         soReq.input('requestedAt',      sql.DateTime2,     toSqlDateTime(requestedAt));
         soReq.input('isOwnTruck',       sql.Bit,           toBit(isOwnTruck));
-        soReq.input('noTruckRequired',  sql.Bit,           toBit(noTruckRequired));
+        soReq.input('noTruckRequired',  sql.Bit,           effectiveNoTruckRequired);
         soReq.input('pSling',           sql.Bit,           toBit(pSling));
         soReq.input('remark',           sql.NVarChar(500), remark || null);
         soReq.input('rebateDiscountAmt', sql.Decimal(12,2), normalizeRebateDiscount(req, rebateDiscountAmt));
@@ -1386,6 +1407,12 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
         soReq.input('salesUserId',      sql.Int,           actualSalesUserId);
         soReq.input('enteredByUserId',  sql.Int,           enteredByUserId);
         salesOwnerIds.add(actualSalesUserId);
+
+        // R11 U-7/U-8: ของแถมต้องไม่เกินโควต้าของภาคผู้ขาย (นับรวมบิลร่างอื่นที่ยังไม่ยืนยัน)
+        const quota = await checkGiveawayQuota({ queryFn: txQueryFn(tx), salesUserId: actualSalesUserId, lines });
+        if (!quota.ok) {
+          throw Object.assign(new Error(quotaErrorMessage(quota.problems)), { status: 400, code: 'GIVEAWAY_OVER_QUOTA', problems: quota.problems });
+        }
         // ยอดของใบนี้ ใช้ตรวจวงเงินเครดิตหลัง commit — ของแถมไม่นับเป็นยอดขาย
         creditChecks.push({
           custId,
@@ -1529,28 +1556,72 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
         }
 
         const hasGiveawayApproval = await hasGiveawayApprovalColumns();
+        let tripLoadInOrder = Boolean(loadInOrder);
+
         for (let i = 0; i < lines.length; i++) {
           const l = lines[i];
+
+          // R9-2: Derive NET floor server-side from active price list; ignore client value
+          let derivedNetPrice = null;
+          const isCouponOrGiveaway = Boolean(l.isGiveaway || l.isCouponDrawn || l.couponReservationId || l.refCouponDocuNo || l.isControlTicketDrawn || l.refControlTicketNo);
+          if (!isCouponOrGiveaway) {
+            try {
+              const auth = await resolveAuthoritativePrice({
+                custId: custId,
+                goodId: l.goodId,
+                goodCode: l.goodCode,
+                asOfDate: deliveryDate ? String(deliveryDate).slice(0, 10) : null
+              });
+              if (auth && auth.hasAnnouncedPrice && auth.announcedPrice > 0) {
+                derivedNetPrice = Number(auth.announcedPrice);
+              }
+            } catch (err) {
+              console.warn('[deriveNetPrice:create] Failed to resolve authoritative price:', err.message);
+            }
+          }
+
+          let lineGoodCode = l.goodCode ? String(l.goodCode) : '';
+          if (!lineGoodCode && l.couponReservationId && l.goodId) {
+            try {
+              const gRow = (await tx.request().input('gid', sql.NVarChar(20), String(l.goodId)).query('SELECT TOP 1 GoodCode FROM dbo.EMGood WHERE GoodID = @gid')).recordset?.[0];
+              if (gRow?.GoodCode) lineGoodCode = gRow.GoodCode;
+            } catch { /* non-fatal */ }
+          }
+
+          let lineSeq = l.loadSequence || null;
+          if (tripLoadInOrder && !lineSeq) {
+            lineSeq = i + 1; // FR-3: Auto-number lines in display order
+          }
+
+          // U-5: Giveaways are stored in pieces (QtyTon=0, MasterQty=0, QtyBag=piece count)
+          const isGw = Boolean(l.isGiveaway);
+          const pieceQty = isGw ? linePieces(l) : 0;
+          const lineQtyTon = isGw ? 0 : Number(l.qtyTon);
+          const lineQtyBag = isGw ? pieceQty : (Number(l.qtyBag) || Math.round(Number(l.qtyTon) * 20));
+          const lineMasterQty = isGw ? 0 : (l.masterQty === undefined || l.masterQty === null ? Number(l.qtyTon) : Number(l.masterQty));
+          const lineChildQty = isGw ? 0 : (l.childQty === undefined || l.childQty === null ? 0 : Number(l.childQty));
+
           const lr = tx.request();
           lr.input('soId',                 sql.Int,           soId);
           lr.input('lineNum',              sql.Int,           i + 1);
           lr.input('goodId',               sql.NVarChar(20),  String(l.goodId));
           lr.input('goodName',             sql.NVarChar(200), l.goodName ? String(l.goodName) : '');
-          lr.input('goodCode',             sql.NVarChar(50),  l.goodCode ? String(l.goodCode) : '');
-          lr.input('qtyTon',               sql.Decimal(12,3), Number(l.qtyTon));
-          lr.input('qtyBag',               sql.Int,           Number(l.qtyBag) || Math.round(l.qtyTon * 20));
-          lr.input('masterQty',            sql.Decimal(12,3), l.masterQty === undefined || l.masterQty === null ? Number(l.qtyTon) : Number(l.masterQty));
-          lr.input('childQty',             sql.Decimal(12,3), l.childQty === undefined || l.childQty === null ? 0 : Number(l.childQty));
-          lr.input('pricePerTon',          sql.Decimal(12,2), Number(l.pricePerTon));
-          lr.input('netPricePerTon',       sql.Decimal(12,2), Number(l.netPricePerTon) || 0);
-          lr.input('isGiveaway',           sql.Bit,           l.isGiveaway ? 1 : 0);
+          lr.input('goodCode',             sql.NVarChar(50),  lineGoodCode);
+          lr.input('qtyTon',               sql.Decimal(12,3), lineQtyTon);
+          lr.input('qtyBag',               sql.Int,           lineQtyBag);
+          lr.input('masterQty',            sql.Decimal(12,3), lineMasterQty);
+          lr.input('childQty',             sql.Decimal(12,3), lineChildQty);
+          const boundNetPrice = derivedNetPrice !== null && derivedNetPrice !== undefined ? derivedNetPrice : 0;
+          lr.input('pricePerTon',          sql.Decimal(12,2), isGw ? 0 : Number(l.pricePerTon));
+          lr.input('netPricePerTon',       sql.Decimal(12,2), isGw ? 0 : boundNetPrice);
+          lr.input('isGiveaway',           sql.Bit,           isGw ? 1 : 0);
           lr.input('refControlTicketNo',   sql.NVarChar(30),  l.refControlTicketNo || null);
           lr.input('isControlTicketDrawn', sql.Bit,           l.isControlTicketDrawn ? 1 : 0);
           lr.input('couponReservationId',   sql.Int,           l.couponReservationId ? Number(l.couponReservationId) : null);
           lr.input('refCouponDocuNo',       sql.VarChar(50),   l.refCouponDocuNo || null);
           lr.input('isCouponDrawn',         sql.Bit,           l.isCouponDrawn ? 1 : 0);
           addGiveawayApprovalInputs(lr, req, l, hasGiveawayApproval);
-          lr.input('loadSequence',         sql.Int,           l.loadSequence || null);
+          lr.input('loadSequence',         sql.Int,           lineSeq);
           
           await lr.query(`
             INSERT INTO wf.SalesOrderLine
@@ -1612,18 +1683,28 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
     } else {
       res.json({ id: createdIds[0], wfRef: createdRefs[0], needsApproval: anyNeedsApproval, warnings });
     }
-  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message, code: e.code, problems: e.problems }); }
 });
 
 // ── PUT /api/so/:id — Update existing DRAFT SO ──
-router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, res) => {
   try {
+    validateBookingNotes(req.body);
     const so = await getSoOrThrow(req.params.id, 'DRAFT');
     const order = req.body;
     
     if (!order.custId) return res.status(400).json({ message: 'ต้องระบุข้อมูลลูกค้า (custId)' });
     if (!order.lines?.length) return res.status(400).json({ message: 'ต้องมีรายการสินค้าอย่างน้อย 1 รายการ' });
     if (!['I', 'K', 'AI'].includes(order.soPrefix)) return res.status(400).json({ message: 'soPrefix ต้องเป็น I / K / AI' });
+
+    for (const l of order.lines) {
+      const master = l.masterQty === undefined || l.masterQty === null ? Number(l.qtyTon) : Number(l.masterQty);
+      const child = l.childQty === undefined || l.childQty === null ? 0 : Number(l.childQty);
+      const qtyTon = Number(l.qtyTon);
+      if (Math.abs(master + child - qtyTon) > 0.001) {
+        return res.status(400).json({ message: 'ผลรวมยอดแม่ + ยอดลูก ต้องเท่ากับจำนวนตันในแต่ละรายการ' });
+      }
+    }
 
     let needsApproval = false;
 
@@ -1635,19 +1716,27 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), as
         const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, rebateDiscountAmt, creditDays, truckRemark, billRemark, transpId } = order;
         const truckPlate = order.truckPlate || null;
         const safeRebateDiscountAmt = normalizeRebateDiscount(req, rebateDiscountAmt);
-        const totalAmnt = lines.reduce((sum, l) => sum + (Number(l.qtyTon) * Number(l.pricePerTon)), 0) - safeRebateDiscountAmt;
+        const totalAmnt = lines.reduce((sum, l) => sum + Math.round(Number(l.qtyTon) * Number(l.pricePerTon) * 100), 0) / 100;
+        if (safeRebateDiscountAmt < 0 || safeRebateDiscountAmt > totalAmnt || lines.some(l => Number(l.qtyTon) < 0 || Number(l.pricePerTon) < 0 || (l.isGiveaway && Number(l.pricePerTon) !== 0)))
+          throw Object.assign(new Error('ยอดเงินหรือของแถมไม่ถูกต้อง'), { status: 400 });
 
         const soReq = tx.request();
         soReq.input('id', sql.VarChar(50), String(so.Id));
         soReq.input('soPrefix', sql.NVarChar(5), String(soPrefix));
         soReq.input('custId', sql.NVarChar(20), String(custId));
         soReq.input('custName', sql.NVarChar(200), custName ? String(custName) : '');
-        soReq.input('truckPlate', sql.NVarChar(30), truckPlate ? String(truckPlate) : null);
+        const isControlTicket = Boolean(order.isControlTicket || String(truckPlate || '').trim() === 'ตั๋วคุม' || soPrefix === 'AI');
+        const effectiveTruckPlate = isControlTicket
+          ? 'ตั๋วคุม'
+          : (truckPlate && !['ยังไม่ระบุรถ','ตั๋วคุม','ไม่ระบุทะเบียนรถ'].includes(String(truckPlate).trim()) ? String(truckPlate).trim() || null : null);
+        const effectiveNoTruckRequired = isControlTicket ? 1 : toBit(noTruckRequired);
+
+        soReq.input('truckPlate', sql.NVarChar(30), effectiveTruckPlate);
         soReq.input('controlTicketNo', sql.NVarChar(20), controlTicketNo ? String(controlTicketNo) : null);
         soReq.input('deliveryDate', sql.Date, deliveryDate ? new Date(deliveryDate) : null);
         soReq.input('requestedAt', sql.DateTime2, toSqlDateTime(requestedAt));
         soReq.input('isOwnTruck', sql.Bit, toBit(isOwnTruck));
-        soReq.input('noTruckRequired', sql.Bit, toBit(noTruckRequired));
+        soReq.input('noTruckRequired', sql.Bit, effectiveNoTruckRequired);
         soReq.input('pSling', sql.Bit, toBit(pSling));
         soReq.input('remark', sql.NVarChar(500), remark || null);
         soReq.input('rebateDiscountAmt', sql.Decimal(12,2), safeRebateDiscountAmt);
@@ -1722,25 +1811,22 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), as
             SELECT
               @soId, @lineNum, @goodId, COALESCE(NULLIF(@goodName, ''), g.GoodName1), 1000, 1000,
               NULL, 0, 0, COALESCE(g.MainGoodUnitID, 1002), 0, @qtyTon, @pricePerTon,
-              0, 0, 0, @qtyTon * @pricePerTon,
-              0, h.ShipDate, 0, 0, 0, 0, 0, @qtyTon * @pricePerTon,
+              0, 0, 0, ROUND(@qtyTon * @pricePerTon,2),
+              0, h.ShipDate, 0, 0, 0, 0, 0, ROUND(@qtyTon * @pricePerTon,2),
               '103', 'N', 'N', '1', COALESCE(g.VatType, '3'), '-1', 'G',
               @qtyTon, 0, @freeFlag, 1, COALESCE(g.MainGoodUnitID, 1002), @qtyTon,
               0, @qtyTon, 0, @qtyTon, @qtyTon, 'N', 'N',
-              0, @qtyTon * @pricePerTon, 'Y', @masterQty, @childQty
+              0, ROUND(@qtyTon * @pricePerTon,2), 'Y', @masterQty, @childQty
             FROM dbo.EMGood g
             CROSS JOIN dbo.SOHD h
             WHERE g.GoodID = @goodId AND h.SOID = @soId;
-
-            INSERT INTO dbo.SODTRemark (SOID, ListNo, RefListNo, Remark)
-            SELECT @soId, @lineNum, @lineNum, COALESCE(NULLIF(@goodName, ''), g.GoodName1)
-            FROM dbo.EMGood g
-            WHERE g.GoodID = @goodId;
 
             INSERT INTO wf.SalesOrderLineExt (SOID, ListNo, NetPricePerTon, IsGiveaway, RebateBooked, RefControlTicketNo, IsControlTicketDrawn, MasterQty, ChildQty, LoadSequence${giveawayApprovalInsertColumns(hasGiveawayApproval)})
             VALUES (@soId, @lineNum, @netPricePerTon, @isGiveaway, 0, @refControlTicketNo, @isControlTicketDrawn, @masterQty, @childQty, @loadSequence${giveawayApprovalInsertValues(hasGiveawayApproval)});
           `);
         }
+        await tx.request().input('SOID',sql.VarChar(50),String(so.Id)).execute('wf.usp_RefreshBookingHeader');
+        await tx.request().input('SOID',sql.VarChar(50),String(so.Id)).execute('wf.usp_WriteBookingDescription');
       });
       await audit(null, so.Id, req.user.sub, 'UPDATED', 'DRAFT', 'DRAFT', null, req.ip);
       broadcast('so_updated', { id: so.Id, action: 'updated' });
@@ -1751,11 +1837,23 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), as
       const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, rebateDiscountAmt, creditDays, truckRemark, billRemark, transpId } = order;
       const truckPlate = order.truckPlate || null;
 
+      // R6-1: Sanitize client-supplied lines by stripping private internal markers
+      stripPrivateLineFields(lines);
+
+      // R5-2: Validate and lock coupon reservations BEFORE evaluating line prices
+      const editActor = {
+        userId: req.user?.sub || req.user?.id,
+        role: req.user?.role
+      };
+      const validatedLineIndexes = await validateAndLockCouponReservations(tx, lines, order.custId, so.Id, editActor, order.soPrefix || so.SoPrefix);
+
       // Evaluate line prices against authoritative server master (dbo.EMSetPriceDT / HD)
       let orderNeedsApproval = false;
       const lineEvaluations = [];
-      for (const l of lines) {
-        const evalResult = await evaluateLinePrice(l, custId, deliveryDate || null);
+      for (let lIdx = 0; lIdx < lines.length; lIdx++) {
+        const l = lines[lIdx];
+        const isCouponValidated = validatedLineIndexes instanceof Set && validatedLineIndexes.has(lIdx);
+        const evalResult = await evaluateLinePrice(l, custId, deliveryDate || null, { isCouponValidated });
         lineEvaluations.push(evalResult);
         if (evalResult.requiresApproval) {
           orderNeedsApproval = true;
@@ -1775,26 +1873,71 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), as
       soReq.input('wfRef',             sql.NVarChar(30),  String(newWfRef));
       soReq.input('custId',            sql.NVarChar(20),  String(custId));
       soReq.input('custName',          sql.NVarChar(200), custName ? String(custName) : '');
-      soReq.input('truckPlate',        sql.NVarChar(30),  truckPlate ? String(truckPlate) : null);
+      const isControlTicket = Boolean(order.isControlTicket || String(truckPlate || '').trim() === 'ตั๋วคุม' || soPrefix === 'AI');
+      const effectiveTruckPlate = isControlTicket
+        ? 'ตั๋วคุม'
+        : (truckPlate && !['ยังไม่ระบุรถ','ตั๋วคุม','ไม่ระบุทะเบียนรถ'].includes(String(truckPlate).trim()) ? String(truckPlate).trim() || null : null);
+      const effectiveNoTruckRequired = isControlTicket ? 1 : toBit(noTruckRequired);
+
+      const has141 = await checkMigration141();
+      const existingRow = (await tx.request().input('id', sql.Int, so.Id).query(`
+        SELECT DocumentRevision, PricingFingerprint, RequiresPriceApproval, PriceApprovalStatus,
+               TripId, RebateDiscountAmt${has141 ? ', AppliedRebateClaimId, ClaimDiscountAmt' : ''}
+        FROM wf.SalesOrder WITH (UPDLOCK, HOLDLOCK)
+        WHERE Id = @id
+      `)).recordset[0];
+      if (!existingRow) throw Object.assign(new Error('Draft no longer exists'), { status: 409 });
+
+      // R11 U-7/U-8: แก้จำนวนของแถมต้องตรวจโควต้าใหม่ (ไม่นับบรรทัดเดิมของบิลนี้)
+      const editQuota = await checkGiveawayQuota({ queryFn: txQueryFn(tx), salesUserId: so.SalesUserId, lines, excludeSoId: so.Id });
+      if (!editQuota.ok) {
+        throw Object.assign(new Error(quotaErrorMessage(editQuota.problems)), { status: 400, code: 'GIVEAWAY_OVER_QUOTA', problems: editQuota.problems });
+      }
+
+      // R9-3: Read TripId from wf.SalesOrder (row lock) and keep it unless payload explicitly sets tripId
+      const effectiveTripId = order.tripId !== undefined
+        ? (order.tripId ? Number(order.tripId) : null)
+        : (existingRow.TripId !== undefined ? existingRow.TripId : (so.TripId || null));
+
+      if (effectiveTripId !== existingRow.TripId) {
+        await audit(tx, so.Id, req.user.sub, 'TRIP_CHANGED', so.Status, so.Status,
+          `Trip changed from ${existingRow.TripId ?? 'NULL'} to ${effectiveTripId ?? 'NULL'}`, req.ip);
+      }
+
+      // R9-1: Protect rebate discount on SALES edit (who cannot see rebate)
+      const canEditRebate = canViewRebateAmounts(req.user);
+      const effectiveRebateDiscount = canEditRebate
+        ? (rebateDiscountAmt !== undefined ? Math.max(0, Number(rebateDiscountAmt) || 0) : Number(existingRow.RebateDiscountAmt || 0))
+        : Number(existingRow.RebateDiscountAmt || 0);
+
+      const claimDiscountAmt = Number(existingRow.ClaimDiscountAmt || 0);
+      if (effectiveRebateDiscount < claimDiscountAmt) {
+        throw Object.assign(new Error(`ยอดส่วนลดรีเบท (฿${effectiveRebateDiscount.toLocaleString()}) ต้องไม่น้อยกว่าส่วนลดเคลมที่ผูกไว้ (฿${claimDiscountAmt.toLocaleString()})`), { status: 400 });
+      }
+
+      soReq.input('truckPlate',        sql.NVarChar(30),  effectiveTruckPlate);
       soReq.input('controlTicketNo',   sql.NVarChar(20),  controlTicketNo ? String(controlTicketNo) : null);
       soReq.input('deliveryDate',      sql.Date,          deliveryDate ? new Date(deliveryDate) : null);
       soReq.input('requestedAt',       sql.DateTime2,     toSqlDateTime(requestedAt));
       soReq.input('isOwnTruck',        sql.Bit,           toBit(isOwnTruck));
-      soReq.input('noTruckRequired',   sql.Bit,           toBit(noTruckRequired));
+      soReq.input('noTruckRequired',   sql.Bit,           effectiveNoTruckRequired);
       soReq.input('pSling',            sql.Bit,           toBit(pSling));
       soReq.input('remark',            sql.NVarChar(500), remark || null);
-      soReq.input('rebateDiscountAmt', sql.Decimal(12,2), normalizeRebateDiscount(req, rebateDiscountAmt));
+      soReq.input('rebateDiscountAmt', sql.Decimal(12,2), effectiveRebateDiscount);
       soReq.input('creditDays',        sql.Int,           creditDays || 30);
       soReq.input('truckRemark',       sql.NVarChar(500), truckRemark || null);
       soReq.input('billRemark',        sql.NVarChar(500), billRemark || null);
       soReq.input('transpId',          sql.Int,           transpId || null);
-      soReq.input('tripId',            sql.Int,           order.tripId !== undefined ? (order.tripId ? Number(order.tripId) : null) : (so.TripId || null));
-      const currentRev = Number(so.DocumentRevision) || 1;
-      const newRev = currentRev + 1;
-      const pricingFingerprint = calculatePricingFingerprint(lines);
+      soReq.input('tripId',            sql.Int,           effectiveTripId);
 
-      soReq.input('requiresPriceApproval', sql.Bit,       orderNeedsApproval ? 1 : 0);
-      soReq.input('priceApprovalStatus', sql.VarChar(20), orderNeedsApproval ? 'PENDING' : 'NONE');
+      const currentRev = Number(existingRow.DocumentRevision) || 1;
+      const pricingFingerprint = calculatePricingFingerprint(lines);
+      const pricingChanged = pricingFingerprint !== existingRow.PricingFingerprint;
+      const newRev = currentRev + (pricingChanged ? 1 : 0);
+      needsApproval = pricingChanged ? orderNeedsApproval : !!existingRow.RequiresPriceApproval && existingRow.PriceApprovalStatus !== 'APPROVED';
+
+      soReq.input('requiresPriceApproval', sql.Bit, pricingChanged ? (orderNeedsApproval ? 1 : 0) : existingRow.RequiresPriceApproval);
+      soReq.input('priceApprovalStatus', sql.VarChar(20), pricingChanged ? (orderNeedsApproval ? 'PENDING' : 'NONE') : existingRow.PriceApprovalStatus);
       soReq.input('documentRevision',    sql.Int,           newRev);
       soReq.input('pricingFingerprint',  sql.VarChar(64),   pricingFingerprint);
 
@@ -1853,37 +1996,74 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), as
       // Delete existing lines
       await tx.request().input('id', sql.Int, so.Id).query(`DELETE FROM wf.SalesOrderLine WHERE SoId = @id`);
 
-      // Validate and lock all new/retained coupon reservations for this order before inserting lines
-      const editActor = {
-        userId: req.user?.sub || req.user?.id,
-        role: req.user?.role
-      };
-      await validateAndLockCouponReservations(tx, lines, order.custId, so.Id, editActor);
-
       // Insert new lines
       const hasGiveawayApproval = await hasGiveawayApprovalColumns();
+      let editTripLoadInOrder = Boolean(req.body.loadInOrder);
+
       for (let i = 0; i < lines.length; i++) {
         const l = lines[i];
+
+        // R9-2: Derive NET floor server-side from active price list; ignore client value
+        let derivedNetPrice = null;
+        const isCouponOrGiveaway = Boolean(l.isGiveaway || l.isCouponDrawn || l.couponReservationId || l.refCouponDocuNo || l.isControlTicketDrawn || l.refControlTicketNo);
+        if (!isCouponOrGiveaway) {
+          try {
+            const auth = await resolveAuthoritativePrice({
+              custId: custId,
+              goodId: l.goodId,
+              goodCode: l.goodCode,
+              asOfDate: deliveryDate ? String(deliveryDate).slice(0, 10) : null
+            });
+            if (auth && auth.hasAnnouncedPrice && auth.announcedPrice > 0) {
+              derivedNetPrice = Number(auth.announcedPrice);
+            }
+          } catch (err) {
+            console.warn('[deriveNetPrice:edit] Failed to resolve authoritative price:', err.message);
+          }
+        }
+
+        let lineGoodCode = l.goodCode ? String(l.goodCode) : '';
+        if (!lineGoodCode && l.couponReservationId && l.goodId) {
+          try {
+            const gRow = (await tx.request().input('gid', sql.NVarChar(20), String(l.goodId)).query('SELECT TOP 1 GoodCode FROM dbo.EMGood WHERE GoodID = @gid')).recordset?.[0];
+            if (gRow?.GoodCode) lineGoodCode = gRow.GoodCode;
+          } catch { /* non-fatal */ }
+        }
+
+        let lineSeq = l.loadSequence || null;
+        if (editTripLoadInOrder && !lineSeq) {
+          lineSeq = i + 1; // FR-3: Auto-number lines in display order
+        }
+
+        // U-5: Giveaways are stored in pieces (QtyTon=0, MasterQty=0, QtyBag=piece count)
+        const isGw = Boolean(l.isGiveaway);
+        const pieceQty = isGw ? linePieces(l) : 0;
+        const lineQtyTon = isGw ? 0 : Number(l.qtyTon);
+        const lineQtyBag = isGw ? pieceQty : (Number(l.qtyBag) || Math.round(Number(l.qtyTon) * 20));
+        const lineMasterQty = isGw ? 0 : (l.masterQty === undefined || l.masterQty === null ? Number(l.qtyTon) : Number(l.masterQty));
+        const lineChildQty = isGw ? 0 : (l.childQty === undefined || l.childQty === null ? 0 : Number(l.childQty));
+
         const lr = tx.request();
         lr.input('soId',                 sql.Int,           so.Id);
         lr.input('lineNum',              sql.Int,           i + 1);
         lr.input('goodId',               sql.NVarChar(20),  String(l.goodId));
         lr.input('goodName',             sql.NVarChar(200), l.goodName ? String(l.goodName) : '');
-        lr.input('goodCode',             sql.NVarChar(50),  l.goodCode ? String(l.goodCode) : '');
-        lr.input('qtyTon',               sql.Decimal(12,3), Number(l.qtyTon));
-        lr.input('qtyBag',               sql.Int,           Number(l.qtyBag) || Math.round(l.qtyTon * 20));
-        lr.input('masterQty',            sql.Decimal(12,3), l.masterQty === undefined || l.masterQty === null ? Number(l.qtyTon) : Number(l.masterQty));
-        lr.input('childQty',             sql.Decimal(12,3), l.childQty === undefined || l.childQty === null ? 0 : Number(l.childQty));
-        lr.input('pricePerTon',          sql.Decimal(12,2), Number(l.pricePerTon));
-        lr.input('netPricePerTon',       sql.Decimal(12,2), Number(l.netPricePerTon) || 0);
-        lr.input('isGiveaway',           sql.Bit,           l.isGiveaway ? 1 : 0);
+        lr.input('goodCode',             sql.NVarChar(50),  lineGoodCode);
+        lr.input('qtyTon',               sql.Decimal(12,3), lineQtyTon);
+        lr.input('qtyBag',               sql.Int,           lineQtyBag);
+        lr.input('masterQty',            sql.Decimal(12,3), lineMasterQty);
+        lr.input('childQty',             sql.Decimal(12,3), lineChildQty);
+        const boundNetPrice = derivedNetPrice !== null && derivedNetPrice !== undefined ? derivedNetPrice : 0;
+        lr.input('pricePerTon',          sql.Decimal(12,2), isGw ? 0 : Number(l.pricePerTon));
+        lr.input('netPricePerTon',       sql.Decimal(12,2), isGw ? 0 : boundNetPrice);
+        lr.input('isGiveaway',           sql.Bit,           isGw ? 1 : 0);
         lr.input('refControlTicketNo',   sql.NVarChar(30),  l.refControlTicketNo || null);
         lr.input('isControlTicketDrawn', sql.Bit,           l.isControlTicketDrawn ? 1 : 0);
         lr.input('couponReservationId',   sql.Int,           l.couponReservationId ? Number(l.couponReservationId) : null);
         lr.input('refCouponDocuNo',       sql.VarChar(50),   l.refCouponDocuNo || null);
         lr.input('isCouponDrawn',         sql.Bit,           l.isCouponDrawn ? 1 : 0);
         addGiveawayApprovalInputs(lr, req, l, hasGiveawayApproval);
-        lr.input('loadSequence',         sql.Int,           l.loadSequence || null);
+        lr.input('loadSequence',         sql.Int,           lineSeq);
         
         await lr.query(`
           INSERT INTO wf.SalesOrderLine
@@ -1913,13 +2093,13 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), as
         }
       }
 
-      // Supersede old price approvals (both PENDING and APPROVED from previous revisions)
-      await tx.request()
+      // Only a changed pricing fingerprint invalidates price approval.
+      if (pricingChanged) await tx.request()
         .input('soId', sql.Int, so.Id)
         .input('newRev', sql.Int, newRev)
         .query(`UPDATE wf.PriceApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE SoId = @soId AND Status IN ('PENDING', 'APPROVED') AND DocumentRevision < @newRev`);
 
-      if (orderNeedsApproval) {
+      if (pricingChanged && orderNeedsApproval) {
         for (let i = 0; i < lines.length; i++) {
           const l = lines[i];
           const ev = lineEvaluations[i];
@@ -1950,12 +2130,12 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), as
     await audit(null, so.Id, req.user.sub, 'UPDATED', 'DRAFT', 'DRAFT', null, req.ip);
     broadcast('so_updated', { id: so.Id, action: 'updated' });
     res.json({ id: so.Id, wfRef: so.WfRef, needsApproval });
-  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message, code: e.code, problems: e.problems }); }
 });
 
 // ── PATCH /api/so/:id/confirm ────────────────────────────────
 // ── PATCH /api/so/:id/verify — Counter-Sales ตรวจซ้ำ (FR-022) ─────
-router.patch('/:id/verify', requireRole('COUNTER_SALES', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
+router.patch('/:id/verify', requireCapability('so.verify'), requireSoInScope, async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'DRAFT');
     await wfQuery(`UPDATE wf.SalesOrder SET VerifiedBy=@uid, VerifiedAt=GETUTCDATE() WHERE Id=@id`,
@@ -1966,8 +2146,11 @@ router.patch('/:id/verify', requireRole('COUNTER_SALES', 'ADMIN', 'MANAGER', 'C_
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
 
-router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.patch('/:id/confirm', requireCapability('so.confirm'), requireSoInScope, async (req, res) => {
+  const {getConfirmationReplay} = require('../services/confirmation-replay');
   try {
+    const replay = await getConfirmationReplay(req);
+    if (replay) return res.json(replay);
     const pendingQuote = await getPendingQuoteForSo(req.params.id);
     if (pendingQuote) {
       return res.status(400).json({
@@ -1979,8 +2162,33 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
       });
     }
 
-    const isSohdOrder = (await wfQuery(`SELECT SOID, PickupDueDate, PickupDueType, ConfirmedAt, PickupPolicySnapshotId, IsUnlocked FROM wf.SalesOrderExt WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: String(req.params.id) } })).recordset[0];
+    const isSohdOrder = (await wfQuery(`SELECT SOID, TripId, PickupDueDate, PickupDueType, ConfirmedAt, PickupPolicySnapshotId, IsUnlocked FROM wf.SalesOrderExt WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: String(req.params.id) } })).recordset[0];
     
+    // R13 (Q1): A trip is confirmed as a whole. Block per-bill confirm for trip bills.
+    if (isSohdOrder && isSohdOrder.TripId) {
+      const trip = (await wfQuery(`SELECT TripId, TripCode, Status FROM wf.SalesTrip WHERE TripId = @tripId`, { tripId: { type: sql.Int, value: Number(isSohdOrder.TripId) } })).recordset?.[0];
+      if (trip && trip.Status !== 'CANCELLED') {
+        if (isSohdOrder.ConfirmedAt && isSohdOrder.IsUnlocked === 0) {
+          const { normalizeDateString } = require('../services/so-pickup-policy');
+          return res.json({
+            id: req.params.id,
+            status: 'CONFIRMED',
+            pickupDueDate: normalizeDateString(isSohdOrder.PickupDueDate, { isWallClock: true }),
+            pickupDueType: isSohdOrder.PickupDueType || 'DEFAULT',
+            confirmedAt: isSohdOrder.ConfirmedAt,
+            pickupPolicySnapshotId: isSohdOrder.PickupPolicySnapshotId,
+            replayed: true,
+          });
+        }
+        return res.status(409).json({
+          message: `บิลนี้อยู่ในเที่ยวขนส่ง (${trip.TripCode || ('#' + trip.TripId)}) กรุณายืนยันผ่านการยืนยันเที่ยวขนส่งทั้งเที่ยว (ไม่อนุญาตให้ยืนยันรายบิล)`,
+          code: 'BILL_IN_ACTIVE_TRIP',
+          tripId: trip.TripId,
+          tripCode: trip.TripCode
+        });
+      }
+    }
+
     if (isSohdOrder) {
       const { calculateConfirmationPickupDue, normalizeDateString } = require('../services/so-pickup-policy');
 
@@ -2037,318 +2245,44 @@ router.patch('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
       });
     }
 
-    let so = await getSoOrThrow(req.params.id, 'DRAFT');
+    const so=await getSoOrThrow(req.params.id,'DRAFT');
 
-    // ตรวจสอบสถานะการอนุมัติราคาขายต่ำกว่าประกาศ ผูกกับ DocumentRevision ปัจจุบัน (P0: Finding 6)
-    const priceApprovalCheck = await wfQuery(`
-      SELECT RequiresPriceApproval, PriceApprovalStatus, DocumentRevision, PricingFingerprint,
-             (SELECT COUNT(*) FROM wf.PriceApproval WHERE SoId = @id AND Status = 'PENDING') AS PendingApprovals,
-             (SELECT COUNT(*) FROM wf.PriceApproval WHERE SoId = @id AND DocumentRevision = wf.SalesOrder.DocumentRevision AND Status = 'APPROVED') AS ApprovedCurrentApprovals
-      FROM wf.SalesOrder WHERE Id = @id
-    `, { id: { type: sql.Int, value: so.Id } });
-    const pCheck = priceApprovalCheck.recordset[0];
-    if (pCheck?.RequiresPriceApproval) {
-      if (pCheck.PriceApprovalStatus !== 'APPROVED' || (pCheck.PendingApprovals && Number(pCheck.PendingApprovals) > 0)) {
-        return res.status(400).json({
-          message: `ไม่สามารถยืนยันคำสั่งซื้อได้: มีรายการราคาขายต่ำกว่าราคาประกาศที่ยังไม่ได้รับอนุมัติ (สถานะ: ${pCheck?.PriceApprovalStatus || 'PENDING'})`,
-          requiresApproval: true,
-          priceApprovalStatus: pCheck?.PriceApprovalStatus || 'PENDING'
-        });
-      }
-      if (!pCheck.ApprovedCurrentApprovals || Number(pCheck.ApprovedCurrentApprovals) === 0) {
-        return res.status(400).json({
-          message: `ไม่สามารถยืนยันคำสั่งซื้อได้: คำขออนุมัติราคาไม่ตรงกับฉบับปัจจุบัน (Revision ${pCheck.DocumentRevision}) กรุณาส่งขออนุมัติใหม่`,
-          requiresApproval: true,
-          priceApprovalStatus: 'SUPERSEDED'
+    // R13 (Q1): Look up TripId from wf.SalesOrder (v_AllSalesOrders does not project TripId)
+    const draftTripRow = (await wfQuery(`SELECT TripId FROM wf.SalesOrder WHERE Id = @id`, { id: { type: sql.Int, value: Number(so.Id) } })).recordset?.[0];
+    so.TripId = draftTripRow?.TripId != null ? draftTripRow.TripId : so.TripId;
+
+    // A trip is confirmed as a whole. Block per-bill confirm for trip bills.
+    if (so.TripId) {
+      const trip = (await wfQuery(`SELECT TripId, TripCode, Status FROM wf.SalesTrip WHERE TripId = @tripId`, { tripId: { type: sql.Int, value: Number(so.TripId) } })).recordset?.[0];
+      if (trip && trip.Status !== 'CANCELLED') {
+        return res.status(409).json({
+          message: `บิลนี้อยู่ในเที่ยวขนส่ง (${trip.TripCode || ('#' + trip.TripId)}) กรุณายืนยันผ่านการยืนยันเที่ยวขนส่งทั้งเที่ยว (ไม่อนุญาตให้ยืนยันรายบิล)`,
+          code: 'BILL_IN_ACTIVE_TRIP',
+          tripId: trip.TripId,
+          tripCode: trip.TripCode
         });
       }
     }
-
-    if (!so.TruckPlate && !so.NoTruckRequired) {
-      return res.status(400).json({ message: 'ต้องระบุทะเบียนรถ หรือทำเครื่องหมาย "ไม่ใช้รถ" ก่อนทำการยืนยัน SO' });
-    }
-
-    if (await hasQuoteSourceTable()) {
-      const pendingQuote = (await wfQuery(`
-        SELECT TOP 1 q.Id, q.QuoteNo, q.Status
-        FROM wf.QuotationSourceSO src
-        INNER JOIN wf.Quotation q ON q.Id = src.QuoteId
-        WHERE src.SoId = @soId
-          AND q.Status IN ('DRAFT', 'SENT', 'EXPIRED')
-          AND NOT EXISTS (
-            SELECT 1
-            FROM wf.QuotationSourceSO acceptedSrc
-            INNER JOIN wf.Quotation acceptedQ ON acceptedQ.Id = acceptedSrc.QuoteId
-            WHERE acceptedSrc.SoId = @soId
-              AND acceptedQ.Status = 'ACCEPTED'
-          )
-        ORDER BY q.Id DESC
-      `, { soId: { type: sql.Int, value: so.Id } })).recordset?.[0];
-
-      if (pendingQuote) {
-        return res.status(400).json({
-          message: `SO ${so.WfRef || so.Id} อยู่ในใบเสนอราคา ${pendingQuote.QuoteNo} (${pendingQuote.Status}) ต้องยืนยันใบเสนอราคาก่อนจึงจะ Confirm SO ได้`,
-          requiresQuotationAccepted: true,
-          quoteId: pendingQuote.Id,
-          quoteNo: pendingQuote.QuoteNo,
-          quoteStatus: pendingQuote.Status,
-        });
-      }
-    }
-
-    // FR-022 Verification Gate: ต้องตรวจซ้ำ (Counter-Sales) ก่อนยืนยัน (ADMIN bypass ได้)
-    if (req.user.role !== 'ADMIN') {
-      const vr = await wfQuery(`SELECT VerifiedAt FROM wf.SalesOrder WHERE Id=@id`, { id: { type: sql.Int, value: so.Id } });
-      if (!vr.recordset?.[0]?.VerifiedAt)
-        return res.status(400).json({ message: 'ต้องตรวจซ้ำ (Counter-Sales) ก่อนยืนยัน — กดปุ่ม “ตรวจแล้ว” ก่อน (FR-022)' });
-    }
-
-    const lines = await getLines(so.Id);
-
-    if (await hasGiveawayApprovalColumns()) {
-      const pendingGiveaway = lines.find(l => l.IsGiveaway && l.GiveawayApprovalStatus !== 'APPROVED');
-      if (pendingGiveaway) {
-        return res.status(400).json({
-          message: `รายการของแถมบรรทัด ${pendingGiveaway.LineNum} ยังไม่ได้รับอนุมัติจากผู้จัดการ`,
-          requiresApproval: true,
-          approvalType: 'GIVEAWAY',
-        });
-      }
-    }
-
-    // FR-003 Credit Hold: ถ้าลูกค้าถูก hold → ต้อง override โดย role ตามนโยบาย CREDIT_OVERRIDE
-    const credit = (await wfQuery(`SELECT CreditHold FROM wf.CreditMaster WHERE CustId=@c`,
-      { c: { type: sql.NVarChar(20), value: String(so.CustId) } })).recordset[0];
-    if (credit?.CreditHold) {
-      const pol = await resolveApprovalPolicy('CREDIT_OVERRIDE');
-      const allowed = req.user.role === 'ADMIN' || (pol && req.user.role === pol.RequiredRole);
-      if (!allowed)
-        return res.status(400).json({ message: `ลูกค้าถูกระงับเครดิต (Credit Hold) — ต้องอนุมัติโดย ${pol?.RequiredRole || 'ผจก.'} ก่อน (FR-003)`, requiresApproval: true });
-    }
-
-    // Get the RebateDiscountAmt from draft table
-    const rAmt = await wfQuery(`SELECT ISNULL(RebateDiscountAmt, 0) AS RebateDiscountAmt FROM wf.SalesOrder WHERE Id = @id`, { id: { type: sql.Int, value: so.Id } });
-    const rebateDiscountAmt = rAmt.recordset[0]?.RebateDiscountAmt || 0;
-
-    // Existing drafts may predate collision-safe allocation; repair just-in-time.
-    so = await reassignCollidingDraftRef(so, req.user.sub, req.ip);
-
-    // Calculate pickup due date policy snapshot and enforce strict mode (SO-03, C2, C4)
-    const { calculateConfirmationPickupDue, diffBangkokCalendarDays, getBangkokDateString, normalizeDateString } = require('../services/so-pickup-policy');
-
-    // Only treat as explicit if user provided date in request OR draft was explicitly marked EXPLICIT (C4)
-    // Legacy default DeliveryDate is NOT used as an explicit date overriding the 7-day policy!
-    const explicitPickup = req.body?.pickupDueDate ||
-      req.body?.deliveryDate ||
-      (so.PickupDueType === 'EXPLICIT' && so.PickupDueDate ? normalizeDateString(so.PickupDueDate, { isWallClock: true }) : null);
-
-    const pickupResult = await calculateConfirmationPickupDue({
-      explicitDate: explicitPickup,
-      confirmedAt: new Date(),
+    const result=await wfTransaction(async tx=>{
+      if(so.TripId) await lockConfirmationResource(tx,'ConfirmTrip_'+so.TripId);
+      await lockConfirmationResource(tx,'ConfirmSO_'+so.Id);
+      const replay=await tx.request().input('id',sql.Int,Number(so.Id)).query('SELECT SOID FROM wf.SalesOrderExt WHERE SourceDraftId=@id');
+      if(replay.recordset[0])return {id:replay.recordset[0].SOID,status:'CONFIRMED',replayed:true};
+      return confirmDraft({tx,draftId:so.Id,user:req.user,ip:req.ip,expectedTripId:so.TripId,
+        expectedRevision:so.DocumentRevision,explicitPickup:req.body?.pickupDueDate || req.body?.deliveryDate});
     });
+    return res.json(result);
 
-    if (pickupResult.policy.strictMode && pickupResult.pickupDueDate) {
-      const todayBkk = getBangkokDateString();
-      if (diffBangkokCalendarDays(pickupResult.pickupDueDate, todayBkk) < 0) {
-        return res.status(400).json({ message: 'ไม่อนุญาตให้กำหนดวันรับสินค้าในอดีต (Strict Mode)' });
-      }
+  } catch (e) {
+    if (e.status === 404) {
+      try {
+        const replay = await getConfirmationReplay(req);
+        if (replay) return res.json(replay);
+      } catch (replayError) { e = replayError; }
     }
-
-    // Serialize confirmation with session application lock to prevent concurrent double-conversion (C4)
-    const activePool = require('../db').pools().ownerPool;
-    const lockResource = `ConfirmSO_${so.Id}`;
-    const lockReq = activePool.request();
-    lockReq.input('rname', sql.NVarChar(255), lockResource);
-    await lockReq.query(`
-      DECLARE @res INT;
-      EXEC @res = sp_getapplock @Resource = @rname, @LockMode = 'Exclusive', @LockOwner = 'Session', @LockTimeout = 10000;
-      IF @res < 0 THROW 50002, 'Unable to acquire lock for SO confirmation', 1;
-    `);
-
-    let newSoid = null;
-    try {
-      // Re-check draft status under lock
-      const freshDraft = (await wfQuery(`SELECT Id, Status, WfRef, PickupDueDate, PickupDueType, ConfirmedAt, PickupPolicySnapshotId FROM wf.SalesOrder WHERE Id = @soId`, {
-        soId: { type: sql.Int, value: so.Id }
-      })).recordset?.[0];
-
-      if (!freshDraft || freshDraft.Status !== 'DRAFT') {
-        // Check if already converted to SalesOrderExt
-        const existingExt = (await wfQuery(`SELECT SOID, PickupDueDate, PickupDueType, ConfirmedAt, PickupPolicySnapshotId FROM wf.SalesOrderExt WHERE WfRef = @ref`, {
-          ref: { type: sql.NVarChar(30), value: so.WfRef }
-        })).recordset?.[0];
-
-        if (existingExt) {
-          return res.json({
-            id: existingExt.SOID,
-            status: 'CONFIRMED',
-            pickupDueDate: normalizeDateString(existingExt.PickupDueDate, { isWallClock: true }),
-            pickupDueType: existingExt.PickupDueType || 'DEFAULT',
-            confirmedAt: existingExt.ConfirmedAt,
-            pickupPolicySnapshotId: existingExt.PickupPolicySnapshotId,
-            replayed: true,
-          });
-        }
-        throw new Error('ไม่พบแบบร่างใบสั่งขาย หรือใบสั่งขายถูกเปลี่ยนสถานะแล้ว');
-      }
-
-      // 1. Persist pickup due date to draft before conversion
-      await wfQuery(`
-        UPDATE wf.SalesOrder
-        SET PickupDueDate = @pDueDate,
-            PickupDueType = @pDueType,
-            ConfirmedAt = @confirmedAt,
-            PickupPolicySnapshotId = @pSnapId
-        WHERE Id = @soId
-      `, {
-        soId: { type: sql.Int, value: so.Id },
-        pDueDate: { type: sql.Date, value: pickupResult.pickupDueDate ? new Date(pickupResult.pickupDueDate) : null },
-        pDueType: { type: sql.VarChar(20), value: pickupResult.pickupDueType },
-        confirmedAt: { type: sql.DateTime2, value: pickupResult.confirmedAt },
-        pSnapId: { type: sql.Int, value: pickupResult.pickupPolicySnapshotId },
-      });
-
-      // 2. เรียก Stored Procedure เพื่อย้ายข้อมูลจาก wf.SalesOrder ไป SOHD (Winspeed)
-      const spReq = activePool.request();
-      spReq.input('SoId', sql.Int, so.Id);
-      spReq.output('NewSoid', sql.VarChar(50));
-      const spRes = await spReq.execute('wf.sp_ConfirmSalesOrder');
-      
-      newSoid = spRes.output.NewSoid;
-      if (!newSoid) throw new Error('ย้ายข้อมูลไปยัง Winspeed ไม่สำเร็จ (ไม่ได้ SOID กลับมา)');
-
-      // 3. Ensure native SO preserves PickupDueDate, PickupDueType, ConfirmedAt, PickupPolicySnapshotId (SO-03, C1)
-      await wfQuery(`
-        UPDATE wf.SalesOrderExt
-        SET PickupDueDate = @pDueDate,
-            PickupDueType = @pDueType,
-            ConfirmedAt = @confirmedAt,
-            PickupPolicySnapshotId = @pSnapId,
-            UpdatedAt = GETUTCDATE()
-        WHERE SOID = @newSoid
-      `, {
-        newSoid: { type: sql.VarChar(50), value: String(newSoid) },
-        pDueDate: { type: sql.Date, value: pickupResult.pickupDueDate ? new Date(pickupResult.pickupDueDate) : null },
-        pDueType: { type: sql.VarChar(20), value: pickupResult.pickupDueType },
-        confirmedAt: { type: sql.DateTime2, value: pickupResult.confirmedAt },
-        pSnapId: { type: sql.Int, value: pickupResult.pickupPolicySnapshotId },
-      });
-
-      // 4. Carry over coupon reservations from draft SO to confirmed native SOID
-      await wfQuery(`
-        UPDATE wf.CouponReservation
-        SET CarrierSoId = @newSoid,
-            UpdatedAt = GETUTCDATE()
-        WHERE CarrierSoId = @oldSoId
-      `, {
-        newSoid: { type: sql.VarChar(50), value: String(newSoid) },
-        oldSoId: { type: sql.VarChar(50), value: String(so.Id) }
-      });
-    } finally {
-      // Release application lock
-      const unlockReq = activePool.request();
-      unlockReq.input('rname', sql.NVarChar(255), lockResource);
-      await unlockReq.query(`EXEC sp_releaseapplock @Resource = @rname, @LockOwner = 'Session';`).catch(() => {});
-    }
-
-    // ตั๋วปุ๋ยไม่ได้ออกที่ขั้นนี้ — sp_ConfirmSalesOrder สร้างใบสั่งจอง (103)
-    // และตั๋วผูกกับใบส่งขาย (104) เท่านั้น (111,210 แถวในระบบเป็น 104 ล้วน
-    // ส่วนใบสั่งจองจริง 61,439 ใบเป็น CouponFlag='N' ทุกใบ ซึ่งถูกต้องแล้ว)
-    // ใบส่งขายกับตั๋วเกิดตอนเจ้าหน้าที่เปิดเอกสารต่อใน WINSpeed · ดู 098/099
-
-    if (await hasQuoteSourceTable()) {
-      await wfQuery(`
-        UPDATE q
-        SET q.Status = 'CONVERTED',
-            q.ConvertedSoId = COALESCE(q.ConvertedSoId, @sourceSoId),
-            q.UpdatedAt = GETUTCDATE()
-        FROM wf.Quotation q
-        WHERE q.Status = 'ACCEPTED'
-          AND EXISTS (
-            SELECT 1
-            FROM wf.QuotationSourceSO src
-            WHERE src.QuoteId = q.Id
-              AND src.SoId = @sourceSoId
-          )
-          AND NOT EXISTS (
-            SELECT 1
-            FROM wf.QuotationSourceSO src
-            LEFT JOIN wf.SalesOrder draftSo ON draftSo.Id = src.SoId
-            WHERE src.QuoteId = q.Id
-              AND draftSo.Status = 'DRAFT'
-          )
-      `, { sourceSoId: { type: sql.Int, value: so.Id } });
-    }
-
-    // 2. (Moved to SHIPPED) ตั้ง Rebate accrual
-    // await bookRebateAccrual({ ...so, Id: newSoid }, lines, req.user.sub);
-
-    // 2.5 Consume Rebate (FIFO)
-    if (rebateDiscountAmt > 0) {
-      await consumeRebateAccrual(so.CustId, newSoid, rebateDiscountAmt);
-    }
-
-    // 2.7 Auto-deduct Giveaway Quota (FR-AutoDeduct)
-    const giveawayLines = lines.filter(l => l.IsGiveaway);
-    const targetSalesUserId = so.SalesUserId || req.user.sub;
-    for (const gl of giveawayLines) {
-      const mapRow = (await wfQuery(`SELECT Brand, ItemName FROM wf.GiveawayItemMapping WHERE GoodID=@g`, { g: { type: sql.VarChar(50), value: gl.GoodId } })).recordset[0];
-      if (mapRow) {
-        let y = new Date().getFullYear();
-        if (y < 2500) y += 543;
-        let regRow = (await wfQuery(`SELECT TOP 1 Region, EmpId, EmpCode FROM wf.GiveawayBudget WHERE SalesUserId=@su AND PeriodYear=@y`, { su: { type: sql.Int, value: targetSalesUserId }, y: { type: sql.Int, value: y } })).recordset[0];
-        if (!regRow && req.user.sub) {
-          regRow = (await wfQuery(`SELECT TOP 1 Region, EmpId, EmpCode FROM wf.GiveawayBudget WHERE SalesUserId=@su AND PeriodYear=@y`, { su: { type: sql.Int, value: req.user.sub }, y: { type: sql.Int, value: y } })).recordset[0];
-        }
-        if (regRow) {
-          await wfQuery(`
-            INSERT INTO wf.GiveawayWithdrawal (SalesUserId, EmpId, EmpCode, Region, PeriodYear, IssueMonth, Brand, ItemName, Qty, CustId, SoId, Note, Source)
-            VALUES (@su, @ei, @ec, @rg, @y, @mo, @br, @it, @qy, @cu, @so, @nt, 'APP')
-          `, {
-            su: { type: sql.Int, value: targetSalesUserId },
-            ei: { type: sql.NVarChar(20), value: regRow.EmpId || null },
-            ec: { type: sql.NVarChar(20), value: regRow.EmpCode || null },
-            rg: { type: sql.NVarChar(60), value: regRow.Region },
-            y: { type: sql.Int, value: y },
-            mo: { type: sql.Int, value: new Date().getMonth() + 1 },
-            br: { type: sql.NVarChar(50), value: mapRow.Brand },
-            it: { type: sql.NVarChar(100), value: mapRow.ItemName },
-            qy: { type: sql.Decimal(12,2), value: gl.QtyBag || gl.QtyTon || 0 },
-            cu: { type: sql.NVarChar(20), value: so.CustId ? String(so.CustId) : null },
-            so: { type: sql.Int, value: so.Id },
-            nt: { type: sql.NVarChar(300), value: `ตัดโควต้าอัตโนมัติจากบิล ${so.WfRef || so.Id}` }
-          });
-        }
-      }
-    }
-
-    // 3. Audit log (บันทึกโดยใช้ newSoid)
-    await audit(null, newSoid, req.user.sub, 'CONFIRMED', 'DRAFT', 'CONFIRMED', null, req.ip);
-    
-    // ยกเลิก 03/09/2569 — ไม่ผลักใบชั่งล่วงหน้าเข้า MySQL อีกแล้ว
-    // insertPreWeighTicket(so).catch(err => console.error('[truckscale] Push error:', err));
-    
-    // เดินตัวนับของ WINSpeed ให้ทันเลขที่แอปเพิ่งออกไป ไม่งั้นหน้าจอ WINSpeed
-    // จะเสนอเลขที่ถูกใช้ไปแล้วให้พนักงานคนถัดไป
-    await advanceDocuNoCounter(so.WfRef);
-
-    // ขั้นนี้สร้างแถวใหม่ใน dbo.SOHD ผ่าน sp_ConfirmSalesOrder — เอกสารที่โผล่ใน
-    // WINSpeed โดยไม่มีรอยว่าใครสร้าง คือสิ่งที่ผู้ตรวจถามหาเป็นอันดับแรก
-    await writeAudit({ screen: SCREEN.SO_CONFIRM, action: 'I', docuNo: so.WfRef,
-      docuDate: so.DeliveryDate || new Date(), refId: newSoid, username: auditUser(req.user),
-      note: `ยืนยันใบสั่งขายจากแอป (ลูกค้า ${so.CustId})` });
-
-    // FR-029 outbox: reliable integration event (idempotent ต่อ SO)
-    await enqueue('SO_CONFIRMED', newSoid, { soId: newSoid, custId: so.CustId, by: req.user.sub }, `SO_CONFIRMED:${newSoid}`);
-    res.json({
-      id: newSoid,
-      status: 'CONFIRMED',
-      pickupDueDate: pickupResult.pickupDueDate,
-      pickupDueType: pickupResult.pickupDueType,
-      confirmedAt: pickupResult.confirmedAt,
-      pickupPolicySnapshotId: pickupResult.pickupPolicySnapshotId,
-    });
-  } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
+    const httpErr = toHttpError(e);
+    res.status(httpErr.status).json({ message: httpErr.message });
+  }
 });
 
 // ── PATCH /api/so/:id/picking ────────────────────────────────
@@ -2379,7 +2313,7 @@ router.patch('/:id/picking', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async
 });
 
 // ── PATCH /api/so/:id/unlock — บทบาท APPROVER เท่านั้น ─────
-router.patch('/:id/unlock', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'C_LEVEL'), async (req, res) => {
+router.patch('/:id/unlock', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'C_LEVEL'), requireSoInScope, async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'PICKING');
     const { note } = req.body;
@@ -2402,7 +2336,7 @@ router.patch('/:id/unlock', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNT
 });
 
 // ── POST /api/so/:id/unlock-request — ขอปลดล็อก/ขอแก้ไข/ขอยกเลิก ─────
-router.post('/:id/unlock-request', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.post('/:id/unlock-request', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'C_LEVEL'), requireSoInScope, async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id);
     const { reason, reqType = 'UNLOCK' } = req.body || {};
@@ -2465,30 +2399,30 @@ router.patch('/:id/load', requireRole('WAREHOUSE', 'ADMIN', 'C_LEVEL'), async (r
 // ป้องกันกรณีที่สถานะชั่งออก commit แล้ว แต่ bookRebateAccrual, audit หรือ outbox ขัดข้อง
 async function recoverPendingShipmentTasks(so, user, clientIp, details = {}) {
   const soIdStr = String(so.Id);
-  const userId = so.SalesUserId || user?.sub || 1;
+  const actingUserId = user?.sub || user?.id || 1;
   const lines = await getLines(so.Id);
 
-  // 1. ตรวจสอบและตั้ง Rebate Accrual หากยังไม่เคยตั้ง (Idempotent)
+  // 1. ตรวจสอบและตั้ง Rebate Accrual หากยังไม่เคยตั้ง (Idempotent) — บันทึกให้เจ้าของบิล (so.SalesUserId)
   const existingLedger = await wfQuery(
     `SELECT TOP 1 Id FROM wf.RebateLedger WHERE SoId = @soId`,
     { soId: { type: sql.VarChar(50), value: soIdStr } }
   );
   let rebateRecovered = false;
   if (!existingLedger.recordset?.length) {
-    await bookRebateAccrual(so, lines, userId);
+    await bookRebateAccrual(so, lines, so.SalesUserId || actingUserId);
     rebateRecovered = true;
   }
 
-  // 2. ตรวจสอบ Audit log และบันทึกหากยังไม่มี
+  // 2. ตรวจสอบ Audit log และบันทึกหากยังไม่มี — F-21: บันทึก acting user (manager) ไม่ใช่เจ้าของบิล
   const existingAudit = await wfQuery(
     `SELECT TOP 1 Id FROM wf.SalesOrderAudit WHERE SoId = @soId AND Action = 'SHIPPED'`,
     { soId: { type: sql.VarChar(50), value: soIdStr } }
   );
   if (!existingAudit.recordset?.length) {
-    await audit(null, so.Id, userId, 'SHIPPED', 'LOADED', 'SHIPPED', null, clientIp);
+    await audit(null, so.Id, actingUserId, 'SHIPPED', 'LOADED', 'SHIPPED', null, clientIp);
     await writeAudit({
       screen: SCREEN.SO_SHIP, action: 'U', docuNo: so.WfRef,
-      docuDate: so.CreatedAt, refId: so.Id, username: auditUser(user || { sub: userId }),
+      docuDate: so.CreatedAt, refId: so.Id, username: auditUser(user || { sub: actingUserId }),
       note: `ชั่งออกจากแอป สุทธิ ${details.finalNet || ''} กก.${details.verifiedEvent ? ` [Scale: ${details.verifiedEvent.EventSource} #${details.verifiedEvent.EventId}]` : ''}`
     });
   }
@@ -2527,7 +2461,7 @@ async function recoverPendingShipmentTasks(so, user, clientIp, details = {}) {
 // ── PATCH /api/so/:id/ship — โอนข้อมูลสมบูรณ์ (Scale) ──────
 // WEIGHBRIDGE ทำได้ถึงขั้นชั่งออก/ส่งของ แต่ไม่ได้สิทธิ์ picking/load ซึ่งเป็นงานคลัง
 // (ดู SOP-03 — ผู้ปฏิบัติงานเครื่องชั่งเป็นคนปิดน้ำหนักจริงและออกใบส่งของ)
-router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'MANAGER', 'ADMIN', 'C_LEVEL'), requireSoInScope, async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, ['LOADED', 'SHIPPED']);
 
@@ -2617,7 +2551,17 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'MANAGER', 'AD
           CAST(WeightOut AS DECIMAL(10,2)) AS GrossKg,
           CAST(WeightIn AS DECIMAL(10,2)) AS TareKg,
           CAST(ISNULL(WeightNet, WeightOut - WeightIn) AS DECIMAL(10,2)) AS NetKg,
-          TRY_CAST(LocationName AS INT) AS ScaleNo,
+          CASE 
+            WHEN LocationName IS NOT NULL 
+             AND LTRIM(RTRIM(LocationName)) NOT LIKE '%[^0-9]%' 
+             AND LTRIM(RTRIM(LocationName)) <> '' 
+             AND (
+               LEN(LTRIM(RTRIM(LocationName))) <= 9
+               OR (LEN(LTRIM(RTRIM(LocationName))) = 10 AND CAST(LTRIM(RTRIM(LocationName)) AS BIGINT) <= 2147483647)
+             )
+            THEN CAST(LTRIM(RTRIM(LocationName)) AS INT) 
+            ELSE NULL 
+          END AS ScaleNo,
           DateOut AS WeighOutAt
         FROM dbo.WGHD WITH (NOLOCK)
         WHERE WGType = 'SO'
@@ -2953,7 +2897,7 @@ router.post('/:id/weigh-item', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'ADMIN', 
 });
 
 // ── GET /api/so/:id/weigh-history — ประวัติใบชั่งและการชั่งวนรายรายการ ──
-router.get('/:id/weigh-history', async (req, res) => {
+router.get('/:id/weigh-history', requireSoInScope, async (req, res) => {
   try {
     const soId = String(req.params.id);
     const ticket = (await wfQuery(`
@@ -3129,24 +3073,35 @@ router.post('/bulk-cancel-delete', requireRole('SALES', 'ADMIN', 'C_LEVEL'), asy
           reqGw.input('nt', sql.NVarChar(300), `ตัดโควต้าอัตโนมัติจากบิล ${so.WfRef || so.Id}`);
           await reqGw.query(`DELETE FROM wf.GiveawayWithdrawal WHERE Note = @nt`);
 
-          // Auto-cancel attached coupon reservations
-          await tx.request()
-            .input('soIdStr', sql.VarChar(50), String(so.Id))
-            .input('wfRefStr', sql.VarChar(50), String(so.WfRef || ''))
-            .input('rsn', sql.NVarChar(255), String(validatedReasonText || 'BULK_CANCEL'))
-            .input('uid', sql.Int, req.user.sub)
-            .query(`
-              UPDATE wf.CouponReservation
-              SET Status = 'CANCELLED',
-                  CancelledAt = GETUTCDATE(),
-                  CancelReason = @rsn,
-                  CancelledBy = @uid,
-                  UpdatedAt = GETUTCDATE()
-              WHERE (CarrierSoId = @soIdStr OR CarrierDocuNo = @wfRefStr)
-                AND Status = 'RESERVED'
-            `);
+            await tx.request()
+              .input('soIdStr', sql.VarChar(50), String(so.Id))
+              .input('wfRefStr', sql.VarChar(50), String(so.WfRef || ''))
+              .input('rsn', sql.NVarChar(255), String(validatedReasonText || 'BULK_CANCEL'))
+              .input('uid', sql.Int, req.user.sub)
+              .query(`
+                UPDATE wf.CouponReservation
+                SET Status = 'CANCELLED',
+                    CancelledAt = GETUTCDATE(),
+                    CancelReason = @rsn,
+                    CancelledBy = @uid,
+                    UpdatedAt = GETUTCDATE()
+                WHERE (CarrierSoId = @soIdStr OR CarrierDocuNo = @wfRefStr)
+                  AND Status = 'RESERVED'
+              `);
 
-          await audit(tx, so.Id, req.user.sub, 'CANCELLED', so.Status, 'CANCELLED', validatedReasonText, req.ip);
+            // R9-1: Restore any applied rebate claim back to clean APPROVED status
+            try {
+              await tx.request()
+                .input('soId', sql.Int, Number(so.Id))
+                .query(`
+                  UPDATE wf.RebateClaim
+                  SET AppliedDraftSoId = NULL,
+                      Note = RTRIM(ISNULL(Note + ' ', '') + N'[บิลร่างถูกยกเลิก คืนสถานะเคลม]')
+                  WHERE AppliedDraftSoId = @soId AND Status = 'APPROVED'
+                `);
+            } catch { /* column may not exist yet */ }
+
+            await audit(tx, so.Id, req.user.sub, 'CANCELLED', so.Status, 'CANCELLED', validatedReasonText, req.ip);
 
           await logChangeEvent(tx, {
             entityType: 'SALES_ORDER',
@@ -3176,7 +3131,7 @@ router.post('/bulk-cancel-delete', requireRole('SALES', 'ADMIN', 'C_LEVEL'), asy
 });
 
 // ── PATCH /api/so/:id/cancel ─────────────────────────────────
-router.patch('/:id/cancel', requireRole('SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.patch('/:id/cancel', requireCapability('so.cancel'), requireSoInScope, async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id);
     if (['SHIPPED', 'IMPORTED', 'CANCELLED'].includes(so.Status))
@@ -3267,7 +3222,7 @@ router.patch('/:id/cancel', requireRole('SALES', 'ADMIN', 'C_LEVEL'), async (req
 });
 
 // ── DELETE /api/so/:id — Permanently remove DRAFT/CANCELLED SO ──
-router.delete('/:id', requireRole('SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.delete('/:id', requireRole('SALES', 'ADMIN', 'C_LEVEL'), requireSoInScope, async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id);
     if (!['DRAFT', 'CANCELLED'].includes(so.Status))
@@ -3320,6 +3275,18 @@ router.delete('/:id', requireRole('SALES', 'ADMIN', 'C_LEVEL'), async (req, res)
           WHERE (CarrierSoId = @soIdStr OR CarrierDocuNo = @wfRefStr)
             AND Status = 'RESERVED'
         `);
+
+      // R9-1: Restore any applied rebate claim back to clean APPROVED status
+      try {
+        await tx.request()
+          .input('soId', sql.Int, Number(so.Id))
+          .query(`
+            UPDATE wf.RebateClaim
+            SET AppliedDraftSoId = NULL,
+                Note = RTRIM(ISNULL(Note + ' ', '') + N'[บิลร่างถูกลบ คืนสถานะเคลม]')
+            WHERE AppliedDraftSoId = @soId AND Status = 'APPROVED'
+          `);
+      } catch { /* column may not exist yet */ }
 
       // ⚠ กฎเหล็ก: ห้ามลบ Audit Trail — บันทึกประวัติการลบและ ChangeEvent เพื่อตรวจสอบย้อนหลังได้เสมอ
       await audit(tx, so.Id, req.user.sub, 'DELETED', so.Status, 'DELETED', delReason, req.ip);
@@ -3378,7 +3345,15 @@ async function bookRebateAccrual(so, lines, userId) {
     }
 
     for (const l of lines) {
-      if (l.IsGiveaway) continue;
+      // R9-2: Coupon and giveaway lines NEVER accrue
+      if (l.IsGiveaway || l.IsCouponDrawn || l.CouponReservationId || l.RefCouponDocuNo || l.RefControlTicketNo || l.IsControlTicketDrawn) {
+        continue;
+      }
+      // When no NET is in effect (NULL or 0), accrue 0 and log for Accounting
+      if (l.NetPricePerTon === null || l.NetPricePerTon === undefined || Number(l.NetPricePerTon) === 0) {
+        console.warn(`[ShipAccrual] No NET floor for SO ${so.Id} line ${l.LineNum || l.Id}, goodId ${l.GoodId}; skipping rebate accrual (0 accrued)`);
+        continue;
+      }
       const rebatePer = Number(l.PricePerTon) - Number(l.NetPricePerTon);
       if (rebatePer <= 0) continue;
       const rebateAmt = rebatePer * Number(l.QtyTon);
@@ -3432,33 +3407,4 @@ async function bookRebateAccrual(so, lines, userId) {
 }
 
 // ── Internal: Consume Rebate (FIFO) ──────────────────────────
-async function consumeRebateAccrual(custId, newSoid, rebateDiscountAmt) {
-  if (!rebateDiscountAmt || rebateDiscountAmt <= 0) return;
-  let remainingToDeduct = Number(rebateDiscountAmt);
-
-  const ledgersR = await wfQuery(
-    `SELECT Id, RemainingAmt FROM wf.RebateLedger 
-     WHERE CustId = @custId AND Status = 'PENDING' AND RemainingAmt > 0 AND ReversedFlag = 0 
-     ORDER BY CreatedAt ASC`,
-    { custId: { type: sql.VarChar(20), value: String(custId || '') } }
-  );
-
-  for (const ledger of ledgersR.recordset) {
-    if (remainingToDeduct <= 0) break;
-    
-    const deduct = Math.min(remainingToDeduct, Number(ledger.RemainingAmt));
-    remainingToDeduct -= deduct;
-    
-    await wfQuery(
-      `UPDATE wf.RebateLedger SET RemainingAmt = RemainingAmt - @deduct WHERE Id = @id`,
-      { deduct: { type: sql.Decimal(12,2), value: deduct }, id: { type: sql.Int, value: ledger.Id } }
-    );
-    
-    await wfQuery(
-      `INSERT INTO wf.RebateUsage (LedgerId, AppliedSOID, DeductedAmt) VALUES (@ledgerId, @soid, @deduct)`,
-      { ledgerId: { type: sql.Int, value: ledger.Id }, soid: { type: sql.VarChar(50), value: newSoid }, deduct: { type: sql.Decimal(12,2), value: deduct } }
-    );
-  }
-}
-
 module.exports = router;

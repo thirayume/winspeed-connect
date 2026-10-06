@@ -9,6 +9,7 @@ const router = require('express').Router();
 const XLSX = require('xlsx');
 const { wfQuery, sql } = require('../db');
 const { requireAuth, canViewAllRebateAmounts } = require('../middleware/auth');
+const { getVisibleScope } = require('../services/visible-scope');
 
 router.use(requireAuth);
 
@@ -161,7 +162,7 @@ const REPORTS = {
             CASE w.Status WHEN 1 THEN N'1 · ลงทะเบียนรอชั่ง'
                           WHEN 2 THEN N'2 · ชั่งเข้าแล้ว'
                           WHEN 3 THEN N'3 · ชั่งออกแล้ว'
-                          ELSE CONCAT(N'? · ', w.Status) END AS Status
+                          ELSE N'? · ' + CAST(w.Status AS NVARCHAR(50)) END AS Status
           FROM dbo.WGHD w WITH (NOLOCK)
           ORDER BY w.DateReg DESC, w.Id DESC`,
   },
@@ -397,6 +398,8 @@ const REPORTS = {
   'ar-receipt-history': {
     title: 'รายงานรายละเอียดการรับชำระเงินลูกหนี้ (AR Receipt & Payment History)',
     category: 'finance',
+    available: false,
+    unavailableReason: 'ยังไม่มี native AR receipt payment history implementation ที่สมบูรณ์ (ไม่อนุญาตให้แสดงข้อมูล SO projection สมมุติเป็นใบเสร็จ)',
     columns: [
       { key: 'ReceiptNo', label: 'เลขที่ใบรับเงิน', type: 'identifier' },
       { key: 'ReceiptDate', label: 'วันที่รับเงิน', type: 'date' },
@@ -405,18 +408,6 @@ const REPORTS = {
       { key: 'PayType', label: 'ประเภทการชำระ', type: 'text' },
       { key: 'Amount', label: 'จำนวนเงิน (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
     ],
-    sql: `SELECT TOP 200
-            CAST(hd.SOID AS VARCHAR(50)) AS ReceiptNo,
-            CONVERT(VARCHAR(10), hd.DocuDate, 120) AS ReceiptDate,
-            hd.CustName,
-            CAST(hd.SOID AS VARCHAR(50)) AS RefDocNo,
-            N'โอนเงิน/โอนผ่านธนาคาร' AS PayType,
-            CAST(SUM(dt.GoodAmnt) AS DECIMAL(12,2)) AS Amount
-          FROM dbo.SOHD hd WITH (NOLOCK)
-          JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
-          WHERE hd.DocuType IN (103, 104) AND hd.DocuStatus <> 'C'
-          GROUP BY hd.SOID, hd.DocuDate, hd.CustName
-          ORDER BY hd.DocuDate DESC, hd.SOID DESC`,
   },
   'ap-liabilities': {
     title: 'รายงานสรุปเจ้าหนี้การค้าและค้างชำระค่าวัตถุดิบ (AP Aging & Material Liabilities)',
@@ -453,31 +444,26 @@ const REPORTS = {
     title: 'รายงานสรุปสมุดรายวันขายและการลงบัญชี (Sales Journal & Ledger Posting Log)',
     category: 'finance',
     columns: [
+      { key: 'GLID', label: 'รหัส GL', type: 'identifier' },
+      { key: 'ListNo', label: 'ลำดับ', type: 'integer' },
       { key: 'JournalNo', label: 'เลขที่สมุดรายวัน', type: 'identifier' },
       { key: 'DocuDate', label: 'วันที่ลงบัญชี', type: 'date' },
       { key: 'AccountCode', label: 'รหัสบัญชี', type: 'identifier' },
       { key: 'AccountName', label: 'ชื่อบัญชี', type: 'text' },
       { key: 'Debit', label: 'เดบิต (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
       { key: 'Credit', label: 'เครดิต (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
-      { key: 'RefSO', label: 'อ้างอิง SO', type: 'identifier' },
+      { key: 'RefInvoice', label: 'อ้างอิงใบกำกับภาษี (Invoice 107)', type: 'identifier' },
+      { key: 'InvoiceAmbiguity', label: 'สถานะใบกำกับ', type: 'text' },
+      { key: 'CustName', label: 'ชื่อลูกค้า', type: 'text' },
+      { key: 'GLDesc', label: 'คำอธิบายรายการ', type: 'text' },
     ],
-    sql: `SELECT TOP 200
-            N'SJ-' + CONVERT(VARCHAR(10), hd.DocuDate, 112) AS JournalNo,
-            CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
-            N'1130-01' AS AccountCode,
-            N'ลูกหนี้การค้า (AR Trade)' AS AccountName,
-            CAST(SUM(dt.GoodAmnt) AS DECIMAL(12,2)) AS Debit,
-            CAST(0 AS DECIMAL(12,2)) AS Credit,
-            CAST(hd.SOID AS VARCHAR(50)) AS RefSO
-          FROM dbo.SOHD hd WITH (NOLOCK)
-          JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
-          WHERE hd.DocuType IN (103, 104) AND hd.DocuStatus <> 'C'
-          GROUP BY hd.SOID, hd.DocuDate
-          ORDER BY hd.DocuDate DESC, hd.SOID DESC`,
+    run: (params) => runSalesJournalReport(params),
   },
   'cq-cheque-register': {
     title: 'รายงานสถานะเช็ครับค้างนำฝาก (Cheque Register & Clearance Status)',
     category: 'finance',
+    available: false,
+    unavailableReason: 'ยังไม่มี native cheque register implementation ในระบบ WinSpeed ERP จริง (ไม่อนุญาตให้แสดงข้อมูลสมมุติ)',
     columns: [
       { key: 'ChequeNo', label: 'เลขที่เช็ค', type: 'identifier' },
       { key: 'ChequeDate', label: 'วันที่หน้าเช็ค', type: 'date' },
@@ -486,18 +472,6 @@ const REPORTS = {
       { key: 'Amount', label: 'จำนวนเงิน (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
       { key: 'Status', label: 'สถานะเช็ค', type: 'text' },
     ],
-    sql: `SELECT TOP 200
-            N'CQ-' + CAST(hd.SOID AS VARCHAR(30)) AS ChequeNo,
-            CONVERT(VARCHAR(10), hd.DocuDate, 120) AS ChequeDate,
-            N'ธนาคารกสิกรไทย / กรุงไทย' AS BankName,
-            hd.CustName,
-            CAST(SUM(dt.GoodAmnt) AS DECIMAL(12,2)) AS Amount,
-            N'นำฝากแล้ว (Cleared)' AS Status
-          FROM dbo.SOHD hd WITH (NOLOCK)
-          JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
-          WHERE hd.DocuType IN (103, 104) AND hd.DocuStatus <> 'C'
-          GROUP BY hd.SOID, hd.DocuDate, hd.CustName
-          ORDER BY hd.DocuDate DESC, hd.SOID DESC`,
   },
   'sales-target-comparison': {
     title: 'รายงานเปรียบเทียบยอดขายกับเป้าหมาย (Sales vs Target Breakdown)',
@@ -670,9 +644,23 @@ function parseDateParam(value, fallback) {
   return Number.isNaN(parsed.getTime()) ? fallback : parsed;
 }
 
+// R12 O-4: reports and exports show company-wide rows. Until team-filtered versions exist,
+// only users whose scope is all records may run them (a MANAGER placed on the Organization
+// Chart is team-scoped → no reports; one not yet placed still sees all).
+router.use(async (req, _res, next) => {
+  try {
+    req.scopeSeesAll = (await getVisibleScope(req.user)).all;
+  } catch (e) {
+    console.error('[reports] scope lookup failed:', e.message);
+    req.scopeSeesAll = false;
+  }
+  next();
+});
+
 function canRunReport(req, type) {
   const rule = REPORT_ROLES[type];
   if (rule === undefined) return false;
+  if (req.scopeSeesAll !== true) return false;
   if (rule === null) return Boolean(req.user);
   if (typeof rule === 'function') return Boolean(rule(req.user));
   if (Array.isArray(rule)) return rule.includes(req.user?.role);
@@ -682,14 +670,35 @@ function canRunReport(req, type) {
 router.get('/types', (req, res) => {
   res.json(Object.entries(REPORTS)
     .filter(([key]) => canRunReport(req, key))
-    .map(([key, r]) => ({ key, title: r.title, category: r.category || 'general' })));
+    .map(([key, r]) => ({
+      key,
+      title: r.available === false ? `${r.title} (ยังไม่เปิดใช้งาน)` : r.title,
+      category: r.category || 'general',
+      available: r.available !== false,
+      unavailableReason: r.available === false ? r.unavailableReason : null,
+    })));
 });
 
 async function runReport(type, params = {}) {
   const def = REPORTS[type];
   if (!def) return null;
-  const rows = def.run ? await def.run(params) : ((await wfQuery(def.sql)).recordset || []);
-  return { type, title: def.title, category: def.category || 'general', columns: def.columns, rows };
+  if (def.available === false) {
+    const err = new Error(def.unavailableReason || 'รายงานนี้ยังไม่พร้อมใช้งานในระบบจริง (ยังไม่มี native implementation)');
+    err.status = 503;
+    err.code = 'REPORT_UNAVAILABLE';
+    throw err;
+  }
+  const result = def.run ? await def.run(params) : ((await wfQuery(def.sql)).recordset || []);
+  const rows = Array.isArray(result) ? result : (result?.rows || []);
+  const meta = result?.meta || null;
+  return {
+    type,
+    title: def.title,
+    category: def.category || 'general',
+    columns: def.columns,
+    rows,
+    ...(meta ? { meta } : {}),
+  };
 }
 
 router.get('/:type', async (req, res) => {
@@ -701,8 +710,9 @@ router.get('/:type', async (req, res) => {
     if (!data) return res.status(404).json({ message: 'ไม่พบรายงาน' });
     res.json(data);
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: e.message });
+    const status = e.status || 500;
+    if (status >= 500 && status !== 503) console.error(e);
+    res.status(status).json({ message: e.message, code: e.code || 'REPORT_ERROR' });
   }
 });
 
@@ -844,13 +854,33 @@ router.get('/:type/export', async (req, res) => {
     if (header.tel) contactParts.push(`โทร: ${header.tel}`);
     if (header.fax) contactParts.push(`แฟกซ์: ${header.fax}`);
 
+    const isPartial = Boolean(data.meta?.isPartialScope || data.meta?.isTruncated);
+    const titleSuffix = isPartial ? ' [ข้อมูลบางส่วน - Partial Export]' : '';
+
     const headerRows = [
       [companyTitle],
       [subLineParts.join('  |  ')],
       [contactParts.join('  |  ')],
-      [`รายงาน: ${data.title}  |  พิมพ์เมื่อ: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}  |  ระบบอ้างอิง: WINSpeed ERP · แม่แบบ: ${template.templateCode} (v${template.version})`],
-      [], // บรรทัดว่างคั่นหัวกระดาษกับตาราง
+      [`รายงาน: ${data.title}${titleSuffix}  |  พิมพ์เมื่อ: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}  |  ระบบอ้างอิง: WINSpeed ERP · แม่แบบ: ${template.templateCode} (v${template.version})`],
     ];
+
+    if (isPartial) {
+      const vCount = data.meta?.voucherCount ?? data.rows.length;
+      const vTotal = data.meta?.totalMatchingVouchers ?? 'หลาย';
+      const pageInfo = (data.meta?.totalPages && data.meta.totalPages > 1)
+        ? ` เฉพาะหน้า ${data.meta.page}/${data.meta.totalPages} (ใช้ scope=all หรือ exportAll=true เพื่อส่งออกข้อมูลทั้งหมด)`
+        : '';
+      headerRows.push([
+        `⚠️ คำเตือน (Warning): การส่งออกนี้เป็นข้อมูลบางส่วน (Partial Export)${pageInfo} ถูกจำกัดที่ ${vCount} ใบสำคัญ จากทั้งหมด ${vTotal} ใบสำคัญ`
+      ]);
+    }
+
+    if (data.meta?.missingDetailCount > 0) {
+      headerRows.push([
+        `⚠️ ข้อสังเกต (Notice): ตรวจพบใบสำคัญ ${data.meta.missingDetailCount} ใบที่ไม่มีบรรทัดรายการบัญชีในระบบ (GLDT) ซึ่งถูกแยกบันทึกในรายงานสรุป`
+      ]);
+    }
+    headerRows.push([]); // บรรทัดว่างคั่นหัวกระดาษกับตาราง
 
     // 2. หัวตารางภาษาไทย
     const aoa = [...headerRows, data.columns.map(c => c.label)];
@@ -923,8 +953,9 @@ router.get('/:type/export', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
     res.send(buf);
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: e.message });
+    const status = e.status || 500;
+    if (status >= 500 && status !== 503) console.error(e);
+    res.status(status).json({ message: e.message, code: e.code || 'REPORT_ERROR' });
   }
 });
 
@@ -969,12 +1000,10 @@ async function runCustomerDispatchReport(params = {}) {
            ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), h.SOID)
     OUTER APPLY (
         SELECT TOP 1
-               CASE WHEN r.Remark LIKE N'[[]ตั๋วคุม]%'
-                    THEN LTRIM(REPLACE(r.Remark, N'[ตั๋วคุม]', N''))
-                    ELSE LTRIM(RTRIM(r.Remark)) END AS TicketNos
-        FROM   dbo.SOHDRemark r WITH (NOLOCK)
-        WHERE  r.SOID = h.SOID AND r.Remark LIKE N'%ตั๋วคุม%'
-        ORDER BY CASE WHEN r.Remark LIKE N'[[]ตั๋วคุม]%' THEN 0 ELSE 1 END, r.ListNo
+               wf.fn_BookingTicketNos(r.Remark) AS TicketNos
+        FROM dbo.SOHDRemark r WITH (NOLOCK)
+        WHERE r.SOID = h.SOID AND wf.fn_BookingTicketNos(r.Remark) IS NOT NULL
+        ORDER BY r.ListNo
     ) drawn
     WHERE  h.DocuType = 104
       AND  h.DocuStatus <> 'C'
@@ -992,5 +1021,357 @@ async function runCustomerDispatchReport(params = {}) {
   )).recordset || [];
 }
 
+// ── Invoice Candidate Resolution (Enrichment separated from financial lines) ──────────
+async function fetchInvoicesByPostIds(invoiceCandidates, options = {}) {
+  if (!invoiceCandidates || invoiceCandidates.length === 0) return new Map();
+
+  const tableInv = options.tableInv || 'dbo.SOInvHD';
+  const tableCust = options.tableCust || 'dbo.EMCust';
+  const queryFn = options.queryFn || wfQuery;
+
+  // Normalize candidate items to { postId, docuType }
+  const normalized = invoiceCandidates.map(c => {
+    if (typeof c === 'object' && c !== null) {
+      return {
+        postId: String(c.postId != null ? c.postId : '').trim(),
+        docuType: String(c.docuType || options.fromFlag || '107').trim(),
+      };
+    }
+    return {
+      postId: String(c || '').trim(),
+      docuType: String(options.fromFlag || '107').trim(),
+    };
+  }).filter(c => c.postId.length > 0);
+
+  if (normalized.length === 0) return new Map();
+
+  // De-duplicate by composite key `${postId}:${docuType}`
+  const uniqueItems = [];
+  const seenKeys = new Set();
+  for (const item of normalized) {
+    const key = `${item.postId}:${item.docuType}`;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      uniqueItems.push(item);
+    }
+  }
+
+  // Group by docuType for efficient chunked SQL queries
+  const groupedByDocuType = new Map();
+  for (const item of uniqueItems) {
+    if (!groupedByDocuType.has(item.docuType)) {
+      groupedByDocuType.set(item.docuType, []);
+    }
+    groupedByDocuType.get(item.docuType).push(item.postId);
+  }
+
+  const resultMap = new Map();
+  const chunkSize = 400;
+
+  for (const [docuType, postIds] of groupedByDocuType.entries()) {
+    for (let i = 0; i < postIds.length; i += chunkSize) {
+      const chunk = postIds.slice(i, i + chunkSize);
+      const allNumeric = chunk.every(id => /^-?\d+$/.test(id));
+      const paramDefs = {
+        docuType: { type: sql.VarChar(10), value: docuType },
+      };
+      const paramNames = chunk.map((id, idx) => {
+        const pName = `id${idx}`;
+        if (allNumeric) {
+          paramDefs[pName] = { type: sql.Int, value: parseInt(id, 10) };
+        } else {
+          paramDefs[pName] = { type: sql.VarChar(50), value: id };
+        }
+        return `@${pName}`;
+      });
+
+      const wherePostId = allNumeric
+        ? `inv.PostID IN (${paramNames.join(', ')})`
+        : `CAST(inv.PostID AS VARCHAR(50)) IN (${paramNames.join(', ')})`;
+
+      const q = `
+        SELECT
+          CAST(inv.PostID AS VARCHAR(50)) AS PostID,
+          CAST(inv.Docutype AS VARCHAR(10)) AS Docutype,
+          inv.DocuNo,
+          COALESCE(c.CustName, inv.ContactName, N'-') AS CustName
+        FROM ${tableInv} inv
+        LEFT JOIN ${tableCust} c ON c.CustID = inv.CustID
+        WHERE inv.Docutype = @docuType
+          AND ${wherePostId}
+      `;
+
+      const res = await queryFn(q, paramDefs);
+      for (const r of (res.recordset || [])) {
+        const pId = String(r.PostID).trim();
+        const dType = String(r.Docutype).trim();
+        const compositeKey = `${pId}:${dType}`;
+
+        if (!resultMap.has(compositeKey)) {
+          resultMap.set(compositeKey, []);
+        }
+        resultMap.get(compositeKey).push({
+          docuNo: r.DocuNo,
+          custName: r.CustName,
+        });
+      }
+    }
+  }
+
+  return resultMap;
+}
+
+// ── R-GL รายงานสรุปสมุดรายวันขายและการลงบัญชี (Native WinSpeed GLHD / GLDT) ──────────
+async function runSalesJournalReport(params = {}, options = {}) {
+  const tableHD = options.tableHD || 'dbo.GLHD';
+  const tableDT = options.tableDT || 'dbo.GLDT';
+  const tableAcc = options.tableAcc || 'dbo.EMAcc';
+  const queryFn = options.queryFn || wfQuery;
+
+  const today = new Date();
+  const defaultFrom = new Date(today.getFullYear(), today.getMonth() - 6, today.getDate());
+  const from = parseDateParam(params.from, defaultFrom);
+  const to   = parseDateParam(params.to, today);
+
+  const startOfDay = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const endOfDay   = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 997);
+
+  const journalFilter = String(params.journalNo || '').trim();
+  const jourId = String(params.jourId || '1001').trim();
+  const fromFlag = String(params.fromFlag || '107').trim();
+
+  // Strict enforcement: sales journal supports only FromFlag = 107
+  if (fromFlag !== '107') {
+    const err = new Error('รายงานสมุดรายวันขายรองรับเฉพาะ FromFlag=107 (ขายเชื่อ) เท่านั้น');
+    err.status = 400;
+    err.code = 'INVALID_FROM_FLAG';
+    throw err;
+  }
+
+  const statusParam = String(params.status || 'POSTED').trim().toUpperCase();
+
+  // Status predicate: POSTED (DocuStatus = 'N' and not reversed), CANCELLED, or ALL
+  let statusClause = `(gl.DocuStatus = 'N' AND (gl.Revflag IS NULL OR gl.Revflag != 'Y'))`;
+  if (statusParam === 'CANCELLED') {
+    statusClause = `(gl.DocuStatus = 'C' OR gl.Revflag = 'Y')`;
+  } else if (statusParam === 'ALL') {
+    statusClause = `(1 = 1)`;
+  }
+
+  // Pagination and scope boundary semantics
+  const isAllScope = params.limit === 'all' || params.scope === 'all' || params.exportAll === 'true' || params.export === 'true';
+  const page = isAllScope ? 1 : Math.max(parseInt(params.page, 10) || 1, 1);
+  const limit = isAllScope
+    ? Math.min(Math.max(parseInt(params.maxLimit, 10) || 20000, 1), 50000)
+    : Math.min(Math.max(parseInt(params.limit, 10) || 2000, 1), 10000);
+  const offset = isAllScope ? 0 : (page - 1) * limit;
+  const limitPlusOne = limit + 1;
+
+  // Step 1: Select whole voucher headers with TotalSummary and LEFT JOINs.
+  // Using TotalSummary as primary source guarantees navigation metadata is NEVER lost even on out-of-range pages or empty filters.
+  // Using LEFT JOIN to dt allows detecting headers that have missing GLDT detail lines.
+  const q = `
+    WITH FilteredHeaders AS (
+      SELECT
+        gl.GLID,
+        gl.DocuNo AS JournalNo,
+        CONVERT(VARCHAR(10), gl.DocuDate, 120) AS DocuDate,
+        gl.JourID,
+        gl.FromFlag,
+        gl.FromID,
+        gl.DocuStatus,
+        gl.Revflag,
+        gl.TotaAmnt,
+        gl.GLDesc1
+      FROM ${tableHD} gl
+      WHERE (@jourId = 'ALL' OR gl.JourID = @jourId)
+        AND gl.FromFlag = @fromFlag
+        AND ${statusClause}
+        AND gl.DocuDate >= @from AND gl.DocuDate <= @to
+        AND (@journalNo = '' OR gl.DocuNo LIKE @journalNoLike)
+    ),
+    TotalSummary AS (
+      SELECT COUNT(1) AS TotalMatchingVouchers FROM FilteredHeaders
+    ),
+    -- ROW_NUMBER paging instead of OFFSET/FETCH: SQL Server 2008 R2 (the office WinSpeed server)
+    -- has no OFFSET/FETCH and refused the whole report with a syntax error (UAT batch 6, RPT-F1)
+    NumberedHeaders AS (
+      SELECT fh.*, ROW_NUMBER() OVER (ORDER BY fh.DocuDate DESC, fh.GLID DESC) AS PageRowNo
+      FROM FilteredHeaders fh
+    ),
+    PagedCandidates AS (
+      SELECT GLID, JournalNo, DocuDate, JourID, FromFlag, FromID, DocuStatus, Revflag, TotaAmnt, GLDesc1
+      FROM NumberedHeaders
+      WHERE PageRowNo > @offset AND PageRowNo <= @offset + @limitPlusOne
+    ),
+    SelectedVouchers AS (
+      SELECT TOP (@limit) *
+      FROM PagedCandidates
+      ORDER BY DocuDate DESC, GLID DESC
+    ),
+    MoreIndicator AS (
+      SELECT CASE WHEN COUNT(1) > @limit THEN 1 ELSE 0 END AS HasMore
+      FROM PagedCandidates
+    )
+    SELECT
+      ts.TotalMatchingVouchers,
+      COALESCE(mi.HasMore, 0) AS HasMore,
+      v.GLID,
+      v.JournalNo,
+      v.DocuDate,
+      v.JourID,
+      v.FromFlag,
+      v.FromID,
+      v.DocuStatus,
+      v.Revflag,
+      v.TotaAmnt,
+      v.GLDesc1 AS HeaderGLDesc,
+      dt.ListNo,
+      dt.AccID,
+      ISNULL(acc.AccCode, N'UNKNOWN') AS AccountCode,
+      ISNULL(acc.AccName, N'ไม่ระบุชื่อบัญชี') AS AccountName,
+      CAST(dt.DrAmnt AS DECIMAL(14,2)) AS Debit,
+      CAST(dt.CrAmnt AS DECIMAL(14,2)) AS Credit,
+      ISNULL(dt.GLDesc1, v.GLDesc1) AS DetailGLDesc
+    FROM TotalSummary ts
+    LEFT JOIN MoreIndicator mi ON 1 = 1
+    LEFT JOIN SelectedVouchers v ON 1 = 1
+    LEFT JOIN ${tableDT} dt ON dt.GLID = v.GLID
+    LEFT JOIN ${tableAcc} acc ON acc.AccID = dt.AccID
+    ORDER BY v.DocuDate DESC, v.GLID DESC, dt.ListNo ASC
+  `;
+
+  const rawRows = (await queryFn(q, {
+    limit:         { type: sql.Int,          value: limit },
+    limitPlusOne:  { type: sql.Int,          value: limitPlusOne },
+    offset:        { type: sql.Int,          value: offset },
+    jourId:        { type: sql.VarChar(10),  value: jourId },
+    fromFlag:      { type: sql.VarChar(10),  value: fromFlag },
+    from:          { type: sql.DateTime2,    value: startOfDay },
+    to:            { type: sql.DateTime2,    value: endOfDay },
+    journalNo:     { type: sql.NVarChar(60), value: journalFilter },
+    journalNoLike: { type: sql.NVarChar(64), value: '%' + journalFilter + '%' },
+  })).recordset || [];
+
+  // Extract navigation metadata from the TotalSummary row (always present)
+  const totalMatching = rawRows.length > 0 ? (Number(rawRows[0].TotalMatchingVouchers) || 0) : 0;
+  const hasMore = rawRows.length > 0 ? Boolean(rawRows[0].HasMore) : false;
+
+  // Track all headers selected in this window
+  const headerMap = new Map();
+  for (const r of rawRows) {
+    if (r.GLID != null && !headerMap.has(r.GLID)) {
+      headerMap.set(r.GLID, {
+        GLID: r.GLID,
+        JournalNo: r.JournalNo,
+        DocuDate: r.DocuDate,
+        JourID: r.JourID,
+        FromFlag: r.FromFlag,
+        FromID: r.FromID,
+        DocuStatus: r.DocuStatus,
+        Revflag: r.Revflag,
+        TotaAmnt: r.TotaAmnt,
+        HeaderGLDesc: r.HeaderGLDesc,
+      });
+    }
+  }
+  const selectedVoucherCount = headerMap.size;
+
+  // Filter actual detail rows (excluding header-only rows where ListNo is null)
+  const detailRows = rawRows.filter(r => r.GLID != null && r.ListNo != null);
+  const vouchersWithDetails = new Set(detailRows.map(r => r.GLID));
+
+  // Identify any vouchers missing GLDT detail rows
+  const missingDetailVouchers = [];
+  for (const [glid, hdr] of headerMap.entries()) {
+    if (!vouchersWithDetails.has(glid)) {
+      missingDetailVouchers.push({
+        GLID: hdr.GLID,
+        JournalNo: hdr.JournalNo,
+        DocuDate: hdr.DocuDate,
+      });
+    }
+  }
+
+  // Step 2: Separate invoice candidate resolution without line duplication, typed by (PostID, Docutype)
+  const invoiceCandidates = detailRows
+    .filter(r => r.FromID != null)
+    .map(r => ({ postId: String(r.FromID).trim(), docuType: String(r.FromFlag || fromFlag).trim() }));
+
+  const invMap = await fetchInvoicesByPostIds(invoiceCandidates, options);
+
+  // Step 3: Enrich rows preserving 1:1 cardinality with explicit ambiguity tracking
+  const rows = detailRows.map(r => {
+    const fromIdKey = r.FromID != null ? String(r.FromID).trim() : '';
+    const docuTypeKey = String(r.FromFlag || fromFlag).trim();
+    const compositeKey = `${fromIdKey}:${docuTypeKey}`;
+    const invList = fromIdKey ? (invMap.get(compositeKey) || []) : [];
+
+    let refInvoice = '-';
+    let custName = '-';
+    let invoiceAmbiguity = 'NONE';
+
+    if (invList.length === 1) {
+      refInvoice = invList[0].docuNo || fromIdKey;
+      custName = invList[0].custName || '-';
+      invoiceAmbiguity = 'EXACT';
+    } else if (invList.length > 1) {
+      refInvoice = invList.map(i => i.docuNo).filter(Boolean).join(', ');
+      custName = invList.map(i => i.custName).find(n => n && n !== '-') || '-';
+      invoiceAmbiguity = 'AMBIGUOUS';
+    } else if (fromIdKey) {
+      refInvoice = fromIdKey;
+      custName = '-';
+      invoiceAmbiguity = 'NONE';
+    }
+
+    return {
+      GLID: r.GLID,
+      ListNo: r.ListNo,
+      JournalNo: r.JournalNo,
+      DocuDate: r.DocuDate,
+      AccountCode: r.AccountCode,
+      AccountName: r.AccountName,
+      Debit: r.Debit,
+      Credit: r.Credit,
+      RefInvoice: refInvoice,
+      InvoiceAmbiguity: invoiceAmbiguity,
+      CustName: custName,
+      GLDesc: r.DetailGLDesc,
+    };
+  });
+
+  const totalPages = totalMatching > 0 ? Math.ceil(totalMatching / limit) : 0;
+  const isCompleteScope = totalMatching > 0
+    ? (offset === 0 && selectedVoucherCount === totalMatching && missingDetailVouchers.length === 0)
+    : true;
+  const isPartialScope = !isCompleteScope && totalMatching > 0;
+  const isTruncated = isPartialScope; // Synonymous for UI/export warning
+
+  rows.meta = {
+    scope: isAllScope ? 'all' : 'page',
+    page,
+    totalPages,
+    offset,
+    voucherLimit: limit,
+    voucherCount: selectedVoucherCount,
+    totalMatchingVouchers: totalMatching,
+    rowCount: rows.length,
+    hasMore,
+    hasPrev: offset > 0,
+    isCompleteScope,
+    isPartialScope,
+    isTruncated,
+    missingDetailCount: missingDetailVouchers.length,
+    missingDetailVouchers,
+    jourId,
+    fromFlag,
+    status: statusParam,
+  };
+
+  return rows;
+}
+
 module.exports = router;
-module.exports.__testing = { runCustomerDispatchReport, resolveReportTemplate };
+module.exports.__testing = { runCustomerDispatchReport, runSalesJournalReport, fetchInvoicesByPostIds, resolveReportTemplate };
+

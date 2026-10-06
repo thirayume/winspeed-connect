@@ -385,10 +385,47 @@ export function ReportsPage() {
                   <h2 className="text-base font-bold text-gray-800">{data.title}</h2>
                   <span className="text-xs text-gray-400">รหัสรายงาน: <code className="font-mono">{data.type}</code></span>
                 </div>
-                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-100">
-                  {data.rows.length.toLocaleString('th-TH')} แถว
-                </span>
+                <div className="flex items-center gap-2">
+                  {data.meta?.isTruncated && (
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                      แสดงข้อมูลบางส่วน
+                    </span>
+                  )}
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-100">
+                    {data.rows.length.toLocaleString('th-TH')} แถว
+                  </span>
+                </div>
               </div>
+
+              {/* Truncation Warning Banner */}
+              {data.meta?.isTruncated && (
+                <div className="mx-5 my-3 p-3 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl flex items-center justify-between gap-3 text-xs shadow-xs">
+                  <div className="flex items-center gap-2 font-medium">
+                    <AlertCircle size={16} className="text-amber-600 shrink-0" />
+                    <span>
+                      <b>⚠️ ข้อมูลแสดงบางส่วน (Partial Display):</b> รายงานถูกจำกัดที่ {data.meta.voucherCount || data.rows.length} ใบสำคัญ (จากทั้งหมด {data.meta.totalMatchingVouchers || 'หลาย'} ใบสำคัญ){data.meta.page ? ` [หน้า ${data.meta.page}${data.meta.totalPages ? `/${data.meta.totalPages}` : ''}]` : ''} กรุณาระบุช่วงวันที่ให้แคบลง หรือใช้ตัวกรองเพื่อดูข้อมูลครบถ้วน
+                    </span>
+                  </div>
+                  <span className="px-2.5 py-1 bg-amber-200 text-amber-950 font-bold rounded-lg text-[11px] shrink-0">
+                    จำกัดสูงสุด {data.meta.voucherLimit || 2000} ใบ
+                  </span>
+                </div>
+              )}
+
+              {Boolean(data.meta?.missingDetailCount && data.meta.missingDetailCount > 0) && (
+                <div className="mx-5 my-2 p-3 bg-red-50 border border-red-200 text-red-900 rounded-xl flex items-center justify-between gap-3 text-xs shadow-xs">
+                  <div className="flex items-center gap-2 font-medium">
+                    <AlertCircle size={16} className="text-red-600 shrink-0" />
+                    <span>
+                      <b>⚠️ ข้อมูลรายละเอียดไม่สมบูรณ์:</b> พบ {data.meta?.missingDetailCount} ใบสำคัญที่ไม่มีรายการบัญชีแยกประเภท (GLDT) ในฐานข้อมูล
+                    </span>
+                  </div>
+                  <span className="px-2.5 py-1 bg-red-100 text-red-800 font-bold rounded-lg text-[11px] shrink-0 font-mono">
+                    {data.meta?.missingDetailVouchers?.map(v => v.JournalNo).filter(Boolean).slice(0, 3).join(', ')}
+                    {(data.meta?.missingDetailVouchers?.length || 0) > 3 ? '...' : ''}
+                  </span>
+                </div>
+              )}
 
               {/* Data Table */}
               <div className="overflow-x-auto custom-scrollbar">

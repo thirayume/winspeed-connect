@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { X, Check, Unlock, RefreshCw, Eye } from 'lucide-react';
 import { listUnlockRequests, resolveUnlockReq, fetchSalesOrder, listPendingGiveaways, approveGiveawayLine } from '../../services/api';
 import type { UnlockReq, SalesOrder, PendingGiveaway } from '../../types';
@@ -216,7 +216,7 @@ export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; on
                 </div>
                 <div className="text-sm font-semibold text-gray-800 mb-1">{g.GoodName}</div>
                 <div className="text-xs text-gray-600 mb-1">ลูกค้า: {g.CustName}</div>
-                <div className="text-[11px] text-gray-400 mb-2">โดย: {g.CreatedByName || '-'} · จำนวน {g.QtyTon ? `${g.QtyTon} ตัน` : ''} {g.QtyBag ? `${g.QtyBag} กระสอบ` : ''}</div>
+                <div className="text-[11px] text-gray-400 mb-2">โดย: {g.CreatedByName || '-'} · จำนวน {g.QtyBag ? `${g.QtyBag} ชิ้น` : ''}{g.QtyTon ? ` (${g.QtyTon} ตัน)` : ''}</div>
                 
                 {isActionActive ? (
                   <div className="mt-3 pt-3 border-t border-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">

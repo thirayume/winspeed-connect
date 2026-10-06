@@ -22,6 +22,7 @@
 const router = require('express').Router();
 const { sql, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
 const { broadcast } = require('../services/socket');
 const truckHold = require('../services/truck-hold');
 
@@ -29,6 +30,42 @@ router.use(requireAuth);
 
 const APPROVER_ROLES = ['APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'C_LEVEL'];
 const REQUESTER_ROLES = ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'MANAGER', 'C_LEVEL'];
+
+// R12 O-4: a team-scoped approver (a MANAGER placed on the org chart) acts only on requests
+// from its own + team scope, or on bills owned by them — the same rows its list shows.
+// Out-of-scope ids answer 404, as if the request did not exist.
+async function requireEditRequestInScope(req, res, next) {
+  try {
+    const scope = await getVisibleScope(req.user);
+    if (scope.all) return next();
+    const r = (await wfQuery(`
+      SELECT r.RequestedBy, CAST(s.EmpID AS VARCHAR(20)) AS EmpID
+      FROM wf.EditRequest r
+      LEFT JOIN dbo.SOHD s WITH (NOLOCK) ON s.SOID = CASE
+        WHEN LTRIM(RTRIM(r.SOID)) NOT LIKE '%[^0-9]%' AND LEN(LTRIM(RTRIM(r.SOID))) BETWEEN 1 AND 9
+        THEN CAST(LTRIM(RTRIM(r.SOID)) AS INT) END
+      WHERE r.Id = @id`, { id: { type: sql.Int, value: Number(req.params.id) } })).recordset?.[0];
+    if (!r || !(inScope(scope, { userId: r.RequestedBy }) || inScope(scope, { empId: r.EmpID }))) {
+      return res.status(404).json({ message: 'ไม่พบคำขอนี้' });
+    }
+    next();
+  } catch (e) { res.status(500).json({ message: e.message }); }
+}
+
+async function requirePriceApprovalInScope(req, res, next) {
+  try {
+    const scope = await getVisibleScope(req.user);
+    if (scope.all) return next();
+    const r = (await wfQuery(`
+      SELECT pa.RequestedBy, so.SalesUserId
+      FROM wf.PriceApproval pa LEFT JOIN wf.SalesOrder so ON so.Id = pa.SoId
+      WHERE pa.Id = @id`, { id: { type: sql.Int, value: Number(req.params.id) } })).recordset?.[0];
+    if (!r || !inScope(scope, { userId: r.RequestedBy, extraUserIds: [r.SalesUserId] })) {
+      return res.status(404).json({ message: 'ไม่พบคำขออนุมัติราคานี้' });
+    }
+    next();
+  } catch (e) { res.status(500).json({ message: e.message }); }
+}
 
 const camel = (s) => s.charAt(0).toLowerCase() + s.slice(1);
 const camelizeRow = (row) => {
@@ -91,7 +128,19 @@ async function loadTarget(soid) {
            e.TripId, t.TripCode, t.TransRegistration
     FROM   dbo.SOHD s
     LEFT   JOIN dbo.EMCust c ON c.CustID = s.CustID
-    LEFT   JOIN wf.SalesOrderExt e ON TRY_CAST(e.SOID AS INT) = s.SOID
+    LEFT   JOIN wf.SalesOrderExt e ON (
+             CASE 
+               WHEN e.SOID IS NOT NULL 
+                AND LTRIM(RTRIM(e.SOID)) NOT LIKE '%[^0-9]%' 
+                AND LTRIM(RTRIM(e.SOID)) <> '' 
+                AND (
+                  LEN(LTRIM(RTRIM(e.SOID))) <= 9 
+                  OR (LEN(LTRIM(RTRIM(e.SOID))) = 10 AND CAST(LTRIM(RTRIM(e.SOID)) AS BIGINT) <= 2147483647)
+                )
+               THEN CAST(LTRIM(RTRIM(e.SOID)) AS INT) 
+               ELSE NULL 
+             END
+           ) = s.SOID
     LEFT   JOIN wf.SalesTrip t ON t.TripId = e.TripId
     WHERE  s.SOID = @soid AND s.DocuType = 103`,
     { soid: { type: sql.Int, value: Number(soid) } });
@@ -171,6 +220,13 @@ router.get('/', async (req, res) => {
     if (soid)   { where += ' AND r.SOID = @soid';     inputs.soid   = { type: sql.VarChar(50), value: String(soid) }; }
     if (tripId) { where += ' AND r.TripId = @tripId'; inputs.tripId = { type: sql.Int, value: Number(tripId) }; }
     if (String(mine) === '1') { where += ' AND r.RequestedBy = @me'; inputs.me = { type: sql.Int, value: req.user.sub }; }
+    // R12 O-4: requests by the user's own + team, or on bills owned by them
+    const scope = await getVisibleScope(req.user);
+    if (!scope.all) {
+      const byReq = scopeFilter(scope, { userCol: 'r.RequestedBy', empCol: 's.EmpID', prefix: 'er' });
+      where += ` AND ${byReq.sql}`;
+      Object.assign(inputs, byReq.inputs);
+    }
 
     const r = await wfQuery(`
       SELECT r.*, rs.ReasonText, rs.RequiresHold AS ReasonRequiresHold,
@@ -181,7 +237,19 @@ router.get('/', async (req, res) => {
       LEFT   JOIN wf.EditReason rs ON rs.ReasonCode = r.ReasonCode
       LEFT   JOIN wf.AppUser  ru ON ru.Id = r.RequestedBy
       LEFT   JOIN wf.AppUser  rv ON rv.Id = r.ReviewedBy
-      LEFT   JOIN dbo.SOHD    s  ON s.SOID = TRY_CAST(r.SOID AS INT) AND s.DocuType = 103
+      LEFT   JOIN dbo.SOHD    s  ON s.SOID = (
+               CASE 
+                 WHEN r.SOID IS NOT NULL 
+                  AND LTRIM(RTRIM(r.SOID)) NOT LIKE '%[^0-9]%' 
+                  AND LTRIM(RTRIM(r.SOID)) <> '' 
+                  AND (
+                    LEN(LTRIM(RTRIM(r.SOID))) <= 9 
+                    OR (LEN(LTRIM(RTRIM(r.SOID))) = 10 AND CAST(LTRIM(RTRIM(r.SOID)) AS BIGINT) <= 2147483647)
+                  )
+                 THEN CAST(LTRIM(RTRIM(r.SOID)) AS INT) 
+                 ELSE NULL 
+               END
+             ) AND s.DocuType = 103
       LEFT   JOIN dbo.EMCust  c  ON c.CustID = s.CustID
       LEFT   JOIN wf.SalesTrip t ON t.TripId = r.TripId
       ${where}
@@ -281,7 +349,7 @@ router.post('/', requireRole(...REQUESTER_ROLES), async (req, res) => {
 });
 
 // ── PATCH /api/edit-requests/:id/approve ──────────────────────
-router.patch('/:id/approve', requireRole(...APPROVER_ROLES), async (req, res) => {
+router.patch('/:id/approve', requireRole(...APPROVER_ROLES), requireEditRequestInScope, async (req, res) => {
   try {
     const { note } = req.body || {};
     const r = (await wfQuery(`SELECT * FROM wf.EditRequest WHERE Id = @id`,
@@ -335,7 +403,7 @@ router.patch('/:id/approve', requireRole(...APPROVER_ROLES), async (req, res) =>
 });
 
 // ── PATCH /api/edit-requests/:id/reject ───────────────────────
-router.patch('/:id/reject', requireRole(...APPROVER_ROLES), async (req, res) => {
+router.patch('/:id/reject', requireRole(...APPROVER_ROLES), requireEditRequestInScope, async (req, res) => {
   try {
     const { note } = req.body || {};
     if (!note || String(note).trim().length < 5)
@@ -575,6 +643,14 @@ router.get('/price-approvals', async (req, res) => {
     if (soId) { where += ' AND pa.SoId = @soId'; inputs.soId = { type: sql.Int, value: Number(soId) }; }
     if (custId) { where += ' AND pa.CustId = @custId'; inputs.custId = { type: sql.NVarChar(20), value: String(custId) }; }
     if (String(mine) === '1') { where += ' AND pa.RequestedBy = @me'; inputs.me = { type: sql.Int, value: req.user.sub }; }
+    // R12 O-4: approvals requested by the user's own + team, or on their bills
+    const scope = await getVisibleScope(req.user);
+    if (!scope.all) {
+      const byReq = scopeFilter(scope, { userCol: 'pa.RequestedBy', prefix: 'pr' });
+      const byBill = scopeFilter(scope, { userCol: 'so.SalesUserId', prefix: 'pb' });
+      where += ` AND (${byReq.sql} OR ${byBill.sql})`;
+      Object.assign(inputs, byReq.inputs, byBill.inputs);
+    }
 
     const r = await wfQuery(`
       SELECT pa.*,
@@ -597,7 +673,7 @@ router.get('/price-approvals', async (req, res) => {
 });
 
 // PATCH /api/edit-requests/price-approvals/:id/approve
-router.patch('/price-approvals/:id/approve', requireRole(...APPROVER_ROLES), async (req, res) => {
+router.patch('/price-approvals/:id/approve', requireRole(...APPROVER_ROLES), requirePriceApprovalInScope, async (req, res) => {
   try {
     const { note } = req.body || {};
     const approvalId = Number(req.params.id);
@@ -664,7 +740,7 @@ router.patch('/price-approvals/:id/approve', requireRole(...APPROVER_ROLES), asy
 });
 
 // PATCH /api/edit-requests/price-approvals/:id/reject
-router.patch('/price-approvals/:id/reject', requireRole(...APPROVER_ROLES), async (req, res) => {
+router.patch('/price-approvals/:id/reject', requireRole(...APPROVER_ROLES), requirePriceApprovalInScope, async (req, res) => {
   try {
     const { note } = req.body || {};
     if (!note || String(note).trim().length < 5) {

@@ -210,6 +210,17 @@ export function OrgAssignmentPage() {
           </div>
         </div>
 
+        {active.length - assigned > 0 && (
+          <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <div>
+              ยังมีผู้ใช้ {num(active.length - assigned)} คนที่ไม่ได้ผูกตำแหน่ง — ระบบใช้ผังนี้กำหนดว่าใครเห็นข้อมูลของใคร (O-4)
+              พนักงานขายที่ไม่มีตำแหน่งจะเห็นเฉพาะของตัวเอง และหัวหน้าทีมจะไม่เห็นข้อมูลลูกทีมจนกว่าจะผูกครบ
+              (ผู้จัดการที่ไม่มีตำแหน่งจะใช้ภาคที่รับผิดชอบแทน) กด "เฉพาะที่ยังไม่ผูก" เพื่อดูรายชื่อ
+            </div>
+          </div>
+        )}
+
         {mismatched.length > 0 && (
           <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />

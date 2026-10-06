@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Scale, AlertTriangle, Truck } from 'lucide-react';
+import { Scale, AlertTriangle, Truck } from 'lucide-react';
 import { shipSO } from '../../services/api';
 import { Modal } from '../ui/Modal';
 

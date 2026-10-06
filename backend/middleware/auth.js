@@ -64,7 +64,8 @@ function requireAuth(req, res, next) {
       isImpersonating: Boolean(payload.impersonating || Number(actorId) !== Number(effectiveId)),
     };
     if (blockWriteWhenPasswordStale(req, res)) return;
-    next();
+    // R12 item 4: audit writers read the Access As actor from this request context
+    require('../services/request-context').runWithUser(req.user, () => next());
   } catch {
     res.status(401).json({ message: 'Token invalid or expired' });
   }
@@ -76,6 +77,12 @@ function requireRole(...roles) {
       return res.status(403).json({ message: `ต้องการสิทธิ์: ${roles.join(' / ')}` });
     next();
   };
+}
+
+// R12 item 3: guard a route with a capability from services/role-capabilities.js
+function requireCapability(action) {
+  const { rolesFor } = require('../services/role-capabilities');
+  return requireRole(...rolesFor(action));
 }
 
 const REBATE_ALL_ROLES = ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'C_LEVEL'];
@@ -102,6 +109,7 @@ module.exports = {
   blockWriteWhenPasswordStale,
   passwordChangeEnforced,
   requireRole,
+  requireCapability,
   requireRebateAmountAccess,
   canViewAllRebateAmounts,
   canViewRebateAmounts,

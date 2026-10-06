@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { LayoutGrid, RefreshCw, Truck, FileText, ArrowRight, ArrowLeft, Clock, Printer, ScanLine, AlertTriangle, ShieldCheck, Unlock, X, Check, Search, Trash2, Edit } from 'lucide-react';
-import { fetchPaperBoard, confirmSO, moveToPicking, confirmLoading, shipSO, syncImported, fetchLostPapers, verifySO, createUnlockRequest, listUnlockRequests, resolveUnlockReq, cancelSO, deleteSO } from '../../services/api';
+import { LayoutGrid, RefreshCw, Truck, FileText, ArrowRight, ArrowLeft, Clock, Printer, ScanLine, AlertTriangle, ShieldCheck, Unlock, X, Search, Trash2, Edit } from 'lucide-react';
+import { fetchPaperBoard, confirmSO, moveToPicking, confirmLoading, syncImported, fetchLostPapers, verifySO, createUnlockRequest, listUnlockRequests, cancelSO, deleteSO } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
+import { useCan } from '../../utils/capabilities';
 import { useAppStore } from '../../store/app-store';
-import type { SalesOrder, UnlockReq } from '../../types';
+import type { SalesOrder } from '../../types';
 import { fetchSalesOrders } from '../../services/api';
 import { appConfirm, appPrompt } from '../ui/AppAlert';
 import type { PaperBoard, PaperCard, SOStatus } from '../../types';
@@ -16,7 +17,6 @@ import { QuickShipModal } from '../sales/QuickShipModal';
 
 import { UnlockReviewModal } from './UnlockReviewModal';
 import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
-const CAN_VERIFY = ['COUNTER_SALES', 'ADMIN', 'MANAGER'];
 const CAN_REQ_UNLOCK = ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN'];
 const CAN_APPROVE_UNLOCK = ['APPROVER', 'ADMIN', 'MANAGER'];
 
@@ -29,6 +29,7 @@ const STATUS_NEXT: Record<string, { label: string; roles: string[] } | undefined
 
 export function PaperTrailPage() {
   const role = useAuthStore(s => s.user?.role);
+  const canAct = useCan();
   const [data, setData]       = useState<PaperBoard | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId]   = useState<string | null>(null);
@@ -95,7 +96,13 @@ export function PaperTrailPage() {
 
     setBusyId(String(card.id));
     try {
-      if (card.status === 'DRAFT') await confirmSO(card.id);
+      if (card.status === 'DRAFT') {
+        if (card.tripId) {
+          alert(`บิลนี้อยู่ในเที่ยวขนส่ง #${card.tripId} กรุณายืนยันผ่านการยืนยันเที่ยวขนส่งทั้งเที่ยว (ไม่อนุญาตให้ยืนยันรายบิล)`);
+          return;
+        }
+        await confirmSO(card.id);
+      }
       else if (card.status === 'CONFIRMED') await moveToPicking(card.id);
       else if (card.status === 'PICKING') await confirmLoading(Number(card.id), []);
       else if (card.status === 'LOADED') {
@@ -179,7 +186,7 @@ export function PaperTrailPage() {
         <div className="flex gap-4 h-full w-max min-w-full pb-2">
           {stages.map(stage => {
             const isControlTicket = (c: PaperCard) => 
-              (c.docuType === 103 || c.truckPlate === 'ตั๋วคุม') && 
+              (c.soPrefix === 'AI' || c.truckPlate === 'ตั๋วคุม' || Boolean(c.noTruckRequired)) && 
               ['DRAFT', 'CONFIRMED', 'IMPORTED'].includes(c.status);
 
             const allCards = stage === 'CONTROL_TICKET'
@@ -291,7 +298,23 @@ export function PaperTrailPage() {
                                 {card.controlTicketNo && <span className="flex items-center gap-0.5 bg-gray-100 px-1 rounded"><FileText size={9} />{card.controlTicketNo}</span>}
                                 {card.importedDocuNo && <span className="text-emerald-600 font-medium">{card.importedDocuNo}</span>}
                                 <span className={`flex items-center gap-0.5 ${overdue}`}><Clock size={9} />{card.daysOpen}ว</span>
+                                {card.status !== 'DRAFT' && (card.soPrefix === 'AI' || card.truckPlate === 'ตั๋วคุม' || card.controlTicketNo) && (() => {
+                                  const daysLeft = 180 - (card.daysOpen || 0);
+                                  if (daysLeft <= 0) {
+                                    return <span className="bg-red-50 text-red-700 font-bold px-1 rounded border border-red-200">⚠️ ตั๋วหมดอายุ</span>;
+                                  }
+                                  if (daysLeft <= 30) {
+                                    return <span className="bg-amber-50 text-amber-800 font-bold px-1 rounded border border-amber-200">⚠️ ตั๋วเหลือ {daysLeft} วัน</span>;
+                                  }
+                                  return <span className="bg-purple-50 text-purple-700 px-1 rounded border border-purple-100">ตั๋วเหลือ {daysLeft} วัน</span>;
+                                })()}
                               </div>
+
+                              {(card.couponNo || card.soPrefix === 'AI') && (
+                                <div className="text-[10px] bg-indigo-50 text-indigo-900 px-1.5 py-0.5 rounded border border-indigo-100 mb-2 ml-1 font-medium">
+                                  ตัดตั๋ว: <span className="font-bold font-mono">{card.couponNo || '-'}</span> · ผู้รับ: <span>{card.beneficiaryCustName || card.custName}</span> · เจ้าของตั๋ว: <span className="font-mono">{card.ownerCustCode || '-'}</span>
+                                </div>
+                              )}
 
                               {(!card.lineCnt || card.lineCnt === 0) ? (
                                 <div className="text-[9px] bg-red-50 text-red-600 px-1.5 py-0.5 rounded-md font-bold flex items-center gap-1 mb-2 border border-red-100 ml-1">
@@ -304,12 +327,16 @@ export function PaperTrailPage() {
                               )}
 
                               <div className="flex flex-wrap items-center gap-1 mt-2 pl-1">
-                                {card.status === 'DRAFT' && (
+                                {card.status === 'DRAFT' && canAct('so.edit') && (
                                   <>
                                     <button disabled={busyId === String(card.id)} onClick={() => useAppStore.getState().navigate('sales', { soId: card.id as number, action: 'edit' })} title="แก้ไขเอกสาร"
                                       className="flex-1 h-7 px-1.5 rounded-md text-[#0C447C] hover:text-white bg-blue-50 hover:bg-[#0C447C] border border-blue-200 flex items-center justify-center gap-1 shrink-0 disabled:opacity-50 text-[10px] font-bold whitespace-nowrap transition-colors">
                                       <Edit size={11} /> แก้ไข
                                     </button>
+                                  </>
+                                )}
+                                {card.status === 'DRAFT' && canAct('so.cancel') && (
+                                  <>
                                     <button disabled={busyId === String(card.id)} onClick={() => doCancel(card)} title="ลบเอกสารร่าง"
                                       className="flex-1 h-7 px-1.5 rounded-md text-red-500 hover:text-white bg-red-50 hover:bg-red-500 border border-red-200 flex items-center justify-center gap-1 shrink-0 disabled:opacity-50 text-[10px] font-bold whitespace-nowrap transition-colors">
                                       <Trash2 size={11} /> ยกเลิก
@@ -334,21 +361,29 @@ export function PaperTrailPage() {
                                   className="flex-1 h-7 px-1.5 rounded-md text-[10px] font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-1 whitespace-nowrap">
                                   <Printer size={11} /> พิมพ์
                                 </button>
-                                {card.status === 'DRAFT' && !card.verifiedAt && role && CAN_VERIFY.includes(role) && (
+                                {card.status === 'DRAFT' && !card.verifiedAt && canAct('so.verify') && (
                                   <button disabled={busyId === String(card.id)} onClick={() => doVerify(card)}
                                     className="flex-1 h-7 px-1.5 rounded-md text-white text-[10px] font-semibold disabled:opacity-50 flex items-center justify-center gap-1 bg-emerald-600 shadow-sm whitespace-nowrap">
                                     <ShieldCheck size={11} /> ตรวจ
                                   </button>
                                 )}
                                 {canAdvance && !(card.truckPlate === 'ตั๋วคุม' && card.status !== 'DRAFT') && (
-                                  <button
-                                    data-testid={`btn-advance-so-${card.id}`}
-                                    disabled={busyId === String(card.id)}
-                                    onClick={() => advance(card)}
-                                    className="flex-1 h-7 px-1.5 rounded-md text-white text-[10px] font-semibold disabled:opacity-50 flex items-center justify-center gap-1 shadow-sm whitespace-nowrap"
-                                    style={{ background: m.color }}>
-                                    {next!.label} <ArrowRight size={11} />
-                                  </button>
+                                  card.status === 'DRAFT' && card.tripId ? (
+                                    <span
+                                      className="flex-1 h-7 px-1.5 rounded-md text-[10px] text-amber-700 bg-amber-50 border border-amber-200 font-bold flex items-center justify-center gap-0.5 whitespace-nowrap"
+                                      title={`บิลนี้อยู่ในเที่ยวรถ #${card.tripId} กรุณายืนยันผ่านเที่ยวขนส่ง`}>
+                                      เที่ยวรถ #{card.tripId}
+                                    </span>
+                                  ) : (
+                                    <button
+                                      data-testid={`btn-advance-so-${card.id}`}
+                                      disabled={busyId === String(card.id)}
+                                      onClick={() => advance(card)}
+                                      className="flex-1 h-7 px-1.5 rounded-md text-white text-[10px] font-semibold disabled:opacity-50 flex items-center justify-center gap-1 shadow-sm whitespace-nowrap"
+                                      style={{ background: m.color }}>
+                                      {next!.label} <ArrowRight size={11} />
+                                    </button>
+                                  )
                                 )}
                               </div>
                             </div>

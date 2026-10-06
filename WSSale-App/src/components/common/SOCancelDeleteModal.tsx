@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { AlertTriangle, X, Check, Loader2 } from 'lucide-react';
 import { fetchEditReasons, type EditReason } from '../../services/api';
 
@@ -27,7 +27,7 @@ export function SOCancelDeleteModal({
   const [errorMessage, setErrorMessage] = useState<string>('');
 
   const stage = mode === 'CANCEL' ? 'SO_CANCEL' : 'SO_DELETE';
-  const isDanger = true;
+
 
   useEffect(() => {
     if (isOpen) {

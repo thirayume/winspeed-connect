@@ -53,11 +53,11 @@ function version() {
  * การยืนยันคำสั่งขายล้มตาม เพราะ wf.SalesOrderAudit บันทึกไว้แล้วในเส้นทางเดียวกัน
  * แต่ต้องเห็นใน log เสมอเพื่อให้ตามแก้ได้
  */
-async function writeAudit({ screen, action, docuNo, docuDate, refId, username, note }) {
+async function writeAudit({ screen, action, docuNo, docuDate, refId, username, note }, options = {}) {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       // ขอเลขจากบล็อกของแอปเอง แล้ว INSERT ในคำสั่งเดียวกัน ให้ช่วงที่ชนกันแคบที่สุด
-      const r = await dboWrite(`
+      const r = await (options.query || dboWrite)(`
         DECLARE @id INT;
         EXEC wf.usp_AllocateWinspeedId @TableName = 'SMAudit', @NewId = @id OUTPUT;
         INSERT INTO dbo.SMAudit
@@ -83,6 +83,7 @@ async function writeAudit({ screen, action, docuNo, docuDate, refId, username, n
         });
       return r.recordset?.[0]?.auditId ?? null;
     } catch (e) {
+      if (options.strict) throw e;
       // สองคำขอที่เข้ามาชิดกันมากยังคว้าเลขเดียวกันได้ ลองใหม่ได้เลย
       const isDup = /PRIMARY KEY|duplicate key|UNIQUE KEY/i.test(e.message || '');
       if (isDup && attempt < MAX_ATTEMPTS) continue;

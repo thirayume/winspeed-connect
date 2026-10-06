@@ -1,23 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  Ticket,
-  RefreshCw,
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  Truck,
-  ArrowDownToLine,
-  Calendar,
-  AlertTriangle,
-  AlertCircle,
-  CheckCircle2,
-  HelpCircle,
-  GitFork,
-  Edit3,
-  ShieldAlert,
-  Info,
-  X,
-} from 'lucide-react';
+import { Ticket, RefreshCw, Search, ChevronLeft, ChevronRight, Truck, ArrowDownToLine, Calendar, AlertTriangle, AlertCircle, CheckCircle2, HelpCircle, GitFork, Edit3, Info, X } from 'lucide-react';
 import {
   fetchControlTickets,
   fetchControlTicketDetails,
@@ -26,7 +8,7 @@ import {
   fetchControlTicketAlerts,
   updateControlTicketExpiry,
 } from '../../services/api';
-import type { ControlTicket, ControlTicketDraw } from '../../types';
+import type { ControlTicketDraw } from '../../types';
 
 type Line = { ListNo: number; GoodCode: string; GoodName: string; QtyTon: number; PricePerTon: number };
 
@@ -35,7 +17,11 @@ export function ControlTicketPage() {
   const [alerts, setAlerts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
-  const [tab, setTab] = useState<'ACTIVE' | 'HISTORY' | 'PENDING'>('ACTIVE');
+  const [tab, setTab] = useState<'ACTIVE' | 'RESERVED_FULL' | 'HISTORY' | 'PENDING' | 'ALERTS' | 'UNKNOWN'>('ACTIVE');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [sel, setSel] = useState<any | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [draws, setDraws] = useState<ControlTicketDraw[]>([]);
@@ -74,17 +60,31 @@ export function ControlTicketPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [ticketData, alertData] = await Promise.all([
-        fetchControlTickets(undefined, true),
+      const [ticketResp, alertData] = await Promise.all([
+        fetchControlTickets({
+          tab,
+          q: q.trim() || undefined,
+          page,
+          pageSize,
+          paginated: true,
+        }),
         fetchControlTicketAlerts().catch(() => []),
       ]);
-      setTickets(ticketData);
-      setAlerts(alertData);
+      if (ticketResp && ticketResp.data) {
+        setTickets(ticketResp.data);
+        setTotalCount(ticketResp.total);
+        setTotalPages(ticketResp.totalPages);
+      } else if (Array.isArray(ticketResp)) {
+        setTickets(ticketResp);
+        setTotalCount(ticketResp.length);
+        setTotalPages(1);
+      }
+      setAlerts(alertData || []);
     } catch (e) {
       console.error(e);
     }
     setLoading(false);
-  }, []);
+  }, [tab, q, page, pageSize]);
 
   useEffect(() => {
     load();
@@ -94,9 +94,11 @@ export function ControlTicketPage() {
     setSel(t);
     setDetailLoading(true);
     try {
+      const exactId = t.exactId || t.CouponID || t.SOID;
+      const entityType = t.entityType || (t.CouponID ? 'COUPON' : undefined);
       const [ls, ds] = await Promise.all([
-        fetchControlTicketDetails(t.DocuNo) as Promise<Line[]>,
-        fetchControlTicketDraws(t.DocuNo),
+        fetchControlTicketDetails(t.CouponNo || t.DocuNo, { exactId, entityType }) as Promise<Line[]>,
+        fetchControlTicketDraws(t.CouponNo || t.DocuNo, { exactId, entityType }),
       ]);
       setLines(ls);
       setDraws(ds);
@@ -106,11 +108,11 @@ export function ControlTicketPage() {
     setDetailLoading(false);
   }
 
-  async function handleOpenTrace(docuNo: string, e?: React.MouseEvent) {
+  async function handleOpenTrace(docuNo: string, e?: React.MouseEvent, exactId?: number, entityType?: string) {
     if (e) e.stopPropagation();
     setTraceModal({ isOpen: true, loading: true, data: null });
     try {
-      const trace = await fetchControlTicketTrace(docuNo);
+      const trace = await fetchControlTicketTrace(docuNo, exactId ? { exactId, entityType } : undefined);
       setTraceModal({ isOpen: true, loading: false, data: trace });
     } catch (err: any) {
       console.error(err);
@@ -138,7 +140,9 @@ export function ControlTicketPage() {
     if (!editModal.ticket) return;
     setEditModal(prev => ({ ...prev, saving: true, error: null }));
     try {
-      await updateControlTicketExpiry(editModal.ticket.DocuNo, {
+      const exactId = editModal.ticket.exactId || editModal.ticket.CouponID || editModal.ticket.SOID;
+      await updateControlTicketExpiry(editModal.ticket.CouponNo || editModal.ticket.DocuNo, {
+        exactId: exactId ? Number(exactId) : undefined,
         expiryDate: editModal.isUnknown ? null : editModal.expiryDate,
         strictOverride: editModal.strictOverride,
         reasonCode: editModal.reasonCode,
@@ -151,17 +155,10 @@ export function ControlTicketPage() {
     }
   }
 
-  const rem = (t: any) => Math.max(0, Number(t.TotalQtyTon || 0) - Number(t.DrawnQtyTon || 0));
-
-  const tabFiltered = tickets.filter(t => {
-    if (tab === 'ACTIVE') return t.DocuStatus === 'Y' && rem(t) > 0;
-    if (tab === 'HISTORY') return t.DocuStatus === 'Y' && rem(t) <= 0;
-    return t.DocuStatus !== 'Y'; // PENDING / DRAFT
-  });
-
-  const filtered = tabFiltered.filter(
-    t => !q || t.CustName?.includes(q) || t.DocuNo?.includes(q) || t.DisplayDocuNo?.includes(q)
-  );
+  const rem = (t: any) => {
+    if (t.AvailableQtyTon != null) return Number(t.AvailableQtyTon);
+    return Math.max(0, Number(t.TotalQtyTon || 0) - Number(t.DrawnQtyTon || 0));
+  };
 
   const activeAlertCount = alerts.filter(a => a.Status === 'ACTIVE').length;
 
@@ -185,8 +182,8 @@ export function ControlTicketPage() {
             </h1>
             <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
               {sel
-                ? `${sel.CustName} · คงเหลือ ${rem(sel).toFixed(2)} ตัน · ติดตามอายุและการเบิกใช้ตามสายเอกสารแท้`
-                : 'Native Trace (I/K → AI → C/D → 116 → J/N) · Expiry & Alert Lifecycle · SO-04'}
+                ? `${sel.CustName} · พร้อมใช้ ${rem(sel).toFixed(2)} ${sel.GoodUnitName || 'ไม่ระบุ'} · ติดตามอายุและการเบิกใช้ตามสายเอกสารแท้`
+                : 'Universal Native Trace (I/K 103 → AI → I/K 104 → C/D → 116 → J/N 107) · R1-02 Balance Engine'}
             </p>
           </div>
         </div>
@@ -219,21 +216,31 @@ export function ControlTicketPage() {
       {/* Body Area */}
       <div className="flex-1 overflow-auto p-0 sm:p-6">
         {!sel ? (
-          <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
-            <div className="flex border-b border-gray-100 px-2 pt-2 bg-gray-50/50">
+          <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+            <div className="flex border-b border-gray-100 px-2 pt-2 bg-gray-50/50 overflow-x-auto">
               <button
-                onClick={() => setTab('ACTIVE')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                onClick={() => { setTab('ACTIVE'); setPage(1); }}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   tab === 'ACTIVE'
                     ? 'border-[#0C447C] text-[#0C447C]'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
-                คงเหลือ (Active)
+                คงเหลือพร้อมใช้ (Active)
               </button>
               <button
-                onClick={() => setTab('HISTORY')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                onClick={() => { setTab('RESERVED_FULL'); setPage(1); }}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                  tab === 'RESERVED_FULL'
+                    ? 'border-[#0C447C] text-[#0C447C]'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                ถูกจองเต็ม (Reserved)
+              </button>
+              <button
+                onClick={() => { setTab('HISTORY'); setPage(1); }}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   tab === 'HISTORY'
                     ? 'border-[#0C447C] text-[#0C447C]'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -242,14 +249,34 @@ export function ControlTicketPage() {
                 ประวัติ (ใช้หมดแล้ว)
               </button>
               <button
-                onClick={() => setTab('PENDING')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                onClick={() => { setTab('PENDING'); setPage(1); }}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   tab === 'PENDING'
                     ? 'border-[#0C447C] text-[#0C447C]'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
-                รอยืนยัน / แบบร่าง
+                รอยืนยัน / รอออกตั๋ว
+              </button>
+              <button
+                onClick={() => { setTab('ALERTS'); setPage(1); }}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                  tab === 'ALERTS'
+                    ? 'border-[#0C447C] text-[#0C447C]'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                เตือนหมดอายุ
+              </button>
+              <button
+                onClick={() => { setTab('UNKNOWN'); setPage(1); }}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                  tab === 'UNKNOWN'
+                    ? 'border-[#0C447C] text-[#0C447C]'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                รอตรวจสอบ (Review)
               </button>
             </div>
             <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-4">
@@ -257,117 +284,173 @@ export function ControlTicketPage() {
                 <Search size={14} className="text-gray-400" />
                 <input
                   value={q}
-                  onChange={e => setQ(e.target.value)}
-                  placeholder="ค้นหา ลูกค้า / เลขตั๋ว / เลขที่ยืนยัน..."
+                  onChange={e => { setQ(e.target.value); setPage(1); }}
+                  placeholder="ค้นหา ลูกค้า / เลขตั๋ว / เลขที่ยืนยัน / สินค้า..."
                   className="flex-1 text-sm outline-none bg-transparent"
                 />
               </div>
-              <span className="text-xs text-gray-400">{filtered.length} ตั๋ว</span>
+              <span className="text-xs text-gray-400 font-medium">{totalCount} ตั๋ว</span>
             </div>
             {loading ? (
               <div className="py-16 flex justify-center">
                 <RefreshCw size={26} className="animate-spin text-gray-300" />
               </div>
-            ) : filtered.length === 0 ? (
-              <p className="py-12 text-center text-sm text-gray-400">ไม่พบตั๋วคุมคงค้าง</p>
+            ) : tickets.length === 0 ? (
+              <p className="py-12 text-center text-sm text-gray-400">ไม่พบตั๋วคุมในหมวดนี้</p>
             ) : (
-              <table className="w-full text-sm min-w-full">
-                <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
-                  <tr>
-                    <th className="px-4 py-3 text-left whitespace-nowrap">เลขตั๋ว / ใบจอง</th>
-                    <th className="px-4 py-3 text-left whitespace-nowrap">ลูกค้า</th>
-                    <th className="px-4 py-3 text-center whitespace-nowrap">สถานะอายุตั๋ว</th>
-                    <th className="px-4 py-3 text-right whitespace-nowrap">จอง (ตัน)</th>
-                    <th className="px-4 py-3 text-right whitespace-nowrap">ตัดแล้ว</th>
-                    <th className="px-4 py-3 text-left w-44 whitespace-nowrap">คงเหลือ</th>
-                    <th className="px-4 py-3 text-center whitespace-nowrap">การจัดการ</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {filtered.map(t => {
-                    const total = Number(t.TotalQtyTon || 0);
-                    const drawn = Number(t.DrawnQtyTon || 0);
-                    const remain = rem(t);
-                    const pct = total ? (drawn / total) * 100 : 0;
-                    const expStatus = t.expiryStatus || t.expiry?.status || 'UNKNOWN';
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-full">
+                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
+                    <tr>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">เลขตั๋ว / คูปอง</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">ลูกค้า</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">สินค้า</th>
+                      <th className="px-4 py-3 text-center whitespace-nowrap">สถานะอายุตั๋ว</th>
+                      <th className="px-4 py-3 text-right whitespace-nowrap">ออกตั๋ว</th>
+                      <th className="px-4 py-3 text-right whitespace-nowrap">คงเหลือจริง</th>
+                      <th className="px-4 py-3 text-right whitespace-nowrap">จองค้าง</th>
+                      <th className="px-4 py-3 text-right whitespace-nowrap">พร้อมใช้</th>
+                      <th className="px-4 py-3 text-center whitespace-nowrap">การจัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {tickets.map(t => {
+                      const total = Number(t.IssuedQtyTon || t.TotalQtyTon || 0);
+                      const nativeRem = Number(t.NativeRemainingQtyTon != null ? t.NativeRemainingQtyTon : rem(t));
+                      const reserved = Number(t.ReservedQtyTon || 0);
+                      const available = Number(t.AvailableQtyTon != null ? t.AvailableQtyTon : rem(t));
+                      const expStatus = t.expiryStatus || t.expiry?.status || 'UNKNOWN';
+                      const unit = t.GoodUnitName || 'ไม่ระบุ';
+                      const stableKey = t.entityKey || (t.CouponID ? `coupon:${t.CouponID}` : `booking:${t.SOID}:${t.ListNo || 1}`);
 
-                    return (
-                      <tr
-                        key={String(t.SOID || t.DocuNo)}
-                        onClick={() => open(t)}
-                        className="hover:bg-blue-50/40 cursor-pointer transition-colors"
-                      >
-                        <td className="px-4 py-2.5 whitespace-nowrap">
-                          <div className="font-mono font-bold text-[#0C447C]">
-                            {t.DisplayDocuNo || t.DocuNo}
-                          </div>
-                          {t.DisplayDocuNo && t.DocuNo !== t.DisplayDocuNo && (
-                            <div className="text-[10px] text-gray-400 font-mono">Ref: {t.DocuNo}</div>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 text-gray-700 max-w-[180px] truncate" title={t.CustName}>
-                          <div className="font-medium text-xs sm:text-sm">{t.CustName}</div>
-                          <div className="text-[10px] text-gray-400 font-mono">ID: {t.CustID}</div>
-                        </td>
-                        <td className="px-4 py-2.5 text-center whitespace-nowrap">
-                          <ExpiryBadge status={expStatus} daysRemaining={t.daysRemaining} expiryDate={t.expiryDate} />
-                        </td>
-                        <td className="px-4 py-2.5 text-right text-gray-600 whitespace-nowrap font-medium">
-                          {total.toFixed(2)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right text-gray-400 whitespace-nowrap font-medium">
-                          {drawn.toFixed(2)}
-                        </td>
-                        <td className="px-4 py-2.5 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-[#0C447C] rounded-full"
-                                style={{ width: `${Math.min(100, pct)}%` }}
-                              />
+                      return (
+                        <tr
+                          key={stableKey}
+                          onClick={() => open(t)}
+                          className="hover:bg-blue-50/40 cursor-pointer transition-colors"
+                        >
+                          <td className="px-4 py-2.5 whitespace-nowrap">
+                            <div className="font-mono font-bold text-[#0C447C] flex items-center gap-1.5">
+                              <span>{t.CouponNo || t.DisplayDocuNo || t.DocuNo}</span>
+                              {t.CouponID && (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-100 text-blue-800 font-mono font-medium">
+                                  #{t.CouponID}
+                                </span>
+                              )}
                             </div>
-                            <span className="text-xs font-bold text-green-600 w-16 text-right">
-                              {remain.toFixed(2)}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-2.5 text-center whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={e => handleOpenTrace(t.DocuNo, e)}
-                              title="สืบย้อนเส้นทาง Native Chain (SO-04)"
-                              className="px-2 py-1 rounded-md text-[11px] font-bold border border-blue-200 bg-blue-50 text-[#0C447C] hover:bg-blue-100 flex items-center gap-1"
-                            >
-                              <GitFork size={12} /> Trace
-                            </button>
-                            <button
-                              onClick={e => handleOpenEditModal(t, e)}
-                              title="ตั้งค่า/แก้ไขวันหมดอายุ"
-                              className="px-2 py-1 rounded-md text-[11px] font-bold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 flex items-center gap-1"
-                            >
-                              <Edit3 size={12} /> อายุ
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                            <div className="text-[10px] text-gray-400 font-mono">
+                              {t.BookingDocuNo && <span>จอง: {t.BookingDocuNo} </span>}
+                              {t.AppvDocuNo && <span className="text-blue-600">AI: {t.AppvDocuNo}</span>}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-700 max-w-[180px] truncate" title={t.CustName}>
+                            <div className="font-medium text-xs sm:text-sm">{t.CustName}</div>
+                            <div className="text-[10px] text-gray-400 font-mono">ID: {t.CustID}</div>
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-700 max-w-[180px] truncate" title={t.GoodName}>
+                            <div className="font-medium text-xs truncate">{t.GoodName || '-'}</div>
+                            <div className="text-[10px] text-gray-400 font-mono">{t.GoodCode || ''}</div>
+                          </td>
+                          <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                            <ExpiryBadge status={expStatus} daysRemaining={t.daysRemaining} expiryDate={t.expiryDate} />
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-gray-600 whitespace-nowrap font-medium">
+                            {total.toFixed(2)} <span className="text-[10px] text-gray-400">{unit}</span>
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-gray-700 whitespace-nowrap font-medium">
+                            {t.NativeRemainingQtyTon != null ? `${nativeRem.toFixed(2)} ` : '-'}
+                            {t.NativeRemainingQtyTon != null && <span className="text-[10px] text-gray-400">{unit}</span>}
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-amber-600 whitespace-nowrap font-medium">
+                            {reserved > 0 ? `${reserved.toFixed(2)} ` : '-'}
+                            {reserved > 0 && <span className="text-[10px] text-amber-500">{unit}</span>}
+                          </td>
+                          <td className="px-4 py-2.5 text-right whitespace-nowrap font-bold">
+                            {t.AvailableQtyTon != null ? (
+                              <span className={available > 0 ? 'text-green-600' : 'text-gray-400'}>
+                                {available.toFixed(2)} <span className="text-[10px] text-gray-400">{unit}</span>
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 text-xs font-normal">รอออกตั๋ว</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5 text-center whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={e => handleOpenTrace(t.CouponNo || t.DocuNo, e, t.exactId || t.CouponID || t.SOID, t.entityType)}
+                                title="สืบย้อนเส้นทาง Universal Native Chain (R1-03)"
+                                className="px-2 py-1 rounded-md text-[11px] font-bold border border-blue-200 bg-blue-50 text-[#0C447C] hover:bg-blue-100 flex items-center gap-1"
+                              >
+                                <GitFork size={12} /> Trace
+                              </button>
+                              <button
+                                onClick={e => handleOpenEditModal(t, e)}
+                                title="ตั้งค่า/แก้ไขวันหมดอายุ"
+                                className="px-2 py-1 rounded-md text-[11px] font-bold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 flex items-center gap-1"
+                              >
+                                <Edit3 size={12} /> อายุ
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
+
+            {/* Server-Side Pagination Controls */}
+            <div className="px-4 py-3 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500 bg-gray-50/50">
+              <div className="flex items-center gap-2">
+                <span>แสดงหน้า <strong>{page}</strong> จาก <strong>{totalPages}</strong> (ทั้งหมด {totalCount} รายการ)</span>
+                <span className="text-gray-300">|</span>
+                <div className="flex items-center gap-1">
+                  <span>แถวต่อหน้า:</span>
+                  <select
+                    value={pageSize}
+                    onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+                    className="border border-gray-200 rounded px-1.5 py-0.5 bg-white text-xs"
+                  >
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  disabled={page <= 1 || loading}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 font-medium"
+                >
+                  <ChevronLeft size={14} /> ก่อนหน้า
+                </button>
+                <span className="px-2 font-mono font-bold text-gray-700">{page}</span>
+                <button
+                  disabled={page >= totalPages || loading}
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 font-medium"
+                >
+                  ถัดไป <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
           </div>
         ) : (
           /* Detail View for Selected Ticket */
           <div className="space-y-5">
             {/* Top Stat Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Stat label="จองทั้งหมด (ตัน)" value={Number(sel.TotalQtyTon || 0).toFixed(2)} color="#0C447C" />
-              <Stat label="ตัดออกแล้ว (ตัน)" value={Number(sel.DrawnQtyTon || 0).toFixed(2)} color="#9CA3AF" />
-              <Stat label="คงเหลือ (ตัน)" value={rem(sel).toFixed(2)} color="#059669" />
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col justify-between">
-                <div className="text-xs text-gray-400">สถานะอายุตั๋ว</div>
-                <div className="mt-1 flex items-center justify-between">
-                  <ExpiryBadge
+              <Stat label={`ออกตั๋วทั้งหมด (${sel.GoodUnitName || 'ไม่ระบุ'})`} value={Number(sel.IssuedQtyTon || sel.TotalQtyTon || 0).toFixed(2)} color="#0C447C" />
+              <Stat label={`คงเหลือในคลัง (${sel.GoodUnitName || 'ไม่ระบุ'})`} value={Number(sel.NativeRemainingQtyTon != null ? sel.NativeRemainingQtyTon : rem(sel)).toFixed(2)} color="#3B82F6" />
+              <Stat label={`จองค้าง (${sel.GoodUnitName || 'ไม่ระบุ'})`} value={Number(sel.ReservedQtyTon || 0).toFixed(2)} color="#D97706" />
+              <Stat label={`พร้อมใช้ (${sel.GoodUnitName || 'ไม่ระบุ'})`} value={Number(sel.AvailableQtyTon != null ? sel.AvailableQtyTon : rem(sel)).toFixed(2)} color="#059669" />
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col justify-between">
+              <div className="text-xs text-gray-400">สถานะอายุตั๋ว</div>
+              <div className="mt-1 flex items-center justify-between">
+                <ExpiryBadge
                     status={sel.expiryStatus || sel.expiry?.status || 'UNKNOWN'}
                     daysRemaining={sel.daysRemaining}
                     expiryDate={sel.expiryDate}
@@ -380,7 +463,6 @@ export function ControlTicketPage() {
                   </button>
                 </div>
               </div>
-            </div>
 
             {/* Candidate Restriction Banner */}
             <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200 text-blue-900 text-xs flex items-center gap-2">
@@ -411,9 +493,9 @@ export function ControlTicketPage() {
                   <tr>
                     <th className="px-4 py-2 text-left whitespace-nowrap">ลำดับ</th>
                     <th className="px-4 py-2 text-left whitespace-nowrap">รหัส/ชื่อสินค้า</th>
-                    <th className="px-4 py-2 text-right whitespace-nowrap">จำนวน (ตัน)</th>
-                    <th className="px-4 py-2 text-right whitespace-nowrap">กระสอบ/ตัน</th>
-                    <th className="px-4 py-2 text-right whitespace-nowrap">ราคา/ตัน (บาท)</th>
+                    <th className="px-4 py-2 text-right whitespace-nowrap">จำนวน ({sel.GoodUnitName || 'หน่วย'})</th>
+                    <th className="px-4 py-2 text-right whitespace-nowrap">กระสอบ / {sel.GoodUnitName || 'หน่วย'}</th>
+                    <th className="px-4 py-2 text-right whitespace-nowrap">ราคา/{sel.GoodUnitName || 'หน่วย'} (บาท)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -453,7 +535,7 @@ export function ControlTicketPage() {
                     <th className="px-4 py-2 text-left whitespace-nowrap">เลขที่ SO ส่งของ (104)</th>
                     <th className="px-4 py-2 text-center whitespace-nowrap">วันที่ส่ง</th>
                     <th className="px-4 py-2 text-left whitespace-nowrap">ทะเบียนรถ</th>
-                    <th className="px-4 py-2 text-right whitespace-nowrap">ตัดออก (ตัน)</th>
+                    <th className="px-4 py-2 text-right whitespace-nowrap">ตัดออก ({sel.GoodUnitName || 'หน่วย'})</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -534,12 +616,26 @@ export function ControlTicketPage() {
                       <ChevronRight size={14} className="text-gray-400" />
                       <span>5. เบิก (116)</span>
                       <ChevronRight size={14} className="text-gray-400" />
-                      <span>6. ใบเสร็จ (J/N)</span>
+                      <span>6. ใบแจ้งหนี้ / ใบกำกับภาษี (Invoice 107)</span>
                     </div>
                   </div>
 
+                  {/* Truncated Graph Warning Banner (R2-04) */}
+                  {traceModal.data.truncated && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-xs flex items-start gap-2.5">
+                      <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <div className="font-bold">ข้อมูลเส้นทางยังไม่ครบ (Truncated Graph)</div>
+                        <div className="text-amber-800 text-[11px]">
+                          ตรวจพบเอกสารเกี่ยวเนื่องเกินขอบเขตจำกัดการสืบค้น ({traceModal.data.reasons?.join(', ') || 'Budget limit reached'}) — กรุณาอย่ายึดถือข้อมูลนี้เป็นหลักฐานสรุปยอดสมบูรณ์หรือการส่งมอบครบถ้วน
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Chain Details */}
                   <div className="space-y-4">
+                    {/* 1. Booking */}
                     <div className="border border-gray-200 rounded-2xl p-4 bg-white space-y-2">
                       <div className="text-xs font-bold text-gray-400 uppercase">1. ใบจองและการอนุมัติ (SOHD 103)</div>
                       <div className="grid grid-cols-2 gap-2 text-xs">
@@ -550,8 +646,29 @@ export function ControlTicketPage() {
                       </div>
                     </div>
 
+                    {/* 2. Delivery */}
                     <div className="border border-gray-200 rounded-2xl p-4 bg-white space-y-2">
-                      <div className="text-xs font-bold text-gray-400 uppercase">2. ตั๋วคุม / คูปอง (WFCoupon)</div>
+                      <div className="text-xs font-bold text-gray-400 uppercase">2. เอกสารส่งของ / ออกตั๋วแท้ (SOHD 104)</div>
+                      {traceModal.data.chain?.deliveries?.length > 0 ? (
+                        traceModal.data.chain.deliveries.map((d: any) => (
+                          <div key={d.soId} className="p-2.5 bg-gray-50 rounded-xl text-xs flex items-center justify-between">
+                            <div>
+                              <span className="font-mono font-bold text-blue-700 mr-2">{d.docuNo}</span>
+                              <span className="text-gray-500">SOID: {d.soId} · {d.docuDate?.slice(0, 10)}</span>
+                            </div>
+                            <div className="text-gray-600 font-medium">
+                              สถานะ: <span className="font-mono font-bold">{d.docuStatus}</span>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-xs text-gray-400">ไม่พบเอกสารส่งของ 104</p>
+                      )}
+                    </div>
+
+                    {/* 3. Coupon */}
+                    <div className="border border-gray-200 rounded-2xl p-4 bg-white space-y-2">
+                      <div className="text-xs font-bold text-gray-400 uppercase">3. ตั๋วคุม / คูปอง (WFCoupon C/D)</div>
                       {traceModal.data.chain?.coupons?.length > 0 ? (
                         traceModal.data.chain.coupons.map((c: any) => (
                           <div key={c.couponId} className="p-2.5 bg-gray-50 rounded-xl text-xs flex items-center justify-between">
@@ -571,22 +688,44 @@ export function ControlTicketPage() {
                       )}
                     </div>
 
+                    {/* 4. Redemptions & 5. Invoices */}
                     <div className="border border-gray-200 rounded-2xl p-4 bg-white space-y-2">
                       <div className="text-xs font-bold text-gray-400 uppercase">
-                        3. ประวัติการเบิกและเอกสารปลายทาง (WFRedemtionDT 116 → SOInvHD 107)
+                        4. ประวัติการเบิกและเอกสารปลายทาง (WFRedemtionDT 116 → SOInvHD 107)
                       </div>
                       {traceModal.data.chain?.redemptions?.length > 0 ? (
                         traceModal.data.chain.redemptions.map((r: any, idx: number) => (
                           <div key={idx} className="p-2 bg-gray-50 rounded-xl text-xs flex items-center justify-between">
                             <div>
-                              <span className="font-mono text-gray-600 mr-2">{r.redemptionDocuNo || `116-#${r.redemptionId}`}</span>
-                              <span className="font-mono text-[#0C447C] font-bold">➔ Invoice: {r.invoiceDocuNo || '-'}</span>
+                              <span className="font-mono text-gray-600 mr-2">{r.docuNo || `116-#${r.redemtionId}`}</span>
                             </div>
-                            <div className="font-bold text-amber-700">-{r.redeemedQtyTon} ตัน</div>
+                            <div className="font-bold text-amber-700">
+                              {r.lines?.map((l: any, li: number) => (
+                                <span key={li} className="ml-2">-{l.redeemedQtyTon} {l.unitName || 'ไม่ระบุ'} {l.soInvId ? `(➔ Inv #${l.soInvId})` : ''}</span>
+                              ))}
+                            </div>
                           </div>
                         ))
                       ) : (
                         <p className="text-xs text-gray-400">ยังไม่มีรายการเบิกใช้ใน WFRedemtionDT</p>
+                      )}
+
+
+                      {traceModal.data.chain?.invoices?.length > 0 && (
+                        <div className="pt-2 border-t border-gray-100 space-y-1">
+                          <div className="text-[11px] font-bold text-gray-500">ใบแจ้งหนี้ / ใบกำกับภาษี (Invoice 107):</div>
+                          {traceModal.data.chain.invoices.map((inv: any) => (
+                            <div key={inv.soInvId} className="p-2 bg-emerald-50/50 rounded-lg text-xs flex items-center justify-between text-emerald-900">
+                              <div>
+                                <span className="font-mono font-bold mr-2">{inv.docuNo}</span>
+                                <span>{inv.docuDate?.slice(0, 10)}</span>
+                              </div>
+                              <div className="font-mono font-bold">
+                                {Number(inv.netAmnt || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
                   </div>

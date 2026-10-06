@@ -19,7 +19,7 @@
  *
  * ตัวแยกว่าใบไหนเป็นรายงานใด คือ `pd_pro_Godown` (ตรวจกับข้อมูลจริง 550,054 แถว)
  */
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X, AlertTriangle } from 'lucide-react';
 import { fetchDeliveryNote, type DeliveryNote } from '../../services/api';
@@ -207,6 +207,13 @@ export function DeliveryNotePrint({
                     <span className="min-w-[80px] border-b border-dotted px-1">
                       {i.Destination && i.Destination !== '-' && i.Destination !== '0' ? i.Destination : ''}
                     </span>
+                    {Boolean((i as any).RefCouponDocuNo || (i as any).refCouponDocuNo || (i as any).isCouponDrawn || (i as any).IsCouponDrawn) && (
+                      <span className="text-xs text-emerald-800 ml-2 font-mono">
+                        (ตั๋วปุ๋ย: {(i as any).RefCouponDocuNo || (i as any).refCouponDocuNo || 'ตั๋วร่วม'}
+                        {Boolean((i as any).BeneficiaryCustName || (i as any).beneficiaryCustName) && ` · ผู้รับ: ${(i as any).BeneficiaryCustName || (i as any).beneficiaryCustName}`}
+                        {Boolean((i as any).OwnerCustCode || (i as any).ownerCustCode || (i as any).OwnerCustName || (i as any).ownerCustName) && ` · เจ้าของ: ${(i as any).OwnerCustCode || (i as any).ownerCustCode || (i as any).OwnerCustName || (i as any).ownerCustName}`})
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>

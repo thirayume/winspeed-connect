@@ -7,7 +7,7 @@ const { query, wfQuery } = require('../db');
 const obs = require('../services/observability');
 const { requireAuth, requireRole } = require('../middleware/auth');
 
-router.use(requireAuth, requireRole('ADMIN', 'MANAGER'));
+router.use(requireAuth, requireRole('ADMIN', 'MANAGER', 'C_LEVEL'));
 
 // GET /api/ops/status — telemetry + DB health รวม
 router.get('/status', async (req, res) => {

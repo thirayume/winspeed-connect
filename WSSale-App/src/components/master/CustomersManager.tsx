@@ -165,7 +165,8 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
       setCustomers(prev => prev.map(c => c.CustID === editingId ? { ...c, ...editForm } as EMCust : c));
       setEditingId(null);
     } catch (err) {
-      alert('บันทึกไม่สำเร็จ');
+      // R12 item 15: show the server's reason (permission / validation / not found)
+      alert('บันทึกไม่สำเร็จ: ' + ((err as Error)?.message || 'ไม่ทราบสาเหตุ'));
       console.error(err);
     }
     setSaving(false);

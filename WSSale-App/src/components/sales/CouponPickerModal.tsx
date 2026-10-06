@@ -20,6 +20,14 @@ export interface CouponItem {
   beneficiaryReason?: string;
   beneficiaryExpiry?: string;
   sourceDocuDate?: string;
+  expiryDate?: string | null;
+  daysLeft?: number | null;
+  isExpired?: boolean;
+  isExpiringSoon?: boolean;
+  warningLeadDays?: number;
+  consumedQty?: number;
+  hasUnmatchedCuts?: boolean;
+  goodCode?: string;
 }
 
 interface CouponPickerModalProps {
@@ -31,6 +39,8 @@ interface CouponPickerModalProps {
   customerId: string;
   customerName?: string;
   selectedGoodId?: number;
+  // R12 K-F3: K bills list/draw only D coupons, I bills only C coupons
+  billPrefix?: string;
   onReserved?: (result: any, coupon: CouponItem) => void;
 }
 
@@ -43,6 +53,7 @@ export const CouponPickerModal: React.FC<CouponPickerModalProps> = ({
   customerId,
   customerName,
   selectedGoodId,
+  billPrefix,
   onReserved
 }) => {
   const [coupons, setCoupons] = useState<CouponItem[]>([]);
@@ -62,7 +73,7 @@ export const CouponPickerModal: React.FC<CouponPickerModalProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const url = `/coupons?customerId=${encodeURIComponent(customerId)}${selectedGoodId ? `&goodId=${selectedGoodId}` : ''}`;
+      const url = `/coupons?customerId=${encodeURIComponent(customerId)}${selectedGoodId ? `&goodId=${selectedGoodId}` : ''}${billPrefix ? `&billPrefix=${encodeURIComponent(billPrefix)}` : ''}`;
       const res = await apiFetch<{ data: CouponItem[] }>(url);
       setCoupons(res?.data || []);
     } catch (err: any) {
@@ -70,7 +81,7 @@ export const CouponPickerModal: React.FC<CouponPickerModalProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [customerId, selectedGoodId]);
+  }, [customerId, selectedGoodId, billPrefix]);
 
   useEffect(() => {
     if (isOpen) {
@@ -126,7 +137,8 @@ export const CouponPickerModal: React.FC<CouponPickerModalProps> = ({
           tripId: tripId ? Number(tripId) : undefined,
           beneficiaryCustId: String(customerId),
           reservedQty: qty,
-          idempotencyKey: opKey
+          idempotencyKey: opKey,
+          billPrefix: billPrefix || undefined
         })
       });
 
@@ -284,25 +296,57 @@ export const CouponPickerModal: React.FC<CouponPickerModalProps> = ({
                           {c.beneficiaryReason && ` (${c.beneficiaryReason})`}
                         </div>
                       )}
+
+                      {/* D1: Ticket Expiry & Days Left */}
+                      {c.expiryDate && (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1.5">
+                          <span className="text-[11px] text-slate-400">หมดอายุ:</span>
+                          <span className="font-semibold text-slate-700 text-[11px]">{c.expiryDate}</span>
+                          {c.isExpired ? (
+                            <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-800 border border-red-200">
+                              ⚠️ หมดอายุแล้ว
+                            </span>
+                          ) : c.isExpiringSoon ? (
+                            <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                              ⚠️ เหลือ {c.daysLeft} วัน
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-600">
+                              เหลือ {c.daysLeft} วัน
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Quantities Grid */}
-                    <div className="mt-auto grid grid-cols-3 gap-2 rounded-lg bg-slate-50 p-2 text-center text-xs border border-slate-100">
+                    {/* Quantities Grid: Settled vs Reserved */}
+                    <div className="mt-auto grid grid-cols-4 gap-1.5 rounded-lg bg-slate-50 p-2 text-center text-xs border border-slate-100">
                       <div>
-                        <div className="text-slate-400">คงเหลือเดิม</div>
+                        <div className="text-slate-400 text-[10px]">คงเหลือเดิม</div>
                         <div className="font-bold text-slate-700 mt-0.5">{c.nativeRemainingQty.toLocaleString()} ตัน</div>
                       </div>
                       <div>
-                        <div className="text-slate-400">จองค้าง</div>
+                        <div className="text-slate-400 text-[10px]">จองค้าง</div>
                         <div className="font-bold text-amber-600 mt-0.5">{c.reservedQty.toLocaleString()} ตัน</div>
                       </div>
+                      <div>
+                        <div className="text-slate-400 text-[10px]">ตัดตั๋วแล้ว</div>
+                        <div className="font-bold text-blue-600 mt-0.5">{(c.consumedQty || 0).toLocaleString()} ตัน</div>
+                      </div>
                       <div className="bg-emerald-50 rounded border border-emerald-200 p-0.5">
-                        <div className="text-emerald-700 font-medium">พร้อมใช้</div>
-                        <div className="font-extrabold text-emerald-700 text-sm mt-0.5">
+                        <div className="text-emerald-700 font-medium text-[10px]">พร้อมใช้</div>
+                        <div className="font-extrabold text-emerald-700 text-xs mt-0.5">
                           {c.availableQty.toLocaleString()} ตัน
                         </div>
                       </div>
                     </div>
+
+                    {c.hasUnmatchedCuts && (
+                      <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 font-medium" data-testid={`unmatched-hint-${c.couponId}`}>
+                        <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
+                        <span>มีการตัดตั๋วที่ยังจับคู่ไม่ได้ — ให้บัญชี/ผู้จัดการตรวจที่หน้ากระทบยอด</span>
+                      </div>
+                    )}
 
                     {!isUsable && (
                       <div className="mt-2 flex items-center gap-1 text-xs text-red-600">

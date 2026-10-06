@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Package, Truck, Clock, Trash2, FileText, Gift, Settings, Activity, Download } from 'lucide-react';
 import { SOStatusBadge } from './SOStatusBadge';
-import { cancelSO, deleteSO, bulkCancelDeleteSO } from '../../services/api';
-import { appConfirm } from '../ui/AppAlert';
+import { bulkCancelDeleteSO } from '../../services/api';
+import '../ui/AppAlert';
 import { useExport } from '../../hooks/useExport';
 import { SOCancelDeleteModal } from '../common/SOCancelDeleteModal';
 import type { SalesOrder } from '../../types';
@@ -219,7 +219,7 @@ export function SaleTripManager({
                 <div className="flex items-center justify-center h-full text-xs text-gray-400 font-medium">ไม่มีบิลในทริปนี้</div>
               ) : g.orders.map(order => {
                 const totalAmt = (order.lines || []).reduce((s, l) => s + (l.qtyTon * l.pricePerTon), 0);
-                const isGiveawayOnly = (order.lines || []).every(l => l.isGiveaway);
+
                 
                 return (
                   <div
@@ -279,7 +279,7 @@ export function SaleTripManager({
             onLoadData();
           } catch (err: any) {
             onLoadData();
-            throw new Error(`การยกเลิก/ลบทริปไม่สำเร็จ: ${err?.message || 'ข้อผิดพลาดของระบบ'}`);
+            throw new Error(`การยกเลิก/ลบทริปไม่สำเร็จ: ${err?.message || 'ข้อผิดพลาดของระบบ'}`, { cause: err });
           }
         }}
       />

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, Fragment } from 'react';
-import { Tag, Search, RefreshCw, X, Edit2, Save, PlusCircle, AlertCircle, Clock, History, CheckSquare, Square, ChevronDown, ChevronRight, FileText, Calendar, ArrowUpDown } from 'lucide-react';
+import { Tag, Search, RefreshCw, X, Edit2, Save, PlusCircle, AlertCircle, Clock, History, CheckSquare, Square, Calendar, ArrowUpDown } from 'lucide-react';
 import { fetchPrices, fetchGoods, fetchCustomers, updatePrice, createPrice, bulkExtendPrices } from '../../services/api';
 import type { CurrentPrice } from '../../types';
 import { formatThaiDate } from '../../utils/date';

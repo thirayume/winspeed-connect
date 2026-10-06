@@ -89,8 +89,8 @@ export function exportToExcel<T = any>(
       <style>
         th { background-color: #0C447C; color: #ffffff; font-weight: bold; text-align: center; }
         td, th { border: 0.5pt solid #cccccc; padding: 5px; font-family: Tahoma, sans-serif; font-size: 11pt; }
-        .num { text-align: right; mso-number-format: "\#,\#\#0\.00"; }
-        .text { mso-number-format: "\@"; }
+        .num { text-align: right; mso-number-format: "#,##0.00"; }
+        .text { mso-number-format: "@"; }
       </style>
     </head>
     <body>

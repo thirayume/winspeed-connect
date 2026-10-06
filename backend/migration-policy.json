@@ -5,13 +5,450 @@
     "000_logins.sql"
   ],
   "excludedPatterns": [
-    "^uat_"
+    "^uat_",
+    "\\.down\\.sql$"
   ],
   "legacyDuplicateSequences": {},
+  "transactionalFiles": [
+    "124_backfill_control_ticket_overlay.sql",
+    "125_coupon_redemption_provenance.sql",
+    "126_correct_coupon_mirror_provenance_defaults.sql",
+    "127_reconcile_coupon_mirror_provenance.sql",
+    "128_reconcile_unverified_mirror_provenance.sql",
+    "129_correct_mirror_line_provenance.sql",
+    "130_correct_mirror_provenance_strict_identity.sql",
+    "131_correct_mirror_provenance_native_uniqueness.sql",
+    "132_correct_mirror_provenance_native_identity.sql",
+    "133_confirm_pickup_independent_of_credit.sql",
+    "134_confirmation_source_draft.sql",
+    "135_confirm_compartment_tonnage.sql",
+    "136_confirm_native_header_totals.sql",
+    "137_booking_description_and_rebate.sql"
+  ],
   "databaseContextOverrides": {
     "074_fix_winspeed_legacy_raiserror.sql": {
       "checksum": "76190fc2ea9933fe1ce088d8173c49ea5080ea5e8da54e486034f0ce1f1d0ce9",
       "database": "dbwins_worldfert9"
+    }
+  },
+  "targetProfiles": {
+    "local_uat": {
+      "serverName": "AMYOU-YOGA7\\V2008R2",
+      "databaseName": "dbwins_worldfert9_local_uat",
+      "productVersionPrefix": "10.50.",
+      "loginName": "wf_uat_app",
+      "migratorLoginName": "wf_uat_migrator",
+      "allowedTransports": [
+        "Shared memory"
+      ],
+      "excludedFiles": [
+        "074_fix_winspeed_legacy_raiserror.sql"
+      ],
+      "dialect": "sql2008"
+    },
+    "local_rehearsal": {
+      "serverName": "AMYOU-YOGA7\\V2008R2",
+      "databaseName": "dbwins_worldfert9_rehearsal",
+      "productVersionPrefix": "10.50.",
+      "loginName": "wf_uat_migrator",
+      "migratorLoginName": "wf_uat_migrator",
+      "allowedTransports": [
+        "Shared memory"
+      ],
+      "excludedFiles": [
+        "074_fix_winspeed_legacy_raiserror.sql"
+      ],
+      "dialect": "sql2008"
+    },
+    "remote_b": {
+      "serverName": "21181f44f254",
+      "databaseName": "dbwins_worldfert9_test_v2",
+      "productVersionPrefix": "16.0.",
+      "loginName": "wf_test",
+      "migratorLoginName": "wf_test",
+      "allowedTransports": [
+        "TCP"
+      ],
+      "excludedFiles": [],
+      "dialect": "sql2022"
+    }
+  },
+  "dialectOverrides": {
+    "001_wf_schema.sql": {
+      "originalHash": "1f86ad93b5272ca27363d5f6cff9ee716a0ff048468cdb1cbd92c1df0d511cf5",
+      "originalBatchCount": 24,
+      "executedFile": "001_wf_schema.sql",
+      "executedHash": "ccacd1ea674bf189bb7d1071fc7aa338c8f45b39490ba70ad739938d5909e167",
+      "executedBatchCount": 29,
+      "dialect": "sql2008"
+    },
+    "002_schema_v2_and_indexes.sql": {
+      "originalHash": "30f7a3cfaf0536766a1a202b65c2bbdb9cebf8d2c28ad06eb3cce40bc0d5ad96",
+      "originalBatchCount": 23,
+      "executedFile": "002_schema_v2_and_indexes.sql",
+      "executedHash": "c5a7395682f16b36485b69016ef021b0dd344e85cdede0fd40b3ad4b14c61b6d",
+      "executedBatchCount": 20,
+      "dialect": "sql2008"
+    },
+    "004_view_union.sql": {
+      "originalHash": "904f37030c40c9273e0f3dedb528b0b33180462f55882a742249fd44c7f9a908",
+      "originalBatchCount": 2,
+      "executedFile": "004_view_union.sql",
+      "executedHash": "81d0d13b22cd5af2c6b35782623db50f33727725c20084638b309505a86f8220",
+      "executedBatchCount": 4,
+      "dialect": "sql2008"
+    },
+    "007_store_weigh_out.sql": {
+      "originalHash": "318e2c4b27ff871caa14e4805d3a5daf9b7450c2f8f2f8324b40e583a17622de",
+      "originalBatchCount": 5,
+      "executedFile": "007_store_weigh_out.sql",
+      "executedHash": "e2539758f44a22a1439f2a9c948c9c507b7cff4186424336535f0e5c608f0312",
+      "executedBatchCount": 7,
+      "dialect": "sql2008"
+    },
+    "009_update_views.sql": {
+      "originalHash": "cc6624bf9af9ad297752b2225f54a2d7db7c8f310817d829bb34debcbda3d91e",
+      "originalBatchCount": 3,
+      "executedFile": "009_update_views.sql",
+      "executedHash": "07c8495f5de3aac0a83d629103d36c84018266b9bf5042aadac81bbd85bac434",
+      "executedBatchCount": 4,
+      "dialect": "sql2008"
+    },
+    "010_rebate_and_loadsequence.sql": {
+      "originalHash": "8b0d866ba05b192d025c88e4707b07d33835d4c9a26155f35bf4673d8cc13d71",
+      "originalBatchCount": 2,
+      "executedFile": "010_rebate_and_loadsequence.sql",
+      "executedHash": "84502e1da6d77e0276da6dcca7b93aacb3b96fb69f12339fd9df94fd9bbb0463",
+      "executedBatchCount": 3,
+      "dialect": "sql2008"
+    },
+    "013_comprehensive_indexes.sql": {
+      "originalHash": "c356ae9cb96ed9a9364ccb46a3cdca1017866c1a8cd4c3e8b7bd1ec65d1852d0",
+      "originalBatchCount": 17,
+      "executedFile": "013_comprehensive_indexes.sql",
+      "executedHash": "155885118672887c9bb5f169f84cc302007a141d4d8319a86d29e988ea91b03a",
+      "executedBatchCount": 12,
+      "dialect": "sql2008"
+    },
+    "015_sp_confirm_so.sql": {
+      "originalHash": "6ba1c2b6acb9a5c2f106c4f2506d3d54282c8d2d9183cef866bff24e1c98e810",
+      "originalBatchCount": 1,
+      "executedFile": "015_sp_confirm_so.sql",
+      "executedHash": "e02bbfc594eae87e3e1be6fefa8ec4778a3f493078ce7f053c3ee3a7add59c52",
+      "executedBatchCount": 2,
+      "dialect": "sql2008"
+    },
+    "031_so_requested_transport_flags.sql": {
+      "originalHash": "e9cce429ee2e4def316105f9c60a8281e19cb4e6f13e2ebe2a17ac8460a928e9",
+      "originalBatchCount": 11,
+      "executedFile": "031_so_requested_transport_flags.sql",
+      "executedHash": "1e9c3e3107a0862ca41d8296d5061ee1b4ae2f250dc2b79ebf264f7745e5a7ea",
+      "executedBatchCount": 13,
+      "dialect": "sql2008"
+    },
+    "033_giveaway_line_approval.sql": {
+      "originalHash": "2662d1e2687523e2d4b46d397540e383e9d58a0d9dea46af7d260558cfae0440",
+      "originalBatchCount": 17,
+      "executedFile": "033_giveaway_line_approval.sql",
+      "executedHash": "2b9541decd392e20ba0ae17faf3a4be77386dcc68140af5bdc328cdccb1dfa5c",
+      "executedBatchCount": 19,
+      "dialect": "sql2008"
+    },
+    "036_align_winspeed_so_flow.sql": {
+      "originalHash": "fed1370fbb3d6e65fa88866561afd842cdca186cf8b2d402143e4b91cf94a50d",
+      "originalBatchCount": 7,
+      "executedFile": "036_align_winspeed_so_flow.sql",
+      "executedHash": "1cebc58492e57b1386db537a44b7945701ac6081944901b4245303a58291d34a",
+      "executedBatchCount": 9,
+      "dialect": "sql2008"
+    },
+    "037_so_credit_days_and_remarks.sql": {
+      "originalHash": "afae821ed56a1e428ea49d98018a29aa1d2001ad362189de55e2e323b7372cd7",
+      "originalBatchCount": 4,
+      "executedFile": "037_so_credit_days_and_remarks.sql",
+      "executedHash": "e9978ae1750c69ec9595b7be890f1b146fb38f7e55c3dbaf827186a19c499cf0",
+      "executedBatchCount": 6,
+      "dialect": "sql2008"
+    },
+    "038_winspeed_so_data_entry_mapping.sql": {
+      "originalHash": "0112a07e83cefbfbcb66c85a51d4b0fa6650a7ce88527ab162e9340f65fc5e87",
+      "originalBatchCount": 7,
+      "executedFile": "038_winspeed_so_data_entry_mapping.sql",
+      "executedHash": "3b3be55f1e22d9f098127d47d3f9299dee1fd77a9df2ecdc6bbf0c09ef488e9a",
+      "executedBatchCount": 9,
+      "dialect": "sql2008"
+    },
+    "039_so_transp_id.sql": {
+      "originalHash": "aa9c1f33b8637b8daa56f5a9d04e135891e5bca1e84e2df177d64775a14cbe2e",
+      "originalBatchCount": 31,
+      "executedFile": "039_so_transp_id.sql",
+      "executedHash": "4140dc41b739a43737d7edc38b75d90d822f6f725d0414d2574b1efd9b42ac9c",
+      "executedBatchCount": 33,
+      "dialect": "sql2008"
+    },
+    "040_deduplicate_winspeed_so.sql": {
+      "originalHash": "baad39b720bdcebf99bb210409874bc6e240b7aaa84d58119fda40b6871beba7",
+      "originalBatchCount": 1,
+      "executedFile": "040_deduplicate_winspeed_so.sql",
+      "executedHash": "7d833ab8a347f9ace87f38a989e8bbed6dc80dc913324c90d3c20ec258a3be31",
+      "executedBatchCount": 2,
+      "dialect": "sql2008"
+    },
+    "044_winspeed_native_quotation_link.sql": {
+      "originalHash": "5eeaeb17c4b2408868c72e4610e8f50a7dd8271615e2cbeff75c1aeefa0b9dbe",
+      "originalBatchCount": 12,
+      "executedFile": "044_winspeed_native_quotation_link.sql",
+      "executedHash": "8afb664b5061ace83a2d6b7b5b1f6803b7840696f0200400f8f8d5256a6d73d5",
+      "executedBatchCount": 11,
+      "dialect": "sql2008"
+    },
+    "050_cleanup_and_truckplate_fix.sql": {
+      "originalHash": "dfaa5c6119a00d2466176bb3a79ea55c21498529e4b7b2a995b1a3e2eda1cffa",
+      "originalBatchCount": 3,
+      "executedFile": "050_cleanup_and_truckplate_fix.sql",
+      "executedHash": "d945b5daac377ccf5b40f476dcd6bc18d4c3b2030336ccfbf9522a7bcb9d8aa3",
+      "executedBatchCount": 4,
+      "dialect": "sql2008"
+    },
+    "052_sohd_remark_logistics.sql": {
+      "originalHash": "0490fc4aaba1f75968ce8146e82ae4e665eb7892bd467b3cae0a27299c601009",
+      "originalBatchCount": 1,
+      "executedFile": "052_sohd_remark_logistics.sql",
+      "executedHash": "b4f8352400746bdc38fce08155a206b2a28f7fa461b40579ed37e6b4ef4a19e8",
+      "executedBatchCount": 2,
+      "dialect": "sql2008"
+    },
+    "055_restore_all_sales_orders_contract.sql": {
+      "originalHash": "df42880cc03d5e315eddc789be108429c4fb75e8932a4016ba0cdc87e6279333",
+      "originalBatchCount": 20,
+      "executedFile": "055_restore_all_sales_orders_contract.sql",
+      "executedHash": "4f7fba1d3006456e422626265c13bf91c6028e9017f30ee18bbd90ed75de1699",
+      "executedBatchCount": 23,
+      "dialect": "sql2008"
+    },
+    "058_fix_shipped_status_clearflag.sql": {
+      "originalHash": "a11a1ad5f713ec1be55426694b3f0f75d4759b0de781241ed881cd5d5a2795d8",
+      "originalBatchCount": 2,
+      "executedFile": "058_fix_shipped_status_clearflag.sql",
+      "executedHash": "2bedb2906d9e2491327bafe2f1cbe6087af2e2832e052b71910885e539ddb65f",
+      "executedBatchCount": 3,
+      "dialect": "sql2008"
+    },
+    "080_fix_all_sales_orders_dedupe.sql": {
+      "originalHash": "f68c22c12f00e7fdad5a7eec85b1ba60647fbc98fee4ce15d2533d60c25ba3e0",
+      "originalBatchCount": 2,
+      "executedFile": "080_fix_all_sales_orders_dedupe.sql",
+      "executedHash": "52d94b97452b67f48251cdc92e45be919e9a7e63aab7aad2dab1a410741c91c5",
+      "executedBatchCount": 3,
+      "dialect": "sql2008"
+    },
+    "084_confirm_so_pending_approval.sql": {
+      "originalHash": "b86c48c83e5876b8124a920c5be0cefd22a0a828b4a1f1a2dcef519d7f980345",
+      "originalBatchCount": 1,
+      "executedFile": "084_confirm_so_pending_approval.sql",
+      "executedHash": "430957192d56683deeca5766ec2cdf624d1a385f8dbd06a8b2fa516664639c39",
+      "executedBatchCount": 2,
+      "dialect": "sql2008"
+    },
+    "085_all_sales_orders_pending_approval.sql": {
+      "originalHash": "72cb68c5aa9da4e396d70eb166f979c7e31e5499ea73bba36ffa1f45f9db0c95",
+      "originalBatchCount": 2,
+      "executedFile": "085_all_sales_orders_pending_approval.sql",
+      "executedHash": "52333bcfebd75f921b342a05a7c791cbf10a8d4acb7da3afbb1577a27af41e2e",
+      "executedBatchCount": 3,
+      "dialect": "sql2008"
+    },
+    "086_confirm_so_winspeed_required_fields.sql": {
+      "originalHash": "680129deab659d61612e30305e47e61c410c32ae47b7e0af09d051ff5a53966a",
+      "originalBatchCount": 1,
+      "executedFile": "086_confirm_so_winspeed_required_fields.sql",
+      "executedHash": "9a8f38d18e9707edbd75e48883bef531dd7f5615cc1d501bca06c59fca7c20af",
+      "executedBatchCount": 2,
+      "dialect": "sql2008"
+    },
+    "087_confirm_so_checkall_yes.sql": {
+      "originalHash": "7b60a7cd0b3c9b7133330d6a354999da1393be10ce7640a5e7ec9b8cbdc49355",
+      "originalBatchCount": 1,
+      "executedFile": "087_confirm_so_checkall_yes.sql",
+      "executedHash": "4283242e612f92ed9b6af216516b1d1454b2fb5b9472a859ff74d7db2e6b630e",
+      "executedBatchCount": 2,
+      "dialect": "sql2008"
+    },
+    "088_confirm_so_valid_salesman.sql": {
+      "originalHash": "7ac6b84cd8d40a996c6dc40619ae4a3861308f3bf25963339bd134a99e775d1c",
+      "originalBatchCount": 1,
+      "executedFile": "088_confirm_so_valid_salesman.sql",
+      "executedHash": "5b4debc5fa60591ddb6ceaa9c5f0d19466b22aa052dc9fae3ce5b75e61f29b33",
+      "executedBatchCount": 2,
+      "dialect": "sql2008"
+    },
+    "089_smid_id_blocks.sql": {
+      "originalHash": "d8ee23a88eedbe24b157a7af2c9be086281d565226a4e809cfc376a5cb5b96b1",
+      "originalBatchCount": 2,
+      "executedFile": "089_smid_id_blocks.sql",
+      "executedHash": "ac33245b4a9186431fd5272883d1e9d0f894912983867fe4f52eb2d225d89845",
+      "executedBatchCount": 4,
+      "dialect": "sql2008"
+    },
+    "090_salesman_registration.sql": {
+      "originalHash": "a3f5ab4fc870d461c93ab677ce6f4bd3abf6fdcba5b99246de371cf26de4c6c7",
+      "originalBatchCount": 4,
+      "executedFile": "090_salesman_registration.sql",
+      "executedHash": "544a3080acdf3c7f8f9f6dfd9577fde9d313753b9997b12f12cc4b97ad0b1e36",
+      "executedBatchCount": 6,
+      "dialect": "sql2008"
+    },
+    "091_budget_plan.sql": {
+      "originalHash": "c956cc7246afddca8159867dd4c60fbf3d779a376993cfb53782e280384dd40c",
+      "originalBatchCount": 7,
+      "executedFile": "091_budget_plan.sql",
+      "executedHash": "a229e73e6be51257a2873a5c990b63de17b6dea1b9a9a1b87370e89eebcb0a31",
+      "executedBatchCount": 8,
+      "dialect": "sql2008"
+    },
+    "092_rebate_floor_zero.sql": {
+      "originalHash": "b1d0f3037c0132ea01b5920376fbac366aba2834b70e3b6157bea48a99e026f7",
+      "originalBatchCount": 1,
+      "executedFile": "092_rebate_floor_zero.sql",
+      "executedHash": "5b22ca3fe86525aefb3e2ff64e3bf3fb2c0feb9c8ac1cf264eda59a92b8e0cac",
+      "executedBatchCount": 2,
+      "dialect": "sql2008"
+    },
+    "093_traceability_gaps.sql": {
+      "originalHash": "a2d2eff4526c0d9b9879f781cade35ce8991fd8ddae5593fb4641b733885efac",
+      "originalBatchCount": 9,
+      "executedFile": "093_traceability_gaps.sql",
+      "executedHash": "b1881fde40dafa9e4c680dcefa37db1ff8806a8de2bec91431ddf9a6334263b0",
+      "executedBatchCount": 18,
+      "dialect": "sql2008"
+    },
+    "094_refresh_accrual_remaining.sql": {
+      "originalHash": "b4911853c4c49f49ada413048b0b17fad2260b425404615dafb0cc1520fa60df",
+      "originalBatchCount": 1,
+      "executedFile": "094_refresh_accrual_remaining.sql",
+      "executedHash": "f1a8cc43b2049ccb777171fab65b5b2a961c7f1d83f1f928f23818ddb65db694",
+      "executedBatchCount": 2,
+      "dialect": "sql2008"
+    },
+    "095_restore_accrual_booking_columns.sql": {
+      "originalHash": "362a9bcfabbee35cf08ddcebf4ea20fc969ff370b5f20e60477a0f1281e12af0",
+      "originalBatchCount": 2,
+      "executedFile": "095_restore_accrual_booking_columns.sql",
+      "executedHash": "98663797e4afc62324e6d57bb3287b2a8660fc463ce056160c6160eaae878bff",
+      "executedBatchCount": 4,
+      "dialect": "sql2008"
+    },
+    "096_rb_balance_exclude_nonnumeric.sql": {
+      "originalHash": "a3b6ad53def0857eb2c93920f94094620d7fd01c2ef4b5a810373a40aaa6e5fe",
+      "originalBatchCount": 1,
+      "executedFile": "096_rb_balance_exclude_nonnumeric.sql",
+      "executedHash": "c2a99597e7f26ecbfb38db2c3ee503391696056254d2374e1a1d6f4deaee9de5",
+      "executedBatchCount": 2,
+      "dialect": "sql2008"
+    },
+    "097_sohdremark_match_production_format.sql": {
+      "originalHash": "4c6d5898999b8ea37c60184881571d8c1960a4812b74d167f1424b94deb4fcb4",
+      "originalBatchCount": 3,
+      "executedFile": "097_sohdremark_match_production_format.sql",
+      "executedHash": "0a64f00f4a777666132a11c27a8989bf18badecfd5d7ced0867cfe99fd814328",
+      "executedBatchCount": 5,
+      "dialect": "sql2008"
+    },
+    "098_app_issue_coupons.sql": {
+      "originalHash": "5d048406bf9a2d252a1aaf764008549454310dadd3dd4f3bcc521525b4f729c1",
+      "originalBatchCount": 2,
+      "executedFile": "098_app_issue_coupons.sql",
+      "executedHash": "da406ac318b2289c9ccff42a9f91b1240f4c3ef3fa1163b9f1850616db4b35d4",
+      "executedBatchCount": 4,
+      "dialect": "sql2008"
+    },
+    "099_coupon_repair_and_watch.sql": {
+      "originalHash": "54ff41c78ca2b5cd66578003429df33e64a30c93d0d71cf2699fd86de30f2a14",
+      "originalBatchCount": 2,
+      "executedFile": "099_coupon_repair_and_watch.sql",
+      "executedHash": "f82a96d06e5c95f8cd6fcd944ba3d5026b80c026d8b80137ca06a5f267c682b8",
+      "executedBatchCount": 4,
+      "dialect": "sql2008"
+    },
+    "100_load_sequence_resolve_goodcode.sql": {
+      "originalHash": "4f7c994d2a143d9df5a935199e87b911b8e7163da208e0dcfd92a5db7d6ee695",
+      "originalBatchCount": 1,
+      "executedFile": "100_load_sequence_resolve_goodcode.sql",
+      "executedHash": "f3deaa05d49f4abc21429c38bc77a756af126ad456d971f18d9f1b4ba7a0dab4",
+      "executedBatchCount": 2,
+      "dialect": "sql2008"
+    },
+    "102_org_structure_2025.sql": {
+      "originalHash": "55d391ad8b581e0092485a1f0dd4b3829e88fc91181d80dc6294048ffa582a72",
+      "originalBatchCount": 7,
+      "executedFile": "102_org_structure_2025.sql",
+      "executedHash": "4b2c857d2a06fb5007bf5c935590a659faf3c7a3d72816a736797a5ff19171af",
+      "executedBatchCount": 9,
+      "dialect": "sql2008"
+    },
+    "103_sale_trip_v2.sql": {
+      "originalHash": "235911bcaea260eeb5532005adf224593e3fc8e5c91bcadea263718b2d6044f8",
+      "originalBatchCount": 14,
+      "executedFile": "103_sale_trip_v2.sql",
+      "executedHash": "6d093b4828db5286676f25c243aab709cc4ae28674fca0d01fb175b7bad95d23",
+      "executedBatchCount": 16,
+      "dialect": "sql2008"
+    },
+    "104_carry_trip_through_confirm.sql": {
+      "originalHash": "1fb28470d9384be592d1501e288716c224943cc3d62349de7ff1aca2f3cd0d33",
+      "originalBatchCount": 5,
+      "executedFile": "104_carry_trip_through_confirm.sql",
+      "executedHash": "f11b4a76630f7d64430a6840fc2450de53d42de8a0143196cf258a187c5aef13",
+      "executedBatchCount": 6,
+      "dialect": "sql2008"
+    },
+    "105_truck_hold_winspeed.sql": {
+      "originalHash": "b779e3a48bff0e7f90eeeaaa2a5c61f9cc8004e1690d4608ff6b6070430f3df3",
+      "originalBatchCount": 4,
+      "executedFile": "105_truck_hold_winspeed.sql",
+      "executedHash": "c70c9b44addf4cd3b3f6b02ec3b79bc66ee2fa330545c2191980c936e95776bd",
+      "executedBatchCount": 5,
+      "dialect": "sql2008"
+    },
+    "112_so_pickup_due_date_and_weighing_views.sql": {
+      "originalHash": "252040fb2af8170690b9db7c8d5c99587c6de46aced46a88457f800ee95cf247",
+      "originalBatchCount": 1,
+      "executedFile": "112_so_pickup_due_date_and_weighing_views.sql",
+      "executedHash": "25df663f94bc149fc2aeb889c6cc649d8f444431d3a6afea240fe561fa97e973",
+      "executedBatchCount": 2,
+      "dialect": "sql2008"
+    },
+    "113_native_weighing_linkage.sql": {
+      "originalHash": "307ba0df74a0658c0d52ef3f26a6068a8d2014c142d586291f1fff9a20f7a70c",
+      "originalBatchCount": 1,
+      "executedFile": "113_native_weighing_linkage.sql",
+      "executedHash": "e12b82c189ca465733c4b931afd3f859f92ab09854453c6f77f901021aaf87d1",
+      "executedBatchCount": 2,
+      "dialect": "sql2008"
+    },
+    "114_so04_control_ticket_trace_expiry.sql": {
+      "originalHash": "7ecda430013023e8ce9a29c2c279efcee8ef1dfe264927987bba94a571b080b0",
+      "originalBatchCount": 3,
+      "executedFile": "114_so04_control_ticket_trace_expiry.sql",
+      "executedHash": "2804539cacf8da397868dfed3567ff0c2494d6a973d74caec79d22f539f7d262",
+      "executedBatchCount": 4,
+      "dialect": "sql2008"
+    },
+    "124_backfill_control_ticket_overlay.sql": {
+      "originalHash": "9d2231f8eb18fa9f6028ff84a803451c7d57f9b214baff09231430197b668423",
+      "originalBatchCount": 6,
+      "executedFile": "124_backfill_control_ticket_overlay.sql",
+      "executedHash": "04500bf5cbf347376d3b21b624d6d801c8af5d4836d8270a7f94f951422fa3e3",
+      "executedBatchCount": 6,
+      "dialect": "sql2008"
+    },
+    "072_fix_winspeed_approval.sql": {
+      "originalHash": "14df54175f8206a4c6cb457f1e57e977ce7390382880a71be0434f780fe8bc00",
+      "originalBatchCount": 1,
+      "executedFile": "072_fix_winspeed_approval.sql",
+      "executedHash": "153d314071bbd97a05541df99bf1f4e088dc0566f3fb1b96e0d0bd3593a65718",
+      "executedBatchCount": 1,
+      "dialect": "sql2008"
     }
   }
 }

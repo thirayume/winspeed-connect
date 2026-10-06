@@ -70,7 +70,7 @@ if (isJwtExpired(storedToken)) {
 const initialToken = isJwtExpired(storedToken) ? null : storedToken;
 const initialUser = initialToken ? getStoredUser() : null;
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: initialUser,
   token: initialToken,
   isAuthenticated: !!initialToken,
@@ -82,6 +82,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
+    // R12 item 4: end an open Access As session on the server so START/STOP stay paired (best effort)
+    const current = get().user as { isImpersonating?: boolean } | null;
+    const token = get().token;
+    if (current?.isImpersonating && token) {
+      const base = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:3000/api';
+      fetch(`${base}/auth/access-as/stop`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+    }
     clearToken();
     clearStoredUser();
     set({ token: null, user: null, isAuthenticated: false });

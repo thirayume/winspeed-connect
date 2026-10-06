@@ -106,7 +106,7 @@ async function resolveAuthoritativePrice({ custId, goodId, goodCode, asOfDate = 
  * - Selling Price < Announced Price -> requiresPriceApproval = true.
  * - Missing Announced Price -> requiresPriceApproval = true.
  */
-async function evaluateLinePrice(line, custId, asOfDate = null) {
+async function evaluateLinePrice(line, custId, asOfDate = null, options = {}) {
   if (line.isGiveaway) {
     return {
       isGiveaway: true,
@@ -114,6 +114,23 @@ async function evaluateLinePrice(line, custId, asOfDate = null) {
       announcedPrice: 0,
       requestedPrice: 0,
       deviationPerTon: 0,
+    };
+  }
+
+  // D1 / R5-2 / R6-1 / R7-4: Validated coupon reservation lines are ฿0 and skip announced price approval by default.
+  // CRITICAL SECURITY: Never trust client flags or line markers.
+  // Exemption strictly requires server-side validated set passed via options.isCouponValidated === true.
+  const isCouponValidated = Boolean(options.isCouponValidated === true);
+  if (isCouponValidated) {
+    return {
+      isGiveaway: false,
+      isCouponDrawn: true,
+      requiresApproval: false,
+      announcedPrice: 0,
+      requestedPrice: 0,
+      deviationPerTon: 0,
+      totalDeviation: 0,
+      reason: 'ยกเว้นการอนุมัติราคาเนื่องจากเป็นการตัดตั๋วคูปองที่มีการจองสิทธิ์ถูกต้องในระบบ',
     };
   }
 

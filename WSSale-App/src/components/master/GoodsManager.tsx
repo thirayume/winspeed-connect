@@ -1,7 +1,7 @@
 import { useEffect, useState, Fragment, useMemo } from 'react';
 import { Package, Search, Image as ImageIcon, Edit2, Save, X, RefreshCw, Upload, Tag, Trash2, ArrowUpDown } from 'lucide-react';
 import { fetchGoods, updateGood, fetchPrices, getToken } from '../../services/api';
-import { useAppStore } from '../../store/app-store';
+import '../../store/app-store';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { DeleteConfirmModal } from '../ui/DeleteConfirmModal';
 import type { EMGood, CurrentPrice } from '../../types';
@@ -116,7 +116,8 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
       setGoods(prev => prev.map(g => g.GoodID === editingId ? { ...g, ...editForm } as EMGood : g));
       setEditingId(null);
     } catch (err) {
-      alert('บันทึกไม่สำเร็จ');
+      // R12 item 15: show the server's reason (permission / validation / not found)
+      alert('บันทึกไม่สำเร็จ: ' + ((err as Error)?.message || 'ไม่ทราบสาเหตุ'));
       console.error(err);
     }
     setSaving(false);
@@ -252,7 +253,7 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
                   </td>
                 </tr>
               ) : (
-                paginatedGoods.map((good, idx) => {
+                paginatedGoods.map((good) => {
                   const isEditing = editingId === good.GoodID;
                   const ytdSales = good.TotalQtyTonThisYear || 0;
                   const totalSales = good.TotalQtyTon || 0;

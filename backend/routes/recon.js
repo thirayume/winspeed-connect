@@ -200,6 +200,76 @@ async function buildCases(days) {
 }
 
 // GET /api/recon/summary?days=
+// ── R12 K-F4: account books (I/C/J = บัญชี 1, K/D/N = บัญชี 2) ─────────────────────
+const { invoiceMismatch, bookOf, BOOKS } = require('../services/account-books');
+const RECON_BOOK_ROLES = ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'];
+
+// GET /api/recon/account-mismatches?days=60 — cuts posted to the other account's invoice book
+// (e.g. a K/D cut with a J invoice because creditsale_docuno was not switched to N before
+// Post Invoice). Pairs cut ↔ invoice only through WFRedemtionDT.SOInvID. Read-only.
+router.get('/account-mismatches', requireRole(...RECON_BOOK_ROLES), async (req, res) => {
+  try {
+    const days = Math.min(Math.max(Number(req.query.days) || 60, 1), 400);
+    const rows = (await wfQuery(`
+      SELECT h.RedemtionID, h.DocuNo AS CutNo, CONVERT(VARCHAR(10), h.DocuDate, 120) AS CutDate,
+             c.CouponNo, c.SONo AS CouponSoNo,
+             i.SOInvID, i.DocuNo AS InvoiceNo, CONVERT(VARCHAR(10), i.DocuDate, 120) AS InvoiceDate, i.NetAmnt
+      FROM dbo.WFRedemtionDT d WITH (NOLOCK)
+      JOIN dbo.WFRedemtionHD h WITH (NOLOCK) ON h.RedemtionID = d.RedemtionID
+      JOIN dbo.WFCoupon c WITH (NOLOCK) ON c.CouponID = d.CouponID
+      JOIN dbo.SOInvHD i WITH (NOLOCK) ON i.SOInvID = d.SOInvID
+      WHERE h.DocuDate >= DATEADD(DAY, -@days, GETDATE())
+        AND ((LEFT(c.CouponNo, 1) = 'D' AND LEFT(i.DocuNo, 1) <> 'N')
+          OR (LEFT(c.CouponNo, 1) = 'C' AND LEFT(i.DocuNo, 1) <> 'J'))
+      ORDER BY h.DocuDate DESC, h.RedemtionID DESC
+    `, { days: { type: sql.Int, value: days } })).recordset || [];
+    const data = rows.map(r => {
+      const mm = invoiceMismatch({ billNo: r.CouponSoNo, couponNo: r.CouponNo, invoiceNo: r.InvoiceNo });
+      return mm ? {
+        ...r,
+        book: mm.book,
+        account: BOOKS[mm.book].account,
+        expectedInvoiceSeries: mm.expected,
+        actualInvoiceSeries: mm.actual,
+        message: `ใบตัดตั๋ว ${r.CutNo} (${r.CouponNo}, บัญชี ${BOOKS[mm.book].account}) ได้ใบกำกับ ${r.InvoiceNo} ซึ่งเป็นเล่ม ${mm.actual} — ต้องเป็นเล่ม ${mm.expected}`,
+      } : null;
+    }).filter(Boolean);
+    res.json({ days, count: data.length, data });
+  } catch (e) { console.error('[recon/account-mismatches]', e); res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/recon/active-books — which book WINSpeed is on right now (read-only) and how many
+// cuts still wait for an invoice per account. The app never switches the active book.
+router.get('/active-books', requireRole(...RECON_BOOK_ROLES), async (req, res) => {
+  try {
+    const counters = (await wfQuery(`
+      SELECT RTRIM(RunCode) AS RunCode, RTRIM(RunFormat) AS RunFormat, RTRIM(LastNo) AS LastNo
+      FROM dbo.EMRunBrch WITH (NOLOCK)
+      WHERE BrchID = 1 AND RunCode IN ('103', '104', 'couponno', 'creditsale_docuno')
+    `)).recordset || [];
+    const pending = (await wfQuery(`
+      SELECT LEFT(c.CouponNo, 1) AS Series, COUNT(DISTINCT h.RedemtionID) AS Cuts
+      FROM dbo.WFRedemtionDT d WITH (NOLOCK)
+      JOIN dbo.WFRedemtionHD h WITH (NOLOCK) ON h.RedemtionID = d.RedemtionID
+      JOIN dbo.WFCoupon c WITH (NOLOCK) ON c.CouponID = d.CouponID
+      WHERE ISNULL(d.SOInvID, 0) = 0 AND h.DocuDate >= DATEADD(DAY, -60, GETDATE())
+      GROUP BY LEFT(c.CouponNo, 1)
+    `)).recordset || [];
+    const label = { '103': 'ใบจอง', '104': 'ใบสั่งขาย', couponno: 'ตั๋วปุ๋ย', creditsale_docuno: 'ใบกำกับ (Post Invoice)' };
+    res.json({
+      books: counters.map(c => ({
+        runCode: c.RunCode, label: label[c.RunCode] || c.RunCode, runFormat: c.RunFormat, lastNo: c.LastNo,
+        activeBook: bookOf(c.RunFormat), activeAccount: bookOf(c.RunFormat) ? BOOKS[bookOf(c.RunFormat)].account : null,
+      })),
+      cutsAwaitingInvoice: {
+        account1: Number(pending.find(p => p.Series === 'C')?.Cuts || 0),
+        account2: Number(pending.find(p => p.Series === 'D')?.Cuts || 0),
+      },
+      note: 'สลับชุดเลขในหน้า "กำหนดเลขที่เอกสาร" ของ WINSpeed เท่านั้น — ก่อน Post Invoice ของบิล K ให้สลับ creditsale_docuno เป็นชุด N แล้วสลับกลับเป็น J',
+    });
+  } catch (e) { console.error('[recon/active-books]', e); res.status(500).json({ message: e.message }); }
+});
+
 router.get('/summary', async (req, res) => {
   try {
     const cases = await buildCases(req.query.days);
@@ -210,6 +280,10 @@ router.get('/summary', async (req, res) => {
       resolved: cases.filter(c => c.overall === 'RESOLVED').length,
       readyForPostInvoice: cases.filter(c => c.postInvoiceStatus === 'READY').length,
       postedInvoice: cases.filter(c => c.postInvoiceStatus === 'POSTED').length,
+      invoiceFound: cases.filter(c => c.postInvoiceStatus === 'POSTED' || Boolean(c.wsInvoiceNo)).length,
+      partialInvoiced: 0,
+      operationallyQualified: cases.filter(c => c.weigh === 'MATCHED' || c.weighResolution?.status === 'RESOLVED').length,
+      glVerified: cases.filter(c => Boolean(c.wsPostId) || c.invoiceResolution?.status === 'RESOLVED').length,
       tsAvailable: cases[0]?.tsAvailable ?? true,
     };
     res.json(summary);

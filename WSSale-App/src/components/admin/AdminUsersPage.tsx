@@ -1,10 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Users, RefreshCw, Check, AlertTriangle, Plus, Edit2, X, Search, UserX, ArrowUpDown, Trash2, Settings } from 'lucide-react';
 import { listUsers, fetchEmployees, updateUser, createUser, deleteUser } from '../../services/api';
-import { getDbMode, DB_MODE_META } from '../../store/db-mode';
+import '../../store/db-mode';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import type { AdminUser, Employee } from '../../types';
 import { SystemSettingsModal } from './SystemSettingsModal';
+import { useAuthStore } from '../../store/auth-store';
+
+// Same roles and ranks as backend/services/role-capabilities.js
+const ASSIGNABLE_ROLES = ['SALES', 'COUNTER_SALES', 'APPROVER', 'WAREHOUSE', 'WEIGHBRIDGE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'];
+const ROLE_RANK: Record<string, number> = {
+  SALES: 1, WEIGHBRIDGE: 1, COUNTER_SALES: 2, WAREHOUSE: 2, APPROVER: 3, ACCOUNTING: 4, MANAGER: 5, C_LEVEL: 6, ADMIN: 7,
+};
 
 export const AdminUsersPage = () => {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -72,6 +79,8 @@ export const AdminUsersPage = () => {
   const needsMapping = (u: AdminUser) => (u.Role === 'SALES' || u.Role === 'COUNTER_SALES') && !u.EmpId;
 
   // Check if an EmpID is already used by ANOTHER user
+  const myRole = useAuthStore(s => s.user?.role) || '';
+
   const isEmpIdTaken = (empId: string, currentUserId?: number) => {
     return users.some(u => u.EmpId === empId && u.Id !== currentUserId);
   };
@@ -413,13 +422,10 @@ export const AdminUsersPage = () => {
                         defaultValue={modalUser.Role || 'SALES'}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#0C447C]/20 outline-none bg-white"
                       >
-                        <option value="SALES">SALES</option>
-                        <option value="COUNTER_SALES">COUNTER_SALES</option>
-                        <option value="APPROVER">APPROVER</option>
-                        <option value="WAREHOUSE">WAREHOUSE</option>
-                        <option value="ACCOUNTING">ACCOUNTING</option>
-                        <option value="ADMIN">ADMIN</option>
-                        <option value="MANAGER">MANAGER</option>
+                        {/* R12 item 2: every role used in code; the server refuses ranks the caller may not assign */}
+                        {ASSIGNABLE_ROLES
+                          .filter(r => myRole === 'ADMIN' || (ROLE_RANK[r] ?? 0) < (ROLE_RANK[myRole] ?? 0) || r === modalUser.Role)
+                          .map(r => <option key={r} value={r}>{r}</option>)}
                       </select>
                     </div>
 

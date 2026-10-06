@@ -211,7 +211,7 @@ export function WeighingReportsPage() {
     setLoading(false);
   }, [active, wgType, from, to]);
 
-  loadRef.current = load;
+  useEffect(() => { loadRef.current = load; }, [load]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetchWeighCoverage().then(setCov).catch(() => setCov(null)); }, []);
 
@@ -246,7 +246,17 @@ export function WeighingReportsPage() {
   }
 
   const showTicketButton = tab === 'live' || tab === 'tickets' || tab === 'anomalies';
-  const stale = cov?.LastWeighOut ? (Date.now() - new Date(cov.LastWeighOut.replace(' ', 'T')).getTime()) / 86400000 : null;
+  const [stale, setStale] = useState<number | null>(null);
+  useEffect(() => {
+    const updateAge = () => {
+      const lastWeighOut = cov?.LastWeighOut;
+      const timestamp = lastWeighOut ? new Date(lastWeighOut.replace(' ', 'T')).getTime() : NaN;
+      setStale(Number.isFinite(timestamp) ? (Date.now() - timestamp) / 86400000 : null);
+    };
+    updateAge();
+    const timer = window.setInterval(updateAge, 60_000);
+    return () => window.clearInterval(timer);
+  }, [cov]);
 
   return (
     <div className="flex h-full flex-col bg-gray-50">

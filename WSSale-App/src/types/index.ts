@@ -10,13 +10,15 @@ export type UserRole =
   | 'ACCOUNTING'
   | 'MANAGER'
   | 'APPROVER'
-  | 'WEIGHBRIDGE';
+  | 'WEIGHBRIDGE'
+  | 'REPORT_PILOT';
 
 export type AppUser = {
   id: number;
   username: string;
   displayName: string;
   role: UserRole;
+  isPilot?: boolean;
   actorId?: number;
   actorUsername?: string;
   actorDisplayName?: string;
@@ -34,6 +36,8 @@ export type AppUser = {
   lineDisplayName?: string | null;
   lineLinkedAt?: string | null;
   mustChangePassword?: boolean;
+  // R12 item 3: menus/actions of the effective role from the backend role-capability map
+  capabilities?: { menus: string[]; actions: string[] };
 };
 
 /** WINSpeed employee (dbo.EMEmp) — for mapping AppUser.empId */
@@ -80,6 +84,7 @@ export type AdminUser = {
 
 // ── Master Data (maps to dbo views — READ ONLY) ───────────────
 export type EMCust = {
+  CustCode?: string;
   CustID: string;
   CustName: string;
   Tel?: string;
@@ -145,8 +150,15 @@ export type EMGood = {
   TotalQtyTon?: number;
   TotalQtyTonThisYear?: number;
   RemainingQty?: number;
+  // ของแถม: บรรทัดงบที่ตัวจับคู่ฝั่งเซิร์ฟเวอร์เลือกให้ (R11 U-8)
+  Brand?: string;
+  ItemName?: string;
+  Region?: string | null;
+  QuotaMatched?: boolean;
   UnitName?: string;
   SetPrice?: number;
+  GoodPrice?: number;
+  GoodPrice1?: number;
 };
 
 export type CurrentPrice = {
@@ -221,7 +233,8 @@ export type SalesOrder = {
   deliveryDate?: string;
   requestedAt?: string;
   isOwnTruck?: boolean;
-  noTruckRequired?: boolean;
+  noTruckRequired?: boolean | number;
+  isControlTicket?: boolean;
   pSling?: boolean;
   remark?: string;
   status: SOStatus;
@@ -297,6 +310,8 @@ export type RebatePool = {
   AccruedAmt: number;
   ClaimedAmt: number;
   AllocatedAmt: number;
+  UsedAmt?: number;
+  AvailableAmt?: number;
 };
 
 export type RebateLedger = {
@@ -383,6 +398,41 @@ export type CouponRow = {
   GoodQty: number;
   RemaQty: number;
   RedeemedQty: number;
+  expiryDate?: string;
+  daysLeft?: number;
+  isExpired?: boolean;
+  isExpiringSoon?: boolean;
+  beneficiaries?: Array<{
+    id: number;
+    beneficiaryCustId: string;
+    beneficiaryCustCode?: string;
+    beneficiaryCustName: string;
+  }>;
+};
+
+export type CouponWorklistRow = {
+  couponId: number;
+  couponNo: string;
+  goodName: string;
+  goodCode?: string;
+  remaQty: number;
+  goodQty: number;
+  redeemedQty: number;
+  docuDate: string;
+  custId: string;
+  custName: string;
+  custCode?: string;
+  ownerCustCode?: string;
+  expiryDate: string;
+  daysLeft: number;
+  isExpired: boolean;
+  isExpiringSoon: boolean;
+  beneficiaries?: Array<{
+    id: number;
+    beneficiaryCustId: string;
+    beneficiaryCustCode?: string;
+    beneficiaryCustName: string;
+  }>;
 };
 
 export type CouponCustomer = {
@@ -587,6 +637,14 @@ export type PaperCard = {
   copyCnt?: number;
   lostCnt?: number;
   verifiedAt?: string | null;
+  tripId?: number | null;
+  soPrefix?: string;
+  noTruckRequired?: boolean | number;
+  ticketExpiryDate?: string | null;
+  ticketDaysLeft?: number | null;
+  couponNo?: string | null;
+  beneficiaryCustName?: string | null;
+  ownerCustCode?: string | null;
 };
 
 export type PaperBoard = {
@@ -705,6 +763,8 @@ export type ControlTicket = {
   DocuNo: string;
   AppvDocuNo?: string;
   DisplayDocuNo: string;
+  BookingDocuNo?: string;
+  DeliveryDocuNo?: string;
   DocuDate: string;
   CustID: string;
   CustName: string;
@@ -714,6 +774,35 @@ export type ControlTicket = {
   DocuStatus?: string;
   TotalQtyTon: number;
   DrawnQtyTon: number;
+  CouponID?: number;
+  CouponNo?: string;
+  GoodID?: number;
+  GoodCode?: string;
+  GoodName?: string;
+  GoodPrice?: number;
+  GoodUnitName?: string;
+  IssuedQtyTon?: number;
+  NativeRemainingQtyTon?: number;
+  ReservedQtyTon?: number;
+  AvailableQtyTon?: number;
+  BalanceState?: 'POSITIVE' | 'RESERVED_FULL' | 'ZERO' | 'NEGATIVE' | 'UNKNOWN';
+  Lifecycle?: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED_NOT_ISSUED' | 'ISSUED' | 'CANCELLED' | 'UNKNOWN';
+  ExpiryState?: 'VALID' | 'EXPIRING' | 'EXPIRED' | 'UNKNOWN';
+  Eligibility?: 'ELIGIBLE' | 'WARNING' | 'BLOCKED' | 'UNKNOWN';
+  Reasons?: string[];
+  expiryDate?: string | null;
+  expiryStatus?: string;
+  daysRemaining?: number | null;
+  strictMode?: boolean;
+  strictOverride?: boolean;
+  isBlocked?: boolean;
+  isSpendable?: boolean;
+  entityType?: 'COUPON' | 'BOOKING' | 'DRAFT' | string;
+  exactId?: number;
+  entityKey?: string;
+  warning?: string | null;
+  error?: string | null;
+  customerCandidate?: any;
 };
 export type ControlTicketDraw = {
   SOID: string | number;

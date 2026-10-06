@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { ScanLine, X, CheckCircle, History, Camera, CameraOff } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { scanPaper, fetchPaperHistory } from '../../services/api';
@@ -62,7 +62,7 @@ export function ScanModal({ onClose, onDone }: { onClose: () => void; onDone: ()
           setNonce(decodedText);
           setShowCamera(false);
         },
-        (errorMessage) => {
+        () => {
           // ignore scan errors, they happen continuously until a QR is found
         }
       ).catch(err => {

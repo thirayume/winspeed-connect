@@ -1,11 +1,26 @@
 import { useEffect, useState, useCallback } from 'react';
 import { ClipboardList, RefreshCw, Plus, X, Square, Coins, FileSignature } from 'lucide-react';
-import { fetchRebatePlans, createRebatePlan, updateRebatePlan, allocateRebatePlan, listUsers } from '../../services/api';
-import type { RebatePlan, AdminUser } from '../../types';
+import { fetchRebatePlans, createRebatePlan, updateRebatePlan, allocateRebatePlan, listUsers, fetchGoods, fetchRebateRegions } from '../../services/api';
+import type { RebatePlan, AdminUser, EMGood } from '../../types';
 import { PlanApprovalDialog } from './RebatePlanApproval';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 
-const REGIONS = ['ALL', 'ใต้', 'กลาง', 'เหนือ', 'ตะวันออก'];
+const CANONICAL_SALE_REGIONS = [
+  { RegionCode: '01', RegionName: 'กรุงเทพและปริมณฑล' },
+  { RegionCode: '02', RegionName: 'ภาคกลาง-ตะวันตก' },
+  { RegionCode: '03', RegionName: 'ภาคตะวันออกเฉียงเหนือ' },
+  { RegionCode: '04', RegionName: 'ภาคเหนือ' },
+  { RegionCode: '05', RegionName: 'ภาคใต้' },
+  { RegionCode: '06', RegionName: 'ภาคตะวันออก' },
+  { RegionCode: '10', RegionName: 'ภาคอีสานบน' },
+  { RegionCode: '11', RegionName: 'ภาคอีสานกลาง' },
+  { RegionCode: '12', RegionName: 'ภาคอีสานล่าง' },
+  { RegionCode: '13', RegionName: 'ภาคปุ๋ยเทพ 1' },
+  { RegionCode: '14', RegionName: 'ภาคปุ๋ยเทพ 2' },
+  { RegionCode: '15', RegionName: 'โรงงานและหน่วยงานราชการ' },
+  { RegionCode: '16', RegionName: 'เคาน์เตอร์เซลล์' },
+  { RegionCode: '99', RegionName: 'ไม่ระบุ' },
+];
 const THB = (n?: number | null) => n != null ? `฿${Number(n).toLocaleString('th-TH', { maximumFractionDigits: 0 })}` : '-';
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   DRAFT:         { label: 'ร่าง',                cls: 'bg-gray-100 text-gray-600' },
@@ -133,6 +148,8 @@ export function RebatePlanPage() {
 }
 
 function PlanForm({ plan, onClose, onDone }: { plan: RebatePlan | null; onClose: () => void; onDone: () => void }) {
+  const [goods, setGoods] = useState<EMGood[]>([]);
+  const [regionList, setRegionList] = useState(CANONICAL_SALE_REGIONS);
   const [f, setF] = useState({
     title: plan?.Title || '', refDoc: plan?.RefDoc || '', goodCodePattern: plan?.GoodCodePattern || '', region: plan?.Region || 'ALL',
     returnType: plan?.ReturnType || 'REBATE', netPrice: plan?.NetPrice ?? '', validFrom: plan?.ValidFrom?.substring(0,10) || '',
@@ -140,6 +157,13 @@ function PlanForm({ plan, onClose, onDone }: { plan: RebatePlan | null; onClose:
   });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
   const set = (k: string, v: unknown) => setF(s => ({ ...s, [k]: v }));
+
+  useEffect(() => {
+    fetchGoods().then(g => setGoods(g || [])).catch(() => setGoods([]));
+    fetchRebateRegions().then(res => {
+      if (res?.regions?.length) setRegionList(res.regions);
+    }).catch(() => {});
+  }, []);
 
   async function submit() {
     setBusy(true); setErr('');
@@ -169,8 +193,40 @@ function PlanForm({ plan, onClose, onDone }: { plan: RebatePlan | null; onClose:
           <Field label="ชื่อแผน"><input value={f.title} onChange={e => set('title', e.target.value)} className="inp" /></Field>
           <Field label="Ref Doc"><input value={f.refDoc} onChange={e => set('refDoc', e.target.value)} placeholder="เลขอ้างอิงเอกสาร/โปรโมชัน" className="inp" /></Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="สูตร (เว้นว่าง=ทุกสูตร)"><input value={f.goodCodePattern} onChange={e => set('goodCodePattern', e.target.value)} placeholder="เช่น 15-5-35" className="inp" /></Field>
-            <Field label="ภาค"><select value={f.region} onChange={e => set('region', e.target.value)} className="inp">{REGIONS.map(r => <option key={r}>{r}</option>)}</select></Field>
+            <div>
+              <Field label="สูตร/สินค้า (เว้นว่าง=ทุกสูตร)">
+                <input
+                  value={f.goodCodePattern}
+                  onChange={e => set('goodCodePattern', e.target.value)}
+                  placeholder="เช่น 7-15151500BBCAR หรือ 15-15-15"
+                  className="inp font-mono text-xs"
+                />
+              </Field>
+              {goods.length > 0 && (
+                <select
+                  onChange={e => { if (e.target.value) set('goodCodePattern', e.target.value); }}
+                  value=""
+                  className="mt-1 w-full text-[11px] border border-gray-200 rounded p-1 text-gray-500 bg-gray-50"
+                >
+                  <option value="">-- หรือเลือกสินค้าจากระบบ --</option>
+                  {goods.map(g => (
+                    <option key={g.GoodID || g.GoodCode} value={g.GoodCode}>
+                      {g.GoodCode} {g.GoodName ? `· ${g.GoodName}` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <Field label="ภาค">
+              <select value={f.region} onChange={e => set('region', e.target.value)} className="inp">
+                <option value="ALL">ALL (ทุกภาค)</option>
+                {regionList.map(r => (
+                  <option key={r.RegionCode} value={r.RegionCode}>
+                    {r.RegionCode} — {r.RegionName}
+                  </option>
+                ))}
+              </select>
+            </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="ประเภทการคืน"><select value={f.returnType} onChange={e => set('returnType', e.target.value)} className="inp"><option value="REBATE">คืนรีเบท</option><option value="PRICEDIFF">คืนส่วนต่าง</option></select></Field>

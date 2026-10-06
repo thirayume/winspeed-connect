@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { X, ArrowUp, ArrowDown, GripVertical, CheckCircle2 } from 'lucide-react';
 import type { SalesOrder } from '../../types';
 

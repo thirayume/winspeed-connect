@@ -106,7 +106,7 @@ export function RebatePage() {
               {pools.length === 0 ? (
                 <p className="text-xs text-gray-400 py-4 text-center">ยังไม่มี pool</p>
               ) : pools.map(p => {
-                const avail = Number(p.AccruedAmt) - Number(p.ClaimedAmt);
+                const avail = p.AvailableAmt !== undefined ? Number(p.AvailableAmt) : (Number(p.AccruedAmt) - Number(p.ClaimedAmt) - Number(p.UsedAmt || 0));
                 const isSel = selectedPool?.Id === p.Id;
                 return (
                   <div key={p.Id} onClick={() => openPool(p)}

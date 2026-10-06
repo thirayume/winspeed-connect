@@ -1,18 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { 
-  Search, 
-  Plus, 
-  Minus, 
-  Trash2, 
-  ShoppingCart, 
-  ChevronRight,
-  Filter,
-  Package,
-  CircleCheck,
-  TrendingUp,
-  Clock,
-  X
-} from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Search, Plus, Minus, Trash2, ShoppingCart, Package, CircleCheck, Clock, X } from 'lucide-react';
 import { Button, Card, Badge, cn } from '../ui/Base';
 
 /**
@@ -73,11 +60,6 @@ export const POSLayout = ({
 
   const total = lines.reduce((sum, line) => sum + (line.GoodQty1 * line.GoodPrice1), 0);
 
-  // Generate a placeholder image URL based on item name
-  const getPlaceholderImage = (name: string) => {
-    const seed = encodeURIComponent(name);
-    return `https://api.dicebear.com/7.x/identicon/svg?seed=${seed}&backgroundColor=f1f5f9`;
-  };
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-slate-50/30">

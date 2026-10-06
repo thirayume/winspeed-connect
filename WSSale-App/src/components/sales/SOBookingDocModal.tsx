@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
-import { Printer, X, Settings, RefreshCw, AlertTriangle, Layers, UserCheck, CheckSquare } from 'lucide-react';
+import { Printer, X, Settings, RefreshCw, AlertTriangle, UserCheck } from 'lucide-react';
 import { getDocHeaderConfig, type DocHeaderConfig } from '../../utils/docHeaderSettings';
 import { DocHeaderSettingsModal } from '../common/DocHeaderSettingsModal';
 import { fetchSalesOrder, fetchCustomers, listUsers } from '../../services/api';
@@ -185,6 +185,12 @@ export function SOBookingDocModal({
               qtyBag: Number(l.qtyBag ?? l.QtyBag ?? (Number(l.qtyTon ?? l.QtyTon ?? 0) * 20)),
               masterQty: l.masterQty ?? l.MotherLoadQty ?? l.MasterQty ?? null,
               childQty: l.childQty ?? l.ChildLoadQty ?? l.ChildQty ?? null,
+              isCouponDrawn: Boolean(l.isCouponDrawn || l.IsCouponDrawn || l.couponReservationId || l.CouponReservationId),
+              refCouponDocuNo: l.refCouponDocuNo || l.RefCouponDocuNo || null,
+              beneficiaryCustName: l.beneficiaryCustName || l.BeneficiaryCustName || null,
+              beneficiaryCustCode: l.beneficiaryCustCode || l.BeneficiaryCustCode || null,
+              ownerCustName: l.ownerCustName || l.OwnerCustName || null,
+              ownerCustCode: l.ownerCustCode || l.OwnerCustCode || null,
             })),
           };
         });
@@ -686,7 +692,20 @@ export function SOBookingDocModal({
                             so.lines.map((l, idx) => (
                               <tr key={idx} className="min-h-[28px]">
                                 <td className="py-2 px-2 border-r border-black font-mono font-medium">{l.goodCode}</td>
-                                <td className="py-2 px-3 border-r border-black font-medium">{l.goodName}</td>
+                                <td className="py-2 px-3 border-r border-black font-medium">
+                                  {l.goodName}
+                                  {(l as any).isCouponDrawn && (
+                                    <div className="text-[10px] text-blue-900 font-normal mt-0.5 leading-tight">
+                                      ตัดตั๋วคูปอง: <span className="font-mono font-semibold">{(l as any).refCouponDocuNo || '-'}</span>
+                                      {(l as any).beneficiaryCustName && (
+                                        <span> | ผู้รับ: <span className="font-semibold">{(l as any).beneficiaryCustName}</span></span>
+                                      )}
+                                      {(l as any).ownerCustName && (
+                                        <span> | เจ้าของสิทธิ์: <span className="font-semibold">{(l as any).ownerCustName}</span></span>
+                                      )}
+                                    </div>
+                                  )}
+                                </td>
                                 <td className="py-2 px-2 border-r border-black text-right font-bold">{l.qtyTon.toFixed(2)}</td>
                                 <td className="py-2 px-2 border-r border-black text-center">ตัน</td>
                                 <td className="py-2 px-2 border-r border-black text-right">{l.masterQty ? Number(l.masterQty).toFixed(2) : '-'}</td>

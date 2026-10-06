@@ -1,11 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import {
-  Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell, LogOut,
-  Users, LayoutDashboard, Coins, FileCheck, FileCheck2, Gift, FileText, LayoutGrid, Database, Clock, Ticket, ClipboardList, ClipboardCheck, Stamp, BarChart3, Scale, ShieldCheck, Activity, BookOpen, ScrollText, Landmark, Inbox,
-  Menu, ChevronDown, Settings, CheckCircle2, Award, Network,
-  Folder, Wallet, Calculator, Truck, Unlock
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell, LogOut, Users, LayoutDashboard, Coins, FileCheck, Gift, FileText, LayoutGrid, Database, Clock, ClipboardList, ClipboardCheck, Stamp, BarChart3, ShieldCheck, Activity, ScrollText, Menu, ChevronDown, Settings, Network, Wallet, Truck, Unlock, Ticket } from 'lucide-react';
+
 import { useErpStore } from './store/erp-store';
 import { useAuthStore } from './store/auth-store';
 import { getMe, listAccessAsCandidates, listUnlockRequests, listPendingGiveaways, startAccessAs, stopAccessAs } from './services/api';
@@ -21,7 +16,7 @@ import { UnlockReviewModal } from './components/papertrail/UnlockReviewModal';
 import { useSocketEvent } from './hooks/useSocket';
 import packageJson from '../package.json';
 
-export type PortalKey = 'dashboard' | 'sales' | 'trip-board' | 'edit-requests' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'master' | 'profile';
+export type PortalKey = 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'master' | 'profile' | 'beneficiaries';
 
 const SalesPortal = lazy(() => import('./components/sales/SalesPortal').then(m => ({ default: m.SalesPortal })));
 const SaleTripBoardPage = lazy(() => import('./components/sales/SaleTripBoardPage').then(m => ({ default: m.SaleTripBoardPage })));
@@ -34,6 +29,7 @@ const RebatePage = lazy(() => import('./components/rebate/RebatePage').then(m =>
 // ไฟล์ทั้งหมดยังอยู่ครบ · เปิดกลับได้ด้วยการเอาคอมเมนต์ออกทั้งบรรทัดนี้และในเมนู/render
 // const CnRebatePage = lazy(() => import('./components/rebate/CnRebatePage').then(m => ({ default: m.CnRebatePage })));
 const RebatePlanPage = lazy(() => import('./components/rebate/RebatePlanPage').then(m => ({ default: m.RebatePlanPage })));
+const VoucherPage = lazy(() => import('./components/voucher/VoucherPage').then(m => ({ default: m.VoucherPage })));
 const ControlTicketPage = lazy(() => import('./components/master/ControlTicketPage').then(m => ({ default: m.ControlTicketPage })));
 const ReportsPage = lazy(() => import('./components/reports/ReportsPage').then(m => ({ default: m.ReportsPage })));
 const WeighingReportsPage = lazy(() => import('./components/reports/WeighingReportsPage').then(m => ({ default: m.WeighingReportsPage })));
@@ -45,6 +41,7 @@ const QuotationPage = lazy(() => import('./components/quotation/QuotationPage').
 const PaperTrailPage = lazy(() => import('./components/papertrail/PaperTrailPage').then(m => ({ default: m.PaperTrailPage })));
 const AdminUsersPage = lazy(() => import('./components/admin/AdminUsersPage').then(m => ({ default: m.AdminUsersPage })));
 const OrgAssignmentPage = lazy(() => import('./components/admin/OrgAssignmentPage').then(m => ({ default: m.OrgAssignmentPage })));
+const BeneficiaryAdminPage = lazy(() => import('./components/admin/BeneficiaryAdminPage'));
 const ProfilePage = lazy(() => import('./components/profile/ProfilePage'));
 const MasterDataPortal = lazy(() => import('./components/master/MasterDataPortal').then(m => ({ default: m.MasterDataPortal })));
 const AgingPage = lazy(() => import('./components/aging/AgingPage').then(m => ({ default: m.AgingPage })));
@@ -69,10 +66,11 @@ const NAV_GROUPS: NavGroup[] = [
     icon: ShoppingCart,
     color: 'text-indigo-600',
     items: [
-      { key: 'sales',      label: 'ขาย',         sub: 'POS · สั่งขายปุ๋ย',     icon: ShoppingCart },
-      { key: 'trip-board', label: 'Sale Trip',   sub: 'กระดานเที่ยวรถ',      icon: Truck },
-      { key: 'edit-requests', label: 'คำขอแก้ไขและอนุมัติ', sub: 'แก้ไข · อนุมัติราคา · Hold รถ', icon: ClipboardCheck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'SALES'] },
-      { key: 'quotation',  label: 'เสนอราคา',    sub: 'Quotation → SO',      icon: FileText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'SALES'] },
+      { key: 'sales',      label: 'ขาย',         sub: 'POS · สั่งขายปุ๋ย',     icon: ShoppingCart, roles: ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'] },
+      { key: 'trip-board', label: 'Sale Trip',   sub: 'กระดานเที่ยวรถ',      icon: Truck, roles: ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'] },
+      { key: 'voucher',    label: 'Voucher คงค้าง', sub: 'ยอดคงค้าง · วันหมดอายุตั๋ว', icon: Ticket, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'SALES', 'COUNTER_SALES'] },
+      { key: 'edit-requests', label: 'คำขอแก้ไขและอนุมัติ', sub: 'แก้ไข · อนุมัติราคา · Hold รถ', icon: ClipboardCheck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'SALES', 'COUNTER_SALES'] },
+      { key: 'quotation',  label: 'เสนอราคา',    sub: 'Quotation → SO',      icon: FileText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'SALES', 'COUNTER_SALES'] },
     ],
   },
   {
@@ -81,7 +79,7 @@ const NAV_GROUPS: NavGroup[] = [
     color: 'text-orange-600',
     items: [
       { key: 'store',      label: 'คลัง',        sub: 'รับสินค้า · ตรวจจ่าย · จัดโหลด', icon: Warehouse, badge: true, roles: ['C_LEVEL', 'ADMIN', 'WAREHOUSE', 'COUNTER_SALES'] },
-      { key: 'papertrail', label: 'Paper Trail', sub: 'Kanban เอกสาร 4 สี',   icon: LayoutGrid, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE'] },
+      { key: 'papertrail', label: 'Paper Trail', sub: 'Kanban เอกสาร 4 สี',   icon: LayoutGrid, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'MANAGER'] },
       { key: 'control-ticket', label: 'ชุดตั๋วคุม', sub: 'คงเหลือ · ตัดจ่ายตั๋วคุม', icon: Stamp, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'SALES'] },
       { key: 'scale-reports', label: 'สถานะการชั่งรถ', sub: 'ชั่งสด WGHD · เข้า-ออก', icon: Truck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE'] },
       { key: 'aging',      label: 'ตั๋วคงค้าง',   sub: 'SO คงค้าง · Aging ตั๋ว', icon: Clock, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'SALES'] },
@@ -98,7 +96,7 @@ const NAV_GROUPS: NavGroup[] = [
       // { key: 'cn-rebate',  label: 'CN Rebate',   sub: 'ใบลดหนี้ · Winspeed',   icon: FileCheck2, roles: [...] },
       // { key: 'incentive-report', label: 'Incentive & Retained', sub: 'สัดส่วน · สะสมบริษัท', icon: Award, roles: [...] },
       // { key: 'budget-report', label: 'Budget Expenditure', sub: 'งบจัดสรร · เบิกจ่าย', icon: BarChart3, roles: [...] },
-      { key: 'giveaway',   label: 'ของแถม',      sub: 'งบของแถมรายภาค · เบิก', icon: Gift, roles: ['C_LEVEL', 'ADMIN', 'APPROVER', 'ACCOUNTING', 'SALES'] },
+      { key: 'giveaway',   label: 'ของแถม',      sub: 'งบของแถมรายภาค · เบิก', icon: Gift, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING', 'SALES'] },
       { key: 'accounting', label: 'บัญชี',       sub: 'Sync WINSpeed · อนุมัติ CN', icon: FileCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
       { key: 'recon',      label: 'กระทบยอด',    sub: 'ตรวจบิล ↔ ชั่ง ↔ บัญชี', icon: ShieldCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
     ],
@@ -108,7 +106,7 @@ const NAV_GROUPS: NavGroup[] = [
     icon: BarChart3,
     color: 'text-purple-600',
     items: [
-      { key: 'reports',    label: 'รายงาน',      sub: 'ศูนย์รายงาน 23 ฉบับ · Export', icon: BarChart3, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER'] },
+      { key: 'reports',    label: 'รายงาน',      sub: 'ศูนย์รายงาน 23 ฉบับ · Export', icon: BarChart3, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'APPROVER', 'MANAGER'] },
     ],
   },
   {
@@ -122,6 +120,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · Watchdog · Alert', icon: Activity, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
       { key: 'admin',      label: 'User Management',    sub: 'จัดการผู้ใช้งาน · รหัสผ่าน', icon: Users, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
       { key: 'org',        label: 'ผังองค์กร',    sub: 'ผูกผู้ใช้ ↔ ตำแหน่ง ↔ สายงาน', icon: Network, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
+      { key: 'beneficiaries', label: 'จัดการสิทธิ์ตั๋วร่วม', sub: 'มอบ/ถอนสิทธิ์ตั๋วร่วมระหว่างลูกค้า', icon: Ticket, roles: ['ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'] },
     ],
   },
 ];
@@ -212,6 +211,9 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
   const role = user?.role;
   const actorRole = user?.actorRole || role;
   const canReviewUnlocks = ['APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '');
+  // same roles as GET /so/giveaways/pending — ACCOUNTING reviews unlocks but not giveaways, and a
+  // 403 there used to fail the unlock fetch too
+  const canApproveGiveaways = ['APPROVER', 'ADMIN', 'MANAGER', 'C_LEVEL'].includes(role || '');
   const canUseAccessAs = Boolean(actorRole && ACCESS_AS_ROLES.includes(actorRole));
 
   useEffect(() => {
@@ -231,21 +233,21 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
       try {
         const [unlocks, giveaways] = await Promise.all([
           listUnlockRequests('PENDING', true),
-          listPendingGiveaways(true)
+          canApproveGiveaways ? listPendingGiveaways(true) : Promise.resolve([])
         ]);
         setUnlockRequests(unlocks);
         setPendingGiveaways(giveaways);
       } catch (e) { console.error('Fetch approvals failed', e); }
     };
     fetchReqs();
-  }, [canReviewUnlocks, setUnlockRequests, setPendingGiveaways]);
+  }, [canReviewUnlocks, canApproveGiveaways, setUnlockRequests, setPendingGiveaways]);
 
   useSocketEvent('so_updated', async () => {
     if (!canReviewUnlocks) return;
     try {
       const [unlocks, giveaways] = await Promise.all([
         listUnlockRequests('PENDING', true),
-        listPendingGiveaways(true)
+        canApproveGiveaways ? listPendingGiveaways(true) : Promise.resolve([])
       ]);
       setUnlockRequests(unlocks);
       setPendingGiveaways(giveaways);
@@ -307,8 +309,10 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
       active ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
     } ${collapsed ? 'justify-center' : ''}`;
   const isGroupActive = (group: NavGroup) => group.items.some(n => n.key === activePortal);
+  // R12 item 3: the backend role-capability map decides; static roles are the fallback for an old stored session
+  const capMenus = user?.capabilities?.menus;
   const getVisibleItems = (items: NavItem[]) =>
-    items.filter(n => !n.roles || (role && n.roles.includes(role)));
+    items.filter(n => capMenus ? capMenus.includes(n.key) : (!n.roles || (role && n.roles.includes(role))));
 
   return (
     <div className="flex h-screen w-full bg-background text-foreground overflow-hidden">
@@ -552,6 +556,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'rebate-plan' && <RebatePlanPage />}
                 {/* ปิดไว้ 03/09/2569 — CnRebatePage */}
                 {activePortal === 'control-ticket' && <ControlTicketPage />}
+                {activePortal === 'voucher'    && <VoucherPage />}
                 {activePortal === 'reports'    && <ReportsPage />}
                 {activePortal === 'scale-reports' && <WeighingReportsPage />}
                 {/* ปิดไว้ 03/09/2569 — IncentiveReport */}
@@ -567,7 +572,8 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'profile'    && <ProfilePage />}
                 {activePortal === 'admin'      && ['ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '') && <AdminUsersPage />}
                 {activePortal === 'org'        && ['ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '') && <OrgAssignmentPage />}
-                {activePortal === 'master'     && role === 'ADMIN' && <MasterDataPortal />}
+                {activePortal === 'beneficiaries' && ['ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'].includes(role || '') && <BeneficiaryAdminPage />}
+                {activePortal === 'master'     && ['ADMIN', 'C_LEVEL'].includes(role || '') && <MasterDataPortal />}
               </div>
             )}
           </Suspense>

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Award, Filter, RefreshCw, DollarSign, PieChart, ShieldCheck, Download } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Award, RefreshCw, DollarSign, PieChart, ShieldCheck } from 'lucide-react';
 import { fetchRebateClaims } from '../../services/api';
 import type { RebateClaim } from '../../types';
 

@@ -1,20 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  X,
-  FileText,
-  Building2,
-  Layers,
-  CheckCircle2,
-  History,
-  Plus,
-  Edit2,
-  Save,
-  AlertCircle,
-  Eye,
-  RefreshCw,
-  ShieldCheck,
-  Tag
-} from 'lucide-react';
+import { X, Building2, Layers, CheckCircle2, History, Plus, Edit2, Save, AlertCircle, RefreshCw, ShieldCheck, Tag } from 'lucide-react';
 import {
   fetchAdminReportHeaders,
   createAdminReportHeader,

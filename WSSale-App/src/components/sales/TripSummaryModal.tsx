@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Truck, Package, Clock, FileText, CheckCircle2, ShieldAlert, Printer, Edit, AlertTriangle, Plus, ChevronDown } from 'lucide-react';
+import { X, Truck, Package, Clock, FileText, CheckCircle2, ShieldAlert, Printer, Edit, AlertTriangle, Plus, Send } from 'lucide-react';
 import type { SalesOrder } from '../../types';
 import { useErpStore } from '../../store/erp-store';
+import { useTripStore } from '../../store/trip-store';
 import { useAppStore } from '../../store/app-store';
-import { confirmSO, cancelSO, shipSO, moveToPicking, createUnlockRequest, fetchSalesOrder, updateSO, createQuotationFromSoTrip, confirmTrip, createTrip, fetchTrip, updateLoadPlan, acknowledgeLoadPlan, fetchLoadingPlan } from '../../services/api';
+import { cancelSO, confirmSO, moveToPicking, createUnlockRequest, createQuotationFromSoTrip, confirmTrip, submitTripPlan, createTrip, fetchTrip, updateLoadPlan, acknowledgeLoadPlan, fetchLoadingPlan } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { appConfirm } from '../ui/AppAlert';
@@ -42,6 +43,10 @@ export function TripSummaryModal({
   const [selectedSoIds, setSelectedSoIds] = useState<Set<string | number>>(new Set());
   const [tripPickupDueDate, setTripPickupDueDate] = useState<string>('');
   const [tripRevision, setTripRevision] = useState<number>(1);
+  const [tripLoaded, setTripLoaded] = useState(false);
+  const [serverPlate, setServerPlate] = useState('');
+  const [tripRemark, setTripRemark] = useState('');
+  const [tripPreSling, setTripPreSling] = useState(false);
   const [loadPlanStatus, setLoadPlanStatus] = useState<string>('DRAFT');
   const [loadPlanRevision, setLoadPlanRevision] = useState<number>(1);
   const [warehouseAckAt, setWarehouseAckAt] = useState<string | null>(null);
@@ -64,6 +69,8 @@ export function TripSummaryModal({
   };
 
   useEffect(() => {
+    let disposed = false;
+    setTripLoaded(false);
     if (trip?.orders) {
       const draftIds = trip.orders
         .filter(o => o.status === 'DRAFT' && o.id && String(o.id) !== 'undefined')
@@ -80,25 +87,31 @@ export function TripSummaryModal({
           idempotencyKeyRef.current = `trip-confirm-${tripId}-${Date.now()}`;
         }
         fetchTrip(tripId).then(res => {
-          const docRev = res.trip?.documentRevision ?? res.trip?.DocumentRevision ?? (res as any).documentRevision;
-          if (docRev != null) {
-            setTripRevision(Number(docRev));
-          }
-          const serverDue = res.trip?.pickupDueDate ?? res.trip?.PickupDueDate ?? (res as any).pickupDueDate;
-          if (serverDue) {
-            setTripPickupDueDate(String(serverDue).split('T')[0]);
-          }
-        }).catch(err => {
-          console.warn('fetchTrip failed', err);
-        });
+          if (disposed) return;
+          setTripRemark(res.tripRemark ?? '');
+          setTripPreSling(!!res.preSlingRequired);
+          setServerPlate(res.transRegistration || '');
+          setTripRevision(Number(res.documentRevision));
+          if (res.pickupDueDate) setTripPickupDueDate(res.pickupDueDate.split('T')[0]);
+          const store = useTripStore.getState();
+          if (Number(store.activeTrip?.tripId) === Number(tripId)) store.updateTrip({
+            truckPlate: res.transRegistration || undefined, remark: res.tripRemark || '',
+            pSling: !!res.preSlingRequired,
+            ...(res.pickupDueDate ? {deliveryDate:res.pickupDueDate.split('T')[0]} : {})
+          });
+          setTripLoaded(true);
+        }).catch(err => console.warn('fetchTrip failed; editing disabled', err));
 
         loadTripPlan(Number(tripId));
       } else {
+        setServerPlate(trip.truck || '');
+        setTripLoaded(true);
         if (!idempotencyKeyRef.current.startsWith('trip-confirm-new-')) {
           idempotencyKeyRef.current = `trip-confirm-new-${Date.now()}`;
         }
       }
     }
+    return () => { disposed = true; };
   }, [trip]);
 
   const handleWarehouseAck = async () => {
@@ -192,6 +205,7 @@ export function TripSummaryModal({
   };
 
   const handleConfirmTripOrders = async () => {
+    if (!tripLoaded) return;
     const draftOrders = trip.orders.filter(o => o.status === 'DRAFT');
     const selectedOrders = draftOrders.filter(o => selectedSoIds.has(o.id!));
     if (selectedOrders.length === 0) {
@@ -214,29 +228,33 @@ export function TripSummaryModal({
       return;
     }
 
-    // Check truck plate
-    const isNoPlate = !trip.truck || trip.truck === 'ไม่ระบุทะเบียนรถ' || trip.truck === 'ยังไม่ระบุรถ';
-    if (isNoPlate) {
-      alert('การยืนยันเที่ยวรถจำเป็นต้องระบุทะเบียนรถ กรุณากด "แก้ไขข้อมูล" เพื่อใส่ทะเบียนรถก่อนยืนยัน');
-      return;
-    }
+    // F-06 UI: Control ticket trips confirm as a trip unit, no truck plate or pickup due date required
+    const isControlTicketTrip = serverPlate === 'ตั๋วคุม' || selectedOrders.every(o => o.truckPlate === 'ตั๋วคุม' || (o as any).noTruckRequired);
 
-    // P1 Finding 4: วันนัดรับรถห้ามเดาและต้องระบุชัดเจน (แยกจากวันรับของแต่ละ SO)
-    if (!tripPickupDueDate) {
-      alert('การยืนยันเที่ยวรถจำเป็นต้องระบุวันนัดรับสินค้า (Pickup Due Date) ให้ชัดเจน');
-      return;
+    if (!isControlTicketTrip) {
+      const isNoPlate = !serverPlate || serverPlate === 'ไม่ระบุทะเบียนรถ' || serverPlate === 'ยังไม่ระบุรถ';
+      if (isNoPlate) {
+        alert('การยืนยันเที่ยวรถจำเป็นต้องระบุทะเบียนรถ กรุณากด "แก้ไขข้อมูล" เพื่อใส่ทะเบียนรถก่อนยืนยัน');
+        return;
+      }
+
+      // P1 Finding 4: วันนัดรับรถห้ามเดาและต้องระบุชัดเจน (แยกจากวันรับของแต่ละ SO)
+      if (!tripPickupDueDate) {
+        alert('การยืนยันเที่ยวรถจำเป็นต้องระบุวันนัดรับสินค้า (Pickup Due Date) ให้ชัดเจน');
+        return;
+      }
     }
 
     let effectiveTripId = (trip as any)?.tripId || (trip.orders[0] as any)?.tripId;
     if (!effectiveTripId || Number(effectiveTripId) <= 0) {
       try {
         const newTrip = await createTrip({
-          transRegistration: trip.truck,
+          transRegistration: serverPlate,
           deliveryDate: tripPickupDueDate,
           orderIds: trip.orders.map(o => o.id!).filter(Boolean)
         });
         effectiveTripId = newTrip.tripId;
-        idempotencyKeyRef.current = `trip-confirm-${effectiveTripId}-${Date.now()}`;
+        idempotencyKeyRef.current = `trip-confirm-${effectiveTripId}-${Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')}`;
       } catch (err: any) {
         alert('ไม่สามารถสร้างเที่ยวรถอัตโนมัติ: ' + err.message);
         return;
@@ -264,8 +282,8 @@ export function TripSummaryModal({
     try {
       // SO-07: Send transactional load plan command (no updateSO loop!)
       if (sequencedLines && sequencedLines.length > 0) {
-        await updateLoadPlan(effectiveTripId, {
-          expectedPlanRevision: tripRevision || 1,
+        const savedPlan = await updateLoadPlan(effectiveTripId, {
+          expectedPlanRevision: loadPlanRevision,
           lines: sequencedLines.map(sl => ({
             memberKind: sl.memberKind,
             memberId: sl.memberId,
@@ -276,12 +294,21 @@ export function TripSummaryModal({
           })),
           reason: 'จัดลำดับขึ้นของโดยพนักงานขาย',
         });
+        setLoadPlanRevision(savedPlan.loadPlanRevision);
+        setLoadPlanStatus(savedPlan.loadPlanStatus);
       }
+
+      const isControlTicketTrip = serverPlate === 'ตั๋วคุม' || selectedOrders.every(o => o.truckPlate === 'ตั๋วคุม' || o.soPrefix === 'AI');
+      const isNoTruckTrip = !isControlTicketTrip && selectedOrders.every(o => (o as any).noTruckRequired);
+      const targetPlate = isControlTicketTrip ? 'ตั๋วคุม' : (isNoTruckTrip ? null : serverPlate);
+      const targetPickup = (isControlTicketTrip || isNoTruckTrip)
+        ? (tripPickupDueDate || new Date().toISOString().slice(0, 10))
+        : tripPickupDueDate;
 
       const res = await confirmTrip(effectiveTripId, {
         confirmedOrderIds: selectedOrders.map(o => o.id!),
-        transRegistration: trip.truck,
-        pickupDueDate: tripPickupDueDate,
+        transRegistration: targetPlate,
+        pickupDueDate: targetPickup,
         expectedRevision: tripRevision || 1,
         idempotencyKey: idempotencyKeyRef.current,
       });
@@ -291,6 +318,7 @@ export function TripSummaryModal({
       } else {
         alert(res.message || 'ยืนยันเที่ยวรถสำเร็จ');
       }
+      useTripStore.getState().clearTrip();
       if (onUpdate) onUpdate();
       onClose();
     } catch (e: any) {
@@ -316,48 +344,24 @@ export function TripSummaryModal({
     });
   };
 
-  const handleEditTripMetadata = async (data: TripSetupData) => {
-    setBusy(true);
-    try {
-      for (const o of trip.orders) {
-        if (!o.id || String(o.id) === 'undefined') continue;
-        const fullSo = await fetchSalesOrder(o.id);
-        
-        // If loadInOrder is false, clear all loadSequences
-        const updatedLines = fullSo.lines || [];
-        if (data.loadInOrder === false) {
-          updatedLines.forEach((l: any) => { l.loadSequence = null; });
-        } else if (data.loadInOrder === true) {
-          const hasAnySequence = updatedLines.some((l: any) => l.loadSequence && Number(l.loadSequence) > 0);
-          if (!hasAnySequence) {
-            updatedLines.forEach((l: any, i: number) => { l.loadSequence = i + 1; });
-          }
-        }
-        
-        // Preserve customer and credit per SO — do not overwrite with data at Trip level (UI Field Ownership)
-        await updateSO(o.id, {
-          ...fullSo,
-          lines: updatedLines,
-          custId: fullSo.custId || o.custId,
-          custName: fullSo.custName || o.custName,
-          truckPlate: data.truckPlate,
-          deliveryDate: data.deliveryDate,
-          pSling: data.pSling !== undefined ? data.pSling : fullSo.pSling,
-          remark: data.remark !== undefined ? data.remark : fullSo.remark,
-        });
-      }
-      setIsEditTripOpen(false);
-      if (onUpdate) onUpdate();
-    } catch (e: any) {
-      alert('แก้ไขข้อมูลล้มเหลว: ' + e.message);
-    } finally {
-      setBusy(false);
-    }
+  const handleEditTripMetadata = (data: TripSetupData) => {
+    if (data.expectedRevision) setTripRevision(data.expectedRevision);
+    setTripPickupDueDate(data.deliveryDate);
+    setServerPlate(data.truckPlate || '');
+    setTripRemark(data.remark || '');
+    setTripPreSling(!!data.pSling);
+    const store = useTripStore.getState();
+    if (Number(store.activeTrip?.tripId) === Number(data.tripId)) store.updateTrip(data);
+    setIsEditTripOpen(false);
+    if (onUpdate) onUpdate();
   };
 
   const allDraft = trip.orders.every(o => o.status === 'DRAFT');
   const allConfirmed = trip.orders.every(o => o.status === 'CONFIRMED');
   const allPicking = trip.orders.length > 0 && trip.orders.every(o => ['PICKING', 'LOADED'].includes(o.status));
+  const canSubmitPlan = (!loadPlanStatus || loadPlanStatus === 'DRAFT') &&
+    trip.orders.length > 0 &&
+    trip.orders.every(o => ['CONFIRMED', 'PICKING', 'LOADED'].includes(o.status));
   const hasAnyUnlockRequest = trip.orders.some(o => unlockRequests.some(r => r.SoId === o.id));
   
   // Checking if there are any non-draft bills that are NOT shipped/imported
@@ -372,7 +376,7 @@ export function TripSummaryModal({
             <div>
               <h2 className="text-base sm:text-xl font-bold flex items-center gap-2">
                 <Truck size={20} className="sm:w-6 sm:h-6" />
-                เที่ยวรถ {trip.tripCode ? `[${trip.tripCode}]` : ''} · {trip.truck || 'ยังไม่ระบุรถ'}
+                เที่ยวรถ {trip.tripCode ? `[${trip.tripCode}]` : ''} · {serverPlate || 'ยังไม่ระบุรถ'}
               </h2>
               <p className="text-xs sm:text-sm text-blue-200 mt-0.5 sm:mt-1">
                 ลูกค้า {Array.from(new Set(trip.orders.map(o => String(o.custId || '')).filter(Boolean))).length} ราย · รวมบิล {trip.orders.length} ใบ (สินค้ารวม {trip.orders.reduce((s, o) => s + (o.lines || []).reduce((ls, l) => ls + (l.isGiveaway ? 0 : l.qtyTon), 0), 0).toLocaleString('th-TH', { maximumFractionDigits: 2 })} ตัน)
@@ -393,7 +397,7 @@ export function TripSummaryModal({
                       <Truck size={20} />
                     </div>
                     <div>
-                      <div className="font-bold text-lg text-gray-900">{trip.truck || 'ยังไม่ระบุรถ'}</div>
+                      <div className="font-bold text-lg text-gray-900">{serverPlate || 'ยังไม่ระบุรถ'}</div>
                       <div className="text-xs text-gray-500 font-medium mt-0.5">
                         ลูกค้า {Array.from(new Set(trip.orders.map(o => String(o.custId || '')).filter(Boolean))).length} ราย · บิล {trip.orders.length} ใบ
                       </div>
@@ -401,7 +405,7 @@ export function TripSummaryModal({
                   </div>
                   {/* Edit Trip Metadata */}
                   <button
-                    disabled={busy || isQuoteLocked}
+                    disabled={busy || isQuoteLocked || !tripLoaded}
                     onClick={() => setIsEditTripOpen(true)}
                     title={isQuoteLocked ? 'ต้องยืนยันหรือยกเลิกใบเสนอราคาก่อน' : undefined}
                     className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50 disabled:hover:bg-white"
@@ -629,6 +633,31 @@ export function TripSummaryModal({
                             ? '✓ โหลดเสร็จสิ้น'
                             : 'แบบร่าง (DRAFT)'}
                   </span>
+                  {canSubmitPlan && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={async () => {
+                        let effectiveTripId = (trip as any)?.tripId || (trip.orders[0] as any)?.tripId;
+                        if (!effectiveTripId) return;
+                        setBusy(true);
+                        try {
+                          const res = await submitTripPlan(effectiveTripId);
+                          setLoadPlanStatus(res.loadPlanStatus);
+                          setLoadPlanRevision(res.loadPlanRevision);
+                          alert(res.message || 'ส่งแผนการโหลดให้ฝ่ายคลังสำเร็จ');
+                          if (onUpdate) onUpdate();
+                        } catch (err: any) {
+                          alert('ส่งแผนการโหลดล้มเหลว: ' + err.message);
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[#0C447C] text-white hover:bg-[#082E54] flex items-center gap-1 shadow-sm"
+                    >
+                      <Send size={13} /> ส่งแผนโหลดให้คลัง
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -752,8 +781,12 @@ export function TripSummaryModal({
                   
                   const totalTon = (order.lines || []).filter(l => !l.isGiveaway).reduce((sum, l) => sum + (l.qtyTon || 0), 0);
                   const totalGiveaways = (order.lines || []).filter(l => l.isGiveaway).reduce((sum, l) => sum + (l.qtyTon || 0), 0);
-                  const totalAmt = (order.lines || []).reduce((sum, l) => sum + ((l.qtyTon * l.netPricePerTon) || 0), 0);
+                  const totalGrossAmt = (order.lines || []).reduce((sum, l) => sum + ((l.qtyTon * (l.pricePerTon != null ? l.pricePerTon : l.netPricePerTon)) || 0), 0);
+                  const totalNetAmt = (order.lines || []).reduce((sum, l) => sum + ((l.qtyTon * l.netPricePerTon) || 0), 0);
                   const hasTicket = (order.lines || []).some(l => l.isControlTicketDrawn);
+                  
+                  const rebateDiscount = Number((order as any).rebateDiscountAmt || 0) || Number((order as any).claimDiscountAmt || 0);
+                  const totalNetPayable = Math.max(0, totalGrossAmt - rebateDiscount);
                   
                   return (
                     <div key={order.id} className={`border rounded-xl shadow-sm flex flex-col ${order.truckPlate === 'ตั๋วคุม' ? 'border-purple-200 bg-purple-50' : 'border-gray-200 bg-white'}`}>
@@ -825,7 +858,19 @@ export function TripSummaryModal({
                           </div>
                           <div className="flex items-baseline gap-1">
                             <span className="text-[10px] text-gray-500">มูลค่า:</span>
-                            <span className="text-xs font-bold text-blue-700">฿{totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+                            <span className="text-xs font-bold text-blue-700">฿{totalGrossAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+                            {rebateDiscount > 0 ? (
+                              <>
+                                <span className="text-[10px] text-emerald-700 font-semibold ml-1">· หักรีเบท ฿{rebateDiscount.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+                                <span className="text-[10px] text-gray-700 font-bold ml-1">· สุทธิ ฿{totalNetPayable.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+                              </>
+                            ) : (
+                              totalNetAmt > 0 && totalNetAmt !== totalGrossAmt && (
+                                <span className="text-[10px] text-gray-500 font-normal ml-0.5">
+                                  (สุทธิ ฿{totalNetAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })})
+                                </span>
+                              )
+                            )}
                           </div>
                           {hasTicket && (
                             <div className="flex items-baseline gap-1 ml-auto">
@@ -913,11 +958,13 @@ export function TripSummaryModal({
         isOpen={isEditTripOpen}
         onClose={() => setIsEditTripOpen(false)}
         initialData={{
-          truckPlate: trip.truck,
-          deliveryDate: trip.orders[0]?.deliveryDate?.split('T')[0] || '',
-          pSling: trip.orders.some(o => !!o.pSling),
+          tripId: trip.tripId || trip.orders[0]?.tripId,
+          expectedRevision: tripRevision,
+          truckPlate: serverPlate,
+          deliveryDate: tripPickupDueDate,
+          pSling: tripPreSling,
           loadInOrder: trip.orders.some(o => (o.lines || []).some((l: any) => l.loadSequence && Number(l.loadSequence) > 0)),
-          remark: trip.orders[0]?.remark || ''
+          remark: tripRemark
         }}
         onConfirm={handleEditTripMetadata}
       />

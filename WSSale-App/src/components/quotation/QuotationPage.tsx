@@ -1,15 +1,12 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { FileText, RefreshCw, Plus, X, ArrowRightCircle, AlertTriangle, Package, Send, Clock, User, ChevronRight, Gift } from 'lucide-react';
-import {
-  fetchQuotations, createQuotation, convertQuotation, updateQuotationStatus, extendQuotationValidity,
-  fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, listUsers
-} from '../../services/api';
+import { FileText, RefreshCw, Plus, X, ArrowRightCircle, AlertTriangle, Package, Send, Clock, User } from 'lucide-react';
+import { fetchQuotations, createQuotation, updateQuotationStatus, extendQuotationValidity, fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, listUsers } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import { useAppStore } from '../../store/app-store';
 import type { Quotation, QuoteStatus, EMCust, EMGood, CurrentPrice, AdminUser } from '../../types';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
-import { Search, ArrowUpDown, Tag, Check } from 'lucide-react';
+import { Search, Check } from 'lucide-react';
 import { CreateSODialog } from '../sales/CreateSODialog';
 
 const STATUS_STYLE: Record<QuoteStatus, string> = {
@@ -49,7 +46,7 @@ export function QuotationPage() {
   const [workView, setWorkView] = useState<WorkView>('ACTIVE');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 30;
-  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'Id', direction: 'desc' });
+  const [sortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'Id', direction: 'desc' });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,8 +68,6 @@ export function QuotationPage() {
     Number(q.TotalAmount ?? (q.lines || []).reduce((s, l) => s + l.QtyTon * l.PricePerTon, 0));
   const quoteTon = (q: Quotation) =>
     Number(q.TotalTon ?? (q.lines || []).reduce((s, l) => s + l.QtyTon, 0));
-  const quoteLineCount = (q: Quotation) =>
-    Number(q.LineCount ?? (q.lines || []).length);
   const isNativeOnly = (q: Quotation) => !!q.IsNativeOnly || q.Id < 0;
   const activeCount = quotes.filter(q => !HISTORY_STATUSES.has(q.Status)).length;
   const historyCount = quotes.filter(q => HISTORY_STATUSES.has(q.Status)).length;
@@ -448,9 +443,22 @@ function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; onDone: (
   const [salesUserId, setSalesUserId]   = useState<string | number>('');
   const [salesUsers, setSalesUsers]     = useState<AdminUser[]>([]);
   const userRole = useAuthStore(s => s.user?.role);
+  const [custSearchLoading, setCustSearchLoading] = useState(false);
+
+  // U-10: Debounced server search for customer picker
+  useEffect(() => {
+    if (!custSearch || custSearch.length < 2) { setCusts([]); return; }
+    const timer = setTimeout(() => {
+      setCustSearchLoading(true);
+      fetchCustomers({ q: custSearch, limit: 50 })
+        .then(setCusts)
+        .catch(() => {})
+        .finally(() => setCustSearchLoading(false));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [custSearch]);
 
   useEffect(() => { 
-    fetchCustomers().then(setCusts).catch(()=>{}); 
     Promise.all([fetchGoods(), fetchGiveawayGoods()])
       .then(([g, gw]) => setGoods([...g, ...gw.map(x => ({ ...x, GoodGroupName: 'ของแถม' }))]))
       .catch(()=>{});
@@ -663,19 +671,22 @@ function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; onDone: (
                   </div>
                   {isCustOpen && (
                     <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
-                      {custs.filter(c => c.CustName.toLowerCase().includes(custSearch.toLowerCase()) || c.CustID.toLowerCase().includes(custSearch.toLowerCase())).map(c => (
+                      {custSearchLoading ? (
+                        <div className="px-3 py-4 text-sm text-center text-gray-400 flex items-center justify-center gap-2"><RefreshCw size={14} className="animate-spin" /> กำลังค้นหา...</div>
+                      ) : custSearch.length < 2 ? (
+                        <div className="px-3 py-4 text-sm text-center text-gray-400">พิมพ์อย่างน้อย 2 ตัวอักษรเพื่อค้นหา</div>
+                      ) : custs.length === 0 ? (
+                        <div className="px-3 py-4 text-sm text-center text-gray-400">ไม่พบลูกค้า</div>
+                      ) : custs.map(c => (
                         <div
                           key={c.CustID}
                           className="px-3 py-2 text-sm hover:bg-blue-50 cursor-pointer border-b border-gray-50 last:border-0"
                           onClick={() => { setCustId(c.CustID); setCustSearch(c.CustName); setIsCustOpen(false); }}
                         >
                           <div className="font-bold text-gray-800">{c.CustName}</div>
-                          <div className="text-[10px] text-gray-500">{c.CustID}</div>
+                          <div className="text-[10px] text-gray-500"><span className="font-mono font-semibold text-[#0C447C]">{c.CustCode}</span> · {c.CustID}</div>
                         </div>
                       ))}
-                      {custs.filter(c => c.CustName.toLowerCase().includes(custSearch.toLowerCase()) || c.CustID.toLowerCase().includes(custSearch.toLowerCase())).length === 0 && (
-                        <div className="px-3 py-4 text-sm text-center text-gray-400">ไม่พบลูกค้า</div>
-                      )}
                     </div>
                   )}
                 </div>

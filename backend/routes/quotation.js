@@ -8,8 +8,11 @@
  */
 const router = require('express').Router();
 const { sql, wfQuery, wfTransaction, pools, getTarget } = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
+const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
 const { broadcast } = require('../services/socket');
+const { getNextSequenceValue } = require('../services/sequence-service');
+const { advanceRunCounter, RUN_CODE_BY_DOC_KIND } = require('../services/winspeed-counter');
 
 router.use(requireAuth);
 
@@ -175,13 +178,58 @@ async function nextWinspeedSoid(tx) {
   return Number(r.recordset?.[0]?.NextId || 1001);
 }
 
+// R11 U-3: native QU/QC writes go through wf procedures (migration 142) when present,
+// because the app login has no INSERT on dbo.SOHD. Without the migration the old
+// direct SQL still runs (and fails with a clear message where the grant is missing).
+let quotationProcsAvailable = null;
+async function hasQuotationProcs(tx) {
+  if (quotationProcsAvailable !== null) return quotationProcsAvailable;
+  const r = await tx.request().query(`SELECT CASE WHEN OBJECT_ID('wf.sp_QuotationInsertNativeHeader', 'P') IS NOT NULL AND OBJECT_ID('wf.sp_QuotationConfirmNative', 'P') IS NOT NULL THEN 1 ELSE 0 END AS HasProcs`);
+  quotationProcsAvailable = Number(r.recordset?.[0]?.HasProcs || 0) === 1;
+  return quotationProcsAvailable;
+}
+
+function execProc(tx, name, inputs) {
+  const r = tx.request();
+  for (const [k, type, value] of inputs) r.input(k, type, value);
+  return r.execute(name);
+}
+
+function nativeWriteError(err) {
+  if (err?.message && /permission was denied/i.test(err.message)) {
+    return new Error('ไม่สามารถบันทึกใบเสนอราคาลง WINSpeed ได้: ผู้ใช้ฐานข้อมูลไม่มีสิทธิ์เขียน dbo.SOHD โดยตรง — ต้อง apply migration 142_quotation_stored_procedure.sql');
+  }
+  return err;
+}
+
+// (sqlText, inputs) runner bound to the open transaction, for services/winspeed-counter.js
+function txQueryFn(tx) {
+  return (text, inputs = {}) => {
+    const r = tx.request();
+    for (const [name, p] of Object.entries(inputs)) r.input(name, p.type, p.value);
+    return r.query(text);
+  };
+}
+
+/**
+ * Next QU / QC number, then WINSpeed's own counter for it (R12 live finding QT-F1).
+ * WINSpeed numbers quotations from dbo.EMRunBrch (102 QUyymm-00000, 113 QCyy-00000); the app used
+ * MAX+1 only and left that counter behind, so WINSpeed's next quotation would reuse the app's number.
+ * The counter now counts as a used number and is advanced in the same transaction.
+ */
 async function nextNativeDocNo(tx, kind) {
   const prefix = nativeDocPrefix(kind);
+  const runCode = RUN_CODE_BY_DOC_KIND[kind];
   const r = await tx.request()
     .input('prefix', sql.NVarChar(20), prefix)
+    .input('rc', sql.VarChar(30), runCode)
     .query(`
       SELECT ISNULL(MAX(SeqNo), 0) + 1 AS NextSeq
       FROM (
+        SELECT CASE WHEN ISNUMERIC(RIGHT(RTRIM(LastNo), 5)) = 1 THEN CAST(RIGHT(RTRIM(LastNo), 5) AS INT) ELSE 0 END AS SeqNo
+        FROM dbo.EMRunBrch WITH (UPDLOCK, HOLDLOCK)
+        WHERE RunCode = @rc AND BrchID = 1 AND LastNo LIKE @prefix + '%'
+        UNION ALL
         SELECT CASE WHEN ISNUMERIC(RIGHT(DocuNo, 5)) = 1 THEN CAST(RIGHT(DocuNo, 5) AS INT) ELSE 0 END AS SeqNo
         FROM dbo.SOHD WITH (UPDLOCK, HOLDLOCK)
         WHERE DocuNo LIKE @prefix + '%'
@@ -199,7 +247,9 @@ async function nextNativeDocNo(tx, kind) {
         WHERE WinspeedConfirmNo LIKE @prefix + '%'
       ) s
     `);
-  return `${prefix}${String(r.recordset?.[0]?.NextSeq || 1).padStart(5, '0')}`;
+  const docNo = `${prefix}${String(r.recordset?.[0]?.NextSeq || 1).padStart(5, '0')}`;
+  await advanceRunCounter(runCode, docNo, { query: txQueryFn(tx), strict: true });
+  return docNo;
 }
 
 async function loadQuotationNativeContext(tx, quoteId, hasGiveaway) {
@@ -369,7 +419,42 @@ async function syncNativeQuotation(tx, quoteId, sourceRefs = [], opts = {}) {
     ['StatusRemark', `''`],
   ]);
 
-  await tx.request()
+  const useProcs = await hasQuotationProcs(tx);
+  if (useProcs) {
+    await execProc(tx, 'wf.sp_QuotationInsertNativeHeader', [
+      ['SOID', sql.Int, Number(quoteSoid)],
+      ['SaleAreaID', sql.Int, saleAreaId],
+      ['DeptID', sql.Int, 1000],
+      ['DocuNo', sql.NVarChar(30), quoteNo],
+      ['CustID', sql.Int, custId],
+      ['CustName', sql.NVarChar(200), cleanText(q.CustName || cust.CustName, 200)],
+      ['DocuDate', sql.DateTime, docDate],
+      ['ValidDays', sql.SmallInt, validDays],
+      ['ExpireDate', sql.DateTime, expireDate],
+      ['ShipDate', sql.DateTime, docDate],
+      ['CreditDays', sql.SmallInt, Number.isFinite(creditDays) ? creditDays : 30],
+      ['NetAmnt', sql.Decimal(18, 2), totalAmount],
+      ['TranspID', sql.Int, transpId],
+      ['Desc1', sql.NVarChar(500), cleanText(truckRemark, 500)],
+      ['Desc2', sql.NVarChar(500), cleanText(billRemark, 500)],
+      ['TransRegistration', sql.NVarChar(30), cleanText(truckPlate, 30)],
+      ['EmpID', sql.Int, empId || 1000],
+      ['BrchID', sql.Int, Number(defaults.BrchID)],
+      ['VATRate', sql.Float, 0],
+      ['VATType', sql.VarChar(1), vatType],
+      ['VATGroupID', sql.Int, vatGroupId],
+      ['BillAddr1', sql.NVarChar(255), cleanText(cust.BillAddr1, 255)],
+      ['BillAddr2', sql.NVarChar(255), cleanText(cust.BillAddr2, 255)],
+      ['District', sql.NVarChar(100), cleanText(cust.District, 100)],
+      ['Amphur', sql.NVarChar(100), cleanText(cust.Amphur, 100)],
+      ['Province', sql.NVarChar(100), cleanText(cust.Province, 100)],
+      ['PostCode', sql.VarChar(20), cleanText(cust.PostCode, 20)],
+      ['Tel', sql.NVarChar(100), cleanText(cust.Tel, 100)],
+      ['Fax', sql.NVarChar(100), cleanText(cust.Fax, 100)],
+      ['Remark', sql.NVarChar(255), cleanText(q.Remark, 255)],
+      ['QuotStatus', sql.NVarChar(100), 'รอผู้ใหญ่ตัดสินใจ'],
+    ]);
+  } else await tx.request()
     .input('SOID', sql.VarChar(50), String(quoteSoid))
     .input('SaleAreaID', sql.Int, saleAreaId)
     .input('DeptID', sql.Int, 1000)
@@ -408,7 +493,7 @@ async function syncNativeQuotation(tx, quoteId, sourceRefs = [], opts = {}) {
       VALUES (
         ${headerInsert.values}
       )
-    `);
+    `).catch(insertErr => { throw nativeWriteError(insertErr); });
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -421,6 +506,23 @@ async function syncNativeQuotation(tx, quoteId, sourceRefs = [], opts = {}) {
     const goodUnitId = await keepNativeIdIfExists(tx, 'dbo.EMGoodUnit', 'GoodUnitID', good.MainGoodUnitID) || 1002;
     const qty = Number(line.QtyTon || 0);
     const price = Number(line.PricePerTon || 0);
+    if (useProcs) {
+      await execProc(tx, 'wf.sp_QuotationInsertNativeLine', [
+        ['SOID', sql.Int, Number(quoteSoid)],
+        ['ListNo', sql.SmallInt, i + 1],
+        ['GoodID', sql.Int, good.GoodID],
+        ['GoodName', sql.NVarChar(255), cleanText(line.GoodName || good.GoodName1, 255)],
+        ['InveID', sql.Int, Number(defaults.InveID)],
+        ['LocaID', sql.Int, Number(defaults.LocaID)],
+        ['GoodUnitID', sql.Int, goodUnitId],
+        ['GoodQty2', sql.Decimal(18, 3), qty],
+        ['GoodPrice2', sql.Decimal(18, 2), price],
+        ['GoodAmnt', sql.Decimal(18, 2), qty * price],
+        ['ShipDate', sql.DateTime, docDate],
+        ['VatType', sql.VarChar(1), cleanText(good.VatType || vatType, 1) || vatType],
+      ]);
+      continue;
+    }
     await tx.request()
       .input('SOID', sql.VarChar(50), String(quoteSoid))
       .input('ListNo', sql.SmallInt, i + 1)
@@ -463,11 +565,20 @@ async function syncNativeQuotation(tx, quoteId, sourceRefs = [], opts = {}) {
     sourceRefs.length ? `Source SO: ${sourceRefs.join(', ')}` : null,
   ].filter(Boolean).map(text => cleanText(text, 255));
   for (let i = 0; i < remarks.length; i++) {
+    if (useProcs) {
+      await execProc(tx, 'wf.sp_QuotationInsertNativeRemark', [
+        ['SOID', sql.Int, Number(quoteSoid)],
+        ['ListNo', sql.SmallInt, i + 1],
+        ['Remark', sql.NVarChar(255), remarks[i]],
+      ]);
+      continue;
+    }
     await tx.request()
       .input('SOID', sql.VarChar(50), String(quoteSoid))
       .input('ListNo', sql.SmallInt, i + 1)
       .input('Remark', sql.NVarChar(255), remarks[i])
-      .query(`INSERT INTO dbo.SOHDRemark (SOID, ListNo, Remark) VALUES (@SOID, @ListNo, @Remark)`);
+      .query(`INSERT INTO dbo.SOHDRemark (SOID, ListNo, Remark) VALUES (@SOID, @ListNo, @Remark)`)
+      .catch(err => { throw nativeWriteError(err); });
   }
 
   await tx.request()
@@ -540,6 +651,18 @@ async function confirmNativeQuotation(tx, quoteId, approvedByUserId) {
       FROM wf.AppUser
       WHERE Id=@uid
     `)).recordset?.[0]?.EmpId || null;
+  if (await hasQuotationProcs(tx)) {
+    await execProc(tx, 'wf.sp_QuotationConfirmNative', [
+      ['QuoteSOID', sql.Int, quoteSoid],
+      ['ConfirmSOID', sql.Int, Number(confirmSoid)],
+      ['ConfirmNo', sql.NVarChar(30), confirmNo],
+      ['QuoteNo', sql.NVarChar(30), quoteNo],
+      ['AppvID', sql.Int, approvedEmp],
+    ]);
+    await markQuotationConfirmed(tx, quoteId, confirmSoid, confirmNo);
+    return { confirmSoid, confirmNo };
+  }
+
   const sohdColumns = await getTableColumnSet(tx, 'dbo.SOHD');
   const confirmHeaderInsert = buildInsertParts(sohdColumns, [
     ['SOID', '@confirmSoid'],
@@ -664,8 +787,13 @@ async function confirmNativeQuotation(tx, quoteId, approvedByUserId) {
       SELECT @confirmSoid, ListNo, Remark
       FROM dbo.SOHDRemark
       WHERE SOID=@quoteSoid;
-    `);
+    `).catch(err => { throw nativeWriteError(err); });
 
+  await markQuotationConfirmed(tx, quoteId, confirmSoid, confirmNo);
+  return { confirmSoid, confirmNo };
+}
+
+async function markQuotationConfirmed(tx, quoteId, confirmSoid, confirmNo) {
   await tx.request()
     .input('qid', sql.Int, Number(quoteId))
     .input('soid', sql.Int, confirmSoid)
@@ -679,8 +807,6 @@ async function confirmNativeQuotation(tx, quoteId, approvedByUserId) {
           UpdatedAt=GETUTCDATE()
       WHERE Id=@qid
     `);
-
-  return { confirmSoid, confirmNo };
 }
 
 async function updateNativeQuotationStatus(tx, quoteId, status) {
@@ -689,6 +815,14 @@ async function updateNativeQuotationStatus(tx, quoteId, status) {
     .input('id', sql.Int, Number(quoteId))
     .query(`SELECT WinspeedQuoteSOID, WinspeedConfirmSOID FROM wf.Quotation WHERE Id=@id`)).recordset?.[0];
   if (!q?.WinspeedQuoteSOID) return;
+  if (await hasQuotationProcs(tx)) {
+    await execProc(tx, 'wf.sp_QuotationCancelNative', [
+      ['QuoteSOID', sql.Int, Number(q.WinspeedQuoteSOID)],
+      ['ConfirmSOID', sql.Int, q.WinspeedConfirmSOID ? Number(q.WinspeedConfirmSOID) : null],
+      ['Remark', sql.NVarChar(255), 'Cancelled by WS-Sale-App'],
+    ]);
+    return;
+  }
   await tx.request()
     .input('quoteSoid', sql.VarChar(50), String(q.WinspeedQuoteSOID))
     .input('confirmSoid', sql.VarChar(50), q.WinspeedConfirmSOID ? String(q.WinspeedConfirmSOID) : null)
@@ -764,6 +898,14 @@ async function updateNativeQuotationValidity(tx, quoteId, validUntil) {
     .input('id', sql.Int, Number(quoteId))
     .query(`SELECT WinspeedQuoteSOID, WinspeedConfirmSOID FROM wf.Quotation WHERE Id=@id`)).recordset?.[0];
   if (!q?.WinspeedQuoteSOID) return;
+  if (await hasQuotationProcs(tx)) {
+    await execProc(tx, 'wf.sp_QuotationSetNativeValidity', [
+      ['QuoteSOID', sql.Int, Number(q.WinspeedQuoteSOID)],
+      ['ConfirmSOID', sql.Int, q.WinspeedConfirmSOID ? Number(q.WinspeedConfirmSOID) : null],
+      ['ValidUntil', sql.DateTime, validUntil],
+    ]);
+    return;
+  }
   await tx.request()
     .input('quoteSoid', sql.VarChar(50), String(q.WinspeedQuoteSOID))
     .input('confirmSoid', sql.VarChar(50), q.WinspeedConfirmSOID ? String(q.WinspeedConfirmSOID) : null)
@@ -889,8 +1031,17 @@ router.get('/', async (req, res) => {
   try {
     const { status } = req.query;
     const hasSource = await hasQuoteSourceTable();
-    const where = status ? 'WHERE q.Status = @st' : '';
-    const inputs = status ? { st: { type: sql.NVarChar(20), value: status } } : {};
+    // R12 O-4: own + team quotations only (ADMIN/C_LEVEL/ACCOUNTING and operational roles see all)
+    const scope = await getVisibleScope(req.user);
+    const conds = [];
+    const inputs = {};
+    if (status) { conds.push('q.Status = @st'); inputs.st = { type: sql.NVarChar(20), value: status }; }
+    if (!scope.all) {
+      const f = scopeFilter(scope, { userCol: 'q.SalesUserId', empCol: 'q.OwnerEmpId', prefix: 'qs' });
+      conds.push(f.sql);
+      Object.assign(inputs, f.inputs);
+    }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     const r = await wfQuery(`
       WITH Rows AS (
         SELECT
@@ -919,7 +1070,8 @@ router.get('/', async (req, res) => {
           CASE WHEN ISNULL(appAgg.LineCount, 0) > 0 THEN appAgg.LineCount ELSE ISNULL(nativeAgg.LineCount, 0) END AS LineCount,
           CASE WHEN ISNULL(appAgg.LineCount, 0) > 0 THEN ISNULL(appAgg.TotalTon, 0) ELSE ISNULL(nativeAgg.TotalTon, 0) END AS TotalTon,
           CASE WHEN ISNULL(appAgg.LineCount, 0) > 0 THEN ISNULL(appAgg.TotalAmount, 0) ELSE ISNULL(nativeAgg.TotalAmount, 0) END AS TotalAmount,
-          ${hasSource ? `(SELECT COUNT(1) FROM wf.QuotationSourceSO src WHERE src.QuoteId = q.Id)` : `CAST(0 AS INT)`} AS SourceSoCount
+          ${hasSource ? `(SELECT COUNT(1) FROM wf.QuotationSourceSO src WHERE src.QuoteId = q.Id)` : `CAST(0 AS INT)`} AS SourceSoCount,
+          CAST(u.EmpId AS VARCHAR(20)) AS OwnerEmpId
         FROM wf.Quotation q WITH (NOLOCK)
         LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = q.SalesUserId
         OUTER APPLY (
@@ -966,7 +1118,8 @@ router.get('/', async (req, res) => {
           ISNULL(agg.LineCount, 0) AS LineCount,
           ISNULL(agg.TotalTon, 0) AS TotalTon,
           ISNULL(agg.TotalAmount, 0) AS TotalAmount,
-          CAST(0 AS INT) AS SourceSoCount
+          CAST(0 AS INT) AS SourceSoCount,
+          CAST(qu.EmpID AS VARCHAR(20)) AS OwnerEmpId
         FROM dbo.SOHD qu WITH (NOLOCK)
         OUTER APPLY (
           SELECT TOP 1 qc2.SOID, qc2.DocuNo
@@ -1002,18 +1155,35 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/quotation/:id
+// R12 O-4: status / validity / convert act only on quotations inside the user's scope
+async function requireQuotationInScope(req, res, next) {
+  try {
+    const scope = await getVisibleScope(req.user);
+    if (scope.all) return next();
+    const q = (await wfQuery(`SELECT SalesUserId FROM wf.Quotation WHERE Id=@id`,
+      { id: { type: sql.Int, value: Number(req.params.id) } })).recordset?.[0];
+    if (!q || !inScope(scope, { userId: q.SalesUserId })) return res.status(404).json({ message: 'ไม่พบใบเสนอราคา' });
+    next();
+  } catch (e) { res.status(500).json({ message: e.message }); }
+}
+
 router.get('/:id', async (req, res) => {
   try {
     const hasSource = await hasQuoteSourceTable();
     const id = Number(req.params.id);
+    const scope = await getVisibleScope(req.user);
     if (Number.isInteger(id) && id < 0) {
       const native = await loadNativeQuotationBySoid(Math.abs(id));
       if (!native) return res.status(404).json({ message: 'quotation not found' });
+      if (!scope.all) {
+        const owner = (await wfQuery(`SELECT CAST(EmpID AS VARCHAR(20)) AS EmpID FROM dbo.SOHD WITH (NOLOCK) WHERE SOID=@sid`, { sid: { type: sql.Int, value: Math.abs(id) } })).recordset?.[0];
+        if (!inScope(scope, { empId: owner?.EmpID })) return res.status(404).json({ message: 'quotation not found' });
+      }
       return res.json(native);
     }
 
     const q = (await wfQuery(`SELECT * FROM wf.Quotation WHERE Id=@id`, { id: { type: sql.Int, value: id } })).recordset?.[0];
-    if (!q) return res.status(404).json({ message: 'ไม่พบใบเสนอราคา' });
+    if (!q || !inScope(scope, { userId: q.SalesUserId })) return res.status(404).json({ message: 'ไม่พบใบเสนอราคา' });
     let lines = (await wfQuery(`SELECT * FROM wf.QuotationLine WHERE QuoteId=@id ORDER BY LineNum`, { id: { type: sql.Int, value: q.Id } })).recordset || [];
     if (!lines.length && q.WinspeedQuoteSOID) {
       const native = await loadNativeQuotationBySoid(q.WinspeedQuoteSOID);
@@ -1066,7 +1236,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/quotation
-router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.post('/', requireCapability('quotation.create'), async (req, res) => {
   try {
     await assertNativeQuotationReady();
     const { custId, custName, validUntil, validDays, remark, lines, salesUserId: impersonatedId } = req.body;
@@ -1115,7 +1285,7 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
 });
 
 // POST /api/quotation/from-so-trip
-router.post('/from-so-trip', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.post('/from-so-trip', requireCapability('quotation.create'), async (req, res) => {
   try {
     const soIds = [...new Set(Array.isArray(req.body?.soIds)
       ? req.body.soIds.map(Number).filter(n => Number.isInteger(n) && n > 0)
@@ -1338,7 +1508,7 @@ router.post('/from-so-trip', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
 });
 
 // PATCH /api/quotation/:id/status
-router.patch('/:id/status', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.patch('/:id/status', requireCapability('quotation.manage'), requireQuotationInScope, async (req, res) => {
   try {
     const { status } = req.body;
     if (!['DRAFT', 'SENT', 'ACCEPTED', 'EXPIRED', 'CANCELLED'].includes(status))
@@ -1396,7 +1566,7 @@ router.patch('/:id/status', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
 });
 
 // PATCH /api/quotation/:id/valid-until
-router.patch('/:id/valid-until', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.patch('/:id/valid-until', requireCapability('quotation.manage'), requireQuotationInScope, async (req, res) => {
   try {
     const validUntil = normalizeValidUntil(req.body?.validUntil, req.body?.validDays);
     const ready = await getNativeQuotationReadiness();
@@ -1416,7 +1586,7 @@ router.patch('/:id/valid-until', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 
 });
 
 // POST /api/quotation/:id/convert - create a draft app SO from an accepted quotation.
-router.post('/:id/convert', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.post('/:id/convert', requireCapability('quotation.manage'), requireQuotationInScope, async (req, res) => {
   try {
     const { soPrefix } = req.body;
     const prefix = ['I', 'K', 'AI'].includes(soPrefix) ? soPrefix : 'I';
@@ -1429,8 +1599,8 @@ router.post('/:id/convert', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
     }
 
     const lines = (await wfQuery(`SELECT * FROM wf.QuotationLine WHERE QuoteId=@id ORDER BY LineNum`, { id: { type: sql.Int, value: q.Id } })).recordset || [];
-    const seqR = await wfQuery(`SELECT NEXT VALUE FOR wf.WfRefSeq AS Seq`);
-    const seq = String(seqR.recordset[0].Seq).padStart(6, '0');
+    const nextVal = await getNextSequenceValue(wfQuery, 'WfRefSeq');
+    const seq = String(nextVal).padStart(6, '0');
     const yy = (new Date().getFullYear() + 543 - 2500).toString().slice(-2);
     const ref = `WF${yy}${prefix}-${seq}`;
 

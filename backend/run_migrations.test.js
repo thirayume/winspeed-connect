@@ -102,3 +102,176 @@ test('temporary-table batch failure rolls back and cannot report migration succe
  await assert.rejects(runFile({transaction:()=>session},'fixture.sql',['CREATE TABLE #Known (Id int);']),/bad SQL/);
  assert.deepEqual(events,['begin','rollback']);
 });
+
+const { run } = require('./run_migrations');
+
+function createRunnerMockPool(options = {}) {
+  const targetRecord = {
+    dbName: 'dbwins_worldfert9_local_uat',
+    serverName: 'AMYOU-YOGA7\\V2008R2',
+    productVersion: '10.50.1600.1',
+    loginName: 'wf_uat_migrator',
+    originalLogin: 'wf_uat_migrator',
+    isSysadmin: 0,
+    isSecurityadmin: 0,
+    isServeradmin: 0,
+    isDbcreator: 0,
+    hasControlServer: 0,
+    hasProdAccess: 0,
+    prodAccess: 0,
+    otherUserDbCount: 0,
+    netTransport: 'Shared memory',
+  };
+
+  const executedQueries = [];
+  const executedBatches = [];
+  let transactionCreated = false;
+
+  const makeReq = () => {
+    const req = {
+      input: () => req,
+      query: async (sqlText) => {
+        executedQueries.push(sqlText);
+        if (/SELECT\s+DB_NAME\(\)/i.test(sqlText)) {
+          return { recordset: [targetRecord] };
+        }
+        if (/SELECT\s+OBJECT_ID\('wf\.SchemaMigration'/i.test(sqlText)) {
+          return { recordset: [{ LedgerId: null, CanInspect: 1 }] };
+        }
+        if (/FROM\s+wf\.SchemaMigration/i.test(sqlText)) {
+          return { recordset: options.ledgerRows || [] };
+        }
+        if (options.queryHandler) {
+          return options.queryHandler(sqlText);
+        }
+        return { recordset: [] };
+      },
+      batch: async (text) => {
+        executedBatches.push(text);
+        if (options.batchHandler) {
+          return options.batchHandler(text);
+        }
+        return { rowsAffected: [1] };
+      }
+    };
+    return req;
+  };
+
+  const pool = {
+    executedQueries,
+    executedBatches,
+    get transactionCreated() { return transactionCreated; },
+    request: makeReq,
+    transaction: () => {
+      transactionCreated = true;
+      return {
+        begin: async () => {},
+        commit: async () => {},
+        rollback: async () => {},
+        request: makeReq,
+      };
+    }
+  };
+  return pool;
+}
+
+test('runner propagates WfRefSeq bootstrap failure, preserves committed migration ledger, and does not report success', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-mig-test-'));
+  try {
+    fs.writeFileSync(path.join(directory, '000_logins.sql'), '-- login exclusion\n', 'utf8');
+    fs.writeFileSync(path.join(directory, '001_initial.sql'), 'SELECT 1;', 'utf8');
+    fs.writeFileSync(path.join(directory, '074_fix_winspeed_legacy_raiserror.sql'), '-- raiserror exclusion\n', 'utf8');
+    const pool = createRunnerMockPool();
+    const runnerOptions = {
+      migrationsDir: directory,
+      bootstrapSequenceHighWater: async (_, seqName) => {
+        if (seqName === 'WfRefSeq') {
+          throw new Error('Injected WfRefSeq bootstrap failure (e.g. table lock timeout)');
+        }
+      }
+    };
+
+    let thrownError = null;
+    try {
+      await run({ profile: 'local_uat', plan: false }, pool, null, runnerOptions);
+    } catch (err) {
+      thrownError = err;
+    }
+
+    assert.ok(thrownError, 'run() must throw when WfRefSeq bootstrap fails');
+    assert.equal(thrownError.code, 'SEQUENCE_BOOTSTRAP_FAILURE');
+    assert.equal(thrownError.sequence, 'WfRefSeq');
+    assert.equal(thrownError.activeProfile, 'local_uat');
+    assert.equal(thrownError.targetDatabase, 'dbwins_worldfert9_local_uat');
+    assert.equal(thrownError.incomplete, true);
+    // Preserves committed ledger entries: 001_initial.sql was committed before bootstrap failed
+    assert.deepEqual(thrownError.appliedList, ['001_initial.sql']);
+    assert.match(thrownError.message, /Post-migration sequence bootstrap failed for WfRefSeq/);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('runner propagates QuoteRefSeq bootstrap failure, preserves committed migration ledger, and does not report success', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-mig-test-'));
+  try {
+    fs.writeFileSync(path.join(directory, '000_logins.sql'), '-- login exclusion\n', 'utf8');
+    fs.writeFileSync(path.join(directory, '001_initial.sql'), 'SELECT 1;', 'utf8');
+    fs.writeFileSync(path.join(directory, '074_fix_winspeed_legacy_raiserror.sql'), '-- raiserror exclusion\n', 'utf8');
+    const pool = createRunnerMockPool();
+    const runnerOptions = {
+      migrationsDir: directory,
+      bootstrapSequenceHighWater: async (_, seqName) => {
+        if (seqName === 'QuoteRefSeq') {
+          throw new Error('Injected QuoteRefSeq bootstrap failure (e.g. conversion error)');
+        }
+      }
+    };
+
+    let thrownError = null;
+    try {
+      await run({ profile: 'local_uat', plan: false }, pool, null, runnerOptions);
+    } catch (err) {
+      thrownError = err;
+    }
+
+    assert.ok(thrownError, 'run() must throw when QuoteRefSeq bootstrap fails');
+    assert.equal(thrownError.code, 'SEQUENCE_BOOTSTRAP_FAILURE');
+    assert.equal(thrownError.sequence, 'QuoteRefSeq');
+    assert.equal(thrownError.activeProfile, 'local_uat');
+    assert.equal(thrownError.targetDatabase, 'dbwins_worldfert9_local_uat');
+    assert.equal(thrownError.incomplete, true);
+    assert.deepEqual(thrownError.appliedList, ['001_initial.sql']);
+    assert.match(thrownError.message, /Post-migration sequence bootstrap failed for QuoteRefSeq/);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('runner --plan is strictly read-only: no transactions, no ledger writes, no sequence bootstrap', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-mig-test-'));
+  try {
+    fs.writeFileSync(path.join(directory, '000_logins.sql'), '-- login exclusion\n', 'utf8');
+    fs.writeFileSync(path.join(directory, '001_initial.sql'), 'SELECT 1;', 'utf8');
+    fs.writeFileSync(path.join(directory, '074_fix_winspeed_legacy_raiserror.sql'), '-- raiserror exclusion\n', 'utf8');
+    const pool = createRunnerMockPool();
+    let bootstrapCalled = false;
+    const runnerOptions = {
+      migrationsDir: directory,
+      bootstrapSequenceHighWater: async () => {
+        bootstrapCalled = true;
+      }
+    };
+
+    const result = await run({ plan: true, profile: 'local_uat' }, pool, null, runnerOptions);
+    assert.ok(result);
+    assert.equal(result.targetProfile, 'local_uat');
+    assert.equal(result.counts.PENDING, 1);
+    assert.equal(pool.transactionCreated, false, 'plan mode must never create transactions');
+    assert.equal(pool.executedBatches.length, 0, 'plan mode must never execute batches');
+    assert.equal(bootstrapCalled, false, 'plan mode must never invoke bootstrap');
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+

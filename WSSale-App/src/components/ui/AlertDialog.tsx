@@ -1,6 +1,6 @@
-import React from 'react';
+import 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, Info, XCircle } from 'lucide-react';
+import { Info, XCircle } from 'lucide-react';
 import { Button } from './Base';
 
 interface AlertDialogProps {

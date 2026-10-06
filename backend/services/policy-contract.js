@@ -115,6 +115,28 @@ const POLICY_DEFINITIONS = Object.freeze(Object.assign(Object.create(null), {
     default: 50.0,
     description: 'น้ำหนักกระสอบมาตรฐาน (กก.)',
   },
+  COUPON_SETTLEMENT_WINDOW_DAYS: {
+    policyName: 'COUPON_SETTLEMENT_POLICY',
+    type: 'INT',
+    min: 0,
+    max: 60,
+    default: 3,
+    description: 'แสดงและให้ตัดตั๋วแบบแมนนวลได้เฉพาะใบตัดตั๋วที่ลงวันที่ไม่เกิน N วันก่อนวันสร้างรายการจอง (วัน)',
+  },
+  COUPON_GOLIVE_CUTOFF_DATE: {
+    policyName: 'COUPON_SETTLEMENT_POLICY',
+    type: 'DATE',
+    default: '2000-01-01',
+    description: 'วันเริ่มใช้งานระบบ (YYYY-MM-DD) — ใบตัดตั๋วที่ลงวันที่ก่อนวันนี้จะไม่ถูกแสดงหรือจับคู่',
+  },
+  GIVEAWAY_BORROW_MAX_PCT: {
+    policyName: 'GIVEAWAY_BORROW_POLICY',
+    type: 'INT',
+    min: 0,
+    max: 100,
+    default: 100,
+    description: 'ยืมของแถมได้สูงสุดกี่ % ของโควต้าคงเหลือของผู้ให้ยืม (%)',
+  },
 }));
 
 /**
@@ -221,6 +243,15 @@ function validateSetting(key, val) {
         nums.push(num);
       }
       return { valid: true, formattedValue: nums.join(','), policyName: def.policyName };
+    }
+
+    case 'DATE': {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(strVal);
+      const d = m ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) : null;
+      if (!d || d.toISOString().slice(0, 10) !== strVal) {
+        return { valid: false, error: `${key} ต้องเป็นวันที่รูปแบบ YYYY-MM-DD` };
+      }
+      return { valid: true, formattedValue: strVal, policyName: def.policyName };
     }
 
     default:
@@ -346,7 +377,16 @@ async function logChangeEvent(txOrReq, {
   userId,
   ipAddress,
 }) {
-  const sqlStr = `
+  // R12 item 4: record the Access As actor next to the effective user (column from migration 144)
+  const { currentActorId, hasColumn } = require('./request-context');
+  const withActor = await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId');
+  const sqlStr = withActor ? `
+    INSERT INTO wf.ChangeEvent (
+      EntityType, EntityId, Action, BeforeJson, AfterJson, ReasonCode, ReasonText, UserId, IpAddress, ActorUserId
+    ) VALUES (
+      @entityType, @entityId, @action, @beforeJson, @afterJson, @reasonCode, @reasonText, @userId, @ipAddress, @actorUserId
+    );
+  ` : `
     INSERT INTO wf.ChangeEvent (
       EntityType, EntityId, Action, BeforeJson, AfterJson, ReasonCode, ReasonText, UserId, IpAddress
     ) VALUES (
@@ -355,6 +395,7 @@ async function logChangeEvent(txOrReq, {
   `;
 
   const params = {
+    ...(withActor ? { actorUserId: { type: sql.VarChar(50), value: String(currentActorId() ?? userId ?? 'SYSTEM').slice(0, 50) } } : {}),
     entityType: { type: sql.VarChar(50), value: String(entityType || '').slice(0, 50) },
     entityId:   { type: sql.VarChar(100), value: String(entityId || '').slice(0, 100) },
     action:     { type: sql.VarChar(30), value: String(action || '').slice(0, 30) },

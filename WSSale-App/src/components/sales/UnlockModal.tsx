@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Base';
 import { Unlock, MessageSquare, ChevronDown } from 'lucide-react';

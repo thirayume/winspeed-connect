@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../../store/auth-store';
 import { getToken, req } from '../../services/api';
-import { Camera, Lock, User, Save, Upload, Info } from 'lucide-react';
+import { Lock, User, Save, Upload } from 'lucide-react';
 
 export default function ProfilePage() {
   const { user, login } = useAuthStore();

@@ -20,15 +20,9 @@ const LINE_AUTH_URL = 'https://access.line.me/oauth2/v2.1/authorize';
 const LINE_TOKEN_URL = 'https://api.line.me/oauth2/v2.1/token';
 const LINE_PROFILE_URL = 'https://api.line.me/v2/profile';
 
-const ACCESS_AS_ROLE_RANK = Object.freeze({
-  SALES: 1,
-  COUNTER_SALES: 2,
-  APPROVER: 3,
-  ACCOUNTING: 4,
-  MANAGER: 5,
-  ADMIN: 6,
-});
-const ACCESS_AS_ACTOR_ROLES = new Set(['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'COUNTER_SALES']);
+// R12 item 1/3: ranks and Access As actors come from the shared role-capability map
+const { ROLE_RANK: ACCESS_AS_ROLE_RANK, ACCESS_AS_ACTOR_ROLES: ACTOR_ROLE_LIST, capabilitiesFor } = require('../services/role-capabilities');
+const ACCESS_AS_ACTOR_ROLES = new Set(ACTOR_ROLE_LIST);
 
 function getUserId(user) {
   return Number(user?.Id ?? user?.id ?? user?.sub);
@@ -77,6 +71,8 @@ function toClientUser(user, actor = null) {
     actorDisplayName: actor ? (actor.DisplayName ?? actor.displayName) : (user.DisplayName ?? user.displayName),
     actorRole: actor ? getUserRole(actor) : getUserRole(user),
     isImpersonating,
+    // R12 item 3: menus and key actions of the effective role (frontend hides what the API refuses)
+    capabilities: capabilitiesFor(getUserRole(user), { positionCode: user.PositionCode ?? user.positionCode ?? null }),
     // บอกหน้าจอเฉพาะเมื่อเซิร์ฟเวอร์บังคับจริง — บนเครื่องนักพัฒนาจะไม่ขึ้นหน้าบังคับ
     // เปลี่ยนรหัสมากั้นงาน ทั้งที่ธงในฐานข้อมูลยังอยู่ตามเดิม
     mustChangePassword: passwordChangeEnforced()
@@ -114,7 +110,7 @@ function signAppToken(user, actor = null) {
 
 async function loadAppUserById(id) {
   const rows = await wfQuery(
-    `SELECT Id, Username, DisplayName, Role, EmpId, IsActive, MustChangePassword,
+    `SELECT Id, Username, DisplayName, Role, EmpId, IsActive, MustChangePassword, PositionCode,
             Address, Phone, Email, IdCardNo, TaxId, SignatureFile,
             LineUserId, LineDisplayName, LineLinkedAt
      FROM wf.AppUser
@@ -145,6 +141,21 @@ async function recordAccessAsAudit(actorId, effectiveId, action, req) {
     );
   } catch (e) {
     if (process.env.NODE_ENV !== 'production') console.warn('[access-as-audit]', e.message);
+  }
+}
+
+async function closeOpenAccessAsSession(actorId, req) {
+  try {
+    const last = (await wfQuery(
+      `IF OBJECT_ID('wf.AccessAsAudit', 'U') IS NOT NULL
+         SELECT TOP 1 EffectiveUserId, Action FROM wf.AccessAsAudit WHERE ActorUserId = @a ORDER BY Id DESC`,
+      { a: { type: sql.Int, value: Number(actorId) } }
+    )).recordset?.[0];
+    if (last && String(last.Action).toUpperCase() === 'START') {
+      await recordAccessAsAudit(actorId, last.EffectiveUserId, 'STOP', req);
+    }
+  } catch (e) {
+    if (process.env.NODE_ENV !== 'production') console.warn('[access-as-close]', e.message);
   }
 }
 
@@ -215,7 +226,7 @@ router.post('/login', async (req, res) => {
     if (!username || !password) return res.status(400).json({ message: 'username และ password จำเป็น' });
 
     const rows = await wfQuery(
-      `SELECT Id, Username, PasswordHash, DisplayName, Role, IsActive, MustChangePassword FROM wf.AppUser WHERE Username = @u`,
+      `SELECT Id, Username, PasswordHash, DisplayName, Role, IsActive, MustChangePassword, PositionCode FROM wf.AppUser WHERE Username = @u`,
       { u: { type: sql.NVarChar(50), value: username } }
     );
     const user = rows.recordset?.[0];
@@ -223,6 +234,10 @@ router.post('/login', async (req, res) => {
 
     const valid = await bcrypt.compare(password, user.PasswordHash);
     if (!valid) return res.status(401).json({ message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
+
+    // R12 item 4: a session that ended by token expiry or a closed browser never sent STOP;
+    // close it now so every START has a STOP
+    await closeOpenAccessAsSession(user.Id, req);
 
     const token = signAppToken(user);
     res.json({
@@ -299,7 +314,7 @@ router.get('/line/callback', async (req, res) => {
     if (!profileRes.ok || !profile.userId) throw new Error('LINE profile fetch failed');
 
     const users = await wfQuery(
-      `SELECT Id, Username, DisplayName, Role, IsActive
+      `SELECT Id, Username, DisplayName, Role, IsActive, PositionCode
        FROM wf.AppUser
        WHERE LineUserId = @lineUserId`,
       { lineUserId: { type: sql.NVarChar(80), value: profile.userId } }
@@ -451,6 +466,11 @@ router.post('/access-as', requireAuth, async (req, res) => {
       return res.json({ accessToken, user: toClientUser(actor) });
     }
 
+    // R12 item 4: switching directly from one target to another closes the previous session first
+    const currentEffective = Number(req.user.sub);
+    if (currentEffective && currentEffective !== getUserId(actor) && currentEffective !== getUserId(target)) {
+      await recordAccessAsAudit(getUserId(actor), currentEffective, 'STOP', req);
+    }
     const accessToken = signAppToken(target, actor);
     await recordAccessAsAudit(getUserId(actor), getUserId(target), 'START', req);
     res.json({ accessToken, user: toClientUser(target, actor) });
@@ -561,11 +581,26 @@ router.post('/profile/signature', requireAuth, upload.single('signature'), async
 router.post('/users', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
   try {
     const { username, password, displayName, role, empId } = req.body;
+    const callerRole = String(req.user.role).toUpperCase();
+    const callerRank = roleRank(callerRole);
+    const newRole = String(role || '').toUpperCase();
+    const targetRank = roleRank(newRole);
+
+    // Only ADMIN may create users with role ADMIN or C_LEVEL
+    if ((newRole === 'ADMIN' || newRole === 'C_LEVEL') && callerRole !== 'ADMIN') {
+      return res.status(403).json({ message: 'เฉพาะ ADMIN เท่านั้นที่สามารถสร้างผู้ใช้ระดับ ADMIN หรือ C_LEVEL ได้' });
+    }
+    // Non-ADMIN callers may not assign a role equal to or above their own
+    if (callerRole !== 'ADMIN' && targetRank >= callerRank) {
+      return res.status(403).json({ message: 'ไม่สามารถกำหนดบทบาทที่เทียบเท่าหรือสูงกว่าตนเองได้' });
+    }
+
     const hash = await bcrypt.hash(password, 12);
     const result = await wfQuery(
-      `INSERT INTO wf.AppUser (Username, PasswordHash, DisplayName, Role, EmpId)
+      // R12 item 5: the admin knows the first password, so the owner must replace it
+      `INSERT INTO wf.AppUser (Username, PasswordHash, DisplayName, Role, EmpId, MustChangePassword)
        OUTPUT inserted.Id, inserted.Username, inserted.DisplayName, inserted.Role
-       VALUES (@u, @h, @d, @r, @e)`,
+       VALUES (@u, @h, @d, @r, @e, 1)`,
       {
         u: { type: sql.NVarChar(50), value: username },
         h: { type: sql.NVarChar(255), value: hash },
@@ -610,9 +645,61 @@ router.get('/users', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'),
 // PATCH /api/auth/users/:id — แก้ไข ADMIN/MANAGER/ACCOUNTING
 router.patch('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
   try {
+    const targetId = Number(req.params.id);
+    const callerId = Number(req.user.sub ?? req.user.id);
+    const callerRole = String(req.user.role).toUpperCase();
+    const callerRank = roleRank(callerRole);
+
+    // 1. No one may change their own role
+    if (callerId === targetId && req.body.role !== undefined) {
+      if (String(req.body.role).toUpperCase() !== callerRole) {
+        return res.status(403).json({ message: 'ไม่อนุญาตให้แก้ไขบทบาทของตนเอง' });
+      }
+    }
+
+    // 2. Load target user from DB to verify target's current rank
+    const targetUser = await loadAppUserById(targetId);
+    if (!targetUser) return res.status(404).json({ message: 'ไม่พบผู้ใช้นี้' });
+    const targetRole = String(targetUser.Role).toUpperCase();
+    const targetRank = roleRank(targetRole);
+
+    if (callerRole !== 'ADMIN') {
+      // Only ADMIN may edit users with role ADMIN or C_LEVEL
+      if (targetRole === 'ADMIN' || targetRole === 'C_LEVEL') {
+        return res.status(403).json({ message: 'เฉพาะ ADMIN เท่านั้นที่สามารถแก้ไขผู้ใช้ระดับ ADMIN หรือ C_LEVEL ได้' });
+      }
+
+      // Non-ADMIN callers: may edit only users of strictly lower rank
+      if (callerId !== targetId && targetRank >= callerRank) {
+        return res.status(403).json({ message: 'ไม่สามารถแก้ไขข้อมูลของผู้ใช้ที่มีระดับเทียบเท่าหรือสูงกว่าตนเองได้' });
+      }
+
+      // Non-ADMIN callers: may not reset passwords of equal or higher rank
+      if (req.body.password && callerId !== targetId && targetRank >= callerRank) {
+        return res.status(403).json({ message: 'ไม่สามารถรีเซ็ตรหัสผ่านของผู้ใช้ที่มีระดับเทียบเท่าหรือสูงกว่าตนเองได้' });
+      }
+
+      // Non-ADMIN callers: may not assign a role equal to or above their own
+      if (req.body.role !== undefined) {
+        const assignedRole = String(req.body.role).toUpperCase();
+        const assignedRank = roleRank(assignedRole);
+        if (assignedRank >= callerRank) {
+          return res.status(403).json({ message: 'ไม่สามารถกำหนดบทบาทที่เทียบเท่าหรือสูงกว่าตนเองได้' });
+        }
+        if (assignedRole === 'ADMIN' || assignedRole === 'C_LEVEL') {
+          return res.status(403).json({ message: 'เฉพาะ ADMIN เท่านั้นที่สามารถแต่งตั้งบทบาท ADMIN หรือ C_LEVEL ได้' });
+        }
+      }
+    } else {
+      // ADMIN editing: No one may change their own role
+      if (callerId === targetId && req.body.role !== undefined && String(req.body.role).toUpperCase() !== callerRole) {
+        return res.status(403).json({ message: 'ไม่อนุญาตให้แก้ไขบทบาทของตนเอง' });
+      }
+    }
+
     const { empId, role, displayName, isActive, password, lineUserId, address, phone, email, idCardNo, taxId, positionCode } = req.body;
     const sets = [];
-    const inputs = { id: { type: sql.Int, value: Number(req.params.id) } };
+    const inputs = { id: { type: sql.Int, value: targetId } };
     if (empId !== undefined)       { sets.push('EmpId = @empId');        inputs.empId       = { type: sql.NVarChar(20),  value: empId || null }; }
     // ตำแหน่งในผังองค์กร — ส่งค่าว่างมาเพื่อถอดออกได้ · FK กันรหัสที่ไม่มีจริงอยู่แล้ว
     if (positionCode !== undefined) { sets.push('PositionCode = @pos');   inputs.pos         = { type: sql.VarChar(30),   value: positionCode || null }; }
@@ -637,7 +724,7 @@ router.patch('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNT
       // ชื่อผู้ทำรายการในหลักฐานก็ไม่ได้พิสูจน์ว่าเจ้าของบัญชีเป็นคนทำ (D6-02)
       // จึงบังคับให้เจ้าของบัญชีตั้งรหัสใหม่ก่อนบันทึกข้อมูลได้อีก
       // ยกเว้นกรณีเปลี่ยนรหัสของตัวเอง ซึ่งไม่มีใครอื่นรู้รหัสนั้น
-      if (Number(req.params.id) !== Number(req.user.sub)) {
+      if (targetId !== callerId) {
         sets.push('MustChangePassword = 1');
       } else {
         sets.push('MustChangePassword = 0');
@@ -650,7 +737,7 @@ router.patch('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNT
       inputs
     );
     if (!__r.rowsAffected?.[0]) return res.status(404).json({ message: 'ไม่พบผู้ใช้นี้' });
-    res.json({ ok: true, id: Number(req.params.id) });
+    res.json({ ok: true, id: targetId });
   } catch (e) {
     if (e.number === 2601) return res.status(409).json({ message: 'พนักงานรหัสนี้ถูกผูกกับผู้ใช้อื่นไปแล้ว' });
     console.error(e);
@@ -785,7 +872,26 @@ router.get('/org-hints', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTIN
 router.delete('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
   try {
     const targetId = Number(req.params.id);
-    if (targetId === req.user.id) return res.status(400).json({ message: 'ไม่สามารถลบบัญชีตัวเองได้' });
+    const callerId = Number(req.user.sub ?? req.user.id);
+    const callerRole = String(req.user.role).toUpperCase();
+    const callerRank = roleRank(callerRole);
+
+    if (targetId === callerId) return res.status(400).json({ message: 'ไม่สามารถลบบัญชีตัวเองได้' });
+
+    const targetUser = await loadAppUserById(targetId);
+    if (!targetUser) return res.status(404).json({ message: 'ไม่พบรายการที่ระบุ' });
+    const targetRole = String(targetUser.Role).toUpperCase();
+    const targetRank = roleRank(targetRole);
+
+    if (callerRole !== 'ADMIN') {
+      if (targetRole === 'ADMIN' || targetRole === 'C_LEVEL') {
+        return res.status(403).json({ message: 'เฉพาะ ADMIN เท่านั้นที่สามารถลบผู้ใช้ระดับ ADMIN หรือ C_LEVEL ได้' });
+      }
+      if (targetRank >= callerRank) {
+        return res.status(403).json({ message: 'ไม่สามารถลบผู้ใช้ที่มีระดับเทียบเท่าหรือสูงกว่าตนเองได้' });
+      }
+    }
+
     const __r = await wfQuery(
       `DELETE FROM wf.AppUser WHERE Id = @id`,
       { id: { type: sql.Int, value: targetId } }

@@ -25,12 +25,17 @@ export function OpsStatusPage() {
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
 
+  const [forbidden, setForbidden] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [s, e, o] = await Promise.all([fetchOpsStatus(), fetchOpsErrors(50), fetchOpsOutbox().catch(() => ({ summary: [], recent: [] }))]);
       setStatus(s); setErrors(Array.isArray(e.errors) ? e.errors : []); setOutbox(o);
-    } catch (err) { console.error(err); }
+      setForbidden(false);
+    } catch (err: any) {
+      if (err?.status === 403) { setForbidden(true); } else { console.error(err); }
+    }
     setLoading(false);
   }, []);
 
@@ -71,6 +76,15 @@ export function OpsStatusPage() {
         </div>
       </div>
 
+      {forbidden ? (
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="text-center">
+            <AlertTriangle size={48} className="mx-auto mb-4 text-amber-400" />
+            <h2 className="text-lg font-bold text-gray-700 mb-2">ไม่มีสิทธิ์ดู</h2>
+            <p className="text-sm text-gray-500">บทบาทของคุณไม่มีสิทธิ์เข้าถึงหน้าสถานะระบบ กรุณาติดต่อ Admin</p>
+          </div>
+        </div>
+      ) : (
       <div className="flex-1 overflow-y-auto p-0 sm:p-6 space-y-2 sm:space-y-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {card(<Server size={20} />, 'เวอร์ชัน', status?.version ?? '–', 'bg-blue-50 text-blue-600')}
@@ -158,6 +172,7 @@ export function OpsStatusPage() {
           </table>
         </div>
       </div>
+      )}
     </div>
   );
 }

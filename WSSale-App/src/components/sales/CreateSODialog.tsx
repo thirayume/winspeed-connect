@@ -1,5 +1,6 @@
+import { bookingNoteError } from '../../utils/bookingNotes';
 import { useState, useEffect, useCallback } from 'react';
-import { X, Plus, Minus, Truck, AlertTriangle, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket } from 'lucide-react';
+import { X, Plus, Minus, Truck, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket } from 'lucide-react';
 import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation } from '../../services/api';
 import type { EffectivePriceRow, AtpStockRow } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
@@ -23,11 +24,6 @@ type DraftLine = SalesOrderLine & {
 };
 type DraftBill = { id: string; soPrefix: SOPrefix; lines: DraftLine[]; remark: string; rebateDiscountAmt?: number; creditDays?: number; truckRemark?: string; billRemark?: string; isControlTicket?: boolean; wfRef?: string; custId?: string; custName?: string; };
 
-const PREFIX_LABELS: Record<SOPrefix, string> = {
-  I: 'I — ขายปกติ (Invoice)',
-  K: 'K — ขายพิเศษ',
-  AI: 'AI — ตั๋วคุม',
-};
 
 const GIVEAWAY_GROUP = 'ของแถม';
 const ALL_GOODS_TAB = 'ทั้งหมด';
@@ -139,7 +135,7 @@ export function CreateSODialog({
   useEffect(() => {
     if (!isOpen) return;
     const targetUserId = salesUserId ? String(salesUserId) : undefined;
-    Promise.all([fetchGoods(), fetchGiveawayGoods(targetUserId), fetchAtpStock()])
+    Promise.all([fetchGoods(), fetchGiveawayGoods(targetUserId, editSoId && editSoId !== 'undefined' ? editSoId : undefined), fetchAtpStock()])
       .then(([g, gw, atpRes]) => {
         setGoods(mergeGoods(g, gw));
         setAtpStock(atpRes.data || []);
@@ -243,7 +239,7 @@ export function CreateSODialog({
         setBills([{
           id: 'bill-1',
           soPrefix: so.soPrefix as SOPrefix,
-          isControlTicket: so.truckPlate === 'ตั๋วคุม',
+          isControlTicket: Boolean(so.isControlTicket || so.truckPlate === 'ตั๋วคุม' || so.soPrefix === 'AI'),
           remark: so.remark || '',
           rebateDiscountAmt: canSeeRebate ? so.rebateDiscountAmt || 0 : 0,
           wfRef: (so as any).wfRef || (so as any).WfRef || '',
@@ -256,7 +252,10 @@ export function CreateSODialog({
             goodId: String(l.goodId || l.GoodId),
             goodName: l.goodName || l.GoodName,
             goodCode: l.goodCode || l.GoodCode || '',
-            qtyTon: Number(l.qtyTon || l.QtyTon) || 0,
+            // ของแถมเก็บจำนวนชิ้นไว้ใน QtyBag ตั้งแต่ U-5 (QtyTon = 0)
+            qtyTon: (l.isGiveaway || l.IsGiveaway)
+              ? (Number(l.qtyTon || l.QtyTon) || Number(l.qtyBag || l.QtyBag) || 0)
+              : (Number(l.qtyTon || l.QtyTon) || 0),
             qtyBag: Number(l.qtyBag || l.QtyBag) || 0,
             pricePerTon: Number(l.pricePerTon || l.PricePerTon) || 0,
             netPricePerTon: Number(l.netPricePerTon || l.NetPricePerTon) || 0,
@@ -271,7 +270,7 @@ export function CreateSODialog({
       }).catch(console.error);
     } else {
       setPersistedReservationIds(new Set());
-      setBills([{ id: 'bill-1', soPrefix: 'I', lines: [], remark: activeTrip?.remark || '', creditDays: 0, isControlTicket: false }]);
+      setBills([{ id: 'bill-1', soPrefix: 'I', lines: [], remark: '', creditDays: 0, isControlTicket: false }]);
       setActiveBillId('bill-1');
       setTruckPlate(''); setTranspId(''); setSalesUserId('');
       setNotifiedAt(''); setIsOwnTruck(false); 
@@ -309,7 +308,7 @@ export function CreateSODialog({
   const currentBillCustId = activeBill?.custId || '';
 
   useEffect(() => {
-    fetchPrices({ custId: currentBillCustId }).then(setPrices).catch(console.error);
+    fetchPrices({ custId: currentBillCustId, asOf: deliveryDate || undefined }).then(setPrices).catch(console.error);
     // Effective prices from PriceBook — overlays legacy prices when available
     if (activePriceBookId) {
       fetchEffectivePrices(activePriceBookId, currentBillCustId || undefined)
@@ -328,7 +327,7 @@ export function CreateSODialog({
     } else {
       setTruckPlates([]); setControlTickets([]); setAvailableRebate(0);
     }
-  }, [currentBillCustId, canSeeRebate, activePriceBookId]);
+  }, [currentBillCustId, deliveryDate, canSeeRebate, activePriceBookId]);
 
   const priceObj = useCallback((goodId: string) => prices.find(p => p.GoodID === goodId), [prices]);
   const effectivePriceObj = useCallback((goodId: string) => effectivePrices.find(p => p.GoodId === goodId), [effectivePrices]);
@@ -395,25 +394,11 @@ export function CreateSODialog({
         return;
       }
 
-      const isPrivileged = ['ADMIN', 'MANAGER', 'C_LEVEL'].includes(userRole || '');
-      if (!isPrivileged) {
-        const quota = myQuota.find(q => good.GoodName.includes(q.ItemName) || q.ItemName.includes(good.GoodName));
-        const remaining = quota ? quota.RemainingQty : 0;
-        
-        const totalAdded = bills.reduce((sum, currB) => 
-          sum + currB.lines.filter(l => l.goodId === good.GoodID && l.isGiveaway).reduce((s, l) => s + l.qtyTon, 0)
-        , 0);
-
-        if (totalAdded + 1 > remaining) {
-          const brandMatch = good.GoodName.match(/ตรา([^\s]+)/);
-          const parsedBrand = quota ? quota.Brand : (brandMatch ? `ตรา${brandMatch[1]}` : 'ทั่วไป');
-          const parsedItemName = quota ? quota.ItemName : good.GoodName;
-          
-          setBorrowReq({ brand: parsedBrand, itemName: parsedItemName, requiredQty: (totalAdded + 1) - remaining });
-          setBorrowModalOpen(true);
-          return; // Prevent adding
-        }
-      }
+      // R11 U-7/U-8: เซิร์ฟเวอร์ตรวจโควต้าทุกบทบาทตอนบันทึก หน้าจอจึงตรวจแบบเดียวกันก่อน
+      const totalAdded = bills.reduce((sum, currB) =>
+        sum + currB.lines.filter(l => l.goodId === good.GoodID && l.isGiveaway).reduce((s, l) => s + l.qtyTon, 0)
+      , 0);
+      if (!giveawayQuotaAllows(good.GoodID, totalAdded + 1)) return; // Prevent adding
     }
 
     setBills(prevBills => prevBills.map(b => {
@@ -434,7 +419,7 @@ export function CreateSODialog({
         return {
           ...b,
           lines: b.lines.map(l => l.tempId === existing.tempId 
-            ? { ...l, qtyTon: newQty, qtyBag: newQty * good.BagPerTon, netPricePerTon: newNet }
+            ? { ...l, qtyTon: newQty, qtyBag: isGiveaway ? newQty : newQty * good.BagPerTon, netPricePerTon: newNet }
             : l
           )
         };
@@ -447,7 +432,7 @@ export function CreateSODialog({
         goodCode: good.GoodCode,
         goodName: good.GoodName,
         qtyTon: 1,
-        qtyBag: good.BagPerTon || 0,
+        qtyBag: isGiveaway ? 1 : (good.BagPerTon || 0),
         pricePerTon: defaultPrice,
         netPricePerTon: defaultPrice,
         isGiveaway: good.GoodGroupName === GIVEAWAY_GROUP,
@@ -498,7 +483,29 @@ export function CreateSODialog({
     }));
   }
 
+  // จำนวนของแถมรวมทุกบิลในหน้าจอ (ชิ้น) ต้องไม่เกินโควต้าที่เซิร์ฟเวอร์คำนวณให้สินค้านี้
+  function giveawayQuotaAllows(goodId: string, totalPieces: number): boolean {
+    const good = goods.find(g => g.GoodID === goodId);
+    const remaining = Number(good?.RemainingQty || 0);
+    if (totalPieces <= remaining) return true;
+    setBorrowReq({
+      brand: good?.Brand || 'ทั่วไป',
+      itemName: good?.ItemName || good?.GoodName || '',
+      requiredQty: totalPieces - Math.max(0, remaining),
+    });
+    setBorrowModalOpen(true);
+    return false;
+  }
+
   function updateActiveLine(tempId: string, patch: Partial<DraftLine>) {
+    // R11 U-7: แก้จำนวนของแถมในบรรทัดต้องตรวจโควต้าใหม่
+    const activeLine = bills.find(b => b.id === activeBillId)?.lines.find(l => l.tempId === tempId);
+    if (activeLine?.isGiveaway && patch.qtyTon !== undefined && Number(patch.qtyTon) > Number(activeLine.qtyTon || 0)) {
+      const others = bills.reduce((sum, b) => sum + b.lines
+        .filter(l => l.goodId === activeLine.goodId && l.isGiveaway && l.tempId !== tempId)
+        .reduce((s2, l) => s2 + Number(l.qtyTon || 0), 0), 0);
+      if (!giveawayQuotaAllows(activeLine.goodId, others + Number(patch.qtyTon))) return;
+    }
     setBills(prevBills => prevBills.map(b => {
       if (b.id !== activeBillId) return b;
       return {
@@ -509,7 +516,19 @@ export function CreateSODialog({
           if (patch.qtyTon !== undefined) {
             updated.qtyTon = l.maxQtyTon !== undefined && patch.qtyTon > l.maxQtyTon ? l.maxQtyTon : patch.qtyTon;
             const good = goods.find(g => g.GoodID === updated.goodId);
-            updated.qtyBag = Math.round(updated.qtyTon * (good?.BagPerTon ?? 20));
+            updated.qtyBag = updated.isGiveaway ? updated.qtyTon : Math.round(updated.qtyTon * (good?.BagPerTon ?? 20));
+            // R10-11: Keep mother = ton when ton changes and child is 0
+            if (!l.childQty || Number(l.childQty) === 0) {
+              updated.masterQty = updated.qtyTon;
+              updated.childQty = 0;
+            } else if (updated.masterQty !== undefined && updated.childQty !== undefined) {
+              if (updated.childQty > updated.qtyTon) {
+                updated.childQty = updated.qtyTon;
+                updated.masterQty = 0;
+              } else {
+                updated.masterQty = Number((updated.qtyTon - updated.childQty).toFixed(3));
+              }
+            }
             if (!updated.isControlTicketDrawn) {
               const netPrice = getNetPrice(updated.goodId, updated.qtyTon);
               updated.netPricePerTon = updated.isGiveaway ? 0 : netPrice;
@@ -531,12 +550,13 @@ export function CreateSODialog({
   function handleCouponReserved(result: any, coupon: CouponItem) {
     if (!activeBill) return;
     const qty = Number(result.reservedQty) || 0;
+    const resolvedGoodCode = coupon.goodCode || goods.find(g => String(g.GoodID) === String(coupon.goodId))?.GoodCode || '';
     const newLine: DraftLine = {
       tempId: `coupon-${coupon.couponId}-${Date.now()}`,
       lineNo: activeBill.lines.length + 1,
       goodId: String(coupon.goodId),
       goodName: coupon.goodName,
-      goodCode: '',
+      goodCode: resolvedGoodCode,
       qtyTon: qty,
       qtyBag: Math.round(qty * 20),
       pricePerTon: 0,
@@ -633,6 +653,12 @@ export function CreateSODialog({
   const totalCartItems = bills.reduce((s, b) => s + b.lines.length, 0);
 
   async function handleSubmit() {
+    for (const bill of bills) {
+      for (const note of [bill.remark, bill.truckRemark, bill.billRemark]) {
+        const noteError = bookingNoteError(note);
+        if (noteError) { setError(noteError); return; }
+      }
+    }
     const hasInvalidCust = bills.some(b => !b.custId);
     if (hasInvalidCust) { setError('กรุณาเลือกลูกค้าให้ครบถ้วนทุกบิล'); return; }
     const emptyBills = bills.filter(b => b.lines.length === 0);
@@ -665,12 +691,13 @@ export function CreateSODialog({
           custName: billCustName,
           tripId: (activeTrip as any)?.tripId ? Number((activeTrip as any).tripId) : undefined,
           truckPlate: b.isControlTicket ? 'ตั๋วคุม' : (truckPlate || undefined),
+          isControlTicket: Boolean(b.isControlTicket),
           // เว้นว่างได้ — ฝั่ง WINSpeed จะรวบเลขจากบรรทัดที่เบิกมาแทน
           controlTicketNo: controlTicketNo.trim() || undefined,
           deliveryDate: deliveryDate || undefined,
           notifiedAt: notifiedAt || undefined,
           isOwnTruck,
-          noTruckRequired,
+          noTruckRequired: Boolean(noTruckRequired),
           pSling,
           loadInOrder,
           remark: b.remark || undefined,
@@ -681,7 +708,7 @@ export function CreateSODialog({
           billRemark: b.billRemark,
           transpId: transpId || undefined,
           convertFromQuoteId,
-          lines: b.lines.map(({ tempId, ...l }) => ({
+          lines: b.lines.map(({ tempId, ...l }, lineIdx) => ({
             ...l,
             qtyTon: Number(l.qtyTon) || 0,
             pricePerTon: Number(l.pricePerTon) || 0,
@@ -692,12 +719,13 @@ export function CreateSODialog({
             couponReservationId: l.couponReservationId,
             masterQty: l.masterQty,
             childQty: l.childQty,
-            loadSequence: l.loadSequence
+            pieceQty: l.isGiveaway ? (Number(l.qtyTon) || 0) : undefined,
+            loadSequence: loadInOrder ? (l.loadSequence || (lineIdx + 1)) : l.loadSequence
           }))
         };
         const res = await updateSO(editSoId, payload);
         setIsSaveCommitted(true);
-        if (res.needsApproval) alert(`⚠ มีรายการที่ราคาต่ำกว่า NET\nต้องการอนุมัติจาก ผจก. ก่อน confirm`);
+        if (res.needsApproval) alert(`⚠ มีรายการราคาที่ต้องอนุมัติ (ไม่พบราคาประกาศหรือราคาต่ำกว่าประกาศ)\nต้องการอนุมัติจาก ผจก. ก่อน confirm`);
         else alert(`✓ แก้ไขบิลสำเร็จ`);
       } else {
         // Build grouped payload (Array of orders) with customer per bill (P1 Finding 1)
@@ -711,12 +739,13 @@ export function CreateSODialog({
             custName: billCustName,
             tripId: (activeTrip as any)?.tripId ? Number((activeTrip as any).tripId) : undefined,
             truckPlate: b.isControlTicket ? 'ตั๋วคุม' : (truckPlate || undefined),
+            isControlTicket: Boolean(b.isControlTicket),
             // เว้นว่างได้ — ฝั่ง WINSpeed จะรวบเลขจากบรรทัดที่เบิกมาแทน
             controlTicketNo: controlTicketNo.trim() || undefined,
             deliveryDate: deliveryDate || undefined,
             notifiedAt: notifiedAt || undefined,
             isOwnTruck,
-            noTruckRequired,
+            noTruckRequired: Boolean(noTruckRequired),
             pSling,
             loadInOrder,
             remark: b.remark || undefined,
@@ -727,7 +756,7 @@ export function CreateSODialog({
             billRemark: b.billRemark,
             transpId: transpId || undefined,
             convertFromQuoteId,
-            lines: b.lines.map(({ tempId, ...l }) => ({
+            lines: b.lines.map(({ tempId, ...l }, lineIdx) => ({
               ...l,
               qtyTon: Number(l.qtyTon) || 0,
               pricePerTon: Number(l.pricePerTon) || 0,
@@ -738,14 +767,15 @@ export function CreateSODialog({
               couponReservationId: l.couponReservationId,
               masterQty: l.masterQty,
               childQty: l.childQty,
-              loadSequence: l.loadSequence
+              pieceQty: l.isGiveaway ? (Number(l.qtyTon) || 0) : undefined,
+              loadSequence: loadInOrder ? (l.loadSequence || (lineIdx + 1)) : l.loadSequence
             }))
           };
         });
 
         const res = await createSO(payload);
         setIsSaveCommitted(true);
-        if (res.needsApproval) alert(`⚠ มีรายการที่ราคาต่ำกว่า NET\nต้องการอนุมัติจาก ผจก. ก่อน confirm`);
+        if (res.needsApproval) alert(`⚠ มีรายการราคาที่ต้องอนุมัติ (ไม่พบราคาประกาศหรือราคาต่ำกว่าประกาศ)\nต้องการอนุมัติจาก ผจก. ก่อน confirm`);
         else alert(`✓ สร้างกลุ่มบิลสำเร็จ (จำนวน ${payload.length} บิล)`);
       }
       onCreated?.();
@@ -825,7 +855,7 @@ export function CreateSODialog({
         <div className="flex items-center justify-between px-4 py-2 sm:px-6 sm:py-3 border-b border-gray-100 bg-[#0C447C] text-white shrink-0">
           <div>
             <h2 className="text-base sm:text-xl font-bold flex items-center gap-2"><Truck size={20} className="sm:w-6 sm:h-6"/> {(activeTrip && !editSoId) ? 'เพิ่มบิลในทริป' : 'บิล'}</h2>
-            <p className="hidden sm:block text-xs text-blue-200 mt-1">{(activeTrip || editSoId) ? `ทะเบียนรถ: ${truckPlate || 'ไม่ระบุ'} | วันที่: ${deliveryDate || '-'} | จำนวน ${bills.length} บิล | Pre-Sling: ${pSling ? 'ใช่' : 'ไม่'}` : 'จัดเรียงบิล I, K ในรถคันเดียวกัน และจัดการเบิกตั๋วคุม'}</p>
+            <p className="hidden sm:block text-xs text-blue-200 mt-1">{(activeTrip || editSoId) ? `ทะเบียนรถ: ${truckPlate || 'ไม่ระบุ'} | วันที่: ${deliveryDate ? (!isNaN(new Date(deliveryDate).getTime()) ? new Date(deliveryDate).toLocaleDateString('th-TH') : deliveryDate) : '-'} | จำนวน ${bills.length} บิล | Pre-Sling: ${pSling ? 'ใช่' : 'ไม่'}` : 'จัดเรียงบิล I, K ในรถคันเดียวกัน และจัดการเบิกตั๋วคุม'}</p>
           </div>
           <button onClick={handleCloseModal} data-testid="btn-close-dialog" className="text-white/80 hover:text-white rounded-full p-1.5 sm:p-2 hover:bg-white/10">
             <X size={20} />
@@ -1228,22 +1258,28 @@ export function CreateSODialog({
                         })()}
                         {!isGiveaway ? (
                           <>
-                            {net > 0 ? (
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-bold" style={{ color: isExpired ? '#DC2626' : '#0C447C' }}>
-                                  ฿{net.toLocaleString()}<span className="text-[9px] font-normal text-gray-400">/ตัน</span>
+                            <div className="space-y-0.5">
+                              <div className="text-[11px] text-gray-600 flex items-center justify-between">
+                                <span>ราคาประกาศ:</span>
+                                <span className="font-bold text-gray-800">
+                                  {epObj?.StandardPrice != null ? `฿${Number(epObj.StandardPrice).toLocaleString()}` : (g.SetPrice || g.GoodPrice1 || g.GoodPrice ? `฿${Number(g.SetPrice || g.GoodPrice1 || g.GoodPrice).toLocaleString()}` : '-')}
                                 </span>
-                                {bestP.source === 'pricebook' && (
-                                  <span className="text-[8px] px-1 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">PB</span>
-                                )}
-                                {bestP.source === 'special' && (
-                                  <span className="text-[8px] px-1 py-0.5 rounded bg-purple-100 text-purple-700 font-bold">พิเศษ</span>
+                              </div>
+                              <div className="text-[11px] flex items-center justify-between">
+                                <span className="text-gray-500">ราคา NET:</span>
+                                {net > 0 && !isExpired ? (
+                                  <span className="font-bold text-[#0C447C]">
+                                    ฿{net.toLocaleString()}
+                                    {bestP.source === 'special' && <span className="ml-1 text-[8px] px-1 py-0.2 rounded bg-purple-100 text-purple-700">พิเศษ</span>}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-amber-600 font-medium">
+                                    - (ไม่เกิดรีเบท)
+                                  </span>
                                 )}
                               </div>
-                            ) : (
-                              <div className="text-[10px] text-orange-400">ไม่มีราคา NET</div>
-                            )}
-                            <div className="text-[9px] text-gray-300 mt-0.5">{g.BagPerTon} กระสอบ/ตัน · {g.WeightKgPerBag}kg</div>
+                            </div>
+                            <div className="text-[9px] text-gray-300 mt-1">{g.BagPerTon} กระสอบ/ตัน · {g.WeightKgPerBag}kg</div>
                           </>
                         ) : (
                           <>
@@ -1360,7 +1396,7 @@ export function CreateSODialog({
                               <div className="fixed inset-0 z-30" onClick={() => setIsBillCustOpen(false)} />
                               <div className="absolute z-40 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
                                 {customers
-                                  .filter(c => !billCustSearch || String(c.CustID || '').toLowerCase().includes(billCustSearch.toLowerCase()) || String(c.CustName || '').toLowerCase().includes(billCustSearch.toLowerCase()))
+                                  .filter(c => !billCustSearch || String(c.CustCode || '').toLowerCase().includes(billCustSearch.toLowerCase()) || String(c.CustID || '').toLowerCase().includes(billCustSearch.toLowerCase()) || String(c.CustName || '').toLowerCase().includes(billCustSearch.toLowerCase()))
                                   .slice(0, 30)
                                   .map(c => (
                                     <div
@@ -1378,7 +1414,7 @@ export function CreateSODialog({
                                     >
                                       <div>
                                         <div className="font-bold text-[#0C447C]">{c.CustName}</div>
-                                        <div className="text-[10px] text-gray-400">{c.CustID}</div>
+                                        <div className="text-[10px] text-gray-400">{c.CustCode || c.CustID}</div>
                                       </div>
                                       <div className="text-[10px] text-gray-500 font-medium">
                                         เครดิต {c.CreditDays || 0} วัน
@@ -1482,6 +1518,13 @@ export function CreateSODialog({
                             <div className="flex flex-col items-end gap-1">
                               {l.isControlTicketDrawn ? (
                                   <div className="text-xs font-bold text-amber-600">฿0 (หักยอดตั๋ว)</div>
+                              ) : l.isCouponDrawn ? (
+                                  <div className="flex flex-col items-end gap-0.5">
+                                    <div className="text-xs font-bold text-blue-700">฿0 (เบิกตั๋วปุ๋ย)</div>
+                                    <div className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                      ✓ ไม่ต้องอนุมัติราคา
+                                    </div>
+                                  </div>
                               ) : l.isGiveaway ? (
                                   <div className="text-xs font-bold text-blue-600">ของแถม (฿0)</div>
                               ) : (
@@ -1490,7 +1533,7 @@ export function CreateSODialog({
                                     <input type="number" value={l.pricePerTon || ''} onChange={e => updateActiveLine(l.tempId, { pricePerTon: Number(e.target.value) })} className={`w-20 text-right border rounded px-1.5 py-1 text-xs font-mono font-bold focus:outline-none focus:border-blue-400 ${priceBand.className}`} />
                                   </div>
                               )}
-                              {!l.isControlTicketDrawn && !l.isGiveaway && priceBand.label && (
+                              {!l.isControlTicketDrawn && !l.isCouponDrawn && !l.isGiveaway && priceBand.label && (
                                 <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${priceBand.className}`}>
                                   {priceBand.label}
                                 </div>
@@ -1513,8 +1556,12 @@ export function CreateSODialog({
                           
                           {!l.isControlTicketDrawn && !l.isGiveaway && (
                             <div className="flex justify-between items-center mt-1 pt-1 border-t border-dashed border-gray-100">
-                              <div className="text-[10px] text-orange-500 font-medium">
-                                {l.pricePerTon > l.netPricePerTon ? `รีเบทสะสม: ฿${((l.pricePerTon - l.netPricePerTon) * l.qtyTon).toLocaleString('th-TH', { maximumFractionDigits: 0 })}` : ''}
+                              <div className="text-[10px] font-medium">
+                                {!l.netPricePerTon || Number(l.netPricePerTon) <= 0 ? (
+                                  <span className="text-gray-400">ไม่เกิดรีเบท (ไม่มีราคา NET)</span>
+                                ) : l.pricePerTon > l.netPricePerTon ? (
+                                  <span className="text-orange-500">รีเบทสะสม: ฿{((l.pricePerTon - l.netPricePerTon) * l.qtyTon).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+                                ) : null}
                               </div>
                               <div className="text-xs font-bold text-[#0C447C]">
                                 รวม: ฿{(l.pricePerTon * l.qtyTon).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
@@ -1531,7 +1578,7 @@ export function CreateSODialog({
                 <div className="mt-3 pt-3 border-t">
                   {activeBill && activeBill.lines.length > 0 && (() => {
                     const totalAmt = activeBill.lines.reduce((s, l) => s + (l.isControlTicketDrawn ? 0 : l.qtyTon * l.pricePerTon), 0);
-                    const totalRebate = canSeeRebate ? activeBill.lines.reduce((s, l) => s + (!l.isControlTicketDrawn && l.pricePerTon > l.netPricePerTon ? (l.pricePerTon - l.netPricePerTon) * l.qtyTon : 0), 0) : 0;
+                    const totalRebate = canSeeRebate ? activeBill.lines.reduce((s, l) => s + (!l.isControlTicketDrawn && l.netPricePerTon > 0 && l.pricePerTon > l.netPricePerTon ? (l.pricePerTon - l.netPricePerTon) * l.qtyTon : 0), 0) : 0;
                     return (
                       <div className="mb-2">
                         <div className="flex justify-between items-center mb-1">
@@ -1565,14 +1612,15 @@ export function CreateSODialog({
                         </div>}
                         {canSeeRebate && (activeBill?.rebateDiscountAmt || 0) > 0 && (
                           <div className="flex justify-between items-center mt-2 bg-emerald-50 p-1.5 rounded">
-                            <span className="text-xs font-bold text-emerald-800">ยอดสุทธิบิลนี้</span>
-                            <span className="text-sm font-black text-emerald-800">฿{(totalAmt - (activeBill.rebateDiscountAmt || 0)).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+                            <span className="text-xs font-bold text-emerald-800">ยอดชำระหลังหักรีเบท (WinSpeed บันทึกยอดเต็ม)</span>
+                            <span className="text-sm font-black text-emerald-800">฿{(totalAmt - (activeBill.rebateDiscountAmt || 0)).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         )}
                       </div>
                     );
                   })()}
-                  <input type="text" placeholder="หมายเหตุบิลนี้..." value={activeBill?.remark} onChange={e => updateBillInfo(activeBillId, { remark: e.target.value })} className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 mt-1" />
+                  <input type="text" maxLength={255} placeholder="หมายเหตุบิลนี้..." value={activeBill?.remark} onChange={e => updateBillInfo(activeBillId, { remark: e.target.value })} className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 mt-1" />
+                  <div className="text-xs text-gray-500">แสดงใน Description ของบิลนี้ใน WinSpeed · {Array.from(activeBill?.remark || '').length}/255</div>
                 </div>
               </div>
             </div>
@@ -1622,9 +1670,12 @@ export function CreateSODialog({
         periodYear={new Date().getFullYear() + 543 - 2500 + 2500}
         onSuccess={() => {
           setBorrowModalOpen(false);
-          // Refetch quota after borrowing
+          // Refetch quota after borrowing (cards and the add check read RemainingQty from the goods list)
           const currentYear = new Date().getFullYear() + 543 - 2500 + 2500;
           apiFetch<GiveawayQuota[]>(`/giveaway/my-quota?year=${currentYear}`).then(setMyQuota).catch(console.error);
+          Promise.all([fetchGoods(), fetchGiveawayGoods(salesUserId ? String(salesUserId) : undefined, editSoId && editSoId !== 'undefined' ? editSoId : undefined)])
+            .then(([g, gw]) => setGoods(mergeGoods(g, gw)))
+            .catch(console.error);
           alert('ส่งคำขอยืมเรียบร้อยแล้ว กรุณารอการอนุมัติ');
         }}
       />
@@ -1637,8 +1688,10 @@ export function CreateSODialog({
         tripId={activeTrip?.tripId ? Number(activeTrip.tripId) : undefined}
         customerId={activeBill?.custId || ''}
         customerName={activeBill?.custName || customers.find(c => c.CustID === activeBill?.custId)?.CustName}
+        billPrefix={activeBill?.soPrefix}
         onReserved={handleCouponReserved}
       />
     </>
   );
 }
+
