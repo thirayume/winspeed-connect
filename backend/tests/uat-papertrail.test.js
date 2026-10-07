@@ -48,3 +48,15 @@ test('SHP-04: a reissue by SALES is refused once a set exists', async () => {
   const r = await app.call('POST', '/api/papertrail/900/print', { body: { docType: 'ISSUE', reissue: true }, user: { sub: 43, role: 'SALES' } });
   assert.equal(r.status, 403);
 });
+
+// UAT batch 5, SO-11 — a reservation made by the person saving, or by the bill's salesperson, may be drawn
+test('SO-11: the counter keying a bill for a salesperson can draw the coupon it reserved', async () => {
+  const { validateAndLockCouponReservations } = require('../services/coupon-service');
+  const row = { Id: 1, CouponId: 9, CouponNo: 'C6906911', GoodId: 1156, GoodUnit: 'ตัน', ReservedQty: 1, Status: 'RESERVED', BeneficiaryCustId: '1158', OwnerCustId: '1158', CarrierSoId: null, ExpiresAt: null, CreatedBy: 64 };
+  const tx = { request: () => ({ input() { return this; }, query: async () => ({ recordset: [row] }) }) };
+  const lines = [{ couponReservationId: 1, goodId: '1156', qtyTon: 1, goodUnit: 'ตัน' }];
+  await validateAndLockCouponReservations(tx, lines, '1158', null, { userId: 64, altUserIds: [36], role: 'COUNTER_SALES' }, 'I');
+  await assert.rejects(validateAndLockCouponReservations(tx, lines, '1158', null, { userId: 36, altUserIds: [], role: 'SALES' }, 'I'), /ถูกสร้างโดยผู้ใช้อื่น/);
+  row.CreatedBy = 36;
+  await validateAndLockCouponReservations(tx, lines, '1158', null, { userId: 64, altUserIds: [36], role: 'COUNTER_SALES' }, 'I');
+});

@@ -473,7 +473,9 @@ async function reserveCoupon({
       .input('cid', sql.Int, cId)
       .input('cno', sql.VarChar(25), couponRow.CouponNo)
       .input('gid', sql.Int, couponRow.GoodID)
-      .input('so', sql.VarChar(50), String(carrierSoId))
+      // no carrier yet = a reservation for a bill still being keyed (the picker sends 'DRAFT'); never store the
+      // text "undefined", which later reads as "bound to another bill" (UAT batch 5, SO-11)
+      .input('so', sql.VarChar(50), carrierSoId == null || String(carrierSoId).trim() === '' ? 'DRAFT' : String(carrierSoId))
       .input('doc', sql.VarChar(50), carrierDocuNo || null)
       .input('trip', sql.Int, tripId ? Number(tripId) : null)
       .input('ben', sql.VarChar(50), String(beneficiaryCustId))
@@ -1215,7 +1217,8 @@ async function validateAndLockCouponReservations(tx, lines, orderCustId, targetS
     // Actor Authorization check: non-elevated users can only bind their own reservations
     if (actor && actor.userId) {
       const isElevated = ['ADMIN', 'MANAGER', 'C_LEVEL'].includes(String(actor.role || '').toUpperCase());
-      if (!isElevated && resRow.CreatedBy && Number(resRow.CreatedBy) !== Number(actor.userId)) {
+      const allowed = [actor.userId, ...(actor.altUserIds || [])].map(Number);
+      if (!isElevated && resRow.CreatedBy && !allowed.includes(Number(resRow.CreatedBy))) {
         throw Object.assign(new Error(`รายการจองตั๋วรหัส ${resId} ถูกสร้างโดยผู้ใช้อื่น (#${resRow.CreatedBy})`), { status: 403 });
       }
     }

@@ -1365,8 +1365,11 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
         stripPrivateLineFields(lines);
 
         // Validate and lock all coupon reservations for this order before pricing and line generation
+        // the person saving made the reservations in the coupon picker; when the counter keys a bill for a
+        // salesperson, that salesperson's own reservations count too (UAT batch 5, SO-11)
         const actor = {
-          userId: impersonatedId || req.user?.sub || req.user?.id,
+          userId: req.user?.sub || req.user?.id,
+          altUserIds: impersonatedId ? [Number(impersonatedId)] : [],
           role: req.user?.role
         };
         const validatedLineIndexes = await validateAndLockCouponReservations(tx, lines, custId, null, actor, soPrefix);
@@ -1848,6 +1851,7 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
       // R5-2: Validate and lock coupon reservations BEFORE evaluating line prices
       const editActor = {
         userId: req.user?.sub || req.user?.id,
+        altUserIds: so.SalesUserId ? [Number(so.SalesUserId)] : [],
         role: req.user?.role
       };
       const validatedLineIndexes = await validateAndLockCouponReservations(tx, lines, order.custId, so.Id, editActor, order.soPrefix || so.SoPrefix);
