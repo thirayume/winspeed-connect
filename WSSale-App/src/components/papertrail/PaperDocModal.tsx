@@ -187,7 +187,8 @@ export function PaperDocModal({ soIds, onClose }: { soIds: (string | number)[]; 
                           </thead>
                           <tbody>
                             {job.doc.lines.map(l => {
-                              const price = Number(l.NetPricePerTon || l.PricePerTon || 0);
+                              // the selling price — the NET floor is internal (it printed ฿19,000 on a ฿19,500 bill, UAT batch 6)
+                              const price = Number(l.PricePerTon || 0);
                               const total = Number(l.QtyTon) * price;
                               return (
                                 <tr key={l.LineNum} className="border-b" style={{ borderColor: '#F0F0F0' }}>
@@ -221,7 +222,7 @@ export function PaperDocModal({ soIds, onClose }: { soIds: (string | number)[]; 
                               <td className="px-2 py-2 text-right whitespace-nowrap">{job.doc.lines.reduce((s, l) => s + Number(l.QtyTon), 0).toFixed(2)}</td>
                               <td className="px-2 py-2 text-right whitespace-nowrap">{job.doc.lines.reduce((s, l) => s + Number(l.QtyBag), 0).toLocaleString()}</td>
                               {showPrices && <td className="px-2 py-2 text-right whitespace-nowrap"></td>}
-                              {showPrices && <td className="px-2 py-2 text-right whitespace-nowrap">{job.doc.lines.reduce((s, l) => s + (Number(l.QtyTon) * Number(l.NetPricePerTon || l.PricePerTon || 0)), 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>}
+                              {showPrices && <td className="px-2 py-2 text-right whitespace-nowrap">{job.doc.lines.reduce((s, l) => s + (Number(l.QtyTon) * Number(l.PricePerTon || 0)), 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>}
                               <td className="px-2 py-2 whitespace-nowrap"></td>
                             </tr>
                           </tfoot>

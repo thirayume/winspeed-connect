@@ -7,7 +7,7 @@
  */
 const router = require('express').Router();
 const crypto = require('crypto');
-const { sql, wfQuery } = require('../db');
+const { sql, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
 const { broadcast } = require('../services/socket');
@@ -224,7 +224,7 @@ router.get('/document/:soId', requirePaperInScope, async (req, res) => {
     `, { id: { type: sql.VarChar(50), value: soId } })).recordset[0];
     if (!hd) return res.status(404).json({ message: 'ไม่พบ SO' });
     const lines = (await wfQuery(`
-      SELECT LineNum, GoodCode, GoodName, QtyTon, QtyBag, PricePerTon, NetPricePerTon, IsGiveaway, LoadSequence
+      SELECT LineNum, GoodCode, GoodName, QtyTon, QtyBag, PricePerTon, IsGiveaway, LoadSequence
       FROM wf.v_AllSalesOrderLines WHERE SoId = @id ORDER BY LineNum
     `, { id: { type: sql.VarChar(50), value: soId } })).recordset;
 
@@ -282,40 +282,47 @@ router.post('/:soId/print', requirePaperInScope, async (req, res) => {
     // Printing again returns the SAME set: same QR codes, scan history kept. Opening the print preview used to
     // delete the copies and their scans and issue new QR codes, so paper already handed out stopped scanning and
     // the trail was lost (UAT batch 5, SHP-04). A new set is issued only on an explicit reissue by a paper role.
-    const existing = (await wfQuery(`SELECT CopyColor, CopyLabel, QrNonce FROM wf.PaperCopy WHERE SoId=@id AND DocType=@dt ORDER BY Id`,
-      { id: { type: sql.VarChar(50), value: soId }, dt: { type: sql.NVarChar(20), value: docType } })).recordset || [];
+    // The check and the insert hold one lock per bill and document: two previews opened together each found no
+    // set and each issued one — I69-04233 got 8 copies (UAT batch 6).
     const reissue = req.body?.reissue === true;
-    if (existing.length && !reissue) {
-      return res.json({ soId, docType, reused: true, copies: existing.map(c => ({ color: c.CopyColor, label: c.CopyLabel, qrNonce: c.QrNonce })) });
-    }
-    if (existing.length && !PAPER_ROLES.includes(req.user.role)) {
-      return res.status(403).json({ message: 'ออกชุดเอกสารใหม่ได้เฉพาะฝ่ายที่ดูแลเอกสาร' });
-    }
-    await wfQuery(`DELETE FROM wf.PaperScan WHERE PaperCopyId IN (SELECT Id FROM wf.PaperCopy WHERE SoId=@id AND DocType=@dt)`,
-      { id: { type: sql.VarChar(50), value: soId }, dt: { type: sql.NVarChar(20), value: docType } });
-    await wfQuery(`DELETE FROM wf.PaperCopy WHERE SoId=@id AND DocType=@dt`,
-      { id: { type: sql.VarChar(50), value: soId }, dt: { type: sql.NVarChar(20), value: docType } });
-
-    const created = [];
-    for (const c of ISSUE_COPIES) {
-      const nonce = `${hd.WfRef || soId}-${c.color}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-      await wfQuery(`
-        INSERT INTO wf.PaperCopy (SoId, WfRef, DocType, CopyColor, CopyLabel, QrNonce, Status, HolderUserId)
-        VALUES (@so, @ref, @dt, @col, @lbl, @nonce, 'PRINTED', @uid)`,
-        {
-          so: { type: sql.NVarChar(50), value: soId },
-          ref:{ type: sql.NVarChar(30), value: hd.WfRef || null },
-          dt: { type: sql.NVarChar(20), value: docType },
-          col:{ type: sql.NVarChar(20), value: c.color },
-          lbl:{ type: sql.NVarChar(80), value: c.label },
-          nonce:{ type: sql.NVarChar(64), value: nonce },
-          uid:{ type: sql.Int, value: req.user.sub },
-        });
-      created.push({ color: c.color, label: c.label, qrNonce: nonce });
-    }
+    const out = await wfTransaction(async (tx) => {
+      const q = (text, inputs = {}) => { const r = tx.request(); for (const [k, v] of Object.entries(inputs)) r.input(k, v.type, v.value); return r.query(text); };
+      const key = { id: { type: sql.VarChar(50), value: soId }, dt: { type: sql.NVarChar(20), value: docType } };
+      await q(`DECLARE @r INT; EXEC @r = sp_getapplock @Resource = @res, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
+               IF @r < 0 RAISERROR('paper set is being printed, try again', 16, 1);`, { res: { type: sql.NVarChar(255), value: `PaperSet_${soId}_${docType}` } });
+      const existing = (await q(`SELECT CopyColor, CopyLabel, QrNonce FROM wf.PaperCopy WHERE SoId=@id AND DocType=@dt ORDER BY Id`, key)).recordset || [];
+      if (existing.length && !reissue) {
+        return { reused: true, copies: existing.map(c => ({ color: c.CopyColor, label: c.CopyLabel, qrNonce: c.QrNonce })) };
+      }
+      if (existing.length && !PAPER_ROLES.includes(req.user.role)) {
+        throw Object.assign(new Error('ออกชุดเอกสารใหม่ได้เฉพาะฝ่ายที่ดูแลเอกสาร'), { status: 403 });
+      }
+      await q(`DELETE FROM wf.PaperScan WHERE PaperCopyId IN (SELECT Id FROM wf.PaperCopy WHERE SoId=@id AND DocType=@dt)`, key);
+      await q(`DELETE FROM wf.PaperCopy WHERE SoId=@id AND DocType=@dt`, key);
+      const created = [];
+      for (const c of ISSUE_COPIES) {
+        const nonce = `${hd.WfRef || soId}-${c.color}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        await q(`
+          INSERT INTO wf.PaperCopy (SoId, WfRef, DocType, CopyColor, CopyLabel, QrNonce, Status, HolderUserId)
+          VALUES (@so, @ref, @dt, @col, @lbl, @nonce, 'PRINTED', @uid)`,
+          {
+            so: { type: sql.NVarChar(50), value: soId },
+            ref:{ type: sql.NVarChar(30), value: hd.WfRef || null },
+            dt: { type: sql.NVarChar(20), value: docType },
+            col:{ type: sql.NVarChar(20), value: c.color },
+            lbl:{ type: sql.NVarChar(80), value: c.label },
+            nonce:{ type: sql.NVarChar(64), value: nonce },
+            uid:{ type: sql.Int, value: req.user.sub },
+          });
+        created.push({ color: c.color, label: c.label, qrNonce: nonce });
+      }
+      return { copies: created };
+    });
+    if (out.reused) return res.json({ soId, docType, reused: true, copies: out.copies });
+    const created = out.copies;
     broadcast('paper_updated', { soId });
     res.json({ soId, docType, copies: created });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // ── POST /api/papertrail/scan — สแกน QR เลื่อนสถานะกระดาษ ──────

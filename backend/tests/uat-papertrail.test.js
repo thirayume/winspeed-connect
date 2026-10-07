@@ -72,3 +72,19 @@ test('board: WinSpeed-pending column and a drawn-tons scan limited to control ti
   assert.match(sqlText, /WHEN hd\.AppvFlag = 'W' AND hd\.AppvDocuNo IS NULL THEN 'PENDING_APPROVAL'/);
   assert.match(sqlText, /CASE WHEN so\.ImportedDocuNo IS NOT NULL\s+AND \(so\.SoPrefix = 'AI' OR so\.TruckPlate = N'ตั๋วคุม' OR so\.NoTruckRequired = 1\) THEN \(/);
 });
+
+// UAT batch 6 — two print previews opened together each found no set and each issued one (8 copies); the check and
+// the insert now run in one transaction under a lock per bill and document
+test('print: the existing-set check runs under a per-bill lock inside the transaction', async () => {
+  copies.length = 0;
+  const before = db.calls.length;
+  const r = await app.call('POST', '/api/papertrail/900/print', { body: { docType: 'ISSUE' }, user: { sub: 43, role: 'SALES' } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const calls = db.calls.slice(before);
+  const lock = calls.findIndex(c => /sp_getapplock/.test(c.text));
+  const check = calls.findIndex(c => /SELECT CopyColor, CopyLabel, QrNonce FROM wf\.PaperCopy/.test(c.text));
+  assert.ok(lock >= 0 && check > lock, 'lock first, then the check');
+  assert.equal(calls[lock].kind, 'tx');
+  assert.equal(calls[check].kind, 'tx');
+  assert.equal(calls[lock].inputs.res, 'PaperSet_900_ISSUE');
+});
