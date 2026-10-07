@@ -35,7 +35,7 @@ async function requirePaperInScope(req, res, next) {
   } catch (e) { res.status(500).json({ message: e.message }); }
 }
 
-const STAGES = ['DRAFT', 'CONFIRMED', 'PICKING', 'LOADED', 'SHIPPED', 'IMPORTED'];
+const STAGES = ['DRAFT', 'PENDING_APPROVAL', 'CONFIRMED', 'PICKING', 'LOADED', 'SHIPPED', 'IMPORTED'];
 // ใบจ่ายของ (ISSUE) 4 สี ตามเอกสารจริง
 const ISSUE_COPIES = [
   { color: 'WHITE',  label: 'ต้นฉบับ (บัญชี)' },
@@ -114,6 +114,9 @@ router.get('/board', async (req, res) => {
               WHEN ext.IsLoaded = 1 THEN 'LOADED'
               WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
               WHEN ext.IsUnlocked = 1 THEN 'DRAFT'
+              -- same rule as wf.v_AllSalesOrders: confirmed in the app, not yet approved in WinSpeed (the board
+              -- showed these as "waiting for delivery" and its WinSpeed column stayed empty — UAT batch 6)
+              WHEN hd.AppvFlag = 'W' AND hd.AppvDocuNo IS NULL THEN 'PENDING_APPROVAL'
               ELSE 'CONFIRMED'
             END AS Status,
             hd.DocuType,
@@ -124,7 +127,7 @@ router.get('/board', async (req, res) => {
           WHERE hd.DocuType IN (103, 104)
         ) w
         WHERE w.DedupRN = 1
-          AND (w.Status IN ('DRAFT', 'CONFIRMED', 'PICKING', 'LOADED')
+          AND (w.Status IN ('DRAFT', 'PENDING_APPROVAL', 'CONFIRMED', 'PICKING', 'LOADED')
                OR (w.Status IN ('SHIPPED', 'IMPORTED') AND w.CreatedAt >= DATEADD(day, -7, GETDATE())))
       ),
       RankedSO AS (
@@ -141,13 +144,16 @@ router.get('/board', async (req, res) => {
                    WHEN so.SourceType = 'WINSPEED' AND ISNULL(sle.IsGiveaway, CASE WHEN dt.FreeFlag = 'Y' THEN 1 ELSE 0 END) = 0 THEN ISNULL(dt.GoodQty2, 0)
                    ELSE 0
                  END) AS TotalQtyTon,
-             (
+             -- only a control ticket is drawn against; the remark scan ran for every card and took most of the
+             -- board's 8.8 s on the production copy (UAT batch 6)
+             CASE WHEN so.ImportedDocuNo IS NOT NULL
+                   AND (so.SoPrefix = 'AI' OR so.TruckPlate = N'ตั๋วคุม' OR so.NoTruckRequired = 1) THEN (
                 SELECT SUM(d2.GoodQty2)
                 FROM dbo.SOHD h2 WITH (NOLOCK)
                 JOIN dbo.SODT d2 WITH (NOLOCK) ON h2.SOID = d2.SOID
                 WHERE h2.DocuType IN (103, 104) AND h2.DocuStatus <> 'C'
                   AND (h2.RefNo = so.ImportedDocuNo OR h2.AppvDocuNo = so.ImportedDocuNo OR h2.Remark LIKE '%' + so.ImportedDocuNo + '%')
-             ) AS DrawnQtyTon,
+             ) END AS DrawnQtyTon,
              COUNT(CASE WHEN so.SourceType = 'DRAFT' THEN sol.SoId ELSE dt.SOID END) AS LineCnt,
              (SELECT COUNT(*) FROM wf.PaperCopy pc WHERE pc.SoId = so.Id) AS CopyCnt,
              (SELECT COUNT(*) FROM wf.PaperCopy pc WHERE pc.SoId = so.Id AND pc.Status='LOST') AS LostCnt,

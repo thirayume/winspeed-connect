@@ -60,3 +60,15 @@ test('SO-11: the counter keying a bill for a salesperson can draw the coupon it 
   row.CreatedBy = 36;
   await validateAndLockCouponReservations(tx, lines, '1158', null, { userId: 64, altUserIds: [36], role: 'COUNTER_SALES' }, 'I');
 });
+
+// UAT batch 6 — the board shows bills still waiting for WinSpeed approval in their own column (same rule as
+// wf.v_AllSalesOrders), and the remark scan for drawn tons runs for control tickets only (8.8 s → 0.7 s)
+test('board: WinSpeed-pending column and a drawn-tons scan limited to control tickets', async () => {
+  const before = db.calls.length;
+  const r = await app.call('GET', '/api/papertrail/board', { user: { sub: 12, role: 'ACCOUNTING' } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.stages.slice(0, 3), ['DRAFT', 'PENDING_APPROVAL', 'CONFIRMED']);
+  const sqlText = db.calls.slice(before).find(c => /WITH Orders AS/.test(c.text)).text;
+  assert.match(sqlText, /WHEN hd\.AppvFlag = 'W' AND hd\.AppvDocuNo IS NULL THEN 'PENDING_APPROVAL'/);
+  assert.match(sqlText, /CASE WHEN so\.ImportedDocuNo IS NOT NULL\s+AND \(so\.SoPrefix = 'AI' OR so\.TruckPlate = N'ตั๋วคุม' OR so\.NoTruckRequired = 1\) THEN \(/);
+});

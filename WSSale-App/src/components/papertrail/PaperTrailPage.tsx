@@ -22,6 +22,8 @@ const CAN_APPROVE_UNLOCK = ['APPROVER', 'ADMIN', 'MANAGER'];
 
 const STATUS_NEXT: Record<string, { label: string; roles: string[] } | undefined> = {
   DRAFT:     { label: 'ยืนยันเป็นรอจัดส่ง', roles: ['SALES', 'COUNTER_SALES', 'ADMIN'] },
+  // picking may start before WinSpeed approves; shipping waits for the approval
+  PENDING_APPROVAL: { label: 'เริ่มรอรับสินค้า', roles: ['WAREHOUSE', 'ADMIN'] },
   CONFIRMED: { label: 'เริ่มรอรับสินค้า', roles: ['WAREHOUSE', 'ADMIN'] },
   PICKING:   { label: 'โหลดสินค้า', roles: ['WAREHOUSE', 'ADMIN'] },
   LOADED:    { label: 'ส่งออกจากตาชั่ง', roles: ['WAREHOUSE', 'ADMIN', 'MANAGER', 'C_LEVEL'] },
@@ -103,7 +105,7 @@ export function PaperTrailPage() {
         }
         await confirmSO(card.id);
       }
-      else if (card.status === 'CONFIRMED') await moveToPicking(card.id);
+      else if (card.status === 'CONFIRMED' || card.status === 'PENDING_APPROVAL') await moveToPicking(card.id);
       else if (card.status === 'PICKING') await confirmLoading(Number(card.id), []);
       else if (card.status === 'LOADED') {
         setShipModalConfig({ isOpen: true, soIds: [card.id] });
