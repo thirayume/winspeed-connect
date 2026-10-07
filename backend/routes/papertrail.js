@@ -8,11 +8,32 @@
 const router = require('express').Router();
 const crypto = require('crypto');
 const { sql, wfQuery } = require('../db');
-const { requireAuth } = require('../middleware/auth');
-const { getVisibleScope, scopeFilter } = require('../services/visible-scope');
+const { requireAuth, requireRole } = require('../middleware/auth');
+const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
 const { broadcast } = require('../services/socket');
 
 router.use(requireAuth);
+
+// Roles that handle the paper set (the Paper Trail menu). SALES prints its own bills from the trip window.
+const PAPER_ROLES = ['COUNTER_SALES', 'WAREHOUSE', 'WEIGHBRIDGE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'];
+
+// R12 O-4 (UAT batch 5, SHP-04): the paper set of a bill is visible only inside the user's own + team scope
+async function paperInScope(user, soId) {
+  const scope = await getVisibleScope(user);
+  if (scope.all) return true;
+  const row = (await wfQuery(`
+    SELECT TOP 1 so.SalesUserId, CAST(h.EmpID AS VARCHAR(20)) AS EmpID
+    FROM wf.v_AllSalesOrders so
+    LEFT JOIN dbo.SOHD h WITH (NOLOCK) ON CAST(h.SOID AS VARCHAR(50)) = CAST(so.Id AS VARCHAR(50))
+    WHERE so.Id = @id`, { id: { type: sql.VarChar(50), value: String(soId) } })).recordset[0];
+  return Boolean(row) && (inScope(scope, { userId: row.SalesUserId }) || inScope(scope, { empId: row.EmpID }));
+}
+async function requirePaperInScope(req, res, next) {
+  try {
+    if (!(await paperInScope(req.user, req.params.soId))) return res.status(404).json({ message: 'ไม่พบ SO' });
+    next();
+  } catch (e) { res.status(500).json({ message: e.message }); }
+}
 
 const STAGES = ['DRAFT', 'CONFIRMED', 'PICKING', 'LOADED', 'SHIPPED', 'IMPORTED'];
 // ใบจ่ายของ (ISSUE) 4 สี ตามเอกสารจริง
@@ -185,7 +206,7 @@ router.get('/board', async (req, res) => {
 });
 
 // ── GET /api/papertrail/document/:soId — ข้อมูลสำหรับพิมพ์เอกสาร ──
-router.get('/document/:soId', async (req, res) => {
+router.get('/document/:soId', requirePaperInScope, async (req, res) => {
   try {
     const soId = String(req.params.soId);
     const hd = (await wfQuery(`
@@ -232,7 +253,7 @@ router.get('/document/:soId', async (req, res) => {
 });
 
 // ── GET /api/papertrail/:soId/copies — สำเนากระดาษของ SO ──────
-router.get('/:soId/copies', async (req, res) => {
+router.get('/:soId/copies', requirePaperInScope, async (req, res) => {
   try {
     const r = await wfQuery(`
       SELECT pc.*, u.DisplayName AS HolderName
@@ -244,7 +265,7 @@ router.get('/:soId/copies', async (req, res) => {
 });
 
 // ── POST /api/papertrail/:soId/print — สร้างสำเนา 4 สี + QR ────
-router.post('/:soId/print', async (req, res) => {
+router.post('/:soId/print', requirePaperInScope, async (req, res) => {
   try {
     const soId = String(req.params.soId);
     const docType = (req.body && req.body.docType) === 'RECEIVE' ? 'RECEIVE' : 'ISSUE';
@@ -252,7 +273,18 @@ router.post('/:soId/print', async (req, res) => {
       { id: { type: sql.VarChar(50), value: soId } })).recordset[0];
     if (!hd) return res.status(404).json({ message: 'ไม่พบ SO' });
 
-    // พิมพ์ซ้ำ docType เดิม → reset (ลบของเก่า) เพื่อ run nonce ใหม่
+    // Printing again returns the SAME set: same QR codes, scan history kept. Opening the print preview used to
+    // delete the copies and their scans and issue new QR codes, so paper already handed out stopped scanning and
+    // the trail was lost (UAT batch 5, SHP-04). A new set is issued only on an explicit reissue by a paper role.
+    const existing = (await wfQuery(`SELECT CopyColor, CopyLabel, QrNonce FROM wf.PaperCopy WHERE SoId=@id AND DocType=@dt ORDER BY Id`,
+      { id: { type: sql.VarChar(50), value: soId }, dt: { type: sql.NVarChar(20), value: docType } })).recordset || [];
+    const reissue = req.body?.reissue === true;
+    if (existing.length && !reissue) {
+      return res.json({ soId, docType, reused: true, copies: existing.map(c => ({ color: c.CopyColor, label: c.CopyLabel, qrNonce: c.QrNonce })) });
+    }
+    if (existing.length && !PAPER_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ message: 'ออกชุดเอกสารใหม่ได้เฉพาะฝ่ายที่ดูแลเอกสาร' });
+    }
     await wfQuery(`DELETE FROM wf.PaperScan WHERE PaperCopyId IN (SELECT Id FROM wf.PaperCopy WHERE SoId=@id AND DocType=@dt)`,
       { id: { type: sql.VarChar(50), value: soId }, dt: { type: sql.NVarChar(20), value: docType } });
     await wfQuery(`DELETE FROM wf.PaperCopy WHERE SoId=@id AND DocType=@dt`,
@@ -282,7 +314,7 @@ router.post('/:soId/print', async (req, res) => {
 
 // ── POST /api/papertrail/scan — สแกน QR เลื่อนสถานะกระดาษ ──────
 // body: { qrNonce, action }  action: TRANSIT/SIGN/FILE/LOST/FOUND
-router.post('/scan', async (req, res) => {
+router.post('/scan', requireRole(...PAPER_ROLES), async (req, res) => {
   try {
     const { qrNonce, action, note, location } = req.body || {};
     if (!qrNonce || !action) return res.status(400).json({ message: 'qrNonce และ action จำเป็น' });
@@ -293,6 +325,7 @@ router.post('/scan', async (req, res) => {
     const copy = (await wfQuery(`SELECT * FROM wf.PaperCopy WHERE QrNonce = @n`,
       { n: { type: sql.NVarChar(64), value: qrNonce } })).recordset[0];
     if (!copy) return res.status(404).json({ message: 'ไม่พบสำเนา (QR ไม่ถูกต้อง)' });
+    if (!(await paperInScope(req.user, copy.SoId))) return res.status(404).json({ message: 'ไม่พบสำเนา (QR ไม่ถูกต้อง)' });
 
     await wfQuery(`UPDATE wf.PaperCopy SET Status=@st, HolderUserId=@uid, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
       { st: { type: sql.NVarChar(20), value: toStatus }, uid: { type: sql.Int, value: req.user.sub }, id: { type: sql.Int, value: copy.Id } });
@@ -318,7 +351,7 @@ router.get('/scan/:qrNonce', async (req, res) => {
   try {
     const copy = (await wfQuery(`SELECT pc.*, u.DisplayName AS HolderName FROM wf.PaperCopy pc LEFT JOIN wf.AppUser u ON u.Id=pc.HolderUserId WHERE pc.QrNonce=@n`,
       { n: { type: sql.NVarChar(64), value: req.params.qrNonce } })).recordset[0];
-    if (!copy) return res.status(404).json({ message: 'ไม่พบสำเนา' });
+    if (!copy || !(await paperInScope(req.user, copy.SoId))) return res.status(404).json({ message: 'ไม่พบสำเนา' });
     const hist = (await wfQuery(`
       SELECT s.*, u.DisplayName AS ScannerName FROM wf.PaperScan s
       LEFT JOIN wf.AppUser u ON u.Id = s.ScannerUserId
@@ -329,7 +362,7 @@ router.get('/scan/:qrNonce', async (req, res) => {
 });
 
 // ── GET /api/papertrail/lost — ใบที่หาย/ค้างนาน (alert >3 วัน) ──
-router.get('/lost', async (req, res) => {
+router.get('/lost', requireRole(...PAPER_ROLES), async (req, res) => {
   try {
     const r = await wfQuery(`
       SELECT pc.*, u.DisplayName AS HolderName,

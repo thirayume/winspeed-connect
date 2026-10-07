@@ -2332,6 +2332,14 @@ router.patch('/:id/unlock', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNT
     await wfQuery(`UPDATE wf.SalesOrderLineExt SET RebateBooked=0 WHERE SOID=@soId`, { soId: { type: sql.VarChar(50), value: so.Id } });
     await wfQuery(`UPDATE dbo.SOHD SET PkgStatus='N' WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: so.Id } });
     await wfQuery(`UPDATE wf.SalesOrderExt SET UpdatedAt=GETUTCDATE() WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: so.Id } });
+    // a direct unlock from the warehouse queue answers any unlock request still waiting for this bill; otherwise it
+    // stayed PENDING in the approval centre after the work was done (UAT batch 5, SHP-03)
+    await wfQuery(`UPDATE wf.UnlockRequest SET Status='APPROVED', ApproverId=@uid, ResponseNote=@note, RespondedAt=GETUTCDATE()
+                   WHERE SoId=@soId AND Status='PENDING' AND ReqType='UNLOCK'`, {
+      uid: { type: sql.Int, value: req.user.sub },
+      note: { type: sql.NVarChar(300), value: note || 'ปลดล็อกจากหน้าคลัง' },
+      soId: { type: sql.NVarChar(50), value: String(so.Id) },
+    });
     await audit(null, so.Id, req.user.sub, 'UNLOCKED', 'PICKING', 'CONFIRMED', note, req.ip);
     await writeAudit({ screen: SCREEN.SO_UNLOCK, action: 'U', docuNo: so.WfRef,
       docuDate: so.CreatedAt, refId: so.Id, username: auditUser(req.user),

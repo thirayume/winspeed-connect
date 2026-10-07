@@ -46,3 +46,12 @@ test('APV-02: an unlock request is refused unless the bill is in PICKING', async
   const yes = await app.call('POST', '/api/so/701/unlock-request', { body: { reason: 'ขอปลดล็อกทดสอบ', reqType: 'UNLOCK' }, user: { sub: 34, role: 'SALES' } });
   assert.equal(yes.status, 200, JSON.stringify(yes.body));
 });
+
+test('SHP-03: a direct unlock from the warehouse queue also answers the pending unlock request', async () => {
+  const before = db.calls.length;
+  const r = await app.call('PATCH', '/api/so/701/unlock', { body: { note: 'ปลดล็อก' }, user: { sub: 12, role: 'ACCOUNTING' } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const close = db.calls.slice(before).find(c => /UPDATE wf\.UnlockRequest SET Status='APPROVED'.*WHERE SoId=@soId AND Status='PENDING' AND ReqType='UNLOCK'/s.test(c.text));
+  assert.ok(close, 'pending request answered');
+  assert.equal(close.inputs.soId, '701');
+});
