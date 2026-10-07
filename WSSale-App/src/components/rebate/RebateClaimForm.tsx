@@ -126,6 +126,8 @@ export function ClaimDialog({ pool, onClose, onDone }:
   const retainedAmount = Math.round(grand * (companyRatio / 100) * 100) / 100;
 
   async function submit() {
+    const below = [...rebate, ...diff].find(l => calc(l).qty > 0 && calc(l).perTon < 0);
+    if (below) { setErr(`${below.goodCode || below.invoiceNo || 'บรรทัด'}: ราคาขายต่ำกว่าราคาสุทธิ ไม่มีส่วนต่างให้เคลียร์`); return; }
     const pack = (rows: Line[], lineType: Kind) => rows
       .filter(l => calc(l).qty > 0 && calc(l).perTon !== 0)
       .map(l => ({

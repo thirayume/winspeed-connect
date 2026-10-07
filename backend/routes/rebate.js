@@ -467,6 +467,11 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
     if (!claimAmt && (!lines || !lines.length)) {
       return res.status(400).json({ message: 'ต้องระบุ claimAmt หรือรายการย่อย lines' });
     }
+    // a salesperson claims against their own pool, which caps the amount; without a pool there was no cap at all
+    // (the form always sends one; the cap was checked only in the browser)
+    if (!poolId && !canViewAllRebateAmounts(req.user)) {
+      return res.status(400).json({ message: 'ต้องยื่นเคลมจาก pool ของตนเอง (ยอดที่ใช้ได้จำกัดตามยอดสะสม)' });
+    }
 
     // Resolve customer code/ID to internal EMCust record
     let cust = null;
@@ -694,6 +699,7 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
 
         const problems = [];
         const skippedNoPlan = [];
+        const skippedNoRebate = [];
         let calculatedSum = 0;
         let seq = 0;
 
@@ -730,9 +736,16 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
               continue;
             }
 
+            const rebatePerTon = Math.round((pricePerTon - netPricePerTon) * 100) / 100;
+            // UAT batch 6 (APV-04): a lot sold at or below the NET carries no rebate. FIFO reached 2019 invoices at
+            // ฿9,800 against a NET of ฿15,000, the amount went negative and the database refused it (HTTP 500)
+            if (rebatePerTon <= 0) {
+              skippedNoRebate.push(`${lot.SourceDocuNo}/${lot.SourceListNo} ราคา ฿${pricePerTon.toLocaleString()} ≤ NET ฿${netPricePerTon.toLocaleString()}`);
+              continue;
+            }
+
             takenInRequest.set(keyOf(lot, lineType), (takenInRequest.get(keyOf(lot, lineType)) || 0) + take);
 
-            const rebatePerTon = Math.round((pricePerTon - netPricePerTon) * 100) / 100;
             const lineAmount = Math.round(take * rebatePerTon * 100) / 100;
             calculatedSum += lineAmount;
 
@@ -774,16 +787,22 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
         if (problems.length) {
           throw {
             status: 400,
-            message: 'ยอดขอเคลียร์ไม่ตรงกับยอดขนจริง',
+            // the reasons go in the message too: the response carried only the message, so the form showed no detail
+            message: `ยอดขอเคลียร์ไม่ตรงกับยอดขนจริง — ${problems.join(' · ')}`
+              + (skippedNoRebate.length ? ` (ข้ามใบส่งของที่ราคาไม่สูงกว่า NET ${skippedNoRebate.length} บรรทัด)` : ''),
             source: 'WINSpeed — ใบส่งของ/ใบกำกับ (DocuType 104) ของลูกค้ารายนี้',
             reconciliation: problems,
             skippedNoPlan: skippedNoPlan.length ? skippedNoPlan : undefined,
+            skippedNoRebate: skippedNoRebate.length ? [...skippedNoRebate.slice(0, 10), ...(skippedNoRebate.length > 10 ? [`และอีก ${skippedNoRebate.length - 10} บรรทัด`] : [])] : undefined,
           };
         }
         if (!parsedLines.length) {
           throw { status: 400, message: 'ไม่มีรายการที่ตัดสิทธิ์ได้' };
         }
         totalAmt = Math.round(calculatedSum * 100) / 100;
+      }
+      if (!(totalAmt > 0)) {
+        throw { status: 400, message: 'ยอดขอเคลียร์ต้องมากกว่า 0 (ราคาขายต้องสูงกว่าราคาสุทธิ)' };
       }
 
       if (pool) {
@@ -976,7 +995,7 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
   } catch (e) {
     console.error(e);
     const { status, message } = mapDatabaseError(e, 'เกิดข้อผิดพลาดในการยื่นเคลม');
-    res.status(status).json({ message });
+    res.status(status).json({ message, reconciliation: e.reconciliation, skippedNoPlan: e.skippedNoPlan, skippedNoRebate: e.skippedNoRebate });
   }
 });
 

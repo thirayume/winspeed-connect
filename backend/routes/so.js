@@ -1179,7 +1179,8 @@ router.patch('/:id/giveaway-lines/:lineNum/approve', requireRole('MANAGER', 'ADM
     const so = await getSoOrThrow(req.params.id);
     const lineNum = Number(req.params.lineNum);
     const note = req.body?.note || null;
-    const isDraft = so.Status === 'DRAFT';
+    // an unlocked native bill reads DRAFT too, but its lines live in SalesOrderLineExt
+    const isDraft = so.Status === 'DRAFT' && !so.ImportedDocuNo;
     const targetTable = isDraft ? 'wf.SalesOrderLine' : 'wf.SalesOrderLineExt';
     const idColumn = isDraft ? 'SoId' : 'SOID';
     const lineColumn = isDraft ? 'LineNum' : 'ListNo';
@@ -3146,8 +3147,8 @@ router.post('/bulk-cancel-delete', requireRole('SALES', 'ADMIN', 'C_LEVEL'), asy
             ipAddress: req.ip,
           });
         } else {
-          // CANCEL
-          if (so.Status === 'DRAFT') {
+          // CANCEL — an unlocked native bill reads DRAFT too, but has a WinSpeed document to cancel
+          if (so.Status === 'DRAFT' && !so.ImportedDocuNo) {
             const reqDraft = tx.request();
             reqDraft.input('id', sql.Int, so.Id);
             await reqDraft.query(`UPDATE wf.SalesOrder SET Status='CANCELLED', UpdatedAt=GETUTCDATE() WHERE Id=@id`);
@@ -3186,17 +3187,8 @@ router.post('/bulk-cancel-delete', requireRole('SALES', 'ADMIN', 'C_LEVEL'), asy
                   AND Status = 'RESERVED'
               `);
 
-            // R9-1: Restore any applied rebate claim back to clean APPROVED status
-            try {
-              await tx.request()
-                .input('soId', sql.Int, Number(so.Id))
-                .query(`
-                  UPDATE wf.RebateClaim
-                  SET AppliedDraftSoId = NULL,
-                      Note = RTRIM(ISNULL(Note + ' ', '') + N'[บิลร่างถูกยกเลิก คืนสถานะเคลม]')
-                  WHERE AppliedDraftSoId = @soId AND Status = 'APPROVED'
-                `);
-            } catch { /* column may not exist yet */ }
+            // R9-1 / F-02: give back applied claims and consumed accrual (drafts and confirmed bills alike)
+            await releaseRebateOnCancel(tx, so, so.Status === 'DRAFT' && !so.ImportedDocuNo);
 
             await audit(tx, so.Id, req.user.sub, 'CANCELLED', so.Status, 'CANCELLED', validatedReasonText, req.ip);
 
@@ -3228,6 +3220,42 @@ router.post('/bulk-cancel-delete', requireRole('SALES', 'ADMIN', 'C_LEVEL'), asy
 });
 
 // ── PATCH /api/so/:id/cancel ─────────────────────────────────
+/**
+ * F-02 (UAT batch 6): a cancelled bill gives back the rebate it used — only delete and bulk cancel did it, for
+ * drafts only. A claim applied to the draft is free again; a claim advanced at confirm (CN_ISSUED on this bill)
+ * returns to APPROVED with its amount; accrual the bill's discount consumed goes back to the ledger through a
+ * reversing usage row, so the history stays.
+ */
+async function releaseRebateOnCancel(tx, so, isDraft) {
+  const docuNo = String(so.ImportedDocuNo || so.WfRef || '');
+  const claimNote = isDraft ? '[บิลร่างถูกยกเลิก คืนสถานะเคลม]' : `[บิล ${docuNo} ถูกยกเลิก คืนสถานะเคลม]`;
+  await tx.request()
+    .input('soId', sql.Int, Number(so.Id))
+    .input('docuNo', sql.VarChar(50), docuNo)
+    .input('custId', sql.NVarChar(20), String(so.CustId || ''))
+    .input('note', sql.NVarChar(200), claimNote)
+    .input('draft', sql.Bit, isDraft ? 1 : 0)
+    .query(`
+      UPDATE wf.RebateClaim
+      SET AppliedDraftSoId = NULL, Note = RTRIM(ISNULL(Note + ' ', '') + @note)
+      WHERE @draft = 1 AND AppliedDraftSoId = @soId AND Status = 'APPROVED';
+      UPDATE wf.RebateClaim
+      SET Status = 'APPROVED', RemainingAmt = ClaimAmt, AppliedDraftSoId = NULL, AppliedSoDocuNo = NULL,
+          Note = RTRIM(ISNULL(Note + ' ', '') + @note)
+      WHERE @draft = 0 AND @docuNo <> '' AND Status = 'CN_ISSUED' AND AppliedSoDocuNo = @docuNo AND CustId = @custId;`);
+  if (!isDraft) {
+    await tx.request().input('soid', sql.VarChar(50), String(so.Id)).query(`
+      UPDATE l SET RemainingAmt = l.RemainingAmt + u.Amt, Status = CASE WHEN l.Status = 'CLAIMED' THEN 'PENDING' ELSE l.Status END
+      FROM wf.RebateLedger l
+      JOIN (SELECT LedgerId, SUM(DeductedAmt) Amt FROM wf.RebateUsage WHERE AppliedSOID = @soid GROUP BY LedgerId HAVING SUM(DeductedAmt) > 0) u
+        ON u.LedgerId = l.Id
+      WHERE l.ReversedFlag = 0;
+      INSERT INTO wf.RebateUsage (LedgerId, AppliedSOID, DeductedAmt)
+      SELECT LedgerId, AppliedSOID, -SUM(DeductedAmt) FROM wf.RebateUsage WHERE AppliedSOID = @soid
+      GROUP BY LedgerId, AppliedSOID HAVING SUM(DeductedAmt) > 0;`);
+  }
+}
+
 router.patch('/:id/cancel', requireCapability('so.cancel'), requireSoInScope, async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id);
@@ -3256,8 +3284,11 @@ router.patch('/:id/cancel', requireCapability('so.cancel'), requireSoInScope, as
     const cancelReasonCode = reasonCheck.reasonCode;
     const cancelReason = reasonCheck.reasonText;
 
+    // an unlocked native bill also reads DRAFT; it has a WinSpeed document to cancel, so it is not a draft here —
+    // it took the draft branch, which updated no row, and the bill stayed live (UAT batch 6)
+    const isDraft = so.Status === 'DRAFT' && !so.ImportedDocuNo;
     await wfTransaction(async (tx) => {
-      if (so.Status === 'DRAFT') {
+      if (isDraft) {
         const reqDraft = tx.request();
         reqDraft.input('id', sql.Int, so.Id);
         await reqDraft.query(`UPDATE wf.SalesOrder SET Status='CANCELLED', UpdatedAt=GETUTCDATE() WHERE Id=@id`);
@@ -3275,6 +3306,8 @@ router.patch('/:id/cancel', requireCapability('so.cancel'), requireSoInScope, as
         reqExt.input('id', sql.VarChar(50), String(so.Id));
         await reqExt.query(`UPDATE wf.SalesOrderExt SET UpdatedAt=GETUTCDATE() WHERE SOID=@id`);
       }
+
+      await releaseRebateOnCancel(tx, so, isDraft);
 
       // Auto-restore Giveaway Quota
       const reqGw = tx.request();
