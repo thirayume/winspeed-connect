@@ -32,6 +32,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/FROM wf\.v_AllSalesOrders WHERE CAST\(Id AS INT\) = @id/.test(text)) {
     return owners[inputs.id] ? [{ Id: inputs.id, Status: 'DRAFT', SalesUserId: owners[inputs.id], ImportedDocuNo: null }] : [];
   }
+  if (/SELECT \* FROM wf\.UnlockRequest WHERE Id=@id/.test(text)) return inputs.id === 70 ? [{ Id: 70, SoId: '600', RequesterId: 20, Status: 'PENDING', ReqType: 'UNLOCK' }] : [];
   if (/AS HasColumns/.test(text)) return [{ HasColumns: 1 }];
   if (/SELECT @@ROWCOUNT AS Affected/.test(text)) return [{ Affected: 1 }];
   if (/SELECT SalesUserId FROM wf\.Quotation WHERE Id=@id/.test(text)) return inputs.id === 7 ? [{ SalesUserId: 20 }] : [];
@@ -106,4 +107,11 @@ test('giveaway quota of another salesperson: refused for SALES, allowed for the 
   assert.equal((await app.call('GET', '/api/giveaway/my-quota?salesUserId=11', { user: { sub: 10, role: 'SALES' } })).status, 200);
   assert.equal((await app.call('GET', '/api/giveaway/my-quota?salesUserId=20', { user: { sub: 50, role: 'COUNTER_SALES' } })).status, 200);
   assert.equal((await app.call('GET', '/api/giveaway/my-quota', { user: { sub: 11, role: 'SALES' } })).status, 200);
+});
+
+test('a manager on the org chart cannot answer another team\'s unlock request (404)', async () => {
+  const r = await app.call('PATCH', '/api/so/unlock-requests/70/resolve', { body: { approve: true, note: 'test' }, user: { sub: 31, role: 'MANAGER' } });
+  assert.equal(r.status, 404);
+  const all = await app.call('PATCH', '/api/so/unlock-requests/70/resolve', { body: { approve: false, note: 'test' }, user: { sub: 12, role: 'ACCOUNTING' } });
+  assert.equal(all.status, 200, JSON.stringify(all.body));
 });

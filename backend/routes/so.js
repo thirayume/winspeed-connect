@@ -1057,6 +1057,8 @@ router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN',
     const reqRow = (await wfQuery(`SELECT * FROM wf.UnlockRequest WHERE Id=@id`,
       { id: { type: sql.Int, value: Number(req.params.reqId) } })).recordset[0];
     if (!reqRow) return res.status(404).json({ message: 'ไม่พบคำขอ' });
+    // R12 O-4: the same team rule as the list above — a manager on the org chart answers the team's requests only
+    if (!inScope(await getVisibleScope(req.user), { userId: reqRow.RequesterId })) return res.status(404).json({ message: 'ไม่พบคำขอ' });
     if (reqRow.Status !== 'PENDING') return res.status(400).json({ message: 'คำขอถูกดำเนินการแล้ว' });
 
     if (approve) {
@@ -1694,6 +1696,64 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message, code: e.code, problems: e.problems }); }
 });
 
+/**
+ * UAT batch 5 (found live on I69-04219): a native bill unlocked for editing is saved by PUT /:id below, and that
+ * path wrote the lines exactly as sent — no price check, no coupon check, a giveaway nobody approved, and the
+ * client's NET floor, which sets the rebate at ship ((price − NET) × tons). It now gets the server checks a new bill
+ * gets. A price approval lives on a draft bill, so an unlocked bill may keep the price it already carried for a good
+ * (not lower and, under an announced price, not more tons); a lower price or a new item goes on a new bill, which
+ * asks for approval. Returns per line the server NET floor and the giveaway approval to store.
+ */
+async function checkUnlockedNativeEdit(tx, req, so, order, beforeLines) {
+  const lines = order.lines;
+  const sameCustomer = String(order.custId) === String(so.CustId);
+  const prior = sameCustomer ? (beforeLines || []) : [];
+  const actor = { userId: req.user?.sub || req.user?.id, altUserIds: so.SalesUserId ? [Number(so.SalesUserId)] : [], role: req.user?.role };
+  const validated = await validateAndLockCouponReservations(tx, lines, order.custId, so.Id, actor, order.soPrefix || so.SoPrefix);
+  // coupon draws already on this bill: the line keeps no reservation id, the reservation names the bill as carrier
+  const held = sameCustomer ? ((await tx.request().input('so', sql.VarChar(50), String(so.Id)).query(
+    `SELECT Id, GoodId, ReservedQty - ISNULL(ConsumedQty, 0) AS LeftQty FROM wf.CouponReservation WITH (UPDLOCK, ROWLOCK)
+     WHERE CarrierSoId = @so AND Status = 'RESERVED'`)).recordset || []) : [];
+  for (const l of lines) {
+    const h = l.couponReservationId && held.find(x => Number(x.Id) === Number(l.couponReservationId));
+    if (h) h.LeftQty = Number(h.LeftQty) - Number(l.qtyTon);
+  }
+
+  const problems = [];
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const name = l.goodName || l.goodCode || l.goodId;
+    if (l.isGiveaway) {
+      const kept = prior.find(p => p.IsGiveaway && String(p.GoodId) === String(l.goodId)
+        && p.GiveawayApprovalStatus === 'APPROVED' && Number(p.QtyTon) >= Number(l.qtyTon));
+      if (kept) out.push({ net: 0, giveaway: { status: 'APPROVED', by: kept.GiveawayApprovedBy, at: kept.GiveawayApprovedAt, note: kept.GiveawayApprovalNote } });
+      else if (giveawayApprovalStatusForLine(req, l) === 'APPROVED') out.push({ net: 0, giveaway: { status: 'APPROVED', by: req.user.sub, at: new Date(), note: l.giveawayApprovalNote || null } });
+      else problems.push(`ของแถม ${name} ${l.qtyTon} ตัน ยังไม่ได้รับอนุมัติ`);
+      continue;
+    }
+    if (validated instanceof Set && validated.has(i)) { out.push({ net: 0 }); continue; }
+    if (!l.couponReservationId && Number(l.pricePerTon) === 0) {
+      const h = held.find(x => String(x.GoodId) === String(l.goodId) && Number(x.LeftQty) >= Number(l.qtyTon));
+      if (h) { h.LeftQty = Number(h.LeftQty) - Number(l.qtyTon); out.push({ net: 0 }); continue; }
+    }
+    const ev = await evaluateLinePrice(l, order.custId, order.deliveryDate || null, {});
+    if (ev.requiresApproval) {
+      const keepsPrice = prior.some(p => !p.IsGiveaway && String(p.GoodId) === String(l.goodId) && Number(p.PricePerTon) > 0
+        && Number(l.pricePerTon) >= Number(p.PricePerTon)
+        && (!(Number(ev.deviationPerTon) > 0) || Number(l.qtyTon) <= Number(p.QtyTon)));
+      if (!keepsPrice) problems.push(ev.reason || `ราคา ${name} ต้องขออนุมัติ`);
+    }
+    out.push({ net: ev.hasAnnouncedPrice && Number(ev.announcedPrice) > 0 ? Number(ev.announcedPrice) : 0 });
+  }
+  if (problems.length) {
+    throw Object.assign(new Error(`บิลที่ปลดล็อกแก้ได้เฉพาะราคาไม่ต่ำกว่าเดิมของบิล: ${problems.join('; ')} — ถ้าต้องลดราคา เพิ่มสินค้าใหม่ หรือเพิ่มของแถม ให้เปิดบิลใหม่เพื่อขออนุมัติ`),
+      { status: 409, code: 'UNLOCKED_EDIT_NEEDS_APPROVAL', problems });
+  }
+  return out;
+}
+router.checkUnlockedNativeEdit = checkUnlockedNativeEdit;
+
 // ── PUT /api/so/:id — Update existing DRAFT SO ──
 router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, res) => {
   try {
@@ -1720,10 +1780,16 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
     const isSohdOrder = !!so.ImportedDocuNo;
 
       if (isSohdOrder) {
+      const beforeLines = await getLines(so.Id);
       await wfTransaction(async tx => {
         const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, rebateDiscountAmt, creditDays, truckRemark, billRemark, transpId } = order;
         const truckPlate = order.truckPlate || null;
-        const safeRebateDiscountAmt = normalizeRebateDiscount(req, rebateDiscountAmt);
+        stripPrivateLineFields(lines);
+        const checked = await checkUnlockedNativeEdit(tx, req, so, order, beforeLines);
+        // a user who cannot see rebate amounts keeps the rebate already applied to the bill (it was reset to 0)
+        const safeRebateDiscountAmt = canViewRebateAmounts(req.user)
+          ? normalizeRebateDiscount(req, rebateDiscountAmt)
+          : Number(so.RebateDiscountAmt) || 0;
         const totalAmnt = lines.reduce((sum, l) => sum + Math.round(Number(l.qtyTon) * Number(l.pricePerTon) * 100), 0) / 100;
         if (safeRebateDiscountAmt < 0 || safeRebateDiscountAmt > totalAmnt || lines.some(l => Number(l.qtyTon) < 0 || Number(l.pricePerTon) < 0 || (l.isGiveaway && Number(l.pricePerTon) !== 0)))
           throw Object.assign(new Error('ยอดเงินหรือของแถมไม่ถูกต้อง'), { status: 400 });
@@ -1797,12 +1863,18 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
           lr.input('masterQty', sql.Decimal(12,3), l.masterQty === undefined || l.masterQty === null ? Number(l.qtyTon) : Number(l.masterQty));
           lr.input('childQty', sql.Decimal(12,3), l.childQty === undefined || l.childQty === null ? 0 : Number(l.childQty));
           lr.input('pricePerTon', sql.Decimal(12,2), Number(l.pricePerTon));
-          lr.input('netPricePerTon', sql.Decimal(12,2), Number(l.netPricePerTon) || 0);
+          lr.input('netPricePerTon', sql.Decimal(12,2), checked[i].net);
           lr.input('isGiveaway', sql.Bit, l.isGiveaway ? 1 : 0);
           lr.input('freeFlag', sql.NVarChar(1), l.isGiveaway ? 'Y' : 'N');
           lr.input('refControlTicketNo', sql.NVarChar(30), l.refControlTicketNo || null);
           lr.input('isControlTicketDrawn', sql.Bit, l.isControlTicketDrawn ? 1 : 0);
-          addGiveawayApprovalInputs(lr, req, l, hasGiveawayApproval);
+          if (hasGiveawayApproval) {
+            const g = checked[i].giveaway;
+            lr.input('giveawayApprovalStatus', sql.NVarChar(20), g ? g.status : null);
+            lr.input('giveawayApprovedBy', sql.Int, g?.by ?? null);
+            lr.input('giveawayApprovedAt', sql.DateTime2, g?.at ? new Date(g.at) : null);
+            lr.input('giveawayApprovalNote', sql.NVarChar(300), g?.note ?? null);
+          }
           lr.input('loadSequence', sql.Int, l.loadSequence || null);
 
           await lr.query(`
@@ -3351,9 +3423,12 @@ async function bookRebateAccrual(so, lines, userId) {
       return;
     }
 
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
+    // the pool month is the Bangkok business month: on a UTC server a bill shipped before 07:00 on the 1st
+    // landed in last month's pool
+    const { getBangkokDateString } = require('../services/so-pickup-policy');
+    const today = getBangkokDateString();
+    const year = Number(today.slice(0, 4));
+    const month = Number(today.slice(5, 7));
 
     // หา/สร้าง RebatePool แบบ Lazy
     let pool = (await tx.request()
@@ -3394,8 +3469,8 @@ async function bookRebateAccrual(so, lines, userId) {
           .query(`SELECT TOP 1 PlanId, Region FROM wf.RebatePlan
                   WHERE Status='ACTIVE'
                     AND (GoodCodePattern IS NULL OR @gc LIKE GoodCodePattern + '%')
-                    AND (ValidFrom IS NULL OR ValidFrom <= CAST(GETDATE() AS DATE))
-                    AND (ValidTo   IS NULL OR ValidTo   >= CAST(GETDATE() AS DATE))
+                    AND (ValidFrom IS NULL OR ValidFrom <= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
+                    AND (ValidTo   IS NULL OR ValidTo   >= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
                   ORDER BY Priority ASC, PlanId DESC`)
         ).recordset?.[0];
         if (plan) { planId = plan.PlanId; planRegion = plan.Region; }
