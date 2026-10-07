@@ -46,7 +46,8 @@ export function exportToCsv<T = any>(
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.setAttribute('href', url);
-  const safeFilename = filename.endsWith('.csv') ? filename : `${filename}_${new Date().toISOString().slice(0, 10)}.csv`;
+  const bkkDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const safeFilename = filename.endsWith('.csv') ? filename : `${filename}_${bkkDate}.csv`;
   link.setAttribute('download', safeFilename);
   document.body.appendChild(link);
   link.click();
@@ -57,6 +58,10 @@ export function exportToCsv<T = any>(
 /**
  * Formats table rows into an HTML-based .xls spreadsheet file (supports styling & UTF-8 Thai text natively in Excel).
  */
+function escapeHtml(v: unknown): string {
+  return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 export function exportToExcel<T = any>(
   filename: string,
   sheetName: string,
@@ -114,7 +119,8 @@ export function exportToExcel<T = any>(
       }
       const isNum = typeof val === 'number';
       const cellClass = isNum ? 'num' : 'text';
-      tableHtml += `<td class="${cellClass}">${val}</td>`;
+      // the file is HTML: a name with & or < broke the row (and markup in a value was rendered)
+      tableHtml += `<td class="${cellClass}">${isNum ? val : escapeHtml(val)}</td>`;
     });
     tableHtml += '</tr>';
   });
@@ -130,7 +136,9 @@ export function exportToExcel<T = any>(
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  const safeFilename = filename.endsWith('.xls') ? filename : `${filename}_${new Date().toISOString().slice(0, 10)}.xls`;
+  // the Bangkok date: before 07:00 the UTC date named the file after yesterday
+  const bkkDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const safeFilename = filename.endsWith('.xls') ? filename : `${filename}_${bkkDate}.xls`;
   link.download = safeFilename;
   document.body.appendChild(link);
   link.click();

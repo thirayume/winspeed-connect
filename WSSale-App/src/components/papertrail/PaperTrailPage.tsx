@@ -189,7 +189,7 @@ export function PaperTrailPage() {
           {stages.map(stage => {
             const isControlTicket = (c: PaperCard) => 
               (c.soPrefix === 'AI' || c.truckPlate === 'ตั๋วคุม' || Boolean(c.noTruckRequired)) && 
-              ['DRAFT', 'CONFIRMED', 'IMPORTED'].includes(c.status);
+              ['DRAFT', 'PENDING_APPROVAL', 'CONFIRMED', 'IMPORTED'].includes(c.status);
 
             const allCards = stage === 'CONTROL_TICKET'
               ? Object.values(data?.board || {}).flat().filter(isControlTicket)
@@ -346,7 +346,7 @@ export function PaperTrailPage() {
                                   </>
                                 )}
                                 
-                                {['CONFIRMED', 'PICKING'].includes(card.status) && role && CAN_REQ_UNLOCK.includes(role) && (
+                                {['PENDING_APPROVAL', 'CONFIRMED', 'PICKING'].includes(card.status) && role && CAN_REQ_UNLOCK.includes(role) && (
                                   <>
                                     <button onClick={() => setRequestModalConfig({ isOpen: true, type: 'EDIT', card })} title="ขอแก้ไขเอกสาร"
                                       className="flex-1 h-7 px-1.5 rounded-md text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 flex items-center justify-center gap-1 shrink-0 text-[10px] font-bold whitespace-nowrap transition-colors">

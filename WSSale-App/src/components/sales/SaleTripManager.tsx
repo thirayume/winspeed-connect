@@ -6,6 +6,7 @@ import '../ui/AppAlert';
 import { useExport } from '../../hooks/useExport';
 import { SOCancelDeleteModal } from '../common/SOCancelDeleteModal';
 import type { SalesOrder } from '../../types';
+import { soStatusLabel } from '../../constants/soStatus';
 
 interface GroupedTrip {
   tripId?: number;
@@ -53,7 +54,9 @@ export function SaleTripManager({
   };
 
   const handleExportTrips = () => {
+    // a cancelled group was exported like a live trip — the file had no status (UAT SO-23)
     const rows = groupedOrders.map(g => ({
+      status: [...new Set(g.orders.map(o => soStatusLabel(o.status)))].join(', '),
       date: g.dateDisplay,
       truck: g.truck,
       destinationCount: g.custCount,
@@ -65,6 +68,7 @@ export function SaleTripManager({
 
     exportData('excel', 'Sale_Trips_Export', [
       { key: 'date', label: 'วันที่จัดส่ง' },
+      { key: 'status', label: 'สถานะ' },
       { key: 'truck', label: 'ทะเบียนรถ' },
       { key: 'destinationCount', label: 'จำนวนจุดหมาย' },
       { key: 'customers', label: 'ชื่อลูกค้า / จุดหมาย' },
