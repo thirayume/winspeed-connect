@@ -165,8 +165,10 @@ export function SOBookingDocModal({
             soPrefix: doc.soPrefix || (doc as any).SoPrefix || 'I',
             custId: cId || '-',
             custName: doc.custName || (doc as any).CustName || cMaster?.CustName || '-',
-            custAddress: (doc as any).custAddress || (doc as any).CustAddress || cMaster?.Remark || cMaster?.Tel || '933 อาคารรวมทุนไทย ถนนมหาไชย เขตพระนคร กรุงเทพฯ',
-            custTel: (doc as any).custTel || (doc as any).CustTel || cMaster?.Tel || cMaster?.Mobile || '-',
+            // address and phone come from the bill (built from the customer master on the server); the old
+            // fallbacks printed a tax id as address and phone, or World Fert's own address (UAT RPT-06)
+            custAddress: (doc as any).custAddress || (doc as any).CustAddress || '-',
+            custTel: (doc as any).custTel || (doc as any).CustTel || '-',
             custFax: (doc as any).custFax || (doc as any).CustFax || '-',
             truckPlate: doc.truckPlate || (doc as any).TransRegistration || (doc as any).TruckPlate || '-',
             transRegistration: (doc as any).transRegistration || (doc as any).TransRegistration || doc.truckPlate || '-',
@@ -175,7 +177,8 @@ export function SOBookingDocModal({
             quotationDate: (doc as any).quotationDate || (doc as any).QuotationDate || doc.linkedQuoteValidUntil || undefined,
             creditDays: (doc as any).creditDays ?? (doc as any).CreditDays ?? 30,
             remark: doc.remark || (doc as any).Remark || '',
-            salesName: doc.salesName || (doc as any).SalesName || currentUser?.displayName || 'พนักงานขาย',
+            // the bill's salesperson — never the person printing
+            salesName: doc.salesName || (doc as any).SalesName || 'พนักงานขาย',
             lines: rawLines.map((l: any, idx: number) => ({
               lineNo: l.lineNo || l.LineNum || idx + 1,
               goodId: l.goodId || l.GoodID || l.GoodId || '',

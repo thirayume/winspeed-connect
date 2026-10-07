@@ -1122,6 +1122,20 @@ router.get('/:id', async (req, res) => {
     const weighTicket = weighR.recordset?.[0] || null;
     const pendingQuote = await getPendingQuoteForSo(so.Id);
 
+    // printed documents name the bill's salesperson and the customer's own address: the A4 booking showed the
+    // person printing as salesperson, the tax id as address and phone, or the company's own address (UAT RPT-06)
+    const party = (await wfQuery(`
+      SELECT (SELECT TOP 1 DisplayName FROM wf.AppUser WHERE Id = @uid) AS SalesName,
+             c.CustAddr1, c.CustAddr2, c.Amphur, c.Province, c.PostCode, c.ContTel, c.ContTel1
+      FROM (SELECT 1 AS x) one
+      LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON c.CustID = @cid`, {
+      uid: { type: sql.Int, value: so.SalesUserId ? Number(so.SalesUserId) : null },
+      cid: { type: sql.Int, value: /^\d+$/.test(String(so.CustId || '')) ? Number(so.CustId) : null },
+    })).recordset?.[0] || {};
+    const phone = [party.ContTel1, party.ContTel].map(v => String(v || '').trim()).find(v => v && !/^tax/i.test(v)) || null;
+    const custAddress = [party.CustAddr1, party.CustAddr2, party.Amphur, party.Province, party.PostCode]
+      .map(v => String(v || '').trim()).filter(Boolean).join(' ') || null;
+
     const { evaluatePickupTiming } = require('../services/so-pickup-policy');
     const pickupEvaluation = {
       in: evaluatePickupTiming(so.ActualWeighInAt, so.PickupDueDate),
@@ -1130,6 +1144,9 @@ router.get('/:id', async (req, res) => {
 
     res.json(redactSoForRole(req, {
       ...camelizeRow(so),
+      salesName: party.SalesName || null,
+      custAddress,
+      custTel: phone,
       pickupEvaluation,
       linkedQuoteId: pendingQuote?.Id || null,
       linkedQuoteNo: pendingQuote?.QuoteNo || null,
