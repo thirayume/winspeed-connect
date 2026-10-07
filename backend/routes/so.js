@@ -3467,7 +3467,7 @@ async function bookRebateAccrual(so, lines, userId) {
         const plan = (await tx.request()
           .input('gc', sql.NVarChar(50), l.GoodCode || '')
           .query(`SELECT TOP 1 PlanId, Region FROM wf.RebatePlan
-                  WHERE Status='ACTIVE'
+                  WHERE Status IN ('APPROVED', 'ACTIVE')
                     AND (GoodCodePattern IS NULL OR @gc LIKE GoodCodePattern + '%')
                     AND (ValidFrom IS NULL OR ValidFrom <= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
                     AND (ValidTo   IS NULL OR ValidTo   >= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))

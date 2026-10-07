@@ -1774,10 +1774,22 @@ router.patch('/plans/:id', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'
     const planId = Number(req.params.id);
     if (!Number.isFinite(planId)) return res.status(400).json({ message: 'Invalid Plan ID' });
 
-    const existingPlan = (await wfQuery(`SELECT 1 FROM wf.RebatePlan WHERE PlanId = @id`, { id: { type: sql.Int, value: planId } })).recordset?.[0];
+    const existingPlan = (await wfQuery(`SELECT Status FROM wf.RebatePlan WHERE PlanId = @id`, { id: { type: sql.Int, value: planId } })).recordset?.[0];
     if (!existingPlan) return res.status(404).json({ message: `ไม่พบ Rebate Plan ID ${planId}` });
 
     const f = req.body || {};
+    // UAT batch 5: the approval chain is the only way to an approved plan — what was signed cannot change after
+    // it was submitted, and ACTIVE follows APPROVED (it was settable straight from a draft)
+    const current = String(existingPlan.Status || 'DRAFT');
+    const editable = ['DRAFT', 'REJECTED'].includes(current);
+    const definition = ['goodCodePattern', 'region', 'returnType', 'netPrice', 'validFrom', 'validTo', 'allocatedAmount', 'priority'];
+    if (!editable && definition.some(k => f[k] !== undefined)) {
+      return res.status(409).json({ message: `แก้เนื้อหาโปรโมชั่นได้เฉพาะสถานะร่างหรือถูกตีกลับ (ปัจจุบัน ${current})` });
+    }
+    const allowedFrom = { ACTIVE: ['APPROVED', 'ACTIVE'], CLOSED: ['APPROVED', 'ACTIVE', 'CLOSED'], DRAFT: ['DRAFT', 'REJECTED'] };
+    if (f.status !== undefined && allowedFrom[f.status] && !allowedFrom[f.status].includes(current)) {
+      return res.status(409).json({ message: `เปลี่ยนสถานะจาก ${current} เป็น ${f.status} ไม่ได้` });
+    }
     const sets = [], inputs = { id: { type: sql.Int, value: planId } };
     const add = (col, key, type, val) => { sets.push(`${col}=@${key}`); inputs[key] = { type, value: val }; };
     if (f.title !== undefined)          add('Title','title',sql.NVarChar(200), f.title || null);
@@ -1808,14 +1820,19 @@ router.post('/plans/:id/allocate', requireRole('MANAGER', 'ADMIN', 'APPROVER', '
     const planId = Number(req.params.id);
     if (!Number.isFinite(planId)) return res.status(400).json({ message: 'Invalid Plan ID' });
 
-    const existingPlan = (await wfQuery(`SELECT 1 FROM wf.RebatePlan WHERE PlanId = @id`, { id: { type: sql.Int, value: planId } })).recordset?.[0];
+    const existingPlan = (await wfQuery(`SELECT Status FROM wf.RebatePlan WHERE PlanId = @id`, { id: { type: sql.Int, value: planId } })).recordset?.[0];
     if (!existingPlan) return res.status(404).json({ message: `ไม่พบ Rebate Plan ID ${planId}` });
+    // a budget comes from an approved plan only
+    if (!['APPROVED', 'ACTIVE'].includes(String(existingPlan.Status))) {
+      return res.status(409).json({ message: `จัดสรรงบได้เมื่อโปรโมชั่นอนุมัติแล้ว (ปัจจุบัน ${existingPlan.Status})` });
+    }
 
     const { salesUserId, periodYear, periodMonth, amount, note } = req.body || {};
-    if (!salesUserId || !amount) return res.status(400).json({ message: 'salesUserId และ amount จำเป็น' });
-    const now = new Date();
-    const y = periodYear || now.getFullYear();
-    const m = periodMonth || (now.getMonth() + 1);
+    if (!salesUserId || !(Number(amount) > 0)) return res.status(400).json({ message: 'salesUserId และ amount จำเป็น' });
+    const { getBangkokDateString } = require('../services/so-pickup-policy');
+    const today = getBangkokDateString();
+    const y = periodYear || Number(today.slice(0, 4));
+    const m = periodMonth || Number(today.slice(5, 7));
     let pool = (await wfQuery(`SELECT * FROM wf.RebatePool WHERE SalesUserId=@u AND PeriodYear=@y AND PeriodMonth=@m`,
       { u: { type: sql.Int, value: Number(salesUserId) }, y: { type: sql.Int, value: y }, m: { type: sql.Int, value: m } })).recordset[0];
     if (!pool) {

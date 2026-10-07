@@ -72,6 +72,8 @@ export function RebatePlanPage() {
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border border-gray-200 rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm focus:outline-none focus:border-[#0C447C]">
             <option value="">ทุกสถานะ</option>
             <option value="DRAFT">ร่าง</option>
+            <option value="REJECTED">ไม่อนุมัติ (ตีกลับ)</option>
+            <option value="APPROVED">อนุมัติแล้ว</option>
             <option value="ACTIVE">ใช้งาน</option>
             <option value="CLOSED">ปิดแล้ว</option>
           </select>
@@ -127,8 +129,8 @@ export function RebatePlanPage() {
                           <button onClick={() => setApprovalFor(p)} title="สายอนุมัติ / ยื่นขออนุมัติ"
                             className="h-7 w-7 flex items-center justify-center rounded-lg bg-blue-50 text-blue-700"><FileSignature size={13} /></button>
                           {['APPROVED', 'ACTIVE'].includes(String(p.Status)) && <button onClick={() => setStatus(p, 'CLOSED')} title="ปิด" className="h-7 w-7 flex items-center justify-center rounded-lg bg-gray-100 text-gray-500"><Square size={13} /></button>}
-                          {p.Status !== 'CLOSED' && <button onClick={() => setAllocFor(p)} title="จัดสรรงบ" className="h-7 w-7 flex items-center justify-center rounded-lg bg-amber-50 text-amber-700"><Coins size={13} /></button>}
-                          <button onClick={() => { setEditing(p); setShowForm(true); }} className="text-xs text-gray-500 px-2 py-1 rounded-lg border border-gray-200">แก้</button>
+                          {['APPROVED', 'ACTIVE'].includes(String(p.Status)) && <button onClick={() => setAllocFor(p)} title="จัดสรรงบ" className="h-7 w-7 flex items-center justify-center rounded-lg bg-amber-50 text-amber-700"><Coins size={13} /></button>}
+                          {['DRAFT', 'REJECTED'].includes(String(p.Status || 'DRAFT')) && <button onClick={() => { setEditing(p); setShowForm(true); }} className="text-xs text-gray-500 px-2 py-1 rounded-lg border border-gray-200">แก้</button>}
                         </div>
                       </td>
                     </tr>
