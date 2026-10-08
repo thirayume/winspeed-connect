@@ -63,6 +63,24 @@ function buildCanonicalPayloadHash(body) {
   return crypto.createHash('sha256').update(JSON.stringify(payloadObj)).digest('hex');
 }
 
+/**
+ * Owner 2026-10-09: claims are cut year by year on the accounting year — only invoice lots dated in the current
+ * accounting year can be claimed. REBATE_CLAIM_FISCAL_START_MONTH (1 = January, 0 = no cut-off) sets the year.
+ * Returns the first day of the current accounting year (YYYY-MM-DD, Bangkok) or null.
+ */
+async function claimCutoffDate(todayBkk) {
+  const { getSettingValue } = require('../services/policy-contract');
+  const month = Number(await getSettingValue('REBATE_CLAIM_FISCAL_START_MONTH'));
+  if (!(month >= 1 && month <= 12)) return null;
+  const { getBangkokDateString } = require('../services/so-pickup-policy');
+  const today = todayBkk || getBangkokDateString();
+  let year = Number(today.slice(0, 4));
+  const startThisYear = `${year}-${String(month).padStart(2, '0')}-01`;
+  if (today < startThisYear) year -= 1;
+  return `${year}-${String(month).padStart(2, '0')}-01`;
+}
+router.claimCutoffDate = claimCutoffDate;
+
 // Helper: Infer Region (01-06 or 99) from customer's SaleAreaID in WINSpeed
 /**
  * ชื่อผู้ตัดสินที่จะบันทึกลงร่องรอยการอนุมัติ
@@ -680,6 +698,8 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
 
         const lotReq = tx.request();
         lotReq.input('cid', sql.NVarChar(20), String(custId));
+        const cutoff = await claimCutoffDate();
+        lotReq.input('cut', sql.Date, cutoff);
         const lotRes = await lotReq.query(`
           SELECT SourceSOID, SourceListNo, SourceDocuNo, SourceDocuDate, CouponNo,
                  SourceRefSOID, SourceRefListNo, SourceBookingDocuNo,
@@ -687,6 +707,7 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
                  RemainingTonRebate, RemainingTonDiff
           FROM wf.v_RebateAccrualRemaining
           WHERE CustId = @cid AND (RemainingTonRebate > 0 OR RemainingTonDiff > 0)
+            AND (@cut IS NULL OR SourceDocuDate >= @cut)
           ORDER BY SourceDocuDate ASC, SourceDocuNo ASC, SourceListNo ASC
         `);
         const lotRows = lotRes.recordset || [];
@@ -1938,6 +1959,8 @@ router.get('/accrual', async (req, res) => {
     const { custId, empId, from, to } = req.query;
     const inputs = {};
     let where = 'WHERE RemainingTonRebate > 0';
+    const cutoff = await claimCutoffDate();
+    if (cutoff) { where += ' AND SourceDocuDate >= @cut'; inputs.cut = { type: sql.Date, value: cutoff }; }
     if (custId) { where += ' AND CustId = @custId'; inputs.custId = { type: sql.NVarChar(20), value: String(custId) }; }
     if (empId)  { where += ' AND SalesEmpId = @empId'; inputs.empId = { type: sql.Int, value: Number(empId) }; }
     if (from)   { where += ' AND SourceDocuDate >= @from'; inputs.from = { type: sql.Date, value: from }; }
@@ -1977,6 +2000,8 @@ router.get('/accrual/:custId', async (req, res) => {
     const kind = String(req.query.lineType || 'REBATE').toUpperCase() === 'DIFF' ? 'DIFF' : 'REBATE';
     const inputs = { cid: { type: sql.NVarChar(20), value: String(cust.custId) } };
     let where = `WHERE CustId = @cid AND ${kind === 'DIFF' ? 'RemainingTonDiff' : 'RemainingTonRebate'} > 0`;
+    const cutoff = await claimCutoffDate();
+    if (cutoff) { where += ' AND SourceDocuDate >= @cut'; inputs.cut = { type: sql.Date, value: cutoff }; }
     if (req.query.goodCode) { where += ' AND GoodCode = @gc'; inputs.gc = { type: sql.NVarChar(50), value: String(req.query.goodCode) }; }
     if (req.query.from)     { where += ' AND SourceDocuDate >= @from'; inputs.from = { type: sql.Date, value: req.query.from }; }
     if (req.query.to)       { where += ' AND SourceDocuDate <= @to'; inputs.to = { type: sql.Date, value: req.query.to }; }

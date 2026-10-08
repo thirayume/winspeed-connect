@@ -138,7 +138,8 @@ function giveawayApprovalInsertValues(hasColumns) {
 function redactRebateFields(row) {
   if (!row || canViewRebateAmounts({ role: row.__viewerRole })) return row;
   const out = { ...row };
-  for (const key of ['RebatePerTon', 'RebateAmount', 'RemainingAmt', 'RebateDiscountAmt', 'rebatePerTon', 'rebateAmount', 'remainingAmt', 'rebateDiscountAmt']) {
+  // the NET floor gives the rebate per ton away too (price − NET); owner 2026-10-09: salespeople see a colour only
+  for (const key of ['RebatePerTon', 'RebateAmount', 'RemainingAmt', 'RebateDiscountAmt', 'rebatePerTon', 'rebateAmount', 'remainingAmt', 'rebateDiscountAmt', 'NetPricePerTon', 'netPricePerTon']) {
     if (key in out) out[key] = null;
   }
   return out;
@@ -268,6 +269,7 @@ async function getSoOrThrow(id, expectedStatus = null) {
 const { validateAndLockCouponReservations } = require('../services/coupon-service');
 const { checkGiveawayQuota, quotaErrorMessage, linePieces } = require('../services/giveaway-quota');
 const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
+const { legacyCutoffInput, legacyCutoffSql } = require('../services/legacy-cutoff');
 
 // R12 O-4: is this bill (draft or native) inside the user's own + team scope?
 async function soVisibleTo(user, so, knownScope = null) {
@@ -497,11 +499,11 @@ router.get('/stats', async (req, res) => {
       const sr = await wfQuery(`
         SELECT q.Status, COUNT(*) AS Cnt
         FROM wf.v_AllSalesOrders q
-        WHERE ${f.sql}
+        WHERE (q.ImportedDocuNo IS NULL OR q.CreatedAt >= @legacyCut OR RTRIM(q.TruckPlate) = N'ตั๋วคุม') AND (${f.sql}
            OR (q.ImportedDocuNo IS NOT NULL AND EXISTS (
                 SELECT 1 FROM dbo.SOHD h WITH (NOLOCK)
-                WHERE h.DocuNo = q.ImportedDocuNo AND h.DocuType IN (103, 104) AND ${e.sql}))
-        GROUP BY q.Status`, { ...f.inputs, ...e.inputs });
+                WHERE h.DocuNo = q.ImportedDocuNo AND h.DocuType IN (103, 104) AND ${e.sql})))
+        GROUP BY q.Status`, { ...f.inputs, ...e.inputs, ...(await legacyCutoffInput()) });
       const byStatus = {};
       for (const row of sr.recordset || []) byStatus[row.Status] = row.Cnt;
       return res.json({ byStatus, total: Object.values(byStatus).reduce((t, n) => t + n, 0), scope: scope.basis, cachedAt: new Date().toISOString() });
@@ -527,7 +529,7 @@ router.get('/stats', async (req, res) => {
           END AS Status,
           COUNT_BIG(*) AS Cnt
         FROM dbo.SOHD hd WITH (NOLOCK)
-        WHERE hd.DocuType IN (103, 104)
+        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')}
         GROUP BY
           CASE
             WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
@@ -560,7 +562,7 @@ router.get('/stats', async (req, res) => {
           FROM wf.SalesOrderExt ext WITH (NOLOCK)
           JOIN dbo.SOHD hd WITH (NOLOCK)
             ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
-          WHERE hd.DocuType IN (103, 104)
+          WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')}
         ) adjusted
         WHERE OldStatus <> NewStatus
         GROUP BY OldStatus
@@ -589,7 +591,7 @@ router.get('/stats', async (req, res) => {
           FROM wf.SalesOrderExt ext WITH (NOLOCK)
           JOIN dbo.SOHD hd WITH (NOLOCK)
             ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
-          WHERE hd.DocuType IN (103, 104)
+          WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')}
         ) adjusted
         WHERE OldStatus <> NewStatus
         GROUP BY NewStatus
@@ -620,7 +622,7 @@ router.get('/stats', async (req, res) => {
           END AS Status,
           COUNT_BIG(*) AS Cnt
         FROM dbo.SOHD hd WITH (NOLOCK)
-        WHERE hd.DocuType IN (103, 104)
+        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')}
         GROUP BY
           CASE
             WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
@@ -638,7 +640,7 @@ router.get('/stats', async (req, res) => {
       ) x
       GROUP BY Status
     `;
-    const r = await wfQuery(winspeedStatsSql);
+    const r = await wfQuery(winspeedStatsSql, await legacyCutoffInput());
     const byStatus = {};
     for (const row of r.recordset || []) byStatus[row.Status] = row.Cnt;
     const total = Object.values(byStatus).reduce((s, n) => s + n, 0);
@@ -679,6 +681,7 @@ router.get('/', async (req, res) => {
       Object.assign(inputs, f.inputs);
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    Object.assign(inputs, await legacyCutoffInput());
     const pageNumber = Math.max(1, Number.parseInt(String(page), 10) || 1);
     const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(limit), 10) || 50));
     const offset = (pageNumber - 1) * pageSize;
@@ -728,7 +731,7 @@ router.get('/', async (req, res) => {
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
           ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
-        WHERE hd.DocuType IN (103, 104)
+        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')}
       )
       SELECT COUNT_BIG(*) AS TotalCount
       FROM Orders q
@@ -856,7 +859,7 @@ router.get('/', async (req, res) => {
             AND q.Status IN ('DRAFT', 'SENT', 'EXPIRED')
           ORDER BY q.Id DESC
         ) pq
-        WHERE hd.DocuType IN (103, 104)
+        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')}
       ),
       FilteredOrders AS (
         SELECT q.*, u.DisplayName AS SalesName,
@@ -1025,6 +1028,44 @@ router.get('/unlock-reasons', async (req, res) => {
 });
 
 // GET /api/so/unlock-requests?status=PENDING — สำหรับ Approver
+/**
+ * Owner 2026-10-09: while keying a bill the salesperson sees only a colour for each price — red below the announced
+ * price by more than PRICE_WARN_BELOW_PER_TON, yellow below it by up to that, green above it (the line accrues
+ * rebate) — never an amount. The announced price is the one the server prices and approves against.
+ */
+function priceLevel(price, announced, warnBelow) {
+  if (!(announced > 0)) return 'NONE';
+  const p = Number(price) || 0;
+  if (p > announced) return 'GREEN';
+  if (p === announced) return 'EQUAL';
+  return announced - p > warnBelow ? 'RED' : 'YELLOW';
+}
+router.priceLevel = priceLevel;
+router.redactSoForRoleForTest = redactSoForRole;
+
+router.post('/price-indicator', requireCapability('so.create'), async (req, res) => {
+  try {
+    const { custId, deliveryDate, lines } = req.body || {};
+    if (!Array.isArray(lines) || lines.length > 50) return res.status(400).json({ message: 'lines ต้องเป็นรายการไม่เกิน 50 บรรทัด' });
+    const { getSettingValue } = require('../services/policy-contract');
+    const warnBelow = await getSettingValue('PRICE_WARN_BELOW_PER_TON');
+    const asOfDate = /^\d{4}-\d{2}-\d{2}/.test(String(deliveryDate || '')) ? String(deliveryDate).slice(0, 10) : null;
+    const cache = new Map();
+    const out = [];
+    for (const l of lines) {
+      if (!l || l.isGiveaway || l.isCouponDrawn || l.isControlTicketDrawn || !l.goodId) { out.push({ key: l?.key ?? null, level: 'SKIP' }); continue; }
+      const k = `${l.goodId}|${l.goodCode || ''}`;
+      if (!cache.has(k)) {
+        cache.set(k, await resolveAuthoritativePrice({ custId, goodId: l.goodId, goodCode: l.goodCode, asOfDate }).catch(() => null));
+      }
+      const auth = cache.get(k);
+      const announced = auth?.hasAnnouncedPrice ? Number(auth.announcedPrice) : 0;
+      out.push({ key: l.key ?? null, level: priceLevel(l.pricePerTon, announced, warnBelow) });
+    }
+    res.json({ lines: out });
+  } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
+});
+
 router.get('/unlock-requests', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'C_LEVEL'), async (req, res) => {
   try {
     const { status } = req.query;
@@ -1772,6 +1813,15 @@ async function checkUnlockedNativeEdit(tx, req, so, order, beforeLines) {
 }
 router.checkUnlockedNativeEdit = checkUnlockedNativeEdit;
 
+// goods, tons, price or giveaway changed between the bill before an edit and the lines being saved
+function materialChange(beforeLines, lines) {
+  const sig = (rows, pick) => rows.map(pick).sort().join(';');
+  const before = sig(beforeLines || [], l => [String(l.GoodId), Number(l.QtyTon).toFixed(3), Number(l.PricePerTon || 0).toFixed(2), l.IsGiveaway ? 'G' : ''].join('|'));
+  const after = sig(lines || [], l => [String(l.goodId), Number(l.qtyTon).toFixed(3), Number(l.pricePerTon || 0).toFixed(2), l.isGiveaway ? 'G' : ''].join('|'));
+  return before !== after;
+}
+router.materialChange = materialChange;
+
 // ── PUT /api/so/:id — Update existing DRAFT SO ──
 router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, res) => {
   try {
@@ -1799,6 +1849,7 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
 
       if (isSohdOrder) {
       const beforeLines = await getLines(so.Id);
+      let approvalReset = null;
       await wfTransaction(async tx => {
         const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, rebateDiscountAmt, creditDays, truckRemark, billRemark, transpId } = order;
         const truckPlate = order.truckPlate || null;
@@ -1925,10 +1976,25 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
         }
         await tx.request().input('SOID',sql.VarChar(50),String(so.Id)).execute('wf.usp_RefreshBookingHeader');
         await tx.request().input('SOID',sql.VarChar(50),String(so.Id)).execute('wf.usp_WriteBookingDescription');
+
+        // Owner 2026-10-09: a change in goods, tons or price voids the WinSpeed approval — the booking goes back
+        // to waiting (AppvFlag W) and ships only after it is approved again (an unlock that kept AI69-06841 on a
+        // bill raised from 1 t to 2 t, UAT SHP-03)
+        if (materialChange(beforeLines, lines)) {
+          const r = await tx.request().input('id', sql.VarChar(50), String(so.Id)).query(`
+            UPDATE dbo.SOHD SET AppvFlag = 'W', AppvDocuNo = NULL, Appvid = NULL, AppvDate = NULL
+            OUTPUT deleted.AppvDocuNo
+            WHERE SOID = @id AND (AppvFlag = 'Y' OR AppvDocuNo IS NOT NULL)`);
+          approvalReset = r.recordset?.[0]?.AppvDocuNo || (r.rowsAffected?.[0] ? '-' : null);
+        }
       });
       await audit(null, so.Id, req.user.sub, 'UPDATED', 'DRAFT', 'DRAFT', null, req.ip);
+      if (approvalReset) {
+        await audit(null, so.Id, req.user.sub, 'WINSPEED_APPROVAL_RESET', 'DRAFT', 'DRAFT',
+          `แก้สินค้า/จำนวน/ราคาหลังปลดล็อก — ยกเลิกใบอนุมัติเดิม ${approvalReset} ต้องอนุมัติใน WinSpeed ใหม่`, req.ip);
+      }
       broadcast('so_updated', { id: so.Id, action: 'updated' });
-      return res.json({ id: so.Id, wfRef: so.WfRef, needsApproval: false });
+      return res.json({ id: so.Id, wfRef: so.WfRef, needsApproval: false, winspeedReapprovalRequired: Boolean(approvalReset), voidedApproval: approvalReset || null });
     }
 
     await wfTransaction(async tx => {

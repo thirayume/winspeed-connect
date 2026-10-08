@@ -176,6 +176,7 @@ test('FR-1: manualSettleCouponCut guards and execution workflow', async () => {
       RemainingReservedQty: 30.0,
       Status: 'RESERVED',
       CarrierSoId: 279000,
+      CreatedAt: '2026-10-04T03:00:00Z', // fixed: the window used "now" and broke once the calendar moved on
       BeneficiaryCustId: '0342001',
       BeneficiaryName: 'สหกรณ์ 0342001',
       OwnerCustId: '0342001'
@@ -187,6 +188,7 @@ test('FR-1: manualSettleCouponCut guards and execution workflow', async () => {
       RemainingReservedQty: 30.0,
       Status: 'RESERVED',
       CarrierSoId: 279001,
+      CreatedAt: '2026-10-04T03:00:00Z',
       BeneficiaryCustId: '0342001',
       BeneficiaryName: 'สหกรณ์ 0342001',
       OwnerCustId: '0342001'

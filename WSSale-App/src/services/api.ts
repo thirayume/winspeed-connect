@@ -344,7 +344,7 @@ export const createSO = (payload: Record<string, unknown> | Record<string, unkno
   });
 
 export const updateSO = (id: number | string, payload: Record<string, unknown>) =>
-  req<{ id: number; wfRef?: string; needsApproval: boolean }>(`/so/${id}`, {
+  req<{ id: number; wfRef?: string; needsApproval: boolean; winspeedReapprovalRequired?: boolean; voidedApproval?: string | null }>(`/so/${id}`, {
     method: 'PUT', body: JSON.stringify(payload),
   });
 
@@ -1007,6 +1007,10 @@ export const requestPriceBookSpecial = (id: number, data: { custId: string; cust
   req<{ id: number }>(`/pricebook/${id}/special`, { method: 'POST', body: JSON.stringify(data) });
 export const approvePriceBookSpecial = (spId: number, approvedPrice: number) =>
   req<{ id: number; approvedPrice: number }>(`/pricebook/special/${spId}`, { method: 'PATCH', body: JSON.stringify({ approvedPrice }) });
+// price colour per bill line (owner 2026-10-09): RED / YELLOW below the announced price, GREEN above, no amounts
+export type PriceLevel = 'RED' | 'YELLOW' | 'GREEN' | 'EQUAL' | 'NONE' | 'SKIP';
+export const fetchPriceIndicator = (payload: { custId: string; deliveryDate?: string; lines: { key: string; goodId: string; goodCode?: string; pricePerTon: number; isGiveaway?: boolean; isCouponDrawn?: boolean; isControlTicketDrawn?: boolean }[] }) =>
+  req<{ lines: { key: string; level: PriceLevel }[] }>('/so/price-indicator', { method: 'POST', body: JSON.stringify(payload) });
 export const fetchEffectivePrices = (priceBookId: number, custId?: string) =>
   req<EffectivePriceRow[]>(`/pricebook/${priceBookId}/effective${custId ? `?custId=${encodeURIComponent(custId)}` : ''}`);
 

@@ -137,7 +137,51 @@ const POLICY_DEFINITIONS = Object.freeze(Object.assign(Object.create(null), {
     default: 100,
     description: 'ยืมของแถมได้สูงสุดกี่ % ของโควต้าคงเหลือของผู้ให้ยืม (%)',
   },
+  // owner 2026-10-09: the bill editor shows the salesperson only a colour for the price, never an amount
+  PRICE_WARN_BELOW_PER_TON: {
+    policyName: 'PRICE_INDICATOR_POLICY',
+    type: 'INT',
+    min: 0,
+    max: 100000,
+    default: 500,
+    description: 'ราคาขายต่ำกว่าราคาประกาศเกินกว่านี้ (บาท/ตัน) แสดงสีแดง · ต่ำกว่าไม่เกินนี้แสดงสีเหลือง · สูงกว่าราคาประกาศแสดงสีเขียว',
+  },
+  // owner 2026-10-09: hide old WinSpeed bookings (2019–2021 never used WinSpeed approval)
+  LEGACY_DOC_CUTOFF_DATE: {
+    policyName: 'LEGACY_DOC_POLICY',
+    type: 'DATE',
+    default: '2022-01-01',
+    description: 'ซ่อนใบสั่งจองของ WinSpeed ที่ลงวันที่ก่อนวันนี้ออกจากกระดาน รายการบิล และรายงาน (ตั๋วคุมที่ยังมียอดค้างแสดงเสมอ)',
+  },
+  // owner 2026-10-09: claims are cut year by year on the company's accounting year
+  REBATE_CLAIM_FISCAL_START_MONTH: {
+    policyName: 'REBATE_CLAIM_CUTOFF_POLICY',
+    type: 'INT',
+    min: 0,
+    max: 12,
+    default: 1,
+    description: 'เคลมรีเบทได้เฉพาะใบส่งของในรอบบัญชีปัจจุบัน — เดือนที่เริ่มรอบบัญชี (1 = มกราคม) · 0 = ไม่ตัดรอบ',
+  },
 }));
+
+// Read one setting with its default; cached briefly because bill and board queries call it per request
+const _settingCache = new Map();
+async function getSettingValue(key, { maxAgeMs = 30000 } = {}) {
+  const def = POLICY_DEFINITIONS[key];
+  if (!def) throw new Error(`unknown setting ${key}`);
+  const hit = _settingCache.get(key);
+  if (hit && Date.now() - hit.at < maxAgeMs) return hit.value;
+  let raw = null;
+  try {
+    raw = (await wfQuery(`SELECT TOP 1 SettingValue FROM wf.SystemSetting WHERE SettingKey = @k`,
+      { k: { type: sql.VarChar(100), value: key } })).recordset?.[0]?.SettingValue ?? null;
+  } catch { raw = null; }
+  const s = raw == null || String(raw).trim() === '' ? String(def.default) : String(raw).trim();
+  const value = def.type === 'INT' ? parseInt(s, 10) : def.type === 'FLOAT' ? parseFloat(s) : def.type === 'BOOLEAN' ? s === 'true' : s;
+  _settingCache.set(key, { at: Date.now(), value });
+  return value;
+}
+function clearSettingCache() { _settingCache.clear(); }
 
 /**
  * Validate a single setting key and value (fail-closed against prototype pollution and trailing garbage).
@@ -803,4 +847,6 @@ module.exports = {
   getPolicySettings,
   updatePolicySettings,
   getEffectivePolicySnapshot,
+  getSettingValue,
+  clearSettingCache,
 };

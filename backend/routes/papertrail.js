@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const { sql, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
+const { legacyCutoffInput, legacyCutoffSql } = require('../services/legacy-cutoff');
 const { broadcast } = require('../services/socket');
 
 router.use(requireAuth);
@@ -124,7 +125,7 @@ router.get('/board', async (req, res) => {
           FROM dbo.SOHD hd WITH (NOLOCK)
           LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
             ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
-          WHERE hd.DocuType IN (103, 104)
+          WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')}
         ) w
         WHERE w.DedupRN = 1
           AND (w.Status IN ('DRAFT', 'PENDING_APPROVAL', 'CONFIRMED', 'PICKING', 'LOADED')
@@ -187,7 +188,7 @@ router.get('/board', async (req, res) => {
                so.ImportedDocuNo, so.CreatedAt, so.DeliveryDate, u.DisplayName, so.DocuType,
                so.TripId, so.SoPrefix, so.NoTruckRequired
       ORDER BY so.CreatedAt DESC
-    `, sf.inputs);
+    `, { ...sf.inputs, ...(await legacyCutoffInput()) });
     const board = {};
     for (const st of STAGES) board[st] = [];
     for (const row of r.recordset || []) {

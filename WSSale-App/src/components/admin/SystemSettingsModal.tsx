@@ -21,7 +21,7 @@ interface SystemSettingsModalProps {
   onClose: () => void;
 }
 
-type TabKey = 'pickup' | 'ticket' | 'rebate' | 'weight' | 'settle' | 'history';
+type TabKey = 'pickup' | 'ticket' | 'rebate' | 'weight' | 'settle' | 'sales' | 'history';
 
 const DEFAULT_REASON_OPTIONS = [
   { code: 'POLICY_ADJUSTMENT', label: 'ปรับปรุงตามนโยบายบริษัท' },
@@ -65,6 +65,10 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
   const [settleWindowDays, setSettleWindowDays] = useState<string>('3');
   const [goLiveCutoff, setGoLiveCutoff] = useState<string>('2000-01-01');
   const [borrowMaxPct, setBorrowMaxPct] = useState<string>('100');
+  // owner 2026-10-09: price colour threshold, legacy-document cut-off, rebate-claim accounting year
+  const [priceWarnBelow, setPriceWarnBelow] = useState<string>('500');
+  const [legacyCutoff, setLegacyCutoff] = useState<string>('2022-01-01');
+  const [claimFiscalMonth, setClaimFiscalMonth] = useState<string>('1');
 
   // Concurrency & Original Settings Tracking
   const [loadedRevision, setLoadedRevision] = useState<number | undefined>(undefined);
@@ -129,6 +133,9 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
             setSettleWindowDays(String(raw.COUPON_SETTLEMENT_WINDOW_DAYS ?? set.COUPON_SETTLEMENT_WINDOW_DAYS ?? '3'));
             setGoLiveCutoff(String(raw.COUPON_GOLIVE_CUTOFF_DATE ?? set.COUPON_GOLIVE_CUTOFF_DATE ?? '2000-01-01'));
             setBorrowMaxPct(String(raw.GIVEAWAY_BORROW_MAX_PCT ?? set.GIVEAWAY_BORROW_MAX_PCT ?? '100'));
+            setPriceWarnBelow(String(raw.PRICE_WARN_BELOW_PER_TON ?? set.PRICE_WARN_BELOW_PER_TON ?? '500'));
+            setLegacyCutoff(String(raw.LEGACY_DOC_CUTOFF_DATE ?? set.LEGACY_DOC_CUTOFF_DATE ?? '2022-01-01'));
+            setClaimFiscalMonth(String(raw.REBATE_CLAIM_FISCAL_START_MONTH ?? set.REBATE_CLAIM_FISCAL_START_MONTH ?? '1'));
           }
           if (res.currentRevision !== undefined) {
             setLoadedRevision(res.currentRevision);
@@ -203,6 +210,11 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
       if (borrowPct < 0 || borrowPct > 100) {
         throw new Error('เพดานการยืมของแถมต้องอยู่ระหว่าง 0 ถึง 100%');
       }
+      const warnBelow = parseStrictInt(priceWarnBelow, 500);
+      if (warnBelow < 0) throw new Error('เกณฑ์ราคาต่ำกว่าราคาประกาศต้องไม่ติดลบ');
+      if (!/^d{4}-d{2}-d{2}$/.test(legacyCutoff.trim())) throw new Error('วันตัดเอกสารเก่าต้องเป็นวันที่รูปแบบ YYYY-MM-DD');
+      const fiscalMonth = parseStrictInt(claimFiscalMonth, 1);
+      if (fiscalMonth < 0 || fiscalMonth > 12) throw new Error('เดือนเริ่มรอบบัญชีต้องอยู่ระหว่าง 0 ถึง 12');
       const overloadPct = parseStrictFloat(tripTolerancePct, 0);
       if (overloadPct < 0) {
         throw new Error('Overload Tolerance % ต้องไม่ติดลบ');
@@ -226,6 +238,9 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
         COUPON_SETTLEMENT_WINDOW_DAYS: windowDays,
         COUPON_GOLIVE_CUTOFF_DATE: goLiveCutoff.trim(),
         GIVEAWAY_BORROW_MAX_PCT: borrowPct,
+        PRICE_WARN_BELOW_PER_TON: warnBelow,
+        LEGACY_DOC_CUTOFF_DATE: legacyCutoff.trim(),
+        REBATE_CLAIM_FISCAL_START_MONTH: fiscalMonth,
       };
 
       // Only submit dirty (modified) keys
@@ -360,6 +375,17 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
             }`}
           >
             <Ticket size={15} /> ตัดตั๋ว & ของแถม
+          </button>
+
+          <button
+            onClick={() => setActiveTab('sales')}
+            className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
+              activeTab === 'sales'
+                ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
+                : 'border-transparent text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            <Info size={15} /> ราคา & เอกสาร
           </button>
 
           <button
@@ -730,6 +756,38 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
                       className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none"
                     />
                     <p className="text-[11px] text-gray-500 mt-1">ค่าเริ่มต้น 100% ตรวจทั้งตอนขอยืมและตอนอนุมัติ</p>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'sales' && (
+                <div className="space-y-4 text-xs">
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-blue-900 flex items-start gap-2">
+                    <Info size={16} className="text-[#0C447C] shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold text-[#0C447C] mb-0.5">สีราคาในหน้าเปิดบิล · การซ่อนเอกสารเก่า · รอบการเคลมรีเบท</div>
+                      พนักงานขายเห็นเพียงสีของราคา ไม่เห็นยอดรีเบท
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">เกณฑ์สีแดง: ต่ำกว่าราคาประกาศเกิน (บาท/ตัน)</label>
+                    <input type="number" min="0" value={priceWarnBelow} onChange={e => setPriceWarnBelow(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none" />
+                    <p className="text-[11px] text-gray-500 mt-1">ต่ำกว่าเกินค่านี้ = แดง · ต่ำกว่าไม่เกินค่านี้ = เหลือง · สูงกว่าราคาประกาศ = เขียว (ค่าเริ่มต้น 500)</p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-bold text-gray-700 mb-1">ซ่อนใบสั่งจอง WinSpeed ที่ลงวันที่ก่อน</label>
+                      <input type="date" value={legacyCutoff} onChange={e => setLegacyCutoff(e.target.value)}
+                        className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none" />
+                      <p className="text-[11px] text-gray-500 mt-1">ใช้กับกระดาน รายการบิล Dashboard และรายงานค้างส่ง · ตั๋วคุมที่ยังมียอดค้างแสดงเสมอ</p>
+                    </div>
+                    <div>
+                      <label className="block font-bold text-gray-700 mb-1">เคลมรีเบท: เดือนเริ่มรอบบัญชี</label>
+                      <input type="number" min="0" max="12" value={claimFiscalMonth} onChange={e => setClaimFiscalMonth(e.target.value)}
+                        className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none" />
+                      <p className="text-[11px] text-gray-500 mt-1">เคลมได้เฉพาะใบส่งของในรอบบัญชีปัจจุบัน (1 = มกราคม) · 0 = ไม่ตัดรอบ</p>
+                    </div>
                   </div>
                 </div>
               )}

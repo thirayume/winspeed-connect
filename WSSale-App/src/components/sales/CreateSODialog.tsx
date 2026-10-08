@@ -1,8 +1,8 @@
 import { bookingNoteError } from '../../utils/bookingNotes';
 import { useState, useEffect, useCallback } from 'react';
 import { X, Plus, Minus, Truck, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket } from 'lucide-react';
-import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation } from '../../services/api';
-import type { EffectivePriceRow, AtpStockRow } from '../../services/api';
+import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation, fetchPriceIndicator } from '../../services/api';
+import type { EffectivePriceRow, AtpStockRow, PriceLevel } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { GiveawayBorrowModal } from './GiveawayBorrowModal';
 import { CouponPickerModal, type CouponItem } from './CouponPickerModal';
@@ -42,16 +42,17 @@ function mergeGoods(normalGoods: EMGood[], giveawayGoods: EMGood[]) {
   return Array.from(merged.values());
 }
 
-function getPriceBand(pricePerTon: number, setPricePerTon: number) {
-  if (!setPricePerTon) {
-    return { label: '', className: 'border-gray-200 bg-white text-gray-700' };
+// owner 2026-10-09: a colour only — red / yellow below the announced price, green above it (the line accrues
+// rebate). The level comes from the server, which prices and approves against the same announced price.
+function getPriceBand(level?: PriceLevel) {
+  switch (level) {
+    case 'GREEN': return { label: 'สูงกว่าราคาประกาศ', className: 'border-emerald-300 bg-emerald-50 text-emerald-700' };
+    case 'EQUAL': return { label: 'เท่าราคาประกาศ', className: 'border-gray-300 bg-white text-gray-700' };
+    case 'YELLOW': return { label: 'ต่ำกว่าราคาประกาศ (ต้องขออนุมัติ)', className: 'border-yellow-300 bg-yellow-50 text-yellow-800' };
+    case 'RED': return { label: 'ต่ำกว่าราคาประกาศเกินเกณฑ์ (ต้องขออนุมัติ)', className: 'border-red-300 bg-red-50 text-red-700' };
+    case 'NONE': return { label: 'ไม่มีราคาประกาศ (ต้องขออนุมัติ)', className: 'border-gray-300 bg-gray-50 text-gray-600' };
+    default: return { label: '', className: 'border-gray-200 bg-white text-gray-700' };
   }
-  const diff = Number(pricePerTon || 0) - Number(setPricePerTon || 0);
-  if (diff > 500) return { label: 'ดีมาก', className: 'border-lime-300 bg-lime-50 text-lime-700' };
-  if (diff > 0) return { label: 'ดี', className: 'border-emerald-300 bg-emerald-50 text-emerald-700' };
-  if (diff === 0) return { label: 'เท่าราคาตั้ง', className: 'border-yellow-300 bg-yellow-50 text-yellow-700' };
-  if (diff >= -500) return { label: `ต่ำกว่า ${Math.abs(diff).toLocaleString('th-TH')}`, className: 'border-orange-300 bg-orange-50 text-orange-700' };
-  return { label: `ต่ำกว่า ${Math.abs(diff).toLocaleString('th-TH')}`, className: 'border-red-300 bg-red-50 text-red-700' };
 }
 
 export function CreateSODialog({
@@ -306,6 +307,23 @@ export function CreateSODialog({
 
   const activeBill = bills.find(b => b.id === activeBillId) || bills[0];
   const currentBillCustId = activeBill?.custId || '';
+
+  // price colour per line from the server (debounced while typing)
+  const [priceLevels, setPriceLevels] = useState<Record<string, PriceLevel>>({});
+  const levelKey = JSON.stringify((activeBill?.lines || []).map(l => [l.tempId, l.goodId, l.pricePerTon, !!l.isGiveaway, !!l.isCouponDrawn, !!l.isControlTicketDrawn]));
+  useEffect(() => {
+    const lines = activeBill?.lines || [];
+    if (!currentBillCustId || lines.length === 0) { setPriceLevels({}); return; }
+    const t = setTimeout(() => {
+      fetchPriceIndicator({
+        custId: currentBillCustId,
+        deliveryDate: deliveryDate || undefined,
+        lines: lines.map(l => ({ key: l.tempId, goodId: String(l.goodId), goodCode: (l as any).goodCode, pricePerTon: Number(l.pricePerTon) || 0, isGiveaway: !!l.isGiveaway, isCouponDrawn: !!l.isCouponDrawn, isControlTicketDrawn: !!l.isControlTicketDrawn })),
+      }).then(r => setPriceLevels(Object.fromEntries(r.lines.map(x => [x.key, x.level])))).catch(() => setPriceLevels({}));
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [levelKey, currentBillCustId, deliveryDate]);
 
   useEffect(() => {
     fetchPrices({ custId: currentBillCustId, asOf: deliveryDate || undefined }).then(setPrices).catch(console.error);
@@ -726,6 +744,8 @@ export function CreateSODialog({
         const res = await updateSO(editSoId, payload);
         setIsSaveCommitted(true);
         if (res.needsApproval) alert(`⚠ มีรายการราคาที่ต้องอนุมัติ (ไม่พบราคาประกาศหรือราคาต่ำกว่าประกาศ)\nต้องการอนุมัติจาก ผจก. ก่อน confirm`);
+        else if (res.winspeedReapprovalRequired) alert(`✓ แก้ไขบิลสำเร็จ
+มีการเปลี่ยนสินค้า/จำนวน/ราคา — ใบอนุมัติเดิมใน WinSpeed${res.voidedApproval && res.voidedApproval !== '-' ? ` (${res.voidedApproval})` : ''} ถูกยกเลิก ต้องอนุมัติใบสั่งจองใน WinSpeed ใหม่ก่อนส่งของ`);
         else alert(`✓ แก้ไขบิลสำเร็จ`);
       } else {
         // Build grouped payload (Array of orders) with customer per bill (P1 Finding 1)
@@ -1265,7 +1285,7 @@ export function CreateSODialog({
                                   {epObj?.StandardPrice != null ? `฿${Number(epObj.StandardPrice).toLocaleString()}` : (g.SetPrice || g.GoodPrice1 || g.GoodPrice ? `฿${Number(g.SetPrice || g.GoodPrice1 || g.GoodPrice).toLocaleString()}` : '-')}
                                 </span>
                               </div>
-                              <div className="text-[11px] flex items-center justify-between">
+                              {canSeeRebate && <div className="text-[11px] flex items-center justify-between">
                                 <span className="text-gray-500">ราคา NET:</span>
                                 {net > 0 && !isExpired ? (
                                   <span className="font-bold text-[#0C447C]">
@@ -1277,7 +1297,7 @@ export function CreateSODialog({
                                     - (ไม่เกิดรีเบท)
                                   </span>
                                 )}
-                              </div>
+                              </div>}
                             </div>
                             <div className="text-[9px] text-gray-300 mt-1">{g.BagPerTon} กระสอบ/ตัน · {g.WeightKgPerBag}kg</div>
                           </>
@@ -1451,7 +1471,7 @@ export function CreateSODialog({
                   <div className="flex-1 overflow-y-auto space-y-2 pr-1">
                     {activeBill?.lines.map(l => {
                       const good = goods.find(g => g.GoodID === l.goodId);
-                      const priceBand = getPriceBand(l.pricePerTon, good?.SetPrice || 0);
+                      const priceBand = getPriceBand(priceLevels[l.tempId]);
                       return (
                       <div key={l.tempId} data-testid={l.isCouponDrawn ? 'cart-coupon-line' : `cart-line-${l.goodId}`} className={`p-3 rounded-lg border ${l.isControlTicketDrawn ? 'border-amber-200 bg-amber-50' : l.isCouponDrawn ? 'border-blue-200 bg-blue-50/70' : 'border-gray-100 bg-white'}`}>
                         <div className="flex justify-between items-start mb-2">
@@ -1557,7 +1577,7 @@ export function CreateSODialog({
                           {!l.isControlTicketDrawn && !l.isGiveaway && (
                             <div className="flex justify-between items-center mt-1 pt-1 border-t border-dashed border-gray-100">
                               <div className="text-[10px] font-medium">
-                                {!l.netPricePerTon || Number(l.netPricePerTon) <= 0 ? (
+                                {!canSeeRebate ? null : !l.netPricePerTon || Number(l.netPricePerTon) <= 0 ? (
                                   <span className="text-gray-400">ไม่เกิดรีเบท (ไม่มีราคา NET)</span>
                                 ) : l.pricePerTon > l.netPricePerTon ? (
                                   <span className="text-orange-500">รีเบทสะสม: ฿{((l.pricePerTon - l.netPricePerTon) * l.qtyTon).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>

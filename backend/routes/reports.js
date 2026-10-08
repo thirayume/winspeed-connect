@@ -293,6 +293,7 @@ const REPORTS = {
           FROM dbo.SOHD hd WITH (NOLOCK)
           JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
           WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C' AND dt.RemaQty > 0
+            AND (hd.DocuDate >= @legacyCut OR RTRIM(hd.TransRegistration) = N'ตั๋วคุม')
           ORDER BY hd.DocuDate DESC, hd.SOID DESC, dt.ListNo`,
   },
   'cn-returns': {
@@ -700,7 +701,9 @@ async function runReport(type, params = {}) {
     err.code = 'REPORT_UNAVAILABLE';
     throw err;
   }
-  const result = def.run ? await def.run(params) : ((await wfQuery(def.sql)).recordset || []);
+  // a report on WinSpeed bookings honours the legacy cut-off (owner 2026-10-09)
+  const sqlInputs = def.sql && def.sql.includes('@legacyCut') ? await require('../services/legacy-cutoff').legacyCutoffInput() : {};
+  const result = def.run ? await def.run(params) : ((await wfQuery(def.sql, sqlInputs)).recordset || []);
   const rows = Array.isArray(result) ? result : (result?.rows || []);
   const meta = result?.meta || null;
   return {

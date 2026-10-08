@@ -1843,7 +1843,7 @@ router.get('/system-settings', async (req, res) => {
 // PATCH /api/master/system-settings — ปรับเปลี่ยนค่าตั้งค่าระบบ (ADMIN Only + Whitelist + Versioned + Audit)
 router.patch('/system-settings', requireRole('ADMIN'), async (req, res) => {
   try {
-    const { getPolicySettings, updatePolicySettings } = require('../services/policy-contract');
+    const { getPolicySettings, updatePolicySettings, clearSettingCache } = require('../services/policy-contract');
     const body = req.body || {};
 
     // Support payload as { updates: { ... }, reasonCode, reasonText } or flat { ...updates, reasonCode, reasonText }
@@ -1873,6 +1873,7 @@ router.patch('/system-settings', requireRole('ADMIN'), async (req, res) => {
       effectiveFrom,
       ipAddress: req.ip,
     });
+    clearSettingCache();
 
     const refreshed = await getPolicySettings();
     res.json({

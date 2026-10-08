@@ -1,7 +1,7 @@
 const { validateBookingNotes } = require('../services/booking-notes');
 const router = require('express').Router();
 const { sql, wfQuery, wfTransaction } = require('../db');
-const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
+const { requireAuth, requireRole, requireCapability, canViewAllRebateAmounts } = require('../middleware/auth');
 const { broadcast } = require('../services/socket');
 
 router.use(requireAuth);
@@ -196,6 +196,8 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
 
     const members   = camelizeRows(membersRes.recordset || []);
     const allLines  = camelizeRows([...(draftLinesRes.recordset || []), ...(confLinesRes.recordset || [])]);
+    // the NET floor gives the rebate per ton away (price − NET); owner 2026-10-09: salespeople see a colour only
+    if (!canViewAllRebateAmounts(req.user)) for (const l of allLines) l.netPricePerTon = null;
     const weighRows = camelizeRows(weighRes.recordset || []);
 
     const key = (kind, id) => kind + '#' + String(id);
