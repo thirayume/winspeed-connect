@@ -270,6 +270,7 @@ const { validateAndLockCouponReservations } = require('../services/coupon-servic
 const { checkGiveawayQuota, quotaErrorMessage, linePieces } = require('../services/giveaway-quota');
 const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
 const { legacyCutoffInput, legacyCutoffSql } = require('../services/legacy-cutoff');
+const { nativeStatusSql, nativeDedupSql } = require('../services/native-status');
 
 // R12 O-4: is this bill (draft or native) inside the user's own + team scope?
 async function soVisibleTo(user, so, knownScope = null) {
@@ -493,162 +494,41 @@ router.get('/stats', async (req, res) => {
     const bust = req.query.bust === '1';
     // R12 O-4: a scoped user's counts cover only their own and their team's bills
     const scope = await getVisibleScope(req.user);
+    if (scope.all && !bust && _statsCache && now - _statsCacheAt < STATS_TTL) return res.json(_statsCache);
+    // UAT 2026-10-09: one query for every role, on the base tables — the scoped version read the all-documents
+    // view and timed out (HTTP 500, the salesperson's dashboard never loaded); the global one counted each
+    // closed booking twice and called it "waiting for delivery". Drafts + WinSpeed documents (de-duplicated,
+    // board status, legacy cut-off).
+    const inputs = { ...(await legacyCutoffInput()) };
+    let wfWhere = '';
+    let nativeWhere = '';
     if (!scope.all) {
-      const f = scopeFilter(scope, { userCol: 'q.SalesUserId', prefix: 'sc' });
-      const e = scopeFilter({ ...scope, userIds: [] }, { empCol: 'h.EmpID', prefix: 'se' });
-      const sr = await wfQuery(`
-        SELECT q.Status, COUNT(*) AS Cnt
-        FROM wf.v_AllSalesOrders q
-        WHERE (q.ImportedDocuNo IS NULL OR q.CreatedAt >= @legacyCut OR RTRIM(q.TruckPlate) = N'ตั๋วคุม') AND (${f.sql}
-           OR (q.ImportedDocuNo IS NOT NULL AND EXISTS (
-                SELECT 1 FROM dbo.SOHD h WITH (NOLOCK)
-                WHERE h.DocuNo = q.ImportedDocuNo AND h.DocuType IN (103, 104) AND ${e.sql})))
-        GROUP BY q.Status`, { ...f.inputs, ...e.inputs, ...(await legacyCutoffInput()) });
-      const byStatus = {};
-      for (const row of sr.recordset || []) byStatus[row.Status] = row.Cnt;
-      return res.json({ byStatus, total: Object.values(byStatus).reduce((t, n) => t + n, 0), scope: scope.basis, cachedAt: new Date().toISOString() });
+      const f = scopeFilter(scope, { userCol: 'so.SalesUserId', prefix: 'sc' });
+      const e = scopeFilter(scope, { userCol: 'ext.SalesUserId', empCol: 'hd.EmpID', prefix: 'se' });
+      wfWhere = `WHERE ${f.sql}`;
+      nativeWhere = `AND ${e.sql}`;
+      Object.assign(inputs, f.inputs, e.inputs);
     }
-    if (!bust && _statsCache && now - _statsCacheAt < STATS_TTL) return res.json(_statsCache);
-
-    const extCountResult = await wfQuery(`SELECT COUNT_BIG(*) AS Cnt FROM wf.SalesOrderExt WITH (NOLOCK)`);
-    const hasWinspeedExt = Number(extCountResult.recordset?.[0]?.Cnt || 0) > 0;
-    const winspeedStatsSql = hasWinspeedExt ? `
-      WITH WfDraft AS (
-        SELECT Status, COUNT(*) AS Cnt
-        FROM wf.SalesOrder WITH (NOLOCK)
-        GROUP BY Status
-      ),
-      WinspeedBase AS (
-        SELECT
-          CASE
-            WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
-            WHEN hd.DocuType = 104 THEN 'IMPORTED'
-            WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
-            ELSE 'CONFIRMED'
-          END AS Status,
-          COUNT_BIG(*) AS Cnt
-        FROM dbo.SOHD hd WITH (NOLOCK)
-        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')}
-        GROUP BY
-          CASE
-            WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
-            WHEN hd.DocuType = 104 THEN 'IMPORTED'
-            WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
-            ELSE 'CONFIRMED'
-          END
-      ),
-      WinspeedExtAdjust AS (
-        SELECT OldStatus AS Status, CAST(-COUNT_BIG(*) AS BIGINT) AS Cnt
-        FROM (
-          SELECT
-            CASE
-              WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
-              WHEN hd.DocuType = 104 THEN 'IMPORTED'
-              WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-              WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
-              ELSE 'CONFIRMED'
-            END AS OldStatus,
-            CASE
-              WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
-              WHEN ext.WeighOutWeight IS NOT NULL OR hd.clearflag = 'Y' THEN 'SHIPPED'
-              WHEN hd.DocuType = 104 THEN 'IMPORTED'
-              WHEN ext.IsLoaded = 1 THEN 'LOADED'
-              WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-              WHEN ext.IsUnlocked = 1 THEN 'DRAFT'
-              ELSE 'CONFIRMED'
-            END AS NewStatus
-          FROM wf.SalesOrderExt ext WITH (NOLOCK)
-          JOIN dbo.SOHD hd WITH (NOLOCK)
-            ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
-          WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')}
-        ) adjusted
-        WHERE OldStatus <> NewStatus
-        GROUP BY OldStatus
-
-        UNION ALL
-
-        SELECT NewStatus AS Status, COUNT_BIG(*) AS Cnt
-        FROM (
-          SELECT
-            CASE
-              WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
-              WHEN hd.DocuType = 104 THEN 'IMPORTED'
-              WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-              WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
-              ELSE 'CONFIRMED'
-            END AS OldStatus,
-            CASE
-              WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
-              WHEN ext.WeighOutWeight IS NOT NULL OR hd.clearflag = 'Y' THEN 'SHIPPED'
-              WHEN hd.DocuType = 104 THEN 'IMPORTED'
-              WHEN ext.IsLoaded = 1 THEN 'LOADED'
-              WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-              WHEN ext.IsUnlocked = 1 THEN 'DRAFT'
-              ELSE 'CONFIRMED'
-            END AS NewStatus
-          FROM wf.SalesOrderExt ext WITH (NOLOCK)
-          JOIN dbo.SOHD hd WITH (NOLOCK)
-            ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
-          WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')}
-        ) adjusted
-        WHERE OldStatus <> NewStatus
-        GROUP BY NewStatus
-      )
-      SELECT Status, CAST(SUM(Cnt) AS INT) AS Cnt
+    const r = await wfQuery(`
+      SELECT Status, COUNT(*) AS Cnt
       FROM (
-        SELECT Status, Cnt FROM WfDraft
+        SELECT so.Status FROM wf.SalesOrder so WITH (NOLOCK) ${wfWhere}
         UNION ALL
-        SELECT Status, Cnt FROM WinspeedBase
-        UNION ALL
-        SELECT Status, Cnt FROM WinspeedExtAdjust
-      ) x
-      GROUP BY Status
-    ` : `
-      WITH WfDraft AS (
-        SELECT Status, COUNT(*) AS Cnt
-        FROM wf.SalesOrder WITH (NOLOCK)
-        GROUP BY Status
-      ),
-      WinspeedBase AS (
-        SELECT
-          CASE
-            WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
-            WHEN hd.DocuType = 104 THEN 'IMPORTED'
-            WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
-            ELSE 'CONFIRMED'
-          END AS Status,
-          COUNT_BIG(*) AS Cnt
+        SELECT ${nativeStatusSql('hd', 'ext')} AS Status
         FROM dbo.SOHD hd WITH (NOLOCK)
-        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')}
-        GROUP BY
-          CASE
-            WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
-            WHEN hd.DocuType = 104 THEN 'IMPORTED'
-            WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-            WHEN hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') = 'N' THEN 'DRAFT'
-            ELSE 'CONFIRMED'
-          END
-      )
-      SELECT Status, CAST(SUM(Cnt) AS INT) AS Cnt
-      FROM (
-        SELECT Status, Cnt FROM WfDraft
-        UNION ALL
-        SELECT Status, Cnt FROM WinspeedBase
+        LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
+        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')} ${nativeWhere}
       ) x
-      GROUP BY Status
-    `;
-    const r = await wfQuery(winspeedStatsSql, await legacyCutoffInput());
+      GROUP BY Status`, inputs);
     const byStatus = {};
-    for (const row of r.recordset || []) byStatus[row.Status] = row.Cnt;
+    for (const row of r.recordset || []) byStatus[row.Status] = Number(row.Cnt);
     const total = Object.values(byStatus).reduce((s, n) => s + n, 0);
-    _statsCache = { byStatus, total, cachedAt: new Date().toISOString() };
-    _statsCacheAt = now;
-    res.json(_statsCache);
+    const out = { byStatus, total, cachedAt: new Date().toISOString(), ...(scope.all ? {} : { scope: scope.basis }) };
+    if (scope.all) { _statsCache = out; _statsCacheAt = now; }
+    res.json(out);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
+
 
 // ── GET /api/so ───────────────────────────────────────────────
 router.get('/', async (req, res) => {
@@ -731,7 +611,7 @@ router.get('/', async (req, res) => {
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
           ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
-        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')}
+        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')}
       )
       SELECT COUNT_BIG(*) AS TotalCount
       FROM Orders q
@@ -859,7 +739,7 @@ router.get('/', async (req, res) => {
             AND q.Status IN ('DRAFT', 'SENT', 'EXPIRED')
           ORDER BY q.Id DESC
         ) pq
-        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')}
+        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')}
       ),
       FilteredOrders AS (
         SELECT q.*, u.DisplayName AS SalesName,
