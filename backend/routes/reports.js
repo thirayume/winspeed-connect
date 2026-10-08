@@ -170,7 +170,7 @@ const REPORTS = {
     title: 'รายงานการเบิกจ่ายและคิวจัดโหลดสินค้าประจำวัน (Daily Dispatch & Loading)',
     category: 'logistics',
     columns: [
-      { key: 'SOID', label: 'เลขที่ SO', type: 'identifier' },
+      { key: 'DocuNo', label: 'เลขที่ SO', type: 'identifier' },
       { key: 'DocuDate', label: 'วันที่เอกสาร', type: 'date' },
       { key: 'CustName', label: 'ลูกค้า', type: 'text' },
       { key: 'TruckPlate', label: 'ทะเบียนรถ', type: 'identifier' },
@@ -181,7 +181,7 @@ const REPORTS = {
       { key: 'Status', label: 'สถานะ', type: 'text' },
     ],
     sql: `SELECT TOP 200 
-            CAST(hd.SOID AS VARCHAR(50)) AS SOID,
+            hd.DocuNo,
             CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
             hd.CustName,
             hd.TransRegistration AS TruckPlate,
@@ -199,14 +199,14 @@ const REPORTS = {
           JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
           LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON ext.SOID = hd.SOID
           LEFT JOIN wf.SalesOrderLineExt le WITH (NOLOCK) ON le.SOID = dt.SOID AND le.ListNo = dt.ListNo
-          WHERE hd.DocuType IN (103, 104) AND hd.DocuStatus <> 'C'
+          WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C'
           ORDER BY hd.DocuDate DESC, hd.SOID DESC`,
   },
   'sales-order-detail': {
     title: 'รายงานสรุปรายละเอียดใบสั่งซื้อสินค้า (Sales Order Line Detail)',
     category: 'sales',
     columns: [
-      { key: 'SOID', label: 'เลขที่ SO', type: 'identifier' },
+      { key: 'DocuNo', label: 'เลขที่ SO', type: 'identifier' },
       { key: 'DocuDate', label: 'วันที่', type: 'date' },
       { key: 'CustName', label: 'ลูกค้า', type: 'text' },
       { key: 'SalesName', label: 'พนักงานขาย', type: 'text' },
@@ -216,7 +216,7 @@ const REPORTS = {
       { key: 'TotalAmt', label: 'จำนวนเงิน (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
     ],
     sql: `SELECT TOP 200 
-            CAST(hd.SOID AS VARCHAR(50)) AS SOID,
+            hd.DocuNo,
             CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
             hd.CustName,
             ISNULL(emp.EmpName, N'ไม่ระบุ') AS SalesName,
@@ -227,7 +227,7 @@ const REPORTS = {
           FROM dbo.SOHD hd WITH (NOLOCK)
           JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
           LEFT JOIN dbo.EMEmp emp WITH (NOLOCK) ON emp.EmpID = hd.EmpID
-          WHERE hd.DocuType IN (103, 104) AND hd.DocuStatus <> 'C'
+          WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C'
           ORDER BY hd.DocuDate DESC, hd.SOID DESC`,
   },
   'ar-aging-summary': {
@@ -298,6 +298,8 @@ const REPORTS = {
   'cn-returns': {
     title: 'รายงานใบลดหนี้และการรับคืนสินค้า (Credit Note & Return Register)',
     category: 'finance',
+    available: false,
+    unavailableReason: 'ยังไม่ได้ผูกกับเอกสารใบลดหนี้จริงของ WinSpeed — ฉบับเดิมแสดงรายการตัดคูปองเป็นใบลดหนี้ (ไม่อนุญาตให้แสดงข้อมูลผิดประเภท)',
     columns: [
       { key: 'DocuNo', label: 'เลขที่ใบลดหนี้', type: 'identifier' },
       { key: 'DocuDate', label: 'วันที่', type: 'date' },
@@ -342,7 +344,7 @@ const REPORTS = {
           ORDER BY s.GoodId ASC`,
   },
   'sales-performance': {
-    title: 'รายงานสรุปยอดขายแยกรายพนักงานและรายภาค (Sales Performance Breakdown)',
+    title: 'รายงานสรุปยอดขายแยกรายพนักงานและรายภาค (Sales Performance Breakdown) — เดือนปัจจุบัน',
     category: 'sales',
     columns: [
       { key: 'SalesName', label: 'พนักงานขาย', type: 'text' },
@@ -360,7 +362,10 @@ const REPORTS = {
           FROM dbo.SOHD hd WITH (NOLOCK)
           JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
           LEFT JOIN dbo.EMEmp emp WITH (NOLOCK) ON emp.EmpID = hd.EmpID
-          WHERE hd.DocuType IN (103, 104) AND hd.DocuStatus <> 'C'
+          -- bookings taken this Bangkok month: it summed bookings and their closing documents (each sale twice)
+          -- over all history since 2019 (UAT RPT-06)
+          WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C'
+            AND hd.DocuDate >= DATEADD(month, DATEDIFF(month, 0, DATEADD(hour, 7, GETUTCDATE())), 0)
           GROUP BY emp.EmpName
           ORDER BY TotalTon DESC`,
   },
@@ -378,14 +383,17 @@ const REPORTS = {
       { key: 'OverrideReason', label: 'เหตุผลขอผ่าน', type: 'text' },
     ],
     sql: `SELECT TOP 200 
-            ISNULL(t.Movebill, CAST(ext.SOID AS VARCHAR(50))) AS Movebill,
+            ISNULL(t.Movebill, so.DocuNo) AS Movebill,
             so.TransRegistration AS Plate,
             so.CustName,
             CAST(ISNULL(so_qty.OrderedKg, 0) AS DECIMAL(10,2)) AS TargetWeight,
             CAST(ISNULL(t.NetKg, ext.WeighOutWeight) AS DECIMAL(10,2)) AS ActualNet,
             CAST(ISNULL(t.NetKg, ext.WeighOutWeight) - ISNULL(so_qty.OrderedKg, 0) AS DECIMAL(10,2)) AS DiffKg,
             CAST(CASE WHEN ISNULL(so_qty.OrderedKg, 0) > 0 THEN ((ISNULL(t.NetKg, ext.WeighOutWeight) - so_qty.OrderedKg) / so_qty.OrderedKg) * 100.0 ELSE 0 END AS DECIMAL(10,2)) AS VariancePct,
-            ISNULL(t.Note, N'ปกติ (อยู่ในเกณฑ์ ±5%)') AS OverrideReason
+            -- "normal" only when it is: a variance over 5% with no recorded reason was labelled normal too
+            CASE WHEN t.Note IS NOT NULL THEN t.Note
+                 WHEN ISNULL(so_qty.OrderedKg, 0) > 0 AND ABS(ISNULL(t.NetKg, ext.WeighOutWeight) - so_qty.OrderedKg) <= so_qty.OrderedKg * 0.05 THEN N'ปกติ (อยู่ในเกณฑ์ ±5%)'
+                 ELSE N'เกินเกณฑ์ ±5% — ไม่มีบันทึกเหตุผล' END AS OverrideReason
           FROM wf.SalesOrderExt ext WITH (NOLOCK)
           JOIN dbo.SOHD so WITH (NOLOCK) ON CONVERT(VARCHAR(50), so.SOID) = CONVERT(VARCHAR(50), ext.SOID)
           LEFT JOIN (
@@ -478,6 +486,8 @@ const REPORTS = {
   'sales-target-comparison': {
     title: 'รายงานเปรียบเทียบยอดขายกับเป้าหมาย (Sales vs Target Breakdown)',
     category: 'sales',
+    available: false,
+    unavailableReason: 'ยังไม่มีข้อมูลเป้าหมายขายในระบบ — ฉบับเดิมใช้เป้าคงที่ 1,000 ตัน / 15 ล้านบาทเท่ากันทุกคนเทียบกับยอดสะสมทั้งหมด (ไม่อนุญาตให้แสดงเป้าสมมุติ)',
     columns: [
       { key: 'SalesName', label: 'พนักงานขาย', type: 'text' },
       { key: 'TargetTon', label: 'เป้าหมาย (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
