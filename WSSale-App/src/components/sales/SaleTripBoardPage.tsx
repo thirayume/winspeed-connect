@@ -23,13 +23,14 @@ import {
   Package, Gift, Layers, ClipboardList, Ticket, X, Info, CircleAlert, PauseOctagon,
 } from 'lucide-react';
 import {
-  fetchTripBoard, fetchLoadingPlan,
+  fetchTripBoard, fetchLoadingPlan, acknowledgeLoadPlan,
   type TripBoardRow, type TripBooking, type TripLine, type LoadingPlan,
   type HoldCapability,
 } from '../../services/api';
 import {
   useHoldCapability, HoldCapabilityBanner, HoldScopeChip,
 } from '../common/HoldCapabilityBanner';
+import { useAuthStore } from '../../store/auth-store';
 
 const NAVY = '#0C447C';
 
@@ -215,14 +216,33 @@ function BookingBlock({ b }: { b: TripBooking }) {
 function LoadingPlanPanel({ tripId, onClose }: { tripId: number | string; onClose: () => void }) {
   const [data, setData] = useState<LoadingPlan | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [ackBusy, setAckBusy] = useState(false);
+  const [ackMsg, setAckMsg] = useState<string | null>(null);
+  const role = useAuthStore(s => s.user?.role);
+  // the warehouse acknowledges the sales-confirmed load plan here: the button lived only in the sales trip window,
+  // which the warehouse cannot open, and shipping a trip needs the acknowledgement (UAT full loop 2026-10-09)
+  const canAck = ['WAREHOUSE', 'MANAGER', 'ADMIN', 'C_LEVEL'].includes(String(role || ''));
+  const planStatus = (data?.trip as any)?.loadPlanStatus as string | undefined;
+  const planRevision = Number((data?.trip as any)?.loadPlanRevision || 1);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     let alive = true;
     fetchLoadingPlan(tripId)
       .then(d => { if (alive) setData(d); })
       .catch(e => { if (alive) setErr(e?.message || 'โหลดผังการจัดของไม่สำเร็จ'); });
     return () => { alive = false; };
   }, [tripId]);
+  useEffect(() => load(), [load]);
+
+  const acknowledge = async () => {
+    setAckBusy(true); setAckMsg(null);
+    try {
+      const r = await acknowledgeLoadPlan(tripId, { expectedPlanRevision: planRevision, note: 'คลังรับทราบแผนจัดของจากกระดาน Sale Trip' });
+      setAckMsg(r.message || 'ฝ่ายคลังรับทราบแผนจัดของเรียบร้อยแล้ว');
+      load();
+    } catch (e: unknown) { setAckMsg('การรับทราบแผนล้มเหลว: ' + ((e as Error).message || 'ข้อผิดพลาด')); }
+    finally { setAckBusy(false); }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
@@ -260,6 +280,19 @@ function LoadingPlanPanel({ tripId, onClose }: { tripId: number | string; onClos
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {planStatus && (
+                <div className={`mb-3 flex flex-wrap items-center gap-2 rounded border px-2.5 py-2 text-xs ${planStatus === 'SALE_CONFIRMED' ? 'border-amber-200 bg-amber-50 text-amber-900' : planStatus === 'WAREHOUSE_ACK' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-gray-200 bg-gray-50 text-gray-600'}`}>
+                  <span>แผนจัดของ Revision {planRevision} · {planStatus === 'SALE_CONFIRMED' ? 'รอคลังรับทราบแผน' : planStatus === 'WAREHOUSE_ACK' ? 'คลังรับทราบแล้ว' : planStatus}</span>
+                  {planStatus === 'SALE_CONFIRMED' && canAck && (
+                    <button type="button" disabled={ackBusy} onClick={acknowledge}
+                      className="ml-auto rounded px-3 py-1 font-semibold text-white disabled:opacity-50" style={{ background: NAVY }}>
+                      {ackBusy ? 'กำลังบันทึก…' : 'คลังรับทราบแผนจัดของ'}
+                    </button>
+                  )}
+                  {ackMsg && <span className="w-full">{ackMsg}</span>}
                 </div>
               )}
 

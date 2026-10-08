@@ -526,7 +526,8 @@ export function TripSummaryModal({
                           </button>
                         </div>
                       )}
-                      {allConfirmed && (
+                      {/* picking is the warehouse's job: the server allows WAREHOUSE / ADMIN / C_LEVEL (sales and counter saw the button and got 403) */}
+                      {allConfirmed && ['WAREHOUSE', 'ADMIN', 'C_LEVEL'].includes(String(currentUser?.role || '')) && (
                         <button
                           disabled={busy}
                           onClick={() => handleBulkAction(moveToPicking, `เริ่มรับสินค้า (Picking) ทั้งทริปใช่หรือไม่?`)}
