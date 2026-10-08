@@ -269,7 +269,7 @@ const REPORTS = {
     title: 'รายงานสินค้าค้างส่งแยกตามลูกค้า (Unfilled Sales Orders / Backlog)',
     category: 'sales',
     columns: [
-      { key: 'SOID', label: 'เลขที่ SO', type: 'identifier' },
+      { key: 'DocuNo', label: 'เลขที่ SO', type: 'identifier' },
       { key: 'DocuDate', label: 'วันที่เอกสาร', type: 'date' },
       { key: 'CustName', label: 'ลูกค้า', type: 'text' },
       { key: 'TruckPlate', label: 'ทะเบียนรถ', type: 'identifier' },
@@ -278,20 +278,22 @@ const REPORTS = {
       { key: 'ShippedTon', label: 'ส่งแล้ว (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
       { key: 'BacklogTon', label: 'ค้างส่ง (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
     ],
-    sql: `SELECT TOP 200 
-            CAST(hd.SOID AS VARCHAR(50)) AS SOID,
+    // UAT RPT-06: the backlog is what WinSpeed still holds open on a booking line (SODT.RemaQty, cut down as
+    // invoices are issued). It listed delivered invoices (104) as backlog, the internal SOID as the SO number,
+    // the whole bill's weigh-out on every line, and only the oldest 200 rows (all from 2019).
+    sql: `SELECT TOP 500
+            hd.DocuNo,
             CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
             hd.CustName,
             hd.TransRegistration AS TruckPlate,
             dt.GoodName,
-            CAST(dt.GoodQty2 AS DECIMAL(10,2)) AS OrderedTon,
-            CAST(ISNULL(ext.WeighOutWeight / 1000.0, 0) AS DECIMAL(10,2)) AS ShippedTon,
-            CAST(dt.GoodQty2 - ISNULL(ext.WeighOutWeight / 1000.0, 0) AS DECIMAL(10,2)) AS BacklogTon
+            CAST(dt.GoodQty2 AS DECIMAL(12,3)) AS OrderedTon,
+            CAST(dt.GoodQty2 - dt.RemaQty AS DECIMAL(12,3)) AS ShippedTon,
+            CAST(dt.RemaQty AS DECIMAL(12,3)) AS BacklogTon
           FROM dbo.SOHD hd WITH (NOLOCK)
           JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
-          LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON ext.SOID = hd.SOID
-          WHERE hd.DocuType IN (103, 104) AND hd.DocuStatus <> 'C' AND (ext.WeighOutWeight IS NULL OR ext.IsLoaded = 0)
-          ORDER BY hd.DocuDate ASC, hd.SOID ASC`,
+          WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C' AND dt.RemaQty > 0
+          ORDER BY hd.DocuDate DESC, hd.SOID DESC, dt.ListNo`,
   },
   'cn-returns': {
     title: 'รายงานใบลดหนี้และการรับคืนสินค้า (Credit Note & Return Register)',
