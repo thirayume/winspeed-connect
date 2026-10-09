@@ -961,6 +961,7 @@ export function TripSummaryModal({
         onClose={() => setIsEditTripOpen(false)}
         initialData={{
           tripId: trip.tripId || trip.orders[0]?.tripId,
+          orderIds: (trip.tripId || trip.orders[0]?.tripId) ? undefined : trip.orders.map(o => o.id!).filter(Boolean),
           expectedRevision: tripRevision,
           truckPlate: serverPlate,
           deliveryDate: tripPickupDueDate,

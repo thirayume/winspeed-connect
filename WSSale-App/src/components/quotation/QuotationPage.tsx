@@ -343,7 +343,7 @@ export function QuotationPage() {
                           )}
                           {q.ConvertedSoId && (
                             <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
-                              SO #{q.ConvertedSoId}
+                              SO {q.ConvertedWfRef || `#${q.ConvertedSoId}`}
                             </span>
                           )}
                         </div>

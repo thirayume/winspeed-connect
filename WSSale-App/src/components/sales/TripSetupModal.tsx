@@ -13,6 +13,9 @@ export type TripSetupData = {
   pSling?: boolean;
   loadInOrder?: boolean;
   remark?: string;
+  // bills of a window that has no trip yet: a new trip takes them in (without them the trip was created empty and
+  // the plate was lost when the window reloaded — UAT 2026-10-09, quotation bill I69-04237)
+  orderIds?: (number | string)[];
 };
 
 export function TripSetupModal({
@@ -73,6 +76,7 @@ export function TripSetupModal({
         deliveryDate,
         truckCapacityTon: 30,
         pSling, remark,
+        ...(initialData?.orderIds?.length ? { orderIds: initialData.orderIds } : {}),
       });
 
       onConfirm({

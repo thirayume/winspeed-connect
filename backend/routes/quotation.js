@@ -1036,6 +1036,9 @@ router.get('/', async (req, res) => {
           q.Status,
           q.SalesUserId,
           q.ConvertedSoId,
+          -- the draft's number, or the booking's once the draft is confirmed (the draft row is then gone)
+          COALESCE((SELECT TOP 1 d.WfRef FROM wf.SalesOrder d WHERE d.Id = q.ConvertedSoId),
+                   (SELECT TOP 1 x.WfRef FROM wf.SalesOrderExt x WHERE x.SourceDraftId = q.ConvertedSoId)) AS ConvertedWfRef,
           q.Remark,
           q.CreatedAt,
           q.UpdatedAt,
@@ -1084,6 +1087,7 @@ router.get('/', async (req, res) => {
           ${nativeQuoteStatusSql('qu', 'qc')} AS Status,
           CAST(NULL AS INT) AS SalesUserId,
           CAST(NULL AS INT) AS ConvertedSoId,
+          CAST(NULL AS NVARCHAR(50)) AS ConvertedWfRef,
           CAST(qu.Remark AS NVARCHAR(500)) AS Remark,
           CAST(qu.DocuDate AS DATETIME2) AS CreatedAt,
           CAST(qu.DocuDate AS DATETIME2) AS UpdatedAt,

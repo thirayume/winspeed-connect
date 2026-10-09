@@ -580,6 +580,7 @@ export type Quotation = {
   SalesUserId?: number | null;
   SalesName?: string;
   ConvertedSoId?: number;
+  ConvertedWfRef?: string | null;
   WinspeedQuoteSOID?: number | null;
   WinspeedQuoteNo?: string | null;
   WinspeedQuoteSyncedAt?: string | null;

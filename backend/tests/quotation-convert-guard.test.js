@@ -61,3 +61,11 @@ test('the raw convert route is retired', async () => {
     assert.equal(r.status, 410);
   } finally { await app.close(); }
 });
+
+test('a converted bill can be confirmed: the quotation no longer holds a key on the draft row', () => {
+  const sqlText = require('fs').readFileSync(require.resolve('../migrations/150_quotation_converted_link.sql'), 'utf8');
+  assert.match(sqlText, /referenced_object_id = OBJECT_ID\('wf\.SalesOrder'\)/);
+  assert.match(sqlText, /ALTER TABLE wf\.Quotation DROP CONSTRAINT/);
+  const src = require('fs').readFileSync(require.resolve('../routes/quotation'), 'utf8');
+  assert.match(src, /x\.SourceDraftId = q\.ConvertedSoId\)\) AS ConvertedWfRef/, 'the list follows the confirmed booking');
+});
