@@ -11,6 +11,7 @@ const { sql, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
 const { legacyCutoffInput, legacyCutoffSql } = require('../services/legacy-cutoff');
+const { nativeDedupSql } = require('../services/native-status');
 const { broadcast } = require('../services/socket');
 
 router.use(requireAuth);
@@ -121,11 +122,12 @@ router.get('/board', async (req, res) => {
               ELSE 'CONFIRMED'
             END AS Status,
             hd.DocuType,
-            ROW_NUMBER() OVER(PARTITION BY hd.DocuNo ORDER BY hd.DocuType DESC, hd.SOID DESC) AS DedupRN
+            -- a booking gives way to its own 104 (linked by RefNo), never to a 104 that only shares the number
+            ROW_NUMBER() OVER(PARTITION BY hd.DocuNo, hd.DocuType ORDER BY hd.SOID DESC) AS DedupRN
           FROM dbo.SOHD hd WITH (NOLOCK)
           LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
             ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
-          WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')}
+          WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')}
         ) w
         WHERE w.DedupRN = 1
           AND (w.Status IN ('DRAFT', 'PENDING_APPROVAL', 'CONFIRMED', 'PICKING', 'LOADED')
