@@ -6,7 +6,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { sql, wfQuery } = require('../db');
-const { requireAuth, requireRole, passwordChangeEnforced, SECRET } = require('../middleware/auth');
+const { requireAuth, requireRole, passwordChangeEnforced, SECRET, clearAccountStatusCache } = require('../middleware/auth');
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -737,6 +737,8 @@ router.patch('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNT
       inputs
     );
     if (!__r.rowsAffected?.[0]) return res.status(404).json({ message: 'ไม่พบผู้ใช้นี้' });
+    // disabling or re-enabling takes effect on the user's very next request
+    if (isActive !== undefined) clearAccountStatusCache(targetId);
     res.json({ ok: true, id: targetId });
   } catch (e) {
     if (e.number === 2601) return res.status(409).json({ message: 'พนักงานรหัสนี้ถูกผูกกับผู้ใช้อื่นไปแล้ว' });
