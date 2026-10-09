@@ -4,11 +4,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { Map as MapIcon, RefreshCw, Plus, Trash2, AlertTriangle, Users } from 'lucide-react';
 import {
   fetchRegionCoverage, setUserRegion, removeUserRegion, listUsers,
-  fetchRebateDocCodes, setRebateDocCode,
+  fetchRebateDocCodes, setRebateDocCode, autoAssignRebateDocCodes,
   type RegionCoverage, type RebateDocCodeRow, type RebateDocCodeEvidence,
 } from '../../services/api';
 // AdminUser ประกาศไว้ที่ types ไม่ใช่ที่ api.ts — api.ts เพียง import มาใช้ต่อ
 import type { AdminUser } from '../../types';
+import { useAuthStore } from '../../store/auth-store';
 
 /**
  * จัดการผู้อนุมัติรายภาค — ผู้อนุมัติชั้นที่ 2 ของใบขอเคลียร์รีเบท
@@ -166,9 +167,8 @@ export function SaleRegionManager() {
  * ตรวจจากฐานจริง 16,195 ใบ พบว่า **EmpID ว่างทุกใบ** — WINSpeed ไม่ได้บันทึกว่าใครขอ
  * อักษรในเลขที่เอกสารจึงเป็นร่องรอยเดียวที่บอกได้ ต้องผูกกับบัญชีผู้ใช้ให้ชัด
  *
- * ตารางหลักฐานด้านล่างคือความสัมพันธ์ในอดีต (นับจากพนักงานขายประจำของลูกค้า)
- * ระบบไม่ตั้งรหัสให้อัตโนมัติ เพราะบางอักษรในอดีตคาบเกี่ยวหลายคน การเดาแล้วผิด
- * จะทำให้เลขที่เอกสารชี้ไปผิดคนอย่างถาวร
+ * Owner 2026-10-09: codes are given automatically (services/rebate-doc-code.js): the series a person used in
+ * WINSpeed over the last two years first, otherwise two letters from the name. An admin changes any code here.
  */
 function RebateDocCodeSection() {
   const [assigned, setAssigned] = useState<RebateDocCodeRow[]>([]);
@@ -187,6 +187,16 @@ function RebateDocCodeSection() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  async function autoAssign() {
+    setBusy(true); setMsg('');
+    try {
+      const r = await autoAssignRebateDocCodes();
+      await load();
+      setMsg(r.assigned ? `ตั้งรหัสให้ ${r.assigned} คนแล้ว` : 'ทุกคนมีรหัสแล้ว');
+    } catch (e: unknown) { setMsg((e as Error).message); }
+    setBusy(false);
+  }
+
   async function save(userId: number) {
     setBusy(true); setMsg('');
     try {
@@ -197,9 +207,15 @@ function RebateDocCodeSection() {
     setBusy(false);
   }
 
+  // the button calls an ADMIN / C_LEVEL route; other roles see the plan only
+  const canAssign = ['ADMIN', 'C_LEVEL'].includes(String(useAuthStore.getState().user?.role));
+  const waiting = canAssign ? assigned.filter(u => !u.RebateDocCode && u.suggested).length : 0;
+
   const hintFor = (code: string | null) => {
     if (!code) return '';
-    const top = evidence.filter(e => e.SeriesCode === code[0]).sort((a, b) => b.DocCount - a.DocCount)[0];
+    // WINSpeed history is one-letter series; a two-letter code is new and starts its own numbering
+    if (code.length > 1) return `รหัสใหม่ · ใบแรกเป็น RB${code}<ปี>-001`;
+    const top = evidence.filter(e => e.SeriesCode === code).sort((a, b) => b.DocCount - a.DocCount)[0];
     return top ? `เดิม ${top.EmpName} ออก ${top.DocCount.toLocaleString()} ใบ` : '';
   };
 
@@ -211,8 +227,15 @@ function RebateDocCodeSection() {
       <p className="text-xs text-gray-500 mt-1">
         เลขที่ใบคืนรีเบทใน WINSpeed คือ <code>RB&lt;รหัส&gt;&lt;ปี พ.ศ.&gt;-&lt;ลำดับ&gt;</code> เช่น <code>RBD68-049</code> ·
         WINSpeed ไม่ได้บันทึกว่าใครเป็นผู้ขอ อักษรนี้จึงเป็นร่องรอยเดียว · ตัวอักษร A-Z 1-2 ตัว ห้ามซ้ำกัน ·
-        คนที่มีเอกสารเดิมอยู่แล้วให้คงอักษรเดิมไว้ · คนใหม่ใช้ตัวแรกของชื่อ + ตัวแรกของนามสกุล
+        ระบบตั้งให้อัตโนมัติ: คนที่มีเอกสาร RB ใน WINSpeed ช่วง 2 ปีล่าสุดใช้อักษรเดิม · คนอื่นใช้ตัวแรกของชื่อ + ตัวแรกของนามสกุล
+        (ไม่ซ้ำกับอักษรที่ WINSpeed เคยใช้) · แก้รหัสของแต่ละคนได้ในตารางนี้
       </p>
+      {waiting > 0 && (
+        <button onClick={autoAssign} disabled={busy} data-testid="rb-code-auto-assign"
+          className="mt-2 px-3 py-1.5 text-xs rounded-lg text-white font-bold disabled:opacity-40" style={{ background: '#0C447C' }}>
+          ตั้งรหัสอัตโนมัติให้ {waiting} คนที่ยังไม่มี
+        </button>
+      )}
       {msg && <p className="text-xs mt-2 text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">{msg}</p>}
 
       <div className="mt-3 border border-gray-200 rounded-xl overflow-hidden">
@@ -247,7 +270,7 @@ function RebateDocCodeSection() {
                       : u.suggested && (
                         <button onClick={() => setDraft({ ...draft, [u.UserId]: u.suggested! })}
                           className="text-blue-600 hover:underline">
-                          เสนอ {u.suggested} (จากชื่อ)
+                          เสนอ {u.suggested} ({u.suggestedSource === 'HISTORY' ? 'อักษรเดิมใน WINSpeed' : 'จากชื่อ'})
                         </button>
                       )}
                   </td>

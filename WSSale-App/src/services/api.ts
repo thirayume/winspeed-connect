@@ -525,8 +525,9 @@ export const createRebateClaim = (payload: {
 export type RebateDocCodeRow = {
   UserId: number; Username: string; DisplayName: string | null;
   EmpId: string | null; Role: string; RebateDocCode: string | null;
-  /** ข้อเสนอจากชื่อไทย (ตัวแรกชื่อ + ตัวแรกนามสกุล) — ต้องกดยืนยัน ไม่ได้ตั้งให้เอง */
+  /** the code automatic assignment would give (HISTORY = the WINSpeed series this person used, NAME = from the name) */
   suggested?: string | null;
+  suggestedSource?: 'HISTORY' | 'NAME' | null;
 };
 export type RebateDocCodeEvidence = {
   SeriesCode: string; EmpCode: string; EmpName: string;
@@ -535,6 +536,10 @@ export type RebateDocCodeEvidence = {
 
 export const fetchRebateDocCodes = () =>
   req<{ assigned: RebateDocCodeRow[]; evidence: RebateDocCodeEvidence[] }>('/rebate/doc-codes');
+
+// owner 2026-10-09: every salesperson and sales manager without a code gets one
+export const autoAssignRebateDocCodes = () =>
+  req<{ assigned: number; codes: { userId: number; code: string; source: string }[] }>('/rebate/doc-codes/auto-assign', { method: 'POST' });
 
 export const setRebateDocCode = (userId: number, code: string | null) =>
   req<{ Id: number; Username: string; RebateDocCode: string | null }>(`/rebate/doc-codes/${userId}`, {

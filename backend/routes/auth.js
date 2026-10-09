@@ -6,6 +6,13 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { sql, wfQuery } = require('../db');
+const { ensureRebateDocCode } = require('../services/rebate-doc-code');
+
+/** best effort: the user is saved either way, and the code is given again on first use */
+async function giveRebateDocCode(userId) {
+  if (!userId) return;
+  try { await ensureRebateDocCode(userId); } catch (e) { console.error('[rebate-doc-code]', e.message); }
+}
 const { requireAuth, requireRole, passwordChangeEnforced, SECRET, clearAccountStatusCache } = require('../middleware/auth');
 
 const upload = multer({
@@ -609,6 +616,8 @@ router.post('/users', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING')
         e: { type: sql.NVarChar(20), value: empId || null },
       }
     );
+    // owner 2026-10-09: a salesperson or sales manager gets a rebate requester code automatically
+    await giveRebateDocCode(result.recordset[0]?.Id);
     res.json(result.recordset[0]);
   } catch (e) {
     if (e.number === 2627) return res.status(409).json({ message: 'ชื่อผู้ใช้ซ้ำ' });
@@ -739,6 +748,7 @@ router.patch('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNT
     if (!__r.rowsAffected?.[0]) return res.status(404).json({ message: 'ไม่พบผู้ใช้นี้' });
     // disabling or re-enabling takes effect on the user's very next request
     if (isActive !== undefined) clearAccountStatusCache(targetId);
+    if (role !== undefined || isActive !== undefined) await giveRebateDocCode(targetId);
     res.json({ ok: true, id: targetId });
   } catch (e) {
     if (e.number === 2601) return res.status(409).json({ message: 'พนักงานรหัสนี้ถูกผูกกับผู้ใช้อื่นไปแล้ว' });

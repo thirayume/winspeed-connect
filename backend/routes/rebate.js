@@ -10,6 +10,7 @@ const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-s
 const { getPolicySettings, logChangeEvent, validateReasonCode } = require('../services/policy-contract');
 const { mapDatabaseError } = require('../services/error-adapter');
 const { applyClaimToDraft } = require('../services/rebate-claim-apply');
+const { autoAssignRebateDocCodes, ensureRebateDocCode } = require('../services/rebate-doc-code');
 
 router.use(requireAuth);
 
@@ -442,6 +443,7 @@ router.get('/claims/:id', requireRebatePageAccess, hideRebateMoneyFromSales, asy
       const owner = (await wfQuery(
         `SELECT RebateDocCode FROM wf.AppUser WHERE Id = @uid`,
         { uid: { type: sql.Int, value: claim.SalesUserId } })).recordset?.[0];
+      if (owner && !owner.RebateDocCode) owner.RebateDocCode = await ensureRebateDocCode(claim.SalesUserId);
       if (owner?.RebateDocCode) {
         const yy = String(beYY()).slice(-2);
         const prefix = `RB${owner.RebateDocCode}${yy}-`;
@@ -2067,43 +2069,6 @@ router.get('/accrual/:custId', hideRebateMoneyFromSales, async (req, res) => {
 /** ปี พ.ศ. 2 หลักที่ใช้ในเลขที่เอกสาร */
 const beYY = (d = new Date()) => String((d.getFullYear() + 543) % 100).padStart(2, '0');
 
-/**
- * เดารหัสผู้ขอจากชื่อไทย — ตัวแรกของชื่อ + ตัวแรกของนามสกุล เป็นอักษรโรมัน
- *
- * เป็น "ข้อเสนอ" ให้ผู้ดูแลกดยืนยัน ไม่ใช่การตั้งค่าอัตโนมัติ
- * เพราะอักษรที่ใช้อยู่เดิมไม่ได้มาจากตัวแรกของชื่อจริง — วัดจากฐานจริงพบว่า 7 ใน 10 คน
- * อักษรไม่ตรงกับตัวแรกของชื่อเลย น่าจะมาจากชื่อเล่นซึ่งไม่มีในฐานข้อมูล
- * การเดาแล้วตั้งให้เองจะทำให้เลขที่เอกสารชี้ผิดคนอย่างถาวร
- */
-const THAI_INITIAL = {
-  'ก':'K','ข':'K','ฃ':'K','ค':'K','ฅ':'K','ฆ':'K','ง':'N','จ':'C','ฉ':'C','ช':'C',
-  'ซ':'S','ฌ':'C','ญ':'Y','ฎ':'D','ฏ':'T','ฐ':'T','ฑ':'T','ฒ':'T','ณ':'N','ด':'D',
-  'ต':'T','ถ':'T','ท':'T','ธ':'T','น':'N','บ':'B','ป':'P','ผ':'P','ฝ':'F','พ':'P',
-  'ฟ':'F','ภ':'P','ม':'M','ย':'Y','ร':'R','ล':'L','ว':'W','ศ':'S','ษ':'S','ส':'S',
-  'ห':'H','ฬ':'L','อ':'A','ฮ':'H',
-};
-
-/** ตัวอักษรโรมันจากพยางค์แรก — ข้ามสระหน้า เ แ โ ใ ไ ที่เขียนก่อนพยัญชนะ */
-function initialOf(word) {
-  for (const ch of String(word || '')) {
-    if (/[A-Za-z]/.test(ch)) return ch.toUpperCase();
-    if (THAI_INITIAL[ch]) return THAI_INITIAL[ch];
-  }
-  return '';
-}
-
-function suggestDocCode(fullName, taken) {
-  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
-  const first = initialOf(parts[0]);
-  const last = initialOf(parts[1]);
-  if (!first) return null;
-  // ชื่อ+นามสกุล ถ้ามี · ไม่มีนามสกุลก็ใช้ตัวเดียว แล้วเติมตัวเลขเมื่อชน
-  const candidates = [first + last, first, first + 'A'].filter(c => c && c.length <= 2);
-  for (const c of candidates) if (!taken.has(c)) return c;
-  for (let i = 1; i <= 9; i++) if (!taken.has(first + i)) return first + i;
-  return null;
-}
-
 // GET /api/rebate/doc-codes — รหัสผู้ขอที่ตั้งไว้แล้ว + หลักฐานจากเอกสารในอดีต
 router.get('/doc-codes', requireRole('ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
   try {
@@ -2113,24 +2078,29 @@ router.get('/doc-codes', requireRole('ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'
       WHERE IsActive = 1 AND (RebateDocCode IS NOT NULL OR Role IN ('SALES','MANAGER'))
       ORDER BY CASE WHEN RebateDocCode IS NULL THEN 1 ELSE 0 END, RebateDocCode, Username`)).recordset || [];
 
-    // หลักฐาน: อักษรชุดใดเคยออกให้ลูกค้าของพนักงานขายคนไหนบ้าง
-    // ใช้ช่วยผู้ดูแลตั้งรหัส ไม่ได้ตั้งให้อัตโนมัติ เพราะบางอักษรคาบเกี่ยวหลายคน
+    // หลักฐาน: อักษรชุดใดเคยออกให้ลูกค้าของพนักงานขายคนไหนบ้าง (ทุกปี) ใช้แสดงประกอบในหน้าจอ
     const evidence = (await wfQuery(`
       SELECT SeriesCode, EmpCode, EmpName, DocCount, FirstDoc, LastDoc, TotalAmnt
       FROM wf.v_RebateDocCodeEvidence
       WHERE DocCount >= 20
       ORDER BY SeriesCode, DocCount DESC`)).recordset || [];
 
-    // เติมข้อเสนอรหัสให้คนที่ยังไม่มี — ผู้ดูแลกดยืนยันเองในหน้าจอ
-    const taken = new Set(assigned.map(u => u.RebateDocCode).filter(Boolean));
+    // รหัสที่การตั้งอัตโนมัติจะให้กับคนที่ยังไม่มี (ยังไม่บันทึก) — กฎอยู่ใน services/rebate-doc-code.js
+    const plan = new Map((await autoAssignRebateDocCodes({ dryRun: true })).map(p => [p.userId, p]));
     const withSuggestion = assigned.map(u => {
-      if (u.RebateDocCode) return { ...u, suggested: null };
-      const code = suggestDocCode(u.DisplayName || u.Username, taken);
-      if (code) taken.add(code);
-      return { ...u, suggested: code };
+      const p = u.RebateDocCode ? null : plan.get(Number(u.UserId));
+      return { ...u, suggested: p ? p.code : null, suggestedSource: p ? p.source : null };
     });
 
     res.json({ assigned: withSuggestion, evidence });
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/rebate/doc-codes/auto-assign — owner 2026-10-09: ตั้งรหัสให้พนักงานขาย/ผู้จัดการทุกคนที่ยังไม่มี
+router.post('/doc-codes/auto-assign', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  try {
+    const written = await autoAssignRebateDocCodes();
+    res.json({ assigned: written.length, codes: written });
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
@@ -2175,6 +2145,8 @@ router.get('/next-rb-no', async (req, res) => {
       `SELECT Username, DisplayName, RebateDocCode FROM wf.AppUser WHERE Id = @id`,
       { id: { type: sql.Int, value: userId } })).recordset?.[0];
     if (!u) return res.status(404).json({ message: 'ไม่พบผู้ใช้' });
+    // owner 2026-10-09: an active salesperson or sales manager without a code gets one now
+    if (!u.RebateDocCode) u.RebateDocCode = await ensureRebateDocCode(userId);
     if (!u.RebateDocCode) {
       return res.status(409).json({
         code: 'NO_DOC_CODE',
