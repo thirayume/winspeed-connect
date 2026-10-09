@@ -69,3 +69,16 @@ test('a converted bill can be confirmed: the quotation no longer holds a key on 
   const src = require('fs').readFileSync(require.resolve('../routes/quotation'), 'utf8');
   assert.match(src, /x\.SourceDraftId = q\.ConvertedSoId\)\) AS ConvertedWfRef/, 'the list follows the confirmed booking');
 });
+
+test('a quotation past its validity reads expired and cannot convert until extended (QT-07)', async () => {
+  const quotation = require('../routes/quotation');
+  const { toBangkokDateString } = require('../services/coupon-settlement-matcher');
+  const today = toBangkokDateString(new Date());
+  const day = n => new Date(new Date(today + 'T00:00:00Z').getTime() + n * 86400000);
+  assert.equal(quotation.isPastValidityForTest({ Status: 'SENT', ValidUntil: day(-1) }), true);
+  assert.equal(quotation.isPastValidityForTest({ Status: 'ACCEPTED', ValidUntil: day(-1) }), true);
+  assert.equal(quotation.isPastValidityForTest({ Status: 'SENT', ValidUntil: day(0) }), false, 'valid through its last day');
+  assert.equal(quotation.isPastValidityForTest({ Status: 'CONVERTED', ValidUntil: day(-30) }), false);
+  await assert.rejects(check({ Id: 3, QuoteNo: 'QU6910-00003', Status: 'ACCEPTED', CustId: '1078', SalesUserId: 43, PastValidity: 1 }),
+    e => e.status === 409 && /หมดอายุ/.test(e.message));
+});

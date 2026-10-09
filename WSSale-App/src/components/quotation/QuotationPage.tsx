@@ -360,7 +360,7 @@ export function QuotationPage() {
                               <Check size={14} /> ยืนยัน
                             </button>
                           )}
-                          {!nativeOnly && (q.Status === 'DRAFT' || q.Status === 'SENT' || q.Status === 'ACCEPTED') && (
+                          {!nativeOnly && (q.Status === 'DRAFT' || q.Status === 'SENT' || q.Status === 'ACCEPTED' || q.Status === 'EXPIRED') && (
                             <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'CANCELLED')} className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
                               <X size={14} /> ยกเลิก
                             </button>

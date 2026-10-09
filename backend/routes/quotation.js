@@ -76,6 +76,13 @@ function normalizeValidUntil(validUntil, validDays) {
   return d;
 }
 
+/** an open quotation past its validity, on the Bangkok business date */
+function isPastValidity(q) {
+  if (!q?.ValidUntil || !['DRAFT', 'SENT', 'ACCEPTED'].includes(q.Status)) return false;
+  return String(new Date(q.ValidUntil).toISOString()).slice(0, 10) < toBangkokDateString(new Date());
+}
+router.isPastValidityForTest = isPastValidity;
+
 function addIds(request, ids) {
   const names = [];
   ids.forEach((id, idx) => {
@@ -1033,7 +1040,10 @@ router.get('/', async (req, res) => {
           q.CustId,
           q.CustName,
           q.ValidUntil,
-          q.Status,
+          -- past its validity (Bangkok business date) an open quotation reads EXPIRED until it is extended;
+          -- it used to stay open forever (UAT 2026-10-09, QT-07)
+          CASE WHEN q.Status IN ('DRAFT', 'SENT', 'ACCEPTED') AND q.ValidUntil < CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE)
+               THEN 'EXPIRED' ELSE q.Status END AS Status,
           q.SalesUserId,
           q.ConvertedSoId,
           -- the draft's number, or the booking's once the draft is confirmed (the draft row is then gone)
@@ -1170,6 +1180,7 @@ router.get('/:id', async (req, res) => {
 
     const q = (await wfQuery(`SELECT * FROM wf.Quotation WHERE Id=@id`, { id: { type: sql.Int, value: id } })).recordset?.[0];
     if (!q || !inScope(scope, { userId: q.SalesUserId })) return res.status(404).json({ message: 'ไม่พบใบเสนอราคา' });
+    if (isPastValidity(q)) q.Status = 'EXPIRED';
     let lines = (await wfQuery(`SELECT * FROM wf.QuotationLine WHERE QuoteId=@id ORDER BY LineNum`, { id: { type: sql.Int, value: q.Id } })).recordset || [];
     if (!lines.length && q.WinspeedQuoteSOID) {
       const native = await loadNativeQuotationBySoid(q.WinspeedQuoteSOID);
@@ -1500,6 +1511,14 @@ router.patch('/:id/status', requireCapability('quotation.manage'), requireQuotat
     if (!['DRAFT', 'SENT', 'ACCEPTED', 'EXPIRED', 'CANCELLED'].includes(status))
       return res.status(400).json({ message: 'status ไม่ถูกต้อง' });
 
+    if (status === 'SENT' || status === 'ACCEPTED') {
+      const cur = (await wfQuery(`SELECT Status, ValidUntil, QuoteNo FROM wf.Quotation WHERE Id=@id`,
+        { id: { type: sql.Int, value: Number(req.params.id) } })).recordset?.[0];
+      if (cur && isPastValidity(cur)) {
+        return res.status(409).json({ message: `ใบเสนอราคา ${cur.QuoteNo} หมดอายุแล้ว (ยืนราคาถึง ${String(new Date(cur.ValidUntil).toISOString()).slice(0, 10)}) กรุณาต่ออายุก่อน` });
+      }
+    }
+
     let native = null;
     let restoredSources = [];
     if (status === 'ACCEPTED') {
@@ -1555,6 +1574,9 @@ router.patch('/:id/status', requireCapability('quotation.manage'), requireQuotat
 router.patch('/:id/valid-until', requireCapability('quotation.manage'), requireQuotationInScope, async (req, res) => {
   try {
     const validUntil = normalizeValidUntil(req.body?.validUntil, req.body?.validDays);
+    if (validUntil.toISOString().slice(0, 10) < toBangkokDateString(new Date())) {
+      return res.status(400).json({ message: 'วันยืนราคาต้องไม่ก่อนวันนี้' });
+    }
     const ready = await getNativeQuotationReadiness();
     await wfTransaction(async tx => {
       const r = await tx.request()

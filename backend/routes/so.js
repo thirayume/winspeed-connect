@@ -1283,10 +1283,13 @@ async function assertQuoteConvertible(tx, req, convertFromQuoteId, custId) {
   const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
   if (quoteId > 0) {
     const q = (await tx.request().input('id', sql.Int, quoteId)
-      .query(`SELECT Id, QuoteNo, Status, CustId, SalesUserId FROM wf.Quotation WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id`)).recordset?.[0];
+      .query(`SELECT Id, QuoteNo, Status, CustId, SalesUserId, ValidUntil,
+                     CASE WHEN ValidUntil < CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE) THEN 1 ELSE 0 END AS PastValidity
+              FROM wf.Quotation WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id`)).recordset?.[0];
     if (!q || !inScope(await getVisibleScope(req.user), { userId: q.SalesUserId })) fail(404, 'ไม่พบใบเสนอราคา');
     if (q.Status === 'CONVERTED') fail(409, `ใบเสนอราคา ${q.QuoteNo} แปลงเป็น SO แล้ว`);
     if (q.Status !== 'ACCEPTED') fail(409, `ใบเสนอราคา ${q.QuoteNo} ต้องยืนยันก่อนจึงจะแปลงเป็น SO ได้`);
+    if (Number(q.PastValidity)) fail(409, `ใบเสนอราคา ${q.QuoteNo} หมดอายุแล้ว กรุณาต่ออายุก่อนแปลงเป็น SO`);
     if (String(q.CustId).trim() !== String(custId).trim()) fail(400, `ลูกค้าในบิลไม่ตรงกับใบเสนอราคา ${q.QuoteNo}`);
     return;
   }
