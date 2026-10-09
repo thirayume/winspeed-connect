@@ -743,10 +743,10 @@ export function CreateSODialog({
         };
         const res = await updateSO(editSoId, payload);
         setIsSaveCommitted(true);
-        if (res.needsApproval) alert(`⚠ มีรายการราคาที่ต้องอนุมัติ (ไม่พบราคาประกาศหรือราคาต่ำกว่าประกาศ)\nต้องการอนุมัติจาก ผจก. ก่อน confirm`);
-        else if (res.winspeedReapprovalRequired) alert(`✓ แก้ไขบิลสำเร็จ
-มีการเปลี่ยนสินค้า/จำนวน/ราคา — ใบอนุมัติเดิมใน WinSpeed${res.voidedApproval && res.voidedApproval !== '-' ? ` (${res.voidedApproval})` : ''} ถูกยกเลิก ต้องอนุมัติใบสั่งจองใน WinSpeed ใหม่ก่อนส่งของ`);
-        else alert(`✓ แก้ไขบิลสำเร็จ`);
+        // both notices when both apply: a price awaiting the manager does not hide the voided WinSpeed approval
+        const notes = [res.needsApproval ? `⚠ มีรายการราคาที่ต้องอนุมัติ (ไม่พบราคาประกาศหรือราคาต่ำกว่าประกาศ)\nต้องการอนุมัติจาก ผจก. ก่อน confirm` : '✓ แก้ไขบิลสำเร็จ'];
+        if (res.winspeedReapprovalRequired) notes.push(`มีการเปลี่ยนสินค้า/จำนวน/ราคา — ใบอนุมัติเดิมใน WinSpeed${res.voidedApproval && res.voidedApproval !== '-' ? ` (${res.voidedApproval})` : ''} ถูกยกเลิก ต้องอนุมัติใบสั่งจองใน WinSpeed ใหม่ก่อนส่งของ`);
+        alert(notes.join('\n\n'));
       } else {
         // Build grouped payload (Array of orders) with customer per bill (P1 Finding 1)
         const payload = bills.map(b => {

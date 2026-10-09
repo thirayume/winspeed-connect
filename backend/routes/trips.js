@@ -894,7 +894,18 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
           const soReq = tx.request();
           soReq.input('tripId', sql.Int, newTripId);
           soReq.input('soId', sql.Int, orderId);
-          await soReq.query(`UPDATE wf.SalesOrder SET TripId = @tripId WHERE Id = @soId`);
+          const linked = await soReq.query(`UPDATE wf.SalesOrder SET TripId = @tripId WHERE Id = @soId`);
+          if (linked.rowsAffected?.[0] > 0) continue;
+          // a WinSpeed bill (re-confirmed after an edit) joins through its extension; it used to be left out, so
+          // the confirm that follows found an empty trip (UAT full loop 2026-10-09, FL13). Only a bill in no
+          // trip yet, and a salesperson's own bill.
+          await tx.request()
+            .input('tripId', sql.Int, newTripId)
+            .input('soid', sql.VarChar(50), String(orderId))
+            .input('uid', sql.Int, req.user.sub)
+            .input('own', sql.Bit, req.user.role === 'SALES' ? 1 : 0)
+            .query(`UPDATE wf.SalesOrderExt SET TripId = @tripId, UpdatedAt = SYSUTCDATETIME()
+                    WHERE SOID = @soid AND TripId IS NULL AND (@own = 0 OR SalesUserId = @uid)`);
         }
       }
     });
@@ -1267,11 +1278,23 @@ router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
           await confirmDraft({tx,draftId:Number(m.MemberId),user:req.user,ip:req.ip,
             expectedTripId:tripId,explicitPickup:targetPickupDate,truckPlate:cleanTruckPlate});
         } else {
+          // a WinSpeed member unlocked for an edit is locked again with the trip, after the counter's check (FR-022)
+          const ext = (await tx.request().input('soid', sql.VarChar(50), String(m.MemberId))
+            .query(`SELECT IsUnlocked, VerifiedAt FROM wf.SalesOrderExt WITH (UPDLOCK) WHERE SOID = @soid`)).recordset?.[0];
+          if (ext && Number(ext.IsUnlocked) && req.user.role !== 'ADMIN' && !ext.VerifiedAt) {
+            const err = new Error(`${m.DocuNo || m.MemberId}: ต้องตรวจซ้ำ (Counter-Sales) ก่อนยืนยัน (FR-022)`);
+            err.status = 400;
+            throw err;
+          }
           // Already CONFIRMED native member: DO NOT overwrite original SO PickupDueDate! Only set TripId (Finding 5)
           await tx.request()
             .input('tripId', sql.Int, tripId)
             .input('soid', sql.VarChar(50), String(m.MemberId))
-            .query(`UPDATE wf.SalesOrderExt SET TripId = @tripId, UpdatedAt = SYSUTCDATETIME() WHERE SOID = @soid`);
+            .query(`UPDATE wf.SalesOrderExt SET TripId = @tripId, UpdatedAt = SYSUTCDATETIME(),
+                      VerifiedBy = CASE WHEN IsUnlocked = 1 THEN NULL ELSE VerifiedBy END,
+                      VerifiedAt = CASE WHEN IsUnlocked = 1 THEN NULL ELSE VerifiedAt END,
+                      IsUnlocked = 0
+                    WHERE SOID = @soid`);
         }
       }
 

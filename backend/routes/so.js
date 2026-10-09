@@ -907,7 +907,6 @@ router.get('/unlock-reasons', async (req, res) => {
   }
 });
 
-// GET /api/so/unlock-requests?status=PENDING — สำหรับ Approver
 /**
  * Owner 2026-10-09: while keying a bill the salesperson sees only a colour for each price — red below the announced
  * price by more than PRICE_WARN_BELOW_PER_TON, yellow below it by up to that, green above it (the line accrues
@@ -946,6 +945,7 @@ router.post('/price-indicator', requireCapability('so.create'), async (req, res)
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
 
+// GET /api/so/unlock-requests?status=PENDING — สำหรับ Approver
 router.get('/unlock-requests', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'C_LEVEL'), async (req, res) => {
   try {
     const { status } = req.query;
@@ -2182,8 +2182,15 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
 router.patch('/:id/verify', requireCapability('so.verify'), requireSoInScope, async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id, 'DRAFT');
-    await wfQuery(`UPDATE wf.SalesOrder SET VerifiedBy=@uid, VerifiedAt=GETUTCDATE() WHERE Id=@id`,
-      { uid: { type: sql.Int, value: req.user.sub }, id: { type: sql.Int, value: so.Id } });
+    // an unlocked WinSpeed bill reads DRAFT too but has no wf.SalesOrder row: its check is kept on the extension
+    // (migration 149; the update used to touch nothing and still answer verified)
+    const native = await wfQuery(`UPDATE wf.SalesOrderExt SET VerifiedBy=@uid, VerifiedAt=GETUTCDATE() WHERE SOID=@id AND IsUnlocked=1`,
+      { uid: { type: sql.Int, value: req.user.sub }, id: { type: sql.VarChar(50), value: String(so.Id) } });
+    if (!(native.rowsAffected?.[0] > 0)) {
+      const draft = await wfQuery(`UPDATE wf.SalesOrder SET VerifiedBy=@uid, VerifiedAt=GETUTCDATE() WHERE Id=@id`,
+        { uid: { type: sql.Int, value: req.user.sub }, id: { type: sql.Int, value: Number(so.Id) } });
+      if (!(draft.rowsAffected?.[0] > 0)) return res.status(409).json({ message: 'บิลนี้ไม่อยู่ในสถานะที่ตรวจได้ กรุณาโหลดใหม่' });
+    }
     await audit(null, so.Id, req.user.sub, 'VERIFIED', 'DRAFT', 'DRAFT', null, req.ip);
     broadcast('so_updated', { id: so.Id, action: 'verified' });
     res.json({ id: so.Id, verified: true });
@@ -2206,13 +2213,13 @@ router.patch('/:id/confirm', requireCapability('so.confirm'), requireSoInScope, 
       });
     }
 
-    const isSohdOrder = (await wfQuery(`SELECT SOID, TripId, PickupDueDate, PickupDueType, ConfirmedAt, PickupPolicySnapshotId, IsUnlocked FROM wf.SalesOrderExt WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: String(req.params.id) } })).recordset[0];
+    const isSohdOrder = (await wfQuery(`SELECT SOID, TripId, PickupDueDate, PickupDueType, ConfirmedAt, PickupPolicySnapshotId, IsUnlocked, VerifiedAt FROM wf.SalesOrderExt WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: String(req.params.id) } })).recordset[0];
     
     // R13 (Q1): A trip is confirmed as a whole. Block per-bill confirm for trip bills.
     if (isSohdOrder && isSohdOrder.TripId) {
       const trip = (await wfQuery(`SELECT TripId, TripCode, Status FROM wf.SalesTrip WHERE TripId = @tripId`, { tripId: { type: sql.Int, value: Number(isSohdOrder.TripId) } })).recordset?.[0];
       if (trip && trip.Status !== 'CANCELLED') {
-        if (isSohdOrder.ConfirmedAt && isSohdOrder.IsUnlocked === 0) {
+        if (isSohdOrder.ConfirmedAt && !Number(isSohdOrder.IsUnlocked)) {
           const { normalizeDateString } = require('../services/so-pickup-policy');
           return res.json({
             id: req.params.id,
@@ -2237,7 +2244,7 @@ router.patch('/:id/confirm', requireCapability('so.confirm'), requireSoInScope, 
       const { calculateConfirmationPickupDue, normalizeDateString } = require('../services/so-pickup-policy');
 
       // Idempotency: if already confirmed and locked, return existing details without shifting ConfirmedAt (C4)
-      if (isSohdOrder.ConfirmedAt && isSohdOrder.IsUnlocked === 0) {
+      if (isSohdOrder.ConfirmedAt && !Number(isSohdOrder.IsUnlocked)) {
         return res.json({
           id: req.params.id,
           status: 'CONFIRMED',
@@ -2247,6 +2254,11 @@ router.patch('/:id/confirm', requireCapability('so.confirm'), requireSoInScope, 
           pickupPolicySnapshotId: isSohdOrder.PickupPolicySnapshotId,
           replayed: true,
         });
+      }
+
+      // FR-022 on a WinSpeed bill unlocked for an edit: the counter checks it again before it is locked
+      if (Number(isSohdOrder.IsUnlocked) && req.user.role !== 'ADMIN' && !isSohdOrder.VerifiedAt) {
+        return res.status(400).json({ message: 'ต้องตรวจซ้ำ (Counter-Sales) ก่อนยืนยัน (FR-022)' });
       }
 
       const explicitDateInput = req.body?.pickupDueDate || req.body?.deliveryDate;
@@ -2263,6 +2275,7 @@ router.patch('/:id/confirm', requireCapability('so.confirm'), requireSoInScope, 
       await wfQuery(`
         UPDATE wf.SalesOrderExt
         SET IsUnlocked = 0,
+            VerifiedBy = NULL, VerifiedAt = NULL,
             PickupDueDate = COALESCE(PickupDueDate, @pDueDate),
             PickupDueType = COALESCE(PickupDueType, @pDueType),
             ConfirmedAt = COALESCE(ConfirmedAt, @confirmedAt),

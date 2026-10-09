@@ -158,7 +158,8 @@ router.get('/board', async (req, res) => {
              COUNT(CASE WHEN so.SourceType = 'DRAFT' THEN sol.SoId ELSE dt.SOID END) AS LineCnt,
              (SELECT COUNT(*) FROM wf.PaperCopy pc WHERE pc.SoId = so.Id) AS CopyCnt,
              (SELECT COUNT(*) FROM wf.PaperCopy pc WHERE pc.SoId = so.Id AND pc.Status='LOST') AS LostCnt,
-             (SELECT TOP 1 dso.VerifiedAt FROM wf.SalesOrder dso WHERE CAST(dso.Id AS NVARCHAR(50)) = so.Id) AS VerifiedAt,
+             COALESCE((SELECT TOP 1 dso.VerifiedAt FROM wf.SalesOrder dso WHERE CAST(dso.Id AS NVARCHAR(50)) = so.Id),
+                      (SELECT TOP 1 vx.VerifiedAt FROM wf.SalesOrderExt vx WHERE vx.SOID = so.Id AND vx.IsUnlocked = 1)) AS VerifiedAt,
              (
                SELECT TOP 1 cr.CouponNo
                FROM wf.CouponReservation cr WITH (NOLOCK)

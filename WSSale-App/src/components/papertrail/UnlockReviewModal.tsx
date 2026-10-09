@@ -19,14 +19,15 @@ export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; on
 
   const reload = useCallback(async () => {
     setLoading(true);
-    try { 
-      const [u, g] = await Promise.all([
-        listUnlockRequests('PENDING'),
-        listPendingGiveaways()
-      ]);
-      setReqs(u);
-      setGiveaways(g);
-    } catch (e) { console.error(e); }
+    // each list on its own: accounting answers unlock requests but may not list giveaways (403),
+    // which used to blank the unlock list too (UAT full loop 2026-10-09)
+    const [u, g] = await Promise.allSettled([
+      listUnlockRequests('PENDING'),
+      listPendingGiveaways(true)
+    ]);
+    setReqs(u.status === 'fulfilled' ? u.value : []);
+    setGiveaways(g.status === 'fulfilled' ? g.value : []);
+    if (u.status === 'rejected') console.error(u.reason);
     setLoading(false);
   }, []);
   useEffect(() => { reload(); }, [reload]);
