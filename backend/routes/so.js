@@ -1272,6 +1272,40 @@ async function creditWarning(custId, orderAmount) {
   }
 }
 
+/**
+ * UAT 2026-10-09 (QT-05): a bill made from a quotation marked the quotation CONVERTED whatever state it was in; the
+ * "accepted, and only once" rule lived only in the browser. The quotation must be accepted (WinSpeed has its QC), not
+ * converted yet, for the same customer, and visible to the person saving.
+ */
+async function assertQuoteConvertible(tx, req, convertFromQuoteId, custId) {
+  const quoteId = Number(convertFromQuoteId);
+  if (!Number.isInteger(quoteId) || quoteId === 0) return;
+  const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
+  if (quoteId > 0) {
+    const q = (await tx.request().input('id', sql.Int, quoteId)
+      .query(`SELECT Id, QuoteNo, Status, CustId, SalesUserId FROM wf.Quotation WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id`)).recordset?.[0];
+    if (!q || !inScope(await getVisibleScope(req.user), { userId: q.SalesUserId })) fail(404, 'ไม่พบใบเสนอราคา');
+    if (q.Status === 'CONVERTED') fail(409, `ใบเสนอราคา ${q.QuoteNo} แปลงเป็น SO แล้ว`);
+    if (q.Status !== 'ACCEPTED') fail(409, `ใบเสนอราคา ${q.QuoteNo} ต้องยืนยันก่อนจึงจะแปลงเป็น SO ได้`);
+    if (String(q.CustId).trim() !== String(custId).trim()) fail(400, `ลูกค้าในบิลไม่ตรงกับใบเสนอราคา ${q.QuoteNo}`);
+    return;
+  }
+  // a quotation keyed in WinSpeed: it needs its QC and must not have been converted already
+  const n = (await tx.request().input('soid', sql.Int, Math.abs(quoteId)).query(`
+    SELECT TOP 1 qu.DocuNo, CAST(qu.CustID AS NVARCHAR(20)) AS CustId,
+      (SELECT TOP 1 1 FROM dbo.SOHD qc WITH (NOLOCK)
+        WHERE qc.DocuType = '113' AND qc.RefNo = qu.DocuNo AND ISNULL(qc.DocuStatus, 'N') <> 'C') AS HasQc,
+      (SELECT TOP 1 w.Status FROM wf.Quotation w WITH (UPDLOCK, HOLDLOCK)
+        WHERE w.WinspeedQuoteSOID = qu.SOID OR w.QuoteNo = qu.DocuNo) AS AppStatus
+    FROM dbo.SOHD qu WITH (NOLOCK)
+    WHERE qu.DocuType = '102' AND qu.SOID = @soid`)).recordset?.[0];
+  if (!n) fail(404, 'ไม่พบใบเสนอราคา');
+  if (n.AppStatus === 'CONVERTED') fail(409, `ใบเสนอราคา ${n.DocuNo} แปลงเป็น SO แล้ว`);
+  if (!n.HasQc) fail(409, `WINSpeed ยังไม่มีเอกสารยืนยันใบเสนอราคา (QC) ของ ${n.DocuNo}`);
+  if (String(n.CustId).trim() !== String(custId).trim()) fail(400, `ลูกค้าในบิลไม่ตรงกับใบเสนอราคา ${n.DocuNo}`);
+}
+router.assertQuoteConvertibleForTest = assertQuoteConvertible;
+
 router.post('/', requireCapability('so.create'), async (req, res) => {
   try {
     const orders = Array.isArray(req.body) ? req.body : [req.body];
@@ -1304,6 +1338,7 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
 
         // R6-1: Sanitize client-supplied lines by stripping private internal markers
         stripPrivateLineFields(lines);
+        if (convertFromQuoteId) await assertQuoteConvertible(tx, req, convertFromQuoteId, custId);
 
         // Validate and lock all coupon reservations for this order before pricing and line generation
         // the person saving made the reservations in the coupon picker; when the counter keys a bill for a
@@ -1421,7 +1456,7 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
             await tx.request()
               .input('quoteId', sql.Int, quoteId)
               .input('soId', sql.Int, soId)
-              .query(`UPDATE wf.Quotation SET Status='CONVERTED', ConvertedSoId=@soId, UpdatedAt=GETUTCDATE() WHERE Id=@quoteId`);
+              .query(`UPDATE wf.Quotation SET Status='CONVERTED', ConvertedSoId=@soId, UpdatedAt=GETUTCDATE() WHERE Id=@quoteId AND Status='ACCEPTED'`);
           } else if (Number.isInteger(quoteId) && quoteId < 0) {
             const nativeQuoteSoid = Math.abs(quoteId);
             const nativeQuote = (await tx.request()

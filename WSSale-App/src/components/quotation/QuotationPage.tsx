@@ -166,6 +166,21 @@ export function QuotationPage() {
     });
   }, [paginatedQuotes, statusOptions]);
 
+  // the bill editor fills the page, as on the sales page; mounted under the list it got the last third of the
+  // screen and its lines were out of reach (UAT 2026-10-09, QT-04)
+  if (convertQuoteId) {
+    return (
+      <div className="h-full w-full flex overflow-hidden">
+        <CreateSODialog
+          isOpen
+          onClose={() => setConvertQuoteId(null)}
+          onCreated={() => { setConvertQuoteId(null); load(); }}
+          convertFromQuoteId={convertQuoteId}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="h-full flex flex-col w-full overflow-hidden max-w-full" style={{ background: '#F1EFE8' }}>
       <div className="px-4 py-3 sm:px-6 sm:py-5 border-b border-gray-200 bg-white shadow-sm flex items-center justify-between shrink-0">
@@ -410,14 +425,6 @@ export function QuotationPage() {
       </div>
 
       {showCreate && <CreateQuoteDialog onClose={() => setShowCreate(false)} onDone={() => { setShowCreate(false); load(); }} />}
-      {convertQuoteId && (
-        <CreateSODialog
-          isOpen={!!convertQuoteId}
-          onClose={() => setConvertQuoteId(null)}
-          onCreated={() => { setConvertQuoteId(null); load(); }}
-          convertFromQuoteId={convertQuoteId}
-        />
-      )}
     </div>
   );
 }

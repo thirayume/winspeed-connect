@@ -11,7 +11,6 @@ const { sql, wfQuery, wfTransaction, pools, getTarget } = require('../db');
 const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
 const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
 const { broadcast } = require('../services/socket');
-const { getNextSequenceValue } = require('../services/sequence-service');
 const { advanceRunCounter, RUN_CODE_BY_DOC_KIND } = require('../services/winspeed-counter');
 const { toBangkokDateString } = require('../services/coupon-settlement-matcher');
 
@@ -926,26 +925,6 @@ async function updateNativeQuotationValidity(tx, quoteId, validUntil) {
     `);
 }
 
-async function nativeQuotationApproved(q) {
-  if (!q?.WinspeedQuoteSOID) return false;
-  const r = await wfQuery(`
-    SELECT TOP 1
-      CASE WHEN qu.AppvFlag='Y'
-             AND qu.DocuStatus='Y'
-             AND EXISTS (
-               SELECT 1 FROM dbo.SOHD qc WITH (NOLOCK)
-               WHERE qc.DocuType='113'
-                 AND qc.RefNo=qu.DocuNo
-                 AND qc.AppvFlag='Y'
-                 AND ISNULL(qc.DocuStatus, 'N') <> 'C'
-             )
-           THEN 1 ELSE 0 END AS IsApproved
-    FROM dbo.SOHD qu WITH (NOLOCK)
-    WHERE qu.SOID=@soid AND qu.DocuType='102'
-  `, { soid: { type: sql.VarChar(50), value: String(q.WinspeedQuoteSOID) } });
-  return Number(r.recordset?.[0]?.IsApproved || 0) === 1;
-}
-
 function nativeQuoteStatusSql(alias = 'qu', qcAlias = 'qc') {
   return `
     CASE
@@ -1588,52 +1567,12 @@ router.patch('/:id/valid-until', requireCapability('quotation.manage'), requireQ
   } catch (e) { res.status(e.statusCode || 500).json({ message: e.message }); }
 });
 
-// POST /api/quotation/:id/convert - create a draft app SO from an accepted quotation.
-router.post('/:id/convert', requireCapability('quotation.manage'), requireQuotationInScope, async (req, res) => {
-  try {
-    const { soPrefix } = req.body;
-    const prefix = ['I', 'K', 'AI'].includes(soPrefix) ? soPrefix : 'I';
-    const q = (await wfQuery(`SELECT * FROM wf.Quotation WHERE Id=@id`, { id: { type: sql.Int, value: Number(req.params.id) } })).recordset?.[0];
-    if (!q) return res.status(404).json({ message: 'ไม่พบใบเสนอราคา' });
-    if (q.Status === 'CONVERTED') return res.status(400).json({ message: 'แปลงเป็น SO แล้ว' });
-    if (q.Status !== 'ACCEPTED') return res.status(400).json({ message: 'ใบเสนอราคาต้องได้รับการยืนยัน/อนุมัติก่อนจึงจะแปลงเป็น SO ได้' });
-    if (!(await nativeQuotationApproved(q))) {
-      return res.status(400).json({ message: 'WINSpeed ยังไม่มีเอกสารยืนยันใบเสนอราคา (QC) หรือ QU ยังไม่อนุมัติ' });
-    }
-
-    const lines = (await wfQuery(`SELECT * FROM wf.QuotationLine WHERE QuoteId=@id ORDER BY LineNum`, { id: { type: sql.Int, value: q.Id } })).recordset || [];
-    const nextVal = await getNextSequenceValue(wfQuery, 'WfRefSeq');
-    const seq = String(nextVal).padStart(6, '0');
-    const yy = (new Date().getFullYear() + 543 - 2500).toString().slice(-2);
-    const ref = `WF${yy}${prefix}-${seq}`;
-
-    const soId = await wfTransaction(async tx => {
-      const sr = tx.request();
-      sr.input('ref', sql.NVarChar(30), ref); sr.input('pfx', sql.NVarChar(5), prefix);
-      sr.input('cid', sql.NVarChar(20), String(q.CustId || '')); sr.input('cnm', sql.NVarChar(200), String(q.CustName || ''));
-      sr.input('rm', sql.NVarChar(500), `จากใบเสนอราคา ${q.QuoteNo}`); sr.input('su', sql.Int, q.SalesUserId);
-      const sres = await sr.query(`
-        INSERT INTO wf.SalesOrder (WfRef, SoPrefix, CustId, CustName, Remark, SalesUserId, Status)
-        OUTPUT inserted.Id VALUES (@ref,@pfx,@cid,@cnm,@rm,@su,'DRAFT')`);
-      const sid = sres.recordset[0].Id;
-      for (let i = 0; i < lines.length; i++) {
-        const l = lines[i]; const lr = tx.request();
-        lr.input('s', sql.Int, sid); lr.input('n', sql.Int, i + 1);
-        lr.input('gid', sql.NVarChar(20), l.GoodId); lr.input('gc', sql.NVarChar(50), l.GoodCode);
-        lr.input('gn', sql.NVarChar(200), l.GoodName);
-        lr.input('qt', sql.Decimal(12,3), Number(l.QtyTon)); lr.input('qb', sql.Int, Math.round(Number(l.QtyTon) * 20));
-        lr.input('pp', sql.Decimal(12,2), Number(l.PricePerTon)); lr.input('np', sql.Decimal(12,2), Number(l.NetPricePerTon));
-        lr.input('ig', sql.Bit, l.IsGiveaway ? 1 : 0);
-        await lr.query(`INSERT INTO wf.SalesOrderLine (SoId, LineNum, GoodId, GoodCode, GoodName, QtyTon, QtyBag, PricePerTon, NetPricePerTon, IsGiveaway)
-          VALUES (@s,@n,@gid,@gc,@gn,@qt,@qb,@pp,@np,@ig)`);
-      }
-      return sid;
-    });
-
-    await wfQuery(`UPDATE wf.Quotation SET Status='CONVERTED', ConvertedSoId=@so, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
-      { so: { type: sql.Int, value: soId }, id: { type: sql.Int, value: q.Id } });
-    res.json({ quoteId: q.Id, soId, wfRef: ref });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+// POST /api/quotation/:id/convert — retired (UAT 2026-10-09). It made a draft straight from the quotation lines: no
+// price check against the announced price, no price approval, the quotation's NET copied as is and 20 bags a ton for
+// every line. The "แปลง SO" button opens the bill editor instead, which saves through POST /api/so with
+// convertFromQuoteId and the same checks as any new bill.
+router.post('/:id/convert', requireCapability('quotation.manage'), (req, res) => {
+  res.status(410).json({ message: 'แปลงใบเสนอราคาผ่านปุ่ม "แปลง SO" (เปิดหน้าบิลเพื่อตรวจราคา) เท่านั้น' });
 });
 
 module.exports = router;

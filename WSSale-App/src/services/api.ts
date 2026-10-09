@@ -801,8 +801,6 @@ export const createQuotation = (payload: {
 export const updateQuotationStatus = (id: number, status: string) =>
   req<{ id: number; status: string; sourceSoCount?: number }>(`/quotation/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
 
-export const convertQuotation = (id: number, soPrefix = 'I') =>
-  req<{ quoteId: number; soId: number; wfRef: string }>(`/quotation/${id}/convert`, { method: 'POST', body: JSON.stringify({ soPrefix }) });
 
 export const createQuotationFromSoTrip = (payload: {
   soIds: Array<number | string>;
