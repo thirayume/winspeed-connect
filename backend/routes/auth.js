@@ -17,7 +17,11 @@ const { requireAuth, requireRole, passwordChangeEnforced, SECRET, clearAccountSt
 
 const upload = multer({
   storage: multer.diskStorage({
-    destination: (req, file, cb) => cb(null, path.join(__dirname, '../uploads/signatures')),
+    // the folder is not in the repository: a fresh server (or an empty Docker volume) has to create it
+    destination: (req, file, cb) => {
+      const dir = path.join(__dirname, '../uploads/signatures');
+      fs.mkdir(dir, { recursive: true }, err => cb(err, dir));
+    },
     filename: (req, file, cb) => cb(null, `sig_${req.user.sub}_${Date.now()}${path.extname(file.originalname)}`),
   }),
   limits: { fileSize: 5 * 1024 * 1024 },
