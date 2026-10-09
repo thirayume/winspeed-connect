@@ -71,6 +71,16 @@
       ],
       "excludedFiles": [],
       "dialect": "sql2022"
+    },
+    "onprem": {
+      "note": "Office SQL Server used by WINSpeed (owner 2026-10-09). Server, database, logins and version prefix are approved in the server's .env (ONPREM_*), not in this public repository; see backend/onprem-target.js.",
+      "allowedTransports": [
+        "TCP"
+      ],
+      "excludedFiles": [
+        "074_fix_winspeed_legacy_raiserror.sql"
+      ],
+      "dialect": "sql2008"
     }
   },
   "dialectOverrides": {

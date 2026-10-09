@@ -98,6 +98,7 @@ function remoteBConfig() {
 }
 
 const { validateLocalTargetRecord } = require('./safety-validator');
+const { onpremConnectionConfig, assertOnpremPools } = require('./onprem-target');
 
 function parseConnectionString(connStr) {
   if (!connStr || typeof connStr !== 'string') {
@@ -237,6 +238,7 @@ const CONFIG_BY_TARGET = {
   remote_b: remoteBConfig,
   local_uat: localUatConfig,
   local_rehearsal: localRehearsalConfig,
+  onprem: () => onpremConnectionConfig(process.env, process.env.DB_OPERATION === 'migration' ? 'migration' : 'runtime', isWindows),
 };
 const registry = {};
 function makeTarget(target) {
@@ -254,6 +256,7 @@ function makeTarget(target) {
       if (target === 'local_uat' || target === 'local_rehearsal') {
         await validateStartupTargetIdentity(readerPool, ownerPool, target);
       }
+      if (target === 'onprem') await assertOnpremPools(readerPool, ownerPool);
       console.log(`✓ DB pools connected — ${target}`);
     })
     .catch(e => {

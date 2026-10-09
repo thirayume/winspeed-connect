@@ -33,8 +33,8 @@ const isLinux = os.platform() !== 'win32';
   head('SQL Server config');
   const mode = E('DB_MODE').toLowerCase();
   if (!mode) block('DB_MODE ไม่ได้ตั้ง', 'ตั้ง DB_MODE=remote สำหรับ container/Linux');
-  else if (isLinux && !['remote', 'remote_b'].includes(mode))
-    block(`DB_MODE="${mode}" บน Linux ใช้ไม่ได้ (local = Windows Trusted Connection)`, 'ตั้ง DB_MODE=remote');
+  else if (isLinux && !['remote', 'remote_b', 'onprem'].includes(mode))
+    block(`DB_MODE="${mode}" บน Linux ใช้ไม่ได้ (local = Windows Trusted Connection)`, 'ตั้ง DB_MODE=remote (หรือ onprem เมื่อต่อฐาน WinSpeed ที่สำนักงาน ดู scripts/onprem-preflight.cjs)');
   else ok(`DB_MODE=${mode}`);
 
   if (E('DB_HOST') || E('DB_PORT'))

@@ -26,6 +26,7 @@ const {
   APPROVED_LOCAL_REHEARSAL_TARGET,
   APPROVED_TARGET,
 } = require('./safety-validator');
+const { validateOnpremTargetRecord } = require('./onprem-target');
 
 const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
 const POLICY_PATH = path.join(__dirname, 'migration-policy.json');
@@ -598,6 +599,9 @@ async function verifyTargetAndProfile(pool, requestedProfile, options = {}) {
     validateLocalTargetRecord(targetInfo, process.env, { operation: 'migration', targetType: 'rehearsal' });
   } else if (profile === 'remote_b') {
     validateTargetRecord(targetInfo, process.env);
+  } else if (profile === 'onprem') {
+    // the approved server, database, migrator login and engine version come from the server's .env
+    validateOnpremTargetRecord(targetInfo, process.env, { operation: 'migration' });
   } else {
     throw new Error(`Unsupported or unapproved migration profile: "${profile}"`);
   }
@@ -617,7 +621,7 @@ async function run(options = parseArgs(process.argv), customPool = null, customT
 
 async function runInternal(options = parseArgs(process.argv), customPool = null, customTarget = null, runnerOptions = {}) {
   if (options.help) {
-    console.log('Usage: node run_migrations.js [--plan|--verify-only] [--profile=local_uat|local_rehearsal|remote_b]');
+    console.log('Usage: node run_migrations.js [--plan|--verify-only] [--profile=local_uat|local_rehearsal|remote_b|onprem]');
     return;
   }
 
@@ -693,7 +697,7 @@ async function runInternal(options = parseArgs(process.argv), customPool = null,
   }
 
   // Post-migration bootstrap phase: synchronize sequence counters above existing documents on local dialect
-  if (activeProfile && (activeProfile === 'local_uat' || activeProfile === 'local_rehearsal')) {
+  if (activeProfile && (activeProfile === 'local_uat' || activeProfile === 'local_rehearsal' || activeProfile === 'onprem')) {
     const bootstrapFn = runnerOptions.bootstrapSequenceHighWater || require('./services/sequence-service').bootstrapSequenceHighWater;
     for (const seqName of ['WfRefSeq', 'QuoteRefSeq']) {
       try {

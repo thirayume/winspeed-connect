@@ -1,7 +1,8 @@
 'use strict';
 
 // Explicit database targets; never silently fall back to another database.
-const VALID_TARGETS = Object.freeze(['local', 'remote', 'remote_b', 'local_uat', 'local_rehearsal']);
+// onprem = the office SQL Server that WINSpeed uses, reached from the Ubuntu VM (see onprem-target.js)
+const VALID_TARGETS = Object.freeze(['local', 'remote', 'remote_b', 'local_uat', 'local_rehearsal', 'onprem']);
 
 function validateTarget(value) {
   const target = String(value).trim().toLowerCase();
