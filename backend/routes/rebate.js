@@ -5,7 +5,7 @@
 const router = require('express').Router();
 const crypto = require('crypto');
 const { sql, wfQuery, query, wfTransaction } = require('../db');
-const { requireAuth, requireRole, requireRebateAmountAccess, canViewAllRebateAmounts } = require('../middleware/auth');
+const { requireAuth, requireRole, requireRebatePageAccess, hideRebateMoneyFromSales, canViewAllRebateAmounts } = require('../middleware/auth');
 const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
 const { getPolicySettings, logChangeEvent, validateReasonCode } = require('../services/policy-contract');
 const { mapDatabaseError } = require('../services/error-adapter');
@@ -264,7 +264,7 @@ router.get('/regions/coverage', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), asyn
 });
 
 // GET /api/rebate/pools — pool รายเดือนของ sales user
-router.get('/pools', requireRebateAmountAccess, async (req, res) => {
+router.get('/pools', requireRebatePageAccess, hideRebateMoneyFromSales, async (req, res) => {
   try {
     const { userId, year, month } = req.query;
     const conditions = [];
@@ -315,7 +315,7 @@ router.get('/pools', requireRebateAmountAccess, async (req, res) => {
 });
 
 // GET /api/rebate/ledger?poolId=&soId= — รายการ accrual
-router.get('/ledger', requireRebateAmountAccess, async (req, res) => {
+router.get('/ledger', requireRebatePageAccess, hideRebateMoneyFromSales, async (req, res) => {
   try {
     const { poolId, soId, custId } = req.query;
     const conditions = ['l.ReversedFlag = 0'];
@@ -341,7 +341,7 @@ router.get('/ledger', requireRebateAmountAccess, async (req, res) => {
 });
 
 // GET /api/rebate/claims — รายการเคลม
-router.get('/claims', requireRebateAmountAccess, async (req, res) => {
+router.get('/claims', requireRebatePageAccess, hideRebateMoneyFromSales, async (req, res) => {
   try {
     const { status } = req.query;
     const conditions = [];
@@ -374,7 +374,7 @@ router.get('/claims', requireRebateAmountAccess, async (req, res) => {
 });
 
 // GET /api/rebate/claims/:id — ดึงใบขอเคลียร์ใบเดียวพร้อมรายการย่อย และประวัติการอนุมัติ
-router.get('/claims/:id', requireRebateAmountAccess, async (req, res) => {
+router.get('/claims/:id', requireRebatePageAccess, hideRebateMoneyFromSales, async (req, res) => {
   try {
     const claimId = Number(req.params.id);
     if (!Number.isFinite(claimId)) return res.status(400).json({ message: 'Invalid claim ID' });
@@ -479,7 +479,7 @@ router.get('/claims/:id', requireRebateAmountAccess, async (req, res) => {
 });
 
 // POST /api/rebate/claims — ยื่นเคลม (รองรับ Multi-line 6 บรรทัด & 4-Tier Approval parity)
-router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
+router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'MANAGER'), hideRebateMoneyFromSales, async (req, res) => {
   try {
     const { poolId, claimAmt, custId: rawCustId, note, lines, invoices, periodYear, periodMonth } = req.body || {};
     if (!claimAmt && (!lines || !lines.length)) {
@@ -489,6 +489,12 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
     // (the form always sends one; the cap was checked only in the browser)
     if (!poolId && !canViewAllRebateAmounts(req.user)) {
       return res.status(400).json({ message: 'ต้องยื่นเคลมจาก pool ของตนเอง (ยอดที่ใช้ได้จำกัดตามยอดสะสม)' });
+    }
+    // owner 2026-10-09: a salesperson sees no rebate amount, so files by tons only. The price and the NET come from
+    // the delivery lot; a price typed by the client is ignored, and the price-difference table is left to accounting
+    const priceFromLotOnly = !canViewAllRebateAmounts(req.user);
+    if (priceFromLotOnly && (lines || []).some(l => String(l.lineType || 'REBATE').toUpperCase() === 'DIFF')) {
+      return res.status(403).json({ message: 'ตารางคืนส่วนต่างต้องให้ฝ่ายบัญชีหรือผู้จัดการยื่น' });
     }
 
     // Resolve customer code/ID to internal EMCust record
@@ -712,6 +718,7 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
         `);
         const lotRows = lotRes.recordset || [];
 
+        const userNetOf = l => (priceFromLotOnly ? 0 : Number(l.netPricePerTon));
         const takenInRequest = new Map();
         const keyOf = (lot, kind) => `${lot.SourceSOID}|${lot.SourceListNo}|${kind}`;
         const lotRemaining = (lot, kind) =>
@@ -746,8 +753,8 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
             if (avail <= 0) continue;
             const take = Math.min(want, avail);
 
-            const pricePerTon = Number(l.pricePerTon) > 0 ? Number(l.pricePerTon) : Number(lot.ListPricePerTon || 0);
-            const userNet = Number(l.netPricePerTon);
+            const pricePerTon = !priceFromLotOnly && Number(l.pricePerTon) > 0 ? Number(l.pricePerTon) : Number(lot.ListPricePerTon || 0);
+            const userNet = userNetOf(l);
             const lotNet  = (lot.NetPricePerTon === null || lot.NetPricePerTon === undefined)
               ? null : Number(lot.NetPricePerTon);
             const netPricePerTon = userNet > 0 ? userNet : lotNet;
@@ -761,7 +768,9 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
             // UAT batch 6 (APV-04): a lot sold at or below the NET carries no rebate. FIFO reached 2019 invoices at
             // ฿9,800 against a NET of ฿15,000, the amount went negative and the database refused it (HTTP 500)
             if (rebatePerTon <= 0) {
-              skippedNoRebate.push(`${lot.SourceDocuNo}/${lot.SourceListNo} ราคา ฿${pricePerTon.toLocaleString()} ≤ NET ฿${netPricePerTon.toLocaleString()}`);
+              skippedNoRebate.push(priceFromLotOnly
+                ? `${lot.SourceDocuNo}/${lot.SourceListNo} ราคาขายไม่สูงกว่า NET`
+                : `${lot.SourceDocuNo}/${lot.SourceListNo} ราคา ฿${pricePerTon.toLocaleString()} ≤ NET ฿${netPricePerTon.toLocaleString()}`);
               continue;
             }
 
@@ -796,7 +805,7 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
 
           if (want > 0.001) {
             const kindLabel = lineType === 'DIFF' ? 'คืนส่วนต่าง' : 'คืนรีเบท';
-            const hasUserNet = Number(l.netPricePerTon) > 0;
+            const hasUserNet = userNetOf(l) > 0;
             const totalAvail = wantedFrom.reduce((a, r) =>
               (hasUserNet || r.NetPricePerTon !== null && r.NetPricePerTon !== undefined)
                 ? a + Math.max(0, lotRemaining(r, lineType)) : a, 0);
@@ -832,7 +841,9 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
         const poolUnclaimed = Number(pool.AccruedAmt) - Number(pool.ClaimedAmt) - usedAmt;
         const available = Math.max(0, ledgerRemaining != null ? Math.min(poolUnclaimed, ledgerRemaining) : poolUnclaimed);
         if (totalAmt > available) {
-          throw { status: 400, message: `ยอดเกิน: ขอ ฿${totalAmt.toFixed(2)} ใช้ได้ ฿${available.toFixed(2)}` };
+          throw { status: 400, message: priceFromLotOnly
+            ? 'ยอดขอเคลียร์เกินยอดรีเบทที่ใช้ได้ของงวดนี้ — ลดจำนวนตันหรือติดต่อฝ่ายบัญชี'
+            : `ยอดเกิน: ขอ ฿${totalAmt.toFixed(2)} ใช้ได้ ฿${available.toFixed(2)}` };
         }
       }
 
@@ -1603,7 +1614,7 @@ const PLAN_TIER_ROLES = {
 };
 
 // GET /api/rebate/plans/:id/approvals — ร่องรอยการอนุมัติของโปรโมชั่น
-router.get('/plans/:id/approvals', async (req, res) => {
+router.get('/plans/:id/approvals', hideRebateMoneyFromSales, async (req, res) => {
   try {
     const rows = (await wfQuery(
       `SELECT * FROM wf.RebatePlanApproval WHERE PlanId = @id ORDER BY Tier ASC, CreatedAt ASC`,
@@ -1725,7 +1736,7 @@ router.post('/plans/:id/reject', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-router.get('/plans', async (req, res) => {
+router.get('/plans', hideRebateMoneyFromSales, async (req, res) => {
   try {
     const { status } = req.query;
     const where = status ? 'WHERE p.Status = @st' : '';
@@ -1981,7 +1992,7 @@ router.get('/voucher-summary', async (req, res) => {
 // migration 076
 
 // GET /api/rebate/accrual — สรุปยอดคงเหลือรายลูกค้า (พร้อมกรองตามพนักงานขาย/ช่วงวันที่)
-router.get('/accrual', async (req, res) => {
+router.get('/accrual', hideRebateMoneyFromSales, async (req, res) => {
   try {
     const { custId, empId, from, to } = req.query;
     const inputs = {};
@@ -2014,7 +2025,7 @@ router.get('/accrual', async (req, res) => {
 //
 // หนึ่งแถว = หนึ่งบรรทัดของใบส่งของ · เป็นหน่วยที่ตัดสิทธิ์ ทำให้ตรวจย้อนกลับได้ว่า
 // เงินที่คืนไปมาจากการขนเที่ยวใด ใบกำกับเลขใด
-router.get('/accrual/:custId', async (req, res) => {
+router.get('/accrual/:custId', hideRebateMoneyFromSales, async (req, res) => {
   try {
     const rawCust = String(req.params.custId || '').trim();
     if (!rawCust) return res.status(400).json({ message: 'ต้องระบุรหัสลูกค้า' });

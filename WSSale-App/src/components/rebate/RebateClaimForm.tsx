@@ -19,6 +19,7 @@ import {
   fetchSalesOrders,
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
+import { canViewRebateAmounts } from '../../utils/permissions';
 import type { RebatePool, RebateAccrualLot } from '../../types';
 
 const NAVY = '#0C447C';
@@ -62,6 +63,8 @@ const sum = (rows: Line[]) => rows.reduce((s, l) => s + calc(l).amount, 0);
 export function ClaimDialog({ pool, onClose, onDone }:
   { pool: RebatePool; onClose: () => void; onDone: () => void }) {
 
+  // owner 2026-10-09: a salesperson files by tons only; the server prices each line from its delivery lot
+  const seeMoney = canViewRebateAmounts(useAuthStore(s => s.user));
   const available = pool.AvailableAmt !== undefined ? Number(pool.AvailableAmt) : (Number(pool.AccruedAmt) - Number(pool.ClaimedAmt) - Number(pool.UsedAmt || 0));
   const [custId, setCustId] = useState('');
   const [note, setNote] = useState('');
@@ -118,7 +121,7 @@ export function ClaimDialog({ pool, onClose, onDone }:
 
   const totals = useMemo(() => ({ rebate: sum(rebate), diff: sum(diff) }), [rebate, diff]);
   const grand = totals.rebate + totals.diff;
-  const overBudget = grand > available;
+  const overBudget = seeMoney && grand > available;
 
   const activeCustomerRatio = customerRatio;
   const companyRatio = 100 - activeCustomerRatio;
@@ -126,10 +129,10 @@ export function ClaimDialog({ pool, onClose, onDone }:
   const retainedAmount = Math.round(grand * (companyRatio / 100) * 100) / 100;
 
   async function submit() {
-    const below = [...rebate, ...diff].find(l => calc(l).qty > 0 && calc(l).perTon < 0);
+    const below = seeMoney && [...rebate, ...diff].find(l => calc(l).qty > 0 && calc(l).perTon < 0);
     if (below) { setErr(`${below.goodCode || below.invoiceNo || 'บรรทัด'}: ราคาขายต่ำกว่าราคาสุทธิ ไม่มีส่วนต่างให้เคลียร์`); return; }
     const pack = (rows: Line[], lineType: Kind) => rows
-      .filter(l => calc(l).qty > 0 && calc(l).perTon !== 0)
+      .filter(l => calc(l).qty > 0 && (!seeMoney || calc(l).perTon !== 0))
       .map(l => ({
         lineType,
         invoiceNo: l.invoiceNo.trim() || undefined,
@@ -140,8 +143,8 @@ export function ClaimDialog({ pool, onClose, onDone }:
         sourceSOID: l.sourceSOID,
         sourceListNo: l.sourceListNo,
       }));
-    const lines = [...pack(rebate, 'REBATE'), ...pack(diff, 'DIFF')];
-    if (!lines.length) { setErr('ต้องมีรายการอย่างน้อย 1 บรรทัดที่มียอดขนและส่วนต่างราคา'); return; }
+    const lines = [...pack(rebate, 'REBATE'), ...(seeMoney ? pack(diff, 'DIFF') : [])];
+    if (!lines.length) { setErr(seeMoney ? 'ต้องมีรายการอย่างน้อย 1 บรรทัดที่มียอดขนและส่วนต่างราคา' : 'ต้องมีรายการอย่างน้อย 1 บรรทัดที่มียอดขน'); return; }
     if (overBudget) { setErr(`ยอดรวม ฿${baht(grand)} เกินยอดที่ใช้ได้ ฿${baht(available)}`); return; }
 
     setBusy(true); setErr('');
@@ -171,7 +174,7 @@ export function ClaimDialog({ pool, onClose, onDone }:
               <Scissors size={18} /> แบบขออนุมัติเคลียร์รายการส่งเสริมการขาย
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              {pool.SalesName} · งวด {pool.PeriodMonth}/{pool.PeriodYear} · ใช้ได้ ฿{baht(available)}
+              {pool.SalesName} · งวด {pool.PeriodMonth}/{pool.PeriodYear}{seeMoney ? ` · ใช้ได้ ฿${baht(available)}` : ' · ระบบคำนวณยอดเงินจากราคาในใบส่งของ'}
             </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
@@ -192,12 +195,18 @@ export function ClaimDialog({ pool, onClose, onDone }:
             </button>
           </div>
 
-          {lots !== null && <LotPicker lots={lots} onUse={useLot} />}
+          {lots !== null && <LotPicker lots={lots} onUse={useLot} seeMoney={seeMoney} />}
 
-          <LineTable kind="REBATE" rows={rebate} setRows={setRebate} total={totals.rebate} />
-          <LineTable kind="DIFF" rows={diff} setRows={setDiff} total={totals.diff} />
+          <LineTable kind="REBATE" rows={rebate} setRows={setRebate} total={totals.rebate} seeMoney={seeMoney} />
+          {seeMoney && <LineTable kind="DIFF" rows={diff} setRows={setDiff} total={totals.diff} seeMoney />}
+          {!seeMoney && (
+            <p className="text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+              เลือกใบส่งของจากยอดขนจริง แล้วระบุจำนวนตันที่ขอเคลียร์ · ราคาและยอดเงินคำนวณโดยระบบ · ตารางคืนส่วนต่างให้ฝ่ายบัญชีหรือผู้จัดการยื่น
+            </p>
+          )}
 
           {/* Rebate Policy Distribution Section (SO-02: 100/0 Rule) */}
+          {seeMoney && <>
           <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-[#0C447C]">สัดส่วนการคืนเงินตามนโยบายระบบ (Rebate Policy Distribution)</span>
@@ -229,6 +238,7 @@ export function ClaimDialog({ pool, onClose, onDone }:
               ฿{baht(grand)}
             </span>
           </div>
+          </>}
 
           <label className="block">
             <span className="text-xs font-semibold text-gray-500">หมายเหตุ</span>
@@ -262,9 +272,10 @@ export function ClaimDialog({ pool, onClose, onDone }:
  * อ่านจาก WINSpeed โดยตรง (ใบส่งของ/ใบกำกับ DocuType 104) ไม่มีสำเนาในแอป
  * ตันที่ยังไม่มีแผนส่งเสริมการขายครอบคลุมจะไม่มีราคาสุทธิ ต้องกรอกเองหรือรออนุมัติแผนก่อน
  */
-function LotPicker({ lots, onUse }: { lots: RebateAccrualLot[]; onUse: (lot: RebateAccrualLot) => void }) {
+function LotPicker({ lots, onUse, seeMoney }: { lots: RebateAccrualLot[]; onUse: (lot: RebateAccrualLot) => void; seeMoney: boolean }) {
   const totalTon = lots.reduce((s, l) => s + Number(l.RemainingTon || 0), 0);
-  const noPlan = lots.filter(l => l.RebatePerTon === null || l.RebatePerTon === undefined).length;
+  // a salesperson gets no prices, so the plan number tells which lots can be claimed
+  const noPlan = lots.filter(l => (seeMoney ? l.RebatePerTon == null : l.PlanId == null)).length;
 
   if (!lots.length) {
     return (
@@ -279,20 +290,23 @@ function LotPicker({ lots, onUse }: { lots: RebateAccrualLot[]; onUse: (lot: Reb
       <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 flex items-baseline justify-between gap-2">
         <h3 className="text-sm font-bold" style={{ color: NAVY }}>ยอดขนจริงคงเหลือ (WINSpeed)</h3>
         <span className="text-[11px] text-gray-500">
-          {lots.length} ใบ · {ton(totalTon)} ตัน{noPlan ? ` · ${noPlan} ใบยังไม่มีราคาสุทธิจากแผนส่งเสริมการขาย` : ''}
+          {lots.length} ใบ · {ton(totalTon)} ตัน{noPlan ? ` · ${noPlan} ใบยังไม่มี${seeMoney ? 'ราคาสุทธิจาก' : ''}แผนส่งเสริมการขาย${seeMoney ? '' : ' (ยื่นได้เฉพาะใบที่มีแผน)'}` : ''}
         </span>
       </div>
       <div className="overflow-x-auto max-h-56 overflow-y-auto">
-        <table className="w-full text-sm min-w-[720px]">
+        <table className={`w-full text-sm ${seeMoney ? 'min-w-[720px]' : ''}`}>
           <thead className="bg-white text-gray-500 text-xs sticky top-0">
             <tr className="text-left">
               <th className="px-2 py-1.5">วันที่</th>
               <th className="px-2 py-1.5">เลขที่ INV</th>
               <th className="px-2 py-1.5">สูตรปุ๋ย</th>
               <th className="px-2 py-1.5 text-right">คงเหลือ (ตัน)</th>
+              {!seeMoney && <th className="px-2 py-1.5">แผนส่งเสริมการขาย</th>}
+              {seeMoney && <>
               <th className="px-2 py-1.5 text-right">ราคาขาย</th>
               <th className="px-2 py-1.5 text-right">ราคาสุทธิ</th>
               <th className="px-2 py-1.5 text-right">คืนรีเบท/ตัน</th>
+              </>}
               <th className="px-2 py-1.5 w-16"></th>
             </tr>
           </thead>
@@ -303,6 +317,8 @@ function LotPicker({ lots, onUse }: { lots: RebateAccrualLot[]; onUse: (lot: Reb
                 <td className="px-2 py-1.5 whitespace-nowrap">{l.SourceDocuNo}</td>
                 <td className="px-2 py-1.5 text-gray-700">{l.GoodName || l.GoodCode}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{ton(l.RemainingTon)}</td>
+                {!seeMoney && <td className="px-2 py-1.5 whitespace-nowrap text-gray-500">{l.PlanId == null ? 'ยังไม่มีแผน' : (l.PlanNo || `แผน #${l.PlanId}`)}</td>}
+                {seeMoney && <>
                 <td className="px-2 py-1.5 text-right tabular-nums">{baht(l.ListPricePerTon)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">
                   {l.NetPricePerTon === null || l.NetPricePerTon === undefined ? '—' : baht(l.NetPricePerTon)}
@@ -310,6 +326,7 @@ function LotPicker({ lots, onUse }: { lots: RebateAccrualLot[]; onUse: (lot: Reb
                 <td className="px-2 py-1.5 text-right tabular-nums font-semibold">
                   {l.RebatePerTon === null || l.RebatePerTon === undefined ? '—' : baht(l.RebatePerTon)}
                 </td>
+                </>}
                 <td className="px-2 py-1.5 text-right">
                   <button data-testid="use-lot-button" onClick={() => onUse(l)} className="px-2 py-1 text-xs rounded-lg border border-gray-200 hover:bg-white">
                     ใช้
@@ -324,8 +341,8 @@ function LotPicker({ lots, onUse }: { lots: RebateAccrualLot[]; onUse: (lot: Reb
   );
 }
 
-function LineTable({ kind, rows, setRows, total }:
-  { kind: Kind; rows: Line[]; setRows: (r: Line[]) => void; total: number }) {
+function LineTable({ kind, rows, setRows, total, seeMoney }:
+  { kind: Kind; rows: Line[]; setRows: (r: Line[]) => void; total: number; seeMoney: boolean }) {
 
   const t = TABLE[kind];
   const setLine = (i: number, patch: Partial<Line>) => setRows(rows.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -346,17 +363,19 @@ function LineTable({ kind, rows, setRows, total }:
         <>
           <div className="border border-gray-200 rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[800px]">
+              <table className={`w-full text-sm ${seeMoney ? 'min-w-[800px]' : 'min-w-[520px]'}`}>
                 <thead className="bg-gray-50 text-gray-600">
                   <tr className="text-left">
                     <th className="px-2 py-2 w-9">ที่</th>
                     <th className="px-2 py-2 w-36">เลขที่ INV</th>
                     <th className="px-2 py-2">รายการสูตรปุ๋ย</th>
                     <th className="px-2 py-2 w-24 text-right">ยอดขน (ตัน)</th>
+                    {seeMoney && <>
                     <th className="px-2 py-2 w-28 text-right">ราคาขาย</th>
                     <th className="px-2 py-2 w-32 text-right">{t.compare}</th>
                     <th className="px-2 py-2 w-24 text-right bg-blue-50/60">{t.rate}</th>
                     <th className="px-2 py-2 w-32 text-right bg-blue-50/60">{t.amount}</th>
+                    </>}
                     <th className="px-2 py-2 w-9"></th>
                   </tr>
                 </thead>
@@ -374,7 +393,7 @@ function LineTable({ kind, rows, setRows, total }:
                           <input value={l.goodCode} onChange={e => setLine(i, { goodCode: e.target.value })}
                             placeholder="18-4-5" className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm" />
                         </td>
-                        {(['qtyTon', 'pricePerTon', 'netPricePerTon'] as const).map(field => (
+                        {(seeMoney ? (['qtyTon', 'pricePerTon', 'netPricePerTon'] as const) : (['qtyTon'] as const)).map(field => (
                           <td key={field} className="px-2 py-1.5">
                             <input type="number" inputMode="decimal" value={l[field]}
                               data-testid={`line-${field}-${i}`}
@@ -382,12 +401,14 @@ function LineTable({ kind, rows, setRows, total }:
                               className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm text-right" />
                           </td>
                         ))}
+                        {seeMoney && <>
                         <td className="px-2 py-1.5 text-right bg-blue-50/60 tabular-nums text-gray-700">
                           {c.perTon ? baht(c.perTon) : '—'}
                         </td>
                         <td className="px-2 py-1.5 text-right bg-blue-50/60 tabular-nums font-semibold" style={{ color: NAVY }}>
                           {c.amount ? baht(c.amount) : '—'}
                         </td>
+                        </>}
                         <td className="px-2 py-1.5">
                           <button onClick={() => setRows(rows.filter((_, idx) => idx !== i))}
                             className="text-gray-300 hover:text-red-500" aria-label="ลบบรรทัด"><Trash2 size={15} /></button>
@@ -402,8 +423,10 @@ function LineTable({ kind, rows, setRows, total }:
                     <td className="px-2 py-2 text-right tabular-nums">
                       {ton(rows.reduce((s, l) => s + calc(l).qty, 0))}
                     </td>
+                    {seeMoney && <>
                     <td colSpan={3}></td>
                     <td className="px-2 py-2 text-right tabular-nums" style={{ color: NAVY }}>฿{baht(total)}</td>
+                    </>}
                     <td></td>
                   </tr>
                 </tfoot>
@@ -440,6 +463,7 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
 
   const user = useAuthStore(s => s.user);
   const role = user?.role;
+  const seeMoney = canViewRebateAmounts(user);
   const [data, setData] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -528,17 +552,19 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
       <div key={kind}>
         <h3 className="text-sm font-bold mb-1.5" style={{ color: NAVY }}>{t.title}</h3>
         <div className="overflow-x-auto border border-gray-200 rounded-xl">
-          <table className="w-full text-sm min-w-[680px]">
+          <table className={`w-full text-sm ${seeMoney ? 'min-w-[680px]' : ''}`}>
             <thead className="bg-gray-50 text-gray-600 text-left">
               <tr>
                 <th className="px-3 py-2 w-9">ที่</th>
                 <th className="px-3 py-2">เลขที่ INV</th>
                 <th className="px-3 py-2">รายการสูตรปุ๋ย</th>
                 <th className="px-3 py-2 text-right">ยอดขน (ตัน)</th>
+                {seeMoney && <>
                 <th className="px-3 py-2 text-right">ราคาขาย</th>
                 <th className="px-3 py-2 text-right">{t.compare}</th>
                 <th className="px-3 py-2 text-right">{t.rate}</th>
                 <th className="px-3 py-2 text-right">{t.amount}</th>
+                </>}
               </tr>
             </thead>
             <tbody>
@@ -548,10 +574,12 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
                   <td className="px-3 py-2">{l.InvoiceNo || '—'}</td>
                   <td className="px-3 py-2">{l.GoodCode}{l.GoodName ? ` · ${l.GoodName}` : ''}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{ton(l.QtyTon)}</td>
+                  {seeMoney && <>
                   <td className="px-3 py-2 text-right tabular-nums">{baht(l.PricePerTon)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{baht(l.NetPricePerTon)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{baht(l.RebatePerTon)}</td>
                   <td className="px-3 py-2 text-right tabular-nums font-semibold">{baht(l.LineAmount)}</td>
+                  </>}
                 </tr>
               ))}
             </tbody>
@@ -559,8 +587,10 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
               <tr className="border-t-2 border-gray-200 bg-gray-50 font-bold">
                 <td colSpan={3} className="px-3 py-2">รวม{t.title}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{ton(tons)}</td>
+                {seeMoney && <>
                 <td colSpan={3}></td>
                 <td className="px-3 py-2 text-right tabular-nums" style={{ color: NAVY }}>฿{baht(amt)}</td>
+                </>}
               </tr>
             </tfoot>
           </table>
@@ -578,10 +608,12 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 print:hidden">
           <h2 data-testid="claim-detail-title" className="text-lg font-bold" style={{ color: NAVY }}>ใบขอเคลียร์รีเบท #{claim.Id}</h2>
           <div className="flex items-center gap-2">
-            <button onClick={() => window.print()}
-              className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">
-              <Printer size={15} /> พิมพ์
-            </button>
+            {seeMoney && (
+              <button onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">
+                <Printer size={15} /> พิมพ์
+              </button>
+            )}
             <button onClick={onClose} data-testid="close-claim-detail" aria-label="close-modal" className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
           </div>
         </div>
@@ -622,10 +654,12 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
           {section('REBATE')}
           {section('DIFF')}
 
-          <div className="flex items-center justify-end gap-4 border-t-2 border-gray-200 pt-3">
-            <span className="text-sm text-gray-500">ยอดรวมทั้งใบ</span>
-            <span className="text-xl font-black tabular-nums" style={{ color: NAVY }}>฿{baht(claim.ClaimAmt)}</span>
-          </div>
+          {seeMoney && (
+            <div className="flex items-center justify-end gap-4 border-t-2 border-gray-200 pt-3">
+              <span className="text-sm text-gray-500">ยอดรวมทั้งใบ</span>
+              <span className="text-xl font-black tabular-nums" style={{ color: NAVY }}>฿{baht(claim.ClaimAmt)}</span>
+            </div>
+          )}
 
           {canApplyToBill && (
             <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2 print:hidden">

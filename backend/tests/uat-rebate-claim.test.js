@@ -5,6 +5,7 @@
  *  FIFO reached 2019 invoices sold at ฿9,800 against a NET of ฿15,000, the amount went negative and the database
  *  refused the insert (HTTP 500). A lot at or below the NET carries no rebate and is skipped.
  *  A salesperson files against their own pool (the cap was checked only in the browser).
+ *  A NET typed on the form is accepted from accounting only (owner 2026-10-09: a salesperson sees no amounts).
  */
 
 const test = require('node:test');
@@ -29,7 +30,8 @@ let app;
 test.before(async () => { app = await h.startApp([['/api/rebate', '../../routes/rebate']]); });
 test.after(async () => { await app.close(); });
 const sales = { sub: 43, role: 'SALES' };
-const claim = (lines, extra = {}) => app.call('POST', '/api/rebate/claims', { body: { poolId: 1, custId: '1078', lines, ...extra }, user: sales });
+const accounting = { sub: 12, role: 'ACCOUNTING' };
+const claim = (lines, extra = {}) => app.call('POST', '/api/rebate/claims', { body: { poolId: 1, custId: '1078', lines, ...extra }, user: accounting });
 
 test('FIFO skips a lot sold at or below the NET and takes the next one', async () => {
   const before = db.calls.length;
@@ -43,6 +45,11 @@ test('a lot chosen on the form below the NET is refused with a reason, not a dat
   const r = await claim([{ goodCode: '7-16080800BBCAR', qtyTon: 2, netPricePerTon: 15000, sourceSOID: 1, sourceListNo: 1 }]);
   assert.equal(r.status, 400);
   assert.match(r.body.message, /ไม่สูงกว่า NET/);
+});
+
+test('a salesperson cannot price lots that have no NET by typing one', async () => {
+  const r = await app.call('POST', '/api/rebate/claims', { body: { poolId: 1, custId: '1078', lines: [{ goodCode: '7-16080800BBCAR', qtyTon: 2, netPricePerTon: 15000 }] }, user: sales });
+  assert.equal(r.status, 400);
 });
 
 test('a salesperson must claim from a pool', async () => {

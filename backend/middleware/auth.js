@@ -123,22 +123,51 @@ function requireCapability(action) {
   return requireRole(...rolesFor(action));
 }
 
+// Owner 2026-10-09: a salesperson sees no rebate amount anywhere, on bills (D1) or on the rebate page. SALES keeps the
+// rebate page for their own pools, claims and delivery lots, with every baht figure removed (hideRebateMoneyFromSales).
 const REBATE_ALL_ROLES = ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'C_LEVEL'];
 const REBATE_OWN_ROLES = ['SALES'];
-const REBATE_AMOUNT_ROLES = [...REBATE_ALL_ROLES, ...REBATE_OWN_ROLES];
 
 function canViewAllRebateAmounts(user) {
   return REBATE_ALL_ROLES.includes(user?.role);
 }
 
 function canViewRebateAmounts(user) {
-  return REBATE_AMOUNT_ROLES.includes(user?.role);
+  return canViewAllRebateAmounts(user);
 }
 
 function requireRebateAmountAccess(req, res, next) {
   if (!canViewRebateAmounts(req.user)) {
     return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูตัวเลขรีเบท' });
   }
+  next();
+}
+
+/** the rebate page: everyone who sees amounts, plus a salesperson for their own records (amounts removed) */
+function requireRebatePageAccess(req, res, next) {
+  if (![...REBATE_ALL_ROLES, ...REBATE_OWN_ROLES].includes(req.user?.role)) {
+    return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูข้อมูลรีเบท' });
+  }
+  next();
+}
+
+// money columns of the rebate tables and views: AccruedAmt, ClaimAmt, CustomerAmount, LineAmount, PricePerTon,
+// NetPricePerTon, RebatePerTon, NetPrice, GoodPrice … Tons (QtyTon, RemainingTon) and ratios stay.
+const REBATE_MONEY_KEY = /(Amt|Amount|PerTon|Price)$/i;
+
+function redactRebateMoney(value) {
+  if (Array.isArray(value)) return value.map(redactRebateMoney);
+  if (!value || typeof value !== 'object' || value instanceof Date) return value;
+  const out = {};
+  for (const [k, v] of Object.entries(value)) out[k] = REBATE_MONEY_KEY.test(k) ? null : redactRebateMoney(v);
+  return out;
+}
+
+/** strips every money field from a successful JSON answer when the caller may not see rebate amounts */
+function hideRebateMoneyFromSales(req, res, next) {
+  if (canViewRebateAmounts(req.user)) return next();
+  const json = res.json.bind(res);
+  res.json = body => json(res.statusCode >= 400 ? body : redactRebateMoney(body));
   next();
 }
 
@@ -149,6 +178,9 @@ module.exports = {
   requireRole,
   requireCapability,
   requireRebateAmountAccess,
+  requireRebatePageAccess,
+  hideRebateMoneyFromSales,
+  redactRebateMoney,
   canViewAllRebateAmounts,
   canViewRebateAmounts,
   SECRET,

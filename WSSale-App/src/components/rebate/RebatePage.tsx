@@ -5,6 +5,7 @@ import {
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import { useExport } from '../../hooks/useExport';
+import { canViewRebateAmounts } from '../../utils/permissions';
 import type { RebatePool, RebateLedger, RebateClaim } from '../../types';
 import { ClaimDialog, ClaimDetailDialog } from './RebateClaimForm';
 
@@ -20,6 +21,8 @@ const STATUS_TONE: Record<string, string> = {
 
 export function RebatePage() {
   const role = useAuthStore(s => s.user?.role);
+  // owner 2026-10-09: a salesperson sees no rebate amount here either; the server sends none
+  const seeMoney = canViewRebateAmounts(role);
   const [pools, setPools]       = useState<RebatePool[]>([]);
   const [claims, setClaims]     = useState<RebateClaim[]>([]);
   const [selectedPool, setSelectedPool] = useState<RebatePool | null>(null);
@@ -47,9 +50,11 @@ export function RebatePage() {
       { key: 'cnDocuNo', label: 'เลขที่เอกสาร' },
       { key: 'salesName', label: 'ผู้เสนอ / ลูกค้า' },
       { key: 'period', label: 'งวดเดือน/ปี' },
-      { key: 'claimAmt', label: 'ยอดเคลมรวม (บาท)' },
-      { key: 'customerAmt', label: 'ยอดคืนลูกค้า (บาท)' },
-      { key: 'retainedAmt', label: 'ยอดสะสมบริษัท (บาท)' },
+      ...(seeMoney ? [
+        { key: 'claimAmt', label: 'ยอดเคลมรวม (บาท)' },
+        { key: 'customerAmt', label: 'ยอดคืนลูกค้า (บาท)' },
+        { key: 'retainedAmt', label: 'ยอดสะสมบริษัท (บาท)' },
+      ] : []),
       { key: 'status', label: 'สถานะ' },
       { key: 'createdAt', label: 'วันที่ยื่น' },
     ], rows, 'RebateClaims');
@@ -116,11 +121,11 @@ export function RebatePage() {
                       <span className="text-sm font-bold text-gray-700">{p.SalesName}</span>
                       <span className="text-xs text-gray-400">{monthLabel(p)}</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 text-center">
+                    {seeMoney ? <div className="grid grid-cols-3 gap-2 text-center">
                       <div><div className="text-[10px] text-gray-400">สะสม</div><div className="text-xs font-bold text-gray-600">฿{Number(p.AccruedAmt).toLocaleString('th-TH',{maximumFractionDigits:0})}</div></div>
                       <div><div className="text-[10px] text-gray-400">เคลม</div><div className="text-xs font-bold text-gray-400">฿{Number(p.ClaimedAmt).toLocaleString('th-TH',{maximumFractionDigits:0})}</div></div>
                       <div><div className="text-[10px] text-gray-400">ใช้ได้</div><div className="text-xs font-bold" style={{color:'#059669'}}>฿{avail.toLocaleString('th-TH',{maximumFractionDigits:0})}</div></div>
-                    </div>
+                    </div> : <div className="text-[11px] text-gray-400">ดูรายการขนและยื่นเคลมได้ · ยอดเงินแสดงเฉพาะฝ่ายบัญชีและผู้จัดการ</div>}
                   </div>
                 );
               })}
@@ -135,7 +140,7 @@ export function RebatePage() {
                   data-testid={`claim-card-${c.Id}`}
                   className="w-full text-left flex items-center justify-between p-2.5 rounded-lg bg-white border border-gray-100 mb-1.5 hover:border-blue-300 hover:bg-blue-50/40 transition">
                   <div>
-                    <div className="text-xs font-bold text-gray-700">฿{Number(c.ClaimAmt).toLocaleString('th-TH',{maximumFractionDigits:0})}</div>
+                    <div className="text-xs font-bold text-gray-700">{seeMoney ? `฿${Number(c.ClaimAmt).toLocaleString('th-TH',{maximumFractionDigits:0})}` : (c.CnDocuNo || `ใบขอเคลียร์ #${c.Id}`)}</div>
                     <div className="text-[10px] text-gray-400">{c.SalesName} · #{c.Id} {c.CnDocuNo ? `(Ref ${c.CnDocuNo})` : ''}</div>
                   </div>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${STATUS_TONE[String(c.Status)] || 'bg-amber-50 text-amber-700'}`}>
@@ -176,9 +181,11 @@ export function RebatePage() {
                       <tr className="text-gray-400 border-b border-gray-100">
                         <th className="text-left py-2 px-3 whitespace-nowrap">สินค้า</th>
                         <th className="text-right py-2 px-3 whitespace-nowrap">ตัน</th>
+                        {seeMoney && <>
                         <th className="text-right py-2 px-3 whitespace-nowrap">รีเบท/ตัน</th>
                         <th className="text-right py-2 px-3 whitespace-nowrap">ยอดรีเบท</th>
                         <th className="text-right py-2 px-3 whitespace-nowrap">คงเหลือ</th>
+                        </>}
                         <th className="text-center py-2 px-3 whitespace-nowrap">สถานะ</th>
                       </tr>
                     </thead>
@@ -187,16 +194,18 @@ export function RebatePage() {
                         <tr key={l.Id}>
                           <td className="py-2 px-3 whitespace-nowrap text-gray-700">{l.GoodCode}</td>
                           <td className="py-2 px-3 whitespace-nowrap text-right tabular-nums text-gray-600">{Number(l.QtyTon).toFixed(2)}</td>
+                          {seeMoney && <>
                           <td className="py-2 px-3 whitespace-nowrap text-right tabular-nums text-gray-600">฿{Number(l.RebatePerTon).toLocaleString()}</td>
                           <td className="py-2 px-3 whitespace-nowrap text-right tabular-nums text-gray-700">฿{Number(l.RebateAmount).toLocaleString('th-TH',{maximumFractionDigits:0})}</td>
                           <td className="py-2 px-3 whitespace-nowrap text-right tabular-nums font-bold" style={{color: Number(l.RemainingAmt)>0?'#059669':'#9CA3AF'}}>฿{Number(l.RemainingAmt).toLocaleString('th-TH',{maximumFractionDigits:0})}</td>
+                          </>}
                           <td className="py-2 px-3 whitespace-nowrap text-center">
                             <span className={`text-[10px] px-2 py-0.5 rounded-full ${l.Status==='CLAIMED'?'bg-gray-100 text-gray-500':'bg-blue-50 text-blue-700'}`}>{l.Status}</span>
                           </td>
                         </tr>
                       ))}
                       {ledger.length === 0 && (
-                        <tr><td colSpan={6} className="py-8 text-center text-gray-300 whitespace-nowrap">ไม่มีรายการใน pool นี้</td></tr>
+                        <tr><td colSpan={seeMoney ? 6 : 3} className="py-8 text-center text-gray-300 whitespace-nowrap">ไม่มีรายการใน pool นี้</td></tr>
                       )}
                     </tbody>
                   </table>
