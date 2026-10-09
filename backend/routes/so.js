@@ -1861,11 +1861,10 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
         // to waiting (AppvFlag W) and ships only after it is approved again (an unlock that kept AI69-06841 on a
         // bill raised from 1 t to 2 t, UAT SHP-03)
         if (materialChange(beforeLines, lines)) {
-          const r = await tx.request().input('id', sql.VarChar(50), String(so.Id)).query(`
-            UPDATE dbo.SOHD SET AppvFlag = 'W', AppvDocuNo = NULL, Appvid = NULL, AppvDate = NULL
-            OUTPUT deleted.AppvDocuNo
-            WHERE SOID = @id AND (AppvFlag = 'Y' OR AppvDocuNo IS NOT NULL)`);
-          approvalReset = r.recordset?.[0]?.AppvDocuNo || (r.rowsAffected?.[0] ? '-' : null);
+          // through a wf procedure: the app login has no UPDATE on SOHD.AppvFlag (migration 148)
+          const r = await tx.request().input('SOID', sql.Int, Number(so.Id)).execute('wf.usp_ResetBookingApproval');
+          const row = r.recordset?.[0];
+          approvalReset = Number(row?.Affected) > 0 ? (row.VoidedDocuNo || '-') : null;
         }
       });
       await audit(null, so.Id, req.user.sub, 'UPDATED', 'DRAFT', 'DRAFT', null, req.ip);
@@ -3073,6 +3072,7 @@ router.post('/bulk-cancel-delete', requireRole('SALES', 'ADMIN', 'C_LEVEL'), asy
             const reqSohd = tx.request();
             reqSohd.input('id', sql.VarChar(50), String(so.Id));
             await reqSohd.query(`UPDATE dbo.SOHD SET DocuStatus='C' WHERE SOID=@id`);
+            await tx.request().input('SOID', sql.Int, Number(so.Id)).execute('wf.usp_MarkCancelledBookingNotApproved'); // migration 148
           }
 
           const reqGw = tx.request();
@@ -3124,6 +3124,7 @@ router.post('/bulk-cancel-delete', requireRole('SALES', 'ADMIN', 'C_LEVEL'), asy
             const reqSohd = tx.request();
             reqSohd.input('id', sql.VarChar(50), String(so.Id));
             await reqSohd.query(`UPDATE dbo.SOHD SET DocuStatus='C' WHERE SOID=@id`);
+            await tx.request().input('SOID', sql.Int, Number(so.Id)).execute('wf.usp_MarkCancelledBookingNotApproved'); // migration 148
 
             const reqExt = tx.request();
             reqExt.input('id', sql.VarChar(50), String(so.Id));
@@ -3264,6 +3265,9 @@ router.patch('/:id/cancel', requireCapability('so.cancel'), requireSoInScope, as
         const reqSohd = tx.request();
         reqSohd.input('id', sql.VarChar(50), String(so.Id));
         await reqSohd.query(`UPDATE dbo.SOHD SET DocuStatus='C' WHERE SOID=@id`);
+        // WinSpeed never uses DocuStatus 'C' on a booking, so its approval lookup still offered the bill;
+        // a booking still waiting for approval is marked not approved (migration 148, UAT full loop)
+        await tx.request().input('SOID', sql.Int, Number(so.Id)).execute('wf.usp_MarkCancelledBookingNotApproved');
 
         const reqExt = tx.request();
         reqExt.input('id', sql.VarChar(50), String(so.Id));
@@ -3349,6 +3353,7 @@ router.delete('/:id', requireRole('SALES', 'ADMIN', 'C_LEVEL'), requireSoInScope
         const reqSohd = tx.request();
         reqSohd.input('id', sql.VarChar(50), String(so.Id));
         await reqSohd.query(`UPDATE dbo.SOHD SET DocuStatus='C' WHERE SOID=@id`);
+        await tx.request().input('SOID', sql.Int, Number(so.Id)).execute('wf.usp_MarkCancelledBookingNotApproved'); // migration 148
       }
 
       const reqGw = tx.request();

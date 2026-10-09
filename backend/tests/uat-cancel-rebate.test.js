@@ -55,3 +55,19 @@ test('an unlocked native bill (reads DRAFT) is cancelled in WinSpeed, not as a d
   assert.ok(calls.some(c => /UPDATE dbo\.SOHD SET DocuStatus='C'/.test(c.text)), 'native document cancelled');
   assert.ok(!calls.some(c => /UPDATE wf\.SalesOrder SET Status='CANCELLED'/.test(c.text)));
 });
+
+// UAT full loop 2026-10-09 — WinSpeed never uses DocuStatus 'C' on a booking, so its approval lookup kept
+// offering a cancelled bill; the cancel marks it not approved through a wf procedure (migration 148)
+test('a cancelled confirmed bill is taken out of WinSpeed\'s approval queue', async () => {
+  const calls = await callsOf(278100);
+  const p = calls.find(c => c.kind === 'proc' && c.proc === 'wf.usp_MarkCancelledBookingNotApproved');
+  assert.ok(p, 'procedure called');
+  assert.equal(p.inputs.SOID, 278100);
+});
+
+// the app login has no UPDATE on SOHD.AppvFlag: approval columns change only through wf procedures
+test('no route updates the WinSpeed approval columns directly', () => {
+  const src = require('fs').readFileSync(require.resolve('../routes/so'), 'utf8');
+  assert.ok(!/UPDATE dbo\.SOHD SET[^`]*AppvFlag/.test(src), 'AppvFlag is written only by wf.usp_ResetBookingApproval / usp_MarkCancelledBookingNotApproved');
+  assert.match(src, /execute\('wf\.usp_ResetBookingApproval'\)/);
+});
