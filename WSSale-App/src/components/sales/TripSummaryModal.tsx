@@ -537,7 +537,8 @@ export function TripSummaryModal({
                           <Package size={18} /> เริ่มรับสินค้า (Picking) ทั้งทริป
                         </button>
                       )}
-                      {allPicking && (
+                      {/* shipping: the server allows WAREHOUSE / WEIGHBRIDGE / MANAGER / ADMIN / C_LEVEL (sales saw the button) */}
+                      {allPicking && ['WAREHOUSE', 'WEIGHBRIDGE', 'MANAGER', 'ADMIN', 'C_LEVEL'].includes(String(currentUser?.role || '')) && (
                         <button
                           data-testid="btn-trip-ship"
                           disabled={busy}
