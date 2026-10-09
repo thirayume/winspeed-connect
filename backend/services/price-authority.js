@@ -204,8 +204,11 @@ async function createPriceApprovalRequest(tx, {
   req.input('custId', sql.NVarChar(20), String(custId));
   req.input('custName', sql.NVarChar(200), custName ? String(custName) : null);
   req.input('goodId', sql.NVarChar(50), String(goodId));
-  req.input('goodCode', sql.NVarChar(50), String(goodCode));
-  req.input('goodName', sql.NVarChar(200), goodName ? String(goodName) : null);
+  // a line sent without its code was stored as the text "undefined" and the approver saw "สินค้า: undefined"
+  // (UAT 2026-10-09); a missing code or name now comes from the goods master
+  const present = v => (v === undefined || v === null || ['', 'undefined', 'null'].includes(String(v).trim()) ? null : String(v));
+  req.input('goodCode', sql.NVarChar(50), present(goodCode));
+  req.input('goodName', sql.NVarChar(200), present(goodName));
   req.input('qtyTon', sql.Decimal(12, 3), Number(qtyTon));
   req.input('announcedPrice', sql.Decimal(12, 2), Number(announcedPrice));
   req.input('requestedPrice', sql.Decimal(12, 2), Number(requestedPrice));
@@ -224,7 +227,9 @@ async function createPriceApprovalRequest(tx, {
     )
     OUTPUT inserted.Id
     VALUES (
-      @soId, @wfRef, @docuNo, @custId, @custName, @goodId, @goodCode, @goodName,
+      @soId, @wfRef, @docuNo, @custId, @custName, @goodId,
+      COALESCE(@goodCode, (SELECT TOP 1 g.GoodCode FROM dbo.EMGood g WITH (NOLOCK) WHERE CAST(g.GoodID AS NVARCHAR(50)) = @goodId), @goodId),
+      COALESCE(@goodName, (SELECT TOP 1 g.GoodName1 FROM dbo.EMGood g WITH (NOLOCK) WHERE CAST(g.GoodID AS NVARCHAR(50)) = @goodId)),
       @qtyTon, @announcedPrice, @requestedPrice, @devPerTon, @totalDev,
       @source, @rev, 'PENDING', @by, @reason
     )
