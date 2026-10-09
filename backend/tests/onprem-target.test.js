@@ -107,3 +107,13 @@ test('the office login script grants what the app ran with through UAT, and no s
   assert.doesNotMatch(s, /sp_addrolemember|sp_addsrvrolemember|ALTER (SERVER )?ROLE|AppvFlag/i);
   assert.doesNotMatch(s, /PASSWORD = N'[^$]/, 'passwords only come from sqlcmd variables');
 });
+
+test('DB_DRIVER=tedious runs the Linux driver on Windows, to rehearse the server path on a workstation', () => {
+  const { execFileSync } = require('child_process');
+  // dotenv may print a notice on stdout, so the answer is marked
+  const probe = "const db = require('./db'); process.stdout.write(' TEDIOUS=' + (db.sql === require('mssql')))";
+  const run = env => (execFileSync(process.execPath, ['-e', probe], { cwd: path.join(__dirname, '..'), env: { ...process.env, DB_MODE: 'onprem', ...env } })
+    .toString().match(/TEDIOUS=(true|false)/) || [])[1];
+  assert.equal(run({ DB_DRIVER: 'tedious' }), 'true');
+  if (process.platform === 'win32') assert.equal(run({ DB_DRIVER: '' }), 'false', 'the native Windows driver otherwise');
+});

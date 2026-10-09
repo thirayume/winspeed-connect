@@ -3,11 +3,14 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
 const { AsyncLocalStorage } = require('async_hooks');
 const os = require('os');
 const isWindows = os.platform() === 'win32';
+// DB_DRIVER=tedious runs the Linux (Docker) driver path on a Windows workstation, to rehearse the on-prem target
+// against SQL Server 2008 R2 before the server is ready; the native Windows driver otherwise
+const nativeDriver = isWindows && String(process.env.DB_DRIVER || '').trim().toLowerCase() !== 'tedious';
 
 // Use msnodesqlv8 on Windows for Windows Auth support, standard tedious on Linux (Docker)
-const sql = isWindows ? require('mssql/msnodesqlv8') : require('mssql');
+const sql = nativeDriver ? require('mssql/msnodesqlv8') : require('mssql');
 const { withNativeSessionSettings } = require('./services/native-session-pool');
-const RuntimePool = isWindows ? withNativeSessionSettings(sql.ConnectionPool) : sql.ConnectionPool;
+const RuntimePool = nativeDriver ? withNativeSessionSettings(sql.ConnectionPool) : sql.ConnectionPool;
 
 /** Explicit configured database targets; never silently fall back to another database. */
 const { VALID_TARGETS, validateTarget } = require('./db-target-policy');
@@ -49,7 +52,7 @@ function remoteConfig() {
   const pwd    = process.env.REMOTE_DB_PASSWORD || '';
   if (!server || !pwd) throw new Error('DB_MODE=remote requires explicit REMOTE_DB_SERVER / REMOTE_DB_PASSWORD (Docker SQL Server)');
   
-  if (isWindows) {
+  if (nativeDriver) {
     const connectionString =
       `Driver={ODBC Driver 17 for SQL Server};Server=${server},${port};Database=${DB};` +
       `Uid=${user};Pwd={${pwd}};Encrypt=yes;TrustServerCertificate=yes;`;
@@ -81,7 +84,7 @@ function remoteBConfig() {
     throw new Error('DB_MODE=remote_b แต่ยังไม่ได้ตั้ง REMOTE_B_DB_SERVER / REMOTE_B_DB_PASSWORD');
   }
 
-  if (isWindows) {
+  if (nativeDriver) {
     // tunnel เป็น loopback จึงไม่บังคับเข้ารหัส แต่ยอมรับได้ถ้าเซิร์ฟเวอร์บังคับเอง
     const connectionString =
       `Driver={ODBC Driver 17 for SQL Server};Server=${server},${port};Database=${db};` +
@@ -238,7 +241,7 @@ const CONFIG_BY_TARGET = {
   remote_b: remoteBConfig,
   local_uat: localUatConfig,
   local_rehearsal: localRehearsalConfig,
-  onprem: () => onpremConnectionConfig(process.env, process.env.DB_OPERATION === 'migration' ? 'migration' : 'runtime', isWindows),
+  onprem: () => onpremConnectionConfig(process.env, process.env.DB_OPERATION === 'migration' ? 'migration' : 'runtime', nativeDriver),
 };
 const registry = {};
 function makeTarget(target) {
@@ -285,7 +288,7 @@ async function query(text, inputs = {}) {
   await pl.ready;
   const req = pl.readerPool.request();
   for (const [k, { type, value }] of Object.entries(inputs)) req.input(k, type, value);
-  const actualText = isWindows ? text : `SET ARITHABORT ON; SET ANSI_WARNINGS ON; ${text}`;
+  const actualText = nativeDriver ? text : `SET ARITHABORT ON; SET ANSI_WARNINGS ON; ${text}`;
   return (await req.query(actualText)).recordset;
 }
 /**
@@ -302,7 +305,7 @@ async function dboWrite(text, inputs = {}) {
   await pl.ready;
   const req = pl.ownerPool.request();
   for (const [k, { type, value }] of Object.entries(inputs)) req.input(k, type, value);
-  const actualText = isWindows ? text : `SET ARITHABORT ON; SET ANSI_WARNINGS ON; ${text}`;
+  const actualText = nativeDriver ? text : `SET ARITHABORT ON; SET ANSI_WARNINGS ON; ${text}`;
   return await req.query(actualText);
 }
 
@@ -311,7 +314,7 @@ async function wfQuery(text, inputs = {}) {
   await pl.ready;
   const req = pl.ownerPool.request();
   for (const [k, { type, value }] of Object.entries(inputs)) req.input(k, type, value);
-  const actualText = isWindows ? text : `SET ARITHABORT ON; SET ANSI_WARNINGS ON; ${text}`;
+  const actualText = nativeDriver ? text : `SET ARITHABORT ON; SET ANSI_WARNINGS ON; ${text}`;
   return await req.query(actualText);
 }
 async function wfTransaction(fn) {
