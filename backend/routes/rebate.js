@@ -1467,6 +1467,33 @@ router.post('/claims/:id/reject', async (req, res) => {
                 UpdatedAt = GETUTCDATE()
             WHERE Id = @pid
           `);
+        // ...and of the ledger amounts the claim cut when it was filed. The pool total came back but the ledger
+        // did not, so the pool read "available ฿0" and the salesperson could not file again (UAT full loop
+        // 2026-10-09, claim #4). Filing cuts oldest first and keeps no per-row link, so the amount goes back to
+        // the most recently cut rows first, never above a row's own amount.
+        let back = Number(claim.ClaimAmt);
+        const cutRows = (await tx.request()
+          .input('pid', sql.Int, claim.PoolId)
+          .query(`
+            SELECT Id, RebateAmount, RemainingAmt FROM wf.RebateLedger WITH (UPDLOCK)
+            WHERE PoolId = @pid AND ReversedFlag = 0 AND RemainingAmt < RebateAmount
+            ORDER BY CreatedAt DESC, Id DESC
+          `)).recordset || [];
+        for (const row of cutRows) {
+          if (back <= 0) break;
+          const put = Math.min(back, Number(row.RebateAmount) - Number(row.RemainingAmt));
+          if (!(put > 0)) continue;
+          await tx.request()
+            .input('put', sql.Decimal(12, 2), put)
+            .input('id', sql.Int, row.Id)
+            .query(`
+              UPDATE wf.RebateLedger
+              SET RemainingAmt = RemainingAmt + @put,
+                  Status = CASE WHEN Status = 'CLAIMED' THEN 'PENDING' ELSE Status END
+              WHERE Id = @id
+            `);
+          back = Math.round((back - put) * 100) / 100;
+        }
       }
 
       // 9. Insert rejection record into approval trail

@@ -763,11 +763,14 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
             ))}
           </div>
 
-          {err && <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2 print:hidden">{err}</p>}
+          {err && !canAct && <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2 print:hidden">{err}</p>}
         </div>
 
         {canAct && (
           <div className="px-5 py-3 border-t border-gray-200 space-y-2 print:hidden">
+            {/* next to the buttons: at the foot of the scrolled body the refusal was out of sight and the button
+                seemed to do nothing (UAT full loop 2026-10-09, same approver on two tiers) */}
+            {err && <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{err}</p>}
             {tier === 4 && (
               <div className="space-y-1">
                 <div className="flex gap-2">
