@@ -82,3 +82,11 @@ test('a quotation past its validity reads expired and cannot convert until exten
   await assert.rejects(check({ Id: 3, QuoteNo: 'QU6910-00003', Status: 'ACCEPTED', CustId: '1078', SalesUserId: 43, PastValidity: 1 }),
     e => e.status === 409 && /หมดอายุ/.test(e.message));
 });
+
+test('a quotation cancelled in the app leaves WinSpeed\'s approval lookup (migration 151)', () => {
+  const sqlText = require('fs').readFileSync(require.resolve('../migrations/151_quotation_cancel_leaves_winspeed_queue.sql'), 'utf8');
+  // WINSpeed's lookup keeps a QU while ClearSO = 'N' and DocuStatus <> 'Y' (read from its query), so cancel closes it
+  assert.match(sqlText, /ALTER PROCEDURE wf\.sp_QuotationCancelNative[\s\S]*ClearSO = 'Y'[\s\S]*WHERE SOID = @QuoteSOID AND DocuType = '102'/);
+  assert.match(sqlText, /EXEC wf\.usp_CloseCancelledQuotations;/);
+  assert.match(sqlText, /WHERE DocuType = '102' AND DocuStatus = 'C' AND ISNULL\(ClearSO, 'N'\) = 'N'/);
+});
