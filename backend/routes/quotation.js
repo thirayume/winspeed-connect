@@ -944,6 +944,31 @@ function nativeQuoteStatusSql(alias = 'qu', qcAlias = 'qc') {
   `;
 }
 
+/**
+ * QT-09 (owner 2026-10-09): the printed quotation names the customer with address, phone and code, and the salesperson.
+ * Same sources as the printed booking: the customer master, and the app user (or the WINSpeed employee of a native QU).
+ */
+async function quotationParty(custId, salesUserId, nativeSoid) {
+  const p = (await wfQuery(`
+    SELECT c.CustCode, c.CustAddr1, c.CustAddr2, c.Amphur, c.Province, c.PostCode, c.ContTel, c.ContTel1,
+           COALESCE((SELECT TOP 1 DisplayName FROM wf.AppUser WHERE Id = @uid),
+                    (SELECT TOP 1 e.EmpName FROM dbo.SOHD h WITH (NOLOCK) JOIN dbo.EMEmp e WITH (NOLOCK) ON e.EmpID = h.EmpID
+                     WHERE h.SOID = @nsoid)) AS SalesName
+    FROM (SELECT 1 AS x) one
+    LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON c.CustID = @cid`, {
+    uid: { type: sql.Int, value: salesUserId ? Number(salesUserId) : null },
+    nsoid: { type: sql.Int, value: nativeSoid ? Number(nativeSoid) : null },
+    cid: { type: sql.Int, value: /^\d+$/.test(String(custId || '').trim()) ? Number(custId) : null },
+  })).recordset?.[0] || {};
+  return {
+    CustCode: p.CustCode || null,
+    CustAddress: [p.CustAddr1, p.CustAddr2, p.Amphur, p.Province, p.PostCode]
+      .map(v => String(v || '').trim()).filter(Boolean).join(' ') || null,
+    CustTel: [p.ContTel1, p.ContTel].map(v => String(v || '').trim()).find(v => v && !/^tax/i.test(v)) || null,
+    SalesName: p.SalesName || null,
+  };
+}
+
 async function loadNativeQuotationBySoid(soid) {
   const r = await wfQuery(`
     SELECT TOP 1
@@ -1175,7 +1200,7 @@ router.get('/:id', async (req, res) => {
         const owner = (await wfQuery(`SELECT CAST(EmpID AS VARCHAR(20)) AS EmpID FROM dbo.SOHD WITH (NOLOCK) WHERE SOID=@sid`, { sid: { type: sql.Int, value: Math.abs(id) } })).recordset?.[0];
         if (!inScope(scope, { empId: owner?.EmpID })) return res.status(404).json({ message: 'quotation not found' });
       }
-      return res.json(native);
+      return res.json({ ...native, ...(await quotationParty(native.CustId, null, Math.abs(id))) });
     }
 
     const q = (await wfQuery(`SELECT * FROM wf.Quotation WHERE Id=@id`, { id: { type: sql.Int, value: id } })).recordset?.[0];
@@ -1228,7 +1253,8 @@ router.get('/:id', async (req, res) => {
 
     const totalTon = lines.reduce((sum, line) => sum + Number(line.QtyTon || 0), 0);
     const totalAmount = lines.reduce((sum, line) => sum + Number(line.LineAmount || (Number(line.QtyTon || 0) * Number(line.PricePerTon || 0))), 0);
-    res.json({ ...q, lines, sourceSos, LineCount: lines.length, TotalTon: totalTon, TotalAmount: totalAmount });
+    const party = await quotationParty(q.CustId, q.SalesUserId, q.WinspeedQuoteSOID);
+    res.json({ ...q, ...party, lines, sourceSos, LineCount: lines.length, TotalTon: totalTon, TotalAmount: totalAmount });
   } catch (e) { res.status(e.statusCode || 500).json({ message: e.message }); }
 });
 

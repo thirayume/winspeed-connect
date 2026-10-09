@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { FileText, RefreshCw, Plus, X, ArrowRightCircle, AlertTriangle, Package, Send, Clock, User } from 'lucide-react';
+import { FileText, RefreshCw, Plus, X, ArrowRightCircle, AlertTriangle, Package, Send, Clock, User, Printer } from 'lucide-react';
 import { fetchQuotations, createQuotation, updateQuotationStatus, extendQuotationValidity, fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, listUsers } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import { useAppStore } from '../../store/app-store';
@@ -8,6 +8,7 @@ import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { Search, Check } from 'lucide-react';
 import { CreateSODialog } from '../sales/CreateSODialog';
+import { QuotationPrintModal } from './QuotationPrintModal';
 
 const STATUS_STYLE: Record<QuoteStatus, string> = {
   DRAFT: 'bg-gray-100 text-gray-600', SENT: 'bg-blue-50 text-blue-700', ACCEPTED: 'bg-green-50 text-green-700',
@@ -37,6 +38,7 @@ export function QuotationPage() {
   const [busyId, setBusyId]   = useState<number | null>(null);
   const [convertQuoteId, setConvertQuoteId] = useState<number | null>(null);
   const [focusedQuoteId, setFocusedQuoteId] = useState<number | null>(null);
+  const [printQuoteId, setPrintQuoteId] = useState<number | null>(null);
   const navParams = useAppStore(s => s.navParams);
   const clearNavParams = useAppStore(s => s.clearNavParams);
 
@@ -350,6 +352,11 @@ export function QuotationPage() {
 
                         {/* Actions Footer */}
                         <div className="mt-auto pt-3 border-t border-gray-100 flex flex-wrap items-center justify-end gap-2">
+                          {q.Status !== 'CANCELLED' && (
+                            <button data-testid={`print-quote-${q.Id}`} onClick={() => setPrintQuoteId(q.Id)} className="px-3 py-1.5 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors flex items-center gap-1.5">
+                              <Printer size={14} /> พิมพ์
+                            </button>
+                          )}
                           {q.Status === 'DRAFT' && !nativeOnly && (
                             <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'SENT')} className="px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
                               <Send size={14} /> ส่ง
@@ -425,6 +432,7 @@ export function QuotationPage() {
       </div>
 
       {showCreate && <CreateQuoteDialog onClose={() => setShowCreate(false)} onDone={() => { setShowCreate(false); load(); }} />}
+      {printQuoteId != null && <QuotationPrintModal quoteId={printQuoteId} onClose={() => setPrintQuoteId(null)} />}
     </div>
   );
 }
