@@ -509,7 +509,9 @@ export function CreateSODialog({
     setBorrowReq({
       brand: good?.Brand || 'ทั่วไป',
       itemName: good?.ItemName || good?.GoodName || '',
-      requiredQty: totalPieces - Math.max(0, remaining),
+      // the shortfall the server checks against: an overdrawn quota (−500) needs its deficit borrowed too, or
+      // the line stays over quota after approval (UAT 2026-10-09, GW-06: asked for 1 piece at −500)
+      requiredQty: totalPieces - remaining,
     });
     setBorrowModalOpen(true);
     return false;
