@@ -110,3 +110,13 @@ __pycache__/
 scratch/
 /evidence/
 backend/scripts/116-baseline*.json
+
+# Keep only the reviewed WSL UAT deployment files in Git.
+!docs/deploy/
+docs/deploy/*
+!docs/deploy/onprem/
+docs/deploy/onprem/*
+!docs/deploy/onprem/uat-compose-quickstart.md
+!docs/deploy/onprem/Caddyfile.uat
+!docs/deploy/onprem/deploy-wsl.bat
+!docs/deploy/onprem/wsl-deploy.sh

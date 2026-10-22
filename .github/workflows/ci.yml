@@ -62,6 +62,9 @@ jobs:
           fi
           echo "ไฟล์แบตช์เป็น ASCII ล้วนทั้งหมด"
 
+      - name: ตรวจไวยากรณ์ deploy helper สำหรับ WSL
+        run: bash -n docs/deploy/onprem/wsl-deploy.sh
+
       - name: ห้ามความลับหลุดเข้า repo
         run: |
           # repo นี้เป็นสาธารณะ
