@@ -1,64 +1,58 @@
-# Local Docker: external SQL Server or --profile db. See docs/DEPLOYMENT.md.
+# UAT-only clone stack for a Linux container host. For production use the reviewed
+# On-Premise release topology and its separate approval gates.
 services:
-
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     environment:
       NODE_ENV: production
       PORT: 3000
-      DB_MODE: remote
-      REMOTE_DB_SERVER: ${REMOTE_DB_SERVER}
-      REMOTE_DB_PORT: ${REMOTE_DB_PORT:-1433}
-      REMOTE_DB_USER: ${REMOTE_DB_USER}
-      REMOTE_DB_PASSWORD: ${REMOTE_DB_PASSWORD}
-      DB_NAME: ${DB_NAME:-dbwins_worldfert9}
-      JWT_SECRET: ${JWT_SECRET}
+      TZ: ${TZ:-Asia/Bangkok}
+      DB_MODE: onprem
+      ONPREM_DB_SERVER: ${ONPREM_DB_SERVER:?Set ONPREM_DB_SERVER in the local .env}
+      ONPREM_DB_PORT: ${ONPREM_DB_PORT:-}
+      ONPREM_DB_INSTANCE: ${ONPREM_DB_INSTANCE:-}
+      ONPREM_DB_NAME: ${ONPREM_DB_NAME:?Set ONPREM_DB_NAME to the approved UAT clone}
+      ONPREM_EXPECTED_SERVERNAME: ${ONPREM_EXPECTED_SERVERNAME:?Set the verified SQL @@SERVERNAME}
+      ONPREM_PRODUCT_VERSION_PREFIX: ${ONPREM_PRODUCT_VERSION_PREFIX:-10.50.}
+      ONPREM_DB_USER: ${ONPREM_DB_USER:?Use a dedicated non-sa application login}
+      ONPREM_DB_PASSWORD: ${ONPREM_DB_PASSWORD:?Set ONPREM_DB_PASSWORD in the local .env}
+      ONPREM_DB_ENCRYPT: ${ONPREM_DB_ENCRYPT:-true}
+      ONPREM_DB_LEGACY_TLS: ${ONPREM_DB_LEGACY_TLS:-false}
+      JWT_SECRET: ${JWT_SECRET:?Generate a private JWT_SECRET in the local .env}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
+      CORS_ORIGIN: ${CORS_ORIGIN:?Set the browser origin used to open the app}
+      ENFORCE_PASSWORD_CHANGE: "true"
+      COUPON_NATIVE_POSTING_ENABLED: "false"
+      DISABLE_BACKGROUND_WORKERS: "true"
+      EXPORT_OUTPUT_PATH: /app/exports
+    volumes:
+      - backend-exports:/app/exports
+      - backend-uploads:/app/uploads
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 20s
+      retries: 5
+      start_period: 30s
 
   frontend:
     build:
       context: ./WSSale-App
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3000/api}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "${HTTP_PORT:-8080}:80"
     depends_on:
       backend:
         condition: service_healthy
 
-  # ── ฐานข้อมูล (เลือกใช้เมื่อ self-host: --profile db) ──────────
-  sqlserver:
-    profiles: ["db"]
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    restart: unless-stopped
-    environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: ${REMOTE_DB_PASSWORD}
-      MSSQL_PID: Express          # Express = ฟรี (จำกัด 10GB/DB); เปลี่ยนเป็น Developer/Standard ตาม license
-    ports:
-      - "1433:1433"
-    volumes:
-      - mssql_data:/var/opt/mssql
-    healthcheck:
-      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -No -Q 'SELECT 1' || exit 1"]
-      interval: 20s
-      timeout: 10s
-      retries: 10
-      start_period: 40s
-
 volumes:
-  mssql_data:
+  backend-exports:
+  backend-uploads:
