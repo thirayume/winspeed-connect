@@ -6,6 +6,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    env_file:
+      - .env
     expose:
       - "3000"
     environment:
@@ -20,7 +22,6 @@ services:
       ONPREM_EXPECTED_SERVERNAME: ${ONPREM_EXPECTED_SERVERNAME:?Set the verified SQL @@SERVERNAME}
       ONPREM_PRODUCT_VERSION_PREFIX: ${ONPREM_PRODUCT_VERSION_PREFIX:-10.50.}
       ONPREM_DB_USER: ${ONPREM_DB_USER:?Use a dedicated non-sa application login}
-      ONPREM_DB_PASSWORD: ${ONPREM_DB_PASSWORD:?Set ONPREM_DB_PASSWORD in the local .env}
       ONPREM_DB_ENCRYPT: ${ONPREM_DB_ENCRYPT:-true}
       ONPREM_DB_LEGACY_TLS: ${ONPREM_DB_LEGACY_TLS:-false}
       JWT_SECRET: ${JWT_SECRET:?Generate a private JWT_SECRET in the local .env}

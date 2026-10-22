@@ -14,7 +14,7 @@ The result must be `linux`. If it says `windows`, stop and connect the CLI to th
 
 ## First run
 
-From the Ubuntu WSL shell, clone the repository and copy `docker.env.example` to `.env` **in the repository root**, beside `docker-compose.yml`. The `.env` inside `docs/deploy/onprem/` belongs to the separate office compose file and is not used by this UAT launcher. Fill the root `.env` with the approved clone endpoint, exact server identity, clone database name, dedicated application login, login password, browser origin, and a newly generated JWT secret. Keep `.env` local; it is ignored by Git. Do not use `sa`: `DB_MODE=onprem` refuses that login and validates server, database, engine, transport, and elevated-role state before using a pool.
+From the Ubuntu WSL shell, clone the repository and copy `docker.env.example` to `.env` **in the repository root**, beside `docker-compose.yml`. The `.env` inside `docs/deploy/onprem/` belongs to the separate office compose file and is not used by this UAT launcher. Fill the root `.env` with the approved clone endpoint, exact server identity, clone database name, dedicated application login, login password, browser origin, and a newly generated JWT secret. Keep `.env` local; it is ignored by Git. Compose reads this file for interpolation and passes its runtime settings to the backend through `env_file`, so keep only the expected deployment settings in it. Do not use `sa`: `DB_MODE=onprem` refuses that login and validates server, database, engine, transport, and elevated-role state before using a pool.
 
 ```bash
 cp docker.env.example .env
