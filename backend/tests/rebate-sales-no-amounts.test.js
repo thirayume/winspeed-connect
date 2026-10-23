@@ -28,7 +28,7 @@ const db = h.installDbStub(({ text }) => {
   if (/FROM wf\.RebateClaimLine l/.test(text)) return [{ LineId: 1, ClaimId: 5, GoodCode: '16-8-8', QtyTon: 2, PricePerTon: 15600, NetPricePerTon: 15000, RebatePerTon: 600, LineAmount: 1200 }];
   if (/FROM wf\.v_RebateClaimTotals/.test(text)) return [{ ClaimId: 5, ClaimAmt: 1200, RebateAmt: 1200, DiffAmt: 0, RebateTon: 2, DiffTon: 0, LineCount: 1 }];
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 const { redactRebateMoney } = require('../middleware/auth');
 
 let app;

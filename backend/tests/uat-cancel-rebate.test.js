@@ -22,7 +22,7 @@ const db = h.installDbStub(({ text, inputs }) => {
     return inputs.code === 'SO_CANCELLED' ? [{ ReasonCode: 'SO_CANCELLED', ReasonText: 'ลูกค้ายกเลิก', AppliesTo: 'SO_CANCEL,SO_DELETE', IsActive: 1 }] : [];
   }
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/so', '../../routes/so']]); });

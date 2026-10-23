@@ -10,7 +10,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
 
-h.installDbStub(() => []);
+h.installDbStub(() => [], { activeUserIds: h.TEST_USERS });
 const so = require('../routes/so');
 
 const fakeTx = row => ({ request() { const r = { input() { return r; }, async query() { return { recordset: row ? [row] : [] }; } }; return r; } });

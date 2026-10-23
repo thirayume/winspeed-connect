@@ -14,7 +14,7 @@ h.installDbStub(({ text }) => {
   if (/OBJECT_ID\('wf\.sp_MasterCreatePrice'/.test(text)) return [{ HasProcs: 0 }];
   if (/UPDATE dbo\.EMCust/.test(text)) throw new Error("The UPDATE permission was denied on the object 'EMCust', database 'dbwins_worldfert9', schema 'dbo'.");
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/master', '../../routes/master']]); });

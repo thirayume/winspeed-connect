@@ -18,7 +18,7 @@ const db = h.installDbStub(({ text }) => {
   }
   if (/EXEC wf\.sp_Master/.test(text)) return [{ Affected: /9999/.test(JSON.stringify(text)) ? 0 : 1 }];
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/master', '../../routes/master']]); });

@@ -24,7 +24,7 @@ const db = h.installDbStub(({ text }) => {
   if (/FROM wf\.v_RebateAccrualRemaining/.test(text)) return lots;
   if (/INSERT INTO wf\.RebateClaim \(/.test(text)) return [{ Id: 77, Status: 'TIER2_PENDING' }];
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/rebate', '../../routes/rebate']]); });

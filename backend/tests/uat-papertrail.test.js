@@ -20,7 +20,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/SELECT CopyColor, CopyLabel, QrNonce FROM wf\.PaperCopy WHERE SoId=@id AND DocType=@dt/.test(text)) return copies.map(c => ({ CopyColor: c.color, CopyLabel: c.label, QrNonce: c.nonce }));
   if (/INSERT INTO wf\.PaperCopy/.test(text)) { copies.push({ color: inputs.col, label: inputs.lbl, nonce: inputs.nonce }); return []; }
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/papertrail', '../../routes/papertrail']]); });

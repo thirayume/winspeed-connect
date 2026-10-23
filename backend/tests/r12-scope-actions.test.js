@@ -43,7 +43,7 @@ const db = h.installDbStub(({ text, inputs }) => {
     return inputs.tid === 53 && ids.includes(20) ? [{ ok: 1 }] : [];
   }
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => {

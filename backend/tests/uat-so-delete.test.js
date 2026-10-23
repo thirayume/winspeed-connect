@@ -17,7 +17,7 @@ const db = h.installDbStub(({ text, inputs }) => {
     return inputs.code === 'SO_DELETED' ? [{ ReasonCode: 'SO_DELETED', ReasonText: 'ลบบิล', AppliesTo: 'SO_DELETE', IsActive: 1 }] : [];
   }
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/so', '../../routes/so']]); });

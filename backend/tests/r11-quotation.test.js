@@ -43,7 +43,7 @@ const db = h.installDbStub(({ kind, text, inputs, proc }) => {
   if (/FROM dbo\.EMGood WITH \(NOLOCK\) WHERE GoodID=@goodId/.test(text)) return [{ GoodID: 1114, GoodName1: '15-15-15 เชิงผสม ตรารถเกษตร', MainGoodUnitID: 1002, VatType: '3' }];
   if (/UPDATE wf\.Quotation/.test(text)) return { recordset: [], rowsAffected: [1] };
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/quotation', '../../routes/quotation']]); });

@@ -28,7 +28,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser WHERE Id = @id/.test(text)) return [{ Id: inputs.id, EmpId: String(7000 + inputs.id), PositionCode: null }];
   if (/FROM dbo\.WFCoupon c WITH \(NOLOCK\) JOIN dbo\.SOHD s/.test(text)) return inputs.no === 'C6906911' ? [{ EmpID: '7036' }] : [];
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 let app;
 test.before(async () => { app = await h.startApp([['/api/master', '../../routes/master']]); });
 test.after(async () => { await app.close(); });

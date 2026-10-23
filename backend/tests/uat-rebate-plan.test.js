@@ -16,7 +16,7 @@ h.installDbStub(({ text, inputs }) => {
   if (/FROM wf\.RebatePool WHERE SalesUserId/.test(text)) return [{ Id: 9 }];
   if (/UPDATE wf\.RebatePlan SET/.test(text)) return { recordset: [], rowsAffected: [1] };
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/rebate', '../../routes/rebate']]); });

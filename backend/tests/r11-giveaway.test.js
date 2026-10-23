@@ -50,7 +50,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/COL_LENGTH\('wf\.GiveawayBorrowRequest', 'RequesterRegion'\)/.test(text)) return [{ HasCol: 1 }];
   if (/INSERT INTO wf\.GiveawayBorrowRequest/.test(text)) return [{ Id: 501 }];
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 const { checkGiveawayQuota, linePieces } = require('../services/giveaway-quota');
 const quotaRow = (remaining) => ({ Region: 'ภาคกลาง', Brand: 'รถเกษตร', ItemName: 'เสื้อยืดแขนยาว', BudgetQty: 5000, WithdrawnQty: 5000 - remaining, RemainingQty: remaining });

@@ -22,7 +22,7 @@ const db = h.installDbStub(({ text }) => {
     return ledger.filter(r => r.RemainingAmt < r.RebateAmount);
   }
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/rebate', '../../routes/rebate']]); });

@@ -22,7 +22,7 @@ const db = h.installDbStub(({ text }) => {
       ContTel: 'TAX 0105', ContTel1: '043-000000', SalesName: 'พนักงานทดสอบ' }];
   }
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/quotation', '../../routes/quotation']]); });

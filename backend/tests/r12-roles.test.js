@@ -26,7 +26,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/WHERE Username = @u/i.test(text)) return [users[1]];
   if (/INSERT INTO wf\.AppUser/i.test(text)) return [{ Id: 99, Username: 'n', DisplayName: 'N', Role: 'WEIGHBRIDGE' }];
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 const { capabilitiesFor, ROLE_RANK, MENUS, ACTIONS } = require('../services/role-capabilities');
 

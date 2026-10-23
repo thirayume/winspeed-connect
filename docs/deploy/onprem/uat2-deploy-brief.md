@@ -86,3 +86,7 @@ Verified on 23 October 2026: the guarded deploy completed with 149 unchanged mig
 ## Production isolation
 
 The migration runner is pinned by the wrapper to `dbwins_worldfert9_uat2`. The on-prem SQL identity guard requires the app and migrator logins to have no direct access to `dbwins_worldfert9`, rejects elevated roles, and the SQL 2008 profile excludes migration 074. The runner also blocks an explicit cross-database production write in a migration batch. The UAT2 copy is expected to change; the original production database should not be targeted. These source checks do not prove that no trigger, stored procedure, linked server, or other indirect mechanism could produce side effects. If the production-access check is nonzero or unknown, deployment stops; do not remove the guard or change target names to proceed.
+
+### Account status after administrator changes
+
+Authenticated requests verify that both the acting and effective accounts exist and are active. Deleted accounts receive `401 ACCOUNT_NOT_FOUND`; disabled accounts receive `401 ACCOUNT_DISABLED`; an unavailable account lookup returns `503 SERVICE_UNAVAILABLE`. A transient lookup failure is not cached. User deletion and activation changes clear the account status cache immediately. Direct SQL changes can take up to 60 seconds to invalidate a cached status.

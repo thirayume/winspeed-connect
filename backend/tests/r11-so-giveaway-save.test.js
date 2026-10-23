@@ -22,7 +22,7 @@ const db = h.installDbStub(({ text }) => {
   if (/INSERT INTO wf\.SalesOrder\s*\(/.test(text) && /OUTPUT/i.test(text)) return [{ Id: nextSoId++ }];
   if (/OUTPUT inserted\.Id/i.test(text)) return [{ Id: nextSoId++ }];
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/so', '../../routes/so']]); });

@@ -25,7 +25,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/UPDATE wf\.SalesOrder SET VerifiedBy=@uid/.test(text)) return { recordset: [], rowsAffected: [Number(inputs.id) === 21 ? 1 : 0] };
   if (/FROM wf\.SalesOrderExt WHERE SOID=@id/.test(text)) return ext[inputs.id] ? [{ ...ext[inputs.id] }] : [];
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/so', '../../routes/so']]); });

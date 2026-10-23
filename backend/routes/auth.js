@@ -913,6 +913,7 @@ router.delete('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUN
       { id: { type: sql.Int, value: targetId } }
     );
     if (!__r.rowsAffected[0]) return res.status(404).json({ message: 'ไม่พบรายการที่ระบุ' });
+    clearAccountStatusCache(targetId);
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: 'Server error' }); }
 });

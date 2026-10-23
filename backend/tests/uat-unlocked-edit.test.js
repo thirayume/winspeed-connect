@@ -19,7 +19,7 @@ h.installDbStub(({ text, inputs }) => {
     return p ? [{ SetPriceID: 1, ListNo: 1, AnnouncedPrice: p, PriceSource: 'EMSetPrice' }] : [];
   }
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 const so = require('../routes/so');
 const held = [{ Id: 5, GoodId: 1156, LeftQty: 1 }];

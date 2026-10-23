@@ -33,14 +33,39 @@ function normalizeResult(r) {
   return { recordset, recordsets: [recordset], rowsAffected: [recordset.length], output: {} };
 }
 
-function installDbStub(handler) {
+const TEST_USERS = Object.freeze([1, 2, 10, 11, 12, 19, 20, 25, 30, 31, 34, 36, 40, 41, 43, 50, 63, 64, 66, 99]);
+
+function installDbStub(handler, options = {}) {
   const realDb = require('../../db');
   const calls = [];
+  const activeUserIds = new Set(
+    Array.isArray(options) ? options :
+    (options.activeUserIds || options.activeUsers || [])
+  );
+  const accountFixtures = options.accounts || {};
+
   const run = async (kind, text, inputs = {}, proc = null) => {
     const call = { kind, text: String(text || ''), inputs: { ...inputs }, proc };
     calls.push(call);
     const out = await handler(call);
-    return normalizeResult(out);
+    const normalized = normalizeResult(out);
+    if (/SELECT IsActive FROM wf\.AppUser WHERE Id = @id/i.test(text)) {
+      if (normalized.recordset.length > 0) {
+        return normalized;
+      }
+      const rawId = inputs.id && typeof inputs.id === 'object' && 'value' in inputs.id ? inputs.id.value : inputs.id;
+      const id = Number(rawId);
+      if (accountFixtures[id] !== undefined) {
+        const acc = accountFixtures[id];
+        return normalizeResult(typeof acc === 'boolean' ? [{ IsActive: acc }] : [acc]);
+      }
+      if (activeUserIds.has(id)) {
+        return normalizeResult([{ IsActive: true }]);
+      }
+      // Explicit fail-closed: without an explicit fixture or handler row, return empty recordset.
+      return normalizeResult([]);
+    }
+    return normalized;
   };
   const plainInputs = (inputs = {}) => Object.fromEntries(
     Object.entries(inputs).map(([k, v]) => [k, v && typeof v === 'object' && 'value' in v ? v.value : v])
@@ -119,4 +144,4 @@ async function startApp(mounts) {
   };
 }
 
-module.exports = { installDbStub, startApp, token };
+module.exports = { installDbStub, startApp, token, TEST_USERS };

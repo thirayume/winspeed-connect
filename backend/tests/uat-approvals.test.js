@@ -19,7 +19,7 @@ const db = h.installDbStub(({ text, inputs }) => {
     return bills[inputs.id] ? [{ Id: inputs.id, Status: bills[inputs.id], SalesUserId: 34, ImportedDocuNo: null, WfRef: 'I69-07' + inputs.id }] : [];
   }
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/master', '../../routes/master'], ['/api/so', '../../routes/so']]); });

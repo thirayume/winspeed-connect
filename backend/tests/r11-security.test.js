@@ -21,7 +21,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/^\s*UPDATE wf\.AppUser/i.test(text)) return { recordset: [], rowsAffected: [1] };
   if (/INSERT INTO wf\.AppUser/i.test(text)) return [{ Id: 99, Username: 'new', DisplayName: 'New', Role: 'SALES' }];
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => {

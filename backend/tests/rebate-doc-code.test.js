@@ -34,7 +34,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/SELECT Username, DisplayName, RebateDocCode FROM wf\.AppUser WHERE Id = @id/.test(text)) return appUsers.filter(u => u.Id === inputs.id);
   if (/FROM\s+CandidateDocs/.test(text)) return inputs.p === 'RBT69-%' ? [{ DocuNo: 'RBT69-110', Seq: 110 }] : [];
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 const { planRebateDocCodes, nameCodes } = require('../services/rebate-doc-code');
 
 let app;

@@ -9,7 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
 
-h.installDbStub(() => []);
+h.installDbStub(() => [], { activeUserIds: h.TEST_USERS });
 const { createPriceApprovalRequest } = require('../services/price-authority');
 
 function captureTx() {

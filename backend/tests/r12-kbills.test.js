@@ -20,7 +20,7 @@ h.installDbStub(({ text }) => {
   if (/FROM dbo\.EMRunBrch WITH \(NOLOCK\)\s+WHERE BrchID = 1 AND RunCode IN/.test(text)) return state.books;
   if (/ISNULL\(d\.SOInvID, 0\) = 0/.test(text)) return state.pending;
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 const books = require('../services/account-books');
 const { validateAndLockCouponReservations } = require('../services/coupon-service');

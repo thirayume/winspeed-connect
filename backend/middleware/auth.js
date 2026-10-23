@@ -46,29 +46,53 @@ function blockWriteWhenPasswordStale(req, res) {
 }
 
 /**
- * A disabled account loses access at once, not when its 8-hour token runs out (UAT 2026-10-09, PERM-07: login
- * refused a disabled user, but a token issued before kept working). The flag is read per user at most once a minute
- * and the user admin route clears it on change. Only a row that exists with IsActive = 0 blocks; a lookup error
- * lets the request through (login itself checks the flag) and is not cached.
+ * A disabled or unverified account loses access at once, not when its 8-hour token runs out (UAT 2026-10-09, PERM-07, A01).
+ * Verification is strictly fail-closed:
+ * - Active account (IsActive === 1 or true): passes. Cached up to ACCOUNT_STATUS_TTL_MS (60s).
+ * - Disabled account (IsActive === 0 or false): 401 code ACCOUNT_DISABLED. Cached up to 60s.
+ * - Missing/deleted account: 401 code ACCOUNT_NOT_FOUND. Cached up to 60s.
+ * - Invalid/malformed account ID: 401 code INVALID_TOKEN.
+ * - Database lookup error: 503 code SERVICE_UNAVAILABLE (fail-closed, NOT cached to allow immediate recovery).
+ *
+ * Cache TTL is 60 seconds. User admin routes clear the cache immediately via clearAccountStatusCache().
+ * Direct database updates performed outside the application take effect once the 60s TTL expires.
  */
 const ACCOUNT_STATUS_TTL_MS = 60 * 1000;
 const accountStatusCache = new Map();
-async function accountDisabled(id) {
+
+async function checkAccountStatus(id) {
   const key = Number(id);
-  if (!Number.isInteger(key) || key <= 0) return false;
+  if (!Number.isInteger(key) || key <= 0) {
+    return { ok: false, status: 'INVALID', code: 'INVALID_TOKEN', message: 'รหัสผู้ใช้ไม่ถูกต้อง' };
+  }
   const hit = accountStatusCache.get(key);
-  if (hit && Date.now() - hit.at < ACCOUNT_STATUS_TTL_MS) return hit.disabled;
+  if (hit && Date.now() - hit.at < ACCOUNT_STATUS_TTL_MS) {
+    return hit;
+  }
   try {
     const { wfQuery, sql } = require('../db');
     const r = await wfQuery('SELECT IsActive FROM wf.AppUser WHERE Id = @id', { id: { type: sql.Int, value: key } });
     const row = r?.recordset?.[0];
-    const disabled = !!row && (row.IsActive === false || row.IsActive === 0);
-    accountStatusCache.set(key, { disabled, at: Date.now() });
-    return disabled;
+    if (!row) {
+      const res = { ok: false, status: 'NOT_FOUND', code: 'ACCOUNT_NOT_FOUND', message: 'ไม่พบบัญชีผู้ใช้ในระบบ', at: Date.now() };
+      accountStatusCache.set(key, res);
+      return res;
+    }
+    const isActive = row.IsActive === true || row.IsActive === 1;
+    if (!isActive) {
+      const res = { ok: false, status: 'DISABLED', code: 'ACCOUNT_DISABLED', message: 'บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ', at: Date.now() };
+      accountStatusCache.set(key, res);
+      return res;
+    }
+    const res = { ok: true, status: 'ACTIVE', at: Date.now() };
+    accountStatusCache.set(key, res);
+    return res;
   } catch {
-    return false;
+    // Fail-closed without caching so retry succeeds immediately after DB recovery
+    return { ok: false, status: 'ERROR', code: 'SERVICE_UNAVAILABLE', message: 'ไม่สามารถตรวจสอบสถานะบัญชีผู้ใช้ได้ชั่วคราว' };
   }
 }
+
 function clearAccountStatusCache(id) {
   if (id === undefined || id === null) accountStatusCache.clear();
   else accountStatusCache.delete(Number(id));
@@ -98,11 +122,17 @@ function requireAuth(req, res, next) {
   }
   const { actorId, effectiveId } = req.user;
   Promise.all([
-    accountDisabled(actorId),
-    Number(actorId) !== Number(effectiveId) ? accountDisabled(effectiveId) : Promise.resolve(false),
-  ]).then(([actorOff, effectiveOff]) => {
-    if (actorOff || effectiveOff) {
-      return res.status(401).json({ code: 'ACCOUNT_DISABLED', message: 'บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ' });
+    checkAccountStatus(actorId),
+    Number(actorId) !== Number(effectiveId) ? checkAccountStatus(effectiveId) : Promise.resolve(null),
+  ]).then(([actorStatus, effectiveStatus]) => {
+    if (actorStatus.status === 'ERROR' || effectiveStatus?.status === 'ERROR') {
+      return res.status(503).json({ code: 'SERVICE_UNAVAILABLE', message: 'ไม่สามารถตรวจสอบสถานะบัญชีผู้ใช้ได้ชั่วคราว' });
+    }
+    if (!actorStatus.ok) {
+      return res.status(401).json({ code: actorStatus.code, message: actorStatus.message });
+    }
+    if (effectiveStatus && !effectiveStatus.ok) {
+      return res.status(401).json({ code: effectiveStatus.code, message: effectiveStatus.message });
     }
     // R12 item 4: audit writers read the Access As actor from this request context
     require('../services/request-context').runWithUser(req.user, () => next());

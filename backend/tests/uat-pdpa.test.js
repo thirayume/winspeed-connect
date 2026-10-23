@@ -12,7 +12,7 @@ const h = require('./helpers/route-harness.cjs');
 const db = h.installDbStub(({ text }) => {
   if (/FROM dbo\.EMCust WHERE/.test(text)) return [{ CustID: 1078, CustName: 'ลูกค้าทดสอบ' }];
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/pdpa', '../../routes/pdpa']]); });

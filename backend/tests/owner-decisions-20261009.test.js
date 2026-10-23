@@ -19,7 +19,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/FROM dbo\.EMCust/.test(text)) return [{ CustID: 1078 }];
   if (/FROM dbo\.EMSetPriceHD/.test(text)) return inputs.goodId === 1114 ? [{ SetPriceID: 2016, ListNo: 1, AnnouncedPrice: 19000, PriceSource: 'EMSetPrice' }] : [];
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 const so = require('../routes/so');
 const rebate = require('../routes/rebate');

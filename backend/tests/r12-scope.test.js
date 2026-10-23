@@ -58,7 +58,7 @@ const db = h.installDbStub(({ text, inputs }) => {
     return (allowed || all) ? [{ TripId: 53, CreatedBy: 20 }] : [];
   }
   return [];
-});
+}, { activeUserIds: h.TEST_USERS });
 
 const { getVisibleScope, scopeFilter } = require('../services/visible-scope');
 
