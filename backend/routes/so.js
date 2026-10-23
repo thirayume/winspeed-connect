@@ -20,6 +20,7 @@ const { enqueue } = require('../services/outbox');
 const { writeAudit, auditUser, SCREEN } = require('../services/winspeed-audit');
 const { evaluateLinePrice, createPriceApprovalRequest, calculatePricingFingerprint, resolveAuthoritativePrice } = require('../services/price-authority');
 const {initialBookingAi,aiHttpError,assertInitialAiShipmentReady}=require('../services/initial-booking-ai');
+const {initialDelivery,deliveryHttpError}=require('../services/initial-delivery');
 
 let _has141Cache = null;
 async function checkMigration141() {
@@ -37,6 +38,24 @@ async function checkMigration141() {
 }
 
 router.use(requireAuth);
+
+// These routes are before /:id. Credit override is a separate Account decision;
+// the AI self-approval capability never grants it.
+function deliveryAction(operation) {
+  return async(req,res)=>{
+    try {
+      const result=await initialDelivery({operation,soid:req.params.id,user:req.user,
+        requestId:req.params.requestId||req.body?.requestId,fingerprint:req.body?.fingerprint,reason:req.body?.reason});
+      if(operation==='apply'&&!result.replayed)broadcast('so_updated',{id:req.params.id,action:'native_104_created'});
+      res.json(result);
+    }catch(e){const x=deliveryHttpError(e);res.status(x.status).json({code:x.code,message:x.code});}
+  };
+}
+router.get('/native-delivery/requests',requireCapability('credit.approve-native'),deliveryAction('list'));
+router.get('/:id/native-delivery/preview',requireCapability('so.create-native-delivery'),deliveryAction('preview'));
+router.post('/:id/native-delivery/requests',requireCapability('so.create-native-delivery'),deliveryAction('request'));
+router.post('/:id/native-delivery/requests/:requestId/approve',requireCapability('credit.approve-native'),deliveryAction('approve'));
+router.post('/:id/native-delivery',requireCapability('so.create-native-delivery'),deliveryAction('apply'));
 
 // Typed native SOID only: never fall back from a draft ID or a non-unique DocuNo.
 // The service rechecks current actors and source ownership under transaction locks.

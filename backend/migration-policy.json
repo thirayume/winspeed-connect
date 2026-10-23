@@ -24,7 +24,8 @@
     "135_confirm_compartment_tonnage.sql",
     "136_confirm_native_header_totals.sql",
     "137_booking_description_and_rebate.sql",
-    "152_initial_booking_ai.sql"
+    "152_initial_booking_ai.sql",
+    "153_initial_delivery_104.sql"
   ],
   "databaseContextOverrides": {
     "074_fix_winspeed_legacy_raiserror.sql": {

@@ -100,6 +100,31 @@ pilot does not enable 104, native 116, invoice posting or production deployment.
 Its approved bookings remain blocked from shipment until the downstream 104/116
 contract is implemented and verified; disabling the pilot flag does not remove this hold.
 
+The separate `NATIVE_DELIVERY_104_ENABLED=true` pilot requires migration 153 and
+an initial app-origin AI receipt. Its default is false. It supports only one full
+line with matching stock/sale units, zero VAT/discount and the observed UAT2
+credit-warning profile: zero credit limit, no unsettled or unknown remaining debt,
+no active temporary/approved credit and the verified native deduction/warning modes.
+Fully settled historical invoices are allowed. Other credit profiles and partial
+quantities stop without guessing their calculation or native effects.
+
+On booking details or Paper Trail, the requester selects **ออกใบสั่งขาย 104** and
+requests over-credit approval. An `ACCOUNTING` user reviews it through
+**อนุมัติเกินวงเงิน 104** on Paper Trail and enters a reason. Account may approve its
+own request under the Owner decision; actual and effective requester/approver are
+recorded. Approval lasts 30 minutes and is bound to the current document/credit
+fingerprint. The same requester then issues the full 104. A new request supersedes
+only that requester's earlier pending/approved decision; another operator cannot
+take it over. Senior roles can use authorized Access As to work as Account, but
+their own role is not itself a credit-approval capability.
+
+Native 104, its internal unnumbered coupon, source remaining balance, document/ID
+books, Define_104, SMAudit, SMEvent, wf audit and durable receipt commit together.
+Retry the same request after an uncertain response; a completed receipt is verified
+against source and delivery fingerprints. The native document-number identity is
+branch + document number + document type. The pilot does not issue a C/D coupon,
+post stock,116 or107, or remove the AI shipment hold. Production remains excluded.
+
 The migration runner is pinned by the wrapper to `dbwins_worldfert9_uat2`. The on-prem SQL identity guard requires the app and migrator logins to have no direct access to `dbwins_worldfert9`, rejects elevated roles, and the SQL 2008 profile excludes migration 074. The runner also blocks an explicit cross-database production write in a migration batch. The UAT2 copy is expected to change; the original production database should not be targeted. These source checks do not prove that no trigger, stored procedure, linked server, or other indirect mechanism could produce side effects. If the production-access check is nonzero or unknown, deployment stops; do not remove the guard or change target names to proceed.
 
 ### Account status after administrator changes
