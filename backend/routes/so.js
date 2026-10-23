@@ -19,7 +19,7 @@ const { broadcast } = require('../services/socket');
 const { enqueue } = require('../services/outbox');
 const { writeAudit, auditUser, SCREEN } = require('../services/winspeed-audit');
 const { evaluateLinePrice, createPriceApprovalRequest, calculatePricingFingerprint, resolveAuthoritativePrice } = require('../services/price-authority');
-const {initialBookingAi,aiHttpError}=require('../services/initial-booking-ai');
+const {initialBookingAi,aiHttpError,assertInitialAiShipmentReady}=require('../services/initial-booking-ai');
 
 let _has141Cache = null;
 async function checkMigration141() {
@@ -2585,7 +2585,13 @@ async function recoverPendingShipmentTasks(so, user, clientIp, details = {}) {
 // (ดู SOP-03 — ผู้ปฏิบัติงานเครื่องชั่งเป็นคนปิดน้ำหนักจริงและออกใบส่งของ)
 router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'MANAGER', 'ADMIN', 'C_LEVEL'), requireSoInScope, async (req, res) => {
   try {
-    const so = await getSoOrThrow(req.params.id, ['LOADED', 'SHIPPED']);
+    const so = await getSoOrThrow(req.params.id);
+    try { await assertInitialAiShipmentReady(so.Id); }
+    catch(e){return res.status(e.status||503).json({code:e.code,
+      message:e.code==='AI_DOWNSTREAM_NOT_READY' ? 'ใบนี้อนุมัติ AI ผ่านรอบ UAT แล้ว แต่ขั้น 104/116 ยังไม่พร้อมให้ส่งสินค้า' : 'ไม่สามารถตรวจสอบความพร้อมก่อนส่งสินค้าได้'});}
+    if (!['LOADED','SHIPPED'].includes(so.Status)) {
+      throw Object.assign(new Error(`SO ต้องอยู่ใน LOADED หรือ SHIPPED (ปัจจุบัน: ${so.Status})`),{status:400});
+    }
 
     // Idempotent retry: หากใบสั่งขายถูกบันทึกเป็น SHIPPED ไปแล้ว คืนข้อมูลเดิมโดยไม่เกิด side-effect ซ้ำ
     const extInfo = await ensureSalesOrderExt(so.Id);

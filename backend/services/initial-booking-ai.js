@@ -1,7 +1,7 @@
 'use strict';
 // Initial-only UAT2 contract. This is not the below-price or credit-override policy.
 const { createHash } = require('crypto');
-const { sql, wfTransaction } = require('../db');
+const { sql, wfTransaction, wfQuery } = require('../db');
 const { getVisibleScope, inScope } = require('./visible-scope');
 const { rolesFor, roleRank, ACCESS_AS_ACTOR_ROLES } = require('./role-capabilities');
 const POLICY = 'O11-AI-INITIAL-UAT2-v1';
@@ -119,4 +119,18 @@ function aiHttpError(e) {
   const known = /\b(AI_(?:CONTRACT_UNSUPPORTED|BOOKING_UNAVAILABLE|COUNTER_UNSUPPORTED|NUMBER_EXHAUSTED|NUMBER_COLLISION|APPROVER_INVALID|ORIGIN_REQUIRED|REQUEST_CONFLICT|TARGET_NOT_SUPPORTED))\b/.exec(String(e.message || ''));
   return known ? { status: 409, code: known[1] } : { status: 503, code: 'AI_APPROVAL_FAILED' };
 }
-module.exports = { POLICY, nativeFingerprint, captureBookingOrigin, initialBookingAi, aiHttpError };
+// The pilot ends at AI. Until 104/116 are implemented and verified together, a
+// pilot receipt must not unlock the legacy shipping path, even after the flag is off.
+async function assertInitialAiShipmentReady(soid, query = wfQuery) {
+  try {
+    const has = (await query("SELECT CASE WHEN OBJECT_ID('wf.NativeBookingApproval','U') IS NULL THEN 0 ELSE 1 END AS HasAiReceipts")).recordset?.[0]?.HasAiReceipts;
+    if (has === 0) return;
+    if (has !== 1) fail('AI_READINESS_UNAVAILABLE', 503);
+    const receipt = (await query('SELECT SOID FROM wf.NativeBookingApproval WHERE SOID=@soid', idInput(Number(soid)))).recordset?.[0];
+    if (receipt) fail('AI_DOWNSTREAM_NOT_READY', 409);
+  } catch (e) {
+    if (e.code === 'AI_DOWNSTREAM_NOT_READY') throw e;
+    fail('AI_READINESS_UNAVAILABLE', 503);
+  }
+}
+module.exports = { POLICY, nativeFingerprint, captureBookingOrigin, initialBookingAi, aiHttpError, assertInitialAiShipmentReady };

@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
 h.installDbStub(() => []);
-const { initialBookingAi, nativeFingerprint, captureBookingOrigin, aiHttpError, POLICY } = require('../services/initial-booking-ai');
+const { initialBookingAi, nativeFingerprint, captureBookingOrigin, aiHttpError, POLICY, assertInitialAiShipmentReady } = require('../services/initial-booking-ai');
 const { capabilitiesFor } = require('../services/role-capabilities');
 const user = { sub: 11, role: 'SALES', actorSub: 99, actorRole: 'ADMIN' };
 const requestId = '11111111-2222-4333-8444-555555555555';
@@ -148,4 +148,27 @@ test('origin capture is opt-in and failure propagates to confirmation transactio
     f.state.originTable = 0;
     await assert.rejects(captureBookingOrigin({ query: f.query, soid: 502, user }), { code: 'AI_ORIGIN_REQUIRED' });
   } finally { if (saved === undefined) delete process.env.NATIVE_BOOKING_AI_ENABLED; else process.env.NATIVE_BOOKING_AI_ENABLED = saved; }
+});
+test('pilot approval cannot unlock shipping, even with the pilot feature disabled', async () => {
+  const saved = process.env.NATIVE_BOOKING_AI_ENABLED;
+  process.env.NATIVE_BOOKING_AI_ENABLED='false';
+  try {
+    const calls=[];
+    await assert.rejects(assertInitialAiShipmentReady(501, async (text,inputs) => {
+      calls.push({text,inputs});
+      return {recordset: /HasAiReceipts/.test(text)?[{HasAiReceipts:1}]:[{SOID:501}]};
+    }), {code:'AI_DOWNSTREAM_NOT_READY',status:409});
+    assert.equal(calls[1].inputs.soid.value,501);
+  } finally { if(saved===undefined)delete process.env.NATIVE_BOOKING_AI_ENABLED;else process.env.NATIVE_BOOKING_AI_ENABLED=saved; }
+});
+test('old schemas and non-pilot documents retain the legacy shipping checks', async () => {
+  let count=0;
+  await assertInitialAiShipmentReady(502,async()=>{count++;return {recordset:[{HasAiReceipts:0}]};});
+  assert.equal(count,1);
+  await assertInitialAiShipmentReady(502,async text=>({recordset:/HasAiReceipts/.test(text)?[{HasAiReceipts:1}]:[]}));
+});
+test('unverifiable shipment readiness fails closed and suppresses the database diagnostic', async () => {
+  for (const query of [async()=>{throw new Error('private database diagnostic');},async()=>({recordset:[]})]) {
+    await assert.rejects(assertInitialAiShipmentReady(501,query),{code:'AI_READINESS_UNAVAILABLE',status:503});
+  }
 });

@@ -97,6 +97,8 @@ detail and Paper Trail offer the separate AI approval action for authorized mapp
 employees. Number, approval, durable request receipt and both audits commit together.
 Retry the same request to recover its receipt; changing the request conflicts. This
 pilot does not enable 104, native 116, invoice posting or production deployment.
+Its approved bookings remain blocked from shipment until the downstream 104/116
+contract is implemented and verified; disabling the pilot flag does not remove this hold.
 
 The migration runner is pinned by the wrapper to `dbwins_worldfert9_uat2`. The on-prem SQL identity guard requires the app and migrator logins to have no direct access to `dbwins_worldfert9`, rejects elevated roles, and the SQL 2008 profile excludes migration 074. The runner also blocks an explicit cross-database production write in a migration batch. The UAT2 copy is expected to change; the original production database should not be targeted. These source checks do not prove that no trigger, stored procedure, linked server, or other indirect mechanism could produce side effects. If the production-access check is nonzero or unknown, deployment stops; do not remove the guard or change target names to proceed.
 
