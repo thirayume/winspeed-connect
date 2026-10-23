@@ -14,6 +14,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { getBangkokDateString } = require('../services/so-pickup-policy');
 // R12 O-4: SALES/MANAGER see their own + team documents (ADMIN/C_LEVEL/ACCOUNTING and operational roles see all)
 const { getVisibleScope, scopeFilter } = require('../services/visible-scope');
+const { nativeChainInScope } = require('../services/native-document-scope');
 
 router.use(requireAuth);
 
@@ -1213,13 +1214,13 @@ router.get('/control-tickets/:docuNo/trace', async (req, res) => {
     }
 
     const trace = await traceNativeTicketChain(req.params.docuNo, { exactId: cleanExactId, entityType });
-    if (!trace) {
+    if (!trace || !await nativeChainInScope(await getVisibleScope(req.user), trace)) {
       return res.status(404).json({ message: `ไม่พบข้อมูลตั๋วคุม ${req.params.docuNo}` });
     }
     res.json(trace);
   } catch (e) {
     console.error('[master/control-tickets/trace]', e);
-    res.status(500).json({ message: e.message });
+    res.status(e.status || 500).json({ message: e.message });
   }
 });
 
@@ -1281,19 +1282,25 @@ router.get('/control-tickets/typed/:entityType/:id', async (req, res) => {
       entityType: String(entityType).toUpperCase(),
       exactId: id
     });
+    if (!await nativeChainInScope(await getVisibleScope(req.user), result)) {
+      return res.status(404).json({ message: 'ไม่พบตั๋วคุมนี้' });
+    }
     if (!result.resolved) {
       return res.status(404).json(result);
     }
     res.json(result);
   } catch (e) {
     console.error('[master/control-tickets/typed]', e);
-    res.status(500).json({ message: e.message });
+    res.status(e.status || 500).json({ message: e.message });
   }
 });
 
 // GET /api/master/control-tickets/:docuNo/draws — ประวัติการตัด (SO 104 หรือ WFRedemtion 116)
 router.get('/control-tickets/:docuNo/draws', async (req, res) => {
   try {
+    const drawScope = await getVisibleScope(req.user);
+    const couponDrawScope = scopeFilter(drawScope, { empCol: 'h104.EmpID', prefix: 'dcp' });
+    const deliveryDrawScope = scopeFilter(drawScope, { empCol: 'h2.EmpID', prefix: 'ddv' });
     const docuNo = String(req.params.docuNo).trim();
     const { exactId, entityType } = req.query;
     let parsedExactId = null;
@@ -1312,6 +1319,7 @@ router.get('/control-tickets/:docuNo/draws', async (req, res) => {
     // Check 1: If coupon (C or D), query WFRedemtionDT (116)
     if (/^[CD]\d+/i.test(docuNo) || entityType === 'COUPON') {
       const redInputs = {
+        ...couponDrawScope.inputs,
         docuNo: { type: sql.NVarChar(50), value: docuNo },
         exactId: { type: sql.Int, value: parsedExactId },
       };
@@ -1327,8 +1335,9 @@ router.get('/control-tickets/:docuNo/draws', async (req, res) => {
         JOIN dbo.WFRedemtionHD rh WITH (NOLOCK) ON rh.RedemtionID = rd.RedemtionID
         JOIN dbo.WFCoupon c WITH (NOLOCK) ON c.CouponID = rd.CouponID
         LEFT JOIN dbo.SOHD h104 WITH (NOLOCK) ON h104.SOID = c.DocuID
-        WHERE (@exactId IS NOT NULL AND c.CouponID = @exactId)
-           OR (@exactId IS NULL AND (c.CouponNo = @docuNo OR rd.CouponNo = @docuNo))
+        WHERE ((@exactId IS NOT NULL AND c.CouponID = @exactId)
+           OR (@exactId IS NULL AND (c.CouponNo = @docuNo OR rd.CouponNo = @docuNo)))
+          AND ${couponDrawScope.sql}
         ORDER BY rh.DocuDate DESC
       `, redInputs);
 
@@ -1339,6 +1348,7 @@ router.get('/control-tickets/:docuNo/draws', async (req, res) => {
 
     // Check 2: Native 104 deliveries
     const delInputs = {
+      ...deliveryDrawScope.inputs,
       docuNo: { type: sql.NVarChar(30), value: docuNo },
       exactId: { type: sql.Int, value: parsedExactId },
     };
@@ -1352,6 +1362,7 @@ router.get('/control-tickets/:docuNo/draws', async (req, res) => {
       JOIN dbo.SODT d2 WITH (NOLOCK) ON h2.SOID = d2.SOID
       LEFT JOIN wf.SalesOrderLine wfl WITH (NOLOCK) ON wfl.SoId = h2.SOID AND wfl.LineNum = d2.ListNo
       WHERE h2.DocuType = 104 AND h2.DocuStatus <> 'C'
+        AND ${deliveryDrawScope.sql}
         AND (
           (@exactId IS NOT NULL AND d2.RefSOID = @exactId)
           OR (@exactId IS NULL AND (RTRIM(h2.RefNo) = RTRIM(@docuNo) OR wfl.RefControlTicketNo = RTRIM(@docuNo)))
@@ -1366,6 +1377,10 @@ router.get('/control-tickets/:docuNo/draws', async (req, res) => {
 // GET /api/master/control-tickets/:docuNo — ดึงรายการสินค้าของตั๋วคุม
 router.get('/control-tickets/:docuNo', async (req, res) => {
   try {
+    const detailScope = await getVisibleScope(req.user);
+    const couponDetailScope = scopeFilter(detailScope, { empCol: 'issuer.EmpID', prefix: 'lcp' });
+    const draftDetailScope = scopeFilter(detailScope, { userCol: 'h.SalesUserId', prefix: 'ldr' });
+    const nativeDetailScope = scopeFilter(detailScope, { empCol: 'h.EmpID', prefix: 'lso' });
     const docuNo = String(req.params.docuNo).trim();
     const { exactId, entityType } = req.query;
     const parsedExactId = exactId ? parseInt(exactId, 10) : null;
@@ -1379,11 +1394,14 @@ router.get('/control-tickets/:docuNo', async (req, res) => {
           CAST(c.GoodPrice AS DECIMAL(12, 2)) AS PricePerTon,
           ISNULL(gx.BagPerTon, 20) AS BagPerTon
         FROM dbo.WFCoupon c WITH (NOLOCK)
+        LEFT JOIN dbo.SOHD issuer ON issuer.SOID = c.DocuID
         LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = c.GoodID
         LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = c.GoodID
-        WHERE (@exactId IS NOT NULL AND c.CouponID = @exactId)
-           OR (@exactId IS NULL AND c.CouponNo = @docuNo)
+        WHERE ((@exactId IS NOT NULL AND c.CouponID = @exactId)
+           OR (@exactId IS NULL AND c.CouponNo = @docuNo))
+          AND ${couponDetailScope.sql}
       `, {
+        ...couponDetailScope.inputs,
         docuNo: { type: sql.NVarChar(50), value: docuNo },
         exactId: { type: sql.Int, value: parsedExactId },
       });
@@ -1403,10 +1421,12 @@ router.get('/control-tickets/:docuNo', async (req, res) => {
         JOIN wf.SalesOrderLine d WITH (NOLOCK) ON h.Id = d.SoId
         JOIN dbo.EMGood g WITH (NOLOCK) ON d.GoodId = g.GoodID
         LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = g.GoodID
-        WHERE (@exactId IS NOT NULL AND h.Id = @exactId)
-           OR (@exactId IS NULL AND h.WfRef = @docuNo AND h.Status = 'DRAFT')
+        WHERE ((@exactId IS NOT NULL AND h.Id = @exactId)
+           OR (@exactId IS NULL AND h.WfRef = @docuNo AND h.Status = 'DRAFT'))
+          AND ${draftDetailScope.sql}
         ORDER BY d.LineNum ASC
       `, {
+        ...draftDetailScope.inputs,
         docuNo: { type: sql.NVarChar(30), value: docuNo },
         exactId: { type: sql.Int, value: parsedExactId },
       });
@@ -1429,8 +1449,10 @@ router.get('/control-tickets/:docuNo', async (req, res) => {
         (@exactId IS NOT NULL AND h.SOID = @exactId)
         OR (@exactId IS NULL AND (RTRIM(h.AppvDocuNo) = RTRIM(@docuNo) OR RTRIM(h.DocuNo) = RTRIM(@docuNo)))
       ) AND h.DocuType = 103 AND h.DocuStatus = 'Y'
+        AND ${nativeDetailScope.sql}
       ORDER BY d.ListNo ASC
     `, {
+      ...nativeDetailScope.inputs,
       docuNo: { type: sql.NVarChar(30), value: docuNo },
       exactId: { type: sql.Int, value: parsedExactId },
     });

@@ -92,3 +92,5 @@ The migration runner is pinned by the wrapper to `dbwins_worldfert9_uat2`. The o
 ### Account status after administrator changes
 
 Authenticated requests verify that both the acting and effective accounts exist and are active. Deleted accounts receive `401 ACCOUNT_NOT_FOUND`; disabled accounts receive `401 ACCOUNT_DISABLED`; an unavailable account lookup returns `503 SERVICE_UNAVAILABLE`. A transient lookup failure is not cached. User deletion and activation changes clear the account status cache immediately. Direct SQL changes can take up to 60 seconds to invalidate a cached status.
+
+Native ticket traces use the effective user's document scope too. A scoped user cannot receive another salesperson's connected source documents; ambiguous, truncated, or unverified source ownership fails closed. Existing roles with access to all records retain that access. Ticket line and draw reads also apply scope when an exact ID is supplied.
