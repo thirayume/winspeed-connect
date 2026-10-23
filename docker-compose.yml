@@ -1,8 +1,10 @@
 # UAT-only clone stack for a Linux container host. For production use the reviewed
 # On-Premise release topology and its separate approval gates.
+# SALEAPP_STACK names the images so stacks on one host (R740 uat/prod, each its own
+# Compose project) never share an image; it defaults to the local UAT2 names.
 services:
   backend:
-    image: worldfert-saleapp-uat-backend:local
+    image: worldfert-saleapp-${SALEAPP_STACK:-uat}-backend:local
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -48,10 +50,10 @@ services:
   # applies only pending changes on the pinned UAT target, then verifies the ledger.
   # It receives the dedicated migrator secret; API credentials/JWT are never passed here.
   migrate:
-    image: worldfert-saleapp-uat-backend:local
+    image: worldfert-saleapp-${SALEAPP_STACK:-uat}-backend:local
     profiles: ["migrate"]
     env_file:
-      - .env.migrator.local
+      - ${SALEAPP_MIGRATOR_ENV_FILE:-.env.migrator.local}
     environment:
       NODE_ENV: production
       TZ: ${TZ:-Asia/Bangkok}
@@ -71,6 +73,7 @@ services:
     entrypoint: ["node", "run_migrations.js"]
 
   frontend:
+    image: worldfert-saleapp-${SALEAPP_STACK:-uat}-frontend:local
     build:
       context: ./WSSale-App
       dockerfile: Dockerfile
@@ -82,7 +85,7 @@ services:
         condition: service_healthy
 
   caddy:
-    image: worldfert-saleapp-uat-caddy:local
+    image: worldfert-saleapp-${SALEAPP_STACK:-uat}-caddy:local
     build:
       context: ./docs/deploy/onprem
       dockerfile: Dockerfile.caddy

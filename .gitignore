@@ -128,4 +128,22 @@ docs/deploy/onprem/*
 !docs/deploy/onprem/uat2-deploy-brief.md
 !docs/deploy/onprem/sql/
 docs/deploy/onprem/sql/*
+# R740-SRV deploy tooling (secrets stay on the server in D:\SaleApp\<env>\config).
+!docs/deploy/r740/
+docs/deploy/r740/*
+!docs/deploy/r740/README.md
+!docs/deploy/r740/deploy.bat
+!docs/deploy/r740/deploy-r740.ps1
+!docs/deploy/r740/bootstrap.sh
+!docs/deploy/r740/r740-deploy.sh
+!docs/deploy/r740/validate-compose.py
+!docs/deploy/r740/uat.env.example
+!docs/deploy/r740/uat.migrator.env.example
+!docs/deploy/r740/targets/
+docs/deploy/r740/targets/*
+!docs/deploy/r740/targets/uat.env
+!docs/deploy/r740/targets/prod.env
+!docs/deploy/r740/sql/
+docs/deploy/r740/sql/*
+!docs/deploy/r740/sql/r740-uat-principals.sql
 !docs/deploy/onprem/sql/local-uat2-principals.sql
