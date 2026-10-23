@@ -24,8 +24,8 @@ async function assertTarget(query) {
 async function nativeFingerprint(query, soid) {
   const parts = [];
   for (const [table, order] of [['SOHD', 'SOID'], ['SODT', 'ListNo'], ['SOHDRemark', 'ListNo'], ['SODTRemark', 'ListNo, RefListNo']]) {
-    const r = await query(`SELECT CONVERT(NVARCHAR(MAX),(SELECT * FROM dbo.${table} WITH (UPDLOCK,HOLDLOCK)
-      WHERE SOID=@soid ORDER BY ${order} FOR XML RAW, BINARY BASE64, ELEMENTS XSINIL)) AS Snapshot`, idInput(soid));
+    const r = await query(`SELECT COALESCE(CONVERT(NVARCHAR(MAX),(SELECT * FROM dbo.${table} WITH (UPDLOCK,HOLDLOCK)
+      WHERE SOID=@soid ORDER BY ${order} FOR XML RAW, BINARY BASE64, ELEMENTS XSINIL)),N'') AS Snapshot`, idInput(soid));
     if (typeof r.recordset?.[0]?.Snapshot !== 'string') fail('AI_SNAPSHOT_UNAVAILABLE', 503);
     parts.push(r.recordset[0].Snapshot);
   }

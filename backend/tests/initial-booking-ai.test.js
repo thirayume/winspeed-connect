@@ -60,6 +60,11 @@ test('preview validates without reserving a number; actual and effective identit
   assert.equal(f.calls.find(c => /EXEC wf.usp_/.test(c.text)).inputs.preview.value, true);
   assert.deepEqual(f.events, ['begin', 'commit']);
 });
+test('empty optional remark sets are valid fingerprint components; missing result sets fail closed', async () => {
+  const empty = await nativeFingerprint(async () => ({ recordset: [{ Snapshot: '' }] }), 501);
+  assert.match(empty, /^[a-f0-9]{64}$/);
+  await assert.rejects(nativeFingerprint(async () => ({ recordset: [] }), 501), { code: 'AI_SNAPSHOT_UNAVAILABLE' });
+});
 test('first approval and same-request replay produce only one native write', async () => {
   const f = fixture(); await f.ready();
   const command = { soid: 501, user, requestId, fingerprint: f.state.originHash };
