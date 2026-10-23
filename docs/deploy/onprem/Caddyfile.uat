@@ -1,5 +1,10 @@
 # UAT ingress: Caddy's local CA serves the configured clone host over HTTPS.
 # Caddy automatically redirects HTTP to HTTPS when the site has a host name/IP.
+{
+	http_port {$HTTP_PORT}
+	https_port {$HTTPS_PORT}
+}
+
 {$APP_DOMAIN} {
 	tls internal
 	encode gzip

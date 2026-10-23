@@ -7,3 +7,6 @@ tests
 coverage
 *.bak
 *.sql
+!migrations/*.sql
+!migrations/compat/**/*.sql
+migrations/uat_create_admin.sql

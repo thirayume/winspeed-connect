@@ -26,7 +26,7 @@ const {
   APPROVED_LOCAL_REHEARSAL_TARGET,
   APPROVED_TARGET,
 } = require('./safety-validator');
-const { validateOnpremTargetRecord } = require('./onprem-target');
+const { validateOnpremTargetRecord, IDENTITY_SQL: ONPREM_IDENTITY_SQL } = require('./onprem-target');
 
 const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
 const POLICY_PATH = path.join(__dirname, 'migration-policy.json');
@@ -519,7 +519,7 @@ function printPlan(plan, inventory, target, readOnly) {
  */
 async function verifyTargetAndProfile(pool, requestedProfile, options = {}) {
   const policy = options.policy || loadPolicy();
-  const targetInfo = (await pool.request().query(`
+  const targetInfo = (await pool.request().query(requestedProfile === 'onprem' ? ONPREM_IDENTITY_SQL : `
     SELECT 
       DB_NAME() AS dbName, 
       @@SERVERNAME AS serverName,

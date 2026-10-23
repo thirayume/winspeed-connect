@@ -1,3 +1,6 @@
 * text=auto eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf
+# These immutable migration originals are pinned to CRLF bytes by migration-policy.json.
+backend/migrations/097_sohdremark_match_production_format.sql text eol=crlf
+backend/migrations/100_load_sequence_resolve_goodcode.sql text eol=crlf

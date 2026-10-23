@@ -2,12 +2,11 @@
 # On-Premise release topology and its separate approval gates.
 services:
   backend:
+    image: worldfert-saleapp-uat-backend:local
     build:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
     expose:
       - "3000"
     environment:
@@ -22,6 +21,7 @@ services:
       ONPREM_EXPECTED_SERVERNAME: ${ONPREM_EXPECTED_SERVERNAME:?Set the verified SQL @@SERVERNAME}
       ONPREM_PRODUCT_VERSION_PREFIX: ${ONPREM_PRODUCT_VERSION_PREFIX:-10.50.}
       ONPREM_DB_USER: ${ONPREM_DB_USER:?Use a dedicated non-sa application login}
+      ONPREM_DB_PASSWORD: ${ONPREM_DB_PASSWORD:?Set ONPREM_DB_PASSWORD in the local .env}
       ONPREM_DB_ENCRYPT: ${ONPREM_DB_ENCRYPT:-true}
       ONPREM_DB_LEGACY_TLS: ${ONPREM_DB_LEGACY_TLS:-false}
       JWT_SECRET: ${JWT_SECRET:?Generate a private JWT_SECRET in the local .env}
@@ -35,11 +35,37 @@ services:
       - backend-exports:/app/exports
       - backend-uploads:/app/uploads
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      test: ["CMD", "node", "healthcheck.cjs"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 30s
+
+  # One-off UAT migration runner. The deploy wrapper runs a read-only plan first,
+  # applies only pending changes on the pinned UAT target, then verifies the ledger.
+  # It receives the dedicated migrator secret; API credentials/JWT are never passed here.
+  migrate:
+    image: worldfert-saleapp-uat-backend:local
+    profiles: ["migrate"]
+    env_file:
+      - .env.migrator.local
+    environment:
+      NODE_ENV: production
+      TZ: ${TZ:-Asia/Bangkok}
+      DB_MODE: onprem
+      DB_OPERATION: migration
+      MIGRATION_PROFILE: onprem
+      ONPREM_DB_SERVER: ${ONPREM_DB_SERVER:?Set ONPREM_DB_SERVER in the local .env}
+      ONPREM_DB_PORT: ${ONPREM_DB_PORT:-}
+      ONPREM_DB_INSTANCE: ${ONPREM_DB_INSTANCE:-}
+      ONPREM_DB_NAME: ${ONPREM_DB_NAME:?Set ONPREM_DB_NAME in the local .env}
+      ONPREM_EXPECTED_SERVERNAME: ${ONPREM_EXPECTED_SERVERNAME:?Set the verified SQL @@SERVERNAME}
+      ONPREM_PRODUCT_VERSION_PREFIX: ${ONPREM_PRODUCT_VERSION_PREFIX:-10.50.}
+      ONPREM_DB_ENCRYPT: ${ONPREM_DB_ENCRYPT:-true}
+      ONPREM_DB_LEGACY_TLS: ${ONPREM_DB_LEGACY_TLS:-false}
+      ONPREM_DB_TDS_VERSION: ${ONPREM_DB_TDS_VERSION:-7_3_B}
+      COUPON_NATIVE_POSTING_ENABLED: "false"
+    entrypoint: ["node", "run_migrations.js"]
 
   frontend:
     build:
@@ -56,10 +82,12 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "${HTTP_PORT:-80}:80"
-      - "${HTTPS_PORT:-443}:443"
+      - "${HTTP_PORT:-8080}:${HTTP_PORT:-8080}"
+      - "${HTTPS_PORT:-8444}:${HTTPS_PORT:-8444}"
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN in the local .env}
+      HTTP_PORT: ${HTTP_PORT:-8080}
+      HTTPS_PORT: ${HTTPS_PORT:-8444}
       TZ: ${TZ:-Asia/Bangkok}
     volumes:
       - ./docs/deploy/onprem/Caddyfile.uat:/etc/caddy/Caddyfile:ro

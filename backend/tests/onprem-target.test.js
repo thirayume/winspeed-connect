@@ -19,7 +19,8 @@ const ENV = {
 const ROW = {
   dbName: 'dbwins_worldfert9_test', serverName: 'OFFICE-SQL\\SQL2008', loginName: 'wf_app', originalLogin: 'wf_app',
   productVersion: '10.50.6000.34', netTransport: 'TCP',
-  isSysadmin: 0, isSecurityadmin: 0, isServeradmin: 0, isDbcreator: 0, hasControlServer: 0,
+  isSysadmin: 0, isSecurityadmin: 0, isServeradmin: 0, isSetupadmin: 0, isProcessadmin: 0, isDiskadmin: 0,
+  isDbcreator: 0, isBulkadmin: 0, hasProdAccess: 0, hasControlServer: 0, isDbOwner: 0, hasControlDatabase: 0,
 };
 
 test('every part of the approved tuple is required, and sa is refused', () => {
@@ -58,7 +59,7 @@ test('the approved server, database, login and engine pass', () => {
   assert.equal(validateOnpremTargetRecord({ ...ROW, loginName: 'wf_migrator', originalLogin: 'wf_migrator' }, ENV, { operation: 'migration' }).login, 'wf_migrator');
 });
 
-test('anything else is refused', () => {
+test('anything else is refused (elevated server roles, db_owner, control database, and null/unknown)', () => {
   const refuse = (patch, re, env = ENV, operation) => assert.throws(() => validateOnpremTargetRecord({ ...ROW, ...patch }, env, { operation }), re);
   refuse({ dbName: 'dbwins_worldfert9' }, /connected to database/);
   refuse({ serverName: 'OTHER\\SQL' }, /@@SERVERNAME/);
@@ -66,8 +67,21 @@ test('anything else is refused', () => {
   refuse({ loginName: 'wf_migrator', originalLogin: 'wf_migrator' }, /login/);
   refuse({ originalLogin: 'sa' }, /login/);
   refuse({ isSysadmin: 1 }, /sysadmin/);
+  refuse({ isSecurityadmin: 1 }, /securityadmin/);
+  refuse({ isServeradmin: 1 }, /serveradmin/);
+  refuse({ isSetupadmin: 1 }, /setupadmin/);
+  refuse({ isProcessadmin: 1 }, /processadmin/);
+  refuse({ isDiskadmin: 1 }, /diskadmin/);
   refuse({ isDbcreator: null }, /dbcreator/);
+  refuse({ isBulkadmin: 1 }, /bulkadmin/);
+  refuse({ isBulkadmin: null }, /bulkadmin/);
+  refuse({ hasProdAccess: 1 }, /HAS_DBACCESS/);
+  refuse({ hasProdAccess: null }, /HAS_DBACCESS/);
   refuse({ hasControlServer: 1 }, /CONTROL SERVER/);
+  refuse({ isDbOwner: 1 }, /db_owner/);
+  refuse({ isDbOwner: null }, /db_owner/);
+  refuse({ hasControlDatabase: 1 }, /CONTROL DATABASE/);
+  refuse({ hasControlDatabase: null }, /CONTROL DATABASE/);
   refuse({ netTransport: 'Shared memory' }, /transport/);
   refuse({}, /COUPON_NATIVE_POSTING_ENABLED/, { ...ENV, COUPON_NATIVE_POSTING_ENABLED: 'true' });
   refuse({}, /login/, ENV, 'migration');
@@ -87,7 +101,12 @@ test('the migration runner checks the office target with the migrator login', as
   const saved = { ...process.env };
   Object.assign(process.env, ENV);
   try {
-    const pool = row => ({ request: () => ({ query: async () => ({ recordset: [row] }) }) });
+    // Model SQL projection: a field absent from SELECT must not be invented by
+    // the stub, otherwise missing privilege checks in the runner go unnoticed.
+    const pool = row => ({ request: () => ({ query: async text => {
+      const aliases = new Set([...text.matchAll(/\bAS\s+(\w+)/gi)].map(match => match[1]));
+      return { recordset: [Object.fromEntries(Object.entries(row).filter(([key]) => aliases.has(key)))] };
+    } }) });
     const ok = await verifyTargetAndProfile(pool({ ...ROW, loginName: 'wf_migrator', originalLogin: 'wf_migrator' }), 'onprem');
     assert.equal(ok.profile, 'onprem');
     await assert.rejects(verifyTargetAndProfile(pool({ ...ROW, loginName: 'wf_migrator', originalLogin: 'wf_migrator', serverName: 'X' }), 'onprem'), /@@SERVERNAME/);
@@ -99,7 +118,10 @@ test('the migration runner checks the office target with the migrator login', as
 });
 
 test('the office login script grants what the app ran with through UAT, and no server role', () => {
-  const s = fs.readFileSync(path.join(__dirname, '../../deploy/onprem/sql/office-logins.sql'), 'utf8');
+  const scriptPath = ['../../docs/deploy/onprem/sql/office-logins.sql', '../../deploy/onprem/sql/office-logins.sql']
+    .map(relative => path.join(__dirname, relative)).find(candidate => fs.existsSync(candidate));
+  assert.ok(scriptPath, 'reviewed office login script must exist');
+  const s = fs.readFileSync(scriptPath, 'utf8');
   assert.match(s, /GRANT SELECT ON SCHEMA::dbo TO \[\$\(APP_LOGIN\)\]/);
   assert.match(s, /GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE, REFERENCES ON SCHEMA::wf TO \[\$\(APP_LOGIN\)\]/);
   assert.match(s, /GRANT CONTROL ON SCHEMA::wf TO \[\$\(MIGRATOR_LOGIN\)\]/);

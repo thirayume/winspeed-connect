@@ -1,0 +1,213 @@
+"""Offline regression checks for the UAT Compose guard; never read local secrets.
+
+Run: python scripts/test-wsl-deploy-config.py
+If Docker Compose is installed, one test renders temporary dummy env files with
+the real root Compose file. No daemon, container, connection, or SQL is used.
+"""
+
+import copy
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+script = (ROOT / "docs/deploy/onprem/wsl-deploy.sh").read_text(encoding="utf-8")
+start = script.index("python3 -c '") + len("python3 -c '")
+VALIDATOR = script[start:script.index("\n'; then", start)]
+
+
+def fixture_models():
+    target = {
+        "DB_MODE": "onprem",
+        "ONPREM_DB_SERVER": "172.21.48.1",
+        "ONPREM_DB_PORT": "51433",
+        "ONPREM_DB_INSTANCE": "",
+        "ONPREM_DB_NAME": "dbwins_worldfert9_uat2",
+        "ONPREM_EXPECTED_SERVERNAME": "AMYOU-YOGA7\\V2008R2",
+        "ONPREM_PRODUCT_VERSION_PREFIX": "10.50.",
+        "ONPREM_DB_ENCRYPT": "true",
+        "ONPREM_DB_LEGACY_TLS": "true",
+    }
+    app = dict(target, ONPREM_DB_USER="wf_local_uat_app",
+               ONPREM_DB_PASSWORD="dummy-app-only", JWT_SECRET="dummy-jwt-only",
+               CORS_ORIGIN="https://localhost:8444", COUPON_NATIVE_POSTING_ENABLED="false",
+               DISABLE_BACKGROUND_WORKERS="true", ENFORCE_PASSWORD_CHANGE="true")
+    migration = dict(target, DB_OPERATION="migration", MIGRATION_PROFILE="onprem",
+                     ONPREM_MIGRATOR_USER="wf_local_uat_migrator",
+                     ONPREM_MIGRATOR_PASSWORD="dummy&Migration$literal #value=1")
+    resolved = {"services": {
+        "backend": {"environment": app},
+        "migrate": {"profiles": ["migrate"], "environment": migration},
+        "frontend": {"build": {"args": {"VITE_API_BASE_URL": "/api"}}},
+        "caddy": {"environment": {"APP_DOMAIN": "localhost", "HTTP_PORT": "8080", "HTTPS_PORT": "8444"},
+                  "ports": [{"published": "8080", "target": 8080}, {"published": "8444", "target": 8444}]},
+    }}
+    sources = copy.deepcopy(resolved)
+    source_migrate = sources["services"]["migrate"]
+    source_migrate["env_file"] = [{"path": "/fixture/.env.migrator.local", "required": True}]
+    for key in ("ONPREM_MIGRATOR_USER", "ONPREM_MIGRATOR_PASSWORD"):
+        source_migrate["environment"].pop(key)
+    return {"resolved": resolved, "env_sources": sources}
+
+
+def validate(models):
+    return subprocess.run([sys.executable, "-c", VALIDATOR], input=json.dumps(models),
+                          capture_output=True, text=True, timeout=10)
+
+
+class ComposeGuardTests(unittest.TestCase):
+    def assert_accepted(self, models):
+        result = validate(models)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout + result.stderr, "")
+
+    def assert_rejected(self, models, reason):
+        result = validate(models)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(reason, result.stdout)
+        self.assertEqual(result.stderr, "")
+        for secret in ("dummy-app-only", "dummy-jwt-only", "dummy&Migration$literal #value=1"):
+            self.assertNotIn(secret, result.stdout)
+
+    def test_resolved_model_without_env_file_declaration_is_accepted(self):
+        models = fixture_models()
+        self.assertNotIn("env_file", models["resolved"]["services"]["migrate"])
+        self.assert_accepted(models)
+
+    def test_source_path_formats(self):
+        for entry in (".env.migrator.local", "/fixture/.env.migrator.local",
+                      r"C:\fixture\.env.migrator.local", {"path": "/fixture/.env.migrator.local", "required": True}):
+            with self.subTest(entry=entry):
+                models = fixture_models()
+                models["env_sources"]["services"]["migrate"]["env_file"] = [entry]
+                self.assert_accepted(models)
+
+    def test_missing_or_additional_env_files_are_rejected(self):
+        for files in ([], [".env"], [".env.migrator.local", ".env"]):
+            with self.subTest(files=files):
+                models = fixture_models()
+                models["env_sources"]["services"]["migrate"]["env_file"] = files
+                self.assert_rejected(models, "must receive only .env.migrator.local")
+
+    def test_app_credentials_are_rejected_from_migration_service(self):
+        models = fixture_models()
+        models["resolved"]["services"]["migrate"]["environment"]["JWT_SECRET"] = "dummy-jwt-only"
+        self.assert_rejected(models, "must not receive application credentials")
+
+    def test_extra_env_file_keys_are_rejected(self):
+        models = fixture_models()
+        models["resolved"]["services"]["migrate"]["environment"]["UNRELATED_SECRET"] = "dummy-app-only"
+        self.assert_rejected(models, "must supply only ONPREM_MIGRATOR_USER")
+
+    def test_explicit_migrator_credentials_are_rejected(self):
+        models = fixture_models()
+        models["env_sources"]["services"]["migrate"]["environment"]["ONPREM_MIGRATOR_USER"] = "wf_local_uat_migrator"
+        self.assert_rejected(models, "must come only from .env.migrator.local")
+
+    def test_wrong_migrator_login_is_rejected(self):
+        models = fixture_models()
+        models["resolved"]["services"]["migrate"]["environment"]["ONPREM_MIGRATOR_USER"] = "wf_local_uat_app"
+        self.assert_rejected(models, "must use the dedicated wf_local_uat_migrator")
+
+    def test_blank_or_placeholder_password_is_rejected(self):
+        for password in ("", "CHANGE_ME"):
+            with self.subTest(password=password):
+                models = fixture_models()
+                models["resolved"]["services"]["migrate"]["environment"]["ONPREM_MIGRATOR_PASSWORD"] = password
+                self.assert_rejected(models, "non-placeholder ONPREM_MIGRATOR_PASSWORD")
+
+    def test_production_target_is_rejected(self):
+        models = fixture_models()
+        for service in ("backend", "migrate"):
+            models["resolved"]["services"][service]["environment"]["ONPREM_DB_NAME"] = "dbwins_worldfert9"
+        self.assert_rejected(models, "Target is pinned to dbwins_worldfert9_uat2")
+
+    def test_reused_application_and_migrator_password_is_rejected(self):
+        models = fixture_models()
+        models["resolved"]["services"]["backend"]["environment"]["ONPREM_DB_PASSWORD"] = models["resolved"]["services"]["migrate"]["environment"]["ONPREM_MIGRATOR_PASSWORD"]
+        self.assert_rejected(models, "Application and migrator passwords must be different")
+
+    def test_desktop_host_and_private_ipv4_are_accepted(self):
+        for host in ("host.docker.internal", "172.21.48.1", "10.0.0.1"):
+            with self.subTest(host=host):
+                models = fixture_models()
+                for service in ("backend", "migrate"):
+                    models["resolved"]["services"][service]["environment"]["ONPREM_DB_SERVER"] = host
+                self.assert_accepted(models)
+
+    def test_other_hostnames_public_and_loopback_endpoints_are_rejected(self):
+        for host in ("unapproved.example", "localhost", "127.0.0.1", "8.8.8.8", "0.0.0.0"):
+            with self.subTest(host=host):
+                models = fixture_models()
+                for service in ("backend", "migrate"):
+                    models["resolved"]["services"][service]["environment"]["ONPREM_DB_SERVER"] = host
+                self.assert_rejected(models, "ONPREM_DB_SERVER must be")
+
+    def test_failure_summary_emits_only_fixed_labels(self):
+        helper = ROOT / "docs/deploy/onprem/migration-failure-summary.py"
+        for message, expected in (
+            ("Failed to connect: EHOSTUNREACH Password=Secret&P@ss$keep;", "TCP_OR_DNS_FAILURE"),
+            ("Login failed for user 'private-account' password=Secret&P@ss$keep; ELOGIN", "SQL_LOGIN_FAILURE"),
+            ("SSL handshake unsupported protocol Secret&P@ss$keep;", "TLS_OR_ENCRYPTION_FAILURE"),
+            ("ONPREM SAFETY VIOLATION: private-account Secret&P@ss$keep;", "TARGET_GUARD_FAILURE"),
+            ("ORIGINAL_HASH_DRIFT: checksum mismatch Secret&P@ss$keep;", "MIGRATION_DRIFT"),
+            ("Unknown private message Secret&P@ss$keep;", "UNCLASSIFIED_FAILURE"),
+        ):
+            with self.subTest(expected=expected):
+                result = subprocess.run([sys.executable, str(helper)], input=message, text=True, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 0)
+                self.assertIn("MIGRATION_DIAGNOSTIC=" + expected, result.stdout)
+                self.assertNotIn("Secret&P@ss$keep", result.stdout + result.stderr)
+                self.assertNotIn("private-account", result.stdout + result.stderr)
+
+    def test_pinned_sql2008_artifacts_match_policy_bytes(self):
+        policy = json.loads((ROOT / "backend/migration-policy.json").read_text(encoding="utf-8"))
+        for filename, override in policy["dialectOverrides"].items():
+            artifacts = (
+                (ROOT / "backend/migrations" / filename, override["originalHash"]),
+                (ROOT / "backend/migrations/compat/sql2008" / override["executedFile"], override["executedHash"]),
+            )
+            for path, expected in artifacts:
+                with self.subTest(artifact=path.name):
+                    self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), expected,
+                                     "Migration artifact bytes differ from the pinned policy; check checkout line endings.")
+
+    @unittest.skipUnless(shutil.which("docker"), "Docker CLI not installed")
+    def test_actual_compose_resolution_with_dummy_special_characters(self):
+        with tempfile.TemporaryDirectory(prefix=".uat-compose-guard-", dir=ROOT) as tmp:
+            directory = Path(tmp).resolve()
+            self.assertEqual(directory.parent, ROOT.resolve())
+            compose_file = directory / "docker-compose.yml"
+            compose_file.write_text((ROOT / "docker-compose.yml").read_text(encoding="utf-8"), encoding="utf-8")
+            app = fixture_models()["resolved"]["services"]["backend"]["environment"]
+            settings = dict(app, APP_DOMAIN="localhost", HTTP_PORT="8080", HTTPS_PORT="8444", VITE_API_BASE_URL="/api")
+            fixture_env = directory / "fixture.env"
+            fixture_env.write_text("".join(f"{key}={value}\n" for key, value in settings.items()), encoding="utf-8")
+            (directory / ".env.migrator.local").write_text(
+                "ONPREM_MIGRATOR_USER=wf_local_uat_migrator\n"
+                "ONPREM_MIGRATOR_PASSWORD='dummy&Migration$literal #value=1'\n", encoding="utf-8")
+            env = {key: value for key, value in os.environ.items()
+                   if not key.startswith(("COMPOSE_", "ONPREM_")) and key not in settings}
+            command = [shutil.which("docker"), "compose", "--project-directory", tmp,
+                       "-f", str(compose_file), "--env-file", str(fixture_env), "--profile", "migrate", "config"]
+            models = {}
+            for name, flags in (("resolved", []), ("env_sources", ["--no-env-resolution"])):
+                result = subprocess.run(command + flags + ["--format", "json"], env=env,
+                                        capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, f"Dummy Compose render failed: {name} (exit {result.returncode})")
+                models[name] = json.loads(result.stdout)
+            self.assertIn("ONPREM_MIGRATOR_PASSWORD", models["resolved"]["services"]["migrate"]["environment"])
+            self.assertNotIn("env_file", models["resolved"]["services"]["migrate"])
+            self.assertTrue(models["env_sources"]["services"]["migrate"]["env_file"])
+            self.assert_accepted(models)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

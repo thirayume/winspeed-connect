@@ -120,3 +120,10 @@ docs/deploy/onprem/*
 !docs/deploy/onprem/Caddyfile.uat
 !docs/deploy/onprem/deploy-wsl.bat
 !docs/deploy/onprem/wsl-deploy.sh
+
+!docs/deploy/onprem/New-Uat2AdminSql.ps1
+!docs/deploy/onprem/migration-failure-summary.py
+!docs/deploy/onprem/uat2-deploy-brief.md
+!docs/deploy/onprem/sql/
+docs/deploy/onprem/sql/*
+!docs/deploy/onprem/sql/local-uat2-principals.sql

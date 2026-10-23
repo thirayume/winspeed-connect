@@ -5,7 +5,7 @@
  * the office SQL Server database that WINSpeed uses, over the LAN/VPN.
  *
  * The approved tuple lives in the server's .env, not in this public repository: the server, the database, the two
- * logins (app and migrator, made by deploy/onprem/sql/office-logins.sql) and the engine version. Every connection is
+ * logins (app and migrator, made by docs/deploy/onprem/sql/office-logins.sql) and the engine version. Every connection is
  * checked against it before use, as for the local targets: the right server and database, the expected login, no
  * elevated server role, over TCP. Nothing falls back to another database and sa is refused.
  *
@@ -28,8 +28,15 @@ const IDENTITY_SQL = `
     IS_SRVROLEMEMBER('sysadmin') AS isSysadmin,
     IS_SRVROLEMEMBER('securityadmin') AS isSecurityadmin,
     IS_SRVROLEMEMBER('serveradmin') AS isServeradmin,
+    IS_SRVROLEMEMBER('setupadmin') AS isSetupadmin,
+    IS_SRVROLEMEMBER('processadmin') AS isProcessadmin,
+    IS_SRVROLEMEMBER('diskadmin') AS isDiskadmin,
     IS_SRVROLEMEMBER('dbcreator') AS isDbcreator,
-    HAS_PERMS_BY_NAME(null, null, 'CONTROL SERVER') AS hasControlServer`;
+    IS_SRVROLEMEMBER('bulkadmin') AS isBulkadmin,
+    HAS_DBACCESS('dbwins_worldfert9') AS hasProdAccess,
+    HAS_PERMS_BY_NAME(null, null, 'CONTROL SERVER') AS hasControlServer,
+    IS_ROLEMEMBER('db_owner') AS isDbOwner,
+    HAS_PERMS_BY_NAME(null, 'DATABASE', 'CONTROL') AS hasControlDatabase`;
 
 const isMigratorOp = operation => operation === 'migration' || operation === 'migrator';
 
@@ -44,7 +51,7 @@ function onpremTuple(env = process.env, operation = 'runtime') {
 
   const login = String(env[userKey]).trim();
   if (/^sa$/i.test(login)) {
-    throw new Error('SECURITY_ERROR: onprem never connects as sa; use the logins made by deploy/onprem/sql/office-logins.sql');
+    throw new Error('SECURITY_ERROR: onprem never connects as sa; use the logins made by docs/deploy/onprem/sql/office-logins.sql');
   }
   const port = env.ONPREM_DB_PORT ? Number(env.ONPREM_DB_PORT) : null;
   if (port !== null && !(Number.isInteger(port) && port > 0 && port < 65536)) throw new Error(`ONPREM_DB_PORT "${env.ONPREM_DB_PORT}" is not a port`);
@@ -124,8 +131,15 @@ function validateOnpremTargetRecord(row, env = process.env, { operation = 'runti
   assertZero(row, 'isSysadmin', "IS_SRVROLEMEMBER('sysadmin')");
   assertZero(row, 'isSecurityadmin', "IS_SRVROLEMEMBER('securityadmin')");
   assertZero(row, 'isServeradmin', "IS_SRVROLEMEMBER('serveradmin')");
+  assertZero(row, 'isSetupadmin', "IS_SRVROLEMEMBER('setupadmin')");
+  assertZero(row, 'processadmin' in row ? 'processadmin' : 'isProcessadmin', "IS_SRVROLEMEMBER('processadmin')");
+  assertZero(row, 'diskadmin' in row ? 'diskadmin' : 'isDiskadmin', "IS_SRVROLEMEMBER('diskadmin')");
   assertZero(row, 'isDbcreator', "IS_SRVROLEMEMBER('dbcreator')");
+  assertZero(row, 'bulkadmin' in row ? 'bulkadmin' : 'isBulkadmin', "IS_SRVROLEMEMBER('bulkadmin')");
+  assertZero(row, 'hasProdAccess', "HAS_DBACCESS('dbwins_worldfert9')");
   assertZero(row, 'hasControlServer', 'CONTROL SERVER');
+  assertZero(row, 'dbOwner' in row ? 'dbOwner' : 'isDbOwner', "IS_ROLEMEMBER('db_owner')");
+  assertZero(row, 'hasControlDatabase', 'CONTROL DATABASE');
   if (lc(row.netTransport) !== 'tcp') {
     throw new Error(`ONPREM SAFETY VIOLATION: transport "${row.netTransport}", expected TCP`);
   }
