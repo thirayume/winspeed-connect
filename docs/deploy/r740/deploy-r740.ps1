@@ -25,6 +25,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
+# Windows PowerShell (.NET Framework) writes the console input encoding's BOM first into a
+# child's redirected stdin; bash would then read the BOM as part of the first line.
+[Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false
 
 function Fail([string]$message) { Write-Host "ERROR: $message" -ForegroundColor Red; exit 1 }
 function Confirm-Word([string]$prompt, [string]$word) {
@@ -88,6 +91,20 @@ function Invoke-Bootstrap([string]$phase, [string]$planId) {
   }
   $process.WaitForExit()
   [pscustomobject]@{ ExitCode = $process.ExitCode; Lines = $lines }
+}
+
+# Starting a cold WSL VM can briefly reset the server's network connections, so start it
+# with a short call (retried) before the long-running plan.
+for ($attempt = 1; $attempt -le 3; $attempt++) {
+  # Windows PowerShell turns redirected native stderr into errors; do not let that stop the retry.
+  $ErrorActionPreference = 'Continue'
+  & $ssh -i $KeyFile -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o LogLevel=ERROR `
+    -o ConnectTimeout=15 "$SshUser@$ServerHost" "wsl.exe --distribution $Distro --exec true" 2>$null | Out-Null
+  $warmExit = $LASTEXITCODE
+  $ErrorActionPreference = 'Stop'
+  if ($warmExit -eq 0) { break }
+  if ($attempt -eq 3) { Fail "cannot reach WSL $Distro on $ServerHost over SSH." }
+  Start-Sleep -Seconds 5
 }
 
 Write-Host ''

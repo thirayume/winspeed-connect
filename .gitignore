@@ -134,6 +134,7 @@ docs/deploy/r740/*
 !docs/deploy/r740/README.md
 !docs/deploy/r740/deploy.bat
 !docs/deploy/r740/deploy-r740.ps1
+!docs/deploy/r740/New-R740AdminSql.ps1
 !docs/deploy/r740/bootstrap.sh
 !docs/deploy/r740/r740-deploy.sh
 !docs/deploy/r740/validate-compose.py

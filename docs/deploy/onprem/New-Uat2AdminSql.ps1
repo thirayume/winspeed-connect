@@ -3,7 +3,11 @@ param(
     [string]$Username,
     [System.Security.SecureString]$Password,
     [string]$DisplayName = 'UAT Administrator',
-    [string]$OutputPath
+    [string]$OutputPath,
+    # Defaults are the local UAT2 target; docs/deploy/r740/New-R740AdminSql.ps1 passes R740 UAT.
+    [ValidatePattern('^[A-Za-z0-9_-]{1,128}$')][string]$Database = 'dbwins_worldfert9_uat2',
+    [ValidatePattern('^[A-Za-z0-9_-]{1,64}(\\[A-Za-z0-9_-]{1,64})?$')][string]$ServerName = 'AMYOU-YOGA7\V2008R2',
+    [string]$BcryptModule
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,6 +16,7 @@ $taskPayload = $null
 $taskPasswordPointer = [IntPtr]::Zero
 $taskProcess = $null
 $taskInputBytes = $null
+$taskInputEncoding = $null
 
 try {
     $taskRepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..'))
@@ -50,7 +55,7 @@ try {
 '@
     $taskInput = @{ password = $taskPlainPassword }
     $taskNode = Get-Command node.exe -ErrorAction SilentlyContinue
-    $taskBcryptModule = Join-Path $taskRepoRoot 'backend\node_modules\bcrypt'
+    $taskBcryptModule = if ($BcryptModule) { $BcryptModule } else { Join-Path $taskRepoRoot 'backend\node_modules\bcrypt' }
     if ($taskNode -and (Test-Path -LiteralPath (Join-Path $taskBcryptModule 'package.json'))) {
         $taskInput.modulePath = $taskBcryptModule
         $taskExecutable = $taskNode.Source
@@ -64,6 +69,10 @@ try {
     $taskPayload = ConvertTo-Json -InputObject $taskInput -Compress
     # PowerShell 5.1 can still use ASCII for native pipelines in a child script.
     # Write UTF-8 bytes to stdin directly so non-ASCII passwords are never replaced.
+    # .NET Framework writes the console input encoding's BOM into redirected stdin first,
+    # which breaks JSON.parse when the console uses UTF-8 (code page 65001).
+    $taskInputEncoding = [Console]::InputEncoding
+    [Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false
     $taskStartInfo = New-Object System.Diagnostics.ProcessStartInfo
     $taskStartInfo.FileName = $taskExecutable
     $taskStartInfo.Arguments = $taskArguments
@@ -95,10 +104,10 @@ try {
     $taskUsernameLiteral = $Username.Replace("'", "''")
     $taskDisplayNameLiteral = $DisplayName.Replace("'", "''")
     $taskSql = @"
--- Generated locally for UAT2. Run the whole file in SSMS as a SQL administrator.
+-- Generated locally for $Database on $ServerName. Run the whole file in SSMS as a SQL administrator.
 -- Password is bcrypt, not plaintext. This creates an app account, not a SQL login.
 -- Existing accounts are never reset. Change the password in the app profile after login.
-USE [dbwins_worldfert9_uat2];
+USE [$Database];
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 -- Required by SQL Server 2008 R2 filtered indexes on this table.
@@ -115,8 +124,8 @@ DECLARE @Username nvarchar(50) = N'$taskUsernameLiteral';
 DECLARE @PasswordHash nvarchar(255) = N'$taskHash';
 DECLARE @DisplayName nvarchar(100) = N'$taskDisplayNameLiteral';
 
-IF CONVERT(nvarchar(128), SERVERPROPERTY('ServerName')) <> N'AMYOU-YOGA7\V2008R2'
-   OR DB_NAME() <> N'dbwins_worldfert9_uat2'
+IF CONVERT(nvarchar(128), SERVERPROPERTY('ServerName')) <> N'$ServerName'
+   OR DB_NAME() <> N'$Database'
 BEGIN
     RAISERROR(N'STOP: Wrong SQL Server or database.', 16, 1);
     RETURN;
@@ -125,7 +134,7 @@ END;
 IF OBJECT_ID(N'wf.AppUser', N'U') IS NULL
    OR COL_LENGTH(N'wf.AppUser', N'MustChangePassword') IS NULL
 BEGIN
-    RAISERROR(N'STOP: Complete the UAT2 migrations first.', 16, 1);
+    RAISERROR(N'STOP: Complete the $Database migrations first.', 16, 1);
     RETURN;
 END;
 
@@ -173,4 +182,5 @@ END CATCH;
     $taskInput = $null
     if ($null -ne $taskInputBytes) { [Array]::Clear($taskInputBytes, 0, $taskInputBytes.Length) }
     if ($null -ne $taskProcess) { $taskProcess.Dispose() }
+    if ($null -ne $taskInputEncoding) { [Console]::InputEncoding = $taskInputEncoding }
 }

@@ -151,6 +151,14 @@ done
 
 echo "Starting frontend and Caddy ..."
 compose up -d --no-build || fail "frontend/Caddy start failed."
+# Public root certificate of this stack's internal CA, to install on client devices.
+for _ in $(seq 1 10); do
+  if compose cp caddy:/data/caddy/pki/authorities/local/root.crt "$ROOT/caddy-root.crt" >/dev/null 2>&1; then
+    echo "Caddy root certificate: D:\\SaleApp\\$ENV_NAME\\caddy-root.crt"
+    break
+  fi
+  sleep 2
+done
 PS_TABLE="$(compose ps --format 'table {{.Service}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null || true)"
 printf '%s\n' "$PS_TABLE"
 RESULT="DEPLOYED ($PLAN_SUMMARY)"

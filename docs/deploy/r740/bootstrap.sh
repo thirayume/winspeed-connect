@@ -50,8 +50,9 @@ REMOTE_HEAD="$(g rev-parse "refs/remotes/origin/$BRANCH")"
 [[ "$REMOTE_HEAD" == "$COMMIT" ]] \
   || fail "requested commit ${COMMIT:0:12} is not the current origin/$BRANCH head (${REMOTE_HEAD:0:12}); fetch and retry."
 
-# Tracked files must not have local edits; ignored files are left alone.
-if g rev-parse --verify --quiet HEAD >/dev/null && [[ -n "$(g status --porcelain --untracked-files=no)" ]]; then
+# Tracked files must not have local edits; ignored files are left alone. A clone that was
+# never checked out has no index, and git status would list every file as deleted.
+if [[ -f "$APP/.git/index" ]] && [[ -n "$(g status --porcelain --untracked-files=no)" ]]; then
   fail "$APP has local changes to tracked files; nothing was deployed."
 fi
 g -c advice.detachedHead=false checkout --quiet --force --detach "$COMMIT" || fail "git checkout failed."

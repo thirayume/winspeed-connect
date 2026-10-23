@@ -68,6 +68,17 @@ from its backup or inspect it before running again.
 Before the first apply, the plan is expected to list most migrations as pending because
 `dbwins_worldfert9-uat` was restored from Live Production (data of 2026-10-23 18:00).
 
+## After the first UAT deploy
+
+- **First app administrator:** on the dev PC run
+  `powershell -NoProfile -ExecutionPolicy Bypass -File docs\deploy\r740\New-R740AdminSql.ps1`,
+  type a username and password (hidden), and give IT the generated, Git-ignored
+  `docs\deploy\r740\sql\r740-uat-create-admin.local.sql` to run in SSMS. It holds only a
+  bcrypt hash; the account must change its password at first sign-in.
+- **Browser trust:** each deploy copies the stack's public Caddy root certificate to
+  `D:\SaleApp\uat\caddy-root.crt`. Install it once per client device (elevated):
+  `certutil -addstore -f Root caddy-root.crt`. Never copy anything else from Caddy's data.
+
 ## Guards worth knowing
 
 - The app and migrator refuse to run if their login can open `dbwins_worldfert9`, is in an
