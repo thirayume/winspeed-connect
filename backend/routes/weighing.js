@@ -359,8 +359,8 @@ router.get('/by-customer', guard(async (req, res) => send(res, await run(req, `
  * ใบชั่งที่ผูกกับใบสั่งขาย — เชื่อมด้วย `SPID` เท่านั้น
  *
  * `SPID` ชี้ที่ **ใบสั่งจอง (DocuType 103)** เสมอ (141/141 ในข้อมูลที่ตรวจ)
- * ใบส่งขาย (104) ใช้เลขที่เดียวกับใบสั่งจอง จึงดึงต่อได้ด้วย `DocuNo` + `DocuType = 104`
- * ทำเป็น subquery แยก ไม่ join ตรง เพราะ `DocuNo` ไม่ unique ข้าม `DocuType`
+ * ใบส่งขาย (104) เชื่อมกลับด้วย SODT.RefSOID ไม่ใช่เลขที่เอกสารที่อาจซ้ำกัน
+ * หลายบรรทัดใน 104 เดียวกันนับเป็นใบเดียว; หลายใบคืนจำนวนและไม่เลือก TOP 1 แทนผู้ใช้
  */
 router.get('/by-so', guard(async (req, res) => send(res, await run(req, `
   SELECT TOP ${LIMIT}
@@ -371,10 +371,16 @@ router.get('/by-so', guard(async (req, res) => send(res, await run(req, `
          h.SPID,
          bk.DocuNo AS BookingNo, CONVERT(varchar(10), bk.DocuDate, 120) AS BookingDate,
          bk.AppvDocuNo, bk.CouponFlag,
-         (SELECT TOP 1 dn.DocuNo FROM dbo.SOHD dn
-           WHERE dn.DocuType = 104 AND dn.DocuNo = bk.DocuNo) AS DeliveryNoteNo
+         delivery.DeliveryNoteNo, delivery.DeliveryNoteCount
     FROM dbo.WGHD h
     LEFT JOIN dbo.SOHD bk ON bk.SOID = h.SPID AND bk.DocuType = 103
+    OUTER APPLY (
+      SELECT COUNT(DISTINCT dn.SOID) AS DeliveryNoteCount,
+             CASE WHEN COUNT(DISTINCT dn.SOID) = 1 THEN MAX(dn.DocuNo) END AS DeliveryNoteNo
+        FROM dbo.SODT link
+        JOIN dbo.SOHD dn ON dn.SOID = link.SOID AND dn.DocuType = 104
+       WHERE link.RefSOID = bk.SOID
+    ) delivery
    WHERE h.WGType = 'SO' AND CAST(h.DateReg AS date) BETWEEN @from AND @to
    ORDER BY h.DateReg DESC, h.Id DESC`))));
 
