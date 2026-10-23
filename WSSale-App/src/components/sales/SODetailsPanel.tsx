@@ -11,6 +11,7 @@ import { useAuthStore } from '../../store/auth-store';
 import { canViewRebateAmounts } from '../../utils/permissions';
 import { formatThaiDate } from '../../utils/date';
 import type { SalesOrder } from '../../types';
+import { NativeAiApprovalButton } from './NativeAiApprovalButton';
 
 function formatDateTime(value?: string | null) {
   if (!value) return '-';
@@ -375,6 +376,7 @@ export function SODetailsPanel({
 
       {/* Actions */}
       <div className="border-t border-gray-100 p-4 space-y-2.5">
+        {so.status === 'PENDING_APPROVAL' && so.id && <NativeAiApprovalButton key={so.id} soid={so.id} onApproved={onUpdate} />}
         {so.status === 'DRAFT' && (
           <div className="flex flex-col gap-2">
             {so.tripId && Number(so.tripId) > 0 && so.truckPlate !== 'ตั๋วคุม' ? (

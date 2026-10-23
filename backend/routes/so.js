@@ -19,6 +19,7 @@ const { broadcast } = require('../services/socket');
 const { enqueue } = require('../services/outbox');
 const { writeAudit, auditUser, SCREEN } = require('../services/winspeed-audit');
 const { evaluateLinePrice, createPriceApprovalRequest, calculatePricingFingerprint, resolveAuthoritativePrice } = require('../services/price-authority');
+const {initialBookingAi,aiHttpError}=require('../services/initial-booking-ai');
 
 let _has141Cache = null;
 async function checkMigration141() {
@@ -36,6 +37,20 @@ async function checkMigration141() {
 }
 
 router.use(requireAuth);
+
+// Typed native SOID only: never fall back from a draft ID or a non-unique DocuNo.
+// The service rechecks current actors and source ownership under transaction locks.
+router.get('/:id/native-ai/preview',requireCapability('so.approve-native'),async(req,res)=>{
+  try { res.json(await initialBookingAi({soid:req.params.id,user:req.user,preview:true})); }
+  catch(e){const x=aiHttpError(e);res.status(x.status).json({code:x.code,message:x.code});}
+});
+router.post('/:id/native-ai',requireCapability('so.approve-native'),async(req,res)=>{
+  try {
+    const result=await initialBookingAi({soid:req.params.id,user:req.user,fingerprint:req.body?.fingerprint,requestId:req.body?.requestId});
+    if(!result.replayed)broadcast('so_updated',{id:req.params.id,action:'native_ai_approved'});
+    res.json(result);
+  }catch(e){const x=aiHttpError(e);res.status(x.status).json({code:x.code,message:x.code});}
+});
 
 // PascalCase → camelCase (DB คอลัมน์เป็น PascalCase, frontend type เป็น camelCase)
 const camel = (s) => s.charAt(0).toLowerCase() + s.slice(1);

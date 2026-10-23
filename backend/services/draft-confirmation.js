@@ -8,6 +8,7 @@ const {calculateConfirmationPickupDue,normalizeDateString,getBangkokDateString,d
 const {advanceAppliedClaimAtConfirm}=require('./rebate-claim-apply');
 const {matchGiveawayItem,findMatchingQuota}=require('./giveaway-matcher');
 const {linePieces}=require('./giveaway-quota');
+const {captureBookingOrigin}=require('./initial-booking-ai');
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status});};
 function transactionQuery(tx) { return async (text,inputs={})=>{
   const r=new sql.Request(tx);for(const [k,{type,value}] of Object.entries(inputs))r.input(k,type,value);return r.query(text);
@@ -264,6 +265,7 @@ async function confirmDraft({tx:confirmationTx,draftId,user,ip,expectedRevision,
 
     // 3. Audit log (บันทึกโดยใช้ newSoid)
     await audit(confirmationTx, newSoid, req.user.sub, 'CONFIRMED', 'DRAFT', 'CONFIRMED', null, req.ip);
+    await captureBookingOrigin({query:confirmationQuery,soid:newSoid,sourceDraftId:so.Id,salesUserId:so.SalesUserId,user});
     
     // ยกเลิก 03/09/2569 — ไม่ผลักใบชั่งล่วงหน้าเข้า MySQL อีกแล้ว
     // insertPreWeighTicket(so).catch(err => console.error('[truckscale] Push error:', err));

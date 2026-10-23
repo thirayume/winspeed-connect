@@ -87,6 +87,17 @@ Verified on 23 October 2026: the guarded deploy completed with 149 unchanged mig
 
 ## Production isolation
 
+The optional `NATIVE_BOOKING_AI_ENABLED=true` pilot requires migration 152 and is
+restricted in both service and procedure to the pinned local UAT2 instance/database/DBID.
+Its default is false. It supports only the unchanged initial, single-line, zero-tax,
+zero-discount app-origin booking without references, descendants, coupons, picking
+or weighing. Enabling it captures a native fingerprint during each new confirmation;
+bookings created before this capture cannot be adopted automatically. The booking
+detail and Paper Trail offer the separate AI approval action for authorized mapped
+employees. Number, approval, durable request receipt and both audits commit together.
+Retry the same request to recover its receipt; changing the request conflicts. This
+pilot does not enable 104, native 116, invoice posting or production deployment.
+
 The migration runner is pinned by the wrapper to `dbwins_worldfert9_uat2`. The on-prem SQL identity guard requires the app and migrator logins to have no direct access to `dbwins_worldfert9`, rejects elevated roles, and the SQL 2008 profile excludes migration 074. The runner also blocks an explicit cross-database production write in a migration batch. The UAT2 copy is expected to change; the original production database should not be targeted. These source checks do not prove that no trigger, stored procedure, linked server, or other indirect mechanism could produce side effects. If the production-access check is nonzero or unknown, deployment stops; do not remove the guard or change target names to proceed.
 
 ### Account status after administrator changes

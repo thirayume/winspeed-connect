@@ -65,6 +65,7 @@ const ACTIONS = Object.freeze({
   'so.cancel': ['SALES', 'C_LEVEL', 'ADMIN'],
   'so.verify': ['COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'so.confirm': ['SALES', 'COUNTER_SALES', 'C_LEVEL', 'ADMIN'],
+  'so.approve-native': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'trip.view': ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'quotation.create': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'quotation.manage': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
@@ -82,7 +83,8 @@ function capabilitiesFor(role, { positionCode = null } = {}) {
   const teamScoped = r === 'MANAGER' && Boolean(positionCode);
   return {
     menus: Object.keys(MENUS).filter(k => MENUS[k].includes(r) && !(teamScoped && k === 'reports')),
-    actions: Object.keys(ACTIONS).filter(k => ACTIONS[k].includes(r)),
+    actions: Object.keys(ACTIONS).filter(k => ACTIONS[k].includes(r)
+      && (k !== 'so.approve-native' || process.env.NATIVE_BOOKING_AI_ENABLED === 'true')),
   };
 }
 

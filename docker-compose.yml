@@ -30,6 +30,8 @@ services:
       ENFORCE_PASSWORD_CHANGE: "true"
       COUPON_NATIVE_POSTING_ENABLED: "false"
       DISABLE_BACKGROUND_WORKERS: "true"
+      # Initial-only UAT2 AI contract. Disabled until explicitly enabled for local UAT.
+      NATIVE_BOOKING_AI_ENABLED: ${NATIVE_BOOKING_AI_ENABLED:-false}
       EXPORT_OUTPUT_PATH: /app/exports
     volumes:
       - backend-exports:/app/exports

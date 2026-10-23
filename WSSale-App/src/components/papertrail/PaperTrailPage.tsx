@@ -14,6 +14,7 @@ import { RequestActionModal, type RequestActionType } from './RequestActionModal
 import { SOCancelDeleteModal } from '../common/SOCancelDeleteModal';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { QuickShipModal } from '../sales/QuickShipModal';
+import { NativeAiApprovalButton } from '../sales/NativeAiApprovalButton';
 
 import { UnlockReviewModal } from './UnlockReviewModal';
 import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
@@ -369,6 +370,7 @@ export function PaperTrailPage() {
                                     <ShieldCheck size={11} /> ตรวจ
                                   </button>
                                 )}
+                                {card.status === 'PENDING_APPROVAL' && <NativeAiApprovalButton soid={card.id} onApproved={load} />}
                                 {canAdvance && !(card.truckPlate === 'ตั๋วคุม' && card.status !== 'DRAFT') && (
                                   card.status === 'DRAFT' && card.tripId ? (
                                     <span
