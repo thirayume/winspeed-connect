@@ -169,6 +169,10 @@ try:
         stop("Application and migration logins must be different principals.")
 
     caddy_env = caddy.get("environment", {})
+    if caddy.get("image") != "worldfert-saleapp-uat-caddy:local" or any(
+        mount.get("type") == "bind" for mount in caddy.get("volumes", [])
+    ):
+        stop("Caddy must use the built UAT image without host bind mounts.")
     if not isinstance(caddy_env, dict):
         stop("Caddy environment is not in the expected Compose format.")
     app_domain = str(caddy_env.get("APP_DOMAIN", "")).strip()
@@ -211,8 +215,8 @@ report_migration_failure() {
 
 echo "UAT target and credential separation checks passed; resolved settings were not displayed."
 echo "Caddy HTTP/HTTPS port and CORS checks passed."
-echo "Building backend/frontend images only; no containers or database writes yet..."
-compose build backend frontend || fail "Image build failed; migration and service startup were not attempted."
+echo "Building backend/frontend/Caddy images only; no containers or database writes yet..."
+compose build backend frontend caddy || fail "Image build failed; migration and service startup were not attempted."
 
 echo "Running read-only migration plan for $TARGET_DATABASE..."
 if ! PLAN_OUTPUT="$(compose --profile migrate run --rm --no-deps migrate --plan --profile=onprem 2>&1)"; then

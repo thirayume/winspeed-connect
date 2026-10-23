@@ -46,7 +46,10 @@ def fixture_models():
         "backend": {"environment": app},
         "migrate": {"profiles": ["migrate"], "environment": migration},
         "frontend": {"build": {"args": {"VITE_API_BASE_URL": "/api"}}},
-        "caddy": {"environment": {"APP_DOMAIN": "localhost", "HTTP_PORT": "8080", "HTTPS_PORT": "8444"},
+        "caddy": {"image": "worldfert-saleapp-uat-caddy:local",
+                  "volumes": [{"type": "volume", "source": "caddy-data", "target": "/data"},
+                              {"type": "volume", "source": "caddy-config", "target": "/config"}],
+                  "environment": {"APP_DOMAIN": "localhost", "HTTP_PORT": "8080", "HTTPS_PORT": "8444"},
                   "ports": [{"published": "8080", "target": 8080}, {"published": "8444", "target": 8444}]},
     }}
     sources = copy.deepcopy(resolved)
@@ -63,6 +66,19 @@ def validate(models):
 
 
 class ComposeGuardTests(unittest.TestCase):
+    def test_caddy_host_bind_is_rejected(self):
+        models = fixture_models()
+        models["resolved"]["services"]["caddy"]["volumes"].append(
+            {"type": "bind", "source": "/fixture/Caddyfile.uat", "target": "/etc/caddy/Caddyfile"})
+        self.assert_rejected(models, "without host bind mounts")
+
+    def test_caddy_context_excludes_local_sql_and_settings(self):
+        context = ROOT / "docs/deploy/onprem"
+        rules = (context / ".dockerignore").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(rules, ["*", "!Dockerfile.caddy", "!Caddyfile.uat"])
+        dockerfile = (context / "Dockerfile.caddy").read_text(encoding="utf-8")
+        self.assertEqual(dockerfile.splitlines(), ["FROM caddy:2-alpine", "COPY Caddyfile.uat /etc/caddy/Caddyfile"])
+
     def assert_accepted(self, models):
         result = validate(models)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

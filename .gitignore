@@ -118,6 +118,8 @@ docs/deploy/*
 docs/deploy/onprem/*
 !docs/deploy/onprem/uat-compose-quickstart.md
 !docs/deploy/onprem/Caddyfile.uat
+!docs/deploy/onprem/Dockerfile.caddy
+!docs/deploy/onprem/.dockerignore
 !docs/deploy/onprem/deploy-wsl.bat
 !docs/deploy/onprem/wsl-deploy.sh
 

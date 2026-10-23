@@ -79,7 +79,10 @@ services:
         condition: service_healthy
 
   caddy:
-    image: caddy:2-alpine
+    image: worldfert-saleapp-uat-caddy:local
+    build:
+      context: ./docs/deploy/onprem
+      dockerfile: Dockerfile.caddy
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-8080}:${HTTP_PORT:-8080}"
@@ -90,7 +93,6 @@ services:
       HTTPS_PORT: ${HTTPS_PORT:-8444}
       TZ: ${TZ:-Asia/Bangkok}
     volumes:
-      - ./docs/deploy/onprem/Caddyfile.uat:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

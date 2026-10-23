@@ -27,6 +27,8 @@ Get-NetTCPConnection -State Listen -LocalPort 8081,8444 -ErrorAction SilentlyCon
 
 If a non-UAT service owns either selected port, select another free port in `.env` or resolve the conflict with its owner. Do not terminate an unidentified process. The wrapper validates that the published ports, Caddy listeners, and CORS origin agree. If you change the ports in `.env`, rerun the same check with those values.
 
+The deploy wrapper also builds the UAT Caddy image with its public `Caddyfile.uat` inside. This avoids stale WSL file bind mounts after Docker Desktop restarts. Only the Dockerfile and Caddyfile enter that build context; local settings and generated SQL are excluded. Certificates remain in the existing named Caddy volumes. After changing Caddy configuration, use the same deployment menu to rebuild and redeploy it.
+
 ## 2. Create the two SQL logins once
 
 In SSMS, connect to `AMYOU-YOGA7\V2008R2` as the SQL administrator. Under **Security → Logins**, confirm `wf_local_uat_app` is enabled and create `wf_local_uat_migrator` if it is missing. Use SQL Server authentication and set or reset separate strong passwords in the SSMS login UI. Do not add either login to a server role. Store each password only in its matching local env file.
