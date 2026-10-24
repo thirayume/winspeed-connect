@@ -43,9 +43,11 @@ try {
       Select-Object -First 1 -ExpandProperty FullName
   }
   if (-not $sqlcmd) { throw 'sqlcmd.exe not found on this server.' }
-  $auth = if ($SqlUser) { @('-U', $SqlUser, '-P', $SqlPassword) } else { @('-E') }
+  $sqlArgs = @('-S', $SqlServer)
+  if ($SqlUser) { $sqlArgs += @('-U', $SqlUser, '-P', $SqlPassword) } else { $sqlArgs += '-E' }
+  $sqlArgs += @('-b', '-i', $sqlFile)
   Log "Re-mapping principals with $(Split-Path $sqlcmd -Leaf) ..."
-  $out = & $sqlcmd -S $SqlServer @auth -b -r1 -i $sqlFile 2>&1
+  $out = & $sqlcmd @sqlArgs 2>&1
   $out | ForEach-Object { Add-Content -Path $log -Value "  sql: $_" }
   if ($LASTEXITCODE -ne 0) { throw "principals SQL failed (exit $LASTEXITCODE); see $log" }
   Log "Principals re-mapped."
@@ -54,9 +56,14 @@ try {
   Log "Running the unattended UAT deploy ..."
   $driver = Join-Path $AppDir 'docs\deploy\r740\deploy-r740.ps1'
   if (-not (Test-Path $driver)) { throw "deploy driver not found: $driver (deploy UAT once from the dev PC first)" }
-  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $driver -Environment uat -OnServer -Auto -Distro $Distro 2>&1 |
-    ForEach-Object { Add-Content -Path $log -Value "  deploy: $_"; Write-Host $_ }
-  if ($LASTEXITCODE -ne 0) { throw "unattended deploy failed (exit $LASTEXITCODE); see $log" }
+  # The deploy builds images; buildx progress goes to stderr, so do not let a stderr line
+  # become a terminating error. Check the exit code instead.
+  $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $driver -Environment uat -OnServer -Auto -Distro $Distro *>&1 |
+    ForEach-Object { Add-Content -Path $log -Value ("  deploy: " + $_); Write-Host $_ }
+  $deployExit = $LASTEXITCODE
+  $ErrorActionPreference = $prev
+  if ($deployExit -ne 0) { throw "unattended deploy failed (exit $deployExit); see $log" }
 
   Log "UAT refresh complete."
   exit 0
