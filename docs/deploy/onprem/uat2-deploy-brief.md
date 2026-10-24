@@ -1,5 +1,7 @@
 # Local UAT2 deployment brief
 
+Current UAT2 restriction (25 October 2026): keep `NATIVE_DELIVERY_104_ENABLED=false` and `COUPON_NATIVE_POSTING_ENABLED=false`. The initial104 pilot used a fixed K book even for I bookings and did not issue numbered coupons. Its earlier mechanical test results do not establish correct business flow. The confirmed chains are account1 I booking → I sales order → C coupon → J invoice, and account2 K → K → D → N. Pending correction must preserve the source account and create complete numbered coupons before104 is saved. Keep existing documents for audit; do not edit applied migration153 or run a bulk coupon repair. The new service guard rejects a mismatched native104 header or retained receipt; this guard alone does not complete the writer or authorize enabling it.
+
 This procedure deploys Sale-App to the local UAT clone on `AMYOU-YOGA7\V2008R2`. The pinned database is `dbwins_worldfert9_uat2`; it is a writable copy restored from backup, not the production database. The first successful deployment can apply pending migrations to this UAT2 copy. It does not start Full Loop UAT by itself.
 
 ## 1. Prepare the clone and local settings

@@ -6,6 +6,7 @@ const { sql, wfTransaction } = require('../db');
 const { nativeFingerprint } = require('./initial-booking-ai');
 const { getVisibleScope, inScope } = require('./visible-scope');
 const { rolesFor, roleRank, ACCESS_AS_ACTOR_ROLES } = require('./role-capabilities');
+const { bookOf } = require('./account-books');
 const POLICY = 'O23-DO104-INITIAL-UAT2-v1';
 const fail = (code, status = 409) => { throw Object.assign(new Error(code), { code, status }); };
 const hash = parts => createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('hex');
@@ -110,6 +111,16 @@ async function verifyReceipt(q,r) {
  if(!r.SourceAfterHash || !r.DeliveryAfterHash || await nativeFingerprint(q,r.SourceSOID)!==r.SourceAfterHash
   || await deliveryFingerprint(q,r.DeliverySOID)!==r.DeliveryAfterHash) fail('DO_RECEIPT_DIVERGED');
 }
+async function verifyDeliveryAccount(q,sourceNo,r) {
+ const delivery=(await q(`SELECT DocuNo,DocuType FROM dbo.SOHD WITH(UPDLOCK,HOLDLOCK)
+  WHERE SOID=@delivery AND DocuType=104`,{delivery:input(sql.Int,Number(r.DeliverySOID))})).recordset?.[0];
+ if(!delivery || delivery.DocuNo!==r.DeliveryNo) fail('DO_RECEIPT_DIVERGED');
+ // bookOf also understands C/D/J/N. Those are not valid103/104 bill numbers
+ // under this initial contract, even when they map to the same account.
+ const billBook=no=>/^[IK]\d{2}-\d{5}$/.test(String(no||'')) ? bookOf(no) : null;
+ const sourceBook=billBook(sourceNo),deliveryBook=billBook(delivery.DocuNo);
+ if(!sourceBook || !deliveryBook || sourceBook!==deliveryBook) fail('DO_ACCOUNT_MISMATCH');
+}
 async function initialDelivery({operation='preview',soid,user,requestId,fingerprint,reason},options={}) {
  if(!(options.enabled??(process.env.NATIVE_DELIVERY_104_ENABLED==='true'))) fail('DO_NOT_ENABLED',503);
  if(!['preview','request','approve','apply','list'].includes(operation)) fail('DO_OPERATION_INVALID',400);
@@ -132,6 +143,7 @@ async function initialDelivery({operation='preview',soid,user,requestId,fingerpr
   if(old) {
    if(operation!=='preview' && (operation!=='apply'||old.RequestId!==requestId||old.Fingerprint!==fingerprint
     ||Number(old.AppliedById)!==who.effective||Number(old.ApplierActorId)!==who.actor)) fail('DO_REQUEST_CONFLICT');
+   await verifyDeliveryAccount(q,row.DocuNo,old);
    await verifyReceipt(q,old);return {...receiptView(old,true),completed:true};
   }
   const current=await eligible(q,row,who);
@@ -181,6 +193,7 @@ async function initialDelivery({operation='preview',soid,user,requestId,fingerpr
   const result=(await q(`EXEC wf.usp_CreateInitialDelivery @SOID=@soid,@Preview=0,@RequestId=@request,@Fingerprint=@fingerprint,@UserId=@user,@ActorId=@actor`,
    {...idInputs(soid),...requestInputs(requestId),fingerprint:input(sql.VarChar(64),fingerprint),user:input(sql.Int,who.effective),actor:input(sql.Int,who.actor)})).recordset?.[0];
   if(!result) fail('DO_RECEIPT_UNAVAILABLE',503);
+  await verifyDeliveryAccount(q,row.DocuNo,result);
   const sourceHash=await nativeFingerprint(q,soid),deliveryHash=await deliveryFingerprint(q,result.DeliverySOID);
   await q(`UPDATE wf.NativeDeliveryReceipt SET SourceAfterHash=@sourceHash,DeliveryAfterHash=@deliveryHash WHERE SourceSOID=@soid AND RequestId=@request`,
    {...idInputs(soid),...requestInputs(requestId),sourceHash:input(sql.VarChar(64),sourceHash),deliveryHash:input(sql.VarChar(64),deliveryHash)});
