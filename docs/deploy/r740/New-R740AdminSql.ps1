@@ -1,6 +1,7 @@
 <#
   New-R740AdminSql.ps1 - generate the SQL that creates the first Sale-App ADMIN account in
-  dbwins_worldfert9-uat on R740-SRV\SQL2008, after the first UAT deploy applied the migrations.
+  dbwins_worldfert9-uat on R740-SRV\SQL2008, after the first UAT deploy applied the migrations
+  (-Environment prod: dbwins_worldfert9 after the go-live deploy, file r740-prod-create-admin.local.sql).
   Run it on R740-SRV (elevated, from D:\SaleApp\uat\app) or on the dev PC:
 
     powershell -NoProfile -ExecutionPolicy Bypass -File D:\SaleApp\uat\app\docs\deploy\r740\New-R740AdminSql.ps1
@@ -14,16 +15,20 @@
 #>
 [CmdletBinding()]
 param(
+  [ValidateSet('uat', 'prod')][string]$Environment = 'uat',
   [string]$Username,
   [System.Security.SecureString]$Password,
   [string]$BcryptModule,
-  [string]$WslContainer = 'saleapp-uat-backend-1'
+  [string]$WslContainer
 )
 $ErrorActionPreference = 'Stop'
+# -Environment prod: the first admin of dbwins_worldfert9 after the go-live migrations.
+$database = if ($Environment -eq 'prod') { 'dbwins_worldfert9' } else { 'dbwins_worldfert9-uat' }
+if (-not $WslContainer) { $WslContainer = "saleapp-$Environment-backend-1" }
 $arguments = @{
-  Database = 'dbwins_worldfert9-uat'
+  Database = $database
   ServerName = 'R740-SRV\SQL2008'
-  OutputPath = Join-Path $PSScriptRoot 'sql\r740-uat-create-admin.local.sql'
+  OutputPath = Join-Path $PSScriptRoot "sql\r740-$Environment-create-admin.local.sql"
 }
 if (-not $BcryptModule -and (Get-Command node.exe -ErrorAction SilentlyContinue)) {
   # This checkout, or (in a Git worktree, which has no node_modules) the main checkout.

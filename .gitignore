@@ -140,6 +140,8 @@ docs/deploy/r740/*
 !docs/deploy/r740/validate-compose.py
 !docs/deploy/r740/uat.env.example
 !docs/deploy/r740/uat.migrator.env.example
+!docs/deploy/r740/prod.env.example
+!docs/deploy/r740/prod.migrator.env.example
 !docs/deploy/r740/targets/
 docs/deploy/r740/targets/*
 !docs/deploy/r740/targets/uat.env
@@ -147,6 +149,8 @@ docs/deploy/r740/targets/*
 !docs/deploy/r740/sql/
 docs/deploy/r740/sql/*
 !docs/deploy/r740/sql/r740-uat-principals.sql
+!docs/deploy/r740/sql/r740-prod-principals.sql
+!docs/deploy/r740/sql/r740-prod-backup.sql
 !docs/deploy/r740/client/
 docs/deploy/r740/client/*
 !docs/deploy/r740/client/Install-SaleAppCert.bat

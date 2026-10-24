@@ -20,7 +20,7 @@ const ROW = {
   dbName: 'dbwins_worldfert9_test', serverName: 'OFFICE-SQL\\SQL2008', loginName: 'wf_app', originalLogin: 'wf_app',
   productVersion: '10.50.6000.34', netTransport: 'TCP',
   isSysadmin: 0, isSecurityadmin: 0, isServeradmin: 0, isSetupadmin: 0, isProcessadmin: 0, isDiskadmin: 0,
-  isDbcreator: 0, isBulkadmin: 0, hasProdAccess: 0, hasControlServer: 0, isDbOwner: 0, hasControlDatabase: 0,
+  isDbcreator: 0, isBulkadmin: 0, hasProdAccess: 0, otherUserDbCount: 0, hasControlServer: 0, isDbOwner: 0, hasControlDatabase: 0,
 };
 
 test('every part of the approved tuple is required, and sa is refused', () => {
@@ -85,6 +85,30 @@ test('anything else is refused (elevated server roles, db_owner, control databas
   refuse({ netTransport: 'Shared memory' }, /transport/);
   refuse({}, /COUPON_NATIVE_POSTING_ENABLED/, { ...ENV, COUPON_NATIVE_POSTING_ENABLED: 'true' });
   refuse({}, /login/, ENV, 'migration');
+});
+
+test('production profile (R740 go-live): only the live database, and no other user database', () => {
+  const PROD_ENV = { ...ENV, ONPREM_DB_NAME: 'dbwins_worldfert9', ONPREM_TARGET_KIND: 'production' };
+  const PROD_ROW = { ...ROW, dbName: 'dbwins_worldfert9', hasProdAccess: 1, otherUserDbCount: 0 };
+  assert.equal(validateOnpremTargetRecord(PROD_ROW, PROD_ENV).database, 'dbwins_worldfert9');
+  assert.equal(validateOnpremTargetRecord({ ...PROD_ROW, loginName: 'wf_migrator', originalLogin: 'wf_migrator' }, PROD_ENV, { operation: 'migration' }).login, 'wf_migrator');
+  const refuse = (patch, re, env = PROD_ENV) => assert.throws(() => validateOnpremTargetRecord({ ...PROD_ROW, ...patch }, env), re);
+  refuse({ otherUserDbCount: 1 }, /other user database/);
+  refuse({ otherUserDbCount: null }, /other user database/);
+  refuse({ isDbOwner: 1 }, /db_owner/);
+  refuse({ isSysadmin: 1 }, /sysadmin/);
+  refuse({ netTransport: 'Shared memory' }, /transport/);
+  // the production kind cannot point at a copy, and a UAT target can never be the live database
+  assert.throws(() => validateOnpremTargetRecord(ROW, { ...ENV, ONPREM_TARGET_KIND: 'production' }), /requires ONPREM_DB_NAME/);
+  refuse({}, /production database/, { ...PROD_ENV, ONPREM_TARGET_KIND: 'uat' });
+  refuse({}, /production database/, { ...PROD_ENV, ONPREM_TARGET_KIND: '' });
+  assert.throws(() => onpremTuple({ ...ENV, ONPREM_TARGET_KIND: 'prod' }), /ONPREM_TARGET_KIND/);
+  assert.equal(onpremTuple(ENV).targetKind, 'uat', 'unset means the strict UAT profile');
+});
+
+test('the identity query reports access to other user databases', () => {
+  const { IDENTITY_SQL } = require('../onprem-target');
+  assert.match(IDENTITY_SQL, /database_id > 4 AND name <> DB_NAME\(\) AND HAS_DBACCESS\(name\) = 1\) AS otherUserDbCount/);
 });
 
 test('onprem is a known target, and its migration profile is SQL 2008 without migration 074', () => {

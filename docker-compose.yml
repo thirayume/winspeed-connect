@@ -26,6 +26,7 @@ services:
       ONPREM_DB_PASSWORD: ${ONPREM_DB_PASSWORD:?Set ONPREM_DB_PASSWORD in the local .env}
       ONPREM_DB_ENCRYPT: ${ONPREM_DB_ENCRYPT:-true}
       ONPREM_DB_LEGACY_TLS: ${ONPREM_DB_LEGACY_TLS:-false}
+      ONPREM_TARGET_KIND: ${ONPREM_TARGET_KIND:-uat}
       JWT_SECRET: ${JWT_SECRET:?Generate a private JWT_SECRET in the local .env}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       CORS_ORIGIN: ${CORS_ORIGIN:?Set the browser origin used to open the app}
@@ -68,6 +69,7 @@ services:
       ONPREM_PRODUCT_VERSION_PREFIX: ${ONPREM_PRODUCT_VERSION_PREFIX:-10.50.}
       ONPREM_DB_ENCRYPT: ${ONPREM_DB_ENCRYPT:-true}
       ONPREM_DB_LEGACY_TLS: ${ONPREM_DB_LEGACY_TLS:-false}
+      ONPREM_TARGET_KIND: ${ONPREM_TARGET_KIND:-uat}
       ONPREM_DB_TDS_VERSION: ${ONPREM_DB_TDS_VERSION:-7_3_B}
       COUPON_NATIVE_POSTING_ENABLED: "false"
     entrypoint: ["node", "run_migrations.js"]

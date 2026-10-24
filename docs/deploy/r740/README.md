@@ -93,11 +93,38 @@ Before the first apply, the plan is expected to list most migrations as pending 
     certificate on the share; double-click, accept UAC. It refuses a file whose fingerprint
     differs, so a swapped file on the share is never trusted.
 
+## PROD go-live (prepared, not started)
+
+PROD uses the same images, Compose file and scripts as UAT. What differs is pinned in
+[`targets/prod.env`](targets/prod.env): `dbwins_worldfert9`, `ONPREM_TARGET_KIND=production`,
+ports 443/8090, a backup gate and the UAT Caddy root. Until the steps below, nothing touches
+`dbwins_worldfert9`.
+
+1. **UAT sign-off**, then the owner approves fast-forwarding `main` to the tested `uat` commit.
+2. **Go-live switch**: a reviewed commit sets `SALEAPP_DEPLOY_ENABLED=true` in
+   `targets/prod.env` (through `uat`, then `main`).
+3. **SQL logins** (IT, maintenance window): create `wf_r740_prod_app` / `wf_r740_prod_migrator`
+   (new passwords, no server roles, no mapping), run
+   [`sql/r740-prod-principals.sql`](sql/r740-prod-principals.sql); both rows must be `OK`
+   (they cannot open `dbwins_worldfert9-uat` or any other user database).
+4. **Secrets**: [`prod.env.example`](prod.env.example) -> `D:\SaleApp\prod\config\.env`,
+   [`prod.migrator.env.example`](prod.migrator.env.example) -> `.env.migrator.local`.
+5. `docs\deploy\r740\deploy.bat prod -PlanOnly` (read-only): expect 151 pending, drift 0.
+6. **Backup** (IT, SSMS): [`sql/r740-prod-backup.sql`](sql/r740-prod-backup.sql), a verified
+   copy-only backup in `D:\MSSQL\MSSQL10_50.SQL2008\Backup`.
+7. `deploy.bat prod`: confirm the commit, then type `dbwins_worldfert9` to apply. The server
+   refuses without that backup (younger than 120 minutes) or if the plan changed, applies the
+   migrations, verifies, starts the stack at `https://172.16.30.169` and reuses the UAT root,
+   so clients need no new certificate.
+8. First admin: `New-R740AdminSql.ps1 -Environment prod`, run by IT in SSMS.
+
+Rollback of a failed apply: stop the `saleapp-prod` stack and restore the step 6 backup.
+
 ## Guards worth knowing
 
 - The app and migrator refuse to run if their login can open `dbwins_worldfert9`, is in an
   elevated role, or the connection is not TCP to `R740-SRV\SQL2008` 10.50.x.
 - Target values live only in `targets/*.env` (reviewed in Git); `config\.env` holds secrets.
-- PROD needs a reviewed production profile before `SALEAPP_DEPLOY_ENABLED=true`: the
-  guard above blocks the production database by design, and a backup step must precede
-  migrations.
+- `ONPREM_TARGET_KIND` (pinned per target): `uat` refuses `dbwins_worldfert9` and any login
+  that can open it; `production` accepts only `dbwins_worldfert9` and refuses a login that
+  can open any other user database.

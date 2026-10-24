@@ -15,6 +15,10 @@
  */
 
 const REQUIRED = ['ONPREM_DB_SERVER', 'ONPREM_DB_NAME', 'ONPREM_EXPECTED_SERVERNAME', 'ONPREM_PRODUCT_VERSION_PREFIX'];
+const PRODUCTION_DB = 'dbwins_worldfert9';
+// uat (default): a copy; its logins must not open the production database.
+// production (R740 go-live): the production database itself; its logins may open no other user database.
+const TARGET_KINDS = ['uat', 'production'];
 
 /** the same identity query as the local targets, read on every new pool before use */
 const IDENTITY_SQL = `
@@ -34,6 +38,7 @@ const IDENTITY_SQL = `
     IS_SRVROLEMEMBER('dbcreator') AS isDbcreator,
     IS_SRVROLEMEMBER('bulkadmin') AS isBulkadmin,
     HAS_DBACCESS('dbwins_worldfert9') AS hasProdAccess,
+    (SELECT COUNT(*) FROM sys.databases WHERE database_id > 4 AND name <> DB_NAME() AND HAS_DBACCESS(name) = 1) AS otherUserDbCount,
     HAS_PERMS_BY_NAME(null, null, 'CONTROL SERVER') AS hasControlServer,
     IS_ROLEMEMBER('db_owner') AS isDbOwner,
     HAS_PERMS_BY_NAME(null, 'DATABASE', 'CONTROL') AS hasControlDatabase`;
@@ -55,7 +60,10 @@ function onpremTuple(env = process.env, operation = 'runtime') {
   }
   const port = env.ONPREM_DB_PORT ? Number(env.ONPREM_DB_PORT) : null;
   if (port !== null && !(Number.isInteger(port) && port > 0 && port < 65536)) throw new Error(`ONPREM_DB_PORT "${env.ONPREM_DB_PORT}" is not a port`);
+  const targetKind = String(env.ONPREM_TARGET_KIND || 'uat').trim().toLowerCase();
+  if (!TARGET_KINDS.includes(targetKind)) throw new Error(`ONPREM_TARGET_KIND "${env.ONPREM_TARGET_KIND}" must be ${TARGET_KINDS.join(' or ')}`);
   return {
+    targetKind,
     server: String(env.ONPREM_DB_SERVER).trim(),
     port,
     instance: String(env.ONPREM_DB_INSTANCE || '').trim() || null,
@@ -136,7 +144,17 @@ function validateOnpremTargetRecord(row, env = process.env, { operation = 'runti
   assertZero(row, 'diskadmin' in row ? 'diskadmin' : 'isDiskadmin', "IS_SRVROLEMEMBER('diskadmin')");
   assertZero(row, 'isDbcreator', "IS_SRVROLEMEMBER('dbcreator')");
   assertZero(row, 'bulkadmin' in row ? 'bulkadmin' : 'isBulkadmin', "IS_SRVROLEMEMBER('bulkadmin')");
-  assertZero(row, 'hasProdAccess', "HAS_DBACCESS('dbwins_worldfert9')");
+  if (t.targetKind === 'production') {
+    if (lc(t.database) !== PRODUCTION_DB) {
+      throw new Error(`ONPREM SAFETY VIOLATION: ONPREM_TARGET_KIND=production requires ONPREM_DB_NAME=${PRODUCTION_DB}`);
+    }
+    assertZero(row, 'otherUserDbCount', 'access to any other user database');
+  } else {
+    if (lc(t.database) === PRODUCTION_DB) {
+      throw new Error(`ONPREM SAFETY VIOLATION: ${PRODUCTION_DB} is the production database; only an approved go-live sets ONPREM_TARGET_KIND=production`);
+    }
+    assertZero(row, 'hasProdAccess', "HAS_DBACCESS('dbwins_worldfert9')");
+  }
   assertZero(row, 'hasControlServer', 'CONTROL SERVER');
   assertZero(row, 'dbOwner' in row ? 'dbOwner' : 'isDbOwner', "IS_ROLEMEMBER('db_owner')");
   assertZero(row, 'hasControlDatabase', 'CONTROL DATABASE');

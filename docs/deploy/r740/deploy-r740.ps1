@@ -120,7 +120,12 @@ if ($PlanOnly) { Write-Host 'Plan only: stopped before any database write.' -For
 
 Write-Host ''
 if ($pending -gt 0) {
-  Confirm-Word "Apply the $pending pending migration(s) listed above to $database and start the stack?" 'APPLY'
+  # Production asks for the database name itself, and the server checks the backup again.
+  $applyWord = if ($Environment -eq 'prod') { $database } else { 'APPLY' }
+  if ($Environment -eq 'prod') {
+    Write-Host "PRODUCTION: a verified pre-deploy backup (sql/r740-prod-backup.sql) younger than 120 minutes is required." -ForegroundColor Yellow
+  }
+  Confirm-Word "Apply the $pending pending migration(s) listed above to $database and start the stack?" $applyWord
 } else {
   Confirm-Word "No pending migrations. Restart the $Environment stack on this commit?" 'YES'
 }
