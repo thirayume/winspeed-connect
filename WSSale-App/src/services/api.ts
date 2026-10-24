@@ -92,6 +92,19 @@ export const startAccessAs = (userId: number) =>
 export const stopAccessAs = () =>
   req<{ accessToken: string; user: AppUser }>('/auth/access-as/stop', { method: 'POST' });
 
+// Database selection (owner 2026-10-25)
+export type DatabaseInfo = {
+  active: string; system: string; primary: string; list: string[];
+  canSwitch: boolean; canSetSystem: boolean;
+};
+export const getDatabases = () => req<DatabaseInfo>('/auth/databases', { silent: true });
+export const switchDatabase = (database: string) =>
+  req<{ accessToken: string; database: string; isDefault: boolean }>('/auth/switch-database', {
+    method: 'POST', body: JSON.stringify({ database }),
+  });
+export const setSystemDatabase = (database: string) =>
+  req<{ system: string }>('/auth/system-database', { method: 'PUT', body: JSON.stringify({ database }) });
+
 export const createUser = (payload: {
   username: string; password: string; displayName: string;
   role: string; empId?: string;

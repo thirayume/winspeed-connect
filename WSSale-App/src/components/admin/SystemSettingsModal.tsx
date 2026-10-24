@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { SystemDatabaseSetting } from './SystemDatabaseSetting';
 import {
   Settings,
   Save,
@@ -402,6 +403,7 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
 
         {/* Modal Body */}
         <div className="p-6 space-y-4 flex-1 overflow-y-auto">
+          <SystemDatabaseSetting />
           {loading ? (
             <div className="py-12 text-center text-sm text-gray-500">⏳ กำลังโหลดนโยบายระบบ...</div>
           ) : (
