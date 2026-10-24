@@ -60,16 +60,18 @@ run_migrate() {  # args passed to run_migrations.js
     --entrypoint node "$IMAGE" run_migrations.js "$@" --profile=onprem
 }
 
-plan_counts() {  # prints "unchanged pending drift" from a plan output on stdin
-  grep -Eo 'unchanged:\s*[0-9]+;\s*pending:\s*[0-9]+;\s*drift:\s*[0-9]+' | tail -1 | grep -Eo '[0-9]+' | tr '\n' ' '
-}
+# Count plan entries directly (robust across runner output formats): the runner lists one
+# "  PENDING <file>" per pending migration and "  <KIND>_DRIFT <file>" per drift.
+count_pending() { printf '%s\n' "$1" | grep -cE '^[[:space:]]+PENDING[[:space:]]'; }
+count_drift()   { printf '%s\n' "$1" | grep -cE '^[[:space:]]+[A-Z_]+_DRIFT[[:space:]]'; }
+plan_ok() { printf '%s\n' "$1" | grep -qiE 'migration (read-only plan|complete)|unchanged:'; }
 
 echo "Read-only migration plan for $DB ..."
-PLAN_OUT="$(run_migrate --plan 2>&1)" || { printf '%s\n' "$PLAN_OUT" | tail -20; fail "plan failed."; }
-printf '%s\n' "$PLAN_OUT" | grep -E '^  (PENDING|[A-Z_]+_DRIFT) ' || true
-read -r UNCHANGED PENDING DRIFT < <(printf '%s' "$PLAN_OUT" | plan_counts)
-[[ -n "${DRIFT:-}" ]] || fail "could not read the plan summary."
-echo "plan: unchanged=$UNCHANGED pending=$PENDING drift=$DRIFT"
+PLAN_OUT="$(run_migrate --plan 2>&1)" || { printf '%s\n' "$PLAN_OUT" | tail -25; fail "plan failed."; }
+plan_ok "$PLAN_OUT" || { printf '%s\n' "$PLAN_OUT" | tail -25; fail "could not read a migration plan from $DB (see output above)."; }
+printf '%s\n' "$PLAN_OUT" | grep -E '^[[:space:]]+(PENDING|[A-Z_]+_DRIFT)[[:space:]]' || true
+PENDING="$(count_pending "$PLAN_OUT")"; DRIFT="$(count_drift "$PLAN_OUT")"
+echo "plan: pending=$PENDING drift=$DRIFT"
 [[ "$DRIFT" == 0 ]] || fail "migration drift on $DB; nothing applied."
 
 if [[ "$PHASE" == plan ]]; then echo "Plan only ($DB); no database writes."; exit 0; fi
@@ -81,6 +83,7 @@ printf '%s\n' "$APPLY_OUT" | grep -E 'Migration complete' || true
 
 echo "Verifying $DB with a second read-only plan ..."
 VERIFY_OUT="$(run_migrate --plan 2>&1)" || fail "post-apply verify failed on $DB."
-read -r _ VPEND VDRIFT < <(printf '%s' "$VERIFY_OUT" | plan_counts)
-[[ "$VPEND" == 0 && "$VDRIFT" == 0 ]] || fail "pending or drift remain on $DB after apply."
+plan_ok "$VERIFY_OUT" || fail "post-apply verify produced no plan on $DB."
+VPEND="$(count_pending "$VERIFY_OUT")"; VDRIFT="$(count_drift "$VERIFY_OUT")"
+[[ "$VPEND" == 0 && "$VDRIFT" == 0 ]] || fail "pending or drift remain on $DB after apply (pending=$VPEND drift=$VDRIFT)."
 echo "SALEAPP_COMPANY_MIGRATED $DB pending=0 drift=0"
