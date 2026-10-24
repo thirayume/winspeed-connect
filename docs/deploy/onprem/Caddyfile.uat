@@ -6,10 +6,11 @@
 	# Browsers send no SNI for an IP address (R740: 172.16.30.169), and behind WSL/Docker
 	# NAT the listener address is the container's own, so name the certificate to use.
 	default_sni {$APP_DOMAIN}
+	# The automatic HTTP->HTTPS redirect drops a non-standard HTTPS port (8444 would
+	# become 443, another stack on R740) and outranks a catch-all HTTP site.
+	auto_https disable_redirects
 }
 
-# Caddy's automatic HTTP->HTTPS redirect drops a non-standard HTTPS port (8444 would
-# become 443, another stack on R740), so redirect explicitly to the configured port.
 http://:{$HTTP_PORT} {
 	redir https://{host}:{$HTTPS_PORT}{uri} 308
 }
