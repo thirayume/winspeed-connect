@@ -85,7 +85,8 @@ def main():
             stop("target file must set " + key + " to true or false.")
         if str(app.get(key, "")).lower() != target[key].lower():
             stop("API setting " + key + " does not match the target file.")
-    for key, value in {"COUPON_NATIVE_POSTING_ENABLED": "false", "ENFORCE_PASSWORD_CHANGE": "true"}.items():
+    for key, value in {"COUPON_NATIVE_POSTING_ENABLED": "false", "ENFORCE_PASSWORD_CHANGE": "true",
+                       "TRUST_PROXY": "1"}.items():
         if str(app.get(key, "")).lower() != value:
             stop("required safety setting is not enforced: " + key)
 

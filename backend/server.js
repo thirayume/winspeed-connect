@@ -16,6 +16,8 @@ process.on('uncaughtException',  (err)    => fatal('uncaughtException', err));
 process.on('unhandledRejection', (reason) => fatal('unhandledRejection', reason));
 
 const app = express();
+const proxyHops = require('./services/trust-proxy').trustProxyHops(process.env.TRUST_PROXY);
+if (proxyHops) app.set('trust proxy', proxyHops);
 const server = http.createServer(app);
 const { initSocket } = require('./services/socket');
 const { startPolling } = require('./services/polling');

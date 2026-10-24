@@ -31,6 +31,8 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       CORS_ORIGIN: ${CORS_ORIGIN:?Set the browser origin used to open the app}
       ENFORCE_PASSWORD_CHANGE: "true"
+      # The API is reachable only through Caddy: trust exactly that one proxy hop.
+      TRUST_PROXY: "1"
       COUPON_NATIVE_POSTING_ENABLED: "false"
       # Polling (screen refresh) and the outbox worker; neither writes dbo. Off unless a
       # target turns them on (R740 UAT/PROD: owner 2026-10-24).
