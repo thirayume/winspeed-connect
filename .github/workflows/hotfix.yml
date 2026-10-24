@@ -1,0 +1,93 @@
+# Manual only (Actions > "3. Hotfix to UAT and PROD" > Run workflow).
+# For a fix branched from main: tests the branch, fast-forwards main to it, merges it into uat,
+# tests that result too, and pushes both branches in one atomic push (both or neither).
+# Nothing is deployed: next, on the dev PC or server, docs\deploy\r740\deploy.bat hotfix
+name: 3. Hotfix to UAT and PROD
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Hotfix branch, created from main
+        required: true
+        type: string
+      dry_run:
+        description: Check only, do not push main or uat
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-branches
+  cancel-in-progress: false
+
+jobs:
+  hotfix:
+    name: hotfix main + uat
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: The hotfix branch starts from main
+        env:
+          SOURCE: ${{ inputs.source }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$SOURCE" =~ ^[A-Za-z0-9._/-]+$ ]] || [[ "$SOURCE" == uat || "$SOURCE" == main ]]; then
+            echo "::error::source must be a hotfix branch name (not uat or main)"; exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags origin "+refs/heads/$SOURCE:refs/remotes/origin/$SOURCE" \
+            +refs/heads/main:refs/remotes/origin/main +refs/heads/uat:refs/remotes/origin/uat
+          git merge-base --is-ancestor origin/main "origin/$SOURCE" \
+            || { echo "::error::$SOURCE does not contain main; create the hotfix from the current main"; exit 1; }
+          # A branch cut from uat also contains main, but would carry uat's untested work into main.
+          git merge-base --is-ancestor "$(git merge-base origin/uat "origin/$SOURCE")" origin/main \
+            || { echo "::error::$SOURCE was branched from uat and holds commits main lacks; create the hotfix from main"; exit 1; }
+          git checkout --quiet --detach "origin/$SOURCE"
+          echo "MAIN_BEFORE=$(git rev-parse origin/main)" >> "$GITHUB_ENV"
+          echo "MAIN_AFTER=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "UAT_BEFORE=$(git rev-parse origin/uat)" >> "$GITHUB_ENV"
+
+      - name: Verify the hotfix as main will be
+        uses: ./.github/actions/verify
+
+      - name: Merge the hotfix into uat (local only)
+        env:
+          SOURCE: ${{ inputs.source }}
+        run: |
+          set -euo pipefail
+          git checkout --quiet -B uat-candidate origin/uat
+          if git merge-base --is-ancestor HEAD "origin/$SOURCE"; then
+            git merge --ff-only "origin/$SOURCE"
+          else
+            git merge --no-ff -m "merge hotfix $SOURCE into uat" "origin/$SOURCE" \
+              || { echo "::error::$SOURCE conflicts with uat; resolve on a branch from uat and promote it separately"; exit 1; }
+          fi
+          echo "UAT_AFTER=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Verify uat with the hotfix
+        uses: ./.github/actions/verify
+
+      - name: Push main and uat together
+        if: ${{ !inputs.dry_run }}
+        run: git push --atomic origin "$MAIN_AFTER:refs/heads/main" "$UAT_AFTER:refs/heads/uat"
+
+      - name: Summary
+        env:
+          SOURCE: ${{ inputs.source }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          {
+            echo "### hotfix ${SOURCE}$([ "$DRY_RUN" = true ] && echo ' (dry run, not pushed)')"
+            echo "- main: \`${MAIN_BEFORE:0:7}\` -> \`${MAIN_AFTER:0:7}\`"
+            echo "- uat: \`${UAT_BEFORE:0:7}\` -> \`${UAT_AFTER:0:7}\`"
+            echo "- Next: \`docs\\deploy\\r740\\deploy.bat hotfix\` (UAT first, then PROD)."
+          } >> "$GITHUB_STEP_SUMMARY"

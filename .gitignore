@@ -154,6 +154,11 @@ docs/deploy/r740/sql/*
 !docs/deploy/r740/client/
 docs/deploy/r740/client/*
 !docs/deploy/r740/client/Install-SaleAppCert.bat
+!docs/deploy/r740/server/
+docs/deploy/r740/server/*
+!docs/deploy/r740/server/Deploy-UAT.bat
+!docs/deploy/r740/server/Deploy-PROD.bat
+!docs/deploy/r740/server/Deploy-HOTFIX.bat
 !docs/deploy/r740/host/
 docs/deploy/r740/host/*
 !docs/deploy/r740/host/Check-SaleAppHost.ps1

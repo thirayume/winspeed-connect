@@ -17,8 +17,39 @@ Docker engine and Docker Desktop on that server are not used.
 Port 80 stays with IIS and SSRS. TLS uses Caddy's internal CA for the IP address until a
 domain exists; each browser device must trust the Caddy root certificate once.
 
-Flow: develop on a branch, merge into `uat`, run `deploy.bat uat`, test. When UAT passes,
-fast-forward `main` to the tested `uat` commit and (after go-live approval) `deploy.bat prod`.
+## Branches and release flow
+
+| Branch | Environment | Who moves it |
+|---|---|---|
+| work branches (e.g. `feature/...`, `fix/...`) | none | developers |
+| `uat` | UAT, `D:\SaleApp\uat` | Actions "1. Promote branch to UAT" (or "3. Hotfix") |
+| `main` | PROD, `D:\SaleApp\prod` | Actions "2. Promote UAT to PROD" (or "3. Hotfix") |
+
+The three workflows run only when started from **Actions > workflow > Run workflow**. Each one
+merges or fast-forwards in the runner, runs the CI checks (backend tests, frontend build,
+batch/script/secret checks) on that exact tree, then pushes. `dry_run` checks without pushing.
+GitHub cannot reach R740-SRV, so deploying stays a separate, manual step.
+
+1. Normal change: finish the work branch, then **1. Promote branch to UAT** (`source` = the
+   branch). Deploy UAT and test.
+2. UAT passed: **2. Promote UAT to PROD** with `uat_commit` = the commit you tested (from the UAT
+   deploy receipt). It refuses if `uat` moved since, or if `main` has commits `uat` lacks.
+   Then deploy PROD.
+3. Hotfix: branch from `main`, then **3. Hotfix to UAT and PROD** (`source` = the hotfix
+   branch). It fast-forwards `main`, merges into `uat`, tests both, and pushes them together.
+   It refuses a branch cut from `uat`. Then deploy with `hotfix`.
+
+Deploy, from the dev PC (over SSH) or on R740-SRV (local WSL; one-click files in `D:\SaleApp`):
+
+| | Dev PC | On R740-SRV |
+|---|---|---|
+| UAT | `docs\deploy\r740\deploy.bat uat` | `D:\SaleApp\Deploy-UAT.bat` |
+| PROD | `docs\deploy\r740\deploy.bat prod` | `D:\SaleApp\Deploy-PROD.bat` |
+| Hotfix (UAT then PROD) | `docs\deploy\r740\deploy.bat hotfix` | `D:\SaleApp\Deploy-HOTFIX.bat` |
+
+Each environment shows the commit it will deploy and asks for `YES`, then shows the migration
+plan and asks for `APPLY` (PROD: the database name). Add `-PlanOnly` to stop after the plan.
+The server files come from [`server/`](server) and run the driver kept current in the UAT clone.
 
 ## Server layout
 
