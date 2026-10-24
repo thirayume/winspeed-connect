@@ -62,8 +62,9 @@ run_migrate() {  # args passed to run_migrations.js
 
 # Count plan entries directly (robust across runner output formats): the runner lists one
 # "  PENDING <file>" per pending migration and "  <KIND>_DRIFT <file>" per drift.
-count_pending() { printf '%s\n' "$1" | grep -cE '^[[:space:]]+PENDING[[:space:]]'; }
-count_drift()   { printf '%s\n' "$1" | grep -cE '^[[:space:]]+[A-Z_]+_DRIFT[[:space:]]'; }
+# grep -c prints the count but exits 1 when it is zero; keep the zero and a success status.
+count_pending() { printf '%s\n' "$1" | grep -cE '^[[:space:]]+PENDING[[:space:]]' || true; }
+count_drift()   { printf '%s\n' "$1" | grep -cE '^[[:space:]]+[A-Z_]+_DRIFT[[:space:]]' || true; }
 plan_ok() { printf '%s\n' "$1" | grep -qiE 'migration (read-only plan|complete)|unchanged:'; }
 
 echo "Read-only migration plan for $DB ..."
