@@ -59,7 +59,8 @@ if ($OnServer) {
 function Invoke-Git([string]$envName, [string[]]$GitArgs) {
   if ($OnServer) {
     $app = "/mnt/d/SaleApp/$envName/app"
-    $out = & $wsl --distribution $Distro --user root --exec git -c "safe.directory=$app" -C $app @GitArgs
+    # Empty input: wsl.exe relays console input to Linux and would swallow the YES typed next.
+    $out = $null | & $wsl --distribution $Distro --user root --exec git -c "safe.directory=$app" -C $app @GitArgs
   } else {
     $out = & $git -C $repo @GitArgs
   }
@@ -77,7 +78,7 @@ function Initialize-ServerClone([string]$envName, [string]$branch) {
     Fail "$winRoot\app exists but is not a Git clone; move it away first."
   }
   Write-Host "First deploy of ${envName}: cloning $branch into $winRoot\app ..."
-  & $wsl --distribution $Distro --user root --exec git -c core.autocrlf=false clone --quiet --filter=blob:none `
+  $null | & $wsl --distribution $Distro --user root --exec git -c core.autocrlf=false clone --quiet --filter=blob:none `
     --no-checkout --branch $branch $repoUrl "/mnt/d/SaleApp/$envName/app"
   if ($LASTEXITCODE -ne 0) { Fail 'git clone failed.' }
   foreach ($setting in @(@('core.autocrlf', 'false'), @('core.filemode', 'false'))) {
