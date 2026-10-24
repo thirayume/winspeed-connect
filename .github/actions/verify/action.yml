@@ -1,0 +1,50 @@
+# The checks CI runs, for the promotion workflows: they test the exact tree they are about
+# to push (a merge result that exists only in the runner) before any branch moves.
+name: verify
+description: Backend tests, frontend build with typecheck, and the repository hygiene checks.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v5
+      with:
+        node-version: '22'
+
+    - name: Backend dependencies
+      shell: bash
+      working-directory: backend
+      run: npm ci || npm install
+
+    - name: Backend tests
+      shell: bash
+      working-directory: backend
+      run: npm test
+
+    - name: Frontend dependencies
+      shell: bash
+      working-directory: WSSale-App
+      run: npm ci || npm install
+
+    # build = tsc -b && vite build, so it covers the typecheck (tsc --noEmit checks nothing here).
+    - name: Frontend build (with typecheck)
+      shell: bash
+      working-directory: WSSale-App
+      run: npm run build
+
+    - name: Batch files are ASCII only
+      shell: bash
+      run: |
+        bad=$(grep -rlP '[\x80-\xFF]' --include='*.bat' --include='*.cmd' . || true)
+        if [ -n "$bad" ]; then echo "::error::non-ASCII bytes in batch files:"; echo "$bad"; exit 1; fi
+
+    - name: Deploy shell scripts parse
+      shell: bash
+      run: |
+        for f in docs/deploy/onprem/wsl-deploy.sh docs/deploy/r740/bootstrap.sh docs/deploy/r740/r740-deploy.sh; do
+          bash -n "$f"
+        done
+
+    - name: No secret files tracked
+      shell: bash
+      run: |
+        leak=$(git ls-files | grep -E '(^|/)(remote-config\.bat|\.local-secrets/|.*\.pem$|server-config\.env$)' || true)
+        if [ -n "$leak" ]; then echo "::error::files that must not be tracked:"; echo "$leak"; exit 1; fi

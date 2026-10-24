@@ -1,0 +1,74 @@
+# Manual only (Actions > "1. Promote branch to UAT" > Run workflow).
+# Merges a finished work branch into uat, runs the CI checks on the merged tree, then pushes
+# uat. Nothing is deployed: GitHub cannot reach R740-SRV. Next step on the dev PC or server:
+#   docs\deploy\r740\deploy.bat uat
+name: 1. Promote branch to UAT
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Work branch to merge into uat
+        required: true
+        type: string
+      dry_run:
+        description: Check only, do not push uat
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-branches
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: merge into uat
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: uat
+          fetch-depth: 0
+
+      - name: Merge the work branch into uat (local only)
+        env:
+          SOURCE: ${{ inputs.source }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$SOURCE" =~ ^[A-Za-z0-9._/-]+$ ]] || [[ "$SOURCE" == uat || "$SOURCE" == main ]]; then
+            echo "::error::source must be a work branch name (not uat or main)"; exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags origin "+refs/heads/$SOURCE:refs/remotes/origin/$SOURCE"
+          before=$(git rev-parse HEAD)
+          if git merge-base --is-ancestor HEAD "origin/$SOURCE"; then
+            git merge --ff-only "origin/$SOURCE"
+          else
+            git merge --no-ff -m "merge $SOURCE into uat" "origin/$SOURCE" \
+              || { echo "::error::$SOURCE conflicts with uat; merge uat into $SOURCE, resolve, push, and run again"; exit 1; }
+          fi
+          echo "UAT_BEFORE=$before" >> "$GITHUB_ENV"
+          echo "UAT_AFTER=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - uses: ./.github/actions/verify
+
+      - name: Push uat
+        if: ${{ !inputs.dry_run }}
+        run: git push origin HEAD:refs/heads/uat
+
+      - name: Summary
+        env:
+          SOURCE: ${{ inputs.source }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          {
+            echo "### ${SOURCE} -> uat"
+            echo "- uat: \`${UAT_BEFORE:0:7}\` -> \`${UAT_AFTER:0:7}\`$([ "$DRY_RUN" = true ] && echo ' (dry run, not pushed)')"
+            echo "- Next: \`docs\\deploy\\r740\\deploy.bat uat\`, test, then run \"2. Promote UAT to PROD\" with commit \`${UAT_AFTER:0:7}\`."
+          } >> "$GITHUB_STEP_SUMMARY"

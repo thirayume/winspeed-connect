@@ -1,0 +1,67 @@
+# Manual only (Actions > "2. Promote UAT to PROD" > Run workflow), after UAT passed.
+# Fast-forwards main to uat, but only if uat is still the commit you tested (enter it from the
+# UAT deploy receipt) and main has nothing uat lacks. Runs the CI checks first. Nothing is
+# deployed: next, on the dev PC or server, docs\deploy\r740\deploy.bat prod
+name: 2. Promote UAT to PROD (main)
+
+on:
+  workflow_dispatch:
+    inputs:
+      uat_commit:
+        description: Commit that passed UAT (7-40 hex, from the UAT deploy receipt)
+        required: true
+        type: string
+      dry_run:
+        description: Check only, do not move main
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-branches
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: fast-forward main
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: uat
+          fetch-depth: 0
+
+      - name: uat is the tested commit, and main can fast-forward to it
+        env:
+          UAT_COMMIT: ${{ inputs.uat_commit }}
+        run: |
+          set -euo pipefail
+          [[ "$UAT_COMMIT" =~ ^[0-9a-f]{7,40}$ ]] || { echo "::error::uat_commit must be 7-40 lowercase hex"; exit 1; }
+          head=$(git rev-parse HEAD)
+          [[ "$head" == "$UAT_COMMIT"* ]] \
+            || { echo "::error::uat is now ${head:0:7}, not the tested ${UAT_COMMIT:0:7}; deploy and test the current uat first"; exit 1; }
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor origin/main HEAD \
+            || { echo "::error::main has commits that uat lacks; merge main into uat (or use the hotfix workflow), test on UAT, then promote"; exit 1; }
+          echo "MAIN_BEFORE=$(git rev-parse origin/main)" >> "$GITHUB_ENV"
+          echo "MAIN_AFTER=$head" >> "$GITHUB_ENV"
+
+      - uses: ./.github/actions/verify
+
+      - name: Fast-forward main
+        if: ${{ !inputs.dry_run }}
+        run: git push origin HEAD:refs/heads/main
+
+      - name: Summary
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          {
+            echo "### uat -> main"
+            echo "- main: \`${MAIN_BEFORE:0:7}\` -> \`${MAIN_AFTER:0:7}\`$([ "$DRY_RUN" = true ] && echo ' (dry run, not pushed)')"
+            echo "- Next: \`docs\\deploy\\r740\\deploy.bat prod\` (take the pre-deploy backup if migrations are pending)."
+          } >> "$GITHUB_STEP_SUMMARY"
