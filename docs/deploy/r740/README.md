@@ -33,9 +33,17 @@ D:\SaleApp\
 
 ## One-time setup
 
-1. **Host** (owner, on R740-SRV, elevated PowerShell): `D:\SaleApp\tools\Enable-SaleAppSsh.ps1`
-   (done 2026-10-23), then `D:\SaleApp\tools\Set-SaleAppHost.ps1 -Apply`. That keeps WSL
-   running, forwards the stack ports from 172.16.30.169 into WSL and opens the firewall.
+1. **Host** (owner, on R740-SRV, elevated PowerShell). The scripts in [`host/`](host) live in
+   `D:\SaleApp\tools` on the server:
+   - `Check-SaleAppHost.ps1` (+ `wsl-check.sh`): read-only report of Docker, WSL, ports, SQL network.
+   - `Enable-SaleAppSsh.ps1 -AllowFrom <VPN range>`: OpenSSH + the dev PC deploy key (done 2026-10-23).
+   - `Set-SaleAppHost.ps1 -Apply`: `.wslconfig` idle timeouts, the startup task running
+     `SaleApp-KeepAlive.ps1` (keeps WSL/Docker up and retries if WSL is not ready at boot,
+     rebinds portproxy if IP Helper started before the LAN address), portproxy
+     172.16.30.169:<port> -> WSL, and firewall rules (existing scopes are kept unless
+     `-AllowFrom` is given). The keep-alive logs to `D:\SaleApp\tools\out\keepalive.log`.
+   - `docker ps` in Windows PowerShell shows the unused Windows engine; inspect the stacks
+     with `wsl -d Ubuntu -u root docker ps`.
 2. **SQL logins** (IT, SSMS on R740-SRV\SQL2008): create `wf_r740_uat_app` and
    `wf_r740_uat_migrator` (SQL authentication, two different passwords, no server roles,
    no user mapping), then run [`sql/r740-uat-principals.sql`](sql/r740-uat-principals.sql).

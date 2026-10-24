@@ -150,4 +150,11 @@ docs/deploy/r740/sql/*
 !docs/deploy/r740/client/
 docs/deploy/r740/client/*
 !docs/deploy/r740/client/Install-SaleAppCert.bat
+!docs/deploy/r740/host/
+docs/deploy/r740/host/*
+!docs/deploy/r740/host/Check-SaleAppHost.ps1
+!docs/deploy/r740/host/wsl-check.sh
+!docs/deploy/r740/host/Enable-SaleAppSsh.ps1
+!docs/deploy/r740/host/Set-SaleAppHost.ps1
+!docs/deploy/r740/host/SaleApp-KeepAlive.ps1
 !docs/deploy/onprem/sql/local-uat2-principals.sql
