@@ -76,8 +76,14 @@ Before the first apply, the plan is expected to list most migrations as pending 
   `docs\deploy\r740\sql\r740-uat-create-admin.local.sql` to run in SSMS. It holds only a
   bcrypt hash; the account must change its password at first sign-in.
 - **Browser trust:** each deploy copies the stack's public Caddy root certificate to
-  `D:\SaleApp\uat\caddy-root.crt`. Install it once per client device (elevated):
-  `certutil -addstore -f Root caddy-root.crt`. Never copy anything else from Caddy's data.
+  `D:\SaleApp\uat\caddy-root.crt` (SHA-256 `372F3202…1D0FA8`). Never copy anything else
+  from Caddy's data. Clients trust it once:
+  - Domain PCs: Group Policy, Computer Configuration > Policies > Windows Settings >
+    Security Settings > Public Key Policies > Trusted Root Certification Authorities >
+    Import `caddy-root.crt`.
+  - Other PCs: [`client/Install-SaleAppCert.bat`](client/Install-SaleAppCert.bat) next to the
+    certificate on the share; double-click, accept UAC. It refuses a file whose fingerprint
+    differs, so a swapped file on the share is never trusted.
 
 ## Guards worth knowing
 

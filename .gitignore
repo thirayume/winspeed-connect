@@ -147,4 +147,7 @@ docs/deploy/r740/targets/*
 !docs/deploy/r740/sql/
 docs/deploy/r740/sql/*
 !docs/deploy/r740/sql/r740-uat-principals.sql
+!docs/deploy/r740/client/
+docs/deploy/r740/client/*
+!docs/deploy/r740/client/Install-SaleAppCert.bat
 !docs/deploy/onprem/sql/local-uat2-principals.sql
