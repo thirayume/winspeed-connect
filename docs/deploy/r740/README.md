@@ -4,6 +4,10 @@ Deploys run **from the dev PC** with `deploy.bat`, over SSH (dedicated key, no p
 into WSL Ubuntu on R740-SRV, where Docker CE (Linux engine) runs the stacks. The Windows
 Docker engine and Docker Desktop on that server are not used.
 
+> **Current status for all agents (Claude · Codex · Antigravity):**
+> [GO-LIVE-STATUS.md](GO-LIVE-STATUS.md) — what is live vs pending, and the constraints to respect
+> when working on deploy or the databases. Updated 2026-10-25.
+
 | | UAT | PROD |
 |---|---|---|
 | Git branch | `uat` | `main` |
