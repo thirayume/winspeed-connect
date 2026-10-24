@@ -46,6 +46,8 @@ write_receipt() {
   echo "Receipt: D:\\SaleApp\\$ENV_NAME\\deploy-logs\\$(basename "$RECEIPT")"
 }
 trap write_receipt EXIT
+# set -e stops on any unhandled failure; say where instead of exiting silently.
+trap 'RESULT="FAILED: unexpected error at r740-deploy.sh line $LINENO"; printf "ERROR: unexpected error at r740-deploy.sh line %s\n" "$LINENO" >&2' ERR
 
 [[ "$(git -c safe.directory="$APP" -C "$APP" rev-parse HEAD)" == "$COMMIT" ]] || fail "working tree is not at the requested commit."
 [[ -f "$TARGET_FILE" ]] || fail "target file docs/deploy/r740/targets/$ENV_NAME.env is missing."
@@ -97,7 +99,9 @@ run_plan() {
     || { diagnose "$out"; fail "read-only migration plan failed."; }
   counts="$(printf '%s\n' "$out" | grep -Eo 'unchanged: [0-9]+; pending: [0-9]+; drift: [0-9]+')" \
     && [[ "$(printf '%s\n' "$counts" | wc -l)" == 1 ]] || fail "could not read the migration plan summary."
-  read -r PLAN_UNCHANGED PLAN_PENDING PLAN_DRIFT < <(printf '%s\n' "$counts" | grep -Eo '[0-9]+' | tr '\n' ' ')
+  [[ "$counts" =~ ^unchanged:\ ([0-9]+)\;\ pending:\ ([0-9]+)\;\ drift:\ ([0-9]+)$ ]] \
+    || fail "could not read the migration plan summary."
+  PLAN_UNCHANGED="${BASH_REMATCH[1]}"; PLAN_PENDING="${BASH_REMATCH[2]}"; PLAN_DRIFT="${BASH_REMATCH[3]}"
   PLAN_LINES="$(printf '%s\n' "$out" | grep -E '^  (PENDING|[A-Z_]+_DRIFT|EXCLUDED_APPLIED|LEDGER_ONLY) ' | sed 's/^  //' || true)"
   PLAN_ID="$(printf '%s\n%s\n' "$counts" "$PLAN_LINES" | sha256sum | cut -c1-64)"
   PLAN_SUMMARY="unchanged=$PLAN_UNCHANGED pending=$PLAN_PENDING drift=$PLAN_DRIFT id=$PLAN_ID"
