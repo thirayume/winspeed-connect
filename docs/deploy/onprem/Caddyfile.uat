@@ -8,6 +8,12 @@
 	default_sni {$APP_DOMAIN}
 }
 
+# Caddy's automatic HTTP->HTTPS redirect drops a non-standard HTTPS port (8444 would
+# become 443, another stack on R740), so redirect explicitly to the configured port.
+http://:{$HTTP_PORT} {
+	redir https://{host}:{$HTTPS_PORT}{uri} 308
+}
+
 {$APP_DOMAIN} {
 	tls internal
 	encode gzip

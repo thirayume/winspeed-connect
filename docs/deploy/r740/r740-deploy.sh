@@ -132,8 +132,11 @@ if (( PLAN_PENDING > 0 )); then
   unset APPLY_OUT
   echo "${APPLY_SUMMARY:-Migration apply finished.}"
   echo "Verifying the migration ledger with a second read-only plan ..."
+  APPROVED_SUMMARY="$PLAN_SUMMARY"; APPROVED_LINES="$PLAN_LINES"
   run_plan
   VERIFY_SUMMARY="$PLAN_SUMMARY"
+  # The receipt and result keep the approved plan; the verify line shows the ledger after apply.
+  PLAN_SUMMARY="$APPROVED_SUMMARY"; PLAN_LINES="$APPROVED_LINES"
   [[ "$PLAN_PENDING" == 0 && "$PLAN_DRIFT" == 0 ]] || fail "pending migrations or drift remain; services were not restarted."
 else
   APPLY_SUMMARY='nothing pending'
@@ -165,5 +168,5 @@ for _ in $(seq 1 10); do
 done
 PS_TABLE="$(compose ps --format 'table {{.Service}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null || true)"
 printf '%s\n' "$PS_TABLE"
-RESULT="DEPLOYED ($PLAN_SUMMARY)"
+RESULT="DEPLOYED (approved $PLAN_SUMMARY; after: $VERIFY_SUMMARY)"
 echo "SALEAPP_DEPLOYED https://$APP_DOMAIN$([[ "$HTTPS_PORT" == 443 ]] || echo ":$HTTPS_PORT")/"
