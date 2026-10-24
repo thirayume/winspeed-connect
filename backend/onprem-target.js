@@ -16,9 +16,37 @@
 
 const REQUIRED = ['ONPREM_DB_SERVER', 'ONPREM_DB_NAME', 'ONPREM_EXPECTED_SERVERNAME', 'ONPREM_PRODUCT_VERSION_PREFIX'];
 const PRODUCTION_DB = 'dbwins_worldfert9';
-// uat (default): a copy; its logins must not open the production database.
-// production (R740 go-live): the production database itself; its logins may open no other user database.
+// uat / production label the environment's primary database only. Database isolation between
+// environments was lifted on 2026-10-25 at the owner's request: a signed-in user with a
+// permitted role may switch their session to any database in the switchable allowlist and
+// read and write there (see docs/deploy/r740/targets/*.env, ONPREM_SWITCHABLE_DATABASES).
 const TARGET_KINDS = ['uat', 'production'];
+// Only WINSpeed databases may ever be selected, by name shape, whatever the allowlist says.
+const SWITCHABLE_NAME = /^dbwins_worldfert[0-9A-Za-z._-]*$/;
+
+/** the databases this environment may connect to: the primary plus ONPREM_SWITCHABLE_DATABASES
+ *  (a comma list, or "*" for every dbwins_worldfert* database the login can open at runtime). */
+function switchableDatabases(env = process.env) {
+  const primary = String(env.ONPREM_DB_NAME || '').trim();
+  const raw = String(env.ONPREM_SWITCHABLE_DATABASES || '').trim();
+  if (raw === '*') return { wildcard: true, list: primary ? [primary] : [] };
+  const list = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
+  if (primary && !list.includes(primary)) list.unshift(primary);
+  for (const name of list) {
+    if (!SWITCHABLE_NAME.test(name)) throw new Error(`ONPREM_SWITCHABLE_DATABASES: "${name}" is not a dbwins_worldfert* database`);
+  }
+  return { wildcard: false, list };
+}
+
+/** is `name` a database this environment is allowed to connect to? */
+function isSwitchableDb(name, env = process.env) {
+  const candidate = String(name || '').trim();
+  if (!SWITCHABLE_NAME.test(candidate)) return false;
+  const { wildcard, list } = switchableDatabases(env);
+  if (wildcard) return true;
+  const lc = v => v.toLowerCase();
+  return list.map(lc).includes(lc(candidate));
+}
 
 /** the same identity query as the local targets, read on every new pool before use */
 const IDENTITY_SQL = `
@@ -45,8 +73,10 @@ const IDENTITY_SQL = `
 
 const isMigratorOp = operation => operation === 'migration' || operation === 'migrator';
 
-/** the approved tuple from .env for the app login (runtime) or the migrator login (migration) */
-function onpremTuple(env = process.env, operation = 'runtime') {
+/** the approved tuple from .env for the app login (runtime) or the migrator login (migration).
+ *  overrideDb switches the session to another database in the switchable allowlist; the migrator
+ *  ignores it and always targets the primary, so migrations never run against a switched copy. */
+function onpremTuple(env = process.env, operation = 'runtime', overrideDb = null) {
   const migrator = isMigratorOp(operation);
   const userKey = migrator ? 'ONPREM_MIGRATOR_USER' : 'ONPREM_DB_USER';
   const pwdKey = migrator ? 'ONPREM_MIGRATOR_PASSWORD' : 'ONPREM_DB_PASSWORD';
@@ -62,12 +92,18 @@ function onpremTuple(env = process.env, operation = 'runtime') {
   if (port !== null && !(Number.isInteger(port) && port > 0 && port < 65536)) throw new Error(`ONPREM_DB_PORT "${env.ONPREM_DB_PORT}" is not a port`);
   const targetKind = String(env.ONPREM_TARGET_KIND || 'uat').trim().toLowerCase();
   if (!TARGET_KINDS.includes(targetKind)) throw new Error(`ONPREM_TARGET_KIND "${env.ONPREM_TARGET_KIND}" must be ${TARGET_KINDS.join(' or ')}`);
+  let database = String(env.ONPREM_DB_NAME).trim();
+  if (overrideDb && !migrator) {
+    const wanted = String(overrideDb).trim();
+    if (!isSwitchableDb(wanted, env)) throw new Error(`SECURITY_ERROR: database "${wanted}" is not in this environment's switchable allowlist`);
+    database = wanted;
+  }
   return {
     targetKind,
     server: String(env.ONPREM_DB_SERVER).trim(),
     port,
     instance: String(env.ONPREM_DB_INSTANCE || '').trim() || null,
-    database: String(env.ONPREM_DB_NAME).trim(),
+    database,
     expectedServerName: String(env.ONPREM_EXPECTED_SERVERNAME).trim(),
     versionPrefix: String(env.ONPREM_PRODUCT_VERSION_PREFIX).trim(),
     login,
@@ -79,8 +115,8 @@ function onpremTuple(env = process.env, operation = 'runtime') {
 }
 
 /** mssql pool config: tedious on Linux (Docker), ODBC Driver 17 on Windows (testing from a workstation over VPN) */
-function onpremConnectionConfig(env = process.env, operation = 'runtime', isWindows = false) {
-  const t = onpremTuple(env, operation);
+function onpremConnectionConfig(env = process.env, operation = 'runtime', isWindows = false, overrideDb = null) {
+  const t = onpremTuple(env, operation, overrideDb);
   const pool = { max: 10, min: 0, idleTimeoutMillis: 30000 };
   if (isWindows) {
     const server = `tcp:${t.server}${t.instance ? `\\${t.instance}` : ''}${t.port ? `,${t.port}` : ''}`;
@@ -119,13 +155,18 @@ function assertZero(row, field, label) {
 }
 
 /** fail closed unless the connection is the approved server, database and login, without elevated roles, over TCP */
-function validateOnpremTargetRecord(row, env = process.env, { operation = 'runtime' } = {}) {
+function validateOnpremTargetRecord(row, env = process.env, { operation = 'runtime', overrideDb = null } = {}) {
   if (!row || typeof row !== 'object') throw new Error('ONPREM SAFETY VIOLATION: the identity query returned no row');
-  const t = onpremTuple(env, operation);
+  const t = onpremTuple(env, operation, overrideDb);
   const lc = v => String(v || '').trim().toLowerCase();
 
-  if (lc(row.dbName) !== lc(t.database)) {
-    throw new Error(`ONPREM SAFETY VIOLATION: connected to database "${row.dbName}", approved "${t.database}"`);
+  // The migrator always targets the primary; a runtime connection may be any allowed database.
+  if (isMigratorOp(operation)) {
+    if (lc(row.dbName) !== lc(t.database)) {
+      throw new Error(`ONPREM SAFETY VIOLATION: migrator connected to database "${row.dbName}", approved "${t.database}"`);
+    }
+  } else if (lc(row.dbName) !== lc(t.database) || !isSwitchableDb(row.dbName, env)) {
+    throw new Error(`ONPREM SAFETY VIOLATION: connected to database "${row.dbName}", which is not in the switchable allowlist`);
   }
   if (lc(row.serverName) !== lc(t.expectedServerName)) {
     throw new Error(`ONPREM SAFETY VIOLATION: @@SERVERNAME is "${row.serverName}", approved "${t.expectedServerName}"`);
@@ -144,16 +185,11 @@ function validateOnpremTargetRecord(row, env = process.env, { operation = 'runti
   assertZero(row, 'diskadmin' in row ? 'diskadmin' : 'isDiskadmin', "IS_SRVROLEMEMBER('diskadmin')");
   assertZero(row, 'isDbcreator', "IS_SRVROLEMEMBER('dbcreator')");
   assertZero(row, 'bulkadmin' in row ? 'bulkadmin' : 'isBulkadmin', "IS_SRVROLEMEMBER('bulkadmin')");
-  if (t.targetKind === 'production') {
-    if (lc(t.database) !== PRODUCTION_DB) {
-      throw new Error(`ONPREM SAFETY VIOLATION: ONPREM_TARGET_KIND=production requires ONPREM_DB_NAME=${PRODUCTION_DB}`);
-    }
-    assertZero(row, 'otherUserDbCount', 'access to any other user database');
-  } else {
-    if (lc(t.database) === PRODUCTION_DB) {
-      throw new Error(`ONPREM SAFETY VIOLATION: ${PRODUCTION_DB} is the production database; only an approved go-live sets ONPREM_TARGET_KIND=production`);
-    }
-    assertZero(row, 'hasProdAccess', "HAS_DBACCESS('dbwins_worldfert9')");
+  // The production environment's primary database is still pinned, so a production deploy cannot
+  // be aimed at a copy. Cross-database isolation is intentionally not enforced: database switching
+  // (owner 2026-10-25) lets a session open any allowed dbwins_worldfert* database.
+  if (t.targetKind === 'production' && lc(String(env.ONPREM_DB_NAME).trim()) !== PRODUCTION_DB) {
+    throw new Error(`ONPREM SAFETY VIOLATION: ONPREM_TARGET_KIND=production requires ONPREM_DB_NAME=${PRODUCTION_DB}`);
   }
   assertZero(row, 'hasControlServer', 'CONTROL SERVER');
   assertZero(row, 'dbOwner' in row ? 'dbOwner' : 'isDbOwner', "IS_ROLEMEMBER('db_owner')");
@@ -169,12 +205,15 @@ function validateOnpremTargetRecord(row, env = process.env, { operation = 'runti
 }
 
 /** checks both pools of the target before the app (or the migration runner) uses them */
-async function assertOnpremPools(readerPool, ownerPool, env = process.env) {
+async function assertOnpremPools(readerPool, ownerPool, env = process.env, overrideDb = null) {
   const operation = env.DB_OPERATION === 'migration' ? 'migration' : 'runtime';
   for (const pool of [readerPool, ownerPool]) {
     const row = (await pool.request().query(IDENTITY_SQL)).recordset?.[0];
-    validateOnpremTargetRecord(row, env, { operation });
+    validateOnpremTargetRecord(row, env, { operation, overrideDb });
   }
 }
 
-module.exports = { IDENTITY_SQL, onpremTuple, onpremConnectionConfig, validateOnpremTargetRecord, assertOnpremPools };
+module.exports = {
+  IDENTITY_SQL, onpremTuple, onpremConnectionConfig, validateOnpremTargetRecord, assertOnpremPools,
+  switchableDatabases, isSwitchableDb,
+};

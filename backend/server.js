@@ -82,8 +82,9 @@ app.use('/api/auth/line/link', rateLimit({
 
 // ── DB target switch (per-request) ────────────────────────────
 // frontend (ADMIN) ส่ง header X-DB-Target: local|remote|remote_b → เลือก pool
-const { runWithTarget, getTarget, DEFAULT_TARGET } = require('./db');
+const { runWithTarget, getTarget, getDbName, DEFAULT_TARGET } = require('./db');
 const { requestTarget } = require('./db-target-policy');
+const activeDb = require('./services/active-database');
 app.use((req, res, next) => {
   let target;
   try {
@@ -91,9 +92,14 @@ app.use((req, res, next) => {
   } catch (error) {
     return res.status(400).json({ message: error.message });
   }
-  return runWithTarget(target, next);
+  // onprem starts each request on the admin-set system default database; requireAuth may then
+  // switch it to the signed-in user's chosen database. Other targets keep their single database.
+  if (target !== 'onprem') return runWithTarget(target, next);
+  activeDb.systemActiveDatabase()
+    .then(db => runWithTarget(target, next, db))
+    .catch(() => runWithTarget(target, next, activeDb.primaryDatabase()));
 });
-app.get('/api/dbinfo', (req, res) => res.json({ target: getTarget(), default: DEFAULT_TARGET }));
+app.get('/api/dbinfo', (req, res) => res.json({ target: getTarget(), default: DEFAULT_TARGET, database: getDbName() || activeDb.primaryDatabase() }));
 app.use(require('./middleware/apiAudit')());
 
 // ── Global Param Validator ────────────────────────────────────

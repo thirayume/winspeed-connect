@@ -27,6 +27,9 @@ services:
       ONPREM_DB_ENCRYPT: ${ONPREM_DB_ENCRYPT:-true}
       ONPREM_DB_LEGACY_TLS: ${ONPREM_DB_LEGACY_TLS:-false}
       ONPREM_TARGET_KIND: ${ONPREM_TARGET_KIND:-uat}
+      # Databases a permitted role may switch their session to: a comma list, or "*" for every
+      # dbwins_worldfert* database the login can open (owner 2026-10-25). Default: none (no switching).
+      ONPREM_SWITCHABLE_DATABASES: ${ONPREM_SWITCHABLE_DATABASES:-}
       JWT_SECRET: ${JWT_SECRET:?Generate a private JWT_SECRET in the local .env}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       CORS_ORIGIN: ${CORS_ORIGIN:?Set the browser origin used to open the app}

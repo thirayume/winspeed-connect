@@ -75,8 +75,6 @@ test('anything else is refused (elevated server roles, db_owner, control databas
   refuse({ isDbcreator: null }, /dbcreator/);
   refuse({ isBulkadmin: 1 }, /bulkadmin/);
   refuse({ isBulkadmin: null }, /bulkadmin/);
-  refuse({ hasProdAccess: 1 }, /HAS_DBACCESS/);
-  refuse({ hasProdAccess: null }, /HAS_DBACCESS/);
   refuse({ hasControlServer: 1 }, /CONTROL SERVER/);
   refuse({ isDbOwner: 1 }, /db_owner/);
   refuse({ isDbOwner: null }, /db_owner/);
@@ -87,23 +85,56 @@ test('anything else is refused (elevated server roles, db_owner, control databas
   refuse({}, /login/, ENV, 'migration');
 });
 
-test('production profile (R740 go-live): only the live database, and no other user database', () => {
+test('production profile still pins its primary database, without cross-database isolation', () => {
   const PROD_ENV = { ...ENV, ONPREM_DB_NAME: 'dbwins_worldfert9', ONPREM_TARGET_KIND: 'production' };
-  const PROD_ROW = { ...ROW, dbName: 'dbwins_worldfert9', hasProdAccess: 1, otherUserDbCount: 0 };
+  const PROD_ROW = { ...ROW, dbName: 'dbwins_worldfert9' };
   assert.equal(validateOnpremTargetRecord(PROD_ROW, PROD_ENV).database, 'dbwins_worldfert9');
   assert.equal(validateOnpremTargetRecord({ ...PROD_ROW, loginName: 'wf_migrator', originalLogin: 'wf_migrator' }, PROD_ENV, { operation: 'migration' }).login, 'wf_migrator');
   const refuse = (patch, re, env = PROD_ENV) => assert.throws(() => validateOnpremTargetRecord({ ...PROD_ROW, ...patch }, env), re);
-  refuse({ otherUserDbCount: 1 }, /other user database/);
-  refuse({ otherUserDbCount: null }, /other user database/);
   refuse({ isDbOwner: 1 }, /db_owner/);
   refuse({ isSysadmin: 1 }, /sysadmin/);
   refuse({ netTransport: 'Shared memory' }, /transport/);
-  // the production kind cannot point at a copy, and a UAT target can never be the live database
+  // Multi-database access no longer fails the guard (owner 2026-10-25): otherUserDbCount is informational.
+  assert.equal(validateOnpremTargetRecord({ ...PROD_ROW, otherUserDbCount: 3, hasProdAccess: 1 }, PROD_ENV).database, 'dbwins_worldfert9');
+  // The production kind cannot point at a copy.
   assert.throws(() => validateOnpremTargetRecord(ROW, { ...ENV, ONPREM_TARGET_KIND: 'production' }), /requires ONPREM_DB_NAME/);
-  refuse({}, /production database/, { ...PROD_ENV, ONPREM_TARGET_KIND: 'uat' });
-  refuse({}, /production database/, { ...PROD_ENV, ONPREM_TARGET_KIND: '' });
   assert.throws(() => onpremTuple({ ...ENV, ONPREM_TARGET_KIND: 'prod' }), /ONPREM_TARGET_KIND/);
-  assert.equal(onpremTuple(ENV).targetKind, 'uat', 'unset means the strict UAT profile');
+  assert.equal(onpremTuple(ENV).targetKind, 'uat', 'unset means the uat profile');
+});
+
+test('switchable allowlist: explicit list, wildcard, and the dbwins_worldfert* name shape', () => {
+  const { switchableDatabases, isSwitchableDb } = require('../onprem-target');
+  const LIST_ENV = { ...ENV, ONPREM_SWITCHABLE_DATABASES: 'dbwins_worldfert9, dbwins_worldfert2' };
+  const WILD_ENV = { ...ENV, ONPREM_SWITCHABLE_DATABASES: '*' };
+  // The primary is always allowed; the explicit list adds the others.
+  assert.deepEqual(switchableDatabases(LIST_ENV).list, ['dbwins_worldfert9_test', 'dbwins_worldfert9', 'dbwins_worldfert2']);
+  assert.ok(isSwitchableDb('dbwins_worldfert2', LIST_ENV));
+  assert.ok(!isSwitchableDb('dbwins_worldfert5', LIST_ENV), 'not listed');
+  assert.ok(!isSwitchableDb('master', LIST_ENV), 'not a dbwins_worldfert name');
+  assert.ok(!isSwitchableDb('dbwins_other', LIST_ENV));
+  // Wildcard allows any dbwins_worldfert* name, but never another database.
+  assert.ok(isSwitchableDb('dbwins_worldfert2', WILD_ENV));
+  assert.ok(isSwitchableDb('dbwins_worldfert9-uat', WILD_ENV));
+  assert.ok(!isSwitchableDb('tempdb', WILD_ENV));
+  assert.ok(!isSwitchableDb("dbwins_worldfert9'; DROP", WILD_ENV), 'rejects an injection-shaped name');
+  assert.equal(switchableDatabases(ENV).list.length, 1, 'unset means only the primary (no switching)');
+  assert.throws(() => switchableDatabases({ ...ENV, ONPREM_SWITCHABLE_DATABASES: 'master,dbwins_worldfert9' }), /not a dbwins_worldfert/);
+});
+
+test('a switched session connects to an allowed database; an unlisted one is refused', () => {
+  const LIST_ENV = { ...ENV, ONPREM_SWITCHABLE_DATABASES: 'dbwins_worldfert9, dbwins_worldfert2' };
+  // The runtime tuple takes the override; the connection config carries it.
+  assert.equal(onpremTuple(LIST_ENV, 'runtime', 'dbwins_worldfert2').database, 'dbwins_worldfert2');
+  assert.equal(onpremConnectionConfig(LIST_ENV, 'runtime', false, 'dbwins_worldfert2').database, 'dbwins_worldfert2');
+  // The migrator ignores the override and always targets the primary.
+  assert.equal(onpremTuple(LIST_ENV, 'migration', 'dbwins_worldfert2').database, 'dbwins_worldfert9_test');
+  // An override outside the allowlist is refused before any connection is made.
+  assert.throws(() => onpremTuple(LIST_ENV, 'runtime', 'dbwins_worldfert5'), /not in this environment's switchable allowlist/);
+  assert.throws(() => onpremTuple(LIST_ENV, 'runtime', 'master'), /not in this environment's switchable allowlist/);
+  // The guard accepts a connection whose database is the switched (allowed) one.
+  assert.equal(validateOnpremTargetRecord({ ...ROW, dbName: 'dbwins_worldfert2' }, LIST_ENV, { overrideDb: 'dbwins_worldfert2' }).database, 'dbwins_worldfert2');
+  // ...but refuses one whose actual database is not allowed, even if asked for an allowed one.
+  assert.throws(() => validateOnpremTargetRecord({ ...ROW, dbName: 'dbwins_worldfert5' }, LIST_ENV, { overrideDb: 'dbwins_worldfert2' }), /not in the switchable allowlist/);
 });
 
 test('the identity query reports access to other user databases', () => {

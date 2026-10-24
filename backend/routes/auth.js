@@ -32,7 +32,16 @@ const LINE_TOKEN_URL = 'https://api.line.me/oauth2/v2.1/token';
 const LINE_PROFILE_URL = 'https://api.line.me/v2/profile';
 
 // R12 item 1/3: ranks and Access As actors come from the shared role-capability map
-const { ROLE_RANK: ACCESS_AS_ROLE_RANK, ACCESS_AS_ACTOR_ROLES: ACTOR_ROLE_LIST, capabilitiesFor } = require('../services/role-capabilities');
+const { ROLE_RANK: ACCESS_AS_ROLE_RANK, ACCESS_AS_ACTOR_ROLES: ACTOR_ROLE_LIST, capabilitiesFor, rolesFor } = require('../services/role-capabilities');
+const activeDb = require('../services/active-database');
+const { getDbName } = require('../db');
+const roleHasCapability = (role, cap) => rolesFor(cap).includes(String(role || '').toUpperCase());
+/** re-sign the current session with a different database claim, preserving the token's lifetime */
+function reissueWithDatabase(tokenPayload, database) {
+  const { iat, ...rest } = tokenPayload || {}; // keep exp so switching never extends the session
+  if (database) rest.db = database; else delete rest.db;
+  return jwt.sign(rest, SECRET);
+}
 const ACCESS_AS_ACTOR_ROLES = new Set(ACTOR_ROLE_LIST);
 
 function getUserId(user) {
@@ -519,6 +528,61 @@ router.get('/me', requireAuth, async (req, res) => {
       : null;
     res.json(toClientUser(user, actor));
   } catch (e) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ── Database selection (owner 2026-10-25) ─────────────────────
+// GET the picker data: the session's active database, the system default, and the list offered.
+router.get('/databases', requireAuth, async (req, res) => {
+  try {
+    const role = req.user?.role;
+    const canSwitch = roleHasCapability(role, 'database.switch');
+    const canSetSystem = roleHasCapability(role, 'database.set-system');
+    const [system, list] = await Promise.all([
+      activeDb.systemActiveDatabase(),
+      (canSwitch || canSetSystem) ? activeDb.listSwitchableDatabases() : Promise.resolve([]),
+    ]);
+    const active = getDbName() || system;
+    res.json({ active, system, primary: activeDb.primaryDatabase(), list, canSwitch, canSetSystem });
+  } catch (e) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST switch this session to another database (empty body resets to the system default).
+router.post('/switch-database', requireAuth, async (req, res) => {
+  try {
+    if (!roleHasCapability(req.user?.role, 'database.switch')) {
+      return res.status(403).json({ code: 'FORBIDDEN', message: 'บทบาทนี้ไม่มีสิทธิ์สลับฐานข้อมูล' });
+    }
+    const wanted = String(req.body?.database || '').trim();
+    const system = await activeDb.systemActiveDatabase();
+    if (!wanted || wanted.toLowerCase() === system.toLowerCase()) {
+      // Reset to the system default: drop the claim.
+      return res.json({ accessToken: reissueWithDatabase(req.tokenPayload, null), database: system, isDefault: true });
+    }
+    const list = await activeDb.listSwitchableDatabases();
+    if (!list.some(d => d.toLowerCase() === wanted.toLowerCase())) {
+      return res.status(400).json({ code: 'DB_NOT_ALLOWED', message: 'เลือกได้เฉพาะฐานข้อมูลที่ระบบอนุญาตและเปิดใช้งานได้' });
+    }
+    const database = list.find(d => d.toLowerCase() === wanted.toLowerCase());
+    res.json({ accessToken: reissueWithDatabase(req.tokenPayload, database), database, isDefault: false });
+  } catch (e) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PUT the system-wide default database (admin). Affects everyone who has not switched.
+router.put('/system-database', requireAuth, async (req, res) => {
+  try {
+    if (!roleHasCapability(req.user?.role, 'database.set-system')) {
+      return res.status(403).json({ code: 'FORBIDDEN', message: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
+    }
+    const database = await activeDb.setSystemActiveDatabase(String(req.body?.database || '').trim());
+    res.json({ system: database });
+  } catch (e) {
+    if (e.code === 'DB_NOT_ALLOWED') return res.status(400).json({ code: e.code, message: 'เลือกได้เฉพาะฐานข้อมูลที่ระบบอนุญาต' });
     res.status(500).json({ message: 'Server error' });
   }
 });

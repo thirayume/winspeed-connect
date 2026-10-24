@@ -241,16 +241,18 @@ const CONFIG_BY_TARGET = {
   remote_b: remoteBConfig,
   local_uat: localUatConfig,
   local_rehearsal: localRehearsalConfig,
-  onprem: () => onpremConnectionConfig(process.env, process.env.DB_OPERATION === 'migration' ? 'migration' : 'runtime', nativeDriver),
+  onprem: (dbName) => onpremConnectionConfig(process.env, process.env.DB_OPERATION === 'migration' ? 'migration' : 'runtime', nativeDriver, dbName),
 };
 const registry = {};
-function makeTarget(target) {
+// Only onprem supports a per-session database; other targets ignore dbName.
+function registryKey(target, dbName) { return target === 'onprem' && dbName ? `onprem::${dbName}` : target; }
+function makeTarget(target, dbName = null) {
   if (process.env.LOCAL_ONLY_MODE === 'true' && target !== 'local_uat') throw new Error('LOCAL_ONLY_MODE prohibits this database target');
   const cfgFn = CONFIG_BY_TARGET[target];
   if (!cfgFn) throw new Error(`ปลายทางฐานข้อมูลไม่รู้จัก: ${target}`);
   // ⚠ ต้องสร้าง config แยก object ต่อ pool — msnodesqlv8 mutate config (แชร์ object → pool ที่ 2 hang)
-  const readerPool = new RuntimePool(cfgFn());
-  const ownerPool  = new RuntimePool(cfgFn());
+  const readerPool = new RuntimePool(cfgFn(dbName));
+  const ownerPool  = new RuntimePool(cfgFn(dbName));
   // Handle pool-level errors so they don't become uncaught exceptions that corrupt process state
   readerPool.on('error', (e) => console.error(`[DB] readerPool (${target}) error:`, e.message));
   ownerPool.on('error',  (e) => console.error(`[DB] ownerPool (${target}) error:`, e.message));
@@ -259,28 +261,33 @@ function makeTarget(target) {
       if (target === 'local_uat' || target === 'local_rehearsal') {
         await validateStartupTargetIdentity(readerPool, ownerPool, target);
       }
-      if (target === 'onprem') await assertOnpremPools(readerPool, ownerPool);
-      console.log(`✓ DB pools connected — ${target}`);
+      if (target === 'onprem') await assertOnpremPools(readerPool, ownerPool, process.env, dbName);
+      console.log(`✓ DB pools connected — ${registryKey(target, dbName)}`);
     })
     .catch(e => {
-      console.error(`✗ DB ${target} connect failed:`, e.message);
+      console.error(`✗ DB ${registryKey(target, dbName)} connect failed:`, e.message);
       readerPool.close().catch(() => {});
       ownerPool.close().catch(() => {});
       throw e;
     });
   return { readerPool, ownerPool, ready };
 }
-function pools(target) {
-  const t = target || (als.getStore()?.target) || DEFAULT_TARGET;
-  if (!registry[t]) {
-    const entry = makeTarget(t);
+function pools(target, dbName) {
+  const store = als.getStore();
+  const t = target || store?.target || DEFAULT_TARGET;
+  // The per-session database applies only to onprem; the default target keeps the primary.
+  const db = t === 'onprem' ? (dbName !== undefined ? dbName : store?.dbName || null) : null;
+  const key = registryKey(t, db);
+  if (!registry[key]) {
+    const entry = makeTarget(t, db);
     // ถ้าต่อไม่ติด ให้เคลียร์ออกเพื่อ retry ครั้งถัดไป (ไม่ค้าง promise reject)
-    entry.ready.catch(() => { if (registry[t] === entry) delete registry[t]; });
-    registry[t] = entry;
+    entry.ready.catch(() => { if (registry[key] === entry) delete registry[key]; });
+    registry[key] = entry;
   }
-  return registry[t];
+  return registry[key];
 }
 function getTarget() { return als.getStore()?.target || DEFAULT_TARGET; }
+function getDbName() { return als.getStore()?.dbName || null; }
 
 // ── helpers (เลือก pool ตาม target ปัจจุบัน) ──────────────────
 async function query(text, inputs = {}) {
@@ -333,9 +340,15 @@ async function wfTransaction(fn) {
 }
 
 // รัน callback ภายใต้ DB target ที่กำหนด (ใช้ใน middleware)
-function runWithTarget(target, fn) {
+function runWithTarget(target, fn, dbName = null) {
   const t = validateTarget(target);
-  return als.run({ target: t }, fn);
+  return als.run({ target: t, dbName: t === 'onprem' ? dbName : null }, fn);
+}
+// Run fn with the session's database overridden, keeping the current target (onprem only).
+function runWithDb(dbName, fn) {
+  const store = als.getStore() || {};
+  const t = store.target || DEFAULT_TARGET;
+  return als.run({ ...store, target: t, dbName: t === 'onprem' ? (dbName || null) : null }, fn);
 }
 
 async function closeAll() {
@@ -359,7 +372,7 @@ async function closeAll() {
 }
 
 module.exports = {
-  sql, query, dboWrite, wfQuery, wfTransaction, runWithTarget, getTarget, pools, closeAll,
+  sql, query, dboWrite, wfQuery, wfTransaction, runWithTarget, runWithDb, getTarget, getDbName, pools, closeAll,
   DEFAULT_TARGET,
   parseConnectionString,
   validateLocalConnectionString,

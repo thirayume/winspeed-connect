@@ -78,6 +78,11 @@ const ACTIONS = Object.freeze({
   'giveaway.budget': ['MANAGER', 'ADMIN'],
   'users.manage': ['ACCOUNTING', 'MANAGER', 'ADMIN'],
   'access-as': ACCESS_AS_ACTOR_ROLES,
+  // Switch your own session to another dbwins_worldfert* database (owner 2026-10-25).
+  // Add or remove roles here to change who may switch.
+  'database.switch': ['ACCOUNTING', 'COUNTER_SALES', 'C_LEVEL', 'ADMIN'],
+  // Change the system-wide default database for everyone.
+  'database.set-system': ['ADMIN'],
 });
 
 function capabilitiesFor(role, { positionCode = null } = {}) {

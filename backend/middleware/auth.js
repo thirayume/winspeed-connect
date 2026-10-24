@@ -2,6 +2,26 @@ const jwt = require('jsonwebtoken');
 
 const SECRET = process.env.JWT_SECRET || 'dev_secret_change_in_production';
 
+/** true if this role may switch its session database (capability database.switch). */
+function maySwitchDatabase(role) {
+  try {
+    return require('../services/role-capabilities').rolesFor('database.switch').includes(String(role || '').toUpperCase());
+  } catch { return false; }
+}
+
+/** Run fn with the session's chosen database when the JWT carries a valid, still-permitted claim. */
+function runWithSessionDatabase(payload, role, fn) {
+  const wanted = payload && typeof payload.db === 'string' ? payload.db.trim() : '';
+  if (!wanted) return fn();
+  try {
+    const { isSwitchableDb } = require('../onprem-target');
+    if (maySwitchDatabase(role) && isSwitchableDb(wanted)) {
+      return require('../db').runWithDb(wanted, fn);
+    }
+  } catch { /* fall through to the default database */ }
+  return fn();
+}
+
 /**
  * D6-02 — บัญชีที่ยังใช้รหัสผ่านตั้งต้นร่วมกับคนอื่น ห้ามเขียนข้อมูล
  *
@@ -104,6 +124,7 @@ function requireAuth(req, res, next) {
   if (!token) return res.status(401).json({ message: 'Token required' });
   try {
     const payload = jwt.verify(token, SECRET);
+    req.tokenPayload = payload; // raw verified claims, for re-issuing on a database switch
     const effectiveId = payload.sub || payload.id;
     const actorId = payload.actorSub || payload.actorId || effectiveId;
     req.user = {
@@ -135,7 +156,12 @@ function requireAuth(req, res, next) {
       return res.status(401).json({ code: effectiveStatus.code, message: effectiveStatus.message });
     }
     // R12 item 4: audit writers read the Access As actor from this request context
-    require('../services/request-context').runWithUser(req.user, () => next());
+    const run = () => require('../services/request-context').runWithUser(req.user, () => next());
+    // Database switching (owner 2026-10-25): a permitted role's session may point at another
+    // allowed database, carried in the JWT `db` claim. An invalid or no-longer-permitted claim is
+    // ignored and the request falls back to the system default already set by the DB-target
+    // middleware. The migrator and non-onprem targets never switch.
+    runWithSessionDatabase(req.tokenPayload, req.user?.role, run);
   }).catch(next);
 }
 

@@ -70,7 +70,7 @@ def main():
         stop("frontend image is not the " + stack + " frontend image.")
 
     # The API receives exactly the reviewed target; only secrets may come from config\.env.
-    for key in TARGET_KEYS + ("ONPREM_DB_USER", "CORS_ORIGIN"):
+    for key in TARGET_KEYS + ("ONPREM_DB_USER", "CORS_ORIGIN", "ONPREM_SWITCHABLE_DATABASES"):
         if str(app.get(key, "")) != target.get(key, ""):
             stop("API setting " + key + " does not match the target file.")
     if app.get("DB_MODE") != "onprem":
