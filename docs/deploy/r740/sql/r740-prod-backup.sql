@@ -4,8 +4,9 @@
 -- 120 minutes in D:\MSSQL\MSSQL10_50.SQL2008\Backup (SQL Server's backup folder).
 --
 -- COPY_ONLY leaves the regular backup chain untouched. CHECKSUM plus RESTORE VERIFYONLY
--- prove the file is readable. To roll back a failed deploy: stop the saleapp-prod stack,
--- then restore this file over dbwins_worldfert9 (WINSpeed users disconnected first).
+-- prove the file is readable. If a deploy fails, first stop the saleapp-prod stack: the
+-- migrations only add wf objects, so WINSpeed keeps working. Restore this file only for real
+-- damage, and remember a restore also discards WINSpeed entries made after this backup.
 USE [master];
 SET NOCOUNT ON;
 

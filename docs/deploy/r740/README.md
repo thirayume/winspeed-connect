@@ -118,7 +118,10 @@ ports 443/8090, a backup gate and the UAT Caddy root. Until the steps below, not
    so clients need no new certificate.
 8. First admin: `New-R740AdminSql.ps1 -Environment prod`, run by IT in SSMS.
 
-Rollback of a failed apply: stop the `saleapp-prod` stack and restore the step 6 backup.
+If an apply fails: stop the `saleapp-prod` stack first. The migrations add only `wf`
+objects (no `dbo` writes at migration time), so WINSpeed keeps working. Restore the step 6
+backup only for real damage; a restore also discards WINSpeed entries made after it, so
+apply in a quiet window right after the backup.
 
 ## Guards worth knowing
 
