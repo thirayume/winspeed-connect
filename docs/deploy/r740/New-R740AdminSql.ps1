@@ -16,6 +16,9 @@
 [CmdletBinding()]
 param(
   [ValidateSet('uat', 'prod')][string]$Environment = 'uat',
+  # Create the admin in a specific company database (dbwins_worldfert9 or dbwins_worldfert2)
+  # after it is migrated; overrides -Environment's default database.
+  [ValidatePattern('^dbwins_worldfert[0-9A-Za-z._-]*$')][string]$Database,
   [string]$Username,
   [System.Security.SecureString]$Password,
   [string]$BcryptModule,
@@ -23,12 +26,14 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 # -Environment prod: the first admin of dbwins_worldfert9 after the go-live migrations.
-$database = if ($Environment -eq 'prod') { 'dbwins_worldfert9' } else { 'dbwins_worldfert9-uat' }
+if (-not $Database) { $Database = if ($Environment -eq 'prod') { 'dbwins_worldfert9' } else { 'dbwins_worldfert9-uat' } }
+$database = $Database
+$fileTag = $database -replace '[^A-Za-z0-9]', '_'
 if (-not $WslContainer) { $WslContainer = "saleapp-$Environment-backend-1" }
 $arguments = @{
   Database = $database
   ServerName = 'R740-SRV\SQL2008'
-  OutputPath = Join-Path $PSScriptRoot "sql\r740-$Environment-create-admin.local.sql"
+  OutputPath = Join-Path $PSScriptRoot "sql\r740-$fileTag-create-admin.local.sql"
 }
 if (-not $BcryptModule -and (Get-Command node.exe -ErrorAction SilentlyContinue)) {
   # This checkout, or (in a Git worktree, which has no node_modules) the main checkout.
