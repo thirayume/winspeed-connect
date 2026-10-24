@@ -21,6 +21,7 @@ param(
   [Parameter(Mandatory = $true)][ValidateSet('uat', 'prod', 'hotfix')][string]$Environment,
   [switch]$PlanOnly,
   [switch]$OnServer,
+  [switch]$Auto,  # unattended (uat only): no prompts, apply the plan just computed; for the nightly refresh
   [string]$ServerHost = '172.16.30.169',
   [string]$SshUser = 'Administrator',
   [string]$KeyFile = (Join-Path $env:USERPROFILE '.ssh\wf-onprem-claude'),
@@ -37,8 +38,10 @@ $repoUrl = 'https://github.com/thirayume/winspeed-connect.git'
 $wsl = Join-Path $env:SystemRoot 'System32\wsl.exe'
 $operator = ("$env:USERNAME@$env:COMPUTERNAME" -replace '[^A-Za-z0-9._@-]', '_')
 
+if ($Auto -and $Environment -ne 'uat') { Write-Host 'ERROR: -Auto is allowed for uat only.' -ForegroundColor Red; exit 2 }
 function Fail([string]$message) { throw "ERROR: $message" }
 function Confirm-Word([string]$prompt, [string]$word) {
+  if ($Auto) { Write-Host "$prompt [auto $word]"; return }
   $answer = Read-Host "$prompt Type $word to continue"
   if ($answer -cne $word) { throw 'STOPPED' }
 }
