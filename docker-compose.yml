@@ -32,7 +32,9 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:?Set the browser origin used to open the app}
       ENFORCE_PASSWORD_CHANGE: "true"
       COUPON_NATIVE_POSTING_ENABLED: "false"
-      DISABLE_BACKGROUND_WORKERS: "true"
+      # Polling (screen refresh) and the outbox worker; neither writes dbo. Off unless a
+      # target turns them on (R740 UAT/PROD: owner 2026-10-24).
+      DISABLE_BACKGROUND_WORKERS: ${DISABLE_BACKGROUND_WORKERS:-true}
       # Initial-only UAT2 AI contract. Disabled until explicitly enabled for local UAT.
       NATIVE_BOOKING_AI_ENABLED: ${NATIVE_BOOKING_AI_ENABLED:-false}
       NATIVE_DELIVERY_104_ENABLED: ${NATIVE_DELIVERY_104_ENABLED:-false}

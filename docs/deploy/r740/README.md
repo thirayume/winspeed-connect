@@ -128,6 +128,11 @@ apply in a quiet window right after the backup.
 - The app and migrator refuse to run if their login can open `dbwins_worldfert9`, is in an
   elevated role, or the connection is not TCP to `R740-SRV\SQL2008` 10.50.x.
 - Target values live only in `targets/*.env` (reviewed in Git); `config\.env` holds secrets.
+- Background workers are on in both R740 targets (`DISABLE_BACKGROUND_WORKERS=false`): the
+  5-second polling that refreshes open screens (read-only on `dbo.SOHD`) and the outbox
+  worker (marks `wf.OutboxEvent` done). Neither writes `dbo`. Local UAT2 keeps them off.
+- Migration 154 locks employee accounts still on the shared default password from 049;
+  an administrator re-enables a person by activating the account with a temporary password.
 - `ONPREM_TARGET_KIND` (pinned per target): `uat` refuses `dbwins_worldfert9` and any login
   that can open it; `production` accepts only `dbwins_worldfert9` and refuses a login that
   can open any other user database.
