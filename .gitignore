@@ -138,6 +138,7 @@ docs/deploy/r740/*
 !docs/deploy/r740/bootstrap.sh
 !docs/deploy/r740/r740-deploy.sh
 !docs/deploy/r740/validate-compose.py
+!docs/deploy/r740/migrate-company.sh
 !docs/deploy/r740/uat.env.example
 !docs/deploy/r740/uat.migrator.env.example
 !docs/deploy/r740/prod.env.example
@@ -155,6 +156,8 @@ docs/deploy/r740/sql/*
 !docs/deploy/r740/sql/r740-grant-app-access.sql
 !docs/deploy/r740/sql/r740-company-principals-dbwins_worldfert9.sql
 !docs/deploy/r740/sql/r740-company-principals-dbwins_worldfert2.sql
+!docs/deploy/r740/sql/r740-company-backup-dbwins_worldfert9.sql
+!docs/deploy/r740/sql/r740-company-backup-dbwins_worldfert2.sql
 !docs/deploy/r740/client/
 docs/deploy/r740/client/*
 !docs/deploy/r740/client/Install-SaleAppCert.bat
@@ -163,6 +166,7 @@ docs/deploy/r740/server/*
 !docs/deploy/r740/server/Deploy-UAT.bat
 !docs/deploy/r740/server/Deploy-PROD.bat
 !docs/deploy/r740/server/Deploy-HOTFIX.bat
+!docs/deploy/r740/server/Migrate-Company.bat
 !docs/deploy/r740/host/
 docs/deploy/r740/host/*
 !docs/deploy/r740/host/Check-SaleAppHost.ps1
