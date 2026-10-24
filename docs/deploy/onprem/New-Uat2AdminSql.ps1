@@ -7,7 +7,9 @@ param(
     # Defaults are the local UAT2 target; docs/deploy/r740/New-R740AdminSql.ps1 passes R740 UAT.
     [ValidatePattern('^[A-Za-z0-9_-]{1,128}$')][string]$Database = 'dbwins_worldfert9_uat2',
     [ValidatePattern('^[A-Za-z0-9_-]{1,64}(\\[A-Za-z0-9_-]{1,64})?$')][string]$ServerName = 'AMYOU-YOGA7\V2008R2',
-    [string]$BcryptModule
+    [string]$BcryptModule,
+    # Hash inside this running backend container of the WSL Ubuntu Docker engine (R740-SRV).
+    [ValidatePattern('^[A-Za-z0-9_.-]{1,128}$')][string]$WslContainer
 )
 
 $ErrorActionPreference = 'Stop'
@@ -56,7 +58,12 @@ try {
     $taskInput = @{ password = $taskPlainPassword }
     $taskNode = Get-Command node.exe -ErrorAction SilentlyContinue
     $taskBcryptModule = if ($BcryptModule) { $BcryptModule } else { Join-Path $taskRepoRoot 'backend\node_modules\bcrypt' }
-    if ($taskNode -and (Test-Path -LiteralPath (Join-Path $taskBcryptModule 'package.json'))) {
+    if ($WslContainer) {
+        # wsl.exe --exec takes Windows-style arguments; pass the worker as one line.
+        $taskExecutable = Join-Path $env:SystemRoot 'System32\wsl.exe'
+        $taskArguments = '--distribution Ubuntu --user root --exec docker exec -i --workdir /app ' + $WslContainer +
+            ' node -e "' + ($taskWorker -replace "`r?`n", ' ') + '"'
+    } elseif ($taskNode -and (Test-Path -LiteralPath (Join-Path $taskBcryptModule 'package.json'))) {
         $taskInput.modulePath = $taskBcryptModule
         $taskExecutable = $taskNode.Source
         $taskArguments = '-e "' + $taskWorker + '"'
