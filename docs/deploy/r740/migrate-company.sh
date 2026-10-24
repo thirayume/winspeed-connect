@@ -38,10 +38,12 @@ MIG_USER="$(sed -n 's/^ONPREM_MIGRATOR_USER=//p' "$MIG_ENV" | tr -d '\r' | head 
 if [[ "$PHASE" == apply ]]; then
   newest="$(find "$BACKUP_DIR" -maxdepth 1 -type f -name "${DB}_predeploy_*.bak" -printf '%T@ %s %f\n' 2>/dev/null | sort -n | tail -1)"
   [[ -n "$newest" ]] || fail "no ${DB}_predeploy_*.bak in $BACKUP_DIR; take a backup first (sql/r740-company-backup-${DB}.sql)."
-  read -r age size file <<<"$newest"
-  age=$(( $(date +%s) - ${age%.*} ))
+  read -r mtime size file <<<"$newest"
+  age=$(( $(date +%s) - ${mtime%.*} ))
+  (( age < 0 )) && age=0   # tolerate WSL/NTFS clock skew (an mtime slightly in the future)
   (( age <= BACKUP_MAX_MIN * 60 )) || fail "the newest backup $file is $(( age/60 )) minutes old (limit $BACKUP_MAX_MIN); take a fresh one."
-  (( age >= 60 )) || fail "the backup $file changed in the last minute; wait until SSMS reports it verified."
+  # r740-company-backup-<db>.sql runs RESTORE VERIFYONLY before you ever run this, so the file is
+  # already proven complete and readable; no wall-clock "too fresh" floor (it only caused false stops).
   (( size > 0 )) || fail "the backup $file is empty."
   echo "Pre-migrate backup: $file ($(( size/1048576 )) MB, $(( age/60 )) min old)"
 fi
