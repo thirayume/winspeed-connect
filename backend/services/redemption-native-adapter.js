@@ -16,7 +16,7 @@
  * 3. DocuNo: Taken directly from physical delivery / scale ticket. NEVER generated, NO prefixes, NEVER touch dbo.EMRunBrch.
  * 4. DocuStatus: Strictly 'N', PostInv = 'N', IsCheckAll = 'Y', IsCheck = 'Y'.
  * 5. RedemtionID: ISNULL(MAX(RedemtionID), 0) + 1 under (UPDLOCK, HOLDLOCK) with retry loop on PK collision.
- * 6. DT Snapshot: WFRedemtionDT.RemaQty records balance BEFORE deduction.
+ * 6. DT quantity: WFRedemtionDT.RemaQty starts at the validated uninvoiced line GoodQty.
  * 7. Optimistic Deduction: UPDATE dbo.WFCoupon SET RemaQty = RemaQty - @qty WHERE RemaQty >= @qty.
  * 8. Lock Ordering: Sort lines by couponId ASC to prevent deadlocks under concurrent multi-coupon writebacks.
  * 9. Repeated Lines: Reject duplicate couponId lines explicitly (Mirror PK is (RedemtionID, CouponID)).
@@ -363,7 +363,7 @@ async function createRedemptionDocument(params = {}, systemOptions = {}) {
       const inveId = Number(line.inveId || 1000);
       const locaId = Number(line.locaId || 1000);
 
-      // 7.2 Insert WFRedemtionDT with snapshot RemaQty (BEFORE deduction)
+      // 7.2 Insert WFRedemtionDT with initial uninvoiced line quantity
       await tx.request()
         .input('redemtionId', sql.Int, redemtionId)
         .input('listno', sql.SmallInt, listno)
@@ -375,7 +375,7 @@ async function createRedemptionDocument(params = {}, systemOptions = {}) {
         .input('couponId', sql.Int, cid)
         .input('couponNo', sql.VarChar(50), effectiveCouponNo)
         .input('goodQty', sql.Decimal(18, 3), qty)
-        .input('remaQty', sql.Decimal(18, 3), beforeRemaQty)
+        .input('remaQty', sql.Decimal(18, 3), qty)
         .query(`
           INSERT INTO dbo.WFRedemtionDT (
             RedemtionID, Listno, GoodID, InveID, LocaID, GoodUnitID, GoodPrice,

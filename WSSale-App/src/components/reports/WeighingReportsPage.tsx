@@ -152,7 +152,7 @@ const TABS: Tab[] = [
       { key: 'DateReg', label: 'ลงทะเบียน' },
       { key: 'Status', label: 'สถานะ', fmt: (v, r) => <StatusChip status={v as number} text={r.StatusText} /> },
       { key: 'BookingNo', label: 'ใบสั่งจอง (103)', fmt: v => v || '—' },
-      { key: 'DeliveryNoteNo', label: 'ใบส่งขาย (104)', fmt: v => v || '—' },
+      { key: 'DeliveryNoteNo', label: 'ใบส่งขาย (104)', fmt: (v, r) => Number(r.DeliveryNoteCount) > 1 ? `หลายใบ (${r.DeliveryNoteCount})` : v || '—' },
       { key: 'AppvDocuNo', label: 'ใบอนุมัติ', fmt: v => v || '—' },
       { key: 'MoveBill', label: 'เลขที่เที่ยว' },
       { key: 'Plate', label: 'ทะเบียนรถ' },
