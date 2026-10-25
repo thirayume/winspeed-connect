@@ -17,6 +17,7 @@ function fixture(overrides={}){
   if(/SERVERPROPERTY/.test(text))return rows([{ServerName:'AMYOU-YOGA7\\V2008R2',DbName:state.dbName||'dbwins_worldfert9_uat2',DbId:10}]);
   if(/SELECT Id,Role,IsActive/.test(text))return rows(state.accounts);
   if(/sp_getapplock/.test(text))return rows([{LockResult:0}]);
+  if(/AS InvoiceReceiptObject/.test(text))return rows([{InvoiceReceiptObject:null}]);
   if(/SELECT r\.\*,h.DocuNo AS SourceNo/.test(text))return rows([state.parent]);
   if(/SELECT Id, EmpId, PositionCode/.test(text))return rows([{Id:p.id.value,EmpId:'1001',PositionCode:null}]);
   if(/SELECT DocuNo,DocuType FROM dbo.SOHD/.test(text))return rows([{DocuNo:'I69-00601',DocuType:104}]);

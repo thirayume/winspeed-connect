@@ -22,6 +22,7 @@ const { evaluateLinePrice, createPriceApprovalRequest, calculatePricingFingerpri
 const {initialBookingAi,aiHttpError,assertInitialAiShipmentReady}=require('../services/initial-booking-ai');
 const {initialDelivery,deliveryHttpError}=require('../services/initial-delivery');
 const {initialManualRedemption,manualRedemptionHttpError}=require('../services/initial-manual-redemption');
+const {initialInvoice,invoiceHttpError}=require('../services/initial-invoice');
 
 let _has141Cache = null;
 async function checkMigration141() {
@@ -39,6 +40,17 @@ async function checkMigration141() {
 }
 
 router.use(requireAuth);
+
+function invoiceAction(operation){return async(req,res)=>{
+ try{
+  const result=await initialInvoice({operation,soid:req.params.id,user:req.user,
+   requestId:req.body?.requestId,fingerprint:req.body?.fingerprint,invoiceDate:req.body?.invoiceDate});
+  if(operation==='apply'&&!result.replayed)broadcast('so_updated',{id:req.params.id,action:'native_107_posted'});
+  res.json(result);
+ }catch(e){const x=invoiceHttpError(e);res.status(x.status).json({code:x.code,message:x.code});}
+};}
+router.get('/:id/native-invoice/preview',requireCapability('invoice.post-native'),invoiceAction('preview'));
+router.post('/:id/native-invoice',requireCapability('invoice.post-native'),invoiceAction('apply'));
 
 function manualRedemptionAction(operation){return async(req,res)=>{
  try{

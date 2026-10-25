@@ -36,12 +36,13 @@ async function context(q,source,user){
  try{await verifyDeliveryAccount(q,r.SourceNo,r);await verifyReceipt(q,r);}catch{fail('MR_DELIVERY_DIVERGED');}
  return r;
 }
-async function redemptionHash(q,id){
+async function redemptionSnapshot(q,id){
  const parts=[];for(const [table,order] of [['WFRedemtionHD','RedemtionID'],['WFRedemtionDT','Listno']]){
   const value=(await q(`SELECT COALESCE(CONVERT(nvarchar(max),(SELECT * FROM dbo.${table} WITH(UPDLOCK,HOLDLOCK) WHERE RedemtionID=@id ORDER BY ${order} FOR XML RAW,BINARY BASE64,ELEMENTS XSINIL)),N'') AS Snapshot`,{id:input(sql.Int,id)})).recordset?.[0]?.Snapshot;
   if(typeof value!=='string')fail('MR_SNAPSHOT_UNAVAILABLE',503);parts.push(value);
- }return hash(parts);
+ }return parts;
 }
+async function redemptionHash(q,id){return hash(await redemptionSnapshot(q,id));}
 async function eligible(q,r){
  const source=r.SourceSOID;
  const rows=(await q(`SELECT c.GoodQty AS Qty,c.CouponNo,h.DocuNo AS DeliveryNo
@@ -67,8 +68,12 @@ function requestView(r,who){return r?{requestId:r.RequestId,status:r.Status,reas
 function receiptView(r,replayed){return {soid:r.SourceSOID,redemptionId:r.RedemptionID,redemptionNo:r.RedemptionNo,
  couponId:r.CouponID,policyVersion:r.PolicyVersion,replayed,completed:true,evidenceMode:'UAT_SIMULATION',physicalShipmentVerified:false};}
 async function verifyCompleted(q,parent,r){
- if(r.PolicyVersion!==POLICY||!r.RedemptionAfterHash||!r.DeliveryAfterHash||parent.DeliveryAfterHash!==r.DeliveryAfterHash
-  ||await redemptionHash(q,r.RedemptionID)!==r.RedemptionAfterHash)fail('MR_RECEIPT_DIVERGED');
+ if(r.PolicyVersion!==POLICY||!r.RedemptionAfterHash||!r.DeliveryAfterHash)fail('MR_RECEIPT_DIVERGED');
+ const current=await redemptionHash(q,r.RedemptionID);
+ if(parent.DeliveryAfterHash!==r.DeliveryAfterHash||current!==r.RedemptionAfterHash){
+  const {verifyInvoiceContinuation}=require('./initial-invoice-continuation');
+  if(!await verifyInvoiceContinuation(q,parent,r,current))fail('MR_RECEIPT_DIVERGED');
+ }
  const request=(await q('SELECT * FROM wf.NativeManualRedemptionRequest WHERE RequestId=@request',requestInputs(r.RequestId))).recordset?.[0];
  if(!request||request.Status!=='CONSUMED'||dataHash(request)!==r.ApprovedDataHash||request.ApprovedDataHash!==r.ApprovedDataHash)fail('MR_RECEIPT_DIVERGED');
 }
@@ -171,4 +176,4 @@ function manualRedemptionHttpError(e){
  const code=/\b(MR_(?:TARGET_NOT_SUPPORTED|SOURCE_UNAVAILABLE|ACTOR_UNAVAILABLE|APPROVAL_REQUIRED|REQUEST_CONFLICT|COUNTER_UNSUPPORTED|NUMBER_EXHAUSTED|ID_CONFLICT|ID_EXHAUSTED))\b/.exec(String(e.message||''))?.[1];
  return {status:code?409:503,code:code||'MR_FAILED'};
 }
-module.exports={initialManualRedemption,manualRedemptionHttpError,redemptionHash,POLICY};
+module.exports={initialManualRedemption,manualRedemptionHttpError,redemptionHash,redemptionSnapshot,verifyCompleted,POLICY};

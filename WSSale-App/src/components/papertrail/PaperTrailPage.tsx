@@ -17,6 +17,7 @@ import { QuickShipModal } from '../sales/QuickShipModal';
 import { NativeAiApprovalButton } from '../sales/NativeAiApprovalButton';
 import { NativeDeliveryButton } from '../sales/NativeDeliveryButton';
 import { NativeManualRedemptionButton } from './NativeManualRedemptionButton';
+import { NativeInvoiceButton } from './NativeInvoiceButton';
 import { NativeCreditRequests } from './NativeCreditRequests';
 
 import { UnlockReviewModal } from './UnlockReviewModal';
@@ -377,6 +378,7 @@ export function PaperTrailPage() {
                                 {card.status === 'PENDING_APPROVAL' && <NativeAiApprovalButton soid={card.id} onApproved={load} />}
                                 {card.status === 'CONFIRMED' && <NativeDeliveryButton soid={card.id} onCreated={load} />}
                                 {card.status === 'CONFIRMED' && <NativeManualRedemptionButton soid={card.id} onCreated={load} />}
+                                {card.status === 'CONFIRMED' && <NativeInvoiceButton soid={card.id} onCreated={load} />}
                                 {canAdvance && !(card.truckPlate === 'ตั๋วคุม' && card.status !== 'DRAFT') && (
                                   card.status === 'DRAFT' && card.tripId ? (
                                     <span

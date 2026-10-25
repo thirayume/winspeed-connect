@@ -15,6 +15,7 @@ const FALLBACK_ACTIONS: Record<string, string[]> = {
   'edit-request.create': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'coupon.settle': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'coupon.manual116': ['WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'invoice.post-native': ['ACCOUNTING'],
   'giveaway.borrow': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'giveaway.budget': ['MANAGER', 'ADMIN'],
   'users.manage': ['ACCOUNTING', 'MANAGER', 'ADMIN'],

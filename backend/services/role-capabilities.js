@@ -69,6 +69,7 @@ const ACTIONS = Object.freeze({
   'so.create-native-delivery': ['SALES', 'COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'credit.approve-native': ['ACCOUNTING'],
   'coupon.manual116': ['WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'invoice.post-native': ['ACCOUNTING'],
   'trip.view': ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'quotation.create': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'quotation.manage': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
@@ -89,7 +90,8 @@ function capabilitiesFor(role, { positionCode = null } = {}) {
     actions: Object.keys(ACTIONS).filter(k => ACTIONS[k].includes(r)
       && (k !== 'so.approve-native' || process.env.NATIVE_BOOKING_AI_ENABLED === 'true')
       && (!['so.create-native-delivery','credit.approve-native'].includes(k) || process.env.NATIVE_DELIVERY_104_ENABLED === 'true')
-      && (k !== 'coupon.manual116' || process.env.NATIVE_MANUAL_116_ENABLED === 'true')),
+      && (k !== 'coupon.manual116' || process.env.NATIVE_MANUAL_116_ENABLED === 'true')
+      && (k !== 'invoice.post-native' || process.env.NATIVE_INVOICE_107_ENABLED === 'true')),
   };
 }
 

@@ -165,6 +165,40 @@ lifecycle branches stop. Real TruckScale integration and the general manual
 exception remain separate acceptance work. Do not enable the legacy native
 coupon adapter to bypass these boundaries.
 
+### Initial coupon Invoice107 simulation
+
+`NATIVE_INVOICE_107_ENABLED=false` is the default. Enable only for the pinned
+local UAT2 after migration157 and a reviewed rehearsal. Only ACCOUNTING may
+preview or post. Existing Access As authorization still applies and both actual
+and effective identities are recorded. Admin/Manager roles do not directly gain
+the posting capability.
+
+Paper Trail offers a Post Invoice preview after the complete104 and approved
+manual116 simulation. The first supported contract posts one full zero-tax line,
+preserves I/C/J or K/D/N, and uses the native116 date. It recalculates the due date
+from the invoice date and credit days. A different invoice date is not yet
+verified. Confirm the date and stock deduction before posting.
+
+One transaction creates native107, its SAT identity and stock row, consumes the
+pending116 quantity and104 remaining quantity, advances the appropriate invoice
+counter, and stores the application audit and receipt. Repeated identical
+commands verify the receipt and return the existing invoice. Original116
+before/after hashes remain intact; only a verified application107 continuation
+can advance the current state. External native changes are not adopted.
+
+The202 receivable and VAT snapshots remain unchanged, as observed in WinSpeed.
+The raw202 and107 balances must not be summed as a customer debt report. Native
+AR report reconciliation is still pending Accounting confirmation. No GL
+posting or physical shipment acceptance is implied.
+
+Native cost triggers stay enabled. The initial contract rejects existing future
+cost-calculated stock or cost-detail rows for the product across all branches
+and inventories. It verifies existing future stock/cost snapshots remain exact.
+The application checks the reviewed trigger definitions through a fixed reader
+procedure running as the existing dedicated migrator; no general metadata grant
+is added to the application principal. Changed definitions or unsupported
+period/counter/cost branches stop before a write.
+
 ### Account status after administrator changes
 
 Authenticated requests verify that both the acting and effective accounts exist and are active. Deleted accounts receive `401 ACCOUNT_NOT_FOUND`; disabled accounts receive `401 ACCOUNT_DISABLED`; an unavailable account lookup returns `503 SERVICE_UNAVAILABLE`. A transient lookup failure is not cached. User deletion and activation changes clear the account status cache immediately. Direct SQL changes can take up to 60 seconds to invalidate a cached status.
