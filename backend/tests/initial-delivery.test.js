@@ -21,6 +21,7 @@ function fixture(overrides={}) {
   if(/sp_getapplock/.test(text))return rows([{LockResult:Object.hasOwn(state,'lockResult')?state.lockResult:0}]);
   if(/SELECT h.SOID/.test(text))return rows([{SOID:501,DocuNo:state.sourceNo,AppvDocuNo:'TEST-AI',CustID:100,EmpID:state.owner===12?102:101,SalesUserId:state.owner??11}]);
   if(/SELECT DocuNo,DocuType FROM dbo.SOHD/.test(text))return rows(state.missingDelivery?[]:[{DocuNo:state.deliveryNo,DocuType:104}]);
+  if(/SELECT c.CouponID AS CompleteCouponID/.test(text))return rows(state.incompleteNativeReceipt?[]:[{CompleteCouponID:701}]);
   if(/SELECT Id, EmpId, PositionCode/.test(text))return rows([{Id:11,EmpId:'101',PositionCode:null}]);
   if(/SELECT \* FROM wf.NativeDeliveryReceipt/.test(text))return rows(state.receipt?[state.receipt]:[]);
   if(/SELECT Fingerprint,PolicyVersion/.test(text))return rows(state.origin===false?[]:[{Fingerprint:originalHash,PolicyVersion:'O11-AI-INITIAL-UAT2-v1'}]);
@@ -36,14 +37,19 @@ function fixture(overrides={}) {
     else if(table==='SOHD'&&!/CAST\('W'/.test(text))value+=':approved';
    }
    if(['WFCoupon','Define_104'].includes(table))value='target:'+table;
+   if(Number(p.soid?.value)===601 && ['SOInvHD','SOInvDT','VTVAT','SMSat'].includes(table))value='finance:'+table+(state.targetFinanceChanged?':changed':'');
+   if(/SELECT g.GoodID,g.GoodWeight,g.ExpnID/.test(text))value='pack:'+Boolean(state.packChanged);
+   if(/FROM dbo.EMPeriod/.test(text))value='period:'+Boolean(state.periodChanged);
    if(state.creditChanged && /EMCust|SOOption|SOInvHD|SOCredit/.test(text))value+=':credit-changed';
    return rows([{Snapshot:value}]);
   }
-  if(/EXEC wf.usp_CreateInitialDelivery/.test(text)){
-   if(/@Preview=1/.test(text)){if(state.previewError)throw new Error(state.previewError);return rows([{Amount:'18200.0000'}]);}
+  if(/EXEC wf.usp_CreateCompleteInitialDelivery/.test(text)){
+   if(/@Preview=1/.test(text)){if(state.previewError)throw new Error(state.previewError);return rows([{Amount:'18200.0000',SourceBook:state.sourceNo[0],CouponSeries:state.sourceNo[0]==='K'?'D':'C',PackKg:'50.0000',SackQty:'20.0000'}]);}
    state.procCalls++;if(state.procError)throw new Error(state.procError);
    state.applied=true;state.request.Status='CONSUMED';
    state.receipt={SourceSOID:501,RequestId:key,Fingerprint:p.fingerprint.value,DeliverySOID:601,DeliveryNo:state.deliveryNo,CouponID:701,
+    CouponNo:state.couponNo||(state.deliveryNo.startsWith('K')?'D6900701':'C6900701'),
+    FinanceSOInvID:801,FinancePostID:901,FinanceVATID:1001,ContainQty:50,SackQty:20,
     AppliedById:p.user.value,ApplierActorId:p.actor.value,PolicyVersion:POLICY};
    return rows([state.receipt]);
   }
@@ -130,11 +136,44 @@ test('a receipt number cannot conceal a different actual native104 number',async
  assert.equal(f.state.procCalls,1);
 });
 test('a coupon or invoice series cannot masquerade as a103/104 bill of the same account',async()=>{
- for(const overrides of [{sourceNo:'C69-00501'},{sourceNo:'J69-00501'},
-  {deliveryNo:'C69-00601'},{deliveryNo:'J69-00601'},{deliveryNo:'AI69-00601'}]){
+ for(const sourceNo of ['C69-00501','J69-00501']){
+  const f=fixture({sourceNo});await assert.rejects(f.call('preview'),{code:'DO_ACCOUNT_MISMATCH'});
+  assert.equal(f.state.procCalls,0);
+ }
+ for(const overrides of [{deliveryNo:'C69-00601'},{deliveryNo:'J69-00601'},{deliveryNo:'AI69-00601'}]){
   const f=fixture(overrides);const command=await approved(f);
   await assert.rejects(f.call('apply',command),{code:'DO_ACCOUNT_MISMATCH'});
   assert.equal(f.state.applied,false);assert.equal(f.state.receipt,null);
+ }
+});
+test('complete receipt exposes the numbered coupon and202 identity without declaring shipment ready',async()=>{
+ const f=fixture();const command=await approved(f);const r=await f.call('apply',command);
+ assert.equal(r.couponNo,'C6900701');assert.equal(r.financeSoInvId,801);assert.equal(r.financePostId,901);
+ assert.equal(r.policyVersion,'O25-DO104-COMPLETE-UAT2-v2');assert.equal(r.shipmentReady,false);
+});
+test('an unnumbered or old-contract receipt cannot be accepted as a complete104',async()=>{
+ for(const mutate of [r=>{r.PolicyVersion='O23-DO104-INITIAL-UAT2-v1';},r=>{r.CouponNo=null;},r=>{r.FinanceSOInvID=null;}]){
+  const f=fixture();const command=await approved(f);await f.call('apply',command);mutate(f.state.receipt);
+  await assert.rejects(f.call('preview'),{code:'DO_LEGACY_RECEIPT_INCOMPLETE'});
+ }
+});
+test('a coupon from the other account cannot commit even when the104 bill is correct',async()=>{
+ const f=fixture({couponNo:'D6900701'});const command=await approved(f);
+ await assert.rejects(f.call('apply',command),{code:'DO_COUPON_ACCOUNT_MISMATCH'});
+ assert.equal(f.state.applied,false);assert.equal(f.state.receipt,null);
+});
+test('missing native coupon/202/VAT proof and changed finance footprints block success or replay',async()=>{
+ const f=fixture({incompleteNativeReceipt:true});const command=await approved(f);
+ await assert.rejects(f.call('apply',command),{code:'DO_COMPLETE_RECEIPT_DIVERGED'});
+ assert.equal(f.state.applied,false);assert.equal(f.state.receipt,null);
+ const x=fixture();const command2=await approved(x);await x.call('apply',command2);
+ x.state.targetFinanceChanged=true;
+ await assert.rejects(x.call('apply',command2),{code:'DO_RECEIPT_DIVERGED'});
+});
+test('packaging or accounting-period changes invalidate credit approval before apply',async()=>{
+ for(const key of ['packChanged','periodChanged']){
+  const f=fixture();const command=await approved(f);f.state[key]=true;
+  await assert.rejects(f.call('apply',command),{code:'DO_PREVIEW_STALE'});assert.equal(f.state.procCalls,0);
  }
 });
 test('changed source or credit invalidates preview and approval before any native apply',async()=>{

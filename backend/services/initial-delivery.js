@@ -1,13 +1,13 @@
 'use strict';
-// Restricted UAT2 contract: full single-line 104 and an explicit Account credit
-// decision. It does not post a numbered coupon, stock movement,116 or107.
+// Restricted UAT2 contract: full single-line whole-bag zero-tax104, numbered
+// C/D and202 receivable, with explicit Account credit approval. No116/107/GL.
 const { createHash } = require('crypto');
 const { sql, wfTransaction } = require('../db');
 const { nativeFingerprint } = require('./initial-booking-ai');
 const { getVisibleScope, inScope } = require('./visible-scope');
 const { rolesFor, roleRank, ACCESS_AS_ACTOR_ROLES } = require('./role-capabilities');
-const { bookOf } = require('./account-books');
-const POLICY = 'O23-DO104-INITIAL-UAT2-v1';
+const { bookOf, couponSeriesForBill } = require('./account-books');
+const POLICY = 'O25-DO104-COMPLETE-UAT2-v2';
 const fail = (code, status = 409) => { throw Object.assign(new Error(code), { code, status }); };
 const hash = parts => createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('hex');
 const input = (type, value) => ({ type, value });
@@ -64,6 +64,12 @@ async function deliveryFingerprint(q, soid) {
   ['SODTRemark','SOID','ListNo,RefListNo'],['WFCoupon','DocuID','CouponID'],['Define_104','ID','ID']]) {
   parts.push(await xml(q,`SELECT * FROM dbo.${table} WITH(UPDLOCK,HOLDLOCK) WHERE ${key}=@soid ORDER BY ${order}`,idInputs(soid)));
  }
+ for(const statement of [
+  'SELECT h.* FROM dbo.SOInvHD h WITH(UPDLOCK,HOLDLOCK) WHERE h.Docutype=202 AND h.SOInvID IN(SELECT SOInvID FROM dbo.SOInvDT WITH(UPDLOCK,HOLDLOCK) WHERE RefID=@soid AND Docutype=202) ORDER BY h.SOInvID',
+  'SELECT * FROM dbo.SOInvDT WITH(UPDLOCK,HOLDLOCK) WHERE RefID=@soid AND Docutype=202 ORDER BY SOInvID,ListNo',
+  'SELECT v.* FROM dbo.VTVAT v WITH(UPDLOCK,HOLDLOCK) JOIN dbo.SOInvHD h ON h.PostID=v.FromID AND h.Docutype=v.FromFlag WHERE h.Docutype=202 AND h.SOInvID IN(SELECT SOInvID FROM dbo.SOInvDT WHERE RefID=@soid AND Docutype=202) ORDER BY v.VATID,v.ListNo',
+  'SELECT s.* FROM dbo.SMSat s WITH(UPDLOCK,HOLDLOCK) JOIN dbo.SOInvHD h ON h.PostID=s.GlobalID AND h.Docutype=s.GlobalFlag WHERE h.Docutype=202 AND h.SOInvID IN(SELECT SOInvID FROM dbo.SOInvDT WHERE RefID=@soid AND Docutype=202) ORDER BY s.GlobalID',
+ ])parts.push(await xml(q,statement,idInputs(soid)));
  return hash(parts);
 }
 async function context(q,soid,user) {
@@ -71,6 +77,7 @@ async function context(q,soid,user) {
   FROM dbo.SOHD h WITH(UPDLOCK,HOLDLOCK) LEFT JOIN wf.SalesOrderExt e WITH(UPDLOCK,HOLDLOCK) ON e.SOID=CONVERT(VARCHAR(50),h.SOID)
   WHERE h.SOID=@soid AND h.DocuType=103`,idInputs(soid))).recordset?.[0];
  if(!row || !inScope(await getVisibleScope(user,q),{userId:row.SalesUserId,empId:row.EmpID})) fail('DO_SOURCE_NOT_FOUND',404);
+ if(!/^[IK]\d{2}-\d{5}$/.test(String(row.DocuNo||'')))fail('DO_ACCOUNT_MISMATCH');
  return row;
 }
 async function eligible(q,row,who) {
@@ -78,10 +85,13 @@ async function eligible(q,row,who) {
  const origin=(await q('SELECT Fingerprint,PolicyVersion FROM wf.NativeBookingOrigin WITH(UPDLOCK,HOLDLOCK) WHERE SOID=@soid',idInputs(soid))).recordset?.[0];
  if(!origin || origin.PolicyVersion!=='O11-AI-INITIAL-UAT2-v1') fail('DO_ORIGIN_REQUIRED');
  if(await confirmedFingerprint(q,soid)!==origin.Fingerprint) fail('DO_SOURCE_CHANGED');
- const checks=await q(`EXEC wf.usp_CreateInitialDelivery @SOID=@soid,@Preview=1,@RequestId=NULL,@Fingerprint=NULL,@UserId=@user,@ActorId=@actor`,
+ const checks=await q(`EXEC wf.usp_CreateCompleteInitialDelivery @SOID=@soid,@Preview=1,@RequestId=NULL,@Fingerprint=NULL,@UserId=@user,@ActorId=@actor`,
   {...idInputs(soid),user:input(sql.Int,who.effective),actor:input(sql.Int,who.actor)});
  const amount=checks.recordset?.[0]?.Amount;
  if(typeof amount!=='string' || !/^\d+\.\d{4}$/.test(amount)) fail('DO_AMOUNT_UNAVAILABLE',503);
+ const detail=checks.recordset?.[0];
+ if(detail.SourceBook!==bookOf(row.DocuNo)||detail.CouponSeries!==couponSeriesForBill(detail.SourceBook)
+  || ![detail.PackKg,detail.SackQty].every(v=>typeof v==='string'&&/^\d+\.\d{4}$/.test(v)&&Number(v)>0))fail('DO_PREVIEW_UNAVAILABLE',503);
  const parts=[await nativeFingerprint(q,soid)];
  const statements=[
   'SELECT CustID,CreditState,CreditAmnt FROM dbo.EMCust WITH(UPDLOCK,HOLDLOCK) WHERE CustID=@cust',
@@ -94,9 +104,11 @@ async function eligible(q,row,who) {
    JOIN dbo.EMCustTempCreditHD h WITH(UPDLOCK,HOLDLOCK) ON h.CreditID=d.CreditID WHERE d.CustID=@cust ORDER BY d.CreditID`,
   'SELECT * FROM dbo.SOCreditApprov WITH(UPDLOCK,HOLDLOCK) WHERE CustID=@cust ORDER BY CreditID',
   'SELECT CONVERT(VARCHAR(10),DATEADD(hour,7,GETUTCDATE()),120) AS BusinessDate',
+  'SELECT g.GoodID,g.GoodWeight,g.ExpnID,u.GoodUnitID,u.GoodUnitCode FROM dbo.SODT d WITH(UPDLOCK,HOLDLOCK) JOIN dbo.EMGood g WITH(UPDLOCK,HOLDLOCK) ON g.GoodID=d.GoodID JOIN dbo.EMGoodUnit u WITH(UPDLOCK,HOLDLOCK) ON u.GoodUnitID=d.GoodUnitID2 WHERE d.SOID=@soid ORDER BY d.ListNo',
+  "SELECT * FROM dbo.EMPeriod WITH(UPDLOCK,HOLDLOCK) WHERE PeriodType='N' AND CONVERT(DATETIME,CONVERT(VARCHAR(10),DATEADD(hour,7,GETUTCDATE()),120),120) BETWEEN BeginDate AND EndDate ORDER BY PeriodID",
  ];
  for(const statement of statements) parts.push(await xml(q,statement,p));
- return {fingerprint:hash(parts),amount};
+ return {fingerprint:hash(parts),amount,book:detail.SourceBook,couponSeries:detail.CouponSeries,packKg:detail.PackKg,sackQty:detail.SackQty};
 }
 const requestInputs=id=>({request:input(sql.VarChar(36),id)});
 function requestView(r,who) {
@@ -105,6 +117,7 @@ function requestView(r,who) {
 }
 function receiptView(r,replayed) {
  return {soid:r.SourceSOID,deliverySoid:r.DeliverySOID,deliveryNo:r.DeliveryNo,couponId:r.CouponID,createdAt:r.CreatedAt,
+  couponNo:r.CouponNo,financeSoInvId:r.FinanceSOInvID,financePostId:r.FinancePostID,
   policyVersion:r.PolicyVersion,replayed,shipmentReady:false};
 }
 async function verifyReceipt(q,r) {
@@ -120,6 +133,26 @@ async function verifyDeliveryAccount(q,sourceNo,r) {
  const billBook=no=>/^[IK]\d{2}-\d{5}$/.test(String(no||'')) ? bookOf(no) : null;
  const sourceBook=billBook(sourceNo),deliveryBook=billBook(delivery.DocuNo);
  if(!sourceBook || !deliveryBook || sourceBook!==deliveryBook) fail('DO_ACCOUNT_MISMATCH');
+ if(r.PolicyVersion!==POLICY || !r.CouponNo || !r.FinanceSOInvID || !r.FinancePostID || !r.FinanceVATID) fail('DO_LEGACY_RECEIPT_INCOMPLETE');
+ if(!/^[CD]\d{7}$/.test(r.CouponNo) || !r.CouponNo.startsWith(couponSeriesForBill(deliveryBook)+delivery.DocuNo.slice(1,3))) fail('DO_COUPON_ACCOUNT_MISMATCH');
+ const proof=(await q(`SELECT c.CouponID AS CompleteCouponID
+  FROM dbo.WFCoupon c WITH(UPDLOCK,HOLDLOCK)
+  JOIN dbo.SODT d WITH(UPDLOCK,HOLDLOCK) ON d.SOID=c.DocuID AND d.ListNo=c.RefListno AND d.DocuType=104
+  JOIN dbo.SOHD h WITH(UPDLOCK,HOLDLOCK) ON h.SOID=d.SOID AND h.DocuType=104 AND h.CouponFlag='Y'
+  JOIN dbo.SOInvDT f WITH(UPDLOCK,HOLDLOCK) ON f.RefID=d.SOID AND f.RefListNo=d.ListNo AND f.Docutype=202
+  JOIN dbo.SOInvHD a WITH(UPDLOCK,HOLDLOCK) ON a.SOInvID=f.SOInvID AND a.Docutype=202 AND a.CouponFlag='Y' AND a.StockEffc='N' AND a.PostGL='N'
+  JOIN dbo.SMSat s WITH(UPDLOCK,HOLDLOCK) ON s.GlobalID=a.PostID AND s.GlobalFlag=202
+  JOIN dbo.VTVAT v WITH(UPDLOCK,HOLDLOCK) ON v.FromID=a.PostID AND v.FromFlag=202
+  WHERE c.CouponID=@coupon AND c.DocuID=@delivery AND c.Docutype=104 AND c.CouponNo=@couponNo
+   AND c.SONo=h.DocuNo AND c.GoodID=d.GoodID AND c.GoodUnitID=d.GoodUnitID2 AND c.GoodPrice=d.GoodPrice2
+   AND c.GoodQty=d.GoodQty2 AND c.ContainQty=@pack AND c.SackQty=@bags AND c.SackQty*c.ContainQty=c.GoodQty*1000
+   AND a.SOInvID=@finance AND a.PostID=@post AND v.VATID=@vat AND a.DocuNo=h.DocuNo AND a.BrchID=h.BrchID
+   AND f.GoodAmnt=h.NetAmnt AND a.NetAmnt=h.NetAmnt AND v.BaseAmnt=h.NetAmnt AND v.VatAmnt=0`,{
+   delivery:input(sql.Int,Number(r.DeliverySOID)),coupon:input(sql.Int,Number(r.CouponID)),couponNo:input(sql.VarChar(25),r.CouponNo),
+   finance:input(sql.Int,Number(r.FinanceSOInvID)),post:input(sql.Int,Number(r.FinancePostID)),vat:input(sql.Int,Number(r.FinanceVATID)),
+   pack:input(sql.Decimal(18,4),r.ContainQty),bags:input(sql.Decimal(18,4),r.SackQty),
+  })).recordset||[];
+ if(proof.length!==1 || Number(proof[0].CompleteCouponID)!==Number(r.CouponID))fail('DO_COMPLETE_RECEIPT_DIVERGED');
 }
 async function initialDelivery({operation='preview',soid,user,requestId,fingerprint,reason},options={}) {
  if(!(options.enabled??(process.env.NATIVE_DELIVERY_104_ENABLED==='true'))) fail('DO_NOT_ENABLED',503);
@@ -136,7 +169,7 @@ async function initialDelivery({operation='preview',soid,user,requestId,fingerpr
    return (await q(`SELECT TOP 50 r.SOID AS soid,r.RequestId AS requestId,r.Fingerprint AS fingerprint,
     CONVERT(VARCHAR(40),r.Amount) AS amount,r.RequestedAt AS requestedAt,h.DocuNo AS docuNo,h.AppvDocuNo AS aiNo
     FROM wf.NativeDeliveryRequest r JOIN dbo.SOHD h ON h.SOID=r.SOID AND h.DocuType=103
-    WHERE r.Status='PENDING' AND r.PolicyVersion='O23-DO104-INITIAL-UAT2-v1' ORDER BY r.Id`)).recordset||[];
+    WHERE r.Status='PENDING' AND r.PolicyVersion='O25-DO104-COMPLETE-UAT2-v2' ORDER BY r.Id`)).recordset||[];
   }
   soid=Number(soid);const row=await context(q,soid,user);
   const old=(await q('SELECT * FROM wf.NativeDeliveryReceipt WITH(UPDLOCK,HOLDLOCK) WHERE SourceSOID=@soid',idInputs(soid))).recordset?.[0];
@@ -190,7 +223,7 @@ async function initialDelivery({operation='preview',soid,user,requestId,fingerpr
    if(!r||r.Status!=='APPROVED') fail('DO_REQUEST_UNAVAILABLE',503);return requestView(r,who);
   }
   if(r.Status!=='APPROVED'||Number(r.RequestedById)!==who.effective||Number(r.RequesterActorId)!==who.actor) fail('DO_CREDIT_APPROVAL_REQUIRED');
-  const result=(await q(`EXEC wf.usp_CreateInitialDelivery @SOID=@soid,@Preview=0,@RequestId=@request,@Fingerprint=@fingerprint,@UserId=@user,@ActorId=@actor`,
+  const result=(await q(`EXEC wf.usp_CreateCompleteInitialDelivery @SOID=@soid,@Preview=0,@RequestId=@request,@Fingerprint=@fingerprint,@UserId=@user,@ActorId=@actor`,
    {...idInputs(soid),...requestInputs(requestId),fingerprint:input(sql.VarChar(64),fingerprint),user:input(sql.Int,who.effective),actor:input(sql.Int,who.actor)})).recordset?.[0];
   if(!result) fail('DO_RECEIPT_UNAVAILABLE',503);
   await verifyDeliveryAccount(q,row.DocuNo,result);
@@ -202,7 +235,7 @@ async function initialDelivery({operation='preview',soid,user,requestId,fingerpr
 }
 function deliveryHttpError(e) {
  if(e.status && /^DO_[A-Z_]+$/.test(e.code||'')) return {status:e.status,code:e.code};
- const known=/\b(DO_(?:TARGET_NOT_SUPPORTED|SOURCE_UNAVAILABLE|CONTRACT_UNSUPPORTED|CREDIT_CONTRACT_UNSUPPORTED|COUNTER_UNSUPPORTED|NUMBER_EXHAUSTED|CREDIT_APPROVAL_REQUIRED|ACTOR_UNAVAILABLE|REQUEST_CONFLICT|ID_CONFLICT|ID_EXHAUSTED))\b/.exec(String(e.message||''));
+ const known=/\b(DO_(?:TARGET_NOT_SUPPORTED|SOURCE_UNAVAILABLE|CONTRACT_UNSUPPORTED|CREDIT_CONTRACT_UNSUPPORTED|COUNTER_UNSUPPORTED|COUPON_COUNTER_UNSUPPORTED|PACKAGING_UNSUPPORTED|PERIOD_UNSUPPORTED|NUMBER_EXHAUSTED|CREDIT_APPROVAL_REQUIRED|ACTOR_UNAVAILABLE|REQUEST_CONFLICT|ID_CONFLICT|ID_EXHAUSTED))\b/.exec(String(e.message||''));
  return known ? {status:409,code:known[1]} : {status:503,code:'DO_FAILED'};
 }
 module.exports={initialDelivery,deliveryHttpError,confirmedFingerprint,deliveryFingerprint,POLICY};
