@@ -58,7 +58,7 @@ async function confirmedFingerprint(q, soid) {
  }
  return hash(parts);
 }
-async function deliveryFingerprint(q, soid) {
+async function deliverySnapshot(q, soid) {
  const parts=[];
  for(const [table,key,order] of [['SOHD','SOID','SOID'],['SODT','SOID','ListNo'],['SOHDRemark','SOID','ListNo'],
   ['SODTRemark','SOID','ListNo,RefListNo'],['WFCoupon','DocuID','CouponID'],['Define_104','ID','ID']]) {
@@ -70,8 +70,9 @@ async function deliveryFingerprint(q, soid) {
   'SELECT v.* FROM dbo.VTVAT v WITH(UPDLOCK,HOLDLOCK) JOIN dbo.SOInvHD h ON h.PostID=v.FromID AND h.Docutype=v.FromFlag WHERE h.Docutype=202 AND h.SOInvID IN(SELECT SOInvID FROM dbo.SOInvDT WHERE RefID=@soid AND Docutype=202) ORDER BY v.VATID,v.ListNo',
   'SELECT s.* FROM dbo.SMSat s WITH(UPDLOCK,HOLDLOCK) JOIN dbo.SOInvHD h ON h.PostID=s.GlobalID AND h.Docutype=s.GlobalFlag WHERE h.Docutype=202 AND h.SOInvID IN(SELECT SOInvID FROM dbo.SOInvDT WHERE RefID=@soid AND Docutype=202) ORDER BY s.GlobalID',
  ])parts.push(await xml(q,statement,idInputs(soid)));
- return hash(parts);
+ return parts;
 }
+async function deliveryFingerprint(q,soid){return hash(await deliverySnapshot(q,soid));}
 async function context(q,soid,user) {
  const row=(await q(`SELECT h.SOID,h.DocuNo,h.EmpID,h.CustID,h.AppvDocuNo,e.SalesUserId
   FROM dbo.SOHD h WITH(UPDLOCK,HOLDLOCK) LEFT JOIN wf.SalesOrderExt e WITH(UPDLOCK,HOLDLOCK) ON e.SOID=CONVERT(VARCHAR(50),h.SOID)
@@ -238,4 +239,4 @@ function deliveryHttpError(e) {
  const known=/\b(DO_(?:TARGET_NOT_SUPPORTED|SOURCE_UNAVAILABLE|CONTRACT_UNSUPPORTED|CREDIT_CONTRACT_UNSUPPORTED|COUNTER_UNSUPPORTED|COUPON_COUNTER_UNSUPPORTED|PACKAGING_UNSUPPORTED|PERIOD_UNSUPPORTED|NUMBER_EXHAUSTED|CREDIT_APPROVAL_REQUIRED|ACTOR_UNAVAILABLE|REQUEST_CONFLICT|ID_CONFLICT|ID_EXHAUSTED))\b/.exec(String(e.message||''));
  return known ? {status:409,code:known[1]} : {status:503,code:'DO_FAILED'};
 }
-module.exports={initialDelivery,deliveryHttpError,confirmedFingerprint,deliveryFingerprint,POLICY};
+module.exports={initialDelivery,deliveryHttpError,confirmedFingerprint,deliveryFingerprint,deliverySnapshot,verifyReceipt,verifyDeliveryAccount,POLICY};

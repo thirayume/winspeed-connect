@@ -40,6 +40,7 @@ services:
       # Initial-only UAT2 AI contract. Disabled until explicitly enabled for local UAT.
       NATIVE_BOOKING_AI_ENABLED: ${NATIVE_BOOKING_AI_ENABLED:-false}
       NATIVE_DELIVERY_104_ENABLED: ${NATIVE_DELIVERY_104_ENABLED:-false}
+      NATIVE_MANUAL_116_ENABLED: ${NATIVE_MANUAL_116_ENABLED:-false}
       EXPORT_OUTPUT_PATH: /app/exports
     volumes:
       - backend-exports:/app/exports

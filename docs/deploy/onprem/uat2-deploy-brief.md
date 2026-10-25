@@ -1,6 +1,6 @@
 # Local UAT2 deployment brief
 
-Current UAT2 restriction (25 October 2026): keep `NATIVE_DELIVERY_104_ENABLED=false` until migration155 and the complete104 API checks pass on the pinned UAT2 target; keep `COUPON_NATIVE_POSTING_ENABLED=false`. The confirmed chains are account1 I booking → I sales order → C coupon → J invoice, and account2 K → K → D → N. Migration155 replaces the incomplete153 writer with a separate book-aware contract that issues a numbered coupon and establishes the202 receivable in the same transaction. It does not repair earlier pilot documents. Keep those documents for audit; do not edit applied153 or run a bulk coupon repair. SQL2008 rollback rehearsals are separate evidence from deployment and API acceptance.
+Current UAT2 restriction (25 October 2026): native flags default to false. Migration155 and the restricted complete104 API checks have passed on the pinned local UAT2 target; only that reviewed test stack may enable `NATIVE_DELIVERY_104_ENABLED`. Keep `COUPON_NATIVE_POSTING_ENABLED=false`. The confirmed chains are account1 I booking → I sales order → C coupon → J invoice, and account2 K → K → D → N. Migration155 replaces the incomplete153 writer with a separate book-aware contract that issues a numbered coupon and establishes the202 receivable in the same transaction. It does not repair earlier pilot documents. Keep those documents for audit; do not edit applied153 or run a bulk coupon repair. SQL2008 rollback rehearsals are separate evidence from deployment and API acceptance.
 
 This procedure deploys Sale-App to the local UAT clone on `AMYOU-YOGA7\V2008R2`. The pinned database is `dbwins_worldfert9_uat2`; it is a writable copy restored from backup, not the production database. The first successful deployment can apply pending migrations to this UAT2 copy. It does not start Full Loop UAT by itself.
 
@@ -137,6 +137,33 @@ verified continuation contract. Never sum raw202 and coupon107 balances as two
 receivables. Production remains excluded.
 
 The migration runner is pinned by the wrapper to `dbwins_worldfert9_uat2`. The on-prem SQL identity guard requires the app and migrator logins to have no direct access to `dbwins_worldfert9`, rejects elevated roles, and the SQL 2008 profile excludes migration 074. The runner also blocks an explicit cross-database production write in a migration batch. The UAT2 copy is expected to change; the original production database should not be targeted. These source checks do not prove that no trigger, stored procedure, linked server, or other indirect mechanism could produce side effects. If the production-access check is nonzero or unknown, deployment stops; do not remove the guard or change target names to proceed.
+
+### Controlled manual116 simulation
+
+The separate `NATIVE_MANUAL_116_ENABLED` flag defaults to false and requires
+migration156. This contract is a local UAT2 simulation of a manual exception,
+available from a confirmed booking on Paper Trail after complete104. Warehouse
+and Account create a request with a reason and UAT receiver/vehicle details.
+Managers, executives and administrators may approve another person; Warehouse
+and Account may approve their own request. Actual actors determine self-approval
+even during Access As. This permission does not grant credit approval or the
+legacy expired-ticket override.
+
+The request retains server-generated UAT document evidence and binds the
+reason, receiver, vehicle and evidence when approved. Changed payloads or native
+documents invalidate the decision. Approval lasts30minutes. The original
+requester applies it; native116, one full coupon deduction, native counters and
+ID blocks, typed audit/event and a durable before/after receipt commit together.
+Existing104/202/VAT snapshots must remain exact except for the coupon remaining
+quantity. The automatic document number skips existing numbers under locks;
+operators do not provide a native number or approver ID.
+
+The UI and receipts explicitly say UAT simulation. It creates no WGHD/WGDT,
+weights, loaded/shipped state, stock107, receivable, GL or proof of physical
+delivery. Existing reservations, overlays, partials, prior cuts and unsupported
+lifecycle branches stop. Real TruckScale integration and the general manual
+exception remain separate acceptance work. Do not enable the legacy native
+coupon adapter to bypass these boundaries.
 
 ### Account status after administrator changes
 
