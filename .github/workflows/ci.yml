@@ -41,6 +41,10 @@ jobs:
         working-directory: WSSale-App
         run: npm ci || npm install
 
+      - name: ทดสอบการแสดง Document Trace 116/202/107
+        working-directory: WSSale-App
+        run: npm run test:trace
+
       # build = tsc -b && vite build จึงครอบ typecheck ไปด้วย
       # (อย่าเปลี่ยนเป็น tsc --noEmit เด็ดขาด — tsconfig ใช้ "files": []
       #  ทำให้ --noEmit ไม่ตรวจไฟล์ใดเลย เคยหลุด error ขึ้น production มาแล้ว)

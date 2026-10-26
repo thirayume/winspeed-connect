@@ -186,6 +186,11 @@ commands verify the receipt and return the existing invoice. Original116
 before/after hashes remain intact; only a verified application107 continuation
 can advance the current state. External native changes are not adopted.
 
+Document Trace displays the native116 number, quantity and unit from its typed
+API fields. Financial documents keep their own202/107 labels; a202-only trace
+does not claim an Invoice107 exists. The display never totals these rows into
+customer debt.
+
 The202 receivable and VAT snapshots remain unchanged, as observed in WinSpeed.
 The raw202 and107 balances must not be summed as a customer debt report. Native
 AR report reconciliation is still pending Accounting confirmation. No GL
