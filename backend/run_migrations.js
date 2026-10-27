@@ -655,7 +655,8 @@ async function runInternal(options = parseArgs(process.argv), customPool = null,
 
   // Step 3: Load existing applied ledger (strictly read-only, handles absent/legacy/full)
   const applied = await loadApplied(pool);
-  const plan = buildPlan(inventory, applied, runnerOptions.migrationsDir || MIGRATIONS_DIR, activeProfile, policy, runnerOptions);
+  const plan = buildPlan(inventory, applied, runnerOptions.migrationsDir || MIGRATIONS_DIR, activeProfile, policy,
+    { ...runnerOptions, verifiedTarget: verified.targetInfo });
   const counts = printPlan(plan, inventory, targetDatabase, isPlan);
 
   if (plan.ledgerOnly.length) {

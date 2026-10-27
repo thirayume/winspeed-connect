@@ -18,7 +18,7 @@ Docker engine and Docker Desktop on that server are not used.
 | Compose project / images | `saleapp-uat` / `worldfert-saleapp-uat-*` | `saleapp-prod` / `worldfert-saleapp-prod-*` |
 | Status | enabled | **disabled until go-live approval** |
 
-Port 80 stays with IIS and SSRS. TLS uses Caddy's internal CA for the IP address until a
+PROD reserves ports 80/443 after the coordinated IIS/SSRS changes. TLS uses Caddy's internal CA for the IP address until a
 domain exists; each browser device must trust the Caddy root certificate once.
 
 ## Branches and release flow
@@ -105,8 +105,20 @@ docs\deploy\r740\deploy.bat uat
    check, then starts the frontend and Caddy.
 
 `deploy.bat uat -PlanOnly` stops after step 2. Each run leaves a receipt in
-`D:\SaleApp\uat\deploy-logs`. A failed apply is not rolled back: restore the UAT database
-from its backup or inspect it before running again.
+`D:\SaleApp\uat\deploy-logs`. Each migration and its ledger row commit together. Earlier
+successful migrations remain committed if a later migration fails; inspect a fresh read-only
+plan before retrying. Receipts preserve only fixed diagnostic categories, SQL numbers and
+migration filenames. Raw connection errors and credentials are not written to receipts.
+
+Migration 157 has a hash-pinned compatibility artifact for the verified SQL server identity
+`R740-SRV\SQL2008`. Its fixed trigger-metadata reader uses `EXECUTE AS SELF`, binding to the
+dedicated login that the runner has already verified. The original migration remains unchanged
+for UAT2, including deployments using the `onprem` profile. All native writer target guards
+remain pinned to the previously tested UAT2 target; applying this artifact does not enable
+104/116/107 business writes on R740.
+
+The owner selected Production app accounts for UAT after the nightly restore (27 October 2026).
+Do not preserve or overwrite the restored `admin` password hash with a separate UAT hash.
 
 Before the first apply, the plan is expected to list most migrations as pending because
 `dbwins_worldfert9-uat` was restored from Live Production (data of 2026-10-23 18:00).

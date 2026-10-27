@@ -27,6 +27,7 @@ readonly RECEIPT="$ROOT/deploy-logs/$(date '+%Y%m%d-%H%M%S')-$ENV_NAME-$PHASE-${
 RESULT='FAILED: stopped before completion'
 PLAN_SUMMARY='(not reached)'; PLAN_LINES=''; APPLY_SUMMARY='(not run)'; VERIFY_SUMMARY='(not run)'; PS_TABLE=''
 BACKUP_SUMMARY='(not required)'; CA_SUMMARY='(own root)'
+DIAGNOSTIC_SUMMARY='(none)'
 
 write_receipt() {
   {
@@ -42,6 +43,7 @@ write_receipt() {
     [[ -n "$PLAN_LINES" ]] && printf '%s\n' "$PLAN_LINES" | sed 's/^/              /'
     echo "backup      : $BACKUP_SUMMARY"
     echo "apply       : $APPLY_SUMMARY"
+    printf '%s\n' "$DIAGNOSTIC_SUMMARY" | sed '1s/^/diagnostic  : /; 2,$s/^/              /'
     echo "verify      : $VERIFY_SUMMARY"
     echo "caddy root  : $CA_SUMMARY"
     [[ -n "$PS_TABLE" ]] && { echo "containers  :"; printf '%s\n' "$PS_TABLE" | sed 's/^/              /'; }
@@ -130,7 +132,8 @@ share_caddy_root() {
 
 diagnose() {
   # Fixed labels only, plus the guard's own sentence (names and versions, never secrets).
-  printf '%s' "$1" | python3 "$APP/docs/deploy/onprem/migration-failure-summary.py" || echo 'MIGRATION_DIAGNOSTIC=SUMMARY_UNAVAILABLE'
+  DIAGNOSTIC_SUMMARY="$(printf '%s' "$1" | python3 "$APP/docs/deploy/onprem/migration-failure-summary.py")" || DIAGNOSTIC_SUMMARY='MIGRATION_DIAGNOSTIC=SUMMARY_UNAVAILABLE'
+  printf '%s\n' "$DIAGNOSTIC_SUMMARY"
   printf '%s\n' "$1" | grep -Eo '(ONPREM SAFETY VIOLATION|SECURITY_ERROR): .*' | head -1 | cut -c1-220 || true
 }
 

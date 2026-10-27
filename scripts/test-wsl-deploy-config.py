@@ -195,6 +195,27 @@ class ComposeGuardTests(unittest.TestCase):
                     self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), expected,
                                      "Migration artifact bytes differ from the pinned policy; check checkout line endings.")
 
+    def test_fatal_sql_error_is_not_hidden_by_tls_warning(self):
+        helper = ROOT / "docs/deploy/onprem/migration-failure-summary.py"
+        message = ("(node:1) [DEP0123] DeprecationWarning: Setting TLS ServerName to an IP address\n"
+                   "Migration failed: 157_initial_coupon_invoice_107.sql batch execution failed (SQL 15517): "
+                   "Cannot execute as the database principal 'private-account' password=Secret&P@ss$keep;\n")
+        result = subprocess.run([sys.executable, str(helper)], input=message, text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.splitlines(), [
+            "MIGRATION_DIAGNOSTIC=DATABASE_PRINCIPAL_FAILURE", "SQL_ERROR_NUMBER=15517",
+            "MIGRATION_FILE=157_initial_coupon_invoice_107.sql"])
+        self.assertNotIn("private-account", result.stdout + result.stderr)
+        self.assertNotIn("Secret&P@ss$keep", result.stdout + result.stderr)
+
+    def test_fatal_tls_error_is_still_reported(self):
+        helper = ROOT / "docs/deploy/onprem/migration-failure-summary.py"
+        result = subprocess.run([sys.executable, str(helper)],
+                                input="Migration failed: Failed to connect: TLS handshake unsupported protocol ESOCKET",
+                                text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.stdout.splitlines(), [
+            "MIGRATION_DIAGNOSTIC=TLS_OR_ENCRYPTION_FAILURE", "ERROR_CODE=ESOCKET"])
+
     @unittest.skipUnless(shutil.which("docker"), "Docker CLI not installed")
     def test_actual_compose_resolution_with_dummy_special_characters(self):
         with tempfile.TemporaryDirectory(prefix=".uat-compose-guard-", dir=ROOT) as tmp:

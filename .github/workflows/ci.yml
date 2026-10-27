@@ -69,6 +69,9 @@ jobs:
       - name: ตรวจไวยากรณ์ deploy helper สำหรับ WSL
         run: bash -n docs/deploy/onprem/wsl-deploy.sh
 
+      - name: Deployment config and redacted diagnostics
+        run: python3 scripts/test-wsl-deploy-config.py
+
       - name: ห้ามความลับหลุดเข้า repo
         run: |
           # repo นี้เป็นสาธารณะ

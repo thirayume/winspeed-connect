@@ -43,6 +43,10 @@ runs:
           bash -n "$f"
         done
 
+    - name: Deployment config and redacted diagnostics
+      shell: bash
+      run: python3 scripts/test-wsl-deploy-config.py
+
     - name: No secret files tracked
       shell: bash
       run: |

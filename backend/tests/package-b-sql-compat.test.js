@@ -7,8 +7,8 @@
  * 100% DB-free: ZERO database connections, ZERO pool creation.
  *
  * Validates:
- * 1. All 47 dialect overrides in backend/migrations/compat/sql2008/ exist and have ZERO SQL 2008 syntax issues.
- * 2. All 47 overrides match backend/migration-policy.json pinned original/executed hashes & batch counts.
+ * 1. All 48 compatibility artifacts exist and have ZERO SQL 2008 syntax issues.
+ * 2. All 48 artifacts match policy hashes/counts; 47 apply to every SQL2008 target and one is R740-specific.
  * 3. 074 remains excluded on local_uat and local_rehearsal across all policy contexts.
  * 4. D3 dbo index blocks are omitted in 002, 013, 044 while wf.* objects/indexes are strictly preserved.
  * 5. remote_b target profile uses standard migrations with ZERO dialect overrides.
@@ -42,10 +42,10 @@ const INCOMPATIBLE_PATTERNS = [
   { name: 'DROP_IF_EXISTS', regex: /\bDROP\s+(TABLE|VIEW|PROCEDURE|PROC|FUNCTION|TRIGGER|INDEX)\s+IF\s+EXISTS\b/gi },
 ];
 
-test('Package B (Offline): Dialect overrides directory contains all 47 files with zero SQL 2008 incompatibilities', () => {
+test('Package B (Offline): Dialect overrides directory contains all 48 files with zero SQL 2008 incompatibilities', () => {
   assert.ok(fs.existsSync(compatDir), 'compatDir must exist');
   const files = fs.readdirSync(compatDir).filter(f => f.endsWith('.sql')).sort();
-  assert.equal(files.length, 47, `Expected exactly 47 dialect overrides, found ${files.length}`);
+  assert.equal(files.length, 48, `Expected exactly 48 dialect overrides, found ${files.length}`);
 
   for (const f of files) {
     const filePath = path.join(compatDir, f);
@@ -67,12 +67,12 @@ test('Package B (Offline): Dialect overrides directory contains all 47 files wit
   }
 });
 
-test('Package B (Offline): Migration policy pins all 47 overrides with exact hashes and batch counts', () => {
+test('Package B (Offline): Migration policy pins all 48 overrides with exact hashes and batch counts', () => {
   const policy = JSON.parse(fs.readFileSync(policyPath, 'utf8'));
   const overrides = policy.dialectOverrides || {};
   const overrideKeys = Object.keys(overrides).sort();
 
-  assert.equal(overrideKeys.length, 47, 'Policy must declare exactly 47 dialect overrides');
+  assert.equal(overrideKeys.length, 48, 'Policy must declare exactly 48 dialect overrides');
 
   for (const fileName of overrideKeys) {
     const meta = overrides[fileName];
@@ -116,7 +116,8 @@ test('Package B (Offline): Profile resolution parity — local_uat and local_reh
       if (f === '000_logins.sql' || f === '074_fix_winspeed_legacy_raiserror.sql') {
         assert.equal(res.status, 'EXCLUDED', `${f} must be excluded on ${profile}`);
         excludedCount++;
-      } else if (policy.dialectOverrides[f]) {
+      } else if (policy.dialectOverrides[f] && (!policy.dialectOverrides[f].targetServerNames ||
+          policy.dialectOverrides[f].targetServerNames.includes(policy.targetProfiles[profile].serverName))) {
         assert.equal(res.status, 'OVERRIDE', `${f} must resolve to OVERRIDE on ${profile}`);
         assert.equal(res.executed.fileName, f);
         overrideCount++;

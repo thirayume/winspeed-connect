@@ -431,8 +431,23 @@ function resolveEffectiveMigration(fileName, fileContent, targetProfile, policy 
 
   // Step 3: Dialect Override Resolution (AR2-01 & AR2-05)
   // Only apply dialect override if the target profile explicitly uses sql2008 dialect!
-  if (profileDialect === 'sql2008' && policy.dialectOverrides && policy.dialectOverrides[fileName]) {
-    const override = policy.dialectOverrides[fileName];
+  const override = policy.dialectOverrides?.[fileName];
+  let overrideMatchesTarget = true;
+  if (profileDialect === 'sql2008' && override?.targetServerNames !== undefined) {
+    const names = override.targetServerNames;
+    if (!Array.isArray(names) || !names.length || names.some(name => typeof name !== 'string' || !name.trim() || name !== name.trim()) ||
+        new Set(names.map(name => name.toLowerCase())).size !== names.length) {
+      throw new Error(`MIGRATION_POLICY_INVALID: targetServerNames for ${fileName} must contain distinct nonempty server names.`);
+    }
+    // On-prem server identity comes from the already-validated SQL connection. Local
+    // profiles have a fixed server pin. Never infer an artifact target from a hostname.
+    const serverName = options.verifiedTarget?.serverName || policy.targetProfiles[targetProfile].serverName;
+    if (typeof serverName !== 'string' || !serverName.trim()) {
+      throw new Error(`COMPAT_TARGET_IDENTITY_REQUIRED: verified server identity is required for ${fileName}.`);
+    }
+    overrideMatchesTarget = names.some(name => name.toLowerCase() === serverName.trim().toLowerCase());
+  }
+  if (profileDialect === 'sql2008' && override && overrideMatchesTarget) {
     const origHash = sha256(fileContent);
     if (origHash.toLowerCase() !== String(override.originalHash || '').toLowerCase()) {
       throw new Error(`ORIGINAL_HASH_DRIFT: Original checksum mismatch for ${fileName} (expected: ${override.originalHash}, actual: ${origHash})`);

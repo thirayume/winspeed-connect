@@ -461,6 +461,17 @@
       "executedHash": "153d314071bbd97a05541df99bf1f4e088dc0566f3fb1b96e0d0bd3593a65718",
       "executedBatchCount": 1,
       "dialect": "sql2008"
+    },
+    "157_initial_coupon_invoice_107.sql": {
+      "originalHash": "33f5a5ce31ccd8b3b7915c1d823a945bc1e1189a6d58f4b5154a62798787eb4e",
+      "originalBatchCount": 8,
+      "executedFile": "157_initial_coupon_invoice_107.sql",
+      "executedHash": "afb92e23717adbcdd9224cb40eb2cc72223e95d5a1d5a52960cf29e67a5cda99",
+      "executedBatchCount": 8,
+      "dialect": "sql2008",
+      "targetServerNames": [
+        "R740-SRV\\SQL2008"
+      ]
     }
   }
 }
