@@ -172,6 +172,9 @@ apply in a quiet window right after the backup.
 
 ## Guards worth knowing
 
+- The env-file source guard is tested with Docker Compose 5.6.1 on R740 and in CI.
+  An implementation that omits `env_file` from `config --no-env-resolution --format json`
+  fails closed; never replace that check with the resolved environment alone.
 - The app and migrator refuse to run if their login can open `dbwins_worldfert9`, is in an
   elevated role, or the connection is not TCP to `R740-SRV\SQL2008` 10.50.x.
 - Target values live only in `targets/*.env` (reviewed in Git); `config\.env` holds secrets.

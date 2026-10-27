@@ -43,6 +43,11 @@ runs:
           bash -n "$f"
         done
 
+    - name: Compose version used by R740 deployment guards
+      uses: docker/setup-compose-action@v2
+      with:
+        version: v5.6.1
+
     - name: Deployment config and redacted diagnostics
       shell: bash
       run: python3 scripts/test-wsl-deploy-config.py

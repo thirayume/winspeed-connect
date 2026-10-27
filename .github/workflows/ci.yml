@@ -69,6 +69,11 @@ jobs:
       - name: ตรวจไวยากรณ์ deploy helper สำหรับ WSL
         run: bash -n docs/deploy/onprem/wsl-deploy.sh
 
+      - name: Compose version used by R740 deployment guards
+        uses: docker/setup-compose-action@v2
+        with:
+          version: v5.6.1
+
       - name: Deployment config and redacted diagnostics
         run: python3 scripts/test-wsl-deploy-config.py
 

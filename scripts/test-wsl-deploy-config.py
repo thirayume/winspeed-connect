@@ -242,6 +242,8 @@ class ComposeGuardTests(unittest.TestCase):
                 models[name] = json.loads(result.stdout)
             self.assertIn("ONPREM_MIGRATOR_PASSWORD", models["resolved"]["services"]["migrate"]["environment"])
             self.assertNotIn("env_file", models["resolved"]["services"]["migrate"])
+            self.assertIn("env_file", models["env_sources"]["services"]["migrate"],
+                          "Compose must preserve env_file with --no-env-resolution; CI and R740 use v5.6.1.")
             self.assertTrue(models["env_sources"]["services"]["migrate"]["env_file"])
             self.assert_accepted(models)
 
