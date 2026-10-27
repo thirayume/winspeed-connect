@@ -9,6 +9,7 @@ import {
   updateControlTicketExpiry,
 } from '../../services/api';
 import type { ControlTicketDraw } from '../../types';
+import { NativeTraceFinance } from './NativeTraceFinance';
 
 type Line = { ListNo: number; GoodCode: string; GoodName: string; QtyTon: number; PricePerTon: number };
 
@@ -688,46 +689,7 @@ export function ControlTicketPage() {
                       )}
                     </div>
 
-                    {/* 4. Redemptions & 5. Invoices */}
-                    <div className="border border-gray-200 rounded-2xl p-4 bg-white space-y-2">
-                      <div className="text-xs font-bold text-gray-400 uppercase">
-                        4. ประวัติการเบิกและเอกสารปลายทาง (WFRedemtionDT 116 → SOInvHD 107)
-                      </div>
-                      {traceModal.data.chain?.redemptions?.length > 0 ? (
-                        traceModal.data.chain.redemptions.map((r: any, idx: number) => (
-                          <div key={idx} className="p-2 bg-gray-50 rounded-xl text-xs flex items-center justify-between">
-                            <div>
-                              <span className="font-mono text-gray-600 mr-2">{r.docuNo || `116-#${r.redemtionId}`}</span>
-                            </div>
-                            <div className="font-bold text-amber-700">
-                              {r.lines?.map((l: any, li: number) => (
-                                <span key={li} className="ml-2">-{l.redeemedQtyTon} {l.unitName || 'ไม่ระบุ'} {l.soInvId ? `(➔ Inv #${l.soInvId})` : ''}</span>
-                              ))}
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-xs text-gray-400">ยังไม่มีรายการเบิกใช้ใน WFRedemtionDT</p>
-                      )}
-
-
-                      {traceModal.data.chain?.invoices?.length > 0 && (
-                        <div className="pt-2 border-t border-gray-100 space-y-1">
-                          <div className="text-[11px] font-bold text-gray-500">ใบแจ้งหนี้ / ใบกำกับภาษี (Invoice 107):</div>
-                          {traceModal.data.chain.invoices.map((inv: any) => (
-                            <div key={inv.soInvId} className="p-2 bg-emerald-50/50 rounded-lg text-xs flex items-center justify-between text-emerald-900">
-                              <div>
-                                <span className="font-mono font-bold mr-2">{inv.docuNo}</span>
-                                <span>{inv.docuDate?.slice(0, 10)}</span>
-                              </div>
-                              <div className="font-mono font-bold">
-                                {Number(inv.netAmnt || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} บาท
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    <NativeTraceFinance redemptions={traceModal.data.chain?.redemptions} invoices={traceModal.data.chain?.invoices} />
                   </div>
                 </>
               ) : (

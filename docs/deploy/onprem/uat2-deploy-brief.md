@@ -1,5 +1,7 @@
 # Local UAT2 deployment brief
 
+Current UAT2 restriction (25 October 2026): native flags default to false. Migration155 and the restricted complete104 API checks have passed on the pinned local UAT2 target; only that reviewed test stack may enable `NATIVE_DELIVERY_104_ENABLED`. Keep `COUPON_NATIVE_POSTING_ENABLED=false`. The confirmed chains are account1 I booking → I sales order → C coupon → J invoice, and account2 K → K → D → N. Migration155 replaces the incomplete153 writer with a separate book-aware contract that issues a numbered coupon and establishes the202 receivable in the same transaction. It does not repair earlier pilot documents. Keep those documents for audit; do not edit applied153 or run a bulk coupon repair. SQL2008 rollback rehearsals are separate evidence from deployment and API acceptance.
+
 This procedure deploys Sale-App to the local UAT clone on `AMYOU-YOGA7\V2008R2`. The pinned database is `dbwins_worldfert9_uat2`; it is a writable copy restored from backup, not the production database. The first successful deployment can apply pending migrations to this UAT2 copy. It does not start Full Loop UAT by itself.
 
 ## 1. Prepare the clone and local settings
@@ -100,13 +102,17 @@ pilot does not enable 104, native 116, invoice posting or production deployment.
 Its approved bookings remain blocked from shipment until the downstream 104/116
 contract is implemented and verified; disabling the pilot flag does not remove this hold.
 
-The separate `NATIVE_DELIVERY_104_ENABLED=true` pilot requires migration 153 and
+The separate `NATIVE_DELIVERY_104_ENABLED=true` pilot requires migration 155 and
 an initial app-origin AI receipt. Its default is false. It supports only one full
 line with matching stock/sale units, zero VAT/discount and the observed UAT2
 credit-warning profile: zero credit limit, no unsettled or unknown remaining debt,
 no active temporary/approved credit and the verified native deduction/warning modes.
 Fully settled historical invoices are allowed. Other credit profiles and partial
-quantities stop without guessing their calculation or native effects.
+quantities stop without guessing their calculation or native effects. Packaging
+must come from the product master and resolve to whole bags in tonnes. A unique
+open native accounting period and the supported I/K plus C/D counter formats are
+required. It preserves the source shipment date and advances the relevant active
+or inactive book without switching WinSpeed's active book.
 
 On booking details or Paper Trail, the requester selects **ออกใบสั่งขาย 104** and
 requests over-credit approval. An `ACCOUNTING` user reviews it through
@@ -118,14 +124,85 @@ only that requester's earlier pending/approved decision; another operator cannot
 take it over. Senior roles can use authorized Access As to work as Account, but
 their own role is not itself a credit-approval capability.
 
-Native 104, its internal unnumbered coupon, source remaining balance, document/ID
-books, Define_104, SMAudit, SMEvent, wf audit and durable receipt commit together.
+Native104, its numbered C/D coupon, source remaining balance, document/ID books,
+Define_104,202 SOInvHD/DT, SMSat/SMReserveSat, zero-tax VTVAT, SMAudit, SMEvent,
+wf audit and durable v2 receipt commit together. VAT and SAT IDs use separate
+application-owned native ID blocks; the SAT block uses native Type2 allocation.
 Retry the same request after an uncertain response; a completed receipt is verified
-against source and delivery fingerprints. The native document-number identity is
-branch + document number + document type. The pilot does not issue a C/D coupon,
-post stock,116 or107, or remove the AI shipment hold. Production remains excluded.
+against source, delivery and finance fingerprints and exact typed references. Old
+v1 or cross-account receipts are rejected. The native document-number identity is
+branch + document number + document type. This contract does not post stock,116
+or107, or remove the AI shipment hold. Later lifecycle changes need their own
+verified continuation contract. Never sum raw202 and coupon107 balances as two
+receivables. Production remains excluded.
 
 The migration runner is pinned by the wrapper to `dbwins_worldfert9_uat2`. The on-prem SQL identity guard requires the app and migrator logins to have no direct access to `dbwins_worldfert9`, rejects elevated roles, and the SQL 2008 profile excludes migration 074. The runner also blocks an explicit cross-database production write in a migration batch. The UAT2 copy is expected to change; the original production database should not be targeted. These source checks do not prove that no trigger, stored procedure, linked server, or other indirect mechanism could produce side effects. If the production-access check is nonzero or unknown, deployment stops; do not remove the guard or change target names to proceed.
+
+### Controlled manual116 simulation
+
+The separate `NATIVE_MANUAL_116_ENABLED` flag defaults to false and requires
+migration156. This contract is a local UAT2 simulation of a manual exception,
+available from a confirmed booking on Paper Trail after complete104. Warehouse
+and Account create a request with a reason and UAT receiver/vehicle details.
+Managers, executives and administrators may approve another person; Warehouse
+and Account may approve their own request. Actual actors determine self-approval
+even during Access As. This permission does not grant credit approval or the
+legacy expired-ticket override.
+
+The request retains server-generated UAT document evidence and binds the
+reason, receiver, vehicle and evidence when approved. Changed payloads or native
+documents invalidate the decision. Approval lasts30minutes. The original
+requester applies it; native116, one full coupon deduction, native counters and
+ID blocks, typed audit/event and a durable before/after receipt commit together.
+Existing104/202/VAT snapshots must remain exact except for the coupon remaining
+quantity. The automatic document number skips existing numbers under locks;
+operators do not provide a native number or approver ID.
+
+The UI and receipts explicitly say UAT simulation. It creates no WGHD/WGDT,
+weights, loaded/shipped state, stock107, receivable, GL or proof of physical
+delivery. Existing reservations, overlays, partials, prior cuts and unsupported
+lifecycle branches stop. Real TruckScale integration and the general manual
+exception remain separate acceptance work. Do not enable the legacy native
+coupon adapter to bypass these boundaries.
+
+### Initial coupon Invoice107 simulation
+
+`NATIVE_INVOICE_107_ENABLED=false` is the default. Enable only for the pinned
+local UAT2 after migration157 and a reviewed rehearsal. Only ACCOUNTING may
+preview or post. Existing Access As authorization still applies and both actual
+and effective identities are recorded. Admin/Manager roles do not directly gain
+the posting capability.
+
+Paper Trail offers a Post Invoice preview after the complete104 and approved
+manual116 simulation. The first supported contract posts one full zero-tax line,
+preserves I/C/J or K/D/N, and uses the native116 date. It recalculates the due date
+from the invoice date and credit days. A different invoice date is not yet
+verified. Confirm the date and stock deduction before posting.
+
+One transaction creates native107, its SAT identity and stock row, consumes the
+pending116 quantity and104 remaining quantity, advances the appropriate invoice
+counter, and stores the application audit and receipt. Repeated identical
+commands verify the receipt and return the existing invoice. Original116
+before/after hashes remain intact; only a verified application107 continuation
+can advance the current state. External native changes are not adopted.
+
+Document Trace displays the native116 number, quantity and unit from its typed
+API fields. Financial documents keep their own202/107 labels; a202-only trace
+does not claim an Invoice107 exists. The display never totals these rows into
+customer debt.
+
+The202 receivable and VAT snapshots remain unchanged, as observed in WinSpeed.
+The raw202 and107 balances must not be summed as a customer debt report. Native
+AR report reconciliation is still pending Accounting confirmation. No GL
+posting or physical shipment acceptance is implied.
+
+Native cost triggers stay enabled. The initial contract rejects existing future
+cost-calculated stock or cost-detail rows for the product across all branches
+and inventories. It verifies existing future stock/cost snapshots remain exact.
+The application checks the reviewed trigger definitions through a fixed reader
+procedure running as the existing dedicated migrator; no general metadata grant
+is added to the application principal. Changed definitions or unsupported
+period/counter/cost branches stop before a write.
 
 ### Account status after administrator changes
 

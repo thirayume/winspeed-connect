@@ -14,7 +14,7 @@ Docker engine and Docker Desktop on that server are not used.
 | Server folder | `D:\SaleApp\uat` | `D:\SaleApp\prod` |
 | Database (R740-SRV\SQL2008) | `dbwins_worldfert9-uat` | `dbwins_worldfert9` |
 | SQL logins | `wf_r740_uat_app` / `wf_r740_uat_migrator` | `wf_r740_prod_app` / `wf_r740_prod_migrator` |
-| URL | `https://172.16.30.169:8444` (HTTP 8091 redirects) | `https://172.16.30.169` (HTTP 8090 redirects) |
+| URL | `https://172.16.30.169:8444` (HTTP 8091 redirects) | `https://172.16.30.169` (HTTP 80 redirects) |
 | Compose project / images | `saleapp-uat` / `worldfert-saleapp-uat-*` | `saleapp-prod` / `worldfert-saleapp-prod-*` |
 | Status | enabled | **disabled until go-live approval** |
 
@@ -132,7 +132,7 @@ Before the first apply, the plan is expected to list most migrations as pending 
 
 PROD uses the same images, Compose file and scripts as UAT. What differs is pinned in
 [`targets/prod.env`](targets/prod.env): `dbwins_worldfert9`, `ONPREM_TARGET_KIND=production`,
-ports 443/8090, a backup gate and the UAT Caddy root. Until the steps below, nothing touches
+ports 80/443, a backup gate and the UAT Caddy root. Until the steps below, nothing touches
 `dbwins_worldfert9`.
 
 1. **UAT sign-off**, then the owner approves fast-forwarding `main` to the tested `uat` commit.

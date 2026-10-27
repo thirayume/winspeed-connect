@@ -11,7 +11,7 @@
 param(
   [string]$Distro = 'Ubuntu',
   [string]$ListenAddress = '172.16.30.169',
-  [int[]]$Ports = @(443, 8090, 8444, 8091),
+  [int[]]$Ports = @(80, 443, 8444, 8091),
   [string]$LogFile = 'D:\SaleApp\tools\out\keepalive.log'
 )
 $ErrorActionPreference = 'Continue'

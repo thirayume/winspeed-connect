@@ -556,9 +556,11 @@ async function resolveNativeDocumentChain(options = {}) {
         SELECT 
           rd.RedemtionID, rd.Listno, rd.CouponID, rd.CouponNo, rd.GoodQty AS RedeemedQty,
           rd.RemaQty AS RedemptionRemaQty, rd.SOInvID, rd.SOListNo,
-          rh.DocuNo AS RedemptionDocuNo, rh.DocuDate AS RedemptionDate, rh.DocuType AS RedemptionType, rh.DocuStatus AS RedemptionStatus
+          rh.DocuNo AS RedemptionDocuNo, rh.DocuDate AS RedemptionDate, rh.DocuType AS RedemptionType, rh.DocuStatus AS RedemptionStatus,
+          gu.GoodUnitName AS RedemptionUnitName
         FROM dbo.WFRedemtionDT rd WITH (NOLOCK)
         JOIN dbo.WFRedemtionHD rh WITH (NOLOCK) ON rh.RedemtionID = rd.RedemtionID
+        LEFT JOIN dbo.EMGoodUnit gu WITH (NOLOCK) ON gu.GoodUnitID=rd.GoodUnitID
         WHERE rd.CouponID = @couponId
       `, { couponId: { type: sql.Int, value: couponId } });
 
@@ -578,6 +580,7 @@ async function resolveNativeDocumentChain(options = {}) {
           couponId: r.CouponID,
           couponNo: r.CouponNo,
           redeemedQtyTon: r.RedeemedQty != null ? Number(r.RedeemedQty) : null,
+          unitName: r.RedemptionUnitName || null,
           remaQty: r.RedemptionRemaQty != null ? Number(r.RedemptionRemaQty) : null,
           soInvId: r.SOInvID,
           soListNo: r.SOListNo

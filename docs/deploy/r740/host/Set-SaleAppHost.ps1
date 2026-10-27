@@ -30,7 +30,7 @@
 [CmdletBinding()]
 param(
   [string]$ListenAddress = '172.16.30.169',
-  [int[]]$Ports = @(443, 8090, 8444, 8091),
+  [int[]]$Ports = @(80, 443, 8444, 8091),
   [string[]]$AllowFrom = @('172.16.30.0/24', '192.168.2.0/24'),
   [string]$Distro = 'Ubuntu',
   [string]$KeepAliveScript,

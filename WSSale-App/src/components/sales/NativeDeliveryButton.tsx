@@ -5,7 +5,8 @@ import { useCan } from '../../utils/capabilities';
 
 type Request = { requestId: string; status: string; expiresAt: string | null; isRequester: boolean };
 type Preview = { soid: number; docuNo: string; aiNo: string; amount: string; fingerprint: string;
-  request: Request | null; completed: boolean; deliveryNo?: string };
+  request: Request | null; completed: boolean; deliveryNo?: string;couponNo?:string;
+  book?:string;couponSeries?:string;packKg?:string;sackQty?:string };
 const messages: Record<string,string> = {
   DO_SOURCE_CHANGED: 'ข้อมูลใบจองเปลี่ยนหลังยืนยัน กรุณาตรวจสอบเอกสาร',
   DO_ORIGIN_REQUIRED: 'ใบนี้ยังไม่รองรับการออก 104 ผ่านแอป กรุณาใช้ใบจองใหม่จากแอป',
@@ -17,6 +18,13 @@ const messages: Record<string,string> = {
   DO_REQUEST_CONFLICT: 'คำขอนี้เปลี่ยนแปลงหรือดำเนินการแล้ว กรุณาตรวจสถานะอีกครั้ง',
   DO_REQUEST_OWNED_BY_ANOTHER: 'มีคำขอจากผู้ใช้อื่นอยู่แล้ว กรุณาให้ผู้ขอดำเนินการต่อ',
   DO_RECEIPT_DIVERGED: 'เอกสารปลายทางมีการเปลี่ยนแปลง กรุณาให้ผู้ดูแลตรวจสอบ',
+  DO_ACCOUNT_MISMATCH: 'เล่มใบสั่งขายไม่ตรงกับบัญชีใบจอง กรุณาให้ผู้ดูแลตรวจสอบ',
+  DO_COUPON_ACCOUNT_MISMATCH: 'เล่มตั๋วไม่ตรงกับบัญชีใบสั่งขาย กรุณาให้ผู้ดูแลตรวจสอบ',
+  DO_LEGACY_RECEIPT_INCOMPLETE: 'เอกสารเดิมยังไม่มีตั๋วและยอดลูกหนี้ครบ กรุณาให้ผู้ดูแลตรวจสอบก่อนดำเนินการต่อ',
+  DO_COMPLETE_RECEIPT_DIVERGED: 'ตั๋วหรือรายการลูกหนี้ไม่ตรงกับใบสั่งขาย กรุณาให้ฝ่ายบัญชีตรวจสอบ',
+  DO_PACKAGING_UNSUPPORTED: 'ขนาดบรรจุหรือจำนวนกระสอบยังไม่พร้อม กรุณาตรวจสอบสินค้าและจำนวน',
+  DO_PERIOD_UNSUPPORTED: 'งวดบัญชีของวันที่เอกสารยังไม่เปิดหรือไม่ชัดเจน กรุณาให้ฝ่ายบัญชีตรวจสอบ',
+  DO_COUPON_COUNTER_UNSUPPORTED: 'เลขรันตั๋วยังไม่พร้อม กรุณาให้ผู้ดูแลตรวจสอบ',
 };
 export function deliveryError(e: unknown) {
   const code=(e as {data?:{code?:string}}).data?.code;
@@ -46,8 +54,8 @@ export function NativeDeliveryButton({soid,onCreated}:{soid:string|number;onCrea
  async function create() {
   if(!preview?.request||busy)return;setBusy(true);setError('');
   try {
-   const r=await req<{deliveryNo:string}>(`/so/${soid}/native-delivery`,{method:'POST',body:JSON.stringify({requestId:preview.request.requestId,fingerprint:preview.fingerprint})});
-   setPreview({...preview,completed:true,deliveryNo:r.deliveryNo});onCreated();
+   const r=await req<{deliveryNo:string;couponNo:string}>(`/so/${soid}/native-delivery`,{method:'POST',body:JSON.stringify({requestId:preview.request.requestId,fingerprint:preview.fingerprint})});
+   setPreview({...preview,completed:true,deliveryNo:r.deliveryNo,couponNo:r.couponNo});onCreated();
   }catch(e){setError(deliveryError(e));}finally{setBusy(false);}
  }
  const r=preview?.request;
@@ -58,8 +66,10 @@ export function NativeDeliveryButton({soid,onCreated}:{soid:string|number;onCrea
    <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
     <h2 className="text-lg font-bold text-[#0C447C]">ออกใบสั่งขาย 104</h2>
     {preview&&<div className="mt-3 space-y-2 text-sm">
-     {preview.completed?<p>ออกเอกสารแล้ว: <strong>{preview.deliveryNo}</strong></p>:<>
+     {preview.completed?<><p>ออกเอกสารแล้ว: <strong>{preview.deliveryNo}</strong></p><p>ตั๋ว: <strong>{preview.couponNo}</strong> · ตั้งยอดลูกหนี้แล้ว</p></>:<>
       <p>ใบจอง {preview.docuNo} · AI {preview.aiNo}</p><p>เต็มจำนวน · ยอด {Number(preview.amount).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท</p>
+      <p>บัญชี {preview.book==='I'?'1':'2'} · ตั๋วเล่ม {preview.couponSeries} · {Number(preview.packKg)} กก./กระสอบ × {Number(preview.sackQty).toLocaleString('th-TH')} กระสอบ</p>
+      <p>ออกตั๋วครบและตั้งยอดลูกหนี้พร้อมใบสั่งขาย</p>
       <p>ใบนี้เกินวงเงินเครดิต ต้องให้ Account อนุมัติก่อนออกเอกสาร</p>
       {r&&<p>{expired?'คำอนุมัติหมดอายุ กรุณาขอใหม่':r.status==='APPROVED'?'Account อนุมัติแล้ว':'ส่งคำขอแล้ว รอ Account อนุมัติ'}</p>}
       {r&&!r.isRequester&&<p>ให้ผู้ขอเดิมเป็นผู้ออกเอกสารหลังอนุมัติ</p>}

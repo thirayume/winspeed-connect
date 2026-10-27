@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test:trace": "node --test tests/native-trace-finance.test.cjs",
     "check:unused": "tsc -p tsconfig.app.json --noUnusedLocals --noUnusedParameters --pretty false"
   },
   "dependencies": {
