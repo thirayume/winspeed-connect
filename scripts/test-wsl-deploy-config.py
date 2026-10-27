@@ -248,5 +248,75 @@ class ComposeGuardTests(unittest.TestCase):
             self.assert_accepted(models)
 
 
+class R740ComposeGuardTests(unittest.TestCase):
+    """R740 must pin every native writer flag outside the secret env files."""
+
+    def fixture(self, environment):
+        target_path = ROOT / f"docs/deploy/r740/targets/{environment}.env"
+        target = dict(line.split("=", 1) for line in target_path.read_text(encoding="utf-8").splitlines()
+                      if line and not line.startswith("#"))
+        models = fixture_models()
+        app = models["resolved"]["services"]["backend"]["environment"]
+        migration = models["resolved"]["services"]["migrate"]["environment"]
+        target_keys = ("ONPREM_DB_SERVER", "ONPREM_DB_PORT", "ONPREM_DB_INSTANCE", "ONPREM_DB_NAME",
+                       "ONPREM_TARGET_KIND", "ONPREM_EXPECTED_SERVERNAME", "ONPREM_PRODUCT_VERSION_PREFIX",
+                       "ONPREM_DB_ENCRYPT", "ONPREM_DB_LEGACY_TLS")
+        for key in target_keys:
+            app[key] = migration[key] = target[key]
+        for key in ("ONPREM_DB_USER", "CORS_ORIGIN", "ONPREM_SWITCHABLE_DATABASES", "NATIVE_BOOKING_AI_ENABLED",
+                    "NATIVE_DELIVERY_104_ENABLED", "NATIVE_MANUAL_116_ENABLED", "NATIVE_INVOICE_107_ENABLED",
+                    "DISABLE_BACKGROUND_WORKERS"):
+            app[key] = target[key]
+        app["TRUST_PROXY"] = "1"
+        migration["ONPREM_MIGRATOR_USER"] = target["SALEAPP_MIGRATOR_LOGIN"]
+        models["env_sources"]["services"]["migrate"]["environment"] = {
+            key: value for key, value in migration.items()
+            if key not in ("ONPREM_MIGRATOR_USER", "ONPREM_MIGRATOR_PASSWORD")}
+        services = models["resolved"]["services"]
+        for service in ("backend", "migrate"):
+            services[service]["image"] = f"worldfert-saleapp-{environment}-backend:local"
+        services["frontend"]["image"] = f"worldfert-saleapp-{environment}-frontend:local"
+        services["caddy"]["image"] = f"worldfert-saleapp-{environment}-caddy:local"
+        services["caddy"]["environment"] = {key: target[key] for key in ("APP_DOMAIN", "HTTP_PORT", "HTTPS_PORT")}
+        services["caddy"]["ports"] = [{"published": target[key], "target": int(target[key])}
+                                          for key in ("HTTP_PORT", "HTTPS_PORT")]
+        return models, target_path
+
+    def validate(self, models, target_path):
+        return subprocess.run([sys.executable, str(ROOT / "docs/deploy/r740/validate-compose.py"),
+                               str(target_path), "/fixture/.env.migrator.local"],
+                              input=json.dumps(models), capture_output=True, text=True, timeout=10)
+
+    def test_reviewed_uat_and_prod_models_are_accepted(self):
+        for environment in ("uat", "prod"):
+            with self.subTest(environment=environment):
+                models, target_path = self.fixture(environment)
+                result = self.validate(models, target_path)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_secret_env_cannot_enable_any_native_writer(self):
+        for environment in ("uat", "prod"):
+            for key in ("NATIVE_BOOKING_AI_ENABLED", "NATIVE_DELIVERY_104_ENABLED",
+                        "NATIVE_MANUAL_116_ENABLED", "NATIVE_INVOICE_107_ENABLED"):
+                with self.subTest(environment=environment, flag=key):
+                    models, target_path = self.fixture(environment)
+                    models["resolved"]["services"]["backend"]["environment"][key] = "true"
+                    result = self.validate(models, target_path)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(key + " does not match the target file", result.stdout)
+                    self.assertNotIn("dummy-app-only", result.stdout + result.stderr)
+                    self.assertNotIn("dummy&Migration", result.stdout + result.stderr)
+
+    def test_launcher_exports_all_reviewed_native_flags(self):
+        launcher = (ROOT / "docs/deploy/r740/r740-deploy.sh").read_text(encoding="utf-8")
+        pin_line = next(line for line in launcher.splitlines() if line.startswith("readonly PIN_KEYS="))
+        for environment in ("uat", "prod"):
+            models, target_path = self.fixture(environment)
+            for key in ("NATIVE_BOOKING_AI_ENABLED", "NATIVE_DELIVERY_104_ENABLED",
+                        "NATIVE_MANUAL_116_ENABLED", "NATIVE_INVOICE_107_ENABLED"):
+                self.assertIn(" " + key + " ", pin_line)
+                self.assertIn(key + "=false", target_path.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -80,7 +80,8 @@ def main():
     for key in ("ONPREM_DB_PASSWORD", "JWT_SECRET"):
         if str(app.get(key, "")).strip().upper() in PLACEHOLDERS:
             stop(key + " is blank or a placeholder in config/.env.")
-    for key in ("NATIVE_BOOKING_AI_ENABLED", "NATIVE_DELIVERY_104_ENABLED", "DISABLE_BACKGROUND_WORKERS"):
+    for key in ("NATIVE_BOOKING_AI_ENABLED", "NATIVE_DELIVERY_104_ENABLED", "NATIVE_MANUAL_116_ENABLED",
+                "NATIVE_INVOICE_107_ENABLED", "DISABLE_BACKGROUND_WORKERS"):
         if target.get(key, "").lower() not in ("true", "false"):
             stop("target file must set " + key + " to true or false.")
         if str(app.get(key, "")).lower() != target[key].lower():

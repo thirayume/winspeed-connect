@@ -1,74 +1,110 @@
-# R740 go-live status (shared: Claude · Codex · Antigravity)
+# R740 go-live status
 
-A snapshot of what is **live** and what is **pending** on R740-SRV, so every agent working this
-repo shares the same picture. Keep it current: update this file in the same change that moves the
-deploy state. For *how* to do each step, see [README.md](README.md).
+Shared operational snapshot, verified **28 October 2026, 01:30 ICT**. Older snapshots in Git
+history describe their observation dates; do not treat them as current deployment acceptance.
+See [README.md](README.md) for the procedure and [TLS guide](TLS-DNS-PKI-ACME.md) for certificates.
 
-**Authoritative as of 2026-10-25**, `origin/uat` = `cc30edf`.
+## UAT deployment recovered and verified
 
-## Done & verified (2026-10-25)
+| Item | Observed result |
+|---|---|
+| Host / SQL identity | `R740-SRV` / `R740-SRV\SQL2008` |
+| Deployed origin/uat commit | `a1060b639defb5244d659b64bb69ef52b552bcd0` |
+| Stack / directory | `saleapp-uat` / `D:\SaleApp\uat` |
+| Database | `dbwins_worldfert9-uat`, DB ID 8 |
+| Migration plan after apply | 155 unchanged, 0 pending, 0 drift |
+| API / SQL / frontend | HTTP 200 / up / HTTP 200 |
+| Backend | running, healthy |
+| UAT URL | `https://172.16.30.169:8444/` |
+| HTTP redirect | port 8091 returns 308 to the UAT HTTPS URL |
+| TLS check | TLS 1.3, certificate chain and IP verified using the exported public root |
+| Production stack | not started; no saleapp-prod containers |
 
-### UAT — live and healthy
-- `origin/uat` deployed to `D:\SaleApp\uat`; backend healthy, `api/health` HTTP 200 at
-  `https://172.16.30.169:8444`.
-- `dbwins_worldfert9-uat` ledger: pending 0, drift 0 (152 migrations). First admin created; owner signed in.
+Successful promotion and checks:
+[Actions run 40557785224](https://github.com/thirayume/winspeed-connect/actions/runs/40557785224).
+Server receipt: `D:\SaleApp\uat\deploy-logs\20261028-011551-uat-apply-a1060b6.txt`.
+The apply run started with migration 157 pending and committed it; the second plan proved 155/0/0.
 
-### Both LIVE company databases migrated
-`dbwins_worldfert9` (company 9) **and** `dbwins_worldfert2` (company 2) now carry the `wf` schema.
-Run by the owner/IT through the per-DB runbook — Claude is classifier-blocked from production DB
-writes, so the owner/IT executes them. Verified read-only:
+### What failed and what fixed it
 
-| | dbwins_worldfert9 | dbwins_worldfert2 |
-|---|---|---|
-| `wf` schema objects | 582 | 582 |
-| migration plan | pending 0, drift 0 | pending 0, drift 0 |
-| `wf_r740_uat_app` DB user (switch access) | yes | yes |
-| first app admin | created (SSMS) | created (SSMS) |
-| `dbo` data / schema | untouched | untouched |
+1. A single added blank line in the tracked server deploy driver blocked checkout. The exact
+   edited file was backed up in `uat\deploy-logs\recovery-20261027-201228-deploy-r740.ps1`,
+   confirmed to contain no other changes, then restored from its recorded Git commit.
+2. The previous apply had committed 155 and 156, then stopped at 157. Its fixed metadata reader
+   named the local UAT2 migrator. The R740-only, hash-pinned compatibility artifact uses
+   `EXECUTE AS SELF`; SQL metadata now identifies `wf_r740_uat_migrator`. Original migrations
+   and local UAT2 ledger hashes are unchanged.
+3. A TLS warning had hidden the actual principal failure in the diagnostic classifier. The
+   classifier now prioritizes the fatal migration error and preserves safe categories in receipts.
+4. CI Compose did not preserve env_file source information. CI now uses the tested Compose
+   5.6.1, keeping the source check enforced.
 
-Per-DB runbook (files in this folder): `sql/r740-company-backup-<db>.sql` (SSMS, copy-only →
-`<db>_predeploy_*.bak`) → `server/Migrate-Company.bat <db>` (plan 152 → apply → verify, backup-gated)
-→ `New-R740AdminSql.ps1 -Database <db>` (IT runs the generated SQL in SSMS) → IT
-`sql/r740-grant-app-access.sql` for `wf_r740_uat_app`.
+## Ports and report service
 
-### Database switcher (shipped on `uat`)
-Topbar DB switcher + admin system-default setting; the green bar shows the database name. Roles with
-`database.switch` = ACCOUNTING / COUNTER_SALES / C_LEVEL / ADMIN; `database.set-system` = ADMIN.
-Allowlist pin `ONPREM_SWITCHABLE_DATABASES` (uat = `*`, prod = `dbwins_worldfert9,dbwins_worldfert9-uat,dbwins_worldfert2`).
-A switched session gets full read/write and reverts to the system default on logout/timeout.
+Windows portproxy now has `172.16.30.169:80 -> 127.0.0.1:80` and the existing
+`172.16.30.169:443 -> 127.0.0.1:443`. The PID 2720 iphlpsvc listeners are the forwarding
+service; do not stop it. A listener alone does not prove an HTTPS application is serving.
+There is currently no Production Caddy behind those two forwarding ports.
 
-### Nightly self-heal wired
-Task `AUTO Backup SQL2008` (daily 21:00, `Administrator` / Limited) now has **2 sequential actions**:
-1. `D:\MSSQL\MSSQL10_50.SQL2008\Backup\run_backup.bat` — backup + restore `dbwins_worldfert9-uat`.
-2. `host/Refresh-UAT.ps1` — re-map the uat principals, then unattended redeploy (`deploy-r740.ps1 -Auto`).
+Port 80 firewall scope matches the existing 443 rule: `172.16.0.0/16,192.168.2.0/24`.
+The running `\SaleApp\SaleApp-WSL-KeepAlive` task uses the reviewed port set
+`80,443,8444,8091`. The old script and portproxy table were backed up under
+`D:\SaleApp\tools\out\*before-port80-20261028-012242*` before the change. The older 8090
+forward and firewall rule were retained; their unrelated service was not changed.
 
-Because 9 now carries `wf` + migrations, the nightly restore copies them into `-uat`, so Refresh-UAT
-step 2 just verifies + restarts. First real run: **tonight 21:00**. Log: `D:\SaleApp\uat\deploy-logs\refresh-*.log`.
+SSRS service `ReportServer$SQL2008` is running. WMI reserved URLs use **8888** for both
+ReportServer_SQL2008 and Reports_SQL2008. A local request reaches the endpoint and returns
+401 (authentication required). A report user still needs to confirm report access at the new URL.
 
-## Pending — PROD app go-live
-The company DB `dbwins_worldfert9` is **already migrated**, so the PROD **app-stack** go-live is now
-mainly: a reviewed commit sets `SALEAPP_DEPLOY_ENABLED=true` (through `uat` → `main`) + prod secrets in
-`D:\SaleApp\prod\config` (IT reports filled) → `deploy.bat prod` (the plan should be **pending 0**, since
-the DB is migrated) → start `saleapp-prod` at `https://172.16.30.169`. Still open: version bump to 1.0.0;
-enable employee accounts with a temporary password (handled server-side, **never in the repo**); a
-non-dry-run test of the promotion workflows; a real TLS certificate once a domain exists.
+## UAT accounts and nightly refresh
 
-## Constraints for concurrent / hotfix work — read before touching deploy or DB
-- **`dbwins_worldfert9` and `dbwins_worldfert2` are LIVE production data.** Never change their `dbo`
-  schema or data except through the already-granted, reviewed app columns (see
-  `sql/r740-grant-app-access.sql`). Migrations add only `wf`; there are no `dbo` writes at migration time.
-- Migrations on the live company DBs go **only** through `server/Migrate-Company.bat` (backup-gated),
-  executed by the owner/IT. Do not run ad-hoc DDL/DML against 9 or 2.
-- **Backup-gate change (`cc30edf`):** `migrate-company.sh` no longer refuses a backup under 60 s old
-  (that floor false-stopped a go-live when the bat ran right after the backup; `RESTORE VERIFYONLY` in
-  the backup SQL already proves completeness). It keeps the 120-minute ceiling + non-empty check and
-  clamps a negative age for WSL/NTFS clock skew.
-- **Branches:** push work to `uat`, not `main`; promote with the Actions workflows. Hotfixes branch from
-  `main` and use "3. Hotfix to UAT and PROD". `origin/main` currently trails `origin/uat` — the recent
-  r740 script commits (`cc1af76` admin `-Database`, `cc30edf` backup-gate) are on `uat`; promote when ready.
-- Public repo: **no secrets, no `.env`, no PII, no real employee names** in tracked files.
+The owner selected **Production accounts for UAT** after the daily 21:00 restore. Read-only SQL
+comparison proved the active UAT admin verifier matches Production, without printing either
+hash. MustChangePassword=1 was observed; the existing first-sign-in change policy still applies.
+Do not reapply a separate UAT password after restore. Never store account passwords in this file.
 
-## Watch-points
-- **Tonight 21:00** — first Refresh-UAT run under the task's `Administrator` / Limited run level; it
-  rebuilds images via docker-in-WSL. If it fails on elevation, set the task's RunLevel to Highest. Check
-  `D:\SaleApp\uat\deploy-logs\refresh-*.log`.
+Task AUTO Backup SQL2008 restores Production into dbwins_worldfert9-uat, then runs
+Refresh-UAT.ps1. The 27 October run reached the old 157 failure. The fixed UAT branch is now
+available to the next refresh, but that next scheduled run has **not yet been observed**. Do not
+rerun the restore merely to test the scheduler: it discards current UAT changes.
+
+## Native Full Loop remains a separate acceptance step
+
+All four flags are false on the deployed R740 UAT: NATIVE_BOOKING_AI_ENABLED,
+NATIVE_DELIVERY_104_ENABLED, NATIVE_MANUAL_116_ENABLED, NATIVE_INVOICE_107_ENABLED.
+The next configuration hardening pins all four in both reviewed target files, rather than
+allowing 116/107 settings to come from a secret env file.
+
+The actual R740 UAT invoice trigger set has 26 enabled definitions. Its metadata fingerprint is
+`1bdd47a6ee4e84662ed0b1979d32a628ac720fd6745e5839a0afb4b1987f6c8a`, matching the tested
+UAT2 contract. This read-only match is useful evidence; it is **not** a complete native save test.
+JavaScript and SQL writer guards still require `AMYOU-YOGA7\V2008R2` /
+`dbwins_worldfert9_uat2` / DB ID 10. The compatibility repair did not enable business writes on R740.
+
+Before enabling them, implement and review a separate R740 target contract, preserve immutable
+155-157, and test on dbwins_worldfert9-uat with WinSpeed connected to that exact database.
+Do not just change a flag or replace the local database name in an applied migration.
+
+UAT2 previously exercised the restricted single-line, full-coupon, zero-VAT I/K paths through
+107. Remaining business evidence: AR report reconciliation (owner deferred), GL, approved print
+forms, real weighing/shipment, and live ACCOUNTING self-approval for manual 116. The illustrated
+question brief is local-only at `docs/sale-app/current/UAT2-FullLoop-Questions-20261027.docx`.
+
+## Production work remaining
+
+- Owner has authorized deployment to dbwins_worldfert9 on this host, using ports 80/443.
+  The tracked SALEAPP_DEPLOY_ENABLED=false gate remains until the reviewed release is ready.
+- Production ledger was read as 152 rows; 155-157 have not been applied there. A fresh guarded
+  Production plan for the final release is required; do not infer its result from the UAT ledger.
+- Production config files, app/migrator principals and checkout exist. Validate the resolved
+  model, credentials and isolation through the reviewed plan before any apply.
+- DNS and company PKI have **not been started**, per the owner on 28 October. Temporary IP
+  HTTPS with the existing private CA versus waiting for PKI is awaiting the owner's selection.
+  Company PKI is not installed and general client trust is not proven.
+- Obtain a fresh verified pre-deploy backup, complete the native UAT acceptance above, promote
+  the exact tested UAT commit through the release workflow, then run the guarded Production
+  plan/apply. Migration failures can leave earlier migrations committed; inspect before retrying.
+
+Production databases dbwins_worldfert9 and dbwins_worldfert2 contain live WINSpeed records.
+No ad-hoc repair of their dbo data/schema was performed during this recovery. Never commit
+secret settings, private keys, password hashes or operational screenshots to the public repository.

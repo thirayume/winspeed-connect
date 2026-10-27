@@ -6,7 +6,7 @@ Docker engine and Docker Desktop on that server are not used.
 
 > **Current status for all agents (Claude · Codex · Antigravity):**
 > [GO-LIVE-STATUS.md](GO-LIVE-STATUS.md) — what is live vs pending, and the constraints to respect
-> when working on deploy or the databases. Updated 2026-10-25.
+> when working on deploy or the databases. Updated 2026-10-28.
 
 | | UAT | PROD |
 |---|---|---|
@@ -16,10 +16,12 @@ Docker engine and Docker Desktop on that server are not used.
 | SQL logins | `wf_r740_uat_app` / `wf_r740_uat_migrator` | `wf_r740_prod_app` / `wf_r740_prod_migrator` |
 | URL | `https://172.16.30.169:8444` (HTTP 8091 redirects) | `https://172.16.30.169` (HTTP 80 redirects) |
 | Compose project / images | `saleapp-uat` / `worldfert-saleapp-uat-*` | `saleapp-prod` / `worldfert-saleapp-prod-*` |
-| Status | enabled | **disabled until go-live approval** |
+| Status | deployed; see current receipt | **release gate disabled; acceptance work remains** |
 
 PROD reserves ports 80/443 after the coordinated IIS/SSRS changes. TLS uses Caddy's internal CA for the IP address until a
-domain exists; each browser device must trust the Caddy root certificate once.
+domain exists; each browser device must trust the Caddy root certificate once. DNS/PKI have not
+yet been arranged. See [DNS, PKI and ACME preparation](TLS-DNS-PKI-ACME.md) for the current
+limitations and the information IT needs to supply.
 
 ## Branches and release flow
 
@@ -156,7 +158,9 @@ ports 80/443, a backup gate and the UAT Caddy root. Until the steps below, nothi
    (they cannot open `dbwins_worldfert9-uat` or any other user database).
 4. **Secrets**: [`prod.env.example`](prod.env.example) -> `D:\SaleApp\prod\config\.env`,
    [`prod.migrator.env.example`](prod.migrator.env.example) -> `.env.migrator.local`.
-5. `docs\deploy\r740\deploy.bat prod -PlanOnly` (read-only): expect 151 pending, drift 0.
+5. `docs\deploy\r740\deploy.bat prod -PlanOnly` (read-only): inspect the actual plan for the
+   release commit. The Production ledger was 152 rows on 28 October; do not expect 151 pending
+   or assume that migrations already applied in UAT have been applied in Production.
 6. **Backup** (IT, SSMS): [`sql/r740-prod-backup.sql`](sql/r740-prod-backup.sql), a verified
    copy-only backup in `D:\MSSQL\MSSQL10_50.SQL2008\Backup`.
 7. `deploy.bat prod`: confirm the commit, then type `dbwins_worldfert9` to apply. The server
@@ -175,8 +179,12 @@ apply in a quiet window right after the backup.
 - The env-file source guard is tested with Docker Compose 5.6.1 on R740 and in CI.
   An implementation that omits `env_file` from `config --no-env-resolution --format json`
   fails closed; never replace that check with the resolved environment alone.
-- The app and migrator refuse to run if their login can open `dbwins_worldfert9`, is in an
-  elevated role, or the connection is not TCP to `R740-SRV\SQL2008` 10.50.x.
+- The UAT app and migrator enforce the UAT target isolation rules. The Production target
+  requires the live database and its dedicated logins. Both enforce their reviewed roles,
+  TCP and SQL server/version identity.
+- All four native AI/104/116/107 feature flags are pinned in `targets/*.env` and checked in
+  the resolved Compose model. Enabling a flag does not change the UAT2-only writer guards or
+  prove the native contract on R740.
 - Target values live only in `targets/*.env` (reviewed in Git); `config\.env` holds secrets.
 - Background workers are on in both R740 targets (`DISABLE_BACKGROUND_WORKERS=false`): the
   5-second polling that refreshes open screens (read-only on `dbo.SOHD`) and the outbox

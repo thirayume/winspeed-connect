@@ -133,6 +133,7 @@ docs/deploy/onprem/sql/*
 docs/deploy/r740/*
 !docs/deploy/r740/README.md
 !docs/deploy/r740/GO-LIVE-STATUS.md
+!docs/deploy/r740/TLS-DNS-PKI-ACME.md
 !docs/deploy/r740/deploy.bat
 !docs/deploy/r740/deploy-r740.ps1
 !docs/deploy/r740/New-R740AdminSql.ps1
