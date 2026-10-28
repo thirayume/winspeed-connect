@@ -104,7 +104,9 @@ function validateTargetRecord(rawRow, env = process.env) {
 }
 
 const WRITE_KEYWORDS_RE = /\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|MERGE)\b/i;
-const PROD_DB_REF_RE = /\bdbwins_worldfert9\b/i;
+// A hyphen is part of a quoted database identifier. Do not mistake the approved
+// R740 clone dbwins_worldfert9-uat for the exact live database name.
+const PROD_DB_REF_RE = /\bdbwins_worldfert9\b(?!-)/i;
 
 function stripComments(sql) {
   return sql.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');

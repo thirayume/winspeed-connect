@@ -7,6 +7,7 @@ const { createHash } = require('node:crypto');
 require('./helpers/route-harness.cjs').installDbStub(() => []);
 const { isInitialNativeUatTarget } = require('../services/initial-native-uat-target');
 const { splitBatches } = require('../run_migrations');
+const { assertNoCrossDbWrite } = require('../safety-validator');
 const { initialBookingAi } = require('../services/initial-booking-ai');
 const { initialDelivery } = require('../services/initial-delivery');
 const { initialManualRedemption } = require('../services/initial-manual-redemption');
@@ -100,4 +101,20 @@ test('SQL target predicate includes exact UAT identities and defaults to deny', 
   assert.match(fn, /ELSE 0 END/);
   assert.doesNotMatch(fn, /N'dbwins_worldfert9'|N'dbwins_worldfert2'/);
   for (const batch of batches.slice(3)) assert.match(batch.trim(), /^ALTER PROCEDURE wf\./);
+});
+
+test('the migration runner accepts every R740 UAT batch without confusing the hyphenated clone with Production', () => {
+  for (const batch of batches) assert.doesNotThrow(() => assertNoCrossDbWrite(batch));
+  assert.doesNotThrow(() => assertNoCrossDbWrite('UPDATE [dbwins_worldfert9-uat].dbo.SOHD SET Remark=N\'test\';'));
+});
+
+test('exact live database writes remain blocked in quoted, unquoted and dynamic SQL', () => {
+  for (const sql of [
+    'UPDATE dbwins_worldfert9.dbo.SOHD SET Remark=N\'test\';',
+    'INSERT INTO [dbwins_worldfert9].[dbo].[SOHD] (SOID) VALUES(1);',
+    'DELETE FROM "dbwins_worldfert9".dbo.SOHD;',
+    "EXEC(N'UPDATE [DBWINS_WORLDFERT9]..SOHD SET Remark=N''test''');",
+    'ALTER TABLE [dbwins_worldfert9]/*comment*/.dbo.SOHD ADD Forbidden int;',
+    "IF DB_NAME()=N'dbwins_worldfert9' UPDATE dbo.SOHD SET Remark=N'test';",
+  ]) assert.throws(() => assertNoCrossDbWrite(sql), /Cross-database write targeting production/);
 });

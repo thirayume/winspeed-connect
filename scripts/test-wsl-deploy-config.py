@@ -173,6 +173,7 @@ class ComposeGuardTests(unittest.TestCase):
             ("Login failed for user 'private-account' password=Secret&P@ss$keep; ELOGIN", "SQL_LOGIN_FAILURE"),
             ("SSL handshake unsupported protocol Secret&P@ss$keep;", "TLS_OR_ENCRYPTION_FAILURE"),
             ("ONPREM SAFETY VIOLATION: private-account Secret&P@ss$keep;", "TARGET_GUARD_FAILURE"),
+            ("CRITICAL SAFETY VIOLATION: Cross-database write private-account Secret&P@ss$keep;", "TARGET_GUARD_FAILURE"),
             ("ORIGINAL_HASH_DRIFT: checksum mismatch Secret&P@ss$keep;", "MIGRATION_DRIFT"),
             ("Unknown private message Secret&P@ss$keep;", "UNCLASSIFIED_FAILURE"),
         ):

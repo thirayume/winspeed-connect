@@ -89,12 +89,20 @@ database is accepted. Original 152/153/155/156/157 migration bytes remain pinned
 The candidate turns on all four flags for the reviewed R740 UAT target only; Production flags
 and its deployment gate stay false.
 
-Backend checks: 153/153. Configuration checks: 22/22. On R740 UAT the 12 candidate batches were
+Backend checks: 155/155. Configuration checks: 22/22. On R740 UAT the 12 candidate batches were
 compiled as wf_r740_uat_migrator inside one transaction, and the function was evaluated as
 wf_r740_uat_app. Rollback restored all nine prior module bodies, removed the new function and
 left the ledger unchanged; no business procedure was executed. Stored CREATE headers were
 normalized to ALTER only after a read-only diff proved that this was the sole source difference.
 The candidate has not yet been applied or proven by a persistent Full Loop at this checkpoint.
+
+The first guarded apply at 13603b5 stopped before candidate DDL: the legacy cross-database
+regex treated the hyphenated UAT name as the exact Production database. SQL inspection proved
+ledger=155, no 158 ledger row, and no new function. The correction distinguishes the hyphenated
+clone while regression tests keep quoted/unquoted/dynamic writes to the exact live name blocked.
+The migration artifact itself is unchanged. A fresh CI promotion and guarded plan/apply are required.
+The UAT pre-test copy-only backup was checksum-verified at
+`D:\MSSQL\MSSQL10_50.SQL2008\Backup\dbwins_worldfert9-uat_pre-full-loop_20261028_082515.bak` (3457.8 MB).
 
 The owner confirmed WinSpeed connected to R740 UAT is available. Next: CI, guarded UAT deploy,
 then both I/C/J and K/D/N test chains and WinSpeed read-back. This remains the restricted

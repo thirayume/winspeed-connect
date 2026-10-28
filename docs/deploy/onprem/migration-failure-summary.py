@@ -10,7 +10,7 @@ RULES = (
     ("TLS_OR_ENCRYPTION_FAILURE", r"tls|ssl|handshake|certificate|unsupported protocol"),
     ("SQL_LOGIN_FAILURE", r"login failed|authentication failed|\b18456\b|\belogin\b"),
     ("DATABASE_ACCESS_FAILURE", r"cannot open database|not accessible|\b4060\b"),
-    ("TARGET_GUARD_FAILURE", r"onprem safety violation|security_error|target_mismatch"),
+    ("TARGET_GUARD_FAILURE", r"onprem safety violation|critical safety violation|security_error|target_mismatch"),
     ("SQL_PERMISSION_FAILURE", r"permission|not authorized|denied|\b229\b|\b262\b"),
     ("MIGRATION_POLICY_FAILURE", r"migration policy|policy_integrity|unknown_target_profile|configured .* migration is missing"),
     ("MIGRATION_DRIFT", r"applied migrations are immutable|missing from disk|(?:original|executed)_hash_drift|checksum.*drift|batchcount.*drift"),
