@@ -25,9 +25,18 @@ the restored active admin verifier matches Production; no password or hash was p
 The post-refresh Full Loop baseline copy-only backup was checksum-verified at
 `D:\MSSQL\MSSQL10_50.SQL2008\Backup\dbwins_worldfert9_uat_pre-full-loop_20261028_210313.bak`.
 
-A separate read-only preflight found both Production application SQL logins can open the
-UAT clone. Production isolation therefore fails. Proposed clone-only CONNECT denials are
-pending explicit owner authorization; no such denial or Production permission change was made.
+A separate read-only preflight found both Production application SQL logins could open the
+UAT clone. The owner explicitly approved clone-only CONNECT denials for those two identities.
+They are now applied and verified: UAT access 0, Production access 1. Their existing company-2
+access and all live Production permission rows were compared before/after and remain unchanged.
+The principal script repeats the two denials after each restore and proves UAT access 0.
+The earlier approval rejection is resolved by the owner's explicit authorization.
+
+Current runtime intentionally supports switching between allowlisted live company databases,
+as confirmed in `backend/onprem-target.js` and its tests. The first private approval-helper
+attempt incorrectly required zero access to every other company database; it rolled back.
+Its corrected verification preserves existing company access while enforcing the exact approved
+UAT denial. No runtime guard or Production permission was weakened to satisfy this check.
 
 ## Owner-corrected UAT target
 

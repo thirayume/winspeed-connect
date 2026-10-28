@@ -186,6 +186,18 @@ BEGIN TRY
         GRANT CREATE TABLE, CREATE VIEW, CREATE PROCEDURE, CREATE FUNCTION, CREATE TYPE, VIEW DEFINITION TO [wf_r740_uat_migrator_v2];
     ');
 
+    -- Owner approved on 28 October 2026: Production backups copy these app
+    -- users into UAT. Deny CONNECT only in this guarded clone after every restore.
+    -- Their login objects and live Production permissions are not changed.
+    IF EXISTS (SELECT 1 FROM sys.database_principals
+               WHERE name IN (N'wf_r740_prod_app', N'wf_r740_prod_migrator')
+                 AND (type <> 'S' OR SUSER_SID(name) IS NULL OR sid <> SUSER_SID(name)))
+        RAISERROR(N'STOP: copied Production identity does not match its login; inspect before isolating UAT.',16,1);
+    IF USER_ID(N'wf_r740_prod_app') IS NOT NULL
+        EXEC(N'DENY CONNECT TO [wf_r740_prod_app]');
+    IF USER_ID(N'wf_r740_prod_migrator') IS NOT NULL
+        EXEC(N'DENY CONNECT TO [wf_r740_prod_migrator]');
+
     COMMIT TRANSACTION;
 END TRY
 BEGIN CATCH
@@ -236,3 +248,16 @@ END;
 
 SELECT @@SERVERNAME AS server_name, DB_NAME() AS database_name,
        CONVERT(NVARCHAR(32), SERVERPROPERTY('ProductVersion')) AS product_version;
+
+-- Impersonation starts in master because these logins must be unable to open UAT.
+-- Dynamic USE stays inside EXEC; the administrator session remains in the clone.
+DECLARE @reverse TABLE (login_name SYSNAME, can_open_uat INT);
+IF SUSER_ID(N'wf_r740_prod_app') IS NOT NULL
+    INSERT INTO @reverse EXEC(N'USE [master]; EXECUTE AS LOGIN=N''wf_r740_prod_app'';
+        SELECT SUSER_SNAME(),HAS_DBACCESS(N''dbwins_worldfert9_uat''); REVERT;');
+IF SUSER_ID(N'wf_r740_prod_migrator') IS NOT NULL
+    INSERT INTO @reverse EXEC(N'USE [master]; EXECUTE AS LOGIN=N''wf_r740_prod_migrator'';
+        SELECT SUSER_SNAME(),HAS_DBACCESS(N''dbwins_worldfert9_uat''); REVERT;');
+IF EXISTS (SELECT 1 FROM @reverse WHERE ISNULL(can_open_uat,1) <> 0)
+    RAISERROR(N'STOP: Production application identity can still open UAT. No deploy is allowed.',16,1);
+SELECT login_name,can_open_uat FROM @reverse;

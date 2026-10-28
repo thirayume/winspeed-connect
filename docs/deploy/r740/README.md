@@ -93,6 +93,9 @@ D:\SaleApp\
    Production permissions are unchanged. UAT JWT sessions are rotated; app-user passwords are
    not changed. Recovery copies are restricted to SYSTEM and Administrators in the UAT config
    directory. Do not copy them off the server.
+   The owner also approved clone-only CONNECT denials for `wf_r740_prod_app` and
+   `wf_r740_prod_migrator`. The principal script repeats them after every restore and
+   proves those two identities cannot open UAT. Their live Production permissions stay unchanged.
 3. **Private config paths** (IT or owner, on R740-SRV): copy [`uat.env.example`](uat.env.example) to
    `D:\SaleApp\uat\config\.env` and [`uat.migrator.env.example`](uat.migrator.env.example)
    to `D:\SaleApp\uat\config\.env.migrator.local` before step 2. The isolated setup helper
