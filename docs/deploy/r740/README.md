@@ -16,7 +16,7 @@ Docker engine and Docker Desktop on that server are not used.
 | SQL logins | `wf_r740_uat_app_v2` / `wf_r740_uat_migrator_v2` | `wf_r740_prod_app` / `wf_r740_prod_migrator` |
 | URL | `https://172.16.30.169:8444` (HTTP 8091 redirects) | `https://172.16.30.169` (HTTP 80 redirects) |
 | Compose project / images | `saleapp-uat` / `worldfert-saleapp-uat-*` | `saleapp-prod` / `worldfert-saleapp-prod-*` |
-| Status | corrected clone awaiting deploy; see current receipt | **release gate disabled; acceptance work remains** |
+| Status | corrected clone deployed; see current receipt | **release gate disabled; acceptance work remains** |
 
 PROD reserves ports 80/443 after the coordinated IIS/SSRS changes. TLS uses Caddy's internal CA for the IP address until a
 domain exists; each browser device must trust the Caddy root certificate once. DNS/PKI have not

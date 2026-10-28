@@ -3,6 +3,32 @@
 Operational snapshot: **28 October 2026 (ICT)**. Current code and the latest successful
 server receipt determine the running release. See [README](README.md) and [TLS guide](TLS-DNS-PKI-ACME.md).
 
+## Corrected UAT deployment verified at 20 52 ICT
+
+Commit `8f1bd694884bd8dd4afd566dd089aaa761265cfc` passed
+[promotion CI attempt 2](https://github.com/thirayume/winspeed-connect/actions/runs/40652678803).
+The first attempt was cancelled after an npm ECONNRESET and stalled dependency install.
+The retry passed in 44 seconds and promoted that exact tree.
+
+Receipt: `D:\SaleApp\uat\deploy-logs\20261028-205154-uat-apply-8f1bd69.txt`.
+The approved plan was 152 unchanged, 5 pending, drift 0; apply committed 155-159 and the
+final plan is **157 unchanged, 0 pending, 0 drift**. Backend running/healthy, restarts 0.
+HTTPS API returns 200 and SQL up; `/api/dbinfo` identifies `dbwins_worldfert9_uat`.
+TLS certificate chain and IP validation passed against the existing public Caddy root.
+
+The owner opened WinSpeed UAT on R740 RDP. Persistent Full Loop creation is held until after
+the scheduled 21:00 restore. The active refresh script and SQL remapping use the
+underscore clone and v2 identities. That scheduled run subsequently **passed at 21:02:12**,
+Task Scheduler result 0. Receipt `20261028-210151-uat-apply-8f1bd69.txt` confirms 155-159
+reapplied to the restored clone and the final plan 157/0/0. A read-only equality check proved
+the restored active admin verifier matches Production; no password or hash was printed or reset.
+The post-refresh Full Loop baseline copy-only backup was checksum-verified at
+`D:\MSSQL\MSSQL10_50.SQL2008\Backup\dbwins_worldfert9_uat_pre-full-loop_20261028_210313.bak`.
+
+A separate read-only preflight found both Production application SQL logins can open the
+UAT clone. Production isolation therefore fails. Proposed clone-only CONNECT denials are
+pending explicit owner authorization; no such denial or Production permission change was made.
+
 ## Owner-corrected UAT target
 
 The owner changed UAT to **R740-SRV\SQL2008 / dbwins_worldfert9_uat / DB ID 10**.
@@ -105,14 +131,36 @@ could not reach the removed database; do not describe that as a successful accou
 
 ## Production and business acceptance remaining
 
+After the 21:00 restore, both restricted I/C/J and K/D/N chains completed quotation,
+booking 103, AI, complete 104, manual simulation 116 and ACCOUNTING-only 107 on the corrected
+R740 clone. Concurrent apply produced one creation and one replay at 104/116/107. Negative
+role/date tests passed; physical shipment remained held. ACCOUNTING created and self-approved
+116 on one chain; WAREHOUSE created and MANAGER approved the other. SQL verified the actual
+actor identities, one receipt per stage, packaging/quantity, native audit rows and one stock
+row per invoice. Document Trace Flow resolved both exact coupon IDs and expected typed edges.
+
+One private test assertion initially expected ACCOUNTING shipping to reach the downstream
+guard; the route correctly returned 403 first. The corrected test verifies this role denial
+and separately verifies the WAREHOUSE downstream hold. No application code or document was
+changed to satisfy the assertion; the same 116 replayed successfully.
+
+All five owned temporary app accounts were disabled after API/SQL verification. Each then
+returned login 401, and their generated passwords were removed from the private fixture file.
+Operational document IDs and detailed logs remain local on R740, outside the public repo.
+
+WinSpeed read-back remains pending: opening Sale Order after the nightly restore showed
+`DataCache error !! [dg_icoption]`. The owner was asked to reopen and authenticate the UAT
+session. No WinSpeed Save/Post or native-data repair was performed.
+
 Production database is `dbwins_worldfert9`; no saleapp-prod stack has started. The tracked
 Production deploy gate and native writer flags remain false. A read-only forecast before the
 latest target correction showed 152 unchanged, 3 pending, drift 0. The current release adds
 158/159 and requires a fresh guarded Production plan and verified pre-deploy backup.
 
 UAT2 previously exercised restricted I/K paths through 107. Still unverified: AR report
-reconciliation (owner deferred), GL, approved forms, physical scale/shipment, and live ACCOUNTING
-self-approval for manual 116. The illustrated local-only question brief is
+reconciliation (owner deferred), GL, approved forms and physical scale/shipment. ACCOUNTING
+self-approval for manual 116 now passes live R740 API/SQL checks, with WinSpeed acceptance pending.
+The illustrated local-only question brief is
 `docs/sale-app/current/UAT2-FullLoop-Questions-20261027.docx` (four workflow screenshots).
 WinSpeed must connect to the underscore R740 UAT clone before read-back; the visible old sessions
 were local UAT2 and R740 Production. No Save/Post was performed through those sessions.
