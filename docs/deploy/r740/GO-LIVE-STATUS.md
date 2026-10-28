@@ -1,6 +1,6 @@
 # R740 go-live status
 
-Operational snapshot: **28 October 2026 (ICT)**. Current code and the latest successful
+Operational snapshot: **29 October 2026 (ICT)**. Current code and the latest successful
 server receipt determine the running release. See [README](README.md) and [TLS guide](TLS-DNS-PKI-ACME.md).
 
 ## Corrected UAT deployment verified at 20 52 ICT
@@ -39,6 +39,13 @@ Its corrected verification preserves existing company access while enforcing the
 UAT denial. No runtime guard or Production permission was weakened to satisfy this check.
 
 ## Owner-corrected UAT target
+
+At 01:55 on 29 October, UAT redeployed commit `806e4080f3c25d9678a63cd449ecb1b8da7fb5ce`
+after [CI 40749160774](https://github.com/thirayume/winspeed-connect/actions/runs/40749160774).
+Receipt `20261029-015510-uat-apply-806e408.txt` verifies 157/0/0 with no migration apply.
+HTTPS API/SQL and the underscore database were reverified. The active nightly principal
+script SHA-256 is `5B2350632D69483019C66603EE4945CD9D53466BFDEDBA96D66F339B33E83ACB`,
+matching the approved script actually applied. The next nightly restore has not yet been observed.
 
 The owner changed UAT to **R740-SRV\SQL2008 / dbwins_worldfert9_uat / DB ID 10**.
 Read-only SQL verified it ONLINE and restored from Production backup
@@ -161,8 +168,10 @@ WinSpeed read-back remains pending: opening Sale Order after the nightly restore
 `DataCache error !! [dg_icoption]`. The owner was asked to reopen and authenticate the UAT
 session. No WinSpeed Save/Post or native-data repair was performed.
 
-Production database is `dbwins_worldfert9`; no saleapp-prod stack has started. The tracked
-Production deploy gate and native writer flags remain false. A read-only forecast before the
+Production database is `dbwins_worldfert9`; no saleapp-prod stack has started. The candidate
+enables the owner-authorized technical deploy gate for ports 80/443. All four native simulation
+writer flags remain false, and the JavaScript/SQL target guards still reject live databases.
+This is not full business go-live acceptance. A read-only forecast before the
 latest target correction showed 152 unchanged, 3 pending, drift 0. The current release adds
 158/159 and requires a fresh guarded Production plan and verified pre-deploy backup.
 

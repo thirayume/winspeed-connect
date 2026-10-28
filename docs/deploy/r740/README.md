@@ -16,7 +16,7 @@ Docker engine and Docker Desktop on that server are not used.
 | SQL logins | `wf_r740_uat_app_v2` / `wf_r740_uat_migrator_v2` | `wf_r740_prod_app` / `wf_r740_prod_migrator` |
 | URL | `https://172.16.30.169:8444` (HTTP 8091 redirects) | `https://172.16.30.169` (HTTP 80 redirects) |
 | Compose project / images | `saleapp-uat` / `worldfert-saleapp-uat-*` | `saleapp-prod` / `worldfert-saleapp-prod-*` |
-| Status | corrected clone deployed; see current receipt | **release gate disabled; acceptance work remains** |
+| Status | corrected clone deployed; see current receipt | technical deploy candidate; business acceptance remains |
 
 PROD reserves ports 80/443 after the coordinated IIS/SSRS changes. TLS uses Caddy's internal CA for the IP address until a
 domain exists; each browser device must trust the Caddy root certificate once. DNS/PKI have not
@@ -170,12 +170,17 @@ plan; the former hyphenated clone and its deployment receipts do not prove this 
     certificate on the share; double-click, accept UAC. It refuses a file whose fingerprint
     differs, so a swapped file on the share is never trusted.
 
-## PROD go-live (prepared, not started)
+## Production technical deployment and business acceptance
 
 PROD uses the same images, Compose file and scripts as UAT. What differs is pinned in
 [`targets/prod.env`](targets/prod.env): `dbwins_worldfert9`, `ONPREM_TARGET_KIND=production`,
 ports 80/443, a backup gate and the UAT Caddy root. Until the steps below, nothing touches
 `dbwins_worldfert9`.
+
+The owner authorized deployment on ports 80/443. The current candidate enables the technical
+deploy gate while retaining all four AI/104/116/107 simulation flags false and the independent
+live-database writer denials. Deploying the web stack does not certify those business operations,
+AR reports, GL, approved print forms or physical weighing/shipment for Production.
 
 1. **UAT sign-off**, then the owner approves fast-forwarding `main` to the tested `uat` commit.
 2. **Go-live switch**: a reviewed commit sets `SALEAPP_DEPLOY_ENABLED=true` in
