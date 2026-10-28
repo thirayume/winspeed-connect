@@ -119,6 +119,15 @@ for UAT2, including deployments using the `onprem` profile. All native writer ta
 remain pinned to the previously tested UAT2 target; applying this artifact does not enable
 104/116/107 business writes on R740.
 
+Migration 158 separately extends the restricted simulation to the exact verified R740 UAT
+tuple (`R740-SRV\SQL2008`, `dbwins_worldfert9-uat`, DB ID 8). It preserves the prior business
+bodies of nine procedures and replaces only their target predicate; the JavaScript services
+also check an independent static allowlist. Both live company databases remain denied.
+The UAT target enables AI/104/116/107 for Full Loop simulation; Production flags stay false.
+This does not support physical shipment, multi-line/partial coupons or other tax contracts.
+Use the current deployment receipt and [status](GO-LIVE-STATUS.md) to distinguish the running
+commit from a candidate that has only passed rollback validation.
+
 The owner selected Production app accounts for UAT after the nightly restore (27 October 2026).
 Do not preserve or overwrite the restored `admin` password hash with a separate UAT hash.
 

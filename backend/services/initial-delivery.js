@@ -1,5 +1,5 @@
 'use strict';
-// Restricted UAT2 contract: full single-line whole-bag zero-tax104, numbered
+// Restricted UAT simulation: full single-line whole-bag zero-tax104, numbered
 // C/D and202 receivable, with explicit Account credit approval. No116/107/GL.
 const { createHash } = require('crypto');
 const { sql, wfTransaction } = require('../db');
@@ -7,6 +7,7 @@ const { nativeFingerprint } = require('./initial-booking-ai');
 const { getVisibleScope, inScope } = require('./visible-scope');
 const { rolesFor, roleRank, ACCESS_AS_ACTOR_ROLES } = require('./role-capabilities');
 const { bookOf, couponSeriesForBill } = require('./account-books');
+const { isInitialNativeUatTarget } = require('./initial-native-uat-target');
 const POLICY = 'O25-DO104-COMPLETE-UAT2-v2';
 const fail = (code, status = 409) => { throw Object.assign(new Error(code), { code, status }); };
 const hash = parts => createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('hex');
@@ -34,7 +35,7 @@ async function identity(q, user, approval = false) {
 }
 async function target(q) {
  const r = (await q(`SELECT CONVERT(NVARCHAR(128),SERVERPROPERTY('ServerName')) AS ServerName,DB_NAME() AS DbName,DB_ID() AS DbId`)).recordset?.[0];
- if (r?.ServerName !== 'AMYOU-YOGA7\\V2008R2' || r.DbName !== 'dbwins_worldfert9_uat2' || Number(r.DbId) !== 10) fail('DO_TARGET_NOT_SUPPORTED',403);
+ if (!isInitialNativeUatTarget(r)) fail('DO_TARGET_NOT_SUPPORTED',403);
 }
 async function xml(q, statement, inputs) {
  const r = (await q(`SELECT COALESCE(CONVERT(NVARCHAR(MAX),(${statement} FOR XML RAW,BINARY BASE64,ELEMENTS XSINIL)),N'') AS Snapshot`,inputs)).recordset?.[0];

@@ -1,9 +1,10 @@
 'use strict';
-// Initial-only UAT2 contract. This is not the below-price or credit-override policy.
+// Initial UAT simulation contract. Below-price and credit override use separate policies.
 const { createHash } = require('crypto');
 const { sql, wfTransaction, wfQuery } = require('../db');
 const { getVisibleScope, inScope } = require('./visible-scope');
 const { rolesFor, roleRank, ACCESS_AS_ACTOR_ROLES } = require('./role-capabilities');
+const { isInitialNativeUatTarget } = require('./initial-native-uat-target');
 const POLICY = 'O11-AI-INITIAL-UAT2-v1';
 const fail = (code, status = 409) => { throw Object.assign(new Error(code), { code, status }); };
 const idInput = id => ({ soid: { type: sql.Int, value: id } });
@@ -17,7 +18,7 @@ function queryFor(tx) {
 async function assertTarget(query) {
   const row = (await query(`SELECT CONVERT(NVARCHAR(128),SERVERPROPERTY('ServerName')) AS ServerName,
     DB_NAME() AS DbName, DB_ID() AS DbId`)).recordset?.[0];
-  if (row?.ServerName !== 'AMYOU-YOGA7\\V2008R2' || row?.DbName !== 'dbwins_worldfert9_uat2' || Number(row?.DbId) !== 10) fail('AI_TARGET_NOT_SUPPORTED', 403);
+  if (!isInitialNativeUatTarget(row)) fail('AI_TARGET_NOT_SUPPORTED', 403);
 }
 // XML preserves exact native decimal/date/null values, rather than hashing JS floats.
 // Only fixed table names enter this SQL; the document ID is always parameterized.

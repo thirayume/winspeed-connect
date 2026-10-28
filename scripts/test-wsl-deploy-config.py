@@ -294,13 +294,14 @@ class R740ComposeGuardTests(unittest.TestCase):
                 result = self.validate(models, target_path)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_secret_env_cannot_enable_any_native_writer(self):
+    def test_secret_env_cannot_override_any_native_writer(self):
         for environment in ("uat", "prod"):
             for key in ("NATIVE_BOOKING_AI_ENABLED", "NATIVE_DELIVERY_104_ENABLED",
                         "NATIVE_MANUAL_116_ENABLED", "NATIVE_INVOICE_107_ENABLED"):
                 with self.subTest(environment=environment, flag=key):
                     models, target_path = self.fixture(environment)
-                    models["resolved"]["services"]["backend"]["environment"][key] = "true"
+                    app = models["resolved"]["services"]["backend"]["environment"]
+                    app[key] = "false" if app[key] == "true" else "true"
                     result = self.validate(models, target_path)
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn(key + " does not match the target file", result.stdout)
@@ -315,7 +316,10 @@ class R740ComposeGuardTests(unittest.TestCase):
             for key in ("NATIVE_BOOKING_AI_ENABLED", "NATIVE_DELIVERY_104_ENABLED",
                         "NATIVE_MANUAL_116_ENABLED", "NATIVE_INVOICE_107_ENABLED"):
                 self.assertIn(" " + key + " ", pin_line)
-                self.assertIn(key + "=false", target_path.read_text(encoding="utf-8"))
+                app = models["resolved"]["services"]["backend"]["environment"]
+                self.assertIn(key + "=" + app[key], target_path.read_text(encoding="utf-8"))
+                if environment == "prod":
+                    self.assertEqual(app[key], "false", "Live native writers have not passed acceptance.")
 
 
 if __name__ == "__main__":

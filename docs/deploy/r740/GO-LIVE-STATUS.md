@@ -1,6 +1,6 @@
 # R740 go-live status
 
-Shared operational snapshot, verified **28 October 2026, 01:30 ICT**. Older snapshots in Git
+Shared operational snapshot, checked **28 October 2026 (ICT)**. Older snapshots in Git
 history describe their observation dates; do not treat them as current deployment acceptance.
 See [README.md](README.md) for the procedure and [TLS guide](TLS-DNS-PKI-ACME.md) for certificates.
 
@@ -9,7 +9,7 @@ See [README.md](README.md) for the procedure and [TLS guide](TLS-DNS-PKI-ACME.md
 | Item | Observed result |
 |---|---|
 | Host / SQL identity | `R740-SRV` / `R740-SRV\SQL2008` |
-| Deployed origin/uat commit | `a1060b639defb5244d659b64bb69ef52b552bcd0` |
+| Deployed origin/uat commit | `ba6b6739473fcfc4d4f738580d7d88434985d45a` |
 | Stack / directory | `saleapp-uat` / `D:\SaleApp\uat` |
 | Database | `dbwins_worldfert9-uat`, DB ID 8 |
 | Migration plan after apply | 155 unchanged, 0 pending, 0 drift |
@@ -21,9 +21,9 @@ See [README.md](README.md) for the procedure and [TLS guide](TLS-DNS-PKI-ACME.md
 | Production stack | not started; no saleapp-prod containers |
 
 Successful promotion and checks:
-[Actions run 40557785224](https://github.com/thirayume/winspeed-connect/actions/runs/40557785224).
-Server receipt: `D:\SaleApp\uat\deploy-logs\20261028-011551-uat-apply-a1060b6.txt`.
-The apply run started with migration 157 pending and committed it; the second plan proved 155/0/0.
+[Actions run 40560919589](https://github.com/thirayume/winspeed-connect/actions/runs/40560919589).
+Server receipt: `D:\SaleApp\uat\deploy-logs\20261028-013528-uat-apply-ba6b673.txt`.
+The earlier a1060b6 run committed migration 157; the ba6b673 redeploy confirmed 155/0/0 with no apply.
 
 ### What failed and what fixed it
 
@@ -72,8 +72,7 @@ rerun the restore merely to test the scheduler: it discards current UAT changes.
 
 All four flags are false on the deployed R740 UAT: NATIVE_BOOKING_AI_ENABLED,
 NATIVE_DELIVERY_104_ENABLED, NATIVE_MANUAL_116_ENABLED, NATIVE_INVOICE_107_ENABLED.
-The next configuration hardening pins all four in both reviewed target files, rather than
-allowing 116/107 settings to come from a secret env file.
+All four are now pinned in both reviewed target files; secret env files cannot override them.
 
 The actual R740 UAT invoice trigger set has 26 enabled definitions. Its metadata fingerprint is
 `1bdd47a6ee4e84662ed0b1979d32a628ac720fd6745e5839a0afb4b1987f6c8a`, matching the tested
@@ -81,9 +80,26 @@ UAT2 contract. This read-only match is useful evidence; it is **not** a complete
 JavaScript and SQL writer guards still require `AMYOU-YOGA7\V2008R2` /
 `dbwins_worldfert9_uat2` / DB ID 10. The compatibility repair did not enable business writes on R740.
 
-Before enabling them, implement and review a separate R740 target contract, preserve immutable
-155-157, and test on dbwins_worldfert9-uat with WinSpeed connected to that exact database.
-Do not just change a flag or replace the local database name in an applied migration.
+### Next release candidate: R740 UAT simulation
+
+Migration 158 adds a shared SQL target predicate and preserves all nine existing procedure
+business bodies, changing only their target condition. The JavaScript services independently
+check the same two exact tuples: original local UAT2/10 and R740 UAT/8. Neither live company
+database is accepted. Original 152/153/155/156/157 migration bytes remain pinned and unchanged.
+The candidate turns on all four flags for the reviewed R740 UAT target only; Production flags
+and its deployment gate stay false.
+
+Backend checks: 153/153. Configuration checks: 22/22. On R740 UAT the 12 candidate batches were
+compiled as wf_r740_uat_migrator inside one transaction, and the function was evaluated as
+wf_r740_uat_app. Rollback restored all nine prior module bodies, removed the new function and
+left the ledger unchanged; no business procedure was executed. Stored CREATE headers were
+normalized to ALTER only after a read-only diff proved that this was the sole source difference.
+The candidate has not yet been applied or proven by a persistent Full Loop at this checkpoint.
+
+The owner confirmed WinSpeed connected to R740 UAT is available. Next: CI, guarded UAT deploy,
+then both I/C/J and K/D/N test chains and WinSpeed read-back. This remains the restricted
+single-line, whole-coupon, zero-VAT simulation. Existing UAT2 policy IDs and manual-evidence
+labels remain unchanged; this candidate does not generalize physical shipping or Production writes.
 
 UAT2 previously exercised the restricted single-line, full-coupon, zero-VAT I/K paths through
 107. Remaining business evidence: AR report reconciliation (owner deferred), GL, approved print
@@ -94,13 +110,14 @@ question brief is local-only at `docs/sale-app/current/UAT2-FullLoop-Questions-2
 
 - Owner has authorized deployment to dbwins_worldfert9 on this host, using ports 80/443.
   The tracked SALEAPP_DEPLOY_ENABLED=false gate remains until the reviewed release is ready.
-- Production ledger was read as 152 rows; 155-157 have not been applied there. A fresh guarded
-  Production plan for the final release is required; do not infer its result from the UAT ledger.
+- A read-only forecast using the deployed, pinned UAT image succeeded on Production: 152
+  unchanged, 3 pending (155-157), 0 drift. No schema/data/ledger changes were made. Migration 158
+  is a newer candidate, so the final Production release still needs its own fresh guarded plan.
 - Production config files, app/migrator principals and checkout exist. Validate the resolved
   model, credentials and isolation through the reviewed plan before any apply.
-- DNS and company PKI have **not been started**, per the owner on 28 October. Temporary IP
-  HTTPS with the existing private CA versus waiting for PKI is awaiting the owner's selection.
-  Company PKI is not installed and general client trust is not proven.
+- DNS and company PKI have **not been started**, per the owner on 28 October. The owner chose
+  temporary IP HTTPS with the existing internal CA. Company PKI is not installed and general
+  client trust is not proven; IT must distribute the verified public root to client devices.
 - Obtain a fresh verified pre-deploy backup, complete the native UAT acceptance above, promote
   the exact tested UAT commit through the release workflow, then run the guarded Production
   plan/apply. Migration failures can leave earlier migrations committed; inspect before retrying.

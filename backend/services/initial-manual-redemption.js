@@ -1,4 +1,5 @@
 'use strict';
+const {isInitialNativeUatTarget}=require('./initial-native-uat-target');
 // UAT simulation only. This never creates weighing or physical shipment evidence.
 const {createHash}=require('crypto');
 const {sql,wfTransaction}=require('../db');
@@ -89,7 +90,7 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
  return (options.transaction||wfTransaction)(async tx=>{
   const q=queryFor(tx);
   const target=(await q("SELECT CONVERT(nvarchar(128),SERVERPROPERTY('ServerName')) AS ServerName,DB_NAME() AS DbName,DB_ID() AS DbId")).recordset?.[0];
-  if(target?.ServerName!=='AMYOU-YOGA7\\V2008R2'||target.DbName!=='dbwins_worldfert9_uat2'||Number(target.DbId)!==10)fail('MR_TARGET_NOT_SUPPORTED',403);
+  if(!isInitialNativeUatTarget(target))fail('MR_TARGET_NOT_SUPPORTED',403);
   const who=await identity(q,user);
   if(['request','apply'].includes(operation)&&!mayCreate(who.role))fail('MR_ROLE_FORBIDDEN',403);
   const lock=(await q("DECLARE @r int; EXEC @r=sp_getapplock @Resource='WF_INITIAL_DELIVERY_104',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=5000; SELECT @r AS LockResult")).recordset?.[0]?.LockResult;

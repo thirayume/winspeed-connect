@@ -1,5 +1,6 @@
 'use strict';
-// Restricted UAT2 simulation: one full zero-tax coupon, ACCOUNTING only.
+const {isInitialNativeUatTarget}=require('./initial-native-uat-target');
+// Restricted UAT simulation: one full zero-tax coupon, ACCOUNTING only.
 const {createHash}=require('crypto');
 const {sql,wfTransaction}=require('../db');
 const {getVisibleScope,inScope}=require('./visible-scope');
@@ -71,7 +72,7 @@ async function initialInvoice({operation='preview',soid,user,requestId,fingerpri
  return (options.transaction||wfTransaction)(async tx=>{
   const q=queryFor(tx);
   const target=(await q("SELECT CONVERT(nvarchar(128),SERVERPROPERTY('ServerName')) AS ServerName,DB_NAME() AS DbName,DB_ID() AS DbId")).recordset?.[0];
-  if(target?.ServerName!=='AMYOU-YOGA7\\V2008R2'||target.DbName!=='dbwins_worldfert9_uat2'||Number(target.DbId)!==10)fail('IP_TARGET_NOT_SUPPORTED',403);
+  if(!isInitialNativeUatTarget(target))fail('IP_TARGET_NOT_SUPPORTED',403);
   const who=await identity(q,user);
   const lock=(await q("DECLARE @r int; EXEC @r=sp_getapplock @Resource='WF_INITIAL_DELIVERY_104',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=5000; SELECT @r AS LockResult")).recordset?.[0]?.LockResult;
   if(!Number.isInteger(lock)||lock<0)fail('IP_BUSY');
