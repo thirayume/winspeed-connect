@@ -177,4 +177,5 @@ docs/deploy/r740/host/*
 !docs/deploy/r740/host/Set-SaleAppHost.ps1
 !docs/deploy/r740/host/SaleApp-KeepAlive.ps1
 !docs/deploy/r740/host/Refresh-UAT.ps1
+!docs/deploy/r740/host/Initialize-R740UatIsolated.ps1
 !docs/deploy/onprem/sql/local-uat2-principals.sql

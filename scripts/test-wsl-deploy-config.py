@@ -295,6 +295,16 @@ class R740ComposeGuardTests(unittest.TestCase):
                 result = self.validate(models, target_path)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_corrected_uat_clone_uses_isolated_logins_and_one_database(self):
+        models, target_path = self.fixture("uat")
+        app = models["resolved"]["services"]["backend"]["environment"]
+        migration = models["resolved"]["services"]["migrate"]["environment"]
+        self.assertEqual(app["ONPREM_DB_NAME"], "dbwins_worldfert9_uat")
+        self.assertEqual(app["ONPREM_SWITCHABLE_DATABASES"], "dbwins_worldfert9_uat")
+        self.assertEqual(app["ONPREM_DB_USER"], "wf_r740_uat_app_v2")
+        self.assertEqual(migration["ONPREM_MIGRATOR_USER"], "wf_r740_uat_migrator_v2")
+        self.assertNotIn("dbwins_worldfert9-uat", target_path.read_text(encoding="utf-8"))
+
     def test_secret_env_cannot_override_any_native_writer(self):
         for environment in ("uat", "prod"):
             for key in ("NATIVE_BOOKING_AI_ENABLED", "NATIVE_DELIVERY_104_ENABLED",

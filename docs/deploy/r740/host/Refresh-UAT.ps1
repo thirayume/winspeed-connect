@@ -1,7 +1,7 @@
 <#
   Refresh-UAT.ps1 - make the nightly restore self-healing on R740-SRV.
 
-  The 21:00 job restores dbwins_worldfert9-uat from a fresh production backup, which drops the
+  The 21:00 job restores dbwins_worldfert9_uat from a fresh production backup, which drops the
   Sale-App database users, the wf schema and the app accounts inside that copy. Run this script
   as the LAST step of that job (Task Scheduler, as an account that is sysadmin on SQL2008). It:
     1. re-maps the wf_r740_uat_* users and grants in the restored database (sql/r740-uat-principals.sql);
@@ -17,7 +17,7 @@
 [CmdletBinding()]
 param(
   [string]$SqlServer = 'R740-SRV\SQL2008',
-  [string]$Database = 'dbwins_worldfert9-uat',
+  [string]$Database = 'dbwins_worldfert9_uat',
   # Trusted (Windows) auth by default; pass -SqlUser/-SqlPassword only if the job account is not a SQL sysadmin.
   [string]$SqlUser,
   [string]$SqlPassword,
@@ -31,6 +31,9 @@ $log = Join-Path $logDir ("refresh-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".
 function Log([string]$m) { $line = "{0:yyyy-MM-dd HH:mm:ss} {1}" -f (Get-Date), $m; Write-Host $line; Add-Content -Path $log -Value $line }
 
 try {
+  if ($SqlServer -cne 'R740-SRV\SQL2008' -or $Database -cne 'dbwins_worldfert9_uat') {
+    throw 'Refresh target must be R740-SRV\SQL2008 / dbwins_worldfert9_uat.'
+  }
   Log "UAT refresh started ($SqlServer / $Database)"
 
   # 1. Re-map the Sale-App principals in the freshly restored copy (needs SQL sysadmin).

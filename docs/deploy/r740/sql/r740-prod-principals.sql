@@ -8,14 +8,14 @@
 --      SQL Server authentication, two different strong passwords typed in the SSMS UI,
 --      different from the UAT passwords. Default database: dbwins_worldfert9.
 --      Server Roles: public only. User Mapping: map NOTHING (this script maps
---      dbwins_worldfert9 only). Never map them to dbwins_worldfert9-uat.
+--      dbwins_worldfert9 only). Never map them to dbwins_worldfert9_uat.
 --   2. Run this whole file once (F5).
 --
 -- It contains no passwords, does not create or drop logins and does not run migrations.
 -- It checks the server, database and logins first, then in one transaction sets default
 -- databases, creates the dbo-owned wf schema, the empty wf_reader role (grantee of immutable
 -- migration 002), the two database users and the reviewed permissions. Finally it proves,
--- read-only, that neither login can open dbwins_worldfert9-uat or any other user database.
+-- read-only, that neither login can open dbwins_worldfert9_uat or any other user database.
 USE [dbwins_worldfert9];
 GO
 SET NOCOUNT ON;
@@ -199,7 +199,7 @@ END CATCH;
 GO
 
 -- Read-only isolation proof. The production guard stops the app and the migrator if either
--- login can open any other user database (dbwins_worldfert9-uat included); a non-zero here
+-- login can open any other user database (dbwins_worldfert9_uat included); a non-zero here
 -- usually means that database has its guest user enabled. Report it; do not edit the check.
 SET NOCOUNT ON;
 IF DB_NAME() <> N'dbwins_worldfert9'
@@ -212,14 +212,14 @@ DECLARE @results TABLE (login_name SYSNAME, can_open_uat INT, other_user_databas
 
 EXECUTE AS LOGIN = N'wf_r740_prod_app';
 INSERT INTO @results
-SELECT SUSER_SNAME(), HAS_DBACCESS(N'dbwins_worldfert9-uat'),
+SELECT SUSER_SNAME(), HAS_DBACCESS(N'dbwins_worldfert9_uat'),
        (SELECT COUNT(*) FROM sys.databases WHERE database_id > 4 AND name <> DB_NAME() AND HAS_DBACCESS(name) = 1),
        IS_ROLEMEMBER(N'db_owner');
 REVERT;
 
 EXECUTE AS LOGIN = N'wf_r740_prod_migrator';
 INSERT INTO @results
-SELECT SUSER_SNAME(), HAS_DBACCESS(N'dbwins_worldfert9-uat'),
+SELECT SUSER_SNAME(), HAS_DBACCESS(N'dbwins_worldfert9_uat'),
        (SELECT COUNT(*) FROM sys.databases WHERE database_id > 4 AND name <> DB_NAME() AND HAS_DBACCESS(name) = 1),
        IS_ROLEMEMBER(N'db_owner');
 REVERT;

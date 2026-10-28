@@ -2,9 +2,9 @@
 -- Adapted from docs/deploy/onprem/sql/local-uat2-principals.sql (same reviewed grants).
 --
 -- BEFORE RUNNING (IT, in SSMS connected to R740-SRV\SQL2008 as a SQL administrator):
---   1. Security > Logins > New Login: create wf_r740_uat_app and wf_r740_uat_migrator,
+--   1. Security > Logins > New Login: create wf_r740_uat_app_v2 and wf_r740_uat_migrator_v2,
 --      SQL Server authentication, two different strong passwords typed in the SSMS UI.
---      Default database: dbwins_worldfert9-uat. Server Roles: public only.
+--      Default database: dbwins_worldfert9_uat. Server Roles: public only.
 --      User Mapping: map NOTHING (this script maps the UAT database only).
 --      Never map either login to dbwins_worldfert9 (the future production database).
 --   2. Run this whole file once (F5).
@@ -15,7 +15,7 @@
 -- empty wf_reader role (grantee of immutable migration 002), the two database users and
 -- the reviewed permissions. Finally it proves, read-only, that neither login can open
 -- dbwins_worldfert9 or any other user database.
-USE [dbwins_worldfert9-uat];
+USE [dbwins_worldfert9_uat];
 GO
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
@@ -40,9 +40,9 @@ BEGIN
     RETURN;
 END;
 
-IF DB_NAME() <> N'dbwins_worldfert9-uat'
+IF DB_NAME() <> N'dbwins_worldfert9_uat' OR DB_ID() <> 10
 BEGIN
-    RAISERROR(N'STOP: current database is not dbwins_worldfert9-uat.', 16, 1);
+    RAISERROR(N'STOP: current database is not dbwins_worldfert9_uat.', 16, 1);
     RETURN;
 END;
 
@@ -52,8 +52,8 @@ BEGIN
     RETURN;
 END;
 
-IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'wf_r740_uat_app' AND type_desc = N'SQL_LOGIN' AND is_disabled = 0)
-   OR NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'wf_r740_uat_migrator' AND type_desc = N'SQL_LOGIN' AND is_disabled = 0)
+IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'wf_r740_uat_app_v2' AND type_desc = N'SQL_LOGIN' AND is_disabled = 0)
+   OR NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'wf_r740_uat_migrator_v2' AND type_desc = N'SQL_LOGIN' AND is_disabled = 0)
 BEGIN
     RAISERROR(N'STOP: create/enable both SQL logins in SSMS first (separate passwords, no server roles).', 16, 1);
     RETURN;
@@ -64,13 +64,13 @@ IF EXISTS (
     FROM sys.server_role_members rm
     JOIN sys.server_principals rolep ON rolep.principal_id = rm.role_principal_id
     JOIN sys.server_principals memberp ON memberp.principal_id = rm.member_principal_id
-    WHERE memberp.name IN (N'wf_r740_uat_app', N'wf_r740_uat_migrator')
+    WHERE memberp.name IN (N'wf_r740_uat_app_v2', N'wf_r740_uat_migrator_v2')
       AND rolep.name IN (N'sysadmin', N'securityadmin', N'serveradmin', N'setupadmin', N'processadmin', N'diskadmin', N'dbcreator', N'bulkadmin')
 ) OR EXISTS (
     SELECT 1
     FROM sys.server_permissions p
     JOIN sys.server_principals memberp ON memberp.principal_id = p.grantee_principal_id
-    WHERE memberp.name IN (N'wf_r740_uat_app', N'wf_r740_uat_migrator')
+    WHERE memberp.name IN (N'wf_r740_uat_app_v2', N'wf_r740_uat_migrator_v2')
       AND p.permission_name = N'CONTROL SERVER'
       AND p.state IN ('G', 'W')
 )
@@ -106,7 +106,7 @@ IF EXISTS (
     SELECT 1
     FROM sys.database_principals dp
     JOIN sys.server_principals sp ON sp.name = dp.name
-    WHERE dp.name IN (N'wf_r740_uat_app', N'wf_r740_uat_migrator')
+    WHERE dp.name IN (N'wf_r740_uat_app_v2', N'wf_r740_uat_migrator_v2')
       AND dp.sid <> sp.sid
 )
 BEGIN
@@ -119,13 +119,13 @@ IF EXISTS (
     FROM sys.database_role_members rm
     JOIN sys.database_principals rolep ON rolep.principal_id = rm.role_principal_id
     JOIN sys.database_principals memberp ON memberp.principal_id = rm.member_principal_id
-    WHERE memberp.name IN (N'wf_r740_uat_app', N'wf_r740_uat_migrator')
+    WHERE memberp.name IN (N'wf_r740_uat_app_v2', N'wf_r740_uat_migrator_v2')
       AND rolep.name IN (N'db_owner', N'db_datareader', N'db_datawriter', N'db_ddladmin', N'db_securityadmin', N'db_accessadmin', N'db_backupoperator')
 ) OR EXISTS (
     SELECT 1
     FROM sys.database_permissions p
     JOIN sys.database_principals memberp ON memberp.principal_id = p.grantee_principal_id
-    WHERE memberp.name IN (N'wf_r740_uat_app', N'wf_r740_uat_migrator')
+    WHERE memberp.name IN (N'wf_r740_uat_app_v2', N'wf_r740_uat_migrator_v2')
       AND p.class = 0 AND p.permission_name = N'CONTROL' AND p.state IN ('G', 'W')
 )
 BEGIN
@@ -156,34 +156,34 @@ END;
 BEGIN TRY
     BEGIN TRANSACTION;
 
-    ALTER LOGIN [wf_r740_uat_app]
-        WITH DEFAULT_DATABASE = [dbwins_worldfert9-uat], CHECK_POLICY = ON, CHECK_EXPIRATION = OFF;
-    ALTER LOGIN [wf_r740_uat_migrator]
-        WITH DEFAULT_DATABASE = [dbwins_worldfert9-uat], CHECK_POLICY = ON, CHECK_EXPIRATION = OFF;
+    ALTER LOGIN [wf_r740_uat_app_v2]
+        WITH DEFAULT_DATABASE = [dbwins_worldfert9_uat], CHECK_POLICY = ON, CHECK_EXPIRATION = OFF;
+    ALTER LOGIN [wf_r740_uat_migrator_v2]
+        WITH DEFAULT_DATABASE = [dbwins_worldfert9_uat], CHECK_POLICY = ON, CHECK_EXPIRATION = OFF;
 
     IF SCHEMA_ID(N'wf') IS NULL EXEC(N'CREATE SCHEMA wf AUTHORIZATION dbo');
     IF DATABASE_PRINCIPAL_ID(N'wf_reader') IS NULL
         EXEC(N'CREATE ROLE [wf_reader] AUTHORIZATION [dbo]');
 
-    IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'wf_r740_uat_app')
-        CREATE USER [wf_r740_uat_app] FOR LOGIN [wf_r740_uat_app] WITH DEFAULT_SCHEMA = dbo;
-    IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'wf_r740_uat_migrator')
-        CREATE USER [wf_r740_uat_migrator] FOR LOGIN [wf_r740_uat_migrator] WITH DEFAULT_SCHEMA = dbo;
+    IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'wf_r740_uat_app_v2')
+        CREATE USER [wf_r740_uat_app_v2] FOR LOGIN [wf_r740_uat_app_v2] WITH DEFAULT_SCHEMA = dbo;
+    IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'wf_r740_uat_migrator_v2')
+        CREATE USER [wf_r740_uat_migrator_v2] FOR LOGIN [wf_r740_uat_migrator_v2] WITH DEFAULT_SCHEMA = dbo;
 
     -- Run the grants after the schema exists so they compile against it.
     EXEC(N'
-        GRANT SELECT ON SCHEMA::dbo TO [wf_r740_uat_app];
-        GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE, REFERENCES ON SCHEMA::wf TO [wf_r740_uat_app];
-        GRANT INSERT, DELETE ON dbo.SODT TO [wf_r740_uat_app];
-        GRANT INSERT, DELETE ON dbo.SODTRemark TO [wf_r740_uat_app];
-        GRANT INSERT ON dbo.SMAudit TO [wf_r740_uat_app];
-        GRANT UPDATE (LastNo) ON dbo.EMRunBrch TO [wf_r740_uat_app];
+        GRANT SELECT ON SCHEMA::dbo TO [wf_r740_uat_app_v2];
+        GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE, REFERENCES ON SCHEMA::wf TO [wf_r740_uat_app_v2];
+        GRANT INSERT, DELETE ON dbo.SODT TO [wf_r740_uat_app_v2];
+        GRANT INSERT, DELETE ON dbo.SODTRemark TO [wf_r740_uat_app_v2];
+        GRANT INSERT ON dbo.SMAudit TO [wf_r740_uat_app_v2];
+        GRANT UPDATE (LastNo) ON dbo.EMRunBrch TO [wf_r740_uat_app_v2];
         GRANT UPDATE (TranspID, CustID, CustName, SumGoodAmnt, BillAftrDiscAmnt, NetAmnt, Remark, DocuStatus, PkgStatus,
-                      CheckAll, TransRegistration) ON dbo.SOHD TO [wf_r740_uat_app];
+                      CheckAll, TransRegistration) ON dbo.SOHD TO [wf_r740_uat_app_v2];
 
-        GRANT SELECT ON SCHEMA::dbo TO [wf_r740_uat_migrator];
-        GRANT CONTROL ON SCHEMA::wf TO [wf_r740_uat_migrator];
-        GRANT CREATE TABLE, CREATE VIEW, CREATE PROCEDURE, CREATE FUNCTION, CREATE TYPE, VIEW DEFINITION TO [wf_r740_uat_migrator];
+        GRANT SELECT ON SCHEMA::dbo TO [wf_r740_uat_migrator_v2];
+        GRANT CONTROL ON SCHEMA::wf TO [wf_r740_uat_migrator_v2];
+        GRANT CREATE TABLE, CREATE VIEW, CREATE PROCEDURE, CREATE FUNCTION, CREATE TYPE, VIEW DEFINITION TO [wf_r740_uat_migrator_v2];
     ');
 
     COMMIT TRANSACTION;
@@ -201,22 +201,22 @@ GO
 -- login can open dbwins_worldfert9; a non-zero here usually means that database has its
 -- guest user enabled. Do not change dbwins_worldfert9 - report the result instead.
 SET NOCOUNT ON;
-IF DB_NAME() <> N'dbwins_worldfert9-uat'
-   OR USER_ID(N'wf_r740_uat_app') IS NULL OR USER_ID(N'wf_r740_uat_migrator') IS NULL
+IF DB_NAME() <> N'dbwins_worldfert9_uat' OR DB_ID() <> 10
+   OR USER_ID(N'wf_r740_uat_app_v2') IS NULL OR USER_ID(N'wf_r740_uat_migrator_v2') IS NULL
 BEGIN
     RAISERROR(N'Setup above did not complete; isolation proof skipped. Read the first error message.', 16, 1);
     RETURN;
 END;
 DECLARE @results TABLE (login_name SYSNAME, can_open_production INT, other_user_databases INT, is_db_owner INT);
 
-EXECUTE AS LOGIN = N'wf_r740_uat_app';
+EXECUTE AS LOGIN = N'wf_r740_uat_app_v2';
 INSERT INTO @results
 SELECT SUSER_SNAME(), HAS_DBACCESS(N'dbwins_worldfert9'),
        (SELECT COUNT(*) FROM sys.databases WHERE database_id > 4 AND name <> DB_NAME() AND HAS_DBACCESS(name) = 1),
        IS_ROLEMEMBER(N'db_owner');
 REVERT;
 
-EXECUTE AS LOGIN = N'wf_r740_uat_migrator';
+EXECUTE AS LOGIN = N'wf_r740_uat_migrator_v2';
 INSERT INTO @results
 SELECT SUSER_SNAME(), HAS_DBACCESS(N'dbwins_worldfert9'),
        (SELECT COUNT(*) FROM sys.databases WHERE database_id > 4 AND name <> DB_NAME() AND HAS_DBACCESS(name) = 1),
@@ -224,8 +224,15 @@ SELECT SUSER_SNAME(), HAS_DBACCESS(N'dbwins_worldfert9'),
 REVERT;
 
 SELECT login_name, can_open_production, other_user_databases, is_db_owner,
-       CASE WHEN can_open_production = 0 AND is_db_owner = 0 THEN N'OK' ELSE N'STOP - report to Sale-App team' END AS result
+       CASE WHEN can_open_production = 0 AND other_user_databases = 0 AND is_db_owner = 0 THEN N'OK' ELSE N'STOP - report to Sale-App team' END AS result
 FROM @results;
+
+IF EXISTS (SELECT 1 FROM @results WHERE ISNULL(can_open_production,1) <> 0
+           OR other_user_databases <> 0 OR ISNULL(is_db_owner,1) <> 0)
+BEGIN
+    RAISERROR(N'STOP: isolated UAT login can open another user database or has db_owner. No deploy is allowed.',16,1);
+    RETURN;
+END;
 
 SELECT @@SERVERNAME AS server_name, DB_NAME() AS database_name,
        CONVERT(NVARCHAR(32), SERVERPROPERTY('ProductVersion')) AS product_version;

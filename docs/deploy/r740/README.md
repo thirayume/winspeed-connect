@@ -12,11 +12,11 @@ Docker engine and Docker Desktop on that server are not used.
 |---|---|---|
 | Git branch | `uat` | `main` |
 | Server folder | `D:\SaleApp\uat` | `D:\SaleApp\prod` |
-| Database (R740-SRV\SQL2008) | `dbwins_worldfert9-uat` | `dbwins_worldfert9` |
-| SQL logins | `wf_r740_uat_app` / `wf_r740_uat_migrator` | `wf_r740_prod_app` / `wf_r740_prod_migrator` |
+| Database (R740-SRV\SQL2008) | `dbwins_worldfert9_uat` | `dbwins_worldfert9` |
+| SQL logins | `wf_r740_uat_app_v2` / `wf_r740_uat_migrator_v2` | `wf_r740_prod_app` / `wf_r740_prod_migrator` |
 | URL | `https://172.16.30.169:8444` (HTTP 8091 redirects) | `https://172.16.30.169` (HTTP 80 redirects) |
 | Compose project / images | `saleapp-uat` / `worldfert-saleapp-uat-*` | `saleapp-prod` / `worldfert-saleapp-prod-*` |
-| Status | deployed; see current receipt | **release gate disabled; acceptance work remains** |
+| Status | corrected clone awaiting deploy; see current receipt | **release gate disabled; acceptance work remains** |
 
 PROD reserves ports 80/443 after the coordinated IIS/SSRS changes. TLS uses Caddy's internal CA for the IP address until a
 domain exists; each browser device must trust the Caddy root certificate once. DNS/PKI have not
@@ -81,14 +81,23 @@ D:\SaleApp\
      `-AllowFrom` is given). The keep-alive logs to `D:\SaleApp\tools\out\keepalive.log`.
    - `docker ps` in Windows PowerShell shows the unused Windows engine; inspect the stacks
      with `wsl -d Ubuntu -u root docker ps`.
-2. **SQL logins** (IT, SSMS on R740-SRV\SQL2008): create `wf_r740_uat_app` and
-   `wf_r740_uat_migrator` (SQL authentication, two different passwords, no server roles,
-   no user mapping), then run [`sql/r740-uat-principals.sql`](sql/r740-uat-principals.sql).
-   Its last result must show `OK` for both logins. It never touches `dbwins_worldfert9`.
-3. **Secrets** (IT or owner, on R740-SRV): copy [`uat.env.example`](uat.env.example) to
+2. **Isolated UAT SQL logins**: first copy the UAT templates into the private config paths
+   described below. The owner selected two new clone-only logins on 28 October,
+   because the old UAT application login can also open Production. On R740, after preparing
+   the private config files below, run
+   [`host/Initialize-R740UatIsolated.ps1`](host/Initialize-R740UatIsolated.ps1) without `-Apply`
+   for its read-only plan, then with `-Apply` for the approved setup. It refuses existing login
+   names, creates `wf_r740_uat_app_v2` / `wf_r740_uat_migrator_v2`, generates separate passwords
+   on the server, applies the existing reviewed UAT grants, and proves zero access to Production
+   or any other user database. It retains the original isolation check. Existing logins and
+   Production permissions are unchanged. UAT JWT sessions are rotated; app-user passwords are
+   not changed. Recovery copies are restricted to SYSTEM and Administrators in the UAT config
+   directory. Do not copy them off the server.
+3. **Private config paths** (IT or owner, on R740-SRV): copy [`uat.env.example`](uat.env.example) to
    `D:\SaleApp\uat\config\.env` and [`uat.migrator.env.example`](uat.migrator.env.example)
-   to `D:\SaleApp\uat\config\.env.migrator.local`; fill in the two SQL passwords and a new
-   JWT secret. Nobody else needs to see them.
+   to `D:\SaleApp\uat\config\.env.migrator.local` before step 2. The isolated setup helper
+   fills the generated SQL passwords and UAT JWT secret; these are not web-admin passwords.
+   Keep both files and their recovery copies on the server.
 
 ## Deploy
 
@@ -120,7 +129,7 @@ remain pinned to the previously tested UAT2 target; applying this artifact does 
 104/116/107 business writes on R740.
 
 Migration 158 separately extends the restricted simulation to the exact verified R740 UAT
-tuple (`R740-SRV\SQL2008`, `dbwins_worldfert9-uat`, DB ID 8). It preserves the prior business
+tuple originally used on this server. It preserves the prior business
 bodies of nine procedures and replaces only their target predicate; the JavaScript services
 also check an independent static allowlist. Both live company databases remain denied.
 The UAT target enables AI/104/116/107 for Full Loop simulation; Production flags stay false.
@@ -128,11 +137,18 @@ This does not support physical shipment, multi-line/partial coupons or other tax
 Use the current deployment receipt and [status](GO-LIVE-STATUS.md) to distinguish the running
 commit from a candidate that has only passed rollback validation.
 
+Migration 159 moves that predicate to the owner-corrected underscore clone
+(`R740-SRV\SQL2008`, `dbwins_worldfert9_uat`, DB ID 10), retaining the original local UAT2 tuple
+and retiring the old R740 hyphenated tuple. Migration 158 remains byte-identical. UAT now has
+an allowlist containing only the underscore clone and uses the isolated v2 logins. Production
+work belongs in the separate Production web app.
+
 The owner selected Production app accounts for UAT after the nightly restore (27 October 2026).
 Do not preserve or overwrite the restored `admin` password hash with a separate UAT hash.
 
-Before the first apply, the plan is expected to list most migrations as pending because
-`dbwins_worldfert9-uat` was restored from Live Production (data of 2026-10-23 18:00).
+The owner corrected UAT to `dbwins_worldfert9_uat`, verified DB ID 10, restored from
+`dbwins_worldfert9_20261027_210002.BAK`. It starts with 152 ledger rows. Inspect the fresh
+plan; the former hyphenated clone and its deployment receipts do not prove this copy migrated.
 
 ## After the first UAT deploy
 
@@ -164,7 +180,7 @@ ports 80/443, a backup gate and the UAT Caddy root. Until the steps below, nothi
 3. **SQL logins** (IT, maintenance window): create `wf_r740_prod_app` / `wf_r740_prod_migrator`
    (new passwords, no server roles, no mapping), run
    [`sql/r740-prod-principals.sql`](sql/r740-prod-principals.sql); both rows must be `OK`
-   (they cannot open `dbwins_worldfert9-uat` or any other user database).
+   (they cannot open `dbwins_worldfert9_uat` or any other user database).
 4. **Secrets**: [`prod.env.example`](prod.env.example) -> `D:\SaleApp\prod\config\.env`,
    [`prod.migrator.env.example`](prod.migrator.env.example) -> `.env.migrator.local`.
 5. `docs\deploy\r740\deploy.bat prod -PlanOnly` (read-only): inspect the actual plan for the

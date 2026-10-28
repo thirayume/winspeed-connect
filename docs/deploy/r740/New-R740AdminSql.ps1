@@ -1,6 +1,6 @@
 <#
   New-R740AdminSql.ps1 - generate the SQL that creates the first Sale-App ADMIN account in
-  dbwins_worldfert9-uat on R740-SRV\SQL2008, after the first UAT deploy applied the migrations
+  dbwins_worldfert9_uat on R740-SRV\SQL2008, after the first UAT deploy applied the migrations
   (-Environment prod: dbwins_worldfert9 after the go-live deploy, file r740-prod-create-admin.local.sql).
   Run it on R740-SRV (elevated, from D:\SaleApp\uat\app) or on the dev PC:
 
@@ -26,7 +26,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 # -Environment prod: the first admin of dbwins_worldfert9 after the go-live migrations.
-if (-not $Database) { $Database = if ($Environment -eq 'prod') { 'dbwins_worldfert9' } else { 'dbwins_worldfert9-uat' } }
+if (-not $Database) { $Database = if ($Environment -eq 'prod') { 'dbwins_worldfert9' } else { 'dbwins_worldfert9_uat' } }
 $database = $Database
 $fileTag = $database -replace '[^A-Za-z0-9]', '_'
 if (-not $WslContainer) { $WslContainer = "saleapp-$Environment-backend-1" }

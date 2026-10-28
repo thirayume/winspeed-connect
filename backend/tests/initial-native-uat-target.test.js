@@ -14,9 +14,10 @@ const { initialManualRedemption } = require('../services/initial-manual-redempti
 const { initialInvoice } = require('../services/initial-invoice');
 
 const local = { ServerName: 'AMYOU-YOGA7\\V2008R2', DbName: 'dbwins_worldfert9_uat2', DbId: 10 };
-const r740 = { ServerName: 'R740-SRV\\SQL2008', DbName: 'dbwins_worldfert9-uat', DbId: 8 };
+const r740 = { ServerName: 'R740-SRV\\SQL2008', DbName: 'dbwins_worldfert9_uat', DbId: 10 };
 const denied = [undefined, {}, { ...r740, DbName: 'dbwins_worldfert9' },
-  { ...r740, DbName: 'dbwins_worldfert2' }, { ...r740, DbId: 10 },
+  { ...r740, DbName: 'dbwins_worldfert2' }, { ...r740, DbId: 8 },
+  { ...r740, DbName: 'dbwins_worldfert9-uat', DbId: 8 },
   { ...r740, ServerName: local.ServerName }, { ...local, DbId: 8 },
   { ...local, DbName: r740.DbName }, { ...r740, DbName: 'dbwins_worldfert9-uat-other' }];
 
@@ -117,4 +118,20 @@ test('exact live database writes remain blocked in quoted, unquoted and dynamic 
     'ALTER TABLE [dbwins_worldfert9]/*comment*/.dbo.SOHD ADD Forbidden int;',
     "IF DB_NAME()=N'dbwins_worldfert9' UPDATE dbo.SOHD SET Remark=N'test';",
   ]) assert.throws(() => assertNoCrossDbWrite(sql), /Cross-database write targeting production/);
+});
+
+test('migration 159 moves the R740 predicate to the owner-corrected restored clone without editing 158', () => {
+  const text = fs.readFileSync(path.join(directory, '159_r740_restored_uat_target.sql'), 'utf8');
+  const parts = splitBatches(text);
+  assert.match(text, /^-- @transaction/m);
+  assert.equal(parts.length, 2);
+  const fn = parts[1].trim();
+  assert.match(fn, /^ALTER FUNCTION wf\.fn_IsInitialNativeUatTarget/);
+  assert.match(fn, /DB_NAME\(\)=N'dbwins_worldfert9_uat' AND DB_ID\(\)=10/);
+  assert.match(fn, /ServerName'\)\)=N'R740-SRV\\SQL2008'/);
+  assert.match(fn, /DB_NAME\(\)=N'dbwins_worldfert9_uat2' AND DB_ID\(\)=10/);
+  assert.match(fn, /ELSE 0 END/);
+  assert.doesNotMatch(fn, /dbwins_worldfert9-uat|N'dbwins_worldfert9'|N'dbwins_worldfert2'/);
+  for (const batch of parts) assert.doesNotThrow(() => assertNoCrossDbWrite(batch));
+  assert.equal(createHash('sha256').update(migration).digest('hex'), '895fb158ab340eebe4107d09a403c650c7f0ba22a6d50a9ebf7005e448792f66');
 });
