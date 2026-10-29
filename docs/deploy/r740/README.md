@@ -131,6 +131,17 @@ for UAT2, including deployments using the `onprem` profile. All native writer ta
 remain pinned to the previously tested UAT2 target; applying this artifact does not enable
 104/116/107 business writes on R740.
 
+After restoring a Production backup, `sql/r740-uat-principals.sql` also remaps that
+reader to the existing isolated `wf_r740_uat_migrator_v2` database user. Otherwise
+the copied SELF binding points at the Production migrator, whose UAT CONNECT is
+intentionally denied, and Invoice 107 preview fails. The remap accepts only the
+exact reviewed SELECT-only body, handles SQL2008 CREATE/ALTER catalog headers,
+and rolls back principal setup if the body differs. Repeating it is idempotent.
+It never removes the Production users' clone-only denials or changes a writer body.
+When installing this correction on an already-restored clone, run the reviewed
+principal setup once after updating the UAT checkout; a normal code redeploy alone
+does not perform the administrator principal remapping. Subsequent nightly refreshes do.
+
 Migration 158 separately extends the restricted simulation to the exact verified R740 UAT
 tuple originally used on this server. It preserves the prior business
 bodies of nine procedures and replaces only their target predicate; the JavaScript services

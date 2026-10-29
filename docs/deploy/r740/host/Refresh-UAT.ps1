@@ -2,14 +2,16 @@
   Refresh-UAT.ps1 - make the nightly restore self-healing on R740-SRV.
 
   The 21:00 job restores dbwins_worldfert9_uat from a fresh production backup, which drops the
-  Sale-App database users, the wf schema and the app accounts inside that copy. Run this script
+  UAT-only users, schema changes and app accounts with the Production snapshot. Run this script
   as the LAST step of that job (Task Scheduler, as an account that is sysadmin on SQL2008). It:
     1. re-maps the wf_r740_uat_* users and grants in the restored database (sql/r740-uat-principals.sql);
     2. re-applies pending migrations and restarts the UAT stack, unattended (deploy-r740.ps1 -Auto).
   It never touches production. All output is appended to D:\SaleApp\uat\deploy-logs\refresh-*.log.
 
   Once production (dbwins_worldfert9) itself carries the wf schema and migrations, the nightly copy
-  arrives already migrated, so step 2 simply verifies and restarts.
+  arrives already migrated, so step 2 simply verifies and restarts. Step 1 also rebinds the fixed
+  invoice metadata reader from the copied Production execution identity to the isolated UAT
+  migrator; the Production users retain their UAT-only CONNECT denials.
 
   Example Task Scheduler action (after the restore step), run as R740-SRV\Administrator, highest privileges:
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\SaleApp\tools\Refresh-UAT.ps1

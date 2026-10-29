@@ -1,200 +1,109 @@
-# R740 go-live status
+# R740 deployment and business acceptance
 
-Operational snapshot: **29 October 2026 (ICT)**. Current code and the latest successful
-server receipt determine the running release. See [README](README.md) and [TLS guide](TLS-DNS-PKI-ACME.md).
+Operational snapshot: **30 October 2026 (ICT)**. This page records observed results;
+current source and the latest successful server receipts determine the running release.
+See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
+[company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
-## Corrected UAT deployment verified at 20 52 ICT
+## Production and UAT websites
 
-Commit `8f1bd694884bd8dd4afd566dd089aaa761265cfc` passed
-[promotion CI attempt 2](https://github.com/thirayume/winspeed-connect/actions/runs/40652678803).
-The first attempt was cancelled after an npm ECONNRESET and stalled dependency install.
-The retry passed in 44 seconds and promoted that exact tree.
+Both stacks deployed DNS-01 release `cad0d542c78adfb97164bd774a638e50c309e474`:
 
-Receipt: `D:\SaleApp\uat\deploy-logs\20261028-205154-uat-apply-8f1bd69.txt`.
-The approved plan was 152 unchanged, 5 pending, drift 0; apply committed 155-159 and the
-final plan is **157 unchanged, 0 pending, 0 drift**. Backend running/healthy, restarts 0.
-HTTPS API returns 200 and SQL up; `/api/dbinfo` identifies `dbwins_worldfert9_uat`.
-TLS certificate chain and IP validation passed against the existing public Caddy root.
+- Production: https://worldfert.duckdns.org -> `dbwins_worldfert9`, DB ID 7.
+- UAT: https://wfuat.duckdns.org -> `dbwins_worldfert9_uat`, DB ID 10.
+- SQL instance: `R740-SRV\SQL2008`. The former hyphenated clone is retired.
 
-The owner opened WinSpeed UAT on R740 RDP. Persistent Full Loop creation is held until after
-the scheduled 21:00 restore. The active refresh script and SQL remapping use the
-underscore clone and v2 identities. That scheduled run subsequently **passed at 21:02:12**,
-Task Scheduler result 0. Receipt `20261028-210151-uat-apply-8f1bd69.txt` confirms 155-159
-reapplied to the restored clone and the final plan 157/0/0. A read-only equality check proved
-the restored active admin verifier matches Production; no password or hash was printed or reset.
-The post-refresh Full Loop baseline copy-only backup was checksum-verified at
-`D:\MSSQL\MSSQL10_50.SQL2008\Backup\dbwins_worldfert9_uat_pre-full-loop_20261028_210313.bak`.
+UAT [promotion CI](https://github.com/thirayume/winspeed-connect/actions/runs/40857534673)
+and Production [promotion CI](https://github.com/thirayume/winspeed-connect/actions/runs/40858332158)
+passed on 29 October. Receipts:
+`20261029-172817-uat-apply-cad0d54.txt` and
+`20261029-173501-prod-apply-cad0d54.txt`, in each stack's deployment-log directory.
+Both final migration plans were **157 unchanged, 0 pending, 0 drift**.
+The earlier Production schema apply had a COPY_ONLY/CHECKSUM/VERIFYONLY backup and
+committed 155-159; no schema migration was needed for DNS-01.
 
-A separate read-only preflight found both Production application SQL logins could open the
-UAT clone. The owner explicitly approved clone-only CONNECT denials for those two identities.
-They are now applied and verified: UAT access 0, Production access 1. Their existing company-2
-access and all live Production permission rows were compared before/after and remain unchanged.
-The principal script repeats the two denials after each restore and proves UAT access 0.
-The earlier approval rejection is resolved by the owner's explicit authorization.
+Trusted public TLS, hostname/chain/expiry checks, nonempty HTML and nine referenced
+JS/CSS assets, HTTP redirects, CORS, SQL-ready health, exact database routing,
+Socket.IO polling and WebSocket upgrade/welcome passed for both names. An intentionally
+invalid nonexistent-user login returned 401; this is not acceptance of a real user's login.
+Both login pages rendered in the browser without a certificate-warning bypass.
+Public certificates expire on 27 January 2027 and are managed by Caddy automatic renewal.
+Certificate keys and token values stay on R740; the protected token is mounted read-only
+only in edge Caddy, outside Docker environment metadata and app/migrator containers.
+The `/data` certificate volume persists across redeploys.
 
-Current runtime intentionally supports switching between allowlisted live company databases,
-as confirmed in `backend/onprem-target.js` and its tests. The first private approval-helper
-attempt incorrectly required zero access to every other company database; it rolled back.
-Its corrected verification preserves existing company access while enforcing the exact approved
-UAT denial. No runtime guard or Production permission was weakened to satisfy this check.
+UniFi's incoming Thailand-only regional policy remains enabled. DNS-01 avoids incoming
+CA validation without weakening that policy. LAN/VPN checks passed; the owner independently
+confirmed both login pages open on Thai mobile data without certificate warnings.
+Only edge Caddy joins both app networks.
+Windows IP Helper's TCP portproxy remains in place; original WAN client-IP preservation
+for audit/rate limiting has not been established. Unrelated Caddy ports 8080/8443 remain
+untouched. SSRS is on 8888; authenticated report-user acceptance remains outstanding.
 
-## Owner-corrected UAT target
+## Nightly restore, isolation and the Invoice metadata correction
 
-29 October public-domain rollout: `982ff054a077c7812bb99935274a6efb8a869328`
-passed UAT CI [40819955883](https://github.com/thirayume/winspeed-connect/actions/runs/40819955883)
-and Production promotion CI [40820361472](https://github.com/thirayume/winspeed-connect/actions/runs/40820361472).
-Both stacks deployed this SHA. UAT receipt `20261029-115156-uat-apply-982ff05.txt`
-verifies 157/0/0. Production backup `dbwins_worldfert9_predeploy_20261029-115050.bak`
-was COPY_ONLY/CHECKSUM/VERIFYONLY verified; receipt `20261029-115848-prod-apply-982ff05.txt`
-records five applied schema migrations and final 157/0/0. Backend health and private-IP
-TLS/host routing were verified for both exact databases. Public certificates are NOT
-yet accepted: the gateway's Thailand-only incoming region policy blocks external CA
-HTTP/TLS validation. The next candidate uses DNS-01 and a protected Caddy-only token
-file, retaining that policy. Both DNS-01 staging authorizations/certificates succeeded
-on 29 October with no published test ports. Trusted public issuance and browser
-acceptance remain pending the DNS-01 release deployment.
+The 29 October restore completed at 21:00:29 and unattended refresh at 21:02:18,
+Task Scheduler result 0. Receipt `20261029-210205-uat-apply-cad0d54.txt` verifies
+157/0/0 without migration apply. Both stacks remained healthy afterward.
 
-At 01:55 on 29 October, UAT redeployed commit `806e4080f3c25d9678a63cd449ecb1b8da7fb5ce`
-after [CI 40749160774](https://github.com/thirayume/winspeed-connect/actions/runs/40749160774).
-Receipt `20261029-015510-uat-apply-806e408.txt` verifies 157/0/0 with no migration apply.
-HTTPS API/SQL and the underscore database were reverified. The active nightly principal
-script SHA-256 is `5B2350632D69483019C66603EE4945CD9D53466BFDEDBA96D66F339B33E83ACB`,
-matching the approved script actually applied. The next nightly restore has not yet been observed.
+The two isolated UAT v2 SQL logins can open only the UAT clone. Both Production
+SQL identities retain their live-company permissions and have UAT-only DENY CONNECT.
+These access results were rechecked after that scheduled restore. Production web-account
+credentials intentionally replace UAT web accounts after refresh, as selected by the owner.
+Do not preserve or reset a separate UAT admin password to hide this expected refresh behavior.
 
-The owner changed UAT to **R740-SRV\SQL2008 / dbwins_worldfert9_uat / DB ID 10**.
-Read-only SQL verified it ONLINE and restored from Production backup
-`D:\MSSQL\MSSQL10_50.SQL2008\Backup\dbwins_worldfert9_20261027_210002.BAK`.
-The former hyphenated database is no longer present. Its receipts are historical and do not
-prove this replacement clone migrated.
+That first restore of the fully migrated Production database exposed a separate problem:
+migration 157's copied metadata reader retained the Production migrator's resolved SELF
+binding. The approved CONNECT denial correctly prevented this principal entering UAT;
+Invoice 107 preview failed before any Invoice apply. The corrected UAT principal script
+rebinds only the exact reviewed SELECT-only reader to the existing UAT migrator.
+It normalizes the SQL2008 CREATE/ALTER catalog-header difference, rejects any body drift,
+and leaves immutable migration bytes, native writer bodies and Production denials intact.
 
-At the corrected-clone checkpoint: 152 ledger rows; no prior temporary fixture accounts;
-no initial-native target function. The backend configured for the removed database was stopped
-before retargeting. No business test documents had been created by this run.
+Live SQL rollback tests verified 26 nonempty metadata rows through the app identity,
+unchanged other WF modules/permissions, idempotency, drift rejection and complete rollback.
+The correction was then applied to UAT and both existing test chains resumed successfully.
+The nightly principal setup contains the same repair. The next scheduled execution of
+this new repair has not yet been observed; do not force a restore merely to test it.
 
-## Isolated UAT SQL identities approved and created
+## Restricted Full Loop evidence
 
-The old `wf_r740_uat_app` login was verified able to open both UAT and Production. The owner
-selected two NEW clone-only identities instead of weakening the existing isolation check:
+A new isolated UAT run after the restore completed both I -> I/C/J and K -> K/D/N:
+quotation, booking 103, AI, complete 104/coupon, manual simulation 116 and ACCOUNTING-only
+107. It used a fresh COPY_ONLY/CHECKSUM/VERIFYONLY UAT backup, five separately generated
+role-specific test accounts and existing master data. No Production business test document
+was created. Operational document identifiers and screenshots stay in the private handoff.
 
-- `wf_r740_uat_app_v2`
-- `wf_r740_uat_migrator_v2`
+API/SQL/Document Trace checks verified quantities, references, one receipt per stage,
+concurrent create/replay behavior, credit approval's actual actor including Access As,
+ACCOUNTING 116 self-approval, WAREHOUSE creation with MANAGER approval, forbidden role/date
+requests, and one 107 stock row. Both 202 and 107 retain the expected coupon flags/amounts;
+this is not a substitute for reconciliation against the accounting team's AR report.
+All five test accounts were disabled and returned login 401; their generated passwords
+were removed from the private fixture. Physical shipping remains held.
 
-Setup passed: Production access 0, other user-database access 0, elevated roles 0. Existing
-logins and Production permissions were not modified. Separate random passwords are stored only
-in protected UAT settings; recovery copies are under `D:\SaleApp\uat\config\before-isolated-20261028-142724`.
-Do not copy their contents off the server. UAT JWT sessions were rotated for the changed database
-identity; no web-user password was changed. UAT users must sign in again with the restored
-Production account policy selected by the owner.
+Native WinSpeed read-back for the fresh run is still being collected. The old session
+was disconnected by restore and had to be reopened against the exact underscore clone.
+No Save, Post or repair of native business rows is part of that read-back.
+The 104s open with the expected quantities, amounts, dates and approvals; the first
+116 opens with its correct coupon/order/receiver/vehicle. Its native recorder field
+is blank and the approver display remains a numeric ID. App audit has actual actors,
+but the native recorder/approver master mapping and display are not yet accepted.
 
-The reviewed UAT runtime allowlist contains only `dbwins_worldfert9_uat`. Production work uses
-the separate Production web app. The nightly principal script retains and strengthens its zero
-Production/other-database access proof for these new logins.
+## Business go-live limits
 
-## Migration 159 and current validation
+The Production website is deployed. **AI/104/116/107 writer flags remain false in
+Production**, and independent JavaScript/SQL target guards reject live databases.
+The current downstream contracts are restricted single-line, whole-coupon, zero-VAT
+UAT simulations. They do not certify physical dispatch, general partial/multi-line or
+other-tax cases, or live accounting business writers.
 
-Migration 158 remains byte-identical after its historical apply. It introduced a shared target
-predicate while preserving all nine procedure business bodies. New migration 159 corrects only
-that predicate to local UAT2/10 or the verified R740 underscore clone/10. The old R740 hyphenated
-identity and both live company databases are rejected by the current JavaScript target checks.
-All original migration 152/153/155/156/157 hashes remain unchanged.
+Outstanding: native 116 recorder/approver master mapping and display; the accounting
+team's accepted AR report and non-duplication reconciliation
+(owner deferred), GL mapping/posting, approved print forms, real scale/transport evidence,
+and authenticated SSRS report acceptance. The private illustrated stakeholder brief lists
+these questions with WinSpeed menu references and clearly labelled original video images.
+No version 1.0.0 or unrestricted business go-live acceptance is asserted.
 
-On the corrected clone, migrations 155-159 (37 batches) compiled under the isolated migrator
-inside a transaction. The app identity evaluated the target predicate and read 26 native trigger
-rows through the fixed metadata reader. Rollback restored the WF catalog and ledger completely;
-no native writer procedure executed. This validates SQL compatibility and permissions, not a
-persistent business Full Loop.
-
-Final local checks passed: backend 156/156, deployment configuration 23/23 and selected
-migration-runner safety checks 34/34. The stricter idempotent principal script was rerun on
-the corrected clone and again proved zero Production/other-database access and no db_owner.
-
-Next: CI and guarded deploy to the corrected clone, then separate I/C/J and K/D/N test chains
-and WinSpeed read-back against that exact database. Current contracts remain restricted to
-single-line, whole-coupon, zero-VAT simulation. They do not prove physical weighing/shipment,
-partial or multi-line coupons, other tax cases, AR reports, GL or approved print forms.
-
-## Nightly restore and account policy
-
-Task `AUTO Backup SQL2008` runs the existing backup/restore batch at 21:00 and then
-`Refresh-UAT.ps1` from the UAT checkout. Its SQL target declaration was corrected from hyphen
-to underscore with a **one-byte diff**, preserving file encoding and every Production backup
-command. No restore was triggered during this correction.
-
-Backup of that SQL script:
-`D:\SaleApp\tools\out\daily-backup-restore-before-underscore-20261028-142039.sql`.
-New script SHA-256: `F67DBAF8571B4700A2FB3C028D7C1DCEB22E73576094FE2DA0493AC0BA57750A`.
-The next release updates the refresh default and principal remapping to the same underscore
-clone and v2 logins. The next scheduled run has not been observed yet.
-
-The owner selected Production web accounts after restore. Do not preserve a separate UAT admin
-hash. The five temporary app accounts created earlier existed only in the former database;
-read-only inspection proved zero of them in the replacement clone. The earlier cleanup command
-could not reach the removed database; do not describe that as a successful account-disable run.
-
-## Ports and TLS
-
-- UAT uses HTTPS 8444 and HTTP 8091. Production reserves HTTPS 443 and HTTP 80.
-- Windows IP Helper owns the portproxy listeners: 172.16.30.169 -> 127.0.0.1 on the same ports.
-  Do not stop IP Helper. A proxy listener alone is not a working HTTPS application.
-- Port 80 firewall scope matches 443: `172.16.0.0/16,192.168.2.0/24`.
-- The running keepalive task uses ports 80,443,8444,8091. Its prior script and proxy table are
-  backed up in `D:\SaleApp\tools\out\*before-port80-20261028-012242*`. The older 8090 rule remains.
-- SSRS is running with reserved URLs on 8888 for ReportServer_SQL2008 and Reports_SQL2008.
-  Local HTTP reaches it with 401; a report user must verify authenticated report access.
-- DNS/PKI have not started. The owner selected temporary IP HTTPS with the existing Caddy CA.
-  IT must distribute the verified public root. Company PKI and universal client trust are not proven.
-- Prior UAT TLS checks passed chain and IP validation with the exported public root, TLS 1.3.
-  Windows Schannel reported unknown revocation status for the private CA. Do not disable
-  certificate/revocation validation globally to hide it.
-
-## Historical recovery receipts
-
-- a1060b6 repaired migration 157's metadata-reader principal using a R740-only, hash-pinned
-  EXECUTE AS SELF artifact; original migration hashes and writer restrictions were preserved.
-- ba6b673 deployed successfully at 01:35 with 155/0/0 and all four native flags pinned false.
-  Receipt: `D:\SaleApp\uat\deploy-logs\20261028-013528-uat-apply-ba6b673.txt`.
-- 13603b5 stopped before candidate DDL because the legacy write guard confused a hyphenated
-  clone name with the exact Production name. Exact-name regression tests preserve live-write denials.
-- 2498c2b then applied 158 to the former clone and started healthy.
-  Receipt: `D:\SaleApp\uat\deploy-logs\20261028-083601-uat-apply-2498c2b.txt`.
-  That database was subsequently replaced/removed; this is not acceptance of the underscore clone.
-
-## Production and business acceptance remaining
-
-After the 21:00 restore, both restricted I/C/J and K/D/N chains completed quotation,
-booking 103, AI, complete 104, manual simulation 116 and ACCOUNTING-only 107 on the corrected
-R740 clone. Concurrent apply produced one creation and one replay at 104/116/107. Negative
-role/date tests passed; physical shipment remained held. ACCOUNTING created and self-approved
-116 on one chain; WAREHOUSE created and MANAGER approved the other. SQL verified the actual
-actor identities, one receipt per stage, packaging/quantity, native audit rows and one stock
-row per invoice. Document Trace Flow resolved both exact coupon IDs and expected typed edges.
-
-One private test assertion initially expected ACCOUNTING shipping to reach the downstream
-guard; the route correctly returned 403 first. The corrected test verifies this role denial
-and separately verifies the WAREHOUSE downstream hold. No application code or document was
-changed to satisfy the assertion; the same 116 replayed successfully.
-
-All five owned temporary app accounts were disabled after API/SQL verification. Each then
-returned login 401, and their generated passwords were removed from the private fixture file.
-Operational document IDs and detailed logs remain local on R740, outside the public repo.
-
-WinSpeed read-back remains pending: opening Sale Order after the nightly restore showed
-`DataCache error !! [dg_icoption]`. The owner was asked to reopen and authenticate the UAT
-session. No WinSpeed Save/Post or native-data repair was performed.
-
-Production database is `dbwins_worldfert9`; the saleapp-prod stack started on 29 October. The release
-enables the owner-authorized technical deploy gate for ports 80/443. All four native simulation
-writer flags remain false, and the JavaScript/SQL target guards still reject live databases.
-This is not full business go-live acceptance. A read-only forecast before the
-latest target correction showed 152 unchanged, 3 pending, drift 0. The current release adds
-158/159 and requires a fresh guarded Production plan and verified pre-deploy backup.
-
-UAT2 previously exercised restricted I/K paths through 107. Still unverified: AR report
-reconciliation (owner deferred), GL, approved forms and physical scale/shipment. ACCOUNTING
-self-approval for manual 116 now passes live R740 API/SQL checks, with WinSpeed acceptance pending.
-The illustrated local-only question brief is
-`docs/sale-app/current/UAT2-FullLoop-Questions-20261027.docx` (four workflow screenshots).
-WinSpeed must connect to the underscore R740 UAT clone before read-back; the visible old sessions
-were local UAT2 and R740 Production. No Save/Post was performed through those sessions.
-
-Never commit secret files, private keys, password hashes or operational screenshots to the public repo.
+Never commit secret files, password hashes, private keys, customer records or operational
+screenshots to the public repository.

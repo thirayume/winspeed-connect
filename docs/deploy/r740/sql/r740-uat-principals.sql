@@ -198,6 +198,45 @@ BEGIN TRY
     IF USER_ID(N'wf_r740_prod_migrator') IS NOT NULL
         EXEC(N'DENY CONNECT TO [wf_r740_prod_migrator]');
 
+    -- A Production backup also copies EXECUTE AS SELF's resolved principal ID.
+    -- Keep the copied Production migrator denied CONNECT; rebind only this fixed
+    -- SELECT-only metadata reader to the existing isolated UAT migrator instead.
+    -- Immutable migration 157 and all native writer bodies/guards stay unchanged.
+    IF OBJECT_ID(N'wf.usp_ReadInitialInvoiceMetadata', N'P') IS NOT NULL
+    BEGIN
+        DECLARE @expected_reader NVARCHAR(MAX), @actual_reader NVARCHAR(MAX), @uat_reader NVARCHAR(MAX);
+        SET @expected_reader = N'ALTER PROCEDURE wf.usp_ReadInitialInvoiceMetadata WITH EXECUTE AS SELF
+AS
+BEGIN
+ SET NOCOUNT ON;
+ SELECT OBJECT_NAME(t.parent_id) AS TableName,t.name,t.is_disabled,m.definition
+ FROM sys.triggers t LEFT JOIN sys.sql_modules m ON m.object_id=t.object_id
+ WHERE t.parent_id IN(OBJECT_ID(''dbo.SOInvHD''),OBJECT_ID(''dbo.SOInvDT''),OBJECT_ID(''dbo.SMSat''),OBJECT_ID(''dbo.SMReserveSat''),
+  OBJECT_ID(''dbo.ICStockDetail''),OBJECT_ID(''dbo.ICCostDetail''),OBJECT_ID(''dbo.SODT''),OBJECT_ID(''dbo.WFRedemtionHD''),OBJECT_ID(''dbo.WFRedemtionDT''));
+END';
+        SET @expected_reader = REPLACE(@expected_reader, CHAR(13), N'');
+        SET @uat_reader = REPLACE(@expected_reader, N'WITH EXECUTE AS SELF',
+                                 N'WITH EXECUTE AS ''wf_r740_uat_migrator_v2''');
+        SET @actual_reader = LTRIM(RTRIM(REPLACE(OBJECT_DEFINITION(OBJECT_ID(N'wf.usp_ReadInitialInvoiceMetadata')), CHAR(13), N'')));
+        WHILE RIGHT(@actual_reader, 1) = CHAR(10)
+            SET @actual_reader = RTRIM(LEFT(@actual_reader, LEN(@actual_reader) - 1));
+        WHILE LEFT(@actual_reader, 1) = CHAR(10)
+            SET @actual_reader = LTRIM(SUBSTRING(@actual_reader, 2, LEN(@actual_reader)));
+        -- SQL2008 may retain CREATE rather than ALTER in the catalog header.
+        IF LEFT(@actual_reader, 17) COLLATE Latin1_General_BIN2 = N'CREATE PROCEDURE ' COLLATE Latin1_General_BIN2
+            SET @actual_reader = N'ALTER' + SUBSTRING(@actual_reader, 7, LEN(@actual_reader));
+        IF @actual_reader IS NULL OR
+           ((@actual_reader COLLATE Latin1_General_BIN2 <> @expected_reader COLLATE Latin1_General_BIN2
+             OR DATALENGTH(@actual_reader) <> DATALENGTH(@expected_reader)) AND
+            (@actual_reader COLLATE Latin1_General_BIN2 <> @uat_reader COLLATE Latin1_General_BIN2
+             OR DATALENGTH(@actual_reader) <> DATALENGTH(@uat_reader)))
+            RAISERROR(N'STOP: invoice metadata reader differs from the reviewed SELECT-only body; remapping rolled back.', 16, 1);
+        IF @actual_reader COLLATE Latin1_General_BIN2 <> @uat_reader COLLATE Latin1_General_BIN2
+           OR (SELECT execute_as_principal_id FROM sys.sql_modules WHERE object_id=OBJECT_ID(N'wf.usp_ReadInitialInvoiceMetadata'))
+              <> USER_ID(N'wf_r740_uat_migrator_v2')
+            EXEC(@uat_reader);
+    END;
+
     COMMIT TRANSACTION;
 END TRY
 BEGIN CATCH

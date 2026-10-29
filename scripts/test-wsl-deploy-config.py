@@ -9,6 +9,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -417,6 +418,19 @@ class R740ComposeGuardTests(unittest.TestCase):
                 self.assertIn(key + "=" + app[key], target_path.read_text(encoding="utf-8"))
                 if environment == "prod":
                     self.assertEqual(app[key], "false", "Live native writers have not passed acceptance.")
+
+
+class R740UatReaderRemapTests(unittest.TestCase):
+    def test_remap_exposes_only_the_immutable_reviewed_metadata_reader(self):
+        # A restored execution identity must not widen the reader's SQL body.
+        setup = (ROOT / "docs/deploy/r740/sql/r740-uat-principals.sql").read_text(encoding="utf-8")
+        literal = re.search(r"SET @expected_reader = N'((?:''|[^'])*)';", setup)
+        self.assertIsNotNone(literal)
+        expected = literal.group(1).replace("''", "'").strip()
+        original = (ROOT / "backend/migrations/compat/sql2008/157_initial_coupon_invoice_107.sql").read_text(encoding="utf-8")
+        reader = re.search(r"(?ms)^ALTER PROCEDURE wf\.usp_ReadInitialInvoiceMetadata\b.*?(?=^GO\s*$)", original)
+        self.assertIsNotNone(reader)
+        self.assertEqual(expected, reader.group(0).strip())
 
 
 if __name__ == "__main__":
