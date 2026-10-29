@@ -65,6 +65,9 @@ unchanged other WF modules/permissions, idempotency, drift rejection and complet
 The correction was then applied to UAT and both existing test chains resumed successfully.
 The nightly principal setup contains the same repair. The next scheduled execution of
 this new repair has not yet been observed; do not force a restore merely to test it.
+UAT was redeployed at `e9326e3` on 30 October 05:23 (receipt
+`20261030-052345-uat-apply-e9326e3.txt`, 157/0/0, health 200), so the UAT checkout that the
+21:00 refresh reads now carries the repaired principal script.
 
 ## Restricted Full Loop evidence
 
@@ -82,13 +85,29 @@ this is not a substitute for reconciliation against the accounting team's AR rep
 All five test accounts were disabled and returned login 401; their generated passwords
 were removed from the private fixture. Physical shipping remains held.
 
-Native WinSpeed read-back for the fresh run is still being collected. The old session
-was disconnected by restore and had to be reopened against the exact underscore clone.
-No Save, Post or repair of native business rows is part of that read-back.
-The 104s open with the expected quantities, amounts, dates and approvals; the first
-116 opens with its correct coupon/order/receiver/vehicle. Its native recorder field
-is blank and the approver display remains a numeric ID. App audit has actual actors,
-but the native recorder/approver master mapping and display are not yet accepted.
+Native WinSpeed read-back of the fresh run is **complete** (30 October, WinSpeed session
+verified on `dbwins_worldfert9_uat`; view only — no Save, Post or repair). Both 104s, both
+116s and both 107s open with the expected references, coupon, receiver, vehicle, product,
+warehouse, quantity, amount, date and credit terms. Each 107 shows `Post Invoice`, cites its
+own 104, carries 0% VAT, and has no GL lines (Post GL unticked) — consistent with GL mapping
+still being outstanding.
+
+The one native-display gap is on both 116s: the recorder field is blank and the approver
+shows a raw numeric ID. Read-only profiling of the restored clone explains both:
+
+- **Recorder:** WinSpeed fills `WFRedemtionHD.SaveEmpID` with the operator's employee on
+  virtually every native 116; the manual-116 procedure (migrations 156/158) never writes
+  `SaveEmpID`, so the field is blank.
+- **Approver:** native 116s almost never use `AppvEmpID` (two rows in the whole history).
+  The procedure writes the approver's verified employee there, but the employee mapped to
+  the Full Loop test accounts is a salesperson-type record (`EmpType` S, no group), while
+  every employee WinSpeed itself uses on 116 is a general-staff type (`EmpType` G). The WF
+  form's approver list most likely excludes type S, so it shows the raw ID. To be confirmed
+  with the WinSpeed administrator.
+
+App audit and `SMAudit` keep the actual actors. Decision needed before changing the
+UAT-only writer body: write `SaveEmpID` from the requester's verified employee (matches
+native practice); keep or drop `AppvEmpID`; and map future test accounts to a type-G employee.
 
 ## Business go-live limits
 
