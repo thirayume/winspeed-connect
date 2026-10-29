@@ -14,6 +14,15 @@
 	}
 }
 
+(public_tls) {
+	tls {
+		# Provision-time file placeholder: no token in image, target env or Docker inspect.
+		dns duckdns {file./run/secrets/duckdns-token}
+		resolvers 1.1.1.1 8.8.8.8
+		propagation_timeout 5m
+	}
+}
+
 (production_app) {
 	encode gzip
 	@api path /api/* /socket.io/* /uploads/*
@@ -46,10 +55,12 @@ http://:80 {
 
 # Public names use automatic ACME certificates, stored only in Caddy's data volume.
 {$PUBLIC_PROD_DOMAIN} {
+	import public_tls
 	import production_app
 }
 
 {$PUBLIC_UAT_DOMAIN} {
+	import public_tls
 	encode gzip
 	@api path /api/* /socket.io/* /uploads/*
 	handle @api {

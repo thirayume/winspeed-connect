@@ -75,7 +75,7 @@ class ComposeGuardTests(unittest.TestCase):
     def test_caddy_context_excludes_local_sql_and_settings(self):
         context = ROOT / "docs/deploy/onprem"
         rules = (context / ".dockerignore").read_text(encoding="utf-8").splitlines()
-        self.assertEqual(rules, ["*", "!Dockerfile.caddy", "!Caddyfile.uat", "!Caddyfile.r740-edge"])
+        self.assertEqual(rules, ["*", "!Dockerfile.caddy", "!Dockerfile.caddy-edge", "!Caddyfile.uat", "!Caddyfile.r740-edge"])
         dockerfile = (context / "Dockerfile.caddy").read_text(encoding="utf-8")
         self.assertEqual(dockerfile.splitlines(), ["FROM caddy:2-alpine", "ARG CADDYFILE=Caddyfile.uat",
                                                  "COPY ${CADDYFILE} /etc/caddy/Caddyfile"])
@@ -288,10 +288,12 @@ class R740ComposeGuardTests(unittest.TestCase):
             if name in ("backend", "frontend"):
                 service["networks"]["default"] = {"aliases": [f"worldfert-saleapp-{environment}-{name}"]}
         if environment == "prod":
-            services["caddy"]["build"] = {"args": {"CADDYFILE": "Caddyfile.r740-edge"}}
+            services["caddy"]["build"] = {"dockerfile": "Dockerfile.caddy-edge"}
             services["caddy"]["networks"]["uat_ingress"] = None
             services["caddy"]["environment"].update({key: target[key] for key in ("PUBLIC_PROD_DOMAIN", "PUBLIC_UAT_DOMAIN")})
             models["resolved"]["networks"]["uat_ingress"] = {"external": True, "name": "saleapp-uat_default"}
+            services["caddy"]["secrets"] = [{"source": "duckdns-token", "target": "duckdns-token"}]
+            models["resolved"]["secrets"] = {"duckdns-token": {"file": "/fixture/duckdns-token"}}
         return models, target_path
 
     def validate(self, models, target_path):
@@ -332,13 +334,28 @@ class R740ComposeGuardTests(unittest.TestCase):
                 if defect == "alias":
                     cfg["services"]["backend"]["networks"]["default"]["aliases"] = ["backend"]
                 elif defect == "image":
-                    cfg["services"]["caddy"]["build"]["args"]["CADDYFILE"] = "Caddyfile.uat"
+                    cfg["services"]["caddy"]["build"]["dockerfile"] = "Dockerfile.caddy"
                 elif defect == "network":
                     cfg["networks"]["uat_ingress"]["name"] = "unrelated_default"
                 elif defect == "domain":
                     cfg["services"]["caddy"]["environment"]["PUBLIC_UAT_DOMAIN"] = "unexpected.example.com"
                 else:
                     cfg["services"]["caddy"]["network_mode"] = "host"
+                self.assertNotEqual(self.validate(models, target_path).returncode, 0)
+
+    def test_dns_secret_cannot_leak_to_app_metadata_or_another_path(self):
+        for defect in ("app", "migrate", "environment", "file", "extra"):
+            with self.subTest(defect=defect):
+                models, target_path = self.fixture("prod")
+                cfg = models["resolved"]
+                if defect in ("app", "migrate"):
+                    cfg["services"]["backend" if defect == "app" else "migrate"]["secrets"] = [{"source": "duckdns-token"}]
+                elif defect == "environment":
+                    cfg["services"]["caddy"]["environment"]["DUCKDNS_API_TOKEN"] = "fixture-not-a-token"
+                elif defect == "file":
+                    cfg["secrets"]["duckdns-token"]["file"] = "/unreviewed/duckdns-token"
+                else:
+                    cfg["secrets"]["extra"] = {"file": "/fixture/another-secret"}
                 self.assertNotEqual(self.validate(models, target_path).returncode, 0)
 
     def test_actual_r740_compose_models_with_public_edge(self):
@@ -355,7 +372,10 @@ class R740ComposeGuardTests(unittest.TestCase):
                 migrator.write_text("ONPREM_MIGRATOR_USER=" + target["SALEAPP_MIGRATOR_LOGIN"] +
                                     "\nONPREM_MIGRATOR_PASSWORD='dummy&separate$literal#value=1'\n", encoding="utf-8")
                 app_env.write_text("ONPREM_DB_PASSWORD='dummy&app$literal#value=2'\nJWT_SECRET=dummy-test-jwt\n", encoding="utf-8")
-                env = dict(os.environ, **target, SALEAPP_MIGRATOR_ENV_FILE=str(migrator))
+                dns_token = Path(tmp) / "duckdns-token"
+                dns_token.write_text("fixture-not-an-api-token", encoding="utf-8")
+                env = dict(os.environ, **target, SALEAPP_MIGRATOR_ENV_FILE=str(migrator),
+                           SALEAPP_DUCKDNS_TOKEN_FILE=dns_token.as_posix())
                 args = [docker, "compose", "--project-directory", str(ROOT), "-p", "saleapp-" + environment,
                         "-f", str(ROOT / "docker-compose.yml")]
                 if environment == "prod":

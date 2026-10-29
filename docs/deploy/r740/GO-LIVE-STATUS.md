@@ -40,6 +40,20 @@ UAT denial. No runtime guard or Production permission was weakened to satisfy th
 
 ## Owner-corrected UAT target
 
+29 October public-domain rollout: `982ff054a077c7812bb99935274a6efb8a869328`
+passed UAT CI [40819955883](https://github.com/thirayume/winspeed-connect/actions/runs/40819955883)
+and Production promotion CI [40820361472](https://github.com/thirayume/winspeed-connect/actions/runs/40820361472).
+Both stacks deployed this SHA. UAT receipt `20261029-115156-uat-apply-982ff05.txt`
+verifies 157/0/0. Production backup `dbwins_worldfert9_predeploy_20261029-115050.bak`
+was COPY_ONLY/CHECKSUM/VERIFYONLY verified; receipt `20261029-115848-prod-apply-982ff05.txt`
+records five applied schema migrations and final 157/0/0. Backend health and private-IP
+TLS/host routing were verified for both exact databases. Public certificates are NOT
+yet accepted: the gateway's Thailand-only incoming region policy blocks external CA
+HTTP/TLS validation. The next candidate uses DNS-01 and a protected Caddy-only token
+file, retaining that policy. Both DNS-01 staging authorizations/certificates succeeded
+on 29 October with no published test ports. Trusted public issuance and browser
+acceptance remain pending the DNS-01 release deployment.
+
 At 01:55 on 29 October, UAT redeployed commit `806e4080f3c25d9678a63cd449ecb1b8da7fb5ce`
 after [CI 40749160774](https://github.com/thirayume/winspeed-connect/actions/runs/40749160774).
 Receipt `20261029-015510-uat-apply-806e408.txt` verifies 157/0/0 with no migration apply.
@@ -168,7 +182,7 @@ WinSpeed read-back remains pending: opening Sale Order after the nightly restore
 `DataCache error !! [dg_icoption]`. The owner was asked to reopen and authenticate the UAT
 session. No WinSpeed Save/Post or native-data repair was performed.
 
-Production database is `dbwins_worldfert9`; no saleapp-prod stack has started. The candidate
+Production database is `dbwins_worldfert9`; the saleapp-prod stack started on 29 October. The release
 enables the owner-authorized technical deploy gate for ports 80/443. All four native simulation
 writer flags remain false, and the JavaScript/SQL target guards still reject live databases.
 This is not full business go-live acceptance. A read-only forecast before the

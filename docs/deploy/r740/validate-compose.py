@@ -137,12 +137,12 @@ def main():
         aliases = (service["networks"]["default"] or {}).get("aliases", [])
         if "worldfert-saleapp-%s-%s" % (stack, name) not in aliases:
             stop(name + " needs its unique environment upstream alias.")
-    caddyfile = caddy.get("build", {}).get("args", {}).get("CADDYFILE", "Caddyfile.uat")
+    caddy_build = caddy.get("build", {})
     if stack == "prod":
         ingress = dict(cfg.get("networks", {}).get("uat_ingress", {}))
         if not ingress.get("ipam"):
             ingress.pop("ipam", None)  # Some Compose versions include an empty default.
-        if caddyfile != "Caddyfile.r740-edge" or ingress != {
+        if caddy_build.get("dockerfile") != "Dockerfile.caddy-edge" or caddy_build.get("args") or ingress != {
                 "external": True, "name": "saleapp-uat_default"}:
             stop("Production must use the reviewed edge image and UAT ingress network.")
         domains = [target.get(key, "") for key in ("PUBLIC_PROD_DOMAIN", "PUBLIC_UAT_DOMAIN")]
@@ -151,8 +151,16 @@ def main():
         for key in ("PUBLIC_PROD_DOMAIN", "PUBLIC_UAT_DOMAIN"):
             if caddy_env.get(key) != target[key]:
                 stop("Caddy public domain does not match the reviewed target: " + key)
-    elif caddyfile != "Caddyfile.uat" or set(cfg.get("networks", {})) != {"default"}:
+        expected_token_file = migrator_env_path.replace("\\", "/").rsplit("/", 1)[0] + "/duckdns-token"
+        if set(cfg.get("secrets", {})) != {"duckdns-token"} or env_file_path(cfg["secrets"]["duckdns-token"].get("file")) != expected_token_file:
+            stop("DuckDNS secret must come only from the protected Production config directory.")
+        if caddy.get("secrets") != [{"source": "duckdns-token", "target": "duckdns-token"}]:
+            stop("only the named read-only DuckDNS secret may be mounted into edge Caddy.")
+    elif caddy_build.get("args", {}).get("CADDYFILE", "Caddyfile.uat") != "Caddyfile.uat" or set(cfg.get("networks", {})) != {"default"} or cfg.get("secrets") or caddy.get("secrets"):
         stop("UAT must retain its independent internal-CA ingress and isolated network.")
+    for name, service in services.items():
+        if (name != "caddy" and service.get("secrets")) or "DUCKDNS_API_TOKEN" in service.get("environment", {}):
+            stop("DuckDNS token must not enter app/migrator containers or Docker environment metadata.")
     if frontend.get("build", {}).get("args", {}).get("VITE_API_BASE_URL") != target["VITE_API_BASE_URL"]:
         stop("VITE_API_BASE_URL does not match the target file.")
     if frontend.get("ports") or backend.get("ports") or migrate.get("ports"):

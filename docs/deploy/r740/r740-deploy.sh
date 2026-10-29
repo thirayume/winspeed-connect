@@ -72,6 +72,11 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done < "$TARGET_FILE"
 [[ "${SALEAPP_DEPLOY_ENABLED:-}" == true ]] || fail "deploys to $ENV_NAME are not enabled (targets/$ENV_NAME.env)."
 export SALEAPP_MIGRATOR_ENV_FILE="$CONFIG/.env.migrator.local"
+if [[ "$ENV_NAME" == prod ]]; then
+  export SALEAPP_DUCKDNS_TOKEN_FILE="$CONFIG/duckdns-token"
+  [[ "$PHASE" != apply || -s "$SALEAPP_DUCKDNS_TOKEN_FILE" ]] \
+    || fail "protected Production duckdns-token file is missing; run host/Set-DuckDnsToken.ps1 interactively on R740."
+fi
 
 [[ "$(docker --context default context inspect default --format '{{ .Endpoints.docker.Host }}' 2>/dev/null)" == unix://* ]] \
   || fail "the default Docker context is not the local Linux engine."
@@ -156,11 +161,11 @@ run_plan() {
 echo "Target and settings match targets/$ENV_NAME.env ($ONPREM_DB_NAME on $ONPREM_EXPECTED_SERVERNAME)."
 echo "Building images (no containers started, no database writes) ..."
 compose build backend frontend caddy || fail "image build failed."
-docker --context default run --rm --network none \
+docker --context default run --rm --network none --tmpfs /run/secrets:rw,noexec,nosuid,size=64k \
   -e "APP_DOMAIN=$APP_DOMAIN" -e "HTTP_PORT=$HTTP_PORT" -e "HTTPS_PORT=$HTTPS_PORT" \
   -e "PUBLIC_PROD_DOMAIN=${PUBLIC_PROD_DOMAIN:-}" -e "PUBLIC_UAT_DOMAIN=${PUBLIC_UAT_DOMAIN:-}" \
-  "worldfert-saleapp-$SALEAPP_STACK-caddy:local" \
-  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile \
+  --entrypoint /bin/sh "worldfert-saleapp-$SALEAPP_STACK-caddy:local" \
+  -c 'set -eu; printf %s fixture-not-an-api-token > /run/secrets/duckdns-token; exec caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile' \
   || fail "built Caddy configuration validation failed; services were not restarted."
 
 echo "Read-only migration plan for $ONPREM_DB_NAME ..."
