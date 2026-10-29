@@ -1,5 +1,14 @@
 # HTTPS บน R740: DNS, PKI บริษัท และ ACME
 
+## Public DuckDNS release candidate — 29 October 2026
+
+The owner now supplied `worldfert.duckdns.org` and `wfuat.duckdns.org`, both resolving
+to `118.172.229.224`, and requested public ingress on 80/443. The R740 Production
+override now builds a separate automatic-ACME edge image while preserving the
+existing IP/internal-CA endpoints. See [the complete topology and acceptance procedure](DUCKDNS-PUBLIC-INGRESS.md).
+The earlier preparation-only statements below still apply to company PKI and to the
+default `Caddyfile.uat`; they do not describe the new public edge configuration.
+
 สถานะ 28 ต.ค. 2569: UAT ใช้ `https://172.16.30.169:8444` ผ่าน Caddy internal CA ได้แล้ว
 แต่ DNS และ PKI บริษัทยังไม่ได้ดำเนินการ ส่วน Production ยังไม่มี stack ที่ให้บริการบน 443
 การเตรียม portproxy/firewall 80/443 เสร็จแล้ว ไม่ใช่หลักฐานว่าเปิด Production HTTPS สำเร็จ

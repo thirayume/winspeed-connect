@@ -1,0 +1,19 @@
+# R740 Production ingress only. The edge joins both app networks; Production backend,
+# migrator and frontend remain on their own default network. Unique upstream aliases
+# prevent the shared generic "backend"/"frontend" names from selecting the wrong DB.
+services:
+  caddy:
+    build:
+      args:
+        CADDYFILE: Caddyfile.r740-edge
+    environment:
+      PUBLIC_PROD_DOMAIN: ${PUBLIC_PROD_DOMAIN:?Set the reviewed public Production domain}
+      PUBLIC_UAT_DOMAIN: ${PUBLIC_UAT_DOMAIN:?Set the reviewed public UAT domain}
+    networks:
+      - default
+      - uat_ingress
+
+networks:
+  uat_ingress:
+    external: true
+    name: saleapp-uat_default

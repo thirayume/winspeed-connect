@@ -127,6 +127,32 @@ def main():
     for key in ("APP_DOMAIN", "HTTP_PORT", "HTTPS_PORT"):
         if str(caddy_env.get(key, "")) != target[key]:
             stop("Caddy setting " + key + " does not match the target file.")
+    # The public edge alone may join UAT's network; app and migration containers
+    # must never inherit that cross-stack access. Keep API routing one proxy hop.
+    for name, service in services.items():
+        wanted_networks = {"default", "uat_ingress"} if stack == "prod" and name == "caddy" else {"default"}
+        if service.get("network_mode") or set(service.get("networks", {})) != wanted_networks:
+            stop(name + " network membership does not match the isolated ingress topology.")
+    for name, service in (("backend", backend), ("frontend", frontend)):
+        aliases = (service["networks"]["default"] or {}).get("aliases", [])
+        if "worldfert-saleapp-%s-%s" % (stack, name) not in aliases:
+            stop(name + " needs its unique environment upstream alias.")
+    caddyfile = caddy.get("build", {}).get("args", {}).get("CADDYFILE", "Caddyfile.uat")
+    if stack == "prod":
+        ingress = dict(cfg.get("networks", {}).get("uat_ingress", {}))
+        if not ingress.get("ipam"):
+            ingress.pop("ipam", None)  # Some Compose versions include an empty default.
+        if caddyfile != "Caddyfile.r740-edge" or ingress != {
+                "external": True, "name": "saleapp-uat_default"}:
+            stop("Production must use the reviewed edge image and UAT ingress network.")
+        domains = [target.get(key, "") for key in ("PUBLIC_PROD_DOMAIN", "PUBLIC_UAT_DOMAIN")]
+        if len(set(domains)) != 2 or any(not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,63}", d) for d in domains):
+            stop("public target domains must be two distinct DNS host names.")
+        for key in ("PUBLIC_PROD_DOMAIN", "PUBLIC_UAT_DOMAIN"):
+            if caddy_env.get(key) != target[key]:
+                stop("Caddy public domain does not match the reviewed target: " + key)
+    elif caddyfile != "Caddyfile.uat" or set(cfg.get("networks", {})) != {"default"}:
+        stop("UAT must retain its independent internal-CA ingress and isolated network.")
     if frontend.get("build", {}).get("args", {}).get("VITE_API_BASE_URL") != target["VITE_API_BASE_URL"]:
         stop("VITE_API_BASE_URL does not match the target file.")
     if frontend.get("ports") or backend.get("ports") or migrate.get("ports"):

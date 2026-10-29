@@ -63,7 +63,7 @@ command -v python3 >/dev/null 2>&1 || fail "python3 is required for the Compose 
 
 # Pins come only from the reviewed target file: KEY=literal lines, a fixed key set.
 unset COMPOSE_FILE COMPOSE_PATH_SEPARATOR COMPOSE_PROJECT_NAME COMPOSE_PROFILES COMPOSE_ENV_FILES DOCKER_HOST DOCKER_CONTEXT
-readonly PIN_KEYS=' SALEAPP_DEPLOY_ENABLED SALEAPP_STACK SALEAPP_COMPOSE_PROJECT SALEAPP_MIGRATOR_LOGIN SALEAPP_BACKUP_DIR SALEAPP_BACKUP_MAX_AGE_MINUTES SALEAPP_SHARE_CA_FROM ONPREM_TARGET_KIND ONPREM_DB_SERVER ONPREM_DB_PORT ONPREM_DB_INSTANCE ONPREM_DB_NAME ONPREM_EXPECTED_SERVERNAME ONPREM_PRODUCT_VERSION_PREFIX ONPREM_DB_USER ONPREM_DB_ENCRYPT ONPREM_DB_LEGACY_TLS APP_DOMAIN HTTP_PORT HTTPS_PORT CORS_ORIGIN VITE_API_BASE_URL TZ NATIVE_BOOKING_AI_ENABLED NATIVE_DELIVERY_104_ENABLED NATIVE_MANUAL_116_ENABLED NATIVE_INVOICE_107_ENABLED DISABLE_BACKGROUND_WORKERS ONPREM_SWITCHABLE_DATABASES '
+readonly PIN_KEYS=' SALEAPP_DEPLOY_ENABLED SALEAPP_STACK SALEAPP_COMPOSE_PROJECT SALEAPP_MIGRATOR_LOGIN SALEAPP_BACKUP_DIR SALEAPP_BACKUP_MAX_AGE_MINUTES SALEAPP_SHARE_CA_FROM ONPREM_TARGET_KIND ONPREM_DB_SERVER ONPREM_DB_PORT ONPREM_DB_INSTANCE ONPREM_DB_NAME ONPREM_EXPECTED_SERVERNAME ONPREM_PRODUCT_VERSION_PREFIX ONPREM_DB_USER ONPREM_DB_ENCRYPT ONPREM_DB_LEGACY_TLS APP_DOMAIN PUBLIC_PROD_DOMAIN PUBLIC_UAT_DOMAIN HTTP_PORT HTTPS_PORT CORS_ORIGIN VITE_API_BASE_URL TZ NATIVE_BOOKING_AI_ENABLED NATIVE_DELIVERY_104_ENABLED NATIVE_MANUAL_116_ENABLED NATIVE_INVOICE_107_ENABLED DISABLE_BACKGROUND_WORKERS ONPREM_SWITCHABLE_DATABASES '
 while IFS= read -r line || [[ -n "$line" ]]; do
   [[ -z "${line//[[:space:]]/}" || "$line" =~ ^[[:space:]]*# ]] && continue
   [[ "$line" =~ ^([A-Z][A-Z0-9_]*)=(.*)$ ]] || fail "invalid line in targets/$ENV_NAME.env."
@@ -78,8 +78,10 @@ export SALEAPP_MIGRATOR_ENV_FILE="$CONFIG/.env.migrator.local"
 [[ "$(docker --context default info --format '{{.OSType}}' 2>/dev/null)" == linux ]] || fail "the Docker engine is not Linux."
 
 compose() {
+  local edge=()
+  [[ "$ENV_NAME" != prod ]] || edge=(-f "$SCRIPT_DIR/compose.edge-prod.yml")
   docker --context default compose -p "$SALEAPP_COMPOSE_PROJECT" --project-directory "$APP" \
-    -f "$APP/docker-compose.yml" --env-file "$CONFIG/.env" "$@"
+    -f "$APP/docker-compose.yml" "${edge[@]}" --env-file "$CONFIG/.env" "$@"
 }
 
 compose --profile migrate config --quiet >/dev/null 2>&1 \
@@ -154,6 +156,12 @@ run_plan() {
 echo "Target and settings match targets/$ENV_NAME.env ($ONPREM_DB_NAME on $ONPREM_EXPECTED_SERVERNAME)."
 echo "Building images (no containers started, no database writes) ..."
 compose build backend frontend caddy || fail "image build failed."
+docker --context default run --rm --network none \
+  -e "APP_DOMAIN=$APP_DOMAIN" -e "HTTP_PORT=$HTTP_PORT" -e "HTTPS_PORT=$HTTPS_PORT" \
+  -e "PUBLIC_PROD_DOMAIN=${PUBLIC_PROD_DOMAIN:-}" -e "PUBLIC_UAT_DOMAIN=${PUBLIC_UAT_DOMAIN:-}" \
+  "worldfert-saleapp-$SALEAPP_STACK-caddy:local" \
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile \
+  || fail "built Caddy configuration validation failed; services were not restarted."
 
 echo "Read-only migration plan for $ONPREM_DB_NAME ..."
 run_plan

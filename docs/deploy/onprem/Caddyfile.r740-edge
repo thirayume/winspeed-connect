@@ -1,0 +1,64 @@
+# Public R740 ingress. Only this Production Caddy publishes 80/443.
+# UAT keeps its independent LAN ingress on 8091/8444. No backend port is published.
+{
+	default_sni {$APP_DOMAIN}
+	auto_https disable_redirects
+}
+
+(security_headers) {
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}
+
+(production_app) {
+	encode gzip
+	@api path /api/* /socket.io/* /uploads/*
+	handle @api {
+		reverse_proxy worldfert-saleapp-prod-backend:3000 {
+			flush_interval -1
+		}
+	}
+	handle {
+		reverse_proxy worldfert-saleapp-prod-frontend:80
+	}
+	import security_headers
+}
+
+http://{$APP_DOMAIN} {
+	redir https://{$APP_DOMAIN}{uri} 308
+}
+http://{$PUBLIC_PROD_DOMAIN}, http://{$PUBLIC_UAT_DOMAIN} {
+	redir https://{host}{uri} 308
+}
+http://:80 {
+	respond "Unknown site" 404
+}
+
+# Preserve the previously approved IP/internal-CA LAN URL.
+{$APP_DOMAIN} {
+	tls internal
+	import production_app
+}
+
+# Public names use automatic ACME certificates, stored only in Caddy's data volume.
+{$PUBLIC_PROD_DOMAIN} {
+	import production_app
+}
+
+{$PUBLIC_UAT_DOMAIN} {
+	encode gzip
+	@api path /api/* /socket.io/* /uploads/*
+	handle @api {
+		reverse_proxy worldfert-saleapp-uat-backend:3000 {
+			flush_interval -1
+		}
+	}
+	handle {
+		reverse_proxy worldfert-saleapp-uat-frontend:80
+	}
+	import security_headers
+}

@@ -172,6 +172,10 @@ plan; the former hyphenated clone and its deployment receipts do not prove this 
 
 ## Production technical deployment and business acceptance
 
+Public domain ingress: [DuckDNS ports, routing, ACME and rollback](DUCKDNS-PUBLIC-INGRESS.md).
+Both hostnames use one Caddy on 80/443, with separate app/database routes; UAT's IP
+endpoint stays on 8444. The public edge never uses the unrelated service on 8443.
+
 PROD uses the same images, Compose file and scripts as UAT. What differs is pinned in
 [`targets/prod.env`](targets/prod.env): `dbwins_worldfert9`, `ONPREM_TARGET_KIND=production`,
 ports 80/443, a backup gate and the UAT Caddy root. Until the steps below, nothing touches

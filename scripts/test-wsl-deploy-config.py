@@ -75,9 +75,10 @@ class ComposeGuardTests(unittest.TestCase):
     def test_caddy_context_excludes_local_sql_and_settings(self):
         context = ROOT / "docs/deploy/onprem"
         rules = (context / ".dockerignore").read_text(encoding="utf-8").splitlines()
-        self.assertEqual(rules, ["*", "!Dockerfile.caddy", "!Caddyfile.uat"])
+        self.assertEqual(rules, ["*", "!Dockerfile.caddy", "!Caddyfile.uat", "!Caddyfile.r740-edge"])
         dockerfile = (context / "Dockerfile.caddy").read_text(encoding="utf-8")
-        self.assertEqual(dockerfile.splitlines(), ["FROM caddy:2-alpine", "COPY Caddyfile.uat /etc/caddy/Caddyfile"])
+        self.assertEqual(dockerfile.splitlines(), ["FROM caddy:2-alpine", "ARG CADDYFILE=Caddyfile.uat",
+                                                 "COPY ${CADDYFILE} /etc/caddy/Caddyfile"])
 
     def assert_accepted(self, models):
         result = validate(models)
@@ -281,6 +282,16 @@ class R740ComposeGuardTests(unittest.TestCase):
         services["caddy"]["environment"] = {key: target[key] for key in ("APP_DOMAIN", "HTTP_PORT", "HTTPS_PORT")}
         services["caddy"]["ports"] = [{"published": target[key], "target": int(target[key])}
                                           for key in ("HTTP_PORT", "HTTPS_PORT")]
+        models["resolved"]["networks"] = {"default": {"name": f"saleapp-{environment}_default"}}
+        for name, service in services.items():
+            service["networks"] = {"default": None}
+            if name in ("backend", "frontend"):
+                service["networks"]["default"] = {"aliases": [f"worldfert-saleapp-{environment}-{name}"]}
+        if environment == "prod":
+            services["caddy"]["build"] = {"args": {"CADDYFILE": "Caddyfile.r740-edge"}}
+            services["caddy"]["networks"]["uat_ingress"] = None
+            services["caddy"]["environment"].update({key: target[key] for key in ("PUBLIC_PROD_DOMAIN", "PUBLIC_UAT_DOMAIN")})
+            models["resolved"]["networks"]["uat_ingress"] = {"external": True, "name": "saleapp-uat_default"}
         return models, target_path
 
     def validate(self, models, target_path):
@@ -304,6 +315,61 @@ class R740ComposeGuardTests(unittest.TestCase):
         self.assertEqual(app["ONPREM_DB_USER"], "wf_r740_uat_app_v2")
         self.assertEqual(migration["ONPREM_MIGRATOR_USER"], "wf_r740_uat_migrator_v2")
         self.assertNotIn("dbwins_worldfert9-uat", target_path.read_text(encoding="utf-8"))
+
+    def test_cross_stack_network_is_rejected_for_app_and_migrator(self):
+        for environment in ("uat", "prod"):
+            for service in ("backend", "frontend", "migrate"):
+                with self.subTest(environment=environment, service=service):
+                    models, target_path = self.fixture(environment)
+                    models["resolved"]["services"][service]["networks"]["uat_ingress"] = None
+                    self.assertNotEqual(self.validate(models, target_path).returncode, 0)
+
+    def test_edge_rejects_ambiguous_aliases_wrong_image_or_foreign_network(self):
+        for defect in ("alias", "image", "network", "domain", "host-network"):
+            with self.subTest(defect=defect):
+                models, target_path = self.fixture("prod")
+                cfg = models["resolved"]
+                if defect == "alias":
+                    cfg["services"]["backend"]["networks"]["default"]["aliases"] = ["backend"]
+                elif defect == "image":
+                    cfg["services"]["caddy"]["build"]["args"]["CADDYFILE"] = "Caddyfile.uat"
+                elif defect == "network":
+                    cfg["networks"]["uat_ingress"]["name"] = "unrelated_default"
+                elif defect == "domain":
+                    cfg["services"]["caddy"]["environment"]["PUBLIC_UAT_DOMAIN"] = "unexpected.example.com"
+                else:
+                    cfg["services"]["caddy"]["network_mode"] = "host"
+                self.assertNotEqual(self.validate(models, target_path).returncode, 0)
+
+    def test_actual_r740_compose_models_with_public_edge(self):
+        docker = shutil.which("docker")
+        if not docker:
+            self.skipTest("Docker Compose CLI unavailable")
+        with tempfile.TemporaryDirectory() as tmp:
+            migrator = Path(tmp) / ".env.migrator.local"
+            app_env = Path(tmp) / ".env"
+            for environment in ("uat", "prod"):
+                _, target_path = self.fixture(environment)
+                target = dict(line.split("=", 1) for line in target_path.read_text(encoding="utf-8").splitlines()
+                              if line and not line.startswith("#"))
+                migrator.write_text("ONPREM_MIGRATOR_USER=" + target["SALEAPP_MIGRATOR_LOGIN"] +
+                                    "\nONPREM_MIGRATOR_PASSWORD='dummy&separate$literal#value=1'\n", encoding="utf-8")
+                app_env.write_text("ONPREM_DB_PASSWORD='dummy&app$literal#value=2'\nJWT_SECRET=dummy-test-jwt\n", encoding="utf-8")
+                env = dict(os.environ, **target, SALEAPP_MIGRATOR_ENV_FILE=str(migrator))
+                args = [docker, "compose", "--project-directory", str(ROOT), "-p", "saleapp-" + environment,
+                        "-f", str(ROOT / "docker-compose.yml")]
+                if environment == "prod":
+                    args += ["-f", str(ROOT / "docs/deploy/r740/compose.edge-prod.yml")]
+                args += ["--env-file", str(app_env), "--profile", "migrate", "config", "--format", "json"]
+                rendered = {}
+                for key, suffix in (("resolved", []), ("env_sources", ["--no-env-resolution"])):
+                    result = subprocess.run(args + suffix, env=env, capture_output=True, text=True, timeout=20)
+                    self.assertEqual(result.returncode, 0, "real Compose render failed")
+                    rendered[key] = json.loads(result.stdout)
+                result = subprocess.run([sys.executable, str(ROOT / "docs/deploy/r740/validate-compose.py"),
+                                         str(target_path), migrator.as_posix()], input=json.dumps(rendered),
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_secret_env_cannot_override_any_native_writer(self):
         for environment in ("uat", "prod"):

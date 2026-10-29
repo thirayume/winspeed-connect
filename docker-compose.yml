@@ -1,5 +1,5 @@
-# UAT-only clone stack for a Linux container host. For production use the reviewed
-# On-Premise release topology and its separate approval gates.
+# Isolated Linux app stack. R740 Production uses its reviewed target, backup/apply
+# gates and compose.edge-prod.yml; the default ingress remains local UAT only.
 # SALEAPP_STACK names the images so stacks on one host (R740 uat/prod, each its own
 # Compose project) never share an image; it defaults to the local UAT2 names.
 services:
@@ -9,6 +9,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    networks:
+      default:
+        aliases: ["worldfert-saleapp-${SALEAPP_STACK:-uat}-backend"]
     expose:
       - "3000"
     environment:
@@ -91,6 +94,9 @@ services:
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
     restart: unless-stopped
+    networks:
+      default:
+        aliases: ["worldfert-saleapp-${SALEAPP_STACK:-uat}-frontend"]
     depends_on:
       backend:
         condition: service_healthy
