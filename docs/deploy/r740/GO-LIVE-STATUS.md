@@ -95,8 +95,12 @@ all earlier checks, the audit now asserts that each 116 carries that employee in
 `wf.NativeDocumentApproval` row (requester, approver, real actors, self-approval); both
 chains passed. Both 107 previews worked on the restored clone, confirming the metadata
 reader repair in a real run. All five accounts were disabled afterwards and returned login
-401/403. No backup was taken first because the clone is replaced every night; the
-WinSpeed screen read-back of the new 116s is pending an operator login in the R740 session.
+401/403. No backup was taken first because the clone is replaced every night. **WinSpeed
+read-back (31 October 00:23, session verified on `dbwins_worldfert9_uat`, view only):** both
+new 116s open in "ตัดตั๋วปุ๋ย (WF)" with the recorder showing the type-G employee's code and
+name and the approver field blank, plus the expected slip, receiver, vehicle, coupon, 104,
+product, warehouse and quantity; the native display gap is closed. No WinSpeed audit row was
+written during the read-back.
 The 116 numbers still come from the stale `redemption` counter (an old month range), while
 real slips since mid-October use the scale's `MoveBill`; aligning app 116 numbers with the
 transport slip is an open design item before live use.
@@ -186,7 +190,7 @@ private brief dated 30 October):
 - **SSRS:** the R740 report server has no reports or data sources and no runs in 30 days,
   so there is nothing yet to accept with real users; the report list must come first.
 
-Outstanding: native WinSpeed read-back of the 116 writer from migration 160 (next Full Loop); the accounting team's accepted
+Outstanding: the accounting team's accepted
 AR report and non-duplication reconciliation (owner deferred), GL posting trial,
 confirmation of print forms, scale tolerance/exception rules, and the SSRS report list.
 The private illustrated stakeholder brief lists these questions with WinSpeed menu
