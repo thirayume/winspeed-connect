@@ -63,11 +63,19 @@ and leaves immutable migration bytes, native writer bodies and Production denial
 Live SQL rollback tests verified 26 nonempty metadata rows through the app identity,
 unchanged other WF modules/permissions, idempotency, drift rejection and complete rollback.
 The correction was then applied to UAT and both existing test chains resumed successfully.
-The nightly principal setup contains the same repair. The next scheduled execution of
-this new repair has not yet been observed; do not force a restore merely to test it.
-UAT was redeployed at `e9326e3` on 30 October 05:23 (receipt
-`20261030-052345-uat-apply-e9326e3.txt`, 157/0/0, health 200), so the UAT checkout that the
-21:00 refresh reads now carries the repaired principal script.
+The nightly principal setup contains the same repair. UAT was redeployed at `e9326e3` on
+30 October 05:23 (receipt `20261030-052345-uat-apply-e9326e3.txt`, 157/0/0, health 200), so
+the 21:00 refresh read the repaired principal script. **Observed on 30 October:** restore
+21:00:30 from that evening's Production backup, principals re-mapped (both UAT identities OK,
+both Production identities still denied), unattended deploy of `1e59a3d` with 157/0/0 and
+health 200, and the Invoice metadata reader rebound to the UAT migrator automatically; called
+as the UAT app identity it returned the expected 26 non-empty rows.
+
+UAT was then deployed at `5f2116a` on 30 October 23:45 (receipt
+`20261030-234503-uat-apply-5f2116a.txt`): 157 unchanged, migration 160 applied, health 200.
+The UAT clone now has 158 migrations, the new 116 writer and the approver list (62 of 62
+enabled). Production does not have 160 yet; until it does, each nightly refresh re-applies
+160 to UAT from a fresh copy.
 
 ## Restricted Full Loop evidence
 
