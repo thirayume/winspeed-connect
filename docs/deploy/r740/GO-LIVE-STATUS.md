@@ -203,14 +203,22 @@ private brief dated 30 October):
   ordered tonnage. `WGDTReport` stopped in September and is not evidence. The app's
   reconciliation already matches on `MoveBill`; acceptance tolerance and exception approver
   remain to be confirmed.
-- **GL:** WinSpeed posts each native 107 as one two-line sales-journal voucher with the
-  invoice's number, date and amount; auto-post on save is off. Recommendation: the app keeps
-  creating 107 unposted and accounting uses WinSpeed's own Post GL step, tried first on UAT.
+- **GL:** WinSpeed posts every native coupon finance document (202) and every native 107,
+  each as one two-line voucher with the document's number, date and amount: 202 moves the
+  amount from the pending-delivery receivable to the customer receivable, and 107 moves it
+  from pending-delivery to credit sales. Auto-post on save is off for 107. The app's 202
+  and 107 are still unposted. Recommendation: the app keeps creating both unposted and
+  accounting uses WinSpeed's own Post GL step, tried first on UAT with the latest test chain
+  before that evening's restore; a read-only check of the resulting vouchers is prepared.
 - **Print forms:** WinSpeed's form registry names a default form per document type (103,
   104, 107, receipts, credit notes); 116 has none. The company forms live on a file share
   that the R740 session cannot read, which explains the empty UAT preview.
-- **AR report:** still deferred; the registry shows two company AR reports to confirm with
-  accounting.
+- **AR report:** still deferred. The ledger shows the customer receivable is raised once,
+  by the 202; the 107 only clears pending-delivery into sales. In the AR sub-ledger,
+  however, every native 107 keeps its full amount outstanding and receipts settle only the
+  202, so a report that adds both would double the balance; the correct report follows the
+  202 (or excludes coupon 107s). App-created documents match the native fields. The form
+  registry shows two company AR reports to confirm with accounting.
 - **SSRS:** the R740 report server has no reports or data sources and no runs in 30 days,
   so there is nothing yet to accept with real users; the report list must come first.
 
