@@ -86,6 +86,24 @@ Production.
 
 ## Restricted Full Loop evidence
 
+**116 number = transport slip (owner decision 31 October; migrations 161 and 162).** With
+the booking's completed scale record the 116 takes its MoveBill and vehicle; net weight
+within 2% of the coupon is normal, outside 2% is an exception. Without a scale record the
+requester types the 7-digit slip number, always an exception. Exceptions need a MANAGER,
+C_LEVEL or ADMIN approver other than the requester. The writer no longer advances the stale
+`redemption` counter. Migration 162 lets the ACCOUNTING-only 107 accept exactly the scale
+record a 116 was numbered from. UAT deployed `fdb9f76` (161) at 00:45 and `06af2ea` (162)
+at 00:55 on 31 October; both plans applied one migration with health 200.
+
+Run `R740UAT-20261031-02` found the 107 gap (the I chain stopped at 107 preview). Run
+`R740UAT-20261031-03` then passed every phase for both chains. Line I ran on one labelled
+simulated scale record inserted on UAT only (test vehicle, test slip range, 1 004 kg for a
+1-ton coupon); its 116 took the MoveBill with ACCOUNTING self-approval. Line K had no scale
+record; the typed slip became an exception, the requester's self-approval was refused, and
+a MANAGER approved. Both 107s posted. The audit additionally asserts that each 116 number
+equals the slip, with the expected slip source and exception flag. The redemption counter
+was unchanged. The test accounts were disabled. Production still needs 161 and 162.
+
 **Run of 31 October 00:14–00:25 (after migration 160 on UAT and Production).** A separate
 dated copy of the private harness (new run label, user namespace and state folder) passed
 every phase for both chains: prepare, booking/AI, 104, 116, 107, audit and close. The five
