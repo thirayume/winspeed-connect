@@ -1,6 +1,6 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **31 October 2026 00:10 (ICT)**. This page records observed results;
+Operational snapshot: **31 October 2026 01:10 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
@@ -102,7 +102,13 @@ simulated scale record inserted on UAT only (test vehicle, test slip range, 1 00
 record; the typed slip became an exception, the requester's self-approval was refused, and
 a MANAGER approved. Both 107s posted. The audit additionally asserts that each 116 number
 equals the slip, with the expected slip source and exception flag. The redemption counter
-was unchanged. The test accounts were disabled. Production still needs 161 and 162.
+was unchanged. The test accounts were disabled.
+
+The owner promoted `06af2ea` to `main` and deployed Production on 31 October 01:05 behind a
+fresh verified copy-only backup (2 minutes old at apply; receipt
+`20261031-010457-prod-apply-06af2ea.txt`): 158 unchanged, 161 and 162 applied, health 200.
+Production carries the slip writer and the scale-slip 107 writer; the native target guard
+returns 0 there and all five native writer flags remain false.
 
 **Run of 31 October 00:14–00:25 (after migration 160 on UAT and Production).** A separate
 dated copy of the private harness (new run label, user namespace and state folder) passed
