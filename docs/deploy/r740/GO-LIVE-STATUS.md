@@ -1,6 +1,6 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **30 October 2026 (ICT)**. This page records observed results;
+Operational snapshot: **30 October 2026 (ICT), updated 09:30**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
@@ -105,9 +105,27 @@ shows a raw numeric ID. Read-only profiling of the restored clone explains both:
   form's approver list most likely excludes type S, so it shows the raw ID. To be confirmed
   with the WinSpeed administrator.
 
-App audit and `SMAudit` keep the actual actors. Decision needed before changing the
-UAT-only writer body: write `SaveEmpID` from the requester's verified employee (matches
-native practice); keep or drop `AppvEmpID`; and map future test accounts to a type-G employee.
+App audit and `SMAudit` keep the actual actors.
+
+**Owner decision, 30 October:** write `SaveEmpID` from the requester's own employee; stop
+writing `AppvEmpID`; keep the approver in the app; map future test accounts to a type-G
+employee. Migration 160 (`160_native_116_recorder_approver.sql`) implements it:
+
+- the 116 writer body is migration 158's plus six exact edits (pinned by a test): it
+  records `SaveEmpID`, never writes `AppvEmpID`, and refuses a requester without an
+  employee (`MR_RECORDER_MAPPING_REQUIRED`) or an approver not enabled in the list
+  (`MR_APPROVER_NOT_LISTED`);
+- `wf.NativeDocumentApproval` keeps one row per native document: requester and approver
+  users, both real actors (Access As), both employees, self-approval and time;
+- `wf.NativeApproverEmployee` is seeded with every WinSpeed employee; ADMIN/C_LEVEL disable
+  entries in Master Data > "ผู้อนุมัติ WinSpeed", with history in
+  `wf.NativeApproverEmployeeHistory`.
+
+It is portable to Production, where the writer stays held by the target guard and flags.
+Verified on local SQL Server 2008 R2 in a rolled-back transaction. Until Production carries
+160, each nightly refresh re-applies it to UAT and re-seeds the list, so the owner's
+filtering only persists once Production has it. The next Full Loop must map its test
+accounts to a type-G employee (the private harness still uses the earlier mapping).
 
 ## Business go-live limits
 
@@ -117,11 +135,32 @@ The current downstream contracts are restricted single-line, whole-coupon, zero-
 UAT simulations. They do not certify physical dispatch, general partial/multi-line or
 other-tax cases, or live accounting business writers.
 
-Outstanding: native 116 recorder/approver master mapping and display; the accounting
-team's accepted AR report and non-duplication reconciliation
-(owner deferred), GL mapping/posting, approved print forms, real scale/transport evidence,
-and authenticated SSRS report acceptance. The private illustrated stakeholder brief lists
-these questions with WinSpeed menu references and clearly labelled original video images.
+Read-only findings on the restored clone, 30 October (details and recommendations in the
+private brief dated 30 October):
+
+- **Scale/transport:** the TruckScale tables carry live weighings since mid-September.
+  For sales trucks since 15 October, the scale header points at the booking (103), its
+  `MoveBill` is the transport-slip number that WinSpeed uses as the 116 number, nearly every
+  native 116 has a matching completed weighing, and every net weight is within 2% of the
+  ordered tonnage. `WGDTReport` stopped in September and is not evidence. The app's
+  reconciliation already matches on `MoveBill`; acceptance tolerance and exception approver
+  remain to be confirmed.
+- **GL:** WinSpeed posts each native 107 as one two-line sales-journal voucher with the
+  invoice's number, date and amount; auto-post on save is off. Recommendation: the app keeps
+  creating 107 unposted and accounting uses WinSpeed's own Post GL step, tried first on UAT.
+- **Print forms:** WinSpeed's form registry names a default form per document type (103,
+  104, 107, receipts, credit notes); 116 has none. The company forms live on a file share
+  that the R740 session cannot read, which explains the empty UAT preview.
+- **AR report:** still deferred; the registry shows two company AR reports to confirm with
+  accounting.
+- **SSRS:** the R740 report server has no reports or data sources and no runs in 30 days,
+  so there is nothing yet to accept with real users; the report list must come first.
+
+Outstanding: deploy and native read-back of migration 160; the accounting team's accepted
+AR report and non-duplication reconciliation (owner deferred), GL posting trial,
+confirmation of print forms, scale tolerance/exception rules, and the SSRS report list.
+The private illustrated stakeholder brief lists these questions with WinSpeed menu
+references and clearly labelled original video images.
 No version 1.0.0 or unrestricted business go-live acceptance is asserted.
 
 Never commit secret files, password hashes, private keys, customer records or operational
