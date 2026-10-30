@@ -1914,6 +1914,28 @@ export const updateEditReason = (code: string, body: Omit<EditReasonInput, 'reas
   req<{ reasonCode: string; message: string }>(
     `/edit-requests/admin/reasons/${encodeURIComponent(code)}`, { method: 'PUT', body: JSON.stringify(body) });
 
+// Master Data — รายชื่อผู้อนุมัติเอกสาร WinSpeed (wf.NativeApproverEmployee, migration 160)
+export type NativeApprover = {
+  empId: number;
+  empCode: string;
+  empName: string;
+  empType: string;
+  empStatus: string;
+  listed: boolean;
+  enabled: boolean;
+  note: string | null;
+  updatedAt: string | null;
+  approvalCount: number;
+  appUserCount: number;
+};
+
+export const fetchNativeApprovers = () =>
+  req<{ data: NativeApprover[] }>('/master/native-approvers');
+
+export const updateNativeApprover = (empId: number, body: { enabled: boolean; note?: string }) =>
+  req<{ empId: number; enabled: boolean; message: string }>(
+    `/master/native-approvers/${empId}`, { method: 'PUT', body: JSON.stringify(body) });
+
 export const deleteEditReason = (code: string) =>
   req<{ reasonCode: string; message: string }>(
     `/edit-requests/admin/reasons/${encodeURIComponent(code)}`, { method: 'DELETE' });

@@ -28,6 +28,14 @@ async function identity(q,user){
  if(![...CREATORS,...REVIEWERS].includes(me.Role))fail('MR_ROLE_FORBIDDEN',403);
  return {effective,actor,role:me.Role,empId:me.EmpId};
 }
+// The requester's employee becomes WinSpeed's recorder (SaveEmpID); the approver's
+// employee must be enabled in wf.NativeApproverEmployee and is kept in wf only.
+async function employee(q,empId,code){
+ if(!/^\d+$/.test(String(empId||'')))fail(code,403);
+ const rows=(await q('SELECT e.EmpID,a.IsEnabled AS ApproverEnabled FROM dbo.EMEmp e LEFT JOIN wf.NativeApproverEmployee a ON a.EmpID=e.EmpID WHERE CONVERT(varchar(30),e.EmpID)=@emp',{emp:input(sql.VarChar(30),String(empId))})).recordset||[];
+ if(rows.length!==1)fail(code,403);
+ return rows[0];
+}
 const sourceInputs=source=>({source:input(sql.Int,source)});
 async function context(q,source,user){
  const r=(await q(`SELECT r.*,h.DocuNo AS SourceNo,h.EmpID,e.SalesUserId FROM wf.NativeDeliveryReceipt r WITH(UPDLOCK,HOLDLOCK)
@@ -110,6 +118,7 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
   let r=(await q('SELECT * FROM wf.NativeManualRedemptionRequest WITH(UPDLOCK,HOLDLOCK) WHERE RequestId=@request',requestInputs(requestId))).recordset?.[0];
   const owned=r&&Number(r.SourceSOID)===soid&&r.Fingerprint===fingerprint&&r.PolicyVersion===POLICY;
   if(operation==='request'){
+   await employee(q,who.empId,'MR_RECORDER_MAPPING_REQUIRED');
    if(r){if(!owned||Number(r.RequestedById)!==who.effective||Number(r.RequesterActorId)!==who.actor||r.Reason!==reason.trim()||r.IssueName!==receiver.trim()||r.CarLicense!==plate.trim())fail('MR_REQUEST_CONFLICT');return requestView(r,who);}
    const active=(await q("SELECT TOP 1 * FROM wf.NativeManualRedemptionRequest WITH(UPDLOCK,HOLDLOCK) WHERE SourceSOID=@source AND Status IN('PENDING','APPROVED') ORDER BY RequestedAt DESC",sourceInputs(soid))).recordset?.[0];
    if(active&&(Number(active.RequestedById)!==who.effective||Number(active.RequesterActorId)!==who.actor))fail('MR_REQUEST_OWNED_BY_ANOTHER');
@@ -129,9 +138,8 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
   if(operation==='approve'){
    const d=decision({role:who.role,actorId:who.actor,requesterActorId:Number(r.RequesterActorId)});
    if(!d.allowed)fail('MR_APPROVAL_FORBIDDEN',403);
-   if(!/^\d+$/.test(String(who.empId||'')))fail('MR_APPROVER_MAPPING_REQUIRED',403);
-   const emp=(await q('SELECT EmpID FROM dbo.EMEmp WHERE CONVERT(varchar(30),EmpID)=@emp',{emp:input(sql.VarChar(30),String(who.empId))})).recordset||[];
-   if(emp.length!==1)fail('MR_APPROVER_MAPPING_REQUIRED',403);
+   const approver=await employee(q,who.empId,'MR_APPROVER_MAPPING_REQUIRED');
+   if(!(approver.ApproverEnabled===true||approver.ApproverEnabled===1))fail('MR_APPROVER_NOT_LISTED',403);
    if(r.Status==='APPROVED'&&Number(r.ApprovedById)===who.effective&&Number(r.ApproverActorId)===who.actor)return requestView(r,who);
    if(r.Status!=='PENDING')fail('MR_REQUEST_CONFLICT');
    await q(`UPDATE wf.NativeManualRedemptionRequest SET Status='APPROVED',ApprovedById=@user,ApproverActorId=@actor,ApprovedAt=GETUTCDATE(),ExpiresAt=DATEADD(minute,30,GETUTCDATE()),SelfApproval=@self,ApprovedDataHash=@datahash WHERE RequestId=@request AND Status='PENDING';
@@ -141,6 +149,7 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
    if(!r||r.Status!=='APPROVED')fail('MR_REQUEST_UNAVAILABLE',503);return requestView(r,who);
   }
   if(r.Status!=='APPROVED'||Number(r.RequestedById)!==who.effective||Number(r.RequesterActorId)!==who.actor)fail('MR_APPROVAL_REQUIRED');
+  await employee(q,who.empId,'MR_RECORDER_MAPPING_REQUIRED');
   const beforeParts=await deliverySnapshot(q,parent.DeliverySOID);
   const result=(await q('EXEC wf.usp_CreateInitialManualRedemption @SOID=@source,@RequestId=@request,@Fingerprint=@fingerprint,@UserId=@user,@ActorId=@actor',{
    ...sourceInputs(soid),...requestInputs(requestId),fingerprint:input(sql.VarChar(64),fingerprint),user:input(sql.Int,who.effective),actor:input(sql.Int,who.actor)})).recordset?.[0];
@@ -148,12 +157,17 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
   const proof=(await q(`SELECT d.RedemtionID FROM dbo.WFRedemtionDT d JOIN dbo.WFRedemtionHD h ON h.RedemtionID=d.RedemtionID AND h.DocuType=116
    JOIN dbo.WFCoupon c ON c.CouponID=d.CouponID
    JOIN wf.NativeManualRedemptionRequest rr ON rr.RequestId=@request
-   JOIN wf.AppUser u ON u.Id=rr.ApprovedById JOIN dbo.EMEmp emp ON CONVERT(varchar(30),emp.EmpID)=u.EmpId
+   JOIN wf.AppUser ru ON ru.Id=rr.RequestedById JOIN dbo.EMEmp rec ON CONVERT(varchar(30),rec.EmpID)=ru.EmpId
+   JOIN wf.AppUser au ON au.Id=rr.ApprovedById JOIN dbo.EMEmp apv ON CONVERT(varchar(30),apv.EmpID)=au.EmpId
+   JOIN wf.NativeDocumentApproval na ON na.DocuType=116 AND na.NativeDocID=h.RedemtionID AND na.NativeDocNo=h.DocuNo AND na.RequestId=rr.RequestId
+    AND na.RecorderUserId=rr.RequestedById AND na.RecorderActorId=rr.RequesterActorId AND na.RecorderEmpID=rec.EmpID
+    AND na.ApproverUserId=rr.ApprovedById AND na.ApproverActorId=rr.ApproverActorId AND na.ApproverEmpID=apv.EmpID
+    AND na.SelfApproval=rr.SelfApproval AND na.ApprovedAt=rr.ApprovedAt
    JOIN dbo.SMAudit a ON a.audit_id=@audit AND a.audit_system=3 AND a.audit_screen=2098003052 AND a.audit_columnid=h.RedemtionID AND a.audit_docuno=h.DocuNo AND a.brchid=1
    JOIN dbo.SMEvent e ON e.eventid=@event AND e.systemid=3 AND e.objectid=2098003052 AND e.docuid=h.RedemtionID AND e.docuno=h.DocuNo AND e.brchid=1
    WHERE d.RedemtionID=@id AND d.CouponID=@coupon AND d.Listno=1 AND d.GoodQty=c.GoodQty
     AND d.GoodID=c.GoodID AND d.GoodUnitID=c.GoodUnitID AND d.InveID=c.InveID AND d.LocaID=c.LocaID AND d.GoodPrice=c.GoodPrice AND d.CouponNo=c.CouponNo
-    AND h.DocuNo=@no AND h.AppvEmpID=emp.EmpID AND h.CarLicense=rr.CarLicense AND h.IssueName=rr.IssueName
+    AND h.DocuNo=@no AND h.SaveEmpID=rec.EmpID AND h.AppvEmpID IS NULL AND h.CarLicense=rr.CarLicense AND h.IssueName=rr.IssueName
     AND h.DocuDate=CONVERT(datetime,CONVERT(varchar(10),DATEADD(hour,7,GETUTCDATE()),120),120)
     AND d.RemaQty=d.GoodQty AND d.PostInv='N' AND d.SOInvID IS NULL AND d.SOListNo IS NULL AND d.IsCheck='Y'
     AND h.DocuStatus='N' AND h.IsCheckAll='Y' AND h.SumGoodQty=d.GoodQty AND c.RemaQty=0`,{
@@ -174,7 +188,7 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
 }
 function manualRedemptionHttpError(e){
  if(e.status&&/^MR_[A-Z_]+$/.test(e.code||''))return {status:e.status,code:e.code};
- const code=/\b(MR_(?:TARGET_NOT_SUPPORTED|SOURCE_UNAVAILABLE|ACTOR_UNAVAILABLE|APPROVAL_REQUIRED|REQUEST_CONFLICT|COUNTER_UNSUPPORTED|NUMBER_EXHAUSTED|ID_CONFLICT|ID_EXHAUSTED))\b/.exec(String(e.message||''))?.[1];
+ const code=/\b(MR_(?:TARGET_NOT_SUPPORTED|SOURCE_UNAVAILABLE|ACTOR_UNAVAILABLE|APPROVAL_REQUIRED|RECORDER_MAPPING_REQUIRED|APPROVER_NOT_LISTED|REQUEST_CONFLICT|COUNTER_UNSUPPORTED|NUMBER_EXHAUSTED|ID_CONFLICT|ID_EXHAUSTED))\b/.exec(String(e.message||''))?.[1];
  return {status:code?409:503,code:code||'MR_FAILED'};
 }
 module.exports={initialManualRedemption,manualRedemptionHttpError,redemptionHash,redemptionSnapshot,verifyCompleted,POLICY};

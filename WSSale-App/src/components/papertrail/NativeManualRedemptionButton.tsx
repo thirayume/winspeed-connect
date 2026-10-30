@@ -19,6 +19,8 @@ const errors:Record<string,string>={
  MR_REQUEST_CONFLICT:'คำขอเปลี่ยนหรือดำเนินการไปแล้ว กรุณาตรวจใหม่',
  MR_REQUEST_CHANGED:'เหตุผลหรือหลักฐานเปลี่ยนหลังอนุมัติ กรุณาตรวจสอบและขอใหม่',
  MR_APPROVER_MAPPING_REQUIRED:'ผู้อนุมัติยังไม่ผูกพนักงาน WinSpeed กรุณาให้ผู้ดูแลตรวจสอบ',
+ MR_APPROVER_NOT_LISTED:'พนักงานของผู้อนุมัติไม่อยู่ในรายชื่อผู้อนุมัติเอกสาร WinSpeed กรุณาให้ผู้ดูแลเพิ่มรายชื่อ',
+ MR_RECORDER_MAPPING_REQUIRED:'ผู้ทำรายการยังไม่ผูกพนักงาน WinSpeed (ใช้เป็นผู้บันทึกใบ 116) กรุณาให้ผู้ดูแลตรวจสอบ',
  MR_SIMULATION_DETAILS_REQUIRED:'กรอกเหตุผลอย่างน้อย 10 ตัวอักษร ผู้รับขึ้นต้น UAT2 และทะเบียนขึ้นต้น UAT2-',
  MR_COUNTER_UNSUPPORTED:'เลขรันใบขนยังไม่พร้อม กรุณาให้ผู้ดูแลตรวจสอบ',
 };
