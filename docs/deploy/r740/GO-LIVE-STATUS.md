@@ -86,7 +86,22 @@ Production.
 
 ## Restricted Full Loop evidence
 
-A new isolated UAT run after the restore completed both I -> I/C/J and K -> K/D/N:
+**Run of 31 October 00:14–00:25 (after migration 160 on UAT and Production).** A separate
+dated copy of the private harness (new run label, user namespace and state folder) passed
+every phase for both chains: prepare, booking/AI, 104, 116, 107, audit and close. The five
+test accounts mapped to a general-staff (type-G) employee, as the owner decided. Besides
+all earlier checks, the audit now asserts that each 116 carries that employee in
+`SaveEmpID`, leaves `AppvEmpID` empty, and has exactly one matching
+`wf.NativeDocumentApproval` row (requester, approver, real actors, self-approval); both
+chains passed. Both 107 previews worked on the restored clone, confirming the metadata
+reader repair in a real run. All five accounts were disabled afterwards and returned login
+401/403. No backup was taken first because the clone is replaced every night; the
+WinSpeed screen read-back of the new 116s is pending an operator login in the R740 session.
+The 116 numbers still come from the stale `redemption` counter (an old month range), while
+real slips since mid-October use the scale's `MoveBill`; aligning app 116 numbers with the
+transport slip is an open design item before live use.
+
+The run of 30 October after the restore completed both I -> I/C/J and K -> K/D/N:
 quotation, booking 103, AI, complete 104/coupon, manual simulation 116 and ACCOUNTING-only
 107. It used a fresh COPY_ONLY/CHECKSUM/VERIFYONLY UAT backup, five separately generated
 role-specific test accounts and existing master data. No Production business test document
