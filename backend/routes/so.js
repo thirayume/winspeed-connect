@@ -56,7 +56,7 @@ function manualRedemptionAction(operation){return async(req,res)=>{
  try{
   const result=await initialManualRedemption({operation,soid:req.params.id,user:req.user,
    requestId:req.params.requestId||req.body?.requestId,fingerprint:req.body?.fingerprint,
-   reason:req.body?.reason,receiver:req.body?.receiver,plate:req.body?.plate});
+   reason:req.body?.reason,receiver:req.body?.receiver,plate:req.body?.plate,slipNo:req.body?.slipNo});
   if(operation==='apply'&&!result.replayed)broadcast('so_updated',{id:req.params.id,action:'native_116_created'});
   res.json(result);
  }catch(e){const x=manualRedemptionHttpError(e);res.status(x.status).json({code:x.code,message:x.code});}

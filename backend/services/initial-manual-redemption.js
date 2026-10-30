@@ -59,7 +59,6 @@ async function eligible(q,r){
   JOIN dbo.SODT d WITH(UPDLOCK,HOLDLOCK) ON d.SOID=h.SOID AND d.ListNo=c.RefListno AND d.DocuType=104
   WHERE c.CouponID=@coupon AND c.GoodQty>0 AND c.RemaQty=c.GoodQty AND d.RemaQty=c.GoodQty
    AND NOT EXISTS(SELECT 1 FROM dbo.WFRedemtionDT WITH(UPDLOCK,HOLDLOCK) WHERE CouponID=c.CouponID)
-   AND NOT EXISTS(SELECT 1 FROM dbo.WGHD WITH(UPDLOCK,HOLDLOCK) WHERE WGType='SO' AND SPID IN(@source,h.SOID))
    AND NOT EXISTS(SELECT 1 FROM wf.CouponReservation WITH(UPDLOCK,HOLDLOCK) WHERE CouponId=c.CouponID)
    AND NOT EXISTS(SELECT 1 FROM wf.ControlTicketOverlay WITH(UPDLOCK,HOLDLOCK) WHERE DocuId=c.CouponID)`,{...sourceInputs(source),coupon:input(sql.Int,r.CouponID)})).recordset||[];
  if(rows.length!==1)fail('MR_SOURCE_UNAVAILABLE');
@@ -69,11 +68,38 @@ async function eligible(q,r){
 }
 const requestInputs=id=>({request:input(sql.VarChar(36),id)});
 const dataHash=r=>hash([r.Reason,r.IssueName,r.CarLicense,r.EvidenceMode,r.Evidence]);
-function evidenceFor(parent,current){return JSON.stringify({mode:'UAT_SIMULATION',version:1,source103:parent.SourceSOID,delivery104:parent.DeliverySOID,couponId:parent.CouponID,couponNo:parent.CouponNo,quantityTon:current.qty,basis:'owned native coupon, no scale measurement',physicalShipmentVerified:false});}
-function requestView(r,who){return r?{requestId:r.RequestId,status:r.Status,reason:r.Reason,receiver:r.IssueName,plate:r.CarLicense,
+// Owner31Oct2026: the 116 number is the transport slip. With the booking's completed scale
+// record it is the MoveBill and the vehicle is the scale's; net weight within 2% of the coupon
+// is normal. Without one the requester types the 7-digit slip number. Outside 2%, or without a
+// scale record, the request is an exception that a manager other than the requester approves.
+async function slipFor(q,parent,qty){
+ const rows=(await q(`SELECT Id,SPID,RTRIM(MoveBill) AS MoveBill,RTRIM(CarNo) AS CarNo,WeightNet,RTRIM(Status) AS Status
+  FROM dbo.WGHD WITH(UPDLOCK,HOLDLOCK) WHERE WGType='SO' AND SPID IN(@source,@delivery)`,{...sourceInputs(parent.SourceSOID),delivery:input(sql.Int,parent.DeliverySOID)})).recordset||[];
+ if(!rows.length)return {source:'MANUAL',exception:true};
+ const w=rows[0];
+ if(rows.length!==1||Number(w.SPID)!==Number(parent.SourceSOID))fail('MR_SCALE_AMBIGUOUS');
+ if(w.Status!=='3'||!/^\d{7}$/.test(w.MoveBill||'')||!(Number(w.WeightNet)>0)||!w.CarNo||w.CarNo.length>25)fail('MR_SCALE_INCOMPLETE');
+ const kg=Number(qty)*1000,net=Number(w.WeightNet);
+ return {source:'SCALE',slipNo:w.MoveBill,plate:w.CarNo,scaleEventId:Number(w.Id),netKg:net,
+  diffPct:Math.round((net-kg)/kg*10000)/100,exception:Math.abs(net-kg)>Number(qty)*20};
+}
+const effectiveSlip=(slip,r)=>slip.source==='MANUAL'?{...slip,slipNo:r.SlipNo,plate:r.CarLicense}:slip;
+const slipMatches=(r,s)=>r.SlipNo===s.slipNo&&r.SlipSource===s.source&&Boolean(r.ExceptionRequired)===s.exception&&r.CarLicense===s.plate
+ &&(s.source==='MANUAL'||(Number(r.ScaleEventId)===s.scaleEventId&&Number(r.ScaleNetKg)===s.netKg));
+function slipView(s,current){return {source:s.source,slipNo:s.slipNo??null,plate:s.plate??null,netKg:s.netKg??null,diffPct:s.diffPct??null,
+ couponTon:current.qty,tolerancePct:2,exception:s.exception};}
+function evidenceFor(parent,current,slip){return JSON.stringify({mode:'UAT_SIMULATION',version:2,source103:parent.SourceSOID,delivery104:parent.DeliverySOID,couponId:parent.CouponID,couponNo:parent.CouponNo,quantityTon:current.qty,
+ slip:{source:slip.source,no:slip.slipNo,vehicle:slip.plate,scaleEventId:slip.scaleEventId??null,netKg:slip.netKg??null,exception:slip.exception},
+ basis:slip.source==='SCALE'?'scale record of the booking':'typed transport slip, no scale record',physicalShipmentVerified:false});}
+function mayApprove(r,who){
+ const d=decision({role:who.role,actorId:who.actor,requesterActorId:Number(r.RequesterActorId)});
+ return {...d,exceptionBlocked:Boolean(r.ExceptionRequired)&&(!REVIEWERS.includes(who.role)||d.selfApproval)};
+}
+function requestView(r,who){if(!r)return null;const d=mayApprove(r,who);return {requestId:r.RequestId,status:r.Status,reason:r.Reason,receiver:r.IssueName,plate:r.CarLicense,
+ slipNo:r.SlipNo,slipSource:r.SlipSource,exceptionRequired:Boolean(r.ExceptionRequired),scaleNetKg:r.ScaleNetKg??null,
  evidenceMode:r.EvidenceMode,evidence:JSON.parse(r.Evidence),expiresAt:r.ExpiresAt,selfApproval:r.SelfApproval==null?null:Boolean(r.SelfApproval),
  isRequester:Number(r.RequestedById)===who.effective&&Number(r.RequesterActorId)===who.actor,
- canApprove:r.Status==='PENDING'&&decision({role:who.role,actorId:who.actor,requesterActorId:Number(r.RequesterActorId)}).allowed}:null;}
+ canApprove:r.Status==='PENDING'&&d.allowed&&!d.exceptionBlocked};}
 function receiptView(r,replayed){return {soid:r.SourceSOID,redemptionId:r.RedemptionID,redemptionNo:r.RedemptionNo,
  couponId:r.CouponID,policyVersion:r.PolicyVersion,replayed,completed:true,evidenceMode:'UAT_SIMULATION',physicalShipmentVerified:false};}
 async function verifyCompleted(q,parent,r){
@@ -86,14 +112,14 @@ async function verifyCompleted(q,parent,r){
  const request=(await q('SELECT * FROM wf.NativeManualRedemptionRequest WHERE RequestId=@request',requestInputs(r.RequestId))).recordset?.[0];
  if(!request||request.Status!=='CONSUMED'||dataHash(request)!==r.ApprovedDataHash||request.ApprovedDataHash!==r.ApprovedDataHash)fail('MR_RECEIPT_DIVERGED');
 }
-async function initialManualRedemption({operation='preview',soid,user,requestId,fingerprint,reason,receiver,plate},options={}){
+async function initialManualRedemption({operation='preview',soid,user,requestId,fingerprint,reason,receiver,plate,slipNo},options={}){
  if(!(options.enabled??(process.env.NATIVE_MANUAL_116_ENABLED==='true')))fail('MR_NOT_ENABLED',503);
  if(!['preview','request','approve','apply'].includes(operation))fail('MR_OPERATION_INVALID',400);
  if(!/^\d+$/.test(String(soid))||!Number.isSafeInteger(Number(soid))||Number(soid)<=0||Number(soid)>2147483647)fail('MR_SOURCE_INVALID',400);
  if(operation!=='preview'&&(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(String(requestId||''))||!/^[a-f0-9]{64}$/.test(String(fingerprint||''))))fail('MR_REQUEST_INVALID',400);
- if(operation==='request'&&(![reason,receiver,plate].every(v=>typeof v==='string')||reason.trim().length<10||reason.trim().length>500
-  ||receiver.trim().length<1||receiver.length>100||plate.trim().length<1||plate.length>25
-  ||!receiver.startsWith('UAT2 ')||!plate.startsWith('UAT2-')))fail('MR_SIMULATION_DETAILS_REQUIRED',400);
+ if(operation==='request'&&(![reason,receiver].every(v=>typeof v==='string')||reason.trim().length<10||reason.trim().length>500
+  ||receiver.trim().length<1||receiver.length>100||!receiver.startsWith('UAT2 ')
+  ||(plate!=null&&(typeof plate!=='string'||plate.length>25))||(slipNo!=null&&typeof slipNo!=='string')))fail('MR_SIMULATION_DETAILS_REQUIRED',400);
  soid=Number(soid);
  return (options.transaction||wfTransaction)(async tx=>{
   const q=queryFor(tx);
@@ -113,31 +139,52 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
   if(operation!=='preview'&&fingerprint!==current.fingerprint)fail('MR_PREVIEW_STALE');
   if(operation==='preview'){
    const r=(await q("SELECT TOP 1 * FROM wf.NativeManualRedemptionRequest WITH(UPDLOCK,HOLDLOCK) WHERE SourceSOID=@source AND Status IN('PENDING','APPROVED') ORDER BY RequestedAt DESC",sourceInputs(soid))).recordset?.[0];
-   return {soid,...current,completed:false,evidenceMode:'UAT_SIMULATION',physicalShipmentVerified:false,canCreate:mayCreate(who.role),request:r&&r.Fingerprint===current.fingerprint?requestView(r,who):null};
+   const slip=await slipFor(q,parent,current.qty);
+   return {soid,...current,slip:slipView(slip,current),completed:false,evidenceMode:'UAT_SIMULATION',physicalShipmentVerified:false,canCreate:mayCreate(who.role),request:r&&r.Fingerprint===current.fingerprint?requestView(r,who):null};
   }
   let r=(await q('SELECT * FROM wf.NativeManualRedemptionRequest WITH(UPDLOCK,HOLDLOCK) WHERE RequestId=@request',requestInputs(requestId))).recordset?.[0];
   const owned=r&&Number(r.SourceSOID)===soid&&r.Fingerprint===fingerprint&&r.PolicyVersion===POLICY;
   if(operation==='request'){
    await employee(q,who.empId,'MR_RECORDER_MAPPING_REQUIRED');
-   if(r){if(!owned||Number(r.RequestedById)!==who.effective||Number(r.RequesterActorId)!==who.actor||r.Reason!==reason.trim()||r.IssueName!==receiver.trim()||r.CarLicense!==plate.trim())fail('MR_REQUEST_CONFLICT');return requestView(r,who);}
+   const scale=await slipFor(q,parent,current.qty);
+   let use=scale;
+   if(scale.source==='MANUAL'){
+    const typed=String(slipNo||'').trim(),vehicle=String(plate||'').trim();
+    if(!/^\d{7}$/.test(typed))fail('MR_SLIP_REQUIRED',400);
+    use={...scale,slipNo:typed,plate:vehicle};
+   }
+   // UAT simulation: test slips use the 99xxxxx range and test vehicles, never a real slip or truck.
+   if(!/^99\d{5}$/.test(use.slipNo)||!String(use.plate||'').startsWith('UAT2-'))fail('MR_SIMULATION_DETAILS_REQUIRED',400);
+   if(r){if(!owned||Number(r.RequestedById)!==who.effective||Number(r.RequesterActorId)!==who.actor||r.Reason!==reason.trim()||r.IssueName!==receiver.trim()||!slipMatches(r,use))fail('MR_REQUEST_CONFLICT');return requestView(r,who);}
    const active=(await q("SELECT TOP 1 * FROM wf.NativeManualRedemptionRequest WITH(UPDLOCK,HOLDLOCK) WHERE SourceSOID=@source AND Status IN('PENDING','APPROVED') ORDER BY RequestedAt DESC",sourceInputs(soid))).recordset?.[0];
    if(active&&(Number(active.RequestedById)!==who.effective||Number(active.RequesterActorId)!==who.actor))fail('MR_REQUEST_OWNED_BY_ANOTHER');
-   const evidence=evidenceFor(parent,current);
+   const used=(await q(`SELECT (SELECT COUNT(*) FROM dbo.WFRedemtionHD WITH(UPDLOCK,HOLDLOCK) WHERE DocuNo=@slip) AS Documents,
+    (SELECT COUNT(*) FROM dbo.WGHD WITH(UPDLOCK,HOLDLOCK) WHERE RTRIM(MoveBill)=@slip AND NOT(WGType='SO' AND SPID=@source)) AS OtherScale,
+    (SELECT COUNT(*) FROM wf.NativeManualRedemptionRequest WITH(UPDLOCK,HOLDLOCK) WHERE SlipNo=@slip AND Status IN('PENDING','APPROVED') AND SourceSOID<>@source) AS Requests`,
+    {...sourceInputs(soid),slip:input(sql.VarChar(25),use.slipNo)})).recordset?.[0]||{};
+   if(Number(used.Documents)||Number(used.OtherScale)||Number(used.Requests))fail('MR_SLIP_IN_USE');
+   const evidence=evidenceFor(parent,current,use);
    await q(`UPDATE wf.NativeManualRedemptionRequest SET Status='SUPERSEDED' WHERE SourceSOID=@source AND Status IN('PENDING','APPROVED');
-    INSERT INTO wf.NativeManualRedemptionRequest(RequestId,SourceSOID,Fingerprint,DeliveryBeforeHash,RequestedById,RequesterActorId,Status,Reason,Evidence,EvidenceMode,IssueName,CarLicense,PolicyVersion)
-    VALUES(@request,@source,@fingerprint,@before,@user,@actor,'PENDING',@reason,@evidence,'UAT_SIMULATION',@receiver,@plate,@policy);
+    INSERT INTO wf.NativeManualRedemptionRequest(RequestId,SourceSOID,Fingerprint,DeliveryBeforeHash,RequestedById,RequesterActorId,Status,Reason,Evidence,EvidenceMode,IssueName,CarLicense,PolicyVersion,
+     SlipNo,SlipSource,ScaleEventId,ScaleNetKg,CouponTon,ExceptionRequired)
+    VALUES(@request,@source,@fingerprint,@before,@user,@actor,'PENDING',@reason,@evidence,'UAT_SIMULATION',@receiver,@plate,@policy,
+     @slip,@slipsource,@scaleevent,@scalenet,@couponton,@exception);
     INSERT INTO wf.SalesOrderAudit(SoId,UserId,ActorUserId,Action,Note) VALUES(CONVERT(varchar(50),@source),@user,@actor,'MANUAL_116_REQUESTED',@request)`,{
     ...sourceInputs(soid),...requestInputs(requestId),fingerprint:input(sql.VarChar(64),fingerprint),before:input(sql.VarChar(64),parent.DeliveryAfterHash),
-    user:input(sql.Int,who.effective),actor:input(sql.Int,who.actor),reason:input(sql.NVarChar(500),reason.trim()),evidence:input(sql.NVarChar(sql.MAX),evidence),receiver:input(sql.NVarChar(100),receiver.trim()),plate:input(sql.NVarChar(25),plate.trim()),policy:input(sql.VarChar(40),POLICY)});
+    user:input(sql.Int,who.effective),actor:input(sql.Int,who.actor),reason:input(sql.NVarChar(500),reason.trim()),evidence:input(sql.NVarChar(sql.MAX),evidence),receiver:input(sql.NVarChar(100),receiver.trim()),plate:input(sql.NVarChar(25),use.plate),policy:input(sql.VarChar(40),POLICY),
+    slip:input(sql.VarChar(25),use.slipNo),slipsource:input(sql.VarChar(20),use.source),scaleevent:input(sql.Int,use.scaleEventId??null),scalenet:input(sql.Int,use.netKg??null),
+    couponton:input(sql.Decimal(18,4),current.qty),exception:input(sql.Bit,use.exception)});
    r=(await q('SELECT * FROM wf.NativeManualRedemptionRequest WHERE RequestId=@request',requestInputs(requestId))).recordset?.[0];
    if(!r)fail('MR_REQUEST_UNAVAILABLE',503);return requestView(r,who);
   }
   if(!owned)fail('MR_REQUEST_CONFLICT');
-  if(r.EvidenceMode!=='UAT_SIMULATION'||r.Evidence!==evidenceFor(parent,current))fail('MR_REQUEST_CHANGED');
+  const slip=effectiveSlip(await slipFor(q,parent,current.qty),r);
+  if(r.EvidenceMode!=='UAT_SIMULATION'||r.Evidence!==evidenceFor(parent,current,slip)||!slipMatches(r,slip))fail('MR_REQUEST_CHANGED');
   if(r.Status==='APPROVED'&&r.ApprovedDataHash!==dataHash(r))fail('MR_REQUEST_CHANGED');
   if(operation==='approve'){
-   const d=decision({role:who.role,actorId:who.actor,requesterActorId:Number(r.RequesterActorId)});
+   const d=mayApprove(r,who);
    if(!d.allowed)fail('MR_APPROVAL_FORBIDDEN',403);
+   if(d.exceptionBlocked)fail('MR_EXCEPTION_APPROVER_REQUIRED',403);
    const approver=await employee(q,who.empId,'MR_APPROVER_MAPPING_REQUIRED');
    if(!(approver.ApproverEnabled===true||approver.ApproverEnabled===1))fail('MR_APPROVER_NOT_LISTED',403);
    if(r.Status==='APPROVED'&&Number(r.ApprovedById)===who.effective&&Number(r.ApproverActorId)===who.actor)return requestView(r,who);
@@ -167,7 +214,7 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
    JOIN dbo.SMEvent e ON e.eventid=@event AND e.systemid=3 AND e.objectid=2098003052 AND e.docuid=h.RedemtionID AND e.docuno=h.DocuNo AND e.brchid=1
    WHERE d.RedemtionID=@id AND d.CouponID=@coupon AND d.Listno=1 AND d.GoodQty=c.GoodQty
     AND d.GoodID=c.GoodID AND d.GoodUnitID=c.GoodUnitID AND d.InveID=c.InveID AND d.LocaID=c.LocaID AND d.GoodPrice=c.GoodPrice AND d.CouponNo=c.CouponNo
-    AND h.DocuNo=@no AND h.SaveEmpID=rec.EmpID AND h.AppvEmpID IS NULL AND h.CarLicense=rr.CarLicense AND h.IssueName=rr.IssueName
+    AND h.DocuNo=@no AND h.DocuNo=rr.SlipNo AND h.SaveEmpID=rec.EmpID AND h.AppvEmpID IS NULL AND h.CarLicense=rr.CarLicense AND h.IssueName=rr.IssueName
     AND h.DocuDate=CONVERT(datetime,CONVERT(varchar(10),DATEADD(hour,7,GETUTCDATE()),120),120)
     AND d.RemaQty=d.GoodQty AND d.PostInv='N' AND d.SOInvID IS NULL AND d.SOListNo IS NULL AND d.IsCheck='Y'
     AND h.DocuStatus='N' AND h.IsCheckAll='Y' AND h.SumGoodQty=d.GoodQty AND c.RemaQty=0`,{
@@ -188,7 +235,7 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
 }
 function manualRedemptionHttpError(e){
  if(e.status&&/^MR_[A-Z_]+$/.test(e.code||''))return {status:e.status,code:e.code};
- const code=/\b(MR_(?:TARGET_NOT_SUPPORTED|SOURCE_UNAVAILABLE|ACTOR_UNAVAILABLE|APPROVAL_REQUIRED|RECORDER_MAPPING_REQUIRED|APPROVER_NOT_LISTED|REQUEST_CONFLICT|COUNTER_UNSUPPORTED|NUMBER_EXHAUSTED|ID_CONFLICT|ID_EXHAUSTED))\b/.exec(String(e.message||''))?.[1];
+ const code=/\b(MR_(?:TARGET_NOT_SUPPORTED|SOURCE_UNAVAILABLE|ACTOR_UNAVAILABLE|APPROVAL_REQUIRED|RECORDER_MAPPING_REQUIRED|APPROVER_NOT_LISTED|SLIP_INVALID|SLIP_IN_USE|SCALE_CHANGED|EXCEPTION_APPROVER_REQUIRED|REQUEST_CONFLICT|COUNTER_UNSUPPORTED|NUMBER_EXHAUSTED|ID_CONFLICT|ID_EXHAUSTED))\b/.exec(String(e.message||''))?.[1];
  return {status:code?409:503,code:code||'MR_FAILED'};
 }
 module.exports={initialManualRedemption,manualRedemptionHttpError,redemptionHash,redemptionSnapshot,verifyCompleted,POLICY};

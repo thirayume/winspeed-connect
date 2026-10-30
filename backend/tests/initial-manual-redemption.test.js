@@ -7,7 +7,7 @@ const key='11111111-2222-4333-8444-555555555555';
 const wh={sub:11,role:'WAREHOUSE'},acct={sub:22,role:'ACCOUNTING'},other={sub:33,role:'WAREHOUSE'},manager={sub:44,role:'MANAGER'};
 function fixture(overrides={}){
  const calls=[],events=[];
- const state={applied:false,request:null,receipt:null,parts:Array.from({length:10},(_,i)=>i===4?'<row><CouponID>701</CouponID><RemaQty>1.0000</RemaQty><GoodQty>1.0000</GoodQty></row>':'delivery:'+i),
+ const state={applied:false,request:null,receipt:null,scale:{Id:9001,SPID:501,MoveBill:'9900501',CarNo:'UAT2-SCALE',WeightNet:1004,Status:'3'},slipUsed:{},parts:Array.from({length:10},(_,i)=>i===4?'<row><CouponID>701</CouponID><RemaQty>1.0000</RemaQty><GoodQty>1.0000</GoodQty></row>':'delivery:'+i),
   accounts:[{Id:11,Role:'WAREHOUSE'},{Id:22,Role:'ACCOUNTING'},{Id:33,Role:'WAREHOUSE'},{Id:44,Role:'MANAGER'},{Id:99,Role:'ADMIN'}].map(r=>({...r,IsActive:1,MustChangePassword:0,EmpId:String(1000+r.Id)})),...overrides};
  state.parent={SourceSOID:501,DeliverySOID:601,DeliveryNo:'I69-00601',CouponID:701,CouponNo:'C6900701',ContainQty:50,SackQty:20,
   FinanceSOInvID:801,FinancePostID:901,FinanceVATID:1001,PolicyVersion:'O25-DO104-COMPLETE-UAT2-v2',
@@ -29,6 +29,8 @@ function fixture(overrides={}){
    else {const i=['SOHD','SODT','SOHDRemark','SODTRemark','WFCoupon','Define_104','SOInvHD','SOInvDT','VTVAT','SMSat'].indexOf(table);value=state.parts[i];}
    return rows([{Snapshot:value}]);
   }
+  if(/AS Documents/.test(text))return rows([{Documents:0,OtherScale:0,Requests:0,...(state.slipUsed[p.slip.value]||{})}]);
+  if(/FROM dbo\.WGHD WITH\(UPDLOCK,HOLDLOCK\) WHERE WGType='SO' AND SPID IN/.test(text))return rows(state.scale?[].concat(state.scale):[]);
   if(/SELECT c.GoodQty AS Qty/.test(text))return rows(state.applied?[]:[{Qty:1,CouponNo:'C6900701',DeliveryNo:'I69-00601'}]);
   if(/AS BusinessDate/.test(text))return rows([{BusinessDate:'2026-10-25'}]);
   if(/SELECT \* FROM wf.NativeManualRedemptionReceipt/.test(text))return rows(state.receipt?[state.receipt]:[]);
@@ -36,7 +38,8 @@ function fixture(overrides={}){
   if(/INSERT INTO wf.NativeManualRedemptionRequest/.test(text)){
    state.request={RequestId:p.request.value,SourceSOID:501,Fingerprint:p.fingerprint.value,DeliveryBeforeHash:p.before.value,
     RequestedById:p.user.value,RequesterActorId:p.actor.value,Reason:p.reason.value,IssueName:p.receiver.value,CarLicense:p.plate.value,
-    Evidence:p.evidence.value,EvidenceMode:'UAT_SIMULATION',PolicyVersion:POLICY,Status:'PENDING'};return rows([]);
+    Evidence:p.evidence.value,EvidenceMode:'UAT_SIMULATION',PolicyVersion:POLICY,Status:'PENDING',
+    SlipNo:p.slip.value,SlipSource:p.slipsource.value,ScaleEventId:p.scaleevent.value,ScaleNetKg:p.scalenet.value,CouponTon:p.couponton.value,ExceptionRequired:p.exception.value};return rows([]);
   }
   if(/AS ApproverEnabled FROM dbo.EMEmp/.test(text))return rows(p.emp.value===state.missingEmp?[]:[{EmpID:Number(p.emp.value),ApproverEnabled:p.emp.value===state.unlistedEmp?0:p.emp.value===state.unseededEmp?null:1}]);
   if(/SET Status='APPROVED'/.test(text)){
@@ -45,7 +48,7 @@ function fixture(overrides={}){
   if(/EXEC wf.usp_CreateInitialManualRedemption/.test(text)){
    state.applied=true;state.request.Status='CONSUMED';state.parts[4]=state.parts[4].replace('RemaQty>1.0000','RemaQty>0.0000');
    if(state.financeDrift)state.parts[6]+='tampered';
-   state.receipt={SourceSOID:501,RequestId:key,Fingerprint:p.fingerprint.value,DeliverySOID:601,CouponID:701,RedemptionID:801,RedemptionNo:'69081783',AppliedById:p.user.value,ApplierActorId:p.actor.value,DeliveryBeforeHash:state.parent.DeliveryAfterHash,ApprovedDataHash:state.request.ApprovedDataHash,PolicyVersion:POLICY};
+   state.receipt={SourceSOID:501,RequestId:key,Fingerprint:p.fingerprint.value,DeliverySOID:601,CouponID:701,RedemptionID:801,RedemptionNo:state.request.SlipNo,AppliedById:p.user.value,ApplierActorId:p.actor.value,DeliveryBeforeHash:state.parent.DeliveryAfterHash,ApprovedDataHash:state.request.ApprovedDataHash,PolicyVersion:POLICY};
    return rows([state.receipt]);
   }
   if(/SELECT d.RedemtionID/.test(text))return rows(state.badProof?[]:[{RedemtionID:801}]);
@@ -60,7 +63,7 @@ function fixture(overrides={}){
  const call=(operation,extra={})=>service({operation,soid:501,user:wh,...extra},{enabled:true,transaction});
  return {state,calls,events,call};
 }
-async function request(f,user=wh){const p=await f.call('preview',{user});const command={user,requestId:key,fingerprint:p.fingerprint,reason:'UAT simulation without a physical scale',receiver:'UAT2 TEST',plate:'UAT2-TEST'};await f.call('request',command);return command;}
+async function request(f,user=wh){const p=await f.call('preview',{user});const command={user,requestId:key,fingerprint:p.fingerprint,reason:'UAT simulation without a physical scale',receiver:'UAT2 TEST',plate:'UAT2-TEST',slipNo:'9900777'};await f.call('request',command);return command;}
 async function approved(f,user=wh,approver=wh){const c=await request(f,user);await f.call('approve',{...c,user:approver});return c;}
 test('manual116 is closed by default and refuses invalid IDs and simulation details',async()=>{
  await assert.rejects(service({soid:501},{enabled:false}),{code:'MR_NOT_ENABLED'});
@@ -127,9 +130,47 @@ test('native proof requires the recorder in SaveEmpID, no AppvEmpID and the wf a
  assert.match(proof,/na\.RecorderEmpID=rec\.EmpID[\s\S]*na\.ApproverEmpID=apv\.EmpID/);
  assert.doesNotMatch(proof,/h\.AppvEmpID=/);
 });
+test('with a completed scale record the 116 number is its MoveBill and the vehicle is the scale vehicle',async()=>{
+ const f=fixture();const p=await f.call('preview');
+ assert.deepEqual(p.slip,{source:'SCALE',slipNo:'9900501',plate:'UAT2-SCALE',netKg:1004,diffPct:0.4,couponTon:'1',tolerancePct:2,exception:false});
+ const c=await approved(f);assert.equal(f.state.request.SlipNo,'9900501');assert.equal(f.state.request.CarLicense,'UAT2-SCALE');
+ assert.equal(f.state.request.ExceptionRequired,false);assert.equal(f.state.request.SelfApproval,true);
+ assert.equal((await f.call('apply',c)).redemptionNo,'9900501');
+ assert.match(f.calls.find(x=>/SELECT d.RedemtionID/.test(x.text)).text,/h\.DocuNo=@no AND h\.DocuNo=rr\.SlipNo/);
+});
+test('outside 2% or without a scale record is an exception only a manager other than the requester approves',async()=>{
+ for(const scale of [{Id:9001,SPID:501,MoveBill:'9900501',CarNo:'UAT2-SCALE',WeightNet:1021,Status:'3'},null]){
+  const f=fixture({scale});const c=await request(f);assert.equal(f.state.request.ExceptionRequired,true);
+  assert.equal(f.state.request.SlipSource,scale?'SCALE':'MANUAL');assert.equal(f.state.request.SlipNo,scale?'9900501':'9900777');
+  await assert.rejects(f.call('approve',{...c,user:wh}),{code:'MR_EXCEPTION_APPROVER_REQUIRED'});
+  await assert.rejects(f.call('approve',{...c,user:{...manager,actorSub:11,actorRole:'WAREHOUSE'}}),{code:'MR_ACCESS_AS_FORBIDDEN'});
+  await f.call('approve',{...c,user:manager});assert.equal(f.state.request.Status,'APPROVED');assert.equal(f.state.request.SelfApproval,false);
+ }
+ const edge=fixture({scale:{Id:9001,SPID:501,MoveBill:'9900501',CarNo:'UAT2-SCALE',WeightNet:1020,Status:'3'}});await request(edge);assert.equal(edge.state.request.ExceptionRequired,false);
+});
+test('a typed slip must be 7 digits, in the UAT test range, unused, with a test vehicle',async()=>{
+ const base=async(over,code,state={})=>{const f=fixture({scale:null,...state});const p=await f.call('preview');
+  await assert.rejects(f.call('request',{requestId:key,fingerprint:p.fingerprint,reason:'UAT simulation without a physical scale',receiver:'UAT2 TEST',plate:'UAT2-TEST',slipNo:'9900777',...over}),{code});assert.equal(f.state.request,null);};
+ await base({slipNo:undefined},'MR_SLIP_REQUIRED');await base({slipNo:'990077'},'MR_SLIP_REQUIRED');
+ await base({slipNo:'6904999'},'MR_SIMULATION_DETAILS_REQUIRED');await base({plate:'REAL-1'},'MR_SIMULATION_DETAILS_REQUIRED');
+ for(const used of [{Documents:1},{OtherScale:1},{Requests:1}])await base({},'MR_SLIP_IN_USE',{slipUsed:{'9900777':used}});
+});
+test('a scale record that appears or changes after the request invalidates it',async()=>{
+ const f=fixture({scale:null});const c=await request(f);
+ f.state.scale={Id:9001,SPID:501,MoveBill:'9900501',CarNo:'UAT2-SCALE',WeightNet:1004,Status:'3'};
+ await assert.rejects(f.call('approve',{...c,user:manager}),{code:'MR_REQUEST_CHANGED'});
+ const g=fixture();const d=await approved(g);g.state.scale={...g.state.scale,WeightNet:1010};
+ await assert.rejects(g.call('apply',d),{code:'MR_REQUEST_CHANGED'});assert.equal(g.state.applied,false);
+});
+test('an incomplete or ambiguous scale record blocks the 116 until weighing finishes',async()=>{
+ await assert.rejects(fixture({scale:{Id:9001,SPID:501,MoveBill:'9900501',CarNo:'UAT2-SCALE',WeightNet:0,Status:'2'}}).call('preview'),{code:'MR_SCALE_INCOMPLETE'});
+ const s={Id:9001,SPID:501,MoveBill:'9900501',CarNo:'UAT2-SCALE',WeightNet:1004,Status:'3'};
+ await assert.rejects(fixture({scale:[s,{...s,Id:9002}]}).call('preview'),{code:'MR_SCALE_AMBIGUOUS'});
+});
 test('public errors contain only fixed codes',()=>{
  assert.deepEqual(manualRedemptionHttpError(Error('private host password')),{status:503,code:'MR_FAILED'});
  assert.deepEqual(manualRedemptionHttpError(Error('MR_COUNTER_UNSUPPORTED')),{status:409,code:'MR_COUNTER_UNSUPPORTED'});
  assert.deepEqual(manualRedemptionHttpError(Error('MR_APPROVER_NOT_LISTED')),{status:409,code:'MR_APPROVER_NOT_LISTED'});
+ for(const code of ['MR_SLIP_INVALID','MR_SLIP_IN_USE','MR_SCALE_CHANGED','MR_EXCEPTION_APPROVER_REQUIRED'])assert.deepEqual(manualRedemptionHttpError(Error(code)),{status:409,code});
  assert.deepEqual(manualRedemptionHttpError(Error('MR_RECORDER_MAPPING_REQUIRED')),{status:409,code:'MR_RECORDER_MAPPING_REQUIRED'});
 });

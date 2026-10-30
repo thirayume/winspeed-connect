@@ -4,9 +4,11 @@ import {req} from '../../services/api';
 import {useCan} from '../../utils/capabilities';
 
 type ManualRequest={requestId:string;status:string;reason:string;receiver:string;plate:string;
- expiresAt:string|null;isRequester:boolean;canApprove:boolean;selfApproval:boolean|null};
+ expiresAt:string|null;isRequester:boolean;canApprove:boolean;selfApproval:boolean|null;
+ slipNo:string|null;slipSource:'SCALE'|'MANUAL'|null;exceptionRequired:boolean};
+type Slip={source:'SCALE'|'MANUAL';slipNo:string|null;plate:string|null;netKg:number|null;diffPct:number|null;couponTon:string;tolerancePct:number;exception:boolean};
 type Preview={soid:number;fingerprint:string;deliveryNo:string;couponNo:string;qty:string;
- completed:boolean;canCreate:boolean;request:ManualRequest|null;redemptionNo?:string};
+ completed:boolean;canCreate:boolean;request:ManualRequest|null;redemptionNo?:string;slip?:Slip};
 const errors:Record<string,string>={
  MR_NOT_ENABLED:'ยังไม่เปิดขั้น 116 สำหรับสภาพแวดล้อมนี้',
  MR_DELIVERY_DIVERGED:'ข้อมูลใบสั่งขายหรือตั๋วเปลี่ยน กรุณาให้ผู้ดูแลตรวจสอบ',
@@ -21,14 +23,21 @@ const errors:Record<string,string>={
  MR_APPROVER_MAPPING_REQUIRED:'ผู้อนุมัติยังไม่ผูกพนักงาน WinSpeed กรุณาให้ผู้ดูแลตรวจสอบ',
  MR_APPROVER_NOT_LISTED:'พนักงานของผู้อนุมัติไม่อยู่ในรายชื่อผู้อนุมัติเอกสาร WinSpeed กรุณาให้ผู้ดูแลเพิ่มรายชื่อ',
  MR_RECORDER_MAPPING_REQUIRED:'ผู้ทำรายการยังไม่ผูกพนักงาน WinSpeed (ใช้เป็นผู้บันทึกใบ 116) กรุณาให้ผู้ดูแลตรวจสอบ',
- MR_SIMULATION_DETAILS_REQUIRED:'กรอกเหตุผลอย่างน้อย 10 ตัวอักษร ผู้รับขึ้นต้น UAT2 และทะเบียนขึ้นต้น UAT2-',
+ MR_SIMULATION_DETAILS_REQUIRED:'กรอกเหตุผลอย่างน้อย 10 ตัวอักษร ผู้รับขึ้นต้น UAT2 ทะเบียนขึ้นต้น UAT2- และเลขใบขนทดสอบขึ้นต้น 99',
+ MR_SLIP_REQUIRED:'ไม่พบบันทึกชั่ง กรุณากรอกเลขใบขน 7 หลักจากใบขนจริง',
+ MR_SLIP_INVALID:'เลขใบขนไม่ถูกต้อง ต้องเป็นตัวเลข 7 หลัก',
+ MR_SLIP_IN_USE:'เลขใบขนนี้ถูกใช้แล้วในตาชั่งหรือใบ 116 อื่น',
+ MR_SCALE_CHANGED:'ข้อมูลตาชั่งเปลี่ยนหลังส่งคำขอ กรุณาตรวจใหม่และส่งคำขอใหม่',
+ MR_SCALE_INCOMPLETE:'รถคันนี้ยังชั่งไม่เสร็จ (ยังไม่มีน้ำหนักชั่งออก) กรุณารอชั่งให้ครบก่อน',
+ MR_SCALE_AMBIGUOUS:'พบบันทึกชั่งของใบจองนี้มากกว่าหนึ่งรายการ กรุณาให้ผู้ดูแลตรวจสอบ',
+ MR_EXCEPTION_APPROVER_REQUIRED:'รายการนี้เป็นข้อยกเว้น ต้องให้ผู้จัดการ ผู้บริหาร หรือผู้ดูแลที่ไม่ใช่ผู้ขอเป็นผู้อนุมัติ',
  MR_COUNTER_UNSUPPORTED:'เลขรันใบขนยังไม่พร้อม กรุณาให้ผู้ดูแลตรวจสอบ',
 };
 export function NativeManualRedemptionButton({soid,onCreated}:{soid:string|number;onCreated:()=>void}){
  const can=useCan();
  const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const [preview,setPreview]=useState<Preview|null>(null),[key,setKey]=useState({basis:'',id:''});
- const [reason,setReason]=useState(''),[receiver,setReceiver]=useState('UAT2 TEST'),[plate,setPlate]=useState('UAT2-TEST');
+ const [reason,setReason]=useState(''),[receiver,setReceiver]=useState('UAT2 TEST'),[plate,setPlate]=useState('UAT2-TEST'),[slipNo,setSlipNo]=useState('99');
  if(!can('coupon.manual116'))return null;
  function showError(e:unknown){const code=(e as {data?:{code?:string}}).data?.code||'';setError(errors[code]||'ดำเนินการไม่สำเร็จ กรุณาตรวจสถานะหรือติดต่อผู้ดูแล');}
  async function inspect(){setOpen(true);setBusy(true);setError('');try{
@@ -41,25 +50,29 @@ export function NativeManualRedemptionButton({soid,onCreated}:{soid:string|numbe
   if(!id){setBusy(false);return;}
   const base=`/so/${soid}/native-redemption`;
   const url=action==='request'?base+'/requests':action==='approve'?base+'/requests/'+id+'/approve':base;
-  try{await req(url,{method:'POST',body:JSON.stringify({requestId:id,fingerprint:preview.fingerprint,reason,receiver,plate})});await inspect();if(action==='apply')onCreated();}
+  try{await req(url,{method:'POST',body:JSON.stringify({requestId:id,fingerprint:preview.fingerprint,reason,receiver,plate,slipNo})});await inspect();if(action==='apply')onCreated();}
   catch(e){showError(e);}finally{setBusy(false);}
  }
- const r=preview?.request,expired=Boolean(r?.expiresAt&&Date.parse(r.expiresAt)<=Date.now());
+ const r=preview?.request,expired=Boolean(r?.expiresAt&&Date.parse(r.expiresAt)<=Date.now()),slip=preview?.slip,manual=slip?.source==='MANUAL';
  return <>
   <button disabled={busy} onClick={inspect} className="rounded-lg border border-amber-700 px-3 py-2 text-xs font-bold text-amber-900 disabled:opacity-50">ตัดตั๋ว 116 · ทดสอบ UAT</button>
   {open&&createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="ทดสอบตัดตั๋ว 116"><div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
    <h2 className="text-lg font-bold text-[#0C447C]">ตัดตั๋ว 116 · ข้อยกเว้นแบบระบุผู้อนุมัติ</h2>
-   <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">รอบจำลอง UAT2 เท่านั้น ไม่มีเครื่องชั่งและหลักฐานส่งจริง รายการนี้ไม่รับรองน้ำหนักหรือการส่งสินค้า</p>
+   <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">รอบจำลอง UAT2 เท่านั้น รายการนี้ไม่รับรองการส่งสินค้าจริง · เลขที่ใบ 116 คือเลขใบขน: ใช้ MoveBill จากตาชั่ง หรือกรอกเองเมื่อไม่มีบันทึกชั่ง (เป็นข้อยกเว้น)</p>
    {preview&&<div className="mt-3 space-y-3 text-sm">{preview.completed?<p>บันทึกใบขนแล้ว: <strong>{preview.redemptionNo}</strong></p>:<>
     <p>104 {preview.deliveryNo} · ตั๋ว {preview.couponNo} · เต็มจำนวน {Number(preview.qty).toLocaleString('th-TH')} ตัน</p>
-    {r&&<div className="rounded-lg bg-slate-50 p-3"><p>สถานะ {expired?'อนุมัติหมดอายุ':r.status==='APPROVED'?'อนุมัติแล้ว':'รออนุมัติ'}</p><p>เหตุผล: {r.reason}</p><p>ผู้รับ: {r.receiver} · ทะเบียน: {r.plate}</p><p>หลักฐาน: snapshot ใบสั่งขายและตั๋วใน UAT ไม่ใช่ผลชั่ง</p></div>}
+    {slip&&(manual?<p className="rounded-lg bg-orange-50 p-3 text-orange-900">ไม่พบบันทึกชั่งของใบจองนี้ · <strong>ข้อยกเว้น</strong>: กรอกเลขใบขน 7 หลักและทะเบียนรถ แล้วให้ผู้จัดการ ผู้บริหาร หรือผู้ดูแลที่ไม่ใช่ผู้ขออนุมัติ</p>
+     :<p className={`rounded-lg p-3 ${slip.exception?'bg-orange-50 text-orange-900':'bg-emerald-50 text-emerald-900'}`}>เลขใบขนจากตาชั่ง (MoveBill) <strong>{slip.slipNo}</strong> · ทะเบียน {slip.plate} · น้ำหนักสุทธิ {Number(slip.netKg).toLocaleString('th-TH')} กก. (ต่างจากตั๋ว {slip.diffPct}%)
+      {slip.exception&&<><br/><strong>เกิน ±{slip.tolerancePct}%</strong> เป็นข้อยกเว้น ต้องให้ผู้จัดการ ผู้บริหาร หรือผู้ดูแลที่ไม่ใช่ผู้ขออนุมัติ</>}</p>)}
+    {r&&<div className="rounded-lg bg-slate-50 p-3"><p>สถานะ {expired?'อนุมัติหมดอายุ':r.status==='APPROVED'?'อนุมัติแล้ว':'รออนุมัติ'}</p><p>เหตุผล: {r.reason}</p><p>ผู้รับ: {r.receiver} · ทะเบียน: {r.plate}</p><p>ใบขน: {r.slipNo} ({r.slipSource==='SCALE'?'จากตาชั่ง':'กรอกเอง'}){r.exceptionRequired?' · ข้อยกเว้น':''}</p></div>}
     {preview.canCreate&&(!r||(r.isRequester&&expired))&&<>
      <label className="block">เหตุผลการจำลอง<textarea value={reason} onChange={e=>setReason(e.target.value)} maxLength={500} className="mt-1 w-full rounded-lg border p-2" /></label>
      <label className="block">ผู้รับทดสอบ<input value={receiver} onChange={e=>setReceiver(e.target.value)} maxLength={100} className="mt-1 w-full rounded-lg border p-2" /></label>
-     <label className="block">ทะเบียนทดสอบ<input value={plate} onChange={e=>setPlate(e.target.value)} maxLength={25} className="mt-1 w-full rounded-lg border p-2" /></label>
+     {manual&&<label className="block">เลขใบขน (7 หลัก)<input value={slipNo} onChange={e=>setSlipNo(e.target.value.replace(/\D/g,''))} inputMode="numeric" maxLength={7} className="mt-1 w-full rounded-lg border p-2" /></label>}
+     {manual&&<label className="block">ทะเบียนทดสอบ<input value={plate} onChange={e=>setPlate(e.target.value)} maxLength={25} className="mt-1 w-full rounded-lg border p-2" /></label>}
     </>}
     {!r&&!preview.canCreate&&<p>รอคลังหรือบัญชีสร้างคำขอก่อน ผู้จัดการจึงตรวจอนุมัติได้</p>}
-    {r?.canApprove&&<p>อนุมัติของตนเองได้ตามสิทธิ์ ระบบบันทึกผู้ใช้งานจริงแม้ใช้ Access As</p>}
+    {r?.canApprove&&!r.exceptionRequired&&<p>อนุมัติของตนเองได้ตามสิทธิ์ ระบบบันทึกผู้ใช้งานจริงแม้ใช้ Access As</p>}
    </>}</div>}
    {busy&&!preview&&<p className="mt-3 text-sm">กำลังตรวจสอบ…</p>}
    {error&&<p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -67,7 +80,7 @@ export function NativeManualRedemptionButton({soid,onCreated}:{soid:string|numbe
     <button disabled={busy} onClick={()=>setOpen(false)} className="rounded-lg border px-3 py-2">ปิด</button>
     {preview&&!preview.completed&&<>
      <button disabled={busy} onClick={inspect} className="rounded-lg border px-3 py-2">ตรวจใหม่</button>
-     {preview.canCreate&&(!r||(r.isRequester&&expired))&&<button disabled={busy||reason.trim().length<10} onClick={()=>act('request')} className="rounded-lg bg-amber-700 px-3 py-2 text-white">ส่งคำขอ</button>}
+     {preview.canCreate&&(!r||(r.isRequester&&expired))&&<button disabled={busy||reason.trim().length<10||(manual&&!/^\d{7}$/.test(slipNo))} onClick={()=>act('request')} className="rounded-lg bg-amber-700 px-3 py-2 text-white">ส่งคำขอ</button>}
      {r?.canApprove&&<button disabled={busy} onClick={()=>act('approve')} className="rounded-lg bg-blue-800 px-3 py-2 text-white">อนุมัติคำขอ</button>}
      {r?.isRequester&&r.status==='APPROVED'&&!expired&&<button disabled={busy} onClick={()=>act('apply')} className="rounded-lg bg-blue-800 px-3 py-2 text-white">ยืนยันตัดตั๋วเต็มจำนวน</button>}
     </>}
