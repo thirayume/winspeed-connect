@@ -1,6 +1,6 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **30 October 2026 (ICT), updated 09:30**. This page records observed results;
+Operational snapshot: **31 October 2026 00:10 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
@@ -74,8 +74,15 @@ as the UAT app identity it returned the expected 26 non-empty rows.
 UAT was then deployed at `5f2116a` on 30 October 23:45 (receipt
 `20261030-234503-uat-apply-5f2116a.txt`): 157 unchanged, migration 160 applied, health 200.
 The UAT clone now has 158 migrations, the new 116 writer and the approver list (62 of 62
-enabled). Production does not have 160 yet; until it does, each nightly refresh re-applies
-160 to UAT from a fresh copy.
+enabled).
+
+The owner promoted `5f2116a` to `main` and deployed Production on 31 October 00:08 with a
+fresh COPY_ONLY/CHECKSUM/VERIFYONLY backup (4 minutes old at apply; receipt
+`20261031-000829-prod-apply-5f2116a.txt`): 157 unchanged, migration 160 applied, health 200.
+Production now has 158 migrations and the approver list (62 of 62 enabled); the native
+target guard returns 0 there and all five native writer flags remain false. From the next
+nightly restore, UAT inherits Production's approver list, so the owner filters it in
+Production.
 
 ## Restricted Full Loop evidence
 
@@ -164,7 +171,7 @@ private brief dated 30 October):
 - **SSRS:** the R740 report server has no reports or data sources and no runs in 30 days,
   so there is nothing yet to accept with real users; the report list must come first.
 
-Outstanding: deploy and native read-back of migration 160; the accounting team's accepted
+Outstanding: native WinSpeed read-back of the 116 writer from migration 160 (next Full Loop); the accounting team's accepted
 AR report and non-duplication reconciliation (owner deferred), GL posting trial,
 confirmation of print forms, scale tolerance/exception rules, and the SSRS report list.
 The private illustrated stakeholder brief lists these questions with WinSpeed menu
