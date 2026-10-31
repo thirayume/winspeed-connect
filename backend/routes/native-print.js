@@ -1,0 +1,139 @@
+'use strict';
+/**
+ * พิมพ์เอกสาร WinSpeed จาก Sale-App (W2, plan v2, owner 31/10/2569)
+ *
+ *   GET /api/native-print/116/:docuNo — ใบขน / ใบตัดตั๋วปุ๋ย (WinSpeed ไม่มีฟอร์มลงทะเบียนให้ 116)
+ *   GET /api/native-print/107/:docuNo — ใบส่งของ (ตาม "ฟอร์มใบส่งของ" ของ WinSpeed; ปุ๋ยยกเว้น VAT จึงไม่ใช่ใบกำกับภาษี)
+ *
+ * อ่านจาก dbo ของ WinSpeed อย่างเดียว ใช้ได้ทั้งเอกสารที่ Sale-App ออกและที่ทำใน WinSpeed เอง
+ * เลขที่ซ้ำ (พบได้ในข้อมูลเก่า) ต้องแจ้งว่าซ้ำ ไม่เลือกใบใดใบหนึ่งให้เอง
+ * หัวบริษัทของใบส่งของมาจาก Header Master (แม่แบบ native-107 หรือ default)
+ */
+const router = require('express').Router();
+const { sql, wfQuery } = require('../db');
+const { requireAuth, requireCapability } = require('../middleware/auth');
+const { getVisibleScope, inScope } = require('../services/visible-scope');
+
+router.use(requireAuth);
+
+const DOCU_NO = /^[A-Za-z0-9-]{3,25}$/;
+
+const noInput = no => ({ no: { type: sql.VarChar(25), value: no } });
+const idInput = id => ({ id: { type: sql.Int, value: id } });
+const rows = r => r.recordset || [];
+
+// ผู้ใช้ที่เห็นเฉพาะทีมตัวเอง เห็นได้เฉพาะเอกสารของพนักงานขาย/ผู้ใช้ในทีม
+async function allowed(user, { empId = null, bookingSoid = null }) {
+  const scope = await getVisibleScope(user);
+  if (scope.all) return true;
+  let salesUserId = null;
+  if (bookingSoid != null) {
+    salesUserId = rows(await wfQuery('SELECT SalesUserId FROM wf.SalesOrderExt WHERE SOID=@soid',
+      { soid: { type: sql.VarChar(50), value: String(bookingSoid) } }))[0]?.SalesUserId ?? null;
+  }
+  return inScope(scope, { userId: salesUserId, empId });
+}
+
+async function load116(no) {
+  const heads = rows(await wfQuery(`
+    SELECT h.RedemtionID, RTRIM(h.DocuNo) AS DocuNo, CONVERT(varchar(10),h.DocuDate,120) AS DocuDate,
+           RTRIM(h.IssueName) AS Receiver, RTRIM(h.CarLicense) AS Plate, h.SumGoodQty, h.DocuStatus, h.IsCheckAll,
+           se.EmpCode AS RecorderCode, RTRIM(se.EmpName) AS RecorderName,
+           ae.EmpCode AS NativeApproverCode, RTRIM(ae.EmpName) AS NativeApproverName
+      FROM dbo.WFRedemtionHD h
+      LEFT JOIN dbo.EMEmp se ON se.EmpID=h.SaveEmpID
+      LEFT JOIN dbo.EMEmp ae ON ae.EmpID=h.AppvEmpID
+     WHERE h.DocuType=116 AND h.DocuNo=@no`, noInput(no)));
+  if (heads.length !== 1) return { count: heads.length };
+  const head = heads[0];
+  const items = rows(await wfQuery(`
+    SELECT d.Listno, RTRIM(d.CouponNo) AS CouponNo, RTRIM(g.GoodCode) AS GoodCode,
+           RTRIM(COALESCE(c.GoodName, g.GoodName1)) AS GoodName, RTRIM(i.InveName) AS InveName, RTRIM(l.LocaName) AS LocaName,
+           d.GoodQty, d.RemaQty, d.PostInv, RTRIM(so.DocuNo) AS DeliveryNo, so.EmpID AS SalesEmpID,
+           RTRIM(so.CustName) AS CustName, RTRIM(cu.CustCode) AS CustCode, RTRIM(inv.DocuNo) AS InvoiceNo,
+           RTRIM(bk.DocuNo) AS BookingNo, bk.SOID AS BookingSOID
+      FROM dbo.WFRedemtionDT d
+      LEFT JOIN dbo.WFCoupon c ON c.CouponID=d.CouponID
+      LEFT JOIN dbo.EMGood g ON g.GoodID=d.GoodID
+      LEFT JOIN dbo.EMInve i ON i.InveID=d.InveID
+      LEFT JOIN dbo.EMLoca l ON l.LocaID=d.LocaID
+      LEFT JOIN dbo.SOHD so ON so.SOID=c.DocuID AND c.Docutype=104
+      LEFT JOIN dbo.EMCust cu ON cu.CustID=so.CustID
+      LEFT JOIN dbo.SOInvHD inv ON inv.SOInvID=d.SOInvID
+      OUTER APPLY (SELECT TOP 1 b.DocuNo, b.SOID FROM dbo.SODT sd JOIN dbo.SOHD b ON b.SOID=sd.RefSOID AND b.DocuType=103
+                    WHERE sd.SOID=so.SOID ORDER BY sd.ListNo) bk
+     WHERE d.RedemtionID=@id ORDER BY d.Listno`, idInput(head.RedemtionID)));
+  const scales = rows(await wfQuery(`
+    SELECT TOP 2 Id, RTRIM(CarNo) AS CarNo, WeightIn, WeightOut, WeightNet, RTRIM(Status) AS Status,
+           CONVERT(varchar(16),DateIn,120) AS DateIn, CONVERT(varchar(16),DateOut,120) AS DateOut
+      FROM dbo.WGHD WHERE WGType='SO' AND RTRIM(MoveBill)=@no`, noInput(no)));
+  const approval = rows(await wfQuery(`
+    SELECT TOP 1 e.EmpCode AS ApproverCode, RTRIM(e.EmpName) AS ApproverName, r.SlipSource, r.ExceptionRequired, na.SelfApproval
+      FROM wf.NativeDocumentApproval na
+      LEFT JOIN dbo.EMEmp e ON e.EmpID=na.ApproverEmpID
+      LEFT JOIN wf.NativeManualRedemptionRequest r ON r.RequestId=na.RequestId
+     WHERE na.DocuType=116 AND na.NativeDocID=@id`, idInput(head.RedemtionID)))[0] || null;
+  return { count: 1, doc: { ...head, items, scale: scales.length === 1 ? scales[0] : null, appApproval: approval } };
+}
+
+async function load107(no) {
+  const heads = rows(await wfQuery(`
+    SELECT h.SOInvID, RTRIM(h.DocuNo) AS DocuNo, CONVERT(varchar(10),h.DocuDate,120) AS DocuDate,
+           RTRIM(cu.CustCode) AS CustCode, RTRIM(COALESCE(h.CustName, cu.CustName)) AS CustName, RTRIM(cu.TaxId) AS CustTaxId,
+           RTRIM(COALESCE(h.BillAddr1, cu.CustAddr1)) AS BillAddr1, RTRIM(COALESCE(h.BillAddr2, cu.CustAddr2)) AS BillAddr2,
+           RTRIM(COALESCE(h.District, cu.District)) AS District, RTRIM(COALESCE(h.Amphur, cu.Amphur)) AS Amphur,
+           RTRIM(COALESCE(h.Province, cu.Province)) AS Province, RTRIM(COALESCE(h.PostCode, cu.PostCode)) AS PostCode, RTRIM(h.Tel) AS Tel,
+           h.CreditDays, CONVERT(varchar(10),h.DueDate,120) AS DueDate, h.SumGoodAmnt, h.BillDiscAmnt, h.BillAftrDiscAmnt,
+           h.VATType, h.VATRate, h.VATAmnt, h.NetAmnt, h.DocuStatus, h.PostGL, h.CouponFlag, RTRIM(h.RefNo) AS RefNo,
+           h.EmpID AS SalesEmpID, RTRIM(e.EmpCode) AS SalesCode, RTRIM(e.EmpName) AS SalesName
+      FROM dbo.SOInvHD h
+      LEFT JOIN dbo.EMCust cu ON cu.CustID=h.CustID
+      LEFT JOIN dbo.EMEmp e ON e.EmpID=h.EmpID
+     WHERE h.DocuType=107 AND h.DocuNo=@no`, noInput(no)));
+  if (heads.length !== 1) return { count: heads.length };
+  const head = heads[0];
+  const items = rows(await wfQuery(`
+    SELECT d.ListNo, RTRIM(g.GoodCode) AS GoodCode, RTRIM(COALESCE(d.GoodName, g.GoodName1)) AS GoodName,
+           d.GoodQty2, RTRIM(u.GoodUnitName) AS UnitName, d.GoodPrice2, d.GoodDiscAmnt, d.GoodAmnt,
+           RTRIM(COALESCE(ref.DocuNo, d.RefDocuno)) AS RefDocuNo, RTRIM(i.InveName) AS InveName
+      FROM dbo.SOInvDT d
+      LEFT JOIN dbo.SOHD ref ON ref.SOID=d.RefID AND ref.DocuType=104
+      LEFT JOIN dbo.EMGood g ON g.GoodID=d.GoodID
+      LEFT JOIN dbo.EMGoodUnit u ON u.GoodUnitID=d.GoodUnitID2
+      LEFT JOIN dbo.EMInve i ON i.InveID=d.InveID
+     WHERE d.SOInvID=@id ORDER BY d.ListNo`, idInput(head.SOInvID)));
+  const slips = rows(await wfQuery(`
+    SELECT DISTINCT RTRIM(r.DocuNo) AS SlipNo FROM dbo.WFRedemtionDT rd
+      JOIN dbo.WFRedemtionHD r ON r.RedemtionID=rd.RedemtionID AND r.DocuType=116
+     WHERE rd.SOInvID=@id`, idInput(head.SOInvID))).map(r => r.SlipNo);
+  const { resolveReportTemplate } = require('./reports').__testing;
+  const header = (await resolveReportTemplate('native-107').catch(() => null))?.header || null;
+  return { count: 1, doc: { ...head, items, slips, company: header } };
+}
+
+function handler(type, loader) {
+  return async (req, res) => {
+    const no = String(req.params.docuNo || '').trim();
+    if (!DOCU_NO.test(no)) return res.status(400).json({ code: 'DOC_NO_INVALID', message: 'เลขที่เอกสารไม่ถูกต้อง' });
+    try {
+      const r = await loader(no);
+      if (r.count === 0) return res.status(404).json({ code: 'DOC_NOT_FOUND', message: `ไม่พบใบ ${type} เลขที่ ${no}` });
+      if (r.count > 1) return res.status(409).json({ code: 'DOC_AMBIGUOUS', message: `พบใบ ${type} เลขที่ ${no} มากกว่าหนึ่งใบ กรุณาตรวจใน WinSpeed` });
+      const empId = type === 116 ? r.doc.items[0]?.SalesEmpID : r.doc.SalesEmpID;
+      const bookingSoid = type === 116 ? r.doc.items[0]?.BookingSOID : null;
+      if (!(await allowed(req.user, { empId, bookingSoid })))
+        return res.status(404).json({ code: 'DOC_NOT_FOUND', message: `ไม่พบใบ ${type} เลขที่ ${no}` });
+      res.json({ type, ...r.doc });
+    } catch (e) {
+      console.error(`[native-print/${type}]`, e.message);
+      res.status(500).json({ code: 'DOC_PRINT_FAILED', message: 'โหลดเอกสารไม่สำเร็จ' });
+    }
+  };
+}
+
+// who may print: services/role-capabilities.js (native.print-116 / native.print-107)
+router.get('/116/:docuNo', requireCapability('native.print-116'), handler(116, load116));
+router.get('/107/:docuNo', requireCapability('native.print-107'), handler(107, load107));
+
+module.exports = router;
+module.exports.__testing = { load116, load107 };

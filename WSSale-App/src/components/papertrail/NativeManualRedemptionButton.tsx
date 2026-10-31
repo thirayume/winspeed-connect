@@ -2,6 +2,7 @@ import {useState} from 'react';
 import {createPortal} from 'react-dom';
 import {req} from '../../services/api';
 import {useCan} from '../../utils/capabilities';
+import {NativeDocPrint} from '../reports/NativeDocPrint';
 
 type ManualRequest={requestId:string;status:string;reason:string;receiver:string;plate:string;
  expiresAt:string|null;isRequester:boolean;canApprove:boolean;selfApproval:boolean|null;
@@ -37,6 +38,7 @@ export function NativeManualRedemptionButton({soid,onCreated}:{soid:string|numbe
  const can=useCan();
  const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const [preview,setPreview]=useState<Preview|null>(null),[key,setKey]=useState({basis:'',id:''});
+ const [printing,setPrinting]=useState(false);
  const [reason,setReason]=useState(''),[receiver,setReceiver]=useState('UAT2 TEST'),[plate,setPlate]=useState('UAT2-TEST'),[slipNo,setSlipNo]=useState('99');
  if(!can('coupon.manual116'))return null;
  function showError(e:unknown){const code=(e as {data?:{code?:string}}).data?.code||'';setError(errors[code]||'ดำเนินการไม่สำเร็จ กรุณาตรวจสถานะหรือติดต่อผู้ดูแล');}
@@ -59,7 +61,7 @@ export function NativeManualRedemptionButton({soid,onCreated}:{soid:string|numbe
   {open&&createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="ทดสอบตัดตั๋ว 116"><div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
    <h2 className="text-lg font-bold text-[#0C447C]">ตัดตั๋ว 116 · ข้อยกเว้นแบบระบุผู้อนุมัติ</h2>
    <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">รอบจำลอง UAT2 เท่านั้น รายการนี้ไม่รับรองการส่งสินค้าจริง · เลขที่ใบ 116 คือเลขใบขน: ใช้ MoveBill จากตาชั่ง หรือกรอกเองเมื่อไม่มีบันทึกชั่ง (เป็นข้อยกเว้น)</p>
-   {preview&&<div className="mt-3 space-y-3 text-sm">{preview.completed?<p>บันทึกใบขนแล้ว: <strong>{preview.redemptionNo}</strong></p>:<>
+   {preview&&<div className="mt-3 space-y-3 text-sm">{preview.completed?<p>บันทึกใบขนแล้ว: <strong>{preview.redemptionNo}</strong>{preview.redemptionNo&&can('native.print-116')&&<button onClick={()=>setPrinting(true)} className="ml-3 rounded-lg border px-2 py-1 text-xs">พิมพ์ใบขน</button>}</p>:<>
     <p>104 {preview.deliveryNo} · ตั๋ว {preview.couponNo} · เต็มจำนวน {Number(preview.qty).toLocaleString('th-TH')} ตัน</p>
     {slip&&(manual?<p className="rounded-lg bg-orange-50 p-3 text-orange-900">ไม่พบบันทึกชั่งของใบจองนี้ · <strong>ข้อยกเว้น</strong>: กรอกเลขใบขน 7 หลักและทะเบียนรถ แล้วให้ผู้จัดการ ผู้บริหาร หรือผู้ดูแลที่ไม่ใช่ผู้ขออนุมัติ</p>
      :<p className={`rounded-lg p-3 ${slip.exception?'bg-orange-50 text-orange-900':'bg-emerald-50 text-emerald-900'}`}>เลขใบขนจากตาชั่ง (MoveBill) <strong>{slip.slipNo}</strong> · ทะเบียน {slip.plate} · น้ำหนักสุทธิ {Number(slip.netKg).toLocaleString('th-TH')} กก. (ต่างจากตั๋ว {slip.diffPct}%)
@@ -86,5 +88,6 @@ export function NativeManualRedemptionButton({soid,onCreated}:{soid:string|numbe
     </>}
    </div>
   </div></div>,document.body)}
+  {printing&&preview?.redemptionNo&&<NativeDocPrint type={116} docuNo={preview.redemptionNo} onClose={()=>setPrinting(false)}/>}
  </>;
 }

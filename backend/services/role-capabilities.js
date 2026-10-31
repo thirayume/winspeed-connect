@@ -70,6 +70,9 @@ const ACTIONS = Object.freeze({
   'credit.approve-native': ['ACCOUNTING'],
   'coupon.manual116': ['WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'invoice.post-native': ['ACCOUNTING'],
+  // W2: print WinSpeed documents (read-only) — 116 slip and 107 delivery note
+  'native.print-116': ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'native.print-107': ['COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'trip.view': ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'quotation.create': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'quotation.manage': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],

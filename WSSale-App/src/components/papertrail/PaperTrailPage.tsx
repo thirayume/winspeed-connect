@@ -19,6 +19,7 @@ import { NativeDeliveryButton } from '../sales/NativeDeliveryButton';
 import { NativeManualRedemptionButton } from './NativeManualRedemptionButton';
 import { NativeInvoiceButton } from './NativeInvoiceButton';
 import { NativeCreditRequests } from './NativeCreditRequests';
+import { NativeDocPrintLauncher } from '../reports/NativeDocPrint';
 
 import { UnlockReviewModal } from './UnlockReviewModal';
 import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
@@ -168,6 +169,7 @@ export function PaperTrailPage() {
 
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide w-full sm:w-auto mt-2 sm:mt-0 order-2 sm:order-3">
           <NativeCreditRequests onApproved={load} />
+          <NativeDocPrintLauncher />
           {lostCount > 0 && (
             <span className="whitespace-nowrap px-2.5 py-1.5 sm:px-3 sm:py-2 bg-red-50 text-red-700 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5 border border-red-200">
               <AlertTriangle size={14} className="sm:w-4 sm:h-4" /> ใบค้าง/หาย {lostCount}

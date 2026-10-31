@@ -126,6 +126,7 @@ app.use('/api/trips',     require('./routes/trips'));
 app.use('/api/edit-requests', require('./routes/edit-requests'));
 app.use('/api/budget',    require('./routes/budget'));
 app.use('/api/papertrail', require('./routes/papertrail'));
+app.use('/api/native-print', require('./routes/native-print'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/admin/reports', require('./routes/admin-reports'));
 app.use('/api/admin', require('./routes/admin-reports'));

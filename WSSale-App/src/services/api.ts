@@ -1538,6 +1538,36 @@ export type WeighingTicket = {
 };
 export const fetchWeighingTicket = (id: number) => req<WeighingTicket>(`/weighing/tickets/${id}`);
 
+// W2: พิมพ์เอกสาร WinSpeed จาก Sale-App (ใบ 116 ใบขน/ใบตัดตั๋ว · ใบ 107 ใบส่งของ) — อ่านอย่างเดียว
+export type NativeSlipItem = {
+  Listno: number; CouponNo: string | null; GoodCode: string | null; GoodName: string | null;
+  InveName: string | null; LocaName: string | null; GoodQty: number; RemaQty: number; PostInv: string | null;
+  DeliveryNo: string | null; CustName: string | null; CustCode: string | null; InvoiceNo: string | null; BookingNo: string | null;
+};
+export type NativeSlipDoc = {
+  type: 116; RedemtionID: number; DocuNo: string; DocuDate: string; Receiver: string | null; Plate: string | null;
+  SumGoodQty: number; DocuStatus: string | null; IsCheckAll: string | null;
+  RecorderCode: string | null; RecorderName: string | null; NativeApproverCode: string | null; NativeApproverName: string | null;
+  items: NativeSlipItem[];
+  scale: { Id: number; CarNo: string | null; WeightIn: number | null; WeightOut: number | null; WeightNet: number | null; Status: string | null; DateIn: string | null; DateOut: string | null } | null;
+  appApproval: { ApproverCode: string | null; ApproverName: string | null; SlipSource: 'SCALE' | 'MANUAL' | null; ExceptionRequired: boolean | null; SelfApproval: boolean | null } | null;
+};
+export type NativeInvoiceItem = {
+  ListNo: number; GoodCode: string | null; GoodName: string | null; GoodQty2: number; UnitName: string | null;
+  GoodPrice2: number; GoodDiscAmnt: number | null; GoodAmnt: number; RefDocuNo: string | null; InveName: string | null;
+};
+export type NativeInvoiceDoc = {
+  type: 107; SOInvID: number; DocuNo: string; DocuDate: string; CustCode: string | null; CustName: string | null; CustTaxId: string | null;
+  BillAddr1: string | null; BillAddr2: string | null; District: string | null; Amphur: string | null; Province: string | null; PostCode: string | null; Tel: string | null;
+  CreditDays: number | null; DueDate: string | null; SumGoodAmnt: number; BillDiscAmnt: number | null; BillAftrDiscAmnt: number | null;
+  VATType: number | null; VATRate: number | null; VATAmnt: number | null; NetAmnt: number; DocuStatus: string | null; PostGL: string | null; CouponFlag: string | null;
+  RefNo: string | null; SalesCode: string | null; SalesName: string | null;
+  items: NativeInvoiceItem[]; slips: string[];
+  company: { companyNameTh?: string | null; companyNameEn?: string | null; addressTh?: string | null; tel?: string | null; fax?: string | null; taxId?: string | null; branchNameTh?: string | null; branchCode?: string | null } | null;
+};
+export const fetchNativeSlipPrint = (docuNo: string) => req<NativeSlipDoc>(`/native-print/116/${encodeURIComponent(docuNo)}`);
+export const fetchNativeInvoicePrint = (docuNo: string) => req<NativeInvoiceDoc>(`/native-print/107/${encodeURIComponent(docuNo)}`);
+
 // สายอนุมัติของแบบขออนุมัติรายการส่งเสริมการขาย (ชั้น 3 = ผู้จัดการฝ่ายขาย)
 export const fetchRebatePlanApprovals = (planId: number) =>
   req<any[]>(`/rebate/plans/${planId}/approvals`);

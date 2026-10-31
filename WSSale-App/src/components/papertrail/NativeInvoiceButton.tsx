@@ -2,6 +2,7 @@ import {useState} from 'react';
 import {createPortal} from 'react-dom';
 import {req} from '../../services/api';
 import {useCan} from '../../utils/capabilities';
+import {NativeDocPrint} from '../reports/NativeDocPrint';
 
 type Preview={completed:boolean;fingerprint?:string;invoiceDate:string;dueDate?:string;series?:string;
  amount?:string;qty?:string;deliveryNo?:string;couponNo?:string;redemptionNo?:string;invoiceNo?:string};
@@ -24,7 +25,7 @@ const date=(v?:string)=>v?new Date(v+'T00:00:00').toLocaleDateString('th-TH'):'�
 export function NativeInvoiceButton({soid,onCreated}:{soid:string|number;onCreated:()=>void}){
  const can=useCan();
  const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
- const [preview,setPreview]=useState<Preview|null>(null),[key,setKey]=useState({basis:'',id:''});
+ const [preview,setPreview]=useState<Preview|null>(null),[key,setKey]=useState({basis:'',id:''}),[printing,setPrinting]=useState(false);
  if(!can('invoice.post-native'))return null;
  function showError(e:unknown){const code=(e as {data?:{code?:string}}).data?.code||'';setError(errors[code]||'ดำเนินการไม่สำเร็จ กรุณาตรวจสถานะหรือติดต่อผู้ดูแล');}
  async function inspect(){setOpen(true);setBusy(true);setError('');setPreview(null);try{
@@ -42,7 +43,7 @@ export function NativeInvoiceButton({soid,onCreated}:{soid:string|number;onCreat
   {open&&createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="ทดสอบ Post Invoice"><div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
    <h2 className="text-lg font-bold text-[#0C447C]">Post Invoice 107 · ACCOUNTING</h2>
    <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">จำลอง UAT2 จากใบตัดตั๋ว ไม่มีหลักฐานชั่งหรือส่งจริง การยืนยันจะออก Invoice และตัดสต็อกเต็มจำนวน</p>
-   {preview&&<div className="mt-3 space-y-2 text-sm">{preview.completed?<p>บันทึก Invoice แล้ว: <strong>{preview.invoiceNo}</strong> · {date(preview.invoiceDate)}</p>:<>
+   {preview&&<div className="mt-3 space-y-2 text-sm">{preview.completed?<p>บันทึก Invoice แล้ว: <strong>{preview.invoiceNo}</strong> · {date(preview.invoiceDate)}{preview.invoiceNo&&can('native.print-107')&&<button onClick={()=>setPrinting(true)} className="ml-3 rounded-lg border px-2 py-1 text-xs">พิมพ์ใบส่งของ</button>}</p>:<>
     <p>104 {preview.deliveryNo} · ตั๋ว {preview.couponNo}</p><p>ใบตัดตั๋ว 116: {preview.redemptionNo}</p>
     <p>Invoice เล่ม {preview.series} · วันที่ {date(preview.invoiceDate)} · ครบกำหนด {date(preview.dueDate)}</p>
     <p>เต็มจำนวน {Number(preview.qty).toLocaleString('th-TH')} ตัน · {Number(preview.amount).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท</p>
@@ -55,5 +56,6 @@ export function NativeInvoiceButton({soid,onCreated}:{soid:string|number;onCreat
     {preview&&!preview.completed&&!error&&<button disabled={busy} onClick={post} className="rounded-lg bg-blue-800 px-3 py-2 text-white">ยืนยัน Post Invoice และตัดสต็อก</button>}
    </div>
   </div></div>,document.body)}
+  {printing&&preview?.invoiceNo&&<NativeDocPrint type={107} docuNo={preview.invoiceNo} onClose={()=>setPrinting(false)}/>}
  </>;
 }
