@@ -6,7 +6,7 @@ Docker engine and Docker Desktop on that server are not used.
 
 > **Current status for all agents (Claude · Codex · Antigravity):**
 > [GO-LIVE-STATUS.md](GO-LIVE-STATUS.md) — what is live vs pending, and the constraints to respect
-> when working on deploy or the databases. Runbook refreshed 2026-10-31 (160 migrations).
+> when working on deploy or the databases. Runbook refreshed 2026-11-01 (160 migrations applied; 163–164 pending in 1.0.0-beta.7).
 
 | | UAT | PROD |
 |---|---|---|
@@ -186,6 +186,16 @@ simulation writers, which stay off in Production:
   (within ±2% of the coupon tons, otherwise an exception), or a typed 7-digit slip number as an
   exception approved by a manager, executive or administrator other than the requester.
 - 162: the 107 writer accepts the scale record that a 116 slip came from.
+
+Migrations 163–164 (1.0.0-beta.7) are pending on both databases until the next deploy, so
+the Production deploy needs the pre-deploy backup and the database-name prompt:
+
+- 163: the booking (103) that Sale-App confirms carries the customer's default contact
+  (`EMCustContact.IsDefault='Y'`) in `SOHD.ContactName`, as WinSpeed does; the 104, its 202 and
+  the 107 writers copy it down. This one edit reaches Production, because confirming a booking
+  is live there (the 104/107 writers stay off). No dbo structure change.
+- 164: `wf.NativePrintLog`, one row per press of the print button for a 104/116/107 (WinSpeed
+  writes SMAudit action P for its own prints). wf only.
 
 The owner selected Production app accounts for UAT after the nightly restore (27 October 2026).
 Do not preserve or overwrite the restored `admin` password hash with a separate UAT hash.
