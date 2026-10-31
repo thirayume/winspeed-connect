@@ -135,7 +135,9 @@ to confirm. The owner promoted `dccfd71` with the workflow and UAT deployed at 0
 31 October (receipt `20261031-093754-uat-apply-dccfd71.txt`, 160/0/0, health 200). The
 deployed loaders, run inside the UAT backend container against the round-3 test documents,
 returned complete 116 and 107 data, but showed that `VATType` arrives as text, which hid the
-VAT-exempt line; `92114ab` compares it as a number (not yet on UAT or Production).
+VAT-exempt line; `92114ab` compares it as a number. The owner promoted `ebe3214` and UAT
+deployed at 09:46 (receipt `20261031-094604-uat-apply-ebe3214.txt`, 160/0/0, health 200; the
+UAT bundle compares `VATType` as a number). Production still runs `d4c83c3`.
 
 **Run of 31 October 00:14–00:25 (after migration 160 on UAT and Production).** A separate
 dated copy of the private harness (new run label, user namespace and state folder) passed
