@@ -485,6 +485,68 @@ const REPORTS = {
     ],
     run: (params) => runNativeDocumentsReport(params),
   },
+  // W1-b / W1-c: wf tables that only services write — read-only audit views (no screen before)
+  'policy-history': {
+    title: 'ประวัติการเปลี่ยนค่านโยบายระบบ (PolicyVersion)',
+    category: 'audit',
+    columns: [
+      { key: 'CreatedAt', label: 'บันทึกเมื่อ', type: 'datetime' },
+      { key: 'PolicyName', label: 'นโยบาย', type: 'identifier' },
+      { key: 'VersionNumber', label: 'เวอร์ชัน', type: 'integer' },
+      { key: 'SettingKey', label: 'ค่าที่เปลี่ยน', type: 'identifier' },
+      { key: 'OldValue', label: 'ค่าเดิม', type: 'text' },
+      { key: 'NewValue', label: 'ค่าใหม่', type: 'text' },
+      { key: 'EffectiveFrom', label: 'มีผลตั้งแต่', type: 'datetime' },
+      { key: 'ChangedBy', label: 'ผู้เปลี่ยน', type: 'text' },
+      { key: 'ReasonCode', label: 'รหัสเหตุผล', type: 'identifier' },
+      { key: 'ReasonText', label: 'เหตุผล', type: 'text' },
+    ],
+    run: (params) => runPolicyHistoryReport(params),
+  },
+  'sequence-counters': {
+    title: 'ตัวนับเลขเอกสารของ Sale-App (SequenceCounter)',
+    category: 'audit',
+    columns: [
+      { key: 'SequenceName', label: 'ตัวนับ', type: 'identifier' },
+      { key: 'Purpose', label: 'ใช้สำหรับ', type: 'text' },
+      { key: 'CurrentValue', label: 'เลขล่าสุด', type: 'integer' },
+      { key: 'UpdatedAt', label: 'ปรับล่าสุดเมื่อ', type: 'datetime' },
+    ],
+    run: (params) => runSequenceCountersReport(params),
+  },
+  'truck-hold-log': {
+    title: 'ประวัติพัก / ปลดพักใบสั่งจองใน WinSpeed (TruckHoldLog)',
+    category: 'audit',
+    columns: [
+      { key: 'ActedAt', label: 'เมื่อ', type: 'datetime' },
+      { key: 'DocuNo', label: 'ใบสั่งจอง 103', type: 'identifier' },
+      { key: 'EditRequestId', label: 'คำขอแก้ไข', type: 'identifier' },
+      { key: 'Action', label: 'การกระทำ', type: 'text' },
+      { key: 'OnHold', label: 'พักใบ (เดิม → ใหม่)', type: 'text' },
+      { key: 'PrevRemark', label: 'หมายเหตุเดิม', type: 'text' },
+      { key: 'NewRemark', label: 'หมายเหตุใหม่', type: 'text' },
+      { key: 'Applied', label: 'ผลใน WinSpeed', type: 'text' },
+      { key: 'SkipReason', label: 'เหตุที่ไม่บันทึก', type: 'text' },
+      { key: 'ActedBy', label: 'ผู้ทำรายการ', type: 'text' },
+    ],
+    run: (params) => runTruckHoldLogReport(params),
+  },
+  'control-ticket-alert-history': {
+    title: 'ประวัติแจ้งเตือนตั๋วคุมใกล้หมดอายุ / หมดอายุ (ControlTicketAlert)',
+    category: 'audit',
+    columns: [
+      { key: 'AlertDate', label: 'วันที่แจ้ง', type: 'date' },
+      { key: 'DocuNo', label: 'ตั๋วคุม', type: 'identifier' },
+      { key: 'CouponNo', label: 'เลขตั๋ว', type: 'identifier' },
+      { key: 'AlertType', label: 'ประเภท', type: 'text' },
+      { key: 'LeadDays', label: 'แจ้งล่วงหน้า (วัน)', type: 'integer' },
+      { key: 'ExpiryDate', label: 'วันหมดอายุ', type: 'date' },
+      { key: 'Status', label: 'สถานะ', type: 'text' },
+      { key: 'CreatedAt', label: 'สร้างเมื่อ', type: 'datetime' },
+      { key: 'ResolvedAt', label: 'ปิดเมื่อ', type: 'datetime' },
+    ],
+    run: (params) => runTicketAlertHistoryReport(params),
+  },
   'gl-sales-journal': {
     title: 'รายงานสรุปสมุดรายวันขายและการลงบัญชี (Sales Journal & Ledger Posting Log)',
     category: 'finance',
@@ -684,6 +746,10 @@ const REPORT_ROLES = {
   'weighbridge-detail': ['WEIGHBRIDGE', 'WAREHOUSE', 'ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
   'customer-dispatch': null,
   'native-documents': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'policy-history': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'sequence-counters': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'truck-hold-log': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'control-ticket-alert-history': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
 };
 
 function parseDateParam(value, fallback) {
@@ -1426,6 +1492,83 @@ async function runSalesJournalReport(params = {}, options = {}) {
 // native documents it wrote (AI, 104 + credit approval, 116 + slip, 107). Names show the
 // effective user and, under Access As, the real person. Read-only; UTC timestamps shown in ICT.
 const NATIVE_STATUS_TH = { PENDING: 'รออนุมัติ', APPROVED: 'อนุมัติแล้ว', CONSUMED: 'ใช้แล้ว', SUPERSEDED: 'ถูกแทนที่', EXPIRED: 'หมดอายุ' };
+// W1-b / W1-c audit views. wf timestamps are UTC (SYSUTCDATETIME / GETUTCDATE) → shown in Thai time.
+const ictText = col => `CONVERT(varchar(16),DATEADD(hour,7,${col}),120)`;
+function auditRange(params = {}) {
+  const today = new Date();
+  const from = parseDateParam(params.from, new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30));
+  const to = parseDateParam(params.to, today);
+  const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return {
+    from: { type: sql.Date, value: ymd(from) },
+    to: { type: sql.Date, value: ymd(to) },
+    limit: { type: sql.Int, value: Math.min(Math.max(parseInt(params.limit, 10) || 1000, 1), 5000) },
+  };
+}
+
+// policy changes are rare, so the whole history is listed (newest first)
+async function runPolicyHistoryReport(params = {}, options = {}) {
+  const queryFn = options.queryFn || wfQuery;
+  const { limit } = auditRange(params);
+  const r = await queryFn(`
+    SELECT TOP (@limit) ${ictText('pv.CreatedAt')} AS CreatedAt, pv.PolicyName, pv.VersionNumber, pv.SettingKey,
+           pv.OldValue, pv.NewValue, ${ictText('pv.EffectiveFrom')} AS EffectiveFrom,
+           CASE WHEN pv.ChangedBy = 'SYSTEM_INIT' THEN N'ระบบ (ค่าเริ่มต้น)' ELSE COALESCE(u.DisplayName, pv.ChangedBy) END AS ChangedBy,
+           pv.ReasonCode, pv.ReasonText
+      FROM wf.PolicyVersion pv
+      LEFT JOIN wf.AppUser u ON CAST(u.Id AS varchar(50)) = pv.ChangedBy
+     ORDER BY pv.CreatedAt DESC, pv.PolicyVersionId DESC`, { limit });
+  return r.recordset || [];
+}
+
+const SEQUENCE_PURPOSE = { WfRefSeq: 'เลขอ้างอิงบิลของ Sale-App (WF Ref)', QuoteRefSeq: 'เลขใบเสนอราคาของ Sale-App' };
+async function runSequenceCountersReport(_params = {}, options = {}) {
+  const queryFn = options.queryFn || wfQuery;
+  const r = await queryFn(`
+    SELECT SequenceName, CurrentValue, ${ictText('UpdatedAt')} AS UpdatedAt
+      FROM wf.SequenceCounter ORDER BY SequenceName`);
+  return (r.recordset || []).map(row => ({ ...row, Purpose: SEQUENCE_PURPOSE[row.SequenceName] || '' }));
+}
+
+const HOLD_ACTIONS = { HOLD: 'พักใบ', RELEASE: 'ปลดพัก' };
+async function runTruckHoldLogReport(params = {}, options = {}) {
+  const queryFn = options.queryFn || wfQuery;
+  const r = await queryFn(`
+    SELECT TOP (@limit) ${ictText('l.ActedAt')} AS ActedAt, RTRIM(h.DocuNo) AS DocuNo, l.EditRequestId, l.Action,
+           l.PrevOnHold, l.NewOnHold, l.PrevRemark, l.NewRemark, l.Applied, l.SkipReason, u.DisplayName AS ActedBy
+      FROM wf.TruckHoldLog l
+      LEFT JOIN dbo.SOHD h ON h.DocuType = 103 AND h.SOID =
+           CASE WHEN l.SOID NOT LIKE '%[^0-9]%' AND LEN(l.SOID) BETWEEN 1 AND 9 THEN CAST(l.SOID AS int) END
+      LEFT JOIN wf.AppUser u ON u.Id = l.ActedBy
+     WHERE CAST(DATEADD(hour,7,l.ActedAt) AS date) BETWEEN @from AND @to
+     ORDER BY l.ActedAt DESC, l.Id DESC`, auditRange(params));
+  return (r.recordset || []).map(({ PrevOnHold, NewOnHold, Applied, Action, ...row }) => ({
+    ...row,
+    Action: HOLD_ACTIONS[String(Action || '').toUpperCase()] || Action,
+    OnHold: `${PrevOnHold || '-'} → ${NewOnHold || '-'}`,
+    Applied: Applied ? 'บันทึกแล้ว' : 'ไม่ได้บันทึก',
+  }));
+}
+
+const ALERT_TYPES = { NEAR_EXPIRY: 'ใกล้หมดอายุ', EXPIRED: 'หมดอายุ' };
+const ALERT_STATUS = { ACTIVE: 'ค้างอยู่', RESOLVED: 'ปิดแล้ว' };
+async function runTicketAlertHistoryReport(params = {}, options = {}) {
+  const queryFn = options.queryFn || wfQuery;
+  const r = await queryFn(`
+    SELECT TOP (@limit) CONVERT(varchar(10),COALESCE(a.AlertDate, CAST(DATEADD(hour,7,a.CreatedAt) AS date)),120) AS AlertDate,
+           a.DocuNo, a.CouponNo, COALESCE(a.AlertType, a.AlertKind) AS AlertType, a.LeadDays,
+           CONVERT(varchar(10),a.ExpiryDate,120) AS ExpiryDate, a.Status,
+           ${ictText('a.CreatedAt')} AS CreatedAt, ${ictText('a.ResolvedAt')} AS ResolvedAt
+      FROM wf.ControlTicketAlert a
+     WHERE COALESCE(a.AlertDate, CAST(DATEADD(hour,7,a.CreatedAt) AS date)) BETWEEN @from AND @to
+     ORDER BY COALESCE(a.AlertDate, CAST(DATEADD(hour,7,a.CreatedAt) AS date)) DESC, a.AlertId DESC`, auditRange(params));
+  return (r.recordset || []).map(row => ({
+    ...row,
+    AlertType: ALERT_TYPES[row.AlertType] || row.AlertType,
+    Status: ALERT_STATUS[row.Status] || row.Status,
+  }));
+}
+
 async function runNativeDocumentsReport(params = {}, options = {}) {
   const queryFn = options.queryFn || wfQuery;
   const today = new Date();
@@ -1503,5 +1646,6 @@ async function runNativeDocumentsReport(params = {}, options = {}) {
 }
 
 module.exports = router;
-module.exports.__testing = { runCustomerDispatchReport, runSalesJournalReport, runNativeDocumentsReport, fetchInvoicesByPostIds, resolveReportTemplate };
+module.exports.__testing = { runCustomerDispatchReport, runSalesJournalReport, runNativeDocumentsReport, fetchInvoicesByPostIds, resolveReportTemplate,
+  runPolicyHistoryReport, runSequenceCountersReport, runTruckHoldLogReport, runTicketAlertHistoryReport };
 

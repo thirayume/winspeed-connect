@@ -58,7 +58,7 @@ export function ReportsPage() {
   })();
   const [from, setFrom] = useState(sixtyDaysAgo);
   const [to, setTo] = useState(localToday);
-  const DATE_RANGE_REPORTS = ['customer-dispatch', 'native-documents'];
+  const DATE_RANGE_REPORTS = ['customer-dispatch', 'native-documents', 'truck-hold-log', 'control-ticket-alert-history'];
   const needsDateRange = DATE_RANGE_REPORTS.includes(active);
 
   const CUST_FILTER_REPORTS = ['customer-dispatch'];
