@@ -137,7 +137,11 @@ deployed loaders, run inside the UAT backend container against the round-3 test 
 returned complete 116 and 107 data, but showed that `VATType` arrives as text, which hid the
 VAT-exempt line; `92114ab` compares it as a number. The owner promoted `ebe3214` and UAT
 deployed at 09:46 (receipt `20261031-094604-uat-apply-ebe3214.txt`, 160/0/0, health 200; the
-UAT bundle compares `VATType` as a number). Production still runs `d4c83c3`.
+UAT bundle compares `VATType` as a number). The owner promoted `ebe3214` to `main` and
+deployed Production at 09:54 (receipt `20261031-095440-prod-apply-ebe3214.txt`, 160/0/0, no
+backup required, health 200). Verified read-only: the Production bundle has the launcher and
+the VAT fix, `/api/native-print` answers 401 without a login, the target guard returns 0 and
+all five native writer flags are false.
 
 **Run of 31 October 00:14–00:25 (after migration 160 on UAT and Production).** A separate
 dated copy of the private harness (new run label, user namespace and state folder) passed
