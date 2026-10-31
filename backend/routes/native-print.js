@@ -5,8 +5,9 @@
  *   GET /api/native-print/104/:docuNo — ใบสั่งจ่ายสินค้า (ตำแหน่งตามฟอร์มกระดาษพิมพ์หัวของ WinSpeed)
  *   GET /api/native-print/116/:docuNo — ใบขน / ใบตัดตั๋วปุ๋ย (WinSpeed ไม่มีฟอร์มลงทะเบียนให้ 116)
  *   GET /api/native-print/107/:docuNo — ใบส่งของ (ตาม "ฟอร์มใบส่งของ" ของ WinSpeed; ปุ๋ยยกเว้น VAT จึงไม่ใช่ใบกำกับภาษี)
+ *   POST /api/native-print/:type/:docuNo/printed — บันทึกการกดพิมพ์ลง wf.NativePrintLog (migration 164)
  *
- * อ่านจาก dbo ของ WinSpeed อย่างเดียว ใช้ได้ทั้งเอกสารที่ Sale-App ออกและที่ทำใน WinSpeed เอง
+ * อ่านจาก dbo ของ WinSpeed อย่างเดียว (บันทึกการพิมพ์เขียนเฉพาะ wf) ใช้ได้ทั้งเอกสารที่ Sale-App ออกและที่ทำใน WinSpeed เอง
  * เลขที่ซ้ำ (พบได้ในข้อมูลเก่า) ต้องแจ้งว่าซ้ำ ไม่เลือกใบใดใบหนึ่งให้เอง
  * หัวบริษัทของใบส่งของมาจาก Header Master (แม่แบบ native-107 หรือ default)
  */
@@ -175,22 +176,65 @@ async function load104(no) {
   return { count: 1, doc: { ...head, items } };
 }
 
+const DOC_ID = { 104: 'SOID', 116: 'RedemtionID', 107: 'SOInvID' };
+
+// ประวัติการพิมพ์จาก Sale-App (เทียบได้กับ SMAudit action P ของ WinSpeed) · อ่านไม่ได้ก็ไม่ขวางการพิมพ์
+async function printHistory(type, docId) {
+  try {
+    const r = rows(await wfQuery(`
+      SELECT COUNT(*) AS count, CONVERT(varchar(16),DATEADD(hour,7,MAX(PrintedAt)),120) AS lastAt
+        FROM wf.NativePrintLog WHERE DocType=@type AND DocId=@id`, { type: { type: sql.SmallInt, value: type }, ...idInput(docId) }))[0];
+    return { count: r?.count || 0, lastAt: r?.lastAt || null };
+  } catch (e) {
+    console.error('[native-print/log]', e.message);
+    return null;
+  }
+}
+
+// โหลดใบพร้อมตรวจสิทธิ์ ใช้ทั้งตอนเปิดดูและตอนบันทึกการพิมพ์ · ตอบ error เองแล้วคืน null
+async function resolveDoc(type, loader, req, res) {
+  const no = String(req.params.docuNo || '').trim();
+  if (!DOCU_NO.test(no)) { res.status(400).json({ code: 'DOC_NO_INVALID', message: 'เลขที่เอกสารไม่ถูกต้อง' }); return null; }
+  const r = await loader(no);
+  if (r.count === 0) { res.status(404).json({ code: 'DOC_NOT_FOUND', message: `ไม่พบใบ ${type} เลขที่ ${no}` }); return null; }
+  if (r.count > 1) { res.status(409).json({ code: 'DOC_AMBIGUOUS', message: `พบใบ ${type} เลขที่ ${no} มากกว่าหนึ่งใบ กรุณาตรวจใน WinSpeed` }); return null; }
+  const empId = type === 116 ? r.doc.items[0]?.SalesEmpID : r.doc.SalesEmpID;
+  const bookingSoid = type === 116 ? r.doc.items[0]?.BookingSOID : type === 104 ? r.doc.BookingSOID : null;
+  if (!(await allowed(req.user, { empId, bookingSoid }))) {
+    res.status(404).json({ code: 'DOC_NOT_FOUND', message: `ไม่พบใบ ${type} เลขที่ ${no}` });
+    return null;
+  }
+  return r.doc;
+}
+
 function handler(type, loader) {
   return async (req, res) => {
-    const no = String(req.params.docuNo || '').trim();
-    if (!DOCU_NO.test(no)) return res.status(400).json({ code: 'DOC_NO_INVALID', message: 'เลขที่เอกสารไม่ถูกต้อง' });
     try {
-      const r = await loader(no);
-      if (r.count === 0) return res.status(404).json({ code: 'DOC_NOT_FOUND', message: `ไม่พบใบ ${type} เลขที่ ${no}` });
-      if (r.count > 1) return res.status(409).json({ code: 'DOC_AMBIGUOUS', message: `พบใบ ${type} เลขที่ ${no} มากกว่าหนึ่งใบ กรุณาตรวจใน WinSpeed` });
-      const empId = type === 116 ? r.doc.items[0]?.SalesEmpID : r.doc.SalesEmpID;
-      const bookingSoid = type === 116 ? r.doc.items[0]?.BookingSOID : type === 104 ? r.doc.BookingSOID : null;
-      if (!(await allowed(req.user, { empId, bookingSoid })))
-        return res.status(404).json({ code: 'DOC_NOT_FOUND', message: `ไม่พบใบ ${type} เลขที่ ${no}` });
-      res.json({ type, ...r.doc });
+      const doc = await resolveDoc(type, loader, req, res);
+      if (!doc) return;
+      res.json({ type, ...doc, printLog: await printHistory(type, doc[DOC_ID[type]]) });
     } catch (e) {
       console.error(`[native-print/${type}]`, e.message);
       res.status(500).json({ code: 'DOC_PRINT_FAILED', message: 'โหลดเอกสารไม่สำเร็จ' });
+    }
+  };
+}
+
+// กดปุ่มพิมพ์หนึ่งครั้ง = หนึ่งแถว (WinSpeed เขียน SMAudit หนึ่งแถวต่อการพิมพ์เช่นกัน)
+function printedHandler(type, loader) {
+  return async (req, res) => {
+    try {
+      const doc = await resolveDoc(type, loader, req, res);
+      if (!doc) return;
+      const docId = doc[DOC_ID[type]];
+      await wfQuery(`INSERT INTO wf.NativePrintLog (DocType, DocId, DocuNo, PrintedBy) VALUES (@type, @id, @no, @user)`, {
+        type: { type: sql.SmallInt, value: type }, ...idInput(docId), ...noInput(doc.DocuNo),
+        user: { type: sql.Int, value: Number(req.user.sub) },
+      });
+      res.json({ ok: true, printLog: await printHistory(type, docId) });
+    } catch (e) {
+      console.error(`[native-print/${type}/printed]`, e.message);
+      res.status(500).json({ code: 'PRINT_LOG_FAILED', message: 'บันทึกประวัติการพิมพ์ไม่สำเร็จ' });
     }
   };
 }
@@ -199,6 +243,9 @@ function handler(type, loader) {
 router.get('/104/:docuNo', requireCapability('native.print-104'), handler(104, load104));
 router.get('/116/:docuNo', requireCapability('native.print-116'), handler(116, load116));
 router.get('/107/:docuNo', requireCapability('native.print-107'), handler(107, load107));
+router.post('/104/:docuNo/printed', requireCapability('native.print-104'), printedHandler(104, load104));
+router.post('/116/:docuNo/printed', requireCapability('native.print-116'), printedHandler(116, load116));
+router.post('/107/:docuNo/printed', requireCapability('native.print-107'), printedHandler(107, load107));
 
 module.exports = router;
 module.exports.__testing = { load104, load116, load107 };

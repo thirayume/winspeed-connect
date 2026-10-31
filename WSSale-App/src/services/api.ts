@@ -1584,9 +1584,15 @@ export type NativeDeliveryOrderDoc = {
   Remark1: string | null; Remark2: string | null; Remark3: string | null; Define1: string | null; CarLicense: string | null; CouponNo: string | null;
   items: NativeDeliveryOrderItem[];
 };
-export const fetchNativeDeliveryOrderPrint = (docuNo: string) => req<NativeDeliveryOrderDoc>(`/native-print/104/${encodeURIComponent(docuNo)}`);
-export const fetchNativeSlipPrint = (docuNo: string) => req<NativeSlipDoc>(`/native-print/116/${encodeURIComponent(docuNo)}`);
-export const fetchNativeInvoicePrint = (docuNo: string) => req<NativeInvoiceDoc>(`/native-print/107/${encodeURIComponent(docuNo)}`);
+// ทุกใบแนบประวัติการพิมพ์จาก Sale-App มาด้วย (null = อ่านประวัติไม่ได้ ไม่ขวางการพิมพ์)
+export type NativePrintLog = { count: number; lastAt: string | null };
+type WithPrintLog<T> = T & { printLog?: NativePrintLog | null };
+export const fetchNativeDeliveryOrderPrint = (docuNo: string) => req<WithPrintLog<NativeDeliveryOrderDoc>>(`/native-print/104/${encodeURIComponent(docuNo)}`);
+export const fetchNativeSlipPrint = (docuNo: string) => req<WithPrintLog<NativeSlipDoc>>(`/native-print/116/${encodeURIComponent(docuNo)}`);
+export const fetchNativeInvoicePrint = (docuNo: string) => req<WithPrintLog<NativeInvoiceDoc>>(`/native-print/107/${encodeURIComponent(docuNo)}`);
+/** กดพิมพ์หนึ่งครั้ง = บันทึกหนึ่งแถวใน wf.NativePrintLog */
+export const logNativePrint = (type: 104 | 116 | 107, docuNo: string) =>
+  req<{ ok: boolean; printLog: NativePrintLog | null }>(`/native-print/${type}/${encodeURIComponent(docuNo)}/printed`, { method: 'POST', silent: true });
 
 // สายอนุมัติของแบบขออนุมัติรายการส่งเสริมการขาย (ชั้น 3 = ผู้จัดการฝ่ายขาย)
 export const fetchRebatePlanApprovals = (planId: number) =>

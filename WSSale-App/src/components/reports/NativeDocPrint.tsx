@@ -8,11 +8,12 @@
  *
  * ใช้คลาสสำหรับพิมพ์ชุดเดียวกับใบอื่น (report-modal-root / report-print-area / report-page / report-no-print)
  * ใบที่ยังไม่สมบูรณ์ (ยังไม่ตรวจครบ, ยังไม่ Post GL) แจ้งบนจอเท่านั้น ไม่พิมพ์ลงกระดาษ
+ * กดพิมพ์แต่ละครั้งบันทึกลง wf.NativePrintLog (เหมือน SMAudit action P ของ WinSpeed) และแสดงจำนวนครั้งที่พิมพ์แล้ว
  */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X, AlertTriangle } from 'lucide-react';
-import { fetchNativeSlipPrint, fetchNativeInvoicePrint, fetchNativeDeliveryOrderPrint, type NativeSlipDoc, type NativeInvoiceDoc, type NativeDeliveryOrderDoc } from '../../services/api';
+import { fetchNativeSlipPrint, fetchNativeInvoicePrint, fetchNativeDeliveryOrderPrint, logNativePrint, type NativeSlipDoc, type NativeInvoiceDoc, type NativeDeliveryOrderDoc, type NativePrintLog } from '../../services/api';
 import { thaiBahtText } from '../../utils/thaiBahtText';
 import { useCan } from '../../utils/capabilities';
 import { DeliveryOrderPages, DELIVERY_ORDER_PRINT_CSS } from './DeliveryOrderForm';
@@ -295,15 +296,28 @@ export function NativeDocPrint({ type, docuNo, onClose }: { type: NativeDocType;
   const [data, setData] = useState<NativeSlipDoc | NativeInvoiceDoc | NativeDeliveryOrderDoc | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [guides, setGuides] = useState(true);
+  const [printLog, setPrintLog] = useState<NativePrintLog | null>(null);
+  const [logFailed, setLogFailed] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    setData(null); setError(null);
+    setData(null); setError(null); setPrintLog(null); setLogFailed(false);
     LOADERS[type](docuNo)
-      .then(d => { if (alive) setData(d); })
+      .then(d => { if (alive) { setData(d); setPrintLog(d.printLog ?? null); } })
       .catch(e => { if (alive) setError(e?.message || 'โหลดเอกสารไม่สำเร็จ'); });
     return () => { alive = false; };
   }, [type, docuNo]);
+
+  // บันทึกก่อนเปิดหน้าต่างพิมพ์ · บันทึกไม่ได้ก็ยังพิมพ์ได้ แต่แจ้งบนจอ
+  const print = async () => {
+    try {
+      const r = await logNativePrint(type, docuNo);
+      setPrintLog(r.printLog); setLogFailed(false);
+    } catch {
+      setLogFailed(true);
+    }
+    window.print();
+  };
 
   // 104 พิมพ์ลงกระดาษพิมพ์หัวขนาด Letter ตามตำแหน่งของ WinSpeed · ใบอื่นเป็น A4
   const preprinted = type === 104;
@@ -311,14 +325,22 @@ export function NativeDocPrint({ type, docuNo, onClose }: { type: NativeDocType;
   const body = (
     <div className="report-modal-root fixed inset-0 z-[110] overflow-auto bg-black/50 p-4">
       <div className={`report-no-print mx-auto mb-3 flex ${width} items-center justify-between gap-3 rounded-lg bg-white px-4 py-2 shadow`}>
-        <span className="font-medium">{TITLES[type]} · {docuNo}</span>
+        <div className="flex flex-col">
+          <span className="font-medium">{TITLES[type]} · {docuNo}</span>
+          {printLog && printLog.count > 0 && (
+            <span className="text-xs text-gray-500">
+              พิมพ์จาก Sale-App แล้ว {printLog.count} ครั้ง · ล่าสุด {shortDate(printLog.lastAt)} {printLog.lastAt?.slice(11, 16)}
+            </span>
+          )}
+          {logFailed && <span className="text-xs text-amber-700">บันทึกประวัติการพิมพ์ไม่สำเร็จ</span>}
+        </div>
         <div className="flex items-center gap-2">
           {preprinted && (
             <label className="flex items-center gap-1 text-xs text-gray-600">
               <input type="checkbox" checked={guides} onChange={e => setGuides(e.target.checked)} /> แสดงกรอบตำแหน่ง (ไม่พิมพ์)
             </label>
           )}
-          <button onClick={() => window.print()} disabled={!data}
+          <button onClick={print} disabled={!data}
             className="flex items-center gap-1 rounded bg-blue-600 px-3 py-1.5 text-white disabled:opacity-50">
             <Printer size={16} /> พิมพ์
           </button>

@@ -11,7 +11,7 @@ const item116 = { Listno: 1, CouponNo: 'CP-T1', GoodCode: 'G-T1', GoodName: 'Tes
 const head107 = { SOInvID: 601, DocuNo: 'T69-00001', DocuDate: '2026-10-31', CustCode: 'C-T1', CustName: 'Test customer', NetAmnt: 107, SalesEmpID: 7002 };
 const head104 = { SOID: 701, DocuNo: 'D-T1', DocuDate: '2026-10-31', CustCode: 'C-T1', CustName: 'Test customer', SalesEmpID: 7001,
   CouponNo: 'CP-T1, CP-T2', CarLicense: 'UAT2-TEST', RefNo: 'Q-T1', BookingSOID: 301, SumGoodAmnt: 100, NetAmnt: 100 };
-const state = { heads104: [head104], heads116: [head116], heads107: [head107], scale: [] };
+const state = { heads104: [head104], heads116: [head116], heads107: [head107], scale: [], printed: [] };
 
 const db = h.installDbStub(call => {
   const t = call.text;
@@ -28,6 +28,11 @@ const db = h.installDbStub(call => {
   if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser/.test(t)) return [{ Id: call.inputs.id, EmpId: '7001', PositionCode: 'TEAM-T' }];
   if (/WITH tree AS/.test(t)) return [{ Id: call.inputs.id, EmpId: '7001' }];
   if (/SELECT SalesUserId FROM wf\.SalesOrderExt/.test(t)) return [];
+  if (/^INSERT INTO wf\.NativePrintLog /.test(t.trim())) { state.printed.push(call.inputs); return []; }
+  if (/FROM wf\.NativePrintLog WHERE DocType=@type AND DocId=@id/.test(t)) {
+    const mine = state.printed.filter(p => p.type === call.inputs.type && p.id === call.inputs.id);
+    return [{ count: mine.length, lastAt: mine.length ? '2026-11-01 09:30' : null }];
+  }
   return [];
 }, { activeUserIds: [11] });
 
@@ -101,7 +106,38 @@ test('a team-scoped manager sees only documents of their team', async () => {
   assert.equal(other.status, 404); assert.equal(other.body.code, 'DOC_NOT_FOUND');
 });
 
-test('printing only reads: no write statement reaches the database', () => {
-  const writes = db.calls.filter(c => c.kind !== 'wfQuery' || /\b(INSERT|UPDATE|DELETE|MERGE|EXEC)\b/i.test(c.text));
+test('opening a document only reads, and shows how often Sale-App printed it', async () => {
+  const before = db.calls.length;
+  const r = await app.call('GET', '/api/native-print/104/D-T1', as('WAREHOUSE'));
+  assert.deepEqual(r.body.printLog, { count: 0, lastAt: null });
+  const writes = db.calls.slice(before).filter(c => c.kind !== 'wfQuery' || /\b(INSERT|UPDATE|DELETE|MERGE|EXEC)\b/i.test(c.text));
   assert.deepEqual(writes, []);
+});
+
+test('pressing print logs one wf row per press, like the SMAudit print row of WinSpeed', async () => {
+  const before = db.calls.length;
+  let r = await app.call('POST', '/api/native-print/104/D-T1/printed', as('WAREHOUSE'));
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.printLog, { count: 1, lastAt: '2026-11-01 09:30' });
+  r = await app.call('POST', '/api/native-print/104/D-T1/printed', as('WAREHOUSE'));
+  assert.equal(r.body.printLog.count, 2);
+  assert.deepEqual(state.printed.map(p => [p.type, p.id, p.no, p.user]), [[104, 701, 'D-T1', 11], [104, 701, 'D-T1', 11]]);
+  assert.equal((await app.call('GET', '/api/native-print/104/D-T1', as('ADMIN'))).body.printLog.count, 2);
+  const writes = db.calls.slice(before).filter(c => c.kind !== 'wfQuery' || /\b(INSERT|UPDATE|DELETE|MERGE|EXEC)\b/i.test(c.text));
+  assert.equal(writes.length, 2);
+  for (const w of writes) assert.match(w.text, /^\s*INSERT INTO wf\.NativePrintLog \(DocType, DocId, DocuNo, PrintedBy\)/);
+});
+
+test('the print log follows the same capability, scope and duplicate rules as opening', async () => {
+  const count = state.printed.length;
+  assert.equal((await app.call('POST', '/api/native-print/107/T69-00001/printed', as('WAREHOUSE'))).status, 403);
+  assert.equal((await app.call('POST', '/api/native-print/107/T69-00001/printed', as('MANAGER'))).status, 404, 'other team');
+  assert.equal((await app.call('POST', '/api/native-print/116/' + encodeURIComponent("1'--") + '/printed', as('ADMIN'))).status, 400);
+  state.heads116 = [head116, { ...head116, RedemtionID: 502 }];
+  assert.equal((await app.call('POST', '/api/native-print/116/9900001/printed', as('ADMIN'))).status, 409);
+  state.heads116 = [head116];
+  assert.equal((await app.call('POST', '/api/native-print/116/9900001/printed')).status, 401);
+  assert.equal(state.printed.length, count, 'nothing logged for refused requests');
+  assert.equal((await app.call('POST', '/api/native-print/107/T69-00001/printed', as('ACCOUNTING'))).status, 200);
+  assert.equal(state.printed.at(-1).id, 601);
 });

@@ -547,6 +547,18 @@ const REPORTS = {
     ],
     run: (params) => runTicketAlertHistoryReport(params),
   },
+  'native-print-log': {
+    title: 'ประวัติการพิมพ์ใบ 104 / 116 / 107 จาก Sale-App (NativePrintLog)',
+    category: 'audit',
+    columns: [
+      { key: 'PrintedAt', label: 'พิมพ์เมื่อ', type: 'datetime' },
+      { key: 'DocType', label: 'เอกสาร', type: 'text' },
+      { key: 'DocuNo', label: 'เลขที่', type: 'identifier' },
+      { key: 'PrintNo', label: 'พิมพ์ครั้งที่', type: 'integer' },
+      { key: 'PrintedBy', label: 'ผู้พิมพ์', type: 'text' },
+    ],
+    run: (params) => runNativePrintLogReport(params),
+  },
   'gl-sales-journal': {
     title: 'รายงานสรุปสมุดรายวันขายและการลงบัญชี (Sales Journal & Ledger Posting Log)',
     category: 'finance',
@@ -750,6 +762,7 @@ const REPORT_ROLES = {
   'sequence-counters': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'truck-hold-log': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'control-ticket-alert-history': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'native-print-log': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
 };
 
 function parseDateParam(value, fallback) {
@@ -1569,6 +1582,25 @@ async function runTicketAlertHistoryReport(params = {}, options = {}) {
   }));
 }
 
+// One row per press of the print button (migration 164). PrintNo counts every print of the
+// document, also those before the date range, so a reprint shows as 2, 3, ...
+const PRINT_DOC_TYPES = { 104: '104 ใบสั่งจ่ายสินค้า', 116: '116 ใบขน', 107: '107 ใบส่งของ' };
+async function runNativePrintLogReport(params = {}, options = {}) {
+  const queryFn = options.queryFn || wfQuery;
+  const r = await queryFn(`
+    WITH numbered AS (
+      SELECT p.Id, p.DocType, p.DocuNo, p.PrintedBy, p.PrintedAt,
+             ROW_NUMBER() OVER (PARTITION BY p.DocType, p.DocId ORDER BY p.PrintedAt, p.Id) AS PrintNo
+        FROM wf.NativePrintLog p)
+    SELECT TOP (@limit) ${ictText('n.PrintedAt')} AS PrintedAt, n.DocType, n.DocuNo, n.PrintNo,
+           COALESCE(u.DisplayName, u.Username) AS PrintedBy
+      FROM numbered n
+      LEFT JOIN wf.AppUser u ON u.Id = n.PrintedBy
+     WHERE CAST(DATEADD(hour,7,n.PrintedAt) AS date) BETWEEN @from AND @to
+     ORDER BY n.PrintedAt DESC, n.Id DESC`, auditRange(params));
+  return (r.recordset || []).map(row => ({ ...row, DocType: PRINT_DOC_TYPES[row.DocType] || String(row.DocType) }));
+}
+
 async function runNativeDocumentsReport(params = {}, options = {}) {
   const queryFn = options.queryFn || wfQuery;
   const today = new Date();
@@ -1647,5 +1679,5 @@ async function runNativeDocumentsReport(params = {}, options = {}) {
 
 module.exports = router;
 module.exports.__testing = { runCustomerDispatchReport, runSalesJournalReport, runNativeDocumentsReport, fetchInvoicesByPostIds, resolveReportTemplate,
-  runPolicyHistoryReport, runSequenceCountersReport, runTruckHoldLogReport, runTicketAlertHistoryReport };
+  runPolicyHistoryReport, runSequenceCountersReport, runTruckHoldLogReport, runTicketAlertHistoryReport, runNativePrintLogReport };
 

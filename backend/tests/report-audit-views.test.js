@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 // W1-b / W1-c: audit views over wf tables that only services write — read-only, Thai time, readable labels
-const { runPolicyHistoryReport, runSequenceCountersReport, runTruckHoldLogReport, runTicketAlertHistoryReport } =
+const { runPolicyHistoryReport, runSequenceCountersReport, runTruckHoldLogReport, runTicketAlertHistoryReport, runNativePrintLogReport } =
   require('../routes/reports').__testing;
 
 function stub(rows) {
@@ -55,4 +55,17 @@ test('control ticket alert history includes closed alerts and names type and sta
   assert.match(text, /FROM wf\.ControlTicketAlert a/);
   assert.doesNotMatch(text, /Status\s*=\s*'ACTIVE'/, 'history shows every status, not only open alerts');
   assert.deepEqual(rows.map(r => [r.AlertType, r.Status]), [['ใกล้หมดอายุ', 'ค้างอยู่'], ['หมดอายุ', 'ปิดแล้ว'], ['X', 'Y']]);
+});
+
+test('Sale-App print log numbers every print of a document and names the document type in Thai', async () => {
+  const s = stub([{ DocType: 104, DocuNo: 'D-T1', PrintNo: 2, PrintedBy: 'Test One' }, { DocType: 116, PrintNo: 1 }, { DocType: 107, PrintNo: 1 }]);
+  const rows = await runNativePrintLogReport({ from: '2026-11-01', to: '2026-11-30' }, { queryFn: s.queryFn });
+  const { text, inputs } = s.calls[0];
+  readOnly(text);
+  assert.match(text, /FROM wf\.NativePrintLog p/);
+  assert.match(text, /ROW_NUMBER\(\) OVER \(PARTITION BY p\.DocType, p\.DocId ORDER BY p\.PrintedAt, p\.Id\) AS PrintNo/);
+  assert.ok(text.indexOf('ROW_NUMBER') < text.indexOf('BETWEEN @from AND @to'), 'numbered before the date filter, so reprints keep their number');
+  assert.deepEqual([inputs.from.value, inputs.to.value], ['2026-11-01', '2026-11-30']);
+  assert.deepEqual(rows.map(r => r.DocType), ['104 ใบสั่งจ่ายสินค้า', '116 ใบขน', '107 ใบส่งของ']);
+  assert.equal(rows[0].PrintNo, 2);
 });
