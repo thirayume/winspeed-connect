@@ -174,7 +174,12 @@ from the capability map) and the changelog (Unreleased since 1.0.0-beta.6) were 
 promotion dispatch again left no run, so the owner allowed a direct fast-forward of `uat` to
 `f380fc8`; UAT deployed at 23:19 on 31 October (receipt `20261031-231920-uat-apply-f380fc8.txt`,
 160/0/0, health 200). In the deployed backend the reports returned 19 policy changes and 2 counters;
-the truck-hold and alert tables are still empty. Production still runs `154eb65`.
+the truck-hold and alert tables are still empty. At the owner's request Claude then fast-forwarded
+`main` to `f380fc8` and deployed Production at 01:52 on 1 November (receipt
+`20261101-015255-prod-apply-f380fc8.txt`, 160/0/0, no backup required, health 200). Verified
+read-only: Production serves the same bundle as UAT, the four reports run against
+`dbwins_worldfert9` (19 policy changes, 2 counters, empty hold and alert history), the report API
+answers 401 without a login, the target guard returns 0 and all five native writer flags are false.
 
 **Run of 31 October 00:14–00:25 (after migration 160 on UAT and Production).** A separate
 dated copy of the private harness (new run label, user namespace and state folder) passed
