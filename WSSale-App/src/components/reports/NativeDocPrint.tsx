@@ -190,13 +190,13 @@ function InvoiceBody({ d }: { d: NativeInvoiceDoc }) {
           <tbody>
             <tr><td className="py-0.5">รวมเงิน</td><td className="py-0.5 text-right tabular-nums">{nf(d.SumGoodAmnt)}</td></tr>
             {Number(d.BillDiscAmnt || 0) > 0 && <tr><td className="py-0.5">ส่วนลด</td><td className="py-0.5 text-right tabular-nums">{nf(d.BillDiscAmnt)}</td></tr>}
-            {Number(d.VATAmnt || 0) > 0 && <tr><td className="py-0.5">ภาษีมูลค่าเพิ่ม {nf(d.VATRate, 0)}%{d.VATType === 2 ? ' (รวมในราคา)' : ''}</td><td className="py-0.5 text-right tabular-nums">{nf(d.VATAmnt)}</td></tr>}
+            {Number(d.VATAmnt || 0) > 0 && <tr><td className="py-0.5">ภาษีมูลค่าเพิ่ม {nf(d.VATRate, 0)}%{Number(d.VATType) === 2 ? ' (รวมในราคา)' : ''}</td><td className="py-0.5 text-right tabular-nums">{nf(d.VATAmnt)}</td></tr>}
             <tr className="border-t border-gray-300 font-semibold"><td className="py-1">จำนวนเงินรวมทั้งสิ้น</td><td className="py-1 text-right tabular-nums">{nf(d.NetAmnt)}</td></tr>
           </tbody>
         </table>
       </div>
       <div className="mt-1 text-right text-[15px]">({thaiBahtText(Number(d.NetAmnt || 0))})</div>
-      {d.VATType === 3 && <div className="mt-1 text-right text-sm text-gray-600">สินค้ายกเว้นภาษีมูลค่าเพิ่ม</div>}
+      {Number(d.VATType) === 3 && <div className="mt-1 text-right text-sm text-gray-600">สินค้ายกเว้นภาษีมูลค่าเพิ่ม</div>}
 
       <div className="mt-16 flex justify-around text-center text-[15px]">
         {['ผู้รับสินค้า', 'ผู้ส่งสินค้า', 'ผู้มีอำนาจลงนาม'].map(t => (

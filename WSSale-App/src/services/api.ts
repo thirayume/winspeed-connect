@@ -1560,7 +1560,7 @@ export type NativeInvoiceDoc = {
   type: 107; SOInvID: number; DocuNo: string; DocuDate: string; CustCode: string | null; CustName: string | null; CustTaxId: string | null;
   BillAddr1: string | null; BillAddr2: string | null; District: string | null; Amphur: string | null; Province: string | null; PostCode: string | null; Tel: string | null;
   CreditDays: number | null; DueDate: string | null; SumGoodAmnt: number; BillDiscAmnt: number | null; BillAftrDiscAmnt: number | null;
-  VATType: number | null; VATRate: number | null; VATAmnt: number | null; NetAmnt: number; DocuStatus: string | null; PostGL: string | null; CouponFlag: string | null;
+  VATType: number | string | null; VATRate: number | null; VATAmnt: number | null; NetAmnt: number; DocuStatus: string | null; PostGL: string | null; CouponFlag: string | null;
   RefNo: string | null; SalesCode: string | null; SalesName: string | null;
   items: NativeInvoiceItem[]; slips: string[];
   company: { companyNameTh?: string | null; companyNameEn?: string | null; addressTh?: string | null; tel?: string | null; fax?: string | null; taxId?: string | null; branchNameTh?: string | null; branchCode?: string | null } | null;
