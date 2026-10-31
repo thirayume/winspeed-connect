@@ -122,6 +122,21 @@ and frontend checks had passed locally). UAT deployed at 09:00 on 31 October (re
 #5 and deployed Production at 09:12 (receipt `20261031-091258-prod-apply-d4c83c3.txt`, 160/0/0,
 no backup required, health 200); writer flags remain false.
 
+**W2 WinSpeed prints (`dccfd71` + `92114ab`, no migration).** `GET /api/native-print/116|107/:docuNo`
+reads dbo only and returns a 116 slip (ใบขน / ใบตัดตั๋วปุ๋ย: receiver, plate, recorder, approver,
+coupon lines, the scale record when exactly one matches) or a 107 delivery note (ใบส่งของ:
+Header Master company header, customer, terms, lines with the 104 reference, linked slips,
+amount in words). Duplicate numbers return 409. Roles come from the capability map
+(`native.print-116`, `native.print-107`); team-scoped users see only their team's documents.
+Paper Trail has a "พิมพ์เอกสาร WinSpeed" launcher, and the 116/107 dialogs get a print button
+once the document exists. Every 2026 native 107 is VATType 3 (fertilizer is VAT-exempt), so the
+form is titled ใบส่งของ, not ใบกำกับภาษี, and the VAT row appears only when there is VAT; accounting
+to confirm. The owner promoted `dccfd71` with the workflow and UAT deployed at 09:37 on
+31 October (receipt `20261031-093754-uat-apply-dccfd71.txt`, 160/0/0, health 200). The
+deployed loaders, run inside the UAT backend container against the round-3 test documents,
+returned complete 116 and 107 data, but showed that `VATType` arrives as text, which hid the
+VAT-exempt line; `92114ab` compares it as a number (not yet on UAT or Production).
+
 **Run of 31 October 00:14–00:25 (after migration 160 on UAT and Production).** A separate
 dated copy of the private harness (new run label, user namespace and state folder) passed
 every phase for both chains: prepare, booking/AI, 104, 116, 107, audit and close. The five
