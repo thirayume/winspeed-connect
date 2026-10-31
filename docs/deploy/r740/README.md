@@ -6,22 +6,24 @@ Docker engine and Docker Desktop on that server are not used.
 
 > **Current status for all agents (Claude · Codex · Antigravity):**
 > [GO-LIVE-STATUS.md](GO-LIVE-STATUS.md) — what is live vs pending, and the constraints to respect
-> when working on deploy or the databases. Updated 2026-10-28.
+> when working on deploy or the databases. Runbook refreshed 2026-10-31 (160 migrations).
 
 | | UAT | PROD |
 |---|---|---|
 | Git branch | `uat` | `main` |
 | Server folder | `D:\SaleApp\uat` | `D:\SaleApp\prod` |
-| Database (R740-SRV\SQL2008) | `dbwins_worldfert9_uat` | `dbwins_worldfert9` |
+| Database (R740-SRV\SQL2008) | `dbwins_worldfert9_uat` (restored from PROD every night at 21:00) | `dbwins_worldfert9` |
 | SQL logins | `wf_r740_uat_app_v2` / `wf_r740_uat_migrator_v2` | `wf_r740_prod_app` / `wf_r740_prod_migrator` |
-| URL | `https://172.16.30.169:8444` (HTTP 8091 redirects) | `https://172.16.30.169` (HTTP 80 redirects) |
+| Public URL | `https://wfuat.duckdns.org` | `https://worldfert.duckdns.org` |
+| LAN URL | `https://172.16.30.169:8444` (HTTP 8091 redirects) | `https://172.16.30.169` (HTTP 80 redirects) |
 | Compose project / images | `saleapp-uat` / `worldfert-saleapp-uat-*` | `saleapp-prod` / `worldfert-saleapp-prod-*` |
-| Status | corrected clone deployed; see current receipt | technical deploy candidate; business acceptance remains |
+| Native WinSpeed writers (AI/104/116/107) | on, for Full Loop simulation on the clone | off; Production prints WinSpeed documents read-only |
 
-PROD reserves ports 80/443 after the coordinated IIS/SSRS changes. TLS uses Caddy's internal CA for the IP address until a
-domain exists; each browser device must trust the Caddy root certificate once. DNS/PKI have not
-yet been arranged. See [DNS, PKI and ACME preparation](TLS-DNS-PKI-ACME.md) for the current
-limitations and the information IT needs to supply.
+The public hostnames have Let's Encrypt certificates through Caddy (DNS-01 with DuckDNS); see
+[DuckDNS public ingress](DUCKDNS-PUBLIC-INGRESS.md). The LAN IP endpoints still use Caddy's
+internal CA, so a device that uses the IP address must trust the Caddy root certificate once.
+[DNS, PKI and ACME preparation](TLS-DNS-PKI-ACME.md) covers the remaining options for a company
+domain.
 
 ## Branches and release flow
 
@@ -45,6 +47,21 @@ GitHub cannot reach R740-SRV, so deploying stays a separate, manual step.
    branch). It fast-forwards `main`, merges into `uat`, tests both, and pushes them together.
    It refuses a branch cut from `uat`. Then deploy with `hotfix`.
 
+Practical notes from October 2026:
+
+- `source` takes a **branch name**. A commit hash fails at the fetch step ("couldn't find
+  remote ref", exit 128).
+- After **Run workflow**, check that a new run appears in the list within a few seconds. On
+  31 October two dispatches (UAT and PROD) were accepted in the browser but created no run, so
+  the branch never moved and the following deploy would have redeployed the old commit.
+- If a dispatch leaves no run, the owner may allow a direct **fast-forward** push of the tested
+  commit (`git push origin <commit>:refs/heads/uat`, or `main` for PROD). Never force; confirm
+  `git merge-base --is-ancestor origin/<branch> <commit>` first, note that the workflow's CI step
+  was skipped (the same backend tests and frontend build must have passed locally), and record it
+  in [GO-LIVE-STATUS.md](GO-LIVE-STATUS.md).
+- Before recording a PROD release as done, check `origin/main`, the new `prod-apply-<commit>`
+  receipt in `D:\SaleApp\prod\deploy-logs`, health and the bundle — not only the person's report.
+
 Deploy, from the dev PC (over SSH) or on R740-SRV (local WSL; one-click files in `D:\SaleApp`):
 
 | | Dev PC | On R740-SRV |
@@ -54,7 +71,9 @@ Deploy, from the dev PC (over SSH) or on R740-SRV (local WSL; one-click files in
 | Hotfix (UAT then PROD) | `docs\deploy\r740\deploy.bat hotfix` | `D:\SaleApp\Deploy-HOTFIX.bat` |
 
 Each environment shows the commit it will deploy and asks for `YES`, then shows the migration
-plan and asks for `APPLY` (PROD: the database name). Add `-PlanOnly` to stop after the plan.
+plan. With pending migrations it asks for `APPLY` (PROD: the database name, and a fresh backup is
+required); with none pending it asks for `YES` to restart the stack on the new commit. Answering
+`APPLY` to the restart prompt stops without changes. Add `-PlanOnly` to stop after the plan.
 The server files come from [`server/`](server) and run the driver kept current in the UAT clone.
 
 ## Server layout
@@ -157,6 +176,17 @@ and retiring the old R740 hyphenated tuple. Migration 158 remains byte-identical
 an allowlist containing only the underscore clone and uses the isolated v2 logins. Production
 work belongs in the separate Production web app.
 
+Migrations 160–162 (applied on UAT and PROD on 30–31 October) change only the restricted
+simulation writers, which stay off in Production:
+
+- 160: a native 116 records the requester's WinSpeed employee as recorder (`SaveEmpID`) and
+  leaves the WinSpeed approver empty; the approver is kept in `wf.NativeDocumentApproval`, and
+  the approver list (`wf.NativeApproverEmployee` + history) is maintained in Master Data.
+- 161: the 116 number is the transport slip: the booking's scale `MoveBill` when there is one
+  (within ±2% of the coupon tons, otherwise an exception), or a typed 7-digit slip number as an
+  exception approved by a manager, executive or administrator other than the requester.
+- 162: the 107 writer accepts the scale record that a 116 slip came from.
+
 The owner selected Production app accounts for UAT after the nightly restore (27 October 2026).
 Do not preserve or overwrite the restored `admin` password hash with a separate UAT hash.
 
@@ -181,7 +211,7 @@ plan; the former hyphenated clone and its deployment receipts do not prove this 
     certificate on the share; double-click, accept UAC. It refuses a file whose fingerprint
     differs, so a swapped file on the share is never trusted.
 
-## Production technical deployment and business acceptance
+## Production
 
 Public domain ingress: [DuckDNS ports, routing, ACME and rollback](DUCKDNS-PUBLIC-INGRESS.md).
 Both hostnames use one Caddy on 80/443, with separate app/database routes; UAT's IP
@@ -189,38 +219,38 @@ endpoint stays on 8444. The public edge never uses the unrelated service on 8443
 
 PROD uses the same images, Compose file and scripts as UAT. What differs is pinned in
 [`targets/prod.env`](targets/prod.env): `dbwins_worldfert9`, `ONPREM_TARGET_KIND=production`,
-ports 80/443, a backup gate and the UAT Caddy root. Until the steps below, nothing touches
-`dbwins_worldfert9`.
+ports 80/443, a backup gate, the UAT Caddy root and the four AI/104/116/107 writer flags set to
+`false`. Production has been live since 30 October 2026. The web stack, reports and read-only
+WinSpeed prints are in use; the native writers, AR reports, GL posting and physical
+weighing/shipment are still business acceptance items, not certified by a deploy.
 
-The owner authorized deployment on ports 80/443. The current candidate enables the technical
-deploy gate while retaining all four AI/104/116/107 simulation flags false and the independent
-live-database writer denials. Deploying the web stack does not certify those business operations,
-AR reports, GL, approved print forms or physical weighing/shipment for Production.
+### Routine release (owner)
 
-1. **UAT sign-off**, then the owner approves fast-forwarding `main` to the tested `uat` commit.
-2. **Go-live switch**: a reviewed commit sets `SALEAPP_DEPLOY_ENABLED=true` in
-   `targets/prod.env` (through `uat`, then `main`).
-3. **SQL logins** (IT, maintenance window): create `wf_r740_prod_app` / `wf_r740_prod_migrator`
-   (new passwords, no server roles, no mapping), run
-   [`sql/r740-prod-principals.sql`](sql/r740-prod-principals.sql); both rows must be `OK`
-   (they cannot open `dbwins_worldfert9_uat` or any other user database).
-4. **Secrets**: [`prod.env.example`](prod.env.example) -> `D:\SaleApp\prod\config\.env`,
-   [`prod.migrator.env.example`](prod.migrator.env.example) -> `.env.migrator.local`.
-5. `docs\deploy\r740\deploy.bat prod -PlanOnly` (read-only): inspect the actual plan for the
-   release commit. The Production ledger was 152 rows on 28 October; do not expect 151 pending
-   or assume that migrations already applied in UAT have been applied in Production.
-6. **Backup** (IT, SSMS): [`sql/r740-prod-backup.sql`](sql/r740-prod-backup.sql), a verified
-   copy-only backup in `D:\MSSQL\MSSQL10_50.SQL2008\Backup`.
-7. `deploy.bat prod`: confirm the commit, then type `dbwins_worldfert9` to apply. The server
-   refuses without that backup (younger than 120 minutes) or if the plan changed, applies the
-   migrations, verifies, starts the stack at `https://172.16.30.169` and reuses the UAT root,
-   so clients need no new certificate.
-8. First admin: `New-R740AdminSql.ps1 -Environment prod`, run by IT in SSMS.
+1. UAT passed on a commit (from the UAT deploy receipt).
+2. **2. Promote UAT to PROD** with `uat_commit` = that commit; check that the run appears and
+   passes (see the practical notes above).
+3. Only if the plan has pending migrations: a verified copy-only backup with
+   [`sql/r740-prod-backup.sql`](sql/r740-prod-backup.sql) in SSMS (younger than 120 minutes).
+4. `docs\deploy\r740\deploy.bat prod`: `YES` for the commit, then the database name
+   `dbwins_worldfert9` when migrations are pending, or `YES` to restart when none are.
+5. Verify, read-only: the `prod-apply-<commit>` receipt, `https://worldfert.duckdns.org/api/health`,
+   the frontend bundle, `wf.fn_IsInitialNativeUatTarget()` = 0 on `dbwins_worldfert9`, and all
+   writer flags false in `saleapp-prod-backend-1` (the four pinned flags plus
+   `COUPON_NATIVE_POSTING_ENABLED`; `ALLOW_TEST_NATIVE_WRITEBACK` unset).
+
+### First go-live (done 30 October 2026, kept for reference)
+
+UAT sign-off; `SALEAPP_DEPLOY_ENABLED=true` in `targets/prod.env`; IT created
+`wf_r740_prod_app` / `wf_r740_prod_migrator` and ran
+[`sql/r740-prod-principals.sql`](sql/r740-prod-principals.sql) (both rows `OK`); secrets from
+[`prod.env.example`](prod.env.example) and [`prod.migrator.env.example`](prod.migrator.env.example)
+in `D:\SaleApp\prod\config`; `deploy.bat prod -PlanOnly`; backup; `deploy.bat prod`; first admin
+with `New-R740AdminSql.ps1 -Environment prod`, run by IT in SSMS.
 
 If an apply fails: stop the `saleapp-prod` stack first. The migrations add only `wf`
-objects (no `dbo` writes at migration time), so WINSpeed keeps working. Restore the step 6
-backup only for real damage; a restore also discards WINSpeed entries made after it, so
-apply in a quiet window right after the backup.
+objects (no `dbo` writes at migration time), so WINSpeed keeps working. Restore the backup only
+for real damage; a restore also discards WINSpeed entries made after it, so apply in a quiet
+window right after the backup.
 
 ## Guards worth knowing
 
@@ -230,9 +260,10 @@ apply in a quiet window right after the backup.
 - The UAT app and migrator enforce the UAT target isolation rules. The Production target
   requires the live database and its dedicated logins. Both enforce their reviewed roles,
   TCP and SQL server/version identity.
-- All four native AI/104/116/107 feature flags are pinned in `targets/*.env` and checked in
-  the resolved Compose model. Enabling a flag does not change the UAT2-only writer guards or
-  prove the native contract on R740.
+- The four native AI/104/116/107 feature flags are pinned in `targets/*.env` and checked in
+  the resolved Compose model (UAT `true`, PROD `false`). `COUPON_NATIVE_POSTING_ENABLED` is not
+  pinned and defaults to `false`; check it after each PROD deploy. The SQL writers also refuse
+  any database other than the UAT clone (`wf.fn_IsInitialNativeUatTarget()` returns 0 on PROD).
 - Target values live only in `targets/*.env` (reviewed in Git); `config\.env` holds secrets.
 - Background workers are on in both R740 targets (`DISABLE_BACKGROUND_WORKERS=false`): the
   5-second polling that refreshes open screens (read-only on `dbo.SOHD`) and the outbox
