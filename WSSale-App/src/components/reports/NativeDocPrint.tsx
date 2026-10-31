@@ -1,6 +1,7 @@
 /**
  * พิมพ์เอกสาร WinSpeed จาก Sale-App (W2) — อ่านจาก dbo ของ WinSpeed อย่างเดียว
  *
+ *   104 ใบสั่งจ่ายสินค้า — พิมพ์ลงกระดาษพิมพ์หัวตามตำแหน่งฟอร์ม WinSpeed (DeliveryOrderForm.tsx)
  *   116 ใบขน / ใบตัดตั๋วปุ๋ย — WinSpeed ไม่มีฟอร์มลงทะเบียน จึงออกแบบจากข้อมูลจริงของใบ
  *   107 ใบส่งของ — จัดตามฟอร์มเริ่มต้นของ WinSpeed (dr_so_saleorder_tax_worldfart) พร้อมหัวบริษัทจาก Header Master
  *       ปุ๋ยเป็นสินค้ายกเว้น VAT (ใบ 107 ปี 2569 เป็น VATType 3 ทั้งหมด) จึงไม่ใช้ชื่อ "ใบกำกับภาษี" และแสดงแถว VAT เฉพาะใบที่มี VAT
@@ -11,9 +12,12 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X, AlertTriangle } from 'lucide-react';
-import { fetchNativeSlipPrint, fetchNativeInvoicePrint, type NativeSlipDoc, type NativeInvoiceDoc } from '../../services/api';
+import { fetchNativeSlipPrint, fetchNativeInvoicePrint, fetchNativeDeliveryOrderPrint, type NativeSlipDoc, type NativeInvoiceDoc, type NativeDeliveryOrderDoc } from '../../services/api';
 import { thaiBahtText } from '../../utils/thaiBahtText';
 import { useCan } from '../../utils/capabilities';
+import { DeliveryOrderPages, DELIVERY_ORDER_PRINT_CSS } from './DeliveryOrderForm';
+
+export type NativeDocType = 104 | 116 | 107;
 
 const PRINT_CSS = `
 @media print {
@@ -280,25 +284,40 @@ function InvoiceBody({ d }: { d: NativeInvoiceDoc }) {
   );
 }
 
-export function NativeDocPrint({ type, docuNo, onClose }: { type: 116 | 107; docuNo: string; onClose: () => void }) {
-  const [data, setData] = useState<NativeSlipDoc | NativeInvoiceDoc | null>(null);
+const TITLES: Record<NativeDocType, string> = {
+  104: 'ใบสั่งจ่ายสินค้า (104) · กระดาษพิมพ์หัว',
+  116: 'ใบขน / ใบตัดตั๋วปุ๋ย (116)',
+  107: 'ใบส่งของ (107)',
+};
+const LOADERS = { 104: fetchNativeDeliveryOrderPrint, 116: fetchNativeSlipPrint, 107: fetchNativeInvoicePrint };
+
+export function NativeDocPrint({ type, docuNo, onClose }: { type: NativeDocType; docuNo: string; onClose: () => void }) {
+  const [data, setData] = useState<NativeSlipDoc | NativeInvoiceDoc | NativeDeliveryOrderDoc | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [guides, setGuides] = useState(true);
 
   useEffect(() => {
     let alive = true;
     setData(null); setError(null);
-    (type === 116 ? fetchNativeSlipPrint(docuNo) : fetchNativeInvoicePrint(docuNo))
+    LOADERS[type](docuNo)
       .then(d => { if (alive) setData(d); })
       .catch(e => { if (alive) setError(e?.message || 'โหลดเอกสารไม่สำเร็จ'); });
     return () => { alive = false; };
   }, [type, docuNo]);
 
-  const title = type === 116 ? 'ใบขน / ใบตัดตั๋วปุ๋ย (116)' : 'ใบส่งของ (107)';
+  // 104 พิมพ์ลงกระดาษพิมพ์หัวขนาด Letter ตามตำแหน่งของ WinSpeed · ใบอื่นเป็น A4
+  const preprinted = type === 104;
+  const width = preprinted ? 'max-w-[8.5in]' : 'max-w-[210mm]';
   const body = (
     <div className="report-modal-root fixed inset-0 z-[110] overflow-auto bg-black/50 p-4">
-      <div className="report-no-print mx-auto mb-3 flex max-w-[210mm] items-center justify-between rounded-lg bg-white px-4 py-2 shadow">
-        <span className="font-medium">{title} · {docuNo}</span>
-        <div className="flex gap-2">
+      <div className={`report-no-print mx-auto mb-3 flex ${width} items-center justify-between gap-3 rounded-lg bg-white px-4 py-2 shadow`}>
+        <span className="font-medium">{TITLES[type]} · {docuNo}</span>
+        <div className="flex items-center gap-2">
+          {preprinted && (
+            <label className="flex items-center gap-1 text-xs text-gray-600">
+              <input type="checkbox" checked={guides} onChange={e => setGuides(e.target.checked)} /> แสดงกรอบตำแหน่ง (ไม่พิมพ์)
+            </label>
+          )}
           <button onClick={() => window.print()} disabled={!data}
             className="flex items-center gap-1 rounded bg-blue-600 px-3 py-1.5 text-white disabled:opacity-50">
             <Printer size={16} /> พิมพ์
@@ -306,15 +325,21 @@ export function NativeDocPrint({ type, docuNo, onClose }: { type: 116 | 107; doc
           <button onClick={onClose} className="rounded border px-3 py-1.5" aria-label="ปิด"><X size={16} /></button>
         </div>
       </div>
-      <div className="report-print-area mx-auto max-w-[210mm]">
-        <div className="report-page bg-white p-10 shadow" style={{ fontFamily: '"Sarabun","TH Sarabun New",sans-serif' }}>
-          {error && <p className="text-red-600">{error}</p>}
-          {!data && !error && <p>กำลังโหลด...</p>}
-          {data && data.type === 116 && <SlipBody d={data} />}
-          {data && data.type === 107 && <InvoiceBody d={data} />}
+      {preprinted && data?.type === 104 ? (
+        <div className="report-print-area mx-auto w-fit">
+          <DeliveryOrderPages d={data} guides={guides} />
         </div>
-      </div>
-      <style>{PRINT_CSS}</style>
+      ) : (
+        <div className={`report-print-area mx-auto ${width}`}>
+          <div className="report-page bg-white p-10 shadow" style={{ fontFamily: '"Sarabun","TH Sarabun New",sans-serif' }}>
+            {error && <p className="text-red-600">{error}</p>}
+            {!data && !error && <p>กำลังโหลด...</p>}
+            {data && data.type === 116 && <SlipBody d={data} />}
+            {data && data.type === 107 && <InvoiceBody d={data} />}
+          </div>
+        </div>
+      )}
+      <style>{preprinted ? DELIVERY_ORDER_PRINT_CSS : PRINT_CSS}</style>
     </div>
   );
   return createPortal(body, document.body);
@@ -323,11 +348,11 @@ export function NativeDocPrint({ type, docuNo, onClose }: { type: 116 | 107; doc
 /** ปุ่มเปิดพิมพ์เอกสาร WinSpeed ด้วยเลขที่ — ใช้ได้ทั้งใบที่ Sale-App ออกและที่ทำใน WinSpeed */
 export function NativeDocPrintLauncher() {
   const can = useCan();
-  const types = ([116, 107] as const).filter(t => can(`native.print-${t}`));
+  const types = ([104, 116, 107] as const).filter(t => can(`native.print-${t}`));
   const [open, setOpen] = useState(false);
-  const [type, setType] = useState<116 | 107>(types[0] ?? 116);
+  const [type, setType] = useState<NativeDocType>(types[0] ?? 116);
   const [no, setNo] = useState('');
-  const [show, setShow] = useState<{ type: 116 | 107; no: string } | null>(null);
+  const [show, setShow] = useState<{ type: NativeDocType; no: string } | null>(null);
   if (!types.length) return null;
   const valid = /^[A-Za-z0-9-]{3,25}$/.test(no.trim());
   const go = () => { if (valid) { setShow({ type, no: no.trim() }); setOpen(false); } };
@@ -341,14 +366,15 @@ export function NativeDocPrintLauncher() {
           <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
             <h2 className="text-lg font-bold text-[#0C447C]">พิมพ์เอกสาร WinSpeed</h2>
             <label className="mt-4 block text-sm">ประเภท
-              <select value={type} onChange={e => setType(Number(e.target.value) as 116 | 107)} className="mt-1 w-full rounded-lg border p-2">
+              <select value={type} onChange={e => setType(Number(e.target.value) as NativeDocType)} className="mt-1 w-full rounded-lg border p-2">
+                {types.includes(104) && <option value={104}>104 ใบสั่งจ่ายสินค้า (กระดาษพิมพ์หัว)</option>}
                 {types.includes(116) && <option value={116}>116 ใบขน / ใบตัดตั๋ว</option>}
                 {types.includes(107) && <option value={107}>107 ใบส่งของ</option>}
               </select>
             </label>
             <label className="mt-3 block text-sm">เลขที่เอกสาร
               <input autoFocus value={no} onChange={e => setNo(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') go(); }}
-                placeholder={type === 116 ? 'เลขใบขน 7 หลัก' : 'เช่น J69-00001'} maxLength={25} className="mt-1 w-full rounded-lg border p-2" />
+                placeholder={type === 116 ? 'เลขใบขน 7 หลัก' : type === 104 ? 'เลขที่ใบสั่งขาย 104' : 'เช่น J69-00001'} maxLength={25} className="mt-1 w-full rounded-lg border p-2" />
             </label>
             <div className="mt-5 flex justify-end gap-2 text-sm">
               <button onClick={() => setOpen(false)} className="rounded-lg border px-3 py-2">ปิด</button>

@@ -16,6 +16,7 @@ const FALLBACK_ACTIONS: Record<string, string[]> = {
   'coupon.settle': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'coupon.manual116': ['WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'invoice.post-native': ['ACCOUNTING'],
+  'native.print-104': ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'native.print-116': ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'native.print-107': ['COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'giveaway.borrow': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],

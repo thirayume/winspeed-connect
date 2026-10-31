@@ -1572,6 +1572,19 @@ export type NativeInvoiceDoc = {
   items: NativeInvoiceItem[]; slips: string[]; coupons: string[]; plates: string[];
   company: { companyNameTh?: string | null; companyNameEn?: string | null; addressTh?: string | null; tel?: string | null; fax?: string | null; taxId?: string | null; branchNameTh?: string | null; branchCode?: string | null } | null;
 };
+// ช่องข้อมูลตามฟอร์มกระดาษพิมพ์หัวของ WinSpeed "ใบสั่งจ่ายสินค้า" (dr_so_delivery_order_pre)
+export type NativeDeliveryOrderItem = {
+  ListNo: number; GoodQty2: number; UnitName: string | null; GoodCode: string | null; GoodName: string | null; GoodPrice2: number; GoodAmnt: number;
+};
+export type NativeDeliveryOrderDoc = {
+  type: 104; SOID: number; DocuNo: string; DocuDate: string; CustCode: string | null; CustName: string | null;
+  Address1: string | null; Address2: string | null; ShipToAddress1: string | null; ShipToAddress2: string | null; ContTel: string | null;
+  CustPONo: string | null; EmpName: string | null; CreditDays: number | null; ShipDate: string | null; RefNo: string | null; RefDate: string | null;
+  SumGoodAmnt: number; NetAmnt: number; DocuStatus: string | null;
+  Remark1: string | null; Remark2: string | null; Remark3: string | null; Define1: string | null; CarLicense: string | null; CouponNo: string | null;
+  items: NativeDeliveryOrderItem[];
+};
+export const fetchNativeDeliveryOrderPrint = (docuNo: string) => req<NativeDeliveryOrderDoc>(`/native-print/104/${encodeURIComponent(docuNo)}`);
 export const fetchNativeSlipPrint = (docuNo: string) => req<NativeSlipDoc>(`/native-print/116/${encodeURIComponent(docuNo)}`);
 export const fetchNativeInvoicePrint = (docuNo: string) => req<NativeInvoiceDoc>(`/native-print/107/${encodeURIComponent(docuNo)}`);
 

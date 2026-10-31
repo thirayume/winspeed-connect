@@ -3,16 +3,20 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
 
-// W2: print WinSpeed 116 / 107 from Sale-App — read-only, role- and scope-guarded, duplicates refused
+// W2: print WinSpeed 104 / 116 / 107 from Sale-App — read-only, role- and scope-guarded, duplicates refused
 const head116 = { RedemtionID: 501, DocuNo: '9900001', DocuDate: '2026-10-31', Receiver: 'UAT2 TEST', Plate: 'UAT2-TEST',
   SumGoodQty: 1, DocuStatus: 'N', IsCheckAll: 'Y', RecorderCode: 'EMP-T1', RecorderName: 'Test One', NativeApproverCode: null, NativeApproverName: null };
 const item116 = { Listno: 1, CouponNo: 'CP-T1', GoodCode: 'G-T1', GoodName: 'Test good', InveName: 'WH', LocaName: 'L1', GoodQty: 1, RemaQty: 0,
   PostInv: 'N', DeliveryNo: 'D-T1', SalesEmpID: 7001, CustName: 'Test customer', CustCode: 'C-T1', InvoiceNo: null, BookingNo: 'B-T1', BookingSOID: 301 };
 const head107 = { SOInvID: 601, DocuNo: 'T69-00001', DocuDate: '2026-10-31', CustCode: 'C-T1', CustName: 'Test customer', NetAmnt: 107, SalesEmpID: 7002 };
-const state = { heads116: [head116], heads107: [head107], scale: [] };
+const head104 = { SOID: 701, DocuNo: 'D-T1', DocuDate: '2026-10-31', CustCode: 'C-T1', CustName: 'Test customer', SalesEmpID: 7001,
+  CouponNo: 'CP-T1, CP-T2', CarLicense: 'UAT2-TEST', RefNo: 'Q-T1', BookingSOID: 301, SumGoodAmnt: 100, NetAmnt: 100 };
+const state = { heads104: [head104], heads116: [head116], heads107: [head107], scale: [] };
 
 const db = h.installDbStub(call => {
   const t = call.text;
+  if (/FROM dbo\.SOHD h/.test(t) && /DocuType=104 AND h\.DocuNo=@no AND ISNULL\(h\.ClearSO,'N'\)<>'Y'/.test(t)) return state.heads104;
+  if (/FROM dbo\.SODT d$/m.test(t)) return [{ ListNo: 1, GoodQty2: 1, UnitName: 'TON', GoodCode: 'G-T1', GoodName: 'Test good', GoodPrice2: 100, GoodAmnt: 100 }];
   if (/FROM dbo\.WFRedemtionHD h/.test(t) && /DocuType=116 AND h\.DocuNo=@no/.test(t)) return state.heads116;
   if (/FROM dbo\.WFRedemtionDT d/.test(t)) return [item116];
   if (/FROM dbo\.WGHD WHERE WGType='SO'/.test(t)) return state.scale;
@@ -39,6 +43,18 @@ test('who may print each document follows the capability map', async () => {
   for (const role of ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ACCOUNTING', 'C_LEVEL', 'ADMIN'])
     assert.equal((await app.call('GET', '/api/native-print/116/9900001', as(role))).status, 200, role);
   assert.equal((await app.call('GET', '/api/native-print/116/9900001')).status, 401);
+});
+
+test('104 prints the delivery-order data of the WinSpeed pre-printed form, for the same roles as the slip', async () => {
+  for (const role of ['SALES', 'APPROVER']) assert.equal((await app.call('GET', '/api/native-print/104/D-T1', as(role))).status, 403);
+  const r = await app.call('GET', '/api/native-print/104/D-T1', as('WAREHOUSE'));
+  assert.equal(r.status, 200);
+  assert.equal(r.body.type, 104); assert.equal(r.body.CouponNo, 'CP-T1, CP-T2'); assert.equal(r.body.CarLicense, 'UAT2-TEST');
+  assert.equal(r.body.items.length, 1); assert.equal(r.body.items[0].GoodCode, 'G-T1');
+  assert.equal((await app.call('GET', '/api/native-print/104/D-T1', as('MANAGER'))).status, 200, 'own team (EmpID 7001)');
+  state.heads104 = [head104, { ...head104, SOID: 702 }];
+  assert.equal((await app.call('GET', '/api/native-print/104/D-T1', as('ADMIN'))).status, 409);
+  state.heads104 = [head104];
 });
 
 test('116 returns the slip with recorder, lines, app approval and only an unambiguous scale record', async () => {

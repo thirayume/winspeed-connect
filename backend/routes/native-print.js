@@ -2,6 +2,7 @@
 /**
  * พิมพ์เอกสาร WinSpeed จาก Sale-App (W2, plan v2, owner 31/10/2569)
  *
+ *   GET /api/native-print/104/:docuNo — ใบสั่งจ่ายสินค้า (ตำแหน่งตามฟอร์มกระดาษพิมพ์หัวของ WinSpeed)
  *   GET /api/native-print/116/:docuNo — ใบขน / ใบตัดตั๋วปุ๋ย (WinSpeed ไม่มีฟอร์มลงทะเบียนให้ 116)
  *   GET /api/native-print/107/:docuNo — ใบส่งของ (ตาม "ฟอร์มใบส่งของ" ของ WinSpeed; ปุ๋ยยกเว้น VAT จึงไม่ใช่ใบกำกับภาษี)
  *
@@ -128,6 +129,52 @@ async function load107(no) {
   return { count: 1, doc: { ...head, items, slips: uniq('SlipNo'), coupons: uniq('CouponNo'), plates: uniq('Plate'), company: header } };
 }
 
+// ช่องข้อมูลตามฟอร์มเริ่มต้นของ WinSpeed "ใบสั่งจ่ายสินค้า" (worldfertdaotai.pbl@dr_so_delivery_order_pre)
+// ซึ่งพิมพ์เฉพาะข้อมูลลงกระดาษที่พิมพ์หัวไว้แล้ว · ใบที่ ClearSO = 'Y' ไม่แสดง เหมือนในฟอร์ม
+// D/O = เลขตั๋วของใบนี้ต่อกันด้วยจุลภาค (เท่ากับ dbo.ufn_GetCouponNo) · ข้อความใต้ D/O มาจาก dbo.Define_104
+async function load104(no) {
+  const heads = rows(await wfQuery(`
+    SELECT h.SOID, RTRIM(h.DocuNo) AS DocuNo, CONVERT(varchar(10),h.DocuDate,120) AS DocuDate,
+           RTRIM(cu.CustCode) AS CustCode,
+           RTRIM(CASE ISNULL(cu.CustBillName,'') WHEN '' THEN ISNULL(cu.CustTitle+' ',' ')+ISNULL(cu.CustName,' ')
+                 ELSE cu.CustBillName END) AS CustName,
+           RTRIM(ISNULL(cu.CustAddr1+' ','')+ISNULL(cu.CustAddr2,'')) AS Address1,
+           RTRIM(ISNULL(cu.District+' ','')+ISNULL(cu.Amphur+' ','')+ISNULL(cu.Province+' ','')+ISNULL(cu.PostCode,'')) AS Address2,
+           RTRIM(ISNULL(h.ShipToAddr1+' ','')+ISNULL(h.ShipToAddr2,'')) AS ShipToAddress1,
+           RTRIM(ISNULL(h.District+' ','')+ISNULL(h.Amphur+' ','')+ISNULL(h.Province+' ','')+ISNULL(h.PostCode,'')) AS ShipToAddress2,
+           RTRIM(cu.ContTel) AS ContTel, RTRIM(h.CustPONo) AS CustPONo, RTRIM(ISNULL(e.EmpName,'')) AS EmpName, h.EmpID AS SalesEmpID,
+           h.CreditDays, CONVERT(varchar(10),h.ShipDate,120) AS ShipDate, RTRIM(h.RefNo) AS RefNo, CONVERT(varchar(10),h.RefDate,120) AS RefDate,
+           h.SumGoodAmnt, h.NetAmnt, h.DocuStatus,
+           (SELECT RTRIM(r.Remark) FROM dbo.SOHDRemark r WHERE r.SOID=h.SOID AND r.ListNo=1) AS Remark1,
+           (SELECT RTRIM(r.Remark) FROM dbo.SOHDRemark r WHERE r.SOID=h.SOID AND r.ListNo=2) AS Remark2,
+           (SELECT RTRIM(r.Remark) FROM dbo.SOHDRemark r WHERE r.SOID=h.SOID AND r.ListNo=3) AS Remark3,
+           (SELECT TOP 1 RTRIM(d4.difine1) FROM dbo.Define_104 d4 WHERE d4.ID=h.SOID) AS Define1,
+           ISNULL((SELECT TOP 1 RTRIM(ISNULL(rh.CarLicense,'')) FROM dbo.WFRedemtionDT rd
+                     LEFT JOIN dbo.WFRedemtionHD rh ON rh.RedemtionID=rd.RedemtionID
+                     LEFT JOIN dbo.WFCoupon c ON c.CouponID=rd.CouponID
+                    WHERE c.DocuID=h.SOID),'') AS CarLicense,
+           STUFF((SELECT ', '+RTRIM(c.CouponNo) FROM dbo.SODT sd
+                    JOIN dbo.WFCoupon c ON c.DocuID=h.SOID AND c.RefListNo=sd.ListNo
+                   WHERE sd.SOID=h.SOID AND NULLIF(RTRIM(c.CouponNo),'') IS NOT NULL
+                   ORDER BY sd.ListNo FOR XML PATH('')),1,2,'') AS CouponNo,
+           (SELECT TOP 1 b.SOID FROM dbo.SODT sd JOIN dbo.SOHD b ON b.SOID=sd.RefSOID AND b.DocuType=103
+             WHERE sd.SOID=h.SOID ORDER BY sd.ListNo) AS BookingSOID
+      FROM dbo.SOHD h
+      LEFT JOIN dbo.EMCust cu ON cu.CustID=h.CustID
+      LEFT JOIN dbo.EMEmp e ON e.EmpID=h.EmpID
+     WHERE h.DocuType=104 AND h.DocuNo=@no AND ISNULL(h.ClearSO,'N')<>'Y'`, noInput(no)));
+  if (heads.length !== 1) return { count: heads.length };
+  const head = heads[0];
+  const items = rows(await wfQuery(`
+    SELECT d.ListNo, d.GoodQty2, RTRIM(u.GoodUnitName) AS UnitName, RTRIM(g.GoodCode) AS GoodCode,
+           RTRIM(COALESCE(d.GoodName, g.GoodName1)) AS GoodName, d.GoodPrice2, d.GoodAmnt
+      FROM dbo.SODT d
+      LEFT JOIN dbo.EMGood g ON g.GoodID=d.GoodID
+      LEFT JOIN dbo.EMGoodUnit u ON u.GoodUnitID=d.GoodUnitID2
+     WHERE d.SOID=@id ORDER BY d.ListNo`, idInput(head.SOID)));
+  return { count: 1, doc: { ...head, items } };
+}
+
 function handler(type, loader) {
   return async (req, res) => {
     const no = String(req.params.docuNo || '').trim();
@@ -137,7 +184,7 @@ function handler(type, loader) {
       if (r.count === 0) return res.status(404).json({ code: 'DOC_NOT_FOUND', message: `ไม่พบใบ ${type} เลขที่ ${no}` });
       if (r.count > 1) return res.status(409).json({ code: 'DOC_AMBIGUOUS', message: `พบใบ ${type} เลขที่ ${no} มากกว่าหนึ่งใบ กรุณาตรวจใน WinSpeed` });
       const empId = type === 116 ? r.doc.items[0]?.SalesEmpID : r.doc.SalesEmpID;
-      const bookingSoid = type === 116 ? r.doc.items[0]?.BookingSOID : null;
+      const bookingSoid = type === 116 ? r.doc.items[0]?.BookingSOID : type === 104 ? r.doc.BookingSOID : null;
       if (!(await allowed(req.user, { empId, bookingSoid })))
         return res.status(404).json({ code: 'DOC_NOT_FOUND', message: `ไม่พบใบ ${type} เลขที่ ${no}` });
       res.json({ type, ...r.doc });
@@ -148,9 +195,10 @@ function handler(type, loader) {
   };
 }
 
-// who may print: services/role-capabilities.js (native.print-116 / native.print-107)
+// who may print: services/role-capabilities.js (native.print-104 / native.print-116 / native.print-107)
+router.get('/104/:docuNo', requireCapability('native.print-104'), handler(104, load104));
 router.get('/116/:docuNo', requireCapability('native.print-116'), handler(116, load116));
 router.get('/107/:docuNo', requireCapability('native.print-107'), handler(107, load107));
 
 module.exports = router;
-module.exports.__testing = { load116, load107 };
+module.exports.__testing = { load104, load116, load107 };

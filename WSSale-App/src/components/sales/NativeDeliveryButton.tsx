@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { req } from '../../services/api';
 import { useCan } from '../../utils/capabilities';
+import { NativeDocPrint } from '../reports/NativeDocPrint';
 
 type Request = { requestId: string; status: string; expiresAt: string | null; isRequester: boolean };
 type Preview = { soid: number; docuNo: string; aiNo: string; amount: string; fingerprint: string;
@@ -35,6 +36,7 @@ export function NativeDeliveryButton({soid,onCreated}:{soid:string|number;onCrea
  const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const [preview,setPreview]=useState<Preview|null>(null);
  const [key,setKey]=useState({basis:'',id:''});
+ const [printing,setPrinting]=useState(false);
  if(!can('so.create-native-delivery')) return null;
  async function inspect() {
   setOpen(true);setBusy(true);setError('');
@@ -66,7 +68,7 @@ export function NativeDeliveryButton({soid,onCreated}:{soid:string|number;onCrea
    <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
     <h2 className="text-lg font-bold text-[#0C447C]">ออกใบสั่งขาย 104</h2>
     {preview&&<div className="mt-3 space-y-2 text-sm">
-     {preview.completed?<><p>ออกเอกสารแล้ว: <strong>{preview.deliveryNo}</strong></p><p>ตั๋ว: <strong>{preview.couponNo}</strong> · ตั้งยอดลูกหนี้แล้ว</p></>:<>
+     {preview.completed?<><p>ออกเอกสารแล้ว: <strong>{preview.deliveryNo}</strong>{preview.deliveryNo&&can('native.print-104')&&<button onClick={()=>setPrinting(true)} className="ml-3 rounded-lg border px-2 py-1 text-xs">พิมพ์ใบสั่งจ่าย</button>}</p><p>ตั๋ว: <strong>{preview.couponNo}</strong> · ตั้งยอดลูกหนี้แล้ว</p></>:<>
       <p>ใบจอง {preview.docuNo} · AI {preview.aiNo}</p><p>เต็มจำนวน · ยอด {Number(preview.amount).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท</p>
       <p>บัญชี {preview.book==='I'?'1':'2'} · ตั๋วเล่ม {preview.couponSeries} · {Number(preview.packKg)} กก./กระสอบ × {Number(preview.sackQty).toLocaleString('th-TH')} กระสอบ</p>
       <p>ออกตั๋วครบและตั้งยอดลูกหนี้พร้อมใบสั่งขาย</p>
@@ -88,5 +90,6 @@ export function NativeDeliveryButton({soid,onCreated}:{soid:string|number;onCrea
     </div>
    </div>
   </div>,document.body)}
+  {printing&&preview?.deliveryNo&&<NativeDocPrint type={104} docuNo={preview.deliveryNo} onClose={()=>setPrinting(false)}/>}
  </>;
 }
