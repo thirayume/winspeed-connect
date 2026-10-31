@@ -67,6 +67,8 @@ export type NormalizedSO = {
   quotationNo: string;
   quotationDate?: string;
   creditDays: number;
+  shipDate?: string;
+  billTerms: string;
   remark: string;
   salesName: string;
   lines: Array<{
@@ -176,6 +178,9 @@ export function SOBookingDocModal({
             quotationNo: (doc as any).quotationNo || (doc as any).QuotationNo || doc.linkedQuoteNo || '-',
             quotationDate: (doc as any).quotationDate || (doc as any).QuotationDate || doc.linkedQuoteValidUntil || undefined,
             creditDays: (doc as any).creditDays ?? (doc as any).CreditDays ?? 30,
+            // วันที่กำหนดส่ง / เงื่อนไขการวางบิล ตามฟอร์มใบสั่งจองของ WinSpeed
+            shipDate: (doc as any).deliveryDate || (doc as any).DeliveryDate || undefined,
+            billTerms: (doc as any).billTerms || '',
             remark: doc.remark || (doc as any).Remark || '',
             // the bill's salesperson — never the person printing
             salesName: doc.salesName || (doc as any).SalesName || 'พนักงานขาย',
@@ -670,10 +675,12 @@ export function SOBookingDocModal({
                           <div><span className="font-bold">ใบอนุมัติเสนอราคา:</span> {so.quotationNo}</div>
                           <div><span className="font-bold">ลงวันที่:</span> {fmtDate(so.quotationDate)}</div>
                         </div>
+                        <div className="flex"><span className="font-bold w-24 shrink-0">วันที่กำหนดส่ง:</span> <span>{fmtDate(so.shipDate)}</span></div>
                         <div className="flex"><span className="font-bold w-24 shrink-0">ขนพร้อมทะเบียน:</span> <b className="text-xs">{so.truckPlate || so.transRegistration}</b></div>
                         <div className="flex gap-4">
                           <div><span className="font-bold">จำนวนวันเครดิต:</span> <span>{so.creditDays} วัน</span></div>
                         </div>
+                        <div className="flex"><span className="font-bold w-28 shrink-0">เงื่อนไขการวางบิล:</span> <span>{so.billTerms || '-'}</span></div>
                       </div>
                     </div>
 

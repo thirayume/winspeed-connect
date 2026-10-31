@@ -1108,7 +1108,8 @@ router.get('/:id', async (req, res) => {
     // person printing as salesperson, the tax id as address and phone, or the company's own address (UAT RPT-06)
     const party = (await wfQuery(`
       SELECT (SELECT TOP 1 DisplayName FROM wf.AppUser WHERE Id = @uid) AS SalesName,
-             c.CustAddr1, c.CustAddr2, c.Amphur, c.Province, c.PostCode, c.ContTel, c.ContTel1
+             c.CustAddr1, c.CustAddr2, c.Amphur, c.Province, c.PostCode, c.ContTel, c.ContTel1,
+             c.BillState, c.BillDay, c.BillDate, c.BillWeek
       FROM (SELECT 1 AS x) one
       LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON c.CustID = @cid`, {
       uid: { type: sql.Int, value: so.SalesUserId ? Number(so.SalesUserId) : null },
@@ -1129,6 +1130,8 @@ router.get('/:id', async (req, res) => {
       salesName: party.SalesName || null,
       custAddress,
       custTel: phone,
+      // ใบสั่งจองแสดงเงื่อนไขการวางบิลแบบเดียวกับฟอร์ม WinSpeed
+      billTerms: require('../services/bill-terms').billTermsText(party) || null,
       pickupEvaluation,
       linkedQuoteId: pendingQuote?.Id || null,
       linkedQuoteNo: pendingQuote?.QuoteNo || null,

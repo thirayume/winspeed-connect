@@ -39,6 +39,12 @@ export const DEFAULT_HEADER_CONFIG: DocHeaderConfig = {
   showPageNumber: true,
 };
 
+// ค่าเริ่มต้นเฉพาะเอกสาร ทับค่ากลางแต่ไม่ทับค่าที่บันทึกไว้ให้เอกสารนั้นเอง
+// SO_BOOKING: ชื่อช่องลายเซ็นตามฟอร์มใบสั่งจองของ WinSpeed (พนักงานขาย / ผู้จัดการฝ่ายขาย / พนักงานคลังสินค้า)
+const REPORT_DEFAULTS: Record<string, Partial<DocHeaderConfig>> = {
+  SO_BOOKING: { signatureSalesLabel: 'พนักงานขาย', signatureApprovedLabel: 'ผู้จัดการฝ่ายขาย', signatureWarehouseLabel: 'พนักงานคลังสินค้า' },
+};
+
 const GLOBAL_STORAGE_KEY = 'wf_doc_header_global_config';
 const REPORT_STORAGE_PREFIX = 'wf_doc_header_report_config_';
 
@@ -52,12 +58,16 @@ function normalizeReportId(id?: string): string | undefined {
  * @param reportId - หากระบุ จะตรวจสอบการตั้งค่าเฉพาะของรายงานนั้นก่อน หากไม่มีจะใช้การตั้งค่าส่วนกลาง
  */
 export function getDocHeaderConfig(reportId?: string): DocHeaderConfig {
-  if (typeof window === 'undefined') return DEFAULT_HEADER_CONFIG;
+  const normalizedId = normalizeReportId(reportId);
+  const reportDefaults = (normalizedId && REPORT_DEFAULTS[normalizedId]) || {};
+  if (typeof window === 'undefined') return { ...DEFAULT_HEADER_CONFIG, ...reportDefaults };
   try {
     const globalSaved = localStorage.getItem(GLOBAL_STORAGE_KEY) || localStorage.getItem('wf_doc_header_config');
-    const globalConfig: DocHeaderConfig = globalSaved ? { ...DEFAULT_HEADER_CONFIG, ...JSON.parse(globalSaved) } : DEFAULT_HEADER_CONFIG;
+    const globalConfig: DocHeaderConfig = {
+      ...(globalSaved ? { ...DEFAULT_HEADER_CONFIG, ...JSON.parse(globalSaved) } : DEFAULT_HEADER_CONFIG),
+      ...reportDefaults,
+    };
 
-    const normalizedId = normalizeReportId(reportId);
     if (normalizedId) {
       const reportSaved = localStorage.getItem(`${REPORT_STORAGE_PREFIX}${normalizedId}`);
       if (reportSaved) {
@@ -69,7 +79,7 @@ export function getDocHeaderConfig(reportId?: string): DocHeaderConfig {
   } catch (e) {
     console.error('Failed to parse doc header config from localStorage:', e);
   }
-  return DEFAULT_HEADER_CONFIG;
+  return { ...DEFAULT_HEADER_CONFIG, ...reportDefaults };
 }
 
 /**
