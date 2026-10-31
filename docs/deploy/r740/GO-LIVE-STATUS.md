@@ -167,6 +167,15 @@ Claude fast-forwarded `main` to `154eb65` and deployed Production at 21:57 (rece
 read-only: the Production bundle carries the 103/104/107 prints, the target guard returns 0 and
 all five native writer flags are false. Still open: one print on the real pre-printed stock.
 
+**W1-b/W1-c audit reports and W5 docs (`f322520`, `f380fc8`, no migration).** Reports > ตรวจสอบ/Audit
+gains policy history, sequence counters, truck-hold log and control-ticket alert history (read-only,
+Thai time, ACCOUNTING/MANAGER/C_LEVEL/ADMIN). The R740 runbook, the role guide (section 0 generated
+from the capability map) and the changelog (Unreleased since 1.0.0-beta.6) were refreshed. The
+promotion dispatch again left no run, so the owner allowed a direct fast-forward of `uat` to
+`f380fc8`; UAT deployed at 23:19 on 31 October (receipt `20261031-231920-uat-apply-f380fc8.txt`,
+160/0/0, health 200). In the deployed backend the reports returned 19 policy changes and 2 counters;
+the truck-hold and alert tables are still empty. Production still runs `154eb65`.
+
 **Run of 31 October 00:14–00:25 (after migration 160 on UAT and Production).** A separate
 dated copy of the private harness (new run label, user namespace and state folder) passed
 every phase for both chains: prepare, booking/AI, 104, 116, 107, audit and close. The five
