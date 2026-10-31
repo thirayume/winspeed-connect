@@ -154,8 +154,14 @@ each value at the WinSpeed pre-printed form's positions on Letter paper (owner: 
 stock, check with a PDF printer); Chrome print-to-PDF gives one Letter page. 102 was left as is
 (6 WinSpeed quotations since August). The owner promoted `7a8c191`; UAT deployed at 13:48 on
 31 October (receipt `20261031-134810-uat-apply-7a8c191.txt`, 160/0/0, health 200). The deployed
-104 and 107 loaders returned complete data for the UAT test documents. Still open: overlay with
-WinSpeed's own PDF of the same 104, then one print on the real stock. Production still runs
+104 and 107 loaders returned complete data for the UAT test documents. A UAT 104 printed from
+WinSpeed (default form, Microsoft Print to PDF) was then compared with the Sale-App print of the
+same document by text-run position: the detail band is `height.autosize`, so lines are 104 units,
+not 96, and the amount in words keeps WinSpeed's padding. After `154eb65` every matched value is
+within 0.4 pt of WinSpeed. WinSpeed logs each print in `SMAudit` (action P, form name); Sale-App
+prints do not. The promotion dispatch left no run, so the owner allowed a direct fast-forward of
+`uat` to `154eb65`; UAT deployed at 21:45 (receipt `20261031-214512-uat-apply-154eb65.txt`,
+160/0/0, health 200). Still open: one print on the real pre-printed stock. Production still runs
 `ebe3214`.
 
 **Run of 31 October 00:14–00:25 (after migration 160 on UAT and Production).** A separate
