@@ -3,9 +3,10 @@
  * "worldfertdaotai.pbl@dr_so_delivery_order_pre" (Letter แนวตั้ง, พิมพ์เฉพาะข้อมูล ไม่พิมพ์หัวข้อช่อง)
  *
  * ฟอร์มใช้หน่วย PowerBuilder: แนวนอน 1 นิ้ว = 3072/7 หน่วย (1 พิกเซล = 32/7 หน่วยที่ 96 dpi), แนวตั้ง 1 นิ้ว = 384 หน่วย
- * ขอบกระดาษ ซ้าย 110 บน 110 ล่าง 300 · หัว 1,500 · บรรทัดละ 96 · ท้าย 1,148 ชิดล่างของหน้า (เริ่มที่ 4,224 − 300 − 1,148)
- * จึงวางรายการได้หน้าละ 12 บรรทัด ยอดเงินและตัวอักษรพิมพ์เฉพาะหน้าสุดท้าย เหมือนฟอร์มเดิม
- * กรอบประบนจอบอกตำแหน่งช่องบนกระดาษ และไม่ถูกพิมพ์
+ * ขอบกระดาษ ซ้าย 110 บน 110 ล่าง 300 · หัว 1,500 · ท้าย 1,148 ชิดล่างของหน้า (เริ่มที่ 4,224 − 300 − 1,148)
+ * บรรทัดรายการ: แถบ detail สูง 96 แต่ตั้ง height.autosize และช่องหน่วยสูง 100 ที่ y 4 จึงขยายเป็น 104 ต่อบรรทัด
+ * (เทียบ PDF จาก WinSpeed 31/10: ระยะบรรทัดจริง 19.45 pt = 104 หน่วย) จึงวางรายการได้หน้าละ 11 บรรทัด
+ * ยอดเงินและตัวอักษรพิมพ์เฉพาะหน้าสุดท้าย เหมือนฟอร์มเดิม · กรอบประบนจอบอกตำแหน่งช่องบนกระดาษ และไม่ถูกพิมพ์
  */
 import type { CSSProperties, ReactNode } from 'react';
 import type { NativeDeliveryOrderDoc, NativeDeliveryOrderItem } from '../../services/api';
@@ -16,7 +17,7 @@ const V = 384;                 // หน่วยแนวตั้งต่อ�
 const LEFT = 110;
 const HEADER_TOP = 110;
 const DETAIL_TOP = HEADER_TOP + 1500;
-const ROW = 96;
+const ROW = 104;
 const FOOTER_TOP = 11 * V - 300 - 1148;
 const ROWS_PER_PAGE = Math.floor((FOOTER_TOP - DETAIL_TOP) / ROW);
 
@@ -38,7 +39,8 @@ const beDate = (raw?: string | null) => {
   return m ? `${m[3]}/${m[2]}/${Number(m[1]) + 543}` : '';
 };
 
-type Box = { x: number; y: number; w: number; h: number; align?: 0 | 1 | 2; size?: number; bold?: boolean; guide: string };
+// pre: keep spaces as typed (WinSpeed counts them when centring "D/O = " and the amount in words)
+type Box = { x: number; y: number; w: number; h: number; align?: 0 | 1 | 2; size?: number; bold?: boolean; pre?: boolean; guide: string };
 
 function Field({ top, box, guides, children }: { top: number; box: Box; guides: boolean; children: ReactNode }) {
   const style: CSSProperties = {
@@ -47,7 +49,7 @@ function Field({ top, box, guides, children }: { top: number; box: Box; guides: 
     width: `${box.w / H}in`, height: `${box.h / V}in`,
     fontSize: `${box.size ?? 15}pt`, fontWeight: box.bold ? 700 : 400, lineHeight: `${box.h / V}in`,
     textAlign: box.align === 1 ? 'right' : box.align === 2 ? 'center' : 'left',
-    whiteSpace: 'nowrap', overflow: 'hidden',
+    whiteSpace: box.pre ? 'pre' : 'nowrap', overflow: 'hidden',
   };
   return (
     <div style={style}>
@@ -89,11 +91,11 @@ const FOOT: Record<string, Box> = {
   remark1: { x: 64, y: 0, w: 2066, h: 88, size: 14, guide: 'หมายเหตุ 1' },
   remark2: { x: 64, y: 80, w: 2085, h: 92, size: 13, guide: 'หมายเหตุ 2' },
   remark3: { x: 59, y: 156, w: 2085, h: 88, size: 13, guide: 'หมายเหตุ 3' },
-  doLabel: { x: 55, y: 252, w: 160, h: 100, align: 2, guide: '' },
+  doLabel: { x: 55, y: 252, w: 160, h: 100, align: 2, pre: true, guide: '' },
   couponNo: { x: 229, y: 252, w: 1120, h: 100, guide: 'เลขตั๋ว (D/O)' },
   define1: { x: 229, y: 380, w: 1120, h: 100, guide: 'ข้อความเพิ่มเติม' },
   sum: { x: 2949, y: 420, w: 485, h: 92, align: 1, guide: 'รวมเงิน' },
-  words: { x: 55, y: 636, w: 2053, h: 104, align: 2, bold: true, guide: 'จำนวนเงินตัวอักษร' },
+  words: { x: 55, y: 636, w: 2053, h: 104, align: 2, bold: true, pre: true, guide: 'จำนวนเงินตัวอักษร' },
   net: { x: 2949, y: 644, w: 485, h: 92, align: 1, guide: 'จำนวนเงินสุทธิ' },
 };
 
@@ -142,7 +144,7 @@ function Page({ d, lines, first, last, guides }: { d: NativeDeliveryOrderDoc; li
       {f(FOOTER_TOP, FOOT.define1, d.Define1)}
       {last && <>
         {f(FOOTER_TOP, FOOT.sum, num(d.SumGoodAmnt) ? money(d.SumGoodAmnt) : '')}
-        {f(FOOTER_TOP, FOOT.words, `(  ${thaiBahtText(num(d.NetAmnt))}  )`)}
+        {f(FOOTER_TOP, FOOT.words, `(    ${thaiBahtText(num(d.NetAmnt))}    )`)}
         {f(FOOTER_TOP, FOOT.net, num(d.NetAmnt) ? money(d.NetAmnt) : '')}
       </>}
     </div>
