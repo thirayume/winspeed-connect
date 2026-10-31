@@ -1,6 +1,6 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **31 October 2026 01:10 (ICT)**. This page records observed results;
+Operational snapshot: **31 October 2026 09:15 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
@@ -109,6 +109,18 @@ fresh verified copy-only backup (2 minutes old at apply; receipt
 `20261031-010457-prod-apply-06af2ea.txt`): 158 unchanged, 161 and 162 applied, health 200.
 Production carries the slip writer and the scale-slip 107 writer; the native target guard
 returns 0 there and all five native writer flags remain false.
+
+**W1-a native document log (`d4c83c3`, no migration).** Reports > ตรวจสอบ/Audit gains
+"บันทึกเอกสาร WinSpeed ที่ Sale-App ออก": one row per app booking with its AI, 104 and
+credit approval, 116 with slip number, slip source and exception flag, recorder/approver
+employees and 107, showing the effective user and, under Access As, the real actor (ACCOUNTING,
+MANAGER, C_LEVEL, ADMIN with company-wide scope; Excel export). Its SQL was checked against the
+UAT chains first. When a dispatch of the promotion workflow left no run, the owner allowed a
+direct fast-forward of `uat` to `d4c83c3` (the workflow's CI step was skipped; the same backend
+and frontend checks had passed locally). UAT deployed at 09:00 on 31 October (receipt
+`20261031-090032-uat-apply-d4c83c3.txt`, 160/0/0, health 200). The owner promoted it with run
+#5 and deployed Production at 09:12 (receipt `20261031-091258-prod-apply-d4c83c3.txt`, 160/0/0,
+no backup required, health 200); writer flags remain false.
 
 **Run of 31 October 00:14–00:25 (after migration 160 on UAT and Production).** A separate
 dated copy of the private harness (new run label, user namespace and state folder) passed
