@@ -451,6 +451,40 @@ const REPORTS = {
           ) ap ON ap.VendorID = v.VendorID
           ORDER BY OutstandingBal DESC`,
   },
+  'native-documents': {
+    title: 'บันทึกเอกสาร WinSpeed ที่ Sale-App ออก (ผู้ขอ · ผู้อนุมัติ · ผู้ทำจริง)',
+    category: 'audit',
+    columns: [
+      { key: 'BookingNo', label: 'ใบสั่งจอง 103', type: 'identifier' },
+      { key: 'BookingAt', label: 'ยืนยันทริปเมื่อ', type: 'datetime' },
+      { key: 'Line', label: 'สาย', type: 'identifier' },
+      { key: 'CustName', label: 'ลูกค้า', type: 'text' },
+      { key: 'Stage', label: 'ขั้นล่าสุด', type: 'text' },
+      { key: 'ConfirmedBy', label: 'ผู้ยืนยันทริป', type: 'text' },
+      { key: 'AiNo', label: 'ใบอนุมัติ AI', type: 'identifier' },
+      { key: 'AiBy', label: 'ผู้อนุมัติ AI', type: 'text' },
+      { key: 'AiAt', label: 'อนุมัติ AI เมื่อ', type: 'datetime' },
+      { key: 'CreditStatus', label: 'อนุมัติเกินวงเงิน 104', type: 'text' },
+      { key: 'CreditBy', label: 'ผู้อนุมัติวงเงิน', type: 'text' },
+      { key: 'DeliveryNo', label: 'ใบสั่งขาย 104', type: 'identifier' },
+      { key: 'CouponNo', label: 'ตั๋ว', type: 'identifier' },
+      { key: 'DeliveryBy', label: 'ผู้ออก 104', type: 'text' },
+      { key: 'DeliveryAt', label: 'ออก 104 เมื่อ', type: 'datetime' },
+      { key: 'SlipNo', label: 'ใบ 116 / เลขใบขน', type: 'identifier' },
+      { key: 'SlipSource', label: 'ที่มาเลขใบขน', type: 'text' },
+      { key: 'SlipException', label: 'ข้อยกเว้น', type: 'text' },
+      { key: 'RedemptionStatus', label: 'สถานะคำขอ 116', type: 'text' },
+      { key: 'RedemptionBy', label: 'ผู้ขอ 116 (ผู้บันทึก)', type: 'text' },
+      { key: 'RedemptionApprovedBy', label: 'ผู้อนุมัติ 116', type: 'text' },
+      { key: 'RecorderEmp', label: 'พนักงานผู้บันทึก', type: 'identifier' },
+      { key: 'ApproverEmp', label: 'พนักงานผู้อนุมัติ', type: 'identifier' },
+      { key: 'RedemptionAt', label: 'ตัดตั๋วเมื่อ', type: 'datetime' },
+      { key: 'InvoiceNo', label: 'ใบ 107', type: 'identifier' },
+      { key: 'InvoiceDate', label: 'วันที่ 107', type: 'date' },
+      { key: 'InvoiceBy', label: 'ผู้ออก 107', type: 'text' },
+    ],
+    run: (params) => runNativeDocumentsReport(params),
+  },
   'gl-sales-journal': {
     title: 'รายงานสรุปสมุดรายวันขายและการลงบัญชี (Sales Journal & Ledger Posting Log)',
     category: 'finance',
@@ -649,6 +683,7 @@ const REPORT_ROLES = {
   'special-price-detail': ['MANAGER', 'APPROVER', 'ADMIN', 'C_LEVEL'],
   'weighbridge-detail': ['WEIGHBRIDGE', 'WAREHOUSE', 'ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'],
   'customer-dispatch': null,
+  'native-documents': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
 };
 
 function parseDateParam(value, fallback) {
@@ -1387,6 +1422,86 @@ async function runSalesJournalReport(params = {}, options = {}) {
   return rows;
 }
 
+// W1-a (plan v2, owner 31 Oct 2026): one row per booking that Sale-App created, following the
+// native documents it wrote (AI, 104 + credit approval, 116 + slip, 107). Names show the
+// effective user and, under Access As, the real person. Read-only; UTC timestamps shown in ICT.
+const NATIVE_STATUS_TH = { PENDING: 'รออนุมัติ', APPROVED: 'อนุมัติแล้ว', CONSUMED: 'ใช้แล้ว', SUPERSEDED: 'ถูกแทนที่', EXPIRED: 'หมดอายุ' };
+async function runNativeDocumentsReport(params = {}, options = {}) {
+  const queryFn = options.queryFn || wfQuery;
+  const today = new Date();
+  const defaultFrom = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30);
+  const from = parseDateParam(params.from, defaultFrom);
+  const to = parseDateParam(params.to, today);
+  const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const book = ['I', 'K'].includes(String(params.book || '').toUpperCase()) ? String(params.book).toUpperCase() : '';
+  const limit = Math.min(Math.max(parseInt(params.limit, 10) || 1000, 1), 5000);
+  const ict = col => `CONVERT(varchar(16),DATEADD(hour,7,${col}),120)`;
+  const result = await queryFn(`
+    SELECT TOP (@limit)
+      o.SOID, h.DocuNo AS BookingNo, ${ict('o.CreatedAt')} AS BookingAt, LEFT(h.DocuNo,1) AS Line, h.CustName,
+      o.ConfirmedById, o.ConfirmedActorId,
+      ba.ApprovalNo AS AiNo, ba.ApproverId AS AiUserId, ba.ApproverActorId AS AiActorId, ba.SelfApproval AS AiSelf, ${ict('ba.ApprovedAt')} AS AiAt,
+      cr.Status AS CreditState, cr.ApprovedById AS CreditUserId, cr.ApproverActorId AS CreditActorId, cr.SelfApproval AS CreditSelf,
+      dr.DeliveryNo, dr.CouponNo, dr.AppliedById AS DeliveryUserId, dr.ApplierActorId AS DeliveryActorId, ${ict('dr.CreatedAt')} AS DeliveryAt,
+      COALESCE(mr.RedemptionNo, mq.SlipNo) AS SlipNo, mq.SlipSource, mq.ExceptionRequired, mq.Status AS RedemptionState,
+      mq.RequestedById AS RedReqUserId, mq.RequesterActorId AS RedReqActorId,
+      mq.ApprovedById AS RedApprUserId, mq.ApproverActorId AS RedApprActorId, mq.SelfApproval AS RedSelf,
+      er.EmpCode AS RecorderEmp, ea.EmpCode AS ApproverEmp, ${ict('mr.CreatedAt')} AS RedemptionAt,
+      ir.InvoiceNo, CONVERT(varchar(10),ir.InvoiceDate,120) AS InvoiceDate, ir.AppliedById AS InvoiceUserId, ir.ApplierActorId AS InvoiceActorId
+    FROM wf.NativeBookingOrigin o
+    JOIN dbo.SOHD h ON h.SOID=o.SOID AND h.DocuType=103
+    LEFT JOIN wf.NativeBookingApproval ba ON ba.SOID=o.SOID
+    OUTER APPLY (SELECT TOP 1 q.* FROM wf.NativeDeliveryRequest q WHERE q.SOID=o.SOID ORDER BY q.RequestedAt DESC) cr
+    LEFT JOIN wf.NativeDeliveryReceipt dr ON dr.SourceSOID=o.SOID
+    LEFT JOIN wf.NativeManualRedemptionReceipt mr ON mr.SourceSOID=o.SOID
+    OUTER APPLY (SELECT TOP 1 q.* FROM wf.NativeManualRedemptionRequest q WHERE q.SourceSOID=o.SOID
+      AND (mr.RequestId IS NULL OR q.RequestId=mr.RequestId) ORDER BY q.RequestedAt DESC) mq
+    LEFT JOIN wf.NativeDocumentApproval na ON na.DocuType=116 AND na.SourceSOID=o.SOID
+    LEFT JOIN dbo.EMEmp er ON er.EmpID=na.RecorderEmpID
+    LEFT JOIN dbo.EMEmp ea ON ea.EmpID=na.ApproverEmpID
+    LEFT JOIN wf.NativeInitialInvoiceReceipt ir ON ir.SourceSOID=o.SOID
+    WHERE DATEADD(hour,7,o.CreatedAt)>=@from AND DATEADD(hour,7,o.CreatedAt)<DATEADD(day,1,CONVERT(datetime,@to,120))
+      AND (@book='' OR LEFT(h.DocuNo,1)=@book)
+    ORDER BY o.CreatedAt DESC`, {
+    limit: { type: sql.Int, value: limit },
+    from: { type: sql.VarChar(10), value: ymd(from) },
+    to: { type: sql.VarChar(10), value: ymd(to) },
+    book: { type: sql.VarChar(1), value: book },
+  });
+  const raw = result.recordset || [];
+  const ids = [...new Set(raw.flatMap(r => [r.ConfirmedById, r.ConfirmedActorId, r.AiUserId, r.AiActorId, r.CreditUserId, r.CreditActorId,
+    r.DeliveryUserId, r.DeliveryActorId, r.RedReqUserId, r.RedReqActorId, r.RedApprUserId, r.RedApprActorId, r.InvoiceUserId, r.InvoiceActorId])
+    .map(Number).filter(n => Number.isSafeInteger(n) && n > 0))];
+  const users = new Map();
+  if (ids.length) {
+    const u = await queryFn(`SELECT Id, Username, DisplayName FROM wf.AppUser WHERE Id IN (${ids.join(',')})`);
+    for (const r of u.recordset || []) users.set(Number(r.Id), r.DisplayName || r.Username);
+  }
+  const who = (userId, actorId, self) => {
+    if (userId == null) return null;
+    const name = users.get(Number(userId)) || `#${userId}`;
+    const actor = actorId != null && Number(actorId) !== Number(userId) ? ` · ทำแทนโดย ${users.get(Number(actorId)) || `#${actorId}`}` : '';
+    return name + actor + (self === true || self === 1 ? ' (อนุมัติเอง)' : '');
+  };
+  const rows = raw.map(r => ({
+    BookingNo: r.BookingNo, BookingAt: r.BookingAt, Line: r.Line, CustName: r.CustName,
+    Stage: r.InvoiceNo ? '107 แล้ว' : r.RedemptionAt ? '116 แล้ว' : r.DeliveryNo ? '104 แล้ว' : r.AiNo ? 'อนุมัติ AI แล้ว' : 'ยืนยันทริปแล้ว',
+    ConfirmedBy: who(r.ConfirmedById, r.ConfirmedActorId),
+    AiNo: r.AiNo || null, AiBy: who(r.AiUserId, r.AiActorId, r.AiSelf), AiAt: r.AiAt || null,
+    CreditStatus: r.CreditState ? (NATIVE_STATUS_TH[r.CreditState] || r.CreditState) : null,
+    CreditBy: who(r.CreditUserId, r.CreditActorId, r.CreditSelf),
+    DeliveryNo: r.DeliveryNo || null, CouponNo: r.CouponNo || null, DeliveryBy: who(r.DeliveryUserId, r.DeliveryActorId), DeliveryAt: r.DeliveryAt || null,
+    SlipNo: r.SlipNo || null,
+    SlipSource: r.SlipSource === 'SCALE' ? 'ตาชั่ง (MoveBill)' : r.SlipSource === 'MANUAL' ? 'กรอกเอง' : null,
+    SlipException: r.ExceptionRequired == null ? null : (r.ExceptionRequired === true || r.ExceptionRequired === 1 ? 'ใช่' : 'ไม่ใช่'),
+    RedemptionStatus: r.RedemptionState ? (NATIVE_STATUS_TH[r.RedemptionState] || r.RedemptionState) : null,
+    RedemptionBy: who(r.RedReqUserId, r.RedReqActorId), RedemptionApprovedBy: who(r.RedApprUserId, r.RedApprActorId, r.RedSelf),
+    RecorderEmp: r.RecorderEmp || null, ApproverEmp: r.ApproverEmp || null, RedemptionAt: r.RedemptionAt || null,
+    InvoiceNo: r.InvoiceNo || null, InvoiceDate: r.InvoiceDate || null, InvoiceBy: who(r.InvoiceUserId, r.InvoiceActorId),
+  }));
+  return { rows, meta: { from: ymd(from), to: ymd(to), book: book || 'ALL', isTruncated: raw.length >= limit } };
+}
+
 module.exports = router;
-module.exports.__testing = { runCustomerDispatchReport, runSalesJournalReport, fetchInvoicesByPostIds, resolveReportTemplate };
+module.exports.__testing = { runCustomerDispatchReport, runSalesJournalReport, runNativeDocumentsReport, fetchInvoicesByPostIds, resolveReportTemplate };
 

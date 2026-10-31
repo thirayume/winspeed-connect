@@ -20,6 +20,7 @@ const CATEGORY_MAP: Record<string, string> = {
   weighing: 'การชั่ง',
   rebate: 'รีเบท',
   finance: 'การเงิน/บัญชี',
+  audit: 'ตรวจสอบ/Audit',
 };
 
 export function ReportsPage() {
@@ -57,12 +58,17 @@ export function ReportsPage() {
   })();
   const [from, setFrom] = useState(sixtyDaysAgo);
   const [to, setTo] = useState(localToday);
-  const DATE_RANGE_REPORTS = ['customer-dispatch'];
+  const DATE_RANGE_REPORTS = ['customer-dispatch', 'native-documents'];
   const needsDateRange = DATE_RANGE_REPORTS.includes(active);
 
   const CUST_FILTER_REPORTS = ['customer-dispatch'];
   const needsCustFilter = CUST_FILTER_REPORTS.includes(active);
   const [custCode, setCustCode] = useState('');
+
+  // บันทึกเอกสาร WinSpeed: เลือกสาย I (บัญชี 1) หรือ K (บัญชี 2) ได้
+  const BOOK_FILTER_REPORTS = ['native-documents'];
+  const needsBookFilter = BOOK_FILTER_REPORTS.includes(active);
+  const [book, setBook] = useState('');
 
   useEffect(() => {
     fetchReportTypes()
@@ -85,8 +91,11 @@ export function ReportsPage() {
     if (CUST_FILTER_REPORTS.includes(active) && custCode.trim()) {
       p.custCode = custCode.trim();
     }
+    if (BOOK_FILTER_REPORTS.includes(active) && book) {
+      p.book = book;
+    }
     return Object.keys(p).length ? p : undefined;
-  }, [active, from, to, custCode]);
+  }, [active, from, to, custCode, book]);
 
   const load = useCallback(async (type: string, range?: Record<string, string>) => {
     if (!type) return;
@@ -230,6 +239,19 @@ export function ReportsPage() {
               placeholder="รหัส/ชื่อลูกค้า (เว้นว่าง = ทุกราย)"
               className="px-3 py-2 rounded-lg border border-gray-200 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
             />
+          )}
+
+          {needsBookFilter && (
+            <select
+              value={book}
+              onChange={e => setBook(e.target.value)}
+              title="สายเอกสาร"
+              className="h-10 px-2 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">ทุกสาย</option>
+              <option value="I">สาย I (บัญชี 1)</option>
+              <option value="K">สาย K (บัญชี 2)</option>
+            </select>
           )}
 
           {needsDateRange && (
