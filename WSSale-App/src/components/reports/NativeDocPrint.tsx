@@ -2,7 +2,7 @@
  * พิมพ์เอกสาร WinSpeed จาก Sale-App (W2) — อ่านจาก dbo ของ WinSpeed อย่างเดียว
  *
  *   116 ใบขน / ใบตัดตั๋วปุ๋ย — WinSpeed ไม่มีฟอร์มลงทะเบียน จึงออกแบบจากข้อมูลจริงของใบ
- *   107 ใบส่งของ — ตามชื่อ "ฟอร์มใบส่งของ" ของ WinSpeed พร้อมหัวบริษัทจาก Header Master
+ *   107 ใบส่งของ — จัดตามฟอร์มเริ่มต้นของ WinSpeed (dr_so_saleorder_tax_worldfart) พร้อมหัวบริษัทจาก Header Master
  *       ปุ๋ยเป็นสินค้ายกเว้น VAT (ใบ 107 ปี 2569 เป็น VATType 3 ทั้งหมด) จึงไม่ใช้ชื่อ "ใบกำกับภาษี" และแสดงแถว VAT เฉพาะใบที่มี VAT
  *
  * ใช้คลาสสำหรับพิมพ์ชุดเดียวกับใบอื่น (report-modal-root / report-print-area / report-page / report-no-print)
@@ -130,89 +130,153 @@ function SlipBody({ d }: { d: NativeSlipDoc }) {
   );
 }
 
+/** 'YYYY-MM-DD' → '31/10/2569' แบบฟอร์ม WinSpeed (dd/mm/ปี พ.ศ.) */
+function shortDate(raw?: string | null): string {
+  const m = String(raw || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${Number(m[1]) + 543}` : '';
+}
+
+/**
+ * ใบส่งของ (107) ตามฟอร์มเริ่มต้นของ WinSpeed "dr_so_saleorder_tax_worldfart":
+ * หัวใบ (ลูกค้า / สถานที่ส่งของ / ใบกำกับ) · แถวอ้างอิงหกช่อง · รายการเจ็ดคอลัมน์ ·
+ * ท้ายใบ (ทะเบียนรถ เลขตั๋วปุ๋ย เลขใบเคลื่อนย้าย หมายเหตุ ยอดเงิน) · ข้อความกรรมสิทธิ์ · ลายเซ็นห้าช่อง
+ */
 function InvoiceBody({ d }: { d: NativeInvoiceDoc }) {
   const c = d.company;
-  const address = [d.BillAddr1, d.BillAddr2, d.District, d.Amphur, d.Province, d.PostCode].filter(Boolean).join(' ');
+  const n = (v: unknown) => Number(v || 0);
+  const soNo = d.SONo || [...new Set(d.items.map(i => i.RefDocuNo).filter(Boolean))].join(', ');
+  const cell = (label: string, value?: string | null) => (
+    <div className="border border-gray-400 px-2 py-1">
+      <div className="text-[12px] text-gray-600">{label}</div>
+      <div className="min-h-5">{value || ''}</div>
+    </div>
+  );
+  const line = (label: string, value?: string | null) => (
+    <div className="flex gap-2"><span className="w-28 shrink-0 text-gray-600">{label}</span><span>{value || ''}</span></div>
+  );
+  const sum = (label: string, value: unknown, extra?: string | null) => (
+    <tr><td className="py-0.5">{label}</td><td className="py-0.5 text-right">{extra || ''}</td><td className="w-32 py-0.5 text-right tabular-nums">{nf(value)}</td></tr>
+  );
   return (
-    <>
-      <div className="flex items-start justify-between gap-6">
-        <div className="text-[14px] leading-6">
-          <div className="text-lg font-bold">{c?.companyNameTh || '-'}</div>
-          {c?.companyNameEn && <div>{c.companyNameEn}</div>}
-          {c?.addressTh && <div>{c.addressTh}</div>}
-          <div>{[c?.tel && `โทร ${c.tel}`, c?.fax && `แฟกซ์ ${c.fax}`].filter(Boolean).join(' · ')}</div>
-          {c?.taxId && <div>เลขประจำตัวผู้เสียภาษี {c.taxId}{c.branchNameTh ? ` · ${c.branchNameTh}` : ''}</div>}
+    <div className="text-[14px] leading-6">
+      {c?.companyNameTh && (
+        <div className="mb-3">
+          <div className="text-lg font-bold">{c.companyNameTh}</div>
+          {c.addressTh && <div>{c.addressTh}</div>}
+          <div>{[c.tel && `โทร. ${c.tel}`, c.fax && `โทรสาร ${c.fax}`, c.taxId && `เลขประจำตัวผู้เสียภาษี ${c.taxId}`].filter(Boolean).join('  ')}</div>
         </div>
-        <div className="text-right">
-          <h1 className="text-2xl font-bold">ใบส่งของ</h1>
-          <div className="mt-2 text-[15px]">เลขที่ <span className="ml-2 font-semibold">{d.DocuNo}</span></div>
-          <div className="text-[15px]">วันที่ {thaiDate(d.DocuDate)}</div>
+      )}
+      <div className="flex items-end justify-between">
+        <h1 className="flex-1 text-center text-2xl font-bold">ใบส่งของ</h1>
+        <div className="w-56">{line('เลขที่', d.DocuNo)}{line('วันที่', shortDate(d.DocuDate))}</div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-x-8">
+        <div>
+          {line('รหัสลูกค้า', d.CustCode)}
+          {line('นามผู้ซื้อ', d.CustName)}
+          {line('ที่อยู่', d.CustAddr1)}
+          {d.CustAddr2 && line('', d.CustAddr2)}
+          <div className="flex gap-6">{line('โทร.', d.Tel)}{line('โทรสาร', d.Fax)}</div>
+        </div>
+        <div>
+          {line('เลขที่ใบกำกับ', d.InvNo ? `${d.InvNo}   วันที่ใบกำกับ ${shortDate(d.InvDate)}` : null)}
+          {line('สถานที่ส่งของ', d.ShipAddr1)}
+          {d.ShipAddr2 && line('', d.ShipAddr2)}
+          {line('ชื่อผู้ติดต่อ', d.ContactName)}
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-x-10 gap-y-2 text-[15px]">
-        {field('ลูกค้า', d.CustName ? `${d.CustCode || ''} ${d.CustName}`.trim() : null)}
-        {field('เลขประจำตัวผู้เสียภาษี', d.CustTaxId)}
-        <div className="col-span-2">{field('ที่อยู่', address)}</div>
-        {field('เครดิต', d.CreditDays != null ? `${d.CreditDays} วัน` : null)}
-        {field('ครบกำหนด', d.DueDate ? thaiDate(d.DueDate) : null)}
-        {field('พนักงานขาย', d.SalesCode ? `${d.SalesCode} ${d.SalesName || ''}` : null)}
-        {field('ใบขน (116)', d.slips.join(', '))}
+      <div className="mt-3 grid grid-cols-6">
+        {cell('ใบสั่งซื้อเลขที่', d.CustPONo)}
+        {cell('ใบสั่งขายเลขที่', soNo)}
+        {cell('เครดิต', n(d.CreditDays) ? `${d.CreditDays} วัน` : '')}
+        {cell('วันครบกำหนด', n(d.CreditDays) ? shortDate(d.DueDate) : '')}
+        {cell('วันที่กำหนดส่ง', shortDate(d.SendDate))}
+        {cell('พนักงานขาย', d.SalesName)}
       </div>
 
-      <table className="mt-6 w-full text-[15px]">
-        <thead className="border-b border-gray-300 text-left">
-          <tr>
-            <th className="py-1 font-medium">ลำดับ</th>
-            <th className="py-1 font-medium">สินค้า</th>
-            <th className="py-1 font-medium">อ้างอิง</th>
+      <table className="mt-3 w-full border-collapse">
+        <thead>
+          <tr className="border-y border-gray-500 text-left">
+            <th className="py-1 font-medium">รหัสสินค้า</th>
+            <th className="py-1 font-medium">รายการ</th>
             <th className="py-1 text-right font-medium">จำนวน</th>
+            <th className="py-1 pl-2 font-medium">หน่วย</th>
             <th className="py-1 text-right font-medium">ราคา/หน่วย</th>
+            <th className="py-1 text-right font-medium">ส่วนลด</th>
             <th className="py-1 text-right font-medium">จำนวนเงิน</th>
           </tr>
         </thead>
         <tbody>
           {d.items.map(i => (
-            <tr key={i.ListNo} className="border-b border-gray-100">
-              <td className="py-1">{i.ListNo}</td>
-              <td className="py-1">{i.GoodCode} {i.GoodName}</td>
-              <td className="py-1">{i.RefDocuNo || '-'}</td>
-              <td className="py-1 text-right tabular-nums">{nf(i.GoodQty2, 3)} {i.UnitName || ''}</td>
+            <tr key={i.ListNo} className="border-b border-gray-100 align-top">
+              <td className="py-1 pr-2">{i.GoodCode}</td>
+              <td className="py-1 pr-2">{i.GoodName}</td>
+              <td className="py-1 text-right tabular-nums">{nf(i.GoodQty2, 3)}</td>
+              <td className="py-1 pl-2">{i.UnitName || ''}</td>
               <td className="py-1 text-right tabular-nums">{nf(i.GoodPrice2)}</td>
+              <td className="py-1 text-right">{i.GoodDiscFormula || ''}</td>
               <td className="py-1 text-right tabular-nums">{nf(i.GoodAmnt)}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <div className="mt-4 flex justify-end">
-        <table className="w-80 text-[15px]">
+      <div className="mt-3 grid grid-cols-2 gap-x-8 border-t border-gray-500 pt-2">
+        <div>
+          {line('เลขทะเบียนรถ', d.plates.join(', '))}
+          {line('เลขตั๋วปุ๋ย', d.coupons.join(', '))}
+          {line('เลขใบเคลื่อนย้าย', d.slips.join(', '))}
+          {line('หมายเหตุ', d.Remark1)}
+          {d.Remark2 && line('', d.Remark2)}
+          {d.Remark3 && line('', d.Remark3)}
+        </div>
+        <table className="self-start">
           <tbody>
-            <tr><td className="py-0.5">รวมเงิน</td><td className="py-0.5 text-right tabular-nums">{nf(d.SumGoodAmnt)}</td></tr>
-            {Number(d.BillDiscAmnt || 0) > 0 && <tr><td className="py-0.5">ส่วนลด</td><td className="py-0.5 text-right tabular-nums">{nf(d.BillDiscAmnt)}</td></tr>}
-            {Number(d.VATAmnt || 0) > 0 && <tr><td className="py-0.5">ภาษีมูลค่าเพิ่ม {nf(d.VATRate, 0)}%{Number(d.VATType) === 2 ? ' (รวมในราคา)' : ''}</td><td className="py-0.5 text-right tabular-nums">{nf(d.VATAmnt)}</td></tr>}
-            <tr className="border-t border-gray-300 font-semibold"><td className="py-1">จำนวนเงินรวมทั้งสิ้น</td><td className="py-1 text-right tabular-nums">{nf(d.NetAmnt)}</td></tr>
+            {sum('จำนวนเงิน', d.SumGoodAmnt)}
+            {n(d.BillDiscAmnt) > 0 && sum('หักส่วนลด', d.BillDiscAmnt, d.BillDiscFormula)}
+            {n(d.BillDiscAmnt) > 0 && sum('หลังหักส่วนลด', d.BillAftrDiscAmnt)}
+            {n(d.AdvnAmnt) > 0 && sum('หักเงินมัดจำ', d.AdvnAmnt)}
+            {sum('รวมเงิน', d.AftrAdvnAmnt ?? d.BillAftrDiscAmnt)}
+            {sum('ภาษีมูลค่าเพิ่ม', d.VATAmnt, n(d.VATRate) ? `${nf(d.VATRate, 0)}%${Number(d.VATType) === 2 ? ' (รวมในราคา)' : ''}` : '')}
+            <tr className="border-t border-gray-500 font-semibold"><td className="py-1">จำนวนเงินทั้งสิ้น</td><td /><td className="py-1 text-right tabular-nums">{nf(d.NetAmnt)}</td></tr>
           </tbody>
         </table>
       </div>
-      <div className="mt-1 text-right text-[15px]">({thaiBahtText(Number(d.NetAmnt || 0))})</div>
-      {Number(d.VATType) === 3 && <div className="mt-1 text-right text-sm text-gray-600">สินค้ายกเว้นภาษีมูลค่าเพิ่ม</div>}
+      <div className="mt-1">({thaiBahtText(n(d.NetAmnt))})</div>
+      {Number(d.VATType) === 3 && <div className="text-sm text-gray-600">สินค้ายกเว้นภาษีมูลค่าเพิ่ม</div>}
 
-      <div className="mt-16 flex justify-around text-center text-[15px]">
-        {['ผู้รับสินค้า', 'ผู้ส่งสินค้า', 'ผู้มีอำนาจลงนาม'].map(t => (
-          <div key={t} className="w-56"><div className="border-b border-dotted" /><div className="mt-1">{t}</div></div>
-        ))}
+      <div className="mt-3">สินค้าตามใบส่งของนี้ แม้จะได้ส่งมอบแก่ผู้ซื้อแล้วยังคงเป็นทรัพย์สินของผู้ขาย จนกว่าผู้ซื้อได้ชำระเงินเสร็จเรียบร้อยแล้ว</div>
+      <div className="mt-6 grid grid-cols-3 gap-6">
+        <div>
+          <div className="h-12">ได้รับสินค้าตามรายการข้างบนไว้ถูกต้อง ในสภาพเรียบร้อยแล้ว</div>
+          <div className="mt-6 border-b border-dotted" />
+          <div className="text-center">ลงนามและประทับตรา (ถ้ามี) ผู้รับของ</div>
+          <div className="mt-2">วันที่ _____/_____/_______</div>
+        </div>
+        <div className="text-center">
+          <div className="h-12">ในนาม {d.BrchName || c?.companyNameTh || ''}</div>
+          <div className="mt-6 border-b border-dotted" />
+          <div>ผู้มีอำนาจลงนาม</div>
+          <div className="mt-2 text-sm">ผิด ตก ยกเว้น</div>
+        </div>
+        <div className="space-y-6 pt-2">
+          {['ผู้จ่ายของ', 'ผู้ตรวจสอบ', 'ผู้ส่งของ'].map(t => (
+            <div key={t} className="flex items-end gap-2"><span className="w-20 shrink-0">{t}</span><span className="flex-1 border-b border-dotted" /></div>
+          ))}
+        </div>
       </div>
 
-      {d.PostGL !== 'Y' && (
+      {(d.PostGL !== 'Y' || d.DocuStatus === 'C') && (
         <p className="report-no-print mt-4 flex items-center gap-1 text-sm text-amber-700">
-          <AlertTriangle size={14} /> ใบนี้ยังไม่ Post GL ใน WinSpeed
+          <AlertTriangle size={14} /> {d.DocuStatus === 'C' ? 'ใบนี้ถูกยกเลิกใน WinSpeed' : 'ใบนี้ยังไม่ Post GL ใน WinSpeed'}
         </p>
       )}
-      <div className="report-no-print mt-8 border-t pt-2 text-xs text-gray-500">
-        SOInvHD #{d.SOInvID} · แหล่งข้อมูล WINSpeed · อ่านอย่างเดียว · แบบพิมพ์นี้รอยืนยันกับฟอร์ม WinSpeed "ฟอร์มใบส่งของ"
+      <div className="report-no-print mt-6 border-t pt-2 text-xs text-gray-500">
+        SOInvHD #{d.SOInvID} · แหล่งข้อมูล WINSpeed · อ่านอย่างเดียว · จัดหน้าตามฟอร์ม WinSpeed "ใบส่งของ"
       </div>
-    </>
+    </div>
   );
 }
 

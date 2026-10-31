@@ -19,7 +19,8 @@ const db = h.installDbStub(call => {
   if (/FROM wf\.NativeDocumentApproval na/.test(t)) return [{ ApproverCode: 'EMP-T2', ApproverName: 'Test Two', SlipSource: 'SCALE', ExceptionRequired: false, SelfApproval: true }];
   if (/FROM dbo\.SOInvHD h/.test(t)) return state.heads107;
   if (/FROM dbo\.SOInvDT d/.test(t)) return [{ ListNo: 1, GoodCode: 'G-T1', GoodName: 'Test good', GoodQty2: 1, UnitName: 'TON', GoodPrice2: 100, GoodAmnt: 100, RefDocuNo: 'D-T1' }];
-  if (/SELECT DISTINCT RTRIM\(r\.DocuNo\) AS SlipNo/.test(t)) return [{ SlipNo: '9900001' }];
+  if (/SELECT DISTINCT RTRIM\(r\.DocuNo\) AS SlipNo, RTRIM\(rd\.CouponNo\) AS CouponNo, RTRIM\(r\.CarLicense\) AS Plate/.test(t))
+    return [{ SlipNo: '9900001', CouponNo: 'CP-T1', Plate: 'UAT2-TEST' }, { SlipNo: '9900001', CouponNo: 'CP-T2', Plate: 'UAT2-TEST' }];
   if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser/.test(t)) return [{ Id: call.inputs.id, EmpId: '7001', PositionCode: 'TEAM-T' }];
   if (/WITH tree AS/.test(t)) return [{ Id: call.inputs.id, EmpId: '7001' }];
   if (/SELECT SalesUserId FROM wf\.SalesOrderExt/.test(t)) return [];
@@ -52,11 +53,13 @@ test('116 returns the slip with recorder, lines, app approval and only an unambi
   state.scale = [];
 });
 
-test('107 returns the invoice with lines, linked slips and the company header', async () => {
+test('107 returns the WinSpeed delivery-note fields: lines, linked slip, coupons, plate and company header', async () => {
   const r = await app.call('GET', '/api/native-print/107/T69-00001', as('ACCOUNTING'));
   assert.equal(r.status, 200);
   assert.equal(r.body.type, 107); assert.equal(r.body.items[0].RefDocuNo, 'D-T1');
   assert.deepEqual(r.body.slips, ['9900001']);
+  assert.deepEqual(r.body.coupons, ['CP-T1', 'CP-T2']);
+  assert.deepEqual(r.body.plates, ['UAT2-TEST']);
   assert.ok('company' in r.body);
 });
 

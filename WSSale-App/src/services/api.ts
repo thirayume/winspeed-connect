@@ -1554,15 +1554,22 @@ export type NativeSlipDoc = {
 };
 export type NativeInvoiceItem = {
   ListNo: number; GoodCode: string | null; GoodName: string | null; GoodQty2: number; UnitName: string | null;
-  GoodPrice2: number; GoodDiscAmnt: number | null; GoodAmnt: number; RefDocuNo: string | null; InveName: string | null;
+  GoodPrice2: number; GoodDiscFormula: string | null; GoodAmnt: number; RefDocuNo: string | null; InveName: string | null;
 };
+// ช่องข้อมูลตามฟอร์ม WinSpeed "ใบส่งของ" (dr_so_saleorder_tax_worldfart)
 export type NativeInvoiceDoc = {
-  type: 107; SOInvID: number; DocuNo: string; DocuDate: string; CustCode: string | null; CustName: string | null; CustTaxId: string | null;
-  BillAddr1: string | null; BillAddr2: string | null; District: string | null; Amphur: string | null; Province: string | null; PostCode: string | null; Tel: string | null;
-  CreditDays: number | null; DueDate: string | null; SumGoodAmnt: number; BillDiscAmnt: number | null; BillAftrDiscAmnt: number | null;
-  VATType: number | string | null; VATRate: number | null; VATAmnt: number | null; NetAmnt: number; DocuStatus: string | null; PostGL: string | null; CouponFlag: string | null;
-  RefNo: string | null; SalesCode: string | null; SalesName: string | null;
-  items: NativeInvoiceItem[]; slips: string[];
+  type: 107; SOInvID: number; DocuNo: string; DocuDate: string; CustCode: string | null; CustName: string | null;
+  CustAddr1: string | null; CustAddr2: string | null; ShipAddr1: string | null; ShipAddr2: string | null;
+  Tel: string | null; Fax: string | null; ContactName: string | null;
+  InvNo: string | null; InvDate: string | null; CustPONo: string | null; SONo: string | null;
+  CreditDays: number | null; DueDate: string | null; SendDate: string | null;
+  SumGoodAmnt: number; BillDiscFormula: string | null; BillDiscAmnt: number | null; BillAftrDiscAmnt: number | null;
+  AdvnAmnt: number | null; AftrAdvnAmnt: number | null;
+  VATType: number | string | null; VATRate: number | null; VATAmnt: number | null; NetAmnt: number;
+  DocuStatus: string | null; PostGL: string | null; CouponFlag: string | null;
+  SalesCode: string | null; SalesName: string | null; BrchName: string | null;
+  Remark1: string | null; Remark2: string | null; Remark3: string | null;
+  items: NativeInvoiceItem[]; slips: string[]; coupons: string[]; plates: string[];
   company: { companyNameTh?: string | null; companyNameEn?: string | null; addressTh?: string | null; tel?: string | null; fax?: string | null; taxId?: string | null; branchNameTh?: string | null; branchCode?: string | null } | null;
 };
 export const fetchNativeSlipPrint = (docuNo: string) => req<NativeSlipDoc>(`/native-print/116/${encodeURIComponent(docuNo)}`);

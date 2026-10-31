@@ -76,25 +76,40 @@ async function load116(no) {
   return { count: 1, doc: { ...head, items, scale: scales.length === 1 ? scales[0] : null, appApproval: approval } };
 }
 
+// ช่องข้อมูลตามฟอร์มเริ่มต้นของ WinSpeed "ใบส่งของ" (soworldfartform.pbl@dr_so_saleorder_tax_worldfart):
+// นามผู้ซื้อ = CustBillName หรือคำนำหน้า+ชื่อลูกหนี้ · ที่อยู่ = ที่อยู่ลูกหนี้ · สถานที่ส่งของ = ที่อยู่ในบิล
+// วันครบกำหนด = วันที่เอกสาร + เครดิต · ท้ายใบ = ทะเบียนรถ เลขตั๋ว และเลขใบเคลื่อนย้าย (เลขใบ 116) ที่ผูกกับใบนี้
 async function load107(no) {
   const heads = rows(await wfQuery(`
     SELECT h.SOInvID, RTRIM(h.DocuNo) AS DocuNo, CONVERT(varchar(10),h.DocuDate,120) AS DocuDate,
-           RTRIM(cu.CustCode) AS CustCode, RTRIM(COALESCE(h.CustName, cu.CustName)) AS CustName, RTRIM(cu.TaxId) AS CustTaxId,
-           RTRIM(COALESCE(h.BillAddr1, cu.CustAddr1)) AS BillAddr1, RTRIM(COALESCE(h.BillAddr2, cu.CustAddr2)) AS BillAddr2,
-           RTRIM(COALESCE(h.District, cu.District)) AS District, RTRIM(COALESCE(h.Amphur, cu.Amphur)) AS Amphur,
-           RTRIM(COALESCE(h.Province, cu.Province)) AS Province, RTRIM(COALESCE(h.PostCode, cu.PostCode)) AS PostCode, RTRIM(h.Tel) AS Tel,
-           h.CreditDays, CONVERT(varchar(10),h.DueDate,120) AS DueDate, h.SumGoodAmnt, h.BillDiscAmnt, h.BillAftrDiscAmnt,
-           h.VATType, h.VATRate, h.VATAmnt, h.NetAmnt, h.DocuStatus, h.PostGL, h.CouponFlag, RTRIM(h.RefNo) AS RefNo,
-           h.EmpID AS SalesEmpID, RTRIM(e.EmpCode) AS SalesCode, RTRIM(e.EmpName) AS SalesName
+           RTRIM(cu.CustCode) AS CustCode,
+           RTRIM(CASE ISNULL(cu.CustBillName,'') WHEN '' THEN ISNULL(NULLIF(RTRIM(cu.CustTitle),'')+' ','')+ISNULL(cu.CustName,'')
+                 ELSE cu.CustBillName END) AS CustName,
+           LTRIM(RTRIM(ISNULL(cu.CustAddr1,'')+' '+ISNULL(cu.CustAddr2,''))) AS CustAddr1,
+           LTRIM(RTRIM(ISNULL(cu.District,'')+' '+ISNULL(cu.Amphur,'')+' '+ISNULL(cu.Province,'')+' '+ISNULL(cu.PostCode,''))) AS CustAddr2,
+           LTRIM(RTRIM(ISNULL(h.BillAddr1,'')+'  '+ISNULL(h.BillAddr2,''))) AS ShipAddr1,
+           LTRIM(RTRIM(ISNULL(h.District,'')+' '+ISNULL(h.Amphur,'')+' '+ISNULL(h.Province,'')+' '+ISNULL(h.PostCode,''))) AS ShipAddr2,
+           RTRIM(cu.ContTel) AS Tel, RTRIM(cu.ContFax) AS Fax, RTRIM(h.ContactName) AS ContactName,
+           RTRIM(h.InvNo) AS InvNo, CONVERT(varchar(10),h.InvDate,120) AS InvDate, RTRIM(h.CustPONo) AS CustPONo, RTRIM(h.SONo) AS SONo,
+           h.CreditDays, CONVERT(varchar(10),DATEADD(day,h.CreditDays,h.DocuDate),120) AS DueDate, CONVERT(varchar(10),h.SendDate,120) AS SendDate,
+           h.SumGoodAmnt, RTRIM(h.BillDiscFormula) AS BillDiscFormula, h.BillDiscAmnt, h.BillAftrDiscAmnt, h.AdvnAmnt, h.AftrAdvnAmnt,
+           h.VATType, h.VATRate, h.VATAmnt, h.NetAmnt, h.DocuStatus, h.PostGL, h.CouponFlag,
+           h.EmpID AS SalesEmpID, RTRIM(e.EmpCode) AS SalesCode,
+           RTRIM(ISNULL(NULLIF(RTRIM(e.EmpTitle),'')+' ','')+ISNULL(e.EmpName,'')) AS SalesName,
+           RTRIM(b.BrchName) AS BrchName,
+           (SELECT RTRIM(r.Remark) FROM dbo.SOInvHDRemark r WHERE r.SOInvID=h.SOInvID AND r.ListNo=1) AS Remark1,
+           (SELECT RTRIM(r.Remark) FROM dbo.SOInvHDRemark r WHERE r.SOInvID=h.SOInvID AND r.ListNo=2) AS Remark2,
+           (SELECT RTRIM(r.Remark) FROM dbo.SOInvHDRemark r WHERE r.SOInvID=h.SOInvID AND r.ListNo=3) AS Remark3
       FROM dbo.SOInvHD h
       LEFT JOIN dbo.EMCust cu ON cu.CustID=h.CustID
       LEFT JOIN dbo.EMEmp e ON e.EmpID=h.EmpID
+      LEFT JOIN dbo.EMBrch b ON b.BrchID=h.BrchID
      WHERE h.DocuType=107 AND h.DocuNo=@no`, noInput(no)));
   if (heads.length !== 1) return { count: heads.length };
   const head = heads[0];
   const items = rows(await wfQuery(`
     SELECT d.ListNo, RTRIM(g.GoodCode) AS GoodCode, RTRIM(COALESCE(d.GoodName, g.GoodName1)) AS GoodName,
-           d.GoodQty2, RTRIM(u.GoodUnitName) AS UnitName, d.GoodPrice2, d.GoodDiscAmnt, d.GoodAmnt,
+           d.GoodQty2, RTRIM(u.GoodUnitName) AS UnitName, d.GoodPrice2, RTRIM(d.GoodDiscFomula) AS GoodDiscFormula, d.GoodAmnt,
            RTRIM(COALESCE(ref.DocuNo, d.RefDocuno)) AS RefDocuNo, RTRIM(i.InveName) AS InveName
       FROM dbo.SOInvDT d
       LEFT JOIN dbo.SOHD ref ON ref.SOID=d.RefID AND ref.DocuType=104
@@ -102,13 +117,15 @@ async function load107(no) {
       LEFT JOIN dbo.EMGoodUnit u ON u.GoodUnitID=d.GoodUnitID2
       LEFT JOIN dbo.EMInve i ON i.InveID=d.InveID
      WHERE d.SOInvID=@id ORDER BY d.ListNo`, idInput(head.SOInvID)));
-  const slips = rows(await wfQuery(`
-    SELECT DISTINCT RTRIM(r.DocuNo) AS SlipNo FROM dbo.WFRedemtionDT rd
+  const refs = rows(await wfQuery(`
+    SELECT DISTINCT RTRIM(r.DocuNo) AS SlipNo, RTRIM(rd.CouponNo) AS CouponNo, RTRIM(r.CarLicense) AS Plate
+      FROM dbo.WFRedemtionDT rd
       JOIN dbo.WFRedemtionHD r ON r.RedemtionID=rd.RedemtionID AND r.DocuType=116
-     WHERE rd.SOInvID=@id`, idInput(head.SOInvID))).map(r => r.SlipNo);
+     WHERE rd.SOInvID=@id`, idInput(head.SOInvID)));
+  const uniq = key => [...new Set(refs.map(r => r[key]).filter(Boolean))];
   const { resolveReportTemplate } = require('./reports').__testing;
   const header = (await resolveReportTemplate('native-107').catch(() => null))?.header || null;
-  return { count: 1, doc: { ...head, items, slips, company: header } };
+  return { count: 1, doc: { ...head, items, slips: uniq('SlipNo'), coupons: uniq('CouponNo'), plates: uniq('Plate'), company: header } };
 }
 
 function handler(type, loader) {
