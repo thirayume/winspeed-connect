@@ -143,6 +143,21 @@ backup required, health 200). Verified read-only: the Production bundle has the 
 the VAT fix, `/api/native-print` answers 401 without a login, the target guard returns 0 and
 all five native writer flags are false.
 
+**W2 WinSpeed form alignment (`18e6281`, `ac38952`, `7a8c191`, no migration).** The default print
+forms were read from WinSpeed's form registry (`dbo.SMForm`) and form libraries, which the owner
+copied read-only to the server (kept out of git). 107 now follows the default "ใบส่งของ" form
+(header blocks, reference row, seven columns, plate / coupon / transport-slip footer, remarks,
+retention clause, five signatures). 103 adds the delivery date and the customer's billing terms
+in the form's wording, and the signature titles พนักงานขาย / ผู้จัดการฝ่ายขาย / พนักงานคลังสินค้า. 104
+is new: `GET /api/native-print/104/:docuNo` (capability `native.print-104`) and a print that places
+each value at the WinSpeed pre-printed form's positions on Letter paper (owner: same pre-printed
+stock, check with a PDF printer); Chrome print-to-PDF gives one Letter page. 102 was left as is
+(6 WinSpeed quotations since August). The owner promoted `7a8c191`; UAT deployed at 13:48 on
+31 October (receipt `20261031-134810-uat-apply-7a8c191.txt`, 160/0/0, health 200). The deployed
+104 and 107 loaders returned complete data for the UAT test documents. Still open: overlay with
+WinSpeed's own PDF of the same 104, then one print on the real stock. Production still runs
+`ebe3214`.
+
 **Run of 31 October 00:14–00:25 (after migration 160 on UAT and Production).** A separate
 dated copy of the private harness (new run label, user namespace and state folder) passed
 every phase for both chains: prepare, booking/AI, 104, 116, 107, audit and close. The five
