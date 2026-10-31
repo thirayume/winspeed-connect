@@ -161,8 +161,11 @@ not 96, and the amount in words keeps WinSpeed's padding. After `154eb65` every 
 within 0.4 pt of WinSpeed. WinSpeed logs each print in `SMAudit` (action P, form name); Sale-App
 prints do not. The promotion dispatch left no run, so the owner allowed a direct fast-forward of
 `uat` to `154eb65`; UAT deployed at 21:45 (receipt `20261031-214512-uat-apply-154eb65.txt`,
-160/0/0, health 200). Still open: one print on the real pre-printed stock. Production still runs
-`ebe3214`.
+160/0/0, health 200). A Production promotion dispatch also left no run; at the owner's request
+Claude fast-forwarded `main` to `154eb65` and deployed Production at 21:57 (receipt
+`20261031-215747-prod-apply-154eb65.txt`, 160/0/0, no backup required, health 200). Verified
+read-only: the Production bundle carries the 103/104/107 prints, the target guard returns 0 and
+all five native writer flags are false. Still open: one print on the real pre-printed stock.
 
 **Run of 31 October 00:14–00:25 (after migration 160 on UAT and Production).** A separate
 dated copy of the private harness (new run label, user namespace and state folder) passed
