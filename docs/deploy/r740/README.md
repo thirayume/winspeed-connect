@@ -197,6 +197,16 @@ the Production deploy needs the pre-deploy backup and the database-name prompt:
 - 164: `wf.NativePrintLog`, one row per press of the print button for a 104/116/107 (WinSpeed
   writes SMAudit action P for its own prints). wf only.
 
+### Full Loop on UAT
+
+[`backend/scripts/uat-full-loop.cjs`](../../../backend/scripts/uat-full-loop.cjs) runs the native
+chain through the real API inside `saleapp-uat-backend-1`, for both book lines, one phase at a
+time (usage and fixtures at the top of the file). It refuses anything but a `_uat` database with
+the native flags on. Before `I-116`, insert the labelled scale record with
+[`sql/uat-simulated-scale-record.sql`](sql/uat-simulated-scale-record.sql); the nightly restore
+removes it and the test documents. Stop at the first failed check and run `close` only after
+everything passed. Keep the document numbers it prints out of this repository.
+
 The owner selected Production app accounts for UAT after the nightly restore (27 October 2026).
 Do not preserve or overwrite the restored `admin` password hash with a separate UAT hash.
 

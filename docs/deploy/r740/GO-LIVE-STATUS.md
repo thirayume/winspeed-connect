@@ -1,6 +1,6 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **31 October 2026 09:15 (ICT)**. This page records observed results;
+Operational snapshot: **1 November 2026 23:00 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
@@ -181,6 +181,25 @@ read-only: Production serves the same bundle as UAT, the four reports run agains
 `dbwins_worldfert9` (19 policy changes, 2 counters, empty hold and alert history), the report API
 answers 401 without a login, the target guard returns 0 and all five native writer flags are false.
 
+**1.0.0-beta.7 on UAT (`0f3a231`, migrations 163 and 164).** UAT deployed at 09:48 on 1 November
+(receipt `20261101-094805-uat-apply-0f3a231.txt`, 160 unchanged, 2 applied) and again after that
+evening's restore (`20261101-210202-uat-apply-0f3a231.txt`). Run `R740UAT-20261101-01` then passed
+every phase for both chains, 207 checks, with new ones proving the customer's default contact on the
+103, 104, 202 and 107 (and on the 107 print), the 104/116/107 prints with one log row per press, the
+denials for a sales user, and both audit reports. `R740UAT-20261101-02` repeated the whole loop with
+the private harness's replacement, `backend/scripts/uat-full-loop.cjs` (224 checks including
+prepare and close), so the loop no longer depends on a private copy. Line I again ran on one labelled
+simulated scale record. All test accounts were disabled. WinSpeed was not open, so this run was
+checked by API and SQL, without a GUI read-back. Production stays on `f380fc8` (beta.6) until promoted.
+
+The backend test list grew from 38 to 90 files (`npm test` 473 tests, also passing in a Linux Node 22
+container); 51 of them had never run in CI, and three needed test-only fixes. Ten database-backed
+files stay outside the list.
+
+Read-only on Production, 1 November: staff accounts are still locked since migration 154 (only the
+owner's administrator is active), there were no drafts or confirmations in the last 7 days, and the
+approver list is still fully enabled. **The website is deployed, but no staff use it yet.**
+
 **Run of 31 October 00:14–00:25 (after migration 160 on UAT and Production).** A separate
 dated copy of the private harness (new run label, user namespace and state folder) passed
 every phase for both chains: prepare, booking/AI, 104, 116, 107, audit and close. The five
@@ -293,11 +312,24 @@ private brief dated 30 October):
 - **SSRS:** the R740 report server has no reports or data sources and no runs in 30 days,
   so there is nothing yet to accept with real users; the report list must come first.
 
-Outstanding: the accounting team's accepted
-AR report and non-duplication reconciliation (owner deferred), GL posting trial,
-confirmation of print forms, scale tolerance/exception rules, and the SSRS report list.
-The private illustrated stakeholder brief lists these questions with WinSpeed menu
-references and clearly labelled original video images.
+Outstanding, none of which software work can close (scale tolerance and the exception approver were
+settled by the owner on 31 October):
+
+| Owner | Item |
+|---|---|
+| Accounting | Post GL trial on UAT (WinSpeed's own Post GL step on the latest test 202/107; a read-only check is prepared) |
+| Accounting | Accept the AR report and the non-duplication reconciliation (owner deferred) |
+| Accounting | Confirm the 107 title ใบส่งของ for VAT-exempt documents, and the RB series mapping (S/T) |
+| Warehouse | One 104 printed on the real pre-printed stock |
+| Factory | The three blocked UAT cases (scale, stock) and physical shipment evidence |
+| QA | Dry-run the three QA guides on UAT |
+| Owner | Enable staff accounts in Production; trim the approver list; say which document MO weighings belong to; decide when the native writers go live |
+| Staff | Close the stale bookings listed in the private register |
+| IT | SSRS report list; an off-host copy of the backups; move the nightly job to Windows authentication |
+
+Known limit: the original client IP is lost at the Windows portproxy, so audit and rate limits see
+the Docker gateway. The private illustrated stakeholder brief lists the accounting questions with
+WinSpeed menu references and clearly labelled original video images.
 No version 1.0.0 or unrestricted business go-live acceptance is asserted.
 
 Never commit secret files, password hashes, private keys, customer records or operational
