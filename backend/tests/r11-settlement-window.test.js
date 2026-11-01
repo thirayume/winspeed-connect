@@ -8,6 +8,22 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+
+// logChangeEvent asks the module's wfQuery whether wf.ChangeEvent has ActorUserId. Answer from a stub:
+// the real one opens a msnodesqlv8 pool, and its pending connect keeps node from ever exiting.
+const dbPath = require.resolve('../db');
+const plainDbExports = Object.fromEntries(
+  Object.entries(Object.getOwnPropertyDescriptors(require('../db')))
+    .filter(([, desc]) => 'value' in desc)
+    .map(([key, desc]) => [key, desc.value])
+);
+require.cache[dbPath] = {
+  id: dbPath,
+  filename: dbPath,
+  loaded: true,
+  exports: { ...plainDbExports, wfQuery: async () => ({ recordset: [] }) }
+};
+
 const { manualSettleCouponCut } = require('../services/coupon-service');
 const { matchCutsToReservations } = require('../services/coupon-settlement-matcher');
 

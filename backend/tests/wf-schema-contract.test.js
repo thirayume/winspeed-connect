@@ -68,7 +68,8 @@ const SCHEMA_FIXTURE = {
     'NoTruckRequired', 'PSling', 'CreditDays', 'TruckRemark', 'BillRemark',
     'TranspId', 'IsUnlocked', 'NotifiedAt', 'EnteredByUserId', 'TripId',
     'PickupDueDate', 'PickupDueType', 'ConfirmedAt', 'PickupPolicySnapshotId',
-    'SourceDraftId', 'AppliedRebateClaimId', 'ClaimDiscountAmt'
+    'SourceDraftId', 'AppliedRebateClaimId', 'ClaimDiscountAmt',
+    'VerifiedBy', 'VerifiedAt'
   ],
   SalesOrderLine: [
     'Id', 'SoId', 'LineNum', 'GoodId', 'GoodCode', 'GoodName', 'QtyTon', 'QtyBag',

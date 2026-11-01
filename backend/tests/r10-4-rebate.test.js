@@ -91,7 +91,10 @@ const stubDb = {
     DateTime: { type: 'DateTime' },
   },
   query: async (sqlText, params) => customQueryHandler(sqlText, params),
-  wfQuery: async (sqlText, params) => customQueryHandler(sqlText, params),
+  // requireAuth checks the token's account is still active before the route runs
+  wfQuery: async (sqlText, params) => (sqlText.includes('SELECT IsActive FROM wf.AppUser')
+    ? { recordset: [{ IsActive: 1 }] }
+    : customQueryHandler(sqlText, params)),
   dboWrite: async (sqlText, params) => customQueryHandler(sqlText, params),
   wfTransaction: async callback => {
     const tx = {
