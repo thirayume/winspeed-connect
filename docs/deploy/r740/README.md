@@ -6,7 +6,7 @@ Docker engine and Docker Desktop on that server are not used.
 
 > **Current status for all agents (Claude · Codex · Antigravity):**
 > [GO-LIVE-STATUS.md](GO-LIVE-STATUS.md) — what is live vs pending, and the constraints to respect
-> when working on deploy or the databases. Runbook refreshed 2026-11-01 (160 migrations applied; 163–164 pending in 1.0.0-beta.7).
+> when working on deploy or the databases. Runbook refreshed 2026-11-01 (release 1.0.0; 162 migrations on UAT and PROD).
 
 | | UAT | PROD |
 |---|---|---|

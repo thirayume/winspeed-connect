@@ -5,6 +5,8 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
+**Running release: 1.0.0 (`966f1ab`) on UAT and Production.** Older paragraphs below are history.
+
 ## Production and UAT websites
 
 Both stacks deployed DNS-01 release `cad0d542c78adfb97164bd774a638e50c309e474`:
@@ -190,7 +192,21 @@ denials for a sales user, and both audit reports. `R740UAT-20261101-02` repeated
 the private harness's replacement, `backend/scripts/uat-full-loop.cjs` (224 checks including
 prepare and close), so the loop no longer depends on a private copy. Line I again ran on one labelled
 simulated scale record. All test accounts were disabled. WinSpeed was not open, so this run was
-checked by API and SQL, without a GUI read-back. Production stays on `f380fc8` (beta.6) until promoted.
+checked by API and SQL, without a GUI read-back.
+
+**1.0.0 on UAT and Production (`966f1ab`, owner decision of 1 November).** The system code is the same
+as `0f3a231`. UAT deployed at 22:45 (receipt `20261101-224544-uat-apply-966f1ab.txt`, 162/0/0, health
+200), and run `R740UAT-20261101-03` passed every phase on that image, 225 checks. The owner allowed the
+direct fast-forward of `uat` and `main` (this token cannot dispatch the promotion workflows); CI on
+`main` passed for `966f1ab`, and the same checks passed locally before the push. Claude took the
+COPY_ONLY/CHECKSUM/VERIFYONLY backup `dbwins_worldfert9_predeploy_20261101-224858.bak` and deployed
+Production at the owner's request (receipt `20261101-225030-prod-apply-966f1ab.txt`): 160 unchanged,
+163 and 164 applied, verify 162/0/0, health 200 reporting 1.0.0. Verified read-only: the Production
+bundle equals UAT's, the target guard returns 0, all five native writer flags are false,
+`ALLOW_TEST_NATIVE_WRITEBACK` is unset, the live confirm procedure carries the contact edit, no `dbo`
+object changed, Production holds no test accounts or simulated scale records, and the checked routes
+answer 401 without a login. No booking was confirmed on Production, so the contact on a real 103 is so
+far proven on UAT only.
 
 The backend test list grew from 38 to 90 files (`npm test` 473 tests, also passing in a Linux Node 22
 container); 51 of them had never run in CI, and three needed test-only fixes. Ten database-backed
