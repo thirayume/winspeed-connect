@@ -187,8 +187,7 @@ simulation writers, which stay off in Production:
   exception approved by a manager, executive or administrator other than the requester.
 - 162: the 107 writer accepts the scale record that a 116 slip came from.
 
-Migrations 163–164 (1.0.0-beta.7) are pending on both databases until the next deploy, so
-the Production deploy needs the pre-deploy backup and the database-name prompt:
+Migrations 163–164 (1.0.0):
 
 - 163: the booking (103) that Sale-App confirms carries the customer's default contact
   (`EMCustContact.IsDefault='Y'`) in `SOHD.ContactName`, as WinSpeed does; the 104, its 202 and

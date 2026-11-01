@@ -312,8 +312,8 @@ private brief dated 30 October):
 - **SSRS:** the R740 report server has no reports or data sources and no runs in 30 days,
   so there is nothing yet to accept with real users; the report list must come first.
 
-Outstanding, none of which software work can close (scale tolerance and the exception approver were
-settled by the owner on 31 October):
+Deferred by the owner to after 1.0.0 (decision of 1 November 2026). None of these is software work; scale
+tolerance and the exception approver were settled by the owner on 31 October:
 
 | Owner | Item |
 |---|---|
@@ -330,7 +330,9 @@ settled by the owner on 31 October):
 Known limit: the original client IP is lost at the Windows portproxy, so audit and rate limits see
 the Docker gateway. The private illustrated stakeholder brief lists the accounting questions with
 WinSpeed menu references and clearly labelled original video images.
-No version 1.0.0 or unrestricted business go-live acceptance is asserted.
+**Version 1.0.0 is the owner's release decision. It does not assert business acceptance of the deferred
+items above or unrestricted go-live:** the native writers stay off in Production, and the downstream
+contracts remain the restricted UAT simulations described above.
 
 Never commit secret files, password hashes, private keys, customer records or operational
 screenshots to the public repository.
