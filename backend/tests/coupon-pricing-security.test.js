@@ -20,8 +20,15 @@ const assert = require('node:assert/strict');
 // Hermetic offline stub for db
 const dbPath = require.resolve('../db');
 const originalDb = require('../db');
+// Copy only db.js's plain exports. Spreading originalDb would also read its lazy readerPool/ownerPool
+// getters, which open two real msnodesqlv8 pools whose pending connect keeps node from ever exiting.
+const plainDbExports = Object.fromEntries(
+  Object.entries(Object.getOwnPropertyDescriptors(originalDb))
+    .filter(([, desc]) => 'value' in desc)
+    .map(([key, desc]) => [key, desc.value])
+);
 const stubDb = {
-  ...originalDb,
+  ...plainDbExports,
   query: async (text) => {
     if (text.includes('EMCust')) return [{ CustID: 1, CustCode: '0342001', CustName: 'Test' }];
     if (text.includes('EMSetPrice')) return [{ SetPriceID: 1, AnnouncedPrice: 15000, PriceSource: 'EMSetPrice' }];
@@ -253,5 +260,7 @@ test('6. Valid reservation: Forces price to 0 and cleanly skips price approval',
 
 test.after(async () => {
   const { closeAll } = require('../db');
-  await closeAll();
+  // Hermetic guard: the stub must never have made db.js open a real pool
+  const { closedPools } = await closeAll();
+  assert.equal(closedPools, 0, 'test opened real DB pools; they keep node alive after the run');
 });
