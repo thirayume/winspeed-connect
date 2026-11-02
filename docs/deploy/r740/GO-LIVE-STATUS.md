@@ -414,8 +414,10 @@ files only, with no migration and no backend route change, so the stock and AR r
 WinSpeed prints under its title and the amount in words sitting on its own line. A real PDF from Edge found what the
 screen hid. The small-screen table rule also applied on paper, because A4 is narrower than 1024 px, so every printed
 table collapsed to about 60% of the page. The 107, 116, delivery note and weigh ticket printed the modal's dark
-backdrop as a grey frame. Long 107s spilled onto a second page. The longest 107 is now one clean A4 page, and three
-wide reports fit their pages as measured in the layout. No physical printer has been used.
+backdrop as a grey frame. Long 107s spilled onto a second page. The longest 107 is now one clean A4 page, and a 116
+and a weigh ticket also came out clean in real PDFs. Three wide reports fit their pages as measured in the layout. The
+quotation, four-copy delivery note and booking form were checked in code only, because UAT had no bills at the time. No
+physical printer has been used.
 
 Full Loop run `R740UAT-20261102-01` passed every phase on `f57ca2a` through the real API with its own test accounts,
 then closed them; later commits changed print only. After the 21:00 refresh, UAT held no test data, the stock route
