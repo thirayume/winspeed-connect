@@ -63,11 +63,14 @@ router.get('/atp', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'MANAGER',
       return res.json({ data: [], asOf: new Date().toISOString(), meta: buildMeta() });
     }
 
-    // 3. Open bookings: what WinSpeed still holds open on each 103 line, the same figure as the backlog report.
+    // 3. Open bookings: what WinSpeed still holds open on each 103 line, the backlog report's figure less trucks gone.
     // The query this replaces treated a booking as invoiced when its number equalled an invoice's SONo, but SONo holds
     // the 104's number and the 103 and 104 counters overlap. On 2 Nov 2026 that hid about four fifths of the open tons,
     // on bookings no invoice refers to.
     // Bookings before LEGACY_DOC_CUTOFF_DATE stay out, as everywhere else (owner D9); an open control ticket stays in.
+    // A truck the scale has weighed out has left, even when WinSpeed has no 104 yet: about a fifth of the trucks on
+    // 2 Nov 2026, and each carried all its booking's open tons, so the booking drops out. The scale writes dbo.WGHD,
+    // never ext.WeighOutWeight. A control ticket is drawn by many trucks, so it stays in.
     const confInputs = await legacyCutoffInput();
     let confTripClause = '';
     if (excludeTripNum != null) {
@@ -87,6 +90,9 @@ router.get('/atp', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'MANAGER',
         AND ISNULL(hd.ClearFlag, 'N') <> 'Y'
         AND dt.RemaQty > 0
         AND ext.WeighOutWeight IS NULL
+        AND (RTRIM(hd.TransRegistration) = N'ตั๋วคุม' OR NOT EXISTS (
+          SELECT 1 FROM dbo.WGHD wg WITH (NOLOCK)
+          WHERE wg.SPID = hd.SOID AND wg.WGType = 'SO' AND RTRIM(wg.Status) = '3'))
         AND ${legacyCutoffSql('hd')}
         ${confTripClause}
       GROUP BY RTRIM(g.GoodCode)

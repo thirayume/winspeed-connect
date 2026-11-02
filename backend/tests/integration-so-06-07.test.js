@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const http = require('http');
 const express = require('express');
 const { runWithTarget, query, wfQuery, pools, sql } = require('../db');
+const { legacyCutoffInput, legacyCutoffSql } = require('../services/legacy-cutoff');
 const { assertTestDatabase } = require('./test-safety');
 
 let server;
@@ -280,11 +281,27 @@ test('ATP 1.4: Invalid or missing unit returns state UNKNOWN', async () => {
   assert.ok(row.stateReason?.includes('หน่วยสินค้าไม่ชัดเจน'));
 });
 
-test('ATP 1.5: Open bookings before LEGACY_DOC_CUTOFF_DATE do not count as demand (owner D9, 2026-10-09)', async () => {
-  const goodCode = '9-1620000000CAR';
+test('ATP 1.5: Open bookings before LEGACY_DOC_CUTOFF_DATE do not count as demand (owner D9, 2026-10-09)', async (t) => {
   const testWh = 'WH-TEST-HIST';
+  let goodCode;
 
   await runWithTarget('remote_b', async () => {
+    // Any good whose open bookings are all older than the cut-off: which goods qualify changes with the data
+    const openLines = `
+      FROM dbo.SODT dt WITH (NOLOCK)
+      JOIN dbo.SOHD hd WITH (NOLOCK) ON hd.SOID = dt.SOID
+      WHERE dt.GoodID = g.GoodID AND hd.DocuType = 103 AND dt.RemaQty > 0
+        AND ISNULL(hd.DocuStatus, 'N') <> 'C' AND ISNULL(hd.ClearSO, 'N') <> 'Y' AND ISNULL(hd.ClearFlag, 'N') <> 'Y'`;
+    const picked = await wfQuery(`
+      SELECT TOP 1 RTRIM(g.GoodCode) AS GoodCode
+      FROM dbo.EMGood g WITH (NOLOCK)
+      WHERE EXISTS (SELECT 1 ${openLines})
+        AND NOT EXISTS (SELECT 1 ${openLines} AND ${legacyCutoffSql('hd')})
+      ORDER BY RTRIM(g.GoodCode)
+    `, await legacyCutoffInput());
+    goodCode = picked.recordset[0]?.GoodCode;
+    if (!goodCode) return;
+
     await wfQuery(`
       INSERT INTO wf.OperationalStock (GoodId, WarehouseId, GoodName, QtyOnHand, Unit, Source, AsOf, UpdatedBy)
       VALUES (@gc, @wh, N'ปุ๋ยทดสอบประวัติศาสตร์', 100.00, N'ตัน', 'FEED', GETUTCDATE(), 1)
@@ -294,6 +311,7 @@ test('ATP 1.5: Open bookings before LEGACY_DOC_CUTOFF_DATE do not count as deman
     });
     trackStock(goodCode, testWh);
   });
+  if (!goodCode) return t.skip('no good has only bookings older than the cut-off');
 
   const res = await fetch(`${baseUrl}/api/stock/atp?goodCode=${goodCode}`, {
     headers: { Authorization: `Bearer ${salesToken}` }
@@ -304,7 +322,6 @@ test('ATP 1.5: Open bookings before LEGACY_DOC_CUTOFF_DATE do not count as deman
 
   assert.ok(row);
   assert.equal(row.totalOnHand, 100);
-  // This good's open line is a 2019 booking of 8 tons; the cut-off hides it, as on every other screen
   assert.equal(row.confirmedReserved, 0);
 });
 

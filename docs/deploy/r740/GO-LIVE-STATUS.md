@@ -1,6 +1,6 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **2 November 2026 12:15 (ICT)**. This page records observed results;
+Operational snapshot: **2 November 2026 17:23 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
@@ -338,7 +338,7 @@ tolerance and the exception approver were settled by the owner on 31 October:
 | Accounting | Accept the AR report and the non-duplication reconciliation (owner deferred) |
 | Accounting | Confirm the 107 title ใบส่งของ for VAT-exempt documents, and the RB series mapping (S/T) |
 | Warehouse | One 104 printed on the real pre-printed stock |
-| Warehouse | Stock case SO-19, ready on UAT: enter a figure for one product, then check the badge and the warning on the bill screen |
+| Warehouse | Accept stock case SO-19 during training: enter a figure for one product, then check the badge and the warning on the bill screen |
 | Factory | The two blocked scale cases (SO-17, SHP-05) and physical shipment evidence |
 | QA | Dry-run the three QA guides on UAT |
 | Owner | Enable staff accounts in Production; trim the approver list; say which document MO weighings belong to; decide when the native writers go live |
@@ -357,8 +357,26 @@ them, so many goods will read short until then. The credit and PDPA tabs of the 
 The fix is on UAT since 2 November 2026 12:09 (`45f5358`, receipt `20261102-120947-uat-apply-45f5358.txt`,
 162/0/0) and is not on Production. A check in the UAT container ran the deployed route on the UAT database
 with sign-in replaced: bad input and a SALES save were refused, reserved tons matched a separate query, all
-four stock states read correctly, and the one test row was removed. UAT serves the new screens. Nobody has
-yet walked the screens signed in on UAT with real goods, so the case stays open for the warehouse. The push
+four stock states read correctly, and the one test row was removed. UAT serves the new screens.
+
+Claude then walked the screens at 16:30 on the same day, on real goods, in a session the owner signed in as
+UAT Administrator. The stock screen saved a figure and its reserved tons matched a separate query. The bill
+screen showed the badge, warned above the available figure, summed the same good across two bills, kept the
+save button enabled, and read short once the figure fell below the reservations. No bill was saved. This
+exercised the ADMIN role only and does not replace the warehouse's acceptance, so the case stays open. One
+test figure and one empty draft trip remain on UAT until the 21:00 restore.
+
+The warehouse was not ready to test, so the reserved figure was checked against documents WinSpeed has already
+issued. On every open or closed booking line since 2019 the open quantity equals the ordered quantity less the 104s
+that refer to it. That check found a defect in `45f5358`: a truck the scale had weighed out stayed reserved until its
+104 was issued, about a fifth of the trucks and of the reserved tons. The next release drops those bookings; the old,
+current and corrected routes were compared on the UAT database, and the corrected one matches a separate calculation
+on every good. It is not on UAT yet. Fertilizer coupons sold but not drawn are still not netted, equal to about a
+third of the reserved tons, and the stock screen says so; whether to net them is the owner's decision. Most of the
+trucks weighed out without a 104 are more than two weeks old, which accounting should review. The private
+verification record holds the documents, figures and recheck queries.
+
+The push
 went straight to `uat`, so the promotion workflow's checks did not run; the backend tests, rehearsal, frontend
 build and the batch, shell and secret-file checks passed locally first. Promoting to Production needs the
 owner's request and a version decision; the changelog holds the fix under Unreleased.

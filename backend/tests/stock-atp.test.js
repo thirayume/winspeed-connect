@@ -4,7 +4,7 @@
  * stock-atp.test.js — UAT case SO-19, stock short of what is being sold (real route, stubbed DB).
  *
  *  1. No stock entered: answers at once without reading the booking tables (every bill dialog calls this).
- *  2. Demand comes from SODT.RemaQty with the legacy cut-off, plus wf drafts.
+ *  2. Demand comes from SODT.RemaQty with the legacy cut-off, less trucks the scale has weighed out, plus wf drafts.
  *  3. Requested quantity gives FULLY_READY, PARTIALLY_READY or SHORTAGE; no quantity gives FULLY_READY or SHORTAGE.
  *  4. Only a stock figure in tons is netted against bookings; stale figures read UNKNOWN.
  *  5. The bill being edited does not count against itself.
@@ -71,6 +71,8 @@ test('2. demand is WinSpeed open quantity plus drafts, under the legacy cut-off'
   assert.match(booking.text, /dt\.RemaQty > 0/);
   assert.match(booking.text, /hd\.DocuDate >= @legacyCut/);
   assert.ok(booking.inputs.legacyCut, 'cut-off date is passed to the query');
+  assert.match(booking.text, /NOT EXISTS \(\s*SELECT 1 FROM dbo\.WGHD wg[\s\S]*wg\.SPID = hd\.SOID AND wg\.WGType = 'SO' AND RTRIM\(wg\.Status\) = '3'/, 'a truck already weighed out has left');
+  assert.match(booking.text, /RTRIM\(hd\.TransRegistration\) = N'ตั๋วคุม' OR NOT EXISTS/, 'a control ticket is drawn by many trucks');
   assert.doesNotMatch(booking.text, /SOInvHD/, 'matching invoices by number hides open bookings: the 103 and 104 counters overlap');
 });
 

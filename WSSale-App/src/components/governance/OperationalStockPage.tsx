@@ -37,7 +37,7 @@ export function StockTab() {
   }
   return (
     <div className="space-y-4">
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-700">ยอดนี้คลังเป็นผู้ป้อนเอง ไม่ได้ดึงจาก WinSpeed ใช้แสดงสถานะและเตือนฝ่ายขายเท่านั้น ไม่ได้ห้ามออกบิล ถ้าไม่อัปเดตเกินกำหนดระบบจะแสดงว่าข้อมูลไม่ชัดเจน ยอดจองนับจากใบจองที่ยังเปิดใน WinSpeed จึงอาจสูงเกินจริงจนกว่าจะปิดใบจองค้างเก่า</div>
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-700">ยอดนี้คลังเป็นผู้ป้อนเอง ไม่ได้ดึงจาก WinSpeed ใช้แสดงสถานะและเตือนฝ่ายขายเท่านั้น ไม่ได้ห้ามออกบิล ถ้าไม่อัปเดตเกินกำหนดระบบจะแสดงว่าข้อมูลไม่ชัดเจน ยอดจองนับจากใบจองที่ยังเปิดใน WinSpeed ไม่รวมรถที่ชั่งออกแล้ว จึงอาจสูงเกินจริงจนกว่าจะปิดใบจองค้างเก่า และยังไม่หักตั๋วปุ๋ยที่ขายแล้วแต่ยังไม่เบิก</div>
       <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4">
         <div className="text-sm font-semibold text-gray-700 mb-3">ป้อน/แก้สต๊อก</div>
         <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_10rem_auto] gap-2 items-end">
