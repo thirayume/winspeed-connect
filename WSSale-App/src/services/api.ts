@@ -315,7 +315,7 @@ export const fetchInvoices = (params?: { custId?: string; dateFrom?: string; dat
   return req<unknown[]>(`/master/invoices${qs ? `?${qs}` : ''}`);
 };
 
-export const fetchAgingOrders = (bust = false) => req<AgingRow[]>(`/master/aging${bust ? '?bust=1' : ''}`);
+export const fetchAgingOrders = (bust = false) => req<AgingRow[]>(`/master/aging${bust ? '?bust=1' : ''}`, { silent: true });
 
 export const searchAgingOrders = (params: {
   q?: string; status?: string; page?: number; pageSize?: number; dateFrom?: string;

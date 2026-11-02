@@ -31,16 +31,17 @@ export function DashboardPage() {
 
   async function load(bustCache = false) {
     setLoading(true);
+    // The open-order list can take about 20 seconds when its cache is cold, so it must not hold the rest of the page
+    const agingDone = fetchAgingOrders(bustCache).then(a => setAging(a as AgingRow[])).catch(() => setAging([]));
     try {
-      const [s, a, r] = await Promise.all([
+      const [s, r] = await Promise.all([
         fetchSoStats(bustCache),
-        fetchAgingOrders(bustCache).catch(() => []),
         canSeeRebate ? fetchRebateSummary().catch(() => []) : Promise.resolve([]),
       ]);
       setStats(s);
-      setAging(a as AgingRow[]);
       setRebate(r as RebateSummary[]);
     } catch (e) { console.error(e); }
+    await agingDone;
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
@@ -163,7 +164,7 @@ export function DashboardPage() {
             value={((stats.byStatus.CONFIRMED || 0) + (stats.byStatus.PICKING || 0) + (stats.byStatus.LOADED || 0)).toLocaleString()} color="#F59E0B" />
           <KpiCard icon={<Truck size={20} />} label="ส่งออกจากตาชั่ง" value={(stats.byStatus.SHIPPED || 0).toLocaleString()} color="#059669" />
           <KpiCard icon={<Database size={20} />} label="ปิด SO ใน WINSpeed" value={(stats.byStatus.IMPORTED || 0).toLocaleString()} color="#10B981" />
-          <KpiCard icon={<AlertTriangle size={20} />} label="SO ค้าง >30 วัน" value={warnAging.length.toLocaleString()} color="#EF4444" />
+          <KpiCard icon={<AlertTriangle size={20} />} label="SO ค้าง >30 วัน" value={loading && aging.length === 0 ? '…' : warnAging.length.toLocaleString()} color="#EF4444" />
           {canSeeRebate && (
             <KpiCard icon={<TrendingUp size={20} />} label="รีเบท (฿)"
               value={totalRebateAvailable.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} color="#059669" />
@@ -279,7 +280,7 @@ export function DashboardPage() {
               <span className="text-[10px] font-normal text-gray-400">เหลือง &gt;30 · แดง &gt;45 วัน</span>
             </h2>
             {groupedAging.length === 0 ? (
-              <p className="text-xs text-gray-400 py-6 text-center">ไม่มี SO ค้างจัดส่ง</p>
+              <p className="text-xs text-gray-400 py-6 text-center">{loading ? 'กำลังโหลดรายการ…' : 'ไม่มี SO ค้างจัดส่ง'}</p>
             ) : (
               <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                 {groupedAging.slice(0, 30).map((g, i) => {
