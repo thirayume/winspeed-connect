@@ -1,6 +1,6 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **3 November 2026 01:20 (ICT)**. This page records observed results;
+Operational snapshot: **3 November 2026 04:58 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
@@ -21,7 +21,11 @@ password screen, and the reconciliation list had no role check. Both are fixed i
 The five roles were then walked on screen on UAT and on Production: 76 menus opened on each, with no failed request,
 no script error, no write and no return trip stuck on the password screen. The first sign-in was checked on UAT with
 a throwaway account: forced change, writes blocked until then, new token works. The check's administrator-reset step
-could not run because UAT has no e2e account. Staff accounts remain closed until the owner runs the private script.
+could not run because UAT has no e2e account.
+
+**Staff accounts, 3 November 2026 04:55.** The owner opened the 62 staff accounts on Production with the private
+script. Read-only check: all active, each with its own password hash and the forced change still set, and Access As
+works into every role. UAT's accounts stay closed until the owner opens them there or the 21:00 restore copies Production's.
 
 **Native writers, 3 November 2026.** The owner asked to open real document issuing for 06:00, then chose mixed mode
 after reading why it is not a switch: setting the flags only makes the buttons appear and fail on the target guards, and opening them means changing the guards that protect live accounting and building
@@ -362,7 +366,7 @@ tolerance and the exception approver were settled by the owner on 31 October:
 | Warehouse | Accept stock case SO-19 during training: enter a figure for one product, then check the badge and the warning on the bill screen |
 | Factory | The two blocked scale cases (SO-17, SHP-05) and physical shipment evidence |
 | QA | Dry-run the three QA guides after the Production deploy: they need several roles, so staff accounts must be open first |
-| Owner | Enable staff accounts in Production with the private script; trim the approver list; say which document MO weighings belong to; decide when the native writers go live |
+| Owner | Trim the approver list; say which document MO weighings belong to; decide when the native writers go live |
 | Staff | Close the stale bookings listed in the private register |
 | IT | SSRS report list |
 
