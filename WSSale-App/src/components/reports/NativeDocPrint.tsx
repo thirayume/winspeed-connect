@@ -29,6 +29,7 @@ const PRINT_CSS = `
   .report-modal-root { display: block !important; position: static !important; }
   .report-print-area { width: 100%; margin: 0 !important; display: block !important; }
   .report-no-print { display: none !important; }
+  .report-page:has(.doc-107) { padding: 0 !important; }
   .report-page { width: 100%; min-height: auto; box-shadow: none !important; border: 0 !important; }
 }`;
 
@@ -164,13 +165,13 @@ function InvoiceBody({ d }: { d: NativeInvoiceDoc }) {
     <tr><td className="py-0.5">{label}</td><td className="py-0.5 text-right">{extra || ''}</td><td className="w-32 py-0.5 text-right tabular-nums">{value === null ? '' : nf(value)}</td></tr>
   );
   return (
-    <div className="text-[14px] leading-6">
-      <div className="text-right text-sm">หน้า 1/1</div>
+    <div className="doc-107 text-[13px] leading-5">
+      <div className="text-right">หน้า 1/1</div>
       {c?.companyNameTh && (
         <div className="mb-3 text-center">
           <div className="text-lg font-bold">{c.companyNameTh}</div>
           {c.addressTh && <div>{c.addressTh}</div>}
-          <div className="text-[13px]">{[c.tel && `โทร. ${c.tel.split(',')[0].trim()}`, c.fax && `โทรสาร ${c.fax}`, c.taxId && `เลขประจำตัวผู้เสียภาษี ${c.taxId}`, c.taxId && `เลขประจำตัวผู้เสียภาษีอากร (13 หลัก) ${c.taxId}`].filter(Boolean).join('  ')}</div>
+          <div className="text-[12px]">{[c.tel && `โทร. ${c.tel.split(',')[0].trim()}`, c.fax && `โทรสาร ${c.fax}`, c.taxId && `เลขประจำตัวผู้เสียภาษี ${c.taxId}`, c.taxId && `เลขประจำตัวผู้เสียภาษีอากร (13 หลัก) ${c.taxId}`].filter(Boolean).join('  ')}</div>
         </div>
       )}
       <div className="flex items-end justify-between">
@@ -254,20 +255,20 @@ function InvoiceBody({ d }: { d: NativeInvoiceDoc }) {
       <div className="mt-1">({thaiBahtText(n(d.NetAmnt))})</div>
 
       <div className="mt-3">สินค้าตามใบส่งของนี้ แม้จะได้ส่งมอบแก่ผู้ซื้อแล้วยังคงเป็นทรัพย์สินของผู้ขาย จนกว่าผู้ซื้อได้ชำระเงินเสร็จเรียบร้อยแล้ว</div>
-      <div className="mt-6 grid grid-cols-3 gap-6">
+      <div className="mt-3 grid grid-cols-3 gap-6">
         <div>
-          <div className="h-12">ได้รับสินค้าตามรายการข้างบนไว้ถูกต้อง ในสภาพเรียบร้อยแล้ว</div>
-          <div className="mt-6 border-b border-dotted" />
+          <div className="h-10">ได้รับสินค้าตามรายการข้างบนไว้ถูกต้อง ในสภาพเรียบร้อยแล้ว</div>
+          <div className="mt-4 border-b border-dotted" />
           <div className="text-center">ลงนามและประทับตรา (ถ้ามี) ผู้รับของ</div>
           <div className="mt-2">วันที่ _____/_____/_______</div>
         </div>
         <div className="text-center">
-          <div className="h-12">ในนาม {d.BrchName || c?.companyNameTh || ''}</div>
-          <div className="mt-6 border-b border-dotted" />
+          <div className="h-10">ในนาม {d.BrchName || c?.companyNameTh || ''}</div>
+          <div className="mt-4 border-b border-dotted" />
           <div>ผู้มีอำนาจลงนาม</div>
           <div className="mt-2 text-sm">ผิด ตก ยกเว้น</div>
         </div>
-        <div className="space-y-6 pt-2">
+        <div className="space-y-4 pt-1">
           {['ผู้จ่ายของ', 'ผู้ตรวจสอบ', 'ผู้ส่งของ'].map(t => (
             <div key={t} className="flex items-end gap-2"><span className="w-20 shrink-0">{t}</span><span className="flex-1 border-b border-dotted" /></div>
           ))}
