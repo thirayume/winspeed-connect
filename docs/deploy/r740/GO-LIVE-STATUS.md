@@ -1,11 +1,11 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **3 November 2026 04:58 (ICT)**. This page records observed results;
+Operational snapshot: **3 November 2026 05:55 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
-**Running release: 1.0.4 on UAT and Production (`c04119a`), 162 migrations. Production opens for staff at 06:00 on
+**Running release: 1.0.5 on UAT and Production (`8333828`), 162 migrations. Production opens for staff at 06:00 on
 3 November 2026 in mixed mode (owner, 3 November 2026): quotations, bills, trips, 103, stock, reports and prints in
 Sale-App; AI, 104, 116 and 107 in WinSpeed. All native writers stay off.**
 Older paragraphs below are history.
@@ -22,6 +22,14 @@ The five roles were then walked on screen on UAT and on Production: 76 menus ope
 no script error, no write and no return trip stuck on the password screen. The first sign-in was checked on UAT with
 a throwaway account: forced change, writes blocked until then, new token works. The check's administrator-reset step
 could not run because UAT has no e2e account.
+
+**Release 1.0.5 and rehearsal, 3 November 2026 05:47.** A bill was rehearsed on screen on UAT through Access As: sales
+created it, a manager approved the price and verified it, sales confirmed the trip, and the 103 matched in the
+tables. It was not opened in WinSpeed's own screens and the AI approval was not run. 1.0.5 limits today's shipments
+to the Accounting menu's roles and the rebate accrual list to own and team records, removes a leftover debug route,
+and uses the date in Thailand for defaults that lagged until 07:00. Receipt:
+`20261103-054637-prod-apply-8333828.txt`. WinSpeed has no price list valid today, so every bill needs a manager's
+price approval until prices are entered.
 
 **Staff accounts, 3 November 2026 04:55.** The owner opened the 62 staff accounts on Production with the private
 script. Read-only check: all active, each with its own password hash and the forced change still set, and Access As
