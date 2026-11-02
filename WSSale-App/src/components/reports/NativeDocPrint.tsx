@@ -218,7 +218,7 @@ function InvoiceBody({ d }: { d: NativeInvoiceDoc }) {
             <tr key={i.ListNo} className="border-b border-gray-100 align-top">
               <td className="py-1 pr-2">{i.GoodCode}</td>
               <td className="py-1 pr-2">{i.GoodName}</td>
-              <td className="py-1 text-right tabular-nums">{nf(i.GoodQty2, 3)}</td>
+              <td className="py-1 text-right tabular-nums">{nf(i.GoodQty2, 2)}</td>
               <td className="py-1 pl-2">{i.UnitName || ''}</td>
               <td className="py-1 text-right tabular-nums">{nf(i.GoodPrice2)}</td>
               <td className="py-1 text-right">{i.GoodDiscFormula || ''}</td>
