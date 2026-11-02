@@ -1640,7 +1640,7 @@ router.get('/aging', async (req, res) => {
           dt.GoodName,
           CAST(ISNULL(dt.GoodQty2, 0) AS DECIMAL(12,3)) AS QtyTon
         FROM dbo.SODT dt WITH (NOLOCK)
-        WHERE CONVERT(VARCHAR(50), dt.SOID) = o.SoId
+        WHERE dt.SOID = o.SoIdKey
       ) line
       ORDER BY DaysOpen DESC
     `, ag.inputs);

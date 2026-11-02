@@ -46,13 +46,13 @@ async function lookupInvoices(rows) {
   if (left.length) {
     const lIds = left.map(r => String(r.SoId)).filter(isNum);
     const lNos = [...new Set(left.map(r => r.WsDocuNo).filter(Boolean))];
-    const idL = lIds.length ? lIds.map(quote).join(',') : `''`;
+    const idL = lIds.length ? lIds.join(',') : 'NULL';
     const noL = lNos.length ? lNos.map(quote).join(',') : `''`;
     const alt = (await wfQuery(`
       SELECT CAST(h.RefSOID AS VARCHAR(50)) AS BySoId, h.SONo, h.SOInvID, h.DocuNo, h.DocuDate, h.DocuType, h.PostID
       FROM dbo.SOInvHD h WITH (NOLOCK)
       WHERE h.DocuType IN (107, 202)
-        AND (CAST(h.RefSOID AS VARCHAR(50)) IN (${idL}) OR h.SONo IN (${noL}))`)).recordset || [];
+        AND (h.RefSOID IN (${idL}) OR h.SONo IN (${noL}))`)).recordset || [];
     for (const r of left) {
       const hit = alt.find(x => String(x.BySoId) === String(r.SoId) || (r.WsDocuNo && x.SONo === r.WsDocuNo));
       if (hit) map[String(r.SoId)] = hit;

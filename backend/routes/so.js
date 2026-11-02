@@ -852,7 +852,7 @@ router.get('/', async (req, res) => {
           sol.IsControlTicketDrawn,
           sol.LoadSequence
         FROM wf.SalesOrderLine sol WITH (NOLOCK)
-        WHERE CONVERT(VARCHAR(50), sol.SoId) IN (${idParams})
+        WHERE sol.SoId IN (${idParams})
 
         UNION ALL
 
@@ -882,12 +882,12 @@ router.get('/', async (req, res) => {
         FROM dbo.SODT dt WITH (NOLOCK)
         LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = dt.GoodID
         LEFT JOIN wf.SalesOrderLineExt ext WITH (NOLOCK)
-          ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), dt.SOID)
+          ON ext.SOID = CONVERT(VARCHAR(50), dt.SOID)
          AND ext.ListNo = dt.ListNo
-        WHERE CONVERT(VARCHAR(50), dt.SOID) IN (${idParams})
+        WHERE dt.SOID IN (${idParams})
         ORDER BY SoId, LineNum
         `,
-        Object.fromEntries(ids.map((id, i) => [`id${i}`, { type: sql.VarChar(50), value: String(id) }]))
+        Object.fromEntries(ids.map((id, i) => [`id${i}`, { type: sql.Int, value: Number(id) }]))
       );
       const linesByso = {};
       for (const line of camelizeRows(lr.recordset)) {
