@@ -4,7 +4,8 @@
  *   104 ใบสั่งจ่ายสินค้า — พิมพ์ลงกระดาษพิมพ์หัวตามตำแหน่งฟอร์ม WinSpeed (DeliveryOrderForm.tsx)
  *   116 ใบขน / ใบตัดตั๋วปุ๋ย — WinSpeed ไม่มีฟอร์มลงทะเบียน จึงออกแบบจากข้อมูลจริงของใบ
  *   107 ใบส่งของ — จัดตามฟอร์มเริ่มต้นของ WinSpeed (dr_so_saleorder_tax_worldfart) พร้อมหัวบริษัทจาก Header Master
- *       ปุ๋ยเป็นสินค้ายกเว้น VAT (ใบ 107 ปี 2569 เป็น VATType 3 ทั้งหมด) จึงไม่ใช้ชื่อ "ใบกำกับภาษี" และแสดงแถว VAT เฉพาะใบที่มี VAT
+ *       ปุ๋ยเป็นสินค้ายกเว้น VAT (ใบ 107 ปี 2569 เป็น VATType 3 ทั้งหมด) จึงไม่ใช้ชื่อ "ใบกำกับภาษี" ส่วนแถว VAT พิมพ์ทุกใบเหมือน WinSpeed
+ *       "หน้า 1/1" เป็นค่าคงที่ ใบ 107 ตั้งแต่ปี 2568 มีไม่เกิน 11 บรรทัด จึงจบใน 1 หน้า
  *
  * ใช้คลาสสำหรับพิมพ์ชุดเดียวกับใบอื่น (report-modal-root / report-print-area / report-page / report-no-print)
  * ใบที่ยังไม่สมบูรณ์ (ยังไม่ตรวจครบ, ยังไม่ Post GL) แจ้งบนจอเท่านั้น ไม่พิมพ์ลงกระดาษ
@@ -160,15 +161,16 @@ function InvoiceBody({ d }: { d: NativeInvoiceDoc }) {
     <div className="flex gap-2"><span className="w-28 shrink-0 text-gray-600">{label}</span><span>{value || ''}</span></div>
   );
   const sum = (label: string, value: unknown, extra?: string | null) => (
-    <tr><td className="py-0.5">{label}</td><td className="py-0.5 text-right">{extra || ''}</td><td className="w-32 py-0.5 text-right tabular-nums">{nf(value)}</td></tr>
+    <tr><td className="py-0.5">{label}</td><td className="py-0.5 text-right">{extra || ''}</td><td className="w-32 py-0.5 text-right tabular-nums">{value === null ? '' : nf(value)}</td></tr>
   );
   return (
     <div className="text-[14px] leading-6">
+      <div className="text-right text-sm">หน้า 1/1</div>
       {c?.companyNameTh && (
-        <div className="mb-3">
+        <div className="mb-3 text-center">
           <div className="text-lg font-bold">{c.companyNameTh}</div>
           {c.addressTh && <div>{c.addressTh}</div>}
-          <div>{[c.tel && `โทร. ${c.tel}`, c.fax && `โทรสาร ${c.fax}`, c.taxId && `เลขประจำตัวผู้เสียภาษี ${c.taxId}`].filter(Boolean).join('  ')}</div>
+          <div className="text-[13px]">{[c.tel && `โทร. ${c.tel.split(',')[0].trim()}`, c.fax && `โทรสาร ${c.fax}`, c.taxId && `เลขประจำตัวผู้เสียภาษี ${c.taxId}`, c.taxId && `เลขประจำตัวผู้เสียภาษีอากร (13 หลัก) ${c.taxId}`].filter(Boolean).join('  ')}</div>
         </div>
       )}
       <div className="flex items-end justify-between">
@@ -239,18 +241,17 @@ function InvoiceBody({ d }: { d: NativeInvoiceDoc }) {
         </div>
         <table className="self-start">
           <tbody>
-            {sum('จำนวนเงิน', d.SumGoodAmnt)}
+            {n(d.BillDiscAmnt) > 0 && sum('จำนวนเงิน', d.SumGoodAmnt)}
             {n(d.BillDiscAmnt) > 0 && sum('หักส่วนลด', d.BillDiscAmnt, d.BillDiscFormula)}
             {n(d.BillDiscAmnt) > 0 && sum('หลังหักส่วนลด', d.BillAftrDiscAmnt)}
-            {n(d.AdvnAmnt) > 0 && sum('หักเงินมัดจำ', d.AdvnAmnt)}
+            {sum('หักเงินมัดจำ', n(d.AdvnAmnt) > 0 ? d.AdvnAmnt : null)}
             {sum('รวมเงิน', d.AftrAdvnAmnt ?? d.BillAftrDiscAmnt)}
-            {sum('ภาษีมูลค่าเพิ่ม', d.VATAmnt, n(d.VATRate) ? `${nf(d.VATRate, 0)}%${Number(d.VATType) === 2 ? ' (รวมในราคา)' : ''}` : '')}
+            {sum('ภาษีมูลค่าเพิ่ม', d.VATAmnt, `${nf(d.VATRate, 0)}%${Number(d.VATType) === 2 ? ' (รวมในราคา)' : ''}`)}
             <tr className="border-t border-gray-500 font-semibold"><td className="py-1">จำนวนเงินทั้งสิ้น</td><td /><td className="py-1 text-right tabular-nums">{nf(d.NetAmnt)}</td></tr>
           </tbody>
         </table>
       </div>
       <div className="mt-1">({thaiBahtText(n(d.NetAmnt))})</div>
-      {Number(d.VATType) === 3 && <div className="text-sm text-gray-600">สินค้ายกเว้นภาษีมูลค่าเพิ่ม</div>}
 
       <div className="mt-3">สินค้าตามใบส่งของนี้ แม้จะได้ส่งมอบแก่ผู้ซื้อแล้วยังคงเป็นทรัพย์สินของผู้ขาย จนกว่าผู้ซื้อได้ชำระเงินเสร็จเรียบร้อยแล้ว</div>
       <div className="mt-6 grid grid-cols-3 gap-6">
