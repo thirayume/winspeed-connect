@@ -133,7 +133,7 @@ test.describe('SO-08 Browser UAT Gate: Real SalesPortal Journey', () => {
     await page.goto('/login');
     await expect(page.locator('input[type="text"], input[name="username"]')).toBeVisible();
     await page.fill('input[type="text"], input[name="username"]', 'emp-00002');
-    await page.fill('input[type="password"]', 'W0rldF3rt');
+    await page.fill('input[type="password"]', process.env.E2E_PASSWORD!);
     await page.click('button:has-text("เข้าสู่ระบบ")');
 
     // Wait for authenticated view and navigate to Sales Portal

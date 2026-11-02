@@ -20,7 +20,7 @@ const OUT_DIR = path.join(ENTERPRISE_ROOT, '05-UI-SCREENSHOTS', 'generated');
 const APP_TSX = path.join(REPO_ROOT, 'WSSale-App', 'src', 'App.tsx');
 
 const BASE_URL = process.env.WF_SHOT_BASE_URL || 'http://localhost:5173';
-const PASSWORD = process.env.WF_SHOT_PASSWORD || process.env.E2E_PASSWORD || 'W0rldF3rt';
+const PASSWORD = process.env.WF_SHOT_PASSWORD || process.env.E2E_PASSWORD;
 const VIEWPORT = { width: 1440, height: 900 };
 
 // บัญชีที่ run-e2e.ps1 คงไว้เพื่อ audit traceability — ใช้ซ้ำได้โดยไม่ต้องสร้างผู้ใช้ใหม่

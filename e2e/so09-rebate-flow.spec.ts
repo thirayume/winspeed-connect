@@ -134,7 +134,7 @@ test.describe('SO-09 Browser UAT Gate: Rebate Vertical Slice Journey', () => {
     });
     await expect(page.locator('input[placeholder="username"]')).toBeVisible({ timeout: 10000 });
     await page.fill('input[placeholder="username"]', 'emp-00002');
-    await page.fill('input[type="password"]', 'W0rldF3rt');
+    await page.fill('input[type="password"]', process.env.E2E_PASSWORD!);
     await page.click('button:has-text("เข้าสู่ระบบ")');
 
     const rebateNav = page.locator('button[title*="รีเบท"], button:has-text("รีเบท (App)"), button:has-text("รีเบท")').first();
@@ -239,7 +239,7 @@ test.describe('SO-09 Browser UAT Gate: Rebate Vertical Slice Journey', () => {
     });
     await expect(page.locator('input[placeholder="username"]')).toBeVisible({ timeout: 10000 });
     await page.fill('input[placeholder="username"]', wrongMgr.Username);
-    await page.fill('input[type="password"]', 'W0rldF3rt');
+    await page.fill('input[type="password"]', process.env.E2E_PASSWORD!);
     await page.click('button:has-text("เข้าสู่ระบบ")');
 
     const wrongMgrRebateNav = page.locator('button[title*="รีเบท"], button:has-text("รีเบท (App)"), button:has-text("รีเบท")').first();
@@ -280,7 +280,7 @@ test.describe('SO-09 Browser UAT Gate: Rebate Vertical Slice Journey', () => {
     });
     await expect(page.locator('input[placeholder="username"]')).toBeVisible({ timeout: 10000 });
     await page.fill('input[placeholder="username"]', correctMgr.Username);
-    await page.fill('input[type="password"]', 'W0rldF3rt');
+    await page.fill('input[type="password"]', process.env.E2E_PASSWORD!);
     await page.click('button:has-text("เข้าสู่ระบบ")');
 
     const correctMgrRebateNav = page.locator('button[title*="รีเบท"], button:has-text("รีเบท (App)"), button:has-text("รีเบท")').first();

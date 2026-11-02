@@ -2,7 +2,7 @@
  * verify-so-02-remote.js — Verify SO-02 Rebate 100/0, Scalar Values, Minor-Unit Rounding, Real Claim Snapshot Links on Hostinger Test Stack
  */
 const BASE = process.env.API_BASE_URL || 'https://api-test.thirayu.online/api';
-const PW = process.env.E2E_PASSWORD || 'W0rldF3rt';
+const PW = process.env.E2E_PASSWORD;
 
 async function run() {
   console.log(`Verifying SO-02 against: ${BASE}`);

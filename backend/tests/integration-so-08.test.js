@@ -105,7 +105,7 @@ async function startTestServer() {
   });
 }
 
-async function loginAs(username, password = 'W0rldF3rt') {
+async function loginAs(username, password = process.env.E2E_PASSWORD) {
   const res = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

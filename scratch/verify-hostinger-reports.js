@@ -1,6 +1,6 @@
 // Verification script for Hostinger Test live reports endpoint & RBAC
 const BASE = process.env.API_BASE || 'https://api-test.thirayu.online/api';
-const PW = process.env.E2E_PASSWORD || 'W0rldF3rt';
+const PW = process.env.E2E_PASSWORD;
 
 async function request(path, token = null) {
   const headers = { 'Content-Type': 'application/json' };

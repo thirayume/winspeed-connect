@@ -2,7 +2,7 @@
  * verify-so-01-remote.js — Verify SO-01 Policy Contract, Zero Values, Whitelist, Reason Master & Concurrency on Hostinger Test Stack
  */
 const BASE = process.env.API_BASE_URL || 'https://api-test.thirayu.online/api';
-const PW = process.env.E2E_PASSWORD || 'W0rldF3rt';
+const PW = process.env.E2E_PASSWORD;
 
 async function run() {
   console.log(`Verifying SO-01 against: ${BASE}`);

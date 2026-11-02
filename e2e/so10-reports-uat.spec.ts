@@ -55,7 +55,7 @@ test.describe('SO-10: Exact Output Checks & Multi-Report Rendering', () => {
     test.setTimeout(45_000);
     await page.goto('/');
     await page.locator('input[type="text"]').fill('wh-so10'); 
-    await page.locator('input[type="password"]').fill(process.env.E2E_PASSWORD || 'W0rldF3rt');
+    await page.locator('input[type="password"]').fill(process.env.E2E_PASSWORD!);
     await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
     await waitForUiIdle(page);
     await openSidebar(page, 'รายงาน');
