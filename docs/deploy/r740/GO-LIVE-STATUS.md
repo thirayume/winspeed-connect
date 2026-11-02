@@ -5,8 +5,8 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
-**Running release: 1.0.2 (`d74dfe1`) on UAT and Production, 162 migrations. All native writers stay off on Production
-until QA passes (owner, 2 November 2026).**
+**Running release: 1.0.3 (`ab6cc0e`) on UAT, 1.0.2 (`d74dfe1`) on Production, 162 migrations. The owner holds Production
+until the bugs below are fixed. All native writers stay off on Production until QA passes (owner, 2 November 2026).**
 Older paragraphs below are history.
 
 ## Production and UAT websites
@@ -426,6 +426,19 @@ matched the recheck on all 77 goods, and the AR report equalled GL 112100 with z
 writer flags are false, the target guard returns 0, the checked APIs answer 401 without a login, and CI passed. Production
 screens have not been opened with a real account. A run of `integration-so-06-07` with a temporary sign-in on UAT was
 refused by the agent's safety check, so it has not run.
+
+**Release 1.0.3 on UAT, 2 November 2026 night; Production not yet.** Opening Production's screens with the owner signed
+in showed the stock menu missing for every fresh session, because the backend menu list never gained it. The owner asked
+for everything found to be fixed before any deploy. Fixed: that menu; sessions keeping old menus until the next sign-in;
+the dashboard blocked behind the full-screen loader by the open-order list; three lookups comparing ids as text, which
+took the list from about 20 seconds to 0.24 and the warehouse list from about 12 to 3.6, returning the same rows; the
+quotation, delivery note and booking form printing customer names without their title; an approver's dashboard calling
+an API it may not use; and the Sale Trip board showing a raw deadlock error. Every menu was opened in all eight roles
+through Access As, on Full Loop test accounts with a role change for the four roles the harness has no account for, with
+no failed request and no script error after the fixes. All printed forms that can be reached were checked as real PDFs.
+Full Loop `R740UAT-20261102-05` passed all 225 checks on `ab6cc0e` and closed its accounts. Still open: the recon page and
+the sales lists take 3 to 5 seconds; `integration-so-06-07` has not run; nobody has followed the guides by hand; no
+physical printer has been used.
 
 The push
 went straight to `uat`, so the promotion workflow's checks did not run; the backend tests, rehearsal, frontend
