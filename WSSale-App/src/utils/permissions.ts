@@ -8,9 +8,10 @@ export function canViewRebateAmounts(userOrRole?: AppUser | UserRole | null) {
   return !!role && [...REBATE_ALL_ROLES, ...REBATE_OWN_ROLES].includes(role);
 }
 
-export function canViewAllRebateAmounts(userOrRole?: AppUser | UserRole | null) {
+// The company rebate total on the dashboard: the roles GET /api/rebate/summary accepts.
+export function canViewRebateSummary(userOrRole?: AppUser | UserRole | null) {
   const role = typeof userOrRole === 'string' ? userOrRole : userOrRole?.role;
-  return !!role && REBATE_ALL_ROLES.includes(role);
+  return !!role && ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'].includes(role);
 }
 
 export function canManageDocHeaderSettings(userOrRole?: AppUser | UserRole | null) {

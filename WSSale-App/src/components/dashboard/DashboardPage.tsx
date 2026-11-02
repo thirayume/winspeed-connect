@@ -3,7 +3,7 @@ import { LayoutDashboard, RefreshCw, Package, Clock, TrendingUp, AlertTriangle, 
 import { fetchSoStats, fetchAgingOrders, fetchRebateSummary, fetchSalesOrders } from '../../services/api';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { useAuthStore } from '../../store/auth-store';
-import { canViewAllRebateAmounts } from '../../utils/permissions';
+import { canViewRebateSummary } from '../../utils/permissions';
 import { formatThaiDate } from '../../utils/date';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import type { AgingRow, RebateSummary, SalesOrder } from '../../types';
@@ -17,7 +17,7 @@ function agingColor(days: number) {
 }
 
 export function DashboardPage() {
-  const canSeeRebate = canViewAllRebateAmounts(useAuthStore(s => s.user));
+  const canSeeRebate = canViewRebateSummary(useAuthStore(s => s.user));
   const [stats, setStats]     = useState<{ byStatus: Record<string, number>; total: number }>({ byStatus: {}, total: 0 });
   const [aging, setAging]     = useState<AgingRow[]>([]);
   const [rebate, setRebate]   = useState<RebateSummary[]>([]);
