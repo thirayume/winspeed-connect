@@ -1,11 +1,12 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **1 November 2026 23:00 (ICT)**. This page records observed results;
+Operational snapshot: **2 November 2026 12:15 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
-**Running release: 1.0.0 (`966f1ab`) on UAT and Production.** Older paragraphs below are history.
+**Running release: 1.0.0 (`966f1ab`) on Production. UAT runs `45f5358`: the same version number plus the SO-19
+stock fix, not yet promoted.** Older paragraphs below are history.
 
 ## Production and UAT websites
 
@@ -337,7 +338,7 @@ tolerance and the exception approver were settled by the owner on 31 October:
 | Accounting | Accept the AR report and the non-duplication reconciliation (owner deferred) |
 | Accounting | Confirm the 107 title ใบส่งของ for VAT-exempt documents, and the RB series mapping (S/T) |
 | Warehouse | One 104 printed on the real pre-printed stock |
-| Warehouse | Stock case SO-19 once its fix is on UAT: enter a figure for one product, then check the badge and the warning on the bill screen |
+| Warehouse | Stock case SO-19, ready on UAT: enter a figure for one product, then check the badge and the warning on the bill screen |
 | Factory | The two blocked scale cases (SO-17, SHP-05) and physical shipment evidence |
 | QA | Dry-run the three QA guides on UAT |
 | Owner | Enable staff accounts in Production; trim the approver list; say which document MO weighings belong to; decide when the native writers go live |
@@ -348,10 +349,19 @@ tolerance and the exception approver were settled by the owner on 31 October:
 screen is hidden, the bill screen's badge reads field names the API does not return, and the reserved
 figure hides about four fifths of the open tons, because it matches invoices to bookings by number while
 the 103 and 104 counters overlap. The fix adds a stock screen for WAREHOUSE, MANAGER, ADMIN and C_LEVEL,
-the badge, a shortage warning, and WinSpeed's own open quantity (`SODT.RemaQty`). It needs no migration and
-is not yet on UAT or Production. Three limits remain: the warehouse types the figure until the owner decides
+the badge, a shortage warning, and WinSpeed's own open quantity (`SODT.RemaQty`). It needs no migration.
+Three limits remain: the warehouse types the figure until the owner decides
 DG-04; a shortage warns but does not block a bill; and stale bookings count as reserved until staff close
 them, so many goods will read short until then. The credit and PDPA tabs of the old screen stay hidden.
+
+The fix is on UAT since 2 November 2026 12:09 (`45f5358`, receipt `20261102-120947-uat-apply-45f5358.txt`,
+162/0/0) and is not on Production. A check in the UAT container ran the deployed route on the UAT database
+with sign-in replaced: bad input and a SALES save were refused, reserved tons matched a separate query, all
+four stock states read correctly, and the one test row was removed. UAT serves the new screens. Nobody has
+yet walked the screens signed in on UAT with real goods, so the case stays open for the warehouse. The push
+went straight to `uat`, so the promotion workflow's checks did not run; the backend tests, rehearsal, frontend
+build and the batch, shell and secret-file checks passed locally first. Promoting to Production needs the
+owner's request and a version decision; the changelog holds the fix under Unreleased.
 
 Known limit: the original client IP is lost at the Windows portproxy, so audit and rate limits see
 the Docker gateway. The private illustrated stakeholder brief lists the accounting questions with
