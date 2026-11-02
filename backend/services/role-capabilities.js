@@ -38,6 +38,7 @@ const MENUS = Object.freeze({
   'edit-requests': ['SALES', 'COUNTER_SALES', 'APPROVER', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   quotation: ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   store: ['COUNTER_SALES', 'WAREHOUSE', 'C_LEVEL', 'ADMIN'],
+  stock: ['WAREHOUSE', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   // verify (COUNTER_SALES/MANAGER), unlock review (ACCOUNTING), ship / weigh-item (WAREHOUSE/WEIGHBRIDGE) live on Paper Trail
   papertrail: ['COUNTER_SALES', 'WAREHOUSE', 'WEIGHBRIDGE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'control-ticket': ['SALES', 'WAREHOUSE', 'ACCOUNTING', 'C_LEVEL', 'ADMIN'],

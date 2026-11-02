@@ -151,3 +151,13 @@ test('7. sales cannot save stock', async () => {
   assert.equal(r.status, 403);
   assert.equal(textsOf(/MERGE wf\.OperationalStock/).length, 0);
 });
+
+test('the stock menu reaches the roles the stock screen is for', () => {
+  const { capabilitiesFor } = require('../services/role-capabilities');
+  for (const role of ['WAREHOUSE', 'MANAGER', 'C_LEVEL', 'ADMIN']) {
+    assert.ok(capabilitiesFor(role).menus.includes('stock'), role);
+  }
+  for (const role of ['SALES', 'COUNTER_SALES', 'ACCOUNTING']) {
+    assert.ok(!capabilitiesFor(role).menus.includes('stock'), role);
+  }
+});
