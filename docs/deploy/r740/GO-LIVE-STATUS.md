@@ -1,6 +1,6 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **2 November 2026 22:19 (ICT)**. This page records observed results;
+Operational snapshot: **3 November 2026 00:45 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
@@ -8,6 +8,22 @@ See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) a
 **Running release: 1.0.3 on UAT (`ab6cc0e`) and Production (`a3643aa`, the same code plus a status note), 162 migrations.
 All native writers stay off on Production until QA passes (owner, 2 November 2026).**
 Older paragraphs below are history.
+
+**Production check by role, 3 November 2026 00:40.** Six accounts were opened for a few minutes from the
+owner's administrator session, with no password set, and closed again. Through Access As, the main read API of
+every menu answered as each role's menu says, for SALES, WAREHOUSE, ACCOUNTING, MANAGER and C_LEVEL, and a sales
+account saw only its own bills. The two refusals seen are by design: the rebate total for SALES and the
+ADMIN-only report templates. No COUNTER_SALES, WEIGHBRIDGE or APPROVER account exists on Production. Two faults
+came out: Access As into an account that must still change its password left the operator stuck on that account's
+password screen, and the reconciliation list had no role check. Both are fixed in 1.0.4, not yet deployed. The
+screens themselves are still to be walked by role on Production, which needs 1.0.4.
+
+**Native writers, 3 November 2026.** The owner asked to open real document issuing for 06:00. They were not
+switched on, and the owner's decision on the finding is pending: setting the flags only makes the buttons appear and
+fail on the target guards, and opening them means changing the guards that protect live accounting and building
+multi-line, partial and other-tax support. Under half of the last 90 days' 104s are single-line, which is all the
+current contract covers. `wf.sp_ConfirmSalesOrder` is identical on UAT and Production and has no target guard, so
+bills and 103s are not blocked; a real one has still never run on Production.
 
 ## Production and UAT websites
 
@@ -330,19 +346,21 @@ private brief dated 30 October):
 - **SSRS:** the R740 report server has no reports or data sources and no runs in 30 days,
   so there is nothing yet to accept with real users; the report list must come first.
 
+Closed by the owner on 3 November 2026: the real-paper 104 (tested, use it as it is for now; Claude has not seen the
+sheet), the off-host backup copy and the nightly job's sign-in (both stay as they are).
+
 Deferred by the owner to after 1.0.0 (decision of 1 November 2026). Apart from stock case SO-19 below, none of these is software work; scale
 tolerance and the exception approver were settled by the owner on 31 October:
 
 | Owner | Item |
 |---|---|
-| Accounting | Countersign the checks Claude ran for them on UAT (below): the Post GL trial, the AR report, the 107 title and the RB series |
-| Warehouse | One 104 printed on the real pre-printed stock: needs a person, the paper and a printer, nothing else is open on it |
+| Accounting | Countersign the checks Claude ran for them on UAT (below): the Post GL trial, the AR report, the 107 title and the RB series. The owner expects this to take a long time, so it comes back later as a filled-in workbook, kept privately |
 | Warehouse | Accept stock case SO-19 during training: enter a figure for one product, then check the badge and the warning on the bill screen |
 | Factory | The two blocked scale cases (SO-17, SHP-05) and physical shipment evidence |
-| QA | Dry-run the three QA guides on UAT: they need several roles, so staff accounts must be open first |
-| Owner | Enable staff accounts in Production; trim the approver list; say which document MO weighings belong to; decide when the native writers go live |
+| QA | Dry-run the three QA guides after the Production deploy: they need several roles, so staff accounts must be open first |
+| Owner | Enable staff accounts in Production with the private script; trim the approver list; say which document MO weighings belong to; decide when the native writers go live |
 | Staff | Close the stale bookings listed in the private register |
-| IT | SSRS report list; an off-host copy of the backups; move the nightly job to Windows authentication |
+| IT | SSRS report list |
 
 **Stock case SO-19 was a software gap, not factory work (found 2 November 2026).** In 1.0.0 the stock
 screen is hidden, the bill screen's badge reads field names the API does not return, and the reserved
