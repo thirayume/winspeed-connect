@@ -1,12 +1,12 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **2 November 2026 17:23 (ICT)**. This page records observed results;
+Operational snapshot: **2 November 2026 17:56 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
-**Running release: 1.0.0 (`966f1ab`) on Production. UAT runs `45f5358`: the same version number plus the SO-19
-stock fix, not yet promoted.** Older paragraphs below are history.
+**Running release: 1.0.0 (`966f1ab`) on Production. UAT runs 1.0.1 (`39973bc`), the SO-19 stock fix, not yet
+promoted.** Older paragraphs below are history.
 
 ## Production and UAT websites
 
@@ -369,12 +369,19 @@ test figure and one empty draft trip remain on UAT until the 21:00 restore.
 The warehouse was not ready to test, so the reserved figure was checked against documents WinSpeed has already
 issued. On every open or closed booking line since 2019 the open quantity equals the ordered quantity less the 104s
 that refer to it. That check found a defect in `45f5358`: a truck the scale had weighed out stayed reserved until its
-104 was issued, about a fifth of the trucks and of the reserved tons. The next release drops those bookings; the old,
+104 was issued, about a fifth of the trucks and of the reserved tons. Release 1.0.1 drops those bookings; the old,
 current and corrected routes were compared on the UAT database, and the corrected one matches a separate calculation
-on every good. It is not on UAT yet. Fertilizer coupons sold but not drawn are still not netted, equal to about a
+on every good. Fertilizer coupons sold but not drawn are still not netted, equal to about a
 third of the reserved tons, and the stock screen says so; whether to net them is the owner's decision. Most of the
 trucks weighed out without a 104 are more than two weeks old, which accounting should review. The private
 verification record holds the documents, figures and recheck queries.
+
+1.0.1 is on UAT since 2 November 2026 17:53 (`39973bc`, receipt `20261102-175326-uat-apply-39973bc.txt`, 162/0/0)
+and is not on Production. The deployed route matched the separate calculation on every good, and the stock screen in
+the owner's signed-in session showed the same reserved tons as the recheck query. The recheck queries gave zero on the
+two checks that must stay zero. The push went straight to `uat`, so the CI steps ran locally first: backend tests,
+rehearsal, trace tests, frontend build, batch, shell, deployment-config and secret-file checks all passed. Integration
+test file `integration-so-06-07` still has not run in full, because its test accounts are closed on UAT.
 
 The push
 went straight to `uat`, so the promotion workflow's checks did not run; the backend tests, rehearsal, frontend
