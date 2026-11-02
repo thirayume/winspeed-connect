@@ -334,7 +334,6 @@ tolerance and the exception approver were settled by the owner on 31 October:
 
 | Owner | Item |
 |---|---|
-| Accounting | Post GL trial on UAT (WinSpeed's own Post GL step on the latest test 202/107; a read-only check is prepared) |
 | Accounting | Countersign the checks Claude ran for them on UAT (below): the Post GL trial, the AR report, the 107 title and the RB series |
 | Warehouse | One 104 printed on the real pre-printed stock: needs a person, the paper and a printer, nothing else is open on it |
 | Warehouse | Accept stock case SO-19 during training: enter a figure for one product, then check the badge and the warning on the bill screen |
