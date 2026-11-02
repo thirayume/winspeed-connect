@@ -168,6 +168,16 @@ function App() {
     }
   }, [isAuthenticated, user, logout]);
 
+  // Menus and capabilities come from the server: read them again on each load, so a new release or a role change
+  // reaches a session that is still signed in. A failed read keeps what is stored; an expired token logs out in req.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    getMe().then(u => {
+      const { token, login } = useAuthStore.getState();
+      if (token) login(token, u);
+    }).catch(() => {});
+  }, [isAuthenticated]);
+
   useEffect(() => {
     const onAuthExpired = () => logout();
     window.addEventListener('wssale:auth-expired', onAuthExpired);
