@@ -379,7 +379,9 @@ and is not on Production. The deployed route matched the separate calculation on
 the owner's signed-in session showed the same reserved tons as the recheck query. The recheck queries gave zero on the
 two checks that must stay zero. The push went straight to `uat`, so the CI steps ran locally first: backend tests,
 rehearsal, trace tests, frontend build, batch, shell, deployment-config and secret-file checks all passed. Integration
-test file `integration-so-06-07` still has not run in full, because its test accounts are closed on UAT.
+test file `integration-so-06-07` still has not run in full. Its test accounts are locked, and its safety guard accepts
+only the `remote_b` target by design, so R740 UAT is refused. It also inserts scale rows directly, so running it here
+would mean loosening that guard, which is the owner's decision.
 
 **Accounting's checks, run by Claude at the owner's request on UAT, 2 November 2026 evening.** WinSpeed's own Post GL
 (Batch) posted two test sets, four documents: the vouchers have the same shape as real October ones and no other
