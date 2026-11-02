@@ -270,7 +270,9 @@ router.get('/active-books', requireRole(...RECON_BOOK_ROLES), async (req, res) =
   } catch (e) { console.error('[recon/active-books]', e); res.status(500).json({ message: e.message }); }
 });
 
-router.get('/summary', async (req, res) => {
+// The case list carries customer names and truck plates company-wide, so it stays with the roles
+// that have the Reconciliation menu (owner rule O-4: everyone else sees their own records only).
+router.get('/summary', requireRole(...RECON_BOOK_ROLES), async (req, res) => {
   try {
     const cases = await buildCases(req.query.days);
     const summary = {
@@ -291,7 +293,7 @@ router.get('/summary', async (req, res) => {
 });
 
 // GET /api/recon/cases?days=&status=
-router.get('/cases', async (req, res) => {
+router.get('/cases', requireRole(...RECON_BOOK_ROLES), async (req, res) => {
   try {
     let cases = await buildCases(req.query.days);
     if (req.query.status) cases = cases.filter(c => c.overall === req.query.status);

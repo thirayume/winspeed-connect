@@ -95,8 +95,12 @@ function toClientUser(user, actor = null) {
     capabilities: capabilitiesFor(getUserRole(user), { positionCode: user.PositionCode ?? user.positionCode ?? null }),
     // บอกหน้าจอเฉพาะเมื่อเซิร์ฟเวอร์บังคับจริง — บนเครื่องนักพัฒนาจะไม่ขึ้นหน้าบังคับ
     // เปลี่ยนรหัสมากั้นงาน ทั้งที่ธงในฐานข้อมูลยังอยู่ตามเดิม
+    // ตอน Access As ใช้ธงของคนที่เข้าระบบจริง เหมือนใน token ไม่อย่างนั้นผู้ดูแล
+    // จะติดอยู่หน้าเปลี่ยนรหัสของบัญชีปลายทางที่เขาไม่รู้รหัส และไม่มีปุ่มกลับ
     mustChangePassword: passwordChangeEnforced()
-      && Boolean(user.MustChangePassword ?? user.mustChangePassword),
+      && Boolean(actor
+        ? (actor.MustChangePassword ?? actor.mustChangePassword)
+        : (user.MustChangePassword ?? user.mustChangePassword)),
   };
   return out;
 }

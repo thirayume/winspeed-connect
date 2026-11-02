@@ -31,7 +31,7 @@ const db = h.installDbStub(({ text, inputs }) => {
 const { capabilitiesFor, ROLE_RANK, MENUS, ACTIONS } = require('../services/role-capabilities');
 
 let app;
-test.before(async () => { app = await h.startApp([['/api/auth', '../../routes/auth'], ['/api/quotation', '../../routes/quotation'], ['/api/coupons', '../../routes/coupons']]); });
+test.before(async () => { app = await h.startApp([['/api/auth', '../../routes/auth'], ['/api/quotation', '../../routes/quotation'], ['/api/coupons', '../../routes/coupons'], ['/api/recon', '../../routes/recon']]); });
 test.after(async () => { await app.close(); });
 
 test('R12-1: WAREHOUSE and WEIGHBRIDGE have a rank below ACCOUNTING', () => {
@@ -77,6 +77,18 @@ test('R12-3: routes guarded by the same capability (COUNTER_SALES may create quo
   assert.equal(sales.status, 403);
 });
 
+test('R12-3: the company-wide reconciliation list stays with the roles that have the menu', async () => {
+  for (const path of ['/api/recon/summary', '/api/recon/cases']) {
+    for (const user of [{ sub: 5, role: 'SALES' }, { sub: 2, role: 'WAREHOUSE' }]) {
+      const denied = await app.call('GET', path, { user });
+      assert.equal(denied.status, 403, `${user.role} ${path}`);
+    }
+    const allowed = await app.call('GET', path, { user: { sub: 7, role: 'ACCOUNTING' } });
+    assert.notEqual(allowed.status, 403, `ACCOUNTING ${path}`);
+  }
+  assert.deepEqual([...MENUS.recon].sort(), ['ACCOUNTING', 'ADMIN', 'C_LEVEL', 'MANAGER']);
+});
+
 test('R12-4: MANAGER cannot Access As a higher rank', async () => {
   const r = await app.call('POST', '/api/auth/access-as', { body: { userId: 1 }, user: { sub: 4, role: 'MANAGER' } });
   assert.equal(r.status, 403);
@@ -89,6 +101,32 @@ test('R12-4: switching directly from one target to another writes STOP for the f
   assert.equal(r.status, 200);
   const audits = db.calls.slice(before).filter(c => /INSERT INTO wf\.AccessAsAudit/.test(c.text)).map(c => [c.inputs.action, c.inputs.effectiveUserId]);
   assert.deepEqual(audits, [['STOP', 2], ['START', 3]]);
+});
+
+test('R12-4: Access As follows the actor\'s password flag, so a target that must still change theirs does not trap the operator', async () => {
+  const saved = process.env.ENFORCE_PASSWORD_CHANGE;
+  process.env.ENFORCE_PASSWORD_CHANGE = 'true';
+  users[2].MustChangePassword = 1;
+  try {
+    const asAdmin = { sub: 2, role: 'WAREHOUSE', actorSub: 1, actorRole: 'ADMIN' };
+    const start = await app.call('POST', '/api/auth/access-as', { body: { userId: 2 }, user: { sub: 1, role: 'ADMIN' } });
+    assert.equal(start.status, 200);
+    assert.equal(start.body.user.mustChangePassword, false);
+    const me = await app.call('GET', '/api/auth/me', { user: asAdmin });
+    assert.equal(me.body.mustChangePassword, false, 'the reload after Access As stays out of the change-password screen');
+
+    const own = await app.call('GET', '/api/auth/me', { user: { sub: 2, role: 'WAREHOUSE' } });
+    assert.equal(own.body.mustChangePassword, true, 'the account owner is still made to change it');
+
+    users[1].MustChangePassword = 1;
+    const actorMust = await app.call('POST', '/api/auth/access-as', { body: { userId: 3 }, user: { sub: 1, role: 'ADMIN' } });
+    assert.equal(actorMust.body.user.mustChangePassword, true, 'an operator who must change their own password still has to');
+  } finally {
+    users[1].MustChangePassword = 0;
+    users[2].MustChangePassword = 0;
+    if (saved === undefined) delete process.env.ENFORCE_PASSWORD_CHANGE;
+    else process.env.ENFORCE_PASSWORD_CHANGE = saved;
+  }
 });
 
 test('R12-4: a login closes a session that ended without STOP (expiry / closed browser)', async () => {
