@@ -238,32 +238,50 @@ const REPORTS = {
       { key: 'CustName', label: 'ชื่อลูกค้า', type: 'text' },
       { key: 'CreditLimit', label: 'วงเงินเครดิต', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
       { key: 'CreditHold', label: 'สถานะ Hold', type: 'text' },
-      { key: 'OutstandingBal', label: 'ยอดค้างส่ง/หนี้คงค้าง', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
-      { key: 'Overdue1_30', label: 'ค้าง 1-30 วัน', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
-      { key: 'OverdueOver30', label: 'ค้าง > 30 วัน', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'OutstandingBal', label: 'ยอดลูกหนี้คงค้าง', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'NotDue', label: 'ยังไม่ครบกำหนด', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'Overdue1_30', label: 'เกินกำหนด 1-30 วัน', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'OverdueOver30', label: 'เกินกำหนด > 30 วัน', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
     ],
-    sql: `SELECT 
-            cm.CustId,
+    // The receivable is what is still unpaid on the invoices, as in WinSpeed's own aging report. It listed every booking
+    // and sales order ever made, with no receipts taken off, and only for customers in the empty wf.CreditMaster.
+    // A ticket's 107 stays out: the 202 raised the receivable, receipts settle only the 202, and the 107's
+    // RemaAmnt never falls. Checked on 2 Nov 2026 against GL account 112100 for a real customer: equal to the baht.
+    sql: `SELECT
+            RTRIM(c.CustCode) AS CustId,
             ISNULL(cm.CustName, c.CustName) AS CustName,
             CAST(ISNULL(cm.CreditLimit, 0) AS DECIMAL(12,2)) AS CreditLimit,
             CASE WHEN cm.CreditHold = 1 THEN N'HOLD' ELSE N'NORMAL' END AS CreditHold,
-            CAST(ISNULL(so.Bal, 0) AS DECIMAL(12,2)) AS OutstandingBal,
-            CAST(ISNULL(so.Overdue30, 0) AS DECIMAL(12,2)) AS Overdue1_30,
-            CAST(ISNULL(so.Overdue90, 0) AS DECIMAL(12,2)) AS OverdueOver30
-          FROM wf.CreditMaster cm WITH (NOLOCK)
-          LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON CONVERT(VARCHAR(50), c.CustID) = CONVERT(VARCHAR(50), cm.CustId)
-          LEFT JOIN (
-            SELECT 
-              CONVERT(VARCHAR(50), hd.CustID) AS CustID, 
-              SUM(dt.GoodAmnt) AS Bal,
-              SUM(CASE WHEN DATEDIFF(day, hd.DocuDate, GETDATE()) BETWEEN 1 AND 30 THEN dt.GoodAmnt ELSE 0 END) AS Overdue30,
-              SUM(CASE WHEN DATEDIFF(day, hd.DocuDate, GETDATE()) > 30 THEN dt.GoodAmnt ELSE 0 END) AS Overdue90
-            FROM dbo.SOHD hd WITH (NOLOCK)
-            JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
-            WHERE hd.DocuStatus <> 'C' AND hd.DocuType IN (103, 104)
-            GROUP BY CONVERT(VARCHAR(50), hd.CustID)
-          ) so ON so.CustID = CONVERT(VARCHAR(50), cm.CustId)
-          ORDER BY cm.CreditHold DESC, OutstandingBal DESC`,
+            CAST(ar.Bal AS DECIMAL(14,2)) AS OutstandingBal,
+            CAST(ar.NotDue AS DECIMAL(14,2)) AS NotDue,
+            CAST(ar.Overdue30 AS DECIMAL(14,2)) AS Overdue1_30,
+            CAST(ar.OverdueMore AS DECIMAL(14,2)) AS OverdueOver30
+          FROM (
+            SELECT
+              x.ARID,
+              SUM(x.Rema) AS Bal,
+              SUM(CASE WHEN x.DaysLate <= 0 THEN x.Rema ELSE 0 END) AS NotDue,
+              SUM(CASE WHEN x.DaysLate BETWEEN 1 AND 30 THEN x.Rema ELSE 0 END) AS Overdue30,
+              SUM(CASE WHEN x.DaysLate > 30 THEN x.Rema ELSE 0 END) AS OverdueMore
+            FROM (
+              SELECT
+                h.ARID,
+                CASE h.Docutype WHEN 109 THEN -1 ELSE 1 END * h.RemaAmnt AS Rema,
+                DATEDIFF(day, ISNULL(h.CreditEndDate, h.DocuDate), GETDATE()) AS DaysLate
+              FROM dbo.SOInvHD h WITH (NOLOCK)
+              WHERE h.Docutype IN (107, 109, 110, 115, 201, 202)
+                AND NOT (h.Docutype = 107 AND ISNULL(h.CouponFlag, 'N') = 'Y')
+                AND ISNULL(h.MultiCurrency, 'N') = 'N'
+                AND ISNULL(h.DocuStatus, 'N') <> 'C'
+                AND ISNULL(h.ReplaceFlag, 'N') <> 'Y'
+                AND ISNULL(h.RemaAmnt, 0) <> 0
+            ) x
+            GROUP BY x.ARID
+          ) ar
+          JOIN dbo.EMCust c WITH (NOLOCK) ON c.CustID = ar.ARID
+          LEFT JOIN wf.CreditMaster cm WITH (NOLOCK) ON CONVERT(VARCHAR(50), c.CustID) = CONVERT(VARCHAR(50), cm.CustId)
+          WHERE ar.Bal <> 0
+          ORDER BY CASE WHEN cm.CreditHold = 1 THEN 0 ELSE 1 END, ar.Bal DESC`,
   },
   'so-backlog': {
     title: 'รายงานสินค้าค้างส่งแยกตามลูกค้า (Unfilled Sales Orders / Backlog)',
@@ -1678,6 +1696,6 @@ async function runNativeDocumentsReport(params = {}, options = {}) {
 }
 
 module.exports = router;
-module.exports.__testing = { runCustomerDispatchReport, runSalesJournalReport, runNativeDocumentsReport, fetchInvoicesByPostIds, resolveReportTemplate,
+module.exports.__testing = { REPORTS, REPORT_ROLES, runCustomerDispatchReport, runSalesJournalReport, runNativeDocumentsReport, fetchInvoicesByPostIds, resolveReportTemplate,
   runPolicyHistoryReport, runSequenceCountersReport, runTruckHoldLogReport, runTicketAlertHistoryReport, runNativePrintLogReport };
 
