@@ -5,8 +5,8 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
-**Running release: 1.0.3 (`ab6cc0e`) on UAT, 1.0.2 (`d74dfe1`) on Production, 162 migrations. The owner holds Production
-until the bugs below are fixed. All native writers stay off on Production until QA passes (owner, 2 November 2026).**
+**Running release: 1.0.3 on UAT (`ab6cc0e`) and Production (`a3643aa`, the same code plus a status note), 162 migrations.
+All native writers stay off on Production until QA passes (owner, 2 November 2026).**
 Older paragraphs below are history.
 
 ## Production and UAT websites
@@ -439,6 +439,14 @@ no failed request and no script error after the fixes. All printed forms that ca
 Full Loop `R740UAT-20261102-05` passed all 225 checks on `ab6cc0e` and closed its accounts. Still open: the recon page and
 the sales lists take 3 to 5 seconds; `integration-so-06-07` has not run; nobody has followed the guides by hand; no
 physical printer has been used.
+
+**Production took 1.0.3 on 3 November 2026 at 00:07, on the owner's order** (receipt
+`20261103-000634-prod-apply-a3643aa.txt`, 162/0/0), with CI passing on `main` and the same bundle as UAT. Read only: the
+five writer flags are false, `ALLOW_TEST_NATIVE_WRITEBACK` is unset, the target guard returns 0, the checked APIs answer
+401 without a login, no RB codes are assigned, the stock recheck queries show zero differences, and the receivable source
+equals GL 112100 with zero difference. In the owner's signed-in session every one of the 24 menus opened with no failed
+request, no script error and no write, the stock menu among them. Other roles on Production were not opened, because
+their accounts are closed.
 
 The push
 went straight to `uat`, so the promotion workflow's checks did not run; the backend tests, rehearsal, frontend
