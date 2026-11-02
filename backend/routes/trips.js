@@ -1051,7 +1051,7 @@ router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
   if (isAllControlTicket || isAllNoTruck) {
     targetPickupDate = (pickupDueDate && typeof pickupDueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(pickupDueDate.trim()))
       ? pickupDueDate.trim()
-      : new Date().toISOString().slice(0, 10);
+      : require('../services/so-pickup-policy').getBangkokDateString();
   } else {
     if (!pickupDueDate || typeof pickupDueDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(pickupDueDate.trim())) {
       return res.status(400).json({ message: 'กรุณาระบุวันรับสินค้า (pickupDueDate ในรูปแบบ YYYY-MM-DD) ให้ชัดเจน ห้ามเว้นว่าง' });

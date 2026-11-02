@@ -6,6 +6,7 @@ import {
 import { useSocketEvent } from '../../hooks/useSocket';
 import { appPrompt } from '../ui/AppAlert';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
+import { bangkokDate } from '../../utils/date';
 import type { RebateClaim, ShippedRow } from '../../types';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -22,7 +23,7 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 function today() {
-  return new Date().toISOString().substring(0, 10);
+  return bangkokDate();
 }
 
 export function AccountingPage() {

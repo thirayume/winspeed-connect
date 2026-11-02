@@ -103,6 +103,14 @@ test('R12-3: today\'s shipments stay with the roles that have the Accounting men
   assert.deepEqual([...MENUS.accounting].sort(), ['ACCOUNTING', 'ADMIN', 'C_LEVEL', 'MANAGER']);
 });
 
+test('shipments default to the date in Thailand, not the UTC date that lags until 07:00', async () => {
+  const { getBangkokDateString } = require('../services/so-pickup-policy');
+  const before = db.calls.length;
+  await app.call('GET', '/api/so/shipped-today', { user: { sub: 7, role: 'ACCOUNTING' } });
+  const q = db.calls.slice(before).find(c => /CAST\(hd\.DocuDate AS DATE\) = @d/.test(c.text));
+  assert.equal(new Date(q.inputs.d).toISOString().slice(0, 10), getBangkokDateString());
+});
+
 test('the leftover SOHD column dump is gone', async () => {
   const before = db.calls.length;
   await app.call('GET', '/api/so/debug-sohd', { user: { sub: 1, role: 'ADMIN' } });

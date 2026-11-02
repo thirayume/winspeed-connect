@@ -12,6 +12,7 @@ import { BarChart3, RefreshCw, Download, CalendarDays, Printer } from 'lucide-re
 import { fetchScaleReport } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { DeliveryNotePrint } from './DeliveryNotePrint';
+import { bangkokDate } from '../../utils/date';
 
 const NAVY = '#0C447C';
 const num = (v: unknown, digits = 0) =>
@@ -92,7 +93,7 @@ const TABS: Tab[] = [
   })),
 ];
 
-const isoDaysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+const isoDaysAgo = bangkokDate;
 
 export function ScaleReportsPage() {
   const [tab, setTab] = useState(TABS[0].key);

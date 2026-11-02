@@ -10,6 +10,14 @@
  */
 
 /**
+ * Today's date in Thailand as YYYY-MM-DD, or n days back. toISOString() alone gives the UTC date,
+ * which is still yesterday until 07:00 here.
+ */
+export function bangkokDate(daysAgo: number = 0): string {
+  return new Date(Date.now() + 7 * 3600000 - daysAgo * 86400000).toISOString().slice(0, 10);
+}
+
+/**
  * Formats a given date (string or Date object) into Thai Buddhist Era format.
  * Format: dd/MM/yyyy [hh:mm]
  * Example: 31/12/2569 14:30

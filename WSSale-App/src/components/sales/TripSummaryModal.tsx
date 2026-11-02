@@ -15,6 +15,7 @@ import { PaperDocModal } from '../papertrail/PaperDocModal';
 import { SOBookingDocModal } from './SOBookingDocModal';
 import { SO_STATUS_META, soStatusLabel } from '../../constants/soStatus';
 import { QuickShipModal } from './QuickShipModal';
+import { bangkokDate } from '../../utils/date';
 import { LoadSequencer, type SequencedLine } from './LoadSequencer';
 
 export function TripSummaryModal({
@@ -302,7 +303,7 @@ export function TripSummaryModal({
       const isNoTruckTrip = !isControlTicketTrip && selectedOrders.every(o => (o as any).noTruckRequired);
       const targetPlate = isControlTicketTrip ? 'ตั๋วคุม' : (isNoTruckTrip ? null : serverPlate);
       const targetPickup = (isControlTicketTrip || isNoTruckTrip)
-        ? (tripPickupDueDate || new Date().toISOString().slice(0, 10))
+        ? (tripPickupDueDate || bangkokDate())
         : tripPickupDueDate;
 
       const res = await confirmTrip(effectiveTripId, {

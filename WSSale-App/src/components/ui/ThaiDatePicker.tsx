@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { parseThaiDateToGregorian, toThaiDateInputFormat } from '../../utils/date';
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { bangkokDate } from '../../utils/date';
 
 interface ThaiDatePickerProps {
   value: string; // Expected in YYYY-MM-DD
@@ -167,7 +168,7 @@ export const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
       if (max && dateStr > max) isDisabled = true;
       
       const isSelected = value === dateStr;
-      const isToday = new Date().toISOString().split('T')[0] === dateStr;
+      const isToday = bangkokDate() === dateStr;
 
       days.push(
         <button

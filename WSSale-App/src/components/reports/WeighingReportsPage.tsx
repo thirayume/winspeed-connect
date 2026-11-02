@@ -24,6 +24,7 @@ import {
   type WeighCoverage, type WeighTally, type WgType,
 } from '../../services/api';
 import { WeighTicketPrint } from './WeighTicketPrint';
+import { bangkokDate } from '../../utils/date';
 
 const NAVY = '#0C447C';
 const POLL_MS = 60_000;          // เจ้าของระบบกำหนด: อ่านค่ามาแสดงทุกนาที
@@ -174,7 +175,7 @@ export function WeighingReportsPage() {
   const [tab, setTab] = useState('live');
   const [wgType, setWgType] = useState<'' | WgType>('');
   const [from, setFrom] = useState('2026-05-01');
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [to, setTo] = useState(() => bangkokDate());
   const [rows, setRows] = useState<any[]>([]);
   const [tally, setTally] = useState<WeighTally | null>(null);
   const [cov, setCov] = useState<WeighCoverage | null>(null);

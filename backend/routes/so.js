@@ -920,7 +920,8 @@ router.get('/rebate-balance/:custId', requireRebateAmountAccess, async (req, res
 // returns dbo.SOHD records with DocuDate = today or clearflag set today
 router.get('/shipped-today', requireAuth, requireRole('ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'), async (req, res) => {
   try {
-    const dateStr = req.query.date || new Date().toISOString().substring(0, 10);
+    const { getBangkokDateString } = require('../services/so-pickup-policy');
+    const dateStr = req.query.date || getBangkokDateString();
     const r = await wfQuery(`
       SELECT TOP 200
              hd.SOID AS Id, hd.DocuNo AS WfRef, hd.CustName,
