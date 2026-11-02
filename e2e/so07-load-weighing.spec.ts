@@ -27,7 +27,7 @@ test.describe.serial('SO-06 & SO-07 Load Allocation, Vehicle Capacity & Hardened
     if (atpResult.body.data.length > 0) {
       const firstRow = atpResult.body.data[0];
       expect(firstRow).toHaveProperty('goodCode');
-      expect(firstRow).toHaveProperty('qtyOnHand');
+      expect(firstRow).toHaveProperty('totalOnHand');
       expect(firstRow).toHaveProperty('unit');
       expect(firstRow).toHaveProperty('freshness');
       expect(['FRESH', 'STALE', 'UNKNOWN']).toContain(firstRow.freshness);

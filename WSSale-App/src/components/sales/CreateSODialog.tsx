@@ -136,12 +136,12 @@ export function CreateSODialog({
   useEffect(() => {
     if (!isOpen) return;
     const targetUserId = salesUserId ? String(salesUserId) : undefined;
-    Promise.all([fetchGoods(), fetchGiveawayGoods(targetUserId, editSoId && editSoId !== 'undefined' ? editSoId : undefined), fetchAtpStock()])
-      .then(([g, gw, atpRes]) => {
-        setGoods(mergeGoods(g, gw));
-        setAtpStock(atpRes.data || []);
-      })
+    const editId = editSoId && editSoId !== 'undefined' ? editSoId : undefined;
+    Promise.all([fetchGoods(), fetchGiveawayGoods(targetUserId, editId)])
+      .then(([g, gw]) => setGoods(mergeGoods(g, gw)))
       .catch(console.error);
+    // แยกจากรายการสินค้า: สต๊อกเป็นข้อมูลประกอบ ดึงไม่ได้ก็ต้องออกบิลได้
+    fetchAtpStock(editId).then(r => setAtpStock(r.data || [])).catch(console.error);
       
     fetchTransports().then(setTransports).catch(console.error);
       
@@ -660,6 +660,16 @@ export function CreateSODialog({
   }
 
   // Totals calculation
+  const atpOfGood = (g: EMGood | undefined) => g && atpStock.find(a => a.goodCode === String(g.GoodCode).trim());
+  // นับทุกบิลในหน้าต่างนี้ เพราะบิลหลายใบในเที่ยวเดียวตัดจากของกองเดียวกัน
+  const stockShortfall = (good: EMGood | undefined) => {
+    const atp = atpOfGood(good);
+    if (!good || !atp || atp.state === 'UNKNOWN') return null;
+    const requested = bills.reduce((s, b) => s + b.lines.filter(l => l.goodId === good.GoodID && !l.isGiveaway).reduce((ls, l) => ls + (Number(l.qtyTon) || 0), 0), 0);
+    const available = Math.max(0, atp.totalAvailable);
+    return requested > available ? { requested, available, short: Number((requested - available).toFixed(3)) } : null;
+  };
+
   const totalTons = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isGiveaway ? 0 : (Number(l.qtyTon) || 0)), 0), 0);
   const totalRebateDiscount = canSeeRebate ? bills.reduce((s, b) => s + (Number(b.rebateDiscountAmt) || 0), 0) : 0;
   // เลขตั๋วที่ถูกเบิกจริงในบิลทั้งหมด — ใช้เป็น placeholder ให้ผู้ใช้เห็นว่าถ้าเว้นว่างจะได้อะไร
@@ -1265,18 +1275,18 @@ export function CreateSODialog({
                           <div className="text-[10px] font-bold text-amber-600 mb-0.5">⚠ กำลังยกเลิก</div>
                         )}
                         {(() => {
-                           const atp = atpStock.find(a => a.goodId === g.GoodID);
+                           const atp = atpOfGood(g);
                            if (!atp || isGiveaway) return null;
                            if (atp.state === 'UNKNOWN') {
-                             return <div className="text-[9px] text-gray-500 mb-1" title="ขาดข้อมูล Reservation Authority ไม่สามารถสรุปได้ว่าพร้อมจ่ายหรือไม่">❓ สถานะคลังไม่ชัดเจน (As of {atp.asOf})</div>;
+                             return <div className="text-[9px] text-gray-500 mb-1" title={atp.stateReason || undefined}>❓ สถานะคลังไม่ชัดเจน</div>;
                            }
                            if (atp.state === 'FULLY_READY') {
-                             return <div className="text-[9px] text-emerald-600 font-bold mb-1">✅ พร้อมครบ ({atp.atpQty}t) - คลัง {atp.warehouseId}</div>;
+                             return <div className="text-[9px] text-emerald-600 font-bold mb-1">✅ พร้อมจ่าย {atp.totalAvailable} ตัน</div>;
                            }
-                           if (atp.state === 'PARTIALLY_READY') {
-                             return <div className="text-[9px] text-amber-600 font-bold mb-1">⚠ พร้อมบางส่วน ({atp.atpQty}t) - คลัง {atp.warehouseId}</div>;
+                           if (atp.state === 'OUT_OF_STOCK') {
+                             return <div className="text-[9px] text-red-600 font-bold mb-1">⛔ ไม่มีของในคลัง</div>;
                            }
-                           return <div className="text-[9px] text-red-600 font-bold mb-1">⏳ รอผลิต/รอจัดหา (As of {atp.asOf})</div>;
+                           return <div className="text-[9px] text-red-600 font-bold mb-1" title={atp.stateReason || undefined}>⏳ ยอดจองเกินของที่มี (มี {atp.totalOnHand} จอง {atp.unallocatedDemand} ตัน)</div>;
                         })()}
                         {!isGiveaway ? (
                           <>
@@ -1474,6 +1484,7 @@ export function CreateSODialog({
                     {activeBill?.lines.map(l => {
                       const good = goods.find(g => g.GoodID === l.goodId);
                       const priceBand = getPriceBand(priceLevels[l.tempId]);
+                      const shortfall = l.isGiveaway ? null : stockShortfall(good);
                       return (
                       <div key={l.tempId} data-testid={l.isCouponDrawn ? 'cart-coupon-line' : `cart-line-${l.goodId}`} className={`p-3 rounded-lg border ${l.isControlTicketDrawn ? 'border-amber-200 bg-amber-50' : l.isCouponDrawn ? 'border-blue-200 bg-blue-50/70' : 'border-gray-100 bg-white'}`}>
                         <div className="flex justify-between items-start mb-2">
@@ -1493,6 +1504,11 @@ export function CreateSODialog({
                           </div>
                           <button onClick={() => removeActiveLine(l.tempId)} data-testid={l.isCouponDrawn ? 'btn-remove-coupon-line' : 'btn-remove-line'} className="text-gray-400 hover:text-red-500 shrink-0"><X size={14}/></button>
                         </div>
+                        {shortfall && (
+                          <div data-testid="cart-stock-warning" className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-1">
+                            ⚠ สต๊อกไม่พอ: ต้องการ {shortfall.requested} ตัน พร้อมจ่าย {shortfall.available} ตัน (ขาด {shortfall.short} ตัน) ยังออกบิลได้ แต่ควรแจ้งคลัง
+                          </div>
+                        )}
                         <div className="flex flex-col gap-1.5 mt-2">
                           <div className="flex justify-between items-end">
                             <div className="flex flex-col gap-1.5">

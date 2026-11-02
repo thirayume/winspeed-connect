@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Landmark, CreditCard, Boxes, ShieldAlert, Download, Trash2, Save } from 'lucide-react';
+import { StockTab } from './OperationalStockPage';
 import {
-  fetchCredits, setCredit, fetchStock, setStock,
+  fetchCredits, setCredit,
   fetchRetentionPolicies, updateRetentionPolicy, fetchDsarLog, dsarExport, runRetention,
-  type CreditInfo, type StockRow, type RetentionPolicy, type DsarRow,
+  type CreditInfo, type RetentionPolicy, type DsarRow,
 } from '../../services/api';
 
 type Tab = 'credit' | 'stock' | 'pdpa';
@@ -66,51 +67,6 @@ function CreditTab() {
                 <td className="px-4 py-3 text-right text-gray-700 whitespace-nowrap">{c.CreditLimit == null ? '—' : `฿${Number(c.CreditLimit).toLocaleString()}`}</td>
                 <td className="px-4 py-3 text-center whitespace-nowrap">{c.CreditHold ? <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-600">ระงับ</span> : <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700">ปกติ</span>}</td>
                 <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{c.Note}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function StockTab() {
-  const [rows, setRows] = useState<StockRow[]>([]);
-  const [f, setF] = useState({ goodId: '', goodName: '', qtyOnHand: '', unit: 'ตัน' });
-  const [busy, setBusy] = useState(false);
-  const load = useCallback(async () => { try { setRows(await fetchStock()); } catch (e) { console.error(e); } }, []);
-  useEffect(() => { load(); }, [load]);
-  async function save() {
-    if (!f.goodId) { alert('ใส่รหัสสินค้า'); return; }
-    setBusy(true);
-    try { await setStock({ goodId: f.goodId, goodName: f.goodName || undefined, qtyOnHand: Number(f.qtyOnHand) || 0, unit: f.unit }); setF({ goodId: '', goodName: '', qtyOnHand: '', unit: 'ตัน' }); await load(); }
-    catch (e: unknown) { alert((e as Error).message); } finally { setBusy(false); }
-  }
-  return (
-    <div className="space-y-4">
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-700">DG-04 (open decision): แหล่งสต๊อกปฏิบัติการที่อนุมัติแล้วใน wf — ไม่ดึงจาก dbo.ICStock โดยตรง</div>
-      <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4">
-        <div className="text-sm font-semibold text-gray-700 mb-3">ป้อน/แก้สต๊อก</div>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
-          <label className="text-xs text-gray-500">รหัสสินค้า<input value={f.goodId} onChange={e => setF({ ...f, goodId: e.target.value })} className="mt-1 w-full border border-gray-200 rounded-lg px-2 py-2 text-sm" /></label>
-          <label className="text-xs text-gray-500">ชื่อ<input value={f.goodName} onChange={e => setF({ ...f, goodName: e.target.value })} className="mt-1 w-full border border-gray-200 rounded-lg px-2 py-2 text-sm" /></label>
-          <label className="text-xs text-gray-500">คงเหลือ<input value={f.qtyOnHand} onChange={e => setF({ ...f, qtyOnHand: e.target.value })} className="mt-1 w-full border border-gray-200 rounded-lg px-2 py-2 text-sm" /></label>
-          <label className="text-xs text-gray-500">หน่วย<input value={f.unit} onChange={e => setF({ ...f, unit: e.target.value })} className="mt-1 w-full border border-gray-200 rounded-lg px-2 py-2 text-sm" /></label>
-          <button onClick={save} disabled={busy} className="flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-sm font-semibold bg-[#0C447C] text-white hover:opacity-90 disabled:opacity-40"><Save size={14} /> บันทึก</button>
-        </div>
-      </div>
-      <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
-        <table className="w-full text-sm min-w-full">
-          <thead className="whitespace-nowrap"><tr className="bg-gray-50 text-gray-500 text-xs uppercase"><th className="text-left px-4 py-3 whitespace-nowrap">สินค้า</th><th className="text-right px-4 py-3 whitespace-nowrap">คงเหลือ</th><th className="text-left px-4 py-3 whitespace-nowrap">คลัง</th><th className="text-left px-4 py-3 whitespace-nowrap">อัปเดต</th></tr></thead>
-          <tbody className="divide-y divide-gray-50">
-            {rows.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400 whitespace-nowrap">ยังไม่มีข้อมูลสต๊อก</td></tr>}
-            {rows.map(s => (
-              <tr key={`${s.GoodId}|${s.WarehouseId}`}>
-                <td className="px-4 py-3 whitespace-nowrap"><span className="font-semibold text-gray-800">{s.GoodId}</span> <span className="text-gray-500">{s.GoodName}</span></td>
-                <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">{Number(s.QtyOnHand).toLocaleString()} {s.Unit}</td>
-                <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{s.WarehouseId}</td>
-                <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{s.AsOf ? new Date(s.AsOf).toLocaleString('th-TH') : ''} {s.UpdatedByName ? `· ${s.UpdatedByName}` : ''}</td>
               </tr>
             ))}
           </tbody>

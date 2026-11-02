@@ -17,7 +17,7 @@ import { UnlockReviewModal } from './components/papertrail/UnlockReviewModal';
 import { useSocketEvent } from './hooks/useSocket';
 import packageJson from '../package.json';
 
-export type PortalKey = 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'master' | 'profile' | 'beneficiaries';
+export type PortalKey = 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'stock' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'master' | 'profile' | 'beneficiaries';
 
 const SalesPortal = lazy(() => import('./components/sales/SalesPortal').then(m => ({ default: m.SalesPortal })));
 const SaleTripBoardPage = lazy(() => import('./components/sales/SaleTripBoardPage').then(m => ({ default: m.SaleTripBoardPage })));
@@ -50,7 +50,10 @@ const AgingPage = lazy(() => import('./components/aging/AgingPage').then(m => ({
 const ReconciliationPage = lazy(() => import('./components/recon/ReconciliationPage').then(m => ({ default: m.ReconciliationPage })));
 const OpsStatusPage = lazy(() => import('./components/ops/OpsStatusPage').then(m => ({ default: m.OpsStatusPage })));
 const ApprovalPolicyPage = lazy(() => import('./components/policy/ApprovalPolicyPage').then(m => ({ default: m.ApprovalPolicyPage })));
+const OperationalStockPage = lazy(() => import('./components/governance/OperationalStockPage').then(m => ({ default: m.OperationalStockPage })));
 // const DataGovernancePage = lazy(() => import('./components/governance/DataGovernancePage').then(m => ({ default: m.DataGovernancePage })));
+
+const STOCK_ROLES: UserRole[] = ['C_LEVEL', 'ADMIN', 'MANAGER', 'WAREHOUSE'];
 
 // ── Grouped Navigation ──────────────────────────────────────
 const NAV_GROUPS: NavGroup[] = [
@@ -80,6 +83,7 @@ const NAV_GROUPS: NavGroup[] = [
     color: 'text-orange-600',
     items: [
       { key: 'store',      label: 'คลัง',        sub: 'รับสินค้า · ตรวจจ่าย · จัดโหลด', icon: Warehouse, badge: true, roles: ['C_LEVEL', 'ADMIN', 'WAREHOUSE', 'COUNTER_SALES'] },
+      { key: 'stock', label: 'สต๊อกปฏิบัติการ', sub: 'ยอดคงเหลือ · พร้อมจ่าย', icon: Boxes, roles: STOCK_ROLES },
       { key: 'papertrail', label: 'Paper Trail', sub: 'Kanban เอกสาร 4 สี',   icon: LayoutGrid, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'MANAGER'] },
       { key: 'control-ticket', label: 'ชุดตั๋วคุม', sub: 'คงเหลือ · ตัดจ่ายตั๋วคุม', icon: Stamp, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'SALES'] },
       { key: 'scale-reports', label: 'สถานะการชั่งรถ', sub: 'ชั่งสด WGHD · เข้า-ออก', icon: Truck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE'] },
@@ -567,6 +571,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'recon'      && <ReconciliationPage />}
 
                 {activePortal === 'policy'     && <ApprovalPolicyPage />}
+                {activePortal === 'stock'      && !!role && STOCK_ROLES.includes(role) && <OperationalStockPage />}
                 {/* ปิดไว้ 03/09/2569 — DataGovernancePage */}
                 {activePortal === 'ops'        && <OpsStatusPage />}
                 {activePortal === 'giveaway'   && <GiveawayPage />}

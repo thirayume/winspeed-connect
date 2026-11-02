@@ -1042,9 +1042,15 @@ export const setCredit = (custId: string, b: { custName?: string; creditLimit?: 
 
 // ── Operational stock (DG-04) ─────────────────────────────────
 export interface StockRow { GoodId: string; WarehouseId: string; GoodName?: string; QtyOnHand: number; Unit?: string; Source?: string; AsOf?: string; UpdatedByName?: string; }
-export interface AtpStockRow { goodId: string; warehouseId: string; goodName?: string; qtyOnHand: number; reservedQty: number; atpQty: number; unit?: string; state: 'FULLY_READY' | 'PARTIALLY_READY' | 'WAITING_PRODUCTION' | 'UNKNOWN'; asOf?: string; }
+export interface AtpStockRow {
+  goodCode: string; goodName?: string; unit?: string; source?: string; asOf?: string;
+  totalOnHand: number; confirmedReserved: number; draftReserved: number; unallocatedDemand: number; totalAvailable: number;
+  state: 'FULLY_READY' | 'PARTIALLY_READY' | 'SHORTAGE' | 'OUT_OF_STOCK' | 'UNKNOWN'; stateReason?: string | null;
+  freshness: 'FRESH' | 'STALE' | 'UNKNOWN'; isStale: boolean;
+}
 export const fetchStock = () => req<StockRow[]>('/stock');
-export const fetchAtpStock = () => req<{ data: AtpStockRow[] }>('/stock/atp');
+export const fetchAtpStock = (excludeSoId?: string) =>
+  req<{ data: AtpStockRow[] }>(`/stock/atp${excludeSoId ? `?excludeSoId=${encodeURIComponent(excludeSoId)}` : ''}`, { silent: true });
 export const setStock = (b: { goodId: string; warehouseId?: string; goodName?: string; qtyOnHand: number; unit?: string; source?: string }) =>
   req<{ ok: boolean }>('/stock', { method: 'PUT', body: JSON.stringify(b) });
 

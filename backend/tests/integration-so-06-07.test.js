@@ -280,7 +280,7 @@ test('ATP 1.4: Invalid or missing unit returns state UNKNOWN', async () => {
   assert.ok(row.stateReason?.includes('หน่วยสินค้าไม่ชัดเจน'));
 });
 
-test('ATP 1.5: Historic open SO older than 60 days without Ext is preserved in demand (no arbitrary cutoff)', async () => {
+test('ATP 1.5: Open bookings before LEGACY_DOC_CUTOFF_DATE do not count as demand (owner D9, 2026-10-09)', async () => {
   const goodCode = '9-1620000000CAR';
   const testWh = 'WH-TEST-HIST';
 
@@ -288,7 +288,7 @@ test('ATP 1.5: Historic open SO older than 60 days without Ext is preserved in d
     await wfQuery(`
       INSERT INTO wf.OperationalStock (GoodId, WarehouseId, GoodName, QtyOnHand, Unit, Source, AsOf, UpdatedBy)
       VALUES (@gc, @wh, N'ปุ๋ยทดสอบประวัติศาสตร์', 100.00, N'ตัน', 'FEED', GETUTCDATE(), 1)
-    `, { 
+    `, {
       gc: { type: sql.NVarChar(50), value: goodCode },
       wh: { type: sql.NVarChar(50), value: testWh }
     });
@@ -304,8 +304,8 @@ test('ATP 1.5: Historic open SO older than 60 days without Ext is preserved in d
 
   assert.ok(row);
   assert.equal(row.totalOnHand, 100);
-  // Demand from 2019 (> 60 days ago) must be preserved and NOT dropped (actual historic unfulfilled demand is 8.00 tons)
-  assert.ok(row.confirmedReserved >= 8, `Confirmed reserved demand must include historic open orders (got ${row.confirmedReserved})`);
+  // This good's open line is a 2019 booking of 8 tons; the cut-off hides it, as on every other screen
+  assert.equal(row.confirmedReserved, 0);
 });
 
 // ─────────────────────────────────────────────────────────────

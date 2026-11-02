@@ -5,15 +5,20 @@
 const router = require('express').Router();
 const { sql, wfQuery } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { legacyCutoffInput, legacyCutoffSql } = require('../services/legacy-cutoff');
 
 router.use(requireAuth);
+
+const STOCK_UNIT = 'ตัน';
 
 // GET /api/stock/atp — Available To Promise (SO-06)
 router.get('/atp', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
-    const { goodCode, warehouseId, requestedQty, excludeTripId } = req.query;
+    const { goodCode, warehouseId, requestedQty, excludeTripId, excludeSoId } = req.query;
     const reqQtyNum = requestedQty != null && requestedQty !== '' ? Number(requestedQty) : null;
     const excludeTripNum = excludeTripId != null && excludeTripId !== '' ? Number(excludeTripId) : null;
+    // the bill being edited: its own saved draft must not count against itself
+    const excludeSoNum = Number.isInteger(Number(excludeSoId)) && Number(excludeSoId) > 0 ? Number(excludeSoId) : null;
 
     // 1. Get operational stock rows (GoodId is GoodCode in OperationalStock)
     let stockQuery = `
@@ -40,12 +45,30 @@ router.get('/atp', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'MANAGER',
     const freshnessDays = settingVal && Number(settingVal) > 0 ? Number(settingVal) : 7;
     const freshnessProvenance = settingVal ? 'wf.SystemSetting:STOCK_FRESHNESS_DAYS' : 'DEFAULT_POLICY';
 
-    // 3. Active Confirmed SO remaining demand (103 minus fulfilled 104 & invoiced 107/202)
-    // - ลบ 60-day cutoff ที่ไม่มี authority ออก
-    // - ตัดบิลที่ปิดแล้วด้วย ClearSO = 'Y', ClearFlag = 'Y', WeighOutWeight IS NOT NULL, หรือออก Invoice 107/202 แล้ว
-    // - ตัดยอดตามบรรทัดที่ส่งมอบแล้วใน 104 (Fulfilled104)
-    // - ตัดบิลในเที่ยวที่ระบุใน excludeTripId (ทั้งแบบ DRAFT และ CONFIRMED)
-    const confInputs = {};
+    const buildMeta = () => ({
+      filterGoodCode: goodCode || null,
+      filterWarehouseId: warehouseId || null,
+      requestedQty: reqQtyNum,
+      excludeTripId: excludeTripNum,
+      excludeSoId: excludeSoNum,
+      freshnessPolicy: {
+        days: freshnessDays,
+        provenance: freshnessProvenance
+      }
+    });
+
+    // Nothing entered for these goods: every bill dialog calls this, so do not read the booking tables for nothing.
+    const stockRows = stockRes.recordset || [];
+    if (stockRows.length === 0) {
+      return res.json({ data: [], asOf: new Date().toISOString(), meta: buildMeta() });
+    }
+
+    // 3. Open bookings: what WinSpeed still holds open on each 103 line, the same figure as the backlog report.
+    // The query this replaces treated a booking as invoiced when its number equalled an invoice's SONo, but SONo holds
+    // the 104's number and the 103 and 104 counters overlap. On 2 Nov 2026 that hid about four fifths of the open tons,
+    // on bookings no invoice refers to.
+    // Bookings before LEGACY_DOC_CUTOFF_DATE stay out, as everywhere else (owner D9); an open control ticket stays in.
+    const confInputs = await legacyCutoffInput();
     let confTripClause = '';
     if (excludeTripNum != null) {
       confTripClause = 'AND (ext.TripId IS NULL OR ext.TripId <> @exTrip)';
@@ -53,41 +76,18 @@ router.get('/atp', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'MANAGER',
     }
 
     const confRes = await wfQuery(`
-      WITH Fulfilled104 AS (
-        SELECT dt.RefSOID, dt.RefListNo, SUM(dt.GoodQty2) AS ShippedQty
-        FROM dbo.SODT dt WITH(NOLOCK)
-        JOIN dbo.SOHD hd WITH(NOLOCK) ON hd.SOID = dt.SOID
-        WHERE hd.DocuType = 104 AND hd.DocuStatus <> 'C' AND dt.RefSOID IS NOT NULL
-        GROUP BY dt.RefSOID, dt.RefListNo
-      ),
-      InvoicedSO AS (
-        SELECT DISTINCT invdt.RefID AS SOID
-        FROM dbo.SOInvDT invdt WITH (NOLOCK)
-        JOIN dbo.SOInvHD invhd WITH (NOLOCK) ON invhd.SOInvID = invdt.SOInvID
-        WHERE invhd.DocuType IN (107, 202) AND invdt.RefID IS NOT NULL
-        UNION
-        SELECT DISTINCT s.SOID
-        FROM dbo.SOInvHD invhd WITH (NOLOCK)
-        JOIN dbo.SOHD s WITH (NOLOCK) ON s.DocuNo = invhd.SONo
-        WHERE invhd.DocuType IN (107, 202) AND invhd.SONo IS NOT NULL AND invhd.SONo <> ''
-      )
-      SELECT RTRIM(g.GoodCode) AS GoodCode,
-             SUM(CASE 
-               WHEN dt.GoodQty2 > ISNULL(f.ShippedQty, 0) THEN dt.GoodQty2 - ISNULL(f.ShippedQty, 0)
-               ELSE 0 
-             END) AS ConfirmedReservedQty
-      FROM dbo.SODT dt WITH(NOLOCK)
-      JOIN dbo.EMGood g WITH(NOLOCK) ON g.GoodID = dt.GoodID
-      JOIN dbo.SOHD hd WITH(NOLOCK) ON hd.SOID = dt.SOID
-      LEFT JOIN Fulfilled104 f ON f.RefSOID = dt.SOID AND f.RefListNo = dt.ListNo
-      LEFT JOIN InvoicedSO inv ON inv.SOID = hd.SOID
-      LEFT JOIN wf.SalesOrderExt ext WITH(NOLOCK) ON CAST(hd.SOID AS VARCHAR(50)) = ext.SOID
-      WHERE hd.DocuType = 103 
-        AND hd.DocuStatus <> 'C' 
-        AND (hd.ClearSO IS NULL OR hd.ClearSO <> 'Y')
-        AND (hd.ClearFlag IS NULL OR hd.ClearFlag <> 'Y')
-        AND (ext.WeighOutWeight IS NULL)
-        AND inv.SOID IS NULL
+      SELECT RTRIM(g.GoodCode) AS GoodCode, SUM(dt.RemaQty) AS ConfirmedReservedQty
+      FROM dbo.SOHD hd WITH (NOLOCK)
+      JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
+      JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = dt.GoodID
+      LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON CAST(hd.SOID AS VARCHAR(50)) = ext.SOID
+      WHERE hd.DocuType = 103
+        AND ISNULL(hd.DocuStatus, 'N') <> 'C'
+        AND ISNULL(hd.ClearSO, 'N') <> 'Y'
+        AND ISNULL(hd.ClearFlag, 'N') <> 'Y'
+        AND dt.RemaQty > 0
+        AND ext.WeighOutWeight IS NULL
+        AND ${legacyCutoffSql('hd')}
         ${confTripClause}
       GROUP BY RTRIM(g.GoodCode)
     `, confInputs);
@@ -105,6 +105,10 @@ router.get('/atp', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'MANAGER',
       draftQuery += ` AND (o.TripId IS NULL OR o.TripId <> @exTrip)`;
       draftInputs.exTrip = { type: sql.Int, value: excludeTripNum };
     }
+    if (excludeSoNum != null) {
+      draftQuery += ` AND o.Id <> @exSo`;
+      draftInputs.exSo = { type: sql.Int, value: excludeSoNum };
+    }
     draftQuery += ` GROUP BY l.GoodCode`;
     const draftRes = await wfQuery(draftQuery, draftInputs);
 
@@ -119,7 +123,6 @@ router.get('/atp', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'MANAGER',
     }
 
     // Group operational stock by GoodId
-    const stockRows = stockRes.recordset || [];
     const goodsMap = new Map();
     for (const s of stockRows) {
       const gCode = String(s.GoodId).trim();
@@ -173,8 +176,8 @@ router.get('/atp', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'MANAGER',
         }
       }
 
-      // Unit check: Valid standard units are 'ตัน' and 'ถุง'
-      const validUnit = g.unit === 'ตัน' || g.unit === 'ถุง';
+      // Bookings are held in tons, so only a stock figure in tons can be netted against them
+      const validUnit = g.unit === STOCK_UNIT;
       let state = 'UNKNOWN';
       let stateReason = null;
 
@@ -243,16 +246,7 @@ router.get('/atp', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'MANAGER',
     res.json({
       data: results,
       asOf: now.toISOString(),
-      meta: {
-        filterGoodCode: goodCode || null,
-        filterWarehouseId: warehouseId || null,
-        requestedQty: reqQtyNum,
-        excludeTripId: excludeTripNum,
-        freshnessPolicy: {
-          days: freshnessDays,
-          provenance: freshnessProvenance
-        }
-      }
+      meta: buildMeta()
     });
   } catch (e) {
     console.error('[stock/atp]', e);
@@ -274,8 +268,23 @@ router.get('/', async (req, res) => {
 // PUT /api/stock — upsert (WAREHOUSE/MANAGER/ADMIN)
 router.put('/', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
-    const { goodId, warehouseId, goodName, qtyOnHand, unit, source } = req.body || {};
-    if (!goodId) return res.status(400).json({ message: 'goodId จำเป็น' });
+    const { goodId, warehouseId, qtyOnHand, unit, source } = req.body || {};
+    const code = String(goodId ?? '').trim();
+    if (!code) return res.status(400).json({ message: 'goodId จำเป็น' });
+    const qty = qtyOnHand === '' || qtyOnHand == null ? NaN : Number(qtyOnHand);
+    if (!Number.isFinite(qty) || qty < 0) {
+      return res.status(400).json({ message: 'จำนวนคงเหลือต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป' });
+    }
+    if (unit != null && unit !== STOCK_UNIT) {
+      return res.status(400).json({ message: `สต๊อกปฏิบัติการใช้หน่วย${STOCK_UNIT}เท่านั้น` });
+    }
+    // The badge on the bill screen joins on this code, so a mistyped one would save and then never show
+    const good = await wfQuery(
+      `SELECT TOP 1 RTRIM(GoodCode) AS GoodCode, GoodName1 AS GoodName FROM dbo.EMGood WITH (NOLOCK) WHERE GoodCode = @g`,
+      { g: { type: sql.NVarChar(50), value: code } }
+    );
+    const master = good.recordset?.[0];
+    if (!master) return res.status(400).json({ message: `ไม่พบรหัสสินค้า ${code}` });
     await wfQuery(`
       MERGE wf.OperationalStock AS t
       USING (SELECT @g AS GoodId, @w AS WarehouseId) AS s ON t.GoodId=s.GoodId AND t.WarehouseId=s.WarehouseId
@@ -283,11 +292,11 @@ router.put('/', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (
       WHEN NOT MATCHED THEN INSERT (GoodId, WarehouseId, GoodName, QtyOnHand, Unit, Source, UpdatedBy)
         VALUES (@g, @w, @n, @q, @u, @src, @uid);`,
       {
-        g:  { type: sql.NVarChar(20),  value: String(goodId) },
+        g:  { type: sql.NVarChar(20),  value: master.GoodCode },
         w:  { type: sql.NVarChar(20),  value: warehouseId || '-' },
-        n:  { type: sql.NVarChar(200), value: goodName || null },
-        q:  { type: sql.Decimal(18,2), value: Number(qtyOnHand) || 0 },
-        u:  { type: sql.NVarChar(20),  value: unit || 'ตัน' },
+        n:  { type: sql.NVarChar(200), value: master.GoodName || null },
+        q:  { type: sql.Decimal(18,2), value: qty },
+        u:  { type: sql.NVarChar(20),  value: STOCK_UNIT },
         src:{ type: sql.NVarChar(40),  value: source || 'MANUAL' },
         uid:{ type: sql.Int,           value: req.user.sub },
       });

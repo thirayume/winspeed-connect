@@ -328,7 +328,7 @@ private brief dated 30 October):
 - **SSRS:** the R740 report server has no reports or data sources and no runs in 30 days,
   so there is nothing yet to accept with real users; the report list must come first.
 
-Deferred by the owner to after 1.0.0 (decision of 1 November 2026). None of these is software work; scale
+Deferred by the owner to after 1.0.0 (decision of 1 November 2026). Apart from stock case SO-19 below, none of these is software work; scale
 tolerance and the exception approver were settled by the owner on 31 October:
 
 | Owner | Item |
@@ -337,11 +337,21 @@ tolerance and the exception approver were settled by the owner on 31 October:
 | Accounting | Accept the AR report and the non-duplication reconciliation (owner deferred) |
 | Accounting | Confirm the 107 title ใบส่งของ for VAT-exempt documents, and the RB series mapping (S/T) |
 | Warehouse | One 104 printed on the real pre-printed stock |
-| Factory | The three blocked UAT cases (scale, stock) and physical shipment evidence |
+| Warehouse | Stock case SO-19 once its fix is on UAT: enter a figure for one product, then check the badge and the warning on the bill screen |
+| Factory | The two blocked scale cases (SO-17, SHP-05) and physical shipment evidence |
 | QA | Dry-run the three QA guides on UAT |
 | Owner | Enable staff accounts in Production; trim the approver list; say which document MO weighings belong to; decide when the native writers go live |
 | Staff | Close the stale bookings listed in the private register |
 | IT | SSRS report list; an off-host copy of the backups; move the nightly job to Windows authentication |
+
+**Stock case SO-19 was a software gap, not factory work (found 2 November 2026).** In 1.0.0 the stock
+screen is hidden, the bill screen's badge reads field names the API does not return, and the reserved
+figure hides about four fifths of the open tons, because it matches invoices to bookings by number while
+the 103 and 104 counters overlap. The fix adds a stock screen for WAREHOUSE, MANAGER, ADMIN and C_LEVEL,
+the badge, a shortage warning, and WinSpeed's own open quantity (`SODT.RemaQty`). It needs no migration and
+is not yet on UAT or Production. Three limits remain: the warehouse types the figure until the owner decides
+DG-04; a shortage warns but does not block a bill; and stale bookings count as reserved until staff close
+them, so many goods will read short until then. The credit and PDPA tabs of the old screen stay hidden.
 
 Known limit: the original client IP is lost at the Windows portproxy, so audit and rate limits see
 the Docker gateway. The private illustrated stakeholder brief lists the accounting questions with
