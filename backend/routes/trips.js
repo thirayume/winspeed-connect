@@ -1,6 +1,10 @@
 const { validateBookingNotes } = require('../services/booking-notes');
 const router = require('express').Router();
 const { sql, wfQuery, wfTransaction } = require('../db');
+const { retryOnDeadlock } = require('../services/db-retry');
+
+// The board only reads, so a read that loses a deadlock to a writer can simply run again
+const readQuery = (text, inputs) => retryOnDeadlock(() => wfQuery(text, inputs));
 const { requireAuth, requireRole, requireCapability, canViewAllRebateAmounts } = require('../middleware/auth');
 const { broadcast } = require('../services/socket');
 
@@ -100,7 +104,7 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
     const bs = await tripScopeSql(req.user);
     where += ` AND ${bs.sql}`;
     Object.assign(inputs, bs.inputs);
-    const tripsRes = await wfQuery(`
+    const tripsRes = await readQuery(`
       SELECT t.*, u.DisplayName AS CreatedByName
       FROM wf.SalesTrip t
       LEFT JOIN wf.AppUser u ON u.Id = t.CreatedBy
@@ -116,9 +120,9 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
     const idList = trips.map(t => Number(t.tripId)).filter(Number.isInteger).join(',');
 
     const [membersRes, draftLinesRes, confLinesRes, weighRes, holdRes] = await Promise.all([
-      wfQuery(`SELECT * FROM wf.v_TripMember WHERE TripId IN (${idList})`),
+      readQuery(`SELECT * FROM wf.v_TripMember WHERE TripId IN (${idList})`),
 
-      wfQuery(`
+      readQuery(`
         SELECT o.TripId, 'DRAFT' AS MemberKind, CAST(l.SoId AS VARCHAR(50)) AS MemberId,
                l.LineNum AS ListNo, l.GoodCode, l.GoodName,
                l.QtyTon, l.QtyBag, l.PricePerTon, l.NetPricePerTon, l.LineAmount,
@@ -130,7 +134,7 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
 
       // ฝั่งที่ยืนยันแล้ว ตัวเลขจริงอยู่ที่ dbo.SODT ส่วนสิ่งที่ WINSpeed ไม่มี
       // (ลำดับขึ้นของ · ตั๋วคุมที่อ้างถึง · สถานะอนุมัติของแถม) อยู่ที่ wf.SalesOrderLineExt
-      wfQuery(`
+      readQuery(`
         SELECT e.TripId, 'CONFIRMED' AS MemberKind, CAST(d.SOID AS VARCHAR(50)) AS MemberId,
                d.ListNo, RTRIM(g.GoodCode) AS GoodCode, RTRIM(d.GoodName) AS GoodName,
                CAST(ISNULL(d.GoodQty2, 0) AS DECIMAL(18,3)) AS QtyTon,
@@ -162,7 +166,7 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
         WHERE e.TripId IN (${idList})`),
 
       // สถานะรถจาก WGHD — 1 ลงทะเบียน · 2 กำลังโหลด · 3 ชั่งออกแล้ว
-      wfQuery(`
+      readQuery(`
         SELECT e.TripId, CAST(w.SPID AS VARCHAR(50)) AS MemberId,
                w.Id, w.CarNo, w.DateReg, w.Status, w.WGType,
                w.WeightIn, w.WeightOut, w.WeightNet, w.TONNet, w.DocuNo, w.MoveBill
@@ -184,7 +188,7 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
 
       // คำขอแก้ไขที่ยังรออนุมัติ (เฟส 5) — ตัวที่ Hold รถต้องเด่นบนกระดาน
       // คนคุมลานต้องเห็นก่อนสั่งขึ้นของ ไม่ใช่ไปรู้เอาตอนรถจอดรอ
-      wfQuery(`
+      readQuery(`
         SELECT r.Id, r.SOID AS MemberId, r.TripId, r.StageAtRequest, r.ReasonCode,
                r.ReasonDetail, r.HoldTruck, r.RequestedAt,
                rs.ReasonText, u.DisplayName AS RequestedByName
