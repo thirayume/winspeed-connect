@@ -1,11 +1,12 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **2 November 2026 19:28 (ICT)**. This page records observed results;
+Operational snapshot: **2 November 2026 22:19 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
-**Running release: 1.0.1 (`e26ad67`) on UAT and Production, 162 migrations, all native writers off on Production.**
+**Running release: 1.0.2 (`d74dfe1`) on UAT and Production, 162 migrations. All native writers stay off on Production
+until QA passes (owner, 2 November 2026).**
 Older paragraphs below are history.
 
 ## Production and UAT websites
@@ -338,7 +339,7 @@ tolerance and the exception approver were settled by the owner on 31 October:
 | Warehouse | One 104 printed on the real pre-printed stock: needs a person, the paper and a printer, nothing else is open on it |
 | Warehouse | Accept stock case SO-19 during training: enter a figure for one product, then check the badge and the warning on the bill screen |
 | Factory | The two blocked scale cases (SO-17, SHP-05) and physical shipment evidence |
-| QA | Dry-run the three QA guides on UAT |
+| QA | Dry-run the three QA guides on UAT: they need several roles, so staff accounts must be open first |
 | Owner | Enable staff accounts in Production; trim the approver list; say which document MO weighings belong to; decide when the native writers go live |
 | Staff | Close the stale bookings listed in the private register |
 | IT | SSRS report list; an off-host copy of the backups; move the nightly job to Windows authentication |
@@ -406,6 +407,23 @@ difference. On UAT, the deployed routes matched the recheck on every good, the A
 total, and a SALES call to it is refused. Production's screens have not been opened with a real account. The 104 on
 UAT matches WinSpeed's PDF on one Letter page, with every value within 0.9 pt and the same data; the print rule hides
 the dashed guides. Nobody has printed it on the real paper, so that row stays open and needs a person.
+
+**Release 1.0.2 on UAT and Production, 2 November 2026 night, on the owner's order.** It changes printing and test
+files only, with no migration and no backend route change, so the stock and AR results above still hold. Comparing the
+107 with WinSpeed line by line found more differences than first reported; the form now matches, except a stray `0`
+WinSpeed prints under its title and the amount in words sitting on its own line. A real PDF from Edge found what the
+screen hid. The small-screen table rule also applied on paper, because A4 is narrower than 1024 px, so every printed
+table collapsed to about 60% of the page. The 107, 116, delivery note and weigh ticket printed the modal's dark
+backdrop as a grey frame. Long 107s spilled onto a second page. The longest 107 is now one clean A4 page, and three
+wide reports fit their pages as measured in the layout. No physical printer has been used.
+
+Full Loop run `R740UAT-20261102-01` passed every phase on `f57ca2a` through the real API with its own test accounts,
+then closed them; later commits changed print only. After the 21:00 refresh, UAT held no test data, the stock route
+matched the recheck on all 77 goods, and the AR report equalled GL 112100 with zero difference. Production took
+`d74dfe1` at 22:18 (receipt `20261102-221718-prod-apply-d74dfe1.txt`, 162/0/0) with the same bundle as UAT; its five
+writer flags are false, the target guard returns 0, the checked APIs answer 401 without a login, and CI passed. Production
+screens have not been opened with a real account. A run of `integration-so-06-07` with a temporary sign-in on UAT was
+refused by the agent's safety check, so it has not run.
 
 The push
 went straight to `uat`, so the promotion workflow's checks did not run; the backend tests, rehearsal, frontend
