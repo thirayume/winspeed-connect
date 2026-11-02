@@ -92,3 +92,12 @@ test('a salesperson without a code gets one on first use and the next RB number 
   assert.equal(r.body.suggested, 'RBT69-111');
   assert.ok(db.calls.some(c => /UPDATE wf\.AppUser SET RebateDocCode/.test(c.text)));
 });
+
+test('series evidence takes the salesperson of that customer in the year of each document', async () => {
+  db.calls.length = 0;
+  await app.call('POST', '/api/rebate/doc-codes/auto-assign', { user: { sub: 63, role: 'ADMIN' } });
+  const evidence = db.calls.find(c => /JOIN CustEmp/.test(c.text));
+  assert.ok(evidence, 'the evidence query ran');
+  assert.match(evidence.text, /PARTITION BY CustID, YEAR\(DocuDate\)/);
+  assert.match(evidence.text, /ce\.Yr = YEAR\(h\.DocuDate\)/);
+});

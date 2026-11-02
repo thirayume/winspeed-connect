@@ -6,8 +6,9 @@
  * dbo.SOInvHD Docutype 106 carries no EmpID, so the letters in the number are the only trace of who asked
  * (migration 079). Owner 2026-10-09: every salesperson and sales manager gets a code automatically, and an admin
  * changes any code in Master data → regional approvers. Codes are given in this order:
- *  1. history: a one-letter series used since 1 January two years back goes to the active user whose customers it
- *     served most, one series per user, the largest counts first. The user keeps the numbering WINSpeed already runs.
+ *  1. history: a one-letter series used since 1 January two years back goes to the active user who sold most to its
+ *     customers in the year of each document, one series per user, the largest counts first. The user keeps the
+ *     numbering WINSpeed already runs.
  *  2. otherwise two letters from the name: first name + surname, or the first two consonants of a single name, then
  *     the first letter + A…Z. A code WINSpeed has ever used is never given, so nobody continues another person's numbers.
  */
@@ -87,16 +88,18 @@ async function loadContext() {
   const [users, evidence, reserved, existing] = await Promise.all([
     wfQuery(`SELECT Id, Username, DisplayName, Role, EmpId, RebateDocCode
              FROM wf.AppUser WHERE IsActive = 1 AND Role IN ('SALES', 'MANAGER')`),
-    // the customer's main salesperson over the same window: customers move between salespeople over the years
+    // the customer's main salesperson in the year of each RB document: customers move between salespeople, and
+    // one main salesperson over the whole window left S and T five documents apart on 2 Nov 2026 (699 to 17 by year)
     wfQuery(`
       WITH CustEmp AS (
-        SELECT CustID, EmpID, ROW_NUMBER() OVER (PARTITION BY CustID ORDER BY COUNT(*) DESC, EmpID) AS rn
+        SELECT CustID, YEAR(DocuDate) AS Yr, EmpID,
+               ROW_NUMBER() OVER (PARTITION BY CustID, YEAR(DocuDate) ORDER BY COUNT(*) DESC, EmpID) AS rn
         FROM dbo.SOHD WITH (NOLOCK)
         WHERE DocuType = 104 AND EmpID IS NOT NULL AND DocuDate >= @since
-        GROUP BY CustID, EmpID)
+        GROUP BY CustID, YEAR(DocuDate), EmpID)
       SELECT SUBSTRING(h.DocuNo, 3, 1) AS SeriesCode, CAST(ce.EmpID AS NVARCHAR(20)) AS EmpId, COUNT(*) AS DocCount
       FROM dbo.SOInvHD h WITH (NOLOCK)
-      JOIN CustEmp ce ON ce.CustID = h.CustID AND ce.rn = 1
+      JOIN CustEmp ce ON ce.CustID = h.CustID AND ce.Yr = YEAR(h.DocuDate) AND ce.rn = 1
       WHERE h.Docutype = 106 AND h.DocuNo LIKE 'RB[A-Z][0-9]%' AND h.DocuDate >= @since
       GROUP BY SUBSTRING(h.DocuNo, 3, 1), ce.EmpID`, { since: { type: sql.Date, value: since } }),
     wfQuery(`
