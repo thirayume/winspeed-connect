@@ -2005,6 +2005,10 @@ router.get('/accrual', hideRebateMoneyFromSales, async (req, res) => {
     if (empId)  { where += ' AND SalesEmpId = @empId'; inputs.empId = { type: sql.Int, value: Number(empId) }; }
     if (from)   { where += ' AND SourceDocuDate >= @from'; inputs.from = { type: sql.Date, value: from }; }
     if (to)     { where += ' AND SourceDocuDate <= @to'; inputs.to = { type: sql.Date, value: to }; }
+    // R12 O-4: own + team deliveries only. Without this every salesperson could list every customer's tons.
+    const scope = scopeFilter(await getVisibleScope(req.user), { empCol: 'SalesEmpId', prefix: 'ra' });
+    where += ` AND ${scope.sql}`;
+    Object.assign(inputs, scope.inputs);
 
     const r = await wfQuery(`
       SELECT CustId, MAX(CustName) AS CustName, MAX(CustCode) AS CustCode, MAX(RegionCode) AS RegionCode,
@@ -2036,6 +2040,15 @@ router.get('/accrual/:custId', hideRebateMoneyFromSales, async (req, res) => {
     if (!cust) {
       return res.status(404).json({ message: `ไม่พบข้อมูลลูกค้า '${rawCust}'` });
     }
+
+    // R12 O-4: the customer must have a delivery in the user's own + team scope. The lots stay whole for
+    // that customer, because a shared customer's claim still draws on them first-in, first-out.
+    const lotScope = scopeFilter(await getVisibleScope(req.user), { empCol: 'SalesEmpId', prefix: 'rl' });
+    const hasLot = (await wfQuery(
+      `SELECT TOP 1 1 AS ok FROM wf.v_RebateAccrualRemaining WHERE CustId = @cid AND ${lotScope.sql}`,
+      { cid: { type: sql.NVarChar(20), value: String(cust.custId) }, ...lotScope.inputs }
+    )).recordset?.[0];
+    if (!hasLot) return res.json([]);
 
     const kind = String(req.query.lineType || 'REBATE').toUpperCase() === 'DIFF' ? 'DIFF' : 'REBATE';
     const inputs = { cid: { type: sql.NVarChar(20), value: String(cust.custId) } };

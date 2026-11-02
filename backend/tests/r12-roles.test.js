@@ -15,8 +15,10 @@ const users = {
   3: { Id: 3, Username: 'wb', DisplayName: 'Weighbridge', Role: 'WEIGHBRIDGE', IsActive: 1, MustChangePassword: 0 },
   4: { Id: 4, Username: 'mgr', DisplayName: 'Manager', Role: 'MANAGER', IsActive: 1, MustChangePassword: 0 },
   5: { Id: 5, Username: 'sales', DisplayName: 'Sales', Role: 'SALES', IsActive: 1, MustChangePassword: 0 },
+  7: { Id: 7, Username: 'acc', DisplayName: 'Accounting', Role: 'ACCOUNTING', IsActive: 1, MustChangePassword: 0 },
 };
 let lastAccessAs = null;
+let accrualHasLot = true;
 
 const db = h.installDbStub(({ text, inputs }) => {
   if (/FROM wf\.AppUser\s+WHERE Id = @id/i.test(text)) return users[inputs.id] ? [users[inputs.id]] : [];
@@ -24,6 +26,9 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/INSERT INTO wf\.AccessAsAudit/i.test(text)) return { recordset: [], rowsAffected: [1] };
   if (/SELECT TOP 1 EffectiveUserId, Action FROM wf\.AccessAsAudit/i.test(text)) return lastAccessAs ? [lastAccessAs] : [];
   if (/WHERE Username = @u/i.test(text)) return [users[1]];
+  if (/FROM dbo\.EMCust/i.test(text)) return [{ CustID: 1078, CustCode: '0330005', CustName: 'Customer' }];
+  if (/SELECT TOP 1 1 AS ok FROM wf\.v_RebateAccrualRemaining/i.test(text)) return accrualHasLot ? [{ ok: 1 }] : [];
+  if (/FROM wf\.v_RebateAccrualRemaining/i.test(text)) return [{ CustId: '1078', SourceDocuNo: 'I69-00001', RemainingTon: 1 }];
   if (/INSERT INTO wf\.AppUser/i.test(text)) return [{ Id: 99, Username: 'n', DisplayName: 'N', Role: 'WEIGHBRIDGE' }];
   return [];
 }, { activeUserIds: h.TEST_USERS });
@@ -31,7 +36,7 @@ const db = h.installDbStub(({ text, inputs }) => {
 const { capabilitiesFor, ROLE_RANK, MENUS, ACTIONS } = require('../services/role-capabilities');
 
 let app;
-test.before(async () => { app = await h.startApp([['/api/auth', '../../routes/auth'], ['/api/quotation', '../../routes/quotation'], ['/api/coupons', '../../routes/coupons'], ['/api/recon', '../../routes/recon']]); });
+test.before(async () => { app = await h.startApp([['/api/auth', '../../routes/auth'], ['/api/quotation', '../../routes/quotation'], ['/api/coupons', '../../routes/coupons'], ['/api/recon', '../../routes/recon'], ['/api/so', '../../routes/so'], ['/api/rebate', '../../routes/rebate']]); });
 test.after(async () => { await app.close(); });
 
 test('R12-1: WAREHOUSE and WEIGHBRIDGE have a rank below ACCOUNTING', () => {
@@ -84,9 +89,64 @@ test('R12-3: the company-wide reconciliation list stays with the roles that have
       assert.equal(denied.status, 403, `${user.role} ${path}`);
     }
     const allowed = await app.call('GET', path, { user: { sub: 7, role: 'ACCOUNTING' } });
-    assert.notEqual(allowed.status, 403, `ACCOUNTING ${path}`);
+    assert.ok(![401, 403].includes(allowed.status), `ACCOUNTING ${path} got ${allowed.status}`);
   }
   assert.deepEqual([...MENUS.recon].sort(), ['ACCOUNTING', 'ADMIN', 'C_LEVEL', 'MANAGER']);
+});
+
+test('R12-3: today\'s shipments stay with the roles that have the Accounting menu', async () => {
+  for (const user of [{ sub: 5, role: 'SALES' }, { sub: 2, role: 'WAREHOUSE' }]) {
+    assert.equal((await app.call('GET', '/api/so/shipped-today', { user })).status, 403, user.role);
+  }
+  const allowed = await app.call('GET', '/api/so/shipped-today', { user: { sub: 7, role: 'ACCOUNTING' } });
+  assert.ok(![401, 403].includes(allowed.status), `ACCOUNTING got ${allowed.status}`);
+  assert.deepEqual([...MENUS.accounting].sort(), ['ACCOUNTING', 'ADMIN', 'C_LEVEL', 'MANAGER']);
+});
+
+test('the leftover SOHD column dump is gone', async () => {
+  const before = db.calls.length;
+  await app.call('GET', '/api/so/debug-sohd', { user: { sub: 1, role: 'ADMIN' } });
+  assert.ok(!db.calls.slice(before).some(c => /INFORMATION_SCHEMA\.COLUMNS/.test(c.text)));
+});
+
+test('O-4: the rebate accrual list is limited to the salesperson\'s own deliveries; everyone-visible roles keep all', async () => {
+  users[5].EmpId = '501';
+  try {
+    let before = db.calls.length;
+    const sales = await app.call('GET', '/api/rebate/accrual', { user: { sub: 5, role: 'SALES' } });
+    assert.equal(sales.status, 200, JSON.stringify(sales.body));
+    const salesQuery = db.calls.slice(before).find(c => /GROUP BY CustId/.test(c.text));
+    assert.match(salesQuery.text, /CAST\(SalesEmpId AS VARCHAR\(20\)\) IN \(@raE0\)/);
+    assert.equal(salesQuery.inputs.raE0, '501');
+
+    before = db.calls.length;
+    const accounting = await app.call('GET', '/api/rebate/accrual', { user: { sub: 7, role: 'ACCOUNTING' } });
+    assert.equal(accounting.status, 200, JSON.stringify(accounting.body));
+    const accountingQuery = db.calls.slice(before).find(c => /GROUP BY CustId/.test(c.text));
+    assert.match(accountingQuery.text, /1=1/);
+  } finally {
+    delete users[5].EmpId;
+  }
+});
+
+test('O-4: a customer\'s delivery lots show only when the salesperson has a delivery there, and then whole', async () => {
+  users[5].EmpId = '501';
+  try {
+    accrualHasLot = false;
+    const none = await app.call('GET', '/api/rebate/accrual/1078', { user: { sub: 5, role: 'SALES' } });
+    assert.equal(none.status, 200);
+    assert.deepEqual(none.body, []);
+
+    accrualHasLot = true;
+    const before = db.calls.length;
+    const mine = await app.call('GET', '/api/rebate/accrual/1078', { user: { sub: 5, role: 'SALES' } });
+    assert.equal(mine.body.length, 1);
+    const lotsQuery = db.calls.slice(before).find(c => /ORDER BY SourceDocuDate ASC/.test(c.text));
+    assert.doesNotMatch(lotsQuery.text, /SalesEmpId AS VARCHAR/, 'a shared customer keeps every lot for first-in, first-out');
+  } finally {
+    delete users[5].EmpId;
+    accrualHasLot = true;
+  }
 });
 
 test('R12-4: MANAGER cannot Access As a higher rank', async () => {

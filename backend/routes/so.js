@@ -916,16 +916,9 @@ router.get('/rebate-balance/:custId', requireRebateAmountAccess, async (req, res
 });
 
 // ── GET /api/so/debug-sohd ──────────────────────────────────
-router.get('/debug-sohd', async (req, res) => {
-  try {
-    const r = await wfQuery(`SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='SOHD'`);
-    res.json(r.recordset);
-  } catch(e) { res.status(500).json({msg: e.message}); }
-});
-
 // ── GET /api/so/shipped-today — ออกของวันนี้ (สำหรับ Accounting)
 // returns dbo.SOHD records with DocuDate = today or clearflag set today
-router.get('/shipped-today', requireAuth, async (req, res) => {
+router.get('/shipped-today', requireAuth, requireRole('ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'), async (req, res) => {
   try {
     const dateStr = req.query.date || new Date().toISOString().substring(0, 10);
     const r = await wfQuery(`
