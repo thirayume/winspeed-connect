@@ -1,6 +1,6 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **2 November 2026 17:56 (ICT)**. This page records observed results;
+Operational snapshot: **2 November 2026 19:04 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
@@ -335,9 +335,8 @@ tolerance and the exception approver were settled by the owner on 31 October:
 | Owner | Item |
 |---|---|
 | Accounting | Post GL trial on UAT (WinSpeed's own Post GL step on the latest test 202/107; a read-only check is prepared) |
-| Accounting | Accept the AR report and the non-duplication reconciliation (owner deferred) |
-| Accounting | Confirm the 107 title ใบส่งของ for VAT-exempt documents, and the RB series mapping (S/T) |
-| Warehouse | One 104 printed on the real pre-printed stock |
+| Accounting | Countersign the checks Claude ran for them on UAT (below): the Post GL trial, the AR report, the 107 title and the RB series |
+| Warehouse | One 104 printed on the real pre-printed stock: needs a person, the paper and a printer, nothing else is open on it |
 | Warehouse | Accept stock case SO-19 during training: enter a figure for one product, then check the badge and the warning on the bill screen |
 | Factory | The two blocked scale cases (SO-17, SHP-05) and physical shipment evidence |
 | QA | Dry-run the three QA guides on UAT |
@@ -382,6 +381,19 @@ the owner's signed-in session showed the same reserved tons as the recheck query
 two checks that must stay zero. The push went straight to `uat`, so the CI steps ran locally first: backend tests,
 rehearsal, trace tests, frontend build, batch, shell, deployment-config and secret-file checks all passed. Integration
 test file `integration-so-06-07` still has not run in full, because its test accounts are closed on UAT.
+
+**Accounting's checks, run by Claude at the owner's request on UAT, 2 November 2026 evening.** WinSpeed's own Post GL
+(Batch) posted two test sets, four documents: the vouchers have the same shape as real October ones and no other
+document moved. WinSpeed's aging and outstanding-delivery reports count each ticket once, from its 202. A real
+customer's report total equals GL account 112100, and the whole company equals it with zero difference once the test
+documents not yet posted are added, starting from the ledger's own 31 December 2018 balance voucher; year ends 2021 to
+2025 also show zero, while 2018 to 2020 are off by about the same fixed amount until 2021. The 107 prints the same
+title and data as WinSpeed's default form, with four small differences in layout text. Series S and T go clearly with
+the people in the register once the salesperson is taken per year. SO-19 passes at the API and on screen, including a
+real save above the available figure, as a draft with no WinSpeed document; the warehouse role was checked at the API
+only, because every warehouse account on UAT is closed. Two fixes came out of this and are committed, not yet on UAT:
+the Sale-App AR aging report summed bookings and sales orders with no receipts, and the RB code assignment left S and
+T a few documents apart, close enough to swap. Accounting has not countersigned, and the real-paper 104 print is open.
 
 The push
 went straight to `uat`, so the promotion workflow's checks did not run; the backend tests, rehearsal, frontend
