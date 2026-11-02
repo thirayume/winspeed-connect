@@ -1,12 +1,13 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **3 November 2026 00:45 (ICT)**. This page records observed results;
+Operational snapshot: **3 November 2026 01:20 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
-**Running release: 1.0.3 on UAT (`ab6cc0e`) and Production (`a3643aa`, the same code plus a status note), 162 migrations.
-All native writers stay off on Production until QA passes (owner, 2 November 2026).**
+**Running release: 1.0.4 on UAT and Production (`c04119a`), 162 migrations. Production opens for staff at 06:00 on
+3 November 2026 in mixed mode (owner, 3 November 2026): quotations, bills, trips, 103, stock, reports and prints in
+Sale-App; AI, 104, 116 and 107 in WinSpeed. All native writers stay off.**
 Older paragraphs below are history.
 
 **Production check by role, 3 November 2026 00:40.** Six accounts were opened for a few minutes from the
@@ -15,12 +16,15 @@ every menu answered as each role's menu says, for SALES, WAREHOUSE, ACCOUNTING, 
 account saw only its own bills. The two refusals seen are by design: the rebate total for SALES and the
 ADMIN-only report templates. No COUNTER_SALES, WEIGHBRIDGE or APPROVER account exists on Production. Two faults
 came out: Access As into an account that must still change its password left the operator stuck on that account's
-password screen, and the reconciliation list had no role check. Both are fixed in 1.0.4, not yet deployed. The
-screens themselves are still to be walked by role on Production, which needs 1.0.4.
+password screen, and the reconciliation list had no role check. Both are fixed in 1.0.4, on Production since 01:07
+(receipt `20261103-010705-prod-apply-c04119a.txt`). The reconciliation list now answers 403 to SALES and WAREHOUSE.
+The five roles were then walked on screen on UAT and on Production: 76 menus opened on each, with no failed request,
+no script error, no write and no return trip stuck on the password screen. The first sign-in was checked on UAT with
+a throwaway account: forced change, writes blocked until then, new token works. The check's administrator-reset step
+could not run because UAT has no e2e account. Staff accounts remain closed until the owner runs the private script.
 
-**Native writers, 3 November 2026.** The owner asked to open real document issuing for 06:00. They were not
-switched on, and the owner's decision on the finding is pending: setting the flags only makes the buttons appear and
-fail on the target guards, and opening them means changing the guards that protect live accounting and building
+**Native writers, 3 November 2026.** The owner asked to open real document issuing for 06:00, then chose mixed mode
+after reading why it is not a switch: setting the flags only makes the buttons appear and fail on the target guards, and opening them means changing the guards that protect live accounting and building
 multi-line, partial and other-tax support. Under half of the last 90 days' 104s are single-line, which is all the
 current contract covers. `wf.sp_ConfirmSalesOrder` is identical on UAT and Production and has no target guard, so
 bills and 103s are not blocked; a real one has still never run on Production.
