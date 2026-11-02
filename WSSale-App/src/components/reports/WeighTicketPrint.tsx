@@ -24,7 +24,7 @@ const PRINT_CSS = `
   @page { size: A4 portrait; margin: 12mm; }
   body { margin: 0; padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body > :not(.report-modal-root) { display: none !important; }
-  .report-modal-root { display: block !important; position: static !important; }
+  .report-modal-root { display: block !important; position: static !important; padding: 0 !important; background: none !important; overflow: visible !important; }
   .report-print-area { width: 100%; margin: 0 !important; display: block !important; }
   .report-no-print { display: none !important; }
   .report-page { width: 100%; min-height: auto; box-shadow: none !important; border: 0 !important; }
