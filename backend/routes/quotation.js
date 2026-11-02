@@ -951,6 +951,7 @@ function nativeQuoteStatusSql(alias = 'qu', qcAlias = 'qc') {
 async function quotationParty(custId, salesUserId, nativeSoid) {
   const p = (await wfQuery(`
     SELECT c.CustCode, c.CustAddr1, c.CustAddr2, c.Amphur, c.Province, c.PostCode, c.ContTel, c.ContTel1,
+           LTRIM(RTRIM(CASE ISNULL(c.CustBillName,'') WHEN '' THEN ISNULL(NULLIF(RTRIM(c.CustTitle),'')+' ','')+ISNULL(c.CustName,'') ELSE c.CustBillName END)) AS CustDocName,
            COALESCE((SELECT TOP 1 DisplayName FROM wf.AppUser WHERE Id = @uid),
                     (SELECT TOP 1 e.EmpName FROM dbo.SOHD h WITH (NOLOCK) JOIN dbo.EMEmp e WITH (NOLOCK) ON e.EmpID = h.EmpID
                      WHERE h.SOID = @nsoid)) AS SalesName
@@ -962,6 +963,7 @@ async function quotationParty(custId, salesUserId, nativeSoid) {
   })).recordset?.[0] || {};
   return {
     CustCode: p.CustCode || null,
+    CustDocName: p.CustDocName || null,
     CustAddress: [p.CustAddr1, p.CustAddr2, p.Amphur, p.Province, p.PostCode]
       .map(v => String(v || '').trim()).filter(Boolean).join(' ') || null,
     CustTel: [p.ContTel1, p.ContTel].map(v => String(v || '').trim()).find(v => v && !/^tax/i.test(v)) || null,

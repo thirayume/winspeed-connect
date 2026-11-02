@@ -227,6 +227,12 @@ router.get('/document/:soId', requirePaperInScope, async (req, res) => {
       WHERE so.Id = @id
     `, { id: { type: sql.VarChar(50), value: soId } })).recordset[0];
     if (!hd) return res.status(404).json({ message: 'ไม่พบ SO' });
+    // the bill keeps the bare name; printed copies carry the title or billing name, as WinSpeed's own forms do
+    const party = (await wfQuery(`
+      SELECT LTRIM(RTRIM(CASE ISNULL(c.CustBillName,'') WHEN '' THEN ISNULL(NULLIF(RTRIM(c.CustTitle),'')+' ','')+ISNULL(c.CustName,'') ELSE c.CustBillName END)) AS CustDocName
+      FROM dbo.EMCust c WITH (NOLOCK) WHERE c.CustID = @cid`, {
+      cid: { type: sql.Int, value: /^\d+$/.test(String(hd.CustId || '').trim()) ? Number(hd.CustId) : null },
+    })).recordset?.[0];
     const lines = (await wfQuery(`
       SELECT LineNum, GoodCode, GoodName, QtyTon, QtyBag, PricePerTon, IsGiveaway, LoadSequence
       FROM wf.v_AllSalesOrderLines WHERE SoId = @id ORDER BY LineNum
@@ -258,7 +264,7 @@ router.get('/document/:soId', requirePaperInScope, async (req, res) => {
       }
     }
 
-    res.json({ ...hd, lines });
+    res.json({ ...hd, CustDocName: party?.CustDocName || null, lines });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 

@@ -686,6 +686,7 @@ export type PaperDocument = {
   WfRef: string;
   CustId: string;
   CustName: string;
+  CustDocName?: string | null;
   TruckPlate?: string;
   ControlTicketNo?: string;
   Status: string;

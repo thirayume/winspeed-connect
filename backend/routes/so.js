@@ -1109,7 +1109,8 @@ router.get('/:id', async (req, res) => {
     const party = (await wfQuery(`
       SELECT (SELECT TOP 1 DisplayName FROM wf.AppUser WHERE Id = @uid) AS SalesName,
              c.CustAddr1, c.CustAddr2, c.Amphur, c.Province, c.PostCode, c.ContTel, c.ContTel1,
-             c.BillState, c.BillDay, c.BillDate, c.BillWeek
+             c.BillState, c.BillDay, c.BillDate, c.BillWeek,
+             LTRIM(RTRIM(CASE ISNULL(c.CustBillName,'') WHEN '' THEN ISNULL(NULLIF(RTRIM(c.CustTitle),'')+' ','')+ISNULL(c.CustName,'') ELSE c.CustBillName END)) AS CustDocName
       FROM (SELECT 1 AS x) one
       LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON c.CustID = @cid`, {
       uid: { type: sql.Int, value: so.SalesUserId ? Number(so.SalesUserId) : null },
@@ -1129,6 +1130,7 @@ router.get('/:id', async (req, res) => {
       ...camelizeRow(so),
       salesName: party.SalesName || null,
       custAddress,
+      custDocName: party.CustDocName || null,
       custTel: phone,
       // ใบสั่งจองแสดงเงื่อนไขการวางบิลแบบเดียวกับฟอร์ม WinSpeed
       billTerms: require('../services/bill-terms').billTermsText(party) || null,

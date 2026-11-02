@@ -30,7 +30,7 @@ const PRINT_CSS = `
 }
 `;
 
-type PrintableQuote = Quotation & { CustCode?: string | null; CustAddress?: string | null; CustTel?: string | null };
+type PrintableQuote = Quotation & { CustDocName?: string | null; CustCode?: string | null; CustAddress?: string | null; CustTel?: string | null };
 
 const money = (n: unknown) => Number(n ?? 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const tons = (n: unknown) => Number(n ?? 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
@@ -131,7 +131,7 @@ export function QuotationPrintModal({ quoteId, onClose }: { quoteId: number; onC
 
               <div className="grid grid-cols-12 gap-2 text-xs mt-3 mb-3">
                 <div className="col-span-7 border border-black rounded p-2.5 space-y-1">
-                  <div className="flex"><span className="font-bold w-20 shrink-0">ลูกค้า</span><b>{quote.CustName}</b></div>
+                  <div className="flex"><span className="font-bold w-20 shrink-0">ลูกค้า</span><b>{quote.CustDocName || quote.CustName}</b></div>
                   <div className="flex"><span className="font-bold w-20 shrink-0">รหัสลูกค้า</span><span>{quote.CustCode || quote.CustId}</span></div>
                   <div className="flex"><span className="font-bold w-20 shrink-0">ที่อยู่</span><span>{quote.CustAddress || '-'}</span></div>
                   <div className="flex"><span className="font-bold w-20 shrink-0">โทร.</span><span>{quote.CustTel || '-'}</span></div>

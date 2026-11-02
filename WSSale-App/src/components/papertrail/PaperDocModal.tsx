@@ -166,7 +166,7 @@ export function PaperDocModal({ soIds, onClose }: { soIds: (string | number)[]; 
                         <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs mt-3 pb-3 border-b" style={{ borderColor: '#E5E7EB' }}>
                           <div><span className="text-gray-400">เลขที่เอกสาร:</span> <b className="font-mono text-gray-800 text-sm">{job.doc.WfRef}</b></div>
                           <div><span className="text-gray-400">วันที่จัดทำ:</span> <span className="font-medium text-gray-800">{fmtDate(job.doc.CreatedAt)}</span></div>
-                          <div className="col-span-2"><span className="text-gray-400">ชื่อลูกค้า:</span> <b className="text-gray-900 text-sm">{job.doc.CustName}</b></div>
+                          <div className="col-span-2"><span className="text-gray-400">ชื่อลูกค้า:</span> <b className="text-gray-900 text-sm">{job.doc.CustDocName || job.doc.CustName}</b></div>
                           <div><span className="text-gray-400">ทะเบียนรถ:</span> <span className="font-medium text-gray-800">{job.doc.TruckPlate || '-'}</span></div>
                           <div><span className="text-gray-400">ตั๋วคุม:</span> <span className="font-medium text-gray-800">{job.doc.ControlTicketNo || '-'}</span></div>
                           <div><span className="text-gray-400">พนักงานขาย:</span> <span className="font-medium text-gray-800">{job.doc.SalesName || '-'}</span></div>

@@ -166,7 +166,7 @@ export function SOBookingDocModal({
             wfRef: doc.wfRef || (doc as any).WfRef || (doc as any).SOID || String(doc.id || ''),
             soPrefix: doc.soPrefix || (doc as any).SoPrefix || 'I',
             custId: cId || '-',
-            custName: doc.custName || (doc as any).CustName || cMaster?.CustName || '-',
+            custName: (doc as any).custDocName || doc.custName || (doc as any).CustName || cMaster?.CustName || '-',
             // address and phone come from the bill (built from the customer master on the server); the old
             // fallbacks printed a tax id as address and phone, or World Fert's own address (UAT RPT-06)
             custAddress: (doc as any).custAddress || (doc as any).CustAddress || '-',
