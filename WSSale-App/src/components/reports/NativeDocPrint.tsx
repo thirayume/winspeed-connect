@@ -240,7 +240,7 @@ function InvoiceBody({ d }: { d: NativeInvoiceDoc }) {
           {d.Remark2 && line('', d.Remark2)}
           {d.Remark3 && line('', d.Remark3)}
         </div>
-        <table className="self-start">
+        <table className="w-full self-start">
           <tbody>
             {n(d.BillDiscAmnt) > 0 && sum('จำนวนเงิน', d.SumGoodAmnt)}
             {n(d.BillDiscAmnt) > 0 && sum('หักส่วนลด', d.BillDiscAmnt, d.BillDiscFormula)}

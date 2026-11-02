@@ -192,8 +192,8 @@
   opacity: 1;
 }
 
-/* Global Mobile Responsive Tables */
-@media (max-width: 1024px) {
+/* Global Mobile Responsive Tables: screen only, because an A4 page is narrower than 1024px and print would match too */
+@media screen and (max-width: 1024px) {
   table {
     display: block;
     max-width: 100%;
