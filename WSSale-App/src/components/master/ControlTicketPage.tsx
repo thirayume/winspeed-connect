@@ -611,7 +611,7 @@ export function ControlTicketPage() {
                       <ChevronRight size={14} className="text-gray-400" />
                       <span>2. ยืนยัน (AI)</span>
                       <ChevronRight size={14} className="text-gray-400" />
-                      <span>3. ส่งของ (104)</span>
+                      <span>3. ใบสั่งขาย (104)</span>
                       <ChevronRight size={14} className="text-gray-400" />
                       <span>4. คูปอง (C/D)</span>
                       <ChevronRight size={14} className="text-gray-400" />

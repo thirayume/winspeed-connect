@@ -112,9 +112,7 @@ test('cancelling an approved booking with no 104 takes it out of the WinSpeed lo
 test('a truck just weighed out counts: the scale keeps local time, so WGHD is not compared with UTC', () => {
   const fs = require('node:fs');
   const path = require('node:path');
-  const source = fs.readFileSync(path.join(__dirname, '../routes/so.js'), 'utf8');
-  const start = source.indexOf("'WGHD' AS EventSource");
-  const query = source.slice(start, source.indexOf('ORDER BY Id DESC', start));
-  assert.match(query, /DateOut <= DATEADD\(minute, 5, GETDATE\(\)\)/);
-  assert.doesNotMatch(query, /GETUTCDATE/);
+  const source = fs.readFileSync(path.join(__dirname, '../services/scale-events.js'), 'utf8');
+  assert.match(source, /w\.DateOut <= DATEADD\(minute, 5, GETDATE\(\)\)/);
+  assert.doesNotMatch(source, /minute, 5, GETUTCDATE/);
 });

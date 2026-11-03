@@ -272,6 +272,14 @@ router.get('/', async (req, res) => {
 });
 
 // PUT /api/stock — upsert (WAREHOUSE/MANAGER/ADMIN)
+// POST /api/stock/sync-winspeed — read the balances from WinSpeed now; figures typed by the warehouse stay
+router.post('/sync-winspeed', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (_req, res) => {
+  try {
+    const { syncStockFromWinSpeed } = require('../services/stock-sync');
+    res.json({ affected: await syncStockFromWinSpeed() });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
 router.put('/', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const { goodId, warehouseId, qtyOnHand, unit, source } = req.body || {};

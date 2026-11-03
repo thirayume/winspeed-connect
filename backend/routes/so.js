@@ -332,6 +332,7 @@ const { checkGiveawayQuota, quotaErrorMessage, linePieces } = require('../servic
 const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
 const { legacyCutoffInput, legacyCutoffSql } = require('../services/legacy-cutoff');
 const { nativeStatusSql, nativeDedupSql, findIssuedDelivery } = require('../services/native-status');
+const { findScaleEvent } = require('../services/scale-events');
 
 async function assertNoIssuedDelivery(so) {
   if (!so.ImportedDocuNo) return;
@@ -2648,7 +2649,7 @@ async function recoverPendingShipmentTasks(so, user, clientIp, details = {}) {
     { soId: { type: sql.VarChar(50), value: soIdStr } }
   );
   if (!existingAudit.recordset?.length) {
-    await audit(null, so.Id, actingUserId, 'SHIPPED', 'LOADED', 'SHIPPED', null, clientIp);
+    await audit(null, so.Id, actingUserId, 'SHIPPED', so.Status, 'SHIPPED', details.auditNote || null, clientIp);
     await writeAudit({
       screen: SCREEN.SO_SHIP, action: 'U', docuNo: so.WfRef,
       docuDate: so.CreatedAt, refId: so.Id, username: auditUser(user || { sub: actingUserId }),
@@ -2677,7 +2678,7 @@ async function recoverPendingShipmentTasks(so, user, clientIp, details = {}) {
       outboxRecovered = true;
     }
   } else {
-    await enqueue('SO_SHIPPED', so.Id, { soId: so.Id, netKg: details.finalNet, by: userId }, `SO_SHIPPED:${so.Id}`);
+    await enqueue('SO_SHIPPED', so.Id, { soId: so.Id, netKg: details.finalNet, by: actingUserId }, `SO_SHIPPED:${so.Id}`);
   }
 
   try {
@@ -2685,6 +2686,181 @@ async function recoverPendingShipmentTasks(so, user, clientIp, details = {}) {
   } catch { /* socket optional */ }
 
   return { rebateRecovered, outboxRecovered };
+}
+
+// Writes the shipment once under locks: weigh-out on the bill, the weigh ticket and the outbox row. Used by the warehouse's
+// button and by the scale sync; a truck the scale has already weighed out is not stopped by the load plan check.
+async function commitShipment({ so, tripId, gross, tare, net, scaleNo, movebill, userId, evalRes, overrideReason, overrideBy, overrideByName,
+  evidencePhotoUrl, enforceLoadPlan = true, faultHeader = null, shipSource = null, scaleEventId = null }) {
+  return wfTransaction(async (tx) => {
+      // 5.1 Lock SO record with UPDLOCK, ROWLOCK เพื่อป้องกัน concurrent shipping requests ชนกัน
+      const soLock = (await tx.request()
+        .input('id', sql.Int, Number(so.Id) || 0)
+        .query(`SELECT Id, Status, WfRef, TruckPlate, SalesUserId FROM wf.SalesOrder WITH (UPDLOCK, ROWLOCK) WHERE Id = @id`)
+      ).recordset?.[0];
+
+      const extLock = (await tx.request()
+        .input('soid', sql.VarChar(50), String(so.Id))
+        .query(`SELECT SOID, WeighOutWeight, TripId FROM wf.SalesOrderExt WITH (UPDLOCK, ROWLOCK) WHERE SOID = @soid`)
+      ).recordset?.[0];
+
+      // หากมีคำขอคู่ขนานที่ commit ไปก่อนแล้ว (In-Transaction Concurrency Recheck)
+      if (soLock?.Status === 'SHIPPED' || (extLock?.WeighOutWeight && Number(extLock.WeighOutWeight) > 0)) {
+        const existingTicket = (await tx.request()
+          .input('soId', sql.NVarChar(50), String(so.Id))
+          .query(`SELECT TOP 1 GrossKg, TareKg, NetKg, ScaleNo, Movebill, WeightStatus, WeighOutAt
+                  FROM wf.WeighTicket WITH (NOLOCK)
+                  WHERE SoId = @soId
+                  ORDER BY Id DESC`)
+        ).recordset?.[0];
+        return { isAlreadyShipped: true, existingTicketData: existingTicket };
+      }
+
+      // ป้องกัน duplicate ticket แม้สถานะ SO ยังไม่อัปเดต
+      const ticketExists = (await tx.request()
+        .input('soId', sql.NVarChar(50), String(so.Id))
+        .query(`SELECT TOP 1 GrossKg, TareKg, NetKg, ScaleNo, Movebill, WeightStatus, WeighOutAt
+                FROM wf.WeighTicket WITH (UPDLOCK, ROWLOCK)
+                WHERE SoId = @soId AND Status = 'DONE'
+                ORDER BY Id DESC`)
+      ).recordset?.[0];
+
+      if (ticketExists) {
+        return { isAlreadyShipped: true, existingTicketData: ticketExists };
+      }
+
+      // 5.2 ล็อก Trip และตรวจสอบสถานะ Load Plan ภายใน Transaction เดียวกัน
+      const activeTripId = extLock?.TripId || tripId;
+      if (activeTripId) {
+        const tripLock = (await tx.request()
+          .input('tid', sql.Int, Number(activeTripId))
+          .query(`SELECT LoadPlanStatus, LoadPlanRevision, WarehouseAckAt FROM wf.SalesTrip WITH (UPDLOCK, ROWLOCK) WHERE TripId = @tid`)).recordset?.[0];
+
+        if (enforceLoadPlan && tripLock && tripLock.LoadPlanStatus && !['WAREHOUSE_ACK', 'LOADING', 'COMPLETED'].includes(tripLock.LoadPlanStatus)) {
+          const err = new Error(`ไม่สามารถตัดส่งสินค้าได้: แผนการโหลดยังไม่ได้รับการยืนยันจากฝ่ายคลัง (สถานะแผนปัจจุบัน: ${tripLock.LoadPlanStatus || 'DRAFT'})`);
+          err.status = 400;
+          throw err;
+        }
+      }
+
+      // 5.3 อัปเดตข้อมูลน้ำหนักและสถานะอย่างมีเงื่อนไข (Conditional State Transition)
+      await tx.request()
+        .input('id', sql.VarChar(50), String(so.Id))
+        .input('weight', sql.Decimal(10, 2), gross)
+        .query(`UPDATE wf.SalesOrderExt SET WeighOutWeight = @weight, UpdatedAt = GETUTCDATE() WHERE SOID = @id`);
+
+      const updateSoRes = await tx.request()
+        .input('id', sql.Int, Number(so.Id) || 0)
+        .query(`UPDATE wf.SalesOrder SET Status = 'SHIPPED', UpdatedAt = GETUTCDATE() WHERE Id = @id AND Status != 'SHIPPED'`);
+
+      if (updateSoRes.rowsAffected?.[0] === 0 && soLock?.Status === 'SHIPPED') {
+        const existingTicket = (await tx.request()
+          .input('soId', sql.NVarChar(50), String(so.Id))
+          .query(`SELECT TOP 1 GrossKg, TareKg, NetKg, ScaleNo, Movebill, WeightStatus, WeighOutAt
+                  FROM wf.WeighTicket WITH (NOLOCK)
+                  WHERE SoId = @soId
+                  ORDER BY Id DESC`)
+        ).recordset?.[0];
+        return { isAlreadyShipped: true, existingTicketData: existingTicket };
+      }
+
+      // 5.4 บันทึกตั๋วชั่งออกจริงเพียงครั้งเดียว
+      await tx.request()
+        .input('so', sql.NVarChar(50), String(so.Id))
+        .input('ref', sql.NVarChar(30), so.WfRef || null)
+        .input('plate', sql.NVarChar(30), so.TruckPlate || null)
+        .input('gross', sql.Decimal(10, 2), gross)
+        .input('tare', sql.Decimal(10, 2), tare)
+        .input('net', sql.Decimal(10, 2), net)
+        .input('scale', sql.Int, scaleNo)
+        .input('mb', sql.NVarChar(50), movebill)
+        .input('uid', sql.Int, userId)
+        .input('expNet', sql.Decimal(12, 2), evalRes.expectedNetKg)
+        .input('varKg', sql.Decimal(12, 2), evalRes.varianceKg)
+        .input('varPct', sql.Decimal(6, 2), evalRes.variancePct)
+        .input('wStatus', sql.NVarChar(20), evalRes.status)
+        .input('ovReason', sql.NVarChar(500), overrideReason || null)
+        .input('ovApprovedBy', sql.Int, overrideBy)
+        .input('ovApprovedByName', sql.NVarChar(100), overrideByName)
+        .input('evidencePhoto', sql.NVarChar(sql.MAX), evidencePhotoUrl || null)
+        .input('shipSource', sql.VarChar(20), shipSource)
+        .input('scaleEventId', sql.Int, scaleEventId)
+        .query(`
+          INSERT INTO wf.WeighTicket (
+            SoId, WfRef, TruckPlate, GrossKg, TareKg, NetKg, ScaleNo, WeighOutAt, Status, Movebill, CreatedBy,
+            ExpectedNetKg, VarianceKg, VariancePct, WeightStatus,
+            OverrideReason, OverrideApprovedBy, OverrideApprovedByName, EvidencePhotoUrl, ShipSource, ScaleEventId
+          )
+          VALUES (
+            @so, @ref, @plate, @gross, @tare, @net, @scale, GETUTCDATE(), 'DONE', @mb, @uid,
+            @expNet, @varKg, @varPct, @wStatus,
+            @ovReason, @ovApprovedBy, @ovApprovedByName, @evidencePhoto, @shipSource, @scaleEventId
+          )
+        `);
+
+      // 5.5 บันทึก Durable Outbox Event (สถานะ PENDING) ภายใน Transaction เดียวกัน
+      // หาก Transaction นี้ Commit ได้ งานส่งต่อและรีเบทจะมีหลักฐานคงทนให้กู้คืนเสมอ
+      const outboxPayload = JSON.stringify({ soId: so.Id, netKg: net, by: userId });
+      await tx.request()
+        .input('t', sql.NVarChar(60), 'SO_SHIPPED')
+        .input('a', sql.NVarChar(60), String(so.Id))
+        .input('p', sql.NVarChar(sql.MAX), outboxPayload)
+        .input('k', sql.NVarChar(120), `SO_SHIPPED:${so.Id}`)
+        .query(`
+          IF NOT EXISTS (SELECT 1 FROM wf.OutboxEvent WHERE IdempotencyKey = @k)
+          BEGIN
+            INSERT INTO wf.OutboxEvent (EventType, AggregateId, Payload, IdempotencyKey, Status, CreatedAt)
+            VALUES (@t, @a, @p, @k, 'PENDING', GETUTCDATE())
+          END
+        `);
+
+      // 5.6 Fault Injection: ทดสอบ Rollback ระหว่างเขียนจริง (Non-production only)
+      if (process.env.NODE_ENV !== 'production' && faultHeader === 'mid_write_rollback') {
+        const err = new Error('FAULT_INJECTION_MID_WRITE_ROLLBACK');
+        err.status = 500;
+        throw err;
+      }
+
+      return { isAlreadyShipped: false };
+  });
+}
+
+// The scale has weighed out this bill's truck and the record checks out: close the bill without anyone pressing a button.
+async function autoShipFromScale(soId, event) {
+  const so = await getSoOrThrow(soId);
+  if (!['CONFIRMED', 'PENDING_APPROVAL', 'PICKING', 'LOADED'].includes(so.Status)) return { shipped: false, status: so.Status };
+  const extInfo = await ensureSalesOrderExt(so.Id);
+  if (!so.SalesUserId && extInfo.salesUserId) so.SalesUserId = extInfo.salesUserId;
+  const tripId = extInfo?.tripId || so.TripId || null;
+  const { evaluateWeight } = require('../services/weight-reconciliation');
+  const evalRes = await evaluateWeight(so.Id, Number(event.NetKg), { expectedKg: Number(event.PlannedTon) * 1000 || null });
+  const actor = { sub: so.SalesUserId, username: 'SCALE-SYNC' };
+  const txResult = await commitShipment({
+    so, tripId, gross: Number(event.GrossKg), tare: Number(event.TareKg), net: Number(event.NetKg),
+    scaleNo: event.ScaleNo != null ? Number(event.ScaleNo) : 1, movebill: event.MoveBill || null,
+    userId: so.SalesUserId, evalRes, overrideReason: null, overrideBy: null, overrideByName: null, evidencePhotoUrl: null,
+    enforceLoadPlan: false, shipSource: 'SCALE_AUTO', scaleEventId: event.EventId,
+  });
+  if (txResult?.isAlreadyShipped) return { shipped: false, status: 'SHIPPED' };
+  await recoverPendingShipmentTasks(so, actor, 'scale-sync', {
+    finalNet: Number(event.NetKg), evalRes, verifiedEvent: event,
+    auditNote: `อัตโนมัติจากบันทึกชั่ง เลขที่ ${event.EventId}`,
+  });
+  await noteLoadPlanNotAcknowledged(so, tripId, event);
+  return { shipped: true, status: 'SHIPPED' };
+}
+router.autoShipFromScale = autoShipFromScale;
+
+// the truck left before the warehouse acknowledged the load plan: allowed, because it has gone, but kept for review
+async function noteLoadPlanNotAcknowledged(so, tripId, event) {
+  if (!tripId || !event?.EventId) return;
+  const trip = (await wfQuery(`SELECT LoadPlanStatus FROM wf.SalesTrip WHERE TripId = @tid`, { tid: { type: sql.Int, value: Number(tripId) } })).recordset?.[0];
+  if (!trip?.LoadPlanStatus || ['WAREHOUSE_ACK', 'LOADING', 'COMPLETED'].includes(trip.LoadPlanStatus)) return;
+  const { recordIncident } = require('../services/rule-incidents');
+  await recordIncident({
+    key: `SHIP_BEFORE_LOAD_ACK:${event.EventId}`, type: 'SHIP_BEFORE_LOAD_ACK', soid: Number(so.Id), docuNo: so.WfRef,
+    wghdId: event.EventId, occurredAt: event.WeighOutAt, detail: `สถานะแผนจัดของ ${trip.LoadPlanStatus}`,
+  });
 }
 
 // ── PATCH /api/so/:id/ship — โอนข้อมูลสมบูรณ์ (Scale) ──────
@@ -2696,7 +2872,10 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'MANAGER', 'AD
     try { await assertInitialAiShipmentReady(so.Id); }
     catch(e){return res.status(e.status||503).json({code:e.code,
       message:e.code==='AI_DOWNSTREAM_NOT_READY' ? 'ใบนี้อนุมัติ AI ผ่านรอบ UAT แล้ว แต่ขั้น 104/116 ยังไม่พร้อมให้ส่งสินค้า' : 'ไม่สามารถตรวจสอบความพร้อมก่อนส่งสินค้าได้'});}
-    if (!['LOADED','SHIPPED'].includes(so.Status)) {
+    // a truck the scale has weighed out has left, whatever step the bill reached in the app
+    const scaleEvent = await findScaleEvent(so.Id);
+    const closableByScale = Boolean(scaleEvent) && ['CONFIRMED', 'PENDING_APPROVAL', 'PICKING'].includes(so.Status);
+    if (!['LOADED','SHIPPED'].includes(so.Status) && !closableByScale) {
       throw Object.assign(new Error(`SO ต้องอยู่ใน LOADED หรือ SHIPPED (ปัจจุบัน: ${so.Status})`),{status:400});
     }
 
@@ -2727,12 +2906,7 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'MANAGER', 'AD
       });
     }
 
-    // ห้ามตัดส่งสินค้าหากใบสั่งขายติด Native Pending Approval (AppvFlag = 'W' และยังไม่มี AppvDocuNo)
-    if (so.AppvFlag === 'W' && !so.AppvDocuNo) {
-      return res.status(400).json({
-        message: 'ไม่สามารถตัดส่งสินค้าได้: ใบสั่งขายนี้อยู่ระหว่างรออนุมัติ (Pending Approval) ต้องได้รับอนุมัติก่อนตัดส่ง'
-      });
-    }
+    // A truck may leave before WinSpeed approves its booking (owner, 3 November 2026): wf.RuleIncident keeps the record.
 
     const { weighOutWeight, tareKg, scaleNo, movebill, overrideReason, evidencePhotoUrl } = req.body || {};
 
@@ -2758,7 +2932,7 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'MANAGER', 'AD
         FROM wf.SalesTrip WHERE TripId = @tid
       `, { tid: { type: sql.Int, value: Number(tripId) } })).recordset?.[0];
 
-      if (tripCheck && tripCheck.LoadPlanStatus && !['WAREHOUSE_ACK', 'LOADING', 'COMPLETED'].includes(tripCheck.LoadPlanStatus)) {
+      if (!scaleEvent && tripCheck && tripCheck.LoadPlanStatus && !['WAREHOUSE_ACK', 'LOADING', 'COMPLETED'].includes(tripCheck.LoadPlanStatus)) {
         return res.status(400).json({
           message: `ไม่สามารถตัดส่งสินค้าได้: แผนการโหลดยังไม่ได้รับการยืนยันจากฝ่ายคลัง (สถานะแผนปัจจุบัน: ${tripCheck.LoadPlanStatus || 'DRAFT'})`,
           loadPlanStatus: tripCheck.LoadPlanStatus
@@ -2775,49 +2949,13 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'MANAGER', 'AD
 
     let verifiedEvent = null;
 
-    // 2.1 ตรวจสอบตารางชั่งจริง native (dbo.WGHD) ด้วย SPID (typed SOHD.SOID)
-    // the scale writes DateOut in local time; against UTC every truck out in the last 7 hours read as still to come
-    if (soIdInt != null) {
-      const wghdRes = await wfQuery(`
-        SELECT TOP 1 
-          'WGHD' AS EventSource,
-          Id AS EventId,
-          MoveBill,
-          CarNo AS TruckPlate,
-          CAST(WeightOut AS DECIMAL(10,2)) AS GrossKg,
-          CAST(WeightIn AS DECIMAL(10,2)) AS TareKg,
-          CAST(ISNULL(WeightNet, WeightOut - WeightIn) AS DECIMAL(10,2)) AS NetKg,
-          CASE 
-            WHEN LocationName IS NOT NULL 
-             AND LTRIM(RTRIM(LocationName)) NOT LIKE '%[^0-9]%' 
-             AND LTRIM(RTRIM(LocationName)) <> '' 
-             AND (
-               LEN(LTRIM(RTRIM(LocationName))) <= 9
-               OR (LEN(LTRIM(RTRIM(LocationName))) = 10 AND CAST(LTRIM(RTRIM(LocationName)) AS BIGINT) <= 2147483647)
-             )
-            THEN CAST(LTRIM(RTRIM(LocationName)) AS INT) 
-            ELSE NULL 
-          END AS ScaleNo,
-          DateOut AS WeighOutAt
-        FROM dbo.WGHD WITH (NOLOCK)
-        WHERE WGType = 'SO'
-          AND SPID = @soIdInt
-          AND (Status = '3' OR Status = 3)
-          AND WeightOut > 0
-          AND WeightIn > 0
-          AND WeightOut > WeightIn
-          AND DateOut IS NOT NULL
-          AND DateOut <= DATEADD(minute, 5, GETDATE())
-        ORDER BY Id DESC
-      `, { soIdInt: { type: sql.Int, value: soIdInt } });
-
-      if (wghdRes.recordset?.length > 0) {
-        verifiedEvent = wghdRes.recordset[0];
-      }
-    }
+    // 2.1 the scale record. A manager who says it is wrong records the weights by hand instead.
+    const canOverrule = ['MANAGER', 'ADMIN', 'C_LEVEL'].includes(req.user.role);
+    const overrulesScale = canOverrule && Boolean(overrideReason && overrideReason.trim()) && Boolean(evidencePhotoUrl);
+    if (scaleEvent && !overrulesScale) verifiedEvent = scaleEvent;
 
     // 2.2 ตรวจสอบ wf.WeighTicket ที่ผูกด้วย SoId จริง และต้องไม่มี OverrideApprovedBy
-    if (!verifiedEvent) {
+    if (!verifiedEvent && !overrulesScale) {
       const ticketRes = await wfQuery(`
         SELECT TOP 1
           'WEIGH_TICKET' AS EventSource,
@@ -2925,137 +3063,14 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'MANAGER', 'AD
 
     // คำนวณ reconciliation และ tolerance status จาก weight-reconciliation service
     const { evaluateWeight } = require('../services/weight-reconciliation');
-    const evalRes = await evaluateWeight(so.Id, finalNet);
+    const evalRes = await evaluateWeight(so.Id, finalNet, { expectedKg: verifiedEvent?.PlannedTon ? Number(verifiedEvent.PlannedTon) * 1000 : null });
 
     // 5. Transaction Boundary: ล็อกและบันทึกการส่งสินค้าพร้อมกัน ป้องกันการแก้ไขแผนระหว่างชั่ง และป้องกัน Concurrent Duplicate Writes
-    const txResult = await wfTransaction(async (tx) => {
-      // 5.1 Lock SO record with UPDLOCK, ROWLOCK เพื่อป้องกัน concurrent shipping requests ชนกัน
-      const soLock = (await tx.request()
-        .input('id', sql.Int, Number(so.Id) || 0)
-        .query(`SELECT Id, Status, WfRef, TruckPlate, SalesUserId FROM wf.SalesOrder WITH (UPDLOCK, ROWLOCK) WHERE Id = @id`)
-      ).recordset?.[0];
-
-      const extLock = (await tx.request()
-        .input('soid', sql.VarChar(50), String(so.Id))
-        .query(`SELECT SOID, WeighOutWeight, TripId FROM wf.SalesOrderExt WITH (UPDLOCK, ROWLOCK) WHERE SOID = @soid`)
-      ).recordset?.[0];
-
-      // หากมีคำขอคู่ขนานที่ commit ไปก่อนแล้ว (In-Transaction Concurrency Recheck)
-      if (soLock?.Status === 'SHIPPED' || (extLock?.WeighOutWeight && Number(extLock.WeighOutWeight) > 0)) {
-        const existingTicket = (await tx.request()
-          .input('soId', sql.NVarChar(50), String(so.Id))
-          .query(`SELECT TOP 1 GrossKg, TareKg, NetKg, ScaleNo, Movebill, WeightStatus, WeighOutAt
-                  FROM wf.WeighTicket WITH (NOLOCK)
-                  WHERE SoId = @soId
-                  ORDER BY Id DESC`)
-        ).recordset?.[0];
-        return { isAlreadyShipped: true, existingTicketData: existingTicket };
-      }
-
-      // ป้องกัน duplicate ticket แม้สถานะ SO ยังไม่อัปเดต
-      const ticketExists = (await tx.request()
-        .input('soId', sql.NVarChar(50), String(so.Id))
-        .query(`SELECT TOP 1 GrossKg, TareKg, NetKg, ScaleNo, Movebill, WeightStatus, WeighOutAt
-                FROM wf.WeighTicket WITH (UPDLOCK, ROWLOCK)
-                WHERE SoId = @soId AND Status = 'DONE'
-                ORDER BY Id DESC`)
-      ).recordset?.[0];
-
-      if (ticketExists) {
-        return { isAlreadyShipped: true, existingTicketData: ticketExists };
-      }
-
-      // 5.2 ล็อก Trip และตรวจสอบสถานะ Load Plan ภายใน Transaction เดียวกัน
-      const activeTripId = extLock?.TripId || tripId;
-      if (activeTripId) {
-        const tripLock = (await tx.request()
-          .input('tid', sql.Int, Number(activeTripId))
-          .query(`SELECT LoadPlanStatus, LoadPlanRevision, WarehouseAckAt FROM wf.SalesTrip WITH (UPDLOCK, ROWLOCK) WHERE TripId = @tid`)).recordset?.[0];
-
-        if (tripLock && tripLock.LoadPlanStatus && !['WAREHOUSE_ACK', 'LOADING', 'COMPLETED'].includes(tripLock.LoadPlanStatus)) {
-          const err = new Error(`ไม่สามารถตัดส่งสินค้าได้: แผนการโหลดยังไม่ได้รับการยืนยันจากฝ่ายคลัง (สถานะแผนปัจจุบัน: ${tripLock.LoadPlanStatus || 'DRAFT'})`);
-          err.status = 400;
-          throw err;
-        }
-      }
-
-      // 5.3 อัปเดตข้อมูลน้ำหนักและสถานะอย่างมีเงื่อนไข (Conditional State Transition)
-      await tx.request()
-        .input('id', sql.VarChar(50), String(so.Id))
-        .input('weight', sql.Decimal(10, 2), finalGross)
-        .query(`UPDATE wf.SalesOrderExt SET WeighOutWeight = @weight, UpdatedAt = GETUTCDATE() WHERE SOID = @id`);
-
-      const updateSoRes = await tx.request()
-        .input('id', sql.Int, Number(so.Id) || 0)
-        .query(`UPDATE wf.SalesOrder SET Status = 'SHIPPED', UpdatedAt = GETUTCDATE() WHERE Id = @id AND Status != 'SHIPPED'`);
-
-      if (updateSoRes.rowsAffected?.[0] === 0 && soLock?.Status === 'SHIPPED') {
-        const existingTicket = (await tx.request()
-          .input('soId', sql.NVarChar(50), String(so.Id))
-          .query(`SELECT TOP 1 GrossKg, TareKg, NetKg, ScaleNo, Movebill, WeightStatus, WeighOutAt
-                  FROM wf.WeighTicket WITH (NOLOCK)
-                  WHERE SoId = @soId
-                  ORDER BY Id DESC`)
-        ).recordset?.[0];
-        return { isAlreadyShipped: true, existingTicketData: existingTicket };
-      }
-
-      // 5.4 บันทึกตั๋วชั่งออกจริงเพียงครั้งเดียว
-      await tx.request()
-        .input('so', sql.NVarChar(50), String(so.Id))
-        .input('ref', sql.NVarChar(30), so.WfRef || null)
-        .input('plate', sql.NVarChar(30), so.TruckPlate || null)
-        .input('gross', sql.Decimal(10, 2), finalGross)
-        .input('tare', sql.Decimal(10, 2), finalTare)
-        .input('net', sql.Decimal(10, 2), finalNet)
-        .input('scale', sql.Int, finalScaleNo)
-        .input('mb', sql.NVarChar(50), finalMovebill)
-        .input('uid', sql.Int, req.user.sub)
-        .input('expNet', sql.Decimal(12, 2), evalRes.expectedNetKg)
-        .input('varKg', sql.Decimal(12, 2), evalRes.varianceKg)
-        .input('varPct', sql.Decimal(6, 2), evalRes.variancePct)
-        .input('wStatus', sql.NVarChar(20), evalRes.status)
-        .input('ovReason', sql.NVarChar(500), overrideReason || null)
-        .input('ovApprovedBy', sql.Int, finalOverrideApprovedBy)
-        .input('ovApprovedByName', sql.NVarChar(100), finalOverrideApprovedByName)
-        .input('evidencePhoto', sql.NVarChar(sql.MAX), evidencePhotoUrl || null)
-        .query(`
-          INSERT INTO wf.WeighTicket (
-            SoId, WfRef, TruckPlate, GrossKg, TareKg, NetKg, ScaleNo, WeighOutAt, Status, Movebill, CreatedBy,
-            ExpectedNetKg, VarianceKg, VariancePct, WeightStatus,
-            OverrideReason, OverrideApprovedBy, OverrideApprovedByName, EvidencePhotoUrl
-          )
-          VALUES (
-            @so, @ref, @plate, @gross, @tare, @net, @scale, GETUTCDATE(), 'DONE', @mb, @uid,
-            @expNet, @varKg, @varPct, @wStatus,
-            @ovReason, @ovApprovedBy, @ovApprovedByName, @evidencePhoto
-          )
-        `);
-
-      // 5.5 บันทึก Durable Outbox Event (สถานะ PENDING) ภายใน Transaction เดียวกัน
-      // หาก Transaction นี้ Commit ได้ งานส่งต่อและรีเบทจะมีหลักฐานคงทนให้กู้คืนเสมอ
-      const outboxPayload = JSON.stringify({ soId: so.Id, netKg: finalNet, by: req.user.sub });
-      await tx.request()
-        .input('t', sql.NVarChar(60), 'SO_SHIPPED')
-        .input('a', sql.NVarChar(60), String(so.Id))
-        .input('p', sql.NVarChar(sql.MAX), outboxPayload)
-        .input('k', sql.NVarChar(120), `SO_SHIPPED:${so.Id}`)
-        .query(`
-          IF NOT EXISTS (SELECT 1 FROM wf.OutboxEvent WHERE IdempotencyKey = @k)
-          BEGIN
-            INSERT INTO wf.OutboxEvent (EventType, AggregateId, Payload, IdempotencyKey, Status, CreatedAt)
-            VALUES (@t, @a, @p, @k, 'PENDING', GETUTCDATE())
-          END
-        `);
-
-      // 5.6 Fault Injection: ทดสอบ Rollback ระหว่างเขียนจริง (Non-production only)
-      if (process.env.NODE_ENV !== 'production' && req.headers['x-test-fault-injection'] === 'mid_write_rollback') {
-        const err = new Error('FAULT_INJECTION_MID_WRITE_ROLLBACK');
-        err.status = 500;
-        throw err;
-      }
-
-      return { isAlreadyShipped: false };
+    const txResult = await commitShipment({
+      so, tripId, gross: finalGross, tare: finalTare, net: finalNet, scaleNo: finalScaleNo, movebill: finalMovebill,
+      userId: req.user.sub, evalRes, overrideReason, overrideBy: finalOverrideApprovedBy, overrideByName: finalOverrideApprovedByName,
+      evidencePhotoUrl, enforceLoadPlan: !verifiedEvent, faultHeader: req.headers['x-test-fault-injection'],
+      shipSource: verifiedEvent ? 'WAREHOUSE' : 'MANAGER', scaleEventId: verifiedEvent?.EventSource === 'WGHD' ? verifiedEvent.EventId : null,
     });
 
     // 5.7 Fault Injection: ทดสอบ Post-Commit Delivery Failure ก่อนทำ side-effects (Non-production only)
@@ -3082,6 +3097,7 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'MANAGER', 'AD
 
     // ประมวลผลงานต่อเนื่องหลัง Commit แบบ Idempotent พร้อมอัปเดตสถานะ Outbox
     const recovery = await recoverPendingShipmentTasks(so, req.user, req.ip, { finalNet, evalRes, verifiedEvent });
+    if (verifiedEvent?.EventSource === 'WGHD') await noteLoadPlanNotAcknowledged(so, tripId, verifiedEvent);
     res.json({
       id: so.Id,
       status: 'SHIPPED',

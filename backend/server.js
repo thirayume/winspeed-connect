@@ -41,6 +41,9 @@ if (backgroundWorkersDisabled) {
   require('./services/outbox').startWorker();
 
 }
+// reads the scale, WinSpeed and this database only, so it also runs on UAT
+require('./services/scale-ship-sync').start();
+
 // CORS — supports comma-separated origins or '*'
 // Set CORS_ORIGIN in env, e.g.: https://app.example.com,http://localhost:5173
 const rawOrigins = (process.env.CORS_ORIGIN || '*').split(',').map(s => s.trim());
@@ -138,6 +141,7 @@ app.use('/api/policy', require('./routes/policy'));
 app.use('/api/pricebook', require('./routes/pricebook'));
 app.use('/api/credit', require('./routes/credit'));
 app.use('/api/stock', require('./routes/stock'));
+app.use('/api/incidents', require('./routes/incidents'));
 app.use('/api/coupons', require('./routes/coupons'));
 app.use('/api/pdpa', require('./routes/pdpa'));
 app.use('/api/line', require('./routes/line').router);

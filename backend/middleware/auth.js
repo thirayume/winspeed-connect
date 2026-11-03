@@ -182,7 +182,7 @@ function requireCapability(action) {
 // Owner 2026-10-09: a salesperson sees no rebate amount anywhere, on bills (D1) or on the rebate page. SALES keeps the
 // rebate page for their own pools, claims and delivery lots, with every baht figure removed (hideRebateMoneyFromSales).
 const REBATE_ALL_ROLES = ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'C_LEVEL'];
-const REBATE_OWN_ROLES = ['SALES'];
+const REBATE_OWN_ROLES = ['SALES', 'COUNTER_SALES'];
 
 function canViewAllRebateAmounts(user) {
   return REBATE_ALL_ROLES.includes(user?.role);

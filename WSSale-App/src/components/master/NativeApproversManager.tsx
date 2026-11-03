@@ -56,7 +56,7 @@ export function NativeApproversManager() {
     <div className="space-y-3 p-4">
       <div className="flex flex-wrap items-center gap-3">
         <h3 className="flex items-center gap-2 text-base font-semibold" style={{ color: NAVY }}>
-          <UserCheck size={18} /> ผู้อนุมัติเอกสาร WinSpeed (ใบ 116)
+          <UserCheck size={18} /> ผู้อนุมัติเอกสาร WinSpeed (ใบตัดตั๋วปุ๋ย 116)
         </h3>
         <span className="text-xs text-gray-500">
           พนักงานทั้งหมด {rows.length} · ใช้อนุมัติได้ {enabledCount} · ปิดไว้ {rows.length - enabledCount}
@@ -70,7 +70,7 @@ export function NativeApproversManager() {
       </div>
 
       <p className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-600">
-        ผู้อนุมัติคำขอใบ 116 ต้องผูกกับพนักงานที่<b>ใช้อนุมัติได้</b>ในรายการนี้ ระบบใส่พนักงานทุกคนไว้ก่อน ให้ปิดคนที่ไม่ใช่ผู้อนุมัติ ·
+        ผู้อนุมัติคำขอใบตัดตั๋วปุ๋ย (116) ต้องผูกกับพนักงานที่<b>ใช้อนุมัติได้</b>ในรายการนี้ ระบบใส่พนักงานทุกคนไว้ก่อน ให้ปิดคนที่ไม่ใช่ผู้อนุมัติ ·
         ข้อมูลพนักงานมาจาก WinSpeed แก้ที่ WinSpeed · ปิดแล้วเปิดกลับได้ และระบบเก็บประวัติทุกครั้ง
       </p>
 

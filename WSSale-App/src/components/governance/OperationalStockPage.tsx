@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Boxes, Save } from 'lucide-react';
-import { fetchStock, setStock, fetchAtpStock, fetchGoods, type StockRow, type AtpStockRow } from '../../services/api';
+import { fetchStock, setStock, syncStockFromWinSpeed, fetchAtpStock, fetchGoods, type StockRow, type AtpStockRow } from '../../services/api';
 import type { EMGood } from '../../types';
 
 const STATE_LABEL: Record<AtpStockRow['state'], { text: string; cls: string }> = {
@@ -35,9 +35,15 @@ export function StockTab() {
     try { await setStock({ goodId: f.goodId, qtyOnHand: Number(f.qtyOnHand), unit: 'ตัน' }); setF({ goodId: '', qtyOnHand: '' }); await load(); }
     catch (e: unknown) { alert((e as Error).message); } finally { setBusy(false); }
   }
+  async function syncNow() {
+    setBusy(true);
+    try { await syncStockFromWinSpeed(); await load(); }
+    catch (e: unknown) { alert((e as Error).message); } finally { setBusy(false); }
+  }
   return (
     <div className="space-y-4">
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-700">ยอดนี้คลังเป็นผู้ป้อนเอง ไม่ได้ดึงจาก WinSpeed ใช้แสดงสถานะและเตือนฝ่ายขายเท่านั้น ไม่ได้ห้ามออกบิล ถ้าไม่อัปเดตเกินกำหนดระบบจะแสดงว่าข้อมูลไม่ชัดเจน ยอดจองนับจากใบจองที่ยังเปิดใน WinSpeed ไม่รวมรถที่ชั่งออกแล้ว จึงอาจสูงเกินจริงจนกว่าจะปิดใบจองค้างเก่า และยังไม่หักตั๋วปุ๋ยที่ขายแล้วแต่ยังไม่เบิก</div>
+      <div className="flex justify-end"><button data-testid="stock-sync" onClick={syncNow} disabled={busy} className="px-3 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-bold text-[#0C447C] disabled:opacity-50">อ่านยอดจาก WinSpeed ตอนนี้</button></div>
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-700">ยอดคงเหลืออ่านจาก WinSpeed ทุก 30 นาที ยอดนี้ช้ากว่าของจริงจนกว่าบัญชีจะออกใบส่งของ (107) ถ้าคลังป้อนยอดเอง ระบบจะใช้ยอดที่ป้อนแทน ใช้แสดงสถานะและเตือนฝ่ายขายเท่านั้น ไม่ได้ห้ามออกบิล</div>
       <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4">
         <div className="text-sm font-semibold text-gray-700 mb-3">ป้อน/แก้สต๊อก</div>
         <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_10rem_auto] gap-2 items-end">
@@ -68,7 +74,7 @@ export function StockTab() {
                   <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">{fmt(a?.unallocatedDemand)}</td>
                   <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">{fmt(a?.totalAvailable)}</td>
                   <td className="px-4 py-3 text-center whitespace-nowrap" title={a?.stateReason || undefined}>{label ? <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${label.cls}`}>{label.text}</span> : '—'}</td>
-                  <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{s.AsOf ? new Date(s.AsOf).toLocaleString('th-TH') : ''} {s.UpdatedByName ? `· ${s.UpdatedByName}` : ''}</td>
+                  <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{s.Source === 'WINSPEED' ? 'WinSpeed · ' : s.Source ? 'คลังลงเอง · ' : ''}{s.AsOf ? new Date(s.AsOf).toLocaleString('th-TH') : ''} {s.UpdatedByName ? `· ${s.UpdatedByName}` : ''}</td>
                 </tr>
               );
             })}

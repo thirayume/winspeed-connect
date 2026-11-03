@@ -19,7 +19,7 @@ type FinanceDocument = {
 
 function financeDocumentLabel(docuType: number): string {
   if (docuType === 202) return 'เอกสารลูกหนี้ (202)';
-  if (docuType === 107) return 'Invoice / ใบกำกับภาษี (107)';
+  if (docuType === 107) return 'ใบส่งของ (107)';
   return `เอกสารการเงิน (${docuType})`;
 }
 

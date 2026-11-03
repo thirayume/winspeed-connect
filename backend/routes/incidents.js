@@ -1,0 +1,163 @@
+'use strict';
+
+/**
+ * Rule incidents: the list, one incident with everyone involved from the first document to the last, and its review.
+ */
+const router = require('express').Router();
+const { sql, wfQuery } = require('../db');
+const { requireAuth, requireRole } = require('../middleware/auth');
+const { getVisibleScope, inScope } = require('../services/visible-scope');
+const { INCIDENT_TYPES } = require('../services/rule-incidents');
+const { MENUS } = require('../services/role-capabilities');
+
+router.use(requireAuth);
+
+const VIEW_ROLES = MENUS.incidents;
+const REVIEW_ROLES = ['MANAGER', 'ACCOUNTING', 'C_LEVEL', 'ADMIN'];
+
+// Screens WinSpeed writes to SMAudit, in plain words for the timeline.
+const WS_SCREENS = Object.freeze({
+  2098003048: 'ใบสั่งจอง (103)',
+  2098003080: 'อนุมัติใบสั่งจอง (AI)',
+  2098003049: 'ใบสั่งขาย (104)',
+  2098003052: 'ตัดตั๋วปุ๋ย (116)',
+  2098003054: 'ใบส่งของ (107)',
+  558: 'Post GL',
+});
+const WS_ACTIONS = Object.freeze({ I: 'บันทึก', U: 'แก้ไข/อนุมัติ', D: 'ลบ', P: 'พิมพ์' });
+
+const typeLabel = t => INCIDENT_TYPES[t]?.label || t;
+
+router.get('/types', requireRole(...VIEW_ROLES), (_req, res) => {
+  res.json(Object.entries(INCIDENT_TYPES).map(([type, v]) => ({ type, ...v })));
+});
+
+router.get('/', requireRole(...VIEW_ROLES), async (req, res) => {
+  try {
+    const { status, type, from, to, search } = req.query;
+    const where = ['1=1'];
+    const inputs = {};
+    if (status && ['OPEN', 'ACK'].includes(status)) { where.push('i.Status = @status'); inputs.status = { type: sql.VarChar(12), value: status }; }
+    if (type && INCIDENT_TYPES[type]) { where.push('i.IncidentType = @type'); inputs.type = { type: sql.VarChar(40), value: type }; }
+    if (from && /^\d{4}-\d{2}-\d{2}$/.test(from)) { where.push('i.OccurredAt >= @from'); inputs.from = { type: sql.VarChar(10), value: from }; }
+    if (to && /^\d{4}-\d{2}-\d{2}$/.test(to)) { where.push('i.OccurredAt < DATEADD(day, 1, CONVERT(DATETIME, @to, 120))'); inputs.to = { type: sql.VarChar(10), value: to }; }
+    if (search) { where.push('(i.DocuNo LIKE @search OR i.Detail LIKE @search OR h.CustName LIKE @search)'); inputs.search = { type: sql.NVarChar(80), value: `%${String(search).slice(0, 60)}%` }; }
+    const rows = (await wfQuery(`
+      SELECT TOP 500 i.Id, i.IncidentType, i.Severity, i.SOID, i.DocuNo, i.WghdId, i.Detail, i.OccurredAt, i.Status,
+             i.AckAt, i.AckNote, ack.DisplayName AS AckByName,
+             RTRIM(h.CustName) AS CustName, RTRIM(emp.EmpName) AS SalesName, h.EmpID, e.SalesUserId
+      FROM wf.RuleIncident i WITH (NOLOCK)
+      LEFT JOIN dbo.SOHD h WITH (NOLOCK) ON h.SOID = i.SOID
+      LEFT JOIN dbo.EMEmp emp WITH (NOLOCK) ON emp.EmpID = h.EmpID
+      LEFT JOIN wf.SalesOrderExt e WITH (NOLOCK) ON e.SOID = CONVERT(VARCHAR(50), i.SOID)
+      LEFT JOIN wf.AppUser ack WITH (NOLOCK) ON ack.Id = i.AckBy
+      WHERE ${where.join(' AND ')}
+      ORDER BY i.OccurredAt DESC, i.Id DESC
+    `, inputs)).recordset || [];
+    const scope = await getVisibleScope(req.user);
+    const visible = scope.all ? rows : rows.filter(r => r.SOID == null || inScope(scope, { userId: r.SalesUserId, empId: r.EmpID }));
+    res.json(visible.map(({ EmpID, SalesUserId, ...r }) => ({ ...r, TypeLabel: typeLabel(r.IncidentType) })));
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+async function loadIncident(id) {
+  return (await wfQuery(`SELECT * FROM wf.RuleIncident WITH (NOLOCK) WHERE Id = @id`,
+    { id: { type: sql.Int, value: Number(id) } })).recordset?.[0] || null;
+}
+
+/** Everyone involved, from the first document to the last, oldest first. */
+async function buildTimeline(soid, docuNo) {
+  const steps = [];
+  const add = (at, step, who, doc, note) => { if (step) steps.push({ at, step, who: who || null, doc: doc || null, note: note || null }); };
+  const q = { soid: { type: sql.Int, value: Number(soid) || 0 } };
+
+  const booking = (await wfQuery(`
+    SELECT RTRIM(h.DocuNo) AS DocuNo, RTRIM(h.AppvDocuNo) AS AppvDocuNo, h.AppvFlag, h.AppvDate, h.DocuDate,
+           RTRIM(h.CustName) AS CustName, RTRIM(h.TransRegistration) AS Plate,
+           RTRIM(s.EmpName) AS SalesName, RTRIM(a.EmpName) AS ApproverName
+    FROM dbo.SOHD h WITH (NOLOCK)
+    LEFT JOIN dbo.EMEmp s WITH (NOLOCK) ON s.EmpID = h.EmpID
+    LEFT JOIN dbo.EMEmp a WITH (NOLOCK) ON a.EmpID = h.Appvid
+    WHERE h.SOID = @soid`, q)).recordset?.[0] || null;
+
+  const appEvents = (await wfQuery(`
+    SELECT a.CreatedAt, a.Action, a.Note, u.DisplayName
+    FROM wf.SalesOrderAudit a WITH (NOLOCK)
+    LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = a.UserId
+    WHERE a.SoId = CONVERT(VARCHAR(50), @soid)
+    ORDER BY a.Id`, q)).recordset || [];
+  for (const a of appEvents) add(a.CreatedAt, `Sale-App: ${a.Action}`, a.DisplayName, booking?.DocuNo, a.Note);
+
+  const deliveries = booking?.AppvDocuNo ? ((await wfQuery(`
+    SELECT RTRIM(d.DocuNo) AS DocuNo, d.SOID FROM dbo.SOHD d WITH (NOLOCK)
+    WHERE d.DocuType = 104 AND d.RefNo = @ai`, { ai: { type: sql.NVarChar(30), value: booking.AppvDocuNo } })).recordset || []) : [];
+
+  const invoices = deliveries.length ? ((await wfQuery(`
+    SELECT RTRIM(i.DocuNo) AS DocuNo, i.Docutype, i.DocuDate FROM dbo.SOInvHD i WITH (NOLOCK)
+    WHERE i.SONo IN (${deliveries.map((_, n) => `@d${n}`).join(',')})`,
+    Object.fromEntries(deliveries.map((d, n) => [`d${n}`, { type: sql.NVarChar(30), value: d.DocuNo }])))).recordset || []) : [];
+
+  const scales = (await wfQuery(`
+    SELECT w.Id, RTRIM(w.CarNo) AS CarNo, w.DateIn, w.DateOut, w.WeightIn, w.WeightOut, w.WeightNet, RTRIM(w.MoveBill) AS MoveBill, RTRIM(w.UpdateBy) AS UpdateBy
+    FROM dbo.WGHD w WITH (NOLOCK) WHERE w.WGType = 'SO' AND w.SPID = @soid ORDER BY w.Id`, q)).recordset || [];
+  for (const w of scales) {
+    add(w.DateIn, 'ตาชั่ง: รถชั่งเข้า', w.UpdateBy, w.MoveBill, `${w.CarNo || ''} ${w.WeightIn || 0} กก.`.trim());
+    add(w.DateOut, 'ตาชั่ง: รถชั่งออก', w.UpdateBy, w.MoveBill, `${w.CarNo || ''} สุทธิ ${w.WeightNet || 0} กก.`.trim());
+  }
+
+  const docNos = [...new Set([booking?.DocuNo, booking?.AppvDocuNo, docuNo, ...deliveries.map(d => d.DocuNo), ...invoices.map(i => i.DocuNo), ...scales.map(w => w.MoveBill)].filter(Boolean))].slice(0, 30);
+  if (docNos.length) {
+    const inputs = Object.fromEntries(docNos.map((d, n) => [`n${n}`, { type: sql.NVarChar(50), value: d }]));
+    const audit = (await wfQuery(`
+      SELECT a.audit_datetime, a.audit_screen, a.audit_action, RTRIM(a.audit_username) AS Username, RTRIM(a.audit_docuno) AS DocuNo
+      FROM dbo.SMAudit a WITH (NOLOCK)
+      WHERE a.audit_docuno IN (${docNos.map((_, n) => `@n${n}`).join(',')})
+        AND a.audit_action IN ('I','U','D')
+      ORDER BY a.audit_datetime`, inputs)).recordset || [];
+    for (const a of audit) {
+      const screen = WS_SCREENS[a.audit_screen];
+      if (screen) add(a.audit_datetime, `WinSpeed: ${WS_ACTIONS[a.audit_action] || a.audit_action} ${screen}`, a.Username, a.DocuNo);
+    }
+  }
+
+  steps.sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
+  return { booking, deliveries, invoices, scales, steps };
+}
+
+router.get('/:id', requireRole(...VIEW_ROLES), async (req, res) => {
+  try {
+    const i = await loadIncident(req.params.id);
+    if (!i) return res.status(404).json({ message: 'ไม่พบเหตุการณ์นี้' });
+    if (i.SOID != null) {
+      const owner = (await wfQuery(`
+        SELECT h.EmpID, e.SalesUserId FROM dbo.SOHD h WITH (NOLOCK)
+        LEFT JOIN wf.SalesOrderExt e WITH (NOLOCK) ON e.SOID = CONVERT(VARCHAR(50), h.SOID)
+        WHERE h.SOID = @s`, { s: { type: sql.Int, value: i.SOID } })).recordset?.[0];
+      const scope = await getVisibleScope(req.user);
+      if (!scope.all && !inScope(scope, { userId: owner?.SalesUserId, empId: owner?.EmpID })) {
+        return res.status(404).json({ message: 'ไม่พบเหตุการณ์นี้' });
+      }
+    }
+    const timeline = await buildTimeline(i.SOID, i.DocuNo);
+    res.json({ ...i, TypeLabel: typeLabel(i.IncidentType), timeline });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+router.patch('/:id/ack', requireRole(...REVIEW_ROLES), async (req, res) => {
+  try {
+    const note = String(req.body?.note || '').trim();
+    if (note.length < 5) return res.status(400).json({ message: 'กรุณาระบุผลการตรวจสอบอย่างน้อย 5 ตัวอักษร' });
+    const r = await wfQuery(`
+      UPDATE wf.RuleIncident SET Status = 'ACK', AckBy = @by, AckAt = SYSUTCDATETIME(), AckNote = @note
+      WHERE Id = @id AND Status = 'OPEN';
+      SELECT @@ROWCOUNT AS Affected;`, {
+      id: { type: sql.Int, value: Number(req.params.id) },
+      by: { type: sql.Int, value: req.user.sub },
+      note: { type: sql.NVarChar(500), value: note },
+    });
+    if (!Number(r.recordset?.[0]?.Affected)) return res.status(409).json({ message: 'เหตุการณ์นี้ตรวจแล้วหรือไม่พบ' });
+    res.json({ id: Number(req.params.id), status: 'ACK' });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+module.exports = router;

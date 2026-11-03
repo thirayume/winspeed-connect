@@ -44,11 +44,12 @@ const MENUS = Object.freeze({
   'control-ticket': ['SALES', 'WAREHOUSE', 'ACCOUNTING', 'C_LEVEL', 'ADMIN'],
   'scale-reports': ['WAREHOUSE', 'WEIGHBRIDGE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   aging: ['SALES', 'WAREHOUSE', 'ACCOUNTING', 'C_LEVEL', 'ADMIN'],
-  rebate: ['SALES', 'APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  rebate: ['SALES', 'COUNTER_SALES', 'APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'rebate-plan': ['APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   giveaway: ['SALES', 'APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   accounting: ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   recon: ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  incidents: ['WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   // O-4: reports show company-wide rows → only users who see all records. A MANAGER sees all
   // until placed on the Organization Chart; capabilitiesFor drops it once they have a position.
   reports: ['APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],

@@ -481,7 +481,7 @@ router.get('/claims/:id', requireRebatePageAccess, hideRebateMoneyFromSales, asy
 });
 
 // POST /api/rebate/claims — ยื่นเคลม (รองรับ Multi-line 6 บรรทัด & 4-Tier Approval parity)
-router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'MANAGER'), hideRebateMoneyFromSales, async (req, res) => {
+router.post('/claims', requireRole('SALES', 'COUNTER_SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'MANAGER'), hideRebateMoneyFromSales, async (req, res) => {
   try {
     const { poolId, claimAmt, custId: rawCustId, note, lines, invoices, periodYear, periodMonth } = req.body || {};
     if (!claimAmt && (!lines || !lines.length)) {
@@ -683,7 +683,7 @@ router.post('/claims', requireRole('SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'M
         `);
         pool = poolRes.recordset?.[0];
         if (!pool) throw { status: 404, message: 'ไม่พบ pool' };
-        if (!canViewAllRebateAmounts(req.user) && Number(pool.SalesUserId) !== Number(req.user.sub)) {
+        if (!canViewAllRebateAmounts(req.user) && req.user.role !== 'COUNTER_SALES' && Number(pool.SalesUserId) !== Number(req.user.sub)) {
           throw { status: 403, message: 'ไม่มีสิทธิ์เคลม pool ของพนักงานขายอื่น' };
         }
       }

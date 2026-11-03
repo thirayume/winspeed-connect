@@ -60,7 +60,7 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
   const [tripCapacityTon, setTripCapacityTon] = useState<string>('50');
   const [tripTolerancePct, setTripTolerancePct] = useState<string>('5');
   const [standardBagKg, setStandardBagKg] = useState<string>('50.0');
-  const [minPct, setMinPct] = useState<string>('2.0');
+  const [minPct, setMinPct] = useState<string>('-2.0');
   const [maxPct, setMaxPct] = useState<string>('5.0');
 
   const [settleWindowDays, setSettleWindowDays] = useState<string>('3');
@@ -128,8 +128,8 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
             setTripCapacityTon(String(raw.TRIP_CAPACITY_TON ?? set.TRIP_CAPACITY_TON ?? '50'));
             setTripTolerancePct(String(raw.TRIP_OVERLOAD_TOLERANCE_PCT ?? set.TRIP_OVERLOAD_TOLERANCE_PCT ?? '5'));
             setStandardBagKg(String(raw.STANDARD_BAG_WEIGHT_KG ?? set.standardBagKg ?? '50.0'));
-            setMinPct(String(raw.WEIGHT_TOLERANCE_MIN_PCT ?? set.minPct ?? '2.0'));
-            setMaxPct(String(raw.WEIGHT_TOLERANCE_MAX_PCT ?? set.maxPct ?? '5.0'));
+            setMinPct(String(raw.WEIGHT_TOLERANCE_MIN_PCT ?? set.minPct ?? '-2.0'));
+            setMaxPct(String(raw.WEIGHT_TOLERANCE_MAX_PCT ?? set.maxPct ?? '2.0'));
 
             setSettleWindowDays(String(raw.COUPON_SETTLEMENT_WINDOW_DAYS ?? set.COUPON_SETTLEMENT_WINDOW_DAYS ?? '3'));
             setGoLiveCutoff(String(raw.COUPON_GOLIVE_CUTOFF_DATE ?? set.COUPON_GOLIVE_CUTOFF_DATE ?? '2000-01-01'));
@@ -177,10 +177,10 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
       }
 
       // 3. Validation for Weights
-      const minP = parseStrictFloat(minPct, 2.0);
-      const maxP = parseStrictFloat(maxPct, 5.0);
+      const minP = parseStrictFloat(minPct, -2.0);
+      const maxP = parseStrictFloat(maxPct, 2.0);
       const bag = parseStrictFloat(standardBagKg, 50.0);
-      if (minP < 0 || maxP < minP) {
+      if (minP > 0 || maxP < 0 || maxP < minP) {
         throw new Error('กรุณาระบุช่วง Error Tolerance % ที่ถูกต้อง (Min ต้องไม่ติดลบ และ Max ต้องมากกว่า Min)');
       }
       if (bag <= 0) {

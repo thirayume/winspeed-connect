@@ -1049,6 +1049,7 @@ export interface AtpStockRow {
   freshness: 'FRESH' | 'STALE' | 'UNKNOWN'; isStale: boolean;
 }
 export const fetchStock = () => req<StockRow[]>('/stock');
+export const syncStockFromWinSpeed = () => req<{ affected: number }>('/stock/sync-winspeed', { method: 'POST', body: '{}' });
 export const fetchAtpStock = (excludeSoId?: string) =>
   req<{ data: AtpStockRow[] }>(`/stock/atp${excludeSoId ? `?excludeSoId=${encodeURIComponent(excludeSoId)}` : ''}`, { silent: true });
 export const setStock = (b: { goodId: string; warehouseId?: string; goodName?: string; qtyOnHand: number; unit?: string; source?: string }) =>
@@ -1701,6 +1702,31 @@ export type TripBoardRow = {
   loadPlanRevision?: number | null;
   warehouseAckAt?: string | null;
 };
+
+// ── เหตุการณ์ผิดกฎ ──────────────────────────────────────────
+export type IncidentType = { type: string; label: string; severity: string };
+export type IncidentRow = {
+  Id: number; IncidentType: string; TypeLabel: string; Severity: string; SOID: number | null; DocuNo: string | null;
+  WghdId: number | null; Detail: string | null; OccurredAt: string | null; Status: 'OPEN' | 'ACK';
+  AckAt: string | null; AckNote: string | null; AckByName?: string | null; CustName?: string | null; SalesName?: string | null;
+};
+export type IncidentStep = { at: string | null; step: string; who: string | null; doc: string | null; note: string | null };
+export type IncidentDetail = IncidentRow & {
+  timeline: {
+    booking: { DocuNo: string | null; AppvDocuNo: string | null; CustName: string | null; SalesName: string | null; ApproverName: string | null } | null;
+    deliveries: { DocuNo: string; SOID: number }[];
+    invoices: { DocuNo: string; Docutype: number }[];
+    steps: IncidentStep[];
+  };
+};
+export const fetchIncidentTypes = () => req<IncidentType[]>('/incidents/types', { silent: true });
+export const fetchIncidents = (params?: { status?: string; type?: string; search?: string; from?: string; to?: string }) => {
+  const qs = new URLSearchParams(Object.fromEntries(Object.entries(params || {}).filter(([, v]) => v !== undefined) as [string, string][])).toString();
+  return req<IncidentRow[]>(`/incidents${qs ? `?${qs}` : ''}`);
+};
+export const fetchIncident = (id: number) => req<IncidentDetail>(`/incidents/${id}`);
+export const ackIncident = (id: number, note: string) =>
+  req<{ id: number; status: string }>(`/incidents/${id}/ack`, { method: 'PATCH', body: JSON.stringify({ note }) });
 
 export const fetchTripBoard = (params?: { status?: string; search?: string }) => {
   const q = new URLSearchParams();

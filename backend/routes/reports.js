@@ -19,6 +19,38 @@ router.use(requireAuth);
  * ป้องกันการแปลงสตริงรหัสเป็นตัวเลข (คง leading zeros เช่น CustCode "0462002")
  */
 const REPORTS = {
+  'rule-incidents': {
+    title: 'เหตุการณ์ผิดกฎ (รถชั่งออกก่อนอนุมัติ น้ำหนัก ทะเบียน เล่มเอกสาร)',
+    category: 'ops',
+    columns: [
+      { key: 'OccurredAt', label: 'เกิดเมื่อ', type: 'text' },
+      { key: 'IncidentType', label: 'เรื่อง', type: 'text' },
+      { key: 'DocuNo', label: 'เอกสาร', type: 'identifier' },
+      { key: 'CustName', label: 'ลูกค้า', type: 'text' },
+      { key: 'Detail', label: 'รายละเอียด', type: 'text' },
+      { key: 'Status', label: 'สถานะ', type: 'text' },
+      { key: 'AckByName', label: 'ผู้ตรวจ', type: 'text' },
+      { key: 'AckNote', label: 'ผลการตรวจ', type: 'text' },
+    ],
+    sql: `SELECT TOP 1000 CONVERT(VARCHAR(16), i.OccurredAt, 120) AS OccurredAt,
+            CASE i.IncidentType
+              WHEN 'SHIP_BEFORE_AI' THEN N'รถชั่งออกก่อนอนุมัติใบสั่งจอง (AI)'
+              WHEN 'SHIP_MANUAL_EXCEPTION' THEN N'ส่งออกโดยไม่มีบันทึกชั่ง'
+              WHEN 'SHIP_BEFORE_LOAD_ACK' THEN N'รถชั่งออกก่อนคลังรับทราบแผน'
+              WHEN 'WEIGHT_OUT_OF_TOLERANCE' THEN N'น้ำหนักต่างเกินเกณฑ์'
+              WHEN 'PLATE_MISMATCH' THEN N'ทะเบียนรถไม่ตรง'
+              WHEN 'SCALE_TONS_MISMATCH' THEN N'ตันในบันทึกชั่งไม่ตรงบิล'
+              WHEN 'DELIVERY_ON_CANCELLED_BOOKING' THEN N'ออกใบสั่งขายจากใบที่ยกเลิก'
+              WHEN 'INVOICE_BOOK_MISMATCH' THEN N'เล่มใบส่งของไม่ตรงสาย'
+              ELSE i.IncidentType END AS IncidentType,
+            i.DocuNo, RTRIM(h.CustName) AS CustName, i.Detail,
+            CASE i.Status WHEN 'ACK' THEN N'ตรวจแล้ว' ELSE N'รอตรวจ' END AS Status,
+            u.DisplayName AS AckByName, i.AckNote
+          FROM wf.RuleIncident i WITH (NOLOCK)
+          LEFT JOIN dbo.SOHD h WITH (NOLOCK) ON h.SOID = i.SOID
+          LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = i.AckBy
+          ORDER BY i.OccurredAt DESC`,
+  },
   'so-status': {
     title: 'สรุปใบสั่งขายตามสถานะ',
     category: 'sales',
@@ -752,6 +784,7 @@ const REPORTS = {
  * function = ตรวจสอบเชิงลึก
  */
 const REPORT_ROLES = {
+  'rule-incidents': ['WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'so-status': null,
   'rebate-pools': (user) => canViewAllRebateAmounts(user),
   'giveaway': null,

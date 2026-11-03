@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell, LogOut, Users, LayoutDashboard, Coins, FileCheck, Gift, FileText, LayoutGrid, Database, Clock, ClipboardList, ClipboardCheck, Stamp, BarChart3, ShieldCheck, Activity, ScrollText, Menu, ChevronDown, Settings, Network, Wallet, Truck, Unlock, Ticket } from 'lucide-react';
+import { AlertTriangle, Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell, LogOut, Users, LayoutDashboard, Coins, FileCheck, Gift, FileText, LayoutGrid, Database, Clock, ClipboardList, ClipboardCheck, Stamp, BarChart3, ShieldCheck, Activity, ScrollText, Menu, ChevronDown, Settings, Network, Wallet, Truck, Unlock, Ticket } from 'lucide-react';
 
 import { useErpStore } from './store/erp-store';
 import { useAuthStore } from './store/auth-store';
@@ -17,7 +17,7 @@ import { UnlockReviewModal } from './components/papertrail/UnlockReviewModal';
 import { useSocketEvent } from './hooks/useSocket';
 import packageJson from '../package.json';
 
-export type PortalKey = 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'stock' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'master' | 'profile' | 'beneficiaries';
+export type PortalKey = 'incidents' | 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'stock' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'master' | 'profile' | 'beneficiaries';
 
 const SalesPortal = lazy(() => import('./components/sales/SalesPortal').then(m => ({ default: m.SalesPortal })));
 const SaleTripBoardPage = lazy(() => import('./components/sales/SaleTripBoardPage').then(m => ({ default: m.SaleTripBoardPage })));
@@ -47,6 +47,7 @@ const ProfilePage = lazy(() => import('./components/profile/ProfilePage'));
 const MasterDataPortal = lazy(() => import('./components/master/MasterDataPortal').then(m => ({ default: m.MasterDataPortal })));
 const AgingPage = lazy(() => import('./components/aging/AgingPage').then(m => ({ default: m.AgingPage })));
 
+const IncidentsPage = lazy(() => import('./components/ops/IncidentsPage').then(m => ({ default: m.IncidentsPage })));
 const ReconciliationPage = lazy(() => import('./components/recon/ReconciliationPage').then(m => ({ default: m.ReconciliationPage })));
 const OpsStatusPage = lazy(() => import('./components/ops/OpsStatusPage').then(m => ({ default: m.OpsStatusPage })));
 const ApprovalPolicyPage = lazy(() => import('./components/policy/ApprovalPolicyPage').then(m => ({ default: m.ApprovalPolicyPage })));
@@ -103,6 +104,7 @@ const NAV_GROUPS: NavGroup[] = [
       // { key: 'budget-report', label: 'Budget Expenditure', sub: 'งบจัดสรร · เบิกจ่าย', icon: BarChart3, roles: [...] },
       { key: 'giveaway',   label: 'ของแถม',      sub: 'งบของแถมรายภาค · เบิก', icon: Gift, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING', 'SALES'] },
       { key: 'accounting', label: 'บัญชี',       sub: 'Sync WINSpeed · อนุมัติ CN', icon: FileCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
+      { key: 'incidents',  label: 'เหตุการณ์ผิดกฎ', sub: 'งานที่ไม่เป็นไปตามขั้นตอน · ผู้เกี่ยวข้อง', icon: AlertTriangle, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'WAREHOUSE'] },
       { key: 'recon',      label: 'กระทบยอด',    sub: 'ตรวจบิล ↔ ชั่ง ↔ บัญชี', icon: ShieldCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
     ],
   },
@@ -579,6 +581,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {/* ปิดไว้ 03/09/2569 — BudgetExpenditureReport */}
                 {activePortal === 'accounting' && <AccountingPage />}
                 {activePortal === 'recon'      && <ReconciliationPage />}
+                {activePortal === 'incidents'  && <IncidentsPage />}
 
                 {activePortal === 'policy'     && <ApprovalPolicyPage />}
                 {activePortal === 'stock'      && !!role && STOCK_ROLES.includes(role) && <OperationalStockPage />}

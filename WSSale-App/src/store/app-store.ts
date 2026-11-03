@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 // ⚠ รายการนี้ซ้ำกับ PortalKey ใน App.tsx — เพิ่มหน้าใหม่ต้องแก้ทั้งสองที่
-type PortalKey = 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'stock' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'scale-reports' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'master' | 'profile' | 'incentive-report' | 'budget-report' | 'beneficiaries';
+type PortalKey = 'incidents' | 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'stock' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'scale-reports' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'master' | 'profile' | 'incentive-report' | 'budget-report' | 'beneficiaries';
 
 type NavParams = {
   soId?: number | string;

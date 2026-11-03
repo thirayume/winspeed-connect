@@ -15,12 +15,12 @@ async function getWeightSettings() {
       settings[r.SettingKey] = parseFloat(r.SettingValue);
     }
     return {
-      minPct: !isNaN(settings.WEIGHT_TOLERANCE_MIN_PCT) ? settings.WEIGHT_TOLERANCE_MIN_PCT : 2.0,
-      maxPct: !isNaN(settings.WEIGHT_TOLERANCE_MAX_PCT) ? settings.WEIGHT_TOLERANCE_MAX_PCT : 5.0,
+      minPct: !isNaN(settings.WEIGHT_TOLERANCE_MIN_PCT) ? settings.WEIGHT_TOLERANCE_MIN_PCT : -2.0,
+      maxPct: !isNaN(settings.WEIGHT_TOLERANCE_MAX_PCT) ? settings.WEIGHT_TOLERANCE_MAX_PCT : 2.0,
       standardBagKg: !isNaN(settings.STANDARD_BAG_WEIGHT_KG) ? settings.STANDARD_BAG_WEIGHT_KG : 50.0,
     };
   } catch (e) {
-    return { minPct: 2.0, maxPct: 5.0, standardBagKg: 50.0 };
+    return { minPct: -2.0, maxPct: 2.0, standardBagKg: 50.0 };
   }
 }
 
@@ -45,9 +45,10 @@ async function computeExpectedNetKg(soId) {
 /**
  * Evaluate actual net weight against theoretical expected weight and system tolerance
  */
-async function evaluateWeight(soId, netKg) {
+async function evaluateWeight(soId, netKg, { expectedKg = null } = {}) {
   const settings = await getWeightSettings();
-  const expectedNetKg = await computeExpectedNetKg(soId);
+  // a partly loaded truck: the scale record says what this truck was to carry
+  const expectedNetKg = expectedKg > 0 ? expectedKg : await computeExpectedNetKg(soId);
 
   if (netKg == null || isNaN(Number(netKg)) || Number(netKg) <= 0) {
     return {
