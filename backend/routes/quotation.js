@@ -1223,6 +1223,14 @@ router.get('/:id', async (req, res) => {
         `, { id: { type: sql.Int, value: q.Id } })).recordset || []
       : [];
       
+    // A quotation made directly has no source bill, so its bill takes the customer's own credit terms.
+    if (!sourceSos.length && /^\d+$/.test(String(q.CustId || '').trim())) {
+      const cust = (await wfQuery(`SELECT CreditDays FROM dbo.EMCust WITH (NOLOCK) WHERE CustID=@cid`, {
+        cid: { type: sql.Int, value: Number(q.CustId) },
+      })).recordset?.[0];
+      q.CreditDays = cust?.CreditDays ?? 0;
+    }
+
     if (sourceSos.length > 0) {
       const firstSo = sourceSos[0];
       q.TruckPlate = firstSo.TruckPlate;
