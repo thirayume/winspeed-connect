@@ -33,6 +33,7 @@ const db = h.installDbStub(({ kind, text, inputs, proc }) => {
   if (/FROM sys\.columns c WITH \(NOLOCK\)/.test(text)) {
     return ['CustID', 'CustName', 'SaleAreaID', 'CreditDays', 'VATGroupID', 'VatType', 'BillAddr1', 'BillAddr2', 'District', 'Amphur', 'Province', 'PostCode', 'Tel', 'Fax'].map(name => ({ name }));
   }
+  if (/SELECT \* FROM wf\.Quotation WHERE Id=@id/.test(text)) return [{ Id: 77, QuoteNo: 'QU6910-00012', CustId: '1141', SalesUserId: 25, Status: 'ACCEPTED', ValidUntil: '2099-12-31' }];
   if (/SELECT CreditDays FROM dbo\.EMCust WITH \(NOLOCK\) WHERE CustID=@cid/.test(text)) return [{ CreditDays: 20 }];
   if (/FROM dbo\.EMCust c WITH \(NOLOCK\)/.test(text)) {
     return [{ CustID: 1141, CustName: 'ร้านสุวรรณภัณฑ์', SaleAreaID: 1061, CreditDays: 30, VATGroupID: 1000, VatType: '3', BillAddr1: '1 ถนน', BillAddr2: '', District: 'ต.', Amphur: 'อ.', Province: 'จ.', PostCode: '10000', Tel: '02', Fax: '' }];
@@ -63,7 +64,7 @@ test('the screen sends the product id as a number, and the text parameter still 
   assert.strictEqual(line.inputs.gid, '1114');
 });
 
-test('a quotation with no source bill gives its bill the customer's credit terms', async () => {
+test('a quotation with no source bill takes the credit terms of the customer', async () => {
   const r = await app.call('GET', '/api/quotation/77', { user: { sub: 25, role: 'MANAGER' } });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.CreditDays, 20);
