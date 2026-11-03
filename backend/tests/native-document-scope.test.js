@@ -57,3 +57,8 @@ test('native IDs are bound as integer parameters and combined source queries ret
     return { recordset: rows() };
   });
 });
+test('the ticket trace spells the 116 id redemptionId: a salesperson can open their own cut ticket', async () => {
+  const flat = chain();
+  flat.chain.redemptions = [{ redemptionId: 700 }];
+  assert.equal(await nativeChainInScope(own, flat, query(rows())), true);
+});

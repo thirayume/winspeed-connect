@@ -2776,6 +2776,7 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'MANAGER', 'AD
     let verifiedEvent = null;
 
     // 2.1 ตรวจสอบตารางชั่งจริง native (dbo.WGHD) ด้วย SPID (typed SOHD.SOID)
+    // the scale writes DateOut in local time; against UTC every truck out in the last 7 hours read as still to come
     if (soIdInt != null) {
       const wghdRes = await wfQuery(`
         SELECT TOP 1 
@@ -2806,7 +2807,7 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'MANAGER', 'AD
           AND WeightIn > 0
           AND WeightOut > WeightIn
           AND DateOut IS NOT NULL
-          AND DateOut <= DATEADD(minute, 5, GETUTCDATE())
+          AND DateOut <= DATEADD(minute, 5, GETDATE())
         ORDER BY Id DESC
       `, { soIdInt: { type: sql.Int, value: soIdInt } });
 

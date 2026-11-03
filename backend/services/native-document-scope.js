@@ -12,7 +12,7 @@ async function nativeChainInScope(scope, result, queryFn = wfQuery) {
   const sources = [
     ['SO', [...(chain.bookings || []), ...(chain.deliveries || [])].map(r => r.soId)],
     ['COUPON', (chain.coupons || []).map(r => r.couponId)],
-    ['REDEMPTION', (chain.redemptions || []).map(r => r.redemtionId)],
+    ['REDEMPTION', (chain.redemptions || []).map(r => r.redemtionId ?? r.redemptionId)],
     ['INVOICE', (chain.invoices || []).map(r => r.soInvId)],
   ];
   const inputs = {};
