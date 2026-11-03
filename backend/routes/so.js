@@ -1038,6 +1038,11 @@ router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN',
     if (reqRow.Status !== 'PENDING') return res.status(400).json({ message: 'คำขอถูกดำเนินการแล้ว' });
 
     if (approve) {
+      const cancelTarget = reqRow.ReqType === 'CANCEL' ? await getSoOrThrow(reqRow.SoId) : null;
+      if (cancelTarget && ['SHIPPED', 'IMPORTED', 'CANCELLED'].includes(cancelTarget.Status)) {
+        return res.status(400).json({ message: 'ยกเลิกไม่ได้ในสถานะนี้' });
+      }
+
       // reverse rebate accrual
       await wfQuery(
         `UPDATE wf.RebateLedger SET ReversedFlag=1, ReversedAt=GETUTCDATE(), ReversedNote=@note, Status='REVERSED'
@@ -1045,19 +1050,17 @@ router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN',
         { soId: { type: sql.VarChar(50), value: reqRow.SoId }, note: { type: sql.NVarChar(300), value: note || 'Request approved' } });
       await wfQuery(`UPDATE wf.SalesOrderLineExt SET RebateBooked=0 WHERE SOID=@soId`, { soId: { type: sql.VarChar(50), value: reqRow.SoId } });
       
-      const targetStatus = reqRow.ReqType === 'CANCEL' ? 'CANCELLED' : 'DRAFT';
-      
-      // Update PkgStatus in SOHD depending on targetStatus
-      if (targetStatus === 'CANCELLED') {
-        await wfQuery(`UPDATE dbo.SOHD SET PkgStatus='C' WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: reqRow.SoId } });
+      if (cancelTarget) {
+        // PkgStatus 'C', written here before, means nothing to the app or to WinSpeed: the bill stayed live
+        await wfTransaction(tx => cancelBillInTx(tx, cancelTarget, {
+          reasonCode: null, reasonText: note || reqRow.Reason || 'อนุมัติคำขอยกเลิก', user: req.user, ip: req.ip,
+        }));
       } else {
-        // DRAFT
         await wfQuery(`UPDATE dbo.SOHD SET PkgStatus='N' WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: reqRow.SoId } });
         // Set IsUnlocked flag so view considers it DRAFT
         await wfQuery(`UPDATE wf.SalesOrderExt SET IsUnlocked=1 WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: reqRow.SoId } });
+        await audit(null, reqRow.SoId, req.user.sub, 'EDIT_UNLOCKED', null, 'DRAFT', note, req.ip);
       }
-
-      await audit(null, reqRow.SoId, req.user.sub, reqRow.ReqType === 'CANCEL' ? 'CANCELLED' : 'EDIT_UNLOCKED', null, targetStatus, note, req.ip);
     }
     await wfQuery(`UPDATE wf.UnlockRequest SET Status=@st, ApproverId=@uid, ResponseNote=@note, RespondedAt=GETUTCDATE() WHERE Id=@id`,
       {
@@ -3337,6 +3340,75 @@ async function releaseRebateOnCancel(tx, so, isDraft) {
   }
 }
 
+/** One cancellation for the Cancel button and for an approved cancel request, so both leave WinSpeed the same. */
+async function cancelBillInTx(tx, so, { reasonCode, reasonText, user, ip }) {
+  const { logChangeEvent } = require('../services/policy-contract');
+  const cancelReason = reasonText;
+  // an unlocked native bill also reads DRAFT; it has a WinSpeed document to cancel, so it is not a draft here —
+  // it took the draft branch, which updated no row, and the bill stayed live (UAT batch 6)
+  const isDraft = so.Status === 'DRAFT' && !so.ImportedDocuNo;
+  if (isDraft) {
+    const reqDraft = tx.request();
+    reqDraft.input('id', sql.Int, so.Id);
+    await reqDraft.query(`UPDATE wf.SalesOrder SET Status='CANCELLED', UpdatedAt=GETUTCDATE() WHERE Id=@id`);
+  } else {
+    const reqReb = tx.request();
+    reqReb.input('soId', sql.VarChar(50), String(so.Id));
+    reqReb.input('note', sql.NVarChar(300), cancelReason);
+    await reqReb.query(`UPDATE wf.RebateLedger SET ReversedFlag=1, ReversedAt=GETUTCDATE(), ReversedNote=@note, Status='REVERSED' WHERE SoId=@soId AND ReversedFlag=0`);
+
+    const reqSohd = tx.request();
+    reqSohd.input('id', sql.VarChar(50), String(so.Id));
+    await reqSohd.query(`UPDATE dbo.SOHD SET DocuStatus='C' WHERE SOID=@id`);
+    // WinSpeed never uses DocuStatus 'C' on a booking, so its approval lookup still offered the bill;
+    // a booking still waiting for approval is marked not approved (migration 148, UAT full loop)
+    await tx.request().input('SOID', sql.Int, Number(so.Id)).execute('wf.usp_MarkCancelledBookingNotApproved');
+
+    const reqExt = tx.request();
+    reqExt.input('id', sql.VarChar(50), String(so.Id));
+    await reqExt.query(`UPDATE wf.SalesOrderExt SET UpdatedAt=GETUTCDATE() WHERE SOID=@id`);
+  }
+
+  await releaseRebateOnCancel(tx, so, isDraft);
+
+  // Auto-restore Giveaway Quota
+  const reqGw = tx.request();
+  reqGw.input('nt', sql.NVarChar(300), `ตัดโควต้าอัตโนมัติจากบิล ${so.WfRef || so.Id}`);
+  await reqGw.query(`DELETE FROM wf.GiveawayWithdrawal WHERE Note = @nt`);
+
+  // Auto-cancel attached coupon reservations
+  await tx.request()
+    .input('soIdStr', sql.VarChar(50), String(so.Id))
+    .input('wfRefStr', sql.VarChar(50), String(so.WfRef || ''))
+    .input('rsn', sql.NVarChar(255), String(cancelReason || 'SO_CANCELLED'))
+    .input('uid', sql.Int, user.sub)
+    .query(`
+      UPDATE wf.CouponReservation
+      SET Status = 'CANCELLED',
+          CancelledAt = GETUTCDATE(),
+          CancelReason = @rsn,
+          CancelledBy = @uid,
+          UpdatedAt = GETUTCDATE()
+      WHERE (CarrierSoId = @soIdStr OR CarrierDocuNo = @wfRefStr)
+        AND Status = 'RESERVED'
+    `);
+
+  // Atomic Audit Logs inside the same transaction (R2)
+  await audit(tx, so.Id, user.sub, 'CANCELLED', so.Status, 'CANCELLED', cancelReason, ip);
+
+  await logChangeEvent(tx, {
+    entityType: 'SALES_ORDER',
+    entityId: String(so.Id),
+    action: 'CANCEL',
+    beforeJson: { id: so.Id, wfRef: so.WfRef, status: so.Status },
+    afterJson: { status: 'CANCELLED' },
+    reasonCode,
+    reasonText: cancelReason,
+    userId: String(user?.sub || user?.username || 'SYSTEM'),
+    ipAddress: ip,
+  });
+}
+
 router.patch('/:id/cancel', requireCapability('so.cancel'), requireSoInScope, async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id);
@@ -3356,7 +3428,7 @@ router.patch('/:id/cancel', requireCapability('so.cancel'), requireSoInScope, as
 
     const rawReasonCode = req.body?.reasonCode;
     const rawReasonText = req.body?.reason || req.body?.note;
-    const { validateReasonCode, logChangeEvent } = require('../services/policy-contract');
+    const { validateReasonCode } = require('../services/policy-contract');
 
     const reasonCheck = await validateReasonCode(null, rawReasonCode, rawReasonText, 'SO_CANCEL');
     if (!reasonCheck.valid) {
@@ -3365,71 +3437,9 @@ router.patch('/:id/cancel', requireCapability('so.cancel'), requireSoInScope, as
     const cancelReasonCode = reasonCheck.reasonCode;
     const cancelReason = reasonCheck.reasonText;
 
-    // an unlocked native bill also reads DRAFT; it has a WinSpeed document to cancel, so it is not a draft here —
-    // it took the draft branch, which updated no row, and the bill stayed live (UAT batch 6)
-    const isDraft = so.Status === 'DRAFT' && !so.ImportedDocuNo;
-    await wfTransaction(async (tx) => {
-      if (isDraft) {
-        const reqDraft = tx.request();
-        reqDraft.input('id', sql.Int, so.Id);
-        await reqDraft.query(`UPDATE wf.SalesOrder SET Status='CANCELLED', UpdatedAt=GETUTCDATE() WHERE Id=@id`);
-      } else {
-        const reqReb = tx.request();
-        reqReb.input('soId', sql.VarChar(50), String(so.Id));
-        reqReb.input('note', sql.NVarChar(300), cancelReason);
-        await reqReb.query(`UPDATE wf.RebateLedger SET ReversedFlag=1, ReversedAt=GETUTCDATE(), ReversedNote=@note, Status='REVERSED' WHERE SoId=@soId AND ReversedFlag=0`);
-
-        const reqSohd = tx.request();
-        reqSohd.input('id', sql.VarChar(50), String(so.Id));
-        await reqSohd.query(`UPDATE dbo.SOHD SET DocuStatus='C' WHERE SOID=@id`);
-        // WinSpeed never uses DocuStatus 'C' on a booking, so its approval lookup still offered the bill;
-        // a booking still waiting for approval is marked not approved (migration 148, UAT full loop)
-        await tx.request().input('SOID', sql.Int, Number(so.Id)).execute('wf.usp_MarkCancelledBookingNotApproved');
-
-        const reqExt = tx.request();
-        reqExt.input('id', sql.VarChar(50), String(so.Id));
-        await reqExt.query(`UPDATE wf.SalesOrderExt SET UpdatedAt=GETUTCDATE() WHERE SOID=@id`);
-      }
-
-      await releaseRebateOnCancel(tx, so, isDraft);
-
-      // Auto-restore Giveaway Quota
-      const reqGw = tx.request();
-      reqGw.input('nt', sql.NVarChar(300), `ตัดโควต้าอัตโนมัติจากบิล ${so.WfRef || so.Id}`);
-      await reqGw.query(`DELETE FROM wf.GiveawayWithdrawal WHERE Note = @nt`);
-
-      // Auto-cancel attached coupon reservations
-      await tx.request()
-        .input('soIdStr', sql.VarChar(50), String(so.Id))
-        .input('wfRefStr', sql.VarChar(50), String(so.WfRef || ''))
-        .input('rsn', sql.NVarChar(255), String(cancelReason || 'SO_CANCELLED'))
-        .input('uid', sql.Int, req.user.sub)
-        .query(`
-          UPDATE wf.CouponReservation
-          SET Status = 'CANCELLED',
-              CancelledAt = GETUTCDATE(),
-              CancelReason = @rsn,
-              CancelledBy = @uid,
-              UpdatedAt = GETUTCDATE()
-          WHERE (CarrierSoId = @soIdStr OR CarrierDocuNo = @wfRefStr)
-            AND Status = 'RESERVED'
-        `);
-
-      // Atomic Audit Logs inside the same transaction (R2)
-      await audit(tx, so.Id, req.user.sub, 'CANCELLED', so.Status, 'CANCELLED', cancelReason, req.ip);
-
-      await logChangeEvent(tx, {
-        entityType: 'SALES_ORDER',
-        entityId: String(so.Id),
-        action: 'CANCEL',
-        beforeJson: { id: so.Id, wfRef: so.WfRef, status: so.Status },
-        afterJson: { status: 'CANCELLED' },
-        reasonCode: cancelReasonCode,
-        reasonText: cancelReason,
-        userId: String(req.user?.sub || req.user?.username || 'SYSTEM'),
-        ipAddress: req.ip,
-      });
-    });
+    await wfTransaction(tx => cancelBillInTx(tx, so, {
+      reasonCode: cancelReasonCode, reasonText: cancelReason, user: req.user, ip: req.ip,
+    }));
 
     res.json({ id: so.Id, status: 'CANCELLED' });
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
