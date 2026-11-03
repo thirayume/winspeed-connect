@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, Lock, Unlock, Truck, Package, FileText, CalendarClock, CheckCircle2, Clock3, ShieldCheck, Calendar, Ticket } from 'lucide-react';
 import { cn } from '../ui/Base';
+import { displayStatus } from '../../constants/soStatus';
 import { SOStatusBadge } from './SOStatusBadge';
 import { useErpStore } from '../../store/erp-store';
 import { approveGiveawayLine, confirmSO, cancelSO, shipSO, moveToPicking, createUnlockRequest } from '../../services/api';
@@ -86,7 +87,7 @@ export function SODetailsPanel({
               <span className="text-sm px-1.5 py-0.5 rounded bg-blue-100 text-[#0C447C] mr-2">{so.soPrefix}</span>
               {so.importedDocuNo || so.wfRef || `#${so.id}`}
             </h2>
-            <SOStatusBadge status={so.status} isUnlockRequested={!!pendingReq} />
+            <SOStatusBadge status={displayStatus(so)} isUnlockRequested={!!pendingReq} />
             {isWinspeedPosted && (
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
                 <ShieldCheck size={11} /> WINSpeed Posted

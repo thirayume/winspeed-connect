@@ -220,6 +220,7 @@ export type SalesOrderLine = {
 };
 
 export type SalesOrder = {
+  awaitingAi?: boolean;
   id?: string | number;
   wfRef?: string;
   soPrefix: SOPrefix;

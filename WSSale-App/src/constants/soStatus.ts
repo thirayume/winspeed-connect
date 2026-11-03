@@ -67,6 +67,10 @@ export const SO_STATUS_META: Record<SOStatus, {
   },
 };
 
+/** What a bill's chip should say: the list keeps a booking waiting for AI approval as CONFIRMED and flags it. */
+export const displayStatus = (o?: { status?: SOStatus | string | null; awaitingAi?: boolean | null } | null): SOStatus =>
+  (o?.awaitingAi && o.status === 'CONFIRMED' ? 'PENDING_APPROVAL' : (o?.status as SOStatus)) || 'DRAFT';
+
 export const soStatusLabel = (status?: string | null) =>
   status && status in SO_STATUS_META ? SO_STATUS_META[status as SOStatus].label : (status || '-');
 

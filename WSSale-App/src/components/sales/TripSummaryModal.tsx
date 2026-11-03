@@ -13,7 +13,7 @@ import { SOCancelDeleteModal } from '../common/SOCancelDeleteModal';
 import { TripSetupModal, type TripSetupData } from './TripSetupModal';
 import { PaperDocModal } from '../papertrail/PaperDocModal';
 import { SOBookingDocModal } from './SOBookingDocModal';
-import { SO_STATUS_META, soStatusLabel } from '../../constants/soStatus';
+import { displayStatus, SO_STATUS_META, soStatusLabel } from '../../constants/soStatus';
 import { QuickShipModal } from './QuickShipModal';
 import { bangkokDate } from '../../utils/date';
 import { giveawayPieces } from '../../utils/giveaway';
@@ -821,7 +821,7 @@ export function TripSummaryModal({
                           </div>
                           <div className="flex flex-col items-end gap-1">
                             <div className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${SO_STATUS_META[order.status]?.badgeClass || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-                              {soStatusLabel(order.status)}
+                              {soStatusLabel(displayStatus(order))}
                             </div>
                             {(order as any).requiresPriceApproval && (
                               <div>

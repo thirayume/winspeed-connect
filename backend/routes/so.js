@@ -607,7 +607,10 @@ router.get('/', async (req, res) => {
     const { status, custId, search, dateFrom, dateTo, page = 1, limit = 50 } = req.query;
     const conditions = [];
     const inputs = {};
-    if (status)  { conditions.push(`q.Status = @status`);  inputs.status  = { type: sql.NVarChar(20), value: status }; }
+    // A booking waiting for AI approval stays CONFIRMED here because the warehouse queue and the trip actions work from
+    // that status (trucks do load before approval); AwaitingAi is what tells it apart on screen and in this filter.
+    if (status === 'PENDING_APPROVAL') { conditions.push(`q.Status = 'CONFIRMED' AND q.AwaitingAi = 1`); }
+    else if (status)  { conditions.push(`q.Status = @status`);  inputs.status  = { type: sql.NVarChar(20), value: status }; }
     if (custId)  { conditions.push(`q.CustId = @custId`);  inputs.custId  = { type: sql.NVarChar(20), value: custId }; }
     if (search)  { 
       conditions.push(`(q.WfRef LIKE '%' + @search + '%' OR q.CustName LIKE '%' + @search + '%' OR q.TruckPlate LIKE '%' + @search + '%' OR q.ImportedDocuNo LIKE '%' + @search + '%')`);
@@ -652,7 +655,8 @@ router.get('/', async (req, res) => {
           so.RequestedAt,
           so.ImportedAt,
           so.SalesUserId,
-          CAST(NULL AS VARCHAR(20)) AS OwnerEmpId
+          CAST(NULL AS VARCHAR(20)) AS OwnerEmpId,
+          CAST(0 AS BIT) AS AwaitingAi
         FROM wf.SalesOrder so WITH (NOLOCK)
 
         UNION ALL
@@ -678,7 +682,8 @@ router.get('/', async (req, res) => {
           ext.RequestedAt,
           ext.ImportedAt,
           ext.SalesUserId,
-          CAST(hd.EmpID AS VARCHAR(20)) AS OwnerEmpId
+          CAST(hd.EmpID AS VARCHAR(20)) AS OwnerEmpId,
+          CAST(CASE WHEN hd.DocuType = 103 AND hd.AppvFlag = 'W' AND hd.AppvDocuNo IS NULL THEN 1 ELSE 0 END AS BIT) AS AwaitingAi
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
           ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
@@ -730,7 +735,8 @@ router.get('/', async (req, res) => {
           pq.Remark AS LinkedQuoteRemark,
           pq.ValidUntil AS LinkedQuoteValidUntil,
           CASE WHEN pq.Id IS NOT NULL THEN 'Waiting for quotation ' + ISNULL(pq.QuoteNo, '') + ' confirmation' ELSE NULL END AS QuotationLockReason,
-          CAST(NULL AS VARCHAR(20)) AS OwnerEmpId
+          CAST(NULL AS VARCHAR(20)) AS OwnerEmpId,
+          CAST(0 AS BIT) AS AwaitingAi
         FROM wf.SalesOrder so WITH (NOLOCK)
         OUTER APPLY (
           SELECT TOP 1 q.Id, q.QuoteNo, q.Status, q.Remark, q.ValidUntil
@@ -788,7 +794,8 @@ router.get('/', async (req, res) => {
           pq.Remark AS LinkedQuoteRemark,
           pq.ValidUntil AS LinkedQuoteValidUntil,
           CASE WHEN pq.Id IS NOT NULL THEN 'Waiting for quotation ' + ISNULL(pq.QuoteNo, '') + ' confirmation' ELSE NULL END AS QuotationLockReason,
-          CAST(hd.EmpID AS VARCHAR(20)) AS OwnerEmpId
+          CAST(hd.EmpID AS VARCHAR(20)) AS OwnerEmpId,
+          CAST(CASE WHEN hd.DocuType = 103 AND hd.AppvFlag = 'W' AND hd.AppvDocuNo IS NULL THEN 1 ELSE 0 END AS BIT) AS AwaitingAi
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
           ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)

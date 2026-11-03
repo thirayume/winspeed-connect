@@ -6,7 +6,7 @@ import '../ui/AppAlert';
 import { useExport } from '../../hooks/useExport';
 import { SOCancelDeleteModal } from '../common/SOCancelDeleteModal';
 import type { SalesOrder } from '../../types';
-import { soStatusLabel } from '../../constants/soStatus';
+import { displayStatus, soStatusLabel } from '../../constants/soStatus';
 
 interface GroupedTrip {
   tripId?: number;
@@ -56,7 +56,7 @@ export function SaleTripManager({
   const handleExportTrips = () => {
     // a cancelled group was exported like a live trip — the file had no status (UAT SO-23)
     const rows = groupedOrders.map(g => ({
-      status: [...new Set(g.orders.map(o => soStatusLabel(o.status)))].join(', '),
+      status: [...new Set(g.orders.map(o => soStatusLabel(displayStatus(o))))].join(', '),
       date: g.dateDisplay,
       truck: g.truck,
       destinationCount: g.custCount,
@@ -121,7 +121,7 @@ export function SaleTripManager({
             <div className="px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex flex-col gap-2 shrink-0">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <SOStatusBadge status={g.orders[0]?.status || 'DRAFT'} isUnlockRequested={unlockRequests.some(r => g.orders.some(o => r.SoId === o.id))} />
+                  <SOStatusBadge status={displayStatus(g.orders[0])} isUnlockRequested={unlockRequests.some(r => g.orders.some(o => r.SoId === o.id))} />
                   <div className="text-[11px] font-bold text-[#0C447C] flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100/50">
                     <Clock size={10} /> {g.dateDisplay}
                   </div>
