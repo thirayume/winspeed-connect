@@ -1737,7 +1737,7 @@ router.get('/aging/search', async (req, res) => {
                CAST(dt.GoodID AS VARCHAR(50)) AS GoodCode,
                dt.GoodName,
                SUM(CAST(ISNULL(dt.GoodQty2, 0) AS DECIMAL(12,3))) AS QtyTon,
-               DATEDIFF(DAY, CAST(hd.DocuDate AS DATETIME), GETUTCDATE()) AS DaysOpen,
+               DATEDIFF(DAY, CAST(hd.DocuDate AS DATETIME), GETDATE()) AS DaysOpen,
                CASE
                  WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
                  WHEN ext.IsLoaded = 1 THEN 'LOADED'
