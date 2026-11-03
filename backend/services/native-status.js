@@ -48,4 +48,19 @@ function nativeDedupSql(hd = 'hd') {
       WHERE b.DocuType = 103)`;
 }
 
-module.exports = { nativeStatusSql, nativeDedupSql };
+/**
+ * The 104 WinSpeed issued from a booking, or null. From then on WinSpeed holds the sale (its ticket and 202, perhaps
+ * 116 and 107), so the app must not cancel or rewrite the booking under it (UAT round trip 2026-11-03).
+ */
+async function findIssuedDelivery(soid) {
+  const { sql, wfQuery } = require('../db');
+  const r = await wfQuery(`
+    SELECT TOP 1 RTRIM(d.DocuNo) AS DocuNo
+    FROM dbo.SOHD b WITH (NOLOCK)
+    JOIN dbo.SOHD d WITH (NOLOCK) ON d.DocuType = 104 AND d.RefNo = b.AppvDocuNo AND ISNULL(d.DocuStatus, '') <> 'C'
+    WHERE b.SOID = @soid AND b.DocuType = 103 AND b.AppvDocuNo IS NOT NULL
+    ORDER BY d.SOID DESC`, { soid: { type: sql.Int, value: Number(soid) } });
+  return r.recordset?.[0]?.DocuNo || null;
+}
+
+module.exports = { nativeStatusSql, nativeDedupSql, findIssuedDelivery };

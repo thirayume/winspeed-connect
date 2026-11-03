@@ -331,7 +331,16 @@ const { validateAndLockCouponReservations } = require('../services/coupon-servic
 const { checkGiveawayQuota, quotaErrorMessage, linePieces } = require('../services/giveaway-quota');
 const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
 const { legacyCutoffInput, legacyCutoffSql } = require('../services/legacy-cutoff');
-const { nativeStatusSql, nativeDedupSql } = require('../services/native-status');
+const { nativeStatusSql, nativeDedupSql, findIssuedDelivery } = require('../services/native-status');
+
+async function assertNoIssuedDelivery(so) {
+  if (!so.ImportedDocuNo) return;
+  const delivery = await findIssuedDelivery(so.Id);
+  if (delivery) {
+    throw Object.assign(new Error(`บิล ${so.WfRef || so.Id} ออกใบสั่งขาย ${delivery} ใน WinSpeed แล้ว แก้ไขหรือยกเลิกจาก Sale-App ไม่ได้ ต้องดำเนินการใน WinSpeed`),
+      { status: 409, code: 'WINSPEED_DELIVERY_ISSUED' });
+  }
+}
 
 // R12 O-4: is this bill (draft or native) inside the user's own + team scope?
 async function soVisibleTo(user, so, knownScope = null) {
@@ -1071,6 +1080,9 @@ router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN',
       const cancelTarget = reqRow.ReqType === 'CANCEL' ? await getSoOrThrow(reqRow.SoId) : null;
       if (cancelTarget && ['SHIPPED', 'IMPORTED', 'CANCELLED'].includes(cancelTarget.Status)) {
         return res.status(400).json({ message: 'ยกเลิกไม่ได้ในสถานะนี้' });
+      }
+      if (['CANCEL', 'EDIT'].includes(reqRow.ReqType)) {
+        await assertNoIssuedDelivery(cancelTarget || await getSoOrThrow(reqRow.SoId));
       }
 
       // reverse rebate accrual
@@ -1859,6 +1871,7 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
     const isSohdOrder = !!so.ImportedDocuNo;
 
       if (isSohdOrder) {
+      await assertNoIssuedDelivery(so);
       const beforeLines = await getLines(so.Id);
       let approvalReset = null;
       await wfTransaction(async tx => {
@@ -2559,6 +2572,8 @@ router.post('/:id/unlock-request', requireRole('SALES', 'COUNTER_SALES', 'WAREHO
     if (reqType === 'UNLOCK' && so.Status !== 'PICKING')
       return res.status(409).json({ message: `ขอปลดล็อกได้เมื่อบิลอยู่ระหว่างจัดของ (PICKING) เท่านั้น — ตอนนี้ ${so.Status}` });
 
+    if (reqType !== 'UNLOCK') await assertNoIssuedDelivery(so);
+
     const dup = (await wfQuery(`SELECT TOP 1 Id FROM wf.UnlockRequest WHERE SoId=@so AND Status='PENDING'`,
       { so: { type: sql.NVarChar(50), value: so.Id } })).recordset[0];
     if (dup) return res.status(400).json({ message: 'มีคำขอที่รออนุมัติอยู่แล้ว' });
@@ -3175,6 +3190,7 @@ router.post('/bulk-cancel-delete', requireRole('SALES', 'ADMIN', 'C_LEVEL'), asy
     const loadedSos = [];
     for (const id of soIds) {
       const so = await getSoOrThrow(id);
+      await assertNoIssuedDelivery(so);
       if (['SHIPPED', 'IMPORTED'].includes(so.Status)) {
         return res.status(400).json({
           message: `ไม่สามารถดำเนินการได้ เนื่องจากบิล ${so.WfRef || so.Id} อยู่ในสถานะ ${so.Status}`,
@@ -3458,6 +3474,7 @@ router.patch('/:id/cancel', requireCapability('so.cancel'), requireSoInScope, as
     const so = await getSoOrThrow(req.params.id);
     if (['SHIPPED', 'IMPORTED', 'CANCELLED'].includes(so.Status))
       return res.status(400).json({ message: 'ยกเลิกไม่ได้ในสถานะนี้' });
+    await assertNoIssuedDelivery(so);
 
     const pendingQuote = await getPendingQuoteForSo(so.Id);
     if (pendingQuote) {
@@ -3493,6 +3510,7 @@ router.patch('/:id/cancel', requireCapability('so.cancel'), requireSoInScope, as
 router.delete('/:id', requireRole('SALES', 'ADMIN', 'C_LEVEL'), requireSoInScope, async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id);
+    await assertNoIssuedDelivery(so);
     if (!['DRAFT', 'CANCELLED'].includes(so.Status))
       return res.status(400).json({ message: `ลบได้เฉพาะบิลร่างหรือยกเลิกแล้ว (ปัจจุบัน: ${so.Status})` });
 

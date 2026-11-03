@@ -238,11 +238,11 @@ export function SOBookingDocModal({
   };
 
   // Consolidated Items for Summary Attachment Page
-  const combinedItemsMap = new Map<string, { goodCode: string; goodName: string; totalTon: number; totalBag: number }>();
+  const combinedItemsMap = new Map<string, { goodCode: string; goodName: string; totalTon: number; totalBag: number; isGiveaway: boolean }>();
   orders.forEach(ord => {
-    ord.lines.filter(l => !l.isGiveaway).forEach(l => {
-      const key = l.goodCode;
-      const existing = combinedItemsMap.get(key) || { goodCode: l.goodCode, goodName: l.goodName, totalTon: 0, totalBag: 0 };
+    ord.lines.forEach(l => {
+      const key = `${l.goodCode}${l.isGiveaway ? '#gift' : ''}`;
+      const existing = combinedItemsMap.get(key) || { goodCode: l.goodCode, goodName: l.goodName, totalTon: 0, totalBag: 0, isGiveaway: l.isGiveaway };
       existing.totalTon += l.qtyTon;
       existing.totalBag += l.qtyBag;
       combinedItemsMap.set(key, existing);
@@ -250,7 +250,7 @@ export function SOBookingDocModal({
   });
   const consolidatedItems = Array.from(combinedItemsMap.values());
   const grandTotalTon = consolidatedItems.reduce((s, i) => s + i.totalTon, 0);
-  const grandTotalBag = consolidatedItems.reduce((s, i) => s + i.totalBag, 0);
+  const grandTotalBag = consolidatedItems.reduce((s, i) => s + (i.isGiveaway ? 0 : i.totalBag), 0);
 
   const mainTruckPlate = orders[0]?.truckPlate || orders[0]?.transRegistration || '-';
   const allRefNos = orders.map(o => o.wfRef).join(', ');
@@ -517,8 +517,8 @@ export function SOBookingDocModal({
                           <td className="py-2 px-2 border-r border-black text-center font-mono">{idx + 1}</td>
                           <td className="py-2 px-2 border-r border-black font-mono font-bold">{item.goodCode}</td>
                           <td className="py-2 px-3 border-r border-black font-medium">{item.goodName}</td>
-                          <td className="py-2 px-2 border-r border-black text-right font-black text-sm">{item.totalTon.toFixed(2)}</td>
-                          <td className="py-2 px-2 border-r border-black text-right font-bold">{item.totalBag.toLocaleString()}</td>
+                          <td className="py-2 px-2 border-r border-black text-right font-black text-sm">{item.isGiveaway ? '-' : item.totalTon.toFixed(2)}</td>
+                          <td className="py-2 px-2 border-r border-black text-right font-bold">{item.isGiveaway ? `${item.totalBag.toLocaleString()} ชิ้น (แถม)` : item.totalBag.toLocaleString()}</td>
                           <td className="py-2 px-2 text-center">
                             <div className="w-4 h-4 border border-black inline-block rounded-sm"></div>
                           </td>

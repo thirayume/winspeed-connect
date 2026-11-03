@@ -25,6 +25,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
 const { broadcast } = require('../services/socket');
 const truckHold = require('../services/truck-hold');
+const { findIssuedDelivery } = require('../services/native-status');
 
 router.use(requireAuth);
 
@@ -272,6 +273,9 @@ router.post('/', requireRole(...REQUESTER_ROLES), async (req, res) => {
     const target = await loadTarget(soid);
     if (!target) return res.status(404).json({ message: 'ไม่พบใบสั่งขายนี้' });
 
+    const issued = await findIssuedDelivery(soid);
+    if (issued) return res.status(409).json({ message: `บิลนี้ออกใบสั่งขาย ${issued} ใน WinSpeed แล้ว แก้ไขจาก Sale-App ไม่ได้ ต้องดำเนินการใน WinSpeed`, code: 'WINSPEED_DELIVERY_ISSUED' });
+
     // ขั้นตอนคำนวณที่ server เสมอ ไม่รับค่าจาก client
     const st = await resolveStage(soid);
     if (!st.editable) {
@@ -363,6 +367,8 @@ router.patch('/:id/approve', requireRole(...APPROVER_ROLES), requireEditRequestI
     //   ถ้าเทียบด้วย === ด่านนี้จะ "ไม่ฟ้องอะไรเลย" แล้วปล่อยให้อนุมัติงานตัวเองผ่าน
     if (sameUser(r.RequestedBy, req.user.sub))
       return res.status(403).json({ message: 'อนุมัติคำขอของตัวเองไม่ได้' });
+    const issued = r.SOID ? await findIssuedDelivery(r.SOID) : null;
+    if (issued) return res.status(409).json({ message: `บิลนี้ออกใบสั่งขาย ${issued} ใน WinSpeed แล้ว แก้ไขจาก Sale-App ไม่ได้ ต้องดำเนินการใน WinSpeed`, code: 'WINSPEED_DELIVERY_ISSUED' });
 
     await wfQuery(`
       UPDATE wf.EditRequest
