@@ -24,7 +24,7 @@ export const SO_STATUS_META: Record<SOStatus, {
     badgeClass: 'bg-gray-100 text-gray-600 border-gray-200',
   },
   PENDING_APPROVAL: {
-    label: 'รออนุมัติใน WINSpeed',
+    label: 'รออนุมัติใบสั่งจอง (103)',
     color: '#D97706',
     bg: '#FFF7ED',
     badgeClass: 'bg-orange-50 text-orange-700 border-orange-200',
@@ -54,7 +54,7 @@ export const SO_STATUS_META: Record<SOStatus, {
     badgeClass: 'bg-green-50 text-green-700 border-green-200',
   },
   IMPORTED: {
-    label: 'ปิด SO ใน WINSpeed',
+    label: 'ออกใบสั่งขาย (104) แล้ว',
     color: '#10B981',
     bg: '#ECFDF5',
     badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',

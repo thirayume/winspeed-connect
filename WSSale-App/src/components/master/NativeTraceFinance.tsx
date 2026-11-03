@@ -66,7 +66,7 @@ export function NativeTraceFinance({
           </div>
         ))
       ) : (
-        <p className="text-xs text-gray-400">ยังไม่มีรายการตัดตั๋ว 116</p>
+        <p className="text-xs text-gray-400">ยังไม่มีใบตัดตั๋วปุ๋ย (116)</p>
       )}
 
       {invoices.length > 0 && (
@@ -103,7 +103,7 @@ export function NativeTraceFinance({
       )}
 
       {!hasInvoice107 && (
-        <p className="text-xs text-gray-400">ยังไม่มี Invoice 107</p>
+        <p className="text-xs text-gray-400">ยังไม่มีใบส่งของ (107)</p>
       )}
     </div>
   );

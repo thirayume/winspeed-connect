@@ -121,7 +121,7 @@ export const AgingPage = () => {
       {/* Header summary */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4 shrink-0">
         <DataSummaryCard
-          title="SO ค้างจัดส่งทั้งหมด"
+          title="บิลค้างจัดส่งทั้งหมด"
           value={total.toLocaleString()}
           icon={<Clock size={24} />}
           colorClass="bg-red-100 text-red-500"
@@ -219,7 +219,7 @@ export const AgingPage = () => {
           ) : groupedData.length === 0 ? (
             <div className="flex flex-col justify-center items-center h-full text-gray-400 py-16">
               <Clock size={40} className="mb-4 opacity-30" />
-              <p>ไม่พบข้อมูล SO ค้างจัดส่ง</p>
+              <p>ไม่พบบิลค้างจัดส่ง</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-4 items-stretch">

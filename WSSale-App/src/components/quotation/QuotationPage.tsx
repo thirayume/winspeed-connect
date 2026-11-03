@@ -25,8 +25,8 @@ const HISTORY_STATUS_ORDER: Record<string, number> = { CONVERTED: 0, EXPIRED: 1,
 const STATUS_LABEL: Record<QuoteStatus, string> = {
   DRAFT: 'ร่าง',
   SENT: 'ส่งแล้ว / รอยืนยัน',
-  ACCEPTED: 'ยืนยันแล้ว / พร้อมออก SO',
-  CONVERTED: 'ออก SO แล้ว',
+  ACCEPTED: 'ยืนยันแล้ว / พร้อมออกบิล',
+  CONVERTED: 'ออกบิลแล้ว',
   EXPIRED: 'หมดอายุ',
   CANCELLED: 'ยกเลิก / ปฏิเสธ',
 };
@@ -78,7 +78,7 @@ export function QuotationPage() {
 
   function doConvert(q: Quotation) {
     if (q.Status !== 'ACCEPTED') {
-      alert('ใบเสนอราคาต้องได้รับการอนุมัติ/ยืนยันก่อนจึงจะออก SO ได้');
+      alert('ใบเสนอราคาต้องได้รับการอนุมัติ/ยืนยันก่อนจึงจะออกบิลได้');
       return;
     }
     setConvertQuoteId(q.Id);
@@ -89,7 +89,7 @@ export function QuotationPage() {
       return;
     }
     if (status === 'CANCELLED' && (q.SourceSoCount || 0) > 0) {
-      const ok = confirm(`ใบเสนอราคานี้ผูกกับ SO ร่าง ${q.SourceSoCount} ใบ\nหากยกเลิกใบเสนอราคาแล้ว ควรยกเลิกหรือแก้ไข SO ที่เกี่ยวข้องด้วย\n\nยืนยันยกเลิกใบเสนอราคา?`);
+      const ok = confirm(`ใบเสนอราคานี้ผูกกับบิลร่าง ${q.SourceSoCount} ใบ\nหากยกเลิกใบเสนอราคาแล้ว ควรยกเลิกหรือแก้ไข SO ที่เกี่ยวข้องด้วย\n\nยืนยันยกเลิกใบเสนอราคา?`);
       if (!ok) return;
     }
     setBusyId(q.Id);
@@ -212,7 +212,7 @@ export function QuotationPage() {
           colorClass="bg-amber-100 text-amber-600"
         />
         <DataSummaryCard
-          title="แปลงเป็น SO แล้ว"
+          title="แปลงเป็นบิลแล้ว"
           value={quotes.filter(q => q.Status === 'CONVERTED').length.toLocaleString()}
           icon={<Check size={24} />}
           colorClass="bg-emerald-100 text-emerald-600"

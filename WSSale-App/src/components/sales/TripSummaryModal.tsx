@@ -430,7 +430,7 @@ export function TripSummaryModal({
                       <span className="flex items-center gap-1.5">
                         <Clock size={13} className="text-[#0C447C]" /> วันนัดรับสินค้าของเที่ยว (Trip Pickup)
                       </span>
-                      <span className="text-[10px] text-blue-600 font-normal">แยกจากกำหนดรับ SO</span>
+                      <span className="text-[10px] text-blue-600 font-normal">แยกจากกำหนดรับของในบิล</span>
                     </label>
                     <ThaiDatePicker
                       value={tripPickupDueDate}

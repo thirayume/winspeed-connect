@@ -655,7 +655,7 @@ export function ReconciliationPage() {
               <table className="w-full text-sm min-w-full">
                 <thead className="whitespace-nowrap">
                   <tr className="bg-gray-50 text-gray-500 text-xs uppercase">
-                    <th className="text-left px-4 py-3 whitespace-nowrap">SO / วันที่</th>
+                    <th className="text-left px-4 py-3 whitespace-nowrap">บิล / วันที่</th>
                     <th className="text-left px-4 py-3 whitespace-nowrap">ลูกค้า / ทะเบียน</th>
                     <th className="text-left px-4 py-3 whitespace-nowrap">น้ำหนัก (App ↔ TS)</th>
                     <th className="text-left px-4 py-3 whitespace-nowrap">ใบกำกับ & Native GL</th>

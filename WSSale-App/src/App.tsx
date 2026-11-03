@@ -75,7 +75,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'trip-board', label: 'Sale Trip',   sub: 'กระดานเที่ยวรถ',      icon: Truck, roles: ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'] },
       { key: 'voucher',    label: 'Voucher คงค้าง', sub: 'ยอดคงค้าง · วันหมดอายุตั๋ว', icon: Ticket, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'SALES', 'COUNTER_SALES'] },
       { key: 'edit-requests', label: 'คำขอแก้ไขและอนุมัติ', sub: 'แก้ไข · อนุมัติราคา · Hold รถ', icon: ClipboardCheck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'SALES', 'COUNTER_SALES'] },
-      { key: 'quotation',  label: 'เสนอราคา',    sub: 'Quotation → SO',      icon: FileText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'SALES', 'COUNTER_SALES'] },
+      { key: 'quotation',  label: 'เสนอราคา',    sub: 'ใบเสนอราคา (102) → บิล',      icon: FileText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'SALES', 'COUNTER_SALES'] },
     ],
   },
   {
@@ -88,7 +88,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'papertrail', label: 'Paper Trail', sub: 'Kanban เอกสาร 4 สี',   icon: LayoutGrid, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'MANAGER'] },
       { key: 'control-ticket', label: 'ชุดตั๋วคุม', sub: 'คงเหลือ · ตัดจ่ายตั๋วคุม', icon: Stamp, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'SALES'] },
       { key: 'scale-reports', label: 'สถานะการชั่งรถ', sub: 'ชั่งสด WGHD · เข้า-ออก', icon: Truck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE'] },
-      { key: 'aging',      label: 'ตั๋วคงค้าง',   sub: 'SO คงค้าง · Aging ตั๋ว', icon: Clock, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'SALES'] },
+      { key: 'aging',      label: 'ตั๋วคงค้าง',   sub: 'บิลคงค้าง · อายุตั๋ว', icon: Clock, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'SALES'] },
     ],
   },
   {

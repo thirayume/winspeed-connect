@@ -466,7 +466,7 @@ export function VoucherPage() {
                   <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
                     <tr>
                       <th className="px-4 py-3 text-left whitespace-nowrap">เลข Voucher</th>
-                      <th className="px-4 py-3 text-left whitespace-nowrap">เลข SO</th>
+                      <th className="px-4 py-3 text-left whitespace-nowrap">เลขบิล</th>
                       <th className="px-4 py-3 text-center whitespace-nowrap">วันที่</th>
                       <th className="px-4 py-3 text-left whitespace-nowrap">สินค้า / สมาชิก</th>
                       <th className="px-4 py-3 text-right whitespace-nowrap">ออก (ตัน)</th>

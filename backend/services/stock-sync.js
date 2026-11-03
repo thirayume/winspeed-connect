@@ -4,12 +4,17 @@
  * Stock on hand from WinSpeed (owner, 3 November 2026: there is no warehouse count yet, use WinSpeed for now). WinSpeed
  * leaves dbo.ICStock empty; the balance is the signed sum of dbo.ICStockDetail. A figure the warehouse typed in
  * (Source MANUAL) is left alone. The figure trails real stock: a truck leaves it only when the 107 is posted.
+ *
+ * Only goods sold by the ton come across: every price list line is family 7- (mixed) or 9- (straight), all in tons. The
+ * other families are empty sacks, inner bags, thread and raw material counted in their own units, so a count of empty
+ * sacks read as thousands of tons of fertilizer.
  */
 const { wfQuery } = require('../db');
 
 const SOURCE = 'WINSPEED';
 
 async function syncStockFromWinSpeed() {
+  await wfQuery(`DELETE FROM wf.OperationalStock WHERE Source = '${SOURCE}' AND LEFT(GoodId, 2) NOT IN ('7-', '9-')`);
   const r = await wfQuery(`
     ;WITH bal AS (
       SELECT RTRIM(g.GoodCode) AS GoodId, MAX(RTRIM(g.GoodName1)) AS GoodName,
@@ -17,6 +22,7 @@ async function syncStockFromWinSpeed() {
       FROM dbo.ICStockDetail d WITH (NOLOCK)
       JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = d.GoodID
       WHERE g.GoodCode IS NOT NULL AND LEN(RTRIM(g.GoodCode)) <= 20
+        AND LEFT(g.GoodCode, 2) IN ('7-', '9-')
       GROUP BY RTRIM(g.GoodCode)
     )
     MERGE wf.OperationalStock AS t

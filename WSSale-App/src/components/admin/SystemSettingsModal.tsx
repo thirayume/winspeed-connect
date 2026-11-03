@@ -427,7 +427,7 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
                     <Info size={16} className="text-[#0C447C] shrink-0 mt-0.5" />
                     <div>
                       <div className="font-bold text-[#0C447C] mb-0.5">นโยบายกำหนดวันรับสินค้า (Pickup Due Policy)</div>
-                      กำหนดวันรับสินค้าค่าเริ่มต้นนับจาก SO Confirmation พร้อม Lead time ขั้นต่ำสำหรับการนัดหมายรถ
+                      กำหนดวันรับสินค้าค่าเริ่มต้นนับจากบิล Confirmation พร้อม Lead time ขั้นต่ำสำหรับการนัดหมายรถ
                     </div>
                   </div>
 
@@ -465,7 +465,7 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
 
                   <div>
                     <label className="block font-bold text-gray-700 mb-1">
-                      ตัวเลือกกำหนดรับสินค้าในหน้าสร้าง SO (วัน, คั่นด้วยจุลภาค)
+                      ตัวเลือกกำหนดรับสินค้าในหน้าสร้างบิล (วัน, คั่นด้วยจุลภาค)
                     </label>
                     <input
                       type="text"

@@ -11,7 +11,7 @@ type Slip={source:'SCALE'|'MANUAL';slipNo:string|null;plate:string|null;netKg:nu
 type Preview={soid:number;fingerprint:string;deliveryNo:string;couponNo:string;qty:string;
  completed:boolean;canCreate:boolean;request:ManualRequest|null;redemptionNo?:string;slip?:Slip};
 const errors:Record<string,string>={
- MR_NOT_ENABLED:'ยังไม่เปิดขั้น 116 สำหรับสภาพแวดล้อมนี้',
+ MR_NOT_ENABLED:'ยังไม่เปิดขั้นใบตัดตั๋วปุ๋ย (116) สำหรับสภาพแวดล้อมนี้',
  MR_DELIVERY_DIVERGED:'ข้อมูลใบสั่งขายหรือตั๋วเปลี่ยน กรุณาให้ผู้ดูแลตรวจสอบ',
  MR_SOURCE_NOT_FOUND:'ไม่พบใบสั่งขายและตั๋วที่รองรับขั้นนี้',
  MR_SOURCE_UNAVAILABLE:'ตั๋วนี้มีการใช้หรือข้อมูลประกอบอื่นแล้ว กรุณาตรวจสอบ',
@@ -23,11 +23,11 @@ const errors:Record<string,string>={
  MR_REQUEST_CHANGED:'เหตุผลหรือหลักฐานเปลี่ยนหลังอนุมัติ กรุณาตรวจสอบและขอใหม่',
  MR_APPROVER_MAPPING_REQUIRED:'ผู้อนุมัติยังไม่ผูกพนักงาน WinSpeed กรุณาให้ผู้ดูแลตรวจสอบ',
  MR_APPROVER_NOT_LISTED:'พนักงานของผู้อนุมัติไม่อยู่ในรายชื่อผู้อนุมัติเอกสาร WinSpeed กรุณาให้ผู้ดูแลเพิ่มรายชื่อ',
- MR_RECORDER_MAPPING_REQUIRED:'ผู้ทำรายการยังไม่ผูกพนักงาน WinSpeed (ใช้เป็นผู้บันทึกใบ 116) กรุณาให้ผู้ดูแลตรวจสอบ',
+ MR_RECORDER_MAPPING_REQUIRED:'ผู้ทำรายการยังไม่ผูกพนักงาน WinSpeed (ใช้เป็นผู้บันทึกใบตัดตั๋วปุ๋ย (116)) กรุณาให้ผู้ดูแลตรวจสอบ',
  MR_SIMULATION_DETAILS_REQUIRED:'กรอกเหตุผลอย่างน้อย 10 ตัวอักษร ผู้รับขึ้นต้น UAT2 ทะเบียนขึ้นต้น UAT2- และเลขใบขนทดสอบขึ้นต้น 99',
  MR_SLIP_REQUIRED:'ไม่พบบันทึกชั่ง กรุณากรอกเลขใบขน 7 หลักจากใบขนจริง',
  MR_SLIP_INVALID:'เลขใบขนไม่ถูกต้อง ต้องเป็นตัวเลข 7 หลัก',
- MR_SLIP_IN_USE:'เลขใบขนนี้ถูกใช้แล้วในตาชั่งหรือใบ 116 อื่น',
+ MR_SLIP_IN_USE:'เลขใบขนนี้ถูกใช้แล้วในตาชั่งหรือใบตัดตั๋วปุ๋ย (116) อื่น',
  MR_SCALE_CHANGED:'ข้อมูลตาชั่งเปลี่ยนหลังส่งคำขอ กรุณาตรวจใหม่และส่งคำขอใหม่',
  MR_SCALE_INCOMPLETE:'รถคันนี้ยังชั่งไม่เสร็จ (ยังไม่มีน้ำหนักชั่งออก) กรุณารอชั่งให้ครบก่อน',
  MR_SCALE_AMBIGUOUS:'พบบันทึกชั่งของใบจองนี้มากกว่าหนึ่งรายการ กรุณาให้ผู้ดูแลตรวจสอบ',
@@ -57,12 +57,12 @@ export function NativeManualRedemptionButton({soid,onCreated}:{soid:string|numbe
  }
  const r=preview?.request,expired=Boolean(r?.expiresAt&&Date.parse(r.expiresAt)<=Date.now()),slip=preview?.slip,manual=slip?.source==='MANUAL';
  return <>
-  <button disabled={busy} onClick={inspect} className="rounded-lg border border-amber-700 px-3 py-2 text-xs font-bold text-amber-900 disabled:opacity-50">ตัดตั๋ว 116 · ทดสอบ UAT</button>
-  {open&&createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="ทดสอบตัดตั๋ว 116"><div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
-   <h2 className="text-lg font-bold text-[#0C447C]">ตัดตั๋ว 116 · ข้อยกเว้นแบบระบุผู้อนุมัติ</h2>
-   <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">รอบจำลอง UAT2 เท่านั้น รายการนี้ไม่รับรองการส่งสินค้าจริง · เลขที่ใบ 116 คือเลขใบขน: ใช้ MoveBill จากตาชั่ง หรือกรอกเองเมื่อไม่มีบันทึกชั่ง (เป็นข้อยกเว้น)</p>
+  <button disabled={busy} onClick={inspect} className="rounded-lg border border-amber-700 px-3 py-2 text-xs font-bold text-amber-900 disabled:opacity-50">ใบตัดตั๋วปุ๋ย (116) · ทดสอบ UAT</button>
+  {open&&createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="ทดสอบใบตัดตั๋วปุ๋ย (116)"><div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+   <h2 className="text-lg font-bold text-[#0C447C]">ใบตัดตั๋วปุ๋ย (116) · ข้อยกเว้นแบบระบุผู้อนุมัติ</h2>
+   <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">รอบจำลอง UAT2 เท่านั้น รายการนี้ไม่รับรองการส่งสินค้าจริง · เลขที่ใบตัดตั๋วปุ๋ย (116) คือเลขใบขน: ใช้ MoveBill จากตาชั่ง หรือกรอกเองเมื่อไม่มีบันทึกชั่ง (เป็นข้อยกเว้น)</p>
    {preview&&<div className="mt-3 space-y-3 text-sm">{preview.completed?<p>บันทึกใบขนแล้ว: <strong>{preview.redemptionNo}</strong>{preview.redemptionNo&&can('native.print-116')&&<button onClick={()=>setPrinting(true)} className="ml-3 rounded-lg border px-2 py-1 text-xs">พิมพ์ใบขน</button>}</p>:<>
-    <p>104 {preview.deliveryNo} · ตั๋ว {preview.couponNo} · เต็มจำนวน {Number(preview.qty).toLocaleString('th-TH')} ตัน</p>
+    <p>ใบสั่งขาย (104) {preview.deliveryNo} · ตั๋ว {preview.couponNo} · เต็มจำนวน {Number(preview.qty).toLocaleString('th-TH')} ตัน</p>
     {slip&&(manual?<p className="rounded-lg bg-orange-50 p-3 text-orange-900">ไม่พบบันทึกชั่งของใบจองนี้ · <strong>ข้อยกเว้น</strong>: กรอกเลขใบขน 7 หลักและทะเบียนรถ แล้วให้ผู้จัดการ ผู้บริหาร หรือผู้ดูแลที่ไม่ใช่ผู้ขออนุมัติ</p>
      :<p className={`rounded-lg p-3 ${slip.exception?'bg-orange-50 text-orange-900':'bg-emerald-50 text-emerald-900'}`}>เลขใบขนจากตาชั่ง (MoveBill) <strong>{slip.slipNo}</strong> · ทะเบียน {slip.plate} · น้ำหนักสุทธิ {Number(slip.netKg).toLocaleString('th-TH')} กก. (ต่างจากตั๋ว {slip.diffPct}%)
       {slip.exception&&<><br/><strong>เกิน ±{slip.tolerancePct}%</strong> เป็นข้อยกเว้น ต้องให้ผู้จัดการ ผู้บริหาร หรือผู้ดูแลที่ไม่ใช่ผู้ขออนุมัติ</>}</p>)}

@@ -56,7 +56,7 @@ export function NativeApproversManager() {
     <div className="space-y-3 p-4">
       <div className="flex flex-wrap items-center gap-3">
         <h3 className="flex items-center gap-2 text-base font-semibold" style={{ color: NAVY }}>
-          <UserCheck size={18} /> ผู้อนุมัติเอกสาร WinSpeed (ใบตัดตั๋วปุ๋ย 116)
+          <UserCheck size={18} /> ผู้อนุมัติเอกสาร WinSpeed ใบตัดตั๋วปุ๋ย (116)
         </h3>
         <span className="text-xs text-gray-500">
           พนักงานทั้งหมด {rows.length} · ใช้อนุมัติได้ {enabledCount} · ปิดไว้ {rows.length - enabledCount}

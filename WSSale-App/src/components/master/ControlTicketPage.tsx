@@ -184,7 +184,7 @@ export function ControlTicketPage() {
             <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
               {sel
                 ? `${sel.CustName} · พร้อมใช้ ${rem(sel).toFixed(2)} ${sel.GoodUnitName || 'ไม่ระบุ'} · ติดตามอายุและการเบิกใช้ตามสายเอกสารแท้`
-                : 'Universal Native Trace (I/K 103 → AI → I/K 104 → C/D → 116 → J/N 107) · R1-02 Balance Engine'}
+                : 'ใบสั่งจอง (103) → ใบอนุมัติ (AI) → ใบสั่งขาย (104) → ตั๋ว → ใบตัดตั๋วปุ๋ย (116) → ใบส่งของ (107)'}
             </p>
           </div>
         </div>
@@ -533,7 +533,7 @@ export function ControlTicketPage() {
               <table className="w-full text-sm min-w-full">
                 <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
                   <tr>
-                    <th className="px-4 py-2 text-left whitespace-nowrap">เลขที่ SO ส่งของ (104)</th>
+                    <th className="px-4 py-2 text-left whitespace-nowrap">เลขที่ใบสั่งขาย (104)</th>
                     <th className="px-4 py-2 text-center whitespace-nowrap">วันที่ส่ง</th>
                     <th className="px-4 py-2 text-left whitespace-nowrap">ทะเบียนรถ</th>
                     <th className="px-4 py-2 text-right whitespace-nowrap">ตัดออก ({sel.GoodUnitName || 'หน่วย'})</th>
@@ -617,7 +617,7 @@ export function ControlTicketPage() {
                       <ChevronRight size={14} className="text-gray-400" />
                       <span>5. เบิก (116)</span>
                       <ChevronRight size={14} className="text-gray-400" />
-                      <span>6. ใบแจ้งหนี้ / ใบกำกับภาษี (Invoice 107)</span>
+                      <span>6. ใบส่งของ (107)</span>
                     </div>
                   </div>
 
@@ -638,7 +638,7 @@ export function ControlTicketPage() {
                   <div className="space-y-4">
                     {/* 1. Booking */}
                     <div className="border border-gray-200 rounded-2xl p-4 bg-white space-y-2">
-                      <div className="text-xs font-bold text-gray-400 uppercase">1. ใบจองและการอนุมัติ (SOHD 103)</div>
+                      <div className="text-xs font-bold text-gray-400 uppercase">1. ใบจองและการอนุมัติ (103)</div>
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>เลขที่ใบจอง: <strong className="font-mono">{traceModal.data.chain?.booking?.docuNo || '-'}</strong></div>
                         <div>เลขที่ยืนยัน AI: <strong className="font-mono text-[#0C447C]">{traceModal.data.chain?.booking?.appvDocuNo || '-'}</strong></div>
@@ -649,7 +649,7 @@ export function ControlTicketPage() {
 
                     {/* 2. Delivery */}
                     <div className="border border-gray-200 rounded-2xl p-4 bg-white space-y-2">
-                      <div className="text-xs font-bold text-gray-400 uppercase">2. เอกสารส่งของ / ออกตั๋วแท้ (SOHD 104)</div>
+                      <div className="text-xs font-bold text-gray-400 uppercase">2. เอกสารส่งของ / ออกตั๋วแท้ (104)</div>
                       {traceModal.data.chain?.deliveries?.length > 0 ? (
                         traceModal.data.chain.deliveries.map((d: any) => (
                           <div key={d.soId} className="p-2.5 bg-gray-50 rounded-xl text-xs flex items-center justify-between">
@@ -663,7 +663,7 @@ export function ControlTicketPage() {
                           </div>
                         ))
                       ) : (
-                        <p className="text-xs text-gray-400">ไม่พบเอกสารส่งของ 104</p>
+                        <p className="text-xs text-gray-400">ไม่พบใบสั่งขาย (104)</p>
                       )}
                     </div>
 

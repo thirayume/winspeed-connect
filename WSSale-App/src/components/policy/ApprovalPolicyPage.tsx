@@ -5,7 +5,7 @@ import { fetchPolicies, createPolicy, updatePolicy, deletePolicy, type ApprovalP
 const CASES = ['UNLOCK', 'REBATE_CLAIM', 'PRICE_CHANGE', 'CREDIT_OVERRIDE', 'GIVEAWAY_OVERRUN'];
 const ROLES = ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ACCOUNTING', 'APPROVER', 'MANAGER', 'ADMIN'];
 const CASE_LABEL: Record<string, string> = {
-  UNLOCK: 'ปลดล็อก SO', REBATE_CLAIM: 'เคลมรีเบท', PRICE_CHANGE: 'เปลี่ยนราคา',
+  UNLOCK: 'ปลดล็อกบิล', REBATE_CLAIM: 'เคลมรีเบท', PRICE_CHANGE: 'เปลี่ยนราคา',
   CREDIT_OVERRIDE: 'ข้ามเครดิต', GIVEAWAY_OVERRUN: 'ของแถมเกินงบ',
 };
 const fmt = (n: number | null) => n == null ? '—' : `฿${Number(n).toLocaleString()}`;

@@ -8,14 +8,14 @@ type Preview={completed:boolean;fingerprint?:string;invoiceDate:string;dueDate?:
  amount?:string;qty?:string;deliveryNo?:string;couponNo?:string;redemptionNo?:string;invoiceNo?:string};
 const errors:Record<string,string>={
  IP_NOT_ENABLED:'ยังไม่เปิด Post Invoice สำหรับสภาพแวดล้อมนี้',
- IP_MANUAL_116_REQUIRED:'ต้องมีใบตัดตั๋ว 116 ที่ผ่านขั้นจำลอง UAT ก่อน',
+ IP_MANUAL_116_REQUIRED:'ต้องมีใบตัดตั๋วปุ๋ย (116) ที่ผ่านขั้นจำลอง UAT ก่อน',
  IP_SOURCE_NOT_FOUND:'ไม่พบเอกสารต้นทางที่รองรับขั้นนี้',
  IP_SOURCE_UNAVAILABLE:'เอกสารมีการใช้หรือข้อมูลประกอบอื่นแล้ว กรุณาตรวจสอบ',
  IP_DELIVERY_DIVERGED:'ข้อมูลใบสั่งขายหรือตั๋วเปลี่ยน กรุณาให้ผู้ดูแลตรวจสอบ',
  IP_REDEMPTION_DIVERGED:'ใบตัดตั๋วหรือข้อมูลอนุมัติเปลี่ยน กรุณาให้ผู้ดูแลตรวจสอบ',
  IP_PREVIEW_STALE:'ข้อมูลเปลี่ยนระหว่างทำรายการ กรุณาตรวจใหม่',
  IP_REQUEST_CONFLICT:'คำขอนี้ดำเนินการแล้วหรือข้อมูลไม่ตรง กรุณาตรวจสถานะ',
- IP_DATE_OVERRIDE_UNVERIFIED:'รอบทดสอบนี้ใช้วันที่ตามใบตัดตั๋ว 116',
+ IP_DATE_OVERRIDE_UNVERIFIED:'รอบทดสอบนี้ใช้วันที่ตามใบตัดตั๋วปุ๋ย (116)',
  IP_COST_SCOPE_UNSUPPORTED:'พบข้อมูลต้นทุนที่ต้องตรวจเพิ่มเติม ยังไม่รองรับการ Post ในกรณีนี้',
  IP_METADATA_UNSUPPORTED:'กติกาฐานข้อมูลเปลี่ยน กรุณาให้ผู้ดูแลตรวจสอบก่อน Post',
  IP_PERIOD_UNSUPPORTED:'งวดบัญชีของวัน Invoice ยังไม่พร้อม กรุณาให้ผู้ดูแลตรวจสอบ',
@@ -41,10 +41,10 @@ export function NativeInvoiceButton({soid,onCreated}:{soid:string|number;onCreat
  return <>
   <button disabled={busy} onClick={inspect} className="rounded-lg border border-blue-800 px-3 py-2 text-xs font-bold text-blue-900 disabled:opacity-50">Post Invoice · ทดสอบ UAT</button>
   {open&&createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="ทดสอบ Post Invoice"><div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
-   <h2 className="text-lg font-bold text-[#0C447C]">Post Invoice 107 · ACCOUNTING</h2>
+   <h2 className="text-lg font-bold text-[#0C447C]">ออกใบส่งของ (107) · ฝ่ายบัญชี</h2>
    <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">จำลอง UAT2 จากใบตัดตั๋ว ไม่มีหลักฐานชั่งหรือส่งจริง การยืนยันจะออก Invoice และตัดสต็อกเต็มจำนวน</p>
    {preview&&<div className="mt-3 space-y-2 text-sm">{preview.completed?<p>บันทึก Invoice แล้ว: <strong>{preview.invoiceNo}</strong> · {date(preview.invoiceDate)}{preview.invoiceNo&&can('native.print-107')&&<button onClick={()=>setPrinting(true)} className="ml-3 rounded-lg border px-2 py-1 text-xs">พิมพ์ใบส่งของ</button>}</p>:<>
-    <p>104 {preview.deliveryNo} · ตั๋ว {preview.couponNo}</p><p>ใบตัดตั๋ว 116: {preview.redemptionNo}</p>
+    <p>ใบสั่งขาย (104) {preview.deliveryNo} · ตั๋ว {preview.couponNo}</p><p>ใบตัดตั๋วปุ๋ย (116): {preview.redemptionNo}</p>
     <p>Invoice เล่ม {preview.series} · วันที่ {date(preview.invoiceDate)} · ครบกำหนด {date(preview.dueDate)}</p>
     <p>เต็มจำนวน {Number(preview.qty).toLocaleString('th-TH')} ตัน · {Number(preview.amount).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท</p>
     <p>ยอดลูกหนี้เกิดจากตั๋วเดิมแล้ว ขั้นนี้เชื่อม Invoice กับตั๋วและตัดสต็อก</p>

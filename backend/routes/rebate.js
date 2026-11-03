@@ -822,7 +822,7 @@ router.post('/claims', requireRole('SALES', 'COUNTER_SALES', 'ACCOUNTING', 'ADMI
             // the reasons go in the message too: the response carried only the message, so the form showed no detail
             message: `ยอดขอเคลียร์ไม่ตรงกับยอดขนจริง — ${problems.join(' · ')}`
               + (skippedNoRebate.length ? ` (ข้ามใบส่งของที่ราคาไม่สูงกว่า NET ${skippedNoRebate.length} บรรทัด)` : ''),
-            source: 'WINSpeed — ใบส่งของ/ใบกำกับ (DocuType 104) ของลูกค้ารายนี้',
+            source: 'WINSpeed — ใบสั่งขาย (104) ของลูกค้ารายนี้',
             reconciliation: problems,
             skippedNoPlan: skippedNoPlan.length ? skippedNoPlan : undefined,
             skippedNoRebate: skippedNoRebate.length ? [...skippedNoRebate.slice(0, 10), ...(skippedNoRebate.length > 10 ? [`และอีก ${skippedNoRebate.length - 10} บรรทัด`] : [])] : undefined,

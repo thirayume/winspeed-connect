@@ -163,8 +163,8 @@ export function DashboardPage() {
           <KpiCard icon={<Clock size={20} />} label="รอจัดส่ง/รับสินค้า"
             value={((stats.byStatus.CONFIRMED || 0) + (stats.byStatus.PICKING || 0) + (stats.byStatus.LOADED || 0)).toLocaleString()} color="#F59E0B" />
           <KpiCard icon={<Truck size={20} />} label="ส่งออกจากตาชั่ง" value={(stats.byStatus.SHIPPED || 0).toLocaleString()} color="#059669" />
-          <KpiCard icon={<Database size={20} />} label="ปิด SO ใน WINSpeed" value={(stats.byStatus.IMPORTED || 0).toLocaleString()} color="#10B981" />
-          <KpiCard icon={<AlertTriangle size={20} />} label="SO ค้าง >30 วัน" value={loading && aging.length === 0 ? '…' : warnAging.length.toLocaleString()} color="#EF4444" />
+          <KpiCard icon={<Database size={20} />} label="ออกใบสั่งขาย (104) แล้ว" value={(stats.byStatus.IMPORTED || 0).toLocaleString()} color="#10B981" />
+          <KpiCard icon={<AlertTriangle size={20} />} label="บิลค้างเกิน 30 วัน" value={loading && aging.length === 0 ? '…' : warnAging.length.toLocaleString()} color="#EF4444" />
           {canSeeRebate && (
             <KpiCard icon={<TrendingUp size={20} />} label="รีเบท (฿)"
               value={totalRebateAvailable.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} color="#059669" />
@@ -214,7 +214,7 @@ export function DashboardPage() {
           {(searchRows.length > 0 || (hasSearch && !searchLoading)) && (
             <div className="mt-4 border-t border-gray-100 pt-3">
               <div className="flex items-center justify-between mb-2">
-                <h2 className="text-xs font-bold text-gray-600">ผลการค้นหา SO</h2>
+                <h2 className="text-xs font-bold text-gray-600">ผลการค้นหาบิล</h2>
                 <span className="text-[10px] text-gray-400">แสดง {searchRows.length.toLocaleString()} จาก {searchTotal.toLocaleString()} รายการ</span>
               </div>
               {searchRows.length === 0 ? (
@@ -276,7 +276,7 @@ export function DashboardPage() {
           {/* Aging orders */}
           <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 p-4 sm:p-5 shadow-sm flex flex-col">
             <h2 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-              SO ค้างจัดส่งนาน
+              บิลค้างจัดส่งนาน
               <span className="text-[10px] font-normal text-gray-400">เหลือง &gt;30 · แดง &gt;45 วัน</span>
             </h2>
             {groupedAging.length === 0 ? (

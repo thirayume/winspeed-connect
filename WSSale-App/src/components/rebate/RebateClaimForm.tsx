@@ -513,11 +513,11 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
   const canApplyToBill = String(claim.Status) === 'APPROVED' && ['ACCOUNTING', 'ADMIN', 'C_LEVEL'].includes(String(role));
 
   async function handleApplyToBill() {
-    if (!targetSoId.trim()) { setApplyErr('กรุณาระบุเลขที่ SO'); return; }
+    if (!targetSoId.trim()) { setApplyErr('กรุณาระบุเลขที่บิล'); return; }
     setApplying(true); setApplyErr(''); setApplySuccess('');
     try {
       const res = await applyRebateClaimToBill(claimId, targetSoId.trim(), Number(applyDiscount) || undefined);
-      setApplySuccess(res.message || 'หักลดในบิล SO สำเร็จ');
+      setApplySuccess(res.message || 'หักลดในบิล สำเร็จ');
       await load(); onChanged();
       setTimeout(() => { setApplyModalOpen(false); }, 1500);
     } catch (e: any) {
@@ -665,9 +665,9 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
             <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2 print:hidden">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-bold text-emerald-900">นำไปหักลดในบิล SO (สำหรับฝ่ายบัญชี/ผู้บริหาร)</div>
+                  <div className="text-xs font-bold text-emerald-900">นำไปหักลดในบิล (สำหรับฝ่ายบัญชี/ผู้บริหาร)</div>
                   <div className="text-[11px] text-emerald-700">
-                    {claim.AppliedDraftSoId ? `ผูกเข้าบิล SO #${claim.AppliedDraftSoId} แล้ว (สถานะ APPROVED จะเปลี่ยนเป็น CN_ISSUED เมื่อบิลยืนยัน)` : 'สามารถนำยอดเคลมที่ได้รับอนุมัตินี้ ไปเป็นส่วนลดในบิล SO'}
+                    {claim.AppliedDraftSoId ? `ผูกเข้าบิล #${claim.AppliedDraftSoId} แล้ว (สถานะ APPROVED จะเปลี่ยนเป็น CN_ISSUED เมื่อบิลยืนยัน)` : 'สามารถนำยอดเคลมที่ได้รับอนุมัตินี้ ไปเป็นส่วนลดในบิล SO'}
                   </div>
                 </div>
                 <button
@@ -688,7 +688,7 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
                   }}
                   className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-colors"
                 >
-                  {applyModalOpen ? 'ปิดฟอร์ม' : (claim.AppliedDraftSoId ? 'แก้ไขการผูกบิล' : 'หักลดในบิล SO')}
+                  {applyModalOpen ? 'ปิดฟอร์ม' : (claim.AppliedDraftSoId ? 'แก้ไขการผูกบิล' : 'หักลดในบิล')}
                 </button>
               </div>
 
@@ -705,7 +705,7 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
                         <option value="">-- เลือกใบสั่งขายร่างของลูกค้านี้ --</option>
                         {candidateBills.map((b: any) => (
                           <option key={b.id} value={String(b.id)}>
-                            SO #{b.id} {b.wfRef ? `· ${b.wfRef}` : ''} {b.totalAmount ? `(฿${Number(b.totalAmount).toLocaleString()})` : ''}
+                            บิล #{b.id} {b.wfRef ? `· ${b.wfRef}` : ''} {b.totalAmount ? `(฿${Number(b.totalAmount).toLocaleString()})` : ''}
                           </option>
                         ))}
                       </select>
@@ -713,7 +713,7 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
                   )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
-                      <label className="text-[10px] font-bold text-emerald-900 block mb-1">เลขที่ SO หรือเลขที่เอกสาร:</label>
+                      <label className="text-[10px] font-bold text-emerald-900 block mb-1">เลขที่บิลหรือเลขที่เอกสาร:</label>
                       <input
                         type="text"
                         placeholder="เช่น 117 หรือ I69-04233 หรือ WF69I-00117"

@@ -242,12 +242,12 @@ export function RebatePage() {
               <button onClick={() => setShowInfo(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
             <div className="text-sm text-gray-600 space-y-3">
-              <p>เมื่อ Sales สร้าง SO ผ่าน App และตั้งราคาขาย (Price) สูงกว่าราคาสุทธิ (Net) —</p>
+              <p>เมื่อฝ่ายขายสร้างบิลใน Sale-App และตั้งราคาขาย (Price) สูงกว่าราคาสุทธิ (Net) —</p>
               <div className="bg-blue-50 text-blue-800 p-3 rounded-lg font-mono text-xs border border-blue-100">
                 รีเบท = (PricePerTon − NetPricePerTon) × ตัน
                 <br/>→ สะสมในบัญชีพนักงาน
               </div>
-              <p>ลูกค้าสามารถใช้รีเบทเป็นส่วนลดบิลใดก็ได้ → บัญชีออก CN 109 ลดหนี้ให้ลูกค้า</p>
+              <p>ลูกค้าสามารถใช้รีเบทเป็นส่วนลดบิลใดก็ได้ → บัญชีออกใบลดหนี้ (109) ลดหนี้ให้ลูกค้า</p>
               <p><strong>Ledger FIFO:</strong> ระบบจะตัดยอดจากรายการเก่าสุดก่อนเสมอ</p>
             </div>
           </div>

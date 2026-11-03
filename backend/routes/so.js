@@ -2859,7 +2859,7 @@ async function noteLoadPlanNotAcknowledged(so, tripId, event) {
   const { recordIncident, localToUtc } = require('../services/rule-incidents');
   await recordIncident({
     key: `SHIP_BEFORE_LOAD_ACK:${event.EventId}`, type: 'SHIP_BEFORE_LOAD_ACK', soid: Number(so.Id), docuNo: so.WfRef,
-    wghdId: event.EventId, occurredAt: localToUtc(event.WeighOutAt), detail: `สถานะแผนจัดของ ${trip.LoadPlanStatus}`,
+    wghdId: event.EventId, occurredAt: localToUtc(event.WeighOutAt), detail: 'รถชั่งออกแล้ว แต่คลังยังไม่กดรับทราบแผนจัดของ',
   });
 }
 

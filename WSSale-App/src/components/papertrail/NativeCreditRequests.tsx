@@ -15,10 +15,10 @@ export function NativeCreditRequests({onApproved}:{onApproved:()=>void}) {
    setSelected(null);setReason('');await load();onApproved();
   }catch(e){setError(deliveryError(e));}finally{setBusy(false);}}
  return <>
-  <button disabled={busy} onClick={load} className="whitespace-nowrap rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">อนุมัติเกินวงเงิน 104</button>
-  {open&&createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Account อนุมัติเกินวงเงิน 104">
+  <button disabled={busy} onClick={load} className="whitespace-nowrap rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">อนุมัติเกินวงเงิน ใบสั่งขาย (104)</button>
+  {open&&createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Account อนุมัติเกินวงเงิน ใบสั่งขาย (104)">
    <div className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
-    <h2 className="text-lg font-bold text-[#0C447C]">Account อนุมัติเกินวงเงิน 104</h2>
+    <h2 className="text-lg font-bold text-[#0C447C]">Account อนุมัติเกินวงเงิน ใบสั่งขาย (104)</h2>
     <p className="my-3 text-sm">อนุมัติได้รวมคำขอของตนเอง ระบบบันทึกผู้ขอและผู้อนุมัติจริงพร้อมผู้ใช้ที่ Access As คำอนุมัติมีอายุ 30 นาที และใช้ได้เมื่อข้อมูลเอกสารยังตรงกัน</p>
     {rows.map(row=><button key={row.requestId} disabled={busy} onClick={()=>{setSelected(row);setReason('');}} className="my-1 w-full rounded-lg border p-3 text-left text-sm">
      {row.docuNo} · {row.aiNo} · {Number(row.amount).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท

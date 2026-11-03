@@ -398,7 +398,7 @@ export function NativeDocPrintLauncher() {
             </label>
             <label className="mt-3 block text-sm">เลขที่เอกสาร
               <input autoFocus value={no} onChange={e => setNo(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') go(); }}
-                placeholder={type === 116 ? 'เลขใบขน 7 หลัก' : type === 104 ? 'เลขที่ใบสั่งขาย 104' : 'เช่น J69-00001'} maxLength={25} className="mt-1 w-full rounded-lg border p-2" />
+                placeholder={type === 116 ? 'เลขใบขน 7 หลัก' : type === 104 ? 'เลขที่ใบสั่งขาย (104)' : 'เช่น J69-00001'} maxLength={25} className="mt-1 w-full rounded-lg border p-2" />
             </label>
             <div className="mt-5 flex justify-end gap-2 text-sm">
               <button onClick={() => setOpen(false)} className="rounded-lg border px-3 py-2">ปิด</button>

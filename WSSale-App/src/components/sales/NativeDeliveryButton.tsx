@@ -10,9 +10,9 @@ type Preview = { soid: number; docuNo: string; aiNo: string; amount: string; fin
   book?:string;couponSeries?:string;packKg?:string;sackQty?:string };
 const messages: Record<string,string> = {
   DO_SOURCE_CHANGED: 'ข้อมูลใบจองเปลี่ยนหลังยืนยัน กรุณาตรวจสอบเอกสาร',
-  DO_ORIGIN_REQUIRED: 'ใบนี้ยังไม่รองรับการออก 104 ผ่านแอป กรุณาใช้ใบจองใหม่จากแอป',
-  DO_SOURCE_UNAVAILABLE: 'สถานะใบจองหรือ AI ยังไม่พร้อมออก 104',
-  DO_CONTRACT_UNSUPPORTED: 'ใบนี้มีเงื่อนไขที่ยังไม่รองรับการออก 104 ผ่านแอป',
+  DO_ORIGIN_REQUIRED: 'ใบนี้ยังไม่รองรับการออกใบสั่งขาย (104) ผ่านแอป กรุณาใช้ใบจองใหม่จากแอป',
+  DO_SOURCE_UNAVAILABLE: 'สถานะใบจองหรือ AI ยังไม่พร้อมออกใบสั่งขาย (104)',
+  DO_CONTRACT_UNSUPPORTED: 'ใบนี้มีเงื่อนไขที่ยังไม่รองรับการออกใบสั่งขาย (104) ผ่านแอป',
   DO_CREDIT_CONTRACT_UNSUPPORTED: 'เงื่อนไขเครดิตลูกค้ารายนี้ยังไม่รองรับ กรุณาให้ฝ่ายบัญชีตรวจสอบ',
   DO_PREVIEW_STALE: 'ข้อมูลเปลี่ยนระหว่างดำเนินการ กรุณาตรวจสถานะและขออนุมัติใหม่',
   DO_CREDIT_APPROVAL_REQUIRED: 'ต้องได้รับอนุมัติวงเงินจาก Account ที่ยังไม่หมดอายุก่อน',
@@ -63,10 +63,10 @@ export function NativeDeliveryButton({soid,onCreated}:{soid:string|number;onCrea
  const r=preview?.request;
  const expired=Boolean(r?.expiresAt && Date.parse(r.expiresAt)<=Date.now());
  return <>
-  <button onClick={inspect} disabled={busy} className="rounded-lg bg-blue-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">ออกใบสั่งขาย 104</button>
-  {open&&createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="ออกใบสั่งขาย 104">
+  <button onClick={inspect} disabled={busy} className="rounded-lg bg-blue-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">ออกใบสั่งขาย (104)</button>
+  {open&&createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="ออกใบสั่งขาย (104)">
    <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-    <h2 className="text-lg font-bold text-[#0C447C]">ออกใบสั่งขาย 104</h2>
+    <h2 className="text-lg font-bold text-[#0C447C]">ออกใบสั่งขาย (104)</h2>
     {preview&&<div className="mt-3 space-y-2 text-sm">
      {preview.completed?<><p>ออกเอกสารแล้ว: <strong>{preview.deliveryNo}</strong>{preview.deliveryNo&&can('native.print-104')&&<button onClick={()=>setPrinting(true)} className="ml-3 rounded-lg border px-2 py-1 text-xs">พิมพ์ใบสั่งจ่าย</button>}</p><p>ตั๋ว: <strong>{preview.couponNo}</strong> · ตั้งยอดลูกหนี้แล้ว</p></>:<>
       <p>ใบจอง {preview.docuNo} · AI {preview.aiNo}</p><p>เต็มจำนวน · ยอด {Number(preview.amount).toLocaleString('th-TH',{minimumFractionDigits:2})} บาท</p>
@@ -85,7 +85,7 @@ export function NativeDeliveryButton({soid,onCreated}:{soid:string|number;onCrea
      {preview&&!preview.completed&&<>
       <button disabled={busy} onClick={inspect} className="rounded-lg border px-3 py-2">ตรวจสถานะอีกครั้ง</button>
       {(!r||(r.isRequester&&expired))&&<button disabled={busy} onClick={request} className="rounded-lg bg-amber-700 px-3 py-2 text-white">ขอ Account อนุมัติเกินวงเงิน</button>}
-      {r?.isRequester&&r.status==='APPROVED'&&!expired&&<button disabled={busy} onClick={create} className="rounded-lg bg-blue-800 px-3 py-2 font-bold text-white">ยืนยันออก 104 เต็มจำนวน</button>}
+      {r?.isRequester&&r.status==='APPROVED'&&!expired&&<button disabled={busy} onClick={create} className="rounded-lg bg-blue-800 px-3 py-2 font-bold text-white">ยืนยันออกใบสั่งขาย (104) เต็มจำนวน</button>}
      </>}
     </div>
    </div>

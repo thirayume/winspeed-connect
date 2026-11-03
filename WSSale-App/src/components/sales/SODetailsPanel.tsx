@@ -199,7 +199,7 @@ export function SODetailsPanel({
           <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs">
             <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
             <div>
-              <p className="font-bold text-emerald-700">WINSpeed Invoice Posted — SO Locked</p>
+              <p className="font-bold text-emerald-700">ออกใบส่งของ (107) ใน WinSpeed แล้ว บิลนี้ถูกล็อก</p>
               <p className="text-emerald-600 mt-0.5">
                 {firstInvoice?.docuNo || firstInvoice?.soInvID || 'พบ invoice ใน WINSpeed'}
                 {firstInvoice?.docuDate ? ` · ${formatDateTime(firstInvoice.docuDate)}` : ''}
