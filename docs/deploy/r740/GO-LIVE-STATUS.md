@@ -1,14 +1,51 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **3 November 2026 05:55 (ICT)**. This page records observed results;
+Operational snapshot: **3 November 2026 16:20 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
-**Running release: 1.0.5 on UAT and Production (`8333828`), 162 migrations. Production opens for staff at 06:00 on
-3 November 2026 in mixed mode (owner, 3 November 2026): quotations, bills, trips, 103, stock, reports and prints in
-Sale-App; AI, 104, 116 and 107 in WinSpeed. All native writers stay off.**
+**Running release: UAT 1.0.6 (164 migrations). Production 1.0.5 (`8333828`, 162 migrations) until the owner orders
+1.0.6. Staff get their accounts on 6 November 2026. Production runs in mixed mode (owner, 3 November 2026): quotations,
+bills, trips, 103, stock, reports and prints in Sale-App; AI, 104, 116 and 107 in WinSpeed. All native writers stay off.**
 Older paragraphs below are history.
+
+**Bill-to-invoice rehearsal on UAT, 3 November 2026.** Bills were made in Sale-App and carried through WinSpeed over
+Remote Desktop on `dbwins_worldfert9_uat`: AI, 104 with ticket, 116 and 107. Production still has every defect below.
+Found and fixed in 1.0.6:
+
+- A bill with a giveaway could not be approved in WinSpeed, which refuses a line with no quantity, and the piece count
+  was lost at confirm. No real WinSpeed sales document has ever carried a giveaway line, so a giveaway now stays out of
+  `dbo.SODT`; `wf.SalesOrderLineExt` keeps the item and pieces, numbered after the sale lines, and the booking remark
+  names it (migration 165). Verified: the approval form shows the sale lines only, the Description tab names the
+  giveaway with its pieces, Approve & Save passes, and the screens, delivery slip and booking print show pieces.
+- A bill read CONFIRMED after WinSpeed had issued its 104, 116 and 107, and could still be cancelled or rewritten from
+  the app. Every path now refuses and names the 104. Verified against a real chain on UAT.
+- A booking cancelled after AI approval stayed in the lookup used to issue a 104 (migration 166). Verified: a booking
+  cancelled after the fix is no longer offered. A booking with a live 104 is never touched.
+- The warehouse could not record shipping for seven hours after a truck left the scale, because `WGHD.DateOut` is local
+  time and was compared with UTC. On Production data every truck out in the previous seven hours failed that check.
+  Verified with one test scale row on UAT: the warehouse role shipped with no exception and the weight came from the row.
+- A salesperson could not open the document chain of their own ticket once it was cut.
+- Also fixed earlier the same day: quotation save, credit days on a bill from a direct quotation, re-confirming an
+  edited bill, an approved cancel request that left the bill live, and numbers bound to text parameters.
+
+Passed with no change: quotation to bill, K and I bills, control ticket, partial trip confirm, draft edit and cancel,
+prints, warehouse picking, load and acknowledgement, manager ship exception, 29 report types, a 40-route scope check as
+SALES, and the rebate plan chain to tier 4, allocation and an accounting claim through tier 2. Claim tier 3 needs a
+C_LEVEL account, closed on UAT until the 21:00 restore.
+
+Owner decisions this rehearsal left open:
+
+- Mixed mode keeps a bill open in Sale-App until the warehouse records shipping there, even after WinSpeed issues the
+  107, and rebate accrual runs at that step. Either the warehouse records every truck, or a sync closes the bill.
+- A salesperson can file a rebate claim only against accrual from bills shipped in the app with a NET price in effect.
+  An allocated plan amount does not raise that cap and an allocation-only pool is hidden. Older deliveries go through
+  accounting.
+- Weight tolerance is set to +2% to +5%. In Production weighings since September, 85% fall between 0% and +1%, and the QA
+  guides say plus or minus 2%. The status only labels a report and blocks nothing.
+- WinSpeed's Post Invoice issues from whichever book is active. Accounting must keep I to J and K to N; the rehearsal
+  got an N on an I bill by not switching. The 104 number follows the letter typed in its number field.
 
 **Production check by role, 3 November 2026 00:40.** Six accounts were opened for a few minutes from the
 owner's administrator session, with no password set, and closed again. Through Access As, the main read API of
