@@ -119,9 +119,9 @@ function LineRow({ l }: { l: TripLine }) {
           )}
         </span>
       </td>
-      <td className="px-2 py-1.5 text-right tabular-nums text-gray-800">{ton(l.qtyTon)}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums text-gray-800">{l.isGiveaway ? '—' : ton(l.qtyTon)}</td>
       <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">
-        {l.qtyBag ? Number(l.qtyBag).toLocaleString('th-TH') : '—'}
+        {l.qtyBag ? `${Number(l.qtyBag).toLocaleString('th-TH')}${l.isGiveaway ? ' ชิ้น' : ''}` : '—'}
       </td>
     </tr>
   );
@@ -345,7 +345,7 @@ function LoadingPlanPanel({ tripId, onClose }: { tripId: number | string; onClos
                           </span>
                         )}
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{ton(r.qtyTon)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{r.isGiveaway ? `${r.qtyPiece} ชิ้น` : ton(r.qtyTon)}</td>
                     </tr>
                   ))}
                 </tbody>

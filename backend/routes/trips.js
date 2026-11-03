@@ -163,6 +163,14 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
         ) AND d.DocuType = 103
         LEFT JOIN dbo.EMGood g ON g.GoodID = d.GoodID
         LEFT JOIN wf.SalesOrderLineExt le ON le.SOID = e.SOID AND le.ListNo = d.ListNo
+        WHERE e.TripId IN (${idList})
+        UNION ALL
+        SELECT e.TripId, 'CONFIRMED', CAST(le.SOID AS VARCHAR(50)), le.ListNo, le.GiveawayGoodCode, le.GiveawayGoodName,
+               CAST(0 AS DECIMAL(18,3)), CAST(le.GiveawayPieces AS DECIMAL(18,0)), CAST(0 AS DECIMAL(18,2)), le.NetPricePerTon,
+               CAST(0 AS DECIMAL(18,2)), le.IsGiveaway, le.LoadSequence, le.MasterQty, le.ChildQty,
+               le.RefControlTicketNo, le.IsControlTicketDrawn, le.GiveawayApprovalStatus
+        FROM wf.SalesOrderExt e
+        JOIN wf.SalesOrderLineExt le ON le.SOID = e.SOID AND le.IsGiveaway = 1 AND le.GiveawayGoodId IS NOT NULL
         WHERE e.TripId IN (${idList})`),
 
       // สถานะรถจาก WGHD — 1 ลงทะเบียน · 2 กำลังโหลด · 3 ชั่งออกแล้ว
@@ -485,6 +493,13 @@ router.get('/:id/loading-plan', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE
         ) AND s.DocuType = 103
         LEFT JOIN dbo.EMGood g ON g.GoodID = d.GoodID
         LEFT JOIN wf.SalesOrderLineExt le ON le.SOID = e.SOID AND le.ListNo = d.ListNo
+        WHERE e.TripId = @id
+        UNION ALL
+        SELECT 'CONFIRMED', CAST(le.SOID AS VARCHAR(50)), le.ListNo, le.GiveawayGoodCode, le.GiveawayGoodName,
+               CAST(0 AS DECIMAL(18,3)), CAST(le.GiveawayPieces AS DECIMAL(18,0)), le.IsGiveaway, le.LoadSequence,
+               le.MasterQty, le.ChildQty, le.RefControlTicketNo, e.PSling, e.TruckRemark, NULL
+        FROM wf.SalesOrderExt e
+        JOIN wf.SalesOrderLineExt le ON le.SOID = e.SOID AND le.IsGiveaway = 1 AND le.GiveawayGoodId IS NOT NULL
         WHERE e.TripId = @id`, { id })
     ]);
 
@@ -641,6 +656,11 @@ router.put('/:id/load-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
             ELSE NULL 
           END
         ) AND d.DocuType = 103
+        WHERE e.TripId = @tripId
+        UNION ALL
+        SELECT CAST(le.SOID AS VARCHAR(50)), le.ListNo, CAST(0 AS DECIMAL(18,3)), le.GiveawayGoodName
+        FROM wf.SalesOrderExt e
+        JOIN wf.SalesOrderLineExt le ON le.SOID = e.SOID AND le.IsGiveaway = 1 AND le.GiveawayGoodId IS NOT NULL
         WHERE e.TripId = @tripId
       `);
 

@@ -7,6 +7,7 @@ import { AlertDialog } from '../ui/AlertDialog';
 import { VisualTruckLoader } from './VisualTruckLoader';
 import { SO_STATUS_META } from '../../constants/soStatus';
 import { appPrompt } from '../ui/AppAlert';
+import { giveawayPieces } from '../../utils/giveaway';
 
 export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[]; onUpdate: () => void, mode: 'LOADING' | 'SCALE' }) => {
   const [busy, setBusy] = useState<number | null>(null);
@@ -216,7 +217,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
                 )}
                 {giveawayLines.length > 0 && (
                   <div className="rounded-md bg-amber-50 px-2 py-1.5 text-xs font-bold text-amber-700 border border-amber-100">
-                    ของแถม {giveawayLines.length} รายการ
+                    ของแถม {giveawayLines.length} รายการ · {giveawayLines.reduce((s, l) => s + giveawayPieces(l), 0)} ชิ้น
                   </div>
                 )}
               </div>

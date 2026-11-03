@@ -78,6 +78,7 @@ export type NormalizedSO = {
     goodName: string;
     qtyTon: number;
     qtyBag: number;
+    isGiveaway: boolean;
     masterQty: number | null;
     childQty: number | null;
   }>;
@@ -191,6 +192,7 @@ export function SOBookingDocModal({
               goodName: l.goodName || l.GoodName || '-',
               qtyTon: Number(l.qtyTon ?? l.QtyTon ?? 0),
               qtyBag: Number(l.qtyBag ?? l.QtyBag ?? (Number(l.qtyTon ?? l.QtyTon ?? 0) * 20)),
+              isGiveaway: Boolean(l.isGiveaway ?? l.IsGiveaway),
               masterQty: l.masterQty ?? l.MotherLoadQty ?? l.MasterQty ?? null,
               childQty: l.childQty ?? l.ChildLoadQty ?? l.ChildQty ?? null,
               isCouponDrawn: Boolean(l.isCouponDrawn || l.IsCouponDrawn || l.couponReservationId || l.CouponReservationId),
@@ -238,7 +240,7 @@ export function SOBookingDocModal({
   // Consolidated Items for Summary Attachment Page
   const combinedItemsMap = new Map<string, { goodCode: string; goodName: string; totalTon: number; totalBag: number }>();
   orders.forEach(ord => {
-    ord.lines.forEach(l => {
+    ord.lines.filter(l => !l.isGiveaway).forEach(l => {
       const key = l.goodCode;
       const existing = combinedItemsMap.get(key) || { goodCode: l.goodCode, goodName: l.goodName, totalTon: 0, totalBag: 0 };
       existing.totalTon += l.qtyTon;
@@ -716,8 +718,8 @@ export function SOBookingDocModal({
                                     </div>
                                   )}
                                 </td>
-                                <td className="py-2 px-2 border-r border-black text-right font-bold">{l.qtyTon.toFixed(2)}</td>
-                                <td className="py-2 px-2 border-r border-black text-center">ตัน</td>
+                                <td className="py-2 px-2 border-r border-black text-right font-bold">{l.isGiveaway ? l.qtyBag : l.qtyTon.toFixed(2)}</td>
+                                <td className="py-2 px-2 border-r border-black text-center">{l.isGiveaway ? 'ชิ้น (แถม)' : 'ตัน'}</td>
                                 <td className="py-2 px-2 border-r border-black text-right">{l.masterQty ? Number(l.masterQty).toFixed(2) : '-'}</td>
                                 <td className="py-2 px-2 text-right">{l.childQty ? Number(l.childQty).toFixed(2) : '-'}</td>
                               </tr>

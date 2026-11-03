@@ -16,6 +16,7 @@ import { SOBookingDocModal } from './SOBookingDocModal';
 import { SO_STATUS_META, soStatusLabel } from '../../constants/soStatus';
 import { QuickShipModal } from './QuickShipModal';
 import { bangkokDate } from '../../utils/date';
+import { giveawayPieces } from '../../utils/giveaway';
 import { LoadSequencer, type SequencedLine } from './LoadSequencer';
 
 export function TripSummaryModal({
@@ -162,7 +163,7 @@ export function TripSummaryModal({
         });
       }
       const existing = consolidatedItems.get(key)!;
-      existing.qtyTon += line.qtyTon;
+      existing.qtyTon += line.isGiveaway ? giveawayPieces(line) : line.qtyTon;
       existing.qtyBag += (line.qtyBag || Math.round(line.qtyTon * 20));
     }
   }
@@ -717,7 +718,7 @@ export function TripSummaryModal({
                           <td className="p-2 text-gray-800 font-medium">{row.goodName}</td>
                           <td className="p-2 text-right font-mono text-gray-700">{row.split?.masterQty != null ? Number(row.split.masterQty).toFixed(2) : '-'}</td>
                           <td className="p-2 text-right font-mono text-gray-700">{row.split?.childQty != null ? Number(row.split.childQty).toFixed(2) : '-'}</td>
-                          <td className="p-2 text-right font-mono font-bold text-[#0C447C]">{Number(row.qtyTon || 0).toFixed(2)}</td>
+                          <td className="p-2 text-right font-mono font-bold text-[#0C447C]">{row.isGiveaway ? `${row.qtyPiece} ชิ้น` : Number(row.qtyTon || 0).toFixed(2)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -785,7 +786,7 @@ export function TripSummaryModal({
                   const isShippedOrImported = ['SHIPPED', 'IMPORTED', 'CANCELLED'].includes(order.status);
                   
                   const totalTon = (order.lines || []).filter(l => !l.isGiveaway).reduce((sum, l) => sum + (l.qtyTon || 0), 0);
-                  const totalGiveaways = (order.lines || []).filter(l => l.isGiveaway).reduce((sum, l) => sum + (l.qtyTon || 0), 0);
+                  const totalGiveaways = (order.lines || []).filter(l => l.isGiveaway).reduce((sum, l) => sum + giveawayPieces(l), 0);
                   const totalGrossAmt = (order.lines || []).reduce((sum, l) => sum + ((l.qtyTon * (l.pricePerTon != null ? l.pricePerTon : l.netPricePerTon)) || 0), 0);
                   const totalNetAmt = (order.lines || []).reduce((sum, l) => sum + ((l.qtyTon * l.netPricePerTon) || 0), 0);
                   const hasTicket = (order.lines || []).some(l => l.isControlTicketDrawn);

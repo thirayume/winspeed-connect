@@ -207,8 +207,8 @@ export function PaperDocModal({ soIds, onClose }: { soIds: (string | number)[]; 
                                       </div>
                                     )}
                                   </td>
-                                  <td className="px-2 py-1.5 text-right whitespace-nowrap">{Number(l.QtyTon).toFixed(2)}</td>
-                                  <td className="px-2 py-1.5 text-right whitespace-nowrap">{l.QtyBag}</td>
+                                  <td className="px-2 py-1.5 text-right whitespace-nowrap">{l.IsGiveaway ? '-' : Number(l.QtyTon).toFixed(2)}</td>
+                                  <td className="px-2 py-1.5 text-right whitespace-nowrap">{l.IsGiveaway ? `${l.QtyBag} ชิ้น` : l.QtyBag}</td>
                                   {showPrices && <td className="px-2 py-1.5 text-right whitespace-nowrap">{price > 0 ? price.toLocaleString(undefined, {minimumFractionDigits: 2}) : '-'}</td>}
                                   {showPrices && <td className="px-2 py-1.5 text-right whitespace-nowrap font-medium">{total > 0 ? total.toLocaleString(undefined, {minimumFractionDigits: 2}) : '-'}</td>}
                                   <td className="px-2 py-1.5 text-center whitespace-nowrap">{l.LoadSequence ?? '-'}</td>
@@ -220,7 +220,7 @@ export function PaperDocModal({ soIds, onClose }: { soIds: (string | number)[]; 
                             <tr className="font-bold text-[11px] sm:text-xs" style={{ background: '#F8FAFC' }}>
                               <td className="px-2 py-2 whitespace-nowrap text-right" colSpan={2}>รวมทั้งหมด</td>
                               <td className="px-2 py-2 text-right whitespace-nowrap">{job.doc.lines.reduce((s, l) => s + Number(l.QtyTon), 0).toFixed(2)}</td>
-                              <td className="px-2 py-2 text-right whitespace-nowrap">{job.doc.lines.reduce((s, l) => s + Number(l.QtyBag), 0).toLocaleString()}</td>
+                              <td className="px-2 py-2 text-right whitespace-nowrap">{job.doc.lines.reduce((s, l) => s + (l.IsGiveaway ? 0 : Number(l.QtyBag)), 0).toLocaleString()}</td>
                               {showPrices && <td className="px-2 py-2 text-right whitespace-nowrap"></td>}
                               {showPrices && <td className="px-2 py-2 text-right whitespace-nowrap">{job.doc.lines.reduce((s, l) => s + (Number(l.QtyTon) * Number(l.PricePerTon || 0)), 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>}
                               <td className="px-2 py-2 whitespace-nowrap"></td>

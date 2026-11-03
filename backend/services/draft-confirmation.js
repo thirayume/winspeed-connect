@@ -57,6 +57,7 @@ async function confirmDraft({tx:confirmationTx,draftId,user,ip,expectedRevision,
  if(quote)fail('ต้องยืนยันใบเสนอราคาก่อน');
  const lines=(await confirmationQuery('SELECT * FROM wf.SalesOrderLine WITH (UPDLOCK,HOLDLOCK) WHERE SoId=@id ORDER BY LineNum',{id:{type:sql.Int,value:so.Id}})).recordset;
  if(!lines.length)fail('ไม่พบรายการสินค้า');
+ if(lines.every(l=>l.IsGiveaway))fail('บิลต้องมีสินค้าขายอย่างน้อย 1 รายการ ของแถมอย่างเดียวออกใบสั่งจองไม่ได้');
  if(lines.some(l=>l.IsGiveaway && l.GiveawayApprovalStatus!=='APPROVED'))fail('ของแถมยังไม่ได้รับอนุมัติ');
  const credit=(await confirmationQuery('SELECT CreditHold FROM wf.CreditMaster WITH (UPDLOCK,HOLDLOCK) WHERE CustId=@c',{c:{type:sql.NVarChar(20),value:String(so.CustId)}})).recordset[0];
  if(credit?.CreditHold) {const policy=await resolveApprovalPolicy('CREDIT_OVERRIDE');if(user.role!=='ADMIN' && user.role!==policy?.RequiredRole)fail('ลูกค้าถูกระงับเครดิต ต้องอนุมัติก่อน');}

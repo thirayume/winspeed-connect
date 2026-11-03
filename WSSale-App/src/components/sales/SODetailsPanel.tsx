@@ -10,6 +10,7 @@ import { SOCancelDeleteModal } from '../common/SOCancelDeleteModal';
 import { useAuthStore } from '../../store/auth-store';
 import { canViewRebateAmounts } from '../../utils/permissions';
 import { formatThaiDate } from '../../utils/date';
+import { giveawayPieces } from '../../utils/giveaway';
 import type { SalesOrder } from '../../types';
 import { NativeAiApprovalButton } from './NativeAiApprovalButton';
 import { NativeDeliveryButton } from './NativeDeliveryButton';
@@ -325,7 +326,7 @@ export function SODetailsPanel({
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-right text-xs text-gray-600 tabular-nums whitespace-nowrap">{l.qtyTon.toFixed(3)}</td>
+                      <td className="px-3 py-2.5 text-right text-xs text-gray-600 tabular-nums whitespace-nowrap">{l.isGiveaway ? `${giveawayPieces(l)} ชิ้น` : l.qtyTon.toFixed(3)}</td>
                       <td className="px-3 py-2.5 text-right text-xs font-medium text-gray-800 tabular-nums whitespace-nowrap">
                         {l.isGiveaway ? '–' : ((l as any).isCouponDrawn || (l as any).couponReservationId || l.pricePerTon === 0) ? (
                           <div>

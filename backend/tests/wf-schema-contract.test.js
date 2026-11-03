@@ -83,7 +83,8 @@ const SCHEMA_FIXTURE = {
     'SOID', 'ListNo', 'NetPricePerTon', 'IsGiveaway', 'RebateBooked',
     'LoadSequence', 'RefControlTicketNo', 'IsControlTicketDrawn',
     'GiveawayApprovalStatus', 'GiveawayApprovedBy', 'GiveawayApprovedAt',
-    'GiveawayApprovalNote', 'MasterQty', 'ChildQty'
+    'GiveawayApprovalNote', 'MasterQty', 'ChildQty',
+    'GiveawayGoodId', 'GiveawayGoodCode', 'GiveawayGoodName', 'GiveawayPieces'
   ]
 };
 

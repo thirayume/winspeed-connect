@@ -885,6 +885,36 @@ router.get('/', async (req, res) => {
           ON ext.SOID = CONVERT(VARCHAR(50), dt.SOID)
          AND ext.ListNo = dt.ListNo
         WHERE dt.SOID IN (${idParams})
+
+        UNION ALL
+
+        -- a giveaway stays out of the WinSpeed document; wf keeps the item and its pieces (migration 165)
+        SELECT
+          CAST(gw.SOID AS VARCHAR(50)) AS SoId,
+          gw.ListNo AS LineNum,
+          gw.GiveawayGoodId AS GoodId,
+          gw.GiveawayGoodCode AS GoodCode,
+          gw.GiveawayGoodName AS GoodName,
+          CAST(0 AS DECIMAL(12,3)) AS QtyTon,
+          gw.GiveawayPieces AS QtyBag,
+          CAST(0 AS DECIMAL(12,3)) AS MasterQty,
+          CAST(0 AS DECIMAL(12,3)) AS ChildQty,
+          CAST(0 AS DECIMAL(12,2)) AS PricePerTon,
+          CAST(0 AS DECIMAL(12,2)) AS NetPricePerTon,
+          CAST(0 AS DECIMAL(18,2)) AS LineAmount,
+          CAST(0 AS DECIMAL(18,2)) AS RebatePerTon,
+          CAST(0 AS DECIMAL(18,2)) AS RebateAmount,
+          CAST(1 AS BIT) AS IsGiveaway,
+          gw.GiveawayApprovalStatus,
+          gw.GiveawayApprovedBy,
+          gw.GiveawayApprovedAt,
+          gw.GiveawayApprovalNote,
+          gw.RefControlTicketNo,
+          gw.IsControlTicketDrawn,
+          gw.LoadSequence
+        FROM wf.SalesOrderLineExt gw WITH (NOLOCK)
+        WHERE gw.IsGiveaway = 1 AND gw.GiveawayGoodId IS NOT NULL
+          AND gw.SOID IN (${ids.map((_, i) => `CONVERT(VARCHAR(50), @id${i})`).join(',')})
         ORDER BY SoId, LineNum
         `,
         Object.fromEntries(ids.map((id, i) => [`id${i}`, { type: sql.Int, value: Number(id) }]))
@@ -1766,10 +1796,10 @@ async function checkUnlockedNativeEdit(tx, req, so, order, beforeLines) {
     const name = l.goodName || l.goodCode || l.goodId;
     if (l.isGiveaway) {
       const kept = prior.find(p => p.IsGiveaway && String(p.GoodId) === String(l.goodId)
-        && p.GiveawayApprovalStatus === 'APPROVED' && Number(p.QtyTon) >= Number(l.qtyTon));
+        && p.GiveawayApprovalStatus === 'APPROVED' && linePieces(p) >= linePieces(l));
       if (kept) out.push({ net: 0, giveaway: { status: 'APPROVED', by: kept.GiveawayApprovedBy, at: kept.GiveawayApprovedAt, note: kept.GiveawayApprovalNote } });
       else if (giveawayApprovalStatusForLine(req, l) === 'APPROVED') out.push({ net: 0, giveaway: { status: 'APPROVED', by: req.user.sub, at: new Date(), note: l.giveawayApprovalNote || null } });
-      else problems.push(`ของแถม ${name} ${l.qtyTon} ตัน ยังไม่ได้รับอนุมัติ`);
+      else problems.push(`ของแถม ${name} ${linePieces(l)} ชิ้น ยังไม่ได้รับอนุมัติ`);
       continue;
     }
     if (validated instanceof Set && validated.has(i)) { out.push({ net: 0 }); continue; }
@@ -1797,8 +1827,8 @@ router.checkUnlockedNativeEdit = checkUnlockedNativeEdit;
 // goods, tons, price or giveaway changed between the bill before an edit and the lines being saved
 function materialChange(beforeLines, lines) {
   const sig = (rows, pick) => rows.map(pick).sort().join(';');
-  const before = sig(beforeLines || [], l => [String(l.GoodId), Number(l.QtyTon).toFixed(3), Number(l.PricePerTon || 0).toFixed(2), l.IsGiveaway ? 'G' : ''].join('|'));
-  const after = sig(lines || [], l => [String(l.goodId), Number(l.qtyTon).toFixed(3), Number(l.pricePerTon || 0).toFixed(2), l.isGiveaway ? 'G' : ''].join('|'));
+  const before = sig(beforeLines || [], l => [String(l.GoodId), Number(l.IsGiveaway ? linePieces(l) : l.QtyTon).toFixed(3), Number(l.PricePerTon || 0).toFixed(2), l.IsGiveaway ? 'G' : ''].join('|'));
+  const after = sig(lines || [], l => [String(l.goodId), Number(l.isGiveaway ? linePieces(l) : l.qtyTon).toFixed(3), Number(l.pricePerTon || 0).toFixed(2), l.isGiveaway ? 'G' : ''].join('|'));
   return before !== after;
 }
 router.materialChange = materialChange;
@@ -1835,6 +1865,7 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
         const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, rebateDiscountAmt, creditDays, truckRemark, billRemark, transpId } = order;
         const truckPlate = order.truckPlate || null;
         stripPrivateLineFields(lines);
+        if (lines.length && lines.every(l => l.isGiveaway)) throw Object.assign(new Error('บิลต้องมีสินค้าขายอย่างน้อย 1 รายการ ของแถมอย่างเดียวออกใบสั่งจองไม่ได้'), { status: 400 });
         const checked = await checkUnlockedNativeEdit(tx, req, so, order, beforeLines);
         // a user who cannot see rebate amounts keeps the rebate already applied to the bill (it was reset to 0)
         const safeRebateDiscountAmt = canViewRebateAmounts(req.user)
@@ -1902,11 +1933,14 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
         await tx.request().input('id', sql.VarChar(50), so.Id).query(`DELETE FROM dbo.SODTRemark WHERE SOID=@id; DELETE FROM dbo.SODT WHERE SOID=@id; DELETE FROM wf.SalesOrderLineExt WHERE SOID=@id;`);
 
         const hasGiveawayApproval = await hasGiveawayApprovalColumns();
+        // sale lines keep 1..n in dbo.SODT; a giveaway stays out of the WinSpeed document, numbered after them (migration 165)
+        let nextSaleNo = 0;
+        let nextGiveawayNo = lines.filter(l => !l.isGiveaway).length;
         for (let i = 0; i < lines.length; i++) {
           const l = lines[i];
           const lr = tx.request();
           lr.input('soId', sql.VarChar(50), so.Id);
-          lr.input('lineNum', sql.Int, i + 1);
+          lr.input('lineNum', sql.Int, l.isGiveaway ? ++nextGiveawayNo : ++nextSaleNo);
           lr.input('goodId', sql.NVarChar(20), String(l.goodId));
           lr.input('goodName', sql.NVarChar(200), l.goodName ? String(l.goodName) : '');
           lr.input('qtyTon', sql.Decimal(12,3), Number(l.qtyTon));
@@ -1926,6 +1960,16 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
             lr.input('giveawayApprovalNote', sql.NVarChar(300), g?.note ?? null);
           }
           lr.input('loadSequence', sql.Int, l.loadSequence || null);
+
+          if (l.isGiveaway) {
+            lr.input('pieces', sql.Int, linePieces(l));
+            await lr.query(`
+              INSERT INTO wf.SalesOrderLineExt (SOID, ListNo, NetPricePerTon, IsGiveaway, RebateBooked, RefControlTicketNo, IsControlTicketDrawn, MasterQty, ChildQty, LoadSequence, GiveawayGoodId, GiveawayGoodCode, GiveawayGoodName, GiveawayPieces${giveawayApprovalInsertColumns(hasGiveawayApproval)})
+              SELECT @soId, @lineNum, @netPricePerTon, 1, 0, @refControlTicketNo, @isControlTicketDrawn, 0, 0, @loadSequence, @goodId, g.GoodCode, COALESCE(NULLIF(@goodName, ''), g.GoodName1), @pieces${giveawayApprovalInsertValues(hasGiveawayApproval)}
+              FROM dbo.EMGood g WHERE g.GoodID = @goodId;
+            `);
+            continue;
+          }
 
           await lr.query(`
             INSERT INTO dbo.SODT (

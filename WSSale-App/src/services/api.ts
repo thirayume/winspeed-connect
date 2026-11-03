@@ -1711,6 +1711,7 @@ export const fetchTripBoard = (params?: { status?: string; search?: string }) =>
 };
 
 export type LoadingPlanRow = TripLine & {
+  qtyPiece?: number;
   step: number;
   docuNo: string | null;
   soPrefix: string | null;
