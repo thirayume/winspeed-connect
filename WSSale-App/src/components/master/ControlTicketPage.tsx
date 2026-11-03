@@ -469,7 +469,7 @@ export function ControlTicketPage() {
             <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200 text-blue-900 text-xs flex items-center gap-2">
               <Info size={16} className="text-blue-600 shrink-0" />
               <span>
-                <strong>นโยบายสิทธิ์การใช้ตั๋วคุม (SO-04):</strong> Prefix ของลูกค้า ({sel.CustID}) เป็นเพียง candidate
+                <strong>นโยบายสิทธิ์การใช้ตั๋วคุม:</strong> Prefix ของลูกค้า ({sel.CustID}) เป็นเพียง candidate
                 ในการค้นหา ไม่ใช่สิทธิ์เบิกข้ามลูกค้าร่วมกันโดยอัตโนมัติ ห้ามแชร์สิทธิ์โดยไม่มี authorized relationship
               </span>
             </div>
@@ -587,7 +587,7 @@ export function ControlTicketPage() {
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-gray-50 to-white">
               <div className="flex items-center gap-2">
                 <GitFork size={18} className="text-[#0C447C]" />
-                <h3 className="font-bold text-gray-800 text-base">ผังเส้นทาง Native Chain (SO-04)</h3>
+                <h3 className="font-bold text-gray-800 text-base">เส้นทางเอกสาร</h3>
               </div>
               <button
                 onClick={() => setTraceModal({ isOpen: false, loading: false, data: null })}
@@ -744,7 +744,7 @@ export function ControlTicketPage() {
                   className="rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]"
                 />
                 <span className="text-xs font-semibold text-gray-700">
-                  ไม่ระบุวันหมดอายุ (สถานะ UNKNOWN ตามข้อตกลงธุรกิจ)
+                  ไม่ระบุวันหมดอายุ (ตามข้อตกลงธุรกิจ)
                 </span>
               </label>
 
@@ -887,7 +887,7 @@ function ExpiryBadge({
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 text-gray-600 border border-gray-200">
           <HelpCircle size={12} />
-          ไม่ระบุวันหมดอายุ (UNKNOWN)
+          ไม่ระบุวันหมดอายุ
         </span>
       );
   }

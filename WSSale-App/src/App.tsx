@@ -135,12 +135,16 @@ const NAV_GROUPS: NavGroup[] = [
 // Flatten for lookups
 const ALL_NAV: NavItem[] = NAV_GROUPS.flatMap(g => g.items);
 
-// Mobile bottom tab bar items (fixed 4 + "More")
+// Mobile bottom tab bar: the first 4 of these the role may open, + "More". The list is longer than 4 so that a role
+// without the warehouse or document board still gets useful tabs instead of pages it has no menu for on a computer.
 const MOBILE_TABS: (NavItem & { isMobileOnly?: boolean })[] = [
   { key: 'dashboard',  label: 'Dashboard',  sub: '',  icon: LayoutDashboard },
   { key: 'papertrail', label: 'เอกสาร',      sub: '',  icon: LayoutGrid },
   { key: 'sales',      label: 'ขาย',         sub: '',  icon: ShoppingCart },
   { key: 'store',      label: 'คลัง',        sub: '',  icon: Warehouse, badge: true },
+  { key: 'trip-board', label: 'เที่ยวรถ',     sub: '',  icon: Truck },
+  { key: 'rebate',     label: 'รีเบท',        sub: '',  icon: Coins },
+  { key: 'reports',    label: 'รายงาน',      sub: '',  icon: BarChart3 },
 ];
 
 const ACCESS_AS_ROLES: UserRole[] = ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'COUNTER_SALES'];
@@ -602,7 +606,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
 
       {/* Mobile Bottom Tab Bar — 4 fixed + "More" */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-border bg-background safe-bottom md:hidden h-[60px] items-center px-1">
-        {MOBILE_TABS.map(n => {
+        {getVisibleItems(MOBILE_TABS).slice(0, 4).map(n => {
           const Icon = n.icon;
           const isSales = n.key === 'sales';
           const isActive = activePortal === n.key;
@@ -648,7 +652,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
         <button
           onClick={() => setIsMobileDrawerOpen(true)}
           className={`relative flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition-colors ${
-            isMobileDrawerOpen || !MOBILE_TABS.some(t => t.key === activePortal) ? 'text-foreground' : 'text-muted-foreground'
+            isMobileDrawerOpen || !getVisibleItems(MOBILE_TABS).slice(0, 4).some(t => t.key === activePortal) ? 'text-foreground' : 'text-muted-foreground'
           }`}
         >
           <Menu className="h-5 w-5" />
@@ -663,6 +667,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
         groups={NAV_GROUPS}
         activePortal={activePortal}
         userRole={role}
+        capMenus={capMenus}
         pendingUnlocks={pendingApprovals}
         onNavigate={(key) => {
           if (key === 'approvals') {

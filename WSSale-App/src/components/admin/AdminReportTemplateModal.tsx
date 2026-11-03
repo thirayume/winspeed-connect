@@ -204,7 +204,7 @@ export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated }:
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold tracking-tight">ระบบจัดการหัวกระดาษและแม่แบบรายงาน (SO-10 Admin Master)</h2>
+                <h2 className="text-lg font-bold tracking-tight">ระบบจัดการหัวกระดาษและแม่แบบรายงาน</h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-amber-950 uppercase">Admin Only</span>
               </div>
               <p className="text-xs text-blue-100/90 mt-0.5">
@@ -436,7 +436,7 @@ export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated }:
                       type="text"
                       value={reason}
                       onChange={e => setReason(e.target.value)}
-                      placeholder="ระบุเหตุผลเพื่อบันทึกประวัติการเปลี่ยนแปลงตามมาตรฐาน SO-10"
+                      placeholder="ระบุเหตุผลเพื่อบันทึกประวัติการเปลี่ยนแปลง"
                       className="w-full px-3 py-2 border border-amber-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-500"
                       required
                     />
@@ -674,7 +674,7 @@ export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated }:
                       type="text"
                       value={reason}
                       onChange={e => setReason(e.target.value)}
-                      placeholder="ระบุเหตุผลเพื่อบันทึกประวัติการเปลี่ยนแปลงตามมาตรฐาน SO-10"
+                      placeholder="ระบุเหตุผลเพื่อบันทึกประวัติการเปลี่ยนแปลง"
                       className="w-full px-3 py-2 border border-amber-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-500"
                       required
                     />

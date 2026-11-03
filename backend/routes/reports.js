@@ -32,7 +32,7 @@ const REPORTS = {
       { key: 'AckByName', label: 'ผู้ตรวจ', type: 'text' },
       { key: 'AckNote', label: 'ผลการตรวจ', type: 'text' },
     ],
-    sql: `SELECT TOP 1000 CONVERT(VARCHAR(16), i.OccurredAt, 120) AS OccurredAt,
+    sql: `SELECT TOP 1000 CONVERT(VARCHAR(16), DATEADD(hour, 7, i.OccurredAt), 120) AS OccurredAt,
             CASE i.IncidentType
               WHEN 'SHIP_BEFORE_AI' THEN N'รถชั่งออกก่อนอนุมัติใบสั่งจอง (AI)'
               WHEN 'SHIP_MANUAL_EXCEPTION' THEN N'ส่งออกโดยไม่มีบันทึกชั่ง'
@@ -40,8 +40,8 @@ const REPORTS = {
               WHEN 'WEIGHT_OUT_OF_TOLERANCE' THEN N'น้ำหนักต่างเกินเกณฑ์'
               WHEN 'PLATE_MISMATCH' THEN N'ทะเบียนรถไม่ตรง'
               WHEN 'SCALE_TONS_MISMATCH' THEN N'ตันในบันทึกชั่งไม่ตรงบิล'
-              WHEN 'DELIVERY_ON_CANCELLED_BOOKING' THEN N'ออกใบสั่งขายจากใบที่ยกเลิก'
-              WHEN 'INVOICE_BOOK_MISMATCH' THEN N'เล่มใบส่งของไม่ตรงสาย'
+              WHEN 'DELIVERY_ON_CANCELLED_BOOKING' THEN N'ออกใบสั่งขาย (104) จากใบที่ยกเลิก'
+              WHEN 'INVOICE_BOOK_MISMATCH' THEN N'เล่มใบส่งของ (107) ไม่ตรงสายใบสั่งขาย (104)'
               ELSE i.IncidentType END AS IncidentType,
             i.DocuNo, RTRIM(h.CustName) AS CustName, i.Detail,
             CASE i.Status WHEN 'ACK' THEN N'ตรวจแล้ว' ELSE N'รอตรวจ' END AS Status,

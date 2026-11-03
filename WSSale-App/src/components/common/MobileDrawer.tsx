@@ -25,11 +25,12 @@ type Props = {
   groups: NavGroup[];
   activePortal: string;
   userRole?: UserRole;
+  capMenus?: string[];
   pendingUnlocks: number;
   onNavigate: (key: string) => void;
 };
 
-export function MobileDrawer({ isOpen, onClose, groups, activePortal, userRole, pendingUnlocks, onNavigate }: Props) {
+export function MobileDrawer({ isOpen, onClose, groups, activePortal, userRole, capMenus, pendingUnlocks, onNavigate }: Props) {
   const backdropRef = useRef<HTMLDivElement>(null);
 
   // Prevent body scroll when drawer is open
@@ -80,7 +81,7 @@ export function MobileDrawer({ isOpen, onClose, groups, activePortal, userRole, 
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 no-scrollbar">
           {groups.map(group => {
             const visibleItems = group.items.filter(
-              n => !n.roles || (userRole && n.roles.includes(userRole))
+              n => capMenus ? capMenus.includes(n.key) : (!n.roles || (userRole && n.roles.includes(userRole)))
             );
             if (visibleItems.length === 0) return null;
 

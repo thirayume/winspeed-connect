@@ -191,7 +191,7 @@ export function QuotationPage() {
             <FileText className="w-5 h-5 sm:w-[26px] sm:h-[26px]" /> ใบเสนอราคา
           </h1>
           <p className="hidden sm:block text-sm text-gray-500 mt-0.5">
-            จัดการใบเสนอราคา, แปลงเป็นใบสั่งขาย (SO) และติดตามสถานะ
+            จัดการใบเสนอราคา, แปลงเป็นบิล และติดตามสถานะ
           </p>
         </div>
       </div>
@@ -378,7 +378,7 @@ export function QuotationPage() {
                               onClick={() => doConvert(q)}
                               className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-colors flex items-center gap-1.5 disabled:opacity-50"
                             >
-                              <ArrowRightCircle size={14} /> แปลง SO
+                              <ArrowRightCircle size={14} /> แปลงเป็นบิล
                             </button>
                           )}
                         </div>

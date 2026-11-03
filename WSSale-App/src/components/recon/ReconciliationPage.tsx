@@ -223,7 +223,7 @@ export function ReconciliationPage() {
               : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
           }`}
         >
-          กระทบยอดขายและชั่งน้ำหนัก (SO & Weigh Recon)
+          กระทบยอดขายและชั่งน้ำหนัก
         </button>
         <button
           onClick={() => setActiveTab('COUPON_SETTLEMENT')}
@@ -539,7 +539,7 @@ export function ReconciliationPage() {
                           <option value="">-- เลือกรายการจอง --</option>
                           {manualCut.candidateReservations.map(c => (
                             <option key={c.id} value={String(c.id)}>
-                              จอง #{c.id} - SO: {c.carrierDocuNo || c.carrierSoId || '-'} | ทะเบียน: {c.plate || '-'} | ยอดคงเหลือ: {c.remainingReservedQty ?? c.reservedQty} ตัน {c.beneficiaryName ? `(${c.beneficiaryName})` : ''}
+                              จอง #{c.id} - บิล: {c.carrierDocuNo || c.carrierSoId || '-'} | ทะเบียน: {c.plate || '-'} | ยอดคงเหลือ: {c.remainingReservedQty ?? c.reservedQty} ตัน {c.beneficiaryName ? `(${c.beneficiaryName})` : ''}
                             </option>
                           ))}
                         </select>

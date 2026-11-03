@@ -149,7 +149,7 @@ export function DashboardPage() {
           <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 bg-gradient-to-r from-[#0C447C] to-[#2563EB] bg-clip-text text-transparent">
             <LayoutDashboard className="w-5 h-5 sm:w-6 sm:h-6" /> Dashboard
           </h1>
-          <p className="hidden sm:block text-sm text-gray-500 mt-0.5 font-medium tracking-wide">ภาพรวมใบสั่งขาย · SO ค้างจัดส่ง · รีเบท</p>
+          <p className="hidden sm:block text-sm text-gray-500 mt-0.5 font-medium tracking-wide">ภาพรวมบิล · บิลค้างจัดส่ง · รีเบท</p>
         </div>
         <button onClick={() => load(true)} className="h-9 w-9 sm:h-10 sm:w-10 flex items-center justify-center rounded-xl border border-gray-200/50 bg-white/50 backdrop-blur-sm hover:bg-white/80 hover:shadow-md transition-all duration-300 hover:scale-105 active:scale-95 shrink-0">
           <RefreshCw size={16} className={loading ? 'animate-spin text-blue-500' : 'text-gray-500 hover:text-[#0C447C] transition-colors'} />
@@ -253,7 +253,7 @@ export function DashboardPage() {
 
         {/* SO status breakdown */}
         <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 p-4 sm:p-5 shadow-sm">
-          <h2 className="text-sm font-bold text-gray-700 mb-4">สถานะใบสั่งขาย</h2>
+          <h2 className="text-sm font-bold text-gray-700 mb-4">สถานะบิล</h2>
           <div className="space-y-2">
             {SO_STATUS_ORDER.map(st => {
               const count = stats.byStatus[st] || 0;
@@ -280,7 +280,7 @@ export function DashboardPage() {
               <span className="text-[10px] font-normal text-gray-400">เหลือง &gt;30 · แดง &gt;45 วัน</span>
             </h2>
             {groupedAging.length === 0 ? (
-              <p className="text-xs text-gray-400 py-6 text-center">{loading ? 'กำลังโหลดรายการ…' : 'ไม่มี SO ค้างจัดส่ง'}</p>
+              <p className="text-xs text-gray-400 py-6 text-center">{loading ? 'กำลังโหลดรายการ…' : 'ไม่มีบิลค้างจัดส่ง'}</p>
             ) : (
               <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                 {groupedAging.slice(0, 30).map((g, i) => {

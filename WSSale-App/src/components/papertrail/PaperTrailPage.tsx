@@ -154,7 +154,7 @@ export function PaperTrailPage() {
             <Search className="absolute left-3 top-2.5 sm:top-2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
             <input 
               type="text" 
-              placeholder="ค้นหา SO, ลูกค้า, ทะเบียนรถ..." 
+              placeholder="ค้นหาเลขบิล ลูกค้า, ทะเบียนรถ..." 
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 sm:py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/50 transition-all"

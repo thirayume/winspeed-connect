@@ -205,7 +205,7 @@ export function LegacyReportPdfModal({
                   รวม {totalPages} หน้า ({data.rows.length.toLocaleString()} แถว)
                 </span>
               </div>
-              <p className="text-xs text-gray-500">รูปแบบเอกสาร A4 ตามมาตรฐาน SO-10 · WINSpeed Connect Master (Authoritative)</p>
+              <p className="text-xs text-gray-500">รูปแบบเอกสาร A4 จากข้อมูล WinSpeed</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
