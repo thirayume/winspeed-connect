@@ -7,7 +7,7 @@
  */
 const { findPendingScaleEvents } = require('./scale-events');
 const { getWeightSettings } = require('./weight-reconciliation');
-const { recordIncident, detectIncidents, plateMatches } = require('./rule-incidents');
+const { recordIncident, detectIncidents, plateMatches, localToUtc } = require('./rule-incidents');
 const { syncStockFromWinSpeed } = require('./stock-sync');
 
 const SHIP_INTERVAL_MS = 60 * 1000;
@@ -48,7 +48,7 @@ async function runOnce() {
         for (const p of problems) {
           await recordIncident({
             key: `${p.type}:${row.EventId}`, type: p.type, soid: row.SOID, docuNo: row.DocuNo,
-            wghdId: row.EventId, occurredAt: row.WeighOutAt, detail: p.detail,
+            wghdId: row.EventId, occurredAt: localToUtc(row.WeighOutAt), detail: p.detail,
           });
         }
         continue;

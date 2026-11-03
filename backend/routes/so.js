@@ -2856,10 +2856,10 @@ async function noteLoadPlanNotAcknowledged(so, tripId, event) {
   if (!tripId || !event?.EventId) return;
   const trip = (await wfQuery(`SELECT LoadPlanStatus FROM wf.SalesTrip WHERE TripId = @tid`, { tid: { type: sql.Int, value: Number(tripId) } })).recordset?.[0];
   if (!trip?.LoadPlanStatus || ['WAREHOUSE_ACK', 'LOADING', 'COMPLETED'].includes(trip.LoadPlanStatus)) return;
-  const { recordIncident } = require('../services/rule-incidents');
+  const { recordIncident, localToUtc } = require('../services/rule-incidents');
   await recordIncident({
     key: `SHIP_BEFORE_LOAD_ACK:${event.EventId}`, type: 'SHIP_BEFORE_LOAD_ACK', soid: Number(so.Id), docuNo: so.WfRef,
-    wghdId: event.EventId, occurredAt: event.WeighOutAt, detail: `สถานะแผนจัดของ ${trip.LoadPlanStatus}`,
+    wghdId: event.EventId, occurredAt: localToUtc(event.WeighOutAt), detail: `สถานะแผนจัดของ ${trip.LoadPlanStatus}`,
   });
 }
 

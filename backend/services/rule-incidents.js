@@ -46,6 +46,9 @@ async function incidentStartDate() {
   return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '2026-11-01';
 }
 
+// WinSpeed and the scale store Bangkok time, and the driver hands it over as if it were UTC.
+const localToUtc = v => (v ? new Date(new Date(v).getTime() - 7 * 3600 * 1000) : null);
+
 const plate = v => String(v || '').replace(/[\s-]/g, '').toUpperCase();
 const NO_PLATE = new Set(['', 'ตั๋วคุม', 'ยังไม่ระบุรถ', 'ไม่ระบุทะเบียนรถ']);
 const plateMatches = (a, b) => NO_PLATE.has(plate(b)) || plate(a) === plate(b);
@@ -64,7 +67,7 @@ async function detectScaleIncidents(start, tolerance) {
   `, { start: { type: sql.VarChar(10), value: start } })).recordset || [];
 
   for (const r of rows) {
-    const base = { soid: r.SPID, docuNo: r.DocuNo, wghdId: r.WghdId, occurredAt: r.DateOut };
+    const base = { soid: r.SPID, docuNo: r.DocuNo, wghdId: r.WghdId, occurredAt: localToUtc(r.DateOut) };
     const approvedLater = r.AppvFlag === 'Y' && r.ApprovedAt && new Date(r.ApprovedAt) > new Date(r.DateOut);
     if (r.AppvFlag !== 'Y' || approvedLater) {
       await recordIncident({
@@ -117,7 +120,7 @@ async function detectDocumentIncidents(start) {
   for (const c of cancelled) {
     await recordIncident({
       key: `DELIVERY_ON_CANCELLED_BOOKING:${c.SOID}:${c.DeliveryNo}`, type: 'DELIVERY_ON_CANCELLED_BOOKING',
-      soid: c.SOID, docuNo: c.DocuNo, occurredAt: c.DocuDate, detail: `ใบสั่งขาย (104) ${c.DeliveryNo}`,
+      soid: c.SOID, docuNo: c.DocuNo, occurredAt: localToUtc(c.DocuDate), detail: `ใบสั่งขาย (104) ${c.DeliveryNo}`,
     });
   }
 
@@ -130,7 +133,7 @@ async function detectDocumentIncidents(start) {
   for (const b of books) {
     await recordIncident({
       key: `INVOICE_BOOK_MISMATCH:${b.SOInvID}`, type: 'INVOICE_BOOK_MISMATCH', docuNo: b.DocuNo,
-      occurredAt: b.DocuDate, detail: `ใบส่งของ (107) ${b.DocuNo} จากใบสั่งขาย (104) ${b.SONo}`,
+      occurredAt: localToUtc(b.DocuDate), detail: `ใบส่งของ (107) ${b.DocuNo} จากใบสั่งขาย (104) ${b.SONo}`,
     });
   }
 }
@@ -143,4 +146,4 @@ async function detectIncidents() {
   await detectDocumentIncidents(start);
 }
 
-module.exports = { INCIDENT_TYPES, APPROVAL_SCREEN, recordIncident, detectIncidents, plateMatches };
+module.exports = { INCIDENT_TYPES, APPROVAL_SCREEN, recordIncident, detectIncidents, plateMatches, localToUtc };

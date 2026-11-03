@@ -7,7 +7,7 @@ const router = require('express').Router();
 const { sql, wfQuery } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { getVisibleScope, inScope } = require('../services/visible-scope');
-const { INCIDENT_TYPES } = require('../services/rule-incidents');
+const { INCIDENT_TYPES, localToUtc } = require('../services/rule-incidents');
 const { MENUS } = require('../services/role-capabilities');
 
 router.use(requireAuth);
@@ -25,6 +25,11 @@ const WS_SCREENS = Object.freeze({
   558: 'Post GL',
 });
 const WS_ACTIONS = Object.freeze({ I: 'บันทึก', U: 'แก้ไข/อนุมัติ', D: 'ลบ', P: 'พิมพ์' });
+const APP_ACTIONS = Object.freeze({
+  CREATED: 'สร้างบิล', UPDATED: 'แก้ไขบิล', VERIFIED: 'ตรวจบิล', CONFIRMED: 'ยืนยันบิล เกิดใบสั่งจอง (103)',
+  PICKING: 'คลังเริ่มรอรับสินค้า', LOADED: 'คลังโหลดสินค้า', SHIPPED: 'ส่งออกจากตาชั่ง', CANCELLED: 'ยกเลิกบิล',
+  UNLOCKED: 'ปลดล็อกบิล', EDIT_UNLOCKED: 'อนุมัติให้แก้ไขบิล', GIVEAWAY_APPROVED: 'อนุมัติของแถม',
+});
 
 const typeLabel = t => INCIDENT_TYPES[t]?.label || t;
 
@@ -86,7 +91,7 @@ async function buildTimeline(soid, docuNo) {
     LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = a.UserId
     WHERE a.SoId = CONVERT(VARCHAR(50), @soid)
     ORDER BY a.Id`, q)).recordset || [];
-  for (const a of appEvents) add(a.CreatedAt, `Sale-App: ${a.Action}`, a.DisplayName, booking?.DocuNo, a.Note);
+  for (const a of appEvents) add(a.CreatedAt, `Sale-App: ${APP_ACTIONS[a.Action] || a.Action}`, a.DisplayName, booking?.DocuNo, a.Note);
 
   const deliveries = booking?.AppvDocuNo ? ((await wfQuery(`
     SELECT RTRIM(d.DocuNo) AS DocuNo, d.SOID FROM dbo.SOHD d WITH (NOLOCK)
@@ -101,8 +106,8 @@ async function buildTimeline(soid, docuNo) {
     SELECT w.Id, RTRIM(w.CarNo) AS CarNo, w.DateIn, w.DateOut, w.WeightIn, w.WeightOut, w.WeightNet, RTRIM(w.MoveBill) AS MoveBill, RTRIM(w.UpdateBy) AS UpdateBy
     FROM dbo.WGHD w WITH (NOLOCK) WHERE w.WGType = 'SO' AND w.SPID = @soid ORDER BY w.Id`, q)).recordset || [];
   for (const w of scales) {
-    add(w.DateIn, 'ตาชั่ง: รถชั่งเข้า', w.UpdateBy, w.MoveBill, `${w.CarNo || ''} ${w.WeightIn || 0} กก.`.trim());
-    add(w.DateOut, 'ตาชั่ง: รถชั่งออก', w.UpdateBy, w.MoveBill, `${w.CarNo || ''} สุทธิ ${w.WeightNet || 0} กก.`.trim());
+    add(localToUtc(w.DateIn), 'ตาชั่ง: รถชั่งเข้า', w.UpdateBy, w.MoveBill, `${w.CarNo || ''} ${w.WeightIn || 0} กก.`.trim());
+    add(localToUtc(w.DateOut), 'ตาชั่ง: รถชั่งออก', w.UpdateBy, w.MoveBill, `${w.CarNo || ''} สุทธิ ${w.WeightNet || 0} กก.`.trim());
   }
 
   const docNos = [...new Set([booking?.DocuNo, booking?.AppvDocuNo, docuNo, ...deliveries.map(d => d.DocuNo), ...invoices.map(i => i.DocuNo), ...scales.map(w => w.MoveBill)].filter(Boolean))].slice(0, 30);
@@ -116,7 +121,7 @@ async function buildTimeline(soid, docuNo) {
       ORDER BY a.audit_datetime`, inputs)).recordset || [];
     for (const a of audit) {
       const screen = WS_SCREENS[a.audit_screen];
-      if (screen) add(a.audit_datetime, `WinSpeed: ${WS_ACTIONS[a.audit_action] || a.audit_action} ${screen}`, a.Username, a.DocuNo);
+      if (screen) add(localToUtc(a.audit_datetime), `WinSpeed: ${WS_ACTIONS[String(a.audit_action).trim()] || a.audit_action} ${screen}`, a.Username, a.DocuNo);
     }
   }
 
