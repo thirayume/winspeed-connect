@@ -1156,10 +1156,20 @@ router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
         residualTripId=residual?.TripId || null;residualTripCode=residual?.TripCode || null;replayed=true;
         return;
       }
+      // A confirmed trip takes one more confirm only to lock again WinSpeed bills unlocked for an edit. Without this
+      // such a bill stays a draft for good, because a trip bill can't be confirmed on its own either.
+      let relockOnly = false;
       if (tripRow.Status === 'CONFIRMED') {
-        const err = new Error('เที่ยวนี้ได้รับการยืนยันไปแล้ว');
-        err.status = 409;
-        throw err;
+        const unlocked = numericIds.length !== cleanOrderIds.length || !numericIds.length ? 0 : (await tx.request()
+          .input('tripId', sql.Int, tripId)
+          .query(`SELECT COUNT(*) AS n FROM wf.SalesOrderExt WITH (UPDLOCK)
+                  WHERE TripId = @tripId AND IsUnlocked = 1 AND CAST(SOID AS INT) IN (${numericIds.join(',')})`)).recordset?.[0]?.n;
+        relockOnly = Number(unlocked) > 0 && Number(unlocked) === new Set(numericIds).size;
+        if (!relockOnly) {
+          const err = new Error('เที่ยวนี้ได้รับการยืนยันไปแล้ว');
+          err.status = 409;
+          throw err;
+        }
       }
       if (expectedRevision != null && Number(expectedRevision) !== tripRow.DocumentRevision) {
         const err = new Error('ข้อมูลเที่ยวรถถูกแก้ไขโดยผู้อื่น กรุณาโหลดข้อมูลใหม่');
@@ -1235,7 +1245,7 @@ router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
       for(const m of allMembers.filter(m=>m.MemberKind==='DRAFT').sort((a,b)=>Number(a.MemberId)-Number(b.MemberId)))
         await lockConfirmationResource(tx,'ConfirmSO_'+m.MemberId);
       // 6. Handle residual unselected members
-      const residualMembers = allMembers.filter(m => !confirmedTypedKeySet.has(`${m.MemberKind}:${m.MemberId}`));
+      const residualMembers = relockOnly ? [] : allMembers.filter(m => !confirmedTypedKeySet.has(`${m.MemberKind}:${m.MemberId}`));
       residualOrderCount = residualMembers.length;
 
       if (residualMembers.length > 0) {
@@ -1318,7 +1328,7 @@ router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LE
             TransRegistration = @plate,
             DriverName = @driver,
             PickupDueDate = @pDate,
-            ConfirmedAt = SYSUTCDATETIME(),
+            ConfirmedAt = CASE WHEN Status = 'CONFIRMED' THEN ConfirmedAt ELSE SYSUTCDATETIME() END,
             IdempotencyKey = @idemKey,
             PayloadHash = @payloadHash,
             DocumentRevision = DocumentRevision + 1,

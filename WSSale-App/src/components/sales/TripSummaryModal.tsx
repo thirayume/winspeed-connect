@@ -262,7 +262,7 @@ export function TripSummaryModal({
       }
     }
 
-    const isPartial = selectedOrders.length < draftOrders.length;
+    const isPartial = !hasRelockableBill && selectedOrders.length < draftOrders.length;
     const confirmMsg = isPartial
       ? `ยืนยัน ${selectedOrders.length} บิลที่เลือก?\nบิลที่ไม่ได้เลือกอีก ${draftOrders.length - selectedOrders.length} บิล จะถูกย้ายไปเที่ยวตกค้าง (-R) โดยอัตโนมัติ`
       : `ยืนยันออร์เดอร์ทั้งหมด ${selectedOrders.length} บิลในเที่ยวนี้ใช่หรือไม่?`;
@@ -358,6 +358,8 @@ export function TripSummaryModal({
   };
 
   const allDraft = trip.orders.every(o => o.status === 'DRAFT');
+  // a bill unlocked for an edit reads DRAFT while the rest of its confirmed trip stays as it was
+  const hasRelockableBill = !allDraft && trip.orders.some(o => o.status === 'DRAFT');
   const allConfirmed = trip.orders.every(o => o.status === 'CONFIRMED');
   const allPicking = trip.orders.length > 0 && trip.orders.every(o => ['PICKING', 'LOADED'].includes(o.status));
   const canSubmitPlan = (!loadPlanStatus || loadPlanStatus === 'DRAFT') &&
@@ -494,7 +496,7 @@ export function TripSummaryModal({
                 <div className="mt-3 pt-3 sm:mt-4 sm:pt-4 border-t border-gray-200 space-y-2 sm:space-y-3">
                   {!hasAnyUnlockRequest && (
                     <div className="flex flex-col gap-2 sm:gap-3">
-                      {allDraft && !isQuoteLocked && (
+                      {(allDraft || hasRelockableBill) && !isQuoteLocked && (
                         <button
                           disabled={busy || selectedSoIds.size === 0}
                           onClick={handleConfirmTripOrders}
