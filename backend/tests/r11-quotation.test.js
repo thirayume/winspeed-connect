@@ -49,6 +49,19 @@ let app;
 test.before(async () => { app = await h.startApp([['/api/quotation', '../../routes/quotation']]); });
 test.after(async () => { await app.close(); });
 
+test('the screen sends the product id as a number, and the text parameter still gets text', async () => {
+  const before = db.calls.length;
+  const r = await app.call('POST', '/api/quotation', {
+    body: { custId: '1141', custName: 'ร้านสุวรรณภัณฑ์', validDays: 15, lines: [
+      { goodId: 1114, goodCode: '7-15151500BBCAR', goodName: '15-15-15', qtyTon: 2, pricePerTon: 19000, netPricePerTon: 19000 },
+    ] },
+    user: { sub: 25, role: 'MANAGER' },
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const line = db.calls.slice(before).find(c => /INSERT INTO wf\.QuotationLine/.test(c.text));
+  assert.strictEqual(line.inputs.gid, '1114');
+});
+
 test('U-3: create writes the native 102 quote only through wf procedures (no INSERT INTO dbo.SOHD)', async () => {
   const before = db.calls.length;
   const r = await app.call('POST', '/api/quotation', {

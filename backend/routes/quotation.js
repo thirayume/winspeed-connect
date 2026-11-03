@@ -1286,7 +1286,7 @@ router.post('/', requireCapability('quotation.create'), async (req, res) => {
       for (let i = 0; i < lines.length; i++) {
         const l = lines[i]; const lr = tx.request();
         lr.input('q', sql.Int, qid); lr.input('n', sql.Int, i + 1);
-        lr.input('gid', sql.NVarChar(20), l.goodId); lr.input('gc', sql.NVarChar(50), l.goodCode || '');
+        lr.input('gid', sql.NVarChar(20), String(l.goodId)); lr.input('gc', sql.NVarChar(50), l.goodCode || '');
         lr.input('gn', sql.NVarChar(200), l.goodName || '');
         lr.input('qt', sql.Decimal(12,3), Number(l.qtyTon));
         lr.input('pp', sql.Decimal(12,2), Number(l.pricePerTon));
@@ -1485,7 +1485,7 @@ router.post('/from-so-trip', requireCapability('quotation.create'), async (req, 
         await tx.request()
           .input('q', sql.Int, qid)
           .input('n', sql.Int, i + 1)
-          .input('gid', sql.NVarChar(20), l.goodId)
+          .input('gid', sql.NVarChar(20), String(l.goodId))
           .input('gc', sql.NVarChar(50), l.goodCode)
           .input('gn', sql.NVarChar(200), l.goodName)
           .input('qt', sql.Decimal(12, 3), l.qtyTon)
