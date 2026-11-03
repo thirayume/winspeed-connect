@@ -637,7 +637,7 @@ export function TripSummaryModal({
                           ? '🚚 กำลังโหลดสินค้า'
                           : loadPlanStatus === 'COMPLETED'
                             ? '✓ โหลดเสร็จสิ้น'
-                            : 'แบบร่าง (DRAFT)'}
+                            : 'แบบร่าง'}
                   </span>
                   {canSubmitPlan && (
                     <button
@@ -691,7 +691,7 @@ export function TripSummaryModal({
                     )}
                   </div>
                   <span className="text-[10px] bg-blue-100 text-[#0C447C] px-2 py-0.5 rounded font-bold">
-                    {capacityInfo.status}
+                    {({ VERIFIED: 'ตรงกับข้อมูลรถ', UNVERIFIED: 'ยังไม่ยืนยันประเภทรถ' } as Record<string, string>)[capacityInfo.status] || capacityInfo.status}
                   </span>
                 </div>
               )}
@@ -847,7 +847,7 @@ export function TripSummaryModal({
                             </div>
                             {order.deliveryDate && (
                               <div>
-                                กำหนดรับ SO: <span className="font-semibold text-gray-700">{order.deliveryDate.split('T')[0]}</span>
+                                กำหนดรับ: <span className="font-semibold text-gray-700">{new Date(order.deliveryDate).toLocaleDateString('th-TH')}</span>
                               </div>
                             )}
                           </div>

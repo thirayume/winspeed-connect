@@ -1808,7 +1808,8 @@ function normalizeGoodPattern(p) {
     const padded = parts.map(part => part.padStart(2, '0')).join('');
     return `%${padded}%`;
   }
-  return s;
+  // A goods code, whole or its start: a part typed without % used to match nothing, and the plan silently never applied.
+  return `${s}%`;
 }
 
 // POST /api/rebate/plans — สร้าง Plan (DRAFT)

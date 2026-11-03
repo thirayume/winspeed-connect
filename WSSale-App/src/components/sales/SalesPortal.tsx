@@ -470,7 +470,7 @@ export const SalesPortal = () => {
                 disabled={orders.length === 0}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-bold text-[#0C447C] shadow-sm disabled:opacity-50"
               >
-                <Download size={13} /> Export SO (Excel)
+                <Download size={13} /> ส่งออกรายการบิล (Excel)
               </button>
             </div>
             {showFilters && (

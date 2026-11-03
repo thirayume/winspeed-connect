@@ -121,7 +121,7 @@ test('R10.5-2: Formula 2-digit zero-padding and LIKE matching against real dbo.E
   assert.equal(sqlLike(realGoods[3].code, normalizeGoodPattern('15-5-35')), false);
 
   // Exact code & wildcard pass-through
-  assert.equal(normalizeGoodPattern('7-15151500BBCAR'), '7-15151500BBCAR');
+  assert.equal(normalizeGoodPattern('7-15151500BBCAR'), '7-15151500BBCAR%');
   assert.equal(normalizeGoodPattern('7-15151500%'), '7-15151500%');
   assert.equal(normalizeGoodPattern('ALL'), null);
   assert.equal(normalizeGoodPattern('ทุกสูตร'), null);

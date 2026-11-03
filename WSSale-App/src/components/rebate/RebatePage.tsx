@@ -86,12 +86,12 @@ export function RebatePage() {
           <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
             <Coins className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> รีเบท (Rebate)
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">ส่วนต่างราคา (฿) · Pool รายเดือน · Ledger FIFO · เคลม → WINSpeed Ref</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">ยอดสะสมรายเดือน · ยื่นเคลียร์รีเบท · ติดตามการอนุมัติ</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={handleExportClaims} disabled={claims.length === 0}
             className="px-3 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-bold text-[#0C447C] flex items-center gap-1.5 shadow-sm disabled:opacity-50">
-            <Download size={14} /> Export Claims (Excel)
+            <Download size={14} /> ส่งออกคำขอ (Excel)
           </button>
           <button onClick={() => setShowInfo(true)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600">
             <Info size={18} />
@@ -107,7 +107,7 @@ export function RebatePage() {
           {/* Left: Pools + Claims */}
           <div className={`w-full lg:max-w-md flex flex-col lg:border-r border-gray-200 overflow-y-auto px-4 pb-4 space-y-5 ${selectedPool ? 'hidden lg:flex' : 'flex'}`}>
             <div>
-              <h2 className="text-xs font-bold uppercase text-gray-400 mb-2">Rebate Pools (รายเดือน)</h2>
+              <h2 className="text-xs font-bold uppercase text-gray-400 mb-2">กองรีเบท (รายเดือน)</h2>
               {pools.length === 0 ? (
                 <p className="text-xs text-gray-400 py-4 text-center">ยังไม่มียอดสะสม ยอดเกิดจากบิลที่ส่งออกแล้วและขายสูงกว่าราคา NET ยอดก่อนเริ่มใช้ระบบให้ฝ่ายบัญชียื่นแทน</p>
               ) : pools.map(p => {
@@ -164,13 +164,13 @@ export function RebatePage() {
                       <h2 className="font-bold text-gray-800">{selectedPool.SalesName}</h2>
                     </div>
                     <h2 className="font-bold text-gray-800 hidden lg:block">{selectedPool.SalesName} · {monthLabel(selectedPool)}</h2>
-                    <p className="text-xs text-gray-400"><span className="lg:hidden">{monthLabel(selectedPool)} · </span>Ledger FIFO — ตัดจากรายการเก่าสุดก่อน</p>
+                    <p className="text-xs text-gray-400"><span className="lg:hidden">{monthLabel(selectedPool)} · </span>ตัดจากรายการเก่าสุดก่อน</p>
                   </div>
                   {(role === 'SALES' || role === 'ACCOUNTING' || role === 'ADMIN' || role === 'C_LEVEL') && (
                     <button onClick={() => setShowClaim(true)}
                       data-testid="open-claim-dialog-button"
                       className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-xs font-semibold" style={{ background: '#0C447C' }}>
-                      <Scissors size={13} /> ยื่นเคลม (FIFO)
+                      <Scissors size={13} /> ยื่นเคลียร์รีเบท
                     </button>
                   )}
                 </div>
@@ -200,7 +200,7 @@ export function RebatePage() {
                           <td className="py-2 px-3 whitespace-nowrap text-right tabular-nums font-bold" style={{color: Number(l.RemainingAmt)>0?'#059669':'#9CA3AF'}}>฿{Number(l.RemainingAmt).toLocaleString('th-TH',{maximumFractionDigits:0})}</td>
                           </>}
                           <td className="py-2 px-3 whitespace-nowrap text-center">
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full ${l.Status==='CLAIMED'?'bg-gray-100 text-gray-500':'bg-blue-50 text-blue-700'}`}>{l.Status}</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full ${l.Status==='CLAIMED'?'bg-gray-100 text-gray-500':'bg-blue-50 text-blue-700'}`}>{({ PENDING: 'ยังไม่เคลียร์', PARTIAL: 'เคลียร์บางส่วน', CLAIMED: 'เคลียร์แล้ว' } as Record<string, string>)[l.Status] || l.Status}</span>
                           </td>
                         </tr>
                       ))}
@@ -215,7 +215,7 @@ export function RebatePage() {
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-gray-300">
                 <Coins size={56} className="mb-3" />
-                <p className="text-sm">เลือก pool เพื่อดู ledger</p>
+                <p className="text-sm">เลือกกองรีเบทเพื่อดูรายการ</p>
               </div>
             )}
           </div>
@@ -248,7 +248,7 @@ export function RebatePage() {
                 <br/>→ สะสมในบัญชีพนักงาน
               </div>
               <p>ลูกค้าสามารถใช้รีเบทเป็นส่วนลดบิลใดก็ได้ → บัญชีออกใบลดหนี้ (109) ลดหนี้ให้ลูกค้า</p>
-              <p><strong>Ledger FIFO:</strong> ระบบจะตัดยอดจากรายการเก่าสุดก่อนเสมอ</p>
+              <p><strong>ลำดับการตัดยอด:</strong> ระบบจะตัดยอดจากรายการเก่าสุดก่อนเสมอ</p>
             </div>
           </div>
         </div>

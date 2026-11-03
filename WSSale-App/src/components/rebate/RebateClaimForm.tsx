@@ -191,7 +191,7 @@ export function ClaimDialog({ pool, onClose, onDone }:
             <button data-testid="fetch-lots-button" onClick={loadLots} disabled={lotsBusy || !custId.trim()}
               className="px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1.5">
               {lotsBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-              ดึงยอดขนจริง (FIFO)
+              ดึงยอดขนจริง
             </button>
           </div>
 

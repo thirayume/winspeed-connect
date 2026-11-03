@@ -311,7 +311,7 @@ test('L-4: Rebate plan region and good code pattern normalizers', () => {
   assert.equal(normalizeGoodPattern('15-5-35'), '%150535%');
   assert.equal(normalizeGoodPattern('16-8-8'), '%160808%');
   assert.equal(normalizeGoodPattern('0-0-60'), '%000060%');
-  assert.equal(normalizeGoodPattern('7-15151500BBCAR'), '7-15151500BBCAR');
+  assert.equal(normalizeGoodPattern('7-15151500BBCAR'), '7-15151500BBCAR%');
   assert.equal(normalizeGoodPattern('7-15151500%'), '7-15151500%');
   assert.equal(normalizeGoodPattern('ALL'), null);
   assert.equal(normalizeGoodPattern(''), null);

@@ -384,7 +384,8 @@ export function CreateSODialog({
       return g.GoodName.toLowerCase().includes(q) || g.GoodCode.toLowerCase().includes(q);
     }
     return true;
-  });
+  // Goods on the price list first: the list also holds sacks and raw material, which filled the first pages.
+  }).sort((a, b) => Number(getBestPrice(b.GoodID).price > 0) - Number(getBestPrice(a.GoodID).price > 0));
   const totalPages = Math.ceil(filteredGoods.length / itemsPerPage) || 1;
   const paginatedGoods = filteredGoods.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
@@ -1294,7 +1295,7 @@ export function CreateSODialog({
                               <div className="text-[11px] text-gray-600 flex items-center justify-between">
                                 <span>ราคาประกาศ:</span>
                                 <span className="font-bold text-gray-800">
-                                  {epObj?.StandardPrice != null ? `฿${Number(epObj.StandardPrice).toLocaleString()}` : (g.SetPrice || g.GoodPrice1 || g.GoodPrice ? `฿${Number(g.SetPrice || g.GoodPrice1 || g.GoodPrice).toLocaleString()}` : '-')}
+                                  {epObj?.StandardPrice != null ? `฿${Number(epObj.StandardPrice).toLocaleString()}` : (g.SetPrice || g.GoodPrice1 || g.GoodPrice ? `฿${Number(g.SetPrice || g.GoodPrice1 || g.GoodPrice).toLocaleString()}` : (net > 0 && !isExpired ? `฿${net.toLocaleString()}` : '-'))}
                                 </span>
                               </div>
                               {canSeeRebate && <div className="text-[11px] flex items-center justify-between">
