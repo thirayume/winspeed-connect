@@ -9,6 +9,18 @@ const nativeDriver = isWindows && String(process.env.DB_DRIVER || '').trim().toL
 
 // Use msnodesqlv8 on Windows for Windows Auth support, standard tedious on Linux (Docker)
 const sql = nativeDriver ? require('mssql/msnodesqlv8') : require('mssql');
+
+// The Linux driver refuses a number in a text parameter ("Validation failed for parameter ... Invalid string"), and
+// screens send ids as numbers: every quotation saved from a screen failed this way while API tests sending strings passed.
+const TEXT_PARAMETER_TYPES = [sql.TYPES.VarChar, sql.TYPES.NVarChar, sql.TYPES.Char, sql.TYPES.NChar];
+const bindParameter = sql.Request.prototype.input;
+sql.Request.prototype.input = function input(name, type, value) {
+  const declared = typeof type === 'function' ? type() : type;
+  if (arguments.length >= 3 && typeof value === 'number' && TEXT_PARAMETER_TYPES.includes(declared?.type)) {
+    return bindParameter.call(this, name, type, String(value));
+  }
+  return bindParameter.apply(this, arguments);
+};
 const { withNativeSessionSettings } = require('./services/native-session-pool');
 const RuntimePool = nativeDriver ? withNativeSessionSettings(sql.ConnectionPool) : sql.ConnectionPool;
 
