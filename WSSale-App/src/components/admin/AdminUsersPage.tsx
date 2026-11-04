@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Users, RefreshCw, Check, AlertTriangle, Plus, Edit2, X, Search, UserX, ArrowUpDown, Trash2, Settings } from 'lucide-react';
+import { Users, RefreshCw, Check, AlertTriangle, Plus, Edit2, X, Search, UserX, ArrowUpDown, Trash2, Settings, KeyRound } from 'lucide-react';
 import { listUsers, fetchEmployees, updateUser, createUser, deleteUser } from '../../services/api';
 import '../../store/db-mode';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
@@ -26,6 +26,10 @@ export const AdminUsersPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
+  const [resetError, setResetError] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetNotice, setResetNotice] = useState('');
 
   // Pagination, Searching & Sorting
   const [searchQuery, setSearchQuery] = useState('');
@@ -79,7 +83,35 @@ export const AdminUsersPage = () => {
   const needsMapping = (u: AdminUser) => (u.Role === 'SALES' || u.Role === 'COUNTER_SALES') && !u.EmpId;
 
   // Check if an EmpID is already used by ANOTHER user
-  const myRole = useAuthStore(s => s.user?.role) || '';
+  const sessionUser = useAuthStore(s => s.user);
+  const myRole = sessionUser?.role || '';
+
+  async function handleResetPassword(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!resetTarget || isResetting) return;
+    const data = new FormData(e.currentTarget);
+    const password = String(data.get('temporaryPassword') ?? '');
+    if (Array.from(password).length < 8 || new TextEncoder().encode(password).length > 72) {
+      setResetError('กรอกรหัสผ่านอย่างน้อย 8 ตัวอักษร และไม่เกิน 72 ไบต์');
+      return;
+    }
+    if (password !== data.get('confirmPassword')) {
+      setResetError('รหัสผ่านทั้งสองช่องไม่ตรงกัน');
+      return;
+    }
+
+    setResetError('');
+    setIsResetting(true);
+    try {
+      await updateUser(resetTarget.Id, { password });
+      setResetNotice('รีเซ็ตรหัสผ่านให้ ' + resetTarget.Username + ' แล้ว ผู้ใช้ต้องเปลี่ยนรหัสเมื่อเข้าสู่ระบบครั้งถัดไป');
+      setResetTarget(null);
+    } catch (err: unknown) {
+      setResetError((err as Error).message || 'รีเซ็ตรหัสผ่านไม่สำเร็จ');
+    } finally {
+      setIsResetting(false);
+    }
+  }
 
   const isEmpIdTaken = (empId: string, currentUserId?: number) => {
     return users.some(u => u.EmpId === empId && u.Id !== currentUserId);
@@ -287,6 +319,16 @@ export const AdminUsersPage = () => {
                       <button onClick={() => setModalUser(u)} className="p-1.5 text-gray-400 hover:text-[#0C447C] hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center justify-center" title="แก้ไข">
                         <Edit2 size={16} />
                       </button>
+                      {myRole === 'ADMIN' && !sessionUser?.isImpersonating && sessionUser?.id !== u.Id && (
+                        <button
+                          type="button"
+                          onClick={() => { setResetError(''); setResetNotice(''); setResetTarget(u); }}
+                          className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[#0C447C] hover:bg-blue-50"
+                          aria-label={'รีเซ็ตรหัสผ่าน ' + u.Username}
+                        >
+                          <KeyRound size={15} /> รีเซ็ตรหัสผ่าน
+                        </button>
+                      )}
                       <button onClick={() => setDeleteTarget(u)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors inline-flex items-center justify-center" title="ลบผู้ใช้">
                         <Trash2 size={16} />
                       </button>
@@ -322,6 +364,49 @@ export const AdminUsersPage = () => {
           </div>
         </div>
       </div>
+
+      {resetNotice && (
+        <div role="status" className="flex items-center justify-between gap-2 rounded-lg bg-green-50 p-3 text-sm text-green-800">
+          {resetNotice}
+          <button type="button" aria-label="ปิดข้อความ" onClick={() => setResetNotice('')}><X size={16} /></button>
+        </div>
+      )}
+
+      {resetTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <form
+            onSubmit={handleResetPassword}
+            onKeyDown={e => { if (e.key === 'Escape' && !isResetting) setResetTarget(null); }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reset-password-title"
+            className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-5 shadow-xl"
+          >
+            <h2 id="reset-password-title" className="text-lg font-bold text-gray-800">รีเซ็ตรหัสผ่าน</h2>
+            <p className="text-sm text-gray-700">{resetTarget.DisplayName} ({resetTarget.Username})</p>
+            <p className="text-sm text-gray-600">ตั้งรหัสชั่วคราวสำหรับบัญชีนี้ ผู้ใช้จะต้องเปลี่ยนรหัสเมื่อเข้าสู่ระบบครั้งถัดไป</p>
+            <label className="block text-sm font-medium text-gray-700">
+              รหัสผ่านชั่วคราว
+              <input name="temporaryPassword" type="password" autoComplete="new-password" autoFocus required disabled={isResetting}
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2" />
+            </label>
+            <label className="block text-sm font-medium text-gray-700">
+              ยืนยันรหัสผ่านชั่วคราว
+              <input name="confirmPassword" type="password" autoComplete="new-password" required disabled={isResetting}
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2" />
+            </label>
+            {resetError && <p role="alert" className="text-sm text-red-700">{resetError}</p>}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setResetTarget(null)} disabled={isResetting}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:opacity-50">ยกเลิก</button>
+              <button type="submit" disabled={isResetting}
+                className="rounded-lg bg-[#0C447C] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
+                {isResetting ? 'กำลังรีเซ็ต...' : 'ยืนยันรีเซ็ต'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Delete Confirm Dialog */}
       {deleteTarget && (

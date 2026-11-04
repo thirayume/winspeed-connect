@@ -8,6 +8,7 @@ param(
     [ValidatePattern('^[A-Za-z0-9_-]{1,128}$')][string]$Database = 'dbwins_worldfert9_uat2',
     [ValidatePattern('^[A-Za-z0-9_-]{1,64}(\\[A-Za-z0-9_-]{1,64})?$')][string]$ServerName = 'AMYOU-YOGA7\V2008R2',
     [string]$BcryptModule,
+    [switch]$HashOnly,
     # Hash inside this running backend container of the WSL Ubuntu Docker engine (R740-SRV).
     [ValidatePattern('^[A-Za-z0-9_.-]{1,128}$')][string]$WslContainer
 )
@@ -22,11 +23,11 @@ $taskInputEncoding = $null
 
 try {
     $taskRepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..'))
-    if (-not $PSBoundParameters.ContainsKey('Username')) {
+    if (-not $HashOnly -and -not $PSBoundParameters.ContainsKey('Username')) {
         $Username = Read-Host 'Application username [admin]'
         if ([string]::IsNullOrWhiteSpace($Username)) { $Username = 'admin' }
     }
-    if ([string]::IsNullOrWhiteSpace($Username) -or $Username.Length -gt 50) {
+    if (-not $HashOnly -and ([string]::IsNullOrWhiteSpace($Username) -or $Username.Length -gt 50)) {
         throw 'Username must contain 1 to 50 characters.'
     }
     if ([string]::IsNullOrWhiteSpace($DisplayName) -or $DisplayName.Length -gt 100) {
@@ -106,6 +107,11 @@ try {
     $taskHash = $taskHashOutput.Trim()
     if ($taskHash -cnotmatch '^\$2b\$12\$[./A-Za-z0-9]{53}$') {
         throw 'Invalid bcrypt output; no SQL file was written.'
+    }
+
+    if ($HashOnly) {
+        Write-Output $taskHash
+        return
     }
 
     $taskUsernameLiteral = $Username.Replace("'", "''")

@@ -292,3 +292,17 @@ window right after the backup.
 - `ONPREM_TARGET_KIND` (pinned per target): `uat` refuses `dbwins_worldfert9` and any login
   that can open it; `production` accepts only `dbwins_worldfert9` and refuses a login that
   can open any other user database.
+
+## Emergency password reset for one app account
+
+In User Management an administrator can use the reset button for another account. Use
+a distinct temporary password and ask the user to sign out and sign back in. The existing
+session may remain valid until its token expires. Forced change on the next sign-in uses
+the existing backend ENFORCE_PASSWORD_CHANGE setting.
+
+If the web UI is unavailable, run docs/deploy/onprem/New-Uat2AdminSql.ps1 with -HashOnly
+and the backend bcrypt module. It prompts for the password without echoing it and returns
+a bcrypt cost-12 hash. Open sql/reset-app-user-password.example.sql in SSMS connected to
+R740-SRV\SQL2008. Select the intended database, set its name and the exact username,
+and run the whole file in Preview mode first. Supply the generated hash and set
+@Apply = 1 after confirming the account. Preserve the template without the hash.

@@ -159,6 +159,7 @@ docs/deploy/r740/sql/*
 !docs/deploy/r740/sql/uat-simulated-scale-record.sql
 !docs/deploy/r740/sql/r740-prod-principals.sql
 !docs/deploy/r740/sql/r740-prod-backup.sql
+!docs/deploy/r740/sql/reset-app-user-password.example.sql
 !docs/deploy/r740/sql/r740-company-principals.sql
 !docs/deploy/r740/sql/r740-grant-app-access.sql
 !docs/deploy/r740/sql/r740-company-principals-dbwins_worldfert9.sql
