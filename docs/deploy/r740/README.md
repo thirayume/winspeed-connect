@@ -306,3 +306,18 @@ a bcrypt cost-12 hash. Open sql/reset-app-user-password.example.sql in SSMS conn
 R740-SRV\SQL2008. Select the intended database, set its name and the exact username,
 and run the whole file in Preview mode first. Supply the generated hash and set
 @Apply = 1 after confirming the account. Preserve the template without the hash.
+
+## Record WinSpeed and Sale-App operational sign-off
+
+After migration 168, an administrator opens **User Management → ผลตรวจรับงาน** and verifies
+the database displayed in the dialog. Pick the topic, enter the agreed procedure, the
+reviewer, the date, and document numbers or a reference to evidence. Select **ยืนยันแล้ว**
+when all four fields are available. The history shows each revision and the actual admin
+who saved it. If the form reports a conflict, reload the latest version before saving again.
+
+Records cover salesperson mapping and first sign-in, Invoice books J/N, accounts receivable,
+Post GL, weighing and transport, and WinSpeed printing. These records are operational
+evidence. They are separate from the EMSales mapping, weighing tolerances, and WinSpeed
+configuration. Later updates use the same page without a release. Enter permanent decisions
+on the intended production database. Nightly refresh can replace UAT-only records with
+the copied production data.

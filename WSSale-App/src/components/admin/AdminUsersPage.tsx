@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Users, RefreshCw, Check, AlertTriangle, Plus, Edit2, X, Search, UserX, ArrowUpDown, Trash2, Settings, KeyRound } from 'lucide-react';
+import { Users, RefreshCw, Check, AlertTriangle, Plus, Edit2, X, Search, UserX, ArrowUpDown, Trash2, Settings, KeyRound, ClipboardCheck } from 'lucide-react';
 import { listUsers, fetchEmployees, updateUser, createUser, deleteUser } from '../../services/api';
 import '../../store/db-mode';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import type { AdminUser, Employee } from '../../types';
 import { SystemSettingsModal } from './SystemSettingsModal';
+import { ReadinessSignoffModal } from './ReadinessSignoffModal';
 import { useAuthStore } from '../../store/auth-store';
 
 // Same roles and ranks as backend/services/role-capabilities.js
@@ -15,6 +16,7 @@ const ROLE_RANK: Record<string, number> = {
 
 export const AdminUsersPage = () => {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showReadiness, setShowReadiness] = useState(false);
   const [users, setUsers]         = useState<AdminUser[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -85,6 +87,7 @@ export const AdminUsersPage = () => {
   // Check if an EmpID is already used by ANOTHER user
   const sessionUser = useAuthStore(s => s.user);
   const myRole = sessionUser?.role || '';
+  const canManageReadiness = myRole === 'ADMIN' && !sessionUser?.isImpersonating;
 
   async function handleResetPassword(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -242,7 +245,13 @@ export const AdminUsersPage = () => {
               </button>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {canManageReadiness && (
+              <button type="button" onClick={() => setShowReadiness(true)}
+                className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-[#0C447C] hover:bg-blue-100">
+                <ClipboardCheck size={16} /> ผลตรวจรับงาน
+              </button>
+            )}
             <button onClick={() => setShowSettingsModal(true)} className="px-3 py-2 bg-blue-50 text-[#0C447C] border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1.5 text-xs font-bold" title="ตั้งค่า Error เครื่องชั่ง">
               <Settings size={16} /> ตั้งค่าเครื่องชั่ง
             </button>
@@ -600,6 +609,8 @@ export const AdminUsersPage = () => {
           </div>
         </div>
       )}
+
+      {canManageReadiness && showReadiness && <ReadinessSignoffModal onClose={() => setShowReadiness(false)} />}
 
       {/* System Settings Modal */}
       <SystemSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />

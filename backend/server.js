@@ -121,6 +121,7 @@ app.use((req, res, next) => {
 app.use('/api/auth',   require('./routes/auth'));
 app.use('/api/master/native-approvers', require('./routes/native-approvers'));
 app.use('/api/master', require('./routes/master'));
+  app.use('/api/readiness-signoff', require('./routes/readiness-signoff'));
 app.use('/api/so',     require('./routes/so'));
 app.use('/api/rebate', require('./routes/rebate'));
 app.use('/api/giveaway', require('./routes/giveaway'));
