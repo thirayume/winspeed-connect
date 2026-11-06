@@ -1,3 +1,4 @@
+import { useCan } from '../../utils/capabilities';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Plus, Search, RefreshCw, ChevronRight, Filter, ChevronLeft, Package, X, Truck, Download } from 'lucide-react';
 import { cn } from '../ui/Base';
@@ -20,6 +21,7 @@ import type { SalesOrder, SOStatus } from '../../types';
 import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
 
 export const SalesPortal = () => {
+  const can = useCan();
   const [orders, setOrders]         = useState<SalesOrder[]>([]);
   const [totalOrders, setTotalOrders] = useState(0);
   const [loading, setLoading]       = useState(true);
@@ -372,7 +374,7 @@ export const SalesPortal = () => {
       <div className="flex-1 flex overflow-hidden">
         {isCreating || editingSoId ? (
           <CreateSODialog 
-             isOpen={isCreating || !!editingSoId} 
+             isOpen={editingSoId ? can('so.edit') : isCreating && can('so.create')}
              editSoId={editingSoId || undefined}
              onClose={() => { setIsCreating(false); setEditingSoId(null); }} 
              onCreated={() => { loadData(); setIsCreating(false); setEditingSoId(null); setShouldOpenActiveTripSummary(true); }} 
@@ -414,13 +416,13 @@ export const SalesPortal = () => {
                   </div>
                   <div className="flex gap-2">
                     <button 
-                      onClick={() => setIsCreating(true)} 
+                      disabled={!can('so.create')} onClick={() => setIsCreating(true)}
                       className="flex-1 bg-[#0C447C] text-white py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-blue-800 shadow-sm"
                     >
                       <Plus size={16} /> เพิ่มบิลในทริปนี้
                     </button>
                     <button 
-                      onClick={handleConfirmTrip}
+                      disabled={!can('so.confirm')} onClick={handleConfirmTrip}
                       className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-green-700 shadow-sm"
                     >
                       <CheckCircle size={16} /> ยืนยันออร์เดอร์
@@ -542,11 +544,13 @@ export const SalesPortal = () => {
           setViewingTrip(null); 
         }}
         onEditBill={(soId) => {
+          if (!can('so.edit')) return;
           setReturnToTripFromSoId(String(soId));
           setEditingSoId(String(soId));
           setViewingTrip(null);
         }}
         onAddBill={() => {
+          if (!can('so.create')) return;
           if (viewingTrip) {
             setTrip({
               tripId: viewingTrip.tripId,

@@ -43,7 +43,7 @@ const bangkokTime = new Intl.DateTimeFormat('th-TH', {
   dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok',
 });
 
-export function ReadinessSignoffModal({ onClose }: { onClose: () => void }) {
+export function ReadinessSignoffModal({ onClose, embedded = false }: { onClose: () => void; embedded?: boolean }) {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [database, setDatabase] = useState<string | null>(null);
   const [selected, setSelected] = useState('');
@@ -138,8 +138,8 @@ export function ReadinessSignoffModal({ onClose }: { onClose: () => void }) {
   const required = form.status === 'CONFIRMED';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 sm:p-6">
-      <section role="dialog" aria-modal="true" aria-labelledby="readiness-title"
+    <div className={embedded ? "w-full" : "fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 sm:p-6"}>
+      <section role={embedded ? undefined : "dialog"} aria-modal={embedded ? undefined : true} aria-labelledby="readiness-title"
         className="max-h-full w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-4 shadow-xl sm:p-6">
         <header className="mb-4 flex items-start justify-between gap-4">
           <div>
@@ -149,7 +149,7 @@ export function ReadinessSignoffModal({ onClose }: { onClose: () => void }) {
             <p className="mt-1 text-sm text-gray-600">เก็บขั้นตอนและหลักฐานที่ทีมรับรองสำหรับฐานข้อมูลที่กำลังใช้งาน</p>
             {database && <p className="mt-1 break-all text-xs text-gray-600">ฐานข้อมูล {database}</p>}
           </div>
-          <button type="button" aria-label="ปิดผลตรวจรับ" disabled={saving} onClick={() => { if (canDiscard()) onClose(); }}>
+          <button hidden={embedded} type="button" aria-label="ปิดผลตรวจรับ" disabled={saving} onClick={() => { if (canDiscard()) onClose(); }}>
             <X size={20} />
           </button>
         </header>

@@ -1,3 +1,4 @@
+import { useCan } from '../../utils/capabilities';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { FileText, RefreshCw, Plus, X, ArrowRightCircle, AlertTriangle, Package, Send, Clock, User, Printer } from 'lucide-react';
 import { fetchQuotations, createQuotation, updateQuotationStatus, extendQuotationValidity, fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, listUsers } from '../../services/api';
@@ -34,6 +35,7 @@ const STATUS_LABEL: Record<QuoteStatus, string> = {
 export function QuotationPage() {
   const [quotes, setQuotes]   = useState<Quotation[]>([]);
   const [loading, setLoading] = useState(true);
+  const can = useCan();
   const [showCreate, setShowCreate] = useState(false);
   const [busyId, setBusyId]   = useState<number | null>(null);
   const [convertQuoteId, setConvertQuoteId] = useState<number | null>(null);
@@ -263,7 +265,7 @@ export function QuotationPage() {
                 <option key={status} value={status}>{STATUS_LABEL[status]}</option>
               ))}
             </select>
-            <button onClick={() => setShowCreate(true)} className="p-2 bg-[#0C447C] text-white rounded-lg hover:bg-[#0a3866] transition-colors flex items-center justify-center" title="สร้างใบเสนอราคา">
+            <button disabled={!can('quotation.create')} onClick={() => setShowCreate(true)} className="p-2 bg-[#0C447C] text-white rounded-lg hover:bg-[#0a3866] transition-colors flex items-center justify-center" title="สร้างใบเสนอราคา">
               <Plus size={18} />
             </button>
             <button onClick={load} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors" title="รีเฟรชข้อมูล">
@@ -358,23 +360,23 @@ export function QuotationPage() {
                             </button>
                           )}
                           {q.Status === 'DRAFT' && !nativeOnly && (
-                            <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'SENT')} className="px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                            <button disabled={busyId===q.Id || !can('quotation.manage')} onClick={() => setStatus(q, 'SENT')} className="px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
                               <Send size={14} /> ส่ง
                             </button>
                           )}
                           {(q.Status === 'DRAFT' || q.Status === 'SENT') && !nativeOnly && (
-                            <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'ACCEPTED')} className="px-3 py-1.5 text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                            <button disabled={busyId===q.Id || !can('quotation.manage')} onClick={() => setStatus(q, 'ACCEPTED')} className="px-3 py-1.5 text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
                               <Check size={14} /> ยืนยัน
                             </button>
                           )}
                           {!nativeOnly && (q.Status === 'DRAFT' || q.Status === 'SENT' || q.Status === 'ACCEPTED' || q.Status === 'EXPIRED') && (
-                            <button disabled={busyId===q.Id} onClick={() => setStatus(q, 'CANCELLED')} className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                            <button disabled={busyId===q.Id || !can('quotation.manage')} onClick={() => setStatus(q, 'CANCELLED')} className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
                               <X size={14} /> ยกเลิก
                             </button>
                           )}
-                          {q.Status === 'ACCEPTED' && !(q.SourceSoCount && q.SourceSoCount > 0) && (
+                          {can('so.create') && q.Status === 'ACCEPTED' && !(q.SourceSoCount && q.SourceSoCount > 0) && (
                             <button
-                              disabled={busyId===q.Id}
+                              disabled={busyId===q.Id || !can('quotation.manage')}
                               onClick={() => doConvert(q)}
                               className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-colors flex items-center gap-1.5 disabled:opacity-50"
                             >
@@ -389,7 +391,7 @@ export function QuotationPage() {
                              <span className="text-[10px] text-gray-400 font-bold">ต่ออายุ:</span>
                              <div className="flex gap-1.5">
                               {[7, 15, 30].map(days => (
-                                <button key={days} disabled={busyId===q.Id} onClick={() => extendValidUntil(q, days as 7 | 15 | 30 | 20 | 45)} className="px-2 py-1 rounded text-[10px] font-bold text-gray-500 bg-gray-100 hover:bg-blue-100 hover:text-blue-700 transition-colors disabled:opacity-50">
+                                <button key={days} disabled={busyId===q.Id || !can('quotation.manage')} onClick={() => extendValidUntil(q, days as 7 | 15 | 30 | 20 | 45)} className="px-2 py-1 rounded text-[10px] font-bold text-gray-500 bg-gray-100 hover:bg-blue-100 hover:text-blue-700 transition-colors disabled:opacity-50">
                                   +{days}
                                 </button>
                               ))}

@@ -335,7 +335,7 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
 });
 
 // GET /api/trips/:id
-router.get('/:id', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'), async (req, res) => {
+router.get('/:id', requireCapability('trip.view'), async (req, res) => {
   try {
     const ds = await tripScopeSql(req.user, 'st');
     const trip = await wfQuery(`SELECT * FROM wf.SalesTrip st WHERE st.TripId = @id AND ${ds.sql}`, {
@@ -430,7 +430,7 @@ async function resolveVehicleCapacity(transRegistration, truckTypeId, clientCapa
 // และต้องเด้ง Pre-Sling / หมายเหตุ / ของแถม ให้คนคุมลานเห็นก่อนเริ่ม
 //
 // อ่านอย่างเดียว ไม่เขียนอะไรทั้งสิ้น
-router.get('/:id/loading-plan', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'), requireTripInScope, async (req, res) => {
+router.get('/:id/loading-plan', requireCapability('trip.view'), requireTripInScope, async (req, res) => {
   try {
     const id = { type: sql.Int, value: req.params.id };
 
@@ -999,7 +999,7 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), re
 });
 
 // POST /api/trips/:id/confirm — Atomic Trip Confirmation and Residual Split (SO-05)
-router.post('/:id/confirm', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), requireTripInScope, async (req, res) => {
+router.post('/:id/confirm', requireCapability('so.confirm'), requireTripInScope, async (req, res) => {
   const tripId = Number(req.params.id);
   if (!Number.isInteger(tripId) || tripId <= 0) {
     return res.status(400).json({ message: 'รหัส Trip ไม่ถูกต้อง' });

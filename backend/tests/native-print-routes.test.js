@@ -110,7 +110,7 @@ test('opening a document only reads, and shows how often Sale-App printed it', a
   const before = db.calls.length;
   const r = await app.call('GET', '/api/native-print/104/D-T1', as('WAREHOUSE'));
   assert.deepEqual(r.body.printLog, { count: 0, lastAt: null });
-  const writes = db.calls.slice(before).filter(c => c.kind !== 'wfQuery' || /\b(INSERT|UPDATE|DELETE|MERGE|EXEC)\b/i.test(c.text));
+  const writes = db.calls.slice(before).filter(c => c.kind !== 'wfQuery' || /\b(INSERT|UPDATE|DELETE|MERGE)\b|\bEXEC\b(?! sp_executesql N\x27SELECT )/i.test(c.text));
   assert.deepEqual(writes, []);
 });
 
@@ -123,7 +123,7 @@ test('pressing print logs one wf row per press, like the SMAudit print row of Wi
   assert.equal(r.body.printLog.count, 2);
   assert.deepEqual(state.printed.map(p => [p.type, p.id, p.no, p.user]), [[104, 701, 'D-T1', 11], [104, 701, 'D-T1', 11]]);
   assert.equal((await app.call('GET', '/api/native-print/104/D-T1', as('ADMIN'))).body.printLog.count, 2);
-  const writes = db.calls.slice(before).filter(c => c.kind !== 'wfQuery' || /\b(INSERT|UPDATE|DELETE|MERGE|EXEC)\b/i.test(c.text));
+  const writes = db.calls.slice(before).filter(c => c.kind !== 'wfQuery' || /\b(INSERT|UPDATE|DELETE|MERGE)\b|\bEXEC\b(?! sp_executesql N\x27SELECT )/i.test(c.text));
   assert.equal(writes.length, 2);
   for (const w of writes) assert.match(w.text, /^\s*INSERT INTO wf\.NativePrintLog \(DocType, DocId, DocuNo, PrintedBy\)/);
 });

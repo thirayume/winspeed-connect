@@ -13,7 +13,7 @@ async function giveRebateDocCode(userId) {
   if (!userId) return;
   try { await ensureRebateDocCode(userId); } catch (e) { console.error('[rebate-doc-code]', e.message); }
 }
-const { requireAuth, requireRole, passwordChangeEnforced, SECRET, clearAccountStatusCache } = require('../middleware/auth');
+const { requireAuth, requireRole, requireCapability, passwordChangeEnforced, SECRET, clearAccountStatusCache } = require('../middleware/auth');
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -75,6 +75,8 @@ function toClientUser(user, actor = null) {
     username: user.Username ?? user.username,
     displayName: user.DisplayName ?? user.displayName,
     role: getUserRole(user),
+    roleCode: user.RoleCode || user.Role,
+    authVersion: user.AuthVersion || 0,
     empId: user.EmpId ?? user.empId ?? null,
     isActive: user.IsActive === undefined ? true : Boolean(user.IsActive),
     address: user.Address ?? user.address ?? null,
@@ -129,12 +131,12 @@ function appUserPayload(user, actor = null) {
 }
 
 function signAppToken(user, actor = null) {
-  return jwt.sign(appUserPayload(user, actor), SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '8h' });
+  return jwt.sign({...appUserPayload(user, actor), authVersion:user.AuthVersion ?? 0, actorAuthVersion:actor?.AuthVersion ?? user.AuthVersion ?? 0}, SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '8h' });
 }
 
 async function loadAppUserById(id) {
   const rows = await wfQuery(
-    `SELECT Id, Username, DisplayName, Role, EmpId, IsActive, MustChangePassword, PositionCode,
+    `SELECT Id, Username, DisplayName, Role, RoleCode, AuthVersion, EmpId, IsActive, MustChangePassword, PositionCode,
             Address, Phone, Email, IdCardNo, TaxId, SignatureFile,
             LineUserId, LineDisplayName, LineLinkedAt
      FROM wf.AppUser
@@ -250,7 +252,7 @@ router.post('/login', async (req, res) => {
     if (!username || !password) return res.status(400).json({ message: 'username และ password จำเป็น' });
 
     const rows = await wfQuery(
-      `SELECT Id, Username, PasswordHash, DisplayName, Role, IsActive, MustChangePassword, PositionCode FROM wf.AppUser WHERE Username = @u`,
+      `SELECT Id, Username, PasswordHash, DisplayName, Role, RoleCode, AuthVersion, IsActive, MustChangePassword, PositionCode FROM wf.AppUser WHERE Username = @u`,
       { u: { type: sql.NVarChar(50), value: username } }
     );
     const user = rows.recordset?.[0];
@@ -338,7 +340,7 @@ router.get('/line/callback', async (req, res) => {
     if (!profileRes.ok || !profile.userId) throw new Error('LINE profile fetch failed');
 
     const users = await wfQuery(
-      `SELECT Id, Username, DisplayName, Role, IsActive, PositionCode
+      `SELECT Id, Username, DisplayName, Role, AuthVersion, RoleCode, IsActive, MustChangePassword, PositionCode
        FROM wf.AppUser
        WHERE LineUserId = @lineUserId`,
       { lineUserId: { type: sql.NVarChar(80), value: profile.userId } }
@@ -381,7 +383,7 @@ router.post('/line/link', async (req, res) => {
 
     const line = verifyLineLinkToken(lineLinkToken);
     const rows = await wfQuery(
-      `SELECT Id, Username, PasswordHash, DisplayName, Role, IsActive, LineUserId
+      `SELECT Id, Username, PasswordHash, DisplayName, Role, AuthVersion, RoleCode, IsActive, MustChangePassword, LineUserId
        FROM wf.AppUser
        WHERE Username = @u`,
       { u: { type: sql.NVarChar(50), value: username } }
@@ -453,7 +455,7 @@ router.get('/access-as/candidates', requireAuth, async (req, res) => {
     if (!actor || !actor.IsActive || !canUseAccessAs(actor.Role)) return res.json([]);
 
     const result = await wfQuery(
-      `SELECT u.Id, u.Username, u.DisplayName, u.Role, u.EmpId, u.IsActive,
+      `SELECT u.Id, u.Username, u.DisplayName, u.Role, u.RoleCode, u.EmpId, u.IsActive,
               e.EmpCode, e.EmpName
        FROM wf.AppUser u
        LEFT JOIN dbo.EMEmp e WITH (NOLOCK) ON e.EmpID = u.EmpId
@@ -530,7 +532,10 @@ router.get('/me', requireAuth, async (req, res) => {
     const actor = Number(req.user.actorSub || req.user.sub) !== Number(req.user.sub)
       ? await loadAppUserById(req.user.actorSub)
       : null;
-    res.json(toClientUser(user, actor));
+    const client=toClientUser(user, actor);
+    client.roleCode=req.user.roleCode||user.Role;
+    client.capabilities=require('../services/role-profiles').filteredCapabilities({...req.user,positionCode:user.PositionCode});
+    res.json(client);
   } catch (e) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -657,12 +662,14 @@ router.post('/profile/signature', requireAuth, upload.single('signature'), async
 });
 
 // POST /api/auth/users (ADMIN/MANAGER/ACCOUNTING)
-router.post('/users', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
+router.post('/users', requireAuth, requireCapability('users.manage'), async (req, res) => {
   try {
     const { username, password, displayName, role, empId } = req.body;
     const callerRole = String(req.user.role).toUpperCase();
     const callerRank = roleRank(callerRole);
     const newRole = String(role || '').toUpperCase();
+    if(!Object.keys(ACCESS_AS_ROLE_RANK).includes(newRole))return res.status(400).json({message:'Role ไม่ถูกต้อง'});
+    if(req.user.isImpersonating)return res.status(403).json({message:'ออกจาก Access As ก่อนสร้างผู้ใช้'});
     const targetRank = roleRank(newRole);
 
     // Only ADMIN may create users with role ADMIN or C_LEVEL
@@ -684,7 +691,7 @@ router.post('/users', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING')
         u: { type: sql.NVarChar(50), value: username },
         h: { type: sql.NVarChar(255), value: hash },
         d: { type: sql.NVarChar(100), value: displayName },
-        r: { type: sql.NVarChar(30), value: role },
+        r: { type: sql.NVarChar(30), value: newRole },
         e: { type: sql.NVarChar(20), value: empId || null },
       }
     );
@@ -700,10 +707,10 @@ router.post('/users', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING')
 });
 
 // GET /api/auth/users (ADMIN/MANAGER/ACCOUNTING)
-router.get('/users', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
+router.get('/users', requireAuth, requireCapability('users.manage'), async (req, res) => {
   try {
     const result = await wfQuery(
-      `SELECT u.Id, u.Username, u.DisplayName, u.Role, u.EmpId, u.IsActive, u.CreatedAt,
+      `SELECT u.Id, u.Username, u.DisplayName, u.Role, u.RoleCode, u.EmpId, u.IsActive, u.CreatedAt,
               u.Address, u.Phone, u.Email, u.IdCardNo, u.TaxId, u.SignatureFile,
               u.LineUserId, u.LineDisplayName, u.LineLinkedAt,
               e.EmpCode, e.EmpName,
@@ -724,7 +731,7 @@ router.get('/users', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'),
 });
 
 // PATCH /api/auth/users/:id — แก้ไข ADMIN/MANAGER/ACCOUNTING
-router.patch('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
+router.patch('/users/:id', requireAuth, requireCapability('users.manage'), async (req, res) => {
   try {
     const targetId = Number(req.params.id);
     const callerId = Number(req.user.sub ?? req.user.id);
@@ -778,13 +785,17 @@ router.patch('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNT
       }
     }
 
+    if(req.user.isImpersonating) return res.status(403).json({message:'ออกจาก Access As ก่อนแก้ผู้ใช้'});
+    if(req.body.isActive!==undefined && typeof req.body.isActive!=='boolean') return res.status(400).json({message:'สถานะผู้ใช้ต้องเป็น true หรือ false'});
+    if(req.body.role!==undefined && !Object.keys(ACCESS_AS_ROLE_RANK).includes(req.body.role)) return res.status(400).json({message:'Role ไม่ถูกต้อง'});
+    if(targetId===callerId && req.body.isActive===false) return res.status(400).json({message:'ไม่สามารถปิดบัญชีตัวเองได้'});
     const { empId, role, displayName, isActive, password, lineUserId, address, phone, email, idCardNo, taxId, positionCode } = req.body;
     const sets = [];
     const inputs = { id: { type: sql.Int, value: targetId } };
     if (empId !== undefined)       { sets.push('EmpId = @empId');        inputs.empId       = { type: sql.NVarChar(20),  value: empId || null }; }
     // ตำแหน่งในผังองค์กร — ส่งค่าว่างมาเพื่อถอดออกได้ · FK กันรหัสที่ไม่มีจริงอยู่แล้ว
     if (positionCode !== undefined) { sets.push('PositionCode = @pos');   inputs.pos         = { type: sql.VarChar(30),   value: positionCode || null }; }
-    if (role !== undefined)        { sets.push('Role = @role');          inputs.role        = { type: sql.NVarChar(30),  value: role }; }
+    if (role !== undefined)        { sets.push('Role = @role'); if(role!==targetUser.Role) sets.push('RoleCode = NULL');          inputs.role        = { type: sql.NVarChar(30),  value: role }; }
     if (displayName !== undefined) { sets.push('DisplayName = @dn');      inputs.dn          = { type: sql.NVarChar(100), value: displayName }; }
     if (isActive !== undefined)    { sets.push('IsActive = @act');       inputs.act         = { type: sql.Bit,          value: isActive ? 1 : 0 }; }
     if (address !== undefined)     { sets.push('Address = @addr');       inputs.addr        = { type: sql.NVarChar(500), value: address || null }; }
@@ -812,6 +823,10 @@ router.patch('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNT
       }
     }
     if (!sets.length) return res.status(400).json({ message: 'ไม่มีข้อมูลที่จะแก้ไข' });
+    const securityChanged = (role!==undefined && role!==targetUser.Role)
+      || (isActive!==undefined && isActive!==Boolean(targetUser.IsActive))
+      || password || (lineUserId!==undefined && (lineUserId||null)!==(targetUser.LineUserId||null));
+    if(securityChanged) sets.push('AuthVersion = AuthVersion + 1');
     sets.push('UpdatedAt = GETUTCDATE()');
     const __r = await wfQuery(
       `UPDATE wf.AppUser SET ${sets.join(', ')} WHERE Id = @id`,
@@ -819,7 +834,7 @@ router.patch('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNT
     );
     if (!__r.rowsAffected?.[0]) return res.status(404).json({ message: 'ไม่พบผู้ใช้นี้' });
     // disabling or re-enabling takes effect on the user's very next request
-    if (isActive !== undefined) clearAccountStatusCache(targetId);
+    clearAccountStatusCache(targetId);
     if (role !== undefined || isActive !== undefined) await giveRebateDocCode(targetId);
     res.json({ ok: true, id: targetId });
   } catch (e) {
@@ -953,8 +968,9 @@ router.get('/org-hints', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTIN
 });
 
 // DELETE /api/auth/users/:id — ลบผู้ใช้ (ADMIN/MANAGER/ACCOUNTING, ห้ามลบตัวเอง)
-router.delete('/users/:id', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
+router.delete('/users/:id', requireAuth, requireCapability('users.manage'), async (req, res) => {
   try {
+    if(req.user.isImpersonating) return res.status(403).json({message:'ออกจาก Access As ก่อนลบผู้ใช้'});
     const targetId = Number(req.params.id);
     const callerId = Number(req.user.sub ?? req.user.id);
     const callerRole = String(req.user.role).toUpperCase();

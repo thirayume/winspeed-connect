@@ -3185,7 +3185,7 @@ router.patch('/:id/sync-imported', requireRole('ADMIN', 'ACCOUNTING', 'C_LEVEL')
 });
 
 // ── POST /api/so/bulk-cancel-delete — Atomic bulk cancel or delete for Sales Orders / Trips ──
-router.post('/bulk-cancel-delete', requireRole('SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.post('/bulk-cancel-delete', requireCapability('so.cancel'), async (req, res) => {
   try {
     const { soIds, action = 'AUTO', reasonCode: rawReasonCode, reasonText: rawReasonText } = req.body || {};
 
@@ -3531,7 +3531,7 @@ router.patch('/:id/cancel', requireCapability('so.cancel'), requireSoInScope, as
 });
 
 // ── DELETE /api/so/:id — Permanently remove DRAFT/CANCELLED SO ──
-router.delete('/:id', requireRole('SALES', 'ADMIN', 'C_LEVEL'), requireSoInScope, async (req, res) => {
+router.delete('/:id', requireCapability('so.cancel'), requireSoInScope, async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id);
     await assertNoIssuedDelivery(so);

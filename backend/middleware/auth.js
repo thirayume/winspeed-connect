@@ -156,7 +156,19 @@ function requireAuth(req, res, next) {
       return res.status(401).json({ code: effectiveStatus.code, message: effectiveStatus.message });
     }
     // R12 item 4: audit writers read the Access As actor from this request context
-    const run = () => require('../services/request-context').runWithUser(req.user, () => next());
+    const run = async () => {
+      try {
+        const { sessionProfile } = require('../services/role-profiles');
+        req.user = await sessionProfile(req.user, req.tokenPayload);
+        if (Number(actorId)!==Number(effectiveId)) {
+          const actor=await sessionProfile({...req.user,id:actorId}, {authVersion:req.tokenPayload.actorAuthVersion||0});
+          req.user.disabledActions=[...new Set([...(req.user.disabledActions||[]),...(actor.disabledActions||[])])];
+          req.user.mustChangePassword=actor.mustChangePassword;
+        }
+        if (blockWriteWhenPasswordStale(req,res)) return;
+        require('../services/request-context').runWithUser(req.user, () => next());
+      } catch(e) {res.status(e.status||503).json({code:e.status===401?'SESSION_REVOKED':'ROLE_UNAVAILABLE',message:'สิทธิ์หรือข้อมูลเข้าสู่ระบบเปลี่ยน กรุณาเข้าสู่ระบบใหม่'});}
+    };
     // Database switching (owner 2026-10-25): a permitted role's session may point at another
     // allowed database, carried in the JWT `db` claim. An invalid or no-longer-permitted claim is
     // ignored and the request falls back to the system default already set by the DB-target
@@ -176,7 +188,10 @@ function requireRole(...roles) {
 // R12 item 3: guard a route with a capability from services/role-capabilities.js
 function requireCapability(action) {
   const { rolesFor } = require('../services/role-capabilities');
-  return requireRole(...rolesFor(action));
+  return (req,res,next) => {
+    if ((req.user?.disabledActions||[]).includes(action)) return res.status(403).json({message:'Role นี้ไม่ได้รับ Permission สำหรับงานนี้'});
+    return requireRole(...rolesFor(action))(req,res,next);
+  };
 }
 
 // Owner 2026-10-09: a salesperson sees no rebate amount anywhere, on bills (D1) or on the rebate page. SALES keeps the

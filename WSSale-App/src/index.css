@@ -213,3 +213,9 @@
     overflow: visible !important;
   }
 }
+
+/* Shared operation colors. Text/accessible labels still convey the operation. */
+button.action-add, button:has(> svg.lucide-plus) { color:#2563eb; background:#eff6ff; }
+button.action-edit, button:has(> svg.lucide-file-pen-line), button:has(> svg.lucide-pencil), button:has(> svg.lucide-pen), button:has(> svg.lucide-pen-line) { color:#b45309; background:#fffbeb; }
+button.action-delete, button:has(> svg.lucide-trash-2), button:has(> svg.lucide-trash) { color:#dc2626; background:#fef2f2; }
+button:disabled { cursor:not-allowed; }

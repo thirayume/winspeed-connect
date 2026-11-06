@@ -19,6 +19,7 @@ import { fetchSystemSettings, updateSystemSettings, fetchEditReasons } from '../
 
 interface SystemSettingsModalProps {
   isOpen: boolean;
+  embedded?: boolean;
   onClose: () => void;
 }
 
@@ -42,7 +43,7 @@ function parseStrictFloat(val: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProps) {
+export function SystemSettingsModal({ isOpen, onClose, embedded = false }: SystemSettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('pickup');
 
   // Policy Settings States
@@ -294,8 +295,8 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className={embedded ? "w-full" : "fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"}>
+      <div className={embedded ? "bg-white rounded-xl w-full overflow-hidden" : "bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"}>
         {/* Modal Header */}
         <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-[#0C447C] text-white">
           <div className="flex items-center gap-2.5">
@@ -316,7 +317,7 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition">
+          <button hidden={embedded} onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition">
             <X size={18} />
           </button>
         </div>
@@ -935,6 +936,7 @@ export function SystemSettingsModal({ isOpen, onClose }: SystemSettingsModalProp
         {/* Modal Footer */}
         <div className="p-4 border-t border-gray-100 bg-gray-50 flex gap-2">
           <button
+            hidden={embedded}
             onClick={onClose}
             className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-semibold text-xs bg-white hover:bg-gray-100 transition"
           >

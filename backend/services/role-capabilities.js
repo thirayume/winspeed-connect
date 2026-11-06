@@ -56,6 +56,8 @@ const MENUS = Object.freeze({
   master: ['C_LEVEL', 'ADMIN'],
   policy: ['MANAGER', 'C_LEVEL', 'ADMIN'],
   ops: ['MANAGER', 'C_LEVEL', 'ADMIN'],
+  'app-settings': ['ADMIN'],
+  'roles': ['ADMIN'],
   admin: ['ACCOUNTING', 'MANAGER', 'ADMIN'],
   org: ['ACCOUNTING', 'MANAGER', 'ADMIN'],
   beneficiaries: ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],

@@ -49,6 +49,8 @@ function installDbStub(handler, options = {}) {
     calls.push(call);
     const out = await handler(call);
     const normalized = normalizeResult(out);
+    // Legacy suites model the pre-profile schema. Profile suites return explicit recordset objects.
+    if (text.includes("AS PolicySchemaMissing") && Array.isArray(out) && out.length===0) return normalizeResult([{PolicySchemaMissing:1}]);
     if (/SELECT IsActive FROM wf\.AppUser WHERE Id = @id/i.test(text)) {
       if (normalized.recordset.length > 0) {
         return normalized;

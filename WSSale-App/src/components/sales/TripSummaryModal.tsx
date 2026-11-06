@@ -1,3 +1,4 @@
+import { useCan } from '../../utils/capabilities';
 import { useState, useEffect, useRef } from 'react';
 import { X, Truck, Package, Clock, FileText, CheckCircle2, ShieldAlert, Printer, Edit, AlertTriangle, Plus, Send } from 'lucide-react';
 import type { SalesOrder } from '../../types';
@@ -36,6 +37,7 @@ export function TripSummaryModal({
 }) {
   const unlockRequests = useErpStore(s => s.unlockRequests);
   const navigate = useAppStore(s => s.navigate);
+  const can = useCan();
   const currentUser = useAuthStore(s => s.user);
   const isWarehouseOrElevated = currentUser && ['WAREHOUSE', 'ADMIN', 'MANAGER', 'C_LEVEL'].includes(currentUser.role);
 
@@ -499,14 +501,14 @@ export function TripSummaryModal({
                     <div className="flex flex-col gap-2 sm:gap-3">
                       {(allDraft || hasRelockableBill) && !isQuoteLocked && (
                         <button
-                          disabled={busy || selectedSoIds.size === 0}
+                          disabled={busy || selectedSoIds.size === 0 || !can('so.confirm')}
                           onClick={handleConfirmTripOrders}
                           className="w-full bg-green-600 text-white py-2.5 sm:py-3 rounded-xl font-bold text-sm sm:text-base flex items-center justify-center gap-2 hover:bg-green-700 shadow-sm disabled:opacity-50 transition-colors"
                         >
                           <CheckCircle2 size={18} /> ยืนยัน {selectedSoIds.size} บิลที่เลือก {selectedSoIds.size < trip.orders.filter(o => o.status === 'DRAFT').length ? '(แยกบิลตกค้าง -R)' : 'ทั้งเที่ยว'}
                         </button>
                       )}
-                      {allDraft && !isQuoteLocked && (
+                      {allDraft && !isQuoteLocked && can('quotation.create') && (
                         <div className="rounded-xl border border-blue-100 bg-blue-50 p-2.5 space-y-2">
                           <div className="flex items-center gap-2">
                             <FileText size={15} className="text-[#0C447C]" />
@@ -593,7 +595,7 @@ export function TripSummaryModal({
                     </button>
                   </div>
                   
-                  {onAddBill && !isQuoteLocked && (
+                  {onAddBill && !isQuoteLocked && can('so.create') && (
                     <button
                       disabled={busy}
                       onClick={onAddBill}
@@ -889,7 +891,7 @@ export function TripSummaryModal({
                         {order.status === 'DRAFT' && !isQuoteLocked && (
                           <div className="flex gap-2 mt-auto pt-2 border-t border-gray-100">
                             <button
-                              disabled={busy}
+                              disabled={busy || !can('so.cancel')}
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -899,7 +901,7 @@ export function TripSummaryModal({
                             >
                               ยกเลิกบิล
                             </button>
-                            {onEditBill && (
+                            {onEditBill && can('so.edit') && (
                               <button
                                 disabled={busy}
                                 onClick={(e) => {
