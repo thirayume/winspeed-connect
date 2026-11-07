@@ -339,3 +339,26 @@ test("role members include inactive users and prevent delete while assigned", as
     path: "test-results/admin-management/role-members-mobile.png",
   });
 });
+
+test("new user can choose a role when the former SALES default was deleted", async ({
+  page,
+}) => {
+  await page.route("**/api/admin-management/roles", (route) =>
+    route.fulfill({ json: { roles: roles.filter((r) => r.Code !== "SALES") } }),
+  );
+  await page.getByTitle("เพิ่มผู้ใช้งาน", { exact: true }).click();
+  const d = page.getByRole("dialog", { name: "เพิ่มผู้ใช้งานใหม่" });
+  await d.getByRole("tab", { name: "บทบาท (0)", exact: true }).click();
+  await expect(
+    d.getByRole("button", { name: "สร้างผู้ใช้ใหม่", exact: true }),
+  ).toBeDisabled();
+  await d
+    .getByRole("checkbox", { name: "C_LEVEL (C_LEVEL)", exact: true })
+    .check();
+  await expect(
+    d.getByRole("tab", { name: "บทบาท (1)", exact: true }),
+  ).toBeVisible();
+  await expect(
+    d.getByRole("button", { name: "สร้างผู้ใช้ใหม่", exact: true }),
+  ).toBeEnabled();
+});

@@ -43,6 +43,12 @@ export function UserEditor({
     req<{ roles: RoleProfile[] }>("/admin-management/roles")
       .then((r) => {
         setRoles(r.roles);
+        if (!user.Id)
+          setCodes((selected) =>
+            selected.filter((code) =>
+              r.roles.some((role) => role.Code === code),
+            ),
+          );
         setLoaded(true);
       })
       .catch((e) => setError(e.message));
