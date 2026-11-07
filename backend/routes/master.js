@@ -10,7 +10,7 @@
  */
 const router = require('express').Router();
 const { sql, query, dboWrite } = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
 const { getBangkokDateString } = require('../services/so-pickup-policy');
 // R12 O-4: SALES/MANAGER see their own + team documents (ADMIN/C_LEVEL/ACCOUNTING and operational roles see all)
 const { getVisibleScope, scopeFilter } = require('../services/visible-scope');
@@ -1863,7 +1863,7 @@ router.get('/system-settings', async (req, res) => {
 });
 
 // PATCH /api/master/system-settings — ปรับเปลี่ยนค่าตั้งค่าระบบ (ADMIN Only + Whitelist + Versioned + Audit)
-router.patch('/system-settings', requireRole('ADMIN'), async (req, res) => {
+router.patch('/system-settings', requireCapability('settings.manage'), async (req, res) => {
   try {
     const { getPolicySettings, updatePolicySettings, clearSettingCache } = require('../services/policy-contract');
     const body = req.body || {};

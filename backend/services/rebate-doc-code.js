@@ -87,7 +87,7 @@ async function loadContext() {
   const since = `${new Date().getFullYear() - 2}-01-01`;
   const [users, evidence, reserved, existing] = await Promise.all([
     wfQuery(`SELECT Id, Username, DisplayName, Role, EmpId, RebateDocCode
-             FROM wf.AppUser WHERE IsActive = 1 AND Role IN ('SALES', 'MANAGER')`),
+             FROM wf.AppUser WHERE IsActive = 1 AND (wf.fn_UserHasRole(Id,'SALES')=1 OR wf.fn_UserHasRole(Id,'MANAGER')=1)`),
     // the customer's main salesperson in the year of each RB document: customers move between salespeople, and
     // one main salesperson over the whole window left S and T five documents apart on 2 Nov 2026 (699 to 17 by year)
     wfQuery(`
@@ -139,11 +139,11 @@ async function autoAssignRebateDocCodes({ userIds = null, dryRun = false } = {})
 /** the user's code, given automatically when an active salesperson or sales manager has none */
 async function ensureRebateDocCode(userId) {
   const u = (await wfQuery(
-    `SELECT Id, Role, IsActive, RebateDocCode FROM wf.AppUser WHERE Id = @id`,
+    `SELECT Id, Role, IsActive, RebateDocCode, wf.fn_UserHasRole(Id,'SALES') AS IsSales, wf.fn_UserHasRole(Id,'MANAGER') AS IsManager FROM wf.AppUser WHERE Id = @id`,
     { id: { type: sql.Int, value: Number(userId) } })).recordset?.[0];
   if (!u) return null;
   if (u.RebateDocCode) return String(u.RebateDocCode).trim();
-  if (!u.IsActive || !['SALES', 'MANAGER'].includes(String(u.Role))) return null;
+  if (!u.IsActive || (!u.IsSales && !u.IsManager && !['SALES', 'MANAGER'].includes(String(u.Role)))) return null;
   const [p] = await autoAssignRebateDocCodes({ userIds: [Number(userId)] });
   return p ? p.code : null;
 }

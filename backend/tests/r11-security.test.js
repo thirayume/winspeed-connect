@@ -17,6 +17,11 @@ const users = {
 };
 
 const db = h.installDbStub(({ text, inputs }) => {
+    if(text.includes("@Resource='WF_ROLE_POLICY'"))return {recordset:[{LockResult:0}]};
+    if(text.includes('AS Allowed'))return {recordset:[{Allowed:1}]};
+    if(text.includes('SELECT TOP(1) Id'))return {recordset:[{Id:1}]};
+    if(text.includes('SELECT Code,BaseRole'))return {recordset:['ADMIN','SALES','MANAGER','C_LEVEL','WAREHOUSE','COUNTER_SALES','ACCOUNTING','APPROVER','WEIGHBRIDGE'].map(Code=>({Code,BaseRole:Code}))};
+
   if (/FROM wf\.AppUser\s+WHERE Id = @id/i.test(text)) return users[inputs.id] ? [users[inputs.id]] : [];
   if (/^\s*UPDATE wf\.AppUser/i.test(text)) return { recordset: [], rowsAffected: [1] };
   if (/INSERT INTO wf\.AppUser/i.test(text)) return [{ Id: 99, Username: 'new', DisplayName: 'New', Role: 'SALES' }];

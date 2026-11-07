@@ -1,4 +1,5 @@
 'use strict';
+const {hasPermission}=require('./role-capabilities');
 // Restricted UAT simulation: full single-line whole-bag zero-tax104, numbered
 // C/D and202 receivable, with explicit Account credit approval. No116/107/GL.
 const { createHash } = require('crypto');
@@ -29,8 +30,8 @@ async function identity(q, user, approval = false) {
  const current = rows.find(r => Number(r.Id) === effective), real = rows.find(r => Number(r.Id) === actor);
  if (![current,real].every(r => r && (r.IsActive === true || r.IsActive === 1) && !r.MustChangePassword)) fail('DO_ACTOR_UNAVAILABLE',403);
  if (current.Role !== user.role || real.Role !== (user.actorRole || user.role)) fail('DO_ROLE_CHANGED',403);
- if (!rolesFor(approval ? 'credit.approve-native' : 'so.create-native-delivery').includes(current.Role)) fail('DO_ROLE_FORBIDDEN',403);
- if (actor !== effective && (!ACCESS_AS_ACTOR_ROLES.includes(real.Role) || roleRank(real.Role) < roleRank(current.Role))) fail('DO_ACCESS_AS_FORBIDDEN',403);
+ if (!hasPermission(user,approval ? 'credit.approve-native' : 'so.create-native-delivery')) fail('DO_ROLE_FORBIDDEN',403);
+ if (actor !== effective && (!hasPermission({role:real.Role,roles:user.actorRoles,permissions:user.actorPermissions},'access-as') || roleRank(real.Role) < roleRank(current.Role))) fail('DO_ACCESS_AS_FORBIDDEN',403);
  return { effective, actor };
 }
 async function target(q) {

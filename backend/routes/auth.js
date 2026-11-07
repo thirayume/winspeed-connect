@@ -1,3 +1,5 @@
+const {hasPermission} = require('../services/role-capabilities');
+const roleWrite=require('../services/role-policy-write');
 const router = require('express').Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
@@ -5,7 +7,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { sql, wfQuery } = require('../db');
+const { sql, wfQuery, wfTransaction } = require('../db');
 const { ensureRebateDocCode } = require('../services/rebate-doc-code');
 
 /** best effort: the user is saved either way, and the code is given again on first use */
@@ -449,10 +451,10 @@ router.get('/line/status', (req, res) => {
 });
 
 // GET /api/auth/access-as/candidates
-router.get('/access-as/candidates', requireAuth, async (req, res) => {
+router.get('/access-as/candidates', requireAuth, requireCapability('access-as'), async (req, res) => {
   try {
     const actor = await loadAppUserById(req.user.actorSub || req.user.sub);
-    if (!actor || !actor.IsActive || !canUseAccessAs(actor.Role)) return res.json([]);
+    if (!actor || !actor.IsActive || !hasPermission({role:actor.Role,roles:req.user.actorRoles,permissions:req.user.isImpersonating?req.user.actorPermissions:req.user.permissions},'access-as')) return res.json([]);
 
     const result = await wfQuery(
       `SELECT u.Id, u.Username, u.DisplayName, u.Role, u.RoleCode, u.EmpId, u.IsActive,
@@ -474,7 +476,7 @@ router.get('/access-as/candidates', requireAuth, async (req, res) => {
 });
 
 // POST /api/auth/access-as
-router.post('/access-as', requireAuth, async (req, res) => {
+router.post('/access-as', requireAuth, requireCapability('access-as'), async (req, res) => {
   try {
     const targetId = Number(req.body?.userId);
     if (!Number.isFinite(targetId)) return res.status(400).json({ message: 'target user required' });
@@ -483,7 +485,7 @@ router.post('/access-as', requireAuth, async (req, res) => {
     const target = await loadAppUserById(targetId);
     if (!actor || !actor.IsActive) return res.status(401).json({ message: 'Actor user not found' });
     if (!target || !target.IsActive) return res.status(404).json({ message: 'Target user not found' });
-    if (!canUseAccessAs(actor.Role) || !canAccessAs(actor.Role, target.Role)) {
+    if (!hasPermission({role:actor.Role,roles:req.user.actorRoles,permissions:req.user.isImpersonating?req.user.actorPermissions:req.user.permissions},'access-as') || !canAccessAs(actor.Role, target.Role)) {
       return res.status(403).json({ message: 'Access As is not allowed for this role' });
     }
 
@@ -534,6 +536,7 @@ router.get('/me', requireAuth, async (req, res) => {
       : null;
     const client=toClientUser(user, actor);
     client.roleCode=req.user.roleCode||user.Role;
+    client.roleCodes=req.user.roleCodes; client.roles=req.user.roles;
     client.capabilities=require('../services/role-profiles').filteredCapabilities({...req.user,positionCode:user.PositionCode});
     res.json(client);
   } catch (e) {
@@ -546,8 +549,8 @@ router.get('/me', requireAuth, async (req, res) => {
 router.get('/databases', requireAuth, async (req, res) => {
   try {
     const role = req.user?.role;
-    const canSwitch = roleHasCapability(role, 'database.switch');
-    const canSetSystem = roleHasCapability(role, 'database.set-system');
+    const canSwitch = hasPermission(req.user, 'database.switch');
+    const canSetSystem = hasPermission(req.user, 'database.set-system');
     const [system, list] = await Promise.all([
       activeDb.systemActiveDatabase(),
       (canSwitch || canSetSystem) ? activeDb.listSwitchableDatabases() : Promise.resolve([]),
@@ -562,7 +565,7 @@ router.get('/databases', requireAuth, async (req, res) => {
 // POST switch this session to another database (empty body resets to the system default).
 router.post('/switch-database', requireAuth, async (req, res) => {
   try {
-    if (!roleHasCapability(req.user?.role, 'database.switch')) {
+    if (!hasPermission(req.user, 'database.switch')) {
       return res.status(403).json({ code: 'FORBIDDEN', message: 'บทบาทนี้ไม่มีสิทธิ์สลับฐานข้อมูล' });
     }
     const wanted = String(req.body?.database || '').trim();
@@ -585,7 +588,7 @@ router.post('/switch-database', requireAuth, async (req, res) => {
 // PUT the system-wide default database (admin). Affects everyone who has not switched.
 router.put('/system-database', requireAuth, async (req, res) => {
   try {
-    if (!roleHasCapability(req.user?.role, 'database.set-system')) {
+    if (!hasPermission(req.user, 'database.set-system')) {
       return res.status(403).json({ code: 'FORBIDDEN', message: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
     }
     const database = await activeDb.setSystemActiveDatabase(String(req.body?.database || '').trim());
@@ -662,7 +665,7 @@ router.post('/profile/signature', requireAuth, upload.single('signature'), async
 });
 
 // POST /api/auth/users (ADMIN/MANAGER/ACCOUNTING)
-router.post('/users', requireAuth, requireCapability('users.manage'), async (req, res) => {
+router.post('/users', requireAuth, requireCapability('users.manage'), requireCapability('roles.manage'), async (req, res) => {
   try {
     const { username, password, displayName, role, empId } = req.body;
     const callerRole = String(req.user.role).toUpperCase();
@@ -682,7 +685,10 @@ router.post('/users', requireAuth, requireCapability('users.manage'), async (req
     }
 
     const hash = await bcrypt.hash(password, 12);
-    const result = await wfQuery(
+    const result = await wfTransaction(async tx=>{
+      await roleWrite.lockPolicy(tx,req.user.id,'roles.manage');
+      const execute=async(text,inputs)=>{const q=tx.request();for(const [k,v] of Object.entries(inputs))q.input(k,v.type,v.value);return q.query(text);};
+      const result = await execute(
       // R12 item 5: the admin knows the first password, so the owner must replace it
       `INSERT INTO wf.AppUser (Username, PasswordHash, DisplayName, Role, EmpId, MustChangePassword)
        OUTPUT inserted.Id, inserted.Username, inserted.DisplayName, inserted.Role
@@ -694,12 +700,16 @@ router.post('/users', requireAuth, requireCapability('users.manage'), async (req
         r: { type: sql.NVarChar(30), value: newRole },
         e: { type: sql.NVarChar(20), value: empId || null },
       }
-    );
+      );
+      await roleWrite.setMembership(tx,result.recordset[0].Id,[newRole]);
+      return result;
+    });
     // owner 2026-10-09: a salesperson or sales manager gets a rebate requester code automatically
     await giveRebateDocCode(result.recordset[0]?.Id);
     res.json(result.recordset[0]);
   } catch (e) {
     if (e.number === 2627) return res.status(409).json({ message: 'ชื่อผู้ใช้ซ้ำ' });
+    if(e.status) return res.status(e.status).json({message:e.message});
     if (e.number === 2601) return res.status(409).json({ message: 'พนักงานรหัสนี้ถูกผูกกับผู้ใช้อื่นไปแล้ว' });
     console.error(e);
     res.status(500).json({ message: 'Server error' });
@@ -723,7 +733,8 @@ router.get('/users', requireAuth, requireCapability('users.manage'), async (req,
        LEFT JOIN wf.v_NearestApprover na ON na.PositionCode = u.PositionCode
        ORDER BY u.DisplayName`
     );
-    res.json(result.recordset);
+    const memberships=(await wfQuery('SELECT UserId,RoleCode FROM wf.vUserRole')).recordset;
+    res.json(result.recordset.map(u=>({...u,RoleCodes:memberships.filter(r=>r.UserId===u.Id).map(r=>r.RoleCode)})));
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: 'Server error' });
@@ -795,6 +806,7 @@ router.patch('/users/:id', requireAuth, requireCapability('users.manage'), async
     if (empId !== undefined)       { sets.push('EmpId = @empId');        inputs.empId       = { type: sql.NVarChar(20),  value: empId || null }; }
     // ตำแหน่งในผังองค์กร — ส่งค่าว่างมาเพื่อถอดออกได้ · FK กันรหัสที่ไม่มีจริงอยู่แล้ว
     if (positionCode !== undefined) { sets.push('PositionCode = @pos');   inputs.pos         = { type: sql.VarChar(30),   value: positionCode || null }; }
+    if(role!==undefined && role!==targetUser.Role && !hasPermission(req.user,'roles.manage')) return res.status(403).json({message:'ต้องการสิทธิ์จัดการ Role'});
     if (role !== undefined)        { sets.push('Role = @role'); if(role!==targetUser.Role) sets.push('RoleCode = NULL');          inputs.role        = { type: sql.NVarChar(30),  value: role }; }
     if (displayName !== undefined) { sets.push('DisplayName = @dn');      inputs.dn          = { type: sql.NVarChar(100), value: displayName }; }
     if (isActive !== undefined)    { sets.push('IsActive = @act');       inputs.act         = { type: sql.Bit,          value: isActive ? 1 : 0 }; }
@@ -828,16 +840,21 @@ router.patch('/users/:id', requireAuth, requireCapability('users.manage'), async
       || password || (lineUserId!==undefined && (lineUserId||null)!==(targetUser.LineUserId||null));
     if(securityChanged) sets.push('AuthVersion = AuthVersion + 1');
     sets.push('UpdatedAt = GETUTCDATE()');
-    const __r = await wfQuery(
-      `UPDATE wf.AppUser SET ${sets.join(', ')} WHERE Id = @id`,
-      inputs
-    );
+    const __r = await wfTransaction(async tx=>{
+      await roleWrite.lockPolicy(tx,callerId,'users.manage');
+      const q=tx.request();for(const [k,v] of Object.entries(inputs))q.input(k,v.type,v.value);
+      const result=await q.query(`UPDATE wf.AppUser SET ${sets.join(', ')} WHERE Id=@id`);
+      if(role!==undefined && role!==targetUser.Role) await roleWrite.setMembership(tx,targetId,[role]);
+      await roleWrite.assertAdministrator(tx);
+      return result;
+    });
     if (!__r.rowsAffected?.[0]) return res.status(404).json({ message: 'ไม่พบผู้ใช้นี้' });
     // disabling or re-enabling takes effect on the user's very next request
     clearAccountStatusCache(targetId);
     if (role !== undefined || isActive !== undefined) await giveRebateDocCode(targetId);
     res.json({ ok: true, id: targetId });
   } catch (e) {
+    if(e.status) return res.status(e.status).json({message:e.message});
     if (e.number === 2601) return res.status(409).json({ message: 'พนักงานรหัสนี้ถูกผูกกับผู้ใช้อื่นไปแล้ว' });
     console.error(e);
     res.status(500).json({ message: 'Server error' });
@@ -992,14 +1009,15 @@ router.delete('/users/:id', requireAuth, requireCapability('users.manage'), asyn
       }
     }
 
-    const __r = await wfQuery(
-      `DELETE FROM wf.AppUser WHERE Id = @id`,
-      { id: { type: sql.Int, value: targetId } }
-    );
+    const __r = await wfTransaction(async tx=>{
+      await roleWrite.lockPolicy(tx,callerId,'users.manage');
+      const result=await roleWrite.query(tx,'DELETE FROM wf.AppUser WHERE Id=@id',{id:targetId});
+      await roleWrite.assertAdministrator(tx);return result;
+    });
     if (!__r.rowsAffected[0]) return res.status(404).json({ message: 'ไม่พบรายการที่ระบุ' });
     clearAccountStatusCache(targetId);
     res.json({ ok: true });
-  } catch (e) { console.error(e); res.status(500).json({ message: 'Server error' }); }
+  } catch (e) { if(e.status)return res.status(e.status).json({message:e.message});console.error(e); res.status(500).json({ message: 'Server error' }); }
 });
 
 module.exports = router;

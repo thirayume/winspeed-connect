@@ -254,7 +254,7 @@ router.get('/available-lenders', async (req, res) => {
 });
 
 // POST /api/giveaway/borrow-requests — Request to borrow quota
-router.post('/borrow-requests', async (req, res) => {
+router.post('/borrow-requests', requireCapability('giveaway.borrow'), async (req, res) => {
   try {
     const { lenderId, region, requesterRegion, lenderRegion, brand, itemName, qty, reason } = req.body;
     if (!lenderId || !brand || !itemName || !qty) {

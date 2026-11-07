@@ -3,9 +3,10 @@
 // may approve their own request, using the actual person during Access As.
 const CREATORS=Object.freeze(['WAREHOUSE','ACCOUNTING']);
 const REVIEWERS=Object.freeze(['MANAGER','C_LEVEL','ADMIN']);
-function mayCreate(role){return CREATORS.includes(role);}
+const any=(role,allowed)=>(Array.isArray(role)?role:[role]).some(r=>allowed.includes(r));
+function mayCreate(role){return any(role,CREATORS);}
 function decision({role,actorId,requesterActorId}){
  const self=Number.isSafeInteger(actorId)&&actorId>0&&actorId===requesterActorId;
- return {allowed:REVIEWERS.includes(role)||(self&&CREATORS.includes(role)),selfApproval:self};
+ return {allowed:any(role,REVIEWERS)||(self&&any(role,CREATORS)),selfApproval:self};
 }
 module.exports={CREATORS,REVIEWERS,mayCreate,decision};

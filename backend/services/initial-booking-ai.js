@@ -1,4 +1,5 @@
 'use strict';
+const {hasPermission}=require('./role-capabilities');
 // Initial UAT simulation contract. Below-price and credit override use separate policies.
 const { createHash } = require('crypto');
 const { sql, wfTransaction, wfQuery } = require('../db');
@@ -57,8 +58,8 @@ async function identity(query, user) {
   const current = rows.find(r => Number(r.Id) === effective), real = rows.find(r => Number(r.Id) === actor);
   if (![current, real].every(r => r && (r.IsActive === true || r.IsActive === 1) && !r.MustChangePassword)) fail('AI_ACTOR_UNAVAILABLE', 403);
   if (current.Role !== user.role || real.Role !== (user.actorRole || user.role)) fail('AI_ROLE_CHANGED', 403);
-  if (!rolesFor('so.approve-native').includes(current.Role)) fail('AI_ROLE_FORBIDDEN', 403);
-  if (actor !== effective && (!ACCESS_AS_ACTOR_ROLES.includes(real.Role) || roleRank(real.Role) < roleRank(current.Role))) fail('AI_ACCESS_AS_FORBIDDEN', 403);
+  if (!hasPermission(user,'so.approve-native')) fail('AI_ROLE_FORBIDDEN', 403);
+  if (actor !== effective && (!hasPermission({role:real.Role,roles:user.actorRoles,permissions:user.actorPermissions},'access-as') || roleRank(real.Role) < roleRank(current.Role))) fail('AI_ACCESS_AS_FORBIDDEN', 403);
   const empId = Number(current.EmpId);
   if (!Number.isSafeInteger(empId) || empId <= 0) fail('AI_APPROVER_EMPLOYEE_REQUIRED', 409);
   return { effective, actor, empId };

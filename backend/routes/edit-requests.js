@@ -21,7 +21,7 @@
  */
 const router = require('express').Router();
 const { sql, wfQuery, wfTransaction } = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
 const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
 const { broadcast } = require('../services/socket');
 const truckHold = require('../services/truck-hold');
@@ -264,7 +264,7 @@ router.get('/', async (req, res) => {
 });
 
 // ── POST /api/edit-requests ───────────────────────────────────
-router.post('/', requireRole(...REQUESTER_ROLES), async (req, res) => {
+router.post('/', requireCapability('edit-request.create'), async (req, res) => {
   try {
     const { soid, reasonCode, reasonDetail } = req.body || {};
     if (!soid)       return res.status(400).json({ message: 'ต้องระบุใบสั่งขาย' });

@@ -9,11 +9,17 @@ const users = new Map([
 ]);
 
 h.installDbStub(({ text, inputs }) => {
+  if(text.includes('AS PolicySchemaMissing'))return [{PolicySchemaMissing:1}];
+    if(text.includes("@Resource='WF_ROLE_POLICY'"))return {recordset:[{LockResult:0}]};
+    if(text.includes('AS Allowed'))return {recordset:[{Allowed:1}]};
+    if(text.includes('SELECT TOP(1) Id'))return {recordset:[{Id:1}]};
+    if(text.includes('SELECT Code,BaseRole'))return {recordset:['ADMIN','SALES','MANAGER'].map(Code=>({Code,BaseRole:Code}))};
+
   const id = Number(inputs.id);
-  if (/DELETE FROM wf\.AppUser WHERE Id = @id/.test(text)) {
+  if (/DELETE FROM wf\.AppUser WHERE Id\s*=\s*@id/.test(text)) {
     return { recordset: [], rowsAffected: [users.delete(id) ? 1 : 0] };
   }
-  if (/FROM wf\.AppUser\s+WHERE Id = @id/.test(text)) {
+  if (/FROM wf\.AppUser\s+WHERE Id\s*=\s*@id/.test(text)) {
     return users.has(id) ? [users.get(id)] : [];
   }
   return [];

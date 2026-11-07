@@ -1,3 +1,4 @@
+const { hasRole,hasPermission } = require('../services/role-capabilities');
 const jwt = require('jsonwebtoken');
 
 const SECRET = process.env.JWT_SECRET || 'dev_secret_change_in_production';
@@ -5,7 +6,7 @@ const SECRET = process.env.JWT_SECRET || 'dev_secret_change_in_production';
 /** true if this role may switch its session database (capability database.switch). */
 function maySwitchDatabase(role) {
   try {
-    return require('../services/role-capabilities').rolesFor('database.switch').includes(String(role || '').toUpperCase());
+    return typeof role==='object' ? hasPermission(role,'database.switch') : require('../services/role-capabilities').rolesFor('database.switch').includes(String(role || '').toUpperCase());
   } catch { return false; }
 }
 
@@ -161,7 +162,10 @@ function requireAuth(req, res, next) {
         const { sessionProfile } = require('../services/role-profiles');
         req.user = await sessionProfile(req.user, req.tokenPayload);
         if (Number(actorId)!==Number(effectiveId)) {
-          const actor=await sessionProfile({...req.user,id:actorId}, {authVersion:req.tokenPayload.actorAuthVersion||0});
+          const actor=await sessionProfile({...req.user,id:actorId,role:req.tokenPayload.actorRole||req.user.role,roles:undefined,permissions:undefined}, {authVersion:req.tokenPayload.actorAuthVersion||0});
+          if (!hasPermission(actor,'access-as')) throw Object.assign(new Error('ACCESS_AS_REVOKED'),{status:403});
+          if(req.user.permissions && actor.permissions) req.user.permissions=req.user.permissions.filter(k=>actor.permissions.includes(k));
+          req.user.actorRoles=actor.roles;req.user.actorPermissions=actor.permissions;
           req.user.disabledActions=[...new Set([...(req.user.disabledActions||[]),...(actor.disabledActions||[])])];
           req.user.mustChangePassword=actor.mustChangePassword;
         }
@@ -173,13 +177,21 @@ function requireAuth(req, res, next) {
     // allowed database, carried in the JWT `db` claim. An invalid or no-longer-permitted claim is
     // ignored and the request falls back to the system default already set by the DB-target
     // middleware. The migrator and non-onprem targets never switch.
-    runWithSessionDatabase(req.tokenPayload, req.user?.role, run);
+    const prepare = async () => {
+      if(req.tokenPayload.db) {
+        const {sessionProfile}=require('../services/role-profiles');
+        const actor=await sessionProfile({...req.user,id:actorId,role:req.tokenPayload.actorRole||req.user.role,roles:undefined,permissions:undefined},{authVersion:req.user.isImpersonating?req.tokenPayload.actorAuthVersion:req.tokenPayload.authVersion});
+        return runWithSessionDatabase(req.tokenPayload,actor,run);
+      }
+      return run();
+    };
+    return prepare();
   }).catch(next);
 }
 
 function requireRole(...roles) {
   return (req, res, next) => {
-    if (!roles.includes(req.user?.role))
+    if (!hasRole(req.user,...roles))
       return res.status(403).json({ message: `ต้องการสิทธิ์: ${roles.join(' / ')}` });
     next();
   };
@@ -187,10 +199,10 @@ function requireRole(...roles) {
 
 // R12 item 3: guard a route with a capability from services/role-capabilities.js
 function requireCapability(action) {
-  const { rolesFor } = require('../services/role-capabilities');
   return (req,res,next) => {
-    if ((req.user?.disabledActions||[]).includes(action)) return res.status(403).json({message:'Role นี้ไม่ได้รับ Permission สำหรับงานนี้'});
-    return requireRole(...rolesFor(action))(req,res,next);
+    const subject=action==='access-as' && req.user?.isImpersonating ? {role:req.user.actorRole,roles:req.user.actorRoles,permissions:req.user.actorPermissions}:req.user;
+    if (!hasPermission(subject,action)) return res.status(403).json({message:'Role นี้ไม่ได้รับ Permission สำหรับงานนี้'});
+    next();
   };
 }
 
@@ -200,7 +212,7 @@ const REBATE_ALL_ROLES = ['ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'C_LEVEL
 const REBATE_OWN_ROLES = ['SALES', 'COUNTER_SALES'];
 
 function canViewAllRebateAmounts(user) {
-  return REBATE_ALL_ROLES.includes(user?.role);
+  return hasRole(user,...REBATE_ALL_ROLES);
 }
 
 function canViewRebateAmounts(user) {
@@ -216,7 +228,7 @@ function requireRebateAmountAccess(req, res, next) {
 
 /** the rebate page: everyone who sees amounts, plus a salesperson for their own records (amounts removed) */
 function requireRebatePageAccess(req, res, next) {
-  if (![...REBATE_ALL_ROLES, ...REBATE_OWN_ROLES].includes(req.user?.role)) {
+  if (!hasRole(req.user,...REBATE_ALL_ROLES,...REBATE_OWN_ROLES)) {
     return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูข้อมูลรีเบท' });
   }
   next();

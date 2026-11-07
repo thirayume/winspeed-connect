@@ -90,7 +90,7 @@ export const AdminUsersPage = () => {
   // Check if an EmpID is already used by ANOTHER user
   const sessionUser = useAuthStore(s => s.user);
   const myRole = sessionUser?.role || '';
-  const canBatch = myRole === 'ADMIN' && !sessionUser?.isImpersonating;
+  const canBatch = Boolean(sessionUser?.capabilities?.actions.includes('roles.manage')) && !sessionUser?.isImpersonating;
   useEffect(()=>{setSelected([]);setCurrentPage(1);},[includeInactive,searchQuery]);
 
   async function handleResetPassword(e: React.FormEvent<HTMLFormElement>) {
@@ -284,7 +284,7 @@ export const AdminUsersPage = () => {
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`text-xs px-2 py-0.5 rounded-full ${u.IsActive ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-600 font-medium'}`}>
-                      {u.RoleCode || u.Role} {!u.IsActive && '(ถูกระงับ)'}
+                      {canBatch ? <button className="text-blue-700 underline" title="จัดการ Role ของผู้ใช้" onClick={()=>setBatchUsers([u])}>{(u.RoleCodes||[u.RoleCode||u.Role]).join(' + ')}</button> : (u.RoleCodes||[u.RoleCode||u.Role]).join(' + ')} {!u.IsActive && '(ถูกระงับ)'}
                     </span>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">

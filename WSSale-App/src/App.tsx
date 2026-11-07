@@ -598,8 +598,8 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'giveaway'   && <GiveawayPage />}
                 {activePortal === 'aging'      && <AgingPage />}
                 {activePortal === 'profile'    && <ProfilePage />}
-                {activePortal === 'app-settings' && role==='ADMIN' && !user?.isImpersonating && <AppSettingsPage />}
-                {activePortal === 'roles' && role==='ADMIN' && !user?.isImpersonating && <RoleManagementPage />}
+                {activePortal === 'app-settings' && user?.capabilities?.actions.includes('settings.manage') && !user?.isImpersonating && <AppSettingsPage />}
+                {activePortal === 'roles' && user?.capabilities?.actions.includes('roles.manage') && !user?.isImpersonating && <RoleManagementPage />}
                 {activePortal === 'admin'      && ['ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '') && <AdminUsersPage />}
                 {activePortal === 'org'        && ['ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '') && <OrgAssignmentPage />}
                 {activePortal === 'beneficiaries' && ['ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'].includes(role || '') && <BeneficiaryAdminPage />}

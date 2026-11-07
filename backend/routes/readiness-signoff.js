@@ -2,7 +2,7 @@
 
 const router = require('express').Router();
 const { sql, wfQuery } = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
 
 const TOPICS = [
   { code: 'SALES_EMP_MAPPING', title: 'ผูกพนักงานฝ่ายขายและเข้าใช้ครั้งแรก', team: 'ฝ่ายขาย + IT', hint: 'จดผลตรวจ EmpID ใน EMSales และเลขใบจอง 103 ของบัญชีที่ทดสอบ' },
@@ -16,7 +16,7 @@ const STATUSES = ['PENDING', 'IN_REVIEW', 'CONFIRMED'];
 const PAGE_SIZE = 20;
 const fields = 'TopicCode, Revision, Status, ProcedureText, EvidenceReference, Reviewer, ReviewDate, SavedByUserId, SavedByUsername, SavedAt';
 
-router.use(requireAuth, requireRole('ADMIN'), (req, res, next) => {
+router.use(requireAuth, requireCapability('settings.manage'), (req, res, next) => {
   if (req.user.isImpersonating) {
     return res.status(403).json({ message: 'กรุณาออกจากโหมดทำรายการแทนก่อนเปิดผลตรวจรับ' });
   }

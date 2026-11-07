@@ -1,4 +1,5 @@
 'use strict';
+const {userRoles,hasRole,hasPermission}=require('./role-capabilities');
 const {isInitialNativeUatTarget}=require('./initial-native-uat-target');
 // UAT simulation only. This never creates weighing or physical shipment evidence.
 const {createHash}=require('crypto');
@@ -24,9 +25,9 @@ async function identity(q,user){
  const me=rows.find(r=>Number(r.Id)===effective),real=rows.find(r=>Number(r.Id)===actor);
  if(![me,real].every(r=>r&&(r.IsActive===true||r.IsActive===1)&&!r.MustChangePassword))fail('MR_ACTOR_UNAVAILABLE',403);
  if(me.Role!==user.role||real.Role!==(user.actorRole||user.role))fail('MR_ROLE_CHANGED',403);
- if(actor!==effective&&(!ACCESS_AS_ACTOR_ROLES.includes(real.Role)||roleRank(real.Role)<roleRank(me.Role)))fail('MR_ACCESS_AS_FORBIDDEN',403);
- if(![...CREATORS,...REVIEWERS].includes(me.Role))fail('MR_ROLE_FORBIDDEN',403);
- return {effective,actor,role:me.Role,empId:me.EmpId};
+ if(actor!==effective&&(!hasPermission({role:real.Role,roles:user.actorRoles,permissions:user.actorPermissions},'access-as')||roleRank(real.Role)<roleRank(me.Role)))fail('MR_ACCESS_AS_FORBIDDEN',403);
+ if(!hasRole(user,...CREATORS,...REVIEWERS) || !hasPermission(user,'coupon.manual116'))fail('MR_ROLE_FORBIDDEN',403);
+ return {effective,actor,role:userRoles(user),empId:me.EmpId};
 }
 // The requester's employee becomes WinSpeed's recorder (SaveEmpID); the approver's
 // employee must be enabled in wf.NativeApproverEmployee and is kept in wf only.
@@ -93,7 +94,7 @@ function evidenceFor(parent,current,slip){return JSON.stringify({mode:'UAT_SIMUL
  basis:slip.source==='SCALE'?'scale record of the booking':'typed transport slip, no scale record',physicalShipmentVerified:false});}
 function mayApprove(r,who){
  const d=decision({role:who.role,actorId:who.actor,requesterActorId:Number(r.RequesterActorId)});
- return {...d,exceptionBlocked:Boolean(r.ExceptionRequired)&&(!REVIEWERS.includes(who.role)||d.selfApproval)};
+ return {...d,exceptionBlocked:Boolean(r.ExceptionRequired)&&(!who.role.some(r=>REVIEWERS.includes(r))||d.selfApproval)};
 }
 function requestView(r,who){if(!r)return null;const d=mayApprove(r,who);return {requestId:r.RequestId,status:r.Status,reason:r.Reason,receiver:r.IssueName,plate:r.CarLicense,
  slipNo:r.SlipNo,slipSource:r.SlipSource,exceptionRequired:Boolean(r.ExceptionRequired),scaleNetKg:r.ScaleNetKg??null,

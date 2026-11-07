@@ -16,7 +16,7 @@ const appUsers = [
   { Id: 2, Username: 'emp-00002', DisplayName: 'เกศินี  ดวงดี', Role: 'SALES', EmpId: '1001', RebateDocCode: null, IsActive: true },
 ];
 const db = h.installDbStub(({ text, inputs }) => {
-  if (/FROM wf\.AppUser WHERE IsActive = 1 AND Role IN/.test(text)) return appUsers.filter(u => u.IsActive);
+  if (/FROM wf\.AppUser WHERE IsActive = 1 AND \(wf\.fn_UserHasRole/.test(text)) return appUsers.filter(u => u.IsActive);
   if (/FROM dbo\.SOInvHD h WITH \(NOLOCK\)\s+JOIN CustEmp/.test(text)) {
     return [{ SeriesCode: 'S', EmpId: '7004', DocCount: 360 }, { SeriesCode: 'T', EmpId: '7004', DocCount: 362 },
       { SeriesCode: 'S', EmpId: '7002', DocCount: 312 }, { SeriesCode: 'T', EmpId: '7002', DocCount: 211 }];
@@ -30,7 +30,7 @@ const db = h.installDbStub(({ text, inputs }) => {
     if (u && !u.RebateDocCode) { u.RebateDocCode = inputs.c; return { recordset: [], rowsAffected: [1] }; }
     return { recordset: [], rowsAffected: [0] };
   }
-  if (/SELECT Id, Role, IsActive, RebateDocCode FROM wf\.AppUser WHERE Id = @id/.test(text)) return appUsers.filter(u => u.Id === inputs.id);
+  if (/SELECT Id, Role, IsActive, RebateDocCode,.*FROM wf\.AppUser WHERE Id = @id/.test(text)) return appUsers.filter(u => u.Id === inputs.id);
   if (/SELECT Username, DisplayName, RebateDocCode FROM wf\.AppUser WHERE Id = @id/.test(text)) return appUsers.filter(u => u.Id === inputs.id);
   if (/FROM\s+CandidateDocs/.test(text)) return inputs.p === 'RBT69-%' ? [{ DocuNo: 'RBT69-110', Seq: 110 }] : [];
   return [];

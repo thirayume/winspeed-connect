@@ -1,3 +1,4 @@
+const {hasRole} = require('./role-capabilities');
 /**
  * visible-scope.js — one data-scoping rule for every list and detail endpoint (R12 O-4).
  *
@@ -32,7 +33,7 @@ const ALL_ROLES = Object.freeze(['ADMIN', 'C_LEVEL', 'ACCOUNTING', 'WAREHOUSE', 
 async function getVisibleScope(user, queryFn = wfQuery) {
   const role = String(user?.role || '').toUpperCase();
   const userId = Number(user?.sub ?? user?.id);
-  if (ALL_ROLES.includes(role)) return { all: true, basis: 'ALL', userIds: [], empIds: [] };
+  if (hasRole(user,...ALL_ROLES)) return { all: true, basis: 'ALL', userIds: [], empIds: [] };
   if (!userId) return { all: false, basis: 'NONE', userIds: [], empIds: [] };
 
   const me = (await queryFn(
@@ -57,7 +58,7 @@ async function getVisibleScope(user, queryFn = wfQuery) {
       WHERE u.Id = @id OR u.PositionCode IN (SELECT PositionCode FROM tree)
       OPTION (MAXRECURSION 32)
     `, { pos: { type: sql.VarChar(30), value: me.PositionCode }, id: { type: sql.Int, value: userId } }))?.recordset || [];
-  } else if (role === 'MANAGER') {
+  } else if (hasRole(user,'MANAGER')) {
     return { all: true, basis: 'MANAGER_UNMAPPED', userIds: [], empIds: [] };
   }
   if (!rows.some(r => Number(r.Id) === userId)) rows.push({ Id: userId, EmpId: me.EmpId });
@@ -108,7 +109,7 @@ async function canViewSalesUser(user, targetUserId, queryFn = wfQuery) {
   const self = Number(user?.sub ?? user?.id);
   const target = Number(targetUserId);
   if (!target || target === self) return true;
-  if (ENTER_FOR_OTHERS_ROLES.includes(String(user?.role || '').toUpperCase())) return true;
+  if (hasRole(user,...ENTER_FOR_OTHERS_ROLES)) return true;
   return inScope(await getVisibleScope(user, queryFn), { userId: target });
 }
 

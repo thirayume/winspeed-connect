@@ -3,7 +3,7 @@ const test = require('node:test'),
   assert = require('node:assert/strict'),
   bcrypt = require('bcrypt');
 const h = require('./helpers/route-harness.cjs');
-let stored = [],
+let assigned = null, remainingAdmin=true, roleMembers=[], stored = [],
   sessions = null,
   session = { PolicySchemaMissing: 1 },
   people = [
@@ -17,6 +17,22 @@ const db = h.installDbStub(
       const row = sessions ? sessions[inputs.id] : session;
       return { recordset: row ? [row] : [] };
     }
+    if(text.includes("@Resource='WF_ROLE_POLICY'"))return [{LockResult:0}];
+    if(text.includes('AS Allowed'))return [{Allowed:people[0].IsActive}];
+    if(text.includes('SELECT TOP(1) Id'))return remainingAdmin?people.filter(u=>u.Role==='ADMIN'&&u.IsActive):[];
+    if(text.includes('SELECT Code,BaseRole'))return [...ROLES.map(Code=>({Code,BaseRole:Code})),...stored];
+    if(text.includes('SELECT RoleCode FROM wf.vUserRole'))return [{RoleCode:people.find(p=>p.Id===inputs.id)?.Role||'SALES'}];
+    if(text.includes('SELECT Revision FROM wf.RoleProfile'))return stored.filter(p=>p.Code===inputs.code);
+    if(text.includes('SELECT UserId FROM wf.vUserRole WHERE RoleCode'))return roleMembers;
+    if(text.includes('SELECT p.Code,p.BaseRole,g.PermissionCode')){
+      if(assigned)return assigned[inputs.id]||[];
+      const row=sessions?sessions[inputs.id]:session;
+      const code=row.RoleCode||row.Role;
+      const p=stored.find(p=>p.Code===code)||{Code:code,BaseRole:row.Role,DisabledActions:'[]'};
+      const disabled=JSON.parse(p.DisabledActions||'[]');
+      const actions=Object.keys(ACTIONS).filter(k=>ACTIONS[k].includes(p.BaseRole)&&!disabled.includes(k));
+      return (actions.length?actions:[null]).map(PermissionCode=>({Code:code,BaseRole:p.BaseRole,PermissionCode}));
+    }
     if (text.includes('SELECT Code, Name')) return stored;
     if (text.includes('SELECT BaseRole,Revision')) return stored.filter((p) => p.Code === inputs.code);
     if (text.includes('SELECT Id,Username,Role,IsActive')) return people;
@@ -25,6 +41,7 @@ const db = h.installDbStub(
   },
   { activeUserIds: h.TEST_USERS },
 );
+const {ACTIONS,ROLES}=require('../services/role-capabilities');
 const { parseProfile, sessionProfile, filteredCapabilities } = require('../services/role-profiles');
 let app;
 test.before(async () => {
@@ -38,7 +55,7 @@ test.before(async () => {
 });
 test.after(() => app.close());
 test.beforeEach(() => {
-  stored = [];
+  stored = []; assigned=null; remainingAdmin=true; roleMembers=[];
   sessions = null;
   session = { PolicySchemaMissing: 1 };
   db.calls.length = 0;
@@ -54,7 +71,7 @@ test('custom role accepts bounded permissions, rejects unknown action, admin clo
   };
   assert.ok(parseProfile(p));
   assert.equal(parseProfile({ ...p, disabledActions: ['users.manage'] }), null);
-  assert.equal(parseProfile({ ...p, baseRole: 'ADMIN' }), null);
+  assert.ok(parseProfile({ ...p, baseRole: 'ADMIN' }));
   assert.equal(parseProfile({ ...p, code: 'SALES', baseRole: 'MANAGER' }), null);
 });
 test('role management rejects non-admin and Access As', async () => {
@@ -260,4 +277,54 @@ test('Access As cannot escape the real actor restrictions or revoked session', a
   assert.equal((await app.call('POST','/api/quotation',{user,body:{}})).status,403);
   sessions[1].AuthVersion=1;
   assert.equal((await app.call('POST','/api/quotation',{user,body:{}})).status,401);
+});
+
+test('every catalog permission is editable, including grants outside ADMIN defaults',()=>{
+  const permissions=Object.keys(ACTIONS);
+  assert.deepEqual(parseProfile({code:'ADMIN_COPY',name:'Copy',baseRole:'ADMIN',permissions,expectedRevision:0}).permissions,permissions);
+  assert.deepEqual(parseProfile({code:'ADMIN',name:'Admin',baseRole:'ADMIN',permissions:[],expectedRevision:1}).permissions,[]);
+  assert.equal(parseProfile({code:'CUSTOM',name:'Custom',baseRole:'SALES',permissions:['unknown.permission'],expectedRevision:0}),null);
+});
+test('C_LEVEL plus SALES combines grants; one omission does not override another grant',async()=>{
+  session={Role:'C_LEVEL',AuthVersion:0,IsActive:1};
+  assigned={2:[{Code:'EXECUTIVE',BaseRole:'C_LEVEL',PermissionCode:'so.verify'},{Code:'SALES_CUSTOM',BaseRole:'SALES',PermissionCode:'so.create'}]};
+  let user=await sessionProfile({id:2},{});
+  assert.deepEqual(new Set(user.roles),new Set(['C_LEVEL','SALES']));
+  assert.equal(filteredCapabilities(user).actions.includes('so.create'),true);
+  assigned[2]=[{Code:'EXECUTIVE',BaseRole:'C_LEVEL',PermissionCode:'so.verify'}];
+  user=await sessionProfile({id:2},{});
+  assert.equal(filteredCapabilities(user).actions.includes('so.create'),false);
+  const {requireCapability}=require('../middleware/auth');let next=false,status;
+  requireCapability('so.create')({user},{status(s){status=s;return this;},json(){}},()=>{next=true;});
+  assert.equal(next,false);assert.equal(status,403);
+});
+test('membership add/remove/replace preserves grants and rejects removing the last role',()=>{
+  const {changeMembership}=require('../services/role-policy-write');
+  assert.deepEqual(changeMembership(['C_LEVEL'],['SALES'],'add'),['C_LEVEL','SALES']);
+  assert.deepEqual(changeMembership(['C_LEVEL','SALES'],['C_LEVEL'],'remove'),['SALES']);
+  assert.deepEqual(changeMembership(['C_LEVEL','SALES'],['ACCOUNTING'],'replace'),['ACCOUNTING']);
+  assert.throws(()=>changeMembership(['SALES'],['SALES'],'remove'),e=>e.status===409);
+  assert.throws(()=>changeMembership(['SALES'],['ADMIN'],'invalid'),e=>e.status===400);
+});
+test('delete assigned Role rejects even an inactive member; empty Role can be deleted',async()=>{
+  stored=[{Code:'UNUSED',BaseRole:'SALES',Revision:2}];roleMembers=[{UserId:3,IsActive:0}];
+  let out=await app.call('DELETE','/api/admin-management/roles/UNUSED',{user:admin,body:{expectedRevision:2}});
+  assert.equal(out.status,409);assert.equal(db.calls.some(c=>c.text.startsWith('DELETE FROM wf.RoleProfile')),false);
+  roleMembers=[];
+  out=await app.call('DELETE','/api/admin-management/roles/UNUSED',{user:admin,body:{expectedRevision:2}});
+  assert.equal(out.status,200);
+  out=await app.call('DELETE','/api/admin-management/roles/UNUSED',{user:admin,body:{expectedRevision:1}});
+  assert.equal(out.status,409);
+});
+test('removing final administrator permissions fails the transaction',async()=>{
+  remainingAdmin=false;
+  const out=await app.call('PUT','/api/admin-management/roles/ADMIN',{user:admin,body:{name:'Admin',baseRole:'ADMIN',permissions:[],expectedRevision:0}});
+  assert.equal(out.status,409);assert.match(out.body.message,/1/);
+  assert.equal(db.calls.some(c=>c.text.includes('INSERT INTO wf.AdminChangeAudit')),false);
+});
+test('multiple roles retain 116 creator rights and manager review rules',()=>{
+  const {mayCreate,decision}=require('../services/manual-redemption-policy');
+  assert.equal(mayCreate(['C_LEVEL','WAREHOUSE']),true);
+  assert.equal(decision({role:['C_LEVEL','SALES'],actorId:1,requesterActorId:2}).allowed,true);
+  assert.equal(decision({role:['SALES'],actorId:1,requesterActorId:2}).allowed,false);
 });

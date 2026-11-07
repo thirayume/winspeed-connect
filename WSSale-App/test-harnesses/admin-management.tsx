@@ -9,7 +9,7 @@ import '../src/index.css';
 // Development-only fixture entry; not imported by the production application.
 useAuthStore.setState({
   isAuthenticated: true,
-  user: { id: 1, username: 'fixture-admin', displayName: 'ผู้ดูแลทดสอบ', role: 'ADMIN', isActive: true },
+  user: { id: 1, username: 'fixture-admin', displayName: 'ผู้ดูแลทดสอบ', role: 'ADMIN', isActive: true, capabilities:{menus:['admin','roles','app-settings'],actions:['users.manage','roles.manage','settings.manage']} },
 });
 function Harness() {
   const [tab, setTab] = useState('users');

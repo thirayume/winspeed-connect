@@ -1,22 +1,19 @@
-'use strict';
-const { wfQuery, sql } = require('../db');
-const { ROLES, ACTIONS, capabilitiesFor } = require('./role-capabilities');
-// Only capabilities enforced by API middleware are editable. Business scope/ranks remain inherited.
-const EDITABLE = Object.keys(ACTIONS).filter(
-  (k) =>
-    ![
-      'access-as',
-      'database.switch',
-      'database.set-system',
-      'edit-request.create',
-      'giveaway.borrow',
-    ].includes(k),
-);
+"use strict";
+const { wfQuery, sql } = require("../db");
+const {
+  ROLES,
+  ACTIONS,
+  capabilitiesFor,
+  userRoles,
+  hasPermission,
+  featureEnabled,
+} = require("./role-capabilities");
+const EDITABLE = Object.keys(ACTIONS);
 function parseProfile(input) {
-  const { code, name, baseRole, disabledActions, expectedRevision } = input || {};
+  const { code, name, baseRole, expectedRevision } = input || {};
   if (
-    !/^[A-Z][A-Z0-9_]{1,29}$/.test(code || '') ||
-    typeof name !== 'string' ||
+    !/^[A-Z][A-Z0-9_]{1,29}$/.test(code || "") ||
+    typeof name !== "string" ||
     !name.trim() ||
     name.trim().length > 100 ||
     !ROLES.includes(baseRole) ||
@@ -24,77 +21,134 @@ function parseProfile(input) {
     expectedRevision < 0
   )
     return null;
+  let permissions = input.permissions;
   if (
-    !Array.isArray(disabledActions) ||
-    disabledActions.some((k) => !EDITABLE.includes(k) || !ACTIONS[k].includes(baseRole))
+    !permissions &&
+    Array.isArray(input.disabledActions) &&
+    input.disabledActions.every(
+      (k) => EDITABLE.includes(k) && ACTIONS[k].includes(baseRole),
+    )
+  )
+    permissions = EDITABLE.filter(
+      (k) =>
+        ACTIONS[k].includes(baseRole) && !input.disabledActions.includes(k),
+    );
+  if (
+    !Array.isArray(permissions) ||
+    permissions.some((k) => !EDITABLE.includes(k))
   )
     return null;
   if (ROLES.includes(code) && code !== baseRole) return null;
-  if (baseRole === 'ADMIN' && !ROLES.includes(code)) return null;
-  if (code === 'ADMIN' && disabledActions.length) return null;
   return {
     code,
     name: name.trim(),
     baseRole,
-    disabledActions: [...new Set(disabledActions)],
+    permissions: [...new Set(permissions)],
     expectedRevision,
   };
 }
 async function profiles() {
-  const r = await wfQuery('SELECT Code, Name, BaseRole, DisabledActions, Revision FROM wf.RoleProfile');
-  return r.recordset.map((p) => ({ ...p, disabledActions: JSON.parse(p.DisabledActions) }));
+  const r =
+    await wfQuery(`SELECT p.Code,p.Name,p.BaseRole,p.Revision,g.PermissionCode,
+    (SELECT COUNT(*) FROM wf.vUserRole u WHERE u.RoleCode=p.Code) AS MemberCount
+    FROM wf.RoleProfile p LEFT JOIN wf.RolePermission g ON g.RoleCode=p.Code ORDER BY p.Code,g.PermissionCode`);
+  const map = new Map();
+  for (const row of r.recordset) {
+    if (!map.has(row.Code))
+      map.set(row.Code, {
+        Code: row.Code,
+        Name: row.Name,
+        BaseRole: row.BaseRole,
+        Revision: row.Revision,
+        MemberCount: row.MemberCount,
+        permissions: [],
+      });
+    if (row.PermissionCode)
+      map.get(row.Code).permissions.push(row.PermissionCode);
+  }
+  return [...map.values()];
 }
 async function resolveProfile(code) {
-  const all = await profiles(),
-    found = all.find((p) => p.Code === code);
-  if (found) return found;
-  if (ROLES.includes(code))
-    return { Code: code, Name: code, BaseRole: code, disabledActions: [], Revision: 0 };
-  return null;
+  return (await profiles()).find((p) => p.Code === code) || null;
 }
 async function sessionProfile(user, payload) {
-  // Allows a rollout before this additive migration; new management endpoints require migration.
   const r = await wfQuery(
-    "IF COL_LENGTH('wf.AppUser','AuthVersion') IS NULL SELECT 1 AS PolicySchemaMissing ELSE EXEC sp_executesql N'SELECT Role, RoleCode, AuthVersion, MustChangePassword, IsActive FROM wf.AppUser WHERE Id=@id',N'@id int',@id=@id",
+    "IF COL_LENGTH('wf.AppUser','AuthVersion') IS NULL SELECT 1 AS PolicySchemaMissing ELSE EXEC sp_executesql N'SELECT Role,RoleCode,AuthVersion,MustChangePassword,IsActive FROM wf.AppUser WHERE Id=@id',N'@id int',@id=@id",
     { id: { type: sql.Int, value: Number(user.id) } },
   );
   const row = r.recordset?.[0];
   if (row?.PolicySchemaMissing === 1) return user;
-  if (!row || !row.Role || !row.IsActive) {
-    const e = new Error('ACCOUNT_UNAVAILABLE');
-    e.status = 401;
-    throw e;
-  }
-  if (Number(payload.authVersion || 0) !== Number(row.AuthVersion || 0)) {
-    const e = new Error('SESSION_REVOKED');
-    e.status = 401;
-    throw e;
-  }
-  const p = await resolveProfile(row.RoleCode || row.Role);
-  if (!p || p.BaseRole !== row.Role) {
-    const e = new Error('ROLE_UNAVAILABLE');
-    e.status = 403;
-    throw e;
-  }
+  const reject = (code, status) => {
+    throw Object.assign(new Error(code), { status });
+  };
+  if (!row || !row.Role || !row.IsActive) reject("ACCOUNT_UNAVAILABLE", 401);
+  if (Number(payload.authVersion || 0) !== Number(row.AuthVersion || 0))
+    reject("SESSION_REVOKED", 401);
+  const assignments = (
+    await wfQuery(
+      `SELECT p.Code,p.BaseRole,g.PermissionCode FROM wf.vUserRole u
+    JOIN wf.RoleProfile p ON p.Code=u.RoleCode LEFT JOIN wf.RolePermission g ON g.RoleCode=p.Code WHERE u.UserId=@id`,
+      { id: { type: sql.Int, value: Number(user.id) } },
+    )
+  ).recordset;
+  if (!assignments.length) reject("ROLE_UNAVAILABLE", 403);
   return {
     ...user,
     role: row.Role,
-    roleCode: p.Code,
-    disabledActions: p.disabledActions,
+    roleCode: row.RoleCode || row.Role,
+    roleCodes: [...new Set(assignments.map((p) => p.Code))],
+    roles: [...new Set(assignments.map((p) => p.BaseRole))],
+    permissions: [
+      ...new Set(assignments.map((p) => p.PermissionCode).filter(Boolean)),
+    ],
     mustChangePassword: Boolean(row.MustChangePassword),
   };
 }
+const MENU_PERMISSION = {
+  admin: "users.manage",
+  roles: "roles.manage",
+  "app-settings": "settings.manage",
+  "trip-board": "trip.view",
+  quotation: "quotation.manage",
+};
 function filteredCapabilities(user) {
-  const c = capabilitiesFor(user.role, { positionCode: user.positionCode });
-  const disabled = user.disabledActions || [];
-  return {
-    ...c,
-    menus: c.menus.filter(
-      (k) =>
-        !(k === 'admin' && disabled.includes('users.manage')) &&
-        !(k === 'trip-board' && disabled.includes('trip.view')),
+  const inherited = new Set(
+    userRoles(user).flatMap(
+      (r) => capabilitiesFor(r, { positionCode: user.positionCode }).menus,
     ),
-    actions: c.actions.filter((k) => !disabled.includes(k)),
+  );
+  for (const [menu, permission] of Object.entries(MENU_PERMISSION)) {
+    if (hasPermission(user, permission)) inherited.add(menu);
+    else inherited.delete(menu);
+  }
+  if (
+    ["so.create", "so.edit", "so.confirm"].some((k) => hasPermission(user, k))
+  )
+    inherited.add("sales");
+  if (hasPermission(user, "quotation.create")) inherited.add("quotation");
+  if (
+    [
+      "so.verify",
+      "so.approve-native",
+      "so.create-native-delivery",
+      "credit.approve-native",
+      "invoice.post-native",
+    ].some((k) => hasPermission(user, k))
+  )
+    inherited.add("papertrail");
+  if (hasPermission(user, "coupon.manual116")) inherited.add("control-ticket");
+  return {
+    menus: [...inherited],
+    actions: Object.keys(ACTIONS).filter(
+      (k) => hasPermission(user, k) && featureEnabled(k),
+    ),
   };
 }
-module.exports = { EDITABLE, parseProfile, profiles, resolveProfile, sessionProfile, filteredCapabilities };
+module.exports = {
+  EDITABLE,
+  parseProfile,
+  profiles,
+  resolveProfile,
+  sessionProfile,
+  filteredCapabilities,
+};

@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
-import { Plus, Save, Shield, History } from 'lucide-react';
-import { req } from '../../services/api';
+import { useEffect, useState } from "react";
+import { Plus, Save, Shield, History, Trash2 } from "lucide-react";
+import { RoleMembers } from "./RoleMembers";
+import { req } from "../../services/api";
 export type RoleProfile = {
   Code: string;
   Name: string;
   BaseRole: string;
-  disabledActions: string[];
+  permissions: string[];
+  MemberCount?: number;
   Revision: number;
 };
 type Catalog = {
@@ -23,49 +25,52 @@ type AuditEntry = {
   CreatedAt: string;
 };
 const auditNames: Record<string, string> = {
-  ROLE_SAVE: 'บันทึก Role',
-  BATCH_role: 'เปลี่ยน Role',
-  BATCH_status: 'เปลี่ยนสถานะ',
-  'BATCH_reset-password': 'รีเซ็ตรหัสผ่าน',
-  'BATCH_clear-line': 'ล้างการผูก LINE',
+  ROLE_SAVE: "บันทึก Role",
+  BATCH_role: "เปลี่ยน Role",
+  BATCH_status: "เปลี่ยนสถานะ",
+  "BATCH_reset-password": "รีเซ็ตรหัสผ่าน",
+  "BATCH_clear-line": "ล้างการผูก LINE",
 };
 const names: Record<string, string> = {
-  'so.create': 'สร้างบิลขาย',
-  'so.edit': 'แก้ไขบิลขาย',
-  'so.cancel': 'ยกเลิกบิล',
-  'so.verify': 'ตรวจบิล',
-  'so.confirm': 'ยืนยันบิล',
-  'so.approve-native': 'อนุมัติ AI',
-  'so.create-native-delivery': 'ออกใบสั่งขาย 104',
-  'credit.approve-native': 'อนุมัติเกินวงเงิน',
-  'coupon.manual116': 'ตัดตั๋ว 116',
-  'invoice.post-native': 'Post Invoice 107',
-  'native.print-104': 'พิมพ์ 104',
-  'native.print-116': 'พิมพ์ 116',
-  'native.print-107': 'พิมพ์ 107',
-  'trip.view': 'ดูเที่ยวรถ',
-  'quotation.create': 'สร้างใบเสนอราคา',
-  'quotation.manage': 'จัดการใบเสนอราคา',
-  'coupon.settle': 'ตัดยอดตั๋ว',
-  'giveaway.budget': 'จัดการงบของแถม',
-  'users.manage': 'จัดการผู้ใช้',
-  'access-as': 'ทำรายการแทน',
-  'database.switch': 'สลับฐานใน session',
-  'database.set-system': 'ตั้งฐานระบบ',
-  'giveaway.borrow': 'ขอเบิกของแถม',
-  'edit-request.create': 'ขอแก้ไขเอกสาร',
+  "so.create": "สร้างบิลขาย",
+  "so.edit": "แก้ไขบิลขาย",
+  "so.cancel": "ยกเลิกบิล",
+  "so.verify": "ตรวจบิล",
+  "so.confirm": "ยืนยันบิล",
+  "so.approve-native": "อนุมัติ AI",
+  "so.create-native-delivery": "ออกใบสั่งขาย 104",
+  "credit.approve-native": "อนุมัติเกินวงเงิน",
+  "coupon.manual116": "ตัดตั๋ว 116",
+  "invoice.post-native": "Post Invoice 107",
+  "native.print-104": "พิมพ์ 104",
+  "native.print-116": "พิมพ์ 116",
+  "native.print-107": "พิมพ์ 107",
+  "trip.view": "ดูเที่ยวรถ",
+  "quotation.create": "สร้างใบเสนอราคา",
+  "quotation.manage": "จัดการใบเสนอราคา",
+  "coupon.settle": "ตัดยอดตั๋ว",
+  "giveaway.budget": "จัดการงบของแถม",
+  "roles.manage": "จัดการ Role และสมาชิก",
+  "settings.manage": "ตั้งค่าแอปและผลตรวจรับ",
+  "users.manage": "จัดการผู้ใช้",
+  "access-as": "ทำรายการแทน",
+  "database.switch": "สลับฐานใน session",
+  "database.set-system": "ตั้งฐานระบบ",
+  "giveaway.borrow": "ขอเบิกของแถม",
+  "edit-request.create": "ขอแก้ไขเอกสาร",
 };
 export function RoleManagementPage() {
   const [editing, setEditing] = useState(false);
+  const [view, setView] = useState<"permissions" | "members">("permissions");
   const [data, setData] = useState<Catalog | null>(null),
     [form, setForm] = useState<RoleProfile | null>(null),
-    [error, setError] = useState(''),
+    [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [notice, setNotice] = useState(''),
+    [notice, setNotice] = useState(""),
     [history, setHistory] = useState<AuditEntry[] | null>(null);
   async function load() {
     try {
-      setData(await req<Catalog>('/admin-management/roles'));
+      setData(await req<Catalog>("/admin-management/roles"));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -76,19 +81,21 @@ export function RoleManagementPage() {
   async function save() {
     if (!form) return;
     setBusy(true);
-    setError('');
+    setError("");
     try {
-      await req('/admin-management/roles/' + form.Code, {
-        method: 'PUT',
+      await req("/admin-management/roles/" + form.Code, {
+        method: "PUT",
         body: JSON.stringify({
           code: form.Code,
           name: form.Name,
           baseRole: form.BaseRole,
-          disabledActions: form.disabledActions,
+          permissions: form.permissions,
           expectedRevision: form.Revision,
         }),
       });
-      setNotice('บันทึก Role แล้ว มีผลกับ API ในคำขอถัดไป ผู้ใช้โหลดหน้าใหม่เพื่อปรับเมนู');
+      setNotice(
+        "บันทึก Role แล้ว มีผลกับ API ในคำขอถัดไป ผู้ใช้โหลดหน้าใหม่เพื่อปรับเมนู",
+      );
       setForm(null);
       await load();
     } catch (e) {
@@ -103,7 +110,8 @@ export function RoleManagementPage() {
         <Shield /> Role Management
       </h1>
       <p>
-        สร้าง Role จากบทบาทต้นแบบ ขอบเขตข้อมูลและกติกาอนุมัติใช้ตามต้นแบบ เลือกเปิด/ปิดสิทธิ์งานที่ระบบรองรับ
+        สร้าง Role จากบทบาทต้นแบบ ขอบเขตข้อมูลและกติกาอนุมัติใช้ตามต้นแบบ
+        เลือกเปิด/ปิดสิทธิ์งานที่ระบบรองรับ
       </p>
       {error && (
         <p role="alert" className="text-red-700">
@@ -122,7 +130,16 @@ export function RoleManagementPage() {
           className="action-add p-2 rounded-lg"
           onClick={() => {
             setEditing(false);
-            setForm({ Code: '', Name: '', BaseRole: 'SALES', disabledActions: [], Revision: 0 });
+            setView("permissions");
+            setForm({
+              Code: "",
+              Name: "",
+              BaseRole: "SALES",
+              permissions: Object.entries(data?.actions || {})
+                .filter(([, rs]) => rs.includes("SALES"))
+                .map(([k]) => k),
+              Revision: 0,
+            });
           }}
         >
           <Plus />
@@ -130,7 +147,7 @@ export function RoleManagementPage() {
         <button
           onClick={async () => {
             try {
-              setHistory(await req<AuditEntry[]>('/admin-management/history'));
+              setHistory(await req<AuditEntry[]>("/admin-management/history"));
             } catch (e) {
               setError((e as Error).message);
             }
@@ -148,19 +165,57 @@ export function RoleManagementPage() {
               className="block text-left w-full p-3 rounded-lg hover:bg-blue-50 border"
               onClick={() => {
                 setEditing(true);
+                setView("permissions");
                 setForm({ ...p });
-                setError('');
+                setError("");
               }}
             >
               <b>{p.Name}</b>
               <small className="block">
-                {p.Code} · ต้นแบบ {p.BaseRole}
+                {p.Code} · ต้นแบบ {p.BaseRole} · สมาชิก {p.MemberCount || 0} คน
               </small>
             </button>
           ))}
         </div>
         {form && data && (
           <div className="bg-white p-5 rounded-xl space-y-4">
+            {editing && (
+              <div className="flex justify-end">
+                <button
+                  title="ลบ Role"
+                  aria-label="ลบ Role"
+                  className="action-delete p-2 disabled:opacity-40"
+                  disabled={busy || Boolean(form.MemberCount)}
+                  onClick={async () => {
+                    if (!window.confirm(`ลบ Role ${form.Name}?`)) return;
+                    setBusy(true);
+                    setError("");
+                    try {
+                      await req("/admin-management/roles/" + form.Code, {
+                        method: "DELETE",
+                        body: JSON.stringify({
+                          expectedRevision: form.Revision,
+                        }),
+                      });
+                      setForm(null);
+                      setNotice("ลบ Role แล้ว");
+                      await load();
+                    } catch (e) {
+                      setError((e as Error).message);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  <Trash2 size={20} />
+                </button>
+              </div>
+            )}
+            {editing && Boolean(form.MemberCount) && (
+              <p className="text-sm text-amber-800">
+                ย้ายสมาชิกทั้งหมด รวมผู้ใช้ที่ปิดใช้งาน ก่อนลบ Role
+              </p>
+            )}
             <label className="block">
               รหัส Role
               <input
@@ -168,7 +223,9 @@ export function RoleManagementPage() {
                 disabled={editing || busy}
                 className="border p-2 block w-full"
                 value={form.Code}
-                onChange={(e) => setForm({ ...form, Code: e.target.value.toUpperCase() })}
+                onChange={(e) =>
+                  setForm({ ...form, Code: e.target.value.toUpperCase() })
+                }
               />
             </label>
             <label className="block">
@@ -183,79 +240,129 @@ export function RoleManagementPage() {
             <label className="block">
               บทบาทต้นแบบ
               <select
+                aria-label="บทบาทต้นแบบ"
                 className="border p-2 block w-full"
                 disabled={editing || busy}
                 value={form.BaseRole}
-                onChange={(e) => setForm({ ...form, BaseRole: e.target.value, disabledActions: [] })}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    BaseRole: e.target.value,
+                    permissions: Object.entries(data.actions)
+                      .filter(([, rs]) => rs.includes(e.target.value))
+                      .map(([k]) => k),
+                  })
+                }
               >
                 {[
-                  'SALES',
-                  'COUNTER_SALES',
-                  'WAREHOUSE',
-                  'WEIGHBRIDGE',
-                  'APPROVER',
-                  'ACCOUNTING',
-                  'MANAGER',
-                  'C_LEVEL',
-                  ...(form.Code === 'ADMIN' ? ['ADMIN'] : []),
+                  "SALES",
+                  "COUNTER_SALES",
+                  "WAREHOUSE",
+                  "WEIGHBRIDGE",
+                  "APPROVER",
+                  "ACCOUNTING",
+                  "MANAGER",
+                  "C_LEVEL",
+                  "ADMIN",
                 ].map((x) => (
                   <option key={x}>{x}</option>
                 ))}
               </select>
             </label>
             <p className="text-sm text-slate-600">
-              สิทธิ์ที่เป็นสีเทาเป็นกติกาคงที่หรืออยู่นอกบทบาทต้นแบบ การเปิดสิทธิ์ไม่ข้ามเงื่อนไขพื้นที่
-              ลำดับอนุมัติ หรือฟีเจอร์ที่ยังปิดอยู่
+              เลือกได้ทุก Permission ต้นแบบใช้กำหนดค่าเริ่มต้นและขอบเขตข้อมูล
+              ผู้ใช้หลาย Role ได้สิทธิ์รวมกัน สิทธิ์ที่ปิดใน Role
+              นี้ยังใช้ได้หากอีก Role เปิดอยู่
+              เงื่อนไขอนุมัติและฟีเจอร์ที่ปิดอยู่ยังคงตรวจแยกกัน
             </p>
-            <fieldset className="grid sm:grid-cols-2 gap-2">
-              <legend className="font-bold mb-2">Permission การปฏิบัติงาน</legend>
-              {Object.entries(data.actions).map(([key, roles]) => {
-                const allowed = roles.includes(form.BaseRole),
-                  editable = allowed && data.editable.includes(key) && form.Code !== 'ADMIN';
-                return (
-                  <label key={key} className="flex gap-2 p-2 border rounded">
-                    <input
-                      type="checkbox"
-                      disabled={!editable || busy}
-                      checked={allowed && !form.disabledActions.includes(key)}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          disabledActions: e.target.checked
-                            ? form.disabledActions.filter((x) => x !== key)
-                            : [...form.disabledActions, key],
-                        })
-                      }
-                    />
-                    <span>
-                      {names[key] || key}
-                      <small className="block text-slate-500">
-                        {key}
-                        {!editable ? ' · ตามต้นแบบ' : ''}
-                      </small>
-                    </span>
-                  </label>
-                );
-              })}
-            </fieldset>
-            <details>
-              <summary>เมนูตามบทบาทต้นแบบ</summary>
-              <p className="text-sm">
-                {Object.entries(data.menus)
-                  .filter(([, roles]) => roles.includes(form.BaseRole))
-                  .map(([k]) => k)
-                  .join(', ')}
-              </p>
-            </details>
-            <button
-              className="bg-blue-700 text-white rounded-lg p-2 flex gap-2 disabled:opacity-50"
-              disabled={
-                busy || !form.Code || !form.Name || (!editing && data.roles.some((p) => p.Code === form.Code))
-              }
-              onClick={save}
-            >
-              <Save size={18} /> {busy ? 'กำลังบันทึก' : 'บันทึก Role'}
-            </button>
+            {editing && (
+              <div
+                role="tablist"
+                aria-label="รายละเอียด Role"
+                className="flex gap-2 border-b pb-2"
+              >
+                <button
+                  role="tab"
+                  aria-selected={view === "permissions"}
+                  className="px-3 py-2 rounded bg-blue-50 text-blue-800"
+                  onClick={() => setView("permissions")}
+                >
+                  Permission
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={view === "members"}
+                  className="px-3 py-2 rounded bg-blue-50 text-blue-800"
+                  onClick={() => setView("members")}
+                >
+                  สมาชิก ({form.MemberCount || 0})
+                </button>
+              </div>
+            )}
+            {editing && view === "members" && (
+              <RoleMembers
+                key={form.Code}
+                code={form.Code}
+                onChanged={async () => {
+                  const fresh = await req<Catalog>("/admin-management/roles");
+                  setData(fresh);
+                  setForm(
+                    fresh.roles.find((r) => r.Code === form.Code) || null,
+                  );
+                }}
+              />
+            )}
+            <div hidden={view !== "permissions"} className="space-y-4">
+              <fieldset className="grid sm:grid-cols-2 gap-2">
+                <legend className="font-bold mb-2">
+                  Permission การปฏิบัติงาน
+                </legend>
+                {Object.keys(data.actions).map((key) => {
+                  return (
+                    <label key={key} className="flex gap-2 p-2 border rounded">
+                      <input
+                        type="checkbox"
+                        disabled={busy}
+                        checked={form.permissions.includes(key)}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            permissions: e.target.checked
+                              ? [...form.permissions, key]
+                              : form.permissions.filter((x) => x !== key),
+                          })
+                        }
+                      />
+                      <span>
+                        {names[key] || key}
+                        <small className="block text-slate-500">{key}</small>
+                      </span>
+                    </label>
+                  );
+                })}
+              </fieldset>
+              <details>
+                <summary>เมนูตามบทบาทต้นแบบ</summary>
+                <p className="text-sm">
+                  {Object.entries(data.menus)
+                    .filter(([, roles]) => roles.includes(form.BaseRole))
+                    .map(([k]) => k)
+                    .join(", ")}
+                </p>
+              </details>
+              <button
+                className="bg-blue-700 text-white rounded-lg p-2 flex gap-2 disabled:opacity-50"
+                disabled={
+                  busy ||
+                  !form.Code ||
+                  !form.Name ||
+                  (!editing && data.roles.some((p) => p.Code === form.Code))
+                }
+                onClick={save}
+              >
+                <Save size={18} /> {busy ? "กำลังบันทึก" : "บันทึก Role"}
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -278,7 +385,9 @@ export function RoleManagementPage() {
               {history.map((h) => (
                 <tr key={h.Id} className="border-t">
                   <td className="p-2 whitespace-nowrap">
-                    {new Date(h.CreatedAt).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}
+                    {new Date(h.CreatedAt).toLocaleString("th-TH", {
+                      timeZone: "Asia/Bangkok",
+                    })}
                   </td>
                   <td>{h.ActorId}</td>
                   <td>{auditNames[h.Action] || h.Action}</td>

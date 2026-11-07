@@ -21,6 +21,10 @@ let lastAccessAs = null;
 let accrualHasLot = true;
 
 const db = h.installDbStub(({ text, inputs }) => {
+  if(text.includes("@Resource='WF_ROLE_POLICY'"))return [{LockResult:0}];
+  if(text.includes('AS Allowed'))return [{Allowed:1}];
+  if(text.includes('SELECT Code,BaseRole'))return ['SALES','WEIGHBRIDGE','ADMIN'].map(Code=>({Code,BaseRole:Code}));
+
   if (/FROM wf\.AppUser\s+WHERE Id = @id/i.test(text)) return users[inputs.id] ? [users[inputs.id]] : [];
   if (/FROM wf\.AppUser u\s+LEFT JOIN dbo\.EMEmp e WITH \(NOLOCK\) ON e\.EmpID = u\.EmpId\s+WHERE u\.IsActive = 1/i.test(text)) return Object.values(users);
   if (/INSERT INTO wf\.AccessAsAudit/i.test(text)) return { recordset: [], rowsAffected: [1] };

@@ -1,4 +1,5 @@
 'use strict';
+const {hasPermission}=require('./role-capabilities');
 const {isInitialNativeUatTarget}=require('./initial-native-uat-target');
 // Restricted UAT simulation: one full zero-tax coupon, ACCOUNTING only.
 const {createHash}=require('crypto');
@@ -27,8 +28,8 @@ async function identity(q,user){
  const me=rows.find(r=>Number(r.Id)===effective),real=rows.find(r=>Number(r.Id)===actor);
  if(![me,real].every(r=>r&&(r.IsActive===true||r.IsActive===1)&&!r.MustChangePassword))fail('IP_ACTOR_UNAVAILABLE',403);
  if(me.Role!==user.role||real.Role!==(user.actorRole||user.role))fail('IP_ROLE_CHANGED',403);
- if(me.Role!=='ACCOUNTING')fail('IP_ACCOUNT_REQUIRED',403);
- if(actor!==effective&&(!ACCESS_AS_ACTOR_ROLES.includes(real.Role)||roleRank(real.Role)<roleRank(me.Role)))fail('IP_ACCESS_AS_FORBIDDEN',403);
+ if(!hasPermission(user,'invoice.post-native'))fail('IP_ACCOUNT_REQUIRED',403);
+ if(actor!==effective&&(!hasPermission({role:real.Role,roles:user.actorRoles,permissions:user.actorPermissions},'access-as')||roleRank(real.Role)<roleRank(me.Role)))fail('IP_ACCESS_AS_FORBIDDEN',403);
  return {effective,actor};
 }
 async function context(q,source,user){

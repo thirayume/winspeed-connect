@@ -87,6 +87,8 @@ const ACTIONS = Object.freeze({
   'giveaway.borrow': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'giveaway.budget': ['MANAGER', 'ADMIN'],
   'users.manage': ['ACCOUNTING', 'MANAGER', 'ADMIN'],
+  'roles.manage': ['ADMIN'],
+  'settings.manage': ['ADMIN'],
   'access-as': ACCESS_AS_ACTOR_ROLES,
   // Switch your own session to another dbwins_worldfert* database (owner 2026-10-25).
   // Add or remove roles here to change who may switch.
@@ -118,4 +120,15 @@ function roleRank(role) {
   return ROLE_RANK[String(role || '').toUpperCase()] || 0;
 }
 
-module.exports = { ROLES, ROLE_RANK, ACCESS_AS_ACTOR_ROLES, MENUS, ACTIONS, capabilitiesFor, rolesFor, roleRank };
+function userRoles(user) { return [...new Set(Array.isArray(user?.roles) ? user.roles : [user?.role].filter(Boolean))]; }
+function hasRole(user, ...roles) { return userRoles(user).some(r => roles.includes(r)); }
+function hasPermission(user, action) {
+  if (Array.isArray(user?.permissions)) return user.permissions.includes(action);
+  return !(user?.disabledActions || []).includes(action) && userRoles(user).some(r => rolesFor(action).includes(r));
+}
+function featureEnabled(action) {
+  const flags = { 'so.approve-native':'NATIVE_BOOKING_AI_ENABLED', 'so.create-native-delivery':'NATIVE_DELIVERY_104_ENABLED',
+    'credit.approve-native':'NATIVE_DELIVERY_104_ENABLED', 'coupon.manual116':'NATIVE_MANUAL_116_ENABLED', 'invoice.post-native':'NATIVE_INVOICE_107_ENABLED' };
+  return !flags[action] || process.env[flags[action]] === 'true';
+}
+module.exports = { ROLES, ROLE_RANK, ACCESS_AS_ACTOR_ROLES, MENUS, ACTIONS, capabilitiesFor, rolesFor, roleRank, userRoles, hasRole, hasPermission, featureEnabled };

@@ -19,6 +19,8 @@ export type AppUser = {
   displayName: string;
   role: UserRole;
   roleCode?: string;
+  roleCodes?: string[];
+  roles?: string[];
   isPilot?: boolean;
   actorId?: number;
   actorUsername?: string;
@@ -56,6 +58,7 @@ export type AdminUser = {
   Username: string;
   DisplayName: string;
   Role: UserRole;
+  RoleCodes?: string[];
   RoleCode?: string | null;
   EmpId: string | null;
   EmpCode: string | null;
