@@ -334,8 +334,8 @@ export function RoleManagementPage({
                 <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-xl text-xs text-[#0C447C] flex items-center gap-2.5">
                   <ShieldCheck size={20} className="shrink-0 text-[#0C447C]" />
                   <div>
-                    <strong className="block font-bold text-sm">Role: ADMIN ได้รับสิทธิ์เต็มทุกรายการเสมอโดยอัตโนมัติ (Full Access)</strong>
-                    <span className="text-slate-600">สิทธิ์ทั้งหมดเปิดใช้งานและล็อคไว้ ไม่สามารถแก้ไขหรือตัดสิทธิ์ได้ เพื่อความปลอดภัยและความเสถียรของระบบ</span>
+                    <strong className="block font-bold text-sm">Role: ADMIN ได้รับการสงวนไว้เป็นสิทธิ์หลักของระบบ</strong>
+                    <span className="text-slate-600">ไม่สามารถแก้ไขหรือลบได้ เพื่อความปลอดภัยและความต่อเนื่องในการดูแลระบบ</span>
                   </div>
                 </div>
               )}
@@ -482,7 +482,7 @@ export function RoleManagementPage({
                 />
                 <fieldset className="grid sm:grid-cols-2 gap-2">
                   <legend className="font-bold text-xs sm:text-sm text-slate-800 mb-2">
-                    Permission การปฏิบัติงาน · {isAdmin ? `เปิดเต็มทุกรายการ (${Object.keys(data.actions).length}/${Object.keys(data.actions).length})` : `เปิด ${form.permissions.length}/${Object.keys(data.actions).length}`}
+                    Permission การปฏิบัติงาน · เปิด {form.permissions.length}/{Object.keys(data.actions).length} รายการ {isAdmin && "(สงวนไว้ - แก้ไขไม่ได้)"}
                   </legend>
                   {Object.keys(data.actions)
                     .filter((key) =>
@@ -491,7 +491,7 @@ export function RoleManagementPage({
                         .includes(permissionSearch.toLowerCase()),
                     )
                     .map((key) => {
-                      const isChecked = isAdmin || form.permissions.includes(key);
+                      const isChecked = form.permissions.includes(key);
                       return (
                         <label
                           key={key}
@@ -538,7 +538,7 @@ export function RoleManagementPage({
                   </button>
                   {isAdmin ? (
                     <span className="text-xs text-purple-700 bg-purple-50 border border-purple-200 font-semibold px-4 py-2 rounded-xl">
-                      Role ADMIN ได้รับสิทธิ์เต็มเสมอ (ไม่ต้องบันทึก)
+                      Role ADMIN ได้รับการสงวนไว้ (ไม่ต้องบันทึก)
                     </span>
                   ) : (
                     <button

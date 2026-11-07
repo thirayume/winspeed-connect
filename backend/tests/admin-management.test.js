@@ -318,9 +318,18 @@ test('delete assigned Role rejects even an inactive member; empty Role can be de
   out=await app.call('DELETE','/api/admin-management/roles/UNUSED',{user:admin,body:{expectedRevision:1}});
   assert.equal(out.status,409);
 });
+test('role ADMIN cannot be updated or deleted via direct API', async () => {
+  let out = await app.call('PUT', '/api/admin-management/roles/ADMIN', { user: admin, body: { name: 'Admin', baseRole: 'ADMIN', permissions: [], expectedRevision: 0 } });
+  assert.equal(out.status, 400);
+  assert.match(out.body.message, /ADMIN/);
+  out = await app.call('DELETE', '/api/admin-management/roles/ADMIN', { user: admin, body: { expectedRevision: 0 } });
+  assert.equal(out.status, 400);
+  assert.match(out.body.message, /ADMIN/);
+});
 test('removing final administrator permissions fails the transaction',async()=>{
   remainingAdmin=false;
-  const out=await app.call('PUT','/api/admin-management/roles/ADMIN',{user:admin,body:{name:'Admin',baseRole:'ADMIN',permissions:[],expectedRevision:0}});
+  stored=[{Code:'CUSTOM_ADMIN',BaseRole:'ADMIN',Revision:0}];
+  const out=await app.call('PUT','/api/admin-management/roles/CUSTOM_ADMIN',{user:admin,body:{name:'Custom Admin',baseRole:'ADMIN',permissions:[],expectedRevision:0}});
   assert.equal(out.status,409);assert.match(out.body.message,/1/);
   assert.equal(db.calls.some(c=>c.text.includes('INSERT INTO wf.AdminChangeAudit')),false);
 });

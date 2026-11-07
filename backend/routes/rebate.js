@@ -195,32 +195,95 @@ router.get('/regions', async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+// GET /api/rebate/candidates — ดึงรายชื่อผู้ใช้สำหรับเลือกเป็นผู้อนุมัติ/ผู้ดูแลภาค
+// คืนเฉพาะข้อมูลจำเป็น: Id, Username, DisplayName, Role, IsActive, EmpCode
+router.get('/candidates', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
+  try {
+    const users = (await wfQuery(`
+      SELECT Id, Username, DisplayName, Role, IsActive, EmpCode
+      FROM wf.AppUser
+      ORDER BY DisplayName ASC, Username ASC
+    `)).recordset || [];
+    res.json(users);
+  } catch (e) { res.status(500).json({ message: e.message }); }
+});
+
 // POST /api/rebate/user-regions — จัดตั้ง/อัปเดตผู้ดูแลภาค
 router.post('/user-regions', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
   try {
-    const { userId, regionCode, isPrimary } = req.body || {};
+    const { userId, regionCode, isPrimary, expectedIsPrimary } = req.body || {};
     if (!userId || !regionCode) return res.status(400).json({ message: 'userId และ regionCode จำเป็น' });
 
-    const user = (await wfQuery(`SELECT Id FROM wf.AppUser WHERE Id = @uid`, { uid: { type: sql.Int, value: Number(userId) } })).recordset?.[0];
-    if (!user) return res.status(404).json({ message: 'ไม่พบบัญชีผู้ใช้' });
+    const actorId = Number(req.user?.sub || req.user?.id);
 
-    await wfQuery(`
-      IF EXISTS (SELECT 1 FROM wf.UserSaleArea WHERE UserId = @uid AND RegionCode = @rcode)
-      BEGIN
-        UPDATE wf.UserSaleArea SET IsPrimary = @prim WHERE UserId = @uid AND RegionCode = @rcode;
-      END
-      ELSE
-      BEGIN
-        INSERT INTO wf.UserSaleArea (UserId, RegionCode, IsPrimary) VALUES (@uid, @rcode, @prim);
-      END
-    `, {
-      uid:   { type: sql.Int,         value: Number(userId) },
-      rcode: { type: sql.VarChar(10), value: String(regionCode) },
-      prim:  { type: sql.Bit,         value: isPrimary ? 1 : 0 }
+    await wfTransaction(async (tx) => {
+      const q = (text, inputs = {}) => {
+        const reqObj = tx.request();
+        for (const [k, v] of Object.entries(inputs)) {
+          if (v === null || v === undefined) reqObj.input(k, sql.NVarChar, null);
+          else if (typeof v === 'number') reqObj.input(k, Number.isInteger(v) ? sql.Int : sql.Decimal(18, 4), v);
+          else if (typeof v === 'boolean') reqObj.input(k, sql.Bit, v ? 1 : 0);
+          else reqObj.input(k, sql.NVarChar, String(v));
+        }
+        return reqObj.query(text);
+      };
+
+      const user = (await q(`SELECT Id, Username FROM wf.AppUser WHERE Id = @uid`, { uid: Number(userId) })).recordset?.[0];
+      if (!user) {
+        const err = new Error('ไม่พบบัญชีผู้ใช้');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      const existing = (await q(`SELECT IsPrimary FROM wf.UserSaleArea WHERE UserId = @uid AND RegionCode = @rcode`, {
+        uid: Number(userId),
+        rcode: String(regionCode)
+      })).recordset?.[0];
+
+      if (expectedIsPrimary !== undefined) {
+        const currentIsPrimary = existing ? Boolean(existing.IsPrimary) : null;
+        if (currentIsPrimary !== expectedIsPrimary) {
+          const err = new Error('ข้อมูลผู้ดูแลภาคเปลี่ยนไปแล้ว กรุณาโหลดข้อมูลใหม่ก่อนบันทึก');
+          err.statusCode = 409;
+          throw err;
+        }
+      }
+
+      const prevPrimary = existing ? Boolean(existing.IsPrimary) : null;
+      const newPrimary = Boolean(isPrimary);
+
+      if (existing) {
+        await q(`UPDATE wf.UserSaleArea SET IsPrimary = @prim WHERE UserId = @uid AND RegionCode = @rcode`, {
+          uid: Number(userId),
+          rcode: String(regionCode),
+          prim: newPrimary
+        });
+      } else {
+        await q(`INSERT INTO wf.UserSaleArea (UserId, RegionCode, IsPrimary) VALUES (@uid, @rcode, @prim)`, {
+          uid: Number(userId),
+          rcode: String(regionCode),
+          prim: newPrimary
+        });
+      }
+
+      await q(`INSERT INTO wf.AdminChangeAudit (ActorId, Action, Target, Detail) VALUES (@actor, 'REGION_ASSIGN', @target, @detail)`, {
+        actor: actorId,
+        target: `${userId}:${regionCode}`,
+        detail: JSON.stringify({
+          userId: Number(userId),
+          username: user.Username,
+          regionCode: String(regionCode),
+          beforeIsPrimary: prevPrimary,
+          afterIsPrimary: newPrimary,
+          isNew: !existing
+        })
+      });
     });
 
     res.json({ success: true, message: 'บันทึกสิทธิ์ดูแลภาคสำเร็จ' });
-  } catch (e) { res.status(500).json({ message: e.message }); }
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ message: e.message });
+  }
 });
 
 // DELETE /api/rebate/user-regions/:userId/:regionCode — ถอดผู้ดูแลภาค
@@ -229,13 +292,48 @@ router.post('/user-regions', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (
 // เคยมีผู้ดูแลภาคหนึ่งถูกผูกกับภาคใต้ทั้งที่ยอดขายอยู่ภาคอีสาน และไม่มีทางแก้จากหน้าจอเลย
 router.delete('/user-regions/:userId/:regionCode', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
   try {
-    const r = await wfQuery(
-      `DELETE FROM wf.UserSaleArea WHERE UserId = @uid AND RegionCode = @rc`,
-      { uid: { type: sql.Int, value: Number(req.params.userId) },
-        rc:  { type: sql.VarChar(10), value: String(req.params.regionCode) } });
-    if (!r.rowsAffected?.[0]) return res.status(404).json({ message: 'ไม่พบการผูกภาคนี้กับผู้ใช้รายนี้' });
+    const uid = Number(req.params.userId);
+    const rc = String(req.params.regionCode);
+    const actorId = Number(req.user?.sub || req.user?.id);
+
+    await wfTransaction(async (tx) => {
+      const q = (text, inputs = {}) => {
+        const reqObj = tx.request();
+        for (const [k, v] of Object.entries(inputs)) {
+          if (v === null || v === undefined) reqObj.input(k, sql.NVarChar, null);
+          else if (typeof v === 'number') reqObj.input(k, Number.isInteger(v) ? sql.Int : sql.Decimal(18, 4), v);
+          else if (typeof v === 'boolean') reqObj.input(k, sql.Bit, v ? 1 : 0);
+          else reqObj.input(k, sql.NVarChar, String(v));
+        }
+        return reqObj.query(text);
+      };
+
+      const user = (await q(`SELECT Id, Username FROM wf.AppUser WHERE Id = @uid`, { uid })).recordset?.[0];
+      const existing = (await q(`SELECT IsPrimary FROM wf.UserSaleArea WHERE UserId = @uid AND RegionCode = @rc`, { uid, rc })).recordset?.[0];
+      if (!existing) {
+        const err = new Error('ไม่พบการผูกภาคนี้กับผู้ใช้รายนี้');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      await q(`DELETE FROM wf.UserSaleArea WHERE UserId = @uid AND RegionCode = @rc`, { uid, rc });
+
+      await q(`INSERT INTO wf.AdminChangeAudit (ActorId, Action, Target, Detail) VALUES (@actor, 'REGION_REMOVE', @target, @detail)`, {
+        actor: actorId,
+        target: `${uid}:${rc}`,
+        detail: JSON.stringify({
+          userId: uid,
+          username: user ? user.Username : null,
+          regionCode: rc,
+          wasPrimary: Boolean(existing.IsPrimary)
+        })
+      });
+    });
+
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ message: e.message }); }
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ message: e.message });
+  }
 });
 
 // GET /api/rebate/regions/coverage — ภาค · ผู้ดูแล · จำนวนลูกค้าที่ได้รับผลกระทบ

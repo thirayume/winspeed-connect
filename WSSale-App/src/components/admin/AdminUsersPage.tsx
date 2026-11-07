@@ -150,17 +150,26 @@ export const AdminUsersPage = ({
   };
 
   const getUserRoleCodes = (u: AdminUser): string[] => {
+    const list: string[] = [];
     if (Array.isArray(u.RoleCodes) && u.RoleCodes.length > 0) {
-      return u.RoleCodes;
+      list.push(...u.RoleCodes);
     }
-    const fallback = u.RoleCode || u.Role;
-    return fallback ? [fallback] : [];
+    if (Array.isArray(u.Roles) && u.Roles.length > 0) {
+      for (const r of u.Roles) {
+        if (!list.includes(r)) list.push(r);
+      }
+    }
+    if (list.length === 0) {
+      const fallback = u.RoleCode || u.Role;
+      if (fallback) list.push(fallback);
+    }
+    return list;
   };
 
   const matchesRoleFilter = (u: AdminUser) => {
     if (roleFilter === 'ALL') return true;
     const userCodes = getUserRoleCodes(u);
-    return userCodes.includes(roleFilter);
+    return userCodes.includes(roleFilter) || (Array.isArray(u.Roles) && u.Roles.includes(roleFilter)) || u.Role === roleFilter;
   };
 
   const filteredUsers = users.filter(u => 

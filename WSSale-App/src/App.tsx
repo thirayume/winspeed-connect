@@ -17,7 +17,7 @@ import { UnlockReviewModal } from './components/papertrail/UnlockReviewModal';
 import { useSocketEvent } from './hooks/useSocket';
 import packageJson from '../package.json';
 
-export type PortalKey = 'app-settings' | 'roles' | 'incidents' | 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'stock' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'master' | 'profile' | 'beneficiaries';
+export type PortalKey = 'app-settings' | 'roles' | 'incidents' | 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'stock' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'approvers' | 'master' | 'profile' | 'beneficiaries';
 
 const SalesPortal = lazy(() => import('./components/sales/SalesPortal').then(m => ({ default: m.SalesPortal })));
 const SaleTripBoardPage = lazy(() => import('./components/sales/SaleTripBoardPage').then(m => ({ default: m.SaleTripBoardPage })));
@@ -129,8 +129,7 @@ const NAV_GROUPS: NavGroup[] = [
       // { key: 'governance', label: 'กำกับข้อมูล',  sub: 'เครดิต · สต๊อก · PDPA',  icon: Landmark, roles: [...] },
       { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · Watchdog · Alert', icon: Activity, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
       { key: 'app-settings', label: 'App Settings', sub: 'นโยบายระบบ · ผลตรวจรับ', icon: Settings, roles: ['ADMIN'] },
-      { key: 'admin',      label: 'ผู้ใช้งานและสิทธิ์', sub: 'จัดการผู้ใช้งาน · บทบาท · Permission', icon: Users, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
-      { key: 'org',        label: 'ผังองค์กร',    sub: 'ผูกผู้ใช้ ↔ ตำแหน่ง ↔ สายงาน', icon: Network, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
+      { key: 'admin',      label: 'ผู้ใช้งานและสิทธิ์', sub: 'จัดการผู้ใช้งาน · บทบาท · ผังองค์กร · ผู้อนุมัติ', icon: Users, roles: ['ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'] },
       { key: 'beneficiaries', label: 'จัดการสิทธิ์ตั๋วร่วม', sub: 'มอบ/ถอนสิทธิ์ตั๋วร่วมระหว่างลูกค้า', icon: Ticket, roles: ['ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'] },
     ],
   },
@@ -599,10 +598,13 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'aging'      && <AgingPage />}
                 {activePortal === 'profile'    && <ProfilePage />}
                 {activePortal === 'app-settings' && user?.capabilities?.actions.includes('settings.manage') && !user?.isImpersonating && <AppSettingsPage />}
-                {(activePortal === 'admin' || activePortal === 'roles') &&
-                  (user?.capabilities?.actions.includes('users.manage') || user?.capabilities?.actions.includes('roles.manage')) &&
+                {(activePortal === 'admin' || activePortal === 'roles' || activePortal === 'org' || activePortal === 'approvers') &&
+                  (
+                    user?.capabilities?.actions.includes('users.manage') ||
+                    user?.capabilities?.actions.includes('roles.manage') ||
+                    ['ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'].includes(role || '')
+                  ) &&
                   !user?.isImpersonating && <UsersAccessConsole initialPortal={activePortal} />}
-                {activePortal === 'org'        && ['ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '') && <OrgAssignmentPage />}
                 {activePortal === 'beneficiaries' && ['ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'].includes(role || '') && <BeneficiaryAdminPage />}
                 {activePortal === 'master'     && ['ADMIN', 'C_LEVEL'].includes(role || '') && <MasterDataPortal />}
               </div>

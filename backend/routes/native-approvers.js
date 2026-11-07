@@ -45,10 +45,30 @@ router.get('/', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
   }
 });
 
+// GET /api/master/native-approvers/history — ประวัติการเปิด/ปิดผู้อนุมัติใบ 116
+router.get('/history', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  try {
+    const r = await wfQuery(`
+      SELECT TOP (100) h.Id, h.EmpID, e.EmpCode, e.EmpName, h.IsEnabled, h.Note, h.CreatedAt,
+             u.DisplayName AS ChangedByName, u.Username AS ChangedByUsername,
+             a.DisplayName AS ChangedByActorName, a.Username AS ChangedByActorUsername
+      FROM wf.NativeApproverEmployeeHistory h
+      LEFT JOIN dbo.EMEmp e ON e.EmpID = h.EmpID
+      LEFT JOIN wf.AppUser u ON u.Id = h.ChangedById
+      LEFT JOIN wf.AppUser a ON a.Id = h.ChangedByActorId
+      ORDER BY h.Id DESC
+    `);
+    res.json({ data: r.recordset || [] });
+  } catch (e) {
+    console.error('[native-approvers:history]', e);
+    res.status(500).json({ message: 'โหลดประวัติผู้อนุมัติไม่สำเร็จ' });
+  }
+});
+
 // PUT /api/master/native-approvers/:empId — เปิด/ปิดพนักงานในรายชื่อผู้อนุมัติ
 router.put('/:empId', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
   const empId = Number(req.params.empId);
-  const { enabled, note } = req.body || {};
+  const { enabled, note, expectedEnabled } = req.body || {};
   if (!Number.isSafeInteger(empId) || empId <= 0) return res.status(400).json({ message: 'รหัสพนักงานไม่ถูกต้อง' });
   if (typeof enabled !== 'boolean') return res.status(400).json({ message: 'ต้องระบุว่าจะเปิดหรือปิดใช้' });
   if (note != null && (typeof note !== 'string' || note.length > 255)) return res.status(400).json({ message: 'หมายเหตุยาวได้ไม่เกิน 255 ตัวอักษร' });
@@ -67,6 +87,17 @@ router.put('/:empId', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
       };
       const found = (await run('SELECT EmpID FROM dbo.EMEmp WHERE EmpID=@emp', { emp: inputs.emp })).recordset || [];
       if (found.length !== 1) return null;
+
+      const existing = (await run('SELECT IsEnabled FROM wf.NativeApproverEmployee WHERE EmpID=@emp', { emp: inputs.emp })).recordset?.[0];
+      if (expectedEnabled !== undefined) {
+        const currentEnabled = existing ? Boolean(existing.IsEnabled) : false;
+        if (currentEnabled !== expectedEnabled) {
+          const err = new Error('สถานะของผู้อนุมัติเปลี่ยนไปแล้ว กรุณาโหลดข้อมูลใหม่ก่อนบันทึก');
+          err.statusCode = 409;
+          throw err;
+        }
+      }
+
       await run(`
         UPDATE wf.NativeApproverEmployee WITH(UPDLOCK,HOLDLOCK)
         SET IsEnabled=@on, Note=COALESCE(@note,Note), UpdatedAt=GETUTCDATE(), UpdatedById=@user, UpdatedByActorId=@actor
@@ -81,6 +112,7 @@ router.put('/:empId', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
     if (!result) return res.status(404).json({ message: 'ไม่พบพนักงานนี้ใน WinSpeed' });
     res.json({ ...result, message: enabled ? 'เพิ่มในรายชื่อผู้อนุมัติแล้ว' : 'นำออกจากรายชื่อผู้อนุมัติแล้ว' });
   } catch (e) {
+    if (e.statusCode === 409) return res.status(409).json({ message: e.message });
     console.error('[native-approvers:update]', e);
     res.status(500).json({ message: 'บันทึกไม่สำเร็จ' });
   }

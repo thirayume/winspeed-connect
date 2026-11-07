@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 // ทำให้ new Map() ในไฟล์นี้เรียกคอมโพเนนต์ React เป็น constructor แล้วพัง
 import { Map as MapIcon, RefreshCw, Plus, Trash2, AlertTriangle, Users } from 'lucide-react';
 import {
-  fetchRegionCoverage, setUserRegion, removeUserRegion, listUsers,
+  fetchRegionCoverage, setUserRegion, removeUserRegion, listUsers, fetchRebateCandidates,
   fetchRebateDocCodes, setRebateDocCode, autoAssignRebateDocCodes,
   type RegionCoverage, type RebateDocCodeRow, type RebateDocCodeEvidence,
 } from '../../services/api';
@@ -31,7 +31,10 @@ export function SaleRegionManager() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [coverage, all] = await Promise.all([fetchRegionCoverage(), listUsers().catch(() => [])]);
+      const [coverage, all] = await Promise.all([
+        fetchRegionCoverage(),
+        fetchRebateCandidates().catch(() => listUsers().catch(() => []) as any)
+      ]);
       setRows(coverage);
       setUsers((all as AdminUser[]).filter(u => u.IsActive));
     } catch (e: unknown) { alert((e as Error).message); }

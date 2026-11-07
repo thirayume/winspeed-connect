@@ -120,6 +120,7 @@ export const updateUser = (id: number, patch: {
   idCardNo?: string | null; taxId?: string | null;
   /** รหัสตำแหน่งใน wf.OrgPosition · ส่ง null เพื่อถอดออก */
   positionCode?: string | null;
+  expectedPositionCode?: string | null;
 }) =>
   req<{ ok: boolean; id: number }>(`/auth/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
 
@@ -588,8 +589,11 @@ export const rejectRebateClaim = (id: number, reason: string) =>
 export const fetchRebateRegions = () =>
   req<{ regions: any[]; userAreas: any[] }>('/rebate/regions');
 
-export const setUserRegion = (payload: { userId: number; regionCode: string; isPrimary?: boolean }) =>
+export const setUserRegion = (payload: { userId: number; regionCode: string; isPrimary?: boolean; expectedIsPrimary?: boolean | null }) =>
   req<{ success: boolean; message: string }>('/rebate/user-regions', { method: 'POST', body: JSON.stringify(payload) });
+
+export const fetchRebateCandidates = () =>
+  req<{ Id: number; Username: string; DisplayName: string; Role: string; IsActive: boolean; EmpCode?: string }[]>('/rebate/candidates');
 
 export type RegionCoverage = {
   RegionCode: string; RegionName: string;
@@ -2022,9 +2026,17 @@ export type NativeApprover = {
 export const fetchNativeApprovers = () =>
   req<{ data: NativeApprover[] }>('/master/native-approvers');
 
-export const updateNativeApprover = (empId: number, body: { enabled: boolean; note?: string }) =>
+export const updateNativeApprover = (empId: number, body: { enabled: boolean; note?: string; expectedEnabled?: boolean }) =>
   req<{ empId: number; enabled: boolean; message: string }>(
     `/master/native-approvers/${empId}`, { method: 'PUT', body: JSON.stringify(body) });
+
+export const fetchNativeApproverHistory = () =>
+  req<{ data: {
+    Id: number; EmpID: number; EmpCode: string; EmpName: string;
+    IsEnabled: boolean; Note: string | null; CreatedAt: string;
+    ChangedByName: string | null; ChangedByUsername: string | null;
+    ChangedByActorName: string | null; ChangedByActorUsername: string | null;
+  }[] }>('/master/native-approvers/history');
 
 export const deleteEditReason = (code: string) =>
   req<{ reasonCode: string; message: string }>(

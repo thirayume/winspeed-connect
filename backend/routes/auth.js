@@ -885,6 +885,22 @@ router.patch('/users/:id', requireAuth, requireCapability('users.manage'), async
         await roleWrite.setMembership(tx,targetId,codes);
         await roleWrite.query(tx,"INSERT wf.AdminChangeAudit(ActorId,Action,Target,Detail) VALUES(@actor,'USER_ROLES',@target,@detail)",{actor:callerId,target:String(targetId),detail:JSON.stringify({before:expectedCodes,after:codes})});
       }else if(role!==undefined && role!==targetUser.Role) await roleWrite.setMembership(tx,targetId,[role]);
+      
+      const oldPos = targetUser.PositionCode || null;
+      const newPos = positionCode ? String(positionCode).trim() : null;
+      if (positionCode !== undefined && oldPos !== newPos) {
+        if (req.body.expectedPositionCode !== undefined) {
+          const expPos = req.body.expectedPositionCode ? String(req.body.expectedPositionCode).trim() : null;
+          if (expPos !== oldPos) {
+            throw roleWrite.error('ตำแหน่งของผู้ใช้เปลี่ยนไปแล้ว กรุณาโหลดข้อมูลใหม่ก่อนบันทึก', 409);
+          }
+        }
+        await roleWrite.query(tx, "INSERT INTO wf.AdminChangeAudit(ActorId, Action, Target, Detail) VALUES(@actor, 'USER_POSITION', @target, @detail)", {
+          actor: callerId,
+          target: String(targetId),
+          detail: JSON.stringify({ before: oldPos, after: newPos, username: targetUser.Username })
+        });
+      }
       await roleWrite.assertAdministrator(tx);
       return result;
     });
