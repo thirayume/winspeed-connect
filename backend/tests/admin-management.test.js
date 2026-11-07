@@ -328,3 +328,14 @@ test('multiple roles retain 116 creator rights and manager review rules',()=>{
   assert.equal(decision({role:['C_LEVEL','SALES'],actorId:1,requesterActorId:2}).allowed,true);
   assert.equal(decision({role:['SALES'],actorId:1,requesterActorId:2}).allowed,false);
 });
+test('users and roles capability gating reflects across filteredCapabilities and route isolation', () => {
+  const customUser = { id: 2, role: 'SALES', roleCode: 'PILOT_CUSTOM', permissions: ['users.manage'] };
+  const caps = filteredCapabilities(customUser);
+  assert.ok(caps.menus.includes('admin'), 'Should grant admin menu to users.manage');
+  assert.ok(!caps.menus.includes('roles'), 'Should NOT grant roles menu without roles.manage');
+
+  const roleOnlyUser = { id: 3, role: 'SALES', roleCode: 'ROLE_MGR', permissions: ['roles.manage'] };
+  const roleCaps = filteredCapabilities(roleOnlyUser);
+  assert.ok(!roleCaps.menus.includes('admin'), 'Should NOT grant admin menu without users.manage');
+  assert.ok(roleCaps.menus.includes('roles'), 'Should grant roles menu with roles.manage');
+});

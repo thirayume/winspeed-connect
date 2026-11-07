@@ -41,6 +41,7 @@ const GiveawayPage = lazy(() => import('./components/giveaway/GiveawayPage').the
 const QuotationPage = lazy(() => import('./components/quotation/QuotationPage').then(m => ({ default: m.QuotationPage })));
 const PaperTrailPage = lazy(() => import('./components/papertrail/PaperTrailPage').then(m => ({ default: m.PaperTrailPage })));
 const AppSettingsPage = lazy(() => import('./components/admin/AppSettingsPage').then(m => ({default:m.AppSettingsPage})));
+const UsersAccessConsole = lazy(() => import('./components/admin/UsersAccessConsole').then(m => ({ default: m.UsersAccessConsole })));
 const RoleManagementPage = lazy(() => import('./components/admin/RoleManagementPage').then(m => ({default:m.RoleManagementPage})));
 const AdminUsersPage = lazy(() => import('./components/admin/AdminUsersPage').then(m => ({ default: m.AdminUsersPage })));
 const OrgAssignmentPage = lazy(() => import('./components/admin/OrgAssignmentPage').then(m => ({ default: m.OrgAssignmentPage })));
@@ -127,9 +128,9 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'policy',     label: 'นโยบายอนุมัติ', sub: 'อำนาจอนุมัติ · วงเงิน', icon: ScrollText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
       // { key: 'governance', label: 'กำกับข้อมูล',  sub: 'เครดิต · สต๊อก · PDPA',  icon: Landmark, roles: [...] },
       { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · Watchdog · Alert', icon: Activity, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
-      {key:'app-settings',label:'App Settings',sub:'นโยบายระบบ · ผลตรวจรับ',icon:Settings,roles:['ADMIN']},
-      {key:'roles',label:'Role Management',sub:'บทบาท · Permission',icon:ShieldCheck,roles:['ADMIN']},
-      { key: 'admin',      label: 'User Management',    sub: 'จัดการผู้ใช้งาน · รหัสผ่าน', icon: Users, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
+      { key: 'app-settings', label: 'App Settings', sub: 'นโยบายระบบ · ผลตรวจรับ', icon: Settings, roles: ['ADMIN'] },
+      { key: 'admin',      label: 'ผู้ใช้งานและสิทธิ์', sub: 'จัดการผู้ใช้งาน · บทบาท · Permission', icon: Users, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
+      { key: 'roles',      label: 'Role Management', sub: 'บทบาท · Permission', icon: ShieldCheck, roles: ['ADMIN'] },
       { key: 'org',        label: 'ผังองค์กร',    sub: 'ผูกผู้ใช้ ↔ ตำแหน่ง ↔ สายงาน', icon: Network, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
       { key: 'beneficiaries', label: 'จัดการสิทธิ์ตั๋วร่วม', sub: 'มอบ/ถอนสิทธิ์ตั๋วร่วมระหว่างลูกค้า', icon: Ticket, roles: ['ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'] },
     ],
@@ -599,8 +600,9 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'aging'      && <AgingPage />}
                 {activePortal === 'profile'    && <ProfilePage />}
                 {activePortal === 'app-settings' && user?.capabilities?.actions.includes('settings.manage') && !user?.isImpersonating && <AppSettingsPage />}
-                {activePortal === 'roles' && user?.capabilities?.actions.includes('roles.manage') && !user?.isImpersonating && <RoleManagementPage />}
-                {activePortal === 'admin'      && ['ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '') && <AdminUsersPage />}
+                {(activePortal === 'admin' || activePortal === 'roles') &&
+                  (user?.capabilities?.actions.includes('users.manage') || user?.capabilities?.actions.includes('roles.manage')) &&
+                  !user?.isImpersonating && <UsersAccessConsole initialPortal={activePortal} />}
                 {activePortal === 'org'        && ['ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '') && <OrgAssignmentPage />}
                 {activePortal === 'beneficiaries' && ['ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'].includes(role || '') && <BeneficiaryAdminPage />}
                 {activePortal === 'master'     && ['ADMIN', 'C_LEVEL'].includes(role || '') && <MasterDataPortal />}

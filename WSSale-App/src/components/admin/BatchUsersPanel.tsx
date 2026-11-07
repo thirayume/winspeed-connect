@@ -58,7 +58,19 @@ export function BatchUsersPanel({
       setResult(r);
       onDone();
     } catch (e) {
-      setError((e as Error).message);
+      const msg = (e as Error).message || "เกิดข้อผิดพลาดในการประมวลผล";
+      if (
+        msg.includes("fetch failed") ||
+        msg.includes("network") ||
+        msg.includes("Failed to fetch") ||
+        msg.includes("NetworkError")
+      ) {
+        setError(
+          "การเชื่อมต่อขัดข้อง ไม่สามารถยืนยันผลได้ กรุณาตรวจสถานะผู้ใช้และประวัติก่อนทำซ้ำ (ไม่แนะนำให้ทำซ้ำทันที)",
+        );
+      } else {
+        setError(msg);
+      }
     } finally {
       setBusy(false);
     }

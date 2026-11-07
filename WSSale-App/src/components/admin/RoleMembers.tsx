@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Users, Plus, ArrowLeft, Search } from "lucide-react";
+import { Users, Plus, ArrowLeft, Search, ExternalLink } from "lucide-react";
 import { req } from "../../services/api";
 import type { AdminUser } from "../../types";
 import { BatchUsersPanel, type BatchUser } from "./BatchUsersPanel";
 import { useAuthStore } from "../../store/auth-store";
+
 type Member = {
   Id: number;
   Username: string;
@@ -11,25 +12,30 @@ type Member = {
   IsActive: boolean;
   RoleCode: string;
 };
+
 export function RoleMembers({
   code,
   onChanged,
+  onViewRoleUsers,
 }: {
   code: string;
   onChanged: () => void;
+  onViewRoleUsers?: (roleCode: string) => void;
 }) {
-  const [members, setMembers] = useState<Member[]>([]),
-    [people, setPeople] = useState<AdminUser[] | null>(null),
-    [search, setSearch] = useState(""),
-    [selected, setSelected] = useState<number[]>([]),
-    [batch, setBatch] = useState<BatchUser[] | null>(null),
-    [error, setError] = useState(""),
-    [inactive, setInactive] = useState(true),
-    [loading, setLoading] = useState(false);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [people, setPeople] = useState<AdminUser[] | null>(null);
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<number[]>([]);
+  const [batch, setBatch] = useState<BatchUser[] | null>(null);
+  const [error, setError] = useState("");
+  const [inactive, setInactive] = useState(true);
+  const [loading, setLoading] = useState(false);
+
   const session = useAuthStore((s) => s.user);
   const canManage =
     Boolean(session?.capabilities?.actions.includes("users.manage")) &&
     !session?.isImpersonating;
+
   async function load() {
     setLoading(true);
     try {
@@ -42,9 +48,11 @@ export function RoleMembers({
       setLoading(false);
     }
   }
+
   useEffect(() => {
     load();
   }, [code]);
+
   const ids = [...new Set(members.map((m) => m.Id))];
   const rows: Array<BatchUser & { IsActive: boolean }> =
     people ||
@@ -55,6 +63,7 @@ export function RoleMembers({
         RoleCodes: members.filter((x) => x.Id === id).map((x) => x.RoleCode),
       };
     });
+
   const shown = rows.filter(
     (u) =>
       (inactive || u.IsActive) &&
@@ -62,7 +71,9 @@ export function RoleMembers({
         .toLowerCase()
         .includes(search.toLowerCase()),
   );
+
   const resetSelection = () => setSelected([]);
+
   return (
     <section className="space-y-4 min-w-0">
       <div className="flex flex-wrap justify-between items-center gap-3">
@@ -79,42 +90,58 @@ export function RoleMembers({
               : "เห็นบทบาททั้งหมดของแต่ละคน รวมผู้ใช้ที่ปิดใช้งาน"}
           </p>
         </div>
-        {canManage &&
-          (people ? (
+
+        <div className="flex items-center gap-2">
+          {!people && canManage && onViewRoleUsers && (
             <button
-              className="border rounded-lg p-2 text-sm flex gap-2"
-              onClick={() => {
-                setPeople(null);
-                setSearch("");
-                resetSelection();
-              }}
+              type="button"
+              className="border border-blue-200 bg-blue-50 text-[#0C447C] hover:bg-blue-100 rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              onClick={() => onViewRoleUsers(code)}
             >
-              <ArrowLeft size={16} />
-              กลับรายชื่อสมาชิก
+              <span>ดูผู้ใช้ Role นี้ในตารางผู้ใช้</span>
+              <ExternalLink size={13} />
             </button>
-          ) : (
-            <button
-              className="action-add rounded-lg px-3 py-2 flex items-center gap-2 text-sm"
-              onClick={async () => {
-                try {
-                  setPeople(await req<AdminUser[]>("/auth/users"));
+          )}
+
+          {canManage &&
+            (people ? (
+              <button
+                className="border rounded-lg p-2 text-sm flex gap-2 hover:bg-slate-50 transition-colors"
+                onClick={() => {
+                  setPeople(null);
                   setSearch("");
                   resetSelection();
-                } catch (e) {
-                  setError((e as Error).message);
-                }
-              }}
-            >
-              <Plus size={16} />
-              เพิ่มสมาชิก
-            </button>
-          ))}
+                }}
+              >
+                <ArrowLeft size={16} />
+                กลับรายชื่อสมาชิก
+              </button>
+            ) : (
+              <button
+                className="action-add rounded-lg px-3 py-1.5 bg-[#0C447C] text-white hover:bg-[#0a3866] flex items-center gap-1.5 text-xs font-semibold shadow-xs transition-colors"
+                onClick={async () => {
+                  try {
+                    setPeople(await req<AdminUser[]>("/auth/users"));
+                    setSearch("");
+                    resetSelection();
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
+                }}
+              >
+                <Plus size={15} />
+                เพิ่มสมาชิก
+              </button>
+            ))}
+        </div>
       </div>
+
       {error && (
-        <p role="alert" className="text-red-700 text-sm">
+        <p role="alert" className="text-red-700 text-sm bg-red-50 p-2.5 rounded-lg border border-red-200">
           {error}
         </p>
       )}
+
       <div className="flex flex-wrap items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
         <div className="relative flex-1 min-w-40">
           <Search size={16} className="absolute top-3 left-3 text-slate-400" />
@@ -126,10 +153,10 @@ export function RoleMembers({
               resetSelection();
             }}
             placeholder="ค้นหาชื่อหรือ Username"
-            className="w-full border rounded-lg py-2 pl-9 pr-3 text-sm"
+            className="w-full border border-slate-200 rounded-lg py-1.5 pl-9 pr-3 text-xs sm:text-sm bg-white outline-none focus:ring-1 focus:ring-[#0C447C]"
           />
         </div>
-        <label className="flex items-center gap-2 text-xs">
+        <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none">
           <input
             type="checkbox"
             checked={inactive}
@@ -137,13 +164,14 @@ export function RoleMembers({
               setInactive(e.target.checked);
               resetSelection();
             }}
+            className="rounded accent-[#0C447C]"
           />
           แสดงผู้ใช้ที่ปิดใช้งานด้วย
         </label>
         {canManage && (
           <button
             disabled={!selected.length}
-            className="bg-[#0C447C] text-white text-sm px-3 py-2 rounded-lg disabled:opacity-40"
+            className="bg-[#0C447C] text-white text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-40 shadow-xs transition-all"
             onClick={() =>
               setBatch(rows.filter((u) => selected.includes(u.Id)))
             }
@@ -152,12 +180,13 @@ export function RoleMembers({
           </button>
         )}
       </div>
-      <div className="overflow-auto max-h-[52vh] rounded-xl border border-slate-200">
-        <table className="w-full text-left text-sm">
-          <thead className="sticky top-0 bg-slate-50 text-slate-500">
+
+      <div className="overflow-auto max-h-[52vh] rounded-xl border border-slate-200 bg-white">
+        <table className="w-full text-left text-xs sm:text-sm">
+          <thead className="sticky top-0 bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 text-[11px] uppercase tracking-wider">
             <tr>
               {canManage && (
-                <th className="p-3">
+                <th className="p-3 w-10 text-center">
                   <span className="sr-only">เลือกผู้ใช้</span>
                 </th>
               )}
@@ -166,11 +195,11 @@ export function RoleMembers({
               <th className="p-3">บทบาททั้งหมด</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100">
             {shown.map((u) => (
-              <tr key={u.Id} className="border-t hover:bg-slate-50/60">
+              <tr key={u.Id} className="hover:bg-slate-50/60 transition-colors">
                 {canManage && (
-                  <td className="p-3">
+                  <td className="p-3 text-center">
                     <input
                       type="checkbox"
                       aria-label={"เลือกสมาชิก " + u.Username}
@@ -183,16 +212,17 @@ export function RoleMembers({
                             : selected.filter((id) => id !== u.Id),
                         )
                       }
+                      className="rounded accent-[#0C447C]"
                     />
                   </td>
                 )}
                 <td className="p-3">
-                  <b>{u.DisplayName}</b>
-                  <small className="block text-slate-500">@{u.Username}</small>
+                  <b className="text-slate-800">{u.DisplayName}</b>
+                  <small className="block text-slate-400 font-mono">@{u.Username}</small>
                 </td>
                 <td className="p-3 whitespace-nowrap">
                   <span
-                    className={`rounded-full px-2 py-1 text-xs ${u.IsActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold border ${u.IsActive ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-500 border-slate-200"}`}
                   >
                     {u.IsActive ? "ใช้งาน" : "ปิดใช้งาน"}
                   </span>
@@ -202,7 +232,7 @@ export function RoleMembers({
                     {(u.RoleCodes || [u.RoleCode || u.Role || ""]).map((r) => (
                       <span
                         key={r}
-                        className="bg-blue-50 text-[#0C447C] rounded-full px-2 py-1 text-xs"
+                        className="bg-blue-50 text-[#0C447C] border border-blue-200 rounded-full px-2 py-0.5 text-[11px] font-medium"
                       >
                         {r}
                       </span>
@@ -214,7 +244,7 @@ export function RoleMembers({
           </tbody>
         </table>
         {!shown.length && (
-          <p className="p-6 text-center text-slate-500">
+          <p className="p-6 text-center text-slate-400 italic text-xs sm:text-sm">
             {loading ? "กำลังโหลดสมาชิก…" : "ไม่พบผู้ใช้ในรายการนี้"}
           </p>
         )}
