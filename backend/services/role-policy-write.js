@@ -55,6 +55,40 @@ function changeMembership(current, requested, mode = "replace") {
     );
   return unique;
 }
+function membershipCodes(value) {
+  if (
+    !Array.isArray(value) ||
+    !value.length ||
+    value.length > 100 ||
+    value.some(
+      (c) => typeof c !== "string" || !/^[A-Z][A-Z0-9_]{0,29}$/.test(c),
+    ) ||
+    new Set(value).size !== value.length
+  )
+    throw error("เลือก Role อย่างน้อย 1 รายการ และห้ามซ้ำ", 400);
+  return [...value].sort();
+}
+async function validateAssignment(tx, codes, callerRole) {
+  const rows = (
+    await query(
+      tx,
+      "SELECT Code,BaseRole FROM wf.RoleProfile WITH(UPDLOCK,HOLDLOCK)",
+    )
+  ).recordset;
+  if (codes.some((c) => !rows.some((r) => r.Code === c)))
+    throw error("ไม่พบ Role ที่เลือก กรุณาโหลดใหม่", 400);
+  const selected = rows.filter((r) => codes.includes(r.Code));
+  if (
+    callerRole !== "ADMIN" &&
+    selected.some((r) => roleRank(r.BaseRole) >= roleRank(callerRole))
+  )
+    throw error("ไม่สามารถกำหนดบทบาทที่เทียบเท่าหรือสูงกว่าตนเองได้", 403);
+  return selected.sort(
+    (a, b) =>
+      roleRank(b.BaseRole) - roleRank(a.BaseRole) ||
+      a.Code.localeCompare(b.Code),
+  )[0];
+}
 async function setMembership(tx, id, codes) {
   const rows = (
     await query(
@@ -90,5 +124,7 @@ module.exports = {
   lockPolicy,
   assertAdministrator,
   changeMembership,
+  membershipCodes,
+  validateAssignment,
   setMembership,
 };

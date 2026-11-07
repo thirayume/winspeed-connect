@@ -1,4 +1,120 @@
+import { randomBytes } from "node:crypto";
 import { test, expect } from "@playwright/test";
+
+test("user editor preserves multiple roles and saves the full selection with a snapshot", async ({
+  page,
+}) => {
+  const row = page
+    .getByText("@fixture-1", { exact: true })
+    .locator("xpath=ancestor::tr");
+  await row.getByTitle("แก้ไข", { exact: true }).click();
+  const d = page.getByRole("dialog", { name: "แก้ไขผู้ใช้งาน" });
+  await expect(
+    d.getByLabel("เปิดใช้งาน (Active)", { exact: false }),
+  ).toBeChecked();
+  await expect(d.locator('input[name="password"]')).toHaveCount(0);
+  await d.getByLabel("ชื่อที่แสดง", { exact: true }).fill("ชื่อแก้ไข");
+  await d.getByRole("tab", { name: "บทบาท (2)", exact: true }).click();
+  await expect(
+    d.getByRole("checkbox", { name: "SALES (SALES)", exact: true }),
+  ).toBeChecked();
+  await expect(
+    d.getByRole("checkbox", { name: "C_LEVEL (C_LEVEL)", exact: true }),
+  ).toBeChecked();
+  await d
+    .getByRole("checkbox", { name: "SALES_CUSTOM (SALES_CUSTOM)", exact: true })
+    .check();
+  await page.screenshot({
+    path: "test-results/admin-management/user-editor-roles.png",
+  });
+  await d.getByRole("tab", { name: "ข้อมูลติดต่อ", exact: true }).click();
+  await d.getByLabel("เบอร์โทร", { exact: true }).fill("0000000000");
+  await d.getByRole("tab", { name: "บัญชีผู้ใช้", exact: true }).click();
+  await expect(d.getByLabel("ชื่อที่แสดง", { exact: true })).toHaveValue(
+    "ชื่อแก้ไข",
+  );
+  const request = page.waitForRequest(
+    (r) => r.method() === "PATCH" && r.url().endsWith("/auth/users/2"),
+  );
+  await d.getByRole("button", { name: "บันทึกการแก้ไข", exact: true }).click();
+  expect((await request).postDataJSON()).toMatchObject({
+    displayName: "ชื่อแก้ไข",
+    isActive: true,
+    phone: "0000000000",
+    roleCodes: ["SALES", "C_LEVEL", "SALES_CUSTOM"],
+    expectedRoleCodes: ["SALES", "C_LEVEL"],
+  });
+});
+
+test("new user can select multiple roles and contact details before a single save on mobile", async ({
+  page,
+}) => {
+  await page.getByTitle("เพิ่มผู้ใช้งาน", { exact: true }).click();
+  const d = page.getByRole("dialog", { name: "เพิ่มผู้ใช้งานใหม่" });
+  await d
+    .getByLabel("Username (ใช้ Login)", { exact: true })
+    .fill("fixture-create");
+  await d.getByLabel("ชื่อที่แสดง", { exact: true }).fill("บัญชีทดสอบ");
+  await d
+    .getByLabel("รหัสผ่านชั่วคราว", { exact: false })
+    .fill(randomBytes(24).toString("base64url"));
+  await d.getByRole("tab", { name: "บทบาท (1)", exact: true }).click();
+  await d
+    .getByRole("checkbox", { name: "C_LEVEL (C_LEVEL)", exact: true })
+    .check();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "test-results/admin-management/user-editor-mobile.png",
+  });
+  await d.getByRole("tab", { name: "ข้อมูลติดต่อ", exact: true }).click();
+  await d.getByLabel("อีเมล", { exact: true }).fill("fixture@example.invalid");
+  const request = page.waitForRequest(
+    (r) => r.method() === "POST" && r.url().endsWith("/auth/users"),
+  );
+  await d.getByRole("button", { name: "สร้างผู้ใช้ใหม่", exact: true }).click();
+  const body = (await request).postDataJSON();
+  expect(body.roleCodes).toEqual(["SALES", "C_LEVEL"]);
+  expect(body.email).toBe("fixture@example.invalid");
+  expect(body).not.toHaveProperty("role");
+});
+
+test("role member commands preselect the current role and the intended add or remove mode", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "roles", exact: true }).click();
+  await page
+    .getByRole("button", { name: /SALES.*ต้นแบบ/ })
+    .first()
+    .click();
+  await page.getByRole("tab", { name: "สมาชิก (6)" }).click();
+  await page.getByLabel("ค้นหาสมาชิก", { exact: true }).fill("fixture-1");
+  await page.getByLabel("เลือกสมาชิก fixture-1", { exact: true }).check();
+  await page
+    .getByRole("button", { name: "จัดการที่เลือก (1)", exact: true })
+    .click();
+  let d = page.getByRole("dialog");
+  await expect(d.getByLabel("รูปแบบเปลี่ยน Role")).toHaveValue("remove");
+  await expect(
+    d.getByRole("checkbox", { name: "SALES (SALES)", exact: true }),
+  ).toBeChecked();
+  await d.getByRole("button", { name: "ยกเลิก", exact: true }).click();
+  await page.getByRole("button", { name: "เพิ่มสมาชิก", exact: true }).click();
+  await page.getByLabel("ค้นหาสมาชิก", { exact: true }).fill("fixture-2");
+  await page.getByLabel("เลือกสมาชิก fixture-2", { exact: true }).check();
+  await page
+    .getByRole("button", { name: "จัดการที่เลือก (1)", exact: true })
+    .click();
+  d = page.getByRole("dialog");
+  await expect(d.getByLabel("รูปแบบเปลี่ยน Role")).toHaveValue("add");
+  await expect(
+    d.getByRole("checkbox", { name: "SALES (SALES)", exact: true }),
+  ).toBeChecked();
+});
 
 const users = Array.from({ length: 7 }, (_, i) => ({
   Id: i + 1,
@@ -6,13 +122,14 @@ const users = Array.from({ length: 7 }, (_, i) => ({
   DisplayName: i === 0 ? "ผู้ดูแลทดสอบ" : `พนักงานทดสอบ ${i}`,
   Role: i === 0 ? "ADMIN" : "SALES",
   IsActive: i !== 6,
+  RoleCodes: i === 0 ? ["ADMIN"] : i === 1 ? ["SALES", "C_LEVEL"] : ["SALES"],
   EmpId: null,
   EmpCode: null,
 }));
-const roles = ["SALES", "ADMIN"].map((Code) => ({
+const roles = ["SALES", "ADMIN", "C_LEVEL", "SALES_CUSTOM"].map((Code) => ({
   Code,
   Name: Code,
-  BaseRole: Code,
+  BaseRole: Code === "SALES_CUSTOM" ? "SALES" : Code,
   permissions:
     Code === "ADMIN"
       ? ["so.create", "quotation.create", "users.manage"]
@@ -200,7 +317,10 @@ test("role members include inactive users and prevent delete while assigned", as
   page,
 }) => {
   await page.getByRole("button", { name: "roles", exact: true }).click();
-  await page.getByRole("button", { name: /SALES.*ต้นแบบ/ }).click();
+  await page
+    .getByRole("button", { name: /SALES.*ต้นแบบ/ })
+    .first()
+    .click();
   await page.getByRole("tab", { name: "สมาชิก (6)" }).click();
   await expect(
     page.getByRole("heading", { name: "สมาชิก Role นี้ (6 คน)" }),

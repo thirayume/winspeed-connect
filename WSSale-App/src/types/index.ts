@@ -59,6 +59,7 @@ export type AdminUser = {
   DisplayName: string;
   Role: UserRole;
   RoleCodes?: string[];
+  Roles?: string[];
   RoleCode?: string | null;
   EmpId: string | null;
   EmpCode: string | null;

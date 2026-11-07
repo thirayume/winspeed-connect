@@ -668,10 +668,13 @@ router.post('/profile/signature', requireAuth, upload.single('signature'), async
 router.post('/users', requireAuth, requireCapability('users.manage'), requireCapability('roles.manage'), async (req, res) => {
   try {
     const { username, password, displayName, role, empId } = req.body;
+    const codes=req.body.roleCodes===undefined?null:roleWrite.membershipCodes(req.body.roleCodes);
+    if(req.body.isActive!==undefined&&typeof req.body.isActive!=='boolean')return res.status(400).json({message:'สถานะผู้ใช้ต้องเป็น true หรือ false'});
+    if(codes && role!==undefined)return res.status(400).json({message:"ส่ง roleCodes หรือ role อย่างใดอย่างหนึ่ง"});
     const callerRole = String(req.user.role).toUpperCase();
     const callerRank = roleRank(callerRole);
-    const newRole = String(role || '').toUpperCase();
-    if(!Object.keys(ACCESS_AS_ROLE_RANK).includes(newRole))return res.status(400).json({message:'Role ไม่ถูกต้อง'});
+    const newRole = codes ? null : String(role || '').toUpperCase();
+    if(!codes && !Object.keys(ACCESS_AS_ROLE_RANK).includes(newRole))return res.status(400).json({message:'Role ไม่ถูกต้อง'});
     if(req.user.isImpersonating)return res.status(403).json({message:'ออกจาก Access As ก่อนสร้างผู้ใช้'});
     const targetRank = roleRank(newRole);
 
@@ -680,13 +683,15 @@ router.post('/users', requireAuth, requireCapability('users.manage'), requireCap
       return res.status(403).json({ message: 'เฉพาะ ADMIN เท่านั้นที่สามารถสร้างผู้ใช้ระดับ ADMIN หรือ C_LEVEL ได้' });
     }
     // Non-ADMIN callers may not assign a role equal to or above their own
-    if (callerRole !== 'ADMIN' && targetRank >= callerRank) {
+    if (!codes && callerRole !== 'ADMIN' && targetRank >= callerRank) {
       return res.status(403).json({ message: 'ไม่สามารถกำหนดบทบาทที่เทียบเท่าหรือสูงกว่าตนเองได้' });
     }
 
     const hash = await bcrypt.hash(password, 12);
     const result = await wfTransaction(async tx=>{
       await roleWrite.lockPolicy(tx,req.user.id,'roles.manage');
+      await roleWrite.lockPolicy(tx,req.user.id,'users.manage');
+      const primary=codes?await roleWrite.validateAssignment(tx,codes,callerRole):{BaseRole:newRole};
       const execute=async(text,inputs)=>{const q=tx.request();for(const [k,v] of Object.entries(inputs))q.input(k,v.type,v.value);return q.query(text);};
       const result = await execute(
       // R12 item 5: the admin knows the first password, so the owner must replace it
@@ -697,11 +702,16 @@ router.post('/users', requireAuth, requireCapability('users.manage'), requireCap
         u: { type: sql.NVarChar(50), value: username },
         h: { type: sql.NVarChar(255), value: hash },
         d: { type: sql.NVarChar(100), value: displayName },
-        r: { type: sql.NVarChar(30), value: newRole },
+        r: { type: sql.NVarChar(30), value: primary.BaseRole },
         e: { type: sql.NVarChar(20), value: empId || null },
       }
       );
-      await roleWrite.setMembership(tx,result.recordset[0].Id,[newRole]);
+      await roleWrite.setMembership(tx,result.recordset[0].Id,codes||[newRole]);
+      const fields={address:'Address',phone:'Phone',email:'Email',idCardNo:'IdCardNo',taxId:'TaxId',isActive:'IsActive'};
+      const extras=Object.keys(fields).filter(k=>req.body[k]!==undefined);
+      if(extras.length)await roleWrite.query(tx,'UPDATE wf.AppUser SET '+extras.map(k=>fields[k]+'=@'+k).join(',')+' WHERE Id=@id',Object.assign({id:result.recordset[0].Id},Object.fromEntries(extras.map(k=>[k,req.body[k]|| (k==='isActive'?false:null)]))));
+      if(codes) await roleWrite.query(tx,"INSERT wf.AdminChangeAudit(ActorId,Action,Target,Detail) VALUES(@actor,'USER_ROLES',@target,@detail)",{actor:Number(req.user.id),target:String(result.recordset[0].Id),detail:JSON.stringify({before:[],after:codes})});
+
       return result;
     });
     // owner 2026-10-09: a salesperson or sales manager gets a rebate requester code automatically
@@ -733,8 +743,8 @@ router.get('/users', requireAuth, requireCapability('users.manage'), async (req,
        LEFT JOIN wf.v_NearestApprover na ON na.PositionCode = u.PositionCode
        ORDER BY u.DisplayName`
     );
-    const memberships=(await wfQuery('SELECT UserId,RoleCode FROM wf.vUserRole')).recordset;
-    res.json(result.recordset.map(u=>({...u,RoleCodes:memberships.filter(r=>r.UserId===u.Id).map(r=>r.RoleCode)})));
+    const memberships=(await wfQuery('SELECT r.UserId,r.RoleCode,p.BaseRole FROM wf.vUserRole r JOIN wf.RoleProfile p ON p.Code=r.RoleCode')).recordset;
+    res.json(result.recordset.map(u=>({...u,RoleCodes:memberships.filter(r=>r.UserId===u.Id).map(r=>r.RoleCode),Roles:[...new Set(memberships.filter(r=>r.UserId===u.Id).map(r=>r.BaseRole))]})));
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: 'Server error' });
@@ -748,6 +758,11 @@ router.patch('/users/:id', requireAuth, requireCapability('users.manage'), async
     const callerId = Number(req.user.sub ?? req.user.id);
     const callerRole = String(req.user.role).toUpperCase();
     const callerRank = roleRank(callerRole);
+    const codes=req.body.roleCodes===undefined?null:roleWrite.membershipCodes(req.body.roleCodes);
+    const expectedCodes=codes?roleWrite.membershipCodes(req.body.expectedRoleCodes):null;
+    if(codes && req.body.role!==undefined)return res.status(400).json({message:'ส่ง roleCodes หรือ role อย่างใดอย่างหนึ่ง'});
+    if(codes && callerId===targetId)return res.status(403).json({message:'ไม่อนุญาตให้แก้ไขบทบาทของตนเอง'});
+    if(codes && !hasPermission(req.user,'roles.manage'))return res.status(403).json({message:'ต้องการสิทธิ์จัดการ Role'});
 
     // 1. No one may change their own role
     if (callerId === targetId && req.body.role !== undefined) {
@@ -834,24 +849,33 @@ router.patch('/users/:id', requireAuth, requireCapability('users.manage'), async
         sets.push('MustChangePassword = 0');
       }
     }
-    if (!sets.length) return res.status(400).json({ message: 'ไม่มีข้อมูลที่จะแก้ไข' });
-    const securityChanged = (role!==undefined && role!==targetUser.Role)
+    if (!sets.length && !codes) return res.status(400).json({ message: 'ไม่มีข้อมูลที่จะแก้ไข' });
+    const securityChanged = codes || (role!==undefined && role!==targetUser.Role)
       || (isActive!==undefined && isActive!==Boolean(targetUser.IsActive))
       || password || (lineUserId!==undefined && (lineUserId||null)!==(targetUser.LineUserId||null));
     if(securityChanged) sets.push('AuthVersion = AuthVersion + 1');
     sets.push('UpdatedAt = GETUTCDATE()');
     const __r = await wfTransaction(async tx=>{
       await roleWrite.lockPolicy(tx,callerId,'users.manage');
+      if(codes){
+        await roleWrite.lockPolicy(tx,callerId,'roles.manage');
+        await roleWrite.validateAssignment(tx,codes,callerRole);
+        const current=(await roleWrite.query(tx,'SELECT RoleCode FROM wf.vUserRole WHERE UserId=@id',{id:targetId})).recordset.map(r=>r.RoleCode).sort();
+        if(JSON.stringify(current)!==JSON.stringify(expectedCodes))throw roleWrite.error('Role ของผู้ใช้เปลี่ยนแล้ว กรุณาปิดและเปิดข้อมูลใหม่ก่อนบันทึก');
+      }
       const q=tx.request();for(const [k,v] of Object.entries(inputs))q.input(k,v.type,v.value);
       const result=await q.query(`UPDATE wf.AppUser SET ${sets.join(', ')} WHERE Id=@id`);
-      if(role!==undefined && role!==targetUser.Role) await roleWrite.setMembership(tx,targetId,[role]);
+      if(codes){
+        await roleWrite.setMembership(tx,targetId,codes);
+        await roleWrite.query(tx,"INSERT wf.AdminChangeAudit(ActorId,Action,Target,Detail) VALUES(@actor,'USER_ROLES',@target,@detail)",{actor:callerId,target:String(targetId),detail:JSON.stringify({before:expectedCodes,after:codes})});
+      }else if(role!==undefined && role!==targetUser.Role) await roleWrite.setMembership(tx,targetId,[role]);
       await roleWrite.assertAdministrator(tx);
       return result;
     });
     if (!__r.rowsAffected?.[0]) return res.status(404).json({ message: 'ไม่พบผู้ใช้นี้' });
     // disabling or re-enabling takes effect on the user's very next request
     clearAccountStatusCache(targetId);
-    if (role !== undefined || isActive !== undefined) await giveRebateDocCode(targetId);
+    if (codes || role !== undefined || isActive !== undefined) await giveRebateDocCode(targetId);
     res.json({ ok: true, id: targetId });
   } catch (e) {
     if(e.status) return res.status(e.status).json({message:e.message});

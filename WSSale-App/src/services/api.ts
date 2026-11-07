@@ -107,13 +107,14 @@ export const setSystemDatabase = (database: string) =>
 
 export const createUser = (payload: {
   username: string; password: string; displayName: string;
-  role: string; empId?: string;
+  role?: string; roleCodes?: string[]; empId?: string; isActive?:boolean;
+  address?:string|null;phone?:string|null;email?:string|null;idCardNo?:string|null;taxId?:string|null;
 }) => req<AppUser>('/auth/users', { method: 'POST', body: JSON.stringify(payload) });
 
 export const listUsers = () => req<AdminUser[]>('/auth/users');
 
 export const updateUser = (id: number, patch: {
-  empId?: string | null; role?: string; displayName?: string; isActive?: boolean;
+  empId?: string | null; role?: string; roleCodes?: string[]; expectedRoleCodes?: string[]; displayName?: string; isActive?: boolean;
   password?: string; lineUserId?: string | null;
   address?: string | null; phone?: string | null; email?: string | null;
   idCardNo?: string | null; taxId?: string | null;

@@ -1,21 +1,28 @@
 import { useEffect, useState } from "react";
+import { RolePicker } from "./RolePicker";
 import { req } from "../../services/api";
 import type { AdminUser } from "../../types";
 import type { RoleProfile } from "./RoleManagementPage";
+export type BatchUser = Pick<AdminUser, "Id" | "Username" | "DisplayName"> &
+  Partial<Pick<AdminUser, "Role" | "RoleCode" | "RoleCodes">>;
 type Credential = { id: number; username: string; password: string };
 export function BatchUsersPanel({
   users,
   onDone,
   onClose,
+  initialRoleCodes = [],
+  initialRoleMode = "add",
 }: {
-  users: AdminUser[];
+  users: BatchUser[];
   onDone: () => void;
   onClose: () => void;
+  initialRoleCodes?: string[];
+  initialRoleMode?: "add" | "remove" | "replace";
 }) {
   const [action, setAction] = useState("role"),
     [roles, setRoles] = useState<RoleProfile[]>([]),
-    [roleCodes, setRoleCodes] = useState<string[]>([]),
-    [roleMode, setRoleMode] = useState("add"),
+    [roleCodes, setRoleCodes] = useState<string[]>(initialRoleCodes),
+    [roleMode, setRoleMode] = useState(initialRoleMode),
     [active, setActive] = useState(true),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -147,7 +154,7 @@ export function BatchUsersPanel({
                   disabled={busy}
                   className="border p-2 w-full"
                   onChange={(e) => {
-                    setRoleMode(e.target.value);
+                    setRoleMode(e.target.value as "add" | "remove" | "replace");
                     setConfirmed(false);
                   }}
                 >
@@ -157,29 +164,15 @@ export function BatchUsersPanel({
                     แทนที่ Role ทั้งหมดด้วยชุดที่เลือก
                   </option>
                 </select>
-                <div className="grid sm:grid-cols-2 gap-2 max-h-56 overflow-auto">
-                  {roles.map((r) => (
-                    <label
-                      key={r.Code}
-                      className="border rounded p-2 flex gap-2"
-                    >
-                      <input
-                        type="checkbox"
-                        disabled={busy}
-                        checked={roleCodes.includes(r.Code)}
-                        onChange={(e) => {
-                          setRoleCodes(
-                            e.target.checked
-                              ? [...roleCodes, r.Code]
-                              : roleCodes.filter((k) => k !== r.Code),
-                          );
-                          setConfirmed(false);
-                        }}
-                      />
-                      {r.Name} ({r.Code})
-                    </label>
-                  ))}
-                </div>
+                <RolePicker
+                  roles={roles}
+                  value={roleCodes}
+                  disabled={busy}
+                  onChange={(codes) => {
+                    setRoleCodes(codes);
+                    setConfirmed(false);
+                  }}
+                />
                 <p className="text-sm">
                   สิทธิ์รวมจากทุก Role · ไม่สามารถนำ Role สุดท้ายของผู้ใช้ออกได้
                 </p>

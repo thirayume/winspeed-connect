@@ -26,6 +26,8 @@ type AuditEntry = {
 };
 const auditNames: Record<string, string> = {
   ROLE_SAVE: "บันทึก Role",
+  ROLE_DELETE: "ลบ Role",
+  USER_ROLES: "แก้บทบาทรายบุคคล",
   BATCH_role: "เปลี่ยน Role",
   BATCH_status: "เปลี่ยนสถานะ",
   "BATCH_reset-password": "รีเซ็ตรหัสผ่าน",
@@ -61,6 +63,8 @@ const names: Record<string, string> = {
 };
 export function RoleManagementPage() {
   const [editing, setEditing] = useState(false);
+  const [roleSearch, setRoleSearch] = useState(""),
+    [permissionSearch, setPermissionSearch] = useState("");
   const [view, setView] = useState<"permissions" | "members">("permissions");
   const [data, setData] = useState<Catalog | null>(null),
     [form, setForm] = useState<RoleProfile | null>(null),
@@ -157,124 +161,104 @@ export function RoleManagementPage() {
           <History /> ประวัติ
         </button>
       </div>
-      <div className="grid md:grid-cols-[260px_1fr] gap-4">
-        <div className="bg-white rounded-xl p-3 space-y-2">
-          {data?.roles.map((p) => (
-            <button
-              key={p.Code}
-              className="block text-left w-full p-3 rounded-lg hover:bg-blue-50 border"
-              onClick={() => {
-                setEditing(true);
-                setView("permissions");
-                setForm({ ...p });
-                setError("");
-              }}
-            >
-              <b>{p.Name}</b>
-              <small className="block">
-                {p.Code} · ต้นแบบ {p.BaseRole} · สมาชิก {p.MemberCount || 0} คน
-              </small>
-            </button>
-          ))}
-        </div>
-        {form && data && (
-          <div className="bg-white p-5 rounded-xl space-y-4">
-            {editing && (
-              <div className="flex justify-end">
+      <div className="grid md:grid-cols-[250px_minmax(0,1fr)] gap-4 items-start">
+        <div className="bg-white rounded-2xl p-3 space-y-2 md:sticky md:top-0">
+          <input
+            aria-label="ค้นหาบทบาท"
+            placeholder="ค้นหาบทบาท…"
+            value={roleSearch}
+            onChange={(e) => setRoleSearch(e.target.value)}
+            className="w-full rounded-xl border p-2 mb-2 text-sm"
+          />
+          <div className="max-h-52 md:max-h-[70vh] overflow-auto space-y-2">
+            {data?.roles
+              .filter((r) =>
+                (r.Name + " " + r.Code)
+                  .toLowerCase()
+                  .includes(roleSearch.toLowerCase()),
+              )
+              .map((p) => (
                 <button
-                  title="ลบ Role"
-                  aria-label="ลบ Role"
-                  className="action-delete p-2 disabled:opacity-40"
-                  disabled={busy || Boolean(form.MemberCount)}
-                  onClick={async () => {
-                    if (!window.confirm(`ลบ Role ${form.Name}?`)) return;
-                    setBusy(true);
+                  key={p.Code}
+                  className={`block text-left w-full p-3 rounded-xl border ${form?.Code === p.Code ? "border-blue-400 bg-blue-50" : "hover:bg-slate-50 border-slate-200"}`}
+                  onClick={() => {
+                    setEditing(true);
+                    setView("permissions");
+                    setForm({ ...p });
                     setError("");
-                    try {
-                      await req("/admin-management/roles/" + form.Code, {
-                        method: "DELETE",
-                        body: JSON.stringify({
-                          expectedRevision: form.Revision,
-                        }),
-                      });
-                      setForm(null);
-                      setNotice("ลบ Role แล้ว");
-                      await load();
-                    } catch (e) {
-                      setError((e as Error).message);
-                    } finally {
-                      setBusy(false);
-                    }
                   }}
                 >
-                  <Trash2 size={20} />
+                  <b>{p.Name}</b>
+                  <small className="block">
+                    {p.Code} · ต้นแบบ {p.BaseRole} · สมาชิก {p.MemberCount || 0}{" "}
+                    คน
+                  </small>
                 </button>
+              ))}
+          </div>
+        </div>
+        {!form && (
+          <div className="bg-white rounded-2xl p-10 text-center text-slate-500">
+            <Shield className="mx-auto mb-3 text-[#0C447C]" size={32} />
+            <h2 className="font-bold text-lg text-[#0C447C]">
+              เลือกบทบาทเพื่อจัดการ
+            </h2>
+            <p className="text-sm mt-2">
+              กำหนด Permission หรือดูและจัดสมาชิกของบทบาทนั้น
+            </p>
+          </div>
+        )}
+        {form && data && (
+          <div className="bg-white p-4 sm:p-5 rounded-2xl space-y-4 min-w-0">
+            <header className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-bold text-xl text-[#0C447C]">
+                  {editing ? form.Name : "สร้างบทบาทใหม่"}
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  {editing
+                    ? `${form.Code} · ต้นแบบ ${form.BaseRole} · สมาชิก ${form.MemberCount || 0} คน`
+                    : "ตั้งชื่อ เลือกต้นแบบ แล้วปรับ Permission"}
+                </p>
               </div>
-            )}
+              {editing && (
+                <div className="flex justify-end">
+                  <button
+                    title="ลบ Role"
+                    aria-label="ลบ Role"
+                    className="action-delete p-2 disabled:opacity-40"
+                    disabled={busy || Boolean(form.MemberCount)}
+                    onClick={async () => {
+                      if (!window.confirm(`ลบ Role ${form.Name}?`)) return;
+                      setBusy(true);
+                      setError("");
+                      try {
+                        await req("/admin-management/roles/" + form.Code, {
+                          method: "DELETE",
+                          body: JSON.stringify({
+                            expectedRevision: form.Revision,
+                          }),
+                        });
+                        setForm(null);
+                        setNotice("ลบ Role แล้ว");
+                        await load();
+                      } catch (e) {
+                        setError((e as Error).message);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    <Trash2 size={20} />
+                  </button>
+                </div>
+              )}
+            </header>
             {editing && Boolean(form.MemberCount) && (
               <p className="text-sm text-amber-800">
                 ย้ายสมาชิกทั้งหมด รวมผู้ใช้ที่ปิดใช้งาน ก่อนลบ Role
               </p>
             )}
-            <label className="block">
-              รหัส Role
-              <input
-                aria-label="รหัส Role"
-                disabled={editing || busy}
-                className="border p-2 block w-full"
-                value={form.Code}
-                onChange={(e) =>
-                  setForm({ ...form, Code: e.target.value.toUpperCase() })
-                }
-              />
-            </label>
-            <label className="block">
-              ชื่อ Role
-              <input
-                className="border p-2 block w-full"
-                value={form.Name}
-                maxLength={100}
-                onChange={(e) => setForm({ ...form, Name: e.target.value })}
-              />
-            </label>
-            <label className="block">
-              บทบาทต้นแบบ
-              <select
-                aria-label="บทบาทต้นแบบ"
-                className="border p-2 block w-full"
-                disabled={editing || busy}
-                value={form.BaseRole}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    BaseRole: e.target.value,
-                    permissions: Object.entries(data.actions)
-                      .filter(([, rs]) => rs.includes(e.target.value))
-                      .map(([k]) => k),
-                  })
-                }
-              >
-                {[
-                  "SALES",
-                  "COUNTER_SALES",
-                  "WAREHOUSE",
-                  "WEIGHBRIDGE",
-                  "APPROVER",
-                  "ACCOUNTING",
-                  "MANAGER",
-                  "C_LEVEL",
-                  "ADMIN",
-                ].map((x) => (
-                  <option key={x}>{x}</option>
-                ))}
-              </select>
-            </label>
-            <p className="text-sm text-slate-600">
-              เลือกได้ทุก Permission ต้นแบบใช้กำหนดค่าเริ่มต้นและขอบเขตข้อมูล
-              ผู้ใช้หลาย Role ได้สิทธิ์รวมกัน สิทธิ์ที่ปิดใน Role
-              นี้ยังใช้ได้หากอีก Role เปิดอยู่
-              เงื่อนไขอนุมัติและฟีเจอร์ที่ปิดอยู่ยังคงตรวจแยกกัน
-            </p>
             {editing && (
               <div
                 role="tablist"
@@ -299,6 +283,70 @@ export function RoleManagementPage() {
                 </button>
               </div>
             )}
+            <div
+              hidden={view !== "permissions"}
+              className="grid sm:grid-cols-3 gap-4 text-sm"
+            >
+              <label className="block">
+                รหัส Role
+                <input
+                  aria-label="รหัส Role"
+                  disabled={editing || busy}
+                  className="border border-slate-200 rounded-xl p-2 block w-full mt-1"
+                  value={form.Code}
+                  onChange={(e) =>
+                    setForm({ ...form, Code: e.target.value.toUpperCase() })
+                  }
+                />
+              </label>
+              <label className="block">
+                ชื่อ Role
+                <input
+                  className="border border-slate-200 rounded-xl p-2 block w-full mt-1"
+                  value={form.Name}
+                  maxLength={100}
+                  onChange={(e) => setForm({ ...form, Name: e.target.value })}
+                />
+              </label>
+              <label className="block">
+                บทบาทต้นแบบ
+                <select
+                  aria-label="บทบาทต้นแบบ"
+                  className="border border-slate-200 rounded-xl p-2 block w-full mt-1"
+                  disabled={editing || busy}
+                  value={form.BaseRole}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      BaseRole: e.target.value,
+                      permissions: Object.entries(data.actions)
+                        .filter(([, rs]) => rs.includes(e.target.value))
+                        .map(([k]) => k),
+                    })
+                  }
+                >
+                  {[
+                    "SALES",
+                    "COUNTER_SALES",
+                    "WAREHOUSE",
+                    "WEIGHBRIDGE",
+                    "APPROVER",
+                    "ACCOUNTING",
+                    "MANAGER",
+                    "C_LEVEL",
+                    "ADMIN",
+                  ].map((x) => (
+                    <option key={x}>{x}</option>
+                  ))}
+                </select>
+              </label>
+              <p className="text-xs leading-relaxed text-slate-500 sm:col-span-3">
+                เลือกได้ทุก Permission ต้นแบบใช้กำหนดค่าเริ่มต้นและขอบเขตข้อมูล
+                ผู้ใช้หลาย Role ได้สิทธิ์รวมกัน สิทธิ์ที่ปิดใน Role
+                นี้ยังใช้ได้หากอีก Role เปิดอยู่
+                เงื่อนไขอนุมัติและฟีเจอร์ที่ปิดอยู่ยังคงตรวจแยกกัน
+              </p>
+            </div>
             {editing && view === "members" && (
               <RoleMembers
                 key={form.Code}
@@ -306,40 +354,64 @@ export function RoleManagementPage() {
                 onChanged={async () => {
                   const fresh = await req<Catalog>("/admin-management/roles");
                   setData(fresh);
-                  setForm(
-                    fresh.roles.find((r) => r.Code === form.Code) || null,
+                  setForm((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          MemberCount:
+                            fresh.roles.find((r) => r.Code === prev.Code)
+                              ?.MemberCount || 0,
+                        }
+                      : null,
                   );
                 }}
               />
             )}
             <div hidden={view !== "permissions"} className="space-y-4">
+              <input
+                aria-label="ค้นหา Permission"
+                placeholder="ค้นหาสิทธิ์การทำงาน…"
+                value={permissionSearch}
+                onChange={(e) => setPermissionSearch(e.target.value)}
+                className="w-full border rounded-xl p-3 text-sm"
+              />
               <fieldset className="grid sm:grid-cols-2 gap-2">
                 <legend className="font-bold mb-2">
-                  Permission การปฏิบัติงาน
+                  Permission การปฏิบัติงาน · เปิด {form.permissions.length}/
+                  {Object.keys(data.actions).length}
                 </legend>
-                {Object.keys(data.actions).map((key) => {
-                  return (
-                    <label key={key} className="flex gap-2 p-2 border rounded">
-                      <input
-                        type="checkbox"
-                        disabled={busy}
-                        checked={form.permissions.includes(key)}
-                        onChange={(e) =>
-                          setForm({
-                            ...form,
-                            permissions: e.target.checked
-                              ? [...form.permissions, key]
-                              : form.permissions.filter((x) => x !== key),
-                          })
-                        }
-                      />
-                      <span>
-                        {names[key] || key}
-                        <small className="block text-slate-500">{key}</small>
-                      </span>
-                    </label>
-                  );
-                })}
+                {Object.keys(data.actions)
+                  .filter((key) =>
+                    (key + " " + (names[key] || ""))
+                      .toLowerCase()
+                      .includes(permissionSearch.toLowerCase()),
+                  )
+                  .map((key) => {
+                    return (
+                      <label
+                        key={key}
+                        className={`flex gap-3 p-3 border rounded-xl text-sm ${form.permissions.includes(key) ? "bg-blue-50/40 border-blue-200" : "border-slate-200"}`}
+                      >
+                        <input
+                          type="checkbox"
+                          disabled={busy}
+                          checked={form.permissions.includes(key)}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              permissions: e.target.checked
+                                ? [...form.permissions, key]
+                                : form.permissions.filter((x) => x !== key),
+                            })
+                          }
+                        />
+                        <span>
+                          {names[key] || key}
+                          <small className="block text-slate-500">{key}</small>
+                        </span>
+                      </label>
+                    );
+                  })}
               </fieldset>
               <details>
                 <summary>เมนูตามบทบาทต้นแบบ</summary>

@@ -13,6 +13,14 @@ Migration 170 replaces the single-profile permission ceiling with explicit grant
 
 The role member tab shows all assigned users, their status, and their complete role list. User Management displays role chips and supports per-user or batch membership editing. Batch password resets and LINE unlinking retain their existing audit and session revocation behavior.
 
+## User and role workspace
+
+- User editing separates account details, multiple role selection, and contact details into tabs. New users can receive several roles during creation; the initial password still requires replacement on first login.
+- A profile and its role changes commit in one transaction. Editing only profile fields preserves the entire membership. Role changes require both management permissions and an expected membership snapshot; a stale snapshot rejects the whole save before any profile write.
+- The same searchable role picker is used for individual users and batches. The role member tab can search existing members or add users, and preselects the current role with the appropriate add/remove mode.
+- Password reset and LINE unlinking remain explicit, confirmed operations rather than incidental profile fields. Account status, membership guards, administrator continuity, audit, and session revocation remain enforced on the server.
+- This interface revision reuses migrations 170–171 and introduces no database migration.
+
 ## Verification and rollout
 
 Run the backend regression suite, offline migration rehearsal, frontend build, and the admin-management Playwright suite. Deploy the migrations and code together on UAT first. Verify union grants, immediate permission removal, membership changes, inactive-member deletion protection, last-administrator rollback, and all four batch actions on isolated test accounts. Keep runtime writer flags unchanged. Promote the identical commit to Production only after UAT verification and a fresh verified backup.
