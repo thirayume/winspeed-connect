@@ -130,7 +130,6 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · Watchdog · Alert', icon: Activity, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
       { key: 'app-settings', label: 'App Settings', sub: 'นโยบายระบบ · ผลตรวจรับ', icon: Settings, roles: ['ADMIN'] },
       { key: 'admin',      label: 'ผู้ใช้งานและสิทธิ์', sub: 'จัดการผู้ใช้งาน · บทบาท · Permission', icon: Users, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
-      { key: 'roles',      label: 'Role Management', sub: 'บทบาท · Permission', icon: ShieldCheck, roles: ['ADMIN'] },
       { key: 'org',        label: 'ผังองค์กร',    sub: 'ผูกผู้ใช้ ↔ ตำแหน่ง ↔ สายงาน', icon: Network, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
       { key: 'beneficiaries', label: 'จัดการสิทธิ์ตั๋วร่วม', sub: 'มอบ/ถอนสิทธิ์ตั๋วร่วมระหว่างลูกค้า', icon: Ticket, roles: ['ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'] },
     ],

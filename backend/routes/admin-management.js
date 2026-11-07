@@ -315,6 +315,9 @@ router.delete(
   "/roles/:code",
   requireCapability("roles.manage"),
   async (req, res) => {
+    if (req.params.code === "ADMIN") {
+      return res.status(400).json({ message: "Role ADMIN เป็นสิทธิ์หลักของระบบ ไม่สามารถลบได้" });
+    }
     try {
       if (!Number.isInteger(req.body?.expectedRevision))
         return res.status(400).json({ message: "กรุณาโหลด Role ใหม่ก่อนลบ" });

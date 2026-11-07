@@ -743,8 +743,24 @@ router.get('/users', requireAuth, requireCapability('users.manage'), async (req,
        LEFT JOIN wf.v_NearestApprover na ON na.PositionCode = u.PositionCode
        ORDER BY u.DisplayName`
     );
-    const memberships=(await wfQuery('SELECT r.UserId,r.RoleCode,p.BaseRole FROM wf.vUserRole r JOIN wf.RoleProfile p ON p.Code=r.RoleCode')).recordset;
-    res.json(result.recordset.map(u=>({...u,RoleCodes:memberships.filter(r=>r.UserId===u.Id).map(r=>r.RoleCode),Roles:[...new Set(memberships.filter(r=>r.UserId===u.Id).map(r=>r.BaseRole))]})));
+    const memberships = (await wfQuery('SELECT r.UserId, r.RoleCode, p.BaseRole FROM wf.vUserRole r JOIN wf.RoleProfile p ON p.Code = r.RoleCode')).recordset;
+    res.json(result.recordset.map(u => {
+      const userMemberships = memberships.filter(r => Number(r.UserId) === Number(u.Id));
+      let roleCodes = userMemberships.map(r => r.RoleCode);
+      let roles = [...new Set(userMemberships.map(r => r.BaseRole))];
+      if (roleCodes.length === 0) {
+        const fallback = u.RoleCode || u.Role;
+        if (fallback) {
+          roleCodes = [fallback];
+          roles = [u.Role || fallback];
+        }
+      }
+      return {
+        ...u,
+        RoleCodes: roleCodes,
+        Roles: roles
+      };
+    }));
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: 'Server error' });

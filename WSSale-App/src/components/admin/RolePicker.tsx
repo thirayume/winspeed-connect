@@ -51,7 +51,7 @@ export function RolePicker({
           className="w-full border border-slate-200 rounded-xl py-2 pl-9 pr-3 text-sm"
         />
       </div>
-      <div className="grid sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto p-0.5">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-80 overflow-y-auto p-0.5">
         {shown.map((r) => (
           <label
             key={r.Code}

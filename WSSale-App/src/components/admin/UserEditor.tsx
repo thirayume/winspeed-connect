@@ -174,7 +174,7 @@ export function UserEditor({
         role="dialog"
         aria-modal="true"
         aria-labelledby="user-editor-title"
-        className="bg-white w-full max-w-4xl max-h-[94dvh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200"
+        className="bg-white w-full max-w-6xl max-h-[92vh] min-h-[580px] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200"
       >
         <header className="px-5 py-4 border-b flex items-start justify-between gap-3 bg-[#F8FAFC]">
           <div>

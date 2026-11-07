@@ -307,6 +307,8 @@ test('membership add/remove/replace preserves grants and rejects removing the la
   assert.throws(()=>changeMembership(['SALES'],['ADMIN'],'invalid'),e=>e.status===400);
 });
 test('delete assigned Role rejects even an inactive member; empty Role can be deleted',async()=>{
+  const delAdmin = await app.call('DELETE','/api/admin-management/roles/ADMIN',{user:admin,body:{expectedRevision:0}});
+  assert.equal(delAdmin.status, 400);
   stored=[{Code:'UNUSED',BaseRole:'SALES',Revision:2}];roleMembers=[{UserId:3,IsActive:0}];
   let out=await app.call('DELETE','/api/admin-management/roles/UNUSED',{user:admin,body:{expectedRevision:2}});
   assert.equal(out.status,409);assert.equal(db.calls.some(c=>c.text.startsWith('DELETE FROM wf.RoleProfile')),false);

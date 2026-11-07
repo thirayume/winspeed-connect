@@ -149,9 +149,17 @@ export const AdminUsersPage = ({
     return users.some(u => u.EmpId === empId && u.Id !== currentUserId);
   };
 
+  const getUserRoleCodes = (u: AdminUser): string[] => {
+    if (Array.isArray(u.RoleCodes) && u.RoleCodes.length > 0) {
+      return u.RoleCodes;
+    }
+    const fallback = u.RoleCode || u.Role;
+    return fallback ? [fallback] : [];
+  };
+
   const matchesRoleFilter = (u: AdminUser) => {
     if (roleFilter === 'ALL') return true;
-    const userCodes = u.RoleCodes || [u.RoleCode || u.Role];
+    const userCodes = getUserRoleCodes(u);
     return userCodes.includes(roleFilter);
   };
 
@@ -230,7 +238,7 @@ export const AdminUsersPage = ({
           />
           <DataSummaryCard
             title="ผู้ใช้หลายบทบาท (Multi-Role)"
-            value={users.filter(u => (u.RoleCodes || [u.RoleCode || u.Role]).length > 1).length.toLocaleString()}
+            value={users.filter(u => getUserRoleCodes(u).length > 1).length.toLocaleString()}
             icon={<Shield size={22} />}
             colorClass="bg-purple-100 text-purple-700"
           />
@@ -370,7 +378,7 @@ export const AdminUsersPage = ({
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {paginatedUsers.map(u => {
-                  const userRoles = u.RoleCodes || [u.RoleCode || u.Role];
+                  const userRoles = getUserRoleCodes(u);
                   const visibleBadges = userRoles.slice(0, 2);
                   const overflowCount = userRoles.length - 2;
 
@@ -396,17 +404,28 @@ export const AdminUsersPage = ({
                       {/* Multi-Role Badges (+N if > 2) */}
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex flex-wrap items-center gap-1.5 max-w-xs">
-                          {visibleBadges.map(code => (
-                            <button
-                              key={code}
-                              type="button"
-                              onClick={() => { setEditorTab('roles'); setModalUser(u); }}
-                              className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-[#0C447C] border border-blue-200 hover:bg-blue-100 transition-colors"
-                              title="คลิกเพื่อจัดการบทบาทของผู้ใช้"
-                            >
-                              {code}
-                            </button>
-                          ))}
+                          {visibleBadges.length === 0 ? (
+                            <span className="text-xs text-gray-400 italic">—</span>
+                          ) : (
+                            visibleBadges.map(code => (
+                              <button
+                                key={code}
+                                type="button"
+                                onClick={() => { setEditorTab('roles'); setModalUser(u); }}
+                                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-all shadow-2xs ${
+                                  code === 'ADMIN'
+                                    ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
+                                    : code === 'C_LEVEL'
+                                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                                    : 'bg-blue-50 text-[#0C447C] border-blue-200 hover:bg-blue-100'
+                                }`}
+                                title="คลิกเพื่อจัดการบทบาทของผู้ใช้"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70"></span>
+                                <span>{code}</span>
+                              </button>
+                            ))
+                          )}
                           {overflowCount > 0 && (
                             <button
                               type="button"
