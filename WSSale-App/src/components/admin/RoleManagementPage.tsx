@@ -311,7 +311,7 @@ export function RoleManagementPage({
                     </span>
                   </div>
                   <small className="block text-purple-800 text-[11px] mt-1 font-medium">
-                    {adminRole.Code} · สิทธิ์เต็ม {Object.keys(data?.actions || {}).length}/{Object.keys(data?.actions || {}).length} · สมาชิก {adminRole.MemberCount || 0} คน
+                    {adminRole.Code} · เปิด {adminRole.permissions.length}/{Object.keys(data?.actions || {}).length} สิทธิ์ · สมาชิก {adminRole.MemberCount || 0} คน
                   </small>
                 </button>
               </div>
@@ -480,7 +480,7 @@ export function RoleManagementPage({
                     }`}
                     onClick={() => setView("permissions")}
                   >
-                    Permission ({isAdmin ? Object.keys(data.actions).length : form.permissions.length})
+                    Permission ({form.permissions.length})
                   </button>
                   <button
                     role="tab"
