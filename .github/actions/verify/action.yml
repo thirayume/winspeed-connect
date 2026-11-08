@@ -12,23 +12,38 @@ runs:
     - name: Backend dependencies
       shell: bash
       working-directory: backend
-      run: npm ci || npm install
+      run: npm ci
 
     - name: Backend tests
       shell: bash
       working-directory: backend
       run: npm test
 
+    - name: Offline migration rehearsal
+      shell: bash
+      working-directory: backend
+      run: npm run test:rehearsal:offline
+
     - name: Frontend dependencies
       shell: bash
       working-directory: WSSale-App
-      run: npm ci || npm install
+      run: npm ci
 
     # build = tsc -b && vite build, so it covers the typecheck (tsc --noEmit checks nothing here).
     - name: Frontend build (with typecheck)
       shell: bash
       working-directory: WSSale-App
       run: npm run build
+
+    - name: Browser regression dependencies
+      shell: bash
+      run: |
+        npm ci
+        npx playwright install --with-deps chromium
+
+    - name: Loading and admin console browser regressions
+      shell: bash
+      run: npm run test:resilience
 
     - name: Batch files are ASCII only
       shell: bash
