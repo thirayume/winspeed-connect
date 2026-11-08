@@ -556,7 +556,7 @@ function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; onDone: (
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 sm:p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-[96vw] h-[96vh] max-w-none flex flex-col overflow-hidden">
+      <div inert={busy} aria-busy={busy} className="bg-white rounded-2xl shadow-2xl w-[96vw] h-[96vh] max-w-none flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-lg font-bold" style={{ color: '#0C447C' }}>สร้างใบเสนอราคา</h2>

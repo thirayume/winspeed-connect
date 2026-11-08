@@ -56,6 +56,21 @@ test('late 401 from an old token does not clear the newer login',async({page})=>
     return localStorage.getItem('wssale_token');
   })).toBe('new-fixture');
 });
+
+test('a delayed profile read cannot overwrite personal details already being edited',async({page})=>{
+  await page.route('**/api/auth/me',async route=>{
+    await new Promise(r=>setTimeout(r,700));
+    await route.fulfill({json:{id:999,username:'fixture',role:'SALES',phone:'SERVER-OLD'}});
+  });
+  await page.getByRole('button',{name:'Profile',exact:true}).click();
+  const phone=page.locator('input[type="tel"]');
+  await phone.fill('USER-UNSAVED');
+  await expect.poll(()=>page.evaluate(()=>(window as any).regression.useAppStore.getState().globalLoadingCount)).toBe(0);
+  await expect(phone).toHaveValue('USER-UNSAVED');
+  page.on('dialog',dialog=>dialog.dismiss());
+  await page.getByRole('button',{name:'Navigate',exact:true}).click();
+  expect(await page.evaluate(()=>(window as any).regression.useAppStore.getState().activePortal)).toBe('sales');
+});
 test('event bursts serialize refreshes and run one trailing refresh',async({page})=>{
   expect(await page.evaluate(async()=>{
     let calls=0,active=0,peak=0;const {refreshQueue}=(window as any).regression;
@@ -64,6 +79,23 @@ test('event bursts serialize refreshes and run one trailing refresh',async({page
     await new Promise(r=>setTimeout(r,40));for(let i=0;i<30;i++)q.request();
     await new Promise(r=>setTimeout(r,220));q.stop();return {calls,peak};
   })).toEqual({calls:2,peak:1});
+});
+
+test('only the submitted profile form pauses editing and a failed save retains inputs',async({page})=>{
+  await page.route('**/api/auth/me',route=>route.fulfill({json:{id:999,username:'fixture',role:'SALES',phone:'OLD'}}));
+  await page.getByRole('button',{name:'Profile',exact:true}).click();
+  const phone=page.locator('input[type="tel"]');
+  await expect(phone).toHaveValue('OLD');
+  await phone.fill('UNSAVED-PHONE');
+  await page.route('**/api/auth/profile',async route=>{
+    await new Promise(r=>setTimeout(r,700));
+    await route.fulfill({status:503,json:{message:'RETRY-LATER'}});
+  });
+  await page.getByRole('button',{name:'บันทึกข้อมูล',exact:true}).click();
+  await expect(page.locator('form')).toHaveAttribute('inert','');
+  await expect(page.getByText('RETRY-LATER',{exact:true})).toBeVisible();
+  await expect(page.locator('form')).not.toHaveAttribute('inert','');
+  await expect(phone).toHaveValue('UNSAVED-PHONE');
 });
 test('warehouse refresh keeps the weighing form mounted and its unsaved values',async({page})=>{
   const order={id:101,status:'LOADED',custName:'Fixture customer',wfRef:'TEST',truckPlate:'TEST',

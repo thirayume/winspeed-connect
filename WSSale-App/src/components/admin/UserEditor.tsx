@@ -185,7 +185,7 @@ export function UserEditor({
             </button>
           ))}
         </div>
-        <div className="p-5 overflow-y-auto space-y-4">
+        <div inert={busy} aria-busy={busy} className="p-5 overflow-y-auto space-y-4">
           {error && (
             <p
               role="alert"

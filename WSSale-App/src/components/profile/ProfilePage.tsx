@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { useAuthStore } from '../../store/auth-store';
 import { getToken, req } from '../../services/api';
 import { Lock, User, Save, Upload } from 'lucide-react';
@@ -9,6 +10,8 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const infoEdited = useRef(false);
+  const [infoDirty, setInfoDirty] = useState(false);
 
   // Info Tab State
   const [address, setAddress] = useState(user?.address || '');
@@ -21,6 +24,7 @@ export default function ProfilePage() {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  useUnsavedChanges(infoDirty || Boolean(oldPassword || newPassword || confirmPassword));
 
   // Signature state
   const [sigFile, setSigFile] = useState<File | null>(null);
@@ -29,9 +33,13 @@ export default function ProfilePage() {
   );
 
   useEffect(() => {
-    // Refresh user info
+    let disposed = false;
+    const requestedToken = getToken();
+    // Never replace input typed while this initial read was in flight.
     req<any>('/auth/me').then(u => {
-      login(getToken() || '', u);
+      if (disposed || getToken() !== requestedToken) return;
+      login(requestedToken || '', u);
+      if (infoEdited.current) return;
       setAddress(u.address || '');
       setPhone(u.phone || '');
       setEmail(u.email || '');
@@ -41,6 +49,7 @@ export default function ProfilePage() {
         setSigPreview(`${import.meta.env.VITE_API_URL || ''}/uploads/${u.signatureFile}`);
       }
     }).catch(() => {});
+    return () => { disposed = true; };
   }, []);
 
   const handleInfoSubmit = async (e: React.FormEvent) => {
@@ -72,6 +81,9 @@ export default function ProfilePage() {
       // Refresh user
       const updatedUser = await req<any>('/auth/me');
       login(getToken() || '', updatedUser);
+      infoEdited.current = false;
+      setInfoDirty(false);
+      setSigFile(null);
     } catch (err: any) {
       setError(err.message || 'เกิดข้อผิดพลาด');
     } finally {
@@ -141,7 +153,7 @@ export default function ProfilePage() {
       {success && <div className="p-4 bg-green-50 text-green-600 rounded-lg">{success}</div>}
 
       {activeTab === 'info' && (
-        <form onSubmit={handleInfoSubmit} className="space-y-6">
+        <form inert={loading} aria-busy={loading} onSubmit={handleInfoSubmit} onChangeCapture={() => { infoEdited.current = true; setInfoDirty(true); }} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">ชื่อ-นามสกุล</label>
@@ -175,7 +187,7 @@ export default function ProfilePage() {
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <label className="text-sm font-medium text-gray-700">เลขประจำตัวผู้เสียภาษี</label>
-                <button type="button" onClick={() => setTaxId(idCardNo)} className="text-xs text-primary hover:underline">
+                <button type="button" onClick={() => { infoEdited.current = true; setInfoDirty(true); setTaxId(idCardNo); }} className="text-xs text-primary hover:underline">
                   ใช้เลขเดียวกับบัตรประชาชน
                 </button>
               </div>
@@ -215,7 +227,7 @@ export default function ProfilePage() {
       )}
 
       {activeTab === 'security' && (
-        <form onSubmit={handlePasswordSubmit} className="space-y-6 max-w-md">
+        <form inert={loading} aria-busy={loading} onSubmit={handlePasswordSubmit} className="space-y-6 max-w-md">
           {user?.mustChangePassword && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs">
               <div className="font-bold mb-1">⚠️ คำแนะนำด้านความปลอดภัย (Audit Trail Compliance)</div>

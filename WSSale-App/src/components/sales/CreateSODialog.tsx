@@ -919,7 +919,7 @@ export function CreateSODialog({
 
   return (
     <>
-      <div className="flex-1 flex flex-col h-full bg-white relative w-full overflow-hidden max-w-full" data-testid="create-so-dialog">
+      <div inert={submitting} aria-busy={submitting} className="flex-1 flex flex-col h-full bg-white relative w-full overflow-hidden max-w-full" data-testid="create-so-dialog">
         <div className="flex items-center justify-between px-4 py-2 sm:px-6 sm:py-3 border-b border-gray-100 bg-[#0C447C] text-white shrink-0">
           <div>
             <h2 className="text-base sm:text-xl font-bold flex items-center gap-2"><Truck size={20} className="sm:w-6 sm:h-6"/> {(activeTrip && !editSoId) ? 'เพิ่มบิลในทริป' : 'บิล'}</h2>

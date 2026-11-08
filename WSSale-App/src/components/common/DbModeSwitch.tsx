@@ -1,6 +1,7 @@
 import { Database } from 'lucide-react';
 import { getDbMode, setDbMode, DB_MODE_META, type DbMode } from '../../store/db-mode';
 import { clearToken } from '../../services/api';
+import { confirmLeaveEditors } from '../../utils/unsaved-changes';
 
 const ORDER: DbMode[] = import.meta.env?.PROD ? ['server'] : ['server', 'local', 'remote', 'remote_b'];
 
@@ -12,6 +13,7 @@ export function DbModeSwitch({ collapsed }: { collapsed?: boolean }) {
 
   function switchTo(m: DbMode) {
     if (m === cur) return;
+    if (!confirmLeaveEditors()) return;
     clearToken();
     setDbMode(m);
     window.location.reload();

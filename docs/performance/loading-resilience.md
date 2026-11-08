@@ -22,13 +22,17 @@ native writers, database targets, or database schemas.
 
 - A delayed, nonblocking activity badge replaces the overlay. Fast requests do not flash it;
   long requests explain that the user should wait for the result before submitting again.
+- Sales, quotation, user, profile and weighing editors pause their own controls during a save;
+  background reads remain nonblocking. Failed saves retain the inputs for review.
 - Sales initialization follows opening/changing the document, not trip refreshes. Late initial
   responses are discarded after the editor is disposed.
 - Warehouse editors remain mounted during refresh, including when their list becomes empty.
-- Sales, quotations, user edits and weighing/loading edits register unsaved changes for portal
+- Sales, quotations, user/profile edits and weighing/loading edits register unsaved changes for portal
   navigation, logout, Access As, database switching and browser unload. These guards are not
   durable draft storage, and browser crashes or a genuinely revoked session can still lose work.
   No password, reset output or business draft is copied to browser storage by the guards.
+- A delayed initial profile read cannot overwrite details already being edited, and responses
+  from a disposed profile or previous login are ignored.
 - Identical concurrent GETs coalesce within the same token, database header, options and write
   generation. Results are independently cloned. Writes never coalesce or retry automatically.
   GET timeout is 60 seconds and mutation timeout is 120 seconds; a mutation timeout explicitly

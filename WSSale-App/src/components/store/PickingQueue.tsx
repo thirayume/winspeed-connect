@@ -287,7 +287,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
       {/* Weigh Out Modal */}
       {weighOrder && (
         <div data-testid="weigh-out-modal" className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
+          <div inert={busy !== null} aria-busy={busy !== null} className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
             <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-blue-50/50 shrink-0">
               <h3 className="font-bold text-[#0C447C] flex items-center gap-2">
                 <Scale size={18} /> ระบุน้ำหนักชั่งออก & ตรวจสอบ Error เครื่องชั่ง
