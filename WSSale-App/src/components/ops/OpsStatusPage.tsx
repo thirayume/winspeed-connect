@@ -8,6 +8,7 @@ function fmtUptime(sec: number) {
   return [d && `${d}d`, h && `${h}h`, `${m}m`].filter(Boolean).join(' ');
 }
 function dbBadge(s: string) {
+  if (s === 'winspeed:WGHD') return <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700">WINSpeed · WGHD</span>;
   if (s === 'up') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700"><CheckCircle size={12} />up</span>;
   if (s === 'not-configured') return <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">not configured</span>;
   return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-600"><XCircle size={12} />down</span>;

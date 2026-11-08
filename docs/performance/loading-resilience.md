@@ -33,6 +33,8 @@ native writers, database targets, or database schemas.
   No password, reset output or business draft is copied to browser storage by the guards.
 - A delayed initial profile read cannot overwrite details already being edited, and responses
   from a disposed profile or previous login are ignored.
+- Quotation expiry-only edits also register as unsaved changes. Ops labels the WinSpeed
+  weighing source explicitly; this is not proof of a connected physical scale.
 - Identical concurrent GETs coalesce within the same token, database header, options and write
   generation. Results are independently cloned. Writes never coalesce or retry automatically.
   GET timeout is 60 seconds and mutation timeout is 120 seconds; a mutation timeout explicitly

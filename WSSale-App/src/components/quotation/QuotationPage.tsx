@@ -443,12 +443,16 @@ export function QuotationPage() {
 
 type DraftLine = { tempId: string; goodId: string; goodCode: string; goodName: string; qtyTon: number | string; pricePerTon: number | string; netPricePerTon: number; isGiveaway?: boolean };
 
-function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [custs, setCusts]   = useState<EMCust[]>([]);
   const [goods, setGoods]   = useState<EMGood[]>([]);
   const [prices, setPrices] = useState<CurrentPrice[]>([]);
   const [custId, setCustId] = useState('');
-  const [validUntil, setValidUntil] = useState('');
+  const [initialValidUntil] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() + 7);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  });
+  const [validUntil, setValidUntil] = useState(initialValidUntil);
   const [lines, setLines]   = useState<DraftLine[]>([]);
   const [busy, setBusy]     = useState(false);
   const [err, setErr]       = useState('');
@@ -463,7 +467,7 @@ function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; onDone: (
   const [salesUsers, setSalesUsers]     = useState<AdminUser[]>([]);
   const userRole = useAuthStore(s => s.user?.role);
   const [custSearchLoading, setCustSearchLoading] = useState(false);
-  const dirty = Boolean(custId || lines.length || salesUserId);
+  const dirty = Boolean(custId || lines.length || salesUserId || validUntil !== initialValidUntil);
   const releaseDraftGuard = useUnsavedChanges(dirty);
   const closeEditor = () => { if (!busy && (!dirty || window.confirm(unsavedMessage))) onClose(); };
 
@@ -492,11 +496,6 @@ function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; onDone: (
     fetchPrices({ custId }).then(setPrices).catch(()=>{});
   }, [custId]);
   
-  useEffect(() => {
-    const d = new Date(); d.setDate(d.getDate() + 7);
-    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-    setValidUntil(local.toISOString().slice(0, 10));
-  }, []);
 
   // Filter & Pagination Logic
   const categories = ['ทั้งหมด', ...Array.from(new Set(goods.map(g => g.GoodGroupName || 'อื่นๆ'))).filter(c => c !== 'ของแถม').sort(), 'ของแถม'];
@@ -560,7 +559,7 @@ function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; onDone: (
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-lg font-bold" style={{ color: '#0C447C' }}>สร้างใบเสนอราคา</h2>
-          <button onClick={closeEditor} className="text-gray-400 hover:text-gray-600 rounded-full p-1.5 hover:bg-gray-100">
+          <button onClick={closeEditor} aria-label="ปิดใบเสนอราคา" className="text-gray-400 hover:text-gray-600 rounded-full p-1.5 hover:bg-gray-100">
             <X size={18} />
           </button>
         </div>

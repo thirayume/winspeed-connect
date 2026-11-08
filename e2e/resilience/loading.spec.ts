@@ -133,6 +133,16 @@ test('hidden-page refreshes wait until resume and disposal cancels pending work'
     q.request();q.stop();await new Promise(r=>setTimeout(r,40));return{hidden,resumed,disposed:calls};
   })).toEqual({hidden:0,resumed:1,disposed:1});
 });
+
+test('changing only the quotation expiry date still warns before closing',async({page})=>{
+  await page.getByRole('button',{name:'Quotation',exact:true}).click();
+  await page.getByRole('button',{name:'+7 วัน',exact:true}).click();
+  let warned=false;
+  page.on('dialog',async dialog=>{warned=true;await dialog.dismiss();});
+  await page.getByRole('button',{name:'ปิดใบเสนอราคา',exact:true}).click();
+  expect(warned).toBe(true);
+  await expect(page.getByRole('button',{name:'+15 วัน',exact:true})).toBeVisible();
+});
 test('read sharing is scoped to token and timed-out writes are never retried',async({page})=>{
   let reads=0,writes=0;
   await page.route('**/api/scoped',async route=>{
