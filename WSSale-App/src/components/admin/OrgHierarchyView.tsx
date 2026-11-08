@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
-  Network, Search, RefreshCw, AlertTriangle, Check, Users, ShieldCheck, Download,
-  ChevronRight, ChevronDown, UserPlus, UserMinus, Building2, Briefcase, UserCheck, AlertCircle, X
+  Network, Search, RefreshCw, AlertTriangle, Check, Users, Download,
+  ChevronDown, ChevronUp, UserPlus, UserMinus, Building2, UserCheck,
+  AlertCircle, X, ZoomIn, ZoomOut, Maximize2, Layers, Filter
 } from 'lucide-react';
 import {
   listUsers, listOrgPositions, updateUser, fetchOrgHints,
@@ -9,21 +10,48 @@ import {
 } from '../../services/api';
 import type { AdminUser } from '../../types';
 
-const NAVY = '#0C447C';
 const UNASSIGNED = '__none__';
 
-const num = (v: unknown) => Number(v ?? 0).toLocaleString('th-TH');
-
 /** สีประจำสายงาน ให้กวาดตาแล้วเห็นกลุ่มได้เร็ว */
-const UNIT_STYLE: Record<string, { bg: string; text: string; border: string; pill: string }> = {
-  'บริหาร': { bg: 'bg-purple-50/70', text: 'text-purple-900', border: 'border-purple-200', pill: 'bg-purple-100 text-purple-800' },
-  'บัญชี-การเงิน': { bg: 'bg-emerald-50/70', text: 'text-emerald-900', border: 'border-emerald-200', pill: 'bg-emerald-100 text-emerald-800' },
-  'โรงงาน': { bg: 'bg-amber-50/70', text: 'text-amber-900', border: 'border-amber-200', pill: 'bg-amber-100 text-amber-800' },
-  'ขาย-การตลาด': { bg: 'bg-sky-50/70', text: 'text-sky-900', border: 'border-sky-200', pill: 'bg-sky-100 text-sky-800' },
+const UNIT_STYLE: Record<string, { bg: string; text: string; border: string; pill: string; bar: string }> = {
+  'บริหาร': {
+    bg: 'bg-purple-50/70',
+    text: 'text-purple-900',
+    border: 'border-purple-200',
+    pill: 'bg-purple-100 text-purple-800 border-purple-300',
+    bar: 'bg-purple-600'
+  },
+  'บัญชี-การเงิน': {
+    bg: 'bg-emerald-50/70',
+    text: 'text-emerald-900',
+    border: 'border-emerald-200',
+    pill: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+    bar: 'bg-emerald-600'
+  },
+  'โรงงาน': {
+    bg: 'bg-amber-50/70',
+    text: 'text-amber-900',
+    border: 'border-amber-200',
+    pill: 'bg-amber-100 text-amber-800 border-amber-300',
+    bar: 'bg-amber-600'
+  },
+  'ขาย-การตลาด': {
+    bg: 'bg-sky-50/70',
+    text: 'text-sky-900',
+    border: 'border-sky-200',
+    pill: 'bg-sky-100 text-sky-800 border-sky-300',
+    bar: 'bg-[#0C447C]'
+  },
 };
 
 const getUnitTheme = (u?: string | null) =>
-  (u && UNIT_STYLE[u]) || { bg: 'bg-slate-50', text: 'text-slate-900', border: 'border-slate-200', pill: 'bg-slate-100 text-slate-700' };
+  (u && UNIT_STYLE[u]) || {
+    bg: 'bg-slate-50',
+    text: 'text-slate-900',
+    border: 'border-slate-200',
+    pill: 'bg-slate-100 text-slate-700 border-slate-300',
+    bar: 'bg-slate-500'
+  };
 
 function getUserBaseRoles(u: AdminUser): string[] {
   if (Array.isArray(u.Roles) && u.Roles.length > 0) return u.Roles;
@@ -43,24 +71,27 @@ interface TreePositionNode {
   activeOccupants: AdminUser[];
   inactiveOccupants: AdminUser[];
   isCycle?: boolean;
+  totalDescendants: number;
 }
 
 export function OrgHierarchyView() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [positions, setPositions] = useState<OrgPosition[]>([]);
-  const [hints, setHints] = useState<Map<number, OrgHintUser>>(new Map());
+  const [, setHints] = useState<Map<number, OrgHintUser>>(new Map());
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // View state: 'tree' | 'matrix'
-  const [viewMode, setViewMode] = useState<'tree' | 'matrix'>('tree');
+  // View state: 'diagram' (tree diagram) | 'matrix' (tabular)
+  const [viewMode, setViewMode] = useState<'diagram' | 'matrix'>('diagram');
   const [searchQuery, setSearchQuery] = useState('');
   const [unitFilter, setUnitFilter] = useState('');
   const [onlyUnassigned, setOnlyUnassigned] = useState(false);
   const [onlyActive, setOnlyActive] = useState(true);
 
-  // Tree expansion state
+  // Diagram zoom & expansion state
+  const [zoom, setZoom] = useState(1);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   // Inline saving state for matrix
   const [savingId, setSavingId] = useState<number | null>(null);
@@ -83,7 +114,7 @@ export function OrgHierarchyView() {
       setPositions(p);
       setHints(new Map((h.data || []).map(x => [Number(x.id), x])));
 
-      // Default expand Tier 1 and Tier 2 nodes
+      // Default expand Tier 1 and Tier 2 nodes for comfortable initial view
       const initialExpanded = new Set<string>();
       p.filter(pos => pos.Tier <= 2 || !pos.ReportsTo).forEach(pos => initialExpanded.add(pos.PositionCode));
       setExpandedNodes(prev => prev.size > 0 ? prev : initialExpanded);
@@ -145,7 +176,8 @@ export function OrgHierarchyView() {
           occupants,
           activeOccupants,
           inactiveOccupants,
-          isCycle: true
+          isCycle: true,
+          totalDescendants: 0,
         };
       }
 
@@ -156,13 +188,15 @@ export function OrgHierarchyView() {
       childPositions.sort((a, b) => a.Tier - b.Tier || a.PositionName.localeCompare(b.PositionName, 'th'));
 
       const children = childPositions.map(c => buildNode(c, nextPath));
+      const totalDescendants = children.reduce((sum, c) => sum + 1 + c.totalDescendants, 0);
 
       return {
         position: pos,
         children,
         occupants,
         activeOccupants,
-        inactiveOccupants
+        inactiveOccupants,
+        totalDescendants,
       };
     }
 
@@ -188,7 +222,30 @@ export function OrgHierarchyView() {
     setExpandedNodes(new Set());
   };
 
+  const expandExecutiveTiers = () => {
+    const execSet = new Set<string>();
+    positions.filter(p => p.Tier <= 2 || !p.ReportsTo).forEach(p => execSet.add(p.PositionCode));
+    setExpandedNodes(execSet);
+  };
+
   // Auto-expand ancestors when search matches
+  const matchCount = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return 0;
+    let count = 0;
+    for (const p of positions) {
+      const occupants = usersByPosition.get(p.PositionCode) || [];
+      const matchesPosition = p.PositionName.toLowerCase().includes(q) || p.PositionCode.toLowerCase().includes(q);
+      const matchesOccupant = occupants.some(u =>
+        u.DisplayName.toLowerCase().includes(q) ||
+        u.Username.toLowerCase().includes(q) ||
+        (u.EmpCode && u.EmpCode.toLowerCase().includes(q))
+      );
+      if (matchesPosition || matchesOccupant) count++;
+    }
+    return count;
+  }, [searchQuery, positions, usersByPosition]);
+
   useEffect(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return;
@@ -203,7 +260,6 @@ export function OrgHierarchyView() {
         (u.EmpCode && u.EmpCode.toLowerCase().includes(q))
       );
       if (matchesPosition || matchesOccupant) {
-        // Add ancestors
         let curr: OrgPosition | undefined = p;
         while (curr && curr.ReportsTo && positionsByCode.has(curr.ReportsTo)) {
           matchedCodes.add(curr.ReportsTo);
@@ -336,9 +392,16 @@ export function OrgHierarchyView() {
     URL.revokeObjectURL(url);
   }
 
-  // Tree Card Render Helper
-  const renderTreeNode = (node: TreePositionNode, depth: number = 0) => {
-    const { position: p, children, occupants, activeOccupants, inactiveOccupants, isCycle } = node;
+  // Zoom handlers
+  const handleZoomIn = () => setZoom(z => Math.min(1.6, Number((z + 0.1).toFixed(1))));
+  const handleZoomOut = () => setZoom(z => Math.max(0.4, Number((z - 0.1).toFixed(1))));
+  const handleResetZoom = () => setZoom(1);
+
+  // ─────────────────────────────────────────────────────────────
+  // INTERNATIONAL STANDARD ORG CHART NODE CARD
+  // ─────────────────────────────────────────────────────────────
+  const renderDiagramCard = (node: TreePositionNode) => {
+    const { position: p, children, occupants, isCycle, totalDescendants } = node;
     const isExpanded = expandedNodes.has(p.PositionCode);
     const hasChildren = children.length > 0;
     const theme = getUnitTheme(p.OrgUnit);
@@ -356,154 +419,202 @@ export function OrgHierarchyView() {
       )
     );
 
-    // Mismatched occupants in this node
+    const isFilteredUnit = !unitFilter || p.OrgUnit === unitFilter;
     const mismatchedOccupants = occupants.filter(isDefaultRoleMismatched);
 
     return (
-      <div key={p.PositionCode} className="relative flex flex-col">
-        {/* Node Card */}
-        <div
-          className={`group rounded-xl border transition-all duration-150 p-3.5 mb-2.5 ${
-            isSearchMatch ? 'ring-2 ring-amber-400 bg-amber-50/40 border-amber-300' : 'bg-white'
-          } ${theme.border} hover:shadow-md`}
-          style={{ marginLeft: depth > 0 ? `${Math.min(depth * 20, 160)}px` : '0px' }}
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            {/* Position info & Collapse button */}
-            <div className="flex items-start gap-2.5 min-w-0">
-              {hasChildren ? (
-                <button
-                  type="button"
-                  onClick={() => toggleNode(p.PositionCode)}
-                  className="mt-0.5 p-1 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
-                  title={isExpanded ? 'ยุบสายงาน' : 'ขยายสายงาน'}
-                >
-                  {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                </button>
-              ) : (
-                <div className="w-6 h-6 flex items-center justify-center shrink-0 text-slate-300 mt-0.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                </div>
+      <div
+        id={`org-node-${p.PositionCode}`}
+        className={`w-[270px] shrink-0 bg-white rounded-2xl border transition-all duration-200 shadow-xs relative flex flex-col ${
+          isSearchMatch
+            ? 'ring-4 ring-amber-400 border-amber-500 shadow-xl bg-amber-50/50 scale-[1.02] z-20'
+            : isFilteredUnit
+            ? `${theme.border} hover:shadow-md hover:border-slate-400 z-10`
+            : 'border-slate-200 opacity-40 hover:opacity-100 z-0'
+        }`}
+      >
+        {/* Unit Top Indicator Bar */}
+        <div className={`h-1.5 w-full rounded-t-2xl ${theme.bar}`} />
+
+        {/* Card Header */}
+        <div className="p-3.5 pb-2.5">
+          <div className="flex items-start justify-between gap-1.5 mb-1.5">
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${theme.pill}`}>
+              {p.OrgUnit}
+            </span>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                Tier {p.Tier}
+              </span>
+              {p.CanApprove && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200 flex items-center gap-0.5" title="มีสิทธิ์อนุมัติเอกสาร">
+                  <UserCheck size={11} /> อนุมัติ
+                </span>
               )}
-
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-base font-bold text-slate-900 leading-snug">
-                    {p.PositionName}
-                  </span>
-                  <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                    {p.PositionCode}
-                  </span>
-                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded border ${theme.pill} ${theme.border}`}>
-                    {p.OrgUnit}
-                  </span>
-                  <span className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
-                    Tier {p.Tier}
-                  </span>
-                  {p.CanApprove && (
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
-                      <UserCheck size={11} /> มีสิทธิ์อนุมัติ
-                    </span>
-                  )}
-                  {isCycle && (
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-red-100 text-red-800 border border-red-300">
-                      ⚠️ วนซ้ำ (Cycle)
-                    </span>
-                  )}
-                </div>
-
-                {/* Sub details: default role & reports to */}
-                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-1">
-                  {p.ReportsTo && (
-                    <span>
-                      สายบังคับบัญชา: <strong className="text-slate-700 font-mono">{p.ReportsTo}</strong>
-                      {p.ReportsToName ? ` (${p.ReportsToName})` : ''}
-                    </span>
-                  )}
-                  {p.DefaultRole && (
-                    <span>
-                      บทบาทแนะนำ: <span className="font-semibold text-slate-700">{p.DefaultRole}</span>
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Manage occupants action button */}
-            <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
-              <button
-                type="button"
-                onClick={() => setAssignModal({ isOpen: true, position: p })}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors"
-              >
-                <UserPlus size={14} />
-                <span>มอบหมายคน ({occupants.length})</span>
-              </button>
             </div>
           </div>
 
-          {/* Occupants list */}
-          <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-2">
-            {occupants.length === 0 ? (
-              <div className="flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200">
-                <AlertTriangle size={13} className="text-amber-600" />
-                <span>⚠️ ตำแหน่งว่าง (0 คน)</span>
-              </div>
-            ) : (
-              <>
-                <span className="text-xs text-slate-400 font-medium mr-1">ผู้ครองตำแหน่ง:</span>
-                {occupants.map(u => {
-                  const isMismatched = isDefaultRoleMismatched(u);
-                  return (
-                    <div
-                      key={u.Id}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border ${
-                        !u.IsActive
-                          ? 'bg-rose-50 text-rose-700 border-rose-200'
-                          : isMismatched
-                          ? 'bg-amber-50 text-amber-900 border-amber-300'
-                          : 'bg-slate-50 text-slate-800 border-slate-200'
-                      }`}
-                    >
-                      <span className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-700 shrink-0">
-                        {u.DisplayName.slice(0, 1)}
-                      </span>
-                      <span className="font-semibold">{u.DisplayName}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">@{u.Username}</span>
-                      {u.EmpCode && (
-                        <span className="text-[10px] text-slate-400 font-mono">[{u.EmpCode}]</span>
-                      )}
-                      {!u.IsActive && (
-                        <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-rose-200 text-rose-800">
-                          ปิดใช้งาน
-                        </span>
-                      )}
-                      {isMismatched && (
-                        <span
-                          className="text-[9px] font-bold px-1 py-0.2 rounded bg-amber-200 text-amber-900 cursor-help"
-                          title={`บทบาท (${getUserBaseRoles(u).join(', ')}) ไม่ตรงกับบทบาทแนะนำของตำแหน่ง (${p.DefaultRole})`}
-                        >
-                          บทบาทไม่ตรง
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </>
-            )}
+          <h3 className="text-sm font-black text-slate-900 leading-snug line-clamp-2 min-h-[2.5rem]">
+            {p.PositionName}
+          </h3>
 
-            {mismatchedOccupants.length > 0 && (
-              <span className="text-[11px] text-amber-700 ml-auto flex items-center gap-1">
-                <AlertCircle size={12} /> บทบาทไม่ตรง {mismatchedOccupants.length} คน
+          <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1 font-mono">
+            <span className="bg-slate-100 px-1.5 py-0.5 rounded font-bold text-slate-700">
+              {p.PositionCode}
+            </span>
+            {p.DefaultRole && (
+              <span className="text-slate-500 font-sans text-[10px]">
+                Role: <strong className="text-slate-800">{p.DefaultRole}</strong>
               </span>
             )}
           </div>
         </div>
 
-        {/* Child branches */}
+        {/* Occupants Container */}
+        <div className="px-3.5 py-2 border-t border-slate-100 bg-slate-50/50 flex-1 flex flex-col justify-center">
+          {occupants.length === 0 ? (
+            <div className="py-2.5 px-3 rounded-xl border border-dashed border-amber-300 bg-amber-50/70 text-center">
+              <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-amber-900">
+                <AlertTriangle size={13} className="text-amber-600" />
+                <span>ตำแหน่งว่าง (0 คน)</span>
+              </div>
+              <p className="text-[10px] text-amber-700 mt-0.5">ยังไม่มีผู้ครองตำแหน่งนี้</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium px-0.5">
+                <span>ผู้ครองตำแหน่ง ({occupants.length}):</span>
+                {mismatchedOccupants.length > 0 && (
+                  <span className="text-amber-700 font-bold flex items-center gap-0.5">
+                    <AlertCircle size={10} /> บทบาทไม่ตรง
+                  </span>
+                )}
+              </div>
+              {occupants.map(u => {
+                const isMismatched = isDefaultRoleMismatched(u);
+                return (
+                  <div
+                    key={u.Id}
+                    className={`flex items-center justify-between p-1.5 rounded-lg border text-xs ${
+                      !u.IsActive
+                        ? 'bg-rose-50 text-rose-800 border-rose-200'
+                        : isMismatched
+                        ? 'bg-amber-50 text-amber-900 border-amber-300'
+                        : 'bg-white text-slate-800 border-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="w-5 h-5 rounded-full bg-[#0C447C] text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                        {u.DisplayName.slice(0, 1)}
+                      </div>
+                      <div className="min-w-0 truncate">
+                        <span className="font-bold text-[11px] block truncate">{u.DisplayName}</span>
+                        <span className="text-[9px] text-slate-400 font-mono">@{u.Username}</span>
+                      </div>
+                    </div>
+                    {u.EmpCode && (
+                      <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
+                        {u.EmpCode}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Card Footer Actions */}
+        <div className="p-2 border-t border-slate-100 bg-white rounded-b-2xl flex items-center justify-between gap-1">
+          <button
+            type="button"
+            onClick={() => setAssignModal({ isOpen: true, position: p })}
+            className="flex-1 py-1 px-2 rounded-lg text-xs font-bold text-[#0C447C] hover:bg-blue-50 border border-blue-200 flex items-center justify-center gap-1 transition-colors"
+          >
+            <UserPlus size={13} />
+            <span>มอบหมายคน</span>
+          </button>
+
+          {isCycle && (
+            <span className="text-[10px] font-bold text-red-600 px-1 py-0.5 bg-red-50 rounded">
+              Cycle
+            </span>
+          )}
+        </div>
+
+        {/* Expand / Collapse Button Attached to Bottom */}
+        {hasChildren && (
+          <button
+            type="button"
+            onClick={() => toggleNode(p.PositionCode)}
+            className={`absolute -bottom-3.5 left-1/2 -translate-x-1/2 z-30 px-2.5 py-0.5 rounded-full text-[11px] font-black shadow-xs border transition-all flex items-center gap-1 ${
+              isExpanded
+                ? 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                : 'bg-[#0C447C] text-white border-[#0a3866] hover:bg-[#0a3866]'
+            }`}
+            title={isExpanded ? 'ยุบสายงานใต้ตำแหน่งนี้' : `ขยาย ${children.length} ตำแหน่งย่อย`}
+          >
+            {isExpanded ? (
+              <>
+                <ChevronUp size={12} />
+                <span>ยุบ</span>
+              </>
+            ) : (
+              <>
+                <ChevronDown size={12} />
+                <span>+ {children.length} ({totalDescendants})</span>
+              </>
+            )}
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // RECURSIVE ORTHOGONAL TREE BRANCH RENDERER
+  // ─────────────────────────────────────────────────────────────
+  const renderDiagramSubtree = (node: TreePositionNode) => {
+    const { position: p, children } = node;
+    const isExpanded = expandedNodes.has(p.PositionCode);
+    const hasChildren = children.length > 0;
+
+    return (
+      <div key={p.PositionCode} className="flex flex-col items-center">
+        {/* Node Card */}
+        {renderDiagramCard(node)}
+
+        {/* Children Branch Container */}
         {hasChildren && isExpanded && (
-          <div className="flex flex-col">
-            {children.map(childNode => renderTreeNode(childNode, depth + 1))}
+          <div className="flex flex-col items-center w-full">
+            {/* Vertical stem descending from parent card */}
+            <div className="w-0.5 h-8 bg-slate-300 shrink-0" />
+
+            {/* Horizontal Bus Bar & Children Nodes */}
+            <div className="flex justify-center items-start relative pt-8">
+              {/* Horizontal Crossbar line across multiple children */}
+              {children.length > 1 && (
+                <div
+                  className="absolute top-0 h-0.5 bg-slate-300"
+                  style={{
+                    left: `calc(${100 / (children.length * 2)}%)`,
+                    right: `calc(${100 / (children.length * 2)}%)`,
+                  }}
+                />
+              )}
+
+              {/* Child Subtrees */}
+              {children.map(child => (
+                <div
+                  key={child.position.PositionCode}
+                  className="flex flex-col items-center px-3 sm:px-4 relative shrink-0"
+                >
+                  {/* Vertical drop line from bus bar into child card */}
+                  <div className="absolute -top-8 w-0.5 h-8 bg-slate-300" />
+                  {renderDiagramSubtree(child)}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -511,68 +622,72 @@ export function OrgHierarchyView() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-slate-50 overflow-hidden">
-      {/* Top Controls Bar */}
-      <div className="px-4 py-3 sm:px-6 sm:py-3.5 bg-white border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0 shadow-xs">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+    <div className="h-full w-full flex flex-col overflow-hidden bg-[#F1EFE8]">
+      {/* ── UNIFIED TOOLBAR & CONTROLS ───────────────────────── */}
+      <div className="bg-white border-b border-slate-200 px-4 py-3 sm:px-6 sm:py-3.5 shadow-xs shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        {/* Left: View Mode Switcher & Summary Chips */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold">
             <button
               type="button"
-              onClick={() => setViewMode('tree')}
+              onClick={() => setViewMode('diagram')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
-                viewMode === 'tree'
-                  ? 'bg-white text-[#0C447C] shadow-xs font-bold'
+                viewMode === 'diagram'
+                  ? 'bg-white text-[#0C447C] shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <Network size={15} />
-              <span>ผังโครงสร้าง (Tree View)</span>
+              <span>ผังองค์กร (Diagram)</span>
             </button>
             <button
               type="button"
               onClick={() => setViewMode('matrix')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
                 viewMode === 'matrix'
-                  ? 'bg-white text-[#0C447C] shadow-xs font-bold'
+                  ? 'bg-white text-[#0C447C] shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <Briefcase size={15} />
-              <span>ตารางผูกตำแหน่ง (Matrix View)</span>
+              <Layers size={15} />
+              <span>ตารางรายชื่อ (Matrix)</span>
             </button>
           </div>
 
-          {/* Quick stats pills */}
-          <div className="hidden lg:flex items-center gap-2 text-xs">
-            <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-medium">
-              ตำแหน่งทั้งหมด: <strong className="text-slate-900">{positions.length}</strong>
+          <div className="h-5 w-px bg-slate-200 hidden sm:block" />
+
+          {/* Quick Metrics */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="px-2.5 py-1 rounded-full bg-blue-50 text-[#0C447C] border border-blue-200 font-bold">
+              ตำแหน่งทั้งหมด: {positions.length}
             </span>
-            <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-medium">
-              ผูกแล้ว: <strong>{assignedActiveCount}</strong>/{activeUsers.length} คน
+            <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
+              ผูกแล้ว: {assignedActiveCount}/{activeUsers.length} คน
             </span>
             {vacantPositionsCount > 0 && (
-              <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-medium">
-                ตำแหน่งว่าง: <strong>{vacantPositionsCount}</strong>
+              <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-bold">
+                ตำแหน่งว่าง: {vacantPositionsCount}
               </span>
             )}
             {mismatchedUsersCount > 0 && (
-              <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-800 border border-rose-200 font-medium">
-                บทบาทไม่ตรง: <strong>{mismatchedUsersCount}</strong> คน
+              <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-800 border border-rose-200 font-bold">
+                บทบาทไม่ตรง: {mismatchedUsersCount}
               </span>
             )}
           </div>
         </div>
 
-        {/* Search & Actions */}
+        {/* Right: Search, Zoom & Action Controls */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[200px] sm:min-w-[260px]">
+          {/* Search bar */}
+          <div className="relative min-w-[220px] sm:min-w-[260px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="ค้นหาชื่อตำแหน่ง, รหัส, ชื่อบุคคล..."
-              className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:border-[#0C447C] focus:bg-white"
+              placeholder="ค้นหาตำแหน่ง, รหัส, ชื่อบุคคล..."
+              className="w-full pl-9 pr-7 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:border-[#0C447C] focus:bg-white"
             />
             {searchQuery && (
               <button
@@ -585,30 +700,78 @@ export function OrgHierarchyView() {
             )}
           </div>
 
-          {viewMode === 'tree' ? (
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={expandAll}
-                className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
-              >
-                + ขยายทั้งหมด
-              </button>
-              <button
-                type="button"
-                onClick={collapseAll}
-                className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
-              >
-                - ยุบทั้งหมด
-              </button>
-            </div>
+          {searchQuery && matchCount > 0 && (
+            <span className="text-[11px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-1 rounded-lg">
+              พบ {matchCount} รายการ
+            </span>
+          )}
+
+          {viewMode === 'diagram' ? (
+            <>
+              {/* Zoom Controls */}
+              <div className="flex items-center bg-slate-100 border border-slate-200 rounded-xl p-0.5 text-xs">
+                <button
+                  type="button"
+                  onClick={handleZoomOut}
+                  className="p-1.5 rounded-lg hover:bg-white text-slate-700 transition-colors"
+                  title="ย่อขนาด (-)"
+                >
+                  <ZoomOut size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetZoom}
+                  className="px-2 py-1 rounded-lg hover:bg-white font-mono text-[11px] font-bold text-slate-800"
+                  title="รีเซ็ตขนาด 100%"
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={handleZoomIn}
+                  className="p-1.5 rounded-lg hover:bg-white text-slate-700 transition-colors"
+                  title="ขยายขนาด (+)"
+                >
+                  <ZoomIn size={15} />
+                </button>
+              </div>
+
+              {/* Tree Expansion Shortcuts */}
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={expandAll}
+                  className="px-2.5 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  title="ขยายทุกกิ่งตำแหน่ง"
+                >
+                  ขยายทั้งหมด
+                </button>
+                <button
+                  type="button"
+                  onClick={expandExecutiveTiers}
+                  className="px-2.5 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  title="ขยายเฉพาะระดับผู้บริหาร Tier 1-2"
+                >
+                  ผู้บริหาร (Tier 1-2)
+                </button>
+                <button
+                  type="button"
+                  onClick={collapseAll}
+                  className="px-2.5 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  title="ยุบกิ่งทั้งหมดเหลือเฉพาะราก"
+                >
+                  ยุบทั้งหมด
+                </button>
+              </div>
+            </>
           ) : (
             <button
               type="button"
               onClick={exportCsv}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 shadow-xs"
             >
-              <Download size={13} /> Export CSV
+              <Download size={13} />
+              <span>ส่งออก CSV</span>
             </button>
           )}
 
@@ -616,7 +779,7 @@ export function OrgHierarchyView() {
             type="button"
             onClick={load}
             disabled={loading}
-            className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            className="p-1.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50"
             title="รีเฟรชข้อมูล"
           >
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
@@ -636,61 +799,133 @@ export function OrgHierarchyView() {
         </div>
       )}
 
-      {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-        {viewMode === 'tree' ? (
-          /* Tree View */
-          <div className="max-w-5xl mx-auto space-y-4">
-            {/* Virtual Company Root Banner */}
-            <div className="rounded-2xl border-2 border-[#0C447C] bg-linear-to-r from-[#0C447C] to-[#1E62A6] text-white p-4 sm:p-5 shadow-sm">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
-                    <Building2 size={24} className="text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-lg sm:text-xl font-black tracking-wide">
-                      บริษัท เวิลด์เฟอร์ติไลเซอร์ จำกัด (WorldFert)
-                    </h2>
-                    <p className="text-xs text-blue-100 mt-0.5">
-                      โครงสร้างองค์กร 2568 · แสดงตามสายบังคับบัญชาจริง (ReportsTo)
-                    </p>
-                  </div>
-                </div>
-                <div className="hidden sm:block text-right text-xs text-blue-100">
-                  <div>ตำแหน่งราก: <strong>{rootNodes.length}</strong> สายงาน</div>
-                  <div>พนักงานผูกตำแหน่งแล้ว: <strong>{assignedActiveCount}</strong>/{activeUsers.length} คน</div>
-                </div>
-              </div>
+      {/* ── MAIN CONTENT VIEW (FULL-WIDTH) ─────────────────── */}
+      <div className="flex-1 overflow-hidden flex flex-col p-3 sm:p-5">
+        {viewMode === 'diagram' ? (
+          /* ── DIAGRAM VIEW: INTERNATIONAL STANDARD ORG CHART ── */
+          <div
+            ref={canvasRef}
+            className="w-full flex-1 overflow-auto bg-[#F8F9FA] rounded-2xl border border-slate-200 p-6 sm:p-10 relative shadow-inner"
+          >
+            {/* Filter Pills Float Bar */}
+            <div className="sticky top-0 left-0 z-30 mb-6 flex flex-wrap items-center gap-2 bg-white/90 backdrop-blur-xs p-2 rounded-xl border border-slate-200 shadow-xs max-w-fit">
+              <span className="text-xs font-bold text-slate-600 flex items-center gap-1 pl-1">
+                <Filter size={13} /> สายงาน:
+              </span>
+              <button
+                type="button"
+                onClick={() => setUnitFilter('')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                  !unitFilter ? 'bg-[#0C447C] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                ทั้งหมด ({positions.length})
+              </button>
+              {units.map(u => {
+                const count = positions.filter(p => p.OrgUnit === u).length;
+                return (
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => setUnitFilter(u === unitFilter ? '' : u)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                      unitFilter === u
+                        ? `${getUnitTheme(u).pill} shadow-xs font-black`
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {u} ({count})
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Tree Nodes List */}
             {loading && positions.length === 0 ? (
-              <div className="py-20 text-center text-slate-400">
-                <RefreshCw size={24} className="animate-spin mx-auto mb-2 text-[#0C447C]" />
-                <p className="text-sm">กำลังโหลดโครงสร้างผังองค์กร...</p>
+              <div className="py-24 text-center text-slate-400">
+                <RefreshCw size={28} className="animate-spin mx-auto mb-2 text-[#0C447C]" />
+                <p className="text-sm font-semibold">กำลังโหลดโครงสร้างผังองค์กรสากล...</p>
               </div>
             ) : rootNodes.length === 0 ? (
-              <div className="py-16 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
-                <Network size={32} className="mx-auto mb-2 text-slate-300" />
-                <p className="text-sm font-semibold">ไม่พบข้อมูลตำแหน่งในผังองค์กร</p>
+              <div className="py-20 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
+                <Network size={36} className="mx-auto mb-2 text-slate-300" />
+                <p className="text-base font-bold text-slate-700">ไม่พบข้อมูลตำแหน่งในผังองค์กร</p>
               </div>
             ) : (
-              <div className="space-y-1">
-                {rootNodes.map(rootNode => renderTreeNode(rootNode, 0))}
+              <div
+                style={{
+                  transform: `scale(${zoom})`,
+                  transformOrigin: 'top center',
+                  transition: 'transform 0.15s ease-out'
+                }}
+                className="inline-block min-w-full pb-20 text-center"
+              >
+                {/* ── APEX ROOT: COMPANY HEADQUARTERS ─────────────── */}
+                <div className="flex flex-col items-center">
+                  <div className="w-[380px] bg-linear-to-r from-[#0C447C] to-[#1E62A6] text-white rounded-2xl p-4 shadow-lg border-2 border-white/20 relative z-10">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
+                        <Building2 size={24} className="text-white" />
+                      </div>
+                      <div className="text-left min-w-0">
+                        <span className="text-[10px] font-bold tracking-widest uppercase text-blue-200">
+                          Apex Organization Root
+                        </span>
+                        <h2 className="text-base font-black tracking-wide truncate">
+                          บริษัท เวิลด์เฟอร์ติไลเซอร์ จำกัด
+                        </h2>
+                        <p className="text-[11px] text-blue-100">
+                          World Fertilizer Co., Ltd. · ผังองค์กร พ.ศ. 2568
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-2.5 pt-2 border-t border-white/15 flex items-center justify-between text-[11px] text-blue-100">
+                      <span>สายงานราก: <strong>{rootNodes.length}</strong> สาย</span>
+                      <span>ตำแหน่ง: <strong>{positions.length}</strong> อัตรา</span>
+                      <span>ครองตำแหน่ง: <strong>{assignedActiveCount}</strong> คน</span>
+                    </div>
+                  </div>
+
+                  {/* Vertical stem from company root to executive bus bar */}
+                  <div className="w-0.5 h-8 bg-slate-300 shrink-0" />
+
+                  {/* Horizontal Bus Bar for Tier 1 Executive Roots */}
+                  <div className="flex justify-center items-start relative pt-8">
+                    {rootNodes.length > 1 && (
+                      <div
+                        className="absolute top-0 h-0.5 bg-slate-300"
+                        style={{
+                          left: `calc(${100 / (rootNodes.length * 2)}%)`,
+                          right: `calc(${100 / (rootNodes.length * 2)}%)`,
+                        }}
+                      />
+                    )}
+
+                    {/* Executive Branches */}
+                    {rootNodes.map(rootNode => (
+                      <div
+                        key={rootNode.position.PositionCode}
+                        className="flex flex-col items-center px-4 sm:px-6 relative shrink-0"
+                      >
+                        {/* Vertical drop line from company bus bar */}
+                        <div className="absolute -top-8 w-0.5 h-8 bg-slate-300" />
+                        {renderDiagramSubtree(rootNode)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
           </div>
         ) : (
-          /* Matrix View */
-          <div className="space-y-3">
+          /* ── MATRIX VIEW: TABULAR / REASSIGNMENT VIEW ────── */
+          <div className="w-full flex-1 flex flex-col overflow-hidden space-y-3">
             {/* Filter controls */}
-            <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-wrap items-center gap-3 text-xs">
-              <span className="font-semibold text-slate-700">กรองตาราง:</span>
+            <div className="bg-white p-3.5 rounded-2xl border border-slate-200 flex flex-wrap items-center gap-3 text-xs shadow-xs shrink-0">
+              <span className="font-bold text-slate-700">กรองตาราง:</span>
               <select
                 value={unitFilter}
                 onChange={e => setUnitFilter(e.target.value)}
-                className="border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50 text-xs"
+                className="border border-slate-200 rounded-xl px-3 py-1.5 bg-slate-50 text-xs font-semibold"
               >
                 <option value="">ทุกสายงาน ({units.length})</option>
                 {units.map(u => (
@@ -698,43 +933,43 @@ export function OrgHierarchyView() {
                 ))}
               </select>
 
-              <label className="flex items-center gap-1.5 cursor-pointer text-slate-700">
+              <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 font-medium">
                 <input
                   type="checkbox"
                   checked={onlyUnassigned}
                   onChange={e => setOnlyUnassigned(e.target.checked)}
                   className="rounded text-[#0C447C]"
                 />
-                <span>เฉพาะที่ยังไม่ผูก ({unassignedActiveCount})</span>
+                <span>เฉพาะที่ยังไม่ผูกตำแหน่ง ({unassignedActiveCount})</span>
               </label>
 
-              <label className="flex items-center gap-1.5 cursor-pointer text-slate-700">
+              <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 font-medium">
                 <input
                   type="checkbox"
                   checked={onlyActive}
                   onChange={e => setOnlyActive(e.target.checked)}
                   className="rounded text-[#0C447C]"
                 />
-                <span>เฉพาะที่ใช้งานอยู่</span>
+                <span>เฉพาะผู้ใช้งานที่เปิดใช้งาน (Active)</span>
               </label>
 
-              <div className="ml-auto text-xs text-slate-500">
+              <div className="ml-auto text-xs text-slate-500 font-medium">
                 แสดง {matrixShown.length} จาก {users.length} รายการ
               </div>
             </div>
 
-            {/* Table */}
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-xs">
+            {/* Full-Width Table */}
+            <div className="flex-1 overflow-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold text-slate-600 text-left">
-                    <th className="px-3.5 py-2.5">ผู้ใช้</th>
-                    <th className="px-3.5 py-2.5">บทบาท (Roles)</th>
-                    <th className="px-3.5 py-2.5">รหัสพนักงาน</th>
-                    <th className="px-3.5 py-2.5 min-w-[280px]">ตำแหน่งในผังองค์กร</th>
-                    <th className="px-3.5 py-2.5">สายงาน</th>
-                    <th className="px-3.5 py-2.5">ผู้อนุมัติ</th>
-                    <th className="px-3.5 py-2.5 text-center">สถานะ</th>
+                  <tr className="border-b border-slate-200 bg-slate-50/90 text-[11px] font-bold text-slate-600 text-left sticky top-0 z-10 backdrop-blur-xs">
+                    <th className="px-4 py-3">ผู้ใช้</th>
+                    <th className="px-4 py-3">บทบาท (Roles)</th>
+                    <th className="px-4 py-3">รหัสพนักงาน</th>
+                    <th className="px-4 py-3 min-w-[320px]">ตำแหน่งในผังองค์กร</th>
+                    <th className="px-4 py-3">สายงาน</th>
+                    <th className="px-4 py-3">ผู้อนุมัติ</th>
+                    <th className="px-4 py-3 text-center">สถานะ</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -745,35 +980,35 @@ export function OrgHierarchyView() {
                     const isSaved = savedId === u.Id;
 
                     return (
-                      <tr key={u.Id} className={`hover:bg-slate-50/70 ${!u.IsActive ? 'opacity-60 bg-slate-50/40' : ''}`}>
-                        <td className="px-3.5 py-2">
-                          <div className="font-semibold text-slate-800">{u.DisplayName}</div>
+                      <tr key={u.Id} className={`hover:bg-slate-50/80 transition-colors ${!u.IsActive ? 'opacity-60 bg-slate-50/40' : ''}`}>
+                        <td className="px-4 py-2.5">
+                          <div className="font-bold text-slate-800">{u.DisplayName}</div>
                           <div className="text-[10px] text-slate-400 font-mono">@{u.Username}</div>
                         </td>
-                        <td className="px-3.5 py-2">
+                        <td className="px-4 py-2.5">
                           <div className="flex flex-wrap gap-1">
                             {userRoles.map(r => (
-                              <span key={r} className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">
+                              <span key={r} className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
                                 {r}
                               </span>
                             ))}
                           </div>
                         </td>
-                        <td className="px-3.5 py-2 font-mono text-slate-600">
+                        <td className="px-4 py-2.5 font-mono text-slate-600 font-semibold">
                           {u.EmpCode || '–'}
                         </td>
-                        <td className="px-3.5 py-2">
+                        <td className="px-4 py-2.5">
                           <div className="flex items-center gap-2">
                             <select
                               value={u.PositionCode || UNASSIGNED}
                               onChange={e => handleMatrixAssign(u, e.target.value)}
                               disabled={isSaving}
-                              className={`w-full max-w-sm rounded-lg border px-2.5 py-1 text-xs bg-white transition-colors ${
+                              className={`w-full max-w-md rounded-xl border px-3 py-1.5 text-xs bg-white transition-colors ${
                                 isMismatched
-                                  ? 'border-amber-300 bg-amber-50/50 text-amber-900 font-medium'
+                                  ? 'border-amber-300 bg-amber-50/50 text-amber-900 font-bold'
                                   : !u.PositionCode
                                   ? 'border-slate-300 text-slate-400'
-                                  : 'border-slate-200 text-slate-800'
+                                  : 'border-slate-200 text-slate-800 font-medium'
                               }`}
                             >
                               <option value={UNASSIGNED}>-- ยังไม่ผูกตำแหน่ง --</option>
@@ -790,32 +1025,32 @@ export function OrgHierarchyView() {
                                 </optgroup>
                               ))}
                             </select>
-                            {isSaving && <RefreshCw size={13} className="animate-spin text-[#0C447C] shrink-0" />}
-                            {isSaved && <Check size={14} className="text-emerald-600 shrink-0" />}
+                            {isSaving && <RefreshCw size={14} className="animate-spin text-[#0C447C] shrink-0" />}
+                            {isSaved && <Check size={15} className="text-emerald-600 shrink-0" />}
                           </div>
                           {isMismatched && (
-                            <div className="text-[10px] text-amber-700 mt-0.5 flex items-center gap-1">
-                              <AlertCircle size={10} /> บทบาทแนะนำ: {u.PositionDefaultRole} (ผู้ใช้มี {userRoles.join(', ')})
+                            <div className="text-[10px] text-amber-700 mt-1 flex items-center gap-1 font-medium">
+                              <AlertCircle size={11} /> บทบาทแนะนำ: {u.PositionDefaultRole} (ผู้ใช้มี {userRoles.join(', ')})
                             </div>
                           )}
                         </td>
-                        <td className="px-3.5 py-2">
+                        <td className="px-4 py-2.5">
                           {u.OrgUnit ? (
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${getUnitTheme(u.OrgUnit).pill} ${getUnitTheme(u.OrgUnit).border}`}>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getUnitTheme(u.OrgUnit).pill}`}>
                               {u.OrgUnit}
                             </span>
                           ) : '–'}
                         </td>
-                        <td className="px-3.5 py-2 text-slate-600">
+                        <td className="px-4 py-2.5 text-slate-600">
                           {u.ApproverName || '–'}
                         </td>
-                        <td className="px-3.5 py-2 text-center">
+                        <td className="px-4 py-2.5 text-center">
                           {u.IsActive ? (
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
                               ใช้งาน
                             </span>
                           ) : (
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
                               ปิดใช้งาน
                             </span>
                           )}
@@ -825,7 +1060,7 @@ export function OrgHierarchyView() {
                   })}
                   {matrixShown.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                      <td colSpan={7} className="px-4 py-16 text-center text-slate-400 font-semibold">
                         ไม่พบข้อมูลผู้ใช้ตามเงื่อนไขที่เลือก
                       </td>
                     </tr>
@@ -837,14 +1072,14 @@ export function OrgHierarchyView() {
         )}
       </div>
 
-      {/* Assignment Modal */}
+      {/* ── MODAL: ASSIGN USER TO POSITION ─────────────────── */}
       {assignModal.isOpen && assignModal.position && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
               <div>
-                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
                   <UserPlus size={18} className="text-[#0C447C]" />
                   มอบหมายผู้ครองตำแหน่ง
                 </h3>
@@ -864,26 +1099,32 @@ export function OrgHierarchyView() {
             {/* Modal Body */}
             <div className="p-6 overflow-y-auto space-y-4">
               {modalErr && (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center gap-2">
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center gap-2 font-medium">
                   <AlertTriangle size={15} className="text-rose-600 shrink-0" />
                   <span>{modalErr}</span>
                 </div>
               )}
 
-              {/* Position details pill */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
+              {/* Position details */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1.5">
                 <div className="flex justify-between text-slate-600">
                   <span>สายงาน:</span>
-                  <span className="font-semibold text-slate-900">{assignModal.position.OrgUnit}</span>
+                  <span className="font-bold text-slate-900">{assignModal.position.OrgUnit}</span>
                 </div>
                 <div className="flex justify-between text-slate-600">
                   <span>ระดับสายบังคับบัญชา:</span>
-                  <span className="font-semibold text-slate-900">Tier {assignModal.position.Tier}</span>
+                  <span className="font-bold text-slate-900">Tier {assignModal.position.Tier}</span>
                 </div>
                 {assignModal.position.DefaultRole && (
                   <div className="flex justify-between text-slate-600">
                     <span>บทบาทแนะนำ:</span>
-                    <span className="font-semibold text-slate-900">{assignModal.position.DefaultRole}</span>
+                    <span className="font-bold text-[#0C447C]">{assignModal.position.DefaultRole}</span>
+                  </div>
+                )}
+                {assignModal.position.ReportsTo && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>รายงานตรงต่อ:</span>
+                    <span className="font-mono text-slate-800">{assignModal.position.ReportsTo}</span>
                   </div>
                 )}
               </div>
@@ -893,22 +1134,22 @@ export function OrgHierarchyView() {
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   ผู้ครองตำแหน่งปัจจุบัน ({usersByPosition.get(assignModal.position.PositionCode)?.length || 0} คน):
                 </label>
-                <div className="space-y-1.5 max-h-36 overflow-y-auto border border-slate-200 rounded-xl p-2 bg-slate-50/50">
+                <div className="space-y-1.5 max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-2 bg-slate-50/50">
                   {(usersByPosition.get(assignModal.position.PositionCode) || []).length === 0 ? (
-                    <div className="text-xs text-slate-400 text-center py-2">ยังไม่มีผู้ครองตำแหน่งนี้</div>
+                    <div className="text-xs text-slate-400 text-center py-3">ยังไม่มีผู้ครองตำแหน่งนี้</div>
                   ) : (
                     (usersByPosition.get(assignModal.position.PositionCode) || []).map(u => (
                       <div key={u.Id} className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-slate-200 text-xs">
                         <div>
-                          <span className="font-semibold text-slate-800">{u.DisplayName}</span>
-                          <span className="text-[10px] text-slate-400 ml-1.5">@{u.Username}</span>
+                          <span className="font-bold text-slate-800">{u.DisplayName}</span>
+                          <span className="text-[10px] text-slate-400 ml-1.5 font-mono">@{u.Username}</span>
                           {!u.IsActive && <span className="ml-1.5 text-[9px] font-bold text-rose-600">[ปิดใช้งาน]</span>}
                         </div>
                         <button
                           type="button"
                           onClick={() => handleModalUnassign(u.Id)}
                           disabled={modalSaving}
-                          className="text-rose-600 hover:text-rose-800 p-1 rounded hover:bg-rose-50 text-[11px] font-semibold flex items-center gap-1"
+                          className="text-rose-600 hover:text-rose-800 p-1 rounded-lg hover:bg-rose-50 text-[11px] font-bold flex items-center gap-1"
                         >
                           <UserMinus size={13} /> ปลด
                         </button>
@@ -926,7 +1167,7 @@ export function OrgHierarchyView() {
                 <select
                   value={assignModal.selectedUserId || ''}
                   onChange={e => setAssignModal(prev => ({ ...prev, selectedUserId: Number(e.target.value) || undefined }))}
-                  className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs bg-white text-slate-800 focus:outline-hidden focus:border-[#0C447C]"
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-xs bg-white text-slate-800 font-medium focus:outline-hidden focus:border-[#0C447C]"
                 >
                   <option value="">-- เลือกผู้ใช้งานในระบบ --</option>
                   {users
@@ -934,7 +1175,7 @@ export function OrgHierarchyView() {
                     .sort((a, b) => a.DisplayName.localeCompare(b.DisplayName, 'th'))
                     .map(u => (
                       <option key={u.Id} value={u.Id}>
-                        {u.DisplayName} (@{u.Username}) {u.PositionName ? `[ปัจจุบัน: ${u.PositionName}]` : '[ยังไม่มีตำแหน่ง]'}
+                        {u.DisplayName} (@{u.Username}) {u.PositionName ? `[ตำแหน่งปัจจุบัน: ${u.PositionName}]` : '[ยังไม่มีตำแหน่ง]'}
                       </option>
                     ))}
                 </select>
@@ -948,26 +1189,26 @@ export function OrgHierarchyView() {
                 const hasDefaultMismatch = assignModal.position?.DefaultRole && !userRoles.includes(assignModal.position.DefaultRole);
 
                 return (
-                  <div className="space-y-2 p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs text-amber-900">
-                    <div className="font-semibold text-slate-800">
-                      ก่อน → หลัง:
+                  <div className="space-y-2 p-3.5 bg-amber-50/80 border border-amber-300 rounded-xl text-xs text-amber-900">
+                    <div className="font-bold text-slate-800">
+                      สรุปการเปลี่ยนแปลงตำแหน่ง:
                     </div>
-                    <div className="text-[11px] space-y-0.5">
+                    <div className="text-[11px] space-y-1">
                       <div>ตำแหน่งเดิม: <strong>{targetUser.PositionName || 'ยังไม่ผูกตำแหน่ง'}</strong></div>
-                      <div>ตำแหน่งใหม่: <strong className="text-[#0C447C]">{assignModal.position?.PositionName}</strong></div>
+                      <div>ตำแหน่งใหม่: <strong className="text-[#0C447C] font-black">{assignModal.position?.PositionName}</strong></div>
                     </div>
 
                     {hasDefaultMismatch && (
-                      <div className="text-amber-800 pt-1 border-t border-amber-200/70 flex items-start gap-1">
-                        <AlertTriangle size={13} className="shrink-0 text-amber-600 mt-0.5" />
+                      <div className="text-amber-900 pt-1.5 border-t border-amber-200 flex items-start gap-1 font-medium">
+                        <AlertTriangle size={14} className="shrink-0 text-amber-600 mt-0.5" />
                         <span>
-                          บทบาทของผู้ใช้ ({userRoles.join(', ')}) ไม่ตรงกับบทบาทแนะนำของตำแหน่ง ({assignModal.position?.DefaultRole}) — ระบบจะไม่เปลี่ยน Role ของผู้ใช้ให้อัตโนมัติ
+                          บทบาทของผู้ใช้ ({userRoles.join(', ')}) ไม่ตรงกับบทบาทแนะนำ ({assignModal.position?.DefaultRole}) — ระบบจะไม่เปลี่ยน Role ของผู้ใช้ให้อัตโนมัติ
                         </span>
                       </div>
                     )}
 
-                    <div className="text-[10px] text-slate-600 pt-1 border-t border-amber-200/70">
-                      ℹ️ การเปลี่ยนตำแหน่งอาจส่งผลต่อการมองเห็นข้อมูล (Visible Scope) ของผู้ใช้และสายงานที่อยู่ใต้ตำแหน่งนี้
+                    <div className="text-[10px] text-slate-600 pt-1 border-t border-amber-200">
+                      ℹ️ การเปลี่ยนตำแหน่งจะส่งผลต่อขอบเขตการมองเห็นข้อมูล (Visible Scope) ของผู้ใช้ทันที
                     </div>
                   </div>
                 );
@@ -979,7 +1220,7 @@ export function OrgHierarchyView() {
               <button
                 type="button"
                 onClick={() => setAssignModal({ isOpen: false, position: null })}
-                className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100"
+                className="px-4 py-2 text-xs font-bold rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100"
               >
                 ยกเลิก
               </button>
@@ -987,7 +1228,7 @@ export function OrgHierarchyView() {
                 type="button"
                 onClick={handleModalAssign}
                 disabled={modalSaving || !assignModal.selectedUserId}
-                className="px-4 py-2 text-xs font-bold rounded-xl bg-[#0C447C] text-white hover:bg-[#0A3866] disabled:opacity-50 flex items-center gap-1.5"
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-[#0C447C] text-white hover:bg-[#0A3866] disabled:opacity-50 flex items-center gap-1.5 shadow-xs"
               >
                 {modalSaving ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
                 <span>บันทึกการมอบหมาย</span>

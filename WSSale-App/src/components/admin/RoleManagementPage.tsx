@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Plus, Save, Shield, History, Trash2, Lock, ShieldCheck } from "lucide-react";
+import { useEffect, useState, useMemo } from "react";
+import { Plus, Save, Shield, History, Trash2, Lock, ShieldCheck, Crown } from "lucide-react";
 import { RoleMembers } from "./RoleMembers";
 import { req } from "../../services/api";
 
@@ -67,6 +67,40 @@ const names: Record<string, string> = {
   "edit-request.create": "ขอแก้ไขเอกสาร",
 };
 
+/** ลำดับบทบาทตามผังโครงสร้างองค์กร (ADMIN เป็น root ถัดมาคือผู้บริหาร C_LEVEL ไล่ลงมาถึงฝ่ายขาย) */
+const ROLE_HIERARCHY_RANK: Record<string, number> = {
+  ADMIN: 0,
+  C_LEVEL: 1,
+  MANAGER: 2,
+  ACCOUNTING: 3,
+  APPROVER: 4,
+  WAREHOUSE: 5,
+  WEIGHBRIDGE: 6,
+  COUNTER_SALES: 7,
+  SALES: 8,
+};
+
+function getRoleRank(role: RoleProfile): number {
+  if (role.Code === "ADMIN") return 0;
+  if (ROLE_HIERARCHY_RANK[role.Code] !== undefined) {
+    return ROLE_HIERARCHY_RANK[role.Code] * 10;
+  }
+  const baseRank = ROLE_HIERARCHY_RANK[role.BaseRole] ?? 90;
+  return baseRank * 10 + 5;
+}
+
+const TIER_BADGES: Record<string, { label: string; class: string }> = {
+  ADMIN: { label: "👑 Root", class: "bg-purple-100 text-purple-800 border-purple-200" },
+  C_LEVEL: { label: "Executive (ผู้บริหาร)", class: "bg-blue-100 text-blue-800 border-blue-200" },
+  MANAGER: { label: "Management (บริหารจัดการ)", class: "bg-indigo-100 text-indigo-800 border-indigo-200" },
+  ACCOUNTING: { label: "Finance (การเงิน-บัญชี)", class: "bg-emerald-100 text-emerald-800 border-emerald-200" },
+  APPROVER: { label: "Approval (สายอนุมัติ)", class: "bg-teal-100 text-teal-800 border-teal-200" },
+  WAREHOUSE: { label: "Operations (คลังสินค้า)", class: "bg-amber-100 text-amber-800 border-amber-200" },
+  WEIGHBRIDGE: { label: "Operations (เครื่องชั่ง)", class: "bg-orange-100 text-orange-800 border-orange-200" },
+  COUNTER_SALES: { label: "Operations (หน้าร้าน)", class: "bg-sky-100 text-sky-800 border-sky-200" },
+  SALES: { label: "Operations (ฝ่ายขาย)", class: "bg-slate-100 text-slate-800 border-slate-200" },
+};
+
 export function RoleManagementPage({
   onViewRoleUsers,
   embedded = false,
@@ -84,6 +118,26 @@ export function RoleManagementPage({
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState(""),
     [history, setHistory] = useState<AuditEntry[] | null>(null);
+
+  // Sort roles according to organization hierarchy: ADMIN (Root) pinned at row 1, followed by C_LEVEL, MANAGER, etc.
+  const { adminRole, hierarchicalRoles } = useMemo(() => {
+    if (!data?.roles) return { adminRole: null, hierarchicalRoles: [] };
+    const needle = roleSearch.trim().toLowerCase();
+    const admin = data.roles.find(r => r.Code === "ADMIN") || null;
+    const others = data.roles
+      .filter(r => r.Code !== "ADMIN")
+      .filter(r => !needle || (r.Name + " " + r.Code + " " + r.BaseRole).toLowerCase().includes(needle))
+      .sort((a, b) => {
+        const rankA = getRoleRank(a);
+        const rankB = getRoleRank(b);
+        if (rankA !== rankB) return rankA - rankB;
+        return a.Name.localeCompare(b.Name, "th");
+      });
+
+    // Check if needle filters out admin
+    const adminMatches = !needle || (admin && (admin.Name + " " + admin.Code).toLowerCase().includes(needle));
+    return { adminRole: adminMatches ? admin : null, hierarchicalRoles: others };
+  }, [data?.roles, roleSearch]);
 
   async function load() {
     try {
@@ -205,7 +259,7 @@ export function RoleManagementPage({
         </p>
       </div>
 
-      <div className="grid md:grid-cols-[260px_minmax(0,1fr)] gap-4 items-start">
+      <div className="grid md:grid-cols-[300px_minmax(0,1fr)] lg:grid-cols-[340px_minmax(0,1fr)] gap-4 items-start w-full">
         {/* Role List Sidebar */}
         <div className="bg-white rounded-2xl p-3.5 space-y-2.5 md:sticky md:top-0 border border-slate-200 shadow-xs">
           <input
@@ -215,40 +269,86 @@ export function RoleManagementPage({
             onChange={(e) => setRoleSearch(e.target.value)}
             className="w-full rounded-xl border border-slate-200 p-2 text-xs sm:text-sm outline-none focus:ring-1 focus:ring-[#0C447C]"
           />
-          <div className="max-h-56 md:max-h-[68vh] overflow-auto space-y-1.5">
-            {data?.roles
-              .filter((r) =>
-                (r.Name + " " + r.Code)
-                  .toLowerCase()
-                  .includes(roleSearch.toLowerCase()),
-              )
-              .map((p) => (
+          <div className="max-h-56 md:max-h-[68vh] overflow-auto space-y-2.5">
+            {/* Pinned Row #1: ADMIN (Root Role) */}
+            {adminRole && (
+              <div className="pb-2 border-b border-slate-200">
+                <div className="flex items-center gap-1.5 text-[11px] font-bold text-purple-900 mb-1 px-1">
+                  <Crown size={13} className="text-purple-600" />
+                  <span>บทบาทผู้ดูแลระบบสูงสุด (Pinned Root)</span>
+                </div>
                 <button
-                  key={p.Code}
+                  key={adminRole.Code}
                   className={`block text-left w-full p-2.5 rounded-xl border transition-all ${
-                    form?.Code === p.Code
-                      ? "border-blue-400 bg-blue-50/70 shadow-xs"
-                      : "hover:bg-slate-50 border-slate-200"
+                    form?.Code === adminRole.Code
+                      ? "border-purple-500 bg-purple-50/90 shadow-xs ring-1 ring-purple-400"
+                      : "hover:bg-purple-50/40 border-purple-200 bg-purple-50/20"
                   }`}
                   onClick={() => {
                     setEditing(true);
                     setView("permissions");
-                    setForm({ ...p });
+                    setForm({ ...adminRole });
                     setError("");
                   }}
                 >
                   <div className="flex items-center justify-between gap-1">
-                    <b className="text-xs sm:text-sm text-slate-800">{p.Name}</b>
-                    {p.Code === "ADMIN" && (
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">Root</span>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      <Lock size={12} className="text-purple-700 shrink-0" />
+                      <b className="text-xs sm:text-sm text-purple-950 font-bold">{adminRole.Name}</b>
+                    </div>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-200 text-purple-900 border border-purple-300">
+                      👑 Root (สงวนสิทธิ์)
+                    </span>
                   </div>
-                  <small className="block text-slate-500 text-[11px] mt-0.5">
-                    {p.Code} · ต้นแบบ {p.BaseRole} · สมาชิก {p.MemberCount || 0}{" "}
-                    คน
+                  <small className="block text-purple-800 text-[11px] mt-1 font-medium">
+                    {adminRole.Code} · สิทธิ์เต็ม 26/26 · สมาชิก {adminRole.MemberCount || 0} คน
                   </small>
                 </button>
-              ))}
+              </div>
+            )}
+
+            {/* Hierarchical Roles: C_LEVEL -> MANAGER -> ACCOUNTING -> APPROVER -> Operations -> SALES */}
+            <div className="space-y-1.5">
+              <div className="text-[11px] font-bold text-slate-500 mb-1 px-1 flex items-center justify-between">
+                <span>ผังบทบาทตามโครงสร้างองค์กร</span>
+                <span>({hierarchicalRoles.length} บทบาท)</span>
+              </div>
+              {hierarchicalRoles.map((p) => {
+                const tier = TIER_BADGES[p.BaseRole] || { label: p.BaseRole, class: "bg-slate-100 text-slate-700 border-slate-200" };
+                return (
+                  <button
+                    key={p.Code}
+                    className={`block text-left w-full p-2.5 rounded-xl border transition-all ${
+                      form?.Code === p.Code
+                        ? "border-blue-500 bg-blue-50/80 shadow-xs ring-1 ring-blue-400"
+                        : "hover:bg-slate-50 border-slate-200"
+                    }`}
+                    onClick={() => {
+                      setEditing(true);
+                      setView("permissions");
+                      setForm({ ...p });
+                      setError("");
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <b className="text-xs sm:text-sm text-slate-800">{p.Name}</b>
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${tier.class}`}>
+                        {tier.label}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-slate-500 text-[11px] mt-1">
+                      <span className="font-mono text-[10px]">{p.Code} · ต้นแบบ {p.BaseRole}</span>
+                      <span>สมาชิก {p.MemberCount || 0} คน</span>
+                    </div>
+                  </button>
+                );
+              })}
+              {hierarchicalRoles.length === 0 && !adminRole && (
+                <div className="text-center py-6 text-slate-400 text-xs">
+                  ไม่พบบทบาทที่ตรงกับคำค้นหา
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

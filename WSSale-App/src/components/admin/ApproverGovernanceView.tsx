@@ -398,7 +398,7 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         {/* ── TAB 1: REGIONAL REBATE APPROVERS ──────────────── */}
         {activeTab === 'regions' && (
-          <div className="max-w-4xl mx-auto space-y-4">
+          <div className="w-full space-y-4">
             {/* Context Notice */}
             <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 text-xs text-blue-950 flex items-start gap-2.5">
               <MapPin size={17} className="text-[#0C447C] shrink-0 mt-0.5" />
@@ -541,7 +541,7 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
 
         {/* ── TAB 2: NATIVE 116 APPROVERS ──────────────────── */}
         {activeTab === 'native116' && (
-          <div className="max-w-4xl mx-auto space-y-4">
+          <div className="w-full space-y-4">
             {/* Notice */}
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs text-xs text-slate-600 space-y-1">
               <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
@@ -658,7 +658,7 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
 
         {/* ── TAB 3: REBATE REQUEST CODES (RB CODES) ────────── */}
         {activeTab === 'rebate-codes' && (
-          <div className="max-w-4xl mx-auto space-y-4">
+          <div className="w-full space-y-4">
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 sm:p-5">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 <FileCheck size={18} className="text-[#0C447C]" />
@@ -763,7 +763,7 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
 
         {/* ── TAB 4: APPROVER HISTORY ──────────────────────── */}
         {activeTab === 'history' && (
-          <div className="max-w-4xl mx-auto space-y-4">
+          <div className="w-full space-y-4">
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 sm:p-5">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 mb-3">
                 <History size={18} className="text-[#0C447C]" />
@@ -896,3 +896,4 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
     </div>
   );
 }
+
