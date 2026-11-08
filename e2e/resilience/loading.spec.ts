@@ -22,6 +22,60 @@ test('typing survives background trip refresh and a slow request, without a bloc
   await expect(input).toHaveValue('STILL-TYPING');
   await expect(page.getByTestId('global-loader')).toHaveCount(0);
 });
+
+test('trip setup retains edits and rejects cancel/navigation after a parent refresh',async({page})=>{
+  await page.getByRole('button',{name:'Trip setup',exact:true}).click();
+  const dialog=page.getByTestId('trip-setup-dialog');
+  const note=page.getByPlaceholder('แสดงใน Description ทุกบิลของเที่ยว');
+  await note.fill('UNSAVED-TRIP');
+  await page.getByRole('button',{name:'Refresh trip setup',exact:true}).click();
+  await expect(note).toHaveValue('UNSAVED-TRIP');
+  let confirmations=0;
+  page.on('dialog',async d=>{confirmations++;await d.dismiss();});
+  await dialog.getByRole('button',{name:'ยกเลิก',exact:true}).click();
+  await expect(note).toHaveValue('UNSAVED-TRIP');
+  await page.getByRole('button',{name:'Navigate',exact:true}).click();
+  expect(await page.evaluate(()=>(window as any).regression.useAppStore.getState().activePortal)).toBe('sales');
+  expect(confirmations).toBe(2);
+});
+
+test('trip save freezes its controls, keeps the opened revision, and retains values on conflict',async({page})=>{
+  await page.getByRole('button',{name:'Trip setup',exact:true}).click();
+  const dialog=page.getByTestId('trip-setup-dialog');
+  const note=page.getByPlaceholder('แสดงใน Description ทุกบิลของเที่ยว');
+  await note.fill('KEEP-AFTER-CONFLICT');
+  await page.getByRole('button',{name:'Refresh trip setup',exact:true}).click();
+  let sent:any;
+  await page.route('**/api/trips/99',async route=>{
+    sent=route.request().postDataJSON();
+    await new Promise(r=>setTimeout(r,700));
+    await route.fulfill({status:409,json:{message:'TRIP_REVISION_CONFLICT'}});
+  });
+  await dialog.getByRole('button',{name:'บันทึกการแก้ไขเที่ยวรถ',exact:true}).click();
+  await expect(dialog.locator('[aria-busy="true"]')).toHaveAttribute('inert','');
+  await expect(dialog.getByRole('button',{name:'ยกเลิก',exact:true})).toBeDisabled();
+  await expect(page.getByText('TRIP_REVISION_CONFLICT',{exact:true})).toBeVisible();
+  expect(sent.expectedRevision).toBe(3);
+  expect(sent.remark).toBe('KEEP-AFTER-CONFLICT');
+  await expect(note).toHaveValue('KEEP-AFTER-CONFLICT');
+  await expect(dialog.getByRole('button',{name:'ยกเลิก',exact:true})).toBeEnabled();
+});
+
+test('discarding a trip clears its guard and a reopened editor uses the latest snapshot',async({page})=>{
+  await page.getByRole('button',{name:'Trip setup',exact:true}).click();
+  const note=page.getByPlaceholder('แสดงใน Description ทุกบิลของเที่ยว');
+  await note.fill('DISCARD-THIS-TEST-EDIT');
+  await page.getByRole('button',{name:'Refresh trip setup',exact:true}).click();
+  let confirmations=0;
+  page.on('dialog',async d=>{confirmations++;await d.accept();});
+  await page.getByRole('button',{name:'ปิดข้อมูลการจัดส่ง',exact:true}).click();
+  await expect(page.getByTestId('trip-setup-dialog')).toHaveCount(0);
+  await page.getByRole('button',{name:'Trip setup',exact:true}).click();
+  await expect(note).toHaveValue('SERVER REFRESH');
+  await page.getByRole('button',{name:'ปิดข้อมูลการจัดส่ง',exact:true}).click();
+  await page.getByRole('button',{name:'Navigate',exact:true}).click();
+  expect(confirmations).toBe(1);
+});
 test('declining close and navigation preserves the unsaved editor',async({page})=>{
   const input=page.getByPlaceholder('หมายเหตุบิลนี้...');
   await input.fill('DO-NOT-LOSE');

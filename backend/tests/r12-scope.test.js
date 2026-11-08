@@ -133,13 +133,18 @@ test('team lead opens a subordinate\'s bill; ACCOUNTING opens any bill', async (
 test('SO list: scoped users get an owner filter in SQL; ACCOUNTING does not', async () => {
   let before = db.calls.length;
   await app.call('GET', '/api/so?limit=5', { user: { sub: 11, role: 'SALES' } });
-  const scoped = db.calls.slice(before).find(c => /COUNT_BIG\(\*\) AS TotalCount/.test(c.text));
+  const scoped = db.calls.slice(before).find(c => /COUNT_BIG\(\*\) OVER\(\) AS FilteredTotal/.test(c.text));
   assert.match(scoped.text, /q\.SalesUserId IN \(@scU0\)/);
   assert.equal(scoped.inputs.scU0, 11);
   before = db.calls.length;
   await app.call('GET', '/api/so?limit=5', { user: { sub: 40, role: 'ACCOUNTING' } });
-  const all = db.calls.slice(before).find(c => /COUNT_BIG\(\*\) AS TotalCount/.test(c.text));
+  const all = db.calls.slice(before).find(c => /COUNT_BIG\(\*\) OVER\(\) AS FilteredTotal/.test(c.text));
   assert.doesNotMatch(all.text, /SalesUserId IN/);
+  before = db.calls.length;
+  await app.call('GET', '/api/so?limit=5&page=2', { user: { sub: 11, role: 'SALES' } });
+  const fallback = db.calls.slice(before).find(c => /COUNT_BIG\(\*\) AS TotalCount/.test(c.text));
+  assert.match(fallback.text, /q\.SalesUserId IN \(@scU0\)/);
+  assert.equal(fallback.inputs.scU0, 11);
 });
 
 test('SALES A cannot open SALES B\'s quotation (404)', async () => {

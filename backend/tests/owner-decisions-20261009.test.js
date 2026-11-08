@@ -68,9 +68,11 @@ test('4. the board, the bill list and the backlog report carry the legacy cut-of
   const before = db.calls.length;
   await app.call('GET', '/api/papertrail/board', { user: { sub: 12, role: 'ACCOUNTING' } });
   await app.call('GET', '/api/so?page=1&limit=20', { user: { sub: 12, role: 'ACCOUNTING' } });
+  // An empty later page also exercises the count-only fallback.
+  await app.call('GET', '/api/so?page=2&limit=20', { user: { sub: 12, role: 'ACCOUNTING' } });
   await app.call('GET', '/api/reports/so-backlog', { user: { sub: 12, role: 'ACCOUNTING' } });
   const calls = db.calls.slice(before).filter(c => /@legacyCut/.test(c.text));
-  assert.ok(calls.length >= 4, `cut-off in board, list count, list data and backlog (got ${calls.length})`);
+  assert.ok(calls.length >= 5, `cut-off in board, both list pages, fallback count and backlog (got ${calls.length})`);
   for (const c of calls) assert.equal(String(c.inputs.legacyCut).slice(0, 10), '2022-01-01');
   assert.ok(calls.some(c => /RTRIM\(hd\.TransRegistration\) = N'ตั๋วคุม'/.test(c.text)), 'open control tickets stay visible');
 });

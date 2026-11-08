@@ -17,6 +17,9 @@ native writers, database targets, or database schemas.
    were still running. Dashboard cache misses were not coalesced.
 5. Cold-session profile lookup failures logged the user out even for temporary connectivity errors.
    An old request's 401 could also clear a newer login.
+6. Trip setup closed without a discard warning and could adopt a refreshed revision while the
+   user was still editing an older snapshot. It now retains the opening revision, guards close
+   and navigation, freezes only its own controls while saving, and retains values on conflict.
 
 ## Resulting behavior
 
@@ -45,6 +48,10 @@ native writers, database targets, or database schemas.
   and the resolved visibility scope. Cold reads coalesce. Existing five-minute TTL for global
   summaries is retained; scoped summaries use 30 seconds. Explicit refresh bypasses completed
   cache entries. Authorization and visibility are still evaluated for each request.
+- Sales list pagination reads the filtered total with `COUNT_BIG(*) OVER()` in the same query
+  as its rows. Empty first pages need no second scan; out-of-range later pages use the existing
+  count query. Visibility, legacy cut-off, native document de-duplication and redaction stay
+  unchanged. There is no new shared cache or persistent SQL object.
 - Ops status exposes bounded latency histograms, active/peak HTTP requests and SQL wrapper
   timings without SQL text/parameters. P95 is a bucket upper bound, not an exact percentile.
   DB query timing includes waiting for a connection; direct transaction queries are outside
@@ -64,6 +71,7 @@ in a business database.
 The regression suite covers retained sales/warehouse inputs, continued typing during slow
 reads, navigation/close cancellation, read coalescing, token separation, late 401, transient
 profile errors, timeout cleanup, no automatic write retry, hidden tabs and event serialization.
+Trip tests additionally cover parent refresh, stale-revision conflicts, cancellation and reopening.
 Backend tests exercise the actual stats/aging routers through HTTP with a recording DB stub:
 12 simultaneous cold requests per endpoint/database execute one endpoint data query; the UAT
 fixture never receives the production fixture. A separate 30-caller test checks coalescing,

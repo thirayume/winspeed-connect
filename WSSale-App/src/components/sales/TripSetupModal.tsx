@@ -3,6 +3,8 @@ import { useState, useEffect, useRef } from 'react';
 import { X, Truck, MapPin } from 'lucide-react';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { fetchTruckStats, createTrip, updateTrip } from '../../services/api';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
+import { unsavedMessage } from '../../utils/unsaved-changes';
 
 export type TripSetupData = {
   tripId?: number;
@@ -41,25 +43,41 @@ export function TripSetupModal({
 
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [baseline, setBaseline] = useState<string | null>(null);
+  // Keep the revision that the editor actually opened, even if its parent refreshes.
+  const openedData = useRef(initialData);
+  const snapshot = JSON.stringify([truckPlate, deliveryDate, pSling, loadInOrder, remark]);
+  const dirty = isOpen && baseline !== null && snapshot !== baseline;
+  const releaseGuard = useUnsavedChanges(dirty || (isOpen && submitting));
 
   const wasOpen = useRef(false);
   useEffect(() => {
     const opening = isOpen && !wasOpen.current;
     wasOpen.current = isOpen;
     if (opening) {
-      setTruckPlate(['ยังไม่ระบุรถ', 'ตั๋วคุม', 'ไม่ระบุทะเบียนรถ'].includes(initialData?.truckPlate || '') ? '' : initialData?.truckPlate || '');
-      setDeliveryDate(initialData?.deliveryDate || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10));
+      openedData.current = initialData;
+      const plate = ['ยังไม่ระบุรถ', 'ตั๋วคุม', 'ไม่ระบุทะเบียนรถ'].includes(initialData?.truckPlate || '') ? '' : initialData?.truckPlate || '';
+      const date = initialData?.deliveryDate || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      setTruckPlate(plate);
+      setDeliveryDate(date);
       setPSling(initialData?.pSling || false);
       setLoadInOrder(initialData?.loadInOrder || false);
       setRemark(initialData?.remark || '');
       setError('');
       setSubmitting(false);
+      setBaseline(JSON.stringify([plate, date, initialData?.pSling || false, initialData?.loadInOrder || false, initialData?.remark || '']));
 
       fetchTruckStats().then(stats => {
         setTruckPlates(stats.map(s => s.truckPlate).filter(Boolean));
       }).catch(console.error);
     }
   }, [isOpen, initialData]);
+
+  const handleClose = () => {
+    if (submitting || (dirty && !window.confirm(unsavedMessage))) return;
+    releaseGuard();
+    onClose();
+  };
 
   const handleConfirm = async () => {
     if (submitting) return;
@@ -69,16 +87,19 @@ export function TripSetupModal({
     setError('');
     try {
       const plate = (!truckPlate.trim() || ['ยังไม่ระบุรถ', 'ตั๋วคุม', 'ไม่ระบุทะเบียนรถ'].includes(truckPlate.trim())) ? null : truckPlate.trim();
-      const res = initialData?.tripId
-        ? await updateTrip(initialData.tripId, { transRegistration: plate, deliveryDate, pSling, loadInOrder, remark, expectedRevision: initialData.expectedRevision! })
+      const original = openedData.current;
+      const res = original?.tripId
+        ? await updateTrip(original.tripId, { transRegistration: plate, deliveryDate, pSling, loadInOrder, remark, expectedRevision: original.expectedRevision! })
         : await createTrip({
         transRegistration: plate,
         deliveryDate,
         truckCapacityTon: 30,
         pSling, remark,
-        ...(initialData?.orderIds?.length ? { orderIds: initialData.orderIds } : {}),
+        ...(original?.orderIds?.length ? { orderIds: original.orderIds } : {}),
       });
 
+      setBaseline(snapshot);
+      releaseGuard();
       onConfirm({
         expectedRevision: 'documentRevision' in res ? res.documentRevision : undefined,
         tripId: res.tripId,
@@ -98,18 +119,18 @@ export function TripSetupModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+    <div data-testid="trip-setup-dialog" role="dialog" aria-label="ข้อมูลการจัดส่ง" aria-modal="true" className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-full">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-[#0C447C] text-white">
           <h2 className="text-xl font-bold flex items-center gap-2">
             <MapPin size={22} /> ข้อมูลการจัดส่ง (Trip)
           </h2>
-          <button onClick={onClose} className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10">
+          <button onClick={handleClose} disabled={submitting} aria-label="ปิดข้อมูลการจัดส่ง" className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10">
             <X size={20} />
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto flex-1 space-y-5">
+        <div inert={submitting} aria-busy={submitting} className="p-6 overflow-y-auto flex-1 space-y-5">
           {error && (
             <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm font-semibold border border-red-100">
               {error}
@@ -172,7 +193,7 @@ export function TripSetupModal({
         </div>
 
         <div className="p-4 sm:p-6 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 shrink-0">
-          <button onClick={onClose} className="px-5 py-2.5 text-gray-600 font-bold hover:bg-gray-200 rounded-xl transition-colors">
+          <button onClick={handleClose} disabled={submitting} className="px-5 py-2.5 text-gray-600 font-bold hover:bg-gray-200 rounded-xl transition-colors">
             ยกเลิก
           </button>
           <button onClick={handleConfirm} disabled={submitting} className="px-6 py-2.5 bg-[#0C447C] text-white font-bold rounded-xl hover:bg-blue-800 transition-colors shadow-md disabled:opacity-50">

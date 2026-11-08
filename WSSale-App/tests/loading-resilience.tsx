@@ -11,6 +11,7 @@ import { useAuthStore } from '../src/store/auth-store';
 import { useAppStore } from '../src/store/app-store';
 import { req, setToken } from '../src/services/api';
 import { refreshQueue } from '../src/utils/refresh-queue';
+import { TripSetupModal, type TripSetupData } from '../src/components/sales/TripSetupModal';
 
 // Test fixture only. No server credentials and no requests to a real database.
 const user = { id: 999, username: 'fixture', displayName: 'Fixture', role: 'SALES', isActive: true,
@@ -22,16 +23,19 @@ useTripStore.getState().setTrip({tripId: 99, truckPlate:'ORIGINAL', deliveryDate
 function Harness() {
   const [open, setOpen] = useState(true);
   const [mode, setMode] = useState('sales');
+  const [tripData, setTripData] = useState<TripSetupData>({tripId:99, expectedRevision:3, deliveryDate:'2026-11-08', remark:'ORIGINAL'});
   return <div style={{height:'100vh',display:'flex',flexDirection:'column'}}>
-    <div>
+    <div style={{position:'relative',zIndex:1000}}>
       <button onClick={() => useTripStore.getState().updateTrip({truckPlate:'SERVER REFRESH'})}>Refresh trip</button>
       <button onClick={() => setMode('store')}>Warehouse</button>
       <button onClick={() => setMode('profile')}>Profile</button>
       <button onClick={() => setMode('quote')}>Quotation</button>
+      <button onClick={() => {setOpen(true);setMode('trip');}}>Trip setup</button>
+      <button onClick={() => setTripData({...tripData, expectedRevision:4, remark:'SERVER REFRESH'})}>Refresh trip setup</button>
       <button onClick={() => useAppStore.getState().navigate('dashboard')}>Navigate</button>
       <span>{useAppStore(s=>s.activePortal)}</span>
     </div>
-    {mode === 'sales' ? open && <CreateSODialog isOpen onClose={()=>setOpen(false)} /> : mode === 'profile' ? <ProfilePage/> : mode === 'quote' ? <CreateQuoteDialog onClose={()=>setMode('sales')} onDone={()=>setMode('sales')}/> : <StorePortal/>}
+    {mode === 'sales' ? open && <CreateSODialog isOpen onClose={()=>setOpen(false)} /> : mode === 'profile' ? <ProfilePage/> : mode === 'quote' ? <CreateQuoteDialog onClose={()=>setMode('sales')} onDone={()=>setMode('sales')}/> : mode === 'trip' ? <TripSetupModal isOpen={open} initialData={tripData} onClose={()=>setOpen(false)} onConfirm={()=>setOpen(false)}/> : <StorePortal/>}
     <GlobalLoader/>
   </div>;
 }

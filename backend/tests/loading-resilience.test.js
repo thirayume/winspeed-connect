@@ -4,6 +4,24 @@ const assert = require('node:assert/strict');
 const { createReadCache, scopedReadKey } = require('../services/read-cache');
 const deferred = () => { let resolve, reject; const promise = new Promise((a,b) => { resolve=a; reject=b; }); return {promise,resolve,reject}; };
 
+test('sales pages use their filtered total without another database scan or exposing metadata',async()=>{
+  const {readPageTotal}=require('../services/paged-orders');
+  const source=[{Id:'12',FilteredTotal:'81',CustName:'Fixture'},{Id:'15',FilteredTotal:'81'}];
+  const page=await readPageTotal(source,30,()=>{throw Error('unnecessary scan');});
+  assert.deepEqual(page,{total:81,rows:[{Id:'12',CustName:'Fixture'},{Id:'15'}]});
+  assert.equal(source[0].FilteredTotal,'81');
+});
+
+test('empty first page returns zero; an out-of-range page still reports the actual total',async()=>{
+  const {readPageTotal}=require('../services/paged-orders');let countReads=0;
+  const count=async()=>{countReads++;return 11;};
+  assert.deepEqual(await readPageTotal([],0,count),{total:0,rows:[]});
+  assert.equal(countReads,0);
+  assert.deepEqual(await readPageTotal([],30,count),{total:11,rows:[]});
+  assert.equal(countReads,1);
+  await assert.rejects(readPageTotal([],30,async()=>{throw Error('database unavailable');}),/database unavailable/);
+});
+
 test('30 simultaneous cold reads of one database/scope execute SQL only once', async () => {
   const cache = createReadCache(); const gate = deferred(); let calls=0;
   const jobs=Array.from({length:30},()=>cache.get('uat:scope1',()=>{calls++;return gate.promise;}));

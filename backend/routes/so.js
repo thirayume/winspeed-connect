@@ -640,7 +640,10 @@ router.get('/', async (req, res) => {
     const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(limit), 10) || 50));
     const offset = (pageNumber - 1) * pageSize;
 
-    const countResult = await wfQuery(`
+    // The first non-empty page carries its filtered count. Keep this count-only
+    // fallback for a page beyond the end, rather than scanning every list twice.
+    const loadEmptyPageTotal = async () => {
+      const countResult = await wfQuery(`
       WITH Orders AS (
         SELECT
           CAST(so.Id AS VARCHAR(50)) AS Id,
@@ -694,7 +697,8 @@ router.get('/', async (req, res) => {
       ${where}
     `, inputs);
 
-    const total = Number(countResult.recordset?.[0]?.TotalCount || 0);
+      return Number(countResult.recordset?.[0]?.TotalCount || 0);
+    };
 
     const r = await wfQuery(`
       WITH Orders AS (
@@ -820,7 +824,7 @@ router.get('/', async (req, res) => {
         WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')}
       ),
       FilteredOrders AS (
-        SELECT q.*, u.DisplayName AS SalesName,
+        SELECT q.*, u.DisplayName AS SalesName, COUNT_BIG(*) OVER() AS FilteredTotal,
                ROW_NUMBER() OVER (ORDER BY q.CreatedAt DESC, q.Id DESC) AS RowNum
         FROM Orders q
         LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = q.SalesUserId
@@ -831,7 +835,8 @@ router.get('/', async (req, res) => {
       WHERE RowNum > ${offset} AND RowNum <= (${offset} + ${pageSize})
       ORDER BY RowNum ASC
     `, inputs);
-    const rows = r.recordset || [];
+    const { rows, total } = await require('../services/paged-orders').readPageTotal(
+      r.recordset || [], offset, loadEmptyPageTotal);
 
     // attach lines for each order on this page
     const orders = camelizeRows(rows);
