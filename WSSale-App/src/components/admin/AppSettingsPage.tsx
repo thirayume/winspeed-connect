@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { SystemSettingsModal, type TabKey } from './SystemSettingsModal';
 import { ReadinessSignoffModal } from './ReadinessSignoffModal';
-import { DbModeSwitch } from '../common/DbModeSwitch';
 
 export type SettingsTabKey = TabKey | 'readiness';
 
@@ -49,9 +48,6 @@ export function AppSettingsPage() {
               Revision #{revision}
             </span>
           )}
-          <div className="bg-gray-50 rounded-xl border border-gray-200 p-1">
-            <DbModeSwitch />
-          </div>
         </div>
       </div>
 

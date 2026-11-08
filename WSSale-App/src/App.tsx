@@ -7,7 +7,6 @@ import { getMe, listAccessAsCandidates, listUnlockRequests, listPendingGiveaways
 import type { AdminUser, UserRole } from './types';
 import LoginPage from './pages/LoginPage';
 import ForcePasswordChange from './components/auth/ForcePasswordChange';
-import { DbModeSwitch } from './components/common/DbModeSwitch';
 import { DatabaseSwitcher } from './components/common/DatabaseSwitcher';
 import { useAppStore } from './store/app-store';
 import { GlobalLoader } from './components/common/GlobalLoader';
@@ -440,7 +439,6 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
               )}
             </div>
           )}
-          {role === 'ADMIN' && !import.meta.env.PROD && <DbModeSwitch collapsed={isSidebarCollapsed} />}
           <button onClick={logout} title="ออกจากระบบ"
             className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-muted-foreground hover:bg-red-50 hover:text-red-600 transition-colors ${isSidebarCollapsed ? 'justify-center' : ''}`}>
             <LogOut className="h-4 w-4 shrink-0" />

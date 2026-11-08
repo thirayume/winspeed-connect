@@ -7,7 +7,6 @@ import { TruckTypesManager } from './TruckTypesManager';
 import { GiveawaysManager } from './GiveawaysManager';
 import { PricesPortal } from './PricesPortal';
 import { EditReasonsManager } from './EditReasonsManager';
-import { DbModeSwitch } from '../common/DbModeSwitch';
 
 type Tab = 'goods' | 'prices' | 'customers' | 'truck-types' | 'trucks' | 'giveaways' | 'edit-reasons';
 
@@ -36,9 +35,6 @@ export const MasterDataPortal = () => {
           <p className="hidden sm:block text-sm text-gray-500 mt-0.5">
             ตั้งค่าข้อมูลสินค้า รูปภาพ หมายเหตุลูกค้า และราคาเบื้องต้น
           </p>
-        </div>
-        <div className="bg-gray-50 rounded-xl border border-gray-200 p-1 w-full sm:w-auto">
-          <DbModeSwitch />
         </div>
       </div>
 

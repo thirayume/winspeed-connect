@@ -32,6 +32,26 @@ test('every part of the approved tuple is required, and sa is refused', () => {
   assert.equal(onpremTuple(ENV, 'migration').login, 'wf_migrator', 'migrations run as the migrator login');
 });
 
+test('ALLOW_DEV_SA=true permits sa on development workstation', () => {
+  const tuple = onpremTuple({ ...ENV, ONPREM_DB_USER: 'sa', ALLOW_DEV_SA: 'true' });
+  assert.equal(tuple.login, 'sa');
+
+  const devRow = {
+    ...ROW,
+    serverName: 'R740-SRV\\SQL2008',
+    loginName: 'sa',
+    originalLogin: 'sa',
+    isSysadmin: 1,
+  };
+  const verified = validateOnpremTargetRecord(devRow, {
+    ...ENV,
+    ONPREM_EXPECTED_SERVERNAME: 'R740-SRV\\SQL2008',
+    ONPREM_DB_USER: 'sa',
+    ALLOW_DEV_SA: 'true',
+  });
+  assert.equal(verified.login, 'sa');
+});
+
 test('Linux (tedious): TDS 7.3 for SQL 2008 R2, and the TLS floor is lowered only when asked', () => {
   const plain = onpremConnectionConfig(ENV, 'runtime', false);
   assert.equal(plain.server, '10.0.0.10');
