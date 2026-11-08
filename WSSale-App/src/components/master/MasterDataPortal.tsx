@@ -1,17 +1,15 @@
 import { useState } from 'react';
-import { Database, Package, Users, Tag, Truck, Gift, Map, ListChecks, UserCheck } from 'lucide-react';
+import { Database, Package, Users, Tag, Truck, Gift, ListChecks } from 'lucide-react';
 import { GoodsManager } from './GoodsManager';
 import { CustomersManager } from './CustomersManager';
 import { TrucksManager } from './TrucksManager';
 import { TruckTypesManager } from './TruckTypesManager';
 import { GiveawaysManager } from './GiveawaysManager';
 import { PricesPortal } from './PricesPortal';
-import { SaleRegionManager } from './SaleRegionManager';
 import { EditReasonsManager } from './EditReasonsManager';
-import { NativeApproversManager } from './NativeApproversManager';
 import { DbModeSwitch } from '../common/DbModeSwitch';
 
-type Tab = 'goods' | 'prices' | 'customers' | 'truck-types' | 'trucks' | 'giveaways' | 'regions' | 'edit-reasons' | 'native-approvers';
+type Tab = 'goods' | 'prices' | 'customers' | 'truck-types' | 'trucks' | 'giveaways' | 'edit-reasons';
 
 export const MasterDataPortal = () => {
   const [activeTab, setActiveTab] = useState<Tab>('goods');
@@ -94,14 +92,6 @@ export const MasterDataPortal = () => {
           <Gift size={16} /> ของแถม
         </button>
         <button
-          onClick={() => setActiveTab('regions')}
-          className={`py-3 text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap ${
-            activeTab === 'regions' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <Map size={16} /> ผู้อนุมัติรายภาค
-        </button>
-        <button
           onClick={() => setActiveTab('edit-reasons')}
           className={`py-3 text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap ${
             activeTab === 'edit-reasons' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -109,22 +99,9 @@ export const MasterDataPortal = () => {
         >
           <ListChecks size={16} /> เหตุผลขอแก้ไข
         </button>
-        <button
-          onClick={() => setActiveTab('native-approvers')}
-          className={`py-3 text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap ${
-            activeTab === 'native-approvers' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <UserCheck size={16} /> ผู้อนุมัติ WinSpeed
-        </button>
       </div>
 
       <div className="flex-1 overflow-hidden p-2 sm:p-4 bg-white/50">
-        {activeTab === 'regions' && (
-          <div className="h-full rounded-none sm:rounded-2xl border-y sm:border border-gray-200 overflow-hidden shadow-sm bg-white">
-            <SaleRegionManager />
-          </div>
-        )}
         {activeTab === 'goods' && <GoodsManager onViewPrices={handleViewPrices} />}
         {activeTab === 'prices' && (
           <div className="h-full rounded-none sm:rounded-2xl border-y sm:border border-gray-200 overflow-hidden shadow-sm">
@@ -138,11 +115,6 @@ export const MasterDataPortal = () => {
         {activeTab === 'edit-reasons' && (
           <div className="h-full overflow-auto rounded-none sm:rounded-2xl border-y sm:border border-gray-200 shadow-sm bg-white">
             <EditReasonsManager />
-          </div>
-        )}
-        {activeTab === 'native-approvers' && (
-          <div className="h-full overflow-auto rounded-none sm:rounded-2xl border-y sm:border border-gray-200 shadow-sm bg-white">
-            <NativeApproversManager />
           </div>
         )}
       </div>
