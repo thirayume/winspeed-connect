@@ -52,7 +52,7 @@ export function AccountingPage() {
 
   useEffect(() => { load(date); }, []);
 
-  useSocketEvent('so_updated', () => { load(date); });
+  useSocketEvent('so_updated', () => load(date));
 
   async function doApprove(claim: RebateClaim) {
     const cn = await appPrompt(`กรอกเลขอ้างอิงเอกสาร WINSpeed สำหรับเคลม ฿${Number(claim.ClaimAmt).toLocaleString()}:\n(เว้นว่างได้ ถ้ายังไม่มีเลขเอกสาร)`);

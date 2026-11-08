@@ -6,6 +6,7 @@ import type { SalesOrder } from '../../types';
 import { AlertDialog } from '../ui/AlertDialog';
 import { VisualTruckLoader } from './VisualTruckLoader';
 import { SO_STATUS_META } from '../../constants/soStatus';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { appPrompt } from '../ui/AppAlert';
 import { giveawayPieces } from '../../utils/giveaway';
 
@@ -28,6 +29,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
   const [overrideApprovedByName, setOverrideApprovedByName] = useState<string>('');
 
   const [errorMsg, setErrorMsg] = useState<string>('');
+  useUnsavedChanges(Boolean(sequenceOrder || (weighOrder && (weighWeight || weighTare || weighMovebill || overrideReason || overridePhotoUrl))));
 
   const formatTon = (value: number) => value.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
 
@@ -106,7 +108,7 @@ export const PickingQueue = ({ orders, onUpdate, mode }: { orders: SalesOrder[];
     }
   };
 
-  if (orders.length === 0) {
+  if (orders.length === 0 && !sequenceOrder && !weighOrder) {
     return (
       <div data-testid={`store-queue-${mode.toLowerCase()}`} className="flex flex-col items-center justify-center py-20 text-gray-300">
         <Package size={48} className="mb-3" />

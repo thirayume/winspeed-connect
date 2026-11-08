@@ -304,11 +304,12 @@ function getDbName() { return als.getStore()?.dbName || null; }
 // ── helpers (เลือก pool ตาม target ปัจจุบัน) ──────────────────
 async function query(text, inputs = {}) {
   const pl = pools();
-  await pl.ready;
+  const metrics = require('./services/performance-metrics');
+  await metrics.measure('db.reader.ready', () => pl.ready);
   const req = pl.readerPool.request();
   for (const [k, { type, value }] of Object.entries(inputs)) req.input(k, type, value);
   const actualText = nativeDriver ? text : `SET ARITHABORT ON; SET ANSI_WARNINGS ON; ${text}`;
-  return (await req.query(actualText)).recordset;
+  return (await metrics.measure('db.reader.query', () => req.query(actualText))).recordset;
 }
 /**
  * เขียนข้อมูลใน dbo (WINSpeed) — ต้องใช้ ownerPool ไม่ใช่ readerPool
@@ -330,11 +331,12 @@ async function dboWrite(text, inputs = {}) {
 
 async function wfQuery(text, inputs = {}) {
   const pl = pools();
-  await pl.ready;
+  const metrics = require('./services/performance-metrics');
+  await metrics.measure('db.owner.ready', () => pl.ready);
   const req = pl.ownerPool.request();
   for (const [k, { type, value }] of Object.entries(inputs)) req.input(k, type, value);
   const actualText = nativeDriver ? text : `SET ARITHABORT ON; SET ANSI_WARNINGS ON; ${text}`;
-  return await req.query(actualText);
+  return await metrics.measure('db.owner.query', () => req.query(actualText));
 }
 async function wfTransaction(fn) {
   const pl = pools();

@@ -550,22 +550,22 @@ async function audit(tx, soId, userId, action, fromStatus, toStatus, note, ipAdd
 
 // ── GET /api/so/stats — สรุปจำนวนตามสถานะ (Dashboard) ────────
 // Cache 5 นาที เพื่อลด load จาก 107k rows scan บน dbo.SOHD
-let _statsCache = null;
-let _statsCacheAt = 0;
+const { createReadCache, scopedReadKey } = require('../services/read-cache');
+const statsCache = createReadCache();
 const STATS_TTL = 5 * 60 * 1000;
 
 router.delete('/stats/cache', requireRole('ADMIN', 'C_LEVEL'), (req, res) => {
-  _statsCache = null; _statsCacheAt = 0;
+  statsCache.clear();
   res.json({ ok: true, message: 'Stats cache cleared' });
 });
 
 router.get('/stats', async (req, res) => {
   try {
-    const now = Date.now();
     const bust = req.query.bust === '1';
     // R12 O-4: a scoped user's counts cover only their own and their team's bills
     const scope = await getVisibleScope(req.user);
-    if (scope.all && !bust && _statsCache && now - _statsCacheAt < STATS_TTL) return res.json(_statsCache);
+    const db = require('../db');
+    const out = await statsCache.get(scopedReadKey(db.getTarget(), db.getDbName(), scope), async () => {
     // UAT 2026-10-09: one query for every role, on the base tables — the scoped version read the all-documents
     // view and timed out (HTTP 500, the salesperson's dashboard never loaded); the global one counted each
     // closed booking twice and called it "waiting for delivery". Drafts + WinSpeed documents (de-duplicated,
@@ -594,8 +594,8 @@ router.get('/stats', async (req, res) => {
     const byStatus = {};
     for (const row of r.recordset || []) byStatus[row.Status] = Number(row.Cnt);
     const total = Object.values(byStatus).reduce((s, n) => s + n, 0);
-    const out = { byStatus, total, cachedAt: new Date().toISOString(), ...(scope.all ? {} : { scope: scope.basis }) };
-    if (scope.all) { _statsCache = out; _statsCacheAt = now; }
+    return { byStatus, total, cachedAt: new Date().toISOString(), ...(scope.all ? {} : { scope: scope.basis }) };
+    }, { ttl: scope.all ? STATS_TTL : 30000, force: bust });
     res.json(out);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useUnsavedChanges } from "../../hooks/useUnsavedChanges";
 import {
   X,
   UserRound,
@@ -45,6 +46,7 @@ export function UserEditor({
   const rolesChanged =
     [...codes].sort().join("|") !== [...original].sort().join("|");
   const isDirty = isFormDirty || rolesChanged;
+  const releaseDraftGuard = useUnsavedChanges(isDirty);
 
   function handleCloseRequest() {
     if (isDirty && !busy) {
@@ -120,6 +122,7 @@ export function UserEditor({
           password: String(data.get("password") || ""),
           roleCodes: codes,
         });
+      releaseDraftGuard();
       onSaved();
       onClose();
     } catch (e) {

@@ -8,6 +8,7 @@
  * ทั้งหมด fail-safe: ถ้า observability พัง ต้องไม่ทำให้ request/แอปล้ม
  */
 const path = require('path');
+const performanceMetrics = require('./performance-metrics');
 
 let VERSION = process.env.APP_VERSION || 'unknown';
 try { VERSION = require(path.join(__dirname, '..', 'package.json')).version || VERSION; } catch { /* ignore */ }
@@ -115,6 +116,7 @@ function getStatus() {
     lastErrorAt: state.lastErrorAt,
     byStatus: state.byStatus,
     alertConfigured: !!process.env.ALERT_WEBHOOK_URL,
+    performance: performanceMetrics.snapshot(),
   };
 }
 
@@ -125,7 +127,12 @@ function getRecentErrors(limit = 50) {
 // middleware: นับ request + เวลา + จับ 5xx ที่ route จัดการเอง (ไม่ผ่าน global error handler)
 function requestTimer(req, res, next) {
   const start = Date.now();
+  const endActive = performanceMetrics.startRequest();
+  res.once('close', endActive);
   res.on('finish', () => {
+    endActive();
+    // Use the Express route template, never originalUrl/query strings or document IDs.
+    performanceMetrics.record(`http ${req.method} ${req.baseUrl || ''}${typeof req.route?.path === 'string' ? req.route.path : '/unmatched'}`, Date.now() - start);
     recordRequest(req.method, req.path, res.statusCode, Date.now() - start);
     // route ส่วนใหญ่ try/catch แล้วตอบ 500 เอง → ไม่ถึง error middleware
     // ถ้ายังไม่ถูกบันทึก ให้บันทึกที่นี่ (กันซ้ำด้วย res.locals.__obsLogged)

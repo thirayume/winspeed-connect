@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Database, Check, ChevronDown, Lock } from 'lucide-react';
+import { confirmLeaveEditors } from '../../utils/unsaved-changes';
 import {
   getDatabases,
   switchDatabase,
@@ -192,6 +193,7 @@ export function DatabaseSwitcher() {
       setOpen(false);
       return;
     }
+    if (!confirmLeaveEditors()) return;
     setBusy(true);
     try {
       const res = await switchDatabase(database);

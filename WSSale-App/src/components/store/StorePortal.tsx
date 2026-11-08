@@ -9,6 +9,7 @@ export const StorePortal = () => {
   const [activeTab, setActiveTab] = useState<'LOADING' | 'SCALE'>('LOADING');
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [search, setSearch] = useState('');
 
   const loadData = async () => {
@@ -28,6 +29,7 @@ export const StorePortal = () => {
       console.error(e);
     }
     setLoading(false);
+    setLoaded(true);
   };
 
   useEffect(() => { loadData(); }, [activeTab]);
@@ -35,7 +37,7 @@ export const StorePortal = () => {
   // Listen for real-time updates
   useSocketEvent('so_updated', () => {
     console.log('[Socket] so_updated event received. Refreshing StorePortal...');
-    loadData();
+    return loadData();
   });
 
   const filtered = orders.filter(o =>
@@ -54,7 +56,7 @@ export const StorePortal = () => {
           </h1>
           <p className="hidden sm:block text-sm text-gray-500 mt-0.5">จัดการการโหลดสินค้าและชั่งออก</p>
         </div>
-        <button onClick={loadData} className="h-9 w-9 sm:h-10 sm:w-10 flex items-center justify-center rounded-lg sm:rounded-xl border border-gray-200 bg-white shrink-0">
+        <button onClick={loadData} disabled={loading} aria-label="รีเฟรชรายการคลัง" className="h-9 w-9 sm:h-10 sm:w-10 flex items-center justify-center rounded-lg sm:rounded-xl border border-gray-200 bg-white shrink-0">
           <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
         </button>
       </div>
@@ -98,7 +100,7 @@ export const StorePortal = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {loading ? (
+        {loading && !loaded ? (
           <div className="flex justify-center py-20 text-gray-300">
             <RefreshCw className="animate-spin" size={32} />
           </div>

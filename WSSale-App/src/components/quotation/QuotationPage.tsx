@@ -1,5 +1,7 @@
 import { useCan } from '../../utils/capabilities';
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
+import { unsavedMessage } from '../../utils/unsaved-changes';
 import { FileText, RefreshCw, Plus, X, ArrowRightCircle, AlertTriangle, Package, Send, Clock, User, Printer } from 'lucide-react';
 import { fetchQuotations, createQuotation, updateQuotationStatus, extendQuotationValidity, fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, listUsers } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
@@ -461,6 +463,9 @@ function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; onDone: (
   const [salesUsers, setSalesUsers]     = useState<AdminUser[]>([]);
   const userRole = useAuthStore(s => s.user?.role);
   const [custSearchLoading, setCustSearchLoading] = useState(false);
+  const dirty = Boolean(custId || lines.length || salesUserId);
+  const releaseDraftGuard = useUnsavedChanges(dirty);
+  const closeEditor = () => { if (!busy && (!dirty || window.confirm(unsavedMessage))) onClose(); };
 
   // U-10: Debounced server search for customer picker
   useEffect(() => {
@@ -543,6 +548,7 @@ function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; onDone: (
         })),
         salesUserId: salesUserId ? Number(salesUserId) : undefined
       });
+      releaseDraftGuard();
       alert(`✓ สร้างใบเสนอราคาสำเร็จ: ${r.quoteNo}`); onDone();
     } catch (e: unknown) { setErr((e as Error).message || 'เกิดข้อผิดพลาด'); }
     finally { setBusy(false); }
@@ -554,7 +560,7 @@ function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; onDone: (
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-lg font-bold" style={{ color: '#0C447C' }}>สร้างใบเสนอราคา</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 rounded-full p-1.5 hover:bg-gray-100">
+          <button onClick={closeEditor} className="text-gray-400 hover:text-gray-600 rounded-full p-1.5 hover:bg-gray-100">
             <X size={18} />
           </button>
         </div>
