@@ -92,10 +92,37 @@ export const startAccessAs = (userId: number) =>
 export const stopAccessAs = () =>
   req<{ accessToken: string; user: AppUser }>('/auth/access-as/stop', { method: 'POST' });
 
-// Database selection (owner 2026-10-25)
+// Database selection (owner 2026-10-25 & 2026-11-08)
+export type DatabaseThemeColor = 'red' | 'yellow' | 'green' | 'blue' | 'slate';
+
+export type DatabaseMeta = {
+  name: string;
+  color: DatabaseThemeColor;
+  label: string;
+  badge?: string;
+  description?: string;
+  restrictedRoles?: string[];
+  isRestricted?: boolean;
+  isAllowed?: boolean;
+};
+
+export type DatabaseThemeConfig = {
+  color: DatabaseThemeColor;
+  label: string;
+  badge?: string;
+  description?: string;
+  restrictedRoles?: string[];
+};
+
 export type DatabaseInfo = {
-  active: string; system: string; primary: string; list: string[];
-  canSwitch: boolean; canSetSystem: boolean;
+  active: string;
+  system: string;
+  primary: string;
+  list: string[];
+  metaList?: DatabaseMeta[];
+  themes?: Record<string, DatabaseThemeConfig>;
+  canSwitch: boolean;
+  canSetSystem: boolean;
 };
 export const getDatabases = () => req<DatabaseInfo>('/auth/databases', { silent: true });
 export const switchDatabase = (database: string) =>
@@ -104,6 +131,10 @@ export const switchDatabase = (database: string) =>
   });
 export const setSystemDatabase = (database: string) =>
   req<{ system: string }>('/auth/system-database', { method: 'PUT', body: JSON.stringify({ database }) });
+export const saveDatabaseThemes = (themes: Record<string, DatabaseThemeConfig>) =>
+  req<{ ok: boolean; themes: Record<string, DatabaseThemeConfig> }>('/auth/database-themes', {
+    method: 'PUT', body: JSON.stringify({ themes }),
+  });
 
 export const createUser = (payload: {
   username: string; password: string; displayName: string;

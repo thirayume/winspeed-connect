@@ -34,7 +34,7 @@ const LINE_TOKEN_URL = 'https://api.line.me/oauth2/v2.1/token';
 const LINE_PROFILE_URL = 'https://api.line.me/v2/profile';
 
 // R12 item 1/3: ranks and Access As actors come from the shared role-capability map
-const { ROLE_RANK: ACCESS_AS_ROLE_RANK, ACCESS_AS_ACTOR_ROLES: ACTOR_ROLE_LIST, capabilitiesFor, rolesFor } = require('../services/role-capabilities');
+const { ROLE_RANK: ACCESS_AS_ROLE_RANK, ACCESS_AS_ACTOR_ROLES: ACTOR_ROLE_LIST, capabilitiesFor, rolesFor, userRoles, hasRole } = require('../services/role-capabilities');
 const activeDb = require('../services/active-database');
 const { getDbName } = require('../db');
 const roleHasCapability = (role, cap) => rolesFor(cap).includes(String(role || '').toUpperCase());
@@ -545,18 +545,52 @@ router.get('/me', requireAuth, async (req, res) => {
 });
 
 // ── Database selection (owner 2026-10-25) ─────────────────────
-// GET the picker data: the session's active database, the system default, and the list offered.
+// GET the picker data: the session's active database, the system default, the list offered, and color theme metadata.
 router.get('/databases', requireAuth, async (req, res) => {
   try {
-    const role = req.user?.role;
     const canSwitch = hasPermission(req.user, 'database.switch');
     const canSetSystem = hasPermission(req.user, 'database.set-system');
-    const [system, list] = await Promise.all([
+    const [system, rawList, themes] = await Promise.all([
       activeDb.systemActiveDatabase(),
       (canSwitch || canSetSystem) ? activeDb.listSwitchableDatabases() : Promise.resolve([]),
+      activeDb.getDatabaseThemes(),
     ]);
     const active = getDbName() || system;
-    res.json({ active, system, primary: activeDb.primaryDatabase(), list, canSwitch, canSetSystem });
+
+    const uRoles = userRoles(req.user);
+    const isAdmin = uRoles.includes('ADMIN');
+
+    // Build rich metadata for all candidate databases
+    const metaList = rawList.map(dbName => {
+      const theme = activeDb.resolveTheme(dbName, themes);
+      const restrictedRoles = Array.isArray(theme.restrictedRoles) ? theme.restrictedRoles : [];
+      const isRestricted = restrictedRoles.length > 0;
+      const isAllowed = !isRestricted || isAdmin || uRoles.some(r => restrictedRoles.includes(r));
+      return {
+        name: dbName,
+        color: theme.color || 'blue',
+        label: theme.label || dbName,
+        badge: theme.badge || '',
+        description: theme.description || '',
+        restrictedRoles,
+        isRestricted,
+        isAllowed,
+      };
+    });
+
+    // list contains databases this user can switch into
+    const list = metaList.filter(m => m.isAllowed).map(m => m.name);
+
+    res.json({
+      active,
+      system,
+      primary: activeDb.primaryDatabase(),
+      list,
+      metaList,
+      themes,
+      canSwitch,
+      canSetSystem,
+    });
   } catch (e) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -579,6 +613,22 @@ router.post('/switch-database', requireAuth, async (req, res) => {
       return res.status(400).json({ code: 'DB_NOT_ALLOWED', message: 'เลือกได้เฉพาะฐานข้อมูลที่ระบบอนุญาตและเปิดใช้งานได้' });
     }
     const database = list.find(d => d.toLowerCase() === wanted.toLowerCase());
+
+    // Security restriction check (e.g. dbwins_worldfert2 -> Accounting, C_Level, Admin)
+    const themes = await activeDb.getDatabaseThemes();
+    const theme = activeDb.resolveTheme(database, themes);
+    const restrictedRoles = Array.isArray(theme.restrictedRoles) ? theme.restrictedRoles : [];
+    if (restrictedRoles.length > 0) {
+      const uRoles = userRoles(req.user);
+      const isAuthorized = uRoles.includes('ADMIN') || uRoles.some(r => restrictedRoles.includes(r));
+      if (!isAuthorized) {
+        return res.status(403).json({
+          code: 'DB_RESTRICTED',
+          message: `ฐานข้อมูล ${database} (${theme.label || 'PROD_DB_RD'}) สงวนไว้เฉพาะทีมที่ได้รับอนุญาต (${restrictedRoles.join(', ')})`,
+        });
+      }
+    }
+
     res.json({ accessToken: reissueWithDatabase(req.tokenPayload, database), database, isDefault: false });
   } catch (e) {
     res.status(500).json({ message: 'Server error' });
@@ -595,6 +645,25 @@ router.put('/system-database', requireAuth, async (req, res) => {
     res.json({ system: database });
   } catch (e) {
     if (e.code === 'DB_NOT_ALLOWED') return res.status(400).json({ code: e.code, message: 'เลือกได้เฉพาะฐานข้อมูลที่ระบบอนุญาต' });
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PUT update database color themes and metadata (admin / database.set-system)
+router.put('/database-themes', requireAuth, async (req, res) => {
+  try {
+    const uRoles = userRoles(req.user);
+    const canManage = hasPermission(req.user, 'database.set-system') || uRoles.includes('ADMIN');
+    if (!canManage) {
+      return res.status(403).json({ code: 'FORBIDDEN', message: 'เฉพาะผู้ดูแลระบบเท่านั้นที่มีสิทธิ์ตั้งค่าสีฐานข้อมูล' });
+    }
+    const themes = req.body?.themes;
+    if (!themes || typeof themes !== 'object') {
+      return res.status(400).json({ code: 'INVALID_THEMES', message: 'ข้อมูลการตั้งค่าสีไม่ถูกต้อง' });
+    }
+    const saved = await activeDb.setDatabaseThemes(themes);
+    res.json({ ok: true, themes: saved });
+  } catch (e) {
     res.status(500).json({ message: 'Server error' });
   }
 });
