@@ -161,7 +161,7 @@ export function ReconciliationPage() {
   }, [days, filter]);
 
   useEffect(() => { load(days, filter); /* eslint-disable-next-line */ }, [days, filter]);
-  useSocketEvent('so_updated', () => { load(days, filter); });
+  useSocketEvent('so_updated', () => load(days, filter));
 
   async function doResolve(c: ReconCase, checkType: ReconCheck, action: 'RESOLVE' | 'IGNORE') {
     const verb = action === 'IGNORE' ? 'ละเว้น (ไม่ถือเป็นปัญหา)' : 'แก้ไขแล้ว';

@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useUnsavedChanges } from "../../hooks/useUnsavedChanges";
+import { unsavedMessage } from "../../utils/unsaved-changes";
 import {
   X,
   UserRound,
@@ -28,6 +30,7 @@ export function UserEditor({
   initialTab?: "account" | "roles";
 }) {
   const session = useAuthStore((s) => s.user);
+  const [formDirty, setFormDirty] = useState(false);
   const original = user.RoleCodes || [user.RoleCode || user.Role || "SALES"];
   const [roles, setRoles] = useState<RoleProfile[]>([]),
     [codes, setCodes] = useState<string[]>(original);
@@ -39,6 +42,9 @@ export function UserEditor({
     Boolean(session?.capabilities?.actions.includes("roles.manage")) &&
     !session?.isImpersonating &&
     session?.id !== user.Id;
+  const dirty = formDirty || [...codes].sort().join("|") !== [...original].sort().join("|");
+  const releaseDraftGuard = useUnsavedChanges(dirty);
+  const closeEditor = () => { if (!busy && (!dirty || window.confirm(unsavedMessage))) onClose(); };
   useEffect(() => {
     req<{ roles: RoleProfile[] }>("/admin-management/roles")
       .then((r) => {
@@ -87,6 +93,7 @@ export function UserEditor({
           password: String(data.get("password") || ""),
           roleCodes: codes,
         });
+      releaseDraftGuard();
       onSaved();
       onClose();
     } catch (e) {
@@ -116,6 +123,7 @@ export function UserEditor({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-2 sm:p-4">
       <form
+        onChangeCapture={() => setFormDirty(true)}
         onSubmit={save}
         onInvalidCapture={(e) => {
           const field = e.target as HTMLInputElement;
@@ -146,7 +154,7 @@ export function UserEditor({
             type="button"
             aria-label="ปิดข้อมูลผู้ใช้"
             disabled={busy}
-            onClick={onClose}
+            onClick={closeEditor}
             className="p-2 rounded-lg hover:bg-slate-200"
           >
             <X size={20} />
@@ -366,7 +374,7 @@ export function UserEditor({
             <button
               type="button"
               disabled={busy}
-              onClick={onClose}
+              onClick={closeEditor}
               className="border rounded-xl px-4 py-2 bg-white"
             >
               ยกเลิก

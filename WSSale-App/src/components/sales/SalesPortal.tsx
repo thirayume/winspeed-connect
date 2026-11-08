@@ -128,7 +128,6 @@ export const SalesPortal = () => {
       setTotalOrders(res.total || 0);
     } catch (e) {
       console.error('fetchSalesOrders failed', e);
-      setOrders([]);
     }
     setLoading(false);
   }, [page, limit, debouncedSearch, statusFilter, setUnlockRequests]);
@@ -167,7 +166,7 @@ export const SalesPortal = () => {
   // Listen for real-time updates
   useSocketEvent('so_updated', () => {
     console.log('[Socket] so_updated event received. Refreshing SalesPortal...');
-    loadData();
+    return loadData();
   });
 
   // Handle Jump to SO

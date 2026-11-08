@@ -1,4 +1,6 @@
 import { bookingNoteError } from '../../utils/bookingNotes';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
+import { unsavedMessage } from '../../utils/unsaved-changes';
 import { useState, useEffect, useCallback } from 'react';
 import { X, Plus, Minus, Truck, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket } from 'lucide-react';
 import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation, fetchPriceIndicator } from '../../services/api';
@@ -112,6 +114,9 @@ export function CreateSODialog({
   const [isSaveCommitted, setIsSaveCommitted] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
+  const [initializing, setInitializing] = useState(true);
+  const [initialError, setInitialError] = useState('');
+  const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [salesUsers, setSalesUsers] = useState<AdminUser[]>([]);
   const currentUser = useAuthStore(s => s.user);
@@ -132,6 +137,13 @@ export function CreateSODialog({
   // Mobile UX State
   const [mobileView, setMobileView] = useState<'products' | 'cart'>('products');
   const [isTruckInfoCollapsed, setIsTruckInfoCollapsed] = useState(false);
+  const draftSnapshot = JSON.stringify({ bills, truckPlate, controlTicketNo, transpId, deliveryDate, notifiedAt,
+    isOwnTruck, noTruckRequired, pSling, loadInOrder, salesUserId });
+  useEffect(() => {
+    if (!initializing && !initialError && initialSnapshot === null) setInitialSnapshot(draftSnapshot);
+  }, [initializing, initialError, initialSnapshot, draftSnapshot]);
+  const dirty = initialSnapshot !== null && initialSnapshot !== draftSnapshot && !isSaveCommitted;
+  const releaseDraftGuard = useUnsavedChanges(dirty);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -166,8 +178,16 @@ export function CreateSODialog({
   }, [debouncedCustSearch, isOpen]);
 
   useEffect(() => {
+    if (!isOpen) return;
+    let disposed = false;
+    setInitializing(true);
+    setInitialError('');
+    setInitialSnapshot(null);
+    const failed = (e: Error) => { if (!disposed) setInitialError(e.message || 'โหลดเอกสารไม่สำเร็จ'); };
+    const complete = () => { if (!disposed) setInitializing(false); };
     if (convertFromQuoteId) {
       fetchQuotation(convertFromQuoteId).then(q => {
+          if (disposed) return;
           setSalesUserId(q.SalesUserId || '');
           
           if (q.TruckPlate) setTruckPlate(q.TruckPlate);
@@ -211,9 +231,10 @@ export function CreateSODialog({
           }]);
           setActiveBillId('bill-1');
           setIsTruckInfoCollapsed(true);
-        }).catch(console.error);
+        }).catch(failed).finally(complete);
     } else if (editSoId && editSoId !== 'undefined') {
       fetchSalesOrder(editSoId).then(so => {
+        if (disposed) return;
         const soCustId = (so as any).custId || (so as any).custID || (so as any).CustId || (so as any).CustID || '';
         const soCustName = (so as any).custName || (so as any).CustName || '';
         const soCreditDays = (so as any).creditDays || (so as any).CreditDays || 0;
@@ -268,7 +289,7 @@ export function CreateSODialog({
             couponReservationId: l.couponReservationId || l.CouponReservationId
           }))
         }]);
-      }).catch(console.error);
+      }).catch(failed).finally(complete);
     } else {
       setPersistedReservationIds(new Set());
       setBills([{ id: 'bill-1', soPrefix: 'I', lines: [], remark: '', creditDays: 0, isControlTicket: false }]);
@@ -293,8 +314,13 @@ export function CreateSODialog({
       
       setError('');
       setIsTruckInfoCollapsed(!!activeTrip); setMobileView('products');
+      complete();
     }
-  }, [isOpen, userRole, editSoId, activeTrip, convertFromQuoteId, canSeeRebate]);
+    return () => { disposed = true; };
+    // Trip refreshes are reference data, NOT permission to replace an open editor.
+    // Seed once when opening/changing the document; server validation still runs on save.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, editSoId, convertFromQuoteId]);
 
   // Load active PriceBook ID once on open
   useEffect(() => {
@@ -811,6 +837,7 @@ export function CreateSODialog({
         if (res.needsApproval) alert(`⚠ มีรายการราคาที่ต้องอนุมัติ (ไม่พบราคาประกาศหรือราคาต่ำกว่าประกาศ)\nต้องการอนุมัติจาก ผจก. ก่อน confirm`);
         else alert(`✓ สร้างกลุ่มบิลสำเร็จ (จำนวน ${payload.length} บิล)`);
       }
+      releaseDraftGuard();
       onCreated?.();
       onClose();
     } catch (e: unknown) {
@@ -821,6 +848,8 @@ export function CreateSODialog({
   }
 
   async function handleCloseModal() {
+    if (submitting) return;
+    if (dirty && !window.confirm(unsavedMessage)) return;
     // If save was already committed to DB, do NOT cancel any reservations
     if (isSaveCommitted) {
       onClose();
@@ -881,6 +910,12 @@ export function CreateSODialog({
   }
 
   if (!isOpen) return null;
+  if (initializing || initialError) return (
+    <div role="status" className="p-6">
+      {initialError || 'กำลังเปิดเอกสาร…'}
+      {initialError && <button type="button" onClick={onClose} className="ml-3 text-blue-700">ปิดแล้วลองเปิดอีกครั้ง</button>}
+    </div>
+  );
 
   return (
     <>

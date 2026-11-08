@@ -1571,17 +1571,17 @@ router.get('/invoices', async (req, res) => {
 });
 
 // GET /api/master/aging — dashboard SO คงค้าง (TOP 200, 2 ปีจาก Jan 1)
-let _agingCache = null;
-let _agingCacheAt = 0;
+const { createReadCache, scopedReadKey } = require('../services/read-cache');
+const agingCache = createReadCache();
 const AGING_TTL = 5 * 60 * 1000;
 
 router.get('/aging', async (req, res) => {
   try {
-    const now = Date.now();
     const bust = req.query.bust === '1';
     const agingScope = await getVisibleScope(req.user);
     const ag = scopeFilter(agingScope, { empCol: 'hd.EmpID', prefix: 'ag' });
-    if (agingScope.all && !bust && _agingCache && now - _agingCacheAt < AGING_TTL) return res.json(_agingCache);
+    const db = require('../db');
+    const rows = await agingCache.get(scopedReadKey(db.getTarget(), db.getDbName(), agingScope), async () => {
 
     const { wfQuery: wq } = require('../db');
     const result = await wq(`
@@ -1644,10 +1644,9 @@ router.get('/aging', async (req, res) => {
       ) line
       ORDER BY DaysOpen DESC
     `, ag.inputs);
-    if (!agingScope.all) return res.json(result.recordset || []);
-    _agingCache = result.recordset || [];
-    _agingCacheAt = now;
-    res.json(_agingCache);
+    return result.recordset || [];
+    }, { ttl: agingScope.all ? AGING_TTL : 30000, force: bust });
+    res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 

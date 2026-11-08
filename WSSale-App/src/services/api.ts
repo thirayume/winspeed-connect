@@ -25,7 +25,9 @@ export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (t: string) => localStorage.setItem(TOKEN_KEY, t);
 export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
 
-function notifyAuthExpired() {
+function notifyAuthExpired(requestToken: string | null) {
+  // A response from the previous login/database must not revoke a newer session.
+  if (!requestToken || getToken() !== requestToken) return;
   clearToken();
   window.dispatchEvent(new CustomEvent('wssale:auth-expired'));
 }
@@ -37,29 +39,64 @@ function authHeaders(): Record<string, string> {
 
 import { useAppStore } from '../store/app-store';
 
-export async function req<T>(path: string, init?: RequestInit & { silent?: boolean }): Promise<T> {
-  const silent = init?.silent;
+const pendingReads = new Map<string, Promise<unknown>>();
+let readGeneration = 0;
+type ApiOptions = RequestInit & { silent?: boolean; timeoutMs?: number };
+
+export async function req<T>(path: string, init: ApiOptions = {}): Promise<T> {
+  const { silent, timeoutMs, ...options } = init;
+  const method = (options.method || 'GET').toUpperCase();
+  const requestToken = getToken();
+  const headers = new Headers({ 'Content-Type': 'application/json', ...authHeaders(), ...dbTargetHeader() });
+  new Headers(options.headers).forEach((value, key) => headers.set(key, value));
+  const isRead = method === 'GET';
+  // Only coalesce concurrent reads, never replay writes or cache mutable query results.
+  const key = isRead && !options.signal
+    ? JSON.stringify([path, [...headers.entries()].sort(), readGeneration, timeoutMs, options.cache, options.credentials])
+    : null;
+  if (key && pendingReads.has(key)) return structuredClone(await pendingReads.get(key)) as T;
+  if (!isRead) { readGeneration++; masterCache.clear(); }
+  const pending = performRequest<T>(path, { ...options, headers }, silent, timeoutMs ?? (isRead ? 60000 : 120000), requestToken);
+  if (key) pendingReads.set(key, pending);
+  try { return structuredClone(await pending); }
+  finally {
+    if (key && pendingReads.get(key) === pending) pendingReads.delete(key);
+    if (!isRead) { readGeneration++; masterCache.clear(); }
+  }
+}
+
+async function performRequest<T>(path: string, options: RequestInit, silent: boolean | undefined, timeoutMs: number, requestToken: string | null): Promise<T> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const abort = () => controller.abort();
+  if (options.signal?.aborted) abort();
+  options.signal?.addEventListener('abort', abort, { once: true });
+  const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
   if (!silent) {
     useAppStore.getState().startLoading();
   }
   
   try {
     const res = await fetch(`${API_BASE}${path}`, {
-      ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeaders(),
-        ...dbTargetHeader(),
-        ...(init?.headers as Record<string, string> | undefined),
-      },
+      ...options,
+      signal: controller.signal,
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText }));
-      if (res.status === 401) notifyAuthExpired();
+      if (res.status === 401) notifyAuthExpired(requestToken);
       throw Object.assign(new Error(err.message || 'Request failed'), { status: res.status, data: err });
     }
     return await res.json();
+  } catch (error) {
+    if (timedOut) throw Object.assign(new Error(
+      !options.method || options.method.toUpperCase() === 'GET'
+        ? 'โหลดข้อมูลไม่ทันเวลา ข้อมูลที่กรอกยังอยู่ กรุณาลองโหลดใหม่'
+        : 'ยังยืนยันผลการบันทึกไม่ได้ ข้อมูลที่กรอกยังอยู่ กรุณาตรวจรายการก่อนบันทึกซ้ำ'
+    ), { code: 'REQUEST_TIMEOUT' });
+    throw error;
   } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abort);
     if (!silent) {
       useAppStore.getState().stopLoading();
     }
@@ -143,13 +180,16 @@ const MASTER_CACHE_TTL = 5 * 60 * 1000;
 const masterCache = new Map<string, { expiresAt: number; promise: Promise<unknown> }>();
 
 function cachedReq<T>(key: string, loader: () => Promise<T>, ttl = MASTER_CACHE_TTL): Promise<T> {
+  key = JSON.stringify([getToken(), dbTargetHeader(), key]);
   const now = Date.now();
   const cached = masterCache.get(key);
   if (cached && cached.expiresAt > now) return cached.promise as Promise<T>;
   const promise = loader().catch(error => {
-    masterCache.delete(key);
+    if (masterCache.get(key)?.promise === promise) masterCache.delete(key);
     throw error;
   });
+  for (const [oldKey, entry] of masterCache) if (entry.expiresAt <= now) masterCache.delete(oldKey);
+  if (masterCache.size >= 128 && !masterCache.has(key)) masterCache.delete(masterCache.keys().next().value!);
   masterCache.set(key, { expiresAt: now + ttl, promise });
   return promise;
 }
@@ -955,6 +995,10 @@ export interface OpsStatus {
   requests: number; errors: number; lastErrorAt: string | null;
   byStatus: Record<string, number>; alertConfigured: boolean;
   db: { sqlserver: string; weighing?: string };
+  performance?: {
+    activeRequests: number; peakRequests: number;
+    timings: { operation: string; count: number; averageMs: number; maxMs: number; slowCount: number; p95UpperBoundMs: number | string }[];
+  };
 }
 export interface OpsError {
   Id?: number; OccurredAt?: string; at?: string;

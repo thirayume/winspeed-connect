@@ -32,7 +32,7 @@ export function DashboardPage() {
   async function load(bustCache = false) {
     setLoading(true);
     // The open-order list can take about 20 seconds when its cache is cold, so it must not hold the rest of the page
-    const agingDone = fetchAgingOrders(bustCache).then(a => setAging(a as AgingRow[])).catch(() => setAging([]));
+    const agingDone = fetchAgingOrders(bustCache).then(a => setAging(a as AgingRow[])).catch(console.error);
     try {
       const [s, r] = await Promise.all([
         fetchSoStats(bustCache),
@@ -49,7 +49,7 @@ export function DashboardPage() {
   // Listen for real-time updates from Backend Polling
   useSocketEvent('so_updated', () => {
     console.log('[Socket] so_updated event received. Refreshing Dashboard...');
-    load();
+    return load();
   });
 
   const warnAging = aging.filter(a => a.DaysOpen > 30);

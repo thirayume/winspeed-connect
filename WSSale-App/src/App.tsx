@@ -1,4 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
+import { confirmLeaveEditors } from './utils/unsaved-changes';
 import { AlertTriangle, Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell, LogOut, Users, LayoutDashboard, Coins, FileCheck, Gift, FileText, LayoutGrid, Database, Clock, ClipboardList, ClipboardCheck, Stamp, BarChart3, ShieldCheck, Activity, ScrollText, Menu, ChevronDown, Settings, Network, Wallet, Truck, Unlock, Ticket } from 'lucide-react';
 
 import { useErpStore } from './store/erp-store';
@@ -168,25 +169,22 @@ function App() {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
   const user = useAuthStore(s => s.user);
   const logout = useAuthStore(s => s.logout);
+  const token = useAuthStore(s => s.token);
+  const [bootstrapError, setBootstrapError] = useState('');
+  const [bootstrapRetry, setBootstrapRetry] = useState(0);
 
   useEffect(() => {
-    if (isAuthenticated && !user) {
-      getMe().then(u => {
-        useAuthStore.getState().login(useAuthStore.getState().token || '', u);
-        useAuthStore.setState({ user: u });
-      }).catch(() => logout());
-    }
-  }, [isAuthenticated, user, logout]);
-
-  // Menus and capabilities come from the server: read them again on each load, so a new release or a role change
-  // reaches a session that is still signed in. A failed read keeps what is stored; an expired token logs out in req.
-  useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !token) return;
+    let disposed = false;
+    setBootstrapError('');
     getMe().then(u => {
-      const { token, login } = useAuthStore.getState();
-      if (token) login(token, u);
-    }).catch(() => {});
-  }, [isAuthenticated]);
+      const session = useAuthStore.getState();
+      if (!disposed && session.token === token) session.login(token, u);
+    }).catch(() => {
+      if (!disposed) setBootstrapError('เชื่อมต่อระบบไม่ได้ชั่วคราว กรุณาลองอีกครั้ง');
+    });
+    return () => { disposed = true; };
+  }, [isAuthenticated, token, bootstrapRetry]);
 
   useEffect(() => {
     const onAuthExpired = () => logout();
@@ -199,7 +197,8 @@ function App() {
   if (!user) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-[#F1EFE8]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0C447C]" />
+        {bootstrapError ? <button onClick={() => setBootstrapRetry(v => v + 1)}>{bootstrapError} · ลองใหม่</button>
+          : <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0C447C]" />}
       </div>
     );
   }
@@ -208,7 +207,8 @@ function App() {
   // (เซิร์ฟเวอร์ส่งธงนี้มาเฉพาะเมื่อเปิด ENFORCE_PASSWORD_CHANGE — บนเครื่องนักพัฒนาจะไม่ขึ้น)
   if (user.mustChangePassword) return <ForcePasswordChange />;
 
-  return <AppShell user={user} logout={logout} />;
+  return <AppShell key={`${user.id}:${user.actorId || user.id}`} user={user}
+    logout={() => { if (confirmLeaveEditors()) logout(); }} />;
 }
 
 function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAuthStore.getState>['user']>; logout: () => void }) {
@@ -227,7 +227,8 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
   const [accessAsUsers, setAccessAsUsers] = useState<AdminUser[]>([]);
   const [accessAsLoading, setAccessAsLoading] = useState(false);
   const [accessAsSearch, setAccessAsSearch] = useState('');
-  const { activePortal, navigate } = useAppStore();
+  const activePortal = useAppStore(s => s.activePortal);
+  const navigate = useAppStore(s => s.navigate);
   const setUnlockRequests = useErpStore(s => s.setUnlockRequests);
   const setPendingGiveaways = useErpStore(s => s.setPendingGiveaways);
   const pendingUnlocks = useErpStore(s => s.unlockRequests.length);
@@ -297,6 +298,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
   });
 
   const switchAccessAs = async (targetId: number) => {
+    if (!confirmLeaveEditors()) return;
     setAccessAsLoading(true);
     try {
       const session = await startAccessAs(targetId);
@@ -311,6 +313,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
   };
 
   const stopAccessAsSession = async () => {
+    if (!confirmLeaveEditors()) return;
     setAccessAsLoading(true);
     try {
       const session = await stopAccessAs();

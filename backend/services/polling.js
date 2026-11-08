@@ -2,6 +2,7 @@ const { query, wfQuery } = require('../db');
 const { broadcast } = require('./socket');
 
 let pollingInterval = null;
+let running = false;
 const INTERVAL_MS = 5000;
 
 // State to track last seen IDs or timestamps
@@ -62,13 +63,18 @@ function startPolling() {
 
   // Start interval immediately so event loop stays alive even if initial checks hang
   pollingInterval = setInterval(() => {
-    checkControlTickets();
-    checkAgingOrders();
+    pollOnce();
   }, INTERVAL_MS);
 
   // Initial check to populate state without broadcasting (best-effort, non-blocking)
-  Promise.all([checkControlTickets(), checkAgingOrders()])
-    .catch((e) => console.error('[Polling] Initial check error:', e.message));
+  pollOnce();
+}
+
+async function pollOnce() {
+  if (running) return;
+  running = true;
+  try { await Promise.all([checkControlTickets(), checkAgingOrders()]); }
+  finally { running = false; }
 }
 
 function stopPolling() {
@@ -81,5 +87,6 @@ function stopPolling() {
 
 module.exports = {
   startPolling,
-  stopPolling
+  stopPolling,
+  pollOnce
 };

@@ -26,9 +26,10 @@ export const useTripStore = create<TripState>((set) => ({
   },
 
   updateTrip: (updates) => {
-    set((state) => ({
-      activeTrip: state.activeTrip ? { ...state.activeTrip, ...updates } : null
-    }));
+    set((state) => {
+      if (!state.activeTrip || Object.entries(updates).every(([key, value]) => state.activeTrip?.[key as keyof TripContext] === value)) return state;
+      return { activeTrip: { ...state.activeTrip, ...updates } };
+    });
   },
 
   clearTrip: () => {

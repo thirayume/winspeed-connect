@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { refreshQueue } from '../../utils/refresh-queue';
 import { Activity, RefreshCw, Database, Server, AlertTriangle, Bell, BellOff, Cpu, CheckCircle, XCircle } from 'lucide-react';
 import { fetchOpsStatus, fetchOpsErrors, fetchOpsOutbox, testOpsAlert, type OpsStatus, type OpsError, type OutboxRow } from '../../services/api';
 
@@ -39,7 +40,14 @@ export function OpsStatusPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
+  useEffect(() => {
+    const queue = refreshQueue(load, 0);
+    const visible = () => { queue.pause(document.hidden); if (!document.hidden) queue.request(); };
+    visible();
+    const t = setInterval(() => queue.request(), 15000);
+    document.addEventListener('visibilitychange', visible);
+    return () => { clearInterval(t); queue.stop(); document.removeEventListener('visibilitychange', visible); };
+  }, [load]);
 
   async function doTest() {
     setTesting(true);
@@ -57,6 +65,15 @@ export function OpsStatusPage() {
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
+      {status?.performance && <details className="bg-white p-4 border-b text-sm">
+        <summary className="cursor-pointer font-semibold text-[#0C447C]">ประสิทธิภาพ · กำลังประมวลผล {status.performance.activeRequests} คำขอ · สูงสุด {status.performance.peakRequests}</summary>
+        <p className="my-2 text-xs text-gray-500">สะสมตั้งแต่เริ่มบริการ · P95 เป็นเพดานช่วงเวลา · เวลา DB query รวมการรอ connection · ไม่มีข้อความ SQL หรือข้อมูลในฟอร์ม</p>
+        <div className="max-h-64 overflow-auto"><table className="w-full text-left text-xs"><thead><tr>
+          <th>งาน</th><th>จำนวน</th><th>เฉลี่ย ms</th><th>P95 ≤ ms</th><th>สูงสุด ms</th><th>ช้า ≥ 3 วินาที</th>
+        </tr></thead><tbody>{status.performance.timings.map(r=><tr key={r.operation} className="border-t">
+          <td>{r.operation}</td><td>{r.count}</td><td>{r.averageMs}</td><td>{r.p95UpperBoundMs}</td><td>{r.maxMs}</td><td>{r.slowCount}</td>
+        </tr>)}</tbody></table></div>
+      </details>}
       <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
