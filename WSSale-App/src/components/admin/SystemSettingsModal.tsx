@@ -17,13 +17,15 @@ import {
 } from 'lucide-react';
 import { fetchSystemSettings, updateSystemSettings, fetchEditReasons } from '../../services/api';
 
-interface SystemSettingsModalProps {
+export interface SystemSettingsModalProps {
   isOpen: boolean;
   embedded?: boolean;
-  onClose: () => void;
+  activeTab?: TabKey;
+  onRevisionLoaded?: (rev: number | undefined) => void;
+  onClose?: () => void;
 }
 
-type TabKey = 'pickup' | 'ticket' | 'rebate' | 'weight' | 'settle' | 'sales' | 'history';
+export type TabKey = 'pickup' | 'ticket' | 'rebate' | 'weight' | 'settle' | 'sales' | 'history';
 
 const DEFAULT_REASON_OPTIONS = [
   { code: 'POLICY_ADJUSTMENT', label: 'ปรับปรุงตามนโยบายบริษัท' },
@@ -43,8 +45,16 @@ function parseStrictFloat(val: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-export function SystemSettingsModal({ isOpen, onClose, embedded = false }: SystemSettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<TabKey>('pickup');
+export function SystemSettingsModal({
+  isOpen,
+  onClose = () => {},
+  embedded = false,
+  activeTab: controlledTab,
+  onRevisionLoaded,
+}: SystemSettingsModalProps) {
+  const [internalTab, setInternalTab] = useState<TabKey>('pickup');
+  const activeTab = controlledTab || internalTab;
+  const setActiveTab = (t: TabKey) => setInternalTab(t);
 
   // Policy Settings States
   const [pickupDueDefaultDays, setPickupDueDefaultDays] = useState<string>('7');
@@ -141,6 +151,7 @@ export function SystemSettingsModal({ isOpen, onClose, embedded = false }: Syste
           }
           if (res.currentRevision !== undefined) {
             setLoadedRevision(res.currentRevision);
+            onRevisionLoaded?.(res.currentRevision);
           }
           if (res.snapshots) {
             setPolicySnapshots(res.snapshots);
@@ -273,6 +284,7 @@ export function SystemSettingsModal({ isOpen, onClose, embedded = false }: Syste
 
       if (res.currentRevision !== undefined) {
         setLoadedRevision(res.currentRevision);
+        onRevisionLoaded?.(res.currentRevision);
       }
       if (res.snapshots) {
         setPolicySnapshots(res.snapshots);
@@ -296,115 +308,119 @@ export function SystemSettingsModal({ isOpen, onClose, embedded = false }: Syste
 
   return (
     <div className={embedded ? "w-full" : "fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"}>
-      <div className={embedded ? "bg-white rounded-xl w-full overflow-hidden" : "bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"}>
-        {/* Modal Header */}
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-[#0C447C] text-white">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-white/10 rounded-lg">
-              <Settings size={20} className="text-white" />
+      <div className={embedded ? "bg-white rounded-2xl border border-slate-200 shadow-xs w-full overflow-hidden p-5 sm:p-7 space-y-5" : "bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"}>
+        {/* Modal Header (Standalone only) */}
+        {!embedded && (
+          <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-[#0C447C] text-white">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 bg-white/10 rounded-lg">
+                <Settings size={20} className="text-white" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm sm:text-base flex items-center gap-2">
+                  ตั้งค่านโยบายระบบ (System Policy Management)
+                  {loadedRevision !== undefined && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 bg-white/20 rounded-full font-normal">
+                      Revision #{loadedRevision}
+                    </span>
+                  )}
+                </h3>
+                <p className="text-[11px] text-blue-200">
+                  ควบคุมพารามิเตอร์หลักตามสิทธิ์ ADMIN พร้อมระบบ Versioning & Change Audit
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-bold text-sm sm:text-base flex items-center gap-2">
-                ตั้งค่านโยบายระบบ (System Policy Management)
-                {loadedRevision !== undefined && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 bg-white/20 rounded-full font-normal">
-                    Revision #{loadedRevision}
-                  </span>
-                )}
-              </h3>
-              <p className="text-[11px] text-blue-200">
-                ควบคุมพารามิเตอร์หลักตามสิทธิ์ ADMIN พร้อมระบบ Versioning & Change Audit
-              </p>
-            </div>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition">
+              <X size={18} />
+            </button>
           </div>
-          <button hidden={embedded} onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition">
-            <X size={18} />
-          </button>
-        </div>
+        )}
 
-        {/* Tab Navigation */}
-        <div className="flex border-b border-gray-200 bg-gray-50/80 px-4 text-xs font-semibold overflow-x-auto gap-1">
-          <button
-            onClick={() => setActiveTab('pickup')}
-            className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
-              activeTab === 'pickup'
-                ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            <Calendar size={15} /> กำหนดรับสินค้า
-          </button>
+        {/* Tab Navigation (Standalone modal only) */}
+        {!embedded && (
+          <div className="flex border-b border-gray-200 bg-gray-50/80 px-4 text-xs font-semibold overflow-x-auto gap-1">
+            <button
+              onClick={() => setActiveTab('pickup')}
+              className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
+                activeTab === 'pickup'
+                  ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <Calendar size={15} /> กำหนดรับสินค้า
+            </button>
 
-          <button
-            onClick={() => setActiveTab('ticket')}
-            className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
-              activeTab === 'ticket'
-                ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            <ShieldAlert size={15} /> ตั๋วคุม & หมดอายุ
-          </button>
+            <button
+              onClick={() => setActiveTab('ticket')}
+              className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
+                activeTab === 'ticket'
+                  ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <ShieldAlert size={15} /> ตั๋วคุม & หมดอายุ
+            </button>
 
-          <button
-            onClick={() => setActiveTab('rebate')}
-            className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
-              activeTab === 'rebate'
-                ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            <Percent size={15} /> สัดส่วนรีเบท
-          </button>
+            <button
+              onClick={() => setActiveTab('rebate')}
+              className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
+                activeTab === 'rebate'
+                  ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <Percent size={15} /> สัดส่วนรีเบท
+            </button>
 
-          <button
-            onClick={() => setActiveTab('weight')}
-            className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
-              activeTab === 'weight'
-                ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            <Truck size={15} /> เที่ยวรถ & เครื่องชั่ง
-          </button>
+            <button
+              onClick={() => setActiveTab('weight')}
+              className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
+                activeTab === 'weight'
+                  ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <Truck size={15} /> เที่ยวรถ & เครื่องชั่ง
+            </button>
 
-          <button
-            onClick={() => setActiveTab('settle')}
-            className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
-              activeTab === 'settle'
-                ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            <Ticket size={15} /> ตัดตั๋ว & ของแถม
-          </button>
+            <button
+              onClick={() => setActiveTab('settle')}
+              className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
+                activeTab === 'settle'
+                  ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <Ticket size={15} /> ตัดตั๋ว & ของแถม
+            </button>
 
-          <button
-            onClick={() => setActiveTab('sales')}
-            className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
-              activeTab === 'sales'
-                ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            <Info size={15} /> ราคา & เอกสาร
-          </button>
+            <button
+              onClick={() => setActiveTab('sales')}
+              className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
+                activeTab === 'sales'
+                  ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <Info size={15} /> ราคา & เอกสาร
+            </button>
 
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
-              activeTab === 'history'
-                ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            <History size={15} /> ประวัติ Version
-          </button>
-        </div>
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
+                activeTab === 'history'
+                  ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <History size={15} /> ประวัติ Version
+            </button>
+          </div>
+        )}
 
-        {/* Modal Body */}
-        <div className="p-6 space-y-4 flex-1 overflow-y-auto">
-          <SystemDatabaseSetting />
+        {/* Modal / Page Body */}
+        <div className={embedded ? "space-y-4" : "p-6 space-y-4 flex-1 overflow-y-auto"}>
+          {activeTab === 'pickup' && <SystemDatabaseSetting />}
           {loading ? (
             <div className="py-12 text-center text-sm text-gray-500">⏳ กำลังโหลดนโยบายระบบ...</div>
           ) : (
@@ -933,19 +949,20 @@ export function SystemSettingsModal({ isOpen, onClose, embedded = false }: Syste
           )}
         </div>
 
-        {/* Modal Footer */}
-        <div className="p-4 border-t border-gray-100 bg-gray-50 flex gap-2">
-          <button
-            hidden={embedded}
-            onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-semibold text-xs bg-white hover:bg-gray-100 transition"
-          >
-            ยกเลิก
-          </button>
+        {/* Save Footer */}
+        <div className={`p-4 border-t border-gray-100 flex items-center justify-end gap-2 ${embedded ? 'bg-transparent px-0 pb-0' : 'bg-gray-50'}`}>
+          {!embedded && (
+            <button
+              onClick={onClose}
+              className="py-2.5 px-4 rounded-xl border border-gray-200 text-gray-600 font-semibold text-xs bg-white hover:bg-gray-100 transition"
+            >
+              ยกเลิก
+            </button>
+          )}
           <button
             onClick={handleSave}
             disabled={saving || loading}
-            className="flex-1 py-2.5 rounded-xl text-white font-semibold text-xs bg-[#0C447C] hover:bg-[#093560] flex items-center justify-center gap-1.5 disabled:opacity-50 transition shadow-sm"
+            className="py-2.5 px-6 rounded-xl text-white font-bold text-xs bg-[#0C447C] hover:bg-[#093560] flex items-center justify-center gap-1.5 disabled:opacity-50 transition shadow-sm ml-auto"
           >
             <Save size={16} /> {saving ? 'กำลังบันทึก...' : 'บันทึกนโยบาย'}
           </button>
