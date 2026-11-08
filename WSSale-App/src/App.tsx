@@ -341,16 +341,16 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
     <div className="flex h-screen w-full bg-background text-foreground overflow-hidden">
       <aside className={`hidden shrink-0 flex-col border-r border-border bg-sidebar md:flex transition-all duration-300 ${isSidebarCollapsed ? 'w-16' : 'w-60'}`}>
         <div className={`flex h-14 items-center border-b border-border transition-all ${isSidebarCollapsed ? 'justify-center' : 'gap-2.5 px-5'}`}>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white" style={{ background: '#0C447C' }}>
-            <span className="text-xs font-bold">WF</span>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden">
+            <img src="/wf-logo.png" alt="WorldFert" className="h-7 w-auto object-contain" />
           </div>
           {!isSidebarCollapsed && (
             <div className="flex flex-col leading-tight animate-in fade-in duration-300">
               <span className="text-sm font-semibold flex items-center gap-1.5">
-                WS-Sale-App
+                WF-SaleApp
                 <span className="text-[9px] bg-blue-100 text-blue-800 px-1 rounded font-bold">v{packageJson.version}</span>
               </span>
-              <span className="text-[11px] text-muted-foreground">World Fert</span>
+              <span className="text-[11px] text-muted-foreground">World Fertilizer</span>
             </div>
           )}
         </div>
@@ -454,8 +454,8 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
       <div className="flex flex-1 flex-col pb-16 md:pb-0 min-w-0">
         <header className="glass-header sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border px-4 md:px-6">
           <div className="flex items-center gap-2.5 md:hidden">
-            <Boxes className="h-5 w-5" />
-            <span className="text-sm font-semibold">WS-Sale-App</span>
+            <img src="/wf-logo.png" alt="WF" className="h-6 w-auto object-contain" />
+            <span className="text-sm font-semibold">WF-SaleApp</span>
           </div>
           <div className="hidden text-sm text-muted-foreground md:block">{portalLabel}</div>
           <div className="flex items-center gap-3">

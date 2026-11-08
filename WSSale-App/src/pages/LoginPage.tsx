@@ -73,12 +73,11 @@ export default function LoginPage() {
       <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-sm">
         {/* Logo area */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full mb-3"
-               style={{ background: '#0C447C' }}>
-            <span className="text-white text-2xl font-bold">WF</span>
+          <div className="inline-flex items-center justify-center mb-3">
+            <img src="/wf-logo.png" alt="World Fertilizer" className="h-16 w-auto object-contain drop-shadow-xs" />
           </div>
-          <h1 className="text-xl font-bold" style={{ color: '#0C447C' }}>WS-Sale-App</h1>
-          <p className="text-sm text-gray-500 mt-1">World Fertilizer Co., Ltd.</p>
+          <h1 className="text-2xl font-black tracking-tight" style={{ color: '#0C447C' }}>WF-SaleApp</h1>
+          <p className="text-sm text-gray-500 mt-1 font-medium">World Fertilizer Co., Ltd.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

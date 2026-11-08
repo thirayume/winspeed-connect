@@ -1122,6 +1122,27 @@ export type ReportTypeItem = {
   key: string;
   title: string;
   category?: string;
+  available?: boolean;
+  unavailableReason?: string | null;
+  enabled?: boolean;
+  orderIndex?: number;
+};
+
+export type ReportCatalogConfigItem = {
+  key: string;
+  title: string;
+  category: string;
+  available: boolean;
+  enabled: boolean;
+  orderIndex: number;
+};
+
+export type ReportCatalogConfigResponse = {
+  config: {
+    order: string[];
+    visibility: Record<string, boolean>;
+  };
+  reports: ReportCatalogConfigItem[];
 };
 
 export type ReportMeta = {
@@ -1180,6 +1201,13 @@ export const fetchDeliveryNote = (sequence: string) =>
   req<DeliveryNote>(`/truckscale/delivery-note/${encodeURIComponent(sequence)}`);
 
 export const fetchReportTypes = () => req<ReportTypeItem[]>('/reports/types');
+export const fetchReportCatalogConfig = () => req<ReportCatalogConfigResponse>('/reports/catalog-config');
+export const saveReportCatalogConfig = (payload: { order: string[]; visibility: Record<string, boolean> }) =>
+  req<{ ok: boolean; message: string; config: { order: string[]; visibility: Record<string, boolean> } }>('/reports/catalog-config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 // รายงานบางตัว (เช่น customer-dispatch) รับช่วงวัน ส่วนตัวอื่นไม่สนใจพารามิเตอร์
 export const fetchReport = (type: string, params?: Record<string, string>, init?: RequestInit) => {
   const qs = params && Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';

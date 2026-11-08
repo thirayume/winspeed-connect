@@ -835,26 +835,174 @@ router.use(async (req, _res, next) => {
   next();
 });
 
+function isUserAdmin(user) {
+  if (!user) return false;
+  if (user.role === 'ADMIN') return true;
+  if (Array.isArray(user.roles) && user.roles.includes('ADMIN')) return true;
+  return false;
+}
+
 function canRunReport(req, type) {
   const rule = REPORT_ROLES[type];
   if (rule === undefined) return false;
   if (req.scopeSeesAll !== true) return false;
   if (rule === null) return Boolean(req.user);
   if (typeof rule === 'function') return Boolean(rule(req.user));
-  if (Array.isArray(rule)) return rule.includes(req.user?.role);
+  if (Array.isArray(rule)) {
+    const roles = Array.isArray(req.user?.roles) ? req.user.roles : (req.user?.role ? [req.user.role] : []);
+    return rule.some(r => roles.includes(r));
+  }
   return false;
 }
 
-router.get('/types', (req, res) => {
-  res.json(Object.entries(REPORTS)
-    .filter(([key]) => canRunReport(req, key))
-    .map(([key, r]) => ({
-      key,
-      title: r.available === false ? `${r.title} (ยังไม่เปิดใช้งาน)` : r.title,
-      category: r.category || 'general',
-      available: r.available !== false,
-      unavailableReason: r.available === false ? r.unavailableReason : null,
-    })));
+let reportConfigCache = null;
+let reportConfigCacheTime = 0;
+
+async function getReportCatalogConfig() {
+  const now = Date.now();
+  if (reportConfigCache && (now - reportConfigCacheTime < 15000)) {
+    return reportConfigCache;
+  }
+  const config = {
+    order: [],
+    visibility: {},
+  };
+  try {
+    const res = await wfQuery("SELECT SettingKey, SettingValue FROM wf.SystemSetting WITH (NOLOCK) WHERE SettingKey LIKE 'REPORT_CFG_%'");
+    const rows = res.recordset || [];
+    const items = [];
+    for (const r of rows) {
+      const key = r.SettingKey.slice('REPORT_CFG_'.length);
+      try {
+        const parsed = JSON.parse(r.SettingValue);
+        items.push({
+          key,
+          order: typeof parsed.order === 'number' ? parsed.order : 9999,
+          enabled: parsed.enabled !== false,
+        });
+      } catch {}
+    }
+    items.sort((a, b) => a.order - b.order);
+    config.order = items.map(i => i.key);
+    for (const item of items) {
+      config.visibility[item.key] = item.enabled;
+    }
+    reportConfigCache = config;
+    reportConfigCacheTime = now;
+  } catch (err) {
+    // Return empty config if table or query unavailable
+  }
+  return config;
+}
+
+async function saveReportCatalogConfig(payload) {
+  const order = Array.isArray(payload?.order) ? payload.order : [];
+  const visibility = payload?.visibility || {};
+
+  const allKeys = new Set([...Object.keys(REPORTS), ...order, ...Object.keys(visibility)]);
+
+  for (const key of allKeys) {
+    const orderIndex = order.indexOf(key);
+    const orderVal = orderIndex >= 0 ? orderIndex : 9999;
+    const enabledVal = visibility[key] !== false;
+    const settingKey = `REPORT_CFG_${key}`;
+    const jsonVal = JSON.stringify({ order: orderVal, enabled: enabledVal });
+
+    await wfQuery(`
+      MERGE wf.SystemSetting AS t
+      USING (SELECT @k AS SettingKey) AS s
+      ON t.SettingKey = s.SettingKey
+      WHEN MATCHED THEN
+        UPDATE SET SettingValue = @v, UpdatedAt = GETUTCDATE()
+      WHEN NOT MATCHED THEN
+        INSERT (SettingKey, SettingValue, Description, UpdatedAt)
+        VALUES (@k, @v, @desc, GETUTCDATE());
+    `, {
+      k: { type: sql.NVarChar(50), value: settingKey },
+      v: { type: sql.NVarChar(200), value: jsonVal },
+      desc: { type: sql.NVarChar(300), value: `Report catalog config for ${key}` },
+    });
+  }
+
+  reportConfigCache = { order, visibility };
+  reportConfigCacheTime = Date.now();
+  return reportConfigCache;
+}
+
+router.get('/catalog-config', async (req, res) => {
+  try {
+    if (!isUserAdmin(req.user)) {
+      return res.status(403).json({ message: 'เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถดูการตั้งค่านี้' });
+    }
+    const config = await getReportCatalogConfig();
+    const reports = Object.entries(REPORTS).map(([key, r]) => {
+      const orderIdx = config.order.indexOf(key);
+      return {
+        key,
+        title: r.title,
+        category: r.category || 'general',
+        available: r.available !== false,
+        enabled: config.visibility[key] !== false,
+        orderIndex: orderIdx >= 0 ? orderIdx : 9999,
+      };
+    });
+    reports.sort((a, b) => a.orderIndex - b.orderIndex);
+    res.json({ config, reports });
+  } catch (err) {
+    console.error('Error fetching catalog config:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.put('/catalog-config', async (req, res) => {
+  try {
+    if (!isUserAdmin(req.user)) {
+      return res.status(403).json({ message: 'เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถแก้ไขลำดับและเปิด/ปิดรายงาน' });
+    }
+    const { order, visibility } = req.body || {};
+    const updated = await saveReportCatalogConfig({ order, visibility });
+    res.json({ ok: true, message: 'บันทึกการจัดเรียงและเปิด/ปิดรายงานเรียบร้อยแล้ว', config: updated });
+  } catch (err) {
+    console.error('Error updating catalog config:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/types', async (req, res) => {
+  try {
+    const config = await getReportCatalogConfig();
+    const isAdmin = isUserAdmin(req.user);
+
+    let list = Object.entries(REPORTS)
+      .filter(([key]) => canRunReport(req, key))
+      .map(([key, r]) => {
+        const isEnabled = config.visibility[key] !== false;
+        const orderIdx = config.order.indexOf(key);
+        return {
+          key,
+          title: r.available === false ? `${r.title} (ยังไม่เปิดใช้งาน)` : r.title,
+          category: r.category || 'general',
+          available: r.available !== false,
+          unavailableReason: r.available === false ? r.unavailableReason : null,
+          enabled: isEnabled,
+          orderIndex: orderIdx >= 0 ? orderIdx : 9999,
+        };
+      });
+
+    if (!isAdmin) {
+      list = list.filter(r => r.enabled);
+    }
+
+    list.sort((a, b) => {
+      if (a.orderIndex !== b.orderIndex) return a.orderIndex - b.orderIndex;
+      return a.title.localeCompare(b.title, 'th');
+    });
+
+    res.json(list);
+  } catch (err) {
+    console.error('Failed to get report types:', err);
+    res.status(500).json({ message: 'ไม่สามารถดึงรายการรายงานได้' });
+  }
 });
 
 async function runReport(type, params = {}) {
@@ -885,6 +1033,10 @@ router.get('/:type', async (req, res) => {
   try {
     if (!canRunReport(req, req.params.type)) {
       return res.status(403).json({ message: 'ไม่มีสิทธิ์เข้าถึงรายงานนี้' });
+    }
+    const config = await getReportCatalogConfig();
+    if (config.visibility[req.params.type] === false && !isUserAdmin(req.user)) {
+      return res.status(403).json({ message: 'รายงานนี้ถูกปิดการแสดงผลโดยผู้ดูแลระบบ' });
     }
     const data = await runReport(req.params.type, req.query);
     if (!data) return res.status(404).json({ message: 'ไม่พบรายงาน' });
@@ -1015,6 +1167,10 @@ router.get('/:type/export', async (req, res) => {
   try {
     if (!canRunReport(req, req.params.type)) {
       return res.status(403).json({ message: 'ไม่มีสิทธิ์ export รายงานนี้' });
+    }
+    const config = await getReportCatalogConfig();
+    if (config.visibility[req.params.type] === false && !isUserAdmin(req.user)) {
+      return res.status(403).json({ message: 'รายงานนี้ถูกปิดการแสดงผลโดยผู้ดูแลระบบ' });
     }
     const data = await runReport(req.params.type, req.query);
     if (!data) return res.status(404).json({ message: 'ไม่พบรายงาน' });
@@ -1730,5 +1886,6 @@ async function runNativeDocumentsReport(params = {}, options = {}) {
 
 module.exports = router;
 module.exports.__testing = { REPORTS, REPORT_ROLES, runCustomerDispatchReport, runSalesJournalReport, runNativeDocumentsReport, fetchInvoicesByPostIds, resolveReportTemplate,
-  runPolicyHistoryReport, runSequenceCountersReport, runTruckHoldLogReport, runTicketAlertHistoryReport, runNativePrintLogReport };
+  runPolicyHistoryReport, runSequenceCountersReport, runTruckHoldLogReport, runTicketAlertHistoryReport, runNativePrintLogReport,
+  getReportCatalogConfig, saveReportCatalogConfig, isUserAdmin, canRunReport };
 

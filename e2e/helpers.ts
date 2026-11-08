@@ -27,7 +27,7 @@ export async function waitForUiIdle(page: Page, timeout = 30_000) {
 export async function login(page: Page, username: string, expectedDisplayName?: string) {
   captureBrowserDiagnostics(page);
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'WS-Sale-App' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /WF-SaleApp|WS-Sale-App/i })).toBeVisible();
   await page.locator('input[type="text"]').fill(username);
   await page.locator('input[type="password"]').fill(E2E_PASSWORD);
   await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
@@ -55,7 +55,7 @@ export async function logout(page: Page) {
     }
   } catch {}
 
-  const heading = page.getByRole('heading', { name: 'WS-Sale-App' });
+  const heading = page.getByRole('heading', { name: /WF-SaleApp|WS-Sale-App/i });
   if (!(await heading.isVisible({ timeout: 2000 }).catch(() => false))) {
     await page.evaluate(() => {
       localStorage.clear();
