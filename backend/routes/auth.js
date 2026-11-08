@@ -34,7 +34,7 @@ const LINE_TOKEN_URL = 'https://api.line.me/oauth2/v2.1/token';
 const LINE_PROFILE_URL = 'https://api.line.me/v2/profile';
 
 // R12 item 1/3: ranks and Access As actors come from the shared role-capability map
-const { ROLE_RANK: ACCESS_AS_ROLE_RANK, ACCESS_AS_ACTOR_ROLES: ACTOR_ROLE_LIST, capabilitiesFor, rolesFor } = require('../services/role-capabilities');
+const { ROLE_RANK: ACCESS_AS_ROLE_RANK, ACCESS_AS_ACTOR_ROLES: ACTOR_ROLE_LIST, capabilitiesFor, rolesFor, userRoles, hasRole } = require('../services/role-capabilities');
 const activeDb = require('../services/active-database');
 const { getDbName } = require('../db');
 const roleHasCapability = (role, cap) => rolesFor(cap).includes(String(role || '').toUpperCase());
@@ -282,11 +282,11 @@ router.post('/login', async (req, res) => {
 router.get('/line/start', (req, res) => {
   const cfg = lineLoginConfig();
   if (!cfg.channelId || !cfg.channelSecret) return res.status(400).send('LINE Login is not configured');
-  
+
   const protocol = req.headers['x-forwarded-proto'] || req.protocol;
   const host = req.get('host');
   const dynamicCallbackUrl = process.env.LINE_LOGIN_CALLBACK_URL || `${protocol}://${host}/api/auth/line/callback`;
-  
+
   let dynamicSuccessRedirect = cfg.successRedirect;
   const referer = req.get('referer');
   if (referer && !process.env.LINE_LOGIN_SUCCESS_REDIRECT) {
@@ -308,10 +308,10 @@ router.get('/line/callback', async (req, res) => {
   const cfg = lineLoginConfig();
   try {
     if (!cfg.channelId || !cfg.channelSecret) throw new Error('LINE Login is not configured');
-    
+
     let statePayload = {};
     try { statePayload = decodeLineState(req.query.state); } catch(e) { throw e; }
-    
+
     const callbackUrl = statePayload.cb || cfg.callbackUrl;
     const successRedirect = statePayload.rd || cfg.successRedirect;
 
@@ -545,18 +545,52 @@ router.get('/me', requireAuth, async (req, res) => {
 });
 
 // ── Database selection (owner 2026-10-25) ─────────────────────
-// GET the picker data: the session's active database, the system default, and the list offered.
+// GET the picker data: the session's active database, the system default, the list offered, and color theme metadata.
 router.get('/databases', requireAuth, async (req, res) => {
   try {
-    const role = req.user?.role;
     const canSwitch = hasPermission(req.user, 'database.switch');
     const canSetSystem = hasPermission(req.user, 'database.set-system');
-    const [system, list] = await Promise.all([
+    const [system, rawList, themes] = await Promise.all([
       activeDb.systemActiveDatabase(),
       (canSwitch || canSetSystem) ? activeDb.listSwitchableDatabases() : Promise.resolve([]),
+      activeDb.getDatabaseThemes(),
     ]);
     const active = getDbName() || system;
-    res.json({ active, system, primary: activeDb.primaryDatabase(), list, canSwitch, canSetSystem });
+
+    const uRoles = userRoles(req.user);
+    const isAdmin = uRoles.includes('ADMIN');
+
+    // Build rich metadata for all candidate databases
+    const metaList = rawList.map(dbName => {
+      const theme = activeDb.resolveTheme(dbName, themes);
+      const restrictedRoles = Array.isArray(theme.restrictedRoles) ? theme.restrictedRoles : [];
+      const isRestricted = restrictedRoles.length > 0;
+      const isAllowed = !isRestricted || isAdmin || uRoles.some(r => restrictedRoles.includes(r));
+      return {
+        name: dbName,
+        color: theme.color || 'blue',
+        label: theme.label || dbName,
+        badge: theme.badge || '',
+        description: theme.description || '',
+        restrictedRoles,
+        isRestricted,
+        isAllowed,
+      };
+    });
+
+    // list contains databases this user can switch into
+    const list = metaList.filter(m => m.isAllowed).map(m => m.name);
+
+    res.json({
+      active,
+      system,
+      primary: activeDb.primaryDatabase(),
+      list,
+      metaList,
+      themes,
+      canSwitch,
+      canSetSystem,
+    });
   } catch (e) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -570,6 +604,7 @@ router.post('/switch-database', requireAuth, async (req, res) => {
     }
     const wanted = String(req.body?.database || '').trim();
     const system = await activeDb.systemActiveDatabase();
+    if (!activeDb.canAccessDatabase(wanted || system, req.user, await activeDb.getDatabaseThemes())) return res.status(403).json({ code: 'DB_RESTRICTED', message: 'ไม่มีสิทธิ์เข้าถึงฐานข้อมูลนี้' });
     if (!wanted || wanted.toLowerCase() === system.toLowerCase()) {
       // Reset to the system default: drop the claim.
       return res.json({ accessToken: reissueWithDatabase(req.tokenPayload, null), database: system, isDefault: true });
@@ -579,6 +614,22 @@ router.post('/switch-database', requireAuth, async (req, res) => {
       return res.status(400).json({ code: 'DB_NOT_ALLOWED', message: 'เลือกได้เฉพาะฐานข้อมูลที่ระบบอนุญาตและเปิดใช้งานได้' });
     }
     const database = list.find(d => d.toLowerCase() === wanted.toLowerCase());
+
+    // Security restriction check (e.g. dbwins_worldfert2 -> Accounting, C_Level, Admin)
+    const themes = await activeDb.getDatabaseThemes();
+    const theme = activeDb.resolveTheme(database, themes);
+    const restrictedRoles = Array.isArray(theme.restrictedRoles) ? theme.restrictedRoles : [];
+    if (restrictedRoles.length > 0) {
+      const uRoles = userRoles(req.user);
+      const isAuthorized = uRoles.includes('ADMIN') || uRoles.some(r => restrictedRoles.includes(r));
+      if (!isAuthorized) {
+        return res.status(403).json({
+          code: 'DB_RESTRICTED',
+          message: `ฐานข้อมูล ${database} (${theme.label || 'PROD_DB_RD'}) สงวนไว้เฉพาะทีมที่ได้รับอนุญาต (${restrictedRoles.join(', ')})`,
+        });
+      }
+    }
+
     res.json({ accessToken: reissueWithDatabase(req.tokenPayload, database), database, isDefault: false });
   } catch (e) {
     res.status(500).json({ message: 'Server error' });
@@ -596,6 +647,25 @@ router.put('/system-database', requireAuth, async (req, res) => {
   } catch (e) {
     if (e.code === 'DB_NOT_ALLOWED') return res.status(400).json({ code: e.code, message: 'เลือกได้เฉพาะฐานข้อมูลที่ระบบอนุญาต' });
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PUT update database color themes and metadata (admin / database.set-system)
+router.put('/database-themes', requireAuth, async (req, res) => {
+  try {
+    const uRoles = userRoles(req.user);
+    const canManage = hasPermission(req.user, 'database.set-system') && !req.user.isImpersonating;
+    if (!canManage) {
+      return res.status(403).json({ code: 'FORBIDDEN', message: 'เฉพาะผู้ดูแลระบบเท่านั้นที่มีสิทธิ์ตั้งค่าสีฐานข้อมูล' });
+    }
+    const themes = req.body?.themes;
+    if (!themes || typeof themes !== 'object') {
+      return res.status(400).json({ code: 'INVALID_THEMES', message: 'ข้อมูลการตั้งค่าสีไม่ถูกต้อง' });
+    }
+    const saved = await activeDb.setDatabaseThemes(themes);
+    res.json({ ok: true, themes: saved });
+  } catch (e) {
+    res.status(e.status || 500).json({ message: e.status ? e.message : 'Server error' });
   }
 });
 
@@ -743,8 +813,24 @@ router.get('/users', requireAuth, requireCapability('users.manage'), async (req,
        LEFT JOIN wf.v_NearestApprover na ON na.PositionCode = u.PositionCode
        ORDER BY u.DisplayName`
     );
-    const memberships=(await wfQuery('SELECT r.UserId,r.RoleCode,p.BaseRole FROM wf.vUserRole r JOIN wf.RoleProfile p ON p.Code=r.RoleCode')).recordset;
-    res.json(result.recordset.map(u=>({...u,RoleCodes:memberships.filter(r=>r.UserId===u.Id).map(r=>r.RoleCode),Roles:[...new Set(memberships.filter(r=>r.UserId===u.Id).map(r=>r.BaseRole))]})));
+    const memberships = (await wfQuery('SELECT r.UserId, r.RoleCode, p.BaseRole FROM wf.vUserRole r JOIN wf.RoleProfile p ON p.Code = r.RoleCode')).recordset;
+    res.json(result.recordset.map(u => {
+      const userMemberships = memberships.filter(r => Number(r.UserId) === Number(u.Id));
+      let roleCodes = userMemberships.map(r => r.RoleCode);
+      let roles = [...new Set(userMemberships.map(r => r.BaseRole))];
+      if (roleCodes.length === 0) {
+        const fallback = u.RoleCode || u.Role;
+        if (fallback) {
+          roleCodes = [fallback];
+          roles = [u.Role || fallback];
+        }
+      }
+      return {
+        ...u,
+        RoleCodes: roleCodes,
+        Roles: roles
+      };
+    }));
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: 'Server error' });
@@ -863,12 +949,35 @@ router.patch('/users/:id', requireAuth, requireCapability('users.manage'), async
         const current=(await roleWrite.query(tx,'SELECT RoleCode FROM wf.vUserRole WHERE UserId=@id',{id:targetId})).recordset.map(r=>r.RoleCode).sort();
         if(JSON.stringify(current)!==JSON.stringify(expectedCodes))throw roleWrite.error('Role ของผู้ใช้เปลี่ยนแล้ว กรุณาปิดและเปิดข้อมูลใหม่ก่อนบันทึก');
       }
+      let currentPosition = targetUser.PositionCode || null;
+      if (positionCode !== undefined) {
+        const current = (await roleWrite.query(tx, 'SELECT PositionCode FROM wf.AppUser WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id', {id:targetId})).recordset[0];
+        if (!current) throw roleWrite.error('ไม่พบผู้ใช้',404);
+        currentPosition = current.PositionCode || null;
+        if (req.body.expectedPositionCode !== undefined && (req.body.expectedPositionCode || null) !== currentPosition) throw roleWrite.error('ตำแหน่งเปลี่ยนแล้ว กรุณาโหลดข้อมูลใหม่',409);
+      }
       const q=tx.request();for(const [k,v] of Object.entries(inputs))q.input(k,v.type,v.value);
       const result=await q.query(`UPDATE wf.AppUser SET ${sets.join(', ')} WHERE Id=@id`);
       if(codes){
         await roleWrite.setMembership(tx,targetId,codes);
         await roleWrite.query(tx,"INSERT wf.AdminChangeAudit(ActorId,Action,Target,Detail) VALUES(@actor,'USER_ROLES',@target,@detail)",{actor:callerId,target:String(targetId),detail:JSON.stringify({before:expectedCodes,after:codes})});
       }else if(role!==undefined && role!==targetUser.Role) await roleWrite.setMembership(tx,targetId,[role]);
+
+      const oldPos = currentPosition;
+      const newPos = positionCode ? String(positionCode).trim() : null;
+      if (positionCode !== undefined && oldPos !== newPos) {
+        if (req.body.expectedPositionCode !== undefined) {
+          const expPos = req.body.expectedPositionCode ? String(req.body.expectedPositionCode).trim() : null;
+          if (expPos !== oldPos) {
+            throw roleWrite.error('ตำแหน่งของผู้ใช้เปลี่ยนไปแล้ว กรุณาโหลดข้อมูลใหม่ก่อนบันทึก', 409);
+          }
+        }
+        await roleWrite.query(tx, "INSERT INTO wf.AdminChangeAudit(ActorId, Action, Target, Detail) VALUES(@actor, 'USER_POSITION', @target, @detail)", {
+          actor: callerId,
+          target: String(targetId),
+          detail: JSON.stringify({ before: oldPos, after: newPos, username: targetUser.Username })
+        });
+      }
       await roleWrite.assertAdministrator(tx);
       return result;
     });
@@ -889,7 +998,18 @@ router.patch('/users/:id', requireAuth, requireCapability('users.manage'), async
 //
 // คืนจำนวนคนที่ถือแต่ละตำแหน่งมาด้วย เพราะบางตำแหน่งมีได้คนเดียว (ผจก.ฝ่าย)
 // แต่บางตำแหน่งมีได้หลายคน (พนักงานขายเขต) — หน้าจอต้องเห็นก่อนตัดสินใจ
-router.get('/org-positions', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
+function mayViewOrganization(req,res,next) {
+  if (hasPermission(req.user,'users.manage') || hasRole(req.user,'ADMIN','MANAGER','ACCOUNTING')) return next();
+  return res.status(403).json({message:'ไม่มีสิทธิ์ดูผังองค์กร'});
+}
+router.get('/org-users', requireAuth, mayViewOrganization, async (req,res) => {
+  try {
+    const result = await wfQuery(`SELECT u.Id,u.Username,u.DisplayName,u.Role,u.IsActive,u.EmpId,u.PositionCode,e.EmpCode,e.EmpName
+      FROM wf.AppUser u LEFT JOIN dbo.EMEmp e ON e.EmpID=u.EmpId ORDER BY u.DisplayName`);
+    res.json(result.recordset || []);
+  } catch { res.status(503).json({message:'โหลดรายชื่อในผังองค์กรไม่สำเร็จ'}); }
+});
+router.get('/org-positions', requireAuth, mayViewOrganization, async (req, res) => {
   try {
     const r = await wfQuery(`
       SELECT p.PositionCode, p.PositionName, p.ReportsTo, p.OrgUnit, p.Tier,
@@ -936,7 +1056,7 @@ const DEPT_TO_UNIT = {
   'ห้องกระสอบ':   'โรงงาน',
 };
 
-router.get('/org-hints', requireAuth, requireRole('ADMIN', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
+router.get('/org-hints', requireAuth, mayViewOrganization, async (req, res) => {
   try {
     // จับคู่ AppUser กับทะเบียนพนักงานด้วยชื่อ — ทางเดียวที่ใช้ได้จริง
     // (EmpID / EmpCode / EMEmp.username จับคู่ไม่ได้เลยสักคน ตรวจแล้ว 3 ทาง)

@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { BarChart3, RefreshCw, Download, FileSpreadsheet, FileText, Search, AlertCircle, ShieldAlert, Settings } from 'lucide-react';
+import { BarChart3, RefreshCw, Download, FileSpreadsheet, FileText, Search, AlertCircle, ShieldAlert, Settings, SlidersHorizontal } from 'lucide-react';
 import { fetchReportTypes, fetchReport, exportReport, fetchReportTemplate } from '../../services/api';
 import type { ReportData, ReportTypeItem, ResolvedReportTemplateDto } from '../../services/api';
 import { LegacyReportPdfModal } from './LegacyReportPdfModal';
 import { AdminReportTemplateModal } from '../admin/AdminReportTemplateModal';
+import { AdminReportCatalogModal } from '../admin/AdminReportCatalogModal';
 import { useAuthStore } from '../../store/auth-store';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import {
@@ -25,7 +26,7 @@ const CATEGORY_MAP: Record<string, string> = {
 
 export function ReportsPage() {
   const currentUser = useAuthStore(s => s.user);
-  const isAdmin = currentUser?.role === 'ADMIN';
+  const isAdmin = currentUser?.role === 'ADMIN' || (Array.isArray(currentUser?.roles) && currentUser.roles.includes('ADMIN'));
 
   const [types, setTypes] = useState<ReportTypeItem[]>([]);
   const [active, setActive] = useState<string>('');
@@ -36,10 +37,22 @@ export function ReportsPage() {
   const [exporting, setExporting] = useState(false);
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
+  const [showCatalogModal, setShowCatalogModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
 
   const [templateError, setTemplateError] = useState<string | null>(null);
+
+  const refreshReportTypes = useCallback(() => {
+    fetchReportTypes()
+      .then(t => {
+        setTypes(t);
+        if (t.length > 0 && !t.some(x => x.key === active)) {
+          setActive(t[0].key);
+        }
+      })
+      .catch(console.error);
+  }, [active]);
 
   // Guard against stale asynchronous responses
   const activeReqIdRef = useRef(0);
@@ -190,6 +203,13 @@ export function ReportsPage() {
           onTemplateUpdated={() => load(active, reportParams())}
         />
       )}
+      {showCatalogModal && (
+        <AdminReportCatalogModal
+          isOpen={showCatalogModal}
+          onClose={() => setShowCatalogModal(false)}
+          onCatalogUpdated={refreshReportTypes}
+        />
+      )}
 
       {/* Top Header */}
       <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -204,13 +224,22 @@ export function ReportsPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           {isAdmin && (
-            <button
-              onClick={() => setShowAdminModal(true)}
-              className="px-3 py-2 rounded-lg text-gray-700 bg-gray-100 hover:bg-gray-200 text-sm font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer border border-gray-300"
-              title="จัดการหัวกระดาษและแม่แบบรายงาน (เฉพาะผู้ดูแลระบบ)"
-            >
-              <Settings size={16} className="text-[#0C447C]" /> จัดการแม่แบบ (Admin)
-            </button>
+            <>
+              <button
+                onClick={() => setShowCatalogModal(true)}
+                className="px-3 py-2 rounded-lg text-emerald-800 bg-emerald-50 hover:bg-emerald-100 text-sm font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer border border-emerald-300"
+                title="จัดเรียงลำดับการแสดงผล และเปิด/ปิด รายงานทั้งระบบ (เฉพาะผู้ดูแลระบบ)"
+              >
+                <SlidersHorizontal size={16} className="text-emerald-700" /> จัดการลำดับ/เปิดปิด (Admin)
+              </button>
+              <button
+                onClick={() => setShowAdminModal(true)}
+                className="px-3 py-2 rounded-lg text-gray-700 bg-gray-100 hover:bg-gray-200 text-sm font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer border border-gray-300"
+                title="จัดการหัวกระดาษและแม่แบบรายงาน (เฉพาะผู้ดูแลระบบ)"
+              >
+                <Settings size={16} className="text-[#0C447C]" /> จัดการแม่แบบ (Admin)
+              </button>
+            </>
           )}
 
           <button
@@ -357,14 +386,23 @@ export function ReportsPage() {
                 <button
                   key={t.key}
                   onClick={() => setActive(t.key)}
-                  className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-medium flex items-center gap-2 transition-colors cursor-pointer ${
+                  className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-medium flex items-center justify-between gap-2 transition-colors cursor-pointer ${
                     active === t.key
                       ? 'bg-[#0C447C] text-white shadow-sm'
+                      : t.enabled === false
+                      ? 'text-gray-400 bg-gray-50 hover:bg-gray-100/80 opacity-75'
                       : 'text-gray-700 hover:bg-gray-100/80'
                   }`}
                 >
-                  <FileSpreadsheet size={15} className="shrink-0 opacity-80" />
-                  <span className="truncate">{t.title}</span>
+                  <div className="flex items-center gap-2 truncate">
+                    <FileSpreadsheet size={15} className="shrink-0 opacity-80" />
+                    <span className="truncate">{t.title}</span>
+                  </div>
+                  {isAdmin && t.enabled === false && (
+                    <span className="text-[9px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-bold shrink-0">
+                      ปิด
+                    </span>
+                  )}
                 </button>
               ))
             )}

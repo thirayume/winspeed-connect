@@ -8,7 +8,7 @@ const {
   requireCapability,
   clearAccountStatusCache,
 } = require("../middleware/auth");
-const { ROLES, ACTIONS, MENUS } = require("../services/role-capabilities");
+const { ROLES, ACTIONS, MENUS, hasPermission } = require("../services/role-capabilities");
 const {
   EDITABLE,
   parseProfile,
@@ -71,11 +71,17 @@ router.put(
   "/roles/:code",
   requireCapability("roles.manage"),
   async (req, res) => {
+    if (String(req.params.code).toUpperCase() === "ADMIN") {
+      return res.status(400).json({ message: "Role ADMIN ได้รับการสงวนไว้ เป็นสิทธิ์หลักของระบบ ไม่สามารถแก้ไขได้" });
+    }
     const p = parseProfile({ ...req.body, code: req.params.code });
     if (!p)
       return res
         .status(400)
         .json({ message: "ตรวจรหัส Role บทบาทต้นแบบ และ Permission" });
+    if (p.code === "ADMIN") {
+      return res.status(400).json({ message: "Role ADMIN ได้รับการสงวนไว้ เป็นสิทธิ์หลักของระบบ ไม่สามารถแก้ไขได้" });
+    }
     try {
       await wfTransaction(async (tx) => {
         await lockPolicy(tx, req.user.id, "roles.manage");
@@ -279,14 +285,45 @@ router.post(
     }
   },
 );
-router.get("/history", requireCapability("roles.manage"), async (req, res) => {
+router.get("/history", async (req, res) => {
   try {
+    const roles = Array.isArray(req.user?.roles) ? req.user.roles : [req.user?.role].filter(Boolean);
+    const isAdmin = roles.includes('ADMIN');
+    const isCLevel = roles.includes('C_LEVEL');
+    const isManager = roles.includes('MANAGER');
+    const hasRolesManage = hasPermission(req.user, 'roles.manage');
+    const hasUsersManage = hasPermission(req.user, 'users.manage');
+
+    const domain = String(req.query.domain || 'all').toLowerCase();
+
+    // Domain-level permission check
+    if (domain === 'roles' || domain === 'batch') {
+      if (!hasRolesManage) return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูประวัติบทบาทและสิทธิ์' });
+    } else if (domain === 'positions') {
+      if (!hasUsersManage && !hasRolesManage) return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูประวัติตำแหน่งองค์กร' });
+    } else if (domain === 'regions') {
+      if (!isAdmin && !isCLevel && !isManager && !hasRolesManage) return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูประวัติผู้ดูแลภาค' });
+    } else {
+      if (!hasRolesManage && !hasUsersManage && !isAdmin) return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูประวัติการดูแลระบบ' });
+    }
+
+    let filterClause = '';
+    if (domain === 'roles') {
+      filterClause = "WHERE Action IN ('ROLE_SAVE', 'ROLE_DELETE')";
+    } else if (domain === 'batch') {
+      filterClause = "WHERE Action LIKE 'BATCH_%'";
+    } else if (domain === 'positions') {
+      filterClause = "WHERE Action = 'USER_POSITION'";
+    } else if (domain === 'regions') {
+      filterClause = "WHERE Action IN ('REGION_ASSIGN', 'REGION_REMOVE')";
+    }
+
     res.json(
       (
         await wfQuery(
-          "SELECT TOP (100) Id,ActorId,Action,Target,Detail,CreatedAt FROM wf.AdminChangeAudit ORDER BY Id DESC",
+          `SELECT TOP (100) Id,ActorId,Action,Target,Detail,CreatedAt FROM wf.AdminChangeAudit ${filterClause} ORDER BY Id DESC`,
         )
-      ).recordset,
+      ).recordset || [],
     );
   } catch (e) {
     fail(res, e);
@@ -315,6 +352,9 @@ router.delete(
   "/roles/:code",
   requireCapability("roles.manage"),
   async (req, res) => {
+    if (String(req.params.code).toUpperCase() === "ADMIN") {
+      return res.status(400).json({ message: "Role ADMIN เป็นสิทธิ์หลักของระบบ ไม่สามารถลบได้" });
+    }
     try {
       if (!Number.isInteger(req.body?.expectedRevision))
         return res.status(400).json({ message: "กรุณาโหลด Role ใหม่ก่อนลบ" });

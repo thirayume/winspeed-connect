@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Search, RefreshCw, X, Clock, Package, ChevronLeft, ChevronRight, Truck } from 'lucide-react';
+import { Search, RefreshCw, X, Clock, Package, ChevronLeft, ChevronRight, Truck, FileSpreadsheet } from 'lucide-react';
 import { searchAgingOrders } from '../../services/api';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { useAppStore } from '../../store/app-store';
+import { exportToExcel, type ExportColumn } from '../../utils/exportUtils';
 import type { AgingRow, SOStatus } from '../../types';
 import { SO_STATUS_META } from '../../constants/soStatus';
 
@@ -53,6 +54,24 @@ export const AgingPage = () => {
 
   const handleSearch = () => { setSearch(inputVal.trim()); setPage(1); };
   const clearSearch  = () => { setInputVal(''); setSearch(''); setPage(1); };
+
+  const exportToExcelHandler = () => {
+    if (!data || data.length === 0) {
+      alert('ไม่มีข้อมูลสำหรับส่งออก');
+      return;
+    }
+    const columns: ExportColumn[] = [
+      { key: 'TruckPlate', label: 'ทะเบียนรถ', formatter: (v) => v || 'ไม่ระบุรถ' },
+      { key: 'CustName', label: 'ชื่อลูกค้า' },
+      { key: 'WfRef', label: 'เลขที่เอกสาร (WF Ref)' },
+      { key: 'GoodCode', label: 'รหัสสินค้า' },
+      { key: 'GoodName', label: 'ชื่อสินค้า' },
+      { key: 'QtyTon', label: 'จำนวน (ตัน)', formatter: (v) => Number(v || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+      { key: 'DaysOpen', label: 'จำนวนวันค้างส่ง (วัน)' },
+      { key: 'DocStatus', label: 'สถานะเอกสาร', formatter: (v) => SO_STATUS_META[v as SOStatus]?.label || v || '-' }
+    ];
+    exportToExcel('รายการบิลค้างจัดส่ง', 'AgingOrders', columns, data);
+  };
 
   const toggleStatus = (s: string) =>
     setStatusFilter(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
@@ -205,6 +224,16 @@ export const AgingPage = () => {
               title="รีเฟรช"
             >
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            </button>
+
+            <button
+              onClick={exportToExcelHandler}
+              disabled={data.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold hover:bg-emerald-100 transition-colors whitespace-nowrap disabled:opacity-40 shadow-xs"
+              title="ส่งออก Excel"
+            >
+              <FileSpreadsheet size={14} />
+              <span className="hidden sm:inline">Export Excel</span>
             </button>
           </div>
         </div>

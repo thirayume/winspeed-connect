@@ -25,12 +25,13 @@ function validate(env,{frontend=false}={}) {
     for(const k of Object.keys(env)) if(/^VITE_/i.test(k)&&/PASSWORD|SECRET|TOKEN|PRIVATE_KEY|CONNECTION_STRING/i.test(k))errors.push(k+': forbidden public client key');
     return errors;
   }
-  if(!['local','remote','remote_b','local_uat','local_rehearsal'].includes(env.DB_MODE))errors.push('DB_MODE: explicit supported target required');
+  if(!['local','remote','remote_b','local_uat','local_rehearsal','onprem'].includes(env.DB_MODE))errors.push('DB_MODE: explicit supported target required');
   const required={remote:['REMOTE_DB_SERVER','REMOTE_DB_USER','REMOTE_DB_PASSWORD','DB_NAME'],
     remote_b:['REMOTE_B_DB_SERVER','REMOTE_B_DB_USER','REMOTE_B_DB_PASSWORD','REMOTE_B_DB_NAME'],
     local:['LOCAL_DB_SERVER','DB_NAME'],
     local_uat:['LOCAL_UAT_SERVER','LOCAL_UAT_DB','LOCAL_UAT_USER','LOCAL_UAT_PASSWORD'],
-    local_rehearsal:['LOCAL_REHEARSAL_SERVER','LOCAL_REHEARSAL_DB','LOCAL_REHEARSAL_USER','LOCAL_REHEARSAL_PASSWORD']};
+    local_rehearsal:['LOCAL_REHEARSAL_SERVER','LOCAL_REHEARSAL_DB','LOCAL_REHEARSAL_USER','LOCAL_REHEARSAL_PASSWORD'],
+    onprem:['ONPREM_DB_SERVER','ONPREM_DB_NAME','ONPREM_EXPECTED_SERVERNAME','ONPREM_PRODUCT_VERSION_PREFIX']};
   const hasConnectionString=env.DB_MODE==='local'&&env.LOCAL_DB_CONNECTION_STRING ||
     env.DB_MODE==='local_uat'&&env.LOCAL_UAT_CONNECTION_STRING ||
     env.DB_MODE==='local_rehearsal'&&env.LOCAL_REHEARSAL_CONNECTION_STRING;

@@ -194,3 +194,11 @@ test('DB_DRIVER=tedious runs the Linux driver on Windows, to rehearse the server
   assert.equal(run({ DB_DRIVER: 'tedious' }), 'true');
   if (process.platform === 'win32') assert.equal(run({ DB_DRIVER: '' }), 'false', 'the native Windows driver otherwise');
 });
+
+// Deployment guards cannot be disabled by a workstation environment flag.
+test('development flag never bypasses on-prem identity or privilege guards', () => {
+  const env = { ...ENV, ALLOW_DEV_SA: 'true' };
+  assert.throws(() => onpremTuple({ ...env, ONPREM_DB_USER: 'sa' }), /never connects as sa/);
+  assert.throws(() => validateOnpremTargetRecord({ ...ROW, serverName: 'other-SQL2008' }, env), /SERVERNAME/);
+  assert.throws(() => validateOnpremTargetRecord({ ...ROW, isSysadmin: 1 }, env), /sysadmin/);
+});

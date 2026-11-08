@@ -1,11 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
-import { LayoutDashboard, RefreshCw, Package, Clock, TrendingUp, AlertTriangle, Truck, Database, Search, X, Calendar } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, Package, Clock, TrendingUp, AlertTriangle, Truck, Database, Search, X, Calendar, FileSpreadsheet } from 'lucide-react';
 import { fetchSoStats, fetchAgingOrders, fetchRebateSummary, fetchSalesOrders } from '../../services/api';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { useAuthStore } from '../../store/auth-store';
 import { canViewRebateSummary } from '../../utils/permissions';
 import { formatThaiDate } from '../../utils/date';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
+import { exportToExcel, type ExportColumn } from '../../utils/exportUtils';
 import type { AgingRow, RebateSummary, SalesOrder } from '../../types';
 import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
 
@@ -106,6 +107,54 @@ export function DashboardPage() {
   }, [aging]);
   const totalRebateAvailable = rebate.reduce((s, r) => s + Number(r.TotalAvailable || 0), 0);
   const hasSearch = !!(searchQuery.trim() || dateFrom || dateTo);
+
+  const exportAgingToExcel = () => {
+    if (!groupedAging || groupedAging.length === 0) {
+      alert('ไม่มีข้อมูลบิลค้างจัดส่งสำหรับส่งออก');
+      return;
+    }
+    const rows: any[] = [];
+    groupedAging.forEach(g => {
+      if (g.items && g.items.length > 0) {
+        g.items.forEach(item => {
+          rows.push({
+            truckPlate: g.truckPlate,
+            custName: g.custName,
+            wfRef: item.wfRef || g.wfRefs.join(', '),
+            productCode: item.code || '-',
+            productName: item.name || '-',
+            qty: item.qty,
+            daysOpen: g.maxDays,
+            status: g.maxDays > 45 ? 'ค้างวิกฤต (>45 วัน)' : g.maxDays > 30 ? 'ค้างนาน (>30 วัน)' : 'ปกติ'
+          });
+        });
+      } else {
+        rows.push({
+          truckPlate: g.truckPlate,
+          custName: g.custName,
+          wfRef: g.wfRefs.join(', '),
+          productCode: '-',
+          productName: '-',
+          qty: g.totalQty,
+          daysOpen: g.maxDays,
+          status: g.maxDays > 45 ? 'ค้างวิกฤต (>45 วัน)' : g.maxDays > 30 ? 'ค้างนาน (>30 วัน)' : 'ปกติ'
+        });
+      }
+    });
+
+    const columns: ExportColumn[] = [
+      { key: 'truckPlate', label: 'ทะเบียนรถ' },
+      { key: 'custName', label: 'ชื่อลูกค้า' },
+      { key: 'wfRef', label: 'เลขที่เอกสาร (WF Ref)' },
+      { key: 'productCode', label: 'รหัสสินค้า' },
+      { key: 'productName', label: 'ชื่อสินค้า' },
+      { key: 'qty', label: 'จำนวน (ตัน)', formatter: (v) => Number(v || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+      { key: 'daysOpen', label: 'จำนวนวันค้างส่ง (วัน)' },
+      { key: 'status', label: 'สถานะการค้าง' }
+    ];
+
+    exportToExcel('บิลค้างจัดส่งนาน', 'บิลค้างจัดส่งนาน', columns, rows);
+  };
 
   async function runSearch() {
     if (!hasSearch) {
@@ -275,10 +324,22 @@ export function DashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
           {/* Aging orders */}
           <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 p-4 sm:p-5 shadow-sm flex flex-col">
-            <h2 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-              บิลค้างจัดส่งนาน
-              <span className="text-[10px] font-normal text-gray-400">เหลือง &gt;30 · แดง &gt;45 วัน</span>
-            </h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                บิลค้างจัดส่งนาน
+                <span className="text-[10px] font-normal text-gray-400">เหลือง &gt;30 · แดง &gt;45 วัน</span>
+              </h2>
+              <button
+                type="button"
+                onClick={exportAgingToExcel}
+                disabled={groupedAging.length === 0}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-xs"
+                title="ส่งออก Excel"
+              >
+                <FileSpreadsheet size={13} />
+                <span>Export Excel</span>
+              </button>
+            </div>
             {groupedAging.length === 0 ? (
               <p className="text-xs text-gray-400 py-6 text-center">{loading ? 'กำลังโหลดรายการ…' : 'ไม่มีบิลค้างจัดส่ง'}</p>
             ) : (

@@ -19,8 +19,108 @@ const { sql, pools } = require('../db');
 const { isSwitchableDb, switchableDatabases } = require('../onprem-target');
 
 const SETTING_KEY = 'ACTIVE_DATABASE';
+const THEME_SETTING_KEY = 'DATABASE_THEME_CONFIG';
 const CACHE_TTL_MS = 30 * 1000;
 let cache = { value: null, at: 0 };
+let themeCache = { value: null, at: 0 };
+
+const DEFAULT_DATABASE_THEMES = {
+  dbwins_worldfert9: {
+    color: 'red',
+    label: 'PROD_DB',
+    badge: 'PROD_DB',
+    description: 'ฐานข้อมูล Production หลัก (ข้อมูลจริง)',
+    restrictedRoles: [],
+  },
+  dbwins_worldfert2: {
+    color: 'yellow',
+    label: 'PROD_DB_RD',
+    badge: 'PROD_DB_RD',
+    description: 'ฐานข้อมูล PROD_DB_RD (เฉพาะทีมบัญชีและผู้บริหาร)',
+    restrictedRoles: ['ACCOUNTING', 'C_LEVEL', 'ADMIN'],
+  },
+  dbwins_worldfert9_uat: {
+    color: 'green',
+    label: 'UAT_DB',
+    badge: 'UAT_DB',
+    description: 'ฐานข้อมูล UAT สำหรับทดสอบระบบ',
+    restrictedRoles: [],
+  },
+  'dbwins_worldfert9-uat': {
+    color: 'green',
+    label: 'UAT_DB',
+    badge: 'UAT_DB',
+    description: 'ฐานข้อมูล UAT สำหรับทดสอบระบบ',
+    restrictedRoles: [],
+  },
+};
+
+function normalizeDbKey(name) {
+  return String(name || '').toLowerCase().replace(/[-_]/g, '').trim();
+}
+
+function resolveTheme(dbName, customThemes = {}) {
+  const norm = normalizeDbKey(dbName);
+
+  // 1. Check customThemes
+  if (customThemes && typeof customThemes === 'object') {
+    for (const [k, v] of Object.entries(customThemes)) {
+      if (normalizeDbKey(k) === norm) {
+        return {
+          color: v.color || (norm.includes('uat') ? 'green' : (norm.endsWith('2') ? 'yellow' : (norm.endsWith('9') ? 'red' : 'blue'))),
+          label: v.label || (norm.includes('uat') ? 'UAT_DB' : (norm.endsWith('2') ? 'PROD_DB_RD' : (norm.endsWith('9') ? 'PROD_DB' : dbName))),
+          badge: v.badge ?? v.label ?? (norm.includes('uat') ? 'UAT_DB' : (norm.endsWith('2') ? 'PROD_DB_RD' : (norm.endsWith('9') ? 'PROD_DB' : ''))),
+          description: v.description || '',
+          restrictedRoles: Array.isArray(v.restrictedRoles) ? v.restrictedRoles : (norm.endsWith('2') ? ['ACCOUNTING', 'C_LEVEL', 'ADMIN'] : []),
+        };
+      }
+    }
+  }
+
+  // 2. Check DEFAULT_DATABASE_THEMES
+  for (const [k, v] of Object.entries(DEFAULT_DATABASE_THEMES)) {
+    if (normalizeDbKey(k) === norm) {
+      return { ...v };
+    }
+  }
+
+  // 3. Built-in smart heuristics based on dbName pattern
+  if (norm.includes('uat')) {
+    return {
+      color: 'green',
+      label: 'UAT_DB',
+      badge: 'UAT_DB',
+      description: 'ฐานข้อมูล UAT สำหรับทดสอบระบบ',
+      restrictedRoles: [],
+    };
+  }
+  if (norm.endsWith('2')) {
+    return {
+      color: 'yellow',
+      label: 'PROD_DB_RD',
+      badge: 'PROD_DB_RD',
+      description: 'ฐานข้อมูล PROD_DB_RD (เฉพาะทีมบัญชีและผู้บริหาร)',
+      restrictedRoles: ['ACCOUNTING', 'C_LEVEL', 'ADMIN'],
+    };
+  }
+  if (norm.endsWith('9')) {
+    return {
+      color: 'red',
+      label: 'PROD_DB',
+      badge: 'PROD_DB',
+      description: 'ฐานข้อมูล Production หลัก (ข้อมูลจริง)',
+      restrictedRoles: [],
+    };
+  }
+
+  return {
+    color: 'blue',
+    label: dbName,
+    badge: '',
+    description: '',
+    restrictedRoles: [],
+  };
+}
 
 function primaryDatabase(env = process.env) {
   return String(env.ONPREM_DB_NAME || '').trim();
@@ -99,9 +199,97 @@ async function listSwitchableDatabases(env = process.env) {
   return allowed;
 }
 
-function clearCache() { cache = { value: null, at: 0 }; }
+/** Get all configured database color themes and metadata, merged with defaults. */
+async function getDatabaseThemes(env = process.env) {
+  if (themeCache.value && Date.now() - themeCache.at < CACHE_TTL_MS) return themeCache.value;
+  const custom = {};
+  let rows;
+  try {
+    const pool = await primaryOwnerPool();
+    rows = (await pool.request().query(
+      `SELECT SettingKey, SettingValue FROM wf.SystemSetting WHERE SettingKey LIKE 'DB_THEME_%' OR SettingKey = '${THEME_SETTING_KEY}'`
+    )).recordset || [];
+    for (const r of rows) {
+      if (r.SettingKey === THEME_SETTING_KEY) {
+        try { Object.assign(custom, JSON.parse(r.SettingValue)); } catch {}
+      } else if (r.SettingKey.startsWith('DB_THEME_') && !r.SettingKey.includes('.')) {
+        const dbKey = r.SettingKey.slice('DB_THEME_'.length);
+        try { custom[dbKey] = JSON.parse(r.SettingValue); } catch {}
+      }
+    }
+  } catch { throw Object.assign(new Error('Database policy unavailable'), { status: 503 }); }
+  // Field records override legacy JSON records and fit the existing NVARCHAR(200) column.
+  try {
+    for (const row of rows) {
+      const match = /^DB_THEME_(.+)\.(color|label|badge|description|restrictedRoles)$/.exec(row.SettingKey);
+      if (!match) continue;
+      custom[match[1]] ||= {};
+      custom[match[1]][match[2]] = match[2] === 'restrictedRoles' ? JSON.parse(row.SettingValue) : row.SettingValue;
+    }
+  } catch { throw Object.assign(new Error('Database policy unavailable'), { status: 503 }); }
+  const merged = { ...DEFAULT_DATABASE_THEMES };
+  if (custom && typeof custom === 'object') {
+    for (const [k, v] of Object.entries(custom)) {
+      merged[k] = { ...(merged[k] || {}), ...v };
+    }
+  }
+  themeCache = { value: merged, at: Date.now() };
+  return merged;
+}
+
+/** Admin saves color themes and labels for databases. Stored per database to stay within NVARCHAR(200). */
+async function setDatabaseThemes(themes, env = process.env) {
+  if (!themes || typeof themes !== 'object' || Array.isArray(themes)) {
+    throw Object.assign(new Error('INVALID_THEMES'), { code: 'INVALID_THEMES', status: 400 });
+  }
+  const colors = new Set(['red','yellow','green','blue','slate']);
+  const roles = require('./role-capabilities').ROLES;
+  const rows = [];
+  for (const [name, cfg] of Object.entries(themes)) {
+    if (!isSwitchableDb(name, env) || !cfg || typeof cfg !== 'object' || Array.isArray(cfg)) throw Object.assign(new Error('Invalid database theme'), { status: 400 });
+    const value = { ...resolveTheme(name), ...cfg };
+    if (!colors.has(value.color) || !Array.isArray(value.restrictedRoles) || value.restrictedRoles.some(r => !roles.includes(r))) throw Object.assign(new Error('Invalid theme color or roles'), { status: 400 });
+    for (const field of ['color','label','badge','description','restrictedRoles']) {
+      const key = `DB_THEME_${name}.${field}`;
+      const val = field === 'restrictedRoles' ? JSON.stringify([...new Set(value[field])]) : value[field];
+      if (key.length > 50 || typeof val !== 'string' || val.length > 200) throw Object.assign(new Error('Database theme field is too long'), { status: 400 });
+      rows.push({ key, val });
+    }
+  }
+  const pool = await primaryOwnerPool();
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    for (const { key, val } of rows.sort((a,b) => a.key.localeCompare(b.key))) {
+      await new sql.Request(tx).input('k', sql.NVarChar(50), key).input('v', sql.NVarChar(200), val)
+        .query(`MERGE wf.SystemSetting WITH (HOLDLOCK) AS t USING (SELECT @k AS SettingKey) AS s ON t.SettingKey=s.SettingKey
+          WHEN MATCHED THEN UPDATE SET SettingValue=@v, UpdatedAt=GETUTCDATE()
+          WHEN NOT MATCHED THEN INSERT (SettingKey,SettingValue) VALUES (@k,@v);`);
+    }
+    await tx.commit();
+  } catch(e) { try { await tx.rollback(); } catch {} throw e; }
+  themeCache = { value: null, at: 0 };
+  return getDatabaseThemes(env);
+}
+
+function canAccessDatabase(name, user, themes) {
+  const { userRoles } = require('./role-capabilities');
+  const roles = userRoles(user);
+  const restricted = resolveTheme(name, themes).restrictedRoles || [];
+  if (!restricted.length) return true;
+  const allowed = roles.includes('ADMIN') || roles.some(r => restricted.includes(r));
+  if (!allowed) return false;
+  if (user?.isImpersonating) return (user.actorRoles || []).some(r => r === 'ADMIN' || restricted.includes(r));
+  return true;
+}
+
+function clearCache() {
+  cache = { value: null, at: 0 };
+  themeCache = { value: null, at: 0 };
+}
 
 module.exports = {
   primaryDatabase, systemActiveDatabase, setSystemActiveDatabase, listSwitchableDatabases,
+  getDatabaseThemes, setDatabaseThemes, resolveTheme, DEFAULT_DATABASE_THEMES, canAccessDatabase,
   isAllowedDatabase: isSwitchableDb, clearCache, onpremEnabled,
 };

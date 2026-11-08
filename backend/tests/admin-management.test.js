@@ -307,6 +307,8 @@ test('membership add/remove/replace preserves grants and rejects removing the la
   assert.throws(()=>changeMembership(['SALES'],['ADMIN'],'invalid'),e=>e.status===400);
 });
 test('delete assigned Role rejects even an inactive member; empty Role can be deleted',async()=>{
+  const delAdmin = await app.call('DELETE','/api/admin-management/roles/ADMIN',{user:admin,body:{expectedRevision:0}});
+  assert.equal(delAdmin.status, 400);
   stored=[{Code:'UNUSED',BaseRole:'SALES',Revision:2}];roleMembers=[{UserId:3,IsActive:0}];
   let out=await app.call('DELETE','/api/admin-management/roles/UNUSED',{user:admin,body:{expectedRevision:2}});
   assert.equal(out.status,409);assert.equal(db.calls.some(c=>c.text.startsWith('DELETE FROM wf.RoleProfile')),false);
@@ -316,9 +318,18 @@ test('delete assigned Role rejects even an inactive member; empty Role can be de
   out=await app.call('DELETE','/api/admin-management/roles/UNUSED',{user:admin,body:{expectedRevision:1}});
   assert.equal(out.status,409);
 });
+test('role ADMIN cannot be updated or deleted via direct API', async () => {
+  let out = await app.call('PUT', '/api/admin-management/roles/ADMIN', { user: admin, body: { name: 'Admin', baseRole: 'ADMIN', permissions: [], expectedRevision: 0 } });
+  assert.equal(out.status, 400);
+  assert.match(out.body.message, /ADMIN/);
+  out = await app.call('DELETE', '/api/admin-management/roles/ADMIN', { user: admin, body: { expectedRevision: 0 } });
+  assert.equal(out.status, 400);
+  assert.match(out.body.message, /ADMIN/);
+});
 test('removing final administrator permissions fails the transaction',async()=>{
   remainingAdmin=false;
-  const out=await app.call('PUT','/api/admin-management/roles/ADMIN',{user:admin,body:{name:'Admin',baseRole:'ADMIN',permissions:[],expectedRevision:0}});
+  stored=[{Code:'CUSTOM_ADMIN',BaseRole:'ADMIN',Revision:0}];
+  const out=await app.call('PUT','/api/admin-management/roles/CUSTOM_ADMIN',{user:admin,body:{name:'Custom Admin',baseRole:'ADMIN',permissions:[],expectedRevision:0}});
   assert.equal(out.status,409);assert.match(out.body.message,/1/);
   assert.equal(db.calls.some(c=>c.text.includes('INSERT INTO wf.AdminChangeAudit')),false);
 });
@@ -327,4 +338,36 @@ test('multiple roles retain 116 creator rights and manager review rules',()=>{
   assert.equal(mayCreate(['C_LEVEL','WAREHOUSE']),true);
   assert.equal(decision({role:['C_LEVEL','SALES'],actorId:1,requesterActorId:2}).allowed,true);
   assert.equal(decision({role:['SALES'],actorId:1,requesterActorId:2}).allowed,false);
+});
+test('users and roles capability gating reflects across filteredCapabilities and route isolation', () => {
+  const customUser = { id: 2, role: 'SALES', roleCode: 'PILOT_CUSTOM', permissions: ['users.manage'] };
+  const caps = filteredCapabilities(customUser);
+  assert.ok(caps.menus.includes('admin'), 'Should grant admin menu to users.manage');
+  assert.ok(!caps.menus.includes('roles'), 'Should NOT grant roles menu without roles.manage');
+
+  const roleOnlyUser = { id: 3, role: 'SALES', roleCode: 'ROLE_MGR', permissions: ['roles.manage'] };
+  const roleCaps = filteredCapabilities(roleOnlyUser);
+  assert.ok(!roleCaps.menus.includes('admin'), 'Should NOT grant admin menu without users.manage');
+  assert.ok(roleCaps.menus.includes('roles'), 'Should grant roles menu with roles.manage');
+});
+
+test('reserved ADMIN cannot be changed or deleted with alternate casing', async()=>{
+  for(const code of ['ADMIN','admin','Admin']) {
+    assert.equal((await app.call('DELETE',`/api/admin-management/roles/${code}`,{user:admin,body:{expectedRevision:0}})).status,400);
+    assert.equal((await app.call('PUT',`/api/admin-management/roles/${code}`,{user:admin,body:{name:'test',baseRole:'ADMIN',permissions:[],expectedRevision:0}})).status,400);
+  }
+  assert.equal(db.calls.some(c=>/DELETE FROM wf.RoleProfile|UPDATE wf.RoleProfile/.test(c.text)),false);
+});
+
+test('custom role with roles.manage can read role history without ADMIN base', async()=>{
+  sessions={1:{PolicySchemaMissing:1},2:{Id:2,Role:'SALES',RoleCode:'ROLE_AUDITOR',IsActive:1,AuthVersion:0}};
+  assigned={2:[{Code:'ROLE_AUDITOR',BaseRole:'SALES',PermissionCode:'roles.manage'}]};
+  assert.equal((await app.call('GET','/api/admin-management/history?domain=roles',{user:{sub:2,role:'SALES'}})).status,200);
+});
+test('org viewers receive only organization fields, not account contact or login secrets', async()=>{
+  const out=await app.call('GET','/api/auth/org-users',{user:{sub:2,role:'MANAGER'}});
+  assert.equal(out.status,200);
+  const call=db.calls.find(c=>c.text.includes('u.PositionCode,e.EmpCode'));
+  assert.ok(call);assert.doesNotMatch(call.text,/Password|Phone|Email|LineUser|IdCard|TaxId/);
+  assert.equal((await app.call('GET','/api/auth/org-users',{user:{sub:2,role:'SALES'}})).status,403);
 });

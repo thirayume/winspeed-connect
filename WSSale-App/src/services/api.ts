@@ -129,10 +129,37 @@ export const startAccessAs = (userId: number) =>
 export const stopAccessAs = () =>
   req<{ accessToken: string; user: AppUser }>('/auth/access-as/stop', { method: 'POST' });
 
-// Database selection (owner 2026-10-25)
+// Database selection (owner 2026-10-25 & 2026-11-08)
+export type DatabaseThemeColor = 'red' | 'yellow' | 'green' | 'blue' | 'slate';
+
+export type DatabaseMeta = {
+  name: string;
+  color: DatabaseThemeColor;
+  label: string;
+  badge?: string;
+  description?: string;
+  restrictedRoles?: string[];
+  isRestricted?: boolean;
+  isAllowed?: boolean;
+};
+
+export type DatabaseThemeConfig = {
+  color: DatabaseThemeColor;
+  label: string;
+  badge?: string;
+  description?: string;
+  restrictedRoles?: string[];
+};
+
 export type DatabaseInfo = {
-  active: string; system: string; primary: string; list: string[];
-  canSwitch: boolean; canSetSystem: boolean;
+  active: string;
+  system: string;
+  primary: string;
+  list: string[];
+  metaList?: DatabaseMeta[];
+  themes?: Record<string, DatabaseThemeConfig>;
+  canSwitch: boolean;
+  canSetSystem: boolean;
 };
 export const getDatabases = () => req<DatabaseInfo>('/auth/databases', { silent: true });
 export const switchDatabase = (database: string) =>
@@ -141,6 +168,10 @@ export const switchDatabase = (database: string) =>
   });
 export const setSystemDatabase = (database: string) =>
   req<{ system: string }>('/auth/system-database', { method: 'PUT', body: JSON.stringify({ database }) });
+export const saveDatabaseThemes = (themes: Record<string, DatabaseThemeConfig>) =>
+  req<{ ok: boolean; themes: Record<string, DatabaseThemeConfig> }>('/auth/database-themes', {
+    method: 'PUT', body: JSON.stringify({ themes }),
+  });
 
 export const createUser = (payload: {
   username: string; password: string; displayName: string;
@@ -157,6 +188,7 @@ export const updateUser = (id: number, patch: {
   idCardNo?: string | null; taxId?: string | null;
   /** รหัสตำแหน่งใน wf.OrgPosition · ส่ง null เพื่อถอดออก */
   positionCode?: string | null;
+  expectedPositionCode?: string | null;
 }) =>
   req<{ ok: boolean; id: number }>(`/auth/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
 
@@ -628,8 +660,11 @@ export const rejectRebateClaim = (id: number, reason: string) =>
 export const fetchRebateRegions = () =>
   req<{ regions: any[]; userAreas: any[] }>('/rebate/regions');
 
-export const setUserRegion = (payload: { userId: number; regionCode: string; isPrimary?: boolean }) =>
+export const setUserRegion = (payload: { userId: number; regionCode: string; isPrimary?: boolean; expectedIsPrimary?: boolean | null }) =>
   req<{ success: boolean; message: string }>('/rebate/user-regions', { method: 'POST', body: JSON.stringify(payload) });
+
+export const fetchRebateCandidates = () =>
+  req<{ Id: number; Username: string; DisplayName: string; Role: string; IsActive: boolean; EmpCode?: string }[]>('/rebate/candidates');
 
 export type RegionCoverage = {
   RegionCode: string; RegionName: string;
@@ -1131,6 +1166,27 @@ export type ReportTypeItem = {
   key: string;
   title: string;
   category?: string;
+  available?: boolean;
+  unavailableReason?: string | null;
+  enabled?: boolean;
+  orderIndex?: number;
+};
+
+export type ReportCatalogConfigItem = {
+  key: string;
+  title: string;
+  category: string;
+  available: boolean;
+  enabled: boolean;
+  orderIndex: number;
+};
+
+export type ReportCatalogConfigResponse = {
+  config: {
+    order: string[];
+    visibility: Record<string, boolean>;
+  };
+  reports: ReportCatalogConfigItem[];
 };
 
 export type ReportMeta = {
@@ -1189,6 +1245,13 @@ export const fetchDeliveryNote = (sequence: string) =>
   req<DeliveryNote>(`/truckscale/delivery-note/${encodeURIComponent(sequence)}`);
 
 export const fetchReportTypes = () => req<ReportTypeItem[]>('/reports/types');
+export const fetchReportCatalogConfig = () => req<ReportCatalogConfigResponse>('/reports/catalog-config');
+export const saveReportCatalogConfig = (payload: { order: string[]; visibility: Record<string, boolean> }) =>
+  req<{ ok: boolean; message: string; config: { order: string[]; visibility: Record<string, boolean> } }>('/reports/catalog-config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 // รายงานบางตัว (เช่น customer-dispatch) รับช่วงวัน ส่วนตัวอื่นไม่สนใจพารามิเตอร์
 export const fetchReport = (type: string, params?: Record<string, string>, init?: RequestInit) => {
   const qs = params && Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';
@@ -2066,9 +2129,17 @@ export type NativeApprover = {
 export const fetchNativeApprovers = () =>
   req<{ data: NativeApprover[] }>('/master/native-approvers');
 
-export const updateNativeApprover = (empId: number, body: { enabled: boolean; note?: string }) =>
+export const updateNativeApprover = (empId: number, body: { enabled: boolean; note?: string; expectedEnabled?: boolean }) =>
   req<{ empId: number; enabled: boolean; message: string }>(
     `/master/native-approvers/${empId}`, { method: 'PUT', body: JSON.stringify(body) });
+
+export const fetchNativeApproverHistory = () =>
+  req<{ data: {
+    Id: number; EmpID: number; EmpCode: string; EmpName: string;
+    IsEnabled: boolean; Note: string | null; CreatedAt: string;
+    ChangedByName: string | null; ChangedByUsername: string | null;
+    ChangedByActorName: string | null; ChangedByActorUsername: string | null;
+  }[] }>('/master/native-approvers/history');
 
 export const deleteEditReason = (code: string) =>
   req<{ reasonCode: string; message: string }>(

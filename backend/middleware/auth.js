@@ -169,6 +169,13 @@ function requireAuth(req, res, next) {
           req.user.disabledActions=[...new Set([...(req.user.disabledActions||[]),...(actor.disabledActions||[])])];
           req.user.mustChangePassword=actor.mustChangePassword;
         }
+        const activeDb = require('../services/active-database');
+        // Control endpoints remain available to recover a session after access is revoked.
+        const controlRoute = String(req.baseUrl || '') === '/api/auth' && ['/databases','/switch-database','/me','/logout'].includes(req.path);
+        if (activeDb.onpremEnabled() && !controlRoute) {
+          const database = require('../db').getDbName() || await activeDb.systemActiveDatabase();
+          if (!activeDb.canAccessDatabase(database, req.user, await activeDb.getDatabaseThemes())) return res.status(403).json({ code: 'DB_RESTRICTED', message: 'บทบาทนี้ไม่มีสิทธิ์เข้าถึงฐานข้อมูลที่เลือก กรุณาสลับฐานข้อมูล' });
+        }
         if (blockWriteWhenPasswordStale(req,res)) return;
         require('../services/request-context').runWithUser(req.user, () => next());
       } catch(e) {res.status(e.status||503).json({code:e.status===401?'SESSION_REVOKED':'ROLE_UNAVAILABLE',message:'สิทธิ์หรือข้อมูลเข้าสู่ระบบเปลี่ยน กรุณาเข้าสู่ระบบใหม่'});}

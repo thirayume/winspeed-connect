@@ -8,7 +8,6 @@ import { getMe, listAccessAsCandidates, listUnlockRequests, listPendingGiveaways
 import type { AdminUser, UserRole } from './types';
 import LoginPage from './pages/LoginPage';
 import ForcePasswordChange from './components/auth/ForcePasswordChange';
-import { DbModeSwitch } from './components/common/DbModeSwitch';
 import { DatabaseSwitcher } from './components/common/DatabaseSwitcher';
 import { useAppStore } from './store/app-store';
 import { GlobalLoader } from './components/common/GlobalLoader';
@@ -18,7 +17,7 @@ import { UnlockReviewModal } from './components/papertrail/UnlockReviewModal';
 import { useSocketEvent } from './hooks/useSocket';
 import packageJson from '../package.json';
 
-export type PortalKey = 'app-settings' | 'roles' | 'incidents' | 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'stock' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'master' | 'profile' | 'beneficiaries';
+export type PortalKey = 'app-settings' | 'roles' | 'incidents' | 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'stock' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'approvers' | 'master' | 'profile' | 'beneficiaries';
 
 const SalesPortal = lazy(() => import('./components/sales/SalesPortal').then(m => ({ default: m.SalesPortal })));
 const SaleTripBoardPage = lazy(() => import('./components/sales/SaleTripBoardPage').then(m => ({ default: m.SaleTripBoardPage })));
@@ -42,6 +41,7 @@ const GiveawayPage = lazy(() => import('./components/giveaway/GiveawayPage').the
 const QuotationPage = lazy(() => import('./components/quotation/QuotationPage').then(m => ({ default: m.QuotationPage })));
 const PaperTrailPage = lazy(() => import('./components/papertrail/PaperTrailPage').then(m => ({ default: m.PaperTrailPage })));
 const AppSettingsPage = lazy(() => import('./components/admin/AppSettingsPage').then(m => ({default:m.AppSettingsPage})));
+const UsersAccessConsole = lazy(() => import('./components/admin/UsersAccessConsole').then(m => ({ default: m.UsersAccessConsole })));
 const RoleManagementPage = lazy(() => import('./components/admin/RoleManagementPage').then(m => ({default:m.RoleManagementPage})));
 const AdminUsersPage = lazy(() => import('./components/admin/AdminUsersPage').then(m => ({ default: m.AdminUsersPage })));
 const OrgAssignmentPage = lazy(() => import('./components/admin/OrgAssignmentPage').then(m => ({ default: m.OrgAssignmentPage })));
@@ -128,10 +128,8 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'policy',     label: 'นโยบายอนุมัติ', sub: 'อำนาจอนุมัติ · วงเงิน', icon: ScrollText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
       // { key: 'governance', label: 'กำกับข้อมูล',  sub: 'เครดิต · สต๊อก · PDPA',  icon: Landmark, roles: [...] },
       { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · Watchdog · Alert', icon: Activity, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
-      {key:'app-settings',label:'App Settings',sub:'นโยบายระบบ · ผลตรวจรับ',icon:Settings,roles:['ADMIN']},
-      {key:'roles',label:'Role Management',sub:'บทบาท · Permission',icon:ShieldCheck,roles:['ADMIN']},
-      { key: 'admin',      label: 'User Management',    sub: 'จัดการผู้ใช้งาน · รหัสผ่าน', icon: Users, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
-      { key: 'org',        label: 'ผังองค์กร',    sub: 'ผูกผู้ใช้ ↔ ตำแหน่ง ↔ สายงาน', icon: Network, roles: ['ADMIN', 'MANAGER', 'ACCOUNTING'] },
+      { key: 'app-settings', label: 'App Settings', sub: 'นโยบายระบบ · ผลตรวจรับ', icon: Settings, roles: ['ADMIN'] },
+      { key: 'admin',      label: 'ผู้ใช้งานและสิทธิ์', sub: 'จัดการผู้ใช้งาน · บทบาท · ผังองค์กร · ผู้อนุมัติ', icon: Users, roles: ['ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'] },
       { key: 'beneficiaries', label: 'จัดการสิทธิ์ตั๋วร่วม', sub: 'มอบ/ถอนสิทธิ์ตั๋วร่วมระหว่างลูกค้า', icon: Ticket, roles: ['ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'] },
     ],
   },
@@ -346,16 +344,16 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
     <div className="flex h-screen w-full bg-background text-foreground overflow-hidden">
       <aside className={`hidden shrink-0 flex-col border-r border-border bg-sidebar md:flex transition-all duration-300 ${isSidebarCollapsed ? 'w-16' : 'w-60'}`}>
         <div className={`flex h-14 items-center border-b border-border transition-all ${isSidebarCollapsed ? 'justify-center' : 'gap-2.5 px-5'}`}>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white" style={{ background: '#0C447C' }}>
-            <span className="text-xs font-bold">WF</span>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden">
+            <img src="/wf-logo.png" alt="WorldFert" className="h-7 w-auto object-contain" />
           </div>
           {!isSidebarCollapsed && (
             <div className="flex flex-col leading-tight animate-in fade-in duration-300">
               <span className="text-sm font-semibold flex items-center gap-1.5">
-                WS-Sale-App
+                WF-SaleApp
                 <span className="text-[9px] bg-blue-100 text-blue-800 px-1 rounded font-bold">v{packageJson.version}</span>
               </span>
-              <span className="text-[11px] text-muted-foreground">World Fert</span>
+              <span className="text-[11px] text-muted-foreground">World Fertilizer</span>
             </div>
           )}
         </div>
@@ -444,7 +442,6 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
               )}
             </div>
           )}
-          {role === 'ADMIN' && !import.meta.env.PROD && <DbModeSwitch collapsed={isSidebarCollapsed} />}
           <button onClick={logout} title="ออกจากระบบ"
             className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-muted-foreground hover:bg-red-50 hover:text-red-600 transition-colors ${isSidebarCollapsed ? 'justify-center' : ''}`}>
             <LogOut className="h-4 w-4 shrink-0" />
@@ -460,8 +457,8 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
       <div className="flex flex-1 flex-col pb-16 md:pb-0 min-w-0">
         <header className="glass-header sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border px-4 md:px-6">
           <div className="flex items-center gap-2.5 md:hidden">
-            <Boxes className="h-5 w-5" />
-            <span className="text-sm font-semibold">WS-Sale-App</span>
+            <img src="/wf-logo.png" alt="WF" className="h-6 w-auto object-contain" />
+            <span className="text-sm font-semibold">WF-SaleApp</span>
           </div>
           <div className="hidden text-sm text-muted-foreground md:block">{portalLabel}</div>
           <div className="flex items-center gap-3">
@@ -602,9 +599,13 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'aging'      && <AgingPage />}
                 {activePortal === 'profile'    && <ProfilePage />}
                 {activePortal === 'app-settings' && user?.capabilities?.actions.includes('settings.manage') && !user?.isImpersonating && <AppSettingsPage />}
-                {activePortal === 'roles' && user?.capabilities?.actions.includes('roles.manage') && !user?.isImpersonating && <RoleManagementPage />}
-                {activePortal === 'admin'      && ['ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '') && <AdminUsersPage />}
-                {activePortal === 'org'        && ['ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '') && <OrgAssignmentPage />}
+                {(activePortal === 'admin' || activePortal === 'roles' || activePortal === 'org' || activePortal === 'approvers') &&
+                  (
+                    user?.capabilities?.actions.includes('users.manage') ||
+                    user?.capabilities?.actions.includes('roles.manage') ||
+                    ['ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'].includes(role || '')
+                  ) &&
+                  !user?.isImpersonating && <UsersAccessConsole initialPortal={activePortal} />}
                 {activePortal === 'beneficiaries' && ['ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'].includes(role || '') && <BeneficiaryAdminPage />}
                 {activePortal === 'master'     && ['ADMIN', 'C_LEVEL'].includes(role || '') && <MasterDataPortal />}
               </div>
