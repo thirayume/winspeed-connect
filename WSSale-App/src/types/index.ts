@@ -32,7 +32,8 @@ export type UserRole =
   | 'MANAGER'
   | 'APPROVER'
   | 'WEIGHBRIDGE'
-  | 'REPORT_PILOT';
+  | 'REPORT_PILOT'
+  | 'SEPARATION';
 
 export type AppUser = {
   id: number;

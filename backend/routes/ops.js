@@ -41,6 +41,37 @@ router.get('/outbox', async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+// GET /api/ops/user-activity?date= — สถิติการใช้งานและ concurrency ราย 15 นาที
+router.get('/user-activity', async (req, res) => {
+  try {
+    const activity = await obs.getUserActivity(req.query.date);
+    res.json(activity);
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// POST /api/ops/errors/clear — เคลียร์ประวัติ Error Log (ADMIN)
+router.post('/errors/clear', requireRole('ADMIN'), async (req, res) => {
+  try {
+    const r = await obs.clearErrors();
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// POST /api/ops/sync-users — ซิงค์ผู้ใช้และบทบาทไปยังฐานข้อมูลปลายทาง (ADMIN)
+router.post('/sync-users', requireRole('ADMIN'), async (req, res) => {
+  try {
+    const { syncUsersToTarget } = require('../services/user-sync');
+    const result = await syncUsersToTarget(req.body?.targetDb);
+    res.json(result);
+  } catch (e) {
+    res.status(e.status || 500).json({ code: e.code, message: e.message });
+  }
+});
+
 // POST /api/ops/test-alert — ทดสอบ webhook (ADMIN)
 router.post('/test-alert', requireRole('ADMIN'), async (req, res) => {
   if (!process.env.ALERT_WEBHOOK_URL)

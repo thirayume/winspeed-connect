@@ -1793,13 +1793,17 @@ router.get('/aging', async (req, res) => {
 router.get('/aging/search', async (req, res) => {
   try {
     const { wfQuery: wq } = require('../db');
+    const isExport = req.query.export === '1';
     const page     = Math.max(1, parseInt(req.query.page)     || 1);
-    const pageSize = Math.min(200, Math.max(10, parseInt(req.query.pageSize) || 50));
+    const pageSize = isExport ? 5000 : Math.min(200, Math.max(10, parseInt(req.query.pageSize) || 50));
     const q        = (req.query.q || '').trim();
-    const dateFrom = req.query.dateFrom || new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const isAllDates = req.query.all === '1' || req.query.allDates === '1';
+    const dateFrom = req.query.dateFrom || (isAllDates ? '2000-01-01' : new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+    const dateTo   = req.query.dateTo || null;
+    const minDays  = parseInt(req.query.minDays) || 0;
     const statusRaw = (req.query.status || '').trim();
     const statuses = statusRaw ? statusRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
-    const offset   = (page - 1) * pageSize;
+    const offset   = isExport ? 0 : (page - 1) * pageSize;
 
     // Build WHERE clauses
     const conditions = [
@@ -1809,8 +1813,18 @@ router.get('/aging/search', async (req, res) => {
       `ISNULL(hd.clearflag, 'N') <> 'Y'`,
       `ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), '') <> N'ตั๋วคุม'`,
     ];
+    const inputs = { dateFrom: { type: sql.Date, value: new Date(dateFrom) } };
+    if (dateTo) {
+      conditions.push(`hd.DocuDate <= @dateTo`);
+      inputs.dateTo = { type: sql.Date, value: new Date(dateTo) };
+    }
+    if (minDays > 0) {
+      conditions.push(`DATEDIFF(DAY, CAST(hd.DocuDate AS DATETIME), GETDATE()) >= @minDays`);
+      inputs.minDays = { type: sql.Int, value: minDays };
+    }
     const searchScope = scopeFilter(await getVisibleScope(req.user), { empCol: 'hd.EmpID', prefix: 'as' });
     conditions.push(searchScope.sql);
+    Object.assign(inputs, searchScope.inputs);
     if (statuses.length) {
       conditions.push(`CASE
         WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
@@ -1821,11 +1835,9 @@ router.get('/aging/search', async (req, res) => {
     }
     if (q) {
       conditions.push(`(hd.CustName LIKE @q OR hd.DocuNo LIKE @q OR CONVERT(NVARCHAR(50), dt.GoodID) LIKE @q OR dt.GoodName LIKE @q)`);
+      inputs.q = { type: sql.NVarChar(200), value: `%${q}%` };
     }
     const where = conditions.join(' AND ');
-
-    const inputs = { dateFrom: { type: sql.Date, value: new Date(dateFrom) }, ...searchScope.inputs };
-    if (q) inputs.q = { type: sql.NVarChar(200), value: `%${q}%` };
 
     const countResult = await wq(`
       WITH BaseCandidateSo AS (

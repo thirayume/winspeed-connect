@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
-import { LayoutDashboard, RefreshCw, Package, Clock, TrendingUp, AlertTriangle, Truck, Database, Search, X, Calendar, FileSpreadsheet } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, Package, Clock, TrendingUp, AlertTriangle, Truck, Database, Search, X, Calendar, FileSpreadsheet, ExternalLink } from 'lucide-react';
 import { fetchSoStats, fetchAgingOrders, fetchRebateSummary, fetchSalesOrders } from '../../services/api';
+import { AgingDetailModal } from './AgingDetailModal';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { useAuthStore } from '../../store/auth-store';
 import { canViewRebateSummary } from '../../utils/permissions';
@@ -21,6 +22,7 @@ export function DashboardPage() {
   const canSeeRebate = canViewRebateSummary(useAuthStore(s => s.user));
   const [stats, setStats]     = useState<{ byStatus: Record<string, number>; total: number }>({ byStatus: {}, total: 0 });
   const [aging, setAging]     = useState<AgingRow[]>([]);
+  const [showAgingModal, setShowAgingModal] = useState(false);
   const [rebate, setRebate]   = useState<RebateSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -324,21 +326,32 @@ export function DashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
           {/* Aging orders */}
           <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 p-4 sm:p-5 shadow-sm flex flex-col">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <h2 className="text-sm font-bold text-gray-700 flex items-center gap-2">
                 บิลค้างจัดส่งนาน
                 <span className="text-[10px] font-normal text-gray-400">เหลือง &gt;30 · แดง &gt;45 วัน</span>
               </h2>
-              <button
-                type="button"
-                onClick={exportAgingToExcel}
-                disabled={groupedAging.length === 0}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-xs"
-                title="ส่งออก Excel"
-              >
-                <FileSpreadsheet size={13} />
-                <span>Export Excel</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAgingModal(true)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-[#0C447C] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors shadow-xs cursor-pointer"
+                  title="ดูรายละเอียดบิลค้างจัดส่งทั้งหมดแบบเจาะลึก"
+                >
+                  <ExternalLink size={13} />
+                  <span>ดูทั้งหมดโดยละเอียด</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={exportAgingToExcel}
+                  disabled={groupedAging.length === 0}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-xs cursor-pointer"
+                  title="ส่งออก Excel"
+                >
+                  <FileSpreadsheet size={13} />
+                  <span>Export Excel</span>
+                </button>
+              </div>
             </div>
             {groupedAging.length === 0 ? (
               <p className="text-xs text-gray-400 py-6 text-center">{loading ? 'กำลังโหลดรายการ…' : 'ไม่มีบิลค้างจัดส่ง'}</p>
@@ -411,6 +424,8 @@ export function DashboardPage() {
           </div>}
         </div>
       </div>
+
+      <AgingDetailModal isOpen={showAgingModal} onClose={() => setShowAgingModal(false)} />
     </div>
   );
 }

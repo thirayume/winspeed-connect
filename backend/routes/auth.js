@@ -826,11 +826,15 @@ router.get('/users', requireAuth, requireCapability('users.manage'), async (req,
     const memberships = (await wfQuery('SELECT r.UserId, r.RoleCode, p.BaseRole FROM wf.vUserRole r JOIN wf.RoleProfile p ON p.Code = r.RoleCode')).recordset;
     res.json(result.recordset.map(u => {
       const userMemberships = memberships.filter(r => Number(r.UserId) === Number(u.Id));
-      let roleCodes = userMemberships.map(r => r.RoleCode);
-      let roles = [...new Set(userMemberships.map(r => r.BaseRole))];
+      let roleCodes = userMemberships.map(r => r.RoleCode).filter(c => c && c !== 'NONE');
+      let roles = [...new Set(userMemberships.map(r => r.BaseRole).filter(b => b && b !== 'NONE'))];
+      if (roleCodes.includes('SEPARATION')) {
+        roleCodes = ['SEPARATION'];
+        roles = ['SEPARATION'];
+      }
       if (roleCodes.length === 0) {
         const fallback = u.RoleCode || u.Role;
-        if (fallback) {
+        if (fallback && fallback !== 'NONE') {
           roleCodes = [fallback];
           roles = [u.Role || fallback];
         }

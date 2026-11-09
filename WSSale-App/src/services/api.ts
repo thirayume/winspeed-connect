@@ -421,7 +421,7 @@ export const fetchInvoices = (params?: { custId?: string; dateFrom?: string; dat
 export const fetchAgingOrders = (bust = false) => req<AgingRow[]>(`/master/aging${bust ? '?bust=1' : ''}`, { silent: true });
 
 export const searchAgingOrders = (params: {
-  q?: string; status?: string; page?: number; pageSize?: number; dateFrom?: string;
+  q?: string; status?: string; page?: number; pageSize?: number; dateFrom?: string; dateTo?: string; minDays?: number; all?: boolean; export?: boolean;
 }) => {
   const qs = new URLSearchParams();
   if (params.q)        qs.set('q',        params.q);
@@ -429,6 +429,10 @@ export const searchAgingOrders = (params: {
   if (params.page)     qs.set('page',     String(params.page));
   if (params.pageSize) qs.set('pageSize', String(params.pageSize));
   if (params.dateFrom) qs.set('dateFrom', params.dateFrom);
+  if (params.dateTo)   qs.set('dateTo',   params.dateTo);
+  if (params.minDays)  qs.set('minDays',  String(params.minDays));
+  if (params.all)      qs.set('all',      '1');
+  if (params.export)   qs.set('export',   '1');
   return req<PaginatedResult<AgingRow>>(`/master/aging/search?${qs}`);
 };
 
@@ -1074,6 +1078,44 @@ export interface OpsError {
 export const fetchOpsStatus = () => req<OpsStatus>('/ops/status', { silent: true });
 export const fetchOpsErrors = (limit = 50) => req<{ source: string; errors: OpsError[] }>(`/ops/errors?limit=${limit}`);
 export const testOpsAlert = () => req<{ ok: boolean; message: string }>('/ops/test-alert', { method: 'POST', body: '{}' });
+
+export interface UserActivitySlotSummary {
+  slot: number;
+  time: string;
+  activeUsers: number;
+  totalRequests: number;
+}
+export interface UserActivityItem {
+  userId: number;
+  username: string;
+  displayName: string;
+  role: string;
+  activeSlotsCount: number;
+  totalRequests: number;
+  firstActiveTime: string;
+  lastActiveTime: string;
+  lastActiveAt: string;
+}
+export interface UserActivityResponse {
+  date: string;
+  currentSlot: number;
+  activeNowCount: number;
+  totalActiveUsersToday: number;
+  peakConcurrency: number;
+  totalRequestsToday: number;
+  slots: UserActivitySlotSummary[];
+  users: UserActivityItem[];
+}
+
+export const fetchUserActivity = (date?: string) =>
+  req<UserActivityResponse>(`/ops/user-activity${date ? `?date=${encodeURIComponent(date)}` : ''}`);
+export const clearOpsErrors = () =>
+  req<{ ok: boolean; message: string }>('/ops/errors/clear', { method: 'POST', body: '{}' });
+export const syncDatabaseUsers = (targetDb: string) =>
+  req<{ ok: boolean; message: string; synced?: { users: number; roles: number; permissions: number; memberships: number } }>('/ops/sync-users', {
+    method: 'POST',
+    body: JSON.stringify({ targetDb }),
+  });
 
 // ── Approval Policy (FR-028) ──────────────────────────────────
 export interface ApprovalPolicy {

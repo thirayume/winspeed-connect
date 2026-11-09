@@ -194,36 +194,38 @@ export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated, e
   if (!isOpen && !embedded) return null;
 
   const modalContent = (
-    <div className={`bg-white rounded-2xl ${embedded ? 'border border-gray-200 shadow-sm' : 'shadow-2xl border border-gray-100 max-h-[92vh]'} w-full flex flex-col overflow-hidden`}>
+    <div className={`bg-white rounded-xl sm:rounded-2xl ${embedded ? 'border border-gray-200 shadow-xs' : 'shadow-2xl border border-gray-100 max-h-[92vh]'} w-full flex flex-col overflow-hidden`}>
       
-      {/* Top Header */}
-      <div className="px-6 py-4 bg-gradient-to-r from-[#0C447C] to-[#184E88] text-white flex items-center justify-between shrink-0 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-white/10 rounded-xl backdrop-blur-xs">
-            <Building2 size={22} className="text-blue-100" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold tracking-tight">ระบบจัดการหัวกระดาษและแม่แบบรายงาน</h2>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-amber-950 uppercase">Master Templates</span>
+      {/* Top Header - Only shown when rendered as standalone modal */}
+      {!embedded && (
+        <div className="px-6 py-4 bg-gradient-to-r from-[#0C447C] to-[#184E88] text-white flex items-center justify-between shrink-0 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-white/10 rounded-xl backdrop-blur-xs">
+              <Building2 size={22} className="text-blue-100" />
             </div>
-            <p className="text-xs text-blue-100/90 mt-0.5">
-              ศูนย์กลางกำหนดหัวกระดาษบริษัท, แม่แบบรายงานหลายรูปแบบ, กำหนดรายงานตัวแทน และตรวจสอบ Audit Trail
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold tracking-tight">ระบบจัดการหัวกระดาษและแม่แบบรายงาน</h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-amber-950 uppercase">Master Templates</span>
+              </div>
+              <p className="text-xs text-blue-100/90 mt-0.5">
+                ศูนย์กลางกำหนดหัวกระดาษบริษัท, แม่แบบรายงานหลายรูปแบบ, กำหนดรายงานตัวแทน และตรวจสอบ Audit Trail
+              </p>
+            </div>
           </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-white/15 text-white/80 hover:text-white transition-colors cursor-pointer"
+            >
+              <X size={20} />
+            </button>
+          )}
         </div>
-        {!embedded && onClose && (
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-white/15 text-white/80 hover:text-white transition-colors cursor-pointer"
-          >
-            <X size={20} />
-          </button>
-        )}
-      </div>
+      )}
 
-        {/* Navigation Tabs */}
-        <div className="px-6 border-b border-gray-200 bg-gray-50/80 flex items-center justify-between">
+      {/* Navigation Sub-Tabs */}
+      <div className={`px-4 sm:px-6 border-b border-gray-200 ${embedded ? 'bg-white' : 'bg-gray-50/80'} flex items-center justify-between shrink-0`}>
           <div className="flex space-x-1 sm:space-x-4">
             <button
               onClick={() => { setActiveTab('headers'); setEditingHeader(null); }}

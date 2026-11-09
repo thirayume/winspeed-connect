@@ -124,6 +124,167 @@ function getRecentErrors(limit = 50) {
   return state.recentErrors.slice(0, limit);
 }
 
+// User activity 15-minute timeslots (Observability & HR Analytics)
+const userActivityBuffer = new Map(); // key: `${dateStr}_${slot}_${userId}` -> { dateStr, slot, userId, count, lastActive }
+
+function getBkkDateAndSlot(d = new Date()) {
+  const bkkMs = d.getTime() + (7 * 60 * 60 * 1000);
+  const bkkDate = new Date(bkkMs);
+  const dateStr = bkkDate.toISOString().slice(0, 10);
+  const hours = bkkDate.getUTCHours();
+  const minutes = bkkDate.getUTCMinutes();
+  const slot = hours * 4 + Math.floor(minutes / 15);
+  return { dateStr, slot, lastActive: d.toISOString() };
+}
+
+function recordUserActivity(userId) {
+  const uid = Number(userId);
+  if (!uid || !Number.isInteger(uid)) return;
+  try {
+    const { dateStr, slot, lastActive } = getBkkDateAndSlot();
+    const key = `${dateStr}_${slot}_${uid}`;
+    const existing = userActivityBuffer.get(key);
+    if (existing) {
+      existing.count += 1;
+      existing.lastActive = lastActive;
+    } else {
+      userActivityBuffer.set(key, { dateStr, slot, userId: uid, count: 1, lastActive });
+    }
+  } catch { /* ignore */ }
+}
+
+async function flushUserActivity() {
+  if (userActivityBuffer.size === 0) return;
+  const items = Array.from(userActivityBuffer.values());
+  userActivityBuffer.clear();
+  try {
+    const { sql, wfQuery } = require('../db');
+    for (const item of items) {
+      await wfQuery(`
+        MERGE wf.UserActivitySlot AS target
+        USING (SELECT @date AS ActivityDate, @slot AS TimeSlot, @uid AS UserId) AS source
+        ON target.ActivityDate = source.ActivityDate AND target.TimeSlot = source.TimeSlot AND target.UserId = source.UserId
+        WHEN MATCHED THEN
+          UPDATE SET RequestCount = target.RequestCount + @cnt, LastActiveAt = @lastActive
+        WHEN NOT MATCHED THEN
+          INSERT (ActivityDate, TimeSlot, UserId, RequestCount, LastActiveAt)
+          VALUES (source.ActivityDate, source.TimeSlot, source.UserId, @cnt, @lastActive);
+      `, {
+        date: { type: sql.Date, value: item.dateStr },
+        slot: { type: sql.TinyInt, value: item.slot },
+        uid: { type: sql.Int, value: item.userId },
+        cnt: { type: sql.Int, value: item.count },
+        lastActive: { type: sql.DateTime2, value: item.lastActive },
+      });
+    }
+  } catch {
+    for (const item of items) {
+      const key = `${item.dateStr}_${item.slot}_${item.userId}`;
+      if (!userActivityBuffer.has(key)) userActivityBuffer.set(key, item);
+    }
+  }
+}
+
+if (process.env.NODE_ENV !== 'test') {
+  setInterval(() => flushUserActivity().catch(() => {}), 30000).unref();
+}
+
+async function getUserActivity(dateStr) {
+  await flushUserActivity().catch(() => {});
+  const date = dateStr || getBkkDateAndSlot().dateStr;
+  const { sql, wfQuery } = require('../db');
+
+  let slotRows = [];
+  let userRows = [];
+  try {
+    slotRows = (await wfQuery(`
+      SELECT TimeSlot, COUNT(DISTINCT UserId) AS ActiveUsers, SUM(RequestCount) AS TotalRequests
+      FROM wf.UserActivitySlot
+      WHERE ActivityDate = @date
+      GROUP BY TimeSlot
+      ORDER BY TimeSlot
+    `, { date: { type: sql.Date, value: date } })).recordset || [];
+
+    userRows = (await wfQuery(`
+      SELECT s.UserId, u.Username, u.DisplayName, u.Role, u.RoleCode,
+             COUNT(DISTINCT s.TimeSlot) AS ActiveSlotsCount,
+             SUM(s.RequestCount) AS TotalRequests,
+             MIN(s.TimeSlot) AS FirstSlot,
+             MAX(s.TimeSlot) AS LastSlot,
+             MAX(s.LastActiveAt) AS LastActiveAt
+      FROM wf.UserActivitySlot s
+      LEFT JOIN wf.AppUser u ON u.Id = s.UserId
+      WHERE s.ActivityDate = @date
+      GROUP BY s.UserId, u.Username, u.DisplayName, u.Role, u.RoleCode
+      ORDER BY TotalRequests DESC
+    `, { date: { type: sql.Date, value: date } })).recordset || [];
+  } catch {
+    slotRows = [];
+    userRows = [];
+  }
+
+  const slots = Array.from({ length: 96 }, (_, i) => {
+    const found = slotRows.find(r => r.TimeSlot === i);
+    const hour = Math.floor(i / 4).toString().padStart(2, '0');
+    const min = ((i % 4) * 15).toString().padStart(2, '0');
+    return {
+      slot: i,
+      time: `${hour}:${min}`,
+      activeUsers: found ? found.ActiveUsers : 0,
+      totalRequests: found ? found.TotalRequests : 0,
+    };
+  });
+
+  const users = userRows.map(u => {
+    const fH = Math.floor((u.FirstSlot || 0) / 4).toString().padStart(2, '0');
+    const fM = (((u.FirstSlot || 0) % 4) * 15).toString().padStart(2, '0');
+    const lH = Math.floor((u.LastSlot || 0) / 4).toString().padStart(2, '0');
+    const lM = (((u.LastSlot || 0) % 4) * 15).toString().padStart(2, '0');
+    return {
+      userId: u.UserId,
+      username: u.Username || `user-${u.UserId}`,
+      displayName: u.DisplayName || u.Username || `User ${u.UserId}`,
+      role: u.RoleCode || u.Role || 'USER',
+      activeSlotsCount: u.ActiveSlotsCount,
+      totalRequests: u.TotalRequests,
+      firstActiveTime: `${fH}:${fM}`,
+      lastActiveTime: `${lH}:${lM}`,
+      lastActiveAt: u.LastActiveAt,
+    };
+  });
+
+  const currentSlot = getBkkDateAndSlot().slot;
+  const activeNowCount = slots[currentSlot]?.activeUsers || 0;
+
+  return {
+    date,
+    currentSlot,
+    activeNowCount,
+    totalActiveUsersToday: users.length,
+    peakConcurrency: Math.max(0, ...slots.map(s => s.activeUsers)),
+    totalRequestsToday: slots.reduce((acc, s) => acc + s.totalRequests, 0),
+    slots,
+    users,
+  };
+}
+
+async function clearErrors() {
+  state.errors = 0;
+  state.recentErrors = [];
+  state.byStatus = {};
+  state.lastErrorAt = null;
+  try {
+    const { wfQuery } = require('../db');
+    await wfQuery('TRUNCATE TABLE wf.ErrorLog');
+  } catch {
+    try {
+      const { wfQuery } = require('../db');
+      await wfQuery('DELETE FROM wf.ErrorLog');
+    } catch {}
+  }
+  return { ok: true, message: 'ล้างประวัติ Error สำเร็จ' };
+}
+
 // middleware: นับ request + เวลา + จับ 5xx ที่ route จัดการเอง (ไม่ผ่าน global error handler)
 function requestTimer(req, res, next) {
   const start = Date.now();
@@ -131,6 +292,10 @@ function requestTimer(req, res, next) {
   res.once('close', endActive);
   res.on('finish', () => {
     endActive();
+    // Record user activity for 15m slot monitoring
+    if (req.user?.sub || req.user?.id) {
+      recordUserActivity(req.user.sub || req.user.id);
+    }
     // Use the Express route template, never originalUrl/query strings or document IDs.
     performanceMetrics.record(`http ${req.method} ${req.baseUrl || ''}${typeof req.route?.path === 'string' ? req.route.path : '/unmatched'}`, Date.now() - start);
     recordRequest(req.method, req.path, res.statusCode, Date.now() - start);
@@ -151,4 +316,17 @@ function requestTimer(req, res, next) {
   next();
 }
 
-module.exports = { recordError, recordRequest, releaseSignal, getStatus, getRecentErrors, alert, requestTimer, _state: state };
+module.exports = {
+  recordError,
+  recordRequest,
+  recordUserActivity,
+  flushUserActivity,
+  getUserActivity,
+  clearErrors,
+  releaseSignal,
+  getStatus,
+  getRecentErrors,
+  alert,
+  requestTimer,
+  _state: state
+};

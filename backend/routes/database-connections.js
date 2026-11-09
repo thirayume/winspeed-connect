@@ -7,7 +7,7 @@ const {createService}=require('../services/database-connections');
 const router=express.Router(), service=createService();
 function managementGuard(req,res,next) {
   if(req.user?.isImpersonating || (req.user?.actorSub && Number(req.user.actorSub)!==Number(req.user.sub)) || !userRoles(req.user).includes('ADMIN') || !hasPermission(req.user,'database.set-system')) return res.status(403).json({code:'FORBIDDEN',message:'เฉพาะผู้ดูแลระบบที่มีสิทธิ์ตั้งฐานระบบ และไม่ได้ใช้ Access As'});
-  res.set('Cache-Control','no-store'); next();
+  if(typeof res.set === 'function') res.set('Cache-Control','no-store'); next();
 }
 router.use(requireAuth,managementGuard);
 const messages={

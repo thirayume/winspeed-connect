@@ -159,38 +159,61 @@ function requireAuth(req, res, next) {
     // R12 item 4: audit writers read the Access As actor from this request context
     const run = async () => {
       try {
-        const { sessionProfile } = require('../services/role-profiles');
-        req.user = await sessionProfile(req.user, req.tokenPayload);
-        if (Number(actorId)!==Number(effectiveId)) {
-          const actor=await sessionProfile({...req.user,id:actorId,role:req.tokenPayload.actorRole||req.user.role,roles:undefined,permissions:undefined}, {authVersion:req.tokenPayload.actorAuthVersion||0});
-          if (!hasPermission(actor,'access-as')) throw Object.assign(new Error('ACCESS_AS_REVOKED'),{status:403});
-          if(req.user.permissions && actor.permissions) req.user.permissions=req.user.permissions.filter(k=>actor.permissions.includes(k));
-          req.user.actorRoles=actor.roles;req.user.actorPermissions=actor.permissions;
-          req.user.disabledActions=[...new Set([...(req.user.disabledActions||[]),...(actor.disabledActions||[])])];
-          req.user.mustChangePassword=actor.mustChangePassword;
-        }
         const activeDb = require('../services/active-database');
         // Control endpoints remain available to recover a session after access is revoked.
         const controlRoute = String(req.baseUrl || '') === '/api/auth' && ['/databases','/switch-database','/me','/logout'].includes(req.path);
         if (activeDb.onpremEnabled() && !controlRoute) {
           const database = require('../db').getDbName() || await activeDb.systemActiveDatabase();
-          if (!activeDb.canAccessDatabase(database, req.user, await activeDb.getDatabaseThemes())) return res.status(403).json({ code: 'DB_RESTRICTED', message: 'บทบาทนี้ไม่มีสิทธิ์เข้าถึงฐานข้อมูลที่เลือก กรุณาสลับฐานข้อมูล' });
+          let themes = {};
+          try {
+            themes = await activeDb.getDatabaseThemes();
+          } catch {
+            themes = activeDb.DEFAULT_DATABASE_THEMES;
+          }
+          if (!activeDb.canAccessDatabase(database, req.user, themes)) return res.status(403).json({ code: 'DB_RESTRICTED', message: 'บทบาทนี้ไม่มีสิทธิ์เข้าถึงฐานข้อมูลที่เลือก กรุณาสลับฐานข้อมูล' });
         }
         if (blockWriteWhenPasswordStale(req,res)) return;
         require('../services/request-context').runWithUser(req.user, () => next());
-      } catch(e) {res.status(e.status||503).json({code:e.status===401?'SESSION_REVOKED':'ROLE_UNAVAILABLE',message:'สิทธิ์หรือข้อมูลเข้าสู่ระบบเปลี่ยน กรุณาเข้าสู่ระบบใหม่'});}
+      } catch(e) {if(process.env.NODE_ENV!=='production')console.error('[auth error]',e);res.status(e.status||503).json({code:e.status===401?'SESSION_REVOKED':'ROLE_UNAVAILABLE',message:'สิทธิ์หรือข้อมูลเข้าสู่ระบบเปลี่ยน กรุณาเข้าสู่ระบบใหม่'});}
     };
     // Database switching (owner 2026-10-25): a permitted role's session may point at another
     // allowed database, carried in the JWT `db` claim. An invalid or no-longer-permitted claim is
     // ignored and the request falls back to the system default already set by the DB-target
     // middleware. The migrator and non-onprem targets never switch.
+    // Auth Anchor (PROD_DB): Identity, credentials, and roles are always resolved against the primary DB.
     const prepare = async () => {
-      if(req.tokenPayload.db) {
-        const {sessionProfile}=require('../services/role-profiles');
-        const actor=await sessionProfile({...req.user,id:actorId,role:req.tokenPayload.actorRole||req.user.role,roles:undefined,permissions:undefined},{authVersion:req.user.isImpersonating?req.tokenPayload.actorAuthVersion:req.tokenPayload.authVersion});
-        return runWithSessionDatabase(req.tokenPayload,actor,run);
+      try {
+        const { sessionProfile } = require('../services/role-profiles');
+        req.user = await sessionProfile(req.user, req.tokenPayload);
+        if (Number(actorId) !== Number(effectiveId)) {
+          const actor = await sessionProfile(
+            { ...req.user, id: actorId, role: req.tokenPayload.actorRole || req.user.role, roles: undefined, permissions: undefined },
+            { authVersion: req.tokenPayload.actorAuthVersion || 0 }
+          );
+          if (!hasPermission(actor, 'access-as')) throw Object.assign(new Error('ACCESS_AS_REVOKED'), { status: 403 });
+          if (req.user.permissions && actor.permissions) req.user.permissions = req.user.permissions.filter(k => actor.permissions.includes(k));
+          req.user.actorRoles = actor.roles;
+          req.user.actorPermissions = actor.permissions;
+          req.user.disabledActions = [...new Set([...(req.user.disabledActions || []), ...(actor.disabledActions || [])])];
+          req.user.mustChangePassword = actor.mustChangePassword;
+        }
+
+        const isAuthOrAdminRoute = String(req.baseUrl || '').startsWith('/api/auth') || String(req.baseUrl || '').startsWith('/api/admin-management');
+        const actorForSwitch = req.user.isImpersonating
+          ? { role: req.user.actorRole, roles: req.user.actorRoles, permissions: req.user.actorPermissions }
+          : req.user;
+
+        if (req.tokenPayload.db && !isAuthOrAdminRoute) {
+          return runWithSessionDatabase(req.tokenPayload, actorForSwitch, run);
+        }
+        return run();
+      } catch (e) {
+        if (process.env.NODE_ENV !== 'production') console.error('[auth error]', e);
+        return res.status(e.status || 503).json({
+          code: e.status === 401 ? 'SESSION_REVOKED' : 'ROLE_UNAVAILABLE',
+          message: 'สิทธิ์หรือข้อมูลเข้าสู่ระบบเปลี่ยน กรุณาเข้าสู่ระบบใหม่',
+        });
       }
-      return run();
     };
     return prepare();
   }).catch(next);

@@ -20,6 +20,7 @@ export const AdminUsersPage = ({
   embedded?: boolean;
 } = {}) => {
   const [includeInactive, setIncludeInactive] = useState(false);
+  const [hideSeparation, setHideSeparation] = useState(true);
   const [selected, setSelected] = useState<number[]>([]);
   const [batchUsers, setBatchUsers] = useState<AdminUser[] | null>(null);
   const [users, setUsers]         = useState<AdminUser[]>([]);
@@ -105,7 +106,19 @@ export const AdminUsersPage = ({
     }
   }
 
-  const needsMapping = (u: AdminUser) => (u.Roles || [u.Role]).some(r => r === 'SALES' || r === 'COUNTER_SALES') && !u.EmpId;
+  const isSeparated = (u: AdminUser): boolean => {
+    if (
+      (Array.isArray(u.RoleCodes) && u.RoleCodes.includes('SEPARATION')) ||
+      (Array.isArray(u.Roles) && u.Roles.includes('SEPARATION')) ||
+      u.RoleCode === 'SEPARATION' ||
+      u.Role === 'SEPARATION'
+    ) {
+      return true;
+    }
+    return false;
+  };
+
+  const needsMapping = (u: AdminUser) => !u.EmpId && u.IsActive && !isSeparated(u);
 
   // Check if an EmpID is already used by ANOTHER user
   const sessionUser = useAuthStore(s => s.user);
@@ -152,18 +165,18 @@ export const AdminUsersPage = ({
   };
 
   const getUserRoleCodes = (u: AdminUser): string[] => {
+    if (isSeparated(u)) {
+      return ['SEPARATION'];
+    }
     const list: string[] = [];
     if (Array.isArray(u.RoleCodes) && u.RoleCodes.length > 0) {
-      list.push(...u.RoleCodes);
-    }
-    if (Array.isArray(u.Roles) && u.Roles.length > 0) {
-      for (const r of u.Roles) {
-        if (!list.includes(r)) list.push(r);
+      for (const c of u.RoleCodes) {
+        if (c && c !== 'NONE' && !list.includes(c)) list.push(c);
       }
     }
     if (list.length === 0) {
       const fallback = u.RoleCode || u.Role;
-      if (fallback) list.push(fallback);
+      if (fallback && fallback !== 'NONE') list.push(fallback);
     }
     return list;
   };
@@ -174,14 +187,17 @@ export const AdminUsersPage = ({
     return userCodes.includes(roleFilter) || (Array.isArray(u.Roles) && u.Roles.includes(roleFilter)) || u.Role === roleFilter;
   };
 
-  const filteredUsers = users.filter(u =>
-    (includeInactive || u.IsActive) &&
-    matchesRoleFilter(u) && (
-      u.DisplayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.Username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (u.EmpCode && u.EmpCode.toLowerCase().includes(searchQuery.toLowerCase()))
-    )
-  );
+  const filteredUsers = users.filter(u => {
+    if (!includeInactive && !u.IsActive) return false;
+    if (includeInactive && hideSeparation && isSeparated(u) && roleFilter !== 'SEPARATION') return false;
+    if (!matchesRoleFilter(u)) return false;
+    const q = searchQuery.toLowerCase();
+    return (
+      u.DisplayName.toLowerCase().includes(q) ||
+      u.Username.toLowerCase().includes(q) ||
+      (u.EmpCode && u.EmpCode.toLowerCase().includes(q))
+    );
+  });
 
   const sortedUsers = [...filteredUsers].sort((a, b) => {
     let aVal: any = a[sortConfig.key as keyof AdminUser] || '';
@@ -214,7 +230,7 @@ export const AdminUsersPage = ({
   const isAllPageSelected = eligiblePageUsers.length > 0 && eligiblePageUsers.every(u => selected.includes(u.Id));
 
   // Top roles for quick filter chips
-  const commonRoleCodes = ['ALL', 'C_LEVEL', 'SALES', 'COUNTER_SALES', 'WAREHOUSE', 'WEIGHBRIDGE', 'APPROVER', 'ACCOUNTING', 'MANAGER', 'ADMIN'];
+  const commonRoleCodes = ['ALL', 'C_LEVEL', 'SALES', 'COUNTER_SALES', 'WAREHOUSE', 'WEIGHBRIDGE', 'APPROVER', 'ACCOUNTING', 'MANAGER', 'ADMIN', 'SEPARATION'];
   const customRoleProfiles = roles.filter(r => !commonRoleCodes.includes(r.Code));
 
   return (
@@ -254,7 +270,7 @@ export const AdminUsersPage = ({
             colorClass="bg-purple-100 text-purple-700"
           />
           <DataSummaryCard
-            title="ยังไม่ผูก EMP (ฝ่ายขาย)"
+            title="ยังไม่ผูก EMP"
             value={users.filter(needsMapping).length.toLocaleString()}
             icon={<AlertTriangle size={22} />}
             colorClass="bg-orange-100 text-orange-600"
@@ -289,6 +305,18 @@ export const AdminUsersPage = ({
                   <input type="checkbox" checked={includeInactive} onChange={e => setIncludeInactive(e.target.checked)} className="rounded accent-[#0C447C]" />
                   <span>รวมผู้ปิดใช้งาน</span>
                 </label>
+
+                {includeInactive && (
+                  <label className="flex items-center gap-1.5 text-xs text-rose-700 bg-rose-50 px-2 py-1 rounded-lg border border-rose-200 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={hideSeparation}
+                      onChange={e => setHideSeparation(e.target.checked)}
+                      className="rounded accent-rose-600"
+                    />
+                    <span>ซ่อนพนักงานสิ้นสภาพ (SEPARATION)</span>
+                  </label>
+                )}
 
                 {canBatch && (
                   <button
