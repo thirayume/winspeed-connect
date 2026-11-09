@@ -11,12 +11,14 @@ const {
 const EDITABLE = Object.keys(ACTIONS);
 function parseProfile(input) {
   const { code, name, baseRole, expectedRevision } = input || {};
+  const isSep = code === "SEPARATION";
+  const validBaseRole = ROLES.includes(baseRole) || (isSep && (baseRole === "NONE" || baseRole === "SEPARATION"));
   if (
     !/^[A-Z][A-Z0-9_]{1,29}$/.test(code || "") ||
     typeof name !== "string" ||
     !name.trim() ||
     name.trim().length > 100 ||
-    !ROLES.includes(baseRole) ||
+    !validBaseRole ||
     !Number.isInteger(expectedRevision) ||
     expectedRevision < 0
   )
@@ -81,7 +83,7 @@ async function sessionProfile(user, payload) {
   const reject = (code, status) => {
     throw Object.assign(new Error(code), { status });
   };
-  if (!row || !row.Role || !row.IsActive) reject("ACCOUNT_UNAVAILABLE", 401);
+  if (!row || !row.Role || !row.IsActive || row.Role === 'SEPARATION' || row.RoleCode === 'SEPARATION') reject("ACCOUNT_UNAVAILABLE", 401);
   if (Number(payload.authVersion || 0) !== Number(row.AuthVersion || 0))
     reject("SESSION_REVOKED", 401);
   const assignments = (
@@ -91,7 +93,7 @@ async function sessionProfile(user, payload) {
       { id: { type: sql.Int, value: Number(user.id) } },
     )
   ).recordset;
-  if (!assignments.length) reject("ROLE_UNAVAILABLE", 403);
+  if (!assignments.length || assignments.some((p) => p.Code === 'SEPARATION')) reject("ROLE_UNAVAILABLE", 403);
   return {
     ...user,
     role: row.Role,
@@ -112,6 +114,9 @@ const MENU_PERMISSION = {
   quotation: "quotation.manage",
 };
 function filteredCapabilities(user) {
+  if (userRoles(user).includes('SEPARATION')) {
+    return { menus: [], actions: [] };
+  }
   const inherited = new Set(
     userRoles(user).flatMap(
       (r) => capabilitiesFor(r, { positionCode: user.positionCode }).menus,

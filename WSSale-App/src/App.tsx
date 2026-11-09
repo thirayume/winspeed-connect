@@ -4,6 +4,7 @@ import { AlertTriangle, Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRigh
 
 import { useErpStore } from './store/erp-store';
 import { useAuthStore } from './store/auth-store';
+import { useCompanyStore } from './store/company-store';
 import { getMe, listAccessAsCandidates, listUnlockRequests, listPendingGiveaways, startAccessAs, stopAccessAs } from './services/api';
 import type { AdminUser, UserRole } from './types';
 import LoginPage from './pages/LoginPage';
@@ -75,7 +76,6 @@ const NAV_GROUPS: NavGroup[] = [
     color: 'text-indigo-600',
     items: [
       { key: 'sales',      label: 'ขาย',         sub: 'POS · สั่งขายปุ๋ย',     icon: ShoppingCart, roles: ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'] },
-      { key: 'trip-board', label: 'Sale Trip',   sub: 'กระดานเที่ยวรถ',      icon: Truck, roles: ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'] },
       { key: 'voucher',    label: 'Voucher คงค้าง', sub: 'ยอดคงค้าง · วันหมดอายุตั๋ว', icon: Ticket, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'SALES', 'COUNTER_SALES'] },
       { key: 'edit-requests', label: 'คำขอแก้ไขและอนุมัติ', sub: 'แก้ไข · อนุมัติราคา · Hold รถ', icon: ClipboardCheck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'SALES', 'COUNTER_SALES'] },
       { key: 'quotation',  label: 'เสนอราคา',    sub: 'ใบเสนอราคา (102) → บิล',      icon: FileText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'SALES', 'COUNTER_SALES'] },
@@ -128,7 +128,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'policy',     label: 'นโยบายอนุมัติ', sub: 'อำนาจอนุมัติ · วงเงิน', icon: ScrollText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
       // { key: 'governance', label: 'กำกับข้อมูล',  sub: 'เครดิต · สต๊อก · PDPA',  icon: Landmark, roles: [...] },
       { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · Watchdog · Alert', icon: Activity, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
-      { key: 'app-settings', label: 'App Settings', sub: 'นโยบายระบบ · ผลตรวจรับ', icon: Settings, roles: ['ADMIN'] },
+      { key: 'app-settings', label: 'App Settings', sub: 'นโยบายระบบ · ผลตรวจรับ · แม่แบบรายงาน', icon: Settings, roles: ['ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'] },
       { key: 'admin',      label: 'ผู้ใช้งานและสิทธิ์', sub: 'จัดการผู้ใช้งาน · บทบาท · ผังองค์กร · ผู้อนุมัติ', icon: Users, roles: ['ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'] },
       { key: 'beneficiaries', label: 'จัดการสิทธิ์ตั๋วร่วม', sub: 'มอบ/ถอนสิทธิ์ตั๋วร่วมระหว่างลูกค้า', icon: Ticket, roles: ['ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'] },
     ],
@@ -145,7 +145,6 @@ const MOBILE_TABS: (NavItem & { isMobileOnly?: boolean })[] = [
   { key: 'papertrail', label: 'เอกสาร',      sub: '',  icon: LayoutGrid },
   { key: 'sales',      label: 'ขาย',         sub: '',  icon: ShoppingCart },
   { key: 'store',      label: 'คลัง',        sub: '',  icon: Warehouse, badge: true },
-  { key: 'trip-board', label: 'เที่ยวรถ',     sub: '',  icon: Truck },
   { key: 'rebate',     label: 'รีเบท',        sub: '',  icon: Coins },
   { key: 'reports',    label: 'รายงาน',      sub: '',  icon: BarChart3 },
 ];
@@ -227,6 +226,12 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
   const [accessAsSearch, setAccessAsSearch] = useState('');
   const activePortal = useAppStore(s => s.activePortal);
   const navigate = useAppStore(s => s.navigate);
+  const companyInfo = useCompanyStore(s => s.companyInfo);
+  const fetchCompanyInfo = useCompanyStore(s => s.fetchCompanyInfo);
+
+  useEffect(() => {
+    fetchCompanyInfo();
+  }, [fetchCompanyInfo]);
   const setUnlockRequests = useErpStore(s => s.setUnlockRequests);
   const setPendingGiveaways = useErpStore(s => s.setPendingGiveaways);
   const pendingUnlocks = useErpStore(s => s.unlockRequests.length);
@@ -353,7 +358,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 WF-SaleApp
                 <span className="text-[9px] bg-blue-100 text-blue-800 px-1 rounded font-bold">v{packageJson.version}</span>
               </span>
-              <span className="text-[11px] text-muted-foreground">World Fertilizer</span>
+              <span className="text-[11px] text-muted-foreground">{companyInfo.compNameEng || 'WORLD FERT CO., LTD.'}</span>
             </div>
           )}
         </div>

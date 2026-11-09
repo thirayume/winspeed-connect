@@ -1,0 +1,24 @@
+# Draft: production/UAT identities and API same-origin must be verified before use.
+{ 
+  email {$ACME_EMAIL}
+}
+{$PROD_DOMAIN} {
+  encode gzip
+  @api path /api/* /socket.io/* /uploads/*
+  handle @api {
+    reverse_proxy prod-api:3000
+  }
+  handle {
+    reverse_proxy prod-web:80
+  }
+}
+{$UAT_DOMAIN} {
+  encode gzip
+  @api path /api/* /socket.io/* /uploads/*
+  handle @api {
+    reverse_proxy uat-api:3000
+  }
+  handle {
+    reverse_proxy uat-web:80
+  }
+}

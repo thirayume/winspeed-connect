@@ -49,6 +49,8 @@ export function QuotationPage() {
   // Pagination & Sorting
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [workView, setWorkView] = useState<WorkView>('ACTIVE');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 30;
@@ -116,6 +118,8 @@ export function QuotationPage() {
       return false;
     }
     if (statusFilter !== 'ALL' && q.Status !== statusFilter) return false;
+    if (dateFrom && (q.CreatedAt || '').slice(0, 10) < dateFrom) return false;
+    if (dateTo && (q.CreatedAt || '').slice(0, 10) > dateTo) return false;
     if (searchQuery) {
       const qLower = searchQuery.toLowerCase();
       if (
@@ -131,12 +135,12 @@ export function QuotationPage() {
   });
 
   const sortedQuotes = [...filteredQuotes].sort((a, b) => {
-    const statusDiff = (statusOrder[a.Status] ?? 99) - (statusOrder[b.Status] ?? 99);
-    if (statusDiff !== 0) return statusDiff;
-
     const aDate = a.CreatedAt ? Date.parse(a.CreatedAt) : 0;
     const bDate = b.CreatedAt ? Date.parse(b.CreatedAt) : 0;
     if (aDate !== bDate) return bDate - aDate;
+
+    const statusDiff = (statusOrder[a.Status] ?? 99) - (statusOrder[b.Status] ?? 99);
+    if (statusDiff !== 0) return statusDiff;
 
     let aVal: any = a[sortConfig.key as keyof Quotation] || '';
     let bVal: any = b[sortConfig.key as keyof Quotation] || '';
@@ -267,6 +271,34 @@ export function QuotationPage() {
                 <option key={status} value={status}>{STATUS_LABEL[status]}</option>
               ))}
             </select>
+            <div className="flex items-center gap-1">
+              <div className="w-28 sm:w-32">
+                <ThaiDatePicker
+                  value={dateFrom}
+                  onChange={d => { setDateFrom(d); setCurrentPage(1); }}
+                  placeholder="ตั้งแต่วันที่"
+                  className="h-9 px-2 text-xs"
+                />
+              </div>
+              <span className="text-gray-400 text-xs">-</span>
+              <div className="w-28 sm:w-32">
+                <ThaiDatePicker
+                  value={dateTo}
+                  onChange={d => { setDateTo(d); setCurrentPage(1); }}
+                  placeholder="ถึงวันที่"
+                  className="h-9 px-2 text-xs"
+                />
+              </div>
+              {(dateFrom || dateTo) && (
+                <button
+                  onClick={() => { setDateFrom(''); setDateTo(''); setCurrentPage(1); }}
+                  className="text-xs text-red-500 hover:text-red-700 px-1"
+                  title="ล้างตัวกรองวันที่"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
             <button disabled={!can('quotation.create')} onClick={() => setShowCreate(true)} className="p-2 bg-[#0C447C] text-white rounded-lg hover:bg-[#0a3866] transition-colors flex items-center justify-center" title="สร้างใบเสนอราคา">
               <Plus size={18} />
             </button>

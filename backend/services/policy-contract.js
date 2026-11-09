@@ -162,6 +162,26 @@ const POLICY_DEFINITIONS = Object.freeze(Object.assign(Object.create(null), {
     default: 1,
     description: 'เคลมรีเบทได้เฉพาะใบส่งของในรอบบัญชีปัจจุบัน — เดือนที่เริ่มรอบบัญชี (1 = มกราคม) · 0 = ไม่ตัดรอบ',
   },
+  CREDIT_LIMIT_STRICT_MODE: {
+    policyName: 'CREDIT_POLICY',
+    type: 'BOOLEAN',
+    default: 'false',
+    description: 'true = บล็อกการสร้างบิลขายทันทีเมื่อเกินวงเงินเครดิต · false = แจ้งเตือนและบันทึกเหตุการณ์ผิดปกติ (ค่าเริ่มต้น false)',
+  },
+  CREDIT_AGING_STRICT_MODE: {
+    policyName: 'CREDIT_POLICY',
+    type: 'BOOLEAN',
+    default: 'false',
+    description: 'true = บล็อกการสร้างบิลขายทันทีเมื่อมีหนี้ค้างชำระเกินกำหนด Aging · false = แจ้งเตือนและบันทึกเหตุการณ์ผิดปกติ (ค่าเริ่มต้น false)',
+  },
+  CREDIT_AGING_DEFAULT_DAYS: {
+    policyName: 'CREDIT_POLICY',
+    type: 'INT',
+    min: 1,
+    max: 365,
+    default: 60,
+    description: 'จำนวนวันเครดิต Aging สูงสุดตามนโยบายค่าเริ่มต้น (วัน, ค่าเริ่มต้น 60 วัน)',
+  },
 }));
 
 // Read one setting with its default; cached briefly because bill and board queries call it per request

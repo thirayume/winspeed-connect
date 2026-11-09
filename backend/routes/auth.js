@@ -247,6 +247,19 @@ function lineLoginConfig() {
   };
 }
 
+const { getCompanyInfo } = require('../services/company-service');
+
+// GET /api/auth/company — ข้อมูลบริษัทจาก dbo.EMComp (Public สำหรับหน้า Login / System Header)
+router.get('/company', async (req, res) => {
+  try {
+    const info = await getCompanyInfo();
+    res.json(info);
+  } catch (err) {
+    console.error('[auth/company] error:', err.message);
+    res.status(500).json({ message: 'Error retrieving company info' });
+  }
+});
+
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
   try {
@@ -557,15 +570,12 @@ router.get('/databases', requireAuth, async (req, res) => {
     ]);
     const active = getDbName() || system;
 
-    const uRoles = userRoles(req.user);
-    const isAdmin = uRoles.includes('ADMIN');
-
     // Build rich metadata for all candidate databases
     const metaList = rawList.map(dbName => {
       const theme = activeDb.resolveTheme(dbName, themes);
       const restrictedRoles = Array.isArray(theme.restrictedRoles) ? theme.restrictedRoles : [];
       const isRestricted = restrictedRoles.length > 0;
-      const isAllowed = !isRestricted || isAdmin || uRoles.some(r => restrictedRoles.includes(r));
+      const isAllowed = activeDb.canAccessDatabase(dbName, req.user, themes);
       return {
         name: dbName,
         color: theme.color || 'blue',
@@ -936,6 +946,18 @@ router.patch('/users/:id', requireAuth, requireCapability('users.manage'), async
       }
     }
     if (!sets.length && !codes) return res.status(400).json({ message: 'ไม่มีข้อมูลที่จะแก้ไข' });
+    if (codes && codes.includes('SEPARATION')) {
+      isActive = false;
+      positionCode = null;
+      inputs.active = { type: sql.Bit, value: false };
+      inputs.pos = { type: sql.VarChar(30), value: null };
+      const hasIsActive = sets.findIndex(s => s.startsWith('IsActive ='));
+      if (hasIsActive >= 0) sets[hasIsActive] = 'IsActive = 0';
+      else sets.push('IsActive = 0');
+      const hasPos = sets.findIndex(s => s.startsWith('PositionCode ='));
+      if (hasPos >= 0) sets[hasPos] = 'PositionCode = NULL';
+      else sets.push('PositionCode = NULL');
+    }
     const securityChanged = codes || (role!==undefined && role!==targetUser.Role)
       || (isActive!==undefined && isActive!==Boolean(targetUser.IsActive))
       || password || (lineUserId!==undefined && (lineUserId||null)!==(targetUser.LineUserId||null));

@@ -793,8 +793,8 @@ export function TripSummaryModal({
                   const totalNetAmt = (order.lines || []).reduce((sum, l) => sum + ((l.qtyTon * l.netPricePerTon) || 0), 0);
                   const hasTicket = (order.lines || []).some(l => l.isControlTicketDrawn);
                   
-                  const rebateDiscount = Number((order as any).rebateDiscountAmt || 0) || Number((order as any).claimDiscountAmt || 0);
-                  const totalNetPayable = Math.max(0, totalGrossAmt - rebateDiscount);
+                  const rebateDiscount = 0;
+                  const totalNetPayable = totalGrossAmt;
                   
                   return (
                     <div key={order.id} className={`border rounded-xl shadow-sm flex flex-col ${order.truckPlate === 'ตั๋วคุม' ? 'border-purple-200 bg-purple-50' : 'border-gray-200 bg-white'}`}>
@@ -867,17 +867,10 @@ export function TripSummaryModal({
                           <div className="flex items-baseline gap-1">
                             <span className="text-[10px] text-gray-500">มูลค่า:</span>
                             <span className="text-xs font-bold text-blue-700">฿{totalGrossAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
-                            {rebateDiscount > 0 ? (
-                              <>
-                                <span className="text-[10px] text-emerald-700 font-semibold ml-1">· หักรีเบท ฿{rebateDiscount.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
-                                <span className="text-[10px] text-gray-700 font-bold ml-1">· สุทธิ ฿{totalNetPayable.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
-                              </>
-                            ) : (
-                              totalNetAmt > 0 && totalNetAmt !== totalGrossAmt && (
-                                <span className="text-[10px] text-gray-500 font-normal ml-0.5">
-                                  (สุทธิ ฿{totalNetAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })})
-                                </span>
-                              )
+                            {totalNetAmt > 0 && totalNetAmt !== totalGrossAmt && (
+                              <span className="text-[10px] text-gray-500 font-normal ml-0.5">
+                                (สุทธิ ฿{totalNetAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })})
+                              </span>
                             )}
                           </div>
                           {hasTicket && (

@@ -1,4 +1,5 @@
 const { validateBookingNotes } = require('../services/booking-notes');
+const { checkCustomerCreditAndAging } = require('../services/credit-service');
 /**
  * so.js — wf.SalesOrder state machine
  * DRAFT → CONFIRMED → PICKING → SHIPPED → IMPORTED | CANCELLED
@@ -9,6 +10,7 @@ const router = require('express').Router();
 const { sql, wfQuery, wfTransaction, getTarget } = require('../db');
 const { toHttpError } = require('../services/error-adapter');
 const { requireAuth, requireRole, requireCapability, requireRebateAmountAccess, canViewAllRebateAmounts } = require('../middleware/auth');
+const { hasPermission } = require('../services/role-capabilities');
 
 // Rebate on bills (amounts, discount at create/edit): the roles the bill editor shows it to. SALES lost rebate
 // visibility at go-live (frontend permissions.ts REBATE_OWN_ROLES = []); the API used the wider rebate-report rule
@@ -825,7 +827,7 @@ router.get('/', async (req, res) => {
       ),
       FilteredOrders AS (
         SELECT q.*, u.DisplayName AS SalesName, COUNT_BIG(*) OVER() AS FilteredTotal,
-               ROW_NUMBER() OVER (ORDER BY q.CreatedAt DESC, q.Id DESC) AS RowNum
+               ROW_NUMBER() OVER (ORDER BY COALESCE(q.DeliveryDate, q.CreatedAt) DESC, q.CreatedAt DESC, q.Id DESC) AS RowNum
         FROM Orders q
         LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = q.SalesUserId
         ${where}
@@ -1348,42 +1350,8 @@ async function salesmanWarning(salesUserId) {
  */
 async function creditWarning(custId, orderAmount) {
   try {
-    const r = await wfQuery(`
-      SELECT TOP 1
-        c.CreditAmnt AS CustLimit,
-        g.CreditAmnt AS GroupLimit,
-        -- ⚠ ห้ามเขียน SUM(i.NetAmnt - (SELECT SUM(...))) — SQL Server ปฏิเสธด้วย
-        --   "Cannot perform an aggregate function on an expression containing
-        --    an aggregate or a subquery" ทำให้ฟังก์ชันนี้โยน error ทุกครั้งและ
-        --   คืน null เสมอ = คำเตือนวงเงินไม่เคยทำงานเลย (พบ 5 ก.ย. 2569 จาก log UAT)
-        --   ต้องดึงยอดรับชำระออกมาเป็นคอลัมน์ด้วย OUTER APPLY ก่อน แล้วค่อย SUM
-        ISNULL((SELECT SUM(CASE WHEN i.NetAmnt - ISNULL(r.Received, 0) > 0
-                                THEN i.NetAmnt - ISNULL(r.Received, 0) ELSE 0 END)
-                FROM dbo.SOInvHD i WITH (NOLOCK)
-                OUTER APPLY (SELECT SUM(d.ReceAmnt) AS Received FROM dbo.ARReceDT d WITH (NOLOCK)
-                             WHERE d.SOInvID = i.SOInvID) r
-                WHERE i.CustID = c.CustID AND i.Docutype IN ('202','107')), 0) AS Outstanding
-      FROM dbo.EMCust c WITH (NOLOCK)
-      LEFT JOIN dbo.EMCustGroup g WITH (NOLOCK) ON g.CustGroupID = c.CustGroupID
-      WHERE c.CustID = @cid`,
-      { cid: { type: sql.NVarChar(20), value: String(custId) } });
-
-    const row = r.recordset?.[0];
-    if (!row) return null;
-
-    // วงเงินของลูกค้ามาก่อน ถ้าไม่ได้ตั้งจึงใช้ของกลุ่ม · 0 หรือ NULL = ยังไม่ได้กำหนด
-    const limit = Number(row.CustLimit) > 0 ? Number(row.CustLimit)
-                : Number(row.GroupLimit) > 0 ? Number(row.GroupLimit)
-                : 0;
-    if (limit <= 0) return null;
-
-    const outstanding = Number(row.Outstanding || 0);
-    const total = outstanding + Number(orderAmount || 0);
-    if (total <= limit) return null;
-
-    const fmt = n => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return `เกินวงเงินเครดิต ${fmt(total - limit)} บาท `
-         + `(วงเงิน ${fmt(limit)} · ค้างชำระ ${fmt(outstanding)} · ใบนี้ ${fmt(orderAmount)})`;
+    const res = await checkCustomerCreditAndAging(custId, orderAmount);
+    return res.warnings.length > 0 ? res.warnings.join(' · ') : null;
   } catch (e) {
     console.error('[so] ตรวจวงเงินเครดิตไม่สำเร็จ:', e.message);
     return null;
@@ -1446,6 +1414,25 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
       }
     }
 
+    // Check credit limit and aging strict rule before transaction
+    const custTotals = new Map();
+    for (const order of orders) {
+      if (!order.custId) continue;
+      const cAmt = (order.lines || []).reduce((sum, l) => sum + (Number(l.qtyTon || 0) * Number(l.pricePerTon || 0)), 0);
+      custTotals.set(order.custId, (custTotals.get(order.custId) || 0) + cAmt);
+    }
+    const customerCreditResults = new Map();
+    for (const [cid, amt] of custTotals) {
+      const evalRes = await checkCustomerCreditAndAging(cid, amt);
+      if (evalRes.blocked) {
+        const err = new Error(evalRes.blockReasons.join(' · '));
+        err.status = 400;
+        err.code = 'CREDIT_RULE_BLOCKED';
+        throw err;
+      }
+      customerCreditResults.set(cid, evalRes);
+    }
+
     const createdIds = [];
     const createdRefs = [];
     const salesOwnerIds = new Set();
@@ -1494,6 +1481,10 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
         soReq.input('custId',           sql.NVarChar(20),  String(custId));
         soReq.input('custName',         sql.NVarChar(200), custName ? String(custName) : '');
         const isControlTicket = Boolean(order.isControlTicket || String(truckPlate || '').trim() === 'ตั๋วคุม' || soPrefix === 'AI');
+        if (isControlTicket && !hasPermission(req.user, 'so.control-ticket')) {
+          await tx.rollback();
+          return res.status(403).json({ message: 'Role ของท่านไม่มีสิทธิ์จำหน่ายตั๋วคุม (อนุญาตเฉพาะ Counter Sale และผู้มีสิทธิ์เท่านั้น)' });
+        }
         const effectiveTruckPlate = isControlTicket
           ? 'ตั๋วคุม'
           : (truckPlate && !['ยังไม่ระบุรถ','ตั๋วคุม','ไม่ระบุทะเบียนรถ'].includes(String(truckPlate).trim()) ? String(truckPlate).trim() || null : null);
@@ -1762,6 +1753,31 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
       await audit(null, soId, req.user.sub, 'CREATED', null, 'DRAFT', null, req.ip);
     }
 
+    // Log credit and aging anomalies if triggered (in soft warning mode)
+    for (let idx = 0; idx < orders.length; idx++) {
+      const ord = orders[idx];
+      const sid = createdIds[idx];
+      const cRes = customerCreditResults.get(ord.custId);
+      if (cRes && cRes.warnings.length > 0 && sid) {
+        try {
+          await audit(null, sid, req.user.sub, 'CREDIT_AGING_WARNING', null, 'DRAFT', cRes.warnings.join('; '), req.ip);
+          await wfQuery(`
+            IF OBJECT_ID('wf.ChangeEvent', 'U') IS NOT NULL
+            BEGIN
+              INSERT INTO wf.ChangeEvent (EntityType, EntityId, ChangeType, FieldName, OldValue, NewValue, Reason, ChangedBy, ChangedAt)
+              VALUES ('SalesOrder', @eid, 'ANOMALY_WARNING', 'CreditAgingCheck', NULL, @newVal, N'เปิดบิลขายเกินวงเงินหรือ Aging โดยได้รับอนุญาตตามนโยบาย Soft Warning', @uid, GETUTCDATE());
+            END
+          `, {
+            eid: { type: sql.NVarChar(50), value: String(sid) },
+            newVal: { type: sql.NVarChar(500), value: cRes.warnings.join('; ') },
+            uid: { type: sql.Int, value: req.user.sub },
+          });
+        } catch (auditErr) {
+          console.warn('[credit-audit-log-error]', auditErr?.message);
+        }
+      }
+    }
+
     // เตือนหลัง commit — ใบเปิดสำเร็จแล้ว คำเตือนไม่ย้อนกลับไปยกเลิก
     const warnings = [];
     for (const ownerId of salesOwnerIds) {
@@ -1772,8 +1788,13 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
     const byCust = new Map();
     for (const c of creditChecks) byCust.set(c.custId, (byCust.get(c.custId) || 0) + c.amount);
     for (const [custId, amount] of byCust) {
-      const w = await creditWarning(custId, amount);
-      if (w) warnings.push(w);
+      const cRes = customerCreditResults.get(custId);
+      if (cRes && cRes.warnings.length > 0) {
+        warnings.push(...cRes.warnings);
+      } else {
+        const w = await creditWarning(custId, amount);
+        if (w) warnings.push(w);
+      }
     }
     if (anyNeedsApproval) {
       warnings.push({
@@ -1907,6 +1928,10 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
         soReq.input('custId', sql.NVarChar(20), String(custId));
         soReq.input('custName', sql.NVarChar(200), custName ? String(custName) : '');
         const isControlTicket = Boolean(order.isControlTicket || String(truckPlate || '').trim() === 'ตั๋วคุม' || soPrefix === 'AI');
+        if (isControlTicket && !hasPermission(req.user, 'so.control-ticket')) {
+          await tx.rollback();
+          return res.status(403).json({ message: 'Role ของท่านไม่มีสิทธิ์จำหน่ายตั๋วคุม (อนุญาตเฉพาะ Counter Sale และผู้มีสิทธิ์เท่านั้น)' });
+        }
         const effectiveTruckPlate = isControlTicket
           ? 'ตั๋วคุม'
           : (truckPlate && !['ยังไม่ระบุรถ','ตั๋วคุม','ไม่ระบุทะเบียนรถ'].includes(String(truckPlate).trim()) ? String(truckPlate).trim() || null : null);

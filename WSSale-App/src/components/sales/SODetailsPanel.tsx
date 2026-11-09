@@ -350,24 +350,6 @@ export function SODetailsPanel({
             <span>ยอดรวมสินค้า</span>
             <span className="font-bold text-gray-800">฿{totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
           </div>
-          {((so.rebateDiscountAmt || 0) > 0 || Number((so as any).claimDiscountAmt || 0) > 0) && (
-            <div className="flex justify-between text-xs text-emerald-700">
-              <span>หักส่วนลดรีเบท / เคลม</span>
-              <span className="font-bold">-฿{(Number(so.rebateDiscountAmt) || Number((so as any).claimDiscountAmt) || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
-            </div>
-          )}
-          {((so.rebateDiscountAmt || 0) > 0 || Number((so as any).claimDiscountAmt || 0) > 0) && (
-            <div className="flex justify-between text-sm font-bold text-gray-900 pt-1 border-t border-gray-100">
-              <span>ยอดสุทธิชำระ</span>
-              <span className="font-black text-emerald-800">฿{Math.max(0, totalAmt - (Number(so.rebateDiscountAmt) || Number((so as any).claimDiscountAmt) || 0)).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
-            </div>
-          )}
-          {totalRebate > 0 && (
-            <div className="flex justify-between text-xs text-orange-500">
-              <span>รีเบทสะสม (accrual)</span>
-              <span className="font-bold">฿{totalRebate.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
-            </div>
-          )}
           {so.importedDocuNo && (
             <div className="flex justify-between text-xs text-emerald-600">
               <span>WINSpeed DocuNo</span>

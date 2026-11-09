@@ -79,8 +79,8 @@ router.put(
       return res
         .status(400)
         .json({ message: "ตรวจรหัส Role บทบาทต้นแบบ และ Permission" });
-    if (p.code === "ADMIN") {
-      return res.status(400).json({ message: "Role ADMIN ได้รับการสงวนไว้ เป็นสิทธิ์หลักของระบบ ไม่สามารถแก้ไขได้" });
+    if (p.code === "ADMIN" || p.code === "SEPARATION") {
+      return res.status(400).json({ message: `Role ${p.code} ได้รับการสงวนไว้ เป็นสิทธิ์หลักของระบบ ไม่สามารถแก้ไขได้` });
     }
     try {
       await wfTransaction(async (tx) => {
@@ -218,7 +218,11 @@ router.post(
             ).recordset.map((r) => r.RoleCode);
             afterRoles = changeMembership(beforeRoles, requested, roleMode);
             await setMembership(tx, id, afterRoles);
-            set = "Role=Role";
+            if (afterRoles.includes("SEPARATION")) {
+              set = "IsActive=0,PositionCode=NULL";
+            } else {
+              set = "Role=Role";
+            }
           }
           if (action === "status") {
             set = "IsActive=@active";
@@ -352,8 +356,8 @@ router.delete(
   "/roles/:code",
   requireCapability("roles.manage"),
   async (req, res) => {
-    if (String(req.params.code).toUpperCase() === "ADMIN") {
-      return res.status(400).json({ message: "Role ADMIN เป็นสิทธิ์หลักของระบบ ไม่สามารถลบได้" });
+    if (["ADMIN", "SEPARATION"].includes(String(req.params.code).toUpperCase())) {
+      return res.status(400).json({ message: `Role ${req.params.code} เป็นสิทธิ์หลักของระบบ ไม่สามารถลบได้` });
     }
     try {
       if (!Number.isInteger(req.body?.expectedRevision))

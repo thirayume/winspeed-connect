@@ -2,8 +2,8 @@ import { bookingNoteError } from '../../utils/bookingNotes';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { unsavedMessage } from '../../utils/unsaved-changes';
 import { useState, useEffect, useCallback } from 'react';
-import { X, Plus, Minus, Truck, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket } from 'lucide-react';
-import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation, fetchPriceIndicator } from '../../services/api';
+import { X, Plus, Minus, Truck, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket, CreditCard, Clock, ShieldAlert, AlertTriangle, AlertCircle } from 'lucide-react';
+import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation, fetchPriceIndicator, fetchCustomerCreditStatus } from '../../services/api';
 import type { EffectivePriceRow, AtpStockRow, PriceLevel } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { GiveawayBorrowModal } from './GiveawayBorrowModal';
@@ -11,8 +11,9 @@ import { CouponPickerModal, type CouponItem } from './CouponPickerModal';
 import { useAuthStore } from '../../store/auth-store';
 import { useTripStore } from '../../store/trip-store';
 import { canViewRebateAmounts } from '../../utils/permissions';
+import { useCan } from '../../utils/capabilities';
 import { appConfirm } from '../ui/AppAlert';
-import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser, GiveawayQuota } from '../../types';
+import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser, GiveawayQuota, CustomerCreditStatus } from '../../types';
 
 type DraftLine = SalesOrderLine & {
   tempId: string;
@@ -120,6 +121,7 @@ export function CreateSODialog({
   const [error, setError] = useState('');
   const [salesUsers, setSalesUsers] = useState<AdminUser[]>([]);
   const currentUser = useAuthStore(s => s.user);
+  const can = useCan();
   const userRole = currentUser?.role;
   const canSeeRebate = canViewRebateAmounts(currentUser);
 
@@ -149,7 +151,7 @@ export function CreateSODialog({
     if (!isOpen) return;
     const targetUserId = salesUserId ? String(salesUserId) : undefined;
     const editId = editSoId && editSoId !== 'undefined' ? editSoId : undefined;
-    Promise.all([fetchGoods(), fetchGiveawayGoods(targetUserId, editId)])
+    Promise.all([fetchGoods({ forSale: true }), fetchGiveawayGoods(targetUserId, editId)])
       .then(([g, gw]) => setGoods(mergeGoods(g, gw)))
       .catch(console.error);
     // แยกจากรายการสินค้า: สต๊อกเป็นข้อมูลประกอบ ดึงไม่ได้ก็ต้องออกบิลได้
@@ -351,6 +353,30 @@ export function CreateSODialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [levelKey, currentBillCustId, deliveryDate]);
 
+  // Credit Limit & AR Aging Status
+  const [creditStatus, setCreditStatus] = useState<CustomerCreditStatus | null>(null);
+  const [creditLoading, setCreditLoading] = useState(false);
+
+  const currentBillTotalAmount = (activeBill?.lines || []).reduce(
+    (sum, l) => sum + ((Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0)),
+    0
+  );
+
+  useEffect(() => {
+    if (!currentBillCustId) {
+      setCreditStatus(null);
+      return;
+    }
+    setCreditLoading(true);
+    fetchCustomerCreditStatus(currentBillCustId, currentBillTotalAmount)
+      .then(setCreditStatus)
+      .catch(err => {
+        console.error('[CreateSODialog/credit-status:error]', err);
+        setCreditStatus(null);
+      })
+      .finally(() => setCreditLoading(false));
+  }, [currentBillCustId, currentBillTotalAmount]);
+
   useEffect(() => {
     fetchPrices({ custId: currentBillCustId, asOf: deliveryDate || undefined }).then(setPrices).catch(console.error);
     // Effective prices from PriceBook — overlays legacy prices when available
@@ -402,7 +428,13 @@ export function CreateSODialog({
       .finally(() => setTicketLoading(false));
   }, [selectedTicketForDraw]);
 
-  const categories = [ALL_GOODS_TAB, ...Array.from(new Set(goods.map(g => g.GoodGroupName || OTHER_GOODS_GROUP))).filter(c => c !== GIVEAWAY_GROUP).sort(), GIVEAWAY_GROUP];
+  const categories: string[] = [
+    ALL_GOODS_TAB,
+    ...Array.from(new Set(goods.map(g => g.GoodGroupName).filter((c): c is string => Boolean(c))))
+      .filter(c => c !== GIVEAWAY_GROUP && c !== 'อื่นๆ' && c !== OTHER_GOODS_GROUP)
+      .sort(),
+    GIVEAWAY_GROUP
+  ];
   const filteredGoods = goods.filter(g => {
     if (activeTab !== ALL_GOODS_TAB && (g.GoodGroupName || OTHER_GOODS_GROUP) !== activeTab) return false;
     if (goodSearch) {
@@ -698,14 +730,14 @@ export function CreateSODialog({
   };
 
   const totalTons = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isGiveaway ? 0 : (Number(l.qtyTon) || 0)), 0), 0);
-  const totalRebateDiscount = canSeeRebate ? bills.reduce((s, b) => s + (Number(b.rebateDiscountAmt) || 0), 0) : 0;
+  const totalRebateDiscount = 0;
   // เลขตั๋วที่ถูกเบิกจริงในบิลทั้งหมด — ใช้เป็น placeholder ให้ผู้ใช้เห็นว่าถ้าเว้นว่างจะได้อะไร
   const drawnTicketNos = Array.from(new Set(
     bills.flatMap(b => b.lines.filter(l => l.isControlTicketDrawn && l.refControlTicketNo)
                               .map(l => l.refControlTicketNo as string))
   )).join(', ');
 
-  const totalPayable = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isControlTicketDrawn ? 0 : (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0)), 0), 0) - totalRebateDiscount;
+  const totalPayable = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isControlTicketDrawn ? 0 : (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0)), 0), 0);
   const totalOffset = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isControlTicketDrawn ? (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0) : 0), 0), 0);
   const totalCartItems = bills.reduce((s, b) => s + b.lines.length, 0);
 
@@ -718,6 +750,10 @@ export function CreateSODialog({
     }
     const hasInvalidCust = bills.some(b => !b.custId);
     if (hasInvalidCust) { setError('กรุณาเลือกลูกค้าให้ครบถ้วนทุกบิล'); return; }
+    if (creditStatus?.blocked) {
+      setError(`ไม่อนุญาตให้เปิดบิลขาย: ${creditStatus.blockReasons.join(' · ')}`);
+      return;
+    }
     const emptyBills = bills.filter(b => b.lines.length === 0);
     if (emptyBills.length > 0) { setError(`มีบิลที่ยังไม่ได้เลือกสินค้า (${emptyBills.length} บิล)`); return; }
 
@@ -1188,93 +1224,7 @@ export function CreateSODialog({
                     ))}
                   </div>
                   </div>
-                  
-                  {/* Control Ticket Toggle for Active Bill */}
-                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg p-2 shrink-0">
-                    <label className="flex items-center gap-2 text-xs font-bold text-amber-800 cursor-pointer">
-                      <input type="checkbox" checked={useControlTicket} onChange={e => setUseControlTicket(e.target.checked)} className="rounded text-amber-600 focus:ring-amber-500"/>
-                      เบิกจากตั๋วคุม (AI)
-                    </label>
-                    {useControlTicket && (
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={ticketSearch || selectedTicketForDraw}
-                          onChange={e => {
-                            setTicketSearch(e.target.value);
-                            setSelectedTicketForDraw('');
-                            setIsTicketOpen(true);
-                          }}
-                          onFocus={() => setIsTicketOpen(true)}
-                          placeholder="ค้นหาเลขตั๋วคุม..."
-                          className="border border-amber-300 rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 w-40"
-                        />
-                        {selectedTicketForDraw && (
-                           <button onClick={() => { setSelectedTicketForDraw(''); setTicketSearch(''); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                             <X size={12} />
-                           </button>
-                        )}
-                        {isTicketOpen && (
-                          <>
-                            <div className="fixed inset-0 z-40" onClick={() => setIsTicketOpen(false)} />
-                            <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto">
-                              {controlTickets.filter(t => t.DocuNo.toLowerCase().includes(ticketSearch.toLowerCase())).length === 0 ? (
-                                <div className="px-3 py-2 text-xs text-gray-500">ไม่พบตั๋วคุมที่ค้นหา</div>
-                              ) : (
-                                controlTickets
-                                  .filter(t => t.DocuNo.toLowerCase().includes(ticketSearch.toLowerCase()))
-                                  .map(t => (
-                                    <button
-                                      key={t.DocuNo}
-                                      onClick={() => {
-                                        setSelectedTicketForDraw(t.DocuNo);
-                                        setTicketSearch('');
-                                        setIsTicketOpen(false);
-                                      }}
-                                      className="w-full text-left px-3 py-2 hover:bg-amber-50 border-b border-gray-50 last:border-0"
-                                    >
-                                      <div className="text-sm font-medium text-amber-900">{t.DocuNo}</div>
-                                      {t.Desc1 && <div className="text-[10px] text-gray-500 truncate">{t.Desc1}</div>}
-                                    </button>
-                                  ))
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
                 </div>
-
-                {/* Control Ticket Details Preview */}
-                {useControlTicket && selectedTicketForDraw && (
-                  <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
-                    <div className="text-xs font-bold text-amber-800 mb-2 flex items-center gap-2">
-                      <FileText size={14}/> รายการในตั๋วคุม: {selectedTicketForDraw}
-                    </div>
-                    {ticketLoading ? (
-                      <div className="text-xs text-amber-600 animate-pulse">กำลังโหลด...</div>
-                    ) : ticketDetails.length === 0 ? (
-                      <div className="text-xs text-gray-500">ไม่พบรายการสินค้าในตั๋วนี้</div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
-                        {ticketDetails.map((td, i) => (
-                          <button key={i} type="button" onClick={(e) => { e.preventDefault(); addTicketItemToActiveBill(td); }} className="flex items-center gap-2 bg-white rounded-lg px-2.5 py-1.5 border border-amber-100 text-xs text-left hover:bg-amber-100/50 hover:border-amber-300 transition-colors cursor-pointer shadow-sm">
-                            <div className="flex-1 min-w-0">
-                              <div className="font-bold text-gray-800 truncate">{td.GoodName}</div>
-                              <div className="text-[10px] text-gray-500">{td.GoodCode}</div>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <div className="font-bold text-amber-700">{td.QtyTon} ตัน</div>
-                              <div className="text-[10px] text-gray-400">฿{td.PricePerTon?.toLocaleString()}/ตัน</div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <p className="text-[10px] text-amber-600 mt-2">คลิกสินค้าด้านบนเพื่อเพิ่มรายการที่ต้องการเบิกจากตั๋วคุมนี้ (ราคาสินค้าจะถูกล็อกตามตั๋วคุม)</p>
-                  </div>
-                )}
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 flex-1 content-start overflow-y-auto scrollbar-hide pb-2">
                   {paginatedGoods.map(g => {
@@ -1413,10 +1363,12 @@ export function CreateSODialog({
                           <option value="K">K - บัญชี 2</option>
                         </select>
                       </div>
-                      <label className="flex items-center gap-1.5 text-[10px] text-gray-500 font-bold cursor-pointer hover:text-amber-600 transition-colors ml-1" title="ติ๊กเพื่อระบุว่าบิลนี้เป็นตั๋วคุม (ไม่ต้องใช้ทะเบียนรถ)">
-                        <input type="checkbox" checked={!!activeBill?.isControlTicket} onChange={e => updateBillInfo(activeBillId, { isControlTicket: e.target.checked })} className="w-3.5 h-3.5 accent-amber-500" />
-                        เป็นตั๋วคุม
-                      </label>
+                      {can('so.control-ticket') && (
+                        <label className="flex items-center gap-1.5 text-[10px] text-gray-500 font-bold cursor-pointer hover:text-amber-600 transition-colors ml-1" title="ติ๊กเพื่อระบุว่าบิลนี้เป็นตั๋วคุม (ไม่ต้องใช้ทะเบียนรถ)">
+                          <input type="checkbox" checked={!!activeBill?.isControlTicket} onChange={e => updateBillInfo(activeBillId, { isControlTicket: e.target.checked })} className="w-3.5 h-3.5 accent-amber-500" />
+                          เป็นตั๋วคุม
+                        </label>
+                      )}
                     </div>
                   </div>
 
@@ -1508,6 +1460,57 @@ export function CreateSODialog({
                       />
                     </div>
                   </div>
+
+                  {/* Live Credit Limit & Aging Badge / Warning / Strict Blocker */}
+                  {activeBill?.custId && creditStatus && (
+                    <div className="mt-2 space-y-1.5">
+                      <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-1.5">
+                        <div className="flex items-center gap-1.5 text-gray-700 font-medium">
+                          <CreditCard size={13} className="text-[#0C447C]" />
+                          <span>วงเงิน: <strong>{creditStatus.creditLimit != null && creditStatus.creditLimit > 0 ? `฿${creditStatus.creditLimit.toLocaleString()}` : 'ไม่จำกัด'}</strong></span>
+                          <span className="text-gray-300">|</span>
+                          <span>ยอดค้าง: <strong className={creditStatus.isOverCreditLimit ? 'text-red-600' : 'text-gray-800'}>฿{creditStatus.totalOutstanding.toLocaleString()}</strong></span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-gray-700 font-medium">
+                          <Clock size={13} className="text-amber-600" />
+                          <span>Aging: <strong className={creditStatus.isOverAging ? 'text-red-600' : 'text-gray-800'}>{creditStatus.maxAgingDays}</strong>/{creditStatus.agingLimitDays} วัน</span>
+                          {creditStatus.creditHold && (
+                            <span className="rounded-full bg-red-100 text-red-700 px-1.5 py-0.2 font-bold text-[10px] flex items-center gap-0.5">
+                              <ShieldAlert size={10} /> Hold
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Strict Rule Blocker Banner (Disallow Mode) */}
+                      {creditStatus.blocked && (
+                        <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-900">
+                          <div className="flex items-center gap-1.5 font-bold text-red-700">
+                            <AlertTriangle size={14} /> ไม่อนุญาตให้เปิดบิลขาย (Strict Rule เปิดใช้งาน)
+                          </div>
+                          <div className="mt-1 space-y-0.5 text-[11px]">
+                            {creditStatus.blockReasons.map((r, i) => (
+                              <div key={i}>• {r}</div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Soft Warning Banner (Warning Mode) */}
+                      {!creditStatus.blocked && creditStatus.warnings.length > 0 && (
+                        <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                          <div className="flex items-center gap-1.5 font-bold text-amber-800">
+                            <AlertCircle size={14} /> แจ้งเตือน: เกินวงเงินเครดิต / อายุหนี้ Aging
+                          </div>
+                          <div className="mt-1 space-y-0.5 text-[11px]">
+                            {creditStatus.warnings.map((w, i) => (
+                              <div key={i}>• {w}</div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {activeBill?.lines.length === 0 ? (
@@ -1659,37 +1662,6 @@ export function CreateSODialog({
                           <span className="text-xs text-gray-600">ยอดรวมบิลนี้</span>
                           <span className="text-sm font-bold text-[#0C447C]">฿{totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
                         </div>
-                        {totalRebate > 0 && (
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="text-[10px] text-orange-500 font-medium">รีเบทสะสมบิลนี้</span>
-                            <span className="text-[10px] font-bold text-orange-500">฿{totalRebate.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
-                          </div>
-                        )}
-                        {canSeeRebate && <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-100">
-                          <div className="flex flex-col">
-                            <span className="text-xs font-bold text-emerald-600">เบิก Rebate มาใช้ (฿)</span>
-                            <span className="text-[10px] text-gray-400">คงเหลือ: ฿{availableRebate.toLocaleString()}</span>
-                          </div>
-                          <input 
-                            type="number" 
-                            max={Math.min(availableRebate, totalAmt)}
-                            min={0}
-                            placeholder="0"
-                            disabled={availableRebate <= 0 || totalAmt <= 0}
-                            value={activeBill?.rebateDiscountAmt || ''} 
-                            onChange={e => {
-                              const val = Math.min(Number(e.target.value) || 0, Math.min(availableRebate, totalAmt));
-                              updateBillInfo(activeBillId, { rebateDiscountAmt: val });
-                            }} 
-                            className="w-24 text-right border border-emerald-300 rounded px-2 py-1 text-xs font-mono font-bold text-emerald-700 bg-emerald-50 focus:outline-none focus:border-emerald-500 disabled:opacity-50 disabled:bg-gray-100 disabled:border-gray-200" 
-                          />
-                        </div>}
-                        {canSeeRebate && (activeBill?.rebateDiscountAmt || 0) > 0 && (
-                          <div className="flex justify-between items-center mt-2 bg-emerald-50 p-1.5 rounded">
-                            <span className="text-xs font-bold text-emerald-800">ยอดชำระหลังหักรีเบท (WinSpeed บันทึกยอดเต็ม)</span>
-                            <span className="text-sm font-black text-emerald-800">฿{(totalAmt - (activeBill.rebateDiscountAmt || 0)).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                        )}
                       </div>
                     );
                   })()}
@@ -1747,7 +1719,7 @@ export function CreateSODialog({
           // Refetch quota after borrowing (cards and the add check read RemainingQty from the goods list)
           const currentYear = new Date().getFullYear() + 543 - 2500 + 2500;
           apiFetch<GiveawayQuota[]>(`/giveaway/my-quota?year=${currentYear}`).then(setMyQuota).catch(console.error);
-          Promise.all([fetchGoods(), fetchGiveawayGoods(salesUserId ? String(salesUserId) : undefined, editSoId && editSoId !== 'undefined' ? editSoId : undefined)])
+          Promise.all([fetchGoods({ forSale: true }), fetchGiveawayGoods(salesUserId ? String(salesUserId) : undefined, editSoId && editSoId !== 'undefined' ? editSoId : undefined)])
             .then(([g, gw]) => setGoods(mergeGoods(g, gw)))
             .catch(console.error);
           alert('ส่งคำขอยืมเรียบร้อยแล้ว กรุณารอการอนุมัติ');

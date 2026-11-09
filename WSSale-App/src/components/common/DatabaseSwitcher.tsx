@@ -204,12 +204,12 @@ export function DatabaseSwitcher() {
   const pill = (
     <span className="flex items-center gap-2 whitespace-nowrap min-w-0">
       <Database className={`h-3.5 w-3.5 shrink-0 ${theme.icon}`} />
-      <span className="font-semibold tabular-nums tracking-tight">{info.active}</span>
       {activeMeta.badge && (
         <span className={`rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider border shadow-2xs ${theme.badge}`}>
           {activeMeta.badge}
         </span>
       )}
+      <span className="font-semibold tabular-nums tracking-tight">{info.active}</span>
       {canOpen ? (
         <ChevronDown
           className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${
@@ -231,7 +231,7 @@ export function DatabaseSwitcher() {
         title={
           info.canSwitch
             ? `ฐานข้อมูลปัจจุบัน: ${info.active}`
-            : `ฐานข้อมูลที่กำลังใช้งาน: ${info.active} (${activeMeta.label || 'โหมดอ่านอย่างเดียว'}) — สิทธิ์ของคุณไม่สามารถสลับฐานข้อมูลได้`
+            : `ฐานข้อมูลที่กำลังใช้งาน: ${info.active} (${activeMeta.label || 'ฐานข้อมูลปัจจุบัน'}) — สิทธิ์ของคุณไม่สามารถสลับฐานข้อมูลได้`
         }
       >
         {pill}
@@ -295,12 +295,12 @@ export function DatabaseSwitcher() {
                 >
                   <span className="flex items-center gap-2 min-w-0">
                     <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${itemTheme.dot}`} />
-                    <span className="font-semibold tabular-nums truncate">{item.name}</span>
                     {item.badge && (
                       <span className={`rounded px-1.5 py-0.2 text-[9px] font-bold border uppercase ${itemTheme.badge}`}>
                         {item.badge}
                       </span>
                     )}
+                    <span className="font-semibold tabular-nums truncate">{item.name}</span>
                     {isSystem && (
                       <span className="text-[10px] text-muted-foreground font-normal">(ค่าระบบ)</span>
                     )}

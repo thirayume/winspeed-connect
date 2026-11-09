@@ -18,11 +18,12 @@ import {
 
 interface Props {
   isOpen: boolean;
-  onClose: () => void;
+  onClose?: () => void;
   onTemplateUpdated?: () => void;
+  embedded?: boolean;
 }
 
-export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated }: Props) {
+export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated, embedded = false }: Props) {
   const [activeTab, setActiveTab] = useState<'headers' | 'templates' | 'assignments' | 'audit'>('headers');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -190,35 +191,36 @@ export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated }:
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen && !embedded) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-gray-100">
-        
-        {/* Top Header */}
-        <div className="px-6 py-4 bg-gradient-to-r from-[#0C447C] to-[#184E88] text-white flex items-center justify-between shrink-0 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-white/10 rounded-xl backdrop-blur-xs">
-              <Building2 size={22} className="text-blue-100" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold tracking-tight">ระบบจัดการหัวกระดาษและแม่แบบรายงาน</h2>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-amber-950 uppercase">Admin Only</span>
-              </div>
-              <p className="text-xs text-blue-100/90 mt-0.5">
-                ศูนย์กลางกำหนดหัวกระดาษบริษัท, แม่แบบรายงานหลายรูปแบบ, กำหนดรายงานตัวแทน และตรวจสอบ Audit Trail
-              </p>
-            </div>
+  const modalContent = (
+    <div className={`bg-white rounded-2xl ${embedded ? 'border border-gray-200 shadow-sm' : 'shadow-2xl border border-gray-100 max-h-[92vh]'} w-full flex flex-col overflow-hidden`}>
+      
+      {/* Top Header */}
+      <div className="px-6 py-4 bg-gradient-to-r from-[#0C447C] to-[#184E88] text-white flex items-center justify-between shrink-0 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-white/10 rounded-xl backdrop-blur-xs">
+            <Building2 size={22} className="text-blue-100" />
           </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold tracking-tight">ระบบจัดการหัวกระดาษและแม่แบบรายงาน</h2>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-amber-950 uppercase">Master Templates</span>
+            </div>
+            <p className="text-xs text-blue-100/90 mt-0.5">
+              ศูนย์กลางกำหนดหัวกระดาษบริษัท, แม่แบบรายงานหลายรูปแบบ, กำหนดรายงานตัวแทน และตรวจสอบ Audit Trail
+            </p>
+          </div>
+        </div>
+        {!embedded && onClose && (
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg hover:bg-white/15 text-white/80 hover:text-white transition-colors cursor-pointer"
           >
             <X size={20} />
           </button>
-        </div>
+        )}
+      </div>
 
         {/* Navigation Tabs */}
         <div className="px-6 border-b border-gray-200 bg-gray-50/80 flex items-center justify-between">
@@ -884,14 +886,27 @@ export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated }:
             <ShieldCheck size={14} className="text-emerald-700" />
             <span>ระบบตรวจสอบการเปลี่ยนแปลงและบันทึกอัตโนมัติ (Durable Audit Trail)</span>
           </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold rounded-lg cursor-pointer transition-colors"
-          >
-            ปิดหน้าต่าง
-          </button>
+          {!embedded && onClose && (
+            <button
+              onClick={onClose}
+              className="px-4 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold rounded-lg cursor-pointer transition-colors"
+            >
+              ปิดหน้าต่าง
+            </button>
+          )}
         </div>
 
+      </div>
+  );
+
+  if (embedded) {
+    return modalContent;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="w-full max-w-5xl">
+        {modalContent}
       </div>
     </div>
   );

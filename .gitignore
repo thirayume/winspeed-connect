@@ -44,8 +44,12 @@ lerna-debug.log*
 # Project specific
 winspeed-connect/
 backend/node_modules/
+backend/.native-timeout-build/
 WSSale-App/node_modules/
 WSSale-App/dist/
+
+# Claude Code & agent worktrees
+.claude/worktrees/
 
 Ref/
 
@@ -187,3 +191,7 @@ docs/deploy/r740/host/*
 !docs/deploy/r740/host/Refresh-UAT.ps1
 !docs/deploy/r740/host/Initialize-R740UatIsolated.ps1
 !docs/deploy/onprem/sql/local-uat2-principals.sql
+
+# Host-local database connection secrets must never enter Git.
+*.connections.enc
+*.connection-key.bin

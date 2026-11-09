@@ -67,6 +67,8 @@ const names: Record<string, string> = {
   "database.set-system": "ตั้งฐานระบบ",
   "giveaway.borrow": "ขอเบิกของแถม",
   "edit-request.create": "ขอแก้ไขเอกสาร",
+  "reports.manage": "จัดการแม่แบบและหัวกระดาษรายงาน",
+  "so.control-ticket": "จำหน่ายตั๋วคุม",
 };
 
 /** ลำดับบทบาทตามผังโครงสร้างองค์กร (ADMIN เป็น root ถัดมาคือผู้บริหาร C_LEVEL ไล่ลงมาถึงฝ่ายขาย) */
@@ -80,10 +82,12 @@ const ROLE_HIERARCHY_RANK: Record<string, number> = {
   WEIGHBRIDGE: 6,
   COUNTER_SALES: 7,
   SALES: 8,
+  SEPARATION: 99,
 };
 
 function getRoleRank(role: RoleProfile): number {
   if (role.Code === "ADMIN") return 0;
+  if (role.Code === "SEPARATION") return 999;
   if (ROLE_HIERARCHY_RANK[role.Code] !== undefined) {
     return ROLE_HIERARCHY_RANK[role.Code] * 10;
   }
@@ -101,6 +105,7 @@ const TIER_BADGES: Record<string, { label: string; class: string }> = {
   WEIGHBRIDGE: { label: "Operations (เครื่องชั่ง)", class: "bg-orange-100 text-orange-800 border-orange-200" },
   COUNTER_SALES: { label: "Operations (หน้าร้าน)", class: "bg-sky-100 text-sky-800 border-sky-200" },
   SALES: { label: "Operations (ฝ่ายขาย)", class: "bg-slate-100 text-slate-800 border-slate-200" },
+  SEPARATION: { label: "สิ้นสภาพพนักงาน", class: "bg-rose-100 text-rose-800 border-rose-200" },
 };
 
 export function RoleManagementPage({
@@ -324,31 +329,39 @@ export function RoleManagementPage({
                 <span>({hierarchicalRoles.length} บทบาท)</span>
               </div>
               {hierarchicalRoles.map((p) => {
-                const tier = TIER_BADGES[p.BaseRole] || { label: p.BaseRole, class: "bg-slate-100 text-slate-700 border-slate-200" };
+                const isSep = p.Code === "SEPARATION";
+                const tier = isSep ? TIER_BADGES.SEPARATION : (TIER_BADGES[p.BaseRole] || { label: p.BaseRole, class: "bg-slate-100 text-slate-700 border-slate-200" });
                 return (
                   <button
                     key={p.Code}
                     className={`block text-left w-full p-2.5 rounded-xl border transition-all ${
                       form?.Code === p.Code
-                        ? "border-blue-500 bg-blue-50/80 shadow-xs ring-1 ring-blue-400"
+                        ? isSep
+                          ? "border-rose-500 bg-rose-50/80 shadow-xs ring-1 ring-rose-400"
+                          : "border-blue-500 bg-blue-50/80 shadow-xs ring-1 ring-blue-400"
+                        : isSep
+                        ? "hover:bg-rose-50/30 border-rose-200 bg-rose-50/10"
                         : "hover:bg-slate-50 border-slate-200"
                     }`}
                     onClick={() => {
                       if (busy || !confirmLeaveEditors()) return;
-                    setEditing(true);
+                      setEditing(true);
                       setView("permissions");
                       setForm({ ...p });
                       setError("");
                     }}
                   >
                     <div className="flex items-center justify-between gap-1">
-                      <b className="text-xs sm:text-sm text-slate-800">{p.Name}</b>
+                      <div className="flex items-center gap-1.5">
+                        {isSep && <Lock size={12} className="text-rose-700 shrink-0" />}
+                        <b className={`text-xs sm:text-sm ${isSep ? "text-rose-950 font-bold" : "text-slate-800"}`}>{p.Name}</b>
+                      </div>
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${tier.class}`}>
                         {tier.label}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-slate-500 text-[11px] mt-1">
-                      <span className="font-mono text-[10px]">{p.Code} · ต้นแบบ {p.BaseRole}</span>
+                      <span className="font-mono text-[10px]">{p.Code} · {isSep ? "ไม่มีบทบาทต้นแบบ" : `ต้นแบบ ${p.BaseRole}`}</span>
                       <span>สมาชิก {p.MemberCount || 0} คน</span>
                     </div>
                   </button>
@@ -378,6 +391,8 @@ export function RoleManagementPage({
 
         {form && data && (() => {
           const isAdmin = form.Code === "ADMIN";
+          const isSeparation = form.Code === "SEPARATION";
+          const isProtected = isAdmin || isSeparation;
           return (
             <div className="bg-white p-4 sm:p-5 rounded-2xl space-y-4 min-w-0 border border-slate-200 shadow-xs">
               <header className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
@@ -389,17 +404,22 @@ export function RoleManagementPage({
                         System Root
                       </span>
                     )}
+                    {isSeparation && (
+                      <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-rose-100 text-rose-700 border border-rose-200">
+                        สิ้นสภาพพนักงาน (Protected)
+                      </span>
+                    )}
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
                     {editing
-                      ? `${form.Code} · ต้นแบบ ${form.BaseRole} · สมาชิก ${form.MemberCount || 0} คน`
+                      ? `${form.Code} · ${isSeparation ? "ไม่มีบทบาทต้นแบบ" : `ต้นแบบ ${form.BaseRole}`} · สมาชิก ${form.MemberCount || 0} คน`
                       : "ตั้งชื่อ เลือกรหัสและต้นแบบ แล้วกำหนด Permission"}
                   </p>
                 </div>
 
                 {editing && (
                   <div className="flex items-center gap-2">
-                    {isAdmin ? (
+                    {isProtected ? (
                       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                         <Lock size={13} /> สิทธิ์หลักของระบบ (ลบไม่ได้)
                       </span>
@@ -451,7 +471,19 @@ export function RoleManagementPage({
                 </div>
               )}
 
-              {editing && !isAdmin && Boolean(form.MemberCount) && (
+              {isSeparation && (
+                <div className="p-3.5 bg-rose-50/80 border border-rose-200 rounded-xl text-xs text-rose-900 flex items-center gap-2.5">
+                  <Shield size={20} className="shrink-0 text-rose-700" />
+                  <div>
+                    <strong className="block font-bold text-sm">Role: SEPARATION ได้รับการสงวนไว้สำหรับพนักงานที่สิ้นสภาพการเป็นพนักงาน</strong>
+                    <span className="text-slate-600">
+                      ครอบคลุมการลาออก เกษียณ เลิกจ้าง หมดสัญญา หรือเสียชีวิต — ผู้ใช้จะถูกตั้งสถานะ Inactive ทันที ถอดสิทธิ์ทั้งหมด และไม่มีบทบาทต้นแบบ (ห้ามแก้ไขหรือลบ)
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {editing && !isProtected && Boolean(form.MemberCount) && (
                 <p className="text-xs text-amber-800 bg-amber-50 p-2.5 rounded-xl border border-amber-200 flex items-center justify-between">
                   <span>⚠️ ย้ายสมาชิกทั้งหมด ({form.MemberCount} คน รวมผู้ใช้ที่ปิดใช้งาน) ก่อนลบ Role</span>
                   <button
@@ -505,7 +537,7 @@ export function RoleManagementPage({
                   รหัส Role
                   <input
                     aria-label="รหัส Role"
-                    disabled={editing || busy || isAdmin}
+                    disabled={editing || busy || isProtected}
                     className="border border-slate-200 rounded-xl p-2 block w-full mt-1 bg-white disabled:bg-slate-50 disabled:text-slate-500 uppercase font-mono text-xs"
                     value={form.Code}
                     onChange={(e) =>
@@ -516,7 +548,7 @@ export function RoleManagementPage({
                 <label className="block font-medium text-slate-700">
                   ชื่อ Role
                   <input
-                    disabled={editing || busy || isAdmin}
+                    disabled={editing || busy || isProtected}
                     className="border border-slate-200 rounded-xl p-2 block w-full mt-1 bg-white disabled:bg-slate-50 disabled:text-slate-500"
                     value={form.Name}
                     maxLength={100}
@@ -528,8 +560,8 @@ export function RoleManagementPage({
                   <select
                     aria-label="บทบาทต้นแบบ"
                     className="border border-slate-200 rounded-xl p-2 block w-full mt-1 bg-white disabled:bg-slate-50 disabled:text-slate-500"
-                    disabled={editing || busy || isAdmin}
-                    value={form.BaseRole}
+                    disabled={editing || busy || isProtected}
+                    value={isSeparation ? "NONE" : form.BaseRole}
                     onChange={(e) =>
                       setForm({
                         ...form,
@@ -540,19 +572,23 @@ export function RoleManagementPage({
                       })
                     }
                   >
-                    {[
-                      "SALES",
-                      "COUNTER_SALES",
-                      "WAREHOUSE",
-                      "WEIGHBRIDGE",
-                      "APPROVER",
-                      "ACCOUNTING",
-                      "MANAGER",
-                      "C_LEVEL",
-                      "ADMIN",
-                    ].map((x) => (
-                      <option key={x} value={x}>{x}</option>
-                    ))}
+                    {isSeparation ? (
+                      <option value="NONE">— ไม่มีบทบาทต้นแบบ (สิ้นสภาพ) —</option>
+                    ) : (
+                      [
+                        "SALES",
+                        "COUNTER_SALES",
+                        "WAREHOUSE",
+                        "WEIGHBRIDGE",
+                        "APPROVER",
+                        "ACCOUNTING",
+                        "MANAGER",
+                        "C_LEVEL",
+                        "ADMIN",
+                      ].map((x) => (
+                        <option key={x} value={x}>{x}</option>
+                      ))
+                    )}
                   </select>
                 </label>
                 <p className="text-[11px] leading-relaxed text-slate-400 sm:col-span-3">
@@ -593,7 +629,7 @@ export function RoleManagementPage({
                 />
                 <fieldset className="grid sm:grid-cols-2 gap-2">
                   <legend className="font-bold text-xs sm:text-sm text-slate-800 mb-2">
-                    Permission การปฏิบัติงาน · เปิด {form.permissions.length}/{Object.keys(data.actions).length} รายการ {isAdmin && "(สงวนไว้ - แก้ไขไม่ได้)"}
+                    Permission การปฏิบัติงาน · เปิด {isSeparation ? 0 : form.permissions.length}/{Object.keys(data.actions).length} รายการ {isProtected && "(สงวนไว้ - แก้ไขไม่ได้)"}
                   </legend>
                   {Object.keys(data.actions)
                     .filter((key) =>
@@ -602,13 +638,15 @@ export function RoleManagementPage({
                         .includes(permissionSearch.toLowerCase()),
                     )
                     .map((key) => {
-                      const isChecked = form.permissions.includes(key);
+                      const isChecked = isSeparation ? false : (isAdmin ? true : form.permissions.includes(key));
                       return (
                         <label
                           key={key}
                           className={`flex gap-2.5 p-2.5 border rounded-xl text-xs transition-colors ${
                             isAdmin
                               ? "bg-purple-50/40 border-purple-200 cursor-default"
+                              : isSeparation
+                              ? "bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed"
                               : isChecked
                               ? "bg-blue-50/50 border-blue-200 cursor-pointer"
                               : "border-slate-200 hover:bg-slate-50 cursor-pointer"
@@ -616,7 +654,7 @@ export function RoleManagementPage({
                         >
                           <input
                             type="checkbox"
-                            disabled={busy || isAdmin}
+                            disabled={busy || isProtected}
                             checked={isChecked}
                             onChange={(e) =>
                               setForm({
@@ -647,9 +685,13 @@ export function RoleManagementPage({
                   >
                     ปิด
                   </button>
-                  {isAdmin ? (
-                    <span className="text-xs text-purple-700 bg-purple-50 border border-purple-200 font-semibold px-4 py-2 rounded-xl">
-                      Role ADMIN ได้รับการสงวนไว้ (ไม่ต้องบันทึก)
+                  {isProtected ? (
+                    <span className={`text-xs font-semibold px-4 py-2 rounded-xl border ${
+                      isAdmin
+                        ? "text-purple-700 bg-purple-50 border-purple-200"
+                        : "text-rose-700 bg-rose-50 border-rose-200"
+                    }`}>
+                      Role {form.Code} ได้รับการสงวนไว้ (ไม่ต้องบันทึก)
                     </span>
                   ) : (
                     <button

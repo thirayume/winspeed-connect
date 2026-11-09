@@ -9,12 +9,12 @@
  */
 const router = require('express').Router();
 const { wfQuery, sql, wfTransaction } = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireCapability } = require('../middleware/auth');
 const { logChangeEvent } = require('../services/policy-contract');
 
-// Enforce ADMIN role across all admin-reports endpoints
+// Enforce reports.manage capability across all admin-reports endpoints
 router.use(requireAuth);
-router.use(requireRole('ADMIN'));
+router.use(requireCapability('reports.manage'));
 
 // ── 1. Header Master Endpoints ──────────────────────────────────────────
 

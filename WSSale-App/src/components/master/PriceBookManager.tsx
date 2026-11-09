@@ -29,7 +29,12 @@ export function PriceBookManager() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ name: '', effectiveMonth: new Date().toISOString().slice(0, 7), seedFromCurrent: true });
+  const [form, setForm] = useState({
+    name: '',
+    effectiveFrom: new Date().toISOString().slice(0, 10),
+    effectiveTo: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+    seedFromCurrent: true
+  });
 
   // Special Price Form
   const [spForm, setSpForm] = useState({ custId: '', custName: '', goodId: '', requestedPrice: '', note: '' });
@@ -62,9 +67,22 @@ export function PriceBookManager() {
     if (!form.name) { alert('ใส่ชื่อ Price Book'); return; }
     setBusy(true);
     try {
-      const r = await createPriceBook(form);
-      setCreating(false); setForm({ ...form, name: '' });
-      await load(); await open(r.id);
+      const r = await createPriceBook({
+        name: form.name,
+        effectiveFrom: form.effectiveFrom,
+        effectiveTo: form.effectiveTo,
+        effectiveMonth: form.effectiveFrom.slice(0, 7),
+        seedFromCurrent: form.seedFromCurrent,
+      });
+      setCreating(false);
+      setForm({
+        name: '',
+        effectiveFrom: new Date().toISOString().slice(0, 10),
+        effectiveTo: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+        seedFromCurrent: true,
+      });
+      await load();
+      await open(r.id);
     } catch (e: unknown) { alert((e as Error).message); }
     finally { setBusy(false); }
   }
@@ -157,12 +175,47 @@ export function PriceBookManager() {
         <div className="md:col-span-2 border-r border-gray-200 overflow-y-auto p-4 space-y-2">
           {creating && (
             <div className="bg-white rounded-xl border border-blue-200 shadow-sm p-3 space-y-2">
-              <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="ชื่อ Price Book เช่น ราคา ก.ค. 2569" className="w-full border border-gray-200 rounded-lg px-2 py-2 text-sm" />
-              <div className="flex gap-2">
-                <input type="month" value={form.effectiveMonth} onChange={e => setForm({ ...form, effectiveMonth: e.target.value })} className="flex-1 border border-gray-200 rounded-lg px-2 py-2 text-sm" />
-                <label className="flex items-center gap-1.5 text-xs text-gray-600"><input type="checkbox" checked={form.seedFromCurrent} onChange={e => setForm({ ...form, seedFromCurrent: e.target.checked })} /> ดึงราคาปัจจุบัน</label>
+              <input
+                value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })}
+                placeholder="ชื่อ Price Book เช่น ราคาประจำสัปดาห์ที่ 45 (10-16 พ.ย. 69)"
+                className="w-full border border-gray-200 rounded-lg px-2 py-2 text-sm"
+              />
+              <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                <div>
+                  <label className="block mb-1 font-medium">วันเริ่มต้น:</label>
+                  <input
+                    type="date"
+                    value={form.effectiveFrom}
+                    onChange={e => setForm({ ...form, effectiveFrom: e.target.value })}
+                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 font-medium">วันสิ้นสุด:</label>
+                  <input
+                    type="date"
+                    value={form.effectiveTo}
+                    onChange={e => setForm({ ...form, effectiveTo: e.target.value })}
+                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs"
+                  />
+                </div>
               </div>
-              <button onClick={doCreate} disabled={busy} className="w-full px-3 py-2 rounded-lg text-sm font-semibold bg-[#0C447C] text-white hover:opacity-90 disabled:opacity-40">สร้าง (DRAFT)</button>
+              <label className="flex items-center gap-1.5 text-xs text-gray-600 pt-1">
+                <input
+                  type="checkbox"
+                  checked={form.seedFromCurrent}
+                  onChange={e => setForm({ ...form, seedFromCurrent: e.target.checked })}
+                />
+                ดึงราคาปัจจุบันเป็นค่าตั้งต้น
+              </label>
+              <button
+                onClick={doCreate}
+                disabled={busy}
+                className="w-full px-3 py-2 rounded-lg text-sm font-semibold bg-[#0C447C] text-white hover:opacity-90 disabled:opacity-40"
+              >
+                สร้าง (DRAFT)
+              </button>
             </div>
           )}
           {books.map(b => (
@@ -171,7 +224,13 @@ export function PriceBookManager() {
                 <span className="font-semibold text-gray-800">{b.Name}</span>
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${STATUS_COLOR[b.Status]}`}>{b.Status}</span>
               </div>
-              <div className="text-xs text-gray-400 mt-1">เดือน {b.EffectiveMonth} · {b.LineCount ?? 0} รายการ</div>
+              <div className="text-xs text-gray-500 mt-1">
+                {b.EffectiveFrom && b.EffectiveTo
+                  ? `${b.EffectiveFrom} ถึง ${b.EffectiveTo}`
+                  : b.EffectiveFrom
+                  ? `ตั้งแต่ ${b.EffectiveFrom}`
+                  : `เดือน ${b.EffectiveMonth}`} · {b.LineCount ?? 0} รายการ
+              </div>
             </button>
           ))}
           {!loading && books.length === 0 && <div className="text-center text-gray-400 text-sm py-8">ยังไม่มี Price Book</div>}
@@ -186,7 +245,11 @@ export function PriceBookManager() {
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-lg font-bold text-gray-800">{sel.Name}</div>
-                    <div className="text-xs text-gray-400">เดือน {sel.EffectiveMonth} · {editableLines.length} รายการสินค้า</div>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {sel.EffectiveFrom && sel.EffectiveTo
+                        ? `ช่วงเวลา: ${sel.EffectiveFrom} ถึง ${sel.EffectiveTo}`
+                        : `เดือน ${sel.EffectiveMonth}`} · {editableLines.length} รายการสินค้า
+                    </div>
                   </div>
                   <span className={`px-3 py-1 rounded-full text-xs font-bold ${STATUS_COLOR[sel.Status]}`}>{sel.Status}</span>
                 </div>

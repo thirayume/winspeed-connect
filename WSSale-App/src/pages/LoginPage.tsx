@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/auth-store';
+import { useCompanyStore } from '../store/company-store';
 import { getMe, lineLoginUrl, linkLineLogin, login as apiLogin, setToken } from '../services/api';
 import { Eye, EyeOff } from 'lucide-react';
 export default function LoginPage() {
@@ -11,6 +12,12 @@ export default function LoginPage() {
   const [lineLinkToken, setLineLinkToken] = useState('');
   const [lineName, setLineName] = useState('');
   const authLogin = useAuthStore(s => s.login);
+  const companyInfo = useCompanyStore(s => s.companyInfo);
+  const fetchCompanyInfo = useCompanyStore(s => s.fetchCompanyInfo);
+
+  useEffect(() => {
+    fetchCompanyInfo();
+  }, [fetchCompanyInfo]);
 
   useEffect(() => {
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
@@ -74,10 +81,10 @@ export default function LoginPage() {
         {/* Logo area */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center mb-3">
-            <img src="/wf-logo.png" alt="World Fertilizer" className="h-16 w-auto object-contain drop-shadow-xs" />
+            <img src="/wf-logo.png" alt={companyInfo.compNameEng || 'WORLD FERT CO., LTD.'} className="h-16 w-auto object-contain drop-shadow-xs" />
           </div>
           <h1 className="text-2xl font-black tracking-tight" style={{ color: '#0C447C' }}>WF-SaleApp</h1>
-          <p className="text-sm text-gray-500 mt-1 font-medium">World Fertilizer Co., Ltd.</p>
+          <p className="text-sm text-gray-500 mt-1 font-medium">{companyInfo.compNameEng || 'WORLD FERT CO., LTD.'}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

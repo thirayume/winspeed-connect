@@ -15,6 +15,7 @@ const ROLES = Object.freeze([
 
 // WAREHOUSE / WEIGHBRIDGE sit below ACCOUNTING (O-1): ADMIN/C_LEVEL can Access As every role.
 const ROLE_RANK = Object.freeze({
+  SEPARATION: 0,
   SALES: 1,
   WEIGHBRIDGE: 1,
   COUNTER_SALES: 2,
@@ -33,7 +34,6 @@ const ALL = ROLES;
 const MENUS = Object.freeze({
   dashboard: ALL,
   sales: ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
-  'trip-board': ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   voucher: ['SALES', 'COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'edit-requests': ['SALES', 'COUNTER_SALES', 'APPROVER', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   quotation: ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
@@ -56,7 +56,7 @@ const MENUS = Object.freeze({
   master: ['C_LEVEL', 'ADMIN'],
   policy: ['MANAGER', 'C_LEVEL', 'ADMIN'],
   ops: ['MANAGER', 'C_LEVEL', 'ADMIN'],
-  'app-settings': ['ADMIN'],
+  'app-settings': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'roles': ['ADMIN'],
   admin: ['ACCOUNTING', 'MANAGER', 'ADMIN'],
   org: ['ACCOUNTING', 'MANAGER', 'ADMIN'],
@@ -69,6 +69,7 @@ const ACTIONS = Object.freeze({
   'so.cancel': ['SALES', 'C_LEVEL', 'ADMIN'],
   'so.verify': ['COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'so.confirm': ['SALES', 'COUNTER_SALES', 'C_LEVEL', 'ADMIN'],
+  'so.control-ticket': ['COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'so.approve-native': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'so.create-native-delivery': ['SALES', 'COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'credit.approve-native': ['ACCOUNTING'],
@@ -86,6 +87,7 @@ const ACTIONS = Object.freeze({
   'coupon.settle': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'giveaway.borrow': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'giveaway.budget': ['MANAGER', 'ADMIN'],
+  'reports.manage': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'users.manage': ['ACCOUNTING', 'MANAGER', 'ADMIN'],
   'roles.manage': ['ADMIN'],
   'settings.manage': ['ADMIN'],
@@ -99,6 +101,7 @@ const ACTIONS = Object.freeze({
 
 function capabilitiesFor(role, { positionCode = null } = {}) {
   const r = String(role || '').toUpperCase();
+  if (r === 'SEPARATION') return { menus: [], actions: [] };
   const teamScoped = r === 'MANAGER' && Boolean(positionCode);
   return {
     menus: Object.keys(MENUS).filter(k => MENUS[k].includes(r) && !(teamScoped && k === 'reports')),
@@ -123,6 +126,7 @@ function roleRank(role) {
 function userRoles(user) { return [...new Set(Array.isArray(user?.roles) ? user.roles : [user?.role].filter(Boolean))]; }
 function hasRole(user, ...roles) { return userRoles(user).some(r => roles.includes(r)); }
 function hasPermission(user, action) {
+  if (userRoles(user).includes('SEPARATION')) return false;
   if (Array.isArray(user?.permissions)) return user.permissions.includes(action);
   return !(user?.disabledActions || []).includes(action) && userRoles(user).some(r => rolesFor(action).includes(r));
 }

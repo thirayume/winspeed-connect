@@ -1,5 +1,26 @@
 export const SCHEMA_VERSION = '4.0';
 
+// ── Company Info (dbo.EMComp) ─────────────────────────────────
+export interface CompanyInfo {
+  compCode: string;
+  compName: string;
+  compNameEng: string;
+  compOwner: string;
+  compOwnerEng: string;
+  taxId: string;
+  taxId13: string;
+  addr1: string;
+  addr2: string;
+  addr3?: string | null;
+  addr1Eng?: string | null;
+  addr2Eng?: string | null;
+  addr3Eng?: string | null;
+  tel?: string | null;
+  fax?: string | null;
+  email?: string | null;
+  homepage?: string | null;
+}
+
 // ── Auth ──────────────────────────────────────────────────────
 export type UserRole =
   | 'ADMIN'
@@ -94,7 +115,11 @@ export type EMCust = {
   CustID: string;
   CustName: string;
   Tel?: string;
+  PrimaryPhone?: string | null;
   Mobile?: string;
+  SecondaryPhone?: string | null;
+  Email?: string | null;
+  LineId?: string | null;
   Remark?: string;
   salespersonId?: string | null;
   salespersonName?: string | null;
@@ -103,6 +128,27 @@ export type EMCust = {
   employeeId?: string | null;
   employeeName?: string | null;
   CreditDays?: number;
+  CreditLimit?: number | null;
+  AgingDays?: number | null;
+  CreditHold?: boolean;
+};
+
+export type CustomerCreditStatus = {
+  custId: string;
+  creditLimit: number | null;
+  agingLimitDays: number;
+  totalOutstanding: number;
+  maxAgingDays: number;
+  orderAmount: number;
+  projectedTotal: number;
+  isOverCreditLimit: boolean;
+  isOverAging: boolean;
+  strictCredit: boolean;
+  strictAging: boolean;
+  creditHold: boolean;
+  blocked: boolean;
+  blockReasons: string[];
+  warnings: string[];
 };
 
 export type CustomerFilterOption = {

@@ -15,13 +15,16 @@ import { TripSetupModal } from './TripSetupModal';
 import { TripSummaryModal } from './TripSummaryModal';
 import { SaleTripManager } from './SaleTripManager';
 import { useTripStore } from '../../store/trip-store';
+import { useCompanyStore } from '../../store/company-store';
 import { formatThaiDate } from '../../utils/date';
 import { CheckCircle } from 'lucide-react';
+import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import type { SalesOrder, SOStatus } from '../../types';
 import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
 
 export const SalesPortal = () => {
   const can = useCan();
+  const companyInfo = useCompanyStore(s => s.companyInfo);
   const [orders, setOrders]         = useState<SalesOrder[]>([]);
   const [totalOrders, setTotalOrders] = useState(0);
   const [loading, setLoading]       = useState(true);
@@ -34,6 +37,8 @@ export const SalesPortal = () => {
   const [shouldOpenActiveTripSummary, setShouldOpenActiveTripSummary] = useState(false);
   
   const [customersMap, setCustomersMap] = useState<Record<string, string>>({});
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const navParams = useAppStore(s => s.navParams);
   const clearNavParams = useAppStore(s => s.clearNavParams);
@@ -95,6 +100,8 @@ export const SalesPortal = () => {
         fetchSalesOrders({
           status: statusFilter || undefined,
           search: debouncedSearch || undefined,
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined,
           page,
           limit,
         }),
@@ -130,7 +137,7 @@ export const SalesPortal = () => {
       console.error('fetchSalesOrders failed', e);
     }
     setLoading(false);
-  }, [page, limit, debouncedSearch, statusFilter, setUnlockRequests]);
+  }, [page, limit, debouncedSearch, statusFilter, dateFrom, dateTo, setUnlockRequests]);
 
   useEffect(() => { loadData(); }, [loadData]);
   
@@ -221,7 +228,12 @@ export const SalesPortal = () => {
         ? (customersMap[ids[0]] || g.orders[0]?.custName || ids[0])
         : `${ids.length} ลูกค้า`;
     }
-    return Array.from(map.values());
+    const sorted = Array.from(map.values()).sort((a, b) => {
+      const dateA = a.orders[0]?.deliveryDate || a.orders[0]?.createdAt || '';
+      const dateB = b.orders[0]?.deliveryDate || b.orders[0]?.createdAt || '';
+      return dateB.localeCompare(dateA);
+    });
+    return sorted;
   }, [orders, customersMap]);
 
   useEffect(() => {
@@ -347,7 +359,7 @@ export const SalesPortal = () => {
             <Package className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
             Sales Portal
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">สั่งขายปุ๋ย · World Fert Co., Ltd.</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">สั่งขายปุ๋ย · {companyInfo.compNameEng || 'WORLD FERT CO., LTD.'}</p>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={loadData} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
@@ -382,53 +394,6 @@ export const SalesPortal = () => {
           <>
             {/* List pane */}
             <div className={cn('flex flex-col overflow-hidden border-r border-gray-200 bg-white/50', 'flex-1')}>
-              
-              {/* Active Trip Banner */}
-              {activeTrip && (
-                <div className="bg-blue-50 border-b border-blue-100 p-4 shrink-0 flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-[#0C447C] font-bold">
-                      <Truck size={18} />
-                      กำลังจัดทริปส่งสินค้า {activeTripGroup ? `(${activeTripGroup.orders.length} บิล)` : ''}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setIsTripSetupOpen(true)} className="text-xs text-blue-600 font-bold hover:underline">แก้ไขทริป</button>
-                      {activeTripGroup && <button onClick={() => setViewingTrip(activeTripGroup)} className="text-xs text-blue-600 font-bold hover:underline">ดูสรุปทริป</button>}
-                      <button onClick={clearTrip} className="text-xs text-gray-500 font-bold hover:text-red-500 transition-colors">ยกเลิก</button>
-                    </div>
-                  </div>
-                  <div className="bg-white rounded-lg p-3 text-sm shadow-sm border border-blue-100/50 flex flex-col gap-1.5">
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">จำนวนลูกค้า:</span>
-                      <span className="font-bold text-gray-900">{activeLoading ? 'กำลังโหลด...' : `${activeTripGroup?.custCount ?? 0} ลูกค้า (${activeTripGroup?.orders.length ?? 0} บิล)`}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">ทะเบียนรถ:</span>
-                      <span className="font-mono font-bold text-gray-900">{activeTrip.truckPlate}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">กำหนดส่ง:</span>
-                      <span className="font-bold text-gray-900">
-                        {activeTrip.deliveryDate ? formatThaiDate(activeTrip.deliveryDate) : 'ไม่ระบุ'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button 
-                      disabled={!can('so.create')} onClick={() => setIsCreating(true)}
-                      className="flex-1 bg-[#0C447C] text-white py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-blue-800 shadow-sm"
-                    >
-                      <Plus size={16} /> เพิ่มบิลในทริปนี้
-                    </button>
-                    <button 
-                      disabled={!can('so.confirm')} onClick={handleConfirmTrip}
-                      className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-green-700 shadow-sm"
-                    >
-                      <CheckCircle size={16} /> ยืนยันออร์เดอร์
-                    </button>
-                  </div>
-                </div>
-              )}
           {/* Search */}
           <div className="p-4 space-y-3 bg-white border-b border-gray-100">
             <div className="relative">
@@ -475,18 +440,45 @@ export const SalesPortal = () => {
               </button>
             </div>
             {showFilters && (
-              <div className="p-3 rounded-xl bg-gray-50 border border-gray-100">
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5">สถานะ</label>
-                <select
-                  value={statusFilter}
-                  onChange={e => { setStatusFilter(e.target.value as SOStatus | ''); setPage(1); }}
-                  className="w-full rounded-lg border border-gray-200 bg-white py-2 px-3 text-sm"
-                >
-                  <option value="">ทุกสถานะ</option>
-                  {SO_STATUS_ORDER.map(s =>
-                    <option key={s} value={s}>{SO_STATUS_META[s].label}</option>
-                  )}
-                </select>
+              <div className="p-3 rounded-xl bg-gray-50 border border-gray-100 space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5">สถานะ</label>
+                  <select
+                    value={statusFilter}
+                    onChange={e => { setStatusFilter(e.target.value as SOStatus | ''); setPage(1); }}
+                    className="w-full rounded-lg border border-gray-200 bg-white py-2 px-3 text-sm"
+                  >
+                    <option value="">ทุกสถานะ</option>
+                    {SO_STATUS_ORDER.map(s =>
+                      <option key={s} value={s}>{SO_STATUS_META[s].label}</option>
+                    )}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5">ช่วงเวลา (กำหนดส่ง / วันที่เอกสาร)</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <ThaiDatePicker
+                      value={dateFrom}
+                      onChange={d => { setDateFrom(d); setPage(1); }}
+                      placeholder="ตั้งแต่วันที่"
+                      className="w-full h-9 text-xs"
+                    />
+                    <ThaiDatePicker
+                      value={dateTo}
+                      onChange={d => { setDateTo(d); setPage(1); }}
+                      placeholder="ถึงวันที่"
+                      className="w-full h-9 text-xs"
+                    />
+                  </div>
+                </div>
+                {(dateFrom || dateTo || statusFilter) && (
+                  <button
+                    onClick={() => { setStatusFilter(''); setDateFrom(''); setDateTo(''); setPage(1); }}
+                    className="text-xs text-red-600 hover:underline pt-1 block font-medium"
+                  >
+                    ล้างตัวกรองทั้งหมด
+                  </button>
+                )}
               </div>
             )}
           </div>

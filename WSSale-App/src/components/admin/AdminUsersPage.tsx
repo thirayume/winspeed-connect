@@ -426,6 +426,8 @@ export const AdminUsersPage = ({
                                 className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-all shadow-2xs ${
                                   code === 'ADMIN'
                                     ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
+                                    : code === 'SEPARATION'
+                                    ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
                                     : code === 'C_LEVEL'
                                     ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
                                     : 'bg-blue-50 text-[#0C447C] border-blue-200 hover:bg-blue-100'

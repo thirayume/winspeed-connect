@@ -74,10 +74,11 @@ export function UserEditor({
     setBusy(true);
     setError("");
     try {
+      const isSeparated = codes.includes("SEPARATION");
       const shared = {
         displayName: String(data.get("displayName") || ""),
         empId: String(data.get("empId") || "") || null,
-        isActive: data.get("isActive") === "on",
+        isActive: isSeparated ? false : data.get("isActive") === "on",
         address: String(data.get("address") || "") || null,
         phone: String(data.get("phone") || "") || null,
         email: String(data.get("email") || "") || null,
@@ -281,17 +282,29 @@ export function UserEditor({
               </select>
             </label>
 
-            <label className="flex items-center gap-2 cursor-pointer pt-2">
-              <input
-                type="checkbox"
-                name="isActive"
-                defaultChecked={user.Id ? user.IsActive : true}
-                className="w-4 h-4 rounded border-slate-300 accent-[#0C447C]"
-              />
-              <span className="text-sm font-medium text-slate-800">
-                เปิดใช้งานบัญชี (Active)
-              </span>
-            </label>
+            {codes.includes("SEPARATION") ? (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <Shield size={14} className="text-rose-600" />
+                  <span>สถานะ: สิ้นสภาพพนักงาน (SEPARATION)</span>
+                </div>
+                <p>
+                  บัญชีนี้จะถูกระงับการใช้งาน (Inactive) และถอดสิทธิ์ทั้งหมดออกจากระบบโดยอัตโนมัติ ข้อมูลเอกสารและประวัติเดิมยังคงอยู่ครบถ้วนเพื่อใช้อ้างอิงทางบัญชีและภาษี
+                </p>
+              </div>
+            ) : (
+              <label className="flex items-center gap-2 cursor-pointer pt-2">
+                <input
+                  type="checkbox"
+                  name="isActive"
+                  defaultChecked={user.Id ? user.IsActive : true}
+                  className="w-4 h-4 rounded border-slate-300 accent-[#0C447C]"
+                />
+                <span className="text-sm font-medium text-slate-800">
+                  เปิดใช้งานบัญชี (Active)
+                </span>
+              </label>
+            )}
 
             {user.Id && user.LineUserId && (
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 flex items-center gap-2">
@@ -306,6 +319,17 @@ export function UserEditor({
             className="space-y-4"
             aria-label="บทบาทและสิทธิ์"
           >
+            {codes.includes("SEPARATION") && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <Shield size={14} className="text-rose-600" />
+                  <span>ได้รับ Role SEPARATION (สิ้นสภาพพนักงาน)</span>
+                </div>
+                <p>
+                  บทบาทนี้ไม่มีบทบาทต้นแบบและไม่มีสิทธิ์ใดๆ ในระบบ เมื่อบันทึก บัญชีจะถูกปรับเป็น Inactive ทันที
+                </p>
+              </div>
+            )}
             <RolePicker
               roles={roles}
               value={codes}

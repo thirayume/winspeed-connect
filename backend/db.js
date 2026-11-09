@@ -385,9 +385,17 @@ async function closeAll() {
   return { success: true, closedPools, closedTargets };
 }
 
+// A bounded, one-off connection for IT diagnostics; never enters the runtime pool registry.
+function createOnpremProbePool(env, database) {
+  const config = onpremConnectionConfig(env, 'runtime', nativeDriver, database);
+  return new sql.ConnectionPool({ ...config, connectionTimeout:6000, requestTimeout:6000,
+    pool:{max:1,min:0,idleTimeoutMillis:1000} });
+}
+
 module.exports = {
   sql, query, dboWrite, wfQuery, wfTransaction, runWithTarget, runWithDb, getTarget, getDbName, pools, closeAll,
   DEFAULT_TARGET,
+  createOnpremProbePool,
   parseConnectionString,
   validateLocalConnectionString,
   CONFIG_BY_TARGET,

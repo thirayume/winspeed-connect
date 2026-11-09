@@ -24,7 +24,7 @@ export const DEFAULT_WF_LOGO_DATA_URL = `data:image/svg+xml;utf8,<svg xmlns="htt
 export const DEFAULT_HEADER_CONFIG: DocHeaderConfig = {
   companyNameTh: 'บริษัท เวิลด์ เฟอท จำกัด',
   companyNameEn: 'WORLD FERT CO., LTD.',
-  addressTh: '933 อาคารรวมทุนไทย ชั้น 11 ถนนมหาไชย แขวงวังบูรพาภิรมย์ เขตพระนคร กรุงเทพมหานคร 10200',
+  addressTh: '933 อาคารรวมทนุไทย ชั้น 11 ถนนมหาไชย แขวงวังบูรพาภิรมย์ เขตพระนคร กรุงเทพมหานคร 10200',
   tel: '02 2218444, 02 2263069',
   fax: '02 2263069',
   taxId: '0105531024397',

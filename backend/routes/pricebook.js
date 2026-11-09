@@ -22,7 +22,7 @@ async function logAudit(bookId, action, fromStatus, toStatus, userId, note) {
 router.get('/', async (req, res) => {
   try {
     const r = await wfQuery(`
-      SELECT b.Id, b.Name, b.EffectiveMonth, b.Status, b.Note,
+      SELECT b.Id, b.Name, b.EffectiveMonth, b.EffectiveFrom, b.EffectiveTo, b.Status, b.Note,
              cu.DisplayName AS CreatedByName, b.CreatedAt,
              au.DisplayName AS ApprovedByName, b.ApprovedAt,
              ac.DisplayName AS ActivatedByName, b.ActivatedAt,
@@ -53,12 +53,19 @@ router.get('/:id', async (req, res) => {
 // POST /api/pricebook — สร้าง DRAFT (+ seedFromCurrent)
 router.post('/', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
-    const { name, effectiveMonth, note, seedFromCurrent } = req.body || {};
-    if (!name || !effectiveMonth) return res.status(400).json({ message: 'name และ effectiveMonth (YYYY-MM) จำเป็น' });
-    const r = await wfQuery(`INSERT INTO wf.PriceBook (Name, EffectiveMonth, Note, CreatedBy)
-                             OUTPUT INSERTED.Id VALUES (@n,@m,@note,@u)`, {
-      n: { type: sql.NVarChar(120), value: name }, m: { type: sql.Char(7), value: effectiveMonth },
-      note: { type: sql.NVarChar(300), value: note || null }, u: { type: sql.Int, value: req.user.sub },
+    const { name, effectiveMonth, effectiveFrom, effectiveTo, note, seedFromCurrent } = req.body || {};
+    const fromDate = effectiveFrom ? String(effectiveFrom).slice(0, 10) : null;
+    const toDate = effectiveTo ? String(effectiveTo).slice(0, 10) : null;
+    const effMonth = effectiveMonth || (fromDate ? fromDate.slice(0, 7) : new Date().toISOString().slice(0, 7));
+    if (!name) return res.status(400).json({ message: 'name จำเป็น' });
+    const r = await wfQuery(`INSERT INTO wf.PriceBook (Name, EffectiveMonth, EffectiveFrom, EffectiveTo, Note, CreatedBy)
+                             OUTPUT INSERTED.Id VALUES (@n,@m,@ef,@et,@note,@u)`, {
+      n: { type: sql.NVarChar(120), value: name },
+      m: { type: sql.Char(7), value: effMonth },
+      ef: { type: sql.Date, value: fromDate ? new Date(fromDate) : null },
+      et: { type: sql.Date, value: toDate ? new Date(toDate) : null },
+      note: { type: sql.NVarChar(300), value: note || null },
+      u: { type: sql.Int, value: req.user.sub },
     });
     const bookId = r.recordset[0].Id;
     await logAudit(bookId, 'CREATE', null, 'DRAFT', req.user.sub, note);

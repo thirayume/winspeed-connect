@@ -1,0 +1,68 @@
+# PREPARATION TEMPLATE ONLY. Not connected or deployed. Supply reviewed runtime files separately.
+x-log: &logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+x-api: &api
+  image: ${API_IMAGE:?Supply an approved immutable API image digest}
+  restart: unless-stopped
+  logging: *logs
+  environment:
+    NODE_ENV: production
+    PORT: 3000
+    TZ: Asia/Bangkok
+    DB_MODE: onprem
+    COUPON_NATIVE_POSTING_ENABLED: "false"
+    ENFORCE_PASSWORD_CHANGE: "true"
+  healthcheck:
+    test: [CMD, node, -e, "require('http').get('http://localhost:3000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+    interval: 30s
+    timeout: 10s
+    retries: 5
+    start_period: 30s
+services:
+  ingress:
+    image: ${CADDY_IMAGE:?Supply an approved Caddy image digest}
+    restart: unless-stopped
+    logging: *logs
+    ports: ["80:80", "443:443"]
+    environment:
+      PROD_DOMAIN: ${PROD_DOMAIN:?Supply production hostname}
+      UAT_DOMAIN: ${UAT_DOMAIN:?Supply UAT hostname}
+      ACME_EMAIL: ${ACME_EMAIL:?Supply certificate contact}
+    volumes:
+      - ./Caddyfile.release.example:/etc/caddy/Caddyfile:ro
+      - cert-data:/data
+      - cert-config:/config
+    networks: [prod, uat]
+  prod-api:
+    <<: *api
+    env_file: ./runtime/prod.env
+    volumes: ["prod-uploads:/app/uploads", "prod-exports:/app/exports"]
+    networks: [prod]
+  uat-api:
+    <<: *api
+    env_file: ./runtime/uat.env
+    volumes: ["uat-uploads:/app/uploads", "uat-exports:/app/exports"]
+    networks: [uat]
+  prod-web:
+    image: ${WEB_IMAGE:?Supply an approved immutable web image digest}
+    restart: unless-stopped
+    logging: *logs
+    networks: [prod]
+  uat-web:
+    image: ${WEB_IMAGE:?Supply the same approved web image digest}
+    restart: unless-stopped
+    logging: *logs
+    networks: [uat]
+volumes:
+  cert-data:
+  cert-config:
+  prod-uploads:
+  prod-exports:
+  uat-uploads:
+  uat-exports:
+networks:
+  prod:
+  uat:

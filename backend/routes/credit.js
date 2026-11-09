@@ -5,14 +5,28 @@
 const router = require('express').Router();
 const { sql, wfQuery } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { checkCustomerCreditAndAging } = require('../services/credit-service');
 
 router.use(requireAuth);
+
+// GET /api/credit/:custId/status — Real-time validation of credit limit & aging balance
+router.get('/:custId/status', async (req, res) => {
+  try {
+    const custId = req.params.custId;
+    const amount = Number(req.query.amount) || 0;
+    const status = await checkCustomerCreditAndAging(custId, amount);
+    res.json(status);
+  } catch (e) {
+    console.error('[credit-status]', e);
+    res.status(500).json({ message: e.message });
+  }
+});
 
 // GET /api/credit — รายการลูกค้าที่ตั้ง credit (โดยเฉพาะที่ hold)
 router.get('/', async (req, res) => {
   try {
     const r = await wfQuery(`
-      SELECT c.CustId, c.CustName, c.CreditLimit, c.CreditHold, c.Note, u.DisplayName AS UpdatedByName, c.UpdatedAt
+      SELECT c.CustId, c.CustName, c.CreditLimit, c.CreditHold, c.AgingDays, c.Note, u.DisplayName AS UpdatedByName, c.UpdatedAt
       FROM wf.CreditMaster c LEFT JOIN wf.AppUser u ON u.Id=c.UpdatedBy
       ORDER BY c.CreditHold DESC, c.UpdatedAt DESC`);
     res.json(r.recordset || []);
@@ -22,16 +36,16 @@ router.get('/', async (req, res) => {
 // GET /api/credit/:custId — ดูเครดิตลูกค้ารายเดียว
 router.get('/:custId', async (req, res) => {
   try {
-    const r = await wfQuery(`SELECT CustId, CustName, CreditLimit, CreditHold, Note FROM wf.CreditMaster WHERE CustId=@c`,
+    const r = await wfQuery(`SELECT CustId, CustName, CreditLimit, CreditHold, AgingDays, Note FROM wf.CreditMaster WHERE CustId=@c`,
       { c: { type: sql.NVarChar(20), value: String(req.params.custId) } });
-    res.json(r.recordset[0] || { CustId: req.params.custId, CreditLimit: null, CreditHold: false });
+    res.json(r.recordset[0] || { CustId: req.params.custId, CreditLimit: null, CreditHold: false, AgingDays: 60 });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
 // PUT /api/credit/:custId — ตั้ง/แก้เครดิต (ACCOUNTING/MANAGER/ADMIN)
 router.put('/:custId', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN'), async (req, res) => {
   try {
-    const { custName, creditLimit, creditHold, note } = req.body || {};
+    const { custName, creditLimit, creditHold, agingDays, note } = req.body || {};
 
     // endpoint นี้เป็น MERGE จึงตอบสำเร็จเสมอแม้รหัสลูกค้าจะพิมพ์ผิด และจะสร้าง
     // credit master ของลูกค้าที่ไม่มีตัวตนทิ้งไว้ในข้อมูลหลัก
@@ -43,17 +57,34 @@ router.put('/:custId', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN'), async (req
 
     await wfQuery(`
       MERGE wf.CreditMaster AS t USING (SELECT @c AS CustId) AS s ON t.CustId=s.CustId
-      WHEN MATCHED THEN UPDATE SET CustName=COALESCE(@n,CustName), CreditLimit=@lim, CreditHold=@hold, Note=@note, UpdatedBy=@u, UpdatedAt=GETUTCDATE()
-      WHEN NOT MATCHED THEN INSERT (CustId, CustName, CreditLimit, CreditHold, Note, UpdatedBy)
-        VALUES (@c,@n,@lim,@hold,@note,@u);`,
+      WHEN MATCHED THEN UPDATE SET CustName=COALESCE(@n,CustName), CreditLimit=@lim, CreditHold=@hold, AgingDays=@aging, Note=@note, UpdatedBy=@u, UpdatedAt=GETUTCDATE()
+      WHEN NOT MATCHED THEN INSERT (CustId, CustName, CreditLimit, CreditHold, AgingDays, Note, UpdatedBy)
+        VALUES (@c,@n,@lim,@hold,@aging,@note,@u);`,
       {
-        c:    { type: sql.NVarChar(20),  value: String(req.params.custId) },
-        n:    { type: sql.NVarChar(200), value: custName || null },
-        lim:  { type: sql.Decimal(18,2), value: creditLimit ?? null },
-        hold: { type: sql.Bit,           value: creditHold ? 1 : 0 },
-        note: { type: sql.NVarChar(300), value: note || null },
-        u:    { type: sql.Int,           value: req.user.sub },
+        c:     { type: sql.NVarChar(20),  value: String(req.params.custId) },
+        n:     { type: sql.NVarChar(200), value: custName || null },
+        lim:   { type: sql.Decimal(18,2), value: creditLimit ?? null },
+        hold:  { type: sql.Bit,           value: creditHold ? 1 : 0 },
+        aging: { type: sql.Int,           value: agingDays ?? 60 },
+        note:  { type: sql.NVarChar(300), value: note || null },
+        u:     { type: sql.Int,           value: req.user.sub },
       });
+
+    // Sync back to wf.CustomerExt if it exists
+    await wfQuery(`
+      IF OBJECT_ID('wf.CustomerExt', 'U') IS NOT NULL
+      BEGIN
+        IF EXISTS (SELECT 1 FROM wf.CustomerExt WHERE CustID = @c)
+          UPDATE wf.CustomerExt SET CreditLimit = @lim, AgingDays = @aging, UpdatedAt = GETUTCDATE() WHERE CustID = @c;
+        ELSE
+          INSERT INTO wf.CustomerExt (CustID, CreditLimit, AgingDays, CreatedAt, UpdatedAt) VALUES (@c, @lim, @aging, GETUTCDATE(), GETUTCDATE());
+      END
+    `, {
+      c:     { type: sql.NVarChar(20),  value: String(req.params.custId) },
+      lim:   { type: sql.Decimal(18,2), value: creditLimit ?? null },
+      aging: { type: sql.Int,           value: agingDays ?? 60 },
+    });
+
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });

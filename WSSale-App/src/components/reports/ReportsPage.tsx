@@ -1,10 +1,8 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { BarChart3, RefreshCw, Download, FileSpreadsheet, FileText, Search, AlertCircle, ShieldAlert, Settings, SlidersHorizontal } from 'lucide-react';
+import { BarChart3, RefreshCw, Download, FileSpreadsheet, FileText, Search, AlertCircle, ShieldAlert } from 'lucide-react';
 import { fetchReportTypes, fetchReport, exportReport, fetchReportTemplate } from '../../services/api';
 import type { ReportData, ReportTypeItem, ResolvedReportTemplateDto } from '../../services/api';
 import { LegacyReportPdfModal } from './LegacyReportPdfModal';
-import { AdminReportTemplateModal } from '../admin/AdminReportTemplateModal';
-import { AdminReportCatalogModal } from '../admin/AdminReportCatalogModal';
 import { useAuthStore } from '../../store/auth-store';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import {
@@ -36,8 +34,6 @@ export function ReportsPage() {
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [showPdfModal, setShowPdfModal] = useState(false);
-  const [showAdminModal, setShowAdminModal] = useState(false);
-  const [showCatalogModal, setShowCatalogModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
 
@@ -72,7 +68,7 @@ export function ReportsPage() {
   const [from, setFrom] = useState(sixtyDaysAgo);
   const [to, setTo] = useState(localToday);
   const DATE_RANGE_REPORTS = ['customer-dispatch', 'native-documents', 'truck-hold-log', 'control-ticket-alert-history', 'native-print-log'];
-  const needsDateRange = DATE_RANGE_REPORTS.includes(active);
+  const needsDateRange = true;
 
   const CUST_FILTER_REPORTS = ['customer-dispatch'];
   const needsCustFilter = CUST_FILTER_REPORTS.includes(active);
@@ -97,10 +93,8 @@ export function ReportsPage() {
 
   const reportParams = useCallback((): Record<string, string> | undefined => {
     const p: Record<string, string> = {};
-    if (DATE_RANGE_REPORTS.includes(active)) {
-      p.from = from;
-      p.to = to;
-    }
+    if (from) p.from = from;
+    if (to) p.to = to;
     if (CUST_FILTER_REPORTS.includes(active) && custCode.trim()) {
       p.custCode = custCode.trim();
     }
@@ -196,20 +190,6 @@ export function ReportsPage() {
           onClose={() => setShowPdfModal(false)}
         />
       )}
-      {showAdminModal && (
-        <AdminReportTemplateModal
-          isOpen={showAdminModal}
-          onClose={() => setShowAdminModal(false)}
-          onTemplateUpdated={() => load(active, reportParams())}
-        />
-      )}
-      {showCatalogModal && (
-        <AdminReportCatalogModal
-          isOpen={showCatalogModal}
-          onClose={() => setShowCatalogModal(false)}
-          onCatalogUpdated={refreshReportTypes}
-        />
-      )}
 
       {/* Top Header */}
       <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -223,25 +203,6 @@ export function ReportsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {isAdmin && (
-            <>
-              <button
-                onClick={() => setShowCatalogModal(true)}
-                className="px-3 py-2 rounded-lg text-emerald-800 bg-emerald-50 hover:bg-emerald-100 text-sm font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer border border-emerald-300"
-                title="จัดเรียงลำดับการแสดงผล และเปิด/ปิด รายงานทั้งระบบ (เฉพาะผู้ดูแลระบบ)"
-              >
-                <SlidersHorizontal size={16} className="text-emerald-700" /> จัดการลำดับ/เปิดปิด (Admin)
-              </button>
-              <button
-                onClick={() => setShowAdminModal(true)}
-                className="px-3 py-2 rounded-lg text-gray-700 bg-gray-100 hover:bg-gray-200 text-sm font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer border border-gray-300"
-                title="จัดการหัวกระดาษและแม่แบบรายงาน (เฉพาะผู้ดูแลระบบ)"
-              >
-                <Settings size={16} className="text-[#0C447C]" /> จัดการแม่แบบ (Admin)
-              </button>
-            </>
-          )}
-
           <button
             onClick={() => setShowPdfModal(true)}
             disabled={!data || loading || exporting || !activeTemplate}

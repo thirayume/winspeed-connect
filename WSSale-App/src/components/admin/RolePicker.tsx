@@ -27,15 +27,23 @@ export function RolePicker({
         บทบาทที่ได้รับ · เลือกได้หลายรายการ
       </legend>
       <div className="flex flex-wrap gap-2 min-h-8" aria-label="Role ที่เลือก">
-        {value.map((code) => (
-          <span
-            key={code}
-            className="inline-flex items-center gap-1 rounded-full bg-blue-50 text-[#0C447C] border border-blue-200 px-3 py-1 text-xs"
-          >
-            <Check size={13} />
-            {roles.find((r) => r.Code === code)?.Name || code}
-          </span>
-        ))}
+        {value.map((code) => {
+          const isSep = code === "SEPARATION";
+          return (
+            <span
+              key={code}
+              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs border ${
+                isSep
+                  ? "bg-rose-50 text-rose-700 border-rose-200"
+                  : "bg-blue-50 text-[#0C447C] border-blue-200"
+              }`}
+            >
+              <Check size={13} />
+              {roles.find((r) => r.Code === code)?.Name || code}
+              {isSep && " (สิ้นสภาพ)"}
+            </span>
+          );
+        })}
         {!value.length && (
           <span className="text-sm text-slate-500">ยังไม่ได้เลือกบทบาท</span>
         )}
@@ -71,9 +79,12 @@ export function RolePicker({
               className="mt-1 accent-[#0C447C]"
             />
             <span className="min-w-0">
-              <b className="block text-sm break-words">{r.Name}</b>
+              <b className={`block text-sm break-words ${r.Code === "SEPARATION" ? "text-rose-700" : ""}`}>
+                {r.Name}
+                {r.Code === "SEPARATION" && " (สิ้นสภาพ)"}
+              </b>
               <small className="block text-slate-500 break-all">
-                {r.Code} · ต้นแบบ {r.BaseRole}
+                {r.Code} · {r.Code === "SEPARATION" ? "ไม่มีบทบาทต้นแบบ" : `ต้นแบบ ${r.BaseRole}`}
               </small>
             </span>
           </label>

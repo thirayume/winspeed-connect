@@ -12,6 +12,7 @@ import type {
   Quotation, PaperBoard,
   PaginatedResult, UnlockRequest, AppUser, AdminUser, AgingRow,
   TruckStats, TruckHistoryItem, CustomerFilterOptions, CustomerRequest, CustomerRequestStatus,
+  CustomerCreditStatus, CompanyInfo,
 } from '../types';
 
 
@@ -162,6 +163,20 @@ export type DatabaseInfo = {
   canSetSystem: boolean;
 };
 export const getDatabases = () => req<DatabaseInfo>('/auth/databases', { silent: true });
+export type DatabaseConnectionProfile = {
+  server:string; port:number; database:string; username:string; expectedServerName:string;
+  versionPrefix:string; encrypt:boolean; legacyTls:boolean; tdsVersion:string; passwordSet?:boolean;
+};
+export type DatabaseConnectionItem = {
+  name:string; revision:number; draft:DatabaseConnectionProfile; active:DatabaseConnectionProfile|null;
+  activeRevision:number|null; testedAt:string|null;
+};
+export type DatabaseConnectionsInfo = {configured:boolean; profiles:DatabaseConnectionItem[]; audit:{at:string;action:string;name:string;revision:number;actor:string}[]};
+export const getDatabaseConnections=()=>req<DatabaseConnectionsInfo>('/database-connections',{silent:true});
+export const saveDatabaseConnection=(name:string,profile:DatabaseConnectionProfile & {password:string},revision:number)=>
+  req<{revision:number}>(`/database-connections/${encodeURIComponent(name)}`,{method:'PUT',body:JSON.stringify({profile,revision}),silent:true});
+export const testDatabaseConnection=(name:string,revision:number)=>
+  req<{revision:number;testedAt:string}>(`/database-connections/${encodeURIComponent(name)}/test`,{method:'POST',body:JSON.stringify({revision}),silent:true,timeoutMs:25000});
 export const switchDatabase = (database: string) =>
   req<{ accessToken: string; database: string; isDefault: boolean }>('/auth/switch-database', {
     method: 'POST', body: JSON.stringify({ database }),
@@ -247,6 +262,12 @@ export const fetchCustomers = (params?: string | {
 export const updateCustomer = (id: string, patch: Partial<EMCust>) =>
   req<{ ok: boolean }>(`/master/customers/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
 
+export const fetchCustomerCreditStatus = (custId: string, amount: number = 0) =>
+  req<CustomerCreditStatus>(`/credit/${encodeURIComponent(custId)}/status?amount=${encodeURIComponent(amount)}`);
+
+export const fetchCompanyInfo = () =>
+  req<CompanyInfo>('/auth/company');
+
 export const fetchCustomerRequests = () =>
   req<CustomerRequest[]>('/master/customer-requests');
 
@@ -259,8 +280,17 @@ export const reviewCustomerRequest = (
 ) =>
   req<{ ok: boolean }>(`/master/customer-requests/${id}/review`, { method: 'PATCH', body: JSON.stringify(payload) });
 
-export const fetchGoods = (q?: string) => {
-  const qs = q ? `?q=${encodeURIComponent(q)}` : '';
+export const fetchGoods = (params?: string | { q?: string; forSale?: boolean | string; groupId?: string | number }) => {
+  let qs = '';
+  if (typeof params === 'string') {
+    qs = params ? `?q=${encodeURIComponent(params)}` : '';
+  } else if (params && typeof params === 'object') {
+    const sp = new URLSearchParams();
+    if (params.q) sp.set('q', params.q);
+    if (params.forSale) sp.set('forSale', String(params.forSale));
+    if (params.groupId) sp.set('groupId', String(params.groupId));
+    qs = sp.toString() ? `?${sp.toString()}` : '';
+  }
   const target = dbTargetHeader()['X-DB-Target'] || '';
   return cachedReq<EMGood[]>(`goods:${target}:${qs}`, () => req<EMGood[]>(`/master/goods${qs}`, { silent: true }));
 };
@@ -1061,6 +1091,7 @@ export const deletePolicy = (id: number) => req<{ ok: boolean }>(`/policy/${id}`
 // ── Price Book (FR-023) ───────────────────────────────────────
 export interface PriceBook {
   Id: number; Name: string; EffectiveMonth: string; Status: 'DRAFT' | 'APPROVED' | 'ACTIVE' | 'ARCHIVED';
+  EffectiveFrom?: string | null; EffectiveTo?: string | null;
   Note?: string; LineCount?: number; CreatedByName?: string; ApprovedByName?: string; ActivatedByName?: string; CreatedAt?: string;
 }
 export interface PriceBookLine {
@@ -1080,7 +1111,7 @@ export interface EffectivePriceRow {
 
 export const fetchPriceBooks = () => req<PriceBook[]>('/pricebook');
 export const fetchPriceBook = (id: number) => req<PriceBook & { lines: PriceBookLine[]; audit: PriceBookAuditRow[] }>(`/pricebook/${id}`);
-export const createPriceBook = (b: { name: string; effectiveMonth: string; note?: string; seedFromCurrent?: boolean }) =>
+export const createPriceBook = (b: { name: string; effectiveMonth?: string; effectiveFrom?: string; effectiveTo?: string; note?: string; seedFromCurrent?: boolean }) =>
   req<{ id: number }>('/pricebook', { method: 'POST', body: JSON.stringify(b) });
 /** POST /pricebook/:id/lines reads camelCase; GET returns PascalCase. Convert at the boundary. */
 export interface PriceBookLineInput {

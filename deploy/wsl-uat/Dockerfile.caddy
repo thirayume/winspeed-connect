@@ -1,0 +1,3 @@
+FROM caddy:2-alpine
+ARG CADDYFILE=Caddyfile.uat
+COPY ${CADDYFILE} /etc/caddy/Caddyfile

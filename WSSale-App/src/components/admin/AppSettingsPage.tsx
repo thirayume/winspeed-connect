@@ -9,11 +9,13 @@ import {
   Tag,
   History,
   ClipboardCheck,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { SystemSettingsModal, type TabKey } from './SystemSettingsModal';
 import { ReadinessSignoffModal } from './ReadinessSignoffModal';
+import { AdminReportTemplateModal } from './AdminReportTemplateModal';
 
-export type SettingsTabKey = TabKey | 'readiness';
+export type SettingsTabKey = TabKey | 'readiness' | 'reports';
 
 const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
   { key: 'pickup', name: 'กำหนดรับสินค้า', Icon: Calendar },
@@ -23,6 +25,7 @@ const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
   { key: 'settle', name: 'ตัดตั๋ว & ของแถม', Icon: Ticket },
   { key: 'sales', name: 'ราคา & เอกสาร', Icon: Tag },
   { key: 'history', name: 'ประวัติ Version', Icon: History },
+  { key: 'reports', name: 'แม่แบบ & หัวกระดาษรายงาน', Icon: FileSpreadsheet },
   { key: 'readiness', name: 'ผลตรวจรับงาน', Icon: ClipboardCheck },
 ];
 
@@ -84,16 +87,27 @@ export function AppSettingsPage() {
           role="tabpanel"
           id="tabpanel-policy"
           aria-labelledby={'tab-' + activeTab}
-          hidden={activeTab === 'readiness'}
+          hidden={activeTab === 'readiness' || activeTab === 'reports'}
           className="w-full"
         >
           <SystemSettingsModal
             isOpen={true}
             embedded={true}
-            activeTab={activeTab === 'readiness' ? 'pickup' : (activeTab as TabKey)}
+            activeTab={activeTab === 'readiness' || activeTab === 'reports' ? 'pickup' : (activeTab as TabKey)}
             onRevisionLoaded={setRevision}
             onClose={() => {}}
           />
+        </div>
+
+        {/* Reports Template & Header Management Tab */}
+        <div
+          role="tabpanel"
+          id="tabpanel-reports"
+          aria-labelledby="tab-reports"
+          hidden={activeTab !== 'reports'}
+          className="w-full"
+        >
+          <AdminReportTemplateModal isOpen={true} embedded={true} onClose={() => {}} />
         </div>
 
         {/* Readiness Signoff Tab */}

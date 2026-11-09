@@ -1,5 +1,7 @@
 /** Express API. Native dbo writes are limited to implemented, authorized workflows; weighing tables remain read-only. */
 require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
+// Snapshot active connection profiles before any worker or pool starts. Drafts are never live.
+require('./services/database-connection-store').activeProfiles(process.env);
 const express = require('express');
 const cors    = require('cors');
 const helmet  = require('helmet');
@@ -119,6 +121,7 @@ app.use((req, res, next) => {
 
 // ── Routes ────────────────────────────────────────────────────
 app.use('/api/auth',   require('./routes/auth'));
+app.use('/api/database-connections', require('./routes/database-connections'));
 app.use('/api/admin-management', require('./routes/admin-management'));
 app.use('/api/master/native-approvers', require('./routes/native-approvers'));
 app.use('/api/master', require('./routes/master'));

@@ -1,4 +1,5 @@
 import { useAuthStore } from '../../store/auth-store';
+import { useCompanyStore } from '../../store/company-store';
 import { req } from '../../services/api';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
@@ -77,6 +78,8 @@ interface TreePositionNode {
 }
 
 export function OrgHierarchyView() {
+  const companyInfo = useCompanyStore(s => s.companyInfo);
+  const fetchCompanyInfo = useCompanyStore(s => s.fetchCompanyInfo);
   const session = useAuthStore(s => s.user);
   const canEdit = Boolean(session?.capabilities?.actions.includes("users.manage")) && !session?.isImpersonating;
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -128,7 +131,10 @@ export function OrgHierarchyView() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    fetchCompanyInfo();
+    load();
+  }, [fetchCompanyInfo, load]);
 
   const units = useMemo(
     () => Array.from(new Set(positions.map(p => p.OrgUnit).filter(Boolean))),
@@ -869,20 +875,27 @@ export function OrgHierarchyView() {
               >
                 {/* ── APEX ROOT: COMPANY HEADQUARTERS ─────────────── */}
                 <div className="flex flex-col items-center">
-                  <div className="w-[380px] bg-linear-to-r from-[#0C447C] to-[#1E62A6] text-white rounded-2xl p-4 shadow-lg border-2 border-white/20 relative z-10">
+                  <div className="w-[420px] bg-linear-to-r from-[#0C447C] to-[#1E62A6] text-white rounded-2xl p-4 shadow-lg border-2 border-white/20 relative z-10">
                     <div className="flex items-center gap-3">
                       <div className="w-11 h-11 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
                         <Building2 size={24} className="text-white" />
                       </div>
-                      <div className="text-left min-w-0">
-                        <span className="text-[10px] font-bold tracking-widest uppercase text-blue-200">
-                          Apex Organization Root
-                        </span>
+                      <div className="text-left min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[10px] font-bold tracking-widest uppercase text-blue-200">
+                            Apex Organization Root
+                          </span>
+                          {(companyInfo.taxId13 || companyInfo.taxId) && (
+                            <span className="text-[9px] font-mono bg-white/10 px-1.5 py-0.2 rounded text-blue-100 border border-white/15">
+                              TAX: {companyInfo.taxId13 || companyInfo.taxId}
+                            </span>
+                          )}
+                        </div>
                         <h2 className="text-base font-black tracking-wide truncate">
-                          บริษัท เวิลด์เฟอร์ติไลเซอร์ จำกัด
+                          {companyInfo.compName || 'บริษัท เวิลด์ เฟอท จำกัด'}
                         </h2>
-                        <p className="text-[11px] text-blue-100">
-                          World Fertilizer Co., Ltd. · ผังองค์กร พ.ศ. 2568
+                        <p className="text-[11px] text-blue-100 truncate">
+                          {companyInfo.compNameEng || 'WORLD FERT CO., LTD.'} · ผังองค์กร พ.ศ. 2568
                         </p>
                       </div>
                     </div>

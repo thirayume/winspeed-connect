@@ -214,6 +214,14 @@ export function BatchUsersPanel({
                     setConfirmed(false);
                   }}
                 />
+                {roleCodes.includes("SEPARATION") && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 space-y-1">
+                    <strong className="block font-bold">⚠️ ข้อควรระวังพิเศษสำหรับ Role: SEPARATION (สิ้นสภาพพนักงาน)</strong>
+                    <span>
+                      ผู้ใช้ที่ได้รับบทบาทนี้ ({users.length} คน) จะถูกตั้งสถานะเป็น Inactive (ระงับการใช้งาน) และถอดสิทธิ์ออกจากระบบทั้งหมดทันที ข้อมูลประวัติเดิมจะถูกเก็บรักษาไว้เพื่อใช้ทางบัญชีและภาษี
+                    </span>
+                  </div>
+                )}
                 <p className="text-xs text-slate-500">
                   * ผู้ใช้จะได้รับสิทธิ์รวมจากทุก Role ที่เลือก · ไม่สามารถนำ Role สุดท้ายของผู้ใช้ออกได้
                 </p>

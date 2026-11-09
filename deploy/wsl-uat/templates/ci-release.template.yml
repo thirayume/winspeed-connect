@@ -1,0 +1,48 @@
+# PRIVATE DRAFT: do not copy into .github/workflows until reviewed/pinned and old auto-deploy is retired.
+# This verifies/builds a candidate only. No registry publish, secrets, live SQL or deployment.
+name: Sale-App candidate verification draft
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      # Pin these action references to reviewed full commit SHAs before enabling the workflow.
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: npm ci
+        working-directory: backend
+      - name: Discover tracked offline suites (no private docs dependency)
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const extras = new Set(['native-status.test.js','policy-contract.test.js','rebate.test.js',
+            'weight-reconciliation.test.js','onprem-target.test.js','db-target-policy.test.js']);
+          const files = fs.readdirSync('backend/tests').filter(f => f.endsWith('.test.js') &&
+            (extras.has(f) || fs.readFileSync(`backend/tests/${f}`, 'utf8').includes('helpers/route-harness.cjs')));
+          if (!files.length) throw Error('No offline suites found');
+          fs.writeFileSync('/tmp/sale-offline-files.txt', files.sort().map(f => `backend/tests/${f}`).join('\n')+'\n');
+          console.log(`Offline suite files: ${files.length}`);
+          NODE
+      - run: |
+          mapfile -t suites < /tmp/sale-offline-files.txt
+          node --require ./backend/tests/helpers/offline-db-sentinel.cjs --test "${suites[@]}"
+      - run: npm run test:rehearsal:offline
+        working-directory: backend
+      - run: npm ci
+        working-directory: WSSale-App
+      - run: npm run build && npm run lint && npm run check:unused
+        working-directory: WSSale-App
+        env:
+          VITE_API_BASE_URL: /api
+      - name: Build the same candidate images for later environment promotion
+        run: |
+          docker build -t sale-api:${GITHUB_SHA} backend
+          docker build --build-arg VITE_API_BASE_URL=/api -t sale-web:${GITHUB_SHA} WSSale-App
+          docker image inspect --format '{{.Id}}' sale-api:${GITHUB_SHA} sale-web:${GITHUB_SHA}
+      # Next reviewed package: SBOM/scan, registry digests, environment approvals and guarded promotion.

@@ -14,6 +14,7 @@ import {
   History,
   Info,
   Ticket,
+  CreditCard,
 } from 'lucide-react';
 import { fetchSystemSettings, updateSystemSettings, fetchEditReasons } from '../../services/api';
 
@@ -25,7 +26,7 @@ export interface SystemSettingsModalProps {
   onClose?: () => void;
 }
 
-export type TabKey = 'pickup' | 'ticket' | 'rebate' | 'weight' | 'settle' | 'sales' | 'history';
+export type TabKey = 'pickup' | 'ticket' | 'rebate' | 'weight' | 'settle' | 'sales' | 'credit' | 'history';
 
 const DEFAULT_REASON_OPTIONS = [
   { code: 'POLICY_ADJUSTMENT', label: 'ปรับปรุงตามนโยบายบริษัท' },
@@ -81,6 +82,11 @@ export function SystemSettingsModal({
   const [priceWarnBelow, setPriceWarnBelow] = useState<string>('500');
   const [legacyCutoff, setLegacyCutoff] = useState<string>('2022-01-01');
   const [claimFiscalMonth, setClaimFiscalMonth] = useState<string>('1');
+
+  // Credit Limit & AR Aging Strict Mode Policy
+  const [creditLimitStrict, setCreditLimitStrict] = useState<boolean>(false);
+  const [creditAgingStrict, setCreditAgingStrict] = useState<boolean>(false);
+  const [creditAgingDefaultDays, setCreditAgingDefaultDays] = useState<string>('60');
 
   // Concurrency & Original Settings Tracking
   const [loadedRevision, setLoadedRevision] = useState<number | undefined>(undefined);
@@ -148,6 +154,10 @@ export function SystemSettingsModal({
             setPriceWarnBelow(String(raw.PRICE_WARN_BELOW_PER_TON ?? set.PRICE_WARN_BELOW_PER_TON ?? '500'));
             setLegacyCutoff(String(raw.LEGACY_DOC_CUTOFF_DATE ?? set.LEGACY_DOC_CUTOFF_DATE ?? '2022-01-01'));
             setClaimFiscalMonth(String(raw.REBATE_CLAIM_FISCAL_START_MONTH ?? set.REBATE_CLAIM_FISCAL_START_MONTH ?? '1'));
+
+            setCreditLimitStrict(String(raw.CREDIT_LIMIT_STRICT_MODE ?? set.CREDIT_LIMIT_STRICT_MODE) === 'true');
+            setCreditAgingStrict(String(raw.CREDIT_AGING_STRICT_MODE ?? set.CREDIT_AGING_STRICT_MODE) === 'true');
+            setCreditAgingDefaultDays(String(raw.CREDIT_AGING_DEFAULT_DAYS ?? set.CREDIT_AGING_DEFAULT_DAYS ?? '60'));
           }
           if (res.currentRevision !== undefined) {
             setLoadedRevision(res.currentRevision);
@@ -254,6 +264,9 @@ export function SystemSettingsModal({
         PRICE_WARN_BELOW_PER_TON: warnBelow,
         LEGACY_DOC_CUTOFF_DATE: legacyCutoff.trim(),
         REBATE_CLAIM_FISCAL_START_MONTH: fiscalMonth,
+        CREDIT_LIMIT_STRICT_MODE: creditLimitStrict ? 'true' : 'false',
+        CREDIT_AGING_STRICT_MODE: creditAgingStrict ? 'true' : 'false',
+        CREDIT_AGING_DEFAULT_DAYS: parseStrictInt(creditAgingDefaultDays, 60),
       };
 
       // Only submit dirty (modified) keys
@@ -403,6 +416,17 @@ export function SystemSettingsModal({
               }`}
             >
               <Info size={15} /> ราคา & เอกสาร
+            </button>
+
+            <button
+              onClick={() => setActiveTab('credit')}
+              className={`py-3 px-3 flex items-center gap-1.5 border-b-2 transition whitespace-nowrap ${
+                activeTab === 'credit'
+                  ? 'border-[#0C447C] text-[#0C447C] font-bold bg-white'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <CreditCard size={15} /> เครดิต & Aging (Strict Rule)
             </button>
 
             <button
@@ -807,6 +831,72 @@ export function SystemSettingsModal({
                         className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none" />
                       <p className="text-[11px] text-gray-500 mt-1">เคลมได้เฉพาะใบส่งของในรอบบัญชีปัจจุบัน (1 = มกราคม) · 0 = ไม่ตัดรอบ</p>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB: เครดิต & Aging (Strict Rule) */}
+              {activeTab === 'credit' && (
+                <div className="space-y-4 text-xs">
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-900 flex items-start gap-2">
+                    <CreditCard size={16} className="text-amber-700 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold text-amber-800 mb-0.5">นโยบายวงเงินเครดิต และอายุหนี้ (Credit Limit & Aging)</div>
+                      กำหนดค่าเริ่มต้น Aging และตั้งค่ากฎเข้มงวด (Strict Rule) เพื่อบล็อกหรืออนุญาตการเปิดบิลขายเมื่อเกินเกณฑ์
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="rounded-xl border border-gray-200 p-4 space-y-3 bg-white">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-gray-800">กฎเข้มงวดวงเงิน (Credit Limit Strict Mode)</span>
+                        <input
+                          type="checkbox"
+                          checked={creditLimitStrict}
+                          onChange={e => setCreditLimitStrict(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]"
+                        />
+                      </div>
+                      <p className="text-[11px] text-gray-500">
+                        {creditLimitStrict
+                          ? '🔴 ปัจจุบัน: บล็อกการเปิดบิลขายทันที (Disallow) หากยอดสั่งซื้อทำให้เกินวงเงินเครดิต'
+                          : '🟡 ปัจจุบัน: แจ้งเตือนเมื่อเปิดบิล แต่ยังอนุญาตให้ทำรายการได้ และบันทึกเป็นเหตุการณ์ผิดปกติ (Soft Warning)'}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-gray-200 p-4 space-y-3 bg-white">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-gray-800">กฎเข้มงวด Aging (Aging Strict Mode)</span>
+                        <input
+                          type="checkbox"
+                          checked={creditAgingStrict}
+                          onChange={e => setCreditAgingStrict(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]"
+                        />
+                      </div>
+                      <p className="text-[11px] text-gray-500">
+                        {creditAgingStrict
+                          ? '🔴 ปัจจุบัน: บล็อกการเปิดบิลขายทันที (Disallow) หากมีหนี้ค้างชำระเกินจำนวนวัน Aging'
+                          : '🟡 ปัจจุบัน: แจ้งเตือนเมื่อเปิดบิล แต่ยังอนุญาตให้ทำรายการได้ และบันทึกเป็นเหตุการณ์ผิดปกติ (Soft Warning)'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 p-4 bg-white">
+                    <label className="block font-bold text-gray-700 mb-1">
+                      จำนวนวัน Aging สูงสุดตามนโยบายค่าเริ่มต้น (วัน)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="365"
+                      value={creditAgingDefaultDays}
+                      onChange={e => setCreditAgingDefaultDays(e.target.value)}
+                      className="w-full max-w-xs p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none"
+                    />
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      มาตรฐาน 60 วัน (หากลูกค้ามียอดค้างชำระจาก WinSpeed เกินจำนวนวันนี้ จะถูกตรวจสอบตามกฎ Strict/Soft Mode)
+                    </p>
                   </div>
                 </div>
               )}

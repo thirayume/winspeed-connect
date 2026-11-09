@@ -80,6 +80,18 @@ function bracketIdent(name) {
   return `[${String(name).replace(/]/g, ']]')}]`;
 }
 
+// GET /api/master/company — ดึงข้อมูลบริษัทจาก dbo.EMComp
+router.get('/company', async (req, res) => {
+  try {
+    const { getCompanyInfo } = require('../services/company-service');
+    const info = await getCompanyInfo();
+    res.json(info);
+  } catch (err) {
+    console.error('[master/company] error:', err.message);
+    res.status(500).json({ message: 'Error retrieving company info' });
+  }
+});
+
 async function getCustomerFilterColumns() {
   if (customerFilterColumnCache) return customerFilterColumnCache;
   const cols = await query(`
@@ -163,13 +175,20 @@ router.get('/customers', async (req, res) => {
       : '';
     const rows = await query(
       `SELECT TOP (@limit)
-              c.CustID, c.CustCode, c.CustName, c.ContTel AS Tel, c.ContTel1 AS Mobile,
-              ISNULL(cx.Remark, '') AS Remark, c.Inactive, ISNULL(c.CreditDays, 0) AS CreditDays,
+              c.CustID, c.CustCode, c.CustName, 
+              COALESCE(cx.PrimaryPhone, c.ContTel) AS Tel, 
+              COALESCE(cx.SecondaryPhone, c.ContTel1) AS Mobile,
+              cx.PrimaryPhone, cx.SecondaryPhone, cx.Email, cx.LineId,
+              ISNULL(cx.Remark, '') AS Remark, c.Inactive, 
+              COALESCE(cx.AgingDays, cm.AgingDays, c.CreditDays, 60) AS AgingDays,
+              COALESCE(cx.CreditLimit, cm.CreditLimit, c.CreditAmnt, 0) AS CreditLimit,
+              ISNULL(cm.CreditHold, 0) AS CreditHold,
               ${selectExt},
               ${columns.salesperson ? `salesEmp.EmpName` : `CAST(NULL AS NVARCHAR(255))`} AS salespersonName,
               ${columns.employee ? `custEmp.EmpName` : `CAST(NULL AS NVARCHAR(255))`} AS employeeName
        FROM dbo.EMCust c WITH (NOLOCK) 
        LEFT JOIN wf.CustomerExt cx ON cx.CustId = c.CustID
+       LEFT JOIN wf.CreditMaster cm ON cm.CustId = c.CustID
        ${salesJoin}
        ${empJoin}
        WHERE ${conditions.join(' AND ')}
@@ -259,21 +278,41 @@ router.patch('/customer-requests/:id/review', requireRole('ADMIN', 'MANAGER'), a
 });
 
 // PATCH /api/master/customers/:id
-router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
   try {
     const id = req.params.id;
-    const { CustName, Tel, Mobile, Remark } = req.body;
+    const {
+      CustName,
+      Tel,
+      PrimaryPhone,
+      Mobile,
+      SecondaryPhone,
+      Email,
+      LineId,
+      Remark,
+      CreditLimit,
+      AgingDays,
+      CreditHold,
+      salespersonId,
+      areaId,
+      groupId,
+      employeeId,
+    } = req.body;
     if (!isMasterId(id)) return res.status(404).json({ message: 'ไม่พบรหัสลูกค้านี้' });
     if (CustName !== undefined && CustName !== null && !String(CustName).trim()) {
       return res.status(400).json({ message: 'ชื่อลูกค้าต้องไม่ว่าง' });
     }
+
+    const primaryPhoneVal = PrimaryPhone !== undefined ? PrimaryPhone : Tel;
+    const secondaryPhoneVal = SecondaryPhone !== undefined ? SecondaryPhone : Mobile;
+
     // 1. Update ERP
     const __rows = (await hasMasterProcs())
       ? affectedOf(await execMasterProc('wf.sp_MasterUpdateCustomer', {
           CustID: { type: sql.VarChar(20), value: id },
           CustName: { type: sql.NVarChar(255), value: CustName ?? null },
-          Tel: { type: sql.NVarChar(50), value: Tel ?? null },
-          Mobile: { type: sql.NVarChar(50), value: Mobile ?? null },
+          Tel: { type: sql.NVarChar(50), value: primaryPhoneVal ?? null },
+          Mobile: { type: sql.NVarChar(50), value: secondaryPhoneVal ?? null },
         }, AFFECTED_OUT))
       : await dboWrite(`
       UPDATE dbo.EMCust 
@@ -283,21 +322,106 @@ router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res)
       WHERE CustID = @id
     `, {
       name: { type: sql.NVarChar(255), value: CustName },
-      tel: { type: sql.NVarChar(50), value: Tel },
-      mob: { type: sql.NVarChar(50), value: Mobile },
+      tel: { type: sql.NVarChar(50), value: primaryPhoneVal },
+      mob: { type: sql.NVarChar(50), value: secondaryPhoneVal },
       id: { type: sql.VarChar(20), value: id }
     });
+
+    // 1b. Update optional ERP classifications if columns exist in dbo.EMCust
+    const filterCols = await getCustomerFilterColumns();
+    const updateClauses = [];
+    const updateInputs = { id: { type: sql.VarChar(20), value: id } };
+    if (salespersonId !== undefined && filterCols.salesperson) {
+      updateClauses.push(`${bracketIdent(filterCols.salesperson)} = @salespersonId`);
+      updateInputs.salespersonId = { type: sql.NVarChar(50), value: salespersonId || null };
+    }
+    if (areaId !== undefined && filterCols.area) {
+      updateClauses.push(`${bracketIdent(filterCols.area)} = @areaId`);
+      updateInputs.areaId = { type: sql.NVarChar(50), value: areaId || null };
+    }
+    if (groupId !== undefined && filterCols.group) {
+      updateClauses.push(`${bracketIdent(filterCols.group)} = @groupId`);
+      updateInputs.groupId = { type: sql.NVarChar(50), value: groupId || null };
+    }
+    if (employeeId !== undefined && filterCols.employee) {
+      updateClauses.push(`${bracketIdent(filterCols.employee)} = @employeeId`);
+      updateInputs.employeeId = { type: sql.NVarChar(50), value: employeeId || null };
+    }
+    if (updateClauses.length > 0) {
+      try {
+        await dboWrite(`
+          UPDATE dbo.EMCust 
+          SET ${updateClauses.join(', ')}
+          WHERE CustID = @id
+        `, updateInputs);
+      } catch (err) {
+        console.warn('[master/customers:update-ext-cols-warning]', err?.message);
+      }
+    }
     
-    // 2. Update Ext
-    if (Remark !== undefined) {
+    // 2. Update wf.CustomerExt with portal contacts and credit/aging
+    const hasExtUpdates = Remark !== undefined || PrimaryPhone !== undefined || Tel !== undefined
+      || SecondaryPhone !== undefined || Mobile !== undefined || Email !== undefined
+      || LineId !== undefined || CreditLimit !== undefined || AgingDays !== undefined;
+
+    if (hasExtUpdates) {
       await query(`
         IF EXISTS (SELECT 1 FROM wf.CustomerExt WHERE CustId = @id)
-          UPDATE wf.CustomerExt SET Remark = @remark, UpdatedAt = GETUTCDATE() WHERE CustId = @id
+          UPDATE wf.CustomerExt 
+          SET Remark = CASE WHEN @hasRemark = 1 THEN @remark ELSE Remark END,
+              PrimaryPhone = CASE WHEN @hasPrimaryPhone = 1 THEN @primaryPhone ELSE PrimaryPhone END,
+              SecondaryPhone = CASE WHEN @hasSecondaryPhone = 1 THEN @secondaryPhone ELSE SecondaryPhone END,
+              Email = CASE WHEN @hasEmail = 1 THEN @email ELSE Email END,
+              LineId = CASE WHEN @hasLineId = 1 THEN @lineId ELSE LineId END,
+              CreditLimit = CASE WHEN @hasCreditLimit = 1 THEN @creditLimit ELSE CreditLimit END,
+              AgingDays = CASE WHEN @hasAgingDays = 1 THEN @agingDays ELSE AgingDays END,
+              UpdatedAt = GETUTCDATE()
+          WHERE CustId = @id
         ELSE
-          INSERT INTO wf.CustomerExt (CustId, Remark) VALUES (@id, @remark)
+          INSERT INTO wf.CustomerExt (CustId, Remark, PrimaryPhone, SecondaryPhone, Email, LineId, CreditLimit, AgingDays, UpdatedAt)
+          VALUES (@id, @remark, @primaryPhone, @secondaryPhone, @email, @lineId, @creditLimit, ISNULL(@agingDays, 60), GETUTCDATE())
       `, {
-        remark: { type: sql.NVarChar(500), value: Remark },
-        id: { type: sql.VarChar(20), value: id }
+        id: { type: sql.VarChar(20), value: id },
+        remark: { type: sql.NVarChar(500), value: Remark ?? null },
+        hasRemark: { type: sql.Bit, value: Remark !== undefined ? 1 : 0 },
+        primaryPhone: { type: sql.NVarChar(50), value: primaryPhoneVal ?? null },
+        hasPrimaryPhone: { type: sql.Bit, value: (PrimaryPhone !== undefined || Tel !== undefined) ? 1 : 0 },
+        secondaryPhone: { type: sql.NVarChar(255), value: secondaryPhoneVal ?? null },
+        hasSecondaryPhone: { type: sql.Bit, value: (SecondaryPhone !== undefined || Mobile !== undefined) ? 1 : 0 },
+        email: { type: sql.NVarChar(255), value: Email ?? null },
+        hasEmail: { type: sql.Bit, value: Email !== undefined ? 1 : 0 },
+        lineId: { type: sql.NVarChar(100), value: LineId ?? null },
+        hasLineId: { type: sql.Bit, value: LineId !== undefined ? 1 : 0 },
+        creditLimit: { type: sql.Decimal(18, 2), value: CreditLimit != null ? Number(CreditLimit) : null },
+        hasCreditLimit: { type: sql.Bit, value: CreditLimit !== undefined ? 1 : 0 },
+        agingDays: { type: sql.Int, value: AgingDays != null ? Number(AgingDays) : null },
+        hasAgingDays: { type: sql.Bit, value: AgingDays !== undefined ? 1 : 0 },
+      });
+    }
+
+    // 3. Keep wf.CreditMaster synchronized if credit fields changed
+    if (CreditLimit !== undefined || AgingDays !== undefined || CreditHold !== undefined || CustName !== undefined) {
+      await query(`
+        MERGE wf.CreditMaster AS t USING (SELECT @id AS CustId) AS s ON t.CustId = s.CustId
+        WHEN MATCHED THEN UPDATE SET
+          CustName = COALESCE(@custName, CustName),
+          CreditLimit = CASE WHEN @hasCreditLimit = 1 THEN @creditLimit ELSE CreditLimit END,
+          AgingDays = CASE WHEN @hasAgingDays = 1 THEN @agingDays ELSE AgingDays END,
+          CreditHold = CASE WHEN @hasCreditHold = 1 THEN @creditHold ELSE CreditHold END,
+          UpdatedBy = @uid,
+          UpdatedAt = GETUTCDATE()
+        WHEN NOT MATCHED THEN INSERT (CustId, CustName, CreditLimit, AgingDays, CreditHold, UpdatedBy, UpdatedAt)
+          VALUES (@id, @custName, @creditLimit, ISNULL(@agingDays, 60), ISNULL(@creditHold, 0), @uid, GETUTCDATE());
+      `, {
+        id: { type: sql.NVarChar(20), value: String(id) },
+        custName: { type: sql.NVarChar(200), value: CustName || null },
+        creditLimit: { type: sql.Decimal(18, 2), value: CreditLimit != null ? Number(CreditLimit) : null },
+        hasCreditLimit: { type: sql.Bit, value: CreditLimit !== undefined ? 1 : 0 },
+        agingDays: { type: sql.Int, value: AgingDays != null ? Number(AgingDays) : 60 },
+        hasAgingDays: { type: sql.Bit, value: AgingDays !== undefined ? 1 : 0 },
+        creditHold: { type: sql.Bit, value: CreditHold ? 1 : 0 },
+        hasCreditHold: { type: sql.Bit, value: CreditHold !== undefined ? 1 : 0 },
+        uid: { type: sql.Int, value: req.user?.sub || null },
       });
     }
     
@@ -321,24 +445,33 @@ router.delete('/customers/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res
   } catch (e) { console.error(e); const m = masterWriteStatus(e); res.status(m.status).json({ message: m.message }); }
 });
 
-// GET /api/master/goods — ปุ๋ย FG เท่านั้น (StockFlag='Y', MainGoodUnitID=1002)
+// GET /api/master/goods — ดึงสินค้า (รองรับการกรองตามกลุ่มสินค้า และ forSale)
 router.get('/goods', async (req, res) => {
   try {
-    const { q, limit = 800 } = req.query;
+    const { q, forSale, groupId, limit = 800 } = req.query;
     const safeLimit = Math.max(50, Math.min(Number(limit) || 800, 2000));
-    const whereClause = q
-      ? `AND (g.GoodCode LIKE N'%' + @q + '%' OR g.GoodName1 LIKE N'%' + @q + '%')`
-      : '';
+    let extraFilter = '';
     const inputs = {
       limit: { type: sql.Int, value: safeLimit },
       ...(q ? { q: { type: sql.NVarChar(100), value: q } } : {}),
     };
+    if (q) {
+      extraFilter += ` AND (g.GoodCode LIKE N'%' + @q + '%' OR g.GoodName1 LIKE N'%' + @q + '%')`;
+    }
+    if (forSale === 'true') {
+      // สำหรับการเปิดบิลขาย: เฉพาะปุ๋ยสูตร (1003) และแม่ปุ๋ย (1004)
+      extraFilter += ` AND g.GoodGroupID IN (1003, 1004)`;
+    } else if (groupId) {
+      extraFilter += ` AND g.GoodGroupID = @groupId`;
+      inputs.groupId = { type: sql.Int, value: Number(groupId) };
+    }
     const rows = await query(`
       SELECT TOP (@limit)
              g.GoodID, g.GoodCode, g.GoodName1 AS GoodName,
              ISNULL(gx.BagPerTon, 20)         AS BagPerTon,
              ISNULL(gx.WeightKgPerBag, 50.0)  AS WeightKgPerBag,
-             gg.GoodGroupName,
+             g.GoodGroupID,
+             COALESCE(gg.GoodGroupName, N'ไม่ระบุกลุ่ม') AS GoodGroupName,
              0                                AS SetPrice,
              g.StockQty,
              g.RemaQty,
@@ -347,9 +480,9 @@ router.get('/goods', async (req, res) => {
       FROM dbo.EMGood g WITH (NOLOCK)
       LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = g.GoodID
       LEFT JOIN dbo.EMGoodGroup gg WITH (NOLOCK) ON g.GoodGroupID = gg.GoodGroupID
-      WHERE g.StockFlag = 'Y' AND g.MainGoodUnitID = 1002 AND g.Inactive = 'A'
+      WHERE ISNULL(g.Inactive, 'A') = 'A'
         AND g.GoodName1 NOT LIKE N'%ไม่ใช้%' AND g.GoodName1 NOT LIKE N'%ยกเลิก%'
-      ${whereClause}
+        ${extraFilter}
       ORDER BY g.GoodCode
     `, inputs);
     res.json(rows);
@@ -462,10 +595,15 @@ router.get('/giveaway-goods', async (req, res) => {
       return res.status(403).json({ message: 'ดูโควต้าของพนักงานขายคนอื่นได้เฉพาะคนในทีม' });
     }
 
-    // สินค้าของแถม + mapping แถวแรก (ลำดับเดียวกับตอนตัดโควต้าใน draft-confirmation)
+    // สินค้าของแถมจาก WINSpeed GoodGroupID = 1005 (ส่งเสริมการขาย)
     const goods = await query(`
       SELECT g.GoodID, g.GoodCode, g.GoodName1 AS GoodName,
-             m.Brand AS MapBrand, m.ItemName AS MapItem,
+             CASE 
+               WHEN g.GoodName1 LIKE N'%ตรารถเกษตร%' OR g.GoodName1 LIKE N'%รถเกษตร%' THEN N'ตรารถเกษตร'
+               WHEN g.GoodName1 LIKE N'%ตราปุ๋ยเทพ%' OR g.GoodName1 LIKE N'%ปุ๋ยเทพ%' THEN N'ตราปุ๋ยเทพ'
+               ELSE COALESCE(m.Brand, N'ส่วนกลาง')
+             END AS MapBrand,
+             COALESCE(m.ItemName, g.GoodName1) AS MapItem,
              u.GoodUnitName AS UnitName
       FROM dbo.EMGood g WITH (NOLOCK)
       OUTER APPLY (
@@ -476,10 +614,10 @@ router.get('/giveaway-goods', async (req, res) => {
       ) m
       LEFT JOIN dbo.EMGoodGroup gg WITH (NOLOCK) ON g.GoodGroupID = gg.GoodGroupID
       LEFT JOIN dbo.EMGoodUnit u WITH (NOLOCK) ON g.MainGoodUnitID = u.GoodUnitID
-      WHERE (m.Brand IS NOT NULL OR gg.GoodGroupName = N'ของแถม' OR g.GoodCode LIKE 'P%' OR g.GoodCode LIKE 'N%'
-             OR EXISTS (SELECT 1 FROM wf.GiveawayItemMapping x WITH (NOLOCK) WHERE x.GoodID = g.GoodID))
+      WHERE (g.GoodGroupID = 1005 OR gg.GoodGroupName = N'ส่งเสริมการขาย' OR gg.GoodGroupName = N'ของแถม' OR m.Brand IS NOT NULL)
         AND ISNULL(g.Inactive, 'A') = 'A'
         AND g.GoodName1 NOT LIKE N'%ไม่ใช้%' AND g.GoodName1 NOT LIKE N'%ยกเลิก%'
+      ORDER BY g.GoodCode ASC
     `);
 
     // R11 U-7/U-8: โควต้าคงเหลือจริงด้วยตัวจับคู่เดียวกับที่เซิร์ฟเวอร์ใช้ตรวจตอนบันทึก/อนุมัติ

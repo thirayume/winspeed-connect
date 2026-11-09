@@ -92,14 +92,35 @@ router.get('/withdrawals', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/giveaway/items?brand= — แคตตาล็อกของแถม
+// GET /api/giveaway/items?brand= — แคตตาล็อกของแถม (ดึงโดยตรงจาก WINSpeed GoodGroupID = 1005 ส่งเสริมการขาย)
 router.get('/items', async (req, res) => {
   try {
     const { brand } = req.query;
-    const where = brand ? 'WHERE Brand = @b' : '';
-    const inputs = brand ? { b: { type: sql.NVarChar(50), value: brand } } : {};
-    const r = await wfQuery(`SELECT Id, Brand, ItemName, ItemType FROM wf.GiveawayItem ${where} ORDER BY Brand, ItemName`, inputs);
-    res.json(r.recordset || []);
+    const r = await wfQuery(`
+      SELECT g.GoodID AS Id,
+             CASE 
+               WHEN g.GoodName1 LIKE N'%ตรารถเกษตร%' OR g.GoodName1 LIKE N'%รถเกษตร%' THEN N'ตรารถเกษตร'
+               WHEN g.GoodName1 LIKE N'%ตราปุ๋ยเทพ%' OR g.GoodName1 LIKE N'%ปุ๋ยเทพ%' THEN N'ตราปุ๋ยเทพ'
+               ELSE N'ส่วนกลาง'
+             END AS Brand,
+             g.GoodName1 AS ItemName,
+             CASE
+               WHEN g.GoodName1 LIKE N'%กระเป๋า%' THEN 'BAG'
+               WHEN g.GoodName1 LIKE N'%เสื้อ%' THEN 'SHIRT'
+               WHEN g.GoodName1 LIKE N'%แบนเนอร์%' OR g.GoodName1 LIKE N'%Board%' OR g.GoodName1 LIKE N'%ผ้าใบ%' OR g.GoodName1 LIKE N'%ป้าย%' THEN 'BANNER'
+               ELSE 'OTHER'
+             END AS ItemType,
+             g.GoodCode
+      FROM dbo.EMGood g WITH (NOLOCK)
+      WHERE g.GoodGroupID = 1005 AND ISNULL(g.Inactive, 'A') = 'A'
+        AND g.GoodName1 NOT LIKE N'%ไม่ใช้%' AND g.GoodName1 NOT LIKE N'%ยกเลิก%'
+      ORDER BY g.GoodCode ASC
+    `);
+    let items = r.recordset || [];
+    if (brand) {
+      items = items.filter(x => x.Brand.toLowerCase().includes(brand.toLowerCase()));
+    }
+    res.json(items);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 

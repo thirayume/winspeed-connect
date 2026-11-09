@@ -859,10 +859,17 @@ const catalog = require('../services/report-catalog').createReportCatalog(requir
 const getReportCatalogConfig = catalog.get;
 const saveReportCatalogConfig = catalog.save;
 
+function canManageReports(user) {
+  if (!user) return false;
+  if (isUserAdmin(user)) return true;
+  const roles = Array.isArray(user.roles) ? user.roles : (user.role ? [user.role] : []);
+  return ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'].some(r => roles.includes(r));
+}
+
 router.get('/catalog-config', async (req, res) => {
   try {
-    if (!isUserAdmin(req.user)) {
-      return res.status(403).json({ message: 'เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถดูการตั้งค่านี้' });
+    if (!canManageReports(req.user)) {
+      return res.status(403).json({ message: 'เฉพาะผู้มีสิทธิ์จัดการรายงาน (reports.manage) เท่านั้นที่สามารถดูการตั้งค่านี้' });
     }
     const config = await getReportCatalogConfig();
     const reports = Object.entries(REPORTS).map(([key, r]) => {
@@ -886,8 +893,8 @@ router.get('/catalog-config', async (req, res) => {
 
 router.put('/catalog-config', async (req, res) => {
   try {
-    if (!isUserAdmin(req.user) || req.user.isImpersonating) {
-      return res.status(403).json({ message: 'เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถแก้ไขลำดับและเปิด/ปิดรายงาน' });
+    if (!canManageReports(req.user) || req.user.isImpersonating) {
+      return res.status(403).json({ message: 'เฉพาะผู้มีสิทธิ์จัดการรายงาน (reports.manage) เท่านั้นที่สามารถแก้ไขลำดับและเปิด/ปิดรายงาน' });
     }
     const { order, visibility } = req.body || {};
     const updated = await catalog.save({ order, visibility }, Number(req.user.actorSub || req.user.id || req.user.sub));

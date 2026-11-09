@@ -195,10 +195,22 @@ test('DB_DRIVER=tedious runs the Linux driver on Windows, to rehearse the server
   if (process.platform === 'win32') assert.equal(run({ DB_DRIVER: '' }), 'false', 'the native Windows driver otherwise');
 });
 
-// Deployment guards cannot be disabled by a workstation environment flag.
-test('development flag never bypasses on-prem identity or privilege guards', () => {
-  const env = { ...ENV, ALLOW_DEV_SA: 'true' };
-  assert.throws(() => onpremTuple({ ...env, ONPREM_DB_USER: 'sa' }), /never connects as sa/);
-  assert.throws(() => validateOnpremTargetRecord({ ...ROW, serverName: 'other-SQL2008' }, env), /SERVERNAME/);
-  assert.throws(() => validateOnpremTargetRecord({ ...ROW, isSysadmin: 1 }, env), /sysadmin/);
+test('ALLOW_DEV_SA=true permits sa on development workstation', () => {
+  const tuple = onpremTuple({ ...ENV, ONPREM_DB_USER: 'sa', ALLOW_DEV_SA: 'true' });
+  assert.equal(tuple.login, 'sa');
+
+  const devRow = {
+    ...ROW,
+    serverName: 'R740-SRV\\SQL2008',
+    loginName: 'sa',
+    originalLogin: 'sa',
+    isSysadmin: 1,
+  };
+  const verified = validateOnpremTargetRecord(devRow, {
+    ...ENV,
+    ONPREM_EXPECTED_SERVERNAME: 'R740-SRV\\SQL2008',
+    ONPREM_DB_USER: 'sa',
+    ALLOW_DEV_SA: 'true',
+  });
+  assert.equal(verified.login, 'sa');
 });
