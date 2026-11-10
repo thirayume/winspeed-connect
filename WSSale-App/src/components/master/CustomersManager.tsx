@@ -2,10 +2,10 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   Search, Edit2, Save, X, RefreshCw, Truck, Trash2, Users, ArrowUpDown, Phone,
   Filter, UserPlus, CheckCircle2, Mail, MessageSquare, CreditCard, Clock,
-  ShieldAlert, Building2
+  ShieldAlert, Building2, Check
 } from 'lucide-react';
 import {
-  fetchCustomers, fetchCustomerFilters, updateCustomer, getToken,
+  fetchCustomers, fetchCustomerFilters, updateCustomer, batchEditCustomers, getToken,
   fetchCustomerRequests, createCustomerRequest, reviewCustomerRequest
 } from '../../services/api';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
@@ -34,6 +34,17 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
     Note: '',
   });
 
+  // Multi-select & Batch Edit State
+  const [selectedCustIds, setSelectedCustIds] = useState<Set<string>>(new Set());
+  const [batchModalOpen, setBatchModalOpen] = useState(false);
+  const [batchForm, setBatchForm] = useState<{ salespersonUserId: string; areaId: string; groupId: string; creditHold: 'keep' | 'hold' | 'unhold' }>({
+    salespersonUserId: '',
+    areaId: '',
+    groupId: '',
+    creditHold: 'keep',
+  });
+  const [batchSaving, setBatchSaving] = useState(false);
+
   // Comprehensive Edit Modal State
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingCust, setEditingCust] = useState<EMCust | null>(null);
@@ -57,6 +68,53 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
       console.error(err);
     }
     setLoading(false);
+  }
+
+  async function handleExecuteBatchEdit() {
+    if (selectedCustIds.size === 0) return;
+    const payload: any = { custIds: Array.from(selectedCustIds) };
+    if (batchForm.salespersonUserId) {
+      payload.salespersonUserId = batchForm.salespersonUserId === 'clear' ? null : Number(batchForm.salespersonUserId);
+    }
+    if (batchForm.areaId) {
+      payload.areaId = batchForm.areaId === 'clear' ? null : batchForm.areaId;
+    }
+    if (batchForm.groupId) {
+      payload.groupId = batchForm.groupId === 'clear' ? null : batchForm.groupId;
+    }
+    if (batchForm.creditHold === 'hold') payload.creditHold = true;
+    else if (batchForm.creditHold === 'unhold') payload.creditHold = false;
+
+    setBatchSaving(true);
+    try {
+      await batchEditCustomers(payload);
+      setBatchModalOpen(false);
+      setSelectedCustIds(new Set());
+      setBatchForm({ salespersonUserId: '', areaId: '', groupId: '', creditHold: 'keep' });
+      await loadCustomers();
+      fetchCustomerFilters().then(setFilterOptions).catch(console.error);
+      alert(`อัปเดตข้อมูลลูกค้า ${selectedCustIds.size} รายการสำเร็จ`);
+    } catch (e: any) {
+      alert(e?.message || 'บันทึกข้อมูลแบบกลุ่มไม่สำเร็จ');
+    } finally {
+      setBatchSaving(false);
+    }
+  }
+
+  async function handleQuickBatchHold(hold: boolean) {
+    if (selectedCustIds.size === 0) return;
+    const actionText = hold ? 'ระงับการสั่งซื้อ (Credit Hold)' : 'ยกเลิกระงับการสั่งซื้อ';
+    if (!confirm(`ยืนยันการ${actionText}สำหรับลูกค้า ${selectedCustIds.size} รายการที่เลือก?`)) return;
+    try {
+      await batchEditCustomers({
+        custIds: Array.from(selectedCustIds),
+        creditHold: hold,
+      });
+      setSelectedCustIds(new Set());
+      await loadCustomers();
+    } catch (e: any) {
+      alert(e?.message || 'บันทึกสถานะไม่สำเร็จ');
+    }
   }
 
   async function loadCustomerRequests() {
@@ -385,6 +443,22 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
           <table className="w-full text-sm text-left min-w-full">
             <thead className="bg-gray-50 sticky top-0 z-10 text-gray-600 font-semibold text-xs uppercase tracking-wider whitespace-nowrap">
               <tr>
+                <th className="px-3.5 py-3 border-b border-gray-100 text-center w-10">
+                  <input
+                    type="checkbox"
+                    checked={paginatedCustomers.length > 0 && paginatedCustomers.every(c => selectedCustIds.has(c.CustID))}
+                    onChange={e => {
+                      if (e.target.checked) {
+                        setSelectedCustIds(new Set([...selectedCustIds, ...paginatedCustomers.map(c => c.CustID)]));
+                      } else {
+                        const next = new Set(selectedCustIds);
+                        paginatedCustomers.forEach(c => next.delete(c.CustID));
+                        setSelectedCustIds(next);
+                      }
+                    }}
+                    className="rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]"
+                  />
+                </th>
                 <th className="px-5 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-100 transition-colors whitespace-nowrap" onClick={() => requestSort('CustID')}>
                   <div className="flex items-center gap-1">รหัสลูกค้า <ArrowUpDown size={12} className={sortConfig.key === 'CustID' ? 'text-[#0C447C] font-bold' : 'text-gray-400'} /></div>
                 </th>
@@ -409,7 +483,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-16 text-center whitespace-nowrap">
+                  <td colSpan={8} className="px-6 py-16 text-center whitespace-nowrap">
                     <div className="flex flex-col items-center justify-center text-[#0C447C]">
                       <RefreshCw size={32} className="animate-spin mb-4 opacity-50" />
                       <p className="text-sm font-medium animate-pulse opacity-70">กำลังโหลดข้อมูลลูกค้า...</p>
@@ -418,7 +492,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                 </tr>
               ) : paginatedCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-gray-400 whitespace-nowrap">
+                  <td colSpan={8} className="px-6 py-12 text-center text-gray-400 whitespace-nowrap">
                     <Users size={32} className="mx-auto mb-3 opacity-30" />
                     <p>ไม่พบข้อมูลลูกค้า</p>
                   </td>
@@ -431,6 +505,21 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
 
                   return (
                     <tr key={cust.CustID} className="hover:bg-gray-50/50 transition-colors">
+                      {/* Checkbox */}
+                      <td className="px-3.5 py-3 text-center w-10">
+                        <input
+                          type="checkbox"
+                          checked={selectedCustIds.has(cust.CustID)}
+                          onChange={() => {
+                            const next = new Set(selectedCustIds);
+                            if (next.has(cust.CustID)) next.delete(cust.CustID);
+                            else next.add(cust.CustID);
+                            setSelectedCustIds(next);
+                          }}
+                          className="rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]"
+                        />
+                      </td>
+
                       {/* 1. CustID */}
                       <td className="px-5 py-3 font-semibold text-gray-900 whitespace-nowrap">
                         <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-xs text-gray-800">{cust.CustID}</span>
@@ -448,11 +537,11 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                         <div className="text-xs">
                           <span className="font-semibold text-gray-800">{cust.salespersonName || cust.salespersonId || '-'}</span>
                           <span className="text-gray-400 mx-1">·</span>
-                          <span className="text-gray-500">{cust.areaId ? `เขต ${cust.areaId}` : '-'}</span>
-                          {cust.groupId && (
+                          <span className="text-gray-600">{cust.areaName || (cust.areaId ? `เขต ${cust.areaId}` : '-')}</span>
+                          {(cust.groupName || cust.groupId) && (
                             <>
                               <span className="text-gray-400 mx-1">·</span>
-                              <span className="text-gray-500">{cust.groupId}</span>
+                              <span className="text-gray-500">{cust.groupName || cust.groupId}</span>
                             </>
                           )}
                         </div>
@@ -581,12 +670,56 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
             </div>
           </div>
         )}
+
+        {/* Sticky Batch Actions Toolbar */}
+        {selectedCustIds.size > 0 && (
+          <div className="sticky bottom-0 z-20 bg-[#0C447C] text-white px-5 py-3 rounded-b-2xl flex flex-wrap items-center justify-between gap-3 shadow-xl animate-in slide-in-from-bottom-2">
+            <div className="flex items-center gap-3">
+              <span className="font-bold text-xs bg-white/20 px-3 py-1 rounded-full">
+                เลือกแล้ว {selectedCustIds.size} ราย
+              </span>
+              <span className="text-xs text-white/80 hidden sm:inline">
+                สามารถกำหนดเซลล์ผู้ดูแล, เขตการขาย, กลุ่มลูกค้า หรือระงับการขายพร้อมกันได้
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setBatchModalOpen(true)}
+                className="px-3.5 py-1.5 rounded-lg bg-white text-[#0C447C] font-bold text-xs hover:bg-blue-50 transition shadow-xs flex items-center gap-1.5"
+              >
+                <Edit2 size={13} /> กำหนดค่าแบบกลุ่ม (Batch Edit)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickBatchHold(true)}
+                className="px-3 py-1.5 rounded-lg bg-red-600 text-white font-semibold text-xs hover:bg-red-700 transition flex items-center gap-1"
+              >
+                <ShieldAlert size={13} /> ระงับการขาย
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickBatchHold(false)}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 transition flex items-center gap-1"
+              >
+                <Check size={13} /> ยกเลิกระงับ
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedCustIds(new Set())}
+                className="px-2.5 py-1.5 text-xs text-white/70 hover:text-white"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Comprehensive Customer Edit Modal */}
       {editModalOpen && editingCust && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/70">
               <div className="flex items-center gap-2.5">
@@ -619,8 +752,8 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                 <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5">
                   <Users size={14} className="text-[#0C447C]" /> ข้อมูลหลักและองค์กร
                 </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="sm:col-span-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-3">
                     <label className="block text-xs font-semibold text-gray-700 mb-1">
                       ชื่อลูกค้า <span className="text-red-500">*</span>
                     </label>
@@ -633,10 +766,10 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">เซลล์ผู้ดูแล</label>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">เซลล์ผู้ดูแล (Sales Rep)</label>
                     <select
-                      value={editForm.salespersonId || ''}
-                      onChange={e => setEditForm({ ...editForm, salespersonId: e.target.value })}
+                      value={editForm.salespersonId || editForm.employeeId || ''}
+                      onChange={e => setEditForm({ ...editForm, salespersonId: e.target.value, employeeId: e.target.value })}
                       className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
                     >
                       <option value="">(ไม่ระบุ)</option>
@@ -646,7 +779,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">เขตการขาย</label>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">เขตการขาย (Sale Area)</label>
                     <select
                       value={editForm.areaId || ''}
                       onChange={e => setEditForm({ ...editForm, areaId: e.target.value })}
@@ -659,7 +792,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">กลุ่มลูกค้า</label>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">กลุ่มลูกค้า (Customer Group)</label>
                     <select
                       value={editForm.groupId || ''}
                       onChange={e => setEditForm({ ...editForm, groupId: e.target.value })}
@@ -667,19 +800,6 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                     >
                       <option value="">(ไม่ระบุ)</option>
                       {(filterOptions?.group || []).map(o => (
-                        <option key={o.value} value={o.value}>{o.label || o.value}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">พนักงานรับผิดชอบ</label>
-                    <select
-                      value={editForm.employeeId || ''}
-                      onChange={e => setEditForm({ ...editForm, employeeId: e.target.value })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
-                    >
-                      <option value="">(ไม่ระบุ)</option>
-                      {(filterOptions?.employee || []).map(o => (
                         <option key={o.value} value={o.value}>{o.label || o.value}</option>
                       ))}
                     </select>
@@ -865,6 +985,120 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
         itemName={customers.find(c => c.CustID === deletingId)?.CustName || ''}
         loading={deleteLoading}
       />
+
+      {/* Batch Edit Customers Modal */}
+      {batchModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-xl flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="rounded-xl bg-[#0C447C]/10 p-2 text-[#0C447C]">
+                  <Edit2 size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">แก้ไขข้อมูลลูกค้าแบบกลุ่ม (Batch Edit)</h3>
+                  <p className="text-xs text-gray-500">
+                    มีผลกับลูกค้าที่เลือกจำนวน <strong className="text-[#0C447C] font-bold">{selectedCustIds.size} ราย</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setBatchModalOpen(false)}
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 text-blue-900">
+                💡 เลือกเฉพาะฟิลด์ที่ต้องการเปลี่ยนแปลง ฟิลด์ที่เลือก "(ไม่เปลี่ยนแปลง)" จะคงค่าเดิมของลูกค้าแต่ละรายไว้
+              </div>
+
+              {/* 1. เซลล์ผู้ดูแล */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">เซลล์ผู้ดูแล (Sales Rep)</label>
+                <select
+                  value={batchForm.salespersonUserId}
+                  onChange={e => setBatchForm({ ...batchForm, salespersonUserId: e.target.value })}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                >
+                  <option value="">(ไม่เปลี่ยนแปลง)</option>
+                  {(filterOptions?.salesperson || []).map(o => (
+                    <option key={o.value} value={o.value}>{o.label || o.value}</option>
+                  ))}
+                  <option value="clear">-- ล้างค่า / ไม่ระบุเซลล์ --</option>
+                </select>
+              </div>
+
+              {/* 2. เขตการขาย */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">เขตการขาย (Sale Area)</label>
+                <select
+                  value={batchForm.areaId}
+                  onChange={e => setBatchForm({ ...batchForm, areaId: e.target.value })}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                >
+                  <option value="">(ไม่เปลี่ยนแปลง)</option>
+                  {(filterOptions?.area || []).map(o => (
+                    <option key={o.value} value={o.value}>{o.label || o.value}</option>
+                  ))}
+                  <option value="clear">-- ล้างค่า / ไม่ระบุเขต --</option>
+                </select>
+              </div>
+
+              {/* 3. กลุ่มลูกค้า */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">กลุ่มลูกค้า (Customer Group)</label>
+                <select
+                  value={batchForm.groupId}
+                  onChange={e => setBatchForm({ ...batchForm, groupId: e.target.value })}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                >
+                  <option value="">(ไม่เปลี่ยนแปลง)</option>
+                  {(filterOptions?.group || []).map(o => (
+                    <option key={o.value} value={o.value}>{o.label || o.value}</option>
+                  ))}
+                  <option value="clear">-- ล้างค่า / ไม่ระบุกลุ่ม --</option>
+                </select>
+              </div>
+
+              {/* 4. สถานะระงับการขาย */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">สถานะระงับการขาย (Credit Hold)</label>
+                <select
+                  value={batchForm.creditHold}
+                  onChange={e => setBatchForm({ ...batchForm, creditHold: e.target.value as any })}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                >
+                  <option value="keep">(ไม่เปลี่ยนแปลง)</option>
+                  <option value="hold">🔴 ระงับการสั่งซื้อ (Credit Hold = True)</option>
+                  <option value="unhold">🟢 ปกติ ไม่ระงับการสั่งซื้อ (Credit Hold = False)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-100 bg-gray-50/70">
+              <button
+                type="button"
+                onClick={() => setBatchModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold text-gray-600 hover:bg-gray-50 transition"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteBatchEdit}
+                disabled={batchSaving || (!batchForm.salespersonUserId && !batchForm.areaId && !batchForm.groupId && batchForm.creditHold === 'keep')}
+                className="px-4 py-2 rounded-xl bg-[#0C447C] text-xs font-bold text-white hover:bg-[#0A3866] transition shadow-xs disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {batchSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+                <span>บันทึกข้อมูล {selectedCustIds.size} ราย</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

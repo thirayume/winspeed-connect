@@ -68,9 +68,9 @@ const AFFECTED_OUT = [{ name: 'Affected', sqlType: 'INT' }];
 const affectedOf = r => ({ rowsAffected: [Number(r.Affected || 0)] });
 
 const CUSTOMER_FILTER_CANDIDATES = {
-  salesperson: ['SalesID', 'SaleID', 'SalesEmpID', 'SaleEmpID', 'SalesmanID', 'SalesManID'],
-  employee: ['EmpID', 'EmployeeID', 'StaffID'],
-  area: ['AreaID', 'AreaCode', 'ZoneID', 'CustAreaID', 'RegionID'],
+  salesperson: ['SalespersonUserId', 'SalesID', 'SaleID', 'SalesEmpID', 'SaleEmpID', 'BillEmp'],
+  employee: ['BillEmp', 'EmpID', 'EmployeeID', 'StaffID'],
+  area: ['SaleAreaID', 'AreaID', 'AreaCode', 'ZoneID', 'CustAreaID', 'RegionID'],
   group: ['CustGroupID', 'CustGroupCode', 'CustTypeID', 'GroupID', 'PriceGroupID'],
 };
 
@@ -108,71 +108,102 @@ async function getCustomerFilterColumns() {
   return found;
 }
 
-async function getCustomerFilterOptionsFor(key, column) {
-  if (!column) return [];
-  const col = bracketIdent(column);
-  const joins = ['salesperson', 'employee'].includes(key)
-    ? `LEFT JOIN dbo.EMEmp emp WITH (NOLOCK) ON CONVERT(NVARCHAR(50), emp.EmpID) = CONVERT(NVARCHAR(50), c.${col})`
-    : '';
-  const labelExpr = ['salesperson', 'employee'].includes(key)
-    ? `COALESCE(NULLIF(emp.EmpName, ''), CONVERT(NVARCHAR(100), c.${col}))`
-    : `CONVERT(NVARCHAR(100), c.${col})`;
-  return query(`
-    SELECT TOP 200
-           CONVERT(NVARCHAR(50), c.${col}) AS value,
-           MAX(${labelExpr}) AS label,
-           COUNT(*) AS count
-    FROM dbo.EMCust c WITH (NOLOCK)
-    ${joins}
-    WHERE c.${col} IS NOT NULL AND CONVERT(NVARCHAR(50), c.${col}) <> ''
-      AND ISNULL(c.Inactive, 'A') <> 'I'
-      AND c.CustName NOT LIKE N'%ไม่ใช้%' AND c.CustName NOT LIKE N'%ยกเลิก%'
-    GROUP BY CONVERT(NVARCHAR(50), c.${col})
-    ORDER BY MAX(${labelExpr})
-  `);
-}
-
 // GET /api/master/customer-filters
 router.get('/customer-filters', async (req, res) => {
   try {
     const columns = await getCustomerFilterColumns();
-    const [salesperson, employee, area, group] = await Promise.all([
-      getCustomerFilterOptionsFor('salesperson', columns.salesperson),
-      getCustomerFilterOptionsFor('employee', columns.employee),
-      getCustomerFilterOptionsFor('area', columns.area),
-      getCustomerFilterOptionsFor('group', columns.group),
-    ]);
-    res.json({ columns, salesperson, employee, area, group });
+
+    // 1. Salesperson: Active sales and managers from wf.AppUser (+ count from wf.CustomerExt)
+    const salesperson = await query(`
+      SELECT CONVERT(NVARCHAR(50), u.Id) AS value,
+             u.DisplayName + ' (@' + u.Username + ')' AS label,
+             COUNT(cx.CustId) AS count
+      FROM wf.AppUser u WITH (NOLOCK)
+      LEFT JOIN wf.UserRole ur WITH (NOLOCK) ON ur.UserId = u.Id
+      LEFT JOIN wf.CustomerExt cx WITH (NOLOCK) ON cx.SalespersonUserId = u.Id
+      WHERE (u.Role IN ('SALES', 'COUNTER_SALES', 'MANAGER') 
+             OR u.RoleCode IN ('SALES', 'COUNTER_SALES', 'MANAGER')
+             OR ur.RoleCode IN ('SALES', 'COUNTER_SALES', 'MANAGER'))
+        AND u.IsActive = 1
+      GROUP BY u.Id, u.DisplayName, u.Username
+      ORDER BY u.DisplayName
+    `);
+
+    // 2. Area: All 76 provinces from dbo.EMSaleArea with region name
+    const area = await query(`
+      SELECT CONVERT(NVARCHAR(50), a.SaleAreaID) AS value,
+             a.SaleAreaName + ' (' + ISNULL(r.RegionName, SUBSTRING(a.SaleAreaCode, 1, 2)) + ')' AS label,
+             COUNT(c.CustID) AS count
+      FROM dbo.EMSaleArea a WITH (NOLOCK)
+      LEFT JOIN wf.SaleRegion r WITH (NOLOCK) ON r.RegionCode = SUBSTRING(a.SaleAreaCode, 1, 2)
+      LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON c.SaleAreaID = a.SaleAreaID AND ISNULL(c.Inactive, 'A') <> 'I'
+      GROUP BY a.SaleAreaID, a.SaleAreaName, r.RegionName, a.SaleAreaCode
+      ORDER BY a.SaleAreaCode, a.SaleAreaName
+    `);
+
+    // 3. Group: From dbo.EMCustGroup
+    const group = await query(`
+      SELECT CONVERT(NVARCHAR(50), g.CustGroupID) AS value,
+             g.CustGroupName AS label,
+             COUNT(c.CustID) AS count
+      FROM dbo.EMCustGroup g WITH (NOLOCK)
+      LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON c.CustGroupID = g.CustGroupID AND ISNULL(c.Inactive, 'A') <> 'I'
+      GROUP BY g.CustGroupID, g.CustGroupName
+      ORDER BY g.CustGroupID
+    `);
+
+    // 4. Regions: From wf.SaleRegion
+    const regions = await query(`
+      SELECT r.RegionCode AS value,
+             r.RegionName AS label,
+             COUNT(c.CustID) AS count
+      FROM wf.SaleRegion r WITH (NOLOCK)
+      LEFT JOIN dbo.EMSaleArea a WITH (NOLOCK) ON SUBSTRING(a.SaleAreaCode, 1, 2) = r.RegionCode
+      LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON c.SaleAreaID = a.SaleAreaID AND ISNULL(c.Inactive, 'A') <> 'I'
+      WHERE ISNULL(r.IsActive, 1) = 1
+      GROUP BY r.RegionCode, r.RegionName
+      ORDER BY r.RegionCode
+    `);
+
+    // 5. Employee: mirror of salesperson for backwards compatibility
+    const employee = salesperson;
+
+    res.json({ columns, salesperson, employee, area, group, regions });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
 // GET /api/master/customers
 router.get('/customers', async (req, res) => {
   try {
-    const { q, salesperson, area, group, employee } = req.query;
-    const limit = Math.min(Math.max(Number(req.query.limit) || 500, 50), 2000);
-    const columns = await getCustomerFilterColumns();
-    const conditions = [`ISNULL(c.Inactive, 'A') <> 'I'`, `c.CustName NOT LIKE N'%ไม่ใช้%'`, `c.CustName NOT LIKE N'%ยกเลิก%'`];
+    const { q, salesperson, area, group, employee, region, includeInactive } = req.query;
+    const limit = Math.min(Math.max(Number(req.query.limit) || 800, 50), 3000);
+    const conditions = [`c.CustName NOT LIKE N'%ไม่ใช้%'`, `c.CustName NOT LIKE N'%ยกเลิก%'`];
+    if (includeInactive !== 'true') {
+      conditions.push(`ISNULL(c.Inactive, 'A') <> 'I'`);
+    }
     const inputs = { limit: { type: sql.Int, value: limit } };
     if (q) {
       conditions.push(`(c.CustName LIKE N'%' + @q + '%' OR c.CustCode LIKE N'%' + @q + '%' OR CONVERT(NVARCHAR(50), c.CustID) LIKE N'%' + @q + '%')`);
       inputs.q = { type: sql.NVarChar(100), value: q };
     }
-    for (const [key, value] of Object.entries({ salesperson, area, group, employee })) {
-      const column = columns[key];
-      if (!value || !column) continue;
-      conditions.push(`CONVERT(NVARCHAR(50), c.${bracketIdent(column)}) = @${key}`);
-      inputs[key] = { type: sql.NVarChar(50), value: String(value) };
+    if (salesperson || employee) {
+      const spVal = salesperson || employee;
+      conditions.push(`(CONVERT(NVARCHAR(50), cx.SalespersonUserId) = @salesperson OR CONVERT(NVARCHAR(50), c.BillEmp) = @salesperson)`);
+      inputs.salesperson = { type: sql.NVarChar(50), value: String(spVal) };
     }
-    const selectExt = Object.entries(columns)
-      .map(([key, column]) => column ? `CONVERT(NVARCHAR(50), c.${bracketIdent(column)}) AS ${key}Id` : `CAST(NULL AS NVARCHAR(50)) AS ${key}Id`)
-      .join(',\n             ');
-    const salesJoin = columns.salesperson
-      ? `LEFT JOIN dbo.EMEmp salesEmp WITH (NOLOCK) ON CONVERT(NVARCHAR(50), salesEmp.EmpID) = CONVERT(NVARCHAR(50), c.${bracketIdent(columns.salesperson)})`
-      : '';
-    const empJoin = columns.employee
-      ? `LEFT JOIN dbo.EMEmp custEmp WITH (NOLOCK) ON CONVERT(NVARCHAR(50), custEmp.EmpID) = CONVERT(NVARCHAR(50), c.${bracketIdent(columns.employee)})`
-      : '';
+    if (area) {
+      conditions.push(`(CONVERT(NVARCHAR(50), c.SaleAreaID) = @area OR CONVERT(NVARCHAR(50), cx.SaleAreaId) = @area)`);
+      inputs.area = { type: sql.NVarChar(50), value: String(area) };
+    }
+    if (group) {
+      conditions.push(`(CONVERT(NVARCHAR(50), c.CustGroupID) = @group OR CONVERT(NVARCHAR(50), cx.CustGroupId) = @group)`);
+      inputs.group = { type: sql.NVarChar(50), value: String(group) };
+    }
+    if (region) {
+      conditions.push(`(COALESCE(cx.RegionCode, SUBSTRING(area.SaleAreaCode, 1, 2)) = @region)`);
+      inputs.region = { type: sql.NVarChar(50), value: String(region) };
+    }
+
     const rows = await query(
       `SELECT TOP (@limit)
               c.CustID, c.CustCode, c.CustName, 
@@ -183,14 +214,24 @@ router.get('/customers', async (req, res) => {
               COALESCE(cx.AgingDays, cm.AgingDays, c.CreditDays, 60) AS AgingDays,
               COALESCE(cx.CreditLimit, cm.CreditLimit, c.CreditAmnt, 0) AS CreditLimit,
               ISNULL(cm.CreditHold, 0) AS CreditHold,
-              ${selectExt},
-              ${columns.salesperson ? `salesEmp.EmpName` : `CAST(NULL AS NVARCHAR(255))`} AS salespersonName,
-              ${columns.employee ? `custEmp.EmpName` : `CAST(NULL AS NVARCHAR(255))`} AS employeeName
+              CONVERT(NVARCHAR(50), COALESCE(cx.SalespersonUserId, c.BillEmp)) AS salespersonId,
+              COALESCE(salesUser.DisplayName, cx.SalespersonName, salesEmp.EmpName) AS salespersonName,
+              CONVERT(NVARCHAR(50), COALESCE(c.SaleAreaID, cx.SaleAreaId)) AS areaId,
+              area.SaleAreaName AS areaName,
+              COALESCE(cx.RegionCode, SUBSTRING(area.SaleAreaCode, 1, 2)) AS regionCode,
+              r.RegionName AS regionName,
+              CONVERT(NVARCHAR(50), COALESCE(c.CustGroupID, cx.CustGroupId)) AS groupId,
+              cg.CustGroupName AS groupName,
+              CONVERT(NVARCHAR(50), COALESCE(cx.SalespersonUserId, c.BillEmp)) AS employeeId,
+              COALESCE(salesUser.DisplayName, cx.SalespersonName, salesEmp.EmpName) AS employeeName
        FROM dbo.EMCust c WITH (NOLOCK) 
-       LEFT JOIN wf.CustomerExt cx ON cx.CustId = c.CustID
-       LEFT JOIN wf.CreditMaster cm ON cm.CustId = c.CustID
-       ${salesJoin}
-       ${empJoin}
+       LEFT JOIN wf.CustomerExt cx WITH (NOLOCK) ON cx.CustId = c.CustID
+       LEFT JOIN wf.CreditMaster cm WITH (NOLOCK) ON cm.CustId = c.CustID
+       LEFT JOIN wf.AppUser salesUser WITH (NOLOCK) ON salesUser.Id = cx.SalespersonUserId
+       LEFT JOIN dbo.EMEmp salesEmp WITH (NOLOCK) ON salesEmp.EmpID = c.BillEmp
+       LEFT JOIN dbo.EMSaleArea area WITH (NOLOCK) ON area.SaleAreaID = COALESCE(c.SaleAreaID, cx.SaleAreaId)
+       LEFT JOIN wf.SaleRegion r WITH (NOLOCK) ON r.RegionCode = COALESCE(cx.RegionCode, SUBSTRING(area.SaleAreaCode, 1, 2))
+       LEFT JOIN dbo.EMCustGroup cg WITH (NOLOCK) ON cg.CustGroupID = COALESCE(c.CustGroupID, cx.CustGroupId)
        WHERE ${conditions.join(' AND ')}
        ORDER BY c.CustName`,
       inputs
@@ -328,24 +369,20 @@ router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async
     });
 
     // 1b. Update optional ERP classifications if columns exist in dbo.EMCust
-    const filterCols = await getCustomerFilterColumns();
     const updateClauses = [];
     const updateInputs = { id: { type: sql.VarChar(20), value: id } };
-    if (salespersonId !== undefined && filterCols.salesperson) {
-      updateClauses.push(`${bracketIdent(filterCols.salesperson)} = @salespersonId`);
-      updateInputs.salespersonId = { type: sql.NVarChar(50), value: salespersonId || null };
+    if (areaId !== undefined) {
+      updateClauses.push('SaleAreaID = @areaId');
+      updateInputs.areaId = { type: sql.Int, value: areaId ? Number(areaId) : null };
     }
-    if (areaId !== undefined && filterCols.area) {
-      updateClauses.push(`${bracketIdent(filterCols.area)} = @areaId`);
-      updateInputs.areaId = { type: sql.NVarChar(50), value: areaId || null };
+    if (groupId !== undefined) {
+      updateClauses.push('CustGroupID = @groupId');
+      updateInputs.groupId = { type: sql.Int, value: groupId ? Number(groupId) : null };
     }
-    if (groupId !== undefined && filterCols.group) {
-      updateClauses.push(`${bracketIdent(filterCols.group)} = @groupId`);
-      updateInputs.groupId = { type: sql.NVarChar(50), value: groupId || null };
-    }
-    if (employeeId !== undefined && filterCols.employee) {
-      updateClauses.push(`${bracketIdent(filterCols.employee)} = @employeeId`);
-      updateInputs.employeeId = { type: sql.NVarChar(50), value: employeeId || null };
+    if (employeeId !== undefined || salespersonId !== undefined) {
+      const spIdVal = salespersonId !== undefined ? salespersonId : employeeId;
+      updateClauses.push('BillEmp = @billEmp');
+      updateInputs.billEmp = { type: sql.Int, value: spIdVal ? Number(spIdVal) : null };
     }
     if (updateClauses.length > 0) {
       try {
@@ -358,11 +395,29 @@ router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async
         console.warn('[master/customers:update-ext-cols-warning]', err?.message);
       }
     }
+
+    // Lookup salesperson user info if salespersonId provided
+    const spId = salespersonId !== undefined ? salespersonId : employeeId;
+    let spUser = null;
+    if (spId) {
+      const uRes = await query(`SELECT Id, DisplayName FROM wf.AppUser WHERE Id = @uid`, { uid: { type: sql.Int, value: Number(spId) } });
+      spUser = uRes?.[0] || null;
+    }
+
+    // Lookup area to derive RegionCode if areaId provided
+    let regionCodeVal = null;
+    if (areaId) {
+      const aRes = await query(`SELECT SaleAreaCode FROM dbo.EMSaleArea WHERE SaleAreaID = @aid`, { aid: { type: sql.Int, value: Number(areaId) } });
+      if (aRes?.[0]?.SaleAreaCode) {
+        regionCodeVal = String(aRes[0].SaleAreaCode).substring(0, 2);
+      }
+    }
     
-    // 2. Update wf.CustomerExt with portal contacts and credit/aging
+    // 2. Update wf.CustomerExt with portal contacts, salesperson, area, and credit/aging
     const hasExtUpdates = Remark !== undefined || PrimaryPhone !== undefined || Tel !== undefined
       || SecondaryPhone !== undefined || Mobile !== undefined || Email !== undefined
-      || LineId !== undefined || CreditLimit !== undefined || AgingDays !== undefined;
+      || LineId !== undefined || CreditLimit !== undefined || AgingDays !== undefined
+      || salespersonId !== undefined || employeeId !== undefined || areaId !== undefined || groupId !== undefined;
 
     if (hasExtUpdates) {
       await query(`
@@ -375,11 +430,16 @@ router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async
               LineId = CASE WHEN @hasLineId = 1 THEN @lineId ELSE LineId END,
               CreditLimit = CASE WHEN @hasCreditLimit = 1 THEN @creditLimit ELSE CreditLimit END,
               AgingDays = CASE WHEN @hasAgingDays = 1 THEN @agingDays ELSE AgingDays END,
+              SalespersonUserId = CASE WHEN @hasSp = 1 THEN @spUserId ELSE SalespersonUserId END,
+              SalespersonName = CASE WHEN @hasSp = 1 THEN @spName ELSE SalespersonName END,
+              SaleAreaId = CASE WHEN @hasArea = 1 THEN @areaIdStr ELSE SaleAreaId END,
+              RegionCode = CASE WHEN @hasArea = 1 THEN @regionCode ELSE RegionCode END,
+              CustGroupId = CASE WHEN @hasGroup = 1 THEN @groupIdStr ELSE CustGroupId END,
               UpdatedAt = GETUTCDATE()
           WHERE CustId = @id
         ELSE
-          INSERT INTO wf.CustomerExt (CustId, Remark, PrimaryPhone, SecondaryPhone, Email, LineId, CreditLimit, AgingDays, UpdatedAt)
-          VALUES (@id, @remark, @primaryPhone, @secondaryPhone, @email, @lineId, @creditLimit, ISNULL(@agingDays, 60), GETUTCDATE())
+          INSERT INTO wf.CustomerExt (CustId, Remark, PrimaryPhone, SecondaryPhone, Email, LineId, CreditLimit, AgingDays, SalespersonUserId, SalespersonName, SaleAreaId, RegionCode, CustGroupId, UpdatedAt)
+          VALUES (@id, @remark, @primaryPhone, @secondaryPhone, @email, @lineId, @creditLimit, ISNULL(@agingDays, 60), @spUserId, @spName, @areaIdStr, @regionCode, @groupIdStr, GETUTCDATE())
       `, {
         id: { type: sql.VarChar(20), value: id },
         remark: { type: sql.NVarChar(500), value: Remark ?? null },
@@ -396,6 +456,14 @@ router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async
         hasCreditLimit: { type: sql.Bit, value: CreditLimit !== undefined ? 1 : 0 },
         agingDays: { type: sql.Int, value: AgingDays != null ? Number(AgingDays) : null },
         hasAgingDays: { type: sql.Bit, value: AgingDays !== undefined ? 1 : 0 },
+        spUserId: { type: sql.Int, value: spUser?.Id ? Number(spUser.Id) : (spId ? Number(spId) : null) },
+        spName: { type: sql.NVarChar(100), value: spUser?.DisplayName || null },
+        hasSp: { type: sql.Bit, value: (salespersonId !== undefined || employeeId !== undefined) ? 1 : 0 },
+        areaIdStr: { type: sql.VarChar(20), value: areaId ? String(areaId) : null },
+        regionCode: { type: sql.NVarChar(10), value: regionCodeVal },
+        hasArea: { type: sql.Bit, value: areaId !== undefined ? 1 : 0 },
+        groupIdStr: { type: sql.VarChar(20), value: groupId ? String(groupId) : null },
+        hasGroup: { type: sql.Bit, value: groupId !== undefined ? 1 : 0 },
       });
     }
 
@@ -443,6 +511,121 @@ router.delete('/customers/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res
     if (!affected(__rows)) return res.status(404).json({ message: 'ไม่พบรหัสลูกค้านี้' });
     res.json({ ok: true });
   } catch (e) { console.error(e); const m = masterWriteStatus(e); res.status(m.status).json({ message: m.message }); }
+});
+
+// POST /api/master/customers/batch-edit — แก้ไขข้อมูลลูกค้าแบบชุด (เซลล์ผู้ดูแล, เขตการขาย, กลุ่มลูกค้า, ระงับเครดิต/ปิดใช้งาน)
+router.post('/customers/batch-edit', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { custIds, salespersonUserId, areaId, groupId, creditHold, inactive } = req.body || {};
+    if (!Array.isArray(custIds) || custIds.length === 0) {
+      return res.status(400).json({ message: 'ต้องระบุรายการลูกค้า (custIds)' });
+    }
+    const cleanCustIds = custIds.map(String).filter(isMasterId);
+    if (cleanCustIds.length === 0) {
+      return res.status(400).json({ message: 'ไม่พบรหัสลูกค้าที่ถูกต้อง' });
+    }
+
+    // Lookup salesperson if provided
+    let spUser = null;
+    if (salespersonUserId) {
+      const uRes = await query(`SELECT Id, DisplayName FROM wf.AppUser WHERE Id = @uid`, { uid: { type: sql.Int, value: Number(salespersonUserId) } });
+      spUser = uRes?.[0] || null;
+    }
+
+    // Lookup area and region if provided
+    let regionCodeVal = null;
+    if (areaId) {
+      const aRes = await query(`SELECT SaleAreaCode FROM dbo.EMSaleArea WHERE SaleAreaID = @aid`, { aid: { type: sql.Int, value: Number(areaId) } });
+      if (aRes?.[0]?.SaleAreaCode) {
+        regionCodeVal = String(aRes[0].SaleAreaCode).substring(0, 2);
+      }
+    }
+
+    const hasSp = salespersonUserId !== undefined;
+    const hasArea = areaId !== undefined;
+    const hasGroup = groupId !== undefined;
+    const hasCreditHold = creditHold !== undefined;
+    const hasInactive = inactive !== undefined;
+
+    const uid = req.user?.sub || null;
+
+    // Process all customers
+    for (const custId of cleanCustIds) {
+      // 1. Update dbo.EMCust if area, group, billEmp, or inactive provided
+      const emCustSets = [];
+      const emCustInputs = { id: { type: sql.VarChar(20), value: custId } };
+      if (hasArea) {
+        emCustSets.push('SaleAreaID = @areaId');
+        emCustInputs.areaId = { type: sql.Int, value: areaId ? Number(areaId) : null };
+      }
+      if (hasGroup) {
+        emCustSets.push('CustGroupID = @groupId');
+        emCustInputs.groupId = { type: sql.Int, value: groupId ? Number(groupId) : null };
+      }
+      if (hasSp) {
+        emCustSets.push('BillEmp = @billEmp');
+        emCustInputs.billEmp = { type: sql.Int, value: spUser?.Id ? Number(spUser.Id) : (salespersonUserId ? Number(salespersonUserId) : null) };
+      }
+      if (hasInactive) {
+        emCustSets.push("Inactive = @inactive, InactiveDate = CASE WHEN @inactive = 'I' THEN GETDATE() ELSE NULL END");
+        emCustInputs.inactive = { type: sql.VarChar(1), value: inactive ? 'I' : 'A' };
+      }
+      if (emCustSets.length > 0) {
+        try {
+          await dboWrite(`UPDATE dbo.EMCust SET ${emCustSets.join(', ')} WHERE CustID = @id`, emCustInputs);
+        } catch (err) {
+          console.warn('[master/customers:batch-emcust-warning]', err?.message);
+        }
+      }
+
+      // 2. Update wf.CustomerExt
+      if (hasSp || hasArea || hasGroup) {
+        await query(`
+          IF EXISTS (SELECT 1 FROM wf.CustomerExt WHERE CustId = @id)
+            UPDATE wf.CustomerExt 
+            SET SalespersonUserId = CASE WHEN @hasSp = 1 THEN @spUserId ELSE SalespersonUserId END,
+                SalespersonName = CASE WHEN @hasSp = 1 THEN @spName ELSE SalespersonName END,
+                SaleAreaId = CASE WHEN @hasArea = 1 THEN @areaIdStr ELSE SaleAreaId END,
+                RegionCode = CASE WHEN @hasArea = 1 THEN @regionCode ELSE RegionCode END,
+                CustGroupId = CASE WHEN @hasGroup = 1 THEN @groupIdStr ELSE CustGroupId END,
+                UpdatedAt = GETUTCDATE()
+            WHERE CustId = @id
+          ELSE
+            INSERT INTO wf.CustomerExt (CustId, SalespersonUserId, SalespersonName, SaleAreaId, RegionCode, CustGroupId, UpdatedAt)
+            VALUES (@id, @spUserId, @spName, @areaIdStr, @regionCode, @groupIdStr, GETUTCDATE())
+        `, {
+          id: { type: sql.VarChar(20), value: custId },
+          spUserId: { type: sql.Int, value: spUser?.Id ? Number(spUser.Id) : (salespersonUserId ? Number(salespersonUserId) : null) },
+          spName: { type: sql.NVarChar(100), value: spUser?.DisplayName || null },
+          hasSp: { type: sql.Bit, value: hasSp ? 1 : 0 },
+          areaIdStr: { type: sql.VarChar(20), value: areaId ? String(areaId) : null },
+          regionCode: { type: sql.NVarChar(10), value: regionCodeVal },
+          hasArea: { type: sql.Bit, value: hasArea ? 1 : 0 },
+          groupIdStr: { type: sql.VarChar(20), value: groupId ? String(groupId) : null },
+          hasGroup: { type: sql.Bit, value: hasGroup ? 1 : 0 },
+        });
+      }
+
+      // 3. Update wf.CreditMaster if creditHold provided
+      if (hasCreditHold) {
+        await query(`
+          MERGE wf.CreditMaster AS t USING (SELECT @id AS CustId) AS s ON t.CustId = s.CustId
+          WHEN MATCHED THEN UPDATE SET CreditHold = @creditHold, UpdatedBy = @uid, UpdatedAt = GETUTCDATE()
+          WHEN NOT MATCHED THEN INSERT (CustId, CreditHold, CreditLimit, AgingDays, UpdatedBy, UpdatedAt)
+            VALUES (@id, @creditHold, 0, 60, @uid, GETUTCDATE());
+        `, {
+          id: { type: sql.NVarChar(20), value: custId },
+          creditHold: { type: sql.Bit, value: creditHold ? 1 : 0 },
+          uid: { type: sql.Int, value: uid },
+        });
+      }
+    }
+
+    res.json({ ok: true, count: cleanCustIds.length, message: `อัปเดตข้อมูลลูกค้า ${cleanCustIds.length} รายสำเร็จ` });
+  } catch (e) {
+    console.error('[master/customers:batch-edit]', e);
+    res.status(500).json({ message: 'บันทึกการแก้ไขแบบชุดไม่สำเร็จ: ' + (e?.message || '') });
+  }
 });
 
 // GET /api/master/goods — ดึงสินค้า (รองรับการกรองตามกลุ่มสินค้า และ forSale)

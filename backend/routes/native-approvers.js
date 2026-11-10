@@ -49,14 +49,14 @@ router.get('/', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
 router.get('/history', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const r = await wfQuery(`
-      SELECT TOP (100) h.Id, h.EmpID, e.EmpCode, e.EmpName, h.IsEnabled, h.Note, h.CreatedAt,
+      SELECT TOP (100) h.HistoryId AS Id, h.EmpID, e.EmpCode, e.EmpName, h.IsEnabled, h.Note, h.ChangedAt AS CreatedAt,
              u.DisplayName AS ChangedByName, u.Username AS ChangedByUsername,
              a.DisplayName AS ChangedByActorName, a.Username AS ChangedByActorUsername
       FROM wf.NativeApproverEmployeeHistory h
       LEFT JOIN dbo.EMEmp e ON e.EmpID = h.EmpID
       LEFT JOIN wf.AppUser u ON u.Id = h.ChangedById
       LEFT JOIN wf.AppUser a ON a.Id = h.ChangedByActorId
-      ORDER BY h.Id DESC
+      ORDER BY h.HistoryId DESC
     `);
     res.json({ data: r.recordset || [] });
   } catch (e) {
@@ -115,6 +115,58 @@ router.put('/:empId', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
     if (e.statusCode === 409) return res.status(409).json({ message: e.message });
     console.error('[native-approvers:update]', e);
     res.status(500).json({ message: 'บันทึกไม่สำเร็จ' });
+  }
+});
+
+// POST /api/master/native-approvers/batch-toggle — เปิด/ปิดผู้อนุมัติแบบชุด
+router.post('/batch-toggle', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  const { empIds, enabled, note } = req.body || {};
+  if (!Array.isArray(empIds) || empIds.length === 0) {
+    return res.status(400).json({ message: 'ต้องระบุ empIds เป็น array' });
+  }
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ message: 'ต้องระบุว่าจะเปิดหรือปิดใช้ (enabled)' });
+  }
+  const cleanEmpIds = empIds.map(Number).filter(id => Number.isSafeInteger(id) && id > 0);
+  if (cleanEmpIds.length === 0) {
+    return res.status(400).json({ message: 'ไม่มีรหัสพนักงานที่ถูกต้อง' });
+  }
+  if (note != null && (typeof note !== 'string' || note.length > 255)) {
+    return res.status(400).json({ message: 'หมายเหตุยาวได้ไม่เกิน 255 ตัวอักษร' });
+  }
+  const userId = Number(req.user?.sub), actorId = Number(req.user?.actorSub || req.user?.sub);
+  if (![userId, actorId].every(v => Number.isSafeInteger(v) && v > 0)) {
+    return res.status(401).json({ message: 'ไม่พบผู้ใช้' });
+  }
+  const cleanNote = note != null ? String(note).trim().slice(0, 255) || null : null;
+
+  try {
+    await wfTransaction(async tx => {
+      for (const empId of cleanEmpIds) {
+        const reqObj = tx.request();
+        reqObj.input('emp', sql.Int, empId);
+        reqObj.input('on', sql.Bit, enabled ? 1 : 0);
+        reqObj.input('note', sql.NVarChar(255), cleanNote);
+        reqObj.input('user', sql.Int, userId);
+        reqObj.input('actor', sql.Int, actorId);
+
+        await reqObj.query(`
+          UPDATE wf.NativeApproverEmployee WITH (UPDLOCK, HOLDLOCK)
+          SET IsEnabled = @on, Note = COALESCE(@note, Note), UpdatedAt = GETUTCDATE(), UpdatedById = @user, UpdatedByActorId = @actor
+          WHERE EmpID = @emp;
+          IF @@ROWCOUNT = 0
+            INSERT INTO wf.NativeApproverEmployee (EmpID, IsEnabled, Note, UpdatedAt, UpdatedById, UpdatedByActorId)
+            VALUES (@emp, @on, @note, GETUTCDATE(), @user, @actor);
+          INSERT INTO wf.NativeApproverEmployeeHistory (EmpID, IsEnabled, Note, ChangedById, ChangedByActorId)
+          VALUES (@emp, @on, @note, @user, @actor);
+        `);
+      }
+    });
+
+    res.json({ ok: true, count: cleanEmpIds.length, enabled, message: `${enabled ? 'เปิดใช้อนุมัติ' : 'ปิดการใช้อนุมัติ'} ${cleanEmpIds.length} ท่านสำเร็จ` });
+  } catch (e) {
+    console.error('[native-approvers:batch-toggle]', e);
+    res.status(500).json({ message: 'บันทึกสถานะผู้อนุมัติแบบชุดไม่สำเร็จ' });
   }
 });
 

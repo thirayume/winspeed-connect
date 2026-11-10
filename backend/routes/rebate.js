@@ -195,6 +195,91 @@ router.get('/regions', async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
 
+// POST /api/rebate/regions — เพิ่มเขตการขายใหม่
+router.post('/regions', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
+  try {
+    const { regionCode, regionName, description } = req.body || {};
+    if (!regionCode || !String(regionCode).trim()) return res.status(400).json({ message: 'ต้องระบุรหัสภาค (regionCode)' });
+    if (!regionName || !String(regionName).trim()) return res.status(400).json({ message: 'ต้องระบุชื่อภาค (regionName)' });
+
+    const code = String(regionCode).trim().toUpperCase();
+    const name = String(regionName).trim();
+    const desc = description != null ? String(description).trim() : null;
+
+    const existing = await wfQuery(`SELECT RegionCode FROM wf.SaleRegion WHERE RegionCode = @code`, { code: { type: sql.NVarChar(10), value: code } });
+    if (existing.recordset && existing.recordset.length > 0) {
+      return res.status(409).json({ message: `รหัสภาค ${code} มีอยู่ในระบบแล้ว` });
+    }
+
+    await wfQuery(`
+      INSERT INTO wf.SaleRegion (RegionCode, RegionName, Description, IsActive, CreatedAt)
+      VALUES (@code, @name, @desc, 1, GETUTCDATE())
+    `, {
+      code: { type: sql.NVarChar(10), value: code },
+      name: { type: sql.NVarChar(100), value: name },
+      desc: { type: sql.NVarChar(255), value: desc },
+    });
+
+    res.status(201).json({ ok: true, regionCode: code, regionName: name, message: `เพิ่มเขตการขาย ${code} สำเร็จ` });
+  } catch (e) {
+    console.error('[rebate/regions:create]', e);
+    res.status(500).json({ message: 'เพิ่มเขตการขายไม่สำเร็จ' });
+  }
+});
+
+// PUT /api/rebate/regions/:code — แก้ไขเขตการขาย
+router.put('/regions/:code', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
+  try {
+    const code = String(req.params.code).trim().toUpperCase();
+    const { regionName, description, isActive } = req.body || {};
+    if (!regionName || !String(regionName).trim()) return res.status(400).json({ message: 'ต้องระบุชื่อภาค (regionName)' });
+
+    const name = String(regionName).trim();
+    const desc = description != null ? String(description).trim() : null;
+    const active = isActive !== undefined ? (isActive ? 1 : 0) : 1;
+
+    await wfQuery(`
+      UPDATE wf.SaleRegion
+      SET RegionName = @name, Description = COALESCE(@desc, Description), IsActive = @active
+      WHERE RegionCode = @code
+    `, {
+      code: { type: sql.NVarChar(10), value: code },
+      name: { type: sql.NVarChar(100), value: name },
+      desc: { type: sql.NVarChar(255), value: desc },
+      active: { type: sql.Bit, value: active },
+    });
+
+    res.json({ ok: true, regionCode: code, regionName: name, message: `แก้ไขเขตการขาย ${code} สำเร็จ` });
+  } catch (e) {
+    console.error('[rebate/regions:update]', e);
+    res.status(500).json({ message: 'แก้ไขเขตการขายไม่สำเร็จ' });
+  }
+});
+
+// DELETE /api/rebate/regions/:code — ลบเขตการขาย (พร้อมตรวจ dependency)
+router.delete('/regions/:code', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  try {
+    const code = String(req.params.code).trim().toUpperCase();
+    // Safety check 1: Assigned to users in wf.UserSaleArea?
+    const userRes = await wfQuery(`SELECT COUNT(*) AS Cnt FROM wf.UserSaleArea WHERE RegionCode = @code`, { code: { type: sql.NVarChar(10), value: code } });
+    if (userRes.recordset?.[0]?.Cnt > 0) {
+      return res.status(400).json({ message: `ไม่สามารถลบภาค ${code} ได้เนื่องจากมีผู้อนุมัติผูกอยู่ กรุณาถอดผู้อนุมัติออกก่อน` });
+    }
+
+    // Safety check 2: Used in claims?
+    const claimRes = await wfQuery(`SELECT COUNT(*) AS Cnt FROM wf.RebateClaim WHERE RegionCode = @code`, { code: { type: sql.NVarChar(10), value: code } });
+    if (claimRes.recordset?.[0]?.Cnt > 0) {
+      return res.status(400).json({ message: `ไม่สามารถลบภาค ${code} ได้เนื่องจากมีประวัติการขอรีเบทอ้างถึง` });
+    }
+
+    await wfQuery(`DELETE FROM wf.SaleRegion WHERE RegionCode = @code`, { code: { type: sql.NVarChar(10), value: code } });
+    res.json({ ok: true, message: `ลบเขตการขาย ${code} สำเร็จ` });
+  } catch (e) {
+    console.error('[rebate/regions:delete]', e);
+    res.status(500).json({ message: 'ลบเขตการขายไม่สำเร็จ' });
+  }
+});
+
 // GET /api/rebate/candidates — ดึงรายชื่อผู้ใช้สำหรับเลือกเป็นผู้อนุมัติ/ผู้ดูแลภาค
 // คืนเฉพาะข้อมูลจำเป็น: Id, Username, DisplayName, Role, IsActive, EmpCode
 router.get('/candidates', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {

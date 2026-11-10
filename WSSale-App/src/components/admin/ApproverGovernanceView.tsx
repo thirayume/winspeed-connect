@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   MapPin, UserCheck, FileText, History, RefreshCw, AlertTriangle,
-  Plus, Trash2, Users, Search, Check, X, ShieldAlert, AlertCircle, FileCheck
+  Plus, Trash2, Edit2, Users, Search, Check, X, ShieldAlert, AlertCircle, FileCheck
 } from 'lucide-react';
 import {
   fetchRegionCoverage, setUserRegion, removeUserRegion,
+  createSaleRegion, updateSaleRegion, deleteSaleRegion,
   fetchRebateCandidates, listUsers,
-  fetchNativeApprovers, updateNativeApprover, fetchNativeApproverHistory,
+  fetchNativeApprovers, updateNativeApprover, batchToggleNativeApprovers, fetchNativeApproverHistory,
   fetchRebateDocCodes, setRebateDocCode, autoAssignRebateDocCodes,
   type RegionCoverage, type NativeApprover, type RebateDocCodeRow, type RebateDocCodeEvidence
 } from '../../services/api';
@@ -57,6 +58,77 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
   const [regionErr, setRegionErr] = useState<string | null>(null);
   const [addForRegion, setAddForRegion] = useState<string | null>(null);
   const [pickedCandidateId, setPickedCandidateId] = useState<string>('');
+
+  // Region Management (Add / Edit / Delete)
+  const [createRegionOpen, setCreateRegionOpen] = useState(false);
+  const [newRegionCode, setNewRegionCode] = useState('');
+  const [newRegionName, setNewRegionName] = useState('');
+  const [newRegionDesc, setNewRegionDesc] = useState('');
+
+  const [editRegionOpen, setEditRegionOpen] = useState(false);
+  const [editingRegionCode, setEditingRegionCode] = useState('');
+  const [editingRegionName, setEditingRegionName] = useState('');
+  const [editingRegionDesc, setEditingRegionDesc] = useState('');
+
+  async function handleCreateRegion() {
+    if (!newRegionCode.trim() || !newRegionName.trim()) {
+      alert('กรุณาระบุรหัสภาคและชื่อภาค');
+      return;
+    }
+    setRegionBusy(true);
+    setRegionErr(null);
+    try {
+      await createSaleRegion({
+        regionCode: newRegionCode.trim().toUpperCase(),
+        regionName: newRegionName.trim(),
+        description: newRegionDesc.trim() || undefined,
+      });
+      setCreateRegionOpen(false);
+      setNewRegionCode('');
+      setNewRegionName('');
+      setNewRegionDesc('');
+      await loadRegions();
+    } catch (e: any) {
+      setRegionErr(e?.message || 'เพิ่มเขตการขายไม่สำเร็จ');
+    } finally {
+      setRegionBusy(false);
+    }
+  }
+
+  async function handleUpdateRegion() {
+    if (!editingRegionName.trim()) {
+      alert('กรุณาระบุชื่อภาค');
+      return;
+    }
+    setRegionBusy(true);
+    setRegionErr(null);
+    try {
+      await updateSaleRegion(editingRegionCode, {
+        regionName: editingRegionName.trim(),
+        description: editingRegionDesc.trim() || undefined,
+      });
+      setEditRegionOpen(false);
+      await loadRegions();
+    } catch (e: any) {
+      setRegionErr(e?.message || 'แก้ไขเขตการขายไม่สำเร็จ');
+    } finally {
+      setRegionBusy(false);
+    }
+  }
+
+  async function handleDeleteRegion(code: string, name: string) {
+    if (!confirm(`ยืนยันการลบเขตการขาย ${code} (${name})?`)) return;
+    setRegionBusy(true);
+    setRegionErr(null);
+    try {
+      await deleteSaleRegion(code);
+      await loadRegions();
+    } catch (e: any) {
+      setRegionErr(e?.message || 'ลบเขตการขายไม่สำเร็จ');
+    } finally {
+      setRegionBusy(false);
+    }
+  }
 
   const loadRegions = useCallback(async () => {
     if (!canManageRegions) return;
@@ -143,6 +215,34 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
   const [confirmToggleTarget, setConfirmToggleTarget] = useState<NativeApprover | null>(null);
   const [toggleNote, setToggleNote] = useState('');
   const [toggleBusy, setToggleBusy] = useState(false);
+
+  // Native 116 Batch selection
+  const [selectedNativeEmpIds, setSelectedNativeEmpIds] = useState<Set<number>>(new Set());
+  const [batchNativeModalOpen, setBatchNativeModalOpen] = useState(false);
+  const [batchNativeAction, setBatchNativeAction] = useState<boolean>(true);
+  const [batchNativeNote, setBatchNativeNote] = useState('');
+  const [batchNativeBusy, setBatchNativeBusy] = useState(false);
+
+  async function handleExecuteBatchNativeToggle() {
+    if (selectedNativeEmpIds.size === 0) return;
+    setBatchNativeBusy(true);
+    setNativeErr(null);
+    try {
+      await batchToggleNativeApprovers({
+        empIds: Array.from(selectedNativeEmpIds),
+        enabled: batchNativeAction,
+        note: batchNativeNote.trim() || undefined,
+      });
+      await loadNativeApprovers();
+      setSelectedNativeEmpIds(new Set());
+      setBatchNativeModalOpen(false);
+      setBatchNativeNote('');
+    } catch (e: any) {
+      setNativeErr(e?.message || 'บันทึกสถานะแบบกลุ่มไม่สำเร็จ');
+    } finally {
+      setBatchNativeBusy(false);
+    }
+  }
 
   const loadNativeApprovers = useCallback(async () => {
     if (!canManageNative116) return;
@@ -432,6 +532,27 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
               </div>
             )}
 
+            {/* Regions List Header with Add Region Button */}
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-slate-500 font-semibold">
+                เขตการขายทั้งหมด {regionsGrouped.length} ภาค
+              </div>
+              {canManageRegions && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewRegionCode('');
+                    setNewRegionName('');
+                    setNewRegionDesc('');
+                    setCreateRegionOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#0C447C] text-white hover:bg-[#0A3866] transition shadow-xs"
+                >
+                  <Plus size={14} /> เพิ่มเขตการขายใหม่
+                </button>
+              )}
+            </div>
+
             {/* Regions List */}
             <div className="space-y-3">
               {regionsGrouped.map(([code, g]) => (
@@ -443,6 +564,33 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
                           {code}
                         </span>
                         <h4 className="font-bold text-slate-900 text-base">{g.name}</h4>
+                        {canManageRegions && (
+                          <div className="flex items-center gap-1 ml-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingRegionCode(code);
+                                setEditingRegionName(g.name);
+                                setEditingRegionDesc('');
+                                setEditRegionOpen(true);
+                              }}
+                              className="p-1 rounded-md text-slate-400 hover:text-[#0C447C] hover:bg-slate-100 transition"
+                              title="แก้ไขชื่อเขตการขาย"
+                            >
+                              <Edit2 size={13} />
+                            </button>
+                            {g.people.length === 0 && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteRegion(code, g.name)}
+                                className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                                title="ลบเขตการขายนี้"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="text-xs text-slate-400 mt-1 flex items-center gap-1">
                         <Users size={12} /> ลูกค้า {g.customers.toLocaleString()} ราย
@@ -597,11 +745,68 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
               </div>
             )}
 
+            {/* Batch actions bar for Native Approvers */}
+            {selectedNativeEmpIds.size > 0 && (
+              <div className="bg-[#0C447C] text-white px-4 py-2.5 rounded-xl flex flex-wrap items-center justify-between gap-3 shadow-md animate-in slide-in-from-top-1">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-bold bg-white/20 px-2.5 py-0.5 rounded-full">
+                    เลือก {selectedNativeEmpIds.size} ท่าน
+                  </span>
+                  <span>จากทั้งหมด {filteredNativeRows.length} รายการ</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBatchNativeAction(true);
+                      setBatchNativeNote('');
+                      setBatchNativeModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600 transition shadow-xs"
+                  >
+                    <Check size={13} /> เปิดใช้อนุมัติ ({selectedNativeEmpIds.size})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBatchNativeAction(false);
+                      setBatchNativeNote('');
+                      setBatchNativeModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1 px-3 py-1 bg-rose-600 text-white rounded-lg text-xs font-bold hover:bg-rose-700 transition shadow-xs"
+                  >
+                    <X size={13} /> ปิดการใช้อนุมัติ ({selectedNativeEmpIds.size})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedNativeEmpIds(new Set())}
+                    className="text-xs text-white/70 hover:text-white px-2 py-1"
+                  >
+                    ยกเลิกการเลือก
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Table */}
             <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-xs">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
+                    <th className="px-3 py-2.5 text-center w-10">
+                      <input
+                        type="checkbox"
+                        checked={filteredNativeRows.length > 0 && filteredNativeRows.every(r => selectedNativeEmpIds.has(r.empId))}
+                        onChange={e => {
+                          if (e.target.checked) {
+                            setSelectedNativeEmpIds(new Set(filteredNativeRows.map(r => r.empId)));
+                          } else {
+                            setSelectedNativeEmpIds(new Set());
+                          }
+                        }}
+                        className="rounded border-slate-300 text-[#0C447C] focus:ring-[#0C447C]"
+                      />
+                    </th>
                     <th className="px-3.5 py-2.5 text-left">รหัสพนักงาน</th>
                     <th className="px-3.5 py-2.5 text-left">ชื่อพนักงาน</th>
                     <th className="px-3.5 py-2.5 text-center">ประเภท</th>
@@ -614,6 +819,19 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
                 <tbody className="divide-y divide-slate-100">
                   {filteredNativeRows.map(r => (
                     <tr key={r.empId} className={`hover:bg-slate-50/70 ${!r.enabled ? 'bg-slate-50/40 opacity-70' : ''}`}>
+                      <td className="px-3 py-2 text-center w-10">
+                        <input
+                          type="checkbox"
+                          checked={selectedNativeEmpIds.has(r.empId)}
+                          onChange={() => {
+                            const next = new Set(selectedNativeEmpIds);
+                            if (next.has(r.empId)) next.delete(r.empId);
+                            else next.add(r.empId);
+                            setSelectedNativeEmpIds(next);
+                          }}
+                          className="rounded border-slate-300 text-[#0C447C] focus:ring-[#0C447C]"
+                        />
+                      </td>
                       <td className="px-3.5 py-2 font-mono font-bold text-slate-800">{r.empCode}</td>
                       <td className="px-3.5 py-2 font-medium text-slate-900">{r.empName}</td>
                       <td className="px-3.5 py-2 text-center text-slate-500">{r.empType || '–'}</td>
@@ -645,7 +863,7 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
                   ))}
                   {filteredNativeRows.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                      <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
                         ไม่พบพนักงานตรงตามเงื่อนไข
                       </td>
                     </tr>
@@ -888,6 +1106,193 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
                 } disabled:opacity-50`}
               >
                 {toggleBusy ? 'กำลังบันทึก...' : !confirmToggleTarget.enabled ? 'ยืนยันเปิดใช้อนุมัติ' : 'ยืนยันปิดใช้อนุมัติ'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Batch Native Approver Toggle */}
+      {batchNativeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-200 bg-slate-50">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <ShieldAlert size={18} className="text-[#0C447C]" />
+                {batchNativeAction ? 'เปิดใช้อนุมัติแบบชุด' : 'ปิดการใช้อนุมัติแบบชุด'}
+              </h3>
+            </div>
+            <div className="p-5 space-y-3 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div>จำนวนพนักงานที่เลือก: <strong className="text-sm font-bold text-[#0C447C]">{selectedNativeEmpIds.size} ท่าน</strong></div>
+                <div className="mt-1">
+                  คำสั่ง: <strong className={batchNativeAction ? 'text-emerald-700' : 'text-rose-700'}>
+                    {batchNativeAction ? 'เปิดใช้อนุมัติใบตัดตั๋ว (116) ผ่าน Sale-App' : 'ปิดการใช้อนุมัติใบตัดตั๋ว (116) ผ่าน Sale-App'}
+                  </strong>
+                </div>
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  หมายเหตุ / เหตุผลบันทึกประวัติ (ระบุหรือไม่ก็ได้):
+                </label>
+                <input
+                  type="text"
+                  maxLength={255}
+                  value={batchNativeNote}
+                  onChange={e => setBatchNativeNote(e.target.value)}
+                  placeholder="เช่น มอบหมายหน้าที่อนุมัติตามโครงสร้างใหม่..."
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white text-slate-800 focus:outline-hidden focus:border-[#0C447C]"
+                />
+              </div>
+            </div>
+            <div className="px-5 py-3.5 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setBatchNativeModalOpen(false)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteBatchNativeToggle}
+                disabled={batchNativeBusy}
+                className={`px-4 py-2 text-xs font-bold rounded-xl text-white ${
+                  batchNativeAction ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
+                } disabled:opacity-50`}
+              >
+                {batchNativeBusy ? 'กำลังบันทึก...' : `ยืนยัน (${selectedNativeEmpIds.size} ท่าน)`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Create Region */}
+      {createRegionOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-200 bg-slate-50">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Plus size={18} className="text-[#0C447C]" />
+                เพิ่มเขตการขายใหม่
+              </h3>
+            </div>
+            <div className="p-5 space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  รหัสเขต/ภาค (RegionCode) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  maxLength={10}
+                  value={newRegionCode}
+                  onChange={e => setNewRegionCode(e.target.value.toUpperCase())}
+                  placeholder="เช่น 07, 17, PT01..."
+                  className="w-full font-mono rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white text-slate-800 focus:outline-hidden focus:border-[#0C447C]"
+                />
+                <span className="text-[10px] text-slate-400">ควรตรงกับ 2 หลักแรกของรหัสเขตใน WinSpeed (EMSaleArea)</span>
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  ชื่อเขตการขาย (RegionName) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  maxLength={100}
+                  value={newRegionName}
+                  onChange={e => setNewRegionName(e.target.value)}
+                  placeholder="เช่น ภาคอีสานเหนือ, เขตเฉพาะกิจ..."
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white text-slate-800 focus:outline-hidden focus:border-[#0C447C]"
+                />
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  คำอธิบายเพิ่มเติม:
+                </label>
+                <input
+                  type="text"
+                  maxLength={255}
+                  value={newRegionDesc}
+                  onChange={e => setNewRegionDesc(e.target.value)}
+                  placeholder="รายละเอียดเขตหรือพื้นที่ครอบคลุม..."
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white text-slate-800 focus:outline-hidden focus:border-[#0C447C]"
+                />
+              </div>
+            </div>
+            <div className="px-5 py-3.5 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCreateRegionOpen(false)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateRegion}
+                disabled={regionBusy || !newRegionCode.trim() || !newRegionName.trim()}
+                className="px-4 py-2 text-xs font-bold rounded-xl text-white bg-[#0C447C] hover:bg-[#0A3866] disabled:opacity-50"
+              >
+                {regionBusy ? 'กำลังบันทึก...' : 'บันทึกเขตการขาย'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Edit Region */}
+      {editRegionOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-200 bg-slate-50">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Edit2 size={18} className="text-[#0C447C]" />
+                แก้ไขเขตการขาย: {editingRegionCode}
+              </h3>
+            </div>
+            <div className="p-5 space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  ชื่อเขตการขาย (RegionName) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  maxLength={100}
+                  value={editingRegionName}
+                  onChange={e => setEditingRegionName(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white text-slate-800 focus:outline-hidden focus:border-[#0C447C]"
+                />
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  คำอธิบายเพิ่มเติม:
+                </label>
+                <input
+                  type="text"
+                  maxLength={255}
+                  value={editingRegionDesc}
+                  onChange={e => setEditingRegionDesc(e.target.value)}
+                  placeholder="รายละเอียดเขตหรือพื้นที่ครอบคลุม..."
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs bg-white text-slate-800 focus:outline-hidden focus:border-[#0C447C]"
+                />
+              </div>
+            </div>
+            <div className="px-5 py-3.5 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditRegionOpen(false)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleUpdateRegion}
+                disabled={regionBusy || !editingRegionName.trim()}
+                className="px-4 py-2 text-xs font-bold rounded-xl text-white bg-[#0C447C] hover:bg-[#0A3866] disabled:opacity-50"
+              >
+                {regionBusy ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
               </button>
             </div>
           </div>

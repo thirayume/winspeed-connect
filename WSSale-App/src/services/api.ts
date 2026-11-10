@@ -262,6 +262,21 @@ export const fetchCustomers = (params?: string | {
 export const updateCustomer = (id: string, patch: Partial<EMCust>) =>
   req<{ ok: boolean }>(`/master/customers/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
 
+export interface BatchEditCustomersPayload {
+  custIds: string[];
+  salespersonUserId?: number;
+  areaId?: string;
+  groupId?: string;
+  creditHold?: boolean;
+  inactive?: boolean;
+}
+
+export const batchEditCustomers = (payload: BatchEditCustomersPayload) =>
+  req<{ ok: boolean; count: number; message: string }>('/master/customers/batch-edit', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
 export const fetchCustomerCreditStatus = (custId: string, amount: number = 0) =>
   req<CustomerCreditStatus>(`/credit/${encodeURIComponent(custId)}/status?amount=${encodeURIComponent(amount)}`);
 
@@ -708,6 +723,23 @@ export type RegionCoverage = {
 };
 
 export const fetchRegionCoverage = () => req<RegionCoverage[]>('/rebate/regions/coverage');
+
+export const createSaleRegion = (payload: { regionCode: string; regionName: string; description?: string }) =>
+  req<{ ok: boolean; regionCode: string; regionName: string; message: string }>('/rebate/regions', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const updateSaleRegion = (code: string, payload: { regionName: string; description?: string; isActive?: boolean }) =>
+  req<{ ok: boolean; regionCode: string; regionName: string; message: string }>(`/rebate/regions/${encodeURIComponent(code)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+
+export const deleteSaleRegion = (code: string) =>
+  req<{ ok: boolean; message: string }>(`/rebate/regions/${encodeURIComponent(code)}`, {
+    method: 'DELETE',
+  });
 
 export const removeUserRegion = (userId: number, regionCode: string) =>
   req<{ ok: boolean }>(`/rebate/user-regions/${userId}/${encodeURIComponent(regionCode)}`, { method: 'DELETE' });
@@ -2205,6 +2237,10 @@ export const fetchNativeApprovers = () =>
 export const updateNativeApprover = (empId: number, body: { enabled: boolean; note?: string; expectedEnabled?: boolean }) =>
   req<{ empId: number; enabled: boolean; message: string }>(
     `/master/native-approvers/${empId}`, { method: 'PUT', body: JSON.stringify(body) });
+
+export const batchToggleNativeApprovers = (body: { empIds: number[]; enabled: boolean; note?: string }) =>
+  req<{ ok: boolean; count: number; enabled: boolean; message: string }>(
+    '/master/native-approvers/batch-toggle', { method: 'POST', body: JSON.stringify(body) });
 
 export const fetchNativeApproverHistory = () =>
   req<{ data: {

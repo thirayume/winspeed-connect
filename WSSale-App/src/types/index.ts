@@ -125,13 +125,18 @@ export type EMCust = {
   salespersonId?: string | null;
   salespersonName?: string | null;
   areaId?: string | null;
+  areaName?: string | null;
+  regionCode?: string | null;
+  regionName?: string | null;
   groupId?: string | null;
+  groupName?: string | null;
   employeeId?: string | null;
   employeeName?: string | null;
   CreditDays?: number;
   CreditLimit?: number | null;
   AgingDays?: number | null;
   CreditHold?: boolean;
+  Inactive?: string | null;
 };
 
 export type CustomerCreditStatus = {
@@ -164,6 +169,7 @@ export type CustomerFilterOptions = {
   area: CustomerFilterOption[];
   group: CustomerFilterOption[];
   employee: CustomerFilterOption[];
+  regions?: CustomerFilterOption[];
 };
 
 export type CustomerRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED';
