@@ -5,10 +5,12 @@ import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
   Network, Search, RefreshCw, AlertTriangle, Check, Users, Download,
   ChevronDown, ChevronUp, UserPlus, UserMinus, Building2, UserCheck,
-  AlertCircle, X, ZoomIn, ZoomOut, Maximize2, Layers, Filter
+  AlertCircle, X, ZoomIn, ZoomOut, Maximize2, Layers, Filter,
+  Plus, Edit2, Trash2, FolderTree
 } from 'lucide-react';
 import {
-  listOrgPositions, updateUser, fetchOrgHints,
+  listOrgPositions, createOrgPosition, updateOrgPosition, deleteOrgPosition,
+  updateUser, fetchOrgHints,
   type OrgPosition, type OrgHintUser
 } from '../../services/api';
 import type { AdminUser } from '../../types';
@@ -112,6 +114,49 @@ export function OrgHierarchyView() {
   }>({ isOpen: false, position: null });
   const [modalSaving, setModalSaving] = useState(false);
   const [modalErr, setModalErr] = useState<string | null>(null);
+
+  // Position CRUD Modal state
+  const [posModal, setPosModal] = useState<{
+    isOpen: boolean;
+    mode: 'create' | 'edit';
+    code: string;
+    name: string;
+    reportsTo: string;
+    orgUnit: string;
+    tier: number;
+    defaultRole: string;
+    canApprove: boolean;
+    isActive: boolean;
+    note: string;
+    saving: boolean;
+    err: string | null;
+  }>({
+    isOpen: false,
+    mode: 'create',
+    code: '',
+    name: '',
+    reportsTo: '',
+    orgUnit: 'บริหาร',
+    tier: 1,
+    defaultRole: '',
+    canApprove: false,
+    isActive: true,
+    note: '',
+    saving: false,
+    err: null
+  });
+
+  const [delModal, setDelModal] = useState<{
+    isOpen: boolean;
+    position: OrgPosition | null;
+    deleting: boolean;
+    err: string | null;
+  }>({
+    isOpen: false,
+    position: null,
+    deleting: false,
+    err: null
+  });
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -236,6 +281,139 @@ export function OrgHierarchyView() {
     const execSet = new Set<string>();
     positions.filter(p => p.Tier <= 2 || !p.ReportsTo).forEach(p => execSet.add(p.PositionCode));
     setExpandedNodes(execSet);
+  };
+
+  const isDescendantOf = useCallback((candidateCode: string, ancestorCode: string): boolean => {
+    if (candidateCode === ancestorCode) return true;
+    let curr = positionsByCode.get(candidateCode);
+    const visited = new Set<string>();
+    while (curr && curr.ReportsTo) {
+      if (curr.ReportsTo === ancestorCode) return true;
+      if (visited.has(curr.ReportsTo)) break;
+      visited.add(curr.ReportsTo);
+      curr = positionsByCode.get(curr.ReportsTo);
+    }
+    return false;
+  }, [positionsByCode]);
+
+  const handleOpenCreate = useCallback((parentCode?: string) => {
+    let reportsTo = '';
+    let tier = 1;
+    let orgUnit = units[0] || 'บริหาร';
+    let defaultRole = '';
+    let canApprove = false;
+
+    if (parentCode) {
+      const parent = positionsByCode.get(parentCode);
+      if (parent) {
+        reportsTo = parent.PositionCode;
+        tier = Math.min(5, parent.Tier + 1);
+        orgUnit = parent.OrgUnit;
+        defaultRole = parent.DefaultRole || '';
+        canApprove = false;
+      }
+    }
+
+    setPosModal({
+      isOpen: true,
+      mode: 'create',
+      code: '',
+      name: '',
+      reportsTo,
+      orgUnit,
+      tier,
+      defaultRole,
+      canApprove,
+      isActive: true,
+      note: '',
+      saving: false,
+      err: null
+    });
+  }, [positionsByCode, units]);
+
+  const handleOpenEdit = useCallback((p: OrgPosition) => {
+    setPosModal({
+      isOpen: true,
+      mode: 'edit',
+      code: p.PositionCode,
+      name: p.PositionName,
+      reportsTo: p.ReportsTo || '',
+      orgUnit: p.OrgUnit,
+      tier: p.Tier,
+      defaultRole: p.DefaultRole || '',
+      canApprove: p.CanApprove,
+      isActive: p.IsActive,
+      note: p.Note || '',
+      saving: false,
+      err: null
+    });
+  }, []);
+
+  const handleOpenDelete = useCallback((p: OrgPosition) => {
+    setDelModal({
+      isOpen: true,
+      position: p,
+      deleting: false,
+      err: null
+    });
+  }, []);
+
+  const handleSavePosition = async () => {
+    if (!posModal.name.trim()) {
+      setPosModal(s => ({ ...s, err: 'กรุณาระบุชื่อตำแหน่ง' }));
+      return;
+    }
+    if (posModal.mode === 'create') {
+      const trimmedCode = posModal.code.trim().toUpperCase();
+      if (!trimmedCode || !/^[A-Z0-9_-]{2,30}$/.test(trimmedCode)) {
+        setPosModal(s => ({ ...s, err: 'รหัสตำแหน่งต้องเป็นตัวอักษรภาษาอังกฤษ ตัวเลข ขีดกลาง หรือขีดล่าง (2-30 ตัวอักษร)' }));
+        return;
+      }
+    }
+
+    setPosModal(s => ({ ...s, saving: true, err: null }));
+    try {
+      if (posModal.mode === 'create') {
+        await createOrgPosition({
+          positionCode: posModal.code.trim().toUpperCase(),
+          positionName: posModal.name.trim(),
+          reportsTo: posModal.reportsTo || null,
+          orgUnit: posModal.orgUnit,
+          tier: posModal.tier,
+          defaultRole: posModal.defaultRole || null,
+          canApprove: posModal.canApprove,
+          note: posModal.note.trim() || null
+        });
+      } else {
+        await updateOrgPosition(posModal.code, {
+          positionName: posModal.name.trim(),
+          reportsTo: posModal.reportsTo || null,
+          orgUnit: posModal.orgUnit,
+          tier: posModal.tier,
+          defaultRole: posModal.defaultRole || null,
+          canApprove: posModal.canApprove,
+          isActive: posModal.isActive,
+          note: posModal.note.trim() || null
+        });
+      }
+
+      setPosModal(s => ({ ...s, isOpen: false, saving: false }));
+      await load();
+    } catch (e: any) {
+      setPosModal(s => ({ ...s, saving: false, err: e?.message || 'บันทึกตำแหน่งไม่สำเร็จ' }));
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!delModal.position) return;
+    setDelModal(s => ({ ...s, deleting: true, err: null }));
+    try {
+      await deleteOrgPosition(delModal.position.PositionCode);
+      setDelModal({ isOpen: false, position: null, deleting: false, err: null });
+      await load();
+    } catch (e: any) {
+      setDelModal(s => ({ ...s, deleting: false, err: e?.message || 'ลบตำแหน่งไม่สำเร็จ' }));
+    }
   };
 
   // Auto-expand ancestors when search matches
@@ -464,6 +642,26 @@ export function OrgHierarchyView() {
                   <UserCheck size={11} /> อนุมัติ
                 </span>
               )}
+              {canEdit && (
+                <div className="flex items-center gap-0.5 ml-1">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleOpenEdit(p); }}
+                    className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-[#0C447C] transition-colors"
+                    title="แก้ไขตำแหน่ง"
+                  >
+                    <Edit2 size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleOpenDelete(p); }}
+                    className="p-1 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors"
+                    title="ลบตำแหน่ง"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -548,6 +746,18 @@ export function OrgHierarchyView() {
             <UserPlus size={13} />
             <span>มอบหมายคน</span>
           </button>
+
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => handleOpenCreate(p.PositionCode)}
+              className="py-1 px-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 border border-slate-200 flex items-center justify-center gap-1 transition-colors"
+              title="เพิ่มตำแหน่งย่อยขึ้นตรงต่อตำแหน่งนี้"
+            >
+              <Plus size={13} />
+              <span>+ตำแหน่งย่อย</span>
+            </button>
+          )}
 
           {isCycle && (
             <span className="text-[10px] font-bold text-red-600 px-1 py-0.5 bg-red-50 rounded">
@@ -789,6 +999,18 @@ export function OrgHierarchyView() {
             </button>
           )}
 
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => handleOpenCreate()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl bg-[#0C447C] text-white hover:bg-[#0A3866] shadow-xs transition-colors shrink-0"
+              title="เพิ่มตำแหน่งใหม่ในผังองค์กร"
+            >
+              <Plus size={14} />
+              <span>+ เพิ่มตำแหน่ง</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={load}
@@ -881,16 +1103,13 @@ export function OrgHierarchyView() {
                         <Building2 size={24} className="text-white" />
                       </div>
                       <div className="text-left min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-[10px] font-bold tracking-widest uppercase text-blue-200">
-                            Apex Organization Root
-                          </span>
-                          {(companyInfo.taxId13 || companyInfo.taxId) && (
+                        {(companyInfo.taxId13 || companyInfo.taxId) && (
+                          <div className="flex items-center justify-end mb-1">
                             <span className="text-[9px] font-mono bg-white/10 px-1.5 py-0.2 rounded text-blue-100 border border-white/15">
                               TAX: {companyInfo.taxId13 || companyInfo.taxId}
                             </span>
-                          )}
-                        </div>
+                          </div>
+                        )}
                         <h2 className="text-base font-black tracking-wide truncate">
                           {companyInfo.compName || 'บริษัท เวิลด์ เฟอท จำกัด'}
                         </h2>
@@ -991,6 +1210,7 @@ export function OrgHierarchyView() {
                     <th className="px-4 py-3">สายงาน</th>
                     <th className="px-4 py-3">ผู้อนุมัติ</th>
                     <th className="px-4 py-3 text-center">สถานะ</th>
+                    <th className="px-4 py-3 text-center">จัดการตำแหน่ง</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -999,6 +1219,7 @@ export function OrgHierarchyView() {
                     const userRoles = getUserBaseRoles(u);
                     const isSaving = savingId === u.Id;
                     const isSaved = savedId === u.Id;
+                    const currentPos = u.PositionCode ? positionsByCode.get(u.PositionCode) : null;
 
                     return (
                       <tr key={u.Id} className={`hover:bg-slate-50/80 transition-colors ${!u.IsActive ? 'opacity-60 bg-slate-50/40' : ''}`}>
@@ -1076,12 +1297,38 @@ export function OrgHierarchyView() {
                             </span>
                           )}
                         </td>
+                        <td className="px-4 py-2.5 text-center">
+                          {currentPos ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                disabled={!canEdit}
+                                onClick={() => handleOpenEdit(currentPos)}
+                                className="p-1 rounded text-slate-500 hover:text-[#0C447C] hover:bg-slate-100 disabled:opacity-40 transition-colors"
+                                title="แก้ไขตำแหน่งนี้"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!canEdit}
+                                onClick={() => handleOpenDelete(currentPos)}
+                                className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-40 transition-colors"
+                                title="ลบตำแหน่งนี้"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-slate-300">–</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
                   {matrixShown.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-4 py-16 text-center text-slate-400 font-semibold">
+                      <td colSpan={8} className="px-4 py-16 text-center text-slate-400 font-semibold">
                         ไม่พบข้อมูลผู้ใช้ตามเงื่อนไขที่เลือก
                       </td>
                     </tr>
@@ -1258,6 +1505,302 @@ export function OrgHierarchyView() {
           </div>
         </div>
       )}
+
+      {/* ── MODAL: CREATE / EDIT ORG POSITION ────────────────── */}
+      {posModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <FolderTree size={18} className="text-[#0C447C]" />
+                  {posModal.mode === 'create' ? 'เพิ่มตำแหน่งใหม่ในผังองค์กร' : 'แก้ไขตำแหน่งในผังองค์กร'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {posModal.mode === 'create'
+                    ? 'กำหนดตำแหน่งใหม่ สายงาน ระดับ และสายการบังคับบัญชา'
+                    : `${posModal.code} — ${posModal.name}`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPosModal(s => ({ ...s, isOpen: false }))}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-4">
+              {posModal.err && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center gap-2 font-medium">
+                  <AlertTriangle size={15} className="text-rose-600 shrink-0" />
+                  <span>{posModal.err}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Position Code */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    รหัสตำแหน่ง (Position Code) *
+                  </label>
+                  <input
+                    type="text"
+                    disabled={posModal.mode === 'edit'}
+                    value={posModal.code}
+                    onChange={e => setPosModal(s => ({ ...s, code: e.target.value.toUpperCase() }))}
+                    placeholder="เช่น ACC-COST-MAT"
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-mono uppercase bg-slate-50 focus:bg-white focus:border-[#0C447C] focus:outline-hidden disabled:opacity-60 disabled:bg-slate-100"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    ตัวอักษรภาษาอังกฤษ A-Z, ตัวเลข 0-9, ขีดกลาง หรือขีดล่าง (2-30 ตัวอักษร)
+                  </p>
+                </div>
+
+                {/* Position Name */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    ชื่อตำแหน่ง (Position Name) *
+                  </label>
+                  <input
+                    type="text"
+                    value={posModal.name}
+                    onChange={e => setPosModal(s => ({ ...s, name: e.target.value }))}
+                    placeholder="เช่น บัญชีต้นทุน-วัตถุดิบ"
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs bg-slate-50 focus:bg-white focus:border-[#0C447C] focus:outline-hidden"
+                  />
+                </div>
+
+                {/* Org Unit */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    สายงาน (Org Unit) *
+                  </label>
+                  <select
+                    value={posModal.orgUnit}
+                    onChange={e => setPosModal(s => ({ ...s, orgUnit: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs bg-white focus:border-[#0C447C] focus:outline-hidden"
+                  >
+                    <option value="บริหาร">บริหาร (Executive / C-Level)</option>
+                    <option value="บัญชี-การเงิน">บัญชี-การเงิน (Accounting & Finance)</option>
+                    <option value="โรงงาน">โรงงาน (Plant & Production)</option>
+                    <option value="ขาย-การตลาด">ขาย-การตลาด (Sales & Marketing)</option>
+                  </select>
+                </div>
+
+                {/* Tier */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    ระดับสายบังคับบัญชา (Tier) *
+                  </label>
+                  <select
+                    value={posModal.tier}
+                    onChange={e => setPosModal(s => ({ ...s, tier: parseInt(e.target.value, 10) || 1 }))}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs bg-white focus:border-[#0C447C] focus:outline-hidden"
+                  >
+                    <option value={1}>Tier 1: ผู้บริหารระดับสูง (C-Level / กรรมการบริหาร)</option>
+                    <option value={2}>Tier 2: ผู้ช่วยกรรมการ / ผู้บริหารสายงาน</option>
+                    <option value={3}>Tier 3: ผู้จัดการฝ่าย / ผู้อำนวยการ (Manager / Approver)</option>
+                    <option value={4}>Tier 4: ผู้ช่วยผู้จัดการ / หัวหน้าแผนก (Chief / Head)</option>
+                    <option value={5}>Tier 5: พนักงานปฏิบัติการ (Staff / Specialist)</option>
+                  </select>
+                </div>
+
+                {/* Reports To */}
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    รายงานตรงต่อ / ผู้บังคับบัญชา (Reports To)
+                  </label>
+                  <select
+                    value={posModal.reportsTo}
+                    onChange={e => setPosModal(s => ({ ...s, reportsTo: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs bg-white focus:border-[#0C447C] focus:outline-hidden"
+                  >
+                    <option value="">(ไม่มี - ตำแหน่งสูงสุด / Tier 1 Root)</option>
+                    {units.map(unit => (
+                      <optgroup key={unit} label={`สายงาน ${unit}`}>
+                        {positions
+                          .filter(p => p.OrgUnit === unit && (posModal.mode === 'create' || p.PositionCode !== posModal.code))
+                          .sort((a, b) => a.Tier - b.Tier || a.PositionName.localeCompare(b.PositionName, 'th'))
+                          .map(p => {
+                            const isCycle = posModal.mode === 'edit' && isDescendantOf(p.PositionCode, posModal.code);
+                            return (
+                              <option key={p.PositionCode} value={p.PositionCode} disabled={isCycle}>
+                                {p.PositionName} ({p.PositionCode}) [Tier {p.Tier}]{isCycle ? ' (วงวนรอบ - ห้ามเลือก)' : ''}
+                              </option>
+                            );
+                          })}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    เลือกหัวหน้างานเพื่อกำหนดสายบังคับบัญชา และลำดับการอนุมัติเอกสารอัตโนมัติ
+                  </p>
+                </div>
+
+                {/* Default Role */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    บทบาทเริ่มต้นในแอป (Default Role)
+                  </label>
+                  <select
+                    value={posModal.defaultRole}
+                    onChange={e => setPosModal(s => ({ ...s, defaultRole: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs bg-white focus:border-[#0C447C] focus:outline-hidden"
+                  >
+                    <option value="">(ไม่ระบุบทบาทเฉพาะ)</option>
+                    <option value="C_LEVEL">C_LEVEL</option>
+                    <option value="MANAGER">MANAGER</option>
+                    <option value="APPROVER">APPROVER</option>
+                    <option value="ACCOUNTING">ACCOUNTING</option>
+                    <option value="WAREHOUSE">WAREHOUSE</option>
+                    <option value="WEIGHBRIDGE">WEIGHBRIDGE</option>
+                    <option value="SALES">SALES</option>
+                    <option value="COUNTER_SALES">COUNTER_SALES</option>
+                    <option value="ADMIN">ADMIN</option>
+                  </select>
+                </div>
+
+                {/* Toggles */}
+                <div className="flex flex-col justify-center space-y-2 pt-2">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={posModal.canApprove}
+                      onChange={e => setPosModal(s => ({ ...s, canApprove: e.target.checked }))}
+                      className="rounded text-[#0C447C] w-4 h-4"
+                    />
+                    <span>มีสิทธิ์อนุมัติเอกสารในระบบ (Can Approve)</span>
+                  </label>
+
+                  {posModal.mode === 'edit' && (
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={posModal.isActive}
+                        onChange={e => setPosModal(s => ({ ...s, isActive: e.target.checked }))}
+                        className="rounded text-[#0C447C] w-4 h-4"
+                      />
+                      <span>เปิดใช้งานตำแหน่งนี้ (Active)</span>
+                    </label>
+                  )}
+                </div>
+
+                {/* Note */}
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    หมายเหตุ / หน้าที่รับผิดชอบ
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={posModal.note}
+                    onChange={e => setPosModal(s => ({ ...s, note: e.target.value }))}
+                    placeholder="ระบุคำอธิบายหรือหน้าที่ความรับผิดชอบของตำแหน่งนี้..."
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs bg-slate-50 focus:bg-white focus:border-[#0C447C] focus:outline-hidden"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPosModal(s => ({ ...s, isOpen: false }))}
+                className="px-4 py-2 text-xs font-bold rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleSavePosition}
+                disabled={posModal.saving}
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-[#0C447C] text-white hover:bg-[#0A3866] disabled:opacity-50 flex items-center gap-1.5 shadow-xs"
+              >
+                {posModal.saving ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+                <span>{posModal.mode === 'create' ? 'สร้างตำแหน่ง' : 'บันทึกการแก้ไข'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: DELETE ORG POSITION CONFIRMATION ─────────── */}
+      {delModal.isOpen && delModal.position && (() => {
+        const p = delModal.position;
+        const occupants = usersByPosition.get(p.PositionCode) || [];
+        const children = positions.filter(child => child.ReportsTo === p.PositionCode);
+        const cannotDelete = occupants.length > 0 || children.length > 0;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+              <div className="p-6">
+                <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mb-4">
+                  <Trash2 size={24} />
+                </div>
+                <h3 className="text-base font-black text-slate-900 mb-1">
+                  ยืนยันการลบตำแหน่ง
+                </h3>
+                <p className="text-xs text-slate-600 font-bold mb-3">
+                  {p.PositionName} ({p.PositionCode}) [Tier {p.Tier}]
+                </p>
+
+                {delModal.err && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 mb-3 font-medium">
+                    {delModal.err}
+                  </div>
+                )}
+
+                {cannotDelete ? (
+                  <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 space-y-2">
+                    <div className="font-bold flex items-center gap-1.5 text-amber-800">
+                      <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                      <span>ไม่สามารถลบตำแหน่งนี้ได้ในขณะนี้:</span>
+                    </div>
+                    {occupants.length > 0 && (
+                      <p className="text-[11px]">
+                        • มีผู้ใช้งาน <strong>{occupants.length}</strong> คนผูกอยู่กับตำแหน่งนี้ ({occupants.map(u => u.DisplayName).join(', ')}) — กรุณาย้ายผู้ใช้ออกก่อน
+                      </p>
+                    )}
+                    {children.length > 0 && (
+                      <p className="text-[11px]">
+                        • มีตำแหน่งย่อย <strong>{children.length}</strong> ตำแหน่งขึ้นตรงต่อตำแหน่งนี้ ({children.map(c => c.PositionName).join(', ')}) — กรุณาย้ายสายบังคับบัญชาก่อน
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    คุณแน่ใจหรือไม่ว่าต้องการลบตำแหน่งนี้ออกจากผังองค์กร? เมื่อลบแล้วผังบังคับบัญชาจะถูกปรับปรุงทันที และไม่สามารถเรียกคืนได้
+                  </p>
+                )}
+              </div>
+
+              <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDelModal({ isOpen: false, position: null, deleting: false, err: null })}
+                  className="px-4 py-2 text-xs font-bold rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  disabled={cannotDelete || delModal.deleting}
+                  className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-40 flex items-center gap-1.5 shadow-xs"
+                >
+                  {delModal.deleting ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  <span>ยืนยันลบตำแหน่ง</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

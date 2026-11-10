@@ -1028,6 +1028,32 @@ function mayViewOrganization(req,res,next) {
   if (hasPermission(req.user,'users.manage') || hasRole(req.user,'ADMIN','MANAGER','ACCOUNTING')) return next();
   return res.status(403).json({message:'ไม่มีสิทธิ์ดูผังองค์กร'});
 }
+
+function mayManageOrganization(req, res, next) {
+  if (req.user?.isImpersonating) return res.status(403).json({ message: 'ไม่อนุญาตให้แก้ไขผังองค์กรขณะจำลองสิทธิ์' });
+  if (hasPermission(req.user, 'users.manage') || hasRole(req.user, 'ADMIN')) return next();
+  return res.status(403).json({ message: 'ไม่มีสิทธิ์จัดการผังองค์กร' });
+}
+
+async function wouldCreateCycle(positionCode, newReportsTo) {
+  if (!newReportsTo) return false;
+  const pCode = String(positionCode).trim().toUpperCase();
+  const targetMgr = String(newReportsTo).trim().toUpperCase();
+  if (pCode === targetMgr) return true;
+
+  let current = targetMgr;
+  const visited = new Set([pCode]);
+  while (current) {
+    if (visited.has(current)) return true;
+    visited.add(current);
+    const res = await wfQuery('SELECT ReportsTo FROM wf.OrgPosition WHERE PositionCode = @pos', {
+      pos: { type: sql.VarChar(30), value: current }
+    });
+    current = res.recordset?.[0]?.ReportsTo ? String(res.recordset[0].ReportsTo).trim().toUpperCase() : null;
+  }
+  return false;
+}
+
 router.get('/org-users', requireAuth, mayViewOrganization, async (req,res) => {
   try {
     const result = await wfQuery(`SELECT u.Id,u.Username,u.DisplayName,u.Role,u.IsActive,u.EmpId,u.PositionCode,e.EmpCode,e.EmpName
@@ -1049,6 +1075,246 @@ router.get('/org-positions', requireAuth, mayViewOrganization, async (req, res) 
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/auth/org-positions — สร้างตำแหน่งใหม่ในผังองค์กร
+router.post('/org-positions', requireAuth, mayManageOrganization, async (req, res) => {
+  try {
+    const code = String(req.body.positionCode || '').trim().toUpperCase();
+    const name = String(req.body.positionName || '').trim();
+    const unit = String(req.body.orgUnit || '').trim();
+    const tier = Math.max(1, Math.min(5, parseInt(req.body.tier, 10) || 5));
+    const reportsTo = req.body.reportsTo ? String(req.body.reportsTo).trim().toUpperCase() : null;
+    const defaultRole = req.body.defaultRole ? String(req.body.defaultRole).trim() : null;
+    const canApprove = Boolean(req.body.canApprove);
+    const note = req.body.note ? String(req.body.note).trim() : null;
+
+    if (!code || !/^[A-Z0-9_-]{2,30}$/.test(code)) {
+      return res.status(400).json({ message: 'รหัสตำแหน่งต้องประกอบด้วยตัวอักษรภาษาอังกฤษ ตัวเลข ขีดกลาง หรือขีดล่าง (2-30 ตัวอักษร)' });
+    }
+    if (!name) {
+      return res.status(400).json({ message: 'กรุณาระบุชื่อตำแหน่ง' });
+    }
+    if (!unit) {
+      return res.status(400).json({ message: 'กรุณาระบุสายงาน' });
+    }
+
+    const dup = await wfQuery('SELECT 1 FROM wf.OrgPosition WHERE PositionCode = @code', {
+      code: { type: sql.VarChar(30), value: code }
+    });
+    if (dup.recordset?.length > 0) {
+      return res.status(409).json({ message: `รหัสตำแหน่ง '${code}' มีอยู่ในระบบแล้ว` });
+    }
+
+    if (reportsTo) {
+      const mgr = await wfQuery('SELECT 1 FROM wf.OrgPosition WHERE PositionCode = @reportsTo', {
+        reportsTo: { type: sql.VarChar(30), value: reportsTo }
+      });
+      if (!mgr.recordset?.length) {
+        return res.status(400).json({ message: `ไม่พบตำแหน่งหัวหน้างาน '${reportsTo}' ในระบบ` });
+      }
+    }
+
+    await wfQuery(`
+      INSERT INTO wf.OrgPosition (PositionCode, PositionName, ReportsTo, OrgUnit, Tier, DefaultRole, CanApprove, IsActive, Note)
+      VALUES (@code, @name, @reportsTo, @unit, @tier, @defaultRole, @canApprove, 1, @note)
+    `, {
+      code: { type: sql.VarChar(30), value: code },
+      name: { type: sql.NVarChar(150), value: name },
+      reportsTo: { type: sql.VarChar(30), value: reportsTo },
+      unit: { type: sql.NVarChar(60), value: unit },
+      tier: { type: sql.TinyInt, value: tier },
+      defaultRole: { type: sql.VarChar(20), value: defaultRole },
+      canApprove: { type: sql.Bit, value: canApprove ? 1 : 0 },
+      note: { type: sql.NVarChar(300), value: note }
+    });
+
+    try {
+      await wfQuery(`
+        INSERT INTO wf.AdminChangeAudit (ActorId, Action, Target, Detail)
+        VALUES (@actor, 'POSITION_CREATE', @target, @detail)
+      `, {
+        actor: { type: sql.Int, value: Number(req.user.id) },
+        target: { type: sql.NVarChar(200), value: code },
+        detail: { type: sql.NVarChar(sql.MAX), value: JSON.stringify({ code, name, reportsTo, unit, tier, defaultRole, canApprove, note }) }
+      });
+    } catch (errAudit) {
+      console.warn('[auth/org-positions] Audit log failed:', errAudit.message);
+    }
+
+    res.status(201).json({
+      ok: true,
+      position: {
+        PositionCode: code,
+        PositionName: name,
+        ReportsTo: reportsTo,
+        OrgUnit: unit,
+        Tier: tier,
+        DefaultRole: defaultRole,
+        CanApprove: canApprove,
+        IsActive: true,
+        Note: note,
+        AssignedCount: 0
+      }
+    });
+  } catch (e) {
+    console.error('[auth/org-positions POST]', e);
+    res.status(500).json({ message: 'เกิดข้อผิดพลาดในการสร้างตำแหน่ง' });
+  }
+});
+
+// PUT /api/auth/org-positions/:code — แก้ไขข้อมูลและสายบังคับบัญชาของตำแหน่ง
+router.put('/org-positions/:code', requireAuth, mayManageOrganization, async (req, res) => {
+  try {
+    const code = String(req.params.code || '').trim().toUpperCase();
+    const existing = await wfQuery('SELECT * FROM wf.OrgPosition WHERE PositionCode = @code', {
+      code: { type: sql.VarChar(30), value: code }
+    });
+    if (!existing.recordset?.length) {
+      return res.status(404).json({ message: `ไม่พบตำแหน่ง '${code}' ในระบบ` });
+    }
+    const current = existing.recordset[0];
+
+    const name = req.body.positionName !== undefined ? String(req.body.positionName).trim() : current.PositionName;
+    if (!name) return res.status(400).json({ message: 'ชื่อตำแหน่งต้องไม่เป็นค่าว่าง' });
+
+    const unit = req.body.orgUnit !== undefined ? String(req.body.orgUnit).trim() : current.OrgUnit;
+    if (!unit) return res.status(400).json({ message: 'สายงานต้องไม่เป็นค่าว่าง' });
+
+    const tier = req.body.tier !== undefined ? Math.max(1, Math.min(5, parseInt(req.body.tier, 10) || current.Tier)) : current.Tier;
+    const defaultRole = req.body.defaultRole !== undefined ? (req.body.defaultRole ? String(req.body.defaultRole).trim() : null) : current.DefaultRole;
+    const canApprove = req.body.canApprove !== undefined ? Boolean(req.body.canApprove) : Boolean(current.CanApprove);
+    const isActive = req.body.isActive !== undefined ? Boolean(req.body.isActive) : Boolean(current.IsActive);
+    const note = req.body.note !== undefined ? (req.body.note ? String(req.body.note).trim() : null) : current.Note;
+
+    let reportsTo = current.ReportsTo;
+    if (req.body.reportsTo !== undefined) {
+      reportsTo = req.body.reportsTo ? String(req.body.reportsTo).trim().toUpperCase() : null;
+      if (reportsTo) {
+        if (reportsTo === code) {
+          return res.status(400).json({ message: 'ตำแหน่งไม่สามารถขึ้นตรงต่อตัวเองได้' });
+        }
+        const mgr = await wfQuery('SELECT 1 FROM wf.OrgPosition WHERE PositionCode = @reportsTo', {
+          reportsTo: { type: sql.VarChar(30), value: reportsTo }
+        });
+        if (!mgr.recordset?.length) {
+          return res.status(400).json({ message: `ไม่พบตำแหน่งหัวหน้างาน '${reportsTo}' ในระบบ` });
+        }
+        if (await wouldCreateCycle(code, reportsTo)) {
+          return res.status(400).json({ message: 'ไม่สามารถกำหนดสายบังคับบัญชาแบบวนรอบ (Circular Hierarchy) ได้' });
+        }
+      }
+    }
+
+    await wfQuery(`
+      UPDATE wf.OrgPosition
+      SET PositionName = @name,
+          ReportsTo = @reportsTo,
+          OrgUnit = @unit,
+          Tier = @tier,
+          DefaultRole = @defaultRole,
+          CanApprove = @canApprove,
+          IsActive = @isActive,
+          Note = @note
+      WHERE PositionCode = @code
+    `, {
+      code: { type: sql.VarChar(30), value: code },
+      name: { type: sql.NVarChar(150), value: name },
+      reportsTo: { type: sql.VarChar(30), value: reportsTo },
+      unit: { type: sql.NVarChar(60), value: unit },
+      tier: { type: sql.TinyInt, value: tier },
+      defaultRole: { type: sql.VarChar(20), value: defaultRole },
+      canApprove: { type: sql.Bit, value: canApprove ? 1 : 0 },
+      isActive: { type: sql.Bit, value: isActive ? 1 : 0 },
+      note: { type: sql.NVarChar(300), value: note }
+    });
+
+    try {
+      await wfQuery(`
+        INSERT INTO wf.AdminChangeAudit (ActorId, Action, Target, Detail)
+        VALUES (@actor, 'POSITION_UPDATE', @target, @detail)
+      `, {
+        actor: { type: sql.Int, value: Number(req.user.id) },
+        target: { type: sql.NVarChar(200), value: code },
+        detail: { type: sql.NVarChar(sql.MAX), value: JSON.stringify({ before: current, after: { name, reportsTo, unit, tier, defaultRole, canApprove, isActive, note } }) }
+      });
+    } catch (errAudit) {
+      console.warn('[auth/org-positions] Audit log failed:', errAudit.message);
+    }
+
+    res.json({
+      ok: true,
+      position: {
+        PositionCode: code,
+        PositionName: name,
+        ReportsTo: reportsTo,
+        OrgUnit: unit,
+        Tier: tier,
+        DefaultRole: defaultRole,
+        CanApprove: canApprove,
+        IsActive: isActive,
+        Note: note
+      }
+    });
+  } catch (e) {
+    console.error('[auth/org-positions PUT]', e);
+    res.status(500).json({ message: 'เกิดข้อผิดพลาดในการแก้ไขตำแหน่ง' });
+  }
+});
+
+// DELETE /api/auth/org-positions/:code — ลบตำแหน่งออกจากผังองค์กร
+router.delete('/org-positions/:code', requireAuth, mayManageOrganization, async (req, res) => {
+  try {
+    const code = String(req.params.code || '').trim().toUpperCase();
+    const existing = await wfQuery('SELECT * FROM wf.OrgPosition WHERE PositionCode = @code', {
+      code: { type: sql.VarChar(30), value: code }
+    });
+    if (!existing.recordset?.length) {
+      return res.status(404).json({ message: `ไม่พบตำแหน่ง '${code}' ในระบบ` });
+    }
+
+    const userCountRes = await wfQuery('SELECT COUNT(*) AS c FROM wf.AppUser WHERE PositionCode = @code', {
+      code: { type: sql.VarChar(30), value: code }
+    });
+    const userCount = userCountRes.recordset?.[0]?.c || 0;
+    if (userCount > 0) {
+      return res.status(409).json({
+        message: `ไม่สามารถลบตำแหน่ง '${code}' ได้ เนื่องจากมีผู้ใช้งาน ${userCount} คนผูกอยู่กับตำแหน่งนี้ กรุณาย้ายผู้ใช้ออกก่อน`
+      });
+    }
+
+    const childCountRes = await wfQuery('SELECT COUNT(*) AS c FROM wf.OrgPosition WHERE ReportsTo = @code', {
+      code: { type: sql.VarChar(30), value: code }
+    });
+    const childCount = childCountRes.recordset?.[0]?.c || 0;
+    if (childCount > 0) {
+      return res.status(409).json({
+        message: `ไม่สามารถลบตำแหน่ง '${code}' ได้ เนื่องจากมีตำแหน่งย่อย ${childCount} ตำแหน่งขึ้นตรงอยู่ กรุณาย้ายสายบังคับบัญชาของตำแหน่งย่อยก่อน`
+      });
+    }
+
+    await wfQuery('DELETE FROM wf.OrgPosition WHERE PositionCode = @code', {
+      code: { type: sql.VarChar(30), value: code }
+    });
+
+    try {
+      await wfQuery(`
+        INSERT INTO wf.AdminChangeAudit (ActorId, Action, Target, Detail)
+        VALUES (@actor, 'POSITION_DELETE', @target, @detail)
+      `, {
+        actor: { type: sql.Int, value: Number(req.user.id) },
+        target: { type: sql.NVarChar(200), value: code },
+        detail: { type: sql.NVarChar(sql.MAX), value: JSON.stringify(existing.recordset[0]) }
+      });
+    } catch (errAudit) {
+      console.warn('[auth/org-positions] Audit log failed:', errAudit.message);
+    }
+
+    res.json({ ok: true, code });
+  } catch (e) {
+    console.error('[auth/org-positions DELETE]', e);
+    res.status(500).json({ message: 'เกิดข้อผิดพลาดในการลบตำแหน่ง' });
   }
 });
 

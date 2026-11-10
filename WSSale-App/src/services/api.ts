@@ -222,6 +222,45 @@ export type OrgPosition = {
 };
 export const listOrgPositions = () => req<OrgPosition[]>('/auth/org-positions');
 
+export interface CreateOrgPositionInput {
+  positionCode: string;
+  positionName: string;
+  reportsTo?: string | null;
+  orgUnit: string;
+  tier: number;
+  defaultRole?: string | null;
+  canApprove?: boolean;
+  note?: string | null;
+}
+
+export interface UpdateOrgPositionInput {
+  positionName?: string;
+  reportsTo?: string | null;
+  orgUnit?: string;
+  tier?: number;
+  defaultRole?: string | null;
+  canApprove?: boolean;
+  isActive?: boolean;
+  note?: string | null;
+}
+
+export const createOrgPosition = (data: CreateOrgPositionInput) =>
+  req<{ ok: boolean; position: OrgPosition }>('/auth/org-positions', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+
+export const updateOrgPosition = (code: string, data: UpdateOrgPositionInput) =>
+  req<{ ok: boolean; position: OrgPosition }>(`/auth/org-positions/${encodeURIComponent(code)}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+
+export const deleteOrgPosition = (code: string) =>
+  req<{ ok: boolean; code: string }>(`/auth/org-positions/${encodeURIComponent(code)}`, {
+    method: 'DELETE'
+  });
+
 // ── Master data ───────────────────────────────────────────────
 const MASTER_CACHE_TTL = 5 * 60 * 1000;
 const masterCache = new Map<string, { expiresAt: number; promise: Promise<unknown> }>();
