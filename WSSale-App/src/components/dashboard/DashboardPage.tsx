@@ -7,6 +7,7 @@ import { useAuthStore } from '../../store/auth-store';
 import { canViewRebateSummary } from '../../utils/permissions';
 import { formatThaiDate } from '../../utils/date';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
+import { appAlert } from '../ui/AppAlert';
 import { exportToExcel, type ExportColumn } from '../../utils/exportUtils';
 import type { AgingRow, RebateSummary, SalesOrder } from '../../types';
 import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
@@ -112,7 +113,7 @@ export function DashboardPage() {
 
   const exportAgingToExcel = () => {
     if (!groupedAging || groupedAging.length === 0) {
-      alert('ไม่มีข้อมูลบิลค้างจัดส่งสำหรับส่งออก');
+      void appAlert('ไม่มีข้อมูลบิลค้างจัดส่งสำหรับส่งออก', 'warning');
       return;
     }
     const rows: any[] = [];

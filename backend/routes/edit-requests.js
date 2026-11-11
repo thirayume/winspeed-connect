@@ -26,6 +26,11 @@ const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-s
 const { broadcast } = require('../services/socket');
 const truckHold = require('../services/truck-hold');
 const { findIssuedDelivery } = require('../services/native-status');
+const {
+  computeTripCustomerSnapshot,
+  canUserApproveMultiCustTrip,
+} = require('../services/trip-multi-cust-approval');
+const { assertPricesAboveCost } = require('../services/cost-authority');
 
 router.use(requireAuth);
 
@@ -695,13 +700,43 @@ router.patch('/price-approvals/:id/approve', requireRole(...APPROVER_ROLES), req
       // Validate current DocumentRevision of the sales order
       const soRes = await tx.request()
         .input('soId', sql.Int, target.SoId)
-        .query('SELECT DocumentRevision, Status FROM wf.SalesOrder WHERE Id = @soId');
+        .query('SELECT DocumentRevision, Status, DeliveryDate, RebateDiscountAmt FROM wf.SalesOrder WHERE Id = @soId');
       const soRow = soRes.recordset[0];
       if (!soRow) throw new Error('ไม่พบใบสั่งขายที่ผูกกับคำขอนี้');
       if (Number(soRow.DocumentRevision) !== Number(target.DocumentRevision)) {
         await tx.request().input('id', sql.Int, approvalId).query("UPDATE wf.PriceApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE Id = @id");
         throw new Error(`คำขอนี้ถูกยกเลิกแล้ว (Superseded) เนื่องจากใบสั่งขายมีการแก้ไขเป็นฉบับใหม่ (Revision ${soRow.DocumentRevision} != ${target.DocumentRevision})`);
       }
+
+      // Confidential safety guard: even price overrides cannot be approved below Costlist
+      const txQ = async (text, inputs = {}) => {
+        const r = new sql.Request(tx);
+        for (const [k, v] of Object.entries(inputs)) r.input(k, v.type, v.value);
+        return r.query(text);
+      };
+      const soLinesRes = await tx.request()
+        .input('soId', sql.Int, target.SoId)
+        .query(`
+          SELECT GoodId, GoodCode, GoodName, QtyTon, PricePerTon, IsGiveaway,
+                 IsCouponDrawn, CouponReservationId, RefCouponDocuNo,
+                 IsControlTicketDrawn, RefControlTicketNo
+          FROM wf.SalesOrderLine WITH (NOLOCK)
+          WHERE SoId = @soId
+        `);
+      const soLines = (soLinesRes.recordset || []).map(l => (
+        String(l.GoodId || '') === String(target.GoodId || '')
+          ? { ...l, PricePerTon: Number(target.RequestedPrice ?? l.PricePerTon) }
+          : l
+      ));
+      const linesToCheck = soLines.length > 0
+        ? soLines
+        : [{ goodId: target.GoodId, goodName: target.GoodName, qtyTon: target.QtyTon, pricePerTon: target.RequestedPrice }];
+      await assertPricesAboveCost({
+        lines: linesToCheck,
+        asOfDate: soRow.DeliveryDate || null,
+        rebateDiscountAmt: Number(soRow.RebateDiscountAmt || 0),
+        queryFn: txQ,
+      });
 
       const updateRes = await tx.request()
         .input('id', sql.Int, approvalId)
@@ -741,7 +776,7 @@ router.patch('/price-approvals/:id/approve', requireRole(...APPROVER_ROLES), req
     res.json({ id: approvalId, status: 'APPROVED', message: 'อนุมัติราคาขายสำเร็จ' });
   } catch (e) {
     console.error('[price-approvals/approve]', e);
-    res.status(e.status || 500).json({ message: e.message });
+    res.status(e.status || e.statusCode || 500).json({ message: e.message, code: e.code });
   }
 });
 
@@ -765,13 +800,43 @@ router.patch('/price-approvals/:id/reject', requireRole(...APPROVER_ROLES), requ
       // Validate current DocumentRevision of the sales order
       const soRes = await tx.request()
         .input('soId', sql.Int, target.SoId)
-        .query('SELECT DocumentRevision, Status FROM wf.SalesOrder WHERE Id = @soId');
+        .query('SELECT DocumentRevision, Status, DeliveryDate, RebateDiscountAmt FROM wf.SalesOrder WHERE Id = @soId');
       const soRow = soRes.recordset[0];
       if (!soRow) throw new Error('ไม่พบใบสั่งขายที่ผูกกับคำขอนี้');
       if (Number(soRow.DocumentRevision) !== Number(target.DocumentRevision)) {
         await tx.request().input('id', sql.Int, approvalId).query("UPDATE wf.PriceApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE Id = @id");
         throw new Error(`คำขอนี้ถูกยกเลิกแล้ว (Superseded) เนื่องจากใบสั่งขายมีการแก้ไขเป็นฉบับใหม่ (Revision ${soRow.DocumentRevision} != ${target.DocumentRevision})`);
       }
+
+      // Confidential safety guard: even price overrides cannot be approved below Costlist
+      const txQ = async (text, inputs = {}) => {
+        const r = new sql.Request(tx);
+        for (const [k, v] of Object.entries(inputs)) r.input(k, v.type, v.value);
+        return r.query(text);
+      };
+      const soLinesRes = await tx.request()
+        .input('soId', sql.Int, target.SoId)
+        .query(`
+          SELECT GoodId, GoodCode, GoodName, QtyTon, PricePerTon, IsGiveaway,
+                 IsCouponDrawn, CouponReservationId, RefCouponDocuNo,
+                 IsControlTicketDrawn, RefControlTicketNo
+          FROM wf.SalesOrderLine WITH (NOLOCK)
+          WHERE SoId = @soId
+        `);
+      const soLines = (soLinesRes.recordset || []).map(l => (
+        String(l.GoodId || '') === String(target.GoodId || '')
+          ? { ...l, PricePerTon: Number(target.RequestedPrice ?? l.PricePerTon) }
+          : l
+      ));
+      const linesToCheck = soLines.length > 0
+        ? soLines
+        : [{ goodId: target.GoodId, goodName: target.GoodName, qtyTon: target.QtyTon, pricePerTon: target.RequestedPrice }];
+      await assertPricesAboveCost({
+        lines: linesToCheck,
+        asOfDate: soRow.DeliveryDate || null,
+        rebateDiscountAmt: Number(soRow.RebateDiscountAmt || 0),
+        queryFn: txQ,
+      });
 
       const updateRes = await tx.request()
         .input('id', sql.Int, approvalId)
@@ -796,6 +861,217 @@ router.patch('/price-approvals/:id/reject', requireRole(...APPROVER_ROLES), requ
     res.json({ id: approvalId, status: 'REJECTED', message: 'ปฏิเสธราคาขายเรียบร้อย' });
   } catch (e) {
     console.error('[price-approvals/reject]', e);
+    res.status(e.status || 500).json({ message: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Multi-Customer Sale Trip Approvals (MULTI_CUST_TRIP)
+// ═══════════════════════════════════════════════════════════════
+
+async function requireTripApprovalInScope(req, res, next) {
+  try {
+    const scope = await getVisibleScope(req.user);
+    if (scope.all) return next();
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติทริปนี้' });
+
+    const r = (await wfQuery(`
+      SELECT a.TripId, a.RequestedBy, st.CreatedBy AS TripCreatedBy
+      FROM wf.TripMultiCustomerApproval a
+      LEFT JOIN wf.SalesTrip st ON st.TripId = a.TripId
+      WHERE a.Id = @id
+    `, { id: { type: sql.Int, value: id } })).recordset?.[0];
+    if (!r) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติทริปนี้' });
+
+    if (inScope(scope, { userId: r.RequestedBy, extraUserIds: [r.TripCreatedBy] })) {
+      return next();
+    }
+
+    const memberFilter = scopeFilter(scope, { userCol: 'm.SalesUserId', prefix: 'tm' });
+    const memberHit = (await wfQuery(`
+      SELECT TOP 1 1 AS ok
+      FROM wf.v_TripMember m
+      WHERE m.TripId = @tid AND ${memberFilter.sql}
+    `, { tid: { type: sql.Int, value: Number(r.TripId) }, ...memberFilter.inputs })).recordset?.[0];
+
+    if (!memberHit) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติทริปนี้' });
+    next();
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
+}
+
+// GET /api/edit-requests/trip-approvals
+router.get('/trip-approvals', async (req, res) => {
+  try {
+    const { status, tripId, mine } = req.query;
+    const inputs = {};
+    let where = 'WHERE 1=1';
+    if (status) { where += ' AND a.Status = @status'; inputs.status = { type: sql.VarChar(20), value: String(status).toUpperCase() }; }
+    if (tripId) { where += ' AND a.TripId = @tripId'; inputs.tripId = { type: sql.Int, value: Number(tripId) }; }
+    if (String(mine) === '1') { where += ' AND a.RequestedBy = @me'; inputs.me = { type: sql.Int, value: req.user.sub }; }
+
+    const scope = await getVisibleScope(req.user);
+    if (!scope.all) {
+      const byReq = scopeFilter(scope, { userCol: 'a.RequestedBy', prefix: 'tar' });
+      const byTripCreator = scopeFilter(scope, { userCol: 'st.CreatedBy', prefix: 'tac' });
+      const byMember = scopeFilter(scope, { userCol: 'm.SalesUserId', prefix: 'tam' });
+      where += ` AND (${byReq.sql} OR ${byTripCreator.sql} OR EXISTS (SELECT 1 FROM wf.v_TripMember m WHERE m.TripId = a.TripId AND ${byMember.sql}))`;
+      Object.assign(inputs, byReq.inputs, byTripCreator.inputs, byMember.inputs);
+    }
+
+    let rows = [];
+    try {
+      const r = await wfQuery(`
+        SELECT a.*,
+               ru.DisplayName AS RequestedByName,
+               au.DisplayName AS ApprovedByName,
+               st.TransRegistration,
+               st.DriverName,
+               st.PickupDueDate,
+               st.Status AS TripStatus,
+               st.DocumentRevision AS CurrentTripRevision
+        FROM wf.TripMultiCustomerApproval a
+        LEFT JOIN wf.AppUser ru ON ru.Id = a.RequestedBy
+        LEFT JOIN wf.AppUser au ON au.Id = a.ApprovedBy
+        LEFT JOIN wf.SalesTrip st ON st.TripId = a.TripId
+        ${where}
+        ORDER BY CASE WHEN a.Status = 'PENDING' THEN 0 ELSE 1 END, a.Id DESC
+      `, inputs);
+      rows = camelizeRows(r.recordset || []).map(row => {
+        let customerIds = [];
+        if (typeof row.customerIdsJson === 'string') {
+          try { customerIds = JSON.parse(row.customerIdsJson); } catch { customerIds = []; }
+        }
+        return { ...row, customerIds };
+      });
+    } catch (e) {
+      if (!/Invalid object name/i.test(String(e.message || ''))) throw e;
+    }
+
+    const authInfo = await canUserApproveMultiCustTrip(req.user, null);
+    res.json({
+      data: rows,
+      requiredRole: authInfo.requiredRole,
+      canApproveRole: authInfo.allowed,
+    });
+  } catch (e) {
+    console.error('[trip-approvals/list]', e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// PATCH /api/edit-requests/trip-approvals/:id/approve
+router.patch('/trip-approvals/:id/approve', requireRole(...APPROVER_ROLES), requireTripApprovalInScope, async (req, res) => {
+  try {
+    const approvalId = Number(req.params.id);
+    if (!Number.isInteger(approvalId) || approvalId <= 0) {
+      return res.status(400).json({ message: 'รหัสคำขอไม่ถูกต้อง' });
+    }
+    const { note } = req.body || {};
+    const target = (await wfQuery(`SELECT * FROM wf.TripMultiCustomerApproval WHERE Id = @id`, {
+      id: { type: sql.Int, value: approvalId },
+    })).recordset?.[0];
+    if (!target) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติทริปนี้' });
+    if (target.Status !== 'PENDING') return res.status(409).json({ message: `คำขอนี้อยู่ในสถานะ ${target.Status} แล้ว` });
+
+    const roleCheck = await canUserApproveMultiCustTrip(req.user, target.TotalAmount);
+    if (!roleCheck.allowed) {
+      return res.status(403).json({ message: roleCheck.reason || 'ไม่มีสิทธิ์อนุมัติทริปหลายลูกค้า' });
+    }
+    if (sameUser(target.RequestedBy, req.user.sub) && !['ADMIN', 'C_LEVEL'].includes(req.user.role)) {
+      return res.status(403).json({ message: 'ไม่อนุญาตให้อนุมัติคำขอของตัวเอง' });
+    }
+
+    await wfTransaction(async tx => {
+      const tripRes = await tx.request().input('tid', sql.Int, Number(target.TripId))
+        .query(`SELECT TripId, Status, DocumentRevision FROM wf.SalesTrip WITH (UPDLOCK, HOLDLOCK) WHERE TripId = @tid`);
+      const tripRow = tripRes.recordset?.[0];
+      if (!tripRow || tripRow.Status === 'DELETED') {
+        throw Object.assign(new Error('ไม่พบเที่ยวรถที่ผูกกับคำขอนี้'), { status: 404 });
+      }
+
+      const membersRes = await tx.request().input('tid', sql.Int, Number(target.TripId))
+        .query(`SELECT MemberKind, MemberId, DocuNo, CustId, CustName, Status FROM wf.v_TripMember WHERE TripId = @tid`);
+      const liveSnapshot = computeTripCustomerSnapshot(membersRes.recordset || []);
+      let targetCustomerIds = [];
+      try { targetCustomerIds = JSON.parse(target.CustomerIdsJson || '[]'); } catch { targetCustomerIds = []; }
+
+      const allRequestedPresent = targetCustomerIds.length > 0 && targetCustomerIds.every(cid => liveSnapshot.customerIds.includes(String(cid)));
+      if (!allRequestedPresent) {
+        await tx.request().input('id', sql.Int, approvalId)
+          .query(`UPDATE wf.TripMultiCustomerApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE Id = @id AND Status = 'PENDING'`);
+        throw Object.assign(new Error('รายชื่อลูกค้าในทริปเปลี่ยนแปลงหลังจากส่งคำขอ กรุณาให้ผู้ขอส่งคำขอใหม่'), { status: 409 });
+      }
+
+      const updRes = await tx.request()
+        .input('id', sql.Int, approvalId)
+        .input('by', sql.Int, Number(req.user.sub))
+        .input('note', sql.NVarChar(500), note ? String(note).trim() : null)
+        .query(`
+          UPDATE wf.TripMultiCustomerApproval
+          SET Status = 'APPROVED', ApprovedBy = @by, ApprovedAt = SYSUTCDATETIME(), ApprovalNote = @note, UpdatedAt = SYSUTCDATETIME()
+          WHERE Id = @id AND Status = 'PENDING'
+        `);
+      if (Number(updRes?.rowsAffected?.[0] || 0) === 0) {
+        throw Object.assign(new Error('ไม่สามารถอนุมัติได้เนื่องจากสถานะคำขอเปลี่ยนแปลงไปแล้ว'), { status: 409 });
+      }
+    });
+
+    broadcast('trip_multi_cust_approval', { id: approvalId, tripId: target.TripId, action: 'approved' });
+    broadcast('trip_updated', { tripId: target.TripId, action: 'multi_cust_approval_approved' });
+    res.json({ id: approvalId, tripId: target.TripId, status: 'APPROVED', message: 'อนุมัติเปิด Sale Trip หลายลูกค้าเรียบร้อยแล้ว' });
+  } catch (e) {
+    console.error('[trip-approvals/approve]', e);
+    res.status(e.status || 500).json({ message: e.message });
+  }
+});
+
+// PATCH /api/edit-requests/trip-approvals/:id/reject
+router.patch('/trip-approvals/:id/reject', requireRole(...APPROVER_ROLES), requireTripApprovalInScope, async (req, res) => {
+  try {
+    const approvalId = Number(req.params.id);
+    if (!Number.isInteger(approvalId) || approvalId <= 0) {
+      return res.status(400).json({ message: 'รหัสคำขอไม่ถูกต้อง' });
+    }
+    const { note } = req.body || {};
+    if (!note || String(note).trim().length < 5) {
+      return res.status(400).json({ message: 'ปฏิเสธคำขอต้องระบุเหตุผลอย่างน้อย 5 ตัวอักษร' });
+    }
+
+    const target = (await wfQuery(`SELECT * FROM wf.TripMultiCustomerApproval WHERE Id = @id`, {
+      id: { type: sql.Int, value: approvalId },
+    })).recordset?.[0];
+    if (!target) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติทริปนี้' });
+    if (target.Status !== 'PENDING') return res.status(409).json({ message: `คำขอนี้อยู่ในสถานะ ${target.Status} แล้ว` });
+
+    const roleCheck = await canUserApproveMultiCustTrip(req.user, target.TotalAmount);
+    if (!roleCheck.allowed) {
+      return res.status(403).json({ message: roleCheck.reason || 'ไม่มีสิทธิ์ปฏิเสธทริปหลายลูกค้า' });
+    }
+    if (sameUser(target.RequestedBy, req.user.sub) && !['ADMIN', 'C_LEVEL'].includes(req.user.role)) {
+      return res.status(403).json({ message: 'ไม่อนุญาตให้ปฏิเสธคำขอของตัวเอง' });
+    }
+
+    const updRes = await wfQuery(`
+      UPDATE wf.TripMultiCustomerApproval
+      SET Status = 'REJECTED', ApprovedBy = @by, ApprovedAt = SYSUTCDATETIME(), ApprovalNote = @note, UpdatedAt = SYSUTCDATETIME()
+      WHERE Id = @id AND Status = 'PENDING'
+    `, {
+      id: { type: sql.Int, value: approvalId },
+      by: { type: sql.Int, value: Number(req.user.sub) },
+      note: { type: sql.NVarChar(500), value: String(note).trim() },
+    });
+    if (Number(updRes?.rowsAffected?.[0] || 0) === 0) {
+      return res.status(409).json({ message: 'ไม่สามารถปฏิเสธได้เนื่องจากสถานะคำขอเปลี่ยนแปลงไปแล้ว' });
+    }
+
+    broadcast('trip_multi_cust_approval', { id: approvalId, tripId: target.TripId, action: 'rejected' });
+    broadcast('trip_updated', { tripId: target.TripId, action: 'multi_cust_approval_rejected' });
+    res.json({ id: approvalId, tripId: target.TripId, status: 'REJECTED', message: 'ปฏิเสธคำขออนุมัติทริปหลายลูกค้าเรียบร้อย' });
+  } catch (e) {
+    console.error('[trip-approvals/reject]', e);
     res.status(e.status || 500).json({ message: e.message });
   }
 });

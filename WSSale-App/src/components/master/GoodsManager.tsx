@@ -3,6 +3,7 @@ import { Package, Search, Image as ImageIcon, Edit2, Save, X, RefreshCw, Upload,
 import { fetchGoods, updateGood, toggleGoodStatus, fetchPrices } from '../../services/api';
 import '../../store/app-store';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
+import { appAlert } from '../ui/AppAlert';
 import type { EMGood, CurrentPrice } from '../../types';
 
 export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodId: string; goodCode?: string; goodName?: string }) => void }) => {
@@ -140,7 +141,7 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodI
       setEditingId(null);
     } catch (err) {
       // R12 item 15: show the server's reason (permission / validation / not found)
-      alert('บันทึกไม่สำเร็จ: ' + ((err as Error)?.message || 'ไม่ทราบสาเหตุ'));
+      await appAlert('บันทึกไม่สำเร็จ: ' + ((err as Error)?.message || 'ไม่ทราบสาเหตุ'), 'error');
       console.error(err);
     }
     setSaving(false);
@@ -158,7 +159,7 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodI
       }
       setStatusModal(null);
     } catch (err: any) {
-      alert('ไม่สามารถเปลี่ยนสถานะสินค้าได้: ' + (err?.message || 'ข้อผิดพลาดระบบ'));
+      await appAlert('ไม่สามารถเปลี่ยนสถานะสินค้าได้: ' + (err?.message || 'ข้อผิดพลาดระบบ'), 'error');
       console.error(err);
     }
     setStatusLoading(false);

@@ -7,6 +7,7 @@ import { RoleManagementPage } from "./RoleManagementPage";
 import { OrgHierarchyView } from "./OrgHierarchyView";
 import { ApproverGovernanceView } from "./ApproverGovernanceView";
 import { req } from "../../services/api";
+import { formatThaiDate } from "../../utils/date";
 
 type ConsoleTab = "users" | "roles" | "org" | "approvers" | "history";
 type HistoryDomain = "all" | "roles" | "batch" | "positions" | "regions";
@@ -408,7 +409,7 @@ export function UsersAccessConsole({
                         return (
                           <tr key={log.Id} className="hover:bg-slate-50/70">
                             <td className="px-3.5 py-2 text-slate-500 whitespace-nowrap font-sans text-[11px]">
-                              {new Date(log.CreatedAt).toLocaleString("th-TH")}
+                              {formatThaiDate(log.CreatedAt, true)}
                             </td>
                             <td className="px-3.5 py-2 font-sans">
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-200">

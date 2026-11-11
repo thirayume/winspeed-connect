@@ -133,6 +133,82 @@ test('policy-contract: enforces weight tolerance min <= max', () => {
   assert.ok(payloadHasError(invalid.errors, /เกณฑ์ความต่างน้ำหนักต่ำสุด/));
 });
 
+test('policy-contract: validates credit aging default <= policy max and preserves 0 for cash-only', () => {
+  const zeroDefault = validateSetting('CREDIT_AGING_DEFAULT_DAYS', 0);
+  assert.equal(zeroDefault.valid, true);
+  assert.equal(zeroDefault.formattedValue, '0');
+
+  const maxValid = validateSetting('CREDIT_AGING_MAX_DAYS', 90);
+  assert.equal(maxValid.valid, true);
+  assert.equal(maxValid.formattedValue, '90');
+
+  const popupBool = validateSetting('CREDIT_AGING_ALERT_POPUP', 'false');
+  assert.equal(popupBool.valid, true);
+  assert.equal(popupBool.formattedValue, 'false');
+
+  const validPair = validateSettingsPayload({
+    CREDIT_AGING_DEFAULT_DAYS: 60,
+    CREDIT_AGING_MAX_DAYS: 90,
+  });
+  assert.equal(validPair.valid, true);
+
+  const zeroDefaultWithMax = validateSettingsPayload({
+    CREDIT_AGING_DEFAULT_DAYS: 0,
+    CREDIT_AGING_MAX_DAYS: 90,
+  });
+  assert.equal(zeroDefaultWithMax.valid, true);
+
+  const invalidPair = validateSettingsPayload({
+    CREDIT_AGING_DEFAULT_DAYS: 100,
+    CREDIT_AGING_MAX_DAYS: 90,
+  });
+  assert.equal(invalidPair.valid, false);
+  assert.ok(payloadHasError(invalidPair.errors, /ค่ามาตรฐาน Aging/));
+
+  // Partial update rejecting max below current default
+  const invalidPartial = validateSettingsPayload(
+    { CREDIT_AGING_MAX_DAYS: 45 },
+    { CREDIT_AGING_DEFAULT_DAYS: '60', CUSTOMER_RATIO: '100', COMPANY_RATIO: '0', WEIGHT_TOLERANCE_MIN_PCT: '-2', WEIGHT_TOLERANCE_MAX_PCT: '5' }
+  );
+  assert.equal(invalidPartial.valid, false);
+  assert.ok(payloadHasError(invalidPartial.errors, /ค่ามาตรฐาน Aging/));
+});
+
+test('policy-contract: validates QUOTATION_MAE_PUI_MAX_VALID_DAYS integer bounds (1..90)', () => {
+  const validDefault = validateSetting('QUOTATION_MAE_PUI_MAX_VALID_DAYS', 3);
+  assert.equal(validDefault.valid, true);
+  assert.equal(validDefault.formattedValue, '3');
+
+  const validCustom = validateSetting('QUOTATION_MAE_PUI_MAX_VALID_DAYS', 5);
+  assert.equal(validCustom.valid, true);
+  assert.equal(validCustom.formattedValue, '5');
+
+  const invalidZero = validateSetting('QUOTATION_MAE_PUI_MAX_VALID_DAYS', 0);
+  assert.equal(invalidZero.valid, false);
+
+  const invalidOver = validateSetting('QUOTATION_MAE_PUI_MAX_VALID_DAYS', 91);
+  assert.equal(invalidOver.valid, false);
+});
+
+test('policy-contract: validates TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS integer bounds (2..50)', () => {
+  const validDefault = validateSetting('TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS', 2);
+  assert.equal(validDefault.valid, true);
+  assert.equal(validDefault.formattedValue, '2');
+
+  const validCustom = validateSetting('TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS', '3');
+  assert.equal(validCustom.valid, true);
+  assert.equal(validCustom.formattedValue, '3');
+
+  const invalidOne = validateSetting('TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS', 1);
+  assert.equal(invalidOne.valid, false);
+
+  const invalidZero = validateSetting('TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS', 0);
+  assert.equal(invalidZero.valid, false);
+
+  const invalidOver = validateSetting('TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS', 51);
+  assert.equal(invalidOver.valid, false);
+});
+
 function payloadHasError(errors, pattern) {
   return errors.some(e => pattern.test(e));
 }

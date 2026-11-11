@@ -1,14 +1,21 @@
 import { useCan } from '../../utils/capabilities';
 import { useState, useEffect, useRef } from 'react';
-import { X, Truck, Package, Clock, FileText, CheckCircle2, ShieldAlert, Printer, Edit, AlertTriangle, Plus, Send } from 'lucide-react';
-import type { SalesOrder } from '../../types';
+import { X, Truck, Package, Clock, FileText, CheckCircle2, ShieldAlert, Printer, Edit, AlertTriangle, Plus, Send, Users, Check, Undo2 } from 'lucide-react';
+import type { SalesOrder, EMGood } from '../../types';
 import { useErpStore } from '../../store/erp-store';
 import { useTripStore } from '../../store/trip-store';
 import { useAppStore } from '../../store/app-store';
-import { cancelSO, confirmSO, moveToPicking, createUnlockRequest, createQuotationFromSoTrip, confirmTrip, submitTripPlan, createTrip, fetchTrip, updateLoadPlan, acknowledgeLoadPlan, fetchLoadingPlan } from '../../services/api';
+import {
+  cancelSO, confirmSO, moveToPicking, createUnlockRequest, createQuotationFromSoTrip,
+  confirmTrip, submitTripPlan, createTrip, fetchTrip, updateLoadPlan, acknowledgeLoadPlan,
+  fetchLoadingPlan, fetchSystemSettings, fetchGoods,
+  requestTripMultiCustApproval, cancelTripMultiCustApproval, approveTripApproval, rejectTripApproval,
+  type MultiCustTripApprovalSummary,
+} from '../../services/api';
+import { isMaePuiGood, parseMaePuiMaxValidDays } from '../../utils/quotation-policy';
 import { useAuthStore } from '../../store/auth-store';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
-import { appConfirm } from '../ui/AppAlert';
+import { appAlert, appConfirm } from '../ui/AppAlert';
 import { RequestActionModal, type RequestActionType } from '../papertrail/RequestActionModal';
 import { SOCancelDeleteModal } from '../common/SOCancelDeleteModal';
 import { TripSetupModal, type TripSetupData } from './TripSetupModal';
@@ -16,7 +23,7 @@ import { PaperDocModal } from '../papertrail/PaperDocModal';
 import { SOBookingDocModal } from './SOBookingDocModal';
 import { displayStatus, SO_STATUS_META, soStatusLabel } from '../../constants/soStatus';
 import { QuickShipModal } from './QuickShipModal';
-import { bangkokDate } from '../../utils/date';
+import { bangkokDate, formatThaiDate } from '../../utils/date';
 import { giveawayPieces } from '../../utils/giveaway';
 import { LoadSequencer, type SequencedLine } from './LoadSequencer';
 
@@ -43,7 +50,15 @@ export function TripSummaryModal({
 
   const [busy, setBusy] = useState(false);
   const [requestModalConfig, setRequestModalConfig] = useState<{ isOpen: boolean, type: RequestActionType }>({ isOpen: false, type: 'EDIT' });
-  const [quoteDays, setQuoteDays] = useState<7 | 15 | 20 | 30 | 45>(15);
+  const [quoteDays, setQuoteDays] = useState<number>(15);
+  const [maePuiMaxDays, setMaePuiMaxDays] = useState<number>(3);
+  const [minCustThreshold, setMinCustThreshold] = useState<number>(2);
+  const [multiCustApproval, setMultiCustApproval] = useState<MultiCustTripApprovalSummary | null>(null);
+  const [showMultiCustForm, setShowMultiCustForm] = useState(false);
+  const [multiCustReason, setMultiCustReason] = useState('');
+  const [multiCustApproveMode, setMultiCustApproveMode] = useState<null | 'approve' | 'reject'>(null);
+  const [multiCustDecisionNote, setMultiCustDecisionNote] = useState('');
+  const [goodsList, setGoodsList] = useState<EMGood[]>([]);
   const [selectedSoIds, setSelectedSoIds] = useState<Set<string | number>>(new Set());
   const [tripPickupDueDate, setTripPickupDueDate] = useState<string>('');
   const [tripRevision, setTripRevision] = useState<number>(1);
@@ -75,7 +90,22 @@ export function TripSummaryModal({
   useEffect(() => {
     let disposed = false;
     setTripLoaded(false);
+    setMultiCustApproval(null);
+    setShowMultiCustForm(false);
+    setMultiCustApproveMode(null);
     if (trip?.orders) {
+      fetchSystemSettings()
+        .then(res => {
+          if (disposed) return;
+          setMaePuiMaxDays(parseMaePuiMaxValidDays(res.raw, res.settings));
+          const rawMin = res.raw?.TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS ?? res.settings?.TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS;
+          const parsedMin = parseInt(String(rawMin ?? '2'), 10);
+          if (Number.isInteger(parsedMin) && parsedMin >= 2) setMinCustThreshold(parsedMin);
+        })
+        .catch(() => {});
+      fetchGoods({ forSale: true })
+        .then(res => { if (!disposed) setGoodsList(Array.isArray(res) ? res : []); })
+        .catch(() => {});
       const draftIds = trip.orders
         .filter(o => o.status === 'DRAFT' && o.id && String(o.id) !== 'undefined')
         .map(o => o.id!);
@@ -97,6 +127,10 @@ export function TripSummaryModal({
           setServerPlate(res.transRegistration || '');
           setTripRevision(Number(res.documentRevision));
           if (res.pickupDueDate) setTripPickupDueDate(res.pickupDueDate.split('T')[0]);
+          setMultiCustApproval(res.multiCustApproval || null);
+          if (res.multiCustApproval?.minCustomers) {
+            setMinCustThreshold(res.multiCustApproval.minCustomers);
+          }
           const store = useTripStore.getState();
           if (Number(store.activeTrip?.tripId) === Number(tripId)) store.updateTrip({
             truckPlate: res.transRegistration || undefined, remark: res.tripRemark || '',
@@ -130,11 +164,11 @@ export function TripSummaryModal({
       });
       setLoadPlanStatus('WAREHOUSE_ACK');
       setWarehouseAckAt(ackRes.warehouseAckAt || new Date().toISOString());
-      alert(ackRes.message || 'ฝ่ายคลังรับทราบแผนจัดของเรียบร้อยแล้ว');
+      await appAlert(ackRes.message || 'ฝ่ายคลังรับทราบแผนจัดของเรียบร้อยแล้ว', 'success');
       if (onUpdate) onUpdate();
       loadTripPlan(Number(effectiveTripId));
     } catch (e: any) {
-      alert('การรับทราบแผนล้มเหลว: ' + (e.message || 'ข้อผิดพลาด'));
+      await appAlert('การรับทราบแผนล้มเหลว: ' + (e.message || 'ข้อผิดพลาด'), 'error');
     } finally {
       setBusy(false);
     }
@@ -191,7 +225,7 @@ export function TripSummaryModal({
       await fn(); 
       if (onUpdate) onUpdate(); 
     }
-    catch (e: unknown) { alert((e as Error).message || 'เกิดข้อผิดพลาด'); }
+    catch (e: unknown) { await appAlert((e as Error).message || 'เกิดข้อผิดพลาด', 'error'); }
     finally { setBusy(false); }
   }
 
@@ -202,7 +236,115 @@ export function TripSummaryModal({
       await Promise.all(trip.orders.filter(o => o.id && String(o.id) !== 'undefined').map(so => actionFn(so.id!)));
       if (onUpdate) onUpdate();
     } catch (e: any) {
-      alert('ทำรายการล้มเหลว: ' + e.message);
+      await appAlert('ทำรายการล้มเหลว: ' + e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const allDraftOrders = trip.orders.filter(o => o.status === 'DRAFT');
+  const activeOrdersForCheck = allDraftOrders.length === trip.orders.length
+    ? (selectedSoIds.size > 0 ? allDraftOrders.filter(o => o.id != null && selectedSoIds.has(o.id)) : allDraftOrders)
+    : trip.orders.filter(o => !['CANCELLED', 'DELETED'].includes(String(o.status || '').toUpperCase()));
+  const selectedCustKeys = Array.from(
+    new Set(
+      activeOrdersForCheck
+        .map(o => String(o.custId || (o.custName ? `NAME:${o.custName}` : '')).trim())
+        .filter(Boolean)
+    )
+  ).sort();
+  const effectiveMinCust = multiCustApproval?.minCustomers || minCustThreshold || 2;
+  const isDraftOrRelock = trip.orders.some(o => o.status === 'DRAFT');
+  const selectionRequiresMultiCust = isDraftOrRelock && selectedCustKeys.length >= effectiveMinCust;
+  const serverCustSorted = [...(multiCustApproval?.customerIds || [])].map(String).sort();
+  const selectionMatchesServer =
+    !!multiCustApproval &&
+    selectedCustKeys.length > 0 &&
+    JSON.stringify(selectedCustKeys) === JSON.stringify(serverCustSorted);
+  const effectiveMultiCustStatus = selectionRequiresMultiCust
+    ? (selectionMatchesServer ? multiCustApproval!.approvalStatus : 'REQUIRED')
+    : 'NOT_REQUIRED';
+  const isMultiCustApprovedForSelection =
+    !selectionRequiresMultiCust || effectiveMultiCustStatus === 'APPROVED';
+
+  const ensureTripIdAndReload = async (): Promise<number | null> => {
+    let tid = (trip as any)?.tripId || (trip.orders[0] as any)?.tripId;
+    if (!tid || Number(tid) <= 0) {
+      const created = await createTrip({
+        transRegistration: serverPlate,
+        deliveryDate: tripPickupDueDate || undefined,
+        orderIds: trip.orders.map(o => o.id!).filter(Boolean),
+      });
+      tid = created.tripId;
+    }
+    return tid ? Number(tid) : null;
+  };
+
+  const handleRequestMultiCustApproval = async () => {
+    setBusy(true);
+    try {
+      const effectiveTripId = await ensureTripIdAndReload();
+      if (!effectiveTripId) throw new Error('ไม่พบรหัส Trip สำหรับส่งขออนุมัติ');
+      const subsetIds = allDraftOrders.length === trip.orders.length && selectedSoIds.size > 0 && selectedSoIds.size < allDraftOrders.length
+        ? Array.from(selectedSoIds)
+        : undefined;
+      const res = await requestTripMultiCustApproval(effectiveTripId, {
+        reason: multiCustReason.trim() || undefined,
+        orderIds: subsetIds,
+      });
+      setShowMultiCustForm(false);
+      setMultiCustReason('');
+      const refreshed = await fetchTrip(effectiveTripId);
+      setMultiCustApproval(refreshed.multiCustApproval || null);
+      if (onUpdate) onUpdate();
+      appAlert(res.message || 'ส่งคำขออนุมัติทริปหลายลูกค้าเรียบร้อยแล้ว', 'success');
+    } catch (e: any) {
+      appAlert('ส่งคำขออนุมัติไม่สำเร็จ: ' + (e.message || 'เกิดข้อผิดพลาด'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCancelMultiCustApproval = async () => {
+    const latestId = multiCustApproval?.latestApproval?.id;
+    const effectiveTripId = (trip as any)?.tripId || (trip.orders[0] as any)?.tripId;
+    if (!latestId || !effectiveTripId) return;
+    if (!await appConfirm('ต้องการถอนคำขออนุมัติทริปหลายลูกค้านี้ใช่หรือไม่?')) return;
+    setBusy(true);
+    try {
+      const res = await cancelTripMultiCustApproval(effectiveTripId, latestId);
+      const refreshed = await fetchTrip(effectiveTripId);
+      setMultiCustApproval(refreshed.multiCustApproval || null);
+      if (onUpdate) onUpdate();
+      appAlert(res.message || 'ถอนคำขออนุมัติเรียบร้อย', 'success');
+    } catch (e: any) {
+      appAlert('ถอนคำขอไม่สำเร็จ: ' + (e.message || 'เกิดข้อผิดพลาด'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDecideMultiCustApproval = async (decision: 'approve' | 'reject') => {
+    const latestId = multiCustApproval?.latestApproval?.id;
+    const effectiveTripId = (trip as any)?.tripId || (trip.orders[0] as any)?.tripId;
+    if (!latestId || !effectiveTripId) return;
+    if (decision === 'reject' && multiCustDecisionNote.trim().length < 5) {
+      appAlert('ปฏิเสธคำขอต้องระบุเหตุผลอย่างน้อย 5 ตัวอักษร', 'warning');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = decision === 'approve'
+        ? await approveTripApproval(latestId, multiCustDecisionNote.trim() || undefined)
+        : await rejectTripApproval(latestId, multiCustDecisionNote.trim());
+      setMultiCustApproveMode(null);
+      setMultiCustDecisionNote('');
+      const refreshed = await fetchTrip(effectiveTripId);
+      setMultiCustApproval(refreshed.multiCustApproval || null);
+      if (onUpdate) onUpdate();
+      appAlert(res.message || (decision === 'approve' ? 'อนุมัติทริปหลายลูกค้าเรียบร้อย' : 'ปฏิเสธคำขอเรียบร้อย'), 'success');
+    } catch (e: any) {
+      appAlert('ดำเนินการไม่สำเร็จ: ' + (e.message || 'เกิดข้อผิดพลาด'), 'error');
     } finally {
       setBusy(false);
     }
@@ -213,7 +355,12 @@ export function TripSummaryModal({
     const draftOrders = trip.orders.filter(o => o.status === 'DRAFT');
     const selectedOrders = draftOrders.filter(o => selectedSoIds.has(o.id!));
     if (selectedOrders.length === 0) {
-      alert('กรุณาเลือกบิลที่ต้องการยืนยันอย่างน้อย 1 บิล');
+      appAlert('กรุณาเลือกบิลที่ต้องการยืนยันอย่างน้อย 1 บิล', 'warning');
+      return;
+    }
+
+    if (selectionRequiresMultiCust && !isMultiCustApprovedForSelection) {
+      appAlert(`ทริปนี้มีลูกค้า ${selectedCustKeys.length} ราย (ตั้งแต่ ${effectiveMinCust} รายขึ้นไป) ต้องส่งขออนุมัติจากผู้มีอำนาจอนุมัติก่อนยืนยันการสั่งซื้อ`, 'warning');
       return;
     }
 
@@ -222,13 +369,13 @@ export function TripSummaryModal({
       (o as any).requiresPriceApproval && ((o as any).priceApprovalStatus === 'PENDING' || (o as any).priceApprovalStatus === 'NONE' || !(o as any).priceApprovalStatus)
     );
     if (pendingPriceOrder) {
-      alert(`ไม่สามารถยืนยันได้: บิล ${pendingPriceOrder.wfRef || '#' + pendingPriceOrder.id} มีรายการราคาต่ำกว่าประกาศที่ยังรอการอนุมัติ`);
+      appAlert(`ไม่สามารถยืนยันได้: บิล ${pendingPriceOrder.wfRef || '#' + pendingPriceOrder.id} มีรายการราคาต่ำกว่าประกาศที่ยังรอการอนุมัติ`, 'warning');
       return;
     }
 
     const rejectedPriceOrder = selectedOrders.find(o => (o as any).priceApprovalStatus === 'REJECTED');
     if (rejectedPriceOrder) {
-      alert(`ไม่สามารถยืนยันได้: บิล ${rejectedPriceOrder.wfRef || '#' + rejectedPriceOrder.id} ถูกปฏิเสธราคาขาย`);
+      appAlert(`ไม่สามารถยืนยันได้: บิล ${rejectedPriceOrder.wfRef || '#' + rejectedPriceOrder.id} ถูกปฏิเสธราคาขาย`, 'error');
       return;
     }
 
@@ -238,13 +385,13 @@ export function TripSummaryModal({
     if (!isControlTicketTrip) {
       const isNoPlate = !serverPlate || serverPlate === 'ไม่ระบุทะเบียนรถ' || serverPlate === 'ยังไม่ระบุรถ';
       if (isNoPlate) {
-        alert('การยืนยันเที่ยวรถจำเป็นต้องระบุทะเบียนรถ กรุณากด "แก้ไขข้อมูล" เพื่อใส่ทะเบียนรถก่อนยืนยัน');
+        appAlert('การยืนยันเที่ยวรถจำเป็นต้องระบุทะเบียนรถ กรุณากด "แก้ไขข้อมูล" เพื่อใส่ทะเบียนรถก่อนยืนยัน', 'warning');
         return;
       }
 
       // P1 Finding 4: วันนัดรับรถห้ามเดาและต้องระบุชัดเจน (แยกจากวันรับของแต่ละ SO)
       if (!tripPickupDueDate) {
-        alert('การยืนยันเที่ยวรถจำเป็นต้องระบุวันนัดรับสินค้า (Pickup Due Date) ให้ชัดเจน');
+        appAlert('การยืนยันเที่ยวรถจำเป็นต้องระบุวันนัดรับสินค้า (Pickup Due Date) ให้ชัดเจน', 'warning');
         return;
       }
     }
@@ -260,7 +407,7 @@ export function TripSummaryModal({
         effectiveTripId = newTrip.tripId;
         idempotencyKeyRef.current = `trip-confirm-${effectiveTripId}-${Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')}`;
       } catch (err: any) {
-        alert('ไม่สามารถสร้างเที่ยวรถอัตโนมัติ: ' + err.message);
+        appAlert('ไม่สามารถสร้างเที่ยวรถอัตโนมัติ: ' + err.message, 'error');
         return;
       }
     }
@@ -318,15 +465,15 @@ export function TripSummaryModal({
       });
 
       if (res.warning) {
-        alert(`${res.message || 'ยืนยันเที่ยวรถสำเร็จ'}\n\nข้อควรระวัง: ${res.warning}`);
+        await appAlert(`${res.message || 'ยืนยันเที่ยวรถสำเร็จ'}\n\nข้อควรระวัง: ${res.warning}`, 'warning');
       } else {
-        alert(res.message || 'ยืนยันเที่ยวรถสำเร็จ');
+        await appAlert(res.message || 'ยืนยันเที่ยวรถสำเร็จ', 'success');
       }
       useTripStore.getState().clearTrip();
       if (onUpdate) onUpdate();
       onClose();
     } catch (e: any) {
-      alert('ยืนยันล้มเหลว: ' + e.message);
+      appAlert('ยืนยันล้มเหลว: ' + e.message, 'error');
     } finally {
       setBusy(false);
     }
@@ -334,17 +481,17 @@ export function TripSummaryModal({
 
   const handleCreateQuotation = async () => {
     const soIds = trip.orders.map(o => o.id).filter((id): id is string | number => !!id && String(id) !== 'undefined');
-    if (!soIds.length) return alert('ไม่พบ SO สำหรับสร้างใบเสนอราคา');
-    if (isQuoteLocked) return alert(`ทริปนี้ผูกกับใบเสนอราคา ${linkedQuoteOrder?.linkedQuoteNo || ''} ที่ยังรอการยืนยันอยู่`);
-    if (!allDraft) return alert('สร้างใบเสนอราคาได้เฉพาะบิลร่างทั้งหมดในทริปเท่านั้น');
+    if (!soIds.length) return void appAlert('ไม่พบ SO สำหรับสร้างใบเสนอราคา', 'warning');
+    if (isQuoteLocked) return void appAlert(`ทริปนี้ผูกกับใบเสนอราคา ${linkedQuoteOrder?.linkedQuoteNo || ''} ที่ยังรอการยืนยันอยู่`, 'warning');
+    if (!allDraft) return void appAlert('สร้างใบเสนอราคาได้เฉพาะบิลร่างทั้งหมดในทริปเท่านั้น', 'warning');
     const ok = await appConfirm(`สร้างใบเสนอราคาจากทริปนี้ ${soIds.length} บิล?\nระบบจะรวมสินค้าเป็นใบเดียว และไม่รวมรายการของแถม`);
     if (!ok) return;
     await doAction(async () => {
       const sourceRefs = trip.orders
         .map(o => o.wfRef || (o as any).importedDocuNo || String(o.id || ''))
         .filter(ref => ref && ref !== 'undefined');
-      const result = await createQuotationFromSoTrip({ soIds, sourceRefs, validDays: quoteDays });
-      alert(`สร้างใบเสนอราคา ${result.quoteNo} สำเร็จ\nSO ในทริปจะยังเป็นร่างจนกว่าใบเสนอราคาจะถูกยืนยัน`);
+      const result = await createQuotationFromSoTrip({ soIds, sourceRefs, validDays: effectiveQuoteDays });
+      await appAlert(`สร้างใบเสนอราคา ${result.quoteNo} สำเร็จ\nSO ในทริปจะยังเป็นร่างจนกว่าใบเสนอราคาจะถูกยืนยัน`, 'success');
     });
   };
 
@@ -361,6 +508,20 @@ export function TripSummaryModal({
   };
 
   const allDraft = trip.orders.every(o => o.status === 'DRAFT');
+  const hasMaePuiInTrip = trip.orders.some(o =>
+    (o.lines || []).some(l => {
+      if (l.isGiveaway) return false;
+      const g = goodsList.find(item => String(item.GoodID) === String(l.goodId) || (l.goodCode && item.GoodCode === l.goodCode));
+      return isMaePuiGood(g) || isMaePuiGood(l as any);
+    })
+  );
+  const effectiveQuoteDays = hasMaePuiInTrip ? Math.min(quoteDays, maePuiMaxDays) : quoteDays;
+
+  useEffect(() => {
+    if (hasMaePuiInTrip && quoteDays > maePuiMaxDays) {
+      setQuoteDays(maePuiMaxDays);
+    }
+  }, [hasMaePuiInTrip, quoteDays, maePuiMaxDays]);
   // a bill unlocked for an edit reads DRAFT while the rest of its confirmed trip stays as it was
   const hasRelockableBill = !allDraft && trip.orders.some(o => o.status === 'DRAFT');
   const allConfirmed = trip.orders.every(o => o.status === 'CONFIRMED');
@@ -499,10 +660,190 @@ export function TripSummaryModal({
                 <div className="mt-3 pt-3 sm:mt-4 sm:pt-4 border-t border-gray-200 space-y-2 sm:space-y-3">
                   {!hasAnyUnlockRequest && (
                     <div className="flex flex-col gap-2 sm:gap-3">
+                      {selectionRequiresMultiCust && !isQuoteLocked && (() => {
+                        const latestApp = selectionMatchesServer ? multiCustApproval?.latestApproval : null;
+                        const canDecideMultiCust =
+                          ['APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'C_LEVEL'].includes(String(currentUser?.role || '')) &&
+                          (['ADMIN', 'C_LEVEL'].includes(String(currentUser?.role || '')) || Number(latestApp?.requestedBy) !== Number(currentUser?.id));
+                        const isRequester = !!latestApp && Number(latestApp.requestedBy) === Number(currentUser?.id);
+                        const boxStyle =
+                          effectiveMultiCustStatus === 'APPROVED'
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                            : effectiveMultiCustStatus === 'REJECTED'
+                              ? 'bg-red-50 border-red-200 text-red-900'
+                              : 'bg-amber-50 border-amber-200 text-amber-950';
+
+                        return (
+                          <div className={`rounded-xl border p-3 text-xs space-y-2 ${boxStyle}`}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-start gap-2">
+                                <Users size={15} className="shrink-0 mt-0.5" />
+                                <div>
+                                  <div className="font-bold">
+                                    ทริปมีลูกค้า {selectedCustKeys.length} ราย (ตั้งแต่ {effectiveMinCust} รายขึ้นไป)
+                                  </div>
+                                  <div className="text-[11px] opacity-85 mt-0.5">
+                                    {effectiveMultiCustStatus === 'APPROVED'
+                                      ? 'ได้รับการอนุมัติจากผู้มีอำนาจแล้ว สามารถยืนยันการสั่งซื้อได้'
+                                      : effectiveMultiCustStatus === 'PENDING'
+                                        ? 'ส่งคำขอแล้ว กำลังรอผู้มีอำนาจอนุมัติพิจารณาก่อนยืนยัน'
+                                        : effectiveMultiCustStatus === 'REJECTED'
+                                          ? `ถูกปฏิเสธ${latestApp?.approvalNote ? `: ${latestApp.approvalNote}` : ''}`
+                                          : multiCustApproval?.isStale && !selectionMatchesServer
+                                            ? 'รายชื่อลูกค้าในทริปเปลี่ยน ต้องส่งขออนุมัติใหม่ก่อนยืนยัน'
+                                            : 'ต้องส่งขออนุมัติทริปหลายลูกค้าจากผู้มีอำนาจก่อนยืนยันการสั่งซื้อทุกครั้ง'}
+                                  </div>
+                                </div>
+                              </div>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                                effectiveMultiCustStatus === 'APPROVED'
+                                  ? 'bg-emerald-600 text-white'
+                                  : effectiveMultiCustStatus === 'PENDING'
+                                    ? 'bg-amber-500 text-white'
+                                    : effectiveMultiCustStatus === 'REJECTED'
+                                      ? 'bg-red-600 text-white'
+                                      : 'bg-gray-700 text-white'
+                              }`}>
+                                {effectiveMultiCustStatus === 'APPROVED' ? 'อนุมัติแล้ว'
+                                  : effectiveMultiCustStatus === 'PENDING' ? 'รออนุมัติ'
+                                  : effectiveMultiCustStatus === 'REJECTED' ? 'ปฏิเสธ'
+                                  : 'ต้องขออนุมัติ'}
+                              </span>
+                            </div>
+
+                            {latestApp?.reasonText && (
+                              <div className="text-[11px] bg-white/70 rounded px-2 py-1 border border-black/5">
+                                เหตุผลผู้ขอ: <span className="font-semibold">{latestApp.reasonText}</span>
+                              </div>
+                            )}
+                            {latestApp?.approvedByName && (
+                              <div className="text-[11px] opacity-80">
+                                {effectiveMultiCustStatus === 'APPROVED' ? 'อนุมัติโดย' : 'ปฏิเสธโดย'}: <strong>{latestApp.approvedByName}</strong>
+                                {latestApp.approvalNote ? ` (${latestApp.approvalNote})` : ''}
+                              </div>
+                            )}
+
+                            {(effectiveMultiCustStatus === 'REQUIRED' || effectiveMultiCustStatus === 'REJECTED' || effectiveMultiCustStatus === 'SUPERSEDED') && (
+                              <div className="space-y-2 pt-1">
+                                {!showMultiCustForm ? (
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => setShowMultiCustForm(true)}
+                                    data-testid="btn-open-multi-cust-request"
+                                    className="w-full py-2 px-3 rounded-lg bg-[#0C447C] text-white font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-blue-900 disabled:opacity-50"
+                                  >
+                                    <Send size={13} /> ส่งขออนุมัติทริปหลายลูกค้า ({selectedCustKeys.length} ราย)
+                                  </button>
+                                ) : (
+                                  <div className="space-y-2 bg-white p-2.5 rounded-lg border border-amber-200">
+                                    <textarea
+                                      rows={2}
+                                      value={multiCustReason}
+                                      onChange={e => setMultiCustReason(e.target.value)}
+                                      placeholder="ระบุเหตุผลประกอบการรวมทริปหลายลูกค้า (ถ้ามี)..."
+                                      className="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-800 focus:border-[#0C447C] outline-none"
+                                    />
+                                    <div className="flex gap-2">
+                                      <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={handleRequestMultiCustApproval}
+                                        data-testid="btn-submit-multi-cust-request"
+                                        className="flex-1 py-1.5 rounded-lg bg-[#0C447C] text-white font-bold text-xs flex items-center justify-center gap-1 hover:bg-blue-900 disabled:opacity-50"
+                                      >
+                                        <Send size={12} /> ยืนยันส่งขออนุมัติ
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => { setShowMultiCustForm(false); setMultiCustReason(''); }}
+                                        className="px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-600 text-xs font-semibold hover:bg-gray-50"
+                                      >
+                                        ยกเลิก
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {effectiveMultiCustStatus === 'PENDING' && (
+                              <div className="space-y-2 pt-1">
+                                <div className="flex flex-wrap gap-2">
+                                  {canDecideMultiCust && multiCustApproveMode === null && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => setMultiCustApproveMode('approve')}
+                                        className="flex-1 py-1.5 px-2.5 rounded-lg bg-emerald-600 text-white font-bold text-xs flex items-center justify-center gap-1 hover:bg-emerald-700 disabled:opacity-50"
+                                      >
+                                        <Check size={13} /> อนุมัติ
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => setMultiCustApproveMode('reject')}
+                                        className="flex-1 py-1.5 px-2.5 rounded-lg border border-red-300 bg-red-50 text-red-700 font-bold text-xs flex items-center justify-center gap-1 hover:bg-red-100 disabled:opacity-50"
+                                      >
+                                        <X size={13} /> ปฏิเสธ
+                                      </button>
+                                    </>
+                                  )}
+                                  {isRequester && (
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={handleCancelMultiCustApproval}
+                                      className="py-1.5 px-2.5 rounded-lg border border-gray-300 bg-white text-gray-700 font-semibold text-xs flex items-center gap-1 hover:bg-gray-50 disabled:opacity-50"
+                                    >
+                                      <Undo2 size={12} /> ถอนคำขอ
+                                    </button>
+                                  )}
+                                </div>
+
+                                {multiCustApproveMode && (
+                                  <div className="space-y-1.5 bg-white p-2 rounded-lg border border-gray-200">
+                                    <input
+                                      type="text"
+                                      value={multiCustDecisionNote}
+                                      onChange={e => setMultiCustDecisionNote(e.target.value)}
+                                      placeholder={multiCustApproveMode === 'reject' ? 'เหตุผลที่ปฏิเสธ (อย่างน้อย 5 ตัวอักษร)...' : 'หมายเหตุการอนุมัติ (ถ้ามี)...'}
+                                      className="w-full rounded border border-gray-300 px-2 py-1 text-xs text-gray-800 outline-none focus:border-[#0C447C]"
+                                    />
+                                    <div className="flex gap-1.5">
+                                      <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => handleDecideMultiCustApproval(multiCustApproveMode)}
+                                        className={`flex-1 py-1.5 rounded text-xs font-bold text-white disabled:opacity-50 ${
+                                          multiCustApproveMode === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'
+                                        }`}
+                                      >
+                                        {multiCustApproveMode === 'approve' ? 'ยืนยันอนุมัติ' : 'ยืนยันปฏิเสธ'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => { setMultiCustApproveMode(null); setMultiCustDecisionNote(''); }}
+                                        className="px-2.5 py-1.5 rounded border border-gray-300 text-xs text-gray-600 bg-white hover:bg-gray-50"
+                                      >
+                                        ยกเลิก
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {(allDraft || hasRelockableBill) && !isQuoteLocked && (
                         <button
-                          disabled={busy || selectedSoIds.size === 0 || !can('so.confirm')}
+                          disabled={busy || selectedSoIds.size === 0 || !can('so.confirm') || !isMultiCustApprovedForSelection}
                           onClick={handleConfirmTripOrders}
+                          title={!isMultiCustApprovedForSelection ? `ต้องได้รับการอนุมัติทริปหลายลูกค้า (>= ${effectiveMinCust} ราย) ก่อนยืนยัน` : undefined}
                           className="w-full bg-green-600 text-white py-2.5 sm:py-3 rounded-xl font-bold text-sm sm:text-base flex items-center justify-center gap-2 hover:bg-green-700 shadow-sm disabled:opacity-50 transition-colors"
                         >
                           <CheckCircle2 size={18} /> ยืนยัน {selectedSoIds.size} บิลที่เลือก {selectedSoIds.size < trip.orders.filter(o => o.status === 'DRAFT').length ? '(แยกบิลตกค้าง -R)' : 'ทั้งเที่ยว'}
@@ -513,16 +854,26 @@ export function TripSummaryModal({
                           <div className="flex items-center gap-2">
                             <FileText size={15} className="text-[#0C447C]" />
                             <select
-                              value={quoteDays}
-                              onChange={e => setQuoteDays(Number(e.target.value) as 7 | 15 | 20 | 30 | 45)}
+                              value={effectiveQuoteDays}
+                              onChange={e => setQuoteDays(Number(e.target.value))}
                               className="flex-1 rounded-lg border border-blue-100 bg-white px-2 py-1.5 text-xs font-bold text-[#0C447C] outline-none"
                               disabled={busy}
                             >
-                              {[7, 15, 20, 30, 45].map(days => (
-                                <option key={days} value={days}>ยืนราคา +{days} วัน</option>
+                              {(hasMaePuiInTrip
+                                ? Array.from({ length: Math.min(maePuiMaxDays, 7) }, (_, i) => i + 1).concat(maePuiMaxDays > 7 ? [maePuiMaxDays] : [])
+                                : [7, 15, 20, 30, 45]
+                              ).map(days => (
+                                <option key={days} value={days}>
+                                  ยืนราคา +{days} วัน{hasMaePuiInTrip && days === maePuiMaxDays ? ' (สูงสุดกลุ่มแม่ปุ๋ย)' : ''}
+                                </option>
                               ))}
                             </select>
                           </div>
+                          {hasMaePuiInTrip && (
+                            <p className="text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                              มีสินค้ากลุ่มแม่ปุ๋ย: ยืนราคาได้สูงสุด {maePuiMaxDays} วัน
+                            </p>
+                          )}
                           <button
                             disabled={busy}
                             onClick={handleCreateQuotation}
@@ -653,10 +1004,10 @@ export function TripSummaryModal({
                           const res = await submitTripPlan(effectiveTripId);
                           setLoadPlanStatus(res.loadPlanStatus);
                           setLoadPlanRevision(res.loadPlanRevision);
-                          alert(res.message || 'ส่งแผนการโหลดให้ฝ่ายคลังสำเร็จ');
+                          await appAlert(res.message || 'ส่งแผนการโหลดให้ฝ่ายคลังสำเร็จ', 'success');
                           if (onUpdate) onUpdate();
                         } catch (err: any) {
-                          alert('ส่งแผนการโหลดล้มเหลว: ' + err.message);
+                          await appAlert('ส่งแผนการโหลดล้มเหลว: ' + err.message, 'error');
                         } finally {
                           setBusy(false);
                         }
@@ -732,7 +1083,7 @@ export function TripSummaryModal({
               <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                 <div className="text-xs text-gray-500">
                   {warehouseAckAt && (
-                    <span>คลังรับทราบล่าสุดเมื่อ: {new Date(warehouseAckAt).toLocaleString('th-TH')}</span>
+                    <span>คลังรับทราบล่าสุดเมื่อ: {formatThaiDate(warehouseAckAt, true)}</span>
                   )}
                 </div>
                 {isWarehouseOrElevated && loadPlanStatus === 'SALE_CONFIRMED' && (
@@ -849,7 +1200,7 @@ export function TripSummaryModal({
                             </div>
                             {order.deliveryDate && (
                               <div>
-                                กำหนดรับ: <span className="font-semibold text-gray-700">{new Date(order.deliveryDate).toLocaleDateString('th-TH')}</span>
+                                กำหนดรับ: <span className="font-semibold text-gray-700">{formatThaiDate(order.deliveryDate)}</span>
                               </div>
                             )}
                           </div>
@@ -949,7 +1300,7 @@ export function TripSummaryModal({
             // Apply request to ALL actionable bills in the trip
             const actionableOrders = trip.orders.filter(o => ['CONFIRMED', 'PICKING'].includes(o.status));
             await Promise.all(actionableOrders.map(o => createUnlockRequest(o.id!, reason, type)));
-            alert(`ส่งคำขอ${type === 'EDIT' ? 'แก้ไข' : 'ยกเลิก'}ทั้งทริปแล้ว รออนุมัติจากหัวหน้างาน`);
+            await appAlert(`ส่งคำขอ${type === 'EDIT' ? 'แก้ไข' : 'ยกเลิก'}ทั้งทริปแล้ว รออนุมัติจากหัวหน้างาน`, 'success');
             setRequestModalConfig({ isOpen: false, type: 'EDIT' });
           });
         }}

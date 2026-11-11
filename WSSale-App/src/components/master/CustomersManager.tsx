@@ -2,23 +2,190 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   Search, Edit2, Save, X, RefreshCw, Truck, Trash2, Users, ArrowUpDown, Phone,
   Filter, UserPlus, CheckCircle2, Mail, MessageSquare, CreditCard, Clock,
-  ShieldAlert, Building2, Check, Plus
+  ShieldAlert, Building2, Check, Plus, AlertTriangle
 } from 'lucide-react';
 import {
   fetchCustomers, fetchCustomerFilters, updateCustomer, batchEditCustomers, getToken,
   fetchCustomerRequests, createCustomerRequest, reviewCustomerRequest,
-  fetchCustomerGroups, createCustomerGroup, updateCustomerGroup, deleteCustomerGroup
+  fetchCustomerGroups, createCustomerGroup, updateCustomerGroup, deleteCustomerGroup,
+  fetchSystemSettings
 } from '../../services/api';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { DeleteConfirmModal } from '../ui/DeleteConfirmModal';
-import { appPrompt, appConfirm } from '../ui/AppAlert';
+import { appAlert, appPrompt, appConfirm } from '../ui/AppAlert';
+import { SearchableSelect } from '../ui/SearchableSelect';
 import type { CustomerRequest, EMCust, CustomerGroup } from '../../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
+function CreditAgingSection({
+  title,
+  creditLimit,
+  onCreditLimitChange,
+  creditLimitLabel,
+  agingDays,
+  onAgingDaysChange,
+  creditHold,
+  onCreditHoldChange,
+  defaultAgingDays,
+  maxAgingDays,
+}: {
+  title: string;
+  creditLimit: number | null | undefined;
+  onCreditLimitChange: (v: number | null) => void;
+  creditLimitLabel: string;
+  agingDays: number | null | undefined;
+  onAgingDaysChange: (v: number | null) => void;
+  creditHold: boolean;
+  onCreditHoldChange: (v: boolean) => void;
+  defaultAgingDays: number;
+  maxAgingDays: number;
+}) {
+  const isDefault = agingDays === null || agingDays === undefined;
+  const isCash = agingDays === 0;
+  const isOverPolicyMax = !isDefault && Number(agingDays) > maxAgingDays;
+
+  return (
+    <div className={`rounded-xl border p-4 ${isOverPolicyMax ? 'border-rose-300 bg-rose-50/40' : 'border-amber-100 bg-amber-50/30'}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <h4 className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${isOverPolicyMax ? 'text-rose-800' : 'text-amber-800'}`}>
+          <CreditCard size={14} /> {title}
+        </h4>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-semibold">
+            มาตรฐาน {defaultAgingDays} วัน
+          </span>
+          <span className="text-[10px] bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full font-semibold">
+            สูงสุดไม่เกิน {maxAgingDays} วัน
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
+        <div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">
+            {creditLimitLabel}
+          </label>
+          <input
+            type="number"
+            step="1000"
+            min="0"
+            value={creditLimit ?? ''}
+            onChange={e => onCreditLimitChange(e.target.value === '' ? null : Number(e.target.value))}
+            placeholder="เช่น 100000 (0 = ไม่จำกัด)"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+          />
+          <p className="text-[10px] text-gray-400 mt-1">ยอดค้างชำระตรวจสอบจาก dbo.SOInvHD</p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">
+            Aging สูงสุด (จำนวนวัน)
+          </label>
+          <input
+            type="number"
+            min="0"
+            max="730"
+            value={isDefault ? '' : agingDays}
+            onChange={e => {
+              const raw = e.target.value;
+              if (raw === '') onAgingDaysChange(null);
+              else {
+                const n = Number(raw);
+                onAgingDaysChange(Number.isFinite(n) && n >= 0 ? Math.trunc(n) : 0);
+              }
+            }}
+            placeholder={`เว้นว่าง = มาตรฐาน (${defaultAgingDays} วัน)`}
+            className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+              isOverPolicyMax
+                ? 'border-rose-500 bg-rose-50 text-rose-900 font-bold focus:ring-rose-400'
+                : 'border-gray-200 bg-white focus:ring-[#0C447C]/40'
+            }`}
+          />
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            <button
+              type="button"
+              onClick={() => onAgingDaysChange(0)}
+              className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition ${
+                isCash ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50'
+              }`}
+            >
+              0 (เงินสด)
+            </button>
+            <button
+              type="button"
+              onClick={() => onAgingDaysChange(null)}
+              className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition ${
+                isDefault ? 'bg-[#0C447C] text-white border-[#0C447C]' : 'bg-white text-[#0C447C] border-blue-200 hover:bg-blue-50'
+              }`}
+            >
+              มาตรฐาน ({defaultAgingDays})
+            </button>
+            <button
+              type="button"
+              onClick={() => onAgingDaysChange(30)}
+              className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition ${
+                agingDays === 30 ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              30 วัน
+            </button>
+            <button
+              type="button"
+              onClick={() => onAgingDaysChange(maxAgingDays)}
+              className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition ${
+                agingDays === maxAgingDays ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              {maxAgingDays} วัน
+            </button>
+          </div>
+          <p className={`text-[10px] mt-1 font-medium ${isCash ? 'text-emerald-700' : isDefault ? 'text-blue-700' : 'text-gray-500'}`}>
+            {isCash
+              ? '💵 ขายเงินสด (0 วัน · ไม่มีเครดิต)'
+              : isDefault
+                ? `ใช้ค่ามาตรฐานระบบ (${defaultAgingDays} วัน)`
+                : `กำหนดเฉพาะราย: ${agingDays} วัน`}
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-700 mb-1">
+            สถานะระงับเครดิต (Hold)
+          </label>
+          <label className="flex items-center gap-2 mt-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={Boolean(creditHold)}
+              onChange={e => onCreditHoldChange(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]"
+            />
+            <span className="text-xs font-bold text-red-600">ระงับการสั่งซื้อ (Credit Hold)</span>
+          </label>
+          <p className="text-[10px] text-gray-400 mt-1">บล็อกการขายทุกกรณี</p>
+        </div>
+      </div>
+
+      {isOverPolicyMax && (
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-rose-300 bg-rose-100/90 px-3 py-2 text-xs text-rose-900">
+          <AlertTriangle size={15} className="text-rose-700 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-bold">คำเตือน: เกินกว่าค่า Aging สูงสุดตามนโยบาย ({agingDays} &gt; {maxAgingDays} วัน)</span>
+            <div className="text-[11px] text-rose-800 mt-0.5">
+              กรุณาตรวจสอบว่าไม่ได้กรอกตัวเลขผิด (เช่น 10 → 100) หากตั้งค่าเกินนโยบาย ระบบจะขึ้นแจ้งเตือนในหน้าเปิดบิล
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: string) => void }) => {
   const [customers, setCustomers] = useState<EMCust[]>([]);
   const [loading, setLoading] = useState(true);
+  const [defaultAgingDays, setDefaultAgingDays] = useState(60);
+  const [maxAgingDays, setMaxAgingDays] = useState(90);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterOptions, setFilterOptions] = useState<import('../../types').CustomerFilterOptions | null>(null);
   const [filters, setFilters] = useState({ salesperson: '', area: '', group: '', employee: '' });
@@ -38,7 +205,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
     RegionCode: '',
     CustGroupId: '',
     CreditLimit: 0,
-    AgingDays: 60,
+    AgingDays: null as number | null,
     CreditHold: false,
     Note: '',
   });
@@ -115,9 +282,9 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
       setBatchForm({ salespersonUserId: '', areaId: '', groupId: '', creditHold: 'keep' });
       await loadCustomers();
       fetchCustomerFilters().then(setFilterOptions).catch(console.error);
-      alert(`อัปเดตข้อมูลลูกค้า ${selectedCustIds.size} รายการสำเร็จ`);
+      await appAlert(`อัปเดตข้อมูลลูกค้า ${selectedCustIds.size} รายการสำเร็จ`, 'success');
     } catch (e: any) {
-      alert(e?.message || 'บันทึกข้อมูลแบบกลุ่มไม่สำเร็จ');
+      await appAlert(e?.message || 'บันทึกข้อมูลแบบกลุ่มไม่สำเร็จ', 'error');
     } finally {
       setBatchSaving(false);
     }
@@ -135,7 +302,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
       setSelectedCustIds(new Set());
       await loadCustomers();
     } catch (e: any) {
-      alert(e?.message || 'บันทึกสถานะไม่สำเร็จ');
+      await appAlert(e?.message || 'บันทึกสถานะไม่สำเร็จ', 'error');
     }
   }
 
@@ -160,7 +327,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
 
   async function handleCreateGroup() {
     if (!newGroupForm.CustGroupName.trim()) {
-      alert('กรุณาระบุชื่อกลุ่มลูกค้า');
+      await appAlert('กรุณาระบุชื่อกลุ่มลูกค้า', 'warning');
       return;
     }
     setGroupSaving(true);
@@ -174,9 +341,9 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
       setNewGroupForm({ CustGroupCode: '', CustGroupName: '', CustGroupNameEng: '', Remark: '' });
       await loadCustomerGroups();
       fetchCustomerFilters().then(setFilterOptions).catch(console.error);
-      alert('เพิ่มกลุ่มลูกค้าสำเร็จ');
+      await appAlert('เพิ่มกลุ่มลูกค้าสำเร็จ', 'success');
     } catch (e: any) {
-      alert(e?.message || 'เพิ่มกลุ่มลูกค้าไม่สำเร็จ');
+      await appAlert(e?.message || 'เพิ่มกลุ่มลูกค้าไม่สำเร็จ', 'error');
     } finally {
       setGroupSaving(false);
     }
@@ -184,7 +351,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
 
   async function handleUpdateGroup(id: number) {
     if (!groupEditForm.CustGroupName.trim()) {
-      alert('กรุณาระบุชื่อกลุ่มลูกค้า');
+      await appAlert('กรุณาระบุชื่อกลุ่มลูกค้า', 'warning');
       return;
     }
     setGroupSaving(true);
@@ -198,9 +365,9 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
       setEditingGroupId(null);
       await loadCustomerGroups();
       fetchCustomerFilters().then(setFilterOptions).catch(console.error);
-      alert('บันทึกการแก้ไขกลุ่มลูกค้าสำเร็จ');
+      await appAlert('บันทึกการแก้ไขกลุ่มลูกค้าสำเร็จ', 'success');
     } catch (e: any) {
-      alert(e?.message || 'แก้ไขกลุ่มลูกค้าไม่สำเร็จ');
+      await appAlert(e?.message || 'แก้ไขกลุ่มลูกค้าไม่สำเร็จ', 'error');
     } finally {
       setGroupSaving(false);
     }
@@ -208,7 +375,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
 
   async function handleDeleteGroup(g: CustomerGroup) {
     if ((g.CustomerCount || 0) > 0) {
-      alert(`ไม่สามารถลบกลุ่ม "${g.CustGroupName}" ได้ เนื่องจากมีลูกค้าอยู่ในกลุ่มนี้ ${g.CustomerCount} ราย`);
+      await appAlert(`ไม่สามารถลบกลุ่ม "${g.CustGroupName}" ได้ เนื่องจากมีลูกค้าอยู่ในกลุ่มนี้ ${g.CustomerCount} ราย`, 'warning');
       return;
     }
     if (!await appConfirm(`ยืนยันการลบกลุ่มลูกค้า "${g.CustGroupName}"?`)) return;
@@ -217,9 +384,9 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
       await deleteCustomerGroup(g.CustGroupID);
       await loadCustomerGroups();
       fetchCustomerFilters().then(setFilterOptions).catch(console.error);
-      alert('ลบกลุ่มลูกค้าสำเร็จ');
+      await appAlert('ลบกลุ่มลูกค้าสำเร็จ', 'success');
     } catch (e: any) {
-      alert(e?.message || 'ลบกลุ่มลูกค้าไม่สำเร็จ');
+      await appAlert(e?.message || 'ลบกลุ่มลูกค้าไม่สำเร็จ', 'error');
     } finally {
       setGroupSaving(false);
     }
@@ -230,12 +397,28 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
     loadCustomerRequests();
     loadCustomerGroups();
     fetchCustomerFilters().then(setFilterOptions).catch(console.error);
+    fetchSystemSettings()
+      .then(res => {
+        const raw = res?.raw || {};
+        const set = res?.settings || {};
+        const defVal = Number(raw.CREDIT_AGING_DEFAULT_DAYS ?? set.CREDIT_AGING_DEFAULT_DAYS);
+        const maxVal = Number(raw.CREDIT_AGING_MAX_DAYS ?? set.CREDIT_AGING_MAX_DAYS);
+        if (Number.isFinite(defVal) && defVal >= 0) setDefaultAgingDays(defVal);
+        if (Number.isFinite(maxVal) && maxVal >= 0) setMaxAgingDays(maxVal);
+      })
+      .catch(() => {});
   }, []);
 
   const submitCustomerRequest = async () => {
     if (!requestForm.CustName.trim()) {
-      alert('กรุณาระบุชื่อลูกค้า');
+      await appAlert('กรุณาระบุชื่อลูกค้า', 'warning');
       return;
+    }
+    if (requestForm.AgingDays !== null && requestForm.AgingDays > maxAgingDays) {
+      const proceed = await appConfirm(
+        `⚠️ ค่า Aging ที่กำหนด (${requestForm.AgingDays} วัน) เกินกว่าเกณฑ์สูงสุดตามนโยบาย (${maxAgingDays} วัน)\nกรุณาตรวจสอบว่าไม่ได้พิมพ์ผิด (เช่น 10 → 100)\n\nยืนยันส่งคำขอด้วยค่า ${requestForm.AgingDays} วันใช่หรือไม่?`
+      );
+      if (!proceed) return;
     }
     setRequestSaving(true);
     try {
@@ -256,7 +439,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
         CustGroupId: requestForm.CustGroupId ? Number(requestForm.CustGroupId) : null,
         CustGroupName: grpObj?.label || null,
         CreditLimit: Number(requestForm.CreditLimit) || 0,
-        AgingDays: Number(requestForm.AgingDays) || 60,
+        AgingDays: requestForm.AgingDays,
         CreditHold: Boolean(requestForm.CreditHold),
         Note: requestForm.Note.trim() || null,
       });
@@ -273,15 +456,15 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
         RegionCode: '',
         CustGroupId: '',
         CreditLimit: 0,
-        AgingDays: 60,
+        AgingDays: null,
         CreditHold: false,
         Note: '',
       });
       setRequestModalOpen(false);
       await loadCustomerRequests();
-      alert('บันทึกคำขอเปิดลูกค้าใหม่เรียบร้อยแล้ว');
+      await appAlert('บันทึกคำขอเปิดลูกค้าใหม่เรียบร้อยแล้ว', 'success');
     } catch (err: any) {
-      alert(err?.message || 'บันทึกคำขอไม่สำเร็จ');
+      await appAlert(err?.message || 'บันทึกคำขอไม่สำเร็จ', 'error');
       console.error(err);
     }
     setRequestSaving(false);
@@ -295,7 +478,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
       await loadCustomerRequests();
       await loadCustomers();
     } catch (err) {
-      alert('อัปเดตคำขอไม่สำเร็จ');
+      await appAlert('อัปเดตคำขอไม่สำเร็จ', 'error');
       console.error(err);
     }
   };
@@ -359,6 +542,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
 
   const handleOpenEdit = (cust: EMCust) => {
     setEditingCust(cust);
+    const initialAging = cust.RawAgingDays !== undefined ? cust.RawAgingDays : (cust.AgingDays ?? null);
     setEditForm({
       CustID: cust.CustID,
       CustName: cust.CustName || '',
@@ -367,7 +551,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
       Email: cust.Email || '',
       LineId: cust.LineId || '',
       CreditLimit: cust.CreditLimit ?? 0,
-      AgingDays: cust.AgingDays ?? 60,
+      AgingDays: initialAging,
       CreditHold: Boolean(cust.CreditHold),
       salespersonId: cust.salespersonId || '',
       areaId: cust.areaId || '',
@@ -381,8 +565,19 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
   const handleSaveCustomer = async () => {
     if (!editingCust) return;
     if (!editForm.CustName?.trim()) {
-      alert('กรุณาระบุชื่อลูกค้า');
+      await appAlert('กรุณาระบุชื่อลูกค้า', 'warning');
       return;
+    }
+
+    const parsedAging = (editForm.AgingDays !== undefined && editForm.AgingDays !== null && (editForm.AgingDays as any) !== '')
+      ? Math.max(0, Math.trunc(Number(editForm.AgingDays)))
+      : null;
+
+    if (parsedAging !== null && parsedAging > maxAgingDays) {
+      const proceed = await appConfirm(
+        `⚠️ คำเตือน: Aging สูงสุดของลูกค้ารายนี้ (${parsedAging} วัน) เกินกว่าเกณฑ์สูงสุดตามนโยบาย (${maxAgingDays} วัน)\nกรุณาตรวจสอบว่าไม่ได้พิมพ์ผิด (เช่น 10 → 100)\n\nยืนยันบันทึกค่า ${parsedAging} วันใช่หรือไม่?`
+      );
+      if (!proceed) return;
     }
 
     setSaving(true);
@@ -395,8 +590,8 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
         Mobile: editForm.SecondaryPhone?.trim() || (null as any),
         Email: editForm.Email?.trim() || (null as any),
         LineId: editForm.LineId?.trim() || (null as any),
-        CreditLimit: (editForm.CreditLimit !== undefined && (editForm.CreditLimit as any) !== '') ? Number(editForm.CreditLimit) : (null as any),
-        AgingDays: (editForm.AgingDays !== undefined && (editForm.AgingDays as any) !== '') ? Number(editForm.AgingDays) : 60,
+        CreditLimit: (editForm.CreditLimit !== undefined && editForm.CreditLimit !== null && (editForm.CreditLimit as any) !== '') ? Number(editForm.CreditLimit) : (null as any),
+        AgingDays: parsedAging,
         CreditHold: Boolean(editForm.CreditHold),
         salespersonId: editForm.salespersonId || null,
         areaId: editForm.areaId || null,
@@ -407,12 +602,20 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
 
       await updateCustomer(editingCust.CustID, payload);
 
-      // Reflect into state
-      setCustomers(prev => prev.map(c => c.CustID === editingCust.CustID ? { ...c, ...payload } as EMCust : c));
+      // Reflect into state accurately (including null -> system default fallback)
+      const effectiveAging = parsedAging ?? defaultAgingDays;
+      setCustomers(prev => prev.map(c => c.CustID === editingCust.CustID ? {
+        ...c,
+        ...payload,
+        RawAgingDays: parsedAging,
+        AgingDays: effectiveAging,
+        CreditDays: effectiveAging,
+        IsDefaultAging: parsedAging === null,
+      } as EMCust : c));
       setEditModalOpen(false);
       setEditingCust(null);
     } catch (err) {
-      alert('บันทึกไม่สำเร็จ: ' + ((err as Error)?.message || 'ไม่ทราบสาเหตุ'));
+      await appAlert('บันทึกไม่สำเร็จ: ' + ((err as Error)?.message || 'ไม่ทราบสาเหตุ'), 'error');
       console.error(err);
     }
     setSaving(false);
@@ -429,7 +632,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
       setCustomers(prev => prev.filter(c => c.CustID !== deletingId));
       setDeletingId(null);
     } catch (err) {
-      alert('ไม่สามารถลบข้อมูลได้');
+      await appAlert('ไม่สามารถลบข้อมูลได้', 'error');
       console.error(err);
     }
     setDeleteLoading(false);
@@ -441,20 +644,25 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
     options: import('../../types').CustomerFilterOption[] | undefined,
     disabled: boolean
   ) => (
-    <label className="flex items-center gap-1.5 text-xs text-gray-600 shrink-0">
+    <div className="flex items-center gap-1.5 text-xs text-gray-600 shrink-0">
       <span className="whitespace-nowrap">{label}</span>
-      <select
+      <SearchableSelect
         value={filters[key]}
         disabled={disabled}
-        onChange={e => updateFilter(key, e.target.value)}
-        className="h-9 min-w-[150px] rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-700 disabled:bg-gray-100 disabled:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
-      >
-        <option value="">ทั้งหมด</option>
-        {(options || []).map(o => (
-          <option key={o.value} value={o.value}>{o.label || o.value} ({o.count})</option>
-        ))}
-      </select>
-    </label>
+        onChange={val => updateFilter(key, val)}
+        placeholder="ทั้งหมด"
+        searchPlaceholder={`ค้นหา${label}...`}
+        allowClear={Boolean(filters[key])}
+        className="min-w-[165px]"
+        options={[
+          { value: '', label: 'ทั้งหมด' },
+          ...(options || []).map(o => ({
+            value: o.value,
+            label: `${o.label || o.value} (${o.count})`,
+          })),
+        ]}
+      />
+    </div>
   );
 
   return (
@@ -544,9 +752,16 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                       <Phone size={11} /> {r.Tel || r.Mobile}
                     </span>
                   )}
-                  {(r.CreditLimit != null && r.CreditLimit > 0) && (
-                    <span className="text-emerald-700 font-semibold text-[11px]">
-                      วงเงิน ฿{Number(r.CreditLimit).toLocaleString()} (Aging {r.AgingDays || 60} วัน)
+                  {(r.CreditLimit != null && r.CreditLimit > 0 || r.AgingDays !== undefined) && (
+                    <span className={`font-semibold text-[11px] ${
+                      r.AgingDays != null && r.AgingDays > maxAgingDays ? 'text-rose-700' : 'text-emerald-700'
+                    }`}>
+                      {r.CreditLimit != null && r.CreditLimit > 0 ? `วงเงิน ฿${Number(r.CreditLimit).toLocaleString()} ` : ''}
+                      {r.AgingDays === 0
+                        ? '(ขายเงินสด 0 วัน)'
+                        : r.AgingDays == null
+                          ? `(Aging มาตรฐาน ${defaultAgingDays} วัน)`
+                          : `(Aging ${r.AgingDays} วัน${r.AgingDays > maxAgingDays ? ` ⚠ เกิน ${maxAgingDays}` : ''})`}
                     </span>
                   )}
                   {r.WinspeedCustId && (
@@ -769,9 +984,37 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                                 <span className="text-gray-400">ไม่จำกัดวงเงิน</span>
                               )}
                             </div>
-                            <div className="text-[11px] text-gray-500 flex items-center gap-1">
-                              <Clock size={11} className="text-amber-600" />
-                              <span>Aging {cust.AgingDays ?? 60} วัน</span>
+                            <div className="text-[11px] flex items-center gap-1">
+                              {(() => {
+                                const effectiveAging = cust.AgingDays ?? defaultAgingDays;
+                                const isCash = effectiveAging === 0;
+                                const isStd = Boolean(cust.IsDefaultAging) || cust.RawAgingDays === null;
+                                const isOverMax = effectiveAging > maxAgingDays;
+                                if (isCash) {
+                                  return (
+                                    <>
+                                      <Clock size={11} className="text-emerald-600" />
+                                      <span className="font-semibold text-emerald-700">เงินสด (0 วัน)</span>
+                                    </>
+                                  );
+                                }
+                                if (isOverMax) {
+                                  return (
+                                    <>
+                                      <AlertTriangle size={11} className="text-rose-600" />
+                                      <span className="font-bold text-rose-700">Aging {effectiveAging} วัน (เกิน {maxAgingDays})</span>
+                                    </>
+                                  );
+                                }
+                                return (
+                                  <>
+                                    <Clock size={11} className={isStd ? 'text-blue-600' : 'text-amber-600'} />
+                                    <span className={isStd ? 'text-blue-700' : 'text-gray-500'}>
+                                      {isStd ? `มาตรฐาน (${effectiveAging} วัน)` : `Aging ${effectiveAging} วัน`}
+                                    </span>
+                                  </>
+                                );
+                              })()}
                             </div>
                           </div>
                           {cust.CreditHold && (
@@ -946,42 +1189,45 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">เซลล์ผู้ดูแล (Sales Rep)</label>
-                    <select
+                    <SearchableSelect
                       value={editForm.salespersonId || editForm.employeeId || ''}
-                      onChange={e => setEditForm({ ...editForm, salespersonId: e.target.value, employeeId: e.target.value })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
-                    >
-                      <option value="">(ไม่ระบุ)</option>
-                      {(filterOptions?.salesperson || []).map(o => (
-                        <option key={o.value} value={o.value}>{o.label || o.value}</option>
-                      ))}
-                    </select>
+                      onChange={v => setEditForm({ ...editForm, salespersonId: v, employeeId: v })}
+                      placeholder="(ไม่ระบุ)"
+                      searchPlaceholder="ค้นหาเซลล์..."
+                      allowClear
+                      options={[
+                        { value: '', label: '(ไม่ระบุ)' },
+                        ...(filterOptions?.salesperson || []).map(o => ({ value: o.value, label: o.label || o.value })),
+                      ]}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">เขตการขาย (Sale Area)</label>
-                    <select
+                    <SearchableSelect
                       value={editForm.areaId || ''}
-                      onChange={e => setEditForm({ ...editForm, areaId: e.target.value })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
-                    >
-                      <option value="">(ไม่ระบุ)</option>
-                      {(filterOptions?.area || []).map(o => (
-                        <option key={o.value} value={o.value}>{o.label || o.value}</option>
-                      ))}
-                    </select>
+                      onChange={v => setEditForm({ ...editForm, areaId: v })}
+                      placeholder="(ไม่ระบุ)"
+                      searchPlaceholder="ค้นหาเขตการขาย..."
+                      allowClear
+                      options={[
+                        { value: '', label: '(ไม่ระบุ)' },
+                        ...(filterOptions?.area || []).map(o => ({ value: o.value, label: o.label || o.value })),
+                      ]}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">กลุ่มลูกค้า (Customer Group)</label>
-                    <select
+                    <SearchableSelect
                       value={editForm.groupId || ''}
-                      onChange={e => setEditForm({ ...editForm, groupId: e.target.value })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
-                    >
-                      <option value="">(ไม่ระบุ)</option>
-                      {(filterOptions?.group || []).map(o => (
-                        <option key={o.value} value={o.value}>{o.label || o.value}</option>
-                      ))}
-                    </select>
+                      onChange={v => setEditForm({ ...editForm, groupId: v })}
+                      placeholder="(ไม่ระบุ)"
+                      searchPlaceholder="ค้นหากลุ่มลูกค้า..."
+                      allowClear
+                      options={[
+                        { value: '', label: '(ไม่ระบุ)' },
+                        ...(filterOptions?.group || []).map(o => ({ value: o.value, label: o.label || o.value })),
+                      ]}
+                    />
                   </div>
                 </div>
               </div>
@@ -1058,63 +1304,18 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
               </div>
 
               {/* Section 3: Credit Limit & AR Aging Policy */}
-              <div className="rounded-xl border border-amber-100 bg-amber-50/30 p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1.5">
-                    <CreditCard size={14} /> นโยบายวงเงินเครดิต & อายุหนี้ (Credit Limit & Aging)
-                  </h4>
-                  <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-semibold">
-                    ค่าเริ่มต้น Aging 60 วัน
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      วงเงินเครดิต (บาท)
-                    </label>
-                    <input
-                      type="number"
-                      step="1000"
-                      min="0"
-                      value={editForm.CreditLimit ?? ''}
-                      onChange={e => setEditForm({ ...editForm, CreditLimit: e.target.value === '' ? undefined : Number(e.target.value) })}
-                      placeholder="เช่น 100000 (0 = ไม่จำกัด)"
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
-                    />
-                    <p className="text-[10px] text-gray-400 mt-1">ยอดค้างชำระตรวจสอบจาก dbo.SOInvHD</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      Aging สูงสุด (จำนวนวัน)
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="365"
-                      value={editForm.AgingDays ?? 60}
-                      onChange={e => setEditForm({ ...editForm, AgingDays: e.target.value === '' ? 60 : Number(e.target.value) })}
-                      placeholder="60"
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
-                    />
-                    <p className="text-[10px] text-gray-400 mt-1">มาตรฐาน 60 วัน เกินกำหนดจะแจ้งเตือน</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      สถานะระงับเครดิต (Hold)
-                    </label>
-                    <label className="flex items-center gap-2 mt-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(editForm.CreditHold)}
-                        onChange={e => setEditForm({ ...editForm, CreditHold: e.target.checked })}
-                        className="h-4 w-4 rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]"
-                      />
-                      <span className="text-xs font-bold text-red-600">ระงับการสั่งซื้อ (Credit Hold)</span>
-                    </label>
-                    <p className="text-[10px] text-gray-400 mt-1">บล็อกการขายทุกกรณี</p>
-                  </div>
-                </div>
-              </div>
+              <CreditAgingSection
+                title="นโยบายวงเงินเครดิต & อายุหนี้ (Credit Limit & Aging)"
+                creditLimit={editForm.CreditLimit}
+                onCreditLimitChange={v => setEditForm({ ...editForm, CreditLimit: v })}
+                creditLimitLabel="วงเงินเครดิต (บาท)"
+                agingDays={editForm.AgingDays}
+                onAgingDaysChange={v => setEditForm({ ...editForm, AgingDays: v })}
+                creditHold={Boolean(editForm.CreditHold)}
+                onCreditHoldChange={v => setEditForm({ ...editForm, CreditHold: v })}
+                defaultAgingDays={defaultAgingDays}
+                maxAgingDays={maxAgingDays}
+              />
 
               {/* Section 4: Remark */}
               <div>
@@ -1201,42 +1402,45 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">เซลล์ผู้ดูแล (Sales Rep)</label>
-                    <select
+                    <SearchableSelect
                       value={requestForm.SalespersonUserId}
-                      onChange={e => setRequestForm({ ...requestForm, SalespersonUserId: e.target.value })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
-                    >
-                      <option value="">(ไม่ระบุ)</option>
-                      {(filterOptions?.salesperson || []).map(o => (
-                        <option key={o.value} value={o.value}>{o.label || o.value}</option>
-                      ))}
-                    </select>
+                      onChange={v => setRequestForm({ ...requestForm, SalespersonUserId: v })}
+                      placeholder="(ไม่ระบุ)"
+                      searchPlaceholder="ค้นหาเซลล์..."
+                      allowClear
+                      options={[
+                        { value: '', label: '(ไม่ระบุ)' },
+                        ...(filterOptions?.salesperson || []).map(o => ({ value: o.value, label: o.label || o.value })),
+                      ]}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">เขตการขาย (14 ภาคตามผู้อนุมัติ)</label>
-                    <select
+                    <SearchableSelect
                       value={requestForm.RegionCode}
-                      onChange={e => setRequestForm({ ...requestForm, RegionCode: e.target.value })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
-                    >
-                      <option value="">(ไม่ระบุ)</option>
-                      {(filterOptions?.area || []).map(o => (
-                        <option key={o.value} value={o.value}>{o.label || o.value}</option>
-                      ))}
-                    </select>
+                      onChange={v => setRequestForm({ ...requestForm, RegionCode: v })}
+                      placeholder="(ไม่ระบุ)"
+                      searchPlaceholder="ค้นหาเขตการขาย..."
+                      allowClear
+                      options={[
+                        { value: '', label: '(ไม่ระบุ)' },
+                        ...(filterOptions?.area || []).map(o => ({ value: o.value, label: o.label || o.value })),
+                      ]}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">กลุ่มลูกค้า (Customer Group)</label>
-                    <select
+                    <SearchableSelect
                       value={requestForm.CustGroupId}
-                      onChange={e => setRequestForm({ ...requestForm, CustGroupId: e.target.value })}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
-                    >
-                      <option value="">(ไม่ระบุ)</option>
-                      {(filterOptions?.group || []).map(o => (
-                        <option key={o.value} value={o.value}>{o.label || o.value}</option>
-                      ))}
-                    </select>
+                      onChange={v => setRequestForm({ ...requestForm, CustGroupId: v })}
+                      placeholder="(ไม่ระบุ)"
+                      searchPlaceholder="ค้นหากลุ่มลูกค้า..."
+                      allowClear
+                      options={[
+                        { value: '', label: '(ไม่ระบุ)' },
+                        ...(filterOptions?.group || []).map(o => ({ value: o.value, label: o.label || o.value })),
+                      ]}
+                    />
                   </div>
                 </div>
               </div>
@@ -1339,57 +1543,18 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
               </div>
 
               {/* Section 3: Credit Limit & Aging */}
-              <div className="rounded-xl border border-amber-100 bg-amber-50/30 p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1.5">
-                    <CreditCard size={14} /> นโยบายวงเงินเครดิต & อายุหนี้ (CREDIT LIMIT & AGING)
-                  </h4>
-                  <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-semibold">
-                    ค่าเริ่มต้น Aging 60 วัน
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">วงเงินเครดิตขออนุมัติ (บาท)</label>
-                    <input
-                      type="number"
-                      step="1000"
-                      min="0"
-                      value={requestForm.CreditLimit || ''}
-                      onChange={e => setRequestForm({ ...requestForm, CreditLimit: Number(e.target.value) || 0 })}
-                      placeholder="เช่น 100000 (0 = สด/ไม่จำกัด)"
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
-                    />
-                    <p className="text-[10px] text-gray-400 mt-1">ยอดค้างชำระตรวจสอบจาก dbo.SOInvHD</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">Aging สูงสุด (จำนวนวัน)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="365"
-                      value={requestForm.AgingDays || 60}
-                      onChange={e => setRequestForm({ ...requestForm, AgingDays: Number(e.target.value) || 60 })}
-                      placeholder="60"
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
-                    />
-                    <p className="text-[10px] text-gray-400 mt-1">มาตรฐาน 60 วัน เกินกำหนดจะแจ้งเตือน</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">สถานะระงับเครดิต (Hold)</label>
-                    <label className="flex items-center gap-2 mt-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(requestForm.CreditHold)}
-                        onChange={e => setRequestForm({ ...requestForm, CreditHold: e.target.checked })}
-                        className="h-4 w-4 rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]"
-                      />
-                      <span className="text-xs font-bold text-red-600">ระงับการสั่งซื้อ (Credit Hold)</span>
-                    </label>
-                    <p className="text-[10px] text-gray-400 mt-1">บล็อกการขายทุกกรณี</p>
-                  </div>
-                </div>
-              </div>
+              <CreditAgingSection
+                title="นโยบายวงเงินเครดิต & อายุหนี้ (CREDIT LIMIT & AGING)"
+                creditLimit={requestForm.CreditLimit}
+                onCreditLimitChange={v => setRequestForm({ ...requestForm, CreditLimit: v ?? 0 })}
+                creditLimitLabel="วงเงินเครดิตขออนุมัติ (บาท)"
+                agingDays={requestForm.AgingDays}
+                onAgingDaysChange={v => setRequestForm({ ...requestForm, AgingDays: v })}
+                creditHold={Boolean(requestForm.CreditHold)}
+                onCreditHoldChange={v => setRequestForm({ ...requestForm, CreditHold: v })}
+                defaultAgingDays={defaultAgingDays}
+                maxAgingDays={maxAgingDays}
+              />
 
               {/* Section 4: Remark */}
               <div>
@@ -1737,49 +1902,52 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
               {/* 1. เซลล์ผู้ดูแล */}
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">เซลล์ผู้ดูแล (Sales Rep)</label>
-                <select
+                <SearchableSelect
                   value={batchForm.salespersonUserId}
-                  onChange={e => setBatchForm({ ...batchForm, salespersonUserId: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
-                >
-                  <option value="">(ไม่เปลี่ยนแปลง)</option>
-                  {(filterOptions?.salesperson || []).map(o => (
-                    <option key={o.value} value={o.value}>{o.label || o.value}</option>
-                  ))}
-                  <option value="clear">-- ล้างค่า / ไม่ระบุเซลล์ --</option>
-                </select>
+                  onChange={v => setBatchForm({ ...batchForm, salespersonUserId: v })}
+                  placeholder="(ไม่เปลี่ยนแปลง)"
+                  searchPlaceholder="ค้นหาเซลล์..."
+                  allowClear
+                  options={[
+                    { value: '', label: '(ไม่เปลี่ยนแปลง)' },
+                    ...(filterOptions?.salesperson || []).map(o => ({ value: o.value, label: o.label || o.value })),
+                    { value: 'clear', label: '-- ล้างค่า / ไม่ระบุเซลล์ --' },
+                  ]}
+                />
               </div>
 
               {/* 2. เขตการขาย */}
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">เขตการขาย (Sale Area)</label>
-                <select
+                <SearchableSelect
                   value={batchForm.areaId}
-                  onChange={e => setBatchForm({ ...batchForm, areaId: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
-                >
-                  <option value="">(ไม่เปลี่ยนแปลง)</option>
-                  {(filterOptions?.area || []).map(o => (
-                    <option key={o.value} value={o.value}>{o.label || o.value}</option>
-                  ))}
-                  <option value="clear">-- ล้างค่า / ไม่ระบุเขต --</option>
-                </select>
+                  onChange={v => setBatchForm({ ...batchForm, areaId: v })}
+                  placeholder="(ไม่เปลี่ยนแปลง)"
+                  searchPlaceholder="ค้นหาเขตการขาย..."
+                  allowClear
+                  options={[
+                    { value: '', label: '(ไม่เปลี่ยนแปลง)' },
+                    ...(filterOptions?.area || []).map(o => ({ value: o.value, label: o.label || o.value })),
+                    { value: 'clear', label: '-- ล้างค่า / ไม่ระบุเขต --' },
+                  ]}
+                />
               </div>
 
               {/* 3. กลุ่มลูกค้า */}
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">กลุ่มลูกค้า (Customer Group)</label>
-                <select
+                <SearchableSelect
                   value={batchForm.groupId}
-                  onChange={e => setBatchForm({ ...batchForm, groupId: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
-                >
-                  <option value="">(ไม่เปลี่ยนแปลง)</option>
-                  {(filterOptions?.group || []).map(o => (
-                    <option key={o.value} value={o.value}>{o.label || o.value}</option>
-                  ))}
-                  <option value="clear">-- ล้างค่า / ไม่ระบุกลุ่ม --</option>
-                </select>
+                  onChange={v => setBatchForm({ ...batchForm, groupId: v })}
+                  placeholder="(ไม่เปลี่ยนแปลง)"
+                  searchPlaceholder="ค้นหากลุ่มลูกค้า..."
+                  allowClear
+                  options={[
+                    { value: '', label: '(ไม่เปลี่ยนแปลง)' },
+                    ...(filterOptions?.group || []).map(o => ({ value: o.value, label: o.label || o.value })),
+                    { value: 'clear', label: '-- ล้างค่า / ไม่ระบุกลุ่ม --' },
+                  ]}
+                />
               </div>
 
               {/* 4. สถานะระงับการขาย */}

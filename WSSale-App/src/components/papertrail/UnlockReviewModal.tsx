@@ -3,6 +3,8 @@ import { X, Check, Unlock, RefreshCw, Eye } from 'lucide-react';
 import { listUnlockRequests, resolveUnlockReq, fetchSalesOrder, listPendingGiveaways, approveGiveawayLine } from '../../services/api';
 import type { UnlockReq, SalesOrder, PendingGiveaway } from '../../types';
 import { SODetailsPanel } from '../sales/SODetailsPanel';
+import { appAlert } from '../ui/AppAlert';
+import { formatThaiDate } from '../../utils/date';
 
 export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; onDone?: () => void }) {
   const [reqs, setReqs] = useState<UnlockReq[]>([]);
@@ -34,7 +36,7 @@ export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; on
 
   async function submitResolve(r: UnlockReq, approve: boolean) {
     if (!approve && !note.trim()) {
-      alert('กรุณาระบุเหตุผลที่ปฏิเสธ');
+      void appAlert('กรุณาระบุเหตุผลที่ปฏิเสธ', 'info');
       return;
     }
     setBusyId(r.Id);
@@ -45,7 +47,7 @@ export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; on
       await reload(); 
       onDone?.(); 
     } catch (e) { 
-      alert((e as Error).message); 
+      void appAlert((e as Error).message, 'error'); 
     } finally { 
       setBusyId(null); 
     }
@@ -60,7 +62,7 @@ export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; on
       await reload();
       onDone?.();
     } catch (e) {
-      alert((e as Error).message);
+      void appAlert((e as Error).message, 'error');
     } finally {
       setBusyId(null);
     }
@@ -72,7 +74,7 @@ export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; on
       const so = await fetchSalesOrder(soId);
       setViewSo(so);
     } catch (e) {
-      alert('ไม่สามารถโหลดรายละเอียดเอกสารได้');
+      void appAlert('ไม่สามารถโหลดรายละเอียดเอกสารได้', 'error');
     } finally {
       setLoadingSoId(null);
     }
@@ -133,7 +135,7 @@ export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; on
                       {loadingSoId === r.SoId ? <RefreshCw size={12} className="animate-spin text-blue-400" /> : <Eye size={14} className="text-blue-400 group-hover:text-blue-600" />}
                     </button>
                   </div>
-                  <span className="text-[11px] text-gray-400">{new Date(r.RequestedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                  <span className="text-[11px] text-gray-400">{formatThaiDate(r.RequestedAt, true)}</span>
                 </div>
                 <div className="text-xs text-gray-600 mb-1">เหตุผล: {r.Reason}</div>
                 <div className="text-[11px] text-gray-400 mb-2">โดย: {r.RequesterName || '-'}</div>
@@ -213,7 +215,7 @@ export function UnlockReviewModal({ onClose, onDone }: { onClose: () => void; on
                       {loadingSoId === g.SoId ? <RefreshCw size={12} className="animate-spin text-blue-400" /> : <Eye size={14} className="text-blue-400 group-hover:text-blue-600" />}
                     </button>
                   </div>
-                  <span className="text-[11px] text-gray-400">{new Date(g.CreatedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                  <span className="text-[11px] text-gray-400">{formatThaiDate(g.CreatedAt, true)}</span>
                 </div>
                 <div className="text-sm font-semibold text-gray-800 mb-1">{g.GoodName}</div>
                 <div className="text-xs text-gray-600 mb-1">ลูกค้า: {g.CustName}</div>

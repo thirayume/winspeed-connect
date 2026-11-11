@@ -11,6 +11,8 @@ import {
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import type { EMCust } from '../../types';
+import { ThaiDatePicker } from '../ui/ThaiDatePicker';
+import { formatThaiDate } from '../../utils/date';
 
 export interface CouponBeneficiary {
   Id: number;
@@ -403,20 +405,22 @@ export const BeneficiaryAdminPage: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-medium text-gray-600 mb-1">วันที่มีผลเริ่มต้น (ไม่บังคับ)</label>
-                  <input
-                    type="date"
+                  <ThaiDatePicker
                     value={effectiveFrom}
-                    onChange={(e) => setEffectiveFrom(e.target.value)}
+                    onChange={setEffectiveFrom}
+                    max={effectiveTo || undefined}
                     className="w-full px-2.5 py-1 text-xs rounded-lg border border-border text-gray-700"
+                    placeholder="วว/ดด/ปปปป"
                   />
                 </div>
                 <div>
                   <label className="block text-[11px] font-medium text-gray-600 mb-1">วันที่มีผลสิ้นสุด (ไม่บังคับ)</label>
-                  <input
-                    type="date"
+                  <ThaiDatePicker
                     value={effectiveTo}
-                    onChange={(e) => setEffectiveTo(e.target.value)}
+                    onChange={setEffectiveTo}
+                    min={effectiveFrom || undefined}
                     className="w-full px-2.5 py-1 text-xs rounded-lg border border-border text-gray-700"
+                    placeholder="วว/ดด/ปปปป"
                   />
                 </div>
               </div>
@@ -630,8 +634,8 @@ export const BeneficiaryAdminPage: React.FC = () => {
                       <td className="py-2.5 px-3 text-[11px] text-gray-600">
                         {g.EffectiveFrom || g.EffectiveTo ? (
                           <div className="space-y-0.5">
-                            <div>เริ่ม: {g.EffectiveFrom ? g.EffectiveFrom.slice(0, 10) : 'ทันที'}</div>
-                            <div>สิ้นสุด: {g.EffectiveTo ? g.EffectiveTo.slice(0, 10) : 'ไม่มีกำหนด'}</div>
+                            <div>เริ่ม: {g.EffectiveFrom ? formatThaiDate(g.EffectiveFrom) : 'ทันที'}</div>
+                            <div>สิ้นสุด: {g.EffectiveTo ? formatThaiDate(g.EffectiveTo) : 'ไม่มีกำหนด'}</div>
                           </div>
                         ) : (
                           <span className="text-gray-400">ตลอดไป</span>
@@ -657,7 +661,7 @@ export const BeneficiaryAdminPage: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-2.5 px-3 text-[11px] text-gray-500">
-                        {g.CreatedAt ? g.CreatedAt.slice(0, 10) : '-'}
+                        {formatThaiDate(g.CreatedAt)}
                       </td>
                       <td className="py-2.5 px-3 text-center">
                         {isActive && (

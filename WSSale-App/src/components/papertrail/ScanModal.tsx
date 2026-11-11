@@ -3,6 +3,7 @@ import { ScanLine, X, CheckCircle, History, Camera, CameraOff } from 'lucide-rea
 import { Html5Qrcode } from 'html5-qrcode';
 import { scanPaper, fetchPaperHistory } from '../../services/api';
 import type { PaperScanRow, PaperCopy } from '../../types';
+import { formatThaiDate } from '../../utils/date';
 
 const ACTIONS = [
   { key: 'TRANSIT', label: 'กำลังส่ง (In Transit)' },
@@ -128,7 +129,7 @@ export function ScanModal({ onClose, onDone }: { onClose: () => void; onDone: ()
                 {history.slice(0, 4).map(h => (
                   <div key={h.Id} className="flex justify-between text-[11px] text-gray-500">
                     <span>{h.Action} → {h.ToStatus}</span>
-                    <span>{new Date(h.ScannedAt).toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                    <span>{formatThaiDate(h.ScannedAt, true)}</span>
                   </div>
                 ))}
               </div>

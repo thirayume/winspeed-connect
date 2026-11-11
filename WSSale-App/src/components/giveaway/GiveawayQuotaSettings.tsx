@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Save, Plus, History } from 'lucide-react';
 import { setGiveawayBudgetLine, fetchGiveawayBudgetHistory, type GiveawayBudgetHistory } from '../../services/api';
 import type { GiveawayBudgetLine } from '../../types';
+import { formatThaiDate } from '../../utils/date';
 
 // R12 item 8: "ตั้งค่าโควต้าของแถม" — ADMIN/MANAGER แก้/เพิ่มงบรายปีต่อภาค × ตรา × รายการ
 // ทุกการเปลี่ยนแปลงบันทึกใน wf.ChangeEvent (GIVEAWAY_BUDGET) พร้อมประวัติการยืม
@@ -96,7 +97,7 @@ export function GiveawayQuotaSettings({ region, empCode, lines, onSaved }: {
             const item = String(c.EntityId).split('|').slice(2).join(' ');
             return (
               <div key={c.Id} className="flex flex-wrap gap-x-3 text-gray-600 border-b border-gray-50 py-1">
-                <span className="text-gray-400">{new Date(c.CreatedAt).toLocaleString('th-TH')}</span>
+                <span className="text-gray-400">{formatThaiDate(c.CreatedAt, true)}</span>
                 <span className="font-semibold">{c.Action}</span>
                 <span>{item}</span>
                 {after.budgetQty !== undefined && <span>{before ? `${before.budgetQty} → ` : ''}{after.budgetQty} ชิ้น</span>}
@@ -108,7 +109,7 @@ export function GiveawayQuotaSettings({ region, empCode, lines, onSaved }: {
           })}
           {(history?.borrows || []).map(b => (
             <div key={`b-${b.Id}`} className="flex flex-wrap gap-x-3 text-gray-600 border-b border-gray-50 py-1">
-              <span className="text-gray-400">{new Date(b.RequestedAt).toLocaleString('th-TH')}</span>
+              <span className="text-gray-400">{formatThaiDate(b.RequestedAt, true)}</span>
               <span className="font-semibold">ยืม #{b.Id} · {b.Status}</span>
               <span>{b.Brand} {b.ItemName} {Number(b.Qty)} ชิ้น</span>
               <span>{b.RequesterName} ← {b.LenderName}</span>

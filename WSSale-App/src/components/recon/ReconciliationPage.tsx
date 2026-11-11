@@ -9,8 +9,9 @@ import {
   type ReconCase, type ReconSummary, type ReconCheck,
 } from '../../services/api';
 import { useSocketEvent } from '../../hooks/useSocket';
-import { appPrompt } from '../ui/AppAlert';
+import { appAlert, appPrompt } from '../ui/AppAlert';
 import { useAuthStore } from '../../store/auth-store';
+import { formatThaiDate } from '../../utils/date';
 
 const UNMATCHED_REASON_LABEL: Record<string, { label: string; badgeClass: string }> = {
   CUT_BEFORE_CONFIRM: {
@@ -100,7 +101,7 @@ export function ReconciliationPage() {
       const res = await settleCouponCuts();
       setSettleResult(res);
     } catch (err: unknown) {
-      alert((err as Error).message || 'ไม่สามารถตรวจการตัดตั๋วได้');
+      void appAlert((err as Error).message || 'ไม่สามารถตรวจการตัดตั๋วได้', 'error');
     } finally {
       setSettling(false);
     }
@@ -170,7 +171,7 @@ export function ReconciliationPage() {
     if (note === null) return;
     setBusy(`${c.soId}|${checkType}`);
     try { await resolveReconCase(c.soId, { checkType, action, note: note || undefined, wfRef: c.wfRef }); await load(days, filter); }
-    catch (e: unknown) { alert((e as Error).message); }
+    catch (e: unknown) { void appAlert((e as Error).message, 'error'); }
     finally { setBusy(null); }
   }
 
@@ -340,7 +341,7 @@ export function ReconciliationPage() {
                                   <div className="text-[11px] text-gray-400">ID: {cut.redemptionId}</div>
                                 </td>
                                 <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">
-                                  {cut.docuDate ? new Date(cut.docuDate).toLocaleDateString('th-TH') : '-'}
+                                  {cut.docuDate ? formatThaiDate(cut.docuDate) : '-'}
                                 </td>
                                 <td className="px-4 py-2.5 text-right font-bold text-gray-800 tabular-nums whitespace-nowrap">
                                   {cut.goodQty != null ? `${Number(cut.goodQty).toFixed(3)}` : '-'}
@@ -365,7 +366,7 @@ export function ReconciliationPage() {
                                           {c.carrierDocuNo && <span className="ml-1 text-[#0C447C]">({c.carrierDocuNo})</span>}
                                           <div>ทะเบียน: {c.plate || '-'} | เหลือ: {c.remainingReservedQty ?? c.reservedQty} ตัน</div>
                                           {c.beneficiaryName && <div className="text-gray-500 truncate">ผู้รับสิทธิ์: {c.beneficiaryName}</div>}
-                                          {c.confirmDate && <div className="text-gray-400 text-[10px]">ยืนยัน: {new Date(c.confirmDate).toLocaleDateString('th-TH')}</div>}
+                                          {c.confirmDate && <div className="text-gray-400 text-[10px]">ยืนยัน: {formatThaiDate(c.confirmDate)}</div>}
                                         </div>
                                       ))}
                                     </div>
@@ -519,7 +520,7 @@ export function ReconciliationPage() {
                       <div className="grid grid-cols-2 gap-2 pt-1">
                         <div><span className="text-gray-400">เลขที่เอกสาร:</span> <span className="font-mono font-bold">{manualCut.docuNo}</span></div>
                         <div><span className="text-gray-400">Redemption ID:</span> <span className="font-mono">{manualCut.redemptionId}</span></div>
-                        <div><span className="text-gray-400">วันที่ตัดตั๋ว:</span> <span>{manualCut.docuDate ? new Date(manualCut.docuDate).toLocaleDateString('th-TH') : '-'}</span></div>
+                        <div><span className="text-gray-400">วันที่ตัดตั๋ว:</span> <span>{manualCut.docuDate ? formatThaiDate(manualCut.docuDate) : '-'}</span></div>
                         <div><span className="text-gray-400">จำนวนตัด:</span> <span className="font-bold text-emerald-700">{manualCut.goodQty} ตัน</span></div>
                         <div><span className="text-gray-400">ทะเบียนรถ:</span> <span className="font-mono">{manualCut.plate || '-'}</span></div>
                         <div><span className="text-gray-400">ผู้รับ:</span> <span>{manualCut.receiver || '-'}</span></div>

@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { exportToCsv, exportToExcel, type ExportColumn } from '../utils/exportUtils';
+import { appAlert } from '../components/ui/AppAlert';
 
 export function useExport<T = any>() {
   const [isExporting, setIsExporting] = useState(false);
@@ -21,7 +22,7 @@ export function useExport<T = any>() {
         }
       } catch (err) {
         console.error('Export failed:', err);
-        alert('เกิดข้อผิดพลาดในการส่งออกไฟล์');
+        void appAlert('เกิดข้อผิดพลาดในการส่งออกไฟล์', 'error');
       } finally {
         setIsExporting(false);
       }

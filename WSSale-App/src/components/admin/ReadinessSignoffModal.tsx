@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { ClipboardCheck, History, Save, X } from 'lucide-react';
 import { req } from '../../services/api';
 import { appConfirm } from '../ui/AppAlert';
+import { ThaiDatePicker } from '../ui/ThaiDatePicker';
+import { formatThaiDate } from '../../utils/date';
 
 const API = '/readiness-signoff';
 const statusNames = {
@@ -100,6 +102,10 @@ export function ReadinessSignoffModal({ onClose, embedded = false }: { onClose: 
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!topic || !database || busy || !dirty) return;
+    if (form.status === 'CONFIRMED' && !form.reviewDate) {
+      setError('กรุณาระบุวันที่ทีมตรวจรับ');
+      return;
+    }
     setSaving(true);
     setError('');
     setNotice('');
@@ -178,10 +184,14 @@ export function ReadinessSignoffModal({ onClose, embedded = false }: { onClose: 
                         {Object.entries(statusNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                       </select>
                     </label>
-                    <label className="text-sm font-medium">วันที่ทีมตรวจรับ
-                      <input className={inputClass} type="date" required={required} value={form.reviewDate}
-                        onChange={e => setForm({ ...form, reviewDate: e.target.value })} />
-                    </label>
+                    <div className="text-sm font-medium">
+                      <span className="block">วันที่ทีมตรวจรับ</span>
+                      <ThaiDatePicker
+                        className={inputClass}
+                        value={form.reviewDate}
+                        onChange={val => setForm({ ...form, reviewDate: val })}
+                      />
+                    </div>
                     <label className="text-sm font-medium sm:col-span-2">ผู้รับรอง
                       <input className={inputClass} maxLength={100} required={required} value={form.reviewer}
                         onChange={e => setForm({ ...form, reviewer: e.target.value })} />
@@ -211,9 +221,9 @@ export function ReadinessSignoffModal({ onClose, embedded = false }: { onClose: 
                   {history?.map(record => (
                     <details key={record.Revision} className="mt-2 rounded-lg border border-gray-200 p-2 text-sm">
                       <summary className="cursor-pointer">
-                        ฉบับที่ {record.Revision} · {statusNames[record.Status]} · {record.SavedByUsername} · {bangkokTime.format(new Date(record.SavedAt))}
+                        ฉบับที่ {record.Revision} · {statusNames[record.Status]} · {record.SavedByUsername} · {formatThaiDate(record.SavedAt, true)}
                       </summary>
-                      {record.Reviewer && <p className="mt-2">ผู้รับรอง {record.Reviewer} · {record.ReviewDate?.slice(0, 10)}</p>}
+                      {record.Reviewer && <p className="mt-2">ผู้รับรอง {record.Reviewer} · {formatThaiDate(record.ReviewDate)}</p>}
                       <p className="mt-2 whitespace-pre-wrap break-words">{record.ProcedureText}</p>
                       <p className="mt-2 whitespace-pre-wrap break-words text-gray-600">{record.EvidenceReference}</p>
                     </details>

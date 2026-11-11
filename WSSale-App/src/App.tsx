@@ -15,6 +15,7 @@ import { GlobalLoader } from './components/common/GlobalLoader';
 import { MobileDrawer } from './components/common/MobileDrawer';
 import type { NavItem, NavGroup } from './components/common/MobileDrawer';
 import { UnlockReviewModal } from './components/papertrail/UnlockReviewModal';
+import { appAlert } from './components/ui/AppAlert';
 import { useSocketEvent } from './hooks/useSocket';
 import packageJson from '../package.json';
 
@@ -77,7 +78,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: 'sales',      label: 'ขาย',         sub: 'POS · สั่งขายปุ๋ย',     icon: ShoppingCart, roles: ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'] },
       { key: 'voucher',    label: 'Voucher คงค้าง', sub: 'ยอดคงค้าง · วันหมดอายุตั๋ว', icon: Ticket, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'SALES', 'COUNTER_SALES'] },
-      { key: 'edit-requests', label: 'คำขอแก้ไขและอนุมัติ', sub: 'แก้ไข · อนุมัติราคา · Hold รถ', icon: ClipboardCheck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'SALES', 'COUNTER_SALES'] },
+      { key: 'edit-requests', label: 'คำขอแก้ไขและอนุมัติ', sub: 'แก้ไข · ราคา · ทริปหลายลูกค้า', icon: ClipboardCheck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'SALES', 'COUNTER_SALES'] },
       { key: 'quotation',  label: 'เสนอราคา',    sub: 'ใบเสนอราคา (102) → บิล',      icon: FileText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'SALES', 'COUNTER_SALES'] },
     ],
   },
@@ -124,7 +125,7 @@ const NAV_GROUPS: NavGroup[] = [
     icon: Settings,
     color: 'text-slate-600',
     items: [
-      { key: 'master',     label: 'ข้อมูลหลัก',  sub: 'สินค้า · ลูกค้า · ราคาขาย', icon: Database, roles: ['C_LEVEL', 'ADMIN'] },
+      { key: 'master',     label: 'ข้อมูลหลัก',  sub: 'สินค้า · ลูกค้า · ต้นทุน & ราคาขาย', icon: Database, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING'] },
       { key: 'policy',     label: 'นโยบายอนุมัติ', sub: 'อำนาจอนุมัติ · วงเงิน', icon: ScrollText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
       // { key: 'governance', label: 'กำกับข้อมูล',  sub: 'เครดิต · สต๊อก · PDPA',  icon: Landmark, roles: [...] },
       { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · Watchdog · Alert', icon: Activity, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
@@ -309,7 +310,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
       setShowAccessAs(false);
       setAccessAsSearch('');
     } catch (e) {
-      alert((e as Error).message || 'Access As failed');
+      await appAlert((e as Error).message || 'Access As failed', 'error');
     } finally {
       setAccessAsLoading(false);
     }
@@ -324,14 +325,30 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
       setShowAccessAs(false);
       setAccessAsSearch('');
     } catch (e) {
-      alert((e as Error).message || 'Stop Access As failed');
+      await appAlert((e as Error).message || 'Stop Access As failed', 'error');
     } finally {
       setAccessAsLoading(false);
     }
   };
 
+  // R12 item 3: the backend role-capability map decides; static roles are the fallback for an old stored session
+  const capMenus = user?.capabilities?.menus;
+  const capActions = user?.capabilities?.actions;
+  const hasMasterGeneral = capActions ? capActions.includes('master.manage') : ['C_LEVEL', 'ADMIN'].includes(role || '');
+  const hasPricingOrCost = capActions
+    ? ['pricing.view', 'pricing.manage', 'cost.view', 'cost.manage'].some(a => capActions.includes(a))
+    : ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '');
+  const getVisibleItems = (items: NavItem[]) =>
+    items.filter(n => capMenus ? capMenus.includes(n.key) : (!n.roles || (role && n.roles.includes(role))));
+  const displayNavLabel = (n: NavItem) => {
+    if (n.key === 'master' && !hasMasterGeneral && hasPricingOrCost) {
+      return { label: 'ต้นทุน & ราคาขาย', sub: 'Pricelist · Costlist · WinSpeed' };
+    }
+    return { label: n.label, sub: n.sub };
+  };
   const current = ALL_NAV.find(n => n.key === activePortal);
-  const portalLabel = current ? `${current.label} — ${current.sub}` : '';
+  const currentText = current ? displayNavLabel(current) : null;
+  const portalLabel = currentText ? `${currentText.label} — ${currentText.sub}` : '';
   const toggleGroup = (groupLabel: string) => {
     setExpandedGroups(prev => ({ ...prev, [groupLabel]: !prev[groupLabel] }));
   };
@@ -340,10 +357,6 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
       active ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
     } ${collapsed ? 'justify-center' : ''}`;
   const isGroupActive = (group: NavGroup) => group.items.some(n => n.key === activePortal);
-  // R12 item 3: the backend role-capability map decides; static roles are the fallback for an old stored session
-  const capMenus = user?.capabilities?.menus;
-  const getVisibleItems = (items: NavItem[]) =>
-    items.filter(n => capMenus ? capMenus.includes(n.key) : (!n.roles || (role && n.roles.includes(role))));
 
   return (
     <div className="flex h-screen w-full bg-background text-foreground overflow-hidden">
@@ -406,6 +419,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 >
                   {visibleItems.map(n => {
                     const Icon = n.icon;
+                    const navText = displayNavLabel(n);
                     return (
                       <button key={n.key} onClick={() => {
                         if (n.key === 'approvals') {
@@ -414,12 +428,12 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                         }
                         navigate(n.key as PortalKey);
                       }}
-                        title={n.label} className={navBtnClass(activePortal === n.key, isSidebarCollapsed)}>
+                        title={navText.label} className={navBtnClass(activePortal === n.key, isSidebarCollapsed)}>
                         <Icon className={`shrink-0 ${isSidebarCollapsed ? 'h-5 w-5' : 'h-4 w-4'} ${activePortal === n.key ? '' : (group.color || '')}`} />
                         {!isSidebarCollapsed && (
                           <div className="flex flex-col text-left animate-in fade-in slide-in-from-left-2 duration-300">
-                            <span className="font-medium">{n.label}</span>
-                            <span className="text-[11px] text-muted-foreground">{n.sub}</span>
+                            <span className="font-medium">{navText.label}</span>
+                            <span className="text-[11px] text-muted-foreground">{navText.sub}</span>
                           </div>
                         )}
                         {n.badge && pendingApprovals > 0 && (
@@ -612,7 +626,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                   ) &&
                   !user?.isImpersonating && <UsersAccessConsole initialPortal={activePortal} />}
                 {activePortal === 'beneficiaries' && ['ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'].includes(role || '') && <BeneficiaryAdminPage />}
-                {activePortal === 'master'     && ['ADMIN', 'C_LEVEL'].includes(role || '') && <MasterDataPortal />}
+                {activePortal === 'master'     && (capMenus ? capMenus.includes('master') : (hasMasterGeneral || hasPricingOrCost)) && <MasterDataPortal />}
               </div>
             )}
           </Suspense>

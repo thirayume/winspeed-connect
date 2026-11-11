@@ -3,6 +3,8 @@ import { Search, RefreshCw, X, Clock, Package, ChevronLeft, ChevronRight, Truck,
 import { searchAgingOrders } from '../../services/api';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
+import { appAlert } from '../ui/AppAlert';
+import { bangkokDate } from '../../utils/date';
 import { useAppStore } from '../../store/app-store';
 import { exportToExcel, type ExportColumn } from '../../utils/exportUtils';
 import type { AgingRow, SOStatus } from '../../types';
@@ -10,11 +12,7 @@ import { SO_STATUS_META } from '../../constants/soStatus';
 
 const PAGE_SIZE = 50;
 
-const defaultDateFrom = () => {
-  const d = new Date();
-  d.setDate(d.getDate() - 180);
-  return d.toISOString().split('T')[0];
-};
+const defaultDateFrom = () => bangkokDate(180);
 
 export const AgingPage = () => {
   const [data, setData]       = useState<AgingRow[]>([]);
@@ -57,7 +55,7 @@ export const AgingPage = () => {
 
   const exportToExcelHandler = () => {
     if (!data || data.length === 0) {
-      alert('ไม่มีข้อมูลสำหรับส่งออก');
+      void appAlert('ไม่มีข้อมูลสำหรับส่งออก', 'warning');
       return;
     }
     const columns: ExportColumn[] = [

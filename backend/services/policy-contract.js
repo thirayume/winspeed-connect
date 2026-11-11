@@ -183,10 +183,40 @@ const POLICY_DEFINITIONS = Object.freeze(Object.assign(Object.create(null), {
   CREDIT_AGING_DEFAULT_DAYS: {
     policyName: 'CREDIT_POLICY',
     type: 'INT',
-    min: 1,
-    max: 365,
+    min: 0,
+    max: 730,
     default: 60,
-    description: 'จำนวนวันเครดิต Aging สูงสุดตามนโยบายค่าเริ่มต้น (วัน, ค่าเริ่มต้น 60 วัน)',
+    description: 'จำนวนวันเครดิต Aging มาตรฐานกรณีไม่ระบุในข้อมูลลูกค้า (0 = ขายเงินสด, ค่าเริ่มต้น 60 วัน)',
+  },
+  CREDIT_AGING_MAX_DAYS: {
+    policyName: 'CREDIT_POLICY',
+    type: 'INT',
+    min: 0,
+    max: 730,
+    default: 90,
+    description: 'เกณฑ์ Aging สูงสุดตามนโยบายบริษัท (วัน, ค่าเริ่มต้น 90 วัน) ใช้แจ้งเตือนเมื่อกำหนดค่าลูกค้าเกินหรือมีหนี้ค้างเกินเกณฑ์',
+  },
+  CREDIT_AGING_ALERT_POPUP: {
+    policyName: 'CREDIT_POLICY',
+    type: 'BOOLEAN',
+    default: 'true',
+    description: 'แสดงหน้าต่างแจ้งเตือนยืนยันก่อนบันทึกบิลขายเมื่อลูกค้าเกินวงเงินหรือเกิน Aging (true = แสดง, false = แจ้งเตือนเฉพาะแบนเนอร์)',
+  },
+  QUOTATION_MAE_PUI_MAX_VALID_DAYS: {
+    policyName: 'QUOTATION_POLICY',
+    type: 'INT',
+    min: 1,
+    max: 90,
+    default: 3,
+    description: 'จำนวนวันยืนราคาสูงสุดสำหรับใบเสนอราคาที่มีสินค้ากลุ่มแม่ปุ๋ย (วัน, ค่าเริ่มต้น 3 วัน) ใช้ทั้งตอนสร้างและตอนขอขยายเวลาต่อครั้ง',
+  },
+  TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS: {
+    policyName: 'TRIP_CAPACITY_POLICY',
+    type: 'INT',
+    min: 2,
+    max: 50,
+    default: 2,
+    description: 'จำนวนลูกค้าขั้นต่ำต่อ 1 Sale Trip ที่ต้องส่งขออนุมัติก่อนยืนยันการสั่งซื้อ (ราย, ค่าเริ่มต้น 2 รายขึ้นไป)',
   },
 }));
 
@@ -424,6 +454,22 @@ function validateSettingsPayload(updates, currentSettings = {}) {
 
   if (effectiveMinPct > effectiveMaxPct) {
     errors.push(`เกณฑ์ความต่างน้ำหนักต่ำสุด (${effectiveMinPct}%) ต้องไม่มากกว่าเกณฑ์สูงสุด (${effectiveMaxPct}%)`);
+  }
+
+  // Cross-field validation: Standard Aging days <= Max Policy Aging days
+  const parseAgingBound = (validatedObj, key, currentObj, fallback) => {
+    if (validatedObj[key] !== undefined) return parseInt(validatedObj[key].value, 10);
+    if (currentObj[key] !== undefined && currentObj[key] !== null && String(currentObj[key]).trim() !== '') {
+      const n = parseInt(currentObj[key], 10);
+      if (Number.isFinite(n)) return n;
+    }
+    return fallback;
+  };
+  const effectiveDefaultAging = parseAgingBound(validated, 'CREDIT_AGING_DEFAULT_DAYS', currentSettings, 60);
+  const effectiveMaxAging = parseAgingBound(validated, 'CREDIT_AGING_MAX_DAYS', currentSettings, 90);
+
+  if (effectiveDefaultAging > effectiveMaxAging) {
+    errors.push(`ค่ามาตรฐาน Aging (${effectiveDefaultAging} วัน) ต้องไม่มากกว่าเกณฑ์สูงสุดตามนโยบาย (${effectiveMaxAging} วัน)`);
   }
 
   return {

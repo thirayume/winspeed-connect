@@ -15,7 +15,7 @@ import {
   type ReportAssignmentItem,
   type ReportAuditEventItem
 } from '../../services/api';
-import { appPrompt } from '../ui/AppAlert';
+import { appAlert, appPrompt } from '../ui/AppAlert';
 
 interface Props {
   isOpen: boolean;
@@ -84,7 +84,7 @@ export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated, e
     e.preventDefault();
     if (!editingHeader) return;
     if (!reason.trim()) {
-      alert('ต้องระบุเหตุผลในการแก้ไข/สร้างข้อมูลหัวกระดาษ (Reason is required)');
+      await appAlert('ต้องระบุเหตุผลในการแก้ไข/สร้างข้อมูลหัวกระดาษ (Reason is required)', 'warning');
       return;
     }
 
@@ -124,7 +124,7 @@ export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated, e
     e.preventDefault();
     if (!editingTemplate) return;
     if (!reason.trim()) {
-      alert('ต้องระบุเหตุผลในการแก้ไข/สร้างแม่แบบรายงาน (Reason is required)');
+      await appAlert('ต้องระบุเหตุผลในการแก้ไข/สร้างแม่แบบรายงาน (Reason is required)', 'warning');
       return;
     }
 
@@ -163,7 +163,7 @@ export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated, e
   const handleUpdateAssignment = async (reportKey: string, templateId: number) => {
     const rPrompt = await appPrompt(`ระบุเหตุผลในการเปลี่ยนแม่แบบสำหรับรายงาน "${reportKey}":`);
     if (!rPrompt || !rPrompt.trim()) {
-      alert('การแก้ไขการกำหนดแม่แบบต้องระบุเหตุผลเสมอ');
+      await appAlert('การแก้ไขการกำหนดแม่แบบต้องระบุเหตุผลเสมอ', 'warning');
       return;
     }
 

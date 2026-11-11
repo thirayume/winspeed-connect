@@ -6,7 +6,8 @@ import { useCan } from '../../utils/capabilities';
 import { useAppStore } from '../../store/app-store';
 import type { SalesOrder } from '../../types';
 import { fetchSalesOrders } from '../../services/api';
-import { appConfirm, appPrompt } from '../ui/AppAlert';
+import { appAlert, appConfirm, appPrompt } from '../ui/AppAlert';
+import { formatThaiDate } from '../../utils/date';
 import type { PaperBoard, PaperCard, SOStatus } from '../../types';
 import { PaperDocModal } from './PaperDocModal';
 import { ScanModal } from './ScanModal';
@@ -73,7 +74,7 @@ export function PaperTrailPage() {
   async function doVerify(card: PaperCard) {
     setBusyId(String(card.id));
     try { await verifySO(Number(card.id)); await load(); }
-    catch (e) { alert((e as Error).message); }
+    catch (e) { void appAlert((e as Error).message, 'error'); }
     finally { setBusyId(null); }
   }
 
@@ -87,11 +88,11 @@ export function PaperTrailPage() {
     if (!card) return;
     try {
       await createUnlockRequest(card.id, reason, type);
-      alert('ส่งคำขอแล้ว รออนุมัติจากหัวหน้างาน');
+      void appAlert('ส่งคำขอแล้ว รออนุมัติจากหัวหน้างาน', 'success');
       setRequestModalConfig({ isOpen: false, type: 'EDIT', card: null });
       await load();
     } catch (e) {
-      alert((e as Error).message);
+      void appAlert((e as Error).message, 'error');
     }
   }
 
@@ -106,7 +107,7 @@ export function PaperTrailPage() {
     try {
       if (card.status === 'DRAFT') {
         if (card.tripId) {
-          alert(`บิลนี้อยู่ในเที่ยวขนส่ง #${card.tripId} กรุณายืนยันผ่านการยืนยันเที่ยวขนส่งทั้งเที่ยว (ไม่อนุญาตให้ยืนยันรายบิล)`);
+          void appAlert(`บิลนี้อยู่ในเที่ยวขนส่ง #${card.tripId} กรุณายืนยันผ่านการยืนยันเที่ยวขนส่งทั้งเที่ยว (ไม่อนุญาตให้ยืนยันรายบิล)`, 'info');
           return;
         }
         await confirmSO(card.id);
@@ -123,7 +124,7 @@ export function PaperTrailPage() {
         await syncImported(Number(card.id), docuNo);
       }
       await load();
-    } catch (e: unknown) { alert((e as Error).message); }
+    } catch (e: unknown) { void appAlert((e as Error).message, 'error'); }
     finally { setBusyId(null); }
   }
 
@@ -221,7 +222,7 @@ export function PaperTrailPage() {
             const map = new Map<string, { dateDisplay: string; cust: string; custCount: number; truck: string; cards: PaperCard[]; totalTon: number }>();
             for (const card of cards) {
               const dateRaw = card.deliveryDate ? card.deliveryDate.split('T')[0] : '9999-12-31';
-              const dateDisplay = card.deliveryDate ? new Date(card.deliveryDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : 'ไม่ระบุวันรับ';
+              const dateDisplay = card.deliveryDate ? formatThaiDate(card.deliveryDate) : 'ไม่ระบุวันรับ';
               const truck = card.truckPlate || 'ไม่ระบุทะเบียนรถ';
               // For CONTROL_TICKET, group individually by ID so independent tickets don't merge, unless they share the exact same ID
               const key = stage === 'CONTROL_TICKET' ? `CT::${card.id}` : `${dateRaw}::${truck}`;
@@ -504,10 +505,7 @@ function CancelledOrdersView({ onBack }: { onBack: () => void }) {
                     <td className="px-6 py-4 font-mono font-bold text-gray-700 whitespace-nowrap">{o.wfRef}</td>
                     <td className="px-6 py-4 text-gray-600 whitespace-nowrap">{o.custName}</td>
                     <td className="px-6 py-4 text-right text-gray-500 whitespace-nowrap">
-                      {o.createdAt ? new Date(o.createdAt).toLocaleString('th-TH', { 
-                        year: 'numeric', month: 'short', day: 'numeric',
-                        hour: '2-digit', minute: '2-digit'
-                      }) : '—'}
+                      {o.createdAt ? formatThaiDate(o.createdAt, true) : '—'}
                     </td>
                   </tr>
                 ))}

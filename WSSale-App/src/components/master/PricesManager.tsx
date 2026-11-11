@@ -5,6 +5,7 @@ import type { CurrentPrice } from '../../types';
 import { formatThaiDate } from '../../utils/date';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
+import { appAlert } from '../ui/AppAlert';
 
 type GroupedPrice = {
   key: string;
@@ -226,7 +227,10 @@ export const PricesManager = ({
   };
 
   const handleEdit = (p: CurrentPrice) => {
-    if (!p.SetPriceID || !p.ListNo) return alert('ไม่สามารถแก้ไขราคานี้ได้');
+    if (!p.SetPriceID || !p.ListNo) {
+      void appAlert('ไม่สามารถแก้ไขราคานี้ได้', 'warning');
+      return;
+    }
     setEditingId(`${p.SetPriceID}-${p.ListNo}`);
     setExtendingId(null);
     setEditForm({
@@ -263,7 +267,10 @@ export const PricesManager = ({
 
   const handleSaveEdit = async (p: CurrentPrice) => {
     if (!p.SetPriceID || !p.ListNo) return;
-    if (editForm.beginDate > editForm.endDate) return alert('วันที่เริ่มต้น ต้องน้อยกว่าหรือเท่ากับ วันที่สิ้นสุด');
+    if (editForm.beginDate > editForm.endDate) {
+      await appAlert('วันที่เริ่มต้น ต้องน้อยกว่าหรือเท่ากับ วันที่สิ้นสุด', 'warning');
+      return;
+    }
     
     setSaving(true);
     try {
@@ -276,12 +283,15 @@ export const PricesManager = ({
       });
       setEditingId(null);
       await loadData();
-    } catch (e: any) { alert('Error updating price: ' + e.message); }
+    } catch (e: any) { await appAlert('Error updating price: ' + e.message, 'error'); }
     setSaving(false);
   };
 
   const handleSaveExtend = async (p: CurrentPrice) => {
-    if (extendForm.beginDate > extendForm.endDate) return alert('วันที่เริ่มต้น ต้องน้อยกว่าหรือเท่ากับ วันที่สิ้นสุด');
+    if (extendForm.beginDate > extendForm.endDate) {
+      await appAlert('วันที่เริ่มต้น ต้องน้อยกว่าหรือเท่ากับ วันที่สิ้นสุด', 'warning');
+      return;
+    }
     
     setSaving(true);
     try {
@@ -296,7 +306,7 @@ export const PricesManager = ({
       });
       setExtendingId(null);
       await loadData();
-    } catch (e: any) { alert('Error extending price: ' + e.message); }
+    } catch (e: any) { await appAlert('Error extending price: ' + e.message, 'error'); }
     setSaving(false);
   };
 
@@ -344,9 +354,9 @@ export const PricesManager = ({
       setShowBulkModal(false);
       setSelectedKeys(new Set());
       await loadData();
-      alert(`ต่ออายุสำเร็จ ${payloads.length} รายการ`);
+      await appAlert(`ต่ออายุสำเร็จ ${payloads.length} รายการ`, 'success');
     } catch (e: any) {
-      alert('Error bulk extending: ' + e.message);
+      await appAlert('Error bulk extending: ' + e.message, 'error');
     }
     setSaving(false);
   };

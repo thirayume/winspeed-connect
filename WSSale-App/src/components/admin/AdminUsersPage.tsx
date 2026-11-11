@@ -3,6 +3,7 @@ import { Users, RefreshCw, Check, AlertTriangle, Plus, FilePenLine, X, Search, A
 import { listUsers, fetchEmployees, updateUser, deleteUser, req } from '../../services/api';
 import '../../store/db-mode';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
+import { appAlert } from '../ui/AppAlert';
 import type { AdminUser, Employee } from '../../types';
 import type { RoleProfile } from './RoleManagementPage';
 import { BatchUsersPanel } from './BatchUsersPanel';
@@ -86,7 +87,7 @@ export const AdminUsersPage = ({
       setSavedId(user.Id);
       setTimeout(() => setSavedId(null), 1500);
     } catch (e: unknown) {
-      alert((e as Error).message || 'บันทึกไม่สำเร็จ');
+      await appAlert((e as Error).message || 'บันทึกไม่สำเร็จ', 'error');
     } finally {
       setSavingId(null);
     }
@@ -100,7 +101,7 @@ export const AdminUsersPage = ({
       setUsers(prev => prev.filter(u => u.Id !== deleteTarget.Id));
       setDeleteTarget(null);
     } catch (e: unknown) {
-      alert((e as Error).message || 'ลบไม่สำเร็จ');
+      await appAlert((e as Error).message || 'ลบไม่สำเร็จ', 'error');
     } finally {
       setIsDeleting(false);
     }

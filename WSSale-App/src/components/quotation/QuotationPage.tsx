@@ -3,16 +3,21 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { unsavedMessage } from '../../utils/unsaved-changes';
 import { FileText, RefreshCw, Plus, X, ArrowRightCircle, AlertTriangle, Package, Send, Clock, User, Printer, Sparkles } from 'lucide-react';
-import { fetchQuotations, createQuotation, updateQuotationStatus, extendQuotationValidity, fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, listUsers, fetchCustomerTopGoods, type CustomerTopGood } from '../../services/api';
+import { fetchQuotations, createQuotation, updateQuotationStatus, extendQuotationValidity, fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, listUsers, fetchCustomerTopGoods, fetchCustomerCreditStatus, fetchSystemSettings, type CustomerTopGood } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import { useAppStore } from '../../store/app-store';
-import type { Quotation, QuoteStatus, EMCust, EMGood, CurrentPrice, AdminUser } from '../../types';
+import type { Quotation, QuoteStatus, EMCust, EMGood, CurrentPrice, AdminUser, CustomerCreditStatus } from '../../types';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { Search, Check } from 'lucide-react';
-import { appConfirm } from '../ui/AppAlert';
+import { appAlert, appConfirm } from '../ui/AppAlert';
+import { SearchableSelect } from '../ui/SearchableSelect';
+import { formatThaiDate } from '../../utils/date';
 import { CreateSODialog } from '../sales/CreateSODialog';
+import { CustomerCreditAlertBanner } from '../sales/CustomerCreditAlertBanner';
 import { QuotationPrintModal } from './QuotationPrintModal';
+import { ExtendMaePuiQuoteModal } from './ExtendMaePuiQuoteModal';
+import { isMaePuiGood, getLocalDateStr, parseMaePuiMaxValidDays, formatThaiShortDate } from '../../utils/quotation-policy';
 
 const STATUS_STYLE: Record<QuoteStatus, string> = {
   DRAFT: 'bg-gray-100 text-gray-600', SENT: 'bg-blue-50 text-blue-700', ACCEPTED: 'bg-green-50 text-green-700',
@@ -44,6 +49,9 @@ export function QuotationPage() {
   const [convertQuoteId, setConvertQuoteId] = useState<number | null>(null);
   const [focusedQuoteId, setFocusedQuoteId] = useState<number | null>(null);
   const [printQuoteId, setPrintQuoteId] = useState<number | null>(null);
+  const [extendQuote, setExtendQuote] = useState<Quotation | null>(null);
+  const [maePuiMaxDays, setMaePuiMaxDays] = useState(3);
+  const [feedbackBanner, setFeedbackBanner] = useState('');
   const navParams = useAppStore(s => s.navParams);
   const clearNavParams = useAppStore(s => s.clearNavParams);
 
@@ -62,7 +70,12 @@ export function QuotationPage() {
     try { setQuotes(await fetchQuotations()); } catch (e) { console.error(e); }
     setLoading(false);
   }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    fetchSystemSettings()
+      .then(res => setMaePuiMaxDays(parseMaePuiMaxValidDays(res.raw, res.settings)))
+      .catch(() => {});
+  }, [load]);
 
   useEffect(() => {
     if (!navParams?.quoteId && !navParams?.quoteNo) return;
@@ -85,14 +98,14 @@ export function QuotationPage() {
 
   function doConvert(q: Quotation) {
     if (q.Status !== 'ACCEPTED') {
-      alert('ใบเสนอราคาต้องได้รับการอนุมัติ/ยืนยันก่อนจึงจะออกบิลได้');
+      void appAlert('ใบเสนอราคาต้องได้รับการอนุมัติ/ยืนยันก่อนจึงจะออกบิลได้', 'info');
       return;
     }
     setConvertQuoteId(q.Id);
   }
   async function setStatus(q: Quotation, status: string) {
     if (isNativeOnly(q)) {
-      alert('เอกสารนี้ออกจาก WINSpeed โดยตรง กรุณาเปลี่ยนสถานะใน WINSpeed แล้วกดรีเฟรช');
+      void appAlert('เอกสารนี้ออกจาก WINSpeed โดยตรง กรุณาเปลี่ยนสถานะใน WINSpeed แล้วกดรีเฟรช', 'info');
       return;
     }
     if (status === 'CANCELLED' && (q.SourceSoCount || 0) > 0) {
@@ -101,14 +114,14 @@ export function QuotationPage() {
     }
     setBusyId(q.Id);
     try { await updateQuotationStatus(q.Id, status); await load(); }
-    catch (e: unknown) { alert((e as Error).message); }
+    catch (e: unknown) { void appAlert((e as Error).message, 'error'); }
     finally { setBusyId(null); }
   }
 
   async function extendValidUntil(q: Quotation, validDays: 7 | 15 | 20 | 30 | 45) {
     setBusyId(q.Id);
     try { await extendQuotationValidity(q.Id, { validDays }); await load(); }
-    catch (e: unknown) { alert((e as Error).message); }
+    catch (e: unknown) { void appAlert((e as Error).message, 'error'); }
     finally { setBusyId(null); }
   }
 
@@ -206,6 +219,14 @@ export function QuotationPage() {
       </div>
 
       <div className="flex-1 flex flex-col gap-4 overflow-hidden p-2 sm:p-4 min-h-0">
+        {feedbackBanner && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-bold text-emerald-800 flex items-center justify-between gap-2 shrink-0">
+            <span className="flex items-center gap-2"><Check size={14} /> {feedbackBanner}</span>
+            <button type="button" onClick={() => setFeedbackBanner('')} className="text-emerald-700 hover:text-emerald-900">
+              <X size={14} />
+            </button>
+          </div>
+        )}
         {/* Summary Cards */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4 shrink-0">
         <DataSummaryCard
@@ -335,7 +356,7 @@ export function QuotationPage() {
                         {/* Header: Date + Amount */}
                         <div className="flex items-center justify-between mb-2">
                           <div className="text-[10px] text-gray-500 flex items-center gap-1 font-bold">
-                            <Clock size={12} /> {q.CreatedAt ? new Date(q.CreatedAt).toLocaleDateString('th-TH') : ''}
+                            <Clock size={12} /> {q.CreatedAt ? formatThaiDate(q.CreatedAt) : ''}
                           </div>
                           <div className={`font-bold text-sm ${q.Status === 'ACCEPTED' ? 'text-emerald-700' : 'text-[#0C447C]'}`}>
                             ฿{total.toLocaleString('th-TH', { maximumFractionDigits: 0 })}
@@ -360,7 +381,7 @@ export function QuotationPage() {
                           </div>
                           {q.ValidUntil && (
                             <div className="flex items-center gap-1 font-bold text-orange-600">
-                               หมดอายุ {new Date(q.ValidUntil).toLocaleDateString('th-TH')}
+                               หมดอายุ {formatThaiDate(q.ValidUntil)}
                             </div>
                           )}
                         </div>
@@ -370,6 +391,11 @@ export function QuotationPage() {
                           <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${nativeOnly ? 'bg-slate-50 text-slate-700 border-slate-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
                             {nativeOnly ? 'WINSpeed' : 'App'}
                           </span>
+                          {q.HasMaePui && (
+                            <span className="text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full">
+                              แม่ปุ๋ย · สูงสุด {q.MaePuiMaxValidDays ?? maePuiMaxDays} วัน
+                            </span>
+                          )}
                           {winspeedQuoteNo && (
                             <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
                               {winspeedQuoteNo}{winspeedConfirmNo ? ` / ${winspeedConfirmNo}` : ''}
@@ -425,11 +451,22 @@ export function QuotationPage() {
                           <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-2">
                              <span className="text-[10px] text-gray-400 font-bold">ต่ออายุ:</span>
                              <div className="flex gap-1.5">
-                              {[7, 15, 30].map(days => (
-                                <button key={days} disabled={busyId===q.Id || !can('quotation.manage')} onClick={() => extendValidUntil(q, days as 7 | 15 | 30 | 20 | 45)} className="px-2 py-1 rounded text-[10px] font-bold text-gray-500 bg-gray-100 hover:bg-blue-100 hover:text-blue-700 transition-colors disabled:opacity-50">
-                                  +{days}
+                              {q.HasMaePui ? (
+                                <button
+                                  type="button"
+                                  disabled={busyId === q.Id || !can('quotation.manage')}
+                                  onClick={() => setExtendQuote(q)}
+                                  className="px-2.5 py-1 rounded text-[10px] font-bold text-amber-900 bg-amber-100 border border-amber-300 hover:bg-amber-200 transition-colors disabled:opacity-50"
+                                >
+                                  +{q.MaePuiMaxValidDays ?? maePuiMaxDays} วัน (ทบทวนราคา)
                                 </button>
-                              ))}
+                              ) : (
+                                [7, 15, 30].map(days => (
+                                  <button key={days} disabled={busyId===q.Id || !can('quotation.manage')} onClick={() => extendValidUntil(q, days as 7 | 15 | 30 | 20 | 45)} className="px-2 py-1 rounded text-[10px] font-bold text-gray-500 bg-gray-100 hover:bg-blue-100 hover:text-blue-700 transition-colors disabled:opacity-50">
+                                    +{days}
+                                  </button>
+                                ))
+                              )}
                              </div>
                           </div>
                         )}
@@ -470,21 +507,41 @@ export function QuotationPage() {
 
       {showCreate && <CreateQuoteDialog onClose={() => setShowCreate(false)} onDone={() => { setShowCreate(false); load(); }} />}
       {printQuoteId != null && <QuotationPrintModal quoteId={printQuoteId} onClose={() => setPrintQuoteId(null)} />}
+      {extendQuote && (
+        <ExtendMaePuiQuoteModal
+          quote={extendQuote}
+          onClose={() => setExtendQuote(null)}
+          onDone={msg => {
+            setExtendQuote(null);
+            setFeedbackBanner(msg);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }
 
-type DraftLine = { tempId: string; goodId: string; goodCode: string; goodName: string; qtyTon: number | string; pricePerTon: number | string; netPricePerTon: number; isGiveaway?: boolean };
+type DraftLine = {
+  tempId: string;
+  goodId: string;
+  goodCode: string;
+  goodName: string;
+  goodGroupId?: number | null;
+  goodGroupName?: string | null;
+  qtyTon: number | string;
+  pricePerTon: number | string;
+  netPricePerTon: number;
+  isGiveaway?: boolean;
+};
 
 export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [custs, setCusts]   = useState<EMCust[]>([]);
   const [goods, setGoods]   = useState<EMGood[]>([]);
   const [prices, setPrices] = useState<CurrentPrice[]>([]);
   const [custId, setCustId] = useState('');
-  const [initialValidUntil] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() + 7);
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-  });
+  const [maePuiMaxDays, setMaePuiMaxDays] = useState<number>(3);
+  const [initialValidUntil] = useState(() => getLocalDateStr(7));
   const [validUntil, setValidUntil] = useState(initialValidUntil);
   const [lines, setLines]   = useState<DraftLine[]>([]);
   const [busy, setBusy]     = useState(false);
@@ -498,6 +555,8 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
 
   const HISTORY_TAB = 'รายการที่เคยสั่งซื้อ';
   const [customerTopGoods, setCustomerTopGoods] = useState<CustomerTopGood[]>([]);
+  const [creditStatus, setCreditStatus] = useState<CustomerCreditStatus | null>(null);
+  const [creditLoading, setCreditLoading] = useState(false);
 
   const [salesUserId, setSalesUserId]   = useState<string | number>('');
   const [salesUsers, setSalesUsers]     = useState<AdminUser[]>([]);
@@ -547,6 +606,9 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
     Promise.all([fetchGoods({ forSale: true }), fetchGiveawayGoods()])
       .then(([g, gw]) => setGoods([...g, ...gw.map(x => ({ ...x, GoodGroupName: 'ของแถม' }))]))
       .catch(()=>{});
+    fetchSystemSettings()
+      .then(res => setMaePuiMaxDays(parseMaePuiMaxValidDays(res.raw, res.settings)))
+      .catch(() => {});
     if (userRole === 'ADMIN') {
       listUsers().then(setSalesUsers).catch(()=>{});
     }
@@ -603,18 +665,84 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
 
   function addGood(g: EMGood) {
     const net = netOf(g.GoodID);
+    const isGw = g.GoodGroupName === 'ของแถม';
     setLines(prev => prev.some(l => l.goodId === g.GoodID && !l.isGiveaway)
       ? prev.map(l => l.goodId === g.GoodID && !l.isGiveaway ? { ...l, qtyTon: Number(l.qtyTon) + 1 } : l)
-      : [{ tempId: `${g.GoodID}-${Date.now()}`, goodId: g.GoodID, goodCode: g.GoodCode, goodName: g.GoodName, qtyTon: 1, pricePerTon: g.GoodGroupName === 'ของแถม' ? 0 : net, netPricePerTon: g.GoodGroupName === 'ของแถม' ? 0 : net, isGiveaway: g.GoodGroupName === 'ของแถม' }, ...prev]);
+      : [{
+          tempId: `${g.GoodID}-${Date.now()}`,
+          goodId: g.GoodID,
+          goodCode: g.GoodCode,
+          goodName: g.GoodName,
+          goodGroupId: g.GoodGroupID ?? null,
+          goodGroupName: g.GoodGroupName ?? null,
+          qtyTon: 1,
+          pricePerTon: isGw ? 0 : net,
+          netPricePerTon: isGw ? 0 : net,
+          isGiveaway: isGw,
+        }, ...prev]);
   }
   function upd(id: string, patch: Partial<DraftLine>) { setLines(prev => prev.map(l => l.tempId === id ? { ...l, ...patch } : l)); }
   function rm(id: string) { setLines(prev => prev.filter(l => l.tempId !== id)); }
 
   const cust = custs.find(c => c.CustID === custId);
   const total = lines.reduce((sum, l) => sum + (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0), 0);
+  const hasMaePui = lines.some(l => {
+    if (l.isGiveaway) return false;
+    if (isMaePuiGood(l)) return true;
+    const matchedGood = goods.find(g => String(g.GoodID) === String(l.goodId));
+    return isMaePuiGood(matchedGood);
+  });
+  const todayStr = getLocalDateStr(0);
+  const maePuiMaxDateStr = getLocalDateStr(maePuiMaxDays, todayStr);
+
+  useEffect(() => {
+    if (hasMaePui && (!validUntil || validUntil > maePuiMaxDateStr || validUntil < todayStr)) {
+      setValidUntil(maePuiMaxDateStr);
+    }
+  }, [hasMaePui, validUntil, maePuiMaxDateStr, todayStr]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!custId) {
+      setCreditStatus(null);
+      return;
+    }
+    setCreditLoading(true);
+    fetchCustomerCreditStatus(custId, total)
+      .then(st => { if (!cancelled) setCreditStatus(st); })
+      .catch(() => { if (!cancelled) setCreditStatus(null); })
+      .finally(() => { if (!cancelled) setCreditLoading(false); });
+    return () => { cancelled = true; };
+  }, [custId, total]);
 
   async function submit() {
     if (!custId || lines.length === 0) { setErr('กรุณาเลือกลูกค้า และเพิ่มสินค้าอย่างน้อย 1 รายการ'); return; }
+    if (validUntil && validUntil < todayStr) {
+      setErr('วันยืนราคาต้องไม่ก่อนวันนี้');
+      return;
+    }
+    if (hasMaePui && validUntil && validUntil > maePuiMaxDateStr) {
+      setErr(`ใบเสนอราคาที่มีสินค้ากลุ่ม "แม่ปุ๋ย" ยืนราคาได้สูงสุด ${maePuiMaxDays} วันเท่านั้น (ไม่เกินวันที่ ${formatThaiShortDate(maePuiMaxDateStr)})`);
+      return;
+    }
+    if (creditStatus?.blocked) {
+      setErr(`ไม่อนุญาตให้สร้างเอกสาร: ${creditStatus.blockReasons.join(' · ')}`);
+      return;
+    }
+    const overAging = Boolean(creditStatus?.isOverAging ?? creditStatus?.isAgingExceeded);
+    const overCredit = Boolean(creditStatus?.isOverCreditLimit ?? creditStatus?.isCreditLimitExceeded);
+    if (
+      creditStatus &&
+      creditStatus.agingAlertPopup !== false &&
+      (creditStatus.isOverPolicyMaxAging || overAging || overCredit || (creditStatus.warnings?.length ?? 0) > 0)
+    ) {
+      const msg = creditStatus.warnings?.length
+        ? creditStatus.warnings.join('\n• ')
+        : 'ลูกค้ามีสถานะเกินวงเงินเครดิตหรือเกินอายุหนี้ Aging';
+      if (!(await appConfirm(`⚠️ คำเตือนเครดิต & Aging ของลูกค้า\n\n• ${msg}\n\nต้องการยืนยันบันทึกใบเสนอราคาต่อหรือไม่?`))) {
+        return;
+      }
+    }
     setBusy(true); setErr('');
     try {
       const r = await createQuotation({ custId, custName: cust?.CustName || custId, validUntil: validUntil || undefined,
@@ -626,7 +754,7 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
         salesUserId: salesUserId ? Number(salesUserId) : undefined
       });
       releaseDraftGuard();
-      alert(`✓ สร้างใบเสนอราคาสำเร็จ: ${r.quoteNo}`); onDone();
+      await appAlert(`สร้างใบเสนอราคาสำเร็จ: ${r.quoteNo}`, 'success'); onDone();
     } catch (e: unknown) { setErr((e as Error).message || 'เกิดข้อผิดพลาด'); }
     finally { setBusy(false); }
   }
@@ -777,11 +905,17 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
                 {userRole === 'ADMIN' && (
                   <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-2">
                     <label className="text-xs font-bold text-amber-800 block mb-1">ทำรายการแทน (Admin Only)</label>
-                    <select value={salesUserId} onChange={e => setSalesUserId(e.target.value)}
-                      className="w-full border-amber-200 rounded px-2 py-1.5 text-sm bg-white text-amber-900 focus:ring-amber-500">
-                      <option value="">-- เป็นตัวเอง (Admin) --</option>
-                      {salesUsers.map(u => <option key={u.Id} value={u.Id}>{u.DisplayName} ({u.Username})</option>)}
-                    </select>
+                    <SearchableSelect
+                      value={String(salesUserId || '')}
+                      onChange={(val) => setSalesUserId(val)}
+                      placeholder="-- เป็นตัวเอง (Admin) --"
+                      searchPlaceholder="ค้นหาผู้ขาย..."
+                      allowClear
+                      options={salesUsers.map(u => ({
+                        value: String(u.Id),
+                        label: `${u.DisplayName} (${u.Username})`,
+                      }))}
+                    />
                   </div>
                 )}
                 <div className="relative">
@@ -828,29 +962,51 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
                       ))}
                     </div>
                   )}
+                  {custId && (
+                    <CustomerCreditAlertBanner creditStatus={creditStatus} loading={creditLoading} />
+                  )}
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-gray-500 block mb-1">ใช้ได้ถึง</label>
                   <div className="flex items-center gap-2">
                     <div className="flex-1">
-                      <ThaiDatePicker value={validUntil} onChange={setValidUntil} />
+                      <ThaiDatePicker
+                        value={validUntil}
+                        min={todayStr}
+                        max={hasMaePui ? maePuiMaxDateStr : undefined}
+                        onChange={v => setValidUntil(hasMaePui && v > maePuiMaxDateStr ? maePuiMaxDateStr : v)}
+                      />
                     </div>
                     <button
                       type="button"
                       onClick={() => {
+                        if (hasMaePui) {
+                          setValidUntil(maePuiMaxDateStr);
+                          return;
+                        }
                         const currentDiff = getDiffDays(validUntil);
                         let nextDiff = 7;
                         if (currentDiff === 7) nextDiff = 15;
                         else if (currentDiff === 15) nextDiff = 30;
-                        const d = new Date(); d.setDate(d.getDate() + nextDiff);
-                        const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-                        setValidUntil(local.toISOString().slice(0, 10));
+                        setValidUntil(getLocalDateStr(nextDiff));
                       }}
-                      className="px-3 py-2 border border-blue-200 bg-blue-50 text-[#0C447C] rounded-lg text-xs font-bold whitespace-nowrap hover:bg-blue-100 transition-colors"
+                      className={`px-3 py-2 border rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${
+                        hasMaePui
+                          ? 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                          : 'border-blue-200 bg-blue-50 text-[#0C447C] hover:bg-blue-100'
+                      }`}
                     >
-                      +{getDiffDays(validUntil)} วัน
+                      {hasMaePui ? `+${maePuiMaxDays} วัน (สูงสุดแม่ปุ๋ย)` : `+${getDiffDays(validUntil)} วัน`}
                     </button>
                   </div>
+                  {hasMaePui && (
+                    <div className="mt-1.5 px-2.5 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-[11px] font-semibold text-amber-900 flex items-center gap-1.5">
+                      <AlertTriangle size={13} className="text-amber-700 shrink-0" />
+                      <span>
+                        มีสินค้ากลุ่มแม่ปุ๋ย: ยืนราคาได้สูงสุด {maePuiMaxDays} วัน (ไม่เกิน {formatThaiShortDate(maePuiMaxDateStr)})
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Line items */}

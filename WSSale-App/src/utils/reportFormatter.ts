@@ -1,4 +1,5 @@
 import type { ReportColumn } from '../services/api';
+import { formatThaiDate } from './date';
 
 /**
  * ตรวจสอบว่าคอลัมน์นี้เป็นตัวเลขเชิงปริมาณหรือการเงิน (จัดชิดขวา) หรือไม่
@@ -30,15 +31,13 @@ export function formatReportCell(value: unknown, col: ReportColumn): string {
       return String(value);
 
     case 'date': {
-      if (value instanceof Date) return value.toISOString().slice(0, 10);
-      const str = String(value);
-      return str.slice(0, 10);
+      const formatted = formatThaiDate(value as string | Date, false);
+      return formatted === '-' ? String(value) : formatted;
     }
 
     case 'datetime': {
-      if (value instanceof Date) return value.toISOString().replace('T', ' ').slice(0, 19);
-      const str = String(value);
-      return str.replace('T', ' ').slice(0, 19);
+      const formatted = formatThaiDate(value as string | Date, true);
+      return formatted === '-' ? String(value) : formatted;
     }
 
     case 'money': {

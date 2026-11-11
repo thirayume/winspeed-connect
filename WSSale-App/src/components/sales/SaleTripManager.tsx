@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Package, Truck, Clock, Trash2, FileText, Gift, Settings, Activity, Download } from 'lucide-react';
 import { SOStatusBadge } from './SOStatusBadge';
 import { bulkCancelDeleteSO, deleteTrip } from '../../services/api';
-import { appPrompt } from '../ui/AppAlert';
+import { appAlert, appPrompt } from '../ui/AppAlert';
 import { useExport } from '../../hooks/useExport';
 import { SOCancelDeleteModal } from '../common/SOCancelDeleteModal';
 import type { SalesOrder } from '../../types';
@@ -136,7 +136,7 @@ export function SaleTripManager({
                       if (isQuoteLocked) return;
                       const invalidOrder = g.orders.find(o => ['SHIPPED', 'IMPORTED'].includes(o.status));
                       if (invalidOrder) {
-                        alert(`ไม่สามารถลบทริปนี้ได้ เนื่องจากบิล ${invalidOrder.wfRef || invalidOrder.id} อยู่ในสถานะ ${invalidOrder.status} ซึ่งไม่สามารถยกเลิก/ลบได้`);
+                        void appAlert(`ไม่สามารถลบทริปนี้ได้ เนื่องจากบิล ${invalidOrder.wfRef || invalidOrder.id} อยู่ในสถานะ ${invalidOrder.status} ซึ่งไม่สามารถยกเลิก/ลบได้`, 'warning');
                         return;
                       }
                       const allDraftOrCancelled = g.orders.every(o => ['DRAFT', 'CANCELLED'].includes(o.status));

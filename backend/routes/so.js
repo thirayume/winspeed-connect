@@ -1,5 +1,5 @@
 const { validateBookingNotes } = require('../services/booking-notes');
-const { checkCustomerCreditAndAging } = require('../services/credit-service');
+const { checkCustomerCreditAndAging, parseNullableAgingInput } = require('../services/credit-service');
 /**
  * so.js — wf.SalesOrder state machine
  * DRAFT → CONFIRMED → PICKING → SHIPPED → IMPORTED | CANCELLED
@@ -21,8 +21,10 @@ const { broadcast } = require('../services/socket');
 const { enqueue } = require('../services/outbox');
 const { writeAudit, auditUser, SCREEN } = require('../services/winspeed-audit');
 const { evaluateLinePrice, createPriceApprovalRequest, calculatePricingFingerprint, resolveAuthoritativePrice } = require('../services/price-authority');
+const { evaluateSellingPriceFloor, assertPricesAboveCost, assertPriceBookLinesSellable } = require('../services/cost-authority');
 const {initialBookingAi,aiHttpError,assertInitialAiShipmentReady}=require('../services/initial-booking-ai');
 const {initialDelivery,deliveryHttpError}=require('../services/initial-delivery');
+const { supersedeStaleTripApprovalsOnMembershipChange } = require('../services/trip-multi-cust-approval');
 const {initialManualRedemption,manualRedemptionHttpError}=require('../services/initial-manual-redemption');
 const {initialInvoice,invoiceHttpError}=require('../services/initial-invoice');
 
@@ -1043,16 +1045,25 @@ router.post('/price-indicator', requireCapability('so.create'), async (req, res)
     const cache = new Map();
     const out = [];
     for (const l of lines) {
-      if (!l || l.isGiveaway || l.isCouponDrawn || l.isControlTicketDrawn || !l.goodId) { out.push({ key: l?.key ?? null, level: 'SKIP' }); continue; }
+      if (!l || l.isGiveaway || l.isCouponDrawn || l.isControlTicketDrawn || !l.goodId) { out.push({ key: l?.key ?? null, level: 'SKIP', belowThreshold: false }); continue; }
       const k = `${l.goodId}|${l.goodCode || ''}`;
       if (!cache.has(k)) {
         cache.set(k, await resolveAuthoritativePrice({ custId, goodId: l.goodId, goodCode: l.goodCode, asOfDate }).catch(() => null));
       }
       const auth = cache.get(k);
       const announced = auth?.hasAnnouncedPrice ? Number(auth.announcedPrice) : 0;
-      out.push({ key: l.key ?? null, level: priceLevel(l.pricePerTon, announced, warnBelow) });
+      out.push({ key: l.key ?? null, level: priceLevel(l.pricePerTon, announced, warnBelow), belowThreshold: false });
     }
-    res.json({ lines: out });
+    const floorEval = await evaluateSellingPriceFloor({
+      lines,
+      asOfDate,
+      rebateDiscountAmt: Number(req.body?.rebateDiscountAmt || 0),
+    }).catch(() => ({ blocked: false, violations: [] }));
+    const violatedIdx = new Set((floorEval.violations || []).map(v => v.lineIndex));
+    violatedIdx.forEach(idx => {
+      if (out[idx]) out[idx].belowThreshold = true;
+    });
+    res.json({ lines: out, belowThreshold: Boolean(floorEval.blocked) });
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
 
@@ -1475,6 +1486,11 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
         }
 
         // Generate a native-compatible reference above all used suffixes.
+        const effectiveCreateRebate = normalizeRebateDiscount(req, rebateDiscountAmt);
+        const queryTx = txQueryFn(tx);
+        await assertPriceBookLinesSellable({ lines, asOfDate: deliveryDate || null, queryFn: queryTx });
+        await assertPricesAboveCost({ lines, asOfDate: deliveryDate || null, rebateDiscountAmt: effectiveCreateRebate, queryFn: queryTx });
+
         const wfRef = await allocateWorkflowRef(tx, soPrefix);
 
         const soReq = tx.request();
@@ -1517,7 +1533,7 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
           amount: (lines || []).reduce(
             (sum, l) => sum + (l.isGiveaway ? 0 : Number(l.qtyTon || 0) * Number(l.pricePerTon || 0)), 0),
         });
-        soReq.input('creditDays',       sql.Int,           creditDays || 30);
+        soReq.input('creditDays',       sql.Int,           parseNullableAgingInput(creditDays) ?? 30);
         const pricingFingerprint = calculatePricingFingerprint(lines);
         soReq.input('truckRemark',      sql.NVarChar(500), truckRemark || null);
         soReq.input('billRemark',       sql.NVarChar(500), billRemark || null);
@@ -1749,6 +1765,11 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
           }
         }
       }
+
+      const touchedTripIds = new Set(orders.map(o => Number(o.tripId)).filter(n => Number.isInteger(n) && n > 0));
+      for (const tid of touchedTripIds) {
+        await supersedeStaleTripApprovalsOnMembershipChange(tx, tid);
+      }
     });
 
     for (const soId of createdIds) {
@@ -1949,7 +1970,7 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
         soReq.input('remark', sql.NVarChar(500), remark || null);
         soReq.input('rebateDiscountAmt', sql.Decimal(12,2), safeRebateDiscountAmt);
         soReq.input('netAmnt', sql.Decimal(18,2), totalAmnt);
-        soReq.input('creditDays', sql.Int, creditDays || 30);
+        soReq.input('creditDays', sql.Int, parseNullableAgingInput(creditDays) ?? 30);
         soReq.input('truckRemark', sql.NVarChar(500), truckRemark || null);
         soReq.input('billRemark', sql.NVarChar(500), billRemark || null);
         soReq.input('transpId', sql.Int, transpId || null);
@@ -2157,6 +2178,10 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
         throw Object.assign(new Error(`ยอดส่วนลดรีเบท (฿${effectiveRebateDiscount.toLocaleString()}) ต้องไม่น้อยกว่าส่วนลดเคลมที่ผูกไว้ (฿${claimDiscountAmt.toLocaleString()})`), { status: 400 });
       }
 
+      const queryTx = txQueryFn(tx);
+      await assertPriceBookLinesSellable({ lines, asOfDate: deliveryDate || null, queryFn: queryTx });
+      await assertPricesAboveCost({ lines, asOfDate: deliveryDate || null, rebateDiscountAmt: effectiveRebateDiscount, queryFn: queryTx });
+
       soReq.input('truckPlate',        sql.NVarChar(30),  effectiveTruckPlate);
       soReq.input('controlTicketNo',   sql.NVarChar(20),  controlTicketNo ? String(controlTicketNo) : null);
       soReq.input('deliveryDate',      sql.Date,          deliveryDate ? new Date(deliveryDate) : null);
@@ -2166,7 +2191,7 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
       soReq.input('pSling',            sql.Bit,           toBit(pSling));
       soReq.input('remark',            sql.NVarChar(500), remark || null);
       soReq.input('rebateDiscountAmt', sql.Decimal(12,2), effectiveRebateDiscount);
-      soReq.input('creditDays',        sql.Int,           creditDays || 30);
+      soReq.input('creditDays',        sql.Int,           parseNullableAgingInput(creditDays) ?? 30);
       soReq.input('truckRemark',       sql.NVarChar(500), truckRemark || null);
       soReq.input('billRemark',        sql.NVarChar(500), billRemark || null);
       soReq.input('transpId',          sql.Int,           transpId || null);
@@ -2366,6 +2391,11 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
             });
           }
         }
+      }
+
+      const editTripIds = new Set([existingRow.TripId, effectiveTripId].map(Number).filter(n => Number.isInteger(n) && n > 0));
+      for (const tid of editTripIds) {
+        await supersedeStaleTripApprovalsOnMembershipChange(tx, tid);
       }
     });
 
@@ -3455,6 +3485,7 @@ router.post('/bulk-cancel-delete', requireCapability('so.cancel'), async (req, r
             UPDATE wf.SalesTrip SET Status = 'DELETED' WHERE TripId = @tid
           `);
         }
+        await supersedeStaleTripApprovalsOnMembershipChange(tx, tid);
       }
     });
 
@@ -3514,6 +3545,13 @@ async function cancelBillInTx(tx, so, { reasonCode, reasonText, user, ip }) {
   // an unlocked native bill also reads DRAFT; it has a WinSpeed document to cancel, so it is not a draft here —
   // it took the draft branch, which updated no row, and the bill stayed live (UAT batch 6)
   const isDraft = so.Status === 'DRAFT' && !so.ImportedDocuNo;
+  let tripIdToSync = so.TripId ? Number(so.TripId) : null;
+  if (!tripIdToSync) {
+    const tRow = isDraft
+      ? (await tx.request().input('id', sql.Int, Number(so.Id)).query('SELECT TripId FROM wf.SalesOrder WHERE Id = @id')).recordset?.[0]
+      : (await tx.request().input('soid', sql.VarChar(50), String(so.Id)).query('SELECT TripId FROM wf.SalesOrderExt WHERE SOID = @soid')).recordset?.[0];
+    if (tRow?.TripId) tripIdToSync = Number(tRow.TripId);
+  }
   if (isDraft) {
     const reqDraft = tx.request();
     reqDraft.input('id', sql.Int, so.Id);
@@ -3574,6 +3612,10 @@ async function cancelBillInTx(tx, so, { reasonCode, reasonText, user, ip }) {
     userId: String(user?.sub || user?.username || 'SYSTEM'),
     ipAddress: ip,
   });
+
+  if (tripIdToSync && Number.isInteger(tripIdToSync) && tripIdToSync > 0) {
+    await supersedeStaleTripApprovalsOnMembershipChange(tx, tripIdToSync);
+  }
 }
 
 router.patch('/:id/cancel', requireCapability('so.cancel'), requireSoInScope, async (req, res) => {
@@ -3634,7 +3676,12 @@ router.delete('/:id', requireCapability('so.cancel'), requireSoInScope, async (r
 
     await wfTransaction(async (tx) => {
       const isWebDraft = !so.ImportedDocuNo;
+      let deletedTripId = so.TripId ? Number(so.TripId) : null;
       if (isWebDraft) {
+        if (!deletedTripId) {
+          const tRow = (await tx.request().input('id', sql.Int, Number(so.Id)).query(`SELECT TripId FROM wf.SalesOrder WHERE Id = @id`)).recordset?.[0];
+          if (tRow?.TripId) deletedTripId = Number(tRow.TripId);
+        }
         // a deleted draft closes its open price approvals (UAT batch 4, SO-14)
         await tx.request().input('id', sql.Int, so.Id)
           .query(`UPDATE wf.PriceApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE SoId = @id AND Status = 'PENDING'`);
@@ -3646,11 +3693,19 @@ router.delete('/:id', requireCapability('so.cancel'), requireSoInScope, async (r
         reqSo.input('id', sql.Int, so.Id);
         await reqSo.query(`DELETE FROM wf.SalesOrder WHERE Id=@id`);
       } else {
+        if (!deletedTripId) {
+          const tRow = (await tx.request().input('soid', sql.VarChar(50), String(so.Id)).query(`SELECT TripId FROM wf.SalesOrderExt WHERE SOID = @soid`)).recordset?.[0];
+          if (tRow?.TripId) deletedTripId = Number(tRow.TripId);
+        }
         const reqSohd = tx.request();
         reqSohd.input('id', sql.VarChar(50), String(so.Id));
         await reqSohd.query(`UPDATE dbo.SOHD SET DocuStatus='C' WHERE SOID=@id`);
         await tx.request().input('SOID', sql.Int, Number(so.Id)).execute('wf.usp_MarkCancelledBookingNotApproved'); // migration 148
         await markNativeOrderDeletedExt(tx, so);
+      }
+
+      if (deletedTripId && Number.isInteger(deletedTripId) && deletedTripId > 0) {
+        await supersedeStaleTripApprovalsOnMembershipChange(tx, deletedTripId);
       }
 
       const reqGw = tx.request();

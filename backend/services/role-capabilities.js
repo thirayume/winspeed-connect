@@ -53,7 +53,7 @@ const MENUS = Object.freeze({
   // O-4: reports show company-wide rows → only users who see all records. A MANAGER sees all
   // until placed on the Organization Chart; capabilitiesFor drops it once they have a position.
   reports: ['APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
-  master: ['C_LEVEL', 'ADMIN'],
+  master: ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   policy: ['MANAGER', 'C_LEVEL', 'ADMIN'],
   ops: ['MANAGER', 'C_LEVEL', 'ADMIN'],
   'app-settings': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
@@ -97,6 +97,12 @@ const ACTIONS = Object.freeze({
   'database.switch': ['ACCOUNTING', 'COUNTER_SALES', 'C_LEVEL', 'ADMIN'],
   // Change the system-wide default database for everyone.
   'database.set-system': ['ADMIN'],
+  // Granular Master Data vs Cost & Selling Price access (owner 2026-11-11)
+  'master.manage': ['C_LEVEL', 'ADMIN'],
+  'pricing.view': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'pricing.manage': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'cost.view': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'cost.manage': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
 });
 
 function capabilitiesFor(role, { positionCode = null } = {}) {

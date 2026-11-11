@@ -24,7 +24,8 @@ import {
   type WeighCoverage, type WeighTally, type WgType,
 } from '../../services/api';
 import { WeighTicketPrint } from './WeighTicketPrint';
-import { bangkokDate } from '../../utils/date';
+import { bangkokDate, formatThaiTime24h } from '../../utils/date';
+import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 
 const NAVY = '#0C447C';
 const POLL_MS = 60_000;          // เจ้าของระบบกำหนด: อ่านค่ามาแสดงทุกนาที
@@ -275,11 +276,23 @@ export function WeighingReportsPage() {
 
           {active.dated && (
             <>
-              <input type="date" value={from} onChange={e => setFrom(e.target.value)}
-                className="h-10 rounded-xl border border-gray-200 px-3 text-sm" />
+              <div className="w-36">
+                <ThaiDatePicker
+                  value={from}
+                  max={to}
+                  onChange={setFrom}
+                  className="h-10 w-full rounded-xl border border-gray-200 px-3 text-sm"
+                />
+              </div>
               <span className="text-gray-400">ถึง</span>
-              <input type="date" value={to} onChange={e => setTo(e.target.value)}
-                className="h-10 rounded-xl border border-gray-200 px-3 text-sm" />
+              <div className="w-36">
+                <ThaiDatePicker
+                  value={to}
+                  min={from}
+                  onChange={setTo}
+                  className="h-10 w-full rounded-xl border border-gray-200 px-3 text-sm"
+                />
+              </div>
             </>
           )}
 
@@ -398,7 +411,7 @@ export function WeighingReportsPage() {
 
         <p className="mt-2 text-xs text-gray-500">
           แสดง {num(rows.length)} แถว · แหล่งข้อมูล {active.source} ในฐาน WINSpeed · 1 กระสอบ = {KG_PER_SACK} กก.
-          {updatedAt && <> · อ่านค่าล่าสุด {updatedAt.toLocaleTimeString('th-TH')}</>}
+          {updatedAt && <> · อ่านค่าล่าสุด {formatThaiTime24h(updatedAt)}</>}
         </p>
       </div>
 

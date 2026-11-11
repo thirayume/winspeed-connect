@@ -3,6 +3,9 @@ import { X, Search, FileSpreadsheet, RefreshCw, Calendar, Truck, AlertTriangle, 
 import { searchAgingOrders } from '../../services/api';
 import type { AgingRow } from '../../types';
 import { exportToExcel, type ExportColumn } from '../../utils/exportUtils';
+import { ThaiDatePicker } from '../ui/ThaiDatePicker';
+import { appAlert } from '../ui/AppAlert';
+import { formatThaiDate } from '../../utils/date';
 
 interface Props {
   isOpen: boolean;
@@ -75,12 +78,12 @@ export function AgingDetailModal({ isOpen, onClose }: Props) {
       }
 
       if (exportRows.length === 0) {
-        alert('ไม่มีข้อมูลสำหรับส่งออก');
+        void appAlert('ไม่มีข้อมูลสำหรับส่งออก', 'info');
         return;
       }
 
       const columns: ExportColumn[] = [
-        { key: 'CreatedAt', label: 'วันที่สั่งจอง' },
+        { key: 'CreatedAt', label: 'วันที่สั่งจอง', formatter: (v: unknown) => formatThaiDate(v ? String(v) : null) },
         { key: 'WfRef', label: 'เลขที่เอกสาร (WF Ref)' },
         { key: 'CustName', label: 'ชื่อลูกค้า' },
         { key: 'TruckPlate', label: 'ทะเบียนรถ' },
@@ -96,10 +99,10 @@ export function AgingDetailModal({ isOpen, onClose }: Props) {
         Status: r.DaysOpen > 45 ? 'ค้างวิกฤต (>45 วัน)' : r.DaysOpen > 30 ? 'ค้างนาน (>30 วัน)' : 'ปกติ'
       }));
 
-      const dateNote = allDates ? 'ทั้งหมด' : `${dateFrom || 'เริ่มต้น'}_ถึง_${dateTo || 'ปัจจุบัน'}`;
+      const dateNote = allDates ? 'ทั้งหมด' : `${dateFrom ? formatThaiDate(dateFrom).replace(/\//g, '-') : 'เริ่มต้น'}_ถึง_${dateTo ? formatThaiDate(dateTo).replace(/\//g, '-') : 'ปัจจุบัน'}`;
       exportToExcel(`บิลค้างจัดส่งนาน_${dateNote}`, 'บิลค้างส่ง', columns, formatted);
     } catch (e: any) {
-      alert('ส่งออก Excel ไม่สำเร็จ: ' + (e?.message || 'ข้อผิดพลาดระบบ'));
+      void appAlert('ส่งออก Excel ไม่สำเร็จ: ' + (e?.message || 'ข้อผิดพลาดระบบ'), 'error');
     } finally {
       setExporting(false);
     }
@@ -216,19 +219,25 @@ export function AgingDetailModal({ isOpen, onClose }: Props) {
             {!allDates && (
               <div className="flex items-center gap-2 ml-2 pl-3 border-l border-gray-300">
                 <span className="text-gray-500 font-medium">วันที่สั่งจอง:</span>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={e => setDateFrom(e.target.value)}
-                  className="px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs"
-                />
+                <div className="w-36">
+                  <ThaiDatePicker
+                    value={dateFrom}
+                    onChange={setDateFrom}
+                    max={dateTo || undefined}
+                    className="w-full px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs"
+                    placeholder="วว/ดด/ปปปป"
+                  />
+                </div>
                 <span className="text-gray-400">ถึง</span>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={e => setDateTo(e.target.value)}
-                  className="px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs"
-                />
+                <div className="w-36">
+                  <ThaiDatePicker
+                    value={dateTo}
+                    onChange={setDateTo}
+                    min={dateFrom || undefined}
+                    className="w-full px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs"
+                    placeholder="วว/ดด/ปปปป"
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={() => loadData(1)}
@@ -289,7 +298,7 @@ export function AgingDetailModal({ isOpen, onClose }: Props) {
                   return (
                     <tr key={`${r.SoId}-${r.GoodCode}-${i}`} className="hover:bg-slate-50/80 transition-colors">
                       <td className="px-4 py-2.5 whitespace-nowrap text-gray-500 font-mono text-[11px]">
-                        {r.CreatedAt ? String(r.CreatedAt).slice(0, 10) : '—'}
+                        {formatThaiDate(r.CreatedAt)}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap font-mono font-bold text-[#0C447C]">
                         {r.WfRef || '—'}

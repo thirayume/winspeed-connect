@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Download, RefreshCw, Search, X } from 'luc
 import { ackIncident, fetchIncident, fetchIncidentTypes, fetchIncidents, shipSO, type IncidentDetail, type IncidentRow, type IncidentType } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import { exportToCsv } from '../../utils/exportUtils';
+import { formatThaiDate } from '../../utils/date';
 
 const REVIEW_ROLES = ['MANAGER', 'ACCOUNTING', 'C_LEVEL', 'ADMIN'];
 const MANAGER_ROLES = ['MANAGER', 'C_LEVEL', 'ADMIN'];
@@ -10,7 +11,7 @@ const SHIP_ROLES = ['WAREHOUSE', 'MANAGER', 'C_LEVEL', 'ADMIN'];
 // the record did not close the bill by itself, so a person decides
 const NEEDS_DECISION = ['WEIGHT_OUT_OF_TOLERANCE', 'PLATE_MISMATCH', 'SCALE_TONS_MISMATCH'];
 
-const when = (v?: string | null) => (v ? new Date(v).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '-');
+const when = (v?: string | null) => (v ? formatThaiDate(v, true) : '-');
 
 export function IncidentsPage() {
   const role = useAuthStore(s => s.user?.role) || '';

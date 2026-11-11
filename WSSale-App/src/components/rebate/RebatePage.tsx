@@ -8,6 +8,7 @@ import { useExport } from '../../hooks/useExport';
 import { canViewRebateAmounts } from '../../utils/permissions';
 import type { RebatePool, RebateLedger, RebateClaim } from '../../types';
 import { ClaimDialog, ClaimDetailDialog } from './RebateClaimForm';
+import { formatThaiDate } from '../../utils/date';
 
 const CLAIM_STATUS: Record<string, string> = {
   DRAFT: 'ร่าง', PENDING: 'รอดำเนินการ',
@@ -43,7 +44,7 @@ export function RebatePage() {
       customerAmt: Number((c as any).CustomerAmount) || 0,
       retainedAmt: Number((c as any).RetainedAmount) || 0,
       status: CLAIM_STATUS[String(c.Status)] || c.Status,
-      createdAt: c.CreatedAt ? new Date(c.CreatedAt).toLocaleDateString('th-TH') : '',
+      createdAt: c.CreatedAt ? formatThaiDate(c.CreatedAt) : '',
     }));
 
     exportData('excel', 'Rebate_Claims_Export', [

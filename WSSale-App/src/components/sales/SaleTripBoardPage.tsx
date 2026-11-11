@@ -31,6 +31,7 @@ import {
   useHoldCapability, HoldCapabilityBanner, HoldScopeChip,
 } from '../common/HoldCapabilityBanner';
 import { useAuthStore } from '../../store/auth-store';
+import { formatThaiDate } from '../../utils/date';
 
 const NAVY = '#0C447C';
 
@@ -39,9 +40,8 @@ const ton = (v: unknown) =>
 
 const thDate = (v?: string | null) => {
   if (!v) return '—';
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? '—'
-    : d.toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric' });
+  const out = formatThaiDate(v);
+  return out === '-' ? '—' : out;
 };
 
 /** สีของแต่ละขั้นในสายงาน ให้กวาดตาทั้งกระดานแล้วรู้ทันทีว่าคันไหนติดอยู่ตรงไหน */
@@ -415,6 +415,22 @@ function TripCard({ t, cap }: { t: TripBoardRow; cap: HoldCapability | null }) {
         <span className="text-xs text-gray-500">
           {t.customers.length} ลูกค้า · {t.orderCount} ใบจอง
         </span>
+        {t.multiCustApproval?.requiresApproval && (
+          <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
+            t.multiCustApproval.approvalStatus === 'APPROVED'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : t.multiCustApproval.approvalStatus === 'PENDING'
+                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                : t.multiCustApproval.approvalStatus === 'REJECTED'
+                  ? 'bg-red-50 text-red-700 border-red-200'
+                  : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+          }`}>
+            {t.multiCustApproval.approvalStatus === 'APPROVED' ? 'อนุมัติหลายลูกค้าแล้ว'
+              : t.multiCustApproval.approvalStatus === 'PENDING' ? 'รออนุมัติทริปหลายลูกค้า'
+              : t.multiCustApproval.approvalStatus === 'REJECTED' ? 'ปฏิเสธทริปหลายลูกค้า'
+              : 'ต้องขออนุมัติหลายลูกค้า'}
+          </span>
+        )}
 
         <div className="ml-auto flex items-center gap-3">
           <CapacityBar cap={t.capacity} />

@@ -13,6 +13,7 @@ import {
   fetchRebatePlanApprovals, submitRebatePlan, approveRebatePlan, rejectRebatePlan,
 } from '../../services/api';
 import type { RebatePlan } from '../../types';
+import { formatThaiDate } from '../../utils/date';
 
 const NAVY = '#0C447C';
 
@@ -108,9 +109,9 @@ export function PlanApprovalDialog({ plan, onClose, onChanged }:
 
           <p className="text-sm text-gray-600">
             <span className="font-semibold">ระยะเวลา: </span>
-            {(plan as any).ValidFrom ? new Date((plan as any).ValidFrom).toLocaleDateString('th-TH') : '—'}
+            {(plan as any).ValidFrom ? formatThaiDate((plan as any).ValidFrom) : '—'}
             {' – '}
-            {(plan as any).ValidTo ? new Date((plan as any).ValidTo).toLocaleDateString('th-TH') : '—'}
+            {(plan as any).ValidTo ? formatThaiDate((plan as any).ValidTo) : '—'}
           </p>
 
           <div>
@@ -140,7 +141,7 @@ export function PlanApprovalDialog({ plan, onClose, onChanged }:
                         </div>
                         <div className="text-[11px] text-gray-500">
                           {a?.DecidedByName || ''}
-                          {a?.DecidedAt ? ` · ${new Date(a.DecidedAt).toLocaleDateString('th-TH')}` : ''}
+                          {a?.DecidedAt ? ` · ${formatThaiDate(a.DecidedAt)}` : ''}
                         </div>
                       </div>
                     </div>

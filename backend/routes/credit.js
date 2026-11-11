@@ -5,7 +5,7 @@
 const router = require('express').Router();
 const { sql, wfQuery } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { checkCustomerCreditAndAging } = require('../services/credit-service');
+const { checkCustomerCreditAndAging, parseNullableAgingInput, getCreditAgingPolicyBounds } = require('../services/credit-service');
 
 router.use(requireAuth);
 
@@ -36,9 +36,18 @@ router.get('/', async (req, res) => {
 // GET /api/credit/:custId — ดูเครดิตลูกค้ารายเดียว
 router.get('/:custId', async (req, res) => {
   try {
-    const r = await wfQuery(`SELECT CustId, CustName, CreditLimit, CreditHold, AgingDays, Note FROM wf.CreditMaster WHERE CustId=@c`,
-      { c: { type: sql.NVarChar(20), value: String(req.params.custId) } });
-    res.json(r.recordset[0] || { CustId: req.params.custId, CreditLimit: null, CreditHold: false, AgingDays: 60 });
+    const [r, bounds] = await Promise.all([
+      wfQuery(`SELECT CustId, CustName, CreditLimit, CreditHold, AgingDays, Note FROM wf.CreditMaster WHERE CustId=@c`,
+        { c: { type: sql.NVarChar(20), value: String(req.params.custId) } }),
+      getCreditAgingPolicyBounds(),
+    ]);
+    res.json(r.recordset[0] || {
+      CustId: req.params.custId,
+      CreditLimit: null,
+      CreditHold: false,
+      AgingDays: null,
+      DefaultAgingDays: bounds.defaultAgingDays,
+    });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
@@ -46,6 +55,8 @@ router.get('/:custId', async (req, res) => {
 router.put('/:custId', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN'), async (req, res) => {
   try {
     const { custName, creditLimit, creditHold, agingDays, note } = req.body || {};
+    const hasAging = agingDays !== undefined;
+    const parsedAging = hasAging ? parseNullableAgingInput(agingDays) : null;
 
     // endpoint นี้เป็น MERGE จึงตอบสำเร็จเสมอแม้รหัสลูกค้าจะพิมพ์ผิด และจะสร้าง
     // credit master ของลูกค้าที่ไม่มีตัวตนทิ้งไว้ในข้อมูลหลัก
@@ -57,17 +68,18 @@ router.put('/:custId', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN'), async (req
 
     await wfQuery(`
       MERGE wf.CreditMaster AS t USING (SELECT @c AS CustId) AS s ON t.CustId=s.CustId
-      WHEN MATCHED THEN UPDATE SET CustName=COALESCE(@n,CustName), CreditLimit=@lim, CreditHold=@hold, AgingDays=@aging, Note=@note, UpdatedBy=@u, UpdatedAt=GETUTCDATE()
+      WHEN MATCHED THEN UPDATE SET CustName=COALESCE(@n,CustName), CreditLimit=@lim, CreditHold=@hold, AgingDays=CASE WHEN @hasAging=1 THEN @aging ELSE t.AgingDays END, Note=@note, UpdatedBy=@u, UpdatedAt=GETUTCDATE()
       WHEN NOT MATCHED THEN INSERT (CustId, CustName, CreditLimit, CreditHold, AgingDays, Note, UpdatedBy)
         VALUES (@c,@n,@lim,@hold,@aging,@note,@u);`,
       {
-        c:     { type: sql.NVarChar(20),  value: String(req.params.custId) },
-        n:     { type: sql.NVarChar(200), value: custName || null },
-        lim:   { type: sql.Decimal(18,2), value: creditLimit ?? null },
-        hold:  { type: sql.Bit,           value: creditHold ? 1 : 0 },
-        aging: { type: sql.Int,           value: agingDays ?? 60 },
-        note:  { type: sql.NVarChar(300), value: note || null },
-        u:     { type: sql.Int,           value: req.user.sub },
+        c:        { type: sql.NVarChar(20),  value: String(req.params.custId) },
+        n:        { type: sql.NVarChar(200), value: custName || null },
+        lim:      { type: sql.Decimal(18,2), value: creditLimit ?? null },
+        hold:     { type: sql.Bit,           value: creditHold ? 1 : 0 },
+        hasAging: { type: sql.Bit,           value: hasAging ? 1 : 0 },
+        aging:    { type: sql.Int,           value: parsedAging },
+        note:     { type: sql.NVarChar(300), value: note || null },
+        u:        { type: sql.Int,           value: req.user.sub },
       });
 
     // Sync back to wf.CustomerExt if it exists
@@ -75,14 +87,15 @@ router.put('/:custId', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN'), async (req
       IF OBJECT_ID('wf.CustomerExt', 'U') IS NOT NULL
       BEGIN
         IF EXISTS (SELECT 1 FROM wf.CustomerExt WHERE CustID = @c)
-          UPDATE wf.CustomerExt SET CreditLimit = @lim, AgingDays = @aging, UpdatedAt = GETUTCDATE() WHERE CustID = @c;
+          UPDATE wf.CustomerExt SET CreditLimit = @lim, AgingDays = CASE WHEN @hasAging=1 THEN @aging ELSE AgingDays END, UpdatedAt = GETUTCDATE() WHERE CustID = @c;
         ELSE
           INSERT INTO wf.CustomerExt (CustID, CreditLimit, AgingDays, CreatedAt, UpdatedAt) VALUES (@c, @lim, @aging, GETUTCDATE(), GETUTCDATE());
       END
     `, {
-      c:     { type: sql.NVarChar(20),  value: String(req.params.custId) },
-      lim:   { type: sql.Decimal(18,2), value: creditLimit ?? null },
-      aging: { type: sql.Int,           value: agingDays ?? 60 },
+      c:        { type: sql.NVarChar(20),  value: String(req.params.custId) },
+      lim:      { type: sql.Decimal(18,2), value: creditLimit ?? null },
+      hasAging: { type: sql.Bit,           value: hasAging ? 1 : 0 },
+      aging:    { type: sql.Int,           value: parsedAging },
     });
 
     res.json({ ok: true });

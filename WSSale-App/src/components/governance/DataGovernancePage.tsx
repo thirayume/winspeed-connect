@@ -6,7 +6,8 @@ import {
   fetchRetentionPolicies, updateRetentionPolicy, fetchDsarLog, dsarExport, runRetention,
   type CreditInfo, type RetentionPolicy, type DsarRow,
 } from '../../services/api';
-import { appConfirm } from '../ui/AppAlert';
+import { appAlert, appConfirm } from '../ui/AppAlert';
+import { formatThaiDate } from '../../utils/date';
 
 type Tab = 'credit' | 'stock' | 'pdpa';
 
@@ -39,10 +40,10 @@ function CreditTab() {
   const load = useCallback(async () => { try { setRows(await fetchCredits()); } catch (e) { console.error(e); } }, []);
   useEffect(() => { load(); }, [load]);
   async function save() {
-    if (!f.custId) { alert('ใส่รหัสลูกค้า'); return; }
+    if (!f.custId) { void appAlert('ใส่รหัสลูกค้า', 'info'); return; }
     setBusy(true);
     try { await setCredit(f.custId, { custName: f.custName || undefined, creditLimit: f.creditLimit ? Number(f.creditLimit) : null, creditHold: f.creditHold, note: f.note || undefined }); setF({ custId: '', custName: '', creditLimit: '', creditHold: false, note: '' }); await load(); }
-    catch (e: unknown) { alert((e as Error).message); } finally { setBusy(false); }
+    catch (e: unknown) { void appAlert((e as Error).message, 'error'); } finally { setBusy(false); }
   }
   return (
     <div className="space-y-4">
@@ -85,18 +86,18 @@ function PdpaTab() {
   const [busy, setBusy] = useState(false);
   const load = useCallback(async () => { try { const [p, l] = await Promise.all([fetchRetentionPolicies(), fetchDsarLog()]); setPol(p); setLog(l); } catch (e) { console.error(e); } }, []);
   useEffect(() => { load(); }, [load]);
-  async function savePol(p: RetentionPolicy, days: number) { try { await updateRetentionPolicy(p.Id, days); await load(); } catch (e: unknown) { alert((e as Error).message); } }
+  async function savePol(p: RetentionPolicy, days: number) { try { await updateRetentionPolicy(p.Id, days); await load(); } catch (e: unknown) { void appAlert((e as Error).message, 'error'); } }
   async function doExport() {
-    if (!subj.id) { alert('ใส่รหัส subject'); return; }
+    if (!subj.id) { void appAlert('ใส่รหัส subject', 'info'); return; }
     setBusy(true);
     try { const r = await dsarExport(subj.type, subj.id); setExp(JSON.stringify(r.data, null, 2)); await load(); }
-    catch (e: unknown) { alert((e as Error).message); } finally { setBusy(false); }
+    catch (e: unknown) { void appAlert((e as Error).message, 'error'); } finally { setBusy(false); }
   }
   async function doRetention() {
     if (!await appConfirm('รัน retention purge ตามนโยบาย? (ลบข้อมูลเก่าถาวร)')) return;
     setBusy(true);
-    try { const r = await runRetention(); alert('เสร็จ: ' + JSON.stringify(r.result)); }
-    catch (e: unknown) { alert((e as Error).message); } finally { setBusy(false); }
+    try { const r = await runRetention(); void appAlert('เสร็จ: ' + JSON.stringify(r.result), 'success'); }
+    catch (e: unknown) { void appAlert((e as Error).message, 'error'); } finally { setBusy(false); }
   }
   return (
     <div className="space-y-4">
@@ -128,7 +129,7 @@ function PdpaTab() {
           <thead className="whitespace-nowrap"><tr className="bg-gray-50 text-gray-500 text-xs uppercase"><th className="text-left px-4 py-2 whitespace-nowrap">เวลา</th><th className="text-left px-4 py-2 whitespace-nowrap">ประเภท</th><th className="text-left px-4 py-2 whitespace-nowrap">Subject</th><th className="text-left px-4 py-2 whitespace-nowrap">การกระทำ</th><th className="text-left px-4 py-2 whitespace-nowrap">โดย</th></tr></thead>
           <tbody className="divide-y divide-gray-50">
             {log.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-400 whitespace-nowrap">ยังไม่มีคำขอ</td></tr>}
-            {log.map(d => (<tr key={d.Id}><td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{new Date(d.RequestedAt).toLocaleString('th-TH')}</td><td className="px-4 py-2 whitespace-nowrap">{d.SubjectType}</td><td className="px-4 py-2 text-gray-700 whitespace-nowrap">{d.SubjectId}</td><td className="px-4 py-2 whitespace-nowrap">{d.Action}</td><td className="px-4 py-2 text-gray-500 whitespace-nowrap">{d.ByName}</td></tr>))}
+            {log.map(d => (<tr key={d.Id}><td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{formatThaiDate(d.RequestedAt, true)}</td><td className="px-4 py-2 whitespace-nowrap">{d.SubjectType}</td><td className="px-4 py-2 text-gray-700 whitespace-nowrap">{d.SubjectId}</td><td className="px-4 py-2 whitespace-nowrap">{d.Action}</td><td className="px-4 py-2 text-gray-500 whitespace-nowrap">{d.ByName}</td></tr>))}
           </tbody>
         </table>
       </div>

@@ -4,7 +4,7 @@ import {
   fetchRebateClaims, approveRebateClaim, fetchShippedToday,
 } from '../../services/api';
 import { useSocketEvent } from '../../hooks/useSocket';
-import { appPrompt } from '../ui/AppAlert';
+import { appAlert, appPrompt } from '../ui/AppAlert';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { bangkokDate } from '../../utils/date';
 import type { RebateClaim, ShippedRow } from '../../types';
@@ -59,7 +59,7 @@ export function AccountingPage() {
     if (cn === null) return;
     setBusyId(claim.Id);
     try { await approveRebateClaim(claim.Id, cn || undefined); await load(date); }
-    catch (e: unknown) { alert((e as Error).message); }
+    catch (e: unknown) { await appAlert((e as Error).message, 'error'); }
     finally { setBusyId(null); }
   }
 

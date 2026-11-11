@@ -6,7 +6,7 @@ import { useExport } from '../../hooks/useExport';
 import { useErpStore } from '../../store/erp-store';
 import { useAppStore } from '../../store/app-store';
 import { fetchSalesOrders, fetchSalesOrder, fetchCustomers, fetchTripBoard, fetchTrip } from '../../services/api';
-import '../ui/AppAlert';
+import { appAlert } from '../ui/AppAlert';
 import { useSocketEvent } from '../../hooks/useSocket';
 import './SOStatusBadge';
 import { CreateSODialog } from './CreateSODialog';
@@ -304,7 +304,7 @@ export const SalesPortal = () => {
   const handleConfirmTrip = () => {
     if (activeLoading) return;
     if (!activeTripGroup) {
-      alert('ไม่พบบิลในทริปนี้ กรุณาเพิ่มบิลก่อนยืนยัน');
+      void appAlert('ไม่พบบิลในทริปนี้ กรุณาเพิ่มบิลก่อนยืนยัน', 'warning');
       return;
     }
     // เปิด TripSummaryModal เพื่อยืนยันผ่าน atomic confirmTrip route (POST /api/trips/:id/confirm)

@@ -10,6 +10,7 @@ import {
   History,
   ClipboardCheck,
   FileSpreadsheet,
+  CreditCard,
 } from 'lucide-react';
 import { SystemSettingsModal, type TabKey } from './SystemSettingsModal';
 import { ReadinessSignoffModal } from './ReadinessSignoffModal';
@@ -24,6 +25,7 @@ const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
   { key: 'weight', name: 'เที่ยวรถ & เครื่องชั่ง', Icon: Truck },
   { key: 'settle', name: 'ตัดตั๋ว & ของแถม', Icon: Ticket },
   { key: 'sales', name: 'ราคา & เอกสาร', Icon: Tag },
+  { key: 'credit', name: 'เครดิต & Aging', Icon: CreditCard },
   { key: 'history', name: 'ประวัติ Version', Icon: History },
   { key: 'reports', name: 'แม่แบบ & หัวกระดาษรายงาน', Icon: FileSpreadsheet },
   { key: 'readiness', name: 'ผลตรวจรับงาน', Icon: ClipboardCheck },

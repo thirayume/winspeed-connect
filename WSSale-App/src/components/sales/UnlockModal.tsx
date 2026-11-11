@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Base';
+import { appAlert } from '../ui/AppAlert';
 import { Unlock, MessageSquare, ChevronDown } from 'lucide-react';
 
 const PRESET_REASONS = [
@@ -25,7 +26,10 @@ export function UnlockModal({ isOpen, onClose, onConfirm, soId }: UnlockModalPro
 
   const handleConfirm = () => {
     const finalReason = reason === "Other" ? customReason : reason;
-    if (!finalReason) return alert("Please provide a reason");
+    if (!finalReason) {
+      void appAlert('Please provide a reason', 'warning');
+      return;
+    }
     onConfirm(finalReason);
     onClose();
   };

@@ -17,6 +17,9 @@ import {
   CreditCard,
 } from 'lucide-react';
 import { fetchSystemSettings, updateSystemSettings, fetchEditReasons } from '../../services/api';
+import { ThaiDatePicker } from '../ui/ThaiDatePicker';
+import { ThaiDateTimePicker } from '../ui/ThaiDateTimePicker';
+import { formatThaiDate } from '../../utils/date';
 
 export interface SystemSettingsModalProps {
   isOpen: boolean;
@@ -70,6 +73,7 @@ export function SystemSettingsModal({
   const [companyRatio, setCompanyRatio] = useState<string>('0');
 
   const [tripCapacityTon, setTripCapacityTon] = useState<string>('50');
+  const [tripMultiCustMin, setTripMultiCustMin] = useState<string>('2');
   const [tripTolerancePct, setTripTolerancePct] = useState<string>('5');
   const [standardBagKg, setStandardBagKg] = useState<string>('50.0');
   const [minPct, setMinPct] = useState<string>('-2.0');
@@ -83,11 +87,14 @@ export function SystemSettingsModal({
   const [priceWarnBelow, setPriceWarnBelow] = useState<string>('500');
   const [legacyCutoff, setLegacyCutoff] = useState<string>('2022-01-01');
   const [claimFiscalMonth, setClaimFiscalMonth] = useState<string>('1');
+  const [maePuiMaxValidDays, setMaePuiMaxValidDays] = useState<string>('3');
 
   // Credit Limit & AR Aging Strict Mode Policy
   const [creditLimitStrict, setCreditLimitStrict] = useState<boolean>(false);
   const [creditAgingStrict, setCreditAgingStrict] = useState<boolean>(false);
   const [creditAgingDefaultDays, setCreditAgingDefaultDays] = useState<string>('60');
+  const [creditAgingMaxDays, setCreditAgingMaxDays] = useState<string>('90');
+  const [creditAgingAlertPopup, setCreditAgingAlertPopup] = useState<boolean>(true);
 
   // Concurrency & Original Settings Tracking
   const [loadedRevision, setLoadedRevision] = useState<number | undefined>(undefined);
@@ -144,6 +151,7 @@ export function SystemSettingsModal({
             setCompanyRatio(String(raw.COMPANY_RATIO ?? set.COMPANY_RATIO ?? '0'));
 
             setTripCapacityTon(String(raw.TRIP_CAPACITY_TON ?? set.TRIP_CAPACITY_TON ?? '50'));
+            setTripMultiCustMin(String(raw.TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS ?? set.TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS ?? '2'));
             setTripTolerancePct(String(raw.TRIP_OVERLOAD_TOLERANCE_PCT ?? set.TRIP_OVERLOAD_TOLERANCE_PCT ?? '5'));
             setStandardBagKg(String(raw.STANDARD_BAG_WEIGHT_KG ?? set.standardBagKg ?? '50.0'));
             setMinPct(String(raw.WEIGHT_TOLERANCE_MIN_PCT ?? set.minPct ?? '-2.0'));
@@ -156,10 +164,13 @@ export function SystemSettingsModal({
             setPriceWarnBelow(String(raw.PRICE_WARN_BELOW_PER_TON ?? set.PRICE_WARN_BELOW_PER_TON ?? '500'));
             setLegacyCutoff(String(raw.LEGACY_DOC_CUTOFF_DATE ?? set.LEGACY_DOC_CUTOFF_DATE ?? '2022-01-01'));
             setClaimFiscalMonth(String(raw.REBATE_CLAIM_FISCAL_START_MONTH ?? set.REBATE_CLAIM_FISCAL_START_MONTH ?? '1'));
+            setMaePuiMaxValidDays(String(raw.QUOTATION_MAE_PUI_MAX_VALID_DAYS ?? set.QUOTATION_MAE_PUI_MAX_VALID_DAYS ?? '3'));
 
             setCreditLimitStrict(String(raw.CREDIT_LIMIT_STRICT_MODE ?? set.CREDIT_LIMIT_STRICT_MODE) === 'true');
             setCreditAgingStrict(String(raw.CREDIT_AGING_STRICT_MODE ?? set.CREDIT_AGING_STRICT_MODE) === 'true');
             setCreditAgingDefaultDays(String(raw.CREDIT_AGING_DEFAULT_DAYS ?? set.CREDIT_AGING_DEFAULT_DAYS ?? '60'));
+            setCreditAgingMaxDays(String(raw.CREDIT_AGING_MAX_DAYS ?? set.CREDIT_AGING_MAX_DAYS ?? '90'));
+            setCreditAgingAlertPopup(String(raw.CREDIT_AGING_ALERT_POPUP ?? set.CREDIT_AGING_ALERT_POPUP ?? 'true') !== 'false');
           }
           if (res.currentRevision !== undefined) {
             setLoadedRevision(res.currentRevision);
@@ -237,12 +248,31 @@ export function SystemSettingsModal({
       }
       const warnBelow = parseStrictInt(priceWarnBelow, 500);
       if (warnBelow < 0) throw new Error('เกณฑ์ราคาต่ำกว่าราคาประกาศต้องไม่ติดลบ');
-      if (!/^d{4}-d{2}-d{2}$/.test(legacyCutoff.trim())) throw new Error('วันตัดเอกสารเก่าต้องเป็นวันที่รูปแบบ YYYY-MM-DD');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(legacyCutoff.trim())) throw new Error('วันตัดเอกสารเก่าต้องเป็นวันที่รูปแบบ YYYY-MM-DD');
       const fiscalMonth = parseStrictInt(claimFiscalMonth, 1);
       if (fiscalMonth < 0 || fiscalMonth > 12) throw new Error('เดือนเริ่มรอบบัญชีต้องอยู่ระหว่าง 0 ถึง 12');
+      const maePuiDays = parseStrictInt(maePuiMaxValidDays, 3);
+      if (maePuiDays < 1 || maePuiDays > 90) {
+        throw new Error('จำนวนวันยืนราคาสูงสุดของใบเสนอราคากลุ่มแม่ปุ๋ยต้องอยู่ระหว่าง 1 ถึง 90 วัน');
+      }
+      const multiCustMin = parseStrictInt(tripMultiCustMin, 2);
+      if (multiCustMin < 2 || multiCustMin > 50) {
+        throw new Error('จำนวนลูกค้าขั้นต่ำต่อ Sale Trip ที่ต้องขออนุมัติต้องอยู่ระหว่าง 2 ถึง 50 ราย');
+      }
       const overloadPct = parseStrictFloat(tripTolerancePct, 0);
       if (overloadPct < 0) {
         throw new Error('Overload Tolerance % ต้องไม่ติดลบ');
+      }
+      const stdAging = parseStrictInt(creditAgingDefaultDays, 60);
+      if (stdAging < 0 || stdAging > 730) {
+        throw new Error('ค่ามาตรฐาน Aging ต้องอยู่ระหว่าง 0 ถึง 730 วัน (0 = ขายเงินสด)');
+      }
+      const maxAging = parseStrictInt(creditAgingMaxDays, 90);
+      if (maxAging < 0 || maxAging > 730) {
+        throw new Error('เกณฑ์ Aging สูงสุดตามนโยบายต้องอยู่ระหว่าง 0 ถึง 730 วัน');
+      }
+      if (stdAging > maxAging) {
+        throw new Error(`ค่ามาตรฐาน Aging (${stdAging} วัน) ต้องไม่มากกว่าเกณฑ์สูงสุดตามนโยบาย (${maxAging} วัน)`);
       }
 
       // Candidate updates preserving explicit 0 values
@@ -267,9 +297,13 @@ export function SystemSettingsModal({
         PRICE_WARN_BELOW_PER_TON: warnBelow,
         LEGACY_DOC_CUTOFF_DATE: legacyCutoff.trim(),
         REBATE_CLAIM_FISCAL_START_MONTH: fiscalMonth,
+        QUOTATION_MAE_PUI_MAX_VALID_DAYS: maePuiDays,
+        TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS: multiCustMin,
         CREDIT_LIMIT_STRICT_MODE: creditLimitStrict ? 'true' : 'false',
         CREDIT_AGING_STRICT_MODE: creditAgingStrict ? 'true' : 'false',
-        CREDIT_AGING_DEFAULT_DAYS: parseStrictInt(creditAgingDefaultDays, 60),
+        CREDIT_AGING_DEFAULT_DAYS: stdAging,
+        CREDIT_AGING_MAX_DAYS: maxAging,
+        CREDIT_AGING_ALERT_POPUP: creditAgingAlertPopup ? 'true' : 'false',
       };
 
       // Only submit dirty (modified) keys
@@ -295,7 +329,9 @@ export function SystemSettingsModal({
         expectedRevision: loadedRevision,
         reasonCode,
         reasonText: fullReasonText,
-        effectiveFrom: effectiveFrom ? new Date(effectiveFrom).toISOString() : undefined,
+        effectiveFrom: effectiveFrom
+          ? new Date(/(?:Z|[+-]\d{2}:\d{2})$/.test(effectiveFrom) ? effectiveFrom : `${effectiveFrom}+07:00`).toISOString()
+          : undefined,
       });
 
       if (res.currentRevision !== undefined) {
@@ -751,6 +787,24 @@ export function SystemSettingsModal({
                       <p className="text-[10px] text-gray-400 mt-1">เกณฑ์ส่วนต่างสูงสุด (ค่าเริ่มต้น +5.0%)</p>
                     </div>
                   </div>
+
+                  <div className="border-t border-gray-100 pt-3">
+                    <label className="block font-bold text-gray-700 mb-1">
+                      เกณฑ์ลูกค้าหลายรายต่อ 1 Sale Trip ที่ต้องส่งขออนุมัติ (ราย) — <span className="font-normal text-amber-700">TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="2"
+                      max="50"
+                      step="1"
+                      value={tripMultiCustMin}
+                      onChange={e => setTripMultiCustMin(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none"
+                    />
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      หาก Sale Trip มีลูกค้าตั้งแต่จำนวนรายนี้ขึ้นไป ต้องส่งขออนุมัติจากผู้มีอำนาจอนุมัติก่อนยืนยันการสั่งซื้อทุกครั้ง (ค่าเริ่มต้น 2 ราย)
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -781,10 +835,9 @@ export function SystemSettingsModal({
 
                     <div>
                       <label className="block font-bold text-gray-700 mb-1">วันเริ่มใช้งานระบบ (Go-Live)</label>
-                      <input
-                        type="date"
+                      <ThaiDatePicker
                         value={goLiveCutoff}
-                        onChange={e => setGoLiveCutoff(e.target.value)}
+                        onChange={setGoLiveCutoff}
                         className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none"
                       />
                       <p className="text-[11px] text-gray-500 mt-1">ใบตัดตั๋วก่อนวันนี้จะไม่ถูกแสดงหรือจับคู่</p>
@@ -843,8 +896,11 @@ export function SystemSettingsModal({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block font-bold text-gray-700 mb-1">ซ่อนใบสั่งจอง WinSpeed ที่ลงวันที่ก่อน</label>
-                      <input type="date" value={legacyCutoff} onChange={e => setLegacyCutoff(e.target.value)}
-                        className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none" />
+                      <ThaiDatePicker
+                        value={legacyCutoff}
+                        onChange={setLegacyCutoff}
+                        className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none"
+                      />
                       <p className="text-[11px] text-gray-500 mt-1">ใช้กับกระดาน รายการบิล Dashboard และรายงานค้างส่ง · ตั๋วคุมที่ยังมียอดค้างแสดงเสมอ</p>
                     </div>
                     <div>
@@ -853,6 +909,22 @@ export function SystemSettingsModal({
                         className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none" />
                       <p className="text-[11px] text-gray-500 mt-1">เคลมได้เฉพาะใบส่งของในรอบบัญชีปัจจุบัน (1 = มกราคม) · 0 = ไม่ตัดรอบ</p>
                     </div>
+                  </div>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-2">
+                    <label className="block font-bold text-amber-900">
+                      จำนวนวันยืนราคาสูงสุดสำหรับใบเสนอราคากลุ่ม &quot;แม่ปุ๋ย&quot; (วัน) — <span className="font-normal text-amber-700">QUOTATION_MAE_PUI_MAX_VALID_DAYS</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="90"
+                      value={maePuiMaxValidDays}
+                      onChange={e => setMaePuiMaxValidDays(e.target.value)}
+                      className="w-full sm:w-56 p-2.5 rounded-xl border border-amber-300 bg-white font-bold text-gray-800 focus:border-[#0C447C] outline-none"
+                    />
+                    <p className="text-[11px] text-amber-900 leading-relaxed">
+                      ค่าเริ่มต้น <span className="font-bold">3 วัน</span> — หากใบเสนอราคามีสินค้ากลุ่มแม่ปุ๋ย จะยืนราคาได้สูงสุดตามค่านี้ ทั้งตอนสร้างใหม่และตอนขอขยายเวลาต่อครั้ง (พร้อมบังคับทบทวนราคาก่อนขยายเวลาเสมอ)
+                    </p>
                   </div>
                 </div>
               )}
@@ -864,14 +936,51 @@ export function SystemSettingsModal({
                     <CreditCard size={16} className="text-amber-700 shrink-0 mt-0.5" />
                     <div>
                       <div className="font-bold text-amber-800 mb-0.5">นโยบายวงเงินเครดิต และอายุหนี้ (Credit Limit & Aging)</div>
-                      กำหนดค่าเริ่มต้น Aging และตั้งค่ากฎเข้มงวด (Strict Rule) เพื่อบล็อกหรืออนุญาตการเปิดบิลขายเมื่อเกินเกณฑ์
+                      กำหนดค่ามาตรฐาน (กรณีลูกค้าไม่ระบุ), เกณฑ์สูงสุดตามนโยบาย, และรูปแบบการแจ้งเตือน/บล็อกในหน้าขาย
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="rounded-xl border border-gray-200 p-4 space-y-2 bg-white">
+                      <label className="block font-bold text-gray-800">
+                        ค่ามาตรฐาน Aging (วัน) — <span className="font-normal text-gray-500">CREDIT_AGING_DEFAULT_DAYS</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="730"
+                        value={creditAgingDefaultDays}
+                        onChange={e => setCreditAgingDefaultDays(e.target.value)}
+                        className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none"
+                      />
+                      <p className="text-[11px] text-gray-500 leading-relaxed">
+                        ค่าเริ่มต้น <span className="font-bold text-gray-700">60 วัน</span> — ใช้กับลูกค้าที่ไม่ได้กำหนดวันเครดิต (NULL / เว้นว่าง)
+                        <br />* หากตั้งเป็น <span className="font-bold text-emerald-700">0</span> จะถือเป็น <span className="font-bold">ขายเงินสด (ไม่มีเครดิต)</span>
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-rose-200 p-4 space-y-2 bg-rose-50/40">
+                      <label className="block font-bold text-rose-900">
+                        เกณฑ์ Aging สูงสุดตามนโยบาย (วัน) — <span className="font-normal text-rose-700">CREDIT_AGING_MAX_DAYS</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="730"
+                        value={creditAgingMaxDays}
+                        onChange={e => setCreditAgingMaxDays(e.target.value)}
+                        className="w-full p-2.5 rounded-xl border border-rose-300 bg-white font-bold text-rose-900 focus:border-rose-600 outline-none"
+                      />
+                      <p className="text-[11px] text-rose-800 leading-relaxed">
+                        ค่าเริ่มต้น <span className="font-bold">90 วัน</span> — หากกำหนดให้ลูกค้าเกินค่านี้ (เช่น พิมพ์ผิด 10 → 100) ระบบจะแจ้งเตือนทันที และหน้าขายจะขึ้นเตือนวิกฤติสีแดงเมื่อหนี้เกินเกณฑ์นี้
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div className="rounded-xl border border-gray-200 p-4 space-y-3 bg-white">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-gray-800">กฎเข้มงวดวงเงิน (Credit Limit Strict Mode)</span>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-gray-800">กฎเข้มงวดวงเงิน (Credit Strict)</span>
                         <input
                           type="checkbox"
                           checked={creditLimitStrict}
@@ -881,14 +990,14 @@ export function SystemSettingsModal({
                       </div>
                       <p className="text-[11px] text-gray-500">
                         {creditLimitStrict
-                          ? '🔴 ปัจจุบัน: บล็อกการเปิดบิลขายทันที (Disallow) หากยอดสั่งซื้อทำให้เกินวงเงินเครดิต'
-                          : '🟡 ปัจจุบัน: แจ้งเตือนเมื่อเปิดบิล แต่ยังอนุญาตให้ทำรายการได้ และบันทึกเป็นเหตุการณ์ผิดปกติ (Soft Warning)'}
+                          ? '🔴 บล็อกการเปิดบิลขายทันที หากยอดสั่งซื้อทำให้เกินวงเงินเครดิต'
+                          : '🟡 แจ้งเตือนเมื่อเปิดบิล แต่ยังอนุญาตให้บันทึกและเก็บ Log เหตุการณ์ผิดปกติ'}
                       </p>
                     </div>
 
                     <div className="rounded-xl border border-gray-200 p-4 space-y-3 bg-white">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-gray-800">กฎเข้มงวด Aging (Aging Strict Mode)</span>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-gray-800">กฎเข้มงวด Aging (Aging Strict)</span>
                         <input
                           type="checkbox"
                           checked={creditAgingStrict}
@@ -898,27 +1007,33 @@ export function SystemSettingsModal({
                       </div>
                       <p className="text-[11px] text-gray-500">
                         {creditAgingStrict
-                          ? '🔴 ปัจจุบัน: บล็อกการเปิดบิลขายทันที (Disallow) หากมีหนี้ค้างชำระเกินจำนวนวัน Aging'
-                          : '🟡 ปัจจุบัน: แจ้งเตือนเมื่อเปิดบิล แต่ยังอนุญาตให้ทำรายการได้ และบันทึกเป็นเหตุการณ์ผิดปกติ (Soft Warning)'}
+                          ? '🔴 บล็อกการเปิดบิลขายทันที หากมีหนี้ค้างชำระเกินจำนวนวัน Aging'
+                          : '🟡 แจ้งเตือนเมื่อเปิดบิล แต่ยังอนุญาตให้บันทึกและเก็บ Log เหตุการณ์ผิดปกติ'}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-blue-200 p-4 space-y-3 bg-blue-50/40">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-blue-900">Popup ยืนยันในหน้าขาย</span>
+                        <input
+                          type="checkbox"
+                          checked={creditAgingAlertPopup}
+                          onChange={e => setCreditAgingAlertPopup(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]"
+                        />
+                      </div>
+                      <p className="text-[11px] text-blue-900/80">
+                        {creditAgingAlertPopup
+                          ? '🔔 เปิดหน้าต่างยืนยันก่อนบันทึกบิล หากลูกค้าเกินวงเงินหรือ Aging (เพื่อป้องกันการเปิดบิลพลาด)'
+                          : '💬 แสดงเฉพาะแบนเนอร์เตือนและป้ายเตือนในหน้าขาย (ไม่ขึ้นหน้าต่างยืนยันซ้ำ)'}
                       </p>
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-gray-200 p-4 bg-white">
-                    <label className="block font-bold text-gray-700 mb-1">
-                      จำนวนวัน Aging สูงสุดตามนโยบายค่าเริ่มต้น (วัน)
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="365"
-                      value={creditAgingDefaultDays}
-                      onChange={e => setCreditAgingDefaultDays(e.target.value)}
-                      className="w-full max-w-xs p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none"
-                    />
-                    <p className="text-[11px] text-gray-500 mt-1">
-                      มาตรฐาน 60 วัน (หากลูกค้ามียอดค้างชำระจาก WinSpeed เกินจำนวนวันนี้ จะถูกตรวจสอบตามกฎ Strict/Soft Mode)
-                    </p>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[11px] text-slate-700 flex flex-wrap gap-x-5 gap-y-1">
+                    <span><span className="font-bold text-emerald-700">0 วัน</span> = ขายเงินสด (ไม่มีเครดิต)</span>
+                    <span><span className="font-bold text-blue-800">เว้นว่าง / NULL</span> = ใช้ค่ามาตรฐานระบบ ({creditAgingDefaultDays || 60} วัน)</span>
+                    <span><span className="font-bold text-rose-700">&gt; {creditAgingMaxDays || 90} วัน</span> = เกินเพดานนโยบาย (แจ้งเตือนชัดเจน)</span>
                   </div>
                 </div>
               )}
@@ -954,7 +1069,7 @@ export function SystemSettingsModal({
                               <tr key={idx} className="hover:bg-blue-50/80">
                                 <td className="p-2 font-bold text-gray-800">{s.PolicyName}</td>
                                 <td className="p-2 text-center font-bold text-[#0C447C]">Rev #{s.RevisionNumber}</td>
-                                <td className="p-2 text-gray-600 font-mono text-[10px]">{s.EffectiveFrom ? new Date(s.EffectiveFrom).toLocaleString('th-TH') : '-'}</td>
+                                <td className="p-2 text-gray-600 font-mono text-[10px]">{s.EffectiveFrom ? formatThaiDate(s.EffectiveFrom, true) : '-'}</td>
                                 <td className="p-2 text-gray-600">{s.CreatedBy}</td>
                                 <td className="p-2 text-gray-500 truncate max-w-[140px]">{s.ReasonText || s.ReasonCode || '-'}</td>
                               </tr>
@@ -1041,16 +1156,16 @@ export function SystemSettingsModal({
                     }`}
                   />
 
-                  <div className="flex items-center gap-1.5 bg-white px-2 py-1.5 rounded-lg border border-amber-200">
-                    <Calendar size={14} className="text-gray-500 shrink-0" />
+                  <div className="flex items-center gap-1.5 bg-white px-2 py-1 rounded-lg border border-amber-200">
                     <span className="text-[11px] text-gray-500 shrink-0">มีผล:</span>
-                    <input
-                      type="datetime-local"
-                      value={effectiveFrom}
-                      onChange={e => setEffectiveFrom(e.target.value)}
-                      title="เว้นว่างเพื่อให้มีผลทันที หรือระบุวันและเวลาที่มีผลล่วงหน้า"
-                      className="w-full text-xs bg-transparent text-gray-800 outline-none"
-                    />
+                    <div className="flex-1 min-w-0">
+                      <ThaiDateTimePicker
+                        value={effectiveFrom}
+                        onChange={setEffectiveFrom}
+                        placeholder="มีผลทันที (หรือระบุวัน-เวลา)"
+                        className="w-full text-xs bg-transparent text-gray-800 outline-none py-0.5"
+                      />
+                    </div>
                   </div>
                 </div>
                 <div className="text-[10px] text-gray-500">

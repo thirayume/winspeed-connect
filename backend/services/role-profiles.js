@@ -142,6 +142,15 @@ function filteredCapabilities(user) {
   )
     inherited.add("papertrail");
   if (hasPermission(user, "coupon.manual116")) inherited.add("control-ticket");
+  if (
+    ["master.manage", "pricing.view", "pricing.manage", "cost.view", "cost.manage"].some((k) =>
+      hasPermission(user, k),
+    )
+  ) {
+    inherited.add("master");
+  } else {
+    inherited.delete("master");
+  }
   return {
     menus: [...inherited],
     actions: Object.keys(ACTIONS).filter(

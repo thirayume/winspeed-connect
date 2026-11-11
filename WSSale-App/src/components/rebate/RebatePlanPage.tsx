@@ -4,6 +4,8 @@ import { fetchRebatePlans, createRebatePlan, updateRebatePlan, allocateRebatePla
 import type { RebatePlan, AdminUser, EMGood } from '../../types';
 import { PlanApprovalDialog } from './RebatePlanApproval';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
+import { SearchableSelect } from '../ui/SearchableSelect';
+import { appAlert } from '../ui/AppAlert';
 
 const CANONICAL_SALE_REGIONS = [
   { RegionCode: '01', RegionName: 'กรุงเทพและปริมณฑล' },
@@ -56,7 +58,7 @@ export function RebatePlanPage() {
 
   async function setStatus(p: RebatePlan, status: string) {
     try { await updateRebatePlan(p.PlanId, { status }); await load(); }
-    catch (e) { alert((e as Error).message); }
+    catch (e) { await appAlert((e as Error).message, 'error'); }
   }
 
   return (
@@ -205,18 +207,18 @@ function PlanForm({ plan, onClose, onDone }: { plan: RebatePlan | null; onClose:
                 />
               </Field>
               {goods.length > 0 && (
-                <select
-                  onChange={e => { if (e.target.value) set('goodCodePattern', e.target.value); }}
-                  value=""
-                  className="mt-1 w-full text-[11px] border border-gray-200 rounded p-1 text-gray-500 bg-gray-50"
-                >
-                  <option value="">-- หรือเลือกสินค้าจากระบบ --</option>
-                  {goods.map(g => (
-                    <option key={g.GoodID || g.GoodCode} value={g.GoodCode}>
-                      {g.GoodCode} {g.GoodName ? `· ${g.GoodName}` : ''}
-                    </option>
-                  ))}
-                </select>
+                <div className="mt-1">
+                  <SearchableSelect
+                    value=""
+                    onChange={val => { if (val) set('goodCodePattern', val); }}
+                    placeholder="-- หรือเลือกสินค้าจากระบบ --"
+                    searchPlaceholder="ค้นหารหัส/ชื่อสินค้า..."
+                    options={goods.map(g => ({
+                      value: g.GoodCode,
+                      label: `${g.GoodCode}${g.GoodName ? ` · ${g.GoodName}` : ''}`,
+                    }))}
+                  />
+                </div>
               )}
             </div>
             <Field label="ภาค">

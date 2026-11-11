@@ -5,6 +5,7 @@ import { Plus, Save, Shield, History, Trash2, Lock, ShieldCheck, Crown } from "l
 import { RoleMembers } from "./RoleMembers";
 import { req } from "../../services/api";
 import { appConfirm } from "../ui/AppAlert";
+import { formatThaiDate } from "../../utils/date";
 
 export type RoleProfile = {
   Code: string;
@@ -70,6 +71,11 @@ const names: Record<string, string> = {
   "edit-request.create": "ขอแก้ไขเอกสาร",
   "reports.manage": "จัดการแม่แบบและหัวกระดาษรายงาน",
   "so.control-ticket": "จำหน่ายตั๋วคุม",
+  "master.manage": "จัดการข้อมูลหลัก (สินค้า/ลูกค้า/รถ/ของแถม)",
+  "pricing.view": "ดูตารางราคาขาย (Pricelist)",
+  "pricing.manage": "แก้ไขตารางราคาขายและ Sync WinSpeed",
+  "cost.view": "ดูตารางราคาทุน (Costlist)",
+  "cost.manage": "แก้ไขและเปิดใช้ราคาทุน (Costlist)",
 };
 
 /** ลำดับบทบาทตามผังโครงสร้างองค์กร (ADMIN เป็น root ถัดมาคือผู้บริหาร C_LEVEL ไล่ลงมาถึงฝ่ายขาย) */
@@ -741,7 +747,7 @@ export function RoleManagementPage({
                 {history.map((h) => (
                   <tr key={h.Id}>
                     <td className="p-2 text-slate-400 font-mono text-[10px]">
-                      {new Date(h.CreatedAt).toLocaleString("th-TH")}
+                      {formatThaiDate(h.CreatedAt, true)}
                     </td>
                     <td className="p-2 font-mono">User #{h.ActorId}</td>
                     <td className="p-2 font-semibold text-[#0C447C]">

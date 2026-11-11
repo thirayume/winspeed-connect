@@ -5,7 +5,7 @@ import { displayStatus } from '../../constants/soStatus';
 import { SOStatusBadge } from './SOStatusBadge';
 import { useErpStore } from '../../store/erp-store';
 import { approveGiveawayLine, confirmSO, cancelSO, shipSO, moveToPicking, createUnlockRequest } from '../../services/api';
-import { appPrompt } from '../ui/AppAlert';
+import { appAlert, appPrompt } from '../ui/AppAlert';
 import { RequestActionModal, type RequestActionType } from '../papertrail/RequestActionModal';
 import { SOCancelDeleteModal } from '../common/SOCancelDeleteModal';
 import { useAuthStore } from '../../store/auth-store';
@@ -67,7 +67,7 @@ export function SODetailsPanel({
   async function doAction(fn: () => Promise<unknown>) {
     setBusy(true);
     try { await fn(); onUpdate(); }
-    catch (e: unknown) { alert((e as Error).message || 'เกิดข้อผิดพลาด'); }
+    catch (e: unknown) { await appAlert((e as Error).message || 'เกิดข้อผิดพลาด', 'error'); }
     finally { setBusy(false); }
   }
 
@@ -470,7 +470,7 @@ export function SODetailsPanel({
         onSubmit={(reason, type) => {
           doAction(async () => {
             await createUnlockRequest(so.id!, reason, type);
-            alert(`ส่งคำขอ${type === 'EDIT' ? 'แก้ไข' : 'ยกเลิก'}แล้ว รออนุมัติจากหัวหน้างาน`);
+            await appAlert(`ส่งคำขอ${type === 'EDIT' ? 'แก้ไข' : 'ยกเลิก'}แล้ว รออนุมัติจากหัวหน้างาน`, 'success');
             setRequestModalConfig({ isOpen: false, type: 'EDIT' });
           });
         }}

@@ -37,22 +37,24 @@ export const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const normalizedValue = value ? String(value).slice(0, 10) : '';
+
   // Sync prop value to display value and calendar state
   useEffect(() => {
-    if (value) {
-      const d = new Date(value);
-      if (!isNaN(d.getTime())) {
-        setCurrentMonth(d.getMonth());
-        setCurrentYear(d.getFullYear());
+    if (normalizedValue) {
+      const m = normalizedValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (m) {
+        setCurrentYear(Number(m[1]));
+        setCurrentMonth(Number(m[2]) - 1);
       }
-      const thaiFormat = toThaiDateInputFormat(value);
+      const thaiFormat = toThaiDateInputFormat(normalizedValue);
       if (thaiFormat !== displayValue) {
         setDisplayValue(thaiFormat);
       }
     } else {
       setDisplayValue('');
     }
-  }, [value]);
+  }, [normalizedValue]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -167,7 +169,7 @@ export const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
       if (min && dateStr < min) isDisabled = true;
       if (max && dateStr > max) isDisabled = true;
       
-      const isSelected = value === dateStr;
+      const isSelected = normalizedValue === dateStr;
       const isToday = bangkokDate() === dateStr;
 
       days.push(
@@ -191,15 +193,12 @@ export const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
   };
 
   const setToday = () => {
-    const d = new Date();
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    const gregorian = `${yyyy}-${mm}-${dd}`;
+    const gregorian = bangkokDate();
     if ((min && gregorian < min) || (max && gregorian > max)) return;
     onChange(gregorian);
-    setCurrentMonth(d.getMonth());
-    setCurrentYear(d.getFullYear());
+    const [y, m] = gregorian.split('-').map(Number);
+    setCurrentMonth(m - 1);
+    setCurrentYear(y);
     setIsOpen(false);
   };
 

@@ -10,7 +10,7 @@ import {
 } from '../../utils/docHeaderSettings';
 import { useAuthStore } from '../../store/auth-store';
 import { canManageDocHeaderSettings } from '../../utils/permissions';
-import { appConfirm } from '../ui/AppAlert';
+import { appAlert, appConfirm } from '../ui/AppAlert';
 
 export function DocHeaderSettingsModal({
   isOpen,
@@ -48,7 +48,7 @@ export function DocHeaderSettingsModal({
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 3 * 1024 * 1024) {
-      alert('ขนาดไฟล์โลโก้ต้องไม่เกิน 3MB');
+      void appAlert('ขนาดไฟล์โลโก้ต้องไม่เกิน 3MB', 'warning');
       return;
     }
     const reader = new FileReader();

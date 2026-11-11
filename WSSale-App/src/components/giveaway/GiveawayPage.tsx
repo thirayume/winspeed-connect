@@ -8,7 +8,7 @@ import { useAuthStore } from '../../store/auth-store';
 import { useCan } from '../../utils/capabilities';
 import { GiveawayQuotaSettings } from './GiveawayQuotaSettings';
 import { formatThaiDate } from '../../utils/date';
-import { appPrompt, appConfirm } from '../ui/AppAlert';
+import { appAlert, appPrompt, appConfirm } from '../ui/AppAlert';
 import type { GiveawayRegion, GiveawayBudgetLine, GiveawayWithdrawal, GiveawayItem } from '../../types';
 
 const TH_MONTHS = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
@@ -214,13 +214,13 @@ export function GiveawayPage() {
                           <div className="mt-4 flex gap-2">
                             <button onClick={async () => {
                               if(await appConfirm('ยืนยันการอนุมัติ? ระบบจะหักโควต้าของคุณไปให้ผู้ขอยืม')) {
-                                resolveGiveawayBorrowRequest(r.Id, true).then(() => load()).catch(e => alert(e.message));
+                                resolveGiveawayBorrowRequest(r.Id, true).then(() => load()).catch(e => void appAlert(e.message, 'error'));
                               }
                             }} className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded hover:bg-green-700">อนุมัติให้ยืม</button>
                             <button onClick={async () => {
                               const note = await appPrompt('เหตุผลที่ปฏิเสธ (ไม่บังคับ):');
                               if (note !== null) {
-                                resolveGiveawayBorrowRequest(r.Id, false, note).then(() => load()).catch(e => alert(e.message));
+                                resolveGiveawayBorrowRequest(r.Id, false, note).then(() => load()).catch(e => void appAlert(e.message, 'error'));
                               }
                             }} className="px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded hover:bg-red-700">ปฏิเสธ</button>
                           </div>
@@ -267,7 +267,7 @@ function WithdrawDialog({ region, onClose, onDone }: { region: string; onClose: 
     setBusy(true); setErr('');
     try {
       const res = await createGiveawayWithdrawal({ region, brand, itemName, qty, issueMonth: month });
-      if (res.isOverBudget) alert(`⚠ เกินงบ! คงเหลือ ${res.status?.RemainingQty}`);
+      if (res.isOverBudget) await appAlert(`⚠ เกินงบ! คงเหลือ ${res.status?.RemainingQty}`, 'warning');
       onDone();
     } catch (e: unknown) { setErr((e as Error).message || 'ผิดพลาด'); }
     finally { setBusy(false); }

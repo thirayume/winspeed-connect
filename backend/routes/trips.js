@@ -7,6 +7,13 @@ const { retryOnDeadlock } = require('../services/db-retry');
 const readQuery = (text, inputs) => retryOnDeadlock(() => wfQuery(text, inputs));
 const { requireAuth, requireRole, requireCapability, canViewAllRebateAmounts } = require('../middleware/auth');
 const { broadcast } = require('../services/socket');
+const {
+  computeTripCustomerSnapshot,
+  getMinCustomersThreshold,
+  buildMultiCustTripSummary,
+  fetchTripMultiCustStatus,
+  assertTripMultiCustApprovedForConfirm,
+} = require('../services/trip-multi-cust-approval');
 
 router.use(requireAuth);
 
@@ -119,7 +126,7 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
     // กรอง Number.isInteger ไว้อีกชั้นกันพลาด
     const idList = trips.map(t => Number(t.tripId)).filter(Number.isInteger).join(',');
 
-    const [membersRes, draftLinesRes, confLinesRes, weighRes, holdRes] = await Promise.all([
+    const [membersRes, draftLinesRes, confLinesRes, weighRes, holdRes, tripApprovalsRes, minCustThreshold] = await Promise.all([
       readQuery(`SELECT * FROM wf.v_TripMember WHERE TripId IN (${idList})`),
 
       readQuery(`
@@ -203,8 +210,29 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
         FROM wf.EditRequest r
         LEFT JOIN wf.EditReason rs ON rs.ReasonCode = r.ReasonCode
         LEFT JOIN wf.AppUser  u  ON u.Id = r.RequestedBy
-        WHERE r.Status = 'PENDING' AND r.TripId IN (${idList})`)
+        WHERE r.Status = 'PENDING' AND r.TripId IN (${idList})`),
+
+      readQuery(`
+        SELECT a.*, ru.DisplayName AS RequestedByName, au.DisplayName AS ApprovedByName
+        FROM wf.TripMultiCustomerApproval a
+        LEFT JOIN wf.AppUser ru ON ru.Id = a.RequestedBy
+        LEFT JOIN wf.AppUser au ON au.Id = a.ApprovedBy
+        WHERE a.Status <> 'CANCELLED' AND a.TripId IN (${idList})
+        ORDER BY a.Id DESC
+      `).catch(e => {
+        if (/Invalid object name/i.test(String(e.message || ''))) return { recordset: [] };
+        throw e;
+      }),
+
+      getMinCustomersThreshold()
     ]);
+
+    const appRowsByTrip = new Map();
+    for (const row of (tripApprovalsRes.recordset || [])) {
+      const k = String(row.TripId);
+      if (!appRowsByTrip.has(k)) appRowsByTrip.set(k, []);
+      appRowsByTrip.get(k).push(row);
+    }
 
     const members   = camelizeRows(membersRes.recordset || []);
     const allLines  = camelizeRows([...(draftLinesRes.recordset || []), ...(confLinesRes.recordset || [])]);
@@ -302,6 +330,12 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
       const tolerancePct = Number(t.tolerancePct ?? 5);
       const maxTon = capacityTon > 0 ? capacityTon : 0;
 
+      const multiCustApproval = buildMultiCustTripSummary({
+        members: mem,
+        approvalRows: appRowsByTrip.get(tripKey(t.tripId)) || [],
+        minCustomers: minCustThreshold,
+      });
+
       return {
         ...t,
         capacity: {
@@ -322,6 +356,7 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
           pendingCount: tripReqs.length,
           requests: tripReqs,
         },
+        multiCustApproval,
         orderCount: mem.length,
         customers: Array.from(byCust.values())
       };
@@ -356,6 +391,7 @@ router.get('/:id', requireCapability('trip.view'), async (req, res) => {
 
     const data = camelizeRow(trip.recordset[0]);
     data.orders = camelizeRows(orders.recordset || []);
+    data.multiCustApproval = await fetchTripMultiCustStatus({ tripId: data.tripId, members: data.orders });
     res.json(data);
   } catch (error) {
     console.error('[trips]', error);
@@ -1264,6 +1300,11 @@ router.post('/:id/confirm', requireCapability('so.confirm'), requireTripInScope,
       const {confirmDraft,lockConfirmationResource}=require('../services/draft-confirmation');
       for(const m of allMembers.filter(m=>m.MemberKind==='DRAFT').sort((a,b)=>Number(a.MemberId)-Number(b.MemberId)))
         await lockConfirmationResource(tx,'ConfirmSO_'+m.MemberId);
+
+      // Multi-customer Sale Trip approval gate (>= configured threshold, default 2 customers)
+      const resultingMembers = relockOnly ? allMembers : confirmedMembers;
+      await assertTripMultiCustApprovedForConfirm({ tx, tripId, resultingMembers });
+
       // 6. Handle residual unselected members
       const residualMembers = relockOnly ? [] : allMembers.filter(m => !confirmedTypedKeySet.has(`${m.MemberKind}:${m.MemberId}`));
       residualOrderCount = residualMembers.length;
@@ -1377,7 +1418,12 @@ router.post('/:id/confirm', requireCapability('so.confirm'), requireTripInScope,
     });
   } catch (err) {
     console.error('[trips/confirm]', err);
-    res.status(err.status || 500).json({ message: err.message, currentRevision: err.currentRevision });
+    res.status(err.status || 500).json({
+      message: err.message,
+      code: err.code,
+      currentRevision: err.currentRevision,
+      multiCustApproval: err.multiCustApproval,
+    });
   }
 });
 
@@ -1506,6 +1552,239 @@ router.delete('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER', 
   } catch (err) {
     console.error('DELETE /trips/:id error:', err);
     res.status(500).json({ message: err.message });
+  }
+});
+
+// ── Multi-customer Sale Trip Approval Endpoints ──────────────
+
+// GET /api/trips/:id/multi-cust-approval — ดูสถานะและประวัติขออนุมัติทริปหลายลูกค้า
+router.get('/:id/multi-cust-approval', requireCapability('trip.view'), requireTripInScope, async (req, res) => {
+  try {
+    const tripId = Number(req.params.id);
+    if (!Number.isInteger(tripId) || tripId <= 0) {
+      return res.status(400).json({ message: 'รหัส Trip ไม่ถูกต้อง' });
+    }
+    const membersRes = await wfQuery(
+      `SELECT MemberKind, MemberId, DocuNo, SoPrefix, CustId, CustName, Status, SOID
+       FROM wf.v_TripMember WHERE TripId = @tripId`,
+      { tripId: { type: sql.Int, value: tripId } }
+    );
+    const summary = await fetchTripMultiCustStatus({ tripId, members: membersRes.recordset || [] });
+    let history = [];
+    try {
+      const hRes = await wfQuery(`
+        SELECT a.*, ru.DisplayName AS RequestedByName, au.DisplayName AS ApprovedByName
+        FROM wf.TripMultiCustomerApproval a
+        LEFT JOIN wf.AppUser ru ON ru.Id = a.RequestedBy
+        LEFT JOIN wf.AppUser au ON au.Id = a.ApprovedBy
+        WHERE a.TripId = @tripId
+        ORDER BY a.Id DESC
+      `, { tripId: { type: sql.Int, value: tripId } });
+      history = camelizeRows(hRes.recordset || []);
+    } catch (e) {
+      if (!/Invalid object name/i.test(String(e.message || ''))) throw e;
+    }
+    res.json({ ...summary, history });
+  } catch (err) {
+    console.error('[trips/multi-cust-approval:get]', err);
+    res.status(err.status || 500).json({ message: err.message });
+  }
+});
+
+// POST /api/trips/:id/multi-cust-approval — ส่งคำขออนุมัติเมื่อมีลูกค้าหลายราย (>= เกณฑ์ใน App Settings)
+router.post('/:id/multi-cust-approval', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER', 'C_LEVEL'), requireTripInScope, async (req, res) => {
+  try {
+    const tripId = Number(req.params.id);
+    if (!Number.isInteger(tripId) || tripId <= 0) {
+      return res.status(400).json({ message: 'รหัส Trip ไม่ถูกต้อง' });
+    }
+    const reasonText = String(req.body?.reason || '').trim();
+    if (reasonText.length > 500) {
+      return res.status(400).json({ message: 'เหตุผลต้องไม่เกิน 500 ตัวอักษร' });
+    }
+    const requestedOrderIds = Array.isArray(req.body?.orderIds)
+      ? req.body.orderIds.map(v => String(v).replace(/^(DRAFT|NATIVE|CONFIRMED):/, '').trim()).filter(Boolean)
+      : null;
+
+    const minCustThreshold = await getMinCustomersThreshold();
+    const { lockConfirmationResource } = require('../services/draft-confirmation');
+
+    const result = await wfTransaction(async tx => {
+      await lockConfirmationResource(tx, `ConfirmTrip_${tripId}`);
+
+      const tripRow = (await tx.request().input('id', sql.Int, tripId).query(
+        `SELECT * FROM wf.SalesTrip WITH (UPDLOCK, HOLDLOCK) WHERE TripId = @id AND Status <> 'DELETED'`
+      )).recordset?.[0];
+      if (!tripRow) {
+        throw Object.assign(new Error('ไม่พบ Trip นี้'), { status: 404 });
+      }
+      if (!['ADMIN', 'MANAGER', 'C_LEVEL'].includes(req.user.role) && Number(tripRow.CreatedBy) !== Number(req.user.sub)) {
+        throw Object.assign(new Error('ไม่มีสิทธิ์ส่งคำขออนุมัติสำหรับเที่ยวรถของผู้อื่น'), { status: 403 });
+      }
+
+      const allMembers = (await tx.request().input('tripId', sql.Int, tripId).query(`
+        SELECT TripId, MemberKind, MemberId, DocuNo, SoPrefix, CustId, CustName, Status, SalesUserId, SOID
+        FROM wf.v_TripMember
+        WHERE TripId = @tripId
+      `)).recordset || [];
+
+      const activeMembers = allMembers.filter(m => !['CANCELLED', 'DELETED'].includes(String(m.Status || '').toUpperCase()));
+      const targetMembers = requestedOrderIds && requestedOrderIds.length > 0
+        ? activeMembers.filter(m => requestedOrderIds.includes(String(m.MemberId)) || (m.SOID != null && requestedOrderIds.includes(String(m.SOID))))
+        : activeMembers;
+
+      const snapshot = computeTripCustomerSnapshot(targetMembers);
+      if (snapshot.customerCount < minCustThreshold) {
+        throw Object.assign(
+          new Error(`ทริปนี้มีลูกค้า ${snapshot.customerCount} ราย ยังไม่ถึงเกณฑ์ ${minCustThreshold} รายที่ต้องขออนุมัติ`),
+          { status: 400 }
+        );
+      }
+
+      const draftIds = targetMembers
+        .filter(m => m.MemberKind === 'DRAFT' && /^\d+$/.test(String(m.MemberId || '')))
+        .map(m => Number(m.MemberId))
+        .filter(n => Number.isInteger(n) && n > 0);
+      const nativeIds = targetMembers
+        .filter(m => m.MemberKind !== 'DRAFT' && /^\d+$/.test(String(m.SOID || m.MemberId || '')))
+        .map(m => Number(m.SOID || m.MemberId))
+        .filter(n => Number.isInteger(n) && n > 0);
+
+      let totalTon = 0;
+      let totalAmount = 0;
+      if (draftIds.length > 0) {
+        const dTot = (await tx.request().query(`
+          SELECT ISNULL(SUM(CASE WHEN ISNULL(IsGiveaway, 0) = 0 THEN ISNULL(QtyTon, 0) ELSE 0 END), 0) AS TotalTon,
+                 ISNULL(SUM(ISNULL(QtyTon, 0) * ISNULL(PricePerTon, 0)), 0) AS TotalAmt
+          FROM wf.SalesOrderLine
+          WHERE SoId IN (${draftIds.join(',')})
+        `)).recordset?.[0];
+        totalTon += Number(dTot?.TotalTon || 0);
+        totalAmount += Number(dTot?.TotalAmt || 0);
+      }
+      if (nativeIds.length > 0) {
+        const nTot = (await tx.request().query(`
+          SELECT ISNULL(SUM(CASE WHEN ISNULL(FreeFlag, 'N') <> 'Y' THEN ISNULL(GoodQty2, 0) ELSE 0 END), 0) AS TotalTon,
+                 ISNULL(SUM(ISNULL(GoodAmnt, 0)), 0) AS TotalAmt
+          FROM dbo.SODT WITH (NOLOCK)
+          WHERE DocuType = 103 AND SOID IN (${nativeIds.join(',')})
+        `)).recordset?.[0];
+        totalTon += Number(nTot?.TotalTon || 0);
+        totalAmount += Number(nTot?.TotalAmt || 0);
+      }
+
+      const latest = (await tx.request().input('tripId', sql.Int, tripId).query(`
+        SELECT TOP 1 *
+        FROM wf.TripMultiCustomerApproval WITH (UPDLOCK, HOLDLOCK)
+        WHERE TripId = @tripId AND Status <> 'CANCELLED'
+        ORDER BY Id DESC
+      `)).recordset?.[0];
+
+      if (latest && latest.Status === 'APPROVED' && String(latest.CustomerFingerprint || '').trim() === snapshot.customerFingerprint) {
+        return {
+          alreadyApproved: true,
+          id: latest.Id,
+          tripId,
+          status: 'APPROVED',
+          minCustomers: minCustThreshold,
+          customerCount: snapshot.customerCount,
+          customerIds: snapshot.customerIds,
+          customerSummary: snapshot.customerSummary,
+          message: 'ทริปนี้ได้รับอนุมัติสำหรับรายชื่อลูกค้าชุดนี้แล้ว',
+        };
+      }
+
+      await tx.request().input('tripId', sql.Int, tripId).query(`
+        UPDATE wf.TripMultiCustomerApproval
+        SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME()
+        WHERE TripId = @tripId AND Status = 'PENDING'
+      `);
+
+      const ins = await tx.request()
+        .input('tripId', sql.Int, tripId)
+        .input('tripCode', sql.VarChar(50), tripRow.TripCode || null)
+        .input('tripRev', sql.Int, Number(tripRow.DocumentRevision || 1))
+        .input('minCust', sql.Int, minCustThreshold)
+        .input('custCnt', sql.Int, snapshot.customerCount)
+        .input('custJson', sql.NVarChar(sql.MAX), JSON.stringify(snapshot.customerIds))
+        .input('custSummary', sql.NVarChar(1000), snapshot.customerSummary || null)
+        .input('fp', sql.VarChar(64), snapshot.customerFingerprint)
+        .input('orderCnt', sql.Int, targetMembers.length)
+        .input('totalTon', sql.Decimal(18, 3), Number(totalTon.toFixed(3)))
+        .input('totalAmt', sql.Decimal(18, 2), Number(totalAmount.toFixed(2)))
+        .input('reason', sql.NVarChar(500), reasonText || null)
+        .input('reqBy', sql.Int, Number(req.user.sub))
+        .query(`
+          INSERT INTO wf.TripMultiCustomerApproval (
+            TripId, TripCode, TripRevision, MinCustomersSetting, CustomerCount,
+            CustomerIdsJson, CustomerSummary, CustomerFingerprint, OrderCount,
+            TotalTon, TotalAmount, ReasonText, Status, RequestedBy
+          )
+          OUTPUT INSERTED.Id
+          VALUES (
+            @tripId, @tripCode, @tripRev, @minCust, @custCnt,
+            @custJson, @custSummary, @fp, @orderCnt,
+            @totalTon, @totalAmt, @reason, 'PENDING', @reqBy
+          )
+        `);
+
+      return {
+        alreadyApproved: false,
+        id: ins.recordset[0].Id,
+        tripId,
+        tripCode: tripRow.TripCode,
+        status: 'PENDING',
+        minCustomers: minCustThreshold,
+        customerCount: snapshot.customerCount,
+        customerIds: snapshot.customerIds,
+        customerSummary: snapshot.customerSummary,
+        orderCount: targetMembers.length,
+        totalTon: Number(totalTon.toFixed(3)),
+        totalAmount: Number(totalAmount.toFixed(2)),
+        message: 'ส่งคำขออนุมัติทริปหลายลูกค้าเรียบร้อยแล้ว',
+      };
+    });
+
+    if (!result.alreadyApproved) {
+      broadcast('trip_multi_cust_approval', { id: result.id, tripId, action: 'requested' });
+      broadcast('trip_updated', { tripId, action: 'multi_cust_approval_requested' });
+      return res.status(201).json(result);
+    }
+    return res.json(result);
+  } catch (err) {
+    console.error('[trips/multi-cust-approval:request]', err);
+    res.status(err.status || 500).json({ message: err.message });
+  }
+});
+
+// PATCH /api/trips/:id/multi-cust-approval/:approvalId/cancel — ยกเลิกคำขอที่รออนุมัติ
+router.patch('/:id/multi-cust-approval/:approvalId/cancel', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER', 'C_LEVEL'), requireTripInScope, async (req, res) => {
+  try {
+    const tripId = Number(req.params.id);
+    const approvalId = Number(req.params.approvalId);
+    if (!Number.isInteger(tripId) || !Number.isInteger(approvalId)) {
+      return res.status(400).json({ message: 'รหัสคำขอไม่ถูกต้อง' });
+    }
+    const existing = (await wfQuery(
+      `SELECT Id, TripId, Status, RequestedBy FROM wf.TripMultiCustomerApproval WHERE Id = @aid AND TripId = @tid`,
+      { aid: { type: sql.Int, value: approvalId }, tid: { type: sql.Int, value: tripId } }
+    )).recordset?.[0];
+    if (!existing) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติทริปนี้' });
+    if (existing.Status !== 'PENDING') return res.status(409).json({ message: `คำขอนี้อยู่ในสถานะ ${existing.Status} แล้ว` });
+    const isAdmin = ['ADMIN', 'C_LEVEL'].includes(req.user.role);
+    if (!isAdmin && Number(existing.RequestedBy) !== Number(req.user.sub)) {
+      return res.status(403).json({ message: 'ถอนได้เฉพาะคำขอที่คุณส่งเองเท่านั้น' });
+    }
+    await wfQuery(
+      `UPDATE wf.TripMultiCustomerApproval SET Status = 'CANCELLED', UpdatedAt = SYSUTCDATETIME() WHERE Id = @aid AND Status = 'PENDING'`,
+      { aid: { type: sql.Int, value: approvalId } }
+    );
+    broadcast('trip_multi_cust_approval', { id: approvalId, tripId, action: 'cancelled' });
+    broadcast('trip_updated', { tripId, action: 'multi_cust_approval_cancelled' });
+    res.json({ id: approvalId, tripId, status: 'CANCELLED', message: 'ถอนคำขออนุมัติเรียบร้อย' });
+  } catch (err) {
+    console.error('[trips/multi-cust-approval:cancel]', err);
+    res.status(err.status || 500).json({ message: err.message });
   }
 });
 

@@ -21,6 +21,7 @@ import {
 import { useAuthStore } from '../../store/auth-store';
 import { canViewRebateAmounts } from '../../utils/permissions';
 import type { RebatePool, RebateAccrualLot } from '../../types';
+import { formatThaiDate } from '../../utils/date';
 
 const NAVY = '#0C447C';
 const baht = (n: unknown) => Number(n ?? 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -779,7 +780,7 @@ export function ClaimDetailDialog({ claimId, onClose, onChanged }:
                         {a?.Decision === 'APPROVED' ? 'อนุมัติ' : a?.Decision === 'REJECTED' ? 'ไม่อนุมัติ' : isCurrent ? 'รออนุมัติ' : '—'}
                       </div>
                       <div className="text-[11px] text-gray-500">
-                        {a?.DecidedByName || ''}{a?.DecidedAt ? ` · ${new Date(a.DecidedAt).toLocaleDateString('th-TH')}` : ''}
+                        {a?.DecidedByName || ''}{a?.DecidedAt ? ` · ${formatThaiDate(a.DecidedAt)}` : ''}
                       </div>
                     </div>
                   </div>

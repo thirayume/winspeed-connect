@@ -9,6 +9,7 @@ const {advanceAppliedClaimAtConfirm}=require('./rebate-claim-apply');
 const {matchGiveawayItem,findMatchingQuota}=require('./giveaway-matcher');
 const {linePieces}=require('./giveaway-quota');
 const {captureBookingOrigin}=require('./initial-booking-ai');
+const {assertPricesAboveCost,assertPriceBookLinesSellable}=require('./cost-authority');
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status});};
 function transactionQuery(tx) { return async (text,inputs={})=>{
   const r=new sql.Request(tx);for(const [k,{type,value}] of Object.entries(inputs))r.input(k,type,value);return r.query(text);
@@ -78,6 +79,8 @@ async function confirmDraft({tx:confirmationTx,draftId,user,ip,expectedRevision,
  if (rebateDiscountAmt > billSubtotal) {
    fail(`ยอดส่วนลด Rebate (฿${rebateDiscountAmt.toLocaleString()}) เกินมูลค่าสินค้าในบิล (฿${billSubtotal.toLocaleString()})`, 400);
  }
+ await assertPriceBookLinesSellable({ lines, asOfDate: so.DeliveryDate || null, queryFn: confirmationQuery });
+ await assertPricesAboveCost({ lines, asOfDate: so.DeliveryDate || null, rebateDiscountAmt, queryFn: confirmationQuery });
  let newSoid=null;
       // 1. Persist pickup due date to draft before conversion
       await confirmationQuery(`

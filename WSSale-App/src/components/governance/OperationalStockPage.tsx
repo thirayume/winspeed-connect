@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { Boxes, Save } from 'lucide-react';
 import { fetchStock, setStock, syncStockFromWinSpeed, fetchAtpStock, fetchGoods, type StockRow, type AtpStockRow } from '../../services/api';
 import type { EMGood } from '../../types';
+import { appAlert } from '../ui/AppAlert';
+import { formatThaiDate } from '../../utils/date';
 
 const STATE_LABEL: Record<AtpStockRow['state'], { text: string; cls: string }> = {
   FULLY_READY: { text: 'พร้อมจ่าย', cls: 'bg-green-100 text-green-700' },
@@ -29,16 +31,16 @@ export function StockTab() {
   }, []);
   useEffect(() => { load(); fetchGoods().then(setGoods).catch(console.error); }, [load]);
   async function save() {
-    if (!f.goodId) { alert('เลือกสินค้า'); return; }
-    if (f.qtyOnHand.trim() === '' || !(Number(f.qtyOnHand) >= 0)) { alert('ใส่จำนวนคงเหลือเป็นตัวเลขตั้งแต่ 0 ขึ้นไป'); return; }
+    if (!f.goodId) { void appAlert('เลือกสินค้า', 'info'); return; }
+    if (f.qtyOnHand.trim() === '' || !(Number(f.qtyOnHand) >= 0)) { void appAlert('ใส่จำนวนคงเหลือเป็นตัวเลขตั้งแต่ 0 ขึ้นไป', 'info'); return; }
     setBusy(true);
     try { await setStock({ goodId: f.goodId, qtyOnHand: Number(f.qtyOnHand), unit: 'ตัน' }); setF({ goodId: '', qtyOnHand: '' }); await load(); }
-    catch (e: unknown) { alert((e as Error).message); } finally { setBusy(false); }
+    catch (e: unknown) { void appAlert((e as Error).message, 'error'); } finally { setBusy(false); }
   }
   async function syncNow() {
     setBusy(true);
     try { await syncStockFromWinSpeed(); await load(); }
-    catch (e: unknown) { alert((e as Error).message); } finally { setBusy(false); }
+    catch (e: unknown) { void appAlert((e as Error).message, 'error'); } finally { setBusy(false); }
   }
   return (
     <div className="space-y-4">
@@ -74,7 +76,7 @@ export function StockTab() {
                   <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">{fmt(a?.unallocatedDemand)}</td>
                   <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">{fmt(a?.totalAvailable)}</td>
                   <td className="px-4 py-3 text-center whitespace-nowrap" title={a?.stateReason || undefined}>{label ? <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${label.cls}`}>{label.text}</span> : '—'}</td>
-                  <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{s.Source === 'WINSPEED' ? 'WinSpeed · ' : s.Source ? 'คลังลงเอง · ' : ''}{s.AsOf ? new Date(s.AsOf).toLocaleString('th-TH') : ''} {s.UpdatedByName ? `· ${s.UpdatedByName}` : ''}</td>
+                  <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{s.Source === 'WINSPEED' ? 'WinSpeed · ' : s.Source ? 'คลังลงเอง · ' : ''}{s.AsOf ? formatThaiDate(s.AsOf, true) : ''} {s.UpdatedByName ? `· ${s.UpdatedByName}` : ''}</td>
                 </tr>
               );
             })}

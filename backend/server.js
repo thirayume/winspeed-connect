@@ -144,6 +144,7 @@ app.use('/api/recon', require('./routes/recon'));
 app.use('/api/ops', require('./routes/ops'));
 app.use('/api/policy', require('./routes/policy'));
 app.use('/api/pricebook', require('./routes/pricebook'));
+app.use('/api/costbook', require('./routes/costbook'));
 app.use('/api/credit', require('./routes/credit'));
 app.use('/api/stock', require('./routes/stock'));
 app.use('/api/incidents', require('./routes/incidents'));

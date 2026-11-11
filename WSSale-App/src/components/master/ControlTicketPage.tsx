@@ -10,6 +10,7 @@ import {
 } from '../../services/api';
 import type { ControlTicketDraw } from '../../types';
 import { NativeTraceFinance } from './NativeTraceFinance';
+import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 
 type Line = { ListNo: number; GoodCode: string; GoodName: string; QtyTon: number; PricePerTon: number };
 
@@ -751,11 +752,10 @@ export function ControlTicketPage() {
               {/* Expiry Date Input */}
               {!editModal.isUnknown && (
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">วันหมดอายุที่แน่นอน (YYYY-MM-DD)</label>
-                  <input
-                    type="date"
+                  <label className="block text-xs font-bold text-gray-700 mb-1">วันหมดอายุที่แน่นอน (วว/ดด/ปปปป)</label>
+                  <ThaiDatePicker
                     value={editModal.expiryDate}
-                    onChange={e => setEditModal(prev => ({ ...prev, expiryDate: e.target.value }))}
+                    onChange={val => setEditModal(prev => ({ ...prev, expiryDate: val }))}
                     className="w-full p-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#0C447C]"
                   />
                 </div>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { fetchTruckTypes, createTruckType, updateTruckType, deleteTruckType } from '../../services/api';
 import { Truck, Plus, RefreshCw, X, Save, Edit2, Trash2, Settings } from 'lucide-react';
 import type { TruckType } from '../../types';
-import { appConfirm } from '../ui/AppAlert';
+import { appAlert, appConfirm } from '../ui/AppAlert';
 
 export const TruckTypesManager = () => {
   const [loading, setLoading] = useState(true);
@@ -45,7 +45,7 @@ export const TruckTypesManager = () => {
   const handleSave = async () => {
     if (!editingItem) return;
     if (!editingItem.Id || !editingItem.Name) {
-      alert('กรุณากรอกรหัสและชื่อประเภทรถ');
+      await appAlert('กรุณากรอกรหัสและชื่อประเภทรถ', 'warning');
       return;
     }
 
@@ -59,7 +59,7 @@ export const TruckTypesManager = () => {
       setEditingItem(null);
       await loadData();
     } catch (e) {
-      alert((e as Error).message);
+      await appAlert((e as Error).message, 'error');
     } finally {
       setBusy(false);
     }
@@ -72,7 +72,7 @@ export const TruckTypesManager = () => {
         await deleteTruckType(id);
         await loadData();
       } catch (e) {
-        alert((e as Error).message);
+        await appAlert((e as Error).message, 'error');
       } finally {
         setBusy(false);
       }

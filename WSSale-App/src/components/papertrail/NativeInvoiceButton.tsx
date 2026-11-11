@@ -3,6 +3,7 @@ import {createPortal} from 'react-dom';
 import {req} from '../../services/api';
 import {useCan} from '../../utils/capabilities';
 import {NativeDocPrint} from '../reports/NativeDocPrint';
+import {formatThaiDate} from '../../utils/date';
 
 type Preview={completed:boolean;fingerprint?:string;invoiceDate:string;dueDate?:string;series?:string;
  amount?:string;qty?:string;deliveryNo?:string;couponNo?:string;redemptionNo?:string;invoiceNo?:string};
@@ -21,7 +22,7 @@ const errors:Record<string,string>={
  IP_PERIOD_UNSUPPORTED:'งวดบัญชีของวัน Invoice ยังไม่พร้อม กรุณาให้ผู้ดูแลตรวจสอบ',
  IP_COUNTER_UNSUPPORTED:'เลขรัน Invoice ยังไม่พร้อม กรุณาให้ผู้ดูแลตรวจสอบ',
 };
-const date=(v?:string)=>v?new Date(v+'T00:00:00').toLocaleDateString('th-TH'):'—';
+const date=(v?:string)=>v?formatThaiDate(v):'—';
 export function NativeInvoiceButton({soid,onCreated}:{soid:string|number;onCreated:()=>void}){
  const can=useCan();
  const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');

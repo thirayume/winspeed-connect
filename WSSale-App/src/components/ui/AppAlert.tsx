@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
 
-type AlertType = 'error' | 'success' | 'info';
+type AlertType = 'error' | 'success' | 'warning' | 'info';
 
 let alertRoot: Root | null = null;
 let alertContainer: HTMLDivElement | null = null;
@@ -22,6 +22,7 @@ const AlertComponent = ({ message, type, onClose }: { message: string, type: Ale
 
   const isError = type === 'error';
   const isSuccess = type === 'success';
+  const isWarning = type === 'warning';
 
   return (
     <AnimatePresence>
@@ -37,13 +38,14 @@ const AlertComponent = ({ message, type, onClose }: { message: string, type: Ale
             <div className={`h-16 w-16 rounded-full flex items-center justify-center mb-4 ${
               isError ? 'bg-red-50 text-red-500' : 
               isSuccess ? 'bg-emerald-50 text-emerald-500' : 
+              isWarning ? 'bg-amber-50 text-amber-500' :
               'bg-blue-50 text-blue-500'
             }`}>
-              {isError ? <AlertTriangle size={32} /> : isSuccess ? <CheckCircle size={32} /> : <Info size={32} />}
+              {isError || isWarning ? <AlertTriangle size={32} /> : isSuccess ? <CheckCircle size={32} /> : <Info size={32} />}
             </div>
             
             <h3 className="text-xl font-bold text-slate-800 mb-2">
-              {isError ? 'แจ้งเตือน' : isSuccess ? 'สำเร็จ' : 'ข้อมูล'}
+              {isError ? 'แจ้งเตือน' : isSuccess ? 'สำเร็จ' : isWarning ? 'คำเตือน' : 'ข้อมูล'}
             </h3>
             
             <div className="text-slate-600 mb-6 break-words whitespace-pre-wrap max-h-48 overflow-y-auto w-full text-sm">
@@ -55,6 +57,7 @@ const AlertComponent = ({ message, type, onClose }: { message: string, type: Ale
               className={`w-full py-3 px-4 rounded-xl font-bold text-white transition-all active:scale-[0.98] ${
                 isError ? 'bg-red-500 hover:bg-red-600 shadow-red-500/25' : 
                 isSuccess ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/25' : 
+                isWarning ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/25' :
                 'bg-blue-500 hover:bg-blue-600 shadow-blue-500/25'
               } shadow-lg`}
             >
@@ -204,4 +207,26 @@ export const setupGlobalAlert = () => {
 
     root.render(<AlertComponent message={msgString} type={type} onClose={cleanup} />);
   };
+};
+
+export const appAlert = (message: string, type?: AlertType): Promise<void> => {
+  return new Promise((resolve) => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const lower = String(message || '').toLowerCase();
+    const resolvedType: AlertType = type || (
+      lower.includes('error') || lower.includes('fail') || lower.includes('ไม่สำเร็จ') || lower.includes('กรุณา') || lower.includes('ต้อง') || lower.includes('ไม่สามารถ')
+        ? 'error'
+        : lower.includes('สำเร็จ') || lower.includes('success') || lower.includes('เรียบร้อย')
+          ? 'success'
+          : 'info'
+    );
+    const cleanup = () => {
+      root.unmount();
+      container.remove();
+      resolve();
+    };
+    root.render(<AlertComponent message={String(message || '')} type={resolvedType} onClose={cleanup} />);
+  });
 };

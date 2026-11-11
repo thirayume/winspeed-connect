@@ -3,6 +3,7 @@ import {Server,Save,PlugZap,RotateCw} from 'lucide-react';
 import {getDatabaseConnections,saveDatabaseConnection,testDatabaseConnection,type DatabaseConnectionsInfo,type DatabaseConnectionProfile,type DatabaseConnectionItem} from '../../services/api';
 import {useUnsavedChanges} from '../../hooks/useUnsavedChanges';
 import {confirmLeaveEditors} from '../../utils/unsaved-changes';
+import {formatThaiDate} from '../../utils/date';
 type Form=DatabaseConnectionProfile & {password:string};
 const makeForm=(p:DatabaseConnectionItem):Form=>({...p.draft,password:''});
 export function DatabaseConnectionsSetting(){
@@ -35,7 +36,7 @@ export function DatabaseConnectionsSetting(){
     {!info&&!error&&<p className="mt-3 text-sm text-gray-500">กำลังโหลดการตั้งค่า...</p>}
     {info&&form&&current&&<fieldset disabled={busy} className="mt-4 space-y-4 disabled:opacity-70">
       <label className="block text-sm font-semibold">ฐานในระบบ (สิทธิ์และป้ายกำกับ)<select aria-label="เลือก connection" className={`${input} mt-1`} value={selected} onChange={async e=>{const val=e.target.value;if(!(await confirmLeaveEditors()))return;const p=info.profiles.find(v=>v.name===val);if(p)choose(p);}}>{info.profiles.map(p=><option key={p.name}>{p.name}</option>)}</select></label>
-      <div className="rounded-lg bg-blue-50 p-3 text-xs text-blue-900">ร่าง Revision {current.revision} · {current.testedAt?`ทดสอบผ่าน ${new Date(current.testedAt).toLocaleString('th-TH')}`:'ยังไม่ผ่านการทดสอบร่างนี้'} · {current.activeRevision?`IT เตรียมเปิดใช้ Revision ${current.activeRevision} (มีผลหลัง restart)`:'ยังใช้ connection จาก deployment เดิม'}</div>
+      <div className="rounded-lg bg-blue-50 p-3 text-xs text-blue-900">ร่าง Revision {current.revision} · {current.testedAt?`ทดสอบผ่าน ${formatThaiDate(current.testedAt, true)}`:'ยังไม่ผ่านการทดสอบร่างนี้'} · {current.activeRevision?`IT เตรียมเปิดใช้ Revision ${current.activeRevision} (มีผลหลัง restart)`:'ยังใช้ connection จาก deployment เดิม'}</div>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="text-sm font-semibold">Server / Host<input aria-label="Connection server" className={`${input} mt-1`} value={form.server} onChange={e=>field('server',e.target.value)} autoComplete="off" placeholder="sql.internal.example"/></label>
         <label className="text-sm font-semibold">TCP Port<input aria-label="Connection port" className={`${input} mt-1`} type="number" min={1} max={65535} value={form.port} onChange={e=>field('port',Number(e.target.value))}/></label>

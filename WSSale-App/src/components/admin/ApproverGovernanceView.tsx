@@ -12,7 +12,8 @@ import {
   type RegionCoverage, type NativeApprover, type RebateDocCodeRow, type RebateDocCodeEvidence
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
-import { appConfirm } from '../ui/AppAlert';
+import { appAlert, appConfirm } from '../ui/AppAlert';
+import { formatThaiDate } from '../../utils/date';
 
 const NAVY = '#0C447C';
 
@@ -73,7 +74,7 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
 
   async function handleCreateRegion() {
     if (!newRegionCode.trim() || !newRegionName.trim()) {
-      alert('กรุณาระบุรหัสภาคและชื่อภาค');
+      void appAlert('กรุณาระบุรหัสภาคและชื่อภาค', 'info');
       return;
     }
     setRegionBusy(true);
@@ -98,7 +99,7 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
 
   async function handleUpdateRegion() {
     if (!editingRegionName.trim()) {
-      alert('กรุณาระบุชื่อภาค');
+      void appAlert('กรุณาระบุชื่อภาค', 'info');
       return;
     }
     setRegionBusy(true);
@@ -1010,7 +1011,7 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
                     {nativeHistory.map(h => (
                       <tr key={h.Id} className="hover:bg-slate-50/70">
                         <td className="px-3.5 py-2 font-mono text-slate-500 whitespace-nowrap">
-                          {new Date(h.CreatedAt).toLocaleString('th-TH')}
+                          {formatThaiDate(h.CreatedAt, true)}
                         </td>
                         <td className="px-3.5 py-2">
                           <span className="font-semibold text-slate-900">{h.EmpName}</span>

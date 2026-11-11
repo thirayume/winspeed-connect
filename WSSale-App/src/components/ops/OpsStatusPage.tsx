@@ -9,7 +9,9 @@ import {
   fetchUserActivity, syncDatabaseUsers,
   type OpsStatus, type OpsError, type OutboxRow, type UserActivityResponse
 } from '../../services/api';
-import { appConfirm } from '../ui/AppAlert';
+import { appAlert, appConfirm } from '../ui/AppAlert';
+import { ThaiDatePicker } from '../ui/ThaiDatePicker';
+import { bangkokDate, formatThaiDate } from '../../utils/date';
 
 function fmtUptime(sec: number) {
   const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
@@ -41,11 +43,7 @@ export function OpsStatusPage() {
   const [forbidden, setForbidden] = useState(false);
 
   // User Activity state
-  const [activityDate, setActivityDate] = useState(() => {
-    const d = new Date();
-    const bkk = new Date(d.getTime() + 7 * 3600 * 1000);
-    return bkk.toISOString().slice(0, 10);
-  });
+  const [activityDate, setActivityDate] = useState(() => bangkokDate());
   const [userActivity, setUserActivity] = useState<UserActivityResponse | null>(null);
   const [activityLoading, setActivityLoading] = useState(false);
 
@@ -101,8 +99,8 @@ export function OpsStatusPage() {
 
   async function doTest() {
     setTesting(true);
-    try { const r = await testOpsAlert(); alert(r.message); }
-    catch (e: unknown) { alert((e as Error).message); }
+    try { const r = await testOpsAlert(); void appAlert(r.message, 'info'); }
+    catch (e: unknown) { void appAlert((e as Error).message, 'error'); }
     finally { setTesting(false); }
   }
 
@@ -112,9 +110,9 @@ export function OpsStatusPage() {
     try {
       await clearOpsErrors();
       await load();
-      alert('ล้างประวัติ Error เรียบร้อย');
+      void appAlert('ล้างประวัติ Error เรียบร้อย', 'success');
     } catch (e: any) {
-      alert(e.message || 'เกิดข้อผิดพลาดในการล้างประวัติ');
+      void appAlert(e.message || 'เกิดข้อผิดพลาดในการล้างประวัติ', 'error');
     } finally {
       setClearing(false);
     }
@@ -258,8 +256,8 @@ export function OpsStatusPage() {
             <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4">
               <div className="text-xs text-gray-400 mb-2">สภาพแวดล้อม</div>
               <div className="flex items-center justify-between py-1"><span className="text-sm text-gray-600">Env</span><span className="font-semibold text-gray-800">{status?.env ?? '–'}</span></div>
-              <div className="flex items-center justify-between py-1"><span className="text-sm text-gray-600">เริ่มทำงาน</span><span className="text-sm text-gray-700">{status ? new Date(status.startedAt).toLocaleString('th-TH') : '–'}</span></div>
-              <div className="flex items-center justify-between py-1"><span className="text-sm text-gray-600">Error ล่าสุด</span><span className="text-sm text-gray-700">{status?.lastErrorAt ? new Date(status.lastErrorAt).toLocaleString('th-TH') : '–'}</span></div>
+              <div className="flex items-center justify-between py-1"><span className="text-sm text-gray-600">เริ่มทำงาน</span><span className="text-sm text-gray-700">{status ? formatThaiDate(status.startedAt, true) : '–'}</span></div>
+              <div className="flex items-center justify-between py-1"><span className="text-sm text-gray-600">Error ล่าสุด</span><span className="text-sm text-gray-700">{status?.lastErrorAt ? formatThaiDate(status.lastErrorAt, true) : '–'}</span></div>
             </div>
             <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4">
               <div className="text-xs text-gray-400 mb-2">การแจ้งเตือน</div>
@@ -314,7 +312,7 @@ export function OpsStatusPage() {
                 )}
                 {errors.map(norm).map((e, i) => (
                   <tr key={i} className="hover:bg-gray-50/50">
-                    <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{e.at ? new Date(e.at).toLocaleString('th-TH') : '–'}</td>
+                    <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{e.at ? formatThaiDate(e.at, true) : '–'}</td>
                     <td className="px-4 py-2 text-xs text-gray-600 whitespace-nowrap">{e.source}</td>
                     <td className="px-4 py-2 text-gray-700 max-w-md truncate" title={e.message}>{e.message}</td>
                     <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{e.method} {e.path}</td>
@@ -361,7 +359,7 @@ export function OpsStatusPage() {
                       </span>
                     </td>
                     <td className="px-4 py-2 text-center text-xs text-gray-500 whitespace-nowrap">{o.RetryCount || ''}</td>
-                    <td className="px-4 py-2 text-xs text-gray-400 whitespace-nowrap">{new Date(o.CreatedAt).toLocaleString('th-TH')}</td>
+                    <td className="px-4 py-2 text-xs text-gray-400 whitespace-nowrap">{formatThaiDate(o.CreatedAt, true)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -376,17 +374,15 @@ export function OpsStatusPage() {
             <div className="flex items-center gap-3">
               <Calendar size={18} className="text-[#0C447C]" />
               <span className="text-sm font-bold text-gray-700">เลือกวันที่ตรวจสอบ:</span>
-              <input
-                type="date"
-                value={activityDate}
-                onChange={e => setActivityDate(e.target.value)}
-                className="px-3 py-1.5 border border-gray-200 rounded-xl text-sm font-semibold bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
-              />
+              <div className="w-40">
+                <ThaiDatePicker
+                  value={activityDate}
+                  onChange={setActivityDate}
+                  className="w-full px-3 py-1.5 border border-gray-200 rounded-xl text-sm font-semibold bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                />
+              </div>
               <button
-                onClick={() => {
-                  const today = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
-                  setActivityDate(today);
-                }}
+                onClick={() => setActivityDate(bangkokDate())}
                 className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700"
               >
                 วันนี้

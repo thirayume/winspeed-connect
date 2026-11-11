@@ -1,6 +1,7 @@
 /**
  * exportUtils.ts — Global CSV & Excel Export Utility with Thai UTF-8 Support
  */
+import { appAlert } from '../components/ui/AppAlert';
 
 export interface ExportColumn<T = any> {
   key: keyof T | string;
@@ -17,7 +18,7 @@ export function exportToCsv<T = any>(
   rows: T[]
 ) {
   if (!rows || !rows.length) {
-    alert('ไม่มีข้อมูลสำหรับส่งออก');
+    void appAlert('ไม่มีข้อมูลสำหรับส่งออก', 'info');
     return;
   }
 
@@ -69,7 +70,7 @@ export function exportToExcel<T = any>(
   rows: T[]
 ) {
   if (!rows || !rows.length) {
-    alert('ไม่มีข้อมูลสำหรับส่งออก');
+    void appAlert('ไม่มีข้อมูลสำหรับส่งออก', 'info');
     return;
   }
 

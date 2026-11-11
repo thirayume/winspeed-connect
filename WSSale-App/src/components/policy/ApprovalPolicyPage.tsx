@@ -1,13 +1,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import { ShieldCheck, RefreshCw, Plus, Trash2, Power } from 'lucide-react';
 import { fetchPolicies, createPolicy, updatePolicy, deletePolicy, type ApprovalPolicy } from '../../services/api';
-import { appConfirm } from '../ui/AppAlert';
+import { appAlert, appConfirm } from '../ui/AppAlert';
 
-const CASES = ['UNLOCK', 'REBATE_CLAIM', 'PRICE_CHANGE', 'CREDIT_OVERRIDE', 'GIVEAWAY_OVERRUN'];
+const CASES = ['UNLOCK', 'REBATE_CLAIM', 'PRICE_CHANGE', 'CREDIT_OVERRIDE', 'GIVEAWAY_OVERRUN', 'MULTI_CUST_TRIP'];
 const ROLES = ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ACCOUNTING', 'APPROVER', 'MANAGER', 'ADMIN'];
 const CASE_LABEL: Record<string, string> = {
   UNLOCK: 'ปลดล็อกบิล', REBATE_CLAIM: 'เคลมรีเบท', PRICE_CHANGE: 'เปลี่ยนราคา',
-  CREDIT_OVERRIDE: 'ข้ามเครดิต', GIVEAWAY_OVERRUN: 'ของแถมเกินงบ',
+  CREDIT_OVERRIDE: 'ข้ามเครดิต', GIVEAWAY_OVERRUN: 'ของแถมเกินงบ', MULTI_CUST_TRIP: 'เปิดทริปหลายลูกค้า',
 };
 const fmt = (n: number | null) => n == null ? '—' : `฿${Number(n).toLocaleString()}`;
 
@@ -35,11 +35,11 @@ export function ApprovalPolicyPage() {
       });
       setForm({ ...form, minAmount: '', maxAmount: '', note: '' });
       await load();
-    } catch (e: unknown) { alert((e as Error).message); }
+    } catch (e: unknown) { await appAlert((e as Error).message, 'error'); }
     finally { setSaving(false); }
   }
-  async function toggle(p: ApprovalPolicy) { try { await updatePolicy(p.Id, { isActive: !p.IsActive }); await load(); } catch (e: unknown) { alert((e as Error).message); } }
-  async function remove(p: ApprovalPolicy) { if (!await appConfirm('ปิดใช้งานนโยบายนี้?')) return; try { await deletePolicy(p.Id); await load(); } catch (e: unknown) { alert((e as Error).message); } }
+  async function toggle(p: ApprovalPolicy) { try { await updatePolicy(p.Id, { isActive: !p.IsActive }); await load(); } catch (e: unknown) { await appAlert((e as Error).message, 'error'); } }
+  async function remove(p: ApprovalPolicy) { if (!await appConfirm('ปิดใช้งานนโยบายนี้?')) return; try { await deletePolicy(p.Id); await load(); } catch (e: unknown) { await appAlert((e as Error).message, 'error'); } }
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>

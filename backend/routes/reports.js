@@ -10,6 +10,13 @@ const XLSX = require('xlsx');
 const { wfQuery, sql } = require('../db');
 const { requireAuth, canViewAllRebateAmounts } = require('../middleware/auth');
 const { getVisibleScope } = require('../services/visible-scope');
+const { hasPermission } = require('../services/role-capabilities');
+const {
+  listSelectablePeriods,
+  buildSheetReport,
+  buildSheetWorkbook,
+  formatThaiBeDate,
+} = require('../services/pricelist-report');
 
 router.use(requireAuth);
 
@@ -775,6 +782,46 @@ const REPORTS = {
     ],
     run: (params) => runCustomerDispatchReport(params),
   },
+  'pricelist_sheet': {
+    title: 'ตารางราคาขาย (Pricelist)',
+    category: 'sales',
+    columns: [
+      { key: 'SectionLabel', label: 'หมวดสินค้า', type: 'text' },
+      { key: 'ItemNo', label: 'ลำดับ', type: 'integer' },
+      { key: 'GoodCode', label: 'รหัสสินค้า', type: 'identifier' },
+      { key: 'GoodName', label: 'รายการ / สูตรปุ๋ย', type: 'text' },
+      { key: 'UnitPrice', label: 'ราคาขาย NET/ตัน (บาท)', type: 'money', precision: 2 },
+      { key: 'StatusMarker', label: 'สถานะ', type: 'text' },
+      { key: 'Remark', label: 'หมายเหตุ', type: 'text' },
+    ],
+    run: (params) => buildSheetReport({
+      kind: 'pricelist',
+      mode: params?.mode,
+      granularity: params?.granularity,
+      periodIds: params?.periodIds,
+      offsets: params?.offsets,
+    }),
+  },
+  'costlist_sheet': {
+    title: 'ตารางราคาทุน (Costlist)',
+    category: 'accounting',
+    columns: [
+      { key: 'SectionLabel', label: 'หมวดสินค้า', type: 'text' },
+      { key: 'ItemNo', label: 'ลำดับ', type: 'integer' },
+      { key: 'GoodCode', label: 'รหัสสินค้า', type: 'identifier' },
+      { key: 'GoodName', label: 'รายการ / สูตรปุ๋ย', type: 'text' },
+      { key: 'UnitPrice', label: 'ราคาทุน/ตัน (บาท)', type: 'money', precision: 2 },
+      { key: 'StatusMarker', label: 'สถานะ', type: 'text' },
+      { key: 'Remark', label: 'หมายเหตุ', type: 'text' },
+    ],
+    run: (params) => buildSheetReport({
+      kind: 'costlist',
+      mode: params?.mode,
+      granularity: params?.granularity,
+      periodIds: params?.periodIds,
+      offsets: params?.offsets,
+    }),
+  },
 };
 
 /**
@@ -814,6 +861,8 @@ const REPORT_ROLES = {
   'truck-hold-log': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'control-ticket-alert-history': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'native-print-log': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'pricelist_sheet': (user) => hasPermission(user, 'pricing.view') || hasPermission(user, 'pricing.manage'),
+  'costlist_sheet': (user) => hasPermission(user, 'cost.view') || hasPermission(user, 'cost.manage'),
 };
 
 function parseDateParam(value, fallback) {
@@ -965,6 +1014,32 @@ async function runReport(type, params = {}) {
     ...(meta ? { meta } : {}),
   };
 }
+
+router.get('/pricelist-periods', async (req, res) => {
+  try {
+    if (!canRunReport(req, 'pricelist_sheet')) {
+      return res.status(403).json({ message: 'ไม่มีสิทธิ์เข้าถึงช่วงตารางราคาขาย' });
+    }
+    const data = await listSelectablePeriods({ kind: 'pricelist', granularity: req.query.granularity });
+    res.json(data);
+  } catch (e) {
+    console.error('[reports/pricelist-periods]', e);
+    res.status(e.status || 500).json({ message: e.message });
+  }
+});
+
+router.get('/costlist-periods', async (req, res) => {
+  try {
+    if (!canRunReport(req, 'costlist_sheet')) {
+      return res.status(403).json({ message: 'ไม่มีสิทธิ์เข้าถึงช่วงตารางราคาทุน' });
+    }
+    const data = await listSelectablePeriods({ kind: 'costlist', granularity: req.query.granularity });
+    res.json(data);
+  } catch (e) {
+    console.error('[reports/costlist-periods]', e);
+    res.status(e.status || 500).json({ message: e.message });
+  }
+});
 
 router.get('/:type', async (req, res) => {
   try {
@@ -1134,7 +1209,7 @@ router.get('/:type/export', async (req, res) => {
       [companyTitle],
       [subLineParts.join('  |  ')],
       [contactParts.join('  |  ')],
-      [`รายงาน: ${data.title}${titleSuffix}  |  พิมพ์เมื่อ: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}  |  ระบบอ้างอิง: WINSpeed ERP · แม่แบบ: ${template.templateCode} (v${template.version})`],
+      [`รายงาน: ${data.title}${titleSuffix}  |  พิมพ์เมื่อ: ${formatThaiBeDate(new Date(), true)}  |  ระบบอ้างอิง: WINSpeed ERP · แม่แบบ: ${template.templateCode} (v${template.version})`],
     ];
 
     if (isPartial) {
@@ -1218,8 +1293,13 @@ router.get('/:type/export', async (req, res) => {
       return res.send(Buffer.from(bomCsv, 'utf8'));
     }
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Report');
+    const wb = (req.params.type === 'pricelist_sheet' || req.params.type === 'costlist_sheet')
+      ? buildSheetWorkbook({ reportData: data })
+      : (() => {
+          const book = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(book, ws, 'Report');
+          return book;
+        })();
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     const fname = `${data.type}_${dateStr}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

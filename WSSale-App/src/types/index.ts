@@ -132,25 +132,53 @@ export type EMCust = {
   groupName?: string | null;
   employeeId?: string | null;
   employeeName?: string | null;
-  CreditDays?: number;
+  CreditDays?: number | null;
+  RawAgingDays?: number | null;
+  IsDefaultAging?: number | boolean;
   CreditLimit?: number | null;
   AgingDays?: number | null;
   CreditHold?: boolean;
   Inactive?: string | null;
 };
 
+export type CustomerCreditOverdueInvoice = {
+  docuNo: string;
+  docuDate: string;
+  unpaidAmnt: number;
+  ageDays: number;
+  overdueDays: number;
+};
+
 export type CustomerCreditStatus = {
   custId: string;
+  custName?: string;
   creditLimit: number | null;
+  rawAgingDays?: number | null;
   agingLimitDays: number;
+  defaultAgingDays?: number;
+  maxPolicyAgingDays?: number;
+  agingAlertPopup?: boolean;
+  isUsingDefaultAging?: boolean;
+  isCashOnly?: boolean;
+  isConfiguredAgingOverPolicyMax?: boolean;
   totalOutstanding: number;
   maxAgingDays: number;
   orderAmount: number;
+  totalWithOrder?: number;
   projectedTotal: number;
+  creditExcessAmount?: number;
   isOverCreditLimit: boolean;
+  isCreditLimitExceeded?: boolean;
   isOverAging: boolean;
+  isAgingExceeded?: boolean;
+  isOverPolicyMaxAging?: boolean;
+  overdueAmount?: number;
+  overdueInvoices?: CustomerCreditOverdueInvoice[];
+  unpaidCount?: number;
   strictCredit: boolean;
   strictAging: boolean;
+  strictCreditMode?: boolean;
+  strictAgingMode?: boolean;
   creditHold: boolean;
   blocked: boolean;
   blockReasons: string[];
@@ -219,6 +247,7 @@ export type EMGood = {
   GoodID: string;
   GoodCode: string;
   GoodName: string;
+  GoodGroupID?: number | null;
   GoodGroupName?: string;
   BagPerTon: number;        // 20 ถ้าไม่มีใน wf.GoodExtra
   WeightKgPerBag: number;   // 50
@@ -648,6 +677,9 @@ export type QuotationLine = {
   GoodId: string;
   GoodCode: string;
   GoodName: string;
+  GoodGroupID?: number | null;
+  GoodGroupName?: string | null;
+  IsMaePui?: boolean;
   QtyTon: number;
   PricePerTon: number;
   NetPricePerTon: number;
@@ -662,6 +694,8 @@ export type QuotationLine = {
 export type Quotation = {
   Id: number;
   IsNativeOnly?: boolean;
+  HasMaePui?: boolean;
+  MaePuiMaxValidDays?: number;
   QuoteNo: string;
   CustId: string;
   CustName: string;

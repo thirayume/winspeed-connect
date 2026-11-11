@@ -19,29 +19,88 @@ export function bangkokDate(daysAgo: number = 0): string {
 
 /**
  * Formats a given date (string or Date object) into Thai Buddhist Era format.
- * Format: dd/MM/yyyy [hh:mm]
+ * Format: dd/MM/yyyy [HH:mm] (24-hour clock in Asia/Bangkok)
  * Example: 31/12/2569 14:30
  *
  * ⚠ ใช้กับค่าที่เป็น **ค.ศ.** เท่านั้น (Date, ISO string, SQL datetime)
  */
+function extractBangkokParts(input: string | Date | undefined | null): {
+  year: number;
+  month: number;
+  day: number;
+  hours: number;
+  minutes: number;
+} | null {
+  if (!input) return null;
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    const dateOnly = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnly) {
+      return {
+        year: Number(dateOnly[1]),
+        month: Number(dateOnly[2]),
+        day: Number(dateOnly[3]),
+        hours: 0,
+        minutes: 0,
+      };
+    }
+    const isoMidnight = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})T00:00:00(?:\.000)?(?:Z|[+-]\d{2}:\d{2})?$/);
+    if (isoMidnight) {
+      return {
+        year: Number(isoMidnight[1]),
+        month: Number(isoMidnight[2]),
+        day: Number(isoMidnight[3]),
+        hours: 0,
+        minutes: 0,
+      };
+    }
+    // Plain SQL datetime without TZ offset (e.g. "2026-11-10 14:30" or "2026-11-10 14:30:00") — already Bangkok wall clock
+    const wallDt = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/);
+    if (wallDt) {
+      return {
+        year: Number(wallDt[1]),
+        month: Number(wallDt[2]),
+        day: Number(wallDt[3]),
+        hours: Number(wallDt[4]),
+        minutes: Number(wallDt[5]),
+      };
+    }
+  }
+  const d = input instanceof Date ? input : new Date(input);
+  if (isNaN(d.getTime())) return null;
+  const bkk = new Date(d.getTime() + 7 * 3600000);
+  return {
+    year: bkk.getUTCFullYear(),
+    month: bkk.getUTCMonth() + 1,
+    day: bkk.getUTCDate(),
+    hours: bkk.getUTCHours(),
+    minutes: bkk.getUTCMinutes(),
+  };
+}
+
 export function formatThaiDate(dateStr: string | Date | undefined | null, includeTime: boolean = false): string {
-  if (!dateStr) return '-';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '-';
-  
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear() + 543;
-  
+  const p = extractBangkokParts(dateStr);
+  if (!p) return '-';
+
+  const day = String(p.day).padStart(2, '0');
+  const month = String(p.month).padStart(2, '0');
+  const year = p.year + 543;
+
   let formatted = `${day}/${month}/${year}`;
-  
+
   if (includeTime) {
-    const hours = String(d.getHours()).padStart(2, '0');
-    const mins = String(d.getMinutes()).padStart(2, '0');
+    const hours = String(p.hours).padStart(2, '0');
+    const mins = String(p.minutes).padStart(2, '0');
     formatted += ` ${hours}:${mins}`;
   }
-  
+
   return formatted;
+}
+
+export function formatThaiTime24h(dateStr: string | Date | undefined | null): string {
+  const p = extractBangkokParts(dateStr);
+  if (!p) return '-';
+  return `${String(p.hours).padStart(2, '0')}:${String(p.minutes).padStart(2, '0')}`;
 }
 
 /**
@@ -96,13 +155,7 @@ export function parseThaiDateToGregorian(thaiDateStr: string): string | null {
  * Converts a standard YYYY-MM-DD date string to dd/MM/yyyy (Buddhist Era) for inputs
  */
 export function toThaiDateInputFormat(gregorianStr: string | undefined | null): string {
-  if (!gregorianStr) return '';
-  const d = new Date(gregorianStr);
-  if (isNaN(d.getTime())) return '';
-  
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear() + 543;
-  
-  return `${day}/${month}/${year}`;
+  const p = extractBangkokParts(gregorianStr);
+  if (!p) return '';
+  return `${String(p.day).padStart(2, '0')}/${String(p.month).padStart(2, '0')}/${p.year + 543}`;
 }

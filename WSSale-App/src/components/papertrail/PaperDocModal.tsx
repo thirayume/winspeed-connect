@@ -8,6 +8,7 @@ import { getDocHeaderConfig, type DocHeaderConfig } from '../../utils/docHeaderS
 import { DocHeaderSettingsModal } from '../common/DocHeaderSettingsModal';
 import { useAuthStore } from '../../store/auth-store';
 import { canManageDocHeaderSettings } from '../../utils/permissions';
+import { formatThaiDate } from '../../utils/date';
 
 const COLOR_META: Record<string, { name: string; accent: string; bg: string }> = {
   WHITE:  { name: 'ขาว — ต้นฉบับ (บัญชี)', accent: '#475569', bg: '#FFFFFF' },
@@ -81,7 +82,7 @@ export function PaperDocModal({ soIds, onClose }: { soIds: (string | number)[]; 
     })();
   }, [idsKey]);
 
-  const fmtDate = (s?: string) => s ? new Date(s).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : '-';
+  const fmtDate = (s?: string) => s ? formatThaiDate(s) : '-';
 
   return createPortal(
     <div className="pt-modal-root fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 print:static print:p-0 print:bg-transparent print:block" onClick={onClose}>

@@ -9,7 +9,7 @@ import type {
   SalesOrder, SOStatus,
   RebatePool, RebateLedger, RebateClaim, RebateSummary,
   GiveawayRegion, GiveawayBudgetLine, GiveawayWithdrawal, GiveawayItem,
-  Quotation, PaperBoard,
+  Quotation, QuotationLine, PaperBoard,
   PaginatedResult, UnlockRequest, AppUser, AdminUser, AgingRow,
   TruckStats, TruckHistoryItem, CustomerFilterOptions, CustomerRequest, CustomerRequestStatus,
   CustomerCreditStatus, CompanyInfo, CustomerGroup,
@@ -17,6 +17,7 @@ import type {
 
 
 import { dbTargetHeader } from '../store/db-mode';
+import { bangkokDate } from '../utils/date';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
@@ -1043,7 +1044,7 @@ export const updateQuotationStatus = (id: number, status: string) =>
 export const createQuotationFromSoTrip = (payload: {
   soIds: Array<number | string>;
   sourceRefs?: string[];
-  validDays?: 7 | 15 | 20 | 30 | 45;
+  validDays?: number;
   validUntil?: string;
   remark?: string;
   salesUserId?: number | string;
@@ -1061,8 +1062,47 @@ export const createQuotationFromSoTrip = (payload: {
     winspeedEstimateNo?: string;
   }>('/quotation/from-so-trip', { method: 'POST', body: JSON.stringify(payload) });
 
-export const extendQuotationValidity = (id: number, payload: { validDays?: 7 | 15 | 20 | 30 | 45; validUntil?: string }) =>
-  req<{ id: number; validUntil: string }>(`/quotation/${id}/valid-until`, { method: 'PATCH', body: JSON.stringify(payload) });
+export interface QuotationExtendPreviewLine extends QuotationLine {
+  CurrentAnnouncedPrice?: number | null;
+  PriceDiff?: number | null;
+  PriceStatus?: string;
+}
+
+export interface QuotationExtendPreview {
+  id: number;
+  quoteNo: string;
+  custId: string;
+  custName: string;
+  status: string;
+  currentValidUntil: string | null;
+  today: string;
+  hasMaePui: boolean;
+  maxValidDays: number | null;
+  maePuiMaxValidDays: number;
+  maxValidUntil: string | null;
+  requiresPriceReview: boolean;
+  lines: QuotationExtendPreviewLine[];
+}
+
+export const fetchQuotationExtendPreview = (id: number) =>
+  req<QuotationExtendPreview>(`/quotation/${id}/extend-preview`);
+
+export const extendQuotationValidity = (
+  id: number,
+  payload: {
+    validDays?: number;
+    validUntil?: string;
+    priceReviewed?: boolean;
+    lines?: Array<{ lineNum?: number; id?: number; goodId: string; pricePerTon: number }>;
+  }
+) =>
+  req<{
+    id: number;
+    validUntil: string;
+    hasMaePui?: boolean;
+    priceReviewed?: boolean;
+    updatedPriceCount?: number;
+  }>(`/quotation/${id}/valid-until`, { method: 'PATCH', body: JSON.stringify(payload) });
 
 // ── TruckScale (MySQL) ถูกลบออกถาวรเมื่อ 04/09/2569 ───────────
 // เดิมมี pingTruckScale · fetchTruckScaleWeigh · fetchTruckScaleDetail ·
@@ -1244,11 +1284,14 @@ export const deletePolicy = (id: number) => req<{ ok: boolean }>(`/policy/${id}`
 export interface PriceBook {
   Id: number; Name: string; EffectiveMonth: string; Status: 'DRAFT' | 'APPROVED' | 'ACTIVE' | 'ARCHIVED';
   EffectiveFrom?: string | null; EffectiveTo?: string | null;
+  SourceSetPriceIds?: string | null; WinSpeedSyncAt?: string | null; LastSyncedByName?: string | null;
   Note?: string; LineCount?: number; CreatedByName?: string; ApprovedByName?: string; ActivatedByName?: string; CreatedAt?: string;
 }
 export interface PriceBookLine {
-  Id?: number; GoodId: string; GoodName?: string; Unit?: string; Price: number | null;
+  Id?: number; GoodId: string; GoodCode?: string | null; GoodName?: string; GoodGroupId?: number | null; GoodGroupName?: string | null;
+  Unit?: string; Price: number | null;
   LineStatus?: 'ACTIVE' | 'DISCONTINUING' | 'SUSPENDED'; Note?: string | null;
+  WinSpeedSetPriceId?: number | null; WinSpeedListNo?: number | null;
 }
 export interface PriceBookAuditRow { Action: string; FromStatus: string | null; ToStatus: string | null; ByName: string | null; Note: string | null; At: string; }
 export interface PriceBookSpecialPrice {
@@ -1265,33 +1308,90 @@ export const fetchPriceBooks = () => req<PriceBook[]>('/pricebook');
 export const fetchPriceBook = (id: number) => req<PriceBook & { lines: PriceBookLine[]; audit: PriceBookAuditRow[] }>(`/pricebook/${id}`);
 export const createPriceBook = (b: { name: string; effectiveMonth?: string; effectiveFrom?: string; effectiveTo?: string; note?: string; seedFromCurrent?: boolean }) =>
   req<{ id: number }>('/pricebook', { method: 'POST', body: JSON.stringify(b) });
+export const updatePriceBookHeader = (id: number, b: { name?: string; effectiveFrom?: string; effectiveTo?: string; note?: string }) =>
+  req<{ ok: boolean; winSpeedSynced?: boolean }>(`/pricebook/${id}`, { method: 'PUT', body: JSON.stringify(b) });
 /** POST /pricebook/:id/lines reads camelCase; GET returns PascalCase. Convert at the boundary. */
 export interface PriceBookLineInput {
-  goodId: string; goodName?: string; unit?: string; price: number | null;
+  goodId: string; goodCode?: string | null; goodName?: string; unit?: string; price: number | null;
   lineStatus?: 'ACTIVE' | 'DISCONTINUING' | 'SUSPENDED'; note?: string | null;
 }
 export const toPriceBookLineInput = (l: PriceBookLine): PriceBookLineInput => ({
-  goodId: l.GoodId, goodName: l.GoodName, unit: l.Unit, price: l.Price,
+  goodId: l.GoodId, goodCode: l.GoodCode, goodName: l.GoodName, unit: l.Unit, price: l.Price,
   lineStatus: l.LineStatus, note: l.Note,
 });
 export const setPriceBookLines = (id: number, lines: PriceBookLine[]) =>
-  req<{ ok: boolean; count: number }>(`/pricebook/${id}/lines`, {
+  req<{ ok: boolean; count: number; winSpeedSynced?: boolean }>(`/pricebook/${id}/lines`, {
     method: 'POST',
     body: JSON.stringify({ lines: lines.map(toPriceBookLineInput) }),
   });
+export const updatePriceBookLine = (bookId: number, lineId: number, payload: { price?: number | null; lineStatus?: 'ACTIVE' | 'DISCONTINUING' | 'SUSPENDED'; note?: string | null; syncToWinSpeed?: boolean }) =>
+  req<{ ok: boolean; lineId: number; price: number | null; lineStatus: string; winSpeedSynced?: boolean }>(`/pricebook/${bookId}/lines/${lineId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+export const upsertPriceBookItem = (bookId: number, payload: { goodId: string; goodCode?: string | null; goodName?: string; unit?: string; price?: number | null; lineStatus?: 'ACTIVE' | 'DISCONTINUING' | 'SUSPENDED'; note?: string | null }) =>
+  req<{ ok: boolean; winSpeedSynced?: boolean }>(`/pricebook/${bookId}/lines/item`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+export const syncPriceBookToWinSpeed = (bookId: number) =>
+  req<{ ok: boolean; synced: boolean; upserted: number; removed: number; setIds: number[] }>(`/pricebook/${bookId}/sync-to-winspeed`, {
+    method: 'POST',
+  });
 export const priceBookAction = (id: number, action: 'approve' | 'activate' | 'archive', note?: string) =>
-  req<{ ok: boolean; status: string }>(`/pricebook/${id}/${action}`, { method: 'POST', body: JSON.stringify({ note }) });
+  req<{ ok: boolean; status: string; winSpeedSynced?: boolean }>(`/pricebook/${id}/${action}`, { method: 'POST', body: JSON.stringify({ note }) });
 export const fetchPriceBookSpecial = (id: number) => req<PriceBookSpecialPrice[]>(`/pricebook/${id}/special`);
 export const requestPriceBookSpecial = (id: number, data: { custId: string; custName?: string; goodId?: string; goodName?: string; requestedPrice?: number; note?: string }) =>
   req<{ id: number }>(`/pricebook/${id}/special`, { method: 'POST', body: JSON.stringify(data) });
 export const approvePriceBookSpecial = (spId: number, approvedPrice: number) =>
-  req<{ id: number; approvedPrice: number }>(`/pricebook/special/${spId}`, { method: 'PATCH', body: JSON.stringify({ approvedPrice }) });
+  req<{ id: number; approvedPrice: number; winSpeedSynced?: boolean }>(`/pricebook/special/${spId}`, { method: 'PATCH', body: JSON.stringify({ approvedPrice }) });
 // price colour per bill line (owner 2026-10-09): RED / YELLOW below the announced price, GREEN above, no amounts
 export type PriceLevel = 'RED' | 'YELLOW' | 'GREEN' | 'EQUAL' | 'NONE' | 'SKIP';
-export const fetchPriceIndicator = (payload: { custId: string; deliveryDate?: string; lines: { key: string; goodId: string; goodCode?: string; pricePerTon: number; isGiveaway?: boolean; isCouponDrawn?: boolean; isControlTicketDrawn?: boolean }[] }) =>
-  req<{ lines: { key: string; level: PriceLevel }[] }>('/so/price-indicator', { method: 'POST', body: JSON.stringify(payload) });
+export const fetchPriceIndicator = (payload: { custId: string; deliveryDate?: string; rebateDiscountAmt?: number; lines: { key: string; goodId: string; goodCode?: string; pricePerTon: number; qtyTon?: number; isGiveaway?: boolean; isCouponDrawn?: boolean; isControlTicketDrawn?: boolean }[] }) =>
+  req<{ lines: { key: string; level: PriceLevel; belowThreshold?: boolean }[]; belowThreshold?: boolean }>('/so/price-indicator', { method: 'POST', body: JSON.stringify(payload) });
 export const fetchEffectivePrices = (priceBookId: number, custId?: string) =>
   req<EffectivePriceRow[]>(`/pricebook/${priceBookId}/effective${custId ? `?custId=${encodeURIComponent(custId)}` : ''}`);
+
+// ── Cost Book (Confidential Costlist) ─────────────────────────
+export interface CostBook {
+  Id: number; Name: string; EffectiveMonth: string; Status: 'DRAFT' | 'APPROVED' | 'ACTIVE' | 'ARCHIVED';
+  EffectiveFrom?: string | null; EffectiveTo?: string | null;
+  Note?: string | null; LineCount?: number; PricedCount?: number;
+  CreatedByName?: string | null; ApprovedByName?: string | null; ActivatedByName?: string | null;
+  CreatedAt?: string; ApprovedAt?: string | null; ActivatedAt?: string | null; UpdatedAt?: string | null;
+}
+export interface CostBookLine {
+  Id?: number; CostBookId?: number; GoodId: string; GoodCode?: string | null; GoodName?: string;
+  GoodGroupId?: number | null; GoodGroupName?: string | null;
+  Unit?: string; CostPrice: number | null; Note?: string | null; UpdatedAt?: string | null;
+}
+export interface CostBookAuditRow { Action: string; FromStatus: string | null; ToStatus: string | null; ByName: string | null; Note: string | null; At: string; }
+
+export const fetchCostBooks = () => req<CostBook[]>('/costbook');
+export const fetchCostBook = (id: number) => req<CostBook & { lines: CostBookLine[]; audit: CostBookAuditRow[] }>(`/costbook/${id}`);
+export const fetchActiveCostMap = (asOfDate?: string) =>
+  req<{ costBook: CostBook | null; items: Record<string, number> }>(`/costbook/active-map${asOfDate ? `?asOfDate=${encodeURIComponent(asOfDate)}` : ''}`);
+export const createCostBook = (b: { name: string; effectiveMonth?: string; effectiveFrom?: string; effectiveTo?: string; note?: string; seedFromCurrent?: boolean; seedAllGoods?: boolean; seedFromBookId?: number | null }) =>
+  req<{ id: number }>('/costbook', { method: 'POST', body: JSON.stringify(b) });
+export const updateCostBookHeader = (id: number, b: { name?: string; effectiveFrom?: string; effectiveTo?: string; note?: string }) =>
+  req<{ ok: boolean }>(`/costbook/${id}`, { method: 'PUT', body: JSON.stringify(b) });
+export const setCostBookLines = (id: number, lines: CostBookLine[]) =>
+  req<{ ok: boolean; count: number }>(`/costbook/${id}/lines`, {
+    method: 'POST',
+    body: JSON.stringify({
+      lines: lines.map(l => ({
+        goodId: l.GoodId, goodCode: l.GoodCode, goodName: l.GoodName,
+        goodGroupId: l.GoodGroupId, goodGroupName: l.GoodGroupName,
+        unit: l.Unit, costPrice: l.CostPrice, note: l.Note,
+      })),
+    }),
+  });
+export const updateCostBookLine = (bookId: number, lineId: number, payload: { costPrice: number | null; note?: string | null }) =>
+  req<{ ok: boolean; costPrice: number | null }>(`/costbook/${bookId}/lines/${lineId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+export const upsertCostBookItem = (bookId: number, payload: { goodId: string; goodCode?: string | null; goodName?: string; unit?: string; costPrice: number | null; note?: string | null }) =>
+  req<{ ok: boolean }>(`/costbook/${bookId}/lines/item`, { method: 'POST', body: JSON.stringify(payload) });
+export const costBookAction = (id: number, action: 'approve' | 'activate' | 'archive', note?: string) =>
+  req<{ ok: boolean; status: string }>(`/costbook/${id}/${action}`, { method: 'POST', body: JSON.stringify({ note }) });
 
 // ── WinSpeed Pricelist sets (dbo.EMSetPriceHD / DT) ────────────
 export interface WinSpeedPriceSet {
@@ -1417,6 +1517,89 @@ export type ReportCatalogConfigResponse = {
   reports: ReportCatalogConfigItem[];
 };
 
+export interface ReportPeriodItem {
+  key: string;
+  id: number;
+  bookIds: number[];
+  name: string;
+  effectiveMonth?: string | null;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+  status: string;
+  label: string;
+  shortLabel: string;
+  offset: number;
+  isCurrent: boolean;
+  offsetLabel: string;
+  selected?: boolean;
+}
+
+export interface SelectablePeriodsResponse {
+  kind: 'pricelist' | 'costlist';
+  granularity: 'week' | 'month';
+  currentKey: string | null;
+  periods: ReportPeriodItem[];
+}
+
+export interface SheetLayoutLineEntry {
+  no: number;
+  goodId: string;
+  goodCode: string;
+  goodName: string;
+  price: number;
+  displayPrice: string;
+  lineStatus: string;
+  marker: string;
+  remark: string;
+  groupType: 'COMPOUND' | 'SINGLE';
+}
+
+export interface SheetLayoutPair {
+  left: SheetLayoutLineEntry | null;
+  right: SheetLayoutLineEntry | null;
+}
+
+export interface SheetSpecialPriceEntry {
+  custId: string;
+  custName: string;
+  goodName: string;
+  price: number;
+  status: string;
+  reasonText: string;
+}
+
+export interface SheetComparePeriodCell {
+  price: number;
+  displayPrice: string;
+  lineStatus: string;
+  marker: string;
+  remark: string;
+}
+
+export interface SheetCompareProduct {
+  groupType: 'COMPOUND' | 'SINGLE';
+  goodId: string;
+  goodCode: string;
+  goodName: string;
+  byPeriod: Record<string, SheetComparePeriodCell>;
+}
+
+export interface SheetLayout {
+  mode: 'current' | 'compare';
+  kind: 'pricelist' | 'costlist';
+  title: string;
+  periodSubtitle: string;
+  generatedAt: string;
+  priceHeaderLabel?: string;
+  compoundPairs?: SheetLayoutPair[];
+  singlePairs?: SheetLayoutPair[];
+  selectedPeriods?: ReportPeriodItem[];
+  products?: SheetCompareProduct[];
+  specialPrices: SheetSpecialPriceEntry[];
+  signatures: { leftLabel: string; rightLabel: string };
+  footnote?: string;
+}
+
 export type ReportMeta = {
   page?: number;
   offset?: number;
@@ -1440,6 +1623,12 @@ export type ReportMeta = {
   jourId?: string;
   fromFlag?: string;
   status?: string;
+  kind?: 'pricelist' | 'costlist';
+  mode?: 'current' | 'compare';
+  granularity?: 'week' | 'month';
+  periods?: ReportPeriodItem[];
+  selectedPeriods?: ReportPeriodItem[];
+  sheetLayout?: SheetLayout;
 };
 
 export type ReportData = {
@@ -1473,6 +1662,8 @@ export const fetchDeliveryNote = (sequence: string) =>
   req<DeliveryNote>(`/truckscale/delivery-note/${encodeURIComponent(sequence)}`);
 
 export const fetchReportTypes = () => req<ReportTypeItem[]>('/reports/types');
+export const fetchReportPeriods = (kind: 'pricelist' | 'costlist', granularity: 'week' | 'month' = 'week') =>
+  req<SelectablePeriodsResponse>(`/reports/${kind}-periods?granularity=${encodeURIComponent(granularity)}`);
 export const fetchReportCatalogConfig = () => req<ReportCatalogConfigResponse>('/reports/catalog-config');
 export const saveReportCatalogConfig = (payload: { order: string[]; visibility: Record<string, boolean> }) =>
   req<{ ok: boolean; message: string; config: { order: string[]; visibility: Record<string, boolean> } }>('/reports/catalog-config', {
@@ -1488,11 +1679,14 @@ export const fetchReport = (type: string, params?: Record<string, string>, init?
 export async function exportReport(type: string, params?: Record<string, string>) {
   const qs = params && Object.keys(params).length ? '?' + new URLSearchParams(params).toString() : '';
   const res = await fetch(`${API_BASE}/reports/${type}/export${qs}`, { headers: { ...authHeaders(), ...dbTargetHeader() } });
-  if (!res.ok) throw new Error('Export ล้มเหลว');
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => null) as { message?: string } | null;
+    throw new Error(errBody?.message || 'Export ล้มเหลว');
+  }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `${type}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  a.href = url; a.download = `${type}_${bangkokDate()}.xlsx`;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }
@@ -2033,10 +2227,62 @@ export type TripBoardRow = {
     rows: TripWeighRow[];
   };
   hold: { held: boolean; pendingCount: number; requests: TripPendingRequest[] };
+  multiCustApproval?: MultiCustTripApprovalSummary;
   customers: TripCustomer[];
   loadPlanStatus?: string | null;
   loadPlanRevision?: number | null;
   warehouseAckAt?: string | null;
+};
+
+export type MultiCustTripCustomerInfo = {
+  custId: string;
+  custName: string;
+  orderCount: number;
+  docuNos: string[];
+};
+
+export type TripMultiCustApprovalRow = {
+  id: number;
+  tripId: number;
+  tripCode: string | null;
+  tripRevision: number;
+  minCustomersSetting: number;
+  customerCount: number;
+  customerIds: string[];
+  customerSummary: string | null;
+  customerFingerprint: string;
+  orderCount: number;
+  totalTon: number;
+  totalAmount: number;
+  reasonText: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED' | 'CANCELLED';
+  requestedBy: number;
+  requestedByName?: string | null;
+  approvedBy: number | null;
+  approvedByName?: string | null;
+  approvedAt: string | null;
+  approvalNote: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+  transRegistration?: string | null;
+  driverName?: string | null;
+  pickupDueDate?: string | null;
+  tripStatus?: string | null;
+  currentTripRevision?: number | null;
+};
+
+export type MultiCustTripApprovalSummary = {
+  minCustomers: number;
+  customerCount: number;
+  customerIds: string[];
+  customerFingerprint: string;
+  customers: MultiCustTripCustomerInfo[];
+  customerSummary: string;
+  requiresApproval: boolean;
+  approvalStatus: 'NOT_REQUIRED' | 'REQUIRED' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUPERSEDED';
+  isApproved: boolean;
+  isStale: boolean;
+  latestApproval: TripMultiCustApprovalRow | null;
 };
 
 // ── เหตุการณ์ผิดกฎ ──────────────────────────────────────────
@@ -2250,8 +2496,45 @@ export const fetchTrip = (id: number | string) =>
     tripId: number; tripCode: string; transRegistration: string | null;
     tripRemark: string | null; preSlingRequired: boolean; documentRevision: number;
     pickupDueDate: string | null;
+    multiCustApproval?: MultiCustTripApprovalSummary;
     orders: { id: number; status: string }[];
   }>(`/trips/${id}`);
+
+export const requestTripMultiCustApproval = (tripId: number | string, data?: { reason?: string; orderIds?: (number | string)[] }) =>
+  req<{
+    alreadyApproved: boolean;
+    id: number;
+    tripId: number;
+    tripCode?: string | null;
+    status: string;
+    minCustomers: number;
+    customerCount: number;
+    customerIds: string[];
+    customerSummary: string;
+    message: string;
+  }>(`/trips/${tripId}/multi-cust-approval`, { method: 'POST', body: JSON.stringify(data || {}) });
+
+export const cancelTripMultiCustApproval = (tripId: number | string, approvalId: number | string) =>
+  req<{ id: number; tripId: number; status: string; message: string }>(
+    `/trips/${tripId}/multi-cust-approval/${approvalId}/cancel`, { method: 'PATCH' });
+
+export const fetchTripApprovals = (params?: { status?: string; tripId?: number | string; mine?: boolean }) => {
+  const q = new URLSearchParams();
+  if (params?.status) q.set('status', params.status);
+  if (params?.tripId) q.set('tripId', String(params.tripId));
+  if (params?.mine) q.set('mine', '1');
+  const qs = q.toString();
+  return req<{ data: TripMultiCustApprovalRow[]; requiredRole?: string; canApproveRole?: boolean }>(
+    `/edit-requests/trip-approvals${qs ? `?${qs}` : ''}`);
+};
+
+export const approveTripApproval = (id: number | string, note?: string) =>
+  req<{ id: number; tripId: number; status: string; message: string }>(
+    `/edit-requests/trip-approvals/${id}/approve`, { method: 'PATCH', body: JSON.stringify({ note }) });
+
+export const rejectTripApproval = (id: number | string, note: string) =>
+  req<{ id: number; tripId: number; status: string; message: string }>(
+    `/edit-requests/trip-approvals/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ note }) });
 
 export const confirmTrip = (tripId: number | string, data: {
   confirmedOrderIds: (number | string)[];

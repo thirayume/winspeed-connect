@@ -3,6 +3,7 @@ import { Truck, Search, History, RefreshCw, X, Calendar, FileText, ArrowUpDown, 
 import { fetchTruckStats, fetchTruckHistory } from '../../services/api';
 import { formatThaiDate } from '../../utils/date';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
+import { appAlert } from '../ui/AppAlert';
 import type { TruckStats, TruckHistoryItem } from '../../types';
 
 export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }) => {
@@ -276,7 +277,7 @@ export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }
                           </div>
                           <div className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
                             <button 
-                              onClick={() => alert(`คุณคลิกเพื่อดูเอกสารอ้างอิง: ${h.so}\n(ฟังก์ชันเปิดเอกสารจริงจะมาในเฟสถัดไป)`)}
+                              onClick={() => void appAlert(`คุณคลิกเพื่อดูเอกสารอ้างอิง: ${h.so}\n(ฟังก์ชันเปิดเอกสารจริงจะมาในเฟสถัดไป)`, 'info')}
                               className="flex items-center gap-1 hover:text-[#0C447C] hover:underline cursor-pointer transition-colors"
                             >
                               <FileText size={14} /> อ้างอิงเอกสาร: {h.so}

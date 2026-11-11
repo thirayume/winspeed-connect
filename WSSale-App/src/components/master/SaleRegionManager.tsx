@@ -10,7 +10,8 @@ import {
 // AdminUser ประกาศไว้ที่ types ไม่ใช่ที่ api.ts — api.ts เพียง import มาใช้ต่อ
 import type { AdminUser } from '../../types';
 import { useAuthStore } from '../../store/auth-store';
-import { appConfirm } from '../ui/AppAlert';
+import { appAlert, appConfirm } from '../ui/AppAlert';
+import { SearchableSelect } from '../ui/SearchableSelect';
 
 /**
  * จัดการผู้อนุมัติรายภาค — ผู้อนุมัติชั้นที่ 2 ของใบขอเคลียร์รีเบท
@@ -38,7 +39,7 @@ export function SaleRegionManager() {
       ]);
       setRows(coverage);
       setUsers((all as AdminUser[]).filter(u => u.IsActive));
-    } catch (e: unknown) { alert((e as Error).message); }
+    } catch (e: unknown) { await appAlert((e as Error).message, 'error'); }
     setLoading(false);
   }, []);
 
@@ -51,7 +52,7 @@ export function SaleRegionManager() {
       await setUserRegion({ userId: Number(pickUser), regionCode, isPrimary: true });
       setAddFor(null); setPickUser('');
       await load();
-    } catch (e: unknown) { alert((e as Error).message); }
+    } catch (e: unknown) { await appAlert((e as Error).message, 'error'); }
     finally { setBusy(false); }
   }
 
@@ -59,7 +60,7 @@ export function SaleRegionManager() {
     if (!await appConfirm(`ถอด ${name} ออกจากภาคนี้?\n\nใบขอเคลียร์ของภาคนี้จะกลับไปให้ผู้จัดการคนใดก็ได้อนุมัติชั้นที่ 2`)) return;
     setBusy(true);
     try { await removeUserRegion(userId, regionCode); await load(); }
-    catch (e: unknown) { alert((e as Error).message); }
+    catch (e: unknown) { await appAlert((e as Error).message, 'error'); }
     finally { setBusy(false); }
   }
 
@@ -112,13 +113,15 @@ export function SaleRegionManager() {
               </div>
               {addFor === code ? (
                 <div className="flex items-center gap-2">
-                  <select value={pickUser} onChange={e => setPickUser(e.target.value)}
-                    className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white max-w-56">
-                    <option value="">-- เลือกผู้ใช้ --</option>
-                    {users.map(u => (
-                      <option key={u.Id} value={u.Id}>{u.DisplayName || u.Username} ({u.Role})</option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    value={pickUser}
+                    onChange={v => setPickUser(v)}
+                    placeholder="-- เลือกผู้ใช้ --"
+                    searchPlaceholder="ค้นหาชื่อ/Role..."
+                    allowClear
+                    className="w-60"
+                    options={users.map(u => ({ value: String(u.Id), label: `${u.DisplayName || u.Username} (${u.Role})` }))}
+                  />
                   <button onClick={() => assign(code)} disabled={busy || !pickUser}
                     className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0C447C] text-white disabled:opacity-40">บันทึก</button>
                   <button onClick={() => { setAddFor(null); setPickUser(''); }}

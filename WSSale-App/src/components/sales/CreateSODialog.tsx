@@ -2,17 +2,20 @@ import { bookingNoteError } from '../../utils/bookingNotes';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { unsavedMessage } from '../../utils/unsaved-changes';
 import { useState, useEffect, useCallback } from 'react';
-import { X, Plus, Minus, Truck, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket, CreditCard, Clock, ShieldAlert, AlertTriangle, AlertCircle, Gift, Sparkles } from 'lucide-react';
+import { X, Plus, Minus, Truck, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket, AlertTriangle, Gift, Sparkles, Clock } from 'lucide-react';
 import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation, fetchPriceIndicator, fetchCustomerCreditStatus, fetchCustomerTopGoods, type CustomerTopGood } from '../../services/api';
 import type { EffectivePriceRow, AtpStockRow, PriceLevel } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
+import { ThaiDateTimePicker } from '../ui/ThaiDateTimePicker';
 import { GiveawayBorrowModal } from './GiveawayBorrowModal';
 import { CouponPickerModal, type CouponItem } from './CouponPickerModal';
+import { CustomerCreditAlertBanner } from './CustomerCreditAlertBanner';
 import { useAuthStore } from '../../store/auth-store';
 import { useTripStore } from '../../store/trip-store';
 import { canViewRebateAmounts } from '../../utils/permissions';
 import { useCan } from '../../utils/capabilities';
-import { appConfirm } from '../ui/AppAlert';
+import { appAlert, appConfirm } from '../ui/AppAlert';
+import { formatThaiDate } from '../../utils/date';
 import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser, GiveawayQuota, CustomerCreditStatus } from '../../types';
 
 type DraftLine = SalesOrderLine & {
@@ -223,7 +226,7 @@ export function CreateSODialog({
             id: 'bill-1',
             soPrefix: 'I',
             remark: q.Remark || `จากใบเสนอราคา ${q.QuoteNo}`,
-            creditDays: (q as any).CreditDays || 0,
+            creditDays: (q as any).CreditDays ?? 0,
             custId: (q as any).CustId || (q as any).custId || '',
             custName: (q as any).CustName || (q as any).custName || '',
             truckRemark: q.TruckRemark || '',
@@ -254,13 +257,13 @@ export function CreateSODialog({
         if (disposed) return;
         const soCustId = (so as any).custId || (so as any).custID || (so as any).CustId || (so as any).CustID || '';
         const soCustName = (so as any).custName || (so as any).CustName || '';
-        const soCreditDays = (so as any).creditDays || (so as any).CreditDays || 0;
+        const soCreditDays = (so as any).creditDays ?? (so as any).CreditDays ?? 0;
         setTruckPlate((so as any).truckPlate || (so as any).TruckPlate || '');
         setControlTicketNo((so as any).controlTicketNo || (so as any).ControlTicketNo || '');
         setTranspId((so as any).transpId || (so as any).TranspId || '');
         setSalesUserId((so as any).salesUserId || (so as any).salesUserID || (so as any).SalesUserId || (so as any).SalesUserID || '');
         setDeliveryDate(so.deliveryDate ? so.deliveryDate.split('T')[0] : '');
-        setNotifiedAt((so as any).notifiedAt ? String((so as any).notifiedAt).slice(0, 16) : '');
+        setNotifiedAt((so as any).notifiedAt ? String((so as any).notifiedAt) : '');
         setIsOwnTruck(!!(so as any).isOwnTruck);
         setNoTruckRequired(!!(so as any).noTruckRequired);
         setPSling(!!(so as any).pSling);
@@ -380,46 +383,108 @@ export function CreateSODialog({
     return () => { cancelled = true; };
   }, [currentBillCustId]);
 
-  // price colour per line from the server (debounced while typing)
+  // price colour & neutral threshold indicator per line from the server (debounced while typing)
   const [priceLevels, setPriceLevels] = useState<Record<string, PriceLevel>>({});
-  const levelKey = JSON.stringify((activeBill?.lines || []).map(l => [l.tempId, l.goodId, l.pricePerTon, !!l.isGiveaway, !!l.isCouponDrawn, !!l.isControlTicketDrawn]));
+  const [belowThresholdMap, setBelowThresholdMap] = useState<Record<string, boolean>>({});
+  const [billBelowThreshold, setBillBelowThreshold] = useState(false);
+  const activeRebateAmt = canSeeRebate ? (Number(activeBill?.rebateDiscountAmt) || 0) : 0;
+  const levelKey = JSON.stringify([
+    activeRebateAmt,
+    (activeBill?.lines || []).map(l => [l.tempId, l.goodId, l.pricePerTon, l.qtyTon, !!l.isGiveaway, !!l.isCouponDrawn, !!l.isControlTicketDrawn]),
+  ]);
   useEffect(() => {
     const lines = activeBill?.lines || [];
-    if (!currentBillCustId || lines.length === 0) { setPriceLevels({}); return; }
+    if (!currentBillCustId || lines.length === 0) {
+      setPriceLevels({});
+      setBelowThresholdMap({});
+      setBillBelowThreshold(false);
+      return;
+    }
     const t = setTimeout(() => {
       fetchPriceIndicator({
         custId: currentBillCustId,
         deliveryDate: deliveryDate || undefined,
-        lines: lines.map(l => ({ key: l.tempId, goodId: String(l.goodId), goodCode: (l as any).goodCode, pricePerTon: Number(l.pricePerTon) || 0, isGiveaway: !!l.isGiveaway, isCouponDrawn: !!l.isCouponDrawn, isControlTicketDrawn: !!l.isControlTicketDrawn })),
-      }).then(r => setPriceLevels(Object.fromEntries(r.lines.map(x => [x.key, x.level])))).catch(() => setPriceLevels({}));
+        rebateDiscountAmt: activeRebateAmt,
+        lines: lines.map(l => ({
+          key: l.tempId,
+          goodId: String(l.goodId),
+          goodCode: (l as any).goodCode,
+          pricePerTon: Number(l.pricePerTon) || 0,
+          qtyTon: Number(l.qtyTon) || 0,
+          isGiveaway: !!l.isGiveaway,
+          isCouponDrawn: !!l.isCouponDrawn,
+          isControlTicketDrawn: !!l.isControlTicketDrawn,
+        })),
+      })
+        .then(r => {
+          setPriceLevels(Object.fromEntries(r.lines.map(x => [x.key, x.level])));
+          setBelowThresholdMap(Object.fromEntries(r.lines.map(x => [x.key, Boolean(x.belowThreshold)])));
+          setBillBelowThreshold(Boolean(r.belowThreshold));
+        })
+        .catch(() => {
+          setPriceLevels({});
+          setBelowThresholdMap({});
+          setBillBelowThreshold(false);
+        });
     }, 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [levelKey, currentBillCustId, deliveryDate]);
 
-  // Credit Limit & AR Aging Status
-  const [creditStatus, setCreditStatus] = useState<CustomerCreditStatus | null>(null);
+  // Credit Limit & AR Aging Status across all bills in trip
+  const [custCreditMap, setCustCreditMap] = useState<Record<string, CustomerCreditStatus>>({});
   const [creditLoading, setCreditLoading] = useState(false);
 
-  const currentBillTotalAmount = (activeBill?.lines || []).reduce(
-    (sum, l) => sum + ((Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0)),
-    0
-  );
+  const custAmountEntries = (() => {
+    const totals = new Map<string, number>();
+    for (const b of bills) {
+      const cid = String(b.custId || '').trim();
+      if (!cid) continue;
+      const amt = (b.lines || []).reduce(
+        (sum, l) => sum + (l.isGiveaway ? 0 : (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0)),
+        0
+      );
+      totals.set(cid, (totals.get(cid) || 0) + amt);
+    }
+    return Array.from(totals.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  })();
+  const custCreditSignature = custAmountEntries.map(([cid, amt]) => `${cid}:${amt}`).join('|');
+  const creditStatus = currentBillCustId ? (custCreditMap[String(currentBillCustId).trim()] ?? null) : null;
 
   useEffect(() => {
-    if (!currentBillCustId) {
-      setCreditStatus(null);
+    if (!custCreditSignature) {
+      setCustCreditMap({});
       return;
     }
+    let cancelled = false;
     setCreditLoading(true);
-    fetchCustomerCreditStatus(currentBillCustId, currentBillTotalAmount)
-      .then(setCreditStatus)
-      .catch(err => {
-        console.error('[CreateSODialog/credit-status:error]', err);
-        setCreditStatus(null);
+    Promise.all(
+      custAmountEntries.map(async ([cid, amt]) => {
+        try {
+          const st = await fetchCustomerCreditStatus(cid, amt);
+          return [cid, st] as const;
+        } catch (err) {
+          console.error('[CreateSODialog/credit-status:error]', cid, err);
+          return null;
+        }
       })
-      .finally(() => setCreditLoading(false));
-  }, [currentBillCustId, currentBillTotalAmount]);
+    )
+      .then(results => {
+        if (cancelled) return;
+        const next: Record<string, CustomerCreditStatus> = {};
+        for (const item of results) {
+          if (item) next[item[0]] = item[1];
+        }
+        setCustCreditMap(next);
+      })
+      .finally(() => {
+        if (!cancelled) setCreditLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [custCreditSignature]);
 
   useEffect(() => {
     fetchPrices({ custId: currentBillCustId, asOf: deliveryDate || undefined }).then(setPrices).catch(console.error);
@@ -732,7 +797,7 @@ export function CreateSODialog({
           await cancelCouponReservation(resId, 'ผู้ใช้ลบรายการเบิกตั๋วร่างออกจากบิล');
         } catch (err: any) {
           const msg = err?.message || 'ไม่สามารถยกเลิกการจองตั๋วร่างได้';
-          alert(`เกิดข้อผิดพลาดในการยกเลิกตั๋วร่าง: ${msg}`);
+          await appAlert(`เกิดข้อผิดพลาดในการยกเลิกตั๋วร่าง: ${msg}`, 'error');
           console.error('Failed to cancel reservation on line delete:', err);
           return; // Do not remove line from UI if cancel failed
         }
@@ -768,7 +833,7 @@ export function CreateSODialog({
               await cancelCouponReservation(resId, 'ผู้ใช้ลบบิลออกจากกลุ่มบิล');
             } catch (err: any) {
               const msg = err?.message || 'ไม่สามารถยกเลิกการจองตั๋วร่างได้';
-              alert(`เกิดข้อผิดพลาดในการยกเลิกตั๋วร่าง: ${msg}`);
+              await appAlert(`เกิดข้อผิดพลาดในการยกเลิกตั๋วร่าง: ${msg}`, 'error');
               console.error('Failed to cancel coupon on bill delete:', err);
               return; // Abort removing bill if cancel failed
             }
@@ -817,12 +882,69 @@ export function CreateSODialog({
     }
     const hasInvalidCust = bills.some(b => !b.custId);
     if (hasInvalidCust) { setError('กรุณาเลือกลูกค้าให้ครบถ้วนทุกบิล'); return; }
-    if (creditStatus?.blocked) {
-      setError(`ไม่อนุญาตให้เปิดบิลขาย: ${creditStatus.blockReasons.join(' · ')}`);
+
+    // Ensure credit & aging status is loaded for all customers in this trip
+    const statusLookup: Record<string, CustomerCreditStatus> = { ...custCreditMap };
+    const missingEntries = custAmountEntries.filter(([cid]) => !statusLookup[cid]);
+    if (missingEntries.length > 0) {
+      const fetched = await Promise.all(
+        missingEntries.map(async ([cid, amt]) => {
+          try {
+            return [cid, await fetchCustomerCreditStatus(cid, amt)] as const;
+          } catch {
+            return null;
+          }
+        })
+      );
+      for (const pair of fetched) {
+        if (pair) statusLookup[pair[0]] = pair[1];
+      }
+    }
+
+    const blockedEntries = bills
+      .map((b, idx) => ({ bill: b, idx, st: b.custId ? statusLookup[String(b.custId).trim()] : undefined }))
+      .filter(x => x.st?.blocked);
+    if (blockedEntries.length > 0) {
+      const details = blockedEntries
+        .map(x => `บิลที่ ${x.idx + 1} (${x.bill.custName || x.bill.custId}): ${x.st!.blockReasons.join(' · ')}`)
+        .join(' | ');
+      setError(`ไม่อนุญาตให้เปิดบิลขาย: ${details}`);
       return;
     }
     const emptyBills = bills.filter(b => b.lines.length === 0);
     if (emptyBills.length > 0) { setError(`มีบิลที่ยังไม่ได้เลือกสินค้า (${emptyBills.length} บิล)`); return; }
+
+    // Consolidated Credit & Aging confirmation popup (if enabled in System Settings)
+    const alertLines: string[] = [];
+    const seenCustPopup = new Set<string>();
+    for (let i = 0; i < bills.length; i++) {
+      const b = bills[i];
+      const cid = String(b.custId || '').trim();
+      const st = cid ? statusLookup[cid] : undefined;
+      const billMaxDays = st?.maxPolicyAgingDays ?? 90;
+      const parts: string[] = [];
+      if (cid && st && !seenCustPopup.has(cid)) {
+        seenCustPopup.add(cid);
+        const overAging = Boolean(st.isOverAging ?? st.isAgingExceeded);
+        const overCredit = Boolean(st.isOverCreditLimit ?? st.isCreditLimitExceeded);
+        if (st.isOverPolicyMaxAging) parts.push(`🔴 Aging ${st.maxAgingDays} วัน (เกินนโยบาย ${billMaxDays} วัน)`);
+        else if (overAging) parts.push(`⚠️ Aging ${st.maxAgingDays}/${st.agingLimitDays} วัน`);
+        if (overCredit) parts.push('⚠️ เกินวงเงินเครดิต');
+        if (st.warnings?.length) parts.push(...st.warnings);
+      }
+      if (b.creditDays != null && Number(b.creditDays) > billMaxDays) {
+        parts.push(`เครดิต(วัน) ของบิล = ${b.creditDays} วัน (เกินนโยบาย ${billMaxDays} วัน)`);
+      }
+      if (parts.length > 0) {
+        alertLines.push(`[บิลที่ ${i + 1}] ${b.custName || cid}:\n  - ${parts.join('\n  - ')}`);
+      }
+    }
+    const popupAllowed = bills.every(b => !b.custId || statusLookup[String(b.custId).trim()]?.agingAlertPopup !== false);
+    if (alertLines.length > 0 && popupAllowed) {
+      if (!(await appConfirm(`⚠️ คำเตือนนโยบายเครดิต & Aging\n\n${alertLines.join('\n\n')}\n\nต้องการยืนยันบันทึกบิลขายต่อหรือไม่?`))) {
+        return;
+      }
+    }
 
     if (totalPayable === 0) {
       if (!(await appConfirm(`ยอดรวมเป็น 0 บาท\n\nต้องการบันทึกเอกสารนี้หรือไม่?`))) {
@@ -888,7 +1010,11 @@ export function CreateSODialog({
         // both notices when both apply: a price awaiting the manager does not hide the voided WinSpeed approval
         const notes = [res.needsApproval ? `⚠ มีรายการราคาที่ต้องอนุมัติ (ไม่พบราคาประกาศหรือราคาต่ำกว่าประกาศ)\nต้องการอนุมัติจาก ผจก. ก่อน confirm` : '✓ แก้ไขบิลสำเร็จ'];
         if (res.winspeedReapprovalRequired) notes.push(`มีการเปลี่ยนสินค้า/จำนวน/ราคา — ใบอนุมัติเดิมใน WinSpeed${res.voidedApproval && res.voidedApproval !== '-' ? ` (${res.voidedApproval})` : ''} ถูกยกเลิก ต้องอนุมัติใบสั่งจองใน WinSpeed ใหม่ก่อนส่งของ`);
-        alert(notes.join('\n\n'));
+        const serverWarnings = Array.isArray((res as any)?.warnings)
+          ? (res as any).warnings.map((w: any) => typeof w === 'string' ? w : w?.message).filter(Boolean)
+          : [];
+        if (serverWarnings.length > 0) notes.push(`คำเตือนเครดิต/Aging:\n• ${serverWarnings.join('\n• ')}`);
+        await appAlert(notes.join('\n\n'), (res.needsApproval || serverWarnings.length > 0) ? 'info' : 'success');
       } else {
         // Build grouped payload (Array of orders) with customer per bill (P1 Finding 1)
         const payload = bills.map(b => {
@@ -937,8 +1063,18 @@ export function CreateSODialog({
 
         const res = await createSO(payload);
         setIsSaveCommitted(true);
-        if (res.needsApproval) alert(`⚠ มีรายการราคาที่ต้องอนุมัติ (ไม่พบราคาประกาศหรือราคาต่ำกว่าประกาศ)\nต้องการอนุมัติจาก ผจก. ก่อน confirm`);
-        else alert(`✓ สร้างกลุ่มบิลสำเร็จ (จำนวน ${payload.length} บิล)`);
+        const serverWarnings = Array.isArray((res as any)?.warnings)
+          ? (res as any).warnings.map((w: any) => typeof w === 'string' ? w : w?.message).filter(Boolean)
+          : [];
+        const notes = [
+          res.needsApproval
+            ? `⚠ มีรายการราคาที่ต้องอนุมัติ (ไม่พบราคาประกาศหรือราคาต่ำกว่าประกาศ)\nต้องการอนุมัติจาก ผจก. ก่อน confirm`
+            : `✓ สร้างกลุ่มบิลสำเร็จ (จำนวน ${payload.length} บิล)`,
+        ];
+        if (serverWarnings.length > 0) {
+          notes.push(`คำเตือนเครดิต/Aging:\n• ${serverWarnings.join('\n• ')}`);
+        }
+        await appAlert(notes.join('\n\n'), (res.needsApproval || serverWarnings.length > 0) ? 'info' : 'success');
       }
       releaseDraftGuard();
       onCreated?.();
@@ -993,7 +1129,7 @@ export function CreateSODialog({
 
     if (serverAlreadyBound) {
       setIsSaveCommitted(true);
-      alert('ใบสั่งขายได้รับการบันทึกบนเซิร์ฟเวอร์เรียบร้อยแล้ว (ตรวจพบรายการผูกกับใบสั่งขายสำเร็จ)');
+      await appAlert('ใบสั่งขายได้รับการบันทึกบนเซิร์ฟเวอร์เรียบร้อยแล้ว (ตรวจพบรายการผูกกับใบสั่งขายสำเร็จ)', 'info');
       onCreated?.();
       onClose();
       return;
@@ -1026,7 +1162,7 @@ export function CreateSODialog({
         <div className="flex items-center justify-between px-4 py-2 sm:px-6 sm:py-3 border-b border-gray-100 bg-[#0C447C] text-white shrink-0">
           <div>
             <h2 className="text-base sm:text-xl font-bold flex items-center gap-2"><Truck size={20} className="sm:w-6 sm:h-6"/> {(activeTrip && !editSoId) ? 'เพิ่มบิลในทริป' : 'บิล'}</h2>
-            <p className="hidden sm:block text-xs text-blue-200 mt-1">{(activeTrip || editSoId) ? `ทะเบียนรถ: ${truckPlate || 'ไม่ระบุ'} | วันที่: ${deliveryDate ? (!isNaN(new Date(deliveryDate).getTime()) ? new Date(deliveryDate).toLocaleDateString('th-TH') : deliveryDate) : '-'} | จำนวน ${bills.length} บิล | Pre-Sling: ${pSling ? 'ใช่' : 'ไม่'}` : 'จัดเรียงบิล I, K ในรถคันเดียวกัน และจัดการเบิกตั๋วคุม'}</p>
+            <p className="hidden sm:block text-xs text-blue-200 mt-1">{(activeTrip || editSoId) ? `ทะเบียนรถ: ${truckPlate || 'ไม่ระบุ'} | วันที่: ${deliveryDate ? formatThaiDate(deliveryDate) : '-'} | จำนวน ${bills.length} บิล | Pre-Sling: ${pSling ? 'ใช่' : 'ไม่'}` : 'จัดเรียงบิล I, K ในรถคันเดียวกัน และจัดการเบิกตั๋วคุม'}</p>
           </div>
           <button onClick={handleCloseModal} data-testid="btn-close-dialog" className="text-white/80 hover:text-white rounded-full p-1.5 sm:p-2 hover:bg-white/10">
             <X size={20} />
@@ -1073,10 +1209,9 @@ export function CreateSODialog({
                   </div>
                   <div className="min-w-[170px]">
                     <label className="text-[10px] font-bold text-gray-700 block mb-1"><Calendar size={10} className="inline mr-1 text-gray-400"/>วันที่แจ้ง/เวลานัด</label>
-                    <input
-                      type="datetime-local"
+                    <ThaiDateTimePicker
                       value={notifiedAt}
-                      onChange={e => setNotifiedAt(e.target.value)}
+                      onChange={setNotifiedAt}
                       className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] bg-gray-50 focus:bg-white"
                     />
                   </div>
@@ -1092,7 +1227,7 @@ export function CreateSODialog({
                       className="w-full text-sm font-mono border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-500 bg-gray-50 focus:bg-white"
                     />
                     <datalist id="ct-ref-list">
-                      {controlTickets.map(t => <option key={t.DocuNo} value={t.DocuNo}>{t.DocuDate?.slice(0, 10)}</option>)}
+                      {controlTickets.map(t => <option key={t.DocuNo} value={t.DocuNo}>{formatThaiDate(t.DocuDate)}</option>)}
                     </datalist>
                     {!controlTicketNo && drawnTicketNos && (
                       <p className="text-[9px] text-purple-600 mt-1">ระบบจะใช้ {drawnTicketNos} จากบรรทัดที่เบิก</p>
@@ -1553,7 +1688,7 @@ export function CreateSODialog({
                                         updateBillInfo(activeBillId, {
                                           custId: c.CustID,
                                           custName: c.CustName,
-                                          creditDays: c.CreditDays !== undefined ? c.CreditDays : activeBill?.creditDays
+                                          creditDays: c.CreditDays !== undefined && c.CreditDays !== null ? c.CreditDays : activeBill?.creditDays
                                         });
                                         setBillCustSearch('');
                                         setIsBillCustOpen(false);
@@ -1563,8 +1698,8 @@ export function CreateSODialog({
                                         <div className="font-bold text-[#0C447C]">{c.CustName}</div>
                                         <div className="text-[10px] text-gray-400">{c.CustCode || c.CustID}</div>
                                       </div>
-                                      <div className="text-[10px] text-gray-500 font-medium">
-                                        เครดิต {c.CreditDays || 0} วัน
+                                      <div className={`text-[10px] font-medium ${c.CreditDays === 0 ? 'text-emerald-700' : 'text-gray-500'}`}>
+                                        {c.CreditDays === 0 ? 'เงินสด (0 วัน)' : `เครดิต ${c.CreditDays ?? 60} วัน`}
                                       </div>
                                     </div>
                                   ))}
@@ -1575,68 +1710,33 @@ export function CreateSODialog({
                       )}
                     </div>
 
-                    <div className="shrink-0 flex items-center gap-1.5 sm:self-end sm:pb-0.5">
-                      <span className="text-[10px] text-gray-600 font-bold whitespace-nowrap">เครดิต(วัน):</span>
-                      <input 
-                        type="number" 
-                        min="0"
-                        value={activeBill?.creditDays !== undefined ? activeBill.creditDays : ''} 
-                        onChange={e => updateBillInfo(activeBillId, { creditDays: e.target.value ? Number(e.target.value) : 0 })}
-                        className="border border-gray-200 rounded text-xs px-2 py-1 font-bold bg-white w-14 text-center focus:ring-1 focus:ring-[#0C447C] outline-none"
-                        placeholder="0"
-                      />
+                    <div className="shrink-0 flex flex-col items-end sm:self-end sm:pb-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-gray-600 font-bold whitespace-nowrap">เครดิต(วัน):</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={activeBill?.creditDays !== undefined ? activeBill.creditDays : ''}
+                          onChange={e => updateBillInfo(activeBillId, { creditDays: e.target.value !== '' ? Math.max(0, Number(e.target.value)) : 0 })}
+                          className={`border rounded text-xs px-2 py-1 font-bold bg-white w-14 text-center focus:ring-1 outline-none ${
+                            activeBill?.creditDays != null && activeBill.creditDays > (creditStatus?.maxPolicyAgingDays ?? 90)
+                              ? 'border-red-500 text-red-700 bg-red-50 focus:ring-red-400'
+                              : 'border-gray-200 focus:ring-[#0C447C]'
+                          }`}
+                          placeholder="0"
+                        />
+                      </div>
+                      {activeBill?.creditDays != null && activeBill.creditDays > (creditStatus?.maxPolicyAgingDays ?? 90) && (
+                        <span className="text-[9px] font-bold text-red-600 mt-0.5">
+                          เกินนโยบาย {creditStatus?.maxPolicyAgingDays ?? 90} วัน
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   {/* Live Credit Limit & Aging Badge / Warning / Strict Blocker */}
-                  {activeBill?.custId && creditStatus && (
-                    <div className="mt-2 space-y-1.5">
-                      <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-1.5">
-                        <div className="flex items-center gap-1.5 text-gray-700 font-medium">
-                          <CreditCard size={13} className="text-[#0C447C]" />
-                          <span>วงเงิน: <strong>{creditStatus.creditLimit != null && creditStatus.creditLimit > 0 ? `฿${creditStatus.creditLimit.toLocaleString()}` : 'ไม่จำกัด'}</strong></span>
-                          <span className="text-gray-300">|</span>
-                          <span>ยอดค้าง: <strong className={creditStatus.isOverCreditLimit ? 'text-red-600' : 'text-gray-800'}>฿{creditStatus.totalOutstanding.toLocaleString()}</strong></span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-gray-700 font-medium">
-                          <Clock size={13} className="text-amber-600" />
-                          <span>Aging: <strong className={creditStatus.isOverAging ? 'text-red-600' : 'text-gray-800'}>{creditStatus.maxAgingDays}</strong>/{creditStatus.agingLimitDays} วัน</span>
-                          {creditStatus.creditHold && (
-                            <span className="rounded-full bg-red-100 text-red-700 px-1.5 py-0.2 font-bold text-[10px] flex items-center gap-0.5">
-                              <ShieldAlert size={10} /> Hold
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Strict Rule Blocker Banner (Disallow Mode) */}
-                      {creditStatus.blocked && (
-                        <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-900">
-                          <div className="flex items-center gap-1.5 font-bold text-red-700">
-                            <AlertTriangle size={14} /> ไม่อนุญาตให้เปิดบิลขาย (Strict Rule เปิดใช้งาน)
-                          </div>
-                          <div className="mt-1 space-y-0.5 text-[11px]">
-                            {creditStatus.blockReasons.map((r, i) => (
-                              <div key={i}>• {r}</div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Soft Warning Banner (Warning Mode) */}
-                      {!creditStatus.blocked && creditStatus.warnings.length > 0 && (
-                        <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
-                          <div className="flex items-center gap-1.5 font-bold text-amber-800">
-                            <AlertCircle size={14} /> แจ้งเตือน: เกินวงเงินเครดิต / อายุหนี้ Aging
-                          </div>
-                          <div className="mt-1 space-y-0.5 text-[11px]">
-                            {creditStatus.warnings.map((w, i) => (
-                              <div key={i}>• {w}</div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                  {activeBill?.custId && (
+                    <CustomerCreditAlertBanner creditStatus={creditStatus} loading={creditLoading} />
                   )}
                 </div>
 
@@ -1734,10 +1834,23 @@ export function CreateSODialog({
                               ) : (
                                   <div className="flex items-center gap-1">
                                     <span className="text-[10px] text-gray-500">฿/ตัน</span>
-                                    <input type="number" value={l.pricePerTon || ''} onChange={e => updateActiveLine(l.tempId, { pricePerTon: Number(e.target.value) })} className={`w-20 text-right border rounded px-1.5 py-1 text-xs font-mono font-bold focus:outline-none focus:border-blue-400 ${priceBand.className}`} />
+                                    <input
+                                      type="number"
+                                      value={l.pricePerTon || ''}
+                                      onChange={e => updateActiveLine(l.tempId, { pricePerTon: Number(e.target.value) })}
+                                      className={`w-20 text-right border rounded px-1.5 py-1 text-xs font-mono font-bold focus:outline-none focus:border-blue-400 ${
+                                        belowThresholdMap[l.tempId]
+                                          ? 'border-red-500 bg-red-50 text-red-700 ring-1 ring-red-300'
+                                          : priceBand.className
+                                      }`}
+                                    />
                                   </div>
                               )}
-                              {!l.isControlTicketDrawn && !l.isCouponDrawn && !l.isGiveaway && priceBand.label && (
+                              {!l.isControlTicketDrawn && !l.isCouponDrawn && !l.isGiveaway && belowThresholdMap[l.tempId] ? (
+                                <div className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-red-400 bg-red-50 text-red-700 text-right max-w-[190px]">
+                                  ไม่อยู่ในเกณฑ์ที่บริษัทกำหนด กรุณาตรวจสอบและแก้ไขราคา
+                                </div>
+                              ) : !l.isControlTicketDrawn && !l.isCouponDrawn && !l.isGiveaway && priceBand.label && (
                                 <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${priceBand.className}`}>
                                   {priceBand.label}
                                 </div>
@@ -1817,7 +1930,52 @@ export function CreateSODialog({
             </div>
           </div>
 
-          <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2 sm:gap-3">
+          <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2 sm:gap-3 flex-wrap">
+            {(() => {
+              const allStatuses = Object.values(custCreditMap);
+              const anyBlocked = allStatuses.some(s => s.blocked);
+              const anyCritical = allStatuses.some(s => s.blocked || s.creditHold || s.isOverPolicyMaxAging);
+              const worstAging = allStatuses.reduce((m, s) => Math.max(m, s.maxAgingDays || 0), 0);
+              const policyMax = allStatuses[0]?.maxPolicyAgingDays ?? 90;
+              const anyManualOver = bills.some(b => b.creditDays != null && Number(b.creditDays) > policyMax);
+              const anyWarning = allStatuses.some(s =>
+                Boolean(s.isOverAging ?? s.isAgingExceeded) ||
+                Boolean(s.isOverCreditLimit ?? s.isCreditLimitExceeded) ||
+                Boolean(s.isConfiguredAgingOverPolicyMax) ||
+                (s.warnings?.length ?? 0) > 0
+              ) || anyManualOver;
+              if (anyBlocked) {
+                return (
+                  <div className="flex items-center gap-1.5 rounded-lg border-2 border-red-500 bg-red-100 px-2.5 py-1 text-[11px] font-extrabold text-red-800">
+                    <AlertTriangle size={14} className="shrink-0" />
+                    <span>ถูกบล็อก (Credit Hold / Strict Rule)</span>
+                  </div>
+                );
+              }
+              if (anyCritical) {
+                return (
+                  <div className="flex items-center gap-1.5 rounded-lg border-2 border-red-400 bg-red-50 px-2.5 py-1 text-[11px] font-extrabold text-red-700 animate-pulse">
+                    <Clock size={14} className="shrink-0" />
+                    <span>Aging วิกฤติ {worstAging.toLocaleString()} วัน (เกินนโยบาย {policyMax} วัน)</span>
+                  </div>
+                );
+              }
+              if (anyWarning) {
+                return (
+                  <div className="flex items-center gap-1.5 rounded-lg border border-amber-400 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800">
+                    <AlertTriangle size={14} className="shrink-0" />
+                    <span>แจ้งเตือนเครดิต / Aging</span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+            {billBelowThreshold && (
+              <div className="flex items-center gap-1.5 rounded-lg border border-red-400 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-700">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>ไม่อยู่ในเกณฑ์ที่บริษัทกำหนด กรุณาตรวจสอบและแก้ไขราคา</span>
+              </div>
+            )}
             {error && <div className="text-red-500 text-[10px] sm:text-xs font-bold bg-red-50 px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg border border-red-100">{error}</div>}
             <button onClick={handleCloseModal} data-testid="btn-cancel-dialog" className="px-4 py-2 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg sm:rounded-xl transition-colors">ยกเลิก</button>
             <button
@@ -1849,7 +2007,7 @@ export function CreateSODialog({
           Promise.all([fetchGoods({ forSale: true }), fetchGiveawayGoods(salesUserId ? String(salesUserId) : undefined, editSoId && editSoId !== 'undefined' ? editSoId : undefined)])
             .then(([g, gw]) => setGoods(mergeGoods(g, gw)))
             .catch(console.error);
-          alert('ส่งคำขอยืมเรียบร้อยแล้ว กรุณารอการอนุมัติ');
+          void appAlert('ส่งคำขอยืมเรียบร้อยแล้ว กรุณารอการอนุมัติ', 'success');
         }}
       />
 

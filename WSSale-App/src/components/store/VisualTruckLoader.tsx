@@ -23,7 +23,7 @@ const getColorForProduct = (goodCode: string) => {
   return ITEM_COLORS[Math.abs(hash) % ITEM_COLORS.length];
 };
 
-import { appPrompt } from '../ui/AppAlert';
+import { appAlert, appPrompt } from '../ui/AppAlert';
 
 export const VisualTruckLoader = ({ 
   order, onConfirm, onCancel 
@@ -132,7 +132,7 @@ export const VisualTruckLoader = ({
 
   const handleConfirm = async () => {
     if (unassigned.length > 0) {
-      alert('กรุณาจัดวางสินค้าให้ครบทุกรายการ');
+      await appAlert('กรุณาจัดวางสินค้าให้ครบทุกรายการ', 'warning');
       return;
     }
 

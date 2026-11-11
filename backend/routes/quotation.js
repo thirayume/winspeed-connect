@@ -13,6 +13,102 @@ const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-s
 const { broadcast } = require('../services/socket');
 const { advanceRunCounter, RUN_CODE_BY_DOC_KIND } = require('../services/winspeed-counter');
 const { toBangkokDateString } = require('../services/coupon-settlement-matcher');
+const { getSettingValue, logChangeEvent } = require('../services/policy-contract');
+const { resolveAuthoritativePrice } = require('../services/price-authority');
+const { assertPricesAboveCost, assertPriceBookLinesSellable } = require('../services/cost-authority');
+
+const MAE_PUI_GOOD_GROUP_ID = 1004;
+
+function isMaePuiGroup(row) {
+  if (!row) return false;
+  const gid = Number(row.GoodGroupID ?? row.goodGroupId ?? 0);
+  const gname = String(row.GoodGroupName ?? row.goodGroupName ?? '');
+  return gid === MAE_PUI_GOOD_GROUP_ID || gname.includes('แม่ปุ๋ย');
+}
+
+function addBangkokDaysDateStr(baseDateStr, days) {
+  const d = new Date(String(baseDateStr).slice(0, 10) + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + Number(days));
+  return d.toISOString().slice(0, 10);
+}
+
+async function getMaePuiMaxValidDays() {
+  try {
+    const n = Number(await getSettingValue('QUOTATION_MAE_PUI_MAX_VALID_DAYS'));
+    return Number.isInteger(n) && n >= 1 ? n : 3;
+  } catch {
+    return 3;
+  }
+}
+
+async function inspectMaePuiGoods(lines) {
+  const activeLines = (lines || []).filter(l => !(l.isGiveaway || l.IsGiveaway));
+  const intIds = [...new Set(
+    activeLines
+      .map(l => String(l.goodId ?? l.GoodId ?? '').trim())
+      .filter(v => /^\d+$/.test(v))
+      .map(Number)
+  )];
+  const codes = [...new Set(
+    activeLines
+      .map(l => String(l.goodCode ?? l.GoodCode ?? '').trim())
+      .filter(Boolean)
+  )];
+  if (!intIds.length && !codes.length) {
+    return { hasMaePui: false, groupByGoodKey: new Map(), maePuiGoods: [] };
+  }
+  const inputs = {};
+  const conds = [];
+  if (intIds.length) {
+    const ph = intIds.map((id, idx) => { inputs[`gid${idx}`] = { type: sql.Int, value: id }; return `@gid${idx}`; });
+    conds.push(`g.GoodID IN (${ph.join(',')})`);
+  }
+  if (codes.length) {
+    const ph = codes.map((c, idx) => { inputs[`gc${idx}`] = { type: sql.NVarChar(50), value: c }; return `@gc${idx}`; });
+    conds.push(`g.GoodCode IN (${ph.join(',')})`);
+  }
+  const r = await wfQuery(`
+    SELECT g.GoodID, g.GoodCode, g.GoodName1, g.GoodGroupID, gg.GoodGroupName
+    FROM dbo.EMGood g WITH (NOLOCK)
+    LEFT JOIN dbo.EMGoodGroup gg WITH (NOLOCK) ON gg.GoodGroupID = g.GoodGroupID
+    WHERE ${conds.join(' OR ')}
+  `, inputs);
+  const rows = r.recordset || [];
+  const groupByGoodKey = new Map();
+  const maePuiGoods = [];
+  for (const row of rows) {
+    const info = {
+      goodId: String(row.GoodID),
+      goodCode: row.GoodCode || '',
+      goodName: row.GoodName1 || '',
+      goodGroupId: row.GoodGroupID != null ? Number(row.GoodGroupID) : null,
+      goodGroupName: row.GoodGroupName || null,
+      isMaePui: isMaePuiGroup(row),
+    };
+    groupByGoodKey.set(info.goodId, info);
+    if (info.goodCode) groupByGoodKey.set(`code:${info.goodCode}`, info);
+    if (info.isMaePui) maePuiGoods.push(info);
+  }
+  return {
+    hasMaePui: maePuiGoods.length > 0,
+    groupByGoodKey,
+    maePuiGoods,
+  };
+}
+
+function enrichLinesWithGroupInfo(lines, groupByGoodKey) {
+  return (lines || []).map(l => {
+    const keyId = String(l.GoodId ?? l.goodId ?? '').trim();
+    const keyCode = String(l.GoodCode ?? l.goodCode ?? '').trim();
+    const info = groupByGoodKey.get(keyId) || (keyCode ? groupByGoodKey.get(`code:${keyCode}`) : null);
+    return {
+      ...l,
+      GoodGroupID: info?.goodGroupId ?? l.GoodGroupID ?? null,
+      GoodGroupName: info?.goodGroupName ?? l.GoodGroupName ?? null,
+      IsMaePui: info ? info.isMaePui : Boolean(l.IsMaePui),
+    };
+  });
+}
 
 router.use(requireAuth);
 
@@ -67,14 +163,63 @@ async function assertNativeQuotationReady() {
 
 // A date-only value at UTC midnight so sql.Date stores exactly that day. The business day is Bangkok's:
 // before 07:00 local time UTC is still on the previous day, which made "+45 days" one day short (UAT SO-21).
-function normalizeValidUntil(validUntil, validDays) {
-  if (validUntil) return new Date(String(validUntil).slice(0, 10) + 'T00:00:00Z');
+function normalizeValidUntil(validUntil, validDays, { defaultDays = 15, strictValidDays = false } = {}) {
+  if (validUntil) {
+    const raw = String(validUntil).slice(0, 10);
+    const d = new Date(raw + 'T00:00:00Z');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== raw) {
+      const err = new Error('รูปแบบวันยืนราคาไม่ถูกต้อง');
+      err.statusCode = 400;
+      throw err;
+    }
+    return d;
+  }
   const allowed = [7, 15, 20, 30, 45];
-  const days = allowed.includes(Number(validDays)) ? Number(validDays) : 15;
+  let days = defaultDays;
+  if (validDays !== undefined && validDays !== null && String(validDays).trim() !== '') {
+    const n = Number(validDays);
+    if (strictValidDays) {
+      if (!Number.isInteger(n) || n < 1) {
+        const err = new Error('จำนวนวันยืนราคาต้องเป็นจำนวนเต็มบวก');
+        err.statusCode = 400;
+        throw err;
+      }
+      days = n;
+    } else if (allowed.includes(n) || (Number.isInteger(n) && n >= 1 && n <= 90)) {
+      days = n;
+    }
+  }
   const d = new Date(toBangkokDateString(new Date()) + 'T00:00:00Z');
   d.setUTCDate(d.getUTCDate() + days);
   return d;
 }
+
+function assertMaePuiValidityAllowed({ hasMaePui, validUntilDate, requestedValidDays, maxDays, todayStr }) {
+  const today = todayStr || toBangkokDateString(new Date());
+  const vuStr = validUntilDate.toISOString().slice(0, 10);
+  if (vuStr < today) {
+    const err = new Error('วันยืนราคาต้องไม่ก่อนวันนี้');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!hasMaePui) return;
+  const maxAllowedStr = addBangkokDaysDateStr(today, maxDays);
+  const reqDaysNum = requestedValidDays !== undefined && requestedValidDays !== null && String(requestedValidDays).trim() !== ''
+    ? Number(requestedValidDays)
+    : null;
+  if (vuStr > maxAllowedStr || (reqDaysNum !== null && reqDaysNum > maxDays)) {
+    const err = new Error(
+      `ใบเสนอราคาที่มีสินค้ากลุ่ม "แม่ปุ๋ย" ยืนราคาและขอขยายเวลาได้สูงสุดครั้งละ ${maxDays} วันเท่านั้น (ไม่เกินวันที่ ${maxAllowedStr})`
+    );
+    err.statusCode = 400;
+    err.code = 'MAE_PUI_MAX_VALIDITY_EXCEEDED';
+    throw err;
+  }
+}
+
+router.assertMaePuiValidityForTest = assertMaePuiValidityAllowed;
+router.normalizeValidUntilForTest = normalizeValidUntil;
+router.isMaePuiGroupForTest = isMaePuiGroup;
 
 /** an open quotation past its validity, on the Bangkok business date */
 function isPastValidity(q) {
@@ -353,7 +498,7 @@ async function syncNativeQuotation(tx, quoteId, sourceRefs = [], opts = {}) {
   const saleAreaId = await keepNativeIdIfExists(tx, 'dbo.EMSaleArea', 'SaleAreaID', cust.SaleAreaID);
   const empId = await keepNativeIdIfExists(tx, 'dbo.EMEmp', 'EmpID', q.SalesEmpId);
   const vatType = cleanText(cust.VatType || cust.VATType || '3', 1) || '3';
-  const creditDays = sourceSo?.CreditDays != null ? Number(sourceSo.CreditDays) : Number(cust.CreditDays || 30);
+  const creditDays = sourceSo?.CreditDays != null ? Number(sourceSo.CreditDays) : (cust.CreditDays != null ? Number(cust.CreditDays) : 30);
   const transpId = sourceSo?.TranspId != null ? await keepNativeIdIfExists(tx, 'dbo.EMTransp', 'TranspID', sourceSo.TranspId) : null;
   const truckRemark = sourceSo?.TruckRemark || null;
   const billRemark = sourceSo?.BillRemark || null;
@@ -932,6 +1077,82 @@ async function updateNativeQuotationValidity(tx, quoteId, validUntil) {
     `);
 }
 
+async function updateNativeQuotationPrices(tx, quoteId, updatedLines) {
+  if (!updatedLines?.length) return;
+  const q = (await tx.request()
+    .input('id', sql.Int, Number(quoteId))
+    .query(`SELECT WinspeedQuoteSOID, WinspeedConfirmSOID FROM wf.Quotation WHERE Id=@id`)).recordset?.[0];
+  if (!q?.WinspeedQuoteSOID) return;
+  const quoteSoid = Number(q.WinspeedQuoteSOID);
+  const confirmSoid = q.WinspeedConfirmSOID ? Number(q.WinspeedConfirmSOID) : null;
+
+  const procCheck = (await tx.request().query(`
+    SELECT CASE
+      WHEN OBJECT_ID('wf.sp_QuotationUpdateNativeLinePrice', 'P') IS NOT NULL
+       AND OBJECT_ID('wf.sp_QuotationRecalcNativeTotal', 'P') IS NOT NULL
+      THEN 1 ELSE 0 END AS HasPriceProcs
+  `)).recordset?.[0];
+  const usePriceProcs = Number(procCheck?.HasPriceProcs || 0) === 1;
+
+  for (const item of updatedLines) {
+    const goodId = toIntOrNull(item.goodId);
+    if (!goodId) continue;
+    const price = Number(item.newPrice);
+    if (usePriceProcs) {
+      await execProc(tx, 'wf.sp_QuotationUpdateNativeLinePrice', [
+        ['QuoteSOID', sql.Int, quoteSoid],
+        ['ConfirmSOID', sql.Int, confirmSoid],
+        ['ListNo', sql.SmallInt, Number(item.lineNum)],
+        ['GoodID', sql.Int, goodId],
+        ['NewPrice', sql.Decimal(18, 2), price],
+      ]);
+    } else {
+      await tx.request()
+        .input('quoteSoid', sql.VarChar(50), String(quoteSoid))
+        .input('confirmSoid', sql.VarChar(50), confirmSoid ? String(confirmSoid) : null)
+        .input('listNo', sql.SmallInt, Number(item.lineNum))
+        .input('goodId', sql.Int, goodId)
+        .input('price', sql.Decimal(18, 2), price)
+        .query(`
+          UPDATE dbo.SODT
+          SET GoodPrice2=@price,
+              GoodAmnt=CAST(ISNULL(GoodQty2, 0) * @price AS DECIMAL(18, 2)),
+              AfterMarkupamnt=CAST(ISNULL(GoodQty2, 0) * @price AS DECIMAL(18, 2)),
+              remaamnt=CAST(ISNULL(GoodQty2, 0) * @price AS DECIMAL(18, 2))
+          WHERE SOID IN (@quoteSoid, @confirmSoid)
+            AND DocuType IN ('102', '113')
+            AND ListNo=@listNo
+            AND GoodID=@goodId
+        `);
+    }
+  }
+
+  if (usePriceProcs) {
+    await execProc(tx, 'wf.sp_QuotationRecalcNativeTotal', [
+      ['QuoteSOID', sql.Int, quoteSoid],
+      ['ConfirmSOID', sql.Int, confirmSoid],
+    ]);
+  } else {
+    await tx.request()
+      .input('quoteSoid', sql.VarChar(50), String(quoteSoid))
+      .input('confirmSoid', sql.VarChar(50), confirmSoid ? String(confirmSoid) : null)
+      .query(`
+        UPDATE h
+        SET NetAmnt=ISNULL(t.SumAmnt, 0),
+            SumGoodAmnt=ISNULL(t.SumAmnt, 0),
+            BillAftrDiscAmnt=ISNULL(t.SumAmnt, 0)
+        FROM dbo.SOHD h
+        OUTER APPLY (
+          SELECT SUM(ISNULL(d.GoodAmnt, 0)) AS SumAmnt
+          FROM dbo.SODT d
+          WHERE d.SOID = h.SOID
+        ) t
+        WHERE h.SOID IN (@quoteSoid, @confirmSoid)
+          AND h.DocuType IN ('102', '113')
+      `);
+  }
+}
+
 function nativeQuoteStatusSql(alias = 'qu', qcAlias = 'qc') {
   return `
     CASE
@@ -1047,6 +1268,9 @@ router.get('/', async (req, res) => {
   try {
     const { status } = req.query;
     const hasSource = await hasQuoteSourceTable();
+    const hasGiveaway = await hasQuoteLineGiveawayColumn();
+    const giveawayFilter = hasGiveaway ? 'AND ISNULL(l.IsGiveaway, 0) = 0' : '';
+    const maePuiMaxValidDays = await getMaePuiMaxValidDays();
     // R12 O-4: own + team quotations only (ADMIN/C_LEVEL/ACCOUNTING and operational roles see all)
     const scope = await getVisibleScope(req.user);
     const conds = [];
@@ -1093,7 +1317,33 @@ router.get('/', async (req, res) => {
           CASE WHEN ISNULL(appAgg.LineCount, 0) > 0 THEN ISNULL(appAgg.TotalTon, 0) ELSE ISNULL(nativeAgg.TotalTon, 0) END AS TotalTon,
           CASE WHEN ISNULL(appAgg.LineCount, 0) > 0 THEN ISNULL(appAgg.TotalAmount, 0) ELSE ISNULL(nativeAgg.TotalAmount, 0) END AS TotalAmount,
           ${hasSource ? `(SELECT COUNT(1) FROM wf.QuotationSourceSO src WHERE src.QuoteId = q.Id)` : `CAST(0 AS INT)`} AS SourceSoCount,
-          CAST(u.EmpId AS VARCHAR(20)) AS OwnerEmpId
+          CAST(u.EmpId AS VARCHAR(20)) AS OwnerEmpId,
+          CAST(CASE WHEN EXISTS (
+            SELECT 1
+            FROM wf.QuotationLine l WITH (NOLOCK)
+            JOIN dbo.EMGood g WITH (NOLOCK)
+              ON (
+                CASE WHEN l.GoodId NOT LIKE N'%[^0-9]%' AND LEN(l.GoodId) BETWEEN 1 AND 9
+                     THEN CAST(l.GoodId AS INT) ELSE NULL END = g.GoodID
+                OR (NULLIF(l.GoodCode, '') IS NOT NULL AND g.GoodCode = l.GoodCode)
+              )
+            LEFT JOIN dbo.EMGoodGroup gg WITH (NOLOCK) ON gg.GoodGroupID = g.GoodGroupID
+            WHERE l.QuoteId = q.Id
+              ${giveawayFilter}
+              AND (g.GoodGroupID = 1004 OR gg.GoodGroupName LIKE N'%แม่ปุ๋ย%')
+          ) OR (
+            NOT EXISTS (SELECT 1 FROM wf.QuotationLine l2 WITH (NOLOCK) WHERE l2.QuoteId = q.Id)
+            AND q.WinspeedQuoteSOID IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM dbo.SODT d WITH (NOLOCK)
+              JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = d.GoodID
+              LEFT JOIN dbo.EMGoodGroup gg WITH (NOLOCK) ON gg.GoodGroupID = g.GoodGroupID
+              WHERE CONVERT(VARCHAR(50), d.SOID) = CONVERT(VARCHAR(50), q.WinspeedQuoteSOID)
+                AND ISNULL(d.FreeFlag, 'N') <> 'Y'
+                AND (g.GoodGroupID = 1004 OR gg.GoodGroupName LIKE N'%แม่ปุ๋ย%')
+            )
+          ) THEN 1 ELSE 0 END AS BIT) AS HasMaePui
         FROM wf.Quotation q WITH (NOLOCK)
         LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = q.SalesUserId
         OUTER APPLY (
@@ -1142,7 +1392,16 @@ router.get('/', async (req, res) => {
           ISNULL(agg.TotalTon, 0) AS TotalTon,
           ISNULL(agg.TotalAmount, 0) AS TotalAmount,
           CAST(0 AS INT) AS SourceSoCount,
-          CAST(qu.EmpID AS VARCHAR(20)) AS OwnerEmpId
+          CAST(qu.EmpID AS VARCHAR(20)) AS OwnerEmpId,
+          CAST(CASE WHEN EXISTS (
+            SELECT 1
+            FROM dbo.SODT d WITH (NOLOCK)
+            JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = d.GoodID
+            LEFT JOIN dbo.EMGoodGroup gg WITH (NOLOCK) ON gg.GoodGroupID = g.GoodGroupID
+            WHERE CONVERT(VARCHAR(50), d.SOID) = CONVERT(VARCHAR(50), ISNULL(qc.SOID, qu.SOID))
+              AND ISNULL(d.FreeFlag, 'N') <> 'Y'
+              AND (g.GoodGroupID = 1004 OR gg.GoodGroupName LIKE N'%แม่ปุ๋ย%')
+          ) THEN 1 ELSE 0 END AS BIT) AS HasMaePui
         FROM dbo.SOHD qu WITH (NOLOCK)
         OUTER APPLY (
           SELECT TOP 1 qc2.SOID, qc2.DocuNo
@@ -1173,7 +1432,11 @@ router.get('/', async (req, res) => {
       ${where}
       ORDER BY q.CreatedAt DESC, q.Id DESC
     `, inputs);
-    res.json(r.recordset || []);
+    res.json((r.recordset || []).map(row => ({
+      ...row,
+      HasMaePui: !!row.HasMaePui,
+      MaePuiMaxValidDays: maePuiMaxValidDays,
+    })));
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
@@ -1190,11 +1453,83 @@ async function requireQuotationInScope(req, res, next) {
   } catch (e) { res.status(500).json({ message: e.message }); }
 }
 
+router.get('/:id/extend-preview', requireCapability('quotation.manage'), requireQuotationInScope, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ message: 'สามารถขยายเวลาได้เฉพาะใบเสนอราคาที่สร้างในระบบเท่านั้น' });
+    }
+    const q = (await wfQuery(`SELECT * FROM wf.Quotation WHERE Id=@id`, { id: { type: sql.Int, value: id } })).recordset?.[0];
+    if (!q) return res.status(404).json({ message: 'ไม่พบใบเสนอราคา' });
+
+    const hasGiveaway = await hasQuoteLineGiveawayColumn();
+    let rawLines = (await wfQuery(
+      `SELECT Id, LineNum, GoodId, GoodCode, GoodName, QtyTon, PricePerTon, NetPricePerTon${hasGiveaway ? ', IsGiveaway' : ''} FROM wf.QuotationLine WHERE QuoteId=@id ORDER BY LineNum`,
+      { id: { type: sql.Int, value: q.Id } }
+    )).recordset || [];
+    if (!rawLines.length && q.WinspeedQuoteSOID) {
+      const native = await loadNativeQuotationBySoid(q.WinspeedQuoteSOID);
+      rawLines = native?.lines || [];
+    }
+
+    const maePuiInfo = await inspectMaePuiGoods(rawLines);
+    const maxDays = await getMaePuiMaxValidDays();
+    const today = toBangkokDateString(new Date());
+    const maxValidUntil = maePuiInfo.hasMaePui ? addBangkokDaysDateStr(today, maxDays) : null;
+
+    const linesWithGroups = enrichLinesWithGroupInfo(rawLines, maePuiInfo.groupByGoodKey);
+    const enrichedLines = [];
+    for (const line of linesWithGroups) {
+      let currentAnnouncedPrice = null;
+      let priceStatus = 'UNKNOWN';
+      if (!line.IsGiveaway) {
+        try {
+          const auth = await resolveAuthoritativePrice({
+            custId: q.CustId,
+            goodId: line.GoodId,
+            goodCode: line.GoodCode,
+            asOfDate: today,
+          });
+          if (auth?.hasAnnouncedPrice && auth.announcedPrice != null) {
+            currentAnnouncedPrice = Number(auth.announcedPrice);
+            priceStatus = auth.priceStatus || 'ACTIVE';
+          }
+        } catch { /* keep null if price lookup fails */ }
+      }
+      const oldPrice = Number(line.PricePerTon || 0);
+      enrichedLines.push({
+        ...line,
+        PricePerTon: oldPrice,
+        CurrentAnnouncedPrice: currentAnnouncedPrice,
+        PriceDiff: currentAnnouncedPrice != null ? Number((oldPrice - currentAnnouncedPrice).toFixed(2)) : null,
+        PriceStatus: priceStatus,
+      });
+    }
+
+    res.json({
+      id: q.Id,
+      quoteNo: q.QuoteNo,
+      custId: q.CustId,
+      custName: q.CustName,
+      status: isPastValidity(q) ? 'EXPIRED' : q.Status,
+      currentValidUntil: q.ValidUntil ? String(new Date(q.ValidUntil).toISOString()).slice(0, 10) : null,
+      today,
+      hasMaePui: maePuiInfo.hasMaePui,
+      maxValidDays: maePuiInfo.hasMaePui ? maxDays : null,
+      maePuiMaxValidDays: maxDays,
+      maxValidUntil,
+      requiresPriceReview: maePuiInfo.hasMaePui,
+      lines: enrichedLines,
+    });
+  } catch (e) { res.status(e.statusCode || 500).json({ message: e.message }); }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const hasSource = await hasQuoteSourceTable();
     const id = Number(req.params.id);
     const scope = await getVisibleScope(req.user);
+    const maePuiMaxValidDays = await getMaePuiMaxValidDays();
     if (Number.isInteger(id) && id < 0) {
       const native = await loadNativeQuotationBySoid(Math.abs(id));
       if (!native) return res.status(404).json({ message: 'quotation not found' });
@@ -1202,7 +1537,15 @@ router.get('/:id', async (req, res) => {
         const owner = (await wfQuery(`SELECT CAST(EmpID AS VARCHAR(20)) AS EmpID FROM dbo.SOHD WITH (NOLOCK) WHERE SOID=@sid`, { sid: { type: sql.Int, value: Math.abs(id) } })).recordset?.[0];
         if (!inScope(scope, { empId: owner?.EmpID })) return res.status(404).json({ message: 'quotation not found' });
       }
-      return res.json({ ...native, ...(await quotationParty(native.CustId, null, Math.abs(id))) });
+      const nativeMaePui = await inspectMaePuiGoods(native.lines);
+      const nativeLines = enrichLinesWithGroupInfo(native.lines, nativeMaePui.groupByGoodKey);
+      return res.json({
+        ...native,
+        ...(await quotationParty(native.CustId, null, Math.abs(id))),
+        lines: nativeLines,
+        HasMaePui: nativeMaePui.hasMaePui,
+        MaePuiMaxValidDays: maePuiMaxValidDays,
+      });
     }
 
     const q = (await wfQuery(`SELECT * FROM wf.Quotation WHERE Id=@id`, { id: { type: sql.Int, value: id } })).recordset?.[0];
@@ -1261,10 +1604,22 @@ router.get('/:id', async (req, res) => {
       }
     }
 
-    const totalTon = lines.reduce((sum, line) => sum + Number(line.QtyTon || 0), 0);
-    const totalAmount = lines.reduce((sum, line) => sum + Number(line.LineAmount || (Number(line.QtyTon || 0) * Number(line.PricePerTon || 0))), 0);
+    const maePuiInfo = await inspectMaePuiGoods(lines);
+    const enrichedLines = enrichLinesWithGroupInfo(lines, maePuiInfo.groupByGoodKey);
+    const totalTon = enrichedLines.reduce((sum, line) => sum + Number(line.QtyTon || 0), 0);
+    const totalAmount = enrichedLines.reduce((sum, line) => sum + Number(line.LineAmount || (Number(line.QtyTon || 0) * Number(line.PricePerTon || 0))), 0);
     const party = await quotationParty(q.CustId, q.SalesUserId, q.WinspeedQuoteSOID);
-    res.json({ ...q, ...party, lines, sourceSos, LineCount: lines.length, TotalTon: totalTon, TotalAmount: totalAmount });
+    res.json({
+      ...q,
+      ...party,
+      lines: enrichedLines,
+      sourceSos,
+      LineCount: enrichedLines.length,
+      TotalTon: totalTon,
+      TotalAmount: totalAmount,
+      HasMaePui: maePuiInfo.hasMaePui,
+      MaePuiMaxValidDays: maePuiMaxValidDays,
+    });
   } catch (e) { res.status(e.statusCode || 500).json({ message: e.message }); }
 });
 
@@ -1275,7 +1630,21 @@ router.post('/', requireCapability('quotation.create'), async (req, res) => {
     const { custId, custName, validUntil, validDays, remark, lines, salesUserId: impersonatedId } = req.body;
     if (!custId || !lines?.length) return res.status(400).json({ message: 'custId และ lines จำเป็น' });
     const hasGiveaway = await hasQuoteLineGiveawayColumn();
-    const normalizedValidUntil = normalizeValidUntil(validUntil, validDays);
+    const maePuiInfo = await inspectMaePuiGoods(lines);
+    const maxDays = await getMaePuiMaxValidDays();
+    const normalizedValidUntil = normalizeValidUntil(validUntil, validDays, {
+      defaultDays: maePuiInfo.hasMaePui ? maxDays : 15,
+      strictValidDays: maePuiInfo.hasMaePui,
+    });
+    assertMaePuiValidityAllowed({
+      hasMaePui: maePuiInfo.hasMaePui,
+      validUntilDate: normalizedValidUntil,
+      requestedValidDays: validDays,
+      maxDays,
+    });
+    const todayStr = toBangkokDateString(new Date());
+    await assertPriceBookLinesSellable({ lines, asOfDate: todayStr });
+    await assertPricesAboveCost({ lines, asOfDate: todayStr });
 
     const result = await wfTransaction(async tx => {
       const quoteNo = await nextNativeDocNo(tx, 'QU');
@@ -1314,7 +1683,7 @@ router.post('/', requireCapability('quotation.create'), async (req, res) => {
       winspeedEstimateId: result.native?.quoteSoid,
       winspeedEstimateNo: result.native?.quoteNo,
     });
-  } catch (e) { console.error(e); res.status(e.statusCode || 500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.statusCode || e.status || 500).json({ message: e.message, code: e.code }); }
 });
 
 // POST /api/quotation/from-so-trip
@@ -1468,7 +1837,21 @@ router.post('/from-so-trip', requireCapability('quotation.create'), async (req, 
     const quoteLines = Array.from(merged.values()).filter(l => l.qtyTon > 0);
     if (!quoteLines.length) return res.status(400).json({ message: 'ไม่พบรายการขายจริงสำหรับทำใบเสนอราคา (ของแถมจะไม่ถูกนำไปเสนอราคา)' });
 
-    const validUntil = normalizeValidUntil(req.body?.validUntil, req.body?.validDays);
+    const maePuiInfo = await inspectMaePuiGoods(quoteLines);
+    const maxDays = await getMaePuiMaxValidDays();
+    const validUntil = normalizeValidUntil(req.body?.validUntil, req.body?.validDays, {
+      defaultDays: maePuiInfo.hasMaePui ? maxDays : 15,
+      strictValidDays: maePuiInfo.hasMaePui,
+    });
+    assertMaePuiValidityAllowed({
+      hasMaePui: maePuiInfo.hasMaePui,
+      validUntilDate: validUntil,
+      requestedValidDays: req.body?.validDays,
+      maxDays,
+    });
+    const todayStr = toBangkokDateString(new Date());
+    await assertPriceBookLinesSellable({ lines: quoteLines, asOfDate: todayStr });
+    await assertPricesAboveCost({ lines: quoteLines, asOfDate: todayStr });
     const remark = req.body?.remark || `สร้างจาก Sale Trip: ${orders.map(o => o.WfRef).join(', ')}`;
     const salesUserId = (req.user.role === 'ADMIN' && req.body?.salesUserId) ? Number(req.body.salesUserId) : (orders[0].SalesUserId || req.user.sub);
 
@@ -1537,7 +1920,7 @@ router.post('/from-so-trip', requireCapability('quotation.create'), async (req, 
       lineCount: quoteLines.length,
       validUntil: validUntil.toISOString().slice(0, 10),
     });
-  } catch (e) { console.error(e); res.status(e.statusCode || 500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.statusCode || e.status || 500).json({ message: e.message, code: e.code }); }
 });
 
 // PATCH /api/quotation/:id/status
@@ -1574,7 +1957,21 @@ router.patch('/:id/status', requireCapability('quotation.manage'), requireQuotat
         return await confirmNativeQuotation(tx, Number(req.params.id), req.user.sub);
       });
     } else {
-      const ready = await getNativeQuotationReadiness();
+      const effectiveLinesToCheck = existingLines.map(l => {
+      const upd = priceUpdates.find(u => Number(u.lineNum) === Number(l.LineNum));
+      return {
+        goodId: l.GoodId,
+        goodCode: l.GoodCode,
+        goodName: l.GoodName,
+        qtyTon: Number(l.QtyTon || 0),
+        pricePerTon: upd ? upd.newPrice : Number(l.PricePerTon || 0),
+        isGiveaway: Boolean(l.IsGiveaway),
+      };
+    });
+    await assertPriceBookLinesSellable({ lines: effectiveLinesToCheck, asOfDate: today });
+    await assertPricesAboveCost({ lines: effectiveLinesToCheck, asOfDate: today });
+
+    const ready = await getNativeQuotationReadiness();
       restoredSources = await wfTransaction(async tx => {
         await tx.request()
           .input('s', sql.NVarChar(20), status)
@@ -1609,24 +2006,173 @@ router.patch('/:id/status', requireCapability('quotation.manage'), requireQuotat
 // PATCH /api/quotation/:id/valid-until
 router.patch('/:id/valid-until', requireCapability('quotation.manage'), requireQuotationInScope, async (req, res) => {
   try {
-    const validUntil = normalizeValidUntil(req.body?.validUntil, req.body?.validDays);
-    if (validUntil.toISOString().slice(0, 10) < toBangkokDateString(new Date())) {
-      return res.status(400).json({ message: 'วันยืนราคาต้องไม่ก่อนวันนี้' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ message: 'รหัสใบเสนอราคาไม่ถูกต้อง' });
     }
+    const existingQuote = (await wfQuery(`SELECT * FROM wf.Quotation WHERE Id=@id`, {
+      id: { type: sql.Int, value: id },
+    })).recordset?.[0];
+    if (!existingQuote) {
+      return res.status(404).json({ message: 'ไม่พบใบเสนอราคาที่ระบุ' });
+    }
+    if (['CONVERTED', 'CANCELLED'].includes(existingQuote.Status)) {
+      return res.status(409).json({ message: 'ไม่สามารถขยายอายุใบเสนอราคาที่แปลงเป็น SO หรือยกเลิกแล้วได้' });
+    }
+
+    const hasGiveaway = await hasQuoteLineGiveawayColumn();
+    let existingLines = (await wfQuery(
+      `SELECT Id, LineNum, GoodId, GoodCode, GoodName, QtyTon, PricePerTon, NetPricePerTon${hasGiveaway ? ', IsGiveaway' : ''} FROM wf.QuotationLine WHERE QuoteId=@id ORDER BY LineNum`,
+      { id: { type: sql.Int, value: id } }
+    )).recordset || [];
+    if (!existingLines.length && existingQuote.WinspeedQuoteSOID) {
+      const native = await loadNativeQuotationBySoid(existingQuote.WinspeedQuoteSOID);
+      existingLines = native?.lines || [];
+    }
+
+    const maePuiInfo = await inspectMaePuiGoods(existingLines);
+    const maxDays = await getMaePuiMaxValidDays();
+    const validUntil = normalizeValidUntil(req.body?.validUntil, req.body?.validDays, {
+      defaultDays: maePuiInfo.hasMaePui ? maxDays : 15,
+      strictValidDays: maePuiInfo.hasMaePui,
+    });
+    assertMaePuiValidityAllowed({
+      hasMaePui: maePuiInfo.hasMaePui,
+      validUntilDate: validUntil,
+      requestedValidDays: req.body?.validDays,
+      maxDays,
+    });
+
+    const priceReviewed = req.body?.priceReviewed === true;
+    if (maePuiInfo.hasMaePui && !priceReviewed) {
+      return res.status(400).json({
+        message: 'ใบเสนอราคาที่มีสินค้ากลุ่ม "แม่ปุ๋ย" ต้องทบทวนราคาก่อนขอขยายเวลาทุกครั้ง',
+        code: 'MAE_PUI_PRICE_REVIEW_REQUIRED',
+        hasMaePui: true,
+        maxValidDays: maxDays,
+      });
+    }
+
+    const today = toBangkokDateString(new Date());
+    const submittedLines = Array.isArray(req.body?.lines) ? req.body.lines : [];
+    const priceUpdates = [];
+    for (const item of submittedLines) {
+      const matched = existingLines.find(l =>
+        (item.lineNum != null && Number(l.LineNum) === Number(item.lineNum)) ||
+        (item.id != null && l.Id != null && Number(l.Id) === Number(item.id)) ||
+        (item.goodId != null && String(l.GoodId) === String(item.goodId))
+      );
+      if (!matched || matched.IsGiveaway) continue;
+      const newPrice = Number(item.pricePerTon ?? item.PricePerTon);
+      if (!Number.isFinite(newPrice) || newPrice < 0) {
+        return res.status(400).json({ message: `ราคาต่อตันของสินค้า ${matched.GoodName || matched.GoodId} ไม่ถูกต้อง` });
+      }
+      const oldPrice = Number(matched.PricePerTon || 0);
+      let nextNetPrice = Number(matched.NetPricePerTon || 0);
+      try {
+        const auth = await resolveAuthoritativePrice({
+          custId: existingQuote.CustId,
+          goodId: matched.GoodId,
+          goodCode: matched.GoodCode,
+          asOfDate: today,
+        });
+        if (auth?.hasAnnouncedPrice && auth.announcedPrice != null) {
+          nextNetPrice = Number(auth.announcedPrice);
+        }
+      } catch { /* fallback to previous NetPricePerTon */ }
+      if (newPrice !== oldPrice || nextNetPrice !== Number(matched.NetPricePerTon || 0)) {
+        priceUpdates.push({
+          lineId: matched.Id || null,
+          lineNum: Number(matched.LineNum),
+          goodId: matched.GoodId,
+          goodCode: matched.GoodCode,
+          goodName: matched.GoodName,
+          oldPrice,
+          newPrice,
+          netPricePerTon: nextNetPrice,
+        });
+      }
+    }
+
+    const effectiveLinesToCheck = existingLines.map(l => {
+      const upd = priceUpdates.find(u => Number(u.lineNum) === Number(l.LineNum));
+      return {
+        goodId: l.GoodId,
+        goodCode: l.GoodCode,
+        goodName: l.GoodName,
+        qtyTon: Number(l.QtyTon || 0),
+        pricePerTon: upd ? upd.newPrice : Number(l.PricePerTon || 0),
+        isGiveaway: Boolean(l.IsGiveaway),
+      };
+    });
+    await assertPriceBookLinesSellable({ lines: effectiveLinesToCheck, asOfDate: today });
+    await assertPricesAboveCost({ lines: effectiveLinesToCheck, asOfDate: today });
+
     const ready = await getNativeQuotationReadiness();
     await wfTransaction(async tx => {
       const r = await tx.request()
         .input('vu', sql.Date, validUntil)
-        .input('id', sql.Int, Number(req.params.id))
-        .query(`UPDATE wf.Quotation SET ValidUntil=@vu, UpdatedAt=GETUTCDATE() WHERE Id=@id`);
+        .input('id', sql.Int, id)
+        .query(`
+          UPDATE wf.Quotation
+          SET ValidUntil=@vu,
+              Status=CASE WHEN Status='EXPIRED' THEN 'SENT' ELSE Status END,
+              UpdatedAt=GETUTCDATE()
+          WHERE Id=@id
+        `);
       // ต้องตรวจในทรานแซกชัน เพื่อให้การอัปเดตฝั่ง native ถูกยกเลิกไปด้วยเมื่อไม่พบใบเสนอราคา
       if (!r.rowsAffected[0]) { const err = new Error('ไม่พบใบเสนอราคาที่ระบุ'); err.statusCode = 404; throw err; }
+
+      for (const u of priceUpdates) {
+        await tx.request()
+          .input('qid', sql.Int, id)
+          .input('ln', sql.Int, u.lineNum)
+          .input('pp', sql.Decimal(12, 2), u.newPrice)
+          .input('np', sql.Decimal(12, 2), u.netPricePerTon)
+          .query(`UPDATE wf.QuotationLine SET PricePerTon=@pp, NetPricePerTon=@np WHERE QuoteId=@qid AND LineNum=@ln`);
+      }
+
       if (ready.hasNativeTables && ready.hasLinkColumns) {
-        await updateNativeQuotationValidity(tx, Number(req.params.id), validUntil);
+        if (priceUpdates.length > 0) {
+          await updateNativeQuotationPrices(tx, id, priceUpdates);
+        }
+        await updateNativeQuotationValidity(tx, id, validUntil);
+      }
+
+      if (maePuiInfo.hasMaePui || priceUpdates.length > 0) {
+        try {
+          await logChangeEvent(tx, {
+            entityType: 'QUOTATION',
+            entityId: String(id),
+            action: 'EXTEND_VALIDITY',
+            beforeJson: {
+              validUntil: existingQuote.ValidUntil ? String(new Date(existingQuote.ValidUntil).toISOString()).slice(0, 10) : null,
+              lines: existingLines.map(l => ({ lineNum: l.LineNum, goodId: l.GoodId, pricePerTon: Number(l.PricePerTon || 0) })),
+            },
+            afterJson: {
+              validUntil: validUntil.toISOString().slice(0, 10),
+              priceReviewed,
+              updatedPrices: priceUpdates,
+            },
+            reasonCode: maePuiInfo.hasMaePui ? 'MAE_PUI_PRICE_REVIEW' : 'EXTEND_VALIDITY',
+            reasonText: maePuiInfo.hasMaePui
+              ? `ทบทวนราคาและขยายอายุใบเสนอราคากลุ่มแม่ปุ๋ย (${priceUpdates.length} รายการปรับราคา)`
+              : `ขยายอายุใบเสนอราคา`,
+            userId: req.user?.sub || 'USER',
+            ipAddress: req.ip,
+          });
+        } catch { /* ChangeEvent logging is best-effort if table absent in partial test envs */ }
       }
     });
-    res.json({ id: Number(req.params.id), validUntil: validUntil.toISOString().slice(0, 10) });
-  } catch (e) { res.status(e.statusCode || 500).json({ message: e.message }); }
+
+    res.json({
+      id,
+      validUntil: validUntil.toISOString().slice(0, 10),
+      hasMaePui: maePuiInfo.hasMaePui,
+      priceReviewed,
+      updatedPriceCount: priceUpdates.length,
+    });
+  } catch (e) { res.status(e.statusCode || 500).json({ message: e.message, code: e.code }); }
 });
 
 // POST /api/quotation/:id/convert — retired (UAT 2026-10-09). It made a draft straight from the quotation lines: no

@@ -3,6 +3,7 @@ import { Gift, Search, RefreshCw, History, X, Calendar, MapPin, User, ArrowUpDow
 import { fetchGiveawayItems, fetchGiveawayWithdrawals, fetchGiveawayRegions, updateGood, toggleGoodStatus } from '../../services/api';
 import { formatThaiDate } from '../../utils/date';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
+import { appAlert } from '../ui/AppAlert';
 import type { GiveawayItem, GiveawayWithdrawal } from '../../types';
 
 export const GiveawaysManager = () => {
@@ -116,7 +117,7 @@ export const GiveawaysManager = () => {
       }));
       setEditingItem(null);
     } catch (err: any) {
-      alert('บันทึกไม่สำเร็จ: ' + (err?.message || 'ข้อผิดพลาดระบบ'));
+      await appAlert('บันทึกไม่สำเร็จ: ' + (err?.message || 'ข้อผิดพลาดระบบ'), 'error');
     }
     setSaving(false);
   };
@@ -144,7 +145,7 @@ export const GiveawaysManager = () => {
       }
       setStatusModal(null);
     } catch (err: any) {
-      alert('ไม่สามารถเปลี่ยนสถานะได้: ' + (err?.message || 'ข้อผิดพลาดระบบ'));
+      await appAlert('ไม่สามารถเปลี่ยนสถานะได้: ' + (err?.message || 'ข้อผิดพลาดระบบ'), 'error');
     }
     setStatusLoading(false);
   };

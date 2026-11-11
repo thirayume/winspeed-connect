@@ -16,13 +16,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ClipboardCheck, RefreshCw, AlertTriangle, Check, X, Clock,
-  PauseOctagon, Truck, Undo2, Filter,
+  PauseOctagon, Truck, Undo2, Filter, Users,
 } from 'lucide-react';
 import {
   fetchEditRequests, approveEditRequest, rejectEditRequest, cancelEditRequest,
   fetchPriceApprovals, approvePriceApproval, rejectPriceApproval,
-  type EditRequestRow, type PriceApprovalRow,
+  fetchTripApprovals, approveTripApproval, rejectTripApproval, cancelTripMultiCustApproval,
+  type EditRequestRow, type PriceApprovalRow, type TripMultiCustApprovalRow,
 } from '../../services/api';
+import { appConfirm } from '../ui/AppAlert';
+import { formatThaiDate } from '../../utils/date';
 import { useAuthStore } from '../../store/auth-store';
 import {
   useHoldCapability, HoldCapabilityBanner, HoldScopeChip,
@@ -44,22 +47,21 @@ const STAGE_LABEL: Record<string, string> = {
   SHIPPED:    'ชั่งออกแล้ว',
 };
 const STATUS_STYLE: Record<string, string> = {
-  PENDING:   'bg-amber-50 text-amber-900 border-amber-300',
-  APPROVED:  'bg-emerald-50 text-emerald-800 border-emerald-300',
-  REJECTED:  'bg-red-50 text-red-800 border-red-300',
-  CANCELLED: 'bg-gray-100 text-gray-600 border-gray-300',
+  PENDING:    'bg-amber-50 text-amber-900 border-amber-300',
+  APPROVED:   'bg-emerald-50 text-emerald-800 border-emerald-300',
+  REJECTED:   'bg-red-50 text-red-800 border-red-300',
+  CANCELLED:  'bg-gray-100 text-gray-600 border-gray-300',
+  SUPERSEDED: 'bg-gray-100 text-gray-500 border-gray-300',
 };
 const STATUS_LABEL: Record<string, string> = {
-  PENDING: 'รออนุมัติ', APPROVED: 'อนุมัติแล้ว', REJECTED: 'ปฏิเสธ', CANCELLED: 'ถอนแล้ว',
+  PENDING: 'รออนุมัติ', APPROVED: 'อนุมัติแล้ว', REJECTED: 'ปฏิเสธ', CANCELLED: 'ถอนแล้ว', SUPERSEDED: 'แทนที่แล้ว',
 };
 
 const APPROVER_ROLES = ['APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'C_LEVEL'];
 
 const thTime = (v?: string | null) => {
   if (!v) return '—';
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? '—'
-    : d.toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return formatThaiDate(v, true);
 };
 
 function RequestCard({ r, onDone, cap }: { r: EditRequestRow; onDone: () => void; cap: HoldCapability | null }) {
@@ -365,10 +367,195 @@ function PriceApprovalCard({ pa, onDone }: { pa: PriceApprovalRow; onDone: () =>
   );
 }
 
+function TripApprovalCard({ ta, canApproveRole, onDone }: { ta: TripMultiCustApprovalRow; canApproveRole: boolean; onDone: () => void }) {
+  const user = useAuthStore(s => s.user);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const [mode, setMode] = useState<null | 'approve' | 'reject'>(null);
+
+  const canApprove =
+    canApproveRole &&
+    APPROVER_ROLES.includes(String(user?.role || '')) &&
+    (user?.role === 'ADMIN' || user?.role === 'C_LEVEL' || Number(ta.requestedBy) !== Number(user?.id));
+  const isMine = Number(ta.requestedBy) === Number(user?.id);
+  const pending = ta.status === 'PENDING';
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true); setErr(null);
+    try { await fn(); onDone(); }
+    catch (e: any) { setErr(e?.message || 'ทำรายการไม่สำเร็จ'); }
+    setBusy(false);
+  };
+
+  return (
+    <div className={`rounded-lg border bg-white p-3 shadow-sm ${pending ? 'border-amber-300' : 'border-gray-200'}`}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <span className="font-mono text-xs text-gray-400">#{ta.id}</span>
+        <span className="font-bold text-sm text-[#0C447C] inline-flex items-center gap-1">
+          <Truck size={14} /> {ta.tripCode || `Trip #${ta.tripId}`}
+        </span>
+        {ta.transRegistration && (
+          <span className="text-xs font-medium text-gray-700 bg-gray-100 rounded px-2 py-0.5">
+            รถ {ta.transRegistration}
+          </span>
+        )}
+        <span className="inline-flex items-center gap-1 rounded border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-bold text-indigo-800">
+          <Users size={11} /> ลูกค้า {ta.customerCount} ราย (เกณฑ์ ≥ {ta.minCustomersSetting})
+        </span>
+        <span className={`rounded border px-2 py-0.5 text-[11px] font-bold ${STATUS_STYLE[ta.status] || ''}`}>
+          {STATUS_LABEL[ta.status] || ta.status}
+        </span>
+      </div>
+
+      <div className="mt-2.5 rounded-lg bg-gray-50 p-2.5 border border-gray-100 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+        <div className="col-span-2">
+          <span className="text-gray-500 block text-[10px]">รายชื่อลูกค้า / บิลในทริป:</span>
+          <span className="font-semibold text-gray-800">{ta.customerSummary || `${ta.customerCount} ราย`}</span>
+        </div>
+        <div>
+          <span className="text-gray-500 block text-[10px]">จำนวนบิล / น้ำหนัก:</span>
+          <span className="font-bold text-gray-800">
+            {ta.orderCount} บิล · {Number(ta.totalTon || 0).toLocaleString('th-TH', { maximumFractionDigits: 3 })} ตัน
+          </span>
+        </div>
+        <div>
+          <span className="text-gray-500 block text-[10px]">มูลค่ารวมทริป:</span>
+          <span className="font-bold text-[#0C447C]">฿{Number(ta.totalAmount || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
+        </div>
+      </div>
+
+      {ta.reasonText && (
+        <div className="mt-2 text-xs text-gray-600 bg-amber-50/60 p-2 rounded border border-amber-100">
+          <span className="font-semibold text-amber-800">เหตุผลขอรวมทริป:</span> {ta.reasonText}
+        </div>
+      )}
+
+      <div className="mt-2 flex flex-wrap items-center justify-between text-[11px] text-gray-400">
+        <span>ขอโดย <strong className="text-gray-600">{ta.requestedByName || `User #${ta.requestedBy}`}</strong> · {thTime(ta.createdAt)}</span>
+        {ta.approvedAt && (
+          <span>
+            {ta.status === 'APPROVED' ? 'อนุมัติ' : 'ปฏิเสธ'}โดย <strong className="text-gray-600">{ta.approvedByName || `User #${ta.approvedBy}`}</strong> · {thTime(ta.approvedAt)}
+            {ta.approvalNote && <span className="ml-1 text-gray-500">({ta.approvalNote})</span>}
+          </span>
+        )}
+      </div>
+
+      {err && (
+        <div className="mt-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">{err}</div>
+      )}
+
+      {pending && (canApprove || isMine) && (
+        <div className="mt-2 border-t border-gray-100 pt-2">
+          {mode === null && (
+            <div className="flex flex-wrap gap-2">
+              {canApprove && (
+                <>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setMode('approve')}
+                    className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    <Check size={12} /> อนุมัติทริป
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setMode('reject')}
+                    className="flex items-center gap-1 rounded border border-red-300 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                  >
+                    <X size={12} /> ปฏิเสธ
+                  </button>
+                </>
+              )}
+              {isMine && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={async () => {
+                    if (!await appConfirm('ต้องการถอนคำขออนุมัติทริปหลายลูกค้านี้ใช่หรือไม่?')) return;
+                    await run(() => cancelTripMultiCustApproval(ta.tripId, ta.id));
+                  }}
+                  className="flex items-center gap-1 rounded border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <Undo2 size={12} /> ถอนคำขอ
+                </button>
+              )}
+            </div>
+          )}
+
+          {mode === 'approve' && (
+            <div className="space-y-1.5 rounded border border-emerald-200 bg-emerald-50/50 p-2 text-xs">
+              <div className="font-semibold text-emerald-900">ยืนยันอนุมัติเปิด Sale Trip หลายลูกค้า</div>
+              <input
+                type="text"
+                placeholder="หมายเหตุการอนุมัติ (ไม่บังคับ)"
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs outline-none"
+              />
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => run(() => approveTripApproval(ta.id, note))}
+                  className="rounded bg-emerald-600 px-2.5 py-1 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {busy ? 'กำลังบันทึก...' : 'ยืนยันอนุมัติ'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMode(null); setNote(''); }}
+                  className="rounded border border-gray-300 bg-white px-2.5 py-1 text-gray-700 hover:bg-gray-50"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          )}
+
+          {mode === 'reject' && (
+            <div className="space-y-1.5 rounded border border-red-200 bg-red-50/50 p-2 text-xs">
+              <div className="font-semibold text-red-900">ปฏิเสธคำขอเปิด Sale Trip หลายลูกค้า (ต้องระบุเหตุผลอย่างน้อย 5 ตัวอักษร)</div>
+              <input
+                type="text"
+                placeholder="ระบุเหตุผลที่ปฏิเสธ..."
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs outline-none"
+              />
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  disabled={busy || note.trim().length < 5}
+                  onClick={() => run(() => rejectTripApproval(ta.id, note))}
+                  className="rounded bg-red-600 px-2.5 py-1 font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {busy ? 'กำลังบันทึก...' : 'ยืนยันปฏิเสธ'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setMode(null); setNote(''); }}
+                  className="rounded border border-gray-300 bg-white px-2.5 py-1 text-gray-700 hover:bg-gray-50"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function EditRequestsPage() {
-  const [activeTab, setActiveTab] = useState<'stage' | 'price'>('stage');
+  const [activeTab, setActiveTab] = useState<'stage' | 'price' | 'trip'>('stage');
   const [rows, setRows] = useState<EditRequestRow[]>([]);
   const [priceRows, setPriceRows] = useState<PriceApprovalRow[]>([]);
+  const [tripRows, setTripRows] = useState<TripMultiCustApprovalRow[]>([]);
+  const [canApproveTripRole, setCanApproveTripRole] = useState<boolean>(true);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('PENDING');
@@ -378,7 +565,7 @@ export function EditRequestsPage() {
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      const [r, p] = await Promise.all([
+      const [r, p, t] = await Promise.all([
         fetchEditRequests({
           status: statusFilter || undefined,
           mine: onlyMine || undefined,
@@ -387,9 +574,15 @@ export function EditRequestsPage() {
           status: statusFilter || undefined,
           mine: onlyMine || undefined,
         }),
+        fetchTripApprovals({
+          status: statusFilter || undefined,
+          mine: onlyMine || undefined,
+        }),
       ]);
       setRows(r.data || []);
       setPriceRows(p.data || []);
+      setTripRows(t.data || []);
+      setCanApproveTripRole(t.canApproveRole ?? true);
     } catch (e: any) {
       setErr(e?.message || 'โหลดคำขอไม่สำเร็จ');
     }
@@ -409,11 +602,12 @@ export function EditRequestsPage() {
   const heldCount = rows.filter(r => r.status === 'PENDING' && r.holdTruck).length;
   const pendingCount = rows.filter(r => r.status === 'PENDING').length;
   const pricePendingCount = priceRows.filter(r => r.status === 'PENDING').length;
+  const tripPendingCount = tripRows.filter(r => r.status === 'PENDING').length;
 
   return (
     <div className="space-y-3 p-4">
       {/* Tab Switcher */}
-      <div className="flex border-b border-gray-200 gap-6">
+      <div className="flex flex-wrap border-b border-gray-200 gap-6">
         <button
           type="button"
           onClick={() => setActiveTab('stage')}
@@ -430,15 +624,27 @@ export function EditRequestsPage() {
           <ClipboardCheck size={16} /> ขออนุมัติราคาต่ำกว่าประกาศ
           {pricePendingCount > 0 && <span className="bg-amber-100 text-amber-800 text-[11px] px-2 py-0.5 rounded-full font-bold">{pricePendingCount}</span>}
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('trip')}
+          className={`pb-2 text-sm font-bold flex items-center gap-1.5 border-b-2 transition-all ${activeTab === 'trip' ? 'border-[#0C447C] text-[#0C447C]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          <Users size={16} /> อนุมัติทริปหลายลูกค้า
+          {tripPendingCount > 0 && <span className="bg-amber-100 text-amber-800 text-[11px] px-2 py-0.5 rounded-full font-bold">{tripPendingCount}</span>}
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="flex items-center gap-2 text-lg font-semibold" style={{ color: NAVY }}>
-          {activeTab === 'stage' ? <PauseOctagon size={19} /> : <ClipboardCheck size={19} />}
-          {activeTab === 'stage' ? 'คำขอแก้ไขหลังยืนยัน / Hold รถ' : 'คำขออนุมัติราคาขายต่ำกว่าราคาประกาศ'}
+          {activeTab === 'stage' ? <PauseOctagon size={19} /> : activeTab === 'price' ? <ClipboardCheck size={19} /> : <Users size={19} />}
+          {activeTab === 'stage'
+            ? 'คำขอแก้ไขหลังยืนยัน / Hold รถ'
+            : activeTab === 'price'
+              ? 'คำขออนุมัติราคาขายต่ำกว่าราคาประกาศ'
+              : 'คำขออนุมัติเปิด Sale Trip หลายลูกค้า'}
         </h2>
         <span className="text-xs text-gray-500">
-          รออนุมัติ {activeTab === 'stage' ? pendingCount : pricePendingCount} รายการ
+          รออนุมัติ {activeTab === 'stage' ? pendingCount : activeTab === 'price' ? pricePendingCount : tripPendingCount} รายการ
           {activeTab === 'stage' && heldCount > 0 && (
             <span className="ml-2 inline-flex items-center gap-1 font-semibold text-red-600">
               <PauseOctagon size={12} /> มีรถถูก Hold {heldCount} คัน
@@ -461,7 +667,8 @@ export function EditRequestsPage() {
               <option value="PENDING">รออนุมัติ</option>
               <option value="APPROVED">อนุมัติแล้ว</option>
               <option value="REJECTED">ปฏิเสธ</option>
-              {activeTab === 'stage' && <option value="CANCELLED">ถอนแล้ว</option>}
+              {(activeTab === 'stage' || activeTab === 'trip') && <option value="CANCELLED">ถอนแล้ว</option>}
+              {activeTab === 'trip' && <option value="SUPERSEDED">แทนที่แล้ว</option>}
               <option value="">ทั้งหมด</option>
             </select>
           </div>
@@ -508,6 +715,21 @@ export function EditRequestsPage() {
 
           <div className="space-y-2">
             {priceRows.map(pa => <PriceApprovalCard key={String(pa.id)} pa={pa} onDone={load} />)}
+          </div>
+        </>
+      )}
+
+      {activeTab === 'trip' && (
+        <>
+          {!loading && tripRows.length === 0 && !err && (
+            <div className="rounded border border-dashed border-gray-300 bg-white px-4 py-10 text-center">
+              <Users size={26} className="mx-auto mb-2 text-gray-300" />
+              <p className="text-sm text-gray-500">ไม่มีคำขออนุมัติทริปหลายลูกค้าที่ตรงกับเงื่อนไข</p>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {tripRows.map(ta => <TripApprovalCard key={String(ta.id)} ta={ta} canApproveRole={canApproveTripRole} onDone={load} />)}
           </div>
         </>
       )}

@@ -12,6 +12,7 @@ const router = require('express').Router();
 const { sql, query, dboWrite } = require('../db');
 const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
 const { getBangkokDateString } = require('../services/so-pickup-policy');
+const { parseNullableAgingInput, getCreditAgingPolicyBounds } = require('../services/credit-service');
 // R12 O-4: SALES/MANAGER see their own + team documents (ADMIN/C_LEVEL/ACCOUNTING and operational roles see all)
 const { getVisibleScope, scopeFilter } = require('../services/visible-scope');
 const { nativeChainInScope } = require('../services/native-document-scope');
@@ -204,6 +205,9 @@ router.get('/customers', async (req, res) => {
       inputs.group = { type: sql.NVarChar(50), value: String(group) };
     }
 
+    const policyBounds = await getCreditAgingPolicyBounds();
+    inputs.defaultAgingDays = { type: sql.Int, value: policyBounds.defaultAgingDays };
+
     const rows = await query(
       `SELECT TOP (@limit)
               c.CustID, c.CustCode, c.CustName, 
@@ -211,7 +215,10 @@ router.get('/customers', async (req, res) => {
               COALESCE(cx.SecondaryPhone, c.ContTel1) AS Mobile,
               cx.PrimaryPhone, cx.SecondaryPhone, cx.Email, cx.LineId,
               ISNULL(cx.Remark, '') AS Remark, c.Inactive, 
-              COALESCE(cx.AgingDays, cm.AgingDays, c.CreditDays, 60) AS AgingDays,
+              COALESCE(cx.AgingDays, cm.AgingDays, c.CreditDays) AS RawAgingDays,
+              COALESCE(cx.AgingDays, cm.AgingDays, c.CreditDays, @defaultAgingDays) AS AgingDays,
+              COALESCE(cx.AgingDays, cm.AgingDays, c.CreditDays, @defaultAgingDays) AS CreditDays,
+              CASE WHEN COALESCE(cx.AgingDays, cm.AgingDays, c.CreditDays) IS NULL THEN 1 ELSE 0 END AS IsDefaultAging,
               COALESCE(cx.CreditLimit, cm.CreditLimit, c.CreditAmnt, 0) AS CreditLimit,
               ISNULL(cm.CreditHold, 0) AS CreditHold,
               CONVERT(NVARCHAR(50), COALESCE(cx.SalespersonUserId, c.BillEmp)) AS salespersonId,
@@ -399,7 +406,7 @@ router.post('/customer-requests', requireRole('SALES', 'COUNTER_SALES', 'ADMIN',
       email: { type: sql.NVarChar(100), value: Email || null },
       lineId: { type: sql.NVarChar(100), value: LineId || null },
       creditLimit: { type: sql.Decimal(18, 2), value: CreditLimit != null ? Number(CreditLimit) : 0 },
-      agingDays: { type: sql.Int, value: AgingDays != null ? Number(AgingDays) : 60 },
+      agingDays: { type: sql.Int, value: parseNullableAgingInput(AgingDays) },
       creditHold: { type: sql.Bit, value: CreditHold ? 1 : 0 },
     });
     res.status(201).json({ id: rows[0]?.Id });
@@ -457,7 +464,7 @@ router.patch('/customer-requests/:id/review', requireRole('ADMIN', 'MANAGER'), a
             WHERE CustId = @custId
           ELSE
             INSERT INTO wf.CustomerExt (CustId, SalespersonUserId, SalespersonName, RegionCode, CustGroupId, Email, LineId, CreditLimit, AgingDays, UpdatedAt)
-            VALUES (@custId, @spUserId, @spName, @regionCode, @custGroupId, @email, @lineId, @creditLimit, ISNULL(@agingDays, 60), GETUTCDATE());
+            VALUES (@custId, @spUserId, @spName, @regionCode, @custGroupId, @email, @lineId, @creditLimit, @agingDays, GETUTCDATE());
 
           MERGE wf.CreditMaster AS t USING (SELECT @custId AS CustId) AS s ON t.CustId = s.CustId
           WHEN MATCHED THEN UPDATE SET
@@ -467,7 +474,7 @@ router.patch('/customer-requests/:id/review', requireRole('ADMIN', 'MANAGER'), a
             UpdatedBy = @uid,
             UpdatedAt = GETUTCDATE()
           WHEN NOT MATCHED THEN INSERT (CustId, CustName, CreditLimit, AgingDays, CreditHold, UpdatedBy, UpdatedAt)
-            VALUES (@custId, @custName, @creditLimit, ISNULL(@agingDays, 60), ISNULL(@creditHold, 0), @uid, GETUTCDATE());
+            VALUES (@custId, @custName, @creditLimit, @agingDays, ISNULL(@creditHold, 0), @uid, GETUTCDATE());
         `, {
           custId: { type: sql.NVarChar(20), value: String(finalWinspeedCustId) },
           custName: { type: sql.NVarChar(200), value: reqRow.CustName },
@@ -478,7 +485,7 @@ router.patch('/customer-requests/:id/review', requireRole('ADMIN', 'MANAGER'), a
           email: { type: sql.NVarChar(100), value: reqRow.Email || null },
           lineId: { type: sql.NVarChar(100), value: reqRow.LineId || null },
           creditLimit: { type: sql.Decimal(18, 2), value: reqRow.CreditLimit != null ? Number(reqRow.CreditLimit) : null },
-          agingDays: { type: sql.Int, value: reqRow.AgingDays != null ? Number(reqRow.AgingDays) : 60 },
+          agingDays: { type: sql.Int, value: parseNullableAgingInput(reqRow.AgingDays) },
           creditHold: { type: sql.Bit, value: reqRow.CreditHold ? 1 : 0 },
           uid: { type: sql.Int, value: req.user.sub },
         });
@@ -622,7 +629,7 @@ router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res)
           WHERE CustId = @id
         ELSE
           INSERT INTO wf.CustomerExt (CustId, Remark, PrimaryPhone, SecondaryPhone, Email, LineId, CreditLimit, AgingDays, SalespersonUserId, SalespersonName, SaleAreaId, RegionCode, CustGroupId, UpdatedAt)
-          VALUES (@id, @remark, @primaryPhone, @secondaryPhone, @email, @lineId, @creditLimit, ISNULL(@agingDays, 60), @spUserId, @spName, @areaIdStr, @regionCode, @groupIdStr, GETUTCDATE())
+          VALUES (@id, @remark, @primaryPhone, @secondaryPhone, @email, @lineId, @creditLimit, @agingDays, @spUserId, @spName, @areaIdStr, @regionCode, @groupIdStr, GETUTCDATE())
       `, {
         id: { type: sql.VarChar(20), value: id },
         remark: { type: sql.NVarChar(500), value: Remark ?? null },
@@ -637,7 +644,7 @@ router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res)
         hasLineId: { type: sql.Bit, value: LineId !== undefined ? 1 : 0 },
         creditLimit: { type: sql.Decimal(18, 2), value: CreditLimit != null ? Number(CreditLimit) : null },
         hasCreditLimit: { type: sql.Bit, value: CreditLimit !== undefined ? 1 : 0 },
-        agingDays: { type: sql.Int, value: AgingDays != null ? Number(AgingDays) : null },
+        agingDays: { type: sql.Int, value: parseNullableAgingInput(AgingDays) },
         hasAgingDays: { type: sql.Bit, value: AgingDays !== undefined ? 1 : 0 },
         spUserId: { type: sql.Int, value: spUser?.Id ? Number(spUser.Id) : (spId ? Number(spId) : null) },
         spName: { type: sql.NVarChar(100), value: spUser?.DisplayName || null },
@@ -662,13 +669,13 @@ router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res)
           UpdatedBy = @uid,
           UpdatedAt = GETUTCDATE()
         WHEN NOT MATCHED THEN INSERT (CustId, CustName, CreditLimit, AgingDays, CreditHold, UpdatedBy, UpdatedAt)
-          VALUES (@id, @custName, @creditLimit, ISNULL(@agingDays, 60), ISNULL(@creditHold, 0), @uid, GETUTCDATE());
+          VALUES (@id, @custName, @creditLimit, @agingDays, ISNULL(@creditHold, 0), @uid, GETUTCDATE());
       `, {
         id: { type: sql.NVarChar(20), value: String(id) },
         custName: { type: sql.NVarChar(200), value: CustName || null },
         creditLimit: { type: sql.Decimal(18, 2), value: CreditLimit != null ? Number(CreditLimit) : null },
         hasCreditLimit: { type: sql.Bit, value: CreditLimit !== undefined ? 1 : 0 },
-        agingDays: { type: sql.Int, value: AgingDays != null ? Number(AgingDays) : 60 },
+        agingDays: { type: sql.Int, value: parseNullableAgingInput(AgingDays) },
         hasAgingDays: { type: sql.Bit, value: AgingDays !== undefined ? 1 : 0 },
         creditHold: { type: sql.Bit, value: CreditHold ? 1 : 0 },
         hasCreditHold: { type: sql.Bit, value: CreditHold !== undefined ? 1 : 0 },
@@ -805,7 +812,7 @@ router.post('/customers/batch-edit', requireRole('ADMIN', 'MANAGER'), async (req
           MERGE wf.CreditMaster AS t USING (SELECT @id AS CustId) AS s ON t.CustId = s.CustId
           WHEN MATCHED THEN UPDATE SET CreditHold = @creditHold, UpdatedBy = @uid, UpdatedAt = GETUTCDATE()
           WHEN NOT MATCHED THEN INSERT (CustId, CreditHold, CreditLimit, AgingDays, UpdatedBy, UpdatedAt)
-            VALUES (@id, @creditHold, 0, 60, @uid, GETUTCDATE());
+            VALUES (@id, @creditHold, NULL, NULL, @uid, GETUTCDATE());
         `, {
           id: { type: sql.NVarChar(20), value: custId },
           creditHold: { type: sql.Bit, value: creditHold ? 1 : 0 },
