@@ -20,12 +20,14 @@ const state = {
   borrow: null,          // wf.GiveawayBorrowRequest row
   lenderBudget: null, lenderWithdrawn: 0, requesterBudget: null,
   borrowPct: null,       // GIVEAWAY_BORROW_MAX_PCT
+  allowNegativeQuota: null, // GIVEAWAY_ALLOW_NEGATIVE_QUOTA
   lenderLine: null, requesterLine: null,
 };
 
 const db = h.installDbStub(({ text, inputs }) => {
   // shared
   if (/GIVEAWAY_BORROW_MAX_PCT/.test(text)) return state.borrowPct == null ? [] : [{ SettingValue: String(state.borrowPct) }];
+  if (/GIVEAWAY_ALLOW_NEGATIVE_QUOTA/.test(text)) return state.allowNegativeQuota == null ? [] : [{ SettingValue: String(state.allowNegativeQuota) }];
   if (/FROM wf\.GiveawayItemMapping/.test(text)) { const m = state.mapping[String(inputs.g)]; return m ? [m] : []; }
   if (/FROM wf\.v_GiveawayBudgetStatus\s+WHERE SalesUserId = @su AND PeriodYear = @y/.test(text)) return state.quotaRows;
   if (/JOIN wf\.SalesOrder s ON s\.Id = l\.SoId/.test(text)) return state.otherDrafts;
@@ -189,4 +191,25 @@ test('R12-8: the cap is enforced again at approval', async () => {
   const r = await app.call('PATCH', '/api/giveaway/borrow-requests/5/resolve', { body: { approve: true }, user: { sub: 25, role: 'MANAGER' } });
   assert.equal(r.status, 400);
   state.borrowPct = null;
+});
+
+// ── Giveaway negative quota (overdraft) toggle ───────────────────────────────
+test('GIVEAWAY_ALLOW_NEGATIVE_QUOTA allows over-quota drafts when true and blocks when false', async () => {
+  const queryFn = (text, inputs) => db.stub.wfQuery(text, inputs);
+  state.quotaRows = [quotaRow(50)]; state.otherDrafts = [];
+
+  state.allowNegativeQuota = 'true';
+  const overdraftOk = await checkGiveawayQuota({ queryFn, salesUserId: 34, lines: [gwLine(80)] });
+  assert.equal(overdraftOk.ok, true);
+  assert.equal(overdraftOk.allowNegative, true);
+  assert.equal(overdraftOk.hasOverdraft, true);
+  assert.equal(overdraftOk.problems[0].overdraftPieces, 30);
+
+  state.allowNegativeQuota = 'false';
+  const blocked = await checkGiveawayQuota({ queryFn, salesUserId: 34, lines: [gwLine(80)] });
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.allowNegative, false);
+  assert.equal(blocked.hasOverdraft, true);
+
+  state.allowNegativeQuota = null;
 });

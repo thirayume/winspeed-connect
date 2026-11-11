@@ -196,7 +196,7 @@ export function TripSummaryModal({
   }
 
   const handleBulkAction = async (actionFn: (id: string | number) => Promise<any>, confirmMsg: string) => {
-    if (!confirm(confirmMsg)) return;
+    if (!await appConfirm(confirmMsg)) return;
     setBusy(true);
     try {
       await Promise.all(trip.orders.filter(o => o.id && String(o.id) !== 'undefined').map(so => actionFn(so.id!)));
@@ -277,7 +277,7 @@ export function TripSummaryModal({
       return; // handleProceedConfirmTrip will be called from LoadSequencer
     }
 
-    if (!confirm(confirmMsg)) return;
+    if (!await appConfirm(confirmMsg)) return;
     await proceedConfirmTrip(effectiveTripId, selectedOrders);
   };
 

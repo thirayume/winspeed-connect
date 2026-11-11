@@ -12,6 +12,7 @@ import {
   type RegionCoverage, type NativeApprover, type RebateDocCodeRow, type RebateDocCodeEvidence
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
+import { appConfirm } from '../ui/AppAlert';
 
 const NAVY = '#0C447C';
 
@@ -117,7 +118,7 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
   }
 
   async function handleDeleteRegion(code: string, name: string) {
-    if (!confirm(`ยืนยันการลบเขตการขาย ${code} (${name})?`)) return;
+    if (!await appConfirm(`ยืนยันการลบเขตการขาย ${code} (${name})?`)) return;
     setRegionBusy(true);
     setRegionErr(null);
     try {
@@ -177,7 +178,7 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
   }
 
   async function handleRemoveRegion(userId: number, regionCode: string, name: string) {
-    if (!confirm(`ถอด ${name} ออกจากภาค ${regionCode}?\n\nคำขอเคลียร์รีเบทของภาคนี้จะกลับไปให้ผู้จัดการคนใดก็ได้อนุมัติชั้นที่ 2`)) return;
+    if (!await appConfirm(`ถอด ${name} ออกจากภาค ${regionCode}?\n\nคำขอเคลียร์รีเบทของภาคนี้จะกลับไปให้ผู้จัดการคนใดก็ได้อนุมัติชั้นที่ 2`)) return;
     setRegionBusy(true);
     setRegionErr(null);
     try {
@@ -409,7 +410,7 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
               }`}
             >
               <MapPin size={15} />
-              <span>ผู้อนุมัติรายภาค (Rebate)</span>
+              <span>ผู้อนุมัติรายภาค</span>
               {emptyRegions.length > 0 && (
                 <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-amber-400 text-amber-950">
                   {emptyRegions.length}
@@ -429,7 +430,7 @@ export function ApproverGovernanceView({ initialSubTab }: { initialSubTab?: stri
               }`}
             >
               <UserCheck size={15} />
-              <span>ผู้อนุมัติ WinSpeed ใบ 116</span>
+              <span>ผู้อนุมัติ WinSpeed</span>
               <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-700">
                 {nativeEnabledCount}
               </span>

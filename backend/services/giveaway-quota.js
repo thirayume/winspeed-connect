@@ -93,6 +93,17 @@ async function committedOnOpenDrafts(queryFn, salesUserId, quotaRows, excludeSoI
   return committed;
 }
 
+async function isNegativeQuotaAllowed(queryFn) {
+  try {
+    const r = await queryFn(`SELECT SettingValue FROM wf.SystemSetting WITH (NOLOCK) WHERE SettingKey = 'GIVEAWAY_ALLOW_NEGATIVE_QUOTA'`);
+    const val = r?.recordset?.[0]?.SettingValue;
+    if (val !== undefined && val !== null) {
+      return String(val).toLowerCase() === 'true';
+    }
+  } catch {}
+  return false; // Require explicit setting in wf.SystemSetting (seeded to 'true' by Migration 182)
+}
+
 /**
  * Check giveaway lines against the sales user's quota.
  * @param {object} p
@@ -101,14 +112,15 @@ async function committedOnOpenDrafts(queryFn, salesUserId, quotaRows, excludeSoI
  * @param {Array}    p.lines        bill lines (only isGiveaway lines are checked)
  * @param {string}   [p.excludeSoId] draft being edited/approved (its own lines are not "other drafts")
  * @param {number}   [p.periodYear]
- * @returns {{ ok: boolean, checked: Array, problems: Array }}
+ * @returns {{ ok: boolean, checked: Array, problems: Array, allowNegative: boolean, hasOverdraft: boolean }}
  */
 async function checkGiveawayQuota({ queryFn, salesUserId, lines = [], excludeSoId = null, periodYear = null }) {
   const gwLines = (lines || [])
     .map((l, idx) => ({ l, idx }))
     .filter(({ l }) => Boolean(l.isGiveaway ?? l.IsGiveaway));
-  if (gwLines.length === 0) return { ok: true, checked: [], problems: [] };
+  if (gwLines.length === 0) return { ok: true, checked: [], problems: [], allowNegative: true, hasOverdraft: false };
 
+  const allowNegative = await isNegativeQuotaAllowed(queryFn);
   const quotaRows = await loadQuotaRows(queryFn, salesUserId, periodYear);
   // Pieces already promised on the user's other open drafts, per budget line
   const committed = await committedOnOpenDrafts(queryFn, salesUserId, quotaRows, excludeSoId);
@@ -140,11 +152,15 @@ async function checkGiveawayQuota({ queryFn, salesUserId, lines = [], excludeSoI
     const row = {
       lineNums: e.lineNums, goodName: e.goodName, region: e.q.Region, brand: e.q.Brand, itemName: e.q.ItemName,
       requested: e.pieces, remaining: Number(e.q.RemainingQty || 0), committedOnOtherDrafts: committed.get(key) || 0, available,
+      isOverQuota: e.pieces > available,
+      overdraftPieces: Math.max(0, e.pieces - available),
     };
     checked.push(row);
     if (e.pieces > available) problems.push({ ...row, lineNum: e.lineNums[0], reason: 'OVER_QUOTA' });
   }
-  return { ok: problems.length === 0, checked, problems };
+  // When allowNegative is true, we allow negative overdraft (ok: true), but problems list is preserved for notice/audit
+  const ok = allowNegative ? true : problems.length === 0;
+  return { ok, checked, problems, allowNegative, hasOverdraft: problems.length > 0 };
 }
 
 /** Thai message for a failed check, pointing to the borrow path. */

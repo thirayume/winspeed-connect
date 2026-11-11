@@ -573,12 +573,12 @@ router.get('/stats', async (req, res) => {
     // closed booking twice and called it "waiting for delivery". Drafts + WinSpeed documents (de-duplicated,
     // board status, legacy cut-off).
     const inputs = { ...(await legacyCutoffInput()) };
-    let wfWhere = '';
+    let wfWhere = "WHERE so.Status <> 'DELETED'";
     let nativeWhere = '';
     if (!scope.all) {
       const f = scopeFilter(scope, { userCol: 'so.SalesUserId', prefix: 'sc' });
       const e = scopeFilter(scope, { userCol: 'ext.SalesUserId', empCol: 'hd.EmpID', prefix: 'se' });
-      wfWhere = `WHERE ${f.sql}`;
+      wfWhere = `WHERE so.Status <> 'DELETED' AND ${f.sql}`;
       nativeWhere = `AND ${e.sql}`;
       Object.assign(inputs, f.inputs, e.inputs);
     }
@@ -590,7 +590,7 @@ router.get('/stats', async (req, res) => {
         SELECT ${nativeStatusSql('hd', 'ext')} AS Status
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
-        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')} ${nativeWhere}
+        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')} AND ISNULL(ext.IsDeleted, 0) = 0 ${nativeWhere}
       ) x
       GROUP BY Status`, inputs);
     const byStatus = {};
@@ -663,6 +663,7 @@ router.get('/', async (req, res) => {
           CAST(NULL AS VARCHAR(20)) AS OwnerEmpId,
           CAST(0 AS BIT) AS AwaitingAi
         FROM wf.SalesOrder so WITH (NOLOCK)
+        WHERE so.Status <> 'DELETED'
 
         UNION ALL
 
@@ -692,7 +693,7 @@ router.get('/', async (req, res) => {
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
           ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
-        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')}
+        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')} AND ISNULL(ext.IsDeleted, 0) = 0
       )
       SELECT COUNT_BIG(*) AS TotalCount
       FROM Orders q
@@ -752,6 +753,7 @@ router.get('/', async (req, res) => {
             AND q.Status IN ('DRAFT', 'SENT', 'EXPIRED')
           ORDER BY q.Id DESC
         ) pq
+        WHERE so.Status <> 'DELETED'
 
         UNION ALL
 
@@ -823,7 +825,7 @@ router.get('/', async (req, res) => {
             AND q.Status IN ('DRAFT', 'SENT', 'EXPIRED')
           ORDER BY q.Id DESC
         ) pq
-        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')}
+        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')} AND ISNULL(ext.IsDeleted, 0) = 0
       ),
       FilteredOrders AS (
         SELECT q.*, u.DisplayName AS SalesName, COUNT_BIG(*) OVER() AS FilteredTotal,
@@ -3214,6 +3216,32 @@ router.patch('/:id/sync-imported', requireRole('ADMIN', 'ACCOUNTING', 'C_LEVEL')
   res.status(400).json({ message: 'ฟังก์ชันนี้ถูกยกเลิก (ข้อมูลซิงค์ตรงเข้า Winspeed แล้ว)' });
 });
 
+async function markNativeOrderDeletedExt(tx, so) {
+  const rawWfRef = String(so.WfRef || so.ImportedDocuNo || `DEL-${so.Id}`).trim().slice(0, 30) || `DEL-${so.Id}`.slice(0, 30);
+  const rawSoPrefix = String(so.SoPrefix || 'W').trim().slice(0, 5) || 'W';
+  const reqExt = tx.request();
+  reqExt.input('id', sql.VarChar(50), String(so.Id));
+  reqExt.input('wfRef', sql.NVarChar(30), rawWfRef);
+  reqExt.input('soPrefix', sql.NVarChar(5), rawSoPrefix);
+  await reqExt.query(`
+    MERGE wf.SalesOrderExt AS target
+    USING (SELECT @id AS SOID) AS source
+    ON target.SOID = source.SOID
+    WHEN MATCHED THEN
+      UPDATE SET IsDeleted = 1, DeletedAt = GETUTCDATE(), UpdatedAt = GETUTCDATE()
+    WHEN NOT MATCHED THEN
+      INSERT (SOID, WfRef, SoPrefix, IsDeleted, DeletedAt, CreatedAt, UpdatedAt)
+      VALUES (
+        @id,
+        CASE WHEN EXISTS (SELECT 1 FROM wf.SalesOrderExt WHERE WfRef = @wfRef)
+             THEN LEFT(N'DEL-' + @id, 30)
+             ELSE @wfRef END,
+        @soPrefix,
+        1, GETUTCDATE(), GETUTCDATE(), GETUTCDATE()
+      );
+  `);
+}
+
 // ── POST /api/so/bulk-cancel-delete — Atomic bulk cancel or delete for Sales Orders / Trips ──
 router.post('/bulk-cancel-delete', requireCapability('so.cancel'), async (req, res) => {
   try {
@@ -3307,6 +3335,8 @@ router.post('/bulk-cancel-delete', requireCapability('so.cancel'), async (req, r
             reqSohd.input('id', sql.VarChar(50), String(so.Id));
             await reqSohd.query(`UPDATE dbo.SOHD SET DocuStatus='C' WHERE SOID=@id`);
             await tx.request().input('SOID', sql.Int, Number(so.Id)).execute('wf.usp_MarkCancelledBookingNotApproved'); // migration 148
+
+            await markNativeOrderDeletedExt(tx, so);
           }
 
           const reqGw = tx.request();
@@ -3401,6 +3431,29 @@ router.post('/bulk-cancel-delete', requireCapability('so.cancel'), async (req, r
             userId: String(req.user?.sub || req.user?.username || 'SYSTEM'),
             ipAddress: req.ip,
           });
+        }
+      }
+
+      // Update status of any affected trips if all their orders are deleted or cancelled
+      const affectedTripIds = new Set(loadedSos.map(({ so }) => so.TripId).filter(Boolean));
+      for (const tid of affectedTripIds) {
+        const remaining = await tx.request().input('tid', sql.Int, Number(tid)).query(`
+          SELECT COUNT(*) AS Cnt
+          FROM (
+            SELECT CAST(so.Id AS VARCHAR(50)) AS Id
+            FROM wf.SalesOrder so WITH (NOLOCK)
+            WHERE so.TripId = @tid AND so.Status NOT IN ('CANCELLED', 'DELETED')
+            UNION ALL
+            SELECT CAST(hd.SOID AS VARCHAR(50)) AS Id
+            FROM dbo.SOHD hd WITH (NOLOCK)
+            LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
+            WHERE ext.TripId = @tid AND ISNULL(hd.DocuStatus, '') <> 'C' AND ISNULL(ext.IsDeleted, 0) = 0
+          ) active
+        `);
+        if (Number(remaining.recordset?.[0]?.Cnt || 0) === 0) {
+          await tx.request().input('tid', sql.Int, Number(tid)).query(`
+            UPDATE wf.SalesTrip SET Status = 'DELETED' WHERE TripId = @tid
+          `);
         }
       }
     });
@@ -3597,6 +3650,7 @@ router.delete('/:id', requireCapability('so.cancel'), requireSoInScope, async (r
         reqSohd.input('id', sql.VarChar(50), String(so.Id));
         await reqSohd.query(`UPDATE dbo.SOHD SET DocuStatus='C' WHERE SOID=@id`);
         await tx.request().input('SOID', sql.Int, Number(so.Id)).execute('wf.usp_MarkCancelledBookingNotApproved'); // migration 148
+        await markNativeOrderDeletedExt(tx, so);
       }
 
       const reqGw = tx.request();

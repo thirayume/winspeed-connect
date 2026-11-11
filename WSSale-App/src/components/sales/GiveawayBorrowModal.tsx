@@ -28,7 +28,18 @@ export function GiveawayBorrowModal({ isOpen, onClose, brand, itemName, required
   const [search, setSearch] = useState('');
   const [selectedLender, setSelectedLender] = useState<number | null>(null);
   const [reason, setReason] = useState('');
+  const [borrowQty, setBorrowQty] = useState<number>(requiredQty > 0 ? requiredQty : 1);
+  const [formError, setFormError] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setBorrowQty(requiredQty > 0 ? requiredQty : 1);
+      setFormError('');
+      setSelectedLender(null);
+      setReason('');
+    }
+  }, [isOpen, requiredQty]);
 
   useEffect(() => {
     if (isOpen && brand && itemName) {
@@ -45,8 +56,19 @@ export function GiveawayBorrowModal({ isOpen, onClose, brand, itemName, required
   const filteredLenders = lenders.filter(l => l.DisplayName.toLowerCase().includes(search.toLowerCase()) || l.EmpCode.toLowerCase().includes(search.toLowerCase()));
 
   const handleSubmit = async () => {
-    if (!selectedLender) return alert('กรุณาเลือกผู้ให้ยืม');
-    if (!reason.trim()) return alert('กรุณาระบุเหตุผลในการขอยืม');
+    setFormError('');
+    if (!borrowQty || borrowQty <= 0) {
+      setFormError('กรุณาระบุจำนวนที่ต้องการยืมให้ถูกต้อง (มากกว่า 0)');
+      return;
+    }
+    if (!selectedLender) {
+      setFormError('กรุณาเลือกผู้ให้ยืม');
+      return;
+    }
+    if (!reason.trim()) {
+      setFormError('กรุณาระบุเหตุผลในการขอยืม');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -58,13 +80,13 @@ export function GiveawayBorrowModal({ isOpen, onClose, brand, itemName, required
           periodYear,
           brand,
           itemName,
-          qty: requiredQty,
+          qty: borrowQty,
           reason
         })
       });
       onSuccess();
     } catch (e: any) {
-      alert(e.message || 'Failed to submit borrow request');
+      setFormError(e.message || 'ส่งคำขอยืมไม่สำเร็จ');
     } finally {
       setSubmitting(false);
     }
@@ -78,11 +100,29 @@ export function GiveawayBorrowModal({ isOpen, onClose, brand, itemName, required
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
         </div>
         
-        <div className="p-4 border-b border-gray-100">
-          <div className="text-sm text-gray-600 mb-1">ของแถมที่ต้องการยืม:</div>
-          <div className="font-bold text-[#0C447C]">{brand} - {itemName}</div>
-          <div className="text-sm font-bold text-amber-600 mt-1">จำนวนที่ต้องการ: {requiredQty} ชิ้น</div>
+        <div className="p-4 border-b border-gray-100 bg-amber-50/30">
+          <div className="text-xs text-gray-500 mb-0.5">ของแถมที่ต้องการยืม:</div>
+          <div className="font-bold text-[#0C447C] text-sm">{brand} - {itemName}</div>
+          <div className="mt-2.5 flex items-center gap-3">
+            <label className="text-xs font-bold text-gray-700 whitespace-nowrap">ระบุจำนวนที่ขอยืม:</label>
+            <div className="flex items-center gap-1.5 flex-1">
+              <input
+                type="number"
+                min="1"
+                value={borrowQty}
+                onChange={e => setBorrowQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                className="w-24 border border-amber-300 rounded-lg px-2.5 py-1 text-sm font-bold text-amber-800 text-center focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              <span className="text-xs text-gray-500 font-medium">ชิ้น (ขาดอยู่ {requiredQty} ชิ้น)</span>
+            </div>
+          </div>
         </div>
+
+        {formError && (
+          <div className="mx-4 mt-3 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs font-semibold text-red-600">
+            {formError}
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto p-4">
           <div className="mb-4">
@@ -90,7 +130,7 @@ export function GiveawayBorrowModal({ isOpen, onClose, brand, itemName, required
             <input 
               type="text" 
               value={reason} 
-              onChange={e => setReason(e.target.value)}
+              onChange={e => { setReason(e.target.value); setFormError(''); }}
               placeholder="เช่น เพื่อจัดโปรโมชันให้ลูกค้ารายใหญ่..."
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
             />

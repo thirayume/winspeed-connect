@@ -4,7 +4,7 @@
  * ⚠ เขียนเฉพาะ schema wf · อ่าน dbo.EMEmp (read-only)
  */
 const router = require('express').Router();
-const { sql, wfQuery, wfTransaction } = require('../db');
+const { sql, query, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
 const { logChangeEvent } = require('../services/policy-contract');
 
@@ -95,32 +95,47 @@ router.get('/withdrawals', async (req, res) => {
 // GET /api/giveaway/items?brand= — แคตตาล็อกของแถม (ดึงโดยตรงจาก WINSpeed GoodGroupID = 1005 ส่งเสริมการขาย)
 router.get('/items', async (req, res) => {
   try {
-    const { brand } = req.query;
-    const r = await wfQuery(`
+    const { brand, includeInactive } = req.query;
+    const inactiveFilter = includeInactive === 'true'
+      ? ''
+      : `AND ISNULL(g.Inactive, 'A') = 'A'`;
+    const items = await query(`
       SELECT g.GoodID AS Id,
+             g.GoodID,
              CASE 
                WHEN g.GoodName1 LIKE N'%ตรารถเกษตร%' OR g.GoodName1 LIKE N'%รถเกษตร%' THEN N'ตรารถเกษตร'
                WHEN g.GoodName1 LIKE N'%ตราปุ๋ยเทพ%' OR g.GoodName1 LIKE N'%ปุ๋ยเทพ%' THEN N'ตราปุ๋ยเทพ'
                ELSE N'ส่วนกลาง'
              END AS Brand,
              g.GoodName1 AS ItemName,
+             g.GoodName1 AS GoodName,
              CASE
                WHEN g.GoodName1 LIKE N'%กระเป๋า%' THEN 'BAG'
                WHEN g.GoodName1 LIKE N'%เสื้อ%' THEN 'SHIRT'
                WHEN g.GoodName1 LIKE N'%แบนเนอร์%' OR g.GoodName1 LIKE N'%Board%' OR g.GoodName1 LIKE N'%ผ้าใบ%' OR g.GoodName1 LIKE N'%ป้าย%' THEN 'BANNER'
                ELSE 'OTHER'
              END AS ItemType,
-             g.GoodCode
+             g.GoodCode,
+             g.StockQty,
+             g.RemaQty,
+             ISNULL(gx.BagPerTon, 20) AS BagPerTon,
+             ISNULL(gx.WeightKgPerBag, 50.0) AS WeightKgPerBag,
+             gx.ImageUrl,
+             ISNULL(u.GoodUnitName, N'ชิ้น') AS Unit,
+             ISNULL(g.Inactive, 'A') AS Inactive
       FROM dbo.EMGood g WITH (NOLOCK)
-      WHERE g.GoodGroupID = 1005 AND ISNULL(g.Inactive, 'A') = 'A'
+      LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = g.GoodID
+      LEFT JOIN dbo.EMGoodUnit u WITH (NOLOCK) ON u.GoodUnitID = COALESCE(g.SaleGoodUnitID, g.MainGoodUnitID)
+      WHERE g.GoodGroupID = 1005
+        ${inactiveFilter}
         AND g.GoodName1 NOT LIKE N'%ไม่ใช้%' AND g.GoodName1 NOT LIKE N'%ยกเลิก%'
       ORDER BY g.GoodCode ASC
     `);
-    let items = r.recordset || [];
+    let result = items || [];
     if (brand) {
-      items = items.filter(x => x.Brand.toLowerCase().includes(brand.toLowerCase()));
+      result = result.filter(x => x.Brand.toLowerCase().includes(brand.toLowerCase()));
     }
-    res.json(items);
+    res.json(result);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 

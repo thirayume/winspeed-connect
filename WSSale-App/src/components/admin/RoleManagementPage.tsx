@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { Plus, Save, Shield, History, Trash2, Lock, ShieldCheck, Crown } from "lucide-react";
 import { RoleMembers } from "./RoleMembers";
 import { req } from "../../services/api";
+import { appConfirm } from "../ui/AppAlert";
 
 export type RoleProfile = {
   Code: string;
@@ -232,8 +233,8 @@ export function RoleManagementPage({
             aria-label="สร้างบทบาทใหม่"
             title="สร้างบทบาทใหม่"
             className="action-add px-3 py-1.5 rounded-xl bg-[#0C447C] hover:bg-[#0a3866] text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-all"
-            onClick={() => {
-              if (busy || !confirmLeaveEditors()) return;
+            onClick={async () => {
+              if (busy || !(await confirmLeaveEditors())) return;
               setEditing(false);
               setView("permissions");
               setForm({
@@ -298,8 +299,8 @@ export function RoleManagementPage({
                       ? "border-purple-500 bg-purple-50/90 shadow-xs ring-1 ring-purple-400"
                       : "hover:bg-purple-50/40 border-purple-200 bg-purple-50/20"
                   }`}
-                  onClick={() => {
-                    if (busy || !confirmLeaveEditors()) return;
+                  onClick={async () => {
+                    if (busy || !(await confirmLeaveEditors())) return;
                     setEditing(true);
                     setView("permissions");
                     setForm({ ...adminRole });
@@ -343,8 +344,8 @@ export function RoleManagementPage({
                         ? "hover:bg-rose-50/30 border-rose-200 bg-rose-50/10"
                         : "hover:bg-slate-50 border-slate-200"
                     }`}
-                    onClick={() => {
-                      if (busy || !confirmLeaveEditors()) return;
+                    onClick={async () => {
+                      if (busy || !(await confirmLeaveEditors())) return;
                       setEditing(true);
                       setView("permissions");
                       setForm({ ...p });
@@ -434,7 +435,7 @@ export function RoleManagementPage({
                         className="action-delete p-2 rounded-xl text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         disabled={busy || Boolean(form.MemberCount)}
                         onClick={async () => {
-                          if (!window.confirm(`ยืนยันการลบ Role ${form.Name} (${form.Code})?`)) return;
+                          if (!await appConfirm(`ยืนยันการลบ Role ${form.Name} (${form.Code})?`)) return;
                           setBusy(true);
                           setError("");
                           try {

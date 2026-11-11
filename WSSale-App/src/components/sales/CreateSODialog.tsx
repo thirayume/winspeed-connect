@@ -2,8 +2,8 @@ import { bookingNoteError } from '../../utils/bookingNotes';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { unsavedMessage } from '../../utils/unsaved-changes';
 import { useState, useEffect, useCallback } from 'react';
-import { X, Plus, Minus, Truck, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket, CreditCard, Clock, ShieldAlert, AlertTriangle, AlertCircle } from 'lucide-react';
-import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation, fetchPriceIndicator, fetchCustomerCreditStatus } from '../../services/api';
+import { X, Plus, Minus, Truck, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket, CreditCard, Clock, ShieldAlert, AlertTriangle, AlertCircle, Gift, Sparkles } from 'lucide-react';
+import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation, fetchPriceIndicator, fetchCustomerCreditStatus, fetchCustomerTopGoods, type CustomerTopGood } from '../../services/api';
 import type { EffectivePriceRow, AtpStockRow, PriceLevel } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { GiveawayBorrowModal } from './GiveawayBorrowModal';
@@ -27,7 +27,7 @@ type DraftLine = SalesOrderLine & {
 };
 type DraftBill = { id: string; soPrefix: SOPrefix; lines: DraftLine[]; remark: string; rebateDiscountAmt?: number; creditDays?: number; truckRemark?: string; billRemark?: string; isControlTicket?: boolean; wfRef?: string; custId?: string; custName?: string; };
 
-
+const HISTORY_TAB = 'รายการที่เคยสั่งซื้อ';
 const GIVEAWAY_GROUP = 'ของแถม';
 const ALL_GOODS_TAB = 'ทั้งหมด';
 const OTHER_GOODS_GROUP = 'อื่นๆ';
@@ -131,8 +131,23 @@ export function CreateSODialog({
   
   // Giveaway Quota State
   const [myQuota, setMyQuota] = useState<GiveawayQuota[]>([]);
+  const [allowNegativeGiveaway, setAllowNegativeGiveaway] = useState(true);
   const [borrowModalOpen, setBorrowModalOpen] = useState(false);
   const [borrowReq, setBorrowReq] = useState({ brand: '', itemName: '', requiredQty: 0 });
+  const [giveawayOverdraftModal, setGiveawayOverdraftModal] = useState<{
+    isOpen: boolean;
+    good: EMGood | null;
+    totalPieces: number;
+    remaining: number;
+    pendingAction?: { type: 'add'; good: EMGood } | { type: 'update'; tempId: string; patch: Partial<DraftLine> };
+  }>({ isOpen: false, good: null, totalPieces: 0, remaining: 0 });
+
+  // Customer Top Goods & Trucks
+  const [customerTopGoods, setCustomerTopGoods] = useState<CustomerTopGood[]>([]);
+  const [truckPickerOpen, setTruckPickerOpen] = useState(false);
+  const [customerTrucks, setCustomerTrucks] = useState<string[]>([]);
+  const [loadingTrucks, setLoadingTrucks] = useState(false);
+  const [newTruckPlateInput, setNewTruckPlateInput] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
 
@@ -324,17 +339,46 @@ export function CreateSODialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, editSoId, convertFromQuoteId]);
 
-  // Load active PriceBook ID once on open
+  // Load active PriceBook ID and giveaway policy setting once on open
   useEffect(() => {
     if (!isOpen) return;
     fetchPriceBooks().then(books => {
       const active = books.find(b => b.Status === 'ACTIVE');
       setActivePriceBookId(active?.Id ?? null);
     }).catch(console.error);
+    apiFetch<{ settings?: Record<string, any> }>('/master/system-settings')
+      .then(res => {
+        if (res?.settings && res.settings.GIVEAWAY_ALLOW_NEGATIVE_QUOTA !== undefined) {
+          setAllowNegativeGiveaway(Boolean(res.settings.GIVEAWAY_ALLOW_NEGATIVE_QUOTA));
+        }
+      })
+      .catch(() => {});
   }, [isOpen]);
 
   const activeBill = bills.find(b => b.id === activeBillId) || bills[0];
   const currentBillCustId = activeBill?.custId || '';
+
+  useEffect(() => {
+    let cancelled = false;
+    if (currentBillCustId) {
+      fetchCustomerTopGoods(currentBillCustId)
+        .then(res => {
+          if (cancelled) return;
+          const list = Array.isArray(res) ? res : [];
+          setCustomerTopGoods(list);
+          setActiveTab(list.length > 0 ? HISTORY_TAB : ALL_GOODS_TAB);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setCustomerTopGoods([]);
+          setActiveTab(ALL_GOODS_TAB);
+        });
+    } else {
+      setCustomerTopGoods([]);
+      setActiveTab(ALL_GOODS_TAB);
+    }
+    return () => { cancelled = true; };
+  }, [currentBillCustId]);
 
   // price colour per line from the server (debounced while typing)
   const [priceLevels, setPriceLevels] = useState<Record<string, PriceLevel>>({});
@@ -428,7 +472,11 @@ export function CreateSODialog({
       .finally(() => setTicketLoading(false));
   }, [selectedTicketForDraw]);
 
+  const topGoodIds = new Set(customerTopGoods.map(tg => String(tg.GoodID)));
+  const topGoodRank = new Map(customerTopGoods.map((tg, idx) => [String(tg.GoodID), { rank: idx, item: tg }]));
+
   const categories: string[] = [
+    HISTORY_TAB,
     ALL_GOODS_TAB,
     ...Array.from(new Set(goods.map(g => g.GoodGroupName).filter((c): c is string => Boolean(c))))
       .filter(c => c !== GIVEAWAY_GROUP && c !== 'อื่นๆ' && c !== OTHER_GOODS_GROUP)
@@ -436,18 +484,71 @@ export function CreateSODialog({
     GIVEAWAY_GROUP
   ];
   const filteredGoods = goods.filter(g => {
-    if (activeTab !== ALL_GOODS_TAB && (g.GoodGroupName || OTHER_GOODS_GROUP) !== activeTab) return false;
+    if (activeTab === HISTORY_TAB) {
+      if (!topGoodIds.has(String(g.GoodID))) return false;
+    } else if (activeTab !== ALL_GOODS_TAB && (g.GoodGroupName || OTHER_GOODS_GROUP) !== activeTab) {
+      return false;
+    }
     if (goodSearch) {
       const q = goodSearch.toLowerCase();
       return g.GoodName.toLowerCase().includes(q) || g.GoodCode.toLowerCase().includes(q);
     }
     return true;
-  // Goods on the price list first: the list also holds sacks and raw material, which filled the first pages.
-  }).sort((a, b) => Number(getBestPrice(b.GoodID).price > 0) - Number(getBestPrice(a.GoodID).price > 0));
+  }).sort((a, b) => {
+    if (activeTab === HISTORY_TAB) {
+      const rankA = topGoodRank.has(String(a.GoodID)) ? topGoodRank.get(String(a.GoodID))!.rank : 9999;
+      const rankB = topGoodRank.has(String(b.GoodID)) ? topGoodRank.get(String(b.GoodID))!.rank : 9999;
+      return rankA - rankB;
+    }
+    return Number(getBestPrice(b.GoodID).price > 0) - Number(getBestPrice(a.GoodID).price > 0);
+  });
   const totalPages = Math.ceil(filteredGoods.length / itemsPerPage) || 1;
   const paginatedGoods = filteredGoods.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   useEffect(() => { setCurrentPage(1); }, [activeTab, goodSearch]);
+
+  function doAddGoodDirect(good: EMGood) {
+    if (!activeBill) return;
+    const isGiveaway = good.GoodGroupName === GIVEAWAY_GROUP;
+    const best = getBestPrice(good.GoodID);
+    const net = best.price || getNetPrice(good.GoodID, 1);
+    const defaultPrice = isGiveaway ? 0 : net;
+
+    setBills(prevBills => prevBills.map(b => {
+      if (b.id !== activeBillId) return b;
+      const existing = b.lines.find(l => 
+        l.goodId === good.GoodID && 
+        l.isGiveaway === isGiveaway && 
+        !l.isControlTicketDrawn
+      );
+      if (existing) {
+        const newQty = existing.qtyTon + 1;
+        const newNet = getNetPrice(good.GoodID, newQty);
+        return {
+          ...b,
+          lines: b.lines.map(l => l.tempId === existing.tempId 
+            ? { ...l, qtyTon: newQty, qtyBag: isGiveaway ? newQty : newQty * good.BagPerTon, netPricePerTon: newNet }
+            : l
+          )
+        };
+      }
+      const newLine: DraftLine = {
+        tempId: `${good.GoodID}-${Date.now()}`,
+        lineNo: b.lines.length + 1,
+        goodId: good.GoodID,
+        goodCode: good.GoodCode,
+        goodName: good.GoodName,
+        qtyTon: 1,
+        qtyBag: isGiveaway ? 1 : (good.BagPerTon || 0),
+        pricePerTon: defaultPrice,
+        netPricePerTon: defaultPrice,
+        isGiveaway,
+        isControlTicketDrawn: false,
+        refControlTicketNo: undefined
+      };
+      return { ...b, lines: [newLine, ...b.lines] };
+    }));
+  }
 
   function addGoodToActiveBill(good: EMGood) {
     if (!activeBill) return;
@@ -456,8 +557,6 @@ export function CreateSODialog({
       setError(`สินค้า ${good.GoodName} อยู่ในสถานะ "งดขาย" ไม่สามารถเพิ่มได้`);
       return;
     }
-    const best = getBestPrice(good.GoodID);
-    const net = best.price || getNetPrice(good.GoodID, 1);
     
     // Auto-collapse truck info on mobile when starting to add products
     if (window.innerWidth < 1024) setIsTruckInfoCollapsed(true);
@@ -475,49 +574,10 @@ export function CreateSODialog({
       const totalAdded = bills.reduce((sum, currB) =>
         sum + currB.lines.filter(l => l.goodId === good.GoodID && l.isGiveaway).reduce((s, l) => s + l.qtyTon, 0)
       , 0);
-      if (!giveawayQuotaAllows(good.GoodID, totalAdded + 1)) return; // Prevent adding
+      if (!giveawayQuotaAllows(good.GoodID, totalAdded + 1, { type: 'add', good })) return; // Prevent adding if deficit needs decision
     }
 
-    setBills(prevBills => prevBills.map(b => {
-      if (b.id !== activeBillId) return b;
-      
-      const defaultPrice = isGiveaway ? 0 : net;
-      
-      // Separate drawn and non-drawn items, but allow merging identical giveaways
-      const existing = b.lines.find(l => 
-        l.goodId === good.GoodID && 
-        l.isGiveaway === isGiveaway && 
-        !l.isControlTicketDrawn
-      );
-      
-      if (existing) {
-        const newQty = existing.qtyTon + 1;
-        const newNet = getNetPrice(good.GoodID, newQty);
-        return {
-          ...b,
-          lines: b.lines.map(l => l.tempId === existing.tempId 
-            ? { ...l, qtyTon: newQty, qtyBag: isGiveaway ? newQty : newQty * good.BagPerTon, netPricePerTon: newNet }
-            : l
-          )
-        };
-      }
-      
-      const newLine: DraftLine = {
-        tempId: `${good.GoodID}-${Date.now()}`,
-        lineNo: b.lines.length + 1,
-        goodId: good.GoodID,
-        goodCode: good.GoodCode,
-        goodName: good.GoodName,
-        qtyTon: 1,
-        qtyBag: isGiveaway ? 1 : (good.BagPerTon || 0),
-        pricePerTon: defaultPrice,
-        netPricePerTon: defaultPrice,
-        isGiveaway: good.GoodGroupName === GIVEAWAY_GROUP,
-        isControlTicketDrawn: false,
-        refControlTicketNo: undefined
-      };
-      return { ...b, lines: [newLine, ...b.lines] };
-    }));
+    doAddGoodDirect(good);
   }
 
   function addTicketItemToActiveBill(td: { ListNo: number; GoodID: string; GoodCode: string; GoodName: string; QtyTon: number; PricePerTon: number; NetPricePerTon?: number; BagPerTon: number }) {
@@ -560,31 +620,26 @@ export function CreateSODialog({
     }));
   }
 
-  // จำนวนของแถมรวมทุกบิลในหน้าจอ (ชิ้น) ต้องไม่เกินโควต้าที่เซิร์ฟเวอร์คำนวณให้สินค้านี้
-  function giveawayQuotaAllows(goodId: string, totalPieces: number): boolean {
+  // จำนวนของแถมรวมทุกบิลในหน้าจอ (ชิ้น) หากเกินโควต้า จะแสดงตัวเลือกระหว่าง "ยอมติดลบก่อน" หรือ "ขอยืมโควต้า"
+  function giveawayQuotaAllows(
+    goodId: string,
+    totalPieces: number,
+    pendingAction?: { type: 'add'; good: EMGood } | { type: 'update'; tempId: string; patch: Partial<DraftLine> }
+  ): boolean {
     const good = goods.find(g => g.GoodID === goodId);
     const remaining = Number(good?.RemainingQty || 0);
     if (totalPieces <= remaining) return true;
-    setBorrowReq({
-      brand: good?.Brand || 'ทั่วไป',
-      itemName: good?.ItemName || good?.GoodName || '',
-      // the shortfall the server checks against: an overdrawn quota (−500) needs its deficit borrowed too, or
-      // the line stays over quota after approval (UAT 2026-10-09, GW-06: asked for 1 piece at −500)
-      requiredQty: totalPieces - remaining,
+    setGiveawayOverdraftModal({
+      isOpen: true,
+      good: good || null,
+      totalPieces,
+      remaining,
+      pendingAction,
     });
-    setBorrowModalOpen(true);
     return false;
   }
 
-  function updateActiveLine(tempId: string, patch: Partial<DraftLine>) {
-    // R11 U-7: แก้จำนวนของแถมในบรรทัดต้องตรวจโควต้าใหม่
-    const activeLine = bills.find(b => b.id === activeBillId)?.lines.find(l => l.tempId === tempId);
-    if (activeLine?.isGiveaway && patch.qtyTon !== undefined && Number(patch.qtyTon) > Number(activeLine.qtyTon || 0)) {
-      const others = bills.reduce((sum, b) => sum + b.lines
-        .filter(l => l.goodId === activeLine.goodId && l.isGiveaway && l.tempId !== tempId)
-        .reduce((s2, l) => s2 + Number(l.qtyTon || 0), 0), 0);
-      if (!giveawayQuotaAllows(activeLine.goodId, others + Number(patch.qtyTon))) return;
-    }
+  function applyActiveLineUpdate(tempId: string, patch: Partial<DraftLine>) {
     setBills(prevBills => prevBills.map(b => {
       if (b.id !== activeBillId) return b;
       return {
@@ -624,6 +679,18 @@ export function CreateSODialog({
         })
       };
     }));
+  }
+
+  function updateActiveLine(tempId: string, patch: Partial<DraftLine>) {
+    // R11 U-7: แก้จำนวนของแถมในบรรทัดต้องตรวจโควต้าใหม่
+    const activeLine = bills.find(b => b.id === activeBillId)?.lines.find(l => l.tempId === tempId);
+    if (activeLine?.isGiveaway && patch.qtyTon !== undefined && Number(patch.qtyTon) > Number(activeLine.qtyTon || 0)) {
+      const others = bills.reduce((sum, b) => sum + b.lines
+        .filter(l => l.goodId === activeLine.goodId && l.isGiveaway && l.tempId !== tempId)
+        .reduce((s2, l) => s2 + Number(l.qtyTon || 0), 0), 0);
+      if (!giveawayQuotaAllows(activeLine.goodId, others + Number(patch.qtyTon), { type: 'update', tempId, patch })) return;
+    }
+    applyActiveLineUpdate(tempId, patch);
   }
 
   function handleCouponReserved(result: any, coupon: CouponItem) {
@@ -885,7 +952,7 @@ export function CreateSODialog({
 
   async function handleCloseModal() {
     if (submitting) return;
-    if (dirty && !window.confirm(unsavedMessage)) return;
+    if (dirty && !await appConfirm(unsavedMessage)) return;
     // If save was already committed to DB, do NOT cancel any reservations
     if (isSaveCommitted) {
       onClose();
@@ -934,7 +1001,7 @@ export function CreateSODialog({
 
     if (failedCancels.length > 0) {
       const detail = failedCancels.map(f => `#${f.id}: ${f.error}`).join('\n');
-      const forceClose = window.confirm(
+      const forceClose = await appConfirm(
         `เกิดข้อผิดพลาดในการคืนยอดการจองตั๋วร่าง (${failedCancels.length} รายการ):\n${detail}\n\nกด "ตกลง" หากต้องการบังคับปิดหน้าจอ (ระบบจะคงสถานะการจองไว้เพื่อตรวจสอบ)\nกด "ยกเลิก" เพื่ออยู่ต่อและลองใหม่`
       );
       if (!forceClose) {
@@ -1217,14 +1284,47 @@ export function CreateSODialog({
                       <button
                         key={cat}
                         onClick={() => { setActiveTab(cat); setCurrentPage(1); }}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap ${activeTab === cat ? 'bg-[#0C447C] text-white shadow-sm' : 'bg-gray-100 text-gray-500'}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition-all ${
+                          activeTab === cat 
+                            ? 'bg-[#0C447C] text-white shadow-sm' 
+                            : cat === HISTORY_TAB
+                            ? 'bg-blue-50 text-[#0C447C] hover:bg-blue-100 border border-blue-200'
+                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                        }`}
                       >
-                        {cat}
+                        {cat === HISTORY_TAB && <Sparkles size={12} className={activeTab === cat ? 'text-amber-300' : 'text-[#0C447C]'} />}
+                        <span>{cat}</span>
+                        {cat === HISTORY_TAB && customerTopGoods.length > 0 && (
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                            activeTab === cat ? 'bg-white/20 text-white' : 'bg-blue-200 text-[#0C447C]'
+                          }`}>
+                            {customerTopGoods.length}
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
                   </div>
                 </div>
+
+                {activeTab === HISTORY_TAB && customerTopGoods.length === 0 && (
+                  <div className="py-12 text-center text-gray-500 bg-white rounded-2xl border border-dashed border-gray-200 p-6 my-2">
+                    <Sparkles size={32} className="mx-auto text-blue-400 mb-2" />
+                    <div className="font-bold text-gray-700 text-sm">
+                      {!activeBill?.custId ? 'กรุณาเลือกลูกค้าประจำบิลนี้ก่อน' : 'ไม่พบประวัติการสั่งซื้อของลูกค้ารายนี้'}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {!activeBill?.custId ? 'เลือกลูกค้าที่แผงขวาเพื่อดูสินค้าที่เคยสั่งซื้อ' : 'สามารถเลือกสินค้าได้จากแท็บ "ทั้งหมด" หรือหมวดหมู่อื่นๆ'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab(ALL_GOODS_TAB)}
+                      className="mt-3 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg"
+                    >
+                      ดูสินค้าทั้งหมด →
+                    </button>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 flex-1 content-start overflow-y-auto scrollbar-hide pb-2">
                   {paginatedGoods.map(g => {
@@ -1253,7 +1353,13 @@ export function CreateSODialog({
                               : 'border-gray-100 bg-gray-50 hover:border-gray-200 hover:bg-white'
                         }`}
                       >
-                        <div className="text-sm font-bold text-[#0C447C] line-clamp-2 leading-tight mb-1.5 h-10" title={g.GoodName}>{g.GoodName}</div>
+                        <div className="text-sm font-bold text-[#0C447C] line-clamp-2 leading-tight mb-1 h-10" title={g.GoodName}>{g.GoodName}</div>
+                        {topGoodRank.has(String(g.GoodID)) && (
+                          <div className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] font-bold mb-1">
+                            <Sparkles size={10} className="text-amber-600" />
+                            <span>เคยซื้อ {topGoodRank.get(String(g.GoodID))!.item.TotalQty.toLocaleString()} {isGiveaway ? (g.UnitName || 'ชิ้น') : 'ตัน'} ({topGoodRank.get(String(g.GoodID))!.item.OrderCount} ครั้ง)</span>
+                          </div>
+                        )}
                         {suspended && (
                           <div className="text-[10px] font-bold text-red-600 mb-0.5">⛔ งดขาย</div>
                         )}
@@ -1392,10 +1498,31 @@ export function CreateSODialog({
                         )}
                       </div>
                       {activeBill?.custId ? (
-                        <div className="flex items-center justify-between bg-white border border-blue-200 rounded-lg px-2.5 py-1 text-xs text-[#0C447C] font-semibold">
+                        <div className="flex items-center justify-between bg-white border border-blue-200 rounded-lg px-2.5 py-1 text-xs text-[#0C447C] font-semibold gap-2">
                           <span className="truncate">
                             [{activeBill.custId}] {activeBill.custName || customers.find(c => c.CustID === activeBill.custId)?.CustName || activeBill.custId}
                           </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLoadingTrucks(true);
+                              fetchTruckPlates(activeBill.custId!)
+                                .then(plates => {
+                                  setCustomerTrucks(plates || []);
+                                  setTruckPickerOpen(true);
+                                })
+                                .catch(() => {
+                                  setCustomerTrucks([]);
+                                  setTruckPickerOpen(true);
+                                })
+                                .finally(() => setLoadingTrucks(false));
+                            }}
+                            className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 hover:bg-blue-200 text-[#0C447C] font-bold text-[11px] border border-blue-200 transition-colors shrink-0 shadow-xs cursor-pointer"
+                            title="เลือกรถที่ลูกค้ารายนี้เคยใช้ขนส่ง (หรือระบุคันใหม่)"
+                          >
+                            <Truck size={13} className="text-[#0C447C]" />
+                            <span>เลือกรถ</span>
+                          </button>
                         </div>
                       ) : (
                         <div className="relative">
@@ -1737,6 +1864,210 @@ export function CreateSODialog({
         billPrefix={activeBill?.soPrefix}
         onReserved={handleCouponReserved}
       />
+
+      {/* Customer Truck Quick-Picker Modal */}
+      {truckPickerOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100 flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-blue-50">
+              <div className="flex items-center gap-2">
+                <Truck className="w-5 h-5 text-[#0C447C]" />
+                <h3 className="font-bold text-[#0C447C] text-sm">
+                  เลือกรถขนส่งสำหรับลูกค้า [{activeBill?.custId}]
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTruckPickerOpen(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  ระบุทะเบียนรถคันใหม่
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="เช่น 70-1234 กทม."
+                    value={newTruckPlateInput}
+                    onChange={e => setNewTruckPlateInput(e.target.value)}
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-xs font-bold focus:border-[#0C447C] outline-none"
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && newTruckPlateInput.trim()) {
+                        setTruckPlate(newTruckPlateInput.trim());
+                        setNewTruckPlateInput('');
+                        setTruckPickerOpen(false);
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={!newTruckPlateInput.trim()}
+                    onClick={() => {
+                      setTruckPlate(newTruckPlateInput.trim());
+                      setNewTruckPlateInput('');
+                      setTruckPickerOpen(false);
+                    }}
+                    className="px-3 py-1.5 bg-[#0C447C] text-white text-xs font-bold rounded-lg hover:bg-blue-900 disabled:opacity-40"
+                  >
+                    ใช้คันนี้
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                  ประวัติรถที่ลูกค้ารายนี้เคยใช้ ({customerTrucks.length} คัน)
+                </label>
+                {loadingTrucks ? (
+                  <div className="py-6 text-center text-xs text-gray-400">กำลังโหลดรายการรถ...</div>
+                ) : customerTrucks.length === 0 ? (
+                  <div className="py-6 text-center text-xs text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                    ไม่พบประวัติรถที่เคยใช้ สามารถพิมพ์ระบุทะเบียนใหม่ด้านบนได้
+                  </div>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                    {customerTrucks.map((plate) => (
+                      <button
+                        key={plate}
+                        type="button"
+                        onClick={() => {
+                          setTruckPlate(plate);
+                          setTruckPickerOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 flex items-center justify-between transition-colors group cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Truck size={14} className="text-gray-400 group-hover:text-[#0C447C]" />
+                          <span className="font-bold text-xs text-gray-800 group-hover:text-[#0C447C]">
+                            {plate}
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-blue-600 font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
+                          เลือกคันนี้ →
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-3 border-t border-gray-100 bg-gray-50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setTruckPickerOpen(false)}
+                className="px-4 py-1.5 rounded-lg text-xs font-bold text-gray-600 hover:bg-gray-200"
+              >
+                ปิด
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Giveaway Overdraft vs Borrow Decision Modal */}
+      {giveawayOverdraftModal.isOpen && giveawayOverdraftModal.good && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100 flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-4 border-b border-amber-100 bg-amber-50 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Gift className="w-5 h-5 text-amber-700" />
+                <h3 className="font-bold text-amber-900 text-sm">
+                  โควต้าของแถมไม่เพียงพอ
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGiveawayOverdraftModal({ isOpen: false, good: null, totalPieces: 0, remaining: 0 })}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="p-5 space-y-4">
+              <div>
+                <div className="text-xs text-gray-500 mb-0.5">รายการของแถม:</div>
+                <div className="font-bold text-base text-[#0C447C]">{giveawayOverdraftModal.good.GoodName}</div>
+              </div>
+
+              <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3 text-xs space-y-1.5 text-amber-900">
+                <div className="flex justify-between font-medium">
+                  <span>โควต้าคงเหลือ:</span>
+                  <span className="font-bold">{giveawayOverdraftModal.remaining} ชิ้น</span>
+                </div>
+                <div className="flex justify-between font-medium">
+                  <span>จำนวนที่ต้องการเพิ่ม:</span>
+                  <span className="font-bold">{giveawayOverdraftModal.totalPieces} ชิ้น</span>
+                </div>
+                <div className="flex justify-between font-bold text-red-600 pt-1 border-t border-amber-200">
+                  <span>จำนวนที่ขาด:</span>
+                  <span>{giveawayOverdraftModal.totalPieces - giveawayOverdraftModal.remaining} ชิ้น</span>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-600 leading-relaxed">
+                {allowNegativeGiveaway ? (
+                  <>ท่านสามารถเลือก <strong>"ยอมติดลบก่อน"</strong> เพื่อออกบิลต่อได้ทันที (ยอดคงเหลือของภาคจะติดลบ) หรือเลือก <strong>"ขอยืมโควต้า"</strong> เพื่อส่งคำขอยืมจากภาคอื่น</>
+                ) : (
+                  <>นโยบายระบบปัจจุบัน<strong>ไม่อนุญาตให้โควต้าของแถมติดลบ</strong> กรุณากด <strong>"ขอยืมโควต้าจากภาคอื่น"</strong> ก่อนดำเนินการต่อ</>
+                )}
+              </p>
+
+              <div className="flex flex-col gap-2 pt-2">
+                {allowNegativeGiveaway && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const g = giveawayOverdraftModal.good!;
+                      const act = giveawayOverdraftModal.pendingAction;
+                      setGiveawayOverdraftModal({ isOpen: false, good: null, totalPieces: 0, remaining: 0 });
+                      if (act?.type === 'update') {
+                        applyActiveLineUpdate(act.tempId, act.patch);
+                      } else {
+                        doAddGoodDirect(g);
+                      }
+                    }}
+                    className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition-colors text-center cursor-pointer"
+                  >
+                    ✓ ยอมติดลบก่อน (ออกบิลต่อได้ทันที)
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const g = giveawayOverdraftModal.good!;
+                    const deficit = giveawayOverdraftModal.totalPieces - giveawayOverdraftModal.remaining;
+                    setGiveawayOverdraftModal({ isOpen: false, good: null, totalPieces: 0, remaining: 0 });
+                    setBorrowReq({
+                      brand: g.Brand || 'ทั่วไป',
+                      itemName: g.ItemName || g.GoodName || '',
+                      requiredQty: deficit > 0 ? deficit : 1,
+                    });
+                    setBorrowModalOpen(true);
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors text-center cursor-pointer"
+                >
+                  🤝 ขอยืมโควต้าจากภาคอื่น
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGiveawayOverdraftModal({ isOpen: false, good: null, totalPieces: 0, remaining: 0 })}
+                  className="w-full py-2 rounded-xl font-bold text-xs text-gray-500 hover:bg-gray-100 transition-colors text-center cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

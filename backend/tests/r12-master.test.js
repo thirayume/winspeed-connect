@@ -10,13 +10,23 @@ const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
 
 const state = { raise: null };
-const db = h.installDbStub(({ text }) => {
+const db = h.installDbStub(({ text, inputs }) => {
   if (/OBJECT_ID\('wf\.sp_MasterCreatePrice'/.test(text)) return [{ HasProcs: 1 }];
   if (/EXEC wf\.sp_MasterCreatePrice/.test(text)) {
     if (state.raise) { const e = new Error(state.raise); e.class = 16; e.number = 50000; throw e; }
     return [{ NewSetPriceID: 2101, DocuNo: 'WEB-20261006-0001' }];
   }
   if (/EXEC wf\.sp_Master/.test(text)) return [{ Affected: /9999/.test(JSON.stringify(text)) ? 0 : 1 }];
+  if (/FROM dbo\.SOHD hd WITH \(NOLOCK\)\s+INNER JOIN dbo\.SODT dt WITH \(NOLOCK\)/i.test(text)) {
+    const cid = inputs.cid && typeof inputs.cid === 'object' ? inputs.cid.value : inputs.cid;
+    if (Number(cid) === 1092) {
+      return [
+        { GoodID: '1118', GoodName: '16-8-8 เชิงผสม ตรารถเกษตร', OrderCount: 15, TotalQty: 140, LastOrderDate: '2026-11-10T00:00:00.000Z' },
+        { GoodID: '1126', GoodName: '18-4-5 เชิงผสม ตรารถเกษตร', OrderCount: 8, TotalQty: 60, LastOrderDate: '2026-11-10T00:00:00.000Z' },
+      ];
+    }
+    return [];
+  }
   return [];
 }, { activeUserIds: h.TEST_USERS });
 
@@ -97,4 +107,30 @@ test('live finding: a garbled RAISERROR text (ANSI driver) becomes a readable Th
     assert.equal(r.status, 400);
     assert.match(r.body.message, /ข้อมูลไม่ผ่านการตรวจของฐานข้อมูล WINSpeed/);
   } finally { state.raise = null; }
+});
+
+test('GET /api/master/customers/:id/top-goods queries SOHD/SODT/EMGood with integer CustID and filters inactive/non-sale items', async () => {
+  const beforeInvalid = db.calls.length;
+  const badRes = await app.call('GET', '/api/master/customers/invalid-id/top-goods', { user: admin });
+  assert.equal(badRes.status, 200);
+  assert.deepEqual(badRes.body, []);
+  assert.equal(
+    db.calls.slice(beforeInvalid).filter(c => /dbo\.SOHD|dbo\.SODT|dbo\.SOSODT/i.test(c.text)).length,
+    0,
+    'non-numeric customer id must short-circuit without querying SOHD/SODT'
+  );
+
+  const beforeValid = db.calls.length;
+  const okRes = await app.call('GET', '/api/master/customers/1092/top-goods', { user: admin });
+  assert.equal(okRes.status, 200, JSON.stringify(okRes.body));
+  assert.equal(okRes.body.length, 2);
+  assert.equal(okRes.body[0].GoodID, '1118');
+
+  const topCall = db.calls.slice(beforeValid).find(c => /INNER JOIN dbo\.SODT dt/i.test(c.text));
+  assert.ok(topCall, 'expected SOHD + SODT + EMGood query');
+  assert.ok(!/dbo\.SOSODT/i.test(topCall.text), 'must not reference non-existent dbo.SOSODT');
+  assert.ok(/INNER JOIN dbo\.EMGood g WITH \(NOLOCK\) ON g\.GoodID = dt\.GoodID/i.test(topCall.text));
+  assert.ok(/g\.GoodGroupID IN \(1003, 1004, 1005\)/.test(topCall.text));
+  assert.ok(/hd\.DocuType = 104 OR \(hd\.DocuType = 103 AND ISNULL\(hd\.DocuStatus, ''\) <> 'Y'\)/.test(topCall.text));
+  assert.strictEqual(topCall.inputs.cid, 1092);
 });

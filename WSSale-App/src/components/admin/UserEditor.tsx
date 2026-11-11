@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useUnsavedChanges } from "../../hooks/useUnsavedChanges";
 import { unsavedMessage } from "../../utils/unsaved-changes";
+import { appConfirm } from "../ui/AppAlert";
 import {
   X,
   UserRound,
@@ -46,7 +47,7 @@ export function UserEditor({
   const rolesChanged = [...codes].sort().join("|") !== [...original].sort().join("|");
   const dirty = formDirty || rolesChanged;
   const releaseDraftGuard = useUnsavedChanges(dirty);
-  const closeEditor = () => { if (!busy && (!dirty || window.confirm(unsavedMessage))) onClose(); };
+  const closeEditor = async () => { if (!busy && (!dirty || await appConfirm(unsavedMessage))) onClose(); };
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); closeEditor(); } };
     window.addEventListener("keydown", handleEscape);

@@ -12,7 +12,7 @@ import type {
   Quotation, PaperBoard,
   PaginatedResult, UnlockRequest, AppUser, AdminUser, AgingRow,
   TruckStats, TruckHistoryItem, CustomerFilterOptions, CustomerRequest, CustomerRequestStatus,
-  CustomerCreditStatus, CompanyInfo,
+  CustomerCreditStatus, CompanyInfo, CustomerGroup,
 } from '../types';
 
 
@@ -334,7 +334,19 @@ export const reviewCustomerRequest = (
 ) =>
   req<{ ok: boolean }>(`/master/customer-requests/${id}/review`, { method: 'PATCH', body: JSON.stringify(payload) });
 
-export const fetchGoods = (params?: string | { q?: string; forSale?: boolean | string; groupId?: string | number }) => {
+export const fetchCustomerGroups = () =>
+  req<CustomerGroup[]>('/master/customer-groups');
+
+export const createCustomerGroup = (data: { CustGroupCode?: string; CustGroupName: string; CustGroupNameEng?: string; Remark?: string }) =>
+  req<{ ok: boolean; CustGroupID: number }>('/master/customer-groups', { method: 'POST', body: JSON.stringify(data) });
+
+export const updateCustomerGroup = (id: number, data: { CustGroupCode?: string; CustGroupName?: string; CustGroupNameEng?: string; Remark?: string }) =>
+  req<{ ok: boolean }>(`/master/customer-groups/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+
+export const deleteCustomerGroup = (id: number) =>
+  req<{ ok: boolean }>(`/master/customer-groups/${id}`, { method: 'DELETE' });
+
+export const fetchGoods = (params?: string | { q?: string; forSale?: boolean | string; groupId?: string | number; includeInactive?: boolean }) => {
   let qs = '';
   if (typeof params === 'string') {
     qs = params ? `?q=${encodeURIComponent(params)}` : '';
@@ -343,11 +355,18 @@ export const fetchGoods = (params?: string | { q?: string; forSale?: boolean | s
     if (params.q) sp.set('q', params.q);
     if (params.forSale) sp.set('forSale', String(params.forSale));
     if (params.groupId) sp.set('groupId', String(params.groupId));
+    if (params.includeInactive) sp.set('includeInactive', 'true');
     qs = sp.toString() ? `?${sp.toString()}` : '';
   }
   const target = dbTargetHeader()['X-DB-Target'] || '';
   return cachedReq<EMGood[]>(`goods:${target}:${qs}`, () => req<EMGood[]>(`/master/goods${qs}`, { silent: true }));
 };
+
+export const toggleGoodStatus = (id: string, inactive: 'A' | 'I') =>
+  req<{ ok: boolean; status: string }>(`/master/goods/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ inactive })
+  });
 
 // ไม่แคช: โควต้าคงเหลือเปลี่ยนทุกครั้งที่มีบิลร่าง/ยืนยัน/ยืม (R11 U-7)
 export const fetchGiveawayGoods = (salesUserId?: string, excludeSoId?: string) => {
@@ -452,6 +471,17 @@ export const updateControlTicketExpiry = (docuNo: string, params: {
     method: 'PATCH',
     body: JSON.stringify(params),
   });
+
+export interface CustomerTopGood {
+  GoodID: string;
+  GoodName: string;
+  OrderCount: number;
+  TotalQty: number;
+  LastOrderDate?: string;
+}
+
+export const fetchCustomerTopGoods = (custId: string) =>
+  req<CustomerTopGood[]>(`/master/customers/${encodeURIComponent(custId)}/top-goods`);
 
 export const fetchTruckPlates = (custId: string) =>
   req<string[]>(`/master/truck-plates?custId=${custId}`);
@@ -949,8 +979,17 @@ export const fetchGiveawayWithdrawals = (region?: string, year?: number) => {
   return req<GiveawayWithdrawal[]>(`/giveaway/withdrawals${qs.toString() ? `?${qs}` : ''}`);
 };
 
-export const fetchGiveawayItems = (brand?: string) =>
-  req<GiveawayItem[]>(`/giveaway/items${brand ? `?brand=${encodeURIComponent(brand)}` : ''}`);
+export const fetchGiveawayItems = (params?: string | { brand?: string; includeInactive?: boolean }) => {
+  const sp = new URLSearchParams();
+  if (typeof params === 'string') {
+    if (params) sp.set('brand', params);
+  } else if (params) {
+    if (params.brand) sp.set('brand', params.brand);
+    if (params.includeInactive) sp.set('includeInactive', 'true');
+  }
+  const qs = sp.toString() ? `?${sp.toString()}` : '';
+  return req<GiveawayItem[]>(`/giveaway/items${qs}`);
+};
 
 export const fetchGiveawayBorrowRequests = () => req<unknown[]>('/giveaway/borrow-requests');
 export const resolveGiveawayBorrowRequest = (id: number, approve: boolean, note?: string) => 
@@ -1253,6 +1292,51 @@ export const fetchPriceIndicator = (payload: { custId: string; deliveryDate?: st
   req<{ lines: { key: string; level: PriceLevel }[] }>('/so/price-indicator', { method: 'POST', body: JSON.stringify(payload) });
 export const fetchEffectivePrices = (priceBookId: number, custId?: string) =>
   req<EffectivePriceRow[]>(`/pricebook/${priceBookId}/effective${custId ? `?custId=${encodeURIComponent(custId)}` : ''}`);
+
+// ── WinSpeed Pricelist sets (dbo.EMSetPriceHD / DT) ────────────
+export interface WinSpeedPriceSet {
+  SetPriceID: number;
+  DocuNo: string;
+  DocuDate: string;
+  BeginDate: string;
+  EndDate: string;
+  CustID?: string | null;
+  CustName?: string | null;
+  Remark1?: string | null;
+  LineCount: number;
+  IsActivePeriod: number;
+}
+
+export interface WinSpeedPriceSetLine {
+  SetPriceID: number;
+  ListNo: number;
+  GoodID: string;
+  GoodCode: string;
+  GoodName: string;
+  GoodGroupName?: string | null;
+  Unit: string;
+  Price: number;
+  Remark?: string | null;
+}
+
+export const fetchWinSpeedPriceSets = () =>
+  req<WinSpeedPriceSet[]>('/pricebook/winspeed-sets');
+
+export const fetchWinSpeedPriceSetLines = (id: number) =>
+  req<WinSpeedPriceSetLine[]>(`/pricebook/winspeed-sets/${id}/lines`);
+
+export const syncWinSpeedPriceSets = (payload?: {
+  setPriceIds?: number[];
+  name?: string;
+  status?: 'DRAFT' | 'ACTIVE';
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  note?: string;
+}) =>
+  req<{ ok: boolean; priceBookId: number; lineCount: number; status: string; name: string }>('/pricebook/sync-from-winspeed', {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  });
 
 // ── Ops outbox (FR-029) ───────────────────────────────────────
 export interface OutboxRow { Id: number; EventType: string; AggregateId: string | null; Status: string; RetryCount: number; LastError: string | null; CreatedAt: string; ProcessedAt: string | null; }
@@ -2193,6 +2277,9 @@ export const submitTripPlan = (tripId: number | string) =>
     loadPlanRevision: number;
     message: string;
   }>(`/trips/${tripId}/submit-plan`, { method: 'POST' });
+
+export const deleteTrip = (tripId: number | string) =>
+  req<{ message: string; tripId: number }>(`/trips/${tripId}`, { method: 'DELETE' });
 
 // ── Transactional Load Plan & Acknowledgements (SO-07) ────────
 export const updateLoadPlan = (tripId: number | string, data: {

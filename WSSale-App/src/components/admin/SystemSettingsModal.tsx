@@ -78,6 +78,7 @@ export function SystemSettingsModal({
   const [settleWindowDays, setSettleWindowDays] = useState<string>('3');
   const [goLiveCutoff, setGoLiveCutoff] = useState<string>('2000-01-01');
   const [borrowMaxPct, setBorrowMaxPct] = useState<string>('100');
+  const [allowNegativeGiveaway, setAllowNegativeGiveaway] = useState<boolean>(true);
   // owner 2026-10-09: price colour threshold, legacy-document cut-off, rebate-claim accounting year
   const [priceWarnBelow, setPriceWarnBelow] = useState<string>('500');
   const [legacyCutoff, setLegacyCutoff] = useState<string>('2022-01-01');
@@ -151,6 +152,7 @@ export function SystemSettingsModal({
             setSettleWindowDays(String(raw.COUPON_SETTLEMENT_WINDOW_DAYS ?? set.COUPON_SETTLEMENT_WINDOW_DAYS ?? '3'));
             setGoLiveCutoff(String(raw.COUPON_GOLIVE_CUTOFF_DATE ?? set.COUPON_GOLIVE_CUTOFF_DATE ?? '2000-01-01'));
             setBorrowMaxPct(String(raw.GIVEAWAY_BORROW_MAX_PCT ?? set.GIVEAWAY_BORROW_MAX_PCT ?? '100'));
+            setAllowNegativeGiveaway(String(raw.GIVEAWAY_ALLOW_NEGATIVE_QUOTA ?? set.GIVEAWAY_ALLOW_NEGATIVE_QUOTA ?? 'true') === 'true');
             setPriceWarnBelow(String(raw.PRICE_WARN_BELOW_PER_TON ?? set.PRICE_WARN_BELOW_PER_TON ?? '500'));
             setLegacyCutoff(String(raw.LEGACY_DOC_CUTOFF_DATE ?? set.LEGACY_DOC_CUTOFF_DATE ?? '2022-01-01'));
             setClaimFiscalMonth(String(raw.REBATE_CLAIM_FISCAL_START_MONTH ?? set.REBATE_CLAIM_FISCAL_START_MONTH ?? '1'));
@@ -261,6 +263,7 @@ export function SystemSettingsModal({
         COUPON_SETTLEMENT_WINDOW_DAYS: windowDays,
         COUPON_GOLIVE_CUTOFF_DATE: goLiveCutoff.trim(),
         GIVEAWAY_BORROW_MAX_PCT: borrowPct,
+        GIVEAWAY_ALLOW_NEGATIVE_QUOTA: allowNegativeGiveaway ? 'true' : 'false',
         PRICE_WARN_BELOW_PER_TON: warnBelow,
         LEGACY_DOC_CUTOFF_DATE: legacyCutoff.trim(),
         REBATE_CLAIM_FISCAL_START_MONTH: fiscalMonth,
@@ -799,6 +802,25 @@ export function SystemSettingsModal({
                       className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none"
                     />
                     <p className="text-[11px] text-gray-500 mt-1">ค่าเริ่มต้น 100% ตรวจทั้งตอนขอยืมและตอนอนุมัติ</p>
+                  </div>
+
+                  <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-4 mt-3">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={allowNegativeGiveaway}
+                        onChange={e => setAllowNegativeGiveaway(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 text-[#0C447C] rounded border-gray-300 focus:ring-[#0C447C]"
+                      />
+                      <div>
+                        <div className="font-bold text-gray-800 text-sm">
+                          อนุญาตให้โควต้าของแถมติดลบได้ก่อน (Giveaway Quota Overdraft)
+                        </div>
+                        <p className="text-xs text-gray-600 mt-0.5">
+                          เมื่อเปิดใช้งาน: หากโควต้าของแถมไม่เพียงพอ ระบบจะอนุญาตให้ออกบิลโดยยอมให้ยอดติดลบ หรือเลือกกดขอยืมโควต้าจากภาคอื่นได้
+                        </p>
+                      </div>
+                    </label>
                   </div>
                 </div>
               )}

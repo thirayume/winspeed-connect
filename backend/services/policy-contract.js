@@ -137,6 +137,12 @@ const POLICY_DEFINITIONS = Object.freeze(Object.assign(Object.create(null), {
     default: 100,
     description: 'ยืมของแถมได้สูงสุดกี่ % ของโควต้าคงเหลือของผู้ให้ยืม (%)',
   },
+  GIVEAWAY_ALLOW_NEGATIVE_QUOTA: {
+    policyName: 'GIVEAWAY_QUOTA_OVERDRAFT_POLICY',
+    type: 'BOOL',
+    default: true,
+    description: 'อนุญาตให้ออกบิลของแถมได้แม้โควต้าไม่พอ (ยอดโควต้าติดลบ)',
+  },
   // owner 2026-10-09: the bill editor shows the salesperson only a colour for the price, never an amount
   PRICE_WARN_BELOW_PER_TON: {
     policyName: 'PRICE_INDICATOR_POLICY',

@@ -174,14 +174,33 @@ export type CustomerFilterOptions = {
 
 export type CustomerRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED';
 
+export type CustomerGroup = {
+  CustGroupID: number;
+  CustGroupCode?: string | null;
+  CustGroupName: string;
+  CustGroupNameEng?: string | null;
+  Remark?: string | null;
+  CustomerCount?: number;
+};
+
 export type CustomerRequest = {
   Id: number;
   CustName: string;
   ContactName?: string | null;
   Tel?: string | null;
   Mobile?: string | null;
+  Email?: string | null;
+  LineId?: string | null;
   TaxId?: string | null;
   Address?: string | null;
+  SalespersonUserId?: number | null;
+  SalespersonName?: string | null;
+  RegionCode?: string | null;
+  CustGroupId?: number | null;
+  CustGroupName?: string | null;
+  CreditLimit?: number | null;
+  AgingDays?: number | null;
+  CreditHold?: boolean | null;
   Note?: string | null;
   Status: CustomerRequestStatus;
   WinspeedCustId?: string | null;
@@ -209,6 +228,7 @@ export type EMGood = {
   TotalQtyTon?: number;
   TotalQtyTonThisYear?: number;
   RemainingQty?: number;
+  Inactive?: 'A' | 'I';
   // ของแถม: บรรทัดงบที่ตัวจับคู่ฝั่งเซิร์ฟเวอร์เลือกให้ (R11 U-8)
   Brand?: string;
   ItemName?: string;
@@ -564,9 +584,19 @@ export type VoucherSummary = {
 // ── Giveaway (qty model จาก xls: ภาค × ตรา × รายการ) ──────────
 export type GiveawayItem = {
   Id: number;
-  Brand: string;       // รถเกษตร / ปุ๋ยเทพ
+  GoodID?: string;
+  GoodCode?: string;
+  GoodName?: string;
+  Brand: string;       // รถเกษตร / ปุ๋ยเทพ / ส่วนกลาง
   ItemName: string;    // "16-8-8" / "เสื้อยืดแขนยาว" / "แบนเนอร์ รถเกษตร"
   ItemType: 'BAG' | 'SHIRT' | 'BANNER' | 'OTHER';
+  StockQty?: number;
+  RemaQty?: number;
+  BagPerTon?: number;
+  WeightKgPerBag?: number;
+  ImageUrl?: string | null;
+  Unit?: string;
+  Inactive?: 'A' | 'I';
 };
 
 export type GiveawayRegion = {

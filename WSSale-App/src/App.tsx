@@ -205,7 +205,7 @@ function App() {
   if (user.mustChangePassword) return <ForcePasswordChange />;
 
   return <AppShell key={`${user.id}:${user.actorId || user.id}`} user={user}
-    logout={() => { if (confirmLeaveEditors()) logout(); }} />;
+    logout={async () => { if (await confirmLeaveEditors()) logout(); }} />;
 }
 
 function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAuthStore.getState>['user']>; logout: () => void }) {
@@ -301,7 +301,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
   });
 
   const switchAccessAs = async (targetId: number) => {
-    if (!confirmLeaveEditors()) return;
+    if (!(await confirmLeaveEditors())) return;
     setAccessAsLoading(true);
     try {
       const session = await startAccessAs(targetId);
@@ -316,7 +316,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
   };
 
   const stopAccessAsSession = async () => {
-    if (!confirmLeaveEditors()) return;
+    if (!(await confirmLeaveEditors())) return;
     setAccessAsLoading(true);
     try {
       const session = await stopAccessAs();

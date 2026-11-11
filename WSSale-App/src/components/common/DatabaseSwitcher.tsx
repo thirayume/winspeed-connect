@@ -190,7 +190,7 @@ export function DatabaseSwitcher() {
   async function choose(database: string) {
     if (busy) return;
     if (database.toLowerCase() === info!.active.toLowerCase()) { setOpen(false); return; }
-    if (!confirmLeaveEditors()) return;
+    if (!(await confirmLeaveEditors())) return;
     setBusy(true);
     try {
       const res = await switchDatabase(database);

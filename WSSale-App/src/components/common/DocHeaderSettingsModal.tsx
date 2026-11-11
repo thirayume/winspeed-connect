@@ -10,6 +10,7 @@ import {
 } from '../../utils/docHeaderSettings';
 import { useAuthStore } from '../../store/auth-store';
 import { canManageDocHeaderSettings } from '../../utils/permissions';
+import { appConfirm } from '../ui/AppAlert';
 
 export function DocHeaderSettingsModal({
   isOpen,
@@ -72,8 +73,8 @@ export function DocHeaderSettingsModal({
     }, 800);
   };
 
-  const handleReset = () => {
-    if (confirm(reportId && scope === 'REPORT' ? `คุณต้องการรีเซ็ตการตั้งค่าของ "${reportTitle || reportId}" กลับไปใช้ค่าส่วนกลางหรือไม่?` : 'คุณต้องการรีเซ็ตตั้งค่าหัวกระดาษและท้ายกระดาษเป็นค่าเริ่มต้นของระบบหรือไม่?')) {
+  const handleReset = async () => {
+    if (await appConfirm(reportId && scope === 'REPORT' ? `คุณต้องการรีเซ็ตการตั้งค่าของ "${reportTitle || reportId}" กลับไปใช้ค่าส่วนกลางหรือไม่?` : 'คุณต้องการรีเซ็ตตั้งค่าหัวกระดาษและท้ายกระดาษเป็นค่าเริ่มต้นของระบบหรือไม่?')) {
       if (reportId && scope === 'REPORT') {
         const globalCfg = resetReportDocHeaderConfig(reportId);
         setConfig(globalCfg);

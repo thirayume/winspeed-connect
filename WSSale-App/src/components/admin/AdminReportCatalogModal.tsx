@@ -1,5 +1,6 @@
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { unsavedMessage } from '../../utils/unsaved-changes';
+import { appConfirm } from '../ui/AppAlert';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
@@ -52,7 +53,7 @@ export const AdminReportCatalogModal: React.FC<AdminReportCatalogModalProps> = (
   const signature = (rows: ReportCatalogConfigItem[]) => JSON.stringify(rows.map(r => [r.key, r.enabled]));
   const dirty = Boolean(baseline && baseline !== signature(items));
   useUnsavedChanges(isOpen && dirty);
-  const requestClose = () => { if (!saving && (!dirty || window.confirm(unsavedMessage))) onClose(); };
+  const requestClose = async () => { if (!saving && (!dirty || await appConfirm(unsavedMessage))) onClose(); };
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,8 +115,8 @@ export const AdminReportCatalogModal: React.FC<AdminReportCatalogModalProps> = (
   };
 
   // Reset to original alphabetical / default order
-  const handleReset = () => {
-    if (!confirm('ต้องการรีเซ็ตลำดับรายงานและเปิดการแสดงผลทั้งหมดเป็นค่าเริ่มต้นใช่หรือไม่?')) return;
+  const handleReset = async () => {
+    if (!await appConfirm('ต้องการรีเซ็ตลำดับรายงานและเปิดการแสดงผลทั้งหมดเป็นค่าเริ่มต้นใช่หรือไม่?')) return;
     setItems(prev =>
       [...prev]
         .sort((a, b) => a.title.localeCompare(b.title, 'th'))

@@ -6,6 +6,7 @@ import {
   fetchRetentionPolicies, updateRetentionPolicy, fetchDsarLog, dsarExport, runRetention,
   type CreditInfo, type RetentionPolicy, type DsarRow,
 } from '../../services/api';
+import { appConfirm } from '../ui/AppAlert';
 
 type Tab = 'credit' | 'stock' | 'pdpa';
 
@@ -92,7 +93,7 @@ function PdpaTab() {
     catch (e: unknown) { alert((e as Error).message); } finally { setBusy(false); }
   }
   async function doRetention() {
-    if (!confirm('รัน retention purge ตามนโยบาย? (ลบข้อมูลเก่าถาวร)')) return;
+    if (!await appConfirm('รัน retention purge ตามนโยบาย? (ลบข้อมูลเก่าถาวร)')) return;
     setBusy(true);
     try { const r = await runRetention(); alert('เสร็จ: ' + JSON.stringify(r.result)); }
     catch (e: unknown) { alert((e as Error).message); } finally { setBusy(false); }

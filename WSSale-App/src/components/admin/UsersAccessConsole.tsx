@@ -85,7 +85,7 @@ export function UsersAccessConsole({
   };
 
   const [activeTab, setActiveTab] = useState<ConsoleTab>(getInitialTab);
-  const chooseTab = (tab: ConsoleTab) => { if (tab !== activeTab && confirmLeaveEditors()) setActiveTab(tab); };
+  const chooseTab = async (tab: ConsoleTab) => { if (tab !== activeTab && await confirmLeaveEditors()) setActiveTab(tab); };
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string | null>(null);
 
   // History state

@@ -9,6 +9,7 @@ import {
   fetchUserActivity, syncDatabaseUsers,
   type OpsStatus, type OpsError, type OutboxRow, type UserActivityResponse
 } from '../../services/api';
+import { appConfirm } from '../ui/AppAlert';
 
 function fmtUptime(sec: number) {
   const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
@@ -106,7 +107,7 @@ export function OpsStatusPage() {
   }
 
   async function handleClearErrors() {
-    if (!confirm('ยืนยันล้างประวัติ Error ทั้งหมดหรือไม่? (รายการเก่าจะถูกเคลียร์ออกจากตาราง wf.ErrorLog)')) return;
+    if (!await appConfirm('ยืนยันล้างประวัติ Error ทั้งหมดหรือไม่? (รายการเก่าจะถูกเคลียร์ออกจากตาราง wf.ErrorLog)')) return;
     setClearing(true);
     try {
       await clearOpsErrors();
@@ -120,7 +121,7 @@ export function OpsStatusPage() {
   }
 
   async function handleSyncDb() {
-    if (!confirm(`ยืนยันซิงค์ผู้ใช้ บทบาท และสิทธิ์ จากฐานหลัก (dbwins_worldfert9) ไปยัง ${targetDb} หรือไม่?`)) return;
+    if (!await appConfirm(`ยืนยันซิงค์ผู้ใช้ บทบาท และสิทธิ์ จากฐานหลัก (dbwins_worldfert9) ไปยัง ${targetDb} หรือไม่?`)) return;
     setSyncing(true);
     setSyncResult(null);
     try {

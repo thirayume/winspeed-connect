@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ClipboardCheck, History, Save, X } from 'lucide-react';
 import { req } from '../../services/api';
+import { appConfirm } from '../ui/AppAlert';
 
 const API = '/readiness-signoff';
 const statusNames = {
@@ -82,12 +83,12 @@ export function ReadinessSignoffModal({ onClose, embedded = false }: { onClose: 
 
   useEffect(() => { void load(); }, []);
 
-  function canDiscard() {
-    return !dirty || window.confirm('ละทิ้งข้อมูลที่ยังไม่ได้บันทึกหรือไม่');
+  async function canDiscard() {
+    return !dirty || await appConfirm('ละทิ้งข้อมูลที่ยังไม่ได้บันทึกหรือไม่');
   }
 
-  function choose(next: Topic) {
-    if (next.code === selected || !canDiscard()) return;
+  async function choose(next: Topic) {
+    if (next.code === selected || !await canDiscard()) return;
     setSelected(next.code);
     setForm(toForm(next.current));
     setError('');
@@ -149,7 +150,7 @@ export function ReadinessSignoffModal({ onClose, embedded = false }: { onClose: 
             <p className="mt-1 text-sm text-gray-600">เก็บขั้นตอนและหลักฐานที่ทีมรับรองสำหรับฐานข้อมูลที่กำลังใช้งาน</p>
             {database && <p className="mt-1 break-all text-xs text-gray-600">ฐานข้อมูล {database}</p>}
           </div>
-          <button hidden={embedded} type="button" aria-label="ปิดผลตรวจรับ" disabled={saving} onClick={() => { if (canDiscard()) onClose(); }}>
+          <button hidden={embedded} type="button" aria-label="ปิดผลตรวจรับ" disabled={saving} onClick={async () => { if (await canDiscard()) onClose(); }}>
             <X size={20} />
           </button>
         </header>
@@ -225,7 +226,7 @@ export function ReadinessSignoffModal({ onClose, embedded = false }: { onClose: 
           </div>
         )}
         <button type="button" disabled={busy} className="mt-3 text-xs text-gray-600 underline"
-          onClick={() => { if (canDiscard()) void load(selected); }}>โหลดข้อมูลล่าสุด</button>
+          onClick={async () => { if (await canDiscard()) void load(selected); }}>โหลดข้อมูลล่าสุด</button>
       </section>
     </div>
   );

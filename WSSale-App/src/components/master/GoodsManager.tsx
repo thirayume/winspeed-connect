@@ -1,27 +1,27 @@
 import { useEffect, useState, Fragment, useMemo } from 'react';
-import { Package, Search, Image as ImageIcon, Edit2, Save, X, RefreshCw, Upload, Tag, Trash2, ArrowUpDown } from 'lucide-react';
-import { fetchGoods, updateGood, fetchPrices, getToken } from '../../services/api';
+import { Package, Search, Image as ImageIcon, Edit2, Save, X, RefreshCw, Upload, Tag, ArrowUpDown, Ban, RotateCcw } from 'lucide-react';
+import { fetchGoods, updateGood, toggleGoodStatus, fetchPrices } from '../../services/api';
 import '../../store/app-store';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
-import { DeleteConfirmModal } from '../ui/DeleteConfirmModal';
 import type { EMGood, CurrentPrice } from '../../types';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
-
-
-export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: string) => void }) => {
+export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodId: string; goodCode?: string; goodName?: string }) => void }) => {
   const [goods, setGoods] = useState<EMGood[]>([]);
   const [prices, setPrices] = useState<CurrentPrice[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+  const [showInactive, setShowInactive] = useState(false);
   
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<EMGood>>({});
   const [saving, setSaving] = useState(false);
 
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [statusModal, setStatusModal] = useState<{
+    good: EMGood;
+    targetStatus: 'A' | 'I';
+  } | null>(null);
+  const [statusLoading, setStatusLoading] = useState(false);
 
   // Pagination & Sorting
   const [currentPage, setCurrentPage] = useState(1);
@@ -32,10 +32,9 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
     setLoading(true);
     try {
       const [goodsData, pricesData] = await Promise.all([
-        fetchGoods(),
+        fetchGoods({ includeInactive: showInactive }),
         fetchPrices({ custId: '' })
       ]);
-      // Backend /master/goods already filters to g.Inactive = 'A'
       setGoods(goodsData);
       setPrices(pricesData);
     } catch (err) {
@@ -46,21 +45,45 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [showInactive]);
+
+  // Canonical category ordering matching billing / SO (ยกเว้นส่งเสริมการขายที่ย้ายไปแท็บของแถม)
+  const categoryOrder = [
+    'ปุ๋ยสูตร บรรจุกระสอบ',
+    'แม่ปุ๋ย บรรจุกระสอบ',
+    'ภาชนะบรรจุ',
+    'วัตถุดิบ',
+    'ธาตุอาหาร',
+  ];
+
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    goods.forEach(g => {
+      const name = g.GoodGroupName || 'ไม่ระบุกลุ่ม';
+      counts.set(name, (counts.get(name) || 0) + 1);
+    });
+    return counts;
+  }, [goods]);
 
   const categories = useMemo(() => {
-    const cats = new Set<string>();
-    goods.forEach(g => {
-      if (g.GoodGroupName) cats.add(g.GoodGroupName);
+    const existing = Array.from(categoryCounts.keys());
+    existing.sort((a, b) => {
+      const idxA = categoryOrder.findIndex(c => a.includes(c) || c.includes(a));
+      const idxB = categoryOrder.findIndex(c => b.includes(c) || c.includes(b));
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b, 'th');
     });
-    return Array.from(cats).sort();
-  }, [goods]);
+    return existing;
+  }, [categoryCounts]);
 
   const filteredGoods = useMemo(() => {
     return goods.filter(g => {
       const matchesSearch = (g.GoodCode ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                             (g.GoodName ?? '').toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = selectedCategory === 'ALL' || g.GoodGroupName === selectedCategory;
+      const gGroup = g.GoodGroupName || 'ไม่ระบุกลุ่ม';
+      const matchesCategory = selectedCategory === 'ALL' || gGroup === selectedCategory;
       return matchesSearch && matchesCategory;
     });
   }, [goods, searchQuery, selectedCategory]);
@@ -123,21 +146,22 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
     setSaving(false);
   };
 
-  const handleDeleteConfirm = async () => {
-    if (!deletingId) return;
-    setDeleteLoading(true);
+  const handleStatusConfirm = async () => {
+    if (!statusModal) return;
+    setStatusLoading(true);
     try {
-      await fetch(`${API_BASE}/master/goods/${deletingId}`, { 
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${getToken()}` }
-      });
-      setGoods(prev => prev.filter(g => g.GoodID !== deletingId));
-      setDeletingId(null);
-    } catch (err) {
-      alert('ไม่สามารถลบข้อมูลได้');
+      await toggleGoodStatus(statusModal.good.GoodID, statusModal.targetStatus);
+      if (statusModal.targetStatus === 'I' && !showInactive) {
+        setGoods(prev => prev.filter(g => g.GoodID !== statusModal.good.GoodID));
+      } else {
+        setGoods(prev => prev.map(g => g.GoodID === statusModal.good.GoodID ? { ...g, Inactive: statusModal.targetStatus } : g));
+      }
+      setStatusModal(null);
+    } catch (err: any) {
+      alert('ไม่สามารถเปลี่ยนสถานะสินค้าได้: ' + (err?.message || 'ข้อผิดพลาดระบบ'));
       console.error(err);
     }
-    setDeleteLoading(false);
+    setStatusLoading(false);
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -187,7 +211,46 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
         />
       </div>
 
-      <div className="flex-1 grid grid-rows-[auto_1fr_auto] bg-white rounded-none sm:rounded-lg sm:rounded-2xl shadow-sm sm:shadow-sm shadow-none border-y sm:border border-gray-100 overflow-hidden relative min-h-0">
+      <div className="flex-1 grid grid-rows-[auto_auto_1fr_auto] bg-white rounded-none sm:rounded-lg sm:rounded-2xl shadow-sm sm:shadow-sm shadow-none border-y sm:border border-gray-100 overflow-hidden relative min-h-0">
+        
+        {/* Category Filter Pills (หมวดหมู่สินค้าเหมือนหน้าเปิดบิล) */}
+        <div className="px-3 sm:px-4 py-2 border-b border-gray-100 bg-white flex items-center gap-1.5 overflow-x-auto scrollbar-hide shrink-0">
+          <button
+            onClick={() => setSelectedCategory('ALL')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition flex items-center gap-1.5 ${
+              selectedCategory === 'ALL'
+                ? 'bg-[#0C447C] text-white shadow-xs'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <span>ทั้งหมด</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${selectedCategory === 'ALL' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-700'}`}>
+              {goods.length}
+            </span>
+          </button>
+          {categories.map(c => {
+            const count = categoryCounts.get(c) || 0;
+            const isSelected = selectedCategory === c;
+            return (
+              <button
+                key={c}
+                onClick={() => setSelectedCategory(c)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition flex items-center gap-1.5 ${
+                  isSelected
+                    ? 'bg-[#0C447C] text-white shadow-xs'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                <span>{c}</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${isSelected ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-700'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Search Toolbar */}
         <div className="p-2 sm:p-4 border-b border-gray-100 flex flex-row items-center gap-2 bg-gray-50/50 overflow-x-auto scrollbar-hide w-full">
           <div className="relative flex-1 min-w-[140px]">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
@@ -204,18 +267,17 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
               </button>
             )}
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <div className="flex bg-gray-100 p-1 rounded-lg">
-              <select 
-                value={selectedCategory} 
-                onChange={e => setSelectedCategory(e.target.value)}
-                className="px-3 py-1 text-xs font-semibold rounded-md transition-colors bg-white text-gray-800 shadow-sm focus:outline-none cursor-pointer border-none"
-              >
-                <option value="ALL">ทุกหมวดหมู่</option>
-                {categories.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <button onClick={loadData} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
+          <div className="flex items-center gap-2 shrink-0">
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition">
+              <input
+                type="checkbox"
+                checked={showInactive}
+                onChange={e => setShowInactive(e.target.checked)}
+                className="rounded text-[#0C447C] focus:ring-[#0C447C] w-3.5 h-3.5"
+              />
+              <span className="font-medium whitespace-nowrap">รวมสินค้างดจำหน่าย</span>
+            </label>
+            <button onClick={loadData} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors" title="โหลดข้อมูลใหม่">
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
@@ -284,11 +346,16 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
                           ) : (
                             <div>
                               <div className="font-bold text-gray-800 text-sm whitespace-normal">{good.GoodName}</div>
-                              <div className="flex items-center gap-2 mt-0.5">
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 <div className="text-xs text-gray-400 font-mono">{good.GoodCode}</div>
                                 {good.GoodGroupName && (
                                   <span className="bg-gray-100 text-gray-500 text-[10px] px-2 py-0.5 rounded-full font-semibold">
                                     {good.GoodGroupName}
+                                  </span>
+                                )}
+                                {good.Inactive === 'I' && (
+                                  <span className="bg-red-50 text-red-700 text-[10px] px-2 py-0.5 rounded-full font-semibold border border-red-200">
+                                    งดจำหน่ายชั่วคราว
                                   </span>
                                 )}
                               </div>
@@ -358,16 +425,34 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
                           ) : (
                             <div className="flex items-center justify-end gap-1">
                               {onViewPrices && (
-                                <button onClick={() => onViewPrices(good.GoodName)} className="p-1.5 text-gray-400 hover:text-[#0C447C] hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center justify-center" title="ดูประวัติการปรับราคา">
+                                <button 
+                                  onClick={() => onViewPrices({ goodId: good.GoodID, goodCode: good.GoodCode, goodName: good.GoodName })} 
+                                  className="p-1.5 text-gray-400 hover:text-[#0C447C] hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center justify-center" 
+                                  title="ดูราคาขาย (Pricelist)"
+                                >
                                   <Tag size={16} />
                                 </button>
                               )}
-                              <button onClick={() => handleEdit(good)} className="p-1.5 text-gray-400 hover:text-[#0C447C] hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center justify-center" title="แก้ไขราคากลาง">
+                              <button onClick={() => handleEdit(good)} className="p-1.5 text-gray-400 hover:text-[#0C447C] hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center justify-center" title="แก้ไขสเปค/รูปภาพ">
                                 <Edit2 size={16} />
                               </button>
-                              <button onClick={() => setDeletingId(good.GoodID)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors inline-flex items-center justify-center" title="ปิดสถานะ (Inactive)">
-                                <Trash2 size={16} />
-                              </button>
+                              {good.Inactive === 'I' ? (
+                                <button 
+                                  onClick={() => setStatusModal({ good, targetStatus: 'A' })} 
+                                  className="p-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors inline-flex items-center justify-center" 
+                                  title="เปิดจำหน่ายอีกครั้ง (Restore)"
+                                >
+                                  <RotateCcw size={16} />
+                                </button>
+                              ) : (
+                                <button 
+                                  onClick={() => setStatusModal({ good, targetStatus: 'I' })} 
+                                  className="p-1.5 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors inline-flex items-center justify-center" 
+                                  title="งดจำหน่ายชั่วคราว (Soft-Delete)"
+                                >
+                                  <Ban size={16} />
+                                </button>
+                              )}
                             </div>
                           )}
                         </td>
@@ -430,14 +515,51 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (goodName: strin
         )}
       </div>
 
-      <DeleteConfirmModal
-        isOpen={!!deletingId}
-        onClose={() => setDeletingId(null)}
-        onConfirm={handleDeleteConfirm}
-        title="ยืนยันการลบสินค้า"
-        itemName={goods.find(g => g.GoodID === deletingId)?.GoodName || ''}
-        loading={deleteLoading}
-      />
+      {statusModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-gray-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${statusModal.targetStatus === 'I' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                {statusModal.targetStatus === 'I' ? <Ban size={20} /> : <RotateCcw size={20} />}
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-base">
+                  {statusModal.targetStatus === 'I' ? 'ยืนยันงดจำหน่ายสินค้านี้ชั่วคราว' : 'ยืนยันเปิดจำหน่ายสินค้าอีกครั้ง'}
+                </h3>
+                <p className="text-xs text-gray-500 font-mono mt-0.5">
+                  [{statusModal.good.GoodCode}] {statusModal.good.GoodName}
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 mb-6 leading-relaxed">
+              {statusModal.targetStatus === 'I'
+                ? 'ระบบจะทำ Soft-Delete โดยกำหนดสถานะเป็น Inactive เพื่อซ่อนสินค้านี้จากหน้ารายการสินค้า ใบเสนอราคา ออกบิลขาย และการจัดทำตารางราคา (Pricelist) โดยไม่กระทบต่อประวัติบิลย้อนหลังใน WinSpeed และสามารถเปิดจำหน่ายใหม่ได้ตลอดเวลา'
+                : 'สินค้าจะกลับมาแสดงในรายการสินค้า ใบเสนอราคา ออกบิลขาย และสามารถทำตารางราคาได้ตามปกติ'}
+            </p>
+            <div className="flex justify-end gap-2.5">
+              <button
+                onClick={() => setStatusModal(null)}
+                disabled={statusLoading}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleStatusConfirm}
+                disabled={statusLoading}
+                className={`px-4 py-2 text-sm font-semibold text-white rounded-lg transition flex items-center gap-1.5 ${
+                  statusModal.targetStatus === 'I'
+                    ? 'bg-amber-600 hover:bg-amber-700'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+              >
+                {statusLoading && <RefreshCw size={14} className="animate-spin" />}
+                {statusModal.targetStatus === 'I' ? 'งดจำหน่ายชั่วคราว' : 'เปิดจำหน่าย'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

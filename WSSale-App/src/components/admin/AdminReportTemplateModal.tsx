@@ -15,6 +15,7 @@ import {
   type ReportAssignmentItem,
   type ReportAuditEventItem
 } from '../../services/api';
+import { appPrompt } from '../ui/AppAlert';
 
 interface Props {
   isOpen: boolean;
@@ -160,7 +161,7 @@ export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated, e
 
   // ── Assignment Actions ────────────────────────────────────────────────────
   const handleUpdateAssignment = async (reportKey: string, templateId: number) => {
-    const rPrompt = prompt(`ระบุเหตุผลในการเปลี่ยนแม่แบบสำหรับรายงาน "${reportKey}":`);
+    const rPrompt = await appPrompt(`ระบุเหตุผลในการเปลี่ยนแม่แบบสำหรับรายงาน "${reportKey}":`);
     if (!rPrompt || !rPrompt.trim()) {
       alert('การแก้ไขการกำหนดแม่แบบต้องระบุเหตุผลเสมอ');
       return;

@@ -10,6 +10,7 @@ import {
 // AdminUser ประกาศไว้ที่ types ไม่ใช่ที่ api.ts — api.ts เพียง import มาใช้ต่อ
 import type { AdminUser } from '../../types';
 import { useAuthStore } from '../../store/auth-store';
+import { appConfirm } from '../ui/AppAlert';
 
 /**
  * จัดการผู้อนุมัติรายภาค — ผู้อนุมัติชั้นที่ 2 ของใบขอเคลียร์รีเบท
@@ -55,7 +56,7 @@ export function SaleRegionManager() {
   }
 
   async function remove(userId: number, regionCode: string, name: string) {
-    if (!confirm(`ถอด ${name} ออกจากภาคนี้?\n\nใบขอเคลียร์ของภาคนี้จะกลับไปให้ผู้จัดการคนใดก็ได้อนุมัติชั้นที่ 2`)) return;
+    if (!await appConfirm(`ถอด ${name} ออกจากภาคนี้?\n\nใบขอเคลียร์ของภาคนี้จะกลับไปให้ผู้จัดการคนใดก็ได้อนุมัติชั้นที่ 2`)) return;
     setBusy(true);
     try { await removeUserRegion(userId, regionCode); await load(); }
     catch (e: unknown) { alert((e as Error).message); }

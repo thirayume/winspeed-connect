@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Package, Truck, Clock, Trash2, FileText, Gift, Settings, Activity, Download } from 'lucide-react';
 import { SOStatusBadge } from './SOStatusBadge';
-import { bulkCancelDeleteSO } from '../../services/api';
-import '../ui/AppAlert';
+import { bulkCancelDeleteSO, deleteTrip } from '../../services/api';
+import { appPrompt } from '../ui/AppAlert';
 import { useExport } from '../../hooks/useExport';
 import { SOCancelDeleteModal } from '../common/SOCancelDeleteModal';
 import type { SalesOrder } from '../../types';
@@ -45,9 +45,9 @@ export function SaleTripManager({
   }>({ isOpen: false, trip: null, mode: 'DELETE' });
   const { exportData } = useExport();
 
-  const handleSetCapacity = (truckPlate: string, currentTotal: number) => {
+  const handleSetCapacity = async (truckPlate: string, currentTotal: number) => {
     const defaultCap = currentTotal > 16 ? 32 : 16;
-    const input = prompt(`ระบุน้ำหนักบรรทุกสูงสุด (ตัน) สำหรับทะเบียน ${truckPlate}`, (capacityMap[truckPlate] || defaultCap).toString());
+    const input = await appPrompt(`ระบุน้ำหนักบรรทุกสูงสุด (ตัน) สำหรับทะเบียน ${truckPlate}`, (capacityMap[truckPlate] || defaultCap).toString());
     if (input && !isNaN(Number(input))) {
       setCapacityMap(prev => ({ ...prev, [truckPlate]: Number(input) }));
     }
@@ -270,16 +270,24 @@ export function SaleTripManager({
         onClose={() => setDeleteTripModal({ isOpen: false, trip: null, mode: 'DELETE' })}
         onConfirm={async (reasonCode, reasonText) => {
           const trip = deleteTripModal.trip;
-          if (!trip || !trip.orders.length) return;
+          if (!trip) return;
 
-          const soIds = trip.orders.map(o => o.id!).filter(Boolean);
+          const soIds = (trip.orders || []).map(o => o.id!).filter(Boolean);
           try {
-            await bulkCancelDeleteSO({
-              soIds,
-              action: deleteTripModal.mode,
-              reasonCode,
-              reasonText,
-            });
+            if (soIds.length > 0) {
+              await bulkCancelDeleteSO({
+                soIds,
+                action: deleteTripModal.mode,
+                reasonCode,
+                reasonText,
+              });
+            }
+            if (deleteTripModal.mode === 'DELETE') {
+              const tripId = trip.tripId || (trip.orders?.[0] as any)?.tripId;
+              if (tripId && Number(tripId) > 0) {
+                await deleteTrip(Number(tripId)).catch(() => {});
+              }
+            }
             onLoadData();
           } catch (err: any) {
             onLoadData();

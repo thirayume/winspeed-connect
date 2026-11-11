@@ -36,6 +36,163 @@ router.get('/', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
+// GET /api/pricebook/winspeed-sets — รายการประกาศราคาจาก WinSpeed (dbo.EMSetPriceHD)
+router.get('/winspeed-sets', async (req, res) => {
+  try {
+    const rows = await query(`
+      SELECT hd.SetPriceID, hd.DocuNo, hd.DocuDate, hd.BeginDate, hd.EndDate, hd.CustID,
+             c.CustName, hd.Remark1,
+             COUNT(dt.ListID) AS LineCount,
+             CASE WHEN GETDATE() >= hd.BeginDate AND GETDATE() <= DATEADD(day, 1, hd.EndDate) THEN 1 ELSE 0 END AS IsActivePeriod
+      FROM dbo.EMSetPriceHD hd WITH (NOLOCK)
+      LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON c.CustID = hd.CustID
+      LEFT JOIN dbo.EMSetPriceDT dt WITH (NOLOCK) ON dt.SetPriceID = hd.SetPriceID
+      GROUP BY hd.SetPriceID, hd.DocuNo, hd.DocuDate, hd.BeginDate, hd.EndDate, hd.CustID, c.CustName, hd.Remark1
+      ORDER BY hd.BeginDate DESC, hd.SetPriceID DESC
+    `);
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/pricebook/winspeed-sets/:id/lines — รายการสินค้าและราคาของชุด WinSpeed
+router.get('/winspeed-sets/:id/lines', async (req, res) => {
+  try {
+    const spid = Number(req.params.id);
+    const rows = await query(`
+      SELECT dt.SetPriceID, dt.ListNo, dt.ListID AS GoodID, g.GoodCode, g.GoodName1 AS GoodName,
+             gg.GoodGroupName, ISNULL(u.GoodUnitName, N'ตัน') AS Unit, dt.GoodPriceNet AS Price, dt.Remark
+      FROM dbo.EMSetPriceDT dt WITH (NOLOCK)
+      JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = dt.ListID
+      LEFT JOIN dbo.EMGoodGroup gg WITH (NOLOCK) ON gg.GoodGroupID = g.GoodGroupID
+      LEFT JOIN dbo.EMGoodUnit u WITH (NOLOCK) ON u.GoodUnitID = dt.GoodUnitID
+      WHERE dt.SetPriceID = @spid
+        AND ISNULL(g.Inactive, 'A') = 'A'
+      ORDER BY g.GoodCode
+    `, { spid: { type: sql.Int, value: spid } });
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/pricebook/sync-from-winspeed — ซิงค์/นำเข้าตารางราคาจาก WinSpeed เข้าสู่ wf.PriceBook
+router.post('/sync-from-winspeed', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+  try {
+    const { setPriceIds, name, status, effectiveFrom, effectiveTo, note } = req.body || {};
+    
+    // 1. หา sets ที่จะนำเข้า
+    let targetSetIds = Array.isArray(setPriceIds) && setPriceIds.length > 0
+      ? setPriceIds.map(Number).filter(Boolean)
+      : [];
+
+    if (targetSetIds.length === 0) {
+      // ค้นหาชุดราคาประกาศทั่วไปที่ active ในปัจจุบัน (CustID IS NULL)
+      const activeSets = await query(`
+        SELECT SetPriceID, DocuNo, BeginDate, EndDate
+        FROM dbo.EMSetPriceHD WITH (NOLOCK)
+        WHERE CustID IS NULL AND GETDATE() >= BeginDate AND GETDATE() <= DATEADD(day, 1, EndDate)
+      `);
+      targetSetIds = activeSets.map(s => Number(s.SetPriceID));
+      if (targetSetIds.length === 0) {
+        // ถ้าไม่มี active วันนี้ เอา 2 ชุดล่าสุด
+        const latestSets = await query(`
+          SELECT TOP 2 SetPriceID, DocuNo, BeginDate, EndDate
+          FROM dbo.EMSetPriceHD WITH (NOLOCK)
+          WHERE CustID IS NULL
+          ORDER BY BeginDate DESC, SetPriceID DESC
+        `);
+        targetSetIds = latestSets.map(s => Number(s.SetPriceID));
+      }
+    }
+
+    if (targetSetIds.length === 0) {
+      return res.status(400).json({ message: 'ไม่พบชุดราคา WinSpeed ที่ต้องการซิงค์' });
+    }
+
+    // 2. ดึงข้อมูล header ของ sets เหล่านี้
+    const setHeaders = await query(`
+      SELECT SetPriceID, DocuNo, BeginDate, EndDate
+      FROM dbo.EMSetPriceHD WITH (NOLOCK)
+      WHERE SetPriceID IN (${targetSetIds.join(',')})
+      ORDER BY BeginDate DESC
+    `);
+    const docNos = setHeaders.map(h => h.DocuNo).join(', ');
+    const minBegin = effectiveFrom || (setHeaders[0]?.BeginDate ? new Date(setHeaders[0].BeginDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
+    const maxEnd = effectiveTo || (setHeaders[0]?.EndDate ? new Date(setHeaders[0].EndDate).toISOString().slice(0, 10) : null);
+    const effMonth = minBegin.slice(0, 7);
+
+    const bookName = name || `ตารางราคา WinSpeed (${docNos}) ประจำวันที่ ${minBegin}${maxEnd ? ' ถึง ' + maxEnd : ''}`;
+    const initialStatus = status === 'DRAFT' ? 'DRAFT' : 'ACTIVE';
+
+    // 3. ดึงรายการสินค้าและราคาจาก dbo.EMSetPriceDT
+    const items = await query(`
+      ;WITH ranked AS (
+        SELECT dt.ListID AS GoodID, dt.GoodPriceNet, dt.GoodUnitID, dt.Remark,
+               ROW_NUMBER() OVER (PARTITION BY dt.ListID ORDER BY hd.BeginDate DESC, dt.SetPriceID DESC) rn
+        FROM dbo.EMSetPriceHD hd WITH (NOLOCK)
+        JOIN dbo.EMSetPriceDT dt WITH (NOLOCK) ON dt.SetPriceID = hd.SetPriceID
+        WHERE hd.SetPriceID IN (${targetSetIds.join(',')}) AND dt.GoodPriceNet > 0
+      )
+      SELECT r.GoodID, g.GoodCode, g.GoodName1 AS GoodName, ISNULL(u.GoodUnitName, N'ตัน') AS Unit,
+             r.GoodPriceNet AS Price, r.Remark
+      FROM ranked r
+      JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = r.GoodID
+      LEFT JOIN dbo.EMGoodUnit u WITH (NOLOCK) ON u.GoodUnitID = COALESCE(r.GoodUnitID, g.SaleGoodUnitID, g.MainGoodUnitID)
+      WHERE r.rn = 1
+        AND ISNULL(g.Inactive, 'A') = 'A'
+      ORDER BY g.GoodCode
+    `);
+
+    if (items.length === 0) {
+      return res.status(400).json({ message: 'ชุดราคาที่เลือกไม่มีรายการสินค้าที่มีราคา' });
+    }
+
+    // 4. สร้าง PriceBook
+    const r = await wfQuery(`
+      INSERT INTO wf.PriceBook (Name, EffectiveMonth, EffectiveFrom, EffectiveTo, Status, Note, CreatedBy, ApprovedBy, ApprovedAt, ActivatedBy, ActivatedAt)
+      OUTPUT INSERTED.Id VALUES (@n, @m, @ef, @et, @s, @note, @u, @appBy, @appAt, @actBy, @actAt)
+    `, {
+      n: { type: sql.NVarChar(120), value: bookName },
+      m: { type: sql.Char(7), value: effMonth },
+      ef: { type: sql.Date, value: minBegin ? new Date(minBegin) : null },
+      et: { type: sql.Date, value: maxEnd ? new Date(maxEnd) : null },
+      s: { type: sql.NVarChar(20), value: initialStatus },
+      note: { type: sql.NVarChar(300), value: note || `ซิงค์จาก WinSpeed: ${docNos}` },
+      u: { type: sql.Int, value: req.user.sub },
+      appBy: { type: sql.Int, value: initialStatus === 'ACTIVE' ? req.user.sub : null },
+      appAt: { type: sql.DateTime, value: initialStatus === 'ACTIVE' ? new Date() : null },
+      actBy: { type: sql.Int, value: initialStatus === 'ACTIVE' ? req.user.sub : null },
+      actAt: { type: sql.DateTime, value: initialStatus === 'ACTIVE' ? new Date() : null },
+    });
+    const bookId = r.recordset[0].Id;
+
+    // 5. ถ้า ACTIVE ให้ Archive เล่ม ACTIVE เดิมของเดือนเดียวกัน
+    if (initialStatus === 'ACTIVE') {
+      await wfQuery(`
+        UPDATE wf.PriceBook SET Status='ARCHIVED'
+        WHERE Status='ACTIVE' AND EffectiveMonth=@m AND Id<>@id
+      `, { m: { type: sql.Char(7), value: effMonth }, id: { type: sql.Int, value: bookId } });
+    }
+
+    // 6. เพิ่ม wf.PriceBookLine
+    for (const item of items) {
+      await wfQuery(`
+        INSERT INTO wf.PriceBookLine (PriceBookId, GoodId, GoodName, Unit, Price, LineStatus, Note)
+        VALUES (@b, @g, @n, @u, @p, 'ACTIVE', @note)
+      `, {
+        b: { type: sql.Int, value: bookId },
+        g: { type: sql.NVarChar(20), value: String(item.GoodID) },
+        n: { type: sql.NVarChar(200), value: item.GoodName },
+        u: { type: sql.NVarChar(20), value: item.Unit || 'ตัน' },
+        p: { type: sql.Decimal(18, 2), value: item.Price },
+        note: { type: sql.NVarChar(200), value: item.Remark || null },
+      });
+    }
+
+    await logAudit(bookId, 'SYNC_FROM_WINSPEED', null, initialStatus, req.user.sub, `ซิงค์ ${items.length} รายการจาก WinSpeed sets: ${docNos}`);
+
+    res.json({ ok: true, priceBookId: bookId, lineCount: items.length, status: initialStatus, name: bookName });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
 // GET /api/pricebook/:id — book + lines + audit
 router.get('/:id', async (req, res) => {
   try {

@@ -48,7 +48,7 @@ const camelizeRows = (rows) => (rows || []).map(camelizeRow);
 router.get('/', requireCapability('trip.view'), async (req, res) => {
   try {
     const { status, search } = req.query;
-    let where = 'WHERE 1=1';
+    let where = "WHERE Status <> 'DELETED'";
     const inputs = {};
     if (status) {
       where += ' AND Status = @status';
@@ -94,7 +94,7 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
   try {
     const { status, search } = req.query;
     const inputs = {};
-    let where = 'WHERE 1=1';
+    let where = "WHERE t.Status <> 'DELETED'";
     if (status) { where += ' AND t.Status = @status'; inputs.status = { type: sql.VarChar(50), value: status }; }
     if (search) {
       where += ' AND (t.TripCode LIKE @search OR t.TransRegistration LIKE @search OR t.DriverName LIKE @search)';
@@ -1461,6 +1461,51 @@ router.post('/:id/submit-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', '
   } catch (err) {
     console.error('[trips/submit-plan]', err);
     res.status(err.status || 500).json({ message: err.message });
+  }
+});
+
+// DELETE /api/trips/:id — ลบเที่ยวรถ (มาร์ก Status = 'DELETED')
+router.delete('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER', 'C_LEVEL'), requireTripInScope, async (req, res) => {
+  try {
+    const tripId = Number(req.params.id);
+    if (!Number.isInteger(tripId) || tripId <= 0) {
+      return res.status(400).json({ message: 'รหัส Trip ไม่ถูกต้อง' });
+    }
+    const tripRes = await wfQuery(
+      `SELECT TripId, Status FROM wf.SalesTrip WITH (NOLOCK) WHERE TripId = @tid AND Status <> 'DELETED'`,
+      { tid: { type: sql.Int, value: tripId } }
+    );
+    if (!tripRes.recordset?.[0]) {
+      return res.status(404).json({ message: 'ไม่พบ Trip นี้' });
+    }
+    const activeRes = await wfQuery(`
+      SELECT COUNT(*) AS Cnt
+      FROM (
+        SELECT CAST(so.Id AS VARCHAR(50)) AS Id
+        FROM wf.SalesOrder so WITH (NOLOCK)
+        WHERE so.TripId = @tid AND so.Status NOT IN ('CANCELLED', 'DELETED')
+        UNION ALL
+        SELECT CAST(hd.SOID AS VARCHAR(50)) AS Id
+        FROM dbo.SOHD hd WITH (NOLOCK)
+        INNER JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
+        WHERE ext.TripId = @tid AND ISNULL(hd.DocuStatus, '') <> 'C' AND ISNULL(ext.IsDeleted, 0) = 0
+      ) active`,
+      { tid: { type: sql.Int, value: tripId } }
+    );
+    const activeCnt = Number(activeRes.recordset?.[0]?.Cnt || 0);
+    if (activeCnt > 0) {
+      return res.status(409).json({
+        message: `ไม่สามารถลบ Trip ที่ยังมีบิลใช้งานอยู่ (${activeCnt} บิล) กรุณายกเลิกหรือลบบิลในทริปก่อน`,
+      });
+    }
+    await wfQuery(`UPDATE wf.SalesTrip SET Status = 'DELETED' WHERE TripId = @tid`, {
+      tid: { type: sql.Int, value: tripId }
+    });
+    broadcast('trip_updated', { tripId, action: 'deleted' });
+    res.json({ message: 'ลบ Trip สำเร็จ', tripId });
+  } catch (err) {
+    console.error('DELETE /trips/:id error:', err);
+    res.status(500).json({ message: err.message });
   }
 });
 

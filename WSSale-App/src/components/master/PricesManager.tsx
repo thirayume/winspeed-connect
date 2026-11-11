@@ -12,7 +12,15 @@ type GroupedPrice = {
   history: CurrentPrice[];
 };
 
-export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }) => {
+export const PricesManager = ({ 
+  initialSearch = '',
+  targetGood = null,
+  onClearTarget,
+}: { 
+  initialSearch?: string;
+  targetGood?: { goodId: string; goodCode?: string; goodName?: string } | null;
+  onClearTarget?: () => void;
+}) => {
   const [loading, setLoading] = useState(true);
   const [prices, setPrices] = useState<CurrentPrice[]>([]);
   const [goodsMap, setGoodsMap] = useState<Record<string, { name: string; category?: string }>>({});
@@ -122,12 +130,21 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
 
   const filteredGroups = useMemo(() => {
     return groupedPrices.filter(g => {
+      // Primary Key matching if targetGood is specified
+      if (targetGood?.goodId) {
+        if (String(g.main.GoodID) !== String(targetGood.goodId)) return false;
+      }
+
       const goodData = goodsMap[g.main.GoodID];
       const goodName = goodData?.name || g.main.GoodID;
       const custName = g.main.CustID ? (custMap[g.main.CustID] || g.main.CustID) : 'ราคากลาง (ทุกลูกค้า)';
-      const query = searchQuery.toLowerCase();
-      const matchesSearch = goodName.toLowerCase().includes(query) || custName.toLowerCase().includes(query);
-      if (!matchesSearch) return false;
+      const query = searchQuery.trim().toLowerCase();
+      if (query) {
+        const matchesSearch = goodName.toLowerCase().includes(query) || 
+                              custName.toLowerCase().includes(query) ||
+                              String(g.main.GoodID) === query;
+        if (!matchesSearch) return false;
+      }
 
       if (selectedCategory !== 'ALL' && goodData?.category !== selectedCategory) return false;
 
@@ -140,7 +157,7 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
 
       return true;
     });
-  }, [groupedPrices, goodsMap, custMap, searchQuery, selectedCategory, statusFilter]);
+  }, [groupedPrices, goodsMap, custMap, searchQuery, selectedCategory, statusFilter, targetGood]);
 
   const sortedGroups = useMemo(() => {
     const sortableItems = [...filteredGroups];
@@ -502,6 +519,31 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
         />
       </div>
 
+      {/* Target Product Banner */}
+      {targetGood && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-900 px-4 py-3 rounded-xl flex items-center justify-between text-xs sm:text-sm shrink-0 shadow-2xs">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center text-[#0C447C] shrink-0">
+              <Tag size={16} />
+            </div>
+            <div>
+              <span>
+                กรองราคาเฉพาะสินค้า: <strong className="font-mono text-[#0C447C]">[{targetGood.goodCode || targetGood.goodId}]</strong> <strong className="text-gray-900">{targetGood.goodName}</strong>
+              </span>
+              <span className="ml-2 text-xs text-blue-600 font-mono">(GoodID: {targetGood.goodId})</span>
+            </div>
+          </div>
+          {onClearTarget && (
+            <button 
+              onClick={onClearTarget} 
+              className="px-3 py-1.5 bg-white hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs shrink-0"
+            >
+              <X size={14} /> แสดงสินค้าทั้งหมด
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="p-2 sm:p-4 border-b border-gray-100 flex flex-row items-center gap-2 bg-gray-50/50 overflow-x-auto scrollbar-hide w-full rounded-xl shrink-0">
         <div className="relative flex-1 min-w-[140px]">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
@@ -590,7 +632,19 @@ export const PricesManager = ({ initialSearch = '' }: { initialSearch?: string }
               <tr>
                 <td colSpan={6} className="px-6 py-12 text-center text-gray-400 whitespace-nowrap">
                   <Tag size={32} className="mx-auto mb-3 opacity-30" />
-                  <p>ไม่พบข้อมูลราคาขาย</p>
+                  <p className="font-medium text-gray-600">
+                    {targetGood 
+                      ? `ไม่พบข้อมูลราคาขายสำหรับสินค้า [${targetGood.goodCode || targetGood.goodId}] ${targetGood.goodName}` 
+                      : 'ไม่พบข้อมูลราคาขาย'}
+                  </p>
+                  {targetGood && onClearTarget && (
+                    <button
+                      onClick={onClearTarget}
+                      className="mt-3 px-3 py-1.5 bg-[#0C447C] text-white rounded-lg text-xs font-semibold hover:bg-[#093561] transition inline-flex items-center gap-1.5 shadow-2xs"
+                    >
+                      <X size={14} /> แสดงรายการราคาทั้งหมด
+                    </button>
+                  )}
                 </td>
               </tr>
             ) : (

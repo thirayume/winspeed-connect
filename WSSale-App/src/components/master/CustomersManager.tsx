@@ -2,16 +2,17 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   Search, Edit2, Save, X, RefreshCw, Truck, Trash2, Users, ArrowUpDown, Phone,
   Filter, UserPlus, CheckCircle2, Mail, MessageSquare, CreditCard, Clock,
-  ShieldAlert, Building2, Check
+  ShieldAlert, Building2, Check, Plus
 } from 'lucide-react';
 import {
   fetchCustomers, fetchCustomerFilters, updateCustomer, batchEditCustomers, getToken,
-  fetchCustomerRequests, createCustomerRequest, reviewCustomerRequest
+  fetchCustomerRequests, createCustomerRequest, reviewCustomerRequest,
+  fetchCustomerGroups, createCustomerGroup, updateCustomerGroup, deleteCustomerGroup
 } from '../../services/api';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { DeleteConfirmModal } from '../ui/DeleteConfirmModal';
-import { appPrompt } from '../ui/AppAlert';
-import type { CustomerRequest, EMCust } from '../../types';
+import { appPrompt, appConfirm } from '../ui/AppAlert';
+import type { CustomerRequest, EMCust, CustomerGroup } from '../../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
@@ -22,17 +23,38 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
   const [filterOptions, setFilterOptions] = useState<import('../../types').CustomerFilterOptions | null>(null);
   const [filters, setFilters] = useState({ salesperson: '', area: '', group: '', employee: '' });
   const [customerRequests, setCustomerRequests] = useState<CustomerRequest[]>([]);
-  const [requestFormOpen, setRequestFormOpen] = useState(false);
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
   const [requestSaving, setRequestSaving] = useState(false);
   const [requestForm, setRequestForm] = useState({
     CustName: '',
     ContactName: '',
     Tel: '',
     Mobile: '',
+    Email: '',
+    LineId: '',
     TaxId: '',
     Address: '',
+    SalespersonUserId: '',
+    RegionCode: '',
+    CustGroupId: '',
+    CreditLimit: 0,
+    AgingDays: 60,
+    CreditHold: false,
     Note: '',
   });
+
+  // Customer Groups CRUD State
+  const [groupsModalOpen, setGroupsModalOpen] = useState(false);
+  const [customerGroups, setCustomerGroups] = useState<CustomerGroup[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [editingGroupId, setEditingGroupId] = useState<number | null>(null);
+  const [groupEditForm, setGroupEditForm] = useState<{ CustGroupCode: string; CustGroupName: string; CustGroupNameEng: string; Remark: string }>({
+    CustGroupCode: '', CustGroupName: '', CustGroupNameEng: '', Remark: ''
+  });
+  const [newGroupForm, setNewGroupForm] = useState({
+    CustGroupCode: '', CustGroupName: '', CustGroupNameEng: '', Remark: ''
+  });
+  const [groupSaving, setGroupSaving] = useState(false);
 
   // Multi-select & Batch Edit State
   const [selectedCustIds, setSelectedCustIds] = useState<Set<string>>(new Set());
@@ -104,7 +126,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
   async function handleQuickBatchHold(hold: boolean) {
     if (selectedCustIds.size === 0) return;
     const actionText = hold ? 'ระงับการสั่งซื้อ (Credit Hold)' : 'ยกเลิกระงับการสั่งซื้อ';
-    if (!confirm(`ยืนยันการ${actionText}สำหรับลูกค้า ${selectedCustIds.size} รายการที่เลือก?`)) return;
+    if (!await appConfirm(`ยืนยันการ${actionText}สำหรับลูกค้า ${selectedCustIds.size} รายการที่เลือก?`)) return;
     try {
       await batchEditCustomers({
         custIds: Array.from(selectedCustIds),
@@ -125,9 +147,88 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
     }
   }
 
+  async function loadCustomerGroups() {
+    setGroupsLoading(true);
+    try {
+      setCustomerGroups(await fetchCustomerGroups());
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setGroupsLoading(false);
+    }
+  }
+
+  async function handleCreateGroup() {
+    if (!newGroupForm.CustGroupName.trim()) {
+      alert('กรุณาระบุชื่อกลุ่มลูกค้า');
+      return;
+    }
+    setGroupSaving(true);
+    try {
+      await createCustomerGroup({
+        CustGroupCode: newGroupForm.CustGroupCode.trim() || undefined,
+        CustGroupName: newGroupForm.CustGroupName.trim(),
+        CustGroupNameEng: newGroupForm.CustGroupNameEng.trim() || undefined,
+        Remark: newGroupForm.Remark.trim() || undefined,
+      });
+      setNewGroupForm({ CustGroupCode: '', CustGroupName: '', CustGroupNameEng: '', Remark: '' });
+      await loadCustomerGroups();
+      fetchCustomerFilters().then(setFilterOptions).catch(console.error);
+      alert('เพิ่มกลุ่มลูกค้าสำเร็จ');
+    } catch (e: any) {
+      alert(e?.message || 'เพิ่มกลุ่มลูกค้าไม่สำเร็จ');
+    } finally {
+      setGroupSaving(false);
+    }
+  }
+
+  async function handleUpdateGroup(id: number) {
+    if (!groupEditForm.CustGroupName.trim()) {
+      alert('กรุณาระบุชื่อกลุ่มลูกค้า');
+      return;
+    }
+    setGroupSaving(true);
+    try {
+      await updateCustomerGroup(id, {
+        CustGroupCode: groupEditForm.CustGroupCode.trim() || undefined,
+        CustGroupName: groupEditForm.CustGroupName.trim(),
+        CustGroupNameEng: groupEditForm.CustGroupNameEng.trim() || undefined,
+        Remark: groupEditForm.Remark.trim() || undefined,
+      });
+      setEditingGroupId(null);
+      await loadCustomerGroups();
+      fetchCustomerFilters().then(setFilterOptions).catch(console.error);
+      alert('บันทึกการแก้ไขกลุ่มลูกค้าสำเร็จ');
+    } catch (e: any) {
+      alert(e?.message || 'แก้ไขกลุ่มลูกค้าไม่สำเร็จ');
+    } finally {
+      setGroupSaving(false);
+    }
+  }
+
+  async function handleDeleteGroup(g: CustomerGroup) {
+    if ((g.CustomerCount || 0) > 0) {
+      alert(`ไม่สามารถลบกลุ่ม "${g.CustGroupName}" ได้ เนื่องจากมีลูกค้าอยู่ในกลุ่มนี้ ${g.CustomerCount} ราย`);
+      return;
+    }
+    if (!await appConfirm(`ยืนยันการลบกลุ่มลูกค้า "${g.CustGroupName}"?`)) return;
+    setGroupSaving(true);
+    try {
+      await deleteCustomerGroup(g.CustGroupID);
+      await loadCustomerGroups();
+      fetchCustomerFilters().then(setFilterOptions).catch(console.error);
+      alert('ลบกลุ่มลูกค้าสำเร็จ');
+    } catch (e: any) {
+      alert(e?.message || 'ลบกลุ่มลูกค้าไม่สำเร็จ');
+    } finally {
+      setGroupSaving(false);
+    }
+  }
+
   useEffect(() => {
     loadCustomers();
     loadCustomerRequests();
+    loadCustomerGroups();
     fetchCustomerFilters().then(setFilterOptions).catch(console.error);
   }, []);
 
@@ -138,12 +239,49 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
     }
     setRequestSaving(true);
     try {
-      await createCustomerRequest({ ...requestForm, CustName: requestForm.CustName.trim() });
-      setRequestForm({ CustName: '', ContactName: '', Tel: '', Mobile: '', TaxId: '', Address: '', Note: '' });
-      setRequestFormOpen(false);
+      const spObj = filterOptions?.salesperson?.find(s => s.value === requestForm.SalespersonUserId);
+      const grpObj = filterOptions?.group?.find(g => g.value === requestForm.CustGroupId);
+      await createCustomerRequest({
+        CustName: requestForm.CustName.trim(),
+        ContactName: requestForm.ContactName.trim() || null,
+        Tel: requestForm.Tel.trim() || null,
+        Mobile: requestForm.Mobile.trim() || null,
+        Email: requestForm.Email.trim() || null,
+        LineId: requestForm.LineId.trim() || null,
+        TaxId: requestForm.TaxId.trim() || null,
+        Address: requestForm.Address.trim() || null,
+        SalespersonUserId: requestForm.SalespersonUserId ? Number(requestForm.SalespersonUserId) : null,
+        SalespersonName: spObj?.label || null,
+        RegionCode: requestForm.RegionCode || null,
+        CustGroupId: requestForm.CustGroupId ? Number(requestForm.CustGroupId) : null,
+        CustGroupName: grpObj?.label || null,
+        CreditLimit: Number(requestForm.CreditLimit) || 0,
+        AgingDays: Number(requestForm.AgingDays) || 60,
+        CreditHold: Boolean(requestForm.CreditHold),
+        Note: requestForm.Note.trim() || null,
+      });
+      setRequestForm({
+        CustName: '',
+        ContactName: '',
+        Tel: '',
+        Mobile: '',
+        Email: '',
+        LineId: '',
+        TaxId: '',
+        Address: '',
+        SalespersonUserId: '',
+        RegionCode: '',
+        CustGroupId: '',
+        CreditLimit: 0,
+        AgingDays: 60,
+        CreditHold: false,
+        Note: '',
+      });
+      setRequestModalOpen(false);
       await loadCustomerRequests();
-    } catch (err) {
-      alert('บันทึกคำขอไม่สำเร็จ');
+      alert('บันทึกคำขอเปิดลูกค้าใหม่เรียบร้อยแล้ว');
+    } catch (err: any) {
+      alert(err?.message || 'บันทึกคำขอไม่สำเร็จ');
       console.error(err);
     }
     setRequestSaving(false);
@@ -344,52 +482,93 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
         />
       </div>
 
-      {/* Customer Requests Section */}
+      {/* Customer Requests & Group Management Bar */}
       <div className="rounded-lg border border-gray-100 bg-white p-3 shadow-sm shrink-0">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <UserPlus size={18} className="text-[#0C447C]" />
             <div>
-              <div className="text-sm font-bold text-gray-800">คำขอเปิดลูกค้าใหม่</div>
-              <div className="text-[11px] text-gray-500">เก็บคำขอใน wf เพื่อให้ Sale Admin ดำเนินการใน WINSpeed</div>
+              <div className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                <span>คำขอเปิดลูกค้าใหม่</span>
+                {customerRequests.filter(r => r.Status === 'PENDING').length > 0 && (
+                  <span className="px-2 py-0.2 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800">
+                    รอตรวจสอบ {customerRequests.filter(r => r.Status === 'PENDING').length} รายการ
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] text-gray-500">เก็บคำขอและข้อมูลสมบูรณ์ (เซลล์, เขต 14 ภาค, กลุ่ม, วงเงิน, Aging) เพื่อส่งต่อ Sale Admin ดำเนินการใน WINSpeed</div>
             </div>
           </div>
-          <button
-            onClick={() => setRequestFormOpen(v => !v)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#0C447C] px-3 py-2 text-xs font-bold text-white hover:bg-[#0a3866]"
-          >
-            <UserPlus size={14} /> เพิ่มคำขอ
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setGroupsModalOpen(true); loadCustomerGroups(); }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition shadow-xs"
+            >
+              <Building2 size={14} className="text-[#0C447C]" /> จัดการกลุ่มลูกค้า ({customerGroups.length || filterOptions?.group?.length || 0})
+            </button>
+            <button
+              onClick={() => setRequestModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0C447C] px-3.5 py-2 text-xs font-bold text-white hover:bg-[#0a3866] transition shadow-xs"
+            >
+              <UserPlus size={14} /> เพิ่มคำขอเปิดลูกค้า
+            </button>
+          </div>
         </div>
-        {requestFormOpen && (
-          <div className="mt-3 grid gap-2 border-t border-gray-100 pt-3 sm:grid-cols-4">
-            <input value={requestForm.CustName} onChange={e => setRequestForm({ ...requestForm, CustName: e.target.value })} placeholder="ชื่อลูกค้า *" className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40" />
-            <input value={requestForm.ContactName} onChange={e => setRequestForm({ ...requestForm, ContactName: e.target.value })} placeholder="ผู้ติดต่อ" className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40" />
-            <input value={requestForm.Tel} onChange={e => setRequestForm({ ...requestForm, Tel: e.target.value })} placeholder="โทรศัพท์" className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40" />
-            <input value={requestForm.Mobile} onChange={e => setRequestForm({ ...requestForm, Mobile: e.target.value })} placeholder="มือถือ" className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40" />
-            <input value={requestForm.TaxId} onChange={e => setRequestForm({ ...requestForm, TaxId: e.target.value })} placeholder="เลขผู้เสียภาษี" className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40" />
-            <input value={requestForm.Address} onChange={e => setRequestForm({ ...requestForm, Address: e.target.value })} placeholder="ที่อยู่" className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40 sm:col-span-2" />
-            <input value={requestForm.Note} onChange={e => setRequestForm({ ...requestForm, Note: e.target.value })} placeholder="หมายเหตุ" className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40" />
-            <div className="flex gap-2 sm:col-span-4">
-              <button onClick={submitCustomerRequest} disabled={requestSaving} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
-                {requestSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />} บันทึกคำขอ
-              </button>
-              <button onClick={() => setRequestFormOpen(false)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50">ยกเลิก</button>
-            </div>
-          </div>
-        )}
+
         {customerRequests.length > 0 && (
-          <div className="mt-3 max-h-44 overflow-auto rounded-lg border border-gray-100">
-            {customerRequests.slice(0, 8).map(r => (
-              <div key={r.Id} className="flex flex-wrap items-center gap-2 border-b border-gray-50 px-3 py-2 last:border-0">
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${r.Status === 'PENDING' ? 'bg-amber-50 text-amber-700' : r.Status === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{r.Status}</span>
-                <span className="min-w-[180px] flex-1 text-sm font-semibold text-gray-800">{r.CustName}</span>
-                <span className="text-xs text-gray-500">{r.ContactName || r.Tel || r.Mobile || '-'}</span>
-                {r.WinspeedCustId && <span className="font-mono text-xs text-[#0C447C]">{r.WinspeedCustId}</span>}
+          <div className="mt-3 max-h-48 overflow-auto rounded-lg border border-gray-100 divide-y divide-gray-50">
+            {customerRequests.slice(0, 10).map(r => (
+              <div key={r.Id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs hover:bg-gray-50/60 transition">
+                <div className="flex items-center gap-2 flex-wrap min-w-[200px] flex-1">
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${r.Status === 'PENDING' ? 'bg-amber-50 text-amber-700 border border-amber-200' : r.Status === 'REJECTED' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                    {r.Status === 'PENDING' ? 'รอเปิดใน ERP' : r.Status === 'COMPLETED' ? 'เปิดสำเร็จ' : 'ปฏิเสธ'}
+                  </span>
+                  <span className="font-bold text-gray-800 text-sm">{r.CustName}</span>
+                  {r.RegionCode && (
+                    <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800 border border-sky-100">
+                      เขต {r.RegionCode}
+                    </span>
+                  )}
+                  {r.SalespersonName && (
+                    <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">
+                      เซลล์: {r.SalespersonName}
+                    </span>
+                  )}
+                  {r.CustGroupName && (
+                    <span className="rounded bg-purple-50 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700">
+                      กลุ่ม: {r.CustGroupName}
+                    </span>
+                  )}
+                  {(r.Tel || r.Mobile) && (
+                    <span className="text-gray-500 font-mono text-[11px] flex items-center gap-1">
+                      <Phone size={11} /> {r.Tel || r.Mobile}
+                    </span>
+                  )}
+                  {(r.CreditLimit != null && r.CreditLimit > 0) && (
+                    <span className="text-emerald-700 font-semibold text-[11px]">
+                      วงเงิน ฿{Number(r.CreditLimit).toLocaleString()} (Aging {r.AgingDays || 60} วัน)
+                    </span>
+                  )}
+                  {r.WinspeedCustId && (
+                    <span className="font-mono text-xs font-bold text-[#0C447C] bg-blue-50 px-1.5 py-0.5 rounded">
+                      WINSpeed: {r.WinspeedCustId}
+                    </span>
+                  )}
+                </div>
                 {r.Status === 'PENDING' && (
-                  <div className="ml-auto flex gap-1">
-                    <button onClick={() => closeCustomerRequest(r, 'COMPLETED')} className="inline-flex items-center gap-1 rounded border border-emerald-200 px-2 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50"><CheckCircle2 size={12} /> เสร็จแล้ว</button>
-                    <button onClick={() => closeCustomerRequest(r, 'REJECTED')} className="rounded border border-red-200 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50">ปฏิเสธ</button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => closeCustomerRequest(r, 'COMPLETED')}
+                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition shadow-2xs"
+                    >
+                      <CheckCircle2 size={13} /> อนุมัติ & ผูกรหัส ERP
+                    </button>
+                    <button
+                      onClick={() => closeCustomerRequest(r, 'REJECTED')}
+                      className="rounded-lg border border-red-200 bg-white px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 transition"
+                    >
+                      ปฏิเสธ
+                    </button>
                   </div>
                 )}
               </div>
@@ -970,6 +1149,546 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
               >
                 {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
                 บันทึกการแก้ไข
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rich Customer Request Modal (สร้างคำขอเปิดลูกค้าใหม่) */}
+      {requestModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="rounded-xl bg-[#0C447C]/10 p-2 text-[#0C447C]">
+                  <UserPlus size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">เพิ่มคำขอเปิดลูกค้าใหม่ (Customer Request)</h3>
+                  <p className="text-xs text-gray-500">กรอกข้อมูลครบถ้วนทั้งองค์กร ช่องทางติดต่อ และนโยบายเครดิต เพื่อส่งต่อเปิดใน WINSpeed</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setRequestModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
+              
+              {/* Section 1: ข้อมูลหลักและองค์กร */}
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5">
+                  <Users size={14} className="text-[#0C447C]" /> ข้อมูลหลักและองค์กร
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-3">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      ชื่อลูกค้า / ชื่อสถานประกอบการ <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={requestForm.CustName}
+                      onChange={e => setRequestForm({ ...requestForm, CustName: e.target.value })}
+                      placeholder="ระบุชื่อลูกค้า (เช่น บริษัท เกษตรเจริญรุ่งเรือง จำกัด)..."
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">เซลล์ผู้ดูแล (Sales Rep)</label>
+                    <select
+                      value={requestForm.SalespersonUserId}
+                      onChange={e => setRequestForm({ ...requestForm, SalespersonUserId: e.target.value })}
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                    >
+                      <option value="">(ไม่ระบุ)</option>
+                      {(filterOptions?.salesperson || []).map(o => (
+                        <option key={o.value} value={o.value}>{o.label || o.value}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">เขตการขาย (14 ภาคตามผู้อนุมัติ)</label>
+                    <select
+                      value={requestForm.RegionCode}
+                      onChange={e => setRequestForm({ ...requestForm, RegionCode: e.target.value })}
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                    >
+                      <option value="">(ไม่ระบุ)</option>
+                      {(filterOptions?.area || []).map(o => (
+                        <option key={o.value} value={o.value}>{o.label || o.value}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">กลุ่มลูกค้า (Customer Group)</label>
+                    <select
+                      value={requestForm.CustGroupId}
+                      onChange={e => setRequestForm({ ...requestForm, CustGroupId: e.target.value })}
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                    >
+                      <option value="">(ไม่ระบุ)</option>
+                      {(filterOptions?.group || []).map(o => (
+                        <option key={o.value} value={o.value}>{o.label || o.value}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Contact & Portal Setup */}
+              <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#0C447C] flex items-center gap-1.5">
+                    <Phone size={14} /> ข้อมูลติดต่อ & เตรียมความพร้อม CUSTOMER PORTAL
+                  </h4>
+                  <span className="text-[10px] bg-blue-100 text-[#0C447C] px-2 py-0.5 rounded-full font-semibold">
+                    Portal Ready
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">ผู้ติดต่อหลัก (Contact Name)</label>
+                    <input
+                      type="text"
+                      value={requestForm.ContactName}
+                      onChange={e => setRequestForm({ ...requestForm, ContactName: e.target.value })}
+                      placeholder="เช่น คุณสมศักดิ์ หรือ ฝ่ายจัดซื้อ"
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">เลขประจำตัวผู้เสียภาษี (Tax ID)</label>
+                    <input
+                      type="text"
+                      value={requestForm.TaxId}
+                      onChange={e => setRequestForm({ ...requestForm, TaxId: e.target.value })}
+                      placeholder="13 หลัก เช่น 0105551014997"
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">เบอร์โทรศัพท์หลัก (1 เบอร์)</label>
+                    <div className="relative">
+                      <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+                      <input
+                        type="text"
+                        value={requestForm.Tel}
+                        onChange={e => setRequestForm({ ...requestForm, Tel: e.target.value })}
+                        placeholder="08X-XXX-XXXX"
+                        className="w-full rounded-lg border border-gray-200 bg-white pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      เบอร์โทรสำรอง / มือถือ <span className="text-[11px] text-gray-400 font-normal">(ใช้ "," คั่นได้)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={requestForm.Mobile}
+                      onChange={e => setRequestForm({ ...requestForm, Mobile: e.target.value })}
+                      placeholder="081-111-1111, 082-222-2222"
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      อีเมล์ติดต่อ <span className="text-[11px] text-gray-400 font-normal">(ใช้ "," คั่นได้)</span>
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+                      <input
+                        type="text"
+                        value={requestForm.Email}
+                        onChange={e => setRequestForm({ ...requestForm, Email: e.target.value })}
+                        placeholder="contact@company.com, info@company.com"
+                        className="w-full rounded-lg border border-gray-200 bg-white pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Line ID</label>
+                    <div className="relative">
+                      <MessageSquare className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+                      <input
+                        type="text"
+                        value={requestForm.LineId}
+                        onChange={e => setRequestForm({ ...requestForm, LineId: e.target.value })}
+                        placeholder="@company หรือ line_id"
+                        className="w-full rounded-lg border border-gray-200 bg-white pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                      />
+                    </div>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">ที่อยู่ตาม ภ.พ.20 / สถานที่ส่งสินค้า</label>
+                    <input
+                      type="text"
+                      value={requestForm.Address}
+                      onChange={e => setRequestForm({ ...requestForm, Address: e.target.value })}
+                      placeholder="ระบุที่อยู่ ตำบล อำเภอ จังหวัด..."
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3: Credit Limit & Aging */}
+              <div className="rounded-xl border border-amber-100 bg-amber-50/30 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1.5">
+                    <CreditCard size={14} /> นโยบายวงเงินเครดิต & อายุหนี้ (CREDIT LIMIT & AGING)
+                  </h4>
+                  <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-semibold">
+                    ค่าเริ่มต้น Aging 60 วัน
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">วงเงินเครดิตขออนุมัติ (บาท)</label>
+                    <input
+                      type="number"
+                      step="1000"
+                      min="0"
+                      value={requestForm.CreditLimit || ''}
+                      onChange={e => setRequestForm({ ...requestForm, CreditLimit: Number(e.target.value) || 0 })}
+                      placeholder="เช่น 100000 (0 = สด/ไม่จำกัด)"
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                    />
+                    <p className="text-[10px] text-gray-400 mt-1">ยอดค้างชำระตรวจสอบจาก dbo.SOInvHD</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Aging สูงสุด (จำนวนวัน)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="365"
+                      value={requestForm.AgingDays || 60}
+                      onChange={e => setRequestForm({ ...requestForm, AgingDays: Number(e.target.value) || 60 })}
+                      placeholder="60"
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                    />
+                    <p className="text-[10px] text-gray-400 mt-1">มาตรฐาน 60 วัน เกินกำหนดจะแจ้งเตือน</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">สถานะระงับเครดิต (Hold)</label>
+                    <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(requestForm.CreditHold)}
+                        onChange={e => setRequestForm({ ...requestForm, CreditHold: e.target.checked })}
+                        className="h-4 w-4 rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]"
+                      />
+                      <span className="text-xs font-bold text-red-600">ระงับการสั่งซื้อ (Credit Hold)</span>
+                    </label>
+                    <p className="text-[10px] text-gray-400 mt-1">บล็อกการขายทุกกรณี</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 4: Remark */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">หมายเหตุเพิ่มเติม</label>
+                <textarea
+                  rows={2}
+                  value={requestForm.Note}
+                  onChange={e => setRequestForm({ ...requestForm, Note: e.target.value })}
+                  placeholder="ระบุข้อความบันทึกเพิ่มเติมสำหรับคำขอนี้..."
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                />
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-gray-100 bg-gray-50/70">
+              <button
+                type="button"
+                onClick={() => setRequestModalOpen(false)}
+                className="px-4 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-100 transition"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={submitCustomerRequest}
+                disabled={requestSaving}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#0C447C] text-xs font-bold text-white hover:bg-[#0a3866] disabled:opacity-50 transition shadow-sm"
+              >
+                {requestSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+                บันทึกคำขอเปิดลูกค้า
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Customer Groups CRUD Modal (จัดการกลุ่มลูกค้า dbo.EMCustGroup) */}
+      {groupsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="rounded-xl bg-[#0C447C]/10 p-2 text-[#0C447C]">
+                  <Building2 size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">จัดการกลุ่มลูกค้า (Customer Groups · dbo.EMCustGroup)</h3>
+                  <p className="text-xs text-gray-500">บริหารรายชื่อกลุ่มลูกค้า กำหนดชื่อและหมายเหตุ พร้อมการตรวจนับจำนวนลูกค้าที่กำลังใช้งาน</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setGroupsModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
+              
+              {/* Form to Add New Customer Group */}
+              <div className="rounded-xl border border-blue-100 bg-blue-50/30 p-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#0C447C] mb-3 flex items-center gap-1.5">
+                  <Plus size={14} /> เพิ่มกลุ่มลูกค้าใหม่
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      ชื่อกลุ่มลูกค้า <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newGroupForm.CustGroupName}
+                      onChange={e => setNewGroupForm({ ...newGroupForm, CustGroupName: e.target.value })}
+                      placeholder="เช่น ลูกค้าทั่วไป, ตัวแทนจำหน่ายภาคกลาง..."
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      รหัสกลุ่ม (Code) <span className="text-[10px] text-gray-400">(เว้นว่างให้ออโต้)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newGroupForm.CustGroupCode}
+                      onChange={e => setNewGroupForm({ ...newGroupForm, CustGroupCode: e.target.value })}
+                      placeholder="เช่น 008 หรือ G01"
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">ชื่อภาษาอังกฤษ</label>
+                    <input
+                      type="text"
+                      value={newGroupForm.CustGroupNameEng}
+                      onChange={e => setNewGroupForm({ ...newGroupForm, CustGroupNameEng: e.target.value })}
+                      placeholder="English name..."
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                    />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">หมายเหตุ</label>
+                    <input
+                      type="text"
+                      value={newGroupForm.Remark}
+                      onChange={e => setNewGroupForm({ ...newGroupForm, Remark: e.target.value })}
+                      placeholder="คำอธิบายกลุ่มลูกค้านี้..."
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]/40"
+                    />
+                  </div>
+                  <div className="sm:col-span-1 flex items-end">
+                    <button
+                      type="button"
+                      onClick={handleCreateGroup}
+                      disabled={groupSaving || !newGroupForm.CustGroupName.trim()}
+                      className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-[#0C447C] text-xs font-bold text-white hover:bg-[#0a3866] disabled:opacity-50 transition shadow-xs"
+                    >
+                      {groupSaving ? <RefreshCw size={13} className="animate-spin" /> : <Plus size={13} />}
+                      เพิ่มกลุ่ม
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Table of Groups */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-600">
+                    รายการกลุ่มลูกค้าทั้งหมด ({customerGroups.length} กลุ่ม)
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={loadCustomerGroups}
+                    className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-[#0C447C]"
+                  >
+                    <RefreshCw size={12} className={groupsLoading ? 'animate-spin' : ''} /> รีเฟรช
+                  </button>
+                </div>
+
+                <div className="rounded-xl border border-gray-100 overflow-hidden shadow-2xs">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-100">
+                      <tr>
+                        <th className="px-4 py-2.5 w-16">รหัส (PK)</th>
+                        <th className="px-3 py-2.5 w-24">รหัสกลุ่ม (Code)</th>
+                        <th className="px-4 py-2.5">ชื่อกลุ่มลูกค้า</th>
+                        <th className="px-4 py-2.5">ชื่อภาษาอังกฤษ</th>
+                        <th className="px-3 py-2.5 text-center w-24">จำนวนลูกค้า</th>
+                        <th className="px-4 py-2.5">หมายเหตุ</th>
+                        <th className="px-4 py-2.5 text-right w-28">จัดการ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {groupsLoading && customerGroups.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                            กำลังโหลดกลุ่มลูกค้า...
+                          </td>
+                        </tr>
+                      ) : customerGroups.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                            ยังไม่มีกลุ่มลูกค้าในระบบ
+                          </td>
+                        </tr>
+                      ) : (
+                        customerGroups.map(g => {
+                          const isEditing = editingGroupId === g.CustGroupID;
+                          const hasCustomers = (g.CustomerCount || 0) > 0;
+                          return (
+                            <tr key={g.CustGroupID} className="hover:bg-gray-50/70 transition">
+                              <td className="px-4 py-2 font-mono text-gray-500">{g.CustGroupID}</td>
+                              <td className="px-3 py-2">
+                                {isEditing ? (
+                                  <input
+                                    type="text"
+                                    value={groupEditForm.CustGroupCode}
+                                    onChange={e => setGroupEditForm({ ...groupEditForm, CustGroupCode: e.target.value })}
+                                    className="w-full rounded border border-gray-200 px-2 py-1 text-xs"
+                                  />
+                                ) : (
+                                  <span className="font-mono font-medium text-gray-700">{g.CustGroupCode || '-'}</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2 font-semibold text-gray-800">
+                                {isEditing ? (
+                                  <input
+                                    type="text"
+                                    value={groupEditForm.CustGroupName}
+                                    onChange={e => setGroupEditForm({ ...groupEditForm, CustGroupName: e.target.value })}
+                                    className="w-full rounded border border-gray-200 px-2 py-1 text-xs"
+                                  />
+                                ) : (
+                                  g.CustGroupName
+                                )}
+                              </td>
+                              <td className="px-4 py-2 text-gray-500">
+                                {isEditing ? (
+                                  <input
+                                    type="text"
+                                    value={groupEditForm.CustGroupNameEng}
+                                    onChange={e => setGroupEditForm({ ...groupEditForm, CustGroupNameEng: e.target.value })}
+                                    className="w-full rounded border border-gray-200 px-2 py-1 text-xs"
+                                  />
+                                ) : (
+                                  g.CustGroupNameEng || '-'
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${hasCustomers ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-gray-100 text-gray-500'}`}>
+                                  {g.CustomerCount || 0} ราย
+                                </span>
+                              </td>
+                              <td className="px-4 py-2 text-gray-400">
+                                {isEditing ? (
+                                  <input
+                                    type="text"
+                                    value={groupEditForm.Remark}
+                                    onChange={e => setGroupEditForm({ ...groupEditForm, Remark: e.target.value })}
+                                    className="w-full rounded border border-gray-200 px-2 py-1 text-xs"
+                                  />
+                                ) : (
+                                  g.Remark || '-'
+                                )}
+                              </td>
+                              <td className="px-4 py-2 text-right whitespace-nowrap">
+                                {isEditing ? (
+                                  <div className="flex items-center justify-end gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateGroup(g.CustGroupID)}
+                                      disabled={groupSaving}
+                                      className="p-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                      title="บันทึก"
+                                    >
+                                      <Save size={13} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingGroupId(null)}
+                                      className="p-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200"
+                                      title="ยกเลิก"
+                                    >
+                                      <X size={13} />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-end gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingGroupId(g.CustGroupID);
+                                        setGroupEditForm({
+                                          CustGroupCode: g.CustGroupCode || '',
+                                          CustGroupName: g.CustGroupName || '',
+                                          CustGroupNameEng: g.CustGroupNameEng || '',
+                                          Remark: g.Remark || '',
+                                        });
+                                      }}
+                                      className="p-1 rounded text-gray-500 hover:text-blue-700 hover:bg-blue-50 transition"
+                                      title="แก้ไขกลุ่ม"
+                                    >
+                                      <Edit2 size={13} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteGroup(g)}
+                                      disabled={hasCustomers}
+                                      className={`p-1 rounded transition ${hasCustomers ? 'text-gray-300 cursor-not-allowed' : 'text-red-500 hover:bg-red-50'}`}
+                                      title={hasCustomers ? `มีลูกค้าในกลุ่ม ${g.CustomerCount} ราย (ลบไม่ได้)` : 'ลบกลุ่มลูกค้า'}
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-gray-100 bg-gray-50/70">
+              <button
+                type="button"
+                onClick={() => setGroupsModalOpen(false)}
+                className="px-4 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-100 transition"
+              >
+                ปิดหน้าต่าง
               </button>
             </div>
           </div>

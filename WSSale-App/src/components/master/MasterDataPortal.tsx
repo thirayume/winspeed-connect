@@ -13,15 +13,15 @@ type Tab = 'goods' | 'prices' | 'customers' | 'truck-types' | 'trucks' | 'giveaw
 export const MasterDataPortal = () => {
   const [activeTab, setActiveTab] = useState<Tab>('goods');
   const [truckSearch, setTruckSearch] = useState('');
-  const [priceSearch, setPriceSearch] = useState('');
+  const [priceTarget, setPriceTarget] = useState<{ goodId: string; goodCode?: string; goodName?: string } | null>(null);
 
   const handleViewTrucks = (custName: string) => {
     setTruckSearch(custName);
     setActiveTab('trucks');
   };
 
-  const handleViewPrices = (goodName: string) => {
-    setPriceSearch(goodName);
+  const handleViewPrices = (target: { goodId: string; goodCode?: string; goodName?: string }) => {
+    setPriceTarget(target);
     setActiveTab('prices');
   };
 
@@ -101,7 +101,7 @@ export const MasterDataPortal = () => {
         {activeTab === 'goods' && <GoodsManager onViewPrices={handleViewPrices} />}
         {activeTab === 'prices' && (
           <div className="h-full rounded-none sm:rounded-2xl border-y sm:border border-gray-200 overflow-hidden shadow-sm">
-            <PricesPortal initialSearch={priceSearch} />
+            <PricesPortal priceTarget={priceTarget} onClearTarget={() => setPriceTarget(null)} />
           </div>
         )}
         {activeTab === 'customers' && <CustomersManager onViewTrucks={handleViewTrucks} />}

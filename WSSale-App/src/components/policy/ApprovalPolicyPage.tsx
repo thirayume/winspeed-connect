@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { ShieldCheck, RefreshCw, Plus, Trash2, Power } from 'lucide-react';
 import { fetchPolicies, createPolicy, updatePolicy, deletePolicy, type ApprovalPolicy } from '../../services/api';
+import { appConfirm } from '../ui/AppAlert';
 
 const CASES = ['UNLOCK', 'REBATE_CLAIM', 'PRICE_CHANGE', 'CREDIT_OVERRIDE', 'GIVEAWAY_OVERRUN'];
 const ROLES = ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ACCOUNTING', 'APPROVER', 'MANAGER', 'ADMIN'];
@@ -38,7 +39,7 @@ export function ApprovalPolicyPage() {
     finally { setSaving(false); }
   }
   async function toggle(p: ApprovalPolicy) { try { await updatePolicy(p.Id, { isActive: !p.IsActive }); await load(); } catch (e: unknown) { alert((e as Error).message); } }
-  async function remove(p: ApprovalPolicy) { if (!confirm('ปิดใช้งานนโยบายนี้?')) return; try { await deletePolicy(p.Id); await load(); } catch (e: unknown) { alert((e as Error).message); } }
+  async function remove(p: ApprovalPolicy) { if (!await appConfirm('ปิดใช้งานนโยบายนี้?')) return; try { await deletePolicy(p.Id); await load(); } catch (e: unknown) { alert((e as Error).message); } }
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>

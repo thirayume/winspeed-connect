@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { confirmLeaveEditors } from '../utils/unsaved-changes';
+import { confirmLeaveEditors, hasUnsavedEditors } from '../utils/unsaved-changes';
 
 // ⚠ รายการนี้ซ้ำกับ PortalKey ใน App.tsx — เพิ่มหน้าใหม่ต้องแก้ทั้งสองที่
 type PortalKey = 'roles' | 'app-settings' | 'incidents' | 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'stock' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'scale-reports' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'approvers' | 'master' | 'profile' | 'incentive-report' | 'budget-report' | 'beneficiaries';
@@ -31,7 +31,12 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
   globalLoadingCount: 0,
 
   navigate: (portal, params) => {
-    if ((portal !== get().activePortal || params) && !confirmLeaveEditors()) return;
+    if ((portal !== get().activePortal || params) && hasUnsavedEditors()) {
+      void confirmLeaveEditors().then((ok) => {
+        if (ok) set({ activePortal: portal, navParams: params || null });
+      });
+      return;
+    }
     set({ activePortal: portal, navParams: params || null });
   },
 

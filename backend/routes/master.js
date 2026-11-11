@@ -129,16 +129,19 @@ router.get('/customer-filters', async (req, res) => {
       ORDER BY u.DisplayName
     `);
 
-    // 2. Area: All 76 provinces from dbo.EMSaleArea with region name
+    // 2. Area: The 14 official sale regions from wf.SaleRegion
     const area = await query(`
-      SELECT CONVERT(NVARCHAR(50), a.SaleAreaID) AS value,
-             a.SaleAreaName + ' (' + ISNULL(r.RegionName, SUBSTRING(a.SaleAreaCode, 1, 2)) + ')' AS label,
+      SELECT r.RegionCode AS value,
+             r.RegionCode + ' ' + r.RegionName AS label,
+             r.RegionCode AS regionCode,
+             r.RegionName AS regionName,
              COUNT(c.CustID) AS count
-      FROM dbo.EMSaleArea a WITH (NOLOCK)
-      LEFT JOIN wf.SaleRegion r WITH (NOLOCK) ON r.RegionCode = SUBSTRING(a.SaleAreaCode, 1, 2)
-      LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON c.SaleAreaID = a.SaleAreaID AND ISNULL(c.Inactive, 'A') <> 'I'
-      GROUP BY a.SaleAreaID, a.SaleAreaName, r.RegionName, a.SaleAreaCode
-      ORDER BY a.SaleAreaCode, a.SaleAreaName
+      FROM wf.SaleRegion r WITH (NOLOCK)
+      LEFT JOIN dbo.EMSaleArea a WITH (NOLOCK) ON SUBSTRING(a.SaleAreaCode, 1, 2) = r.RegionCode
+      LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON (c.SaleAreaID = a.SaleAreaID OR c.CustID IN (SELECT CustId FROM wf.CustomerExt WHERE RegionCode = r.RegionCode)) AND ISNULL(c.Inactive, 'A') <> 'I'
+      WHERE ISNULL(r.IsActive, 1) = 1
+      GROUP BY r.RegionCode, r.RegionName
+      ORDER BY r.RegionCode
     `);
 
     // 3. Group: From dbo.EMCustGroup
@@ -191,17 +194,14 @@ router.get('/customers', async (req, res) => {
       conditions.push(`(CONVERT(NVARCHAR(50), cx.SalespersonUserId) = @salesperson OR CONVERT(NVARCHAR(50), c.BillEmp) = @salesperson)`);
       inputs.salesperson = { type: sql.NVarChar(50), value: String(spVal) };
     }
-    if (area) {
-      conditions.push(`(CONVERT(NVARCHAR(50), c.SaleAreaID) = @area OR CONVERT(NVARCHAR(50), cx.SaleAreaId) = @area)`);
-      inputs.area = { type: sql.NVarChar(50), value: String(area) };
+    if (area || region) {
+      const regionVal = region || area;
+      conditions.push(`(COALESCE(cx.RegionCode, SUBSTRING(area.SaleAreaCode, 1, 2)) = @region OR CONVERT(NVARCHAR(50), c.SaleAreaID) = @region OR CONVERT(NVARCHAR(50), cx.SaleAreaId) = @region)`);
+      inputs.region = { type: sql.NVarChar(50), value: String(regionVal) };
     }
     if (group) {
       conditions.push(`(CONVERT(NVARCHAR(50), c.CustGroupID) = @group OR CONVERT(NVARCHAR(50), cx.CustGroupId) = @group)`);
       inputs.group = { type: sql.NVarChar(50), value: String(group) };
-    }
-    if (region) {
-      conditions.push(`(COALESCE(cx.RegionCode, SUBSTRING(area.SaleAreaCode, 1, 2)) = @region)`);
-      inputs.region = { type: sql.NVarChar(50), value: String(region) };
     }
 
     const rows = await query(
@@ -240,6 +240,90 @@ router.get('/customers', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
+// GET /api/master/customer-groups — ดึงรายชื่อกลุ่มลูกค้าพร้อมจำนวนลูกค้า
+router.get('/customer-groups', async (req, res) => {
+  try {
+    const rows = await query(`
+      SELECT g.CustGroupID, g.CustGroupCode, g.CustGroupName, g.CustGroupNameEng, g.Remark,
+             COUNT(c.CustID) AS CustomerCount
+      FROM dbo.EMCustGroup g WITH (NOLOCK)
+      LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON c.CustGroupID = g.CustGroupID AND ISNULL(c.Inactive, 'A') <> 'I'
+      GROUP BY g.CustGroupID, g.CustGroupCode, g.CustGroupName, g.CustGroupNameEng, g.Remark
+      ORDER BY g.CustGroupID
+    `);
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// POST /api/master/customer-groups — เพิ่มกลุ่มลูกค้าใหม่
+router.post('/customer-groups', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { CustGroupCode, CustGroupName, CustGroupNameEng, Remark } = req.body || {};
+    if (!CustGroupName || !String(CustGroupName).trim()) {
+      return res.status(400).json({ message: 'กรุณาระบุชื่อกลุ่มลูกค้า' });
+    }
+    const nameVal = String(CustGroupName).trim();
+    // Auto-generate next CustGroupID and Code if not provided
+    const maxRes = await query(`SELECT ISNULL(MAX(CustGroupID), 2000) + 1 AS NextID, COUNT(*) AS Total FROM dbo.EMCustGroup`);
+    const nextId = Number(maxRes?.[0]?.NextID || 2001);
+    const codeVal = CustGroupCode && String(CustGroupCode).trim()
+      ? String(CustGroupCode).trim()
+      : String(nextId % 1000).padStart(3, '0');
+
+    await dboWrite(`
+      INSERT INTO dbo.EMCustGroup (CustGroupID, CustGroupCode, CustGroupName, CustGroupNameEng, Remark)
+      VALUES (@id, @code, @name, @nameEng, @remark)
+    `, {
+      id: { type: sql.Int, value: nextId },
+      code: { type: sql.VarChar(20), value: codeVal },
+      name: { type: sql.VarChar(100), value: nameVal },
+      nameEng: { type: sql.VarChar(100), value: CustGroupNameEng || '' },
+      remark: { type: sql.VarChar(255), value: Remark || null },
+    });
+    res.status(201).json({ ok: true, CustGroupID: nextId, CustGroupCode: codeVal, CustGroupName: nameVal });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// PUT /api/master/customer-groups/:id — แก้ไขกลุ่มลูกค้า
+router.put('/customer-groups/:id', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { CustGroupName, CustGroupNameEng, Remark } = req.body || {};
+    if (!CustGroupName || !String(CustGroupName).trim()) {
+      return res.status(400).json({ message: 'กรุณาระบุชื่อกลุ่มลูกค้า' });
+    }
+    await dboWrite(`
+      UPDATE dbo.EMCustGroup
+      SET CustGroupName = @name,
+          CustGroupNameEng = COALESCE(@nameEng, CustGroupNameEng),
+          Remark = @remark
+      WHERE CustGroupID = @id
+    `, {
+      id: { type: sql.Int, value: id },
+      name: { type: sql.VarChar(100), value: String(CustGroupName).trim() },
+      nameEng: { type: sql.VarChar(100), value: CustGroupNameEng !== undefined ? CustGroupNameEng : null },
+      remark: { type: sql.VarChar(255), value: Remark || null },
+    });
+    res.json({ ok: true });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// DELETE /api/master/customer-groups/:id — ลบกลุ่มลูกค้า (มี Safeguard ตรวจสอบว่าไม่มีลูกค้าผูกอยู่)
+router.delete('/customer-groups/:id', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const countRes = await query(`
+      SELECT COUNT(*) AS Cnt FROM dbo.EMCust WHERE CustGroupID = @id AND ISNULL(Inactive, 'A') <> 'I'
+    `, { id: { type: sql.Int, value: id } });
+    const count = Number(countRes?.[0]?.Cnt || 0);
+    if (count > 0) {
+      return res.status(400).json({ message: `ไม่สามารถลบกลุ่มลูกค้านี้ได้ เนื่องจากมีลูกค้าผูกอยู่จำนวน ${count} ราย` });
+    }
+    await dboWrite(`DELETE FROM dbo.EMCustGroup WHERE CustGroupID = @id`, { id: { type: sql.Int, value: id } });
+    res.json({ ok: true });
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
 // GET /api/master/customer-requests
 router.get('/customer-requests', async (req, res) => {
   try {
@@ -261,21 +345,43 @@ router.get('/customer-requests', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-// POST /api/master/customer-requests — app-owned request only, no dbo.EMCust insert
+// POST /api/master/customer-requests — รองรับข้อมูลแบบครบถ้วนสอดคล้องกับหน้าแก้ไขลูกค้า
 router.post('/customer-requests', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER'), async (req, res) => {
   try {
-    const { CustName, ContactName, Tel, Mobile, TaxId, Address, Note } = req.body || {};
+    const {
+      CustName, ContactName, Tel, Mobile, TaxId, Address, Note,
+      SalespersonUserId, SalespersonName, RegionCode, CustGroupId, CustGroupName,
+      Email, LineId, CreditLimit, AgingDays, CreditHold
+    } = req.body || {};
     if (!CustName || !String(CustName).trim()) {
       return res.status(400).json({ message: 'กรุณาระบุชื่อลูกค้า' });
     }
-    // query() returns the recordset itself; reading .recordset[0] threw after the row was saved, so the screen
-    // showed an error and people sent the same request again (UAT APV-07)
+
+    // Resolve Salesperson Name if ID provided
+    let spName = SalespersonName || null;
+    let spId = SalespersonUserId ? Number(SalespersonUserId) : null;
+    if (spId && !spName) {
+      const uRes = await query(`SELECT DisplayName FROM wf.AppUser WHERE Id = @uid`, { uid: { type: sql.Int, value: spId } });
+      spName = uRes?.[0]?.DisplayName || null;
+    }
+
+    // Resolve Customer Group Name if ID provided
+    let grpName = CustGroupName || null;
+    if (CustGroupId && !grpName) {
+      const gRes = await query(`SELECT CustGroupName FROM dbo.EMCustGroup WHERE CustGroupID = @gid`, { gid: { type: sql.Int, value: Number(CustGroupId) } });
+      grpName = gRes?.[0]?.CustGroupName || null;
+    }
+
     const rows = await query(`
       INSERT INTO wf.CustomerRequest
-        (CustName, ContactName, Tel, Mobile, TaxId, Address, Note, RequestedBy)
+        (CustName, ContactName, Tel, Mobile, TaxId, Address, Note, RequestedBy,
+         SalespersonUserId, SalespersonName, RegionCode, CustGroupId, CustGroupName,
+         Email, LineId, CreditLimit, AgingDays, CreditHold)
       OUTPUT inserted.Id
       VALUES
-        (@custName, @contactName, @tel, @mobile, @taxId, @address, @note, @uid)
+        (@custName, @contactName, @tel, @mobile, @taxId, @address, @note, @uid,
+         @spUserId, @spName, @regionCode, @custGroupId, @custGroupName,
+         @email, @lineId, @creditLimit, @agingDays, @creditHold)
     `, {
       custName: { type: sql.NVarChar(255), value: String(CustName).trim() },
       contactName: { type: sql.NVarChar(255), value: ContactName || null },
@@ -285,6 +391,16 @@ router.post('/customer-requests', requireRole('SALES', 'COUNTER_SALES', 'ADMIN',
       address: { type: sql.NVarChar(500), value: Address || null },
       note: { type: sql.NVarChar(500), value: Note || null },
       uid: { type: sql.Int, value: req.user.sub },
+      spUserId: { type: sql.Int, value: spId },
+      spName: { type: sql.NVarChar(100), value: spName },
+      regionCode: { type: sql.NVarChar(20), value: RegionCode || null },
+      custGroupId: { type: sql.NVarChar(50), value: CustGroupId ? String(CustGroupId) : null },
+      custGroupName: { type: sql.NVarChar(100), value: grpName },
+      email: { type: sql.NVarChar(100), value: Email || null },
+      lineId: { type: sql.NVarChar(100), value: LineId || null },
+      creditLimit: { type: sql.Decimal(18, 2), value: CreditLimit != null ? Number(CreditLimit) : 0 },
+      agingDays: { type: sql.Int, value: AgingDays != null ? Number(AgingDays) : 60 },
+      creditHold: { type: sql.Bit, value: CreditHold ? 1 : 0 },
     });
     res.status(201).json({ id: rows[0]?.Id });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
@@ -298,6 +414,14 @@ router.patch('/customer-requests/:id/review', requireRole('ADMIN', 'MANAGER'), a
     if (!['APPROVED', 'REJECTED', 'COMPLETED'].includes(nextStatus)) {
       return res.status(400).json({ message: 'สถานะไม่ถูกต้อง' });
     }
+    const id = Number(req.params.id);
+
+    // Fetch the request record first
+    const reqRow = (await query(`SELECT * FROM wf.CustomerRequest WHERE Id = @id`, { id: { type: sql.Int, value: id } }))?.[0];
+    if (!reqRow) return res.status(404).json({ message: 'ไม่พบคำขอนี้' });
+
+    const finalWinspeedCustId = winspeedCustId || reqRow.WinspeedCustId;
+
     await query(`
       UPDATE wf.CustomerRequest
       SET Status = @status,
@@ -308,18 +432,67 @@ router.patch('/customer-requests/:id/review', requireRole('ADMIN', 'MANAGER'), a
           UpdatedAt = GETUTCDATE()
       WHERE Id = @id
     `, {
-      id: { type: sql.Int, value: Number(req.params.id) },
+      id: { type: sql.Int, value: id },
       status: { type: sql.NVarChar(20), value: nextStatus },
       winspeedCustId: { type: sql.NVarChar(20), value: winspeedCustId || null },
       reviewNote: { type: sql.NVarChar(500), value: reviewNote || null },
       uid: { type: sql.Int, value: req.user.sub },
     });
+
+    // If completed and has WINSpeed CustID, sync metadata into wf.CustomerExt and wf.CreditMaster
+    if (nextStatus === 'COMPLETED' && finalWinspeedCustId) {
+      try {
+        await query(`
+          IF EXISTS (SELECT 1 FROM wf.CustomerExt WHERE CustId = @custId)
+            UPDATE wf.CustomerExt
+            SET SalespersonUserId = COALESCE(@spUserId, SalespersonUserId),
+                SalespersonName = COALESCE(@spName, SalespersonName),
+                RegionCode = COALESCE(@regionCode, RegionCode),
+                CustGroupId = COALESCE(@custGroupId, CustGroupId),
+                Email = COALESCE(@email, Email),
+                LineId = COALESCE(@lineId, LineId),
+                CreditLimit = COALESCE(@creditLimit, CreditLimit),
+                AgingDays = COALESCE(@agingDays, AgingDays),
+                UpdatedAt = GETUTCDATE()
+            WHERE CustId = @custId
+          ELSE
+            INSERT INTO wf.CustomerExt (CustId, SalespersonUserId, SalespersonName, RegionCode, CustGroupId, Email, LineId, CreditLimit, AgingDays, UpdatedAt)
+            VALUES (@custId, @spUserId, @spName, @regionCode, @custGroupId, @email, @lineId, @creditLimit, ISNULL(@agingDays, 60), GETUTCDATE());
+
+          MERGE wf.CreditMaster AS t USING (SELECT @custId AS CustId) AS s ON t.CustId = s.CustId
+          WHEN MATCHED THEN UPDATE SET
+            CreditLimit = COALESCE(@creditLimit, t.CreditLimit),
+            AgingDays = COALESCE(@agingDays, t.AgingDays),
+            CreditHold = COALESCE(@creditHold, t.CreditHold),
+            UpdatedBy = @uid,
+            UpdatedAt = GETUTCDATE()
+          WHEN NOT MATCHED THEN INSERT (CustId, CustName, CreditLimit, AgingDays, CreditHold, UpdatedBy, UpdatedAt)
+            VALUES (@custId, @custName, @creditLimit, ISNULL(@agingDays, 60), ISNULL(@creditHold, 0), @uid, GETUTCDATE());
+        `, {
+          custId: { type: sql.NVarChar(20), value: String(finalWinspeedCustId) },
+          custName: { type: sql.NVarChar(200), value: reqRow.CustName },
+          spUserId: { type: sql.Int, value: reqRow.SalespersonUserId || null },
+          spName: { type: sql.NVarChar(100), value: reqRow.SalespersonName || null },
+          regionCode: { type: sql.NVarChar(20), value: reqRow.RegionCode || null },
+          custGroupId: { type: sql.NVarChar(50), value: reqRow.CustGroupId || null },
+          email: { type: sql.NVarChar(100), value: reqRow.Email || null },
+          lineId: { type: sql.NVarChar(100), value: reqRow.LineId || null },
+          creditLimit: { type: sql.Decimal(18, 2), value: reqRow.CreditLimit != null ? Number(reqRow.CreditLimit) : null },
+          agingDays: { type: sql.Int, value: reqRow.AgingDays != null ? Number(reqRow.AgingDays) : 60 },
+          creditHold: { type: sql.Bit, value: reqRow.CreditHold ? 1 : 0 },
+          uid: { type: sql.Int, value: req.user.sub },
+        });
+      } catch (syncErr) {
+        console.warn('[customer-request:review-sync-warning]', syncErr?.message);
+      }
+    }
+
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
 // PATCH /api/master/customers/:id
-router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async (req, res) => {
+router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const id = req.params.id;
     const {
@@ -368,12 +541,31 @@ router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async
       id: { type: sql.VarChar(20), value: id }
     });
 
+    // Lookup area and region (supports both 2-character RegionCode and numeric SaleAreaID)
+    let regionCodeVal = null;
+    let resolvedAreaId = null;
+    if (areaId) {
+      const areaStr = String(areaId).trim();
+      const rRes = await query(`SELECT RegionCode, RegionName FROM wf.SaleRegion WHERE RegionCode = @rCode`, { rCode: { type: sql.NVarChar(20), value: areaStr } });
+      if (rRes?.[0]?.RegionCode) {
+        regionCodeVal = rRes[0].RegionCode;
+        const aRes = await query(`SELECT TOP 1 SaleAreaID FROM dbo.EMSaleArea WHERE SaleAreaCode LIKE @pfx + '%' ORDER BY SaleAreaCode`, { pfx: { type: sql.VarChar(10), value: regionCodeVal } });
+        resolvedAreaId = aRes?.[0]?.SaleAreaID ? Number(aRes[0].SaleAreaID) : null;
+      } else {
+        const aRes = await query(`SELECT SaleAreaID, SaleAreaCode FROM dbo.EMSaleArea WHERE SaleAreaID = @aid`, { aid: { type: sql.Int, value: Number(areaStr) } });
+        if (aRes?.[0]?.SaleAreaCode) {
+          regionCodeVal = String(aRes[0].SaleAreaCode).substring(0, 2);
+          resolvedAreaId = Number(aRes[0].SaleAreaID);
+        }
+      }
+    }
+
     // 1b. Update optional ERP classifications if columns exist in dbo.EMCust
     const updateClauses = [];
     const updateInputs = { id: { type: sql.VarChar(20), value: id } };
     if (areaId !== undefined) {
       updateClauses.push('SaleAreaID = @areaId');
-      updateInputs.areaId = { type: sql.Int, value: areaId ? Number(areaId) : null };
+      updateInputs.areaId = { type: sql.Int, value: resolvedAreaId };
     }
     if (groupId !== undefined) {
       updateClauses.push('CustGroupID = @groupId');
@@ -402,15 +594,6 @@ router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL', 'MANAGER'), async
     if (spId) {
       const uRes = await query(`SELECT Id, DisplayName FROM wf.AppUser WHERE Id = @uid`, { uid: { type: sql.Int, value: Number(spId) } });
       spUser = uRes?.[0] || null;
-    }
-
-    // Lookup area to derive RegionCode if areaId provided
-    let regionCodeVal = null;
-    if (areaId) {
-      const aRes = await query(`SELECT SaleAreaCode FROM dbo.EMSaleArea WHERE SaleAreaID = @aid`, { aid: { type: sql.Int, value: Number(areaId) } });
-      if (aRes?.[0]?.SaleAreaCode) {
-        regionCodeVal = String(aRes[0].SaleAreaCode).substring(0, 2);
-      }
     }
     
     // 2. Update wf.CustomerExt with portal contacts, salesperson, area, and credit/aging
@@ -532,12 +715,22 @@ router.post('/customers/batch-edit', requireRole('ADMIN', 'MANAGER'), async (req
       spUser = uRes?.[0] || null;
     }
 
-    // Lookup area and region if provided
+    // Lookup area and region if provided (supports both 2-char RegionCode and SaleAreaID)
     let regionCodeVal = null;
+    let resolvedAreaId = null;
     if (areaId) {
-      const aRes = await query(`SELECT SaleAreaCode FROM dbo.EMSaleArea WHERE SaleAreaID = @aid`, { aid: { type: sql.Int, value: Number(areaId) } });
-      if (aRes?.[0]?.SaleAreaCode) {
-        regionCodeVal = String(aRes[0].SaleAreaCode).substring(0, 2);
+      const areaStr = String(areaId).trim();
+      const rRes = await query(`SELECT RegionCode, RegionName FROM wf.SaleRegion WHERE RegionCode = @rCode`, { rCode: { type: sql.NVarChar(20), value: areaStr } });
+      if (rRes?.[0]?.RegionCode) {
+        regionCodeVal = rRes[0].RegionCode;
+        const aRes = await query(`SELECT TOP 1 SaleAreaID FROM dbo.EMSaleArea WHERE SaleAreaCode LIKE @pfx + '%' ORDER BY SaleAreaCode`, { pfx: { type: sql.VarChar(10), value: regionCodeVal } });
+        resolvedAreaId = aRes?.[0]?.SaleAreaID ? Number(aRes[0].SaleAreaID) : null;
+      } else {
+        const aRes = await query(`SELECT SaleAreaID, SaleAreaCode FROM dbo.EMSaleArea WHERE SaleAreaID = @aid`, { aid: { type: sql.Int, value: Number(areaStr) } });
+        if (aRes?.[0]?.SaleAreaCode) {
+          regionCodeVal = String(aRes[0].SaleAreaCode).substring(0, 2);
+          resolvedAreaId = Number(aRes[0].SaleAreaID);
+        }
       }
     }
 
@@ -554,9 +747,9 @@ router.post('/customers/batch-edit', requireRole('ADMIN', 'MANAGER'), async (req
       // 1. Update dbo.EMCust if area, group, billEmp, or inactive provided
       const emCustSets = [];
       const emCustInputs = { id: { type: sql.VarChar(20), value: custId } };
-      if (hasArea) {
+      if (hasArea && resolvedAreaId !== null) {
         emCustSets.push('SaleAreaID = @areaId');
-        emCustInputs.areaId = { type: sql.Int, value: areaId ? Number(areaId) : null };
+        emCustInputs.areaId = { type: sql.Int, value: resolvedAreaId };
       }
       if (hasGroup) {
         emCustSets.push('CustGroupID = @groupId');
@@ -628,10 +821,10 @@ router.post('/customers/batch-edit', requireRole('ADMIN', 'MANAGER'), async (req
   }
 });
 
-// GET /api/master/goods — ดึงสินค้า (รองรับการกรองตามกลุ่มสินค้า และ forSale)
+// GET /api/master/goods — ดึงสินค้า (รองรับการกรองตามกลุ่มสินค้า, forSale, และสถานะงดจำหน่าย)
 router.get('/goods', async (req, res) => {
   try {
-    const { q, forSale, groupId, limit = 800 } = req.query;
+    const { q, forSale, groupId, includeInactive, excludeGiveaways = 'true', limit = 800 } = req.query;
     const safeLimit = Math.max(50, Math.min(Number(limit) || 800, 2000));
     let extraFilter = '';
     const inputs = {
@@ -639,7 +832,7 @@ router.get('/goods', async (req, res) => {
       ...(q ? { q: { type: sql.NVarChar(100), value: q } } : {}),
     };
     if (q) {
-      extraFilter += ` AND (g.GoodCode LIKE N'%' + @q + '%' OR g.GoodName1 LIKE N'%' + @q + '%')`;
+      extraFilter += ` AND (g.GoodCode LIKE N'%' + @q + '%' OR g.GoodName1 LIKE N'%' + @q + '%' OR g.GoodID = @q)`;
     }
     if (forSale === 'true') {
       // สำหรับการเปิดบิลขาย: เฉพาะปุ๋ยสูตร (1003) และแม่ปุ๋ย (1004)
@@ -648,6 +841,14 @@ router.get('/goods', async (req, res) => {
       extraFilter += ` AND g.GoodGroupID = @groupId`;
       inputs.groupId = { type: sql.Int, value: Number(groupId) };
     }
+    // ควบรวมของแถม: ไม่แสดงกลุ่มส่งเสริมการขาย (GoodGroupID=1005) ในหน้ารายการสินค้าทั่วไป (ให้ดูแลในแท็บของแถมแทน)
+    if (excludeGiveaways === 'true') {
+      extraFilter += ` AND ISNULL(g.GoodGroupID, 0) <> 1005`;
+    }
+    const inactiveFilter = includeInactive === 'true'
+      ? ''
+      : ` AND ISNULL(g.Inactive, 'A') = 'A'`;
+
     const rows = await query(`
       SELECT TOP (@limit)
              g.GoodID, g.GoodCode, g.GoodName1 AS GoodName,
@@ -658,12 +859,15 @@ router.get('/goods', async (req, res) => {
              0                                AS SetPrice,
              g.StockQty,
              g.RemaQty,
+             gx.ImageUrl,
+             ISNULL(g.Inactive, 'A')          AS Inactive,
              CAST(0 AS DECIMAL(18,3)) AS TotalQtyTon,
              CAST(0 AS DECIMAL(18,3)) AS TotalQtyTonThisYear
       FROM dbo.EMGood g WITH (NOLOCK)
       LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = g.GoodID
       LEFT JOIN dbo.EMGoodGroup gg WITH (NOLOCK) ON g.GoodGroupID = gg.GoodGroupID
-      WHERE ISNULL(g.Inactive, 'A') = 'A'
+      WHERE 1=1
+        ${inactiveFilter}
         AND g.GoodName1 NOT LIKE N'%ไม่ใช้%' AND g.GoodName1 NOT LIKE N'%ยกเลิก%'
         ${extraFilter}
       ORDER BY g.GoodCode
@@ -762,6 +966,29 @@ router.delete('/goods/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res) =>
       });
     if (!affected(__rows)) return res.status(404).json({ message: 'ไม่พบรหัสสินค้านี้' });
     res.json({ ok: true });
+  } catch (e) { console.error(e); const m = masterWriteStatus(e); res.status(m.status).json({ message: m.message }); }
+});
+
+// PATCH /api/master/goods/:id/status — เปิดจำหน่าย ('A') หรือ งดจำหน่ายชั่วคราว ('I')
+router.patch('/goods/:id/status', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { inactive } = req.body || {};
+    const statusVal = String(inactive || 'I').toUpperCase() === 'A' ? 'A' : 'I';
+    if (!isMasterId(id)) return res.status(404).json({ message: 'ไม่พบรหัสสินค้านี้' });
+    
+    const __rows = await dboWrite(
+      `UPDATE dbo.EMGood 
+       SET Inactive = @status, 
+           InactiveDate = CASE WHEN @status = 'I' THEN GETDATE() ELSE NULL END 
+       WHERE GoodID = @id`,
+      {
+        status: { type: sql.VarChar(1), value: statusVal },
+        id: { type: sql.VarChar(20), value: id }
+      }
+    );
+    if (!affected(__rows)) return res.status(404).json({ message: 'ไม่พบรหัสสินค้านี้' });
+    res.json({ ok: true, status: statusVal });
   } catch (e) { console.error(e); const m = masterWriteStatus(e); res.status(m.status).json({ message: m.message }); }
 });
 
@@ -1779,6 +2006,41 @@ router.get('/control-tickets/:docuNo', async (req, res) => {
     });
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/master/customers/:id/top-goods — สินค้าที่ลูกค้ารายนี้เคยซื้อ เรียงจากซื้อมากสุด บ่อยสุด ไปน้อยสุด
+router.get('/customers/:id/top-goods', async (req, res) => {
+  try {
+    const cleanId = String(req.params.id || '').trim();
+    if (!/^\d+$/.test(cleanId)) return res.json([]);
+
+    const rows = await query(`
+      SELECT TOP 50
+        CAST(dt.GoodID AS VARCHAR(50)) AS GoodID,
+        COALESCE(NULLIF(MAX(LTRIM(RTRIM(g.GoodName1))), ''), NULLIF(MAX(LTRIM(RTRIM(dt.GoodName))), '')) AS GoodName,
+        COUNT(DISTINCT hd.SOID) AS OrderCount,
+        CAST(SUM(CASE WHEN ISNULL(dt.GoodQty2, 0) > 0 THEN dt.GoodQty2 ELSE ISNULL(dt.GoodQty1, 0) END) AS DECIMAL(18,3)) AS TotalQty,
+        MAX(hd.DocuDate) AS LastOrderDate
+      FROM dbo.SOHD hd WITH (NOLOCK)
+      INNER JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
+      INNER JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = dt.GoodID
+      WHERE hd.CustID = @cid
+        AND ISNULL(hd.DocuStatus, '') <> 'C'
+        AND (hd.DocuType = 104 OR (hd.DocuType = 103 AND ISNULL(hd.DocuStatus, '') <> 'Y'))
+        AND ISNULL(g.Inactive, 'A') = 'A'
+        AND g.GoodGroupID IN (1003, 1004, 1005)
+        AND g.GoodName1 NOT LIKE N'%ไม่ใช้%'
+        AND g.GoodName1 NOT LIKE N'%ยกเลิก%'
+        AND dt.GoodID IS NOT NULL
+      GROUP BY dt.GoodID
+      ORDER BY TotalQty DESC, OrderCount DESC
+    `, { cid: { type: sql.Int, value: Number(cleanId) } });
+
+    res.json(rows || []);
+  } catch (e) {
+    console.error('Error fetching customer top goods:', e);
+    res.status(500).json({ message: e.message });
+  }
 });
 
 // GET /api/master/truck-plates — ทะเบียนรถเก่าของลูกค้า (autocomplete)

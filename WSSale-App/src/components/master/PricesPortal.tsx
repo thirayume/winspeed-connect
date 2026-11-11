@@ -5,7 +5,15 @@ import { PriceBookManager } from './PriceBookManager';
 
 type PriceTab = 'individual' | 'pricebook';
 
-export const PricesPortal = ({ initialSearch = '' }: { initialSearch?: string }) => {
+export const PricesPortal = ({ 
+  initialSearch = '',
+  priceTarget = null,
+  onClearTarget,
+}: { 
+  initialSearch?: string;
+  priceTarget?: { goodId: string; goodCode?: string; goodName?: string } | null;
+  onClearTarget?: () => void;
+}) => {
   const [activeTab, setActiveTab] = useState<PriceTab>('individual');
 
   return (
@@ -25,12 +33,18 @@ export const PricesPortal = ({ initialSearch = '' }: { initialSearch?: string })
             activeTab === 'pricebook' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
           }`}
         >
-          <BookOpen size={16} /> Price Book (รายการเหมา)
+          <BookOpen size={16} /> Price Book (ตารางราคา / WinSpeed)
         </button>
       </div>
 
       <div className="flex-1 overflow-hidden relative">
-        {activeTab === 'individual' && <PricesManager initialSearch={initialSearch} />}
+        {activeTab === 'individual' && (
+          <PricesManager
+            initialSearch={initialSearch}
+            targetGood={priceTarget}
+            onClearTarget={onClearTarget}
+          />
+        )}
         {activeTab === 'pricebook' && <PriceBookManager />}
       </div>
     </div>

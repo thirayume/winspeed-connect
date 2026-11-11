@@ -1,5 +1,6 @@
 import { useAuthStore } from '../../store/auth-store';
 import { useCompanyStore } from '../../store/company-store';
+import { appConfirm } from '../ui/AppAlert';
 import { req } from '../../services/api';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
@@ -538,7 +539,7 @@ export function OrgHierarchyView() {
     if (!canEdit) return;
     const targetUser = users.find(u => u.Id === userId);
     if (!targetUser) return;
-    if (!confirm(`ต้องการปลด ${targetUser.DisplayName} ออกจากตำแหน่งนี้ใช่หรือไม่?`)) return;
+    if (!await appConfirm(`ต้องการปลด ${targetUser.DisplayName} ออกจากตำแหน่งนี้ใช่หรือไม่?`)) return;
 
     setModalSaving(true);
     setModalErr(null);

@@ -5,6 +5,7 @@ import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { fetchTruckStats, createTrip, updateTrip } from '../../services/api';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { unsavedMessage } from '../../utils/unsaved-changes';
+import { appConfirm } from '../ui/AppAlert';
 
 export type TripSetupData = {
   tripId?: number;
@@ -73,8 +74,9 @@ export function TripSetupModal({
     }
   }, [isOpen, initialData]);
 
-  const handleClose = () => {
-    if (submitting || (dirty && !window.confirm(unsavedMessage))) return;
+  const handleClose = async () => {
+    if (submitting) return;
+    if (dirty && !await appConfirm(unsavedMessage)) return;
     releaseGuard();
     onClose();
   };

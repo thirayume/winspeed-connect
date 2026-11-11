@@ -2,14 +2,15 @@ import { useCan } from '../../utils/capabilities';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { unsavedMessage } from '../../utils/unsaved-changes';
-import { FileText, RefreshCw, Plus, X, ArrowRightCircle, AlertTriangle, Package, Send, Clock, User, Printer } from 'lucide-react';
-import { fetchQuotations, createQuotation, updateQuotationStatus, extendQuotationValidity, fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, listUsers } from '../../services/api';
+import { FileText, RefreshCw, Plus, X, ArrowRightCircle, AlertTriangle, Package, Send, Clock, User, Printer, Sparkles } from 'lucide-react';
+import { fetchQuotations, createQuotation, updateQuotationStatus, extendQuotationValidity, fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, listUsers, fetchCustomerTopGoods, type CustomerTopGood } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import { useAppStore } from '../../store/app-store';
 import type { Quotation, QuoteStatus, EMCust, EMGood, CurrentPrice, AdminUser } from '../../types';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { Search, Check } from 'lucide-react';
+import { appConfirm } from '../ui/AppAlert';
 import { CreateSODialog } from '../sales/CreateSODialog';
 import { QuotationPrintModal } from './QuotationPrintModal';
 
@@ -95,7 +96,7 @@ export function QuotationPage() {
       return;
     }
     if (status === 'CANCELLED' && (q.SourceSoCount || 0) > 0) {
-      const ok = confirm(`ใบเสนอราคานี้ผูกกับบิลร่าง ${q.SourceSoCount} ใบ\nหากยกเลิกใบเสนอราคาแล้ว ควรยกเลิกหรือแก้ไข SO ที่เกี่ยวข้องด้วย\n\nยืนยันยกเลิกใบเสนอราคา?`);
+      const ok = await appConfirm(`ใบเสนอราคานี้ผูกกับบิลร่าง ${q.SourceSoCount} ใบ\nหากยกเลิกใบเสนอราคาแล้ว ควรยกเลิกหรือแก้ไข SO ที่เกี่ยวข้องด้วย\n\nยืนยันยกเลิกใบเสนอราคา?`);
       if (!ok) return;
     }
     setBusyId(q.Id);
@@ -495,13 +496,39 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 30;
 
+  const HISTORY_TAB = 'รายการที่เคยสั่งซื้อ';
+  const [customerTopGoods, setCustomerTopGoods] = useState<CustomerTopGood[]>([]);
+
   const [salesUserId, setSalesUserId]   = useState<string | number>('');
   const [salesUsers, setSalesUsers]     = useState<AdminUser[]>([]);
   const userRole = useAuthStore(s => s.user?.role);
   const [custSearchLoading, setCustSearchLoading] = useState(false);
   const dirty = Boolean(custId || lines.length || salesUserId || validUntil !== initialValidUntil);
   const releaseDraftGuard = useUnsavedChanges(dirty);
-  const closeEditor = () => { if (!busy && (!dirty || window.confirm(unsavedMessage))) onClose(); };
+  const closeEditor = async () => { if (!busy && (!dirty || await appConfirm(unsavedMessage))) onClose(); };
+
+  // Fetch top ordered goods for customer
+  useEffect(() => {
+    let cancelled = false;
+    if (custId) {
+      fetchCustomerTopGoods(custId)
+        .then(res => {
+          if (cancelled) return;
+          const list = Array.isArray(res) ? res : [];
+          setCustomerTopGoods(list);
+          setActiveTab(list.length > 0 ? HISTORY_TAB : 'ทั้งหมด');
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setCustomerTopGoods([]);
+          setActiveTab('ทั้งหมด');
+        });
+    } else {
+      setCustomerTopGoods([]);
+      setActiveTab('ทั้งหมด');
+    }
+    return () => { cancelled = true; };
+  }, [custId]);
 
   // U-10: Debounced server search for customer picker
   useEffect(() => {
@@ -517,7 +544,7 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
   }, [custSearch]);
 
   useEffect(() => { 
-    Promise.all([fetchGoods(), fetchGiveawayGoods()])
+    Promise.all([fetchGoods({ forSale: true }), fetchGiveawayGoods()])
       .then(([g, gw]) => setGoods([...g, ...gw.map(x => ({ ...x, GoodGroupName: 'ของแถม' }))]))
       .catch(()=>{});
     if (userRole === 'ADMIN') {
@@ -530,14 +557,33 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
   
 
   // Filter & Pagination Logic
-  const categories = ['ทั้งหมด', ...Array.from(new Set(goods.map(g => g.GoodGroupName || 'อื่นๆ'))).filter(c => c !== 'ของแถม').sort(), 'ของแถม'];
+  const topGoodIds = new Set(customerTopGoods.map(tg => String(tg.GoodID)));
+  const topGoodRank = new Map(customerTopGoods.map((tg, idx) => [String(tg.GoodID), { rank: idx, item: tg }]));
+
+  const categories = [
+    HISTORY_TAB,
+    'ทั้งหมด',
+    ...Array.from(new Set(goods.map(g => g.GoodGroupName || 'อื่นๆ'))).filter(c => c !== 'ของแถม' && c !== HISTORY_TAB).sort(),
+    'ของแถม'
+  ];
   const filteredGoods = goods.filter(g => {
-    if (activeTab !== 'ทั้งหมด' && (g.GoodGroupName || 'อื่นๆ') !== activeTab) return false;
+    if (activeTab === HISTORY_TAB) {
+      if (!topGoodIds.has(String(g.GoodID))) return false;
+    } else if (activeTab !== 'ทั้งหมด' && (g.GoodGroupName || 'อื่นๆ') !== activeTab) {
+      return false;
+    }
     if (goodSearch) {
       const q = goodSearch.toLowerCase();
       return g.GoodName.toLowerCase().includes(q) || g.GoodCode.toLowerCase().includes(q);
     }
     return true;
+  }).sort((a, b) => {
+    if (activeTab === HISTORY_TAB) {
+      const rankA = topGoodRank.has(String(a.GoodID)) ? topGoodRank.get(String(a.GoodID))!.rank : 9999;
+      const rankB = topGoodRank.has(String(b.GoodID)) ? topGoodRank.get(String(b.GoodID))!.rank : 9999;
+      return rankA - rankB;
+    }
+    return 0;
   });
   const totalPages = Math.ceil(filteredGoods.length / itemsPerPage) || 1;
   const paginatedGoods = filteredGoods.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -619,15 +665,29 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
 
               {/* Tabs */}
               <div className="flex items-center justify-between mb-3 shrink-0 gap-4">
-                <div className="flex items-center gap-1 overflow-x-auto pb-2 scrollbar-hide flex-1">
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-hide flex-1">
                   {categories.map(cat => (
                     <button
                       key={cat}
                       onClick={() => { setActiveTab(cat); setCurrentPage(1); }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${activeTab === cat ? 'text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition-colors ${
+                        activeTab === cat 
+                          ? 'text-white shadow-sm' 
+                          : cat === HISTORY_TAB
+                          ? 'bg-blue-50 text-[#0C447C] hover:bg-blue-100 border border-blue-200'
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                      }`}
                       style={activeTab === cat ? { background: '#0C447C' } : {}}
                     >
-                      {cat}
+                      {cat === HISTORY_TAB && <Sparkles size={12} className={activeTab === cat ? 'text-amber-300' : 'text-[#0C447C]'} />}
+                      <span>{cat}</span>
+                      {cat === HISTORY_TAB && customerTopGoods.length > 0 && (
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                          activeTab === cat ? 'bg-white/20 text-white' : 'bg-blue-200 text-[#0C447C]'
+                        }`}>
+                          {customerTopGoods.length}
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -653,31 +713,56 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
                 )}
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 overflow-y-auto flex-1 content-start pr-1">
-                {paginatedGoods.map(g => {
-                  const pObj = priceObj(g.GoodID);
-                  const net = pObj?.GoodPriceNet ?? 0;
-                  const isExpired = pObj?.IsExpired === 1;
-                  const inCart = lines.some(l => l.goodId === g.GoodID);
-                  return (
-                    <button
-                      key={g.GoodID}
-                      onClick={() => addGood(g)}
-                      className={`text-left p-3 rounded-xl border transition-all ${inCart ? 'border-blue-300 bg-blue-50' : 'border-gray-100 bg-gray-50 hover:border-gray-200 hover:bg-white'}`}
-                    >
-                      <div className="text-sm font-bold text-[#0C447C] line-clamp-2 leading-tight mb-1.5 h-10" title={g.GoodName}>{g.GoodName}</div>
-                      {net > 0 ? (
-                        <div className="text-xs font-bold" style={{ color: isExpired ? '#DC2626' : '#0C447C' }}>
-                          ฿{net.toLocaleString()}<span className="text-[9px] font-normal text-gray-400">/ตัน</span>
-                        </div>
-                      ) : (
-                        <div className="text-[10px] text-orange-400">ไม่มีราคากลาง</div>
-                      )}
-                      <div className="text-[9px] text-gray-300 mt-0.5">{g.BagPerTon} กระสอบ/ตัน · {g.WeightKgPerBag}kg</div>
-                    </button>
-                  );
-                })}
-              </div>
+              {activeTab === HISTORY_TAB && customerTopGoods.length === 0 ? (
+                <div className="py-12 text-center text-gray-500 bg-white rounded-2xl border border-dashed border-gray-200 p-6 my-2">
+                  <Sparkles size={32} className="mx-auto text-blue-400 mb-2" />
+                  <div className="font-bold text-gray-700 text-sm">
+                    {!custId ? 'กรุณาเลือกลูกค้าก่อน' : 'ไม่พบประวัติการสั่งซื้อของลูกค้ารายนี้'}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {!custId ? 'เลือกลูกค้าด้านบนเพื่อดูรายการสินค้าที่เคยสั่งซื้อ' : 'สามารถเลือกสินค้าได้จากแท็บ "ทั้งหมด" หรือหมวดหมู่อื่นๆ'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('ทั้งหมด')}
+                    className="mt-3 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg"
+                  >
+                    ดูสินค้าทั้งหมด →
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 overflow-y-auto flex-1 content-start pr-1">
+                  {paginatedGoods.map(g => {
+                    const pObj = priceObj(g.GoodID);
+                    const net = pObj?.GoodPriceNet ?? 0;
+                    const isExpired = pObj?.IsExpired === 1;
+                    const inCart = lines.some(l => l.goodId === g.GoodID);
+                    return (
+                      <button
+                        key={g.GoodID}
+                        onClick={() => addGood(g)}
+                        className={`text-left p-3 rounded-xl border transition-all ${inCart ? 'border-blue-300 bg-blue-50' : 'border-gray-100 bg-gray-50 hover:border-gray-200 hover:bg-white'}`}
+                      >
+                        <div className="text-sm font-bold text-[#0C447C] line-clamp-2 leading-tight mb-1 h-10" title={g.GoodName}>{g.GoodName}</div>
+                        {topGoodRank.has(String(g.GoodID)) && (
+                          <div className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] font-bold mb-1">
+                            <Sparkles size={10} className="text-amber-600" />
+                            <span>เคยซื้อ {topGoodRank.get(String(g.GoodID))!.item.TotalQty.toLocaleString()} {g.GoodGroupName === 'ของแถม' ? (g.UnitName || 'ชิ้น') : 'ตัน'} ({topGoodRank.get(String(g.GoodID))!.item.OrderCount} ครั้ง)</span>
+                          </div>
+                        )}
+                        {net > 0 ? (
+                          <div className="text-xs font-bold" style={{ color: isExpired ? '#DC2626' : '#0C447C' }}>
+                            ฿{net.toLocaleString()}<span className="text-[9px] font-normal text-gray-400">/ตัน</span>
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-orange-400">ไม่มีราคากลาง</div>
+                        )}
+                        <div className="text-[9px] text-gray-300 mt-0.5">{g.BagPerTon} กระสอบ/ตัน · {g.WeightKgPerBag}kg</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               <div className="mt-4 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-4 text-[10px] text-gray-500 shrink-0">
                 <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full" style={{ background: '#0C447C' }}></div> ราคากลางปกติ</div>

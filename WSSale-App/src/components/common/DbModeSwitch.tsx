@@ -11,9 +11,9 @@ const ORDER: DbMode[] = import.meta.env?.PROD ? ['server'] : ['server', 'local',
 export function DbModeSwitch({ collapsed }: { collapsed?: boolean }) {
   const cur = getDbMode();
 
-  function switchTo(m: DbMode) {
+  async function switchTo(m: DbMode) {
     if (m === cur) return;
-    if (!confirmLeaveEditors()) return;
+    if (!(await confirmLeaveEditors())) return;
     clearToken();
     setDbMode(m);
     window.location.reload();
