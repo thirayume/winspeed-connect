@@ -7,7 +7,7 @@ import { useTripStore } from '../../store/trip-store';
 import { useAppStore } from '../../store/app-store';
 import {
   cancelSO, confirmSO, moveToPicking, createUnlockRequest, createQuotationFromSoTrip,
-  confirmTrip, submitTripPlan, createTrip, fetchTrip, updateLoadPlan, acknowledgeLoadPlan,
+  confirmTrip, submitTripPlan, createTrip, updateTrip, fetchTrip, fetchTruckPlates, updateLoadPlan, acknowledgeLoadPlan,
   fetchLoadingPlan, fetchSystemSettings, fetchGoods,
   requestTripMultiCustApproval, cancelTripMultiCustApproval, approveTripApproval, rejectTripApproval,
   type MultiCustTripApprovalSummary,
@@ -180,6 +180,11 @@ export function TripSummaryModal({
   const [shipModalConfig, setShipModalConfig] = useState<{ isOpen: boolean; soIds: (string | number)[] }>({ isOpen: false, soIds: [] });
   const [cancelModalConfig, setCancelModalConfig] = useState<{ isOpen: boolean; order: SalesOrder | null }>({ isOpen: false, order: null });
   const [isSequencerOpen, setIsSequencerOpen] = useState(false);
+  const [truckPickerOrder, setTruckPickerOrder] = useState<SalesOrder | null>(null);
+  const [customerTrucks, setCustomerTrucks] = useState<string[]>([]);
+  const [loadingTrucks, setLoadingTrucks] = useState(false);
+  const [newTruckPlateInput, setNewTruckPlateInput] = useState('');
+  const [savingTruck, setSavingTruck] = useState(false);
 
   // Guard Hooks Rule (#310): keep all derived hook inputs and useEffect strictly above early return
   const hasMaePuiInTrip = Boolean(trip?.orders?.some(o =>
@@ -520,6 +525,77 @@ export function TripSummaryModal({
     if (Number(store.activeTrip?.tripId) === Number(data.tripId)) store.updateTrip(data);
     setIsEditTripOpen(false);
     if (onUpdate) onUpdate();
+  };
+
+  const openTruckPickerForOrder = (order: SalesOrder) => {
+    if (!order.custId) return;
+    setTruckPickerOrder(order);
+    setNewTruckPlateInput('');
+    setLoadingTrucks(true);
+    fetchTruckPlates(String(order.custId))
+      .then(plates => setCustomerTrucks(plates || []))
+      .catch(() => setCustomerTrucks([]))
+      .finally(() => setLoadingTrucks(false));
+  };
+
+  const applyTripTruckPlate = async (plateRaw: string) => {
+    if (!trip || savingTruck) return;
+    const trimmed = plateRaw.trim();
+    if (!trimmed) return;
+    const cleanPlate = ['ยังไม่ระบุรถ', 'ตั๋วคุม', 'ไม่ระบุทะเบียนรถ'].includes(trimmed) ? '' : trimmed;
+    const effectiveTripId = (trip as any)?.tripId || (trip.orders[0] as any)?.tripId;
+    const deliveryDate = tripPickupDueDate || trip.orders.find(o => o.deliveryDate)?.deliveryDate?.split('T')[0] || bangkokDate();
+    const loadInOrder = trip.orders.some(o => (o.lines || []).some((l: any) => l.loadSequence && Number(l.loadSequence) > 0));
+
+    setSavingTruck(true);
+    try {
+      let nextRevision = tripRevision;
+      let resolvedTripId = effectiveTripId ? Number(effectiveTripId) : undefined;
+      if (resolvedTripId) {
+        const res = await updateTrip(resolvedTripId, {
+          transRegistration: cleanPlate || null,
+          deliveryDate,
+          pSling: tripPreSling,
+          loadInOrder,
+          remark: tripRemark,
+          expectedRevision: tripRevision,
+        });
+        if (res.documentRevision) nextRevision = res.documentRevision;
+      } else {
+        const orderIds = trip.orders.map(o => o.id!).filter(Boolean);
+        const created = await createTrip({
+          transRegistration: cleanPlate || null,
+          deliveryDate,
+          truckCapacityTon: 30,
+          pSling: tripPreSling,
+          remark: tripRemark,
+          ...(orderIds.length ? { orderIds } : {}),
+        });
+        resolvedTripId = created.tripId;
+        const freshTrip = await fetchTrip(created.tripId).catch(() => null);
+        if (freshTrip?.documentRevision) nextRevision = freshTrip.documentRevision;
+      }
+
+      setTripRevision(nextRevision);
+      setServerPlate(cleanPlate);
+      setTripPickupDueDate(deliveryDate);
+      const store = useTripStore.getState();
+      if (resolvedTripId && (!store.activeTrip?.tripId || Number(store.activeTrip.tripId) === resolvedTripId)) {
+        store.updateTrip({
+          tripId: resolvedTripId,
+          truckPlate: cleanPlate || undefined,
+          deliveryDate,
+        });
+      }
+      if (resolvedTripId) loadTripPlan(resolvedTripId);
+      setTruckPickerOrder(null);
+      setNewTruckPlateInput('');
+      if (onUpdate) onUpdate();
+    } catch (err: any) {
+      await appAlert('บันทึกรถขนส่งไม่สำเร็จ: ' + (err?.message || 'ข้อผิดพลาด'), 'error');
+    } finally {
+      setSavingTruck(false);
+    }
   };
 
   const allDraft = trip.orders.every(o => o.status === 'DRAFT');
@@ -1175,8 +1251,33 @@ export function TripSummaryModal({
                             {pendingReq && <ShieldAlert size={14} className="text-red-500" />}
                           </div>
                           <div className="flex flex-col items-end gap-1">
-                            <div className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${SO_STATUS_META[order.status]?.badgeClass || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-                              {soStatusLabel(displayStatus(order))}
+                            <div className="flex items-center gap-1.5">
+                              {order.custId && order.truckPlate !== 'ตั๋วคุม' && order.status !== 'CANCELLED' && (
+                                <button
+                                  type="button"
+                                  data-testid={`btn-bill-truck-picker-${order.id}`}
+                                  disabled={busy || savingTruck || isQuoteLocked || !tripLoaded || !allDraft}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    openTruckPickerForOrder(order);
+                                  }}
+                                  className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 hover:bg-blue-200 text-[#0C447C] font-bold text-[11px] border border-blue-200 transition-colors shrink-0 shadow-xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                  title={
+                                    isQuoteLocked
+                                      ? 'ต้องยืนยันหรือยกเลิกใบเสนอราคาก่อน'
+                                      : !allDraft
+                                        ? 'เปลี่ยนรถได้เฉพาะเที่ยวรถสถานะร่าง'
+                                        : 'เลือกรถที่ลูกค้ารายนี้เคยใช้ขนส่ง (หรือระบุคันใหม่)'
+                                  }
+                                >
+                                  <Truck size={13} className="text-[#0C447C]" />
+                                  <span>เลือกรถ</span>
+                                </button>
+                              )}
+                              <div className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${SO_STATUS_META[order.status]?.badgeClass || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                                {soStatusLabel(displayStatus(order))}
+                              </div>
                             </div>
                             {(order as any).requiresPriceApproval && (
                               <div>
@@ -1364,6 +1465,131 @@ export function TripSummaryModal({
           if (onUpdate) onUpdate();
         }}
       />
+
+      {truckPickerOrder && (
+        <div
+          className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-xs"
+          onClick={() => { if (!savingTruck) setTruckPickerOrder(null); }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100 flex flex-col animate-in fade-in zoom-in-95 duration-150"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-blue-50">
+              <div className="flex items-center gap-2">
+                <Truck className="w-5 h-5 text-[#0C447C]" />
+                <h3 className="font-bold text-[#0C447C] text-sm">
+                  เลือกรถขนส่งสำหรับลูกค้า [{truckPickerOrder.custId}]
+                </h3>
+              </div>
+              <button
+                type="button"
+                disabled={savingTruck}
+                onClick={() => setTruckPickerOrder(null)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg disabled:opacity-40"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {truckPickerOrder.custName && (
+                <div className="text-xs text-gray-500">
+                  ลูกค้า: <span className="font-semibold text-gray-800">{truckPickerOrder.custName}</span>
+                  {serverPlate && (
+                    <span className="ml-2 text-[#0C447C] font-semibold">· รถปัจจุบัน: {serverPlate}</span>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  ระบุทะเบียนรถคันใหม่
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="เช่น 70-1234 กทม."
+                    value={newTruckPlateInput}
+                    disabled={savingTruck}
+                    onChange={e => setNewTruckPlateInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && newTruckPlateInput.trim()) {
+                        applyTripTruckPlate(newTruckPlateInput.trim());
+                      }
+                    }}
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-xs font-bold focus:border-[#0C447C] outline-none"
+                  />
+                  <button
+                    type="button"
+                    disabled={savingTruck || !newTruckPlateInput.trim()}
+                    onClick={() => applyTripTruckPlate(newTruckPlateInput.trim())}
+                    className="px-3 py-1.5 bg-[#0C447C] text-white text-xs font-bold rounded-lg hover:bg-blue-900 disabled:opacity-40 cursor-pointer"
+                  >
+                    {savingTruck ? 'กำลังบันทึก...' : 'ใช้คันนี้'}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                  ประวัติรถที่ลูกค้ารายนี้เคยใช้ ({customerTrucks.length} คัน)
+                </label>
+                {loadingTrucks ? (
+                  <div className="py-6 text-center text-xs text-gray-400">กำลังโหลดรายการรถ...</div>
+                ) : customerTrucks.length === 0 ? (
+                  <div className="py-6 text-center text-xs text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                    ไม่พบประวัติรถที่เคยใช้ สามารถพิมพ์ระบุทะเบียนใหม่ด้านบนได้
+                  </div>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                    {customerTrucks.map(plate => {
+                      const isCurrent = plate === serverPlate;
+                      return (
+                        <button
+                          key={plate}
+                          type="button"
+                          disabled={savingTruck}
+                          onClick={() => applyTripTruckPlate(plate)}
+                          className={`w-full text-left px-3 py-2 rounded-xl border flex items-center justify-between transition-colors group cursor-pointer disabled:opacity-40 ${
+                            isCurrent
+                              ? 'border-[#0C447C] bg-blue-50'
+                              : 'border-gray-200 hover:border-blue-400 hover:bg-blue-50/50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Truck size={14} className={isCurrent ? 'text-[#0C447C]' : 'text-gray-400 group-hover:text-[#0C447C]'} />
+                            <span className={`font-bold text-xs ${isCurrent ? 'text-[#0C447C]' : 'text-gray-800 group-hover:text-[#0C447C]'}`}>
+                              {plate}
+                            </span>
+                            {isCurrent && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-[#0C447C] font-semibold">กำลังใช้อยู่</span>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-blue-600 font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
+                            เลือกคันนี้ →
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-3 border-t border-gray-100 bg-gray-50 flex justify-end">
+              <button
+                type="button"
+                disabled={savingTruck}
+                onClick={() => setTruckPickerOrder(null)}
+                className="px-4 py-1.5 rounded-lg text-xs font-bold text-gray-600 hover:bg-gray-200 disabled:opacity-40"
+              >
+                ปิด
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

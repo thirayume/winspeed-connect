@@ -238,32 +238,62 @@ async function confirmDraft({tx:confirmationTx,draftId,user,ip,expectedRevision,
         regRow = (await confirmationQuery(`SELECT TOP 1 Region, EmpId, EmpCode FROM wf.GiveawayBudget WHERE SalesUserId=@su AND PeriodYear=@y`, { su: { type: sql.Int, value: req.user.sub }, y: { type: sql.Int, value: y } })).recordset[0];
       }
       if (regRow) {
-        // U-4: เขียนชื่อตรา/รายการตามบรรทัดงบจริงของภาค เพื่อให้ยอดเบิกตัดงบบรรทัดเดียวกับที่ตรวจโควต้า
+        // U-4: เขียนชื่อตรา/รายการ/รหัสสินค้าตามบรรทัดงบจริงเพื่อให้ยอดเบิกตัดงบบรรทัดเดียวกับที่ตรวจโควต้า
         const budgetRows = (await confirmationQuery(
-          `SELECT Region, Brand, ItemName FROM wf.GiveawayBudget WHERE Region=@rg AND PeriodYear=@y`,
+          `SELECT * FROM wf.GiveawayBudget WHERE Region=@rg AND PeriodYear=@y`,
           { rg: { type: sql.NVarChar(60), value: regRow.Region }, y: { type: sql.Int, value: y } }
         )).recordset || [];
-        const budgetLine = findMatchingQuota({ goodId: gl.GoodId || gl.goodId, goodName: gl.GoodName || gl.goodName, brand: mapBrand, itemName: mapItem }, budgetRows);
+        const userSpecificRows = budgetRows.filter(r => Number(r.SalesUserId) === Number(targetSalesUserId));
+        const budgetPool = userSpecificRows.length > 0 ? [...userSpecificRows, ...budgetRows.filter(r => r.SalesUserId == null)] : budgetRows;
+        const budgetLine = findMatchingQuota({ goodId: gl.GoodId || gl.goodId, goodName: gl.GoodName || gl.goodName, brand: mapBrand, itemName: mapItem }, budgetPool);
         if (budgetLine) { matched.brand = budgetLine.Brand; matched.itemName = budgetLine.ItemName; }
-        // U-4 / U-5: Quantity in PIECES
         const pieceQty = linePieces(gl);
-        await confirmationQuery(`
-          INSERT INTO wf.GiveawayWithdrawal (SalesUserId, EmpId, EmpCode, Region, PeriodYear, IssueMonth, Brand, ItemName, Qty, CustId, SoId, Note, Source)
-          VALUES (@su, @ei, @ec, @rg, @y, @mo, @br, @it, @qy, @cu, @so, @nt, 'APP')
-        `, {
-          su: { type: sql.Int, value: targetSalesUserId },
-          ei: { type: sql.NVarChar(20), value: regRow.EmpId || null },
-          ec: { type: sql.NVarChar(20), value: regRow.EmpCode || null },
-          rg: { type: sql.NVarChar(60), value: regRow.Region },
-          y: { type: sql.Int, value: y },
-          mo: { type: sql.Int, value: new Date().getMonth() + 1 },
-          br: { type: sql.NVarChar(50), value: matched.brand },
-          it: { type: sql.NVarChar(100), value: matched.itemName },
-          qy: { type: sql.Decimal(12,2), value: pieceQty },
-          cu: { type: sql.NVarChar(20), value: so.CustId ? String(so.CustId) : null },
-          so: { type: sql.Int, value: Number(newSoid) },
-          nt: { type: sql.NVarChar(300), value: `ตัดโควต้าอัตโนมัติจากบิล ${so.WfRef || so.Id}` }
-        });
+        const goodIdVal = budgetLine?.GoodId ?? gl.GoodId ?? gl.goodId ?? null;
+        const goodCodeVal = budgetLine?.GoodCode ?? gl.GoodCode ?? gl.goodCode ?? null;
+        const goodNameVal = budgetLine?.GoodName ?? gl.GoodName ?? gl.goodName ?? null;
+        const hasWdGoodCol = Boolean((await confirmationQuery(
+          `SELECT COL_LENGTH('wf.GiveawayWithdrawal', 'GoodId') AS Len`
+        )).recordset?.[0]?.Len);
+        if (hasWdGoodCol) {
+          await confirmationQuery(`
+            INSERT INTO wf.GiveawayWithdrawal (SalesUserId, EmpId, EmpCode, Region, PeriodYear, IssueMonth, Brand, ItemName, GoodId, GoodCode, GoodName, Qty, CustId, SoId, Note, Source)
+            VALUES (@su, @ei, @ec, @rg, @y, @mo, @br, @it, @gid, @gc, @gn, @qy, @cu, @so, @nt, 'APP')
+          `, {
+            su: { type: sql.Int, value: targetSalesUserId },
+            ei: { type: sql.NVarChar(20), value: regRow.EmpId || null },
+            ec: { type: sql.NVarChar(20), value: regRow.EmpCode || null },
+            rg: { type: sql.NVarChar(60), value: regRow.Region },
+            y: { type: sql.Int, value: y },
+            mo: { type: sql.Int, value: new Date().getMonth() + 1 },
+            br: { type: sql.NVarChar(50), value: matched.brand },
+            it: { type: sql.NVarChar(100), value: matched.itemName },
+            gid: { type: sql.VarChar(50), value: goodIdVal != null ? String(goodIdVal) : null },
+            gc: { type: sql.NVarChar(50), value: goodCodeVal || null },
+            gn: { type: sql.NVarChar(200), value: goodNameVal || null },
+            qy: { type: sql.Decimal(12,2), value: pieceQty },
+            cu: { type: sql.NVarChar(20), value: so.CustId ? String(so.CustId) : null },
+            so: { type: sql.Int, value: Number(newSoid) },
+            nt: { type: sql.NVarChar(300), value: `ตัดโควต้าอัตโนมัติจากบิล ${so.WfRef || so.Id}` }
+          });
+        } else {
+          await confirmationQuery(`
+            INSERT INTO wf.GiveawayWithdrawal (SalesUserId, EmpId, EmpCode, Region, PeriodYear, IssueMonth, Brand, ItemName, Qty, CustId, SoId, Note, Source)
+            VALUES (@su, @ei, @ec, @rg, @y, @mo, @br, @it, @qy, @cu, @so, @nt, 'APP')
+          `, {
+            su: { type: sql.Int, value: targetSalesUserId },
+            ei: { type: sql.NVarChar(20), value: regRow.EmpId || null },
+            ec: { type: sql.NVarChar(20), value: regRow.EmpCode || null },
+            rg: { type: sql.NVarChar(60), value: regRow.Region },
+            y: { type: sql.Int, value: y },
+            mo: { type: sql.Int, value: new Date().getMonth() + 1 },
+            br: { type: sql.NVarChar(50), value: matched.brand },
+            it: { type: sql.NVarChar(100), value: matched.itemName },
+            qy: { type: sql.Decimal(12,2), value: pieceQty },
+            cu: { type: sql.NVarChar(20), value: so.CustId ? String(so.CustId) : null },
+            so: { type: sql.Int, value: Number(newSoid) },
+            nt: { type: sql.NVarChar(300), value: `ตัดโควต้าอัตโนมัติจากบิล ${so.WfRef || so.Id}` }
+          });
+        }
       }
     }
 

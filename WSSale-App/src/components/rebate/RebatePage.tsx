@@ -8,6 +8,7 @@ import { useExport } from '../../hooks/useExport';
 import { canViewRebateAmounts } from '../../utils/permissions';
 import type { RebatePool, RebateLedger, RebateClaim } from '../../types';
 import { ClaimDialog, ClaimDetailDialog } from './RebateClaimForm';
+import { RebatePoolPanel } from './RebatePoolPanel';
 import { formatThaiDate } from '../../utils/date';
 
 const CLAIM_STATUS: Record<string, string> = {
@@ -22,6 +23,7 @@ const STATUS_TONE: Record<string, string> = {
 
 export function RebatePage() {
   const role = useAuthStore(s => s.user?.role);
+  const [viewTab, setViewTab] = useState<'pool-fifo' | 'legacy'>('pool-fifo');
   // owner 2026-10-09: a salesperson sees no rebate amount here either; the server sends none
   const seeMoney = canViewRebateAmounts(role);
   const [pools, setPools]       = useState<RebatePool[]>([]);
@@ -87,23 +89,50 @@ export function RebatePage() {
           <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
             <Coins className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> รีเบท (Rebate)
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">ยอดสะสมรายเดือน · ยื่นเคลียร์รีเบท · ติดตามการอนุมัติ</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">Rebate Pool FIFO · แปลงตั๋วปุ๋ย (1 พ.ย.) · กองทุนรีเบท &amp; คำขอเคลม CN</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={handleExportClaims} disabled={claims.length === 0}
-            className="px-3 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-bold text-[#0C447C] flex items-center gap-1.5 shadow-sm disabled:opacity-50">
-            <Download size={14} /> ส่งออกคำขอ (Excel)
-          </button>
-          <button onClick={() => setShowInfo(true)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600">
-            <Info size={18} />
-          </button>
-          <button onClick={load} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white">
-            <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center bg-gray-100 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setViewTab('pool-fifo')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewTab === 'pool-fifo' ? 'bg-[#0C447C] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Rebate Pool &amp; แปลงตั๋วปุ๋ย (FIFO)
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewTab('legacy')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewTab === 'legacy' ? 'bg-[#0C447C] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              กองรีเบทรายเดือน &amp; เคลม CN (เดิม)
+            </button>
+          </div>
+          {viewTab === 'legacy' && (
+            <>
+              <button onClick={handleExportClaims} disabled={claims.length === 0}
+                className="px-3 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-bold text-[#0C447C] flex items-center gap-1.5 shadow-sm disabled:opacity-50">
+                <Download size={14} /> ส่งออกคำขอ (Excel)
+              </button>
+              <button onClick={() => setShowInfo(true)} className="h-10 w-10 flex items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600">
+                <Info size={18} />
+              </button>
+              <button onClick={load} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white">
+                <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col">
+        {viewTab === 'pool-fifo' ? (
+          <RebatePoolPanel />
+        ) : (
         <div className="flex-1 overflow-hidden flex mt-2 lg:mt-4">
           {/* Left: Pools + Claims */}
           <div className={`w-full lg:max-w-md flex flex-col lg:border-r border-gray-200 overflow-y-auto px-4 pb-4 space-y-5 ${selectedPool ? 'hidden lg:flex' : 'flex'}`}>
@@ -221,6 +250,7 @@ export function RebatePage() {
             )}
           </div>
         </div>
+        )}
       </div>
 
       {showClaim && selectedPool && (

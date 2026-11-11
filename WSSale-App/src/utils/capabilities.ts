@@ -21,6 +21,8 @@ const FALLBACK_ACTIONS: Record<string, string[]> = {
   'native.print-107': ['COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'giveaway.borrow': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'giveaway.budget': ['MANAGER', 'ADMIN'],
+  'rebate.approve-over-limit': ['MANAGER', 'C_LEVEL', 'ADMIN'],
+  'rebate.convert': ['ACCOUNTING', 'ADMIN'],
   'users.manage': ['ACCOUNTING', 'MANAGER', 'ADMIN'],
   'access-as': ['ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'COUNTER_SALES'],
 };

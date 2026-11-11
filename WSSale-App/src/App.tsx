@@ -100,7 +100,7 @@ const NAV_GROUPS: NavGroup[] = [
     icon: Wallet,
     color: 'text-emerald-600',
     items: [
-      { key: 'rebate',     label: 'รีเบท (App)', sub: 'กองทุนรีเบท · คำขอเคลม', icon: Coins, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'SALES'] },
+      { key: 'rebate',     label: 'รีเบท (App)', sub: 'Rebate Pool FIFO · แปลงตั๋ว · คำขอเคลม', icon: Coins, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'SALES', 'COUNTER_SALES'] },
       { key: 'rebate-plan',label: 'Rebate Plan', sub: 'แผนจัดสรรงบรีเบท',        icon: ClipboardList, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING'] },
       // ── ซ่อนชั่วคราว — คง requirement และ source component ไว้ ไม่ลบ ──
       // { key: 'cn-rebate',  label: 'CN Rebate',   sub: 'ใบลดหนี้ · Winspeed',   icon: FileCheck2, roles: [...] },

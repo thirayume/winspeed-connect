@@ -22,12 +22,21 @@ function isNumericString(str) {
   return /^\d+$/.test(String(str || '').trim());
 }
 
+function normalizeBrand(str) {
+  const b = normalizeText(str);
+  if (!b || isNumericString(b)) return '';
+  if (b === 'ตรารถเกษตร' || b.includes('รถเกษตร')) return 'รถเกษตร';
+  if (b === 'ตราปุ๋ยเทพ' || b.includes('ปุ๋ยเทพ')) return 'ปุ๋ยเทพ';
+  if (b === 'ส่วนกลาง' || b === 'ทั่วไป' || b === 'ของแถม') return 'ทั่วไป';
+  return b;
+}
+
 /**
  * Extract canonical Brand from good / mapping info
  */
 function resolveBrand(good = {}) {
-  const explicitBrand = normalizeText(good.Brand || good.brand);
-  if (explicitBrand && !isNumericString(explicitBrand) && KNOWN_BRANDS.includes(explicitBrand)) {
+  const explicitBrand = normalizeBrand(good.Brand || good.brand);
+  if (explicitBrand && KNOWN_BRANDS.includes(explicitBrand)) {
     return explicitBrand;
   }
 
@@ -35,7 +44,7 @@ function resolveBrand(good = {}) {
   if (name.includes('ปุ๋ยเทพ')) return 'ปุ๋ยเทพ';
   if (name.includes('รถเกษตร')) return 'รถเกษตร';
 
-  if (explicitBrand && !isNumericString(explicitBrand) && !['ทั่วไป', 'ของแถม'].includes(explicitBrand)) {
+  if (explicitBrand && explicitBrand !== 'ทั่วไป') {
     return explicitBrand;
   }
   return 'ทั่วไป';
@@ -101,8 +110,14 @@ function matchGiveawayItem(good = {}) {
  * Check if a giveaway line matches a quota budget line
  */
 function isGiveawayQuotaMatch(line = {}, quota = {}) {
+  const lineGoodId = line.goodId ?? line.GoodId ?? line.GoodID;
+  const quotaGoodId = quota.GoodId ?? quota.goodId ?? quota.GoodID;
+  if (lineGoodId != null && quotaGoodId != null && String(lineGoodId).trim() !== '' && String(quotaGoodId).trim() !== '') {
+    return String(lineGoodId).trim() === String(quotaGoodId).trim();
+  }
+
   const lineMatched = matchGiveawayItem(line);
-  const quotaBrand = normalizeText(quota.Brand || quota.brand);
+  const quotaBrand = normalizeBrand(quota.Brand || quota.brand) || 'ทั่วไป';
   const quotaItem = normalizeText(quota.ItemName || quota.itemName);
 
   // Brand match (if quota has a brand, must match unless general)
@@ -111,7 +126,7 @@ function isGiveawayQuotaMatch(line = {}, quota = {}) {
   }
 
   // ItemName match
-  if (quotaItem === lineMatched.itemName) return true;
+  if (quotaItem && quotaItem === lineMatched.itemName) return true;
 
   // Formula match
   const qFormula = quotaItem.match(/(\d+-\d+-\d+)/);
@@ -121,7 +136,7 @@ function isGiveawayQuotaMatch(line = {}, quota = {}) {
   }
 
   // Substring match for merchandise if both brands match
-  if (quotaBrand === lineMatched.brand) {
+  if (quotaBrand === lineMatched.brand && quotaItem && lineMatched.itemName) {
     if (quotaItem.includes(lineMatched.itemName) || lineMatched.itemName.includes(quotaItem)) {
       return true;
     }
@@ -131,16 +146,26 @@ function isGiveawayQuotaMatch(line = {}, quota = {}) {
 }
 
 /**
- * Find matching quota row from an array of quota rows
+ * Find matching quota row from an array of quota rows.
+ * Prioritizes direct GoodId matches over legacy Brand+ItemName heuristics.
  */
 function findMatchingQuota(line = {}, quotaList = []) {
   if (!Array.isArray(quotaList) || quotaList.length === 0) return null;
+  const lineGoodId = line.goodId ?? line.GoodId ?? line.GoodID;
+  if (lineGoodId != null && String(lineGoodId).trim() !== '') {
+    const exactByGoodId = quotaList.find(q => {
+      const qGid = q.GoodId ?? q.goodId ?? q.GoodID;
+      return qGid != null && String(qGid).trim() === String(lineGoodId).trim();
+    });
+    if (exactByGoodId) return exactByGoodId;
+  }
   return quotaList.find(q => isGiveawayQuotaMatch(line, q)) || null;
 }
 
 module.exports = {
   KNOWN_BRANDS,
   normalizeText,
+  normalizeBrand,
   resolveBrand,
   resolveItemName,
   matchGiveawayItem,

@@ -630,23 +630,39 @@ export type GiveawayItem = {
 
 export type GiveawayRegion = {
   Region: string;
+  RegionCode?: string | null;
+  RegionLabel?: string | null;
+  SalesUserId?: number | null;
+  DisplayName?: string | null;
   EmpCode: string | null;
   EmpId: string | null;
   EmpName: string | null;
+  PositionCode?: string | null;
+  PositionName?: string | null;
+  OrgUnit?: string | null;
   TotalBudget: number;
   TotalWithdrawn: number;
   TotalRemaining: number;
   ItemCount: number;
   OverCount: number;
   OverQty: number;
+  HasQuota?: boolean;
 };
 
 export type GiveawayBudgetLine = {
   Id: number;
   Region: string;
+  RegionCode?: string | null;
+  SalesUserId?: number | null;
+  SalesUserName?: string | null;
+  SalesPositionCode?: string | null;
+  SalesPositionName?: string | null;
   PeriodYear: number;
   Brand: string;
   ItemName: string;
+  GoodId?: string | null;
+  GoodCode?: string | null;
+  GoodName?: string | null;
   BudgetQty: number;
   WithdrawnQty: number;
   RemainingQty: number;
@@ -656,16 +672,179 @@ export type GiveawayBudgetLine = {
 
 export type GiveawayWithdrawal = {
   Id: number;
+  SalesUserId?: number | null;
   Region: string;
   PeriodYear: number;
   IssueMonth: number | null;
   Brand: string;
   ItemName: string;
+  GoodId?: string | null;
+  GoodCode?: string | null;
+  GoodName?: string | null;
   Qty: number;
   CustId: string | null;
   Note: string | null;
   Source: 'IMPORT' | 'APP';
   CreatedAt: string;
+};
+
+export type GiveawayOrgRoster = {
+  regions: { RegionCode: string; RegionName: string; Description?: string | null; IsActive?: boolean }[];
+  staff: {
+    UserId: number;
+    Username: string;
+    DisplayName: string;
+    Role: string;
+    EmpId: string | null;
+    EmpCode: string | null;
+    EmpName: string | null;
+    PositionCode: string | null;
+    PositionName: string | null;
+    OrgUnit: string | null;
+    RegionCode: string | null;
+    RegionName: string;
+  }[];
+};
+
+// ── New Rebate Pool & FIFO Fertilizer Ticket Conversion ──────────
+export type RebatePricingMode =
+  | 'CASE_A_CASH_DISCOUNT'
+  | 'CASE_B_TIER1_AUTO'
+  | 'CASE_B_TIER2_APPROVAL'
+  | 'CASE_C_AT_BASE'
+  | 'CASE_C_MARKUP_REWARD';
+
+export type RebatePoolApprovalStatus =
+  | 'NOT_REQUIRED'
+  | 'PENDING_MANAGER_APPROVAL'
+  | 'APPROVED'
+  | 'REJECTED';
+
+export type RebatePoolLedgerStatus =
+  | 'ACTIVE'
+  | 'PARTIALLY_CONVERTED'
+  | 'FULLY_CONVERTED'
+  | 'READY_FOR_CONVERSION'
+  | 'CANCELLED';
+
+export type RebateCalculationResult = {
+  basePrice: number;
+  sellingPrice: number;
+  qtyTons: number;
+  isCashDiscount: boolean;
+  invoiceUnitPrice: number;
+  rebatePerTon: number;
+  totalRebateEarned: number;
+  companyExtraProfitPerTon: number;
+  totalCompanyExtraProfit: number;
+  requiresManagerApproval: boolean;
+  excessApprovalAmount: number;
+  totalExcessApprovalAmount: number;
+  approvalStatus: RebatePoolApprovalStatus;
+  pricingMode: RebatePricingMode;
+};
+
+export type RebatePoolLedgerEntry = {
+  id: number;
+  soId: number | null;
+  soLineId: number | null;
+  docNo: string | null;
+  custId: number;
+  custCode: string | null;
+  custName: string | null;
+  goodId: number | null;
+  goodCode: string | null;
+  goodName: string | null;
+  qtyTons: number;
+  basePrice: number;
+  sellingPrice: number;
+  invoiceUnitPrice: number;
+  isCashDiscount: boolean;
+  pricingMode: RebatePricingMode;
+  rebatePerTon: number;
+  totalRebateEarned: number;
+  companyExtraProfitPerTon: number;
+  totalCompanyExtraProfit: number;
+  remainingAmount: number;
+  requiresManagerApproval: boolean;
+  excessApprovalAmount: number;
+  approvalStatus: RebatePoolApprovalStatus;
+  approvedByUserId: number | null;
+  approvedByName: string | null;
+  approvedAt: string | null;
+  approvalNote: string | null;
+  earnedDate: string;
+  cycleExpiryDate: string;
+  status: RebatePoolLedgerStatus;
+  createdByUserId: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RebateCustomerQueue = {
+  custId: number;
+  asOfDate: string;
+  maturedBalance: number;
+  activeUnmaturedBalance: number;
+  totalFifoEligibleBalance: number;
+  pendingApprovalBalance: number;
+  eligibleLedgers: RebatePoolLedgerEntry[];
+};
+
+export type Oct31StandingPriceItem = {
+  Id: number;
+  StandingYear: number;
+  GoodId: number;
+  GoodCode: string | null;
+  GoodName: string | null;
+  StandingPricePerTon: number;
+  EffectiveDate: string;
+  Source: string;
+  CapturedByUserId: number | null;
+  CapturedByName: string | null;
+  CapturedAt: string;
+  Note: string | null;
+};
+
+export type RebateConversionAlertItem = {
+  Id: number;
+  AlertYear: number;
+  CustId: number;
+  CustCode: string | null;
+  CustName: string | null;
+  MaturedBalance: number;
+  LedgerCount: number;
+  NotifiedAt: string;
+  NotificationSent: boolean;
+};
+
+export type RebateConversionRecord = {
+  id: number;
+  conversionDocCode: string;
+  custId: number;
+  custCode: string | null;
+  custName: string | null;
+  goodId: number;
+  goodCode: string | null;
+  goodName: string | null;
+  standingYear: number;
+  oct31StandingPrice: number;
+  convertedTons: number;
+  convertedBaht: number;
+  executionMode: string;
+  allocationJson: {
+    ledgerId: number;
+    docNo: string | null;
+    earnedDate: string;
+    cycleExpiryDate: string;
+    deductedAmount: number;
+    remainingAfter: number;
+  }[];
+  note: string | null;
+  convertedByUserId: number | null;
+  convertedByName: string | null;
+  convertedByRole: string | null;
+  convertedAt: string;
 };
 
 // ── Quotation (ใบเสนอราคา) ────────────────────────────────────

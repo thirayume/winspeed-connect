@@ -63,13 +63,13 @@ async function describeLine(queryFn, line) {
 async function loadQuotaRows(queryFn, salesUserId, periodYear = null) {
   if (!salesUserId) return [];
   return (await queryFn(`
-    SELECT Region, Brand, ItemName, BudgetQty, WithdrawnQty, RemainingQty
+    SELECT *
     FROM wf.v_GiveawayBudgetStatus
     WHERE SalesUserId = @su AND PeriodYear = @y
   `, { su: { type: sql.Int, value: Number(salesUserId) }, y: { type: sql.Int, value: periodYear || currentBuddhistYear() } }))?.recordset || [];
 }
 
-const quotaKey = (q) => `${q.Region}|${q.Brand}|${q.ItemName}`;
+const quotaKey = (q) => `${q.Region}|${q.Brand}|${q.ItemName}${q.GoodId ? `|${q.GoodId}` : ''}${q.SalesUserId ? `@${q.SalesUserId}` : ''}`;
 
 /** Pieces already promised on the user's open drafts, per budget line (key = region|brand|item). */
 async function committedOnOpenDrafts(queryFn, salesUserId, quotaRows, excludeSoId = null) {
@@ -141,7 +141,7 @@ async function checkGiveawayQuota({ queryFn, salesUserId, lines = [], excludeSoI
       });
       continue;
     }
-    const key = `${q.Region}|${q.Brand}|${q.ItemName}`;
+    const key = quotaKey(q);
     const entry = requested.get(key) || { q, pieces: 0, lineNums: [], goodName: d.goodName };
     entry.pieces += pieces;
     entry.lineNums.push(idx + 1);

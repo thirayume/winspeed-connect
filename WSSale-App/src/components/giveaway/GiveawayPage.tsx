@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Gift, RefreshCw, Plus, X, AlertTriangle, Package, ChevronLeft } from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Gift, RefreshCw, Plus, X, AlertTriangle, Package, ChevronLeft, Search, Link2, UserCheck } from 'lucide-react';
 import {
   fetchGiveawayRegions, fetchGiveawayBudgetLines, fetchGiveawayWithdrawals,
   fetchGiveawayItems, createGiveawayWithdrawal, fetchGiveawayBorrowRequests, resolveGiveawayBorrowRequest
@@ -7,6 +7,7 @@ import {
 import { useAuthStore } from '../../store/auth-store';
 import { useCan } from '../../utils/capabilities';
 import { GiveawayQuotaSettings } from './GiveawayQuotaSettings';
+import { SearchableSelect, type SearchableSelectOption } from '../ui/SearchableSelect';
 import { formatThaiDate } from '../../utils/date';
 import { appAlert, appPrompt, appConfirm } from '../ui/AppAlert';
 import type { GiveawayRegion, GiveawayBudgetLine, GiveawayWithdrawal, GiveawayItem } from '../../types';
@@ -18,6 +19,7 @@ export function GiveawayPage() {
   const role = useAuthStore(s => s.user?.role);
   const canWithdraw = ['SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER', 'APPROVER', 'C_LEVEL'].includes(role || '');
   const [regions, setRegions]   = useState<GiveawayRegion[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [selected, setSelected] = useState<GiveawayRegion | null>(null);
   const [lines, setLines]       = useState<GiveawayBudgetLine[]>([]);
   const [log, setLog]           = useState<GiveawayWithdrawal[]>([]);
@@ -41,10 +43,45 @@ export function GiveawayPage() {
   const openRegion = useCallback(async (r: GiveawayRegion) => {
     setSelected(r);
     try {
-      const [bl, wl] = await Promise.all([fetchGiveawayBudgetLines(r.Region), fetchGiveawayWithdrawals(r.Region)]);
+      const [bl, wl] = await Promise.all([
+        fetchGiveawayBudgetLines(r.Region, undefined, {
+          salesUserId: r.SalesUserId ?? undefined,
+          regionCode: r.RegionCode ?? undefined,
+        }),
+        fetchGiveawayWithdrawals(r.Region, undefined, r.SalesUserId ?? undefined),
+      ]);
       setLines(bl); setLog(wl);
     } catch (e) { console.error(e); setLines([]); setLog([]); }
   }, []);
+
+  const groupedRegions = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    const filtered = !q
+      ? regions
+      : regions.filter(r =>
+          [
+            r.Region,
+            r.RegionLabel,
+            r.RegionCode,
+            r.DisplayName,
+            r.EmpName,
+            r.EmpCode,
+            r.PositionName,
+            r.PositionCode,
+            r.OrgUnit,
+          ]
+            .filter(Boolean)
+            .some(v => String(v).toLowerCase().includes(q))
+        );
+    return Object.entries(
+      filtered.reduce((acc, r) => {
+        const groupKey = r.RegionCode ? `${r.RegionLabel || r.Region} [${r.RegionCode}]` : (r.RegionLabel || r.Region);
+        if (!acc[groupKey]) acc[groupKey] = [];
+        acc[groupKey].push(r);
+        return acc;
+      }, {} as Record<string, GiveawayRegion[]>)
+    );
+  }, [regions, searchTerm]);
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
@@ -53,7 +90,7 @@ export function GiveawayPage() {
           <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
             <Gift className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> ของแถม (Giveaway)
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">งบส่งเสริมการขายรายภาค ปี 2569 · จำนวนชิ้น ต่อ ตรา × รายการ</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">งบส่งเสริมการขายรายเขต & พนักงานขายตามผังองค์กร ปี 2569 · ผูกข้อมูลหลัก 98 รายการ</p>
         </div>
         <button onClick={load} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white">
           <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
@@ -61,39 +98,72 @@ export function GiveawayPage() {
       </div>
 
       <div className="flex-1 overflow-hidden flex">
-        {/* Region list */}
+        {/* Region / Org roster sidebar */}
         <div className={`${selected ? 'hidden lg:block' : 'w-full'} lg:w-full lg:max-w-xs border-r border-gray-200 overflow-y-auto p-4`}>
-          <h2 className="text-xs font-bold uppercase text-gray-400 mb-3">ภาค / พนักงาน</h2>
-          {regions.length === 0 ? (
-            <p className="text-xs text-gray-400 py-6 text-center">ไม่มีข้อมูล</p>
-          ) : Object.entries(
-            regions.reduce((acc, r) => {
-              if (!acc[r.Region]) acc[r.Region] = [];
-              acc[r.Region].push(r);
-              return acc;
-            }, {} as Record<string, GiveawayRegion[]>)
-          ).map(([regionName, items]) => (
-            <div key={regionName} className="mb-4">
-              <h3 className="text-[11px] font-black uppercase text-gray-400 mb-2 tracking-wider px-1 border-l-2 border-gray-300 pl-2">{regionName}</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-xs font-bold uppercase text-gray-400">เขตการขาย / พนักงาน ({regions.length})</h2>
+          </div>
+          <div className="relative mb-3">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="ค้นหาภาค / พนักงาน / ตำแหน่ง..."
+              className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-[#0C447C]"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          {groupedRegions.length === 0 ? (
+            <p className="text-xs text-gray-400 py-6 text-center">ไม่พบข้อมูลเขตการขายหรือพนักงานที่ตรงกัน</p>
+          ) : groupedRegions.map(([regionLabel, items]) => (
+            <div key={regionLabel} className="mb-4">
+              <h3 className="text-[11px] font-black uppercase text-gray-500 mb-2 tracking-wider px-1 border-l-2 border-[#0C447C] pl-2">{regionLabel}</h3>
               <div className="space-y-2">
                 {items.map(r => {
-                  const isSel = selected?.Region === r.Region && selected?.EmpCode === r.EmpCode;
+                  const isSel =
+                    selected?.SalesUserId != null && r.SalesUserId != null
+                      ? selected.SalesUserId === r.SalesUserId && selected.Region === r.Region
+                      : selected?.Region === r.Region && selected?.EmpCode === r.EmpCode;
                   const pct = r.TotalBudget ? (r.TotalWithdrawn / r.TotalBudget) * 100 : 0;
-                  const empDisplay = r.EmpName || r.EmpCode || 'ไม่ระบุพนักงาน';
+                  const empDisplay = r.DisplayName || r.EmpName || r.EmpCode || 'งบส่วนกลางประจำภาค';
+                  const noQuotaYet = r.HasQuota === false || Number(r.ItemCount || 0) === 0;
                   
                   return (
-                    <div key={`${r.Region}-${r.EmpCode}`} onClick={() => openRegion(r)}
+                    <div key={`${r.RegionCode || r.Region}-${r.SalesUserId ?? r.EmpCode ?? 'region'}`} onClick={() => openRegion(r)}
                       className={`p-3 rounded-xl border cursor-pointer transition-all ${isSel ? 'border-blue-700 bg-blue-50 shadow-md' : 'border-gray-100 bg-white hover:border-blue-300'}`}>
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-sm font-bold text-[#0C447C]">{empDisplay}</span>
-                        {r.OverCount > 0 && (
-                          <span 
-                            title={`เกิน ${r.OverCount} รายการ รวม ${Number(r.OverQty || 0).toLocaleString()} ชิ้น`}
-                            className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 font-bold"
-                          >
-                            เกิน {Number(r.OverQty || 0).toLocaleString()} ชิ้น
-                          </span>
-                        )}
+                      <div className="flex items-start justify-between gap-1.5 mb-0.5">
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold text-[#0C447C] truncate">{empDisplay}</div>
+                          {(r.PositionName || r.EmpCode) && (
+                            <div className="text-[10px] text-gray-500 truncate mt-0.5">
+                              {[r.PositionName, r.EmpCode ? `รหัส ${r.EmpCode}` : null].filter(Boolean).join(' · ')}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          {r.OverCount > 0 && (
+                            <span 
+                              title={`เกิน ${r.OverCount} รายการ รวม ${Number(r.OverQty || 0).toLocaleString()} ชิ้น`}
+                              className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 font-bold whitespace-nowrap"
+                            >
+                              เกิน {Number(r.OverQty || 0).toLocaleString()} ชิ้น
+                            </span>
+                          )}
+                          {noQuotaYet && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-semibold whitespace-nowrap">
+                              ยังไม่ตั้งโควต้า
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden mb-1 mt-2">
                         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, pct)}%`, background: r.OverCount > 0 ? '#EF4444' : '#0C447C' }} />
@@ -114,7 +184,7 @@ export function GiveawayPage() {
         <div className={`${!selected ? 'hidden' : 'flex'} lg:flex flex-1 flex-col overflow-hidden bg-white w-full`}>
           {selected ? (
             <>
-              <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between overflow-x-auto">
+              <div className="px-5 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2 overflow-x-auto">
                 <div className="flex items-center gap-1 whitespace-nowrap">
                   <button onClick={() => setSelected(null)} className="lg:hidden p-1.5 mr-1 -ml-2 text-gray-500 rounded-lg hover:bg-gray-100">
                     <ChevronLeft size={20} />
@@ -126,11 +196,20 @@ export function GiveawayPage() {
                     <button onClick={() => setTab('settings')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${tab==='settings'?'text-white':'text-gray-500 hover:bg-gray-100'}`} style={tab==='settings'?{background:'#0C447C'}:{}}>ตั้งค่าโควต้า</button>
                   )}
                 </div>
-                {canWithdraw && (
-                  <button onClick={() => setShowWd(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-xs font-semibold" style={{ background: '#0C447C' }}>
-                    <Plus size={14} /> บันทึกการเบิก
-                  </button>
-                )}
+                <div className="flex items-center gap-2 ml-auto">
+                  <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700">
+                    <UserCheck size={13} className="text-[#0C447C]" />
+                    <span className="font-semibold">{selected.DisplayName || selected.EmpName || 'ส่วนกลางภาค'}</span>
+                    <span className="text-slate-400">·</span>
+                    <span>{selected.Region}</span>
+                    {selected.PositionName && <span className="text-slate-400 text-[11px]">({selected.PositionName})</span>}
+                  </div>
+                  {canWithdraw && (
+                    <button onClick={() => setShowWd(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-xs font-semibold" style={{ background: '#0C447C' }}>
+                      <Plus size={14} /> บันทึกการเบิก
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex-1 overflow-y-auto p-4">
                 {tab === 'budget' ? (
@@ -138,7 +217,8 @@ export function GiveawayPage() {
                     <thead className="whitespace-nowrap">
                       <tr className="text-gray-400 border-b border-gray-100">
                         <th className="text-left py-2 whitespace-nowrap">ตรา</th>
-                        <th className="text-left py-2 whitespace-nowrap">รายการ</th>
+                        <th className="text-left py-2 whitespace-nowrap">รหัส / รายการสินค้า (98 รายการ)</th>
+                        <th className="text-left py-2 whitespace-nowrap">ผู้ถือโควต้า</th>
                         <th className="text-right py-2 whitespace-nowrap">งบ</th>
                         <th className="text-right py-2 whitespace-nowrap">เบิกแล้ว</th>
                         <th className="text-right py-2 whitespace-nowrap">คงเหลือ</th>
@@ -147,17 +227,30 @@ export function GiveawayPage() {
                     <tbody className="divide-y divide-gray-50">
                       {lines.map(l => {
                         const over = Number(l.RemainingQty) < 0;
+                        const labelName = l.GoodName || l.ItemName;
                         return (
                           <tr key={l.Id} className={over ? 'bg-red-50/40' : ''}>
                             <td className="py-2 text-gray-500 whitespace-nowrap">{l.Brand}</td>
-                            <td className="py-2 text-gray-700 whitespace-nowrap">{l.ItemName}</td>
+                            <td className="py-2 text-gray-700">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {l.GoodCode && (
+                                  <span className="inline-flex items-center gap-0.5 font-mono text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-[#0C447C] border border-blue-100">
+                                    <Link2 size={10} /> {l.GoodCode}
+                                  </span>
+                                )}
+                                <span className="font-medium">{labelName}</span>
+                              </div>
+                            </td>
+                            <td className="py-2 text-gray-500 whitespace-nowrap">
+                              {l.SalesUserName || <span className="text-gray-400 italic">ส่วนกลางภาค</span>}
+                            </td>
                             <td className="py-2 text-right tabular-nums text-gray-600 whitespace-nowrap">{Number(l.BudgetQty).toLocaleString()}</td>
                             <td className="py-2 text-right tabular-nums text-gray-600 whitespace-nowrap">{Number(l.WithdrawnQty).toLocaleString()}</td>
-                            <td className={`py-2 text-right tabular-nums font-bold ${over ? 'text-red-600' : 'text-green-600'}`}>{Number(l.RemainingQty).toLocaleString()}</td>
+                            <td className={`py-2 text-right tabular-nums font-bold whitespace-nowrap ${over ? 'text-red-600' : 'text-green-600'}`}>{Number(l.RemainingQty).toLocaleString()}</td>
                           </tr>
                         );
                       })}
-                      {lines.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-gray-300 whitespace-nowrap">ไม่มีงบ</td></tr>}
+                      {lines.length === 0 && <tr><td colSpan={6} className="py-8 text-center text-gray-300 whitespace-nowrap">ยังไม่มีรายการโควต้า — ไปที่แท็บ &quot;ตั้งค่าโควต้า&quot; เพื่อเพิ่มจากรายการของแถมหลัก 98 รายการ</td></tr>}
                     </tbody>
                   </table>
                 ) : tab === 'log' ? (
@@ -176,7 +269,10 @@ export function GiveawayPage() {
                         <tr key={w.Id}>
                           <td className="py-2 text-gray-500 whitespace-nowrap">{w.IssueMonth ? TH_MONTHS[w.IssueMonth] : '-'}</td>
                           <td className="py-2 text-gray-500 whitespace-nowrap">{w.Brand}</td>
-                          <td className="py-2 text-gray-700 whitespace-nowrap">{w.ItemName}</td>
+                          <td className="py-2 text-gray-700 whitespace-nowrap">
+                            {w.GoodCode && <span className="font-mono text-[10px] mr-1.5 text-[#0C447C]">[{w.GoodCode}]</span>}
+                            {w.GoodName || w.ItemName}
+                          </td>
                           <td className="py-2 text-right tabular-nums text-gray-700 whitespace-nowrap">{Number(w.Qty).toLocaleString()}</td>
                           <td className="py-2 text-center whitespace-nowrap">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${w.Source==='IMPORT'?'bg-gray-100 text-gray-500':'bg-blue-50 text-blue-700'}`}>{w.Source}</span>
@@ -187,7 +283,16 @@ export function GiveawayPage() {
                     </tbody>
                   </table>
                 ) : tab === 'settings' && selected ? (
-                  <GiveawayQuotaSettings region={selected.Region} empCode={selected.EmpCode || undefined} lines={lines} onSaved={() => openRegion(selected)} />
+                  <GiveawayQuotaSettings
+                    region={selected.Region}
+                    regionCode={selected.RegionCode}
+                    selectedSalesUserId={selected.SalesUserId}
+                    selectedSalesName={selected.DisplayName || selected.EmpName}
+                    empId={selected.EmpId}
+                    empCode={selected.EmpCode || undefined}
+                    lines={lines}
+                    onSaved={() => { load(); openRegion(selected); }}
+                  />
                 ) : tab === 'requests' ? (
                   <div className="space-y-4">
                     {requests.map(r => (
@@ -242,31 +347,76 @@ export function GiveawayPage() {
       </div>
 
       {showWd && selected && (
-        <WithdrawDialog region={selected.Region} onClose={() => setShowWd(false)}
-          onDone={() => { setShowWd(false); load(); openRegion(selected); }} />
+        <WithdrawDialog
+          region={selected.Region}
+          salesUserId={selected.SalesUserId}
+          salesName={selected.DisplayName || selected.EmpName}
+          onClose={() => setShowWd(false)}
+          onDone={() => { setShowWd(false); load(); openRegion(selected); }}
+        />
       )}
     </div>
   );
 }
 
-function WithdrawDialog({ region, onClose, onDone }: { region: string; onClose: () => void; onDone: () => void }) {
+function WithdrawDialog({
+  region,
+  salesUserId,
+  salesName,
+  onClose,
+  onDone,
+}: {
+  region: string;
+  salesUserId?: number | null;
+  salesName?: string | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const [items, setItems] = useState<GiveawayItem[]>([]);
-  const [brand, setBrand] = useState('');
-  const [itemName, setItemName] = useState('');
+  const [brandFilter, setBrandFilter] = useState('');
+  const [goodId, setGoodId] = useState('');
   const [qty, setQty]     = useState(1);
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [busy, setBusy]   = useState(false);
   const [err, setErr]     = useState('');
 
   useEffect(() => { fetchGiveawayItems().then(setItems).catch(() => {}); }, []);
-  const brands = Array.from(new Set(items.map(i => i.Brand)));
-  const itemsForBrand = items.filter(i => i.Brand === brand);
+  const brands = useMemo(() => Array.from(new Set(items.map(i => i.Brand))), [items]);
+  const selectedItem = useMemo(
+    () => items.find(i => String(i.GoodID || i.Id) === goodId),
+    [items, goodId]
+  );
+
+  const itemOptions: SearchableSelectOption[] = useMemo(() => {
+    const filtered = brandFilter ? items.filter(i => i.Brand === brandFilter) : items;
+    return filtered.map(i => {
+      const gid = String(i.GoodID || i.Id);
+      const name = i.GoodName || i.ItemName;
+      return {
+        value: gid,
+        label: i.GoodCode ? `[${i.GoodCode}] ${name}` : name,
+        sublabel: `ตรา: ${i.Brand} · ${TYPE_LABEL[i.ItemType] || i.ItemType} · หน่วย: ${i.Unit || 'ชิ้น'}`,
+        badge: i.Brand,
+        keywords: `${i.GoodCode || ''} ${name} ${i.ItemName} ${i.Brand}`,
+      };
+    });
+  }, [items, brandFilter]);
 
   async function submit() {
-    if (!brand || !itemName || qty < 1) { setErr('เลือกตรา รายการ และจำนวน'); return; }
+    if (!selectedItem || qty < 1) { setErr('เลือกรายการของแถมและระบุจำนวนให้ถูกต้อง'); return; }
     setBusy(true); setErr('');
     try {
-      const res = await createGiveawayWithdrawal({ region, brand, itemName, qty, issueMonth: month });
+      const res = await createGiveawayWithdrawal({
+        region,
+        goodId: String(selectedItem.GoodID || selectedItem.Id),
+        goodCode: selectedItem.GoodCode || undefined,
+        goodName: selectedItem.GoodName || selectedItem.ItemName,
+        brand: selectedItem.Brand,
+        itemName: selectedItem.ItemName || selectedItem.GoodName,
+        salesUserId: salesUserId ?? undefined,
+        qty,
+        issueMonth: month,
+      });
       if (res.isOverBudget) await appAlert(`⚠ เกินงบ! คงเหลือ ${res.status?.RemainingQty}`, 'warning');
       onDone();
     } catch (e: unknown) { setErr((e as Error).message || 'ผิดพลาด'); }
@@ -275,25 +425,53 @@ function WithdrawDialog({ region, onClose, onDone }: { region: string; onClose: 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: '#0C447C' }}><Gift size={18} /> บันทึกการเบิก — {region}</h2>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: '#0C447C' }}>
+              <Gift size={18} /> บันทึกการเบิก — {region}
+            </h2>
+            {salesName && (
+              <p className="text-xs text-gray-500 mt-0.5">พนักงาน: <span className="font-semibold text-gray-700">{salesName}</span></p>
+            )}
+          </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
         <div className="space-y-3 text-sm">
+          {brands.length > 1 && (
+            <div>
+              <label className="text-xs font-semibold text-gray-500 block mb-1">กรองตามตรา (ไม่บังคับ)</label>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setBrandFilter('')}
+                  className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${!brandFilter ? 'bg-[#0C447C] text-white border-[#0C447C]' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                >
+                  ทั้งหมด ({items.length})
+                </button>
+                {brands.map(b => (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => setBrandFilter(b)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${brandFilter === b ? 'bg-[#0C447C] text-white border-[#0C447C]' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div>
-            <label className="text-xs font-semibold text-gray-500 block mb-1">ตรา *</label>
-            <select value={brand} onChange={e => { setBrand(e.target.value); setItemName(''); }} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
-              <option value="">-- เลือก --</option>
-              {brands.map(b => <option key={b} value={b}>{b}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-500 block mb-1">รายการ *</label>
-            <select value={itemName} onChange={e => setItemName(e.target.value)} disabled={!brand} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50">
-              <option value="">-- เลือก --</option>
-              {itemsForBrand.map(i => <option key={i.Id} value={i.ItemName}>{i.ItemName} ({TYPE_LABEL[i.ItemType]})</option>)}
-            </select>
+            <label className="text-xs font-semibold text-gray-500 block mb-1">รายการของแถม (ข้อมูลหลัก {items.length} รายการ) *</label>
+            <SearchableSelect
+              options={itemOptions}
+              value={goodId}
+              onChange={val => { setGoodId(val); setErr(''); }}
+              placeholder="-- ค้นหาชื่อหรือรหัสของแถม --"
+              searchPlaceholder="พิมพ์รหัสสินค้า หรือชื่อของแถม..."
+              allowClear
+            />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>

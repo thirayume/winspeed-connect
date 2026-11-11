@@ -966,17 +966,32 @@ export const fetchCouponExpiry = (couponId: number) =>
     remainingTon: number;
   }>(`/coupons/${couponId}/expiry`);
 
-// ── Giveaway (qty model) ──────────────────────────────────────
+// ── Giveaway (qty model + Org hierarchy + 98 master goods CRUD) ─
+export const fetchGiveawayOrgRoster = () =>
+  req<import('../types').GiveawayOrgRoster>('/giveaway/org-roster');
+
 export const fetchGiveawayRegions = (year?: number) =>
   req<GiveawayRegion[]>(`/giveaway/regions${year ? `?year=${year}` : ''}`);
 
-export const fetchGiveawayBudgetLines = (region: string, year?: number) =>
-  req<GiveawayBudgetLine[]>(`/giveaway/budget-lines?region=${encodeURIComponent(region)}${year ? `&year=${year}` : ''}`);
-
-export const fetchGiveawayWithdrawals = (region?: string, year?: number) => {
+export const fetchGiveawayBudgetLines = (
+  region: string,
+  year?: number,
+  options?: { salesUserId?: number | null; regionCode?: string | null; includeShared?: boolean }
+) => {
   const qs = new URLSearchParams();
   if (region) qs.set('region', region);
   if (year) qs.set('year', String(year));
+  if (options?.salesUserId != null) qs.set('salesUserId', String(options.salesUserId));
+  if (options?.regionCode) qs.set('regionCode', options.regionCode);
+  if (options?.includeShared === false) qs.set('includeShared', 'false');
+  return req<GiveawayBudgetLine[]>(`/giveaway/budget-lines?${qs.toString()}`);
+};
+
+export const fetchGiveawayWithdrawals = (region?: string, year?: number, salesUserId?: number | null) => {
+  const qs = new URLSearchParams();
+  if (region) qs.set('region', region);
+  if (year) qs.set('year', String(year));
+  if (salesUserId != null) qs.set('salesUserId', String(salesUserId));
   return req<GiveawayWithdrawal[]>(`/giveaway/withdrawals${qs.toString() ? `?${qs}` : ''}`);
 };
 
@@ -1000,14 +1015,140 @@ export const resolveGiveawayBorrowRequest = (id: number, approve: boolean, note?
   });
 
 export const createGiveawayWithdrawal = (payload: {
-  region: string; brand: string; itemName: string; qty: number;
-  issueMonth?: number; periodYear?: number; custId?: string; note?: string;
+  region: string; brand?: string; itemName?: string; goodId?: string; goodCode?: string; goodName?: string;
+  salesUserId?: number | null; qty: number; issueMonth?: number; periodYear?: number; custId?: string; note?: string;
 }) => req<{ ok: boolean; status: GiveawayBudgetLine | null; isOverBudget: boolean }>(
   '/giveaway/withdrawals', { method: 'POST', body: JSON.stringify(payload) });
 
 export const setGiveawayBudgetLine = (payload: {
-  region: string; brand: string; itemName: string; budgetQty: number; periodYear?: number; empCode?: string; reason?: string;
-}) => req<{ ok: boolean; warning?: string | null }>('/giveaway/budgets', { method: 'POST', body: JSON.stringify(payload) });
+  region: string; regionCode?: string | null; salesUserId?: number | null;
+  brand?: string; itemName?: string; goodId?: string | null; goodCode?: string | null; goodName?: string | null;
+  budgetQty: number; periodYear?: number; empId?: string | null; empCode?: string | null; reason?: string;
+}) => req<{ ok: boolean; id?: number; warning?: string | null }>('/giveaway/budgets', { method: 'POST', body: JSON.stringify(payload) });
+
+export const updateGiveawayBudgetLine = (
+  id: number,
+  payload: {
+    region?: string; regionCode?: string | null; salesUserId?: number | null;
+    brand?: string; itemName?: string; goodId?: string | null; goodCode?: string | null; goodName?: string | null;
+    budgetQty?: number; empId?: string | null; empCode?: string | null; reason?: string;
+  }
+) => req<{ ok: boolean; id: number; warning?: string | null }>(`/giveaway/budgets/${id}`, {
+  method: 'PUT',
+  body: JSON.stringify(payload),
+});
+
+export const deleteGiveawayBudgetLine = (id: number, options?: { force?: boolean; reason?: string }) => {
+  const qs = new URLSearchParams();
+  if (options?.force) qs.set('force', 'true');
+  if (options?.reason) qs.set('reason', options.reason);
+  const queryStr = qs.toString() ? `?${qs.toString()}` : '';
+  return req<{ ok: boolean; id: number }>(`/giveaway/budgets/${id}${queryStr}`, { method: 'DELETE' });
+};
+
+// ── New Rebate Pool (FIFO Ledger + Manager Approval + Nov 1 Conversion) ──
+export const calculateRebatePoolOrder = (payload: {
+  basePrice: number;
+  sellingPrice: number;
+  qtyTons: number;
+  isCashDiscount?: boolean;
+}) => req<import('../types').RebateCalculationResult>('/rebate-pool/calculate', {
+  method: 'POST',
+  body: JSON.stringify(payload),
+});
+
+export const fetchRebatePoolLedger = (params?: {
+  custId?: number | string;
+  approvalStatus?: string;
+  status?: string;
+  limit?: number;
+}) => {
+  const qs = new URLSearchParams();
+  if (params?.custId) qs.set('custId', String(params.custId));
+  if (params?.approvalStatus) qs.set('approvalStatus', params.approvalStatus);
+  if (params?.status) qs.set('status', params.status);
+  if (params?.limit) qs.set('limit', String(params.limit));
+  return req<import('../types').RebatePoolLedgerEntry[]>(`/rebate-pool/ledger${qs.toString() ? `?${qs}` : ''}`);
+};
+
+export const createRebatePoolLedger = (payload: {
+  custId: number;
+  custCode?: string;
+  custName?: string;
+  goodId?: number;
+  goodCode?: string;
+  goodName?: string;
+  qtyTons: number;
+  basePrice: number;
+  sellingPrice: number;
+  isCashDiscount?: boolean;
+  earnedDate?: string;
+  docNo?: string;
+  soId?: number;
+  soLineId?: number;
+}) => req<{ calculation: import('../types').RebateCalculationResult; ledger: import('../types').RebatePoolLedgerEntry }>('/rebate-pool/ledger', {
+  method: 'POST',
+  body: JSON.stringify(payload),
+});
+
+export const approveRebatePoolLedger = (id: number, note?: string) =>
+  req<import('../types').RebatePoolLedgerEntry>(`/rebate-pool/ledger/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ note }),
+  });
+
+export const rejectRebatePoolLedger = (id: number, note: string) =>
+  req<import('../types').RebatePoolLedgerEntry>(`/rebate-pool/ledger/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ note }),
+  });
+
+export const fetchRebatePoolCustomerQueue = (custId: number | string, asOfDate?: string) =>
+  req<import('../types').RebateCustomerQueue>(`/rebate-pool/queue/${custId}${asOfDate ? `?asOfDate=${encodeURIComponent(asOfDate)}` : ''}`);
+
+export const fetchRebatePoolAlerts = (year?: number) =>
+  req<import('../types').RebateConversionAlertItem[]>(`/rebate-pool/alerts${year ? `?year=${year}` : ''}`);
+
+export const triggerRebatePoolNovemberCheck = (payload?: { asOfDate?: string; force?: boolean }) =>
+  req<{ triggered: boolean; reason?: string; asOfDate: string; promotedCount: number; alertsCreated: number; alerts: any[] }>(
+    '/rebate-pool/alerts/check',
+    { method: 'POST', body: JSON.stringify(payload || {}) }
+  );
+
+export const fetchOct31StandingPrices = (year?: number) =>
+  req<{ standingYear: number; items: import('../types').Oct31StandingPriceItem[] }>(
+    `/rebate-pool/oct31-prices${year ? `?year=${year}` : ''}`
+  );
+
+export const snapshotOct31StandingPrices = (payload: {
+  standingYear?: number;
+  entries?: { goodId: number; goodCode?: string; goodName?: string; standingPricePerTon: number; note?: string }[];
+}) => req<{ standingYear: number; count: number; items: import('../types').Oct31StandingPriceItem[] }>(
+  '/rebate-pool/oct31-prices/snapshot',
+  { method: 'POST', body: JSON.stringify(payload) }
+);
+
+export const fetchRebateConversions = (custId?: number | string, limit?: number) => {
+  const qs = new URLSearchParams();
+  if (custId) qs.set('custId', String(custId));
+  if (limit) qs.set('limit', String(limit));
+  return req<import('../types').RebateConversionRecord[]>(`/rebate-pool/conversions${qs.toString() ? `?${qs}` : ''}`);
+};
+
+export const executeManualRebateConversion = (payload: {
+  custId: number;
+  goodId: number;
+  standingYear?: number;
+  requestedAmountBaht?: number;
+  requestedTons?: number;
+  convertAllEligible?: boolean;
+  maturedOnly?: boolean;
+  executionMode: 'MANUAL';
+  note: string;
+}) => req<{ conversion: import('../types').RebateConversionRecord; allocations: any[]; remainingEligibleBalance: number }>(
+  '/rebate-pool/conversions/execute',
+  { method: 'POST', body: JSON.stringify(payload) }
+);
 
 // R12 item 8 — quota settings audit trail
 export type GiveawayBudgetHistory = {
