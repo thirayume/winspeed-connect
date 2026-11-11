@@ -47,6 +47,7 @@ BEGIN
     CONSTRAINT UQ_RebateTransactionLedger_LedgerCode UNIQUE (LedgerCode)
   );
 END;
+GO
 
 IF NOT EXISTS (
   SELECT 1 FROM sys.indexes
@@ -101,6 +102,7 @@ BEGIN
     CONSTRAINT UQ_Oct31StandingPrice_YearGood UNIQUE (StandingYear, GoodId)
   );
 END;
+GO
 
 -- 3) Manual Fertilizer Ticket Conversion Header
 IF OBJECT_ID('wf.FertilizerTicketConversion', 'U') IS NULL
@@ -129,6 +131,7 @@ BEGIN
     CONSTRAINT UQ_FertilizerTicketConversion_No UNIQUE (ConversionNo)
   );
 END;
+GO
 
 IF NOT EXISTS (
   SELECT 1 FROM sys.indexes
@@ -153,6 +156,7 @@ BEGIN
     CreatedAt       DATETIME NOT NULL CONSTRAINT DF_FTCA_CreatedAt DEFAULT (DATEADD(HOUR, 7, GETUTCDATE()))
   );
 END;
+GO
 
 IF NOT EXISTS (
   SELECT 1 FROM sys.indexes
@@ -193,59 +197,69 @@ BEGIN
     CONSTRAINT UQ_RebateConversionAlert_YearCust UNIQUE (AlertYear, CustId)
   );
 END;
+GO
 
 -- 6) Policy, System Settings & RBAC Seeds (idempotent)
 IF OBJECT_ID('wf.ApprovalPolicy', 'U') IS NOT NULL
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM wf.ApprovalPolicy WHERE CaseType = 'REBATE_OVER_LIMIT')
+  IF NOT EXISTS (SELECT 1 FROM wf.ApprovalPolicy WHERE CaseType = 'REBATE_OVER_LIMIT' AND IsActive = 1)
   BEGIN
-    INSERT INTO wf.ApprovalPolicy (CaseType, MinAmount, MaxAmount, ApproverRole, SecondApproverRole, AllowSelfApprove, IsActive)
-    VALUES ('REBATE_OVER_LIMIT', 200.01, 300.00, 'MANAGER', NULL, 0, 1);
+    INSERT INTO wf.ApprovalPolicy (CaseType, MinAmount, MaxAmount, RequiredRole, EffectiveFrom, Note)
+    VALUES ('REBATE_OVER_LIMIT', 200.01, 300.00, 'MANAGER', '2025-01-01', N'ขออนุมัติผู้จัดการเมื่อลดราคาจากราคากลางเกิน 200 ถึงสูงสุด 300 บาท/ตัน (Rebate Pool)');
   END;
 END;
+GO
 
 IF OBJECT_ID('wf.SystemSetting', 'U') IS NOT NULL
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM wf.SystemSetting WHERE SettingKey = 'REBATE_STANDARD_LIMIT_PER_TON')
   BEGIN
-    INSERT INTO wf.SystemSetting (SettingKey, SettingValue, ValueType, Description)
-    VALUES ('REBATE_STANDARD_LIMIT_PER_TON', '200', 'INT', N'วงเงินส่วนลด Rebate Pool มาตรฐานที่ไม่ต้องขออนุมัติ (บาท/ตัน)');
+    INSERT INTO wf.SystemSetting (SettingKey, SettingValue, Description)
+    VALUES ('REBATE_STANDARD_LIMIT_PER_TON', '200', N'วงเงินส่วนลด Rebate Pool มาตรฐานที่ไม่ต้องขออนุมัติ (บาท/ตัน)');
   END;
   IF NOT EXISTS (SELECT 1 FROM wf.SystemSetting WHERE SettingKey = 'REBATE_MAX_LIMIT_PER_TON')
   BEGIN
-    INSERT INTO wf.SystemSetting (SettingKey, SettingValue, ValueType, Description)
-    VALUES ('REBATE_MAX_LIMIT_PER_TON', '300', 'INT', N'วงเงินส่วนลด Rebate Pool สูงสุดเมื่อได้รับอนุมัติจากผู้จัดการ (บาท/ตัน)');
+    INSERT INTO wf.SystemSetting (SettingKey, SettingValue, Description)
+    VALUES ('REBATE_MAX_LIMIT_PER_TON', '300', N'วงเงินส่วนลด Rebate Pool สูงสุดเมื่อได้รับอนุมัติจากผู้จัดการ (บาท/ตัน)');
   END;
   IF NOT EXISTS (SELECT 1 FROM wf.SystemSetting WHERE SettingKey = 'REBATE_CYCLE_MONTHS')
   BEGIN
-    INSERT INTO wf.SystemSetting (SettingKey, SettingValue, ValueType, Description)
-    VALUES ('REBATE_CYCLE_MONTHS', '12', 'INT', N'ระยะเวลารอบสะสม Rebate Pool ก่อนครบกำหนดแปลงตั๋วปุ๋ย (เดือน)');
+    INSERT INTO wf.SystemSetting (SettingKey, SettingValue, Description)
+    VALUES ('REBATE_CYCLE_MONTHS', '12', N'ระยะเวลารอบสะสม Rebate Pool ก่อนครบกำหนดแปลงตั๋วปุ๋ย (เดือน)');
   END;
 END;
+GO
 
 IF OBJECT_ID('wf.RoleProfile', 'U') IS NOT NULL
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM wf.RoleProfile WHERE Code = 'REBATE_CONVERTER')
   BEGIN
-    INSERT INTO wf.RoleProfile (Code, Name, BaseRole, IsSystem)
-    VALUES ('REBATE_CONVERTER', N'ผู้มีสิทธิ์แปลงตั๋วปุ๋ย Rebate Pool (1 พ.ย.)', 'ACCOUNTING', 1);
+    INSERT INTO wf.RoleProfile (Code, Name, BaseRole, DisabledActions, UpdatedBy)
+    VALUES ('REBATE_CONVERTER', N'ผู้มีสิทธิ์แปลงตั๋วปุ๋ย Rebate Pool (1 พ.ย.)', 'ACCOUNTING', N'[]', 0);
   END;
 END;
+GO
 
-IF OBJECT_ID('wf.RolePermission', 'U') IS NOT NULL
+IF OBJECT_ID('wf.RoleProfile', 'U') IS NOT NULL AND OBJECT_ID('wf.RolePermission', 'U') IS NOT NULL
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM wf.RolePermission WHERE RoleCode = 'ACCOUNTING' AND PermissionCode = 'rebate.convert')
+  IF EXISTS (SELECT 1 FROM wf.RoleProfile WHERE Code = 'ACCOUNTING')
+     AND NOT EXISTS (SELECT 1 FROM wf.RolePermission WHERE RoleCode = 'ACCOUNTING' AND PermissionCode = 'rebate.convert')
     INSERT INTO wf.RolePermission (RoleCode, PermissionCode) VALUES ('ACCOUNTING', 'rebate.convert');
-  IF NOT EXISTS (SELECT 1 FROM wf.RolePermission WHERE RoleCode = 'ADMIN' AND PermissionCode = 'rebate.convert')
+  IF EXISTS (SELECT 1 FROM wf.RoleProfile WHERE Code = 'ADMIN')
+     AND NOT EXISTS (SELECT 1 FROM wf.RolePermission WHERE RoleCode = 'ADMIN' AND PermissionCode = 'rebate.convert')
     INSERT INTO wf.RolePermission (RoleCode, PermissionCode) VALUES ('ADMIN', 'rebate.convert');
-  IF NOT EXISTS (SELECT 1 FROM wf.RolePermission WHERE RoleCode = 'REBATE_CONVERTER' AND PermissionCode = 'rebate.convert')
+  IF EXISTS (SELECT 1 FROM wf.RoleProfile WHERE Code = 'REBATE_CONVERTER')
+     AND NOT EXISTS (SELECT 1 FROM wf.RolePermission WHERE RoleCode = 'REBATE_CONVERTER' AND PermissionCode = 'rebate.convert')
     INSERT INTO wf.RolePermission (RoleCode, PermissionCode) VALUES ('REBATE_CONVERTER', 'rebate.convert');
 
-  IF NOT EXISTS (SELECT 1 FROM wf.RolePermission WHERE RoleCode = 'MANAGER' AND PermissionCode = 'rebate.approve-over-limit')
+  IF EXISTS (SELECT 1 FROM wf.RoleProfile WHERE Code = 'MANAGER')
+     AND NOT EXISTS (SELECT 1 FROM wf.RolePermission WHERE RoleCode = 'MANAGER' AND PermissionCode = 'rebate.approve-over-limit')
     INSERT INTO wf.RolePermission (RoleCode, PermissionCode) VALUES ('MANAGER', 'rebate.approve-over-limit');
-  IF NOT EXISTS (SELECT 1 FROM wf.RolePermission WHERE RoleCode = 'C_LEVEL' AND PermissionCode = 'rebate.approve-over-limit')
+  IF EXISTS (SELECT 1 FROM wf.RoleProfile WHERE Code = 'C_LEVEL')
+     AND NOT EXISTS (SELECT 1 FROM wf.RolePermission WHERE RoleCode = 'C_LEVEL' AND PermissionCode = 'rebate.approve-over-limit')
     INSERT INTO wf.RolePermission (RoleCode, PermissionCode) VALUES ('C_LEVEL', 'rebate.approve-over-limit');
-  IF NOT EXISTS (SELECT 1 FROM wf.RolePermission WHERE RoleCode = 'ADMIN' AND PermissionCode = 'rebate.approve-over-limit')
+  IF EXISTS (SELECT 1 FROM wf.RoleProfile WHERE Code = 'ADMIN')
+     AND NOT EXISTS (SELECT 1 FROM wf.RolePermission WHERE RoleCode = 'ADMIN' AND PermissionCode = 'rebate.approve-over-limit')
     INSERT INTO wf.RolePermission (RoleCode, PermissionCode) VALUES ('ADMIN', 'rebate.approve-over-limit');
 END;
 GO
