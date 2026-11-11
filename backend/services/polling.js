@@ -70,10 +70,28 @@ function startPolling() {
   pollOnce();
 }
 
+let lastRebateAlertCheckAt = 0;
+
+async function checkNovember1RebateAlerts() {
+  const nowMs = Date.now();
+  if (nowMs - lastRebateAlertCheckAt < 15 * 60 * 1000) return;
+  lastRebateAlertCheckAt = nowMs;
+  try {
+    const { wfQuery } = require('../db');
+    const { runNovember1ConversionAlertCheck } = require('./rebate-conversion-service');
+    await runNovember1ConversionAlertCheck(wfQuery);
+  } catch (err) {
+    // Non-fatal if migration 187 is not applied yet
+    if (!/Invalid object name/i.test(String(err?.message || ''))) {
+      console.error('[poll] checkNovember1RebateAlerts failed:', err.message);
+    }
+  }
+}
+
 async function pollOnce() {
   if (running) return;
   running = true;
-  try { await Promise.all([checkControlTickets(), checkAgingOrders()]); }
+  try { await Promise.all([checkControlTickets(), checkAgingOrders(), checkNovember1RebateAlerts()]); }
   finally { running = false; }
 }
 

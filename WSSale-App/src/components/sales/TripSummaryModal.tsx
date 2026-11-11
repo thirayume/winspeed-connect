@@ -181,6 +181,21 @@ export function TripSummaryModal({
   const [cancelModalConfig, setCancelModalConfig] = useState<{ isOpen: boolean; order: SalesOrder | null }>({ isOpen: false, order: null });
   const [isSequencerOpen, setIsSequencerOpen] = useState(false);
 
+  // Guard Hooks Rule (#310): keep all derived hook inputs and useEffect strictly above early return
+  const hasMaePuiInTrip = Boolean(trip?.orders?.some(o =>
+    (o.lines || []).some(l => {
+      if (l.isGiveaway) return false;
+      const g = goodsList.find(item => String(item.GoodID) === String(l.goodId) || (l.goodCode && item.GoodCode === l.goodCode));
+      return isMaePuiGood(g) || isMaePuiGood(l as any);
+    })
+  ));
+
+  useEffect(() => {
+    if (hasMaePuiInTrip && quoteDays > maePuiMaxDays) {
+      setQuoteDays(maePuiMaxDays);
+    }
+  }, [hasMaePuiInTrip, quoteDays, maePuiMaxDays]);
+
   if (!isOpen || !trip) return null;
 
   // Consolidate items across all bills in this trip
@@ -508,20 +523,7 @@ export function TripSummaryModal({
   };
 
   const allDraft = trip.orders.every(o => o.status === 'DRAFT');
-  const hasMaePuiInTrip = trip.orders.some(o =>
-    (o.lines || []).some(l => {
-      if (l.isGiveaway) return false;
-      const g = goodsList.find(item => String(item.GoodID) === String(l.goodId) || (l.goodCode && item.GoodCode === l.goodCode));
-      return isMaePuiGood(g) || isMaePuiGood(l as any);
-    })
-  );
   const effectiveQuoteDays = hasMaePuiInTrip ? Math.min(quoteDays, maePuiMaxDays) : quoteDays;
-
-  useEffect(() => {
-    if (hasMaePuiInTrip && quoteDays > maePuiMaxDays) {
-      setQuoteDays(maePuiMaxDays);
-    }
-  }, [hasMaePuiInTrip, quoteDays, maePuiMaxDays]);
   // a bill unlocked for an edit reads DRAFT while the rest of its confirmed trip stays as it was
   const hasRelockableBill = !allDraft && trip.orders.some(o => o.status === 'DRAFT');
   const allConfirmed = trip.orders.every(o => o.status === 'CONFIRMED');

@@ -103,6 +103,10 @@ const ACTIONS = Object.freeze({
   'pricing.manage': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'cost.view': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'cost.manage': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+
+  // Rebate Pool Over-Limit Approval & Manual Nov-1 Ticket Conversion
+  'rebate.approve-over-limit': ['MANAGER', 'C_LEVEL', 'ADMIN'],
+  'rebate.convert': ['ACCOUNTING', 'ADMIN'],
 });
 
 function capabilitiesFor(role, { positionCode = null } = {}) {

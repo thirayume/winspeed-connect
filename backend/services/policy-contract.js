@@ -218,6 +218,30 @@ const POLICY_DEFINITIONS = Object.freeze(Object.assign(Object.create(null), {
     default: 2,
     description: 'จำนวนลูกค้าขั้นต่ำต่อ 1 Sale Trip ที่ต้องส่งขออนุมัติก่อนยืนยันการสั่งซื้อ (ราย, ค่าเริ่มต้น 2 รายขึ้นไป)',
   },
+  REBATE_STANDARD_LIMIT_PER_TON: {
+    policyName: 'REBATE_POOL_POLICY',
+    type: 'INT',
+    min: 0,
+    max: 1000,
+    default: 200,
+    description: 'วงเงินส่วนลด/สะสม Rebate Pool มาตรฐานต่อตันที่ไม่ต้องขออนุมัติผู้จัดการ (บาท/ตัน)',
+  },
+  REBATE_MAX_LIMIT_PER_TON: {
+    policyName: 'REBATE_POOL_POLICY',
+    type: 'INT',
+    min: 0,
+    max: 1500,
+    default: 300,
+    description: 'วงเงินส่วนลดจากราคากลางสูงสุดต่อตันเมื่อได้รับอนุมัติจากผู้จัดการ (บาท/ตัน)',
+  },
+  REBATE_CYCLE_MONTHS: {
+    policyName: 'REBATE_POOL_POLICY',
+    type: 'INT',
+    min: 1,
+    max: 24,
+    default: 12,
+    description: 'ระยะเวลารอบสะสม Rebate Pool ก่อนเข้าคิวแปลงเป็นตั๋วปุ๋ย (เดือน)',
+  },
 }));
 
 // Read one setting with its default; cached briefly because bill and board queries call it per request
