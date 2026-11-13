@@ -29,5 +29,6 @@ test('duplicates, inconsistent Bangkok dates, overdraw and unrepresentable amoun
   assert.throws(()=>allocateShipmentRebate([lots[0],lots[0]],{convertAll:true,asOfDate:'2026-06-01'}),{code:'REBATE_SOURCE_INVALID'});
   assert.throws(()=>allocateShipmentRebate([{...lots[0],EarnedDate:'2026-01-31'}],{convertAll:true,asOfDate:'2026-06-01'}),{code:'REBATE_SOURCE_INVALID'});
   assert.throws(()=>allocateShipmentRebate(lots,{requestedAmountBaht:'501.00',asOfDate:'2026-06-01'}),{code:'INSUFFICIENT_REBATE_BALANCE'});
-  assert.throws(()=>allocateShipmentRebate([{...lots[0],RebatePerTon:'1500.00'}],{requestedAmountBaht:'1.00',asOfDate:'2026-06-01'}),{code:'CONVERSION_AMOUNT_NOT_REPRESENTABLE'});
+  assert.throws(()=>allocateShipmentRebate([{...lots[0],RebatePerTon:'250.00'}],{requestedAmountBaht:'0.01',asOfDate:'2026-06-01'}),{code:'CONVERSION_AMOUNT_NOT_REPRESENTABLE'});
+  assert.throws(()=>allocateShipmentRebate([{...lots[0],RebatePerTon:'300.01'}],{requestedAmountBaht:'1.00',asOfDate:'2026-06-01'}),{code:'REBATE_SOURCE_INVALID'});
 });

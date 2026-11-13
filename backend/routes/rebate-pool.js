@@ -31,6 +31,7 @@ const {
 } = require('../services/rebate-ticket-service');
 
 router.use(requireAuth);
+router.use('/shipment-evidence', require('./rebate-evidence'));
 
 function sendRebateError(res, err) {
   const status = err?.status || err?.statusCode || 500;
@@ -68,6 +69,9 @@ router.post('/calculate', requireRebateAmountAccess, async (req, res) => {
 
 // ── 2) Ledger list & creation ───────────────────────────────────────────────
 router.get('/ledger', requireRebateAmountAccess, async (req, res) => {
+  // Do not present the separate legacy ledger as the new Pool balance.
+  if (process.env.REBATE_POOL_103_ENABLED === 'true')
+    return res.status(503).json({code:'REBATE_SHIPMENT_VIEW_UNAVAILABLE',error:'มุมมองยอดจากการขนส่งอยู่ระหว่างตรวจสอบ'});
   try {
     const custId = req.query.custId ? Number(req.query.custId) : null;
     const approvalStatus = req.query.approvalStatus ? String(req.query.approvalStatus) : null;
@@ -129,6 +133,16 @@ router.get('/queue/:custId', requireRebateAmountAccess, async (req, res) => {
     const asOfDate = req.query.asOfDate ? String(req.query.asOfDate) : getBangkokDateString();
     const cutoff = (await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;
     const scope = await require('../services/rebate-shared-scope').sharedRebateScopeFilter(req.user);
+    if(process.env.REBATE_POOL_103_ENABLED==='true') {
+      const {withRebateRouteFence,routeParticipantFence,isShipmentEpoch}=require('../services/rebate-route-fence');
+      const queue=await withRebateRouteFence(epoch=>wfTransaction(async tx=>{
+        const q=transactionQuery(tx,sql);await routeParticipantFence(q,epoch);
+        if(!isShipmentEpoch(epoch))throw Object.assign(Error('reset required'),{code:'REBATE_RESET_NOT_COMPLETED',status:409});
+        const months=await require('../services/rebate-cycle-policy').readRebateCycleMonths(q,{lock:true});
+        return require('../services/rebate-shipment-queue').getShipmentCustomerQueue(q,{epoch,custId,asOfDate,cutoff,scope,cycleMonths:months});
+      }));
+      return res.json(queue);
+    }
     const cycleMonths = await require('../services/rebate-cycle-policy').readRebateCycleMonths(wfQuery);
     const queue = await require('../services/rebate-shared-queue').getSharedCustomerQueue(wfQuery, {
       custId, asOfDate, cutoff, scope, cycleMonths,
@@ -140,6 +154,8 @@ router.get('/queue/:custId', requireRebateAmountAccess, async (req, res) => {
 });
 
 router.get('/alerts', requireRebateAmountAccess, async (req, res) => {
+  if (process.env.REBATE_POOL_103_ENABLED === 'true')
+    return res.status(503).json({code:'REBATE_SHIPMENT_VIEW_UNAVAILABLE',error:'การแจ้งเตือนยอดจากการขนส่งอยู่ระหว่างตรวจสอบ'});
   try {
     const year = req.query.year ? Number(req.query.year) : Number(getBangkokDateString().slice(0, 4));
     if (!Number.isInteger(year) || year < 2000 || year > 2100) return res.status(400).json({ code: 'INVALID_YEAR' });
@@ -249,10 +265,14 @@ router.get('/conversions', requireRebateAmountAccess, async (req, res) => {
 });
 
 router.post('/conversions/execute', requireCapability('rebate.convert'), async (req, res) => {
-  // The owner confirmed conversion and existing rebate claims share one
-  // balance. The current transaction-ledger implementation is a separate
-  // balance; it must not be exposed even behind a configuration flag.
-  return res.status(503).json({ code: 'REBATE_SINGLE_SOURCE_REQUIRED', error: 'การแปลง Rebate อยู่ระหว่างเชื่อมยอดคงเหลือเดียวกับระบบเคลียร์รีเบท' });
+  // Both switches default off. Only the post-reset shared shipment epoch may
+  // be used through HTTP; the old standalone Pool ledger is never accepted.
+  if (process.env.REBATE_POOL_103_ENABLED !== 'true' || process.env.REBATE_CONVERSION_ENABLED !== 'true')
+    return res.status(503).json({ code: 'REBATE_SINGLE_SOURCE_REQUIRED', error: 'การแปลง Rebate ยังไม่เปิดใช้งาน' });
+  try {
+    const result=await require('../services/rebate-conversion-execution').executeReviewedConversion(req.user,req.body,{requireShipmentEpoch:true});
+    return res.json(result);
+  } catch(err) { return sendRebateError(res,err); }
 });
 
 // ── 7) Fertilizer Tickets (ตั๋วปุ๋ย) ──────────────────────────────────────

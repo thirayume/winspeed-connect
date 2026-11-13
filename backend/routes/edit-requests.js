@@ -729,7 +729,7 @@ router.patch('/price-approvals/:id/approve', requireRole(...APPROVER_ROLES), req
       // Validate current DocumentRevision of the sales order
       const soRes = await tx.request()
         .input('soId', sql.Int, target.SoId)
-        .query('SELECT DocumentRevision, Status, DeliveryDate, RebateDiscountAmt FROM wf.SalesOrder WHERE Id = @soId');
+        .query('SELECT DocumentRevision, Status, DeliveryDate, RebateDiscountAmt FROM wf.SalesOrder WITH (UPDLOCK, HOLDLOCK) WHERE Id = @soId');
       const soRow = soRes.recordset[0];
       if (!soRow) throw new Error('ไม่พบใบสั่งขายที่ผูกกับคำขอนี้');
       if (Number(soRow.DocumentRevision) !== Number(target.DocumentRevision)) {
@@ -749,7 +749,7 @@ router.patch('/price-approvals/:id/approve', requireRole(...APPROVER_ROLES), req
           SELECT GoodId, GoodCode, GoodName, QtyTon, PricePerTon, IsGiveaway,
                  IsCouponDrawn, CouponReservationId, RefCouponDocuNo,
                  IsControlTicketDrawn, RefControlTicketNo
-          FROM wf.SalesOrderLine WITH (NOLOCK)
+          FROM wf.SalesOrderLine WITH (HOLDLOCK)
           WHERE SoId = @soId
         `);
       const soLines = (soLinesRes.recordset || []).map(l => (
@@ -834,43 +834,13 @@ router.patch('/price-approvals/:id/reject', requireRole(...APPROVER_ROLES), requ
       // Validate current DocumentRevision of the sales order
       const soRes = await tx.request()
         .input('soId', sql.Int, target.SoId)
-        .query('SELECT DocumentRevision, Status, DeliveryDate, RebateDiscountAmt FROM wf.SalesOrder WHERE Id = @soId');
+        .query('SELECT DocumentRevision, Status, DeliveryDate, RebateDiscountAmt FROM wf.SalesOrder WITH (UPDLOCK, HOLDLOCK) WHERE Id = @soId');
       const soRow = soRes.recordset[0];
       if (!soRow) throw new Error('ไม่พบใบสั่งขายที่ผูกกับคำขอนี้');
       if (Number(soRow.DocumentRevision) !== Number(target.DocumentRevision)) {
         await tx.request().input('id', sql.Int, approvalId).query("UPDATE wf.PriceApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE Id = @id");
         throw new Error(`คำขอนี้ถูกยกเลิกแล้ว (Superseded) เนื่องจากใบสั่งขายมีการแก้ไขเป็นฉบับใหม่ (Revision ${soRow.DocumentRevision} != ${target.DocumentRevision})`);
       }
-
-      // Confidential safety guard: even price overrides cannot be approved below Costlist
-      const txQ = async (text, inputs = {}) => {
-        const r = new sql.Request(tx);
-        for (const [k, v] of Object.entries(inputs)) r.input(k, v.type, v.value);
-        return r.query(text);
-      };
-      const soLinesRes = await tx.request()
-        .input('soId', sql.Int, target.SoId)
-        .query(`
-          SELECT GoodId, GoodCode, GoodName, QtyTon, PricePerTon, IsGiveaway,
-                 IsCouponDrawn, CouponReservationId, RefCouponDocuNo,
-                 IsControlTicketDrawn, RefControlTicketNo
-          FROM wf.SalesOrderLine WITH (NOLOCK)
-          WHERE SoId = @soId
-        `);
-      const soLines = (soLinesRes.recordset || []).map(l => (
-        String(l.GoodId || '') === String(target.GoodId || '')
-          ? { ...l, PricePerTon: Number(target.RequestedPrice ?? l.PricePerTon) }
-          : l
-      ));
-      const linesToCheck = soLines.length > 0
-        ? soLines
-        : [{ goodId: target.GoodId, goodName: target.GoodName, qtyTon: target.QtyTon, pricePerTon: target.RequestedPrice }];
-      await assertPricesAboveCost({
-        lines: linesToCheck,
-        asOfDate: soRow.DeliveryDate || null,
-        rebateDiscountAmt: Number(soRow.RebateDiscountAmt || 0),
-        queryFn: txQ,
-      });
 
       const updateRes = await tx.request()
         .input('id', sql.Int, approvalId)

@@ -21,14 +21,41 @@ router.use(requireAuth);
 
 // R12 O-4: a trip is visible when its creator or any of its bills belongs to the user's own + team scope
 const { getVisibleScope, scopeFilter } = require('../services/visible-scope');
+const { actorPerspective, businessIds } = require('../services/business-identity');
+const { readGlobalDataWindow } = require('../services/global-data-window-store');
 async function tripScopeSql(user, alias = 't') {
-  const scope = await getVisibleScope(user);
-  if (scope.all) return { sql: '1=1', inputs: {} };
-  const created = scopeFilter(scope, { userCol: `${alias}.CreatedBy`, prefix: 'tc' });
-  const member = scopeFilter(scope, { userCol: 'm.SalesUserId', prefix: 'tm' });
+  const dataWindow = await readGlobalDataWindow();
+  const actor = actorPerspective(user);
+  const effectiveScope = await getVisibleScope(user);
+  const actorScope = actor === user ? effectiveScope : await getVisibleScope(actor);
+  const visibility = (scope, prefix) => {
+    if (scope.all) return { sql: '1=1', inputs: {} };
+    const created = scopeFilter(scope, { userCol: `${alias}.CreatedBy`, prefix: `${prefix}c` });
+    const member = scopeFilter(scope, { userCol: 'm.SalesUserId', prefix: `${prefix}m` });
+    return {
+      sql: `(${created.sql} OR EXISTS (SELECT 1 FROM wf.v_TripMember m WHERE m.TripId = ${alias}.TripId AND ${member.sql}))`,
+      inputs: { ...created.inputs, ...member.inputs },
+    };
+  };
+  const effective = visibility(effectiveScope, 'te');
+  const realActor = visibility(actorScope, 'ta');
+  // A mixed trip must not silently omit older members: its loading plan and
+  // approval totals are computed from the complete trip. Hide the whole trip
+  // until it is reviewed rather than exposing or operating on old documents.
+  const windowSql = `${alias}.CreatedAt >= @tripStartUtc AND NOT EXISTS (
+    SELECT 1 FROM wf.v_TripMember tw
+    LEFT JOIN wf.SalesOrder draft ON tw.MemberKind='DRAFT' AND CAST(draft.Id AS VARCHAR(50))=tw.MemberId
+    LEFT JOIN dbo.SOHD native ON tw.MemberKind='CONFIRMED' AND native.SOID=tw.SOID AND native.DocuType=103
+    WHERE tw.TripId=${alias}.TripId AND (
+      (tw.MemberKind='DRAFT' AND (draft.Id IS NULL OR draft.CreatedAt IS NULL OR draft.CreatedAt < @tripStartUtc)) OR
+      (tw.MemberKind='CONFIRMED' AND (native.SOID IS NULL OR native.DocuDate IS NULL OR native.DocuDate < @tripStartDate)) OR
+      tw.MemberKind IS NULL OR tw.MemberKind NOT IN ('DRAFT','CONFIRMED')
+    ))`;
   return {
-    sql: `(${created.sql} OR EXISTS (SELECT 1 FROM wf.v_TripMember m WHERE m.TripId = ${alias}.TripId AND ${member.sql}))`,
-    inputs: { ...created.inputs, ...member.inputs },
+    sql: `(${windowSql}) AND (${effective.sql}) AND (${realActor.sql})`,
+    inputs: { ...effective.inputs, ...realActor.inputs,
+      tripStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
+      tripStartDate: { type: sql.Date, value: dataWindow.businessDate } },
   };
 }
 
@@ -36,7 +63,6 @@ async function tripScopeSql(user, alias = 't') {
 async function requireTripInScope(req, res, next) {
   try {
     const ts = await tripScopeSql(req.user);
-    if (ts.sql === '1=1') return next();
     const r = await wfQuery(`SELECT 1 AS ok FROM wf.SalesTrip t WHERE t.TripId = @tid AND ${ts.sql}`,
       { tid: { type: sql.Int, value: Number(req.params.id) || 0 }, ...ts.inputs });
     if (!r.recordset?.[0]) return res.status(404).json({ message: 'ไม่พบ Trip นี้' });
@@ -854,7 +880,7 @@ router.put('/:id/load-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
 });
 
 // POST /api/trips/:id/load-plan/ack — Warehouse Load Plan Acknowledgement (SO-07)
-router.post('/:id/load-plan/ack', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.post('/:id/load-plan/ack', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', 'C_LEVEL'), requireTripInScope, async (req, res) => {
   const tripId = Number(req.params.id);
   if (!Number.isInteger(tripId) || tripId <= 0) {
     return res.status(400).json({ message: 'รหัส Trip ไม่ถูกต้อง' });
@@ -893,7 +919,7 @@ router.post('/:id/load-plan/ack', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', '
 
       await tx.request()
         .input('tripId', sql.Int, tripId)
-        .input('userId', sql.Int, req.user.sub)
+        .input('userId', sql.Int, businessIds(req.user).effective)
         .query(`
           UPDATE wf.SalesTrip
           SET LoadPlanStatus = 'WAREHOUSE_ACK',
@@ -907,7 +933,7 @@ router.post('/:id/load-plan/ack', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', '
         loadPlanStatus: 'WAREHOUSE_ACK',
         loadPlanRevision: currentRevision,
         warehouseAckAt: new Date().toISOString(),
-        warehouseAckBy: req.user.sub,
+        warehouseAckBy: businessIds(req.user).effective,
         message: 'ฝ่ายคลังรับทราบแผนจัดของเรียบร้อยแล้ว'
       };
     });
@@ -924,6 +950,21 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
   try {
     validateBookingNotes(req.body, ['remark']);
     const { tripCode, transRegistration, driverName, truckCapacityTon, orderIds, scheduledDate, deliveryDate } = req.body || {};
+    if (orderIds != null && (!Array.isArray(orderIds) || orderIds.some(id => !/^\d+$/.test(String(id)) ||
+      !Number.isSafeInteger(Number(id)) || Number(id) <= 0 || Number(id) > 2147483647) ||
+      new Set(orderIds.map(Number)).size !== orderIds.length)) {
+      return res.status(400).json({ message: 'รายการบิลไม่ถูกต้องหรือมีเลขซ้ำ' });
+    }
+    const dataWindow = await readGlobalDataWindow();
+    const who = businessIds(req.user);
+    if (!who.effective || !who.actor) throw Object.assign(new Error('IDENTITY_BINDING_INVALID'), { status: 409 });
+    const actor = actorPerspective(req.user);
+    const effectiveScope = await getVisibleScope(req.user);
+    const actorScope = actor === req.user ? effectiveScope : await getVisibleScope(actor);
+    const draftEffective = scopeFilter(effectiveScope, { userCol: 'o.SalesUserId', prefix: 'newDraftEff' });
+    const draftActor = scopeFilter(actorScope, { userCol: 'o.SalesUserId', prefix: 'newDraftActor' });
+    const nativeEffective = scopeFilter(effectiveScope, { userCol: 'e.SalesUserId', empCol: 'h.EmpID', prefix: 'newNativeEff' });
+    const nativeActor = scopeFilter(actorScope, { userCol: 'e.SalesUserId', empCol: 'h.EmpID', prefix: 'newNativeActor' });
     let effectiveTripCode = tripCode;
     if (!effectiveTripCode) {
       const yy = (new Date().getFullYear() + 543 - 2500).toString().slice(-2);
@@ -953,6 +994,10 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
 
     let newTripId = null;
     await wfTransaction(async tx => {
+      // SQL Server 2008 indexed views / filtered indexes require these SET
+      // options for the membership updates on this transaction connection.
+      await tx.request().query(`SET QUOTED_IDENTIFIER ON; SET ANSI_NULLS ON; SET ANSI_PADDING ON;
+        SET ANSI_WARNINGS ON; SET CONCAT_NULL_YIELDS_NULL ON; SET NUMERIC_ROUNDABORT OFF; SET ARITHABORT ON;`);
       const tripReq = tx.request();
       tripReq.input('tripCode', sql.VarChar(50), effectiveTripCode);
       tripReq.input('transRegistration', sql.VarChar(50), cleanPlate);
@@ -963,7 +1008,7 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
 
       tripReq.input('truckCapacityTon', sql.Decimal(18,2), masterCapacity || null);
       tripReq.input('truckTypeId', sql.NVarChar(50), capacityInfo.truckTypeId || req.body?.truckTypeId || null);
-      tripReq.input('createdBy', sql.Int, req.user.sub);
+      tripReq.input('createdBy', sql.Int, who.effective);
       tripReq.input('tripRemark',sql.NVarChar(500),req.body?.remark ?? null);
       tripReq.input('preSling',sql.Bit,!!req.body?.pSling);
       tripReq.input('pickupDueDate', sql.Date, targetDate ? new Date(targetDate) : null);
@@ -977,21 +1022,48 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
 
       if (orderIds && orderIds.length > 0) {
         for (const orderId of orderIds) {
+          // IDs from native SO and draft tables occupy different namespaces.
+          // Never guess which record the caller meant when both exist.
+          const exists = (await tx.request().input('id', sql.Int, Number(orderId))
+            .input('textId', sql.VarChar(50), String(Number(orderId)))
+            .query(`SELECT (SELECT COUNT(*) FROM wf.SalesOrder WITH(UPDLOCK,HOLDLOCK) WHERE Id=@id) AS DraftCount,
+              (SELECT COUNT(*) FROM wf.SalesOrderExt e WITH(UPDLOCK,HOLDLOCK)
+               JOIN dbo.SOHD h WITH(UPDLOCK,HOLDLOCK) ON h.SOID=@id AND h.DocuType=103
+               WHERE e.SOID=@textId) AS NativeCount`)).recordset?.[0];
+          if (!exists || Number(exists.DraftCount) + Number(exists.NativeCount) !== 1)
+            throw Object.assign(new Error('ไม่พบรายการบิลที่ระบุ หรือเลขบิลกำกวม'), { status: 409 });
+          const addInputs = (request, inputs) => {
+            for (const [key, value] of Object.entries(inputs)) request.input(key, value.type, value.value);
+            return request;
+          };
           const soReq = tx.request();
           soReq.input('tripId', sql.Int, newTripId);
-          soReq.input('soId', sql.Int, orderId);
-          const linked = await soReq.query(`UPDATE wf.SalesOrder SET TripId = @tripId WHERE Id = @soId`);
-          if (linked.rowsAffected?.[0] > 0) continue;
+          soReq.input('soId', sql.Int, Number(orderId));
+          soReq.input('startUtc', sql.DateTime2, dataWindow.utcInstant);
+          addInputs(soReq, { ...draftEffective.inputs, ...draftActor.inputs });
+          if (Number(exists.DraftCount) === 1) {
+            const linked = await soReq.query(`UPDATE o SET TripId=@tripId FROM wf.SalesOrder o
+              WHERE o.Id=@soId AND o.TripId IS NULL AND o.CreatedAt>=@startUtc
+                AND ${draftEffective.sql} AND ${draftActor.sql}`);
+            if (Number(linked.rowsAffected?.[0]) !== 1)
+              throw Object.assign(new Error('บิลอยู่นอกช่วงข้อมูล ไม่มีสิทธิ์ หรืออยู่ในเที่ยวอื่น'), { status: 409 });
+            continue;
+          }
           // a WinSpeed bill (re-confirmed after an edit) joins through its extension; it used to be left out, so
           // the confirm that follows found an empty trip (UAT full loop 2026-10-09, FL13). Only a bill in no
           // trip yet, and a salesperson's own bill.
-          await tx.request()
+          const nativeReq = tx.request()
             .input('tripId', sql.Int, newTripId)
-            .input('soid', sql.VarChar(50), String(orderId))
-            .input('uid', sql.Int, req.user.sub)
-            .input('own', sql.Bit, req.user.role === 'SALES' ? 1 : 0)
-            .query(`UPDATE wf.SalesOrderExt SET TripId = @tripId, UpdatedAt = SYSUTCDATETIME()
-                    WHERE SOID = @soid AND TripId IS NULL AND (@own = 0 OR SalesUserId = @uid)`);
+            .input('soid', sql.VarChar(50), String(Number(orderId)))
+            .input('id', sql.Int, Number(orderId))
+            .input('startDate', sql.Date, dataWindow.businessDate);
+          addInputs(nativeReq, { ...nativeEffective.inputs, ...nativeActor.inputs });
+          const linked = await nativeReq.query(`UPDATE e SET TripId=@tripId, UpdatedAt=SYSUTCDATETIME()
+            FROM wf.SalesOrderExt e JOIN dbo.SOHD h ON h.SOID=@id AND h.DocuType=103
+            WHERE e.SOID=@soid AND e.TripId IS NULL AND h.DocuDate>=@startDate
+              AND ${nativeEffective.sql} AND ${nativeActor.sql}`);
+          if (Number(linked.rowsAffected?.[0]) !== 1)
+            throw Object.assign(new Error('บิลอยู่นอกช่วงข้อมูล ไม่มีสิทธิ์ หรืออยู่ในเที่ยวอื่น'), { status: 409 });
         }
       }
     });

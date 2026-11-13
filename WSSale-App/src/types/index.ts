@@ -310,6 +310,7 @@ export type SalesOrderLine = {
   qtyBag: number;
   pricePerTon: number;
   netPricePerTon: number;
+  rebatePricingMode?: 'POOL' | 'CASH' | null;
   lineAmount?: number;        // computed: qtyTon * pricePerTon
   rebatePerTon?: number;      // computed: pricePerTon - netPricePerTon
   rebateAmount?: number;      // computed: rebatePerTon * qtyTon
@@ -709,6 +710,12 @@ export type GiveawayOrgRoster = {
 
 // ── New Rebate Pool & FIFO Fertilizer Ticket Conversion ──────────
 export type RebatePricingMode =
+  | 'CASH_DISCOUNT'
+  | 'STANDARD_LIST'
+  | 'REBATE_WITHIN_LIMIT'
+  | 'REBATE_OVER_LIMIT'
+  | 'MARKUP_STANDARD'
+  | 'MARKUP_EXTRA_PROFIT'
   | 'CASE_A_CASH_DISCOUNT'
   | 'CASE_B_TIER1_AUTO'
   | 'CASE_B_TIER2_APPROVAL'

@@ -57,3 +57,16 @@ test('invalid identifiers, unfinished reset, and unexpected DB failures fail clo
   await assert.rejects(stageShipmentEvidence(item, f.overrides), { code: 'DATABASE_DOWN' });
   assert.equal(f.insert, undefined);
 });
+test('a denied caller cannot stage or inspect an existing evidence row', async () => {
+  const f=fixture();
+  f.overrides.authorizeSource=async()=>{throw Object.assign(Error('denied'),{code:'REBATE_EVIDENCE_NOT_FOUND'});};
+  await assert.rejects(stageShipmentEvidence(item,f.overrides),{code:'REBATE_EVIDENCE_NOT_FOUND'});
+  assert.equal(f.insert,undefined);
+  assert.equal(f.calls.some(c=>/RebateShipmentEvidence/.test(c.sql||'')),false);
+});
+test('a page discovered before a reset cannot be staged into the new epoch',async()=>{
+  const f=fixture();
+  f.overrides.expectedEpoch={...epoch,generation:epoch.generation+1};
+  await assert.rejects(stageShipmentEvidence(item,f.overrides),{code:'REBATE_RESET_EPOCH_CHANGED'});
+  assert.equal(f.calls.length,0);
+});

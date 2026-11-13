@@ -23,12 +23,19 @@ async function stageShipmentEvidence({ redemptionId, listNo } = {}, overrides = 
   const resolveQuantityTon = overrides.resolveQuantityTon || resolveVerifiedTon;
   return runFence(async epoch => {
     if (!epoch.resetId || !epoch.lastResetAtUtc) fail('REBATE_RESET_NOT_COMPLETED');
+    if (overrides.expectedEpoch && (epoch.environment!==overrides.expectedEpoch.environment ||
+        epoch.generation!==overrides.expectedEpoch.generation ||
+        String(epoch.resetId).toLowerCase()!==String(overrides.expectedEpoch.resetId).toLowerCase()))
+      fail('REBATE_RESET_EPOCH_CHANGED');
     return runTx(async query => {
       await participantFence(query, epoch);
       // This lock order matches evidence review: native source before queue row.
       const source = await readSource(query, { redemptionId, listNo });
       if (source.redemptionId !== redemptionId || source.redemptionListNo !== listNo ||
           !validFingerprint(source.fingerprint) || !Array.isArray(source.issues)) fail('REBATE_SHIPMENT_SOURCE_INVALID');
+      // A caller that acts on behalf of a user must enforce their scope after
+      // the source is locked, before exposing or modifying the queue row.
+      if (overrides.authorizeSource) await overrides.authorizeSource(query, source);
       let quantityTon = null;
       let holdReason = 'MANUAL_SHIPMENT_PROOF_REQUIRED';
       if (source.issues.length) holdReason = 'SOURCE_INCOMPLETE';

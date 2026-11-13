@@ -26,7 +26,7 @@ function allocateShipmentRebate(rows,{requestedAmountBaht=null,convertAll=false,
     let occurred; try { occurred=parseEvidenceInstant(r.OccurredAtUtc); } catch (_) { fail('REBATE_SOURCE_INVALID'); }
     if (new Date(occurred+7*60*60*1000).toISOString().slice(0,10)!==date) fail('REBATE_SOURCE_INVALID');
     const qty=shipmentUnits(r.RemainingTon,3), rate=shipmentUnits(r.RebatePerTon,2), remaining=shipmentUnits(r.RemainingAmountBaht,2);
-    if (rate<=0n) fail('REBATE_SOURCE_INVALID');
+    if (rate<=0n || rate>30000n) fail('REBATE_SOURCE_INVALID');
     const usable=maxQty(qty,rate,remaining);
     return {id,date,occurred,qty:usable,rate,available:cost(usable,rate)};
   }).filter(l=>l.qty>0n&&l.available>0n&&l.date<=asOfDate&&(!maturedOnly||computeCycleExpiryDate(l.date,cycleMonths)<=asOfDate))

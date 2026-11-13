@@ -42,7 +42,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   }
   if (/FROM wf\.SalesTrip t WHERE t\.TripId = @tid/.test(text)) {
     // Trip 88 belongs to user 34; Trip 53 belongs to user 20 only
-    const ids = Object.entries(inputs).filter(([k]) => /^tc|^tm/.test(k)).map(([, v]) => Number(v));
+    const ids = Object.entries(inputs).filter(([k]) => /^t[ea][cm]/.test(k)).map(([, v]) => Number(v));
     if (Number(inputs.tid) === 88 && ids.includes(34)) return [{ ok: 1 }];
     if (Number(inputs.tid) === 53 && ids.includes(20)) return [{ ok: 1 }];
     return [];

@@ -31,6 +31,8 @@ import {
   useHoldCapability, HoldCapabilityBanner, HoldScopeChip,
 } from '../common/HoldCapabilityBanner';
 import type { HoldCapability } from '../../services/api';
+import { canDo } from '../../utils/capabilities';
+import { RebateBookingApproval } from './RebateBookingApproval';
 
 const NAVY = '#0C447C';
 
@@ -551,6 +553,7 @@ function TripApprovalCard({ ta, canApproveRole, onDone }: { ta: TripMultiCustApp
 }
 
 export function EditRequestsPage() {
+  const user = useAuthStore(s => s.user);
   const [activeTab, setActiveTab] = useState<'stage' | 'price' | 'trip'>('stage');
   const [rows, setRows] = useState<EditRequestRow[]>([]);
   const [priceRows, setPriceRows] = useState<PriceApprovalRow[]>([]);
@@ -706,6 +709,7 @@ export function EditRequestsPage() {
 
       {activeTab === 'price' && (
         <>
+          {canDo(user, 'rebate.approve-over-limit') && <RebateBookingApproval />}
           {!loading && priceRows.length === 0 && !err && (
             <div className="rounded border border-dashed border-gray-300 bg-white px-4 py-10 text-center">
               <ClipboardCheck size={26} className="mx-auto mb-2 text-gray-300" />

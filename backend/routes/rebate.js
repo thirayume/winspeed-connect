@@ -12,6 +12,45 @@ const { mapDatabaseError } = require('../services/error-adapter');
 const { applyClaimToDraft } = require('../services/rebate-claim-apply');
 const { autoAssignRebateDocCodes, ensureRebateDocCode } = require('../services/rebate-doc-code');
 const { approvalIdentity, bothHaveRole, isSubmitter, bothQualifyForRegion } = require('../services/approval-identity');
+const { transactionQuery } = require('../services/rebate-sql');
+const { withRebateRouteFence, routeParticipantFence, isShipmentEpoch, rebateFenceMessage } = require('../services/rebate-route-fence');
+const { planShipmentClaim, applyShipmentClaimPlan, claimLinesFromPlan, releaseShipmentClaimReservations } = require('../services/rebate-shipment-claim');
+const { businessIds } = require('../services/business-identity');
+const { validateClaimReplay } = require('../services/rebate-claim-replay');
+const { verifyShipmentClaimReservations } = require('../services/rebate-shipment-claim-verification');
+
+// Messages for the shipment-ledger claim path (used once Rebate has been reset).
+const SHIPMENT_CLAIM_MESSAGES = Object.freeze({
+  REBATE_CLAIM_INPUT_INVALID: 'ข้อมูลรายการขอเคลียร์ไม่ถูกต้อง',
+  REBATE_CLAIM_INSUFFICIENT: 'ยอดขอเคลียร์มากกว่ายอดรีเบทคงเหลือจากการขนส่งที่ตรวจแล้ว',
+  REBATE_CLAIM_AMOUNT_INVALID: 'ยอดขอเคลียร์ต้องมากกว่า 0',
+  REBATE_CLAIM_DIFFERENCE_UNAVAILABLE: 'ตารางคืนส่วนต่างยังไม่เปิดใช้กับยอดรีเบทหลังเริ่มยอดใหม่',
+  REBATE_CUSTOMER_OUT_OF_SCOPE: 'ไม่พบยอดรีเบทของลูกค้ารายนี้ในขอบเขตที่ท่านดูแล',
+  REBATE_SOURCE_INVALID: 'ข้อมูลยอดรีเบทต้นทางไม่สมบูรณ์ กรุณาแจ้งผู้ดูแลระบบ',
+  REBATE_RESERVATION_SOURCE_CHANGED: 'เอกสารขนส่งต้นทางมีการเปลี่ยนแปลง ต้องตรวจหลักฐานใหม่ก่อนเคลียร์ยอดนี้',
+  REBATE_RESERVATION_INSUFFICIENT: 'ยอดรีเบทคงเหลือไม่พอ เนื่องจากมีรายการอื่นใช้ยอดไปก่อน',
+  REBATE_RESERVATION_LOCK_UNAVAILABLE: 'มีผู้อื่นกำลังทำรายการรีเบทของลูกค้ารายนี้ กรุณาลองอีกครั้ง',
+  REBATE_EVIDENCE_SOURCE_CHANGED: 'เอกสารขนส่งต้นทางมีการเปลี่ยนแปลง ต้องตรวจหลักฐานใหม่ก่อนเคลียร์ยอดนี้',
+  REBATE_EVIDENCE_TONNAGE_CHANGED: 'ปริมาณในเอกสารขนส่งต้นทางเปลี่ยน ต้องตรวจหลักฐานใหม่ก่อนเคลียร์ยอดนี้',
+  REBATE_CLAIM_RESERVATION_MISSING: 'ใบขอเคลียร์นี้ไม่มียอดรีเบทที่จองไว้ในรอบยอดปัจจุบัน จึงอนุมัติไม่ได้',
+  REBATE_CLAIM_RESERVATION_MISMATCH: 'ยอดที่จองกับรายละเอียดใบขอเคลียร์ไม่ตรงกัน กรุณาแจ้งผู้ดูแลระบบ',
+  REBATE_RELEASE_INPUT_INVALID: 'ไม่สามารถคืนยอดรีเบทที่จองไว้ได้ เนื่องจากข้อมูลผู้ทำรายการไม่ครบ',
+  REBATE_RELEASE_CLAIM_INVALID: 'ไม่สามารถคืนยอดรีเบทที่จองไว้ได้ เนื่องจากข้อมูลใบขอเคลียร์ไม่ตรงกัน',
+  REBATE_CLAIM_REPLAY_CONFLICT: 'ไม่สามารถใช้รหัสรายการซ้ำกับข้อมูลที่ไม่ตรงกัน',
+  REBATE_CLAIM_REPLAY_OUTSIDE_WINDOW: 'ไม่พบใบขอเคลียร์ในช่วงข้อมูลที่ใช้งาน',
+  REBATE_CLAIM_REPLAY_PREVIOUS_EPOCH: 'รหัสรายการนี้อยู่ในรอบรีเบทก่อนหน้า กรุณาเริ่มรายการใหม่',
+  REBATE_CLAIM_REPLAY_OUT_OF_SCOPE: 'ไม่พบใบขอเคลียร์ในขอบเขตที่ท่านดูแล',
+});
+
+// Shipment and fence failures carry a code, not a user message.
+function rebateClaimFailure(e) {
+  const code = e && typeof e === 'object' ? e.code : null;
+  if (typeof code !== 'string' || !/^REBATE_/.test(code)) return null;
+  const fence = rebateFenceMessage(code);
+  if (fence) return { status: 503, code, message: fence };
+  const message = SHIPMENT_CLAIM_MESSAGES[code] || 'ไม่สามารถทำรายการรีเบทได้ กรุณาแจ้งผู้ดูแลระบบ';
+  return { status: Number.isInteger(e.status) && e.status >= 400 && e.status < 600 ? e.status : 409, code, message };
+}
 
 router.use(requireAuth);
 
@@ -736,42 +775,20 @@ router.post('/claims', requireRole('SALES', 'COUNTER_SALES', 'ACCOUNTING', 'ADMI
         idempotencyKey = trimmedKey;
       }
     }
-    let payloadHash = null;
-
-    if (idempotencyKey) {
-      // Canonical payload hash covering all financial and transactional parameters (C5)
-      payloadHash = buildCanonicalPayloadHash(req.body);
-
-      // Pre-check before transaction for quick idempotent replay
-      const preCheck = await wfQuery(`SELECT * FROM wf.RebateClaim WHERE IdempotencyKey = @k`, {
-        k: { type: sql.VarChar(100), value: idempotencyKey }
-      });
-      const existingPre = preCheck.recordset?.[0];
-      if (existingPre) {
-        // Enforce authorization scope before returning replay (C5)
-        const creatorId = existingPre.SalesUserId || existingPre.CreatedBy;
-        const isAuthorized = req.user.role === 'ADMIN' ||
-                             req.user.role === 'ACCOUNTING' ||
-                             req.user.role === 'C_LEVEL' ||
-                             (String(creatorId) === String(req.user.sub));
-        if (!isAuthorized) {
-          return res.status(403).json({ message: 'ไม่มีสิทธิ์เข้าถึงหรือใช้ Idempotency-Key ของผู้ใช้อื่น' });
-        }
-        if (existingPre.RequestPayloadHash && existingPre.RequestPayloadHash !== payloadHash) {
-          return res.status(409).json({ message: 'Idempotency key reused with different payload' });
-        }
-        const normalized = normalizeClaim(existingPre);
-        return res.json({ claim: normalized, ...normalized, replayed: true });
-      }
-    }
+    const payloadHash = idempotencyKey ? buildCanonicalPayloadHash(req.body) : null;
 
     const regionCode = await getCustomerRegion(cust || custId);
     const parsedLines = [];
     let pYear = Number(periodYear) || null;
     let pMonth = Number(periodMonth) || null;
 
-    // Reserve customer lots with header, lines, invoice links, and audit in one transaction.
-    const newClaim = await wfTransaction(async (tx) => {
+    // Reserve customer lots with header, lines, invoice links, and audit in one transaction,
+    // inside the Rebate reset fences so a reset cannot interleave with the claim.
+    const newClaim = await withRebateRouteFence(epoch => wfTransaction(async (tx) => {
+      const fenceQuery = transactionQuery(tx, sql);
+      await routeParticipantFence(fenceQuery, epoch);
+      const claimBusinessIds = businessIds(req.user);
+      const claimIdentity = approvalIdentity(req.user);
       // Serialize claims and conversions against the same customer lots.
       const lockKeys = [];
       if (custId) lockKeys.push(`RebateCust_${String(custId).trim()}`);
@@ -804,17 +821,7 @@ router.post('/claims', requireRole('SALES', 'COUNTER_SALES', 'ACCOUNTING', 'ADMI
         const lockedCheckRes = await lockedCheckReq.query(`SELECT * FROM wf.RebateClaim WITH (UPDLOCK, HOLDLOCK) WHERE IdempotencyKey = @k`);
         const lockedExisting = lockedCheckRes.recordset?.[0];
         if (lockedExisting) {
-          const creatorId = lockedExisting.SalesUserId || lockedExisting.CreatedBy;
-          const isAuthorized = req.user.role === 'ADMIN' ||
-                               req.user.role === 'ACCOUNTING' ||
-                               req.user.role === 'C_LEVEL' ||
-                               (String(creatorId) === String(req.user.sub));
-          if (!isAuthorized) {
-            throw { status: 403, message: 'ไม่มีสิทธิ์เข้าถึงหรือใช้ Idempotency-Key ของผู้ใช้อื่น' };
-          }
-          if (lockedExisting.RequestPayloadHash && lockedExisting.RequestPayloadHash !== payloadHash) {
-            throw { status: 409, message: 'Idempotency key reused with different payload' };
-          }
+          await validateClaimReplay(fenceQuery,req.user,lockedExisting,{epoch,dataWindow,custId,payloadHash});
           return { ...lockedExisting, _replayed: true };
         }
       }
@@ -842,6 +849,20 @@ router.post('/claims', requireRole('SALES', 'COUNTER_SALES', 'ACCOUNTING', 'ADMI
 
       let totalAmt = Number(claimAmt || 0);
 
+      // After a reset the balance is the verified shipment ledger, never the 104 lots:
+      // FIFO by shipment time, priced from the accrual snapshot, reserved with the claim below.
+      let shipmentPlan = null;
+      if (isShipmentEpoch(epoch)) {
+        if (lines.length > 12) throw { status: 400, message: 'ใบขอเคลียร์รองรับสูงสุด 12 รายการย่อย (6 บรรทัดต่อตาราง)' };
+        const shipmentCustId = Number(custId);
+        if (!custId || !Number.isSafeInteger(shipmentCustId) || shipmentCustId < 1) {
+          throw { status: 400, message: 'ต้องระบุลูกค้า (custId) เมื่อยื่นรายการย่อย — ยอดสะสมอ่านจากการขนส่งของลูกค้ารายนั้น' };
+        }
+        shipmentPlan = await planShipmentClaim(fenceQuery, epoch, req.user,
+          { custId: shipmentCustId, lines, startDate: dataWindow.businessDate });
+        for (const line of claimLinesFromPlan(shipmentPlan)) parsedLines.push(line);
+        totalAmt = Number(shipmentPlan.totalAmount);
+      } else
       // A2. Lots validation & FIFO calculation under lock
       if (!isAmountOnly) {
         if (lines.length > 12) throw { status: 400, message: 'ใบขอเคลียร์รองรับสูงสุด 12 รายการย่อย (6 บรรทัดต่อตาราง)' };
@@ -1038,7 +1059,7 @@ router.post('/claims', requireRole('SALES', 'COUNTER_SALES', 'ACCOUNTING', 'ADMI
       // 1. Create RebateClaim Header
       const headerReq = tx.request();
       headerReq.input('pid', sql.Int, null);
-      headerReq.input('uid', sql.Int, req.user.sub);
+      headerReq.input('uid', sql.Int, claimBusinessIds.effective);
       headerReq.input('cid', sql.NVarChar(20), custId || null);
       headerReq.input('amt', sql.Decimal(12,2), totalAmt);
       headerReq.input('note', sql.NVarChar(500), note || null);
@@ -1101,6 +1122,13 @@ router.post('/claims', requireRole('SALES', 'COUNTER_SALES', 'ACCOUNTING', 'ADMI
         `);
       }
 
+      // 2b. Shipment ledger: reserve every allocated accrual for this claim. Each reservation
+      // re-checks the native source and evidence; a changed source rolls the whole claim back.
+      if (shipmentPlan) {
+        await applyShipmentClaimPlan(fenceQuery, epoch,
+          { custId: Number(custId), claimId: Number(claim.Id), allocations: shipmentPlan.allocations });
+      }
+
       // 3. Create RebateClaimInvoice records if provided
       if (Array.isArray(invoices) && invoices.length > 0) {
         for (const invNo of invoices) {
@@ -1115,8 +1143,8 @@ router.post('/claims', requireRole('SALES', 'COUNTER_SALES', 'ACCOUNTING', 'ADMI
       // 4. Log Tier 1 Submission Approval Record
       const appReq = tx.request();
       appReq.input('cid', sql.Int, claim.Id);
-      appReq.input('uid', sql.Int, req.user.sub);
-      appReq.input('uname', sql.NVarChar(150), await approverName(req.user));
+      appReq.input('uid', sql.Int, claimBusinessIds.effective);
+      appReq.input('uname', sql.NVarChar(150), await approverName({ ...req.user, sub: claimBusinessIds.effective }));
       await appReq.query(`
         INSERT INTO wf.RebateClaimApproval (ClaimId, Tier, RequiredRole, Decision, DecidedBy, DecidedByName, DecidedAt, Reason)
         VALUES (@cid, 1, 'SALES', 'APPROVED', @uid, @uname, GETUTCDATE(), 'ยื่นใบขออนุมัติเคลียร์รีเบท')
@@ -1129,13 +1157,23 @@ router.post('/claims', requireRole('SALES', 'COUNTER_SALES', 'ACCOUNTING', 'ADMI
         entityId: String(claim.Id),
         action: 'CREATE_CLAIM',
         beforeJson: null,
-        afterJson: JSON.stringify({ id: claim.Id, claimAmt: totalAmt, custId }),
-        reason: adjReasonText,
+        afterJson: JSON.stringify({ id: claim.Id, claimAmt: totalAmt, custId,
+          balanceSource: shipmentPlan ? 'SHIPMENT_LEDGER' : 'WINSPEED_104',
+          resetGeneration: epoch.generation, resetId: epoch.resetId || null,
+          reservedAccruals: shipmentPlan ? shipmentPlan.allocations.length : undefined,
+          actorPrimaryId: claimIdentity.actorId, effectivePrimaryId: claimIdentity.effectiveId,
+          actorBusinessId: claimBusinessIds.actor, effectiveBusinessId: claimBusinessIds.effective }),
+        reasonText: adjReasonText,
         userId: Number(req.user.sub),
       });
 
       return claim;
-    });
+    }));
+
+    if (newClaim._replayed) {
+      const normalized = normalizeClaim(newClaim);
+      return res.json({ claim: normalized, ...normalized, replayed: true });
+    }
 
     // เอกสารที่รองรับการขอใช้รีเบท — ผู้อนุมัติต้องเห็นว่าอ้างแผนฉบับใด
     const planIds = [...new Set(parsedLines.map(l => l.planId).filter(Boolean))];
@@ -1160,6 +1198,8 @@ router.post('/claims', requireRole('SALES', 'COUNTER_SALES', 'ACCOUNTING', 'ADMI
     });
   } catch (e) {
     console.error(e);
+    const rebateFailure = rebateClaimFailure(e);
+    if (rebateFailure) return res.status(rebateFailure.status).json({ message: rebateFailure.message, code: rebateFailure.code });
     const { status, message } = mapDatabaseError(e, 'เกิดข้อผิดพลาดในการยื่นเคลม');
     res.status(status).json({ message, reconciliation: e.reconciliation, skippedNoPlan: e.skippedNoPlan, skippedNoRebate: e.skippedNoRebate });
   }
@@ -1180,7 +1220,9 @@ router.post('/claims/:id/approve', async (req, res) => {
     const elevated = bothHaveRole(identity, ['ADMIN', 'C_LEVEL']);
     const userName = await decisionActorName(req.user, identity);
 
-    const result = await wfTransaction(async (tx) => {
+    const result = await withRebateRouteFence(epoch => wfTransaction(async (tx) => {
+      const fenceQuery = transactionQuery(tx, sql);
+      await routeParticipantFence(fenceQuery, epoch);
       // 1. Transaction-scoped Application Lock on Claim ID
       const claimLockKey = `RebateClaim_${claimId}`;
       const lockReq = tx.request();
@@ -1202,6 +1244,12 @@ router.post('/claims/:id/approve', async (req, res) => {
       const claim = claimR.recordset?.[0];
       if (!claim) {
         throw Object.assign(new Error(`ไม่พบใบขอเคลียร์ ID ${claimId}`), { status: 404 });
+      }
+
+      // Recheck every reserved native shipment and reconcile all claim lines
+      // and amounts before approval; a count alone cannot detect stale proof.
+      if (isShipmentEpoch(epoch) && /PENDING$/.test(String(claim.Status || ''))) {
+        await verifyShipmentClaimReservations(fenceQuery,epoch,claim);
       }
 
       // 3. Decision Replay Check BEFORE terminal guard
@@ -1416,11 +1464,13 @@ router.post('/claims/:id/approve', async (req, res) => {
         rbMatched: !!rb,
         warnings,
       };
-    });
+    }));
 
     res.json(result);
   } catch (e) {
     console.error('[POST /claims/:id/approve error]', e.message || e);
+    const rebateFailure = rebateClaimFailure(e);
+    if (rebateFailure) return res.status(rebateFailure.status).json({ message: rebateFailure.message, code: rebateFailure.code });
     const httpErr = mapDatabaseError(e, 'เกิดข้อผิดพลาดในการอนุมัติใบขอเคลียร์');
     res.status(httpErr.status).json({ message: httpErr.message });
   }
@@ -1446,7 +1496,9 @@ router.post('/claims/:id/reject', async (req, res) => {
     const elevated = bothHaveRole(identity, ['ADMIN', 'C_LEVEL']);
     const userName = await decisionActorName(req.user, identity);
 
-    const result = await wfTransaction(async (tx) => {
+    const result = await withRebateRouteFence(epoch => wfTransaction(async (tx) => {
+      const fenceQuery = transactionQuery(tx, sql);
+      await routeParticipantFence(fenceQuery, epoch);
       // 1. Transaction-scoped Application Lock on Claim ID
       const claimLockKey = `RebateClaim_${claimId}`;
       const lockReq = tx.request();
@@ -1597,6 +1649,19 @@ router.post('/claims/:id/reject', async (req, res) => {
         throw Object.assign(new Error('สถานะของคำขอเปลี่ยนแปลงไปแล้ว กรุณารีเฟรชเพื่อดูสถานะล่าสุด'), { status: 409 });
       }
 
+      // 7b. Shipment ledger: the rejected claim's reserved balance goes back to the customer,
+      // recorded with both identities of the decision and the reason.
+      let releasedReservations = 0;
+      if (isShipmentEpoch(epoch) && Number.isSafeInteger(Number(claim.CustId)) && Number(claim.CustId) > 0) {
+        const business = businessIds(req.user);
+        ({ released: releasedReservations } = await releaseShipmentClaimReservations(fenceQuery, epoch, {
+          custId: Number(claim.CustId), claimId,
+          release: { actorPrimaryId: identity.actorId, effectivePrimaryId: identity.effectiveId,
+            actorBusinessId: business.actor, effectiveBusinessId: business.effective,
+            reason: `ไม่อนุมัติใบขอเคลียร์ (ขั้นที่ ${currentTier}): ${trimmedReason}`.slice(0, 500) },
+        }));
+      }
+
       // 8. Reversal of Pool ClaimedAmt if attached to a pool
       if (claim.PoolId && Number(claim.ClaimAmt) > 0) {
         await tx.request()
@@ -1656,7 +1721,8 @@ router.post('/claims/:id/reject', async (req, res) => {
         entityId: String(claimId),
         action: `REJECT_TIER_${currentTier}`,
         beforeJson: JSON.stringify({ status: claim.Status, currentTier: claim.CurrentTier }),
-        afterJson: JSON.stringify({ status: 'REJECTED', currentTier: 1, effectiveUserId: identity.effectiveId }),
+        afterJson: JSON.stringify({ status: 'REJECTED', currentTier: 1, effectiveUserId: identity.effectiveId,
+          resetGeneration: epoch.generation, releasedReservations }),
         reasonText: trimmedReason,
         userId: identity.effectiveId,
       });
@@ -1667,11 +1733,13 @@ router.post('/claims/:id/reject', async (req, res) => {
         currentTier: 1,
         message: 'ไม่อนุมัติใบขอเคลียร์และบันทึกประวัติการปฏิเสธเรียบร้อย',
       };
-    });
+    }));
 
     res.json(result);
   } catch (e) {
     console.error('[POST /claims/:id/reject error]', e.message || e);
+    const rebateFailure = rebateClaimFailure(e);
+    if (rebateFailure) return res.status(rebateFailure.status).json({ message: rebateFailure.message, code: rebateFailure.code });
     const httpErr = mapDatabaseError(e, 'เกิดข้อผิดพลาดในการไม่อนุมัติใบขอเคลียร์');
     res.status(httpErr.status).json({ message: httpErr.message });
   }
@@ -2968,9 +3036,10 @@ router.post('/claims/:id/apply-to-bill', requireRole('ACCOUNTING', 'ADMIN', 'C_L
   const { soId, targetSoId } = req.body || {};
 
   try {
-    const result = await wfTransaction(async (tx) => {
+    const result = await withRebateRouteFence(epoch => wfTransaction(async (tx) => {
+      await routeParticipantFence(transactionQuery(tx, sql), epoch);
       return await applyClaimToDraft(tx, { claimId, soId: soId ?? targetSoId, targetSoId, user: req.user });
-    });
+    }));
 
     res.json({
       success: true,
@@ -2979,6 +3048,8 @@ router.post('/claims/:id/apply-to-bill', requireRole('ACCOUNTING', 'ADMIN', 'C_L
     });
   } catch (err) {
     console.error('[rebate/claims/apply-to-bill]', err);
+    const rebateFailure = rebateClaimFailure(err);
+    if (rebateFailure) return res.status(rebateFailure.status).json({ message: rebateFailure.message, code: rebateFailure.code });
     res.status(err.status || 500).json({ message: err.message, code: err.code });
   }
 });

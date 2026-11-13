@@ -22,7 +22,7 @@ function fixture(options = {}) {
   return { calls, get updated() { return updated; }, overrides: {
     runFence: async fn => fn(options.epoch || epoch), runTx: async fn => fn(query),
     participantFence: async (_q, e) => { calls.push({ participant: e }); if (options.participantFails) throw new Error('participant failed'); },
-    readSource: async (_q, keys) => { calls.push({ source: keys }); return { redemptionId: 10, redemptionListNo: 2,
+    readSource: async (_q, keys) => { calls.push({ source: keys }); return { redemptionId: 10, redemptionListNo: 2,sourceSOID:40,
       fingerprint: options.fingerprint || fingerprint, issues: options.issues || [] }; },
     resolveQuantityTon: async () => options.authoritativeTon || '1.000',
   } };
@@ -38,6 +38,22 @@ test('review takes both fences, rechecks source and records actor and effective 
   assert.equal(f.updated.businessId, 1);
   assert.equal(f.updated.fingerprint, fingerprint);
 });
+test('evidence reviewer and real actor must each have the source salesperson in scope',async()=>{
+  const f=fixture();const originalRunTx=f.overrides.runTx;
+  f.overrides.runTx=fn=>originalRunTx(query=>fn(async(text,inputs)=>{
+    if(/SELECT EmpID FROM dbo\.SOHD/.test(text))return {recordset:[{EmpID:12}]};
+    return query(text,inputs);
+  }));
+  const user={sub:1,role:'MANAGER',roles:['MANAGER'],permissions:['rebate.evidence.verify'],actorSub:2,actorRole:'MANAGER',
+    actorRoles:['MANAGER'],actorPermissions:['rebate.evidence.verify'],isImpersonating:true};
+  f.overrides.getVisibleScope=async u=>({all:false,userIds:[],empIds:Number(u.sub)===1?['12']:[]});
+  await assert.rejects(reviewShipmentEvidence(user,payload,f.overrides),{code:'REBATE_EVIDENCE_NOT_FOUND'});
+  assert.equal(f.updated,undefined);
+  const g=fixture();const gRun=g.overrides.runTx;
+  g.overrides.runTx=fn=>gRun(query=>fn(async(text,inputs)=>/SELECT EmpID FROM dbo\.SOHD/.test(text)?{recordset:[{EmpID:12}]}:query(text,inputs)));
+  g.overrides.getVisibleScope=async()=>({all:false,userIds:[],empIds:['12']});
+  assert.equal((await reviewShipmentEvidence(user,payload,g.overrides)).status,'MANUALLY_VERIFIED');
+});
 test('role intersection and stale or changed evidence fail before update', async () => {
   let f = fixture();
   await assert.rejects(reviewShipmentEvidence({ sub: 1, role: 'SALES' }, payload, f.overrides), { code: 'REBATE_EVIDENCE_PERMISSION_REQUIRED' });
@@ -50,6 +66,12 @@ test('role intersection and stale or changed evidence fail before update', async
   f = fixture({ row: { Revision: 2 } });
   await assert.rejects(reviewShipmentEvidence(user, payload, f.overrides), { code: 'REBATE_EVIDENCE_STALE' });
   assert.equal(f.updated, undefined);
+});
+test('a denied scope or cutoff check prevents evidence review',async()=>{
+  const f=fixture();
+  f.overrides.authorizeSource=async()=>{throw Object.assign(Error('denied'),{code:'REBATE_EVIDENCE_NOT_FOUND'});};
+  await assert.rejects(reviewShipmentEvidence(user,payload,f.overrides),{code:'REBATE_EVIDENCE_NOT_FOUND'});
+  assert.equal(f.updated,undefined);
 });
 test('a reset not completed, missing source or failed participant cannot update review', async () => {
   for (const options of [{ epoch: { ...epoch, resetId: null } }, { missing: true }, { participantFails: true }, { issues: ['UNIT_UNCONFIRMED'] }]) {
@@ -79,4 +101,16 @@ test('review writes mapped business IDs separately from Access As primary IDs', 
     identityMapping: { primaryEffectiveUserId: 1, primaryActorUserId: 2, businessEffectiveUserId: 11, businessActorUserId: 22 } };
   await reviewShipmentEvidence(asUser, payload, f.overrides);
   assert.deepEqual([f.updated.primaryId, f.updated.businessId, f.updated.actorPrimaryId, f.updated.actorBusinessId], [1, 11, 2, 22]);
+});
+test('enabled verification accrues inside the same transaction and propagates missing snapshot', async () => {
+  const old=process.env.REBATE_POOL_103_ENABLED;process.env.REBATE_POOL_103_ENABLED='true';
+  try {
+    const f=fixture();
+    f.overrides.accrue=async (_query,e,key)=>{assert.equal(e.resetId,resetId);assert.deepEqual(key,{redemptionId:10,listNo:2});
+      assert.equal(f.updated.status,'MANUALLY_VERIFIED');return {id:8,replayed:false};};
+    const result=await reviewShipmentEvidence(user,payload,f.overrides);
+    assert.deepEqual(result.accrual,{id:8,replayed:false});
+    const g=fixture();g.overrides.accrue=async()=>{throw Object.assign(Error('snapshot missing'),{code:'REBATE_BOOKING_SNAPSHOT_UNAVAILABLE'});};
+    await assert.rejects(reviewShipmentEvidence(user,payload,g.overrides),{code:'REBATE_BOOKING_SNAPSHOT_UNAVAILABLE'});
+  } finally {if(old===undefined)delete process.env.REBATE_POOL_103_ENABLED;else process.env.REBATE_POOL_103_ENABLED=old;}
 });

@@ -81,6 +81,14 @@ async function confirmDraft({tx:confirmationTx,draftId,user,ip,expectedRevision,
  }
  await assertPriceBookLinesSellable({ lines, asOfDate: so.DeliveryDate || null, queryFn: confirmationQuery });
  await assertPricesAboveCost({ lines, asOfDate: so.DeliveryDate || null, rebateDiscountAmt, queryFn: confirmationQuery });
+ let rebatePriceDecisions=null, rebateQuery=null;
+ if(process.env.REBATE_POOL_103_ENABLED==='true') {
+   const {transactionQuery:rebateTransactionQuery}=require('./rebate-sql');
+   const {stageBookingInvoicePrices}=require('./rebate-booking-transaction');
+   rebateQuery=rebateTransactionQuery(confirmationTx,sql);
+   rebatePriceDecisions=await stageBookingInvoicePrices(rebateQuery,{draft:so,lines,
+     saleDate:getBangkokDateString(pickupResult.confirmedAt)});
+ }
  let newSoid=null;
       // 1. Persist pickup due date to draft before conversion
       await confirmationQuery(`
@@ -106,6 +114,10 @@ async function confirmDraft({tx:confirmationTx,draftId,user,ip,expectedRevision,
       
       newSoid = spRes.output.NewSoid;
       if (!newSoid) throw new Error('ย้ายข้อมูลไปยัง Winspeed ไม่สำเร็จ (ไม่ได้ SOID กลับมา)');
+      if(rebatePriceDecisions) {
+        const {finalizeBookingPriceSnapshots}=require('./rebate-booking-transaction');
+        await finalizeBookingPriceSnapshots(rebateQuery,{bookingId:newSoid,decisions:rebatePriceDecisions});
+      }
 
       // 3. Ensure native SO preserves PickupDueDate, PickupDueType, ConfirmedAt, PickupPolicySnapshotId, NoTruckRequired (SO-03, C1)
       // R9-8: Remove redundant UPDATE dbo.SOHD SET TransRegistration (sp_ConfirmSalesOrder already wrote the plate)

@@ -53,8 +53,8 @@ const db = h.installDbStub(({ text, inputs }) => {
   }
   if (/FROM wf\.SalesTrip st WHERE st\.TripId = @id/.test(text)) {
     // the route applies the scope in SQL: emulate "trip 53 is created by user 20 only"
-    const allowed = Object.entries(inputs).some(([k, v]) => /^tc|^tm/.test(k) && Number(v) === 20);
-    const all = !/tc0|tm0/.test(text) && !Object.keys(inputs).some(k => /^tc|^tm/.test(k));
+    const allowed = Object.entries(inputs).some(([k, v]) => /^t[ea][cm]/.test(k) && Number(v) === 20);
+    const all = !Object.keys(inputs).some(k => /^t[ea][cm]/.test(k));
     return (allowed || all) ? [{ TripId: 53, CreatedBy: 20 }] : [];
   }
   return [];

@@ -6,7 +6,7 @@
 const { lockVerifiedShipment } = require('./rebate-verified-shipment');
 const { withRebateOperationFence } = require('./rebate-reset-fence');
 const { transactionQuery } = require('./rebate-sql');
-function fail(code) { throw Object.assign(new Error(code), { code, status: 409 }); }
+function fail(code, status = 409) { throw Object.assign(new Error(code), { code, status }); }
 const positive = n => Number.isSafeInteger(n) && n > 0 && n <= 2147483647;
 function units(value, decimals) {
   const text = String(value ?? '');
@@ -28,9 +28,17 @@ async function accrueVerifiedShipment(query, epoch, key, overrides = {}) {
     fail('REBATE_SHIPMENT_SOURCE_INVALID');
   const qty = units(shipment.quantityTon, 3);
   if (qty <= 0n) fail('REBATE_SHIPMENT_AMOUNT_INVALID');
+  // Lazy import avoids a circular initialization with the exact decimal
+  // helpers exported by this module.
+  const snapshot=await (overrides.lockSnapshot || require('./rebate-shipment-booking-snapshot').lockShipmentBookingSnapshot)(query,shipment);
+  if (!snapshot || !positive(snapshot.bookingId) || !positive(snapshot.bookingLineNo) || !positive(snapshot.customerId))
+    fail('REBATE_BOOKING_SNAPSHOT_UNAVAILABLE');
+  const rate=units(snapshot.rebatePerTon,2);
+  if(rate===0n) return {skipped:true,reason:'NO_REBATE'};
+  if(rate>30000n) fail('REBATE_SHIPMENT_AMOUNT_INVALID');
   const p = { environment:epoch.environment, resetId:epoch.resetId, generation:epoch.generation,
     evidenceId:shipment.evidenceId, sourceSOID:shipment.sourceSOID, sourceListNo:shipment.sourceListNo,
-    couponId:shipment.couponId, goodId:shipment.goodId };
+    couponId:shipment.couponId, goodId:shipment.goodId,bookingId:snapshot.bookingId,bookingLineNo:snapshot.bookingLineNo };
   const existing = (await query(`SELECT * FROM wf.RebateShipmentAccrual WITH(UPDLOCK,HOLDLOCK)
     WHERE EnvironmentKind=@environment AND ResetId=@resetId AND EvidenceId=@evidenceId`, p)).recordset || [];
   if (existing.length > 1) fail('REBATE_SHIPMENT_RECEIPT_INVALID');
@@ -39,38 +47,30 @@ async function accrueVerifiedShipment(query, epoch, key, overrides = {}) {
     if (!Number.isSafeInteger(id) || id <= 0 || Number(r.Generation)!==epoch.generation ||
         Number(r.SourceSOID)!==shipment.sourceSOID || Number(r.SourceListNo)!==shipment.sourceListNo ||
         Number(r.CouponId)!==shipment.couponId || Number(r.GoodId)!==shipment.goodId ||
-        !positive(Number(r.CustId)) || !positive(Number(r.PlanId)) || units(r.RebatePerTon,2)<=0n ||
-        units(r.ListPricePerTon,2)-units(r.NetPricePerTon,2)!==units(r.RebatePerTon,2) ||
-        units(r.AmountBaht,2)!==(qty*units(r.RebatePerTon,2)+500n)/1000n ||
+        Number(r.CustId)!==snapshot.customerId || r.PlanId!=null || Number(r.BookingSOID)!==snapshot.bookingId ||
+        Number(r.BookingLineNo)!==snapshot.bookingLineNo || units(r.RebatePerTon,2)!==rate ||
+        units(r.ListPricePerTon,2)!==units(snapshot.basePrice,2) || units(r.NetPricePerTon,2)!==units(snapshot.sellingPrice,2) ||
+        units(r.AmountBaht,2)!==(qty*rate+500n)/1000n ||
         units(r.QuantityTon,3)!==qty || at(r.OccurredAtUtc)!==at(shipment.occurredAtUtc)) fail('REBATE_SHIPMENT_RECEIPT_INVALID');
     return { id, replayed:true };
   }
-  // The current view selects a plan dynamically. A serializable plan scan
-  // prevents a concurrent plan edit/insert changing the chosen rate before
-  // this transaction commits. Performance and UAT lock behavior must be
-  // verified before exposing this primitive.
-  await query("SELECT PlanId FROM wf.RebatePlan WITH(UPDLOCK,HOLDLOCK) WHERE Status IN ('ACTIVE','APPROVED')", {});
-  const lots = (await query(`SELECT SourceSOID,SourceListNo,CouponID,GoodID,CustId,PlanId,QtyTon,ListPricePerTon,NetPricePerTon,RebatePerTon
-    FROM wf.v_RebateAccrualLot WHERE SourceSOID=@sourceSOID AND SourceListNo=@sourceListNo AND CouponID=@couponId`, p)).recordset || [];
-  if (lots.length !== 1) fail('REBATE_SHIPMENT_LOT_UNAVAILABLE');
-  const lot = lots[0], custId = Number(lot.CustId), planId = Number(lot.PlanId);
-  if (Number(lot.SourceSOID)!==shipment.sourceSOID || Number(lot.SourceListNo)!==shipment.sourceListNo ||
-      Number(lot.CouponID)!==shipment.couponId || Number(lot.GoodID)!==shipment.goodId || !positive(custId) || !positive(planId))
-    fail('REBATE_SHIPMENT_LOT_UNAVAILABLE');
-  const sold = units(lot.QtyTon,3), rate = units(lot.RebatePerTon,2);
-  if (sold <= 0n || rate <= 0n || units(lot.ListPricePerTon,2)-units(lot.NetPricePerTon,2)!==rate) fail('REBATE_SHIPMENT_PLAN_UNAVAILABLE');
-  const accumulated = (await query(`SELECT COALESCE(SUM(QuantityTon),0) AS QuantityTon FROM wf.RebateShipmentAccrual WITH(HOLDLOCK)
-    WHERE EnvironmentKind=@environment AND ResetId=@resetId AND SourceSOID=@sourceSOID AND SourceListNo=@sourceListNo`, p)).recordset?.[0];
-  if (!accumulated || units(accumulated.QuantityTon,3)+qty > sold) fail('REBATE_SHIPMENT_EXCEEDS_SALE');
+  // Snapshot 103 is locked by the resolver above. Check both the originating
+  // delivery and the whole booking so split 104s cannot accrue the same tons.
+  const accumulated = (await query(`SELECT
+      COALESCE(SUM(CASE WHEN SourceSOID=@sourceSOID AND SourceListNo=@sourceListNo THEN QuantityTon ELSE 0 END),0) AS DeliveryTon,
+      COALESCE(SUM(QuantityTon),0) AS BookingTon FROM wf.RebateShipmentAccrual WITH(HOLDLOCK)
+    WHERE EnvironmentKind=@environment AND ResetId=@resetId AND BookingSOID=@bookingId AND BookingLineNo=@bookingLineNo`, p)).recordset?.[0];
+  if (!accumulated || units(accumulated.DeliveryTon,3)+qty>units(snapshot.deliveryQty,3) ||
+      units(accumulated.BookingTon,3)+qty>units(snapshot.bookingQty,3)) fail('REBATE_SHIPMENT_EXCEEDS_SALE');
   const cents = (qty*rate+500n)/1000n; // nonnegative DECIMAL rounding to baht cents
   if (cents <= 0n || cents > 999999999999999999n) fail('REBATE_SHIPMENT_AMOUNT_INVALID');
   const inserted = (await query(`INSERT wf.RebateShipmentAccrual(EnvironmentKind,ResetId,Generation,EvidenceId,SourceSOID,
-      SourceListNo,CouponId,GoodId,CustId,PlanId,QuantityTon,ListPricePerTon,NetPricePerTon,RebatePerTon,AmountBaht,OccurredAtUtc)
+      SourceListNo,CouponId,GoodId,CustId,PlanId,BookingSOID,BookingLineNo,QuantityTon,ListPricePerTon,NetPricePerTon,RebatePerTon,AmountBaht,OccurredAtUtc)
     OUTPUT INSERTED.Id VALUES(@environment,@resetId,@generation,@evidenceId,@sourceSOID,@sourceListNo,@couponId,@goodId,
-      @custId,@planId,CAST(@quantity AS decimal(18,3)),CAST(@listPrice AS decimal(18,2)),CAST(@netPrice AS decimal(18,2)),
+      @custId,NULL,@bookingId,@bookingLineNo,CAST(@quantity AS decimal(18,3)),CAST(@listPrice AS decimal(18,2)),CAST(@netPrice AS decimal(18,2)),
       CAST(@rate AS decimal(18,2)),CAST(@amount AS decimal(18,2)),@occurred)`,
-  { ...p, custId, planId, quantity:shipment.quantityTon, listPrice:String(lot.ListPricePerTon), netPrice:String(lot.NetPricePerTon),
-    rate:String(lot.RebatePerTon), amount:money(cents), occurred:shipment.occurredAtUtc })).recordset?.[0];
+  { ...p, custId:snapshot.customerId, quantity:shipment.quantityTon, listPrice:snapshot.basePrice, netPrice:snapshot.sellingPrice,
+    rate:snapshot.rebatePerTon, amount:money(cents), occurred:shipment.occurredAtUtc })).recordset?.[0];
   const id = Number(inserted?.Id);
   if (!Number.isSafeInteger(id) || id <= 0) fail('REBATE_SHIPMENT_RECEIPT_INVALID');
   return { id, replayed:false };
@@ -82,7 +82,11 @@ async function accrueReviewedShipment(key, overrides = {}) {
   const db = overrides.db || require('../db');
   const runFence = overrides.runFence || (fn => withRebateOperationFence(fn));
   const runTx = overrides.runTx || (fn => db.wfTransaction(tx => fn(transactionQuery(tx, db.sql))));
-  return runFence(epoch => runTx(query => accrueVerifiedShipment(query, epoch, key, overrides)));
+  return runFence(epoch => runTx(async query => {
+    await (overrides.participantFence || require('./rebate-participant-fence').acquireRebateParticipantFence)(query, epoch);
+    if(process.env.REBATE_POOL_103_ENABLED!=='true') fail('REBATE_POOL_PRICING_SOURCE_UNAVAILABLE', 503);
+    return accrueVerifiedShipment(query,epoch,key,overrides);
+  }));
 }
 
 module.exports = { accrueVerifiedShipment, accrueReviewedShipment, shipmentUnits: units, shipmentMoney: money };

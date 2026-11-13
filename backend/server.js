@@ -45,6 +45,8 @@ if (backgroundWorkersDisabled) {
 }
 // reads the scale, WinSpeed and this database only, so it also runs on UAT
 require('./services/scale-ship-sync').start();
+// Opt-in only; independently disabled by DISABLE_BACKGROUND_WORKERS.
+require('./services/rebate-evidence-discovery-worker').createWorker().start();
 
 // CORS — supports comma-separated origins or '*'
 // Set CORS_ORIGIN in env, e.g.: https://app.example.com,http://localhost:5173

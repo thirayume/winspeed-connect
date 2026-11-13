@@ -6,12 +6,12 @@ h.installDbStub(() => [], { activeUserIds: h.TEST_USERS });
 const servicePath = require.resolve('../services/rebate-conversion-execution');
 const real = require(servicePath);
 let calls = [];
-require.cache[servicePath].exports = { ...real, executeReviewedConversion: async (user, body) => {
-  calls.push({ user, body }); return { conversion: { id: 1 }, replayed: false };
+require.cache[servicePath].exports = { ...real, executeReviewedConversion: async (user, body, options) => {
+  calls.push({ user, body, options }); return { conversion: { id: 1 }, replayed: false };
 } };
 let app;
 test.before(async () => { app = await h.startApp([['/api/rebate-pool', '../../routes/rebate-pool']]); });
-test.after(async () => { delete process.env.REBATE_CONVERSION_ENABLED; await app.close(); });
+test.after(async () => { delete process.env.REBATE_CONVERSION_ENABLED; delete process.env.REBATE_POOL_103_ENABLED; await app.close(); });
 
 test('conversion is disabled by default even for admin', async () => {
   delete process.env.REBATE_CONVERSION_ENABLED; calls = [];
@@ -20,9 +20,15 @@ test('conversion is disabled by default even for admin', async () => {
 });
 
 test('an environment flag cannot expose the separate rebate ledger', async () => {
-  process.env.REBATE_CONVERSION_ENABLED = 'true'; calls = [];
+  process.env.REBATE_CONVERSION_ENABLED = 'true'; delete process.env.REBATE_POOL_103_ENABLED; calls = [];
   const result = await app.call('POST', '/api/rebate-pool/conversions/execute', { user: { sub: 1, role: 'ADMIN' }, body: { requestId: 'fixture' } });
   assert.equal(result.status, 503); assert.equal(result.body.code, 'REBATE_SINGLE_SOURCE_REQUIRED'); assert.equal(calls.length, 0);
+});
+
+test('both flags expose only the shipment epoch service to an authorized caller',async()=>{
+  process.env.REBATE_CONVERSION_ENABLED='true';process.env.REBATE_POOL_103_ENABLED='true';calls=[];
+  const result=await app.call('POST','/api/rebate-pool/conversions/execute',{user:{sub:1,role:'ADMIN'},body:{requestId:'fixture'}});
+  assert.equal(result.status,200);assert.equal(calls.length,1);assert.equal(calls[0].options.requireShipmentEpoch,true);
 });
 
 test('enabled conversion does not allow a user without permission', async () => {

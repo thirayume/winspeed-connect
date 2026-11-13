@@ -2587,6 +2587,46 @@ export const cancelEditRequest = (id: number | string, note?: string) =>
     `/edit-requests/${id}/cancel`, { method: 'PATCH', body: JSON.stringify({ note }) });
 
 // ── Price Approvals (P0) ──────────────────────────────────────
+export type RebateBookingPricePreview = {
+  draftId: number;
+  revision: number;
+  saleDate: string;
+  lines: Array<{
+    lineNo: number;
+    goodId: number;
+    quantityTon: string;
+    basePrice: string;
+    sellingPrice: string;
+    invoicePrice: number;
+    rebatePerTon: number;
+    requiresManagerApproval: boolean;
+    fingerprint: string;
+  }>;
+};
+
+export const previewRebateBookingPricing = (draftId: number) =>
+  req<RebateBookingPricePreview>(`/so/${draftId}/rebate-pricing-preview`);
+
+export const approveRebateBookingPricing = (draftId: number, input: {
+  lineNo: number; expectedRevision: number; expectedFingerprint: string; reason: string;
+}) => req<{ id: number; fingerprint: string; saleDate: string; replayed: boolean }>(
+  `/so/${draftId}/rebate-pricing-approval`, { method: 'POST', body: JSON.stringify(input) });
+
+export type RebateShipmentEvidence = {
+  Id: number; RedemptionId: number | null; RedemptionListNo: number | null; Revision: number;
+  DocuNo: string | null; DocuDate: string | null; IsOpeningSource: number; Status: string; HoldReason: string;
+  QuantityTon: number | null; SourceSOID: number | null; SourceListNo: number | null; GoodId: number | null;
+};
+export const fetchRebateShipmentEvidence = () =>
+  req<{data: RebateShipmentEvidence[]}>('/rebate-pool/shipment-evidence');
+export const stageRebateShipmentEvidence = (redemptionId: number, listNo: number) =>
+  req<{id: number; status: string; replayed: boolean}>('/rebate-pool/shipment-evidence/stage',
+    {method:'POST', body:JSON.stringify({redemptionId,listNo})});
+export const reviewRebateShipmentEvidence = (id: number, input: {
+  expectedRevision: number; decision: 'VERIFY' | 'REJECT'; occurredAtUtc?: string; reason: string;
+}) => req<{id:number;status:string}>(`/rebate-pool/shipment-evidence/${id}/review`,
+  {method:'POST', body:JSON.stringify(input)});
+
 export type PriceApprovalRow = {
   id: number;
   soId: number;

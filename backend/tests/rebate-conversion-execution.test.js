@@ -40,7 +40,10 @@ function fixture() {
         const query = async (text, p) => {
           if (/sp_getapplock/.test(text)) return { recordset: [] };
           if (/SELECT TOP 1 1 AS ok FROM wf.v_RebateAccrualRemaining/.test(text)) return { recordset: /1=0/.test(text) ? [] : [{ ok: 1 }] };
-          if (/SELECT TOP 1 1 AS ok FROM wf.RebateShipmentAccrual/.test(text)) return { recordset: /1=0/.test(text) ? [] : [{ ok: 1 }] };
+          if (/SELECT a.Id AS AccrualId/.test(text)) {
+            assert.doesNotMatch(text,/v_RebateAccrualLot|RebatePlan/);
+            return { recordset: /1=0/.test(text) ? [] : [{ AccrualId: 1 }] };
+          }
           if (/SELECT \* FROM wf.RebateConversionRequest/.test(text)) return { recordset: state.receipts[p.requestId] ? [state.receipts[p.requestId]] : [] };
           if (/INSERT INTO wf.RebateConversionRequest/.test(text)) {
             state.receipts[p.requestId] = { Fingerprint: p.fingerprint, IdentityActorId: p.actor,
@@ -78,6 +81,12 @@ test('after reset conversion takes the shipment path, never the legacy 104 lots'
   deps.convertShipment=deps.convert;deps.convert=async()=>{throw Error('legacy path must not run');};
   const result=await executeReviewedConversion(actor,base,deps);
   assert.equal(result.replayed,false);assert.equal(state.runs,1);assert.equal(state.balance,500);
+});
+
+test('HTTP shipment requirement rejects generation zero before reading or deducting the old balance',async()=>{
+  const {state,deps}=fixture();deps.requireShipmentEpoch=true;
+  await assert.rejects(executeReviewedConversion(actor,base,deps),{code:'REBATE_RESET_NOT_COMPLETED'});
+  assert.equal(state.balance,1000);assert.equal(state.runs,0);assert.deepEqual(state.receipts,{});
 });
 
 test('concurrent retry converts once and returns the same receipt', async () => {

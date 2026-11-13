@@ -333,7 +333,7 @@ const db = h.installDbStub((call) => {
       Status: 'PENDING', DocumentRevision: 1, RequestedBy: 99, SalesUserId: 99,
     }];
   }
-  if (/FROM wf\.SalesOrder WHERE Id = @soId/i.test(text)) {
+  if (/FROM wf\.SalesOrder WITH \(UPDLOCK, HOLDLOCK\) WHERE Id = @soId/i.test(text)) {
     return [{ DocumentRevision: 1, Status: 'DRAFT', DeliveryDate: '2026-11-12', RebateDiscountAmt: 0 }];
   }
   if (/FROM wf\.SalesOrderLine/i.test(text)) {

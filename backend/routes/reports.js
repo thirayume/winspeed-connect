@@ -149,7 +149,9 @@ const REPORTS = {
       { key: 'Status', label: 'สถานะเอกสาร', type: 'text' },
       { key: 'Cnt', label: 'จำนวนสำเนา (ใบ)', type: 'integer', unit: 'ใบ', aggregation: 'sum' },
     ],
-    sql: `SELECT Status, COUNT(*) AS Cnt FROM wf.PaperCopy GROUP BY Status ORDER BY Cnt DESC`,
+    sql: `SELECT Status, COUNT(*) AS Cnt FROM wf.PaperCopy
+          WHERE PrintedAt >= @globalStartUtc
+          GROUP BY Status ORDER BY Cnt DESC`,
   },
   'cn-rebate': {
     title: 'WF Rebate Trail (WINSpeed coupon redemption)',
@@ -711,6 +713,7 @@ const REPORTS = {
           FROM wf.RebateClaim c WITH (NOLOCK)
           LEFT JOIN wf.RebateClaimLine l WITH (NOLOCK) ON l.ClaimId = c.Id
           LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = c.SalesUserId
+          WHERE c.CreatedAt >= @globalStartUtc
           -- LineNo เป็นคำสงวนของ SQL Server ต้องครอบด้วยวงเล็บเหลี่ยมเสมอ
           ORDER BY c.Id DESC, l.[LineNo] ASC`,
   },
@@ -740,6 +743,7 @@ const REPORTS = {
           JOIN wf.PriceBook pb WITH (NOLOCK) ON pb.Id = sp.PriceBookId
           LEFT JOIN wf.AppUser reqU WITH (NOLOCK) ON reqU.Id = sp.RequestedBy
           LEFT JOIN wf.AppUser appvU WITH (NOLOCK) ON appvU.Id = sp.ApprovedBy
+          WHERE sp.CreatedAt >= @globalStartUtc
           ORDER BY sp.Id DESC`,
   },
   'weighbridge-detail': {
@@ -764,6 +768,7 @@ const REPORTS = {
                  CONVERT(VARCHAR(19), wt.WeighOutAt, 120) AS WeighOutAt,
                  wt.OverrideReason AS Note
           FROM wf.WeighTicket wt WITH (NOLOCK)
+          WHERE COALESCE(wt.WeighOutAt, wt.WeighInAt, wt.CreatedAt) >= @globalStartUtc
           ORDER BY wt.Id DESC`,
   },
   'customer-dispatch': {

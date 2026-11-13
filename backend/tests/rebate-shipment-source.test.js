@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { lockShipmentSource } = require('../services/rebate-shipment-source');
+const { lockShipmentSource, SNAPSHOT_SQL } = require('../services/rebate-shipment-source');
 function row() { return { RedemtionID: 1, RedemptionListNo: 2, CouponID: 3, SourceSOID: 4, SourceListNo: 5,
   GoodID: 6, GoodUnitID: 7, CouponGoodID: 6, CouponGoodUnitID: 7, SaleGoodID: 6, SaleGoodUnitID: 7, SaleHeaderId: 4, SaleLineId: 4,
   RedemptionStatus: 'N', SaleStatus: 'Y', Quantity: '1.000',
@@ -9,6 +9,7 @@ function row() { return { RedemtionID: 1, RedemptionListNo: 2, CouponID: 3, Sour
   UnitSnapshot: 'unit', ScaleSnapshot: '', AuditSnapshot: '' }; }
 const load = item => async () => ({ recordset: item == null ? [] : [item] });
 test('fingerprints the native documents without exposing their contents or inferring physical proof', async () => {
+  assert.match(SNAPSHOT_SQL, /sdt\.RefSOID,sdt\.RefListNo/);
   const original = await lockShipmentSource(load(row()), { redemptionId: 1, listNo: 2 });
   assert.match(original.fingerprint, /^[a-f0-9]{64}$/);
   assert.equal(original.scaleRowsPresent, false);

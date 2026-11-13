@@ -69,7 +69,9 @@ test('the trip confirm locks an unlocked WinSpeed member only after the check', 
   assert.match(src, /IsUnlocked = 0\s+WHERE SOID = @soid/);
 });
 
-test('a new trip takes in a WinSpeed bill that is in no trip yet', () => {
+test('a new trip limits WinSpeed members to unlinked bookings within the data window', () => {
   const src = require('fs').readFileSync(require.resolve('../routes/trips'), 'utf8');
-  assert.match(src, /UPDATE wf\.SalesOrderExt SET TripId = @tripId, UpdatedAt = SYSUTCDATETIME\(\)\s+WHERE SOID = @soid AND TripId IS NULL AND \(@own = 0 OR SalesUserId = @uid\)/);
+  assert.match(src, /UPDATE e SET TripId=@tripId, UpdatedAt=SYSUTCDATETIME\(\)/);
+  assert.match(src, /e\.SOID=@soid AND e\.TripId IS NULL AND h\.DocuDate>=@startDate/);
+  assert.match(src, /\$\{nativeEffective\.sql\} AND \$\{nativeActor\.sql\}/);
 });

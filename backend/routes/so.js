@@ -21,6 +21,7 @@ const { broadcast } = require('../services/socket');
 const { enqueue } = require('../services/outbox');
 const { writeAudit, auditUser, SCREEN } = require('../services/winspeed-audit');
 const { evaluateLinePrice, createPriceApprovalRequest, calculatePricingFingerprint, resolveAuthoritativePrice } = require('../services/price-authority');
+const { normalizeRebatePricingMode } = require('../services/rebate-draft-mode');
 const { evaluateSellingPriceFloor, assertPricesAboveCost, assertPriceBookLinesSellable } = require('../services/cost-authority');
 const {initialBookingAi,aiHttpError,assertInitialAiShipmentReady}=require('../services/initial-booking-ai');
 const {initialDelivery,deliveryHttpError}=require('../services/initial-delivery');
@@ -322,6 +323,7 @@ async function getSoOrThrow(id, expectedStatus = null) {
     `SELECT * FROM wf.v_AllSalesOrders WHERE ${idCol} = @id AND ${windowSql}`,
     { id: { type: idType, value: idValue }, ...windowInputs }
   );
+  if ((r.recordset?.length || 0) > 1) throw Object.assign(new Error('เลขภายในเอกสารซ้ำ กรุณาให้ผู้ดูแลตรวจสอบ'), { status: 409, code: 'SO_SOURCE_ID_COLLISION' });
   let so = r.recordset?.[0];
 
   // If not found, try to see if this ID was deduplicated out. Find the actual active SOID for its DocuNo.
@@ -331,6 +333,7 @@ async function getSoOrThrow(id, expectedStatus = null) {
       UNION
       SELECT ISNULL(ImportedDocuNo, WfRef) AS DocuNo FROM wf.SalesOrder WITH (NOLOCK) WHERE Id = @id AND CreatedAt >= @globalStartUtc
     `, { id: { type: sql.Int, value: Number(id) || 0 }, ...windowInputs });
+    if ((docLookup.recordset?.length || 0) > 1) throw Object.assign(new Error('เลขภายในเอกสารซ้ำ กรุณาให้ผู้ดูแลตรวจสอบ'), { status: 409, code: 'SO_SOURCE_ID_COLLISION' });
     
     if (docLookup.recordset?.length > 0) {
        const docuNo = docLookup.recordset[0].DocuNo;
@@ -339,6 +342,7 @@ async function getSoOrThrow(id, expectedStatus = null) {
            `SELECT * FROM wf.v_AllSalesOrders WHERE (WfRef = @docuNo OR ImportedDocuNo = @docuNo) AND ${windowSql}`,
            { docuNo: { type: sql.VarChar(50), value: docuNo }, ...windowInputs }
          );
+         if ((r.recordset?.length || 0) > 1) throw Object.assign(new Error('เลขอ้างอิงเอกสารซ้ำ กรุณาให้ผู้ดูแลตรวจสอบ'), { status: 409, code: 'SO_SOURCE_ID_COLLISION' });
          so = r.recordset?.[0];
        }
     }
@@ -493,17 +497,31 @@ async function ensureSalesOrderExt(soid) {
   return { created, salesUserId: cur.recordset?.[0]?.SalesUserId ?? null };
 }
 
-async function getLines(soId) {
+async function getLines(soId, { isDraft = false } = {}) {
   const isString = typeof soId === 'string' && isNaN(Number(soId));
   const idValue = isString ? soId : Number(soId);
   const idCol = isString ? 'SoId' : 'CAST(SoId AS INT)';
   const idType = isString ? sql.VarChar(50) : sql.Int;
 
-  let r = await wfQuery(
+  // The union view does not distinguish draft IDs from WinSpeed SOIDs.
+  // Read draft rows from their own table; otherwise a numeric collision can
+  // mix two orders' lines and bind pricing to the wrong sale.
+  if (!isDraft && !isString) {
+    const collision = await wfQuery(
+      `SELECT TOP 1 Id FROM wf.SalesOrder WHERE Id=@soId AND Status='DRAFT'`,
+      { soId: { type: sql.Int, value: Number(idValue) } }
+    );
+    if (collision.recordset?.length) throw Object.assign(new Error('เลขภายในใบจองซ้ำกับบิลร่าง กรุณาให้ผู้ดูแลตรวจสอบ'), { status: 409, code: 'SO_SOURCE_ID_COLLISION' });
+  }
+  let r = isDraft ? await wfQuery(
+    `SELECT sol.*, au.DisplayName AS GiveawayApprovedByName FROM wf.SalesOrderLine sol
+     LEFT JOIN wf.AppUser au ON au.Id=sol.GiveawayApprovedBy WHERE sol.SoId=@soId ORDER BY sol.LineNum`,
+    { soId: { type: sql.Int, value: Number(idValue) } }
+  ) : await wfQuery(
     `SELECT * FROM wf.v_AllSalesOrderLines WHERE ${idCol} = @soId ORDER BY LineNum`,
     { soId: { type: idType, value: idValue } }
   );
-  if (!r.recordset || r.recordset.length === 0) {
+  if (isDraft && (!r.recordset || r.recordset.length === 0)) {
     const numId = Number(idValue);
     if (!isNaN(numId)) {
       r = await wfQuery(
@@ -515,12 +533,12 @@ async function getLines(soId) {
   }
 
   // Enrich with Coupon and Beneficiary fields from wf.SalesOrderLine & wf.CouponReservation (Q7)
-  if (r.recordset && r.recordset.length > 0) {
+  if (isDraft && r.recordset && r.recordset.length > 0) {
     const numId = Number(idValue);
     if (!isNaN(numId)) {
       const couponLines = (await wfQuery(`
         SELECT 
-          cl.LineNum, cl.CouponReservationId, cl.RefCouponDocuNo, cl.IsCouponDrawn,
+          cl.LineNum, cl.CouponReservationId, cl.RefCouponDocuNo, cl.IsCouponDrawn, cl.RebatePricingMode,
           cr.BeneficiaryCustId, cr.OwnerCustId,
           ben.CustCode AS BeneficiaryCustCode, ben.CustName AS BeneficiaryCustName,
           own.CustCode AS OwnerCustCode, own.CustName AS OwnerCustName
@@ -536,6 +554,9 @@ async function getLines(soId) {
         for (const line of r.recordset) {
           const match = cMap.get(line.LineNum);
           if (match) {
+            // Draft and native IDs can overlap. Only apply the draft mode
+            // when the caller already established the record is a draft.
+            if (isDraft) line.RebatePricingMode = match.RebatePricingMode ?? null;
             line.CouponReservationId = match.CouponReservationId;
             line.RefCouponDocuNo = match.RefCouponDocuNo;
             line.IsCouponDrawn = match.IsCouponDrawn;
@@ -1204,6 +1225,33 @@ router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN',
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
+// Rebate Pool price decisions stay disabled until the booking, shipment and
+// reset workflows have all passed UAT together. Never accept a client price.
+router.get('/:id/rebate-pricing-preview', requireCapability('rebate.approve-over-limit'), requireRebateAmountAccess, async (req,res) => {
+  if(process.env.REBATE_POOL_103_ENABLED!=='true') return res.status(503).json({code:'REBATE_POOL_103_UNAVAILABLE',message:'การอนุมัติราคา Rebate ยังไม่เปิดใช้งาน'});
+  try {
+    const window=await require('../services/global-data-window-store').readGlobalDataWindow();
+    const {transactionQuery}=require('../services/rebate-sql');
+    const {previewBookingPricing}=require('../services/rebate-booking-approval');
+    const result=await wfTransaction(tx=>previewBookingPricing(transactionQuery(tx,sql),{
+      user:req.user,draftId:Number(req.params.id),windowStartUtc:window.utcInstant}));
+    res.json(result);
+  } catch(e) {res.status(e.status||500).json({code:e.code||'REBATE_PRICE_ERROR',message:e.message});}
+});
+
+router.post('/:id/rebate-pricing-approval', requireCapability('rebate.approve-over-limit'), requireRebateAmountAccess, async (req,res) => {
+  if(process.env.REBATE_POOL_103_ENABLED!=='true') return res.status(503).json({code:'REBATE_POOL_103_UNAVAILABLE',message:'การอนุมัติราคา Rebate ยังไม่เปิดใช้งาน'});
+  try {
+    const window=await require('../services/global-data-window-store').readGlobalDataWindow();
+    const {transactionQuery}=require('../services/rebate-sql');
+    const {reviewBookingPricing}=require('../services/rebate-booking-approval');
+    const result=await wfTransaction(tx=>reviewBookingPricing(transactionQuery(tx,sql),{
+      user:req.user,draftId:Number(req.params.id),lineNo:Number(req.body?.lineNo),expectedRevision:Number(req.body?.expectedRevision),
+      expectedFingerprint:req.body?.expectedFingerprint,reason:req.body?.reason,windowStartUtc:window.utcInstant}));
+    res.json(result);
+  } catch(e) {res.status(e.status||500).json({code:e.code||'REBATE_PRICE_ERROR',message:e.message});}
+});
+
 // ── GET /api/so/:id/weigh — WeighTicket ของ SO ───────────────
 router.get('/:id/weigh', requireSoInScope, async (req, res) => {
   try {
@@ -1221,7 +1269,7 @@ router.get('/:id', async (req, res) => {
     const so = await getSoOrThrow(req.params.id);
     if (!(await soVisibleTo(req.user, so))) return res.status(404).json({ message: `SO id ${req.params.id} ไม่พบ` });
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
-    const lines = await getLines(so.Id);
+    const lines = await getLines(so.Id, { isDraft: !so.ImportedDocuNo });
     const auditR = await wfQuery(
       `SELECT a.*, u.DisplayName FROM wf.SalesOrderAudit a JOIN wf.AppUser u ON u.Id = a.UserId WHERE a.SoId = @id AND a.CreatedAt >= @globalStartUtc ORDER BY a.CreatedAt DESC`,
       { id: { type: sql.VarChar(50), value: String(so.Id) }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } }
@@ -1796,6 +1844,7 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
           lr.input('pricePerTon',          sql.Decimal(12,2), isGw ? 0 : Number(l.pricePerTon));
           lr.input('netPricePerTon',       sql.Decimal(12,2), isGw ? 0 : boundNetPrice);
           lr.input('isGiveaway',           sql.Bit,           isGw ? 1 : 0);
+          lr.input('rebatePricingMode',    sql.VarChar(8),    normalizeRebatePricingMode(l));
           lr.input('refControlTicketNo',   sql.NVarChar(30),  l.refControlTicketNo || null);
           lr.input('isControlTicketDrawn', sql.Bit,           l.isControlTicketDrawn ? 1 : 0);
           lr.input('couponReservationId',   sql.Int,           l.couponReservationId ? Number(l.couponReservationId) : null);
@@ -1806,8 +1855,8 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
           
           await lr.query(`
             INSERT INTO wf.SalesOrderLine
-              (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, MasterQty, ChildQty, PricePerTon, NetPricePerTon, IsGiveaway, RefControlTicketNo, IsControlTicketDrawn, CouponReservationId, RefCouponDocuNo, IsCouponDrawn, LoadSequence${giveawayApprovalInsertColumns(hasGiveawayApproval)})
-            VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @masterQty, @childQty, @pricePerTon, @netPricePerTon, @isGiveaway, @refControlTicketNo, @isControlTicketDrawn, @couponReservationId, @refCouponDocuNo, @isCouponDrawn, @loadSequence${giveawayApprovalInsertValues(hasGiveawayApproval)})
+              (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, MasterQty, ChildQty, PricePerTon, NetPricePerTon, IsGiveaway, RebatePricingMode, RefControlTicketNo, IsControlTicketDrawn, CouponReservationId, RefCouponDocuNo, IsCouponDrawn, LoadSequence${giveawayApprovalInsertColumns(hasGiveawayApproval)})
+            VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @masterQty, @childQty, @pricePerTon, @netPricePerTon, @isGiveaway, @rebatePricingMode, @refControlTicketNo, @isControlTicketDrawn, @couponReservationId, @refCouponDocuNo, @isCouponDrawn, @loadSequence${giveawayApprovalInsertValues(hasGiveawayApproval)})
           `);
 
           if (l.couponReservationId) {
@@ -1995,10 +2044,16 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
     const isSohdOrder = !!so.ImportedDocuNo;
 
       if (isSohdOrder) {
+      if (order.lines.some(l => l.rebatePricingMode != null && l.rebatePricingMode !== '')) {
+        return res.status(409).json({ code: 'REBATE_NATIVE_EDIT_UNAVAILABLE', message: 'ยังไม่รองรับการเปลี่ยนประเภทรีเบทในใบจองที่ออกแล้ว' });
+      }
       await assertNoIssuedDelivery(so);
       const beforeLines = await getLines(so.Id);
       let approvalReset = null;
       await wfTransaction(async tx => {
+        const { transactionQuery: rebateTransactionQuery } = require('../services/rebate-sql');
+        const { assertBookingSnapshotEditable } = require('../services/rebate-booking-snapshot');
+        await assertBookingSnapshotEditable(rebateTransactionQuery(tx, sql), so.Id);
         const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, rebateDiscountAmt, creditDays, truckRemark, billRemark, transpId } = order;
         const truckPlate = order.truckPlate || null;
         stripPrivateLineFields(lines);
@@ -2391,6 +2446,7 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
         lr.input('pricePerTon',          sql.Decimal(12,2), isGw ? 0 : Number(l.pricePerTon));
         lr.input('netPricePerTon',       sql.Decimal(12,2), isGw ? 0 : boundNetPrice);
         lr.input('isGiveaway',           sql.Bit,           isGw ? 1 : 0);
+        lr.input('rebatePricingMode',    sql.VarChar(8),    normalizeRebatePricingMode(l));
         lr.input('refControlTicketNo',   sql.NVarChar(30),  l.refControlTicketNo || null);
         lr.input('isControlTicketDrawn', sql.Bit,           l.isControlTicketDrawn ? 1 : 0);
         lr.input('couponReservationId',   sql.Int,           l.couponReservationId ? Number(l.couponReservationId) : null);
@@ -2401,8 +2457,8 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
         
         await lr.query(`
           INSERT INTO wf.SalesOrderLine
-            (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, MasterQty, ChildQty, PricePerTon, NetPricePerTon, IsGiveaway, RefControlTicketNo, IsControlTicketDrawn, CouponReservationId, RefCouponDocuNo, IsCouponDrawn, LoadSequence${giveawayApprovalInsertColumns(hasGiveawayApproval)})
-          VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @masterQty, @childQty, @pricePerTon, @netPricePerTon, @isGiveaway, @refControlTicketNo, @isControlTicketDrawn, @couponReservationId, @refCouponDocuNo, @isCouponDrawn, @loadSequence${giveawayApprovalInsertValues(hasGiveawayApproval)})
+            (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, MasterQty, ChildQty, PricePerTon, NetPricePerTon, IsGiveaway, RebatePricingMode, RefControlTicketNo, IsControlTicketDrawn, CouponReservationId, RefCouponDocuNo, IsCouponDrawn, LoadSequence${giveawayApprovalInsertColumns(hasGiveawayApproval)})
+          VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @masterQty, @childQty, @pricePerTon, @netPricePerTon, @isGiveaway, @rebatePricingMode, @refControlTicketNo, @isControlTicketDrawn, @couponReservationId, @refCouponDocuNo, @isCouponDrawn, @loadSequence${giveawayApprovalInsertValues(hasGiveawayApproval)})
         `);
 
         if (l.couponReservationId) {

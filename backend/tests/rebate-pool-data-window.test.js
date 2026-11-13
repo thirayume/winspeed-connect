@@ -85,3 +85,13 @@ test('queue rejects malformed as-of dates without querying source lots', async (
   assert.equal(result.status, 400);
   assert.ok(!db.calls.slice(before).some(c => /FROM wf\.v_RebateAccrualRemaining/.test(c.text)));
 });
+
+test('new shipment workflow never exposes legacy ledger or alerts as current balances',async()=>{
+  process.env.REBATE_POOL_103_ENABLED='true';
+  try {
+    for(const path of ['/ledger','/alerts']) {
+      const result=await app.call('GET','/api/rebate-pool'+path,{user:{sub:1,role:'ADMIN'}});
+      assert.equal(result.status,503);assert.equal(result.body.code,'REBATE_SHIPMENT_VIEW_UNAVAILABLE');
+    }
+  } finally {delete process.env.REBATE_POOL_103_ENABLED;}
+});

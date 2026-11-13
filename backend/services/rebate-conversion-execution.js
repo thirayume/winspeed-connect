@@ -14,6 +14,7 @@ const { isValidStartDate } = require('./data-window');
 const { readRebateCycleMonths } = require('./rebate-cycle-policy');
 const { executeSharedSourceConversion } = require('./rebate-shared-conversion');
 const { executeShipmentSourceConversion } = require('./rebate-shipment-conversion');
+const { readShipmentLots } = require('./rebate-shipment-lots');
 const { mapConversionRow } = require('./rebate-pool-models');
 const { sharedRebateScopeFilter } = require('./rebate-shared-scope');
 const { withRebateOperationFence } = require('./rebate-reset-fence');
@@ -71,6 +72,10 @@ async function executeReviewedConversion(user, payload, overrides = {}) {
   const filter = await sharedRebateScopeFilter(user, overrides.getScope);
   return runFence(epoch => runTx(async query => {
     await participantFence(query, epoch);
+    // HTTP use is restricted to the new, shared shipment ledger. Never fall
+    // back to pre-reset 104 lots when enabling the Pool workflow.
+    if (overrides.requireShipmentEpoch && !(Number.isSafeInteger(epoch.generation) && epoch.generation>0))
+      fail('REBATE_RESET_NOT_COMPLETED', 409);
     // Shared with claim creation so the view and reservations cannot be read
     // concurrently by a claim and a conversion for the same customer.
     await query(`DECLARE @result INT;
@@ -78,11 +83,7 @@ async function executeReviewedConversion(user, payload, overrides = {}) {
       IF @result < 0 RAISERROR('Unable to acquire rebate customer lock',16,1);`, { resource: `RebateCust_${input.custId}` });
     const shipmentEpoch = epoch.generation>0;
     const visible = shipmentEpoch
-      ? await query(`SELECT TOP 1 1 AS ok FROM wf.RebateShipmentAccrual a
-          JOIN wf.v_RebateAccrualLot l ON l.SourceSOID=a.SourceSOID AND l.SourceListNo=a.SourceListNo AND l.CouponID=a.CouponId
-            AND l.GoodID=a.GoodId AND l.CustId=CONVERT(nvarchar(20),a.CustId)
-          WHERE a.EnvironmentKind=@environment AND a.ResetId=@resetId AND a.Generation=@generation AND a.CustId=@cid AND ${filter.sql}`,
-        { ...filter.inputs, environment:epoch.environment, resetId:epoch.resetId, generation:epoch.generation, cid:input.custId })
+      ? {recordset:await readShipmentLots(query,{epoch,custId:input.custId,scopeSql:filter.sql,scopeInputs:filter.inputs})}
       : await query(`SELECT TOP 1 1 AS ok FROM wf.v_RebateAccrualRemaining
           WHERE CustId=@cid AND ${filter.sql}`, { ...filter.inputs, cid: String(input.custId) });
     if (!visible.recordset?.length) fail('REBATE_CUSTOMER_OUT_OF_SCOPE', 404);

@@ -10,8 +10,9 @@ const { acquireRebateParticipantFence } = require('./rebate-participant-fence');
 const { lockShipmentSource } = require('./rebate-shipment-source');
 const { reviewEvidence } = require('./rebate-evidence-policy');
 const { approvalIdentity } = require('./approval-identity');
-const { businessIds } = require('./business-identity');
+const { businessIds, actorPerspective } = require('./business-identity');
 const { hasPermission } = require('./role-capabilities');
+const { getVisibleScope, inScope } = require('./visible-scope');
 
 function fail(code, status = 409) { throw Object.assign(new Error(code), { code, status }); }
 function positive(n) { return Number.isSafeInteger(n) && n > 0; }
@@ -67,6 +68,18 @@ async function reviewShipmentEvidence(user, payload, overrides = {}) {
       { id, environment: epoch.environment, resetId: epoch.resetId })).recordset?.[0];
       if (!key) fail('REBATE_EVIDENCE_NOT_FOUND', 404);
       const source = await readSource(query, { redemptionId: Number(key.RedemptionId), listNo: Number(key.RedemptionListNo) });
+      if (overrides.authorizeSource) await overrides.authorizeSource(query, source);
+      // Verify organizational scope of both real and effective identities in
+      // the selected business DB. Unknown ownership remains admin-only.
+      const scopeReader=overrides.getVisibleScope || getVisibleScope;
+      const effectiveScope=await scopeReader(user,query),actorScope=await scopeReader(actorPerspective(user),query);
+      if(!effectiveScope.all || !actorScope.all) {
+        if(!positive(Number(source.sourceSOID))) fail('REBATE_EVIDENCE_NOT_FOUND',404);
+        const owner=(await query(`SELECT EmpID FROM dbo.SOHD WITH(UPDLOCK,HOLDLOCK)
+          WHERE SOID=@sourceSOID AND DocuType=104`,{sourceSOID:Number(source.sourceSOID)})).recordset?.[0];
+        if(!owner || !inScope(effectiveScope,{empId:owner.EmpID}) || !inScope(actorScope,{empId:owner.EmpID}))
+          fail('REBATE_EVIDENCE_NOT_FOUND',404);
+      }
       const row = (await query(`SELECT *,GETUTCDATE() AS ServerNowUtc FROM wf.RebateShipmentEvidence WITH(UPDLOCK,HOLDLOCK)
         WHERE Id=@id AND EnvironmentKind=@environment AND ResetId=@resetId`,
       { id, environment: epoch.environment, resetId: epoch.resetId })).recordset?.[0];
@@ -96,7 +109,14 @@ async function reviewShipmentEvidence(user, payload, overrides = {}) {
         reason: result.reviewReason, ...reviewer,
       });
       if (Number(updated.rowsAffected?.[0]) !== 1) fail('REBATE_EVIDENCE_STALE');
-      return { id, status: result.status, revision: result.expectedRevision + 1 };
+      let accrual;
+      if(payload.decision==='VERIFY' && process.env.REBATE_POOL_103_ENABLED==='true') {
+        // Verification and credit must commit together. If the 103 snapshot
+        // is missing or any source changed, the review transaction rolls back.
+        const accrue=overrides.accrue || require('./rebate-shipment-accrual').accrueVerifiedShipment;
+        accrual=await accrue(query,epoch,{redemptionId:source.redemptionId,listNo:source.redemptionListNo});
+      }
+      return { id, status: result.status, revision: result.expectedRevision + 1, ...(accrual ? {accrual} : {}) };
     });
   });
 }

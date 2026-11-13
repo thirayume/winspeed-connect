@@ -23,14 +23,14 @@ async function getSharedCustomerQueue(query, { custId, asOfDate, cutoff, scope, 
     ISNULL(SUM(CASE WHEN PlanId IS NOT NULL AND RebatePerTon > 0 AND SourceDocuDate < @cutoff THEN 1 ELSE 0 END),0) AS OpeningCount,
     ISNULL(SUM(CASE WHEN PlanId IS NULL THEN 1 ELSE 0 END),0) AS WithoutPlanCount
     FROM wf.v_RebateAccrualRemaining
-    WHERE CustId=@cid AND SourceDocuDate <= @today AND RemainingTonRebate > 0`, args)).recordset?.[0];
+    WHERE CustId=@cid AND SourceDocuDate <= @today AND RemainingTonRebate > 0 AND ${scope.sql}`, args)).recordset?.[0];
   if (!summary) throw Object.assign(new Error('Rebate queue unavailable'), { code: 'REBATE_QUEUE_UNAVAILABLE', status: 503 });
   const detail = await query(`SELECT TOP 500 SourceSOID,SourceListNo,SourceDocuNo,SourceDocuDate,
       DATEADD(MONTH,@months,SourceDocuDate) AS CycleExpiryDate,
       ROUND(RemainingTonRebate*RebatePerTon,2) AS RemainingAmount
     FROM wf.v_RebateAccrualRemaining
     WHERE CustId=@cid AND SourceDocuDate >= @cutoff AND SourceDocuDate <= @today
-      AND RemainingTonRebate > 0 AND PlanId IS NOT NULL AND RebatePerTon > 0
+      AND RemainingTonRebate > 0 AND PlanId IS NOT NULL AND RebatePerTon > 0 AND ${scope.sql}
     ORDER BY SourceDocuDate,SourceDocuNo,SourceListNo,SourceSOID`, args);
   const maturedBalance = round2(summary.MaturedBalance), activeUnmaturedBalance = round2(summary.UnmaturedBalance);
   return { custId, asOfDate, maturedBalance, activeUnmaturedBalance,

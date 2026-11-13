@@ -12,6 +12,11 @@ require.cache[storePath] = { id: storePath, filename: storePath, loaded: true, e
   },
 } };
 const db = h.installDbStub(({ text, inputs }) => {
+  if (/FROM wf\.RebateClaim c WITH/.test(text)) {
+    const rows = [{ CreatedAt: '2025-12-31T16:59:59.000Z' }, { CreatedAt: '2025-12-31T17:00:00.000Z' },
+      { CreatedAt: '2026-01-01T03:00:00.000Z' }];
+    return rows.filter(row => new Date(row.CreatedAt) >= inputs.globalStartUtc);
+  }
   if (/FROM dbo\.SOHD hd/.test(text)) {
     const rows = [{ DocuDate: '2025-12-31' }, { DocuDate: '2026-01-01' }, { DocuDate: '2026-02-01' }];
     return rows.filter(row => row.DocuDate >= inputs.globalStartDate);
@@ -63,4 +68,35 @@ test('weighing and current sales report use the business-date boundary', async (
   call = db.calls.at(-1);
   assert.match(call.text, /hd\.DocuDate >= @globalStartDate/);
   assert.equal(call.inputs.globalStartDate, cutoff);
+});
+
+test('rebate claim detail hides pre-cutoff claims without removing opening balances', async () => {
+  cutoff = '2026-01-01';
+  const result = await runReport('rebate-claim-detail');
+  assert.deepEqual(result.rows.map(x=>x.CreatedAt),['2025-12-31T17:00:00.000Z','2026-01-01T03:00:00.000Z']);
+  const call=db.calls.at(-1);
+  assert.match(call.text,/WHERE c\.CreatedAt >= @globalStartUtc/);
+  assert.equal(call.inputs.globalStartUtc.toISOString(),'2025-12-31T17:00:00.000Z');
+  assert.doesNotMatch(REPORTS['ar-aging-summary'].sql,/@globalStartDate|@globalStartUtc/);
+  failPrimary=true;
+  await assert.rejects(runReport('rebate-claim-detail'),/PRIMARY_UNAVAILABLE/);
+  failPrimary=false;
+});
+
+test('paper, special price and weigh-ticket reports apply the UTC cutoff and fail closed', async () => {
+  cutoff = '2026-01-01';
+  const reports = [
+    ['paper-status', /PrintedAt >= @globalStartUtc/],
+    ['special-price-detail', /sp\.CreatedAt >= @globalStartUtc/],
+    ['weighbridge-detail', /COALESCE\(wt\.WeighOutAt, wt\.WeighInAt, wt\.CreatedAt\) >= @globalStartUtc/],
+  ];
+  for (const [name, predicate] of reports) {
+    await runReport(name);
+    const call = db.calls.at(-1);
+    assert.match(call.text, predicate);
+    assert.equal(call.inputs.globalStartUtc.toISOString(), '2025-12-31T17:00:00.000Z');
+    failPrimary = true;
+    await assert.rejects(runReport(name), /PRIMARY_UNAVAILABLE/);
+    failPrimary = false;
+  }
 });

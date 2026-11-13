@@ -8,7 +8,7 @@ function fixture(){
     requestedAmountBaht:150,convertAllEligible:false,maturedOnly:false,note:'verified',cycleMonths:12,
     scopeSql:'SalesEmpId IN (@actor) AND SalesEmpId IN (@effective)',scopeInputs:{actor:1,effective:2}};
   const row={AccrualId:5,SourceSOID:40,SourceListNo:1,CouponId:30,GoodId:20,CustCode:'C',CustName:'TEST',
-    OccurredAtUtc:new Date('2026-02-01T00:00:00Z'),EarnedDate:'2026-02-01',RebatePerTon:'500.00',RemainingTon:'1.000',RemainingAmountBaht:'500.00'};
+    OccurredAtUtc:new Date('2026-02-01T00:00:00Z'),EarnedDate:'2026-02-01',RebatePerTon:'250.00',RemainingTon:'1.000',RemainingAmountBaht:'250.00'};
   const state={conversions:[],reservations:[],rows:[row],failReserve:false,scopeSql:null,scopeParams:null};
   const query=async(text,p)=>{
     if (/FROM wf.RebateShipmentAccrual a/.test(text)){state.scopeSql=text;state.scopeParams=p;return {recordset:state.rows};}
@@ -28,7 +28,7 @@ function fixture(){
 test('conversion reserves FIFO verified shipments and carries both scope filters',async()=>{
   const f=fixture(),r=await f.run();
   assert.equal(r.conversion.convertedValueBaht,150);assert.equal(r.conversion.convertedByUserId,37);
-  assert.deepEqual(f.state.reservations,[{accrualId:5,custId:9,documentId:1,documentType:'CONVERSION',quantityTon:'0.300'}]);
+  assert.deepEqual(f.state.reservations,[{accrualId:5,custId:9,documentId:1,documentType:'CONVERSION',quantityTon:'0.600'}]);
   assert.match(f.state.scopeSql,/SalesEmpId IN \(@actor\) AND SalesEmpId IN \(@effective\)/);
   assert.match(f.state.scopeSql,/l\.GoodID=a\.GoodId AND l\.CustId=CONVERT\(nvarchar\(20\),a\.CustId\)/);
   assert.equal(f.state.scopeParams.resetId,f.input.epoch.resetId);assert.equal(f.state.scopeParams.generation,1);

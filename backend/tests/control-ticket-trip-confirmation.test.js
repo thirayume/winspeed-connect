@@ -214,6 +214,7 @@ test('1. Real route PATCH /api/so/99901/confirm: Bill in active trip returns 409
 test('2. Real route POST /api/trips/99902/confirm: Normal trip missing plate returns 400', async () => {
   executedQueries.length = 0;
   queryHandler = (text, inputs) => {
+    if (text.includes('FROM wf.SalesTrip t WHERE t.TripId = @tid')) return { recordset: [{ ok: 1 }] };
     if (text.includes('FROM wf.SalesOrder WHERE Id IN')) {
       return {
         recordset: [{
@@ -245,6 +246,7 @@ test('2. Real route POST /api/trips/99902/confirm: Normal trip missing plate ret
 test('3. Real route POST /api/trips/99902/confirm: Mixed trip returns 400 MIXED_CONTROL_TICKET_TRIP', async () => {
   executedQueries.length = 0;
   queryHandler = (text, inputs) => {
+    if (text.includes('FROM wf.SalesTrip t WHERE t.TripId = @tid')) return { recordset: [{ ok: 1 }] };
     if (text.includes('FROM wf.SalesOrder WHERE Id IN')) {
       return {
         recordset: [
@@ -367,14 +369,28 @@ test('4. Real route POST /api/trips/99902/confirm: Control ticket trip confirms 
     return { recordset: [] };
   };
 
-  const res = await fetch(`${baseUrl}/api/trips/99902/confirm`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      confirmedOrderIds: [99901]
-      // No transRegistration supplied, no pickupDueDate supplied (valid for control ticket trip)
-    })
-  });
+  const priceModulePath = require.resolve('../services/rebate-booking-transaction');
+  const previousPriceModule = require.cache[priceModulePath];
+  const previousPoolFlag = process.env.REBATE_POOL_103_ENABLED;
+  process.env.REBATE_POOL_103_ENABLED = 'true';
+  require.cache[priceModulePath] = { id:priceModulePath, filename:priceModulePath, loaded:true, exports: {
+    stageBookingInvoicePrices: async (_query, input) => { executedQueries.push({text:'STAGE_REBATE_PRICE',inputs:input}); return [{fixture:true}]; },
+    finalizeBookingPriceSnapshots: async (_query, input) => { executedQueries.push({text:'FINALIZE_REBATE_SNAPSHOT',inputs:input}); },
+  }};
+  let res;
+  try {
+    res = await fetch(`${baseUrl}/api/trips/99902/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        confirmedOrderIds: [99901]
+        // No transRegistration supplied, no pickupDueDate supplied (valid for control ticket trip)
+      })
+    });
+  } finally {
+    if (previousPriceModule) require.cache[priceModulePath] = previousPriceModule; else delete require.cache[priceModulePath];
+    if (previousPoolFlag === undefined) delete process.env.REBATE_POOL_103_ENABLED; else process.env.REBATE_POOL_103_ENABLED = previousPoolFlag;
+  }
 
   const body = await res.json();
   assert.equal(res.status, 200);
@@ -397,6 +413,10 @@ test('4. Real route POST /api/trips/99902/confirm: Control ticket trip confirms 
   const spCall = executedQueries.find(q => q.text.includes('EXEC wf.sp_ConfirmSalesOrder'));
   assert.ok(spCall, 'Must execute wf.sp_ConfirmSalesOrder');
   assert.equal(spCall.inputs.SoId?.value, 99901);
+  const stageIndex=executedQueries.findIndex(q=>q.text==='STAGE_REBATE_PRICE');
+  const spIndex=executedQueries.findIndex(q=>q.text==='EXEC wf.sp_ConfirmSalesOrder');
+  const snapshotIndex=executedQueries.findIndex(q=>q.text==='FINALIZE_REBATE_SNAPSHOT');
+  assert.ok(stageIndex>=0 && stageIndex<spIndex && snapshotIndex>spIndex,'stage before native 103 and snapshot afterwards');
 
   // 4. R9-8: Redundant UPDATE dbo.SOHD must NOT run
   const sohdUpdate = executedQueries.find(q => q.text.includes('UPDATE dbo.SOHD SET TransRegistration'));
@@ -418,7 +438,8 @@ test('5. Real route POST /api/so with exact CreateSODialog payload: stores NoTru
         goodId: 101,
         qtyTon: 2.0,
         pricePerTon: 15000,
-        netPricePerTon: 14000
+        netPricePerTon: 14000,
+        rebatePricingMode: 'POOL'
       }
     ]
   };
@@ -461,6 +482,9 @@ test('5. Real route POST /api/so with exact CreateSODialog payload: stores NoTru
   assert.ok(insertQuery, 'Must execute INSERT INTO wf.SalesOrder');
   assert.equal(insertQuery.inputs.noTruckRequired?.value, 1, 'noTruckRequired input must be 1');
   assert.equal(insertQuery.inputs.truckPlate?.value, 'ตั๋วคุม', 'truckPlate input must be "ตั๋วคุม"');
+  const insertLine = executedQueries.find(q => q.text.includes('INSERT INTO wf.SalesOrderLine'));
+  assert.ok(insertLine);
+  assert.equal(insertLine.inputs.rebatePricingMode?.value, 'POOL', 'the chosen pricing mode is saved with the draft line');
 });
 
 test('6. R10-5: No-truck trip ignores client transRegistration="ตั๋วคุม" and keeps cleanTruckPlate=null', async () => {

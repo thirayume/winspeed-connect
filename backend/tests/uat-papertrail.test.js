@@ -105,7 +105,9 @@ test('paper reissue accepts an assigned operational role even when SALES is prim
     const acting = await app.call('POST', '/api/papertrail/900/print', {
       body: { docType: 'ISSUE', reissue: true }, user: { sub: 43, role: 'SALES', actorSub: 64 },
     });
-    assert.equal(acting.status, 403, JSON.stringify(acting.body));
+    // The real actor cannot see this other salesperson's SO, so the scope
+    // guard hides it before the reissue permission check is reached.
+    assert.equal(acting.status, 404, JSON.stringify(acting.body));
   } finally { multiRoleFixture = false; }
 });
 

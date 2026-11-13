@@ -33,15 +33,20 @@ async function reserveShipmentAccrual(query, epoch, input = {}, overrides = {}) 
   if (!Number.isInteger(lock) || lock<0) fail('REBATE_RESERVATION_LOCK_UNAVAILABLE');
   const shipment = await (overrides.lockShipment || lockVerifiedShipment)(query,epoch,
     {redemptionId:Number(initial.RedemptionId),listNo:Number(initial.RedemptionListNo)});
+  const snapshot=await (overrides.lockSnapshot || require('./rebate-shipment-booking-snapshot').lockShipmentBookingSnapshot)(query,shipment);
   const a = (await query(`SELECT * FROM wf.RebateShipmentAccrual WITH(UPDLOCK,HOLDLOCK)
     WHERE Id=@accrualId AND EnvironmentKind=@environment AND ResetId=@resetId`,p)).recordset?.[0];
   if (!a || Number(a.CustId)!==custId || Number(a.Generation)!==epoch.generation || Number(a.EvidenceId)!==shipment.evidenceId ||
       Number(a.SourceSOID)!==shipment.sourceSOID || Number(a.SourceListNo)!==shipment.sourceListNo || Number(a.CouponId)!==shipment.couponId ||
-      Number(a.GoodId)!==shipment.goodId || shipmentUnits(a.QuantityTon,3)!==shipmentUnits(shipment.quantityTon,3) ||
+      Number(a.GoodId)!==shipment.goodId || a.PlanId!=null || Number(a.BookingSOID)!==snapshot.bookingId ||
+      Number(a.BookingLineNo)!==snapshot.bookingLineNo || Number(a.CustId)!==snapshot.customerId ||
+      shipmentUnits(a.QuantityTon,3)!==shipmentUnits(shipment.quantityTon,3) ||
       new Date(a.OccurredAtUtc).getTime()!==new Date(shipment.occurredAtUtc).getTime()) fail('REBATE_RESERVATION_SOURCE_CHANGED');
   const rate=shipmentUnits(a.RebatePerTon,2), total=shipmentUnits(a.QuantityTon,3);
   const cents=(requested*rate+500n)/1000n;
-  if (rate<=0n || shipmentUnits(a.ListPricePerTon,2)-shipmentUnits(a.NetPricePerTon,2)!==rate ||
+  if (rate<=0n || rate>30000n || rate!==shipmentUnits(snapshot.rebatePerTon,2) ||
+      shipmentUnits(a.ListPricePerTon,2)!==shipmentUnits(snapshot.basePrice,2) ||
+      shipmentUnits(a.NetPricePerTon,2)!==shipmentUnits(snapshot.sellingPrice,2) ||
       shipmentUnits(a.AmountBaht,2)!==(total*rate+500n)/1000n || cents<=0n || cents>999999999999999999n)
     fail('REBATE_RESERVATION_AMOUNT_INVALID');
   const document = documentType==='CLAIM'

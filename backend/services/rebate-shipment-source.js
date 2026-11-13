@@ -26,7 +26,7 @@ SELECT h.RedemtionID, d.Listno AS RedemptionListNo, d.CouponID,
        COALESCE((SELECT sale.SOID,sale.DocuNo,sale.DocuDate,sale.DocuType,sale.CustID
         FROM dbo.SOHD sale WITH(UPDLOCK,HOLDLOCK)
         WHERE sale.SOID=sh.SOID FOR XML RAW,BINARY BASE64,ELEMENTS XSINIL),N'') AS SaleHeaderSnapshot,
-       COALESCE((SELECT sdt.SOID,sdt.ListNo,sdt.DocuType,sdt.GoodID,sdt.GoodUnitID2,sdt.GoodQty2,sdt.GoodPrice2,sdt.GoodAmnt
+       COALESCE((SELECT sdt.SOID,sdt.ListNo,sdt.DocuType,sdt.RefSOID,sdt.RefListNo,sdt.GoodID,sdt.GoodUnitID2,sdt.GoodQty2,sdt.GoodPrice2,sdt.GoodAmnt
         FROM dbo.SODT sdt WITH(UPDLOCK,HOLDLOCK)
         WHERE sdt.SOID=sd.SOID AND sdt.ListNo=sd.ListNo FOR XML RAW,BINARY BASE64,ELEMENTS XSINIL),N'') AS SaleLineSnapshot,
        COALESCE((SELECT u.* FROM dbo.EMGoodUnit u WITH(UPDLOCK,HOLDLOCK)
@@ -77,7 +77,7 @@ async function lockShipmentSource(query, { redemptionId, listNo } = {}) {
   if (!/^\d+(?:\.\d+)?$/.test(quantity) || Number(quantity) <= 0) issues.push('QUANTITY_INVALID');
   // Post Invoice changes 116 status, PostInv and remaining quantities. Those
   // lifecycle fields are checked separately, not fingerprinted as proof data.
-  const fingerprint = crypto.createHash('sha256').update(JSON.stringify(['rebate-shipment-v2', ...names.map(n => r[n])]), 'utf8').digest('hex');
+  const fingerprint = crypto.createHash('sha256').update(JSON.stringify(['rebate-shipment-v3', ...names.map(n => r[n])]), 'utf8').digest('hex');
   return { redemptionId, redemptionListNo: listNo, couponId, sourceSOID, sourceListNo, goodId, goodUnitId,
     quantity, issues, fingerprint, scaleRowsPresent: r.ScaleSnapshot !== '', auditRowsPresent: r.AuditSnapshot !== '' };
 }

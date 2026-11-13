@@ -7,6 +7,9 @@ let date = '2026-01-01';
 let unavailable = false;
 let quoteRecord = null;
 let replayRecord = null;
+let rebateModeFixture = false;
+let sourceCollisionFixture = false;
+let bookingSnapshotFixture = false;
 const db = h.installDbStub(({ text, inputs }) => {
   if (/WHERE x\.SourceDraftId=@id/.test(text)) return replayRecord ? [replayRecord] : [];
   if (/OBJECT_ID\('wf\.QuotationSourceSO', 'U'\)/.test(text)) return [{ HasTable: 1 }];
@@ -15,6 +18,12 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/SELECT Status, COUNT\(\*\) AS Cnt/.test(text)) return [{ Status: 'DRAFT', Cnt: inputs.globalStartDate === '2026-01-01' ? 2 : 1 }];
   if (/SELECT COUNT_BIG\(\*\) AS TotalCount/.test(text)) return [{ TotalCount: 0 }];
   if (/COL_LENGTH\('wf\.SalesOrderLine', 'GiveawayApprovalStatus'\)/.test(text)) return [{ HasColumns: 1 }];
+  if (rebateModeFixture && /SELECT \* FROM wf\.v_AllSalesOrders WHERE/.test(text) && inputs.id === 502) return [{ Id: 502, Status: 'DRAFT', ImportedDocuNo: 'I-TEST' }];
+  if (rebateModeFixture && /FROM wf\.SalesOrderLine sol/.test(text)) return [{ LineNum: 1, GoodId: 12, RebatePricingMode: 'POOL' }];
+  if (rebateModeFixture && /FROM wf\.v_AllSalesOrderLines WHERE/.test(text)) return [{ LineNum: 1, GoodId: 12 }];
+  if (rebateModeFixture && /FROM wf\.SalesOrderLine cl WITH/.test(text)) return [{ LineNum: 1, RebatePricingMode: 'POOL' }];
+  if (sourceCollisionFixture && /SELECT TOP 1 Id FROM wf\.SalesOrder WHERE Id=@soId AND Status='DRAFT'/.test(text)) return [{ Id: 502 }];
+  if (bookingSnapshotFixture && /SELECT TOP 1 BookingSOID FROM wf\.RebateBookingPriceSnapshot/.test(text)) return [{ BookingSOID: 502 }];
   if (/SELECT \* FROM wf\.v_AllSalesOrders WHERE/.test(text) && inputs.id === 501) return [{ Id: 501, Status: 'DRAFT' }];
   if (/SELECT TOP 1 GrossScaleKg FROM wf\.WeighTicketItemLog/.test(text)) return [{ GrossScaleKg: 1000 }];
   if (/SELECT COUNT\(\*\) AS cnt FROM wf\.WeighTicketItemLog/.test(text)) return [{ cnt: 1 }];
@@ -29,6 +38,32 @@ let app;
 test.before(async () => { app = await h.startApp([['/api/so', '../../routes/so']]); });
 test.after(async () => { await app.close(); });
 const admin = { sub: 1, role: 'ADMIN' };
+
+test('draft mode is loaded only from draft rows; a native ID collision fails closed', async () => {
+  rebateModeFixture = true;
+  try {
+    const draft = await app.call('GET', '/api/so/501', { user: admin });
+    assert.equal(draft.status, 200, JSON.stringify(draft.body));
+    assert.equal(draft.body.lines[0].rebatePricingMode, 'POOL');
+    const native = await app.call('GET', '/api/so/502', { user: admin });
+    assert.equal(native.status, 200, JSON.stringify(native.body));
+    assert.equal(native.body.lines[0].rebatePricingMode, undefined);
+    sourceCollisionFixture = true;
+    const collided = await app.call('GET', '/api/so/502', { user: admin });
+    assert.equal(collided.status, 409, JSON.stringify(collided.body));
+    assert.equal(collided.body.lines, undefined);
+  } finally { rebateModeFixture = false; sourceCollisionFixture = false; }
+});
+
+test('native editor refuses changes after a 103 price snapshot exists', async () => {
+  rebateModeFixture = true; bookingSnapshotFixture = true;
+  try {
+    const result = await app.call('PUT', '/api/so/502', { user: admin,
+      body: { custId: '12', soPrefix: 'I', lines: [{goodId:12,qtyTon:1,pricePerTon:100}] } });
+    assert.equal(result.status, 409, JSON.stringify(result.body));
+    assert.match(result.body.message, /ราคาที่ตรึงแล้ว/);
+  } finally { rebateModeFixture = false; bookingSnapshotFixture = false; }
+});
 
 test('confirmation replay never returns an older booking or falls through to native mutation', async () => {
   replayRecord = { SOID: '1200', WfRef: 'OLD-BOOKING', SalesUserId: 1, InDataWindow: 0 };

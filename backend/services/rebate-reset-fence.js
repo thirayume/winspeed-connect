@@ -16,6 +16,8 @@ function digestTargets(targets) {
   return crypto.createHash('sha256').update(JSON.stringify(pairs)).digest('hex');
 }
 
+// A missing row can mean a restored or damaged database, not just a first
+// installation. Never silently fall back to the pre-reset balance.
 async function withRebateOperationFence(operation, { env = process.env, db = require('../db'), tupleResolver } = {}) {
   if (typeof operation !== 'function') throw new TypeError('operation is required');
   const targets = resolvePhysicalResetTargets(env, tupleResolver);

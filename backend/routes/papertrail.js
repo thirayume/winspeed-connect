@@ -15,15 +15,37 @@ const { readGlobalDataWindow } = require('../services/global-data-window-store')
 const { nativeDedupSql } = require('../services/native-status');
 const { broadcast } = require('../services/socket');
 const { approvalIdentity, bothHaveRole } = require('../services/approval-identity');
+const { businessIds, actorPerspective } = require('../services/business-identity');
 
 router.use(requireAuth);
 
 // Roles that handle the paper set (the Paper Trail menu). SALES prints its own bills from the trip window.
 const PAPER_ROLES = ['COUNTER_SALES', 'WAREHOUSE', 'WEIGHBRIDGE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'];
 
+async function paperScopes(user) {
+  const actor = actorPerspective(user);
+  const effectiveScope = await getVisibleScope(user);
+  const actorScope = actor === user ? effectiveScope : await getVisibleScope(actor);
+  return { effectiveScope, actorScope };
+}
+
+function paperScopeFilter(scopes, columns, prefix) {
+  const effective = scopeFilter(scopes.effectiveScope, { ...columns, prefix: `${prefix}Effective` });
+  const actor = scopeFilter(scopes.actorScope, { ...columns, prefix: `${prefix}Actor` });
+  return { sql: `(${effective.sql}) AND (${actor.sql})`, inputs: { ...effective.inputs, ...actor.inputs } };
+}
+
+function paperAuditNote(message, user) {
+  const effective = Number(user.sub ?? user.id);
+  const actor = Number(user.actorSub ?? user.actorId ?? effective);
+  if (![effective, actor].every(id => Number.isSafeInteger(id) && id > 0))
+    throw Object.assign(new Error('IDENTITY_BINDING_INVALID'), { status: 409 });
+  return `${message}; primaryActor=${actor}; primaryEffective=${effective}`;
+}
+
 // R12 O-4 (UAT batch 5, SHP-04): the paper set of a bill is visible only inside the user's own + team scope
 async function paperInScope(user, soId) {
-  const scope = await getVisibleScope(user);
+  const scopes = await paperScopes(user);
   const dataWindow = await readGlobalDataWindow();
   const row = (await wfQuery(`
     SELECT TOP 1 so.SalesUserId, CAST(h.EmpID AS VARCHAR(20)) AS EmpID
@@ -37,13 +59,14 @@ async function paperInScope(user, soId) {
     globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
     globalStartDate: { type: sql.Date, value: dataWindow.businessDate },
   })).recordset[0];
-  return Boolean(row) && (scope.all || inScope(scope, { userId: row.SalesUserId }) || inScope(scope, { empId: row.EmpID }));
+  const owner = row && { userId: row.SalesUserId, empId: row.EmpID };
+  return Boolean(row) && inScope(scopes.effectiveScope, owner) && inScope(scopes.actorScope, owner);
 }
 async function requirePaperInScope(req, res, next) {
   try {
     if (!(await paperInScope(req.user, req.params.soId))) return res.status(404).json({ message: 'ไม่พบ SO' });
     next();
-  } catch (e) { res.status(500).json({ message: e.message }); }
+  } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 }
 
 const STAGES = ['DRAFT', 'PENDING_APPROVAL', 'CONFIRMED', 'PICKING', 'LOADED', 'SHIPPED', 'IMPORTED'];
@@ -59,8 +82,7 @@ const ISSUE_COPIES = [
 router.get('/board', async (req, res) => {
   try {
     // R12 O-4: SALES/MANAGER see their own + team bills; operational roles and ADMIN/C_LEVEL/ACCOUNTING see all
-    const scope = await getVisibleScope(req.user);
-    const sf = scopeFilter(scope, { userCol: 'SalesUserId', empCol: 'OwnerEmpId', prefix: 'pt' });
+    const sf = paperScopeFilter(await paperScopes(req.user), { userCol: 'SalesUserId', empCol: 'OwnerEmpId' }, 'pt');
     const dataWindow = await readGlobalDataWindow();
     const r = await wfQuery(`
       WITH Orders AS (
@@ -298,6 +320,8 @@ router.get('/:soId/copies', requirePaperInScope, async (req, res) => {
 // ── POST /api/papertrail/:soId/print — สร้างสำเนา 4 สี + QR ────
 router.post('/:soId/print', requirePaperInScope, async (req, res) => {
   try {
+    const business = businessIds(req.user);
+    if (!business.effective || !business.actor) throw Object.assign(new Error('IDENTITY_BINDING_INVALID'), { status: 409 });
     const soId = String(req.params.soId);
     const docType = (req.body && req.body.docType) === 'RECEIVE' ? 'RECEIVE' : 'ISSUE';
     const hd = (await wfQuery(`SELECT TOP 1 WfRef FROM wf.v_AllSalesOrders WHERE Id = @id`,
@@ -342,10 +366,16 @@ router.post('/:soId/print', requirePaperInScope, async (req, res) => {
             col:{ type: sql.NVarChar(20), value: c.color },
             lbl:{ type: sql.NVarChar(80), value: c.label },
             nonce:{ type: sql.NVarChar(64), value: nonce },
-            uid:{ type: sql.Int, value: req.user.sub },
+            uid:{ type: sql.Int, value: business.effective },
           });
         created.push({ color: c.color, label: c.label, qrNonce: nonce });
       }
+      await q(`INSERT INTO wf.SalesOrderAudit (SoId, UserId, ActorUserId, Action, Note)
+        VALUES (@so, @effective, @actor, 'PAPER_SET_ISSUED', @note)`, {
+        so: { type: sql.VarChar(50), value: soId }, effective: { type: sql.Int, value: business.effective },
+        actor: { type: sql.Int, value: business.actor },
+        note: { type: sql.NVarChar(500), value: paperAuditNote(`Paper set ${docType}; reissue=${reissue ? 'yes' : 'no'}`, req.user) },
+      });
       return { copies: created };
     });
     if (out.reused) return res.json({ soId, docType, reused: true, copies: out.copies });
@@ -359,6 +389,8 @@ router.post('/:soId/print', requirePaperInScope, async (req, res) => {
 // body: { qrNonce, action }  action: TRANSIT/SIGN/FILE/LOST/FOUND
 router.post('/scan', requireRole(...PAPER_ROLES), async (req, res) => {
   try {
+    const business = businessIds(req.user);
+    if (!business.effective || !business.actor) throw Object.assign(new Error('IDENTITY_BINDING_INVALID'), { status: 409 });
     const { qrNonce, action, note, location } = req.body || {};
     if (!qrNonce || !action) return res.status(400).json({ message: 'qrNonce และ action จำเป็น' });
     const map = { TRANSIT: 'IN_TRANSIT', SIGN: 'SIGNED', FILE: 'FILED', LOST: 'LOST', FOUND: 'SIGNED' };
@@ -371,23 +403,41 @@ router.post('/scan', requireRole(...PAPER_ROLES), async (req, res) => {
     if (!copy) return res.status(404).json({ message: 'ไม่พบสำเนา (QR ไม่ถูกต้อง)' });
     if (!(await paperInScope(req.user, copy.SoId))) return res.status(404).json({ message: 'ไม่พบสำเนา (QR ไม่ถูกต้อง)' });
 
-    await wfQuery(`UPDATE wf.PaperCopy SET Status=@st, HolderUserId=@uid, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
-      { st: { type: sql.NVarChar(20), value: toStatus }, uid: { type: sql.Int, value: req.user.sub }, id: { type: sql.Int, value: copy.Id } });
-    await wfQuery(`
-      INSERT INTO wf.PaperScan (PaperCopyId, Action, FromStatus, ToStatus, ScannerUserId, Location, Note)
-      VALUES (@cid, @act, @fr, @to, @uid, @loc, @note)`,
-      {
-        cid: { type: sql.Int, value: copy.Id },
-        act: { type: sql.NVarChar(30), value: action },
-        fr:  { type: sql.NVarChar(20), value: copy.Status },
-        to:  { type: sql.NVarChar(20), value: toStatus },
-        uid: { type: sql.Int, value: req.user.sub },
-        loc: { type: sql.NVarChar(100), value: location || null },
-        note:{ type: sql.NVarChar(300), value: note || null },
+    await wfTransaction(async tx => {
+      const q = (text, inputs = {}) => {
+        const request = tx.request();
+        for (const [name, value] of Object.entries(inputs)) request.input(name, value.type, value.value);
+        return request.query(text);
+      };
+      // Re-read under a lock so concurrent scans cannot record a stale
+      // FromStatus, and the state update cannot commit without its scan log.
+      const locked = (await q(`SELECT Id, SoId, Status FROM wf.PaperCopy WITH (UPDLOCK, HOLDLOCK)
+        WHERE Id=@id AND QrNonce=@nonce AND PrintedAt >= @globalStartUtc`, {
+        id: { type: sql.Int, value: copy.Id }, nonce: { type: sql.NVarChar(64), value: qrNonce },
+        globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
+      })).recordset?.[0];
+      if (!locked || String(locked.SoId) !== String(copy.SoId))
+        throw Object.assign(new Error('ไม่พบสำเนา (QR ไม่ถูกต้อง)'), { status: 404 });
+      const updated = await q(`UPDATE wf.PaperCopy SET Status=@st, HolderUserId=@uid, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
+        { st: { type: sql.NVarChar(20), value: toStatus }, uid: { type: sql.Int, value: business.effective }, id: { type: sql.Int, value: locked.Id } });
+      if (Number(updated.rowsAffected?.[0]) !== 1) throw Object.assign(new Error('PAPER_SCAN_CONFLICT'), { status: 409 });
+      await q(`INSERT INTO wf.PaperScan (PaperCopyId, Action, FromStatus, ToStatus, ScannerUserId, Location, Note)
+        VALUES (@cid, @act, @fr, @to, @uid, @loc, @note)`, {
+        cid: { type: sql.Int, value: locked.Id }, act: { type: sql.NVarChar(30), value: action },
+        fr: { type: sql.NVarChar(20), value: locked.Status }, to: { type: sql.NVarChar(20), value: toStatus },
+        uid: { type: sql.Int, value: business.effective }, loc: { type: sql.NVarChar(100), value: location || null },
+        note: { type: sql.NVarChar(300), value: note || null },
       });
+      await q(`INSERT INTO wf.SalesOrderAudit (SoId, UserId, ActorUserId, Action, Note)
+        VALUES (@so, @effective, @actor, 'PAPER_SCAN', @note)`, {
+        so: { type: sql.VarChar(50), value: String(locked.SoId) },
+        effective: { type: sql.Int, value: business.effective }, actor: { type: sql.Int, value: business.actor },
+        note: { type: sql.NVarChar(500), value: paperAuditNote(`Paper copy ${locked.Id}; action=${action}`, req.user) },
+      });
+    });
     broadcast('paper_updated', { soId: copy.SoId, qrNonce, toStatus });
     res.json({ qrNonce, color: copy.CopyColor, soId: copy.SoId, status: toStatus });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // ── GET /api/papertrail/scan/:qrNonce — ดูประวัติสำเนา ────────
@@ -410,8 +460,7 @@ router.get('/scan/:qrNonce', async (req, res) => {
 router.get('/lost', requireRole(...PAPER_ROLES), async (req, res) => {
   try {
     const dataWindow = await readGlobalDataWindow();
-    const scope = await getVisibleScope(req.user);
-    const sf = scopeFilter(scope, { userCol: 'so.SalesUserId', empCol: 'h.EmpID', prefix: 'lost' });
+    const sf = paperScopeFilter(await paperScopes(req.user), { userCol: 'so.SalesUserId', empCol: 'h.EmpID' }, 'lost');
     const r = await wfQuery(`
       SELECT pc.*, u.DisplayName AS HolderName,
              DATEDIFF(day, pc.UpdatedAt, GETUTCDATE()) AS DaysStuck

@@ -116,6 +116,7 @@ export function CreateSODialog({
   const [isCouponPickerOpen, setIsCouponPickerOpen] = useState(false);
   const [persistedReservationIds, setPersistedReservationIds] = useState<Set<string | number>>(new Set());
   const [isSaveCommitted, setIsSaveCommitted] = useState(false);
+  const [editingNative, setEditingNative] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [initializing, setInitializing] = useState(true);
@@ -203,6 +204,7 @@ export function CreateSODialog({
     setInitializing(true);
     setInitialError('');
     setInitialSnapshot(null);
+    setEditingNative(false);
     const failed = (e: Error) => { if (!disposed) setInitialError(e.message || 'โหลดเอกสารไม่สำเร็จ'); };
     const complete = () => { if (!disposed) setInitializing(false); };
     if (convertFromQuoteId) {
@@ -255,6 +257,7 @@ export function CreateSODialog({
     } else if (editSoId && editSoId !== 'undefined') {
       fetchSalesOrder(editSoId).then(so => {
         if (disposed) return;
+        setEditingNative(!!((so as any).importedDocuNo || (so as any).ImportedDocuNo));
         const soCustId = (so as any).custId || (so as any).custID || (so as any).CustId || (so as any).CustID || '';
         const soCustName = (so as any).custName || (so as any).CustName || '';
         const soCreditDays = (so as any).creditDays ?? (so as any).CreditDays ?? 0;
@@ -301,6 +304,8 @@ export function CreateSODialog({
             qtyBag: Number(l.qtyBag || l.QtyBag) || 0,
             pricePerTon: Number(l.pricePerTon || l.PricePerTon) || 0,
             netPricePerTon: Number(l.netPricePerTon || l.NetPricePerTon) || 0,
+            rebatePricingMode: ['POOL', 'CASH'].includes(l.rebatePricingMode || l.RebatePricingMode)
+              ? (l.rebatePricingMode || l.RebatePricingMode) : null,
             lineNo: i + 1,
             isGiveaway: !!(l.isGiveaway || l.IsGiveaway),
             isControlTicketDrawn: !!(l.isControlTicketDrawn || l.IsControlTicketDrawn),
@@ -748,6 +753,7 @@ export function CreateSODialog({
             updated.netPricePerTon = patch.isGiveaway ? 0 : netPrice;
             updated.pricePerTon = patch.isGiveaway ? 0 : netPrice;
             updated.giveawayApprovalStatus = patch.isGiveaway ? 'PENDING' : null;
+            if (patch.isGiveaway) updated.rebatePricingMode = null;
           }
           return updated;
         })
@@ -1880,17 +1886,31 @@ export function CreateSODialog({
                             </label>
                           )}
                           
+                          {!editingNative && !l.isControlTicketDrawn && !l.isCouponDrawn && !l.isGiveaway && (
+                            <label className="mt-2 flex flex-wrap items-center gap-2 text-xs font-medium text-gray-700">
+                              ประเภทส่วนลด
+                              <select aria-label={`ประเภทส่วนลด ${l.goodName}`} value={l.rebatePricingMode || ''}
+                                onChange={e => updateActiveLine(l.tempId, { rebatePricingMode: (e.target.value || null) as 'POOL' | 'CASH' | null })}
+                                className="rounded border border-gray-300 bg-white px-2 py-1 text-xs">
+                                <option value="">เลือกประเภทส่วนลด</option>
+                                <option value="POOL">สะสม Rebate</option>
+                                <option value="CASH">ส่วนลดเงินสด</option>
+                              </select>
+                            </label>
+                          )}
                           {!l.isControlTicketDrawn && !l.isGiveaway && (
                             <div className="flex justify-between items-center mt-1 pt-1 border-t border-dashed border-gray-100">
                               <div className="text-[10px] font-medium">
-                                {!canSeeRebate ? null : !l.netPricePerTon || Number(l.netPricePerTon) <= 0 ? (
+                                {l.rebatePricingMode ? (
+                                  <span className="text-gray-500">ตรวจราคาตามวันออกใบจอง</span>
+                                ) : !canSeeRebate ? null : !l.netPricePerTon || Number(l.netPricePerTon) <= 0 ? (
                                   <span className="text-gray-400">ไม่เกิดรีเบท (ไม่มีราคา NET)</span>
                                 ) : l.pricePerTon > l.netPricePerTon ? (
                                   <span className="text-orange-500">รีเบทสะสม: ฿{((l.pricePerTon - l.netPricePerTon) * l.qtyTon).toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
                                 ) : null}
                               </div>
                               <div className="text-xs font-bold text-[#0C447C]">
-                                รวม: ฿{(l.pricePerTon * l.qtyTon).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
+                                {l.rebatePricingMode ? 'ราคาขายที่ระบุ' : 'รวม'}: ฿{(l.pricePerTon * l.qtyTon).toLocaleString('th-TH', { maximumFractionDigits: 0 })}
                               </div>
                             </div>
                           )}
@@ -1908,7 +1928,7 @@ export function CreateSODialog({
                     return (
                       <div className="mb-2">
                         <div className="flex justify-between items-center mb-1">
-                          <span className="text-xs text-gray-600">ยอดรวมบิลนี้</span>
+                          <span className="text-xs text-gray-600">{activeBill.lines.some(l => l.rebatePricingMode) ? 'ยอดตามราคาขายที่ระบุ' : 'ยอดรวมบิลนี้'}</span>
                           <span className="text-sm font-bold text-[#0C447C]">฿{totalAmt.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
                         </div>
                       </div>

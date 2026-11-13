@@ -77,7 +77,9 @@ const SCHEMA_FIXTURE = {
     'IsGiveaway', 'RebateBooked', 'CreatedAt', 'RefControlTicketNo',
     'IsControlTicketDrawn', 'GiveawayApprovalStatus', 'GiveawayApprovedBy',
     'GiveawayApprovedAt', 'GiveawayApprovalNote', 'LoadSequence', 'MasterQty',
-    'ChildQty', 'CouponReservationId', 'RefCouponDocuNo', 'IsCouponDrawn'
+    'ChildQty', 'CouponReservationId', 'RefCouponDocuNo', 'IsCouponDrawn',
+    // Added by migration 206; this is expected schema, not evidence of a live deployment.
+    'RebatePricingMode'
   ],
   SalesOrderLineExt: [
     'SOID', 'ListNo', 'NetPricePerTon', 'IsGiveaway', 'RebateBooked',
@@ -141,6 +143,8 @@ function getCodeFiles(dir) {
 
 test('1. Schema Contract: wf.RebateClaim has NO UpdatedAt column in fixture', () => {
   assert.equal(SCHEMA_MAP.rebateclaim.has('updatedat'), false, 'RebateClaim must not have UpdatedAt');
+  const migration206 = fs.readFileSync(path.join(__dirname, '../migrations/206_rebate_draft_pricing_mode.sql'), 'utf8');
+  assert.match(migration206, /ALTER TABLE wf\.SalesOrderLine ADD RebatePricingMode varchar\(8\) NULL/i);
 });
 
 test('2. Schema Contract: All INSERT and UPDATE statements in routes/ and services/ match real schema', () => {

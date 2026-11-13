@@ -12,11 +12,14 @@ const ton=qty=>`${qty/1000n}.${String(qty%1000n).padStart(3,'0')}`;
 function allocateShipmentClaim(rows,lines,{startDate}={}){
   if(!Array.isArray(rows)||!Array.isArray(lines)||!lines.length||lines.length>12||!isValidStartDate(startDate))fail('REBATE_CLAIM_INPUT_INVALID');
   const seen=new Set(),lots=rows.map(r=>{
-    const id=Number(r.AccrualId),soid=Number(r.SourceSOID),list=Number(r.SourceListNo),plan=Number(r.PlanId);
-    if(![id,soid,list,plan].every(n=>Number.isSafeInteger(n)&&n>0)||seen.has(id)||!isValidStartDate(String(r.SourceDocuDate||''))||!String(r.GoodCode||'').trim())fail('REBATE_SOURCE_INVALID');
+    const id=Number(r.AccrualId),soid=Number(r.SourceSOID),list=Number(r.SourceListNo),booking=Number(r.BookingSOID),bookingLine=Number(r.BookingLineNo);
+    if(![id,soid,list,booking,bookingLine].every(n=>Number.isSafeInteger(n)&&n>0)||r.PlanId!=null||
+       Number(r.SourceRefSOID)!==booking||Number(r.SourceRefListNo)!==bookingLine||seen.has(id)||
+       !isValidStartDate(String(r.SourceDocuDate||''))||!String(r.GoodCode||'').trim())fail('REBATE_SOURCE_INVALID');
     seen.add(id);let time;try{time=parseEvidenceInstant(r.OccurredAtUtc);}catch(_){fail('REBATE_SOURCE_INVALID');}
     const qty=shipmentUnits(r.RemainingTon,3),amount=shipmentUnits(r.RemainingAmountBaht,2),rate=shipmentUnits(r.RebatePerTon,2);
-    if(rate<=0n||shipmentUnits(r.ListPricePerTon,2)-shipmentUnits(r.NetPricePerTon,2)!==rate)fail('REBATE_SOURCE_INVALID');
+    if(rate<=0n||rate>30000n||shipmentUnits(r.ListPricePerTon,2)<=0n)fail('REBATE_SOURCE_INVALID');
+    shipmentUnits(r.NetPricePerTon,2);
     return {r,id,soid,list,time,qty,amount,rate,taken:0n};
   }).sort((a,b)=>a.time-b.time||a.id-b.id);
   for(const line of lines){
@@ -46,7 +49,7 @@ function allocateShipmentClaim(rows,lines,{startDate}={}){
       sourceSOID:l.soid,sourceListNo:l.list,sourceDocuNo:l.r.SourceDocuNo,sourceDocuDate:l.r.SourceDocuDate,
       sourceCouponNo:l.r.CouponNo,sourceRefSOID:l.r.SourceRefSOID,sourceRefListNo:l.r.SourceRefListNo,
       sourceBookingDocuNo:l.r.SourceBookingDocuNo,goodCode:l.r.GoodCode,goodName:l.r.GoodName,
-      listPricePerTon:l.r.ListPricePerTon,netPricePerTon:l.r.NetPricePerTon,rebatePerTon:l.r.RebatePerTon,planId:Number(l.r.PlanId)};
+      listPricePerTon:l.r.ListPricePerTon,netPricePerTon:l.r.NetPricePerTon,rebatePerTon:l.r.RebatePerTon,planId:null};
   });
   const cents=allocations.reduce((sum,a)=>sum+shipmentUnits(a.amountBaht,2),0n);
   if(cents<=0n||cents>999999999999n)fail('REBATE_CLAIM_AMOUNT_INVALID'); // claim amount is DECIMAL(12,2)

@@ -13,7 +13,10 @@ function calculatePricingFingerprint(lines) {
     const qty = Number(l.qtyTon || l.QtyTon || 0).toFixed(3);
     const price = Number(l.pricePerTon || l.PricePerTon || 0).toFixed(2);
     const giveaway = (l.isGiveaway || l.IsGiveaway) ? '1' : '0';
-    return `${gid}:${qty}:${price}:${giveaway}`;
+    // Preserve historical fingerprints for legacy lines while making any
+    // new explicit rebate mode part of the revision/approval identity.
+    const mode = l.rebatePricingMode ?? l.RebatePricingMode ?? null;
+    return `${gid}:${qty}:${price}:${giveaway}${mode == null || mode === '' ? '' : `:rebate=${mode}`}`;
   }).sort().join('|');
   return crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');
 }

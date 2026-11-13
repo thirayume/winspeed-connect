@@ -39,7 +39,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/FROM wf\.PriceApproval pa LEFT JOIN wf\.SalesOrder so/.test(text)) return inputs.id === 9 ? [{ RequestedBy: 20, SalesUserId: 20 }] : [];
   if (/FROM wf\.SalesTrip t WHERE t\.TripId = @tid/.test(text)) {
     // trip 53 belongs to user 20 only
-    const ids = Object.entries(inputs).filter(([k]) => /^tc|^tm/.test(k)).map(([, v]) => Number(v));
+    const ids = Object.entries(inputs).filter(([k]) => /^t[ea][cm]/.test(k)).map(([, v]) => Number(v));
     return inputs.tid === 53 && ids.includes(20) ? [{ ok: 1 }] : [];
   }
   return [];

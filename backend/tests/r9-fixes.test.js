@@ -448,6 +448,7 @@ test('R9-4: Confirming mixed trip (control ticket + normal/no-truck) is rejected
   executedQueries.length = 0;
 
   queryHandler = (text, inputs) => {
+    if (text.includes('FROM wf.SalesTrip t WHERE t.TripId = @tid')) return { recordset: [{ ok: 1 }] };
     if (text.includes('FROM wf.SalesOrder WHERE Id IN')) {
       // Mixed: One ticket bill ('ตั๋วคุม') and one normal no-truck bill
       return {
