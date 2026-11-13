@@ -104,9 +104,14 @@ const ACTIONS = Object.freeze({
   'cost.view': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'cost.manage': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
 
-  // Rebate Pool Over-Limit Approval & Manual Nov-1 Ticket Conversion
+  // Rebate Pool Over-Limit Approval & Manual Nov-1 Ticket Conversion & Tickets
   'rebate.approve-over-limit': ['MANAGER', 'C_LEVEL', 'ADMIN'],
   'rebate.convert': ['ACCOUNTING', 'ADMIN'],
+  // Explicitly assignable; evidence review is not implied by accounting or sales.
+  'rebate.evidence.verify': ['ADMIN'],
+  'rebate.ticket-redeem': ['COUNTER_SALES', 'SALES', 'ACCOUNTING', 'ADMIN'],
+  'rebate.ticket-extend': ['C_LEVEL', 'ADMIN'],
+  'rebate.aging-override': ['MANAGER', 'C_LEVEL', 'ADMIN'],
 });
 
 function capabilitiesFor(role, { positionCode = null } = {}) {

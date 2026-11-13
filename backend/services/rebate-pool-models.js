@@ -10,7 +10,8 @@
  */
 
 const crypto = require('crypto');
-const { wfQuery, sql } = require('../db');
+const { sql } = require('../db');
+const { defaultRebateQuery: wfQuery } = require('./rebate-sql');
 
 const REBATE_CONSTANTS = Object.freeze({
   STANDARD_DISCOUNT_LIMIT: 200,
@@ -284,9 +285,9 @@ const RebatePoolModels = {
     return (res.recordset || []).map(mapLedgerRow);
   },
 
-  async findOct31StandingPrice(queryFn = wfQuery, standingYear, goodId) {
+  async findOct31StandingPrice(queryFn = wfQuery, standingYear, goodId, { lock = false } = {}) {
     const res = await queryFn(
-      `SELECT * FROM wf.Oct31StandingPrice WHERE StandingYear = @standingYear AND GoodId = @goodId`,
+      `SELECT * FROM wf.Oct31StandingPrice ${lock ? 'WITH (UPDLOCK, HOLDLOCK)' : ''} WHERE StandingYear = @standingYear AND GoodId = @goodId`,
       { standingYear, goodId }
     );
     return mapOct31StandingPriceRow(res.recordset?.[0]);

@@ -9,6 +9,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { getVisibleScope, inScope } = require('../services/visible-scope');
 const { INCIDENT_TYPES, localToUtc } = require('../services/rule-incidents');
 const { MENUS } = require('../services/role-capabilities');
+const { isValidStartDate, boundaries } = require('../services/data-window');
 
 router.use(requireAuth);
 
@@ -40,12 +41,13 @@ router.get('/types', requireRole(...VIEW_ROLES), (_req, res) => {
 router.get('/', requireRole(...VIEW_ROLES), async (req, res) => {
   try {
     const { status, type, from, to, search } = req.query;
-    const where = ['1=1'];
-    const inputs = {};
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const where = ['i.OccurredAt >= @globalStartUtc'];
+    const inputs = { globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } };
     if (status && ['OPEN', 'ACK'].includes(status)) { where.push('i.Status = @status'); inputs.status = { type: sql.VarChar(12), value: status }; }
     if (type && INCIDENT_TYPES[type]) { where.push('i.IncidentType = @type'); inputs.type = { type: sql.VarChar(40), value: type }; }
-    if (from && /^\d{4}-\d{2}-\d{2}$/.test(from)) { where.push('i.OccurredAt >= @from'); inputs.from = { type: sql.VarChar(10), value: from }; }
-    if (to && /^\d{4}-\d{2}-\d{2}$/.test(to)) { where.push('i.OccurredAt < DATEADD(day, 1, CONVERT(DATETIME, @to, 120))'); inputs.to = { type: sql.VarChar(10), value: to }; }
+    if (isValidStartDate(from)) { where.push('i.OccurredAt >= @from'); inputs.from = { type: sql.DateTime2, value: boundaries(from).utcInstant }; }
+    if (isValidStartDate(to)) { where.push('i.OccurredAt < @toExclusive'); inputs.toExclusive = { type: sql.DateTime2, value: new Date(boundaries(to).utcInstant.getTime() + 86400000) }; }
     if (search) { where.push('(i.DocuNo LIKE @search OR i.Detail LIKE @search OR h.CustName LIKE @search)'); inputs.search = { type: sql.NVarChar(80), value: `%${String(search).slice(0, 60)}%` }; }
     const rows = (await wfQuery(`
       SELECT TOP 500 i.Id, i.IncidentType, i.Severity, i.SOID, i.DocuNo, i.WghdId, i.Detail, i.OccurredAt, i.Status,
@@ -65,15 +67,19 @@ router.get('/', requireRole(...VIEW_ROLES), async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-async function loadIncident(id) {
-  return (await wfQuery(`SELECT * FROM wf.RuleIncident WITH (NOLOCK) WHERE Id = @id`,
-    { id: { type: sql.Int, value: Number(id) } })).recordset?.[0] || null;
+async function loadIncident(id, dataWindow) {
+  return (await wfQuery(`SELECT * FROM wf.RuleIncident WITH (NOLOCK) WHERE Id = @id AND OccurredAt >= @globalStartUtc`,
+    { id: { type: sql.Int, value: Number(id) }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } })).recordset?.[0] || null;
 }
 
 /** Everyone involved, from the first document to the last, oldest first. */
-async function buildTimeline(soid, docuNo) {
+async function buildTimeline(soid, docuNo, dataWindow) {
   const steps = [];
-  const add = (at, step, who, doc, note) => { if (step) steps.push({ at, step, who: who || null, doc: doc || null, note: note || null }); };
+  const visible = at => {
+    const time = at == null ? NaN : new Date(at).getTime();
+    return Number.isFinite(time) && time >= dataWindow.utcInstant.getTime();
+  };
+  const add = (at, step, who, doc, note) => { if (step && visible(at)) steps.push({ at, step, who: who || null, doc: doc || null, note: note || null }); };
   const q = { soid: { type: sql.Int, value: Number(soid) || 0 } };
 
   const booking = (await wfQuery(`
@@ -94,7 +100,7 @@ async function buildTimeline(soid, docuNo) {
   for (const a of appEvents) add(a.CreatedAt, `Sale-App: ${APP_ACTIONS[a.Action] || a.Action}`, a.DisplayName, booking?.DocuNo, a.Note);
 
   const deliveries = booking?.AppvDocuNo ? ((await wfQuery(`
-    SELECT RTRIM(d.DocuNo) AS DocuNo, d.SOID FROM dbo.SOHD d WITH (NOLOCK)
+    SELECT RTRIM(d.DocuNo) AS DocuNo, d.SOID, d.DocuDate FROM dbo.SOHD d WITH (NOLOCK)
     WHERE d.DocuType = 104 AND d.RefNo = @ai`, { ai: { type: sql.NVarChar(30), value: booking.AppvDocuNo } })).recordset || []) : [];
 
   const invoices = deliveries.length ? ((await wfQuery(`
@@ -126,12 +132,23 @@ async function buildTimeline(soid, docuNo) {
   }
 
   steps.sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
-  return { booking, deliveries, invoices, scales, steps };
+  return {
+    booking: booking && visible(localToUtc(booking.DocuDate)) ? booking : null,
+    deliveries: deliveries.filter(d => visible(localToUtc(d.DocuDate))),
+    invoices: invoices.filter(i => visible(localToUtc(i.DocuDate))),
+    scales: scales.filter(w => visible(localToUtc(w.DateOut || w.DateIn))).map(w => ({
+      ...w,
+      DateIn: visible(localToUtc(w.DateIn)) ? w.DateIn : null,
+      DateOut: visible(localToUtc(w.DateOut)) ? w.DateOut : null,
+    })),
+    steps,
+  };
 }
 
 router.get('/:id', requireRole(...VIEW_ROLES), async (req, res) => {
   try {
-    const i = await loadIncident(req.params.id);
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const i = await loadIncident(req.params.id, dataWindow);
     if (!i) return res.status(404).json({ message: 'ไม่พบเหตุการณ์นี้' });
     if (i.SOID != null) {
       const owner = (await wfQuery(`
@@ -143,7 +160,7 @@ router.get('/:id', requireRole(...VIEW_ROLES), async (req, res) => {
         return res.status(404).json({ message: 'ไม่พบเหตุการณ์นี้' });
       }
     }
-    const timeline = await buildTimeline(i.SOID, i.DocuNo);
+    const timeline = await buildTimeline(i.SOID, i.DocuNo, dataWindow);
     res.json({ ...i, TypeLabel: typeLabel(i.IncidentType), timeline });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -152,13 +169,15 @@ router.patch('/:id/ack', requireRole(...REVIEW_ROLES), async (req, res) => {
   try {
     const note = String(req.body?.note || '').trim();
     if (note.length < 5) return res.status(400).json({ message: 'กรุณาระบุผลการตรวจสอบอย่างน้อย 5 ตัวอักษร' });
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
     const r = await wfQuery(`
       UPDATE wf.RuleIncident SET Status = 'ACK', AckBy = @by, AckAt = SYSUTCDATETIME(), AckNote = @note
-      WHERE Id = @id AND Status = 'OPEN';
+      WHERE Id = @id AND Status = 'OPEN' AND OccurredAt >= @globalStartUtc;
       SELECT @@ROWCOUNT AS Affected;`, {
       id: { type: sql.Int, value: Number(req.params.id) },
       by: { type: sql.Int, value: req.user.sub },
       note: { type: sql.NVarChar(500), value: note },
+      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
     });
     if (!Number(r.recordset?.[0]?.Affected)) return res.status(409).json({ message: 'เหตุการณ์นี้ตรวจแล้วหรือไม่พบ' });
     res.json({ id: Number(req.params.id), status: 'ACK' });

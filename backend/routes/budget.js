@@ -17,8 +17,13 @@ const camelizeRows = (rows) => (rows || []).map(camelizeRow);
 router.get('/expenditure', requireRole('ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'), async (req, res) => {
   try {
     const { year, channel } = req.query;
-    let where = 'WHERE 1=1';
-    const inputs = {};
+    const start = (await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;
+    // Annual plans can use BE years; older giveaway budgets can use CE years.
+    // Retain the year containing the cutoff, since the annual totals may carry
+    // activity from earlier in that year. This filters display, not the view's
+    // underlying spent/remaining arithmetic.
+    let where = 'WHERE CASE WHEN PeriodYear BETWEEN 2400 AND 3000 THEN PeriodYear-543 ELSE PeriodYear END >= @startYear';
+    const inputs = { startYear: { type: sql.Int, value: Number(start.slice(0, 4)) } };
 
     if (year) {
       where += ' AND PeriodYear = @year';
@@ -46,6 +51,7 @@ router.get('/expenditure', requireRole('ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTIN
 // GET /api/budget/plans
 router.get('/plans', requireRole('ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'), async (req, res) => {
   try {
+    const start = (await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;
     const result = await wfQuery(`
       SELECT p.*,
              prep.DisplayName AS PreparedByName,
@@ -55,8 +61,9 @@ router.get('/plans', requireRole('ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'), a
       LEFT JOIN wf.AppUser prep ON prep.Id = p.PreparedBy
       LEFT JOIN wf.AppUser rev ON rev.Id = p.ReviewedBy
       LEFT JOIN wf.AppUser appr ON appr.Id = p.ApprovedBy
+      WHERE CASE WHEN p.PeriodYear BETWEEN 2400 AND 3000 THEN p.PeriodYear-543 ELSE p.PeriodYear END >= @startYear
       ORDER BY p.PeriodYear DESC, p.Channel
-    `);
+    `, { startYear: { type: sql.Int, value: Number(start.slice(0, 4)) } });
     res.json({ data: camelizeRows(result.recordset || []) });
   } catch (error) {
     console.error('[budget]', error);

@@ -52,11 +52,12 @@ test('stale save and background loading retain unsaved data; changing profile re
   await expect(page.getByRole('alert')).toBeVisible();
   await expect(page.getByLabel('Connection server',{exact:true})).toHaveValue('unsaved.example.test');
   await expect(page.getByLabel('Connection password',{exact:true})).toHaveValue('TEMP_TEST_ONLY');
-  page.on('dialog',dialog=>dialog.dismiss());
   await page.getByLabel('เลือก connection',{exact:true}).selectOption(second);
+  await page.getByText('ยืนยันการทำรายการ',{exact:true}).locator('..').getByRole('button',{name:'ยกเลิก',exact:true}).click();
   await expect(page.getByLabel('เลือก connection',{exact:true})).toHaveValue(name);
   await expect(page.getByLabel('Connection server',{exact:true})).toHaveValue('unsaved.example.test');
   await page.getByRole('button',{name:'โหลด connection ล่าสุด',exact:true}).click();
+  await page.getByText('ยืนยันการทำรายการ',{exact:true}).locator('..').getByRole('button',{name:'ยกเลิก',exact:true}).click();
   await expect(page.getByLabel('Connection password',{exact:true})).toHaveValue('TEMP_TEST_ONLY');
 });
 

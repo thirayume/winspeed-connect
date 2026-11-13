@@ -258,13 +258,18 @@ const CONFIG_BY_TARGET = {
 const registry = {};
 // Only onprem supports a per-session database; other targets ignore dbName.
 function registryKey(target, dbName) { return target === 'onprem' && dbName ? `onprem::${dbName}` : target; }
-function makeTarget(target, dbName = null) {
+function makeTarget(target, dbName = null, maxConnections = null) {
   if (process.env.LOCAL_ONLY_MODE === 'true' && target !== 'local_uat') throw new Error('LOCAL_ONLY_MODE prohibits this database target');
   const cfgFn = CONFIG_BY_TARGET[target];
   if (!cfgFn) throw new Error(`ปลายทางฐานข้อมูลไม่รู้จัก: ${target}`);
   // ⚠ ต้องสร้าง config แยก object ต่อ pool — msnodesqlv8 mutate config (แชร์ object → pool ที่ 2 hang)
-  const readerPool = new RuntimePool(cfgFn(dbName));
-  const ownerPool  = new RuntimePool(cfgFn(dbName));
+  const config = () => {
+    const value = cfgFn(dbName);
+    if (maxConnections !== null) value.pool = { ...value.pool, max: maxConnections };
+    return value;
+  };
+  const readerPool = new RuntimePool(config());
+  const ownerPool  = new RuntimePool(config());
   // Handle pool-level errors so they don't become uncaught exceptions that corrupt process state
   readerPool.on('error', (e) => console.error(`[DB] readerPool (${target}) error:`, e.message));
   ownerPool.on('error',  (e) => console.error(`[DB] ownerPool (${target}) error:`, e.message));
@@ -353,6 +358,34 @@ async function wfTransaction(fn) {
   }
 }
 
+// The global Rebate fence must not occupy the normal primary owner pool while
+// business operations wait for that same pool. Keep a separate, bounded pair
+// of pools with the same on-prem identity verification and shutdown lifecycle.
+async function rebateFenceTransaction(fn, primaryDatabase) {
+  const primary = String(process.env.ONPREM_DB_NAME || '').trim();
+  if (DEFAULT_TARGET !== 'onprem' || !primary || String(primaryDatabase || '').trim().toLowerCase() !== primary.toLowerCase()) {
+    throw Object.assign(new Error('REBATE_RESET_PRIMARY_INVALID'), { code: 'REBATE_RESET_PRIMARY_INVALID', status: 503 });
+  }
+  const key = `rebate-fence::${primary.toLowerCase()}`;
+  if (!registry[key]) {
+    const entry = makeTarget('onprem', primary, 4);
+    registry[key] = entry;
+    entry.ready.catch(() => { if (registry[key] === entry) delete registry[key]; });
+  }
+  const entry = registry[key];
+  await entry.ready;
+  const tx = new sql.Transaction(entry.ownerPool);
+  await tx.begin();
+  try {
+    const result = await fn(tx);
+    await tx.commit();
+    return result;
+  } catch (err) {
+    try { await tx.rollback(); } catch (_) {}
+    throw err;
+  }
+}
+
 // รัน callback ภายใต้ DB target ที่กำหนด (ใช้ใน middleware)
 function runWithTarget(target, fn, dbName = null) {
   const t = validateTarget(target);
@@ -393,7 +426,7 @@ function createOnpremProbePool(env, database) {
 }
 
 module.exports = {
-  sql, query, dboWrite, wfQuery, wfTransaction, runWithTarget, runWithDb, getTarget, getDbName, pools, closeAll,
+  sql, query, dboWrite, wfQuery, wfTransaction, rebateFenceTransaction, runWithTarget, runWithDb, getTarget, getDbName, pools, closeAll,
   DEFAULT_TARGET,
   createOnpremProbePool,
   parseConnectionString,

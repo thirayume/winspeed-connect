@@ -10,9 +10,6 @@ import {
   Bell,
   Lock,
   ArrowRightLeft,
-  CalendarCheck,
-  ChevronDown,
-  ChevronUp,
   Plus,
   Trash2,
 } from 'lucide-react';
@@ -24,7 +21,6 @@ import {
   rejectRebatePoolLedger,
   fetchRebatePoolCustomerQueue,
   fetchRebatePoolAlerts,
-  triggerRebatePoolNovemberCheck,
   fetchOct31StandingPrices,
   snapshotOct31StandingPrices,
   fetchRebateConversions,
@@ -90,7 +86,7 @@ const LEDGER_STATUS_META: Record<string, { label: string; cls: string }> = {
   ACTIVE: { label: 'สะสมใช้งานได้', cls: 'bg-blue-50 text-blue-700' },
   READY_FOR_CONVERSION: { label: 'ครบ 1 พ.ย. พร้อมแปลง', cls: 'bg-purple-100 text-purple-800' },
   PARTIALLY_CONVERTED: { label: 'แปลงบางส่วน', cls: 'bg-indigo-50 text-indigo-700' },
-  FULLY_CONVERTED: { label: 'แปลงหมดแล้ว', cls: 'bg-gray-100 text-gray-500' },
+  CONVERTED: { label: 'แปลงหมดแล้ว', cls: 'bg-gray-100 text-gray-500' },
   CANCELLED: { label: 'ยกเลิก', cls: 'bg-red-50 text-red-600' },
 };
 
@@ -100,25 +96,11 @@ export function RebatePoolPanel() {
   const user = useAuthStore(s => s.user);
   const can = useCan();
 
-  const roleList = useMemo(() => {
-    const raw = [
-      user?.role,
-      user?.roleCode,
-      ...(Array.isArray(user?.roleCodes) ? user.roleCodes : []),
-      ...(Array.isArray(user?.roles) ? user.roles : []),
-    ];
-    return raw.filter(Boolean).map(r => String(r).toUpperCase());
-  }, [user]);
-
-  const canApproveOverLimit =
-    can('rebate.approve-over-limit') ||
-    roleList.some(r => ['MANAGER', 'C_LEVEL', 'ADMIN'].includes(r));
-
-  const canConvert =
-    can('rebate.convert') ||
-    roleList.some(r =>
-      ['ACCOUNTING', 'ADMIN', 'REBATE_CONVERTER', 'ROLE_AUTHORIZED_REBATE_CONVERTER'].includes(r)
-    );
+  // The server-provided capability list already includes all assigned roles
+  // and Access As restrictions. Role-name fallbacks must not re-enable a
+  // permission that an administrator explicitly removed.
+  const canApproveOverLimit = can('rebate.approve-over-limit');
+  const canConvert = can('rebate.convert');
 
   const canManageSnapshot =
     canConvert || canApproveOverLimit;
@@ -133,6 +115,7 @@ export function RebatePoolPanel() {
   const [standingYear, setStandingYear] = useState<number>(new Date().getFullYear());
   const [oct31Items, setOct31Items] = useState<Oct31StandingPriceItem[]>([]);
   const [conversions, setConversions] = useState<RebateConversionRecord[]>([]);
+  const [expandedConvId, setExpandedConvId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Ledger filters
@@ -164,8 +147,8 @@ export function RebatePoolPanel() {
   const [convTonsStr, setConvTonsStr] = useState('');
   const [convMaturedOnly, setConvMaturedOnly] = useState(true);
   const [convNote, setConvNote] = useState('');
+  const [convExpiryDate, setConvExpiryDate] = useState('');
   const [convBusy, setConvBusy] = useState(false);
-  const [expandedConvId, setExpandedConvId] = useState<number | null>(null);
 
   // Oct 31 Snapshot Modal state
   const [showSnapshotModal, setShowSnapshotModal] = useState(false);
@@ -271,7 +254,7 @@ export function RebatePoolPanel() {
 
   const oct31MapByGoodId = useMemo(() => {
     const m = new Map<number, Oct31StandingPriceItem>();
-    for (const item of oct31Items) m.set(Number(item.GoodId), item);
+    for (const item of oct31Items) m.set(Number(item.goodId), item);
     return m;
   }, [oct31Items]);
 
@@ -418,27 +401,6 @@ export function RebatePoolPanel() {
     }
   }
 
-  async function handleNovCheck() {
-    try {
-      const res = await triggerRebatePoolNovemberCheck({
-        asOfDate: queueAsOfDate || bangkokDate(),
-        force: false,
-      });
-      if (!res.triggered) {
-        await appAlert(res.reason || 'ยังไม่ถึงรอบวันที่ 1 พฤศจิกายน', 'info');
-      } else {
-        await appAlert(
-          `ตรวจรอบ 1 พ.ย. เรียบร้อย: อัปเกรด ${res.promotedCount} รายการ · สร้างแจ้งเตือน ${res.alertsCreated} ลูกค้า`,
-          'info'
-        );
-      }
-      await loadAll();
-      if (queueCustId) await loadCustomerQueue(queueCustId, queueAsOfDate);
-    } catch (e: unknown) {
-      await appAlert((e as Error).message || 'ตรวจสอบไม่สำเร็จ', 'error');
-    }
-  }
-
   async function handleManualConvert() {
     if (!canConvert) {
       await appAlert('บัญชีผู้ใช้ของคุณไม่มีสิทธิ์แปลงตั๋วปุ๋ย', 'error');
@@ -456,22 +418,27 @@ export function RebatePoolPanel() {
       await appAlert('กรุณาระบุหมายเหตุการแปลงตั๋ว (จำเป็นสำหรับการตรวจสอบ)', 'warning');
       return;
     }
+    if (convExpiryDate && convExpiryDate < bangkokDate()) {
+      await appAlert('วันหมดอายุต้องไม่ก่อนวันแปลง', 'warning');
+      return;
+    }
     const goodIdNum = Number(convGoodId);
     const standingItem = oct31MapByGoodId.get(goodIdNum);
-    if (!standingItem || standingItem.StandingPricePerTon <= 0) {
+    if (!standingItem || standingItem.basePrice <= 0) {
       await appAlert(
         `ไม่พบราคายืน ณ 31 ต.ค. ${standingYear + 543} สำหรับสินค้านี้ กรุณาบันทึก/Snapshot ราคา 31 ต.ค. ก่อน`,
         'warning'
       );
       return;
     }
-    const payload: Parameters<typeof executeManualRebateConversion>[0] = {
+    const payload: Omit<Parameters<typeof executeManualRebateConversion>[0], 'requestId'> = {
       custId: Number(queueCustId),
       goodId: goodIdNum,
       standingYear,
       maturedOnly: convMaturedOnly,
       executionMode: 'MANUAL',
       note: convNote.trim(),
+      ...(convExpiryDate ? { expiryDate: convExpiryDate } : {}),
     };
     if (convMode === 'ALL') {
       payload.convertAllEligible = true;
@@ -492,20 +459,33 @@ export function RebatePoolPanel() {
     }
 
     const ok = await appConfirm(
-      `ยืนยันการแปลงตั๋วปุ๋ยแบบ FIFO (Manual)\nสินค้า: ${standingItem.GoodName || goodIdNum}\nราคายืน 31 ต.ค.: ${fmtMoney(standingItem.StandingPricePerTon)} บ./ตัน\n\nหมายเหตุ: ระบบจะตัดยอดจากรายการสะสมเก่าที่สุดก่อนเสมอ`
+      `ยืนยันการแปลงตั๋วปุ๋ยแบบ FIFO (Manual)\nสินค้า: ${standingItem.goodName || goodIdNum}\nราคายืน 31 ต.ค.: ${fmtMoney(standingItem.basePrice)} บ./ตัน\nวันหมดอายุ: ${convExpiryDate || 'ตามค่าเริ่มต้นของระบบ'}\n\nหมายเหตุ: ระบบจะตัดยอดจากรายการสะสมเก่าที่สุดก่อนเสมอ`
     );
     if (!ok) return;
 
     setConvBusy(true);
     try {
-      const res = await executeManualRebateConversion(payload);
+      // Persist only a hash and random request ID, scoped to both identities.
+      // If the response is lost, the same form can be retried after a reload
+      // without deducting again. Do not send if session storage is unavailable.
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(payload)));
+      const fingerprint = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+      const attemptKey = `wf-rebate-conversion:${user?.actorId || user?.id}:${user?.id}:${fingerprint}`;
+      let requestId = sessionStorage.getItem(attemptKey);
+      if (!requestId) {
+        requestId = crypto.randomUUID();
+        sessionStorage.setItem(attemptKey, requestId);
+      }
+      const res = await executeManualRebateConversion({ ...payload, requestId });
+      sessionStorage.removeItem(attemptKey);
       await appAlert(
-        `แปลงตั๋วปุ๋ยสำเร็จ (${res.conversion.conversionDocCode})\nจำนวน ${fmtTons(res.conversion.convertedTons)} ตัน · ตัดยอด ${fmtMoney(res.conversion.convertedBaht)} บาท`,
+        `แปลงตั๋วปุ๋ยสำเร็จ (${res.conversion.conversionNo})\nจำนวน ${fmtTons(res.conversion.convertedTons)} ตัน · ตัดยอด ${fmtMoney(res.conversion.convertedValueBaht)} บาท\nหมดอายุ ${res.ticket.expiryDate}`,
         'info'
       );
       setConvNote('');
       setConvBahtStr('');
       setConvTonsStr('');
+      setConvExpiryDate('');
       await Promise.all([loadAll(), loadCustomerQueue(queueCustId, queueAsOfDate)]);
     } catch (e: unknown) {
       await appAlert((e as Error).message || 'แปลงตั๋วปุ๋ยไม่สำเร็จ', 'error');
@@ -529,7 +509,7 @@ export function RebatePoolPanel() {
               goodId: Number(r.goodId),
               goodCode: g?.GoodCode || undefined,
               goodName: g?.GoodName || undefined,
-              standingPricePerTon: Number(r.price),
+              basePrice: Number(r.price),
               note: r.note.trim() || undefined,
             };
           });
@@ -552,8 +532,8 @@ export function RebatePoolPanel() {
 
   const selectedOct31Price = convGoodId ? oct31MapByGoodId.get(Number(convGoodId)) : undefined;
   const estConversionPreview = useMemo(() => {
-    if (!selectedOct31Price || selectedOct31Price.StandingPricePerTon <= 0) return null;
-    const price = selectedOct31Price.StandingPricePerTon;
+    if (!selectedOct31Price || selectedOct31Price.basePrice <= 0) return null;
+    const price = selectedOct31Price.basePrice;
     if (convMode === 'ALL' && customerQueue) {
       const baht = convMaturedOnly
         ? customerQueue.maturedBalance
@@ -574,7 +554,7 @@ export function RebatePoolPanel() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
           <div className="text-xs text-gray-400 flex items-center gap-1.5">
-            <Coins size={14} className="text-[#0C447C]" /> ยอดคงเหลือใน Rebate Pool (รายการที่โหลด)
+            <Coins size={14} className="text-[#0C447C]" /> ยอดจาก Ledger เดิม (ไม่ใช่ยอดคงเหลือที่ใช้เคลม)
           </div>
           <div className="text-xl font-black text-[#0C447C] tabular-nums mt-1">
             ฿{fmtMoney(kpi.totalRemaining)}
@@ -596,7 +576,7 @@ export function RebatePoolPanel() {
 
         <div className="bg-white rounded-xl border border-purple-200 p-4 shadow-sm">
           <div className="text-xs text-purple-700 flex items-center gap-1.5 font-semibold">
-            <Bell size={14} /> แจ้งเตือนครบกำหนด 1 พ.ย. (ปี {standingYear + 543})
+            <Bell size={14} /> ยอดครบกำหนด 1 พ.ย. (ปี {standingYear + 543})
           </div>
           <div className="text-xl font-black text-purple-700 tabular-nums mt-1">
             {kpi.alertCount} ลูกค้า · ฿{fmtMoney(kpi.alertTotal)}
@@ -665,6 +645,9 @@ export function RebatePoolPanel() {
       {/* TAB 1: LEDGER & APPROVALS */}
       {subTab === 'ledger' && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm space-y-4">
+          <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+            Ledger เดิมเป็นข้อมูลแยก ไม่ใช่ยอดที่ใช้เคลมหรือแปลงตั๋ว ให้ดูยอดจริงที่คิว FIFO; การอนุมัติรายการชุดเดิมอยู่ระหว่างเชื่อมระบบ
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">กรองตามลูกค้า</label>
@@ -702,7 +685,7 @@ export function RebatePoolPanel() {
                 <option value="ACTIVE">สะสมใช้งานได้ (ACTIVE)</option>
                 <option value="READY_FOR_CONVERSION">ครบกำหนด 1 พ.ย. พร้อมแปลง</option>
                 <option value="PARTIALLY_CONVERTED">แปลงบางส่วน</option>
-                <option value="FULLY_CONVERTED">แปลงหมดแล้ว</option>
+                <option value="CONVERTED">แปลงหมดแล้ว</option>
                 <option value="CANCELLED">ยกเลิก</option>
               </select>
             </div>
@@ -794,6 +777,7 @@ export function RebatePoolPanel() {
                             <>
                               <button
                                 type="button"
+                                disabled
                                 onClick={() => handleApproveLedger(row)}
                                 className="px-2 py-1 rounded bg-green-600 text-white text-[11px] font-bold hover:bg-green-700 flex items-center gap-1"
                               >
@@ -801,6 +785,7 @@ export function RebatePoolPanel() {
                               </button>
                               <button
                                 type="button"
+                                disabled
                                 onClick={() => handleRejectLedger(row)}
                                 className="px-2 py-1 rounded bg-red-600 text-white text-[11px] font-bold hover:bg-red-700 flex items-center gap-1"
                               >
@@ -953,11 +938,11 @@ export function RebatePoolPanel() {
               </button>
               <button
                 type="button"
-                disabled={calcBusy}
+                disabled
                 onClick={handleCreateLedger}
                 className="px-4 py-2 rounded-lg bg-[#0C447C] text-white text-xs font-bold hover:bg-[#09345f] disabled:opacity-50 flex items-center gap-1.5"
               >
-                <Plus size={14} /> คำนวณ &amp; บันทึกลง Rebate Ledger
+                <Plus size={14} /> การบันทึก Ledger เดิมยังไม่พร้อม
               </button>
             </div>
           </div>
@@ -1052,18 +1037,10 @@ export function RebatePoolPanel() {
               <div className="flex items-center gap-2">
                 <Bell size={16} className="text-purple-700" />
                 <h2 className="text-sm font-black text-purple-900">
-                  แจ้งเตือนลูกค้าครบกำหนด 1 พฤศจิกายน (ปี {standingYear + 543})
+                  ยอดลูกค้าครบกำหนด 1 พฤศจิกายน (ปี {standingYear + 543})
                 </h2>
               </div>
-              {canManageSnapshot && (
-                <button
-                  type="button"
-                  onClick={handleNovCheck}
-                  className="px-3 py-1.5 rounded-lg bg-purple-700 text-white text-xs font-bold hover:bg-purple-800 flex items-center gap-1.5"
-                >
-                  <CalendarCheck size={14} /> ตรวจสอบรายการครบกำหนด 1 พ.ย.
-                </button>
-              )}
+              <span className="text-xs text-purple-700">คำนวณจากยอด WinSpeed ที่เหลือ ณ วันที่ 1 พ.ย.</span>
             </div>
             {alerts.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -1091,7 +1068,7 @@ export function RebatePoolPanel() {
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-gray-400">ยังไม่มีรายการแจ้งเตือนรอบ 1 พ.ย. สำหรับปีนี้</p>
+              <p className="text-xs text-gray-400">ไม่พบยอดครบกำหนดรอบ 1 พ.ย. สำหรับปีนี้</p>
             )}
           </div>
 
@@ -1142,13 +1119,14 @@ export function RebatePoolPanel() {
                       </div>
                     </div>
                     <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200">
-                      <div className="text-[11px] text-amber-700">รออนุมัติ ผจก.</div>
+                      <div className="text-[11px] text-amber-700">ล็อตที่ยังไม่มีแผน</div>
                       <div className="font-black text-amber-900 tabular-nums mt-0.5">
-                        ฿{fmtMoney(customerQueue.pendingApprovalBalance)}
+                        {customerQueue.withoutPlanCount} รายการ (ยังไม่รวมในยอด)
                       </div>
                     </div>
                   </div>
 
+                  <p className="text-[11px] text-gray-500">ยอดยกมา ฿{fmtMoney(customerQueue.openingEligibleBalance)} รวมอยู่ในยอด FIFO แล้ว · แสดงรายละเอียดไม่เกิน {customerQueue.detailLimit} รายการตามลำดับ FIFO</p>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
@@ -1175,7 +1153,7 @@ export function RebatePoolPanel() {
                         {customerQueue.eligibleLedgers.length === 0 && (
                           <tr>
                             <td colSpan={5} className="py-6 text-center text-gray-400">
-                              ลูกค้านี้ยังไม่มียอดคงเหลือที่พร้อมตัดแบบ FIFO
+                              ไม่มีรายละเอียดล็อตในช่วงวันเริ่มข้อมูล (อาจมียอดยกมาในยอดรวม)
                             </td>
                           </tr>
                         )}
@@ -1242,7 +1220,7 @@ export function RebatePoolPanel() {
                   {selectedOct31Price ? (
                     <>
                       ราคายืน 31 ต.ค. {standingYear + 543}:{' '}
-                      <strong className="tabular-nums">฿{fmtMoney(selectedOct31Price.StandingPricePerTon)} / ตัน</strong>
+                      <strong className="tabular-nums">฿{fmtMoney(selectedOct31Price.basePrice)} / ตัน</strong>
                     </>
                   ) : (
                     <>ไม่พบราคายืน 31 ต.ค. {standingYear + 543} ของสินค้านี้ (กรุณา Snapshot ก่อน)</>
@@ -1312,7 +1290,7 @@ export function RebatePoolPanel() {
                   disabled={!canConvert}
                   onChange={e => setConvMaturedOnly(e.target.checked)}
                 />
-                ตัดเฉพาะยอดครบกำหนด 1 พ.ย. (Matured Only)
+                ตัดเฉพาะยอดที่ครบระยะเวลาสะสม (Matured Only)
               </label>
 
               {estConversionPreview && (
@@ -1323,6 +1301,14 @@ export function RebatePoolPanel() {
                   </span>
                 </div>
               )}
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">วันหมดอายุตั๋ว</label>
+                <input type="date" min={bangkokDate()} value={convExpiryDate} disabled={!canConvert}
+                  onChange={e => setConvExpiryDate(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50" />
+                <p className="text-[11px] text-gray-500 mt-1">เว้นว่างเพื่อใช้ค่าเริ่มต้นของระบบ (เริ่มต้น 90 วันนับจากวันแปลง)</p>
+              </div>
 
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">หมายเหตุการออกตั๋วปุ๋ย *</label>
@@ -1380,20 +1366,20 @@ export function RebatePoolPanel() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {oct31Items.map(item => (
-                    <tr key={item.Id}>
+                    <tr key={item.id}>
                       <td className="py-2 font-medium text-gray-800">
-                        {item.GoodCode ? `[${item.GoodCode}] ` : ''}{item.GoodName || `#${item.GoodId}`}
+                        {item.goodCode ? `[${item.goodCode}] ` : ''}{item.goodName || `#${item.goodId}`}
                       </td>
                       <td className="py-2 text-right font-black tabular-nums text-[#0C447C]">
-                        ฿{fmtMoney(item.StandingPricePerTon)}
+                        ฿{fmtMoney(item.basePrice)}
                       </td>
                       <td className="py-2 text-center">
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold">
-                          {item.Source}
+                          {item.sourceType}
                         </span>
                       </td>
-                      <td className="py-2 text-gray-600">{item.CapturedByName || '-'}</td>
-                      <td className="py-2 text-gray-500">{formatThaiDate(item.CapturedAt, true)}</td>
+                      <td className="py-2 text-gray-600">{item.capturedByUserId ? `#${item.capturedByUserId}` : '-'}</td>
+                      <td className="py-2 text-gray-500">{formatThaiDate(item.capturedAt, true)}</td>
                     </tr>
                   ))}
                   {oct31Items.length === 0 && (
@@ -1427,13 +1413,11 @@ export function RebatePoolPanel() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {conversions.map(c => {
-                    const isOpen = expandedConvId === c.id;
-                    return (
+                  {conversions.map(c => (
                       <Fragment key={c.id}>
                         <tr>
                           <td className="py-2.5 font-mono text-[11px] font-bold text-[#0C447C]">
-                            {c.conversionDocCode}
+                            {c.conversionNo}
                             <div className="text-[10px] font-sans font-normal text-gray-400">
                               {formatThaiDate(c.convertedAt, true)}
                             </div>
@@ -1444,55 +1428,34 @@ export function RebatePoolPanel() {
                           <td className="py-2.5">
                             <div>{c.goodCode ? `[${c.goodCode}] ` : ''}{c.goodName || `#${c.goodId}`}</div>
                             <div className="text-[11px] text-gray-400 tabular-nums">
-                              ราคา 31 ต.ค. ({c.standingYear + 543}): ฿{fmtMoney(c.oct31StandingPrice)}/ตัน
+                              ราคา 31 ต.ค. ({c.standingYear + 543}): ฿{fmtMoney(c.standingPricePerTon)}/ตัน
                             </div>
                           </td>
                           <td className="py-2.5 text-right font-bold tabular-nums text-emerald-700">
                             {fmtTons(c.convertedTons)} ตัน
                           </td>
                           <td className="py-2.5 text-right font-bold tabular-nums text-[#0C447C]">
-                            ฿{fmtMoney(c.convertedBaht)}
+                            ฿{fmtMoney(c.convertedValueBaht)}
                           </td>
                           <td className="py-2.5 text-gray-600">
-                            <div>{c.convertedByName || '-'}</div>
+                            <div>{c.convertedByUserId ? `#${c.convertedByUserId}` : '-'}</div>
                             {c.note && <div className="text-[10px] text-gray-400">{c.note}</div>}
                           </td>
                           <td className="py-2.5 text-right">
-                            <button
-                              type="button"
-                              onClick={() => setExpandedConvId(isOpen ? null : c.id)}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded border border-gray-200 text-[11px] text-gray-600 hover:bg-gray-50"
-                            >
-                              {isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                              {c.allocationJson?.length || 0} ล็อต
+                            <button type="button" onClick={() => setExpandedConvId(expandedConvId === c.id ? null : c.id)}
+                              className="px-2 py-1 rounded border border-gray-200 text-[11px] text-gray-600 hover:bg-gray-50">
+                              {expandedConvId === c.id ? 'ซ่อน' : 'ดู'} รายการที่แสดงได้ ({c.allocations.length})
                             </button>
                           </td>
                         </tr>
-                        {isOpen && (
-                          <tr key={`${c.id}-alloc`} className="bg-slate-50/80">
-                            <td colSpan={7} className="p-3">
-                              <div className="text-[11px] font-bold text-gray-600 mb-1.5">
-                                ลำดับการตัดยอด FIFO (allocationJson):
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                                {(c.allocationJson || []).map((al, i) => (
-                                  <div key={i} className="bg-white border border-gray-200 rounded p-2 text-[11px]">
-                                    <div className="font-semibold text-[#0C447C]">
-                                      #{i + 1} · Ledger #{al.ledgerId} {al.docNo ? `(${al.docNo})` : ''}
-                                    </div>
-                                    <div className="text-gray-500">สะสม {formatThaiDate(al.earnedDate)}</div>
-                                    <div className="text-gray-700 tabular-nums mt-0.5">
-                                      ตัด <strong>฿{fmtMoney(al.deductedAmount)}</strong> · เหลือ ฿{fmtMoney(al.remainingAfter)}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
+                        {expandedConvId === c.id && <tr className="bg-slate-50/80"><td colSpan={7} className="p-3">
+                          <p className="text-gray-500 mb-2">แสดงเฉพาะรายการหลังวันเริ่มข้อมูล ยอดรวมยังรวมรายการยกมา</p>
+                          {c.allocations.map((a, i) => <div key={`${a.ledgerId}-${i}`} className="text-gray-700 py-1">
+                            #{i + 1} · {a.ledgerId ? `Ledger #${a.ledgerId}` : 'ล็อต WinSpeed'} {a.docNo || ''} · {formatThaiDate(a.earnedDate)} · ตัด ฿{fmtMoney(a.deductedAmount)}{a.remainingAfter != null ? ` · เหลือ ฿${fmtMoney(a.remainingAfter)}` : ''}
+                          </div>)}
+                        </td></tr>}
                       </Fragment>
-                    );
-                  })}
+                  ))}
                   {conversions.length === 0 && (
                     <tr>
                       <td colSpan={7} className="py-6 text-center text-gray-400">

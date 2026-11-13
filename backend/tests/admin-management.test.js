@@ -43,6 +43,15 @@ const db = h.installDbStub(
 );
 const {ACTIONS,ROLES}=require('../services/role-capabilities');
 const { parseProfile, sessionProfile, filteredCapabilities } = require('../services/role-profiles');
+
+test('rebate shipment evidence verification requires explicit configurable permission', () => {
+  const { capabilitiesFor, hasPermission } = require('../services/role-capabilities');
+  assert.ok(capabilitiesFor('ADMIN').actions.includes('rebate.evidence.verify'));
+  assert.ok(!capabilitiesFor('ACCOUNTING').actions.includes('rebate.evidence.verify'));
+  assert.equal(hasPermission({ role: 'ACCOUNTING', permissions: ['rebate.evidence.verify'] }, 'rebate.evidence.verify'), true);
+  assert.equal(hasPermission({ role: 'ACCOUNTING', permissions: [] }, 'rebate.evidence.verify'), false);
+  assert.ok(parseProfile({ code: 'REBATE_REVIEW', name: 'Reviewer', baseRole: 'ACCOUNTING', permissions: ['rebate.evidence.verify'], expectedRevision: 0 }));
+});
 let app;
 test.before(async () => {
   app = await h.startApp([

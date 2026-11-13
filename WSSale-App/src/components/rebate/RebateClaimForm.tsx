@@ -15,12 +15,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Scissors, X, Plus, Trash2, Printer, Check, Ban, Loader2, Download } from 'lucide-react';
 import {
   createRebateClaim, fetchRebateClaimDetail, approveRebateClaim, rejectRebateClaim,
-  fetchRebateAccrualLots, fetchNextRbNo, fetchSystemSettings, applyRebateClaimToBill,
+  fetchRebateAccrualLots, fetchRebateOpeningBalances, fetchNextRbNo, fetchSystemSettings, applyRebateClaimToBill,
   fetchSalesOrders,
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import { canViewRebateAmounts } from '../../utils/permissions';
-import type { RebatePool, RebateAccrualLot } from '../../types';
+import type { RebatePool, RebateAccrualLot, RebateOpeningBalance } from '../../types';
 import { formatThaiDate } from '../../utils/date';
 
 const NAVY = '#0C447C';
@@ -46,6 +46,9 @@ const TABLE: Record<Kind, { title: string; compare: string; rate: string; amount
 type Line = {
   invoiceNo: string; goodCode: string; qtyTon: string; pricePerTon: string; netPricePerTon: string;
   sourceSOID?: number; sourceListNo?: number;
+  openingBalance?: boolean;
+  openingAvailableTon?: number;
+  openingPreviewAmount?: number | null;
 };
 const emptyLine = (): Line => ({ invoiceNo: '', goodCode: '', qtyTon: '', pricePerTon: '', netPricePerTon: '' });
 
@@ -54,7 +57,9 @@ const calc = (l: Line) => {
   const price = Number(l.pricePerTon) || 0;
   const compare = Number(l.netPricePerTon) || 0;
   const perTon = price - compare;
-  return { qty, price, compare, perTon, amount: Math.round(qty * perTon * 100) / 100 };
+  const fullOpening = l.openingBalance && Math.abs(qty - Number(l.openingAvailableTon)) < 0.0001;
+  const amount = fullOpening && l.openingPreviewAmount != null ? l.openingPreviewAmount : Math.round(qty * perTon * 100) / 100;
+  return { qty, price, compare, perTon, amount };
 };
 const sum = (rows: Line[]) => rows.reduce((s, l) => s + calc(l).amount, 0);
 
@@ -62,11 +67,10 @@ const sum = (rows: Line[]) => rows.reduce((s, l) => s + calc(l).amount, 0);
 // ยื่นใบขอเคลียร์
 // ─────────────────────────────────────────────────────────────
 export function ClaimDialog({ pool, onClose, onDone }:
-  { pool: RebatePool; onClose: () => void; onDone: () => void }) {
+  { pool?: RebatePool | null; onClose: () => void; onDone: () => void }) {
 
   // owner 2026-10-09: a salesperson files by tons only; the server prices each line from its delivery lot
   const seeMoney = canViewRebateAmounts(useAuthStore(s => s.user));
-  const available = pool.AvailableAmt !== undefined ? Number(pool.AvailableAmt) : (Number(pool.AccruedAmt) - Number(pool.ClaimedAmt) - Number(pool.UsedAmt || 0));
   const [custId, setCustId] = useState('');
   const [note, setNote] = useState('');
   const [rebate, setRebate] = useState<Line[]>([emptyLine()]);
@@ -74,6 +78,7 @@ export function ClaimDialog({ pool, onClose, onDone }:
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [lots, setLots] = useState<RebateAccrualLot[] | null>(null);
+  const [openingBalances, setOpeningBalances] = useState<RebateOpeningBalance[]>([]);
   const [lotsBusy, setLotsBusy] = useState(false);
   
   // Ratio & Policy states (Rebate policy: Customer 100% / WF 0% default)
@@ -96,9 +101,21 @@ export function ClaimDialog({ pool, onClose, onDone }:
     if (!cid) { setErr('กรอกรหัสลูกค้าก่อน จึงจะดึงยอดขนจริงได้'); return; }
     setLotsBusy(true); setErr('');
     try {
-      setLots(await fetchRebateAccrualLots(cid, { lineType: 'REBATE' }));
+      const [current, opening] = await Promise.all([fetchRebateAccrualLots(cid, { lineType: 'REBATE' }), fetchRebateOpeningBalances(cid)]);
+      setLots(current); setOpeningBalances(opening);
     } catch (e: unknown) { setErr((e as Error).message || 'ดึงยอดขนจริงไม่สำเร็จ'); }
     finally { setLotsBusy(false); }
+  }
+
+  function useOpening(balance: RebateOpeningBalance) {
+    const row: Line = { invoiceNo: 'ยอดยกมา', goodCode: balance.GoodCode, qtyTon: String(balance.RemainingTon),
+      pricePerTon: '', netPricePerTon: '', openingBalance: true,
+      openingAvailableTon: Number(balance.RemainingTon), openingPreviewAmount: balance.RemainingAmt };
+    setRebate(prev => {
+      const blank = prev.findIndex(l => !l.goodCode && !l.qtyTon);
+      if (blank >= 0) return prev.map((l, i) => (i === blank ? row : l));
+      return [...prev, row];
+    });
   }
 
   /** เติมล็อตลงตารางคืนรีเบท พร้อมผูกบรรทัดใบส่งของต้นทางไว้ */
@@ -122,7 +139,9 @@ export function ClaimDialog({ pool, onClose, onDone }:
 
   const totals = useMemo(() => ({ rebate: sum(rebate), diff: sum(diff) }), [rebate, diff]);
   const grand = totals.rebate + totals.diff;
-  const overBudget = seeMoney && grand > available;
+  const hasOpening = rebate.some(row => row.openingBalance && Number(row.qtyTon) > 0);
+  const hasUnpricedOpening = rebate.some(row => row.openingBalance && Number(row.qtyTon) > 0 &&
+    (row.openingPreviewAmount == null || Math.abs(Number(row.qtyTon) - Number(row.openingAvailableTon)) >= 0.0001));
 
   const activeCustomerRatio = customerRatio;
   const companyRatio = 100 - activeCustomerRatio;
@@ -130,10 +149,10 @@ export function ClaimDialog({ pool, onClose, onDone }:
   const retainedAmount = Math.round(grand * (companyRatio / 100) * 100) / 100;
 
   async function submit() {
-    const below = seeMoney && [...rebate, ...diff].find(l => calc(l).qty > 0 && calc(l).perTon < 0);
+    const below = seeMoney && [...rebate, ...diff].find(l => !l.openingBalance && calc(l).qty > 0 && calc(l).perTon < 0);
     if (below) { setErr(`${below.goodCode || below.invoiceNo || 'บรรทัด'}: ราคาขายต่ำกว่าราคาสุทธิ ไม่มีส่วนต่างให้เคลียร์`); return; }
     const pack = (rows: Line[], lineType: Kind) => rows
-      .filter(l => calc(l).qty > 0 && (!seeMoney || calc(l).perTon !== 0))
+      .filter(l => calc(l).qty > 0 && (l.openingBalance || !seeMoney || calc(l).perTon !== 0))
       .map(l => ({
         lineType,
         invoiceNo: l.invoiceNo.trim() || undefined,
@@ -143,15 +162,14 @@ export function ClaimDialog({ pool, onClose, onDone }:
         netPricePerTon: calc(l).compare,
         sourceSOID: l.sourceSOID,
         sourceListNo: l.sourceListNo,
+        openingBalance: l.openingBalance === true,
       }));
     const lines = [...pack(rebate, 'REBATE'), ...(seeMoney ? pack(diff, 'DIFF') : [])];
     if (!lines.length) { setErr(seeMoney ? 'ต้องมีรายการอย่างน้อย 1 บรรทัดที่มียอดขนและส่วนต่างราคา' : 'ต้องมีรายการอย่างน้อย 1 บรรทัดที่มียอดขน'); return; }
-    if (overBudget) { setErr(`ยอดรวม ฿${baht(grand)} เกินยอดที่ใช้ได้ ฿${baht(available)}`); return; }
 
     setBusy(true); setErr('');
     try {
       await createRebateClaim({
-        poolId: pool.Id,
         custId: custId.trim(),
         note: note.trim() || undefined,
         lines,
@@ -175,7 +193,7 @@ export function ClaimDialog({ pool, onClose, onDone }:
               <Scissors size={18} /> แบบขออนุมัติเคลียร์รายการส่งเสริมการขาย
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              {pool.SalesName} · งวด {pool.PeriodMonth}/{pool.PeriodYear}{seeMoney ? ` · ใช้ได้ ฿${baht(available)}` : ' · ระบบคำนวณยอดเงินจากราคาในใบส่งของ'}
+              {pool?.SalesName ? `${pool.SalesName} · ` : ''}ใช้ยอดคงเหลือของลูกค้า รวมยอดยกมา ระบบตรวจสอบยอดอีกครั้งเมื่อยื่น
             </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
@@ -185,7 +203,7 @@ export function ClaimDialog({ pool, onClose, onDone }:
           <div className="flex flex-wrap items-end gap-3">
             <label className="block max-w-xs flex-1 min-w-[200px]">
               <span className="text-xs font-semibold text-gray-500">รหัสลูกค้า</span>
-              <input data-testid="claim-cust-id-input" value={custId} onChange={e => { setCustId(e.target.value); setLots(null); }} placeholder="เช่น 0592004"
+              <input data-testid="claim-cust-id-input" value={custId} onChange={e => { setCustId(e.target.value); setLots(null); setOpeningBalances([]); setRebate([emptyLine()]); setDiff([]); }} placeholder="เช่น 0592004"
                 className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
               <span className="text-[11px] text-gray-400">ใช้อนุมานภาคเพื่อส่งอนุมัติชั้นที่ 2 และดึงยอดขนจริง</span>
             </label>
@@ -197,8 +215,19 @@ export function ClaimDialog({ pool, onClose, onDone }:
           </div>
 
           {lots !== null && <LotPicker lots={lots} onUse={useLot} seeMoney={seeMoney} />}
+          {lots !== null && openingBalances.length > 0 && <section className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+            <h3 className="text-sm font-bold text-amber-900">ยอดยกมาก่อนวันเริ่มข้อมูล</h3>
+            <p className="text-xs text-amber-800">แสดงรวมตามสินค้า ระบบเลือกล็อต FIFO และคำนวณราคาจริงเมื่อบันทึก</p>
+            {openingBalances.map(item => <div key={item.GoodCode} className="flex items-center justify-between gap-3 text-sm">
+              <span>{item.GoodName || item.GoodCode} · {ton(item.RemainingTon)} ตัน</span>
+              <button type="button" onClick={() => useOpening(item)} className="px-2 py-1 border rounded bg-white">ใช้ยอดยกมา</button>
+            </div>)}
+          </section>}
 
           <LineTable kind="REBATE" rows={rebate} setRows={setRebate} total={totals.rebate} seeMoney={seeMoney} />
+          {hasOpening && <p className="text-xs text-amber-800">{hasUnpricedOpening
+            ? 'ยอดยกมาบางส่วนจะคำนวณจากล็อตจริงเมื่อบันทึก ยอดด้านล่างยังไม่รวมส่วนนี้'
+            : 'ยอดยกมาเป็นประมาณการจากล็อตจริง ระบบตรวจยอดอีกครั้งเมื่อบันทึก'}</p>}
           {seeMoney && <LineTable kind="DIFF" rows={diff} setRows={setDiff} total={totals.diff} seeMoney />}
           {!seeMoney && (
             <p className="text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
@@ -235,7 +264,7 @@ export function ClaimDialog({ pool, onClose, onDone }:
 
           <div className="flex items-center justify-end gap-4 border-t-2 border-gray-200 pt-3">
             <span className="text-sm text-gray-500">ยอดรวมทั้งใบ</span>
-            <span className="text-xl font-black tabular-nums" style={{ color: overBudget ? '#B91C1C' : NAVY }}>
+            <span className="text-xl font-black tabular-nums" style={{ color: NAVY }}>
               ฿{baht(grand)}
             </span>
           </div>
@@ -247,17 +276,12 @@ export function ClaimDialog({ pool, onClose, onDone }:
               className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
           </label>
 
-          {overBudget && (
-            <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-              ยอดรวมเกินยอดรีเบทค้างรับที่ใช้ได้ (฿{baht(available)})
-            </p>
-          )}
           {err && <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{err}</p>}
         </div>
 
         <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-between gap-3">
           <p className="text-[11px] text-gray-400">ยื่นแล้วจะเข้าสู่การอนุมัติชั้นที่ 2 (ผู้จัดการภาค)</p>
-          <button data-testid="submit-claim-button" disabled={busy || overBudget} onClick={submit}
+          <button data-testid="submit-claim-button" disabled={busy} onClick={submit}
             className="px-5 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50" style={{ background: NAVY }}>
             {busy ? 'กำลังบันทึก…' : 'ยื่นใบขอเคลียร์'}
           </button>
@@ -281,7 +305,7 @@ function LotPicker({ lots, onUse, seeMoney }: { lots: RebateAccrualLot[]; onUse:
   if (!lots.length) {
     return (
       <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-        ไม่พบยอดขนจริงคงเหลือของลูกค้ารายนี้ — อาจขนไม่ครบ หรือถูกขอเคลียร์ไปหมดแล้ว
+        ไม่พบล็อตคงเหลือในช่วงวันที่แสดง หากมียอดยกมาให้เลือกจากส่วนด้านล่าง
       </p>
     );
   }
@@ -388,15 +412,18 @@ function LineTable({ kind, rows, setRows, total, seeMoney }:
                         <td className="px-2 py-1.5 text-gray-400">{i + 1}</td>
                         <td className="px-2 py-1.5">
                           <input value={l.invoiceNo} onChange={e => setLine(i, { invoiceNo: e.target.value })}
+                            disabled={l.openingBalance}
                             placeholder="I68-01781" className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm" />
                         </td>
                         <td className="px-2 py-1.5">
                           <input value={l.goodCode} onChange={e => setLine(i, { goodCode: e.target.value })}
+                            disabled={l.openingBalance}
                             placeholder="18-4-5" className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm" />
                         </td>
                         {(seeMoney ? (['qtyTon', 'pricePerTon', 'netPricePerTon'] as const) : (['qtyTon'] as const)).map(field => (
                           <td key={field} className="px-2 py-1.5">
                             <input type="number" inputMode="decimal" value={l[field]}
+                              disabled={l.openingBalance && field !== 'qtyTon'}
                               data-testid={`line-${field}-${i}`}
                               onChange={e => setLine(i, { [field]: e.target.value } as Partial<Line>)}
                               className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm text-right" />
@@ -404,10 +431,10 @@ function LineTable({ kind, rows, setRows, total, seeMoney }:
                         ))}
                         {seeMoney && <>
                         <td className="px-2 py-1.5 text-right bg-blue-50/60 tabular-nums text-gray-700">
-                          {c.perTon ? baht(c.perTon) : '—'}
+                          {l.openingBalance ? 'ระบบคำนวณ' : c.perTon ? baht(c.perTon) : '—'}
                         </td>
                         <td className="px-2 py-1.5 text-right bg-blue-50/60 tabular-nums font-semibold" style={{ color: NAVY }}>
-                          {c.amount ? baht(c.amount) : '—'}
+                          {l.openingBalance ? (c.amount ? `ประมาณ ${baht(c.amount)}` : 'ระบบคำนวณ') : c.amount ? baht(c.amount) : '—'}
                         </td>
                         </>}
                         <td className="px-2 py-1.5">

@@ -26,8 +26,37 @@ function camelizeApprovalRow(row) {
 }
 
 /**
+ * Extract root customer code before the first "-" so branches/sub-accounts
+ * such as "0462002" and "0462002-1" represent the SAME customer ("0462002").
+ */
+function getBaseCustCode(custCode) {
+  const raw = String(custCode || '').trim().toUpperCase();
+  if (!raw) return '';
+  const dashIdx = raw.indexOf('-');
+  const prefix = dashIdx >= 0 ? raw.slice(0, dashIdx).trim() : raw;
+  return prefix || raw;
+}
+
+/**
+ * Canonical grouping key for a trip member:
+ * - Uses root CustCode prefix ("CODE:<baseCode>") when CustCode is available
+ * - Falls back to CustId (or "NAME:<custName>") for unmapped/legacy rows
+ */
+function getCustomerGroupKey(member) {
+  const rawCustCode = String(readField(member, 'CustCode', 'custCode', 'FallbackCustCode', 'fallbackCustCode') || '').trim();
+  const baseCode = getBaseCustCode(rawCustCode);
+  if (baseCode) return `CODE:${baseCode}`;
+
+  const rawCustId = String(readField(member, 'CustId', 'custId') || '').trim();
+  if (rawCustId) return rawCustId;
+
+  const rawCustName = String(readField(member, 'CustName', 'custName') || '').trim();
+  return rawCustName ? `NAME:${rawCustName}` : '';
+}
+
+/**
  * Compute deterministic distinct-customer snapshot for a Sale Trip's active members.
- * Multiple bills for the SAME CustId count as 1 distinct customer.
+ * Multiple bills for the same customer or same base CustCode prefix (before "-") count as 1 customer.
  */
 function computeTripCustomerSnapshot(members = []) {
   const byCustomer = new Map();
@@ -37,8 +66,10 @@ function computeTripCustomerSnapshot(members = []) {
     if (status === 'CANCELLED' || status === 'DELETED') continue;
 
     const rawCustId = String(readField(m, 'CustId', 'custId') || '').trim();
+    const rawCustCode = String(readField(m, 'CustCode', 'custCode', 'FallbackCustCode', 'fallbackCustCode') || '').trim().toUpperCase();
+    const baseCustCode = getBaseCustCode(rawCustCode);
     const rawCustName = String(readField(m, 'CustName', 'custName') || '').trim();
-    const custKey = rawCustId || (rawCustName ? `NAME:${rawCustName}` : '');
+    const custKey = getCustomerGroupKey(m);
     if (!custKey) continue;
 
     const docuNo = String(
@@ -49,24 +80,40 @@ function computeTripCustomerSnapshot(members = []) {
       ''
     ).trim();
 
+    const isPrimaryBranch = !!baseCustCode && rawCustCode === baseCustCode;
     if (!byCustomer.has(custKey)) {
       byCustomer.set(custKey, {
-        custId: rawCustId || custKey,
-        custName: rawCustName || rawCustId || custKey,
+        custId: custKey,
+        baseCustCode: baseCustCode || null,
+        custIds: rawCustId ? [rawCustId] : [],
+        custCodes: rawCustCode ? [rawCustCode] : [],
+        custName: rawCustName || baseCustCode || rawCustId || custKey,
+        _hasPrimaryName: isPrimaryBranch && !!rawCustName,
         orderCount: 0,
         docuNos: [],
       });
     }
     const entry = byCustomer.get(custKey);
+    if (rawCustId && !entry.custIds.includes(rawCustId)) {
+      entry.custIds.push(rawCustId);
+    }
+    if (rawCustCode && !entry.custCodes.includes(rawCustCode)) {
+      entry.custCodes.push(rawCustCode);
+    }
+    // Prefer the root customer's name (without "-" suffix) over sub-account labels
+    if (isPrimaryBranch && rawCustName && !entry._hasPrimaryName) {
+      entry.custName = rawCustName;
+      entry._hasPrimaryName = true;
+    }
     entry.orderCount += 1;
     if (docuNo && !entry.docuNos.includes(docuNo)) {
       entry.docuNos.push(docuNo);
     }
   }
 
-  const customers = Array.from(byCustomer.values()).sort((a, b) =>
-    String(a.custId).localeCompare(String(b.custId))
-  );
+  const customers = Array.from(byCustomer.values())
+    .map(({ _hasPrimaryName, ...rest }) => rest)
+    .sort((a, b) => String(a.custId).localeCompare(String(b.custId)));
   const customerIds = customers.map(c => String(c.custId));
   const customerFingerprint = crypto
     .createHash('sha256')
@@ -249,7 +296,7 @@ async function supersedeStaleTripApprovalsOnMembershipChange(txOrQueryFn, tripId
 
   try {
     const membersRes = await execQuery(`
-      SELECT MemberKind, MemberId, DocuNo, CustId, CustName, Status
+      SELECT MemberKind, MemberId, DocuNo, CustId, CustCode, CustName, Status
       FROM wf.v_TripMember
       WHERE TripId = @tripId
     `, { tripId: { type: sql.Int, value: numericTripId } });
@@ -276,6 +323,8 @@ async function supersedeStaleTripApprovalsOnMembershipChange(txOrQueryFn, tripId
 module.exports = {
   TRIP_APPROVER_ROLES,
   camelizeApprovalRow,
+  getBaseCustCode,
+  getCustomerGroupKey,
   computeTripCustomerSnapshot,
   getMinCustomersThreshold,
   canUserApproveMultiCustTrip,

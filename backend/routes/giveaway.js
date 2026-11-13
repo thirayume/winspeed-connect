@@ -188,6 +188,16 @@ function borrowLimit(remaining, pct) {
 }
 
 const APPROVER_ROLES = ['ADMIN', 'MANAGER', 'C_LEVEL'];
+const { approvalIdentity } = require('../services/approval-identity');
+
+function canResolveBorrow(user, request, approve) {
+  const identity = approvalIdentity(user);
+  const qualifies = (id, roles) =>
+    Number(id) === Number(request.LenderId) ||
+    (!approve && Number(id) === Number(request.RequesterId)) ||
+    roles.some(role => APPROVER_ROLES.includes(role));
+  return qualifies(identity.actorId, identity.actorRoles) && qualifies(identity.effectiveId, identity.effectiveRoles);
+}
 
 const YEAR = (q) => {
   let y = Number(q) || new Date().getFullYear();
@@ -401,12 +411,24 @@ router.get('/budget-lines', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/giveaway/withdrawals?region=&salesUserId=&year= — log การเบิก
-router.get('/withdrawals', async (req, res) => {
-  try {
+// Legacy withdrawal records have only a year/month, not a business day. When
+// the cutoff is mid-month the boundary month is held separately for review;
+// the budget balance view still uses every withdrawal as before.
+async function listWithdrawals(req, pendingDateReview) {
     const { region, salesUserId } = req.query;
     const conds = ['PeriodYear = @y'];
     const inputs = { y: { type: sql.Int, value: YEAR(req.query.year) } };
+    const start = (await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;
+    const startYear = Number(start.slice(0, 4)), startMonth = Number(start.slice(5, 7)), startDay = Number(start.slice(8, 10));
+    const normalizedYear = '(CASE WHEN PeriodYear BETWEEN 2400 AND 3000 THEN PeriodYear-543 ELSE PeriodYear END)';
+    const monthIndex = `(${normalizedYear} * 12 + IssueMonth)`;
+    inputs.startYear = { type: sql.Int, value: startYear };
+    inputs.startPeriod = { type: sql.Int, value: startYear * 12 + startMonth };
+    if (pendingDateReview) {
+      conds.push(`${normalizedYear} >= @startYear AND (IssueMonth IS NULL OR IssueMonth NOT BETWEEN 1 AND 12${startDay > 1 ? ` OR ${monthIndex} = @startPeriod` : ''})`);
+    } else {
+      conds.push(`IssueMonth BETWEEN 1 AND 12 AND ${monthIndex} ${startDay > 1 ? '>' : '>='} @startPeriod`);
+    }
     if (region) {
       const aliases = getRegionAliases(region);
       const orConds = aliases.map((alias, idx) => {
@@ -427,7 +449,20 @@ router.get('/withdrawals', async (req, res) => {
       WHERE ${conds.join(' AND ')}
       ORDER BY IssueMonth DESC, Id DESC
     `, inputs);
-    res.json(r.recordset || []);
+    return r.recordset || [];
+}
+
+// GET /api/giveaway/withdrawals?region=&salesUserId=&year= — ประวัติที่วันที่ไม่ก่อน cutoff
+router.get('/withdrawals', async (req, res) => {
+  try {
+    res.json(await listWithdrawals(req, false));
+  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// รายการที่มีปี/เดือนแต่พิสูจน์วันจริงไม่ได้ จึงยังไม่แสดงในประวัติปกติ
+router.get('/withdrawals/date-review', async (req, res) => {
+  try {
+    res.json(await listWithdrawals(req, true));
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
@@ -794,7 +829,8 @@ router.get('/budget-history', requireCapability('giveaway.budget'), async (req, 
     if (!region) return res.status(400).json({ message: 'region จำเป็น' });
     const year = YEAR(req.query.year);
     const aliases = getRegionAliases(region);
-    const changeInputs = {};
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const changeInputs = { globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } };
     const prefixConds = aliases.map((alias, idx) => {
       const key = `prefix${idx}`;
       changeInputs[key] = { type: sql.NVarChar(120), value: `${alias}|${year}|%` };
@@ -804,11 +840,11 @@ router.get('/budget-history', requireCapability('giveaway.budget'), async (req, 
       SELECT TOP 300 e.EventId AS Id, e.EntityId, e.Action, e.BeforeJson, e.AfterJson, e.ReasonText, e.UserId, e.CreatedAt, u.DisplayName AS UserName
       FROM wf.ChangeEvent e
       LEFT JOIN wf.AppUser u ON CAST(u.Id AS VARCHAR(50)) = e.UserId
-      WHERE e.EntityType = 'GIVEAWAY_BUDGET' AND (${prefixConds.join(' OR ')})
+      WHERE e.EntityType = 'GIVEAWAY_BUDGET' AND e.CreatedAt >= @globalStartUtc AND (${prefixConds.join(' OR ')})
       ORDER BY e.EventId DESC
     `, changeInputs)).recordset || [];
 
-    const borrowInputs = { y: { type: sql.Int, value: year } };
+    const borrowInputs = { y: { type: sql.Int, value: year }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } };
     const regionConds = aliases.map((alias, idx) => {
       borrowInputs[`rg${idx}`] = { type: sql.NVarChar(60), value: alias };
       borrowInputs[`tag1_${idx}`] = { type: sql.NVarChar(80), value: `%[REQ_RG:${alias}]%` };
@@ -820,7 +856,7 @@ router.get('/budget-history', requireCapability('giveaway.budget'), async (req, 
       FROM wf.GiveawayBorrowRequest b
       JOIN wf.AppUser rq ON rq.Id = b.RequesterId
       JOIN wf.AppUser ln ON ln.Id = b.LenderId
-      WHERE b.PeriodYear = @y AND (${regionConds.join(' OR ')})
+      WHERE b.PeriodYear = @y AND b.RequestedAt >= @globalStartUtc AND (${regionConds.join(' OR ')})
       ORDER BY b.RequestedAt DESC
     `, borrowInputs)).recordset || [];
     res.json({ changes, borrows });
@@ -966,6 +1002,7 @@ router.post('/borrow-requests', requireCapability('giveaway.borrow'), async (req
 // GET /api/giveaway/borrow-requests — Get pending borrow requests for the current user (either requester, lender, or approver)
 router.get('/borrow-requests', async (req, res) => {
   try {
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
     // R12 O-4: requests where the requester or the lender is in the user's own + team scope
     const scope = await getVisibleScope(req.user);
     const byReq = scopeFilter(scope, { userCol: 'b.RequesterId', prefix: 'bq' });
@@ -975,9 +1012,9 @@ router.get('/borrow-requests', async (req, res) => {
       FROM wf.GiveawayBorrowRequest b
       JOIN wf.AppUser req ON req.Id = b.RequesterId
       JOIN wf.AppUser len ON len.Id = b.LenderId
-      WHERE ${scope.all ? '1=1' : `(${byReq.sql} OR ${byLen.sql})`}
+      WHERE b.RequestedAt >= @globalStartUtc AND ${scope.all ? '1=1' : `(${byReq.sql} OR ${byLen.sql})`}
       ORDER BY b.RequestedAt DESC
-    `, { ...byReq.inputs, ...byLen.inputs });
+    `, { ...byReq.inputs, ...byLen.inputs, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } });
     res.json(r.recordset || []);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -1002,23 +1039,26 @@ router.patch('/borrow-requests/:id/resolve', requireBorrowRequestInScope, async 
     const { approve, note } = req.body;
     const reqId = Number(req.params.id);
     if (!reqId) return res.status(400).json({ message: 'รหัสคำขอไม่ถูกต้อง' });
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
 
     // Reject flow — ผู้ให้ยืม ผู้ขอ (ยกเลิกคำขอตัวเอง) หรือ ADMIN/MANAGER/C_LEVEL เท่านั้น
     if (!approve) {
-      const cur = (await wfQuery(`SELECT RequesterId, LenderId, Status FROM wf.GiveawayBorrowRequest WHERE Id=@id`, { id: { type: sql.Int, value: reqId } })).recordset?.[0];
+      const cur = (await wfQuery(`SELECT RequesterId, LenderId, Status FROM wf.GiveawayBorrowRequest WHERE Id=@id AND RequestedAt >= @globalStartUtc`, {
+        id: { type: sql.Int, value: reqId }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
+      })).recordset?.[0];
       if (!cur) return res.status(404).json({ message: 'ไม่พบข้อมูลคำขอยืมโควตา' });
-      const uid = Number(req.user.id);
-      if (uid !== Number(cur.LenderId) && uid !== Number(cur.RequesterId) && !APPROVER_ROLES.includes(req.user.role)) {
+      if (!canResolveBorrow(req.user, cur, false)) {
         return res.status(403).json({ message: 'คุณไม่มีสิทธิ์ปฏิเสธคำขอนี้' });
       }
       const rejectRes = await wfQuery(`
         UPDATE wf.GiveawayBorrowRequest 
         SET Status = 'REJECTED', ApproverId = @u, Note = @n, ResolvedAt = GETUTCDATE()
-        WHERE Id = @id AND Status = 'PENDING'
+        WHERE Id = @id AND Status = 'PENDING' AND RequestedAt >= @globalStartUtc
       `, {
         id: { type: sql.Int, value: reqId },
         u: { type: sql.Int, value: req.user.id },
         n: { type: sql.NVarChar(500), value: note || null },
+        globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
       });
       if (!rejectRes.rowsAffected?.[0]) {
         return res.status(409).json({ message: 'คำขอนี้ถูกดำเนินการไปแล้วหรือไม่พบข้อมูล' });
@@ -1031,7 +1071,8 @@ router.patch('/borrow-requests/:id/resolve', requireBorrowRequestInScope, async 
       // 1. Lock and fetch the borrow request
       const bReq = (await tx.request()
         .input('id', sql.Int, reqId)
-        .query(`SELECT * FROM wf.GiveawayBorrowRequest WITH (UPDLOCK, ROWLOCK) WHERE Id = @id`)).recordset?.[0];
+        .input('globalStartUtc', sql.DateTime2, dataWindow.utcInstant)
+        .query(`SELECT * FROM wf.GiveawayBorrowRequest WITH (UPDLOCK, ROWLOCK) WHERE Id = @id AND RequestedAt >= @globalStartUtc`)).recordset?.[0];
 
       if (!bReq) {
         throw Object.assign(new Error('ไม่พบข้อมูลคำขอยืมโควตา'), { status: 404 });
@@ -1041,7 +1082,7 @@ router.patch('/borrow-requests/:id/resolve', requireBorrowRequestInScope, async 
       }
 
       // Check permission: only Lender or ADMIN/MANAGER/C_LEVEL can resolve
-      if (Number(req.user.id) !== Number(bReq.LenderId) && !APPROVER_ROLES.includes(req.user.role)) {
+      if (!canResolveBorrow(req.user, bReq, true)) {
         throw Object.assign(new Error('คุณไม่มีสิทธิ์อนุมัติคำขอนี้'), { status: 403 });
       }
 
@@ -1222,4 +1263,5 @@ router.patch('/borrow-requests/:id/resolve', requireBorrowRequestInScope, async 
   }
 });
 
+router.__testing = { canResolveBorrow };
 module.exports = router;

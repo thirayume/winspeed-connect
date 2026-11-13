@@ -1,9 +1,12 @@
 const { query, wfQuery } = require('../db');
 const { broadcast } = require('./socket');
+const { reconcileFromWinSpeed } = require('./pricebook-winspeed-sync');
 
 let pollingInterval = null;
 let running = false;
 const INTERVAL_MS = 5000;
+const PRICEBOOK_SYNC_INTERVAL_MS = 15000;
+let lastPriceBookSyncAt = 0;
 
 // State to track last seen IDs or timestamps
 let state = {
@@ -88,10 +91,25 @@ async function checkNovember1RebateAlerts() {
   }
 }
 
+async function checkPriceBookAutoSync() {
+  const now = Date.now();
+  if (now - lastPriceBookSyncAt < PRICEBOOK_SYNC_INTERVAL_MS) return;
+  lastPriceBookSyncAt = now;
+  try {
+    const res = await reconcileFromWinSpeed({ force: true });
+    if (res?.changed) {
+      console.log(`[Polling] PriceBook auto-synced from WinSpeed (updated=${res.updatedBooks}, imported=${res.importedBooks}). Broadcasting...`);
+      broadcast('pricebook_updated', res);
+    }
+  } catch (err) {
+    console.warn('[poll] checkPriceBookAutoSync failed:', err.message);
+  }
+}
+
 async function pollOnce() {
   if (running) return;
   running = true;
-  try { await Promise.all([checkControlTickets(), checkAgingOrders(), checkNovember1RebateAlerts()]); }
+  try { await Promise.all([checkControlTickets(), checkAgingOrders(), checkNovember1RebateAlerts(), checkPriceBookAutoSync()]); }
   finally { running = false; }
 }
 

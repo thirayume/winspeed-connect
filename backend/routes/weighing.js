@@ -53,6 +53,7 @@
 const router = require('express').Router();
 const { sql, query } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { isValidStartDate } = require('../services/data-window');
 
 router.use(requireAuth);
 router.use(requireRole('ACCOUNTING', 'MANAGER', 'ADMIN', 'C_LEVEL', 'WAREHOUSE', 'WEIGHBRIDGE'));
@@ -69,15 +70,22 @@ const STATUS_SQL = `CASE h.Status
 
 /** ช่วงวันที่: ไม่ส่งมา = ย้อนหลัง 30 วัน */
 function range(req) {
-  const today = new Date();
+  const today = new Date(Date.now() + 7 * 3600000);
   const back = new Date(today.getTime() - 30 * 86400000);
   const iso = d => d.toISOString().slice(0, 10);
-  return { from: String(req.query.from || iso(back)), to: String(req.query.to || iso(today)) };
+  const from = String(req.query.from || iso(back));
+  const to = String(req.query.to || iso(today));
+  if (!isValidStartDate(from) || !isValidStartDate(to)) throw Object.assign(new Error('วันที่ไม่ถูกต้อง'), { status: 400 });
+  return { from, to };
 }
 
 async function run(req, text, extra = {}) {
-  const { from, to } = range(req);
-  const inputs = { from: { type: sql.Date, value: from }, to: { type: sql.Date, value: to } };
+  const requested = range(req);
+  const { businessDate } = await require('../services/global-data-window-store').readGlobalDataWindow();
+  const from = requested.from < businessDate ? businessDate : requested.from;
+  const { to } = requested;
+  const inputs = { from: { type: sql.Date, value: from }, to: { type: sql.Date, value: to },
+    globalStartDate: { type: sql.Date, value: businessDate } };
   for (const [k, v] of Object.entries(extra)) inputs[k] = { type: sql.NVarChar(100), value: v };
   return { rows: await query(text, inputs), from, to };
 }
@@ -109,7 +117,8 @@ function wgTypeFilter(req) {
 router.get('/live', guard(async (req, res) => {
   const hours = Math.min(Math.max(Number(req.query.sinceHours) || 24, 1), 720);
   const { clause, value } = wgTypeFilter(req);
-  const inputs = { hours: { type: sql.Int, value: hours } };
+  const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+  const inputs = { hours: { type: sql.Int, value: hours }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
   if (value) inputs.wgtype = { type: sql.VarChar(10), value };
 
   const rows = await query(`
@@ -137,8 +146,8 @@ router.get('/live', guard(async (req, res) => {
              WHERE d.WGHDId = h.Id AND NULLIF(RTRIM(d.CouponNo), '') IS NOT NULL) AS CouponLines
       FROM dbo.WGHD h
       LEFT JOIN dbo.EMDriver dr ON dr.Id = h.EMDriverId
-      LEFT JOIN dbo.SOHD    so ON so.SOID = h.SPID AND h.WGType = 'SO'
-     WHERE (h.Status < 3 OR h.DateOut >= DATEADD(hour, -@hours, GETDATE()))${clause}
+      LEFT JOIN dbo.SOHD    so ON so.SOID = h.SPID AND h.WGType = 'SO' AND so.DocuDate >= @globalStartDate
+     WHERE h.DateReg >= @globalStartDate AND (h.Status < 3 OR h.DateOut >= DATEADD(hour, -@hours, GETDATE()))${clause}
      ORDER BY h.Status, h.DateReg DESC, h.Id DESC`, inputs);
 
   // นับแยกตามสถานะ ให้หน้าจอทำแถบสรุปได้โดยไม่ต้องยิงซ้ำ
@@ -161,6 +170,7 @@ router.get('/live', guard(async (req, res) => {
  * แถวที่ตัวเลขขัดกันเอง — ต้องเห็นก่อนเอาไปใช้ตัดสินใจ
  */
 router.get('/anomalies', guard(async (req, res) => {
+  const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
   const rows = await query(`
     SELECT TOP ${LIMIT}
            h.Id, h.WGType, h.Status, h.MoveBill, h.CarNo AS Plate,
@@ -179,19 +189,20 @@ router.get('/anomalies', guard(async (req, res) => {
              ELSE NULL END AS Issue
       FROM dbo.WGHD h
       LEFT JOIN dbo.SOHD so ON so.SOID = h.SPID AND h.WGType = 'SO'
-     WHERE h.WeightNet < 0
+     WHERE h.DateReg >= @globalStartDate AND (h.WeightNet < 0
         OR (h.Status = 3 AND (h.WeightNet IS NULL OR h.WeightNet = 0))
         OR (h.Status = 2 AND h.WeightIn IS NULL)
         OR (h.WeightNet IS NOT NULL AND h.WeightOut IS NOT NULL AND h.WeightIn IS NOT NULL
             AND h.WeightNet <> CASE WHEN h.WGType = 'PO' THEN h.WeightIn - h.WeightOut
                                                          ELSE h.WeightOut - h.WeightIn END)
-        OR (h.WGType = 'SO' AND h.SPID IS NOT NULL AND so.SOID IS NULL)
-     ORDER BY h.DateReg DESC, h.Id DESC`);
+        OR (h.WGType = 'SO' AND h.SPID IS NOT NULL AND so.SOID IS NULL))
+     ORDER BY h.DateReg DESC, h.Id DESC`, { globalStartDate: { type: sql.Date, value: dataWindow.businessDate } });
   res.json({ rows, count: rows.length });
 }));
 
 /** ความครบถ้วนของข้อมูล — หน้าจอเอาไปเตือนผู้ใช้ว่าเชื่อได้แค่ไหน */
 router.get('/coverage', guard(async (req, res) => {
+  const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
   const r = (await query(`
     SELECT COUNT(*) AS Registered,
            SUM(CASE WHEN Status = 1 THEN 1 ELSE 0 END) AS Waiting,
@@ -204,9 +215,9 @@ router.get('/coverage', guard(async (req, res) => {
            CONVERT(varchar(16), MIN(DateReg), 120) AS FirstDate,
            CONVERT(varchar(16), MAX(DateReg), 120) AS LastDate,
            CONVERT(varchar(16), MAX(DateOut), 120) AS LastWeighOut,
-           (SELECT COUNT(*) FROM dbo.WGDT) AS DetailRows,
-           (SELECT COUNT(*) FROM dbo.WGDT WHERE NULLIF(RTRIM(CouponNo),'') IS NOT NULL) AS WithCoupon
-      FROM dbo.WGHD`))[0];
+           (SELECT COUNT(*) FROM dbo.WGDT d JOIN dbo.WGHD h ON h.Id=d.WGHDId WHERE h.DateReg >= @globalStartDate) AS DetailRows,
+           (SELECT COUNT(*) FROM dbo.WGDT d JOIN dbo.WGHD h ON h.Id=d.WGHDId WHERE h.DateReg >= @globalStartDate AND NULLIF(RTRIM(d.CouponNo),'') IS NOT NULL) AS WithCoupon
+      FROM dbo.WGHD WHERE DateReg >= @globalStartDate`, { globalStartDate: { type: sql.Date, value: dataWindow.businessDate } }))[0];
   res.json(r);
 }));
 
@@ -227,7 +238,7 @@ router.get('/tickets', guard(async (req, res) => {
            (SELECT COUNT(*) FROM dbo.WGDT d WHERE d.WGHDId = h.Id) AS Lines
       FROM dbo.WGHD h
       LEFT JOIN dbo.EMDriver dr ON dr.Id = h.EMDriverId
-      LEFT JOIN dbo.SOHD    so ON so.SOID = h.SPID AND h.WGType = 'SO'
+      LEFT JOIN dbo.SOHD    so ON so.SOID = h.SPID AND h.WGType = 'SO' AND so.DocuDate >= @globalStartDate
      WHERE CAST(h.DateReg AS date) BETWEEN @from AND @to${clause}
      ORDER BY h.DateReg DESC, h.Id DESC`, extra));
 }));
@@ -244,6 +255,7 @@ router.get('/tickets', guard(async (req, res) => {
 router.get('/for-so/:soid', guard(async (req, res) => {
   const soid = Number(req.params.soid);
   if (!Number.isInteger(soid)) return res.status(400).json({ message: 'soid ต้องเป็นตัวเลข' });
+  const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
   // ⚠ query() ของโปรเจกต์นี้คืน **array ตรง ๆ** ไม่ใช่ผลลัพธ์ที่มี .recordset
   //   เขียน r.recordset จะได้ undefined แล้วกลายเป็นรายการว่างแบบเงียบ ๆ
   const rows = await query(`
@@ -253,8 +265,8 @@ router.get('/for-so/:soid', guard(async (req, res) => {
            CONVERT(varchar(16), h.DateOut, 120) AS DateOut,
            h.LocationName AS ScaleNo
       FROM dbo.WGHD h
-     WHERE h.SPID = @soid
-     ORDER BY h.Id DESC`, { soid: { type: sql.Int, value: soid } });
+     WHERE h.SPID = @soid AND h.DateReg >= @globalStartDate
+     ORDER BY h.Id DESC`, { soid: { type: sql.Int, value: soid }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } });
   const candidates = Array.isArray(rows) ? rows : (rows.recordset || []);
   res.json({ soid, candidates, count: candidates.length });
 }));
@@ -263,7 +275,8 @@ router.get('/for-so/:soid', guard(async (req, res) => {
 router.get('/tickets/:id', guard(async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ message: 'id ต้องเป็นตัวเลข' });
-  const idIn = { id: { type: sql.Int, value: id } };
+  const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+  const idIn = { id: { type: sql.Int, value: id }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
 
   const head = (await query(`
     SELECT h.Id, h.WGType, h.Status, ${STATUS_SQL} AS StatusText,
@@ -278,8 +291,8 @@ router.get('/tickets/:id', guard(async (req, res) => {
            so.AppvDocuNo, so.CouponFlag, RTRIM(so.TransRegistration) AS SOPlate
       FROM dbo.WGHD h
       LEFT JOIN dbo.EMDriver dr ON dr.Id = h.EMDriverId
-      LEFT JOIN dbo.SOHD    so ON so.SOID = h.SPID AND h.WGType = 'SO'
-     WHERE h.Id = @id`, idIn))[0];
+      LEFT JOIN dbo.SOHD    so ON so.SOID = h.SPID AND h.WGType = 'SO' AND so.DocuDate >= @globalStartDate
+     WHERE h.Id = @id AND h.DateReg >= @globalStartDate`, idIn))[0];
   if (!head) return res.status(404).json({ message: 'ไม่พบใบชั่ง' });
 
   const items = await query(`
@@ -369,8 +382,10 @@ router.get('/by-so', guard(async (req, res) => send(res, await run(req, `
          h.MoveBill, h.CarNo AS Plate, RTRIM(h.CVName) AS CustName,
          h.WeightIn, h.WeightOut, h.WeightNet, h.TotalTon, h.TotalKasob,
          h.SPID,
-         bk.DocuNo AS BookingNo, CONVERT(varchar(10), bk.DocuDate, 120) AS BookingDate,
-         bk.AppvDocuNo, bk.CouponFlag,
+         CASE WHEN bk.DocuDate >= @globalStartDate THEN bk.DocuNo END AS BookingNo,
+         CASE WHEN bk.DocuDate >= @globalStartDate THEN CONVERT(varchar(10), bk.DocuDate, 120) END AS BookingDate,
+         CASE WHEN bk.DocuDate >= @globalStartDate THEN bk.AppvDocuNo END AS AppvDocuNo,
+         CASE WHEN bk.DocuDate >= @globalStartDate THEN bk.CouponFlag END AS CouponFlag,
          delivery.DeliveryNoteNo, delivery.DeliveryNoteCount
     FROM dbo.WGHD h
     LEFT JOIN dbo.SOHD bk ON bk.SOID = h.SPID AND bk.DocuType = 103
@@ -379,7 +394,7 @@ router.get('/by-so', guard(async (req, res) => send(res, await run(req, `
              CASE WHEN COUNT(DISTINCT dn.SOID) = 1 THEN MAX(dn.DocuNo) END AS DeliveryNoteNo
         FROM dbo.SODT link
         JOIN dbo.SOHD dn ON dn.SOID = link.SOID AND dn.DocuType = 104
-       WHERE link.RefSOID = bk.SOID
+       WHERE link.RefSOID = bk.SOID AND dn.DocuDate >= @globalStartDate
     ) delivery
    WHERE h.WGType = 'SO' AND CAST(h.DateReg AS date) BETWEEN @from AND @to
    ORDER BY h.DateReg DESC, h.Id DESC`))));

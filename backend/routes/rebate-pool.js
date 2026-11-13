@@ -5,28 +5,30 @@
 
 const express = require('express');
 const router = express.Router();
-const { wfQuery } = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { sql, wfTransaction } = require('../db');
+const { defaultRebateQuery: wfQuery, transactionQuery } = require('../services/rebate-sql');
+const { requireAuth, requireRole, requireCapability, requireRebateAmountAccess } = require('../middleware/auth');
 const { getBangkokDateString } = require('../services/so-pickup-policy');
 const {
   calculateOrderPricingAndRebate,
-  recordRebateTransaction,
-  approveOverLimitRebate,
-  rejectOverLimitRebate,
   resolveConfiguredRebatePolicy,
 } = require('../services/rebate-calculator-service');
 const {
-  getCustomerConversionQueue,
-  runNovember1ConversionAlertCheck,
   snapshotOct31StandingPrices,
-  executeManualTicketConversion,
-  isAuthorizedConverter,
 } = require('../services/rebate-conversion-service');
 const {
   mapLedgerRow,
   mapConversionRow,
+  formatYmd,
   RebatePoolModels,
 } = require('../services/rebate-pool-models');
+const {
+  validateCustomerAging,
+  getExpiringTickets,
+  getCustomerTickets,
+  getTicketRedemptionHistory,
+  getAuditLog,
+} = require('../services/rebate-ticket-service');
 
 router.use(requireAuth);
 
@@ -39,8 +41,15 @@ function sendRebateError(res, err) {
   });
 }
 
+async function canAccessRebateCustomer(user, custId) {
+  const scope = await require('../services/rebate-shared-scope').sharedRebateScopeFilter(user);
+  const visible = await wfQuery(`SELECT TOP 1 1 AS ok FROM wf.v_RebateAccrualRemaining
+    WHERE CustId=@cid AND ${scope.sql}`, { ...scope.inputs, cid: custId });
+  return !!visible.recordset?.length;
+}
+
 // ── 1) Pure calculation preview ─────────────────────────────────────────────
-router.post('/calculate', async (req, res) => {
+router.post('/calculate', requireRebateAmountAccess, async (req, res) => {
   try {
     const { basePrice, sellingPrice, qtyTons, isCashDiscount } = req.body || {};
     const policy = await resolveConfiguredRebatePolicy();
@@ -58,26 +67,29 @@ router.post('/calculate', async (req, res) => {
 });
 
 // ── 2) Ledger list & creation ───────────────────────────────────────────────
-router.get('/ledger', async (req, res) => {
+router.get('/ledger', requireRebateAmountAccess, async (req, res) => {
   try {
     const custId = req.query.custId ? Number(req.query.custId) : null;
     const approvalStatus = req.query.approvalStatus ? String(req.query.approvalStatus) : null;
     const status = req.query.status ? String(req.query.status) : null;
     const limit = Math.min(Math.max(1, parseInt(String(req.query.limit || '100'), 10) || 100), 500);
 
-    const where = ['1 = 1'];
-    const params = { limit };
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    // This filters the displayed transaction history only. Conversion queues
+    // and balances continue to include qualifying prior-period amounts.
+    const where = ['EarnedDate >= @globalStartDate'];
+    const params = { limit: { type: sql.Int, value: limit }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
     if (custId) {
       where.push('CustId = @custId');
-      params.custId = custId;
+      params.custId = { type: sql.Int, value: custId };
     }
     if (approvalStatus) {
       where.push('ApprovalStatus = @approvalStatus');
-      params.approvalStatus = approvalStatus;
+      params.approvalStatus = { type: sql.NVarChar(30), value: approvalStatus };
     }
     if (status) {
       where.push('Status = @status');
-      params.status = status;
+      params.status = { type: sql.NVarChar(30), value: status };
     }
 
     const r = await wfQuery(
@@ -94,71 +106,53 @@ router.get('/ledger', async (req, res) => {
 });
 
 router.post('/ledger', async (req, res) => {
-  try {
-    const payload = { ...(req.body || {}), createdByUserId: req.user?.id };
-    const result = await recordRebateTransaction(wfQuery, payload, { actorUser: req.user });
-    return res.status(201).json(result);
-  } catch (err) {
-    return sendRebateError(res, err);
-  }
+  // The current body contains caller-supplied price/quantity and has no
+  // authoritative, idempotent booking link. Never mint financial balances
+  // from that input while the posting contract is being implemented.
+  return res.status(503).json({ code: 'REBATE_POSTING_UNAVAILABLE', error: 'การบันทึก Rebate ผ่านช่องทางนี้ยังไม่พร้อมใช้งาน' });
 });
 
 // ── 3) Manager approval for -200 < diff <= -300 THB/ton ─────────────────────
 router.post('/ledger/:id/approve', async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
-      return res.status(400).json({ error: 'Invalid ledger id', code: 'INVALID_ID' });
-    }
-    const updated = await approveOverLimitRebate(undefined, {
-      ledgerId: id,
-      actorUser: req.user,
-      note: req.body?.note || null,
-    });
-    return res.json(updated);
-  } catch (err) {
-    return sendRebateError(res, err);
-  }
+  // This ledger is separate from the owner's confirmed shared claim balance.
+  return res.status(503).json({ code: 'REBATE_SINGLE_SOURCE_REQUIRED', error: 'การอนุมัติอยู่ระหว่างเชื่อมยอดเดียวกับระบบเคลียร์รีเบท' });
 });
 
 router.post('/ledger/:id/reject', async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
-      return res.status(400).json({ error: 'Invalid ledger id', code: 'INVALID_ID' });
-    }
-    const updated = await rejectOverLimitRebate(undefined, {
-      ledgerId: id,
-      actorUser: req.user,
-      note: req.body?.note || null,
-    });
-    return res.json(updated);
-  } catch (err) {
-    return sendRebateError(res, err);
-  }
+  return res.status(503).json({ code: 'REBATE_SINGLE_SOURCE_REQUIRED', error: 'การอนุมัติอยู่ระหว่างเชื่อมยอดเดียวกับระบบเคลียร์รีเบท' });
 });
 
 // ── 4) Customer conversion queue & annual Nov 1 alerts ──────────────────────
-router.get('/queue/:custId', async (req, res) => {
+router.get('/queue/:custId', requireRebateAmountAccess, async (req, res) => {
   try {
     const custId = Number(req.params.custId);
-    const asOfDate = req.query.asOfDate ? String(req.query.asOfDate) : null;
-    const queue = await getCustomerConversionQueue(wfQuery, { custId, asOfDate });
+    const asOfDate = req.query.asOfDate ? String(req.query.asOfDate) : getBangkokDateString();
+    const cutoff = (await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;
+    const scope = await require('../services/rebate-shared-scope').sharedRebateScopeFilter(req.user);
+    const cycleMonths = await require('../services/rebate-cycle-policy').readRebateCycleMonths(wfQuery);
+    const queue = await require('../services/rebate-shared-queue').getSharedCustomerQueue(wfQuery, {
+      custId, asOfDate, cutoff, scope, cycleMonths,
+    });
     return res.json(queue);
   } catch (err) {
     return sendRebateError(res, err);
   }
 });
 
-router.get('/alerts', async (req, res) => {
+router.get('/alerts', requireRebateAmountAccess, async (req, res) => {
   try {
     const year = req.query.year ? Number(req.query.year) : Number(getBangkokDateString().slice(0, 4));
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) return res.status(400).json({ code: 'INVALID_YEAR' });
+    const scope = await require('../services/rebate-shared-scope').sharedRebateScopeFilter(req.user);
+    const cycleMonths = await require('../services/rebate-cycle-policy').readRebateCycleMonths(wfQuery);
     const r = await wfQuery(
-      `SELECT *
-       FROM wf.RebateConversionAlert WITH (NOLOCK)
-       WHERE AlertYear = @year
-       ORDER BY MaturedBalance DESC, CustId ASC`,
-      { year }
+      `SELECT CustId AS Id, @year AS AlertYear, CustId, MAX(CustCode) AS CustCode, MAX(CustName) AS CustName,
+         SUM(ROUND(RemainingTonRebate*RebatePerTon,2)) AS MaturedBalance, COUNT(*) AS LedgerCount
+       FROM wf.v_RebateAccrualRemaining
+       WHERE RemainingTonRebate > 0 AND PlanId IS NOT NULL AND RebatePerTon > 0
+         AND SourceDocuDate <= @asOf AND DATEADD(MONTH,@months,SourceDocuDate) <= @asOf AND ${scope.sql}
+       GROUP BY CustId ORDER BY MaturedBalance DESC,CustId`,
+      { ...scope.inputs, year, asOf: `${year}-11-01`, months: cycleMonths }
     );
     return res.json(r.recordset || []);
   } catch (err) {
@@ -167,13 +161,9 @@ router.get('/alerts', async (req, res) => {
 });
 
 router.post('/alerts/check', requireRole('ADMIN', 'ACCOUNTING', 'MANAGER', 'C_LEVEL'), async (req, res) => {
-  try {
-    const { asOfDate = null, force = false } = req.body || {};
-    const result = await runNovember1ConversionAlertCheck(wfQuery, { asOfDate, force: Boolean(force) });
-    return res.json(result);
-  } catch (err) {
-    return sendRebateError(res, err);
-  }
+  // The legacy job writes alerts for a separate ledger, not the shared balance.
+  // Keep it closed until a shared-source notification job is implemented.
+  return res.status(503).json({ code: 'REBATE_SHARED_ALERT_UNAVAILABLE', error: 'การส่งแจ้งเตือนอยู่ระหว่างเชื่อมยอดเดียวกับระบบเคลียร์' });
 });
 
 // ── 5) Official Oct 31 standing prices ──────────────────────────────────────
@@ -190,11 +180,11 @@ router.get('/oct31-prices', async (req, res) => {
 router.post('/oct31-prices/snapshot', requireRole('ADMIN', 'ACCOUNTING', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { standingYear = null, entries = null } = req.body || {};
-    const result = await snapshotOct31StandingPrices(wfQuery, {
+    const result = await wfTransaction(async tx => snapshotOct31StandingPrices(transactionQuery(tx, sql), {
       standingYear,
       entries,
       actorUser: req.user,
-    });
+    }));
     return res.status(201).json(result);
   } catch (err) {
     return sendRebateError(res, err);
@@ -202,37 +192,167 @@ router.post('/oct31-prices/snapshot', requireRole('ADMIN', 'ACCOUNTING', 'MANAGE
 });
 
 // ── 6) Manual-only FIFO Fertilizer Ticket Conversion ────────────────────────
-router.get('/conversions', async (req, res) => {
+router.get('/conversions', requireRebateAmountAccess, async (req, res) => {
   try {
     const custId = req.query.custId ? Number(req.query.custId) : null;
     const limit = Math.min(Math.max(1, parseInt(String(req.query.limit || '100'), 10) || 100), 500);
-    const where = custId ? 'WHERE CustId = @custId' : '';
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    // ConvertedAt is stored in Bangkok local time by migration 187. This is a
+    // history filter only; it must not change ticket or pool balances.
+    const where = custId ? 'WHERE ConvertedAt >= @globalStartDate AND CustId = @custId' : 'WHERE ConvertedAt >= @globalStartDate';
     const r = await wfQuery(
       `SELECT TOP (@limit) *
        FROM wf.FertilizerTicketConversion WITH (NOLOCK)
        ${where}
        ORDER BY ConvertedAt DESC, Id DESC`,
-      custId ? { limit, custId } : { limit }
+      custId
+        ? { limit, custId, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } }
+        : { limit, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } }
     );
-    return res.json((r.recordset || []).map(mapConversionRow));
+    const conversions = (r.recordset || []).map(mapConversionRow);
+    if (conversions.length) {
+      const ids = conversions.map((_, i) => `@conversion${i}`);
+      const params = { globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
+      conversions.forEach((row, i) => { params[`conversion${i}`] = { type: sql.BigInt, value: row.id }; });
+      // Old allocations remain part of the conversion total but their source
+      // documents are hidden from history under the data-window policy.
+      const allocations = await wfQuery(
+        `SELECT a.ConversionId, a.LedgerId, a.DeductionOrder, a.DeductedAmount, a.RemainingAfter,
+                l.DocNo, l.EarnedDate
+         FROM wf.FertilizerTicketConversionAllocation a
+         JOIN wf.RebateTransactionLedger l ON l.Id = a.LedgerId
+         WHERE a.ConversionId IN (${ids.join(', ')}) AND l.EarnedDate >= @globalStartDate
+         ORDER BY a.ConversionId, a.DeductionOrder`, params);
+      const byId = new Map(conversions.map(row => [row.id, []]));
+      for (const row of allocations.recordset || []) {
+        byId.get(Number(row.ConversionId))?.push({ ledgerId: Number(row.LedgerId),
+          docNo: row.DocNo || null, earnedDate: formatYmd(row.EarnedDate),
+          deductedAmount: Number(row.DeductedAmount), remainingAfter: Number(row.RemainingAfter) });
+      }
+      const shared = await wfQuery(`SELECT a.ConversionId,a.SourceSOID,a.SourceListNo,a.QtyTon,a.AmountBaht,
+          h.DocuNo,h.DocuDate
+        FROM wf.RebateConversionSourceAllocation a
+        JOIN dbo.SOHD h ON h.SOID=a.SourceSOID
+        WHERE a.ConversionId IN (${ids.join(', ')}) AND h.DocuDate >= @globalStartDate
+        ORDER BY a.ConversionId,h.DocuDate,h.DocuNo,a.SourceListNo`, params);
+      for (const row of shared.recordset || []) {
+        byId.get(Number(row.ConversionId))?.push({ ledgerId: null, sourceSOID: Number(row.SourceSOID),
+          sourceListNo: Number(row.SourceListNo), docNo: row.DocuNo || null, earnedDate: formatYmd(row.DocuDate),
+          qtyTon: Number(row.QtyTon), deductedAmount: Number(row.AmountBaht), remainingAfter: null });
+      }
+      conversions.forEach(row => { row.allocations = byId.get(row.id) || []; });
+    }
+    return res.json(conversions);
   } catch (err) {
     return sendRebateError(res, err);
   }
 });
 
-router.post('/conversions/execute', async (req, res) => {
+router.post('/conversions/execute', requireCapability('rebate.convert'), async (req, res) => {
+  // The owner confirmed conversion and existing rebate claims share one
+  // balance. The current transaction-ledger implementation is a separate
+  // balance; it must not be exposed even behind a configuration flag.
+  return res.status(503).json({ code: 'REBATE_SINGLE_SOURCE_REQUIRED', error: 'การแปลง Rebate อยู่ระหว่างเชื่อมยอดคงเหลือเดียวกับระบบเคลียร์รีเบท' });
+});
+
+// ── 7) Fertilizer Tickets (ตั๋วปุ๋ย) ──────────────────────────────────────
+router.get('/tickets', requireRebateAmountAccess, async (req, res) => {
   try {
-    if (!isAuthorizedConverter(req.user)) {
-      return res.status(403).json({
-        error: 'บัญชีผู้ใช้นี้ไม่มีสิทธิ์แปลง Rebate Pool เป็นตั๋วปุ๋ย',
-        code: 'FORBIDDEN_CONVERTER_ROLE',
-      });
+    const custId = req.query.custId ? Number(req.query.custId) : null;
+    if (!Number.isSafeInteger(custId) || custId <= 0) {
+      return res.status(400).json({ error: 'กรุณาระบุ custId', code: 'MISSING_CUST_ID' });
     }
-    const result = await executeManualTicketConversion(undefined, {
-      ...(req.body || {}),
-      actorUser: req.user,
+    if (!await canAccessRebateCustomer(req.user, custId)) return res.status(404).json({ code: 'REBATE_CUSTOMER_OUT_OF_SCOPE' });
+    const includeExpired = req.query.includeExpired === 'true';
+    const tickets = await getCustomerTickets(wfQuery, { custId, includeExpired });
+    return res.json(tickets);
+  } catch (err) {
+    return sendRebateError(res, err);
+  }
+});
+
+router.post('/tickets/issue', requireRole('ADMIN', 'ACCOUNTING', 'REBATE_CONVERTER'), async (req, res) => {
+  // Issuance must lock and consume exactly one verified conversion; the old
+  // interface trusted amounts supplied by the caller and permitted duplicates.
+  return res.status(503).json({ code: 'TICKET_ISSUANCE_UNAVAILABLE', error: 'การออกตั๋วปุ๋ยยังไม่พร้อมใช้งาน' });
+});
+
+router.post('/tickets/redeem', requireCapability('rebate.ticket-redeem'), async (req, res) => {
+  // The order/customer/product link and caller scope must be verified before
+  // allowing a FIFO deduction. A submitted amount alone is not evidence.
+  return res.status(503).json({ code: 'TICKET_REDEMPTION_UNAVAILABLE', error: 'การใช้ตั๋วปุ๋ยยังไม่พร้อมใช้งาน' });
+});
+
+router.get('/tickets/:ticketId/history', requireRebateAmountAccess, async (req, res) => {
+  try {
+    const ticketId = Number(req.params.ticketId);
+    if (!Number.isInteger(ticketId) || ticketId <= 0) {
+      return res.status(400).json({ error: 'Invalid ticket id', code: 'INVALID_ID' });
+    }
+    const ticket = await wfQuery('SELECT CustId FROM wf.FertilizerTicket WHERE Id=@id', { id: ticketId });
+    const custId = Number(ticket.recordset?.[0]?.CustId);
+    if (!Number.isSafeInteger(custId) || !await canAccessRebateCustomer(req.user, custId)) {
+      return res.status(404).json({ code: 'TICKET_NOT_FOUND' });
+    }
+    const history = await getTicketRedemptionHistory(wfQuery, ticketId);
+    return res.json(history);
+  } catch (err) {
+    return sendRebateError(res, err);
+  }
+});
+
+// ── 8) Expired Ticket Extension (Executive Override) ────────────────────────
+router.post('/tickets/:ticketId/extend', requireCapability('rebate.ticket-extend'), async (req, res) => {
+  return res.status(503).json({ code: 'TICKET_EXTENSION_UNAVAILABLE', error: 'การต่ออายุตั๋วอยู่ระหว่างตรวจสอบและยังไม่พร้อมใช้งาน' });
+});
+
+// ── 9) AR Aging Check & Override ────────────────────────────────────────────
+router.get('/aging/:custId', requireRebateAmountAccess, async (req, res) => {
+  try {
+    const custId = Number(req.params.custId);
+    if (!Number.isSafeInteger(custId) || custId <= 0) return res.status(400).json({ code: 'INVALID_ID' });
+    if (!await canAccessRebateCustomer(req.user, custId)) return res.status(404).json({ code: 'REBATE_CUSTOMER_OUT_OF_SCOPE' });
+    const result = await validateCustomerAging(wfQuery, custId);
+    return res.json(result);
+  } catch (err) {
+    return sendRebateError(res, err);
+  }
+});
+
+router.post('/aging/:custId/override', requireCapability('rebate.aging-override'), async (req, res) => {
+  // A log entry alone is not a consumable, bound approval. Avoid telling users
+  // an override is granted until it is linked to a specific transaction.
+  return res.status(503).json({ code: 'AGING_OVERRIDE_UNAVAILABLE', error: 'การอนุมัติยกเว้นอายุหนี้ยังไม่พร้อมใช้งาน' });
+});
+
+// ── 10) Daily Ticket Expiry Cron & Expiry Warnings ──────────────────────────
+router.post('/tickets/expire', requireRole('ADMIN', 'ACCOUNTING'), async (req, res) => {
+  return res.status(503).json({ code: 'TICKET_EXPIRY_UNAVAILABLE', error: 'การเปลี่ยนสถานะตั๋วหมดอายุอยู่ระหว่างตรวจสอบและยังไม่พร้อมใช้งาน' });
+});
+
+router.get('/tickets/expiring', requireRebateAmountAccess, async (req, res) => {
+  try {
+    const warningDays = parseInt(req.query.warningDays || '15', 10) || 15;
+    const result = await getExpiringTickets(wfQuery, {
+      warningDays,
+      asOfDate: req.query.asOfDate || null,
     });
-    return res.status(201).json(result);
+    return res.json(result);
+  } catch (err) {
+    return sendRebateError(res, err);
+  }
+});
+
+// ── 11) Audit Log ───────────────────────────────────────────────────────────
+router.get('/audit', requireRole('ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
+  try {
+    const logs = await getAuditLog(wfQuery, {
+      entityType: req.query.entityType || null,
+      entityId: req.query.entityId ? Number(req.query.entityId) : null,
+      custId: req.query.custId ? Number(req.query.custId) : null,
+      limit: parseInt(req.query.limit || '100', 10),
+    });
+    return res.json(logs);
   } catch (err) {
     return sendRebateError(res, err);
   }

@@ -156,12 +156,14 @@ export function IncidentsPage() {
               <button onClick={() => setDetail(null)} aria-label="ปิด" className="p-1 text-gray-500 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
             </div>
             <div className="overflow-auto px-5 py-4 space-y-4">
-              {detail.timeline.booking && (
+              {(detail.timeline.booking || detail.timeline.deliveries.length > 0 || detail.timeline.invoices.length > 0) && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                  <div><span className="text-gray-500">ลูกค้า: </span>{detail.timeline.booking.CustName || '-'}</div>
-                  <div><span className="text-gray-500">พนักงานขาย: </span>{detail.timeline.booking.SalesName || '-'}</div>
-                  <div><span className="text-gray-500">ใบสั่งจอง (103): </span>{detail.timeline.booking.DocuNo || '-'}</div>
-                  <div><span className="text-gray-500">ใบอนุมัติ (AI): </span>{detail.timeline.booking.AppvDocuNo || 'ยังไม่อนุมัติ'}{detail.timeline.booking.ApproverName ? ` · ${detail.timeline.booking.ApproverName}` : ''}</div>
+                  {detail.timeline.booking && <>
+                    <div><span className="text-gray-500">ลูกค้า: </span>{detail.timeline.booking.CustName || '-'}</div>
+                    <div><span className="text-gray-500">พนักงานขาย: </span>{detail.timeline.booking.SalesName || '-'}</div>
+                    <div><span className="text-gray-500">ใบสั่งจอง (103): </span>{detail.timeline.booking.DocuNo || '-'}</div>
+                    <div><span className="text-gray-500">ใบอนุมัติ (AI): </span>{detail.timeline.booking.AppvDocuNo || 'ยังไม่อนุมัติ'}{detail.timeline.booking.ApproverName ? ` · ${detail.timeline.booking.ApproverName}` : ''}</div>
+                  </>}
                   <div><span className="text-gray-500">ใบสั่งขาย (104): </span>{detail.timeline.deliveries.map(d => d.DocuNo).join(', ') || '-'}</div>
                   <div><span className="text-gray-500">ใบส่งของ (107): </span>{detail.timeline.invoices.filter(i => Number(i.Docutype) === 107).map(i => i.DocuNo).join(', ') || '-'}</div>
                 </div>

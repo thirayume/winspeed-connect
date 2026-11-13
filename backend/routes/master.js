@@ -25,15 +25,12 @@ const affected = result => Number(result?.rowsAffected?.[0] || 0);
 
 // R12 items 14–16 (O-2): master-data writes go through wf procedures (migration 146) when present —
 // the least-privilege app login has no UPDATE/INSERT on dbo.EMCust / EMGood / EMSetPrice*.
-let masterProcsAvailable = null;
 async function hasMasterProcs() {
-  if (masterProcsAvailable !== null) return masterProcsAvailable;
   const { wfQuery } = require('../db');
   try {
     const r = await wfQuery("SELECT CASE WHEN OBJECT_ID('wf.sp_MasterCreatePrice', 'P') IS NOT NULL AND OBJECT_ID('wf.sp_MasterUpdateCustomer', 'P') IS NOT NULL THEN 1 ELSE 0 END AS HasProcs");
-    masterProcsAvailable = Number(r.recordset?.[0]?.HasProcs || 0) === 1;
-  } catch { masterProcsAvailable = false; }
-  return masterProcsAvailable;
+    return Number(r.recordset?.[0]?.HasProcs || 0) === 1;
+  } catch { return false; }
 }
 // EXEC wf.<proc> with named params; returns the first result row (OUTPUT values selected back)
 async function execMasterProc(proc, params, outputs = []) {
@@ -75,7 +72,10 @@ const CUSTOMER_FILTER_CANDIDATES = {
   group: ['CustGroupID', 'CustGroupCode', 'CustTypeID', 'GroupID', 'PriceGroupID'],
 };
 
-let customerFilterColumnCache = null;
+// Cache metadata per live connection pool, not globally by table name. A
+// replaced pool after a database profile change must discover its own schema.
+const customerFilterColumnsByPool = new WeakMap();
+
 
 function bracketIdent(name) {
   return `[${String(name).replace(/]/g, ']]')}]`;
@@ -94,19 +94,24 @@ router.get('/company', async (req, res) => {
 });
 
 async function getCustomerFilterColumns() {
-  if (customerFilterColumnCache) return customerFilterColumnCache;
-  const cols = await query(`
+  let pool = null;
+  try { pool = require('../db').pools(); } catch { /* isolated tests can run without a pool */ }
+  if (pool && customerFilterColumnsByPool.has(pool)) return customerFilterColumnsByPool.get(pool);
+  const load = (async () => {
+    const cols = await query(`
     SELECT COLUMN_NAME
     FROM INFORMATION_SCHEMA.COLUMNS
     WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'EMCust'
   `);
-  const existing = new Set((cols || []).map(r => String(r.COLUMN_NAME).toLowerCase()));
-  const found = {};
-  for (const [key, candidates] of Object.entries(CUSTOMER_FILTER_CANDIDATES)) {
-    found[key] = candidates.find(c => existing.has(c.toLowerCase())) || null;
-  }
-  customerFilterColumnCache = found;
-  return found;
+    const existing = new Set((cols || []).map(r => String(r.COLUMN_NAME).toLowerCase()));
+    const found = {};
+    for (const [key, candidates] of Object.entries(CUSTOMER_FILTER_CANDIDATES)) {
+      found[key] = candidates.find(c => existing.has(c.toLowerCase())) || null;
+    }
+    return found;
+  })();
+  if (pool) customerFilterColumnsByPool.set(pool, load);
+  try { return await load; } catch (err) { if (pool) customerFilterColumnsByPool.delete(pool); throw err; }
 }
 
 // GET /api/master/customer-filters
@@ -2020,6 +2025,7 @@ router.get('/customers/:id/top-goods', async (req, res) => {
   try {
     const cleanId = String(req.params.id || '').trim();
     if (!/^\d+$/.test(cleanId)) return res.json([]);
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
 
     const rows = await query(`
       SELECT TOP 50
@@ -2032,6 +2038,7 @@ router.get('/customers/:id/top-goods', async (req, res) => {
       INNER JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
       INNER JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = dt.GoodID
       WHERE hd.CustID = @cid
+        AND hd.DocuDate >= @globalStartDate
         AND ISNULL(hd.DocuStatus, '') <> 'C'
         AND (hd.DocuType = 104 OR (hd.DocuType = 103 AND ISNULL(hd.DocuStatus, '') <> 'Y'))
         AND ISNULL(g.Inactive, 'A') = 'A'
@@ -2041,7 +2048,7 @@ router.get('/customers/:id/top-goods', async (req, res) => {
         AND dt.GoodID IS NOT NULL
       GROUP BY dt.GoodID
       ORDER BY TotalQty DESC, OrderCount DESC
-    `, { cid: { type: sql.Int, value: Number(cleanId) } });
+    `, { cid: { type: sql.Int, value: Number(cleanId) }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } });
 
     res.json(rows || []);
   } catch (e) {
@@ -2055,12 +2062,16 @@ router.get('/truck-plates', async (req, res) => {
   try {
     const { custId } = req.query;
     if (!custId) return res.json([]);
-    
-    const inputs = { custId: { type: sql.NVarChar(20), value: custId } };
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const inputs = { custId: { type: sql.NVarChar(20), value: custId },
+      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
     const rows = await query(`
-      SELECT DISTINCT TruckPlate AS Plate
-      FROM wf.v_AllSalesOrders
-      WHERE CustId = @custId AND TruckPlate IS NOT NULL AND TruckPlate <> ''
+      SELECT DISTINCT so.TruckPlate AS Plate
+      FROM wf.v_AllSalesOrders so
+      LEFT JOIN dbo.SOHD hd WITH (NOLOCK) ON CONVERT(VARCHAR(50), hd.SOID) = CONVERT(VARCHAR(50), so.Id)
+      WHERE so.CustId = @custId AND so.TruckPlate IS NOT NULL AND so.TruckPlate <> ''
+        AND ((NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NULL AND so.CreatedAt >= @globalStartUtc)
+          OR (NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NOT NULL AND hd.DocuDate >= @globalStartDate))
     `, inputs);
     
     res.json(rows.map(r => r.Plate));
@@ -2071,10 +2082,12 @@ router.get('/truck-plates', async (req, res) => {
 router.get('/trucks-stats', async (req, res) => {
   try {
     const { q } = req.query;
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
     const where = q 
       ? `AND (TruckPlate LIKE N'%' + @q + '%' OR CustName LIKE N'%' + @q + '%')`
       : '';
-    const inputs = q ? { q: { type: sql.NVarChar(100), value: q } } : {};
+    const inputs = { ...(q ? { q: { type: sql.NVarChar(100), value: q } } : {}),
+      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
     
     const rows = await query(`
       SELECT TOP 100
@@ -2087,12 +2100,14 @@ router.get('/trucks-stats', async (req, res) => {
         FROM wf.SalesOrder so
         WHERE so.TruckPlate IS NOT NULL AND so.TruckPlate <> '' AND so.Status NOT IN ('DRAFT', 'CANCELLED')
           AND so.CreatedAt >= DATEADD(month, -12, GETDATE())
+          AND so.CreatedAt >= @globalStartUtc
         UNION ALL
         SELECT hd.TransRegistration AS TruckPlate, hd.CustName, ISNULL(ext.CreatedAt, hd.DocuDate) AS CreatedAt
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
         WHERE hd.TransRegistration IS NOT NULL AND hd.TransRegistration <> ''
           AND hd.DocuDate >= DATEADD(month, -12, GETDATE())
+          AND hd.DocuDate >= @globalStartDate
           AND hd.DocuType IN (103, 104) AND hd.DocuStatus <> 'C'
       ) T
       WHERE TruckPlate IS NOT NULL AND TruckPlate <> ''
@@ -2109,7 +2124,9 @@ router.get('/trucks-stats', async (req, res) => {
 router.get('/trucks/:plate/history', async (req, res) => {
   try {
     const plate = req.params.plate;
-    const inputs = { plate: { type: sql.NVarChar(30), value: plate } };
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const inputs = { plate: { type: sql.NVarChar(30), value: plate },
+      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
     
     const rows = await query(`
       SELECT TOP 100
@@ -2120,12 +2137,12 @@ router.get('/trucks/:plate/history', async (req, res) => {
       FROM (
         SELECT CAST(so.Id AS VARCHAR(50)) AS Id, so.WfRef, so.CreatedAt
         FROM wf.SalesOrder so
-        WHERE so.TruckPlate = @plate AND so.Status NOT IN ('DRAFT', 'CANCELLED')
+        WHERE so.TruckPlate = @plate AND so.Status NOT IN ('DRAFT', 'CANCELLED') AND so.CreatedAt >= @globalStartUtc
         UNION ALL
         SELECT CAST(hd.SOID AS VARCHAR(50)) AS Id, ISNULL(ext.WfRef, hd.DocuNo) AS WfRef, ISNULL(ext.CreatedAt, hd.DocuDate) AS CreatedAt
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
-        WHERE hd.TransRegistration = @plate AND hd.DocuType IN (103, 104) AND hd.DocuStatus <> 'C'
+        WHERE hd.TransRegistration = @plate AND hd.DocuType IN (103, 104) AND hd.DocuStatus <> 'C' AND hd.DocuDate >= @globalStartDate
       ) T
       LEFT JOIN wf.v_AllSalesOrderLines sol ON sol.SoId = T.Id
       GROUP BY T.Id, T.WfRef, T.CreatedAt
@@ -2140,8 +2157,9 @@ router.get('/trucks/:plate/history', async (req, res) => {
 router.get('/invoices', async (req, res) => {
   try {
     const { custId, dateFrom, dateTo } = req.query;
-    const conditions = [`h.DocuType IN (107, 202)`];
-    const inputs = {};
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const conditions = [`h.DocuType IN (107, 202)`, 'h.DocuDate >= @globalStartDate'];
+    const inputs = { globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
     if (custId) { conditions.push(`h.ARID = @custId`); inputs.custId = { type: sql.NVarChar(20), value: custId }; }
     if (dateFrom) { conditions.push(`h.DocuDate >= @dateFrom`); inputs.dateFrom = { type: sql.Date, value: dateFrom }; }
     if (dateTo) { conditions.push(`h.DocuDate <= @dateTo`); inputs.dateTo = { type: sql.Date, value: dateTo }; }
@@ -2171,7 +2189,9 @@ router.get('/aging', async (req, res) => {
     const agingScope = await getVisibleScope(req.user);
     const ag = scopeFilter(agingScope, { empCol: 'hd.EmpID', prefix: 'ag' });
     const db = require('../db');
-    const rows = await agingCache.get(scopedReadKey(db.getTarget(), db.getDbName(), agingScope), async () => {
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const cacheKey = JSON.stringify([scopedReadKey(db.getTarget(), db.getDbName(), agingScope), dataWindow.businessDate]);
+    const rows = await agingCache.get(cacheKey, async () => {
 
     const { wfQuery: wq } = require('../db');
     const result = await wq(`
@@ -2191,6 +2211,7 @@ router.get('/aging', async (req, res) => {
           AND ISNULL(hd.clearflag, 'N') <> 'Y'
           AND ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), '') <> N'ตั๋วคุม'
           AND hd.DocuDate >= DATEADD(DAY, -180, GETDATE())
+          AND hd.DocuDate >= @globalStartDate
           AND ${ag.sql}
       ),
       CandidateSo AS (
@@ -2233,7 +2254,7 @@ router.get('/aging', async (req, res) => {
         WHERE dt.SOID = o.SoIdKey
       ) line
       ORDER BY DaysOpen DESC
-    `, ag.inputs);
+    `, { ...ag.inputs, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } });
     return result.recordset || [];
     }, { ttl: agingScope.all ? AGING_TTL : 30000, force: bust });
     res.json(rows);
@@ -2245,6 +2266,7 @@ router.get('/aging', async (req, res) => {
 router.get('/aging/search', async (req, res) => {
   try {
     const { wfQuery: wq } = require('../db');
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
     const isExport = req.query.export === '1';
     const page     = Math.max(1, parseInt(req.query.page)     || 1);
     const pageSize = isExport ? 5000 : Math.min(200, Math.max(10, parseInt(req.query.pageSize) || 50));
@@ -2260,12 +2282,14 @@ router.get('/aging/search', async (req, res) => {
     // Build WHERE clauses
     const conditions = [
       `hd.DocuDate >= @dateFrom`,
+      `hd.DocuDate >= @globalStartDate`,
       `hd.DocuType IN (103, 104)`,
       `ISNULL(hd.DocuStatus, '') <> 'C'`,
       `ISNULL(hd.clearflag, 'N') <> 'Y'`,
       `ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), '') <> N'ตั๋วคุม'`,
     ];
-    const inputs = { dateFrom: { type: sql.Date, value: new Date(dateFrom) } };
+    const inputs = { dateFrom: { type: sql.Date, value: new Date(dateFrom) },
+      globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
     if (dateTo) {
       conditions.push(`hd.DocuDate <= @dateTo`);
       inputs.dateTo = { type: sql.Date, value: new Date(dateTo) };
@@ -2299,6 +2323,7 @@ router.get('/aging/search', async (req, res) => {
           ROW_NUMBER() OVER(PARTITION BY hd.DocuNo ORDER BY hd.DocuType DESC, hd.SOID DESC) as rn
         FROM dbo.SOHD hd WITH (NOLOCK)
         WHERE hd.DocuDate >= @dateFrom
+          AND hd.DocuDate >= @globalStartDate
           AND hd.DocuType IN (103, 104)
           AND ISNULL(hd.DocuStatus, '') <> 'C'
           AND ISNULL(hd.clearflag, 'N') <> 'Y'
@@ -2325,6 +2350,7 @@ router.get('/aging/search', async (req, res) => {
           ROW_NUMBER() OVER(PARTITION BY hd.DocuNo ORDER BY hd.DocuType DESC, hd.SOID DESC) as rn
         FROM dbo.SOHD hd WITH (NOLOCK)
         WHERE hd.DocuDate >= @dateFrom
+          AND hd.DocuDate >= @globalStartDate
           AND hd.DocuType IN (103, 104)
           AND ISNULL(hd.DocuStatus, '') <> 'C'
           AND ISNULL(hd.clearflag, 'N') <> 'Y'
@@ -2443,6 +2469,33 @@ router.delete('/truck-types/:id', requireRole('ADMIN', 'MANAGER'), async (req, r
 });
 
 // GET /api/master/system-settings — อ่านตั้งค่าระบบครบทุกนโยบาย พร้อมข้อมูล Version และคำอธิบาย
+// The global setting uses the deployment's primary DB, independent of a switched session.
+router.get('/global-data-window', requireCapability('settings.manage'), async (req,res) => {
+  if (req.user.isImpersonating) return res.status(403).json({message:'ไม่อนุญาตให้ตั้งค่าขณะทำรายการแทน'});
+  try {
+    const result=await require('../services/global-data-window-store').readGlobalDataWindow();
+    res.set('Cache-Control','no-store').json({startDate:result.businessDate});
+  } catch { res.status(503).json({message:'อ่านวันเริ่มข้อมูลจากฐานหลักไม่สำเร็จ'}); }
+});
+router.put('/global-data-window', requireCapability('settings.manage'), async (req,res) => {
+  if (req.user.isImpersonating) return res.status(403).json({message:'ไม่อนุญาตให้ตั้งค่าขณะทำรายการแทน'});
+  // Authorization and the audit actor must be resolved in the same primary DB that stores the policy.
+  const db = require('../db');
+  const primary = String(process.env.ONPREM_DB_NAME || '').trim();
+  const current = db.getDbName();
+  if (db.DEFAULT_TARGET === 'onprem' && current && current.toLowerCase() !== primary.toLowerCase()) {
+    return res.status(409).json({message:'กรุณาสลับกลับฐานหลักของระบบก่อนแก้วันเริ่มข้อมูล'});
+  }
+  try {
+    const {startDate,expectedStartDate}=req.body || {};
+    const result=await require('../services/global-data-window-store').saveGlobalDataWindow({value:startDate,expectedValue:expectedStartDate,actorId:Number(req.user.sub)});
+    res.set('Cache-Control','no-store').json({startDate:result.value,changed:result.changed});
+  } catch(e) {
+    const message=e.code==='STALE_DATA_WINDOW'?'วันเริ่มข้อมูลเปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุด':e.code==='INVALID_DATA_WINDOW'?'กรุณาระบุวันที่ที่ถูกต้อง':'บันทึกวันเริ่มข้อมูลไม่สำเร็จ';
+    res.status(e.status||500).json({message});
+  }
+});
+
 router.get('/system-settings', async (req, res) => {
   try {
     const { getPolicySettings } = require('../services/policy-contract');

@@ -8,7 +8,7 @@ const {
   requireCapability,
   clearAccountStatusCache,
 } = require("../middleware/auth");
-const { ROLES, ACTIONS, MENUS, hasPermission } = require("../services/role-capabilities");
+const { ROLES, ACTIONS, MENUS, hasPermission, hasRole } = require("../services/role-capabilities");
 const {
   EDITABLE,
   parseProfile,
@@ -44,6 +44,61 @@ function fail(res, e) {
         : "ดำเนินการไม่สำเร็จ กรุณาตรวจ migration และโหลดข้อมูลใหม่",
     });
 }
+// Reviewed cross-database identities are anchored in the primary identity DB.
+// The API requires an explicit pair and expected usernames; it never matches
+// people automatically or changes either account's active status.
+router.get('/database-identity-bindings', requireCapability('roles.manage'), async (req, res) => {
+  if (!hasRole(req.user, 'ADMIN')) return res.status(403).json({ code: 'IDENTITY_REVIEW_FORBIDDEN' });
+  try {
+    const db = require('../db');
+    const active = require('../services/active-database');
+    const target = String(req.query.targetDatabase || '').trim();
+    if (!active.onpremEnabled() || !require('../onprem-target').isSwitchableDb(target) ||
+        target.toLowerCase() === String(active.primaryDatabase() || '').toLowerCase()) {
+      return res.status(400).json({ code: 'IDENTITY_REVIEW_INVALID' });
+    }
+    const rows = await db.runWithTarget('onprem', () => wfQuery(`SELECT Id,PrimaryUserId,PrimaryUsername,PrimaryEmployeeId,
+      TargetServerName,TargetDatabaseName,TargetUserId,TargetUsername,TargetEmployeeId,IsActive,Revision,ReviewedBy,ReviewedAt
+      FROM wf.DatabaseIdentityBinding WHERE TargetDatabaseName=@target ORDER BY PrimaryUserId`,
+    { target: { type: sql.NVarChar(128), value: target } }), active.primaryDatabase());
+    return res.json({ bindings: rows.recordset || [] });
+  } catch (e) {
+    return res.status(e.status || 503).json({ code: e.code || 'IDENTITY_REVIEW_UNAVAILABLE' });
+  }
+});
+router.post('/database-identity-bindings', requireCapability('roles.manage'), async (req, res) => {
+  if (!hasRole(req.user, 'ADMIN')) return res.status(403).json({ code: 'IDENTITY_REVIEW_FORBIDDEN' });
+  try {
+    const db = require('../db');
+    const active = require('../services/active-database');
+    if (!active.onpremEnabled()) return res.status(400).json({ code: 'IDENTITY_REVIEW_UNAVAILABLE' });
+    const body = req.body || {};
+    const result = await require('../services/database-identity-registry').saveReviewedBinding({
+      primaryDatabase: active.primaryDatabase(), targetDatabase: body.targetDatabase,
+      primaryUserId: body.primaryUserId, targetUserId: body.targetUserId,
+      primaryUsername: body.primaryUsername, targetUsername: body.targetUsername,
+      expectedRevision: body.expectedRevision, reviewerId: Number(req.user.sub),
+    }, { db, isSwitchableDb: require('../onprem-target').isSwitchableDb, lockPolicy });
+    return res.json(result);
+  } catch (e) {
+    return res.status(e.status || 503).json({ code: e.code || 'IDENTITY_REVIEW_UNAVAILABLE' });
+  }
+});
+router.delete('/database-identity-bindings/:id', requireCapability('roles.manage'), async (req, res) => {
+  if (!hasRole(req.user, 'ADMIN')) return res.status(403).json({ code: 'IDENTITY_REVIEW_FORBIDDEN' });
+  try {
+    const db = require('../db');
+    const active = require('../services/active-database');
+    if (!active.onpremEnabled()) return res.status(400).json({ code: 'IDENTITY_REVIEW_UNAVAILABLE' });
+    const result = await require('../services/database-identity-registry').revokeReviewedBinding({
+      primaryDatabase: active.primaryDatabase(), bindingId: Number(req.params.id),
+      expectedRevision: req.body?.expectedRevision, reviewerId: Number(req.user.sub),
+    }, { db, isSwitchableDb: require('../onprem-target').isSwitchableDb, lockPolicy });
+    return res.json(result);
+  } catch (e) {
+    return res.status(e.status || 503).json({ code: e.code || 'IDENTITY_REVIEW_UNAVAILABLE' });
+  }
+});
 router.get(
   "/roles",
   (req, res, next) =>

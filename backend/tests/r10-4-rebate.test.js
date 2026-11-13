@@ -107,6 +107,10 @@ const stubDb = {
 
 require.cache[path.resolve('backend/db.js')] = { exports: stubDb };
 require.cache[path.resolve(__dirname, '../db.js')] = { exports: stubDb };
+const windowPath = require.resolve('../services/global-data-window-store');
+require.cache[windowPath] = { id: windowPath, filename: windowPath, loaded: true, exports: {
+  readGlobalDataWindow: async () => ({ businessDate: '2026-01-01', utcInstant: new Date('2025-12-31T17:00:00Z') }),
+} };
 
 // Load rebate route and claim-apply service with stubbed db
 const rebateRouter = require('../routes/rebate');
@@ -359,7 +363,7 @@ test('R10.4-1: POST /api/rebate/claims resolves customer code, stores internal C
   }
 });
 
-test('R10.4-2: Pool available calculation accounts for RebateUsage and rejects claims exceeding remaining', async () => {
+test('R10.4-2: historical pool summary accounts for RebateUsage and amount-only claim cannot bypass customer lots', async () => {
   const app = createTestApp();
   const server = http.createServer(app);
   await new Promise(r => server.listen(0, r));
@@ -431,8 +435,8 @@ test('R10.4-2: Pool available calculation accounts for RebateUsage and rejects c
     assert.equal(poolsData[0].UsedAmt, 1000);
     assert.equal(poolsData[0].AvailableAmt, 1000);
 
-    // 2. POST /api/rebate/claims with Amount-Only exceeding remaining:
-    // User tries to claim 1,500 when available is 1,000 (even though Accrued - Claimed = 2,000)
+    // Owner 2026-11-13: a claim reserves customer lots, not a monthly pool.
+    // Amount-only requests are rejected because they cannot reserve any lot.
     const overClaimPayload = {
       poolId: 8,
       claimAmt: 1500,
@@ -450,7 +454,7 @@ test('R10.4-2: Pool available calculation accounts for RebateUsage and rejects c
 
     assert.equal(rejectRes.status, 400);
     const rejectData = await rejectRes.json();
-    assert.match(rejectData.message, /ยอดเกิน: ขอ ฿1500\.00 ใช้ได้ ฿1000\.00/);
+    assert.match(rejectData.message, /กรุณาเลือกยอดรีเบทจากรายการสะสมของลูกค้า/);
 
   } finally {
     server.close();

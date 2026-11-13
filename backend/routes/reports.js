@@ -56,6 +56,7 @@ const REPORTS = {
           FROM wf.RuleIncident i WITH (NOLOCK)
           LEFT JOIN dbo.SOHD h WITH (NOLOCK) ON h.SOID = i.SOID
           LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = i.AckBy
+          WHERE i.OccurredAt >= @globalStartUtc
           ORDER BY i.OccurredAt DESC`,
   },
   'so-status': {
@@ -69,6 +70,7 @@ const REPORTS = {
       WITH WfDraft AS (
         SELECT Status, COUNT_BIG(*) AS Cnt
         FROM wf.SalesOrder WITH (NOLOCK)
+        WHERE CreatedAt >= @globalStartUtc
         GROUP BY Status
       ),
       WinspeedBase AS (
@@ -86,7 +88,7 @@ const REPORTS = {
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
           ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
-        WHERE hd.DocuType IN (103, 104)
+        WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate
         GROUP BY
           CASE
             WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
@@ -203,6 +205,7 @@ const REPORTS = {
                           WHEN 3 THEN N'3 · ชั่งออกแล้ว'
                           ELSE N'? · ' + CAST(w.Status AS NVARCHAR(50)) END AS Status
           FROM dbo.WGHD w WITH (NOLOCK)
+          WHERE COALESCE(w.DateOut, w.DateIn, w.DateReg) >= @globalStartDate
           ORDER BY w.DateReg DESC, w.Id DESC`,
   },
   'wh-dispatch-daily': {
@@ -239,6 +242,7 @@ const REPORTS = {
           LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON ext.SOID = hd.SOID
           LEFT JOIN wf.SalesOrderLineExt le WITH (NOLOCK) ON le.SOID = dt.SOID AND le.ListNo = dt.ListNo
           WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C'
+            AND hd.DocuDate >= @globalStartDate
           ORDER BY hd.DocuDate DESC, hd.SOID DESC`,
   },
   'sales-order-detail': {
@@ -267,6 +271,7 @@ const REPORTS = {
           JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
           LEFT JOIN dbo.EMEmp emp WITH (NOLOCK) ON emp.EmpID = hd.EmpID
           WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C'
+            AND hd.DocuDate >= @globalStartDate
           ORDER BY hd.DocuDate DESC, hd.SOID DESC`,
   },
   'ar-aging-summary': {
@@ -424,6 +429,7 @@ const REPORTS = {
           -- over all history since 2019 (UAT RPT-06)
           WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C'
             AND hd.DocuDate >= DATEADD(month, DATEDIFF(month, 0, DATEADD(hour, 7, GETUTCDATE())), 0)
+            AND hd.DocuDate >= @globalStartDate
           GROUP BY emp.EmpName
           ORDER BY TotalTon DESC`,
   },
@@ -1002,6 +1008,11 @@ async function runReport(type, params = {}) {
   }
   // a report on WinSpeed bookings honours the legacy cut-off (owner 2026-10-09)
   const sqlInputs = def.sql && def.sql.includes('@legacyCut') ? await require('../services/legacy-cutoff').legacyCutoffInput() : {};
+  if (def.sql && (def.sql.includes('@globalStartDate') || def.sql.includes('@globalStartUtc'))) {
+    const { businessDate, utcInstant } = await require('../services/global-data-window-store').readGlobalDataWindow();
+    if (def.sql.includes('@globalStartDate')) sqlInputs.globalStartDate = { type: sql.Date, value: businessDate };
+    if (def.sql.includes('@globalStartUtc')) sqlInputs.globalStartUtc = { type: sql.DateTime2, value: utcInstant };
+  }
   const result = def.run ? await def.run(params) : ((await wfQuery(def.sql, sqlInputs)).recordset || []);
   const rows = Array.isArray(result) ? result : (result?.rows || []);
   const meta = result?.meta || null;
@@ -1902,7 +1913,7 @@ async function runNativeDocumentsReport(params = {}, options = {}) {
 }
 
 module.exports = router;
-module.exports.__testing = { REPORTS, REPORT_ROLES, runCustomerDispatchReport, runSalesJournalReport, runNativeDocumentsReport, fetchInvoicesByPostIds, resolveReportTemplate,
+module.exports.__testing = { REPORTS, REPORT_ROLES, runReport, runCustomerDispatchReport, runSalesJournalReport, runNativeDocumentsReport, fetchInvoicesByPostIds, resolveReportTemplate,
   runPolicyHistoryReport, runSequenceCountersReport, runTruckHoldLogReport, runTicketAlertHistoryReport, runNativePrintLogReport,
   getReportCatalogConfig, saveReportCatalogConfig, isUserAdmin, canRunReport };
 

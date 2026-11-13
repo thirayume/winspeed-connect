@@ -28,19 +28,22 @@ const { supersedeStaleTripApprovalsOnMembershipChange } = require('../services/t
 const {initialManualRedemption,manualRedemptionHttpError}=require('../services/initial-manual-redemption');
 const {initialInvoice,invoiceHttpError}=require('../services/initial-invoice');
 
-let _has141Cache = null;
+const _has141Cache = new Set();
 async function checkMigration141() {
-  if (_has141Cache === true) return true;
+  const db = require('../db');
+  const key = JSON.stringify([db.getTarget?.() || '', db.getDbName?.() || '']);
+  if (_has141Cache.has(key)) return true;
   try {
     const res = await wfQuery(`
       SELECT 1 FROM sys.columns 
       WHERE object_id = OBJECT_ID('wf.SalesOrder') AND name = 'AppliedRebateClaimId'
     `);
-    _has141Cache = Boolean(res.recordset?.length > 0);
+    const present = Boolean(res.recordset?.length > 0);
+    if (present) _has141Cache.add(key);
+    return present;
   } catch {
-    _has141Cache = false;
+    return false;
   }
-  return _has141Cache;
 }
 
 router.use(requireAuth);
@@ -133,9 +136,11 @@ function toBit(value) {
 // collisions with both existing native documents and concurrent app drafts.
 const {allocateWorkflowRef,confirmDraft,lockConfirmationResource}=require('../services/draft-confirmation');
 
-let giveawayApprovalColumns = null;
+const giveawayApprovalColumns = new Map();
 async function hasGiveawayApprovalColumns() {
-  if (giveawayApprovalColumns !== null) return giveawayApprovalColumns;
+  const db = require('../db');
+  const key = JSON.stringify([db.getTarget?.() || '', db.getDbName?.() || '']);
+  if (giveawayApprovalColumns.has(key)) return giveawayApprovalColumns.get(key);
   const r = await wfQuery(`
     SELECT CASE
       WHEN COL_LENGTH('wf.SalesOrderLine', 'GiveawayApprovalStatus') IS NULL THEN 0
@@ -143,13 +148,15 @@ async function hasGiveawayApprovalColumns() {
       ELSE 1
     END AS HasColumns
   `);
-  giveawayApprovalColumns = Number(r.recordset?.[0]?.HasColumns || 0) === 1;
-  return giveawayApprovalColumns;
+  const present = Number(r.recordset?.[0]?.HasColumns || 0) === 1;
+  giveawayApprovalColumns.set(key, present);
+  return present;
 }
 
 const quoteSourceTableCache = new Map();
 async function hasQuoteSourceTable() {
-  const target = getTarget();
+  const db = require('../db');
+  const target = JSON.stringify([getTarget(), db.getDbName?.() || '']);
   if (quoteSourceTableCache.has(target)) return quoteSourceTableCache.get(target);
   const r = await wfQuery(`SELECT CASE WHEN OBJECT_ID('wf.QuotationSourceSO', 'U') IS NULL THEN 0 ELSE 1 END AS HasTable`);
   const value = Number(r.recordset?.[0]?.HasTable || 0) === 1;
@@ -166,15 +173,29 @@ async function getPendingQuoteForSo(soId) {
   if (!(await hasQuoteSourceTable())) return null;
   const sourceSoId = quoteSourceSoId(soId);
   if (!sourceSoId) return null;
+  const { utcInstant } = await require('../services/global-data-window-store').readGlobalDataWindow();
   const r = await wfQuery(`
-    SELECT TOP 1 q.Id, q.QuoteNo, q.Status, q.Remark, q.ValidUntil
+    SELECT TOP 1 q.Id, q.QuoteNo, q.Status, q.Remark, q.ValidUntil,
+      CASE WHEN q.CreatedAt >= @globalStartUtc THEN 1 ELSE 0 END AS InDataWindow
     FROM wf.QuotationSourceSO src WITH (NOLOCK)
     INNER JOIN wf.Quotation q WITH (NOLOCK) ON q.Id = src.QuoteId
     WHERE src.SoId = @soId
       AND q.Status IN ('DRAFT', 'SENT', 'EXPIRED')
     ORDER BY q.Id DESC
-  `, { soId: { type: sql.Int, value: sourceSoId } });
+  `, { soId: { type: sql.Int, value: sourceSoId }, globalStartUtc: { type: sql.DateTime2, value: utcInstant } });
   return r.recordset?.[0] || null;
+}
+
+function quoteVisibleInWindow(quote) { return Number(quote?.InDataWindow) === 1; }
+function quoteLockDetails(quote, mode = 'action') {
+  if (!quoteVisibleInWindow(quote)) return {
+    message: 'บิลนี้มีใบเสนอราคาค้างก่อนวันเริ่มข้อมูล กรุณาติดต่อผู้ดูแลเพื่อตรวจสอบก่อนดำเนินการ',
+    quoteId: null, quoteNo: null, quoteStatus: null,
+  };
+  return {
+    message: `SO นี้ผูกกับใบเสนอราคา ${quote.QuoteNo} (${quote.Status}) ต้อง${mode === 'confirm' ? 'ยืนยันหรือยกเลิก' : 'ยกเลิก'}ใบเสนอราคาก่อน`,
+    quoteId: quote.Id, quoteNo: quote.QuoteNo, quoteStatus: quote.Status,
+  };
 }
 
 function giveawayApprovalStatusForLine(req, line) {
@@ -283,27 +304,40 @@ async function getSoOrThrow(id, expectedStatus = null) {
   const idValue = isString ? id : Number(id);
   const idCol = isString ? 'Id' : 'CAST(Id AS INT)';
   const idType = isString ? sql.VarChar(50) : sql.Int;
+  const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+  const windowInputs = {
+    globalStartDate: { type: sql.Date, value: dataWindow.businessDate },
+    globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
+  };
+  // Imported documents use WinSpeed's local business date. Standalone Sale-App
+  // drafts use their UTC creation time. Match native SOID AND DocuNo: a 103 and
+  // 104 can share a document number and numeric IDs can collide with draft IDs.
+  const nativeMatch = `CONVERT(VARCHAR(50), h.SOID)=[wf].[v_AllSalesOrders].[Id]
+    AND h.DocuNo=[wf].[v_AllSalesOrders].[ImportedDocuNo]`;
+  const windowSql = `((EXISTS (SELECT 1 FROM dbo.SOHD h WHERE ${nativeMatch} AND h.DocuDate >= @globalStartDate))
+    OR (NOT EXISTS (SELECT 1 FROM dbo.SOHD h WHERE ${nativeMatch}) AND EXISTS
+      (SELECT 1 FROM wf.SalesOrder w WHERE CONVERT(VARCHAR(50),w.Id)=[wf].[v_AllSalesOrders].[Id] AND w.CreatedAt >= @globalStartUtc)))`;
 
   let r = await wfQuery(
-    `SELECT * FROM wf.v_AllSalesOrders WHERE ${idCol} = @id`,
-    { id: { type: idType, value: idValue } }
+    `SELECT * FROM wf.v_AllSalesOrders WHERE ${idCol} = @id AND ${windowSql}`,
+    { id: { type: idType, value: idValue }, ...windowInputs }
   );
   let so = r.recordset?.[0];
 
   // If not found, try to see if this ID was deduplicated out. Find the actual active SOID for its DocuNo.
   if (!so) {
     const docLookup = await wfQuery(`
-      SELECT DocuNo FROM dbo.SOHD WITH (NOLOCK) WHERE SOID = @id
+      SELECT DocuNo FROM dbo.SOHD WITH (NOLOCK) WHERE SOID = @id AND DocuDate >= @globalStartDate
       UNION
-      SELECT ISNULL(ImportedDocuNo, WfRef) AS DocuNo FROM wf.SalesOrder WITH (NOLOCK) WHERE Id = @id
-    `, { id: { type: sql.Int, value: Number(id) || 0 } });
+      SELECT ISNULL(ImportedDocuNo, WfRef) AS DocuNo FROM wf.SalesOrder WITH (NOLOCK) WHERE Id = @id AND CreatedAt >= @globalStartUtc
+    `, { id: { type: sql.Int, value: Number(id) || 0 }, ...windowInputs });
     
     if (docLookup.recordset?.length > 0) {
        const docuNo = docLookup.recordset[0].DocuNo;
        if (docuNo) {
          r = await wfQuery(
-           `SELECT * FROM wf.v_AllSalesOrders WHERE WfRef = @docuNo OR ImportedDocuNo = @docuNo`,
-           { docuNo: { type: sql.VarChar(50), value: docuNo } }
+           `SELECT * FROM wf.v_AllSalesOrders WHERE (WfRef = @docuNo OR ImportedDocuNo = @docuNo) AND ${windowSql}`,
+           { docuNo: { type: sql.VarChar(50), value: docuNo }, ...windowInputs }
          );
          so = r.recordset?.[0];
        }
@@ -569,18 +603,21 @@ router.get('/stats', async (req, res) => {
     // R12 O-4: a scoped user's counts cover only their own and their team's bills
     const scope = await getVisibleScope(req.user);
     const db = require('../db');
-    const out = await statsCache.get(scopedReadKey(db.getTarget(), db.getDbName(), scope), async () => {
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const cacheKey = JSON.stringify([scopedReadKey(db.getTarget(), db.getDbName(), scope), dataWindow.businessDate]);
+    const out = await statsCache.get(cacheKey, async () => {
     // UAT 2026-10-09: one query for every role, on the base tables — the scoped version read the all-documents
     // view and timed out (HTTP 500, the salesperson's dashboard never loaded); the global one counted each
     // closed booking twice and called it "waiting for delivery". Drafts + WinSpeed documents (de-duplicated,
     // board status, legacy cut-off).
-    const inputs = { ...(await legacyCutoffInput()) };
-    let wfWhere = "WHERE so.Status <> 'DELETED'";
+    const inputs = { ...(await legacyCutoffInput()), globalStartDate: { type: sql.Date, value: dataWindow.businessDate },
+      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } };
+    let wfWhere = "WHERE so.Status <> 'DELETED' AND so.CreatedAt >= @globalStartUtc";
     let nativeWhere = '';
     if (!scope.all) {
       const f = scopeFilter(scope, { userCol: 'so.SalesUserId', prefix: 'sc' });
       const e = scopeFilter(scope, { userCol: 'ext.SalesUserId', empCol: 'hd.EmpID', prefix: 'se' });
-      wfWhere = `WHERE so.Status <> 'DELETED' AND ${f.sql}`;
+      wfWhere = `WHERE so.Status <> 'DELETED' AND so.CreatedAt >= @globalStartUtc AND ${f.sql}`;
       nativeWhere = `AND ${e.sql}`;
       Object.assign(inputs, f.inputs, e.inputs);
     }
@@ -592,7 +629,7 @@ router.get('/stats', async (req, res) => {
         SELECT ${nativeStatusSql('hd', 'ext')} AS Status
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
-        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')} AND ISNULL(ext.IsDeleted, 0) = 0 ${nativeWhere}
+        WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')} AND ISNULL(ext.IsDeleted, 0) = 0 ${nativeWhere}
       ) x
       GROUP BY Status`, inputs);
     const byStatus = {};
@@ -610,7 +647,9 @@ router.get('/', async (req, res) => {
   try {
     const { status, custId, search, dateFrom, dateTo, page = 1, limit = 50 } = req.query;
     const conditions = [];
-    const inputs = {};
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const inputs = { globalStartDate: { type: sql.Date, value: dataWindow.businessDate },
+      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } };
     // A booking waiting for AI approval stays CONFIRMED here because the warehouse queue and the trip actions work from
     // that status (trucks do load before approval); AwaitingAi is what tells it apart on screen and in this filter.
     if (status === 'PENDING_APPROVAL') { conditions.push(`q.Status = 'CONFIRMED' AND q.AwaitingAi = 1`); }
@@ -665,7 +704,7 @@ router.get('/', async (req, res) => {
           CAST(NULL AS VARCHAR(20)) AS OwnerEmpId,
           CAST(0 AS BIT) AS AwaitingAi
         FROM wf.SalesOrder so WITH (NOLOCK)
-        WHERE so.Status <> 'DELETED'
+        WHERE so.Status <> 'DELETED' AND so.CreatedAt >= @globalStartUtc
 
         UNION ALL
 
@@ -695,7 +734,7 @@ router.get('/', async (req, res) => {
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
           ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
-        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')} AND ISNULL(ext.IsDeleted, 0) = 0
+        WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')} AND ISNULL(ext.IsDeleted, 0) = 0
       )
       SELECT COUNT_BIG(*) AS TotalCount
       FROM Orders q
@@ -738,24 +777,24 @@ router.get('/', async (req, res) => {
           so.TripId,
           ISNULL(so.RequiresPriceApproval, 0) AS RequiresPriceApproval,
           ISNULL(so.PriceApprovalStatus, 'NONE') AS PriceApprovalStatus,
-          pq.Id AS LinkedQuoteId,
-          pq.QuoteNo AS LinkedQuoteNo,
-          pq.Status AS LinkedQuoteStatus,
-          pq.Remark AS LinkedQuoteRemark,
-          pq.ValidUntil AS LinkedQuoteValidUntil,
-          CASE WHEN pq.Id IS NOT NULL THEN 'Waiting for quotation ' + ISNULL(pq.QuoteNo, '') + ' confirmation' ELSE NULL END AS QuotationLockReason,
+          CASE WHEN pq.CreatedAt >= @globalStartUtc THEN pq.Id END AS LinkedQuoteId,
+          CASE WHEN pq.CreatedAt >= @globalStartUtc THEN pq.QuoteNo END AS LinkedQuoteNo,
+          CASE WHEN pq.CreatedAt >= @globalStartUtc THEN pq.Status END AS LinkedQuoteStatus,
+          CASE WHEN pq.CreatedAt >= @globalStartUtc THEN pq.Remark END AS LinkedQuoteRemark,
+          CASE WHEN pq.CreatedAt >= @globalStartUtc THEN pq.ValidUntil END AS LinkedQuoteValidUntil,
+          CASE WHEN pq.Id IS NULL THEN NULL WHEN pq.CreatedAt >= @globalStartUtc THEN N'รอใบเสนอราคายืนยัน' ELSE N'มีใบเสนอราคาค้างก่อนวันเริ่มข้อมูล กรุณาติดต่อผู้ดูแล' END AS QuotationLockReason,
           CAST(NULL AS VARCHAR(20)) AS OwnerEmpId,
           CAST(0 AS BIT) AS AwaitingAi
         FROM wf.SalesOrder so WITH (NOLOCK)
         OUTER APPLY (
-          SELECT TOP 1 q.Id, q.QuoteNo, q.Status, q.Remark, q.ValidUntil
+          SELECT TOP 1 q.Id, q.QuoteNo, q.Status, q.Remark, q.ValidUntil, q.CreatedAt
           FROM wf.QuotationSourceSO src WITH (NOLOCK)
           INNER JOIN wf.Quotation q WITH (NOLOCK) ON q.Id = src.QuoteId
           WHERE src.SoId = so.Id
             AND q.Status IN ('DRAFT', 'SENT', 'EXPIRED')
           ORDER BY q.Id DESC
         ) pq
-        WHERE so.Status <> 'DELETED'
+        WHERE so.Status <> 'DELETED' AND so.CreatedAt >= @globalStartUtc
 
         UNION ALL
 
@@ -798,19 +837,19 @@ router.get('/', async (req, res) => {
           CAST(NULL AS INT) AS TripId,
           CAST(0 AS BIT) AS RequiresPriceApproval,
           CAST('NONE' AS VARCHAR(20)) AS PriceApprovalStatus,
-          pq.Id AS LinkedQuoteId,
-          pq.QuoteNo AS LinkedQuoteNo,
-          pq.Status AS LinkedQuoteStatus,
-          pq.Remark AS LinkedQuoteRemark,
-          pq.ValidUntil AS LinkedQuoteValidUntil,
-          CASE WHEN pq.Id IS NOT NULL THEN 'Waiting for quotation ' + ISNULL(pq.QuoteNo, '') + ' confirmation' ELSE NULL END AS QuotationLockReason,
+          CASE WHEN pq.CreatedAt >= @globalStartUtc THEN pq.Id END AS LinkedQuoteId,
+          CASE WHEN pq.CreatedAt >= @globalStartUtc THEN pq.QuoteNo END AS LinkedQuoteNo,
+          CASE WHEN pq.CreatedAt >= @globalStartUtc THEN pq.Status END AS LinkedQuoteStatus,
+          CASE WHEN pq.CreatedAt >= @globalStartUtc THEN pq.Remark END AS LinkedQuoteRemark,
+          CASE WHEN pq.CreatedAt >= @globalStartUtc THEN pq.ValidUntil END AS LinkedQuoteValidUntil,
+          CASE WHEN pq.Id IS NULL THEN NULL WHEN pq.CreatedAt >= @globalStartUtc THEN N'รอใบเสนอราคายืนยัน' ELSE N'มีใบเสนอราคาค้างก่อนวันเริ่มข้อมูล กรุณาติดต่อผู้ดูแล' END AS QuotationLockReason,
           CAST(hd.EmpID AS VARCHAR(20)) AS OwnerEmpId,
           CAST(CASE WHEN hd.DocuType = 103 AND hd.AppvFlag = 'W' AND hd.AppvDocuNo IS NULL THEN 1 ELSE 0 END AS BIT) AS AwaitingAi
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
           ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
         OUTER APPLY (
-          SELECT TOP 1 q.Id, q.QuoteNo, q.Status, q.Remark, q.ValidUntil
+          SELECT TOP 1 q.Id, q.QuoteNo, q.Status, q.Remark, q.ValidUntil, q.CreatedAt
           FROM wf.QuotationSourceSO src WITH (NOLOCK)
           INNER JOIN wf.Quotation q WITH (NOLOCK) ON q.Id = src.QuoteId
           WHERE src.SoId = CASE
@@ -827,7 +866,7 @@ router.get('/', async (req, res) => {
             AND q.Status IN ('DRAFT', 'SENT', 'EXPIRED')
           ORDER BY q.Id DESC
         ) pq
-        WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')} AND ISNULL(ext.IsDeleted, 0) = 0
+        WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')} AND ISNULL(ext.IsDeleted, 0) = 0
       ),
       FilteredOrders AS (
         SELECT q.*, u.DisplayName AS SalesName, COUNT_BIG(*) OVER() AS FilteredTotal,
@@ -836,10 +875,19 @@ router.get('/', async (req, res) => {
         LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = q.SalesUserId
         ${where}
       )
-      SELECT *
-      FROM FilteredOrders
-      WHERE RowNum > ${offset} AND RowNum <= (${offset} + ${pageSize})
-      ORDER BY RowNum ASC
+      SELECT fo.*, RTRIM(emc.CustCode) AS CustCode
+      FROM FilteredOrders fo
+      LEFT JOIN dbo.EMCust emc WITH (NOLOCK)
+        ON emc.CustID = CASE
+          WHEN fo.CustId IS NOT NULL
+           AND LTRIM(RTRIM(CONVERT(VARCHAR(50), fo.CustId))) NOT LIKE '%[^0-9]%'
+           AND LTRIM(RTRIM(CONVERT(VARCHAR(50), fo.CustId))) <> ''
+           AND LEN(LTRIM(RTRIM(CONVERT(VARCHAR(50), fo.CustId)))) <= 9
+          THEN CAST(LTRIM(RTRIM(CONVERT(VARCHAR(50), fo.CustId))) AS INT)
+          ELSE NULL
+        END
+      WHERE fo.RowNum > ${offset} AND fo.RowNum <= (${offset} + ${pageSize})
+      ORDER BY fo.RowNum ASC
     `, inputs);
     const { rows, total } = await require('../services/paged-orders').readPageTotal(
       r.recordset || [], offset, loadEmptyPageTotal);
@@ -960,11 +1008,16 @@ router.get('/', async (req, res) => {
 // ── GET /api/so/rebate-balance/:custId ─────────────────────────
 router.get('/rebate-balance/:custId', requireRebateAmountAccess, async (req, res) => {
   try {
+    const custId = Number(req.params.custId);
+    if (!Number.isSafeInteger(custId) || custId <= 0) return res.status(400).json({ code: 'INVALID_CUSTOMER_ID' });
+    const scope = await require('../services/rebate-shared-scope').sharedRebateScopeFilter(req.user);
+    const today = require('../services/so-pickup-policy').getBangkokDateString();
     const r = await wfQuery(
-      `SELECT ISNULL(SUM(RemainingAmt), 0) AS AvailableRebate 
-       FROM wf.RebateLedger 
-       WHERE CustId = @custId AND Status = 'PENDING' AND RemainingAmt > 0 AND ReversedFlag = 0`,
-      { custId: { type: sql.VarChar(20), value: req.params.custId } }
+      `SELECT ISNULL(SUM(ROUND(RemainingTonRebate * RebatePerTon, 2)), 0) AS AvailableRebate
+       FROM wf.v_RebateAccrualRemaining
+       WHERE CustId=@custId AND RemainingTonRebate > 0 AND PlanId IS NOT NULL AND RebatePerTon > 0
+         AND SourceDocuDate <= @today AND ${scope.sql}`,
+      { ...scope.inputs, custId: { type: sql.Int, value: custId }, today: { type: sql.Date, value: today } }
     );
     res.json({ availableRebate: Number(r.recordset[0]?.AvailableRebate || 0) });
   } catch (e) {
@@ -979,7 +1032,10 @@ router.get('/rebate-balance/:custId', requireRebateAmountAccess, async (req, res
 router.get('/shipped-today', requireAuth, requireRole('ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'), async (req, res) => {
   try {
     const { getBangkokDateString } = require('../services/so-pickup-policy');
-    const dateStr = req.query.date || getBangkokDateString();
+    const { isValidStartDate } = require('../services/data-window');
+    const dateStr = String(req.query.date || getBangkokDateString());
+    if (!isValidStartDate(dateStr)) return res.status(400).json({ message: 'วันที่ไม่ถูกต้อง' });
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
     const r = await wfQuery(`
       SELECT TOP 200
              hd.SOID AS Id, hd.DocuNo AS WfRef, hd.CustName,
@@ -991,10 +1047,11 @@ router.get('/shipped-today', requireAuth, requireRole('ACCOUNTING', 'MANAGER', '
       FROM dbo.SOHD hd
       LEFT JOIN dbo.SODT dt ON dt.SOID = hd.SOID
       WHERE CAST(hd.DocuDate AS DATE) = @d
+        AND hd.DocuDate >= @globalStartDate
         AND hd.DocuType = 103
       GROUP BY hd.SOID, hd.DocuNo, hd.CustName, hd.DocuDate, hd.DocuStatus, hd.TransRegistration
       ORDER BY hd.DocuDate DESC, hd.SOID DESC
-    `, { d: { type: sql.Date, value: new Date(dateStr) } });
+    `, { d: { type: sql.Date, value: new Date(dateStr) }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } });
     res.json(r.recordset || []);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -1071,8 +1128,9 @@ router.post('/price-indicator', requireCapability('so.create'), async (req, res)
 router.get('/unlock-requests', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'C_LEVEL'), async (req, res) => {
   try {
     const { status } = req.query;
-    const conds = [];
-    const inputs = {};
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const conds = ['r.RequestedAt >= @globalStartUtc'];
+    const inputs = { globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } };
     if (status) { conds.push('r.Status=@st'); inputs.st = { type: sql.NVarChar(20), value: status }; }
     // R12 O-4: a MANAGER sees unlock requests of their own team only
     const scope = await getVisibleScope(req.user);
@@ -1097,8 +1155,10 @@ router.get('/unlock-requests', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCO
 router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'C_LEVEL'), async (req, res) => {
   try {
     const { approve, note } = req.body || {};
-    const reqRow = (await wfQuery(`SELECT * FROM wf.UnlockRequest WHERE Id=@id`,
-      { id: { type: sql.Int, value: Number(req.params.reqId) } })).recordset[0];
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const reqRow = (await wfQuery(`SELECT * FROM wf.UnlockRequest WHERE Id=@id AND RequestedAt >= @globalStartUtc`,
+      { id: { type: sql.Int, value: Number(req.params.reqId) },
+        globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } })).recordset[0];
     if (!reqRow) return res.status(404).json({ message: 'ไม่พบคำขอ' });
     // R12 O-4: the same team rule as the list above — a manager on the org chart answers the team's requests only
     if (!inScope(await getVisibleScope(req.user), { userId: reqRow.RequesterId })) return res.status(404).json({ message: 'ไม่พบคำขอ' });
@@ -1147,10 +1207,12 @@ router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN',
 // ── GET /api/so/:id/weigh — WeighTicket ของ SO ───────────────
 router.get('/:id/weigh', requireSoInScope, async (req, res) => {
   try {
-    const r = await wfQuery(`SELECT TOP 1 * FROM wf.WeighTicket WHERE SoId=@id ORDER BY Id DESC`,
-      { id: { type: sql.NVarChar(50), value: String(req.params.id) } });
+    await getSoOrThrow(req.params.id);
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const r = await wfQuery(`SELECT TOP 1 * FROM wf.WeighTicket WHERE SoId=@id AND CreatedAt >= @globalStartUtc ORDER BY Id DESC`,
+      { id: { type: sql.NVarChar(50), value: String(req.params.id) }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } });
     res.json(r.recordset?.[0] || null);
-  } catch (e) { res.status(500).json({ message: e.message }); }
+  } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // ── GET /api/so/:id ──────────────────────────────────────────
@@ -1158,14 +1220,15 @@ router.get('/:id', async (req, res) => {
   try {
     const so = await getSoOrThrow(req.params.id);
     if (!(await soVisibleTo(req.user, so))) return res.status(404).json({ message: `SO id ${req.params.id} ไม่พบ` });
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
     const lines = await getLines(so.Id);
     const auditR = await wfQuery(
-      `SELECT a.*, u.DisplayName FROM wf.SalesOrderAudit a JOIN wf.AppUser u ON u.Id = a.UserId WHERE a.SoId = @id ORDER BY a.CreatedAt DESC`,
-      { id: { type: sql.VarChar(50), value: String(so.Id) } }
+      `SELECT a.*, u.DisplayName FROM wf.SalesOrderAudit a JOIN wf.AppUser u ON u.Id = a.UserId WHERE a.SoId = @id AND a.CreatedAt >= @globalStartUtc ORDER BY a.CreatedAt DESC`,
+      { id: { type: sql.VarChar(50), value: String(so.Id) }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } }
     );
     const weighR = await wfQuery(
-      `SELECT TOP 1 * FROM wf.WeighTicket WHERE SoId=@id ORDER BY Id DESC`,
-      { id: { type: sql.NVarChar(50), value: String(so.Id) } }
+      `SELECT TOP 1 * FROM wf.WeighTicket WHERE SoId=@id AND CreatedAt >= @globalStartUtc ORDER BY Id DESC`,
+      { id: { type: sql.NVarChar(50), value: String(so.Id) }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } }
     );
     const auditRows = auditR.recordset || [];
     const weighTicket = weighR.recordset?.[0] || null;
@@ -1175,6 +1238,7 @@ router.get('/:id', async (req, res) => {
     // person printing as salesperson, the tax id as address and phone, or the company's own address (UAT RPT-06)
     const party = (await wfQuery(`
       SELECT (SELECT TOP 1 DisplayName FROM wf.AppUser WHERE Id = @uid) AS SalesName,
+             RTRIM(c.CustCode) AS CustCode,
              c.CustAddr1, c.CustAddr2, c.Amphur, c.Province, c.PostCode, c.ContTel, c.ContTel1,
              c.BillState, c.BillDay, c.BillDate, c.BillWeek,
              LTRIM(RTRIM(CASE ISNULL(c.CustBillName,'') WHEN '' THEN ISNULL(NULLIF(RTRIM(c.CustTitle),'')+' ','')+ISNULL(c.CustName,'') ELSE c.CustBillName END)) AS CustDocName
@@ -1195,6 +1259,7 @@ router.get('/:id', async (req, res) => {
 
     res.json(redactSoForRole(req, {
       ...camelizeRow(so),
+      custCode: so.CustCode || party.CustCode || null,
       salesName: party.SalesName || null,
       custAddress,
       custDocName: party.CustDocName || null,
@@ -1202,12 +1267,12 @@ router.get('/:id', async (req, res) => {
       // ใบสั่งจองแสดงเงื่อนไขการวางบิลแบบเดียวกับฟอร์ม WinSpeed
       billTerms: require('../services/bill-terms').billTermsText(party) || null,
       pickupEvaluation,
-      linkedQuoteId: pendingQuote?.Id || null,
-      linkedQuoteNo: pendingQuote?.QuoteNo || null,
-      linkedQuoteStatus: pendingQuote?.Status || null,
-      linkedQuoteRemark: pendingQuote?.Remark || null,
-      linkedQuoteValidUntil: pendingQuote?.ValidUntil || null,
-      quotationLockReason: pendingQuote ? `Waiting for quotation ${pendingQuote.QuoteNo} confirmation` : null,
+      linkedQuoteId: quoteVisibleInWindow(pendingQuote) ? pendingQuote.Id : null,
+      linkedQuoteNo: quoteVisibleInWindow(pendingQuote) ? pendingQuote.QuoteNo : null,
+      linkedQuoteStatus: quoteVisibleInWindow(pendingQuote) ? pendingQuote.Status : null,
+      linkedQuoteRemark: quoteVisibleInWindow(pendingQuote) ? pendingQuote.Remark : null,
+      linkedQuoteValidUntil: quoteVisibleInWindow(pendingQuote) ? pendingQuote.ValidUntil : null,
+      quotationLockReason: pendingQuote ? quoteLockDetails(pendingQuote, 'confirm').message : null,
       lines: camelizeRows(lines),
       auditLogs: camelizeRows(auditRows),
       weighOutAt: weighTicket?.WeighOutAt || null,
@@ -1223,6 +1288,7 @@ router.get('/giveaways/pending', requireRole('MANAGER', 'ADMIN', 'C_LEVEL', 'APP
     if (!(await hasGiveawayApprovalColumns())) return res.json([]);
     // R12 O-4: a manager on the org chart approves only the team's giveaways
     const sf = scopeFilter(await getVisibleScope(req.user), { userCol: 's.SalesUserId', prefix: 'gp' });
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
     const r = await wfQuery(`
       SELECT l.SoId, l.LineNum, l.GoodName, l.QtyTon, l.QtyBag, 
              ISNULL(l.QtyBag, CAST(l.QtyTon AS INT)) AS QtyPiece,
@@ -1232,9 +1298,10 @@ router.get('/giveaways/pending', requireRole('MANAGER', 'ADMIN', 'C_LEVEL', 'APP
       INNER JOIN wf.SalesOrder s ON s.Id = l.SoId
       LEFT JOIN wf.AppUser u ON u.Id = s.SalesUserId
       WHERE l.IsGiveaway = 1 AND ISNULL(l.GiveawayApprovalStatus, 'PENDING') = 'PENDING' AND s.Status = 'DRAFT'
+        AND s.CreatedAt >= @globalStartUtc
         AND ${sf.sql}
       ORDER BY s.CreatedAt ASC
-    `, sf.inputs);
+    `, { ...sf.inputs, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } });
     res.json(r.recordset || []);
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -2430,14 +2497,14 @@ router.patch('/:id/confirm', requireCapability('so.confirm'), requireSoInScope, 
   try {
     const replay = await getConfirmationReplay(req);
     if (replay) return res.json(replay);
+    // All-scope roles skip the scope lookup middleware. Validate the actual
+    // order's data window here before any native replay or mutation path.
+    await getSoOrThrow(req.params.id);
     const pendingQuote = await getPendingQuoteForSo(req.params.id);
     if (pendingQuote) {
       return res.status(400).json({
-        message: `SO นี้ผูกกับใบเสนอราคา ${pendingQuote.QuoteNo} (${pendingQuote.Status}) ต้องยืนยันหรือยกเลิกใบเสนอราคาก่อน`,
+        ...quoteLockDetails(pendingQuote, 'confirm'),
         requiresQuotationAccepted: true,
-        quoteId: pendingQuote.Id,
-        quoteNo: pendingQuote.QuoteNo,
-        quoteStatus: pendingQuote.Status,
       });
     }
 
@@ -3178,12 +3245,29 @@ router.patch('/:id/ship', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'MANAGER', 'AD
 });
 
 // ── POST /api/so/:id/weigh-item — บันทึกผลการชั่งวนรายรายการสินค้า ──
-router.post('/:id/weigh-item', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.post('/:id/weigh-item', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'ADMIN', 'C_LEVEL'), requireSoInScope, async (req, res) => {
   try {
     const soId = String(req.params.id);
+    // Check the business-date window even for all-scope roles. Do not filter
+    // earlier weigh passes from the calculation: they are required to compute
+    // the incremental weight accurately.
+    const so = await getSoOrThrow(soId);
+    if (req.user.isImpersonating) {
+      const { approvalIdentity } = require('../services/approval-identity');
+      const { businessIds } = require('../services/business-identity');
+      const identity = approvalIdentity(req.user);
+      const business = businessIds(req.user);
+      const mapped = req.user.identityMapping;
+      const actor = { ...req.user, sub: identity.actorId, id: identity.actorId, actorSub: identity.actorId,
+        actorId: identity.actorId, isImpersonating: false, role: req.user.actorRole, roles: req.user.actorRoles,
+        permissions: req.user.actorPermissions, disabledActions: req.user.actorDisabledActions,
+        identityMapping: mapped ? { ...mapped, primaryActorUserId: identity.actorId, primaryEffectiveUserId: identity.actorId,
+          businessActorUserId: business.actor, businessEffectiveUserId: business.actor } : undefined };
+      if (!(await soVisibleTo(actor, so))) return res.status(404).json({ message: 'ไม่พบบิลในขอบเขตผู้ใช้งาน' });
+    }
     const { grossScaleKg, lineNum, goodCode, goodName, note, tareKg } = req.body || {};
     const gross = Number(grossScaleKg);
-    if (isNaN(gross) || gross <= 0) return res.status(400).json({ message: 'กรุณาระบุน้ำหนักเครื่องชั่งที่ถูกต้อง' });
+    if (!Number.isFinite(gross) || gross <= 0 || gross > 99999999.99) return res.status(400).json({ message: 'กรุณาระบุน้ำหนักเครื่องชั่งที่ถูกต้อง' });
 
     // ดึงประวัติการชั่งย่อยย้อนหลังเพื่อคำนวณ Incremental Net
     const lastLogs = (await wfQuery(`
@@ -3210,35 +3294,38 @@ router.post('/:id/weigh-item', requireRole('WAREHOUSE', 'WEIGHBRIDGE', 'ADMIN', 
       gross: { type: sql.Decimal(10,2), value: gross },
       inc:   { type: sql.Decimal(10,2), value: incNet },
       note:  { type: sql.NVarChar(300), value: note || null },
-      uid:   { type: sql.Int, value: req.user.sub },
+      uid:   { type: sql.Int, value: require('../services/business-identity').businessIds(req.user).effective },
     });
 
     res.json({ ok: true, passNo: passCnt + 1, grossScaleKg: gross, incrementalNetKg: incNet });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // ── GET /api/so/:id/weigh-history — ประวัติใบชั่งและการชั่งวนรายรายการ ──
 router.get('/:id/weigh-history', requireSoInScope, async (req, res) => {
   try {
     const soId = String(req.params.id);
+    await getSoOrThrow(soId);
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const globalStartUtc = { type: sql.DateTime2, value: dataWindow.utcInstant };
     const ticket = (await wfQuery(`
-      SELECT TOP 1 * FROM wf.WeighTicket WHERE SoId = @so ORDER BY Id DESC
-    `, { so: { type: sql.NVarChar(50), value: soId } })).recordset[0] || null;
+      SELECT TOP 1 * FROM wf.WeighTicket WHERE SoId = @so AND CreatedAt >= @globalStartUtc ORDER BY Id DESC
+    `, { so: { type: sql.NVarChar(50), value: soId }, globalStartUtc })).recordset[0] || null;
 
     const itemLogs = (await wfQuery(`
       SELECT l.*, u.DisplayName AS WeighedByName
       FROM wf.WeighTicketItemLog l
       LEFT JOIN wf.AppUser u ON u.Id = l.WeighedBy
-      WHERE l.SoId = @so
+      WHERE l.SoId = @so AND l.WeighedAt >= @globalStartUtc
       ORDER BY l.PassNo ASC, l.Id ASC
-    `, { so: { type: sql.NVarChar(50), value: soId } })).recordset || [];
+    `, { so: { type: sql.NVarChar(50), value: soId }, globalStartUtc })).recordset || [];
 
     const { evaluateWeight } = require('../services/weight-reconciliation');
     const netKg = ticket ? ticket.NetKg : null;
     const weightEval = await evaluateWeight(soId, netKg);
 
     res.json({ ticket, itemLogs, weightEval });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // ── PATCH /api/so/:id/sync-imported — เลิกใช้ เพราะเข้า Winspeed อัตโนมัติตั้งแต่ CONFIRM แล้ว ─
@@ -3313,10 +3400,8 @@ router.post('/bulk-cancel-delete', requireCapability('so.cancel'), async (req, r
       const pendingQuote = await getPendingQuoteForSo(so.Id);
       if (pendingQuote) {
         return res.status(400).json({
-          message: `บิล ${so.WfRef || so.Id} ผูกกับใบเสนอราคา ${pendingQuote.QuoteNo} (${pendingQuote.Status}) ต้องยกเลิกใบเสนอราคาก่อน`,
+          ...quoteLockDetails(pendingQuote),
           requiresQuotationAction: true,
-          quoteId: pendingQuote.Id,
-          quoteNo: pendingQuote.QuoteNo,
           failedSoId: so.Id,
         });
       }
@@ -3628,11 +3713,8 @@ router.patch('/:id/cancel', requireCapability('so.cancel'), requireSoInScope, as
     const pendingQuote = await getPendingQuoteForSo(so.Id);
     if (pendingQuote) {
       return res.status(400).json({
-        message: `SO นี้ผูกกับใบเสนอราคา ${pendingQuote.QuoteNo} (${pendingQuote.Status}) ต้องยกเลิกใบเสนอราคาก่อน`,
+        ...quoteLockDetails(pendingQuote),
         requiresQuotationAction: true,
-        quoteId: pendingQuote.Id,
-        quoteNo: pendingQuote.QuoteNo,
-        quoteStatus: pendingQuote.Status,
       });
     }
 

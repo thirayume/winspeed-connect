@@ -100,6 +100,12 @@ test('Account self-approval counts the actual actor during Access As; request/ap
  const f=fixture();await approved(f,account);const r=f.state.request;
  assert.equal(r.RequestedById,22);assert.equal(r.RequesterActorId,99);assert.equal(r.ApprovedById,22);assert.equal(r.ApproverActorId,99);assert.equal(r.SelfApproval,true);
 });
+test('mapped Access As credit request and approval use business IDs',async()=>{
+ const f=fixture();const user={sub:122,role:'ACCOUNTING',actorSub:199,actorRole:'ADMIN',
+  identityMapping:{primaryEffectiveUserId:122,primaryActorUserId:199,businessEffectiveUserId:22,businessActorUserId:99}};
+ await approved(f,user);
+ assert.equal(f.state.request.RequestedById,22);assert.equal(f.state.request.RequesterActorId,99);
+});
 test('different effective request/approver but same actual person is still self approval',async()=>{
  const f=fixture();await approved(f);assert.equal(f.state.request.RequestedById,11);assert.equal(f.state.request.ApprovedById,22);assert.equal(f.state.request.SelfApproval,true);
 });

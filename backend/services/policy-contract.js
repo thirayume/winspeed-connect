@@ -159,14 +159,15 @@ const POLICY_DEFINITIONS = Object.freeze(Object.assign(Object.create(null), {
     default: '2022-01-01',
     description: 'ซ่อนใบสั่งจองของ WinSpeed ที่ลงวันที่ก่อนวันนี้ออกจากกระดาน รายการบิล และรายงาน (ตั๋วคุมที่ยังมียอดค้างแสดงเสมอ)',
   },
-  // owner 2026-10-09: claims are cut year by year on the company's accounting year
+  // Historical compatibility only. Owner 2026-11-13 allows unused opening
+  // balances from previous years; changing this setting no longer expires them.
   REBATE_CLAIM_FISCAL_START_MONTH: {
     policyName: 'REBATE_CLAIM_CUTOFF_POLICY',
     type: 'INT',
     min: 0,
     max: 12,
     default: 1,
-    description: 'เคลมรีเบทได้เฉพาะใบส่งของในรอบบัญชีปัจจุบัน — เดือนที่เริ่มรอบบัญชี (1 = มกราคม) · 0 = ไม่ตัดรอบ',
+    description: 'ค่าเดิมเก็บเพื่อประวัติ ไม่มีผลตัดสิทธิ์ยอดรีเบทยกมาจากปีก่อน',
   },
   CREDIT_LIMIT_STRICT_MODE: {
     policyName: 'CREDIT_POLICY',

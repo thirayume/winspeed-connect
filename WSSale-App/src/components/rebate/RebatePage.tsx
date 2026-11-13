@@ -14,15 +14,18 @@ import { formatThaiDate } from '../../utils/date';
 const CLAIM_STATUS: Record<string, string> = {
   DRAFT: 'ร่าง', PENDING: 'รอดำเนินการ',
   TIER2_PENDING: 'รอผู้จัดการภาค', TIER3_PENDING: 'รอฝ่ายตลาด', TIER4_PENDING: 'รอกรรมการ',
-  APPROVED: 'อนุมัติแล้ว', REJECTED: 'ไม่อนุมัติ', CN_ISSUED: 'ออกใบลดหนี้',
+  APPROVED: 'อนุมัติแล้ว', REJECTED: 'ไม่อนุมัติ', CANCELLED: 'ยกเลิก', CN_ISSUED: 'ออกใบลดหนี้',
 };
 const STATUS_TONE: Record<string, string> = {
   APPROVED: 'bg-green-50 text-green-700', CN_ISSUED: 'bg-green-50 text-green-700',
   REJECTED: 'bg-red-50 text-red-700',
+  CANCELLED: 'bg-gray-100 text-gray-600',
 };
 
 export function RebatePage() {
-  const role = useAuthStore(s => s.user?.role);
+  const user = useAuthStore(s => s.user);
+  const role = user?.role;
+  const canClaim = [role, ...(user?.roles || [])].some(r => ['SALES', 'COUNTER_SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'MANAGER'].includes(String(r)));
   const [viewTab, setViewTab] = useState<'pool-fifo' | 'legacy'>('pool-fifo');
   // owner 2026-10-09: a salesperson sees no rebate amount here either; the server sends none
   const seeMoney = canViewRebateAmounts(role);
@@ -114,6 +117,12 @@ export function RebatePage() {
           </div>
           {viewTab === 'legacy' && (
             <>
+              {canClaim && (
+                <button onClick={() => setShowClaim(true)} data-testid="open-customer-claim-button"
+                  className="px-3 py-2 rounded-xl bg-[#0C447C] text-white text-xs font-bold flex items-center gap-1.5">
+                  <Scissors size={14} /> ยื่นเคลียร์จากยอดลูกค้า
+                </button>
+              )}
               <button onClick={handleExportClaims} disabled={claims.length === 0}
                 className="px-3 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-bold text-[#0C447C] flex items-center gap-1.5 shadow-sm disabled:opacity-50">
                 <Download size={14} /> ส่งออกคำขอ (Excel)
@@ -137,9 +146,9 @@ export function RebatePage() {
           {/* Left: Pools + Claims */}
           <div className={`w-full lg:max-w-md flex flex-col lg:border-r border-gray-200 overflow-y-auto px-4 pb-4 space-y-5 ${selectedPool ? 'hidden lg:flex' : 'flex'}`}>
             <div>
-              <h2 className="text-xs font-bold uppercase text-gray-400 mb-2">กองรีเบท (รายเดือน)</h2>
+              <h2 className="text-xs font-bold uppercase text-gray-400 mb-2">กองรีเบทรายเดือน (ประวัติเดิม)</h2>
               {pools.length === 0 ? (
-                <p className="text-xs text-gray-400 py-4 text-center">ยังไม่มียอดสะสม ยอดเกิดจากบิลที่ส่งออกแล้วและขายสูงกว่าราคา NET ยอดก่อนเริ่มใช้ระบบให้ฝ่ายบัญชียื่นแทน</p>
+                <p className="text-xs text-gray-400 py-4 text-center">ไม่มีกองรายเดือนเดิม กด “ยื่นเคลียร์จากยอดลูกค้า” เพื่อเลือกยอดคงเหลือและยอดยกมา</p>
               ) : pools.map(p => {
                 const avail = p.AvailableAmt !== undefined ? Number(p.AvailableAmt) : (Number(p.AccruedAmt) - Number(p.ClaimedAmt) - Number(p.UsedAmt || 0));
                 const isSel = selectedPool?.Id === p.Id;
@@ -154,7 +163,7 @@ export function RebatePage() {
                     {seeMoney ? <div className="grid grid-cols-3 gap-2 text-center">
                       <div><div className="text-[10px] text-gray-400">สะสม</div><div className="text-xs font-bold text-gray-600">฿{Number(p.AccruedAmt).toLocaleString('th-TH',{maximumFractionDigits:0})}</div></div>
                       <div><div className="text-[10px] text-gray-400">เคลม</div><div className="text-xs font-bold text-gray-400">฿{Number(p.ClaimedAmt).toLocaleString('th-TH',{maximumFractionDigits:0})}</div></div>
-                      <div><div className="text-[10px] text-gray-400">ใช้ได้</div><div className="text-xs font-bold" style={{color:'#059669'}}>฿{avail.toLocaleString('th-TH',{maximumFractionDigits:0})}</div></div>
+                      <div><div className="text-[10px] text-gray-400">คงเหลือกองเดิม</div><div className="text-xs font-bold" style={{color:'#059669'}}>฿{avail.toLocaleString('th-TH',{maximumFractionDigits:0})}</div></div>
                     </div> : <div className="text-[11px] text-gray-400">ดูรายการขนและยื่นเคลมได้ · ยอดเงินแสดงเฉพาะฝ่ายบัญชีและผู้จัดการ</div>}
                   </div>
                 );
@@ -196,7 +205,7 @@ export function RebatePage() {
                     <h2 className="font-bold text-gray-800 hidden lg:block">{selectedPool.SalesName} · {monthLabel(selectedPool)}</h2>
                     <p className="text-xs text-gray-400"><span className="lg:hidden">{monthLabel(selectedPool)} · </span>ตัดจากรายการเก่าสุดก่อน</p>
                   </div>
-                  {(role === 'SALES' || role === 'ACCOUNTING' || role === 'ADMIN' || role === 'C_LEVEL') && (
+                  {canClaim && (
                     <button onClick={() => setShowClaim(true)}
                       data-testid="open-claim-dialog-button"
                       className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-xs font-semibold" style={{ background: '#0C447C' }}>
@@ -253,9 +262,9 @@ export function RebatePage() {
         )}
       </div>
 
-      {showClaim && selectedPool && (
+      {showClaim && (
         <ClaimDialog pool={selectedPool} onClose={() => setShowClaim(false)}
-          onDone={() => { setShowClaim(false); load(); openPool(selectedPool); }} />
+          onDone={() => { setShowClaim(false); load(); if (selectedPool) openPool(selectedPool); }} />
       )}
 
       {detailId != null && (

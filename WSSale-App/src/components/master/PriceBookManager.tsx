@@ -1,16 +1,16 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   BookOpen, RefreshCw, Plus, CheckCircle2, Rocket, Archive, FileClock,
-  Tag, Save, UserCheck, AlertTriangle, Layers, X, Search, Edit3, UploadCloud,
+  Tag, Save, UserCheck, AlertTriangle, Search, Edit3,
 } from 'lucide-react';
 import {
   fetchPriceBooks, fetchPriceBook, createPriceBook, updatePriceBookHeader,
-  priceBookAction, setPriceBookLines, upsertPriceBookItem, syncPriceBookToWinSpeed,
+  priceBookAction, setPriceBookLines, upsertPriceBookItem,
   fetchPriceBookSpecial, requestPriceBookSpecial, approvePriceBookSpecial,
-  fetchWinSpeedPriceSets, syncWinSpeedPriceSets, fetchGoods, fetchActiveCostMap,
+  fetchGoods, fetchActiveCostMap,
   type PriceBook, type PriceBookLine, type PriceBookAuditRow, type PriceBookSpecialPrice,
-  type WinSpeedPriceSet,
 } from '../../services/api';
+import { socketService } from '../../services/socket';
 import type { EMGood } from '../../types';
 import { useAuthStore } from '../../store/auth-store';
 import { appAlert, appConfirm } from '../ui/AppAlert';
@@ -39,6 +39,29 @@ const LINE_STATUS_OPTIONS = [
 ];
 
 type Detail = PriceBook & { lines: PriceBookLine[]; audit: PriceBookAuditRow[] };
+
+function addDaysIso(isoDate: string, days: number): string {
+  const m = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return bangkokDate(0);
+  const d = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function suggestNextCycleDates(books: PriceBook[]): { effectiveFrom: string; effectiveTo: string } {
+  const nonArchived = books.filter(b => b.Status !== 'ARCHIVED' && (b.EffectiveTo || b.EffectiveFrom));
+  if (nonArchived.length === 0) {
+    const start = bangkokDate(0);
+    return { effectiveFrom: start, effectiveTo: addDaysIso(start, 7) };
+  }
+  const latestEnd = nonArchived
+    .map(b => (b.EffectiveTo || b.EffectiveFrom || '').slice(0, 10))
+    .filter(Boolean)
+    .sort()
+    .pop();
+  const nextStart = latestEnd ? addDaysIso(latestEnd, 1) : bangkokDate(0);
+  return { effectiveFrom: nextStart, effectiveTo: addDaysIso(nextStart, 7) };
+}
 
 export function PriceBookManager({
   targetGood = null,
@@ -90,17 +113,6 @@ export function PriceBookManager({
   const [spForm, setSpForm] = useState({ custId: '', custName: '', goodId: '', requestedPrice: '', note: '' });
   const [spApprovedInput, setSpApprovedInput] = useState<Record<number, string>>({});
 
-  // WinSpeed Sync State
-  const [syncModalOpen, setSyncModalOpen] = useState(false);
-  const [winSpeedSets, setWinSpeedSets] = useState<WinSpeedPriceSet[]>([]);
-  const [winSpeedLoading, setWinSpeedLoading] = useState(false);
-  const [selectedSetIds, setSelectedSetIds] = useState<number[]>([]);
-  const [syncForm, setSyncForm] = useState({
-    name: '',
-    effectiveFrom: bangkokDate(0),
-    effectiveTo: bangkokDate(-7),
-  });
-
   const open = useCallback(async (id: number) => {
     try {
       const b = await fetchPriceBook(id);
@@ -151,6 +163,20 @@ export function PriceBookManager({
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    const sock = socketService.connect();
+    const handleRemoteUpdate = () => {
+      void fetchPriceBooks().then(setBooks).catch(() => {});
+      if (sel?.Id) {
+        void open(sel.Id);
+      }
+    };
+    sock.on('pricebook_updated', handleRemoteUpdate);
+    return () => {
+      sock.off('pricebook_updated', handleRemoteUpdate);
+    };
+  }, [sel?.Id, open]);
+
+  useEffect(() => {
     if (targetGood) {
       setLineSearch(targetGood.goodName || targetGood.goodCode || targetGood.goodId || '');
       if (books.length > 0 && !sel) {
@@ -160,56 +186,28 @@ export function PriceBookManager({
     }
   }, [targetGood, books, sel, open]);
 
-  const loadWinSpeedSets = useCallback(async () => {
-    setWinSpeedLoading(true);
-    try {
-      const sets = await fetchWinSpeedPriceSets();
-      setWinSpeedSets(sets);
-      const activeGeneral = sets.filter(s => !s.CustID && s.IsActivePeriod === 1).map(s => s.SetPriceID);
-      setSelectedSetIds(activeGeneral.length > 0 ? activeGeneral : sets.slice(0, 2).map(s => s.SetPriceID));
-      if (sets.length > 0) {
-        const first = sets[0];
-        setSyncForm(prev => ({
-          ...prev,
-          effectiveFrom: first.BeginDate ? first.BeginDate.slice(0, 10) : prev.effectiveFrom,
-          effectiveTo: first.EndDate ? first.EndDate.slice(0, 10) : prev.effectiveTo,
-        }));
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setWinSpeedLoading(false);
-    }
-  }, []);
-
-  async function handleSyncWinSpeed(targetStatus: 'ACTIVE' | 'DRAFT' = 'ACTIVE') {
-    if (selectedSetIds.length === 0) {
-      await appAlert('กรุณาเลือกชุดราคา WinSpeed อย่างน้อย 1 ชุด', 'error');
+  function openCreatePanel() {
+    if (creating) {
+      setCreating(false);
       return;
     }
-    setBusy(true);
-    try {
-      const res = await syncWinSpeedPriceSets({
-        setPriceIds: selectedSetIds,
-        name: syncForm.name.trim() || undefined,
-        status: targetStatus,
-        effectiveFrom: syncForm.effectiveFrom,
-        effectiveTo: syncForm.effectiveTo,
-      });
-      await appAlert(`ซิงค์ตารางราคา WinSpeed สำเร็จ (${res.lineCount} รายการ, สถานะ ${res.status})`, 'success');
-      setSyncModalOpen(false);
-      await load();
-      await open(res.priceBookId);
-    } catch (e: unknown) {
-      await appAlert((e as Error).message || 'ซิงค์ไม่สำเร็จ', 'error');
-    } finally {
-      setBusy(false);
-    }
+    const next = suggestNextCycleDates(books);
+    setForm({
+      name: '',
+      effectiveFrom: next.effectiveFrom,
+      effectiveTo: next.effectiveTo,
+      seedFromCurrent: true,
+    });
+    setCreating(true);
   }
 
-  async function doCreate() {
+  async function doCreate(targetStatus: 'ACTIVE' | 'DRAFT' = 'ACTIVE') {
     if (!form.name.trim()) {
       await appAlert('กรุณาระบุชื่อ Price Book', 'error');
+      return;
+    }
+    if (!form.effectiveFrom || !form.effectiveTo) {
+      await appAlert('กรุณาระบุวันที่เริ่มต้นและวันที่สิ้นสุด', 'error');
       return;
     }
     setBusy(true);
@@ -220,16 +218,19 @@ export function PriceBookManager({
         effectiveTo: form.effectiveTo,
         effectiveMonth: form.effectiveFrom.slice(0, 7),
         seedFromCurrent: form.seedFromCurrent,
+        status: targetStatus,
       });
       setCreating(false);
-      setForm({
-        name: '',
-        effectiveFrom: bangkokDate(0),
-        effectiveTo: bangkokDate(-7),
-        seedFromCurrent: true,
-      });
       await load();
       await open(r.id);
+      if (r.winSpeedSynced) {
+        await appAlert(
+          r.docuNo
+            ? `สร้างชุดราคาและบันทึกไปยัง WinSpeed (${r.docuNo}) เรียบร้อย`
+            : 'สร้างชุดราคาและบันทึกไปยัง WinSpeed เรียบร้อย',
+          'success'
+        );
+      }
     } catch (e: unknown) {
       await appAlert((e as Error).message, 'error');
     } finally {
@@ -256,7 +257,7 @@ export function PriceBookManager({
       await open(sel.Id);
       await appAlert(
         res.winSpeedSynced
-          ? 'บันทึกหัวตารางและ Sync วันที่กลับ WinSpeed เรียบร้อย'
+          ? 'บันทึกหัวตารางและอัปเดตไปยัง WinSpeed เรียบร้อย'
           : 'บันทึกหัวตารางเรียบร้อย',
         'success'
       );
@@ -274,7 +275,7 @@ export function PriceBookManager({
       const res = await setPriceBookLines(sel.Id, editableLines);
       await appAlert(
         res.winSpeedSynced
-          ? 'บันทึกรายการราคาและ Sync กลับ WinSpeed เรียบร้อย'
+          ? 'บันทึกรายการราคาและอัปเดตไปยัง WinSpeed เรียบร้อย'
           : 'บันทึกรายการราคาเรียบร้อย',
         'success'
       );
@@ -311,27 +312,12 @@ export function PriceBookManager({
       await load();
       await appAlert(
         res.winSpeedSynced
-          ? 'เพิ่ม/อัปเดตสูตรและ Sync กลับ WinSpeed เรียบร้อย'
+          ? 'เพิ่ม/อัปเดตสูตรและบันทึกไปยัง WinSpeed เรียบร้อย'
           : 'เพิ่ม/อัปเดตสูตรเรียบร้อย',
         'success'
       );
     } catch (e: unknown) {
       await appAlert((e as Error).message, 'error');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleManualPushToWinSpeed() {
-    if (!sel) return;
-    if (!await appConfirm(`ยืนยัน Sync ราคาขายจาก Price Book "${sel.Name}" กลับไป WinSpeed (EMSetPrice)?`)) return;
-    setBusy(true);
-    try {
-      const res = await syncPriceBookToWinSpeed(sel.Id);
-      await open(sel.Id);
-      await appAlert(`Sync กลับ WinSpeed สำเร็จ (อัปเดต ${res.upserted} / งดขาย ${res.removed} รายการ)`, 'success');
-    } catch (e: unknown) {
-      await appAlert((e as Error).message || 'Sync WinSpeed ไม่สำเร็จ', 'error');
     } finally {
       setBusy(false);
     }
@@ -347,7 +333,7 @@ export function PriceBookManager({
       await load();
       await open(sel.Id);
       if (action === 'activate' && res.winSpeedSynced) {
-        await appAlert('เปิดใช้งานและ Sync กลับ WinSpeed เรียบร้อย', 'success');
+        await appAlert('เปิดใช้งานและบันทึกไปยัง WinSpeed เรียบร้อย', 'success');
       }
     } catch (e: unknown) {
       await appAlert((e as Error).message, 'error');
@@ -465,25 +451,17 @@ export function PriceBookManager({
             <BookOpen size={18} /> Price Book (ตารางราคาขาย)
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            แก้ไขราคาได้ทั้งแบบร่างและ ACTIVE · Sync สองทางกับ WinSpeed · สถานะ ***/งดขาย และราคาพิเศษรายร้านค้า
+            แก้ไขราคาได้ทั้งแบบร่างและ ACTIVE · เชื่อมต่อสองทางกับ WinSpeed อัตโนมัติ · ห้ามตั้งราคาทับซ้อนวันและสินค้าเดียวกัน
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {canManagePricing && (
-            <>
-              <button
-                onClick={() => { setSyncModalOpen(true); loadWinSpeedSets(); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs transition"
-              >
-                <Rocket size={15} /> ซิงค์จาก WinSpeed
-              </button>
-              <button
-                onClick={() => setCreating(!creating)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-[#0C447C] text-white hover:opacity-90"
-              >
-                <Plus size={15} /> สร้างใหม่
-              </button>
-            </>
+            <button
+              onClick={openCreatePanel}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-[#0C447C] text-white hover:opacity-90"
+            >
+              <Plus size={15} /> สร้างใหม่
+            </button>
           )}
           <button
             onClick={load}
@@ -538,6 +516,9 @@ export function PriceBookManager({
                   />
                 </div>
               </div>
+              <p className="text-[11px] text-gray-500">
+                รองรับช่วงวงรอบถัดไป ล่วงหน้า หรือย้อนหลัง โดยต้องไม่ทับซ้อนวันและสินค้าเดียวกัน
+              </p>
               <label className="flex items-center gap-1.5 text-xs text-gray-600 pt-1">
                 <input
                   type="checkbox"
@@ -546,13 +527,24 @@ export function PriceBookManager({
                 />
                 ดึงราคาปัจจุบันเป็นค่าตั้งต้น
               </label>
-              <button
-                onClick={doCreate}
-                disabled={busy}
-                className="w-full px-3 py-2 rounded-lg text-sm font-semibold bg-[#0C447C] text-white hover:opacity-90 disabled:opacity-40"
-              >
-                สร้าง (DRAFT)
-              </button>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => doCreate('DRAFT')}
+                  disabled={busy}
+                  className="px-3 py-2 rounded-lg text-xs font-semibold border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                >
+                  บันทึกแบบร่าง
+                </button>
+                <button
+                  type="button"
+                  onClick={() => doCreate('ACTIVE')}
+                  disabled={busy}
+                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#0C447C] text-white hover:opacity-90 disabled:opacity-40"
+                >
+                  สร้างชุดราคา (ACTIVE)
+                </button>
+              </div>
             </div>
           )}
 
@@ -582,13 +574,13 @@ export function PriceBookManager({
             <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center space-y-3 bg-gray-50/50">
               <BookOpen size={32} className="mx-auto text-gray-400 opacity-60" />
               <div className="text-gray-600 text-sm font-semibold">ยังไม่มี Price Book ใน Sale-App</div>
-              <p className="text-xs text-gray-400">คุณสามารถดึงชุดราคาประกาศจาก WinSpeed เข้ามาได้ทันที</p>
+              <p className="text-xs text-gray-400">ระบบจะซิงค์ข้อมูลจาก WinSpeed อัตโนมัติ หรือสร้างชุดราคาใหม่ได้ทันที</p>
               {canManagePricing && (
                 <button
-                  onClick={() => { setSyncModalOpen(true); loadWinSpeedSets(); }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs transition"
+                  onClick={openCreatePanel}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-[#0C447C] text-white hover:opacity-90 shadow-xs transition"
                 >
-                  <Rocket size={14} /> ซิงค์ชุดราคา WinSpeed ทันที
+                  <Plus size={14} /> สร้างชุดราคาใหม่
                 </button>
               )}
             </div>
@@ -664,7 +656,7 @@ export function PriceBookManager({
                             onClick={saveHeader}
                             className="px-3 py-1 text-xs rounded-lg bg-[#0C447C] text-white font-semibold"
                           >
-                            บันทึก{sel.Status === 'ACTIVE' ? ' & Sync WinSpeed' : ''}
+                            บันทึก
                           </button>
                         </div>
                       </div>
@@ -685,18 +677,9 @@ export function PriceBookManager({
                     </button>
                   )}
                   {canManagePricing && sel.Status === 'ACTIVE' && (
-                    <>
-                      <button
-                        onClick={handleManualPushToWinSpeed}
-                        disabled={busy}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"
-                      >
-                        <UploadCloud size={15} /> Sync กลับ WinSpeed
-                      </button>
-                      <button onClick={() => act('archive')} disabled={busy} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
-                        <Archive size={15} /> เก็บเข้าคลัง
-                      </button>
-                    </>
+                    <button onClick={() => act('archive')} disabled={busy} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+                      <Archive size={15} /> เก็บเข้าคลัง
+                    </button>
                   )}
                 </div>
               </div>
@@ -724,7 +707,7 @@ export function PriceBookManager({
                         disabled={busy}
                         className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40"
                       >
-                        <Save size={14} /> บันทึกรายการ{sel.Status === 'ACTIVE' ? ' & Sync' : ''}
+                        <Save size={14} /> บันทึกรายการ
                       </button>
                     )}
                   </div>
@@ -1032,176 +1015,6 @@ export function PriceBookManager({
           )}
         </div>
       </div>
-
-      {/* WinSpeed Pricelist Sync Modal */}
-      {syncModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/70">
-              <div className="flex items-center gap-2.5">
-                <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-600">
-                  <Rocket size={20} />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-gray-900">ซิงค์ตารางราคาจาก WinSpeed (Pricelist Sync)</h3>
-                  <p className="text-xs text-gray-500">ดึงชุดราคาประกาศจาก dbo.EMSetPriceHD / DT เข้าสู่ Price Book</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setSyncModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 p-4 space-y-3">
-                <h4 className="font-bold text-emerald-900 flex items-center gap-1.5">
-                  <Layers size={14} /> ข้อมูล Price Book ปลายทาง
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      วันเริ่มต้นมีผล (Effective From):
-                    </label>
-                    <ThaiDatePicker
-                      value={syncForm.effectiveFrom}
-                      onChange={v => setSyncForm({ ...syncForm, effectiveFrom: v })}
-                      className="w-full border border-gray-200 rounded-lg py-2 text-xs bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
-                      วันสิ้นสุดมีผล (Effective To):
-                    </label>
-                    <ThaiDatePicker
-                      value={syncForm.effectiveTo}
-                      onChange={v => setSyncForm({ ...syncForm, effectiveTo: v })}
-                      className="w-full border border-gray-200 rounded-lg py-2 text-xs bg-white"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    ชื่อ Price Book (เว้นว่างเพื่อให้ระบบตั้งชื่ออัตโนมัติตามเลขที่ชุด):
-                  </label>
-                  <input
-                    type="text"
-                    value={syncForm.name}
-                    onChange={e => setSyncForm({ ...syncForm, name: e.target.value })}
-                    placeholder="เช่น ตารางราคา WinSpeed ประจำสัปดาห์..."
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs bg-white"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-bold text-gray-700">เลือกชุดราคา WinSpeed ที่ต้องการนำเข้า (dbo.EMSetPriceHD)</h4>
-                  <button
-                    onClick={loadWinSpeedSets}
-                    className="text-xs text-gray-500 hover:text-emerald-700 flex items-center gap-1"
-                  >
-                    <RefreshCw size={12} className={winSpeedLoading ? 'animate-spin' : ''} /> รีเฟรช WinSpeed
-                  </button>
-                </div>
-
-                <div className="rounded-xl border border-gray-200 overflow-hidden">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-100">
-                      <tr>
-                        <th className="px-3 py-2.5 w-10 text-center">เลือก</th>
-                        <th className="px-3 py-2.5">เลขที่ชุด (DocuNo)</th>
-                        <th className="px-3 py-2.5">วันเริ่มต้น - สิ้นสุด</th>
-                        <th className="px-3 py-2.5 text-center">จำนวนรายการ</th>
-                        <th className="px-3 py-2.5">ลูกค้า</th>
-                        <th className="px-3 py-2.5 text-center">สถานะช่วงเวลา</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {winSpeedLoading && winSpeedSets.length === 0 ? (
-                        <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">กำลังโหลดชุดราคาจาก WinSpeed...</td></tr>
-                      ) : winSpeedSets.length === 0 ? (
-                        <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">ไม่พบชุดราคาใน WinSpeed</td></tr>
-                      ) : (
-                        winSpeedSets.map(s => {
-                          const isChecked = selectedSetIds.includes(s.SetPriceID);
-                          return (
-                            <tr
-                              key={s.SetPriceID}
-                              className={`hover:bg-gray-50 transition cursor-pointer ${isChecked ? 'bg-emerald-50/40' : ''}`}
-                              onClick={() => {
-                                if (isChecked) setSelectedSetIds(selectedSetIds.filter(id => id !== s.SetPriceID));
-                                else setSelectedSetIds([...selectedSetIds, s.SetPriceID]);
-                              }}
-                            >
-                              <td className="px-3 py-2 text-center" onClick={e => e.stopPropagation()}>
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={e => {
-                                    if (e.target.checked) setSelectedSetIds([...selectedSetIds, s.SetPriceID]);
-                                    else setSelectedSetIds(selectedSetIds.filter(id => id !== s.SetPriceID));
-                                  }}
-                                  className="rounded border-gray-300 text-emerald-600"
-                                />
-                              </td>
-                              <td className="px-3 py-2 font-mono font-bold text-gray-800">{s.DocuNo}</td>
-                              <td className="px-3 py-2 text-gray-600">
-                                {formatThaiDate(s.BeginDate)} ถึง {formatThaiDate(s.EndDate)}
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700">{s.LineCount} รายการ</span>
-                              </td>
-                              <td className="px-3 py-2 text-gray-500">
-                                {s.CustName || (s.CustID ? `ลูกค้า: ${s.CustID}` : 'ประกาศทั่วไป')}
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${s.IsActivePeriod === 1 ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'}`}>
-                                  {s.IsActivePeriod === 1 ? 'อยู่ในช่วงใช้งาน' : 'พ้นกำหนด'}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/70">
-              <span className="text-xs text-gray-500">
-                เลือกแล้ว <strong className="text-emerald-700 font-bold">{selectedSetIds.length} ชุดราคา</strong>
-              </span>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setSyncModalOpen(false)} className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold text-gray-600 hover:bg-gray-50">
-                  ยกเลิก
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSyncWinSpeed('DRAFT')}
-                  disabled={busy || selectedSetIds.length === 0}
-                  className="px-3.5 py-2 rounded-xl border border-gray-300 bg-white text-xs font-bold text-gray-700 hover:bg-gray-100 disabled:opacity-40"
-                >
-                  ซิงค์เป็นแบบร่าง (DRAFT)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSyncWinSpeed('ACTIVE')}
-                  disabled={busy || selectedSetIds.length === 0}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-40 flex items-center gap-1.5"
-                >
-                  {busy ? <RefreshCw size={14} className="animate-spin" /> : <Rocket size={14} />}
-                  <span>ซิงค์และเปิดใช้งานทันที (ACTIVE)</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

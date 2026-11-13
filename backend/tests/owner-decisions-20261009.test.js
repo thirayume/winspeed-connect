@@ -12,6 +12,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
+const windowPath = require.resolve('../services/global-data-window-store');
+require.cache[windowPath] = {id:windowPath,filename:windowPath,loaded:true,exports:{readGlobalDataWindow:async()=>({businessDate:'2026-01-01',utcInstant:new Date('2025-12-31T17:00:00Z')})}};
 
 const settings = { PRICE_WARN_BELOW_PER_TON: '500', REBATE_CLAIM_FISCAL_START_MONTH: '1', LEGACY_DOC_CUTOFF_DATE: '2022-01-01' };
 const db = h.installDbStub(({ text, inputs }) => {
@@ -53,12 +55,12 @@ test('2. a material change is goods, tons, price or giveaway; a remark-only edit
   assert.equal(so.materialChange(before, [{ goodId: '1118', qtyTon: 1, pricePerTon: 16000 }, { goodId: '1200', qtyTon: 0.5, pricePerTon: 0, isGiveaway: true }]), true);
 });
 
-test('3. claims: the first day of the current accounting year', async () => {
+test('3. claims retain unused balances from previous accounting years', async () => {
   clearSettingCache();
-  assert.equal(await rebate.claimCutoffDate('2026-10-09'), '2026-01-01');
+  assert.equal(await rebate.claimCutoffDate('2026-10-09'), null);
   settings.REBATE_CLAIM_FISCAL_START_MONTH = '10'; clearSettingCache();
-  assert.equal(await rebate.claimCutoffDate('2026-10-09'), '2026-10-01');
-  assert.equal(await rebate.claimCutoffDate('2026-09-30'), '2025-10-01');
+  assert.equal(await rebate.claimCutoffDate('2026-10-09'), null);
+  assert.equal(await rebate.claimCutoffDate('2026-09-30'), null);
   settings.REBATE_CLAIM_FISCAL_START_MONTH = '0'; clearSettingCache();
   assert.equal(await rebate.claimCutoffDate('2026-10-09'), null);
   settings.REBATE_CLAIM_FISCAL_START_MONTH = '1'; clearSettingCache();

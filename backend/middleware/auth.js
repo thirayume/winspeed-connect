@@ -2,6 +2,11 @@ const { hasRole,hasPermission } = require('../services/role-capabilities');
 const jwt = require('jsonwebtoken');
 
 const SECRET = process.env.JWT_SECRET || 'dev_secret_change_in_production';
+const ADMIN_ACCOUNTING_DELEGATION = new Set(['credit.approve-native', 'invoice.post-native']);
+
+function mayDelegateAccounting(actor, action) {
+  return ADMIN_ACCOUNTING_DELEGATION.has(action) && hasRole(actor, 'ADMIN') && hasPermission(actor, 'access-as');
+}
 
 /** true if this role may switch its session database (capability database.switch). */
 function maySwitchDatabase(role) {
@@ -21,6 +26,16 @@ function runWithSessionDatabase(payload, role, fn) {
     }
   } catch { /* fall through to the default database */ }
   return fn();
+}
+
+// Identity and permissions are anchored to the deployment's primary database,
+// regardless of the system default or the session's business database.
+function runOnIdentityDatabase(fn) {
+  const db = require('../db');
+  if (typeof db.getTarget !== 'function' || db.getTarget() !== 'onprem') return fn();
+  const primary = require('../services/active-database').primaryDatabase();
+  if (!primary) throw Object.assign(new Error('PRIMARY_DATABASE_REQUIRED'), { status: 503 });
+  return db.runWithTarget('onprem', fn, primary);
 }
 
 /**
@@ -86,7 +101,9 @@ async function checkAccountStatus(id) {
   if (!Number.isInteger(key) || key <= 0) {
     return { ok: false, status: 'INVALID', code: 'INVALID_TOKEN', message: 'รหัสผู้ใช้ไม่ถูกต้อง' };
   }
-  const hit = accountStatusCache.get(key);
+  const db = require('../db');
+  const cacheKey = JSON.stringify([db.getTarget?.() || '', db.getDbName?.() || '', key]);
+  const hit = accountStatusCache.get(cacheKey);
   if (hit && Date.now() - hit.at < ACCOUNT_STATUS_TTL_MS) {
     return hit;
   }
@@ -96,17 +113,17 @@ async function checkAccountStatus(id) {
     const row = r?.recordset?.[0];
     if (!row) {
       const res = { ok: false, status: 'NOT_FOUND', code: 'ACCOUNT_NOT_FOUND', message: 'ไม่พบบัญชีผู้ใช้ในระบบ', at: Date.now() };
-      accountStatusCache.set(key, res);
+      accountStatusCache.set(cacheKey, { ...res, id: key });
       return res;
     }
     const isActive = row.IsActive === true || row.IsActive === 1;
     if (!isActive) {
       const res = { ok: false, status: 'DISABLED', code: 'ACCOUNT_DISABLED', message: 'บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ', at: Date.now() };
-      accountStatusCache.set(key, res);
+      accountStatusCache.set(cacheKey, { ...res, id: key });
       return res;
     }
     const res = { ok: true, status: 'ACTIVE', at: Date.now() };
-    accountStatusCache.set(key, res);
+    accountStatusCache.set(cacheKey, { ...res, id: key });
     return res;
   } catch {
     // Fail-closed without caching so retry succeeds immediately after DB recovery
@@ -116,7 +133,7 @@ async function checkAccountStatus(id) {
 
 function clearAccountStatusCache(id) {
   if (id === undefined || id === null) accountStatusCache.clear();
-  else accountStatusCache.delete(Number(id));
+  else for (const [key, entry] of accountStatusCache) if (entry.id === Number(id)) accountStatusCache.delete(key);
 }
 
 function requireAuth(req, res, next) {
@@ -136,6 +153,9 @@ function requireAuth(req, res, next) {
       actorId,
       effectiveSub: effectiveId,
       effectiveId,
+      // A verified token is still an identity claim, not proof of a reviewed
+      // cross-database binding. Only middleware may attach a fresh mapping.
+      identityMapping: undefined,
       isImpersonating: Boolean(payload.impersonating || Number(actorId) !== Number(effectiveId)),
     };
     if (blockWriteWhenPasswordStale(req, res)) return;
@@ -143,9 +163,13 @@ function requireAuth(req, res, next) {
     return res.status(401).json({ message: 'Token invalid or expired' });
   }
   const { actorId, effectiveId } = req.user;
+  const identityStatus = async id => {
+    try { return await runOnIdentityDatabase(() => checkAccountStatus(id)); }
+    catch { return { status: 'ERROR' }; }
+  };
   Promise.all([
-    checkAccountStatus(actorId),
-    Number(actorId) !== Number(effectiveId) ? checkAccountStatus(effectiveId) : Promise.resolve(null),
+    identityStatus(actorId),
+    Number(actorId) !== Number(effectiveId) ? identityStatus(effectiveId) : Promise.resolve(null),
   ]).then(([actorStatus, effectiveStatus]) => {
     if (actorStatus.status === 'ERROR' || effectiveStatus?.status === 'ERROR') {
       return res.status(503).json({ code: 'SERVICE_UNAVAILABLE', message: 'ไม่สามารถตรวจสอบสถานะบัญชีผู้ใช้ได้ชั่วคราว' });
@@ -164,6 +188,9 @@ function requireAuth(req, res, next) {
         const controlRoute = String(req.baseUrl || '') === '/api/auth' && ['/databases','/switch-database','/me','/logout'].includes(req.path);
         if (activeDb.onpremEnabled() && !controlRoute) {
           const database = require('../db').getDbName() || await activeDb.systemActiveDatabase();
+          req.auditBusinessDatabase = database;
+          const primary = activeDb.primaryDatabase();
+          if (!primary) throw Object.assign(new Error('PRIMARY_DATABASE_REQUIRED'), { status: 503 });
           let themes = {};
           try {
             themes = await activeDb.getDatabaseThemes();
@@ -171,6 +198,33 @@ function requireAuth(req, res, next) {
             themes = activeDb.DEFAULT_DATABASE_THEMES;
           }
           if (!activeDb.canAccessDatabase(database, req.user, themes)) return res.status(403).json({ code: 'DB_RESTRICTED', message: 'บทบาทนี้ไม่มีสิทธิ์เข้าถึงฐานข้อมูลที่เลือก กรุณาสลับฐานข้อมูล' });
+          if (database.toLowerCase() !== primary.toLowerCase()) {
+            // The list and stats are read-only and use the target scope and
+            // data cutoff. Other routes stay closed until individually reviewed.
+            const reviewedRead = req.method === 'GET' && req.baseUrl === '/api/so' && ['/', '/stats'].includes(req.path) &&
+              hasRole(req.user, 'ADMIN', 'C_LEVEL', 'ACCOUNTING');
+            if (!reviewedRead) return res.status(409).json({ code: 'IDENTITY_MAPPING_REQUIRED', message: 'กรุณากลับฐานหลัก หรือตรวจสอบการจับคู่บัญชีระหว่างฐานก่อนใช้งานฐานนี้' });
+            const actor = req.user.isImpersonating ? {
+              role: req.user.actorRole, roles: req.user.actorRoles, permissions: req.user.actorPermissions,
+            } : req.user;
+            if (!activeDb.canAccessDatabase(database, actor, themes)) return res.status(403).json({ code: 'DB_RESTRICTED' });
+            const identity = require('../services/database-identity-resolver');
+            let mapping;
+            try {
+              mapping = await identity.resolveReviewedActorAndEffective({
+                actorUserId: Number(req.user.actorSub), effectiveUserId: Number(req.user.sub),
+                primaryDatabase: primary, targetDatabase: database,
+              }, identity.sqlRepository(require('../db'), require('../onprem-target').isSwitchableDb));
+            } catch (e) {
+              if (e.code === 'IDENTITY_BINDING_INVALID') return res.status(409).json({ code: 'IDENTITY_MAPPING_REQUIRED' });
+              throw e;
+            }
+            req.user.identityMapping = mapping;
+            req.identityMappingAudit = mapping;
+          }
+        }
+        if (activeDb.onpremEnabled() && !req.auditBusinessDatabase) {
+          req.auditBusinessDatabase = require('../db').getDbName() || await activeDb.systemActiveDatabase();
         }
         if (blockWriteWhenPasswordStale(req,res)) return;
         require('../services/request-context').runWithUser(req.user, () => next());
@@ -184,16 +238,19 @@ function requireAuth(req, res, next) {
     const prepare = async () => {
       try {
         const { sessionProfile } = require('../services/role-profiles');
-        req.user = await sessionProfile(req.user, req.tokenPayload);
+        req.user = await runOnIdentityDatabase(() => sessionProfile(req.user, req.tokenPayload));
         if (Number(actorId) !== Number(effectiveId)) {
-          const actor = await sessionProfile(
+          const actor = await runOnIdentityDatabase(() => sessionProfile(
             { ...req.user, id: actorId, role: req.tokenPayload.actorRole || req.user.role, roles: undefined, permissions: undefined },
             { authVersion: req.tokenPayload.actorAuthVersion || 0 }
-          );
+          ));
           if (!hasPermission(actor, 'access-as')) throw Object.assign(new Error('ACCESS_AS_REVOKED'), { status: 403 });
-          if (req.user.permissions && actor.permissions) req.user.permissions = req.user.permissions.filter(k => actor.permissions.includes(k));
+          if (req.user.permissions && actor.permissions) {
+            req.user.permissions = req.user.permissions.filter(k => actor.permissions.includes(k) || mayDelegateAccounting(actor, k));
+          }
           req.user.actorRoles = actor.roles;
           req.user.actorPermissions = actor.permissions;
+          req.user.actorDisabledActions = actor.disabledActions;
           req.user.disabledActions = [...new Set([...(req.user.disabledActions || []), ...(actor.disabledActions || [])])];
           req.user.mustChangePassword = actor.mustChangePassword;
         }
@@ -203,7 +260,7 @@ function requireAuth(req, res, next) {
           ? { role: req.user.actorRole, roles: req.user.actorRoles, permissions: req.user.actorPermissions }
           : req.user;
 
-        if (req.tokenPayload.db && !isAuthOrAdminRoute) {
+        if (req.tokenPayload.db && !isAuthOrAdminRoute && maySwitchDatabase(req.user) && maySwitchDatabase(actorForSwitch)) {
           return runWithSessionDatabase(req.tokenPayload, actorForSwitch, run);
         }
         return run();
@@ -221,7 +278,11 @@ function requireAuth(req, res, next) {
 
 function requireRole(...roles) {
   return (req, res, next) => {
-    if (!hasRole(req.user,...roles))
+    const user = req.user;
+    const actor = user?.isImpersonating ? { role: user.actorRole, roles: user.actorRoles } : user;
+    // Acting as another user must not grant either party a role they do not
+    // possess. Each may qualify through any one of their assigned roles.
+    if (!hasRole(user,...roles) || !hasRole(actor,...roles))
       return res.status(403).json({ message: `ต้องการสิทธิ์: ${roles.join(' / ')}` });
     next();
   };
@@ -230,8 +291,14 @@ function requireRole(...roles) {
 // R12 item 3: guard a route with a capability from services/role-capabilities.js
 function requireCapability(action) {
   return (req,res,next) => {
-    const subject=action==='access-as' && req.user?.isImpersonating ? {role:req.user.actorRole,roles:req.user.actorRoles,permissions:req.user.actorPermissions}:req.user;
-    if (!hasPermission(subject,action)) return res.status(403).json({message:'Role นี้ไม่ได้รับ Permission สำหรับงานนี้'});
+    const actor = req.user?.isImpersonating ? {
+      role: req.user.actorRole, roles: req.user.actorRoles,
+      permissions: req.user.actorPermissions, disabledActions: req.user.actorDisabledActions,
+    } : req.user;
+    const subject = action === 'access-as' ? actor : req.user;
+    if (!hasPermission(subject,action) || (req.user?.isImpersonating && action !== 'access-as' && !hasPermission(actor,action) && !mayDelegateAccounting(actor,action))) {
+      return res.status(403).json({message:'Role นี้ไม่ได้รับ Permission สำหรับงานนี้'});
+    }
     next();
   };
 }
@@ -250,7 +317,8 @@ function canViewRebateAmounts(user) {
 }
 
 function requireRebateAmountAccess(req, res, next) {
-  if (!canViewRebateAmounts(req.user)) {
+  const actor = req.user?.isImpersonating ? { role: req.user.actorRole, roles: req.user.actorRoles } : req.user;
+  if (!canViewRebateAmounts(req.user) || !canViewRebateAmounts(actor)) {
     return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูตัวเลขรีเบท' });
   }
   next();

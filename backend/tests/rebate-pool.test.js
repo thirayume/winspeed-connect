@@ -432,6 +432,12 @@ test('Manager Approval & Rejection workflow + anti-self-approval + FIFO exclusio
   assert.equal(created.ledger.status, LEDGER_STATUS.PENDING_APPROVAL);
   assert.equal(created.ledger.excessApprovalAmount, 50);
 
+  // A hidden old ledger entry cannot be approved or rejected directly by ID.
+  for (const action of [approveOverLimitRebate, rejectOverLimitRebate]) {
+    await assert.rejects(() => action(db.query, { ledgerId: created.ledger.id, actorUser: managerUser,
+      note: 'review', dataStartDate: '2026-02-01' }), { code: 'LEDGER_NOT_FOUND' });
+  }
+
   // Blocked from FIFO queue before Manager approves
   const qBefore = await getCustomerConversionQueue(db.query, { custId: 1092, asOfDate: '2026-11-01' });
   assert.equal(qBefore.pendingApprovalBalance, 2500);
@@ -448,6 +454,14 @@ test('Manager Approval & Rejection workflow + anti-self-approval + FIFO exclusio
     () => approveOverLimitRebate(db.query, { ledgerId: created.ledger.id, actorUser: { id: salesUser.id, role: 'MANAGER' } }),
     (err) => err.code === 'SELF_APPROVAL_FORBIDDEN'
   );
+
+  // Access As must check the real actor as well as the effective manager.
+  await assert.rejects(() => approveOverLimitRebate(db.query, { ledgerId: created.ledger.id,
+    actorUser: { id: 202, role: 'MANAGER', actorSub: 101, actorRole: 'ADMIN', actorRoles: ['ADMIN'] } }),
+  { code: 'SELF_APPROVAL_FORBIDDEN' });
+  await assert.rejects(() => approveOverLimitRebate(db.query, { ledgerId: created.ledger.id,
+    actorUser: { id: 202, role: 'MANAGER', actorSub: 303, actorRole: 'SALES', actorRoles: ['SALES'] } }),
+  { code: 'FORBIDDEN_APPROVAL_ROLE' });
 
   // MANAGER approves
   const approved = await approveOverLimitRebate(db.query, {
@@ -668,5 +682,22 @@ test('Manual-only guard, Role guard, Mandatory Oct 31 price & FIFO Partial Deduc
   assert.equal(conv2.allocations[0].ledgerId, lot2.ledger.id);
   assert.equal(conv2.allocations[0].remainingAfter, 500);
   assert.equal(conv2.remainingPoolBalance, 500);
+});
+
+test('early partial conversion does not make an unmatured lot eligible for matured-only conversion', async () => {
+  const db = createInMemoryRebateDb();
+  const actorUser = { id: 901, role: 'ACCOUNTING' };
+  await recordRebateTransaction(db.query, {
+    custId: 777, goodId: 1094, qtyTons: 10, basePrice: 18000, sellingPrice: 17800, earnedDate: '2026-01-01',
+  }, { skipCostCheck: true });
+  await snapshotOct31StandingPrices(db.query, { standingYear: 2025, entries: [{ goodId: 1094, basePrice: 18000 }] });
+  const early = await executeManualTicketConversion(db.query, { custId: 777, goodId: 1094, standingYear: 2025,
+    requestedAmountBaht: 500, actorUser, asOfDate: '2026-06-01' });
+  assert.equal(early.conversion.convertedValueBaht, 500);
+  await assert.rejects(executeManualTicketConversion(db.query, { custId: 777, goodId: 1094, standingYear: 2025,
+    requestedAmountBaht: 500, maturedOnly: true, actorUser, asOfDate: '2026-06-01' }), { code: 'NO_ELIGIBLE_REBATE_BALANCE' });
+  const matured = await executeManualTicketConversion(db.query, { custId: 777, goodId: 1094, standingYear: 2025,
+    requestedAmountBaht: 500, maturedOnly: true, actorUser, asOfDate: '2027-01-01' });
+  assert.equal(matured.conversion.convertedValueBaht, 500);
 });
 

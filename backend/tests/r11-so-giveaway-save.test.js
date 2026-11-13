@@ -14,6 +14,7 @@ const h = require('./helpers/route-harness.cjs');
 const state = { remaining: 300 };
 let nextSoId = 4001;
 const db = h.installDbStub(({ text }) => {
+  if (/AS TotalOutstanding/.test(text)) return [{ TotalOutstanding: 0 }];
   if (/FROM wf\.GiveawayItemMapping/.test(text)) return [{ Brand: 'รถเกษตร', ItemName: 'เสื้อยืดแขนยาว' }];
   if (/FROM wf\.v_GiveawayBudgetStatus\s+WHERE SalesUserId = @su AND PeriodYear = @y/.test(text)) {
     return [{ Region: 'ภาคกลาง', Brand: 'รถเกษตร', ItemName: 'เสื้อยืดแขนยาว', BudgetQty: 5000, WithdrawnQty: 5000 - state.remaining, RemainingQty: state.remaining }];

@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Gift, RefreshCw, Plus, X, AlertTriangle, Package, ChevronLeft, Search, Link2, UserCheck } from 'lucide-react';
 import {
-  fetchGiveawayRegions, fetchGiveawayBudgetLines, fetchGiveawayWithdrawals,
+  fetchGiveawayRegions, fetchGiveawayBudgetLines, fetchGiveawayWithdrawals, fetchGiveawayWithdrawalsDateReview,
   fetchGiveawayItems, createGiveawayWithdrawal, fetchGiveawayBorrowRequests, resolveGiveawayBorrowRequest
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
@@ -23,6 +23,8 @@ export function GiveawayPage() {
   const [selected, setSelected] = useState<GiveawayRegion | null>(null);
   const [lines, setLines]       = useState<GiveawayBudgetLine[]>([]);
   const [log, setLog]           = useState<GiveawayWithdrawal[]>([]);
+  const [dateReview, setDateReview] = useState<GiveawayWithdrawal[] | null>([]);
+  const detailRequest = useRef(0);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
   const [tab, setTab]           = useState<'budget' | 'log' | 'requests' | 'settings'>('budget');
@@ -41,17 +43,24 @@ export function GiveawayPage() {
   useEffect(() => { load(); }, [load]);
 
   const openRegion = useCallback(async (r: GiveawayRegion) => {
+    const requestId = ++detailRequest.current;
     setSelected(r);
+    setLines([]); setLog([]); setDateReview([]);
     try {
-      const [bl, wl] = await Promise.all([
+      const [bl, wl, uncertain] = await Promise.all([
         fetchGiveawayBudgetLines(r.Region, undefined, {
           salesUserId: r.SalesUserId ?? undefined,
           regionCode: r.RegionCode ?? undefined,
         }),
         fetchGiveawayWithdrawals(r.Region, undefined, r.SalesUserId ?? undefined),
+        fetchGiveawayWithdrawalsDateReview(r.Region, undefined, r.SalesUserId ?? undefined).catch(() => null),
       ]);
-      setLines(bl); setLog(wl);
-    } catch (e) { console.error(e); setLines([]); setLog([]); }
+      if (detailRequest.current !== requestId) return;
+      setLines(bl); setLog(wl); setDateReview(uncertain);
+    } catch (e) {
+      if (detailRequest.current !== requestId) return;
+      console.error(e); setLines([]); setLog([]); setDateReview(null);
+    }
   }, []);
 
   const groupedRegions = useMemo(() => {
@@ -254,6 +263,8 @@ export function GiveawayPage() {
                     </tbody>
                   </table>
                 ) : tab === 'log' ? (
+                  <div>
+                  {dateReview === null && <p role="status" className="mb-3 text-xs text-amber-700">โหลดรายการรอตรวจวันที่ไม่สำเร็จ กรุณาลองเปิดเขตอีกครั้ง</p>}
                   <table className="w-full text-xs min-w-full">
                     <thead className="whitespace-nowrap">
                       <tr className="text-gray-400 border-b border-gray-100">
@@ -282,6 +293,14 @@ export function GiveawayPage() {
                       {log.length === 0 && <tr><td colSpan={5} className="py-8 text-center text-gray-300 whitespace-nowrap">ยังไม่มีการเบิก</td></tr>}
                     </tbody>
                   </table>
+                  {dateReview && dateReview.length > 0 && <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <p className="font-semibold text-amber-800">รอตรวจวันที่ ({dateReview.length} รายการที่โหลด)</p>
+                    <p className="mt-1 text-xs text-amber-800">ข้อมูลมีเพียงปีและเดือน จึงยังระบุไม่ได้ว่าอยู่ก่อนหรือหลังวันเริ่มข้อมูล แสดงสูงสุด 300 รายการ; ยอดคงเหลือยังคำนวณรวมรายการเหล่านี้</p>
+                    <ul className="mt-2 space-y-1 text-xs text-amber-900">
+                      {dateReview.map(w => <li key={w.Id}>#{w.Id} · {(w.IssueMonth != null && TH_MONTHS[w.IssueMonth]) || 'เดือนผิดปกติหรือไม่ระบุ'} · {w.GoodName || w.ItemName} · {Number(w.Qty).toLocaleString()} · {w.Source}</li>)}
+                    </ul>
+                  </div>}
+                  </div>
                 ) : tab === 'settings' && selected ? (
                   <GiveawayQuotaSettings
                     region={selected.Region}

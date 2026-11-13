@@ -17,6 +17,7 @@ import { SaleTripManager } from './SaleTripManager';
 import { useTripStore } from '../../store/trip-store';
 import { useCompanyStore } from '../../store/company-store';
 import { formatThaiDate } from '../../utils/date';
+import { getBaseCustCode, getCustomerGroupKey } from '../../utils/customer-identity';
 import { CheckCircle } from 'lucide-react';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import type { SalesOrder, SOStatus } from '../../types';
@@ -37,6 +38,7 @@ export const SalesPortal = () => {
   const [shouldOpenActiveTripSummary, setShouldOpenActiveTripSummary] = useState(false);
   
   const [customersMap, setCustomersMap] = useState<Record<string, string>>({});
+  const [custCodeMap, setCustCodeMap]   = useState<Record<string, string>>({});
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
@@ -144,10 +146,15 @@ export const SalesPortal = () => {
   useEffect(() => {
     fetchCustomers().then(custs => {
       const map: Record<string, string> = {};
+      const codeMap: Record<string, string> = {};
       custs.forEach(c => {
-        if (c.CustID) map[c.CustID] = c.CustName;
+        if (c.CustID) {
+          map[c.CustID] = c.CustName;
+          if (c.CustCode) codeMap[c.CustID] = c.CustCode;
+        }
       });
       setCustomersMap(map);
+      setCustCodeMap(codeMap);
     }).catch(console.error);
   }, []);
 
@@ -164,6 +171,7 @@ export const SalesPortal = () => {
           const match = res.find(c => String(c.CustID) === String(id));
           if (match) {
             setCustomersMap(prev => ({ ...prev, [id]: match.CustName }));
+            if (match.CustCode) setCustCodeMap(prev => ({ ...prev, [id]: match.CustCode! }));
           }
         }).catch(console.error);
       });
@@ -216,17 +224,30 @@ export const SalesPortal = () => {
 
       if (!map.has(key)) map.set(key, { tripId: (tripId && Number(tripId) > 0) ? Number(tripId) : undefined, tripCode, dateDisplay, cust: '', custCount: 0, truck, orders: [], totalAmt: 0, totalTon: 0 });
       const g = map.get(key)!;
-      g.orders.push(o);
+      const orderWithCode = o.custCode || !custCodeMap[o.custId] ? o : { ...o, custCode: custCodeMap[o.custId] };
+      g.orders.push(orderWithCode);
       g.totalAmt += (o.lines || []).reduce((s, l) => s + (l.qtyTon * l.pricePerTon), 0);
       g.totalTon += (o.lines || []).reduce((s, l) => s + (l.isGiveaway ? 0 : l.qtyTon), 0);
     }
-    // สรุปชื่อลูกค้าหลังจัดกลุ่มเสร็จ — เที่ยวหลายลูกค้าต้องบอกจำนวน ไม่ใช่โชว์รายแรกรายเดียว
+    // สรุปชื่อลูกค้าหลังจัดกลุ่มเสร็จ — รวมรหัสลูกค้าที่มี prefix หน้า "-" เดียวกันเป็นรายเดียวกัน
     for (const g of map.values()) {
-      const ids = Array.from(new Set(g.orders.map(o => String(o.custId || 'ไม่ระบุลูกค้า'))));
-      g.custCount = ids.length;
-      g.cust = ids.length === 1
-        ? (customersMap[ids[0]] || g.orders[0]?.custName || ids[0])
-        : `${ids.length} ลูกค้า`;
+      const custGroups = new Map<string, string>();
+      const primaryGroups = new Set<string>();
+      for (const o of g.orders) {
+        const custCode = o.custCode || custCodeMap[o.custId] || '';
+        const groupKey = getCustomerGroupKey({ custId: o.custId, custCode, custName: o.custName }) || 'ไม่ระบุลูกค้า';
+        const displayName = customersMap[o.custId] || o.custName || o.custId || 'ไม่ระบุลูกค้า';
+        const baseCode = getBaseCustCode(custCode);
+        const isPrimary = !!baseCode && custCode.trim().toUpperCase() === baseCode;
+        if (!custGroups.has(groupKey) || (isPrimary && !primaryGroups.has(groupKey))) {
+          custGroups.set(groupKey, displayName);
+          if (isPrimary) primaryGroups.add(groupKey);
+        }
+      }
+      g.custCount = custGroups.size;
+      g.cust = custGroups.size === 1
+        ? Array.from(custGroups.values())[0]
+        : `${custGroups.size} ลูกค้า`;
     }
     const sorted = Array.from(map.values()).sort((a, b) => {
       const dateA = a.orders[0]?.deliveryDate || a.orders[0]?.createdAt || '';
@@ -234,7 +255,7 @@ export const SalesPortal = () => {
       return dateB.localeCompare(dateA);
     });
     return sorted;
-  }, [orders, customersMap]);
+  }, [orders, customersMap, custCodeMap]);
 
   useEffect(() => {
     let disposed = false;

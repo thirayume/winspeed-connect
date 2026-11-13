@@ -181,9 +181,12 @@ const DOC_ID = { 104: 'SOID', 116: 'RedemtionID', 107: 'SOInvID' };
 // ประวัติการพิมพ์จาก Sale-App (เทียบได้กับ SMAudit action P ของ WinSpeed) · อ่านไม่ได้ก็ไม่ขวางการพิมพ์
 async function printHistory(type, docId) {
   try {
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
     const r = rows(await wfQuery(`
       SELECT COUNT(*) AS count, CONVERT(varchar(16),DATEADD(hour,7,MAX(PrintedAt)),120) AS lastAt
-        FROM wf.NativePrintLog WHERE DocType=@type AND DocId=@id`, { type: { type: sql.SmallInt, value: type }, ...idInput(docId) }))[0];
+        FROM wf.NativePrintLog WHERE DocType=@type AND DocId=@id AND PrintedAt >= @globalStartUtc`, {
+      type: { type: sql.SmallInt, value: type }, ...idInput(docId), globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
+    }))[0];
     return { count: r?.count || 0, lastAt: r?.lastAt || null };
   } catch (e) {
     console.error('[native-print/log]', e.message);
@@ -198,6 +201,12 @@ async function resolveDoc(type, loader, req, res) {
   const r = await loader(no);
   if (r.count === 0) { res.status(404).json({ code: 'DOC_NOT_FOUND', message: `ไม่พบใบ ${type} เลขที่ ${no}` }); return null; }
   if (r.count > 1) { res.status(409).json({ code: 'DOC_AMBIGUOUS', message: `พบใบ ${type} เลขที่ ${no} มากกว่าหนึ่งใบ กรุณาตรวจใน WinSpeed` }); return null; }
+  const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+  const date = r.doc?.DocuDate;
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date < dataWindow.businessDate) {
+    res.status(404).json({ code: 'DOC_NOT_FOUND', message: `ไม่พบใบ ${type} เลขที่ ${no}` });
+    return null;
+  }
   const empId = type === 116 ? r.doc.items[0]?.SalesEmpID : r.doc.SalesEmpID;
   const bookingSoid = type === 116 ? r.doc.items[0]?.BookingSOID : type === 104 ? r.doc.BookingSOID : null;
   if (!(await allowed(req.user, { empId, bookingSoid }))) {

@@ -31,11 +31,26 @@ const {
   canUserApproveMultiCustTrip,
 } = require('../services/trip-multi-cust-approval');
 const { assertPricesAboveCost } = require('../services/cost-authority');
+const { approvalIdentity, bothHaveRole, isSubmitter } = require('../services/approval-identity');
 
 router.use(requireAuth);
 
 const APPROVER_ROLES = ['APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'C_LEVEL'];
 const REQUESTER_ROLES = ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN', 'MANAGER', 'C_LEVEL'];
+
+// Direct action URLs must not bypass the date boundary applied to the list.
+async function requireCurrentEditRequest(req, res, next) {
+  try {
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const row = await wfQuery('SELECT 1 AS ok FROM wf.EditRequest WHERE Id = @id AND RequestedAt >= @globalStartUtc', {
+      id: { type: sql.Int, value: Number(req.params.id) || 0 },
+      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
+    });
+    if (!row.recordset?.[0]) return res.status(404).json({ message: 'ไม่พบคำขอนี้' });
+    req.editRequestStartUtc = dataWindow.utcInstant;
+    next();
+  } catch (e) { res.status(500).json({ message: e.message }); }
+}
 
 // R12 O-4: a team-scoped approver (a MANAGER placed on the org chart) acts only on requests
 // from its own + team scope, or on bills owned by them — the same rows its list shows.
@@ -128,6 +143,7 @@ async function resolveStage(soid) {
 
 /** ใบสั่งขายมีอยู่จริงไหม และผูกกับเที่ยวไหน */
 async function loadTarget(soid) {
+  const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
   const r = await wfQuery(`
     SELECT TOP 1 CAST(s.SOID AS VARCHAR(50)) AS SOID, RTRIM(s.DocuNo) AS DocuNo,
            CAST(s.CustID AS VARCHAR(50)) AS CustId, RTRIM(c.CustName) AS CustName,
@@ -148,8 +164,8 @@ async function loadTarget(soid) {
              END
            ) = s.SOID
     LEFT   JOIN wf.SalesTrip t ON t.TripId = e.TripId
-    WHERE  s.SOID = @soid AND s.DocuType = 103`,
-    { soid: { type: sql.Int, value: Number(soid) } });
+    WHERE  s.SOID = @soid AND s.DocuType = 103 AND s.DocuDate >= @globalStartDate`,
+    { soid: { type: sql.Int, value: Number(soid) }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } });
   return camelizeRow(r.recordset[0]);
 }
 
@@ -220,8 +236,9 @@ router.get('/stage/:soid', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const { status, soid, tripId, mine } = req.query;
-    const inputs = {};
-    let where = 'WHERE 1=1';
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const inputs = { globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } };
+    let where = 'WHERE r.RequestedAt >= @globalStartUtc';
     if (status) { where += ' AND r.Status = @status'; inputs.status = { type: sql.VarChar(20), value: String(status).toUpperCase() }; }
     if (soid)   { where += ' AND r.SOID = @soid';     inputs.soid   = { type: sql.VarChar(50), value: String(soid) }; }
     if (tripId) { where += ' AND r.TripId = @tripId'; inputs.tripId = { type: sql.Int, value: Number(tripId) }; }
@@ -358,7 +375,7 @@ router.post('/', requireCapability('edit-request.create'), async (req, res) => {
 });
 
 // ── PATCH /api/edit-requests/:id/approve ──────────────────────
-router.patch('/:id/approve', requireRole(...APPROVER_ROLES), requireEditRequestInScope, async (req, res) => {
+router.patch('/:id/approve', requireRole(...APPROVER_ROLES), requireCurrentEditRequest, requireEditRequestInScope, async (req, res) => {
   try {
     const { note } = req.body || {};
     const r = (await wfQuery(`SELECT * FROM wf.EditRequest WHERE Id = @id`,
@@ -370,19 +387,22 @@ router.patch('/:id/approve', requireRole(...APPROVER_ROLES), requireEditRequestI
     //   driver คืนชนิดไม่สม่ำเสมอแม้ในตารางเดียวกัน (EditRequest.Id เป็นสตริง
     //   แต่ RequestedBy เป็นตัวเลข) และ sub ใน JWT ก็ขึ้นกับว่าใครสร้าง token
     //   ถ้าเทียบด้วย === ด่านนี้จะ "ไม่ฟ้องอะไรเลย" แล้วปล่อยให้อนุมัติงานตัวเองผ่าน
-    if (sameUser(r.RequestedBy, req.user.sub))
+    if (isSubmitter(approvalIdentity(req.user), r.RequestedBy))
       return res.status(403).json({ message: 'อนุมัติคำขอของตัวเองไม่ได้' });
     const issued = r.SOID ? await findIssuedDelivery(r.SOID) : null;
     if (issued) return res.status(409).json({ message: `บิลนี้ออกใบสั่งขาย ${issued} ใน WinSpeed แล้ว แก้ไขจาก Sale-App ไม่ได้ ต้องดำเนินการใน WinSpeed`, code: 'WINSPEED_DELIVERY_ISSUED' });
 
-    await wfQuery(`
+    const approvalUpdate = await wfQuery(`
       UPDATE wf.EditRequest
       SET Status = 'APPROVED', ReviewedBy = @by, ReviewedAt = SYSUTCDATETIME(), ReviewNote = @note
-      WHERE Id = @id AND Status = 'PENDING'`, {
+      WHERE Id = @id AND Status = 'PENDING' AND RequestedAt >= @globalStartUtc`, {
         id:   { type: sql.Int, value: Number(req.params.id) },
         by:   { type: sql.Int, value: req.user.sub },
         note: { type: sql.NVarChar(1000), value: note || null },
+        globalStartUtc: { type: sql.DateTime2, value: req.editRequestStartUtc },
       });
+    if (!(approvalUpdate.rowsAffected[0] || 0))
+      return res.status(409).json({ message: 'คำขอเปลี่ยนสถานะแล้ว กรุณาโหลดข้อมูลอีกครั้ง' });
 
     // อนุมัติแล้วต้องทำให้ใบแก้ไขได้จริง — ใช้ธงเดิมที่ทั้งระบบอ่านอยู่แล้ว
     // (`ext.IsUnlocked = 1 THEN 'DRAFT'` มีอยู่ใน so.js · reports.js · papertrail.js)
@@ -414,7 +434,7 @@ router.patch('/:id/approve', requireRole(...APPROVER_ROLES), requireEditRequestI
 });
 
 // ── PATCH /api/edit-requests/:id/reject ───────────────────────
-router.patch('/:id/reject', requireRole(...APPROVER_ROLES), requireEditRequestInScope, async (req, res) => {
+router.patch('/:id/reject', requireRole(...APPROVER_ROLES), requireCurrentEditRequest, requireEditRequestInScope, async (req, res) => {
   try {
     const { note } = req.body || {};
     if (!note || String(note).trim().length < 5)
@@ -423,10 +443,11 @@ router.patch('/:id/reject', requireRole(...APPROVER_ROLES), requireEditRequestIn
     const up = await wfQuery(`
       UPDATE wf.EditRequest
       SET Status = 'REJECTED', ReviewedBy = @by, ReviewedAt = SYSUTCDATETIME(), ReviewNote = @note
-      WHERE Id = @id AND Status = 'PENDING'`, {
+      WHERE Id = @id AND Status = 'PENDING' AND RequestedAt >= @globalStartUtc`, {
         id:   { type: sql.Int, value: Number(req.params.id) },
         by:   { type: sql.Int, value: req.user.sub },
         note: { type: sql.NVarChar(1000), value: String(note).trim() },
+        globalStartUtc: { type: sql.DateTime2, value: req.editRequestStartUtc },
       });
     if (!(up.rowsAffected[0] || 0))
       return res.status(409).json({ message: 'ไม่พบคำขอที่รออนุมัติ (อาจถูกปิดไปแล้ว)' });
@@ -448,7 +469,7 @@ router.patch('/:id/reject', requireRole(...APPROVER_ROLES), requireEditRequestIn
 
 // ── PATCH /api/edit-requests/:id/cancel ───────────────────────
 // คนขอถอนคำขอเอง (หรือผู้ดูแล) — Hold ถูกยกเลิกไปด้วย
-router.patch('/:id/cancel', async (req, res) => {
+router.patch('/:id/cancel', requireCurrentEditRequest, async (req, res) => {
   try {
     const r = (await wfQuery(`SELECT * FROM wf.EditRequest WHERE Id = @id`,
       { id: { type: sql.Int, value: Number(req.params.id) } })).recordset[0];
@@ -460,15 +481,18 @@ router.patch('/:id/cancel', async (req, res) => {
     if (!isOwner && !isAdmin)
       return res.status(403).json({ message: 'ถอนได้เฉพาะคำขอของตัวเอง' });
 
-    await wfQuery(`
+    const cancellationUpdate = await wfQuery(`
       UPDATE wf.EditRequest
       SET Status = 'CANCELLED', ReviewedBy = @by, ReviewedAt = SYSUTCDATETIME(),
           ReviewNote = @note
-      WHERE Id = @id AND Status = 'PENDING'`, {
+      WHERE Id = @id AND Status = 'PENDING' AND RequestedAt >= @globalStartUtc`, {
         id:   { type: sql.Int, value: Number(req.params.id) },
         by:   { type: sql.Int, value: req.user.sub },
         note: { type: sql.NVarChar(1000), value: (req.body && req.body.note) || 'ผู้ขอถอนคำขอเอง' },
+        globalStartUtc: { type: sql.DateTime2, value: req.editRequestStartUtc },
       });
+    if (!(cancellationUpdate.rowsAffected[0] || 0))
+      return res.status(409).json({ message: 'คำขอเปลี่ยนสถานะแล้ว กรุณาโหลดข้อมูลอีกครั้ง' });
 
     // ปิดคำขอแล้วต้องปลดพักฝั่ง WINSpeed ด้วย ไม่งั้นใบจะค้างพักอยู่ตลอด
     if (r.HoldTruck && r.SOID) {
@@ -648,8 +672,9 @@ router.delete('/admin/reasons/:code', requireRole('ADMIN', 'C_LEVEL'), async (re
 router.get('/price-approvals', async (req, res) => {
   try {
     const { status, soId, custId, mine } = req.query;
-    const inputs = {};
-    let where = 'WHERE 1=1';
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const inputs = { globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } };
+    let where = 'WHERE pa.CreatedAt >= @globalStartUtc';
     if (status) { where += ' AND pa.Status = @status'; inputs.status = { type: sql.VarChar(20), value: String(status).toUpperCase() }; }
     if (soId) { where += ' AND pa.SoId = @soId'; inputs.soId = { type: sql.Int, value: Number(soId) }; }
     if (custId) { where += ' AND pa.CustId = @custId'; inputs.custId = { type: sql.NVarChar(20), value: String(custId) }; }
@@ -688,11 +713,15 @@ router.patch('/price-approvals/:id/approve', requireRole(...APPROVER_ROLES), req
   try {
     const { note } = req.body || {};
     const approvalId = Number(req.params.id);
-    const target = (await wfQuery(`SELECT * FROM wf.PriceApproval WHERE Id = @id`, { id: { type: sql.Int, value: approvalId } })).recordset[0];
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const target = (await wfQuery(`SELECT * FROM wf.PriceApproval WHERE Id = @id AND CreatedAt >= @globalStartUtc`, {
+      id: { type: sql.Int, value: approvalId }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
+    })).recordset[0];
     if (!target) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติราคานี้' });
     if (target.Status !== 'PENDING') return res.status(409).json({ message: `คำขอนี้อยู่ในสถานะ ${target.Status} แล้ว` });
 
-    if (sameUser(target.RequestedBy, req.user.sub) && !['ADMIN', 'C_LEVEL'].includes(req.user.role)) {
+    const identity = approvalIdentity(req.user);
+    if (isSubmitter(identity, target.RequestedBy) && !bothHaveRole(identity, ['ADMIN', 'C_LEVEL'])) {
       return res.status(403).json({ message: 'ไม่อนุญาตให้อนุมัติคำขอของตัวเอง' });
     }
 
@@ -742,10 +771,11 @@ router.patch('/price-approvals/:id/approve', requireRole(...APPROVER_ROLES), req
         .input('id', sql.Int, approvalId)
         .input('by', sql.Int, req.user.sub)
         .input('note', sql.NVarChar(500), note || null)
+        .input('globalStartUtc', sql.DateTime2, dataWindow.utcInstant)
         .query(`
           UPDATE wf.PriceApproval
           SET Status = 'APPROVED', ApprovedBy = @by, ApprovedAt = SYSUTCDATETIME(), ApprovalNote = @note, UpdatedAt = SYSUTCDATETIME()
-          WHERE Id = @id AND Status = 'PENDING'
+          WHERE Id = @id AND Status = 'PENDING' AND CreatedAt >= @globalStartUtc
         `);
 
       if (Number(updateRes?.rowsAffected?.[0] || 0) === 0) {
@@ -788,11 +818,15 @@ router.patch('/price-approvals/:id/reject', requireRole(...APPROVER_ROLES), requ
       return res.status(400).json({ message: 'ปฏิเสธคำขอต้องระบุเหตุผลอย่างน้อย 5 ตัวอักษร' });
     }
     const approvalId = Number(req.params.id);
-    const target = (await wfQuery(`SELECT * FROM wf.PriceApproval WHERE Id = @id`, { id: { type: sql.Int, value: approvalId } })).recordset[0];
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const target = (await wfQuery(`SELECT * FROM wf.PriceApproval WHERE Id = @id AND CreatedAt >= @globalStartUtc`, {
+      id: { type: sql.Int, value: approvalId }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
+    })).recordset[0];
     if (!target) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติราคานี้' });
     if (target.Status !== 'PENDING') return res.status(409).json({ message: `คำขอนี้อยู่ในสถานะ ${target.Status} แล้ว` });
 
-    if (sameUser(target.RequestedBy, req.user.sub) && !['ADMIN', 'C_LEVEL'].includes(req.user.role)) {
+    const identity = approvalIdentity(req.user);
+    if (isSubmitter(identity, target.RequestedBy) && !bothHaveRole(identity, ['ADMIN', 'C_LEVEL'])) {
       return res.status(403).json({ message: 'ไม่อนุญาตให้ปฏิเสธคำขอของตัวเอง' });
     }
 
@@ -842,10 +876,11 @@ router.patch('/price-approvals/:id/reject', requireRole(...APPROVER_ROLES), requ
         .input('id', sql.Int, approvalId)
         .input('by', sql.Int, req.user.sub)
         .input('note', sql.NVarChar(500), String(note).trim())
+        .input('globalStartUtc', sql.DateTime2, dataWindow.utcInstant)
         .query(`
           UPDATE wf.PriceApproval
           SET Status = 'REJECTED', ApprovedBy = @by, ApprovedAt = SYSUTCDATETIME(), ApprovalNote = @note, UpdatedAt = SYSUTCDATETIME()
-          WHERE Id = @id AND Status = 'PENDING'
+          WHERE Id = @id AND Status = 'PENDING' AND CreatedAt >= @globalStartUtc
         `);
 
       if (Number(updateRes?.rowsAffected?.[0] || 0) === 0) {
@@ -906,8 +941,9 @@ async function requireTripApprovalInScope(req, res, next) {
 router.get('/trip-approvals', async (req, res) => {
   try {
     const { status, tripId, mine } = req.query;
-    const inputs = {};
-    let where = 'WHERE 1=1';
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const inputs = { globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } };
+    let where = 'WHERE a.CreatedAt >= @globalStartUtc';
     if (status) { where += ' AND a.Status = @status'; inputs.status = { type: sql.VarChar(20), value: String(status).toUpperCase() }; }
     if (tripId) { where += ' AND a.TripId = @tripId'; inputs.tripId = { type: sql.Int, value: Number(tripId) }; }
     if (String(mine) === '1') { where += ' AND a.RequestedBy = @me'; inputs.me = { type: sql.Int, value: req.user.sub }; }
@@ -970,8 +1006,10 @@ router.patch('/trip-approvals/:id/approve', requireRole(...APPROVER_ROLES), requ
       return res.status(400).json({ message: 'รหัสคำขอไม่ถูกต้อง' });
     }
     const { note } = req.body || {};
-    const target = (await wfQuery(`SELECT * FROM wf.TripMultiCustomerApproval WHERE Id = @id`, {
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const target = (await wfQuery(`SELECT * FROM wf.TripMultiCustomerApproval WHERE Id = @id AND CreatedAt >= @globalStartUtc`, {
       id: { type: sql.Int, value: approvalId },
+      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
     })).recordset?.[0];
     if (!target) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติทริปนี้' });
     if (target.Status !== 'PENDING') return res.status(409).json({ message: `คำขอนี้อยู่ในสถานะ ${target.Status} แล้ว` });
@@ -980,7 +1018,8 @@ router.patch('/trip-approvals/:id/approve', requireRole(...APPROVER_ROLES), requ
     if (!roleCheck.allowed) {
       return res.status(403).json({ message: roleCheck.reason || 'ไม่มีสิทธิ์อนุมัติทริปหลายลูกค้า' });
     }
-    if (sameUser(target.RequestedBy, req.user.sub) && !['ADMIN', 'C_LEVEL'].includes(req.user.role)) {
+    const identity = approvalIdentity(req.user);
+    if (isSubmitter(identity, target.RequestedBy) && !bothHaveRole(identity, ['ADMIN', 'C_LEVEL'])) {
       return res.status(403).json({ message: 'ไม่อนุญาตให้อนุมัติคำขอของตัวเอง' });
     }
 
@@ -993,7 +1032,7 @@ router.patch('/trip-approvals/:id/approve', requireRole(...APPROVER_ROLES), requ
       }
 
       const membersRes = await tx.request().input('tid', sql.Int, Number(target.TripId))
-        .query(`SELECT MemberKind, MemberId, DocuNo, CustId, CustName, Status FROM wf.v_TripMember WHERE TripId = @tid`);
+        .query(`SELECT MemberKind, MemberId, DocuNo, CustId, CustCode, CustName, Status FROM wf.v_TripMember WHERE TripId = @tid`);
       const liveSnapshot = computeTripCustomerSnapshot(membersRes.recordset || []);
       let targetCustomerIds = [];
       try { targetCustomerIds = JSON.parse(target.CustomerIdsJson || '[]'); } catch { targetCustomerIds = []; }
@@ -1009,10 +1048,11 @@ router.patch('/trip-approvals/:id/approve', requireRole(...APPROVER_ROLES), requ
         .input('id', sql.Int, approvalId)
         .input('by', sql.Int, Number(req.user.sub))
         .input('note', sql.NVarChar(500), note ? String(note).trim() : null)
+        .input('globalStartUtc', sql.DateTime2, dataWindow.utcInstant)
         .query(`
           UPDATE wf.TripMultiCustomerApproval
           SET Status = 'APPROVED', ApprovedBy = @by, ApprovedAt = SYSUTCDATETIME(), ApprovalNote = @note, UpdatedAt = SYSUTCDATETIME()
-          WHERE Id = @id AND Status = 'PENDING'
+          WHERE Id = @id AND Status = 'PENDING' AND CreatedAt >= @globalStartUtc
         `);
       if (Number(updRes?.rowsAffected?.[0] || 0) === 0) {
         throw Object.assign(new Error('ไม่สามารถอนุมัติได้เนื่องจากสถานะคำขอเปลี่ยนแปลงไปแล้ว'), { status: 409 });
@@ -1040,8 +1080,10 @@ router.patch('/trip-approvals/:id/reject', requireRole(...APPROVER_ROLES), requi
       return res.status(400).json({ message: 'ปฏิเสธคำขอต้องระบุเหตุผลอย่างน้อย 5 ตัวอักษร' });
     }
 
-    const target = (await wfQuery(`SELECT * FROM wf.TripMultiCustomerApproval WHERE Id = @id`, {
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const target = (await wfQuery(`SELECT * FROM wf.TripMultiCustomerApproval WHERE Id = @id AND CreatedAt >= @globalStartUtc`, {
       id: { type: sql.Int, value: approvalId },
+      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
     })).recordset?.[0];
     if (!target) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติทริปนี้' });
     if (target.Status !== 'PENDING') return res.status(409).json({ message: `คำขอนี้อยู่ในสถานะ ${target.Status} แล้ว` });
@@ -1050,18 +1092,20 @@ router.patch('/trip-approvals/:id/reject', requireRole(...APPROVER_ROLES), requi
     if (!roleCheck.allowed) {
       return res.status(403).json({ message: roleCheck.reason || 'ไม่มีสิทธิ์ปฏิเสธทริปหลายลูกค้า' });
     }
-    if (sameUser(target.RequestedBy, req.user.sub) && !['ADMIN', 'C_LEVEL'].includes(req.user.role)) {
+    const identity = approvalIdentity(req.user);
+    if (isSubmitter(identity, target.RequestedBy) && !bothHaveRole(identity, ['ADMIN', 'C_LEVEL'])) {
       return res.status(403).json({ message: 'ไม่อนุญาตให้ปฏิเสธคำขอของตัวเอง' });
     }
 
     const updRes = await wfQuery(`
       UPDATE wf.TripMultiCustomerApproval
       SET Status = 'REJECTED', ApprovedBy = @by, ApprovedAt = SYSUTCDATETIME(), ApprovalNote = @note, UpdatedAt = SYSUTCDATETIME()
-      WHERE Id = @id AND Status = 'PENDING'
+      WHERE Id = @id AND Status = 'PENDING' AND CreatedAt >= @globalStartUtc
     `, {
       id: { type: sql.Int, value: approvalId },
       by: { type: sql.Int, value: Number(req.user.sub) },
       note: { type: sql.NVarChar(500), value: String(note).trim() },
+      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
     });
     if (Number(updRes?.rowsAffected?.[0] || 0) === 0) {
       return res.status(409).json({ message: 'ไม่สามารถปฏิเสธได้เนื่องจากสถานะคำขอเปลี่ยนแปลงไปแล้ว' });

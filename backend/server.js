@@ -100,6 +100,13 @@ app.use((req, res, next) => {
   // onprem starts each request on the admin-set system default database; requireAuth may then
   // switch it to the signed-in user's chosen database. Other targets keep their single database.
   if (target !== 'onprem') return runWithTarget(target, next);
+  // Authentication and user administration always belong to the identity
+  // database, even when the system's business database has been switched.
+  if (/^\/api\/(?:auth|admin-management)(?:\/|$)/.test(req.path)) {
+    const primary = activeDb.primaryDatabase();
+    if (!primary) return res.status(503).json({ code: 'PRIMARY_DATABASE_REQUIRED', message: 'ไม่สามารถตรวจสอบฐานข้อมูลผู้ใช้งานได้' });
+    return runWithTarget(target, next, primary);
+  }
   activeDb.systemActiveDatabase()
     .then(db => runWithTarget(target, next, db))
     .catch(() => runWithTarget(target, next, activeDb.primaryDatabase()));

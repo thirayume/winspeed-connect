@@ -1,9 +1,9 @@
 import { bookingNoteError } from '../../utils/bookingNotes';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { unsavedMessage } from '../../utils/unsaved-changes';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, Plus, Minus, Truck, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket, AlertTriangle, Gift, Sparkles, Clock } from 'lucide-react';
-import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation, fetchPriceIndicator, fetchCustomerCreditStatus, fetchCustomerTopGoods, type CustomerTopGood } from '../../services/api';
+import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation, fetchPriceIndicator, fetchCustomerCreditStatus, fetchCustomerTopGoods, type CustomerTopGood, type PriceBook } from '../../services/api';
 import type { EffectivePriceRow, AtpStockRow, PriceLevel } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { ThaiDateTimePicker } from '../ui/ThaiDateTimePicker';
@@ -15,7 +15,7 @@ import { useTripStore } from '../../store/trip-store';
 import { canViewRebateAmounts } from '../../utils/permissions';
 import { useCan } from '../../utils/capabilities';
 import { appAlert, appConfirm } from '../ui/AppAlert';
-import { formatThaiDate } from '../../utils/date';
+import { formatThaiDate, bangkokDate } from '../../utils/date';
 import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser, GiveawayQuota, CustomerCreditStatus } from '../../types';
 
 type DraftLine = SalesOrderLine & {
@@ -79,7 +79,7 @@ export function CreateSODialog({
   const [prices, setPrices] = useState<CurrentPrice[]>([]);
   const [effectivePrices, setEffectivePrices] = useState<EffectivePriceRow[]>([]);
   const [atpStock, setAtpStock] = useState<AtpStockRow[]>([]);
-  const [activePriceBookId, setActivePriceBookId] = useState<number | null>(null);
+  const [priceBooks, setPriceBooks] = useState<PriceBook[]>([]);
   const [truckPlates, setTruckPlates] = useState<string[]>([]);
   const [transports, setTransports] = useState<{TranspID: number; TranspName: string}[]>([]);
   const [controlTickets, setControlTickets] = useState<{ DocuNo: string; DocuDate: string; TruckPlate?: string; Desc1?: string }[]>([]);
@@ -342,13 +342,22 @@ export function CreateSODialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, editSoId, convertFromQuoteId]);
 
-  // Load active PriceBook ID and giveaway policy setting once on open
+  const activePriceBookId = useMemo(() => {
+    const activeBooks = priceBooks.filter(b => b.Status === 'ACTIVE');
+    if (activeBooks.length === 0) return null;
+    const targetDate = (deliveryDate || bangkokDate(0)).slice(0, 10);
+    const matching = activeBooks.find(b => {
+      const from = (b.EffectiveFrom || `${b.EffectiveMonth}-01`).slice(0, 10);
+      const to = (b.EffectiveTo || from).slice(0, 10);
+      return from <= targetDate && to >= targetDate;
+    });
+    return (matching || activeBooks[0]).Id;
+  }, [priceBooks, deliveryDate]);
+
+  // Load PriceBooks and giveaway policy setting once on open
   useEffect(() => {
     if (!isOpen) return;
-    fetchPriceBooks().then(books => {
-      const active = books.find(b => b.Status === 'ACTIVE');
-      setActivePriceBookId(active?.Id ?? null);
-    }).catch(console.error);
+    fetchPriceBooks().then(setPriceBooks).catch(console.error);
     apiFetch<{ settings?: Record<string, any> }>('/master/system-settings')
       .then(res => {
         if (res?.settings && res.settings.GIVEAWAY_ALLOW_NEGATIVE_QUOTA !== undefined) {

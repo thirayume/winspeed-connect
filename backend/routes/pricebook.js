@@ -10,6 +10,27 @@ const { sql, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
 const { assertPricesAboveCost } = require('../services/cost-authority');
 const { getBangkokDateString } = require('../services/so-pickup-policy');
+const { broadcast } = require('../services/socket');
+const {
+  parseDateOnly,
+  parseSetIds,
+  hasSyncColumns,
+  resolveBookWinSpeedSetIds,
+  assertNoPriceOverlap,
+  syncBookToWinSpeed,
+  syncSpecialPriceToWinSpeed,
+  reconcileFromWinSpeed,
+  invalidateReconcileCache,
+} = require('../services/pricebook-winspeed-sync');
+
+function notifyPriceBookUpdated(payload = {}) {
+  try {
+    invalidateReconcileCache();
+    broadcast('pricebook_updated', payload);
+  } catch {
+    // Non-fatal in unit tests or when sockets aren't initialized
+  }
+}
 
 router.use(requireAuth);
 
@@ -31,332 +52,18 @@ async function audit(queryFn, bookId, action, fromStatus, toStatus, userId, note
   );
 }
 
-async function hasSyncColumns(queryFn = wfQuery) {
-  try {
-    const r = await queryFn(`
-      SELECT
-        COL_LENGTH('wf.PriceBook', 'SourceSetPriceIds') AS HasPb,
-        COL_LENGTH('wf.PriceBookLine', 'WinSpeedSetPriceId') AS HasLine,
-        COL_LENGTH('wf.PriceBookSpecialPrice', 'WinSpeedSetPriceId') AS HasSp,
-        OBJECT_ID('wf.sp_PriceBookUpsertWinSpeedLine', 'P') AS HasSpProc
-    `);
-    const row = r.recordset?.[0] || {};
-    return Boolean(row.HasPb && row.HasLine && row.HasSpProc);
-  } catch {
-    return false;
-  }
-}
-
-function parseSetIds(raw) {
-  if (!raw) return [];
-  return String(raw)
-    .split(',')
-    .map(s => Number(String(s).trim()))
-    .filter(n => Number.isInteger(n) && n > 0);
-}
-
-/**
- * Resolves linked WinSpeed SetPriceIDs for a PriceBook.
- * If SourceSetPriceIds is empty (e.g. imported before Migration 186), matches DocuNo patterns from Name/Note.
- */
-async function resolveBookWinSpeedSetIds(book, queryFn = wfQuery) {
-  const existing = parseSetIds(book.SourceSetPriceIds);
-  if (existing.length > 0) return existing;
-
-  const text = `${book.Name || ''} ${book.Note || ''}`;
-  const docNos = [...new Set((text.match(/(?:SPL\d{4}-\d{5}|WEB-\d{8}-\d{4})/g) || []).map(s => s.trim()))];
-  if (!docNos.length) return [];
-
-  try {
-    const inParams = {};
-    const ph = docNos.map((d, i) => {
-      const k = `dn${i}`;
-      inParams[k] = { type: sql.VarChar(25), value: d };
-      return `@${k}`;
-    });
-    const r = await queryFn(
-      `SELECT SetPriceID FROM dbo.EMSetPriceHD WITH (NOLOCK) WHERE DocuNo IN (${ph.join(',')}) ORDER BY SetPriceID`,
-      inParams
-    );
-    const found = (r.recordset || []).map(x => Number(x.SetPriceID)).filter(n => Number.isInteger(n) && n > 0);
-    if (found.length > 0 && (await hasSyncColumns(queryFn))) {
-      await queryFn(`UPDATE wf.PriceBook SET SourceSetPriceIds = @s WHERE Id = @id`, {
-        s: { type: sql.NVarChar(200), value: found.join(',') },
-        id: { type: sql.Int, value: book.Id },
-      }).catch(() => {});
-    }
-    return found;
-  } catch {
-    return [];
-  }
-}
-
-async function execProc(requestSource, procName, configureFn) {
-  const req = typeof requestSource.request === 'function' ? requestSource.request() : await requestSource;
-  if (configureFn) configureFn(req);
-  return req.execute(procName);
-}
-
-/**
- * Determines which WinSpeed SetPriceID should receive a given PriceBookLine (supporting split sets
- * such as SPL-Compound + SPL-MaePui for the same period).
- */
-async function pickTargetWinSpeedSetId(queryFn, book, line, setIds) {
-  if (line.WinSpeedSetPriceId) return Number(line.WinSpeedSetPriceId);
-  if (!setIds || !setIds.length) return null;
-  if (setIds.length === 1) return setIds[0];
-
-  try {
-    const gid = Number(line.GoodId);
-    const ggRes = Number.isInteger(gid)
-      ? await queryFn(`SELECT GoodGroupID FROM dbo.EMGood WITH (NOLOCK) WHERE GoodID = @gid`, { gid: { type: sql.Int, value: gid } })
-      : null;
-    const goodGroupId = ggRes?.recordset?.[0]?.GoodGroupID ?? line.GoodGroupId ?? null;
-
-    const existingMatch = await queryFn(`
-      SELECT TOP 1 d.SetPriceID
-      FROM dbo.EMSetPriceDT d WITH (NOLOCK)
-      WHERE d.SetPriceID IN (${setIds.join(',')}) AND d.ListID = @gid
-    `, { gid: { type: sql.Int, value: Number.isInteger(gid) ? gid : 0 } });
-    if (existingMatch.recordset?.[0]?.SetPriceID) {
-      return Number(existingMatch.recordset[0].SetPriceID);
-    }
-
-    if (goodGroupId != null) {
-      const groupSetMatch = await queryFn(`
-        SELECT TOP 1 d.SetPriceID, COUNT(*) AS Cnt
-        FROM dbo.EMSetPriceDT d WITH (NOLOCK)
-        JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = d.ListID
-        WHERE d.SetPriceID IN (${setIds.join(',')}) AND g.GoodGroupID = @gg
-        GROUP BY d.SetPriceID
-        ORDER BY Cnt DESC, d.SetPriceID ASC
-      `, { gg: { type: sql.Int, value: Number(goodGroupId) } });
-      if (groupSetMatch.recordset?.[0]?.SetPriceID) {
-        return Number(groupSetMatch.recordset[0].SetPriceID);
-      }
-    }
-  } catch {
-    // Fallback cleanly to primary set id
-  }
-  return setIds[0];
-}
-
-/**
- * Syncs an ACTIVE PriceBook's lines and header dates to WinSpeed (dbo.EMSetPriceHD / DT).
- * Uses ownership-chained wf.sp_PriceBook* procedures cleanly.
- */
-async function syncBookToWinSpeed(bookId, userId, onlyGoodIds = null) {
-  const syncReady = await hasSyncColumns();
-  if (!syncReady) return { synced: false, reason: 'SYNC_PROCS_NOT_MIGRATED' };
-
-  const book = (await wfQuery(`
-    SELECT Id, Name, EffectiveMonth, Status, SourceSetPriceIds, Note,
-           CONVERT(VARCHAR(10), EffectiveFrom, 23) AS EffectiveFrom,
-           CONVERT(VARCHAR(10), EffectiveTo, 23) AS EffectiveTo
-    FROM wf.PriceBook WHERE Id = @id
-  `, { id: { type: sql.Int, value: bookId } })).recordset[0];
-  if (!book) throw Object.assign(new Error('ไม่พบ PriceBook'), { status: 404 });
-
-  let setIds = await resolveBookWinSpeedSetIds(book);
-  const beginStr = book.EffectiveFrom || `${book.EffectiveMonth}-01`;
-  const endStr = book.EffectiveTo || beginStr;
-  const beginDate = new Date(`${beginStr}T00:00:00`);
-  const endDate = new Date(`${endStr}T00:00:00`);
-
-  const allLines = (await wfQuery(`
-    SELECT Id, GoodId, GoodCode, GoodName, GoodGroupId, Price, LineStatus, Note, WinSpeedSetPriceId, WinSpeedListNo
-    FROM wf.PriceBookLine
-    WHERE PriceBookId = @id
-    ORDER BY Id
-  `, { id: { type: sql.Int, value: bookId } })).recordset || [];
-
-  const targetLines = onlyGoodIds
-    ? allLines.filter(l => onlyGoodIds.has(String(l.GoodId)))
-    : allLines;
-
-  const { getPool } = require('../db');
-  const pool = await getPool();
-
-  // Create a new WinSpeed SetPriceHD if ACTIVE book has no linked WinSpeed sets yet
-  if (setIds.length === 0) {
-    const cr = await execProc(pool, 'wf.sp_PriceBookCreateWinSpeedSet', r => {
-      r.input('BeginDate', sql.Date, beginDate);
-      r.input('EndDate', sql.Date, endDate);
-      r.input('CustID', sql.Int, null);
-      r.input('Remark1', sql.VarChar(255), String(book.Name || 'Sale-App PriceBook').slice(0, 255));
-      r.output('NewSetPriceID', sql.Int);
-      r.output('DocuNo', sql.VarChar(25));
-    });
-    const newSetId = Number(cr.output?.NewSetPriceID || 0);
-    if (newSetId > 0) {
-      setIds = [newSetId];
-      await wfQuery(`UPDATE wf.PriceBook SET SourceSetPriceIds = @s WHERE Id = @id`, {
-        s: { type: sql.NVarChar(200), value: setIds.join(',') },
-        id: { type: sql.Int, value: bookId },
-      });
-    }
-  } else {
-    // Sync header effective dates across linked WinSpeed sets
-    for (const sid of setIds) {
-      await execProc(pool, 'wf.sp_PriceBookSyncHeaderDatesToWinSpeed', r => {
-        r.input('SetPriceID', sql.Int, sid);
-        r.input('BeginDate', sql.Date, beginDate);
-        r.input('EndDate', sql.Date, endDate);
-        r.input('Remark1', sql.VarChar(255), null);
-      });
-    }
-  }
-
-  let upserted = 0;
-  let removed = 0;
-
-  for (const line of targetLines) {
-    const gidNum = Number(line.GoodId);
-    if (!Number.isInteger(gidNum) || gidNum <= 0) continue;
-
-    const targetSetId = await pickTargetWinSpeedSetId(wfQuery, book, line, setIds);
-    if (!targetSetId) continue;
-
-    if (String(line.LineStatus || 'ACTIVE').toUpperCase() === 'SUSPENDED') {
-      if (line.WinSpeedSetPriceId || setIds.length > 0) {
-        const delSetId = line.WinSpeedSetPriceId ? Number(line.WinSpeedSetPriceId) : targetSetId;
-        await execProc(pool, 'wf.sp_PriceBookDeleteWinSpeedLine', r => {
-          r.input('SetPriceID', sql.Int, delSetId);
-          r.input('ListNo', sql.SmallInt, line.WinSpeedListNo != null ? Number(line.WinSpeedListNo) : null);
-          r.input('GoodID', sql.Int, gidNum);
-        });
-        await wfQuery(`UPDATE wf.PriceBookLine SET WinSpeedListNo = NULL, UpdatedAt = GETUTCDATE() WHERE Id = @lid`, {
-          lid: { type: sql.Int, value: line.Id },
-        });
-        removed += 1;
-      }
-      continue;
-    }
-
-    if (line.Price == null || !(Number(line.Price) > 0)) continue;
-
-    const noteMarker = line.LineStatus === 'DISCONTINUING'
-      ? (line.Note ? (String(line.Note).includes('***') ? line.Note : `*** ${line.Note}`) : '***')
-      : (line.Note || null);
-
-    const up = await execProc(pool, 'wf.sp_PriceBookUpsertWinSpeedLine', r => {
-      r.input('SetPriceID', sql.Int, targetSetId);
-      r.input('GoodID', sql.Int, gidNum);
-      r.input('GoodPriceNet', sql.Decimal(18, 4), Number(line.Price));
-      r.input('BeginDate', sql.Date, beginDate);
-      r.input('EndDate', sql.Date, endDate);
-      r.input('Remark', sql.VarChar(255), noteMarker ? String(noteMarker).slice(0, 255) : null);
-      r.input('ListNo', sql.SmallInt, line.WinSpeedListNo != null ? Number(line.WinSpeedListNo) : null);
-      r.output('ListNo', sql.SmallInt);
-    }).catch(async () => {
-      // Handle stored proc OUTPUT parameter cleanly in mssql (output-only param definition)
-      const r2 = pool.request();
-      r2.input('SetPriceID', sql.Int, targetSetId);
-      r2.input('GoodID', sql.Int, gidNum);
-      r2.input('GoodPriceNet', sql.Decimal(18, 4), Number(line.Price));
-      r2.input('BeginDate', sql.Date, beginDate);
-      r2.input('EndDate', sql.Date, endDate);
-      r2.input('Remark', sql.VarChar(255), noteMarker ? String(noteMarker).slice(0, 255) : null);
-      r2.output('ListNo', sql.SmallInt, line.WinSpeedListNo != null ? Number(line.WinSpeedListNo) : null);
-      return r2.execute('wf.sp_PriceBookUpsertWinSpeedLine');
-    });
-
-    const syncedListNo = up?.output?.ListNo ?? line.WinSpeedListNo ?? null;
-    await wfQuery(`
-      UPDATE wf.PriceBookLine
-      SET WinSpeedSetPriceId = @sid,
-          WinSpeedListNo = @lno,
-          UpdatedAt = GETUTCDATE()
-      WHERE Id = @lid
-    `, {
-      sid: { type: sql.Int, value: targetSetId },
-      lno: { type: sql.SmallInt, value: syncedListNo != null ? Number(syncedListNo) : null },
-      lid: { type: sql.Int, value: line.Id },
-    });
-    upserted += 1;
-  }
-
-  // Also sync any already-approved customer Special Prices on full sync / activate
-  if (!onlyGoodIds) {
-    const sps = (await wfQuery(`
-      SELECT Id, CustId, GoodId, ApprovedPrice, Note, WinSpeedSetPriceId
-      FROM wf.PriceBookSpecialPrice
-      WHERE PriceBookId = @id AND ApprovedPrice IS NOT NULL AND ApprovedPrice > 0 AND GoodId IS NOT NULL
-    `, { id: { type: sql.Int, value: bookId } })).recordset || [];
-    for (const sp of sps) {
-      await syncSpecialPriceToWinSpeed(sp.Id, book).catch(err => {
-        console.warn('[pricebook/sync-special-warn]', err.message);
-      });
-    }
-  }
-
-  await wfQuery(`
-    UPDATE wf.PriceBook
-    SET WinSpeedSyncAt = SYSUTCDATETIME(),
-        LastSyncedBy = @uid
-    WHERE Id = @id
-  `, { uid: { type: sql.Int, value: userId || null }, id: { type: sql.Int, value: bookId } });
-
-  return { synced: true, setIds, upserted, removed };
-}
-
-async function syncSpecialPriceToWinSpeed(spId, knownBook = null) {
-  const syncReady = await hasSyncColumns();
-  if (!syncReady) return { synced: false };
-
-  const sp = (await wfQuery(`
-    SELECT sp.Id, sp.PriceBookId, sp.CustId, sp.GoodId, sp.ApprovedPrice, sp.Note, sp.WinSpeedSetPriceId,
-           pb.Status AS BookStatus, pb.EffectiveMonth,
-           CONVERT(VARCHAR(10), pb.EffectiveFrom, 23) AS EffectiveFrom,
-           CONVERT(VARCHAR(10), pb.EffectiveTo, 23) AS EffectiveTo
-    FROM wf.PriceBookSpecialPrice sp
-    JOIN wf.PriceBook pb ON pb.Id = sp.PriceBookId
-    WHERE sp.Id = @id
-  `, { id: { type: sql.Int, value: spId } })).recordset[0];
-
-  if (!sp || !sp.ApprovedPrice || !sp.GoodId || !sp.CustId) return { synced: false };
-  const bookStatus = knownBook?.Status || sp.BookStatus;
-  if (bookStatus !== 'ACTIVE') return { synced: false, reason: 'BOOK_NOT_ACTIVE' };
-
-  const custStr = String(sp.CustId).trim();
-  const isNumCust = /^\d+$/.test(custStr);
-  const custRow = (await wfQuery(`
-    SELECT TOP 1 CustID FROM dbo.EMCust WITH (NOLOCK)
-    WHERE ${isNumCust ? 'CustID = @cid OR CustCode = @cc' : 'CustCode = @cc'}
-  `, {
-    cid: { type: sql.Int, value: isNumCust ? Number(custStr) : 0 },
-    cc: { type: sql.VarChar(20), value: custStr },
-  })).recordset?.[0];
-  const canonicalCustId = Number(custRow?.CustID || (isNumCust ? Number(custStr) : 0));
-  const goodNum = Number(sp.GoodId);
-  if (!canonicalCustId || !Number.isInteger(goodNum)) return { synced: false };
-
-  const beginStr = sp.EffectiveFrom || `${sp.EffectiveMonth}-01`;
-  const endStr = sp.EffectiveTo || beginStr;
-  const { getPool } = require('../db');
-  const pool = await getPool();
-  const req = pool.request();
-  req.input('CustID', sql.Int, canonicalCustId);
-  req.input('GoodID', sql.Int, goodNum);
-  req.input('ApprovedPrice', sql.Decimal(18, 4), Number(sp.ApprovedPrice));
-  req.input('BeginDate', sql.Date, new Date(`${beginStr}T00:00:00`));
-  req.input('EndDate', sql.Date, new Date(`${endStr}T00:00:00`));
-  req.input('Remark', sql.VarChar(255), sp.Note ? String(sp.Note).slice(0, 255) : 'ราคาพิเศษรายร้านค้า (Sale-App)');
-  req.output('SetPriceID', sql.Int, sp.WinSpeedSetPriceId != null ? Number(sp.WinSpeedSetPriceId) : null);
-  const r = await req.execute('wf.sp_PriceBookUpsertSpecialWinSpeedPrice');
-  const syncedId = Number(r.output?.SetPriceID || 0);
-  if (syncedId > 0) {
-    await wfQuery(`UPDATE wf.PriceBookSpecialPrice SET WinSpeedSetPriceId = @sid WHERE Id = @id`, {
-      sid: { type: sql.Int, value: syncedId },
-      id: { type: sql.Int, value: spId },
-    });
-  }
-  return { synced: true, setPriceId: syncedId };
+function txQuery(tx) {
+  return async (text, inputs = {}) => {
+    const req = tx.request();
+    for (const [name, { type, value }] of Object.entries(inputs)) req.input(name, type, value);
+    return req.query(text);
+  };
 }
 
 // GET /api/pricebook — รายการ (used by CreateSODialog + PriceBookManager)
 router.get('/', async (_req, res) => {
   try {
+    await reconcileFromWinSpeed();
     const syncCols = await hasSyncColumns();
     const extraCols = syncCols ? ', b.SourceSetPriceIds, b.WinSpeedSyncAt, sb.DisplayName AS LastSyncedByName' : '';
     const extraJoin = syncCols ? 'LEFT JOIN wf.AppUser sb ON sb.Id = b.LastSyncedBy' : '';
@@ -484,6 +191,12 @@ router.post('/sync-from-winspeed', requirePricingManage, async (req, res) => {
     const bookName = name || `ตารางราคา WinSpeed (${docNos}) ${minBegin || effectiveMonth}`;
     const initialStatus = status === 'ACTIVE' ? 'ACTIVE' : 'DRAFT';
     const syncReady = await hasSyncColumns();
+    await assertNoPriceOverlap({
+      excludeSetIds: foundIds,
+      effectiveFrom: minBegin,
+      effectiveTo: maxEnd,
+      goodIds: items.map(i => i.GoodId),
+    });
 
     // 4. สร้าง PriceBook + Lines
     const insertBook = await wfQuery(`
@@ -506,15 +219,7 @@ router.post('/sync-from-winspeed', requirePricingManage, async (req, res) => {
     });
     const bookId = insertBook.recordset[0].Id;
 
-    // 5. ถ้า ACTIVE ให้ ARCHIVE เล่ม ACTIVE เดิมที่ช่วงเดือน/วันที่ทับซ้อนกัน
-    if (initialStatus === 'ACTIVE') {
-      await wfQuery(`
-        UPDATE wf.PriceBook SET Status='ARCHIVED'
-        WHERE Status='ACTIVE' AND EffectiveMonth=@m AND Id<>@id
-      `, { m: { type: sql.Char(7), value: effectiveMonth }, id: { type: sql.Int, value: bookId } });
-    }
-
-    // 6. เพิ่ม wf.PriceBookLine พร้อมลิงก์ SetPriceID + ListNo ต้นทาง
+    // 5. เพิ่ม wf.PriceBookLine พร้อมลิงก์ SetPriceID + ListNo ต้นทาง
     for (const item of items) {
       const hasStar = item.Remark && String(item.Remark).includes('***');
       await wfQuery(`
@@ -545,8 +250,9 @@ router.post('/sync-from-winspeed', requirePricingManage, async (req, res) => {
     }
 
     await audit(wfQuery, bookId, 'SYNC_FROM_WINSPEED', null, initialStatus, req.user.sub, `${docNos} (${items.length} รายการ)`);
+    notifyPriceBookUpdated({ bookId, action: 'sync_from_winspeed' });
     res.json({ ok: true, priceBookId: bookId, lineCount: items.length, status: initialStatus, name: bookName });
-  } catch (e) { console.error('[pricebook/sync-from-winspeed]', e); res.status(e.status || 500).json({ message: e.message, code: e.code }); }
+  } catch (e) { console.error('[pricebook/sync-from-winspeed]', e); res.status(e.status || 500).json({ message: e.message, code: e.code, details: e.details }); }
 });
 
 // GET /api/pricebook/:id — book + lines + audit
@@ -554,6 +260,7 @@ router.get('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'Invalid id' });
+    await reconcileFromWinSpeed({ bookId: id });
     const syncCols = await hasSyncColumns();
     const pbCols = syncCols ? ', SourceSetPriceIds, WinSpeedSyncAt' : '';
     const book = (await wfQuery(`
@@ -588,65 +295,179 @@ router.get('/:id', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-// POST /api/pricebook — สร้าง DRAFT (+ seedFromCurrent)
+// POST /api/pricebook — สร้างชุดราคาใหม่ (DRAFT หรือ ACTIVE + Auto-Sync WinSpeed + ห้ามช่วงวันและสินค้าทับซ้อน)
 router.post('/', requirePricingManage, async (req, res) => {
   try {
-    const { name, effectiveMonth, effectiveFrom, effectiveTo, note, seedFromCurrent = true } = req.body || {};
-    if (!name) return res.status(400).json({ message: 'name จำเป็น' });
-    const cleanFrom = effectiveFrom ? String(effectiveFrom).slice(0, 10) : null;
-    const cleanTo = effectiveTo ? String(effectiveTo).slice(0, 10) : null;
-    if (cleanFrom && cleanTo && cleanFrom > cleanTo) {
+    const {
+      name,
+      effectiveMonth,
+      effectiveFrom,
+      effectiveTo,
+      note,
+      seedFromCurrent = true,
+      status = 'DRAFT',
+    } = req.body || {};
+    if (!name || !String(name).trim()) return res.status(400).json({ message: 'name จำเป็น' });
+    const cleanFrom = parseDateOnly(effectiveFrom);
+    const cleanTo = parseDateOnly(effectiveTo);
+    if (!cleanFrom || !cleanTo) {
+      return res.status(400).json({ message: 'กรุณาระบุวันที่เริ่มต้นและวันที่สิ้นสุด' });
+    }
+    if (cleanFrom > cleanTo) {
       return res.status(400).json({ message: 'วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด' });
     }
-    const monthStr = effectiveMonth || (cleanFrom ? cleanFrom.slice(0, 7) : getBangkokDateString().slice(0, 7));
+    const initialStatus = String(status || 'DRAFT').toUpperCase() === 'ACTIVE' ? 'ACTIVE' : 'DRAFT';
+    const monthStr = effectiveMonth || cleanFrom.slice(0, 7);
+    const result = await wfTransaction(async tx => {
+    const query = txQuery(tx);
+    const syncReady = await hasSyncColumns(query);
 
-    const r = await wfQuery(`INSERT INTO wf.PriceBook (Name, EffectiveMonth, EffectiveFrom, EffectiveTo, Note, CreatedBy)
-      OUTPUT inserted.Id VALUES (@n, @m, @ef, @et, @note, @u)`, {
-      n: { type: sql.NVarChar(120), value: name },
+    let seedLines = [];
+    if (seedFromCurrent) {
+      const cur = (await query(`
+        SELECT TOP 1 Id
+        FROM wf.PriceBook
+        WHERE Status = 'ACTIVE'
+        ORDER BY COALESCE(EffectiveTo, EffectiveFrom, CAST(EffectiveMonth + '-01' AS DATE)) DESC, Id DESC
+      `)).recordset?.[0];
+      if (cur) {
+        seedLines = (await query(`
+          SELECT GoodId, GoodName, Unit, Price, LineStatus, Note
+                 ${syncReady ? ', GoodCode, GoodGroupId, GoodGroupName' : ''}
+          FROM wf.PriceBookLine
+          WHERE PriceBookId = @src
+        `, { src: { type: sql.Int, value: cur.Id } })).recordset || [];
+      }
+    }
+
+    const activeSeedLines = seedLines.filter(l => String(l.LineStatus || 'ACTIVE').toUpperCase() !== 'SUSPENDED');
+    await assertNoPriceOverlap({
+      effectiveFrom: cleanFrom,
+      effectiveTo: cleanTo,
+      goodIds: activeSeedLines.map(l => l.GoodId),
+      queryFn: query,
+    });
+
+    if (initialStatus === 'ACTIVE' && activeSeedLines.length > 0) {
+      await assertPricesAboveCost({
+        lines: activeSeedLines.map(l => ({
+          goodId: l.GoodId,
+          goodCode: l.GoodCode,
+          goodName: l.GoodName,
+          pricePerTon: l.Price,
+        })),
+        asOfDate: cleanFrom,
+        queryFn: query,
+      });
+    }
+
+    const now = new Date();
+    const r = await query(`
+      INSERT INTO wf.PriceBook (Name, EffectiveMonth, EffectiveFrom, EffectiveTo, Status, Note, CreatedBy, ApprovedBy, ApprovedAt, ActivatedBy, ActivatedAt)
+      OUTPUT inserted.Id
+      VALUES (@n, @m, @ef, @et, @st, @note, @u, @appBy, @appAt, @actBy, @actAt)
+    `, {
+      n: { type: sql.NVarChar(120), value: String(name).trim().slice(0, 120) },
       m: { type: sql.Char(7), value: monthStr },
       ef: { type: sql.Date, value: cleanFrom },
       et: { type: sql.Date, value: cleanTo },
+      st: { type: sql.VarChar(20), value: initialStatus },
       note: { type: sql.NVarChar(500), value: note || null },
       u: { type: sql.Int, value: req.user.sub },
+      appBy: { type: sql.Int, value: initialStatus === 'ACTIVE' ? req.user.sub : null },
+      appAt: { type: sql.DateTime2, value: initialStatus === 'ACTIVE' ? now : null },
+      actBy: { type: sql.Int, value: initialStatus === 'ACTIVE' ? req.user.sub : null },
+      actAt: { type: sql.DateTime2, value: initialStatus === 'ACTIVE' ? now : null },
     });
     const bookId = r.recordset[0].Id;
 
-    if (seedFromCurrent) {
-      const cur = (await wfQuery(`SELECT TOP 1 Id FROM wf.PriceBook WHERE Status='ACTIVE' AND Id<>@id ORDER BY Id DESC`, { id: { type: sql.Int, value: bookId } })).recordset[0];
-      if (cur) {
-        const syncReady = await hasSyncColumns();
-        await wfQuery(`
-          INSERT INTO wf.PriceBookLine (PriceBookId, GoodId, GoodName, Unit, Price, LineStatus, Note${syncReady ? ', GoodCode, GoodGroupId, GoodGroupName' : ''})
-          SELECT @newId, GoodId, GoodName, Unit, Price, LineStatus, Note${syncReady ? ', GoodCode, GoodGroupId, GoodGroupName' : ''}
-          FROM wf.PriceBookLine WHERE PriceBookId=@src`, {
-          newId: { type: sql.Int, value: bookId },
-          src: { type: sql.Int, value: cur.Id },
-        });
-      }
+    for (const l of seedLines) {
+      await query(`
+        INSERT INTO wf.PriceBookLine (
+          PriceBookId, GoodId, GoodName, Unit, Price, LineStatus, Note
+          ${syncReady ? ', GoodCode, GoodGroupId, GoodGroupName' : ''}
+        )
+        VALUES (
+          @newId, @g, @gn, @u, @p, @ls, @note
+          ${syncReady ? ', @gc, @ggId, @ggName' : ''}
+        )
+      `, {
+        newId: { type: sql.Int, value: bookId },
+        g: { type: sql.NVarChar(20), value: String(l.GoodId) },
+        gn: { type: sql.NVarChar(200), value: l.GoodName || '' },
+        u: { type: sql.NVarChar(30), value: l.Unit || 'ตัน' },
+        p: { type: sql.Decimal(12, 2), value: l.Price != null ? Number(l.Price) : null },
+        ls: { type: sql.VarChar(20), value: l.LineStatus || 'ACTIVE' },
+        note: { type: sql.NVarChar(255), value: l.Note || null },
+        ...(syncReady ? {
+          gc: { type: sql.NVarChar(50), value: l.GoodCode || null },
+          ggId: { type: sql.Int, value: l.GoodGroupId != null ? Number(l.GoodGroupId) : null },
+          ggName: { type: sql.NVarChar(100), value: l.GoodGroupName || null },
+        } : {}),
+      });
     }
-    await audit(wfQuery, bookId, 'CREATE', null, 'DRAFT', req.user.sub, note || name);
-    res.json({ id: bookId });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+
+    let syncResult = { synced: false };
+    if (initialStatus === 'ACTIVE') {
+      syncResult = await syncBookToWinSpeed(bookId, req.user.sub, null, tx);
+    }
+
+    await audit(query, bookId, 'CREATE', null, initialStatus, req.user.sub, `${note || name}${syncResult.docuNo ? ` · WinSpeed: ${syncResult.docuNo}` : ''}`);
+    return {
+      id: bookId,
+      status: initialStatus,
+      winSpeedSynced: Boolean(syncResult.synced),
+      docuNo: syncResult.docuNo || null,
+    };
+    });
+    notifyPriceBookUpdated({ bookId: result.id, action: 'create', status: initialStatus });
+    res.json(result);
+  } catch (e) {
+    console.error('[pricebook/create]', e);
+    res.status(e.status || 500).json({ message: e.message, code: e.code, details: e.details });
+  }
 });
 
-// PUT /api/pricebook/:id — แก้ไขหัวตารางราคา (DRAFT/APPROVED/ACTIVE) + sync WinSpeed dates if ACTIVE
+// PUT /api/pricebook/:id — แก้ไขหัวตารางราคา (DRAFT/APPROVED/ACTIVE) + ตรวจไม่ทับซ้อน + sync WinSpeed dates if ACTIVE
 router.put('/:id', requirePricingManage, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const { name, effectiveFrom, effectiveTo, note } = req.body || {};
-    const book = (await wfQuery(`SELECT Id, Name, Status, EffectiveMonth, SourceSetPriceIds FROM wf.PriceBook WHERE Id=@id`, { id: { type: sql.Int, value: id } })).recordset[0];
-    if (!book) return res.status(404).json({ message: 'ไม่พบ Price Book' });
-    if (book.Status === 'ARCHIVED') return res.status(400).json({ message: 'ไม่สามารถแก้ไข Price Book ที่เก็บเข้าคลังแล้ว' });
+    const result = await wfTransaction(async tx => {
+    const query = txQuery(tx);
+    const book = (await query(`
+      SELECT Id, Name, Status, EffectiveMonth, SourceSetPriceIds, Note,
+             CONVERT(VARCHAR(10), EffectiveFrom, 23) AS EffectiveFrom,
+             CONVERT(VARCHAR(10), EffectiveTo, 23) AS EffectiveTo
+      FROM wf.PriceBook WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id
+    `, { id: { type: sql.Int, value: id } })).recordset[0];
+    if (!book) throw Object.assign(new Error('ไม่พบ Price Book'), { status: 404 });
+    if (book.Status === 'ARCHIVED') throw Object.assign(new Error('ไม่สามารถแก้ไข Price Book ที่เก็บเข้าคลังแล้ว'), { status: 400 });
 
-    const cleanFrom = effectiveFrom ? String(effectiveFrom).slice(0, 10) : null;
-    const cleanTo = effectiveTo ? String(effectiveTo).slice(0, 10) : null;
+    const cleanFrom = effectiveFrom ? parseDateOnly(effectiveFrom) : book.EffectiveFrom;
+    const cleanTo = effectiveTo ? parseDateOnly(effectiveTo) : (book.EffectiveTo || cleanFrom);
     if (cleanFrom && cleanTo && cleanFrom > cleanTo) {
-      return res.status(400).json({ message: 'วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด' });
+      throw Object.assign(new Error('วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด'), { status: 400 });
     }
     const cleanName = name != null && String(name).trim() ? String(name).trim() : book.Name;
     const nextMonth = cleanFrom ? cleanFrom.slice(0, 7) : book.EffectiveMonth;
 
-    await wfQuery(`
+    if (cleanFrom && cleanTo) {
+      const activeLines = (await query(`
+        SELECT GoodId FROM wf.PriceBookLine
+        WHERE PriceBookId = @id AND ISNULL(LineStatus, 'ACTIVE') <> 'SUSPENDED'
+      `, { id: { type: sql.Int, value: id } })).recordset || [];
+      await assertNoPriceOverlap({
+        excludeBookId: id,
+        excludeSetIds: await resolveBookWinSpeedSetIds(book, query, { strict: true }),
+        effectiveFrom: cleanFrom,
+        effectiveTo: cleanTo,
+        goodIds: activeLines.map(l => l.GoodId),
+        queryFn: query,
+      });
+    }
+
+    await query(`
       UPDATE wf.PriceBook
       SET Name = @n,
           EffectiveMonth = @m,
@@ -660,16 +481,22 @@ router.put('/:id', requirePricingManage, async (req, res) => {
       m: { type: sql.Char(7), value: nextMonth },
       ef: { type: sql.Date, value: cleanFrom },
       et: { type: sql.Date, value: cleanTo },
-      note: { type: sql.NVarChar(500), value: note ?? null },
+      note: { type: sql.NVarChar(500), value: note ?? book.Note ?? null },
     });
 
     let syncResult = { synced: false };
     if (book.Status === 'ACTIVE') {
-      syncResult = await syncBookToWinSpeed(id, req.user.sub).catch(err => ({ synced: false, error: err.message }));
+      syncResult = await syncBookToWinSpeed(id, req.user.sub, null, tx);
     }
-    await audit(wfQuery, id, 'UPDATE_HEADER', book.Status, book.Status, req.user.sub, `${cleanName}${syncResult.synced ? ' (Synced WinSpeed)' : ''}`);
-    res.json({ ok: true, winSpeedSynced: Boolean(syncResult.synced) });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+    await audit(query, id, 'UPDATE_HEADER', book.Status, book.Status, req.user.sub, `${cleanName}${syncResult.synced ? ' (Auto-Synced WinSpeed)' : ''}`);
+    return { ok: true, winSpeedSynced: Boolean(syncResult.synced) };
+    });
+    notifyPriceBookUpdated({ bookId: id, action: 'update_header' });
+    res.json(result);
+  } catch (e) {
+    console.error('[pricebook/update-header]', e);
+    res.status(e.status || 500).json({ message: e.message, code: e.code, details: e.details });
+  }
 });
 
 // POST /api/pricebook/:id/lines — แทนที่รายการทั้งเล่ม (อนุญาต DRAFT, APPROVED, ACTIVE + Sync กลับ WinSpeed!)
@@ -678,27 +505,29 @@ router.post('/:id/lines', requirePricingManage, async (req, res) => {
     const id = Number(req.params.id);
     const { lines } = req.body || {};
     if (!Array.isArray(lines)) return res.status(400).json({ message: 'lines (array) จำเป็น' });
-    const syncReady = await hasSyncColumns();
+    const result = await wfTransaction(async tx => {
+    const query = txQuery(tx);
+    const syncReady = await hasSyncColumns(query);
 
-    const book = (await wfQuery(`
+    const book = (await query(`
       SELECT Id, Name, Status, EffectiveMonth,
              CONVERT(VARCHAR(10), EffectiveFrom, 23) AS EffectiveFrom,
              CONVERT(VARCHAR(10), EffectiveTo, 23) AS EffectiveTo
              ${syncReady ? ', SourceSetPriceIds' : ''}
-      FROM wf.PriceBook WHERE Id=@id
+      FROM wf.PriceBook WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id
     `, { id: { type: sql.Int, value: id } })).recordset[0];
-    if (!book) return res.status(404).json({ message: 'ไม่พบ Price Book' });
-    if (book.Status === 'ARCHIVED') return res.status(409).json({ message: 'ไม่สามารถแก้ไข Price Book ที่เก็บเข้าคลังแล้ว' });
+    if (!book) throw Object.assign(new Error('ไม่พบ Price Book'), { status: 404 });
+    if (book.Status === 'ARCHIVED') throw Object.assign(new Error('ไม่สามารถแก้ไข Price Book ที่เก็บเข้าคลังแล้ว'), { status: 409 });
 
     const validatedLines = [];
     for (const l of lines) {
-      if (!l.goodId) return res.status(400).json({ message: 'ทุก line ต้องมี goodId' });
+      if (!l.goodId) throw Object.assign(new Error('ทุก line ต้องมี goodId'), { status: 400 });
       const lineStatus = ['ACTIVE', 'DISCONTINUING', 'SUSPENDED'].includes(String(l.lineStatus || '').toUpperCase())
         ? String(l.lineStatus).toUpperCase()
         : 'ACTIVE';
       const linePrice = lineStatus === 'SUSPENDED' ? null : Number(l.price);
       if (lineStatus !== 'SUSPENDED' && (!Number.isFinite(linePrice) || linePrice <= 0)) {
-        return res.status(400).json({ message: `สินค้า ${l.goodName || l.goodId}: ต้องระบุราคาขายมากกว่า 0` });
+        throw Object.assign(new Error(`สินค้า ${l.goodName || l.goodId}: ต้องระบุราคาขายมากกว่า 0`), { status: 400 });
       }
       validatedLines.push({
         goodId: String(l.goodId),
@@ -712,24 +541,43 @@ router.post('/:id/lines', requirePricingManage, async (req, res) => {
         winSpeedListNo: l.winSpeedListNo || null,
       });
     }
+    if (new Set(validatedLines.map(line => line.goodId)).size !== validatedLines.length) {
+      throw Object.assign(new Error('สินค้าในตารางราคาซ้ำกัน'), { status: 400, code: 'DUPLICATE_PRICE_PRODUCT' });
+    }
 
     // Check confidential Cost Floor on all active priced items!
+    const activeValidated = validatedLines.filter(v => v.lineStatus !== 'SUSPENDED');
     await assertPricesAboveCost({
-      lines: validatedLines.filter(v => v.lineStatus !== 'SUSPENDED'),
+      lines: activeValidated,
       asOfDate: book.EffectiveFrom || getBangkokDateString(),
+      queryFn: query,
     });
+
+    if (book.EffectiveFrom || book.EffectiveTo) {
+      await assertNoPriceOverlap({
+        excludeBookId: id,
+        excludeSetIds: await resolveBookWinSpeedSetIds(book, query, { strict: true }),
+        effectiveFrom: book.EffectiveFrom || `${book.EffectiveMonth}-01`,
+        effectiveTo: book.EffectiveTo || book.EffectiveFrom || `${book.EffectiveMonth}-01`,
+        goodIds: activeValidated.map(v => v.goodId),
+        queryFn: query,
+      });
+    }
 
     // Preserve existing WinSpeed links when replacing rows
     const prevMap = new Map();
     if (syncReady) {
-      const prevRows = (await wfQuery(`SELECT GoodId, WinSpeedSetPriceId, WinSpeedListNo, GoodCode, GoodGroupId, GoodGroupName FROM wf.PriceBookLine WHERE PriceBookId=@id`, { id: { type: sql.Int, value: id } })).recordset || [];
+      const prevRows = (await query(`SELECT GoodId, WinSpeedSetPriceId, WinSpeedListNo, GoodCode, GoodGroupId, GoodGroupName FROM wf.PriceBookLine WITH (UPDLOCK,HOLDLOCK) WHERE PriceBookId=@id`, { id: { type: sql.Int, value: id } })).recordset || [];
       for (const pr of prevRows) prevMap.set(String(pr.GoodId), pr);
+      if (book.Status === 'ACTIVE' && prevRows.some(pr => !validatedLines.some(line => line.goodId === String(pr.GoodId)))) {
+        throw Object.assign(new Error('กรุณาเปลี่ยนสถานะสินค้าที่นำออกเป็นงดขายก่อน'), { status: 409, code: 'PRICE_LINE_REMOVAL_REQUIRES_SUSPEND' });
+      }
     }
 
-    await wfQuery(`DELETE FROM wf.PriceBookLine WHERE PriceBookId=@id`, { id: { type: sql.Int, value: id } });
+    await query(`DELETE FROM wf.PriceBookLine WHERE PriceBookId=@id`, { id: { type: sql.Int, value: id } });
     for (const v of validatedLines) {
       const prev = prevMap.get(v.goodId);
-      await wfQuery(`
+      await query(`
         INSERT INTO wf.PriceBookLine (
           PriceBookId, GoodId, GoodName, Unit, Price, LineStatus, Note
           ${syncReady ? ', GoodCode, GoodGroupId, GoodGroupName, WinSpeedSetPriceId, WinSpeedListNo' : ''}
@@ -749,19 +597,22 @@ router.post('/:id/lines', requirePricingManage, async (req, res) => {
         note: { type: sql.NVarChar(255), value: v.note },
         ...(syncReady ? {
           gc: { type: sql.NVarChar(50), value: v.goodCode || prev?.GoodCode || null },
-          wsSid: { type: sql.Int, value: v.winSpeedSetPriceId ?? prev?.WinSpeedSetPriceId ?? null },
-          wsLno: { type: sql.SmallInt, value: v.winSpeedListNo ?? prev?.WinSpeedListNo ?? null },
+          wsSid: { type: sql.Int, value: prev?.WinSpeedSetPriceId ?? null },
+          wsLno: { type: sql.SmallInt, value: prev?.WinSpeedListNo ?? null },
         } : {}),
       });
     }
 
     let syncResult = { synced: false };
     if (book.Status === 'ACTIVE') {
-      syncResult = await syncBookToWinSpeed(id, req.user.sub);
+      syncResult = await syncBookToWinSpeed(id, req.user.sub, null, tx);
     }
 
-    await audit(wfQuery, id, 'EDIT_LINES', book.Status, book.Status, req.user.sub, `${lines.length} รายการ${syncResult.synced ? ` · Sync WinSpeed (${syncResult.upserted} อัปเดต)` : ''}`);
-    res.json({ ok: true, count: lines.length, winSpeedSynced: Boolean(syncResult.synced), syncSummary: syncResult });
+    await audit(query, id, 'EDIT_LINES', book.Status, book.Status, req.user.sub, `${lines.length} รายการ${syncResult.synced ? ` · Auto-Sync WinSpeed (${syncResult.upserted} อัปเดต)` : ''}`);
+    return { ok: true, count: lines.length, winSpeedSynced: Boolean(syncResult.synced), syncSummary: syncResult };
+    });
+    notifyPriceBookUpdated({ bookId: id, action: 'edit_lines' });
+    res.json(result);
   } catch (e) {
     console.error('[pricebook/lines]', e);
     res.status(e.status || 500).json({ message: e.message, code: e.code, details: e.details });
@@ -774,24 +625,26 @@ router.patch('/:id/lines/:lineId', requirePricingManage, async (req, res) => {
     const id = Number(req.params.id);
     const lineId = Number(req.params.lineId);
     const { price, lineStatus, note, syncToWinSpeed = true } = req.body || {};
-
-    const syncReady = await hasSyncColumns();
-    const book = (await wfQuery(`
+    const result = await wfTransaction(async tx => {
+    const query = txQuery(tx);
+    const syncReady = await hasSyncColumns(query);
+    const book = (await query(`
       SELECT Id, Name, Status, EffectiveMonth,
              CONVERT(VARCHAR(10), EffectiveFrom, 23) AS EffectiveFrom,
              CONVERT(VARCHAR(10), EffectiveTo, 23) AS EffectiveTo
              ${syncReady ? ', SourceSetPriceIds' : ''}
-      FROM wf.PriceBook WHERE Id=@id
+      FROM wf.PriceBook WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id
     `, { id: { type: sql.Int, value: id } })).recordset[0];
-    if (!book) return res.status(404).json({ message: 'ไม่พบ Price Book' });
-    if (book.Status === 'ARCHIVED') return res.status(409).json({ message: 'ไม่สามารถแก้ไข Price Book ที่เก็บเข้าคลังแล้ว' });
+    if (!book) throw Object.assign(new Error('ไม่พบ Price Book'), { status: 404 });
+    if (book.Status === 'ARCHIVED') throw Object.assign(new Error('ไม่สามารถแก้ไข Price Book ที่เก็บเข้าคลังแล้ว'), { status: 409 });
+    if (book.Status === 'ACTIVE' && !syncToWinSpeed) throw Object.assign(new Error('ตารางราคาที่ใช้งานต้อง sync กับ WinSpeed'), { status: 409, code: 'PRICE_SYNC_REQUIRED' });
 
-    const existingLine = (await wfQuery(`
+    const existingLine = (await query(`
       SELECT Id, GoodId, GoodName, Unit, Price, LineStatus, Note
              ${syncReady ? ', GoodCode, GoodGroupId, WinSpeedSetPriceId, WinSpeedListNo' : ''}
-      FROM wf.PriceBookLine WHERE Id=@lid AND PriceBookId=@id
+      FROM wf.PriceBookLine WITH (UPDLOCK,HOLDLOCK) WHERE Id=@lid AND PriceBookId=@id
     `, { lid: { type: sql.Int, value: lineId }, id: { type: sql.Int, value: id } })).recordset[0];
-    if (!existingLine) return res.status(404).json({ message: 'ไม่พบรายการสินค้าในตารางราคา' });
+    if (!existingLine) throw Object.assign(new Error('ไม่พบรายการสินค้าในตารางราคา'), { status: 404 });
 
     const nextStatus = lineStatus !== undefined
       ? (['ACTIVE', 'DISCONTINUING', 'SUSPENDED'].includes(String(lineStatus).toUpperCase()) ? String(lineStatus).toUpperCase() : existingLine.LineStatus)
@@ -801,17 +654,28 @@ router.patch('/:id/lines/:lineId', requirePricingManage, async (req, res) => {
       : (price !== undefined ? Number(price) : Number(existingLine.Price));
 
     if (nextStatus !== 'SUSPENDED' && (!Number.isFinite(nextPrice) || nextPrice <= 0)) {
-      return res.status(400).json({ message: 'ราคาขายต้องมากกว่า 0' });
+      throw Object.assign(new Error('ราคาขายต้องมากกว่า 0'), { status: 400 });
     }
 
     if (nextStatus !== 'SUSPENDED') {
       await assertPricesAboveCost({
         lines: [{ goodId: existingLine.GoodId, goodCode: existingLine.GoodCode, goodName: existingLine.GoodName, pricePerTon: nextPrice }],
         asOfDate: book.EffectiveFrom || getBangkokDateString(),
+        queryFn: query,
       });
+      if (book.EffectiveFrom || book.EffectiveTo) {
+        await assertNoPriceOverlap({
+          excludeBookId: id,
+          excludeSetIds: await resolveBookWinSpeedSetIds(book, query, { strict: true }),
+          effectiveFrom: book.EffectiveFrom || `${book.EffectiveMonth}-01`,
+          effectiveTo: book.EffectiveTo || book.EffectiveFrom || `${book.EffectiveMonth}-01`,
+          goodIds: [existingLine.GoodId],
+          queryFn: query,
+        });
+      }
     }
 
-    await wfQuery(`
+    await query(`
       UPDATE wf.PriceBookLine
       SET Price = @p,
           LineStatus = @ls,
@@ -828,12 +692,15 @@ router.patch('/:id/lines/:lineId', requirePricingManage, async (req, res) => {
 
     let syncResult = { synced: false };
     if (syncToWinSpeed && book.Status === 'ACTIVE') {
-      syncResult = await syncBookToWinSpeed(id, req.user.sub, new Set([String(existingLine.GoodId)]));
+      syncResult = await syncBookToWinSpeed(id, req.user.sub, new Set([String(existingLine.GoodId)]), tx);
     }
 
-    await audit(wfQuery, id, 'EDIT_LINE', book.Status, book.Status, req.user.sub,
-      `${existingLine.GoodName}: ${existingLine.Price ?? 'งดขาย'} -> ${nextStatus === 'SUSPENDED' ? 'งดขาย' : nextPrice}${syncResult.synced ? ' (Sync WinSpeed)' : ''}`);
-    res.json({ ok: true, lineId, price: nextPrice, lineStatus: nextStatus, winSpeedSynced: Boolean(syncResult.synced) });
+    await audit(query, id, 'EDIT_LINE', book.Status, book.Status, req.user.sub,
+      `${existingLine.GoodName}: ${existingLine.Price ?? 'งดขาย'} -> ${nextStatus === 'SUSPENDED' ? 'งดขาย' : nextPrice}${syncResult.synced ? ' (Auto-Sync WinSpeed)' : ''}`);
+    return { ok: true, lineId, price: nextPrice, lineStatus: nextStatus, winSpeedSynced: Boolean(syncResult.synced) };
+    });
+    notifyPriceBookUpdated({ bookId: id, action: 'edit_line', lineId });
+    res.json(result);
   } catch (e) {
     console.error('[pricebook/edit-line]', e);
     res.status(e.status || 500).json({ message: e.message, code: e.code, details: e.details });
@@ -846,39 +713,52 @@ router.post('/:id/lines/item', requirePricingManage, async (req, res) => {
     const id = Number(req.params.id);
     const { goodId, goodCode, goodName, unit = 'ตัน', price, lineStatus = 'ACTIVE', note } = req.body || {};
     if (!goodId) return res.status(400).json({ message: 'กรุณาเลือกสูตรสินค้า' });
-
-    const syncReady = await hasSyncColumns();
-    const book = (await wfQuery(`
-      SELECT Id, Name, Status, EffectiveMonth,
+    const result = await wfTransaction(async tx => {
+    const query = txQuery(tx);
+    const syncReady = await hasSyncColumns(query);
+    const book = (await query(`
+      SELECT Id, Name, Status, EffectiveMonth, Note,
              CONVERT(VARCHAR(10), EffectiveFrom, 23) AS EffectiveFrom,
              CONVERT(VARCHAR(10), EffectiveTo, 23) AS EffectiveTo
-      FROM wf.PriceBook WHERE Id=@id
+             ${syncReady ? ', SourceSetPriceIds' : ''}
+      FROM wf.PriceBook WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id
     `, { id: { type: sql.Int, value: id } })).recordset[0];
-    if (!book) return res.status(404).json({ message: 'ไม่พบ Price Book' });
-    if (book.Status === 'ARCHIVED') return res.status(409).json({ message: 'ไม่สามารถแก้ไข Price Book ที่เก็บเข้าคลังแล้ว' });
+    if (!book) throw Object.assign(new Error('ไม่พบ Price Book'), { status: 404 });
+    if (book.Status === 'ARCHIVED') throw Object.assign(new Error('ไม่สามารถแก้ไข Price Book ที่เก็บเข้าคลังแล้ว'), { status: 409 });
 
     const nextStatus = ['ACTIVE', 'DISCONTINUING', 'SUSPENDED'].includes(String(lineStatus).toUpperCase())
       ? String(lineStatus).toUpperCase()
       : 'ACTIVE';
     const nextPrice = nextStatus === 'SUSPENDED' ? null : Number(price);
     if (nextStatus !== 'SUSPENDED' && (!Number.isFinite(nextPrice) || nextPrice <= 0)) {
-      return res.status(400).json({ message: 'ราคาขายต้องมากกว่า 0' });
+      throw Object.assign(new Error('ราคาขายต้องมากกว่า 0'), { status: 400 });
     }
 
     if (nextStatus !== 'SUSPENDED') {
       await assertPricesAboveCost({
         lines: [{ goodId, goodCode, goodName, pricePerTon: nextPrice }],
         asOfDate: book.EffectiveFrom || getBangkokDateString(),
+        queryFn: query,
       });
+      if (book.EffectiveFrom || book.EffectiveTo) {
+        await assertNoPriceOverlap({
+          excludeBookId: id,
+          excludeSetIds: await resolveBookWinSpeedSetIds(book, query, { strict: true }),
+          effectiveFrom: book.EffectiveFrom || `${book.EffectiveMonth}-01`,
+          effectiveTo: book.EffectiveTo || book.EffectiveFrom || `${book.EffectiveMonth}-01`,
+          goodIds: [goodId],
+          queryFn: query,
+        });
+      }
     }
 
-    const existing = (await wfQuery(`SELECT Id FROM wf.PriceBookLine WHERE PriceBookId=@id AND GoodId=@g`, {
+    const existing = (await query(`SELECT Id FROM wf.PriceBookLine WITH (UPDLOCK,HOLDLOCK) WHERE PriceBookId=@id AND GoodId=@g`, {
       id: { type: sql.Int, value: id },
       g: { type: sql.NVarChar(20), value: String(goodId) },
     })).recordset[0];
 
     if (existing) {
-      await wfQuery(`
+      await query(`
         UPDATE wf.PriceBookLine SET Price=@p, LineStatus=@ls, Note=@note${syncReady ? ', UpdatedAt=GETUTCDATE()' : ''} WHERE Id=@lid
       `, {
         p: { type: sql.Decimal(12, 2), value: nextPrice },
@@ -887,7 +767,7 @@ router.post('/:id/lines/item', requirePricingManage, async (req, res) => {
         lid: { type: sql.Int, value: existing.Id },
       });
     } else {
-      await wfQuery(`
+      await query(`
         INSERT INTO wf.PriceBookLine (PriceBookId, GoodId, GoodName, Unit, Price, LineStatus, Note${syncReady ? ', GoodCode, GoodGroupId, GoodGroupName' : ''})
         SELECT @b, @g, COALESCE(NULLIF(@n, ''), gm.GoodName1, ''), @u, @p, @ls, @note${syncReady ? ', COALESCE(@gc, gm.GoodCode), gm.GoodGroupID, gg.GoodGroupName' : ''}
         FROM (SELECT 1 AS dummy) d
@@ -907,12 +787,15 @@ router.post('/:id/lines/item', requirePricingManage, async (req, res) => {
 
     let syncResult = { synced: false };
     if (book.Status === 'ACTIVE') {
-      syncResult = await syncBookToWinSpeed(id, req.user.sub, new Set([String(goodId)]));
+      syncResult = await syncBookToWinSpeed(id, req.user.sub, new Set([String(goodId)]), tx);
     }
 
-    await audit(wfQuery, id, existing ? 'EDIT_LINE' : 'ADD_LINE', book.Status, book.Status, req.user.sub,
-      `${goodName || goodId}: ${nextStatus === 'SUSPENDED' ? 'งดขาย' : nextPrice}${syncResult.synced ? ' (Sync WinSpeed)' : ''}`);
-    res.json({ ok: true, winSpeedSynced: Boolean(syncResult.synced) });
+    await audit(query, id, existing ? 'EDIT_LINE' : 'ADD_LINE', book.Status, book.Status, req.user.sub,
+      `${goodName || goodId}: ${nextStatus === 'SUSPENDED' ? 'งดขาย' : nextPrice}${syncResult.synced ? ' (Auto-Sync WinSpeed)' : ''}`);
+    return { response: { ok: true, winSpeedSynced: Boolean(syncResult.synced) }, action: existing ? 'edit_line' : 'add_line' };
+    });
+    notifyPriceBookUpdated({ bookId: id, action: result.action });
+    res.json(result.response);
   } catch (e) {
     console.error('[pricebook/add-item]', e);
     res.status(e.status || 500).json({ message: e.message, code: e.code, details: e.details });
@@ -927,7 +810,7 @@ router.post('/:id/sync-to-winspeed', requirePricingManage, async (req, res) => {
     if (!result.synced) {
       return res.status(400).json({ message: 'ไม่สามารถ Sync ไปยัง WinSpeed ได้ (โปรดตรวจ Migration 186)' });
     }
-    await audit(wfQuery, id, 'SYNC_TO_WINSPEED', null, null, req.user.sub, `อัปเดต ${result.upserted} รายการ / งดขาย ${result.removed} รายการ`);
+    // syncBookToWinSpeed commits its audit together with the native updates.
     res.json({ ok: true, ...result });
   } catch (e) {
     console.error('[pricebook/sync-to-winspeed]', e);
@@ -944,41 +827,55 @@ for (const [action, fromStatuses, toStatus, col] of [
   router.post(`/:id/${action}`, requirePricingManage, async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const book = (await wfQuery(`
-        SELECT Id, Status, EffectiveMonth,
-               CONVERT(VARCHAR(10), EffectiveFrom, 23) AS EffectiveFrom
-        FROM wf.PriceBook WHERE Id=@id
+      const result = await wfTransaction(async tx => {
+      const query = txQuery(tx);
+      const syncReady = await hasSyncColumns(query);
+      const book = (await query(`
+        SELECT Id, Name, Status, EffectiveMonth, Note,
+               CONVERT(VARCHAR(10), EffectiveFrom, 23) AS EffectiveFrom,
+               CONVERT(VARCHAR(10), EffectiveTo, 23) AS EffectiveTo
+               ${syncReady ? ', SourceSetPriceIds' : ''}
+        FROM wf.PriceBook WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id
       `, { id: { type: sql.Int, value: id } })).recordset[0];
-      if (!book) return res.status(404).json({ message: 'ไม่พบ Price Book' });
+      if (!book) throw Object.assign(new Error('ไม่พบ Price Book'), { status: 404 });
       if (!fromStatuses.includes(book.Status)) {
-        return res.status(409).json({ message: `ต้องเป็น ${fromStatuses.join(' หรือ ')} (ปัจจุบัน: ${book.Status})` });
+        throw Object.assign(new Error(`ต้องเป็น ${fromStatuses.join(' หรือ ')} (ปัจจุบัน: ${book.Status})`), { status: 409 });
       }
       if (toStatus === 'ACTIVE') {
-        const lines = (await wfQuery(`SELECT GoodId, GoodName, Price, LineStatus FROM wf.PriceBookLine WHERE PriceBookId=@id`, { id: { type: sql.Int, value: id } })).recordset || [];
+        const lines = (await query(`SELECT GoodId, GoodName, Price, LineStatus FROM wf.PriceBookLine WITH (UPDLOCK,HOLDLOCK) WHERE PriceBookId=@id`, { id: { type: sql.Int, value: id } })).recordset || [];
+        const activeLines = lines.filter(l => l.LineStatus !== 'SUSPENDED');
         await assertPricesAboveCost({
-          lines: lines.filter(l => l.LineStatus !== 'SUSPENDED').map(l => ({ goodId: l.GoodId, goodName: l.GoodName, pricePerTon: l.Price })),
+          lines: activeLines.map(l => ({ goodId: l.GoodId, goodName: l.GoodName, pricePerTon: l.Price })),
           asOfDate: book.EffectiveFrom || getBangkokDateString(),
+          queryFn: query,
         });
-
-        await wfQuery(`UPDATE wf.PriceBook SET Status='ARCHIVED'
-          WHERE Status='ACTIVE' AND EffectiveMonth=@em AND Id<>@id`,
-          { em: { type: sql.Char(7), value: book.EffectiveMonth }, id: { type: sql.Int, value: id } });
+        await assertNoPriceOverlap({
+          excludeBookId: id,
+          excludeSetIds: await resolveBookWinSpeedSetIds(book, query, { strict: true }),
+          effectiveFrom: book.EffectiveFrom || `${book.EffectiveMonth}-01`,
+          effectiveTo: book.EffectiveTo || book.EffectiveFrom || `${book.EffectiveMonth}-01`,
+          goodIds: activeLines.map(l => l.GoodId),
+          queryFn: query,
+        });
       }
       const setCol = col ? `, ${col}=@uid, ${col.replace('By','At')}=GETUTCDATE()` : '';
-      const __r = await wfQuery(`UPDATE wf.PriceBook SET Status=@s ${setCol} WHERE Id=@id`, {
+      const __r = await query(`UPDATE wf.PriceBook SET Status=@s ${setCol} WHERE Id=@id`, {
         s: { type: sql.VarChar(20), value: toStatus },
         uid: { type: sql.Int, value: req.user.sub },
         id: { type: sql.Int, value: id },
       });
-      if (!__r.rowsAffected[0]) return res.status(404).json({ message: 'ไม่พบรายการที่ระบุ' });
+      if (!__r.rowsAffected[0]) throw Object.assign(new Error('ไม่พบรายการที่ระบุ'), { status: 404 });
 
       let syncResult = { synced: false };
       if (toStatus === 'ACTIVE') {
-        syncResult = await syncBookToWinSpeed(id, req.user.sub).catch(err => ({ synced: false, error: err.message }));
+        syncResult = await syncBookToWinSpeed(id, req.user.sub, null, tx);
       }
 
-      await audit(wfQuery, id, action.toUpperCase(), book.Status, toStatus, req.user.sub, req.body?.note || (syncResult.synced ? 'Synced WinSpeed' : null));
-      res.json({ ok: true, status: toStatus, winSpeedSynced: Boolean(syncResult.synced) });
+      await audit(query, id, action.toUpperCase(), book.Status, toStatus, req.user.sub, req.body?.note || (syncResult.synced ? 'Auto-Synced WinSpeed' : null));
+      return { ok: true, status: toStatus, winSpeedSynced: Boolean(syncResult.synced), docuNo: syncResult.docuNo || null };
+      });
+      notifyPriceBookUpdated({ bookId: id, action, status: toStatus });
+      res.json(result);
     } catch (e) {
       console.error(e);
       res.status(e.status || 500).json({ message: e.message, code: e.code, details: e.details });
@@ -1049,35 +946,42 @@ router.patch('/special/:spId', requireRole(...SPECIAL_APPROVE_ROLES), async (req
     if (approvedPrice == null || !Number.isFinite(Number(approvedPrice)) || Number(approvedPrice) <= 0) {
       return res.status(400).json({ message: 'ต้องระบุราคาอนุมัติ (approvedPrice > 0)' });
     }
-    const sp = (await wfQuery(`
+    const result = await wfTransaction(async tx => {
+      const query = txQuery(tx);
+      const sp = (await query(`
       SELECT sp.Id, sp.RequestedBy, sp.GoodId, sp.GoodName, sp.PriceBookId,
-             CONVERT(VARCHAR(10), pb.EffectiveFrom, 23) AS EffectiveFrom
-      FROM wf.PriceBookSpecialPrice sp
-      JOIN wf.PriceBook pb ON pb.Id = sp.PriceBookId
+             pb.Status AS BookStatus, CONVERT(VARCHAR(10), pb.EffectiveFrom, 23) AS EffectiveFrom
+      FROM wf.PriceBookSpecialPrice sp WITH (UPDLOCK,HOLDLOCK)
+      JOIN wf.PriceBook pb WITH (UPDLOCK,HOLDLOCK) ON pb.Id = sp.PriceBookId
       WHERE sp.Id=@id
     `, { id: { type: sql.Int, value: spId } })).recordset[0];
-    if (!sp) return res.status(404).json({ message: 'ไม่พบคำขอราคาพิเศษ' });
-    if (Number(sp.RequestedBy) === Number(req.user.sub) && req.user.role !== 'ADMIN') {
-      return res.status(403).json({ message: 'ไม่อนุญาตให้อนุมัติคำขอของตัวเอง (ใช้บัญชีผู้อนุมัติคนอื่น)' });
+    if (!sp) throw Object.assign(new Error('ไม่พบคำขอราคาพิเศษ'), { status: 404 });
+    if ([Number(req.user.sub), Number(req.user.actorSub || req.user.sub)].includes(Number(sp.RequestedBy)) && req.user.role !== 'ADMIN') {
+      throw Object.assign(new Error('ไม่อนุญาตให้อนุมัติคำขอของตัวเอง (ใช้บัญชีผู้อนุมัติคนอื่น)'), { status: 403 });
     }
 
     if (sp.GoodId) {
       await assertPricesAboveCost({
         lines: [{ goodId: sp.GoodId, goodName: sp.GoodName, pricePerTon: Number(approvedPrice) }],
         asOfDate: sp.EffectiveFrom || getBangkokDateString(),
+        queryFn: query,
       });
     }
 
-    const __r = await wfQuery(`
+    const __r = await query(`
       UPDATE wf.PriceBookSpecialPrice SET ApprovedPrice=@p, ApprovedBy=@uid, ApprovedAt=GETUTCDATE() WHERE Id=@id`, {
       id: { type: sql.Int, value: spId },
       p: { type: sql.Decimal(12, 2), value: Number(approvedPrice) },
       uid: { type: sql.Int, value: req.user.sub },
     });
-    if (!__r.rowsAffected[0]) return res.status(404).json({ message: 'ไม่พบรายการที่ระบุ' });
+    if (!__r.rowsAffected[0]) throw Object.assign(new Error('ไม่พบรายการที่ระบุ'), { status: 404 });
 
-    const syncResult = await syncSpecialPriceToWinSpeed(spId).catch(err => ({ synced: false, error: err.message }));
-    res.json({ id: spId, approvedPrice: Number(approvedPrice), winSpeedSynced: Boolean(syncResult.synced) });
+    const syncResult = sp.BookStatus === 'ACTIVE' ? await syncSpecialPriceToWinSpeed(spId, null, tx) : { synced: false };
+    if (sp.BookStatus === 'ACTIVE' && !syncResult.synced) throw Object.assign(new Error('WinSpeed special price was not synced'), { status: 409, code: 'PRICE_SYNC_INCOMPLETE' });
+    await audit(query, sp.PriceBookId, 'SPECIAL_APPROVE', sp.BookStatus, sp.BookStatus, req.user.sub, `specialId=${spId}`);
+    return { id: spId, approvedPrice: Number(approvedPrice), winSpeedSynced: Boolean(syncResult.synced) };
+    });
+    res.json(result);
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message, code: e.code, details: e.details }); }
 });
 
@@ -1085,6 +989,7 @@ router.patch('/special/:spId', requireRole(...SPECIAL_APPROVE_ROLES), async (req
 router.get('/:id/effective', async (req, res) => {
   try {
     const id = Number(req.params.id);
+    if (Number.isInteger(id) && id > 0) await reconcileFromWinSpeed({ bookId: id });
     const custId = req.query.custId ? String(req.query.custId) : null;
     const rows = (await wfQuery(`
       SELECT GoodId, GoodName, Unit, LineStatus, StandardPrice, SpecialPrice, EffectivePrice, Sellable
@@ -1103,4 +1008,6 @@ module.exports.__testing = {
   parseSetIds,
   syncBookToWinSpeed,
   syncSpecialPriceToWinSpeed,
+  reconcileFromWinSpeed,
+  assertNoPriceOverlap,
 };

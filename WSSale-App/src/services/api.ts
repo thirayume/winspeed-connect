@@ -995,6 +995,14 @@ export const fetchGiveawayWithdrawals = (region?: string, year?: number, salesUs
   return req<GiveawayWithdrawal[]>(`/giveaway/withdrawals${qs.toString() ? `?${qs}` : ''}`);
 };
 
+export const fetchGiveawayWithdrawalsDateReview = (region?: string, year?: number, salesUserId?: number | null) => {
+  const qs = new URLSearchParams();
+  if (region) qs.set('region', region);
+  if (year) qs.set('year', String(year));
+  if (salesUserId != null) qs.set('salesUserId', String(salesUserId));
+  return req<GiveawayWithdrawal[]>(`/giveaway/withdrawals/date-review${qs.toString() ? `?${qs}` : ''}`);
+};
+
 export const fetchGiveawayItems = (params?: string | { brand?: string; includeInactive?: boolean }) => {
   const sp = new URLSearchParams();
   if (typeof params === 'string') {
@@ -1122,7 +1130,7 @@ export const fetchOct31StandingPrices = (year?: number) =>
 
 export const snapshotOct31StandingPrices = (payload: {
   standingYear?: number;
-  entries?: { goodId: number; goodCode?: string; goodName?: string; standingPricePerTon: number; note?: string }[];
+  entries?: { goodId: number; goodCode?: string; goodName?: string; basePrice: number; note?: string }[];
 }) => req<{ standingYear: number; count: number; items: import('../types').Oct31StandingPriceItem[] }>(
   '/rebate-pool/oct31-prices/snapshot',
   { method: 'POST', body: JSON.stringify(payload) }
@@ -1136,6 +1144,7 @@ export const fetchRebateConversions = (custId?: number | string, limit?: number)
 };
 
 export const executeManualRebateConversion = (payload: {
+  requestId: string;
   custId: number;
   goodId: number;
   standingYear?: number;
@@ -1143,9 +1152,10 @@ export const executeManualRebateConversion = (payload: {
   requestedTons?: number;
   convertAllEligible?: boolean;
   maturedOnly?: boolean;
+  expiryDate?: string;
   executionMode: 'MANUAL';
   note: string;
-}) => req<{ conversion: import('../types').RebateConversionRecord; allocations: any[]; remainingEligibleBalance: number }>(
+}) => req<{ conversion: import('../types').RebateConversionRecord; ticket: { id: number; expiryDate: string }; replayed: boolean }>(
   '/rebate-pool/conversions/execute',
   { method: 'POST', body: JSON.stringify(payload) }
 );
@@ -1447,8 +1457,16 @@ export interface EffectivePriceRow {
 
 export const fetchPriceBooks = () => req<PriceBook[]>('/pricebook');
 export const fetchPriceBook = (id: number) => req<PriceBook & { lines: PriceBookLine[]; audit: PriceBookAuditRow[] }>(`/pricebook/${id}`);
-export const createPriceBook = (b: { name: string; effectiveMonth?: string; effectiveFrom?: string; effectiveTo?: string; note?: string; seedFromCurrent?: boolean }) =>
-  req<{ id: number }>('/pricebook', { method: 'POST', body: JSON.stringify(b) });
+export const createPriceBook = (b: {
+  name: string;
+  effectiveMonth?: string;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  note?: string;
+  seedFromCurrent?: boolean;
+  status?: 'DRAFT' | 'ACTIVE';
+}) =>
+  req<{ id: number; status?: string; winSpeedSynced?: boolean; docuNo?: string | null }>('/pricebook', { method: 'POST', body: JSON.stringify(b) });
 export const updatePriceBookHeader = (id: number, b: { name?: string; effectiveFrom?: string; effectiveTo?: string; note?: string }) =>
   req<{ ok: boolean; winSpeedSynced?: boolean }>(`/pricebook/${id}`, { method: 'PUT', body: JSON.stringify(b) });
 /** POST /pricebook/:id/lines reads camelCase; GET returns PascalCase. Convert at the boundary. */
@@ -2121,6 +2139,9 @@ export const fetchRebateAccrualLots = (
   return req<import('../types').RebateAccrualLot[]>(`/rebate/accrual/${encodeURIComponent(custId)}${suffix ? `?${suffix}` : ''}`);
 };
 
+export const fetchRebateOpeningBalances = (custId: string) =>
+  req<import('../types').RebateOpeningBalance[]>(`/rebate/accrual/${encodeURIComponent(custId)}/opening`);
+
 export const fetchWfRebateTrailList = (params: { year?: number; empId?: number; custId?: string; q?: string }) => {
   const qs = new URLSearchParams();
   if (params.year) qs.set('year', String(params.year));
@@ -2638,7 +2659,7 @@ export const fetchTrip = (id: number | string) =>
     tripRemark: string | null; preSlingRequired: boolean; documentRevision: number;
     pickupDueDate: string | null;
     multiCustApproval?: MultiCustTripApprovalSummary;
-    orders: { id: number; status: string }[];
+    orders: { id: number | string; custId?: string | number; custCode?: string | null; custName?: string | null; status: string }[];
   }>(`/trips/${id}`);
 
 export const requestTripMultiCustApproval = (tripId: number | string, data?: { reason?: string; orderIds?: (number | string)[] }) =>

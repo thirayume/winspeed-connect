@@ -86,7 +86,6 @@ export function SystemSettingsModal({
   // owner 2026-10-09: price colour threshold, legacy-document cut-off, rebate-claim accounting year
   const [priceWarnBelow, setPriceWarnBelow] = useState<string>('500');
   const [legacyCutoff, setLegacyCutoff] = useState<string>('2022-01-01');
-  const [claimFiscalMonth, setClaimFiscalMonth] = useState<string>('1');
   const [maePuiMaxValidDays, setMaePuiMaxValidDays] = useState<string>('3');
 
   // Credit Limit & AR Aging Strict Mode Policy
@@ -163,7 +162,6 @@ export function SystemSettingsModal({
             setAllowNegativeGiveaway(String(raw.GIVEAWAY_ALLOW_NEGATIVE_QUOTA ?? set.GIVEAWAY_ALLOW_NEGATIVE_QUOTA ?? 'true') === 'true');
             setPriceWarnBelow(String(raw.PRICE_WARN_BELOW_PER_TON ?? set.PRICE_WARN_BELOW_PER_TON ?? '500'));
             setLegacyCutoff(String(raw.LEGACY_DOC_CUTOFF_DATE ?? set.LEGACY_DOC_CUTOFF_DATE ?? '2022-01-01'));
-            setClaimFiscalMonth(String(raw.REBATE_CLAIM_FISCAL_START_MONTH ?? set.REBATE_CLAIM_FISCAL_START_MONTH ?? '1'));
             setMaePuiMaxValidDays(String(raw.QUOTATION_MAE_PUI_MAX_VALID_DAYS ?? set.QUOTATION_MAE_PUI_MAX_VALID_DAYS ?? '3'));
 
             setCreditLimitStrict(String(raw.CREDIT_LIMIT_STRICT_MODE ?? set.CREDIT_LIMIT_STRICT_MODE) === 'true');
@@ -249,8 +247,6 @@ export function SystemSettingsModal({
       const warnBelow = parseStrictInt(priceWarnBelow, 500);
       if (warnBelow < 0) throw new Error('เกณฑ์ราคาต่ำกว่าราคาประกาศต้องไม่ติดลบ');
       if (!/^\d{4}-\d{2}-\d{2}$/.test(legacyCutoff.trim())) throw new Error('วันตัดเอกสารเก่าต้องเป็นวันที่รูปแบบ YYYY-MM-DD');
-      const fiscalMonth = parseStrictInt(claimFiscalMonth, 1);
-      if (fiscalMonth < 0 || fiscalMonth > 12) throw new Error('เดือนเริ่มรอบบัญชีต้องอยู่ระหว่าง 0 ถึง 12');
       const maePuiDays = parseStrictInt(maePuiMaxValidDays, 3);
       if (maePuiDays < 1 || maePuiDays > 90) {
         throw new Error('จำนวนวันยืนราคาสูงสุดของใบเสนอราคากลุ่มแม่ปุ๋ยต้องอยู่ระหว่าง 1 ถึง 90 วัน');
@@ -296,7 +292,6 @@ export function SystemSettingsModal({
         GIVEAWAY_ALLOW_NEGATIVE_QUOTA: allowNegativeGiveaway ? 'true' : 'false',
         PRICE_WARN_BELOW_PER_TON: warnBelow,
         LEGACY_DOC_CUTOFF_DATE: legacyCutoff.trim(),
-        REBATE_CLAIM_FISCAL_START_MONTH: fiscalMonth,
         QUOTATION_MAE_PUI_MAX_VALID_DAYS: maePuiDays,
         TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS: multiCustMin,
         CREDIT_LIMIT_STRICT_MODE: creditLimitStrict ? 'true' : 'false',
@@ -904,10 +899,8 @@ export function SystemSettingsModal({
                       <p className="text-[11px] text-gray-500 mt-1">ใช้กับกระดาน รายการบิล Dashboard และรายงานค้างส่ง · ตั๋วคุมที่ยังมียอดค้างแสดงเสมอ</p>
                     </div>
                     <div>
-                      <label className="block font-bold text-gray-700 mb-1">เคลมรีเบท: เดือนเริ่มรอบบัญชี</label>
-                      <input type="number" min="0" max="12" value={claimFiscalMonth} onChange={e => setClaimFiscalMonth(e.target.value)}
-                        className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none" />
-                      <p className="text-[11px] text-gray-500 mt-1">เคลมได้เฉพาะใบส่งของในรอบบัญชีปัจจุบัน (1 = มกราคม) · 0 = ไม่ตัดรอบ</p>
+                      <label className="block font-bold text-gray-700 mb-1">ยอดรีเบทยกมา</label>
+                      <p className="text-sm text-gray-600">ยอดคงเหลือที่มีสิทธิ์จากปีก่อนยังใช้เคลียร์ได้ โดยรายละเอียดเก่าซ่อนตามวันเริ่มข้อมูล</p>
                     </div>
                   </div>
                   <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-2">

@@ -6,12 +6,12 @@
  * passing it down. Outside a request (jobs, scripts) there is no context.
  */
 const { AsyncLocalStorage } = require('async_hooks');
+const { businessIds } = require('./business-identity');
 
 const als = new AsyncLocalStorage();
 
 function runWithUser(user, fn) {
-  const effectiveId = Number(user?.sub ?? user?.id) || null;
-  const actorId = Number(user?.actorSub ?? user?.actorId ?? effectiveId) || null;
+  const { effective: effectiveId, actor: actorId } = businessIds(user);
   return als.run({ effectiveId, actorId }, fn);
 }
 
@@ -23,7 +23,9 @@ function currentActorId() {
 // Column checks are cached per process: the audit columns only appear after migration 144.
 const columnCache = new Map();
 async function hasColumn(queryFn, table, column) {
-  const key = `${table}.${column}`;
+  const db = require('../db');
+  // The same table can have different migrations in different databases.
+  const key = JSON.stringify([db.getTarget?.() || '', db.getDbName?.() || '', table, column]);
   if (columnCache.has(key)) return columnCache.get(key);
   let present = false;
   try {

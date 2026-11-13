@@ -11,7 +11,8 @@
  *     supporting full & partial deductions (PARTIALLY_CONVERTED / CONVERTED)
  */
 
-const { wfQuery, wfTransaction, sql } = require('../db');
+const { wfTransaction, sql } = require('../db');
+const { defaultRebateQuery: wfQuery, transactionQuery } = require('./rebate-sql');
 const { getBangkokDateString } = require('./so-pickup-policy');
 const { hasPermission, hasRole, userRoles } = require('./role-capabilities');
 const { getSettingValue, logChangeEvent } = require('./policy-contract');
@@ -132,9 +133,10 @@ async function getCustomerConversionQueue(queryFn = wfQuery, { custId, asOfDate 
       ['ACTIVE', 'READY_FOR_CONVERSION', 'PARTIALLY_CONVERTED'].includes(row.status)
     ) {
       eligibleLedgers.push(row);
-      const isMatured =
-        row.status === LEDGER_STATUS.READY_FOR_CONVERSION ||
-        (row.cycleExpiryDate && row.cycleExpiryDate <= today);
+      // A status reflects a previous job run, not the queried as-of date.
+      // In particular, an earlier-date preview must not show a future lot as
+      // matured just because a later job already marked it READY.
+      const isMatured = row.cycleExpiryDate && row.cycleExpiryDate <= today;
       if (isMatured) {
         maturedBalance = round2(maturedBalance + row.remainingAmount);
       } else {
@@ -281,11 +283,11 @@ async function snapshotOct31StandingPrices(
 
   if (!sourceEntries) {
     const bookRes = await queryFn(
-      `SELECT pbl.GoodId, pbl.GoodCode, pbl.GoodName, pbl.ListPricePerTon, pb.Id AS PriceBookId, pb.Code AS PriceListCode
+      `SELECT pbl.GoodId, pbl.GoodCode, pbl.GoodName, pbl.Price AS ListPricePerTon, pb.Id AS PriceBookId, pb.Name AS PriceListCode
        FROM wf.PriceBookLine pbl WITH (NOLOCK)
        JOIN wf.PriceBook pb WITH (NOLOCK) ON pb.Id = pbl.PriceBookId
        WHERE pb.Status = 'ACTIVE'
-         AND pbl.ListPricePerTon > 0
+         AND pbl.Price > 0
          AND ISNULL(pbl.LineStatus, 'NORMAL') <> 'SUSPENDED'
          AND (pb.EffectiveFrom IS NULL OR pb.EffectiveFrom <= @standingDate)
          AND (pb.EffectiveTo IS NULL OR pb.EffectiveTo >= @standingDate)
@@ -296,7 +298,12 @@ async function snapshotOct31StandingPrices(
     sourceEntries = [];
     for (const r of (bookRes.recordset || [])) {
       const gid = Number(r.GoodId);
-      if (!gid || seenGoods.has(gid)) continue;
+      if (!gid) continue;
+      if (seenGoods.has(gid)) {
+        throw createRebateError('พบราคาสินค้าซ้ำใน Pricelist ณ วันที่ 31 ตุลาคม กรุณาตรวจสอบก่อน Snapshot', {
+          status: 409, code: 'OCT31_PRICE_AMBIGUOUS', details: { goodId: gid },
+        });
+      }
       seenGoods.add(gid);
       sourceEntries.push({
         goodId: gid,
@@ -317,7 +324,9 @@ async function snapshotOct31StandingPrices(
     });
   }
 
-  const saved = [];
+  // Validate the complete batch before making any changes. The HTTP endpoint
+  // also wraps the entire snapshot in a transaction.
+  const uniqueGoods = new Set();
   for (const item of sourceEntries) {
     const goodId = Number(item.goodId);
     const basePrice = round2(item.basePrice);
@@ -327,6 +336,16 @@ async function snapshotOct31StandingPrices(
         code: 'INVALID_STANDING_PRICE_ENTRY',
       });
     }
+    if (uniqueGoods.has(goodId)) {
+      throw createRebateError('พบสินค้าซ้ำในรายการราคายืน', { status: 400, code: 'DUPLICATE_STANDING_PRICE_ENTRY' });
+    }
+    uniqueGoods.add(goodId);
+  }
+
+  const saved = [];
+  for (const item of sourceEntries) {
+    const goodId = Number(item.goodId);
+    const basePrice = round2(item.basePrice);
     const row = await RebatePoolModels.upsertOct31StandingPrice(queryFn, {
       standingYear: year,
       standingDate,
@@ -340,6 +359,7 @@ async function snapshotOct31StandingPrices(
       note: item.note ?? null,
       capturedByUserId: actorUser?.id ?? null,
     });
+    if (!row) throw createRebateError('ไม่สามารถบันทึกราคายืนได้', { status: 503, code: 'STANDING_PRICE_SAVE_FAILED' });
     saved.push(row);
   }
 
@@ -354,8 +374,8 @@ async function snapshotOct31StandingPrices(
 /**
  * Fetches official Oct 31st standing price, throwing OCT31_STANDING_PRICE_NOT_FOUND if absent.
  */
-async function requireOct31StandingPrice(queryFn = wfQuery, { standingYear, goodId }) {
-  const row = await RebatePoolModels.findOct31StandingPrice(queryFn, standingYear, goodId);
+async function requireOct31StandingPrice(queryFn = wfQuery, { standingYear, goodId, lock = false }) {
+  const row = await RebatePoolModels.findOct31StandingPrice(queryFn, standingYear, goodId, { lock });
   if (!row || !(row.basePrice > 0)) {
     throw createRebateError(
       `ไม่พบราคายืน ณ วันที่ 31 ตุลาคม ปี ${standingYear} สำหรับสินค้า #${goodId} กรุณาบันทึกราคายืน 31 ต.ค. ก่อนทำการแปลงตั๋วปุ๋ย`,
@@ -449,6 +469,7 @@ async function executeManualTicketConversion(queryFnOrUndefined, params = {}) {
     const standingPrice = await requireOct31StandingPrice(txQuery, {
       standingYear: effectiveYear,
       goodId: numericGoodId,
+      lock: true,
     });
 
     // 4) Fetch & lock FIFO-eligible ledger lots oldest-first
@@ -459,12 +480,7 @@ async function executeManualTicketConversion(queryFnOrUndefined, params = {}) {
     );
 
     const fifoLots = maturedOnly
-      ? allEligible.filter(
-          lot =>
-            lot.status === LEDGER_STATUS.READY_FOR_CONVERSION ||
-            lot.status === LEDGER_STATUS.PARTIALLY_CONVERTED ||
-            (lot.cycleExpiryDate && lot.cycleExpiryDate <= today)
-        )
+      ? allEligible.filter(lot => lot.cycleExpiryDate && lot.cycleExpiryDate <= today)
       : allEligible;
 
     const totalAvailable = round2(fifoLots.reduce((sum, lot) => sum + lot.remainingAmount, 0));
@@ -631,51 +647,21 @@ async function executeManualTicketConversion(queryFnOrUndefined, params = {}) {
       );
     }
 
-    if (typeof queryFnOrUndefined !== 'function') {
-      // Update yearly conversion alert status to CONVERTED if no matured balance remains
-      try {
-        await txQuery(
-          `UPDATE wf.RebateConversionAlert
-           SET Status = 'CONVERTED',
-               AcknowledgedByUserId = ISNULL(AcknowledgedByUserId, @userId),
-               AcknowledgedAt = ISNULL(AcknowledgedAt, DATEADD(HOUR, 7, GETUTCDATE()))
-           WHERE AlertYear = @year AND CustId = @custId AND Status = 'PENDING'`,
-          { year: effectiveYear, custId: numericCustId, userId: actorUser.id }
-        );
-      } catch { /* alert row may not exist if converted early */ }
-
-      try {
-        await logChangeEvent({
-          entityType: 'FERTILIZER_TICKET_CONVERSION',
-          entityId: String(conversion.id),
-          action: 'MANUAL_FIFO_CONVERSION',
-          changedBy: actorUser.id,
-          summary: `Converted ${totalDeducted} THB (FIFO ${allocations.length} lots) -> ${convertedTons} tons (${convertedBags} bags) @ ${standingPrice.basePrice} THB/ton [Oct31 ${effectiveYear}]`,
-        });
-      } catch { /* non-fatal */ }
-    } else {
-      // Update yearly conversion alert status using injected test queryFn
-      try {
-        await txQuery(
-          `UPDATE wf.RebateConversionAlert
-           SET Status = 'CONVERTED',
-               AcknowledgedByUserId = ISNULL(AcknowledgedByUserId, @userId),
-               AcknowledgedAt = ISNULL(AcknowledgedAt, DATEADD(HOUR, 7, GETUTCDATE()))
-           WHERE AlertYear = @year AND CustId = @custId AND Status = 'PENDING'`,
-          { year: effectiveYear, custId: numericCustId, userId: actorUser.id }
-        );
-      } catch { /* alert row may not exist if converted early */ }
-    }
-
-    try {
-      broadcast('rebate_ticket_converted', {
-        conversionNo: conversion.conversionNo,
-        custId: numericCustId,
-        goodId: standingPrice.goodId,
-        convertedTons,
-        convertedValueBaht: totalDeducted,
-      });
-    } catch { /* non-fatal */ }
+    // Early conversion is allowed, but must not dismiss an alert while any
+    // approved matured balance remains. An absent alert simply updates 0 rows.
+    await txQuery(
+      `UPDATE wf.RebateConversionAlert
+       SET Status = 'CONVERTED',
+           AcknowledgedByUserId = ISNULL(AcknowledgedByUserId, @userId),
+           AcknowledgedAt = ISNULL(AcknowledgedAt, DATEADD(HOUR, 7, GETUTCDATE()))
+       WHERE AlertYear = @year AND CustId = @custId AND Status = 'PENDING'
+         AND NOT EXISTS (SELECT 1 FROM wf.RebateTransactionLedger l
+           WHERE l.CustId = @custId AND l.RemainingAmount > 0
+             AND l.ApprovalStatus IN ('NOT_REQUIRED','APPROVED')
+             AND l.Status IN ('ACTIVE','READY_FOR_CONVERSION','PARTIALLY_CONVERTED')
+             AND l.CycleExpiryDate <= @today)`,
+      { year: effectiveYear, custId: numericCustId, userId: actorUser.id, today }
+    );
 
     return {
       conversion,
@@ -689,7 +675,13 @@ async function executeManualTicketConversion(queryFnOrUndefined, params = {}) {
   if (typeof queryFnOrUndefined === 'function') {
     return runInTx(queryFnOrUndefined);
   }
-  return wfTransaction(async (tx) => runInTx(tx.query));
+  const result = await wfTransaction(async (tx) => runInTx(transactionQuery(tx, sql)));
+  // Notifications and optional legacy event are emitted only after commit.
+  try { await logChangeEvent({ entityType: 'FERTILIZER_TICKET_CONVERSION', entityId: String(result.conversion.id),
+    action: 'MANUAL_FIFO_CONVERSION', changedBy: actorUser.id, summary: `Converted ${result.conversion.convertedValueBaht} THB` }); } catch { /* legacy event is best-effort */ }
+  try { broadcast('rebate_ticket_converted', { conversionNo: result.conversion.conversionNo, custId: numericCustId,
+    goodId: numericGoodId, convertedTons: result.conversion.convertedTons, convertedValueBaht: result.conversion.convertedValueBaht }); } catch { /* notification is best-effort */ }
+  return result;
 }
 
 module.exports = {

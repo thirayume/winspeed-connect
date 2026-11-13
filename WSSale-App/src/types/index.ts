@@ -333,6 +333,7 @@ export type SalesOrder = {
   wfRef?: string;
   soPrefix: SOPrefix;
   custId: string;
+  custCode?: string | null;
   custName: string;
   creditDays?: number;
   tripId?: number;
@@ -723,7 +724,7 @@ export type RebatePoolApprovalStatus =
 export type RebatePoolLedgerStatus =
   | 'ACTIVE'
   | 'PARTIALLY_CONVERTED'
-  | 'FULLY_CONVERTED'
+  | 'CONVERTED'
   | 'READY_FOR_CONVERSION'
   | 'CANCELLED';
 
@@ -787,40 +788,42 @@ export type RebateCustomerQueue = {
   maturedBalance: number;
   activeUnmaturedBalance: number;
   totalFifoEligibleBalance: number;
-  pendingApprovalBalance: number;
-  eligibleLedgers: RebatePoolLedgerEntry[];
+  pendingApprovalBalance: number | null;
+  withoutPlanCount: number;
+  openingEligibleBalance: number;
+  openingEligibleCount: number;
+  detailLimit: number;
+  eligibleLedgers: { id: string; docNo: string | null; earnedDate: string | null;
+    cycleExpiryDate: string | null; remainingAmount: number }[];
 };
 
 export type Oct31StandingPriceItem = {
-  Id: number;
-  StandingYear: number;
-  GoodId: number;
-  GoodCode: string | null;
-  GoodName: string | null;
-  StandingPricePerTon: number;
-  EffectiveDate: string;
-  Source: string;
-  CapturedByUserId: number | null;
-  CapturedByName: string | null;
-  CapturedAt: string;
-  Note: string | null;
+  id: number;
+  standingYear: number;
+  goodId: number;
+  goodCode: string | null;
+  goodName: string | null;
+  basePrice: number;
+  standingDate: string;
+  sourceType: string;
+  capturedByUserId: number | null;
+  capturedAt: string;
+  note: string | null;
 };
 
 export type RebateConversionAlertItem = {
-  Id: number;
+  Id: number | string;
   AlertYear: number;
   CustId: number;
   CustCode: string | null;
   CustName: string | null;
   MaturedBalance: number;
   LedgerCount: number;
-  NotifiedAt: string;
-  NotificationSent: boolean;
 };
 
 export type RebateConversionRecord = {
   id: number;
-  conversionDocCode: string;
+  conversionNo: string;
   custId: number;
   custCode: string | null;
   custName: string | null;
@@ -828,21 +831,14 @@ export type RebateConversionRecord = {
   goodCode: string | null;
   goodName: string | null;
   standingYear: number;
-  oct31StandingPrice: number;
+  standingPricePerTon: number;
   convertedTons: number;
-  convertedBaht: number;
+  convertedValueBaht: number;
   executionMode: string;
-  allocationJson: {
-    ledgerId: number;
-    docNo: string | null;
-    earnedDate: string;
-    cycleExpiryDate: string;
-    deductedAmount: number;
-    remainingAfter: number;
-  }[];
+  allocations: { ledgerId: number | null; sourceSOID?: number; sourceListNo?: number; qtyTon?: number;
+    docNo: string | null; earnedDate: string | null; deductedAmount: number; remainingAfter: number | null }[];
   note: string | null;
   convertedByUserId: number | null;
-  convertedByName: string | null;
   convertedByRole: string | null;
   convertedAt: string;
 };
@@ -1202,6 +1198,8 @@ export interface RebateAccrualSummary {
   LotCount: number;
   RemainingTon: number;
   RemainingAmt: number;
+  OpeningTon: number;
+  OpeningAmt: number;
   /** ตันที่ยังไม่มีแบบขออนุมัติรายการส่งเสริมการขายครอบคลุม — คิดเป็นเงินไม่ได้ */
   TonWithoutPlan: number;
   OldestDate: string | null;
@@ -1230,6 +1228,13 @@ export interface RebateAccrualLot {
   RebatePerTon: number | null;
   PlanId: number | null;
   PlanNo: string | null;
+  RemainingTon: number;
+  RemainingAmt: number | null;
+}
+
+export interface RebateOpeningBalance {
+  GoodCode: string;
+  GoodName: string | null;
   RemainingTon: number;
   RemainingAmt: number | null;
 }

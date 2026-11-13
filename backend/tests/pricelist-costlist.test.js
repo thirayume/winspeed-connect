@@ -51,6 +51,7 @@ const priceBooks = [
     EffectiveTo: '2026-09-30',
     Status: 'ARCHIVED',
     SourceSetPriceIds: '501',
+    Note: null,
   },
   {
     Id: 2,
@@ -60,6 +61,7 @@ const priceBooks = [
     EffectiveTo: '2026-10-31',
     Status: 'ARCHIVED',
     SourceSetPriceIds: '502',
+    Note: null,
   },
   {
     Id: 3,
@@ -69,6 +71,7 @@ const priceBooks = [
     EffectiveTo: '2026-11-15',
     Status: 'ACTIVE',
     SourceSetPriceIds: '503',
+    Note: null,
   },
   {
     Id: 4,
@@ -78,6 +81,7 @@ const priceBooks = [
     EffectiveTo: '2026-11-30',
     Status: 'APPROVED',
     SourceSetPriceIds: '504',
+    Note: null,
   },
   {
     Id: 5,
@@ -87,8 +91,20 @@ const priceBooks = [
     EffectiveTo: '2026-12-31',
     Status: 'DRAFT',
     SourceSetPriceIds: '505',
+    Note: null,
   },
 ];
+
+let nextBookId = 100;
+let nextLineId = 1000;
+let mockWinSpeedSets = [];
+let mockWinSpeedLines = [];
+
+function toIsoDateOnly(v) {
+  if (!v) return null;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v).slice(0, 10);
+}
 
 let mutableBookLines = [
   { Id: 11, PriceBookId: 1, GoodId: '1094', GoodCode: '7-12044000BB', GoodName: '12-4-40 เชิงผสม ตรารถเกษตร', GoodGroupId: 1001, GoodGroupName: 'ปุ๋ยสูตร', Unit: 'ตัน', Price: 16800, LineStatus: 'ACTIVE', Note: null, WinSpeedSetPriceId: 501, WinSpeedListNo: 1 },
@@ -210,12 +226,36 @@ const db = h.installDbStub((call) => {
     }];
   }
 
+  if (/INSERT INTO wf\.PriceBookLine/i.test(text)) {
+    const newLine = {
+      Id: nextLineId++,
+      PriceBookId: Number(inputs.b ?? inputs.newId),
+      GoodId: String(inputs.g || ''),
+      GoodCode: inputs.gc || null,
+      GoodName: inputs.gn || inputs.n || '',
+      Unit: inputs.u || 'ตัน',
+      Price: inputs.p != null ? Number(inputs.p) : null,
+      LineStatus: inputs.ls || 'ACTIVE',
+      Note: inputs.note || null,
+      WinSpeedSetPriceId: inputs.wsSid ?? inputs.wsSetId ?? null,
+      WinSpeedListNo: inputs.wsLno ?? inputs.wsListNo ?? null,
+    };
+    mutableBookLines.push(newLine);
+    return { recordset: [{ Id: newLine.Id }], rowsAffected: [1] };
+  }
   if (/FROM wf\.PriceBookLine/i.test(text)) {
     if (/LineStatus = 'SUSPENDED'/i.test(text)) {
       return mutableBookLines.filter(l => l.PriceBookId === 3 && l.LineStatus === 'SUSPENDED');
     }
     if (/WHERE Id=@lid AND PriceBookId=@id/i.test(text)) {
       return mutableBookLines.filter(l => l.Id === Number(inputs.lid) && l.PriceBookId === Number(inputs.id));
+    }
+    if (/PriceBookId\s*=\s*@bid/i.test(text)) {
+      const bid = Number(inputs.bid);
+      return mutableBookLines.filter(l => l.PriceBookId === bid && (/ISNULL\(LineStatus,\s*'ACTIVE'\)\s*<>\s*'SUSPENDED'/i.test(text) ? l.LineStatus !== 'SUSPENDED' : true));
+    }
+    if (/WHERE PriceBookId = @b AND GoodId = @g/i.test(text) || /WHERE PriceBookId=@b AND GoodId=@g/i.test(text)) {
+      return mutableBookLines.filter(l => l.PriceBookId === Number(inputs.b) && String(l.GoodId) === String(inputs.g));
     }
     if (/WHERE PriceBookId = @id/i.test(text) || /WHERE PriceBookId=@id/i.test(text)) {
       return mutableBookLines.filter(l => l.PriceBookId === Number(inputs.id));
@@ -234,15 +274,54 @@ const db = h.installDbStub((call) => {
       if ('p' in inputs) line.Price = inputs.p;
       if ('ls' in inputs) line.LineStatus = inputs.ls;
       if ('note' in inputs) line.Note = inputs.note;
+      if ('wsSid' in inputs || 'sid' in inputs) line.WinSpeedSetPriceId = inputs.wsSid ?? inputs.sid;
+      if ('wsLno' in inputs || 'lno' in inputs) line.WinSpeedListNo = inputs.wsLno ?? inputs.lno;
     }
     return { recordset: [], rowsAffected: [1] };
   }
 
+  if (/INSERT INTO wf\.PriceBook\b/i.test(text)) {
+    const newId = nextBookId++;
+    priceBooks.push({
+      Id: newId,
+      Name: inputs.n,
+      EffectiveMonth: inputs.m,
+      EffectiveFrom: toIsoDateOnly(inputs.ef),
+      EffectiveTo: toIsoDateOnly(inputs.et),
+      Status: inputs.st || 'DRAFT',
+      SourceSetPriceIds: inputs.sids || null,
+      Note: inputs.note || null,
+    });
+    return { recordset: [{ Id: newId }], rowsAffected: [1] };
+  }
   if (/FROM wf\.PriceBook\b/i.test(text)) {
     if (inputs.id) return priceBooks.filter(b => b.Id === Number(inputs.id));
+    if (/WHERE Status = 'ACTIVE'/i.test(text) && /ORDER BY/i.test(text)) {
+      return [...priceBooks]
+        .filter(b => b.Status === 'ACTIVE')
+        .sort((a, b) => String(b.EffectiveTo || b.EffectiveFrom).localeCompare(String(a.EffectiveTo || a.EffectiveFrom)));
+    }
+    if (/Status IN \('DRAFT', 'APPROVED', 'ACTIVE'\)/i.test(text)) {
+      const exId = inputs.exId != null ? Number(inputs.exId) : null;
+      const fromStr = toIsoDateOnly(inputs.from);
+      const toStr = toIsoDateOnly(inputs.to);
+      return priceBooks
+        .filter(b => ['DRAFT', 'APPROVED', 'ACTIVE'].includes(b.Status))
+        .filter(b => exId == null || b.Id !== exId)
+        .filter(b => !fromStr || !toStr || (b.EffectiveFrom <= toStr && b.EffectiveTo >= fromStr))
+        .map(b => ({ ...b, StartDate: b.EffectiveFrom, EndDate: b.EffectiveTo }));
+    }
     return priceBooks;
   }
   if (/UPDATE wf\.PriceBook\b/i.test(text)) {
+    const target = inputs.id ? priceBooks.find(b => b.Id === Number(inputs.id)) : null;
+    if (target) {
+      if ('s' in inputs && /SET SourceSetPriceIds/i.test(text)) target.SourceSetPriceIds = inputs.s;
+      else if ('s' in inputs && /SET Status=@s/i.test(text)) target.Status = inputs.s;
+      if ('ef' in inputs && inputs.ef) target.EffectiveFrom = toIsoDateOnly(inputs.ef);
+      if ('et' in inputs && inputs.et) target.EffectiveTo = toIsoDateOnly(inputs.et);
+      if ('em' in inputs && inputs.em) target.EffectiveMonth = inputs.em;
+    }
     return { recordset: [], rowsAffected: [1] };
   }
 
@@ -264,8 +343,41 @@ const db = h.installDbStub((call) => {
     }];
   }
 
-  // Standard WinSpeed price indicator lookups (so.js / price-authority)
+  // WinSpeed EMSetPriceHD / EMSetPriceDT queries
+  if (/FROM dbo\.EMSetPriceHD/i.test(text)) {
+    const sidMatch = text.match(/SetPriceID IN \(([^)]+)\)/i);
+    if (sidMatch) {
+      const idSet = new Set(sidMatch[1].split(',').map(x => Number(x.trim())));
+      return mockWinSpeedSets.filter(s => idSet.has(Number(s.SetPriceID)));
+    }
+    if (inputs.from && inputs.to) {
+      const fromStr = toIsoDateOnly(inputs.from);
+      const toStr = toIsoDateOnly(inputs.to);
+      return mockWinSpeedSets
+        .filter(s => !s.CustID && s.BeginDate <= toStr && (s.EndDate || '2099-12-31') >= fromStr)
+        .map(s => ({
+          ...s,
+          LineCount: mockWinSpeedLines.filter(l => l.SetPriceID === s.SetPriceID && Number(l.Price) > 0).length,
+        }));
+    }
+    return mockWinSpeedSets.map(s => ({
+      ...s,
+      LineCount: mockWinSpeedLines.filter(l => l.SetPriceID === s.SetPriceID && Number(l.Price) > 0).length,
+    }));
+  }
   if (/FROM dbo\.EMSetPriceDT/i.test(text)) {
+    if (/SELECT ListID FROM dbo\.EMSetPriceDT WITH \(UPDLOCK,HOLDLOCK\)/i.test(text)) {
+      return mutableBookLines.filter(l => Number(l.WinSpeedSetPriceId) === Number(inputs.sid) && Number(l.WinSpeedListNo) === Number(inputs.list))
+        .map(l => ({ ListID: Number(l.GoodId) }));
+    }
+    if (inputs.sid) {
+      return mockWinSpeedLines.filter(l => l.SetPriceID === Number(inputs.sid) && Number(l.Price) > 0);
+    }
+    const sidMatch = text.match(/SetPriceID IN \(([^)]+)\)/i);
+    if (sidMatch) {
+      const idSet = new Set(sidMatch[1].split(',').map(x => Number(x.trim())));
+      return mockWinSpeedLines.filter(l => idSet.has(Number(l.SetPriceID)) && Number(l.Price) > 0);
+    }
     return [{ ListID: 1094, GoodPriceNet: 17200, CustID: null }];
   }
 
@@ -623,4 +735,114 @@ test('Reports: -2..+2 contiguous window validation, BE dd/mm/yyyy format, Sheet 
   const accCostCompare = await app.call('GET', '/api/reports/costlist_sheet?mode=compare&granularity=month&offsets=0', { user: { sub: 12, role: 'ACCOUNTING' } });
   assert.equal(accCostCompare.status, 200);
   assert.equal(accCostCompare.body.type, 'costlist_sheet');
+});
+
+// ── 7. Non-Overlapping Cycles (Future & Backdated) + WinSpeed Two-Way Auto-Sync ──
+test('PriceBook: blocks overlapping date+product (409), allows non-overlapping future & backdated cycles, preserves existing ACTIVE, and auto-reconciles from WinSpeed', async () => {
+  const { reconcileFromWinSpeed, invalidateReconcileCache } = require('../services/pricebook-winspeed-sync');
+  const origBooks = priceBooks.map(b => ({ ...b }));
+  const origLines = mutableBookLines.map(l => ({ ...l }));
+
+  try {
+    // 1. Overlapping existing wf.PriceBook (2026-11-10..2026-11-20 shares 2026-11-01..15 GoodId 1094) -> 409 PRICE_PERIOD_OVERLAP
+    const overlapPb = await app.call('POST', '/api/pricebook', {
+      body: {
+        name: 'ราคาทับซ้อน',
+        effectiveFrom: '2026-11-10',
+        effectiveTo: '2026-11-20',
+        seedFromCurrent: true,
+        status: 'ACTIVE',
+      },
+      user: { sub: 12, role: 'ACCOUNTING' },
+    });
+    assert.equal(overlapPb.status, 409);
+    assert.equal(overlapPb.body.code, 'PRICE_PERIOD_OVERLAP');
+
+    // 2. Overlapping external WinSpeed general set (2027-02-01..2027-02-10 in dbo.EMSetPriceHD) -> 409 PRICE_PERIOD_OVERLAP
+    mockWinSpeedSets = [
+      { SetPriceID: 950, DocuNo: 'SPL7002-00001', DocuDate: '2027-02-01', BeginDate: '2027-02-01', EndDate: '2027-02-10', CustID: null, Remark1: 'WinSpeed External' },
+    ];
+    mockWinSpeedLines = [
+      { SetPriceID: 950, ListNo: 1, GoodId: '1094', GoodCode: '7-12044000BB', GoodName: '12-4-40 เชิงผสม ตรารถเกษตร', GoodGroupId: 1001, GoodGroupName: 'ปุ๋ยสูตร', Unit: 'ตัน', Price: 17600, Remark: null },
+    ];
+    const overlapWs = await app.call('POST', '/api/pricebook', {
+      body: {
+        name: 'ทับซ้อน WinSpeed',
+        effectiveFrom: '2027-02-05',
+        effectiveTo: '2027-02-12',
+        seedFromCurrent: true,
+        status: 'ACTIVE',
+      },
+      user: { sub: 12, role: 'ACCOUNTING' },
+    });
+    assert.equal(overlapWs.status, 409);
+    assert.equal(overlapWs.body.code, 'PRICE_PERIOD_OVERLAP');
+    assert.match(overlapWs.body.message, /SPL7002-00001/);
+
+    // 3. Creating future non-overlapping ACTIVE cycle (2027-01-01..2027-01-15) auto-creates WinSpeed set & keeps existing ACTIVE (Id=3) intact
+    procCalls.length = 0;
+    const futureRes = await app.call('POST', '/api/pricebook', {
+      body: {
+        name: 'ราคาล่วงหน้า ม.ค. 2570',
+        effectiveFrom: '2027-01-01',
+        effectiveTo: '2027-01-15',
+        seedFromCurrent: true,
+        status: 'ACTIVE',
+      },
+      user: { sub: 12, role: 'ACCOUNTING' },
+    });
+    assert.equal(futureRes.status, 200);
+    assert.equal(futureRes.body.status, 'ACTIVE');
+    assert.equal(futureRes.body.winSpeedSynced, true);
+    assert.ok(procCalls.some(c => c.proc === 'wf.sp_PriceBookCreateWinSpeedSet'));
+    assert.ok(procCalls.some(c => c.proc === 'wf.sp_PriceBookUpsertWinSpeedLine'));
+    assert.equal(priceBooks.find(b => b.Id === 3).Status, 'ACTIVE', 'Existing ACTIVE PriceBook must stay ACTIVE when creating future cycle');
+
+    // 4. Creating backdated non-overlapping ACTIVE cycle (2026-08-01..2026-08-31) succeeds & syncs to WinSpeed
+    procCalls.length = 0;
+    const backdatedRes = await app.call('POST', '/api/pricebook', {
+      body: {
+        name: 'ราคาย้อนหลัง ส.ค. 2569',
+        effectiveFrom: '2026-08-01',
+        effectiveTo: '2026-08-31',
+        seedFromCurrent: true,
+        status: 'ACTIVE',
+      },
+      user: { sub: 12, role: 'ACCOUNTING' },
+    });
+    assert.equal(backdatedRes.status, 200);
+    assert.equal(backdatedRes.body.status, 'ACTIVE');
+    assert.equal(backdatedRes.body.winSpeedSynced, true);
+
+    // 5. Activating non-overlapping Id=4 (2026-11-16..30, same month as Id=3) preserves Id=3 ACTIVE too
+    const act4 = await app.call('POST', '/api/pricebook/4/activate', {
+      body: {},
+      user: { sub: 12, role: 'ACCOUNTING' },
+    });
+    assert.equal(act4.status, 200);
+    assert.equal(priceBooks.find(b => b.Id === 4).Status, 'ACTIVE');
+    assert.equal(priceBooks.find(b => b.Id === 3).Status, 'ACTIVE');
+
+    // 6. Auto-reconcile pulls updated price from WinSpeed (SetPriceID 503 -> Id=3 GoodId=1094 updated to 17950)
+    mockWinSpeedSets = [
+      { SetPriceID: 503, DocuNo: 'SPL6911-00005', DocuDate: '2026-11-01', BeginDate: '2026-11-01', EndDate: '2026-11-15', CustID: null, Remark1: 'Updated in WinSpeed' },
+    ];
+    mockWinSpeedLines = [
+      { SetPriceID: 503, ListNo: 1, GoodId: '1094', GoodCode: '7-12044000BB', GoodName: '12-4-40 เชิงผสม ตรารถเกษตร', GoodGroupId: 1001, GoodGroupName: 'ปุ๋ยสูตร', Unit: 'ตัน', Price: 17950, Remark: null },
+      { SetPriceID: 503, ListNo: 2, GoodId: '2001', GoodCode: '1-46000000BB', GoodName: '46-0-0 ยูเรีย', GoodGroupId: 1004, GoodGroupName: 'แม่ปุ๋ย', Unit: 'ตัน', Price: 13500, Remark: '*** ใกล้หมดสต็อก' },
+    ];
+    invalidateReconcileCache();
+    const recRes = await reconcileFromWinSpeed({ force: true, bookId: 3 });
+    assert.equal(recRes.changed, true);
+    assert.equal(recRes.updatedBooks, 1);
+    const updated1094 = mutableBookLines.find(l => l.PriceBookId === 3 && l.GoodId === '1094');
+    assert.equal(Number(updated1094.Price), 17950);
+  } finally {
+    mockWinSpeedSets = [];
+    mockWinSpeedLines = [];
+    priceBooks.length = 0;
+    priceBooks.push(...origBooks);
+    mutableBookLines = origLines;
+    invalidateReconcileCache();
+  }
 });

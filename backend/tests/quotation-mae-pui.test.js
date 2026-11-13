@@ -11,6 +11,7 @@ let lastQuoteLines = [];
 
 const db = h.installDbStub(({ kind, text, inputs }) => {
   if (kind === 'proc') return { recordset: [], rowsAffected: [1] };
+  if (/AS Visible FROM wf\.Quotation/.test(text)) return [88, 89].includes(Number(inputs.id)) ? [{ Visible: 1 }] : [];
 
   if (/FROM wf\.SystemSetting WHERE SettingKey = @k/.test(text)) {
     if (inputs?.k === 'QUOTATION_MAE_PUI_MAX_VALID_DAYS') {

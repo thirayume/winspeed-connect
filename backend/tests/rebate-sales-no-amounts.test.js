@@ -93,14 +93,21 @@ test('the price-difference table is left to accounting', async () => {
   assert.equal(r.status, 403);
 });
 
-test('over the pool, the salesperson is told without figures', async () => {
+test('monthly pool does not cap a salesperson claim and money remains hidden', async () => {
   poolAccrued = 100;
   try {
     const r = await app.call('POST', '/api/rebate/claims', { body: { poolId: 1, custId: '1078',
       lines: [{ goodCode: '7-16080800BBCAR', qtyTon: 2, sourceSOID: 2, sourceListNo: 1 }] }, user: sales });
-    assert.equal(r.status, 400);
-    assert.doesNotMatch(r.body.message, /฿|\d{3}/);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.ClaimAmt, null);
   } finally { poolAccrued = 5000; }
+});
+
+test('claim exceeding customer lot quantity is rejected without exposing currency', async () => {
+  const r = await app.call('POST', '/api/rebate/claims', { body: { custId: '1078',
+    lines: [{ goodCode: '7-16080800BBCAR', qtyTon: 121, sourceSOID: 2, sourceListNo: 1 }] }, user: sales });
+  assert.equal(r.status, 400);
+  assert.doesNotMatch(r.body.message, /฿/);
 });
 
 test('the bill editor rebate balance is closed to a salesperson', async () => {

@@ -36,6 +36,14 @@ function normalizeResult(r) {
 const TEST_USERS = Object.freeze([1, 2, 10, 11, 12, 19, 20, 25, 30, 31, 34, 36, 40, 41, 43, 50, 63, 64, 66, 99]);
 
 function installDbStub(handler, options = {}) {
+  // Route tests use an isolated primary setting by default; suites exercising
+  // the setting itself install their own explicit stub before or after this.
+  const windowPath = require.resolve('../../services/global-data-window-store');
+  if (!require.cache[windowPath]) {
+    require.cache[windowPath] = { id: windowPath, filename: windowPath, loaded: true, exports: {
+      readGlobalDataWindow: async () => require('../../services/data-window').boundaries('2026-01-01'),
+    } };
+  }
   const realDb = require('../../db');
   const calls = [];
   const activeUserIds = new Set(
@@ -93,7 +101,16 @@ function installDbStub(handler, options = {}) {
   const stub = {
     ...plainExports,
     pools: () => { throw new Error('route-harness: real DB pools are not available in tests'); },
-    wfQuery: (text, inputs) => run('wfQuery', text, plainInputs(inputs)),
+    wfQuery: (text, inputs) => {
+      if (options.strictTypedInputs && inputs) {
+        for (const [name, value] of Object.entries(inputs)) {
+          if (!value || typeof value !== 'object' || !('type' in value) || !('value' in value)) {
+            throw new TypeError(`wfQuery input ${name} must have type and value`);
+          }
+        }
+      }
+      return run('wfQuery', text, plainInputs(inputs));
+    },
     query: async (text, inputs) => (await run('query', text, plainInputs(inputs))).recordset,
     dboWrite: (text, inputs) => run('dboWrite', text, plainInputs(inputs)),
     wfTransaction: async (fn) => fn(tx),

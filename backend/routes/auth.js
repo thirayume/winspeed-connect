@@ -568,7 +568,13 @@ router.get('/databases', requireAuth, async (req, res) => {
       (canSwitch || canSetSystem) ? activeDb.listSwitchableDatabases() : Promise.resolve([]),
       activeDb.getDatabaseThemes(),
     ]);
-    const active = getDbName() || system;
+    // This endpoint runs on the identity database. Display the valid signed
+    // session selection (or the system default), not that internal anchor.
+    const requested = String(req.tokenPayload?.db || '').trim();
+    const selected = canSwitch && requested
+      ? rawList.find(name => name.toLowerCase() === requested.toLowerCase() && activeDb.canAccessDatabase(name, req.user, themes))
+      : null;
+    const active = selected || system || getDbName();
 
     // Build rich metadata for all candidate databases
     const metaList = rawList.map(dbName => {
