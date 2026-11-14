@@ -77,6 +77,8 @@ const names: Record<string, string> = {
   "cost.view": "ดูตารางราคาทุน (Costlist)",
   "cost.manage": "แก้ไขและเปิดใช้ราคาทุน (Costlist)",
   "rebate.evidence.verify": "ตรวจหลักฐานเวลาขนส่งสำหรับยอด Rebate ที่พักไว้",
+  "rebate.conversion.request": "ยื่นคำขอแปลง Rebate เป็นตั๋ว",
+  "rebate.conversion.approve": "พิจารณาคำขอแปลง Rebate เป็นตั๋ว",
 };
 
 /** ลำดับบทบาทตามผังโครงสร้างองค์กร (ADMIN เป็น root ถัดมาคือผู้บริหาร C_LEVEL ไล่ลงมาถึงฝ่ายขาย) */

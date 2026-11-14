@@ -32,9 +32,16 @@ async function tripScopeSql(user, alias = 't') {
     if (scope.all) return { sql: '1=1', inputs: {} };
     const created = scopeFilter(scope, { userCol: `${alias}.CreatedBy`, prefix: `${prefix}c` });
     const member = scopeFilter(scope, { userCol: 'm.SalesUserId', prefix: `${prefix}m` });
+    // Board responses include every member and line of a selected trip. On a
+    // secondary database, don't expose a mixed trip just because one member is
+    // in scope. NULL owners are also treated as out of scope.
+    const foreignMember = scopeFilter(scope, { userCol: 'outsideMember.SalesUserId', prefix: `${prefix}outside` });
+    const fullTripScope = user.identityMapping ? ` AND NOT EXISTS (
+      SELECT 1 FROM wf.v_TripMember outsideMember WHERE outsideMember.TripId = ${alias}.TripId
+        AND CASE WHEN ${foreignMember.sql} THEN 0 ELSE 1 END = 1)` : '';
     return {
-      sql: `(${created.sql} OR EXISTS (SELECT 1 FROM wf.v_TripMember m WHERE m.TripId = ${alias}.TripId AND ${member.sql}))`,
-      inputs: { ...created.inputs, ...member.inputs },
+      sql: `((${created.sql} OR EXISTS (SELECT 1 FROM wf.v_TripMember m WHERE m.TripId = ${alias}.TripId AND ${member.sql}))${fullTripScope})`,
+      inputs: { ...created.inputs, ...member.inputs, ...(user.identityMapping ? foreignMember.inputs : {}) },
     };
   };
   const effective = visibility(effectiveScope, 'te');
@@ -212,6 +219,7 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
       readQuery(`
         SELECT e.TripId, CAST(w.SPID AS VARCHAR(50)) AS MemberId,
                w.Id, w.CarNo, w.DateReg, w.Status, w.WGType,
+               CASE WHEN w.WGType = 'SO' AND w.DateReg >= @tripStartDate THEN 1 ELSE 0 END AS WindowEligible,
                w.WeightIn, w.WeightOut, w.WeightNet, w.TONNet, w.DocuNo, w.MoveBill
         FROM wf.SalesOrderExt e
         JOIN dbo.WGHD w ON w.SPID = (
@@ -227,33 +235,44 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
             ELSE NULL 
           END
         )
-        WHERE e.TripId IN (${idList})`),
+        WHERE e.TripId IN (${idList}) AND (w.WGType = 'SO' OR w.WGType IS NULL OR LTRIM(RTRIM(w.WGType)) = '')`, { tripStartDate: bs.inputs.tripStartDate }),
 
       // คำขอแก้ไขที่ยังรออนุมัติ (เฟส 5) — ตัวที่ Hold รถต้องเด่นบนกระดาน
       // คนคุมลานต้องเห็นก่อนสั่งขึ้นของ ไม่ใช่ไปรู้เอาตอนรถจอดรอ
       readQuery(`
         SELECT r.Id, r.SOID AS MemberId, r.TripId, r.StageAtRequest, r.ReasonCode,
                r.ReasonDetail, r.HoldTruck, r.RequestedAt,
+               CASE WHEN r.RequestedAt >= @tripStartUtc THEN 1 ELSE 0 END AS WindowEligible,
                rs.ReasonText, u.DisplayName AS RequestedByName
         FROM wf.EditRequest r
         LEFT JOIN wf.EditReason rs ON rs.ReasonCode = r.ReasonCode
         LEFT JOIN wf.AppUser  u  ON u.Id = r.RequestedBy
-        WHERE r.Status = 'PENDING' AND r.TripId IN (${idList})`),
+        WHERE r.Status = 'PENDING' AND r.TripId IN (${idList})`, { tripStartUtc: bs.inputs.tripStartUtc }),
 
       readQuery(`
-        SELECT a.*, ru.DisplayName AS RequestedByName, au.DisplayName AS ApprovedByName
+        SELECT a.*, ru.DisplayName AS RequestedByName, au.DisplayName AS ApprovedByName,
+               CASE WHEN a.CreatedAt >= @tripStartUtc THEN 1 ELSE 0 END AS WindowEligible
         FROM wf.TripMultiCustomerApproval a
         LEFT JOIN wf.AppUser ru ON ru.Id = a.RequestedBy
         LEFT JOIN wf.AppUser au ON au.Id = a.ApprovedBy
         WHERE a.Status <> 'CANCELLED' AND a.TripId IN (${idList})
         ORDER BY a.Id DESC
-      `).catch(e => {
-        if (/Invalid object name/i.test(String(e.message || ''))) return { recordset: [] };
-        throw e;
-      }),
+      `, { tripStartUtc: bs.inputs.tripStartUtc }),
 
       getMinCustomersThreshold()
     ]);
+
+    // An old or undated child may still determine whether a truck is held,
+    // approved or weighed. Silently removing it would produce a false state;
+    // returning it would expose history outside the configured window. Fail
+    // closed until the affected trip has been reviewed instead.
+    for (const rows of [weighRes.recordset, holdRes.recordset, tripApprovalsRes.recordset]) {
+      if ((rows || []).some(row => Number(row.WindowEligible) !== 1)) {
+        return res.status(409).json({ code: 'TRIP_HISTORY_OUTSIDE_DATA_WINDOW',
+          message: 'ไม่สามารถแสดงกระดานเที่ยวได้ เนื่องจากข้อมูลชั่ง คำขอ หรือการอนุมัติอยู่นอกช่วงข้อมูลหรือมีข้อมูลไม่ครบ กรุณาติดต่อผู้ดูแลเพื่อตรวจสอบ' });
+      }
+      for (const row of rows || []) delete row.WindowEligible;
+    }
 
     const appRowsByTrip = new Map();
     for (const row of (tripApprovalsRes.recordset || [])) {
@@ -1278,7 +1297,7 @@ router.post('/:id/confirm', requireCapability('so.confirm'), requireTripInScope,
     let residualOrderCount = 0;
     let replayed = false;
 
-    await wfTransaction(async tx => {
+    await require('../services/so-rebate-transaction').withSoRebateTransaction(async tx => {
       // 1. Transaction-owned applock
       const lockReq = tx.request();
       lockReq.input('rname', sql.NVarChar(255), `ConfirmTrip_${tripId}`);

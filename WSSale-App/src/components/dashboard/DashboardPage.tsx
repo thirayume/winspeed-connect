@@ -26,6 +26,9 @@ export function DashboardPage() {
   const [showAgingModal, setShowAgingModal] = useState(false);
   const [rebate, setRebate]   = useState<RebateSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [statsState, setStatsState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [agingState, setAgingState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [rebateState, setRebateState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -36,16 +39,13 @@ export function DashboardPage() {
   async function load(bustCache = false) {
     setLoading(true);
     // The open-order list can take about 20 seconds when its cache is cold, so it must not hold the rest of the page
-    const agingDone = fetchAgingOrders(bustCache).then(a => setAging(a as AgingRow[])).catch(console.error);
-    try {
-      const [s, r] = await Promise.all([
-        fetchSoStats(bustCache),
-        canSeeRebate ? fetchRebateSummary().catch(() => []) : Promise.resolve([]),
-      ]);
-      setStats(s);
-      setRebate(r as RebateSummary[]);
-    } catch (e) { console.error(e); }
-    await agingDone;
+    const agingDone = fetchAgingOrders(bustCache).then(a => { setAging(a as AgingRow[]); setAgingState('ready'); })
+      .catch(e => { console.error(e); setAgingState('error'); });
+    const statsDone = fetchSoStats(bustCache).then(s => { setStats(s); setStatsState('ready'); })
+      .catch(e => { console.error(e); setStatsState('error'); });
+    const rebateDone = canSeeRebate ? fetchRebateSummary().then(r => { setRebate(r as RebateSummary[]); setRebateState('ready'); })
+      .catch(e => { console.error(e); setRebateState('error'); }) : Promise.resolve();
+    await Promise.all([agingDone, statsDone, rebateDone]);
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
@@ -211,15 +211,15 @@ export function DashboardPage() {
       <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
         {/* KPI cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-4">
-          <KpiCard icon={<Package size={20} />} label="ทั้งหมด" value={stats.total.toLocaleString()} color="#0C447C" />
+          <KpiCard icon={<Package size={20} />} label="ทั้งหมด" value={statsState === 'ready' ? stats.total.toLocaleString() : '—'} color="#0C447C" />
           <KpiCard icon={<Clock size={20} />} label="รอจัดส่ง/รับสินค้า"
-            value={((stats.byStatus.CONFIRMED || 0) + (stats.byStatus.PICKING || 0) + (stats.byStatus.LOADED || 0)).toLocaleString()} color="#F59E0B" />
-          <KpiCard icon={<Truck size={20} />} label="ส่งออกจากตาชั่ง" value={(stats.byStatus.SHIPPED || 0).toLocaleString()} color="#059669" />
-          <KpiCard icon={<Database size={20} />} label="ออกใบสั่งขาย (104) แล้ว" value={(stats.byStatus.IMPORTED || 0).toLocaleString()} color="#10B981" />
-          <KpiCard icon={<AlertTriangle size={20} />} label="บิลค้างเกิน 30 วัน" value={loading && aging.length === 0 ? '…' : warnAging.length.toLocaleString()} color="#EF4444" />
+            value={statsState === 'ready' ? ((stats.byStatus.CONFIRMED || 0) + (stats.byStatus.PICKING || 0) + (stats.byStatus.LOADED || 0)).toLocaleString() : '—'} color="#F59E0B" />
+          <KpiCard icon={<Truck size={20} />} label="ส่งออกจากตาชั่ง" value={statsState === 'ready' ? (stats.byStatus.SHIPPED || 0).toLocaleString() : '—'} color="#059669" />
+          <KpiCard icon={<Database size={20} />} label="ออกใบสั่งขาย (104) แล้ว" value={statsState === 'ready' ? (stats.byStatus.IMPORTED || 0).toLocaleString() : '—'} color="#10B981" />
+          <KpiCard icon={<AlertTriangle size={20} />} label="บิลค้างเกิน 30 วัน" value={agingState === 'ready' ? warnAging.length.toLocaleString() : '—'} color="#EF4444" />
           {canSeeRebate && (
             <KpiCard icon={<TrendingUp size={20} />} label="รีเบท (฿)"
-              value={totalRebateAvailable.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} color="#059669" />
+              value={rebateState === 'ready' ? totalRebateAvailable.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'} color="#059669" />
           )}
         </div>
 
@@ -307,7 +307,7 @@ export function DashboardPage() {
         <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 p-4 sm:p-5 shadow-sm">
           <h2 className="text-sm font-bold text-gray-700 mb-4">สถานะบิล</h2>
           <div className="space-y-2">
-            {SO_STATUS_ORDER.map(st => {
+            {statsState !== 'ready' ? <p role="status" className="text-sm text-amber-700">{statsState === 'loading' ? 'กำลังโหลดสถานะบิล…' : 'โหลดสถานะบิลไม่สำเร็จ กรุณาตรวจสิทธิ์หรือลองใหม่'}</p> : SO_STATUS_ORDER.map(st => {
               const count = stats.byStatus[st] || 0;
               const pct = stats.total ? (count / stats.total) * 100 : 0;
               const m = SO_STATUS_META[st];
@@ -354,7 +354,7 @@ export function DashboardPage() {
                 </button>
               </div>
             </div>
-            {groupedAging.length === 0 ? (
+            {agingState !== 'ready' ? <p role="status" className="text-sm text-amber-700 py-6 text-center">{agingState === 'loading' ? 'กำลังโหลดรายการ…' : 'โหลดบิลค้างส่งไม่สำเร็จ กรุณาตรวจสิทธิ์หรือลองใหม่'}</p> : groupedAging.length === 0 ? (
               <p className="text-xs text-gray-400 py-6 text-center">{loading ? 'กำลังโหลดรายการ…' : 'ไม่มีบิลค้างจัดส่ง'}</p>
             ) : (
               <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
@@ -396,7 +396,7 @@ export function DashboardPage() {
           {/* Rebate summary per salesperson */}
           {canSeeRebate && <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 p-4 sm:p-5 shadow-sm overflow-hidden flex flex-col w-full">
             <h2 className="text-sm font-bold text-gray-700 mb-3">รีเบทต่อพนักงานขาย</h2>
-            {rebate.length === 0 ? (
+            {rebateState !== 'ready' ? <p role="status" className="text-sm text-amber-700 py-6 text-center">{rebateState === 'loading' ? 'กำลังโหลดรีเบท…' : 'โหลดรีเบทไม่สำเร็จ กรุณาตรวจสิทธิ์หรือลองใหม่'}</p> : rebate.length === 0 ? (
               <p className="text-xs text-gray-400 py-6 text-center">ยังไม่มีข้อมูลรีเบท</p>
             ) : (
               <div className="overflow-x-auto w-full scrollbar-hide">

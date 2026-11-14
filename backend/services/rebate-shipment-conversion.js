@@ -13,6 +13,7 @@ function fail(code,status=400) { throw Object.assign(new Error(code),{code,statu
 async function executeShipmentSourceConversion(query, input, options = {}) {
   const { epoch, custId, goodId, standingYear, asOfDate, actorUser, requestedAmountBaht, requestedTons,
     convertAllEligible, maturedOnly, note, cycleMonths=12, scopeSql='1=0', scopeInputs={} }=input;
+  const status = options.pendingApproval === true ? 'PENDING_APPROVAL' : 'ISSUED';
   if (!epoch || !Number.isSafeInteger(epoch.generation) || epoch.generation<1 || !epoch.resetId) fail('REBATE_RESET_EPOCH_INVALID',503);
   // SalesEmpId is supplied by the linked WinSpeed sale for both actor and
   // effective scope expressions. Historical shipments are not discarded by
@@ -31,10 +32,10 @@ async function executeShipmentSourceConversion(query, input, options = {}) {
     (ConversionNo,CustId,CustCode,CustName,StandingYear,GoodId,GoodCode,GoodName,StandingPricePerTon,
      ConvertedTons,ConvertedBags,ConvertedValueBaht,ResidualBaht,ExecutionMode,ConvertedByUserId,ConvertedByRole,Note,Status)
     OUTPUT INSERTED.* VALUES(@number,@custId,@custCode,@custName,@year,@goodId,@goodCode,@goodName,@price,
-      @tons,@bags,@amount,@residual,'MANUAL',@userId,@role,@note,'ISSUED')`,{
+      @tons,@bags,@amount,@residual,'MANUAL',@userId,@role,@note,@status)`,{
     number:generateDocCode('FTC',asOfDate),custId,custCode:rows[0].CustCode??null,custName:rows[0].CustName??null,
     year:standingYear,goodId:standing.goodId,goodCode:standing.goodCode,goodName:standing.goodName,price:standing.basePrice,
-    tons,bags,amount:baht,residual,userId:Number(actorUser.id),role:String(actorUser.role||'UNKNOWN'),note,
+    tons,bags,amount:baht,residual,userId:Number(actorUser.id),role:String(actorUser.role||'UNKNOWN'),note,status,
   });
   const conversion=mapConversionRow(inserted.recordset?.[0]);
   if (!Number.isSafeInteger(Number(conversion?.id)) || Number(conversion.id)<=0) fail('CONVERSION_RECEIPT_INVALID',500);

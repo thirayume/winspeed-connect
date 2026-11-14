@@ -16,6 +16,9 @@ const { parseNullableAgingInput, getCreditAgingPolicyBounds } = require('../serv
 // R12 O-4: SALES/MANAGER see their own + team documents (ADMIN/C_LEVEL/ACCOUNTING and operational roles see all)
 const { getVisibleScope, scopeFilter } = require('../services/visible-scope');
 const { nativeChainInScope } = require('../services/native-document-scope');
+const { hasRole } = require('../services/role-capabilities');
+const { businessIds, actorPerspective } = require('../services/business-identity');
+const { secondaryCustomerPredicate, secondaryCustomerVisible } = require('../services/secondary-customer-scope');
 
 router.use(requireAuth);
 
@@ -191,6 +194,13 @@ router.get('/customers', async (req, res) => {
       conditions.push(`ISNULL(c.Inactive, 'A') <> 'I'`);
     }
     const inputs = { limit: { type: sql.Int, value: limit } };
+    // Customer rows include contact and credit information. The secondary
+    // identity mapping must constrain both the effective user and real actor.
+    if (req.user.identityMapping) {
+      const predicate = await secondaryCustomerPredicate(req.user);
+      conditions.push(predicate.sql);
+      Object.assign(inputs, predicate.inputs);
+    }
     if (q) {
       conditions.push(`(c.CustName LIKE N'%' + @q + '%' OR c.CustCode LIKE N'%' + @q + '%' OR CONVERT(NVARCHAR(50), c.CustID) LIKE N'%' + @q + '%')`);
       inputs.q = { type: sql.NVarChar(100), value: q };
@@ -339,9 +349,16 @@ router.delete('/customer-groups/:id', requireRole('ADMIN', 'MANAGER'), async (re
 // GET /api/master/customer-requests
 router.get('/customer-requests', async (req, res) => {
   try {
-    const allAccess = ['ADMIN', 'MANAGER'].includes(req.user?.role);
-    const where = allAccess ? '' : 'WHERE cr.RequestedBy = @uid';
-    const inputs = allAccess ? {} : { uid: { type: sql.Int, value: req.user.sub } };
+    let dataWindow;
+    try { dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow(); }
+    catch { return res.status(503).json({ code:'DATA_WINDOW_UNAVAILABLE', message:'ไม่สามารถอ่านวันเริ่มข้อมูลได้' }); }
+    const ids=businessIds(req.user);
+    if (!ids.actor || !ids.effective) return res.status(401).json({message:'ไม่พบผู้ใช้'});
+    const actor=actorPerspective(req.user);
+    const conditions=['cr.CreatedAt >= @globalStartUtc'];
+    const inputs={globalStartUtc:{type:sql.DateTime2,value:dataWindow.utcInstant}};
+    if (!hasRole(req.user,'ADMIN','MANAGER')) { conditions.push('cr.RequestedBy = @uid'); inputs.uid={type:sql.Int,value:ids.effective}; }
+    if (!hasRole(actor,'ADMIN','MANAGER')) { conditions.push('cr.RequestedBy = @actor'); inputs.actor={type:sql.Int,value:ids.actor}; }
     const rows = await query(`
       SELECT TOP 200
              cr.*,
@@ -350,11 +367,14 @@ router.get('/customer-requests', async (req, res) => {
       FROM wf.CustomerRequest cr
       LEFT JOIN wf.AppUser requester ON requester.Id = cr.RequestedBy
       LEFT JOIN wf.AppUser reviewer ON reviewer.Id = cr.ReviewedBy
-      ${where}
+      WHERE ${conditions.join(' AND ')}
       ORDER BY CASE WHEN cr.Status = 'PENDING' THEN 0 ELSE 1 END, cr.CreatedAt DESC
     `, inputs);
     res.json(rows);
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) {
+    if (e.code === 'IDENTITY_BINDING_INVALID') return res.status(409).json({code:e.code});
+    console.error('[customer-requests/list]', e); res.status(500).json({ message:'โหลดคำขอลูกค้าไม่สำเร็จ' });
+  }
 });
 
 // POST /api/master/customer-requests — รองรับข้อมูลแบบครบถ้วนสอดคล้องกับหน้าแก้ไขลูกค้า
@@ -1010,9 +1030,17 @@ router.get('/giveaway-goods', async (req, res) => {
     const { wfQuery } = require('../db');
     const { matchGiveawayItem, findMatchingQuota } = require('../services/giveaway-matcher');
     const { loadQuotaRows, committedOnOpenDrafts, quotaKey } = require('../services/giveaway-quota');
-    const targetUserId = req.query.salesUserId ? Number(req.query.salesUserId) : req.user.sub;
+    let targetUserId = req.query.salesUserId ? Number(req.query.salesUserId) : req.user.sub;
     const excludeSoId = req.query.excludeSoId ? String(req.query.excludeSoId) : null;
     const { canViewSalesUser } = require('../services/visible-scope');
+    if (req.user.identityMapping) {
+      if (excludeSoId || (req.query.salesUserId && Number(req.query.salesUserId) !== Number(req.user.sub)))
+        return res.status(409).json({ code: 'IDENTITY_MAPPING_REQUIRED' });
+      targetUserId = businessIds(req.user).effective;
+      const actor = actorPerspective(req.user);
+      if (actor !== req.user && !await canViewSalesUser(actor, targetUserId))
+        return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูโควต้าของพนักงานขาย' });
+    }
     if (!(await canViewSalesUser(req.user, targetUserId))) {
       return res.status(403).json({ message: 'ดูโควต้าของพนักงานขายคนอื่นได้เฉพาะคนในทีม' });
     }
@@ -1087,6 +1115,15 @@ router.get('/employees', async (req, res) => {
 router.get('/prices', async (req, res) => {
   try {
     const { custId, goodId, includeExpired, asOf } = req.query;
+    if (req.user.identityMapping && custId && !await secondaryCustomerVisible(req.user, custId))
+      return res.status(404).json({ message: 'ไม่พบลูกค้า' });
+    if (req.user.identityMapping && includeExpired === 'true')
+      return res.status(403).json({ message: 'ไม่สามารถดูประวัติราคาในฐานนี้' });
+    if (req.user.identityMapping && asOf) {
+      const window = await require('../services/global-data-window-store').readGlobalDataWindow();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(asOf)) || String(asOf) < window.businessDate)
+        return res.status(400).json({ message: 'วันที่ราคาต้องไม่ก่อนวันเริ่มข้อมูล' });
+    }
     const targetDate = asOf ? String(asOf).slice(0, 10) : getBangkokDateString();
     const inputs = {
       custId: { type: sql.NVarChar(20), value: custId || null },
@@ -2025,7 +2062,21 @@ router.get('/customers/:id/top-goods', async (req, res) => {
   try {
     const cleanId = String(req.params.id || '').trim();
     if (!/^\d+$/.test(cleanId)) return res.json([]);
+    if (req.user.identityMapping && !await secondaryCustomerVisible(req.user, cleanId))
+      return res.status(404).json({ message: 'ไม่พบลูกค้า' });
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    let ownerWhere = '';
+    const ownerInputs = {};
+    if (req.user.identityMapping) {
+      const actor = actorPerspective(req.user);
+      const scopes = [await getVisibleScope(req.user), ...(actor === req.user ? [] : [await getVisibleScope(actor)])];
+      for (const [index, scope] of scopes.entries()) {
+        if (scope.all) continue;
+        const owner = scopeFilter(scope, { userCol: 'topExt.SalesUserId', empCol: 'hd.EmpID', prefix: `topOwner${index}` });
+        ownerWhere += ` AND ${owner.sql}`;
+        Object.assign(ownerInputs, owner.inputs);
+      }
+    }
 
     const rows = await query(`
       SELECT TOP 50
@@ -2037,6 +2088,7 @@ router.get('/customers/:id/top-goods', async (req, res) => {
       FROM dbo.SOHD hd WITH (NOLOCK)
       INNER JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
       INNER JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = dt.GoodID
+      LEFT JOIN wf.SalesOrderExt topExt WITH (NOLOCK) ON topExt.SOID = CONVERT(VARCHAR(50),hd.SOID)
       WHERE hd.CustID = @cid
         AND hd.DocuDate >= @globalStartDate
         AND ISNULL(hd.DocuStatus, '') <> 'C'
@@ -2046,9 +2098,10 @@ router.get('/customers/:id/top-goods', async (req, res) => {
         AND g.GoodName1 NOT LIKE N'%ไม่ใช้%'
         AND g.GoodName1 NOT LIKE N'%ยกเลิก%'
         AND dt.GoodID IS NOT NULL
+        ${ownerWhere}
       GROUP BY dt.GoodID
       ORDER BY TotalQty DESC, OrderCount DESC
-    `, { cid: { type: sql.Int, value: Number(cleanId) }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } });
+    `, { cid: { type: sql.Int, value: Number(cleanId) }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate }, ...ownerInputs });
 
     res.json(rows || []);
   } catch (e) {
@@ -2062,9 +2115,24 @@ router.get('/truck-plates', async (req, res) => {
   try {
     const { custId } = req.query;
     if (!custId) return res.json([]);
+    if (req.user.identityMapping && !await secondaryCustomerVisible(req.user, custId))
+      return res.status(404).json({ message: 'ไม่พบลูกค้า' });
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    let ownerWhere = '';
+    const ownerInputs = {};
+    if (req.user.identityMapping) {
+      const actor = actorPerspective(req.user);
+      const scopes = [await getVisibleScope(req.user), ...(actor === req.user ? [] : [await getVisibleScope(actor)])];
+      for (const [index, scope] of scopes.entries()) {
+        if (scope.all) continue;
+        const draftOwner = scopeFilter(scope, { userCol: 'so.SalesUserId', prefix: `plateDraft${index}` });
+        const nativeOwner = scopeFilter(scope, { userCol: 'so.SalesUserId', empCol: 'hd.EmpID', prefix: `plateNative${index}` });
+        ownerWhere += ` AND ((NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NULL AND ${draftOwner.sql}) OR (NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NOT NULL AND ${nativeOwner.sql}))`;
+        Object.assign(ownerInputs, draftOwner.inputs, nativeOwner.inputs);
+      }
+    }
     const inputs = { custId: { type: sql.NVarChar(20), value: custId },
-      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
+      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate }, ...ownerInputs };
     const rows = await query(`
       SELECT DISTINCT so.TruckPlate AS Plate
       FROM wf.v_AllSalesOrders so
@@ -2072,6 +2140,7 @@ router.get('/truck-plates', async (req, res) => {
       WHERE so.CustId = @custId AND so.TruckPlate IS NOT NULL AND so.TruckPlate <> ''
         AND ((NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NULL AND so.CreatedAt >= @globalStartUtc)
           OR (NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NOT NULL AND hd.DocuDate >= @globalStartDate))
+        ${ownerWhere}
     `, inputs);
     
     res.json(rows.map(r => r.Plate));

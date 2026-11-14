@@ -867,7 +867,19 @@ router.get('/budget-history', requireCapability('giveaway.budget'), async (req, 
 router.get('/my-quota', async (req, res) => {
   try {
     const year = YEAR(req.query.year);
-    const targetUserId = req.query.salesUserId ? Number(req.query.salesUserId) : req.user.id;
+    let targetUserId = req.query.salesUserId ? Number(req.query.salesUserId) : req.user.id;
+    if (req.user.identityMapping) {
+      if (req.query.salesUserId && Number(req.query.salesUserId) !== Number(req.user.sub))
+        return res.status(409).json({ code: 'IDENTITY_MAPPING_REQUIRED' });
+      const { businessIds, actorPerspective } = require('../services/business-identity');
+      targetUserId = businessIds(req.user).effective;
+      const actor = actorPerspective(req.user);
+      if (actor !== req.user && !await canViewSalesUser(actor, targetUserId))
+        return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูโควต้าของพนักงานขาย' });
+      const window = await require('../services/global-data-window-store').readGlobalDataWindow();
+      if (Number(year) - 543 < Number(String(window.businessDate).slice(0, 4)))
+        return res.status(400).json({ message: 'ปีโควต้าต้องไม่ก่อนวันเริ่มข้อมูล' });
+    }
     if (!(await canViewSalesUser(req.user, targetUserId))) {
       return res.status(403).json({ message: 'ดูโควต้าของพนักงานขายคนอื่นได้เฉพาะคนในทีม' });
     }

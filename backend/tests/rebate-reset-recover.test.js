@@ -23,6 +23,11 @@ function fixture() {
     if (/SELECT DatabaseName,ServerName,ReceiptVerifiedAtUtc/.test(text)) return {recordset:state.targets};
     if (/UPDATE wf.RebateResetAttempt SET Phase='APPLYING'/.test(text)) {state.attempt.Phase='APPLYING';return {rowsAffected:[1]};}
     if (/UPDATE wf.RebateResetCoordinator SET Phase='APPLYING'/.test(text)) {state.coordinator.Phase='APPLYING';return {rowsAffected:[1]};}
+    if (/UPDATE wf.RebateResetAttemptTarget SET BusinessActorId/.test(text)) {
+      const target=state.targets.find(t=>t.DatabaseName===p.database && t.ServerName===p.server);
+      if (!target || target.BusinessActorId != null || target.BusinessEffectiveId != null) return {rowsAffected:[0]};
+      target.BusinessActorId=p.actor; target.BusinessEffectiveId=p.effective; return {rowsAffected:[1]};
+    }
     if (/UPDATE wf.RebateResetAttemptTarget SET/.test(text)) {
       if (state.failMark) {state.failMark=false;throw Error('mark unavailable');}
       const target=state.targets.find(t=>t.DatabaseName===p.database && t.ServerName===p.server);
@@ -36,8 +41,11 @@ function fixture() {
   let currentTarget;
   const db={sql,rebateFenceTransaction:async fn=>{const before=structuredClone(state);try{return await fn(tx());}catch(e){Object.assign(state,before);throw e;}},
     runWithTarget:async(_target,fn,name)=>{currentTarget=name;return fn();},wfTransaction:async fn=>fn(tx())};
-  const options={env,db,tupleResolver,preflight:async()=>({ready:true}),applyParticipant:async(_query,input)=>{
+  const options={env,db,tupleResolver,preflight:async()=>({ready:true}),
+    resolveBusinessIdentity:async({target})=>({businessActorId:target.name==='dbwins_worldfert9'?1:11,businessEffectiveId:target.name==='dbwins_worldfert9'?2:12}),
+    applyParticipant:async(_query,input)=>{
     assert.equal(input.target.database,currentTarget);
+    assert.equal(input.businessActorId,currentTarget==='dbwins_worldfert9'?1:11);
     if (state.failTarget===currentTarget) throw Error('participant unavailable');
     if (!state.participants[currentTarget]) state.participants[currentTarget]={resetId:input.next.resetId,applications:1};
     else assert.equal(state.participants[currentTarget].resetId,input.next.resetId);
@@ -58,6 +66,23 @@ test('failure after participant commit can replay its receipt without applying t
   const f=fixture();f.state.failMark=true;await assert.rejects(f.run(),/mark unavailable/);
   assert.equal(f.state.coordinator.Phase,'APPLYING');assert.equal(f.state.participants.dbwins_worldfert9.applications,1);
   f.state.failMark=false;await f.run();assert.equal(f.state.participants.dbwins_worldfert9.applications,1);
+});
+test('a changed cross-database identity cannot resume an existing reset attempt',async()=>{
+  const f=fixture(); f.state.failTarget='dbwins_worldfert2'; await assert.rejects(f.run(),/participant unavailable/);
+  f.state.failTarget=null;
+  f.options.resolveBusinessIdentity=async({target})=>({businessActorId:target.name==='dbwins_worldfert9'?1:99,
+    businessEffectiveId:target.name==='dbwins_worldfert9'?2:12});
+  await assert.rejects(f.run(),{code:'REBATE_RESET_BUSINESS_IDENTITY_UNAVAILABLE'});
+  assert.equal(f.state.coordinator.Phase,'APPLYING');
+});
+test('missing identity in any target is detected before binding or applying',async()=>{
+  const f=fixture();
+  f.options.resolveBusinessIdentity=async({target})=>target.name==='dbwins_worldfert9'
+    ? {businessActorId:1,businessEffectiveId:2} : null;
+  await assert.rejects(f.run(),{code:'REBATE_RESET_BUSINESS_IDENTITY_UNAVAILABLE'});
+  assert.equal(f.state.coordinator.Phase,'PREPARING');
+  assert.deepEqual(f.state.participants,{});
+  assert.ok(f.state.targets.every(t=>t.BusinessActorId==null && t.BusinessEffectiveId==null));
 });
 test('changed target journal or digest cannot complete an attempt',async()=>{
   for(const mutate of [f=>f.state.targets.pop(),f=>f.state.targets[1].ServerName='other',f=>f.state.attempt.ManifestDigest='b'.repeat(64)]){

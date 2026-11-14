@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Calculator,
   CheckCircle2,
@@ -35,6 +35,8 @@ import { SearchableSelect, type SearchableSelectOption } from '../ui/SearchableS
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { appAlert, appConfirm, appPrompt } from '../ui/AppAlert';
 import { RebateEvidenceQueue } from './RebateEvidenceQueue';
+import { RebateCustomersOverview } from './RebateCustomersOverview';
+import { RebateConversionRequests } from './RebateConversionRequests';
 import type {
   EMCust,
   EMGood,
@@ -148,7 +150,10 @@ export function RebatePoolPanel() {
   // Customer FIFO Queue & Manual Conversion state
   const [queueCustId, setQueueCustId] = useState('');
   const [queueAsOfDate, setQueueAsOfDate] = useState(() => bangkokDate());
-  const [customerQueue, setCustomerQueue] = useState<RebateCustomerQueue | null>(null);
+  const [loadedCustomerQueue, setCustomerQueue] = useState<RebateCustomerQueue | null>(null);
+  const customerQueue = loadedCustomerQueue && String(loadedCustomerQueue.custId) === queueCustId &&
+    loadedCustomerQueue.asOfDate === queueAsOfDate ? loadedCustomerQueue : null;
+  const queueRequestSequence = useRef(0);
   const [queueLoading, setQueueLoading] = useState(false);
   const [convGoodId, setConvGoodId] = useState('');
   const [convMode, setConvMode] = useState<'BAHT' | 'TONS' | 'ALL'>('BAHT');
@@ -207,26 +212,35 @@ export function RebatePoolPanel() {
   }, [loadAll]);
 
   const loadCustomerQueue = useCallback(async (cid: string, asOf: string) => {
+    const sequence = ++queueRequestSequence.current;
+    setCustomerQueue(null);
     if (!cid) {
-      setCustomerQueue(null);
+      setQueueLoading(false);
+      return;
+    }
+    if (!asOf) {
+      setQueueLoading(false);
+      await appAlert('กรุณาระบุวันที่เพื่อดูยอด Rebate', 'warning');
       return;
     }
     setQueueLoading(true);
     try {
       const res = await fetchRebatePoolCustomerQueue(cid, asOf || undefined);
+      if (sequence !== queueRequestSequence.current) return;
+      if (String(res.custId) !== cid || res.asOfDate !== asOf) throw new Error('ข้อมูลยอดไม่ตรงกับลูกค้าหรือวันที่ที่เลือก');
       setCustomerQueue(res);
     } catch (e: unknown) {
-      await appAlert((e as Error).message || 'โหลดคิว FIFO ไม่สำเร็จ', 'error');
+      if (sequence !== queueRequestSequence.current) return;
       setCustomerQueue(null);
+      await appAlert((e as Error).message || 'โหลดคิว FIFO ไม่สำเร็จ', 'error');
     } finally {
-      setQueueLoading(false);
+      if (sequence === queueRequestSequence.current) setQueueLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (queueCustId) {
-      loadCustomerQueue(queueCustId, queueAsOfDate);
-    }
+    void loadCustomerQueue(queueCustId, queueAsOfDate);
+    return () => { queueRequestSequence.current++; };
   }, [queueCustId, queueAsOfDate, loadCustomerQueue]);
 
   const customerById = useMemo(() => {
@@ -421,6 +435,14 @@ export function RebatePoolPanel() {
       await appAlert('กรุณาเลือกลูกค้า', 'warning');
       return;
     }
+    if (queueLoading || !customerQueue) {
+      await appAlert('กรุณาตรวจยอดของลูกค้าและวันที่ที่เลือกก่อนแปลงตั๋ว', 'warning');
+      return;
+    }
+    if (queueAsOfDate !== bangkokDate()) {
+      await appAlert('กรุณาเลือกวันที่ปัจจุบันเพื่อตรวจยอดก่อนแปลงตั๋ว', 'warning');
+      return;
+    }
     if (!convGoodId) {
       await appAlert('กรุณาเลือกสินค้าปุ๋ยที่จะแปลง', 'warning');
       return;
@@ -561,7 +583,8 @@ export function RebatePoolPanel() {
 
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-      {can('rebate.evidence.verify') && <RebateEvidenceQueue />}
+      <RebateCustomersOverview onSelect={id => { setQueueCustId(String(id)); setQueueAsOfDate(bangkokDate()); setSubTab('conversion'); }} />
+      <RebateConversionRequests customers={customerOptions} goods={goodOptions} />
       {(ledgerUnavailable || alertsUnavailable) && <p role="status" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
         ข้อมูลยอดหรือการแจ้งเตือนบางส่วนยังไม่พร้อมแสดง กรุณาอย่าใช้ตัวเลขในส่วนที่ไม่พร้อมเป็นยอดคงเหลือ
       </p>}
@@ -656,6 +679,8 @@ export function RebatePoolPanel() {
           <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> รีเฟรช
         </button>
       </div>
+
+      {can('rebate.evidence.verify') && <RebateEvidenceQueue />}
 
       {/* TAB 1: LEDGER & APPROVALS */}
       {subTab === 'ledger' && (
@@ -1339,15 +1364,11 @@ export function RebatePoolPanel() {
 
               <button
                 type="button"
-                disabled={!canConvert || convBusy || !queueCustId}
+                disabled
                 onClick={handleManualConvert}
                 className="w-full py-2.5 rounded-xl bg-[#0C447C] text-white text-xs font-bold hover:bg-[#09345f] disabled:opacity-50"
               >
-                {convBusy
-                  ? 'กำลังแปลงตั๋ว...'
-                  : canConvert
-                  ? 'ยืนยันแปลงเป็นตั๋วปุ๋ย (FIFO Manual)'
-                  : 'จำกัดสิทธิ์เฉพาะ ACCOUNTING / REBATE_CONVERTER / ADMIN'}
+                {convBusy ? 'กำลังแปลงตั๋ว...' : 'รอระบบยื่นและอนุมัติคำขอแปลง Rebate'}
               </button>
             </div>
           </div>

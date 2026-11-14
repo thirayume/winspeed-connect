@@ -18,14 +18,11 @@ function maySwitchDatabase(role) {
 /** Run fn with the session's chosen database when the JWT carries a valid, still-permitted claim. */
 function runWithSessionDatabase(payload, role, fn) {
   const wanted = payload && typeof payload.db === 'string' ? payload.db.trim() : '';
-  if (!wanted) return fn();
-  try {
-    const { isSwitchableDb } = require('../onprem-target');
-    if (maySwitchDatabase(role) && isSwitchableDb(wanted)) {
-      return require('../db').runWithDb(wanted, fn);
-    }
-  } catch { /* fall through to the default database */ }
-  return fn();
+  if (!wanted) throw Object.assign(new Error('DB_RESTRICTED'), { status:403, code:'DB_RESTRICTED' });
+  const { isSwitchableDb } = require('../onprem-target');
+  if (!maySwitchDatabase(role) || !isSwitchableDb(wanted))
+    throw Object.assign(new Error('DB_RESTRICTED'), { status:403, code:'DB_RESTRICTED' });
+  return require('../db').runWithDb(wanted, fn);
 }
 
 // Identity and permissions are anchored to the deployment's primary database,
@@ -200,14 +197,63 @@ function requireAuth(req, res, next) {
           }
           if (!activeDb.canAccessDatabase(database, req.user, themes)) return res.status(403).json({ code: 'DB_RESTRICTED', message: 'บทบาทนี้ไม่มีสิทธิ์เข้าถึงฐานข้อมูลที่เลือก กรุณาสลับฐานข้อมูล' });
           if (database.toLowerCase() !== primary.toLowerCase()) {
-            // The list and stats are read-only and use the target scope and
-            // data cutoff. Other routes stay closed until individually reviewed.
-            const reviewedRead = req.method === 'GET' && req.baseUrl === '/api/so' && ['/', '/stats'].includes(req.path) &&
-              hasRole(req.user, 'ADMIN', 'C_LEVEL', 'ACCOUNTING');
-            if (!reviewedRead) return res.status(409).json({ code: 'IDENTITY_MAPPING_REQUIRED', message: 'กรุณากลับฐานหลัก หรือตรวจสอบการจับคู่บัญชีระหว่างฐานก่อนใช้งานฐานนี้' });
             const actor = req.user.isImpersonating ? {
               role: req.user.actorRole, roles: req.user.actorRoles, permissions: req.user.actorPermissions,
             } : req.user;
+            // Only individually reviewed routes may disclose secondary data.
+            // Customer salesperson/employee filters are not yet reviewed for
+            // cross-database identity translation, so keep those requests shut.
+            const privilegedRead = hasRole(req.user, 'ADMIN', 'C_LEVEL', 'ACCOUNTING') && (
+              (req.baseUrl === '/api/so' && ['/', '/stats'].includes(req.path)) ||
+              (req.baseUrl === '/api/so' && process.env.REBATE_POOL_103_ENABLED === 'true' &&
+                /^\/rebate-balance\/[0-9]+$/.test(req.path)) ||
+              (req.baseUrl === '/api/trips' && ['/', '/board'].includes(req.path)) ||
+              (req.baseUrl === '/api/master/native-approvers' && ['/', '/history'].includes(req.path) && hasRole(req.user, 'ADMIN', 'C_LEVEL')) ||
+              (req.baseUrl === '/api/credit' && /^\/[0-9]+\/status$/.test(req.path)) ||
+              // Only the new shipment-backed pool uses the reviewed scope,
+              // primary reset fence and business participant fence. Do not
+              // expose the legacy queue when that feature is disabled.
+              (req.baseUrl === '/api/rebate-pool' && process.env.REBATE_POOL_103_ENABLED === 'true' &&
+                (req.path === '/customers' || /^\/queue\/[0-9]+$/.test(req.path))) ||
+              (req.baseUrl === '/api/master' && (
+                req.path === '/aging' ||
+                (req.path === '/customers' && !req.query?.salesperson && !req.query?.employee)
+              ))
+            );
+            // Sales may only learn availability, never amounts. The endpoint
+            // independently enforces actor/effective capability, both scopes,
+            // cutoff and reset fences after identity translation.
+            const availabilityRead = process.env.REBATE_POOL_103_ENABLED === 'true' &&
+              req.baseUrl === '/api/so' && /^\/rebate-availability\/[0-9]+$/.test(req.path) &&
+              hasPermission(req.user, 'so.create');
+            // Trip handlers enforce both actor and effective scopes and hide
+            // mixed-owner trips on secondary databases before returning details.
+            const tripRead = req.baseUrl === '/api/trips' && ['/', '/board'].includes(req.path) &&
+              hasPermission(req.user, 'trip.view');
+            // List handlers intersect the scopes of both identities. Untranslated
+            // salesperson filters remain blocked until separately reviewed.
+            const scopedSalesRead = hasPermission(req.user, 'so.create') && hasPermission(actor, 'so.create') && (
+              (req.baseUrl === '/api/so' && ['/', '/stats'].includes(req.path)) ||
+              (req.baseUrl === '/api/credit' && /^\/[0-9]+\/status$/.test(req.path)) ||
+              (req.baseUrl === '/api/giveaway' && req.path === '/my-quota' &&
+                (!req.query?.salesUserId || Number(req.query.salesUserId) === Number(req.user.sub))) ||
+              (req.baseUrl === '/api/master' && (
+                (req.path === '/customers' && !req.query?.salesperson && !req.query?.employee) ||
+                (req.path === '/goods' && req.query?.forSale === 'true' && req.query?.includeInactive !== 'true') ||
+                (req.path === '/prices' && req.query?.includeExpired !== 'true') ||
+                req.path === '/transports' ||
+                req.path === '/truck-plates' ||
+                /^\/customers\/[0-9]+\/top-goods$/.test(req.path) ||
+                (req.path === '/giveaway-goods' && !req.query?.excludeSoId &&
+                  (!req.query?.salesUserId || Number(req.query.salesUserId) === Number(req.user.sub)))
+              ))
+            );
+            // This POST only calculates a price indicator; it does not write.
+            // The handler checks customer scope and fails closed on price errors.
+            const priceIndicatorRead = req.method === 'POST' && req.baseUrl === '/api/so' &&
+              req.path === '/price-indicator' && hasPermission(req.user, 'so.create') && hasPermission(actor, 'so.create');
+            const reviewedRead = (req.method === 'GET' && (privilegedRead || availabilityRead || tripRead || scopedSalesRead)) || priceIndicatorRead;
+            if (!reviewedRead) return res.status(409).json({ code: 'IDENTITY_MAPPING_REQUIRED', message: 'กรุณากลับฐานหลัก หรือตรวจสอบการจับคู่บัญชีระหว่างฐานก่อนใช้งานฐานนี้' });
             if (!activeDb.canAccessDatabase(database, actor, themes)) return res.status(403).json({ code: 'DB_RESTRICTED' });
             const identity = require('../services/database-identity-resolver');
             let mapping;
@@ -240,9 +286,8 @@ function requireAuth(req, res, next) {
       } catch(e) {if(process.env.NODE_ENV!=='production')console.error('[auth error]',e);res.status(e.status||503).json({code:e.status===401?'SESSION_REVOKED':'ROLE_UNAVAILABLE',message:'สิทธิ์หรือข้อมูลเข้าสู่ระบบเปลี่ยน กรุณาเข้าสู่ระบบใหม่'});}
     };
     // Database switching (owner 2026-10-25): a permitted role's session may point at another
-    // allowed database, carried in the JWT `db` claim. An invalid or no-longer-permitted claim is
-    // ignored and the request falls back to the system default already set by the DB-target
-    // middleware. The migrator and non-onprem targets never switch.
+    // allowed database, carried in the JWT `db` claim. If that selection is no
+    // longer permitted, fail closed rather than silently using a different database.
     // Auth Anchor (PROD_DB): Identity, credentials, and roles are always resolved against the primary DB.
     const prepare = async () => {
       try {
@@ -269,14 +314,19 @@ function requireAuth(req, res, next) {
           ? { role: req.user.actorRole, roles: req.user.actorRoles, permissions: req.user.actorPermissions }
           : req.user;
 
-        if (req.tokenPayload.db && !isAuthOrAdminRoute && maySwitchDatabase(req.user) && maySwitchDatabase(actorForSwitch)) {
+        if (req.tokenPayload.db && !isAuthOrAdminRoute && require('../db').getTarget() === 'onprem') {
+          // Even when access is denied before switching pools, audit the
+          // requested signed business target rather than the identity anchor.
+          req.auditBusinessDatabase = String(req.tokenPayload.db).trim();
+          if (!maySwitchDatabase(req.user) || !maySwitchDatabase(actorForSwitch))
+            return res.status(403).json({code:'DB_RESTRICTED',message:'ไม่มีสิทธิ์เข้าถึงฐานข้อมูลที่เลือก กรุณาสลับฐานข้อมูล'});
           return runWithSessionDatabase(req.tokenPayload, actorForSwitch, run);
         }
         return run();
       } catch (e) {
         if (process.env.NODE_ENV !== 'production') console.error('[auth error]', e);
         return res.status(e.status || 503).json({
-          code: e.status === 401 ? 'SESSION_REVOKED' : 'ROLE_UNAVAILABLE',
+          code: e.code === 'DB_RESTRICTED' ? 'DB_RESTRICTED' : e.status === 401 ? 'SESSION_REVOKED' : 'ROLE_UNAVAILABLE',
           message: 'สิทธิ์หรือข้อมูลเข้าสู่ระบบเปลี่ยน กรุณาเข้าสู่ระบบใหม่',
         });
       }

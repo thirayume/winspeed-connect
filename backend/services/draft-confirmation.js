@@ -11,6 +11,26 @@ const {linePieces}=require('./giveaway-quota');
 const {captureBookingOrigin}=require('./initial-booking-ai');
 const {assertPricesAboveCost,assertPriceBookLinesSellable}=require('./cost-authority');
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status});};
+function assertLegacyRebateAllowed(so,env=process.env){
+ const rebateDiscountAmt=Number(so.RebateDiscountAmt)||0;
+ if(env.REBATE_POOL_103_ENABLED==='true' && Math.max(0,rebateDiscountAmt-(Number(so.ClaimDiscountAmt)||0))>0)
+   fail('ยอดรีเบทแบบเดิมไม่สามารถใช้กับระบบใหม่ กรุณาใช้คำขอ Rebate ของลูกค้า',409);
+}
+async function verifyApprovedLegacyClaim(so,query,env=process.env){
+ if(env.REBATE_POOL_103_ENABLED!=='true')return;
+ const amount=Number(so.ClaimDiscountAmt||0),discount=Number(so.RebateDiscountAmt||0),claimId=Number(so.AppliedRebateClaimId||0);
+ if(!Number.isFinite(amount)||!Number.isFinite(discount)||amount<0||discount<0||amount>discount||
+    (amount>0&&(!Number.isSafeInteger(claimId)||claimId<1))||(claimId>0&&amount<=0))
+   fail('ยอดเคลมเดิมที่ผูกกับบิลไม่ถูกต้อง กรุณาตรวจสอบก่อนยืนยัน',409);
+ if(amount===0)return;
+ const rows=(await query(`SELECT Id FROM wf.RebateClaim WITH(UPDLOCK,HOLDLOCK)
+   WHERE Id=@claimId AND AppliedDraftSoId=@draftId AND CustId=@custId AND Status='APPROVED'
+     AND CAST(COALESCE(CustomerAmount,ClaimAmt,0) AS decimal(18,2))=CAST(@amount AS decimal(18,2))`,{
+   claimId:{type:sql.Int,value:claimId},draftId:{type:sql.Int,value:Number(so.Id)},
+   custId:{type:sql.NVarChar(20),value:String(so.CustId||'')},amount:{type:sql.Decimal(18,2),value:amount}
+ })).recordset||[];
+ if(rows.length!==1)fail('ยอดเคลมเดิมที่อนุมัติไม่ตรงกับบิล กรุณาตรวจสอบก่อนยืนยัน',409);
+}
 function transactionQuery(tx) { return async (text,inputs={})=>{
   const r=new sql.Request(tx);for(const [k,{type,value}] of Object.entries(inputs))r.input(k,type,value);return r.query(text);
 }; }
@@ -73,6 +93,11 @@ async function confirmDraft({tx:confirmationTx,draftId,user,ip,expectedRevision,
  const pickupResult=await calculateConfirmationPickupDue({explicitDate:explicitPickup || (so.PickupDueType==='EXPLICIT' ? normalizeDateString(so.PickupDueDate,{isWallClock:true}) : null),confirmedAt:new Date()});
  if(pickupResult.policy.strictMode && diffBangkokCalendarDays(pickupResult.pickupDueDate,getBangkokDateString())<0)fail('ไม่อนุญาตวันรับสินค้าในอดีต (Strict Mode)');
  const rebateDiscountAmt=Number(so.RebateDiscountAmt)||0;
+ // The old sales-ledger balance is not the new customer shipment ledger.
+ // Keep already-approved legacy claims usable, but never spend an additional
+ // legacy ledger amount once the new pool is enabled.
+ assertLegacyRebateAllowed(so);
+ await verifyApprovedLegacyClaim(so,confirmationQuery);
 
  // R9-1: Reject if total discount exceeds bill subtotal
  const billSubtotal = lines.reduce((sum, l) => sum + (l.IsGiveaway ? 0 : Number(l.QtyTon || 0) * Number(l.PricePerTon || 0)), 0);
@@ -484,4 +509,4 @@ async function consumeRebateAccrual(custId, newSoid, rebateDiscountAmt, queryFn 
 }
 
 
-module.exports={confirmDraft,lockConfirmationResource,allocateWorkflowRef,consumeRebateAccrual,advanceAppliedClaimAtConfirm};
+module.exports={confirmDraft,lockConfirmationResource,allocateWorkflowRef,consumeRebateAccrual,advanceAppliedClaimAtConfirm,assertLegacyRebateAllowed,verifyApprovedLegacyClaim};

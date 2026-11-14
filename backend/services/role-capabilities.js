@@ -106,6 +106,10 @@ const ACTIONS = Object.freeze({
 
   // Rebate Pool Over-Limit Approval & Manual Nov-1 Ticket Conversion & Tickets
   'rebate.approve-over-limit': ['MANAGER', 'C_LEVEL', 'ADMIN'],
+  // Conversion requests and decisions are separate from approving an order's
+  // over-limit price and can be assigned independently in Role Management.
+  'rebate.conversion.request': ['SALES'],
+  'rebate.conversion.approve': ['MANAGER', 'C_LEVEL'],
   'rebate.convert': ['ACCOUNTING', 'ADMIN'],
   // Explicitly assignable; evidence review is not implied by accounting or sales.
   'rebate.evidence.verify': ['ADMIN'],

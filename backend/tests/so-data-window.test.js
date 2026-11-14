@@ -11,6 +11,11 @@ let rebateModeFixture = false;
 let sourceCollisionFixture = false;
 let bookingSnapshotFixture = false;
 const db = h.installDbStub(({ text, inputs }) => {
+  if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser WHERE Id = @id/.test(text) && [2,10].includes(Number(inputs.id)))
+    return [{Id:Number(inputs.id),EmpId:`E${inputs.id}`,PositionCode:`P${inputs.id}`}];
+  if (/WITH tree AS/.test(text) && /^P(?:2|10)$/.test(String(inputs.pos))) {
+    const id=Number(String(inputs.pos).slice(1));return [{Id:id,EmpId:`E${id}`}];
+  }
   if (/WHERE x\.SourceDraftId=@id/.test(text)) return replayRecord ? [replayRecord] : [];
   if (/OBJECT_ID\('wf\.QuotationSourceSO', 'U'\)/.test(text)) return [{ HasTable: 1 }];
   if (/FROM wf\.QuotationSourceSO src WITH \(NOLOCK\)/.test(text) && /SELECT TOP 1 q\.Id/.test(text)) return quoteRecord ? [quoteRecord] : [];
@@ -213,6 +218,29 @@ test('sales list and empty-page count share both date boundaries', async () => {
   assert.ok(listing);
   assert.equal((listing.text.match(/CASE WHEN pq\.CreatedAt >= @globalStartUtc THEN pq\.Id END AS LinkedQuoteId/g) || []).length, 2);
   assert.equal((listing.text.match(/pq\.Id IS NULL THEN NULL WHEN pq\.CreatedAt >= @globalStartUtc/g) || []).length, 2);
+});
+
+test('Access As sales list and dashboard intersect real actor scope and isolate cache entries', async () => {
+  date='2026-01-01';unavailable=false;
+  const actor2={sub:1,role:'ADMIN',actorSub:2,actorRole:'MANAGER'};
+  const actor10={sub:1,role:'ADMIN',actorSub:10,actorRole:'MANAGER'};
+  const before=db.calls.length;
+  const list=await app.call('GET','/api/so?page=2&limit=10',{user:actor2});
+  assert.equal(list.status,200,JSON.stringify(list.body));
+  const listQueries=db.calls.slice(before).filter(c=>/WITH Orders AS/.test(c.text));
+  assert.equal(listQueries.length,2);
+  for(const q of listQueries){
+    assert.match(q.text,/q\.SalesUserId IN \(@actorScU0\)/);
+    assert.match(q.text,/CAST\(q\.OwnerEmpId AS VARCHAR\(20\)\) IN \(@actorScE0\)/);
+    assert.equal(q.inputs.actorScU0,2);assert.equal(q.inputs.actorScE0,'E2');
+  }
+  const start=db.calls.length;
+  assert.equal((await app.call('GET','/api/so/stats?bust=1',{user:actor2})).status,200);
+  assert.equal((await app.call('GET','/api/so/stats',{user:actor10})).status,200);
+  const stats=db.calls.slice(start).filter(c=>/SELECT Status, COUNT\(\*\) AS Cnt/.test(c.text));
+  assert.equal(stats.length,2,'Different real actors must not share an all-scope cache entry');
+  assert.equal(stats[0].inputs.actorScU0,2);assert.equal(stats[0].inputs.actorSeE0,'E2');
+  assert.equal(stats[1].inputs.actorScU0,10);assert.equal(stats[1].inputs.actorSeE0,'E10');
 });
 
 test('dashboard cache changes immediately with the global date and fails closed on missing policy', async () => {

@@ -132,8 +132,12 @@ function appUserPayload(user, actor = null) {
   };
 }
 
-function signAppToken(user, actor = null) {
-  return jwt.sign({...appUserPayload(user, actor), authVersion:user.AuthVersion ?? 0, actorAuthVersion:actor?.AuthVersion ?? user.AuthVersion ?? 0}, SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '8h' });
+function signAppToken(user, actor = null, selectedDatabase = null) {
+  const payload={...appUserPayload(user, actor), authVersion:user.AuthVersion ?? 0, actorAuthVersion:actor?.AuthVersion ?? user.AuthVersion ?? 0};
+  // Only an already verified session claim may be carried to the new identity.
+  // Each subsequent business request rechecks both users and the allowlist.
+  if (typeof selectedDatabase === 'string' && selectedDatabase.trim()) payload.db=selectedDatabase.trim();
+  return jwt.sign(payload, SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '8h' });
 }
 
 async function loadAppUserById(id) {
@@ -538,7 +542,7 @@ router.post('/access-as', requireAuth, requireCapability('access-as'), async (re
       if (Number(req.user.sub) !== getUserId(actor)) {
         await recordAccessAsTransition(getUserId(actor), [{ action:'STOP', effectiveId:Number(req.user.sub) }], req);
       }
-      const accessToken = signAppToken(actor);
+      const accessToken = signAppToken(actor, null, req.tokenPayload?.db);
       return res.json({ accessToken, user: toClientUser(actor) });
     }
     if (!canAccessAs(actor.Role, target.Role)) return res.status(403).json({ message: 'Access As is not allowed for this role' });
@@ -550,7 +554,7 @@ router.post('/access-as', requireAuth, requireCapability('access-as'), async (re
       steps.push({ action:'STOP', effectiveId:currentEffective });
     steps.push({ action:'START', effectiveId:getUserId(target) });
     await recordAccessAsTransition(getUserId(actor), steps, req);
-    const accessToken = signAppToken(target, actor);
+    const accessToken = signAppToken(target, actor, req.tokenPayload?.db);
     res.json({ accessToken, user: toClientUser(target, actor) });
   } catch (e) {
     console.error('[access-as:start] ACCESS_AS_UNAVAILABLE');
@@ -568,7 +572,7 @@ router.post('/access-as/stop', requireAuth, async (req, res) => {
       await recordAccessAsTransition(getUserId(actor), [{ action:'STOP', effectiveId:Number(req.user.sub) }], req);
     }
 
-    const accessToken = signAppToken(actor);
+    const accessToken = signAppToken(actor, null, req.tokenPayload?.db);
     res.json({ accessToken, user: toClientUser(actor) });
   } catch (e) {
     console.error('[access-as:stop] ACCESS_AS_UNAVAILABLE');
@@ -605,13 +609,20 @@ router.get('/databases', requireAuth, async (req, res) => {
       (canSwitch || canSetSystem) ? activeDb.listSwitchableDatabases() : Promise.resolve([]),
       activeDb.getDatabaseThemes(),
     ]);
-    // This endpoint runs on the identity database. Display the valid signed
-    // session selection (or the system default), not that internal anchor.
+    // The signed selection remains the requested business database even if
+    // the current effective role no longer has access. Do not label the
+    // system default as active: business requests fail closed in that case.
     const requested = String(req.tokenPayload?.db || '').trim();
-    const selected = canSwitch && requested
-      ? rawList.find(name => name.toLowerCase() === requested.toLowerCase() && activeDb.canAccessDatabase(name, req.user, themes))
-      : null;
-    const active = selected || system || getDbName();
+    const active = requested || system || getDbName();
+    const actor = req.user.isImpersonating
+      ? {role:req.user.actorRole,roles:req.user.actorRoles,permissions:req.user.actorPermissions}
+      : req.user;
+    const selectionBlocked = Boolean(requested) && (
+      !canSwitch || !hasPermission(actor, 'database.switch') ||
+      !require('../onprem-target').isSwitchableDb(requested) ||
+      !activeDb.canAccessDatabase(requested, req.user, themes) ||
+      !activeDb.canAccessDatabase(requested, actor, themes)
+    );
 
     // Build rich metadata for all candidate databases
     const metaList = rawList.map(dbName => {
@@ -643,6 +654,7 @@ router.get('/databases', requireAuth, async (req, res) => {
       themes,
       canSwitch,
       canSetSystem,
+      selectionBlocked,
     });
   } catch (e) {
     res.status(500).json({ message: 'Server error' });

@@ -15,7 +15,7 @@ export function RebateEvidenceQueue() {
   const refresh=async()=>{
     setLoading(true);setError('');
     try {setRows((await fetchRebateShipmentEvidence()).data);}
-    catch(e:unknown){setError(e instanceof Error?e.message:'โหลดคิวหลักฐานไม่สำเร็จ');}
+    catch(e:unknown){setRows([]);setError(e instanceof Error?e.message:'โหลดคิวหลักฐานไม่สำเร็จ');}
     finally{setLoading(false);}
   };
   const stage=async()=>{
@@ -41,11 +41,11 @@ export function RebateEvidenceQueue() {
     finally{setLoading(false);}
   };
   return <section className="rounded-xl border border-amber-200 bg-white p-4">
-    <button type="button" className="font-bold text-[#0C447C]" onClick={()=>{setOpen(!open);if(!open)void refresh();}}>
-      {open?'ซ่อน':'เปิด'}คิวตรวจหลักฐานการขนส่ง Rebate
+    <button type="button" aria-expanded={open} className="font-bold text-[#0C447C]" onClick={()=>{setOpen(!open);if(!open)void refresh();}}>
+      {open?'ซ่อน':'ดู'}รายการขนส่งที่รอตรวจหลักฐาน
     </button>
     {open && <div className="mt-3 space-y-3">
-      <p className="text-sm text-gray-600">ตรวจเอกสารและหลักฐานเวลาขนส่งก่อนยืนยัน ยอดจะไม่ถูกเพิ่มหากต้นทางหรือราคาตรึงไม่ผ่านการตรวจ</p>
+      <p className="text-sm text-gray-600">คิวนี้แสดงเฉพาะรายการขนส่งที่ต้องตรวจเพิ่มเติม เช่น เวลาขนส่งหรือราคาต้นทางยังยืนยันไม่ได้ ไม่ใช่ยอด Rebate รวมของลูกค้า ผู้มีสิทธิ์ตรวจหลักฐานก่อนนำรายการมาคำนวณ</p>
       <div className="flex flex-wrap gap-2">
         <label className="sr-only" htmlFor="rebate-116-id">ID ใบขน 116</label>
         <input id="rebate-116-id" inputMode="numeric" value={source} onChange={e=>setSource(e.target.value)} placeholder="ID ใบขน 116" className="rounded border px-2 py-1" />
@@ -55,7 +55,7 @@ export function RebateEvidenceQueue() {
         <button type="button" disabled={loading} onClick={refresh} className="rounded border px-3 py-1">รีเฟรช</button>
       </div>
       {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-      {!rows.length && !loading && <p className="text-sm text-gray-500">ไม่มีรายการพักที่แสดงในช่วงข้อมูลนี้</p>}
+      {!error && !rows.length && !loading && <p className="text-sm text-gray-500">ไม่มีรายการพักที่แสดงในช่วงข้อมูลนี้</p>}
       {rows.map(row=><div key={row.Id} className="rounded border p-3 text-sm">
         <p className="font-semibold">{row.DocuNo ? `ใบขน ${row.DocuNo} · รายการ ${row.RedemptionListNo} · ${row.DocuDate}` : `รายการพัก #${row.Id} จากเอกสารก่อนวันเริ่มข้อมูล`}</p>
         <p>จำนวน {row.QuantityTon ?? 'ยังไม่ยืนยัน'} ตัน · เหตุพัก {row.HoldReason}</p>

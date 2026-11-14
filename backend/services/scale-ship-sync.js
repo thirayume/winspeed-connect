@@ -64,7 +64,8 @@ async function runOnce() {
 
 let timers = [];
 function start() {
-  if (timers.length || String(process.env.SCALE_SHIP_SYNC_DISABLED || '').toLowerCase() === 'true') return;
+  if (timers.length || String(process.env.DISABLE_BACKGROUND_WORKERS || '').toLowerCase() === 'true' ||
+      String(process.env.SCALE_SHIP_SYNC_DISABLED || '').toLowerCase() === 'true') return;
   const guard = (name, fn) => () => fn().catch(e => console.error(`[${name}] ${e.message}`));
   const ship = guard('scale-ship-sync', runOnce);
   const incidents = guard('rule-incidents', detectIncidents);

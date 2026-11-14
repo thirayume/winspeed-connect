@@ -67,12 +67,12 @@ async function reserveShipmentAccrual(query, epoch, input = {}, overrides = {}) 
     // valid, as do issued conversions.
     const replayClaimStatuses=['DRAFT','PENDING','TIER2_PENDING','TIER3_PENDING','TIER4_PENDING','APPROVED','CN_ISSUED'];
     if ((documentType==='CLAIM' && !replayClaimStatuses.includes(document.Status)) ||
-        (documentType==='CONVERSION' && document.Status!=='ISSUED'))
+        (documentType==='CONVERSION' && !['PENDING_APPROVAL','ISSUED'].includes(document.Status)))
       fail('REBATE_RESERVATION_DOCUMENT_INVALID');
     return {id,replayed:true};
   }
   if (documentType==='CLAIM' && !['DRAFT','PENDING','TIER2_PENDING','TIER3_PENDING','TIER4_PENDING'].includes(document.Status) ||
-      documentType==='CONVERSION' && document.Status!=='ISSUED') fail('REBATE_RESERVATION_DOCUMENT_INVALID');
+      documentType==='CONVERSION' && !['PENDING_APPROVAL','ISSUED'].includes(document.Status)) fail('REBATE_RESERVATION_DOCUMENT_INVALID');
   const used=(await query(`SELECT COALESCE(SUM(QuantityTon),0) AS QuantityTon,COALESCE(SUM(AmountBaht),0) AS AmountBaht FROM wf.RebateShipmentReservation WITH(HOLDLOCK)
     WHERE AccrualId=@accrualId AND Status='ACTIVE'`,p)).recordset?.[0];
   // Rounding each slice independently can exceed the original monetary

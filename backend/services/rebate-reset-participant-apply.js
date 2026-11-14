@@ -48,6 +48,10 @@ async function applyResetParticipant(query, input = {}) {
   const incomplete = (await query(`SELECT TOP 1 RequestId FROM wf.RebateConversionRequest WITH(UPDLOCK,HOLDLOCK)
     WHERE ConversionId IS NULL OR CompletedAt IS NULL`, {})).recordset || [];
   if (incomplete.length) fail('REBATE_RESET_INCOMPLETE_CONVERSION');
+  // New pending approval requests are cancelled and their reservations
+  // released in this same participant transaction. The coordinator must pass
+  // verified per-database business identities when such requests exist.
+  await require('./rebate-conversion-approval-reset').cancelPendingConversionRequestsForReset(query, input, previous);
   const unknown = (await query(`SELECT TOP 1 Id FROM wf.RebateClaim WITH(UPDLOCK,HOLDLOCK)
     WHERE Status IS NULL OR Status NOT IN (N'DRAFT',N'PENDING',N'TIER2_PENDING',N'TIER3_PENDING',N'TIER4_PENDING',
       N'APPROVED',N'REJECTED',N'CN_ISSUED',N'CANCELLED')`, {})).recordset || [];

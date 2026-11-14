@@ -162,6 +162,7 @@ export type DatabaseInfo = {
   themes?: Record<string, DatabaseThemeConfig>;
   canSwitch: boolean;
   canSetSystem: boolean;
+  selectionBlocked?: boolean;
 };
 export const getDatabases = () => req<DatabaseInfo>('/auth/databases', { silent: true });
 export type DatabaseConnectionProfile = {
@@ -538,7 +539,9 @@ export const fetchSoStats = (bust = false) =>
   req<{ byStatus: Record<string, number>; total: number }>(`/so/stats${bust ? '?bust=1' : ''}`);
 
 export const getRebateBalance = (custId: string) =>
-  req<{ availableRebate: number }>(`/so/rebate-balance/${custId}`, { silent: true });
+  req<{ availableRebate: number; source?: 'legacy' | 'shipment' }>(`/so/rebate-balance/${custId}`, { silent: true });
+export const getRebateAvailability = (custId: string) =>
+  req<{hasAvailableRebate:boolean}>(`/so/rebate-availability/${encodeURIComponent(custId)}`, {silent:true});
 
 export const fetchShippedToday = (date: string) =>
   req<import('../types').ShippedRow[]>(`/so/shipped-today?date=${date}`);
@@ -1113,6 +1116,24 @@ export const rejectRebatePoolLedger = (id: number, note: string) =>
 
 export const fetchRebatePoolCustomerQueue = (custId: number | string, asOfDate?: string) =>
   req<import('../types').RebateCustomerQueue>(`/rebate-pool/queue/${custId}${asOfDate ? `?asOfDate=${encodeURIComponent(asOfDate)}` : ''}`);
+
+export type RebateCustomerOverview = { asOfDate: string; nextAfter: number | null; items: Array<{
+  custId: number; custCode: string | null; custName: string | null; status: 'ready' | 'needs_review';
+  balance: number | null; openingBalance: number | null;
+}> };
+export const fetchRebateCustomerOverview = (after: number, search: string) => {
+  const qs = new URLSearchParams({ after: String(after), limit: '10', search });
+  return req<RebateCustomerOverview>(`/rebate-pool/customers?${qs}`, { silent: true });
+};
+export type RebateConversionRequestItem = { id:number; custId:number; custCode:string|null; custName:string|null;
+  goodName:string|null; status:string; createdAtUtc:string; canCancel:boolean; canDecide:boolean; amount?:number; tons?:number };
+export const fetchRebateConversionRequests = () => req<{items:RebateConversionRequestItem[];limit:number;database:string}>('/rebate-pool/conversion-requests', {silent:true});
+export const submitRebateConversionRequest = (payload:{requestId:string;expectedDatabase:string;custId:number;goodId:number;standingYear:number;
+  note:string;requestedTons?:number;convertAllEligible?:boolean;expiryDate?:string}) =>
+  req<{id:number;status:string;replayed:boolean}>('/rebate-pool/conversion-requests', {method:'POST',body:JSON.stringify(payload),silent:true});
+export const decideRebateConversionRequest = (id:number,action:'approve'|'reject'|'cancel',reason:string,expectedDatabase:string) =>
+  req<{id:number;status:string;replayed:boolean}>(`/rebate-pool/conversion-requests/${id}/${action}`,
+    {method:'POST',body:JSON.stringify({reason,expectedDatabase}),silent:true});
 
 export const fetchRebatePoolAlerts = (year?: number) =>
   req<import('../types').RebateConversionAlertItem[]>(`/rebate-pool/alerts${year ? `?year=${year}` : ''}`);

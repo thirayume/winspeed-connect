@@ -185,7 +185,13 @@ export function DatabaseSwitcher() {
   const activeMeta = resolveDbMeta(info.active, info);
   const theme = THEME_STYLES[activeMeta.color] || THEME_STYLES.slate;
   const switched = info.active.toLowerCase() !== info.system.toLowerCase();
-  const canOpen = info.canSwitch && ((info.list?.length || 0) > 1 || (info.metaList?.length || 0) > 1);
+  // A session may still point at a database that was removed from the
+  // allowlist. Even a single remaining target must then be selectable so the
+  // user can recover without discarding the session.
+  const allowedAlternatives = info.metaList?.length
+    ? info.metaList.filter(m => m.isAllowed !== false).map(m => m.name)
+    : info.list || [];
+  const canOpen = info.canSwitch && allowedAlternatives.some(name => name.toLowerCase() !== info.active.toLowerCase());
 
   async function choose(database: string) {
     if (busy) return;
@@ -210,6 +216,7 @@ export function DatabaseSwitcher() {
         </span>
       )}
       <span className="font-semibold tabular-nums tracking-tight">{info.active}</span>
+      {info.selectionBlocked && <span className="font-bold text-red-700">ไม่มีสิทธิ์เข้าฐานนี้</span>}
       {canOpen ? (
         <ChevronDown
           className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${
@@ -229,7 +236,9 @@ export function DatabaseSwitcher() {
       <div
         className={base}
         title={
-          info.canSwitch
+          info.selectionBlocked
+            ? `ฐานที่เลือก ${info.active} ไม่อนุญาตสำหรับผู้ใช้งานปัจจุบัน กรุณาหยุด Access As หรือให้ผู้ดูแลตรวจสิทธิ์`
+            : info.canSwitch
             ? `ฐานข้อมูลปัจจุบัน: ${info.active}`
             : `ฐานข้อมูลที่กำลังใช้งาน: ${info.active} (${activeMeta.label || 'ฐานข้อมูลปัจจุบัน'}) — สิทธิ์ของคุณไม่สามารถสลับฐานข้อมูลได้`
         }

@@ -33,6 +33,19 @@ const {
 router.use(requireAuth);
 router.use('/shipment-evidence', require('./rebate-evidence'));
 
+// Disabled by default until the cross-database fence audit and UAT pass.
+// Database targets are derived exclusively from server configuration.
+router.get('/admin/reset', requireRole('ADMIN'), async (req,res)=>{
+  try { return res.json(await require('../services/rebate-reset-admin').getResetStatus(req.user)); }
+  catch(e) { return res.status(e.status||503).json({code:e.code||'REBATE_RESET_UNAVAILABLE',message:'ไม่สามารถตรวจความพร้อม Reset Rebate ได้'}); }
+});
+router.post('/admin/reset', requireRole('ADMIN'), async (req,res)=>{
+  try { return res.json(await require('../services/rebate-reset-admin').executeReset(req.user,req.body||{})); }
+  catch(e) { return res.status(e.status||503).json({code:e.code||'REBATE_RESET_UNAVAILABLE',
+    message:'Reset Rebate ยังไม่สำเร็จ กรุณาตรวจสถานะและลองคำขอเดิมอีกครั้ง',
+    ...(e.resetRequestId?{requestId:e.resetRequestId}:{})}); }
+});
+
 function sendRebateError(res, err) {
   const status = err?.status || err?.statusCode || 500;
   return res.status(status).json({
@@ -127,6 +140,29 @@ router.post('/ledger/:id/reject', async (req, res) => {
 });
 
 // ── 4) Customer conversion queue & annual Nov 1 alerts ──────────────────────
+router.get('/customers', requireRebateAmountAccess, async (req, res) => {
+  if (process.env.REBATE_POOL_103_ENABLED !== 'true')
+    return res.status(503).json({ code: 'REBATE_POOL_103_UNAVAILABLE', error: 'กอง Rebate ใหม่ยังไม่เปิดใช้งาน' });
+  try {
+    const after = req.query.after == null ? 0 : Number(req.query.after);
+    const limit = req.query.limit == null ? 10 : Number(req.query.limit);
+    const search = req.query.search == null ? '' : String(req.query.search).trim();
+    const asOfDate = getBangkokDateString();
+    const cutoff = (await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;
+    const scope = await require('../services/rebate-shared-scope').sharedRebateScopeFilter(req.user);
+    const { withRebateRouteFence, routeParticipantFence, isShipmentEpoch } = require('../services/rebate-route-fence');
+    const result = await withRebateRouteFence(epoch => wfTransaction(async tx => {
+      const q = transactionQuery(tx, sql);
+      await routeParticipantFence(q, epoch);
+      if (!isShipmentEpoch(epoch)) throw Object.assign(new Error('reset required'), { code: 'REBATE_RESET_NOT_COMPLETED', status: 409 });
+      const cycleMonths = await require('../services/rebate-cycle-policy').readRebateCycleMonths(q, { lock: true });
+      return require('../services/rebate-shipment-customer-overview').getShipmentCustomerOverview(q,
+        { epoch, scope, asOfDate, cutoff, cycleMonths, after, limit, search });
+    }));
+    return res.json(result);
+  } catch (err) { return sendRebateError(res, err); }
+});
+
 router.get('/queue/:custId', requireRebateAmountAccess, async (req, res) => {
   try {
     const custId = Number(req.params.custId);
@@ -265,14 +301,109 @@ router.get('/conversions', requireRebateAmountAccess, async (req, res) => {
 });
 
 router.post('/conversions/execute', requireCapability('rebate.convert'), async (req, res) => {
-  // Both switches default off. Only the post-reset shared shipment epoch may
-  // be used through HTTP; the old standalone Pool ledger is never accepted.
-  if (process.env.REBATE_POOL_103_ENABLED !== 'true' || process.env.REBATE_CONVERSION_ENABLED !== 'true')
-    return res.status(503).json({ code: 'REBATE_SINGLE_SOURCE_REQUIRED', error: 'การแปลง Rebate ยังไม่เปิดใช้งาน' });
+  // Owner requires a sales request and an explicit role-authorized decision.
+  // Do not let the earlier one-step API bypass that approval, even if old
+  // environment flags are enabled. Existing receipts remain unchanged.
+  return res.status(503).json({ code: 'REBATE_CONVERSION_APPROVAL_REQUIRED',
+    error: 'การแปลง Rebate ต้องผ่านการยื่นและอนุมัติ ระบบกำลังเชื่อมขั้นตอนนี้' });
+});
+
+// The new request workflow is isolated behind its own default-off switch. It
+// must not be enabled until the reset coordinator, UAT and accounting checks
+// are complete. Decision writers use the same epoch and business transaction.
+function conversionApprovalsEnabled(req, res, next) {
+  if (process.env.REBATE_POOL_103_ENABLED !== 'true' || process.env.REBATE_CONVERSION_APPROVAL_ENABLED !== 'true')
+    return res.status(503).json({ code: 'REBATE_APPROVAL_WORKFLOW_UNAVAILABLE', error: 'ระบบคำขอแปลง Rebate ยังไม่เปิดใช้งาน' });
+  next();
+}
+async function verifyConversionTarget(query, expectedDatabase) {
+  if (typeof expectedDatabase !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(expectedDatabase))
+    throw Object.assign(new Error('กรุณาตรวจสอบฐานข้อมูลปัจจุบัน'), { code:'REBATE_TARGET_REQUIRED', status:400 });
+  const actual = (await query('SELECT DB_NAME() AS DatabaseName', {})).recordset?.[0]?.DatabaseName;
+  if (String(actual || '').trim().toLowerCase() !== expectedDatabase.toLowerCase())
+    throw Object.assign(new Error('ฐานข้อมูลเปลี่ยนหรือไม่ตรงกับที่เลือก กรุณาตรวจสอบอีกครั้ง'), { code:'REBATE_TARGET_MISMATCH', status:409 });
+}
+router.get('/conversion-requests', conversionApprovalsEnabled, async (req, res) => {
   try {
-    const result=await require('../services/rebate-conversion-execution').executeReviewedConversion(req.user,req.body,{requireShipmentEpoch:true});
+    const { authorizeConversionAction } = require('../services/rebate-conversion-approval-policy');
+    let requester = null, reviewer = null;
+    try { requester = authorizeConversionAction(req.user, 'REQUEST'); } catch (err) {
+      if (err.code !== 'REBATE_CONVERSION_PERMISSION_REQUIRED') throw err;
+    }
+    try { reviewer = authorizeConversionAction(req.user, 'APPROVE'); } catch (err) {
+      if (err.code !== 'REBATE_CONVERSION_PERMISSION_REQUIRED') throw err;
+    }
+    if (!requester && !reviewer) return res.status(403).json({ code: 'REBATE_CONVERSION_PERMISSION_REQUIRED' });
+    const identity = reviewer || requester;
+    const windowStartUtc = (await require('../services/global-data-window-store').readGlobalDataWindow()).utcInstant;
+    const { withRebateRouteFence, routeParticipantFence, isShipmentEpoch } = require('../services/rebate-route-fence');
+    const authorizeScope = require('../services/rebate-conversion-approval-scope').authorizeConversionRequestScope;
+    const actor = require('../services/business-identity').actorPerspective(req.user);
+    const showMoney = require('../middleware/auth').canViewAllRebateAmounts(req.user) &&
+      require('../middleware/auth').canViewAllRebateAmounts(actor);
+    const result = await withRebateRouteFence(epoch => wfTransaction(async tx => {
+      const q = transactionQuery(tx, sql); await routeParticipantFence(q, epoch);
+      if (!isShipmentEpoch(epoch)) throw Object.assign(new Error('reset required'), { code: 'REBATE_RESET_NOT_COMPLETED', status: 409 });
+      const database = (await q('SELECT DB_NAME() AS DatabaseName', {})).recordset?.[0]?.DatabaseName;
+      if (typeof database !== 'string' || !database.trim()) throw Object.assign(new Error('database unavailable'), {code:'REBATE_TARGET_UNAVAILABLE',status:503});
+      const rows = (await q(`SELECT TOP (50) r.Id,r.CustId,r.ConversionId,r.Status,r.CreatedAtUtc,
+          r.ActorPrimaryId,r.EffectivePrimaryId,c.CustCode,c.CustName,c.GoodName,c.ConvertedValueBaht,c.ConvertedTons
+        FROM wf.RebateConversionApprovalRequest r
+        JOIN wf.FertilizerTicketConversion c ON c.Id=r.ConversionId AND c.CustId=r.CustId
+        WHERE r.EnvironmentKind=@environment AND r.ResetId=@resetId AND r.Generation=@generation
+          AND r.CreatedAtUtc>=@windowStartUtc
+          AND (@reviewer=1 OR (r.ActorPrimaryId=@actor AND r.EffectivePrimaryId=@effective)) ORDER BY r.Id DESC`, {
+        environment:epoch.environment,resetId:epoch.resetId,generation:epoch.generation,windowStartUtc,
+        reviewer:!!reviewer,actor:identity.actorPrimaryId,effective:identity.effectivePrimaryId })).recordset || [];
+      const items=[];
+      for (const row of rows) {
+        try { await authorizeScope(q, req.user, row); }
+        catch (err) { if (err.code === 'REBATE_CONVERSION_REQUEST_NOT_FOUND') continue; throw err; }
+        items.push({ id:Number(row.Id),custId:Number(row.CustId),custCode:row.CustCode||null,custName:row.CustName||null,
+          goodName:row.GoodName||null,status:row.Status,createdAtUtc:row.CreatedAtUtc,
+          canCancel:!!requester && row.Status==='PENDING' && Number(row.EffectivePrimaryId)===requester.effectivePrimaryId,
+          canDecide:!!reviewer && row.Status==='PENDING',
+          ...(showMoney ? { amount:Number(row.ConvertedValueBaht),tons:Number(row.ConvertedTons) } : {}) });
+      }
+      return { items, limit:50, database };
+    }));
     return res.json(result);
-  } catch(err) { return sendRebateError(res,err); }
+  } catch (err) { return sendRebateError(res, err); }
+});
+router.post('/conversion-requests', conversionApprovalsEnabled, requireCapability('rebate.conversion.request'), async (req, res) => {
+  try {
+    const { withRebateRouteFence, isShipmentEpoch } = require('../services/rebate-route-fence');
+    const windowStartUtc = (await require('../services/global-data-window-store').readGlobalDataWindow()).utcInstant;
+    const result = await withRebateRouteFence(epoch => {
+      if (!isShipmentEpoch(epoch)) throw Object.assign(new Error('reset required'), { code: 'REBATE_RESET_NOT_COMPLETED', status: 409 });
+      return wfTransaction(async tx => {
+        const q = transactionQuery(tx, sql); await verifyConversionTarget(q, req.body?.expectedDatabase);
+        return require('../services/rebate-conversion-approval-request').createConversionApprovalRequest(q, req.user, req.body, epoch, { windowStartUtc });
+      });
+    });
+    return res.json(result);
+  } catch (err) { return sendRebateError(res, err); }
+});
+router.post('/conversion-requests/:id/:action', conversionApprovalsEnabled, async (req, res) => {
+  try {
+    const action = String(req.params.action || '').toUpperCase();
+    if (!['APPROVE','REJECT','CANCEL'].includes(action))
+      return res.status(400).json({ code: 'REBATE_CONVERSION_ACTION_INVALID', error: 'คำสั่งไม่ถูกต้อง' });
+    const { withRebateRouteFence, isShipmentEpoch } = require('../services/rebate-route-fence');
+    const authorizeScope = require('../services/rebate-conversion-approval-scope').authorizeConversionRequestScope;
+    const windowStartUtc = (await require('../services/global-data-window-store').readGlobalDataWindow()).utcInstant;
+    const result = await withRebateRouteFence(epoch => {
+      if (!isShipmentEpoch(epoch)) throw Object.assign(new Error('reset required'), { code: 'REBATE_RESET_NOT_COMPLETED', status: 409 });
+      return wfTransaction(async tx => {
+        const q = transactionQuery(tx, sql), input = { id: Number(req.params.id), action, reason: req.body?.reason };
+        await verifyConversionTarget(q, req.body?.expectedDatabase);
+        return action === 'APPROVE'
+          ? require('../services/rebate-conversion-approval-issue').approveConversionRequest(q, req.user, input, epoch, { authorizeScope, windowStartUtc })
+          : require('../services/rebate-conversion-approval-release').releaseConversionApprovalRequest(q, req.user, input, epoch, { authorizeScope, windowStartUtc });
+      });
+    });
+    return res.json(result);
+  } catch (err) { return sendRebateError(res, err); }
 });
 
 // ── 7) Fertilizer Tickets (ตั๋วปุ๋ย) ──────────────────────────────────────
@@ -295,6 +426,35 @@ router.post('/tickets/issue', requireRole('ADMIN', 'ACCOUNTING', 'REBATE_CONVERT
   // Issuance must lock and consume exactly one verified conversion; the old
   // interface trusted amounts supplied by the caller and permitted duplicates.
   return res.status(503).json({ code: 'TICKET_ISSUANCE_UNAVAILABLE', error: 'การออกตั๋วปุ๋ยยังไม่พร้อมใช้งาน' });
+});
+
+// Read-only UAT preview: verifies the locked 103, current scope, aging and
+// available ticket tons. It neither consumes a ticket nor certifies the
+// accounting treatment. The real writer remains separately closed.
+router.post('/tickets/redemption-preview', requireCapability('rebate.ticket-redeem'), async (req,res)=>{
+  if(process.env.REBATE_POOL_103_ENABLED!=='true'||process.env.REBATE_TICKET_PREVIEW_ENABLED!=='true')
+    return res.status(503).json({code:'TICKET_PREVIEW_UNAVAILABLE',message:'การตรวจตั๋ว Rebate ยังไม่เปิดใช้งาน'});
+  try {
+    const {withRebateRouteFence,routeParticipantFence,isShipmentEpoch}=require('../services/rebate-route-fence');
+    const window=await require('../services/global-data-window-store').readGlobalDataWindow();
+    const result=await withRebateRouteFence(epoch=>wfTransaction(async tx=>{
+      const q=transactionQuery(tx,sql);await routeParticipantFence(q,epoch);
+      if(!isShipmentEpoch(epoch))throw Object.assign(Error('reset required'),{code:'REBATE_RESET_NOT_COMPLETED',status:409});
+      await verifyConversionTarget(q,req.body?.expectedDatabase);
+      const proof=await require('../services/rebate-ticket-booking-proof').prepareTicketBookingProof(q,{
+        user:req.user,bookingId:Number(req.body?.bookingId),lineNo:Number(req.body?.lineNo),
+        requestedTonnage:req.body?.requestedTonnage,startDate:window.businessDate});
+      // Do not expose financial fields or customer data beyond the already
+      // authorized booking. A preview does not reserve or consume anything.
+      return {bookingId:proof.bookingId,lineNo:proof.lineNo,quantityTon:proof.plan.quantityTon,
+        ticketCount:proof.plan.allocations.length,asOfDate:proof.plan.asOfDate,
+        readyForRedemption:false};
+    }));
+    return res.json(result);
+  } catch(e) {
+    const status=Number.isInteger(e.status)&&e.status>=400&&e.status<=599?e.status:503;
+    return res.status(status).json({code:e.code||'TICKET_PREVIEW_UNAVAILABLE',message:'ไม่สามารถตรวจตั๋วกับใบจองได้ กรุณาตรวจสิทธิ์ ยอดตั๋ว และข้อมูลต้นทาง'});
+  }
 });
 
 router.post('/tickets/redeem', requireCapability('rebate.ticket-redeem'), async (req, res) => {
