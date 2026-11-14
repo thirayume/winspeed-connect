@@ -34,6 +34,17 @@ export function canDo(user: { role?: string; capabilities?: { actions: string[] 
   return Boolean(user.role && (FALLBACK_ACTIONS[action] || []).includes(user.role));
 }
 
+/** A server feature switch, e.g. 'rebate-pool-103'. Off unless the backend says it is on. */
+export function hasFeature(user: { capabilities?: { features?: string[] } } | null | undefined, feature: string): boolean {
+  return Boolean(user?.capabilities?.features?.includes(feature));
+}
+
+/** const featureOn = useFeature(); if (featureOn('rebate-pool-103')) ... */
+export function useFeature() {
+  const user = useAuthStore(s => s.user);
+  return (feature: string) => hasFeature(user, feature);
+}
+
 /** const can = useCan(); if (can('quotation.create')) ... */
 export function useCan() {
   const user = useAuthStore(s => s.user);

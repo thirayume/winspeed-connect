@@ -13,7 +13,7 @@ import { CustomerCreditAlertBanner } from './CustomerCreditAlertBanner';
 import { useAuthStore } from '../../store/auth-store';
 import { useTripStore } from '../../store/trip-store';
 import { canViewRebateAmounts } from '../../utils/permissions';
-import { useCan } from '../../utils/capabilities';
+import { useCan, useFeature } from '../../utils/capabilities';
 import { appAlert, appConfirm } from '../ui/AppAlert';
 import { formatThaiDate, bangkokDate } from '../../utils/date';
 import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser, GiveawayQuota, CustomerCreditStatus } from '../../types';
@@ -126,6 +126,8 @@ export function CreateSODialog({
   const [salesUsers, setSalesUsers] = useState<AdminUser[]>([]);
   const currentUser = useAuthStore(s => s.user);
   const can = useCan();
+  // The discount-mode choice belongs to the Rebate Pool; it stays off the form until the Pool is switched on.
+  const rebatePoolOn = useFeature()('rebate-pool-103');
   const userRole = currentUser?.role;
   const canSeeRebate = canViewRebateAmounts(currentUser);
 
@@ -1886,7 +1888,7 @@ export function CreateSODialog({
                             </label>
                           )}
                           
-                          {!editingNative && !l.isControlTicketDrawn && !l.isCouponDrawn && !l.isGiveaway && (
+                          {rebatePoolOn && !editingNative && !l.isControlTicketDrawn && !l.isCouponDrawn && !l.isGiveaway && (
                             <label className="mt-2 flex flex-wrap items-center gap-2 text-xs font-medium text-gray-700">
                               ประเภทส่วนลด
                               <select aria-label={`ประเภทส่วนลด ${l.goodName}`} value={l.rebatePricingMode || ''}

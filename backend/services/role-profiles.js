@@ -7,6 +7,7 @@ const {
   userRoles,
   hasPermission,
   featureEnabled,
+  enabledFeatures,
 } = require("./role-capabilities");
 const EDITABLE = Object.keys(ACTIONS);
 function parseProfile(input) {
@@ -156,6 +157,7 @@ function filteredCapabilities(user) {
     actions: Object.keys(ACTIONS).filter(
       (k) => hasPermission(user, k) && featureEnabled(k),
     ),
+    features: enabledFeatures(),
   };
 }
 module.exports = {

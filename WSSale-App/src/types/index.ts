@@ -62,7 +62,7 @@ export type AppUser = {
   lineLinkedAt?: string | null;
   mustChangePassword?: boolean;
   // R12 item 3: menus/actions of the effective role from the backend role-capability map
-  capabilities?: { menus: string[]; actions: string[] };
+  capabilities?: { menus: string[]; actions: string[]; features?: string[] };
 };
 
 /** WINSpeed employee (dbo.EMEmp) — for mapping AppUser.empId */

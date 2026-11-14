@@ -16,6 +16,9 @@ const positive = value => Number.isSafeInteger(value) && value > 0 && value <= 2
 async function beginResetAttempt({ actorId, effectiveId } = {}, options = {}) {
   if (!positive(actorId) || !positive(effectiveId)) fail('REBATE_RESET_IDENTITY_INVALID');
   const env = options.env || process.env, db = options.db || require('../db'), tupleResolver = options.tupleResolver;
+  // Routes run unfenced while the Rebate Pool switch is off (rebate-route-fence.js),
+  // so no reset may begin or resume in that state.
+  if (env.REBATE_POOL_103_ENABLED !== 'true') fail('REBATE_POOL_103_UNAVAILABLE');
   const targets = resolvePhysicalResetTargets(env, tupleResolver);
   const digest = digestTargets(targets), kind = clean(env.ONPREM_TARGET_KIND), primary = String(env.ONPREM_DB_NAME || '').trim();
   const primaryTarget = targets.find(t => clean(t.name) === clean(primary));

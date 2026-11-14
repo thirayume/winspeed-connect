@@ -51,10 +51,13 @@ test('a reset in progress fails closed even when an uninitialized environment wo
   }
 });
 
+const poolOn = { ...env, REBATE_POOL_103_ENABLED: 'true' };
+
 test('route fence: on-prem targets go through the global fence, other targets run unfenced at generation 0', async () => {
   let fenceOptions = null;
   const onprem = await withRebateRouteFence(async epoch => epoch, {
-    db: { getTarget: () => 'onprem' }, env,
+    db: { getTarget: () => 'onprem' }, env: poolOn,
+    neverReset: async () => { throw new Error('the switched-off check must not run when the Pool is on'); },
     fence: async (operation, options) => { fenceOptions = options; return operation({ environment: 'production', generation: 3,
       resetId: ready.ResetId, lastResetAtUtc: new Date('2026-11-13T12:00:00Z'), manifestDigest: digest }); },
   });
@@ -72,9 +75,69 @@ test('route fence: on-prem targets go through the global fence, other targets ru
 });
 
 test('route fence does not swallow a fence failure', async () => {
-  await assert.rejects(withRebateRouteFence(async () => 'ran', { db: { getTarget: () => 'onprem' },
+  await assert.rejects(withRebateRouteFence(async () => 'ran', { db: { getTarget: () => 'onprem' }, env: poolOn,
     fence: async () => { throw Object.assign(new Error('REBATE_RESET_IN_PROGRESS_OR_UNINITIALIZED'), { code: 'REBATE_RESET_IN_PROGRESS_OR_UNINITIALIZED', status: 503 }); } }),
   { code: 'REBATE_RESET_IN_PROGRESS_OR_UNINITIALIZED' });
+});
+
+// ── Rebate Pool switched off: live claim routes must keep working exactly as before ──
+const { assertEnvironmentNeverReset, rebatePoolEnabled } = require('../services/rebate-route-fence');
+const { beginResetAttempt } = require('../services/rebate-reset-begin');
+const { recoverResetAttempt } = require('../services/rebate-reset-recover');
+
+// db fixture for the switched-off check: `row` is the coordinator row on the primary database.
+function primaryDb({ row = null, error = null } = {}) {
+  const calls = [];
+  return { calls, sql: { VarChar: n => `varchar(${n})` }, getTarget: () => 'onprem',
+    runWithDb: async (database, fn) => { calls.push(`db:${database}`); return fn(); },
+    wfQuery: async (text, inputs) => { calls.push({ text, inputs }); if (error) throw error; return { recordset: row ? [row] : [] }; } };
+}
+
+test('with the Pool switched off an on-prem route runs unfenced without touching the fence', async () => {
+  for (const flag of [undefined, 'false', 'TRUE', '1']) {
+    const db = primaryDb(); let fenceCalled = false;
+    const epoch = await withRebateRouteFence(async e => e, { db, env: { ...env, REBATE_POOL_103_ENABLED: flag },
+      fence: async () => { fenceCalled = true; } });
+    assert.equal(epoch, UNFENCED, `flag=${flag}`);
+    assert.equal(fenceCalled, false);
+    assert.equal(rebatePoolEnabled({ REBATE_POOL_103_ENABLED: flag }), false);
+    // the history check reads the coordinator of this environment on the primary database
+    assert.equal(db.calls[0], 'db:dbwins_worldfert9');
+    assert.match(db.calls[1].text, /FROM wf\.RebateResetCoordinator WHERE EnvironmentKind=@kind/);
+    assert.equal(db.calls[1].inputs.kind.value, 'production');
+  }
+  assert.equal(rebatePoolEnabled({ REBATE_POOL_103_ENABLED: 'true' }), true);
+});
+
+test('a database that was reset is never served from the pre-reset balance when the switch is off', async () => {
+  for (const row of [{ Generation: 1, Phase: 'READY' }, { Generation: 0, Phase: 'PREPARING' }, { Generation: 2, Phase: 'APPLYING' }, { Generation: 0, Phase: 'FAILED' }]) {
+    let ran = false;
+    await assert.rejects(withRebateRouteFence(async () => { ran = true; }, { db: primaryDb({ row }), env }),
+      { code: 'REBATE_POOL_DISABLED_AFTER_RESET', status: 503 });
+    assert.equal(ran, false);
+  }
+  // initialized but never reset: still the pre-reset balance, so the routes run
+  assert.equal(await withRebateRouteFence(async e => e, { db: primaryDb({ row: { Generation: 0, Phase: 'READY' } }), env }), UNFENCED);
+  assert.match(rebateFenceMessage('REBATE_POOL_DISABLED_AFTER_RESET'), /Rebate Pool ถูกปิดอยู่/);
+});
+
+test('the switched-off check tolerates only a missing coordinator table', async () => {
+  const missing = new Error("Invalid object name 'wf.RebateResetCoordinator'.");
+  await assertEnvironmentNeverReset({ db: primaryDb({ error: missing }), env });
+  await assert.rejects(assertEnvironmentNeverReset({ db: primaryDb({ error: new Error('Login failed') }), env }), /Login failed/);
+  await assert.rejects(assertEnvironmentNeverReset({ db: primaryDb(), env: { ...env, ONPREM_DB_NAME: '' } }), { code: 'REBATE_RESET_ENVIRONMENT_INVALID' });
+  await assert.rejects(assertEnvironmentNeverReset({ db: primaryDb(), env: { ...env, ONPREM_TARGET_KIND: 'staging' } }), { code: 'REBATE_RESET_ENVIRONMENT_INVALID' });
+  // the compose default applies when the kind is not pinned
+  const db = primaryDb(); await assertEnvironmentNeverReset({ db, env: { ONPREM_DB_NAME: 'dbwins_worldfert9_uat' } });
+  assert.equal(db.calls[1].inputs.kind.value, 'uat');
+});
+
+test('no reset can begin or resume while the switch is off, which is what makes unfenced routes safe', async () => {
+  const off = { ...env };
+  const never = () => { throw new Error('must not reach the database'); };
+  const options = { env: off, db: { rebateFenceTransaction: never, runWithTarget: never, wfQuery: never }, tupleResolver, preflight: never };
+  await assert.rejects(beginResetAttempt({ actorId: 1, effectiveId: 1 }, options), { code: 'REBATE_POOL_103_UNAVAILABLE', status: 503 });
+  await assert.rejects(recoverResetAttempt('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', options), { code: 'REBATE_POOL_103_UNAVAILABLE', status: 503 });
 });
 
 test('participant fence by epoch: none when unfenced, the strict fence once initialized', async () => {

@@ -5,7 +5,7 @@ const { beginResetAttempt } = require('../services/rebate-reset-begin');
 const { digestTargets } = require('../services/rebate-reset-fence');
 
 function fixture() {
-  const env = { DB_MODE:'onprem', ONPREM_TARGET_KIND:'production', ONPREM_DB_NAME:'dbwins_worldfert9',
+  const env = { DB_MODE:'onprem', REBATE_POOL_103_ENABLED:'true', ONPREM_TARGET_KIND:'production', ONPREM_DB_NAME:'dbwins_worldfert9',
     ONPREM_SWITCHABLE_DATABASES:'dbwins_worldfert9,dbwins_worldfert2', REBATE_RESET_DATABASES:'dbwins_worldfert9,dbwins_worldfert2' };
   const tupleResolver = (_env, _op, database) => ({ database, expectedServerName:'R740-SRV\\SQL2008' });
   const targets = ['dbwins_worldfert9','dbwins_worldfert2'].map(name => ({ name, database:name, expectedServerName:'R740-SRV\\SQL2008' }));

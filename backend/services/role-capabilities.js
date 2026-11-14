@@ -145,9 +145,23 @@ function hasPermission(user, action) {
   if (Array.isArray(user?.permissions)) return user.permissions.includes(action);
   return !(user?.disabledActions || []).includes(action) && userRoles(user).some(r => rolesFor(action).includes(r));
 }
-function featureEnabled(action) {
-  const flags = { 'so.approve-native':'NATIVE_BOOKING_AI_ENABLED', 'so.create-native-delivery':'NATIVE_DELIVERY_104_ENABLED',
-    'credit.approve-native':'NATIVE_DELIVERY_104_ENABLED', 'coupon.manual116':'NATIVE_MANUAL_116_ENABLED', 'invoice.post-native':'NATIVE_INVOICE_107_ENABLED' };
-  return !flags[action] || process.env[flags[action]] === 'true';
+// Switches that hide an action from the client while its feature is off. This only shapes what
+// the screens offer; routes are authorized by hasPermission and closed by their own switch.
+const REBATE_POOL_SWITCH = 'REBATE_POOL_103_ENABLED';
+const FEATURE_SWITCHES = Object.freeze({
+  'so.approve-native': ['NATIVE_BOOKING_AI_ENABLED'], 'so.create-native-delivery': ['NATIVE_DELIVERY_104_ENABLED'],
+  'credit.approve-native': ['NATIVE_DELIVERY_104_ENABLED'], 'coupon.manual116': ['NATIVE_MANUAL_116_ENABLED'],
+  'invoice.post-native': ['NATIVE_INVOICE_107_ENABLED'],
+  // Rebate Pool: price approval, evidence review, conversion and ticket actions exist only with the Pool on
+  'rebate.approve-over-limit': [REBATE_POOL_SWITCH], 'rebate.evidence.verify': [REBATE_POOL_SWITCH],
+  'rebate.convert': [REBATE_POOL_SWITCH, 'REBATE_CONVERSION_ENABLED'],
+  'rebate.ticket-redeem': [REBATE_POOL_SWITCH], 'rebate.ticket-extend': [REBATE_POOL_SWITCH], 'rebate.aging-override': [REBATE_POOL_SWITCH],
+});
+function featureEnabled(action, env = process.env) {
+  return (FEATURE_SWITCHES[action] || []).every(name => env[name] === 'true');
 }
-module.exports = { ROLES, ROLE_RANK, ACCESS_AS_ACTOR_ROLES, MENUS, ACTIONS, capabilitiesFor, rolesFor, roleRank, userRoles, hasRole, hasPermission, featureEnabled };
+// Features that are not tied to one permission, e.g. the discount-mode choice on a draft bill.
+function enabledFeatures(env = process.env) {
+  return env[REBATE_POOL_SWITCH] === 'true' ? ['rebate-pool-103'] : [];
+}
+module.exports = { ROLES, ROLE_RANK, ACCESS_AS_ACTOR_ROLES, MENUS, ACTIONS, capabilitiesFor, rolesFor, roleRank, userRoles, hasRole, hasPermission, featureEnabled, enabledFeatures };
