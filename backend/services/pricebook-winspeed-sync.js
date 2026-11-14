@@ -5,19 +5,25 @@
  * and WinSpeed dbo.EMSetPriceHD / dbo.EMSetPriceDT, plus non-overlapping date &
  * product enforcement (one product on any date has at most one announced price).
  */
-const { sql, wfQuery, wfTransaction, getDbName } = require('../db');
+const { sql, wfQuery, wfTransaction, getDbName, getTarget } = require('../db');
 const { getBangkokDateString } = require('./so-pickup-policy');
 
 const RECONCILE_TTL_MS = 5000;
 const lastReconcileByDb = new Map();
 const inFlightByDb = new Map();
+const reconcileGenerationByDb = new Map();
 
 function dbCacheKey() {
-  return String(getDbName() || 'default').toLowerCase();
+  return JSON.stringify([String(getTarget?.() || 'default').toLowerCase(), String(getDbName() || 'default').toLowerCase()]);
 }
 
 function invalidateReconcileCache() {
-  lastReconcileByDb.delete(dbCacheKey());
+  const dbKey = dbCacheKey();
+  reconcileGenerationByDb.set(dbKey, (reconcileGenerationByDb.get(dbKey) || 0) + 1);
+  const prefix = `${dbKey}::`;
+  for (const key of lastReconcileByDb.keys()) {
+    if (key.startsWith(prefix)) lastReconcileByDb.delete(key);
+  }
 }
 
 function formatThaiDateShort(isoDate) {
@@ -538,14 +544,40 @@ async function syncBookToWinSpeed(bookId, userId, onlyGoodIds = null, tx = null)
   return { synced: true, setIds, docuNo: createdDocuNo, upserted, removed };
 }
 
+// The secondary database is read-only. Abort before executing any statement
+// that reconciliation would use to mutate it; stale data must never look current.
+function secondaryPriceUnavailable(message = 'ราคาฐานรองไม่ตรงกับ WinSpeed กรุณาให้ผู้ดูแลตรวจสอบ') {
+  return Object.assign(new Error(message), { code: 'SECONDARY_PRICE_RECONCILE_UNAVAILABLE', status: 503 });
+}
+
+function readOnlyPriceQuery(queryFn) {
+  return async (text, inputs) => {
+    const statement = String(text);
+    if (!/^\s*SELECT\b/i.test(statement) || /;|--|\/\*|\b(?:INSERT|UPDATE|DELETE|MERGE|EXEC(?:UTE)?|INTO|CREATE|ALTER|DROP|TRUNCATE)\b/i.test(statement))
+      throw secondaryPriceUnavailable();
+    // Reconciliation normally uses dirty reads and update locks. Serializable
+    // read-only verification must keep shared locks and see committed values.
+    const safe = statement.replace(/WITH\s*\(\s*NOLOCK\s*\)/gi, '')
+      .replace(/WITH\s*\(\s*UPDLOCK\s*,\s*HOLDLOCK\s*\)/gi, 'WITH (HOLDLOCK)');
+    return queryFn(safe, inputs);
+  };
+}
+
+async function verifySecondaryPriceBook(queryFn, bookId = null) {
+  return runReconcileFromWinSpeed(bookId, readOnlyPriceQuery(queryFn), { strictRead: true });
+}
+
 /**
  * Reconciles linked active PriceBooks and newly published WinSpeed sets (dbo.EMSetPriceHD / DT)
  * into wf.PriceBook / wf.PriceBookLine automatically.
  */
-async function runReconcileFromWinSpeed(bookIdFilter = null) {
-  if (!(await hasSyncColumns())) return { changed: false, skipped: 'SYNC_COLS_MISSING' };
+async function runReconcileFromWinSpeed(bookIdFilter = null, queryFn = wfQuery, { strictRead = false } = {}) {
+  if (!(await hasSyncColumns(queryFn))) {
+    if (strictRead) throw secondaryPriceUnavailable('ไม่สามารถตรวจโครงสร้างราคาฐานรองได้');
+    return { changed: false, skipped: 'SYNC_COLS_MISSING' };
+  }
 
-  const allBooks = (await wfQuery(`
+  const allBooks = (await queryFn(`
     SELECT Id, Name, EffectiveMonth, Status, SourceSetPriceIds, Note,
            CONVERT(VARCHAR(10), EffectiveFrom, 23) AS EffectiveFrom,
            CONVERT(VARCHAR(10), EffectiveTo, 23) AS EffectiveTo
@@ -555,7 +587,7 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
 
   const allLinkedSetIds = new Set();
   for (const b of allBooks) {
-    const ids = await resolveBookWinSpeedSetIds(b);
+    const ids = await resolveBookWinSpeedSetIds(b, queryFn, { strict: strictRead });
     b._resolvedSetIds = ids;
     for (const sid of ids) allLinkedSetIds.add(sid);
   }
@@ -571,13 +603,14 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
 
   for (const book of booksToSync) {
     const setIds = book._resolvedSetIds;
-    const headers = (await wfQuery(`
+    const headers = (await queryFn(`
       SELECT SetPriceID, RTRIM(DocuNo) AS DocuNo,
              CONVERT(VARCHAR(10), BeginDate, 23) AS BeginDate,
              CONVERT(VARCHAR(10), EndDate, 23) AS EndDate
       FROM dbo.EMSetPriceHD WITH (NOLOCK)
       WHERE SetPriceID IN (${setIds.join(',')})
     `)).recordset || [];
+    if (strictRead && headers.length !== setIds.length) throw secondaryPriceUnavailable('ชุดราคาต้นทางไม่ครบ');
     if (!headers.length) continue;
 
     const existingSetIdSet = new Set(headers.map(h => Number(h.SetPriceID)));
@@ -590,7 +623,7 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
     let changesSummary = [];
 
     if ((wsFrom && wsFrom !== book.EffectiveFrom) || (wsTo && wsTo !== book.EffectiveTo)) {
-      await wfQuery(`
+      await queryFn(`
         UPDATE wf.PriceBook
         SET EffectiveFrom = @ef,
             EffectiveTo = @et,
@@ -606,7 +639,7 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
       changesSummary.push(`ช่วงวันที่ ${wsFrom}..${wsTo}`);
     }
 
-    const wsLines = (await wfQuery(`
+    const wsLines = (await queryFn(`
       SELECT dt.SetPriceID, dt.ListNo, CAST(dt.ListID AS NVARCHAR(20)) AS GoodId,
              RTRIM(g.GoodCode) AS GoodCode, RTRIM(g.GoodName1) AS GoodName,
              g.GoodGroupID AS GoodGroupId, RTRIM(gg.GoodGroupName) AS GoodGroupName,
@@ -626,7 +659,7 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
       if (!wsByGood.has(String(row.GoodId))) wsByGood.set(String(row.GoodId), row);
     }
 
-    const curLines = (await wfQuery(`
+    const curLines = (await queryFn(`
       SELECT Id, GoodId, GoodName, Price, LineStatus, Note, WinSpeedSetPriceId, WinSpeedListNo
       FROM wf.PriceBookLine
       WHERE PriceBookId = @id
@@ -643,7 +676,7 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
       const cur = curByGood.get(gid);
 
       if (!cur) {
-        await wfQuery(`
+        await queryFn(`
           INSERT INTO wf.PriceBookLine (
             PriceBookId, GoodId, GoodName, Unit, Price, LineStatus, Note,
             GoodCode, GoodGroupId, GoodGroupName, WinSpeedSetPriceId, WinSpeedListNo
@@ -679,7 +712,7 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
         Number(cur.WinSpeedListNo || 0) !== Number(ws.ListNo);
 
       if (diff) {
-        await wfQuery(`
+        await queryFn(`
           UPDATE wf.PriceBookLine
           SET Price = @p,
               LineStatus = @ls,
@@ -712,7 +745,7 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
       const linkedSetStillExists = !cur.WinSpeedSetPriceId || existingSetIdSet.has(Number(cur.WinSpeedSetPriceId));
       if (!linkedSetStillExists) continue;
 
-      await wfQuery(`
+      await queryFn(`
         UPDATE wf.PriceBookLine
         SET LineStatus = 'SUSPENDED',
             Price = NULL,
@@ -729,10 +762,10 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
       updatedBooks += 1;
       if (upserted > 0) changesSummary.push(`อัปเดต ${upserted} รายการ`);
       if (suspended > 0) changesSummary.push(`งดขาย ${suspended} รายการ`);
-      await wfQuery(`UPDATE wf.PriceBook SET WinSpeedSyncAt = SYSUTCDATETIME() WHERE Id = @id`, {
+      await queryFn(`UPDATE wf.PriceBook SET WinSpeedSyncAt = SYSUTCDATETIME() WHERE Id = @id`, {
         id: { type: sql.Int, value: book.Id },
       });
-      await wfQuery(`
+      await queryFn(`
         INSERT INTO wf.PriceBookAudit (PriceBookId, Action, FromStatus, ToStatus, ByUser, Note)
         VALUES (@b, 'AUTO_SYNC_WINSPEED', @s, @s, NULL, @n)
       `, {
@@ -746,7 +779,7 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
   // 2. Auto-import newly published WinSpeed general sets (active today OR recent/upcoming sets created since 2026-11-12)
   if (!bookIdFilter) {
     const todayStr = getBangkokDateString();
-    const candidateSets = (await wfQuery(`
+    const candidateSets = (await queryFn(`
       SELECT hd.SetPriceID, RTRIM(hd.DocuNo) AS DocuNo,
              CONVERT(VARCHAR(10), hd.DocuDate, 23) AS DocuDate,
              CONVERT(VARCHAR(10), hd.BeginDate, 23) AS BeginDate,
@@ -768,6 +801,8 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
     );
 
     if (unlinked.length > 0) {
+      // Never present a partial price list as complete on a read-only database.
+      if (strictRead) throw secondaryPriceUnavailable('พบชุดราคา WinSpeed ที่ยังไม่เชื่อมกับ PriceBook ฐานรอง');
       // Group unlinked WinSpeed sets by exact BeginDate + EndDate period (e.g. compound + raw material split sets)
       const byPeriod = new Map();
       for (const s of unlinked) {
@@ -786,7 +821,7 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
           b => b.Status !== 'ARCHIVED' && parseDateOnly(b.EffectiveFrom) === ef && parseDateOnly(b.EffectiveTo) === et
         );
 
-        const groupLines = (await wfQuery(`
+        const groupLines = (await queryFn(`
           SELECT dt.SetPriceID, dt.ListNo, CAST(dt.ListID AS NVARCHAR(20)) AS GoodId,
                  RTRIM(g.GoodCode) AS GoodCode, RTRIM(g.GoodName1) AS GoodName,
                  g.GoodGroupID AS GoodGroupId, RTRIM(gg.GoodGroupName) AS GoodGroupName,
@@ -811,19 +846,19 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
 
         if (exactMatchBook) {
           const mergedIds = [...new Set([...(exactMatchBook._resolvedSetIds || []), ...groupSetIds])];
-          await wfQuery(`UPDATE wf.PriceBook SET SourceSetPriceIds = @s, WinSpeedSyncAt = SYSUTCDATETIME() WHERE Id = @id`, {
+          await queryFn(`UPDATE wf.PriceBook SET SourceSetPriceIds = @s, WinSpeedSyncAt = SYSUTCDATETIME() WHERE Id = @id`, {
             s: { type: sql.NVarChar(200), value: mergedIds.join(',') },
             id: { type: sql.Int, value: exactMatchBook.Id },
           });
           // Re-run line sync on this book cleanly via direct insert of missing items
           for (const item of items) {
-            const exists = (await wfQuery(`SELECT Id FROM wf.PriceBookLine WHERE PriceBookId=@b AND GoodId=@g`, {
+            const exists = (await queryFn(`SELECT Id FROM wf.PriceBookLine WHERE PriceBookId=@b AND GoodId=@g`, {
               b: { type: sql.Int, value: exactMatchBook.Id },
               g: { type: sql.NVarChar(20), value: String(item.GoodId) },
             })).recordset?.[0];
             if (!exists) {
               const hasStar = item.Remark && String(item.Remark).includes('***');
-              await wfQuery(`
+              await queryFn(`
                 INSERT INTO wf.PriceBookLine (
                   PriceBookId, GoodId, GoodName, Unit, Price, LineStatus, Note,
                   GoodCode, GoodGroupId, GoodGroupName, WinSpeedSetPriceId, WinSpeedListNo
@@ -857,16 +892,17 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
             effectiveFrom: ef,
             effectiveTo: et,
             goodIds: items.map(i => i.GoodId),
-            queryFn: wfQuery,
+            queryFn,
           });
-        } catch {
+        } catch (error) {
+          if (strictRead && !['PRICE_PERIOD_OVERLAP', 'PRICE_PERIOD_REQUIRED', 'INVALID_DATE_RANGE'].includes(error?.code)) throw error;
           continue;
         }
 
         const docNos = groupSets.map(s => s.DocuNo).join(', ');
         const bookName = `ตารางราคา WinSpeed (${docNos}) ประจำวันที่ ${ef} ถึง ${et}`.slice(0, 120);
         const effMonth = ef ? ef.slice(0, 7) : todayStr.slice(0, 7);
-        const inserted = (await wfQuery(`
+        const inserted = (await queryFn(`
           INSERT INTO wf.PriceBook (
             Name, EffectiveMonth, EffectiveFrom, EffectiveTo, Status, Note,
             SourceSetPriceIds, WinSpeedSyncAt, ActivatedAt
@@ -885,7 +921,7 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
         const newBookId = inserted.Id;
         for (const item of items) {
           const hasStar = item.Remark && String(item.Remark).includes('***');
-          await wfQuery(`
+          await queryFn(`
             INSERT INTO wf.PriceBookLine (
               PriceBookId, GoodId, GoodName, Unit, Price, LineStatus, Note,
               GoodCode, GoodGroupId, GoodGroupName, WinSpeedSetPriceId, WinSpeedListNo
@@ -906,7 +942,7 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
             wsLno: { type: sql.SmallInt, value: Number(item.ListNo) },
           });
         }
-        await wfQuery(`
+        await queryFn(`
           INSERT INTO wf.PriceBookAudit (PriceBookId, Action, FromStatus, ToStatus, ByUser, Note)
           VALUES (@b, 'AUTO_SYNC_WINSPEED', NULL, 'ACTIVE', NULL, @n)
         `, {
@@ -927,7 +963,20 @@ async function runReconcileFromWinSpeed(bookIdFilter = null) {
  * Throttled wrapper for automatic WinSpeed -> Sale-App reconciliation.
  */
 async function reconcileFromWinSpeed({ force = false, bookId = null } = {}) {
-  const key = `${dbCacheKey()}::${bookId || 'all'}`;
+  // Reconciliation writes PriceBook and its lines, even when invoked by GET.
+  // Secondary access is currently read-only and has no transactional write
+  // audit/identity mapping contract. Fail before cache checks or SQL: silently
+  // returning an unsynchronised price could be mistaken for a current quote.
+  if (getTarget?.() === 'onprem') {
+    const primary = require('./active-database').primaryDatabase();
+    const selected = getDbName() || primary;
+    if (!primary || !selected || String(primary).toLowerCase() !== String(selected).toLowerCase())
+      throw Object.assign(new Error('ไม่สามารถตรวจราคาฐานรองได้จนกว่าจะรองรับการซิงค์แบบปลอดภัย'),
+        { code: 'SECONDARY_PRICE_RECONCILE_UNAVAILABLE', status: 503 });
+  }
+  const dbKey = dbCacheKey();
+  const key = `${dbKey}::${bookId || 'all'}`;
+  const generation = reconcileGenerationByDb.get(dbKey) || 0;
   const now = Date.now();
   if (!force) {
     const last = lastReconcileByDb.get(key) || 0;
@@ -940,8 +989,8 @@ async function reconcileFromWinSpeed({ force = false, bookId = null } = {}) {
   }
   const p = runReconcileFromWinSpeed(bookId)
     .then(res => {
-      lastReconcileByDb.set(key, Date.now());
-      if (bookId && res?.changed) lastReconcileByDb.delete(`${dbCacheKey()}::all`);
+      if ((reconcileGenerationByDb.get(dbKey) || 0) === generation) lastReconcileByDb.set(key, Date.now());
+      if (bookId && res?.changed) lastReconcileByDb.delete(`${dbKey}::all`);
       return res;
     })
     .catch(err => {
@@ -965,6 +1014,8 @@ module.exports = {
   syncBookToWinSpeed,
   syncSpecialPriceToWinSpeed,
   reconcileFromWinSpeed,
+  verifySecondaryPriceBook,
+  readOnlyPriceQuery,
   invalidateReconcileCache,
 };
 

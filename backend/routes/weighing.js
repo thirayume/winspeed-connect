@@ -265,7 +265,8 @@ router.get('/for-so/:soid', guard(async (req, res) => {
            CONVERT(varchar(16), h.DateOut, 120) AS DateOut,
            h.LocationName AS ScaleNo
       FROM dbo.WGHD h
-     WHERE h.SPID = @soid AND h.DateReg >= @globalStartDate
+     WHERE h.SPID = @soid AND h.WGType = 'SO' AND h.DateReg >= @globalStartDate
+       AND EXISTS (SELECT 1 FROM dbo.SOHD s WHERE s.SOID=h.SPID AND s.DocuDate >= @globalStartDate)
      ORDER BY h.Id DESC`, { soid: { type: sql.Int, value: soid }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } });
   const candidates = Array.isArray(rows) ? rows : (rows.recordset || []);
   res.json({ soid, candidates, count: candidates.length });

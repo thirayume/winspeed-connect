@@ -7,7 +7,7 @@ import {
   fetchPriceBooks, fetchPriceBook, createPriceBook, updatePriceBookHeader,
   priceBookAction, setPriceBookLines, upsertPriceBookItem,
   fetchPriceBookSpecial, requestPriceBookSpecial, approvePriceBookSpecial,
-  fetchGoods, fetchActiveCostMap,
+  fetchGoods, fetchActiveCostMap, getDatabases,
   type PriceBook, type PriceBookLine, type PriceBookAuditRow, type PriceBookSpecialPrice,
 } from '../../services/api';
 import { socketService } from '../../services/socket';
@@ -73,7 +73,9 @@ export function PriceBookManager({
   const user = useAuthStore(s => s.user);
   const actions = user?.capabilities?.actions;
   const role = user?.role || '';
-  const canManagePricing = actions ? actions.includes('pricing.manage') : ['MANAGER', 'ADMIN', 'C_LEVEL', 'ACCOUNTING'].includes(role);
+  const [databaseMode, setDatabaseMode] = useState<'checking' | 'primary' | 'secondary' | 'unavailable'>('checking');
+  const hasPricingPermission = actions ? actions.includes('pricing.manage') : ['MANAGER', 'ADMIN', 'C_LEVEL', 'ACCOUNTING'].includes(role);
+  const canManagePricing = hasPricingPermission && databaseMode === 'primary';
   const canViewCost = actions ? (actions.includes('cost.view') || actions.includes('cost.manage')) : ['MANAGER', 'ADMIN', 'C_LEVEL', 'ACCOUNTING'].includes(role);
 
   const [books, setBooks] = useState<PriceBook[]>([]);
@@ -83,7 +85,19 @@ export function PriceBookManager({
   const [goods, setGoods] = useState<EMGood[]>([]);
   const [costMap, setCostMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [booksError, setBooksError] = useState<string | null>(null);
+  const [specialsError, setSpecialsError] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    getDatabases().then(info => {
+      if (!live) return;
+      if (!info.primary || !info.active) setDatabaseMode('unavailable');
+      else setDatabaseMode(info.primary.toLowerCase() === info.active.toLowerCase() ? 'primary' : 'secondary');
+    }).catch(() => { if (live) setDatabaseMode('unavailable'); });
+    return () => { live = false; };
+  }, []);
 
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({
@@ -125,7 +139,11 @@ export function PriceBookManager({
         note: b.Note || '',
       });
       setEditingHeader(false);
-      const sps = await fetchPriceBookSpecial(id).catch(() => []);
+      setSpecialsError(false);
+      const sps = await fetchPriceBookSpecial(id).catch(() => {
+        setSpecialsError(true);
+        return [] as PriceBookSpecialPrice[];
+      });
       setSpecials(sps);
       const initInputs: Record<number, string> = {};
       sps.forEach(s => { initInputs[s.Id] = s.ApprovedPrice != null ? String(s.ApprovedPrice) : String(s.RequestedPrice || ''); });
@@ -147,6 +165,7 @@ export function PriceBookManager({
         fetchPriceBooks(),
         fetchGoods({ forSale: true }).catch(() => [] as EMGood[]),
       ]);
+      setBooksError(null);
       setBooks(bookList);
       setGoods(goodsList);
       if (bookList.length > 0 && !sel) {
@@ -154,7 +173,10 @@ export function PriceBookManager({
         if (activeBook) await open(activeBook.Id);
       }
     } catch (e) {
-      console.error(e);
+      const status = (e as { status?: number })?.status;
+      setBooksError(status === 409
+        ? 'ยังตรวจสอบการจับคู่บัญชีหรือสิทธิ์ฐานข้อมูลนี้ไม่ได้ กรุณาติดต่อผู้ดูแล'
+        : 'ไม่สามารถโหลดตารางราคาได้ กรุณาตรวจสิทธิ์และการเชื่อมต่อ แล้วลองใหม่');
     } finally {
       setLoading(false);
     }
@@ -396,7 +418,7 @@ export function PriceBookManager({
     }
   }
 
-  const isManagerOrAbove = ['MANAGER', 'ADMIN', 'C_LEVEL', 'ACCOUNTING'].includes(role);
+  const isManagerOrAbove = databaseMode === 'primary' && ['MANAGER', 'ADMIN', 'C_LEVEL', 'ACCOUNTING'].includes(role);
   const canEditBook = Boolean(sel && canManagePricing && sel.Status !== 'ARCHIVED');
 
   const lineFormulaOptions = useMemo(() => {
@@ -458,7 +480,8 @@ export function PriceBookManager({
           {canManagePricing && (
             <button
               onClick={openCreatePanel}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-[#0C447C] text-white hover:opacity-90"
+              disabled={Boolean(booksError)}
+              className="disabled:opacity-40 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-[#0C447C] text-white hover:opacity-90"
             >
               <Plus size={15} /> สร้างใหม่
             </button>
@@ -487,7 +510,16 @@ export function PriceBookManager({
         </div>
       )}
 
-      <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-5 gap-0">
+      {databaseMode === 'secondary' && <div role="status" className="mx-4 mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">ฐานรอง: อ่านราคาอย่างเดียว ไม่สามารถสร้างหรือแก้ไขตารางราคาได้</div>}
+      {databaseMode === 'unavailable' && <div role="alert" className="mx-4 mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">ไม่สามารถตรวจฐานข้อมูลปัจจุบันได้ จึงปิดการแก้ไขราคาไว้ชั่วคราว</div>}
+      {booksError && (
+        <div role="alert" className="m-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          <strong>โหลด Price Book ไม่สำเร็จ</strong>
+          <p className="mt-1">{booksError}</p>
+          <button type="button" onClick={load} disabled={loading} className="mt-2 rounded border border-amber-400 px-3 py-1 font-semibold disabled:opacity-40">ลองใหม่</button>
+        </div>
+      )}
+      <div className={`${booksError ? 'hidden' : 'grid'} flex-1 overflow-hidden grid-cols-1 md:grid-cols-5 gap-0`}>
         {/* list */}
         <div className="md:col-span-2 border-r border-gray-200 overflow-y-auto p-4 space-y-2">
           {creating && canManagePricing && (
@@ -865,10 +897,11 @@ export function PriceBookManager({
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
                 <div className="flex items-center justify-between border-b border-gray-100 pb-2">
                   <div className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
-                    <UserCheck size={16} className="text-blue-600" /> ร้านค้าที่ขอราคาเป็นกรณีพิเศษสำหรับรอบนี้ ({specials.length})
+                    <UserCheck size={16} className="text-blue-600" /> ร้านค้าที่ขอราคาเป็นกรณีพิเศษสำหรับรอบนี้ {specialsError ? '(โหลดไม่สำเร็จ)' : `(${specials.length})`}
                   </div>
                 </div>
 
+                {specialsError && <p role="alert" className="rounded-lg bg-amber-50 p-2 text-sm text-amber-900">ไม่สามารถโหลดรายการราคาพิเศษได้ กรุณาตรวจสิทธิ์หรือลองเปิด Price Book อีกครั้ง</p>}
                 {/* Submit Special Price Request Form with CustomerAutocomplete & SearchableSelect */}
                 <div className="bg-blue-50/40 rounded-xl p-3 border border-blue-100 space-y-2">
                   <div className="text-xs font-semibold text-blue-900">ยื่นคำขอราคาพิเศษรายร้านค้า:</div>
@@ -907,7 +940,7 @@ export function PriceBookManager({
                     <div className="sm:col-span-2">
                       <button
                         onClick={submitSpecialReq}
-                        disabled={busy || !spForm.custId}
+                        disabled={busy || specialsError || databaseMode !== 'primary' || !spForm.custId}
                         className="w-full px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0C447C] text-white hover:opacity-90 disabled:opacity-40"
                       >
                         ส่งคำขอ
@@ -984,7 +1017,7 @@ export function PriceBookManager({
                           </tr>
                         );
                       })}
-                      {specials.length === 0 && (
+                      {!specialsError && specials.length === 0 && (
                         <tr>
                           <td colSpan={6} className="px-3 py-4 text-center text-gray-400">ยังไม่มีรายการขอราคาพิเศษ</td>
                         </tr>

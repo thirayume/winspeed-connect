@@ -38,6 +38,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/SELECT TOP 1 1 AS ok FROM wf\.v_RebateAccrualRemaining/i.test(text)) return accrualHasLot ? [{ ok: 1 }] : [];
   if (/FROM wf\.v_RebateAccrualRemaining/i.test(text)) return [{ CustId: '1078', SourceDocuNo: 'I69-00001', RemainingTon: 1 }];
   if (/INSERT INTO wf\.AppUser/i.test(text)) return [{ Id: 99, Username: 'n', DisplayName: 'N', Role: 'WEIGHBRIDGE' }];
+  if (/INSERT INTO wf\.AdminChangeAudit/i.test(text)) return { rowsAffected:[1] };
   return [];
 }, { activeUserIds: h.TEST_USERS });
 

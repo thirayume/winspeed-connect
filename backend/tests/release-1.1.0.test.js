@@ -53,16 +53,16 @@ test('database restrictions apply to union roles and to both Access As identitie
 test('theme settings fit SQL 2008 columns, commit atomically, and read back complete values', async () => {
   const vm=require('node:vm'), fs=require('node:fs'), path=require('node:path');
   let rows=[],commits=0;
-  const makeRequest = tx => {const inputs={};return {input(k,t,v){inputs[k]=v;return this;},async query(text){if(text.startsWith('SELECT'))return {recordset:rows};assert.ok(inputs.k.length<=50);assert.ok(inputs.v.length<=200);tx.rows.push({SettingKey:inputs.k,SettingValue:inputs.v});return {};}};};
+  const makeRequest = tx => {const inputs={};return {input(k,t,v){inputs[k]=v;return this;},async query(text){if(text.startsWith('SELECT'))return {recordset:rows};if(text.includes('AdminChangeAudit'))return {rowsAffected:[1]};assert.ok(inputs.k.length<=50);assert.ok(inputs.v.length<=200);tx.rows.push({SettingKey:inputs.k,SettingValue:inputs.v});return {};}};};
   const pool={request:()=>makeRequest(null)};
-  const db={pools:()=>({ready:Promise.resolve(),ownerPool:pool}),sql:{NVarChar:n=>n,Transaction:class {constructor(){this.rows=[];}async begin(){}async commit(){rows=this.rows;commits++;}async rollback(){}},Request:function(tx){return makeRequest(tx);}}};
+  const db={pools:()=>({ready:Promise.resolve(),ownerPool:pool}),sql:{Int:'int',MAX:'max',NVarChar:n=>n,VarChar:n=>n,Transaction:class {constructor(){this.rows=[];}async begin(){}async commit(){rows=this.rows;commits++;}async rollback(){}},Request:function(tx){return makeRequest(tx);}}};
   const filename=path.join(__dirname,'../services/active-database.js');
   const mod={exports:{}};
   vm.runInNewContext(fs.readFileSync(filename,'utf8'),{module:mod,require:name=>name==='../db'?db:require(path.resolve(path.dirname(filename),name)),process,Date,Map,Set,JSON,Object,Array,String,Number,Error});
   const api=mod.exports;
   const env={DB_MODE:'onprem',ONPREM_DB_NAME:'dbwins_worldfert9_uat',ONPREM_SWITCHABLE_DATABASES:'dbwins_worldfert9_uat'};
   const cfg={color:'green',label:'UAT',badge:'UAT',description:'x'.repeat(200),restrictedRoles:['ADMIN','ACCOUNTING']};
-  const saved=await api.setDatabaseThemes({dbwins_worldfert9_uat:cfg},env);
+  const saved=await api.setDatabaseThemes({dbwins_worldfert9_uat:cfg},env,{sub:1,actorSub:1});
   assert.equal(saved.dbwins_worldfert9_uat.description,cfg.description);assert.equal(commits,1);assert.equal(rows.length,5);
   await assert.rejects(api.setDatabaseThemes({dbwins_worldfert9_uat:{...cfg,description:'x'.repeat(201)}},env),{status:400});
   assert.equal(commits,1);

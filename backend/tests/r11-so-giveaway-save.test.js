@@ -11,9 +11,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
 
-const state = { remaining: 300 };
+const state = { remaining: 300, failAudit: false, rollbacks: 0 };
 let nextSoId = 4001;
-const db = h.installDbStub(({ text }) => {
+const db = h.installDbStub(({ kind, text }) => {
+  if (/INSERT INTO wf\.SalesOrderAudit/.test(text)) {
+    assert.equal(kind, 'tx');
+    if (state.failAudit) throw new Error('TEST_SO_AUDIT_FAILURE');
+    return {rowsAffected:[1]};
+  }
   if (/AS TotalOutstanding/.test(text)) return [{ TotalOutstanding: 0 }];
   if (/FROM wf\.GiveawayItemMapping/.test(text)) return [{ Brand: 'รถเกษตร', ItemName: 'เสื้อยืดแขนยาว' }];
   if (/FROM wf\.v_GiveawayBudgetStatus\s+WHERE SalesUserId = @su AND PeriodYear = @y/.test(text)) {
@@ -24,6 +29,7 @@ const db = h.installDbStub(({ text }) => {
   if (/OUTPUT inserted\.Id/i.test(text)) return [{ Id: nextSoId++ }];
   return [];
 }, { activeUserIds: h.TEST_USERS });
+db.stub.wfTransaction=async fn=>{try{return await fn(db.tx);}catch(e){state.rollbacks++;throw e;}};
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/so', '../../routes/so']]); });
@@ -71,4 +77,15 @@ test('UAT SO-20: a rebate discount sent by SALES is ignored; ADMIN may set it (s
   await app.call('POST', '/api/so', { body: { ...withRebate, salesUserId: 34 }, user: { sub: 1, role: 'ADMIN' } });
   const adminInsert = db.calls.slice(before).find(c => /INSERT INTO wf\.SalesOrder\s*\(/.test(c.text));
   assert.equal(Number(adminInsert.inputs.rebateDiscountAmt), 500);
+});
+
+test('a bill creation audit failure aborts the transaction and does not return success', async () => {
+  state.remaining=300;state.failAudit=true;
+  const before=db.calls.length, rollbacks=state.rollbacks;
+  try {
+    const r=await app.call('POST','/api/so',{body:order(10),user:{sub:34,role:'SALES'}});
+    assert.equal(r.status,500);
+    assert.ok(db.calls.slice(before).some(c=>c.kind==='tx' && /INSERT INTO wf\.SalesOrderAudit/.test(c.text)));
+    assert.equal(state.rollbacks,rollbacks+1);
+  } finally {state.failAudit=false;}
 });

@@ -345,7 +345,7 @@ const REPORTS = {
     // UAT RPT-06: the backlog is what WinSpeed still holds open on a booking line (SODT.RemaQty, cut down as
     // invoices are issued). It listed delivered invoices (104) as backlog, the internal SOID as the SO number,
     // the whole bill's weigh-out on every line, and only the oldest 200 rows (all from 2019).
-    sql: `SELECT TOP 500
+    sql: `SELECT
             hd.DocuNo,
             CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
             hd.CustName,
@@ -357,8 +357,28 @@ const REPORTS = {
           FROM dbo.SOHD hd WITH (NOLOCK)
           JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
           WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C' AND dt.RemaQty > 0
+            AND hd.DocuDate >= @globalStartDate
             AND (hd.DocuDate >= @legacyCut OR RTRIM(hd.TransRegistration) = N'ตั๋วคุม')
-          ORDER BY hd.DocuDate DESC, hd.SOID DESC, dt.ListNo`,
+          UNION ALL
+          SELECT CASE WHEN hd.DocuDate IS NULL THEN N'ยอดค้างส่งไม่ทราบวันที่'
+                      WHEN hd.DocuDate < @globalStartDate THEN N'ยอดค้างส่งยกมา'
+                      ELSE N'ยอดค้างส่งซ่อนตามเกณฑ์เดิม' END AS DocuNo,
+            CAST(NULL AS VARCHAR(10)) AS DocuDate,
+            hd.CustName, CAST(NULL AS VARCHAR(100)) AS TruckPlate, dt.GoodName,
+            CAST(NULL AS DECIMAL(12,3)) AS OrderedTon,
+            CAST(NULL AS DECIMAL(12,3)) AS ShippedTon,
+            CAST(SUM(CAST(dt.RemaQty AS DECIMAL(19,3))) AS DECIMAL(19,3)) AS BacklogTon
+          FROM dbo.SOHD hd WITH (NOLOCK)
+          JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
+          WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C'
+            AND dt.RemaQty > 0 AND (hd.DocuDate IS NULL OR hd.DocuDate < @globalStartDate
+              OR (hd.DocuDate >= @globalStartDate AND hd.DocuDate < @legacyCut
+                AND ISNULL(RTRIM(hd.TransRegistration), N'') <> N'ตั๋วคุม'))
+          GROUP BY hd.CustID, hd.CustName, dt.GoodID, dt.GoodName,
+            CASE WHEN hd.DocuDate IS NULL THEN N'ยอดค้างส่งไม่ทราบวันที่'
+                 WHEN hd.DocuDate < @globalStartDate THEN N'ยอดค้างส่งยกมา'
+                 ELSE N'ยอดค้างส่งซ่อนตามเกณฑ์เดิม' END
+          ORDER BY DocuDate DESC, CustName, GoodName`,
   },
   'cn-returns': {
     title: 'รายงานใบลดหนี้และการรับคืนสินค้า (Credit Note & Return Register)',
@@ -469,6 +489,9 @@ const REPORTS = {
           ) so_qty ON so_qty.SOID = so.SOID
           LEFT JOIN wf.WeighTicket t WITH (NOLOCK) ON CONVERT(VARCHAR(50), t.SoId) = CONVERT(VARCHAR(50), ext.SOID)
           WHERE ext.WeighOutWeight IS NOT NULL
+            -- An extension-only weight has no proven event date. Do not use
+            -- UpdatedAt: later edits could expose a pre-window record.
+            AND COALESCE(t.WeighOutAt, t.WeighInAt, t.CreatedAt) >= @globalStartUtc
           ORDER BY ext.UpdatedAt DESC`,
   },
   'ar-receipt-history': {
@@ -1330,6 +1353,7 @@ router.get('/:type/export', async (req, res) => {
 
 // ── R-4 รายงานการขนสินค้าตามรายชื่อลูกค้า ────────────────────────────────────
 async function runCustomerDispatchReport(params = {}) {
+  const { businessDate } = await require('../services/global-data-window-store').readGlobalDataWindow();
   const today = new Date();
   const defaultFrom = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30);
   const from = parseDateParam(params.from, defaultFrom);
@@ -1346,7 +1370,7 @@ async function runCustomerDispatchReport(params = {}) {
            ISNULL(cu.CustName, h.CustName)                AS CustName,
            CONVERT(VARCHAR(10), h.DocuDate, 120)          AS DocuDate,
            h.DocuNo,
-           bk.DocuNo                                      AS BookingDocuNo,
+           CASE WHEN bk.DocuDate >= @globalStartDate THEN bk.DocuNo ELSE NULL END AS BookingDocuNo,
            h.RefNo                                        AS TaxInvoiceNo,
            ISNULL(h.TransRegistration, bk.TransRegistration) AS TruckPlate,
            cp.CouponNo,
@@ -1378,12 +1402,14 @@ async function runCustomerDispatchReport(params = {}) {
       AND  h.DocuStatus <> 'C'
       AND  d.GoodQty2 > 0
       AND  h.DocuDate >= @from AND h.DocuDate <= @to
+      AND  h.DocuDate >= @globalStartDate
       AND  (@cust = '' OR cu.CustCode LIKE @custLike
                        OR ISNULL(cu.CustName, h.CustName) LIKE @custLike)
     ORDER BY CustName, h.DocuDate, h.DocuNo, d.ListNo`,
     {
       from:     { type: sql.DateTime2,   value: startOfDay },
       to:       { type: sql.DateTime2,   value: endOfDay },
+      globalStartDate: { type: sql.Date, value: businessDate },
       cust:     { type: sql.NVarChar(60), value: custFilter },
       custLike: { type: sql.NVarChar(64), value: '%' + custFilter + '%' },
     }
@@ -1496,6 +1522,7 @@ async function runSalesJournalReport(params = {}, options = {}) {
   const tableDT = options.tableDT || 'dbo.GLDT';
   const tableAcc = options.tableAcc || 'dbo.EMAcc';
   const queryFn = options.queryFn || wfQuery;
+  const { businessDate } = await (options.readGlobalDataWindow || require('../services/global-data-window-store').readGlobalDataWindow)();
 
   const today = new Date();
   const defaultFrom = new Date(today.getFullYear(), today.getMonth() - 6, today.getDate());
@@ -1557,6 +1584,7 @@ async function runSalesJournalReport(params = {}, options = {}) {
         AND gl.FromFlag = @fromFlag
         AND ${statusClause}
         AND gl.DocuDate >= @from AND gl.DocuDate <= @to
+        AND gl.DocuDate >= @globalStartDate
         AND (@journalNo = '' OR gl.DocuNo LIKE @journalNoLike)
     ),
     TotalSummary AS (
@@ -1618,6 +1646,7 @@ async function runSalesJournalReport(params = {}, options = {}) {
     fromFlag:      { type: sql.VarChar(10),  value: fromFlag },
     from:          { type: sql.DateTime2,    value: startOfDay },
     to:            { type: sql.DateTime2,    value: endOfDay },
+    globalStartDate: { type: sql.Date, value: businessDate },
     journalNo:     { type: sql.NVarChar(60), value: journalFilter },
     journalNoLike: { type: sql.NVarChar(64), value: '%' + journalFilter + '%' },
   })).recordset || [];
@@ -1762,6 +1791,7 @@ function auditRange(params = {}) {
 // policy changes are rare, so the whole history is listed (newest first)
 async function runPolicyHistoryReport(params = {}, options = {}) {
   const queryFn = options.queryFn || wfQuery;
+  const { utcInstant } = await (options.readGlobalDataWindow || require('../services/global-data-window-store').readGlobalDataWindow)();
   const { limit } = auditRange(params);
   const r = await queryFn(`
     SELECT TOP (@limit) ${ictText('pv.CreatedAt')} AS CreatedAt, pv.PolicyName, pv.VersionNumber, pv.SettingKey,
@@ -1770,7 +1800,8 @@ async function runPolicyHistoryReport(params = {}, options = {}) {
            pv.ReasonCode, pv.ReasonText
       FROM wf.PolicyVersion pv
       LEFT JOIN wf.AppUser u ON CAST(u.Id AS varchar(50)) = pv.ChangedBy
-     ORDER BY pv.CreatedAt DESC, pv.PolicyVersionId DESC`, { limit });
+     WHERE pv.CreatedAt >= @globalStartUtc
+     ORDER BY pv.CreatedAt DESC, pv.PolicyVersionId DESC`, { limit, globalStartUtc: { type: sql.DateTime2, value: utcInstant } });
   return r.recordset || [];
 }
 
@@ -1786,6 +1817,7 @@ async function runSequenceCountersReport(_params = {}, options = {}) {
 const HOLD_ACTIONS = { HOLD: 'พักใบ', RELEASE: 'ปลดพัก' };
 async function runTruckHoldLogReport(params = {}, options = {}) {
   const queryFn = options.queryFn || wfQuery;
+  const { utcInstant } = await (options.readGlobalDataWindow || require('../services/global-data-window-store').readGlobalDataWindow)();
   const r = await queryFn(`
     SELECT TOP (@limit) ${ictText('l.ActedAt')} AS ActedAt, RTRIM(h.DocuNo) AS DocuNo, l.EditRequestId, l.Action,
            l.PrevOnHold, l.NewOnHold, l.PrevRemark, l.NewRemark, l.Applied, l.SkipReason, u.DisplayName AS ActedBy
@@ -1794,7 +1826,8 @@ async function runTruckHoldLogReport(params = {}, options = {}) {
            CASE WHEN l.SOID NOT LIKE '%[^0-9]%' AND LEN(l.SOID) BETWEEN 1 AND 9 THEN CAST(l.SOID AS int) END
       LEFT JOIN wf.AppUser u ON u.Id = l.ActedBy
      WHERE CAST(DATEADD(hour,7,l.ActedAt) AS date) BETWEEN @from AND @to
-     ORDER BY l.ActedAt DESC, l.Id DESC`, auditRange(params));
+       AND l.ActedAt >= @globalStartUtc
+     ORDER BY l.ActedAt DESC, l.Id DESC`, { ...auditRange(params), globalStartUtc: { type: sql.DateTime2, value: utcInstant } });
   return (r.recordset || []).map(({ PrevOnHold, NewOnHold, Applied, Action, ...row }) => ({
     ...row,
     Action: HOLD_ACTIONS[String(Action || '').toUpperCase()] || Action,
@@ -1807,6 +1840,7 @@ const ALERT_TYPES = { NEAR_EXPIRY: 'ใกล้หมดอายุ', EXPIRED:
 const ALERT_STATUS = { ACTIVE: 'ค้างอยู่', RESOLVED: 'ปิดแล้ว' };
 async function runTicketAlertHistoryReport(params = {}, options = {}) {
   const queryFn = options.queryFn || wfQuery;
+  const { businessDate } = await (options.readGlobalDataWindow || require('../services/global-data-window-store').readGlobalDataWindow)();
   const r = await queryFn(`
     SELECT TOP (@limit) CONVERT(varchar(10),COALESCE(a.AlertDate, CAST(DATEADD(hour,7,a.CreatedAt) AS date)),120) AS AlertDate,
            a.DocuNo, a.CouponNo, COALESCE(a.AlertType, a.AlertKind) AS AlertType, a.LeadDays,
@@ -1814,7 +1848,8 @@ async function runTicketAlertHistoryReport(params = {}, options = {}) {
            ${ictText('a.CreatedAt')} AS CreatedAt, ${ictText('a.ResolvedAt')} AS ResolvedAt
       FROM wf.ControlTicketAlert a
      WHERE COALESCE(a.AlertDate, CAST(DATEADD(hour,7,a.CreatedAt) AS date)) BETWEEN @from AND @to
-     ORDER BY COALESCE(a.AlertDate, CAST(DATEADD(hour,7,a.CreatedAt) AS date)) DESC, a.AlertId DESC`, auditRange(params));
+       AND COALESCE(a.AlertDate, CAST(DATEADD(hour,7,a.CreatedAt) AS date)) >= @globalStartDate
+     ORDER BY COALESCE(a.AlertDate, CAST(DATEADD(hour,7,a.CreatedAt) AS date)) DESC, a.AlertId DESC`, { ...auditRange(params), globalStartDate: { type: sql.Date, value: businessDate } });
   return (r.recordset || []).map(row => ({
     ...row,
     AlertType: ALERT_TYPES[row.AlertType] || row.AlertType,
@@ -1827,6 +1862,7 @@ async function runTicketAlertHistoryReport(params = {}, options = {}) {
 const PRINT_DOC_TYPES = { 104: '104 ใบสั่งจ่ายสินค้า', 116: '116 ใบขน', 107: '107 ใบส่งของ' };
 async function runNativePrintLogReport(params = {}, options = {}) {
   const queryFn = options.queryFn || wfQuery;
+  const { utcInstant } = await (options.readGlobalDataWindow || require('../services/global-data-window-store').readGlobalDataWindow)();
   const r = await queryFn(`
     WITH numbered AS (
       SELECT p.Id, p.DocType, p.DocuNo, p.PrintedBy, p.PrintedAt,
@@ -1837,12 +1873,14 @@ async function runNativePrintLogReport(params = {}, options = {}) {
       FROM numbered n
       LEFT JOIN wf.AppUser u ON u.Id = n.PrintedBy
      WHERE CAST(DATEADD(hour,7,n.PrintedAt) AS date) BETWEEN @from AND @to
-     ORDER BY n.PrintedAt DESC, n.Id DESC`, auditRange(params));
+       AND n.PrintedAt >= @globalStartUtc
+     ORDER BY n.PrintedAt DESC, n.Id DESC`, { ...auditRange(params), globalStartUtc: { type: sql.DateTime2, value: utcInstant } });
   return (r.recordset || []).map(row => ({ ...row, DocType: PRINT_DOC_TYPES[row.DocType] || String(row.DocType) }));
 }
 
 async function runNativeDocumentsReport(params = {}, options = {}) {
   const queryFn = options.queryFn || wfQuery;
+  const { utcInstant } = await (options.readGlobalDataWindow || require('../services/global-data-window-store').readGlobalDataWindow)();
   const today = new Date();
   const defaultFrom = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30);
   const from = parseDateParam(params.from, defaultFrom);
@@ -1876,12 +1914,14 @@ async function runNativeDocumentsReport(params = {}, options = {}) {
     LEFT JOIN dbo.EMEmp ea ON ea.EmpID=na.ApproverEmpID
     LEFT JOIN wf.NativeInitialInvoiceReceipt ir ON ir.SourceSOID=o.SOID
     WHERE DATEADD(hour,7,o.CreatedAt)>=@from AND DATEADD(hour,7,o.CreatedAt)<DATEADD(day,1,CONVERT(datetime,@to,120))
+      AND o.CreatedAt >= @globalStartUtc
       AND (@book='' OR LEFT(h.DocuNo,1)=@book)
     ORDER BY o.CreatedAt DESC`, {
     limit: { type: sql.Int, value: limit },
     from: { type: sql.VarChar(10), value: ymd(from) },
     to: { type: sql.VarChar(10), value: ymd(to) },
     book: { type: sql.VarChar(1), value: book },
+    globalStartUtc: { type: sql.DateTime2, value: utcInstant },
   });
   const raw = result.recordset || [];
   const ids = [...new Set(raw.flatMap(r => [r.ConfirmedById, r.ConfirmedActorId, r.AiUserId, r.AiActorId, r.CreditUserId, r.CreditActorId,

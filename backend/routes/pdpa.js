@@ -21,14 +21,15 @@ router.get('/policies', async (req, res) => {
 // PUT /api/pdpa/policies/:id — แก้ retention (ADMIN)
 router.put('/policies/:id', requireRole('ADMIN'), async (req, res) => {
   try {
-    const __r = await wfQuery(`UPDATE wf.RetentionPolicy SET RetentionDays=@d, Note=@n, UpdatedAt=GETUTCDATE() WHERE Id=@id`, {
-      d: { type: sql.Int, value: Number(req.body?.retentionDays) || 0 },
-      n: { type: sql.NVarChar(300), value: req.body?.note || null },
-      id:{ type: sql.Int, value: Number(req.params.id) },
+    const rawDays = req.body?.retentionDays;
+    if (rawDays === undefined || rawDays === null || String(rawDays).trim() === '') return res.status(400).json({ message: 'กรุณาระบุจำนวนวันเก็บข้อมูล' });
+    const result = await require('../services/retention-audit').updateRetentionPolicy({
+      id: Number(req.params.id), retentionDays: Number(rawDays),
+      note: req.body?.note || null, user: req.user, ipAddress: req.ip,
     });
-    if (!__r.rowsAffected[0]) return res.status(404).json({ message: 'ไม่พบรายการที่ระบุ' });
+    if (!result) return res.status(404).json({ message: 'ไม่พบรายการที่ระบุ' });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ message: e.message }); }
+  } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // GET /api/pdpa/dsar — log คำขอ
@@ -82,34 +83,17 @@ router.post('/dsar/export', async (req, res) => {
     } else {
       return res.status(400).json({ message: 'subjectType ต้องเป็น CUSTOMER หรือ USER' });
     }
-    await wfQuery(`INSERT INTO wf.DsarLog (SubjectType, SubjectId, Action, RequestedBy, Note) VALUES (@t,@s,'EXPORT',@u,@n)`, {
-      t: { type: sql.NVarChar(20), value: subjectType }, s: { type: sql.NVarChar(40), value: String(subjectId) },
-      u: { type: sql.Int, value: req.user.sub }, n: { type: sql.NVarChar(400), value: 'DSAR export' },
-    });
+    await require('../services/retention-audit').recordDsarExport({ subjectType, subjectId, user: req.user, ipAddress: req.ip });
     res.json({ subjectType, subjectId, exportedAt: new Date().toISOString(), historyStartDate, data });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // POST /api/pdpa/retention/run — ลบข้อมูลเก่าตามนโยบาย (ADMIN)
 router.post('/retention/run', requireRole('ADMIN'), async (req, res) => {
   try {
-    const pol = (await wfQuery(`SELECT DataClass, RetentionDays FROM wf.RetentionPolicy`)).recordset || [];
-    const days = (cls) => pol.find(p => p.DataClass === cls)?.RetentionDays;
-    const result = {};
-    const errDays = days('ERROR_LOG');
-    if (errDays) {
-      const r = await wfQuery(`DELETE FROM wf.ErrorLog WHERE OccurredAt < DATEADD(day, -@d, GETUTCDATE())`,
-        { d: { type: sql.Int, value: errDays } });
-      result.errorLogDeleted = r.rowsAffected?.[0] ?? 0;
-    }
-    const obDays = days('OUTBOX_DONE');
-    if (obDays) {
-      const r = await wfQuery(`DELETE FROM wf.OutboxEvent WHERE Status='DONE' AND ProcessedAt < DATEADD(day, -@d, GETUTCDATE())`,
-        { d: { type: sql.Int, value: obDays } });
-      result.outboxDeleted = r.rowsAffected?.[0] ?? 0;
-    }
+    const result = await require('../services/retention-audit').runRetention({ user: req.user, ipAddress: req.ip });
     res.json({ ok: true, ranAt: new Date().toISOString(), result });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 module.exports = router;

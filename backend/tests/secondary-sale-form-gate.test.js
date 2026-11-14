@@ -64,7 +64,11 @@ async function start(t) {
   const app = express();
   app.use(express.json());
   app.use((req, res, next) => db.runWithTarget('onprem', next, 'secondary'));
-  for (const mount of ['/api/stock', '/api/pricebook', '/api/master']) {
+  for (const mount of ['/api/master/native-approvers', '/api/stock', '/api/pricebook', '/api/master',
+    '/api/so', '/api/trips', '/api/rebate', '/api/rebate-pool', '/api/giveaway', '/api/quotation',
+    '/api/edit-requests', '/api/budget', '/api/papertrail', '/api/native-print', '/api/reports',
+    '/api/readiness-signoff', '/api/admin/reports', '/api/weighing', '/api/recon', '/api/ops',
+    '/api/policy', '/api/costbook', '/api/credit', '/api/incidents', '/api/coupons', '/api/pdpa']) {
     const r = express.Router();
     r.use(requireAuth);
     r.use((req, res) => res.json({ mapped: req.user.identityMapping?.businessEffectiveUserId ?? null }));
@@ -110,6 +114,27 @@ test('other routes of the same routers and every write stay closed on a secondar
   const token = jwt.sign({ sub: 8, role: 'SALES', actorSub: 17, actorRole: 'ADMIN', impersonating: true }, SECRET);
   for (const path of CLOSED_GET) { attemptedAudit = null; assert.equal((await call(path, token)).status, 409, path); assert.equal(attemptedAudit, null, path); }
   for (const [method, path] of CLOSED_WRITE) { attemptedAudit = null; assert.equal((await call(path, token, method)).status, 409, `${method} ${path}`); assert.equal(attemptedAudit, null); }
+});
+
+test('secondary gate blocks write methods across business router families', async t => {
+  const call = await start(t); reset();
+  const token = jwt.sign({ sub: 8, role: 'SALES', actorSub: 17, actorRole: 'ADMIN', impersonating: true }, SECRET);
+  const families=['/api/master/native-approvers','/api/stock','/api/pricebook','/api/master','/api/so',
+    '/api/trips','/api/rebate','/api/rebate-pool','/api/giveaway','/api/quotation','/api/edit-requests',
+    '/api/budget','/api/papertrail','/api/native-print','/api/reports','/api/readiness-signoff',
+    '/api/admin/reports','/api/weighing','/api/recon','/api/ops','/api/policy','/api/costbook',
+    '/api/credit','/api/incidents','/api/coupons','/api/pdpa'];
+  const tokens=[token,jwt.sign({sub:17,role:'ADMIN'},SECRET),jwt.sign({sub:22,role:'ACCOUNTING'},SECRET)];
+  for(const identity of tokens) for(const family of families) for(const method of ['POST','PUT','PATCH','DELETE']) {
+    const path=family+'/review-probe';attemptedAudit=null;
+    const response=await call(path,identity,method);
+    assert.equal(response.status,409,`${method} ${path}`);
+    assert.equal(attemptedAudit,null,'no reviewed-read admission for a write');
+  }
+  // This one POST is a calculation, not an allowed write; the actual handler
+  // has separate tests ensuring it performs no business mutations.
+  const calculate=await call('/api/so/price-indicator',token,'POST');
+  assert.equal(calculate.status,200);assert.equal(attemptedAudit.inputs.path,'/api/so/price-indicator');
 });
 
 test('both identities need the sale capability; an invalid binding or a failed audit closes the read', async t => {

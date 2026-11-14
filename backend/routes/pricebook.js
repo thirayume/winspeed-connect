@@ -6,7 +6,7 @@
  * Special Price per Customer, and Confidential Costlist Minimum Price Enforcement.
  */
 const router = require('express').Router();
-const { sql, wfQuery, wfTransaction } = require('../db');
+const { sql, wfQuery, wfTransaction, getTarget, getDbName } = require('../db');
 const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
 const { assertPricesAboveCost } = require('../services/cost-authority');
 const { getBangkokDateString } = require('../services/so-pickup-policy');
@@ -20,6 +20,8 @@ const {
   syncBookToWinSpeed,
   syncSpecialPriceToWinSpeed,
   reconcileFromWinSpeed,
+  verifySecondaryPriceBook,
+  readOnlyPriceQuery,
   invalidateReconcileCache,
 } = require('../services/pricebook-winspeed-sync');
 
@@ -36,6 +38,14 @@ router.use(requireAuth);
 
 const requirePricingManage = requireCapability('pricing.manage');
 const SPECIAL_APPROVE_ROLES = ['MANAGER', 'C_LEVEL', 'ADMIN', 'ACCOUNTING'];
+
+function priceBookReadError(res, error) {
+  if (error?.code === 'SECONDARY_PRICE_RECONCILE_UNAVAILABLE') {
+    return res.status(503).json({ code: error.code, message: error.message });
+  }
+  console.error(error);
+  return res.status(500).json({ message: error.message });
+}
 
 async function audit(queryFn, bookId, action, fromStatus, toStatus, userId, note) {
   await queryFn(
@@ -60,14 +70,31 @@ function txQuery(tx) {
   };
 }
 
+// Keep freshness verification and result reads in the same serializable
+// transaction. The secondary path never executes reconciliation writes.
+async function withPriceBookRead(bookId, read) {
+  const primary = require('../services/active-database').primaryDatabase();
+  const secondary = getTarget?.() === 'onprem' &&
+    (!primary || String(getDbName() || primary).toLowerCase() !== String(primary).toLowerCase());
+  if (!secondary) {
+    await reconcileFromWinSpeed({ bookId });
+    return read(wfQuery);
+  }
+  return wfTransaction(async tx => {
+    const query = txQuery(tx);
+    await verifySecondaryPriceBook(query, bookId);
+    return read(readOnlyPriceQuery(query));
+  }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+}
+
 // GET /api/pricebook — รายการ (used by CreateSODialog + PriceBookManager)
 router.get('/', async (_req, res) => {
   try {
-    await reconcileFromWinSpeed();
-    const syncCols = await hasSyncColumns();
+    const rows = await withPriceBookRead(null, async query => {
+    const syncCols = await hasSyncColumns(query);
     const extraCols = syncCols ? ', b.SourceSetPriceIds, b.WinSpeedSyncAt, sb.DisplayName AS LastSyncedByName' : '';
     const extraJoin = syncCols ? 'LEFT JOIN wf.AppUser sb ON sb.Id = b.LastSyncedBy' : '';
-    const r = await wfQuery(`
+    const r = await query(`
       SELECT b.Id, b.Name, b.EffectiveMonth,
              CONVERT(VARCHAR(10), b.EffectiveFrom, 23) AS EffectiveFrom,
              CONVERT(VARCHAR(10), b.EffectiveTo, 23) AS EffectiveTo,
@@ -81,8 +108,10 @@ router.get('/', async (_req, res) => {
       LEFT JOIN wf.AppUser act ON act.Id = b.ActivatedBy
       ${extraJoin}
       ORDER BY COALESCE(b.EffectiveFrom, CAST(b.EffectiveMonth + '-01' AS DATE)) DESC, b.Id DESC`);
-    res.json(r.recordset);
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+    return r.recordset;
+    });
+    res.json(rows);
+  } catch (e) { return priceBookReadError(res, e); }
 });
 
 // GET /api/pricebook/winspeed-sets — รายการประกาศราคาจาก WinSpeed (dbo.EMSetPriceHD)
@@ -265,19 +294,19 @@ router.get('/:id', async (req, res) => {
     let window;
     try { window = await require('../services/global-data-window-store').readGlobalDataWindow(); }
     catch { return res.status(503).json({ code:'DATA_WINDOW_UNAVAILABLE', message:'ไม่สามารถตรวจวันเริ่มข้อมูลได้' }); }
-    await reconcileFromWinSpeed({ bookId: id });
-    const syncCols = await hasSyncColumns();
+    const result = await withPriceBookRead(id, async query => {
+    const syncCols = await hasSyncColumns(query);
     const pbCols = syncCols ? ', SourceSetPriceIds, WinSpeedSyncAt' : '';
-    const book = (await wfQuery(`
+    const book = (await query(`
       SELECT Id, Name, EffectiveMonth,
              CONVERT(VARCHAR(10), EffectiveFrom, 23) AS EffectiveFrom,
              CONVERT(VARCHAR(10), EffectiveTo, 23) AS EffectiveTo,
              Status, Note, CreatedBy, ApprovedBy, ActivatedBy, CreatedAt, ApprovedAt, ActivatedAt${pbCols}
       FROM wf.PriceBook WHERE Id=@id
     `, { id: { type: sql.Int, value: id } })).recordset[0];
-    if (!book) return res.status(404).json({ message: 'ไม่พบ Price Book' });
+    if (!book) return null;
 
-    const lines = (await wfQuery(`
+    const lines = (await query(`
       SELECT l.Id, l.GoodId,
              COALESCE(${syncCols ? 'l.GoodCode,' : ''} g.GoodCode) AS GoodCode,
              COALESCE(NULLIF(l.GoodName, ''), g.GoodName1) AS GoodName,
@@ -292,13 +321,16 @@ router.get('/:id', async (req, res) => {
       ORDER BY COALESCE(${syncCols ? 'l.GoodGroupId,' : ''} g.GoodGroupID, 9999), COALESCE(NULLIF(l.GoodName, ''), g.GoodName1, l.GoodId)
     `, { id: { type: sql.Int, value: id } })).recordset;
 
-    const auditRows = (await wfQuery(`
+    const auditRows = (await query(`
       SELECT a.Action, a.FromStatus, a.ToStatus, u.DisplayName AS ByName, a.Note, a.At
       FROM wf.PriceBookAudit a LEFT JOIN wf.AppUser u ON u.Id=a.ByUser
       WHERE a.PriceBookId=@id AND a.At >= @globalStartUtc ORDER BY a.At DESC`,
       { id: { type: sql.Int, value: id }, globalStartUtc: { type: sql.DateTime2, value: window.utcInstant } })).recordset;
-    res.json({ ...book, lines, audit: auditRows });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+    return { ...book, lines, audit: auditRows };
+    });
+    if (!result) return res.status(404).json({ message: 'ไม่พบ Price Book' });
+    res.json(result);
+  } catch (e) { return priceBookReadError(res, e); }
 });
 
 // POST /api/pricebook — สร้างชุดราคาใหม่ (DRAFT หรือ ACTIVE + Auto-Sync WinSpeed + ห้ามช่วงวันและสินค้าทับซ้อน)
@@ -1001,8 +1033,26 @@ router.get('/:id/effective', async (req, res) => {
     const onSecondary = Boolean(req.user?.identityMapping);
     if (onSecondary && custId && !await require('../services/secondary-customer-scope').secondaryCustomerVisible(req.user, custId))
       return res.status(404).json({ message: 'ไม่พบลูกค้า' });
-    if (Number.isInteger(id) && id > 0) await reconcileFromWinSpeed({ bookId: id });
-    const rows = (await wfQuery(`
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'Invalid id' });
+    const rows = await withPriceBookRead(id, async query => {
+      if (onSecondary && custId) {
+        await require('../services/secondary-pricebook-special').verifySecondarySpecialPrices(query, id, custId);
+      }
+      if (onSecondary) {
+        // A JOIN in the legacy effective-price view can hide the standard line
+        // when another customer has a special price. Select this customer only.
+        return (await query(`SELECT l.GoodId, l.GoodName, l.Unit, l.LineStatus,
+            l.Price AS StandardPrice, sp.ApprovedPrice AS SpecialPrice,
+            COALESCE(sp.ApprovedPrice,l.Price) AS EffectivePrice,
+            CASE WHEN l.LineStatus='SUSPENDED' THEN 0 ELSE 1 END AS Sellable
+          FROM wf.PriceBookLine l
+          LEFT JOIN wf.PriceBookSpecialPrice sp ON sp.PriceBookId=l.PriceBookId
+            AND sp.GoodId=l.GoodId AND sp.CustId=@cust AND sp.ApprovedPrice IS NOT NULL
+          WHERE l.PriceBookId=@id ORDER BY l.GoodId`, {
+          id: { type: sql.Int, value: id }, cust: { type: sql.NVarChar(20), value: custId },
+        })).recordset;
+      }
+      return (await query(`
       SELECT GoodId, GoodName, Unit, LineStatus, StandardPrice, SpecialPrice, EffectivePrice, Sellable
       FROM wf.v_PriceBookEffective
       WHERE PriceBookId = @id AND (${onSecondary ? '' : '@cust IS NULL OR '}CustId = @cust OR CustId IS NULL)
@@ -1010,8 +1060,9 @@ router.get('/:id/effective', async (req, res) => {
       id: { type: sql.Int, value: id },
       cust: { type: sql.NVarChar(20), value: custId },
     })).recordset;
+    });
     res.json(rows);
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { return priceBookReadError(res, e); }
 });
 
 module.exports = router;

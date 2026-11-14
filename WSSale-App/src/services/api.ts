@@ -1040,6 +1040,7 @@ export const setGiveawayBudgetLine = (payload: {
 export const updateGiveawayBudgetLine = (
   id: number,
   payload: {
+    expectedToken: string;
     region?: string; regionCode?: string | null; salesUserId?: number | null;
     brand?: string; itemName?: string; goodId?: string | null; goodCode?: string | null; goodName?: string | null;
     budgetQty?: number; empId?: string | null; empCode?: string | null; reason?: string;
@@ -1049,12 +1050,12 @@ export const updateGiveawayBudgetLine = (
   body: JSON.stringify(payload),
 });
 
-export const deleteGiveawayBudgetLine = (id: number, options?: { force?: boolean; reason?: string }) => {
+export const deleteGiveawayBudgetLine = (id: number, options: { expectedToken: string; force?: boolean; reason?: string }) => {
   const qs = new URLSearchParams();
   if (options?.force) qs.set('force', 'true');
   if (options?.reason) qs.set('reason', options.reason);
   const queryStr = qs.toString() ? `?${qs.toString()}` : '';
-  return req<{ ok: boolean; id: number }>(`/giveaway/budgets/${id}${queryStr}`, { method: 'DELETE' });
+  return req<{ ok: boolean; id: number }>(`/giveaway/budgets/${id}${queryStr}`, { method: 'DELETE', body: JSON.stringify({ expectedToken: options.expectedToken }) });
 };
 
 // ── New Rebate Pool (FIFO Ledger + Manager Approval + Nov 1 Conversion) ──
@@ -2592,19 +2593,19 @@ export const fetchEditRequests = (params?: { status?: string; soid?: string; tri
 };
 
 export const createEditRequest = (body: { soid: string | number; reasonCode: string; reasonDetail?: string }) =>
-  req<{ id: number; stage: EditStage; stageLabel: string; holdTruck: boolean; message: string }>(
+  req<{ id: number; stage: EditStage; stageLabel: string; holdTruck: boolean; message: string; holdWarning?: string | null }>(
     '/edit-requests', { method: 'POST', body: JSON.stringify(body) });
 
 export const approveEditRequest = (id: number | string, note?: string) =>
-  req<{ id: number; status: string; unlocked: boolean; message: string }>(
+  req<{ id: number; status: string; unlocked: boolean; message: string; holdReleaseWarning?: string | null }>(
     `/edit-requests/${id}/approve`, { method: 'PATCH', body: JSON.stringify({ note }) });
 
 export const rejectEditRequest = (id: number | string, note: string) =>
-  req<{ id: number; status: string; message: string }>(
+  req<{ id: number; status: string; message: string; holdReleaseWarning?: string | null }>(
     `/edit-requests/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ note }) });
 
 export const cancelEditRequest = (id: number | string, note?: string) =>
-  req<{ id: number; status: string; message: string }>(
+  req<{ id: number; status: string; message: string; holdReleaseWarning?: string | null }>(
     `/edit-requests/${id}/cancel`, { method: 'PATCH', body: JSON.stringify({ note }) });
 
 // ── Price Approvals (P0) ──────────────────────────────────────

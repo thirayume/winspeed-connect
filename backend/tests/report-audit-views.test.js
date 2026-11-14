@@ -1,6 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+require('./helpers/route-harness.cjs').installDbStub(() => []);
 
 // W1-b / W1-c: audit views over wf tables that only services write — read-only, Thai time, readable labels
 const { runPolicyHistoryReport, runSequenceCountersReport, runTruckHoldLogReport, runTicketAlertHistoryReport, runNativePrintLogReport } =

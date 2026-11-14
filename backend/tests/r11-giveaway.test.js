@@ -39,7 +39,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   // giveaway.js borrow
   if (/SELECT \* FROM wf\.GiveawayBorrowRequest WITH \(UPDLOCK, ROWLOCK\)/.test(text)) return state.borrow ? [state.borrow] : [];
   if (/SELECT RequesterId, LenderId, Status FROM wf\.GiveawayBorrowRequest/.test(text)) return state.borrow ? [state.borrow] : [];
-  if (/SET Status = 'REJECTED'/.test(text)) return { recordset: [], rowsAffected: [1] };
+  if (/SET Status\s*=\s*'REJECTED'/.test(text)) return { recordset: [], rowsAffected: [1] };
   if (/FROM wf\.GiveawayBudget WITH \(UPDLOCK, ROWLOCK\)/.test(text)) {
     return inputs.rg === state.borrow?.LenderRegion ? (state.lenderBudget ? [state.lenderBudget] : [])
       : (state.requesterBudget ? [state.requesterBudget] : []);
@@ -127,6 +127,10 @@ test('U-6: approve moves the qty from the lender region row to the requester reg
   const r = await app.call('PATCH', '/api/giveaway/borrow-requests/5/resolve', { body: { approve: true }, user: { sub: 25, role: 'MANAGER' } });
   assert.equal(r.status, 200);
   const upd = db.calls.slice(before).filter(c => /UPDATE wf\.GiveawayBudget/.test(c.text));
+  const locks = db.calls.slice(before).filter(c => /FROM wf\.GiveawayBudget WITH \(UPDLOCK,HOLDLOCK\) WHERE Region=@rg/.test(c.text));
+  assert.equal(locks.length, 2, 'both regions locked before transfer');
+  assert.ok(db.calls.slice(before).some(c => /GiveawayWithdrawal WITH \(UPDLOCK,HOLDLOCK\)/.test(c.text)));
+  assert.ok(db.calls.slice(before).some(c => c.kind === 'tx' && /INSERT INTO wf\.ChangeEvent/.test(c.text) && c.inputs.entityType === 'GIVEAWAY_BORROW_REQUEST' && c.inputs.action === 'APPROVE'));
   assert.equal(upd.length, 2);
   assert.match(upd[0].text, /BudgetQty - @qty/); assert.equal(upd[0].inputs.id, 1); assert.equal(Number(upd[0].inputs.qty), 100);
   assert.match(upd[1].text, /BudgetQty \+ @qty/); assert.equal(upd[1].inputs.id, 2);
@@ -152,6 +156,7 @@ test('U-6: an unrelated SALES user cannot reject someone else\'s request', async
   assert.equal(r.status, 403);
   const own = await app.call('PATCH', '/api/giveaway/borrow-requests/5/resolve', { body: { approve: false }, user: { sub: 41, role: 'SALES' } });
   assert.equal(own.status, 200, 'the requester may withdraw their own request');
+  assert.ok(db.calls.some(c => c.kind === 'tx' && /INSERT INTO wf\.ChangeEvent/.test(c.text) && c.inputs.entityType === 'GIVEAWAY_BORROW_REQUEST'));
 });
 
 test('U-6: borrowing from yourself is blocked', async () => {

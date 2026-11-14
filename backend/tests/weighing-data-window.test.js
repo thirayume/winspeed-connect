@@ -26,6 +26,9 @@ test('direct weighing lookup and sales candidates cannot bypass the date boundar
   const calls = db.calls.slice(before).filter(c => /h\.DateReg >= @globalStartDate/.test(c.text));
   assert.equal(calls.length, 2);
   for (const c of calls) assert.equal(c.inputs.globalStartDate, '2026-01-01');
+  const forSo = calls.find(c => /h\.SPID = @soid/.test(c.text));
+  assert.match(forSo.text, /h\.WGType = 'SO'/);
+  assert.match(forSo.text, /EXISTS \(SELECT 1 FROM dbo\.SOHD s WHERE s\.SOID=h\.SPID AND s\.DocuDate >= @globalStartDate\)/);
 });
 
 test('live, anomalies and coverage apply the same boundary, including detail counts', async () => {

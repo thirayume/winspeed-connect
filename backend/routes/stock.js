@@ -20,6 +20,33 @@ router.get('/atp', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'MANAGER',
     // the bill being edited: its own saved draft must not count against itself
     const excludeSoNum = Number.isInteger(Number(excludeSoId)) && Number(excludeSoId) > 0 ? Number(excludeSoId) : null;
 
+    if (req.user.identityMapping) {
+      // A trip can contain multiple owners and native documents. Until its
+      // complete cross-database visibility is checked, do not allow callers
+      // to suppress its demand from the ATP calculation.
+      if (excludeTripId != null && excludeTripId !== '')
+        return res.status(409).json({ code: 'ATP_SECONDARY_TRIP_EXCLUSION_UNAVAILABLE', message: 'ยังไม่รองรับการยกเว้นเที่ยวรถบนฐานรอง' });
+      if (excludeSoId != null && excludeSoId !== '') {
+        if (typeof excludeSoId !== 'string' || !/^[1-9]\d{0,9}$/.test(excludeSoId) || !excludeSoNum || excludeSoNum > 2147483647)
+          return res.status(400).json({ code: 'ATP_EXCLUSION_INVALID', message: 'เลขบิลไม่ถูกต้อง' });
+        const { getVisibleScope, scopeFilter } = require('../services/visible-scope');
+        const { actorPerspective } = require('../services/business-identity');
+        const actor = actorPerspective(req.user);
+        const effective = scopeFilter(await getVisibleScope(req.user), {userCol:'o.SalesUserId',prefix:'atpEffective'});
+        const real = scopeFilter(await getVisibleScope(actor), {userCol:'o.SalesUserId',prefix:'atpActor'});
+        const window = await require('../services/global-data-window-store').readGlobalDataWindow();
+        const permitted = await wfQuery(`SELECT TOP 1 1 AS ok FROM wf.SalesOrder o
+          WHERE o.Id=@atpSoId AND o.CreatedAt>=@atpStartUtc
+            AND o.Status IN ('DRAFT','SUBMITTED','PRICE_APPROVED')
+            AND ${effective.sql} AND ${real.sql}`, {
+          atpSoId:{type:sql.Int,value:excludeSoNum},atpStartUtc:{type:sql.DateTime2,value:window.utcInstant},
+          ...effective.inputs,...real.inputs,
+        });
+        if (!permitted.recordset?.length)
+          return res.status(404).json({ code: 'ATP_EXCLUSION_NOT_FOUND', message: 'ไม่พบบิลที่สามารถยกเว้นได้' });
+      }
+    }
+
     // 1. Get operational stock rows (GoodId is GoodCode in OperationalStock)
     let stockQuery = `
       SELECT s.GoodId, s.WarehouseId, s.GoodName, s.QtyOnHand, s.Unit, s.Source, s.AsOf
@@ -255,6 +282,14 @@ router.get('/atp', requireRole('SALES', 'COUNTER_SALES', 'WAREHOUSE', 'MANAGER',
       meta: buildMeta()
     });
   } catch (e) {
+    if (req.user?.identityMapping) {
+      console.error('[stock/atp] SECONDARY_ATP_FAILED');
+      const bindingInvalid = e.code === 'IDENTITY_BINDING_INVALID';
+      return res.status(bindingInvalid ? 409 : 503).json({
+        code: bindingInvalid ? 'IDENTITY_BINDING_INVALID' : 'SECONDARY_ATP_UNAVAILABLE',
+        message: 'ไม่สามารถตรวจสต๊อกฐานรองได้ กรุณาลองใหม่หรือติดต่อผู้ดูแล',
+      });
+    }
     console.error('[stock/atp]', e);
     res.status(500).json({ message: e.message });
   }

@@ -41,7 +41,12 @@ export function ResetRebateSetting(){
   }
   return <section className="rounded-2xl border border-amber-200 bg-white p-5 space-y-4">
     <h2 className="font-bold text-[#0C447C]">เริ่มยอด Rebate ใหม่ทุกฐานในระบบนี้</h2>
-    <p className="text-sm text-gray-700">เมื่อยืนยัน ยอดสะสมของลูกค้าเริ่มที่ศูนย์จากเวลายืนยัน คำขอที่ยังรอจะถูกยกเลิก และตั๋วที่ออกสำเร็จแล้วจะคงอยู่ ระบบ UAT และ Production ทำงานแยกกัน</p>
+    <p className="text-sm text-gray-700">เมื่อยืนยัน ยอดสะสม Rebate ของลูกค้าเริ่มที่ศูนย์จากเวลาที่ระบบบันทึก ระบบ UAT และ Production ทำงานแยกกัน</p>
+    <ul className="list-disc space-y-1 pl-5 text-sm text-gray-700">
+      <li>คำขอที่ยังรอจะถูกยกเลิกและคืนยอดจอง ส่วนใบเคลมที่อนุมัติครบแล้วคงไว้ดำเนินการต่อ</li>
+      <li>ตั๋วที่ออกสำเร็จ ประวัติการใช้ตั๋ว และยอดลูกหนี้เดิมยังคงอยู่</li>
+      <li>เริ่มสะสมใหม่จากการบันทึกขนส่งหรือชั่งออกจริงหลังเวลาเริ่มรอบ หากยืนยันเวลาไม่ได้ให้พักรายการไว้ตรวจหลักฐาน</li>
+    </ul>
     {!status&& !error && <p role="status">กำลังตรวจความพร้อม...</p>}
     {status&&!status.enabled&&<p role="status" className="text-amber-800">ยังไม่เปิดใช้ Reset ระหว่างตรวจความปลอดภัยและทดสอบ UAT</p>}
     {status?.enabled&&<>

@@ -22,11 +22,17 @@ test('recordUserActivity and getUserActivity slot calculation', async () => {
 });
 
 test('clearErrors resets error counters', async () => {
-  obs.recordError({ level: 'ERROR', message: 'Test error', status: 500 });
-  assert.ok(obs.getStatus().errors > 0);
-
-  const res = await obs.clearErrors();
-  assert.equal(res.ok, true);
-  assert.equal(obs.getStatus().errors, 0);
-  assert.equal(obs.getRecentErrors().length, 0);
+  const policy = require('../services/policy-contract');
+  const originalQuery = db.wfQuery, originalTx = db.wfTransaction, originalAudit = policy.logChangeEvent;
+  db.wfQuery = async () => ({ recordset: [] });
+  db.wfTransaction = async fn => fn({ request: () => ({ query: async () => ({ rowsAffected: [1] }) }) });
+  policy.logChangeEvent = async () => {};
+  try {
+    obs.recordError({ level: 'ERROR', message: 'Test error', status: 500 });
+    assert.ok(obs.getStatus().errors > 0);
+    const res = await obs.clearErrors({ sub: 1 });
+    assert.equal(res.ok, true);
+    assert.equal(obs.getStatus().errors, 0);
+    assert.equal(obs.getRecentErrors().length, 0);
+  } finally { db.wfQuery = originalQuery; db.wfTransaction = originalTx; policy.logChangeEvent = originalAudit; }
 });

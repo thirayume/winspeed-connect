@@ -78,10 +78,10 @@ router.get('/user-activity', async (req, res) => {
 // POST /api/ops/errors/clear — เคลียร์ประวัติ Error Log (ADMIN)
 router.post('/errors/clear', requireRole('ADMIN'), async (req, res) => {
   try {
-    const r = await obs.clearErrors();
+    const r = await obs.clearErrors(req.user, req.ip);
     res.json(r);
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    res.status(e.status || 500).json({ message: 'ล้าง Error Log ไม่สำเร็จ กรุณาตรวจสอบกับผู้ดูแล' });
   }
 });
 
@@ -89,7 +89,10 @@ router.post('/errors/clear', requireRole('ADMIN'), async (req, res) => {
 router.post('/sync-users', requireRole('ADMIN'), async (req, res) => {
   try {
     const { syncUsersToTarget } = require('../services/user-sync');
-    const result = await syncUsersToTarget(req.body?.targetDb);
+    const result = await syncUsersToTarget(req.body?.targetDb, {
+      actorPrimaryId: req.user.actorSub ?? req.user.sub,
+      effectivePrimaryId: req.user.sub,
+    });
     res.json(result);
   } catch (e) {
     res.status(e.status || 500).json({ code: e.code, message: e.message });

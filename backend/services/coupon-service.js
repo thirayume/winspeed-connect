@@ -33,6 +33,15 @@ const { sql, wfQuery, wfTransaction } = require('../db');
 const { logChangeEvent } = require('./policy-contract');
 const { enqueue } = require('./outbox');
 
+async function requireCouponAuditActor(userId) {
+  const effective = Number(userId);
+  if (!Number.isSafeInteger(effective) || effective <= 0) throw Object.assign(new Error('COUPON_AUDIT_IDENTITY_REQUIRED'), { status: 403 });
+  const { currentActorId, hasColumn } = require('./request-context');
+  const actor = currentActorId() || effective;
+  if (actor !== effective && !await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId'))
+    throw Object.assign(new Error('COUPON_ACTOR_AUDIT_UNAVAILABLE'), { status: 503 });
+}
+
 function isNativePostingEnabled() {
   return String(process.env.COUPON_NATIVE_POSTING_ENABLED || '').toLowerCase().trim() === 'true';
 }
@@ -60,6 +69,10 @@ function computePayloadHash(payload) {
 async function getCouponsForCustomer(customerId, options = {}) {
   const custIdStr = String(customerId).trim();
   if (!custIdStr) return [];
+  // Active older tickets remain usable as opening balances; their original
+  // sales-document identity must not be exposed outside the data window.
+  const dataWindow = await require('./global-data-window-store').readGlobalDataWindow();
+  const ownerScope = options.actor ? await require('./coupon-access-scope').couponScope(options.actor) : {sql:'1=1',inputs:{}};
   const goodId = options.goodId ? Number(options.goodId) : null;
   const has139 = await checkMigration139();
 
@@ -85,9 +98,11 @@ async function getCouponsForCustomer(customerId, options = {}) {
       END AS rightType,
       b.Reason AS beneficiaryReason,
       b.EffectiveTo AS beneficiaryExpiry,
-      s.DocuDate AS sourceDocuDate
+      s.DocuDate AS sourceDocuDate,
+      CASE WHEN s.DocuDate >= @globalStartDate THEN 1 ELSE 0 END AS sourceWithinWindow
     FROM dbo.WFCoupon c WITH (NOLOCK)
     JOIN dbo.SOHD s WITH (NOLOCK) ON s.SOID = c.DocuID
+    LEFT JOIN wf.SalesOrderExt couponOwnerExt WITH (NOLOCK) ON couponOwnerExt.SOID = CONVERT(VARCHAR(50),s.SOID)
     LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = c.GoodID
     LEFT JOIN (
       SELECT 
@@ -111,12 +126,15 @@ async function getCouponsForCustomer(customerId, options = {}) {
       OR b.Id IS NOT NULL
     )
     AND c.RemaQty > 0
+    AND ${ownerScope.sql}
     ${goodId ? 'AND c.GoodID = @goodId' : ''}
     ORDER BY c.CouponID DESC
   `;
 
   const params = {
-    custId: { type: sql.VarChar(50), value: custIdStr }
+    custId: { type: sql.VarChar(50), value: custIdStr },
+    globalStartDate: { type: sql.Date, value: dataWindow.businessDate },
+    ...ownerScope.inputs
   };
   if (goodId) {
     params.goodId = { type: sql.Int, value: goodId };
@@ -129,6 +147,7 @@ async function getCouponsForCustomer(customerId, options = {}) {
         SELECT DISTINCT c.CouponID
         FROM dbo.WFCoupon c WITH (NOLOCK)
         JOIN dbo.SOHD s WITH (NOLOCK) ON s.SOID = c.DocuID
+        LEFT JOIN wf.SalesOrderExt couponOwnerExt WITH (NOLOCK) ON couponOwnerExt.SOID = CONVERT(VARCHAR(50),s.SOID)
         JOIN wf.CouponReservation res WITH (NOLOCK) ON res.CouponId = c.CouponID
         WHERE (
           CAST(s.CustID AS VARCHAR(50)) = @custId
@@ -143,12 +162,13 @@ async function getCouponsForCustomer(customerId, options = {}) {
           )
         )
         AND res.Status = 'RESERVED'
+        AND ${ownerScope.sql}
         AND (res.ReservedQty - ISNULL(res.ConsumedQty, 0)) > 0
-      `, { custId: { type: sql.VarChar(50), value: custIdStr } });
+      `, { custId: { type: sql.VarChar(50), value: custIdStr }, ...ownerScope.inputs });
 
       for (const row of activeResCoupons.recordset || []) {
         try {
-          await settleCouponReservations(row.CouponID, null);
+          await settleCouponReservations(row.CouponID, options.actor || null);
         } catch { /* non-fatal */ }
       }
     } catch {
@@ -233,10 +253,10 @@ async function getCouponsForCustomer(customerId, options = {}) {
           SELECT DISTINCT rd.CouponID
           FROM dbo.WFRedemtionDT rd WITH (NOLOCK)
           LEFT JOIN (
-            SELECT NativeRedemptionId, SUM(SettledQty) AS TotalSettled
+            SELECT NativeRedemptionId, CouponId, SUM(SettledQty) AS TotalSettled
             FROM wf.CouponReservationSettlement WITH (NOLOCK)
-            GROUP BY NativeRedemptionId
-          ) st ON st.NativeRedemptionId = rd.RedemtionID
+            GROUP BY NativeRedemptionId, CouponId
+          ) st ON st.NativeRedemptionId = rd.RedemtionID AND st.CouponId = rd.CouponID
           WHERE rd.CouponID IN (${activeResCids.join(',')})
             AND (rd.GoodQty - ISNULL(st.TotalSettled, 0)) > 0
         `);
@@ -283,6 +303,15 @@ async function getCouponsForCustomer(customerId, options = {}) {
 
     // FR-1 picker hint
     r.hasUnmatchedCuts = unmatchedCouponIds.has(Number(r.couponId));
+    // Keep ticket number, reservation identifiers and balances for normal use.
+    // Compute expiry first, then remove the old/undated source document fields.
+    r.sourceDocumentHidden = Number(r.sourceWithinWindow) !== 1;
+    if (r.sourceDocumentHidden) {
+      r.sourceSoId = null;
+      r.sourceDocuNo = null;
+      r.sourceDocuDate = null;
+    }
+    delete r.sourceWithinWindow;
   }
   // R12 K-F3: a K bill lists only D coupons and an I bill only C coupons
   if (options.billPrefix) return rows.filter(r => couponAllowedForBill(r.couponNo, options.billPrefix));
@@ -383,6 +412,7 @@ async function reserveCoupon({
   }
 
   const key = idempotencyKey || `RES:${carrierSoId}:${couponId}:${qty}`;
+  await requireCouponAuditActor(userId);
 
   return await wfTransaction(async (tx) => {
     // 1. Lock and fetch coupon row to serialize claims on last balance
@@ -500,6 +530,11 @@ async function reserveCoupon({
       `);
 
     const newId = insertRes.recordset[0].Id;
+    await logChangeEvent(tx, {
+      entityType: 'COUPON_RESERVATION', entityId: String(newId), action: 'RESERVE',
+      afterJson: { couponId: cId, carrierSoId: carrierSoId || 'DRAFT', beneficiaryCustId: String(beneficiaryCustId), reservedQty: qty },
+      reasonCode: 'COUPON_RESERVATION', userId: String(userId),
+    });
     return {
       id: newId,
       couponId: cId,
@@ -528,6 +563,7 @@ async function cancelReservation(reservationId, reason, userId = 1, userRole = n
   if (!reason || String(reason).trim().length < 3) {
     throw Object.assign(new Error('กรุณาระบุเหตุผลในการยกเลิกการจองตั๋ว (อย่างน้อย 3 ตัวอักษร)'), { status: 400 });
   }
+  await requireCouponAuditActor(userId);
 
   const execInTx = async (tx) => {
     const res = (await tx.request()
@@ -615,6 +651,12 @@ async function cancelReservation(reservationId, reason, userId = 1, userRole = n
         WHERE Id = @id
       `);
 
+    await logChangeEvent(tx, {
+      entityType: 'COUPON_RESERVATION', entityId: String(rId), action: 'CANCEL',
+      beforeJson: { status: res.Status }, afterJson: { status: 'CANCELLED' },
+      reasonCode: 'COUPON_RESERVATION', reasonText: String(reason).trim().slice(0, 500), userId: String(userId),
+    });
+
     return { id: rId, status: 'CANCELLED', idempotent: false };
   };
 
@@ -635,12 +677,18 @@ async function reconcileCoupon(couponId, options = {}) {
   const cId = Number(couponId);
   if (!cId) return null;
 
+  if (options.actor && !await require('./coupon-access-scope').couponVisible(options.actor,cId)) return null;
+
+  // Resolve the authoritative primary setting before a read can settle or
+  // disclose source documents, including when the session uses a secondary DB.
+  const dataWindow = await require('./global-data-window-store').readGlobalDataWindow();
+
   const has139 = await checkMigration139();
 
   // PB-3 / §0: If migration 139 is present and settle is not disabled, settle FIRST
   if (has139 && options.settle !== false) {
     try {
-      await settleCouponReservations(cId, null);
+      await settleCouponReservations(cId, options.actor || null);
     } catch {
       // Non-fatal if settlement fails during read
     }
@@ -659,6 +707,9 @@ async function reconcileCoupon(couponId, options = {}) {
            ${has139 ? 'CAST(cr.ReservedQty - ISNULL(cr.ConsumedQty, 0) AS DECIMAL(12, 4))' : 'cr.ReservedQty'} AS RemainingReservedQty,
            cr.BeneficiaryCustId, cr.OwnerCustId,
            cr.CreatedAt,
+           CASE WHEN (soh.SOID IS NOT NULL AND (soh.DocuDate IS NULL OR soh.DocuDate < @globalStartDate))
+                     OR (so.Id IS NOT NULL AND (so.CreatedAt IS NULL OR so.CreatedAt < @globalStartUtc)) THEN 0
+                WHEN soh.SOID IS NOT NULL OR so.Id IS NOT NULL THEN 1 ELSE 0 END AS CarrierWithinWindow,
            COALESCE(st.TransRegistration, so.TruckPlate, soh.TransRegistration) AS TripPlate,
            COALESCE(soe.ConfirmedAt, soh.DocuDate, cr.CreatedAt) AS ConfirmDate,
            COALESCE(benCust.CustName, so.CustName, soh.CustName) AS BeneficiaryName,
@@ -672,36 +723,65 @@ async function reconcileCoupon(couponId, options = {}) {
     WHERE cr.CouponId = @cid AND cr.Status = 'RESERVED' 
       ${has139 ? 'AND (cr.ReservedQty - ISNULL(cr.ConsumedQty, 0)) > 0' : ''}
       AND (cr.ExpiresAt IS NULL OR cr.ExpiresAt > GETUTCDATE())
-  `, { cid: { type: sql.Int, value: cId } })).recordset || [];
+  `, { cid: { type: sql.Int, value: cId }, globalStartDate:{type:sql.Date,value:dataWindow.businessDate}, globalStartUtc:{type:sql.DateTime,value:dataWindow.utcInstant} })).recordset || [];
 
   const cuts = has139
     ? (await wfQuery(`
         SELECT rd.RedemtionID, rd.CouponID, 
                CAST(rd.GoodQty - ISNULL(st.TotalSettled, 0) AS DECIMAL(12, 4)) AS GoodQty,
-               rh.DocuNo, rh.DocuNo AS RedemptionDocuNo, rh.DocuDate, rh.CarLicense, rh.IssueName
+               rh.DocuNo, rh.DocuNo AS RedemptionDocuNo, rh.DocuDate, rh.CarLicense, rh.IssueName,
+               CASE WHEN rh.DocuDate >= @globalStartDate THEN 1 ELSE 0 END AS CutWithinWindow
         FROM dbo.WFRedemtionDT rd WITH (NOLOCK)
         JOIN dbo.WFRedemtionHD rh WITH (NOLOCK) ON rh.RedemtionID = rd.RedemtionID
         LEFT JOIN (
-          SELECT NativeRedemptionId, SUM(SettledQty) AS TotalSettled
+          SELECT NativeRedemptionId, CouponId, SUM(SettledQty) AS TotalSettled
           FROM wf.CouponReservationSettlement WITH (NOLOCK)
-          GROUP BY NativeRedemptionId
-        ) st ON st.NativeRedemptionId = rd.RedemtionID
+          GROUP BY NativeRedemptionId, CouponId
+        ) st ON st.NativeRedemptionId = rd.RedemtionID AND st.CouponId = rd.CouponID
         WHERE rd.CouponID = @cid
           AND (rd.GoodQty - ISNULL(st.TotalSettled, 0)) > 0
-      `, { cid: { type: sql.Int, value: cId } })).recordset || []
+      `, { cid: { type: sql.Int, value: cId }, globalStartDate:{type:sql.Date,value:dataWindow.businessDate} })).recordset || []
     : (await wfQuery(`
         SELECT rd.RedemtionID, rd.CouponID, CAST(rd.GoodQty AS DECIMAL(12, 4)) AS GoodQty,
-               rh.DocuNo, rh.DocuNo AS RedemptionDocuNo, rh.DocuDate, rh.CarLicense, rh.IssueName
+               rh.DocuNo, rh.DocuNo AS RedemptionDocuNo, rh.DocuDate, rh.CarLicense, rh.IssueName,
+               CASE WHEN rh.DocuDate >= @globalStartDate THEN 1 ELSE 0 END AS CutWithinWindow
         FROM dbo.WFRedemtionDT rd WITH (NOLOCK)
         JOIN dbo.WFRedemtionHD rh WITH (NOLOCK) ON rh.RedemtionID = rd.RedemtionID
         WHERE rd.CouponID = @cid
-      `, { cid: { type: sql.Int, value: cId } })).recordset || [];
+      `, { cid: { type: sql.Int, value: cId }, globalStartDate:{type:sql.Date,value:dataWindow.businessDate} })).recordset || [];
 
   const activeReserved = res.reduce((sum, r) => sum + Number(r.RemainingReservedQty != null ? r.RemainingReservedQty : (r.ReservedQty || 0)), 0);
   const nativeRema = Number(coupon.NativeRemaQty || 0);
 
   // Strict matching via pure function
   const matchResult = matchCutsToReservations(res, cuts, options.settlementPolicy || await getCouponSettlementPolicy());
+
+  // The calculation needs the complete history. Only redact its presentation;
+  // dates missing or not provable must never expose document identifiers.
+  const carrierVisible = new Map(res.map(row => [String(row.Id), Number(row.CarrierWithinWindow) === 1]));
+  const cutVisible = new Map();
+  for (const row of cuts) {
+    const id = String(row.RedemtionID);
+    cutVisible.set(id, (cutVisible.get(id) ?? true) && Number(row.CutWithinWindow) === 1);
+  }
+  const doubleCountedReservations = matchResult.doubleCountedReservations.map(row => {
+    const carrierHidden = !carrierVisible.get(String(row.reservationId));
+    const cutHidden = !cutVisible.get(String(row.matchingRedemptionId));
+    return { ...row, carrierSoId:carrierHidden ? null : row.carrierSoId,
+      carrierDocuNo:carrierHidden ? null : row.carrierDocuNo,
+      matchingRedemptionId:cutHidden ? null : row.matchingRedemptionId,
+      matchingRedemptionDocuNo:cutHidden ? null : row.matchingRedemptionDocuNo,
+      carrierDocumentHidden:carrierHidden, redemptionDocumentHidden:cutHidden };
+  });
+  const ambiguousCuts = matchResult.ambiguous.map(row => {
+    const hidden = !cutVisible.get(String(row.redemptionId));
+    if (!hidden) {
+      const visibleIds = (row.candidateReservationIds || []).filter(id => carrierVisible.get(String(id)));
+      return { ...row, candidateReservationIds:visibleIds, sourceDocumentHidden:false,
+        carrierDocumentsHidden:visibleIds.length !== (row.candidateReservationIds || []).length };
+    }
+    return { cutQty:row.cutQty, reason:row.reason, sourceDocumentHidden:true };
+  });
 
   const hasShortfall = nativeRema < activeReserved;
   const hasDoubleCount = matchResult.doubleCountedQty > 0;
@@ -721,8 +801,8 @@ async function reconcileCoupon(couponId, options = {}) {
     shortfallQty: hasShortfall ? Number((activeReserved - nativeRema).toFixed(4)) : 0, // Strict shortfall only per R6 §1.4
     hasDoubleCount,
     doubleCountedQty: matchResult.doubleCountedQty,
-    doubleCountedReservations: matchResult.doubleCountedReservations,
-    ambiguousCuts: matchResult.ambiguous,
+    doubleCountedReservations,
+    ambiguousCuts,
     adjustedAvailableQty: Math.max(0, Number(rawAdjusted.toFixed(4))),
     overcutNotice: nativeRema < activeReserved ? 'รอตรวจการตัดตั๋ว' : null,
   };
@@ -768,7 +848,7 @@ const _settlementLocks = new Map();
  * (COUPON_SETTLEMENT_WINDOW_DAYS default 3, COUPON_GOLIVE_CUTOFF_DATE default none).
  * Returned in the option shape matchCutsToReservations expects.
  */
-async function getCouponSettlementPolicy(queryFn = wfQuery) {
+async function getCouponSettlementPolicy(queryFn = wfQuery, { strict = false } = {}) {
   const policy = { settlementWindowDays: 3, goLiveCutoffDate: null };
   try {
     const s = await queryFn(`
@@ -785,7 +865,8 @@ async function getCouponSettlementPolicy(queryFn = wfQuery) {
         policy.goLiveCutoffDate = String(row.SettingValue).trim();
       }
     }
-  } catch {
+  } catch (err) {
+    if (strict) throw Object.assign(new Error('SETTLEMENT_POLICY_UNAVAILABLE'), {status:503,code:'SETTLEMENT_POLICY_UNAVAILABLE'});
     // wf.SystemSetting unavailable: keep the defaults
   }
   return policy;
@@ -811,7 +892,7 @@ async function settleCouponReservations(couponId, actor = null, deps = {}) {
     }
 
     // 1. Fetch active reservations with lock, selecting remaining reserved qty
-    const res = (await effectiveWfQuery(`
+    const reservationSql = `
       SELECT cr.Id, cr.CouponId, cr.CarrierSoId, cr.CarrierDocuNo, cr.TripId, cr.ReservedQty, 
              ISNULL(cr.ConsumedQty, 0) AS ConsumedQty,
              CAST(cr.ReservedQty - ISNULL(cr.ConsumedQty, 0) AS DECIMAL(12, 4)) AS RemainingReservedQty,
@@ -830,34 +911,39 @@ async function settleCouponReservations(couponId, actor = null, deps = {}) {
       WHERE cr.CouponId = @cid AND cr.Status = 'RESERVED' 
         AND (cr.ReservedQty - ISNULL(cr.ConsumedQty, 0)) > 0
         AND (cr.ExpiresAt IS NULL OR cr.ExpiresAt > GETUTCDATE())
-    `, { cid: { type: sql.Int, value: cId } })).recordset || [];
+    `;
+    const couponInput = { cid: { type: sql.Int, value: cId } };
+    const res = (await effectiveWfQuery(reservationSql, couponInput)).recordset || [];
 
     if (res.length === 0) {
       return { settledCount: 0, settlements: [], ambiguous: [], unmatched: [] };
     }
 
     // 2. Fetch cuts — select only the UNSETTLED part of each cut
-    const cuts = (await effectiveWfQuery(`
+    const cutsSql = `
       SELECT rd.RedemtionID, rd.CouponID, 
              CAST(rd.GoodQty - ISNULL(st.TotalSettled, 0) AS DECIMAL(12, 4)) AS GoodQty,
              rh.DocuNo, rh.DocuNo AS RedemptionDocuNo, rh.DocuDate, rh.CarLicense, rh.IssueName
       FROM dbo.WFRedemtionDT rd WITH (NOLOCK)
       JOIN dbo.WFRedemtionHD rh WITH (NOLOCK) ON rh.RedemtionID = rd.RedemtionID
       LEFT JOIN (
-        SELECT NativeRedemptionId, SUM(SettledQty) AS TotalSettled
+        SELECT NativeRedemptionId, CouponId, SUM(SettledQty) AS TotalSettled
         FROM wf.CouponReservationSettlement WITH (NOLOCK)
-        GROUP BY NativeRedemptionId
-      ) st ON st.NativeRedemptionId = rd.RedemtionID
+        GROUP BY NativeRedemptionId, CouponId
+      ) st ON st.NativeRedemptionId = rd.RedemtionID AND st.CouponId = rd.CouponID
       WHERE rd.CouponID = @cid
         AND (rd.GoodQty - ISNULL(st.TotalSettled, 0)) > 0
-    `, { cid: { type: sql.Int, value: cId } })).recordset || [];
+    `;
+    const cuts = (await effectiveWfQuery(cutsSql, couponInput)).recordset || [];
 
     if (cuts.length === 0) {
       return { settledCount: 0, settlements: [], ambiguous: [], unmatched: [] };
     }
+    if (new Set(cuts.map(c=>String(c.RedemtionID))).size !== cuts.length)
+      throw Object.assign(Error('ใบขนมีรายการตั๋วซ้ำ กรุณาตรวจสอบใน WinSpeed'),{status:409,code:'REDEMPTION_LINE_AMBIGUOUS'});
 
     // 3. Match cuts using pure matcher
-    const policy = deps.settlementPolicy || await getCouponSettlementPolicy(effectiveWfQuery);
+    const policy = deps.settlementPolicy || await getCouponSettlementPolicy(effectiveWfQuery, {strict:true});
     const matchResult = matchCutsToReservations(res, cuts, policy);
     if (matchResult.matches.length === 0) {
       return { settledCount: 0, settlements: [], ambiguous: matchResult.ambiguous, unmatched: matchResult.unmatched || [] };
@@ -866,8 +952,14 @@ async function settleCouponReservations(couponId, actor = null, deps = {}) {
     // 4. Perform idempotent settlement in wfTransaction
     const settledRows = [];
     const actingUid = actor && (actor.userId || actor.sub) ? Number(actor.userId || actor.sub) : null;
+    if (actor && !actingUid) throw Object.assign(new Error('COUPON_AUDIT_IDENTITY_REQUIRED'), { status: 403 });
+    if (actingUid) await requireCouponAuditActor(actingUid);
 
     await effectiveWfTransaction(async (tx) => {
+      await (deps.validateSettlementSnapshot || require('./coupon-settlement-fence').validateSettlementSnapshot)(tx, {
+        couponId:cId, snapshots:[{text:reservationSql,inputs:couponInput,rows:res},{text:cutsSql,inputs:couponInput,rows:cuts}],
+        policy, readPolicy:deps.settlementPolicy ? null : query => getCouponSettlementPolicy(query,{strict:true}),
+      });
       for (const m of matchResult.matches) {
         // Check if already settled
         const existsCheck = await tx.request()
@@ -894,7 +986,7 @@ async function settleCouponReservations(couponId, actor = null, deps = {}) {
           `);
 
         // Update wf.CouponReservation: increment ConsumedQty, move to CONSUMED if fully consumed
-        await tx.request()
+        const updated = await tx.request()
           .input('resId', sql.BigInt, Number(m.reservationId))
           .input('qty', sql.Decimal(12, 4), m.matchedQty)
           .query(`
@@ -902,12 +994,21 @@ async function settleCouponReservations(couponId, actor = null, deps = {}) {
             SET ConsumedQty = ISNULL(ConsumedQty, 0) + @qty,
                 Status = CASE WHEN ISNULL(ConsumedQty, 0) + @qty >= ReservedQty THEN 'CONSUMED' ELSE Status END,
                 UpdatedAt = GETUTCDATE()
-            WHERE Id = @resId
+            WHERE Id = @resId AND Status = 'RESERVED'
+              AND (ExpiresAt IS NULL OR ExpiresAt > GETUTCDATE())
+              AND ISNULL(ConsumedQty,0) + @qty <= ReservedQty
           `);
+        if (Number(updated.rowsAffected?.[0]) !== 1)
+          throw Object.assign(Error('COUPON_SETTLEMENT_STALE'), {status:409,code:'COUPON_SETTLEMENT_STALE'});
 
+        await (deps.logChangeEvent || logChangeEvent)(tx, {
+          entityType: 'COUPON_RESERVATION', entityId: String(m.reservationId), action: 'AUTO_SETTLE',
+          afterJson: { couponId:cId, redemptionId:Number(m.redemptionId), settledQty:m.matchedQty },
+          reasonCode: 'AUTO_SETTLEMENT', userId: String(actingUid || 'SYSTEM'),
+        });
         settledRows.push(m);
       }
-    });
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
 
     return {
       settledCount: settledRows.length,
@@ -957,7 +1058,7 @@ async function manualSettleCouponCut(params = {}, options = {}) {
   }
 
   // 4. Fetch reservation with details
-  const resRows = (await effectiveWfQuery(`
+  const reservationSql = `
     SELECT cr.Id, cr.CouponId, cr.CarrierSoId, cr.CarrierDocuNo, cr.TripId, cr.ReservedQty, 
            ISNULL(cr.ConsumedQty, 0) AS ConsumedQty,
            CAST(cr.ReservedQty - ISNULL(cr.ConsumedQty, 0) AS DECIMAL(12, 4)) AS RemainingReservedQty,
@@ -971,7 +1072,9 @@ async function manualSettleCouponCut(params = {}, options = {}) {
     LEFT JOIN dbo.SOHD soh WITH (NOLOCK) ON CAST(soh.SOID AS VARCHAR(50)) = CAST(cr.CarrierSoId AS VARCHAR(50))
     LEFT JOIN dbo.EMCust benCust WITH (NOLOCK) ON benCust.CustID = CASE WHEN ISNUMERIC(cr.BeneficiaryCustId) = 1 THEN CAST(cr.BeneficiaryCustId AS INT) END
     WHERE cr.Id = @id
-  `, { id: { type: sql.BigInt, value: resId } })).recordset || [];
+  `;
+  const reservationInput={ id: { type: sql.BigInt, value: resId } };
+  const resRows = (await effectiveWfQuery(reservationSql, reservationInput)).recordset || [];
 
   const reservation = resRows[0];
   if (!reservation || reservation.Status !== 'RESERVED' || Number(reservation.RemainingReservedQty) <= 0) {
@@ -986,7 +1089,7 @@ async function manualSettleCouponCut(params = {}, options = {}) {
 
   try {
     // 5. Fetch cut from WinSpeed
-    const cutRows = (await effectiveWfQuery(`
+    const cutsSql = `
       SELECT rd.RedemtionID, rd.CouponID, 
              CAST(rd.GoodQty AS DECIMAL(12, 4)) AS OriginalGoodQty,
              CAST(rd.GoodQty - ISNULL(st.TotalSettled, 0) AS DECIMAL(12, 4)) AS GoodQty,
@@ -994,26 +1097,31 @@ async function manualSettleCouponCut(params = {}, options = {}) {
       FROM dbo.WFRedemtionDT rd WITH (NOLOCK)
       JOIN dbo.WFRedemtionHD rh WITH (NOLOCK) ON rh.RedemtionID = rd.RedemtionID
       LEFT JOIN (
-        SELECT NativeRedemptionId, SUM(SettledQty) AS TotalSettled
+        SELECT NativeRedemptionId, CouponId, SUM(SettledQty) AS TotalSettled
         FROM wf.CouponReservationSettlement WITH (NOLOCK)
-        GROUP BY NativeRedemptionId
-      ) st ON st.NativeRedemptionId = rd.RedemtionID
-      WHERE rd.RedemtionID = @redemId
-    `, { redemId: { type: sql.BigInt, value: redemId } })).recordset || [];
+        GROUP BY NativeRedemptionId, CouponId
+      ) st ON st.NativeRedemptionId = rd.RedemtionID AND st.CouponId = rd.CouponID
+      WHERE rd.RedemtionID = @redemId AND rd.CouponID = @cid
+    `;
+    const cutsInput={ redemId: { type: sql.BigInt, value: redemId }, cid: { type: sql.Int, value: cId } };
+    const cutRows = (await effectiveWfQuery(cutsSql, cutsInput)).recordset || [];
 
     const cut = cutRows[0];
     if (!cut) {
       throw Object.assign(new Error(`ไม่พบรายการตัดตั๋วรหัส ${redemId} ในระบบ`), { status: 404 });
     }
+    if (cutRows.length !== 1) throw Object.assign(new Error('ใบขนมีรายการตั๋วซ้ำ กรุณาตรวจสอบใน WinSpeed'), { status: 409, code: 'REDEMPTION_LINE_AMBIGUOUS' });
 
     // Guard: already settled check
-    const existingSettlement = (await effectiveWfQuery(`
+    const existingSql = `
       SELECT 1 FROM wf.CouponReservationSettlement WITH (NOLOCK)
       WHERE ReservationId = @resId AND NativeRedemptionId = @redemId
-    `, {
+    `;
+    const existingInput = {
       resId: { type: sql.BigInt, value: resId },
       redemId: { type: sql.BigInt, value: redemId }
-    })).recordset;
+    };
+    const existingSettlement = (await effectiveWfQuery(existingSql, existingInput)).recordset || [];
 
     if (existingSettlement?.length > 0 || Number(cut.GoodQty) <= 0) {
       throw Object.assign(new Error('รายการตัดตั๋วนี้ได้รับการชำระ/จับคู่ไปแล้ว (Already settled)'), { status: 409 });
@@ -1025,7 +1133,7 @@ async function manualSettleCouponCut(params = {}, options = {}) {
     }
 
     // R10.7-1: Date cutoff checks (Go-live and N-day window before the reservation was created)
-    const policy = deps.settlementPolicy || await getCouponSettlementPolicy(effectiveWfQuery);
+    const policy = deps.settlementPolicy || await getCouponSettlementPolicy(effectiveWfQuery, {strict:true});
     const nDays = policy.settlementWindowDays;
     const goLiveCutoff = policy.goLiveCutoffDate;
     const cutDateStr = toBangkokDateString(cut.DocuDate);
@@ -1087,9 +1195,16 @@ async function manualSettleCouponCut(params = {}, options = {}) {
     }
 
     const actingUid = actor && (actor.userId || actor.sub) ? Number(actor.userId || actor.sub) : null;
+    if (actor && !actingUid) throw Object.assign(new Error('COUPON_AUDIT_IDENTITY_REQUIRED'), { status: 403 });
+    if (actingUid) await requireCouponAuditActor(actingUid);
     let newStatus = reservation.Status;
 
     await effectiveWfTransaction(async (tx) => {
+      await (deps.validateSettlementSnapshot || require('./coupon-settlement-fence').validateSettlementSnapshot)(tx, {
+        couponId:cId, snapshots:[{text:reservationSql,inputs:reservationInput,rows:resRows},{text:cutsSql,inputs:cutsInput,rows:cutRows},
+          {text:existingSql,inputs:existingInput,rows:existingSettlement}],
+        policy, readPolicy:deps.settlementPolicy ? null : query => getCouponSettlementPolicy(query,{strict:true}),
+      });
       // Insert audit row in wf.CouponReservationSettlement with Note "MANUAL: <reason>"
       await tx.request()
         .input('resId', sql.BigInt, resId)
@@ -1144,8 +1259,12 @@ async function manualSettleCouponCut(params = {}, options = {}) {
         status: newStatus,
         reason: reason.trim(),
         settledBy: actingUid,
-      }, { tx });
-    });
+      }, null, { strict:true, query:async(text,inputs)=>{
+        const request=tx.request();
+        for(const [name,{type,value}] of Object.entries(inputs))request.input(name,type,value);
+        return request.query(text);
+      }});
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
 
     return {
       ok: true,
@@ -1376,6 +1495,7 @@ async function grantBeneficiary({
   if (fromDate && toDate && fromDate > toDate) {
     throw Object.assign(new Error('วันที่เริ่มต้นต้องไม่มากกว่าวันที่สิ้นสุด'), { status: 400 });
   }
+  await requireCouponAuditActor(userId);
 
   // Validate customers exist in dbo.EMCust
   const custCheck = await wfQuery(`
@@ -1489,7 +1609,11 @@ async function grantBeneficiary({
         )
       `);
 
-    return { id: res.recordset[0].Id, status: 'ACTIVE' };
+    const grantId = res.recordset[0].Id;
+    await logChangeEvent(tx, { entityType: 'COUPON_BENEFICIARY', entityId: String(grantId), action: 'GRANT',
+      afterJson: { ownerCustId: ownStr, beneficiaryCustId: benStr, scope: scp, effectiveFrom: fromDate, effectiveTo: toDate, status: 'ACTIVE' },
+      reasonCode: 'COUPON_BENEFICIARY', reasonText: rsn.slice(0, 500), userId: String(userId) });
+    return { id: grantId, status: 'ACTIVE' };
   });
 }
 
@@ -1503,6 +1627,7 @@ async function revokeBeneficiary(id, reason, userId = 1) {
   if (!rsn || rsn.length < 3) {
     throw Object.assign(new Error('กรุณาระบุเหตุผลในการถอนสิทธิ์ (อย่างน้อย 3 ตัวอักษร)'), { status: 400 });
   }
+  await requireCouponAuditActor(userId);
 
   return await wfTransaction(async (tx) => {
     const grant = (await tx.request()
@@ -1540,12 +1665,14 @@ async function revokeBeneficiary(id, reason, userId = 1) {
       .input('reason', sql.NVarChar(255), 'ถอนสิทธิ์ตั๋วร่วม')
       .input('uid', sql.Int, userId)
       .query(`
+        DECLARE @cancelled TABLE (Id INT NOT NULL);
         UPDATE wf.CouponReservation
         SET Status = 'CANCELLED',
             CancelledAt = GETUTCDATE(),
             CancelReason = @reason,
             CancelledBy = @uid,
             UpdatedAt = GETUTCDATE()
+        OUTPUT INSERTED.Id INTO @cancelled(Id)
         WHERE OwnerCustId = @own
           AND BeneficiaryCustId = @ben
           AND Status = 'RESERVED'
@@ -1559,9 +1686,14 @@ async function revokeBeneficiary(id, reason, userId = 1) {
                 (so.Id IS NOT NULL AND so.Status NOT IN ('CANCELLED', 'DELETED'))
                 OR (hd.SOID IS NOT NULL AND hd.DocuStatus NOT IN ('C', 'CANCELLED', 'REJECTED'))
               )
-          )
+          );
+        SELECT Id FROM @cancelled;
       `);
-    const cancelledCount = unattachedCancel.rowsAffected?.[0] || 0;
+    const cancelledIds = (unattachedCancel.recordset || []).map(row => Number(row.Id));
+    const cancelledCount = cancelledIds.length;
+    await logChangeEvent(tx, { entityType: 'COUPON_BENEFICIARY', entityId: String(gId), action: 'REVOKE',
+      beforeJson: { status: grant.Status }, afterJson: { status: 'REVOKED', cancelledReservationIds: cancelledIds },
+      reasonCode: 'COUPON_BENEFICIARY', reasonText: rsn.slice(0, 500), userId: String(userId) });
 
     return { id: gId, status: 'REVOKED', idempotent: false, cancelledUnattachedReservations: cancelledCount };
   });
@@ -2655,24 +2787,21 @@ async function updateCouponExpiry(couponId, expiryDate, userId, note = null) {
   }
 
   const expDateStr = String(expiryDate).trim();
-  await wfQuery(`
-    IF EXISTS (SELECT 1 FROM wf.CouponExpiry WHERE CouponId = @cid)
-    BEGIN
-      UPDATE wf.CouponExpiry
-      SET ExpiryDate = @exp, Source = 'MANUAL', SetBy = @uid, SetAt = GETUTCDATE(), Note = @note, UpdatedAt = GETUTCDATE()
-      WHERE CouponId = @cid
-    END
-    ELSE
-    BEGIN
-      INSERT INTO wf.CouponExpiry (CouponId, ExpiryDate, Source, SetBy, SetAt, Note, UpdatedAt)
-      VALUES (@cid, @exp, 'MANUAL', @uid, GETUTCDATE(), @note, GETUTCDATE())
-    END
-  `, {
-    cid: { type: sql.Int, value: cId },
-    exp: { type: sql.Date, value: new Date(expDateStr) },
-    uid: { type: sql.Int, value: Number(userId) || null },
-    note: { type: sql.NVarChar(255), value: note || null },
-  });
+  const uid = Number(userId);
+  if (!Number.isSafeInteger(uid) || uid <= 0) throw Object.assign(new Error('COUPON_AUDIT_IDENTITY_REQUIRED'), { status: 403 });
+  await requireCouponAuditActor(uid);
+  await wfTransaction(async tx => {
+    const coupon = (await tx.request().input('cid', sql.Int, cId).query('SELECT CouponID FROM dbo.WFCoupon WITH (NOLOCK) WHERE CouponID=@cid')).recordset?.[0];
+    if (!coupon) throw Object.assign(new Error('ไม่พบตั๋วปุ๋ย'), { status: 404 });
+    const before = (await tx.request().input('cid', sql.Int, cId).query('SELECT ExpiryDate, Source, SetBy, Note FROM wf.CouponExpiry WITH (UPDLOCK,HOLDLOCK) WHERE CouponId=@cid')).recordset?.[0] || null;
+    const request = tx.request().input('cid', sql.Int, cId).input('exp', sql.Date, new Date(expDateStr))
+      .input('uid', sql.Int, uid).input('note', sql.NVarChar(255), note || null);
+    if (before) await request.query("UPDATE wf.CouponExpiry SET ExpiryDate=@exp, Source='MANUAL', SetBy=@uid, SetAt=GETUTCDATE(), Note=@note, UpdatedAt=GETUTCDATE() WHERE CouponId=@cid");
+    else await request.query("INSERT INTO wf.CouponExpiry (CouponId,ExpiryDate,Source,SetBy,SetAt,Note,UpdatedAt) VALUES (@cid,@exp,'MANUAL',@uid,GETUTCDATE(),@note,GETUTCDATE())");
+    await logChangeEvent(tx, { entityType: 'COUPON_EXPIRY', entityId: String(cId), action: before ? 'UPDATE' : 'CREATE',
+      beforeJson: before, afterJson: { expiryDate: expDateStr, source: 'MANUAL' }, reasonCode: 'COUPON_EXPIRY_SETTING',
+      reasonText: note ? String(note).slice(0, 500) : null, userId: String(uid) });
+  }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
 
   return getCouponExpiryInfo(cId);
 }

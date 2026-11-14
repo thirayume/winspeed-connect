@@ -851,7 +851,7 @@ export function CreateSODialog({
       isGiveaway: false,
       isControlTicketDrawn: false,
       isCouponDrawn: true,
-      refCouponDocuNo: coupon.sourceDocuNo,
+      refCouponDocuNo: coupon.couponNo,
       couponReservationId: result.id,
       masterQty: qty,
       childQty: 0

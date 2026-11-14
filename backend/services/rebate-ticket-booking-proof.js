@@ -43,8 +43,10 @@ async function lockTicketBookingContext(query,{user,bookingId,lineNo,requestedTo
   {bookingId,lineNo,startDate})).recordset||[];
   if(rows.length!==1)fail('TICKET_BOOKING_NOT_FOUND',404);
   const row=rows[0],customer=Number(row.CustID),good=Number(row.GoodID);
+  const documentStatus=String(row.DocuStatus||'').trim().toUpperCase();
+  const ownerEmployeeId=row.EmpID==null?null:Number(row.EmpID);
   if(Number(row.SOID)!==bookingId||Number(row.ListNo)!==lineNo||!id(customer)||!id(good)||
-      !['N','Y'].includes(String(row.DocuStatus||'').trim().toUpperCase())||
+      !['N','Y'].includes(documentStatus)||(ownerEmployeeId!==null&&!id(ownerEmployeeId))||
       !isValidStartDate(row.DocuDate)||!isValidStartDate(row.Today)||row.DocuDate>row.Today||
       !id(Number(row.GoodUnitID2))||String(row.GoodUnitCode||'').trim()!=='ตัน'||
       String(row.GoodUnitName||'').trim()!=='ตัน')fail('TICKET_BOOKING_SOURCE_UNCONFIRMED');
@@ -98,16 +100,24 @@ async function lockTicketBookingContext(query,{user,bookingId,lineNo,requestedTo
      selected[0].quantity!==ticketQuantity(lineQty)||selected[0].price!==money(row.GoodPrice2)||
      selected[0].amount!==money(row.GoodAmnt))fail('TICKET_BOOKING_FINANCIAL_SOURCE_UNCONFIRMED');
   const crypto=require('crypto');
-  const fingerprint=crypto.createHash('sha256').update(JSON.stringify({version:3,bookingId,lineNo,customer,good,
+  const fingerprintPayload={version:4,bookingId,lineNo,customer,good,
+    documentStatus,ownerEmployeeId,
     date:row.DocuDate,unit:Number(row.GoodUnitID2),quantity:ticketQuantity(lineQty),docuNo:String(row.DocuNo||'').trim(),
     price:money(row.GoodPrice2),amount:money(row.GoodAmnt),
     financial:Object.fromEntries(fields.map(k=>[k,money(row[k])])),vatType:String(row.VatType).trim(),
     billDiscountFormula:row.BillDiscFormula==null?null:String(row.BillDiscFormula),
-    vatRateBits:String(row.VatRateBits).toUpperCase(),lines:canonicalLines})).digest('hex');
+    vatRateBits:String(row.VatRateBits).toUpperCase(),lines:canonicalLines};
+  // Keep the exact v3 serialization for recognizing existing receipts. V3 did
+  // not bind status/owner; matching it alone must never authorize replay.
+  const {documentStatus:_status,ownerEmployeeId:_owner,...legacyPayload}=fingerprintPayload;
+  legacyPayload.version=3;
+  const hash=payload=>crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  const fingerprint=hash(fingerprintPayload),legacyFingerprint=hash(legacyPayload);
   if(!String(row.DocuNo||'').trim())fail('TICKET_BOOKING_FINANCIAL_SOURCE_UNCONFIRMED');
   return {bookingId,lineNo,bookingDate:row.DocuDate,today:row.Today,identity,business,customer,good,
     requestedTonnage:ticketQuantity(qty),lineTonnage:ticketQuantity(lineQty),docuNo:String(row.DocuNo).trim(),
-    nativeFingerprint:fingerprint,financial:{price:String(row.GoodPrice2),amount:String(row.GoodAmnt),
+    nativeFingerprint:fingerprint,legacyNativeFingerprint:legacyFingerprint,documentStatus,ownerEmployeeId,
+    financial:{price:String(row.GoodPrice2),amount:String(row.GoodAmnt),
       billDiscount:String(row.BillDiscAmnt),net:String(row.NetAmnt),
       nativeFields:Object.fromEntries(fields.map(k=>[k,money(row[k])])),
       vatType:String(row.VatType).trim(),vatRateBits:String(row.VatRateBits).toUpperCase()}};

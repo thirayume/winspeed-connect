@@ -7,6 +7,7 @@ let raceFixture = false;
 const db = h.installDbStub(({ text, inputs }) => {
   if (raceFixture && /SELECT 1 AS ok FROM wf\.EditRequest/.test(text)) return [{ ok: 1 }];
   if (raceFixture && /SELECT \* FROM wf\.EditRequest WHERE Id/.test(text)) return [{ Id: 1, Status: 'PENDING', RequestedBy: 12, SOID: null }];
+  if (raceFixture && /SELECT \* FROM wf\.EditRequest WITH \(UPDLOCK,HOLDLOCK\)/.test(text)) return [{ Id: 1, Status: 'PENDING', RequestedBy: 12, SOID: null }];
   if (raceFixture && /UPDATE\s+wf\.EditRequest/i.test(text)) return { recordset: [], rowsAffected: [0] };
   if (/FROM\s+wf\.(EditRequest r|PriceApproval pa|TripMultiCustomerApproval a)/.test(text) && /@globalStartUtc/.test(text)) {
     const rows = [
@@ -48,7 +49,7 @@ test('a concurrent status change prevents approval and cancellation side effects
       assert.equal(response.status, 409, JSON.stringify(response.body));
       const calls = db.calls.slice(before);
       const update = calls.find(call => /UPDATE\s+wf\.EditRequest/i.test(call.text));
-      assert.match(update.text, /RequestedAt >= @globalStartUtc/);
+      assert.match(update.text, /RequestedAt >= @start/);
       assert.ok(!calls.some(call => /UPDATE\s+wf\.SalesOrderExt/i.test(call.text)));
     }
   } finally { raceFixture = false; }

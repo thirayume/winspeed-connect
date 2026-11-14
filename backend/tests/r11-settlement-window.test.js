@@ -27,8 +27,8 @@ require.cache[dbPath] = {
 const { manualSettleCouponCut } = require('../services/coupon-service');
 const { matchCutsToReservations } = require('../services/coupon-settlement-matcher');
 
-function makeDeps({ cutDate, cutPlate = 'กพ70-9233/9234', tripPlate = 'กพ70-9233/9234' }) {
-  const writes = [];
+function makeDeps({ cutDate, cutPlate = 'กพ70-9233/9234', tripPlate = 'กพ70-9233/9234', duplicateCut = false }) {
+  const writes = [], reads = [];
   const reservation = {
     Id: 20, CouponId: 246003, CarrierSoId: 278026, CarrierDocuNo: 'K69-02764', TripId: 53,
     ReservedQty: 1, ConsumedQty: 0, RemainingReservedQty: 1, BeneficiaryCustId: '16002', OwnerCustId: '1141',
@@ -48,22 +48,32 @@ function makeDeps({ cutDate, cutPlate = 'กพ70-9233/9234', tripPlate = 'ก�
     };
   };
   return {
-    writes,
+    writes, reads,
     deps: {
       checkMigration139: async () => true,
       settlementPolicy: { settlementWindowDays: 3, goLiveCutoffDate: '2026-10-01' },
-      wfQuery: async (text) => {
+      wfQuery: async (text, params) => {
+        reads.push({text,params});
         if (/FROM wf\.CouponReservation cr/.test(text)) return { recordset: [reservation] };
-        if (/FROM dbo\.WFRedemtionDT rd/.test(text)) return { recordset: [cut] };
+        if (/FROM dbo\.WFRedemtionDT rd/.test(text)) return { recordset: duplicateCut ? [cut, {...cut}] : [cut] };
         if (/FROM wf\.CouponReservationSettlement/.test(text)) return { recordset: [] };
         return { recordset: [] };
       },
-      wfTransaction: async (fn) => fn({ request: req }),
+      wfTransaction: async (fn) => fn({ request: req }), validateSettlementSnapshot: async()=>{},
     },
   };
 }
 
 const base = { reservationId: 20, redemptionId: 183005, reason: 'UAT R11 manual settle check', role: 'ACCOUNTING', actor: { userId: 40, role: 'ACCOUNTING' } };
+
+test('manual settlement scopes the cut to the reserved coupon and rejects duplicate matching lines',async()=>{
+  const f=makeDeps({cutDate:'2026-10-06T00:00:00Z',duplicateCut:true});
+  await assert.rejects(manualSettleCouponCut({...base,deps:f.deps}),{code:'REDEMPTION_LINE_AMBIGUOUS'});
+  const read=f.reads.find(r=>/FROM dbo\.WFRedemtionDT rd/.test(r.text));
+  assert.match(read.text,/rd\.RedemtionID = @redemId AND rd\.CouponID = @cid/);
+  assert.match(read.text,/GROUP BY NativeRedemptionId, CouponId/);
+  assert.equal(read.params.cid.value,246003);assert.equal(f.writes.length,0);
+});
 
 test('R10.7-1: a cut dated before the go-live cutoff cannot be settled manually', async () => {
   const { deps } = makeDeps({ cutDate: '2026-09-30T00:00:00Z' });

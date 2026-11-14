@@ -304,7 +304,8 @@ test('12. Stubbed settlement test (R8-2): cut number reaches inserted settlement
       }
       return { recordset: [] };
     },
-    wfTransaction: async (fn) => fn(mockTx)
+    wfTransaction: async (fn) => fn(mockTx), validateSettlementSnapshot: async()=>{},
+    logChangeEvent: async (_tx,event) => { assert.equal(event.action, 'AUTO_SETTLE'); assert.equal(event.userId, '43'); }
   };
 
   const result = await settleCouponReservations(246000, { userId: 43 }, stubDeps);

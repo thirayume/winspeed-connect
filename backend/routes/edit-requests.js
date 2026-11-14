@@ -58,7 +58,9 @@ async function requireCurrentEditRequest(req, res, next) {
 async function requireEditRequestInScope(req, res, next) {
   try {
     const scope = await getVisibleScope(req.user);
-    if (scope.all) return next();
+    const actor = require('../services/business-identity').actorPerspective(req.user);
+    const actorScope = actor === req.user ? scope : await getVisibleScope(actor);
+    if (scope.all && actorScope.all) return next();
     const r = (await wfQuery(`
       SELECT r.RequestedBy, CAST(s.EmpID AS VARCHAR(20)) AS EmpID
       FROM wf.EditRequest r
@@ -66,7 +68,8 @@ async function requireEditRequestInScope(req, res, next) {
         WHEN LTRIM(RTRIM(r.SOID)) NOT LIKE '%[^0-9]%' AND LEN(LTRIM(RTRIM(r.SOID))) BETWEEN 1 AND 9
         THEN CAST(LTRIM(RTRIM(r.SOID)) AS INT) END
       WHERE r.Id = @id`, { id: { type: sql.Int, value: Number(req.params.id) } })).recordset?.[0];
-    if (!r || !(inScope(scope, { userId: r.RequestedBy }) || inScope(scope, { empId: r.EmpID }))) {
+    const owner = r && { userId: r.RequestedBy, empId: r.EmpID };
+    if (!r || !inScope(scope, owner) || !inScope(actorScope, owner)) {
       return res.status(404).json({ message: 'ไม่พบคำขอนี้' });
     }
     next();
@@ -147,6 +150,7 @@ async function loadTarget(soid) {
   const r = await wfQuery(`
     SELECT TOP 1 CAST(s.SOID AS VARCHAR(50)) AS SOID, RTRIM(s.DocuNo) AS DocuNo,
            CAST(s.CustID AS VARCHAR(50)) AS CustId, RTRIM(c.CustName) AS CustName,
+           CAST(s.EmpID AS VARCHAR(20)) AS EmpId, e.SalesUserId,
            e.TripId, t.TripCode, t.TransRegistration
     FROM   dbo.SOHD s
     LEFT   JOIN dbo.EMCust c ON c.CustID = s.CustID
@@ -167,6 +171,15 @@ async function loadTarget(soid) {
     WHERE  s.SOID = @soid AND s.DocuType = 103 AND s.DocuDate >= @globalStartDate`,
     { soid: { type: sql.Int, value: Number(soid) }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } });
   return camelizeRow(r.recordset[0]);
+}
+
+async function canSeeEditTarget(user, target) {
+  const { actorPerspective } = require('../services/business-identity');
+  const effectiveScope = await getVisibleScope(user);
+  const actor = actorPerspective(user);
+  const actorScope = actor === user ? effectiveScope : await getVisibleScope(actor);
+  const ownership = { userId: target.salesUserId, empId: target.empId };
+  return inScope(effectiveScope, ownership) && inScope(actorScope, ownership);
 }
 
 // ── GET /api/edit-requests/reasons?stage=CONFIRMED ────────────
@@ -210,7 +223,7 @@ router.get('/hold-capability', async (req, res) => {
 router.get('/stage/:soid', async (req, res) => {
   try {
     const target = await loadTarget(req.params.soid);
-    if (!target) return res.status(404).json({ message: 'ไม่พบใบสั่งขายนี้' });
+    if (!target || !await canSeeEditTarget(req.user, target)) return res.status(404).json({ message: 'ไม่พบใบสั่งขายนี้' });
 
     const st = await resolveStage(req.params.soid);
     const pending = await wfQuery(`
@@ -293,7 +306,7 @@ router.post('/', requireCapability('edit-request.create'), async (req, res) => {
     if (!reasonCode) return res.status(400).json({ message: 'ต้องเลือกเหตุผล' });
 
     const target = await loadTarget(soid);
-    if (!target) return res.status(404).json({ message: 'ไม่พบใบสั่งขายนี้' });
+    if (!target || !await canSeeEditTarget(req.user, target)) return res.status(404).json({ message: 'ไม่พบใบสั่งขายนี้' });
 
     const issued = await findIssuedDelivery(soid);
     if (issued) return res.status(409).json({ message: `บิลนี้ออกใบสั่งขาย ${issued} ใน WinSpeed แล้ว แก้ไขจาก Sale-App ไม่ได้ ต้องดำเนินการใน WinSpeed`, code: 'WINSPEED_DELIVERY_ISSUED' });
@@ -325,52 +338,49 @@ router.post('/', requireCapability('edit-request.create'), async (req, res) => {
     if (reason.ReasonCode === 'OTHER' && detail.length < 5)
       return res.status(400).json({ message: 'เลือก "อื่น ๆ" ต้องระบุรายละเอียดอย่างน้อย 5 ตัวอักษร' });
 
-    const dup = (await wfQuery(`
-      SELECT TOP 1 Id FROM wf.EditRequest WHERE SOID = @soid AND Status = 'PENDING'`,
-      { soid: { type: sql.VarChar(50), value: String(soid) } })).recordset[0];
-    if (dup) return res.status(409).json({ message: `ใบนี้มีคำขอ #${dup.Id} รออนุมัติอยู่แล้ว` });
-
-    // เหตุผลเป็นตัวกำหนดว่าต้อง Hold ไหม ไม่ใช่ผู้ขอ
-    // และไม่ Hold เลยเมื่อยังไม่มีรถเข้ามา เพราะไม่มีอะไรให้หยุด
+    // เหตุผลเป็นตัวกำหนด Hold แต่ยังเป็นเพียงการแจ้งเตือนในแอป
     const hold = reason.RequiresHold && st.stage !== 'CONFIRMED' ? 1 : 0;
+    const { businessIds } = require('../services/business-identity');
+    const ids = businessIds(req.user);
+    if (!ids.effective || !ids.actor) throw Object.assign(new Error('EDIT_AUDIT_IDENTITY_REQUIRED'), { status: 403 });
+    if (req.user.isImpersonating && !await require('../services/request-context').hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId'))
+      throw Object.assign(new Error('EDIT_ACTOR_AUDIT_UNAVAILABLE'), { status: 503 });
+    const id = await wfTransaction(async tx => {
+      const dup = (await tx.request().input('soid', sql.VarChar(50), String(soid))
+        .query("SELECT TOP 1 Id FROM wf.EditRequest WITH (UPDLOCK,HOLDLOCK) WHERE SOID=@soid AND Status='PENDING'")).recordset?.[0];
+      if (dup) throw Object.assign(new Error('ใบนี้มีคำขอรออนุมัติอยู่แล้ว'), { status: 409 });
+      const ins = await tx.request().input('soid', sql.VarChar(50), String(soid))
+        .input('tripId', sql.Int, target.tripId ? Number(target.tripId) : null).input('stage', sql.VarChar(20), st.stage)
+        .input('code', sql.VarChar(30), reason.ReasonCode).input('detail', sql.NVarChar(1000), detail || null)
+        .input('hold', sql.Bit, hold).input('by', sql.Int, ids.effective)
+        .query('INSERT INTO wf.EditRequest (SOID,TripId,StageAtRequest,ReasonCode,ReasonDetail,HoldTruck,RequestedBy) OUTPUT inserted.Id VALUES (@soid,@tripId,@stage,@code,@detail,@hold,@by)');
+      const created = ins.recordset?.[0]?.Id;
+      if (!created) throw new Error('EDIT_REQUEST_INSERT_ID_MISSING');
+      await require('../services/policy-contract').logChangeEvent(tx, { entityType:'EDIT_REQUEST', entityId:String(created), action:'CREATE',
+        afterJson:{ soid:String(soid), stage:st.stage, reasonCode:reason.ReasonCode, holdTruck:Boolean(hold) },
+        reasonCode:'EDIT_REQUEST_CREATE', reasonText:detail ? detail.slice(0,500) : null, userId:String(ids.effective), ipAddress:req.ip });
+      return created;
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
 
-    const ins = await wfQuery(`
-      INSERT INTO wf.EditRequest (SOID, TripId, StageAtRequest, ReasonCode, ReasonDetail, HoldTruck, RequestedBy)
-      OUTPUT inserted.Id
-      VALUES (@soid, @tripId, @stage, @code, @detail, @hold, @by)`, {
-        soid:   { type: sql.VarChar(50),   value: String(soid) },
-        tripId: { type: sql.Int,           value: target.tripId ? Number(target.tripId) : null },
-        stage:  { type: sql.VarChar(20),   value: st.stage },
-        code:   { type: sql.VarChar(30),   value: reason.ReasonCode },
-        detail: { type: sql.NVarChar(1000), value: detail || null },
-        hold:   { type: sql.Bit,           value: hold },
-        by:     { type: sql.Int,           value: req.user.sub },
-      });
-
-    const id = ins.recordset[0].Id;
-
-    // Hold ที่มีผลถึง WINSpeed — ปิดไว้เป็นค่าเริ่มต้น
-    // ถ้าสวิตช์ปิดจะได้ applied=false ซึ่งไม่ใช่ error แต่แปลว่า Hold มีผลเฉพาะในแอป
-    let winspeedHold = null;
+    let winspeedHold = null, holdWarning = null;
     if (hold) {
-      winspeedHold = await truckHold.applyHold(soid, {
-        editRequestId: id, note: reason.ReasonText, actedBy: req.user.sub,
-      });
+      try { winspeedHold = await truckHold.applyHold(soid, { editRequestId:id, note:reason.ReasonText, actedBy:ids.effective }); }
+      catch (error) { console.error('[edit-requests/apply-hold]', error); holdWarning = 'ส่งคำขอแล้ว แต่บันทึก Hold ไม่สำเร็จ กรุณาให้ผู้ดูแลตรวจสอบ'; }
     }
 
     broadcast('edit_request', { id, soid: String(soid), action: 'created', hold: !!hold });
 
     res.json({
       id, stage: st.stage, stageLabel: STAGE_LABEL[st.stage], holdTruck: !!hold,
-      winspeedHold,
+      winspeedHold, holdWarning,
       message: hold
-        ? `ส่งคำขอ #${id} แล้ว — รถถูก Hold จนกว่าจะมีการอนุมัติ` +
-          (winspeedHold && winspeedHold.applied ? ' · ส่งถึง WINSpeed แล้ว' : '')
+        ? `ส่งคำขอ #${id} แล้ว — แสดงสถานะ Hold ในแอป กรุณาแจ้งพนักงานควบคุมรถ` +
+          (holdWarning ? ` · ${holdWarning}` : '')
         : `ส่งคำขอ #${id} แล้ว รออนุมัติ`,
     });
   } catch (e) {
     console.error('[edit-requests/create]', e);
-    res.status(500).json({ message: e.message });
+    res.status(e.status || 500).json({ message: e.message });
   }
 });
 
@@ -392,119 +402,122 @@ router.patch('/:id/approve', requireRole(...APPROVER_ROLES), requireCurrentEditR
     const issued = r.SOID ? await findIssuedDelivery(r.SOID) : null;
     if (issued) return res.status(409).json({ message: `บิลนี้ออกใบสั่งขาย ${issued} ใน WinSpeed แล้ว แก้ไขจาก Sale-App ไม่ได้ ต้องดำเนินการใน WinSpeed`, code: 'WINSPEED_DELIVERY_ISSUED' });
 
-    const approvalUpdate = await wfQuery(`
-      UPDATE wf.EditRequest
-      SET Status = 'APPROVED', ReviewedBy = @by, ReviewedAt = SYSUTCDATETIME(), ReviewNote = @note
-      WHERE Id = @id AND Status = 'PENDING' AND RequestedAt >= @globalStartUtc`, {
-        id:   { type: sql.Int, value: Number(req.params.id) },
-        by:   { type: sql.Int, value: req.user.sub },
-        note: { type: sql.NVarChar(1000), value: note || null },
-        globalStartUtc: { type: sql.DateTime2, value: req.editRequestStartUtc },
+    // Lock and commit the request, unlock flag and audit together. Recheck the
+    // approval preconditions under the same lock rather than trusting the read
+    // made before entering the transaction.
+    const result = await wfTransaction(async tx => {
+      const { businessIds } = require('../services/business-identity');
+      const ids = businessIds(req.user);
+      if (!ids.effective || !ids.actor) throw Object.assign(new Error('EDIT_AUDIT_IDENTITY_REQUIRED'), { status: 403 });
+      if (req.user.isImpersonating && !await require('../services/request-context').hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId'))
+        throw Object.assign(new Error('EDIT_ACTOR_AUDIT_UNAVAILABLE'), { status: 503 });
+      const current = (await tx.request().input('id', sql.Int, Number(req.params.id)).input('start', sql.DateTime2, req.editRequestStartUtc)
+        .query('SELECT * FROM wf.EditRequest WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id AND RequestedAt >= @start')).recordset?.[0];
+      if (!current) throw Object.assign(new Error('ไม่พบคำขอนี้'), { status: 404 });
+      if (current.Status !== 'PENDING') throw Object.assign(new Error('คำขอเปลี่ยนสถานะแล้ว กรุณาโหลดข้อมูลอีกครั้ง'), { status: 409 });
+      if (isSubmitter(approvalIdentity(req.user), current.RequestedBy)) throw Object.assign(new Error('อนุมัติคำขอของตัวเองไม่ได้'), { status: 403 });
+      // A different target or requester requires the scope/WinSpeed checks to be rerun.
+      if (String(current.SOID || '') !== String(r.SOID || '') || Number(current.RequestedBy) !== Number(r.RequestedBy))
+        throw Object.assign(new Error('ข้อมูลคำขอเปลี่ยนแล้ว กรุณาโหลดใหม่'), { status: 409 });
+      const updated = await tx.request().input('id', sql.Int, current.Id).input('by', sql.Int, ids.effective)
+        .input('note', sql.NVarChar(1000), note || null).input('start', sql.DateTime2, req.editRequestStartUtc)
+        .query("UPDATE wf.EditRequest SET Status='APPROVED',ReviewedBy=@by,ReviewedAt=GETUTCDATE(),ReviewNote=@note WHERE Id=@id AND Status='PENDING' AND RequestedAt >= @start");
+      if (!updated.rowsAffected?.[0]) throw Object.assign(new Error('คำขอเปลี่ยนสถานะแล้ว กรุณาโหลดข้อมูลอีกครั้ง'), { status: 409 });
+      let unlocked = false;
+      if (current.SOID) {
+        const up = await tx.request().input('soid', sql.VarChar(50), String(current.SOID))
+          .query('UPDATE wf.SalesOrderExt SET IsUnlocked=1,UpdatedAt=GETUTCDATE() WHERE SOID=@soid');
+        unlocked = (up.rowsAffected?.[0] || 0) > 0;
+      }
+      await require('../services/policy-contract').logChangeEvent(tx, {
+        entityType:'EDIT_REQUEST', entityId:String(current.Id), action:'APPROVE',
+        beforeJson:{ status:current.Status, soid:current.SOID }, afterJson:{ status:'APPROVED', unlocked },
+        reasonCode:'EDIT_REQUEST_APPROVAL', reasonText:note ? String(note).slice(0,500) : null,
+        userId:String(ids.effective), ipAddress:req.ip,
       });
-    if (!(approvalUpdate.rowsAffected[0] || 0))
-      return res.status(409).json({ message: 'คำขอเปลี่ยนสถานะแล้ว กรุณาโหลดข้อมูลอีกครั้ง' });
-
-    // อนุมัติแล้วต้องทำให้ใบแก้ไขได้จริง — ใช้ธงเดิมที่ทั้งระบบอ่านอยู่แล้ว
-    // (`ext.IsUnlocked = 1 THEN 'DRAFT'` มีอยู่ใน so.js · reports.js · papertrail.js)
-    // จึงไม่เกิดแหล่งความจริงที่สองว่าใบไหนแก้ได้
-    let unlocked = false;
-    if (r.SOID) {
-      const up = await wfQuery(`
-        UPDATE wf.SalesOrderExt SET IsUnlocked = 1, UpdatedAt = GETUTCDATE() WHERE SOID = @soid`,
-        { soid: { type: sql.VarChar(50), value: String(r.SOID) } });
-      unlocked = (up.rowsAffected[0] || 0) > 0;
-    }
-
-    // ปิดคำขอแล้วต้องปลดพักฝั่ง WINSpeed ด้วย ไม่งั้นใบจะค้างพักอยู่ตลอด
-    if (r.HoldTruck && r.SOID) {
-      await truckHold.releaseHold(r.SOID, { editRequestId: r.Id, actedBy: req.user.sub });
+      return { unlocked, request: current };
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+    const unlocked = result.unlocked;
+    // Release can invoke an optional WinSpeed integration; it is not in the SQL
+    // transaction. Surface a failure instead of reporting a failed approval.
+    let holdReleaseWarning = null;
+    if (result.request.HoldTruck && result.request.SOID) {
+      try { await truckHold.releaseHold(result.request.SOID, { editRequestId: result.request.Id, actedBy: req.user.sub }); }
+      catch (error) { console.error('[edit-requests/release-hold]', error); holdReleaseWarning = 'อนุมัติแล้ว แต่ปลด Hold ไม่สำเร็จ กรุณาให้ผู้ดูแลตรวจสอบ'; }
     }
 
     broadcast('edit_request', { id: r.Id, soid: r.SOID, action: 'approved' });
     res.json({
-      id: r.Id, status: 'APPROVED', unlocked,
+      id: r.Id, status: 'APPROVED', unlocked, holdReleaseWarning,
       message: unlocked
         ? 'อนุมัติแล้ว ใบสั่งขายกลับมาแก้ไขได้'
         : 'อนุมัติแล้ว — แต่ยังไม่มีแถวฝั่ง wf ของใบนี้ ต้องเปิดใบผ่านแอปก่อนจึงจะปลดล็อกอัตโนมัติได้',
     });
   } catch (e) {
     console.error('[edit-requests/approve]', e);
-    res.status(500).json({ message: e.message });
+    res.status(e.status || 500).json({ message: e.message });
   }
 });
+
+// Close requests and their transactional change-audit together. Hold release
+// is a separate optional integration and failures are reported after commit.
+async function closeEditRequest(req, status, note) {
+  const { businessIds } = require('../services/business-identity');
+  const ids = businessIds(req.user);
+  if (!ids.effective || !ids.actor) throw Object.assign(new Error('EDIT_AUDIT_IDENTITY_REQUIRED'), { status: 403 });
+  if (req.user.isImpersonating && !await require('../services/request-context').hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId'))
+    throw Object.assign(new Error('EDIT_ACTOR_AUDIT_UNAVAILABLE'), { status: 503 });
+  return wfTransaction(async tx => {
+    const current = (await tx.request().input('id', sql.Int, Number(req.params.id)).input('start', sql.DateTime2, req.editRequestStartUtc)
+      .query('SELECT * FROM wf.EditRequest WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id AND RequestedAt >= @start')).recordset?.[0];
+    if (!current) throw Object.assign(new Error('ไม่พบคำขอนี้'), { status: 404 });
+    if (current.Status !== 'PENDING') throw Object.assign(new Error('คำขอเปลี่ยนสถานะแล้ว กรุณาโหลดข้อมูลอีกครั้ง'), { status: 409 });
+    if (status === 'CANCELLED') {
+      const identity = approvalIdentity(req.user);
+      const qualifies = (id, roles) => sameUser(current.RequestedBy, id) || roles.some(role => ['ADMIN','C_LEVEL'].includes(role));
+      if (!qualifies(identity.effectiveId, identity.effectiveRoles) || !qualifies(identity.actorId, identity.actorRoles))
+        throw Object.assign(new Error('ถอนได้เฉพาะคำขอของตัวเองหรือผู้ดูแล'), { status: 403 });
+    }
+    const changed = await tx.request().input('id', sql.Int, current.Id).input('by', sql.Int, ids.effective)
+      .input('status', sql.VarChar(20), status).input('note', sql.NVarChar(1000), note)
+      .input('start', sql.DateTime2, req.editRequestStartUtc)
+      .query("UPDATE wf.EditRequest SET Status=@status,ReviewedBy=@by,ReviewedAt=GETUTCDATE(),ReviewNote=@note WHERE Id=@id AND Status='PENDING' AND RequestedAt >= @start");
+    if (!changed.rowsAffected?.[0]) throw Object.assign(new Error('คำขอเปลี่ยนสถานะแล้ว กรุณาโหลดข้อมูลอีกครั้ง'), { status: 409 });
+    await require('../services/policy-contract').logChangeEvent(tx, {
+      entityType:'EDIT_REQUEST', entityId:String(current.Id), action:status === 'REJECTED' ? 'REJECT' : 'CANCEL',
+      beforeJson:{ status:current.Status, soid:current.SOID }, afterJson:{ status }, reasonCode:'EDIT_REQUEST_REVIEW',
+      reasonText:note ? String(note).slice(0,500) : null, userId:String(ids.effective), ipAddress:req.ip,
+    });
+    return current;
+  }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+}
+async function releaseClosedRequestHold(request, user) {
+  if (!request.HoldTruck || !request.SOID) return null;
+  try { await truckHold.releaseHold(request.SOID, { editRequestId: request.Id, actedBy: user.sub }); return null; }
+  catch (error) { console.error('[edit-requests/release-hold]', error); return 'ปิดคำขอแล้ว แต่ปลด Hold ไม่สำเร็จ กรุณาให้ผู้ดูแลตรวจสอบ'; }
+}
 
 // ── PATCH /api/edit-requests/:id/reject ───────────────────────
 router.patch('/:id/reject', requireRole(...APPROVER_ROLES), requireCurrentEditRequest, requireEditRequestInScope, async (req, res) => {
   try {
-    const { note } = req.body || {};
-    if (!note || String(note).trim().length < 5)
-      return res.status(400).json({ message: 'ปฏิเสธคำขอต้องระบุเหตุผลอย่างน้อย 5 ตัวอักษร' });
-
-    const up = await wfQuery(`
-      UPDATE wf.EditRequest
-      SET Status = 'REJECTED', ReviewedBy = @by, ReviewedAt = SYSUTCDATETIME(), ReviewNote = @note
-      WHERE Id = @id AND Status = 'PENDING' AND RequestedAt >= @globalStartUtc`, {
-        id:   { type: sql.Int, value: Number(req.params.id) },
-        by:   { type: sql.Int, value: req.user.sub },
-        note: { type: sql.NVarChar(1000), value: String(note).trim() },
-        globalStartUtc: { type: sql.DateTime2, value: req.editRequestStartUtc },
-      });
-    if (!(up.rowsAffected[0] || 0))
-      return res.status(409).json({ message: 'ไม่พบคำขอที่รออนุมัติ (อาจถูกปิดไปแล้ว)' });
-
-    // ปิดคำขอแล้วต้องปลดพักฝั่ง WINSpeed ด้วย ไม่งั้นใบจะค้างพักอยู่ตลอด
-    const rej = (await wfQuery(`SELECT SOID, HoldTruck FROM wf.EditRequest WHERE Id = @id`,
-      { id: { type: sql.Int, value: Number(req.params.id) } })).recordset[0];
-    if (rej && rej.HoldTruck && rej.SOID) {
-      await truckHold.releaseHold(rej.SOID, { editRequestId: Number(req.params.id), actedBy: req.user.sub });
-    }
-
-    broadcast('edit_request', { id: Number(req.params.id), action: 'rejected' });
-    res.json({ id: Number(req.params.id), status: 'REJECTED', message: 'ปฏิเสธคำขอแล้ว — ยกเลิก Hold รถ' });
-  } catch (e) {
-    console.error('[edit-requests/reject]', e);
-    res.status(500).json({ message: e.message });
-  }
+    const note = String(req.body?.note || '').trim();
+    if (note.length < 5) return res.status(400).json({ message: 'ปฏิเสธคำขอต้องระบุเหตุผลอย่างน้อย 5 ตัวอักษร' });
+    const current = await closeEditRequest(req, 'REJECTED', note);
+    const holdReleaseWarning = await releaseClosedRequestHold(current, req.user);
+    broadcast('edit_request', { id: current.Id, action: 'rejected' });
+    res.json({ id: current.Id, status: 'REJECTED', holdReleaseWarning, message: 'ปฏิเสธคำขอแล้ว' });
+  } catch (e) { console.error('[edit-requests/reject]', e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // ── PATCH /api/edit-requests/:id/cancel ───────────────────────
-// คนขอถอนคำขอเอง (หรือผู้ดูแล) — Hold ถูกยกเลิกไปด้วย
 router.patch('/:id/cancel', requireCurrentEditRequest, async (req, res) => {
   try {
-    const r = (await wfQuery(`SELECT * FROM wf.EditRequest WHERE Id = @id`,
-      { id: { type: sql.Int, value: Number(req.params.id) } })).recordset[0];
-    if (!r) return res.status(404).json({ message: 'ไม่พบคำขอนี้' });
-    if (r.Status !== 'PENDING') return res.status(409).json({ message: 'คำขอนี้ถูกปิดไปแล้ว' });
-
-    const isOwner = sameUser(r.RequestedBy, req.user.sub);
-    const isAdmin = ['ADMIN', 'C_LEVEL'].includes(req.user.role);
-    if (!isOwner && !isAdmin)
-      return res.status(403).json({ message: 'ถอนได้เฉพาะคำขอของตัวเอง' });
-
-    const cancellationUpdate = await wfQuery(`
-      UPDATE wf.EditRequest
-      SET Status = 'CANCELLED', ReviewedBy = @by, ReviewedAt = SYSUTCDATETIME(),
-          ReviewNote = @note
-      WHERE Id = @id AND Status = 'PENDING' AND RequestedAt >= @globalStartUtc`, {
-        id:   { type: sql.Int, value: Number(req.params.id) },
-        by:   { type: sql.Int, value: req.user.sub },
-        note: { type: sql.NVarChar(1000), value: (req.body && req.body.note) || 'ผู้ขอถอนคำขอเอง' },
-        globalStartUtc: { type: sql.DateTime2, value: req.editRequestStartUtc },
-      });
-    if (!(cancellationUpdate.rowsAffected[0] || 0))
-      return res.status(409).json({ message: 'คำขอเปลี่ยนสถานะแล้ว กรุณาโหลดข้อมูลอีกครั้ง' });
-
-    // ปิดคำขอแล้วต้องปลดพักฝั่ง WINSpeed ด้วย ไม่งั้นใบจะค้างพักอยู่ตลอด
-    if (r.HoldTruck && r.SOID) {
-      await truckHold.releaseHold(r.SOID, { editRequestId: r.Id, actedBy: req.user.sub });
-    }
-
-    broadcast('edit_request', { id: r.Id, soid: r.SOID, action: 'cancelled' });
-    res.json({ id: r.Id, status: 'CANCELLED', message: 'ถอนคำขอแล้ว — ยกเลิก Hold รถ' });
-  } catch (e) {
-    console.error('[edit-requests/cancel]', e);
-    res.status(500).json({ message: e.message });
-  }
+    const note = (req.body && req.body.note) || 'ผู้ขอถอนคำขอเอง';
+    const current = await closeEditRequest(req, 'CANCELLED', note);
+    const holdReleaseWarning = await releaseClosedRequestHold(current, req.user);
+    broadcast('edit_request', { id: current.Id, soid: current.SOID, action: 'cancelled' });
+    res.json({ id: current.Id, status: 'CANCELLED', holdReleaseWarning, message: 'ถอนคำขอแล้ว' });
+  } catch (e) { console.error('[edit-requests/cancel]', e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 

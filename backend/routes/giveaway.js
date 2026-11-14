@@ -7,10 +7,41 @@ const router = require('express').Router();
 const { sql, query, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
 const { logChangeEvent } = require('../services/policy-contract');
+const { businessIds } = require('../services/business-identity');
+const { hasColumn } = require('../services/request-context');
 const { matchGiveawayItem } = require('../services/giveaway-matcher');
+const { createHash } = require('crypto');
+
+// Optimistic concurrency complements SQL locks: the lock alone cannot tell
+// whether an administrator is submitting a form opened before another edit.
+function budgetEditToken(row) {
+  if (!/^[0-9A-F]{16}$/i.test(String(row.EditVersion || ''))) throw new Error('GIVEAWAY_BUDGET_REVISION_UNAVAILABLE');
+  const fields = ['Id', 'EditVersion', 'Region', 'RegionCode', 'PeriodYear', 'SalesUserId', 'EmpId', 'EmpCode', 'Brand', 'ItemName', 'GoodId', 'GoodCode', 'GoodName', 'BudgetQty', 'WithdrawnQty'];
+  return createHash('sha256').update(JSON.stringify(fields.map(k => row[k] == null ? null : String(row[k])))).digest('hex');
+}
+function requireBudgetEditToken(row, token) {
+  if (typeof token !== 'string' || !/^[0-9a-f]{64}$/.test(token))
+    throw Object.assign(new Error('กรุณาโหลดรายการงบล่าสุดก่อนบันทึก'), { status: 428, code: 'GIVEAWAY_BUDGET_REVISION_REQUIRED' });
+  if (budgetEditToken(row) !== token)
+    throw Object.assign(new Error('รายการงบหรือยอดเบิกเปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุดและตรวจสอบก่อนบันทึก'), { status: 409, code: 'GIVEAWAY_BUDGET_STALE' });
+}
 
 const budgetKey = (region, year, brand, item, goodId = null, salesUserId = null) =>
   `${region}|${year}|${brand}|${item}${goodId ? `|G:${goodId}` : ''}${salesUserId ? `|U:${salesUserId}` : ''}`;
+
+async function requireBudgetAuditIdentity(user) {
+  const ids = businessIds(user);
+  if (!ids.actor || !ids.effective) throw new Error('BUDGET_AUDIT_IDENTITY_REQUIRED');
+  if (user.isImpersonating && !await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId')) throw new Error('BUDGET_ACTOR_AUDIT_UNAVAILABLE');
+}
+
+async function budgetTxQuery(tx, text, inputs = {}) {
+  const request = tx.request();
+  for (const [key, input] of Object.entries(inputs)) request.input(key, input.type, input.value);
+  return request.query(text);
+}
+
+const budgetConflict = () => Object.assign(new Error('รายการงบเปลี่ยนหรือถูกลบ กรุณาโหลดใหม่'), { status: 409 });
 
 // R12 O-4: SALES/MANAGER see their own + team records and regions
 const { getVisibleScope, scopeFilter, inScope, canViewSalesUser } = require('../services/visible-scope');
@@ -397,17 +428,18 @@ router.get('/budget-lines', async (req, res) => {
     }
 
     const r = await wfQuery(`
-      SELECT v.*,
+      SELECT v.*, CONVERT(varchar(16), CONVERT(varbinary(8), btoken.EditVersion), 2) AS EditVersion,
              u.DisplayName AS SalesUserName,
              u.PositionCode AS SalesPositionCode,
              p.PositionName AS SalesPositionName
       FROM wf.v_GiveawayBudgetStatus v
+      JOIN wf.GiveawayBudget btoken ON btoken.Id = v.Id
       LEFT JOIN wf.AppUser u ON u.Id = v.SalesUserId
       LEFT JOIN wf.OrgPosition p ON p.PositionCode = u.PositionCode
       WHERE ${conds.join(' AND ')}
       ORDER BY CASE WHEN v.SalesUserId IS NULL THEN 1 ELSE 0 END ASC, v.Brand, v.ItemName
     `, inputs);
-    res.json(r.recordset || []);
+    res.json((r.recordset || []).map(row => ({ ...row, EditToken: budgetEditToken(row) })));
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
@@ -517,7 +549,7 @@ router.get('/items', async (req, res) => {
 router.post('/withdrawals', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER', 'APPROVER', 'C_LEVEL'), async (req, res) => {
   try {
     const { region, brand, itemName, goodId, goodCode, goodName, salesUserId, qty, issueMonth, custId, note } = req.body;
-    if (!region || (!itemName && !goodId) || !qty)
+    if (!region || (!itemName && !goodId) || !Number.isFinite(Number(qty)) || Number(qty) <= 0)
       return res.status(400).json({ message: 'region, itemName/goodId, qty จำเป็น' });
     const year = YEAR(req.body.periodYear);
     const masterGood = goodId ? await resolveMasterGood(goodId) : null;
@@ -542,10 +574,16 @@ router.post('/withdrawals', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANA
     }
 
     const hasExt = await hasExtendedBudgetSchema();
+    const st = await wfTransaction(async tx => {
+      await requireBudgetAuditIdentity(req.user);
+      const txQuery = (text, inputs = {}) => budgetTxQuery(tx, text, inputs);
+      // Serialize withdrawals with budget edits and quota transfers in this region/year.
+      await txQuery('SELECT Id FROM wf.GiveawayBudget WITH (UPDLOCK,HOLDLOCK) WHERE Region=@rg AND PeriodYear=@y ORDER BY Id', { rg: { type: sql.NVarChar(60), value: region }, y: { type: sql.Int, value: year } });
+      let inserted;
     if (hasExt) {
-      await wfQuery(`
+      inserted = await txQuery(`
         INSERT INTO wf.GiveawayWithdrawal (SalesUserId, EmpId, EmpCode, Region, PeriodYear, IssueMonth, Brand, ItemName, GoodId, GoodCode, GoodName, Qty, CustId, Note, Source)
-        VALUES (@su, @ei, @ec, @rg, @y, @mo, @br, @it, @gid, @gc, @gn, @qy, @cu, @nt, 'APP')`, {
+        VALUES (@su, @ei, @ec, @rg, @y, @mo, @br, @it, @gid, @gc, @gn, @qy, @cu, @nt, 'APP'); SELECT CONVERT(int, SCOPE_IDENTITY()) AS Id`, {
           su: { type: sql.Int, value: su },
           ei: { type: sql.NVarChar(20), value: ei },
           ec: { type: sql.NVarChar(20), value: ec },
@@ -562,9 +600,9 @@ router.post('/withdrawals', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANA
           nt: { type: sql.NVarChar(300), value: note || null },
         });
     } else {
-      await wfQuery(`
+      inserted = await txQuery(`
         INSERT INTO wf.GiveawayWithdrawal (SalesUserId, EmpId, EmpCode, Region, PeriodYear, IssueMonth, Brand, ItemName, Qty, CustId, Note, Source)
-        VALUES (@su, @ei, @ec, @rg, @y, @mo, @br, @it, @qy, @cu, @nt, 'APP')`, {
+        VALUES (@su, @ei, @ec, @rg, @y, @mo, @br, @it, @qy, @cu, @nt, 'APP'); SELECT CONVERT(int, SCOPE_IDENTITY()) AS Id`, {
           su: { type: sql.Int, value: su },
           ei: { type: sql.NVarChar(20), value: ei },
           ec: { type: sql.NVarChar(20), value: ec },
@@ -579,7 +617,10 @@ router.post('/withdrawals', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANA
         });
     }
 
-    const st = (await wfQuery(
+      const withdrawalId = inserted.recordset?.[0]?.Id;
+      if (!withdrawalId) throw new Error('WITHDRAWAL_INSERT_ID_MISSING');
+      await logChangeEvent(tx, { entityType: 'GIVEAWAY_WITHDRAWAL', entityId: String(withdrawalId), action: 'CREATE', afterJson: { region, periodYear: year, brand: effBrand, itemName: effItem, goodId: effGoodId, salesUserId: su, qty: Number(qty) }, reasonCode: 'GIVEAWAY_WITHDRAWAL', userId: String(businessIds(req.user).effective), ipAddress: req.ip });
+    return (await txQuery(
       `SELECT BudgetQty, WithdrawnQty, RemainingQty FROM wf.v_GiveawayBudgetStatus
        WHERE Region=@rg AND PeriodYear=@y AND ${hasExt ? '((@gid IS NOT NULL AND GoodId=@gid) OR (Brand=@br AND ItemName=@it))' : '(Brand=@br AND ItemName=@it)'}
          AND (@su IS NULL OR SalesUserId=@su OR SalesUserId IS NULL)`,
@@ -587,6 +628,7 @@ router.post('/withdrawals', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANA
         gid: { type: sql.VarChar(50), value: effGoodId }, br: { type: sql.NVarChar(50), value: effBrand },
         it: { type: sql.NVarChar(100), value: effItem }, su: { type: sql.Int, value: su } }
     )).recordset?.[0];
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
     res.json({ ok: true, status: st, isOverBudget: st ? Number(st.RemainingQty) < 0 : false });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -628,19 +670,29 @@ router.post('/budgets', requireCapability('giveaway.budget'), async (req, res) =
       ? `Region=@rg AND PeriodYear=@y AND ISNULL(SalesUserId, 0)=ISNULL(@su, 0) AND (GoodId=@gid OR (GoodId IS NULL AND Brand=@br AND ItemName=@it))`
       : `Region=@rg AND PeriodYear=@y AND ${hasExt ? 'ISNULL(SalesUserId, 0)=ISNULL(@su, 0) AND ' : ''}Brand=@br AND ItemName=@it`;
 
-    const existing = (await wfQuery(
-      `SELECT TOP 1 Id, BudgetQty, WithdrawnQty, RemainingQty FROM wf.v_GiveawayBudgetStatus WHERE ${matchWhere}`,
-      {
+    const matchInputs = {
         rg: { type: sql.NVarChar(60), value: region }, y: { type: sql.Int, value: year },
         su: { type: sql.Int, value: su }, gid: { type: sql.VarChar(50), value: effGoodId },
         br: { type: sql.NVarChar(50), value: effBrand }, it: { type: sql.NVarChar(100), value: effItem },
-      }
-    )).recordset?.[0] || null;
+    };
 
+    const result = await wfTransaction(async tx => {
+    await requireBudgetAuditIdentity(req.user);
+    const txQuery = (text, inputs = {}) => budgetTxQuery(tx, text, inputs);
+    // Lock the matching key range, including the absence of a row, before
+    // deciding whether to update or insert. Ambiguous legacy matches fail closed.
+    const matches = (await txQuery(`SELECT TOP 2 Id FROM wf.GiveawayBudget WITH (UPDLOCK,HOLDLOCK) WHERE ${matchWhere}`, matchInputs)).recordset || [];
+    if (matches.length > 1) throw budgetConflict();
+    if (matches.length) throw Object.assign(new Error('รายการงบนี้มีอยู่แล้ว กรุณาโหลดใหม่แล้วใช้ปุ่มแก้ไข'), { status: 409, code: 'GIVEAWAY_BUDGET_EXISTS' });
+    const existing = matches.length ? (await txQuery(
+      'SELECT Id, BudgetQty, WithdrawnQty, RemainingQty FROM wf.v_GiveawayBudgetStatus WHERE Id=@id',
+      {id:{type:sql.Int,value:matches[0].Id}}
+    )).recordset?.[0] : null;
+    if (matches.length && !existing) throw budgetConflict();
     let budgetId = existing?.Id || null;
     if (existing) {
       if (hasExt) {
-        await wfQuery(`
+        const updated = await txQuery(`
           UPDATE wf.GiveawayBudget
           SET BudgetQty=@bq, GoodId=COALESCE(@gid, GoodId), GoodCode=COALESCE(@gc, GoodCode), GoodName=COALESCE(@gn, GoodName),
               RegionCode=COALESCE(@rc, RegionCode), SalesUserId=COALESCE(@su, SalesUserId), EmpId=COALESCE(@ei, EmpId), EmpCode=COALESCE(@ec, EmpCode),
@@ -651,13 +703,15 @@ router.post('/budgets', requireCapability('giveaway.budget'), async (req, res) =
             gn: { type: sql.NVarChar(200), value: effGoodName }, rc: { type: sql.VarChar(10), value: effRegionCode },
             su: { type: sql.Int, value: su }, ei: { type: sql.NVarChar(20), value: resolvedEmpId }, ec: { type: sql.NVarChar(20), value: resolvedEmpCode },
           });
+        if (Number(updated.rowsAffected?.[0]) !== 1) throw Object.assign(new Error('รายการงบเปลี่ยนหรือถูกลบ กรุณาโหลดใหม่'), { status: 409 });
       } else {
-        await wfQuery(`UPDATE wf.GiveawayBudget SET BudgetQty=@bq, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
+        const updated = await txQuery(`UPDATE wf.GiveawayBudget SET BudgetQty=@bq, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
           { id: { type: sql.Int, value: existing.Id }, bq: { type: sql.Decimal(12,2), value: qtyNum } });
+        if (Number(updated.rowsAffected?.[0]) !== 1) throw Object.assign(new Error('รายการงบเปลี่ยนหรือถูกลบ กรุณาโหลดใหม่'), { status: 409 });
       }
     } else {
       if (hasExt) {
-        const ins = await wfQuery(`
+        const ins = await txQuery(`
           INSERT INTO wf.GiveawayBudget (SalesUserId, EmpId, EmpCode, Region, RegionCode, PeriodYear, Brand, ItemName, GoodId, GoodCode, GoodName, BudgetQty)
           OUTPUT INSERTED.Id
           VALUES (@su, @ei, @ec, @rg, @rc, @y, @br, @it, @gid, @gc, @gn, @bq)`, {
@@ -669,7 +723,7 @@ router.post('/budgets', requireCapability('giveaway.budget'), async (req, res) =
           });
         budgetId = ins?.recordset?.[0]?.Id || null;
       } else {
-        const ins = await wfQuery(`
+        const ins = await txQuery(`
           INSERT INTO wf.GiveawayBudget (SalesUserId, EmpId, EmpCode, Region, PeriodYear, Brand, ItemName, BudgetQty)
           OUTPUT INSERTED.Id
           VALUES (@su, @ei, @ec, @rg, @y, @br, @it, @bq)`, {
@@ -682,7 +736,7 @@ router.post('/budgets', requireCapability('giveaway.budget'), async (req, res) =
       }
     }
 
-    await logChangeEvent(null, {
+    await logChangeEvent(tx, {
       entityType: 'GIVEAWAY_BUDGET',
       entityId: budgetKey(region, year, effBrand, effItem, effGoodId, su),
       action: existing ? 'UPDATE' : 'CREATE',
@@ -690,13 +744,15 @@ router.post('/budgets', requireCapability('giveaway.budget'), async (req, res) =
       afterJson: { budgetQty: qtyNum, goodId: effGoodId, goodCode: effGoodCode, goodName: effGoodName, salesUserId: su },
       reasonCode: 'GIVEAWAY_QUOTA_SETTING',
       reasonText: reason ? String(reason).slice(0, 500) : null,
-      userId: String(req.user.sub),
+      userId: String(businessIds(req.user).effective),
       ipAddress: req.ip,
     });
     const warning = existing && qtyNum < Number(existing.WithdrawnQty || 0)
       ? `งบใหม่ (${qtyNum}) น้อยกว่ายอดเบิกแล้ว (${Number(existing.WithdrawnQty)}) — โควต้าคงเหลือจะติดลบ` : null;
-    res.json({ ok: true, id: budgetId, warning });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+    return { ok:true, id:budgetId, warning };
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+    res.json(result);
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // PUT /api/giveaway/budgets/:id — แก้ไขรายการโควต้า (จำนวน, สินค้าจาก 98 รายการ, หรือพนักงาน)
@@ -704,12 +760,19 @@ router.put('/budgets/:id', requireCapability('giveaway.budget'), async (req, res
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'รหัสรายการไม่ถูกต้อง' });
-    const current = (await wfQuery(`SELECT * FROM wf.v_GiveawayBudgetStatus WHERE Id = @id`, { id: { type: sql.Int, value: id } })).recordset?.[0];
-    if (!current) return res.status(404).json({ message: 'ไม่พบรายการโควต้า' });
+    const result = await wfTransaction(async tx => {
+    await requireBudgetAuditIdentity(req.user);
+    const txQuery = (text, inputs = {}) => budgetTxQuery(tx, text, inputs);
+    const idInput = { id: { type: sql.Int, value: id } };
+    const locked = (await txQuery('SELECT Id FROM wf.GiveawayBudget WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id', idInput)).recordset?.[0];
+    if (!locked) throw Object.assign(new Error('ไม่พบรายการโควต้า'), { status: 404 });
+    const current = (await txQuery('SELECT v.*, CONVERT(varchar(16), CONVERT(varbinary(8), b.EditVersion), 2) AS EditVersion FROM wf.v_GiveawayBudgetStatus v JOIN wf.GiveawayBudget b ON b.Id=v.Id WHERE v.Id = @id', idInput)).recordset?.[0];
+    if (!current) throw budgetConflict();
+    requireBudgetEditToken(current, req.body?.expectedToken);
 
     const { region, regionCode, salesUserId, empId, empCode, goodId, goodCode, goodName, brand, itemName, budgetQty, reason } = req.body;
     const qtyNum = budgetQty !== undefined ? Number(budgetQty) : Number(current.BudgetQty);
-    if (!Number.isFinite(qtyNum) || qtyNum < 0) return res.status(400).json({ message: 'จำนวนงบต้องเป็นตัวเลขไม่ติดลบ' });
+    if (!Number.isFinite(qtyNum) || qtyNum < 0) throw Object.assign(new Error('จำนวนงบต้องเป็นตัวเลขไม่ติดลบ'), { status: 400 });
 
     const masterGood = goodId ? await resolveMasterGood(goodId) : null;
     const effRegion = region || current.Region;
@@ -736,8 +799,17 @@ router.put('/budgets/:id', requireCapability('giveaway.budget'), async (req, res
     }
 
     const hasExt = await hasExtendedBudgetSchema();
+    const targetWhere = hasExt && effGoodId
+      ? `Region=@rg AND PeriodYear=@y AND ISNULL(SalesUserId,0)=ISNULL(@su,0) AND (GoodId=@gid OR (GoodId IS NULL AND Brand=@br AND ItemName=@it))`
+      : `Region=@rg AND PeriodYear=@y AND ${hasExt ? 'ISNULL(SalesUserId,0)=ISNULL(@su,0) AND ' : ''}Brand=@br AND ItemName=@it`;
+    const conflicting = (await txQuery(`SELECT TOP 1 Id FROM wf.GiveawayBudget WITH (UPDLOCK,HOLDLOCK) WHERE ${targetWhere} AND Id<>@id`, {
+      id:{type:sql.Int,value:id}, rg:{type:sql.NVarChar(60),value:effRegion}, y:{type:sql.Int,value:current.PeriodYear},
+      su:{type:sql.Int,value:effSalesUserId}, gid:{type:sql.VarChar(50),value:effGoodId},
+      br:{type:sql.NVarChar(50),value:effBrand}, it:{type:sql.NVarChar(100),value:effItem},
+    })).recordset || [];
+    if (conflicting.length) throw Object.assign(new Error('มีรายการงบสำหรับภาค พนักงาน และสินค้านี้อยู่แล้ว'), {status:409});
     if (hasExt) {
-      await wfQuery(`
+      const updated = await txQuery(`
         UPDATE wf.GiveawayBudget
         SET Region=@rg, RegionCode=@rc, SalesUserId=@su, EmpId=@ei, EmpCode=@ec,
             Brand=@br, ItemName=@it, GoodId=@gid, GoodCode=@gc, GoodName=@gn, BudgetQty=@bq, UpdatedAt=GETUTCDATE()
@@ -749,8 +821,9 @@ router.put('/budgets/:id', requireCapability('giveaway.budget'), async (req, res
           gid: { type: sql.VarChar(50), value: effGoodId }, gc: { type: sql.NVarChar(50), value: effGoodCode }, gn: { type: sql.NVarChar(200), value: effGoodName },
           bq: { type: sql.Decimal(12,2), value: qtyNum },
         });
+      if (Number(updated.rowsAffected?.[0]) !== 1) throw Object.assign(new Error('รายการงบเปลี่ยนหรือถูกลบ กรุณาโหลดใหม่'), { status: 409 });
     } else {
-      await wfQuery(`
+      const updated = await txQuery(`
         UPDATE wf.GiveawayBudget
         SET Region=@rg, SalesUserId=@su, EmpId=@ei, EmpCode=@ec, Brand=@br, ItemName=@it, BudgetQty=@bq, UpdatedAt=GETUTCDATE()
         WHERE Id=@id`, {
@@ -760,9 +833,10 @@ router.put('/budgets/:id', requireCapability('giveaway.budget'), async (req, res
           br: { type: sql.NVarChar(50), value: effBrand }, it: { type: sql.NVarChar(100), value: effItem },
           bq: { type: sql.Decimal(12,2), value: qtyNum },
         });
+      if (Number(updated.rowsAffected?.[0]) !== 1) throw Object.assign(new Error('รายการงบเปลี่ยนหรือถูกลบ กรุณาโหลดใหม่'), { status: 409 });
     }
 
-    await logChangeEvent(null, {
+    await logChangeEvent(tx, {
       entityType: 'GIVEAWAY_BUDGET',
       entityId: budgetKey(effRegion, current.PeriodYear, effBrand, effItem, effGoodId, effSalesUserId),
       action: 'UPDATE',
@@ -775,14 +849,16 @@ router.put('/budgets/:id', requireCapability('giveaway.budget'), async (req, res
       },
       reasonCode: 'GIVEAWAY_QUOTA_EDIT',
       reasonText: reason ? String(reason).slice(0, 500) : null,
-      userId: String(req.user.sub),
+      userId: String(businessIds(req.user).effective),
       ipAddress: req.ip,
     });
 
     const warning = qtyNum < Number(current.WithdrawnQty || 0)
       ? `งบใหม่ (${qtyNum}) น้อยกว่ายอดเบิกแล้ว (${Number(current.WithdrawnQty)}) — โควต้าคงเหลือจะติดลบ` : null;
-    res.json({ ok: true, id, warning });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+    return { ok:true, id, warning };
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+    res.json(result);
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message, code: e.code }); }
 });
 
 // DELETE /api/giveaway/budgets/:id — ลบรายการโควต้า (บันทึก Audit Log เสมอ)
@@ -791,19 +867,26 @@ router.delete('/budgets/:id', requireCapability('giveaway.budget'), async (req, 
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'รหัสรายการไม่ถูกต้อง' });
     const force = req.query.force === 'true';
-    const current = (await wfQuery(`SELECT * FROM wf.v_GiveawayBudgetStatus WHERE Id = @id`, { id: { type: sql.Int, value: id } })).recordset?.[0];
-    if (!current) return res.status(404).json({ message: 'ไม่พบรายการโควต้า' });
+    const result = await wfTransaction(async tx => {
+    await requireBudgetAuditIdentity(req.user);
+    const idInput = { id: { type: sql.Int, value: id } };
+    const locked = (await budgetTxQuery(tx, 'SELECT Id FROM wf.GiveawayBudget WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id', idInput)).recordset?.[0];
+    if (!locked) throw Object.assign(new Error('ไม่พบรายการโควต้า'), { status: 404 });
+    const current = (await budgetTxQuery(tx, 'SELECT v.*, CONVERT(varchar(16), CONVERT(varbinary(8), b.EditVersion), 2) AS EditVersion FROM wf.v_GiveawayBudgetStatus v JOIN wf.GiveawayBudget b ON b.Id=v.Id WHERE v.Id = @id', idInput)).recordset?.[0];
+    if (!current) throw budgetConflict();
+    requireBudgetEditToken(current, req.body?.expectedToken);
 
     if (Number(current.WithdrawnQty || 0) > 0 && !force) {
-      return res.status(409).json({
+      return { conflict: {
         message: `รายการ "${current.GoodName || current.ItemName}" มียอดเบิกแล้ว ${Number(current.WithdrawnQty).toLocaleString()} ชิ้น กรุณายืนยันอีกครั้งหากต้องการลบ`,
         withdrawnQty: Number(current.WithdrawnQty),
         requiresConfirm: true,
-      });
+      } };
     }
 
-    await wfQuery(`DELETE FROM wf.GiveawayBudget WHERE Id = @id`, { id: { type: sql.Int, value: id } });
-    await logChangeEvent(null, {
+    const deleted = await tx.request().input('id', sql.Int, id).query(`DELETE FROM wf.GiveawayBudget WHERE Id = @id`);
+    if (Number(deleted.rowsAffected?.[0]) !== 1) throw Object.assign(new Error('รายการงบเปลี่ยนหรือถูกลบ กรุณาโหลดใหม่'), { status: 409 });
+    await logChangeEvent(tx, {
       entityType: 'GIVEAWAY_BUDGET',
       entityId: budgetKey(current.Region, current.PeriodYear, current.Brand, current.ItemName, current.GoodId || null, current.SalesUserId || null),
       action: 'DELETE',
@@ -815,11 +898,14 @@ router.delete('/budgets/:id', requireCapability('giveaway.budget'), async (req, 
       afterJson: null,
       reasonCode: 'GIVEAWAY_QUOTA_DELETE',
       reasonText: req.body?.reason ? String(req.body.reason).slice(0, 500) : (req.query.reason ? String(req.query.reason).slice(0, 500) : null),
-      userId: String(req.user.sub),
+      userId: String(businessIds(req.user).effective),
       ipAddress: req.ip,
     });
-    res.json({ ok: true, id });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+    return { ok:true, id };
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+    if (result.conflict) return res.status(409).json(result.conflict);
+    res.json(result);
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message, code: e.code }); }
 });
 
 // GET /api/giveaway/budget-history?region=&year= — audit trail of quota settings and borrow moves (R12 item 8)
@@ -922,7 +1008,7 @@ router.post('/borrow-requests', requireCapability('giveaway.borrow'), async (req
     }
 
     // U-6: Block borrowing from yourself
-    if (Number(req.user.id) === Number(lenderId)) {
+    if (Number(businessIds(req.user).effective) === Number(lenderId)) {
       return res.status(400).json({ message: 'ไม่สามารถขอยืมโควตาจากตนเองได้' });
     }
 
@@ -942,7 +1028,7 @@ router.post('/borrow-requests', requireCapability('giveaway.borrow'), async (req
     }
     const requesterLine = (await wfQuery(
       `SELECT TOP 1 Region FROM wf.GiveawayBudget WHERE SalesUserId=@u AND PeriodYear=@y ORDER BY CASE WHEN Brand=@br AND ItemName=@it THEN 0 ELSE 1 END`,
-      { u: { type: sql.Int, value: Number(req.user.id) }, y: { type: sql.Int, value: year }, br: { type: sql.NVarChar(50), value: brand }, it: { type: sql.NVarChar(100), value: itemName } }
+      { u: { type: sql.Int, value: Number(businessIds(req.user).effective) }, y: { type: sql.Int, value: year }, br: { type: sql.NVarChar(50), value: brand }, it: { type: sql.NVarChar(100), value: itemName } }
     )).recordset?.[0];
     const lenRegion = String(lenderLine.Region || '').trim();
     const reqRegion = String(requesterLine?.Region || requesterRegion || region || '').trim();
@@ -967,14 +1053,17 @@ router.post('/borrow-requests', requireCapability('giveaway.borrow'), async (req
       hasRegionCols = !!colCheck.recordset?.[0]?.HasCol;
     } catch (_) {}
 
-    let r;
+    const r = await wfTransaction(async tx => {
+      await requireBudgetAuditIdentity(req.user);
+      const txQuery = (text, inputs = {}) => budgetTxQuery(tx, text, inputs);
+      let inserted;
     if (hasRegionCols) {
-      r = await wfQuery(`
+      inserted = await txQuery(`
         INSERT INTO wf.GiveawayBorrowRequest (RequesterId, LenderId, Region, RequesterRegion, LenderRegion, PeriodYear, Brand, ItemName, Qty, Reason, Status)
         OUTPUT INSERTED.Id
         VALUES (@req, @len, @rg, @reqRg, @lenRg, @y, @br, @it, @qty, @rs, 'PENDING')
       `, {
-        req: { type: sql.Int, value: req.user.id },
+        req: { type: sql.Int, value: businessIds(req.user).effective },
         len: { type: sql.Int, value: Number(lenderId) },
         rg: { type: sql.NVarChar(60), value: reqRegion || lenRegion },
         reqRg: { type: sql.NVarChar(60), value: reqRegion || lenRegion },
@@ -988,12 +1077,12 @@ router.post('/borrow-requests', requireCapability('giveaway.borrow'), async (req
     } else {
       // Store region metadata in Reason tag for backwards compatibility when columns aren't in live DB
       const reasonMeta = `[REQ_RG:${reqRegion || lenRegion}][LEN_RG:${lenRegion || reqRegion}] ${reason || ''}`.trim();
-      r = await wfQuery(`
+      inserted = await txQuery(`
         INSERT INTO wf.GiveawayBorrowRequest (RequesterId, LenderId, Region, PeriodYear, Brand, ItemName, Qty, Reason, Status)
         OUTPUT INSERTED.Id
         VALUES (@req, @len, @rg, @y, @br, @it, @qty, @rs, 'PENDING')
       `, {
-        req: { type: sql.Int, value: req.user.id },
+        req: { type: sql.Int, value: businessIds(req.user).effective },
         len: { type: sql.Int, value: Number(lenderId) },
         rg: { type: sql.NVarChar(60), value: reqRegion || lenRegion },
         y: { type: sql.Int, value: year },
@@ -1003,6 +1092,12 @@ router.post('/borrow-requests', requireCapability('giveaway.borrow'), async (req
         rs: { type: sql.NVarChar(200), value: reasonMeta }
       });
     }
+
+      const id = inserted.recordset?.[0]?.Id;
+      if (!id) throw new Error('BORROW_REQUEST_INSERT_ID_MISSING');
+      await logChangeEvent(tx, { entityType: 'GIVEAWAY_BORROW_REQUEST', entityId: String(id), action: 'CREATE', afterJson: { requesterId: businessIds(req.user).effective, lenderId: Number(lenderId), requesterRegion: reqRegion, lenderRegion: lenRegion, periodYear: year, brand, itemName, qty: borrowQty }, reasonCode: 'GIVEAWAY_BORROW', reasonText: reason ? String(reason).slice(0, 500) : null, userId: String(businessIds(req.user).effective), ipAddress: req.ip });
+      return inserted;
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
 
     res.json({ ok: true, id: r.recordset[0].Id });
   } catch (e) {
@@ -1053,33 +1148,26 @@ router.patch('/borrow-requests/:id/resolve', requireBorrowRequestInScope, async 
     if (!reqId) return res.status(400).json({ message: 'รหัสคำขอไม่ถูกต้อง' });
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
 
-    // Reject flow — ผู้ให้ยืม ผู้ขอ (ยกเลิกคำขอตัวเอง) หรือ ADMIN/MANAGER/C_LEVEL เท่านั้น
+    // Resolve and audit the rejection under the same lock/transaction.
     if (!approve) {
-      const cur = (await wfQuery(`SELECT RequesterId, LenderId, Status FROM wf.GiveawayBorrowRequest WHERE Id=@id AND RequestedAt >= @globalStartUtc`, {
-        id: { type: sql.Int, value: reqId }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
-      })).recordset?.[0];
-      if (!cur) return res.status(404).json({ message: 'ไม่พบข้อมูลคำขอยืมโควตา' });
-      if (!canResolveBorrow(req.user, cur, false)) {
-        return res.status(403).json({ message: 'คุณไม่มีสิทธิ์ปฏิเสธคำขอนี้' });
-      }
-      const rejectRes = await wfQuery(`
-        UPDATE wf.GiveawayBorrowRequest 
-        SET Status = 'REJECTED', ApproverId = @u, Note = @n, ResolvedAt = GETUTCDATE()
-        WHERE Id = @id AND Status = 'PENDING' AND RequestedAt >= @globalStartUtc
-      `, {
-        id: { type: sql.Int, value: reqId },
-        u: { type: sql.Int, value: req.user.id },
-        n: { type: sql.NVarChar(500), value: note || null },
-        globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
-      });
-      if (!rejectRes.rowsAffected?.[0]) {
-        return res.status(409).json({ message: 'คำขอนี้ถูกดำเนินการไปแล้วหรือไม่พบข้อมูล' });
-      }
+      await wfTransaction(async tx => {
+        await requireBudgetAuditIdentity(req.user);
+        const txQuery = (text, inputs = {}) => budgetTxQuery(tx, text, inputs);
+        const inputs = { id: { type: sql.Int, value: reqId }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } };
+        const cur = (await txQuery('SELECT RequesterId, LenderId, Status FROM wf.GiveawayBorrowRequest WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id AND RequestedAt >= @globalStartUtc', inputs)).recordset?.[0];
+        if (!cur) throw Object.assign(new Error('ไม่พบข้อมูลคำขอยืมโควตา'), { status: 404 });
+        if (!canResolveBorrow(req.user, cur, false)) throw Object.assign(new Error('คุณไม่มีสิทธิ์ปฏิเสธคำขอนี้'), { status: 403 });
+        if (cur.Status !== 'PENDING') throw Object.assign(new Error('คำขอนี้ถูกดำเนินการไปแล้ว'), { status: 409 });
+        const update = await txQuery(`UPDATE wf.GiveawayBorrowRequest SET Status='REJECTED', ApproverId=@u, Note=@n, ResolvedAt=GETUTCDATE() WHERE Id=@id AND Status='PENDING' AND RequestedAt >= @globalStartUtc`, { ...inputs, u: { type: sql.Int, value: businessIds(req.user).effective }, n: { type: sql.NVarChar(500), value: note || null } });
+        if (!update.rowsAffected?.[0]) throw Object.assign(new Error('คำขอนี้ถูกดำเนินการไปแล้ว'), { status: 409 });
+        await logChangeEvent(tx, { entityType: 'GIVEAWAY_BORROW_REQUEST', entityId: String(reqId), action: 'REJECT', beforeJson: { status: cur.Status }, afterJson: { status: 'REJECTED' }, reasonCode: 'GIVEAWAY_BORROW', reasonText: note ? String(note).slice(0, 500) : null, userId: String(businessIds(req.user).effective), ipAddress: req.ip });
+      }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
       return res.json({ ok: true, status: 'REJECTED' });
     }
 
     // Approve flow: Atomic transaction with UPDLOCK/ROWLOCK
     await wfTransaction(async (tx) => {
+      await requireBudgetAuditIdentity(req.user);
       // 1. Lock and fetch the borrow request
       const bReq = (await tx.request()
         .input('id', sql.Int, reqId)
@@ -1136,17 +1224,29 @@ router.patch('/borrow-requests/:id/resolve', requireBorrowRequestInScope, async 
         requesterRegion = rBudgetRow?.Region || bReq.Region;
       }
 
+      if (!lenderRegion || !requesterRegion || lenderRegion === requesterRegion)
+        throw Object.assign(new Error('ไม่สามารถระบุภาคผู้ให้ยืมและผู้ขอให้แตกต่างกันได้'), { status: 409 });
+      // The same region/year lock is taken by withdrawals. Acquire regions in
+      // a deterministic order, including empty key ranges, before transferring.
+      for (const rg of [lenderRegion, requesterRegion].sort()) {
+        await budgetTxQuery(tx, 'SELECT Id FROM wf.GiveawayBudget WITH (UPDLOCK,HOLDLOCK) WHERE Region=@rg AND PeriodYear=@y ORDER BY Id', {
+          rg: { type: sql.NVarChar(60), value: rg }, y: { type: sql.Int, value: bReq.PeriodYear },
+        });
+      }
+
       // 3. Lock lender budget row and verify quota
-      const lenderBudget = (await tx.request()
+      const lenderBudgets = (await tx.request()
         .input('rg', sql.NVarChar(60), lenderRegion)
         .input('y', sql.Int, bReq.PeriodYear)
         .input('br', sql.NVarChar(50), bReq.Brand)
         .input('it', sql.NVarChar(100), bReq.ItemName)
         .query(`
-          SELECT Id, BudgetQty, SalesUserId, EmpCode, EmpId
+          SELECT TOP 2 Id, BudgetQty, SalesUserId, EmpCode, EmpId
           FROM wf.GiveawayBudget WITH (UPDLOCK, ROWLOCK)
           WHERE Region = @rg AND PeriodYear = @y AND Brand = @br AND ItemName = @it
-        `)).recordset?.[0];
+        `)).recordset || [];
+      if (lenderBudgets.length > 1) throw Object.assign(new Error('พบงบผู้ให้ยืมหลายรายการ กรุณาตรวจสอบก่อนอนุมัติ'), { status: 409 });
+      const lenderBudget = lenderBudgets[0];
 
       if (!lenderBudget) {
         throw Object.assign(new Error(`ไม่พบงบโควตาของผู้ให้ยืมในภาค "${lenderRegion}" สำหรับ ${bReq.Brand} ${bReq.ItemName}`), { status: 400 });
@@ -1160,7 +1260,7 @@ router.patch('/borrow-requests/:id/resolve', requireBorrowRequestInScope, async 
         .input('it', sql.NVarChar(100), bReq.ItemName)
         .query(`
           SELECT ISNULL(SUM(Qty), 0) AS Withdrawn
-          FROM wf.GiveawayWithdrawal WITH (UPDLOCK)
+          FROM wf.GiveawayWithdrawal WITH (UPDLOCK,HOLDLOCK)
           WHERE Region = @rg AND PeriodYear = @y AND Brand = @br AND ItemName = @it
         `)).recordset?.[0];
 
@@ -1188,16 +1288,18 @@ router.patch('/borrow-requests/:id/resolve', requireBorrowRequestInScope, async 
         `);
 
       // 5. Add to requester region row (or create if missing)
-      const requesterBudget = (await tx.request()
+      const requesterBudgets = (await tx.request()
         .input('rg', sql.NVarChar(60), requesterRegion)
         .input('y', sql.Int, bReq.PeriodYear)
         .input('br', sql.NVarChar(50), bReq.Brand)
         .input('it', sql.NVarChar(100), bReq.ItemName)
         .query(`
-          SELECT Id, BudgetQty
+          SELECT TOP 2 Id, BudgetQty
           FROM wf.GiveawayBudget WITH (UPDLOCK, ROWLOCK)
           WHERE Region = @rg AND PeriodYear = @y AND Brand = @br AND ItemName = @it
-        `)).recordset?.[0];
+        `)).recordset || [];
+      if (requesterBudgets.length > 1) throw Object.assign(new Error('พบงบผู้ขอยืมหลายรายการ กรุณาตรวจสอบก่อนอนุมัติ'), { status: 409 });
+      const requesterBudget = requesterBudgets[0];
 
       if (requesterBudget) {
         await tx.request()
@@ -1232,7 +1334,7 @@ router.patch('/borrow-requests/:id/resolve', requireBorrowRequestInScope, async 
       // 6. Mark borrow request as APPROVED
       const finalUpdate = await tx.request()
         .input('id', sql.Int, reqId)
-        .input('u', sql.Int, req.user.id)
+        .input('u', sql.Int, businessIds(req.user).effective)
         .input('n', sql.NVarChar(500), note || null)
         .query(`
           UPDATE wf.GiveawayBorrowRequest
@@ -1244,6 +1346,12 @@ router.patch('/borrow-requests/:id/resolve', requireBorrowRequestInScope, async 
         throw Object.assign(new Error('คำขอนี้ได้รับการดำเนินการไปแล้ว'), { status: 409 });
       }
 
+      await logChangeEvent(tx, {
+        entityType: 'GIVEAWAY_BORROW_REQUEST', entityId: String(reqId), action: 'APPROVE',
+        beforeJson: { status: 'PENDING' }, afterJson: { status: 'APPROVED', qty: borrowQty },
+        reasonCode: 'GIVEAWAY_BORROW', reasonText: note ? String(note).slice(0, 500) : null,
+        userId: String(businessIds(req.user).effective), ipAddress: req.ip,
+      });
       // R12 item 8: the quota move is part of the budget audit trail
       await logChangeEvent(tx, {
         entityType: 'GIVEAWAY_BUDGET',
@@ -1252,7 +1360,7 @@ router.patch('/borrow-requests/:id/resolve', requireBorrowRequestInScope, async 
         afterJson: { borrowRequestId: reqId, qty: borrowQty, toRegion: requesterRegion },
         reasonCode: 'GIVEAWAY_BORROW',
         reasonText: note || null,
-        userId: String(req.user.sub),
+        userId: String(businessIds(req.user).effective),
         ipAddress: req.ip,
       });
       await logChangeEvent(tx, {
@@ -1262,10 +1370,10 @@ router.patch('/borrow-requests/:id/resolve', requireBorrowRequestInScope, async 
         afterJson: { borrowRequestId: reqId, qty: borrowQty, fromRegion: lenderRegion },
         reasonCode: 'GIVEAWAY_BORROW',
         reasonText: note || null,
-        userId: String(req.user.sub),
+        userId: String(businessIds(req.user).effective),
         ipAddress: req.ip,
       });
-    });
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
 
     res.json({ ok: true, status: 'APPROVED' });
   } catch (e) {
@@ -1275,5 +1383,5 @@ router.patch('/borrow-requests/:id/resolve', requireBorrowRequestInScope, async 
   }
 });
 
-router.__testing = { canResolveBorrow };
+router.__testing = { canResolveBorrow, budgetEditToken };
 module.exports = router;

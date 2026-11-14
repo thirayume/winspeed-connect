@@ -13,6 +13,7 @@ const { sql, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireCapability } = require('../middleware/auth');
 const { hasPermission } = require('../services/role-capabilities');
 const { getBangkokDateString } = require('../services/so-pickup-policy');
+const { businessIds } = require('../services/business-identity');
 
 router.use(requireAuth);
 
@@ -33,7 +34,9 @@ function requireCostView(req, res, next) {
 
 const requireCostManage = requireCapability('cost.manage');
 
-async function logAudit(queryFn, costBookId, action, fromStatus, toStatus, userId, note) {
+async function logAudit(queryFn, costBookId, action, fromStatus, toStatus, user, note) {
+  const ids = businessIds(user);
+  if (!ids.actor || !ids.effective) throw new Error('COSTBOOK_AUDIT_IDENTITY_REQUIRED');
   await queryFn(
     `INSERT INTO wf.CostBookAudit (CostBookId, Action, FromStatus, ToStatus, ByUser, Note)
      VALUES (@id, @a, @f, @t, @u, @n)`,
@@ -42,10 +45,23 @@ async function logAudit(queryFn, costBookId, action, fromStatus, toStatus, userI
       a: { type: sql.VarChar(40), value: action },
       f: { type: sql.VarChar(20), value: fromStatus || null },
       t: { type: sql.VarChar(20), value: toStatus || null },
-      u: { type: sql.Int, value: userId || null },
+      u: { type: sql.Int, value: ids.effective },
       n: { type: sql.NVarChar(500), value: note || null },
     }
   );
+  // CostBookAudit stores only the effective user. Record the real actor as
+  // well, in the same transaction; a missing audit schema or insert rolls
+  // back the business change instead of losing accountability.
+  await queryFn(`INSERT INTO wf.ChangeEvent
+    (EntityType, EntityId, Action, BeforeJson, AfterJson, UserId, ActorUserId)
+    VALUES ('COSTBOOK', @entityId, @action, @before, @after, @user, @actor)`, {
+    entityId: { type: sql.VarChar(100), value: String(costBookId) },
+    action: { type: sql.VarChar(30), value: String(action).slice(0, 30) },
+    before: { type: sql.NVarChar(sql.MAX), value: JSON.stringify({ status: fromStatus || null }) },
+    after: { type: sql.NVarChar(sql.MAX), value: JSON.stringify({ status: toStatus || null }) },
+    user: { type: sql.VarChar(50), value: String(ids.effective) },
+    actor: { type: sql.VarChar(50), value: String(ids.actor) },
+  });
 }
 
 // GET /api/costbook — list CostBooks
@@ -202,7 +218,7 @@ router.post('/', requireCostManage, async (req, res) => {
         ef: { type: sql.Date, value: cleanFrom },
         et: { type: sql.Date, value: cleanTo },
         note: { type: sql.NVarChar(500), value: note || null },
-        u: { type: sql.Int, value: req.user.sub },
+        u: { type: sql.Int, value: businessIds(req.user).effective },
       });
       const id = ins.recordset[0].Id;
 
@@ -249,7 +265,7 @@ router.post('/', requireCostManage, async (req, res) => {
         `, { newId: { type: sql.Int, value: id } });
       }
 
-      await logAudit(tq, id, 'CREATE', null, 'DRAFT', req.user.sub, note || name);
+      await logAudit(tq, id, 'CREATE', null, 'DRAFT', req.user, note || name);
       return id;
     });
 
@@ -293,7 +309,7 @@ router.put('/:id', requireCostManage, async (req, res) => {
         et: { type: sql.Date, value: cleanTo },
         note: { type: sql.NVarChar(500), value: note ?? null },
       });
-      await logAudit(tq, id, 'UPDATE_HEADER', book.Status, book.Status, req.user.sub, `${cleanName} (${cleanFrom || '-'} ถึง ${cleanTo || '-'})`);
+      await logAudit(tq, id, 'UPDATE_HEADER', book.Status, book.Status, req.user, `${cleanName} (${cleanFrom || '-'} ถึง ${cleanTo || '-'})`);
       return {};
     });
     if (result.statusCode) return res.status(result.statusCode).json({ message: result.message });
@@ -361,7 +377,7 @@ router.post('/:id/lines', requireCostManage, async (req, res) => {
       }
 
       await tq(`UPDATE wf.CostBook SET UpdatedAt = GETUTCDATE() WHERE Id = @id`, { id: { type: sql.Int, value: id } });
-      await logAudit(tq, id, 'EDIT_LINES', book.Status, book.Status, req.user.sub, `${lines.length} รายการ`);
+      await logAudit(tq, id, 'EDIT_LINES', book.Status, book.Status, req.user, `${lines.length} รายการ`);
       return {};
     });
     if (result.statusCode) return res.status(result.statusCode).json({ message: result.message });
@@ -407,7 +423,7 @@ router.patch('/:id/lines/:lineId', requireCostManage, async (req, res) => {
       cbId: { type: sql.Int, value: id },
     });
       if (!r.rowsAffected?.[0]) return { statusCode: 404, message: 'ไม่พบรายการสินค้านี้' };
-      await logAudit(tq, id, 'EDIT_LINE', book.Status, book.Status, req.user.sub, `Line ${lineId} -> Cost ${cp ?? '-'}`);
+      await logAudit(tq, id, 'EDIT_LINE', book.Status, book.Status, req.user, `Line ${lineId} -> Cost ${cp ?? '-'}`);
       return {};
     });
     if (result.statusCode) return res.status(result.statusCode).json({ message: result.message });
@@ -477,7 +493,7 @@ router.post('/:id/lines/item', requireCostManage, async (req, res) => {
       });
     }
 
-      await logAudit(tq, id, existing ? 'EDIT_LINE' : 'ADD_LINE', book.Status, book.Status, req.user.sub, `${goodName || goodId}: ${cp ?? '-'}`);
+      await logAudit(tq, id, existing ? 'EDIT_LINE' : 'ADD_LINE', book.Status, book.Status, req.user, `${goodName || goodId}: ${cp ?? '-'}`);
       return {};
     });
     if (result.statusCode) return res.status(result.statusCode).json({ message: result.message });
@@ -519,16 +535,16 @@ for (const [action, fromStatuses, toStatus, col] of [
           for (const oldBook of oldBooks) {
             await tq(`UPDATE wf.CostBook SET Status = 'ARCHIVED', UpdatedAt = GETUTCDATE() WHERE Id = @oldId`,
               { oldId: { type: sql.Int, value: oldBook.Id } });
-            await logAudit(tq, oldBook.Id, 'ARCHIVE', 'ACTIVE', 'ARCHIVED', req.user.sub, 'Replaced by another active Costlist');
+            await logAudit(tq, oldBook.Id, 'ARCHIVE', 'ACTIVE', 'ARCHIVED', req.user, 'Replaced by another active Costlist');
           }
         }
         const setCol = col ? `, ${col} = @uid, ${col.replace('By', 'At')} = GETUTCDATE()` : '';
         await tq(`UPDATE wf.CostBook SET Status = @s, UpdatedAt = GETUTCDATE() ${setCol} WHERE Id = @id`, {
           s: { type: sql.VarChar(20), value: toStatus },
-          uid: { type: sql.Int, value: req.user.sub },
+          uid: { type: sql.Int, value: businessIds(req.user).effective },
           id: { type: sql.Int, value: id },
         });
-        await logAudit(tq, id, action.toUpperCase(), book.Status, toStatus, req.user.sub, req.body?.note || null);
+        await logAudit(tq, id, action.toUpperCase(), book.Status, toStatus, req.user, req.body?.note || null);
         return {};
       });
       if (result.statusCode) return res.status(result.statusCode).json({ message: result.message });

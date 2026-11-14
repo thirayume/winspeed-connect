@@ -22,6 +22,7 @@ const state = {
     GoodId: '5001',
     GoodCode: 'GW-1688',
     GoodName: 'กระเป๋าปุ๋ย 16-8-8 ตรารถเกษตร',
+    EditVersion: '0000000000000001',
     BudgetQty: 500,
     WithdrawnQty: 120,
     RemainingQty: 380,
@@ -32,6 +33,8 @@ const state = {
 const db = h.installDbStub((call) => {
   const t = call.text;
   if (/COL_LENGTH\('wf\.GiveawayBudget',\s*'GoodId'\)/i.test(t)) return [{ Len: 50 }];
+  if (/SELECT Id FROM wf\.GiveawayBudget WITH \(UPDLOCK,HOLDLOCK\) WHERE Id=@id/i.test(t)) return Number(call.inputs.id?.value ?? call.inputs.id) === state.budgetRow.Id ? [{ Id: state.budgetRow.Id }] : [];
+  if (/SELECT TOP 2 Id FROM wf\.GiveawayBudget WITH \(UPDLOCK,HOLDLOCK\)/i.test(t)) return state.existingBudget ? [{Id:state.existingBudget.Id}] : [];
   if (/FROM dbo\.EMGood g/i.test(t) && /WHERE g\.GoodID = @gid/i.test(t)) {
     const gid = String(call.inputs.gid?.value ?? call.inputs.gid ?? '');
     if (gid === state.masterGood.GoodID) {
@@ -82,7 +85,7 @@ const db = h.installDbStub((call) => {
   if (/FROM wf\.AppUser u LEFT JOIN dbo\.EMEmp/i.test(t)) {
     return [{ EmpId: '10040', EmpCode: 'S040' }];
   }
-  if (/FROM wf\.v_GiveawayBudgetStatus WHERE Id = @id/i.test(t)) {
+  if (/FROM wf\.v_GiveawayBudgetStatus v JOIN wf\.GiveawayBudget b ON b.Id=v.Id WHERE v.Id = @id/i.test(t)) {
     const id = Number(call.inputs.id?.value ?? call.inputs.id);
     return id === state.budgetRow.Id ? [{ ...state.budgetRow }] : [];
   }
@@ -160,7 +163,7 @@ test('POST /api/giveaway/budgets links master goodId/goodCode/goodName and sales
 test('PUT /api/giveaway/budgets/:id warns when new qty is below withdrawn qty', async () => {
   const before = db.calls.length;
   const r = await app.call('PUT', '/api/giveaway/budgets/101', {
-    body: { budgetQty: 80, reason: 'ลดโควต้า' },
+    body: { budgetQty: 80, reason: 'ลดโควต้า', expectedToken: require('../routes/giveaway').__testing.budgetEditToken(state.budgetRow) },
     user: { sub: 25, role: 'MANAGER' },
   });
   assert.equal(r.status, 200);
@@ -173,6 +176,7 @@ test('PUT /api/giveaway/budgets/:id warns when new qty is below withdrawn qty', 
 
 test('DELETE /api/giveaway/budgets/:id enforces 409 confirm guard when WithdrawnQty > 0', async () => {
   const blocked = await app.call('DELETE', '/api/giveaway/budgets/101', {
+    body: { expectedToken: require('../routes/giveaway').__testing.budgetEditToken(state.budgetRow) },
     user: { sub: 25, role: 'MANAGER' },
   });
   assert.equal(blocked.status, 409);
@@ -180,6 +184,7 @@ test('DELETE /api/giveaway/budgets/:id enforces 409 confirm guard when Withdrawn
   assert.equal(blocked.body.withdrawnQty, 120);
 
   const forced = await app.call('DELETE', '/api/giveaway/budgets/101?force=true', {
+    body: { expectedToken: require('../routes/giveaway').__testing.budgetEditToken(state.budgetRow) },
     user: { sub: 25, role: 'MANAGER' },
   });
   assert.equal(forced.status, 200);

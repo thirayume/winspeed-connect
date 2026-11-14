@@ -9,7 +9,7 @@
  * - นำไปแสดงผลในส่วนหัวของระบบ (Navbar), หน้าเข้าสู่ระบบ (LoginPage), และหัวรายงาน/เอกสารทั้งหมด
  */
 
-const { query, getDbName } = require('../db');
+const { query, getDbName, getTarget } = require('../db');
 
 const DEFAULT_COMPANY = Object.freeze({
   compCode: '001',
@@ -70,7 +70,7 @@ function normalizeCompanyRecord(row) {
 
 async function getCompanyInfo(options = {}) {
   const { forceRefresh = false, customQueryFn = null } = options;
-  const dbKey = (typeof getDbName === 'function' ? getDbName() : null) || 'DEFAULT';
+  const dbKey = JSON.stringify([typeof getTarget === 'function' ? getTarget() : null, typeof getDbName === 'function' ? getDbName() : null]);
   const now = Date.now();
   const cached = cacheByDb.get(dbKey);
   if (!forceRefresh && cached && now < cached.expiry) {

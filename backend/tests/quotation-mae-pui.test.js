@@ -8,8 +8,10 @@ const { toBangkokDateString } = require('../services/coupon-settlement-matcher')
 
 let maePuiSettingValue = '3';
 let lastQuoteLines = [];
+let failQuoteAudit = false;
 
 const db = h.installDbStub(({ kind, text, inputs }) => {
+  if (/INSERT INTO wf\.ChangeEvent/.test(text) && failQuoteAudit) throw new Error('TEST_AUDIT_UNAVAILABLE');
   if (kind === 'proc') return { recordset: [], rowsAffected: [1] };
   if (/AS Visible FROM wf\.Quotation/.test(text)) return [88, 89].includes(Number(inputs.id)) ? [{ Visible: 1 }] : [];
 
@@ -258,6 +260,19 @@ test('PATCH /api/quotation/:id/valid-until: enforces <=3 days, requires priceRev
     user: { sub: 25, role: 'MANAGER' },
   });
   assert.equal(normalExtend.status, 200, JSON.stringify(normalExtend.body));
+  const normalAudit = db.calls.slice(before).find(c => c.kind === 'tx' && /INSERT INTO wf\.ChangeEvent/.test(c.text) && c.inputs.entityId === '89');
+  assert.ok(normalAudit, 'even an unchanged-price validity extension is recorded in the business transaction');
+});
+
+test('quotation validity extension fails if its transactional audit cannot be written', async () => {
+  failQuoteAudit = true;
+  try {
+    const res = await app.call('PATCH', '/api/quotation/89/valid-until', {
+      body: { validDays: 15 }, user: { sub: 25, role: 'MANAGER' },
+    });
+    assert.equal(res.status, 500);
+    assert.ok(db.calls.some(c => c.kind === 'tx' && /INSERT INTO wf\.ChangeEvent/.test(c.text)));
+  } finally { failQuoteAudit = false; }
 });
 
 test('Migration 184 seeds QUOTATION_MAE_PUI_MAX_VALID_DAYS and uses SQL 2008 R2 compatible procs', () => {

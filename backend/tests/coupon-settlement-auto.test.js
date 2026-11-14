@@ -62,6 +62,11 @@ require.cache[dbPath] = {
   exports: stubDb
 };
 
+const windowPath = require.resolve('../services/global-data-window-store');
+require.cache[windowPath] = { id:windowPath, filename:windowPath, loaded:true, exports:{
+  readGlobalDataWindow:async () => require('../services/data-window').boundaries('2026-01-01'),
+} };
+
 delete require.cache[require.resolve('../services/coupon-service')];
 const couponService = require('../services/coupon-service');
 

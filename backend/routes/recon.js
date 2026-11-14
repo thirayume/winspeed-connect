@@ -6,7 +6,7 @@
  * เขียนเฉพาะ wf (ReconResolution) · อ่าน dbo
  */
 const router = require('express').Router();
-const { sql, wfQuery } = require('../db');
+const { sql, wfQuery, wfTransaction } = require('../db');
 // เดิมเทียบยอดกับตาราง tblscale ใน MySQL ของ TruckScale
 // MySQL ถูกลบออกถาวรเมื่อ 04/09/2569 — ย้ายมาอ่าน dbo.WGHD ซึ่งเป็นแหล่งเดียวแล้ว
 // dbo.WGHD มีครบทั้ง MoveBill · CarNo · WeightNet · DateOut จึงเทียบได้เหมือนเดิม
@@ -335,22 +335,27 @@ router.post('/:soId/resolve', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_L
     });
     if (!target.recordset?.[0]) return res.status(404).json({ message: 'ไม่พบใบสั่งขายนี้' });
     const status = action === 'IGNORE' ? 'IGNORED' : 'RESOLVED';
-    await wfQuery(`
-      MERGE wf.ReconResolution AS t
+    const { effective, actor } = require('../services/business-identity').businessIds(req.user);
+    if (!effective || !actor) return res.status(403).json({ message: 'ไม่สามารถยืนยันตัวตนผู้บันทึกได้' });
+    if (req.user.isImpersonating && !await require('../services/request-context').hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId'))
+      return res.status(503).json({ message: 'ไม่สามารถบันทึกตัวตนผู้ทำรายการแทนได้' });
+    await wfTransaction(async tx => {
+      await tx.request().input('so', sql.NVarChar(50), String(soId)).input('ref', sql.NVarChar(30), wfRef || null)
+        .input('ct', sql.NVarChar(20), checkType).input('st', sql.NVarChar(20), status)
+        .input('note', sql.NVarChar(500), note || null).input('uid', sql.Int, effective).query(`
+      MERGE wf.ReconResolution WITH (HOLDLOCK) AS t
       USING (SELECT @so AS SoId, @ct AS CheckType) AS s ON t.SoId=s.SoId AND t.CheckType=s.CheckType
       WHEN MATCHED THEN UPDATE SET Status=@st, Note=@note, ResolvedBy=@uid, ResolvedAt=GETUTCDATE()
       WHEN NOT MATCHED THEN INSERT (SoId, WfRef, CheckType, Status, Note, ResolvedBy)
-        VALUES (@so, @ref, @ct, @st, @note, @uid);`,
-      {
-        so:  { type: sql.NVarChar(50),  value: String(req.params.soId) },
-        ref: { type: sql.NVarChar(30),  value: wfRef || null },
-        ct:  { type: sql.NVarChar(20),  value: checkType },
-        st:  { type: sql.NVarChar(20),  value: status },
-        note:{ type: sql.NVarChar(500), value: note || null },
-        uid: { type: sql.Int,           value: req.user.sub },
+        VALUES (@so, @ref, @ct, @st, @note, @uid);`);
+      await require('../services/policy-contract').logChangeEvent(tx, {
+        entityType: 'RECON_RESOLUTION', entityId: `${soId}:${checkType}`, action: status,
+        afterJson: { soId, checkType, status }, reasonCode: 'RECON_RESOLVE', reasonText: note || null,
+        userId: String(effective), ipAddress: req.ip,
       });
+    });
     res.json({ soId: req.params.soId, checkType, status });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 module.exports = router;

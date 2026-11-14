@@ -28,10 +28,14 @@ async function applyTicketRedemption(query,input={},options={}){
     if(String(r.RequestId||'').toLowerCase()!==p.requestId||Number(r.BookingSOID)!==context.bookingId||
        Number(r.BookingLineNo)!==context.lineNo||Number(r.CustId)!==context.customer||Number(r.GoodId)!==context.good||
        ticketUnits(r.QuantityTon)!==ticketUnits(context.requestedTonnage)||r.Treatment!==input.treatment||
-       String(r.NativeFingerprint||'').trim()!==context.nativeFingerprint||
        Number(r.ActorPrimaryId)!==context.identity.actorId||Number(r.EffectivePrimaryId)!==context.identity.effectiveId||
        Number(r.ActorBusinessId)!==context.business.actor||Number(r.EffectiveBusinessId)!==context.business.effective||
        !positive(Number(r.Id)))fail('TICKET_REDEMPTION_CONFLICT');
+    const storedFingerprint=String(r.NativeFingerprint||'').trim();
+    const currentMatch=storedFingerprint===context.nativeFingerprint;
+    const legacyMatch=typeof context.legacyNativeFingerprint==='string' &&
+      storedFingerprint===context.legacyNativeFingerprint;
+    if(!currentMatch&&!legacyMatch)fail('TICKET_REDEMPTION_CONFLICT');
     const allocations=(await query(`SELECT TicketId,Ordinal,QuantityTon,RemainingBefore,RemainingAfter
       FROM wf.RebateTicketRedemptionAllocation WHERE ReceiptId=@receiptId ORDER BY Ordinal`,{receiptId:Number(r.Id)})).recordset||[];
     let sum=0n;const seen=new Set();
@@ -41,6 +45,14 @@ async function applyTicketRedemption(query,input={},options={}){
       seen.add(id);sum+=q;
     }
     if(sum!==ticketUnits(context.requestedTonnage))fail('TICKET_REDEMPTION_RECEIPT_INVALID');
+    if(!currentMatch){
+      // A v3 hash has no original status/owner. Only a trusted server-side
+      // verifier using independent historical evidence can prove those fields;
+      // current values or caller-supplied attestations are insufficient.
+      if(typeof options.verifyLegacyReceipt!=='function'||
+          await options.verifyLegacyReceipt(query,context,r)!==true)
+        fail('TICKET_LEGACY_PROOF_UNAVAILABLE',503);
+    }
     return {id:Number(r.Id),replayed:true,allocations};
   }
   await (options.assertAging||assertAgingNotBlocked)(query,context.customer,{asOfDate:context.today,lock:true});
