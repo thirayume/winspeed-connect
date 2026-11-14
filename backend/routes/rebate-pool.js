@@ -378,5 +378,68 @@ router.get('/audit', requireRole('ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'), a
   }
 });
 
+// ── 12) Reset fences: status and first-time initialization ──────────────────
+// The fences must exist before the Rebate Pool switch can be used in an
+// environment. Initialization writes generation 0 only: it changes no balance,
+// cancels nothing and is not a reset. On-prem only, from the primary database.
+const RESET_ADMIN_MESSAGES = Object.freeze({
+  REBATE_POOL_103_UNAVAILABLE: 'ระบบ Rebate Pool ยังไม่เปิดใช้งานในสภาพแวดล้อมนี้',
+  REBATE_RESET_ENVIRONMENT_INVALID: 'ใช้งานได้เฉพาะระบบที่ติดตั้งบนเซิร์ฟเวอร์ของบริษัท',
+  REBATE_RESET_PRIMARY_SESSION_REQUIRED: 'กรุณาสลับกลับมาที่ฐานข้อมูลหลักก่อนทำรายการนี้',
+  REBATE_RESET_CONFIRMATION_REQUIRED: 'กรุณายืนยันสภาพแวดล้อมและพิมพ์คำยืนยันให้ถูกต้อง',
+  REBATE_RESET_REASON_REQUIRED: 'กรุณาระบุเหตุผล (ไม่เกิน 500 ตัวอักษร)',
+  REBATE_RESET_HISTORY_EXISTS: 'ฐานข้อมูลนี้มีประวัติการเริ่มยอดรีเบทใหม่อยู่แล้ว ตั้งค่าเริ่มต้นซ้ำไม่ได้ ต้องให้ผู้ดูแลระบบตรวจสอบ',
+  REBATE_RESET_COORDINATOR_MISMATCH: 'สถานะตัวควบคุมรีเบทไม่ตรงกับการตั้งค่าของระบบ ต้องให้ผู้ดูแลระบบตรวจสอบ',
+  REBATE_RESET_PARTICIPANT_MISMATCH: 'สถานะรีเบทของบางฐานข้อมูลไม่ตรงกับการตั้งค่าของระบบ ต้องให้ผู้ดูแลระบบตรวจสอบ',
+  REBATE_RESET_PREFLIGHT_FAILED: 'บางฐานข้อมูลยังไม่มีตารางที่จำเป็น กรุณาอัปเดตฐานข้อมูลให้ครบก่อน',
+});
+
+function sendResetAdminError(res, err) {
+  const code = typeof err?.code === 'string' && /^REBATE_/.test(err.code) ? err.code : null;
+  if (!code) { console.error('[rebate-pool/reset]', err); return res.status(500).json({ code: 'REBATE_POOL_ERROR', error: 'ไม่สามารถทำรายการได้' }); }
+  const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 600 ? err.status : 503;
+  return res.status(status).json({ code, error: RESET_ADMIN_MESSAGES[code] || 'ระบบรีเบทยังไม่พร้อมใช้งาน กรุณาแจ้งผู้ดูแลระบบ' });
+}
+
+function assertOnPremPrimarySession() {
+  const db = require('../db');
+  const fail = code => { throw Object.assign(new Error(code), { code, status: 409 }); };
+  if (db.getTarget() !== 'onprem') fail('REBATE_RESET_ENVIRONMENT_INVALID');
+  const primary = String(require('../services/active-database').primaryDatabase() || '').trim().toLowerCase();
+  const session = String(db.getDbName() || primary).trim().toLowerCase();
+  if (!primary || session !== primary) fail('REBATE_RESET_PRIMARY_SESSION_REQUIRED');
+}
+
+router.get('/reset/status', requireRole('ADMIN'), async (req, res) => {
+  try {
+    assertOnPremPrimarySession();
+    return res.json(await require('../services/rebate-reset-initialize').readRebateEnvironmentStatus());
+  } catch (err) {
+    return sendResetAdminError(res, err);
+  }
+});
+
+router.post('/reset/initialize', requireRole('ADMIN'), async (req, res) => {
+  try {
+    if (process.env.REBATE_POOL_103_ENABLED !== 'true') {
+      return res.status(503).json({ code: 'REBATE_POOL_103_UNAVAILABLE', error: RESET_ADMIN_MESSAGES.REBATE_POOL_103_UNAVAILABLE });
+    }
+    assertOnPremPrimarySession();
+    // The administrator names the environment and types the confirmation, so a
+    // request aimed at UAT cannot initialize Production or the other way round.
+    const expected = String(process.env.ONPREM_TARGET_KIND || '').trim().toLowerCase();
+    if (req.body?.confirm !== 'INITIALIZE' || String(req.body?.environment || '').trim().toLowerCase() !== expected || !expected) {
+      return res.status(400).json({ code: 'REBATE_RESET_CONFIRMATION_REQUIRED', error: RESET_ADMIN_MESSAGES.REBATE_RESET_CONFIRMATION_REQUIRED });
+    }
+    const identity = require('../services/approval-identity').approvalIdentity(req.user);
+    const result = await require('../services/rebate-reset-initialize').initializeRebateEnvironment({
+      actorId: identity.actorId, effectiveId: identity.effectiveId, reason: req.body?.reason,
+    });
+    return res.status(result.coordinatorCreated ? 201 : 200).json(result);
+  } catch (err) {
+    return sendResetAdminError(res, err);
+  }
+});
+
 module.exports = router;
 
