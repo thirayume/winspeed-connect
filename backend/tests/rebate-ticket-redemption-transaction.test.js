@@ -70,6 +70,30 @@ test('damaged allocation receipt cannot be replayed as success',async()=>{
   await assert.rejects(f.run(),{code:'TICKET_REDEMPTION_RECEIPT_INVALID'});
   assert.equal(f.state.balance,'0.5000');
 });
+test('legacy v3 receipt replays only with independent historical proof and never deducts again',async()=>{
+  const f=fixture();await f.run();
+  f.state.context.legacyNativeFingerprint='b'.repeat(64);f.state.receipt.NativeFingerprint='b'.repeat(64);
+  await assert.rejects(f.run(),{code:'TICKET_LEGACY_PROOF_UNAVAILABLE'});
+  f.options.verifyLegacyReceipt=async(_query,context,receipt)=>context.documentStatus==='N'&&context.ownerEmployeeId===9&&Number(receipt.Id)===9;
+  f.state.context.documentStatus='Y';f.state.context.ownerEmployeeId=9;
+  await assert.rejects(f.run(),{code:'TICKET_LEGACY_PROOF_UNAVAILABLE'});
+  f.state.context.documentStatus='N';f.state.context.ownerEmployeeId=10;
+  await assert.rejects(f.run(),{code:'TICKET_LEGACY_PROOF_UNAVAILABLE'});
+  f.state.context.ownerEmployeeId=9;
+  const result=await f.run();assert.equal(result.replayed,true);
+  assert.equal(f.state.balance,'0.5000');assert.equal(f.state.history.length,1);assert.equal(f.state.allocations.length,1);
+  f.state.context.legacyNativeFingerprint='c'.repeat(64);
+  await assert.rejects(f.run(),{code:'TICKET_REDEMPTION_CONFLICT'});
+  assert.equal(f.state.balance,'0.5000');
+});
+test('legacy verifier cannot bypass identity or receipt allocation checks',async()=>{
+  const f=fixture();await f.run();f.state.context.legacyNativeFingerprint='b'.repeat(64);f.state.receipt.NativeFingerprint='b'.repeat(64);
+  let checks=0;f.options.verifyLegacyReceipt=async()=>{checks++;return true;};
+  f.state.receipt.ActorBusinessId=999;await assert.rejects(f.run(),{code:'TICKET_REDEMPTION_CONFLICT'});assert.equal(checks,0);
+  f.state.receipt.ActorBusinessId=22;f.state.allocations[0].QuantityTon='0.4000';
+  await assert.rejects(f.run(),{code:'TICKET_REDEMPTION_RECEIPT_INVALID'});assert.equal(checks,0);
+  assert.equal(f.state.balance,'0.5000');
+});
 test('missing or failing participant fence prevents all ticket writes',async()=>{
   let f=fixture();await assert.rejects(f.run(input,{...f.options,epoch:null}),{code:'REBATE_RESET_PARTICIPANT_MISMATCH'});
   assert.equal(f.state.receipt,null);assert.equal(f.state.balance,'1.0000');

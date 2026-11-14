@@ -136,6 +136,7 @@ export function GiveawayQuotaSettings({
     setMsg(null);
     try {
       const r = await updateGiveawayBudgetLine(line.Id, {
+        expectedToken: line.EditToken,
         budgetQty: qty,
         reason: reason.trim() || undefined,
       });
@@ -187,7 +188,7 @@ export function GiveawayQuotaSettings({
         ok: true,
         text:
           r.warning ||
-          `เพิ่ม/อัปเดตโควต้า ${selectedMasterNew.GoodCode ? `[${selectedMasterNew.GoodCode}] ` : ''}${
+          `เพิ่มโควต้า ${selectedMasterNew.GoodCode ? `[${selectedMasterNew.GoodCode}] ` : ''}${
             selectedMasterNew.GoodName || selectedMasterNew.ItemName
           } = ${qty.toLocaleString()} ชิ้นแล้ว`,
       });
@@ -203,6 +204,7 @@ export function GiveawayQuotaSettings({
   }
 
   function openEditModal(line: GiveawayBudgetLine) {
+    setMsg(null);
     setEditingRow(line);
     setEditGoodId(line.GoodId ? String(line.GoodId) : '');
     setEditSalesUserId(line.SalesUserId ? String(line.SalesUserId) : '');
@@ -226,6 +228,7 @@ export function GiveawayQuotaSettings({
     setMsg(null);
     try {
       const r = await updateGiveawayBudgetLine(editingRow.Id, {
+        expectedToken: editingRow.EditToken,
         budgetQty: qty,
         salesUserId: editSalesUserId ? Number(editSalesUserId) : null,
         empId: chosenStaff?.EmpId ?? null,
@@ -265,18 +268,18 @@ export function GiveawayQuotaSettings({
     setBusy(true);
     setMsg(null);
     try {
-      await deleteGiveawayBudgetLine(line.Id, { reason: reason.trim() || undefined });
+      await deleteGiveawayBudgetLine(line.Id, { expectedToken: line.EditToken, reason: reason.trim() || undefined });
       setMsg({ ok: true, text: `ลบรายการโควต้า "${label}" ออกจากเขต ${region} แล้ว` });
       onSaved();
       loadHistory();
     } catch (e: any) {
-      if (e?.status === 409 || e?.requiresConfirm || String(e?.message || '').includes('มียอดเบิกแล้ว')) {
+      if (e?.data?.requiresConfirm === true) {
         const confirmedForce = await appConfirm(
           `${e.message || `รายการ "${label}" มียอดเบิกแล้ว`}\n\nต้องการยืนยันลบรายการโควต้านี้อย่างถาวรหรือไม่?`
         );
         if (confirmedForce) {
           try {
-            await deleteGiveawayBudgetLine(line.Id, { force: true, reason: reason.trim() || undefined });
+            await deleteGiveawayBudgetLine(line.Id, { expectedToken: line.EditToken, force: true, reason: reason.trim() || undefined });
             setMsg({ ok: true, text: `ลบรายการโควต้า "${label}" เรียบร้อยแล้ว` });
             onSaved();
             loadHistory();
@@ -596,6 +599,11 @@ export function GiveawayQuotaSettings({
                 <X size={18} />
               </button>
             </div>
+            {msg && !msg.ok && (
+              <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">
+                {msg.text} ข้อมูลที่กรอกยังอยู่ในหน้าต่างนี้
+              </div>
+            )}
 
             <div className="space-y-3">
               <div>

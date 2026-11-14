@@ -61,6 +61,20 @@ test('locked financial fingerprint changes with native price or discount',async(
   assert.notEqual(first.nativeFingerprint,changedDiscount.nativeFingerprint);
   assert.notEqual(first.nativeFingerprint,changedPrice.nativeFingerprint);
 });
+test('fingerprint binds native document status and responsible employee',async()=>{
+  const original=fixture(),approved=fixture({DocuStatus:'Y'}),newOwner=fixture({EmpID:10});
+  const base=await prepareTicketBookingProof(original.query,input,original.overrides);
+  assert.notEqual(base.nativeFingerprint,(await prepareTicketBookingProof(approved.query,input,approved.overrides)).nativeFingerprint);
+  assert.notEqual(base.nativeFingerprint,(await prepareTicketBookingProof(newOwner.query,input,newOwner.overrides)).nativeFingerprint);
+  // Legacy v3 deliberately did not bind those fields. It requires an
+  // independent historical verifier before it can be replayed.
+  assert.equal(base.legacyNativeFingerprint,(await prepareTicketBookingProof(approved.query,input,approved.overrides)).legacyNativeFingerprint);
+  assert.equal(base.legacyNativeFingerprint,(await prepareTicketBookingProof(newOwner.query,input,newOwner.overrides)).legacyNativeFingerprint);
+  const changedPrice=fixture({GoodPrice2:'99.0000'});
+  assert.notEqual(base.legacyNativeFingerprint,(await prepareTicketBookingProof(changedPrice.query,input,changedPrice.overrides)).legacyNativeFingerprint);
+  const invalid=fixture({EmpID:-1});
+  await assert.rejects(prepareTicketBookingProof(invalid.query,input,invalid.overrides),{code:'TICKET_BOOKING_SOURCE_UNCONFIRMED'});
+});
 test('fingerprint detects fractional-cent changes, tax, other charges and document totals',async()=>{
   const original=fixture();
   const base=await prepareTicketBookingProof(original.query,input,original.overrides);

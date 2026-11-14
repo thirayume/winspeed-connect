@@ -21,6 +21,7 @@ require.cache[auth] = { id: auth, filename: auth, loaded: true, exports: {
 const db = h.installDbStub(({ text, inputs }) => {
   if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser/.test(text)) return [{ Id: Number(inputs.id), EmpId: Number(inputs.id) + 1000, PositionCode: null }];
   if (/WHERE c\.CustID=@visibilityCustId/.test(text)) return visible ? [{ ok: 1 }] : [];
+  if (/SELECT Id, Status, EffectiveMonth/.test(text)) return [{Id:5,Status:'ACTIVE',EffectiveMonth:'2026-11',EffectiveFrom:'2026-11-01',EffectiveTo:'2026-11-30'}];
   return [];
 });
 const win = require.resolve('../services/global-data-window-store');
@@ -92,17 +93,17 @@ test('an invalid identity mapping fails closed', async () => {
 });
 
 test('effective prices on a secondary database never show another customer\'s special price', async () => {
-  const priceQuery = () => db.calls.find(c => /FROM wf\.v_PriceBookEffective/.test(c.text));
+  const priceQuery = () => db.calls.find(c => /FROM wf\.PriceBookLine l/.test(c.text));
   visible = false;
   assert.equal((await app.call('GET', '/api/pricebook/5/effective?custId=123')).status, 404);
   assert.equal(priceQuery(), undefined);
   visible = true; db.calls.length = 0;
   assert.equal((await app.call('GET', '/api/pricebook/5/effective?custId=123')).status, 200);
-  assert.doesNotMatch(priceQuery().text, /@cust IS NULL OR/);
+  assert.match(priceQuery().text, /sp\.CustId=@cust/);
   assert.equal(priceQuery().inputs.cust, '123');
   db.calls.length = 0;
   assert.equal((await app.call('GET', '/api/pricebook/5/effective')).status, 200);
-  assert.doesNotMatch(priceQuery().text, /@cust IS NULL OR/, 'without a customer only standard rows match');
+  assert.match(priceQuery().text, /sp\.CustId=@cust/, 'without a customer only standard rows match');
   assert.equal(priceQuery().inputs.cust, null);
 });
 

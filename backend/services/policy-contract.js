@@ -250,7 +250,11 @@ const _settingCache = new Map();
 async function getSettingValue(key, { maxAgeMs = 30000 } = {}) {
   const def = POLICY_DEFINITIONS[key];
   if (!def) throw new Error(`unknown setting ${key}`);
-  const hit = _settingCache.get(key);
+  // Settings are read through the current database context. A cached value
+  // from another database must never influence this session's credit policy.
+  const db = require('../db');
+  const cacheKey = `${String(db.getTarget?.() || 'default').toLowerCase()}::${String(db.getDbName?.() || 'default').toLowerCase()}::${key}`;
+  const hit = _settingCache.get(cacheKey);
   if (hit && Date.now() - hit.at < maxAgeMs) return hit.value;
   let raw = null;
   try {
@@ -259,7 +263,7 @@ async function getSettingValue(key, { maxAgeMs = 30000 } = {}) {
   } catch { raw = null; }
   const s = raw == null || String(raw).trim() === '' ? String(def.default) : String(raw).trim();
   const value = def.type === 'INT' ? parseInt(s, 10) : def.type === 'FLOAT' ? parseFloat(s) : def.type === 'BOOLEAN' ? s === 'true' : s;
-  _settingCache.set(key, { at: Date.now(), value });
+  _settingCache.set(cacheKey, { at: Date.now(), value });
   return value;
 }
 function clearSettingCache() { _settingCache.clear(); }

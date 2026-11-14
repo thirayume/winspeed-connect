@@ -653,6 +653,7 @@ export type GiveawayRegion = {
 
 export type GiveawayBudgetLine = {
   Id: number;
+  EditToken: string;
   Region: string;
   RegionCode?: string | null;
   SalesUserId?: number | null;

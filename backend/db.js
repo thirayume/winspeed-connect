@@ -343,19 +343,14 @@ async function wfQuery(text, inputs = {}) {
   const actualText = nativeDriver ? text : `SET ARITHABORT ON; SET ANSI_WARNINGS ON; ${text}`;
   return await metrics.measure('db.owner.query', () => req.query(actualText));
 }
-async function wfTransaction(fn) {
+async function wfTransaction(fn, { isolationLevel, onRollbackConfirmed } = {}) {
   const pl = pools();
   await pl.ready;
   const tx = new sql.Transaction(pl.ownerPool);
-  await tx.begin();
-  try {
-    const r = await fn(tx);
-    await tx.commit();
-    return r;
-  } catch (e) {
-    try { await tx.rollback(); } catch (_) {}
-    throw e;
-  }
+  await tx.begin(isolationLevel);
+  // A commit failure may be ambiguous even when rollback resolves. Only
+  // clean external staging after a confirmed pre-commit rollback.
+  return require('./services/transaction-execution').runTransaction(tx, fn, onRollbackConfirmed);
 }
 
 // The global Rebate fence must not occupy the normal primary owner pool while

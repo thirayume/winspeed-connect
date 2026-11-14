@@ -19,6 +19,7 @@ h.installDbStub(({ text, inputs }) => {
   if (/DELETE FROM wf\.AppUser WHERE Id\s*=\s*@id/.test(text)) {
     return { recordset: [], rowsAffected: [users.delete(id) ? 1 : 0] };
   }
+  if (/INSERT INTO wf\.AdminChangeAudit/.test(text)) return { rowsAffected:[1] };
   if (/FROM wf\.AppUser\s+WHERE Id\s*=\s*@id/.test(text)) {
     return users.has(id) ? [users.get(id)] : [];
   }

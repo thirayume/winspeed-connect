@@ -22,7 +22,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/FROM wf\.EditReason/.test(text)) return [{ ReasonCode: 'X', ReasonText: 'customer cancelled', AppliesTo: 'SO_CANCEL,SO_DELETE', IsActive: 1 }];
   if (/JOIN dbo\.SOHD d WITH \(NOLOCK\) ON d\.DocuType = 104/.test(text)) return issued ? [{ DocuNo: issued }] : [];
   if (/SELECT \* FROM wf\.UnlockRequest WHERE Id=@id/.test(text)) return [requests[inputs.id]];
-  if (/FROM\s+dbo\.SOHD s\s/.test(text) && /s\.SOID = @soid AND s\.DocuType = 103/.test(text)) return [{ SOID: '289030', DocuNo: 'I69-05286', CustId: '1086' }];
+  if (/FROM\s+dbo\.SOHD s\s/.test(text) && /s\.SOID = @soid AND s\.DocuType = 103/.test(text)) return [{ SOID: '289030', DocuNo: 'I69-05286', CustId: '1086', SalesUserId: 43 }];
   if (/SELECT 1 AS ok FROM wf\.EditRequest WHERE Id = @id AND RequestedAt >= @globalStartUtc/.test(text)) return [{ ok: 1 }];
   if (/SELECT \* FROM wf\.EditRequest WHERE Id = @id/.test(text)) return [{ Id: 7, SOID: '289030', Status: 'PENDING', RequestedBy: 43 }];
   return [];

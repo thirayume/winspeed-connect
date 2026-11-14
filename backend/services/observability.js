@@ -268,21 +268,16 @@ async function getUserActivity(dateStr) {
   };
 }
 
-async function clearErrors() {
-  state.errors = 0;
-  state.recentErrors = [];
-  state.byStatus = {};
-  state.lastErrorAt = null;
-  try {
-    const { wfQuery } = require('../db');
-    await wfQuery('TRUNCATE TABLE wf.ErrorLog');
-  } catch {
-    try {
-      const { wfQuery } = require('../db');
-      await wfQuery('DELETE FROM wf.ErrorLog');
-    } catch {}
-  }
-  return { ok: true, message: 'ล้างประวัติ Error สำเร็จ' };
+let clearErrorsQueue = Promise.resolve();
+async function clearErrors(user, ipAddress) {
+  const next = clearErrorsQueue.then(() => {
+    const { wfQuery, wfTransaction } = require('../db');
+    return require('./clear-errors').createErrorClearer({ state, wfQuery, wfTransaction,
+      hasColumn: require('./request-context').hasColumn,
+      logChangeEvent: require('./policy-contract').logChangeEvent })(user, ipAddress);
+  });
+  clearErrorsQueue = next.catch(() => {});
+  return next;
 }
 
 // middleware: นับ request + เวลา + จับ 5xx ที่ route จัดการเอง (ไม่ผ่าน global error handler)

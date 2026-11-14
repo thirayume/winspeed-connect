@@ -25,6 +25,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/FROM wf\.AppUser\s+WHERE Id = @id/i.test(text)) return users[inputs.id] ? [users[inputs.id]] : [];
   if (/^\s*UPDATE wf\.AppUser/i.test(text)) return { recordset: [], rowsAffected: [1] };
   if (/INSERT INTO wf\.AppUser/i.test(text)) return [{ Id: 99, Username: 'new', DisplayName: 'New', Role: 'SALES' }];
+  if (/INSERT INTO wf\.AdminChangeAudit/i.test(text)) return { rowsAffected:[1] };
   return [];
 }, { activeUserIds: h.TEST_USERS });
 

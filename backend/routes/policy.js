@@ -3,11 +3,29 @@
  * จัดการ wf.ApprovalPolicy (ADMIN/MANAGER) + endpoint resolve
  */
 const router = require('express').Router();
-const { sql, wfQuery } = require('../db');
+const { sql, wfQuery, wfTransaction } = require('../db');
 const { resolveApprovalPolicy } = require('../services/approval');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { logChangeEvent } = require('../services/policy-contract');
+const { businessIds } = require('../services/business-identity');
+const { hasColumn } = require('../services/request-context');
 
 router.use(requireAuth);
+
+async function txQuery(tx, text, inputs = {}) {
+  const request = tx.request();
+  for (const [key, input] of Object.entries(inputs)) request.input(key, input.type, input.value);
+  return request.query(text);
+}
+
+async function auditPolicy(tx, req, id, action, before, after) {
+  const ids = businessIds(req.user);
+  if (!ids.actor || !ids.effective) throw new Error('POLICY_AUDIT_IDENTITY_REQUIRED');
+  if (req.user.isImpersonating && !await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId')) throw new Error('POLICY_ACTOR_AUDIT_UNAVAILABLE');
+  await logChangeEvent(tx, { entityType:'APPROVAL_POLICY', entityId:String(id), action,
+    beforeJson:before, afterJson:after, reasonCode:'APPROVAL_POLICY_CHANGE',
+    userId:String(ids.effective), ipAddress:req.ip });
+}
 
 // GET /api/policy — รายการนโยบายทั้งหมด
 router.get('/', async (req, res) => {
@@ -38,7 +56,8 @@ router.post('/', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) =>
   try {
     const { caseType, minAmount, maxAmount, requiredRole, effectiveFrom, effectiveTo, note } = req.body || {};
     if (!caseType || !requiredRole) return res.status(400).json({ message: 'caseType และ requiredRole จำเป็น' });
-    const r = await wfQuery(`
+    const r = await wfTransaction(async tx => {
+      const inserted = await txQuery(tx, `
       INSERT INTO wf.ApprovalPolicy (CaseType, MinAmount, MaxAmount, RequiredRole, EffectiveFrom, EffectiveTo, Note, CreatedBy)
       OUTPUT INSERTED.Id
       VALUES (@c, @min, @max, @role, ISNULL(@from, CAST(GETDATE() AS DATE)), @to, @note, @uid)`,
@@ -50,8 +69,15 @@ router.post('/', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) =>
         from: { type: sql.Date,          value: effectiveFrom || null },
         to:   { type: sql.Date,          value: effectiveTo || null },
         note: { type: sql.NVarChar(300), value: note || null },
-        uid:  { type: sql.Int,           value: req.user.sub },
+        uid:  { type: sql.Int,           value: businessIds(req.user).effective },
       });
+      const id = inserted.recordset?.[0]?.Id;
+      if (!id) throw new Error('POLICY_INSERT_FAILED');
+      const after = (await txQuery(tx, 'SELECT * FROM wf.ApprovalPolicy WHERE Id=@id', {id:{type:sql.Int,value:id}})).recordset?.[0];
+      if (!after) throw new Error('POLICY_INSERT_NOT_VISIBLE');
+      await auditPolicy(tx, req, id, 'CREATE', null, after);
+      return inserted;
+    });
     res.json({ id: r.recordset[0].Id });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -60,7 +86,11 @@ router.post('/', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) =>
 router.put('/:id', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { minAmount, maxAmount, requiredRole, effectiveTo, isActive, note } = req.body || {};
-    const __r = await wfQuery(`
+    const __r = await wfTransaction(async tx => {
+      const id = Number(req.params.id);
+      const before = (await txQuery(tx, 'SELECT * FROM wf.ApprovalPolicy WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id', {id:{type:sql.Int,value:id}})).recordset?.[0];
+      if (!before) return {rowsAffected:[0]};
+      const result = await txQuery(tx, `
       UPDATE wf.ApprovalPolicy SET
         MinAmount = @min, MaxAmount = @max, RequiredRole = COALESCE(@role, RequiredRole),
         EffectiveTo = @to, IsActive = COALESCE(@act, IsActive), Note = @note
@@ -74,6 +104,12 @@ router.put('/:id', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) 
         act:  { type: sql.Bit,           value: isActive == null ? null : (isActive ? 1 : 0) },
         note: { type: sql.NVarChar(300), value: note || null },
       });
+      if (!result.rowsAffected?.[0]) return result;
+      const after = (await txQuery(tx, 'SELECT * FROM wf.ApprovalPolicy WHERE Id=@id', {id:{type:sql.Int,value:id}})).recordset?.[0];
+      if (!after) throw new Error('POLICY_UPDATE_NOT_VISIBLE');
+      await auditPolicy(tx, req, id, 'UPDATE', before, after);
+      return result;
+    });
     if (!__r.rowsAffected[0]) return res.status(404).json({ message: 'ไม่พบรายการที่ระบุ' });
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
@@ -82,8 +118,17 @@ router.put('/:id', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) 
 // DELETE /api/policy/:id — ปิดใช้งาน (ADMIN)
 router.delete('/:id', requireRole('ADMIN'), async (req, res) => {
   try {
-    const r = await wfQuery(`UPDATE wf.ApprovalPolicy SET IsActive = 0 WHERE Id = @id`,
-      { id: { type: sql.Int, value: Number(req.params.id) } });
+    const r = await wfTransaction(async tx => {
+      const id=Number(req.params.id), input={ id: { type: sql.Int, value: id } };
+      const before=(await txQuery(tx,'SELECT * FROM wf.ApprovalPolicy WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id',input)).recordset?.[0];
+      if (!before) return {rowsAffected:[0]};
+      const result=await txQuery(tx,`UPDATE wf.ApprovalPolicy SET IsActive = 0 WHERE Id = @id`,input);
+      if (!result.rowsAffected?.[0]) return result;
+      const after=(await txQuery(tx,'SELECT * FROM wf.ApprovalPolicy WHERE Id=@id',input)).recordset?.[0];
+      if (!after) throw new Error('POLICY_UPDATE_NOT_VISIBLE');
+      await auditPolicy(tx,req,id,'DEACTIVATE',before,after);
+      return result;
+    });
     if (!r.rowsAffected[0]) return res.status(404).json({ message: 'ไม่พบนโยบายที่ระบุ' });
     res.json({ ok: true });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }

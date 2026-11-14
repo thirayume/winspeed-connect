@@ -14,6 +14,7 @@ const { broadcast } = require('../services/socket');
 const { advanceRunCounter, RUN_CODE_BY_DOC_KIND } = require('../services/winspeed-counter');
 const { toBangkokDateString } = require('../services/coupon-settlement-matcher');
 const { getSettingValue, logChangeEvent } = require('../services/policy-contract');
+const { businessIds } = require('../services/business-identity');
 const { resolveAuthoritativePrice } = require('../services/price-authority');
 const { assertPricesAboveCost, assertPriceBookLinesSellable } = require('../services/cost-authority');
 
@@ -2145,9 +2146,7 @@ router.patch('/:id/valid-until', requireCapability('quotation.manage'), requireQ
         await updateNativeQuotationValidity(tx, id, validUntil);
       }
 
-      if (maePuiInfo.hasMaePui || priceUpdates.length > 0) {
-        try {
-          await logChangeEvent(tx, {
+      await logChangeEvent(tx, {
             entityType: 'QUOTATION',
             entityId: String(id),
             action: 'EXTEND_VALIDITY',
@@ -2164,11 +2163,9 @@ router.patch('/:id/valid-until', requireCapability('quotation.manage'), requireQ
             reasonText: maePuiInfo.hasMaePui
               ? `ทบทวนราคาและขยายอายุใบเสนอราคากลุ่มแม่ปุ๋ย (${priceUpdates.length} รายการปรับราคา)`
               : `ขยายอายุใบเสนอราคา`,
-            userId: req.user?.sub || 'USER',
+            userId: businessIds(req.user).effective,
             ipAddress: req.ip,
           });
-        } catch { /* ChangeEvent logging is best-effort if table absent in partial test envs */ }
-      }
     });
 
     res.json({

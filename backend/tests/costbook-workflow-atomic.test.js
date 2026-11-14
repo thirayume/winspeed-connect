@@ -2,12 +2,13 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const h=require('./helpers/route-harness.cjs');
+let testUser={sub:1,role:'ADMIN'};
 const authPath=require.resolve('../middleware/auth');
 require.cache[authPath]={id:authPath,filename:authPath,loaded:true,exports:{
- requireAuth:(req,_res,next)=>{req.user={sub:1,role:'ADMIN'};next();},
+ requireAuth:(req,_res,next)=>{req.user=testUser;next();},
  requireCapability:()=> (_req,_res,next)=>next(),
 }};
-let books,events,failAudit,priced,lines;
+let books,events,changeEvents,failAudit,failChangeAudit,priced,lines;
 const db=h.installDbStub(({kind,text,inputs})=>{
  assert.equal(kind,'tx','status workflow must use a single transaction');
  if(/SELECT Id, Status, EffectiveMonth FROM wf\.CostBook/.test(text)) {
@@ -33,13 +34,14 @@ const db=h.installDbStub(({kind,text,inputs})=>{
  if(/UPDATE wf\.CostBook SET Status = @s/.test(text)){books.find(b=>b.Id===inputs.id).Status=inputs.s;return {rowsAffected:[1]};}
  if(/UPDATE wf\.CostBook\s+SET Name = @name/.test(text)){books.find(b=>b.Id===inputs.id).Name=inputs.name;return {rowsAffected:[1]};}
  if(/INSERT INTO wf\.CostBookAudit/.test(text)) {if(failAudit===true||failAudit===inputs.a)throw Error('simulated audit failure');events.push({id:inputs.id,action:inputs.a,from:inputs.f,to:inputs.t});return {rowsAffected:[1]};}
+ if(/INSERT INTO wf\.ChangeEvent/.test(text)){if(failChangeAudit)throw Error('simulated identity audit failure');changeEvents.push({...inputs});return {rowsAffected:[1]};}
  throw Error('Unexpected SQL: '+text);
 });
-db.stub.wfTransaction=async fn=>{const before=structuredClone({books,events,lines});try{return await fn(db.tx);}catch(e){books=before.books;events=before.events;lines=before.lines;throw e;}};
+db.stub.wfTransaction=async fn=>{const before=structuredClone({books,events,changeEvents,lines});try{return await fn(db.tx);}catch(e){books=before.books;events=before.events;changeEvents=before.changeEvents;lines=before.lines;throw e;}};
 let app;
 test.before(async()=>{app=await h.startApp([['/api/costbook','../../routes/costbook']]);});
 test.after(async()=>app.close());
-test.beforeEach(()=>{books=[{Id:1,Name:'Original',Status:'APPROVED',EffectiveMonth:'2026-11'},{Id:2,Name:'Old',Status:'ACTIVE',EffectiveMonth:'2026-11'}];lines=[{Id:11,CostBookId:1,GoodId:'100',CostPrice:10}];events=[];failAudit=false;priced=1;});
+test.beforeEach(()=>{testUser={sub:1,role:'ADMIN'};books=[{Id:1,Name:'Original',Status:'APPROVED',EffectiveMonth:'2026-11'},{Id:2,Name:'Old',Status:'ACTIVE',EffectiveMonth:'2026-11'}];lines=[{Id:11,CostBookId:1,GoodId:'100',CostPrice:10}];events=[];changeEvents=[];failAudit=false;failChangeAudit=false;priced=1;});
 test('activation records both the activation and the automatically archived predecessor',async()=>{
  const r=await app.call('POST','/api/costbook/1/activate',{body:{}});
  assert.equal(r.status,200);assert.equal(books[0].Status,'ACTIVE');assert.equal(books[1].Status,'ARCHIVED');
@@ -52,6 +54,16 @@ test('failed audit rolls back both status changes',async()=>{
 test('failure of the final audit rolls back the earlier archive and its audit',async()=>{
  failAudit='ACTIVATE';const r=await app.call('POST','/api/costbook/1/activate',{body:{}});
  assert.equal(r.status,500);assert.equal(books[0].Status,'APPROVED');assert.equal(books[1].Status,'ACTIVE');assert.deepEqual(events,[]);
+});
+test('Access As records business actor and effective identities in the same transaction',async()=>{
+ testUser={sub:8,actorSub:63,role:'ACCOUNTING',isImpersonating:true,identityMapping:{primaryEffectiveUserId:8,primaryActorUserId:63,businessEffectiveUserId:17,businessActorUserId:31}};
+ const r=await app.call('PUT','/api/costbook/1',{body:{name:'Changed'}});
+ assert.equal(r.status,200);assert.equal(changeEvents.length,1);
+ assert.equal(changeEvents[0].user,'17');assert.equal(changeEvents[0].actor,'31');
+});
+test('failure of actor audit rolls back costbook and its first audit',async()=>{
+ failChangeAudit=true;const r=await app.call('PUT','/api/costbook/1',{body:{name:'Changed'}});
+ assert.equal(r.status,500);assert.equal(books[0].Name,'Original');assert.deepEqual(events,[]);assert.deepEqual(changeEvents,[]);
 });
 test('activation without priced items leaves status and audit untouched',async()=>{
  priced=0;const r=await app.call('POST','/api/costbook/1/activate',{body:{}});

@@ -215,6 +215,7 @@ test('FR-1: manualSettleCouponCut guards and execution workflow', async () => {
       VarChar: () => 'VarChar',
       Decimal: () => 'Decimal',
       DateTime2: 'DateTime2',
+      ISOLATION_LEVEL: { SERIALIZABLE: 'SERIALIZABLE' },
       Request: class {
         constructor() { this.inputs = {}; }
         input(k, t, v) { this.inputs[k] = { type: t, value: v }; return this; }
@@ -294,6 +295,7 @@ test('FR-1: manualSettleCouponCut guards and execution workflow', async () => {
     checkMigration139: async () => true,
     wfQuery: stubDb.wfQuery,
     wfTransaction: stubDb.wfTransaction,
+    validateSettlementSnapshot: async()=>{},
   };
 
   // 1. Guard: reason < 10 characters -> 400

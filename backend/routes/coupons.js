@@ -16,7 +16,7 @@ router.get('/', async (req, res) => {
     if (!customerId) {
       return res.status(400).json({ message: 'กรุณาระบุ customerId' });
     }
-    const coupons = await couponService.getCouponsForCustomer(customerId, { goodId, billPrefix });
+    const coupons = await couponService.getCouponsForCustomer(customerId, { goodId, billPrefix, actor:req.user });
     res.json({ data: coupons, count: coupons.length });
   } catch (err) {
     console.error('[coupons]', err);
@@ -93,7 +93,7 @@ router.post('/cancel', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER',
  */
 router.get('/reconcile/:couponId', async (req, res) => {
   try {
-    const result = await couponService.reconcileCoupon(req.params.couponId);
+    const result = await couponService.reconcileCoupon(req.params.couponId, { actor:req.user });
     if (!result) return res.status(404).json({ message: 'ไม่พบตั๋วปุ๋ย' });
     res.json(result);
   } catch (err) {
@@ -108,6 +108,8 @@ router.get('/reconcile/:couponId', async (req, res) => {
  */
 router.get('/:id/expiry', async (req, res) => {
   try {
+    if (!await require('../services/coupon-access-scope').couponVisible(req.user,req.params.id))
+      return res.status(404).json({ message: 'ไม่พบตั๋วปุ๋ย' });
     const info = await couponService.getCouponExpiryInfo(req.params.id);
     if (!info) return res.status(404).json({ message: 'ไม่พบตั๋วปุ๋ย' });
     res.json(info);

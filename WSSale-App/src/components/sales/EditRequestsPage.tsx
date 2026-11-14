@@ -24,7 +24,7 @@ import {
   fetchTripApprovals, approveTripApproval, rejectTripApproval, cancelTripMultiCustApproval,
   type EditRequestRow, type PriceApprovalRow, type TripMultiCustApprovalRow,
 } from '../../services/api';
-import { appConfirm } from '../ui/AppAlert';
+import { appAlert, appConfirm } from '../ui/AppAlert';
 import { formatThaiDate } from '../../utils/date';
 import { useAuthStore } from '../../store/auth-store';
 import {
@@ -80,7 +80,12 @@ function RequestCard({ r, onDone, cap }: { r: EditRequestRow; onDone: () => void
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true); setErr(null);
-    try { await fn(); onDone(); }
+    try {
+      const result = await fn();
+      if (result && typeof result === 'object' && 'holdReleaseWarning' in result && typeof result.holdReleaseWarning === 'string')
+        await appAlert(result.holdReleaseWarning, 'warning');
+      onDone();
+    }
     catch (e: any) { setErr(e?.message || 'ทำรายการไม่สำเร็จ'); }
     setBusy(false);
   };

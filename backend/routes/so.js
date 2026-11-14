@@ -1963,36 +1963,27 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
       for (const tid of touchedTripIds) {
         await supersedeStaleTripApprovalsOnMembershipChange(tx, tid);
       }
-    });
-
-    for (const soId of createdIds) {
-      await audit(null, soId, req.user.sub, 'CREATED', null, 'DRAFT', null, req.ip);
-    }
-
-    // Log credit and aging anomalies if triggered (in soft warning mode)
-    for (let idx = 0; idx < orders.length; idx++) {
-      const ord = orders[idx];
-      const sid = createdIds[idx];
-      const cRes = customerCreditResults.get(ord.custId);
-      if (cRes && cRes.warnings.length > 0 && sid) {
-        try {
-          await audit(null, sid, req.user.sub, 'CREDIT_AGING_WARNING', null, 'DRAFT', cRes.warnings.join('; '), req.ip);
-          await wfQuery(`
-            IF OBJECT_ID('wf.ChangeEvent', 'U') IS NOT NULL
-            BEGIN
-              INSERT INTO wf.ChangeEvent (EntityType, EntityId, ChangeType, FieldName, OldValue, NewValue, Reason, ChangedBy, ChangedAt)
-              VALUES ('SalesOrder', @eid, 'ANOMALY_WARNING', 'CreditAgingCheck', NULL, @newVal, N'เปิดบิลขายเกินวงเงินหรือ Aging โดยได้รับอนุญาตตามนโยบาย Soft Warning', @uid, GETUTCDATE());
-            END
-          `, {
-            eid: { type: sql.NVarChar(50), value: String(sid) },
-            newVal: { type: sql.NVarChar(500), value: cRes.warnings.join('; ') },
-            uid: { type: sql.Int, value: req.user.sub },
+      // Creation and credit exceptions must not commit without their audit.
+      const ids = require('../services/business-identity').businessIds(req.user);
+      if (!ids.effective || !ids.actor) throw new Error('SO_AUDIT_IDENTITY_REQUIRED');
+      if (req.user.isImpersonating && !await require('../services/request-context').hasColumn(wfQuery, 'wf.SalesOrderAudit', 'ActorUserId')) {
+        throw new Error('SO_ACTOR_AUDIT_UNAVAILABLE');
+      }
+      for (let idx = 0; idx < createdIds.length; idx++) {
+        const sid = createdIds[idx];
+        await audit(tx, sid, ids.effective, 'CREATED', null, 'DRAFT', null, req.ip);
+        const cRes = customerCreditResults.get(orders[idx].custId);
+        if (cRes?.warnings?.length) {
+          const warningText = cRes.warnings.join('; ').slice(0, 500);
+          await audit(tx, sid, ids.effective, 'CREDIT_AGING_WARNING', null, 'DRAFT', warningText, req.ip);
+          await require('../services/policy-contract').logChangeEvent(tx, {
+            entityType:'SALES_ORDER', entityId:String(sid), action:'CREDIT_AGING_WARNING',
+            afterJson:{warnings:cRes.warnings}, reasonCode:'CREDIT_SOFT_WARNING',
+            userId:String(ids.effective), ipAddress:req.ip,
           });
-        } catch (auditErr) {
-          console.warn('[credit-audit-log-error]', auditErr?.message);
         }
       }
-    }
+    });
 
     // เตือนหลัง commit — ใบเปิดสำเร็จแล้ว คำเตือนไม่ย้อนกลับไปยกเลิก
     const warnings = [];

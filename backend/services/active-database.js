@@ -159,17 +159,33 @@ async function systemActiveDatabase(env = process.env) {
 }
 
 /** Admin changes the system-wide default. The value must be in the allowlist. */
-async function setSystemActiveDatabase(name, env = process.env) {
+async function writeSettingAudit(tx, user, action, detail) {
+  const effective = Number(user?.sub ?? user?.id), actor = Number(user?.actorSub ?? user?.actorId ?? effective);
+  if (!Number.isSafeInteger(actor) || actor <= 0 || !Number.isSafeInteger(effective) || effective <= 0)
+    throw Object.assign(new Error('SETTING_IDENTITY_INVALID'), { status: 403 });
+  const result = await new sql.Request(tx).input('actor', sql.Int, actor).input('action', sql.VarChar(40), action)
+    .input('target', sql.NVarChar(100), 'DATABASE_SETTINGS').input('detail', sql.NVarChar(sql.MAX), JSON.stringify({effectiveUserId:effective,...detail}))
+    .query('INSERT INTO wf.AdminChangeAudit (ActorId, Action, Target, Detail) VALUES (@actor, @action, @target, @detail)');
+  if (Number(result.rowsAffected?.[0]) !== 1) throw new Error('SETTING_AUDIT_FAILED');
+}
+
+async function setSystemActiveDatabase(name, env = process.env, user) {
   const wanted = String(name || '').trim();
   if (!isSwitchableDb(wanted, env)) throw Object.assign(new Error('DB_NOT_ALLOWED'), { code: 'DB_NOT_ALLOWED', status: 400 });
   const pool = await primaryOwnerPool();
-  await pool.request()
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+  await new sql.Request(tx)
     .input('k', sql.NVarChar(50), SETTING_KEY)
     .input('v', sql.NVarChar(200), wanted)
     .input('d', sql.NVarChar(300), 'System-wide active Sale-App database (owner 2026-10-25)')
-    .query(`MERGE wf.SystemSetting AS t USING (SELECT @k AS SettingKey) AS s ON t.SettingKey = s.SettingKey
+    .query(`MERGE wf.SystemSetting WITH (HOLDLOCK) AS t USING (SELECT @k AS SettingKey) AS s ON t.SettingKey = s.SettingKey
             WHEN MATCHED THEN UPDATE SET SettingValue = @v, Description = @d, UpdatedAt = GETUTCDATE()
             WHEN NOT MATCHED THEN INSERT (SettingKey, SettingValue, Description) VALUES (@k, @v, @d);`);
+  await writeSettingAudit(tx, user, 'SYSTEM_DB_UPDATE', { database: wanted });
+  await tx.commit();
+  } catch(e) { try { await tx.rollback(); } catch {} throw e; }
   cache = { value: wanted, at: Date.now() };
   return wanted;
 }
@@ -241,7 +257,7 @@ async function getDatabaseThemes(env = process.env) {
 }
 
 /** Admin saves color themes and labels for databases. Stored per database to stay within NVARCHAR(200). */
-async function setDatabaseThemes(themes, env = process.env) {
+async function setDatabaseThemes(themes, env = process.env, user) {
   if (!themes || typeof themes !== 'object' || Array.isArray(themes)) {
     throw Object.assign(new Error('INVALID_THEMES'), { code: 'INVALID_THEMES', status: 400 });
   }
@@ -269,6 +285,7 @@ async function setDatabaseThemes(themes, env = process.env) {
           WHEN MATCHED THEN UPDATE SET SettingValue=@v, UpdatedAt=GETUTCDATE()
           WHEN NOT MATCHED THEN INSERT (SettingKey,SettingValue) VALUES (@k,@v);`);
     }
+    await writeSettingAudit(tx, user, 'DB_THEMES_UPDATE', { databases: Object.keys(themes).sort() });
     await tx.commit();
   } catch(e) { try { await tx.rollback(); } catch {} throw e; }
   themeCache = { value: null, at: 0 };

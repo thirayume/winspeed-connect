@@ -130,7 +130,7 @@ function createTxRequest(state) {
 
       // Q8: Cancel unattached reservations
       if (q.includes('UPDATE wf.CouponReservation') && q.includes('SET Status = \'CANCELLED\'')) {
-        let count = 0;
+        const cancelled = [];
         for (const res of state.reservations) {
           if (String(res.OwnerCustId) === String(inputs.own) &&
               String(res.BeneficiaryCustId) === String(inputs.ben) &&
@@ -139,11 +139,11 @@ function createTxRequest(state) {
             if (!isAttached) {
               res.Status = 'CANCELLED';
               res.CancelReason = inputs.reason;
-              count++;
+              cancelled.push({ Id: res.Id });
             }
           }
         }
-        return { rowsAffected: [count] };
+        return { recordset: cancelled, rowsAffected: [cancelled.length] };
       }
 
       return { recordset: [], rowsAffected: [0] };

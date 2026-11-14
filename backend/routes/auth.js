@@ -24,7 +24,7 @@ const upload = multer({
       const dir = path.join(__dirname, '../uploads/signatures');
       fs.mkdir(dir, { recursive: true }, err => cb(err, dir));
     },
-    filename: (req, file, cb) => cb(null, `sig_${req.user.sub}_${Date.now()}${path.extname(file.originalname)}`),
+    filename: (req, file, cb) => cb(null, `sig_${req.user.sub}_${crypto.randomBytes(16).toString('hex')}${path.extname(file.originalname)}`),
   }),
   limits: { fileSize: 5 * 1024 * 1024 },
 });
@@ -403,22 +403,22 @@ router.get('/line/callback', async (req, res) => {
       }));
     }
 
-    await wfQuery(
-      `UPDATE wf.AppUser
+    await onIdentityDatabase(() => require('../services/profile-audit-write').writeProfileChange({ user: {sub:user.Id,actorSub:user.Id}, action:'LINE_PROFILE_REFRESH',
+      statement: `UPDATE wf.AppUser
        SET LineDisplayName=@dn, LinePictureUrl=@pic, LineLinkedAt=COALESCE(LineLinkedAt, GETUTCDATE()), UpdatedAt=GETUTCDATE()
-       WHERE Id=@id`,
-      {
+       WHERE Id=@id AND IsActive=1 AND LineUserId=@lineUserId`, parameters: {
         id: { type: sql.Int, value: user.Id },
         dn: { type: sql.NVarChar(150), value: profile.displayName || null },
         pic: { type: sql.NVarChar(500), value: profile.pictureUrl || null },
+        lineUserId: { type: sql.NVarChar(80), value: profile.userId },
       }
-    );
+    }));
 
     res.redirect(appendHash(successRedirect, { line_token: signAppToken(user) }));
   } catch (e) {
-    console.error('[line-login]', e.message);
+    console.error('[line-login] LOGIN_FAILED');
     const fallbackRedirect = process.env.LINE_LOGIN_SUCCESS_REDIRECT || 'http://localhost:5173';
-    res.redirect(appendHash(fallbackRedirect, { line_error: e.message || 'line_login_failed' }));
+    res.redirect(appendHash(fallbackRedirect, { line_error: 'line_login_failed' }));
   }
 });
 
@@ -448,38 +448,7 @@ router.post('/line/link', async (req, res) => {
       return res.status(401).json({ message: 'Login ไม่สำเร็จ กรุณาตรวจ username/password หรือติดต่อ Admin' });
     }
 
-    if (user.LineUserId && user.LineUserId !== line.lineUserId) {
-      return res.status(409).json({ message: 'ผู้ใช้นี้ผูกกับ LINE อื่นแล้ว กรุณาติดต่อ Admin' });
-    }
-
-    const existing = await wfQuery(
-      `SELECT TOP 1 Id, Username
-       FROM wf.AppUser
-       WHERE LineUserId = @lineUserId AND Id <> @id`,
-      {
-        id: { type: sql.Int, value: user.Id },
-        lineUserId: { type: sql.NVarChar(80), value: line.lineUserId },
-      }
-    );
-    if (existing.recordset?.[0]) {
-      return res.status(409).json({ message: 'LINE นี้ถูกผูกกับผู้ใช้อื่นแล้ว กรุณาติดต่อ Admin' });
-    }
-
-    await wfQuery(
-      `UPDATE wf.AppUser
-       SET LineUserId=@lineUserId,
-           LineDisplayName=@dn,
-           LinePictureUrl=@pic,
-           LineLinkedAt=GETUTCDATE(),
-           UpdatedAt=GETUTCDATE()
-       WHERE Id=@id`,
-      {
-        id: { type: sql.Int, value: user.Id },
-        lineUserId: { type: sql.NVarChar(80), value: line.lineUserId },
-        dn: { type: sql.NVarChar(150), value: line.lineDisplayName || null },
-        pic: { type: sql.NVarChar(500), value: line.linePictureUrl || null },
-      }
-    );
+    await onIdentityDatabase(() => require('../services/line-link-transaction').linkLine({user,line}));
 
     res.json({
       accessToken: signAppToken(user),
@@ -487,8 +456,10 @@ router.post('/line/link', async (req, res) => {
       linked: true,
     });
   } catch (e) {
-    console.error('[line-link]', e.message);
-    res.status(e.status || 500).json({ message: e.message || 'LINE link failed' });
+    console.error('[line-link] LINK_FAILED');
+    if (e.status === 409 || e.number === 2601 || e.number === 2627)
+      return res.status(409).json({ message: 'บัญชีหรือการผูก LINE เปลี่ยนแปลงแล้ว กรุณาลองใหม่หรือติดต่อ Admin' });
+    res.status(e.status || 500).json({ message: 'ไม่สามารถผูก LINE ได้ กรุณาลองใหม่หรือติดต่อ Admin' });
   }
 });
 
@@ -707,7 +678,7 @@ router.put('/system-database', requireAuth, async (req, res) => {
     if (!hasPermission(req.user, 'database.set-system')) {
       return res.status(403).json({ code: 'FORBIDDEN', message: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
     }
-    const database = await activeDb.setSystemActiveDatabase(String(req.body?.database || '').trim());
+    const database = await activeDb.setSystemActiveDatabase(String(req.body?.database || '').trim(), process.env, req.user);
     res.json({ system: database });
   } catch (e) {
     if (e.code === 'DB_NOT_ALLOWED') return res.status(400).json({ code: e.code, message: 'เลือกได้เฉพาะฐานข้อมูลที่ระบบอนุญาต' });
@@ -727,7 +698,7 @@ router.put('/database-themes', requireAuth, async (req, res) => {
     if (!themes || typeof themes !== 'object') {
       return res.status(400).json({ code: 'INVALID_THEMES', message: 'ข้อมูลการตั้งค่าสีไม่ถูกต้อง' });
     }
-    const saved = await activeDb.setDatabaseThemes(themes);
+    const saved = await activeDb.setDatabaseThemes(themes, process.env, req.user);
     res.json({ ok: true, themes: saved });
   } catch (e) {
     res.status(e.status || 500).json({ message: e.status ? e.message : 'Server error' });
@@ -738,9 +709,9 @@ router.put('/database-themes', requireAuth, async (req, res) => {
 router.put('/profile', requireAuth, async (req, res) => {
   try {
     const { address, phone, email, idCardNo, taxId } = req.body;
-    await wfQuery(
-      `UPDATE wf.AppUser SET Address=@a, Phone=@p, Email=@e, IdCardNo=@idCard, TaxId=@tax, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
-      {
+    await onIdentityDatabase(() => require('../services/profile-audit-write').writeProfileChange({ user: req.user, action: 'PROFILE_UPDATE',
+      statement: `UPDATE wf.AppUser SET Address=@a, Phone=@p, Email=@e, IdCardNo=@idCard, TaxId=@tax, UpdatedAt=GETUTCDATE() WHERE Id=@id`,
+      parameters: {
         id: { type: sql.Int, value: req.user.sub },
         a: { type: sql.NVarChar(500), value: address || null },
         p: { type: sql.NVarChar(50), value: phone || null },
@@ -748,18 +719,20 @@ router.put('/profile', requireAuth, async (req, res) => {
         idCard: { type: sql.NVarChar(20), value: idCardNo || null },
         tax: { type: sql.NVarChar(20), value: taxId || null },
       }
-    );
+    }));
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(e.status || 500).json({ message: e.status === 409 ? 'ข้อมูลบัญชีเปลี่ยนแปลงหรือไม่พบ กรุณาลองใหม่' : 'Server error' });
   }
 });
 
 // PUT /api/auth/profile/password
 router.put('/profile/password', requireAuth, async (req, res) => {
   try {
+    if (Number(req.user.actorSub || req.user.actorId || req.user.sub) !== Number(req.user.sub) || req.user.isImpersonating || req.user.impersonating)
+      return res.status(403).json({ message: 'ออกจาก Access As ก่อนเปลี่ยนรหัสผ่าน' });
     const { oldPassword, newPassword } = req.body;
-    const rows = await wfQuery(`SELECT PasswordHash FROM wf.AppUser WHERE Id=@id`, { id: { type: sql.Int, value: req.user.sub } });
+    const rows = await onIdentityDatabase(() => wfQuery(`SELECT PasswordHash FROM wf.AppUser WHERE Id=@id`, { id: { type: sql.Int, value: req.user.sub } }));
     const user = rows.recordset[0];
     if (!user) return res.status(404).json({ message: 'User not found' });
 
@@ -767,20 +740,22 @@ router.put('/profile/password', requireAuth, async (req, res) => {
     if (!valid) return res.status(401).json({ message: 'รหัสผ่านเดิมไม่ถูกต้อง' });
 
     const hash = await bcrypt.hash(newPassword, 12);
-    await wfQuery(`UPDATE wf.AppUser SET PasswordHash=@ph, MustChangePassword=0, UpdatedAt=GETUTCDATE() WHERE Id=@id`, {
+    await onIdentityDatabase(() => require('../services/profile-audit-write').writeProfileChange({ user: req.user, action: 'PROFILE_PASSWORD',
+      statement: `UPDATE wf.AppUser SET PasswordHash=@ph, MustChangePassword=0, UpdatedAt=GETUTCDATE() WHERE Id=@id AND PasswordHash COLLATE Latin1_General_100_BIN2=@oldHash COLLATE Latin1_General_100_BIN2`, parameters: {
       id: { type: sql.Int, value: req.user.sub },
       ph: { type: sql.NVarChar(255), value: hash },
-    });
+      oldHash: { type: sql.NVarChar(255), value: user.PasswordHash },
+    }}));
     // ต้องออก token ใหม่ ไม่งั้นผู้ใช้ยังถือ token ที่บอกว่า mustChangePassword=1
     // แล้วถูกบล็อกการเขียนต่อไปอีกจนกว่า token เดิมหมดอายุ ทั้งที่เปลี่ยนรหัสแล้ว
-    const fresh = await loadAppUserById(req.user.sub);
+    const fresh = await onIdentityDatabase(() => loadAppUserById(req.user.sub));
     res.json({
       ok: true,
-      accessToken: fresh ? signAppToken(fresh) : undefined,
+      accessToken: fresh ? signAppToken(fresh, null, req.tokenPayload?.db) : undefined,
       user: fresh ? toClientUser(fresh) : undefined,
     });
   } catch (e) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(e.status || 500).json({ message: e.status === 409 ? 'รหัสผ่านเปลี่ยนแปลงแล้ว กรุณาลองใหม่' : 'Server error' });
   }
 });
 
@@ -789,13 +764,16 @@ router.post('/profile/signature', requireAuth, upload.single('signature'), async
   try {
     if (!req.file) return res.status(400).json({ message: 'ไม่มีไฟล์ที่อัพโหลด' });
     const filename = req.file.filename;
-    await wfQuery(`UPDATE wf.AppUser SET SignatureFile=@sig, UpdatedAt=GETUTCDATE() WHERE Id=@id`, {
+    await onIdentityDatabase(() => require('../services/profile-audit-write').writeProfileChange({ user: req.user, action: 'PROFILE_SIGNATURE',
+      statement: `UPDATE wf.AppUser SET SignatureFile=@sig, UpdatedAt=GETUTCDATE() WHERE Id=@id`, parameters: {
       id: { type: sql.Int, value: req.user.sub },
       sig: { type: sql.NVarChar(255), value: filename },
-    });
+    }, onRollbackConfirmed: () => require('../services/signature-staging').removeRolledBackUpload(path.join(__dirname, '../uploads/signatures'), req.file) }));
     res.json({ ok: true, filename });
   } catch (e) {
-    res.status(500).json({ message: 'Server error' });
+    // An ambiguous commit, connection failure or process crash may leave an
+    // unreferenced file; never delete unless pre-commit rollback was confirmed.
+    res.status(e.status || 500).json({ message: e.status === 409 ? 'ข้อมูลบัญชีเปลี่ยนแปลงหรือไม่พบ กรุณาลองใหม่' : 'Server error' });
   }
 });
 
@@ -846,6 +824,8 @@ router.post('/users', requireAuth, requireCapability('users.manage'), requireCap
       const extras=Object.keys(fields).filter(k=>req.body[k]!==undefined);
       if(extras.length)await roleWrite.query(tx,'UPDATE wf.AppUser SET '+extras.map(k=>fields[k]+'=@'+k).join(',')+' WHERE Id=@id',Object.assign({id:result.recordset[0].Id},Object.fromEntries(extras.map(k=>[k,req.body[k]|| (k==='isActive'?false:null)]))));
       if(codes) await roleWrite.query(tx,"INSERT wf.AdminChangeAudit(ActorId,Action,Target,Detail) VALUES(@actor,'USER_ROLES',@target,@detail)",{actor:Number(req.user.id),target:String(result.recordset[0].Id),detail:JSON.stringify({before:[],after:codes})});
+      await require('../services/admin-user-audit').auditUserMutation(tx, {actor:req.user.sub ?? req.user.id, target:result.recordset[0].Id,
+        action:'USER_CREATE', fields:['username','displayName','password','empId',codes?'roleCodes':'role',...extras]});
 
       return result;
     });
@@ -970,7 +950,8 @@ router.patch('/users/:id', requireAuth, requireCapability('users.manage'), async
     if(req.body.isActive!==undefined && typeof req.body.isActive!=='boolean') return res.status(400).json({message:'สถานะผู้ใช้ต้องเป็น true หรือ false'});
     if(req.body.role!==undefined && !Object.keys(ACCESS_AS_ROLE_RANK).includes(req.body.role)) return res.status(400).json({message:'Role ไม่ถูกต้อง'});
     if(targetId===callerId && req.body.isActive===false) return res.status(400).json({message:'ไม่สามารถปิดบัญชีตัวเองได้'});
-    const { empId, role, displayName, isActive, password, lineUserId, address, phone, email, idCardNo, taxId, positionCode } = req.body;
+    const { empId, role, displayName, password, lineUserId, address, phone, email, idCardNo, taxId } = req.body;
+    let { isActive, positionCode } = req.body;
     const sets = [];
     const inputs = { id: { type: sql.Int, value: targetId } };
     if (empId !== undefined)       { sets.push('EmpId = @empId');        inputs.empId       = { type: sql.NVarChar(20),  value: empId || null }; }
@@ -1039,6 +1020,7 @@ router.patch('/users/:id', requireAuth, requireCapability('users.manage'), async
       }
       const q=tx.request();for(const [k,v] of Object.entries(inputs))q.input(k,v.type,v.value);
       const result=await q.query(`UPDATE wf.AppUser SET ${sets.join(', ')} WHERE Id=@id`);
+      if (Number(result.rowsAffected?.[0]) !== 1) throw roleWrite.error('ไม่พบผู้ใช้',404);
       if(codes){
         await roleWrite.setMembership(tx,targetId,codes);
         await roleWrite.query(tx,"INSERT wf.AdminChangeAudit(ActorId,Action,Target,Detail) VALUES(@actor,'USER_ROLES',@target,@detail)",{actor:callerId,target:String(targetId),detail:JSON.stringify({before:expectedCodes,after:codes})});
@@ -1059,6 +1041,10 @@ router.patch('/users/:id', requireAuth, requireCapability('users.manage'), async
           detail: JSON.stringify({ before: oldPos, after: newPos, username: targetUser.Username })
         });
       }
+      const auditFields=['empId','role','roleCodes','displayName','isActive','password','lineUserId','address','phone','email','idCardNo','taxId','positionCode']
+        .filter(k=>req.body[k]!==undefined && (k!=='password' || Boolean(req.body.password)));
+      if(codes?.includes('SEPARATION')) auditFields.push('isActive','positionCode');
+      await require('../services/admin-user-audit').auditUserMutation(tx,{actor:callerId,target:targetId,action:'USER_UPDATE',fields:auditFields});
       await roleWrite.assertAdministrator(tx);
       return result;
     });
@@ -1171,10 +1157,10 @@ router.post('/org-positions', requireAuth, mayManageOrganization, async (req, re
       }
     }
 
-    await wfQuery(`
+    await require('../services/organization-audit-write').writeOrganizationChange({ statement: `
       INSERT INTO wf.OrgPosition (PositionCode, PositionName, ReportsTo, OrgUnit, Tier, DefaultRole, CanApprove, IsActive, Note)
       VALUES (@code, @name, @reportsTo, @unit, @tier, @defaultRole, @canApprove, 1, @note)
-    `, {
+    `, parameters: {
       code: { type: sql.VarChar(30), value: code },
       name: { type: sql.NVarChar(150), value: name },
       reportsTo: { type: sql.VarChar(30), value: reportsTo },
@@ -1183,20 +1169,8 @@ router.post('/org-positions', requireAuth, mayManageOrganization, async (req, re
       defaultRole: { type: sql.VarChar(20), value: defaultRole },
       canApprove: { type: sql.Bit, value: canApprove ? 1 : 0 },
       note: { type: sql.NVarChar(300), value: note }
-    });
-
-    try {
-      await wfQuery(`
-        INSERT INTO wf.AdminChangeAudit (ActorId, Action, Target, Detail)
-        VALUES (@actor, 'POSITION_CREATE', @target, @detail)
-      `, {
-        actor: { type: sql.Int, value: Number(req.user.id) },
-        target: { type: sql.NVarChar(200), value: code },
-        detail: { type: sql.NVarChar(sql.MAX), value: JSON.stringify({ code, name, reportsTo, unit, tier, defaultRole, canApprove, note }) }
-      });
-    } catch (errAudit) {
-      console.warn('[auth/org-positions] Audit log failed:', errAudit.message);
-    }
+    }, user: req.user, action: 'POSITION_CREATE', target: code,
+      detail: { code, name, reportsTo, unit, tier, defaultRole, canApprove, note } });
 
     res.status(201).json({
       ok: true,
@@ -1215,7 +1189,7 @@ router.post('/org-positions', requireAuth, mayManageOrganization, async (req, re
     });
   } catch (e) {
     console.error('[auth/org-positions POST]', e);
-    res.status(500).json({ message: 'เกิดข้อผิดพลาดในการสร้างตำแหน่ง' });
+    res.status(e.status || 500).json({ message: 'เกิดข้อผิดพลาดในการสร้างตำแหน่ง' });
   }
 });
 
@@ -1262,7 +1236,7 @@ router.put('/org-positions/:code', requireAuth, mayManageOrganization, async (re
       }
     }
 
-    await wfQuery(`
+    await require('../services/organization-audit-write').writeOrganizationChange({ statement: `
       UPDATE wf.OrgPosition
       SET PositionName = @name,
           ReportsTo = @reportsTo,
@@ -1273,7 +1247,7 @@ router.put('/org-positions/:code', requireAuth, mayManageOrganization, async (re
           IsActive = @isActive,
           Note = @note
       WHERE PositionCode = @code
-    `, {
+    `, parameters: {
       code: { type: sql.VarChar(30), value: code },
       name: { type: sql.NVarChar(150), value: name },
       reportsTo: { type: sql.VarChar(30), value: reportsTo },
@@ -1283,20 +1257,8 @@ router.put('/org-positions/:code', requireAuth, mayManageOrganization, async (re
       canApprove: { type: sql.Bit, value: canApprove ? 1 : 0 },
       isActive: { type: sql.Bit, value: isActive ? 1 : 0 },
       note: { type: sql.NVarChar(300), value: note }
-    });
-
-    try {
-      await wfQuery(`
-        INSERT INTO wf.AdminChangeAudit (ActorId, Action, Target, Detail)
-        VALUES (@actor, 'POSITION_UPDATE', @target, @detail)
-      `, {
-        actor: { type: sql.Int, value: Number(req.user.id) },
-        target: { type: sql.NVarChar(200), value: code },
-        detail: { type: sql.NVarChar(sql.MAX), value: JSON.stringify({ before: current, after: { name, reportsTo, unit, tier, defaultRole, canApprove, isActive, note } }) }
-      });
-    } catch (errAudit) {
-      console.warn('[auth/org-positions] Audit log failed:', errAudit.message);
-    }
+    }, user: req.user, action: 'POSITION_UPDATE', target: code, expected: current,
+      detail: { before: current, after: { name, reportsTo, unit, tier, defaultRole, canApprove, isActive, note } } });
 
     res.json({
       ok: true,
@@ -1314,7 +1276,7 @@ router.put('/org-positions/:code', requireAuth, mayManageOrganization, async (re
     });
   } catch (e) {
     console.error('[auth/org-positions PUT]', e);
-    res.status(500).json({ message: 'เกิดข้อผิดพลาดในการแก้ไขตำแหน่ง' });
+    res.status(e.status || 500).json({ message: e.status === 409 ? 'ตำแหน่งเปลี่ยนแล้ว กรุณาโหลดข้อมูลใหม่' : 'เกิดข้อผิดพลาดในการแก้ไขตำแหน่ง' });
   }
 });
 
@@ -1349,27 +1311,14 @@ router.delete('/org-positions/:code', requireAuth, mayManageOrganization, async 
       });
     }
 
-    await wfQuery('DELETE FROM wf.OrgPosition WHERE PositionCode = @code', {
+    await require('../services/organization-audit-write').writeOrganizationChange({ statement: 'DELETE FROM wf.OrgPosition WHERE PositionCode = @code', parameters: {
       code: { type: sql.VarChar(30), value: code }
-    });
-
-    try {
-      await wfQuery(`
-        INSERT INTO wf.AdminChangeAudit (ActorId, Action, Target, Detail)
-        VALUES (@actor, 'POSITION_DELETE', @target, @detail)
-      `, {
-        actor: { type: sql.Int, value: Number(req.user.id) },
-        target: { type: sql.NVarChar(200), value: code },
-        detail: { type: sql.NVarChar(sql.MAX), value: JSON.stringify(existing.recordset[0]) }
-      });
-    } catch (errAudit) {
-      console.warn('[auth/org-positions] Audit log failed:', errAudit.message);
-    }
+    }, user: req.user, action: 'POSITION_DELETE', target: code, expected: existing.recordset[0], detail: existing.recordset[0] });
 
     res.json({ ok: true, code });
   } catch (e) {
     console.error('[auth/org-positions DELETE]', e);
-    res.status(500).json({ message: 'เกิดข้อผิดพลาดในการลบตำแหน่ง' });
+    res.status(e.status || 500).json({ message: e.status === 409 ? 'ตำแหน่งเปลี่ยนแล้ว กรุณาโหลดข้อมูลใหม่' : 'เกิดข้อผิดพลาดในการลบตำแหน่ง' });
   }
 });
 
@@ -1503,7 +1452,10 @@ router.delete('/users/:id', requireAuth, requireCapability('users.manage'), asyn
     const __r = await wfTransaction(async tx=>{
       await roleWrite.lockPolicy(tx,callerId,'users.manage');
       const result=await roleWrite.query(tx,'DELETE FROM wf.AppUser WHERE Id=@id',{id:targetId});
-      await roleWrite.assertAdministrator(tx);return result;
+      if (Number(result.rowsAffected?.[0]) !== 1) throw roleWrite.error('ไม่พบรายการที่ระบุ',404);
+      await roleWrite.assertAdministrator(tx);
+      await require('../services/admin-user-audit').auditUserMutation(tx,{actor:callerId,target:targetId,action:'USER_DELETE',fields:[]});
+      return result;
     });
     if (!__r.rowsAffected[0]) return res.status(404).json({ message: 'ไม่พบรายการที่ระบุ' });
     clearAccountStatusCache(targetId);

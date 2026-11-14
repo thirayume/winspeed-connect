@@ -18,6 +18,15 @@ test('preview stays closed unless both UAT flags are enabled',async()=>{
   const r=await app.call('POST','/api/rebate-pool/tickets/redemption-preview',{user:{sub:1,role:'ADMIN'},body:{}});
   assert.equal(r.status,503);assert.deepEqual(calls,[]);
 });
+test('ticket issuance and redemption remain closed without writing business data',async()=>{
+  delete process.env.REBATE_POOL_103_ENABLED;delete process.env.REBATE_TICKET_PREVIEW_ENABLED;
+  const before=db.calls.length;
+  for(const [path,code] of [['issue','TICKET_ISSUANCE_UNAVAILABLE'],['redeem','TICKET_REDEMPTION_UNAVAILABLE']]){
+    const response=await app.call('POST',`/api/rebate-pool/tickets/${path}`,{user:{sub:1,role:'ADMIN'},body:{bookingId:4,lineNo:1,requestedTonnage:'1.0000'}});
+    assert.equal(response.status,503);assert.equal(response.body.code,code);
+  }
+  assert.ok(!db.calls.slice(before).some(c=>/\b(?:INSERT|UPDATE|DELETE|MERGE)\b/i.test(c.text)));
+});
 test('preview verifies target and participant and does not return financial data',async()=>{
   process.env.REBATE_POOL_103_ENABLED='true';process.env.REBATE_TICKET_PREVIEW_ENABLED='true';calls=[];
   const r=await app.call('POST','/api/rebate-pool/tickets/redemption-preview',{user:{sub:1,role:'ADMIN'},

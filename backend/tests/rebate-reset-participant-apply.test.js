@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { applyResetParticipant } = require('../services/rebate-reset-participant-apply');
 
 function fixture() {
+  const calls = [];
   const input = { environment: 'uat', manifestDigest: 'a'.repeat(64), actorId: 1, effectiveId: 2,
     target: { database: 'dbwins_worldfert9_uat', server: 'R740-SRV\\SQL2008' },
     previous: { generation: 0, resetId: null, lastResetAtUtc: null },
@@ -12,6 +13,7 @@ function fixture() {
     receipt: null, claims: ['DRAFT', 'TIER2_PENDING', 'APPROVED', 'CN_ISSUED'], tickets: ['ISSUED'], incomplete: false, audit: [],
     actual: { DatabaseName: input.target.database, ServerName: input.target.server }, lockResult: 0, failParticipantUpdate: false };
   const query = async (text, p) => {
+    calls.push(text);
     if (/SELECT DB_NAME/.test(text)) return { recordset: [state.actual] };
     if (/sp_getapplock/.test(text)) { assert.match(text, /LockMode='Exclusive'/); return { recordset: [{ LockResult: state.lockResult }] }; }
     if (/SELECT EnvironmentKind,ManifestDigest,Generation,Phase/.test(text)) return { recordset: [state.participant] };
@@ -36,7 +38,7 @@ function fixture() {
   };
   const run = async () => { const before = structuredClone(state); try { return await applyResetParticipant(query, input); }
     catch (error) { Object.assign(state, before); throw error; } };
-  return { input, state, run };
+  return { input, state, run, calls };
 }
 
 test('participant applies and replays once with audit, preserving issued tickets and final claims', async () => {
@@ -45,6 +47,18 @@ test('participant applies and replays once with audit, preserving issued tickets
   assert.deepEqual(f.state.audit, ['DRAFT','TIER2_PENDING']); assert.deepEqual(f.state.tickets, ['ISSUED']);
   assert.deepEqual(await f.run(), { replayed: true, cancelledClaims: 2 });
   assert.equal(f.state.audit.length, 2);
+});
+
+test('zero-start preserves issued tickets, redemption receipts and accounts receivable records', async () => {
+  const f=fixture();await f.run();await f.run();
+  const sql=f.calls.join('\n');
+  for(const table of ['wf.FertilizerTicket','wf.RebateTicketRedemptionReceipt','wf.RebateTicketRedemptionAllocation',
+    'wf.TicketRedemptionHistory','dbo.SOInvHD','dbo.SOInvDT']) {
+    const escaped=table.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    assert.doesNotMatch(sql,new RegExp(`\\b(?:UPDATE|DELETE\\s+FROM|INSERT\\s+(?:INTO\\s+)?|MERGE\\s+(?:INTO\\s+)?)\\s+${escaped}\\b`,'i'),table);
+  }
+  assert.deepEqual(f.state.claims,['CANCELLED','CANCELLED','APPROVED','CN_ISSUED']);
+  assert.deepEqual(f.state.tickets,['ISSUED']);
 });
 
 test('incomplete conversions and mismatched prior state leave all balances unchanged', async () => {

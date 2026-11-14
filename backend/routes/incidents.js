@@ -170,18 +170,12 @@ router.patch('/:id/ack', requireRole(...REVIEW_ROLES), async (req, res) => {
     const note = String(req.body?.note || '').trim();
     if (note.length < 5) return res.status(400).json({ message: 'กรุณาระบุผลการตรวจสอบอย่างน้อย 5 ตัวอักษร' });
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
-    const r = await wfQuery(`
-      UPDATE wf.RuleIncident SET Status = 'ACK', AckBy = @by, AckAt = SYSUTCDATETIME(), AckNote = @note
-      WHERE Id = @id AND Status = 'OPEN' AND OccurredAt >= @globalStartUtc;
-      SELECT @@ROWCOUNT AS Affected;`, {
-      id: { type: sql.Int, value: Number(req.params.id) },
-      by: { type: sql.Int, value: req.user.sub },
-      note: { type: sql.NVarChar(500), value: note },
-      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
-    });
-    if (!Number(r.recordset?.[0]?.Affected)) return res.status(409).json({ message: 'เหตุการณ์นี้ตรวจแล้วหรือไม่พบ' });
+    const { acknowledgeIncident } = require('../services/incident-ack');
+    const updated = await acknowledgeIncident({ id: Number(req.params.id), note, user: req.user,
+      startUtc: dataWindow.utcInstant, ipAddress: req.ip });
+    if (!updated) return res.status(409).json({ message: 'เหตุการณ์นี้ตรวจแล้วหรือไม่พบ' });
     res.json({ id: Number(req.params.id), status: 'ACK' });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 module.exports = router;

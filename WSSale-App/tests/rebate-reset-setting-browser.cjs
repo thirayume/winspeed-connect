@@ -11,6 +11,8 @@ const {chromium}=require('playwright');const assert=require('node:assert/strict'
     active=null;return route.fulfill({json:{complete:true,requestId:body.requestId,replayed:true,generation:1}});
   });
   await page.goto('http://127.0.0.1:5179/tests/rebate-reset-setting.html');
+  await page.getByText('ตั๋วที่ออกสำเร็จ ประวัติการใช้ตั๋ว และยอดลูกหนี้เดิมยังคงอยู่').waitFor();
+  await page.getByText('คำขอที่ยังรอจะถูกยกเลิกและคืนยอดจอง ส่วนใบเคลมที่อนุมัติครบแล้วคงไว้ดำเนินการต่อ').waitFor();
   const field=page.getByLabel('พิมพ์ RESET เพื่อยืนยัน');await field.waitFor();await field.fill('RESET');
   await page.getByRole('button',{name:'ยืนยันเริ่มยอด Rebate ใหม่'}).click();
   await page.getByText('คำขอขัดข้อง').waitFor();

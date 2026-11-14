@@ -13,6 +13,7 @@ const db=h.installDbStub(({text,inputs})=>{
   if(text.includes('SELECT RoleCode FROM wf.vUserRole'))return current.map(RoleCode=>({RoleCode}));
   if(text.includes('FROM wf.AppUser')&&text.includes('WHERE Id = @id'))return [{Id:inputs.id,Role:inputs.id===1?'ADMIN':'C_LEVEL',IsActive:true}];
   if(text.includes('INSERT INTO wf.AppUser'))return [{Id:99,Role:inputs.r}];
+  if(text.includes('INSERT INTO wf.AdminChangeAudit'))return {rowsAffected:[1]};
   if(text.startsWith('UPDATE wf.AppUser'))return {recordset:[],rowsAffected:[1]};
   return [];
 },{activeUserIds:[1,2]});
