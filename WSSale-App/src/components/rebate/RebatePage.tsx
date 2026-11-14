@@ -92,7 +92,7 @@ export function RebatePage() {
           <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
             <Coins className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> รีเบท (Rebate)
           </h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">Rebate Pool FIFO · แปลงตั๋วปุ๋ย (1 พ.ย.) · กองทุนรีเบท &amp; คำขอเคลม CN</p>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1">Rebate ลูกค้า · การแปลงตั๋วปุ๋ย · รายการเดิมที่ยังต้องติดตาม</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center bg-gray-100 p-1 rounded-xl">
@@ -112,7 +112,7 @@ export function RebatePage() {
                 viewTab === 'legacy' ? 'bg-[#0C447C] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              กองรีเบทรายเดือน &amp; เคลม CN (เดิม)
+              ประวัติและคำขอเดิม
             </button>
           </div>
           {viewTab === 'legacy' && (

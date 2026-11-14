@@ -14,7 +14,7 @@ function fixture(rows) {
     wfQuery: async query => { calls.push({ name: current, query }); return { recordset: [rows[current]] }; },
   } };
 }
-function ready(name) { return { DatabaseName: name, ServerName: 'R740-SRV\\SQL2008',
+function ready(name) { return { DatabaseName: name, ServerName: 'R740-SRV\\SQL2008', BusinessActorId:1, BusinessEffectiveId:1, BootstrapId:1,
   ...Object.fromEntries([...REQUIRED_OBJECTS, ...PRIMARY_OBJECTS].map(name => [name, 1])) }; }
 
 test('preflight checks only the reviewed physical targets and never outputs credentials', async () => {
@@ -24,6 +24,17 @@ test('preflight checks only the reviewed physical targets and never outputs cred
   assert.deepEqual(f.calls.map(c => c.name), ['dbwins_worldfert9', 'dbwins_worldfert2']);
   assert.ok(!JSON.stringify(result).includes('never-output'));
   assert.ok(f.calls.every(c => /^SELECT\s/i.test(c.query) && !/\b(INSERT|UPDATE|DELETE|ALTER|CREATE)\b/i.test(c.query)));
+});
+
+test('approval journal and coordinator identity columns are required before reset', async () => {
+  const primary=ready('dbwins_worldfert9'), secondary=ready('dbwins_worldfert2');
+  primary.BusinessActorId=0; secondary.RebateConversionApprovalRequest=0;
+  const f=fixture({dbwins_worldfert9:primary,dbwins_worldfert2:secondary});
+  const result=await preflightResetTargets({env,db:f.db,tupleResolver});
+  assert.equal(result.ready,false);
+  assert.deepEqual(result.targets[0].missing,['BusinessActorId']);
+  assert.deepEqual(result.targets[1].missing,['RebateConversionApprovalRequest']);
+  assert.doesNotMatch(f.calls[1].query,/COL_LENGTH\('wf.RebateResetAttemptTarget'/);
 });
 
 test('a missing migration keeps the entire preflight unready', async () => {

@@ -6,6 +6,7 @@ const router = require('express').Router();
 const { sql, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { businessIds } = require('../services/business-identity');
+const { secondaryCustomerVisible } = require('../services/secondary-customer-scope');
 const { readGlobalDataWindow } = require('../services/global-data-window-store');
 const { checkCustomerCreditAndAging, parseNullableAgingInput, getCreditAgingPolicyBounds } = require('../services/credit-service');
 
@@ -15,6 +16,8 @@ router.use(requireAuth);
 router.get('/:custId/status', async (req, res) => {
   try {
     const custId = req.params.custId;
+    if (req.user.identityMapping && !await secondaryCustomerVisible(req.user, custId))
+      return res.status(404).json({ message: 'ไม่พบลูกค้า' });
     const amount = Number(req.query.amount) || 0;
     const status = await checkCustomerCreditAndAging(custId, amount);
     res.json(status);

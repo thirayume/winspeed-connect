@@ -17,6 +17,7 @@ function fixture() {
     if (/SELECT EnvironmentKind,ManifestDigest,Generation,Phase/.test(text)) return { recordset: [state.participant] };
     if (/SELECT \* FROM wf.RebateResetReceipt/.test(text)) return { recordset: state.receipt ? [state.receipt] : [] };
     if (/SELECT TOP 1 RequestId FROM wf.RebateConversionRequest/.test(text)) return { recordset: state.incomplete ? [{ RequestId: 'x' }] : [] };
+    if (/OBJECT_ID\('wf.RebateConversionApprovalRequest'/.test(text)) return { recordset: [{ HasSchema: 0 }] };
     if (/SELECT TOP 1 Id FROM wf.RebateClaim/.test(text)) return { recordset: state.claims.some(status =>
       !['DRAFT','PENDING','TIER2_PENDING','TIER3_PENDING','TIER4_PENDING','APPROVED','REJECTED','CN_ISSUED','CANCELLED'].includes(status)) ? [{ Id: 9 }] : [] };
     if (/INSERT wf.RebateResetReceipt/.test(text)) { state.receipt = { ManifestDigest: p.digest, PreviousGeneration: p.oldGeneration,

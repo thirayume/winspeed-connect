@@ -34,18 +34,23 @@ function nativeStatusSql(hd = 'hd', ext = 'ext') {
  * to a parameterised scope filter (a salesperson's dashboard), SQL Server picked a nested-loop plan over every
  * 103 × 104 pair and the query timed out at 15 s, even with RECOMPILE. The set form ran in about 0.5 s for every role.
  */
-function nativeDedupSql(hd = 'hd') {
+// Only use this option when the outer document is already constrained by the
+// same @globalStartDate. Restrict the row being excluded, not its linked
+// counterpart: a 2026 delivery can still refer to an older booking.
+function nativeDedupSql(hd = 'hd', { boundedByStartDate = false } = {}) {
+  const bookingBound = boundedByStartDate ? ' AND b.DocuDate >= @globalStartDate' : '';
+  const deliveryBound = boundedByStartDate ? ' AND s.DocuDate >= @globalStartDate' : '';
   return `${hd}.SOID NOT IN (
       SELECT b.SOID FROM dbo.SOHD b WITH (NOLOCK)
       JOIN dbo.SOHD s WITH (NOLOCK) ON s.DocuType = 104 AND s.RefNo = ISNULL(b.AppvDocuNo, b.DocuNo)
-      WHERE b.DocuType = 103
+      WHERE b.DocuType = 103${bookingBound}
         AND NOT EXISTS (SELECT 1 FROM wf.SalesOrderExt bx WITH (NOLOCK) WHERE bx.SOID = CONVERT(VARCHAR(50), b.SOID))
       UNION ALL
       SELECT s.SOID FROM wf.SalesOrderExt x WITH (NOLOCK)
       JOIN dbo.SOHD b WITH (NOLOCK) ON b.SOID = CASE WHEN x.SOID NOT LIKE '%[^0-9]%' AND LEN(x.SOID) BETWEEN 1 AND 9
                                                      THEN CAST(x.SOID AS INT) END
       JOIN dbo.SOHD s WITH (NOLOCK) ON s.DocuType = 104 AND s.RefNo = ISNULL(b.AppvDocuNo, b.DocuNo)
-      WHERE b.DocuType = 103)`;
+      WHERE b.DocuType = 103${deliveryBound})`;
 }
 
 /**

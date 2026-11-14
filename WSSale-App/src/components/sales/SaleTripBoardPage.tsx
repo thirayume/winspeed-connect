@@ -17,7 +17,7 @@
  *   backend รวมสองฝั่งให้แล้วผ่าน wf.v_TripMember หน้านี้จึงไม่ต้องรู้เรื่องนี้
  *   แต่ถ้าเห็นเที่ยวที่ "ใบจอง 0" ทั้งที่ควรมี ให้สงสัยตรงนั้นก่อน
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Truck, RefreshCw, Search, ChevronRight, ChevronDown, AlertTriangle,
   Package, Gift, Layers, ClipboardList, Ticket, X, Info, CircleAlert, PauseOctagon,
@@ -506,20 +506,27 @@ export function SaleTripBoardPage() {
   const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const [phaseFilter, setPhaseFilter] = useState('');
+  const loadSequence = useRef(0);
   const cap = useHoldCapability();
 
   const load = useCallback(async () => {
+    const requestSequence = ++loadSequence.current;
     setLoading(true); setErr(null);
     try {
       const r = await fetchTripBoard(q ? { search: q } : undefined);
+      if (requestSequence !== loadSequence.current) return;
       setRows(r.data || []);
     } catch (e: any) {
+      if (requestSequence !== loadSequence.current) return;
+      // A denied or failed cross-database read must not leave the prior
+      // database's trip cards visible under the newly selected database.
+      setRows([]);
       setErr(e?.message || 'โหลดกระดานไม่สำเร็จ');
     }
-    setLoading(false);
+    if (requestSequence === loadSequence.current) setLoading(false);
   }, [q]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); return () => { loadSequence.current++; }; }, [load]);
 
   const shown = useMemo(
     () => (phaseFilter ? rows.filter(r => r.weighing.phase === phaseFilter) : rows),
@@ -543,12 +550,12 @@ export function SaleTripBoardPage() {
         <h2 className="flex items-center gap-2 text-lg font-semibold" style={{ color: NAVY }}>
           <Truck size={19} /> กระดาน Sale Trip
         </h2>
-        <span className="text-xs text-gray-500">
+        {!err && <span className="text-xs text-gray-500">
           {tally.total} เที่ยว · {ton(tally.ton)} ตัน · กำลังโหลด {tally.loading} · ชั่งออกแล้ว {tally.shipped}
           {tally.over > 0 && (
             <span className="ml-2 font-semibold text-red-600">เกินความจุ {tally.over} เที่ยว</span>
           )}
-        </span>
+        </span>}
 
         <div className="ml-auto flex items-center gap-2">
           <div className="relative">

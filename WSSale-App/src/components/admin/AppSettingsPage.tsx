@@ -11,14 +11,16 @@ import {
   ClipboardCheck,
   FileSpreadsheet,
   CreditCard,
+  RotateCcw,
 } from 'lucide-react';
 import { SystemSettingsModal, type TabKey } from './SystemSettingsModal';
 import { ReadinessSignoffModal } from './ReadinessSignoffModal';
 import { AdminReportTemplateModal } from './AdminReportTemplateModal';
 import { GlobalDataWindowSetting } from './GlobalDataWindowSetting';
+import { ResetRebateSetting } from './ResetRebateSetting';
 import { confirmLeaveEditors } from '../../utils/unsaved-changes';
 
-export type SettingsTabKey = TabKey | 'readiness' | 'reports' | 'data-window';
+export type SettingsTabKey = TabKey | 'readiness' | 'reports' | 'data-window' | 'rebate-reset';
 
 const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
   { key: 'pickup', name: 'กำหนดรับสินค้า', Icon: Calendar },
@@ -29,6 +31,7 @@ const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
   { key: 'sales', name: 'ราคา & เอกสาร', Icon: Tag },
   { key: 'credit', name: 'เครดิต & Aging', Icon: CreditCard },
   { key: 'data-window', name: 'วันเริ่มข้อมูล', Icon: Calendar },
+  { key: 'rebate-reset', name: 'เริ่มยอด Rebate ใหม่', Icon: RotateCcw },
   { key: 'history', name: 'ประวัติ Version', Icon: History },
   { key: 'reports', name: 'แม่แบบ & หัวกระดาษรายงาน', Icon: FileSpreadsheet },
   { key: 'readiness', name: 'ผลตรวจรับงาน', Icon: ClipboardCheck },
@@ -92,19 +95,20 @@ export function AppSettingsPage() {
           role="tabpanel"
           id="tabpanel-policy"
           aria-labelledby={'tab-' + activeTab}
-          hidden={activeTab === 'readiness' || activeTab === 'reports' || activeTab === 'data-window'}
+          hidden={activeTab === 'readiness' || activeTab === 'reports' || activeTab === 'data-window' || activeTab === 'rebate-reset'}
           className="w-full"
         >
           <SystemSettingsModal
             isOpen={true}
             embedded={true}
-            activeTab={activeTab === 'readiness' || activeTab === 'reports' || activeTab === 'data-window' ? 'pickup' : (activeTab as TabKey)}
+            activeTab={activeTab === 'readiness' || activeTab === 'reports' || activeTab === 'data-window' || activeTab === 'rebate-reset' ? 'pickup' : (activeTab as TabKey)}
             onRevisionLoaded={setRevision}
             onClose={() => {}}
           />
         </div>
 
         {activeTab === 'data-window' && <div role="tabpanel" id="tabpanel-data-window" aria-labelledby="tab-data-window"><GlobalDataWindowSetting /></div>}
+        {activeTab === 'rebate-reset' && <div role="tabpanel" id="tabpanel-rebate-reset" aria-labelledby="tab-rebate-reset"><ResetRebateSetting /></div>}
 
         {/* Reports Template & Header Management Tab */}
         <div

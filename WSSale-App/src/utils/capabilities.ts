@@ -22,6 +22,8 @@ const FALLBACK_ACTIONS: Record<string, string[]> = {
   'giveaway.borrow': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'giveaway.budget': ['MANAGER', 'ADMIN'],
   'rebate.approve-over-limit': ['MANAGER', 'C_LEVEL', 'ADMIN'],
+  'rebate.conversion.request': ['SALES'],
+  'rebate.conversion.approve': ['MANAGER', 'C_LEVEL'],
   'rebate.convert': ['ACCOUNTING', 'ADMIN'],
   'rebate.evidence.verify': ['ADMIN'],
   'users.manage': ['ACCOUNTING', 'MANAGER', 'ADMIN'],

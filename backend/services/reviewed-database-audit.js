@@ -11,7 +11,8 @@ async function recordReviewedReadAttempt(req, primaryDatabase, businessDatabase,
   const actor = Number(req.user?.actorSub);
   const effective = Number(req.user?.sub);
   const route = String(req.originalUrl || '').split('?')[0];
-  if (req.method !== 'GET' || !route.startsWith('/api/') || !primaryDatabase || !businessDatabase ||
+  const readOnlyRequest = req.method === 'GET' || (req.method === 'POST' && route === '/api/so/price-indicator');
+  if (!readOnlyRequest || !route.startsWith('/api/') || !primaryDatabase || !businessDatabase ||
       !mapping || !mapping.identityServer || !mapping.businessServer ||
       !Number.isSafeInteger(actor) || actor < 1 || !Number.isSafeInteger(effective) || effective < 1 ||
       !ids.actor || !ids.effective) {

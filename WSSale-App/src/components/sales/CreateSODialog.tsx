@@ -3,7 +3,7 @@ import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { unsavedMessage } from '../../utils/unsaved-changes';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, Plus, Minus, Truck, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket, AlertTriangle, Gift, Sparkles, Clock } from 'lucide-react';
-import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation, fetchPriceIndicator, fetchCustomerCreditStatus, fetchCustomerTopGoods, type CustomerTopGood, type PriceBook } from '../../services/api';
+import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, getRebateAvailability, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation, fetchPriceIndicator, fetchCustomerCreditStatus, fetchCustomerTopGoods, type CustomerTopGood, type PriceBook } from '../../services/api';
 import type { EffectivePriceRow, AtpStockRow, PriceLevel } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { ThaiDateTimePicker } from '../ui/ThaiDateTimePicker';
@@ -39,6 +39,8 @@ function goodListKey(good: EMGood) {
   return `${good.GoodID}::${good.GoodGroupName || OTHER_GOODS_GROUP}`;
 }
 
+const CREDIT_CHECK_ERROR = 'ตรวจสอบวงเงินเครดิตและอายุหนี้ไม่สำเร็จ กรุณาลองอีกครั้งก่อนบันทึก ข้อมูลที่กรอกยังอยู่';
+
 function mergeGoods(normalGoods: EMGood[], giveawayGoods: EMGood[]) {
   const merged = new Map<string, EMGood>();
   [...normalGoods, ...giveawayGoods.map(g => ({ ...g, GoodGroupName: GIVEAWAY_GROUP }))].forEach(good => {
@@ -46,6 +48,17 @@ function mergeGoods(normalGoods: EMGood[], giveawayGoods: EMGood[]) {
     if (!merged.has(key)) merged.set(key, good);
   });
   return Array.from(merged.values());
+}
+
+async function loadSaleGoods(salesUserId?: string, excludeSoId?: string) {
+  const [regular, giveaway] = await Promise.allSettled([
+    fetchGoods({ forSale: true }), fetchGiveawayGoods(salesUserId, excludeSoId),
+  ]);
+  const unavailable = [regular.status === 'rejected' ? 'สินค้า' : '', giveaway.status === 'rejected' ? 'ของแถม' : ''].filter(Boolean);
+  return {
+    goods: mergeGoods(regular.status === 'fulfilled' ? regular.value : [], giveaway.status === 'fulfilled' ? giveaway.value : []),
+    warning: unavailable.length ? `โหลด${unavailable.join('และ')}ไม่สำเร็จ กรุณาลองใหม่หรือติดต่อผู้ดูแล` : '',
+  };
 }
 
 // owner 2026-10-09: a colour only — red / yellow below the announced price, green above it (the line accrues
@@ -76,6 +89,7 @@ export function CreateSODialog({
 }) {
   const [customers, setCustomers] = useState<EMCust[]>([]);
   const [goods, setGoods] = useState<EMGood[]>([]);
+  const [goodsWarning, setGoodsWarning] = useState('');
   const [prices, setPrices] = useState<CurrentPrice[]>([]);
   const [effectivePrices, setEffectivePrices] = useState<EffectivePriceRow[]>([]);
   const [atpStock, setAtpStock] = useState<AtpStockRow[]>([]);
@@ -102,7 +116,8 @@ export function CreateSODialog({
   const [pSling, setPSling] = useState(false);
   const [loadInOrder, setLoadInOrder] = useState(false);
   const [salesUserId, setSalesUserId] = useState<string | number>('');
-  const [availableRebate, setAvailableRebate] = useState(0);
+  const [rebateBalance, setRebateBalance] = useState<{ customerId: string; amount: number | null; status: 'loading' | 'ready' | 'error'; source?: 'legacy' | 'shipment' } | null>(null);
+  const [rebateAvailability,setRebateAvailability]=useState<{customerId:string;status:'loading'|'available'|'none'|'unavailable'}|null>(null);
   
   // Multi-Bill State
   const [bills, setBills] = useState<DraftBill[]>([{ id: 'bill-1', soPrefix: 'I', lines: [], remark: '' }]);
@@ -170,11 +185,14 @@ export function CreateSODialog({
 
   useEffect(() => {
     if (!isOpen) return;
+    let disposed = false;
     const targetUserId = salesUserId ? String(salesUserId) : undefined;
     const editId = editSoId && editSoId !== 'undefined' ? editSoId : undefined;
-    Promise.all([fetchGoods({ forSale: true }), fetchGiveawayGoods(targetUserId, editId)])
-      .then(([g, gw]) => setGoods(mergeGoods(g, gw)))
-      .catch(console.error);
+    setGoods([]);
+    setGoodsWarning('');
+    loadSaleGoods(targetUserId, editId).then(result => {
+      if (!disposed) { setGoods(result.goods); setGoodsWarning(result.warning); }
+    });
     // แยกจากรายการสินค้า: สต๊อกเป็นข้อมูลประกอบ ดึงไม่ได้ก็ต้องออกบิลได้
     fetchAtpStock(editId).then(r => setAtpStock(r.data || [])).catch(console.error);
       
@@ -187,7 +205,8 @@ export function CreateSODialog({
     if (userRole === 'ADMIN') {
       listUsers().then(setSalesUsers).catch(console.error);
     }
-  }, [isOpen, userRole, salesUserId]);
+    return () => { disposed = true; };
+  }, [isOpen, userRole, salesUserId, editSoId]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedCustSearch(billCustSearch), 300);
@@ -403,6 +422,8 @@ export function CreateSODialog({
   const [priceLevels, setPriceLevels] = useState<Record<string, PriceLevel>>({});
   const [belowThresholdMap, setBelowThresholdMap] = useState<Record<string, boolean>>({});
   const [billBelowThreshold, setBillBelowThreshold] = useState(false);
+  const [priceCheckError, setPriceCheckError] = useState(false);
+  const [priceCheckRetry, setPriceCheckRetry] = useState(0);
   const activeRebateAmt = canSeeRebate ? (Number(activeBill?.rebateDiscountAmt) || 0) : 0;
   const levelKey = JSON.stringify([
     activeRebateAmt,
@@ -414,8 +435,10 @@ export function CreateSODialog({
       setPriceLevels({});
       setBelowThresholdMap({});
       setBillBelowThreshold(false);
+      setPriceCheckError(false);
       return;
     }
+    let cancelled = false;
     const t = setTimeout(() => {
       fetchPriceIndicator({
         custId: currentBillCustId,
@@ -433,23 +456,28 @@ export function CreateSODialog({
         })),
       })
         .then(r => {
+          if (cancelled) return;
+          setPriceCheckError(false);
           setPriceLevels(Object.fromEntries(r.lines.map(x => [x.key, x.level])));
           setBelowThresholdMap(Object.fromEntries(r.lines.map(x => [x.key, Boolean(x.belowThreshold)])));
           setBillBelowThreshold(Boolean(r.belowThreshold));
         })
         .catch(() => {
+          if (cancelled) return;
+          setPriceCheckError(true);
           setPriceLevels({});
           setBelowThresholdMap({});
           setBillBelowThreshold(false);
         });
     }, 400);
-    return () => clearTimeout(t);
+    return () => { cancelled = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [levelKey, currentBillCustId, deliveryDate]);
+  }, [levelKey, currentBillCustId, deliveryDate, priceCheckRetry]);
 
   // Credit Limit & AR Aging Status across all bills in trip
-  const [custCreditMap, setCustCreditMap] = useState<Record<string, CustomerCreditStatus>>({});
+  const [creditSnapshot, setCreditSnapshot] = useState<{ signature: string; values: Record<string, CustomerCreditStatus>; failed: string[] }>({ signature: '', values: {}, failed: [] });
   const [creditLoading, setCreditLoading] = useState(false);
+  const [creditRetry, setCreditRetry] = useState(0);
 
   const custAmountEntries = (() => {
     const totals = new Map<string, number>();
@@ -465,11 +493,16 @@ export function CreateSODialog({
     return Array.from(totals.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   })();
   const custCreditSignature = custAmountEntries.map(([cid, amt]) => `${cid}:${amt}`).join('|');
+  // A status calculated for an earlier amount is not valid for the edited bill.
+  const custCreditMap = creditSnapshot.signature === custCreditSignature ? creditSnapshot.values : {};
   const creditStatus = currentBillCustId ? (custCreditMap[String(currentBillCustId).trim()] ?? null) : null;
+  const activeCreditFailed = creditSnapshot.signature === custCreditSignature &&
+    !!currentBillCustId && creditSnapshot.failed.includes(String(currentBillCustId).trim());
 
   useEffect(() => {
     if (!custCreditSignature) {
-      setCustCreditMap({});
+      setCreditSnapshot({ signature: '', values: {}, failed: [] });
+      setCreditLoading(false);
       return;
     }
     let cancelled = false;
@@ -480,18 +513,21 @@ export function CreateSODialog({
           const st = await fetchCustomerCreditStatus(cid, amt);
           return [cid, st] as const;
         } catch (err) {
-          console.error('[CreateSODialog/credit-status:error]', cid, err);
-          return null;
+          console.error('[CreateSODialog/credit-status:error]', err);
+          return [cid, null] as const;
         }
       })
     )
       .then(results => {
         if (cancelled) return;
         const next: Record<string, CustomerCreditStatus> = {};
+        const failed: string[] = [];
         for (const item of results) {
-          if (item) next[item[0]] = item[1];
+          if (item[1]) next[item[0]] = item[1];
+          else failed.push(item[0]);
         }
-        setCustCreditMap(next);
+        setCreditSnapshot({ signature: custCreditSignature, values: next, failed });
+        if (failed.length === 0) setError(previous => previous === CREDIT_CHECK_ERROR ? '' : previous);
       })
       .finally(() => {
         if (!cancelled) setCreditLoading(false);
@@ -500,7 +536,7 @@ export function CreateSODialog({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [custCreditSignature]);
+  }, [custCreditSignature, creditRetry]);
 
   useEffect(() => {
     fetchPrices({ custId: currentBillCustId, asOf: deliveryDate || undefined }).then(setPrices).catch(console.error);
@@ -514,15 +550,38 @@ export function CreateSODialog({
     if (currentBillCustId) {
       fetchTruckPlates(currentBillCustId).then(setTruckPlates).catch(console.error);
       fetchControlTickets(currentBillCustId).then(setControlTickets).catch(console.error);
-      if (canSeeRebate) {
-        getRebateBalance(currentBillCustId).then(r => setAvailableRebate(r.availableRebate)).catch(console.error);
-      } else {
-        setAvailableRebate(0);
-      }
     } else {
-      setTruckPlates([]); setControlTickets([]); setAvailableRebate(0);
+      setTruckPlates([]); setControlTickets([]);
     }
-  }, [currentBillCustId, deliveryDate, canSeeRebate, activePriceBookId]);
+  }, [currentBillCustId, deliveryDate, activePriceBookId]);
+
+  useEffect(() => {
+    if (!currentBillCustId || !canSeeRebate) { setRebateBalance(null); return; }
+    let cancelled = false;
+    const customerId = currentBillCustId;
+    setRebateBalance({ customerId, amount: null, status: 'loading' });
+    getRebateBalance(customerId).then(result => {
+      if (cancelled) return;
+      const amount = result.availableRebate;
+      setRebateBalance(Number.isFinite(amount) && amount >= 0
+        ? { customerId, amount, status: 'ready', source: result.source }
+        : { customerId, amount: null, status: 'error' });
+    }).catch(() => {
+      if (!cancelled) setRebateBalance({ customerId, amount: null, status: 'error' });
+    });
+    return () => { cancelled = true; };
+  }, [currentBillCustId, canSeeRebate]);
+
+  useEffect(()=>{
+    if(!currentBillCustId||canSeeRebate){setRebateAvailability(null);return;}
+    let cancelled=false;const customerId=currentBillCustId;
+    setRebateAvailability({customerId,status:'loading'});
+    getRebateAvailability(customerId).then(result=>{
+      if(!cancelled)setRebateAvailability({customerId,status:typeof result.hasAvailableRebate==='boolean'
+        ?(result.hasAvailableRebate?'available':'none'):'unavailable'});
+    }).catch(()=>{if(!cancelled)setRebateAvailability({customerId,status:'unavailable'});});
+    return ()=>{cancelled=true;};
+  },[currentBillCustId,canSeeRebate]);
 
   const priceObj = useCallback((goodId: string) => prices.find(p => p.GoodID === goodId), [prices]);
   const effectivePriceObj = useCallback((goodId: string) => effectivePrices.find(p => p.GoodId === goodId), [effectivePrices]);
@@ -916,6 +975,10 @@ export function CreateSODialog({
       for (const pair of fetched) {
         if (pair) statusLookup[pair[0]] = pair[1];
       }
+    }
+    if (custAmountEntries.some(([cid]) => !statusLookup[cid])) {
+      setError(CREDIT_CHECK_ERROR);
+      return;
     }
 
     const blockedEntries = bills
@@ -1409,6 +1472,7 @@ export function CreateSODialog({
 
               {/* Product Picker */}
               <div className="p-2 sm:p-4 flex flex-col flex-1 overflow-hidden min-h-0">
+                {goodsWarning && <div role="alert" className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">{goodsWarning}</div>}
                 <div className="flex flex-col sm:flex-row justify-between gap-2 sm:gap-4 mb-2 sm:mb-4">
                   <div className="flex-1 flex flex-col gap-2">
                     {/* Search Input */}
@@ -1751,9 +1815,32 @@ export function CreateSODialog({
                     </div>
                   </div>
 
+                  {canSeeRebate && activeBill?.custId && rebateBalance?.customerId === currentBillCustId && (
+                    <div role="status" className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-[#0C447C]">
+                      {rebateBalance.status === 'loading' && 'กำลังตรวจยอด Rebate ของลูกค้า...'}
+                      {rebateBalance.status === 'error' && 'ตรวจยอด Rebate ไม่สำเร็จ กรุณาตรวจสอบอีกครั้งก่อนขอใช้'}
+                      {rebateBalance.status === 'ready' && <>
+                        {rebateBalance.source === 'shipment' ? 'ยอด Rebate จากการขนส่ง:' : 'ยอดตามระบบเดิม:'} <strong>฿{rebateBalance.amount!.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                        <span className="ml-1 text-gray-600">{rebateBalance.source === 'shipment' ? '· การขอใช้ต้องผ่านการตรวจสิทธิ์และสถานะตั๋ว' : '· ยังไม่ใช่ยอดจากระบบ Rebate ใหม่'}</span>
+                      </>}
+                    </div>
+                  )}
+
+                  {!canSeeRebate && activeBill?.custId && rebateAvailability?.customerId===currentBillCustId && (
+                    <div role="status" className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-[#0C447C]">
+                      {rebateAvailability.status==='loading'&&'กำลังตรวจสิทธิ์ Rebate ของลูกค้า...'}
+                      {rebateAvailability.status==='available'&&'ลูกค้ามี Rebate พร้อมยื่นคำขอใช้ตามสิทธิ์'}
+                      {rebateAvailability.status==='none'&&'ไม่มียอด Rebate ที่พร้อมยื่นคำขอในขณะนี้'}
+                      {rebateAvailability.status==='unavailable'&&'ยังตรวจสิทธิ์ Rebate ของลูกค้าไม่ได้ กรุณาตรวจสอบอีกครั้ง'}
+                    </div>
+                  )}
+
                   {/* Live Credit Limit & Aging Badge / Warning / Strict Blocker */}
                   {activeBill?.custId && (
-                    <CustomerCreditAlertBanner creditStatus={creditStatus} loading={creditLoading} />
+                    <>
+                      <CustomerCreditAlertBanner creditStatus={creditStatus} loading={creditLoading || creditSnapshot.signature !== custCreditSignature} />
+                      {activeCreditFailed && !creditLoading && <div role="alert" className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">ตรวจสอบเครดิตไม่ได้ กรุณาลองใหม่ก่อนบันทึก <button type="button" className="font-bold underline" onClick={() => setCreditRetry(value => value + 1)}>ลองตรวจอีกครั้ง</button></div>}
+                    </>
                   )}
                 </div>
 
@@ -2007,11 +2094,12 @@ export function CreateSODialog({
                 <span>ไม่อยู่ในเกณฑ์ที่บริษัทกำหนด กรุณาตรวจสอบและแก้ไขราคา</span>
               </div>
             )}
+            {priceCheckError && <div role="alert" className="rounded-lg border border-amber-400 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-900">ตรวจเกณฑ์ราคายังไม่สำเร็จ <button type="button" className="underline" onClick={() => setPriceCheckRetry(v => v + 1)}>ลองตรวจอีกครั้ง</button></div>}
             {error && <div className="text-red-500 text-[10px] sm:text-xs font-bold bg-red-50 px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg border border-red-100">{error}</div>}
             <button onClick={handleCloseModal} data-testid="btn-cancel-dialog" className="px-4 py-2 text-sm font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg sm:rounded-xl transition-colors">ยกเลิก</button>
             <button
               onClick={handleSubmit}
-              disabled={submitting}
+              disabled={submitting || priceCheckError}
               data-testid="btn-save-so"
               className="px-4 py-2 text-sm font-bold text-white bg-[#0C447C] hover:bg-[#0a3663] rounded-lg sm:rounded-xl flex items-center gap-2 shadow-lg disabled:opacity-50 transition-colors"
             >
@@ -2035,9 +2123,8 @@ export function CreateSODialog({
           // Refetch quota after borrowing (cards and the add check read RemainingQty from the goods list)
           const currentYear = new Date().getFullYear() + 543 - 2500 + 2500;
           apiFetch<GiveawayQuota[]>(`/giveaway/my-quota?year=${currentYear}`).then(setMyQuota).catch(console.error);
-          Promise.all([fetchGoods({ forSale: true }), fetchGiveawayGoods(salesUserId ? String(salesUserId) : undefined, editSoId && editSoId !== 'undefined' ? editSoId : undefined)])
-            .then(([g, gw]) => setGoods(mergeGoods(g, gw)))
-            .catch(console.error);
+          loadSaleGoods(salesUserId ? String(salesUserId) : undefined, editSoId && editSoId !== 'undefined' ? editSoId : undefined)
+            .then(result => { setGoods(result.goods); setGoodsWarning(result.warning); });
           void appAlert('ส่งคำขอยืมเรียบร้อยแล้ว กรุณารอการอนุมัติ', 'success');
         }}
       />

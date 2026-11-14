@@ -1,0 +1,13 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),h=require('./helpers/route-harness.cjs');
+let allowed=true,failPrice=false,failFloor=false;
+const auth=require.resolve('../middleware/auth');require.cache[auth]={id:auth,filename:auth,loaded:true,exports:{requireAuth:(req,_res,next)=>{req.user={sub:8,role:'SALES',identityMapping:{primaryActorUserId:8,primaryEffectiveUserId:8,businessActorUserId:34,businessEffectiveUserId:34}};next();},requireRole:()=> (_req,_res,next)=>next(),requireCapability:()=> (_req,_res,next)=>next(),requireRebateAmountAccess:(_req,_res,next)=>next(),canViewAllRebateAmounts:()=>false}};
+h.installDbStub(()=>[]);
+const scope=require.resolve('../services/secondary-customer-scope');require.cache[scope]={id:scope,filename:scope,loaded:true,exports:{secondaryCustomerVisible:async()=>allowed}};
+const policy=require.resolve('../services/policy-contract');const policyReal=require(policy);require.cache[policy].exports={...policyReal,getSettingValue:async()=>200};
+const price=require.resolve('../services/price-authority');const priceReal=require(price);require.cache[price].exports={...priceReal,resolveAuthoritativePrice:async()=>{if(failPrice)throw Error('PRICE_UNAVAILABLE');return {hasAnnouncedPrice:true,announcedPrice:1000};}};
+const cost=require.resolve('../services/cost-authority');const costReal=require(cost);require.cache[cost].exports={...costReal,evaluateSellingPriceFloor:async()=>{if(failFloor)throw Error('COST_UNAVAILABLE');return {blocked:true,violations:[{lineIndex:0}]};}};
+let app;test.before(async()=>{app=await h.startApp([['/api/so','../../routes/so']]);});test.after(async()=>app.close());
+const body={custId:'123',deliveryDate:'2026-01-02',lines:[{key:'one',goodId:'12',pricePerTon:800}]};
+test('secondary price indicator checks customer scope and returns only band and floor decision',async()=>{let r=await app.call('POST','/api/so/price-indicator',{body});assert.equal(r.status,200);assert.deepEqual(r.body,{lines:[{key:'one',level:'YELLOW',belowThreshold:true}],belowThreshold:true});allowed=false;r=await app.call('POST','/api/so/price-indicator',{body});assert.equal(r.status,404);allowed=true;});
+test('secondary price indicator rejects old dates and unavailable price or floor',async()=>{assert.equal((await app.call('POST','/api/so/price-indicator',{body:{...body,deliveryDate:'2025-12-31'}})).status,400);failPrice=true;assert.equal((await app.call('POST','/api/so/price-indicator',{body})).status,500);failPrice=false;failFloor=true;assert.equal((await app.call('POST','/api/so/price-indicator',{body})).status,500);failFloor=false;});

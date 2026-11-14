@@ -23,8 +23,19 @@ test('a bill made in the app keeps its booking number; its 104 is the row left o
   assert.match(s, /^hd\.SOID NOT IN \(/, 'one uncorrelated set (correlated forms timed out under a scope filter)');
 });
 
+test('the cutoff bounds only the excluded document and preserves links across the boundary', () => {
+  const s=nativeDedupSql('hd',{boundedByStartDate:true});
+  const parts=s.split('UNION ALL');
+  assert.equal(parts.length,2);
+  assert.match(parts[0],/b\.DocuDate >= @globalStartDate/);
+  assert.doesNotMatch(parts[0],/s\.DocuDate >= @globalStartDate/);
+  assert.match(parts[1],/s\.DocuDate >= @globalStartDate/);
+  assert.doesNotMatch(parts[1],/b\.DocuDate >= @globalStartDate/);
+  assert.doesNotMatch(nativeDedupSql('hd'),/@globalStartDate/);
+});
+
 test('the paper trail board uses the same link', () => {
   const src = require('fs').readFileSync(require.resolve('../routes/papertrail'), 'utf8');
-  assert.match(src, /\$\{nativeDedupSql\('hd'\)\}/);
+  assert.match(src, /\$\{nativeDedupSql\('hd',\s*\{boundedByStartDate:true\}\)\}/);
   assert.match(src, /PARTITION BY hd\.DocuNo, hd\.DocuType/);
 });

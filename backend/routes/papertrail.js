@@ -160,7 +160,7 @@ router.get('/board', async (req, res) => {
           FROM dbo.SOHD hd WITH (NOLOCK)
           LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
             ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
-          WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')}
+          WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd', {boundedByStartDate:true})}
         ) w
         WHERE w.DedupRN = 1
           AND (w.Status IN ('DRAFT', 'PENDING_APPROVAL', 'CONFIRMED', 'PICKING', 'LOADED')

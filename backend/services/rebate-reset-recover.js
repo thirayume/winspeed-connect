@@ -42,7 +42,7 @@ async function recoverResetAttempt(resetId, options = {}) {
         FROM wf.RebateResetCoordinator WITH(UPDLOCK,HOLDLOCK) WHERE EnvironmentKind=@kind`, { kind })).recordset?.[0];
       const attempt = (await query(`SELECT * FROM wf.RebateResetAttempt WITH(UPDLOCK,HOLDLOCK)
         WHERE EnvironmentKind=@kind AND ResetId=@resetId`, { kind, resetId })).recordset?.[0];
-      const recorded = (await query(`SELECT DatabaseName,ServerName,ReceiptVerifiedAtUtc FROM wf.RebateResetAttemptTarget WITH(UPDLOCK,HOLDLOCK)
+      const recorded = (await query(`SELECT DatabaseName,ServerName,ReceiptVerifiedAtUtc,BusinessActorId,BusinessEffectiveId FROM wf.RebateResetAttemptTarget WITH(UPDLOCK,HOLDLOCK)
         WHERE EnvironmentKind=@kind AND ResetId=@resetId`, { kind, resetId })).recordset || [];
       if (!row || !attempt || clean(row.EnvironmentKind) !== kind || clean(row.PrimaryDatabase) !== clean(primary) ||
           clean(row.ManifestDigest) !== digest || clean(attempt.ManifestDigest) !== digest || clean(attempt.EnvironmentKind) !== kind ||
@@ -66,17 +66,55 @@ async function recoverResetAttempt(resetId, options = {}) {
 
   const initial = await coordinator(async s => {
     if (s.complete) return { complete:true };
-    if (s.row.Phase === 'PREPARING') {
-      const a = await s.query("UPDATE wf.RebateResetAttempt SET Phase='APPLYING' WHERE EnvironmentKind=@kind AND ResetId=@resetId AND Phase='PREPARING'", { kind, resetId });
-      const c = await s.query("UPDATE wf.RebateResetCoordinator SET Phase='APPLYING',UpdatedAtUtc=GETUTCDATE() WHERE EnvironmentKind=@kind AND Phase='PREPARING'", { kind });
-      if (Number(a.rowsAffected?.[0]) !== 1 || Number(c.rowsAffected?.[0]) !== 1) fail('REBATE_RESET_COORDINATOR_MISMATCH');
-    } else if (s.attempt.Phase !== 'APPLYING') fail('REBATE_RESET_COORDINATOR_MISMATCH');
+    if (s.row.Phase !== s.attempt.Phase) fail('REBATE_RESET_COORDINATOR_MISMATCH');
     return { complete:false, previous:s.previous, next:s.next, actorId:Number(s.attempt.IdentityActorId), effectiveId:Number(s.attempt.IdentityEffectiveId) };
   });
   if (initial.complete) return { complete:true, replayed:true, targetCount:targets.length };
 
-  for (const target of targets) {
+  const resolveIdentity = options.resolveBusinessIdentity || require('./rebate-reset-business-identity').resolveResetBusinessIdentity;
+  async function mappingFor(target) {
+    const mapped = await resolveIdentity({
+      actorId: initial.actorId, effectiveId: initial.effectiveId, primaryTarget, target, db,
+    });
+    if (!Number.isSafeInteger(mapped?.businessActorId) || mapped.businessActorId < 1 || mapped.businessActorId > 2147483647 ||
+        !Number.isSafeInteger(mapped?.businessEffectiveId) || mapped.businessEffectiveId < 1 || mapped.businessEffectiveId > 2147483647)
+      fail('REBATE_RESET_BUSINESS_IDENTITY_UNAVAILABLE');
+    return mapped;
+  }
+  // Resolve every identity before entering APPLYING or writing a participant.
+  const mappings = [];
+  for (const target of targets) mappings.push(await mappingFor(target));
+  const bound = await coordinator(async s => {
+    if (s.complete) return { complete:true };
+    if (s.row.Phase !== s.attempt.Phase) fail('REBATE_RESET_COORDINATOR_MISMATCH');
+    for (let i = 0; i < targets.length; i++) {
+      const target = targets[i], mapped = mappings[i];
+      const targetRow = s.recorded.find(r => clean(r.DatabaseName) === clean(target.database) && clean(r.ServerName) === clean(target.expectedServerName));
+      if (!targetRow) fail('REBATE_RESET_MANIFEST_MISMATCH');
+      if (targetRow.BusinessActorId == null && targetRow.BusinessEffectiveId == null) {
+        const result = await s.query(`UPDATE wf.RebateResetAttemptTarget SET BusinessActorId=@actor,BusinessEffectiveId=@effective
+          WHERE EnvironmentKind=@kind AND ResetId=@resetId AND DatabaseName=@database AND ServerName=@server
+            AND BusinessActorId IS NULL AND BusinessEffectiveId IS NULL`,
+        { kind, resetId, database: target.database, server: target.expectedServerName,
+          actor: mapped.businessActorId, effective: mapped.businessEffectiveId });
+        if (Number(result.rowsAffected?.[0]) !== 1) fail('REBATE_RESET_BUSINESS_IDENTITY_UNAVAILABLE');
+      } else if (Number(targetRow.BusinessActorId) !== mapped.businessActorId ||
+          Number(targetRow.BusinessEffectiveId) !== mapped.businessEffectiveId) fail('REBATE_RESET_BUSINESS_IDENTITY_UNAVAILABLE');
+    }
+    if (s.row.Phase === 'PREPARING') {
+      const a = await s.query("UPDATE wf.RebateResetAttempt SET Phase='APPLYING' WHERE EnvironmentKind=@kind AND ResetId=@resetId AND Phase='PREPARING'", { kind, resetId });
+      const c = await s.query("UPDATE wf.RebateResetCoordinator SET Phase='APPLYING',UpdatedAtUtc=GETUTCDATE() WHERE EnvironmentKind=@kind AND Phase='PREPARING'", { kind });
+      if (Number(a.rowsAffected?.[0]) !== 1 || Number(c.rowsAffected?.[0]) !== 1) fail('REBATE_RESET_COORDINATOR_MISMATCH');
+    } else if (s.row.Phase !== 'APPLYING') fail('REBATE_RESET_COORDINATOR_MISMATCH');
+    return { complete:false };
+  });
+  if (bound.complete) return { complete:true, replayed:true, targetCount:targets.length };
+  for (let i = 0; i < targets.length; i++) {
+    const target = targets[i], mapped = await mappingFor(target);
+    if (mapped.businessActorId !== mappings[i].businessActorId || mapped.businessEffectiveId !== mappings[i].businessEffectiveId)
+      fail('REBATE_RESET_BUSINESS_IDENTITY_UNAVAILABLE');
     const input = { environment:kind, manifestDigest:digest, actorId:initial.actorId, effectiveId:initial.effectiveId,
+      businessActorId:mapped.businessActorId, businessEffectiveId:mapped.businessEffectiveId,
       previous:initial.previous, next:initial.next, target:{ database:target.database, server:target.expectedServerName } };
     await db.runWithTarget('onprem', () => db.wfTransaction(tx =>
       (options.applyParticipant || applyResetParticipant)(transactionQuery(tx, db.sql), input)), target.name);

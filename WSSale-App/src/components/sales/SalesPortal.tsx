@@ -29,6 +29,7 @@ export const SalesPortal = () => {
   const [orders, setOrders]         = useState<SalesOrder[]>([]);
   const [totalOrders, setTotalOrders] = useState(0);
   const [loading, setLoading]       = useState(true);
+  const [loadError, setLoadError]   = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [editingSoId, setEditingSoId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -107,7 +108,9 @@ export const SalesPortal = () => {
           page,
           limit,
         }),
-        fetchTripBoard().catch(() => ({ data: [] })),
+        // Trip membership is required to group orders safely. Do not silently
+        // present an empty board when that request was denied or failed.
+        fetchTripBoard(),
       ]);
 
       const orderTripMap = new Map<string, { tripId: number; tripCode?: string }>();
@@ -135,8 +138,17 @@ export const SalesPortal = () => {
 
       setOrders(mappedOrders);
       setTotalOrders(res.total || 0);
+      setLoadError('');
     } catch (e) {
       console.error('fetchSalesOrders failed', e);
+      const error = e as {status?:number;data?:{code?:string}};
+      setLoadError(error.status === 403
+        ? 'ไม่มีสิทธิ์เข้าถึงข้อมูลในฐานที่เลือก กรุณาตรวจสิทธิ์หรือหยุด Access As'
+        : error.data?.code === 'IDENTITY_MAPPING_REQUIRED'
+          ? 'ข้อมูลเที่ยวรถยังไม่พร้อมใช้งานข้ามฐาน กรุณากลับฐานหลักหรือติดต่อผู้ดูแล'
+          : error.data?.code === 'TRIP_HISTORY_OUTSIDE_DATA_WINDOW'
+            ? 'มีข้อมูลเที่ยวรถเก่าหรือไม่ครบซึ่งอาจมีผลต่อสถานะ กรุณาติดต่อผู้ดูแลเพื่อตรวจสอบ'
+          : 'โหลดรายการขายหรือเที่ยวรถไม่สำเร็จ กรุณาลองใหม่');
     }
     setLoading(false);
   }, [page, limit, debouncedSearch, statusFilter, dateFrom, dateTo, setUnlockRequests]);
@@ -506,7 +518,10 @@ export const SalesPortal = () => {
 
             <div className="flex-1 overflow-hidden flex flex-col bg-gray-50/50">
               <div className="flex-1 overflow-y-auto custom-scrollbar">
-                <SaleTripManager
+                {loadError && <div role="alert" className="m-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                  {loadError} <button type="button" onClick={loadData} className="ml-2 underline font-semibold">ลองใหม่</button>
+                </div>}
+                {!loadError && <SaleTripManager
                   groupedOrders={displayGroupedOrders}
                   loading={loading}
                   unlockRequests={unlockRequests}
@@ -514,24 +529,24 @@ export const SalesPortal = () => {
                   onViewTrip={setViewingTrip}
                   onOpenQuote={(quoteId, quoteNo) => navigate('quotation', { quoteId, quoteNo })}
                   onLoadData={loadData}
-                />
+                />}
               </div>
             </div>
 
           {/* Pagination */}
           <div className="p-3 border-t border-gray-100 bg-white flex items-center justify-between">
-            <span className="text-xs text-gray-400">หน้า {page} / {totalPages} ({totalOrders} รายการ)</span>
+            <span className="text-xs text-gray-400">{loadError ? 'ยังไม่ทราบจำนวนรายการ' : `หน้า ${page} / ${totalPages} (${totalOrders} รายการ)`}</span>
             <div className="flex gap-2">
               <button
                 onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
+                disabled={Boolean(loadError) || page === 1}
                 className="h-8 w-8 flex items-center justify-center rounded-lg border border-gray-200 disabled:opacity-40"
               >
                 <ChevronLeft size={14} />
               </button>
               <button
                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages}
+                disabled={Boolean(loadError) || page >= totalPages}
                 className="h-8 w-8 flex items-center justify-center rounded-lg border border-gray-200 disabled:opacity-40"
               >
                 <ChevronRight size={14} />

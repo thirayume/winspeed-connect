@@ -372,6 +372,7 @@ async function getSoOrThrow(id, expectedStatus = null) {
 const { validateAndLockCouponReservations } = require('../services/coupon-service');
 const { checkGiveawayQuota, quotaErrorMessage, linePieces } = require('../services/giveaway-quota');
 const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
+const { actorPerspective } = require('../services/business-identity');
 const { legacyCutoffInput, legacyCutoffSql } = require('../services/legacy-cutoff');
 const { nativeStatusSql, nativeDedupSql, findIssuedDelivery } = require('../services/native-status');
 const { findScaleEvent } = require('../services/scale-events');
@@ -623,9 +624,12 @@ router.get('/stats', async (req, res) => {
     const bust = req.query.bust === '1';
     // R12 O-4: a scoped user's counts cover only their own and their team's bills
     const scope = await getVisibleScope(req.user);
+    const actor = actorPerspective(req.user);
+    const actorScope = actor === req.user ? scope : await getVisibleScope(actor);
     const db = require('../db');
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
-    const cacheKey = JSON.stringify([scopedReadKey(db.getTarget(), db.getDbName(), scope), dataWindow.businessDate]);
+    const cacheKey = JSON.stringify([scopedReadKey(db.getTarget(), db.getDbName(), scope),
+      scopedReadKey(db.getTarget(), db.getDbName(), actorScope), dataWindow.businessDate]);
     const out = await statsCache.get(cacheKey, async () => {
     // UAT 2026-10-09: one query for every role, on the base tables — the scoped version read the all-documents
     // view and timed out (HTTP 500, the salesperson's dashboard never loaded); the global one counted each
@@ -642,6 +646,13 @@ router.get('/stats', async (req, res) => {
       nativeWhere = `AND ${e.sql}`;
       Object.assign(inputs, f.inputs, e.inputs);
     }
+    if (actor !== req.user && !actorScope.all) {
+      const f = scopeFilter(actorScope, { userCol: 'so.SalesUserId', prefix: 'actorSc' });
+      const e = scopeFilter(actorScope, { userCol: 'ext.SalesUserId', empCol: 'hd.EmpID', prefix: 'actorSe' });
+      wfWhere += ` AND ${f.sql}`;
+      nativeWhere += ` AND ${e.sql}`;
+      Object.assign(inputs, f.inputs, e.inputs);
+    }
     const r = await wfQuery(`
       SELECT Status, COUNT(*) AS Cnt
       FROM (
@@ -650,14 +661,14 @@ router.get('/stats', async (req, res) => {
         SELECT ${nativeStatusSql('hd', 'ext')} AS Status
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
-        WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')} AND ISNULL(ext.IsDeleted, 0) = 0 ${nativeWhere}
+        WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd', {boundedByStartDate:true})} AND ISNULL(ext.IsDeleted, 0) = 0 ${nativeWhere}
       ) x
       GROUP BY Status`, inputs);
     const byStatus = {};
     for (const row of r.recordset || []) byStatus[row.Status] = Number(row.Cnt);
     const total = Object.values(byStatus).reduce((s, n) => s + n, 0);
     return { byStatus, total, cachedAt: new Date().toISOString(), ...(scope.all ? {} : { scope: scope.basis }) };
-    }, { ttl: scope.all ? STATS_TTL : 30000, force: bust });
+    }, { ttl: scope.all && actorScope.all ? STATS_TTL : 30000, force: bust });
     res.json(out);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -697,6 +708,15 @@ router.get('/', async (req, res) => {
       const f = scopeFilter(scope, { userCol: 'q.SalesUserId', empCol: 'q.OwnerEmpId', prefix: 'sc' });
       conditions.push(f.sql);
       Object.assign(inputs, f.inputs);
+    }
+    const actor = actorPerspective(req.user);
+    if (actor !== req.user) {
+      const actorScope = await getVisibleScope(actor);
+      if (!actorScope.all) {
+        const f = scopeFilter(actorScope, { userCol: 'q.SalesUserId', empCol: 'q.OwnerEmpId', prefix: 'actorSc' });
+        conditions.push(f.sql);
+        Object.assign(inputs, f.inputs);
+      }
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     Object.assign(inputs, await legacyCutoffInput());
@@ -754,8 +774,8 @@ router.get('/', async (req, res) => {
           CAST(CASE WHEN hd.DocuType = 103 AND hd.AppvFlag = 'W' AND hd.AppvDocuNo IS NULL THEN 1 ELSE 0 END AS BIT) AS AwaitingAi
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
-          ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
-        WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')} AND ISNULL(ext.IsDeleted, 0) = 0
+          ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
+        WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd', {boundedByStartDate:true})} AND ISNULL(ext.IsDeleted, 0) = 0
       )
       SELECT COUNT_BIG(*) AS TotalCount
       FROM Orders q
@@ -868,7 +888,7 @@ router.get('/', async (req, res) => {
           CAST(CASE WHEN hd.DocuType = 103 AND hd.AppvFlag = 'W' AND hd.AppvDocuNo IS NULL THEN 1 ELSE 0 END AS BIT) AS AwaitingAi
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
-          ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
+          ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
         OUTER APPLY (
           SELECT TOP 1 q.Id, q.QuoteNo, q.Status, q.Remark, q.ValidUntil, q.CreatedAt
           FROM wf.QuotationSourceSO src WITH (NOLOCK)
@@ -887,7 +907,7 @@ router.get('/', async (req, res) => {
             AND q.Status IN ('DRAFT', 'SENT', 'EXPIRED')
           ORDER BY q.Id DESC
         ) pq
-        WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')} AND ISNULL(ext.IsDeleted, 0) = 0
+        WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd', {boundedByStartDate:true})} AND ISNULL(ext.IsDeleted, 0) = 0
       ),
       FilteredOrders AS (
         SELECT q.*, u.DisplayName AS SalesName, COUNT_BIG(*) OVER() AS FilteredTotal,
@@ -1026,6 +1046,30 @@ router.get('/', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
+// Sales can see whether a customer has a verified available rebate without
+// receiving its monetary value. Scope and both reset fences still apply.
+router.get('/rebate-availability/:custId', requireCapability('so.create'), async (req,res)=>{
+  if(process.env.REBATE_POOL_103_ENABLED!=='true')return res.status(503).json({code:'REBATE_AVAILABILITY_UNAVAILABLE'});
+  try{
+    const custId=Number(req.params.custId);
+    if(!Number.isSafeInteger(custId)||custId<=0||custId>2147483647)return res.status(400).json({code:'INVALID_CUSTOMER_ID'});
+    const scope=await require('../services/rebate-shared-scope').sharedRebateScopeFilter(req.user);
+    const cutoff=(await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;
+    const {withRebateRouteFence,routeParticipantFence,isShipmentEpoch}=require('../services/rebate-route-fence');
+    const queue=await withRebateRouteFence(epoch=>wfTransaction(async tx=>{
+      const q=require('../services/rebate-sql').transactionQuery(tx,sql);await routeParticipantFence(q,epoch);
+      if(!isShipmentEpoch(epoch))throw Object.assign(Error('reset required'),{code:'REBATE_RESET_NOT_COMPLETED',status:409});
+      const cycleMonths=await require('../services/rebate-cycle-policy').readRebateCycleMonths(q,{lock:true});
+      return require('../services/rebate-shipment-queue').getShipmentCustomerQueue(q,{epoch,custId,scope,cutoff,cycleMonths,
+        asOfDate:require('../services/so-pickup-policy').getBangkokDateString()});
+    }));
+    if(!Number.isFinite(queue.totalFifoEligibleBalance)||queue.totalFifoEligibleBalance<0)
+      throw Object.assign(Error('unavailable'),{code:'REBATE_AVAILABILITY_UNAVAILABLE',status:503});
+    return res.json({hasAvailableRebate:queue.totalFifoEligibleBalance>0});
+  }catch(e){const status=Number.isInteger(e.status)&&e.status>=400&&e.status<=599?e.status:503;
+    return res.status(status).json({code:e.code||'REBATE_AVAILABILITY_UNAVAILABLE',message:'ยังไม่สามารถตรวจสิทธิ์ Rebate ของลูกค้าได้'});}
+});
+
 // ── GET /api/so/rebate-balance/:custId ─────────────────────────
 router.get('/rebate-balance/:custId', requireRebateAmountAccess, async (req, res) => {
   try {
@@ -1033,6 +1077,23 @@ router.get('/rebate-balance/:custId', requireRebateAmountAccess, async (req, res
     if (!Number.isSafeInteger(custId) || custId <= 0) return res.status(400).json({ code: 'INVALID_CUSTOMER_ID' });
     const scope = await require('../services/rebate-shared-scope').sharedRebateScopeFilter(req.user);
     const today = require('../services/so-pickup-policy').getBangkokDateString();
+    if (process.env.REBATE_POOL_103_ENABLED === 'true') {
+      const { withRebateRouteFence, routeParticipantFence, isShipmentEpoch } = require('../services/rebate-route-fence');
+      const { transactionQuery } = require('../services/rebate-sql');
+      const cutoff = (await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;
+      const queue = await withRebateRouteFence(epoch => wfTransaction(async tx => {
+        const q = transactionQuery(tx, sql);
+        await routeParticipantFence(q, epoch);
+        if (!isShipmentEpoch(epoch)) throw Object.assign(new Error('reset required'), { code: 'REBATE_RESET_NOT_COMPLETED', status: 409 });
+        const months = await require('../services/rebate-cycle-policy').readRebateCycleMonths(q, { lock: true });
+        return require('../services/rebate-shipment-queue').getShipmentCustomerQueue(q, {
+          epoch, custId, asOfDate: today, cutoff, scope, cycleMonths: months,
+        });
+      }));
+      if (!Number.isFinite(queue.totalFifoEligibleBalance) || queue.totalFifoEligibleBalance < 0)
+        throw Object.assign(new Error('invalid shipment balance'), { code: 'REBATE_BALANCE_UNAVAILABLE', status: 503 });
+      return res.json({ availableRebate: queue.totalFifoEligibleBalance, source: 'shipment' });
+    }
     const r = await wfQuery(
       `SELECT ISNULL(SUM(ROUND(RemainingTonRebate * RebatePerTon, 2)), 0) AS AvailableRebate
        FROM wf.v_RebateAccrualRemaining
@@ -1040,10 +1101,11 @@ router.get('/rebate-balance/:custId', requireRebateAmountAccess, async (req, res
          AND SourceDocuDate <= @today AND ${scope.sql}`,
       { ...scope.inputs, custId: { type: sql.Int, value: custId }, today: { type: sql.Date, value: today } }
     );
-    res.json({ availableRebate: Number(r.recordset[0]?.AvailableRebate || 0) });
+    res.json({ availableRebate: Number(r.recordset[0]?.AvailableRebate || 0), source: 'legacy' });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ message: e.message });
+    console.error('[GET /so/rebate-balance]', e.code || 'REBATE_BALANCE_UNAVAILABLE');
+    const status = Number.isInteger(e.status) && e.status >= 400 && e.status <= 599 ? e.status : 500;
+    res.status(status).json({ code: e.code || 'REBATE_BALANCE_UNAVAILABLE', message: 'ไม่สามารถตรวจยอด Rebate ได้ กรุณาลองใหม่หรือแจ้งผู้ดูแลระบบ' });
   }
 });
 
@@ -1117,6 +1179,15 @@ router.post('/price-indicator', requireCapability('so.create'), async (req, res)
   try {
     const { custId, deliveryDate, lines } = req.body || {};
     if (!Array.isArray(lines) || lines.length > 50) return res.status(400).json({ message: 'lines ต้องเป็นรายการไม่เกิน 50 บรรทัด' });
+    if (req.user.identityMapping) {
+      if (!await require('../services/secondary-customer-scope').secondaryCustomerVisible(req.user, custId))
+        return res.status(404).json({ message: 'ไม่พบลูกค้า' });
+      if (deliveryDate) {
+        const window = await require('../services/global-data-window-store').readGlobalDataWindow();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(deliveryDate)) || String(deliveryDate) < window.businessDate)
+          return res.status(400).json({ message: 'วันที่ราคาต้องไม่ก่อนวันเริ่มข้อมูล' });
+      }
+    }
     const { getSettingValue } = require('../services/policy-contract');
     const warnBelow = await getSettingValue('PRICE_WARN_BELOW_PER_TON');
     const asOfDate = /^\d{4}-\d{2}-\d{2}/.test(String(deliveryDate || '')) ? String(deliveryDate).slice(0, 10) : null;
@@ -1126,7 +1197,10 @@ router.post('/price-indicator', requireCapability('so.create'), async (req, res)
       if (!l || l.isGiveaway || l.isCouponDrawn || l.isControlTicketDrawn || !l.goodId) { out.push({ key: l?.key ?? null, level: 'SKIP', belowThreshold: false }); continue; }
       const k = `${l.goodId}|${l.goodCode || ''}`;
       if (!cache.has(k)) {
-        cache.set(k, await resolveAuthoritativePrice({ custId, goodId: l.goodId, goodCode: l.goodCode, asOfDate }).catch(() => null));
+        cache.set(k, await resolveAuthoritativePrice({ custId, goodId: l.goodId, goodCode: l.goodCode, asOfDate }).catch(e => {
+          if (req.user.identityMapping) throw e;
+          return null;
+        }));
       }
       const auth = cache.get(k);
       const announced = auth?.hasAnnouncedPrice ? Number(auth.announcedPrice) : 0;
@@ -1136,7 +1210,7 @@ router.post('/price-indicator', requireCapability('so.create'), async (req, res)
       lines,
       asOfDate,
       rebateDiscountAmt: Number(req.body?.rebateDiscountAmt || 0),
-    }).catch(() => ({ blocked: false, violations: [] }));
+    }).catch(e => { if (req.user.identityMapping) throw e; return { blocked: false, violations: [] }; });
     const violatedIdx = new Set((floorEval.violations || []).map(v => v.lineIndex));
     violatedIdx.forEach(idx => {
       if (out[idx]) out[idx].belowThreshold = true;
@@ -1193,25 +1267,28 @@ router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN',
       if (['CANCEL', 'EDIT'].includes(reqRow.ReqType)) {
         await assertNoIssuedDelivery(cancelTarget || await getSoOrThrow(reqRow.SoId));
       }
+      const sourceBooking=cancelTarget || await getSoOrThrow(reqRow.SoId);
 
-      // reverse rebate accrual
-      await wfQuery(
-        `UPDATE wf.RebateLedger SET ReversedFlag=1, ReversedAt=GETUTCDATE(), ReversedNote=@note, Status='REVERSED'
-         WHERE SoId=@soId AND ReversedFlag=0`,
-        { soId: { type: sql.VarChar(50), value: reqRow.SoId }, note: { type: sql.NVarChar(300), value: note || 'Request approved' } });
-      await wfQuery(`UPDATE wf.SalesOrderLineExt SET RebateBooked=0 WHERE SOID=@soId`, { soId: { type: sql.VarChar(50), value: reqRow.SoId } });
-      
-      if (cancelTarget) {
-        // PkgStatus 'C', written here before, means nothing to the app or to WinSpeed: the bill stayed live
-        await wfTransaction(tx => cancelBillInTx(tx, cancelTarget, {
-          reasonCode: null, reasonText: note || reqRow.Reason || 'อนุมัติคำขอยกเลิก', user: req.user, ip: req.ip,
-        }));
-      } else {
-        await wfQuery(`UPDATE dbo.SOHD SET PkgStatus='N' WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: reqRow.SoId } });
-        // Set IsUnlocked flag so view considers it DRAFT
-        await wfQuery(`UPDATE wf.SalesOrderExt SET IsUnlocked=1 WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: reqRow.SoId } });
-        await audit(null, reqRow.SoId, req.user.sub, 'EDIT_UNLOCKED', null, 'DRAFT', note, req.ip);
-      }
+      // Reversal, source update and request decision must all commit while the
+      // same reset fences are held; otherwise reset can split the operation.
+      await require('../services/so-rebate-transaction').withSoRebateTransaction(async tx => {
+        await require('../services/so-rebate-transaction').assertNoRedeemedTicketForBooking(tx,sourceBooking);
+        await reverseLegacyRebateForUnlockInTx(tx, reqRow.SoId, note || 'Request approved');
+        if (cancelTarget) {
+          await cancelBillInTx(tx, cancelTarget, {
+            reasonCode: null, reasonText: note || reqRow.Reason || 'อนุมัติคำขอยกเลิก', user: req.user, ip: req.ip,
+          });
+        } else {
+          await tx.request().input('id',sql.VarChar(50),String(reqRow.SoId)).query(`UPDATE dbo.SOHD SET PkgStatus='N' WHERE SOID=@id`);
+          await tx.request().input('id',sql.VarChar(50),String(reqRow.SoId)).query(`UPDATE wf.SalesOrderExt SET IsUnlocked=1 WHERE SOID=@id`);
+          await audit(tx, reqRow.SoId, req.user.sub, 'EDIT_UNLOCKED', null, 'DRAFT', note, req.ip);
+        }
+        await tx.request().input('st',sql.NVarChar(20),'APPROVED').input('uid',sql.Int,req.user.sub)
+          .input('note',sql.NVarChar(300),note || null).input('id',sql.Int,reqRow.Id)
+          .query(`UPDATE wf.UnlockRequest SET Status=@st, ApproverId=@uid, ResponseNote=@note, RespondedAt=GETUTCDATE() WHERE Id=@id`);
+      });
+      broadcast('so_updated', { id: reqRow.SoId, action: 'unlock_resolved' });
+      return res.json({ id: reqRow.Id, status: 'APPROVED' });
     }
     await wfQuery(`UPDATE wf.UnlockRequest SET Status=@st, ApproverId=@uid, ResponseNote=@note, RespondedAt=GETUTCDATE() WHERE Id=@id`,
       {
@@ -2050,7 +2127,8 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
       await assertNoIssuedDelivery(so);
       const beforeLines = await getLines(so.Id);
       let approvalReset = null;
-      await wfTransaction(async tx => {
+      await require('../services/so-rebate-transaction').withSoRebateTransaction(async tx => {
+        await require('../services/so-rebate-transaction').assertNoRedeemedTicketForBooking(tx,so);
         const { transactionQuery: rebateTransactionQuery } = require('../services/rebate-sql');
         const { assertBookingSnapshotEditable } = require('../services/rebate-booking-snapshot');
         await assertBookingSnapshotEditable(rebateTransactionQuery(tx, sql), so.Id);
@@ -2671,7 +2749,7 @@ router.patch('/:id/confirm', requireCapability('so.confirm'), requireSoInScope, 
         });
       }
     }
-    const result=await wfTransaction(async tx=>{
+    const result=await require('../services/so-rebate-transaction').withSoRebateTransaction(async tx=>{
       if(so.TripId) await lockConfirmationResource(tx,'ConfirmTrip_'+so.TripId);
       await lockConfirmationResource(tx,'ConfirmSO_'+so.Id);
       const replay=await tx.request().input('id',sql.Int,Number(so.Id)).query('SELECT SOID FROM wf.SalesOrderExt WHERE SourceDraftId=@id');
@@ -2726,24 +2804,17 @@ router.patch('/:id/unlock', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCOUNT
     const so = await getSoOrThrow(req.params.id, 'PICKING');
     const { note } = req.body;
 
-    // Reverse rebate accrual entries (ไม่ลบ, ใช้ reversedFlag)
-    await wfQuery(
-      `UPDATE wf.RebateLedger SET ReversedFlag=1, ReversedAt=GETUTCDATE(), ReversedNote=@note, Status='REVERSED'
-       WHERE SoId=@soId AND ReversedFlag=0`,
-      { soId: { type: sql.VarChar(50), value: so.Id }, note: { type: sql.NVarChar(300), value: note || 'Unlocked' } }
-    );
-    await wfQuery(`UPDATE wf.SalesOrderLineExt SET RebateBooked=0 WHERE SOID=@soId`, { soId: { type: sql.VarChar(50), value: so.Id } });
-    await wfQuery(`UPDATE dbo.SOHD SET PkgStatus='N' WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: so.Id } });
-    await wfQuery(`UPDATE wf.SalesOrderExt SET UpdatedAt=GETUTCDATE() WHERE SOID=@id`, { id: { type: sql.VarChar(50), value: so.Id } });
-    // a direct unlock from the warehouse queue answers any unlock request still waiting for this bill; otherwise it
-    // stayed PENDING in the approval centre after the work was done (UAT batch 5, SHP-03)
-    await wfQuery(`UPDATE wf.UnlockRequest SET Status='APPROVED', ApproverId=@uid, ResponseNote=@note, RespondedAt=GETUTCDATE()
-                   WHERE SoId=@soId AND Status='PENDING' AND ReqType='UNLOCK'`, {
-      uid: { type: sql.Int, value: req.user.sub },
-      note: { type: sql.NVarChar(300), value: note || 'ปลดล็อกจากหน้าคลัง' },
-      soId: { type: sql.NVarChar(50), value: String(so.Id) },
+    await require('../services/so-rebate-transaction').withSoRebateTransaction(async tx=>{
+      await require('../services/so-rebate-transaction').assertNoRedeemedTicketForBooking(tx,so);
+      await reverseLegacyRebateForUnlockInTx(tx,so.Id,note || 'Unlocked');
+      await tx.request().input('id',sql.VarChar(50),String(so.Id)).query(`UPDATE dbo.SOHD SET PkgStatus='N' WHERE SOID=@id`);
+      await tx.request().input('id',sql.VarChar(50),String(so.Id)).query(`UPDATE wf.SalesOrderExt SET UpdatedAt=GETUTCDATE() WHERE SOID=@id`);
+      // Resolve the waiting warehouse request in the same transaction.
+      await tx.request().input('uid',sql.Int,req.user.sub).input('note',sql.NVarChar(300),note || 'ปลดล็อกจากหน้าคลัง')
+        .input('soId',sql.NVarChar(50),String(so.Id)).query(`UPDATE wf.UnlockRequest SET Status='APPROVED', ApproverId=@uid, ResponseNote=@note, RespondedAt=GETUTCDATE()
+          WHERE SoId=@soId AND Status='PENDING' AND ReqType='UNLOCK'`);
+      await audit(tx, so.Id, req.user.sub, 'UNLOCKED', 'PICKING', 'CONFIRMED', note, req.ip);
     });
-    await audit(null, so.Id, req.user.sub, 'UNLOCKED', 'PICKING', 'CONFIRMED', note, req.ip);
     await writeAudit({ screen: SCREEN.SO_UNLOCK, action: 'U', docuNo: so.WfRef,
       docuDate: so.CreatedAt, refId: so.Id, username: auditUser(req.user),
       note: `PkgStatus=N (ปลดล็อกจากแอป) ${note || ''}`.trim() });
@@ -2825,14 +2896,16 @@ async function recoverPendingShipmentTasks(so, user, clientIp, details = {}) {
   const lines = await getLines(so.Id);
 
   // 1. ตรวจสอบและตั้ง Rebate Accrual หากยังไม่เคยตั้ง (Idempotent) — บันทึกให้เจ้าของบิล (so.SalesUserId)
-  const existingLedger = await wfQuery(
-    `SELECT TOP 1 Id FROM wf.RebateLedger WHERE SoId = @soId`,
-    { soId: { type: sql.VarChar(50), value: soIdStr } }
-  );
   let rebateRecovered = false;
-  if (!existingLedger.recordset?.length) {
-    await bookRebateAccrual(so, lines, so.SalesUserId || actingUserId);
-    rebateRecovered = true;
+  if (process.env.REBATE_POOL_103_ENABLED !== 'true') {
+    const existingLedger = await wfQuery(
+      `SELECT TOP 1 Id FROM wf.RebateLedger WHERE SoId = @soId`,
+      { soId: { type: sql.VarChar(50), value: soIdStr } }
+    );
+    if (!existingLedger.recordset?.length) {
+      await bookRebateAccrual(so, lines, so.SalesUserId || actingUserId);
+      rebateRecovered = true;
+    }
   }
 
   // 2. ตรวจสอบ Audit log และบันทึกหากยังไม่มี — F-21: บันทึก acting user (manager) ไม่ใช่เจ้าของบิล
@@ -3485,8 +3558,9 @@ router.post('/bulk-cancel-delete', requireCapability('so.cancel'), async (req, r
     }
 
     // 3. Execute inside single atomic transaction
-    await wfTransaction(async (tx) => {
+    await require('../services/so-rebate-transaction').withSoRebateTransaction(async (tx) => {
       for (const { so, op } of loadedSos) {
+        await require('../services/so-rebate-transaction').assertNoRedeemedTicketForBooking(tx,so);
         if (op === 'DELETE') {
           const isWebDraft = !so.ImportedDocuNo;
           if (isWebDraft) {
@@ -3617,7 +3691,7 @@ router.post('/bulk-cancel-delete', requireCapability('so.cancel'), async (req, r
             UNION ALL
             SELECT CAST(hd.SOID AS VARCHAR(50)) AS Id
             FROM dbo.SOHD hd WITH (NOLOCK)
-            LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
+            LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
             WHERE ext.TripId = @tid AND ISNULL(hd.DocuStatus, '') <> 'C' AND ISNULL(ext.IsDeleted, 0) = 0
           ) active
         `);
@@ -3649,6 +3723,15 @@ router.post('/bulk-cancel-delete', requireCapability('so.cancel'), async (req, r
  * returns to APPROVED with its amount; accrual the bill's discount consumed goes back to the ledger through a
  * reversing usage row, so the history stays.
  */
+async function reverseLegacyRebateForUnlockInTx(tx, soId, note) {
+  await tx.request().input('soId', sql.VarChar(50), String(soId))
+    .input('note', sql.NVarChar(300), String(note))
+    .query(`UPDATE wf.RebateLedger SET ReversedFlag=1, ReversedAt=GETUTCDATE(), ReversedNote=@note, Status='REVERSED'
+      WHERE SoId=@soId AND ReversedFlag=0`);
+  await tx.request().input('soId', sql.VarChar(50), String(soId))
+    .query(`UPDATE wf.SalesOrderLineExt SET RebateBooked=0 WHERE SOID=@soId`);
+}
+
 async function releaseRebateOnCancel(tx, so, isDraft) {
   const docuNo = String(so.ImportedDocuNo || so.WfRef || '');
   const claimNote = isDraft ? '[บิลร่างถูกยกเลิก คืนสถานะเคลม]' : `[บิล ${docuNo} ถูกยกเลิก คืนสถานะเคลม]`;
@@ -3681,6 +3764,7 @@ async function releaseRebateOnCancel(tx, so, isDraft) {
 
 /** One cancellation for the Cancel button and for an approved cancel request, so both leave WinSpeed the same. */
 async function cancelBillInTx(tx, so, { reasonCode, reasonText, user, ip }) {
+  await require('../services/so-rebate-transaction').assertNoRedeemedTicketForBooking(tx,so);
   const { logChangeEvent } = require('../services/policy-contract');
   const cancelReason = reasonText;
   // an unlocked native bill also reads DRAFT; it has a WinSpeed document to cancel, so it is not a draft here —
@@ -3785,7 +3869,7 @@ router.patch('/:id/cancel', requireCapability('so.cancel'), requireSoInScope, as
     const cancelReasonCode = reasonCheck.reasonCode;
     const cancelReason = reasonCheck.reasonText;
 
-    await wfTransaction(tx => cancelBillInTx(tx, so, {
+    await require('../services/so-rebate-transaction').withSoRebateTransaction(tx => cancelBillInTx(tx, so, {
       reasonCode: cancelReasonCode, reasonText: cancelReason, user: req.user, ip: req.ip,
     }));
 
@@ -3812,7 +3896,8 @@ router.delete('/:id', requireCapability('so.cancel'), requireSoInScope, async (r
     const delReasonCode = reasonDelCheck.reasonCode;
     const delReason = reasonDelCheck.reasonText;
 
-    await wfTransaction(async (tx) => {
+    await require('../services/so-rebate-transaction').withSoRebateTransaction(async (tx) => {
+      await require('../services/so-rebate-transaction').assertNoRedeemedTicketForBooking(tx,so);
       const isWebDraft = !so.ImportedDocuNo;
       let deletedTripId = so.TripId ? Number(so.TripId) : null;
       if (isWebDraft) {
