@@ -200,10 +200,24 @@ function requireAuth(req, res, next) {
             const actor = req.user.isImpersonating ? {
               role: req.user.actorRole, roles: req.user.actorRoles, permissions: req.user.actorPermissions,
             } : req.user;
+            // Company-wide reads of the sale form: price lists, stock availability and
+            // policy settings. They carry no salesperson filter; the effective-price
+            // handler checks customer visibility for both identities itself.
+            const saleFormRead =
+              (req.baseUrl === '/api/stock' && req.path === '/atp') ||
+              (req.baseUrl === '/api/pricebook' && (req.path === '/' || /^\/[0-9]+(\/effective)?$/.test(req.path))) ||
+              (req.baseUrl === '/api/master' && req.path === '/system-settings');
+            // Control tickets: every handler intersects the scopes of both identities,
+            // and a customer filter is checked against customer visibility.
+            const controlTicketRead = req.baseUrl === '/api/master' && (
+              req.path === '/control-tickets' ||
+              /^\/control-tickets\/typed\/[A-Za-z_]{1,20}\/[0-9]{1,10}$/.test(req.path) ||
+              /^\/control-tickets\/[^/]{1,40}(\/(draws|trace))?$/.test(req.path));
             // Only individually reviewed routes may disclose secondary data.
             // Customer salesperson/employee filters are not yet reviewed for
             // cross-database identity translation, so keep those requests shut.
             const privilegedRead = hasRole(req.user, 'ADMIN', 'C_LEVEL', 'ACCOUNTING') && (
+              saleFormRead || controlTicketRead ||
               (req.baseUrl === '/api/so' && ['/', '/stats'].includes(req.path)) ||
               (req.baseUrl === '/api/so' && process.env.REBATE_POOL_103_ENABLED === 'true' &&
                 /^\/rebate-balance\/[0-9]+$/.test(req.path)) ||
@@ -233,6 +247,7 @@ function requireAuth(req, res, next) {
             // List handlers intersect the scopes of both identities. Untranslated
             // salesperson filters remain blocked until separately reviewed.
             const scopedSalesRead = hasPermission(req.user, 'so.create') && hasPermission(actor, 'so.create') && (
+              saleFormRead || controlTicketRead ||
               (req.baseUrl === '/api/so' && ['/', '/stats'].includes(req.path)) ||
               (req.baseUrl === '/api/credit' && /^\/[0-9]+\/status$/.test(req.path)) ||
               (req.baseUrl === '/api/giveaway' && req.path === '/my-quota' &&

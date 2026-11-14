@@ -995,12 +995,17 @@ router.patch('/special/:spId', requireRole(...SPECIAL_APPROVE_ROLES), async (req
 router.get('/:id/effective', async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (Number.isInteger(id) && id > 0) await reconcileFromWinSpeed({ bookId: id });
     const custId = req.query.custId ? String(req.query.custId) : null;
+    // Secondary database: special prices belong to a customer. Show them only for a
+    // customer both identities may see, and never the other customers' special rows.
+    const onSecondary = Boolean(req.user?.identityMapping);
+    if (onSecondary && custId && !await require('../services/secondary-customer-scope').secondaryCustomerVisible(req.user, custId))
+      return res.status(404).json({ message: 'ไม่พบลูกค้า' });
+    if (Number.isInteger(id) && id > 0) await reconcileFromWinSpeed({ bookId: id });
     const rows = (await wfQuery(`
       SELECT GoodId, GoodName, Unit, LineStatus, StandardPrice, SpecialPrice, EffectivePrice, Sellable
       FROM wf.v_PriceBookEffective
-      WHERE PriceBookId = @id AND (@cust IS NULL OR CustId = @cust OR CustId IS NULL)
+      WHERE PriceBookId = @id AND (${onSecondary ? '' : '@cust IS NULL OR '}CustId = @cust OR CustId IS NULL)
       ORDER BY GoodId`, {
       id: { type: sql.Int, value: id },
       cust: { type: sql.NVarChar(20), value: custId },

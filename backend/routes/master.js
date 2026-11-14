@@ -19,6 +19,7 @@ const { nativeChainInScope } = require('../services/native-document-scope');
 const { hasRole } = require('../services/role-capabilities');
 const { businessIds, actorPerspective } = require('../services/business-identity');
 const { secondaryCustomerPredicate, secondaryCustomerVisible } = require('../services/secondary-customer-scope');
+const { secondaryActorScope, withActorScope, chainVisibleToBoth, bothSeeAll } = require('../services/secondary-read-scope');
 
 router.use(requireAuth);
 
@@ -1407,10 +1408,15 @@ router.get('/control-tickets', async (req, res) => {
     const inputs = {};
     if (custId) inputs.custId = { type: sql.NVarChar(50), value: String(custId).trim() };
     if (q) inputs.q = { type: sql.NVarChar(100), value: `%${String(q).trim()}%` };
+    // Secondary database: a customer filter is honoured only for a customer both
+    // identities may see; without one the real actor's scope is applied as well.
+    if (req.user.identityMapping && custId && !await secondaryCustomerVisible(req.user, custId))
+      return res.status(404).json({ message: 'ไม่พบลูกค้า' });
     const ctVisible = custId ? { all: true } : await getVisibleScope(req.user);
-    const ctScope = scopeFilter(ctVisible, { empCol: 'h104.EmpID', prefix: 'ct' });
-    const ctPending = scopeFilter(ctVisible, { empCol: 'h.EmpID', prefix: 'cp' });
-    const ctDraft = scopeFilter(ctVisible, { userCol: 'so.SalesUserId', prefix: 'cd' });
+    const ctActor = custId ? null : await secondaryActorScope(req.user);
+    const ctScope = withActorScope(scopeFilter(ctVisible, { empCol: 'h104.EmpID', prefix: 'ct' }), ctActor, { empCol: 'h104.EmpID' }, 'cta');
+    const ctPending = withActorScope(scopeFilter(ctVisible, { empCol: 'h.EmpID', prefix: 'cp' }), ctActor, { empCol: 'h.EmpID' }, 'cpa');
+    const ctDraft = withActorScope(scopeFilter(ctVisible, { userCol: 'so.SalesUserId', prefix: 'cd' }), ctActor, { userCol: 'so.SalesUserId' }, 'cda');
     Object.assign(inputs, ctScope.inputs, ctPending.inputs, ctDraft.inputs);
 
     // 1. Query Issued Coupons from WFCoupon linked to 104 and 103
@@ -1783,6 +1789,9 @@ router.get('/control-tickets', async (req, res) => {
 router.get('/control-tickets/alerts', async (req, res) => {
   try {
     const { listTicketAlerts } = require('../services/ticket-policy');
+    // The alert list has no owner column. On a secondary database it is shown only
+    // when both identities see every record; otherwise it is empty, not an error.
+    if (req.user.identityMapping && !await bothSeeAll(req.user, await getVisibleScope(req.user))) return res.json([]);
     const alerts = await listTicketAlerts();
     res.json(alerts);
   } catch (e) {
@@ -1811,7 +1820,7 @@ router.get('/control-tickets/:docuNo/trace', async (req, res) => {
     }
 
     const trace = await traceNativeTicketChain(req.params.docuNo, { exactId: cleanExactId, entityType });
-    if (!trace || !await nativeChainInScope(await getVisibleScope(req.user), trace)) {
+    if (!trace || !await chainVisibleToBoth(req.user, await getVisibleScope(req.user), trace)) {
       return res.status(404).json({ message: `ไม่พบข้อมูลตั๋วคุม ${req.params.docuNo}` });
     }
     res.json(trace);
@@ -1879,7 +1888,7 @@ router.get('/control-tickets/typed/:entityType/:id', async (req, res) => {
       entityType: String(entityType).toUpperCase(),
       exactId: id
     });
-    if (!await nativeChainInScope(await getVisibleScope(req.user), result)) {
+    if (!await chainVisibleToBoth(req.user, await getVisibleScope(req.user), result)) {
       return res.status(404).json({ message: 'ไม่พบตั๋วคุมนี้' });
     }
     if (!result.resolved) {
@@ -1896,8 +1905,9 @@ router.get('/control-tickets/typed/:entityType/:id', async (req, res) => {
 router.get('/control-tickets/:docuNo/draws', async (req, res) => {
   try {
     const drawScope = await getVisibleScope(req.user);
-    const couponDrawScope = scopeFilter(drawScope, { empCol: 'h104.EmpID', prefix: 'dcp' });
-    const deliveryDrawScope = scopeFilter(drawScope, { empCol: 'h2.EmpID', prefix: 'ddv' });
+    const drawActor = await secondaryActorScope(req.user);
+    const couponDrawScope = withActorScope(scopeFilter(drawScope, { empCol: 'h104.EmpID', prefix: 'dcp' }), drawActor, { empCol: 'h104.EmpID' }, 'dcpa');
+    const deliveryDrawScope = withActorScope(scopeFilter(drawScope, { empCol: 'h2.EmpID', prefix: 'ddv' }), drawActor, { empCol: 'h2.EmpID' }, 'ddva');
     const docuNo = String(req.params.docuNo).trim();
     const { exactId, entityType } = req.query;
     let parsedExactId = null;
@@ -1975,9 +1985,10 @@ router.get('/control-tickets/:docuNo/draws', async (req, res) => {
 router.get('/control-tickets/:docuNo', async (req, res) => {
   try {
     const detailScope = await getVisibleScope(req.user);
-    const couponDetailScope = scopeFilter(detailScope, { empCol: 'issuer.EmpID', prefix: 'lcp' });
-    const draftDetailScope = scopeFilter(detailScope, { userCol: 'h.SalesUserId', prefix: 'ldr' });
-    const nativeDetailScope = scopeFilter(detailScope, { empCol: 'h.EmpID', prefix: 'lso' });
+    const detailActor = await secondaryActorScope(req.user);
+    const couponDetailScope = withActorScope(scopeFilter(detailScope, { empCol: 'issuer.EmpID', prefix: 'lcp' }), detailActor, { empCol: 'issuer.EmpID' }, 'lcpa');
+    const draftDetailScope = withActorScope(scopeFilter(detailScope, { userCol: 'h.SalesUserId', prefix: 'ldr' }), detailActor, { userCol: 'h.SalesUserId' }, 'ldra');
+    const nativeDetailScope = withActorScope(scopeFilter(detailScope, { empCol: 'h.EmpID', prefix: 'lso' }), detailActor, { empCol: 'h.EmpID' }, 'lsoa');
     const docuNo = String(req.params.docuNo).trim();
     const { exactId, entityType } = req.query;
     const parsedExactId = exactId ? parseInt(exactId, 10) : null;
