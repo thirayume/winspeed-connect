@@ -1417,6 +1417,14 @@ router.get('/control-tickets', async (req, res) => {
     const ctScope = withActorScope(scopeFilter(ctVisible, { empCol: 'h104.EmpID', prefix: 'ct' }), ctActor, { empCol: 'h104.EmpID' }, 'cta');
     const ctPending = withActorScope(scopeFilter(ctVisible, { empCol: 'h.EmpID', prefix: 'cp' }), ctActor, { empCol: 'h.EmpID' }, 'cpa');
     const ctDraft = withActorScope(scopeFilter(ctVisible, { userCol: 'so.SalesUserId', prefix: 'cd' }), ctActor, { userCol: 'so.SalesUserId' }, 'cda');
+    // Data start date: a ticket issued before it is history, unless it still carries a
+    // balance. Like old unpaid invoices in credit, that balance is an opening balance and
+    // stays. Exhausted or cancelled older tickets are hidden. Open bookings and draft
+    // bills are not history and are not filtered.
+    let ctWindow;
+    try { ctWindow = await require('../services/global-data-window-store').readGlobalDataWindow(); }
+    catch { return res.status(503).json({ code: 'DATA_WINDOW_UNAVAILABLE', message: 'ไม่สามารถตรวจวันเริ่มข้อมูลได้' }); }
+    inputs.ctDataStart = { type: sql.Date, value: ctWindow.businessDate };
     Object.assign(inputs, ctScope.inputs, ctPending.inputs, ctDraft.inputs);
 
     // 1. Query Issued Coupons from WFCoupon linked to 104 and 103
@@ -1501,6 +1509,9 @@ router.get('/control-tickets', async (req, res) => {
           ov.UpdatedAt DESC
       ) ov
       WHERE ${ctScope.sql}
+        AND (ISNULL(h104.DocuDate, h103.DocuDate) IS NULL
+          OR ISNULL(h104.DocuDate, h103.DocuDate) >= @ctDataStart
+          OR (c.RemaQty <> 0 AND ISNULL(h104.DocuStatus, '') <> 'C'))
         ${custId ? `AND (h104.CustID = @custId OR h103.CustID = @custId)` : ''}
         ${q ? `AND (c.CouponNo LIKE @q OR h103.DocuNo LIKE @q OR h103.AppvDocuNo LIKE @q OR h104.DocuNo LIKE @q OR h104.CustName LIKE @q OR c.GoodName LIKE @q)` : ''}
     `;

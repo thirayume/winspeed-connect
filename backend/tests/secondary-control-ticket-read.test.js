@@ -24,7 +24,11 @@ const db = h.installDbStub(({ text, inputs }) => {
   return [];
 });
 const win = require.resolve('../services/global-data-window-store');
-require.cache[win].exports.readGlobalDataWindow = async () => require('../services/data-window').boundaries('2026-01-01');
+let failWindow = false;
+require.cache[win].exports.readGlobalDataWindow = async () => {
+  if (failWindow) throw new Error('missing window');
+  return require('../services/data-window').boundaries('2026-01-01');
+};
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/master', '../../routes/master'], ['/api/pricebook', '../../routes/pricebook']]); });
@@ -100,6 +104,24 @@ test('effective prices on a secondary database never show another customer\'s sp
   assert.equal((await app.call('GET', '/api/pricebook/5/effective')).status, 200);
   assert.doesNotMatch(priceQuery().text, /@cust IS NULL OR/, 'without a customer only standard rows match');
   assert.equal(priceQuery().inputs.cust, null);
+});
+
+test('tickets issued before the data start date stay only while they carry a balance', async () => {
+  user = { sub: 8, actorSub: 8, role: 'SALES', actorRole: 'SALES', isImpersonating: false };
+  for (const tab of ['', '?tab=HISTORY', '?tab=ALL', '?custId=123']) {
+    db.calls.length = 0;
+    assert.equal((await app.call('GET', `/api/master/control-tickets${tab}`)).status, 200, tab);
+    const q = ticketQuery();
+    assert.match(q.text, /ISNULL\(h104\.DocuDate, h103\.DocuDate\) >= @ctDataStart/);
+    assert.match(q.text, /OR \(c\.RemaQty <> 0 AND ISNULL\(h104\.DocuStatus, ''\) <> 'C'\)/);
+    assert.equal(q.inputs.ctDataStart, '2026-01-01');
+  }
+  failWindow = true; db.calls.length = 0;
+  try {
+    const r = await app.call('GET', '/api/master/control-tickets');
+    assert.equal(r.status, 503); assert.equal(r.body.code, 'DATA_WINDOW_UNAVAILABLE');
+    assert.equal(ticketQuery(), undefined, 'nothing is read when the start date cannot be checked');
+  } finally { failWindow = false; }
 });
 
 test('on the primary database the handlers keep their existing single-scope behaviour', async () => {
