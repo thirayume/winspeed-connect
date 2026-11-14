@@ -147,7 +147,7 @@ test('pressing print logs one wf row per press, like the SMAudit print row of Wi
   assert.equal((await app.call('GET', '/api/native-print/104/D-T1', as('ADMIN'))).body.printLog.count, 2);
   const writes = db.calls.slice(before).filter(c => c.kind !== 'wfQuery' || /\b(INSERT|UPDATE|DELETE|MERGE)\b|\bEXEC\b(?! sp_executesql N\x27SELECT )/i.test(c.text));
   assert.equal(writes.length, 2);
-  for (const w of writes) assert.match(w.text, /^\s*INSERT INTO wf\.NativePrintLog \(DocType, DocId, DocuNo, PrintedBy\)/);
+  for (const w of writes) assert.match(w.text, /^\s*INSERT INTO wf\.NativePrintLog \(DocType, DocId, DocuNo, PrintedBy, ActorUserId\)/);
 });
 
 test('the print log follows the same capability, scope and duplicate rules as opening', async () => {

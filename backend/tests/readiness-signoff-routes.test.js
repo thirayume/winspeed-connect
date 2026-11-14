@@ -43,7 +43,8 @@ const db = harness.installDbStub(({ text, inputs }) => {
     return (latest.length ? latest : [{}]).map(row => ({ ...row, DatabaseName: 'dbwins_worldfert9_uat' }));
   }
   if (text.startsWith('SELECT TOP (21)')) {
-    return rows.filter(row => row.TopicCode === inputs.topic && (!inputs.before || row.Revision < inputs.before)).slice(0, 21);
+    return rows.filter(row => row.TopicCode === inputs.topic && (!inputs.before || row.Revision < inputs.before) &&
+      new Date(row.SavedAt).getTime() >= inputs.globalStartUtc.getTime()).slice(0, 21);
   }
   return [];
 }, { activeUserIds: [11, 99] });
@@ -107,7 +108,7 @@ test('a new revision stores the authenticated user, rejects stale updates and pr
 });
 
 test('history has a stable cursor for older revisions', async () => {
-  rows = Array.from({ length: 22 }, (_, index) => ({ TopicCode: code, Revision: 22 - index }));
+  rows = Array.from({ length: 22 }, (_, index) => ({ TopicCode: code, Revision: 22 - index, SavedAt:'2026-01-01T00:00:00Z' }));
   const page = await app.call('GET', endpoint + '/history', { user: admin });
   assert.equal(page.body.items.length, 20);
   assert.equal(page.body.nextBefore, 3);
@@ -115,4 +116,20 @@ test('history has a stable cursor for older revisions', async () => {
   assert.deepEqual(next.body.items.map(row => row.Revision), [2, 1]);
   assert.equal(next.body.nextBefore, null);
   assert.equal((await app.call('GET', endpoint + '/history?before=0', { user: admin })).status, 400);
+});
+
+test('history hides revisions before the Bangkok boundary but current setting remains intact', async () => {
+  rows = [
+    { TopicCode: code, Revision: 2, SavedAt:'2025-12-31T17:00:00.000Z' },
+    { TopicCode: code, Revision: 1, SavedAt:'2025-12-31T16:59:59.000Z' },
+  ];
+  const history = await app.call('GET', endpoint + '/history', { user: admin });
+  assert.equal(history.status, 200);
+  assert.deepEqual(history.body.items.map(row => row.Revision), [2]);
+  const call = db.calls.find(c => /SELECT TOP \(21\)/.test(c.text));
+  assert.match(call.text, /SavedAt >= @globalStartUtc/);
+  assert.equal(call.inputs.globalStartUtc.toISOString(), '2025-12-31T17:00:00.000Z');
+  rows = [{ TopicCode: code, Revision: 1, SavedAt:'2025-12-31T16:59:59.000Z' }];
+  const list = await app.call('GET', base, { user: admin });
+  assert.equal(list.body.topics.find(topic => topic.code === code).current.Revision, 1);
 });

@@ -55,10 +55,12 @@ router.get('/:topic/history', topicCode, async (req, res) => {
     return res.status(400).json({ message: 'เลขหน้าประวัติไม่ถูกต้อง' });
   }
   try {
+    const window = await require('../services/global-data-window-store').readGlobalDataWindow();
     const result = await wfQuery(
       'SELECT TOP (' + (PAGE_SIZE + 1) + ') ' + fields + ' FROM wf.ReadinessSignoff ' +
-      'WHERE TopicCode=@topic AND (@before IS NULL OR Revision < @before) ORDER BY Revision DESC',
-      { topic: { type: sql.VarChar(40), value: req.params.topic }, before: { type: sql.Int, value: cursor ? Number(cursor) : null } }
+      'WHERE TopicCode=@topic AND SavedAt >= @globalStartUtc AND (@before IS NULL OR Revision < @before) ORDER BY Revision DESC',
+      { topic: { type: sql.VarChar(40), value: req.params.topic }, before: { type: sql.Int, value: cursor ? Number(cursor) : null },
+        globalStartUtc: { type: sql.DateTime2, value: window.utcInstant } }
     );
     const items = result.recordset.slice(0, PAGE_SIZE);
     return res.json({ items, nextBefore: result.recordset.length > PAGE_SIZE ? items.at(-1).Revision : null });

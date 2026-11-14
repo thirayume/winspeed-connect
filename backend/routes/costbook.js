@@ -17,7 +17,12 @@ const { getBangkokDateString } = require('../services/so-pickup-policy');
 router.use(requireAuth);
 
 function requireCostView(req, res, next) {
-  if (hasPermission(req.user, 'cost.view') || hasPermission(req.user, 'cost.manage')) {
+  const canView = user => hasPermission(user, 'cost.view') || hasPermission(user, 'cost.manage');
+  const actor = req.user?.isImpersonating ? {
+    role:req.user.actorRole, roles:req.user.actorRoles, permissions:req.user.actorPermissions,
+    disabledActions:req.user.actorDisabledActions,
+  } : req.user;
+  if (canView(req.user) && canView(actor)) {
     return next();
   }
   return res.status(403).json({
@@ -114,6 +119,9 @@ router.get('/:id', requireCostView, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'Invalid id' });
+    let window;
+    try { window = await require('../services/global-data-window-store').readGlobalDataWindow(); }
+    catch { return res.status(503).json({ code:'DATA_WINDOW_UNAVAILABLE', message:'ไม่สามารถตรวจวันเริ่มข้อมูลได้' }); }
 
     const book = (await wfQuery(`
       SELECT Id, Name, EffectiveMonth,
@@ -142,9 +150,9 @@ router.get('/:id', requireCostView, async (req, res) => {
       SELECT a.Action, a.FromStatus, a.ToStatus, u.DisplayName AS ByName, a.Note, a.At
       FROM wf.CostBookAudit a
       LEFT JOIN wf.AppUser u ON u.Id = a.ByUser
-      WHERE a.CostBookId = @id
+      WHERE a.CostBookId = @id AND a.At >= @globalStartUtc
       ORDER BY a.At DESC, a.Id DESC
-    `, { id: { type: sql.Int, value: id } })).recordset || [];
+    `, { id: { type: sql.Int, value: id }, globalStartUtc: { type: sql.DateTime2, value: window.utcInstant } })).recordset || [];
 
     res.json({ ...book, lines, audit });
   } catch (e) {
@@ -257,37 +265,38 @@ router.put('/:id', requireCostManage, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const { name, effectiveFrom, effectiveTo, note } = req.body || {};
-    const book = (await wfQuery(`SELECT Id, Status, Name FROM wf.CostBook WHERE Id = @id`, { id: { type: sql.Int, value: id } })).recordset[0];
-    if (!book) return res.status(404).json({ message: 'ไม่พบ Costlist' });
-    if (book.Status === 'ARCHIVED') return res.status(400).json({ message: 'ไม่สามารถแก้ไข Costlist ที่เก็บเข้าคลังแล้ว' });
-
     const cleanFrom = effectiveFrom ? String(effectiveFrom).slice(0, 10) : null;
     const cleanTo = effectiveTo ? String(effectiveTo).slice(0, 10) : null;
     if (cleanFrom && cleanTo && cleanFrom > cleanTo) {
       return res.status(400).json({ message: 'วันที่เริ่มต้นต้องไม่มากกว่าวันที่สิ้นสุด' });
     }
-    const cleanName = name != null && String(name).trim() ? String(name).trim() : book.Name;
-    const nextMonth = cleanFrom ? cleanFrom.slice(0, 7) : undefined;
-
-    await wfQuery(`
-      UPDATE wf.CostBook
-      SET Name = @name,
-          EffectiveMonth = COALESCE(@em, EffectiveMonth),
-          EffectiveFrom = COALESCE(@ef, EffectiveFrom),
-          EffectiveTo = COALESCE(@et, EffectiveTo),
-          Note = @note,
-          UpdatedAt = GETUTCDATE()
-      WHERE Id = @id
-    `, {
-      id: { type: sql.Int, value: id },
-      name: { type: sql.NVarChar(120), value: cleanName },
-      em: { type: sql.Char(7), value: nextMonth || null },
-      ef: { type: sql.Date, value: cleanFrom },
-      et: { type: sql.Date, value: cleanTo },
-      note: { type: sql.NVarChar(500), value: note ?? null },
+    const result = await wfTransaction(async tx => {
+      const tq = async (text, inputs = {}) => {
+        const request = tx.request();
+        for (const [key, { type, value }] of Object.entries(inputs)) request.input(key, type, value);
+        return request.query(text);
+      };
+      const book = (await tq(`SELECT Id, Status, Name FROM wf.CostBook WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id`,
+        { id: { type: sql.Int, value: id } })).recordset[0];
+      if (!book) return { statusCode: 404, message: 'ไม่พบ Costlist' };
+      if (book.Status === 'ARCHIVED') return { statusCode: 400, message: 'ไม่สามารถแก้ไข Costlist ที่เก็บเข้าคลังแล้ว' };
+      const cleanName = name != null && String(name).trim() ? String(name).trim() : book.Name;
+      await tq(`UPDATE wf.CostBook
+        SET Name = @name, EffectiveMonth = COALESCE(@em, EffectiveMonth),
+            EffectiveFrom = COALESCE(@ef, EffectiveFrom), EffectiveTo = COALESCE(@et, EffectiveTo),
+            Note = @note, UpdatedAt = GETUTCDATE()
+        WHERE Id = @id`, {
+        id: { type: sql.Int, value: id },
+        name: { type: sql.NVarChar(120), value: cleanName },
+        em: { type: sql.Char(7), value: cleanFrom ? cleanFrom.slice(0, 7) : null },
+        ef: { type: sql.Date, value: cleanFrom },
+        et: { type: sql.Date, value: cleanTo },
+        note: { type: sql.NVarChar(500), value: note ?? null },
+      });
+      await logAudit(tq, id, 'UPDATE_HEADER', book.Status, book.Status, req.user.sub, `${cleanName} (${cleanFrom || '-'} ถึง ${cleanTo || '-'})`);
+      return {};
     });
-
-    await logAudit(wfQuery, id, 'UPDATE_HEADER', book.Status, book.Status, req.user.sub, `${cleanName} (${cleanFrom || '-'} ถึง ${cleanTo || '-'})`);
+    if (result.statusCode) return res.status(result.statusCode).json({ message: result.message });
     res.json({ ok: true });
   } catch (e) {
     console.error('[costbook/update-header]', e);
@@ -302,10 +311,6 @@ router.post('/:id/lines', requireCostManage, async (req, res) => {
     const { lines } = req.body || {};
     if (!Array.isArray(lines)) return res.status(400).json({ message: 'ต้องระบุรายการสินค้า lines' });
 
-    const book = (await wfQuery(`SELECT Id, Status FROM wf.CostBook WHERE Id = @id`, { id: { type: sql.Int, value: id } })).recordset[0];
-    if (!book) return res.status(404).json({ message: 'ไม่พบ Costlist' });
-    if (book.Status === 'ARCHIVED') return res.status(400).json({ message: 'ไม่สามารถแก้ไข Costlist ที่เก็บเข้าคลังแล้ว' });
-
     for (const l of lines) {
       if (!l.goodId) return res.status(400).json({ message: 'รหัสสินค้า (goodId) จำเป็นทุกรายการ' });
       if (l.costPrice !== null && l.costPrice !== undefined && l.costPrice !== '') {
@@ -316,12 +321,16 @@ router.post('/:id/lines', requireCostManage, async (req, res) => {
       }
     }
 
-    await wfTransaction(async tx => {
+    const result = await wfTransaction(async tx => {
       const tq = async (text, inputs = {}) => {
         const r = tx.request();
         for (const [k, { type, value }] of Object.entries(inputs)) r.input(k, type, value);
         return r.query(text);
       };
+
+      const book = (await tq(`SELECT Id, Status FROM wf.CostBook WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id`, { id: { type: sql.Int, value: id } })).recordset[0];
+      if (!book) return { statusCode: 404, message: 'ไม่พบ Costlist' };
+      if (book.Status === 'ARCHIVED') return { statusCode: 400, message: 'ไม่สามารถแก้ไข Costlist ที่เก็บเข้าคลังแล้ว' };
 
       await tq(`DELETE FROM wf.CostBookLine WHERE CostBookId = @id`, { id: { type: sql.Int, value: id } });
 
@@ -353,7 +362,9 @@ router.post('/:id/lines', requireCostManage, async (req, res) => {
 
       await tq(`UPDATE wf.CostBook SET UpdatedAt = GETUTCDATE() WHERE Id = @id`, { id: { type: sql.Int, value: id } });
       await logAudit(tq, id, 'EDIT_LINES', book.Status, book.Status, req.user.sub, `${lines.length} รายการ`);
+      return {};
     });
+    if (result.statusCode) return res.status(result.statusCode).json({ message: result.message });
 
     res.json({ ok: true, count: lines.length });
   } catch (e) {
@@ -369,16 +380,21 @@ router.patch('/:id/lines/:lineId', requireCostManage, async (req, res) => {
     const lineId = Number(req.params.lineId);
     const { costPrice, note } = req.body || {};
 
-    const book = (await wfQuery(`SELECT Id, Status FROM wf.CostBook WHERE Id = @id`, { id: { type: sql.Int, value: id } })).recordset[0];
-    if (!book) return res.status(404).json({ message: 'ไม่พบ Costlist' });
-    if (book.Status === 'ARCHIVED') return res.status(400).json({ message: 'ไม่สามารถแก้ไข Costlist ที่เก็บเข้าคลังแล้ว' });
-
     const cp = (costPrice === null || costPrice === undefined || costPrice === '') ? null : Number(costPrice);
     if (cp !== null && (!Number.isFinite(cp) || cp <= 0)) {
       return res.status(400).json({ message: 'ราคาทุนต้องเป็นตัวเลขมากกว่า 0' });
     }
 
-    const r = await wfQuery(`
+    const result = await wfTransaction(async tx => {
+      const tq = async (text, inputs = {}) => {
+        const r = tx.request();
+        for (const [key, { type, value }] of Object.entries(inputs)) r.input(key, type, value);
+        return r.query(text);
+      };
+      const book = (await tq(`SELECT Id, Status FROM wf.CostBook WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id`, { id: { type: sql.Int, value: id } })).recordset[0];
+      if (!book) return { statusCode: 404, message: 'ไม่พบ Costlist' };
+      if (book.Status === 'ARCHIVED') return { statusCode: 400, message: 'ไม่สามารถแก้ไข Costlist ที่เก็บเข้าคลังแล้ว' };
+      const r = await tq(`
       UPDATE wf.CostBookLine
       SET CostPrice = @cp,
           Note = COALESCE(@note, Note),
@@ -390,9 +406,11 @@ router.patch('/:id/lines/:lineId', requireCostManage, async (req, res) => {
       lineId: { type: sql.Int, value: lineId },
       cbId: { type: sql.Int, value: id },
     });
-    if (!r.rowsAffected?.[0]) return res.status(404).json({ message: 'ไม่พบรายการสินค้านี้' });
-
-    await logAudit(wfQuery, id, 'EDIT_LINE', book.Status, book.Status, req.user.sub, `Line ${lineId} -> Cost ${cp ?? '-'}`);
+      if (!r.rowsAffected?.[0]) return { statusCode: 404, message: 'ไม่พบรายการสินค้านี้' };
+      await logAudit(tq, id, 'EDIT_LINE', book.Status, book.Status, req.user.sub, `Line ${lineId} -> Cost ${cp ?? '-'}`);
+      return {};
+    });
+    if (result.statusCode) return res.status(result.statusCode).json({ message: result.message });
     res.json({ ok: true, costPrice: cp });
   } catch (e) {
     console.error('[costbook/edit-line]', e);
@@ -407,22 +425,27 @@ router.post('/:id/lines/item', requireCostManage, async (req, res) => {
     const { goodId, goodCode, goodName, unit = 'ตัน', costPrice, note } = req.body || {};
     if (!goodId) return res.status(400).json({ message: 'กรุณาเลือกสินค้า' });
 
-    const book = (await wfQuery(`SELECT Id, Status FROM wf.CostBook WHERE Id = @id`, { id: { type: sql.Int, value: id } })).recordset[0];
-    if (!book) return res.status(404).json({ message: 'ไม่พบ Costlist' });
-    if (book.Status === 'ARCHIVED') return res.status(400).json({ message: 'ไม่สามารถแก้ไข Costlist ที่เก็บเข้าคลังแล้ว' });
-
     const cp = (costPrice === null || costPrice === undefined || costPrice === '') ? null : Number(costPrice);
     if (cp !== null && (!Number.isFinite(cp) || cp <= 0)) {
       return res.status(400).json({ message: 'ราคาทุนต้องมากกว่า 0' });
     }
 
-    const existing = (await wfQuery(`SELECT Id FROM wf.CostBookLine WHERE CostBookId = @cbId AND GoodId = @gid`, {
+    const result = await wfTransaction(async tx => {
+      const tq = async (text, inputs = {}) => {
+        const r = tx.request();
+        for (const [key, { type, value }] of Object.entries(inputs)) r.input(key, type, value);
+        return r.query(text);
+      };
+      const book = (await tq(`SELECT Id, Status FROM wf.CostBook WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id`, { id: { type: sql.Int, value: id } })).recordset[0];
+      if (!book) return { statusCode: 404, message: 'ไม่พบ Costlist' };
+      if (book.Status === 'ARCHIVED') return { statusCode: 400, message: 'ไม่สามารถแก้ไข Costlist ที่เก็บเข้าคลังแล้ว' };
+      const existing = (await tq(`SELECT Id FROM wf.CostBookLine WITH (UPDLOCK, HOLDLOCK) WHERE CostBookId = @cbId AND GoodId = @gid`, {
       cbId: { type: sql.Int, value: id },
       gid: { type: sql.NVarChar(20), value: String(goodId) },
     })).recordset[0];
 
     if (existing) {
-      await wfQuery(`
+      await tq(`
         UPDATE wf.CostBookLine
         SET CostPrice = @cp, Note = COALESCE(@note, Note), UpdatedAt = GETUTCDATE()
         WHERE Id = @lineId
@@ -432,7 +455,7 @@ router.post('/:id/lines/item', requireCostManage, async (req, res) => {
         lineId: { type: sql.Int, value: existing.Id },
       });
     } else {
-      await wfQuery(`
+      await tq(`
         INSERT INTO wf.CostBookLine (CostBookId, GoodId, GoodCode, GoodName, GoodGroupId, GoodGroupName, Unit, CostPrice, Note)
         SELECT @cbId, @gid,
                COALESCE(@gc, g.GoodCode),
@@ -454,7 +477,10 @@ router.post('/:id/lines/item', requireCostManage, async (req, res) => {
       });
     }
 
-    await logAudit(wfQuery, id, existing ? 'EDIT_LINE' : 'ADD_LINE', book.Status, book.Status, req.user.sub, `${goodName || goodId}: ${cp ?? '-'}`);
+      await logAudit(tq, id, existing ? 'EDIT_LINE' : 'ADD_LINE', book.Status, book.Status, req.user.sub, `${goodName || goodId}: ${cp ?? '-'}`);
+      return {};
+    });
+    if (result.statusCode) return res.status(result.statusCode).json({ message: result.message });
     res.json({ ok: true });
   } catch (e) {
     console.error('[costbook/add-item]', e);
@@ -471,32 +497,41 @@ for (const [action, fromStatuses, toStatus, col] of [
   router.post(`/:id/${action}`, requireCostManage, async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const book = (await wfQuery(`SELECT Id, Status, EffectiveMonth FROM wf.CostBook WHERE Id = @id`, { id: { type: sql.Int, value: id } })).recordset[0];
-      if (!book) return res.status(404).json({ message: 'ไม่พบ Costlist' });
-      if (!fromStatuses.includes(book.Status)) {
-        return res.status(409).json({ message: `ต้องเป็น ${fromStatuses.join(' หรือ ')} (ปัจจุบัน: ${book.Status})` });
-      }
-
-      if (toStatus === 'ACTIVE') {
-        const lineCnt = (await wfQuery(`SELECT COUNT(*) AS cnt FROM wf.CostBookLine WHERE CostBookId = @id AND CostPrice IS NOT NULL AND CostPrice > 0`, { id: { type: sql.Int, value: id } })).recordset[0]?.cnt || 0;
-        if (lineCnt === 0) {
-          return res.status(400).json({ message: 'ต้องกรอกราคาทุนอย่างน้อย 1 รายการก่อนเปิดใช้งาน' });
+      const result = await wfTransaction(async tx => {
+        const tq = async (text, inputs = {}) => {
+          const request = tx.request();
+          for (const [key, { type, value }] of Object.entries(inputs)) request.input(key, type, value);
+          return request.query(text);
+        };
+        const book = (await tq(`SELECT Id, Status, EffectiveMonth FROM wf.CostBook WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id`,
+          { id: { type: sql.Int, value: id } })).recordset[0];
+        if (!book) return { statusCode: 404, message: 'ไม่พบ Costlist' };
+        if (!fromStatuses.includes(book.Status)) {
+          return { statusCode: 409, message: `ต้องเป็น ${fromStatuses.join(' หรือ ')} (ปัจจุบัน: ${book.Status})` };
         }
-        await wfQuery(`
-          UPDATE wf.CostBook
-          SET Status = 'ARCHIVED', UpdatedAt = GETUTCDATE()
-          WHERE Status = 'ACTIVE' AND EffectiveMonth = @em AND Id <> @id
-        `, { em: { type: sql.Char(7), value: book.EffectiveMonth }, id: { type: sql.Int, value: id } });
-      }
-
-      const setCol = col ? `, ${col} = @uid, ${col.replace('By', 'At')} = GETUTCDATE()` : '';
-      await wfQuery(`UPDATE wf.CostBook SET Status = @s, UpdatedAt = GETUTCDATE() ${setCol} WHERE Id = @id`, {
-        s: { type: sql.VarChar(20), value: toStatus },
-        uid: { type: sql.Int, value: req.user.sub },
-        id: { type: sql.Int, value: id },
+        if (toStatus === 'ACTIVE') {
+          const lineCnt = (await tq(`SELECT COUNT(*) AS cnt FROM wf.CostBookLine WITH (UPDLOCK, HOLDLOCK) WHERE CostBookId = @id AND CostPrice IS NOT NULL AND CostPrice > 0`,
+            { id: { type: sql.Int, value: id } })).recordset[0]?.cnt || 0;
+          if (lineCnt === 0) return { statusCode: 400, message: 'ต้องกรอกราคาทุนอย่างน้อย 1 รายการก่อนเปิดใช้งาน' };
+          const oldBooks = (await tq(`SELECT Id FROM wf.CostBook WITH (UPDLOCK, HOLDLOCK)
+            WHERE Status = 'ACTIVE' AND EffectiveMonth = @em AND Id <> @id`,
+            { em: { type: sql.Char(7), value: book.EffectiveMonth }, id: { type: sql.Int, value: id } })).recordset;
+          for (const oldBook of oldBooks) {
+            await tq(`UPDATE wf.CostBook SET Status = 'ARCHIVED', UpdatedAt = GETUTCDATE() WHERE Id = @oldId`,
+              { oldId: { type: sql.Int, value: oldBook.Id } });
+            await logAudit(tq, oldBook.Id, 'ARCHIVE', 'ACTIVE', 'ARCHIVED', req.user.sub, 'Replaced by another active Costlist');
+          }
+        }
+        const setCol = col ? `, ${col} = @uid, ${col.replace('By', 'At')} = GETUTCDATE()` : '';
+        await tq(`UPDATE wf.CostBook SET Status = @s, UpdatedAt = GETUTCDATE() ${setCol} WHERE Id = @id`, {
+          s: { type: sql.VarChar(20), value: toStatus },
+          uid: { type: sql.Int, value: req.user.sub },
+          id: { type: sql.Int, value: id },
+        });
+        await logAudit(tq, id, action.toUpperCase(), book.Status, toStatus, req.user.sub, req.body?.note || null);
+        return {};
       });
-
-      await logAudit(wfQuery, id, action.toUpperCase(), book.Status, toStatus, req.user.sub, req.body?.note || null);
+      if (result.statusCode) return res.status(result.statusCode).json({ message: result.message });
       res.json({ ok: true, status: toStatus });
     } catch (e) {
       console.error(`[costbook/${action}]`, e);

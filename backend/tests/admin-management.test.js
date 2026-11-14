@@ -372,6 +372,20 @@ test('custom role with roles.manage can read role history without ADMIN base', a
   sessions={1:{PolicySchemaMissing:1},2:{Id:2,Role:'SALES',RoleCode:'ROLE_AUDITOR',IsActive:1,AuthVersion:0}};
   assigned={2:[{Code:'ROLE_AUDITOR',BaseRole:'SALES',PermissionCode:'roles.manage'}]};
   assert.equal((await app.call('GET','/api/admin-management/history?domain=roles',{user:{sub:2,role:'SALES'}})).status,200);
+  const auditQuery = db.calls.find(c=>/SELECT TOP \(100\).*FROM wf\.AdminChangeAudit/.test(c.text));
+  assert.ok(auditQuery); assert.match(auditQuery.text,/CreatedAt >= @globalStartUtc/);
+  assert.match(auditQuery.text,/Action IN \('ROLE_SAVE', 'ROLE_DELETE'\)/);
+  assert.equal(auditQuery.inputs.globalStartUtc.toISOString(),'2025-12-31T17:00:00.000Z');
+});
+test('admin history fails closed when the data window is unavailable',async()=>{
+  const settings=require('../services/global-data-window-store');const original=settings.readGlobalDataWindow;
+  settings.readGlobalDataWindow=async()=>{throw new Error('unavailable');};
+  const before=db.calls.length;
+  try{
+    const result=await app.call('GET','/api/admin-management/history?domain=roles',{user:admin});
+    assert.equal(result.status,500);
+    assert.ok(!db.calls.slice(before).some(c=>/SELECT TOP \(100\).*FROM wf\.AdminChangeAudit/.test(c.text)));
+  }finally{settings.readGlobalDataWindow=original;}
 });
 test('org viewers receive only organization fields, not account contact or login secrets', async()=>{
   const out=await app.call('GET','/api/auth/org-users',{user:{sub:2,role:'MANAGER'}});

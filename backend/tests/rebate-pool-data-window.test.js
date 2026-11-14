@@ -4,6 +4,11 @@ const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
 const db = h.installDbStub(({ text }) => {
   if (/SELECT TOP 1 1 AS ok FROM wf\.v_RebateAccrualRemaining/.test(text)) return [{ ok: 1 }];
+  if (/SELECT CustId FROM wf\.FertilizerTicket WHERE Id=@id/.test(text)) return [{ CustId: 123 }];
+  if (/FROM wf\.TicketRedemptionHistory r WITH \(NOLOCK\)/.test(text)) return [
+    { Id: 2, TicketId: 7, SoId: null, DocNo: null, RedemptionOrder: 2, RedeemedTonnage: 1,
+      RemainingBefore: 2, RemainingAfter: 1, RedeemedAt: '2026-01-01T00:00:00' },
+  ];
   if (/AS MaturedBalance/.test(text) && /FROM wf\.v_RebateAccrualRemaining/.test(text)) return [
     { MaturedBalance: 50, UnmaturedBalance: 75, OpeningBalance: 50, OpeningCount: 1, WithoutPlanCount: 0 },
   ];
@@ -67,6 +72,47 @@ test('conversion history applies Bangkok business date without filtering balance
   const shared = db.calls.find(c => /FROM wf\.RebateConversionSourceAllocation a/.test(c.text));
   assert.match(shared.text, /h.DocuDate >= @globalStartDate/);
   assert.deepEqual(result.body[0].allocations.map(row => row.docNo), ['NEW', 'NEW-104']);
+});
+
+test('ticket use history filters local time while hiding unverified source identifiers', async () => {
+  const before = db.calls.length;
+  const result = await app.call('GET', '/api/rebate-pool/tickets/7/history', { user: { sub: 1, role: 'ADMIN' } });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  const call = db.calls.slice(before).find(c => /FROM wf\.TicketRedemptionHistory r/.test(c.text));
+  assert.ok(call);
+  assert.match(call.text, /r\.RedeemedAt >= @globalStartDate/);
+  assert.match(call.text, /h\.DocuDate >= @globalStartDate/);
+  assert.match(call.text, /RTRIM\(h\.DocuNo\) = RTRIM\(r\.DocNo\)/);
+  assert.match(call.text, /h\.SOID IS NOT NULL AND d\.Id IS NULL THEN r\.DocNo ELSE NULL/);
+  assert.match(call.text, /h\.SOID IS NOT NULL AND d\.Id IS NULL THEN r\.Note ELSE NULL/);
+  assert.equal(call.inputs.globalStartDate, '2026-01-01');
+  assert.deepEqual(result.body.map(row => [row.docNo, row.soId, row.redeemedTonnage, row.remainingAfter]), [[null, null, 1, 1]]);
+  assert.ok(!db.calls.slice(before).some(c => /UPDATE wf\.FertilizerTicket/.test(c.text)));
+});
+
+test('rebate audit history uses the local business-date boundary', async () => {
+  const before = db.calls.length;
+  const result = await app.call('GET', '/api/rebate-pool/audit?limit=25', { user: { sub: 1, role: 'ADMIN' } });
+  assert.equal(result.status, 200);
+  const call = db.calls.slice(before).find(c => /FROM wf\.RebateAuditAndOverrideLog/.test(c.text));
+  assert.ok(call); assert.match(call.text, /PerformedAt >= @globalStartDate/);
+  assert.equal(call.inputs.globalStartDate, '2026-01-01'); assert.equal(call.inputs.limit, 25);
+});
+
+test('rebate audit refuses missing or invalid start dates before querying', async () => {
+  const { getAuditLog } = require('../services/rebate-ticket-service');
+  let queried = false;
+  await assert.rejects(getAuditLog(async () => { queried = true; }, { startDate: '2026-02-30' }),
+    { code: 'INVALID_GLOBAL_DATA_START_DATE' });
+  assert.equal(queried, false);
+});
+
+test('invalid cutoff fails ticket use history before querying the database', async () => {
+  const { getTicketRedemptionHistory } = require('../services/rebate-ticket-service');
+  let queried = false;
+  await assert.rejects(getTicketRedemptionHistory(async () => { queried = true; }, 7, { startDate: '2026-02-30' }),
+    { code: 'INVALID_GLOBAL_DATA_START_DATE' });
+  assert.equal(queried, false);
 });
 
 test('annual maturity summary uses the shared WinSpeed-backed balance', async () => {

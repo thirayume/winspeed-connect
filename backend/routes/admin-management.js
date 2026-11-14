@@ -366,21 +366,23 @@ router.get("/history", async (req, res) => {
       if (!hasRolesManage && !hasUsersManage && !isAdmin) return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูประวัติการดูแลระบบ' });
     }
 
-    let filterClause = '';
+    const window = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const filters = ['CreatedAt >= @globalStartUtc'];
     if (domain === 'roles') {
-      filterClause = "WHERE Action IN ('ROLE_SAVE', 'ROLE_DELETE')";
+      filters.push("Action IN ('ROLE_SAVE', 'ROLE_DELETE')");
     } else if (domain === 'batch') {
-      filterClause = "WHERE Action LIKE 'BATCH_%'";
+      filters.push("Action LIKE 'BATCH_%'");
     } else if (domain === 'positions') {
-      filterClause = "WHERE Action = 'USER_POSITION'";
+      filters.push("Action = 'USER_POSITION'");
     } else if (domain === 'regions') {
-      filterClause = "WHERE Action IN ('REGION_ASSIGN', 'REGION_REMOVE')";
+      filters.push("Action IN ('REGION_ASSIGN', 'REGION_REMOVE')");
     }
 
     res.json(
       (
         await wfQuery(
-          `SELECT TOP (100) Id,ActorId,Action,Target,Detail,CreatedAt FROM wf.AdminChangeAudit ${filterClause} ORDER BY Id DESC`,
+          `SELECT TOP (100) Id,ActorId,Action,Target,Detail,CreatedAt FROM wf.AdminChangeAudit WHERE ${filters.join(' AND ')} ORDER BY Id DESC`,
+          { globalStartUtc: { type: sql.DateTime2, value: window.utcInstant } },
         )
       ).recordset || [],
     );

@@ -19,6 +19,7 @@ const users = {
 };
 let lastAccessAs = null;
 let accrualHasLot = true;
+let failAccessAsAction = null;
 
 const db = h.installDbStub(({ text, inputs }) => {
   if(text.includes("@Resource='WF_ROLE_POLICY'"))return [{LockResult:0}];
@@ -27,7 +28,10 @@ const db = h.installDbStub(({ text, inputs }) => {
 
   if (/FROM wf\.AppUser\s+WHERE Id = @id/i.test(text)) return users[inputs.id] ? [users[inputs.id]] : [];
   if (/FROM wf\.AppUser u\s+LEFT JOIN dbo\.EMEmp e WITH \(NOLOCK\) ON e\.EmpID = u\.EmpId\s+WHERE u\.IsActive = 1/i.test(text)) return Object.values(users);
-  if (/INSERT INTO wf\.AccessAsAudit/i.test(text)) return { recordset: [], rowsAffected: [1] };
+  if (/INSERT INTO wf\.AccessAsAudit/i.test(text)) {
+    if (inputs.action === failAccessAsAction) throw new Error('simulated audit failure');
+    return { recordset: [], rowsAffected: [1] };
+  }
   if (/SELECT TOP 1 EffectiveUserId, Action FROM wf\.AccessAsAudit/i.test(text)) return lastAccessAs ? [lastAccessAs] : [];
   if (/WHERE Username = @u/i.test(text)) return [users[1]];
   if (/FROM dbo\.EMCust/i.test(text)) return [{ CustID: 1078, CustCode: '0330005', CustName: 'Customer' }];
@@ -173,6 +177,30 @@ test('R12-4: switching directly from one target to another writes STOP for the f
   assert.equal(r.status, 200);
   const audits = db.calls.slice(before).filter(c => /INSERT INTO wf\.AccessAsAudit/.test(c.text)).map(c => [c.inputs.action, c.inputs.effectiveUserId]);
   assert.deepEqual(audits, [['STOP', 2], ['START', 3]]);
+  assert.ok(db.calls.slice(before).filter(c => /INSERT INTO wf\.AccessAsAudit/.test(c.text)).every(c => c.kind === 'tx'));
+});
+
+test('Access As does not issue a token if audit cannot be committed', async () => {
+  failAccessAsAction='START';
+  try {
+    const result=await app.call('POST','/api/auth/access-as',{
+      body:{userId:3},user:{sub:2,role:'WAREHOUSE',actorSub:1,actorRole:'ADMIN'},
+    });
+    assert.equal(result.status,503);
+    assert.equal(result.body.code,'ACCESS_AS_UNAVAILABLE');
+    assert.equal(result.body.accessToken,undefined);
+  } finally {failAccessAsAction=null;}
+});
+
+test('choosing the real user while impersonating records a STOP', async () => {
+  const before=db.calls.length;
+  const result=await app.call('POST','/api/auth/access-as',{
+    body:{userId:1},user:{sub:2,role:'WAREHOUSE',actorSub:1,actorRole:'ADMIN'},
+  });
+  assert.equal(result.status,200);
+  const audits=db.calls.slice(before).filter(c=>/INSERT INTO wf\.AccessAsAudit/.test(c.text));
+  assert.deepEqual(audits.map(c=>[c.inputs.action,c.inputs.effectiveUserId]),[['STOP',2]]);
+  assert.equal(audits[0].kind,'tx');
 });
 
 test('R12-4: Access As follows the actor\'s password flag, so a target that must still change theirs does not trap the operator', async () => {

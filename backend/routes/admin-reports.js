@@ -765,8 +765,11 @@ router.put(['/assignments/:reportKey', '/report-assignments/:reportKey'], async 
 
 // GET /api/admin/reports/audit
 router.get(['/audit', '/report-audit'], async (req, res) => {
+  let window;
+  try { window = await require('../services/global-data-window-store').readGlobalDataWindow(); }
+  catch { return res.status(503).json({ code: 'DATA_WINDOW_UNAVAILABLE', message: 'ไม่สามารถตรวจวันเริ่มข้อมูลได้' }); }
   try {
-    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const limit = Math.min(Math.max(1, Math.trunc(Number(req.query.limit) || 100)), 500);
     const result = await wfQuery(`
       SELECT TOP (@limit)
         EventId, EntityType, EntityId, Action,
@@ -774,9 +777,11 @@ router.get(['/audit', '/report-audit'], async (req, res) => {
         BeforeJson, AfterJson
       FROM wf.ChangeEvent WITH (NOLOCK)
       WHERE EntityType IN ('REPORT_HEADER', 'REPORT_TEMPLATE', 'REPORT_ASSIGNMENT')
+        AND CreatedAt >= @globalStartUtc
       ORDER BY EventId DESC
     `, {
-      limit: { type: sql.Int, value: limit }
+      limit: { type: sql.Int, value: limit },
+      globalStartUtc: { type: sql.DateTime2, value: window.utcInstant }
     });
     res.json(result.recordset || []);
   } catch (err) {

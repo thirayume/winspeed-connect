@@ -22,3 +22,11 @@ test('migration 164 creates only wf.NativePrintLog, idempotently and portable to
   for (const index of ['IX_NativePrintLog_Doc', 'IX_NativePrintLog_PrintedAt'])
     assert.ok(text.includes(`IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'${index}'`), index);
 });
+
+test('migration 210 adds a nullable actor without inventing historical identities', () => {
+  const migration = fs.readFileSync(path.join(__dirname, '../migrations/210_native_print_actor.sql'), 'utf8');
+  assert.match(migration, /COL_LENGTH\('wf\.NativePrintLog','ActorUserId'\) IS NULL/);
+  assert.match(migration, /ADD ActorUserId int NULL/i);
+  assert.doesNotMatch(migration, /\bUPDATE\b|\bdbo\.|\bTHROW\b|CREATE\s+OR\s+ALTER/i);
+  for (const batch of splitBatches(migration)) assert.doesNotThrow(() => assertNoCrossDbWrite(batch));
+});
