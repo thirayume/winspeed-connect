@@ -141,7 +141,8 @@ test('3. Real validateAndLockCouponReservations: Product mismatch throws 400', a
       GoodId: 999, // Product 999
       ReservedQty: 5.0,
       Status: 'RESERVED',
-      BeneficiaryCustId: '0342001'
+      BeneficiaryCustId: '0342001',
+      OwnerCustId: '0342001'
     }
   });
 
@@ -224,7 +225,8 @@ test('6. Valid reservation: Forces price to 0 and cleanly skips price approval',
       GoodId: 101,
       ReservedQty: 4.0,
       Status: 'RESERVED',
-      BeneficiaryCustId: '0342001'
+      BeneficiaryCustId: '0342001',
+      OwnerCustId: '0342001'
     }
   });
 

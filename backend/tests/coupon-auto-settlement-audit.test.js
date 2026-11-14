@@ -16,7 +16,7 @@ const tx={request(){const args={};return {input(k,t,v){args[k]=v;return this;},a
   if(text.includes('INSERT INTO wf.ChangeEvent')){if(failAudit)throw Error('AUDIT_FAILED');state.events.push({...args});return {rowsAffected:[1]};}
   throw Error('UNEXPECTED_SQL');
 }};}};
-const deps={checkMigration139:async()=>true,wfQuery:matchQuery,settlementPolicy:{settlementWindowDays:3,goLiveCutoffDate:null},
+const deps={checkMigration139:async()=>true,wfQuery:matchQuery,couponVisible:async()=>true,reservationsVisible:async()=>true,settlementPolicy:{settlementWindowDays:3,goLiveCutoffDate:null},
   wfTransaction:async fn=>{const before=structuredClone(state);try{return await fn(tx);}catch(e){state=before;throw e;}}, validateSettlementSnapshot:async()=>{if(failFence)throw Object.assign(Error('STALE'),{code:'COUPON_SETTLEMENT_STALE'});},
   logChangeEvent:async(actual,event)=>{assert.equal(actual,tx);if(failAudit)throw Error('AUDIT_FAILED');state.events.push(event);}};
 test('auto settlement and its actor-attributed audit commit together',async()=>{
@@ -33,6 +33,22 @@ test('auto settlement rolls back when audit fails',async()=>{
 test('auto settlement does not write when locked snapshot has changed',async()=>{
   state={settlements:[],consumed:0,events:[]};failAudit=false;failFence=true;
   try{await assert.rejects(runWithUser(user,()=>svc.settleCouponReservations(246000,user,deps)),{code:'COUPON_SETTLEMENT_STALE'});assert.deepEqual(state,{settlements:[],consumed:0,events:[]});}finally{failFence=false;}
+});
+test('auto settlement rejects missing scope before reads and rechecks it before writes',async()=>{
+  state={settlements:[],consumed:0,events:[]};failAudit=false;
+  let checks=0;
+  await assert.rejects(svc.settleCouponReservations(246000,user,{...deps,couponVisible:async()=>{checks++;return false;}}),e=>e.status===404);
+  assert.equal(checks,1);assert.deepEqual(state,{settlements:[],consumed:0,events:[]});
+  checks=0;
+  await assert.rejects(svc.settleCouponReservations(246000,user,{...deps,couponVisible:async()=>++checks===1}),e=>e.status===404);
+  assert.equal(checks,2);assert.deepEqual(state,{settlements:[],consumed:0,events:[]});
+});
+test('auto settlement fails closed if a reservation is outside scope or scope changes',async()=>{
+  state={settlements:[],consumed:0,events:[]};let checks=0;
+  await assert.rejects(svc.settleCouponReservations(246000,user,{...deps,reservationsVisible:async()=>false}),e=>e.status===404);
+  assert.deepEqual(state,{settlements:[],consumed:0,events:[]});
+  await assert.rejects(svc.settleCouponReservations(246000,user,{...deps,reservationsVisible:async()=>++checks===1}),e=>e.status===404);
+  assert.equal(checks,2);assert.deepEqual(state,{settlements:[],consumed:0,events:[]});
 });
 test('actual audit writer records Access As actor and effective user',async()=>{
   state={settlements:[],consumed:0,events:[]};failAudit=false;const realAuditDeps={...deps};delete realAuditDeps.logChangeEvent;

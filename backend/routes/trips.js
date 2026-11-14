@@ -462,7 +462,8 @@ router.get('/:id', requireCapability('trip.view'), async (req, res) => {
 
     const data = camelizeRow(trip.recordset[0]);
     data.orders = camelizeRows(orders.recordset || []);
-    data.multiCustApproval = await fetchTripMultiCustStatus({ tripId: data.tripId, members: data.orders });
+    data.multiCustApproval = await fetchTripMultiCustStatus({ tripId: data.tripId, members: data.orders,
+      dataWindow:{utcInstant:ds.inputs.tripStartUtc.value} });
     res.json(data);
   } catch (error) {
     console.error('[trips]', error);
@@ -712,6 +713,7 @@ router.put('/:id/load-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
   }
 
   try {
+    const ids=await require('../services/trip-transaction-audit').requireTripAuditIdentity(req.user);
     const result = await wfTransaction(async (tx) => {
       // 1. Lock and read trip
       const tripRes = await tx.request()
@@ -866,7 +868,7 @@ router.put('/:id/load-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
       await tx.request()
         .input('tripId', sql.Int, tripId)
         .input('rev', sql.Int, nextRevision)
-        .input('userId', sql.Int, req.user.sub)
+        .input('userId', sql.Int, ids.effective)
         .input('snapshot', sql.NVarChar(sql.MAX), snapshot)
         .input('truckTypeId', sql.NVarChar(50), truckTypeId || trip.TruckTypeId || null)
         .query(`
@@ -882,6 +884,9 @@ router.put('/:id/load-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
           WHERE TripId = @tripId
         `);
 
+      await require('../services/trip-transaction-audit').logTripChange(tx,{tripId,action:'LOAD_PLAN_CONFIRM',
+        before:{status:trip.LoadPlanStatus || null,revision:currentRevision},
+        after:{status:'SALE_CONFIRMED',revision:nextRevision,linesCount:lines.length},effectiveId:ids.effective});
       return {
         tripId,
         loadPlanStatus: 'SALE_CONFIRMED',
@@ -911,6 +916,7 @@ router.post('/:id/load-plan/ack', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', '
   }
 
   try {
+    const ids=await require('../services/trip-transaction-audit').requireTripAuditIdentity(req.user);
     const result = await wfTransaction(async (tx) => {
       const tripRes = await tx.request()
         .input('tripId', sql.Int, tripId)
@@ -938,7 +944,7 @@ router.post('/:id/load-plan/ack', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', '
 
       await tx.request()
         .input('tripId', sql.Int, tripId)
-        .input('userId', sql.Int, businessIds(req.user).effective)
+        .input('userId', sql.Int, ids.effective)
         .query(`
           UPDATE wf.SalesTrip
           SET LoadPlanStatus = 'WAREHOUSE_ACK',
@@ -947,12 +953,15 @@ router.post('/:id/load-plan/ack', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', '
           WHERE TripId = @tripId
         `);
 
+      await require('../services/trip-transaction-audit').logTripChange(tx,{tripId,action:'LOAD_PLAN_ACK',
+        before:{status:trip.LoadPlanStatus,revision:currentRevision},
+        after:{status:'WAREHOUSE_ACK',revision:currentRevision},effectiveId:ids.effective});
       return {
         tripId,
         loadPlanStatus: 'WAREHOUSE_ACK',
         loadPlanRevision: currentRevision,
         warehouseAckAt: new Date().toISOString(),
-        warehouseAckBy: businessIds(req.user).effective,
+        warehouseAckBy: ids.effective,
         message: 'ฝ่ายคลังรับทราบแผนจัดของเรียบร้อยแล้ว'
       };
     });
@@ -1552,6 +1561,7 @@ router.post('/:id/submit-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', '
   }
 
   try {
+    const ids=await require('../services/trip-transaction-audit').requireTripAuditIdentity(req.user);
     const result = await wfTransaction(async (tx) => {
       const trip = (await tx.request()
         .input('tripId', sql.Int, tripId)
@@ -1562,9 +1572,9 @@ router.post('/:id/submit-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', '
       }
 
       // R7-5: Restrict submit-plan to trip sales owner and elevated roles
-      const isElevated = ['ADMIN', 'MANAGER', 'C_LEVEL'].includes(req.user?.role);
+      const isElevated = require('../services/role-capabilities').hasRole(req.user,'ADMIN','MANAGER','C_LEVEL');
       if (!isElevated) {
-        const userId = Number(req.user?.sub || req.user?.userId);
+        const userId = ids.effective;
         let isOwner = Number(trip.SaleConfirmedBy) === userId || Number(trip.CreatedBy) === userId;
         if (!isOwner) {
           // Check if user owns any order or draft in this trip
@@ -1601,7 +1611,7 @@ router.post('/:id/submit-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', '
       await tx.request()
         .input('tripId', sql.Int, tripId)
         .input('rev', sql.Int, rev)
-        .input('uid', sql.Int, req.user?.sub || null)
+        .input('uid', sql.Int, ids.effective)
         .query(`
           UPDATE wf.SalesTrip
           SET LoadPlanStatus = 'SALE_CONFIRMED',
@@ -1611,6 +1621,9 @@ router.post('/:id/submit-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', '
           WHERE TripId = @tripId
         `);
 
+      await require('../services/trip-transaction-audit').logTripChange(tx,{tripId,action:'LOAD_PLAN_SUBMIT',
+        before:{status:trip.LoadPlanStatus || null,revision:rev},
+        after:{status:'SALE_CONFIRMED',revision:rev},effectiveId:ids.effective});
       return {
         tripId,
         loadPlanStatus: 'SALE_CONFIRMED',
@@ -1686,7 +1699,8 @@ router.get('/:id/multi-cust-approval', requireCapability('trip.view'), requireTr
        FROM wf.v_TripMember WHERE TripId = @tripId`,
       { tripId: { type: sql.Int, value: tripId } }
     );
-    const summary = await fetchTripMultiCustStatus({ tripId, members: membersRes.recordset || [] });
+    const dataWindow=await readGlobalDataWindow();
+    const summary = await fetchTripMultiCustStatus({ tripId, members: membersRes.recordset || [], dataWindow });
     let history = [];
     try {
       const hRes = await wfQuery(`
@@ -1694,9 +1708,9 @@ router.get('/:id/multi-cust-approval', requireCapability('trip.view'), requireTr
         FROM wf.TripMultiCustomerApproval a
         LEFT JOIN wf.AppUser ru ON ru.Id = a.RequestedBy
         LEFT JOIN wf.AppUser au ON au.Id = a.ApprovedBy
-        WHERE a.TripId = @tripId
+        WHERE a.TripId = @tripId AND a.CreatedAt >= @globalStartUtc
         ORDER BY a.Id DESC
-      `, { tripId: { type: sql.Int, value: tripId } });
+      `, { tripId: { type: sql.Int, value: tripId }, globalStartUtc:{type:sql.DateTime2,value:dataWindow.utcInstant} });
       history = camelizeRows(hRes.recordset || []);
     } catch (e) {
       if (!/Invalid object name/i.test(String(e.message || ''))) throw e;

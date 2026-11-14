@@ -51,6 +51,7 @@ router.post('/reserve', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER'
       beneficiaryCustId,
       reservedQty,
       userId: req.user.sub,
+      actor: req.user,
       idempotencyKey,
       expiresAt,
       goodUnit,
@@ -78,7 +79,9 @@ router.post('/cancel', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER',
       reservationId,
       reason,
       req.user.sub,
-      req.user.role
+      req.user.role,
+      null,
+      req.user
     );
     res.json(result);
   } catch (err) {
@@ -126,7 +129,7 @@ router.get('/:id/expiry', async (req, res) => {
 router.put('/:id/expiry', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
   try {
     const { expiryDate, note } = req.body || {};
-    const updated = await couponService.updateCouponExpiry(req.params.id, expiryDate, req.user.sub, note);
+    const updated = await couponService.updateCouponExpiry(req.params.id, expiryDate, req.user.sub, note, req.user);
     res.json(updated);
   } catch (err) {
     console.error('[coupons/expiry/put]', err);
@@ -253,6 +256,7 @@ router.post('/post-native', requireRole('WAREHOUSE', 'ADMIN', 'MANAGER', 'C_LEVE
       expectedRevision,
       callerRole,
       overrideApproval,
+      actor: req.user,
     });
     res.json(result);
   } catch (err) {
@@ -324,6 +328,7 @@ router.post('/post-native-delivery', requireRole('WAREHOUSE', 'ADMIN', 'MANAGER'
       callerRole,
       overrideApproval,
       userId: callerId,
+      actor: req.user,
     });
     res.json(result);
   } catch (err) {
@@ -338,38 +343,60 @@ router.post('/post-native-delivery', requireRole('WAREHOUSE', 'ADMIN', 'MANAGER'
  */
 router.post('/settle-cuts', requireCapability('coupon.settle'), async (req, res) => {
   try {
+    const window=await require('../services/global-data-window-store').readGlobalDataWindow();
+    const {presentSettlement}=require('../services/coupon-settlement-presentation');
     const { couponId } = req.body || {};
     if (couponId) {
       const result = await couponService.settleCouponReservations(couponId, req.user);
-      return res.json(result);
+      return res.json(await presentSettlement(result,window));
     }
 
     // If no couponId provided, check all coupons with active reservations
     const { wfQuery } = require('../db');
+    const scope = await require('../services/coupon-access-scope').couponScope(req.user);
     const activeCoupons = (await wfQuery(`
-      SELECT DISTINCT CouponId FROM wf.CouponReservation WHERE Status = 'RESERVED'
-    `)).recordset || [];
+      SELECT DISTINCT cr.CouponId FROM wf.CouponReservation cr
+      JOIN dbo.WFCoupon c ON c.CouponID=cr.CouponId
+      JOIN dbo.SOHD s ON s.SOID=c.DocuID
+      LEFT JOIN wf.SalesOrderExt couponOwnerExt ON couponOwnerExt.SOID=CONVERT(VARCHAR(50),s.SOID)
+      WHERE cr.Status='RESERVED' AND ${scope.sql}
+    `,scope.inputs)).recordset || [];
 
     let totalSettled = 0;
     const allSettlements = [];
     const allAmbiguous = [];
     const allUnmatched = [];
+    const failures = [];
 
     for (const c of activeCoupons) {
-      const r = await couponService.settleCouponReservations(c.CouponId, req.user);
-      totalSettled += r.settledCount || 0;
-      if (r.settlements?.length) allSettlements.push(...r.settlements);
-      if (r.ambiguous?.length) allAmbiguous.push(...r.ambiguous);
-      if (r.unmatched?.length) allUnmatched.push(...r.unmatched);
+      try {
+        const r = await couponService.settleCouponReservations(c.CouponId, req.user);
+        if (r.code === 'SETTLEMENT_IN_PROGRESS' || r.code === 'MIGRATION_139_REQUIRED') {
+          failures.push({code:r.code});
+          continue;
+        }
+        totalSettled += r.settledCount || 0;
+        if (r.settlements?.length) allSettlements.push(...r.settlements);
+        if (r.ambiguous?.length) allAmbiguous.push(...r.ambiguous);
+        if (r.unmatched?.length) allUnmatched.push(...r.unmatched);
+      } catch (e) {
+        const code=String(e.code || 'SETTLEMENT_FAILED');
+        failures.push({code:/^[A-Z0-9_]{1,60}$/.test(code) ? code : 'SETTLEMENT_FAILED'});
+      }
     }
 
-    res.json({
+    const response=await presentSettlement({
       settledCount: totalSettled,
       settlements: allSettlements,
       ambiguous: allAmbiguous,
       unmatched: allUnmatched,
-      processedCoupons: activeCoupons.length
-    });
+      processedCoupons: activeCoupons.length,
+      failedCoupons:failures.length,
+      failures,
+      partial:failures.length>0,
+      ...(failures.length ? {note:`มี ${failures.length} ตั๋วที่ตรวจไม่สำเร็จ กรุณาลองใหม่`} : {}),
+    },window);
+    res.status(failures.length ? 207 : 200).json(response);
   } catch (err) {
     console.error('[coupons/settle-cuts]', err);
     res.status(err.status || 500).json({ message: err.message });
@@ -384,6 +411,9 @@ router.post('/settle-cuts', requireCapability('coupon.settle'), async (req, res)
 router.post('/manual-settle', requireCapability('coupon.settle'), async (req, res) => {
   try {
     const { reservationId, redemptionId, reason, qty, beneficiaryCustId, overridePlate } = req.body || {};
+    const window=await require('../services/global-data-window-store').readGlobalDataWindow();
+    if (!(await require('../services/coupon-settlement-presentation').visibleRedemptionIds([redemptionId],window)).has(String(Number(redemptionId))))
+      return res.status(404).json({message:'ไม่พบรายการตัดตั๋ว'});
     const result = await couponService.manualSettleCouponCut({
       reservationId,
       redemptionId,

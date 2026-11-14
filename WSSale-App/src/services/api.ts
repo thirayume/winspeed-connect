@@ -887,6 +887,9 @@ export interface CouponSettlementResult {
   }>;
   unmatched?: UnmatchedCut[];
   processedCoupons?: number;
+  failedCoupons?: number;
+  partial?: boolean;
+  failures?: Array<{ code: string }>;
   note?: string;
 }
 
@@ -2467,6 +2470,7 @@ export type MultiCustTripApprovalSummary = {
   isApproved: boolean;
   isStale: boolean;
   latestApproval: TripMultiCustApprovalRow | null;
+  approvalHistoryHidden?: boolean;
 };
 
 // ── เหตุการณ์ผิดกฎ ──────────────────────────────────────────

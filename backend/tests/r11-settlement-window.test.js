@@ -59,7 +59,7 @@ function makeDeps({ cutDate, cutPlate = 'กพ70-9233/9234', tripPlate = 'ก�
         if (/FROM wf\.CouponReservationSettlement/.test(text)) return { recordset: [] };
         return { recordset: [] };
       },
-      wfTransaction: async (fn) => fn({ request: req }), validateSettlementSnapshot: async()=>{},
+      wfTransaction: async (fn) => fn({ request: req }), validateSettlementSnapshot: async()=>{}, couponVisible:async()=>true,reservationsVisible:async()=>true,
     },
   };
 }
