@@ -16,6 +16,9 @@ const h = require('./helpers/route-harness.cjs');
 const state = { coupon: null, mismatchRows: [], books: [], pending: [] };
 h.installDbStub(({ text }) => {
   if (/FROM dbo\.WFCoupon c WITH \(UPDLOCK, ROWLOCK\)/.test(text)) return state.coupon ? [state.coupon] : [];
+  // These fixtures are owned by the test salesperson; authorization is checked
+  // before the account-series rule is reached.
+  if (/WHERE c\.CouponID=@scopeCouponId/.test(text)) return state.coupon ? [{ok:1}] : [];
   if (/FROM dbo\.WFRedemtionDT d WITH \(NOLOCK\)[\s\S]*JOIN dbo\.SOInvHD i/.test(text)) return state.mismatchRows;
   if (/FROM dbo\.EMRunBrch WITH \(NOLOCK\)\s+WHERE BrchID = 1 AND RunCode IN/.test(text)) return state.books;
   if (/ISNULL\(d\.SOInvID, 0\) = 0/.test(text)) return state.pending;

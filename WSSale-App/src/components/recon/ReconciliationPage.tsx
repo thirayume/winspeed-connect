@@ -267,14 +267,18 @@ export function ReconciliationPage() {
             {settleResult && (
               <div className="space-y-4">
                 <div className={`p-4 rounded-xl border text-sm flex items-start gap-3 ${
-                  settleResult.settledCount > 0
+                  settleResult.partial
+                    ? 'bg-amber-50 border-amber-200 text-amber-900'
+                    : settleResult.settledCount > 0
                     ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                     : 'bg-blue-50 border-blue-200 text-blue-800'
                 }`}>
                   <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
                   <div>
                     <div className="font-bold">
-                      {settleResult.settledCount > 0
+                      {settleResult.partial
+                        ? `ตรวจไม่สำเร็จ ${settleResult.failedCoupons ?? 0} ใบ · บันทึกตัดตั๋วสำเร็จ ${settleResult.settledCount} รายการ`
+                        : settleResult.settledCount > 0
                         ? `ตัดตั๋วสำเร็จ ${settleResult.settledCount} รายการ (จากตั๋วที่มีการจอง ${settleResult.processedCoupons ?? 0} ใบ)`
                         : `ตรวจสอบเรียบร้อย — ไม่พบการตัดตั๋วใหม่ที่ต้องบันทึก (ตรวจไป ${settleResult.processedCoupons ?? 0} ใบ)`}
                     </div>

@@ -73,6 +73,7 @@ async function getCouponsForCustomer(customerId, options = {}) {
   // sales-document identity must not be exposed outside the data window.
   const dataWindow = await require('./global-data-window-store').readGlobalDataWindow();
   const ownerScope = options.actor ? await require('./coupon-access-scope').couponScope(options.actor) : {sql:'1=1',inputs:{}};
+  const beneficiaryVisible = options.actor && await require('./coupon-access-scope').beneficiaryCustomerVisible(options.actor,custIdStr,dataWindow);
   const goodId = options.goodId ? Number(options.goodId) : null;
   const has139 = await checkMigration139();
 
@@ -99,7 +100,8 @@ async function getCouponsForCustomer(customerId, options = {}) {
       b.Reason AS beneficiaryReason,
       b.EffectiveTo AS beneficiaryExpiry,
       s.DocuDate AS sourceDocuDate,
-      CASE WHEN s.DocuDate >= @globalStartDate THEN 1 ELSE 0 END AS sourceWithinWindow
+      CASE WHEN s.DocuDate >= @globalStartDate THEN 1 ELSE 0 END AS sourceWithinWindow,
+      CASE WHEN ${ownerScope.sql} THEN 1 ELSE 0 END AS ownerDocumentWithinScope
     FROM dbo.WFCoupon c WITH (NOLOCK)
     JOIN dbo.SOHD s WITH (NOLOCK) ON s.SOID = c.DocuID
     LEFT JOIN wf.SalesOrderExt couponOwnerExt WITH (NOLOCK) ON couponOwnerExt.SOID = CONVERT(VARCHAR(50),s.SOID)
@@ -126,7 +128,7 @@ async function getCouponsForCustomer(customerId, options = {}) {
       OR b.Id IS NOT NULL
     )
     AND c.RemaQty > 0
-    AND ${ownerScope.sql}
+    AND ((${ownerScope.sql}) ${beneficiaryVisible ? "OR (CAST(s.CustID AS VARCHAR(50)) <> @custId AND b.Id IS NOT NULL)" : ''})
     ${goodId ? 'AND c.GoodID = @goodId' : ''}
     ORDER BY c.CouponID DESC
   `;
@@ -220,7 +222,7 @@ async function getCouponsForCustomer(customerId, options = {}) {
   const beneficiariesMap = new Map();
   if (rows.length > 0) {
     try {
-      const ownerCustIds = [...new Set(rows.map(r => String(r.ownerCustId || '')).filter(Boolean))];
+      const ownerCustIds = [...new Set(rows.filter(r=>!options.actor || Number(r.ownerDocumentWithinScope)===1).map(r => String(r.ownerCustId || '')).filter(Boolean))];
       if (ownerCustIds.length > 0) {
         const idList = ownerCustIds.map(id => `'${id.replace(/'/g, "''")}'`).join(',');
         const bRes = await wfQuery(`
@@ -305,12 +307,16 @@ async function getCouponsForCustomer(customerId, options = {}) {
     r.hasUnmatchedCuts = unmatchedCouponIds.has(Number(r.couponId));
     // Keep ticket number, reservation identifiers and balances for normal use.
     // Compute expiry first, then remove the old/undated source document fields.
-    r.sourceDocumentHidden = Number(r.sourceWithinWindow) !== 1;
+    const hiddenByAccess = Boolean(options.actor) && Number(r.ownerDocumentWithinScope)!==1;
+    r.sourceHiddenByAccess = hiddenByAccess;
+    r.sourceDocumentHidden = hiddenByAccess || Number(r.sourceWithinWindow) !== 1;
     if (r.sourceDocumentHidden) {
       r.sourceSoId = null;
       r.sourceDocuNo = null;
       r.sourceDocuDate = null;
     }
+    if (hiddenByAccess) { r.ownerCustId = null; r.ownerCustName = null; r.beneficiaries = []; }
+    delete r.ownerDocumentWithinScope;
     delete r.sourceWithinWindow;
   }
   // R12 K-F3: a K bill lists only D coupons and an I bill only C coupons
@@ -387,6 +393,7 @@ async function reserveCoupon({
   beneficiaryCustId,
   reservedQty,
   userId = 1,
+  actor = null,
   idempotencyKey = null,
   expiresAt = null,
   goodUnit = 'ตัน',
@@ -413,6 +420,7 @@ async function reserveCoupon({
 
   const key = idempotencyKey || `RES:${carrierSoId}:${couponId}:${qty}`;
   await requireCouponAuditActor(userId);
+  const window = actor ? await require('./global-data-window-store').readGlobalDataWindow() : null;
 
   return await wfTransaction(async (tx) => {
     // 1. Lock and fetch coupon row to serialize claims on last balance
@@ -434,6 +442,30 @@ async function reserveCoupon({
       throw Object.assign(new Error(`ไม่พบตั๋วปุ๋ยรหัส ${cId}`), { status: 404 });
     }
 
+    // The HTTP caller may reserve only an issuing document in both scopes.
+    // Read scope inside this serializable transaction, before idempotent replay
+    // or any business write; internal trusted callers retain their own guards.
+    let ownerVisible = true;
+    if (actor) {
+      const queryInTx=async(text,inputs={})=>{const request=tx.request();
+        for(const [name,{type,value}] of Object.entries(inputs))request.input(name,type,value);
+        return request.query(text);
+      };
+      const scope=require('./coupon-access-scope');
+      ownerVisible=await scope.couponVisible(actor,cId,queryInTx);
+      if (!ownerVisible && (String(couponRow.OwnerCustId)===String(beneficiaryCustId) ||
+          !await scope.beneficiaryCustomerVisible(actor,beneficiaryCustId,window,queryInTx)))
+        throw Object.assign(new Error('ไม่พบตั๋วปุ๋ย'),{status:404});
+    }
+
+    // Check the live grant before revealing ticket details or accepting a
+    // beneficiary-only scope. The row lock is held through the reservation.
+    const authCheck = await checkBeneficiaryAuthorization(couponRow.OwnerCustId, beneficiaryCustId, couponRow.GoodID, tx);
+    if (!authCheck.authorized) {
+      if (!ownerVisible) throw Object.assign(new Error('ไม่พบตั๋วปุ๋ย'),{status:404});
+      throw Object.assign(new Error(authCheck.reason), { status: 403 });
+    }
+
     // R12 K-F3 (owner rule): K bills draw only D coupons, I bills only C coupons
     if (billPrefix && !couponAllowedForBill(couponRow.CouponNo, billPrefix)) {
       throw Object.assign(new Error(couponBookMismatchMessage(couponRow.CouponNo, billPrefix)), { status: 400, code: 'COUPON_BOOK_MISMATCH' });
@@ -450,12 +482,6 @@ async function reserveCoupon({
       userId,
       expiresAt
     });
-
-    // 2. Verify Beneficiary Rights under transaction lock first
-    const authCheck = await checkBeneficiaryAuthorization(couponRow.OwnerCustId, beneficiaryCustId, couponRow.GoodID, tx);
-    if (!authCheck.authorized) {
-      throw Object.assign(new Error(authCheck.reason), { status: 403 });
-    }
 
     // 3. Check Idempotency Key with Payload Fingerprint
     const existing = (await tx.request()
@@ -546,7 +572,7 @@ async function reserveCoupon({
       status: 'RESERVED',
       idempotent: false
     };
-  });
+  }, actor ? {isolationLevel:sql.ISOLATION_LEVEL.SERIALIZABLE} : undefined);
 }
 
 /**
@@ -557,13 +583,14 @@ async function reserveCoupon({
  * @param {string} userRole
  * @param {object|null} internalContext - Trusted server-owned context; null for public API calls
  */
-async function cancelReservation(reservationId, reason, userId = 1, userRole = null, internalContext = null) {
+async function cancelReservation(reservationId, reason, userId = 1, userRole = null, internalContext = null, actor = null) {
   const rId = Number(reservationId);
   if (!rId) throw Object.assign(new Error('กรุณาระบุ reservationId'), { status: 400 });
   if (!reason || String(reason).trim().length < 3) {
     throw Object.assign(new Error('กรุณาระบุเหตุผลในการยกเลิกการจองตั๋ว (อย่างน้อย 3 ตัวอักษร)'), { status: 400 });
   }
   await requireCouponAuditActor(userId);
+  const window = actor ? await require('./global-data-window-store').readGlobalDataWindow() : null;
 
   const execInTx = async (tx) => {
     const res = (await tx.request()
@@ -575,18 +602,37 @@ async function cancelReservation(reservationId, reason, userId = 1, userRole = n
       throw Object.assign(new Error(`ไม่พบรายการจองตั๋ว #${rId}`), { status: 404 });
     }
 
+    // Role check: non-admin/manager can only cancel their own reservations
+    const elevated = ['ADMIN', 'MANAGER', 'C_LEVEL'].includes(userRole);
+    if (!elevated && Number(res.CreatedBy) !== Number(userId)) {
+      throw Object.assign(new Error('คุณไม่มีสิทธิ์ยกเลิกรายการจองของผู้อื่น'), { status: 403 });
+    }
+
+    if (actor) {
+      const queryInTx=async(text,inputs={})=>{const request=tx.request();
+        for(const [name,{type,value}] of Object.entries(inputs))request.input(name,type,value);
+        return request.query(text);
+      };
+      const scope=require('./coupon-access-scope');
+      if (!await scope.couponVisible(actor,res.CouponId,queryInTx)) {
+        const native=(await queryInTx(`SELECT CAST(s.CustID AS VARCHAR(50)) AS OwnerCustId,c.GoodID
+          FROM dbo.WFCoupon c JOIN dbo.SOHD s ON s.SOID=c.DocuID WHERE c.CouponID=@id`,
+          {id:{type:sql.Int,value:Number(res.CouponId)}})).recordset?.[0];
+        const beneficiary=String(res.BeneficiaryCustId || '').trim();
+        if (!native || String(native.OwnerCustId)!==String(res.OwnerCustId) ||
+            Number(native.GoodID)!==Number(res.GoodId) || String(native.OwnerCustId)===beneficiary ||
+            !await scope.beneficiaryCustomerVisible(actor,beneficiary,window,queryInTx) ||
+            !(await checkBeneficiaryAuthorization(native.OwnerCustId,beneficiary,native.GoodID,tx)).authorized)
+          throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'),{status:404});
+      }
+    }
+
     if (res.Status === 'CANCELLED') {
       return { id: rId, status: 'CANCELLED', message: 'รายการจองนี้ถูกยกเลิกไปแล้ว (Idempotent)', idempotent: true };
     }
 
     if (res.Status === 'POSTED') {
-      throw Object.assign(new Error(`ไม่สามารถยกเลิกได้: รายการจองนี้ถูก Post ไปแล้ว`), { status: 400 });
-    }
-
-    // Role check: non-admin/manager can only cancel their own reservations
-    const elevated = ['ADMIN', 'MANAGER', 'C_LEVEL'].includes(userRole);
-    if (!elevated && res.CreatedBy && Number(res.CreatedBy) !== Number(userId)) {
-      throw Object.assign(new Error('คุณไม่มีสิทธิ์ยกเลิกรายการจองของผู้อื่น'), { status: 403 });
+      throw Object.assign(new Error('ไม่สามารถยกเลิกได้: รายการจองนี้ถูก Post ไปแล้ว'), { status: 400 });
     }
 
     // Guard against cancelling reservations already attached to an active SalesOrderLine (draft or native)
@@ -629,8 +675,7 @@ async function cancelReservation(reservationId, reason, userId = 1, userRole = n
         (Number(internalContext.soId) === Number(activeAttachment.SoId) || String(internalContext.soId) === String(activeAttachment.SoId));
 
       if (!isAuthorizedInternalContext) {
-        const soDoc = activeAttachment.DraftDocuNo || activeAttachment.NativeDocuNo || activeAttachment.SoId;
-        throw Object.assign(new Error(`ไม่สามารถยกเลิกรายการจอง #${rId} ได้: รายการจองถูกผูกกับใบสั่งขาย SO #${activeAttachment.SoId} (${soDoc}) เรียบร้อยแล้ว`), {
+        throw Object.assign(new Error('ไม่สามารถยกเลิกได้: รายการจองผูกกับใบสั่งขายที่ยังดำเนินการอยู่'), {
           status: 409,
           code: 'RESERVATION_ALREADY_ATTACHED_TO_SO'
         });
@@ -663,7 +708,7 @@ async function cancelReservation(reservationId, reason, userId = 1, userRole = n
   if (internalContext && internalContext.tx) {
     return await execInTx(internalContext.tx);
   } else {
-    return await wfTransaction(execInTx);
+    return await wfTransaction(execInTx, actor ? {isolationLevel:sql.ISOLATION_LEVEL.SERIALIZABLE} : undefined);
   }
 }
 
@@ -724,6 +769,8 @@ async function reconcileCoupon(couponId, options = {}) {
       ${has139 ? 'AND (cr.ReservedQty - ISNULL(cr.ConsumedQty, 0)) > 0' : ''}
       AND (cr.ExpiresAt IS NULL OR cr.ExpiresAt > GETUTCDATE())
   `, { cid: { type: sql.Int, value: cId }, globalStartDate:{type:sql.Date,value:dataWindow.businessDate}, globalStartUtc:{type:sql.DateTime,value:dataWindow.utcInstant} })).recordset || [];
+
+  if (options.actor && !await require('./coupon-access-scope').reservationsVisible(options.actor,res.map(r=>r.Id))) return null;
 
   const cuts = has139
     ? (await wfQuery(`
@@ -876,8 +923,13 @@ async function settleCouponReservations(couponId, actor = null, deps = {}) {
   const cId = Number(couponId);
   if (!cId) return { settledCount: 0, settlements: [], ambiguous: [], unmatched: [] };
 
+  const scopeCheck=deps.couponVisible || require('./coupon-access-scope').couponVisible;
+  const reservationScopeCheck=deps.reservationsVisible || require('./coupon-access-scope').reservationsVisible;
+  if (actor && !await scopeCheck(actor,cId,deps.wfQuery || wfQuery))
+    throw Object.assign(new Error('ไม่พบตั๋วปุ๋ย'),{status:404});
+
   if (_settlementLocks.get(cId)) {
-    return { settledCount: 0, settlements: [], ambiguous: [], unmatched: [], note: 'Settlement already in progress for coupon' };
+    return { settledCount: 0, settlements: [], ambiguous: [], unmatched: [], code:'SETTLEMENT_IN_PROGRESS', note: 'Settlement already in progress for coupon' };
   }
   _settlementLocks.set(cId, true);
 
@@ -888,7 +940,7 @@ async function settleCouponReservations(couponId, actor = null, deps = {}) {
 
     const has139 = await effectiveCheck139();
     if (!has139) {
-      return { settledCount: 0, settlements: [], ambiguous: [], unmatched: [], note: 'Migration 139 not applied; skipping persistent write' };
+      return { settledCount: 0, settlements: [], ambiguous: [], unmatched: [], code:'MIGRATION_139_REQUIRED', note: 'Migration 139 not applied; skipping persistent write' };
     }
 
     // 1. Fetch active reservations with lock, selecting remaining reserved qty
@@ -918,6 +970,8 @@ async function settleCouponReservations(couponId, actor = null, deps = {}) {
     if (res.length === 0) {
       return { settledCount: 0, settlements: [], ambiguous: [], unmatched: [] };
     }
+    if (actor && !await reservationScopeCheck(actor,res.map(r=>r.Id),effectiveWfQuery))
+      throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'),{status:404});
 
     // 2. Fetch cuts — select only the UNSETTLED part of each cut
     const cutsSql = `
@@ -960,6 +1014,16 @@ async function settleCouponReservations(couponId, actor = null, deps = {}) {
         couponId:cId, snapshots:[{text:reservationSql,inputs:couponInput,rows:res},{text:cutsSql,inputs:couponInput,rows:cuts}],
         policy, readPolicy:deps.settlementPolicy ? null : query => getCouponSettlementPolicy(query,{strict:true}),
       });
+      if (actor) {
+        const queryInTx=async(text,inputs={})=>{const request=tx.request();
+          for(const [name,{type,value}] of Object.entries(inputs))request.input(name,type,value);
+          return request.query(text);
+        };
+        if (!await scopeCheck(actor,cId,queryInTx))
+          throw Object.assign(new Error('ไม่พบตั๋วปุ๋ย'),{status:404});
+        if (!await reservationScopeCheck(actor,res.map(r=>r.Id),queryInTx))
+          throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'),{status:404});
+      }
       for (const m of matchResult.matches) {
         // Check if already settled
         const existsCheck = await tx.request()
@@ -1036,8 +1100,10 @@ async function manualSettleCouponCut(params = {}, options = {}) {
 
   // 1. Role verification (ADMIN, MANAGER, C_LEVEL, ACCOUNTING)
   const callerRole = params.actor?.role || params.role;
-  if (callerRole && !['ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'].includes(callerRole)) {
-    throw Object.assign(new Error('สิทธิ์ไม่เพียงพอ — ต้องเป็นผู้ดูแลระบบ ผู้จัดการ หรือฝ่ายบัญชีเท่านั้น (ADMIN, MANAGER, C_LEVEL หรือ ACCOUNTING)'), { status: 403 });
+  const allowedRole=actor ? require('./role-capabilities').hasPermission(actor,'coupon.settle') :
+    (!callerRole || ['ADMIN','MANAGER','C_LEVEL','ACCOUNTING'].includes(callerRole));
+  if (!allowedRole) {
+    throw Object.assign(new Error('สิทธิ์ไม่เพียงพอ — ต้องมี Permission coupon.settle'), { status: 403 });
   }
 
   // 2. Reason validation (>= 10 chars)
@@ -1077,11 +1143,17 @@ async function manualSettleCouponCut(params = {}, options = {}) {
   const resRows = (await effectiveWfQuery(reservationSql, reservationInput)).recordset || [];
 
   const reservation = resRows[0];
-  if (!reservation || reservation.Status !== 'RESERVED' || Number(reservation.RemainingReservedQty) <= 0) {
+  if (!reservation) throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'), {status:404});
+  const cId = Number(reservation.CouponId);
+  const scopeCheck=deps.couponVisible || require('./coupon-access-scope').couponVisible;
+  const reservationScopeCheck=deps.reservationsVisible || require('./coupon-access-scope').reservationsVisible;
+  if (actor && !await scopeCheck(actor,cId,effectiveWfQuery))
+    throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'),{status:404});
+  if (actor && !await reservationScopeCheck(actor,[resId],effectiveWfQuery))
+    throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'),{status:404});
+  if (reservation.Status !== 'RESERVED' || Number(reservation.RemainingReservedQty) <= 0) {
     throw Object.assign(new Error('ไม่พบรายการจองตั๋วที่สามารถตัดได้ (สถานะไม่ถูกต้อง หรือยอดจองถูกตัดครบแล้ว)'), { status: 400 });
   }
-
-  const cId = Number(reservation.CouponId);
   if (_settlementLocks.get(cId)) {
     throw Object.assign(new Error('กำลังดำเนินการตัดตั๋วสำหรับคูปองนี้อยู่ กรุณารอสักครู่'), { status: 409 });
   }
@@ -1205,6 +1277,16 @@ async function manualSettleCouponCut(params = {}, options = {}) {
           {text:existingSql,inputs:existingInput,rows:existingSettlement}],
         policy, readPolicy:deps.settlementPolicy ? null : query => getCouponSettlementPolicy(query,{strict:true}),
       });
+      if (actor) {
+        const queryInTx=async(text,inputs={})=>{const request=tx.request();
+          for(const [name,{type,value}] of Object.entries(inputs))request.input(name,type,value);
+          return request.query(text);
+        };
+        if (!await scopeCheck(actor,cId,queryInTx))
+          throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'),{status:404});
+        if (!await reservationScopeCheck(actor,[resId],queryInTx))
+          throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'),{status:404});
+      }
       // Insert audit row in wf.CouponReservationSettlement with Note "MANUAL: <reason>"
       await tx.request()
         .input('resId', sql.BigInt, resId)
@@ -1386,6 +1468,17 @@ async function validateAndLockCouponReservations(tx, lines, orderCustId, targetS
       if (!isDraftCarrier && !isCurrentSo) {
         throw Object.assign(new Error(`รายการจองตั๋วรหัส ${resId} ถูกผูกกับบิลอื่นไปแล้ว (${boundSo})`), { status: 400 });
       }
+    }
+
+    if (!resRow.OwnerCustId) throw Object.assign(new Error('ไม่สามารถยืนยันเจ้าของตั๋วได้'),{status:409});
+    if (String(resRow.OwnerCustId).trim() !== resCust) {
+      const source=(await tx.request().input('cid',sql.Int,Number(resRow.CouponId)).query(`
+        SELECT CAST(s.CustID AS VARCHAR(50)) AS OwnerCustId,c.GoodID
+        FROM dbo.WFCoupon c WITH (HOLDLOCK) JOIN dbo.SOHD s WITH (HOLDLOCK) ON s.SOID=c.DocuID WHERE c.CouponID=@cid
+      `)).recordset?.[0];
+      if (!source || String(source.OwnerCustId)!==String(resRow.OwnerCustId) || Number(source.GoodID)!==Number(resRow.GoodId) ||
+          !(await checkBeneficiaryAuthorization(source.OwnerCustId,resCust,source.GoodID,tx)).authorized)
+        throw Object.assign(new Error('สิทธิ์ใช้ตั๋วร่วมไม่พร้อมใช้งาน กรุณาตรวจสอบสิทธิ์ลูกค้า'),{status:409,code:'COUPON_BENEFICIARY_UNAVAILABLE'});
     }
 
     // D1 / R5-2: Validated reservation line is forced to price ฿0 and marked validated
@@ -2176,6 +2269,8 @@ async function validateReservationBeforePosting({
     await tx.request()
       .input('id', sql.Int, r.Id)
       .query(`UPDATE wf.CouponReservation SET Status = 'EXPIRED', UpdatedAt = GETUTCDATE() WHERE Id = @id`);
+    await logChangeEvent(tx,{entityType:'COUPON_RESERVATION',entityId:String(r.Id),action:'EXPIRE',
+      beforeJson:{status:r.Status},afterJson:{status:'EXPIRED'},reasonCode:'COUPON_RESERVATION_EXPIRED',userId:String(userId)});
     return { expired: true, reservationId: r.Id, expiresAt: r.ExpiresAt, reservation: r };
   }
 
@@ -2231,12 +2326,12 @@ async function validateReservationBeforePosting({
       SELECT 
         c.CouponID, c.CouponNo, c.GoodID, c.GoodUnitID, c.GoodPrice, c.RemaQty,
         c.DocuID, c.SONo,
-        s.DocuStatus AS SoDocuStatus,
+        s.DocuStatus AS SoDocuStatus, CAST(s.CustID AS VARCHAR(50)) AS ActualOwnerCustId,
         ov.ExpiryDate AS ExpDate,
         ov.StrictOverrideFlag,
         ov.ReasonCode
       FROM dbo.WFCoupon c WITH (UPDLOCK, HOLDLOCK)
-      LEFT JOIN dbo.SOHD s WITH (NOLOCK) ON s.SOID = c.DocuID
+      LEFT JOIN dbo.SOHD s WITH (HOLDLOCK) ON s.SOID = c.DocuID
       LEFT JOIN wf.ControlTicketOverlay ov WITH (NOLOCK) ON ov.DocuId = c.CouponID
       WHERE c.CouponID = @cid
     `)
@@ -2245,6 +2340,9 @@ async function validateReservationBeforePosting({
   if (!couponRecord) {
     throw Object.assign(new Error(`ไม่พบคูปอง ID ${r.CouponId} ในระบบ`), { code: 'COUPON_NOT_FOUND', status: 404 });
   }
+  if (r.BeneficiaryCustId && r.OwnerCustId && String(r.BeneficiaryCustId).trim() !== String(r.OwnerCustId).trim() &&
+      (String(couponRecord.ActualOwnerCustId || '')!==String(r.OwnerCustId) || Number(couponRecord.GoodID)!==Number(r.GoodId)))
+    throw Object.assign(new Error('ไม่สามารถยืนยันเจ้าของหรือสินค้าของตั๋วร่วม'),{code:'COUPON_SOURCE_CHANGED',status:409});
 
   // R3-01: Server-owned policy resolution; client cannot dictate strictMode
   const ticketPolicy = require('./ticket-policy');
@@ -2321,14 +2419,13 @@ async function validateReservationBeforePosting({
 
   // R3-05 / R4-05: Transactional audit logging for warnings and overrides with authenticated executor attribution
   if (effectiveStrictOverride || warnings.length > 0) {
-    await tx.request()
-      .input('entityType', sql.VarChar(50), 'COUPON_POSTING')
-      .input('entityId', sql.VarChar(50), String(r.Id))
-      .input('action', effectiveStrictOverride ? 'STRICT_OVERRIDE' : 'EXPIRY_WARNING')
-      .input('reasonCode', effectiveStrictOverride ? 'POLICY_OVERRIDE' : 'EXPIRY_WARNING')
-      .input('reasonText', sql.NVarChar(500), overrideReason || warnings.join('; ') || 'Warning during posting')
-      .input('userId', sql.VarChar(50), String(userId || overrideActor || 'SYSTEM'))
-      .input('afterJson', sql.NVarChar(sql.MAX), JSON.stringify({
+    await logChangeEvent(tx, {
+      entityType:'COUPON_POSTING', entityId:String(r.Id),
+      action:effectiveStrictOverride ? 'STRICT_OVERRIDE' : 'EXPIRY_WARNING',
+      reasonCode:effectiveStrictOverride ? 'POLICY_OVERRIDE' : 'EXPIRY_WARNING',
+      reasonText:overrideReason || warnings.join('; ') || 'Warning during posting',
+      userId:String(userId || overrideActor || 'SYSTEM'),
+      afterJson:{
         reservationId: r.Id,
         couponId: r.CouponId,
         couponNo: r.CouponNo,
@@ -2340,11 +2437,8 @@ async function validateReservationBeforePosting({
         warnings,
         snapshotId: policySettings.snapshotId,
         revisionNumber: policySettings.revisionNumber,
-      }))
-      .query(`
-        INSERT INTO wf.ChangeEvent (EntityType, EntityId, Action, ReasonCode, ReasonText, UserId, AfterJson, CreatedAt)
-        VALUES (@entityType, @entityId, @action, @reasonCode, @reasonText, @userId, @afterJson, GETUTCDATE())
-      `);
+      },
+    });
   }
 
   return {
@@ -2386,6 +2480,8 @@ async function postNativeCouponRedemption(reservationId, userId = 1, options = {
     );
   }
 
+  await requireCouponAuditActor(userId);
+
   const txResult = await wfTransaction(async (tx) => {
     // 1. Fetch reservation under lock
     const res = (await tx.request()
@@ -2395,6 +2491,17 @@ async function postNativeCouponRedemption(reservationId, userId = 1, options = {
 
     if (!res) {
       throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'), { code: 'NOT_FOUND', status: 404 });
+    }
+
+    if (options.actor) {
+      const queryInTx=async(text,inputs={})=>{const request=tx.request();
+        for(const [name,{type,value}] of Object.entries(inputs))request.input(name,type,value);
+        return request.query(text);
+      };
+      if (!await require('./coupon-access-scope').couponVisible(options.actor,res.CouponId,queryInTx))
+        throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'),{status:404});
+      if (!await require('./coupon-access-scope').reservationsVisible(options.actor,[res.Id],queryInTx))
+        throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'),{status:404});
     }
 
     const redemptionDocuNo = String(options.docuNo || options.deliveryDocuNo || res.CarrierDocuNo || (options.adapter ? 'SIM-DOC' : '')).trim();
@@ -2482,12 +2589,16 @@ async function postNativeCouponRedemption(reservationId, userId = 1, options = {
         WHERE Id = @id AND Revision = @expectedRev
       `);
 
-    if (updateRes.rowsAffected?.[0] === 0) {
+    if (Number(updateRes.rowsAffected?.[0]) !== 1) {
       throw Object.assign(
         new Error(`OCC Conflict: การจองตั๋วถูกแก้ไขระหว่างทำรายการ`),
         { code: 'OCC_CONFLICT', status: 409 }
       );
     }
+
+    await logChangeEvent(tx,{entityType:'COUPON_RESERVATION',entityId:String(res.Id),action:'POST_NATIVE',
+      beforeJson:{status:res.Status},afterJson:{status:'POSTED',couponId:Number(res.CouponId),redemptionId:adapterResult.redemptionId || null,quantity:Number(res.ReservedQty)},
+      reasonCode:'COUPON_NATIVE_POST',userId:String(userId)});
 
     return {
       id: Number(reservationId),
@@ -2499,7 +2610,7 @@ async function postNativeCouponRedemption(reservationId, userId = 1, options = {
       policy: validation.policy,
       eligibility: validation.eligibility,
     };
-  });
+  }, {isolationLevel:sql.ISOLATION_LEVEL.SERIALIZABLE});
 
   if (txResult?.expired) {
     throw Object.assign(
@@ -2530,6 +2641,7 @@ async function postNativeDeliveryRedemption(params = {}) {
     userId = 1,
     callerRole = null,
     overrideApproval = null,
+    actor = null,
   } = params;
 
   const docuNo = String(deliveryDocuNo || '').trim();
@@ -2540,6 +2652,8 @@ async function postNativeDeliveryRedemption(params = {}) {
   if (!Array.isArray(reservationIds) || reservationIds.length === 0) {
     throw Object.assign(new Error('ต้องระบุรายการจองตั๋ว (reservationIds) อย่างน้อย 1 รายการ'), { code: 'EMPTY_RESERVATIONS', status: 400 });
   }
+
+  await requireCouponAuditActor(userId);
 
   const sortedIds = [...new Set(reservationIds.map(Number))].sort((a, b) => a - b);
 
@@ -2553,6 +2667,16 @@ async function postNativeDeliveryRedemption(params = {}) {
       ).recordset?.[0];
       if (!row) {
         throw Object.assign(new Error(`ไม่พบรายการจองตั๋วรหัส ${rId}`), { code: 'NOT_FOUND', status: 404 });
+      }
+      if (actor) {
+        const queryInTx=async(text,inputs={})=>{const request=tx.request();
+          for(const [name,{type,value}] of Object.entries(inputs))request.input(name,type,value);
+          return request.query(text);
+        };
+        if (!await require('./coupon-access-scope').couponVisible(actor,row.CouponId,queryInTx))
+          throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'),{status:404});
+        if (!await require('./coupon-access-scope').reservationsVisible(actor,[row.Id],queryInTx))
+          throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'),{status:404});
       }
       reservations.push(row);
     }
@@ -2667,12 +2791,15 @@ async function postNativeDeliveryRedemption(params = {}) {
           WHERE Id = @id AND Revision = @rev
         `);
 
-      if (updateRes.rowsAffected?.[0] === 0) {
+      if (Number(updateRes.rowsAffected?.[0]) !== 1) {
         throw Object.assign(
           new Error(`OCC Conflict: ข้อมูลการจองตั๋วรหัส ${r.Id} ถูกแก้ไขระหว่างทำรายการ`),
           { code: 'OCC_CONFLICT', status: 409 }
         );
       }
+      await logChangeEvent(tx,{entityType:'COUPON_RESERVATION',entityId:String(r.Id),action:'POST_NATIVE',
+        beforeJson:{status:r.Status},afterJson:{status:'POSTED',couponId:Number(r.CouponId),redemptionId:result.redemtionId || null,quantity:Number(r.ReservedQty)},
+        reasonCode:'COUPON_NATIVE_POST',userId:String(userId)});
     }
 
     const aggregatedWarnings = [...new Set(validations.flatMap(v => v.warnings || []))];
@@ -2690,7 +2817,7 @@ async function postNativeDeliveryRedemption(params = {}) {
         warnings: v.warnings,
       })),
     };
-  });
+  }, {isolationLevel:sql.ISOLATION_LEVEL.SERIALIZABLE});
 
   if (txResult?.expired) {
     throw Object.assign(
@@ -2779,7 +2906,7 @@ async function getCouponExpiryInfo(couponId) {
 /**
  * D1: Update coupon expiry date (ADMIN / MANAGER only, audited).
  */
-async function updateCouponExpiry(couponId, expiryDate, userId, note = null) {
+async function updateCouponExpiry(couponId, expiryDate, userId, note = null, actor = null) {
   const cId = Number(couponId);
   if (!cId) throw Object.assign(new Error('Invalid couponId'), { status: 400 });
   if (!expiryDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(expiryDate).trim())) {
@@ -2791,6 +2918,14 @@ async function updateCouponExpiry(couponId, expiryDate, userId, note = null) {
   if (!Number.isSafeInteger(uid) || uid <= 0) throw Object.assign(new Error('COUPON_AUDIT_IDENTITY_REQUIRED'), { status: 403 });
   await requireCouponAuditActor(uid);
   await wfTransaction(async tx => {
+    if (actor) {
+      const queryInTx=async(text,inputs={})=>{const request=tx.request();
+        for(const [name,{type,value}] of Object.entries(inputs))request.input(name,type,value);
+        return request.query(text);
+      };
+      if (!await require('./coupon-access-scope').couponVisible(actor,cId,queryInTx))
+        throw Object.assign(new Error('ไม่พบตั๋วปุ๋ย'),{status:404});
+    }
     const coupon = (await tx.request().input('cid', sql.Int, cId).query('SELECT CouponID FROM dbo.WFCoupon WITH (NOLOCK) WHERE CouponID=@cid')).recordset?.[0];
     if (!coupon) throw Object.assign(new Error('ไม่พบตั๋วปุ๋ย'), { status: 404 });
     const before = (await tx.request().input('cid', sql.Int, cId).query('SELECT ExpiryDate, Source, SetBy, Note FROM wf.CouponExpiry WITH (UPDLOCK,HOLDLOCK) WHERE CouponId=@cid')).recordset?.[0] || null;

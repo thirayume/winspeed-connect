@@ -8,8 +8,9 @@ export interface CouponItem {
   sourceSoId: number | null;
   sourceDocuNo: string | null;
   sourceDocumentHidden?: boolean;
-  ownerCustId: string;
-  ownerCustName: string;
+  sourceHiddenByAccess?: boolean;
+  ownerCustId: string | null;
+  ownerCustName: string | null;
   goodId: number;
   goodName: string;
   goodPrice: number;
@@ -260,7 +261,7 @@ export const CouponPickerModal: React.FC<CouponPickerModalProps> = ({
                       <div>
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs font-semibold text-slate-500">เลขที่เอกสาร:</span>
-                          <span className="font-bold text-slate-900 text-sm">{c.sourceDocuNo || 'ยอดยกมา'}</span>
+                          <span className="font-bold text-slate-900 text-sm">{c.sourceDocuNo || (c.sourceHiddenByAccess ? 'ตั๋วร่วม' : 'ยอดยกมา')}</span>
                         </div>
                         <div className="text-xs text-slate-400 mt-0.5">
                           ตั๋วเลขที่: <span className="font-medium text-slate-700">{c.couponNo}</span>
@@ -369,7 +370,7 @@ export const CouponPickerModal: React.FC<CouponPickerModalProps> = ({
               <div>
                 <div className="text-xs font-semibold text-slate-500">ตั๋วที่เลือก:</div>
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-slate-900">{selectedCoupon.sourceDocuNo || 'ยอดยกมา'}</span>
+                  <span className="font-bold text-slate-900">{selectedCoupon.sourceDocuNo || (selectedCoupon.sourceHiddenByAccess ? 'ตั๋วร่วม' : 'ยอดยกมา')}</span>
                   <span className="text-xs text-slate-500">({selectedCoupon.couponNo})</span>
                   <span className="text-xs text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded">
                     พร้อมใช้ {selectedCoupon.availableQty.toLocaleString()} ตัน

@@ -296,7 +296,24 @@ test('FR-1: manualSettleCouponCut guards and execution workflow', async () => {
     wfQuery: stubDb.wfQuery,
     wfTransaction: stubDb.wfTransaction,
     validateSettlementSnapshot: async()=>{},
+    couponVisible: async()=>true,
+    reservationsVisible: async()=>true,
   };
+
+  // Scope may be revoked after the initial lookup; fail before any write.
+  let scopeChecks=0;
+  await assert.rejects(manualSettleCouponCut({reservationId:17,redemptionId:183003,
+    reason:'Scope revocation before settlement',actor:{userId:42,role:'MANAGER'},
+    deps:{...testDeps,couponVisible:async()=>++scopeChecks===1}}),e=>e.status===404);
+  assert.equal(scopeChecks,2);
+  assert.equal(mockSettlements.length,0);assert.equal(changeEvents.length,0);assert.equal(outboxEvents.length,0);
+  // A secondary MANAGER role must be honored even when the primary role is SALES.
+  await assert.rejects(manualSettleCouponCut({reservationId:17,redemptionId:183003,
+    reason:'Check multi role scope denial',actor:{userId:42,role:'SALES',roles:['SALES','MANAGER']},
+    deps:{...testDeps,couponVisible:async()=>false}}),e=>e.status===404);
+  await assert.rejects(manualSettleCouponCut({reservationId:17,redemptionId:183003,
+    reason:'Check custom permission scope denial',actor:{userId:42,role:'CUSTOM',permissions:['coupon.settle']},
+    deps:{...testDeps,couponVisible:async()=>false}}),e=>e.status===404);
 
   // 1. Guard: reason < 10 characters -> 400
   await assert.rejects(
@@ -326,7 +343,7 @@ test('FR-1: manualSettleCouponCut guards and execution workflow', async () => {
     (err) => {
       assert.equal(err.status, 403);
       // O-3 (owner 2026-10-05): ACCOUNTING may also settle manually
-      assert.match(err.message, /ADMIN, MANAGER, C_LEVEL หรือ ACCOUNTING/);
+      assert.match(err.message, /coupon\.settle/);
       return true;
     }
   );

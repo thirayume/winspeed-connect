@@ -265,6 +265,8 @@ test('12. Stubbed settlement test (R8-2): cut number reaches inserted settlement
   };
 
   const stubDeps = {
+    couponVisible: async () => true,
+    reservationsVisible: async () => true,
     checkMigration139: async () => true,
     wfQuery: async (sqlText) => {
       if (sqlText.includes('FROM wf.CouponReservation cr')) {

@@ -209,13 +209,14 @@ function buildMultiCustTripSummary({ members = [], approvalRows = [], minCustome
   };
 }
 
-async function fetchTripMultiCustStatus({ tripId, members, minCustomers = null, queryFn = wfQuery }) {
+async function fetchTripMultiCustStatus({ tripId, members, minCustomers = null, queryFn = wfQuery, dataWindow = null }) {
+  const window = dataWindow || await require('./global-data-window-store').readGlobalDataWindow();
   const threshold = minCustomers ?? await getMinCustomersThreshold();
   let rows = [];
   if (tripId && Number(tripId) > 0) {
     try {
       const r = await queryFn(`
-        SELECT TOP 5 a.*,
+        SELECT TOP 5 a.*, CASE WHEN a.CreatedAt >= @globalStartUtc THEN 1 ELSE 0 END AS WindowEligible,
                ru.DisplayName AS RequestedByName,
                au.DisplayName AS ApprovedByName
         FROM wf.TripMultiCustomerApproval a
@@ -223,14 +224,25 @@ async function fetchTripMultiCustStatus({ tripId, members, minCustomers = null, 
         LEFT JOIN wf.AppUser au ON au.Id = a.ApprovedBy
         WHERE a.TripId = @tripId
         ORDER BY a.Id DESC
-      `, { tripId: { type: sql.Int, value: Number(tripId) } });
+      `, { tripId: { type: sql.Int, value: Number(tripId) }, globalStartUtc:{type:sql.DateTime2,value:window.utcInstant} });
       rows = r.recordset || [];
     } catch (e) {
       // Allow pre-migration or legacy unit mocks that do not mount wf.TripMultiCustomerApproval
       if (!/Invalid object name/i.test(String(e.message || ''))) throw e;
     }
   }
-  return buildMultiCustTripSummary({ members, approvalRows: rows, minCustomers: threshold });
+  const result=buildMultiCustTripSummary({ members, approvalRows: rows, minCustomers: threshold });
+  const latest=rows.find(r=>String(r.Status || '').toUpperCase()!=='CANCELLED');
+  // The current approval still governs the trip even if recorded before the
+  // reporting window; only its historical details are hidden.
+  if (latest && Number(latest.WindowEligible)!==1) {
+    result.latestApproval=null;
+    result.approvalHistoryHidden=true;
+  } else if (result.latestApproval) {
+    delete result.latestApproval.windowEligible;
+    result.approvalHistoryHidden=false;
+  }
+  return result;
 }
 
 async function assertTripMultiCustApprovedForConfirm({ tx, tripId, resultingMembers }) {
