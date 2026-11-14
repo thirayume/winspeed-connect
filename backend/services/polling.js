@@ -73,23 +73,13 @@ function startPolling() {
   pollOnce();
 }
 
-let lastRebateAlertCheckAt = 0;
-
-async function checkNovember1RebateAlerts() {
-  const nowMs = Date.now();
-  if (nowMs - lastRebateAlertCheckAt < 15 * 60 * 1000) return;
-  lastRebateAlertCheckAt = nowMs;
-  try {
-    const { wfQuery } = require('../db');
-    const { runNovember1ConversionAlertCheck } = require('./rebate-conversion-service');
-    await runNovember1ConversionAlertCheck(wfQuery);
-  } catch (err) {
-    // Non-fatal if migration 187 is not applied yet
-    if (!/Invalid object name/i.test(String(err?.message || ''))) {
-      console.error('[poll] checkNovember1RebateAlerts failed:', err.message);
-    }
-  }
-}
+// The 1 November conversion alert job is not scheduled here. It is the legacy job that
+// promotes and alerts on the standalone wf.RebateTransactionLedger, not on the shared
+// Rebate balance, and its manual route (POST /rebate-pool/alerts/check) is closed with
+// REBATE_SHARED_ALERT_UNAVAILABLE for the same reason. While it was scheduled it handed
+// untyped parameters to db.wfQuery, so every 15 minutes it failed before reaching SQL
+// Server and only wrote an error line. Schedule the shared-balance notification job
+// here once it exists; do not re-enable the legacy one.
 
 async function checkPriceBookAutoSync() {
   const now = Date.now();
@@ -109,7 +99,7 @@ async function checkPriceBookAutoSync() {
 async function pollOnce() {
   if (running) return;
   running = true;
-  try { await Promise.all([checkControlTickets(), checkAgingOrders(), checkNovember1RebateAlerts(), checkPriceBookAutoSync()]); }
+  try { await Promise.all([checkControlTickets(), checkAgingOrders(), checkPriceBookAutoSync()]); }
   finally { running = false; }
 }
 
