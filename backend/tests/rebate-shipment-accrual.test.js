@@ -16,6 +16,8 @@ function fixture() {
       DeliveryTon:state.rows.filter(r=>r.SourceSOID===p.sourceSOID&&r.SourceListNo===p.sourceListNo).reduce((n,r)=>n+Number(r.QuantityTon),0).toFixed(3),
       BookingTon:state.rows.filter(r=>r.BookingSOID===p.bookingId&&r.BookingLineNo===p.bookingLineNo).reduce((n,r)=>n+Number(r.QuantityTon),0).toFixed(3)}]};
     if (/INSERT wf.RebateShipmentAccrual/.test(text)) {
+      assert.match(text, /OUTPUT INSERTED\.Id INTO @inserted/);
+      assert.match(text, /SELECT Id FROM @inserted/);
       const row={Id:state.rows.length+1,Generation:p.generation,EvidenceId:p.evidenceId,SourceSOID:p.sourceSOID,SourceListNo:p.sourceListNo,
         CouponId:p.couponId,GoodId:p.goodId,CustId:p.custId,PlanId:null,BookingSOID:p.bookingId,BookingLineNo:p.bookingLineNo,QuantityTon:p.quantity,ListPricePerTon:p.listPrice,NetPricePerTon:p.netPrice,
         RebatePerTon:p.rate,AmountBaht:p.amount,OccurredAtUtc:p.occurred};
@@ -44,6 +46,11 @@ test('different 104 documents cannot together exceed the same 103 booking line',
 test('a zero rebate records no positive balance',async()=>{
   const f=fixture();f.lot.rebatePerTon='0.00';
   assert.deepEqual(await f.run(),{skipped:true,reason:'NO_REBATE'});assert.equal(f.state.rows.length,0);
+});
+test('a zero rate on a changed replay never hides an existing accrued balance',async()=>{
+  const f=fixture();await f.run();f.lot.rebatePerTon='0.00';
+  await assert.rejects(f.run(),{code:'REBATE_SHIPMENT_RECEIPT_INVALID'});
+  assert.equal(f.state.rows.length,1);assert.equal(f.state.rows[0].AmountBaht,'125.00');
 });
 test('source changes, missing snapshot and a failed insert cannot create a balance',async()=>{
   for(const mutate of [f=>f.state.invalidSource=true,f=>f.state.snapshotAvailable=false,f=>f.state.failAfterInsert=true]){

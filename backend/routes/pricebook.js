@@ -260,6 +260,11 @@ router.get('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'Invalid id' });
+    // The detail keeps active price master data, but its audit history is
+    // bounded. Read the policy before the reconcile step, which may write.
+    let window;
+    try { window = await require('../services/global-data-window-store').readGlobalDataWindow(); }
+    catch { return res.status(503).json({ code:'DATA_WINDOW_UNAVAILABLE', message:'ไม่สามารถตรวจวันเริ่มข้อมูลได้' }); }
     await reconcileFromWinSpeed({ bookId: id });
     const syncCols = await hasSyncColumns();
     const pbCols = syncCols ? ', SourceSetPriceIds, WinSpeedSyncAt' : '';
@@ -290,7 +295,8 @@ router.get('/:id', async (req, res) => {
     const auditRows = (await wfQuery(`
       SELECT a.Action, a.FromStatus, a.ToStatus, u.DisplayName AS ByName, a.Note, a.At
       FROM wf.PriceBookAudit a LEFT JOIN wf.AppUser u ON u.Id=a.ByUser
-      WHERE a.PriceBookId=@id ORDER BY a.At DESC`, { id: { type: sql.Int, value: id } })).recordset;
+      WHERE a.PriceBookId=@id AND a.At >= @globalStartUtc ORDER BY a.At DESC`,
+      { id: { type: sql.Int, value: id }, globalStartUtc: { type: sql.DateTime2, value: window.utcInstant } })).recordset;
     res.json({ ...book, lines, audit: auditRows });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });

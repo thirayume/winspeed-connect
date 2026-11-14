@@ -185,7 +185,8 @@ function requireAuth(req, res, next) {
       try {
         const activeDb = require('../services/active-database');
         // Control endpoints remain available to recover a session after access is revoked.
-        const controlRoute = String(req.baseUrl || '') === '/api/auth' && ['/databases','/switch-database','/me','/logout'].includes(req.path);
+        const controlRoute = String(req.baseUrl || '') === '/api/auth' &&
+          ['/databases','/switch-database','/me','/logout','/access-as','/access-as/stop','/access-as/candidates'].includes(req.path);
         if (activeDb.onpremEnabled() && !controlRoute) {
           const database = require('../db').getDbName() || await activeDb.systemActiveDatabase();
           req.auditBusinessDatabase = database;
@@ -221,6 +222,14 @@ function requireAuth(req, res, next) {
             }
             req.user.identityMapping = mapping;
             req.identityMappingAudit = mapping;
+            // A reviewed secondary read may disclose business data. Record
+            // both identities on the primary database before exposing it.
+            try {
+              await require('../services/reviewed-database-audit').recordReviewedReadAttempt(req, primary, database);
+            } catch {
+              console.error('[api-audit] REVIEWED_READ_AUDIT_FAILED');
+              return res.status(503).json({ code: 'AUDIT_UNAVAILABLE', message: 'ไม่สามารถบันทึกการเข้าถึงฐานข้อมูลได้' });
+            }
           }
         }
         if (activeDb.onpremEnabled() && !req.auditBusinessDatabase) {

@@ -33,9 +33,14 @@ router.put('/policies/:id', requireRole('ADMIN'), async (req, res) => {
 
 // GET /api/pdpa/dsar — log คำขอ
 router.get('/dsar', async (req, res) => {
+  let window;
+  try { window = await require('../services/global-data-window-store').readGlobalDataWindow(); }
+  catch { return res.status(503).json({ code: 'DATA_WINDOW_UNAVAILABLE', message: 'ไม่สามารถตรวจวันเริ่มข้อมูลได้' }); }
   try {
     const r = await wfQuery(`SELECT TOP 100 d.Id, d.SubjectType, d.SubjectId, d.Action, d.Status, u.DisplayName AS ByName, d.RequestedAt, d.Note
-                             FROM wf.DsarLog d LEFT JOIN wf.AppUser u ON u.Id=d.RequestedBy ORDER BY d.Id DESC`);
+                             FROM wf.DsarLog d LEFT JOIN wf.AppUser u ON u.Id=d.RequestedBy
+                             WHERE d.RequestedAt >= @globalStartUtc ORDER BY d.Id DESC`,
+      { globalStartUtc: { type: sql.DateTime2, value: window.utcInstant } });
     res.json(r.recordset || []);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });
@@ -46,7 +51,12 @@ router.post('/dsar/export', async (req, res) => {
     const { subjectType, subjectId } = req.body || {};
     if (!subjectType || !subjectId) return res.status(400).json({ message: 'subjectType และ subjectId จำเป็น' });
     const data = {};
+    let historyStartDate = null;
     if (subjectType === 'CUSTOMER') {
+      let window;
+      try { window = await require('../services/global-data-window-store').readGlobalDataWindow(); }
+      catch { return res.status(503).json({ code: 'DATA_WINDOW_UNAVAILABLE', message: 'ไม่สามารถตรวจวันเริ่มข้อมูลได้' }); }
+      historyStartDate = window.businessDate;
       data.master = (await query(`SELECT TOP 1 * FROM dbo.EMCust WHERE CAST(CustID AS NVARCHAR(20))=@c`,
         { c: { type: sql.NVarChar(20), value: String(subjectId) } }))[0] || null;
       // Read the two base tables by customer id instead of wf.v_AllSalesOrders with CAST(CustId …): the view
@@ -55,13 +65,15 @@ router.post('/dsar/export', async (req, res) => {
       const custNo = /^\d{1,10}$/.test(String(subjectId)) ? Number(subjectId) : null;
       data.salesOrders = (await wfQuery(`SELECT TOP 200 Id, WfRef, DocuType, Status, CONVERT(VARCHAR(10), CreatedAt, 120) AS CreatedAt FROM (
           SELECT CAST(s.Id AS VARCHAR(50)) AS Id, s.WfRef, CAST(NULL AS INT) AS DocuType, s.Status, s.CreatedAt
-          FROM wf.SalesOrder s WHERE CAST(s.CustId AS NVARCHAR(20)) = @c
+          FROM wf.SalesOrder s WHERE CAST(s.CustId AS NVARCHAR(20)) = @c AND s.CreatedAt >= @globalStartUtc
           UNION ALL
           SELECT CAST(h.SOID AS VARCHAR(50)), h.DocuNo, h.DocuType,
                  CASE WHEN h.DocuStatus = 'C' THEN 'CANCELLED' ELSE 'NATIVE' END, h.DocuDate
           FROM dbo.SOHD h WITH (NOLOCK) WHERE @cid IS NOT NULL AND h.CustID = @cid AND h.DocuType IN (103, 104)
+            AND h.DocuDate >= @globalStartDate
         ) x ORDER BY CreatedAt DESC`,
-        { c: { type: sql.NVarChar(20), value: String(subjectId) }, cid: { type: sql.Int, value: custNo } })).recordset;
+        { c: { type: sql.NVarChar(20), value: String(subjectId) }, cid: { type: sql.Int, value: custNo },
+          globalStartUtc: { type: sql.DateTime2, value: window.utcInstant }, globalStartDate: { type: sql.Date, value: window.businessDate } })).recordset;
       data.creditMaster = (await wfQuery(`SELECT CustId, CreditLimit, CreditHold, Note FROM wf.CreditMaster WHERE CustId=@c`,
         { c: { type: sql.NVarChar(20), value: String(subjectId) } })).recordset[0] || null;
     } else if (subjectType === 'USER') {
@@ -74,7 +86,7 @@ router.post('/dsar/export', async (req, res) => {
       t: { type: sql.NVarChar(20), value: subjectType }, s: { type: sql.NVarChar(40), value: String(subjectId) },
       u: { type: sql.Int, value: req.user.sub }, n: { type: sql.NVarChar(400), value: 'DSAR export' },
     });
-    res.json({ subjectType, subjectId, exportedAt: new Date().toISOString(), data });
+    res.json({ subjectType, subjectId, exportedAt: new Date().toISOString(), historyStartDate, data });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 

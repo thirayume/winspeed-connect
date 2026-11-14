@@ -15,6 +15,7 @@ const router = require('express').Router();
 const { sql, wfQuery } = require('../db');
 const { requireAuth, requireCapability } = require('../middleware/auth');
 const { getVisibleScope, inScope } = require('../services/visible-scope');
+const { businessIds } = require('../services/business-identity');
 
 router.use(requireAuth);
 
@@ -236,9 +237,11 @@ function printedHandler(type, loader) {
       const doc = await resolveDoc(type, loader, req, res);
       if (!doc) return;
       const docId = doc[DOC_ID[type]];
-      await wfQuery(`INSERT INTO wf.NativePrintLog (DocType, DocId, DocuNo, PrintedBy) VALUES (@type, @id, @no, @user)`, {
+      const ids = businessIds(req.user);
+      if (!ids.effective || !ids.actor) throw Object.assign(new Error('IDENTITY_BINDING_INVALID'), { code: 'IDENTITY_BINDING_INVALID' });
+      await wfQuery(`INSERT INTO wf.NativePrintLog (DocType, DocId, DocuNo, PrintedBy, ActorUserId) VALUES (@type, @id, @no, @user, @actor)`, {
         type: { type: sql.SmallInt, value: type }, ...idInput(docId), ...noInput(doc.DocuNo),
-        user: { type: sql.Int, value: Number(req.user.sub) },
+        user: { type: sql.Int, value: ids.effective }, actor: { type: sql.Int, value: ids.actor },
       });
       res.json({ ok: true, printLog: await printHistory(type, docId) });
     } catch (e) {

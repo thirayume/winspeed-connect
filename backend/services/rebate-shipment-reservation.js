@@ -61,6 +61,14 @@ async function reserveShipmentAccrual(query, epoch, input = {}, overrides = {}) 
     const r=rows[0],id=Number(r.Id);
     if (!positive(id) || r.Status!=='ACTIVE' || shipmentUnits(r.QuantityTon,3)!==requested || shipmentUnits(r.AmountBaht,2)!==cents)
       fail('REBATE_RESERVATION_RECEIPT_CONFLICT');
+    // An ACTIVE reservation on a rejected/cancelled or unknown document is
+    // inconsistent. Never report a successful replay until it is reconciled.
+    // Fully approved claims (including those with CN already issued) remain
+    // valid, as do issued conversions.
+    const replayClaimStatuses=['DRAFT','PENDING','TIER2_PENDING','TIER3_PENDING','TIER4_PENDING','APPROVED','CN_ISSUED'];
+    if ((documentType==='CLAIM' && !replayClaimStatuses.includes(document.Status)) ||
+        (documentType==='CONVERSION' && document.Status!=='ISSUED'))
+      fail('REBATE_RESERVATION_DOCUMENT_INVALID');
     return {id,replayed:true};
   }
   if (documentType==='CLAIM' && !['DRAFT','PENDING','TIER2_PENDING','TIER3_PENDING','TIER4_PENDING'].includes(document.Status) ||

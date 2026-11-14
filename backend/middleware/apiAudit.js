@@ -46,10 +46,16 @@ function apiAudit() {
       const target = getTarget();
       const businessDatabase = req.auditBusinessDatabase || db.getDbName?.() || null;
       const identityDatabase = target === 'onprem' ? require('../services/active-database').primaryDatabase() : db.getDbName?.() || null;
-      if (target === 'onprem' && !identityDatabase) return;
+      if (target === 'onprem' && !identityDatabase) {
+        console.error('[api-audit] AUDIT_PRIMARY_DATABASE_UNAVAILABLE');
+        return;
+      }
       const writeAudit = () => hasApiAuditTable()
         .then((ready) => {
-          if (!ready.table) return null;
+          if (!ready.table) {
+            console.error('[api-audit] AUDIT_TABLE_UNAVAILABLE');
+            return null;
+          }
           const actorId = Number(req.user.actorSub || req.user.actorId || req.user.sub || req.user.id);
           const effectiveId = Number(req.user.sub || req.user.id);
           const provenanceColumns = ready.provenance ? ', IdentityDatabase, BusinessDatabase' : '';
@@ -87,10 +93,12 @@ function apiAudit() {
             }
           );
         })
-        .catch((error) => {
-          if (process.env.NODE_ENV !== 'production') {
-            console.warn('[api-audit]', error.message);
-          }
+        .catch(() => {
+          // Audit loss must be visible in production. Never log raw driver
+          // messages, SQL parameters, customer data, credentials or headers.
+          // This is diagnostic only: business transactions still need their
+          // own transactional audit and must not rely on this async hook.
+          console.error('[api-audit] AUDIT_WRITE_FAILED');
         });
       if (target === 'onprem') db.runWithTarget(target, writeAudit, identityDatabase);
       else writeAudit();

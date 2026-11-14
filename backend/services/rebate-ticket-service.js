@@ -855,19 +855,41 @@ async function getCustomerTickets(queryFn = wfQuery, { custId, includeExpired = 
   return (res.recordset || []).map(mapTicketRow);
 }
 
-async function getTicketRedemptionHistory(queryFn = wfQuery, ticketId) {
+async function getTicketRedemptionHistory(queryFn = wfQuery, ticketId, { startDate } = {}) {
+  // RedeemedAt is stored as Bangkok local time (migration 190). The filter is
+  // for displayed history only; the ticket balance still includes every use.
+  // Historical rows can reference an older/ambiguous source: reveal a source
+  // identifier only when it resolves to a current native booking with the same
+  // document number. Never guess between draft IDs and native SOIDs.
+  if (!require('./data-window').isValidStartDate(startDate)) {
+    throw Object.assign(new Error('INVALID_GLOBAL_DATA_START_DATE'), { code: 'INVALID_GLOBAL_DATA_START_DATE', status: 503 });
+  }
   const res = await queryFn(
-    `SELECT * FROM wf.TicketRedemptionHistory WITH (NOLOCK)
-     WHERE TicketId = @ticketId
-     ORDER BY RedemptionOrder ASC`,
-    { ticketId: Number(ticketId) }
+    `SELECT r.Id, r.TicketId,
+       CASE WHEN h.SOID IS NOT NULL AND d.Id IS NULL THEN r.SoId ELSE NULL END AS SoId,
+       CASE WHEN h.SOID IS NOT NULL AND d.Id IS NULL THEN r.DocNo ELSE NULL END AS DocNo,
+       r.RedemptionOrder, r.RedeemedTonnage, r.RemainingBefore, r.RemainingAfter,
+       r.RedeemedByUserId, r.RedeemedAt,
+       CASE WHEN h.SOID IS NOT NULL AND d.Id IS NULL THEN r.Note ELSE NULL END AS Note
+     FROM wf.TicketRedemptionHistory r WITH (NOLOCK)
+     LEFT JOIN dbo.SOHD h ON h.SOID = r.SoId AND h.DocuType = 103
+       AND h.DocuDate >= @globalStartDate AND RTRIM(h.DocuNo) = RTRIM(r.DocNo)
+     LEFT JOIN wf.SalesOrder d ON d.Id = r.SoId
+     WHERE r.TicketId = @ticketId AND r.RedeemedAt >= @globalStartDate
+     ORDER BY r.RedemptionOrder ASC`,
+    { ticketId: Number(ticketId), globalStartDate: { type: sql.Date, value: startDate } }
   );
   return (res.recordset || []).map(mapRedemptionRow);
 }
 
-async function getAuditLog(queryFn = wfQuery, { entityType = null, entityId = null, custId = null, limit = 100 } = {}) {
-  const where = ['1 = 1'];
-  const params = { limit: Math.min(limit, 500) };
+async function getAuditLog(queryFn = wfQuery, { entityType = null, entityId = null, custId = null, limit = 100, startDate = null } = {}) {
+  if (!require('./data-window').isValidStartDate(startDate)) {
+    throw Object.assign(new Error('INVALID_GLOBAL_DATA_START_DATE'), { code: 'INVALID_GLOBAL_DATA_START_DATE', status: 503 });
+  }
+  // PerformedAt is Bangkok local time (migration 190), not UTC.
+  const where = ['PerformedAt >= @globalStartDate'];
+  const params = { limit: Math.min(Math.max(1, Number.isFinite(Number(limit)) ? Math.trunc(Number(limit)) : 100), 500),
+    globalStartDate: { type: sql.Date, value: startDate } };
   if (entityType) { where.push('EntityType = @entityType'); params.entityType = entityType; }
   if (entityId != null) { where.push('EntityId = @entityId'); params.entityId = Number(entityId); }
   if (custId != null) { where.push('CustId = @custId'); params.custId = Number(custId); }

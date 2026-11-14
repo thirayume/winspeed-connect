@@ -16,6 +16,8 @@
 const router = require('express').Router();
 const { sql, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { readGlobalDataWindow } = require('../services/global-data-window-store');
+const { businessIds } = require('../services/business-identity');
 
 router.use(requireAuth);
 
@@ -27,17 +29,20 @@ const view = r => ({
 
 // GET /api/master/native-approvers — พนักงาน WinSpeed ทุกคน พร้อมสถานะในรายชื่อผู้อนุมัติ
 router.get('/', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  let dataWindow;
+  try { dataWindow = await readGlobalDataWindow(); }
+  catch { return res.status(503).json({ code: 'DATA_WINDOW_UNAVAILABLE', message: 'ไม่สามารถอ่านวันเริ่มข้อมูลได้' }); }
   try {
     const r = await wfQuery(`
       SELECT e.EmpID, e.EmpCode, e.EmpName, e.EmpType, e.EmpStatus,
              CASE WHEN a.EmpID IS NULL THEN 0 ELSE 1 END AS Listed,
              CASE WHEN a.IsEnabled = 1 THEN 1 ELSE 0 END AS IsEnabled,
              a.Note, a.UpdatedAt,
-             (SELECT COUNT(*) FROM wf.NativeDocumentApproval d WHERE d.ApproverEmpID = e.EmpID) AS ApprovalCount,
+             (SELECT COUNT(*) FROM wf.NativeDocumentApproval d WHERE d.ApproverEmpID = e.EmpID AND d.RecordedAt >= @globalStartUtc) AS ApprovalCount,
              (SELECT COUNT(*) FROM wf.AppUser u WHERE u.EmpId = CONVERT(varchar(30), e.EmpID)) AS AppUserCount
       FROM dbo.EMEmp e
       LEFT JOIN wf.NativeApproverEmployee a ON a.EmpID = e.EmpID
-      ORDER BY e.EmpCode`);
+      ORDER BY e.EmpCode`, { globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } });
     res.json({ data: (r.recordset || []).map(view) });
   } catch (e) {
     console.error('[native-approvers]', e);
@@ -47,6 +52,9 @@ router.get('/', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
 
 // GET /api/master/native-approvers/history — ประวัติการเปิด/ปิดผู้อนุมัติใบ 116
 router.get('/history', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  let dataWindow;
+  try { dataWindow = await readGlobalDataWindow(); }
+  catch { return res.status(503).json({ code: 'DATA_WINDOW_UNAVAILABLE', message: 'ไม่สามารถอ่านวันเริ่มข้อมูลได้' }); }
   try {
     const r = await wfQuery(`
       SELECT TOP (100) h.HistoryId AS Id, h.EmpID, e.EmpCode, e.EmpName, h.IsEnabled, h.Note, h.ChangedAt AS CreatedAt,
@@ -56,8 +64,9 @@ router.get('/history', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
       LEFT JOIN dbo.EMEmp e ON e.EmpID = h.EmpID
       LEFT JOIN wf.AppUser u ON u.Id = h.ChangedById
       LEFT JOIN wf.AppUser a ON a.Id = h.ChangedByActorId
+      WHERE h.ChangedAt >= @globalStartUtc
       ORDER BY h.HistoryId DESC
-    `);
+    `, { globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } });
     res.json({ data: r.recordset || [] });
   } catch (e) {
     console.error('[native-approvers:history]', e);
@@ -72,9 +81,9 @@ router.put('/:empId', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
   if (!Number.isSafeInteger(empId) || empId <= 0) return res.status(400).json({ message: 'รหัสพนักงานไม่ถูกต้อง' });
   if (typeof enabled !== 'boolean') return res.status(400).json({ message: 'ต้องระบุว่าจะเปิดหรือปิดใช้' });
   if (note != null && (typeof note !== 'string' || note.length > 255)) return res.status(400).json({ message: 'หมายเหตุยาวได้ไม่เกิน 255 ตัวอักษร' });
-  const userId = Number(req.user?.sub), actorId = Number(req.user?.actorSub || req.user?.sub);
-  if (![userId, actorId].every(v => Number.isSafeInteger(v) && v > 0)) return res.status(401).json({ message: 'ไม่พบผู้ใช้' });
   try {
+    const { effective: userId, actor: actorId } = businessIds(req.user);
+    if (![userId, actorId].every(v => Number.isSafeInteger(v) && v > 0)) return res.status(401).json({ message: 'ไม่พบผู้ใช้' });
     const result = await wfTransaction(async tx => {
       const run = (text, inputs) => {
         const q = tx.request();
@@ -112,6 +121,7 @@ router.put('/:empId', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
     if (!result) return res.status(404).json({ message: 'ไม่พบพนักงานนี้ใน WinSpeed' });
     res.json({ ...result, message: enabled ? 'เพิ่มในรายชื่อผู้อนุมัติแล้ว' : 'นำออกจากรายชื่อผู้อนุมัติแล้ว' });
   } catch (e) {
+    if (e.code === 'IDENTITY_BINDING_INVALID') return res.status(409).json({ code: e.code, message: 'ไม่สามารถยืนยันตัวตนในฐานข้อมูลนี้ได้' });
     if (e.statusCode === 409) return res.status(409).json({ message: e.message });
     console.error('[native-approvers:update]', e);
     res.status(500).json({ message: 'บันทึกไม่สำเร็จ' });
@@ -134,13 +144,11 @@ router.post('/batch-toggle', requireRole('ADMIN', 'C_LEVEL'), async (req, res) =
   if (note != null && (typeof note !== 'string' || note.length > 255)) {
     return res.status(400).json({ message: 'หมายเหตุยาวได้ไม่เกิน 255 ตัวอักษร' });
   }
-  const userId = Number(req.user?.sub), actorId = Number(req.user?.actorSub || req.user?.sub);
-  if (![userId, actorId].every(v => Number.isSafeInteger(v) && v > 0)) {
-    return res.status(401).json({ message: 'ไม่พบผู้ใช้' });
-  }
   const cleanNote = note != null ? String(note).trim().slice(0, 255) || null : null;
 
   try {
+    const { effective: userId, actor: actorId } = businessIds(req.user);
+    if (![userId, actorId].every(v => Number.isSafeInteger(v) && v > 0)) return res.status(401).json({ message: 'ไม่พบผู้ใช้' });
     await wfTransaction(async tx => {
       for (const empId of cleanEmpIds) {
         const reqObj = tx.request();
@@ -165,6 +173,7 @@ router.post('/batch-toggle', requireRole('ADMIN', 'C_LEVEL'), async (req, res) =
 
     res.json({ ok: true, count: cleanEmpIds.length, enabled, message: `${enabled ? 'เปิดใช้อนุมัติ' : 'ปิดการใช้อนุมัติ'} ${cleanEmpIds.length} ท่านสำเร็จ` });
   } catch (e) {
+    if (e.code === 'IDENTITY_BINDING_INVALID') return res.status(409).json({ code: e.code, message: 'ไม่สามารถยืนยันตัวตนในฐานข้อมูลนี้ได้' });
     console.error('[native-approvers:batch-toggle]', e);
     res.status(500).json({ message: 'บันทึกสถานะผู้อนุมัติแบบชุดไม่สำเร็จ' });
   }

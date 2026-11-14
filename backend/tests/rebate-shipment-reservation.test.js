@@ -55,6 +55,20 @@ test('completed or rejected claims cannot acquire a new reservation',async()=>{
     const f=fixture();f.state.claimStatus=status;await assert.rejects(f.run(input),{code:'REBATE_RESERVATION_DOCUMENT_INVALID'});
   }
 });
+test('replay refuses reservations on rejected or cancelled documents but retains completed claims',async()=>{
+  const f=fixture();await f.run(input);
+  for(const status of ['APPROVED','CN_ISSUED']){
+    f.state.claimStatus=status;assert.deepEqual(await f.run(input),{id:1,replayed:true});
+  }
+  for(const status of ['REJECTED','CANCELLED','UNKNOWN']){
+    f.state.claimStatus=status;await assert.rejects(f.run(input),{code:'REBATE_RESERVATION_DOCUMENT_INVALID'});
+  }
+  assert.equal(f.state.reservations.length,1);
+  const c=fixture();const conversion={...input,documentId:2,documentType:'CONVERSION'};
+  await c.run(conversion);c.state.conversionStatus='CANCELLED';
+  await assert.rejects(c.run(conversion),{code:'REBATE_RESERVATION_DOCUMENT_INVALID'});
+  assert.equal(c.state.reservations.length,1);
+});
 test('rounding slices cannot reserve more baht than the verified accrual',async()=>{
   const f=fixture();f.shipment.quantityTon='0.002';f.accrual.QuantityTon='0.002';
   f.snapshot.basePrice='1015.00';f.snapshot.sellingPrice='1000.00';f.snapshot.rebatePerTon='15.00';

@@ -34,7 +34,6 @@ async function accrueVerifiedShipment(query, epoch, key, overrides = {}) {
   if (!snapshot || !positive(snapshot.bookingId) || !positive(snapshot.bookingLineNo) || !positive(snapshot.customerId))
     fail('REBATE_BOOKING_SNAPSHOT_UNAVAILABLE');
   const rate=units(snapshot.rebatePerTon,2);
-  if(rate===0n) return {skipped:true,reason:'NO_REBATE'};
   if(rate>30000n) fail('REBATE_SHIPMENT_AMOUNT_INVALID');
   const p = { environment:epoch.environment, resetId:epoch.resetId, generation:epoch.generation,
     evidenceId:shipment.evidenceId, sourceSOID:shipment.sourceSOID, sourceListNo:shipment.sourceListNo,
@@ -54,6 +53,10 @@ async function accrueVerifiedShipment(query, epoch, key, overrides = {}) {
         units(r.QuantityTon,3)!==qty || at(r.OccurredAtUtc)!==at(shipment.occurredAtUtc)) fail('REBATE_SHIPMENT_RECEIPT_INVALID');
     return { id, replayed:true };
   }
+  // A zero rate can skip a new accrual only after checking for an existing
+  // receipt. Otherwise a changed snapshot could silently leave an old credit
+  // in the ledger without detecting the mismatch.
+  if(rate===0n) return {skipped:true,reason:'NO_REBATE'};
   // Snapshot 103 is locked by the resolver above. Check both the originating
   // delivery and the whole booking so split 104s cannot accrue the same tons.
   const accumulated = (await query(`SELECT
@@ -64,11 +67,15 @@ async function accrueVerifiedShipment(query, epoch, key, overrides = {}) {
       units(accumulated.BookingTon,3)+qty>units(snapshot.bookingQty,3)) fail('REBATE_SHIPMENT_EXCEEDS_SALE');
   const cents = (qty*rate+500n)/1000n; // nonnegative DECIMAL rounding to baht cents
   if (cents <= 0n || cents > 999999999999999999n) fail('REBATE_SHIPMENT_AMOUNT_INVALID');
-  const inserted = (await query(`INSERT wf.RebateShipmentAccrual(EnvironmentKind,ResetId,Generation,EvidenceId,SourceSOID,
+  // This table has enabled INSERT triggers. SQL Server rejects a direct
+  // OUTPUT result set for such a target; use OUTPUT INTO in the same batch.
+  const inserted = (await query(`DECLARE @inserted TABLE (Id bigint NOT NULL);
+    INSERT wf.RebateShipmentAccrual(EnvironmentKind,ResetId,Generation,EvidenceId,SourceSOID,
       SourceListNo,CouponId,GoodId,CustId,PlanId,BookingSOID,BookingLineNo,QuantityTon,ListPricePerTon,NetPricePerTon,RebatePerTon,AmountBaht,OccurredAtUtc)
-    OUTPUT INSERTED.Id VALUES(@environment,@resetId,@generation,@evidenceId,@sourceSOID,@sourceListNo,@couponId,@goodId,
+    OUTPUT INSERTED.Id INTO @inserted VALUES(@environment,@resetId,@generation,@evidenceId,@sourceSOID,@sourceListNo,@couponId,@goodId,
       @custId,NULL,@bookingId,@bookingLineNo,CAST(@quantity AS decimal(18,3)),CAST(@listPrice AS decimal(18,2)),CAST(@netPrice AS decimal(18,2)),
-      CAST(@rate AS decimal(18,2)),CAST(@amount AS decimal(18,2)),@occurred)`,
+      CAST(@rate AS decimal(18,2)),CAST(@amount AS decimal(18,2)),@occurred);
+    SELECT Id FROM @inserted;`,
   { ...p, custId:snapshot.customerId, quantity:shipment.quantityTon, listPrice:snapshot.basePrice, netPrice:snapshot.sellingPrice,
     rate:snapshot.rebatePerTon, amount:money(cents), occurred:shipment.occurredAtUtc })).recordset?.[0];
   const id = Number(inserted?.Id);

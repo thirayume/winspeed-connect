@@ -148,10 +148,39 @@ async function loadAppUserById(id) {
   return rows.recordset?.[0] || null;
 }
 
+// Access As identities and their audit always belong to the primary identity
+// database, even when the session is currently viewing a secondary database.
+function onIdentityDatabase(fn) {
+  const db = require('../db');
+  if (db.getTarget() !== 'onprem') return fn();
+  const primary = activeDb.primaryDatabase();
+  if (!primary) throw Object.assign(new Error('PRIMARY_DATABASE_REQUIRED'), { status: 503 });
+  return db.runWithTarget('onprem', fn, primary);
+}
+
+// STOP and START must commit together before returning a replacement token.
+async function recordAccessAsTransition(actorId, steps, req) {
+  return onIdentityDatabase(() => wfTransaction(async tx => {
+    for (const step of steps) {
+      const result = await tx.request()
+        .input('actorUserId', sql.Int, Number(actorId))
+        .input('effectiveUserId', sql.Int, Number(step.effectiveId))
+        .input('action', sql.NVarChar(20), step.action)
+        .input('ipAddress', sql.NVarChar(80), req.ip || null)
+        .input('userAgent', sql.NVarChar(500), req.get('user-agent') || null)
+        .query(`INSERT INTO wf.AccessAsAudit (ActorUserId, EffectiveUserId, Action, IpAddress, UserAgent, CreatedAt)
+                VALUES (@actorUserId, @effectiveUserId, @action, @ipAddress, @userAgent, SYSUTCDATETIME())`);
+      if (Number(result.rowsAffected?.[0]) !== 1) throw new Error('ACCESS_AS_AUDIT_FAILED');
+    }
+  }));
+}
+
 async function recordAccessAsAudit(actorId, effectiveId, action, req) {
   try {
     await wfQuery(
-      `IF OBJECT_ID('wf.AccessAsAudit', 'U') IS NOT NULL
+      `IF OBJECT_ID('wf.AccessAsAudit', 'U') IS NULL
+         RAISERROR('ACCESS_AS_AUDIT_TABLE_MISSING',16,1);
+       ELSE
        BEGIN
          EXEC sp_executesql
            N'INSERT INTO wf.AccessAsAudit (ActorUserId, EffectiveUserId, Action, IpAddress, UserAgent, CreatedAt)
@@ -167,23 +196,25 @@ async function recordAccessAsAudit(actorId, effectiveId, action, req) {
         userAgent: { type: sql.NVarChar(500), value: req.get('user-agent') || null },
       }
     );
-  } catch (e) {
-    if (process.env.NODE_ENV !== 'production') console.warn('[access-as-audit]', e.message);
+  } catch {
+    // Best effort for login/session cleanup only; never expose driver details.
+    console.error('[access-as-audit] ACCESS_AS_CLEANUP_AUDIT_FAILED');
   }
 }
 
 async function closeOpenAccessAsSession(actorId, req) {
   try {
     const last = (await wfQuery(
-      `IF OBJECT_ID('wf.AccessAsAudit', 'U') IS NOT NULL
-         SELECT TOP 1 EffectiveUserId, Action FROM wf.AccessAsAudit WHERE ActorUserId = @a ORDER BY Id DESC`,
+      `IF OBJECT_ID('wf.AccessAsAudit', 'U') IS NULL
+         RAISERROR('ACCESS_AS_AUDIT_TABLE_MISSING',16,1);
+       ELSE SELECT TOP 1 EffectiveUserId, Action FROM wf.AccessAsAudit WHERE ActorUserId = @a ORDER BY Id DESC`,
       { a: { type: sql.Int, value: Number(actorId) } }
     )).recordset?.[0];
     if (last && String(last.Action).toUpperCase() === 'START') {
       await recordAccessAsAudit(actorId, last.EffectiveUserId, 'STOP', req);
     }
-  } catch (e) {
-    if (process.env.NODE_ENV !== 'production') console.warn('[access-as-close]', e.message);
+  } catch {
+    console.error('[access-as-close] ACCESS_AS_CLEANUP_AUDIT_FAILED');
   }
 }
 
@@ -466,17 +497,17 @@ router.get('/line/status', (req, res) => {
 // GET /api/auth/access-as/candidates
 router.get('/access-as/candidates', requireAuth, requireCapability('access-as'), async (req, res) => {
   try {
-    const actor = await loadAppUserById(req.user.actorSub || req.user.sub);
+    const actor = await onIdentityDatabase(() => loadAppUserById(req.user.actorSub || req.user.sub));
     if (!actor || !actor.IsActive || !hasPermission({role:actor.Role,roles:req.user.actorRoles,permissions:req.user.isImpersonating?req.user.actorPermissions:req.user.permissions},'access-as')) return res.json([]);
 
-    const result = await wfQuery(
+    const result = await onIdentityDatabase(() => wfQuery(
       `SELECT u.Id, u.Username, u.DisplayName, u.Role, u.RoleCode, u.EmpId, u.IsActive,
               e.EmpCode, e.EmpName
        FROM wf.AppUser u
        LEFT JOIN dbo.EMEmp e WITH (NOLOCK) ON e.EmpID = u.EmpId
        WHERE u.IsActive = 1
        ORDER BY u.DisplayName`
-    );
+    ));
     const actorId = getUserId(actor);
     const rows = (result.recordset || [])
       .filter(u => getUserId(u) !== actorId && canAccessAs(actor.Role, u.Role))
@@ -494,48 +525,54 @@ router.post('/access-as', requireAuth, requireCapability('access-as'), async (re
     const targetId = Number(req.body?.userId);
     if (!Number.isFinite(targetId)) return res.status(400).json({ message: 'target user required' });
 
-    const actor = await loadAppUserById(req.user.actorSub || req.user.sub);
-    const target = await loadAppUserById(targetId);
+    const [actor, target] = await onIdentityDatabase(() => Promise.all([
+      loadAppUserById(req.user.actorSub || req.user.sub), loadAppUserById(targetId),
+    ]));
     if (!actor || !actor.IsActive) return res.status(401).json({ message: 'Actor user not found' });
     if (!target || !target.IsActive) return res.status(404).json({ message: 'Target user not found' });
-    if (!hasPermission({role:actor.Role,roles:req.user.actorRoles,permissions:req.user.isImpersonating?req.user.actorPermissions:req.user.permissions},'access-as') || !canAccessAs(actor.Role, target.Role)) {
+    if (!hasPermission({role:actor.Role,roles:req.user.actorRoles,permissions:req.user.isImpersonating?req.user.actorPermissions:req.user.permissions},'access-as')) {
       return res.status(403).json({ message: 'Access As is not allowed for this role' });
     }
 
     if (getUserId(actor) === getUserId(target)) {
+      if (Number(req.user.sub) !== getUserId(actor)) {
+        await recordAccessAsTransition(getUserId(actor), [{ action:'STOP', effectiveId:Number(req.user.sub) }], req);
+      }
       const accessToken = signAppToken(actor);
       return res.json({ accessToken, user: toClientUser(actor) });
     }
+    if (!canAccessAs(actor.Role, target.Role)) return res.status(403).json({ message: 'Access As is not allowed for this role' });
 
     // R12 item 4: switching directly from one target to another closes the previous session first
     const currentEffective = Number(req.user.sub);
-    if (currentEffective && currentEffective !== getUserId(actor) && currentEffective !== getUserId(target)) {
-      await recordAccessAsAudit(getUserId(actor), currentEffective, 'STOP', req);
-    }
+    const steps = [];
+    if (currentEffective && currentEffective !== getUserId(actor) && currentEffective !== getUserId(target))
+      steps.push({ action:'STOP', effectiveId:currentEffective });
+    steps.push({ action:'START', effectiveId:getUserId(target) });
+    await recordAccessAsTransition(getUserId(actor), steps, req);
     const accessToken = signAppToken(target, actor);
-    await recordAccessAsAudit(getUserId(actor), getUserId(target), 'START', req);
     res.json({ accessToken, user: toClientUser(target, actor) });
   } catch (e) {
-    console.error('[access-as:start]', e);
-    res.status(500).json({ message: e.message || 'Server error' });
+    console.error('[access-as:start] ACCESS_AS_UNAVAILABLE');
+    res.status(e.status || 503).json({ code:'ACCESS_AS_UNAVAILABLE', message:'ไม่สามารถเริ่มทำรายการแทนได้ กรุณาลองใหม่หรือติดต่อผู้ดูแล' });
   }
 });
 
 // POST /api/auth/access-as/stop
 router.post('/access-as/stop', requireAuth, async (req, res) => {
   try {
-    const actor = await loadAppUserById(req.user.actorSub || req.user.sub);
+    const actor = await onIdentityDatabase(() => loadAppUserById(req.user.actorSub || req.user.sub));
     if (!actor || !actor.IsActive) return res.status(401).json({ message: 'Actor user not found' });
 
     if (Number(req.user.sub) !== getUserId(actor)) {
-      await recordAccessAsAudit(getUserId(actor), Number(req.user.sub), 'STOP', req);
+      await recordAccessAsTransition(getUserId(actor), [{ action:'STOP', effectiveId:Number(req.user.sub) }], req);
     }
 
     const accessToken = signAppToken(actor);
     res.json({ accessToken, user: toClientUser(actor) });
   } catch (e) {
-    console.error('[access-as:stop]', e);
-    res.status(500).json({ message: e.message || 'Server error' });
+    console.error('[access-as:stop] ACCESS_AS_UNAVAILABLE');
+    res.status(e.status || 503).json({ code:'ACCESS_AS_UNAVAILABLE', message:'ไม่สามารถสิ้นสุดการทำรายการแทนได้ กรุณาออกจากระบบและติดต่อผู้ดูแล' });
   }
 });
 

@@ -71,6 +71,10 @@ test('2. demand is WinSpeed open quantity plus drafts, under the legacy cut-off'
   assert.match(booking.text, /dt\.RemaQty > 0/);
   assert.match(booking.text, /hd\.DocuDate >= @legacyCut/);
   assert.ok(booking.inputs.legacyCut, 'cut-off date is passed to the query');
+  // The global display date is not a reservation cutoff: still-open demand
+  // after the separately maintained legacy cutoff must remain in ATP.
+  assert.doesNotMatch(booking.text, /@globalStartDate|@globalStartUtc/);
+  assert.doesNotMatch(booking.text, /SELECT[^]*hd\.DocuNo/i, 'only aggregate quantities are returned');
   assert.match(booking.text, /NOT EXISTS \(\s*SELECT 1 FROM dbo\.WGHD wg[\s\S]*wg\.SPID = hd\.SOID AND wg\.WGType = 'SO' AND RTRIM\(wg\.Status\) = '3'/, 'a truck already weighed out has left');
   assert.match(booking.text, /RTRIM\(hd\.TransRegistration\) = N'ตั๋วคุม' OR NOT EXISTS/, 'a control ticket is drawn by many trucks');
   assert.doesNotMatch(booking.text, /SOInvHD/, 'matching invoices by number hides open bookings: the 103 and 104 counters overlap');

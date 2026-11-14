@@ -10,10 +10,28 @@ const context = new AsyncLocalStorage();
 const checked = [];
 let auditEvent;
 let auditDone;
+let attemptedAudit;
+let failAttemptAudit = false;
+let accessAsWrites = [];
 const { stub: db, calls: dbCalls } = h.installDbStub(({ text, inputs }) => {
   const database = context.getStore()?.database;
+  if (/INSERT INTO wf\.AccessAsAudit/.test(text)) {
+    accessAsWrites.push({ database, ...inputs });
+    return { recordset:[], rowsAffected:[1] };
+  }
+  if (/SELECT Id, Username, DisplayName, Role, RoleCode, AuthVersion/.test(text) && /FROM wf\.AppUser\s+WHERE Id = @id/.test(text)) {
+    const id=Number(inputs.id),role=id===17?'ADMIN':id===22?'ACCOUNTING':'SALES';
+    checked.push({database,id,kind:'user'});
+    return [{ Id:id, Username:`test-${id}`, DisplayName:'Fixture', Role:role, IsActive:1, AuthVersion:0 }];
+  }
   if (/SELECT OBJECT_ID\('wf\.ApiAuditLog'/.test(text)) return [{ ObjectId: 1, IdentityColumn: 256, BusinessColumn: 256, BusinessActorColumn: 1, BusinessEffectiveColumn: 1, IdentityServerColumn: 1, BusinessServerColumn: 1 }];
-  if (/INSERT INTO wf\.ApiAuditLog/.test(text)) { auditEvent = { database, inputs }; auditDone?.(); return []; }
+  if (/INSERT INTO wf\.ApiAuditLog/.test(text)) {
+    if (/102, 0, SYSUTCDATETIME/.test(text)) {
+      attemptedAudit = { database, inputs };
+      if (failAttemptAudit) throw new Error('simulated audit failure');
+    } else { auditEvent = { database, inputs }; auditDone?.(); }
+    return [];
+  }
   if (/SELECT IsActive FROM wf\.AppUser/.test(text)) {
     checked.push({ database, id: inputs.id, kind: 'status' });
     return [{ IsActive: database === 'primary' ? 1 : 0 }];
@@ -188,6 +206,10 @@ test('reviewed secondary stats route resolves both parties; unreviewed routes an
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { identity: { actor: 17, effective: 22 }, business: { actor: 47, effective: 34 } });
   assert.deepEqual(mappingCalls[0], { actorUserId: 17, effectiveUserId: 22, primaryDatabase: 'primary', targetDatabase: 'secondary' });
+  assert.equal(attemptedAudit.database, 'primary');
+  assert.equal(attemptedAudit.inputs.actor, 17); assert.equal(attemptedAudit.inputs.effective, 22);
+  assert.equal(attemptedAudit.inputs.businessActor, 47); assert.equal(attemptedAudit.inputs.businessEffective, 34);
+  assert.equal(attemptedAudit.inputs.path, '/api/so/stats');
   await Promise.race([successfulAudit, new Promise((_, reject) => setTimeout(() => reject(new Error('audit timeout')), 2000))]);
   assert.equal(auditEvent.inputs.path, '/api/so/stats');
   assert.equal(auditEvent.inputs.actorUserId, 17); assert.equal(auditEvent.inputs.effectiveUserId, 22);
@@ -209,6 +231,46 @@ test('reviewed secondary stats route resolves both parties; unreviewed routes an
   const invalid = await fetch(`http://127.0.0.1:${server.address().port}/api/so/stats`, { headers });
   assert.equal(invalid.status, 409);
   rejectBinding = false;
+});
+
+test('reviewed secondary read is denied if its primary audit cannot be written', async t => {
+  const app = express();
+  app.use((req, res, next) => db.runWithTarget('onprem', next, 'secondary'));
+  let reached = false;
+  const router = express.Router();
+  router.get('/stats', requireAuth, (_req, res) => { reached = true; res.json({ ok:true }); });
+  app.use('/api/so', router);
+  const server = http.createServer(app);
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  clearAccountStatusCache();
+  const token = jwt.sign({ sub:22, role:'ACCOUNTING', actorSub:17, actorRole:'ADMIN', impersonating:true }, SECRET);
+  failAttemptAudit = true;
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/so/stats`, { headers:{ authorization:`Bearer ${token}` } });
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).code, 'AUDIT_UNAVAILABLE');
+    assert.equal(reached, false);
+  } finally { failAttemptAudit = false; }
+});
+
+test('Access As switching from a simulated secondary database reads and audits only the primary identity database', async t => {
+  const app=express();app.use(express.json());
+  app.use((req,res,next)=>db.runWithTarget('onprem',next,'secondary'));
+  app.use('/api/auth',require('../routes/auth'));
+  const server=http.createServer(app);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(()=>server.close());
+  clearAccountStatusCache();checked.length=0;accessAsWrites=[];
+  const token=jwt.sign({sub:22,id:22,role:'ACCOUNTING',actorSub:17,actorRole:'ADMIN',impersonating:true},SECRET);
+  const response=await fetch(`http://127.0.0.1:${server.address().port}/api/auth/access-as`,{
+    method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({userId:8}),
+  });
+  assert.equal(response.status,200,JSON.stringify(await response.clone().json()));
+  assert.ok((await response.json()).accessToken);
+  assert.deepEqual(checked.filter(c=>c.kind==='user').map(c=>[c.database,c.id]).sort(),[['primary',17],['primary',8]].sort());
+  assert.deepEqual(accessAsWrites.map(c=>[c.database,c.action,c.actorUserId,c.effectiveUserId]),[
+    ['primary','STOP',17,22],['primary','START',17,8],
+  ]);
 });
 
 test('real SO list on a secondary database receives reviewed identities and the global date boundary', async t => {

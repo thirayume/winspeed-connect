@@ -314,7 +314,8 @@ router.get('/tickets/:ticketId/history', requireRebateAmountAccess, async (req, 
     if (!Number.isSafeInteger(custId) || !await canAccessRebateCustomer(req.user, custId)) {
       return res.status(404).json({ code: 'TICKET_NOT_FOUND' });
     }
-    const history = await getTicketRedemptionHistory(wfQuery, ticketId);
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const history = await getTicketRedemptionHistory(wfQuery, ticketId, { startDate: dataWindow.businessDate });
     return res.json(history);
   } catch (err) {
     return sendRebateError(res, err);
@@ -366,11 +367,13 @@ router.get('/tickets/expiring', requireRebateAmountAccess, async (req, res) => {
 // ── 11) Audit Log ───────────────────────────────────────────────────────────
 router.get('/audit', requireRole('ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'), async (req, res) => {
   try {
+    const window = await require('../services/global-data-window-store').readGlobalDataWindow();
     const logs = await getAuditLog(wfQuery, {
       entityType: req.query.entityType || null,
       entityId: req.query.entityId ? Number(req.query.entityId) : null,
       custId: req.query.custId ? Number(req.query.custId) : null,
       limit: parseInt(req.query.limit || '100', 10),
+      startDate: window.businessDate,
     });
     return res.json(logs);
   } catch (err) {
