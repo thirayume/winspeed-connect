@@ -573,7 +573,9 @@ export function CreateSODialog({
   }, [currentBillCustId, canSeeRebate]);
 
   useEffect(()=>{
-    if(!currentBillCustId||canSeeRebate){setRebateAvailability(null);return;}
+    // With the Rebate Pool switched off the server answers 503 here, which showed sales a
+    // "cannot check Rebate" notice on every bill. Ask only when the Pool is on.
+    if(!rebatePoolOn||!currentBillCustId||canSeeRebate){setRebateAvailability(null);return;}
     let cancelled=false;const customerId=currentBillCustId;
     setRebateAvailability({customerId,status:'loading'});
     getRebateAvailability(customerId).then(result=>{
@@ -581,7 +583,7 @@ export function CreateSODialog({
         ?(result.hasAvailableRebate?'available':'none'):'unavailable'});
     }).catch(()=>{if(!cancelled)setRebateAvailability({customerId,status:'unavailable'});});
     return ()=>{cancelled=true;};
-  },[currentBillCustId,canSeeRebate]);
+  },[currentBillCustId,canSeeRebate,rebatePoolOn]);
 
   const priceObj = useCallback((goodId: string) => prices.find(p => p.GoodID === goodId), [prices]);
   const effectivePriceObj = useCallback((goodId: string) => effectivePrices.find(p => p.GoodId === goodId), [effectivePrices]);

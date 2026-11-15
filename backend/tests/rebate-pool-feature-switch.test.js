@@ -57,3 +57,19 @@ test('the capabilities sent to the client follow the switch, the server permissi
   // routes still authorize on the permission itself, whatever the switch says
   withEnv({}, () => { for (const action of POOL_ACTIONS) assert.equal(hasPermission(admin, action), true, action); });
 });
+
+test('the bill form asks for Rebate availability only when the Pool is switched on', () => {
+  // With the Pool off the server answers 503 to /so/rebate-availability. The form used to
+  // call it for every salesperson and showed a "cannot check Rebate" notice on each bill.
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const form = fs.readFileSync(path.join(__dirname, '../../WSSale-App/src/components/sales/CreateSODialog.tsx'), 'utf8');
+  const call = form.indexOf('getRebateAvailability(customerId)');
+  assert.ok(call > 0, 'the availability call exists');
+  const effect = form.slice(form.lastIndexOf('useEffect(', call), form.indexOf('},[', call) + 60);
+  assert.match(effect, /if\(!rebatePoolOn\|\|!currentBillCustId\|\|canSeeRebate\)\{setRebateAvailability\(null\);return;\}/);
+  assert.match(effect, /\},\[currentBillCustId,canSeeRebate,rebatePoolOn\]\)/);
+  assert.match(form, /const rebatePoolOn = useFeature\(\)\('rebate-pool-103'\)/);
+  const server = fs.readFileSync(path.join(__dirname, '../routes/so.js'), 'utf8');
+  assert.match(server, /router\.get\('\/rebate-availability\/:custId'[\s\S]{0,120}REBATE_POOL_103_ENABLED!=='true'\)return res\.status\(503\)/);
+});
