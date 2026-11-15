@@ -1645,6 +1645,11 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
     let anyNeedsApproval = false;
 
     await wfTransaction(async tx => {
+      // Take the trip membership lock before any bill is written (lowest trip first), so a
+      // trip being deleted at the same moment cannot end up with a new bill.
+      const tripsToJoin = [...new Set(orders.map(o => o.tripId).filter(v => v != null && v !== '' && v !== 0 && v !== '0').map(v => Number(v)))]
+        .sort((a, b) => a - b);
+      for (const tripToJoin of tripsToJoin) await require('../services/trip-membership-lock').lockTripForMembership(tx, tripToJoin);
       for (const order of orders) {
         const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, salesUserId: impersonatedId, rebateDiscountAmt, convertFromQuoteId, creditDays, truckRemark, billRemark, transpId, loadInOrder } = order;
         const truckPlate = order.truckPlate || null;
@@ -2352,6 +2357,11 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
       const effectiveTripId = order.tripId !== undefined
         ? (order.tripId ? Number(order.tripId) : null)
         : (existingRow.TripId !== undefined ? existingRow.TripId : (so.TripId || null));
+
+      // Moving the bill into another trip: hold that trip's membership lock and refuse a
+      // trip that has been deleted in the meantime.
+      if (effectiveTripId && Number(effectiveTripId) !== Number(existingRow.TripId || 0))
+        await require('../services/trip-membership-lock').lockTripForMembership(tx, effectiveTripId);
 
       if (effectiveTripId !== existingRow.TripId) {
         await audit(tx, so.Id, req.user.sub, 'TRIP_CHANGED', so.Status, so.Status,
@@ -3673,24 +3683,9 @@ router.post('/bulk-cancel-delete', requireCapability('so.cancel'), async (req, r
       // Update status of any affected trips if all their orders are deleted or cancelled
       const affectedTripIds = new Set(loadedSos.map(({ so }) => so.TripId).filter(Boolean));
       for (const tid of affectedTripIds) {
-        const remaining = await tx.request().input('tid', sql.Int, Number(tid)).query(`
-          SELECT COUNT(*) AS Cnt
-          FROM (
-            SELECT CAST(so.Id AS VARCHAR(50)) AS Id
-            FROM wf.SalesOrder so WITH (NOLOCK)
-            WHERE so.TripId = @tid AND so.Status NOT IN ('CANCELLED', 'DELETED')
-            UNION ALL
-            SELECT CAST(hd.SOID AS VARCHAR(50)) AS Id
-            FROM dbo.SOHD hd WITH (NOLOCK)
-            LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
-            WHERE ext.TripId = @tid AND ISNULL(hd.DocuStatus, '') <> 'C' AND ISNULL(ext.IsDeleted, 0) = 0
-          ) active
-        `);
-        if (Number(remaining.recordset?.[0]?.Cnt || 0) === 0) {
-          await tx.request().input('tid', sql.Int, Number(tid)).query(`
-            UPDATE wf.SalesTrip SET Status = 'DELETED' WHERE TripId = @tid
-          `);
-        }
+        // Under the trip membership lock: a bill being added to this trip right now either
+        // finished before this count or waits and is then refused.
+        await require('../services/trip-membership-lock').deleteTripIfEmpty(tx, tid);
         await supersedeStaleTripApprovalsOnMembershipChange(tx, tid);
       }
     });

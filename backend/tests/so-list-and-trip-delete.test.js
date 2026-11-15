@@ -37,8 +37,12 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/SELECT COUNT_BIG\(\*\) AS TotalCount\s+FROM/i.test(text)) {
     return [{ TotalCount: 0 }];
   }
-  if (/SELECT TripId, Status FROM wf\.SalesTrip WITH \(NOLOCK\) WHERE TripId = @tid/.test(text)) {
-    return [53, 88].includes(Number(inputs.tid)) ? [{ TripId: Number(inputs.tid), Status: 'DRAFT' }] : [];
+  // Trip membership lock: delete and bill-attach read the trip row with UPDLOCK, HOLDLOCK.
+  if (/SELECT TripId, Status FROM wf\.SalesTrip WITH \(UPDLOCK, HOLDLOCK\) WHERE TripId = @tripLockId/.test(text)) {
+    return [53, 88].includes(Number(inputs.tripLockId)) ? [{ TripId: Number(inputs.tripLockId), Status: 'DRAFT' }] : [];
+  }
+  if (/UPDATE wf\.SalesTrip SET Status = 'DELETED' WHERE TripId = @tripDeleteId/.test(text)) {
+    return { recordset: [], rowsAffected: [1] };
   }
   if (/FROM wf\.SalesTrip t WHERE t\.TripId = @tid/.test(text)) {
     // Trip 88 belongs to user 34; Trip 53 belongs to user 20 only
@@ -144,7 +148,14 @@ test('DELETE /api/trips/:id enforces scope, rejects active bills (409), and dele
   const before = db.calls.length;
   const ok = await app.call('DELETE', '/api/trips/88', { user: { sub: 34, role: 'SALES' } });
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
-  const updCall = db.calls.slice(before).find((c) => /UPDATE wf\.SalesTrip SET Status = 'DELETED'/i.test(c.text));
+  const after = db.calls.slice(before);
+  const updCall = after.find((c) => /UPDATE wf\.SalesTrip SET Status = 'DELETED'/i.test(c.text));
   assert.ok(updCall, 'SalesTrip updated to DELETED');
   assert.ok(!updCall.text.includes('UpdatedAt'), 'must not reference non-existent UpdatedAt column');
+  // The delete runs under the trip membership lock, counts committed rows and is audited.
+  const lockAt = after.findIndex((c) => /FROM wf\.SalesTrip WITH \(UPDLOCK, HOLDLOCK\)/.test(c.text));
+  const countAt = after.findIndex((c) => /SELECT COUNT\(\*\) AS Cnt FROM \(/.test(c.text));
+  assert.ok(lockAt >= 0 && lockAt < countAt && countAt < after.indexOf(updCall), 'lock, then count, then delete');
+  assert.ok(!/wf\.SalesOrder so WITH \(NOLOCK\)/.test(after[countAt].text));
+  assert.ok(after.some((c) => /INSERT INTO wf\.ChangeEvent/.test(c.text)), 'trip delete writes an audit event');
 });

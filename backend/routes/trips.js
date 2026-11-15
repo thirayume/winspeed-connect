@@ -1647,41 +1647,34 @@ router.delete('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER', 
     if (!Number.isInteger(tripId) || tripId <= 0) {
       return res.status(400).json({ message: 'รหัส Trip ไม่ถูกต้อง' });
     }
-    const tripRes = await wfQuery(
-      `SELECT TripId, Status FROM wf.SalesTrip WITH (NOLOCK) WHERE TripId = @tid AND Status <> 'DELETED'`,
-      { tid: { type: sql.Int, value: tripId } }
-    );
-    if (!tripRes.recordset?.[0]) {
+    // Check and delete under the trip membership lock, with the audit event in the same
+    // transaction. A bill being attached to this trip at the same moment either finished
+    // first (the trip is then not empty) or waits and is refused because the trip is gone.
+    const tripAudit = require('../services/trip-transaction-audit');
+    const ids = await tripAudit.requireTripAuditIdentity(req.user);
+    const outcome = await wfTransaction(async tx => {
+      const result = await require('../services/trip-membership-lock').deleteTripIfEmpty(tx, tripId);
+      if (result.deleted) await tripAudit.logTripChange(tx, { tripId, action: 'DELETE',
+        before: { status: result.previousStatus }, after: { status: 'DELETED' }, effectiveId: ids.effective });
+      return result;
+    });
+    if (!outcome.found) {
       return res.status(404).json({ message: 'ไม่พบ Trip นี้' });
     }
-    const activeRes = await wfQuery(`
-      SELECT COUNT(*) AS Cnt
-      FROM (
-        SELECT CAST(so.Id AS VARCHAR(50)) AS Id
-        FROM wf.SalesOrder so WITH (NOLOCK)
-        WHERE so.TripId = @tid AND so.Status NOT IN ('CANCELLED', 'DELETED')
-        UNION ALL
-        SELECT CAST(hd.SOID AS VARCHAR(50)) AS Id
-        FROM dbo.SOHD hd WITH (NOLOCK)
-        INNER JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
-        WHERE ext.TripId = @tid AND ISNULL(hd.DocuStatus, '') <> 'C' AND ISNULL(ext.IsDeleted, 0) = 0
-      ) active`,
-      { tid: { type: sql.Int, value: tripId } }
-    );
-    const activeCnt = Number(activeRes.recordset?.[0]?.Cnt || 0);
+    const activeCnt = outcome.activeBills;
     if (activeCnt > 0) {
       return res.status(409).json({
         message: `ไม่สามารถลบ Trip ที่ยังมีบิลใช้งานอยู่ (${activeCnt} บิล) กรุณายกเลิกหรือลบบิลในทริปก่อน`,
       });
     }
-    await wfQuery(`UPDATE wf.SalesTrip SET Status = 'DELETED' WHERE TripId = @tid`, {
-      tid: { type: sql.Int, value: tripId }
-    });
+    if (!outcome.deleted) {
+      return res.status(409).json({ message: 'Trip นี้เปลี่ยนสถานะระหว่างดำเนินการ กรุณาโหลดข้อมูลใหม่' });
+    }
     broadcast('trip_updated', { tripId, action: 'deleted' });
     res.json({ message: 'ลบ Trip สำเร็จ', tripId });
   } catch (err) {
     console.error('DELETE /trips/:id error:', err);
-    res.status(500).json({ message: err.message });
+    res.status(err.status || 500).json({ message: err.message });
   }
 });
 
