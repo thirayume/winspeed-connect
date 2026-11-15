@@ -485,6 +485,18 @@ router.patch('/customer-requests/:id/review', requireRole('ADMIN', 'MANAGER'), a
     })).recordset?.[0];
     if (!reqRow) throw Object.assign(new Error('ไม่พบคำขอนี้'), { status: 404 });
 
+    // The first decision stands. Under the row lock a second reviewer sees the status the
+    // first one committed and is refused instead of overwriting it. Allowed moves:
+    // PENDING -> APPROVED / REJECTED / COMPLETED, APPROVED -> COMPLETED. REJECTED and
+    // COMPLETED are final. A client may also send the status it was looking at.
+    const currentStatus = String(reqRow.Status || '').trim().toUpperCase();
+    const allowedMoves = { PENDING: ['APPROVED', 'REJECTED', 'COMPLETED'], APPROVED: ['COMPLETED'] };
+    const expectedStatus = req.body?.expectedStatus == null ? null : String(req.body.expectedStatus).trim().toUpperCase();
+    if ((expectedStatus && expectedStatus !== currentStatus) || !(allowedMoves[currentStatus] || []).includes(nextStatus)) {
+      throw Object.assign(new Error(`คำขอนี้ถูกพิจารณาไปแล้ว (สถานะปัจจุบัน ${currentStatus}) กรุณาโหลดข้อมูลใหม่`),
+        { status: 409, code: 'CUSTOMER_REQUEST_ALREADY_REVIEWED' });
+    }
+
     const finalWinspeedCustId = winspeedCustId || reqRow.WinspeedCustId;
 
     await transactionQuery(tx, `
