@@ -9,7 +9,7 @@
  * pool สำหรับอ่าน และไม่มี rowsAffected จึงตรวจไม่ได้ว่ามีแถวถูกแก้จริงหรือไม่
  */
 const router = require('express').Router();
-const { sql, query, dboWrite } = require('../db');
+const { sql, query, dboWrite, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
 const { getBangkokDateString } = require('../services/so-pickup-policy');
 const { parseNullableAgingInput, getCreditAgingPolicyBounds } = require('../services/credit-service');
@@ -20,6 +20,23 @@ const { hasRole } = require('../services/role-capabilities');
 const { businessIds, actorPerspective } = require('../services/business-identity');
 const { secondaryCustomerPredicate, secondaryCustomerVisible } = require('../services/secondary-customer-scope');
 const { secondaryActorScope, withActorScope, chainVisibleToBoth, bothSeeAll } = require('../services/secondary-read-scope');
+const { currentActorId, hasColumn } = require('../services/request-context');
+const { logChangeEvent } = require('../services/policy-contract');
+
+async function customerRequestAuditIdentity(user) {
+  const ids = businessIds(user);
+  if (!ids.actor || !ids.effective) throw Object.assign(new Error('CUSTOMER_REQUEST_IDENTITY_REQUIRED'), { status: 401 });
+  if (ids.actor !== ids.effective && (currentActorId() !== ids.actor || !await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId'))) {
+    throw Object.assign(new Error('CUSTOMER_REQUEST_ACTOR_AUDIT_UNAVAILABLE'), { status: 503 });
+  }
+  return ids;
+}
+
+async function transactionQuery(tx, statement, inputs) {
+  const request = tx.request();
+  for (const [name, { type, value }] of Object.entries(inputs)) request.input(name, type, value);
+  return request.query(statement);
+}
 
 router.use(requireAuth);
 
@@ -405,7 +422,9 @@ router.post('/customer-requests', requireRole('SALES', 'COUNTER_SALES', 'ADMIN',
       grpName = gRes?.[0]?.CustGroupName || null;
     }
 
-    const rows = await query(`
+    const ids = await customerRequestAuditIdentity(req.user);
+    const id = await wfTransaction(async tx => {
+    const result = await transactionQuery(tx, `
       INSERT INTO wf.CustomerRequest
         (CustName, ContactName, Tel, Mobile, TaxId, Address, Note, RequestedBy,
          SalespersonUserId, SalespersonName, RegionCode, CustGroupId, CustGroupName,
@@ -423,7 +442,7 @@ router.post('/customer-requests', requireRole('SALES', 'COUNTER_SALES', 'ADMIN',
       taxId: { type: sql.NVarChar(50), value: TaxId || null },
       address: { type: sql.NVarChar(500), value: Address || null },
       note: { type: sql.NVarChar(500), value: Note || null },
-      uid: { type: sql.Int, value: req.user.sub },
+      uid: { type: sql.Int, value: ids.effective },
       spUserId: { type: sql.Int, value: spId },
       spName: { type: sql.NVarChar(100), value: spName },
       regionCode: { type: sql.NVarChar(20), value: RegionCode || null },
@@ -435,8 +454,14 @@ router.post('/customer-requests', requireRole('SALES', 'COUNTER_SALES', 'ADMIN',
       agingDays: { type: sql.Int, value: parseNullableAgingInput(AgingDays) },
       creditHold: { type: sql.Bit, value: CreditHold ? 1 : 0 },
     });
-    res.status(201).json({ id: rows[0]?.Id });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+    const id = Number(result.recordset?.[0]?.Id);
+    if (!Number.isSafeInteger(id) || id <= 0) throw new Error('CUSTOMER_REQUEST_INSERT_FAILED');
+    await logChangeEvent(tx, { entityType: 'CUSTOMER_REQUEST', entityId: String(id), action: 'CREATE',
+      afterJson: { status: 'PENDING' }, reasonCode: 'CUSTOMER_REQUEST', userId: String(ids.effective) });
+    return id;
+    });
+    res.status(201).json({ id });
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // PATCH /api/master/customer-requests/:id/review — close request after Sale Admin/WINSpeed action
@@ -448,14 +473,21 @@ router.patch('/customer-requests/:id/review', requireRole('ADMIN', 'MANAGER'), a
       return res.status(400).json({ message: 'สถานะไม่ถูกต้อง' });
     }
     const id = Number(req.params.id);
-
-    // Fetch the request record first
-    const reqRow = (await query(`SELECT * FROM wf.CustomerRequest WHERE Id = @id`, { id: { type: sql.Int, value: id } }))?.[0];
-    if (!reqRow) return res.status(404).json({ message: 'ไม่พบคำขอนี้' });
+    if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647) return res.status(400).json({ message: 'รหัสคำขอไม่ถูกต้อง' });
+    const ids = await customerRequestAuditIdentity(req.user);
+    let dataWindow;
+    try { dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow(); }
+    catch { return res.status(503).json({ code: 'DATA_WINDOW_UNAVAILABLE', message: 'ไม่สามารถอ่านวันเริ่มข้อมูลได้' }); }
+    await wfTransaction(async tx => {
+    // Hold the row until the request, linked master data and audit commit together.
+    const reqRow = (await transactionQuery(tx, `SELECT * FROM wf.CustomerRequest WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id AND CreatedAt >= @globalStartUtc`, {
+      id: { type: sql.Int, value: id }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant }
+    })).recordset?.[0];
+    if (!reqRow) throw Object.assign(new Error('ไม่พบคำขอนี้'), { status: 404 });
 
     const finalWinspeedCustId = winspeedCustId || reqRow.WinspeedCustId;
 
-    await query(`
+    await transactionQuery(tx, `
       UPDATE wf.CustomerRequest
       SET Status = @status,
           WinspeedCustId = COALESCE(@winspeedCustId, WinspeedCustId),
@@ -469,14 +501,13 @@ router.patch('/customer-requests/:id/review', requireRole('ADMIN', 'MANAGER'), a
       status: { type: sql.NVarChar(20), value: nextStatus },
       winspeedCustId: { type: sql.NVarChar(20), value: winspeedCustId || null },
       reviewNote: { type: sql.NVarChar(500), value: reviewNote || null },
-      uid: { type: sql.Int, value: req.user.sub },
+      uid: { type: sql.Int, value: ids.effective },
     });
 
     // If completed and has WINSpeed CustID, sync metadata into wf.CustomerExt and wf.CreditMaster
     if (nextStatus === 'COMPLETED' && finalWinspeedCustId) {
-      try {
-        await query(`
-          IF EXISTS (SELECT 1 FROM wf.CustomerExt WHERE CustId = @custId)
+        await transactionQuery(tx, `
+          IF EXISTS (SELECT 1 FROM wf.CustomerExt WITH (UPDLOCK, HOLDLOCK) WHERE CustId = @custId)
             UPDATE wf.CustomerExt
             SET SalespersonUserId = COALESCE(@spUserId, SalespersonUserId),
                 SalespersonName = COALESCE(@spName, SalespersonName),
@@ -492,7 +523,7 @@ router.patch('/customer-requests/:id/review', requireRole('ADMIN', 'MANAGER'), a
             INSERT INTO wf.CustomerExt (CustId, SalespersonUserId, SalespersonName, RegionCode, CustGroupId, Email, LineId, CreditLimit, AgingDays, UpdatedAt)
             VALUES (@custId, @spUserId, @spName, @regionCode, @custGroupId, @email, @lineId, @creditLimit, @agingDays, GETUTCDATE());
 
-          MERGE wf.CreditMaster AS t USING (SELECT @custId AS CustId) AS s ON t.CustId = s.CustId
+          MERGE wf.CreditMaster WITH (HOLDLOCK) AS t USING (SELECT @custId AS CustId) AS s ON t.CustId = s.CustId
           WHEN MATCHED THEN UPDATE SET
             CreditLimit = COALESCE(@creditLimit, t.CreditLimit),
             AgingDays = COALESCE(@agingDays, t.AgingDays),
@@ -513,15 +544,15 @@ router.patch('/customer-requests/:id/review', requireRole('ADMIN', 'MANAGER'), a
           creditLimit: { type: sql.Decimal(18, 2), value: reqRow.CreditLimit != null ? Number(reqRow.CreditLimit) : null },
           agingDays: { type: sql.Int, value: parseNullableAgingInput(reqRow.AgingDays) },
           creditHold: { type: sql.Bit, value: reqRow.CreditHold ? 1 : 0 },
-          uid: { type: sql.Int, value: req.user.sub },
+          uid: { type: sql.Int, value: ids.effective },
         });
-      } catch (syncErr) {
-        console.warn('[customer-request:review-sync-warning]', syncErr?.message);
-      }
     }
-
+    await logChangeEvent(tx, { entityType: 'CUSTOMER_REQUEST', entityId: String(id), action: 'REVIEW',
+      beforeJson: { status: reqRow.Status }, afterJson: { status: nextStatus, masterSynced: Boolean(nextStatus === 'COMPLETED' && finalWinspeedCustId) },
+      reasonCode: 'CUSTOMER_REQUEST', userId: String(ids.effective) });
+    });
     res.json({ ok: true });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // PATCH /api/master/customers/:id
