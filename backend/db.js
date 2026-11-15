@@ -348,9 +348,15 @@ async function wfTransaction(fn, { isolationLevel, onRollbackConfirmed } = {}) {
   await pl.ready;
   const tx = new sql.Transaction(pl.ownerPool);
   await tx.begin(isolationLevel);
+  // A transaction that asks for an isolation level (the serializable ones) holds range
+  // locks, some on tables WinSpeed users write to. Bound its own lock waits so it cannot
+  // keep those locks for an unbounded time. WF_SERIALIZABLE_LOCK_TIMEOUT_MS=0 turns it off.
+  const configured = Number(process.env.WF_SERIALIZABLE_LOCK_TIMEOUT_MS);
+  const lockTimeoutMs = isolationLevel == null ? null
+    : (Number.isSafeInteger(configured) && configured >= 0 ? configured : 10000);
   // A commit failure may be ambiguous even when rollback resolves. Only
   // clean external staging after a confirmed pre-commit rollback.
-  return require('./services/transaction-execution').runTransaction(tx, fn, onRollbackConfirmed);
+  return require('./services/transaction-execution').runTransaction(tx, fn, onRollbackConfirmed, { lockTimeoutMs });
 }
 
 // The global Rebate fence must not occupy the normal primary owner pool while
