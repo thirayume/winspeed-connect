@@ -28,8 +28,13 @@ test('a credit note reduces the balance and old cancelled or replaced documents 
 test('customers show without a credit master row, and the buckets add up to the balance', () => {
   assert.match(report.sql, /LEFT JOIN wf\.CreditMaster cm/);
   assert.deepEqual(report.columns.filter(c => c.aggregation === 'sum').map(c => c.key),
-    ['CreditLimit', 'OutstandingBal', 'NotDue', 'Overdue1_30', 'OverdueOver30']);
-  for (const key of ['x.DaysLate <= 0', 'x.DaysLate BETWEEN 1 AND 30', 'x.DaysLate > 30']) assert.ok(report.sql.includes(key), key);
+    ['CreditLimit', 'OutstandingBal', 'NotDue', 'OverdueTotal', 'Overdue1_30', 'Overdue31_60', 'Overdue61_90', 'Overdue91_120', 'OverdueOver120']);
+  // the overdue periods of WinSpeed's own aging report, which accounting uses: every day past due falls in exactly one
+  for (const key of ['x.DaysLate <= 0', 'x.DaysLate BETWEEN 1 AND 30', 'x.DaysLate BETWEEN 31 AND 60', 'x.DaysLate BETWEEN 61 AND 90',
+    'x.DaysLate BETWEEN 91 AND 120', 'x.DaysLate > 120']) assert.ok(report.sql.includes(key), key);
+  assert.doesNotMatch(report.sql, /x\.DaysLate > 30\b/);
+  assert.match(report.sql, /CAST\(ar\.Bal - ar\.NotDue AS DECIMAL\(14,2\)\) AS OverdueTotal/);
+  for (const column of report.columns) assert.ok(new RegExp(`AS ${column.key}\\b`).test(report.sql), `column ${column.key} is selected`);
 });
 
 test('only accounting and management can open it', () => {

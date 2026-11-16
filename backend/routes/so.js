@@ -1042,6 +1042,13 @@ router.get('/', async (req, res) => {
       }
       for (const o of orders) o.lines = linesByso[o.id] || [];
     }
+    // Which WinSpeed documents each bill has reached (103, 104 and tickets, 116, 107). The list is still
+    // useful without it, so a failure here is logged and the page is returned without the stage.
+    try {
+      await require('../services/document-stage').attachDocumentStages(orders, { query: wfQuery, sql });
+    } catch (stageError) {
+      console.warn('[so-list] document stage unavailable:', stageError.code || '', stageError.message);
+    }
     res.json({ data: orders.map(o => redactSoForRole(req, o)), total, page: pageNumber, limit: pageSize });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -1382,8 +1389,17 @@ router.get('/:id', async (req, res) => {
       out: evaluatePickupTiming(so.ActualWeighOutAt, so.PickupDueDate),
     };
 
+    // Which WinSpeed documents this bill has reached; the bill is still shown when this read fails.
+    const stageCarrier = [{ id: so.Id, importedDocuNo: so.ImportedDocuNo, status: so.Status }];
+    try {
+      await require('../services/document-stage').attachDocumentStages(stageCarrier, { query: wfQuery, sql });
+    } catch (stageError) {
+      console.warn('[so-detail] document stage unavailable:', stageError.code || '', stageError.message);
+    }
+
     res.json(redactSoForRole(req, {
       ...camelizeRow(so),
+      docStage: stageCarrier[0].docStage || null,
       custCode: so.CustCode || party.CustCode || null,
       salesName: party.SalesName || null,
       custAddress,

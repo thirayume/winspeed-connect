@@ -22,6 +22,7 @@ import { TripSetupModal, type TripSetupData } from './TripSetupModal';
 import { PaperDocModal } from '../papertrail/PaperDocModal';
 import { SOBookingDocModal } from './SOBookingDocModal';
 import { displayStatus, SO_STATUS_META, soStatusLabel } from '../../constants/soStatus';
+import { DocStageChip } from './DocStageChip';
 import { QuickShipModal } from './QuickShipModal';
 import { bangkokDate, formatThaiDate } from '../../utils/date';
 import { getCustomerGroupKey } from '../../utils/customer-identity';
@@ -1293,6 +1294,8 @@ export function TripSummaryModal({
                                 {soStatusLabel(displayStatus(order))}
                               </div>
                             </div>
+                            {/* which WinSpeed document this bill has reached: 103, 104 and tickets, 116, 107 */}
+                            <DocStageChip stage={order.docStage} className="items-end" />
                             {(order as any).requiresPriceApproval && (
                               <div>
                                 {(order as any).priceApprovalStatus === 'APPROVED' ? (

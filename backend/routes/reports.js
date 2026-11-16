@@ -286,9 +286,15 @@ const REPORTS = {
       { key: 'CreditHold', label: 'สถานะ Hold', type: 'text' },
       { key: 'OutstandingBal', label: 'ยอดลูกหนี้คงค้าง', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
       { key: 'NotDue', label: 'ยังไม่ครบกำหนด', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'OverdueTotal', label: 'ยอดหนี้เกินกำหนด', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
       { key: 'Overdue1_30', label: 'เกินกำหนด 1-30 วัน', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
-      { key: 'OverdueOver30', label: 'เกินกำหนด > 30 วัน', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'Overdue31_60', label: 'เกินกำหนด 31-60 วัน', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'Overdue61_90', label: 'เกินกำหนด 61-90 วัน', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'Overdue91_120', label: 'เกินกำหนด 91-120 วัน', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'OverdueOver120', label: 'เกินกำหนดมากกว่า 120 วัน', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
     ],
+    // The overdue periods are the ones on WinSpeed's own report (รายงานวิเคราะห์อายุลูกหนี้: 1-30, 31-60, 61-90, 91-120
+    // and more than 120 days past the due date), as accounting confirmed on 12 November 2026.
     // The receivable is what is still unpaid on the invoices, as in WinSpeed's own aging report. It listed every booking
     // and sales order ever made, with no receipts taken off, and only for customers in the empty wf.CreditMaster.
     // A ticket's 107 stays out: the 202 raised the receivable, receipts settle only the 202, and the 107's
@@ -300,15 +306,22 @@ const REPORTS = {
             CASE WHEN cm.CreditHold = 1 THEN N'HOLD' ELSE N'NORMAL' END AS CreditHold,
             CAST(ar.Bal AS DECIMAL(14,2)) AS OutstandingBal,
             CAST(ar.NotDue AS DECIMAL(14,2)) AS NotDue,
+            CAST(ar.Bal - ar.NotDue AS DECIMAL(14,2)) AS OverdueTotal,
             CAST(ar.Overdue30 AS DECIMAL(14,2)) AS Overdue1_30,
-            CAST(ar.OverdueMore AS DECIMAL(14,2)) AS OverdueOver30
+            CAST(ar.Overdue60 AS DECIMAL(14,2)) AS Overdue31_60,
+            CAST(ar.Overdue90 AS DECIMAL(14,2)) AS Overdue61_90,
+            CAST(ar.Overdue120 AS DECIMAL(14,2)) AS Overdue91_120,
+            CAST(ar.OverdueMore AS DECIMAL(14,2)) AS OverdueOver120
           FROM (
             SELECT
               x.ARID,
               SUM(x.Rema) AS Bal,
               SUM(CASE WHEN x.DaysLate <= 0 THEN x.Rema ELSE 0 END) AS NotDue,
               SUM(CASE WHEN x.DaysLate BETWEEN 1 AND 30 THEN x.Rema ELSE 0 END) AS Overdue30,
-              SUM(CASE WHEN x.DaysLate > 30 THEN x.Rema ELSE 0 END) AS OverdueMore
+              SUM(CASE WHEN x.DaysLate BETWEEN 31 AND 60 THEN x.Rema ELSE 0 END) AS Overdue60,
+              SUM(CASE WHEN x.DaysLate BETWEEN 61 AND 90 THEN x.Rema ELSE 0 END) AS Overdue90,
+              SUM(CASE WHEN x.DaysLate BETWEEN 91 AND 120 THEN x.Rema ELSE 0 END) AS Overdue120,
+              SUM(CASE WHEN x.DaysLate > 120 THEN x.Rema ELSE 0 END) AS OverdueMore
             FROM (
               SELECT
                 h.ARID,
