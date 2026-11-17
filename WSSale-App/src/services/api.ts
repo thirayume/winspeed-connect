@@ -43,6 +43,15 @@ import { useAppStore } from '../store/app-store';
 
 const pendingReads = new Map<string, Promise<unknown>>();
 let readGeneration = 0;
+// Reads the user can stop waiting for from the loader (owner, 17 Nov 2026: a 30 s read left screens feeling locked).
+// Saves are never in this set: stopping the wait on a save would hide whether it was recorded.
+const cancellableReads = new Set<() => void>();
+export const READ_CANCELLED = 'REQUEST_CANCELLED';
+export function cancelPendingReads(): number {
+  const all = [...cancellableReads];
+  all.forEach(cancel => cancel());
+  return all.length;
+}
 type ApiOptions = RequestInit & { silent?: boolean; timeoutMs?: number };
 
 export async function req<T>(path: string, init: ApiOptions = {}): Promise<T> {
@@ -74,10 +83,14 @@ async function performRequest<T>(path: string, options: RequestInit, silent: boo
   if (options.signal?.aborted) abort();
   options.signal?.addEventListener('abort', abort, { once: true });
   const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+  const isWrite = !!options.method && options.method.toUpperCase() !== 'GET';
+  let cancelled = false;
+  const cancel = () => { cancelled = true; controller.abort(); };
+  if (!isWrite) cancellableReads.add(cancel);
   if (!silent) {
-    useAppStore.getState().startLoading();
+    useAppStore.getState().startLoading(isWrite);
   }
-  
+
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       ...options,
@@ -90,6 +103,7 @@ async function performRequest<T>(path: string, options: RequestInit, silent: boo
     }
     return await res.json();
   } catch (error) {
+    if (cancelled && !timedOut) throw Object.assign(new Error('หยุดรอข้อมูลแล้ว ข้อมูลที่กรอกยังอยู่ กดโหลดใหม่ได้เมื่อพร้อม'), { code: READ_CANCELLED });
     if (timedOut) throw Object.assign(new Error(
       !options.method || options.method.toUpperCase() === 'GET'
         ? 'โหลดข้อมูลไม่ทันเวลา ข้อมูลที่กรอกยังอยู่ กรุณาลองโหลดใหม่'
@@ -99,8 +113,9 @@ async function performRequest<T>(path: string, options: RequestInit, silent: boo
   } finally {
     clearTimeout(timeout);
     options.signal?.removeEventListener('abort', abort);
+    cancellableReads.delete(cancel);
     if (!silent) {
-      useAppStore.getState().stopLoading();
+      useAppStore.getState().stopLoading(isWrite);
     }
   }
 }

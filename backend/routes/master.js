@@ -2289,31 +2289,43 @@ router.get('/truck-plates', async (req, res) => {
     if (!await customerVisible(req.user, custId))
       return res.status(404).json({ message: 'ไม่พบลูกค้า' });
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
-    let ownerWhere = '';
+    // UAT 17 Nov 2026: reading wf.v_AllSalesOrders here (every native 103/104, joined on converted ids) ran past
+    // the 30 s SQL limit on every call, and the bill screen's "เลือกรถ" waited on it. Read the two base tables by
+    // customer instead (the same rows the view's two branches give), with the same window and visibility.
+    let draftOwnerWhere = '', nativeOwnerWhere = '';
     const ownerInputs = {};
     {
       const actor = actorPerspective(req.user);
       const scopes = [await getVisibleScope(req.user), ...(actor === req.user ? [] : [await getVisibleScope(actor)])];
       for (const [index, scope] of scopes.entries()) {
         if (scope.all) continue;
-        const draftOwner = scopeFilter(scope, { userCol: 'so.SalesUserId', prefix: `plateDraft${index}` });
-        const nativeOwner = scopeFilter(scope, { userCol: 'so.SalesUserId', empCol: 'hd.EmpID', prefix: `plateNative${index}` });
-        ownerWhere += ` AND ((NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NULL AND ${draftOwner.sql}) OR (NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NOT NULL AND ${nativeOwner.sql}))`;
+        const draftOwner = scopeFilter(scope, { userCol: 's.SalesUserId', prefix: `plateDraft${index}` });
+        const nativeOwner = scopeFilter(scope, { userCol: 'ext.SalesUserId', empCol: 'hd.EmpID', prefix: `plateNative${index}` });
+        draftOwnerWhere += ` AND ${draftOwner.sql}`;
+        nativeOwnerWhere += ` AND ${nativeOwner.sql}`;
         Object.assign(ownerInputs, draftOwner.inputs, nativeOwner.inputs);
       }
     }
-    const inputs = { custId: { type: sql.NVarChar(20), value: custId },
+    const custNo = /^\d{1,9}$/.test(String(custId).trim()) ? Number(String(custId).trim()) : null;
+    const inputs = { custId: { type: sql.NVarChar(20), value: String(custId) }, custNo: { type: sql.Int, value: custNo },
       globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate }, ...ownerInputs };
     const rows = await query(`
-      SELECT DISTINCT so.TruckPlate AS Plate
-      FROM wf.v_AllSalesOrders so
-      LEFT JOIN dbo.SOHD hd WITH (NOLOCK) ON CONVERT(VARCHAR(50), hd.SOID) = CONVERT(VARCHAR(50), so.Id)
-      WHERE so.CustId = @custId AND so.TruckPlate IS NOT NULL AND so.TruckPlate <> ''
-        AND ((NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NULL AND so.CreatedAt >= @globalStartUtc)
-          OR (NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NOT NULL AND hd.DocuDate >= @globalStartDate))
-        ${ownerWhere}
+      SELECT DISTINCT Plate FROM (
+        SELECT s.TruckPlate AS Plate
+        FROM wf.SalesOrder s WITH (NOLOCK)
+        WHERE s.CustId = @custId AND s.TruckPlate IS NOT NULL AND s.TruckPlate <> ''
+          AND NULLIF(LTRIM(RTRIM(s.ImportedDocuNo)), '') IS NULL AND s.CreatedAt >= @globalStartUtc
+          ${draftOwnerWhere}
+        UNION ALL
+        SELECT hd.TransRegistration AS Plate
+        FROM dbo.SOHD hd WITH (NOLOCK)
+        LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
+        WHERE @custNo IS NOT NULL AND hd.CustID = @custNo AND hd.DocuType IN (103, 104)
+          AND hd.TransRegistration IS NOT NULL AND hd.TransRegistration <> '' AND hd.DocuDate >= @globalStartDate
+          ${nativeOwnerWhere}
+      ) p
     `, inputs);
-    
+
     res.json(rows.map(r => r.Plate));
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });

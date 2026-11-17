@@ -16,19 +16,22 @@ type AppState = {
   activePortal: PortalKey;
   navParams: NavParams | null;
   globalLoadingCount: number;
+  /** Saves in flight among globalLoadingCount: they are never cancelled from the loader. */
+  globalWritingCount: number;
 };
 
 type AppActions = {
   navigate: (portal: PortalKey, params?: NavParams) => void;
   clearNavParams: () => void;
-  startLoading: () => void;
-  stopLoading: () => void;
+  startLoading: (write?: boolean) => void;
+  stopLoading: (write?: boolean) => void;
 };
 
 export const useAppStore = create<AppState & AppActions>((set, get) => ({
   activePortal: 'dashboard',
   navParams: null,
   globalLoadingCount: 0,
+  globalWritingCount: 0,
 
   navigate: (portal, params) => {
     if ((portal !== get().activePortal || params) && hasUnsavedEditors()) {
@@ -42,6 +45,8 @@ export const useAppStore = create<AppState & AppActions>((set, get) => ({
 
   clearNavParams: () => set({ navParams: null }),
   
-  startLoading: () => set((state) => ({ globalLoadingCount: state.globalLoadingCount + 1 })),
-  stopLoading: () => set((state) => ({ globalLoadingCount: Math.max(0, state.globalLoadingCount - 1) })),
+  startLoading: (write = false) => set((state) => ({ globalLoadingCount: state.globalLoadingCount + 1,
+    globalWritingCount: state.globalWritingCount + (write ? 1 : 0) })),
+  stopLoading: (write = false) => set((state) => ({ globalLoadingCount: Math.max(0, state.globalLoadingCount - 1),
+    globalWritingCount: Math.max(0, state.globalWritingCount - (write ? 1 : 0)) })),
 }));

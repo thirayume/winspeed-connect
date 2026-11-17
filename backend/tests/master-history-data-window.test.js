@@ -14,7 +14,7 @@ test.after(async () => { await app.close(); });
 test('truck history and suggestions use both UTC and WinSpeed business-date boundaries', async () => {
   const user = { sub: 12, role: 'ADMIN' };
   for (const [url, pattern] of [
-    ['/api/master/truck-plates?custId=123', /SELECT DISTINCT so\.TruckPlate AS Plate/],
+    ['/api/master/truck-plates?custId=123', /SELECT DISTINCT Plate FROM/],
     ['/api/master/trucks-stats', /AS truckPlate/],
     ['/api/master/trucks/ABC-123/history', /AS qtyTon/],
   ]) {

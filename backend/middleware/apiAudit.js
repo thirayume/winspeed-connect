@@ -24,11 +24,16 @@ async function hasApiAuditTable() {
   }
 }
 
-function shouldAudit(req, res, auditPath) {
+// A read this slow is recorded too (route only, never the query string), so pages that keep staff waiting show
+// up in wf.ApiAuditLog with their duration (owner, 17 Nov 2026: screens felt locked while a read ran 30 s).
+const SLOW_READ_MS = 3000;
+
+function shouldAudit(req, res, auditPath, durationMs = 0) {
   if (!req.user) return false;
   if (!String(auditPath || '').startsWith('/api/')) return false;
   if (req.method === 'OPTIONS' || req.method === 'HEAD') return false;
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return true;
+  if (durationMs >= SLOW_READ_MS) return true;
   // A reviewed cross-database read must be attributable to both identities,
   // even when it succeeds; it can expose data from a separate business DB.
   if (req.identityMappingAudit) return true;
@@ -43,7 +48,7 @@ function apiAudit() {
     // secrets. The route remains sufficient for the audit trail.
     const auditPath = String(req.originalUrl || req.url || req.path || '').split('?')[0];
     res.on('finish', () => {
-      if (!shouldAudit(req, res, auditPath)) return;
+      if (!shouldAudit(req, res, auditPath, Date.now() - startedAt)) return;
       const target = getTarget();
       const businessDatabase = req.auditBusinessDatabase || db.getDbName?.() || null;
       const identityDatabase = target === 'onprem' ? require('../services/active-database').primaryDatabase() : db.getDbName?.() || null;
@@ -109,3 +114,5 @@ function apiAudit() {
 }
 
 module.exports = apiAudit;
+module.exports.shouldAudit = shouldAudit;
+module.exports.SLOW_READ_MS = SLOW_READ_MS;

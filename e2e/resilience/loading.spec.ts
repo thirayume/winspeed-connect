@@ -209,3 +209,23 @@ test('read sharing is scoped to token and timed-out writes are never retried',as
   expect(reads).toBe(2);expect(writes).toBe(1);
   expect(result.code).toBe('REQUEST_TIMEOUT');expect(result.message).toContain('ตรวจรายการก่อนบันทึกซ้ำ');
 });
+
+test('a slow read offers "หยุดรอ": the read stops, the loader goes and typing is kept; a slow save offers no cancel',async({page})=>{
+  test.setTimeout(45000);
+  const input=page.getByPlaceholder('หมายเหตุบิลนี้...');
+  await input.fill('KEEP-WHILE-WAITING');
+  await page.route('**/api/hang',async route=>{await new Promise(r=>setTimeout(r,20000));await route.fulfill({json:{ok:true}}).catch(()=>{});});
+  const read=page.evaluate(async()=>{try{await (window as any).regression.req('/hang');return 'done';}catch(e:any){return e.code;}});
+  const cancel=page.getByTestId('global-loader-cancel');
+  await expect(cancel).toBeVisible({timeout:9000});
+  await cancel.click();
+  expect(await read).toBe('REQUEST_CANCELLED');
+  await expect(page.getByTestId('global-loader')).toHaveCount(0);
+  await expect(input).toHaveValue('KEEP-WHILE-WAITING');
+  await page.route('**/api/hang-save',async route=>{await new Promise(r=>setTimeout(r,9000));await route.fulfill({json:{ok:true}}).catch(()=>{});});
+  const save=page.evaluate(()=> (window as any).regression.req('/hang-save',{method:'POST'}));
+  await expect(page.getByTestId('global-loader')).toContainText('กำลังบันทึก',{timeout:3000});
+  await page.waitForTimeout(6500);
+  await expect(page.getByTestId('global-loader-cancel')).toHaveCount(0);
+  await save;
+});

@@ -930,6 +930,8 @@ export function CreateSODialog({
 
   function updateBillInfo(id: string, patch: Partial<DraftBill>) {
     setBills(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
+    // A customer chosen now answers the earlier "choose a customer first" message; do not leave it on screen.
+    if (patch.custId) setError(prevError => prevError.startsWith('กรุณาเลือกลูกค้า') ? '' : prevError);
   }
 
   // Totals calculation
@@ -1727,16 +1729,13 @@ export function CreateSODialog({
                           <button
                             type="button"
                             onClick={() => {
+                              // Open at once: the plate box works while the history loads (it used to wait for it).
+                              setCustomerTrucks([]);
+                              setTruckPickerOpen(true);
                               setLoadingTrucks(true);
                               fetchTruckPlates(activeBill.custId!)
-                                .then(plates => {
-                                  setCustomerTrucks(plates || []);
-                                  setTruckPickerOpen(true);
-                                })
-                                .catch(() => {
-                                  setCustomerTrucks([]);
-                                  setTruckPickerOpen(true);
-                                })
+                                .then(plates => setCustomerTrucks(plates || []))
+                                .catch(() => setCustomerTrucks([]))
                                 .finally(() => setLoadingTrucks(false));
                             }}
                             className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 hover:bg-blue-200 text-[#0C447C] font-bold text-[11px] border border-blue-200 transition-colors shrink-0 shadow-xs cursor-pointer"

@@ -69,3 +69,12 @@ test('successful verification reads are audited without storing the document num
   assert.equal(writes[0].inputs.effectiveUserId.value,8);
   assert.doesNotMatch(JSON.stringify(writes),/PRIVATE-DOC/);
 });
+
+test('a read is recorded when it is slow, and fast successful reads stay out of the log', () => {
+  const { shouldAudit, SLOW_READ_MS } = require('../middleware/apiAudit');
+  const req = { user: { sub: 1 }, method: 'GET' };
+  assert.equal(shouldAudit(req, { statusCode: 200 }, '/api/master/truck-plates', 120), false);
+  assert.equal(shouldAudit(req, { statusCode: 200 }, '/api/master/truck-plates', SLOW_READ_MS), true);
+  assert.equal(shouldAudit(req, { statusCode: 500 }, '/api/master/truck-plates', 10), true);
+  assert.equal(shouldAudit({ method: 'GET' }, { statusCode: 200 }, '/api/master/truck-plates', 60000), false);
+});
