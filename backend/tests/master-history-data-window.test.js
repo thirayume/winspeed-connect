@@ -2,7 +2,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
-const db = h.installDbStub(() => [], { activeUserIds: h.TEST_USERS });
+const db = h.installDbStub(({ text, inputs }) => {
+  // The truck-plate lookup checks customer visibility before reading history.
+  if (/WHERE c\.CustID=@visibilityCustId/.test(text) && inputs.visibilityCustId === 123) return [{ ok: 1 }];
+  return [];
+}, { activeUserIds: h.TEST_USERS });
 let app;
 test.before(async () => { app = await h.startApp([['/api/master', '../../routes/master']]); });
 test.after(async () => { await app.close(); });
