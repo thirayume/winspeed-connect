@@ -19,7 +19,7 @@ import { appAlert } from './components/ui/AppAlert';
 import { useSocketEvent } from './hooks/useSocket';
 import packageJson from '../package.json';
 
-export type PortalKey = 'app-settings' | 'roles' | 'incidents' | 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'stock' | 'papertrail' | 'rebate' | 'rebate-plan' | 'cn-rebate' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'policy' | 'governance' | 'ops' | 'admin' | 'org' | 'approvers' | 'master' | 'profile' | 'beneficiaries';
+export type PortalKey = 'app-settings' | 'roles' | 'incidents' | 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'stock' | 'papertrail' | 'rebate' | 'rebate-plan' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'policy' | 'ops' | 'admin' | 'org' | 'approvers' | 'master' | 'profile' | 'beneficiaries';
 
 const SalesPortal = lazy(() => import('./components/sales/SalesPortal').then(m => ({ default: m.SalesPortal })));
 const SaleTripBoardPage = lazy(() => import('./components/sales/SaleTripBoardPage').then(m => ({ default: m.SaleTripBoardPage })));
@@ -30,7 +30,6 @@ const RebatePage = lazy(() => import('./components/rebate/RebatePage').then(m =>
 // ── ปิด lazy import 03/09/2569 — หน้าเหล่านี้ถูกตัด/ซ่อนออกจากเมนูแล้ว ──
 // ปิดที่นี่ด้วยเพื่อไม่ให้ vite สร้าง chunk ที่ไม่มีใครเรียก
 // ไฟล์ทั้งหมดยังอยู่ครบ · เปิดกลับได้ด้วยการเอาคอมเมนต์ออกทั้งบรรทัดนี้และในเมนู/render
-// const CnRebatePage = lazy(() => import('./components/rebate/CnRebatePage').then(m => ({ default: m.CnRebatePage })));
 const RebatePlanPage = lazy(() => import('./components/rebate/RebatePlanPage').then(m => ({ default: m.RebatePlanPage })));
 const VoucherPage = lazy(() => import('./components/voucher/VoucherPage').then(m => ({ default: m.VoucherPage })));
 const ControlTicketPage = lazy(() => import('./components/master/ControlTicketPage').then(m => ({ default: m.ControlTicketPage })));
@@ -57,7 +56,6 @@ const ReconciliationPage = lazy(() => import('./components/recon/ReconciliationP
 const OpsStatusPage = lazy(() => import('./components/ops/OpsStatusPage').then(m => ({ default: m.OpsStatusPage })));
 const ApprovalPolicyPage = lazy(() => import('./components/policy/ApprovalPolicyPage').then(m => ({ default: m.ApprovalPolicyPage })));
 const OperationalStockPage = lazy(() => import('./components/governance/OperationalStockPage').then(m => ({ default: m.OperationalStockPage })));
-// const DataGovernancePage = lazy(() => import('./components/governance/DataGovernancePage').then(m => ({ default: m.DataGovernancePage })));
 
 const STOCK_ROLES: UserRole[] = ['C_LEVEL', 'ADMIN', 'MANAGER', 'WAREHOUSE'];
 
@@ -102,8 +100,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: 'rebate',     label: 'รีเบท (App)', sub: 'Rebate Pool FIFO · แปลงตั๋ว · คำขอเคลม', icon: Coins, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'SALES', 'COUNTER_SALES'] },
       { key: 'rebate-plan',label: 'Rebate Plan', sub: 'แผนจัดสรรงบรีเบท',        icon: ClipboardList, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING'] },
-      // ── ซ่อนชั่วคราว — คง requirement และ source component ไว้ ไม่ลบ ──
-      // { key: 'cn-rebate',  label: 'CN Rebate',   sub: 'ใบลดหนี้ · Winspeed',   icon: FileCheck2, roles: [...] },
+      // ── รายงานที่ซ่อนไว้ — เจ้าของให้คงรายงานไว้ก่อน (17/11/2569) ──
       // { key: 'incentive-report', label: 'Incentive & Retained', sub: 'สัดส่วน · สะสมบริษัท', icon: Award, roles: [...] },
       // { key: 'budget-report', label: 'Budget Expenditure', sub: 'งบจัดสรร · เบิกจ่าย', icon: BarChart3, roles: [...] },
       { key: 'giveaway',   label: 'ของแถม',      sub: 'งบของแถมรายภาค · เบิก', icon: Gift, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING', 'SALES'] },
@@ -117,7 +114,7 @@ const NAV_GROUPS: NavGroup[] = [
     icon: BarChart3,
     color: 'text-purple-600',
     items: [
-      { key: 'reports',    label: 'รายงาน',      sub: 'ศูนย์รายงาน 23 ฉบับ · Export', icon: BarChart3, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'APPROVER', 'MANAGER'] },
+      { key: 'reports',    label: 'รายงาน',      sub: 'ศูนย์รายงาน · Export', icon: BarChart3, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'APPROVER', 'MANAGER'] },
     ],
   },
   {
@@ -127,7 +124,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: 'master',     label: 'ข้อมูลหลัก',  sub: 'สินค้า · ลูกค้า · ต้นทุน & ราคาขาย', icon: Database, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING'] },
       { key: 'policy',     label: 'นโยบายอนุมัติ', sub: 'อำนาจอนุมัติ · วงเงิน', icon: ScrollText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
-      // { key: 'governance', label: 'กำกับข้อมูล',  sub: 'เครดิต · สต๊อก · PDPA',  icon: Landmark, roles: [...] },
       { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · Watchdog · Alert', icon: Activity, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
       { key: 'app-settings', label: 'App Settings', sub: 'นโยบายระบบ · ผลตรวจรับ · แม่แบบรายงาน', icon: Settings, roles: ['ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'] },
       { key: 'admin',      label: 'ผู้ใช้งานและสิทธิ์', sub: 'จัดการผู้ใช้งาน · บทบาท · ผังองค์กร · ผู้อนุมัติ', icon: Users, roles: ['ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'] },
@@ -599,7 +595,6 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'papertrail' && <PaperTrailPage />}
                 {activePortal === 'rebate'     && <RebatePage />}
                 {activePortal === 'rebate-plan' && <RebatePlanPage />}
-                {/* ปิดไว้ 03/09/2569 — CnRebatePage */}
                 {activePortal === 'control-ticket' && <ControlTicketPage />}
                 {activePortal === 'voucher'    && <VoucherPage />}
                 {activePortal === 'reports'    && <ReportsPage />}
@@ -612,7 +607,6 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
 
                 {activePortal === 'policy'     && <ApprovalPolicyPage />}
                 {activePortal === 'stock'      && !!role && STOCK_ROLES.includes(role) && <OperationalStockPage />}
-                {/* ปิดไว้ 03/09/2569 — DataGovernancePage */}
                 {activePortal === 'ops'        && <OpsStatusPage />}
                 {activePortal === 'giveaway'   && <GiveawayPage />}
                 {activePortal === 'aging'      && <AgingPage />}
