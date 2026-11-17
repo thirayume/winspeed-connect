@@ -12,6 +12,7 @@ function setup({grant=true,sourceOwner='123',owner='123'}={}){
     if(text.includes('FROM dbo.WFCoupon c WITH (HOLDLOCK)'))return {recordset:[{OwnerCustId:sourceOwner,GoodID:3}]};
     if(text.includes('FROM wf.CouponBeneficiary WITH'))return {recordset:grant?[{Id:5}]:[]};
     if(text.includes('FROM wf.ControlTicketOverlay WITH (UPDLOCK,HOLDLOCK)'))return {recordset:[]};
+    if(text.includes('LEFT JOIN wf.CouponExpiry x WITH (NOLOCK)'))return {recordset:[]};
     if(text.includes('SELECT TOP 1 1 AS LegacyConflict'))return {recordset:[]};
     if(text.includes('SELECT TOP 1 1 AS SourceConflict'))return {recordset:[]};
     throw Error('UNEXPECTED_QUERY');

@@ -2,11 +2,11 @@
 const test=require('node:test'),assert=require('node:assert/strict'),h=require('./helpers/route-harness.cjs');
 const db=h.installDbStub(({text})=>/COL_LENGTH\('wf\.ChangeEvent'/.test(text)?[{HasCol:1}]:[]);
 const {createNativeCutAuthorization}=require('../services/coupon-native-authorization');
-let state,calls,flags;
+let state,calls,flags,expiryChecks;
 const actor={sub:4,actorSub:9,role:'MANAGER',actorRole:'ADMIN',isImpersonating:true};
 const payload={actor,docuNo:'QA-116',expiresAt:'2099-01-01T00:00:00Z',reason:'verified authorization evidence',dataWindow:{businessDate:'2026-01-01'},items:[{couponId:42,reservationId:12,qty:0.1},{couponId:41,reservationId:11,qty:0.2}]};
 function fixture(){
- state={headers:[],docs:[],lines:[],audits:[]};calls=[];flags={};
+ state={headers:[],docs:[],lines:[],audits:[]};calls=[];flags={};expiryChecks=[];
  const tx={request(){const args={};return {input(k,t,v){args[k]=v;return this;},async query(text){
   calls.push({text,args:{...args}});
   const legacyRecovery=require('./helpers/native-hold-legacy.cjs')(text);
@@ -31,7 +31,7 @@ function fixture(){
   assertNativeBridgeReady:async actual=>{assert.equal(actual,tx);},
   couponVisible:async()=>!flags.scopeDenied,reservationsVisible:async()=>!flags.scopeDenied,
   assertNoActiveAuthorization:async(actual,rid)=>{assert.equal(actual,tx);if(flags.closedEvidence&&rid===11)throw Object.assign(Error('held'),{code:'COUPON_NATIVE_AUTH_RESERVATION_HELD'});},
-  couponService:{assertControlTicketUnexpired:async()=>{if(flags.expired)throw Error('COUPON_EXPIRED');},assertCouponReservationCoverage:async()=>{}},
+  couponService:{checkTicketUseExpiry:async(actual,cid,ctx)=>{assert.equal(actual,tx);if(flags.expiryInvalid)throw Object.assign(Error('COUPON_EXPIRY_INVALID'),{code:'COUPON_EXPIRY_INVALID'});expiryChecks.push({cid,...ctx});return flags.expired?{expired:true,warning:'expired'}:null;},assertCouponReservationCoverage:async()=>{}},
   logChangeEvent:async(actual,event)=>{assert.equal(actual,tx);if(flags.auditFailed)throw Error('AUDIT_FAILED');state.audits.push(event);},
   wfTransaction:async fn=>{const before=structuredClone(state);try{return await fn(tx);}catch(e){state=before;throw e;}}};
  return deps;
@@ -55,7 +55,7 @@ test('shared audit writer preserves distinct Access As identities in the same tr
  assert.equal(state.audits.length,1);assert.equal(state.audits[0].userId,'4');assert.equal(state.audits[0].actorUserId,'9');
 });
 test('scope, prior use, cutoff and audit failures leave no authorization',async()=>{
- for(const flag of ['secondary','stale','scopeDenied','document','nativeAudit','auditReadError','docActive','reservationActive','expired','auditFailed']){
+ for(const flag of ['secondary','stale','scopeDenied','document','nativeAudit','auditReadError','docActive','reservationActive','expiryInvalid','auditFailed']){
   const deps=fixture();flags[flag]=true;await assert.rejects(createNativeCutAuthorization(payload,deps));assert.deepEqual(state,{headers:[],docs:[],lines:[],audits:[]});
  }
  const deps=fixture();flags.window='2027-01-01';await assert.rejects(createNativeCutAuthorization(payload,deps),{code:'COUPON_NATIVE_AUTH_WINDOW_CHANGED'});
@@ -94,4 +94,9 @@ test('identity, actor permissions, duplicate entries and unsafe quantities fail 
   const deps=fixture();await assert.rejects(createNativeCutAuthorization(invalid,deps));assert.deepEqual(state,{headers:[],docs:[],lines:[],audits:[]});
  }
  const deps=fixture();deps.hasColumn=async()=>false;await assert.rejects(createNativeCutAuthorization(payload,deps),{code:'COUPON_NATIVE_AUTH_AUDIT_UNAVAILABLE'});
+});
+test('an expired ticket is still authorized; each line is checked with its reservation for the incident record',async()=>{
+ const deps=fixture();flags.expired=true;const result=await createNativeCutAuthorization(payload,deps);
+ assert.equal(result.lineCount,2);assert.deepEqual(expiryChecks.map(x=>[x.cid,x.reservationId]).sort(),[[41,11],[42,12]]);
+ assert.ok(expiryChecks.every(x=>/116/.test(x.stage)));
 });

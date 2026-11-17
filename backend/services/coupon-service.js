@@ -44,11 +44,17 @@ async function requireCouponAuditActor(userId) {
     throw Object.assign(new Error('COUPON_ACTOR_AUDIT_UNAVAILABLE'), { status: 503 });
 }
 
-// The explicit Control Ticket date is authoritative. The separately calculated
-// 180-day coupon date is only a reminder and must never block a transaction.
-// Hold the overlay lock through reservation/bill/posting so an expiry edit cannot
-// race the decision. No legacy Strict Mode or override bypasses an expired date.
-async function assertControlTicketUnexpired(tx, couponId) {
+// Ticket life (owner policy, 17 November 2026): a fertilizer ticket lives TICKET_EXPIRY_DEFAULT_DAYS (standard 90)
+// from the date of its sales order (104). A date set on the control ticket, or else on the ticket itself, replaces
+// the standard. An expired ticket may still be used: the caller shows the warning and one TICKET_USED_EXPIRED
+// incident is recorded per reservation, inside the same transaction. Duplicate or unreadable dates still fail
+// closed. The control-ticket row stays locked through reservation/bill/posting so an edit cannot race the check.
+const DEFAULT_TICKET_LIFE_DAYS = 90;
+const TICKET_EXPIRY_SOURCE_LABEL = Object.freeze({
+  CONTROL_TICKET: 'วันที่กำหนดบนตั๋วคุม', TICKET: 'วันที่กำหนดบนตั๋ว', DEFAULT: 'อายุมาตรฐาน',
+});
+
+async function readTicketUseExpiry(tx, couponId) {
   const id = Number(couponId);
   if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647)
     throw Object.assign(new Error('ไม่สามารถยืนยันรหัสตั๋วได้'), { code: 'COUPON_ID_INVALID', status: 400 });
@@ -56,14 +62,57 @@ async function assertControlTicketUnexpired(tx, couponId) {
     SELECT ExpiryDate FROM wf.ControlTicketOverlay WITH (UPDLOCK,HOLDLOCK) WHERE DocuId=@cid
   `)).recordset || [];
   if (rows.length > 1) throw Object.assign(new Error('ข้อมูลวันหมดอายุตั๋วซ้ำ กรุณาติดต่อผู้ดูแล'), { code: 'COUPON_EXPIRY_AMBIGUOUS', status: 409 });
-  const raw = rows[0]?.ExpiryDate;
-  if (raw == null || raw === '') return;
-  const { normalizeDateString, isValidDateString, getBangkokDateString } = require('./so-pickup-policy');
-  const date = normalizeDateString(raw, { isWallClock: true });
-  if (!date || !isValidDateString(date))
-    throw Object.assign(new Error('ไม่สามารถตรวจวันหมดอายุของตั๋วได้'), { code: 'COUPON_EXPIRY_INVALID', status: 409 });
-  if (date < getBangkokDateString())
-    throw Object.assign(new Error(`ตั๋วหมดอายุแล้วเมื่อ ${date}`), { code: 'COUPON_EXPIRED', status: 400 });
+  const { normalizeDateString, isValidDateString, getBangkokDateString, addBangkokCalendarDays } = require('./so-pickup-policy');
+  const readDate = raw => {
+    if (raw == null || raw === '') return null;
+    const date = normalizeDateString(raw, { isWallClock: true });
+    if (!date || !isValidDateString(date))
+      throw Object.assign(new Error('ไม่สามารถตรวจวันหมดอายุของตั๋วได้'), { code: 'COUPON_EXPIRY_INVALID', status: 409 });
+    return date;
+  };
+  const source = (await tx.request().input('cid', sql.Int, id).query(`
+    SELECT TOP 1 c.DocuID, RTRIM(c.CouponNo) AS CouponNo, CONVERT(VARCHAR(10), h.DocuDate, 120) AS IssueDate,
+      CONVERT(VARCHAR(10), x.ExpiryDate, 120) AS TicketExpiryDate,
+      (SELECT TOP 1 s.SettingValue FROM wf.SystemSetting s WITH (NOLOCK) WHERE s.SettingKey = 'TICKET_EXPIRY_DEFAULT_DAYS') AS DefaultDays
+    FROM dbo.WFCoupon c WITH (NOLOCK)
+    LEFT JOIN dbo.SOHD h WITH (NOLOCK) ON h.SOID = c.DocuID
+    LEFT JOIN wf.CouponExpiry x WITH (NOLOCK) ON x.CouponId = c.CouponID
+    WHERE c.CouponID = @cid`)).recordset?.[0] || {};
+  const days = Number(source.DefaultDays);
+  const lifeDays = Number.isSafeInteger(days) && days > 0 ? days : DEFAULT_TICKET_LIFE_DAYS;
+  let expiryDate = readDate(rows[0]?.ExpiryDate), kind = 'CONTROL_TICKET';
+  if (!expiryDate) { expiryDate = readDate(source.TicketExpiryDate); kind = 'TICKET'; }
+  if (!expiryDate && source.IssueDate) {
+    const issued = normalizeDateString(source.IssueDate, { isWallClock: true });
+    expiryDate = issued ? addBangkokCalendarDays(issued, lifeDays) : null;
+    kind = 'DEFAULT';
+  }
+  return {
+    couponId: id, couponNo: source.CouponNo || null, docuId: source.DocuID ?? null, lifeDays,
+    expiryDate: expiryDate || null, source: expiryDate ? kind : null,
+    expired: Boolean(expiryDate) && expiryDate < getBangkokDateString(),
+  };
+}
+
+/**
+ * Checks a ticket at the moment it is used. Never blocks for age: returns null for a ticket in date, or the
+ * expiry with a warning for an expired one, and then records the incident when the reservation is known.
+ */
+async function checkTicketUseExpiry(tx, couponId, { reservationId = null, stage = '', qty = null } = {}) {
+  const expiry = await readTicketUseExpiry(tx, couponId);
+  if (!expiry.expired) return null;
+  const how = expiry.source === 'DEFAULT'
+    ? `${TICKET_EXPIRY_SOURCE_LABEL.DEFAULT} ${expiry.lifeDays} วัน`
+    : TICKET_EXPIRY_SOURCE_LABEL[expiry.source];
+  const warning = `ตั๋ว ${expiry.couponNo || expiry.couponId} หมดอายุแล้วเมื่อ ${expiry.expiryDate} (${how}) — ใช้ได้ตามนโยบาย แต่ระบบบันทึกเป็นเหตุการณ์ผิดปกติ`;
+  if (reservationId != null) {
+    const parts = [warning, stage ? `ขั้น: ${stage}` : null, qty != null ? `${qty} ตัน` : null, `รายการจอง ${reservationId}`];
+    await require('./rule-incidents').recordIncidentTx(tx, {
+      key: `TICKET_USED_EXPIRED:${reservationId}`, type: 'TICKET_USED_EXPIRED',
+      soid: expiry.docuId, docuNo: expiry.couponNo, detail: parts.filter(Boolean).join(' · '),
+    });
+  }
+  return { ...expiry, warning };
 }
 
 // Old bill lines never held a CouponReservation. Native remaining quantity can
@@ -253,7 +302,7 @@ async function getCouponsForCustomer(customerId, options = {}) {
   const sourceConflicts = has139 ? await require('./coupon-settlement-read-hold').findSettlementSourceConflicts(wfQuery,rows.map(r=>r.couponId),settlementSource) : new Set();
 
   // Read system settings for expiry rules (R9-5)
-  let defaultDays = 180;
+  let defaultDays = 90;
   let warningLeadDays = 30;
   try {
     const s = await wfQuery(`
@@ -262,11 +311,11 @@ async function getCouponsForCustomer(customerId, options = {}) {
       WHERE SettingKey IN ('TICKET_EXPIRY_DEFAULT_DAYS', 'TICKET_EXPIRY_WARNING_LEAD_DAYS')
     `);
     for (const row of s.recordset || []) {
-      if (row.SettingKey === 'TICKET_EXPIRY_DEFAULT_DAYS') defaultDays = Number(row.SettingValue) || 180;
+      if (row.SettingKey === 'TICKET_EXPIRY_DEFAULT_DAYS') defaultDays = Number(row.SettingValue) || 90;
       if (row.SettingKey === 'TICKET_EXPIRY_WARNING_LEAD_DAYS') warningLeadDays = Number(row.SettingValue) || 30;
     }
   } catch {
-    // Fallback to 180 and 30
+    // Fallback to 90 and 30
   }
 
   // Fetch custom expiry dates if table exists
@@ -364,12 +413,16 @@ async function getCouponsForCustomer(customerId, options = {}) {
     r.isExpired = daysLeft !== null ? daysLeft < 0 : false;
     r.isExpiringSoon = daysLeft !== null ? (daysLeft >= 0 && daysLeft <= warningLeadDays) : false;
     r.warningLeadDays = warningLeadDays;
-    // The calculated 180-day value above is a reminder only. The explicit
-    // Control Ticket date is the separate source for eligibility decisions.
+    // The date that counts when the ticket is used (same order as readTicketUseExpiry): the control-ticket date,
+    // else the date set on the ticket, else the standard life. Expired stays usable with a warning (owner, 17 Nov).
     const control = evaluateTicketExpiry(r.controlExpiryDate, null, warningLeadDays, false, false);
     r.controlExpiryDate = control.expiryDate;
     r.controlExpiryExpired = control.isExpired;
     r.controlExpiryOverride = Boolean(r.controlExpiryOverride);
+    r.useExpiryDate = control.expiryDate || r.expiryDate;
+    r.useExpirySource = control.expiryDate ? 'CONTROL_TICKET' : (r.expiryDate ? source : null);
+    r.useExpired = control.expiryDate ? control.isExpired : r.isExpired;
+    r.ticketLifeDays = defaultDays;
 
     // Attach active beneficiaries for the owner
     const allOwnerBenes = beneficiariesMap.get(String(r.ownerCustId || '')) || [];
@@ -562,7 +615,7 @@ async function reserveCoupon({
       throw Object.assign(new Error(couponBookMismatchMessage(couponRow.CouponNo, billPrefix)), { status: 400, code: 'COUPON_BOOK_MISMATCH' });
     }
 
-    await assertControlTicketUnexpired(tx, cId);
+    const ticketExpiry = await checkTicketUseExpiry(tx, cId);
     await assertNoUnreservedLegacyReferences(tx, couponRow.CouponNo);
     await require('./coupon-settlement-source-fence').assertSettledSourcesUnchanged(tx,cId);
 
@@ -612,13 +665,15 @@ async function reserveCoupon({
           { status: 409, code: 'COUPON_RESERVATION_REPLAY_CLOSED' });
       }
       await assertCouponReservationCoverage(tx,cId);
+      if (ticketExpiry) await checkTicketUseExpiry(tx, cId, { reservationId: existing.Id, stage: 'จองตั๋ว', qty: Number(existing.ReservedQty) });
       return {
         id: existing.Id,
         couponId: existing.CouponId,
         couponNo: existing.CouponNo,
         reservedQty: Number(existing.ReservedQty),
         status: existing.Status,
-        idempotent: true
+        idempotent: true,
+        ...(ticketExpiry ? { expiryWarning: ticketExpiry.warning, expiryDate: ticketExpiry.expiryDate } : {}),
       };
     }
 
@@ -692,7 +747,9 @@ async function reserveCoupon({
       afterJson: { couponId: cId, carrierSoId: carrierSoId || 'DRAFT', beneficiaryCustId: String(beneficiaryCustId), reservedQty: qty },
       reasonCode: 'COUPON_RESERVATION', userId: String(userId),
     });
+    if (ticketExpiry) await checkTicketUseExpiry(tx, cId, { reservationId: newId, stage: 'จองตั๋ว', qty });
     return {
+      ...(ticketExpiry ? { expiryWarning: ticketExpiry.warning, expiryDate: ticketExpiry.expiryDate } : {}),
       id: newId,
       couponId: cId,
       couponNo: couponRow.CouponNo,
@@ -1670,7 +1727,9 @@ async function validateAndLockCouponReservations(tx, lines, orderCustId, targetS
     }
 
     await require('./coupon-authorization-hold').assertNoActiveAuthorization(tx,resId);
-    await assertControlTicketUnexpired(tx, Number(resRow.CouponId));
+    const ticketExpiry = await checkTicketUseExpiry(tx, Number(resRow.CouponId),
+      { reservationId: resRow.Id, stage: 'ผูกตั๋วกับบิล', qty: line.qtyTon ?? null });
+    if (ticketExpiry) line._ticketExpiryWarning = ticketExpiry.warning;
     await assertNoUnreservedLegacyReferences(tx, resRow.CouponNo);
     await assertCouponReservationCoverage(tx, Number(resRow.CouponId));
 
@@ -2539,7 +2598,7 @@ async function validateReservationBeforePosting({
     throw Object.assign(new Error(`ไม่พบคูปอง ID ${r.CouponId} ในระบบ`), { code: 'COUPON_NOT_FOUND', status: 404 });
   }
   await require('./coupon-settlement-source-fence').assertSettledSourcesUnchanged(tx, Number(couponRecord.CouponID));
-  await assertControlTicketUnexpired(tx, Number(couponRecord.CouponID));
+  const ticketExpiry = await checkTicketUseExpiry(tx, Number(couponRecord.CouponID), { reservationId: r.Id, stage: 'บันทึกตัดตั๋ว' });
   if (r.BeneficiaryCustId && r.OwnerCustId && String(r.BeneficiaryCustId).trim() !== String(r.OwnerCustId).trim() &&
       (String(couponRecord.ActualOwnerCustId || '')!==String(r.OwnerCustId) || Number(couponRecord.GoodID)!==Number(r.GoodId)))
     throw Object.assign(new Error('ไม่สามารถยืนยันเจ้าของหรือสินค้าของตั๋วร่วม'),{code:'COUPON_SOURCE_CHANGED',status:409});
@@ -2608,6 +2667,7 @@ async function validateReservationBeforePosting({
 
   // R3-05: Warnings aggregation
   const warnings = [];
+  if (ticketExpiry?.warning) warnings.push(ticketExpiry.warning);
   if (expiryEval?.warning) {
     warnings.push(expiryEval.warning);
   }
@@ -3058,7 +3118,7 @@ async function getCouponExpiryInfo(couponId) {
 
   if (!cp) return null;
 
-  let defaultDays = 180;
+  let defaultDays = 90;
   let warningLeadDays = 30;
   try {
     const s = await wfQuery(`
@@ -3067,11 +3127,11 @@ async function getCouponExpiryInfo(couponId) {
       WHERE SettingKey IN ('TICKET_EXPIRY_DEFAULT_DAYS', 'TICKET_EXPIRY_WARNING_LEAD_DAYS')
     `);
     for (const row of s.recordset || []) {
-      if (row.SettingKey === 'TICKET_EXPIRY_DEFAULT_DAYS') defaultDays = Number(row.SettingValue) || 180;
+      if (row.SettingKey === 'TICKET_EXPIRY_DEFAULT_DAYS') defaultDays = Number(row.SettingValue) || 90;
       if (row.SettingKey === 'TICKET_EXPIRY_WARNING_LEAD_DAYS') warningLeadDays = Number(row.SettingValue) || 30;
     }
   } catch {
-    // Fallback to 180 and 30 if wf.SystemSetting does not exist
+    // Fallback to 90 and 30 if wf.SystemSetting does not exist
   }
 
   let expiryDate = null;
@@ -3160,7 +3220,8 @@ module.exports = {
   settleCouponReservations,
   manualSettleCouponCut,
   validateAndLockCouponReservations,
-  assertControlTicketUnexpired,
+  readTicketUseExpiry,
+  checkTicketUseExpiry,
   assertCouponReservationCoverage,
 };
 

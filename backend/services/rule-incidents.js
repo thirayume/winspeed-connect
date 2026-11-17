@@ -16,7 +16,30 @@ const INCIDENT_TYPES = Object.freeze({
   SCALE_TONS_MISMATCH: { label: 'ตันในบันทึกชั่งไม่ตรงกับบิล', severity: 'WARN' },
   DELIVERY_ON_CANCELLED_BOOKING: { label: 'ออกใบสั่งขาย (104) จากใบสั่งจองที่ยกเลิกแล้ว', severity: 'HIGH' },
   INVOICE_BOOK_MISMATCH: { label: 'เล่มใบส่งของ (107) ไม่ตรงสายใบสั่งขาย (104)', severity: 'WARN' },
+  // Owner, 17 November 2026: an expired fertilizer ticket may still be used, but each use is recorded here.
+  TICKET_USED_EXPIRED: { label: 'ใช้ตั๋วปุ๋ยที่หมดอายุแล้ว', severity: 'WARN' },
 });
+
+const INSERT_INCIDENT_SQL = `
+    IF NOT EXISTS (SELECT 1 FROM wf.RuleIncident WITH (UPDLOCK, HOLDLOCK) WHERE IncidentKey = @key)
+      INSERT INTO wf.RuleIncident (IncidentKey, IncidentType, Severity, SOID, DocuNo, WghdId, Detail, OccurredAt)
+      VALUES (@key, @type, @sev, @soid, @docuNo, @wghdId, @detail, @occurredAt)`;
+
+/** Records an incident inside the caller's transaction, so it is kept only if the work it describes is kept. */
+async function recordIncidentTx(tx, { key, type, soid = null, docuNo = null, detail = null, occurredAt = new Date() }) {
+  const spec = INCIDENT_TYPES[type];
+  if (!spec) throw new Error(`Unknown incident type ${type}`);
+  await tx.request()
+    .input('key', sql.NVarChar(120), String(key).slice(0, 120))
+    .input('type', sql.VarChar(40), type)
+    .input('sev', sql.VarChar(10), spec.severity)
+    .input('soid', sql.Int, soid == null ? null : Number(soid))
+    .input('docuNo', sql.NVarChar(30), docuNo == null ? null : String(docuNo).slice(0, 30))
+    .input('wghdId', sql.Int, null)
+    .input('detail', sql.NVarChar(500), detail == null ? null : String(detail).slice(0, 500))
+    .input('occurredAt', sql.DateTime, occurredAt ? new Date(occurredAt) : new Date())
+    .query(INSERT_INCIDENT_SQL);
+}
 
 // WinSpeed writes this screen's row when a booking is approved (อนุมัติใบสั่งจอง (WF)).
 const APPROVAL_SCREEN = 2098003080;
@@ -146,4 +169,4 @@ async function detectIncidents() {
   await detectDocumentIncidents(start);
 }
 
-module.exports = { INCIDENT_TYPES, APPROVAL_SCREEN, recordIncident, detectIncidents, plateMatches, localToUtc };
+module.exports = { INCIDENT_TYPES, APPROVAL_SCREEN, recordIncident, recordIncidentTx, detectIncidents, plateMatches, localToUtc };

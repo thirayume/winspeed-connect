@@ -42,8 +42,8 @@ async function resolveTicketPolicy(asOfDate = null) {
     ? Math.max(0, parseInt(snapJson.CONTROL_TICKET_ALERT_DAYS, 10))
     : 7;
 
-  // The owner requires explicit expiry to block regardless of legacy settings.
-  const strictMode = true;
+  // Owner policy 17 Nov 2026: expiry never blocks; an expired ticket is warned and recorded as an incident.
+  const strictMode = false;
 
   // If resolving for current live operations (asOfDate is null), incorporate authoritative live SystemSetting
   if (!asOfDate) {
@@ -75,7 +75,7 @@ async function resolveTicketPolicy(asOfDate = null) {
  * Evaluate ticket expiry status (SO-04).
  * Rules:
  * - If expiryDate is null/empty/invalid -> UNKNOWN (never guess or use ValidDays)
- * - If expiryDate < today -> EXPIRED and blocked, regardless of legacy strict settings
+ * - If expiryDate < today -> EXPIRED: usable with a warning, recorded as an incident (owner, 17 Nov 2026)
  * - If today <= expiryDate <= today + alertDays -> NEAR_EXPIRY (warning, not blocked)
  * - If expiryDate > today + alertDays -> VALID
  */
@@ -99,19 +99,18 @@ function evaluateTicketExpiry(expiryDate, asOfDate = null, alertDays = 7, strict
   const daysRemaining = diffBangkokCalendarDays(normExpiry, todayStr);
 
   if (daysRemaining < 0) {
-    const error = `บล็อกการใช้ตั๋วคุม: ตั๋วหมดอายุแล้วเมื่อ ${normExpiry}`;
-
+    // Owner policy 17 Nov 2026: an expired ticket may still be used; the use is warned and recorded as an incident.
     return {
       status: 'EXPIRED',
       expiryDate: normExpiry,
       daysRemaining,
       isExpired: true,
       isNearExpiry: false,
-      blocked: true,
+      blocked: false,
       strictOverride: Boolean(strictOverride),
       label: 'หมดอายุแล้ว',
-      warning: null,
-      error,
+      warning: `ตั๋วคุมหมดอายุแล้วเมื่อ ${normExpiry} — ใช้ได้ตามนโยบาย แต่ระบบบันทึกเป็นเหตุการณ์ผิดปกติ`,
+      error: null,
       provenance: 'EXPLICIT_EXPIRED',
     };
   }
@@ -266,15 +265,8 @@ function evaluateTicketEligibility({
   // 3. Expiry checks (avail > 0)
   const isExpired = expiryEval?.status === 'EXPIRED';
   if (isExpired) {
-      return {
-        eligibility: 'BLOCKED',
-        status: 'BLOCKED',
-        isBlocked: true,
-        isSpendable: false,
-        reasons: [`ตั๋วคุมหมดอายุแล้วเมื่อ ${expiryEval.expiryDate}`],
-        warnings: [],
-        error: `ตั๋วหมดอายุแล้วเมื่อ ${expiryEval.expiryDate}`
-      };
+    // Owner policy 17 Nov 2026: usable, with a warning; the caller records the incident.
+    warnings.push(`ตั๋วคุมหมดอายุแล้วเมื่อ ${expiryEval.expiryDate} — ใช้ได้ตามนโยบาย แต่ระบบบันทึกเป็นเหตุการณ์ผิดปกติ`);
   } else if (expiryEval?.status === 'NEAR_EXPIRY') {
     warnings.push(`ตั๋วคุมใกล้หมดอายุในอีก ${expiryEval.daysRemaining} วัน (${expiryEval.expiryDate})`);
   }

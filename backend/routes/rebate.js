@@ -2816,7 +2816,7 @@ router.get('/coupons-worklist', async (req, res) => {
     let where = 'WHERE c.RemaQty > 0';
     if (scopeEmpIds) where += empInClause('hd.EmpID', scopeEmpIds, inputs);
 
-    let defaultDays = 180;
+    let defaultDays = 90;
     let warningLeadDays = 30;
     try {
       const s = await wfQuery(`
@@ -2825,7 +2825,7 @@ router.get('/coupons-worklist', async (req, res) => {
         WHERE SettingKey IN ('TICKET_EXPIRY_DEFAULT_DAYS', 'TICKET_EXPIRY_WARNING_LEAD_DAYS')
       `);
       for (const row of s.recordset || []) {
-        if (row.SettingKey === 'TICKET_EXPIRY_DEFAULT_DAYS') defaultDays = Number(row.SettingValue) || 180;
+        if (row.SettingKey === 'TICKET_EXPIRY_DEFAULT_DAYS') defaultDays = Number(row.SettingValue) || 90;
         if (row.SettingKey === 'TICKET_EXPIRY_WARNING_LEAD_DAYS') warningLeadDays = Number(row.SettingValue) || 30;
       }
     } catch { /* fallback */ }
@@ -2940,7 +2940,7 @@ router.get('/coupons/:custId', async (req, res) => {
       }
     }
 
-    let defaultDays = 180;
+    let defaultDays = 90;
     let warningLeadDays = 30;
     try {
       const s = await wfQuery(`
@@ -2949,7 +2949,7 @@ router.get('/coupons/:custId', async (req, res) => {
         WHERE SettingKey IN ('TICKET_EXPIRY_DEFAULT_DAYS', 'TICKET_EXPIRY_WARNING_LEAD_DAYS')
       `);
       for (const row of s.recordset || []) {
-        if (row.SettingKey === 'TICKET_EXPIRY_DEFAULT_DAYS') defaultDays = Number(row.SettingValue) || 180;
+        if (row.SettingKey === 'TICKET_EXPIRY_DEFAULT_DAYS') defaultDays = Number(row.SettingValue) || 90;
         if (row.SettingKey === 'TICKET_EXPIRY_WARNING_LEAD_DAYS') warningLeadDays = Number(row.SettingValue) || 30;
       }
     } catch { /* fallback */ }

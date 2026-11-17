@@ -145,7 +145,7 @@ export function VoucherPage() {
               {activeTab === 'hierarchy' && hierarchyView === 'coupon'   && `Voucher ของ ${selCust?.CustName}`}
             </h1>
             <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
-              {activeTab === 'worklist' && `พบตั๋วใกล้หมดอายุ/หมดอายุ ${worklist.length} รายการ (ระบบคำนวณอายุและสมาชิกอัตโนมัติ)`}
+              {activeTab === 'worklist' && `พบตั๋วใกล้หมดอายุ/หมดอายุ ${worklist.length} รายการ (อายุมาตรฐาน 90 วัน · หมดอายุแล้วยังใช้ได้ แต่ระบบบันทึกเหตุการณ์ผิดปกติ)`}
               {activeTab === 'hierarchy' && hierarchyView === 'summary' && 'ยอด Voucher คงค้างจาก Winspeed (WFCoupon) · แยกตามพนักงานขาย'}
               {activeTab === 'hierarchy' && hierarchyView === 'customer' && `${customers.length} ลูกค้า · คลิกเพื่อดูรายการ voucher`}
               {activeTab === 'hierarchy' && hierarchyView === 'coupon' && `${coupons.length} ใบคงค้าง`}
@@ -277,7 +277,7 @@ export function VoucherPage() {
                         <td className="px-4 py-2.5 text-center whitespace-nowrap">
                           {w.daysLeft <= 0 ? (
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
-                              ⚠️ หมดอายุแล้ว
+                              ⚠️ หมดอายุแล้ว (ยังใช้ได้)
                             </span>
                           ) : w.daysLeft <= 30 ? (
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">

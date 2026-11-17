@@ -51,6 +51,13 @@ async function getExpiringCoupons(warningDays = 30) {
 
     const now = Date.now();
     const results = [];
+    // Standard ticket life from the setting (owner policy 17 Nov 2026: 90 days).
+    let lifeDays = 90;
+    try {
+      const st = await wfQuery(`SELECT TOP 1 SettingValue FROM wf.SystemSetting WITH (NOLOCK) WHERE SettingKey = 'TICKET_EXPIRY_DEFAULT_DAYS'`);
+      const v = Number(st.recordset?.[0]?.SettingValue);
+      if (Number.isSafeInteger(v) && v > 0) lifeDays = v;
+    } catch { /* keep the standard */ }
 
     for (const row of r.recordset || []) {
       let expiryDate = row.customExpiryDate ? new Date(row.customExpiryDate) : null;
@@ -58,7 +65,7 @@ async function getExpiringCoupons(warningDays = 30) {
 
       if (!expiryDate && row.sourceDocuDate) {
         const issueDate = new Date(row.sourceDocuDate);
-        expiryDate = new Date(issueDate.getTime() + 180 * 24 * 60 * 60 * 1000);
+        expiryDate = new Date(issueDate.getTime() + lifeDays * 24 * 60 * 60 * 1000);
       }
 
       if (!expiryDate) continue;

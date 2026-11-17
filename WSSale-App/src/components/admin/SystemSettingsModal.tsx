@@ -598,8 +598,8 @@ export function SystemSettingsModal({
                   </div>
 
                   <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl">
-                    <div className="font-bold text-gray-800">บล็อกตั๋วหลังวันหมดอายุที่กำหนด</div>
-                    <div className="text-[11px] text-gray-500">ใช้ตั๋วได้ถึงวันหมดอายุ และบล็อกตั้งแต่วันถัดไปเสมอ</div>
+                    <div className="font-bold text-gray-800">ตั๋วที่หมดอายุแล้ว</div>
+                    <div className="text-[11px] text-gray-500">อายุมาตรฐาน 90 วันนับจากวันที่ใบสั่งขาย (ถ้าไม่กำหนดวันบนตั๋ว) · หมดอายุแล้วยังใช้ได้ แต่แจ้งเตือนและบันทึกเป็นเหตุการณ์ผิดปกติ (นโยบาย 17/11/2569)</div>
                   </div>
                 </div>
               )}

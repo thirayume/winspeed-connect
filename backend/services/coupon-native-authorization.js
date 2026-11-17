@@ -85,7 +85,7 @@ async function createNativeCutAuthorization({actor,docuNo,expiresAt,reason,items
         qty:{type:sql.Decimal(12,4),value:line.qtyUnits/10000},expires:{type:sql.DateTime2,value:expires}})).recordset||[];
       if(rows.length!==1)fail('COUPON_NATIVE_AUTH_RESERVATION_CHANGED');
       if(!await couponVisible(actor,line.couponId,query))fail('COUPON_NATIVE_AUTH_NOT_FOUND',404);
-      await coupons.assertControlTicketUnexpired(tx,line.couponId);
+      await coupons.checkTicketUseExpiry(tx,line.couponId,{reservationId:line.reservationId,stage:'อนุมัติตัดตั๋ว (116)'});
       await coupons.assertCouponReservationCoverage(tx,line.couponId);
     }
     if(!await reservationsVisible(actor,lines.map(x=>x.reservationId),query))fail('COUPON_NATIVE_AUTH_NOT_FOUND',404);
