@@ -21,6 +21,19 @@ const denied = [undefined, {}, { ...r740, DbName: 'dbwins_worldfert9' },
   { ...r740, ServerName: local.ServerName }, { ...local, DbId: 8 },
   { ...local, DbName: r740.DbName }, { ...r740, DbName: 'dbwins_worldfert9-uat-other' }];
 
+test('fz8 native writes require the isolated runner and exact SQL identity', () => {
+  const target = { ...r740, DbName: 'dbwins_worldfert9_uat_fz8', DbId: 15 };
+  const env = {
+    NATIVE_FZ8_FULL_LOOP: 'true', ONPREM_DB_NAME: target.DbName, ONPREM_SWITCHABLE_DATABASES: target.DbName,
+    ONPREM_TARGET_KIND: 'uat', ONPREM_CONNECTION_PROFILES_DISABLE: 'true', DISABLE_BACKGROUND_WORKERS: 'true',
+  };
+  assert.equal(isInitialNativeUatTarget(target, {}), false);
+  assert.equal(isInitialNativeUatTarget(target, env), true);
+  assert.equal(isInitialNativeUatTarget({ ...target, DbId: 16 }, env), false);
+  assert.equal(isInitialNativeUatTarget({ ...target, DbName: 'dbwins_worldfert9' }, env), false);
+  assert.equal(isInitialNativeUatTarget(target, { ...env, ONPREM_SWITCHABLE_DATABASES: target.DbName + ',dbwins_worldfert2' }), false);
+  assert.equal(isInitialNativeUatTarget(target, { ...env, REBATE_POOL_103_ENABLED: 'true' }), false);
+});
 test('only the two exact verified UAT tuples are accepted, including switched databases', () => {
   assert.equal(isInitialNativeUatTarget(local), true);
   assert.equal(isInitialNativeUatTarget(r740), true);

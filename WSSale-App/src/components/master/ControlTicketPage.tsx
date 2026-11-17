@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Ticket, RefreshCw, Search, ChevronLeft, ChevronRight, Truck, ArrowDownToLine, Calendar, AlertTriangle, AlertCircle, CheckCircle2, HelpCircle, GitFork, Edit3, Info, X } from 'lucide-react';
 import {
   fetchControlTickets,
@@ -18,6 +18,8 @@ export function ControlTicketPage() {
   const [tickets, setTickets] = useState<any[]>([]);
   const [alerts, setAlerts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const loadRequest = useRef(0);
   const [q, setQ] = useState('');
   const [tab, setTab] = useState<'ACTIVE' | 'RESERVED_FULL' | 'HISTORY' | 'PENDING' | 'ALERTS' | 'UNKNOWN'>('ACTIVE');
   const [page, setPage] = useState(1);
@@ -28,6 +30,7 @@ export function ControlTicketPage() {
   const [lines, setLines] = useState<Line[]>([]);
   const [draws, setDraws] = useState<ControlTicketDraw[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [expiryNotice, setExpiryNotice] = useState('');
 
   // Trace Modal state
   const [traceModal, setTraceModal] = useState<{ isOpen: boolean; loading: boolean; data: any | null }>({
@@ -60,7 +63,9 @@ export function ControlTicketPage() {
   });
 
   const load = useCallback(async () => {
+    const request = ++loadRequest.current;
     setLoading(true);
+    setLoadError('');
     try {
       const [ticketResp, alertData] = await Promise.all([
         fetchControlTickets({
@@ -72,6 +77,7 @@ export function ControlTicketPage() {
         }),
         fetchControlTicketAlerts().catch(() => []),
       ]);
+      if (request !== loadRequest.current) return;
       if (ticketResp && ticketResp.data) {
         setTickets(ticketResp.data);
         setTotalCount(ticketResp.total);
@@ -83,9 +89,17 @@ export function ControlTicketPage() {
       }
       setAlerts(alertData || []);
     } catch (e) {
-      console.error(e);
+      if (request !== loadRequest.current) return;
+      const code = (e as { data?: { code?: string } })?.data?.code;
+      setTickets([]);
+      setTotalCount(0);
+      setTotalPages(1);
+      setLoadError(code === 'COUPON_NATIVE_EDIT_HOLD_REVIEW_REQUIRED' || code === 'COUPON_RECOVERY_REVIEW_REQUIRED'
+        ? 'รายการคืนยอดตั๋วอยู่ระหว่างตรวจสอบ กรุณาตรวจคิวใบขนในหน้ากระทบยอดก่อนโหลดอีกครั้ง'
+        : 'โหลดรายการตั๋วคุมไม่สำเร็จ กรุณาลองใหม่');
+    } finally {
+      if (request === loadRequest.current) setLoading(false);
     }
-    setLoading(false);
   }, [tab, q, page, pageSize]);
 
   useEffect(() => {
@@ -143,13 +157,14 @@ export function ControlTicketPage() {
     setEditModal(prev => ({ ...prev, saving: true, error: null }));
     try {
       const exactId = editModal.ticket.exactId || editModal.ticket.CouponID || editModal.ticket.SOID;
-      await updateControlTicketExpiry(editModal.ticket.CouponNo || editModal.ticket.DocuNo, {
+      const result = await updateControlTicketExpiry(editModal.ticket.CouponNo || editModal.ticket.DocuNo, {
         exactId: exactId ? Number(exactId) : undefined,
         expiryDate: editModal.isUnknown ? null : editModal.expiryDate,
         strictOverride: editModal.strictOverride,
         reasonCode: editModal.reasonCode,
         reasonText: editModal.reasonText,
       });
+      setExpiryNotice(result.alertsPending ? 'บันทึกวันหมดอายุแล้ว แต่ยังปรับปรุงรายการแจ้งเตือนไม่สำเร็จ กรุณาแจ้งผู้ดูแลระบบ' : '');
       setEditModal(prev => ({ ...prev, isOpen: false, saving: false }));
       load();
     } catch (err: any) {
@@ -166,6 +181,7 @@ export function ControlTicketPage() {
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
+      {expiryNotice && <div role="status" className="mx-4 mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">{expiryNotice}</div>}
       {/* Header */}
       <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -291,12 +307,14 @@ export function ControlTicketPage() {
                   className="flex-1 text-sm outline-none bg-transparent"
                 />
               </div>
-              <span className="text-xs text-gray-400 font-medium">{totalCount} ตั๋ว</span>
+              {!loading && !loadError && <span className="text-xs text-gray-400 font-medium">{totalCount} ตั๋ว</span>}
             </div>
             {loading ? (
               <div className="py-16 flex justify-center">
                 <RefreshCw size={26} className="animate-spin text-gray-300" />
               </div>
+            ) : loadError ? (
+              <p role="alert" className="py-12 text-center text-sm text-amber-800">{loadError}</p>
             ) : tickets.length === 0 ? (
               <p className="py-12 text-center text-sm text-gray-400">ไม่พบตั๋วคุมในหมวดนี้</p>
             ) : (
@@ -761,19 +779,9 @@ export function ControlTicketPage() {
                 </div>
               )}
 
-              {/* Strict Override Checkbox */}
-              <label className="flex items-center gap-2.5 p-3 rounded-xl border border-amber-200 bg-amber-50/50 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={editModal.strictOverride}
-                  onChange={e => setEditModal(prev => ({ ...prev, strictOverride: e.target.checked }))}
-                  className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                />
-                <div>
-                  <span className="text-xs font-bold text-amber-900 block">Strict Mode Override</span>
-                  <span className="text-[11px] text-amber-700">อนุญาตให้ใช้งานเป็นกรณีพิเศษแม้หมดอายุ</span>
-                </div>
-              </label>
+              <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/50 text-xs text-amber-900">
+                ตั๋วที่พ้นวันหมดอายุจะถูกบล็อกเสมอ ข้อมูลผ่อนผันเดิมไม่มีผลต่อการบล็อก
+              </div>
 
               {/* Reason Code from Active Master */}
               <div>

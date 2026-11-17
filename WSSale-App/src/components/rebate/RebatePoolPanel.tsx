@@ -29,7 +29,7 @@ import {
   fetchGoods,
 } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
-import { useCan } from '../../utils/capabilities';
+import { useCan, useFeature } from '../../utils/capabilities';
 import { bangkokDate, formatThaiDate } from '../../utils/date';
 import { SearchableSelect, type SearchableSelectOption } from '../ui/SearchableSelect';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
@@ -102,6 +102,16 @@ const LEDGER_STATUS_META: Record<string, { label: string; cls: string }> = {
 type SubTab = 'ledger' | 'calculator' | 'conversion';
 
 export function RebatePoolPanel() {
+  const poolEnabled = useFeature()('rebate-pool-103');
+  if (!poolEnabled) {
+    return <div role="status" className="m-4 rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-600">
+      Rebate Pool ยังไม่เปิดใช้งานในระบบนี้
+    </div>;
+  }
+  return <EnabledRebatePoolPanel />;
+}
+
+function EnabledRebatePoolPanel() {
   const user = useAuthStore(s => s.user);
   const can = useCan();
 

@@ -1,11 +1,14 @@
 import { canDo } from '../../utils/capabilities';
 import { AccountBooksPanel } from './AccountBooksPanel';
-import { useEffect, useState, useCallback } from 'react';
+import { NativeCutReviewQueue } from './NativeCutReviewQueue';
+import { NativeEditApprovalForm } from './NativeEditApprovalForm';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Scale, RefreshCw, AlertTriangle, CheckCircle, ShieldCheck, FileCheck2, Info, Ticket, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import {
   fetchReconCases, fetchReconSummary, resolveReconCase,
-  settleCouponCuts, manualSettleCouponCut, type CouponSettlementResult,
+  settleCouponCuts, manualSettleCouponCut, manualSettleCouponDocument, verifyRedemptionDocument, type CouponSettlementResult,
   type UnmatchedCut,
+  type NativeEditTarget,
   type ReconCase, type ReconSummary, type ReconCheck,
 } from '../../services/api';
 import { useSocketEvent } from '../../hooks/useSocket';
@@ -20,6 +23,10 @@ const UNMATCHED_REASON_LABEL: Record<string, { label: string; badgeClass: string
   },
   QTY_MISMATCH: {
     label: 'จำนวนตัดตั๋วไม่ตรงกับยอดจองคงเหลือ',
+    badgeClass: 'bg-amber-100 text-amber-800 border-amber-200',
+  },
+  AUTHORITATIVE_LINK_REQUIRED: {
+    label: 'ยังไม่มีหลักฐานเชื่อมใบขนกับรายการจอง กรุณาตรวจสอบ',
     badgeClass: 'bg-amber-100 text-amber-800 border-amber-200',
   },
   RECEIVER_MISMATCH: {
@@ -91,9 +98,35 @@ export function ReconciliationPage() {
   const [activeTab, setActiveTab] = useState<'SO_WEIGH' | 'COUPON_SETTLEMENT'>('SO_WEIGH');
   const [settleResult, setSettleResult] = useState<CouponSettlementResult | null>(null);
   const [settling, setSettling] = useState(false);
+  const [verifyNumber, setVerifyNumber] = useState('');
+  const [verifyBusy, setVerifyBusy] = useState(false);
+  const verifyGeneration = useRef(0);
+  const [verifyResult, setVerifyResult] = useState<{ number: string; status: 'PRESENT' | 'NOT_VERIFIED'; lineCount?: number; editTarget?: NativeEditTarget } | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
   const currentUser = useAuthStore(s => s.user);
+  const authToken = useAuthStore(s => s.token);
   // O-3 / R12 item 6: ADMIN, MANAGER, C_LEVEL and ACCOUNTING (shared capability 'coupon.settle')
   const canSettle = canDo(currentUser, 'coupon.settle');
+
+  useEffect(() => {
+    verifyGeneration.current++;
+    setVerifyResult(null);
+    setVerifyError(null);
+    setVerifyBusy(false);
+  }, [authToken]);
+
+  async function handleVerifyRedemption() {
+    const number = verifyNumber.trim();
+    if (!number || verifyBusy) return;
+    const generation = ++verifyGeneration.current;
+    setVerifyBusy(true); setVerifyResult(null); setVerifyError(null);
+    try {
+      const result = await verifyRedemptionDocument(number, canSettle);
+      if (generation === verifyGeneration.current) setVerifyResult({ number, ...result });
+    } catch (err: unknown) {
+      if (generation === verifyGeneration.current) setVerifyError((err as Error).message || 'ไม่สามารถตรวจใบขนได้ กรุณาลองใหม่');
+    } finally { if (generation === verifyGeneration.current) setVerifyBusy(false); }
+  }
 
   async function handleSettleCuts() {
     setSettling(true);
@@ -114,6 +147,30 @@ export function ReconciliationPage() {
   const [manualOverridePlate, setManualOverridePlate] = useState(false);
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [manualError, setManualError] = useState<string | null>(null);
+  const [documentCuts, setDocumentCuts] = useState<UnmatchedCut[]>([]);
+  const [documentSelections, setDocumentSelections] = useState<Record<string, string>>({});
+  const [documentReason, setDocumentReason] = useState('');
+  const [documentOverridePlate, setDocumentOverridePlate] = useState(false);
+  const [documentBusy, setDocumentBusy] = useState(false);
+  const [documentError, setDocumentError] = useState<string | null>(null);
+
+  function openDocumentReview(cuts: UnmatchedCut[]) {
+    setDocumentCuts(cuts); setDocumentSelections({}); setDocumentReason('');
+    setDocumentOverridePlate(false); setDocumentError(null);
+  }
+
+  async function submitDocumentReview() {
+    if (!documentCuts.length || documentReason.trim().length < 10 ||
+        documentCuts.some(cut => !cut.couponId || !documentSelections[String(cut.couponId)])) return;
+    setDocumentBusy(true); setDocumentError(null);
+    try {
+      await manualSettleCouponDocument({ redemptionId:documentCuts[0].redemptionId, reason:documentReason.trim(),
+        items:documentCuts.map(cut => ({ couponId:cut.couponId!, reservationId:documentSelections[String(cut.couponId)],
+          qty:cut.goodQty, overridePlate:documentOverridePlate || undefined })) });
+      setDocumentCuts([]); await handleSettleCuts();
+    } catch (e: unknown) { setDocumentError((e as Error).message || 'ไม่สามารถจับคู่ใบขนได้'); }
+    finally { setDocumentBusy(false); }
+  }
 
   function openManualSettle(cut: UnmatchedCut) {
     setManualCut(cut);
@@ -264,20 +321,48 @@ export function ReconciliationPage() {
 
             <AccountBooksPanel />
 
+            <NativeCutReviewQueue canReview={canSettle} />
+
+            <section className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5" aria-labelledby="verify-116-title">
+              <h3 id="verify-116-title" className="text-sm font-bold text-gray-800">ตรวจใบขนหลังบันทึกใน WinSpeed</h3>
+              <p className="text-xs text-gray-600 mt-1">หาก WinSpeed เปิดหน้าพิมพ์โดยไม่แสดงผลบันทึก ให้ตรวจเลขใบขนก่อนทำรายการซ้ำ</p>
+              <div className="flex flex-wrap gap-2 mt-3">
+                <label className="sr-only" htmlFor="verify-116-number">เลขใบขน 116</label>
+                <input id="verify-116-number" value={verifyNumber} maxLength={25}
+                  onChange={e => { verifyGeneration.current++; setVerifyNumber(e.target.value); setVerifyResult(null); setVerifyError(null); setVerifyBusy(false); }}
+                  placeholder="เลขใบขน 116" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                <button type="button" disabled={!canSettle || verifyBusy || !verifyNumber.trim()}
+                  onClick={handleVerifyRedemption} className="px-4 py-2 rounded-lg bg-[#0C447C] text-white text-sm font-bold disabled:opacity-50">
+                  {verifyBusy ? 'กำลังตรวจ...' : 'ตรวจใบขน'}
+                </button>
+              </div>
+              {verifyError && <p role="alert" className="text-sm text-red-700 mt-3">{verifyError}</p>}
+              {verifyResult && <div role="status" className={`mt-3 rounded-lg p-3 text-sm ${verifyResult.status === 'PRESENT' ? 'bg-emerald-50 text-emerald-900' : 'bg-amber-50 text-amber-900'}`}>
+                {verifyResult.status === 'PRESENT'
+                  ? `พบใบขน ${verifyResult.number} และรายละเอียด ${verifyResult.lineCount} บรรทัด ณ เวลาตรวจ กรุณาตรวจสถานะและยอดก่อนดำเนินการต่อ`
+                  : `ยังไม่พบใบขน ${verifyResult.number} ที่ยืนยันได้ในช่วงข้อมูลและสิทธิ์ของคุณ กรุณาตรวจสอบกับผู้ดูแลก่อนบันทึกซ้ำ`}
+              </div>}
+              {canSettle && verifyResult?.editTarget && <NativeEditApprovalForm target={verifyResult.editTarget} />}
+            </section>
+
             {settleResult && (
               <div className="space-y-4">
                 <div className={`p-4 rounded-xl border text-sm flex items-start gap-3 ${
-                  settleResult.partial
+                  settleResult.partial || (settleResult.ambiguous?.length ?? 0) > 0 || (settleResult.unmatched?.length ?? 0) > 0
                     ? 'bg-amber-50 border-amber-200 text-amber-900'
                     : settleResult.settledCount > 0
                     ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                     : 'bg-blue-50 border-blue-200 text-blue-800'
                 }`}>
-                  <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
+                  {settleResult.partial || (settleResult.ambiguous?.length ?? 0) > 0 || (settleResult.unmatched?.length ?? 0) > 0
+                    ? <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+                    : <CheckCircle2 size={18} className="mt-0.5 shrink-0" />}
                   <div>
                     <div className="font-bold">
                       {settleResult.partial
                         ? `ตรวจไม่สำเร็จ ${settleResult.failedCoupons ?? 0} ใบ · บันทึกตัดตั๋วสำเร็จ ${settleResult.settledCount} รายการ`
+                        : (settleResult.ambiguous?.length ?? 0) > 0 || (settleResult.unmatched?.length ?? 0) > 0
+                        ? 'พบรายการตัดตั๋วที่ต้องตรวจหลักฐานก่อนจับคู่'
                         : settleResult.settledCount > 0
                         ? `ตัดตั๋วสำเร็จ ${settleResult.settledCount} รายการ (จากตั๋วที่มีการจอง ${settleResult.processedCoupons ?? 0} ใบ)`
                         : `ตรวจสอบเรียบร้อย — ไม่พบการตัดตั๋วใหม่ที่ต้องบันทึก (ตรวจไป ${settleResult.processedCoupons ?? 0} ใบ)`}
@@ -334,6 +419,10 @@ export function ReconciliationPage() {
                         </thead>
                         <tbody className="divide-y divide-gray-50">
                           {settleResult.unmatched.map((cut, idx) => {
+                            const sameDocument = settleResult.unmatched!.filter(row => String(row.redemptionId) === String(cut.redemptionId));
+                            const wholeDocumentOffered = sameDocument.length > 1 && sameDocument[0] === cut &&
+                              sameDocument.every(row => row.couponId && row.goodQty > 0 && row.candidateReservations?.length) &&
+                              new Set(sameDocument.map(row => row.couponId)).size === sameDocument.length;
                             const reasonMeta = UNMATCHED_REASON_LABEL[cut.reason] || {
                               label: cut.reason,
                               badgeClass: 'bg-gray-100 text-gray-700 border-gray-200',
@@ -387,6 +476,11 @@ export function ReconciliationPage() {
                                   >
                                     ตัดตั๋วแบบแมนนวล
                                   </button>
+                                  {wholeDocumentOffered && <button type="button" disabled={!canSettle}
+                                    onClick={() => openDocumentReview(sameDocument)}
+                                    className="ml-2 px-3 py-1 rounded-lg text-xs font-semibold border border-[#0C447C] text-[#0C447C] disabled:opacity-40">
+                                    ตรวจและจับคู่ทั้งใบ
+                                  </button>}
                                 </td>
                               </tr>
                             );
@@ -436,7 +530,13 @@ export function ReconciliationPage() {
                                 {amb.qty != null ? `${Number(amb.qty).toFixed(3)} ตัน` : '-'}
                               </td>
                               <td className="px-4 py-2.5 text-xs text-amber-800 font-medium">
-                                {amb.reason || 'ยอดไม่ตรงหรือพบการจองตรงกันหลายรายการ'}
+                                {amb.reason === 'MULTIPLE_CANDIDATE_RESERVATIONS'
+                                  ? 'พบการจองที่อาจตรงกันหลายรายการ กรุณาตรวจหลักฐาน'
+                                  : amb.reason === 'CUT_EXCEEDS_RESERVATION'
+                                    ? 'ยอดใบขนเกินยอดจอง กรุณาตรวจหลักฐาน'
+                                    : amb.reason === 'AUTHORITATIVE_LINK_REQUIRED'
+                                      ? 'ยังไม่มีหลักฐานเชื่อมใบขนกับรายการจอง กรุณาตรวจสอบ'
+                                    : amb.reason || 'ยอดไม่ตรงหรือพบการจองตรงกันหลายรายการ'}
                               </td>
                             </tr>
                           ))}
@@ -499,6 +599,50 @@ export function ReconciliationPage() {
             )}
 
             {/* Manual settle dialog modal (FR-1) */}
+            {documentCuts.length > 0 && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                <div role="dialog" aria-modal="true" aria-labelledby="document-settlement-title"
+                  className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
+                  <div className="border-b px-6 py-4">
+                    <h3 id="document-settlement-title" className="font-bold text-[#0C447C]">ตรวจหลักฐานและจับคู่ใบขนทั้งใบ</h3>
+                    <p className="mt-1 text-sm text-gray-600">ใบขน {documentCuts[0].docuNo} บันทึกใน WinSpeed แล้ว กรุณาตรวจหลักฐานและเลือกรายการจองสำหรับตั๋วทุกบรรทัด</p>
+                  </div>
+                  <div className="space-y-4 p-6">
+                    {documentCuts.map(cut => (
+                      <label key={cut.couponId} className="block rounded-xl border border-gray-200 p-3 text-sm">
+                        <span className="font-semibold">ตั๋ว {cut.couponNo || `#${cut.couponId}`} · {cut.goodQty} ตัน</span>
+                        <select value={documentSelections[String(cut.couponId)] || ''} disabled={documentBusy}
+                          onChange={e => setDocumentSelections(old => ({...old,[String(cut.couponId)]:e.target.value}))}
+                          className="mt-2 w-full rounded-lg border border-gray-300 p-2">
+                          <option value="">เลือกรายการจองหลังตรวจหลักฐาน</option>
+                          {cut.candidateReservations.map(c => <option key={c.id} value={String(c.id)}>
+                            จอง #{c.id} · คงเหลือ {c.remainingReservedQty ?? c.reservedQty} ตัน
+                          </option>)}
+                        </select>
+                      </label>
+                    ))}
+                    <label className="block text-sm font-semibold">เหตุผลและหลักฐานที่ตรวจ (อย่างน้อย 10 ตัวอักษร)
+                      <textarea value={documentReason} onChange={e => setDocumentReason(e.target.value)} maxLength={500}
+                        disabled={documentBusy} className="mt-2 w-full rounded-lg border border-gray-300 p-2" rows={3} />
+                    </label>
+                    <label className="flex items-start gap-2 text-sm text-gray-700">
+                      <input type="checkbox" checked={documentOverridePlate} disabled={documentBusy}
+                        onChange={e => setDocumentOverridePlate(e.target.checked)} />
+                      ยืนยันยกเว้นทะเบียนรถสำหรับรายการในใบนี้ โดยบันทึกเหตุผลไว้ใน audit
+                    </label>
+                    {documentError && <p role="alert" className="text-sm text-red-700">{documentError}</p>}
+                  </div>
+                  <div className="flex justify-end gap-2 border-t bg-gray-50 px-6 py-4">
+                    <button type="button" disabled={documentBusy} onClick={() => setDocumentCuts([])} className="rounded-lg border px-4 py-2 text-sm">ยกเลิก</button>
+                    <button type="button" onClick={submitDocumentReview}
+                      disabled={documentBusy || documentReason.trim().length < 10 || documentCuts.some(cut => !documentSelections[String(cut.couponId)])}
+                      className="rounded-lg bg-[#0C447C] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+                      {documentBusy ? 'กำลังบันทึก...' : 'ยืนยันจับคู่ทั้งใบ'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             {manualCut && (
               <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
                 <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]">

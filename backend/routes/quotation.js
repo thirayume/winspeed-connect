@@ -15,10 +15,26 @@ const { advanceRunCounter, RUN_CODE_BY_DOC_KIND } = require('../services/winspee
 const { toBangkokDateString } = require('../services/coupon-settlement-matcher');
 const { getSettingValue, logChangeEvent } = require('../services/policy-contract');
 const { businessIds } = require('../services/business-identity');
+const { currentActorId, hasColumn } = require('../services/request-context');
 const { resolveAuthoritativePrice } = require('../services/price-authority');
-const { assertPricesAboveCost, assertPriceBookLinesSellable } = require('../services/cost-authority');
+const { assertPricesAboveCost, assertPriceBookLinesSellable, evaluateSellingPriceFloor } = require('../services/cost-authority');
 
 const MAE_PUI_GOOD_GROUP_ID = 1004;
+
+async function ensureQuotationAuditIdentity(user) {
+  const ids = businessIds(user);
+  if (!ids.actor || !ids.effective) throw Object.assign(new Error('ไม่สามารถยืนยันตัวตนผู้บันทึกได้'), { statusCode: 401 });
+  if (ids.actor !== ids.effective && (currentActorId() !== ids.actor || !await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId'))) {
+    throw Object.assign(new Error('ไม่สามารถบันทึกตัวตนผู้ทำรายการแทนได้'), { statusCode: 503 });
+  }
+  return ids;
+}
+
+async function auditQuotation(tx, req, id, action, before, after) {
+  const ids = await ensureQuotationAuditIdentity(req.user);
+  await logChangeEvent(tx, { entityType: 'QUOTATION', entityId: String(id), action,
+    beforeJson: before, afterJson: after, userId: ids.effective, ipAddress: req.ip });
+}
 
 function isMaePuiGroup(row) {
   if (!row) return false;
@@ -1000,10 +1016,32 @@ async function restoreSourceSalesOrdersToDraft(tx, quoteId) {
     .input('id', sql.Int, Number(quoteId))
     .query(`
       SELECT SoId, SourceWfRef
-      FROM wf.QuotationSourceSO WITH (NOLOCK)
+      FROM wf.QuotationSourceSO WITH (UPDLOCK, HOLDLOCK)
       WHERE QuoteId=@id
     `)).recordset || [];
   if (!sourceRows.length) return [];
+
+  // Legacy rows carry a numeric ID but no source type. Do not restore an
+  // unrelated APP/native order when independent ID sequences collide.
+  const conflicting = (await tx.request().input('id', sql.Int, Number(quoteId)).query(`
+    SELECT TOP 1 src.Id
+    FROM wf.QuotationSourceSO src WITH (UPDLOCK, HOLDLOCK)
+    LEFT JOIN wf.SalesOrder so WITH (UPDLOCK, HOLDLOCK) ON so.Id=src.SoId
+    LEFT JOIN dbo.SOHD hd WITH (UPDLOCK, HOLDLOCK)
+      ON CONVERT(VARCHAR(50),hd.SOID)=CONVERT(VARCHAR(50),src.SoId) AND hd.DocuType=103
+    LEFT JOIN wf.SalesOrderExt ext WITH (UPDLOCK, HOLDLOCK)
+      ON CONVERT(VARCHAR(50),ext.SOID)=CONVERT(VARCHAR(50),hd.SOID)
+    WHERE src.QuoteId=@id AND (
+      NULLIF(src.SourceWfRef,'') IS NULL
+      OR (so.Id IS NULL AND hd.SOID IS NULL)
+      OR (so.Id IS NOT NULL AND ISNULL(so.WfRef,'')<>src.SourceWfRef)
+      OR (hd.SOID IS NOT NULL AND ISNULL(ext.WfRef,ISNULL(hd.DocuNo,''))<>src.SourceWfRef
+          AND ISNULL(hd.DocuNo,'')<>src.SourceWfRef)
+    )
+  `)).recordset?.[0];
+  if (conflicting) {
+    throw Object.assign(new Error('ไม่สามารถยืนยันเอกสารต้นทางได้ กรุณาให้ผู้ดูแลตรวจสอบก่อนยกเลิก'), { statusCode: 409 });
+  }
 
   await tx.request()
     .input('id', sql.Int, Number(quoteId))
@@ -1498,8 +1536,13 @@ router.get('/:id/extend-preview', requireCapability('quotation.manage'), require
     const maxValidUntil = maePuiInfo.hasMaePui ? addBangkokDaysDateStr(today, maxDays) : null;
 
     const linesWithGroups = enrichLinesWithGroupInfo(rawLines, maePuiInfo.groupByGoodKey);
+    const coverage = await evaluateSellingPriceFloor({
+      lines: linesWithGroups.map(line => ({ ...line, pricePerTon: Number(line.PricePerTon ?? 0) })),
+      asOfDate: today,
+    });
+    const missingCost = new Set((coverage.missingCost || []).map(item => item.lineIndex));
     const enrichedLines = [];
-    for (const line of linesWithGroups) {
+    for (const [lineIndex, line] of linesWithGroups.entries()) {
       let currentAnnouncedPrice = null;
       let priceStatus = 'UNKNOWN';
       if (!line.IsGiveaway) {
@@ -1514,7 +1557,7 @@ router.get('/:id/extend-preview', requireCapability('quotation.manage'), require
             currentAnnouncedPrice = Number(auth.announcedPrice);
             priceStatus = auth.priceStatus || 'ACTIVE';
           }
-        } catch { /* keep null if price lookup fails */ }
+        } catch (err) { if (err.code === 'AMBIGUOUS_CUSTOMER_ID') throw err; /* keep null if price lookup fails */ }
       }
       const oldPrice = Number(line.PricePerTon || 0);
       enrichedLines.push({
@@ -1523,6 +1566,7 @@ router.get('/:id/extend-preview', requireCapability('quotation.manage'), require
         CurrentAnnouncedPrice: currentAnnouncedPrice,
         PriceDiff: currentAnnouncedPrice != null ? Number((oldPrice - currentAnnouncedPrice).toFixed(2)) : null,
         PriceStatus: priceStatus,
+        MissingCost: missingCost.has(lineIndex),
       });
     }
 
@@ -1644,6 +1688,19 @@ router.get('/:id', async (req, res) => {
   } catch (e) { res.status(e.statusCode || 500).json({ message: e.message }); }
 });
 
+// Read-only preview: return only line indexes, never cost amounts. Mutations
+// still apply their own price-floor check when saved.
+router.post('/price-coverage', requireCapability('quotation.create'), async (req, res) => {
+  try {
+    const lines = req.body?.lines;
+    if (!Array.isArray(lines) || lines.length > 100) return res.status(400).json({ message: 'รายการสินค้าไม่ถูกต้อง' });
+    const coverage = await evaluateSellingPriceFloor({ lines, asOfDate: toBangkokDateString(new Date()) });
+    return res.json({ missingCostLineIndexes: (coverage.missingCost || []).map(item => item.lineIndex) });
+  } catch (e) {
+    return res.status(e.status || 500).json({ message: 'ไม่สามารถตรวจเกณฑ์ราคาได้' });
+  }
+});
+
 // POST /api/quotation
 router.post('/', requireCapability('quotation.create'), async (req, res) => {
   try {
@@ -1665,7 +1722,7 @@ router.post('/', requireCapability('quotation.create'), async (req, res) => {
     });
     const todayStr = toBangkokDateString(new Date());
     await assertPriceBookLinesSellable({ lines, asOfDate: todayStr });
-    await assertPricesAboveCost({ lines, asOfDate: todayStr });
+    const coverage = await assertPricesAboveCost({ lines, asOfDate: todayStr });
 
     const result = await wfTransaction(async tx => {
       const quoteNo = await nextNativeDocNo(tx, 'QU');
@@ -1694,11 +1751,13 @@ router.post('/', requireCapability('quotation.create'), async (req, res) => {
           VALUES (@q,@n,@gid,@gc,@gn,@qt,@pp,@np${hasGiveaway ? ',@ig' : ''})`);
       }
       const native = await syncNativeQuotation(tx, qid, [], { hasGiveawayColumn: hasGiveaway });
+      await auditQuotation(tx, req, qid, 'CREATE', null, { status: 'DRAFT', lineCount: lines.length });
       return { id: qid, quoteNo, native };
     });
     res.json({
       id: result.id,
       quoteNo: result.quoteNo,
+      missingCost: Boolean(coverage?.missingCost?.length),
       winspeedQuoteSoid: result.native?.quoteSoid,
       winspeedQuoteNo: result.native?.quoteNo,
       winspeedEstimateId: result.native?.quoteSoid,
@@ -1723,6 +1782,10 @@ router.post('/from-so-trip', requireCapability('quotation.create'), async (req, 
     await assertNativeQuotationReady();
 
     const orderReq = await ownerRequest();
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const orderScope = await getVisibleScope(req.user);
+    orderReq.input('quoteStartUtc', sql.DateTime2, dataWindow.utcInstant);
+    orderReq.input('quoteStartDate', sql.Date, dataWindow.businessDate);
     const matchByRef = sourceRefs.length > 0;
     const orderMatch = matchByRef
       ? {
@@ -1735,8 +1798,8 @@ router.post('/from-so-trip', requireCapability('quotation.create'), async (req, 
           native: `ISNUMERIC(CONVERT(VARCHAR(50), hd.SOID)) = 1 AND CAST(hd.SOID AS INT) IN (${soIds.map((_, i) => `@id${i}`).join(',')})`,
           expectedCount: soIds.length,
         };
-    const orders = (await orderReq.query(`
-      SELECT SourceKind, Id, WfRef, CustId, CustName, Status, SalesUserId, TruckPlate, DeliveryDate
+    const orderSql = `
+      SELECT SourceKind, Id, WfRef, CustId, CustName, Status, SalesUserId, OwnerEmpId, TruckPlate, DeliveryDate
       FROM (
         SELECT
           'APP' AS SourceKind,
@@ -1746,10 +1809,11 @@ router.post('/from-so-trip', requireCapability('quotation.create'), async (req, 
           so.CustName,
           so.Status,
           so.SalesUserId,
+          CAST(NULL AS VARCHAR(20)) AS OwnerEmpId,
           so.TruckPlate,
           so.DeliveryDate
         FROM wf.SalesOrder so WITH (NOLOCK)
-        WHERE ${orderMatch.app}
+        WHERE so.CreatedAt >= @quoteStartUtc AND ${orderMatch.app}
 
         UNION ALL
 
@@ -1769,19 +1833,24 @@ router.post('/from-so-trip', requireCapability('quotation.create'), async (req, 
             ELSE 'CONFIRMED'
           END AS Status,
           ext.SalesUserId,
+          CAST(hd.EmpID AS VARCHAR(20)) AS OwnerEmpId,
           hd.TransRegistration AS TruckPlate,
           ISNULL(ext.DeliveryDate, CAST(hd.DocuDate AS DATE)) AS DeliveryDate
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
           ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
         WHERE hd.DocuType IN (103, 104)
+          AND hd.DocuDate >= @quoteStartDate
           AND ISNUMERIC(CONVERT(VARCHAR(50), hd.SOID)) = 1
           AND ${orderMatch.native}
       ) src
       ORDER BY Id
-    `)).recordset || [];
+    `;
+    const orders = (await orderReq.query(orderSql)).recordset || [];
 
     if (orders.length !== orderMatch.expectedCount) return res.status(404).json({ message: 'พบ SO ไม่ครบตามที่เลือก' });
+    if (orders.some(order => !inScope(orderScope, { userId: order.SalesUserId, empId: order.OwnerEmpId })))
+      return res.status(404).json({ message: 'พบ SO ไม่ครบตามที่เลือก' });
     const nonDraft = orders.find(o => o.Status !== 'DRAFT');
     if (nonDraft) return res.status(400).json({ message: `SO ${nonDraft.WfRef || nonDraft.Id} ต้องเป็นสถานะร่างก่อนทำใบเสนอราคา` });
 
@@ -1790,16 +1859,19 @@ router.post('/from-so-trip', requireCapability('quotation.create'), async (req, 
     if (differentCustomer) return res.status(400).json({ message: 'สร้างใบเสนอราคาจากหลายลูกค้าในใบเดียวไม่ได้' });
 
     const sourceSoIds = orders.map(o => Number(o.Id)).filter(n => Number.isInteger(n) && n > 0);
+    // The legacy source table stores only SoId; refuse ambiguous APP/native IDs.
+    if (new Set(sourceSoIds).size !== sourceSoIds.length) return res.status(409).json({ message: 'รหัส SO ต้นทางซ้ำกัน กรุณาเลือกใหม่' });
     const existingReq = await ownerRequest();
     const existingIn = addIds(existingReq, sourceSoIds);
-    const existing = (await existingReq.query(`
+    const existingSql = `
       SELECT TOP 1 q.QuoteNo, q.Status, src.SourceWfRef
       FROM wf.QuotationSourceSO src
       INNER JOIN wf.Quotation q ON q.Id = src.QuoteId
       WHERE src.SoId IN (${existingIn})
         AND q.Status IN ('DRAFT', 'SENT', 'ACCEPTED')
       ORDER BY q.Id DESC
-    `)).recordset?.[0];
+    `;
+    const existing = (await existingReq.query(existingSql)).recordset?.[0];
     if (existing) {
       return res.status(400).json({ message: `SO ${existing.SourceWfRef || ''} ถูกผูกกับใบเสนอราคา ${existing.QuoteNo} (${existing.Status}) อยู่แล้ว` });
     }
@@ -1809,7 +1881,7 @@ router.post('/from-so-trip', requireCapability('quotation.create'), async (req, 
     const winspeedIds = orders.filter(o => o.SourceKind === 'WINSPEED').map(o => String(o.Id));
     const appLineWhere = appIds.length ? `WHERE sol.SoId IN (${addIds(lineReq, appIds)})` : 'WHERE 1 = 0';
     const winspeedLineWhere = winspeedIds.length ? `WHERE CONVERT(VARCHAR(50), dt.SOID) IN (${addTextValues(lineReq, winspeedIds, 'wid')})` : 'WHERE 1 = 0';
-    const rawLines = (await lineReq.query(`
+    const lineSql = `
       SELECT
         CAST(sol.GoodId AS NVARCHAR(20)) AS GoodId,
         sol.GoodCode,
@@ -1837,7 +1909,8 @@ router.post('/from-so-trip', requireCapability('quotation.create'), async (req, 
         ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), dt.SOID)
        AND ext.ListNo = dt.ListNo
       ${winspeedLineWhere}
-    `)).recordset || [];
+    `;
+    const rawLines = (await lineReq.query(lineSql)).recordset || [];
 
     const merged = new Map();
     for (const l of rawLines) {
@@ -1872,11 +1945,37 @@ router.post('/from-so-trip', requireCapability('quotation.create'), async (req, 
     });
     const todayStr = toBangkokDateString(new Date());
     await assertPriceBookLinesSellable({ lines: quoteLines, asOfDate: todayStr });
-    await assertPricesAboveCost({ lines: quoteLines, asOfDate: todayStr });
+    const coverage = await assertPricesAboveCost({ lines: quoteLines, asOfDate: todayStr });
     const remark = req.body?.remark || `สร้างจาก Sale Trip: ${orders.map(o => o.WfRef).join(', ')}`;
     const salesUserId = (req.user.role === 'ADMIN' && req.body?.salesUserId) ? Number(req.body.salesUserId) : (orders[0].SalesUserId || req.user.sub);
 
     const result = await wfTransaction(async tx => {
+      // Re-read the complete source under serializable locks before any write.
+      // The preliminary reads are for validation only and may have raced.
+      const lockedOrderReq = tx.request()
+        .input('quoteStartUtc', sql.DateTime2, dataWindow.utcInstant)
+        .input('quoteStartDate', sql.Date, dataWindow.businessDate);
+      if (matchByRef) addTextValues(lockedOrderReq, sourceRefs, 'oref');
+      else addIds(lockedOrderReq, soIds);
+      const lockedOrders = (await lockedOrderReq.query(orderSql.replaceAll('WITH (NOLOCK)', 'WITH (UPDLOCK, HOLDLOCK)'))).recordset || [];
+      const snapshot = rows => rows.map(row => JSON.stringify(row)).sort();
+      if (JSON.stringify(snapshot(lockedOrders)) !== JSON.stringify(snapshot(orders))) {
+        throw Object.assign(new Error('ข้อมูล SO ต้นทางเปลี่ยนแปลง กรุณาตรวจสอบและลองใหม่'), { statusCode: 409 });
+      }
+      const lockedExistingReq = tx.request();
+      addIds(lockedExistingReq, sourceSoIds);
+      const lockedExistingSql = existingSql.replace('wf.QuotationSourceSO src', 'wf.QuotationSourceSO src WITH (UPDLOCK, HOLDLOCK)')
+        .replace('wf.Quotation q ON', 'wf.Quotation q WITH (UPDLOCK, HOLDLOCK) ON');
+      if ((await lockedExistingReq.query(lockedExistingSql)).recordset?.length) {
+        throw Object.assign(new Error('SO ต้นทางถูกผูกกับใบเสนอราคาแล้ว กรุณาตรวจสอบและลองใหม่'), { statusCode: 409 });
+      }
+      const lockedLineReq = tx.request();
+      if (appIds.length) addIds(lockedLineReq, appIds);
+      if (winspeedIds.length) addTextValues(lockedLineReq, winspeedIds, 'wid');
+      const lockedLines = (await lockedLineReq.query(lineSql.replaceAll('WITH (NOLOCK)', 'WITH (UPDLOCK, HOLDLOCK)'))).recordset || [];
+      if (JSON.stringify(snapshot(lockedLines)) !== JSON.stringify(snapshot(rawLines))) {
+        throw Object.assign(new Error('รายการสินค้าใน SO ต้นทางเปลี่ยนแปลง กรุณาตรวจสอบและลองใหม่'), { statusCode: 409 });
+      }
       const quoteNo = await nextNativeDocNo(tx, 'QU');
       const qr = tx.request();
       qr.input('no', sql.NVarChar(30), quoteNo);
@@ -1916,18 +2015,22 @@ router.post('/from-so-trip', requireCapability('quotation.create'), async (req, 
       }
 
       // Lock original draft SOs to QUOTATION status
-      const soIds = orders.map(o => Number(o.Id)).filter(n => Number.isInteger(n) && n > 0);
-      if (soIds.length > 0) {
-        await tx.request().query(`
+      // Native SOID values are not wf.SalesOrder IDs, even if the numbers match.
+      if (appIds.length > 0) {
+        const changed = await tx.request().query(`
           UPDATE wf.SalesOrder
           SET Status='QUOTATION', UpdatedAt=GETUTCDATE()
-          WHERE Id IN (${soIds.join(',')})
+          WHERE Status='DRAFT' AND Id IN (${appIds.join(',')})
         `);
+        if (changed.rowsAffected?.[0] !== appIds.length) {
+          throw Object.assign(new Error('สถานะ SO ต้นทางเปลี่ยนแปลง กรุณาตรวจสอบและลองใหม่'), { statusCode: 409 });
+        }
       }
 
       const native = await syncNativeQuotation(tx, qid, orders.map(o => o.WfRef).filter(Boolean), { hasGiveawayColumn: false });
+      await auditQuotation(tx, req, qid, 'CREATE_FROM_TRIP', null, { status: 'DRAFT', sourceCount: orders.length, lineCount: quoteLines.length });
       return { id: qid, quoteNo, native };
-    });
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
 
     res.json({
       id: result.id,
@@ -1939,6 +2042,7 @@ router.post('/from-so-trip', requireCapability('quotation.create'), async (req, 
       sourceSoIds: orders.map(o => o.Id),
       sourceWfRefs: orders.map(o => o.WfRef),
       lineCount: quoteLines.length,
+      missingCost: Boolean(coverage?.missingCost?.length),
       validUntil: validUntil.toISOString().slice(0, 10),
     });
   } catch (e) { console.error(e); res.status(e.statusCode || e.status || 500).json({ message: e.message, code: e.code }); }
@@ -1966,7 +2070,7 @@ router.patch('/:id/status', requireCapability('quotation.manage'), requireQuotat
       native = await wfTransaction(async tx => {
         const q = (await tx.request()
           .input('id', sql.Int, Number(req.params.id))
-          .query(`SELECT WinspeedQuoteSOID FROM wf.Quotation WHERE Id=@id`)).recordset?.[0];
+          .query(`SELECT WinspeedQuoteSOID, Status FROM wf.Quotation WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id`)).recordset?.[0];
         if (!q) {
           const err = new Error('ไม่พบใบเสนอราคา');
           err.statusCode = 404;
@@ -1975,11 +2079,16 @@ router.patch('/:id/status', requireCapability('quotation.manage'), requireQuotat
         if (!q.WinspeedQuoteSOID) {
           await syncNativeQuotation(tx, Number(req.params.id), [], { hasGiveawayColumn: await hasQuoteLineGiveawayColumn() });
         }
-        return await confirmNativeQuotation(tx, Number(req.params.id), req.user.sub);
+        const confirmed = await confirmNativeQuotation(tx, Number(req.params.id), businessIds(req.user).effective);
+        await auditQuotation(tx, req, Number(req.params.id), 'STATUS', { status: q.Status }, { status });
+        return confirmed;
       });
     } else {
       const ready = await getNativeQuotationReadiness();
       restoredSources = await wfTransaction(async tx => {
+        const before = (await tx.request().input('id', sql.Int, Number(req.params.id))
+          .query(`SELECT Status FROM wf.Quotation WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id`)).recordset?.[0];
+        if (!before) throw Object.assign(new Error('ไม่พบใบเสนอราคา'), { statusCode: 404 });
         await tx.request()
           .input('s', sql.NVarChar(20), status)
           .input('id', sql.Int, Number(req.params.id))
@@ -1987,10 +2096,10 @@ router.patch('/:id/status', requireCapability('quotation.manage'), requireQuotat
         if (ready.hasNativeTables && ready.hasLinkColumns) {
           await updateNativeQuotationStatus(tx, Number(req.params.id), status);
         }
-        if (status === 'CANCELLED' && await hasQuoteSourceTable()) {
-          return await restoreSourceSalesOrdersToDraft(tx, Number(req.params.id));
-        }
-        return [];
+        const restored = status === 'CANCELLED' && await hasQuoteSourceTable()
+          ? await restoreSourceSalesOrdersToDraft(tx, Number(req.params.id)) : [];
+        await auditQuotation(tx, req, Number(req.params.id), 'STATUS', { status: before.Status }, { status, restoredSourceCount: restored.length });
+        return restored;
       });
     }
 
@@ -2086,7 +2195,7 @@ router.patch('/:id/valid-until', requireCapability('quotation.manage'), requireQ
         if (auth?.hasAnnouncedPrice && auth.announcedPrice != null) {
           nextNetPrice = Number(auth.announcedPrice);
         }
-      } catch { /* fallback to previous NetPricePerTon */ }
+      } catch (err) { if (err.code === 'AMBIGUOUS_CUSTOMER_ID') throw err; /* fallback to previous NetPricePerTon */ }
       if (newPrice !== oldPrice || nextNetPrice !== Number(matched.NetPricePerTon || 0)) {
         priceUpdates.push({
           lineId: matched.Id || null,
@@ -2113,7 +2222,7 @@ router.patch('/:id/valid-until', requireCapability('quotation.manage'), requireQ
       };
     });
     await assertPriceBookLinesSellable({ lines: effectiveLinesToCheck, asOfDate: today });
-    await assertPricesAboveCost({ lines: effectiveLinesToCheck, asOfDate: today });
+    const coverage = await assertPricesAboveCost({ lines: effectiveLinesToCheck, asOfDate: today });
 
     const ready = await getNativeQuotationReadiness();
     await wfTransaction(async tx => {
@@ -2146,6 +2255,7 @@ router.patch('/:id/valid-until', requireCapability('quotation.manage'), requireQ
         await updateNativeQuotationValidity(tx, id, validUntil);
       }
 
+      await ensureQuotationAuditIdentity(req.user);
       await logChangeEvent(tx, {
             entityType: 'QUOTATION',
             entityId: String(id),
@@ -2174,6 +2284,7 @@ router.patch('/:id/valid-until', requireCapability('quotation.manage'), requireQ
       hasMaePui: maePuiInfo.hasMaePui,
       priceReviewed,
       updatedPriceCount: priceUpdates.length,
+      missingCost: Boolean(coverage?.missingCost?.length),
     });
   } catch (e) { res.status(e.statusCode || 500).json({ message: e.message, code: e.code }); }
 });

@@ -1,9 +1,8 @@
 'use strict';
 
 /**
- * R12 item 15 — without migration 146 the old direct SQL still runs; when the
- * least-privilege login is refused, the screen gets a clear 503 that names the migration
- * (instead of a bare "บันทึกไม่สำเร็จ").
+ * Customer edits fail closed when their transactional procedures are missing;
+ * never fall back to a direct non-atomic native update.
  */
 
 const test = require('node:test');
@@ -20,8 +19,8 @@ let app;
 test.before(async () => { app = await h.startApp([['/api/master', '../../routes/master']]); });
 test.after(async () => { await app.close(); });
 
-test('permission denied on dbo.EMCust → 503 naming migration 146', async () => {
+test('missing customer procedures returns 503 before any direct native write', async () => {
   const r = await app.call('PATCH', '/api/master/customers/1141', { body: { CustName: 'x' }, user: { sub: 63, role: 'ADMIN' } });
   assert.equal(r.status, 503);
-  assert.match(r.body.message, /146_master_data_procs/);
+  assert.match(r.body.message, /ฐานข้อมูลยังไม่พร้อม/);
 });

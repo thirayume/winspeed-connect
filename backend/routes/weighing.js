@@ -60,6 +60,13 @@ router.use(requireRole('ACCOUNTING', 'MANAGER', 'ADMIN', 'C_LEVEL', 'WAREHOUSE',
 
 const LIMIT = 500;
 const KG_PER_SACK = 50;
+// Raw SPID/DocuNo can refer to a pre-window source even when the weighing
+// itself is current. SO and PO have verified source keys; unknown types must
+// not expose a source reference until its date can be established.
+const SOURCE_VISIBLE_SQL = `(CASE WHEN (h.WGType='SO' AND so.SOID IS NOT NULL)
+  OR (h.WGType='PO' AND po.POID IS NOT NULL) THEN 1 ELSE 0 END)`;
+const SOURCE_ID_SQL = `CASE WHEN h.WGType='SO' THEN so.SOID WHEN h.WGType='PO' THEN po.POID ELSE NULL END`;
+const SOURCE_NUMBER_SQL = `CASE WHEN h.WGType='SO' THEN so.DocuNo WHEN h.WGType='PO' THEN po.DocuNo ELSE NULL END`;
 
 /** ป้ายสถานะที่ใช้ทั้งฝั่ง SQL และฝั่งหน้าจอ — เก็บที่เดียวกันไว้ */
 const STATUS_SQL = `CASE h.Status
@@ -132,7 +139,7 @@ router.get('/live', guard(async (req, res) => {
            CONVERT(varchar(16), h.DateOut, 120) AS DateOut,
            h.WeightIn, h.WeightOut, h.WeightNet,
            h.TotalTon, h.TotalKasob,
-           h.SPID,
+           ${SOURCE_ID_SQL} AS SPID,
            so.DocuNo AS SODocuNo, so.DocuType AS SODocuType,
            CONVERT(varchar(10), so.DocuDate, 120) AS SODate,
            so.AppvDocuNo, so.CouponFlag, so.clearflag,
@@ -147,6 +154,7 @@ router.get('/live', guard(async (req, res) => {
       FROM dbo.WGHD h
       LEFT JOIN dbo.EMDriver dr ON dr.Id = h.EMDriverId
       LEFT JOIN dbo.SOHD    so ON so.SOID = h.SPID AND h.WGType = 'SO' AND so.DocuDate >= @globalStartDate
+      LEFT JOIN dbo.POHD    po ON po.POID = h.SPID AND h.WGType = 'PO' AND po.DocuDate >= @globalStartDate
      WHERE h.DateReg >= @globalStartDate AND (h.Status < 3 OR h.DateOut >= DATEADD(hour, -@hours, GETDATE()))${clause}
      ORDER BY h.Status, h.DateReg DESC, h.Id DESC`, inputs);
 
@@ -230,7 +238,7 @@ router.get('/tickets', guard(async (req, res) => {
            h.Id, CONVERT(varchar(16), h.DateReg, 120) AS DateReg,
            h.WGType, h.Status, ${STATUS_SQL} AS StatusText,
            h.CarNo AS Plate, RTRIM(dr.FullName) AS DriverName,
-           h.MoveBill, h.SPID, so.DocuNo AS SODocuNo, so.DocuType AS SODocuType,
+           h.MoveBill, ${SOURCE_ID_SQL} AS SPID, so.DocuNo AS SODocuNo, so.DocuType AS SODocuType,
            h.CVCode, RTRIM(h.CVName) AS PartyName,
            CONVERT(varchar(16), h.DateIn, 120)  AS DateIn,  h.WeightIn,
            CONVERT(varchar(16), h.DateOut, 120) AS DateOut, h.WeightOut,
@@ -239,6 +247,7 @@ router.get('/tickets', guard(async (req, res) => {
       FROM dbo.WGHD h
       LEFT JOIN dbo.EMDriver dr ON dr.Id = h.EMDriverId
       LEFT JOIN dbo.SOHD    so ON so.SOID = h.SPID AND h.WGType = 'SO' AND so.DocuDate >= @globalStartDate
+      LEFT JOIN dbo.POHD    po ON po.POID = h.SPID AND h.WGType = 'PO' AND po.DocuDate >= @globalStartDate
      WHERE CAST(h.DateReg AS date) BETWEEN @from AND @to${clause}
      ORDER BY h.DateReg DESC, h.Id DESC`, extra));
 }));
@@ -282,7 +291,11 @@ router.get('/tickets/:id', guard(async (req, res) => {
   const head = (await query(`
     SELECT h.Id, h.WGType, h.Status, ${STATUS_SQL} AS StatusText,
            h.MoveBill, h.CarNo, RTRIM(dr.FullName) AS DriverName,
-           h.CVCode, RTRIM(h.CVName) AS CVName, h.SPID, h.DocuNo,
+           h.CVCode, RTRIM(h.CVName) AS CVName, ${SOURCE_ID_SQL} AS SPID,
+           CASE WHEN ${SOURCE_VISIBLE_SQL}=1 AND RTRIM(h.DocuNo)=RTRIM(${SOURCE_NUMBER_SQL})
+                THEN h.DocuNo END AS DocuNo,
+           ${SOURCE_VISIBLE_SQL} AS SourceDocumentVisible,
+           ${SOURCE_NUMBER_SQL} AS VerifiedSourceNumber,
            CONVERT(varchar(16), h.DateReg, 120) AS DateReg,
            CONVERT(varchar(16), h.DateIn,  120) AS DateInText,
            CONVERT(varchar(16), h.DateOut, 120) AS DateOutText,
@@ -293,6 +306,7 @@ router.get('/tickets/:id', guard(async (req, res) => {
       FROM dbo.WGHD h
       LEFT JOIN dbo.EMDriver dr ON dr.Id = h.EMDriverId
       LEFT JOIN dbo.SOHD    so ON so.SOID = h.SPID AND h.WGType = 'SO' AND so.DocuDate >= @globalStartDate
+      LEFT JOIN dbo.POHD    po ON po.POID = h.SPID AND h.WGType = 'PO' AND po.DocuDate >= @globalStartDate
      WHERE h.Id = @id AND h.DateReg >= @globalStartDate`, idIn))[0];
   if (!head) return res.status(404).json({ message: 'ไม่พบใบชั่ง' });
 
@@ -301,16 +315,22 @@ router.get('/tickets/:id', guard(async (req, res) => {
            d.GoodQty2, d.GoodTon, d.GoodKasob, d.GoodKG,
            RTRIM(d.STOCode) AS StoreCode, RTRIM(s.STOName) AS StoreName,
            RTRIM(d.STOCode2) AS StoreCode2, RTRIM(s2.STOName) AS StoreName2,
-           NULLIF(RTRIM(d.CouponNo), '') AS CouponNo, d.RefNo
+           NULLIF(RTRIM(d.CouponNo), '') AS CouponNo,
+           CASE WHEN @sourceVisible=1 AND RTRIM(d.RefNo)=RTRIM(@sourceNumber)
+                THEN d.RefNo END AS RefNo
       FROM dbo.WGDT d
       LEFT JOIN dbo.EMSTOType s  ON RTRIM(s.STOCode)  = RTRIM(d.STOCode)
       LEFT JOIN dbo.EMSTOType s2 ON RTRIM(s2.STOCode) = RTRIM(d.STOCode2)
-     WHERE d.WGHDId = @id ORDER BY d.ListNo`, idIn);
+     WHERE d.WGHDId = @id ORDER BY d.ListNo`, {
+    ...idIn, sourceVisible: { type: sql.Bit, value: Number(head.SourceDocumentVisible) === 1 },
+    sourceNumber: { type: sql.NVarChar(100), value: head.VerifiedSourceNumber || null },
+  });
 
   const ton = items.reduce((s, i) => s + Number(i.GoodTon || 0), 0);
   const kasob = items.reduce((s, i) => s + Number(i.GoodKasob || 0), 0);
+  const { VerifiedSourceNumber, ...publicHead } = head;
   res.json({
-    ...head, items,
+    ...publicHead, items,
     totals: { ton, kasob, kgFromSacks: kasob * KG_PER_SACK },
   });
 }));
@@ -382,7 +402,7 @@ router.get('/by-so', guard(async (req, res) => send(res, await run(req, `
          h.Status, ${STATUS_SQL} AS StatusText,
          h.MoveBill, h.CarNo AS Plate, RTRIM(h.CVName) AS CustName,
          h.WeightIn, h.WeightOut, h.WeightNet, h.TotalTon, h.TotalKasob,
-         h.SPID,
+         CASE WHEN bk.DocuDate >= @globalStartDate THEN bk.SOID END AS SPID,
          CASE WHEN bk.DocuDate >= @globalStartDate THEN bk.DocuNo END AS BookingNo,
          CASE WHEN bk.DocuDate >= @globalStartDate THEN CONVERT(varchar(10), bk.DocuDate, 120) END AS BookingDate,
          CASE WHEN bk.DocuDate >= @globalStartDate THEN bk.AppvDocuNo END AS AppvDocuNo,

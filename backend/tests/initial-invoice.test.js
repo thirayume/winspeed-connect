@@ -11,9 +11,11 @@ function fixture(overrides={}){
   parts:Array.from({length:10},(_,i)=>i===1?'<row><RemaQty>1.0000</RemaQty><GoodAmnt>18200.0000</GoodAmnt></row>':'delivery:'+i),
   cut:['<row><DocuStatus>N</DocuStatus><SumGoodQty>1.0000</SumGoodQty></row>','<row><RemaQty>1.0000</RemaQty><PostInv>N</PostInv><SOInvID xsi:nil="true" /><SOListNo xsi:nil="true" /></row>'],
   accounts:[{Id:11,Role:'WAREHOUSE'},{Id:22,Role:'ACCOUNTING'},{Id:44,Role:'MANAGER'},{Id:99,Role:'ADMIN'}].map(r=>({...r,IsActive:1,MustChangePassword:0})),...overrides};
- state.parent={SourceSOID:501,DeliverySOID:601,DeliveryNo:'I69-00601',CouponID:701,CouponNo:'C6900701',ContainQty:50,SackQty:20,
+ const isTaxable=Number(state.taxAmount)>0;
+ const book=isTaxable?'K':'I',invoiceSeries=isTaxable?'N':'J';
+ state.parent={SourceSOID:501,DeliverySOID:601,DeliveryNo:`${book}69-00601`,CouponID:701,CouponNo:isTaxable?'D6900701':'C6900701',ContainQty:50,SackQty:20,
   FinanceSOInvID:801,FinancePostID:901,FinanceVATID:1001,PolicyVersion:'O25-DO104-COMPLETE-UAT2-v2',
-  SourceNo:'I69-00501',SourceAfterHash:H(['SOHD','SODT','SOHDRemark','SODTRemark'].map(t=>'source:'+t)),DeliveryAfterHash:H(state.parts)};
+  SourceNo:`${book}69-00501`,SourceAfterHash:H(['SOHD','SODT','SOHDRemark','SODTRemark'].map(t=>'source:'+t)),DeliveryAfterHash:H(state.parts)};
  state.request={RequestId:key,Status:'CONSUMED',Reason:'UAT simulation',IssueName:'UAT2 TEST',CarLicense:'UAT2-TEST',EvidenceMode:'UAT_SIMULATION',Evidence:'{}'};
  state.request.ApprovedDataHash=H(['UAT simulation','UAT2 TEST','UAT2-TEST','UAT_SIMULATION','{}']);
  state.manual={SourceSOID:501,DeliverySOID:601,CouponID:701,RedemptionID:1001,RedemptionNo:'69081783',RequestId:key,
@@ -26,7 +28,8 @@ function fixture(overrides={}){
   if(/sp_getapplock/.test(text))return rows([{LockResult:0}]);
   if(/SELECT r\.\*,h.DocuNo AS SourceNo/.test(text))return rows([state.parent]);
   if(/SELECT Id, EmpId, PositionCode/.test(text))return rows([{Id:p.id.value,EmpId:'1001',PositionCode:null}]);
-  if(/SELECT DocuNo,DocuType FROM dbo.SOHD/.test(text))return rows([{DocuNo:'I69-00601',DocuType:104}]);
+  if(/SELECT DocuNo,DocuType FROM dbo.SOHD/.test(text))return rows([{DocuNo:state.parent.DeliveryNo,DocuType:104}]);
+  if(/JOIN dbo.EMVATGroup/.test(text))return rows(state.vatAccounts||[]);
   if(/AS CompleteCouponID/.test(text))return rows([{CompleteCouponID:701}]);
   if(/AS InvoiceReceiptObject/.test(text))return rows([{InvoiceReceiptObject:1}]);
   if(/SELECT \* FROM wf.NativeInitialInvoiceReceipt/.test(text))return rows(state.receipt?[state.receipt]:[]);
@@ -36,7 +39,7 @@ function fixture(overrides={}){
   if(/EXEC wf.usp_PostInitialCouponInvoice/.test(text)){
    if(/@Preview=1/.test(text)){
     if(p.date.value&&p.date.value!=='2026-10-25')throw Error('IP_DATE_OVERRIDE_UNVERIFIED');
-    return rows([{InvoiceSeries:'J',Amount:'18200.0000',Qty:'1.0000',GoodID:1094,InveID:1000,InvoiceDate:'2026-10-25'}]);
+    return rows([{InvoiceSeries:invoiceSeries,Amount:'18200.0000',Qty:'1.0000',GoodID:1094,InveID:1000,InvoiceDate:'2026-10-25',TaxAmount:state.taxAmount}]);
    }
    state.applied=true;
    state.parts[1]=state.parts[1].replace('RemaQty>1.0000','RemaQty>0.0000');
@@ -45,7 +48,7 @@ function fixture(overrides={}){
    if(state.financeDrift)state.parts[6]+='changed';
    if(state.costDrift)state.cost+='changed';
    if(state.cutDrift)state.cut[0]+='changed';
-   state.receipt={SourceSOID:501,RequestId:key,Fingerprint:p.fingerprint.value,DeliverySOID:601,RedemptionID:1001,InvoiceID:2001,InvoiceNo:'J69-02001',InvoiceDate:new Date('2026-10-25T00:00:00Z'),GlobalID:3001,StockDetailID:4001,AppliedById:p.user.value,ApplierActorId:p.actor.value,
+   state.receipt={SourceSOID:501,RequestId:key,Fingerprint:p.fingerprint.value,DeliverySOID:601,RedemptionID:1001,InvoiceID:2001,InvoiceNo:`${invoiceSeries}69-02001`,InvoiceDate:new Date('2026-10-25T00:00:00Z'),GlobalID:3001,StockDetailID:4001,AppliedById:p.user.value,ApplierActorId:p.actor.value,
     DeliveryBeforeHash:state.parent.DeliveryAfterHash,RedemptionBeforeHash:state.manual.RedemptionAfterHash,PolicyVersion:POLICY};return rows([state.receipt]);
   }
   if(/FOR XML RAW/.test(text)){
@@ -76,6 +79,28 @@ test('107 stays closed by default, pins UAT2 and requires a valid request',async
  const f=fixture();await assert.rejects(f.call('preview',{soid:'1;DROP'}),{code:'IP_SOURCE_INVALID'});
  await assert.rejects(f.call('apply',{requestId:'x',fingerprint:'x',invoiceDate:'2026-10-25'}),{code:'IP_REQUEST_INVALID'});
  await assert.rejects(fixture({dbName:'production'}).call('preview'),{code:'IP_TARGET_NOT_SUPPORTED'});
+});
+test('taxable 107 N previews and applies only with the approved mapping intact',async t=>{
+ const setting='NATIVE_SALES_VAT_APPROVAL',saved=process.env[setting];
+ t.after(()=>{if(saved===undefined)delete process.env[setting];else process.env[setting]=saved;});
+ delete process.env[setting];
+ const exempt=fixture({taxAmount:'0.0000'});
+ assert.equal((await exempt.call('preview')).taxAmount,'0.0000');
+ assert.ok(!exempt.calls.some(c=>/JOIN dbo.EMVATGroup/.test(c.text)));
+ const f=fixture({taxAmount:'1190.0000',vatAccounts:[{GroupId:31,AccountId:41,AccountCode:'VAT-OUT'}]});
+ await assert.rejects(f.call('preview'),{code:'IP_VAT_APPROVAL_REQUIRED'});
+ process.env[setting]='dbwins_worldfert9_uat2:31:VAT-OUT';
+ const preview=await command(f);
+ const lookup=f.calls.find(c=>/JOIN dbo.EMVATGroup/.test(c.text));
+ assert.equal(lookup.p.soid.value,601);
+ assert.equal(lookup.p.docuType.value,104);
+ assert.match(lookup.text,/v\.VATGroupID=h\.VATGroupID AND v\.VatType=h\.VatType/);
+ assert.match(lookup.text,/v\.VATGroupID=@groupId AND RTRIM\(a\.AccCode\)=@accountCode/);
+ f.state.vatAccounts=[];
+ await assert.rejects(f.call('apply',preview),{code:'IP_VAT_APPROVAL_REQUIRED'});
+ assert.ok(!f.state.applied);
+ f.state.vatAccounts=[{GroupId:31,AccountId:41,AccountCode:'VAT-OUT'}];
+ assert.equal((await f.call('apply',preview)).invoiceNo,'N69-02001');
 });
 test('only effective ACCOUNTING may post; live identity and Access As authority are rechecked',async()=>{
  for(const user of [{sub:11,role:'WAREHOUSE'},{sub:44,role:'MANAGER'},{sub:99,role:'ADMIN'}])await assert.rejects(fixture().call('preview',{user}),{code:'IP_ACCOUNT_REQUIRED'});

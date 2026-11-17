@@ -10,7 +10,7 @@ require.cache[auth]={id:auth,filename:auth,loaded:true,exports:{
  requireAuth:(req,_res,next)=>{req.user=currentUser;next();},requireRole:()=> (_req,_res,next)=>next(),
 }};
 const db=h.installDbStub(({kind,text,inputs})=>{
- if(/FROM dbo\.EMCust WHERE CustID = @c/.test(text))return missing?[]:[{ok:1}];
+ if(/FROM dbo\.EMCust c WITH \(UPDLOCK,HOLDLOCK\)/.test(text) || /WHERE c\.CustID=@visibilityCustId/.test(text))return missing?[]:[{ok:1}];
  if(/SELECT CustName, CreditLimit, CreditHold, AgingDays, Note FROM wf\.CreditMaster/.test(text))return credit?[{...credit}]:[];
  if(/MERGE wf\.CreditMaster/.test(text)){assert.equal(kind,'tx');credit={CreditLimit:inputs.lim,CreditHold:inputs.hold,AgingDays:inputs.hasAging?inputs.aging:credit?.AgingDays??null};return {rowsAffected:[1]};}
  if(/IF OBJECT_ID\('wf\.CustomerExt'/.test(text)){assert.equal(kind,'tx');ext={CreditLimit:inputs.lim,AgingDays:inputs.hasAging?inputs.aging:ext?.AgingDays??null};return {rowsAffected:[1]};}

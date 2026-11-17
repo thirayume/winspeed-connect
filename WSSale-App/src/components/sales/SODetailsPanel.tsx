@@ -3,6 +3,7 @@ import { X, Lock, Unlock, Truck, Package, FileText, CalendarClock, CheckCircle2,
 import { cn } from '../ui/Base';
 import { displayStatus } from '../../constants/soStatus';
 import { SOStatusBadge } from './SOStatusBadge';
+import { DocStageChip } from './DocStageChip';
 import { useErpStore } from '../../store/erp-store';
 import { approveGiveawayLine, confirmSO, cancelSO, shipSO, moveToPicking, createUnlockRequest } from '../../services/api';
 import { appAlert, appPrompt } from '../ui/AppAlert';
@@ -95,6 +96,8 @@ export function SODetailsPanel({
             )}
           </div>
           <p className="text-xs text-gray-400 mt-0.5">{so.custName} · {so.createdAt?.slice(0, 10)}</p>
+          {/* which WinSpeed document this bill has reached, with the tonnes on its tickets */}
+          <DocStageChip stage={so.docStage} showQuantities className="mt-1.5" />
         </div>
         {!isInline && (
           <button onClick={onClose} className="rounded-full p-2 text-gray-400 hover:bg-gray-100">

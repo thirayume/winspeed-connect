@@ -47,6 +47,14 @@ async function getCreditAgingPolicyBounds(readSetting = getSettingValue) {
  * @returns {Promise<object>} Credit and Aging evaluation result
  */
 async function checkCustomerCreditAndAging(custId, orderAmount = 0, deps = {}) {
+  // Invalid order totals must not reduce outstanding AR or silently disable a
+  // strict credit limit. Preserve zero for callers without an order amount.
+  const amt = orderAmount == null ? 0 : Number(orderAmount);
+  if ((typeof orderAmount !== 'number' && typeof orderAmount !== 'string' && orderAmount != null) ||
+      (typeof orderAmount === 'string' && !/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(orderAmount)) ||
+      !Number.isFinite(amt) || amt < 0) {
+    throw Object.assign(new Error('ยอดคำสั่งซื้อต้องเป็นจำนวนไม่ติดลบ'),{status:400,code:'CREDIT_AMOUNT_INVALID'});
+  }
   const queryFn = deps.wfQuery || wfQuery;
   const readSetting = deps.getSettingValue || getSettingValue;
   const cid = String(custId || '').trim();
@@ -221,7 +229,6 @@ async function checkCustomerCreditAndAging(custId, orderAmount = 0, deps = {}) {
     }
   }
 
-  const amt = Number(orderAmount || 0);
   const totalWithOrder = totalOutstanding + amt;
   const isCreditLimitExceeded = creditLimit > 0 && totalWithOrder > creditLimit;
   const creditExcessAmount = isCreditLimitExceeded ? (totalWithOrder - creditLimit) : 0;

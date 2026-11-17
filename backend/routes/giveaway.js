@@ -7,8 +7,8 @@ const router = require('express').Router();
 const { sql, query, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
 const { logChangeEvent } = require('../services/policy-contract');
-const { businessIds } = require('../services/business-identity');
-const { hasColumn } = require('../services/request-context');
+const { businessIds, actorPerspective } = require('../services/business-identity');
+const { hasColumn, currentActorId } = require('../services/request-context');
 const { matchGiveawayItem } = require('../services/giveaway-matcher');
 const { createHash } = require('crypto');
 
@@ -32,7 +32,8 @@ const budgetKey = (region, year, brand, item, goodId = null, salesUserId = null)
 async function requireBudgetAuditIdentity(user) {
   const ids = businessIds(user);
   if (!ids.actor || !ids.effective) throw new Error('BUDGET_AUDIT_IDENTITY_REQUIRED');
-  if (user.isImpersonating && !await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId')) throw new Error('BUDGET_ACTOR_AUDIT_UNAVAILABLE');
+  if (ids.actor !== ids.effective && (currentActorId() !== ids.actor || !await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId')))
+    throw Object.assign(new Error('BUDGET_ACTOR_AUDIT_UNAVAILABLE'), { status: 503 });
 }
 
 async function budgetTxQuery(tx, text, inputs = {}) {
@@ -953,15 +954,11 @@ router.get('/budget-history', requireCapability('giveaway.budget'), async (req, 
 router.get('/my-quota', async (req, res) => {
   try {
     const year = YEAR(req.query.year);
-    let targetUserId = req.query.salesUserId ? Number(req.query.salesUserId) : req.user.id;
+    let targetUserId = req.query.salesUserId ? Number(req.query.salesUserId) : businessIds(req.user).effective;
     if (req.user.identityMapping) {
       if (req.query.salesUserId && Number(req.query.salesUserId) !== Number(req.user.sub))
         return res.status(409).json({ code: 'IDENTITY_MAPPING_REQUIRED' });
-      const { businessIds, actorPerspective } = require('../services/business-identity');
       targetUserId = businessIds(req.user).effective;
-      const actor = actorPerspective(req.user);
-      if (actor !== req.user && !await canViewSalesUser(actor, targetUserId))
-        return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูโควต้าของพนักงานขาย' });
       const window = await require('../services/global-data-window-store').readGlobalDataWindow();
       if (Number(year) - 543 < Number(String(window.businessDate).slice(0, 4)))
         return res.status(400).json({ message: 'ปีโควต้าต้องไม่ก่อนวันเริ่มข้อมูล' });
@@ -969,6 +966,9 @@ router.get('/my-quota', async (req, res) => {
     if (!(await canViewSalesUser(req.user, targetUserId))) {
       return res.status(403).json({ message: 'ดูโควต้าของพนักงานขายคนอื่นได้เฉพาะคนในทีม' });
     }
+    const actor = actorPerspective(req.user);
+    if (actor !== req.user && !await canViewSalesUser(actor, targetUserId))
+      return res.status(403).json({ message: 'ไม่มีสิทธิ์ดูโควต้าของพนักงานขาย' });
     const r = await wfQuery(`
       SELECT * FROM wf.v_GiveawayBudgetStatus
       WHERE SalesUserId = @u AND PeriodYear = @y
@@ -1102,7 +1102,7 @@ router.post('/borrow-requests', requireCapability('giveaway.borrow'), async (req
     res.json({ ok: true, id: r.recordset[0].Id });
   } catch (e) {
     console.error('[giveaway-borrow-requests] error:', e);
-    res.status(500).json({ message: 'เกิดข้อผิดพลาดในการบันทึกคำขอยืมโควตา: ' + e.message });
+    res.status(e.status || 500).json({ message: 'เกิดข้อผิดพลาดในการบันทึกคำขอยืมโควตา: ' + e.message });
   }
 });
 
@@ -1114,14 +1114,20 @@ router.get('/borrow-requests', async (req, res) => {
     const scope = await getVisibleScope(req.user);
     const byReq = scopeFilter(scope, { userCol: 'b.RequesterId', prefix: 'bq' });
     const byLen = scopeFilter(scope, { userCol: 'b.LenderId', prefix: 'bl' });
+    const actor = actorPerspective(req.user);
+    const actorScope = actor === req.user ? scope : await getVisibleScope(actor);
+    const actorReq = scopeFilter(actorScope, { userCol: 'b.RequesterId', prefix: 'abq' });
+    const actorLen = scopeFilter(actorScope, { userCol: 'b.LenderId', prefix: 'abl' });
     const r = await wfQuery(`
       SELECT b.*, req.DisplayName as RequesterName, len.DisplayName as LenderName
       FROM wf.GiveawayBorrowRequest b
       JOIN wf.AppUser req ON req.Id = b.RequesterId
       JOIN wf.AppUser len ON len.Id = b.LenderId
       WHERE b.RequestedAt >= @globalStartUtc AND ${scope.all ? '1=1' : `(${byReq.sql} OR ${byLen.sql})`}
+        AND ${actorScope.all ? '1=1' : `(${actorReq.sql} OR ${actorLen.sql})`}
       ORDER BY b.RequestedAt DESC
-    `, { ...byReq.inputs, ...byLen.inputs, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } });
+    `, { ...byReq.inputs, ...byLen.inputs, ...actorReq.inputs, ...actorLen.inputs,
+      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } });
     res.json(r.recordset || []);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -1131,10 +1137,13 @@ router.get('/borrow-requests', async (req, res) => {
 async function requireBorrowRequestInScope(req, res, next) {
   try {
     const scope = await getVisibleScope(req.user);
-    if (scope.all) return next();
+    const actor = actorPerspective(req.user);
+    const actorScope = actor === req.user ? scope : await getVisibleScope(actor);
+    if (scope.all && actorScope.all) return next();
     const cur = (await wfQuery(`SELECT RequesterId, LenderId FROM wf.GiveawayBorrowRequest WHERE Id=@id`,
       { id: { type: sql.Int, value: Number(req.params.id) || 0 } })).recordset?.[0];
-    if (cur && !inScope(scope, { userId: cur.RequesterId, extraUserIds: [cur.LenderId] })) {
+    if (cur && (!inScope(scope, { userId: cur.RequesterId, extraUserIds: [cur.LenderId] }) ||
+        !inScope(actorScope, { userId: cur.RequesterId, extraUserIds: [cur.LenderId] }))) {
       return res.status(404).json({ message: 'ไม่พบข้อมูลคำขอยืมโควตา' });
     }
     next();

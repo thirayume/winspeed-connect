@@ -192,6 +192,12 @@ test('FR-1: manualSettleCouponCut guards and execution workflow', async () => {
       BeneficiaryCustId: '0342001',
       BeneficiaryName: 'สหกรณ์ 0342001',
       OwnerCustId: '0342001'
+    },
+    '19': {
+      ReservationId: 19, CouponId: 246003, ReservedQty: 30.0,
+      RemainingReservedQty: 30.0, Status: 'RESERVED', CarrierSoId: 279002,
+      CreatedAt: '2026-10-04T03:00:00Z', BeneficiaryCustId: '0342001',
+      BeneficiaryName: 'สหกรณ์ 0342001', OwnerCustId: '0342001'
     }
   };
   const mockCuts = {
@@ -221,6 +227,7 @@ test('FR-1: manualSettleCouponCut guards and execution workflow', async () => {
         input(k, t, v) { this.inputs[k] = { type: t, value: v }; return this; }
         output() { return this; }
         async query(sqlText) {
+          const legacy=require('./helpers/native-hold-legacy.cjs')(sqlText);if(legacy)return legacy;
           if (sqlText.includes('SELECT 1 FROM sys.tables') && sqlText.includes('CouponReservationSettlement')) {
             return { recordset: [{ 1: 1 }] }; // Table exists
           }
@@ -232,16 +239,21 @@ test('FR-1: manualSettleCouponCut guards and execution workflow', async () => {
           if (sqlText.includes('FROM dbo.WFRedemtionDT rd') || sqlText.includes('FROM dbo.WFRedemtion rd')) {
             const redemIdVal = (this.inputs.redemId || this.inputs.redemptionId)?.value || 183003;
             const cut = mockCuts[redemIdVal] || mockCuts['183003'];
-            return { recordset: cut ? [cut] : [] };
+            const couponId = this.inputs.cid?.value || cut?.CouponID;
+            const used = mockSettlements.filter(s=>s.RedemptionID===redemIdVal && s.CouponID===couponId)
+              .reduce((n,s)=>n+s.MatchedQty,0);
+            return { recordset: cut ? [{...cut,CouponID:couponId,GoodQty:cut.GoodQty-used}] : [] };
           }
           if (sqlText.includes('FROM wf.CouponReservationSettlement') && (sqlText.includes('NativeRedemptionId = @redemId') || sqlText.includes('RedemptionID = @redemptionId'))) {
             const redemIdVal = (this.inputs.redemId || this.inputs.redemptionId)?.value || 183003;
-            const found = mockSettlements.find(s => String(s.RedemptionID) === String(redemIdVal));
+            const found = mockSettlements.find(s => String(s.RedemptionID) === String(redemIdVal) &&
+              String(s.ReservationID) === String(this.inputs.resId?.value));
             return { recordset: found ? [found] : [] };
           }
           if (sqlText.includes('INSERT INTO wf.CouponReservationSettlement')) {
             mockSettlements.push({
               ReservationID: this.inputs.resId.value,
+              CouponID: this.inputs.cid.value,
               RedemptionID: (this.inputs.redemId || this.inputs.redemptionId).value,
               MatchedQty: this.inputs.qty.value,
               SettledBy: this.inputs.uid ? this.inputs.uid.value : null,
@@ -296,9 +308,30 @@ test('FR-1: manualSettleCouponCut guards and execution workflow', async () => {
     wfQuery: stubDb.wfQuery,
     wfTransaction: stubDb.wfTransaction,
     validateSettlementSnapshot: async()=>{},
+    validateManualSettlementWindow: async()=>{},
     couponVisible: async()=>true,
     reservationsVisible: async()=>true,
   };
+
+  // A previously settled 116 that has since changed must hold every new
+  // manual settlement for this coupon before any business or audit write.
+  await assert.rejects(manualSettleCouponCut({reservationId:17,redemptionId:183003,
+    reason:'Review changed settled source',role:'ADMIN',
+    deps:{...testDeps,assertSettledSourcesUnchanged:async()=>{
+      throw Object.assign(Error('SOURCE_CHANGED'),{code:'COUPON_SETTLEMENT_SOURCE_CHANGED',status:409});
+    }}}),{code:'COUPON_SETTLEMENT_SOURCE_CHANGED'});
+  assert.equal(mockSettlements.length,0);assert.equal(changeEvents.length,0);assert.equal(outboxEvents.length,0);
+  for(const qty of [0.00001, 1.00001, Infinity]) {
+    await assert.rejects(manualSettleCouponCut({reservationId:17,redemptionId:183003,
+      reason:'Reject unrepresentable quantity',qty,role:'ADMIN',deps:testDeps}),e=>e.status===400);
+  }
+  assert.equal(mockSettlements.length,0);assert.equal(changeEvents.length,0);assert.equal(outboxEvents.length,0);
+  const small=await manualSettleCouponCut({reservationId:17,redemptionId:183003,
+    reason:'Accept the smallest valid amount',qty:0.0001,role:'ADMIN',deps:testDeps});
+  assert.equal(small.settledQty,0.0001);
+  assert.equal(mockSettlements[0].MatchedQty,0.0001);
+  mockSettlements.splice(0);changeEvents.splice(0);outboxEvents.splice(0);
+  mockReservations['17'].RemainingReservedQty=30;
 
   // Scope may be revoked after the initial lookup; fail before any write.
   let scopeChecks=0;
@@ -415,6 +448,14 @@ test('FR-1: manualSettleCouponCut guards and execution workflow', async () => {
       return true;
     }
   );
+
+  // A native 116 may contain another coupon line. Settling that distinct
+  // coupon must not be mistaken for replaying the first line of the header.
+  const secondLine=await manualSettleCouponCut({reservationId:19,redemptionId:183003,
+    reason:'Verify separate coupon line in one document',role:'MANAGER',
+    actor:{userId:42,role:'MANAGER'},deps:testDeps});
+  assert.equal(secondLine.settledQty,30);
+  assert.deepEqual(mockSettlements.map(x=>x.CouponID),[246002,246003]);
 });
 
 // ── FR-2: Price lookup by bill document date (asOf) ───────────────────────────

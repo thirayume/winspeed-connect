@@ -9,13 +9,16 @@
  * other families are empty sacks, inner bags, thread and raw material counted in their own units, so a count of empty
  * sacks read as thousands of tons of fertilizer.
  */
-const { wfQuery } = require('../db');
+const { sql, wfTransaction } = require('../db');
+const { stockIdentity, stockAudit } = require('./stock-audit');
 
 const SOURCE = 'WINSPEED';
 
-async function syncStockFromWinSpeed() {
-  await wfQuery(`DELETE FROM wf.OperationalStock WHERE Source = '${SOURCE}' AND LEFT(GoodId, 2) NOT IN ('7-', '9-')`);
-  const r = await wfQuery(`
+async function syncStockFromWinSpeed(user, ipAddress) {
+  const ids = await stockIdentity(user);
+  return wfTransaction(async tx => {
+  const removed = await tx.request().query(`DELETE FROM wf.OperationalStock WHERE Source = '${SOURCE}' AND LEFT(GoodId, 2) NOT IN ('7-', '9-')`);
+  const r = await tx.request().query(`
     ;WITH bal AS (
       SELECT RTRIM(g.GoodCode) AS GoodId, MAX(RTRIM(g.GoodName1)) AS GoodName,
              CAST(SUM(CAST(d.StockFlag AS INT) * d.GoodStockQty) AS DECIMAL(18,2)) AS Qty
@@ -25,7 +28,7 @@ async function syncStockFromWinSpeed() {
         AND LEFT(g.GoodCode, 2) IN ('7-', '9-')
       GROUP BY RTRIM(g.GoodCode)
     )
-    MERGE wf.OperationalStock AS t
+    MERGE wf.OperationalStock WITH (HOLDLOCK) AS t
     USING (SELECT GoodId, GoodName, Qty FROM bal WHERE Qty <> 0) AS s
       ON t.GoodId = s.GoodId AND t.WarehouseId = '-'
     WHEN MATCHED AND ISNULL(t.Source, '') = '${SOURCE}' THEN
@@ -37,7 +40,11 @@ async function syncStockFromWinSpeed() {
       UPDATE SET QtyOnHand = 0, AsOf = GETUTCDATE();
     SELECT @@ROWCOUNT AS Affected;
   `);
-  return Number(r.recordset?.[0]?.Affected) || 0;
+  const affected = Number(r.recordset?.[0]?.Affected) || 0;
+  await stockAudit(tx, { entityId: 'WINSPEED', action: 'SYNC', ids, ipAddress,
+    after: { affected, removed: Number(removed.rowsAffected?.[0] || 0) } });
+  return affected;
+  }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
 }
 
 module.exports = { syncStockFromWinSpeed };

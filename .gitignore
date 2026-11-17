@@ -134,6 +134,7 @@ docs/deploy/onprem/*
 !docs/deploy/onprem/uat2-deploy-brief.md
 !docs/deploy/onprem/sql/
 docs/deploy/onprem/sql/*
+!docs/deploy/onprem/sql/office-logins.sql
 # R740-SRV deploy tooling (secrets stay on the server in D:\SaleApp\<env>\config).
 !docs/deploy/r740/
 docs/deploy/r740/*

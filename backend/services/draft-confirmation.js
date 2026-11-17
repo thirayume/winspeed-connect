@@ -47,6 +47,7 @@ async function confirmDraft({tx:confirmationTx,draftId,user,ip,expectedRevision,
  await lockConfirmationResource(confirmationTx,'ConfirmSO_'+draftId);
  let so=(await confirmationQuery('SELECT * FROM wf.SalesOrder WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id', {id:{type:sql.Int,value:Number(draftId)}})).recordset[0];
  if(!so || so.Status!=='DRAFT') fail('Draft already converted or unavailable',409);
+ await require('./coupon-authorization-hold').assertCarrierHasNoActiveAuthorization(confirmationTx,so.Id,so.WfRef);
  if(expectedTripId!==undefined && Number(so.TripId||0)!==Number(expectedTripId||0)) fail('Trip membership changed; reload',409);
  if(expectedRevision!==undefined && Number(so.DocumentRevision)!==Number(expectedRevision)) fail('SO revision changed; reload',409);
  if(user.role==='SALES' && Number(so.SalesUserId)!==Number(user.sub)) fail('Cannot confirm another salesperson document',403);

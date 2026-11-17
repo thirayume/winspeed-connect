@@ -7,6 +7,7 @@ const router = require('express').Router();
 const { sql, wfQuery } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { getVisibleScope, inScope } = require('../services/visible-scope');
+const { actorPerspective } = require('../services/business-identity');
 const { INCIDENT_TYPES, localToUtc } = require('../services/rule-incidents');
 const { MENUS } = require('../services/role-capabilities');
 const { isValidStartDate, boundaries } = require('../services/data-window');
@@ -33,6 +34,8 @@ const APP_ACTIONS = Object.freeze({
 });
 
 const typeLabel = t => INCIDENT_TYPES[t]?.label || t;
+const hideSource = row => ({ ...row, IncidentKey: null, SOID: null, DocuNo: null, WghdId: null,
+  Detail: null, AckNote: null, SourceHidden: true });
 
 router.get('/types', requireRole(...VIEW_ROLES), (_req, res) => {
   res.json(Object.entries(INCIDENT_TYPES).map(([type, v]) => ({ type, ...v })));
@@ -43,16 +46,19 @@ router.get('/', requireRole(...VIEW_ROLES), async (req, res) => {
     const { status, type, from, to, search } = req.query;
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
     const where = ['i.OccurredAt >= @globalStartUtc'];
-    const inputs = { globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } };
+    const inputs = { globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
+      globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
+    const sourceVisible = "((i.SOID IS NULL AND i.DocuNo IS NULL AND i.WghdId IS NULL) OR (i.SOID IS NOT NULL AND h.SOID IS NOT NULL AND h.DocuDate >= @globalStartDate))";
     if (status && ['OPEN', 'ACK'].includes(status)) { where.push('i.Status = @status'); inputs.status = { type: sql.VarChar(12), value: status }; }
     if (type && INCIDENT_TYPES[type]) { where.push('i.IncidentType = @type'); inputs.type = { type: sql.VarChar(40), value: type }; }
     if (isValidStartDate(from)) { where.push('i.OccurredAt >= @from'); inputs.from = { type: sql.DateTime2, value: boundaries(from).utcInstant }; }
     if (isValidStartDate(to)) { where.push('i.OccurredAt < @toExclusive'); inputs.toExclusive = { type: sql.DateTime2, value: new Date(boundaries(to).utcInstant.getTime() + 86400000) }; }
-    if (search) { where.push('(i.DocuNo LIKE @search OR i.Detail LIKE @search OR h.CustName LIKE @search)'); inputs.search = { type: sql.NVarChar(80), value: `%${String(search).slice(0, 60)}%` }; }
+    if (search) { where.push(`((${sourceVisible} AND (i.DocuNo LIKE @search OR i.Detail LIKE @search)) OR h.CustName LIKE @search)`); inputs.search = { type: sql.NVarChar(80), value: `%${String(search).slice(0, 60)}%` }; }
     const rows = (await wfQuery(`
       SELECT TOP 500 i.Id, i.IncidentType, i.Severity, i.SOID, i.DocuNo, i.WghdId, i.Detail, i.OccurredAt, i.Status,
              i.AckAt, i.AckNote, ack.DisplayName AS AckByName,
-             RTRIM(h.CustName) AS CustName, RTRIM(emp.EmpName) AS SalesName, h.EmpID, e.SalesUserId
+             RTRIM(h.CustName) AS CustName, RTRIM(emp.EmpName) AS SalesName, h.EmpID, e.SalesUserId,
+             CASE WHEN ${sourceVisible} THEN 1 ELSE 0 END AS SourceVisible
       FROM wf.RuleIncident i WITH (NOLOCK)
       LEFT JOIN dbo.SOHD h WITH (NOLOCK) ON h.SOID = i.SOID
       LEFT JOIN dbo.EMEmp emp WITH (NOLOCK) ON emp.EmpID = h.EmpID
@@ -62,8 +68,11 @@ router.get('/', requireRole(...VIEW_ROLES), async (req, res) => {
       ORDER BY i.OccurredAt DESC, i.Id DESC
     `, inputs)).recordset || [];
     const scope = await getVisibleScope(req.user);
-    const visible = scope.all ? rows : rows.filter(r => r.SOID == null || inScope(scope, { userId: r.SalesUserId, empId: r.EmpID }));
-    res.json(visible.map(({ EmpID, SalesUserId, ...r }) => ({ ...r, TypeLabel: typeLabel(r.IncidentType) })));
+    const actor = actorPerspective(req.user);
+    const actorScope = actor === req.user ? scope : await getVisibleScope(actor);
+    const visible = rows.filter(r => r.SOID == null ||
+      (inScope(scope, { userId: r.SalesUserId, empId: r.EmpID }) && inScope(actorScope, { userId: r.SalesUserId, empId: r.EmpID })));
+    res.json(visible.map(({ EmpID, SalesUserId, SourceVisible, ...r }) => ({ ...(Number(SourceVisible) === 1 ? r : hideSource(r)), TypeLabel: typeLabel(r.IncidentType) })));
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
@@ -97,7 +106,9 @@ async function buildTimeline(soid, docuNo, dataWindow) {
     LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = a.UserId
     WHERE a.SoId = CONVERT(VARCHAR(50), @soid)
     ORDER BY a.Id`, q)).recordset || [];
-  for (const a of appEvents) add(a.CreatedAt, `Sale-App: ${APP_ACTIONS[a.Action] || a.Action}`, a.DisplayName, booking?.DocuNo, a.Note);
+  const bookingVisible = booking && visible(localToUtc(booking.DocuDate));
+  for (const a of appEvents) add(a.CreatedAt, `Sale-App: ${APP_ACTIONS[a.Action] || a.Action}`, a.DisplayName,
+    bookingVisible ? booking.DocuNo : null, bookingVisible ? a.Note : null);
 
   const deliveries = booking?.AppvDocuNo ? ((await wfQuery(`
     SELECT RTRIM(d.DocuNo) AS DocuNo, d.SOID, d.DocuDate FROM dbo.SOHD d WITH (NOLOCK)
@@ -109,35 +120,62 @@ async function buildTimeline(soid, docuNo, dataWindow) {
     Object.fromEntries(deliveries.map((d, n) => [`d${n}`, { type: sql.NVarChar(30), value: d.DocuNo }])))).recordset || []) : [];
 
   const scales = (await wfQuery(`
-    SELECT w.Id, RTRIM(w.CarNo) AS CarNo, w.DateIn, w.DateOut, w.WeightIn, w.WeightOut, w.WeightNet, RTRIM(w.MoveBill) AS MoveBill, RTRIM(w.UpdateBy) AS UpdateBy
-    FROM dbo.WGHD w WITH (NOLOCK) WHERE w.WGType = 'SO' AND w.SPID = @soid ORDER BY w.Id`, q)).recordset || [];
+    SELECT w.Id, RTRIM(w.CarNo) AS CarNo, w.DateIn, w.DateOut, w.WeightIn, w.WeightOut, w.WeightNet, RTRIM(w.MoveBill) AS MoveBill, RTRIM(w.UpdateBy) AS UpdateBy,
+      CASE WHEN EXISTS (SELECT 1 FROM dbo.WFRedemtionHD rh WHERE RTRIM(rh.DocuNo)=RTRIM(w.MoveBill) AND rh.DocuDate >= @globalStartDate)
+             AND NOT EXISTS (SELECT 1 FROM dbo.WFRedemtionHD rh WHERE RTRIM(rh.DocuNo)=RTRIM(w.MoveBill) AND (rh.DocuDate IS NULL OR rh.DocuDate < @globalStartDate))
+        THEN 1 ELSE 0 END AS MoveBillVisible
+    FROM dbo.WGHD w WITH (NOLOCK) WHERE w.WGType = 'SO' AND w.SPID = @soid ORDER BY w.Id`,
+    { ...q, globalStartDate:{type:sql.Date,value:dataWindow.businessDate} })).recordset || [];
   for (const w of scales) {
-    add(localToUtc(w.DateIn), 'ตาชั่ง: รถชั่งเข้า', w.UpdateBy, w.MoveBill, `${w.CarNo || ''} ${w.WeightIn || 0} กก.`.trim());
-    add(localToUtc(w.DateOut), 'ตาชั่ง: รถชั่งออก', w.UpdateBy, w.MoveBill, `${w.CarNo || ''} สุทธิ ${w.WeightNet || 0} กก.`.trim());
+    const moveBill = Number(w.MoveBillVisible) === 1 ? w.MoveBill : null;
+    add(localToUtc(w.DateIn), 'ตาชั่ง: รถชั่งเข้า', w.UpdateBy, moveBill, `${w.CarNo || ''} ${w.WeightIn || 0} กก.`.trim());
+    add(localToUtc(w.DateOut), 'ตาชั่ง: รถชั่งออก', w.UpdateBy, moveBill, `${w.CarNo || ''} สุทธิ ${w.WeightNet || 0} กก.`.trim());
   }
 
-  const docNos = [...new Set([booking?.DocuNo, booking?.AppvDocuNo, docuNo, ...deliveries.map(d => d.DocuNo), ...invoices.map(i => i.DocuNo), ...scales.map(w => w.MoveBill)].filter(Boolean))].slice(0, 30);
+  const docNos = [...new Set([
+    bookingVisible ? booking.DocuNo : null,
+    booking && visible(localToUtc(booking.AppvDate)) ? booking.AppvDocuNo : null,
+    docuNo,
+    ...deliveries.filter(d => visible(localToUtc(d.DocuDate))).map(d => d.DocuNo),
+    ...invoices.filter(i => visible(localToUtc(i.DocuDate))).map(i => i.DocuNo),
+    ...scales.filter(w => Number(w.MoveBillVisible) === 1 && visible(localToUtc(w.DateOut || w.DateIn))).map(w => w.MoveBill),
+  ].filter(Boolean))].slice(0, 30);
   if (docNos.length) {
-    const inputs = Object.fromEntries(docNos.map((d, n) => [`n${n}`, { type: sql.NVarChar(50), value: d }]));
+    const inputs = { ...Object.fromEntries(docNos.map((d, n) => [`n${n}`, { type: sql.NVarChar(50), value: d }])),
+      globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
     const audit = (await wfQuery(`
-      SELECT a.audit_datetime, a.audit_screen, a.audit_action, RTRIM(a.audit_username) AS Username, RTRIM(a.audit_docuno) AS DocuNo
+      SELECT a.audit_datetime, a.audit_screen, a.audit_action, RTRIM(a.audit_username) AS Username, RTRIM(a.audit_docuno) AS DocuNo,
+        CASE WHEN a.audit_screen=2098003052 AND a.audit_action='I' AND EXISTS (
+          SELECT 1 FROM dbo.WFRedemtionHD rh
+          WHERE rh.RedemtionID=a.audit_columnid AND rh.DocuType=116 AND rh.DocuDate>=@globalStartDate
+            AND RTRIM(rh.DocuNo)=RTRIM(a.audit_docuno)
+            AND EXISTS (SELECT 1 FROM dbo.WFRedemtionDT rd WHERE rd.RedemtionID=rh.RedemtionID)
+        ) THEN 1 ELSE 0 END AS Native116Present
       FROM dbo.SMAudit a WITH (NOLOCK)
       WHERE a.audit_docuno IN (${docNos.map((_, n) => `@n${n}`).join(',')})
         AND a.audit_action IN ('I','U','D')
       ORDER BY a.audit_datetime`, inputs)).recordset || [];
     for (const a of audit) {
       const screen = WS_SCREENS[a.audit_screen];
-      if (screen) add(localToUtc(a.audit_datetime), `WinSpeed: ${WS_ACTIONS[String(a.audit_action).trim()] || a.audit_action} ${screen}`, a.Username, a.DocuNo);
+      const action = String(a.audit_action).trim();
+      // WinSpeed can write an I audit event even when the 116 transaction is
+      // rolled back. Do not present that event alone as a saved document.
+      const label = Number(a.audit_screen) === 2098003052 && action === 'I'
+        ? (Number(a.Native116Present) === 1 ? 'บันทึก (พบใบขน)' : 'พยายามบันทึก (ยังไม่พบใบขนที่ยืนยันได้)')
+        : (WS_ACTIONS[action] || action);
+      if (screen) add(localToUtc(a.audit_datetime), `WinSpeed: ${label} ${screen}`, a.Username, a.DocuNo);
     }
   }
 
   steps.sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
   return {
-    booking: booking && visible(localToUtc(booking.DocuDate)) ? booking : null,
+    booking: bookingVisible ? { ...booking, AppvDocuNo: visible(localToUtc(booking.AppvDate)) ? booking.AppvDocuNo : null } : null,
     deliveries: deliveries.filter(d => visible(localToUtc(d.DocuDate))),
     invoices: invoices.filter(i => visible(localToUtc(i.DocuDate))),
-    scales: scales.filter(w => visible(localToUtc(w.DateOut || w.DateIn))).map(w => ({
+    scales: scales.filter(w => visible(localToUtc(w.DateOut || w.DateIn))).map(({ MoveBillVisible, ...w }) => ({
       ...w,
+      MoveBill: Number(MoveBillVisible) === 1 ? w.MoveBill : null,
+      MoveBillHidden: Boolean(w.MoveBill && Number(MoveBillVisible) !== 1),
       DateIn: visible(localToUtc(w.DateIn)) ? w.DateIn : null,
       DateOut: visible(localToUtc(w.DateOut)) ? w.DateOut : null,
     })),
@@ -150,18 +188,24 @@ router.get('/:id', requireRole(...VIEW_ROLES), async (req, res) => {
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
     const i = await loadIncident(req.params.id, dataWindow);
     if (!i) return res.status(404).json({ message: 'ไม่พบเหตุการณ์นี้' });
+    let sourceVisible = i.SOID == null && i.DocuNo == null && i.WghdId == null;
     if (i.SOID != null) {
       const owner = (await wfQuery(`
-        SELECT h.EmpID, e.SalesUserId FROM dbo.SOHD h WITH (NOLOCK)
+        SELECT h.EmpID, e.SalesUserId,
+          CASE WHEN h.DocuDate >= @globalStartDate THEN 1 ELSE 0 END AS SourceVisible FROM dbo.SOHD h WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt e WITH (NOLOCK) ON e.SOID = CONVERT(VARCHAR(50), h.SOID)
-        WHERE h.SOID = @s`, { s: { type: sql.Int, value: i.SOID } })).recordset?.[0];
+        WHERE h.SOID = @s`, { s: { type: sql.Int, value: i.SOID }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } })).recordset?.[0];
+      sourceVisible = Number(owner?.SourceVisible) === 1;
       const scope = await getVisibleScope(req.user);
-      if (!scope.all && !inScope(scope, { userId: owner?.SalesUserId, empId: owner?.EmpID })) {
+      const actor = actorPerspective(req.user);
+      const actorScope = actor === req.user ? scope : await getVisibleScope(actor);
+      if (!inScope(scope, { userId: owner?.SalesUserId, empId: owner?.EmpID }) ||
+          !inScope(actorScope, { userId: owner?.SalesUserId, empId: owner?.EmpID })) {
         return res.status(404).json({ message: 'ไม่พบเหตุการณ์นี้' });
       }
     }
-    const timeline = await buildTimeline(i.SOID, i.DocuNo, dataWindow);
-    res.json({ ...i, TypeLabel: typeLabel(i.IncidentType), timeline });
+    const timeline = await buildTimeline(i.SOID, sourceVisible ? i.DocuNo : null, dataWindow);
+    res.json({ ...(sourceVisible ? i : hideSource(i)), TypeLabel: typeLabel(i.IncidentType), timeline });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 

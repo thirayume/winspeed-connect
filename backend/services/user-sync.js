@@ -10,6 +10,7 @@ const { sql, pools } = require('../db');
 const { primaryDatabase, primaryOwnerPool, onpremEnabled } = require('./active-database');
 const { isSwitchableDb } = require('../onprem-target');
 const { randomUUID } = require('crypto');
+const { runTransaction } = require('./transaction-execution');
 
 async function syncUsersToTarget(targetDbName, identity) {
   if (!targetDbName || typeof targetDbName !== 'string') {
@@ -41,7 +42,7 @@ async function syncUsersToTarget(targetDbName, identity) {
   const sourceTx = new sql.Transaction(srcPool);
   await sourceTx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
   let sourceContext, rolesRs, permsRs, usersRs, userRolesRs;
-  try {
+  await runTransaction(sourceTx, async () => {
     sourceContext = (await sourceTx.request().query('SELECT DB_NAME() AS DatabaseName, @@SERVERNAME AS ServerName')).recordset?.[0];
     if (!sourceContext?.ServerName || String(sourceContext.DatabaseName || '').toLowerCase() !== primaryDb.toLowerCase())
       throw Object.assign(new Error('ฐานต้นทางไม่ตรงกับฐานตัวตนหลัก'), { status: 409, code: 'SYNC_SOURCE_CONTEXT_MISMATCH' });
@@ -53,11 +54,7 @@ async function syncUsersToTarget(targetDbName, identity) {
       FROM wf.AppUser
     `);
     userRolesRs = await sourceTx.request().query('SELECT UserId, RoleCode FROM wf.UserRole');
-    await sourceTx.commit();
-  } catch (error) {
-    try { await sourceTx.rollback(); } catch (_) { /* preserve the original error */ }
-    throw error;
-  }
+  }, undefined, { lockTimeoutMs: 10000 });
 
   const roles = rolesRs.recordset || [];
   const perms = permsRs.recordset || [];
@@ -76,7 +73,7 @@ async function syncUsersToTarget(targetDbName, identity) {
   const tgtPool = tgtEntry.ownerPool;
   const tx = new sql.Transaction(tgtPool);
   await tx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
-  try {
+  return runTransaction(tx, async () => {
   const targetContext = (await tx.request().query('SELECT DB_NAME() AS DatabaseName, @@SERVERNAME AS ServerName')).recordset?.[0];
   if (!targetContext?.ServerName || String(targetContext.DatabaseName || '').toLowerCase() !== cleanTarget.toLowerCase())
     throw Object.assign(new Error('ฐานปลายทางไม่ตรงกับที่เลือก'), { status: 409, code: 'SYNC_TARGET_CONTEXT_MISMATCH' });
@@ -261,7 +258,6 @@ async function syncUsersToTarget(targetDbName, identity) {
   await tx.request().input('actor', sql.Int, actorPrimaryId).input('target', sql.NVarChar(100), cleanTarget)
     .input('detail', sql.NVarChar(sql.MAX), detail)
     .query("INSERT INTO wf.AdminChangeAudit (ActorId, Action, Target, Detail) VALUES (@actor, 'USER_ROLE_SYNC', @target, @detail)");
-  await tx.commit();
   return {
     ok: true,
     message: `ซิงค์บัญชีผู้ใช้และสิทธิ์ไปยังฐานข้อมูล ${cleanTarget} สำเร็จเรียบร้อย`,
@@ -272,10 +268,7 @@ async function syncUsersToTarget(targetDbName, identity) {
       memberships: userRoles.length,
     },
   };
-  } catch (error) {
-    try { await tx.rollback(); } catch (_) { /* preserve the original error */ }
-    throw error;
-  }
+  }, undefined, { lockTimeoutMs: 10000 });
 }
 
 module.exports = { syncUsersToTarget };

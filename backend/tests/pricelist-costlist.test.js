@@ -674,7 +674,10 @@ test('Quotation POST & PriceApproval approve: block SUSPENDED and below-cost neu
 });
 
 // ── 6. Reports: -2..+2 Contiguous Window + Sheet Layout + XLSX Export ─────────
-test('Reports: -2..+2 contiguous window validation, BE dd/mm/yyyy format, Sheet layout & XLSX', async () => {
+test('Reports: -2..+2 contiguous window validation, BE dd/mm/yyyy format, Sheet layout & XLSX', async (t) => {
+  // The fixtures describe November 2026. Pin the report clock to their first
+  // active period so this layout test does not change at midnight on Nov 16.
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-11T05:00:00.000Z') });
   assert.equal(formatThaiBeDate('2026-11-11'), '11/11/2569');
   assert.equal(formatThaiBeDate('2026-11-11T09:05:00+07:00', true), '11/11/2569 09:05');
 

@@ -41,6 +41,7 @@ class MockRequest {
   }
   async query(sqlText) {
     executedQueries.push({ text: sqlText, inputs: this.inputs });
+    const legacy=require('./helpers/native-hold-legacy.cjs')(sqlText);if(legacy)return legacy;
     return queryHandler(sqlText, this.inputs);
   }
   async execute(procName) {

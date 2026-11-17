@@ -12,8 +12,9 @@ function lockConflictNumber(error) {
 }
 
 async function setLockTimeout(tx, ms) {
-  // Session setting, so it is put back to "wait" before the connection returns to the pool.
-  await tx.request().query(`SET LOCK_TIMEOUT ${Number(ms)}`);
+  // A parameterless query may execute under sp_executesql, whose SET scope ends
+  // when the RPC returns. A batch applies the setting to the pinned session.
+  await tx.request().batch(`SET LOCK_TIMEOUT ${Number(ms)}`);
 }
 
 /**
@@ -21,25 +22,34 @@ async function setLockTimeout(tx, ms) {
  *
  * options.lockTimeoutMs (positive integer): the transaction gives up a lock wait after
  * that long instead of waiting without limit while it holds its own locks. Serializable
- * transactions use it so they cannot keep rows of the shared WinSpeed database locked for
- * longer than a bounded time. A lock timeout or deadlock then surfaces as HTTP 409 with a
- * retry message.
+ * transactions use it to bound each lock wait. It does not bound total transaction time
+ * or how long previously acquired locks are held. A lock timeout or deadlock then surfaces
+ * as HTTP 409 with a retry message.
  */
 async function runTransaction(tx, fn, onRollbackConfirmed, options = {}) {
   const lockTimeoutMs = Number.isSafeInteger(options.lockTimeoutMs) && options.lockTimeoutMs > 0 ? options.lockTimeoutMs : null;
   let commitStarted=false;
   let timeoutSet=false;
+  // node-mssql releases a driver-aborted transaction's connection before our
+  // catch handler can issue a reset. Its supported pool drivers validate this
+  // marker on the next acquire and discard the session rather than reuse it.
+  const connection = lockTimeoutMs ? tx._acquiredConnection : null;
+  const invalidate = () => { if (connection) connection.hasError = true; };
+  const onAutoRollback = aborted => { if (aborted && timeoutSet) invalidate(); };
+  if (connection && typeof tx.on === 'function') tx.on('rollback', onAutoRollback);
   try {
-    if (lockTimeoutMs) { await setLockTimeout(tx, lockTimeoutMs); timeoutSet=true; }
+    // If the driver reports a failure after the server applied SET, still
+    // attempt to restore the session before returning it to the pool.
+    if (lockTimeoutMs) { timeoutSet=true; await setLockTimeout(tx, lockTimeoutMs); }
     const result=await fn(tx);
     if (timeoutSet) { await setLockTimeout(tx, -1); timeoutSet=false; }
     commitStarted=true;
     await tx.commit();
     return result;
   } catch(error) {
-    // Best effort: if the server already ended the transaction this cannot run, and the
-    // pooled connection keeps the bounded wait, which only makes later waits fail sooner.
-    if (timeoutSet && !commitStarted) { try { await setLockTimeout(tx, -1); } catch (_) {} }
+    // If a reset cannot be confirmed, prevent the possibly tainted connection
+    // from being reused with this transaction's session setting.
+    if (timeoutSet && !commitStarted) { try { await setLockTimeout(tx, -1); } catch (_) { invalidate(); } }
     let rolledBack=false;
     try { await tx.rollback(); rolledBack=true; } catch (_) {}
     if (!commitStarted && rolledBack && typeof onRollbackConfirmed==='function') {
@@ -51,6 +61,8 @@ async function runTransaction(tx, fn, onRollbackConfirmed, options = {}) {
         { status: 409, code: conflict === 1205 ? 'DEADLOCK_RETRY' : 'LOCK_TIMEOUT', number: conflict, originalError: error });
     }
     throw error;
+  } finally {
+    if (connection && typeof tx.removeListener === 'function') tx.removeListener('rollback', onAutoRollback);
   }
 }
 module.exports={runTransaction, lockConflictNumber};

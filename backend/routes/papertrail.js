@@ -47,20 +47,25 @@ function paperAuditNote(message, user) {
 async function paperInScope(user, soId) {
   const scopes = await paperScopes(user);
   const dataWindow = await readGlobalDataWindow();
-  const row = (await wfQuery(`
-    SELECT TOP 1 so.SalesUserId, CAST(h.EmpID AS VARCHAR(20)) AS EmpID
+  const candidates = (await wfQuery(`
+    SELECT TOP 2 so.SalesUserId, CAST(h.EmpID AS VARCHAR(20)) AS EmpID,
+      CASE WHEN (NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NULL AND so.CreatedAt >= @globalStartUtc)
+        OR (NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NOT NULL AND h.DocuDate >= @globalStartDate)
+        THEN 1 ELSE 0 END AS InWindow
     FROM wf.v_AllSalesOrders so
     LEFT JOIN dbo.SOHD h WITH (NOLOCK) ON CAST(h.SOID AS VARCHAR(50)) = CAST(so.Id AS VARCHAR(50))
-    WHERE so.Id = @id AND (
-      (NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NULL AND so.CreatedAt >= @globalStartUtc)
-      OR (NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NOT NULL AND h.DocuDate >= @globalStartDate)
-    )`, {
+      AND NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NOT NULL AND h.DocuNo=so.ImportedDocuNo
+    WHERE so.Id = @id`, {
     id: { type: sql.VarChar(50), value: String(soId) },
     globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
     globalStartDate: { type: sql.Date, value: dataWindow.businessDate },
-  })).recordset[0];
-  const owner = row && { userId: row.SalesUserId, empId: row.EmpID };
-  return Boolean(row) && inScope(scopes.effectiveScope, owner) && inScope(scopes.actorScope, owner);
+  })).recordset || [];
+  // wf draft IDs and WinSpeed SOIDs are independent; never resolve an
+  // untyped collision by picking whichever row happens to come first.
+  if (candidates.length !== 1 || Number(candidates[0].InWindow) !== 1) return false;
+  const row = candidates[0];
+  const owner = { userId: row.SalesUserId, empId: row.EmpID };
+  return inScope(scopes.effectiveScope, owner) && inScope(scopes.actorScope, owner);
 }
 async function requirePaperInScope(req, res, next) {
   try {
@@ -227,8 +232,7 @@ router.get('/board', async (req, res) => {
     `, { ...sf.inputs, ...(await legacyCutoffInput()),
       globalStartDate:{type:sql.Date,value:dataWindow.businessDate},
       globalStartUtc:{type:sql.DateTime2,value:dataWindow.utcInstant} });
-    const board = {};
-    for (const st of STAGES) board[st] = [];
+    const cards = [];
     for (const row of r.recordset || []) {
       const card = {
         id: row.Id, wfRef: row.WfRef, custName: row.CustName, status: row.Status,
@@ -244,8 +248,14 @@ router.get('/board', async (req, res) => {
         beneficiaryCustName: row.BeneficiaryCustName || null,
         ownerCustCode: row.OwnerCustCode || null,
       };
-      (board[row.Status] ||= []).push(card);
+      cards.push(card);
     }
+    // Rows have already passed the actor/effective scope and date window.
+    try { await require('../services/document-stage').attachDocumentStages(cards, { query: wfQuery, sql, dataWindow }); }
+    catch (stageError) { console.warn('[paper-board] document stage unavailable:', stageError.code || '', stageError.message); }
+    const board = {};
+    for (const st of STAGES) board[st] = [];
+    for (const card of cards) (board[card.status] ||= []).push(card);
     res.json({ stages: STAGES, board });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -254,14 +264,15 @@ router.get('/board', async (req, res) => {
 router.get('/document/:soId', requirePaperInScope, async (req, res) => {
   try {
     const soId = String(req.params.soId);
-    const hd = (await wfQuery(`
-      SELECT so.Id, so.WfRef, so.CustId, so.CustName, so.TruckPlate, so.ControlTicketNo,
+    const headers = (await wfQuery(`
+      SELECT TOP 2 so.Id, so.WfRef, so.CustId, so.CustName, so.TruckPlate, so.ControlTicketNo,
              so.Status, so.DeliveryDate, so.CreatedAt, u.DisplayName AS SalesName
       FROM wf.v_AllSalesOrders so
       LEFT JOIN wf.AppUser u ON u.Id = so.SalesUserId
       WHERE so.Id = @id
-    `, { id: { type: sql.VarChar(50), value: soId } })).recordset[0];
-    if (!hd) return res.status(404).json({ message: 'ไม่พบ SO' });
+    `, { id: { type: sql.VarChar(50), value: soId } })).recordset || [];
+    if (headers.length !== 1) return res.status(404).json({ message: 'ไม่พบ SO' });
+    const hd = headers[0];
     // the bill keeps the bare name; printed copies carry the title or billing name, as WinSpeed's own forms do
     const party = (await wfQuery(`
       SELECT LTRIM(RTRIM(CASE ISNULL(c.CustBillName,'') WHEN '' THEN ISNULL(NULLIF(RTRIM(c.CustTitle),'')+' ','')+ISNULL(c.CustName,'') ELSE c.CustBillName END)) AS CustDocName
@@ -324,9 +335,10 @@ router.post('/:soId/print', requirePaperInScope, async (req, res) => {
     if (!business.effective || !business.actor) throw Object.assign(new Error('IDENTITY_BINDING_INVALID'), { status: 409 });
     const soId = String(req.params.soId);
     const docType = (req.body && req.body.docType) === 'RECEIVE' ? 'RECEIVE' : 'ISSUE';
-    const hd = (await wfQuery(`SELECT TOP 1 WfRef FROM wf.v_AllSalesOrders WHERE Id = @id`,
-      { id: { type: sql.VarChar(50), value: soId } })).recordset[0];
-    if (!hd) return res.status(404).json({ message: 'ไม่พบ SO' });
+    const headers = (await wfQuery(`SELECT TOP 2 WfRef FROM wf.v_AllSalesOrders WHERE Id = @id`,
+      { id: { type: sql.VarChar(50), value: soId } })).recordset || [];
+    if (headers.length !== 1) return res.status(404).json({ message: 'ไม่พบ SO' });
+    const hd = headers[0];
 
     // Printing again returns the SAME set: same QR codes, scan history kept. Opening the print preview used to
     // delete the copies and their scans and issue new QR codes, so paper already handed out stopped scanning and
@@ -468,9 +480,11 @@ router.get('/lost', requireRole(...PAPER_ROLES), async (req, res) => {
       WHERE pc.PrintedAt >= @globalStartUtc
         AND (pc.Status = 'LOST'
          OR (pc.Status IN ('PRINTED','IN_TRANSIT') AND pc.UpdatedAt < DATEADD(day, -3, GETUTCDATE())))
+        AND (SELECT COUNT(1) FROM wf.v_AllSalesOrders sourceCheck WHERE sourceCheck.Id=pc.SoId)=1
         AND EXISTS (
           SELECT 1 FROM wf.v_AllSalesOrders so
           LEFT JOIN dbo.SOHD h WITH (NOLOCK) ON CAST(h.SOID AS VARCHAR(50)) = CAST(so.Id AS VARCHAR(50))
+            AND NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NOT NULL AND h.DocuNo=so.ImportedDocuNo
           WHERE so.Id = pc.SoId AND ${sf.sql}
             AND ((NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NULL AND so.CreatedAt >= @globalStartUtc)
               OR (NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NOT NULL AND h.DocuDate >= @globalStartDate))

@@ -8,7 +8,7 @@ const { resolveApprovalPolicy } = require('../services/approval');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { logChangeEvent } = require('../services/policy-contract');
 const { businessIds } = require('../services/business-identity');
-const { hasColumn } = require('../services/request-context');
+const { hasColumn, currentActorId } = require('../services/request-context');
 
 router.use(requireAuth);
 
@@ -21,7 +21,8 @@ async function txQuery(tx, text, inputs = {}) {
 async function auditPolicy(tx, req, id, action, before, after) {
   const ids = businessIds(req.user);
   if (!ids.actor || !ids.effective) throw new Error('POLICY_AUDIT_IDENTITY_REQUIRED');
-  if (req.user.isImpersonating && !await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId')) throw new Error('POLICY_ACTOR_AUDIT_UNAVAILABLE');
+  if (ids.actor !== ids.effective && (currentActorId() !== ids.actor || !await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId')))
+    throw Object.assign(new Error('POLICY_ACTOR_AUDIT_UNAVAILABLE'), { status: 503 });
   await logChangeEvent(tx, { entityType:'APPROVAL_POLICY', entityId:String(id), action,
     beforeJson:before, afterJson:after, reasonCode:'APPROVAL_POLICY_CHANGE',
     userId:String(ids.effective), ipAddress:req.ip });
@@ -79,7 +80,7 @@ router.post('/', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) =>
       return inserted;
     });
     res.json({ id: r.recordset[0].Id });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // PUT /api/policy/:id — แก้ไข (ADMIN/MANAGER)
@@ -112,7 +113,7 @@ router.put('/:id', requireRole('ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) 
     });
     if (!__r.rowsAffected[0]) return res.status(404).json({ message: 'ไม่พบรายการที่ระบุ' });
     res.json({ ok: true });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // DELETE /api/policy/:id — ปิดใช้งาน (ADMIN)
@@ -131,7 +132,7 @@ router.delete('/:id', requireRole('ADMIN'), async (req, res) => {
     });
     if (!r.rowsAffected[0]) return res.status(404).json({ message: 'ไม่พบนโยบายที่ระบุ' });
     res.json({ ok: true });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 module.exports = router;

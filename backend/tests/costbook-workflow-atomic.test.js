@@ -33,6 +33,12 @@ const db=h.installDbStub(({kind,text,inputs})=>{
  if(/UPDATE wf\.CostBook SET Status = 'ARCHIVED'/.test(text)){books.find(b=>b.Id===inputs.oldId).Status='ARCHIVED';return {rowsAffected:[1]};}
  if(/UPDATE wf\.CostBook SET Status = @s/.test(text)){books.find(b=>b.Id===inputs.id).Status=inputs.s;return {rowsAffected:[1]};}
  if(/UPDATE wf\.CostBook\s+SET Name = @name/.test(text)){books.find(b=>b.Id===inputs.id).Name=inputs.name;return {rowsAffected:[1]};}
+ if(/INSERT INTO wf\.CostBookAudit/.test(text) && inputs.batch){
+  if(failAudit===inputs.action)throw Error('simulated snapshot failure');
+  for(const line of lines.filter(l=>l.CostBookId===inputs.book&&(!inputs.line||l.Id===inputs.line)&&(!inputs.good||l.GoodId===inputs.good)))
+    events.push({id:inputs.book,action:inputs.action,batch:inputs.batch,good:line.GoodId,price:line.CostPrice});
+  return {rowsAffected:[1]};
+ }
  if(/INSERT INTO wf\.CostBookAudit/.test(text)) {if(failAudit===true||failAudit===inputs.a)throw Error('simulated audit failure');events.push({id:inputs.id,action:inputs.a,from:inputs.f,to:inputs.t});return {rowsAffected:[1]};}
  if(/INSERT INTO wf\.ChangeEvent/.test(text)){if(failChangeAudit)throw Error('simulated identity audit failure');changeEvents.push({...inputs});return {rowsAffected:[1]};}
  throw Error('Unexpected SQL: '+text);
@@ -99,4 +105,17 @@ test('archived costlists reject line changes before modifying lines or audit',as
  books[0].Status='ARCHIVED';const before=structuredClone(lines);
  assert.equal((await app.call('PATCH','/api/costbook/1/lines/11',{body:{costPrice:20}})).status,400);
  assert.deepEqual(lines,before);assert.deepEqual(events,[]);
+});
+test('bulk price replacement captures restricted before/after snapshots and links their actor audit',async()=>{
+ const r=await app.call('POST','/api/costbook/1/lines',{body:{lines:[{goodId:'101',costPrice:20}]}});
+ assert.equal(r.status,200);
+ const before=events.find(e=>e.action==='PRICE_BEFORE'),after=events.find(e=>e.action==='PRICE_AFTER');
+ assert.deepEqual([before.good,before.price,after.good,after.price],['100',10,'101',20]);
+ assert.equal(before.batch,after.batch);
+ assert.equal(JSON.parse(changeEvents.at(-1).after).auditBatchId,before.batch);
+ assert.ok(!changeEvents.at(-1).after.includes('101'));
+});
+test('failure to save the after snapshot rolls back the replacement and earlier snapshot',async()=>{
+ failAudit='PRICE_AFTER';const r=await app.call('POST','/api/costbook/1/lines',{body:{lines:[{goodId:'101',costPrice:20}]}});
+ assert.equal(r.status,500);assert.equal(lines[0].GoodId,'100');assert.deepEqual(events,[]);assert.deepEqual(changeEvents,[]);
 });

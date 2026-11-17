@@ -8,6 +8,14 @@ replace('../services/rebate-route-fence',{withRebateRouteFence:fn=>fn({environme
   routeParticipantFence:async()=>{calls.push('participant');},isShipmentEpoch:e=>e.generation>0});
 replace('../services/rebate-ticket-booking-proof',{prepareTicketBookingProof:async(_q,input)=>{calls.push(input);return {
   bookingId:input.bookingId,lineNo:input.lineNo,financial:{price:'secret'},plan:{quantityTon:'1.0000',asOfDate:'2026-11-14',allocations:[{ticketId:1}]}};}});
+const postedVerifier=async()=>true;
+replace('../services/rebate-ticket-financial-verifier',{verifyPostedTicketSale:postedVerifier});
+replace('../services/rebate-ticket-redemption-transaction',{executeTicketRedemption:async(user,payload,options)=>{
+  await options.verifyTarget(async()=>({recordset:[{DatabaseName:'dbwins_worldfert9_uat_fz'}]}),{generation:1});
+  assert.equal(options.verifyFinancialTreatment,postedVerifier);
+  calls.push({actor:user.sub,payload});
+  return {id:10,replayed:false};
+}});
 let app,oldPool,oldPreview;
 test.before(async()=>{oldPool=process.env.REBATE_POOL_103_ENABLED;oldPreview=process.env.REBATE_TICKET_PREVIEW_ENABLED;
   app=await h.startApp([['/api/rebate-pool','../../routes/rebate-pool']]);});
@@ -41,4 +49,26 @@ test('a stale selected database never reaches booking proof',async()=>{
   calls=[];const r=await app.call('POST','/api/rebate-pool/tickets/redemption-preview',{user:{sub:1,role:'ADMIN'},
     body:{bookingId:4,lineNo:1,requestedTonnage:'1',expectedDatabase:'dbwins_worldfert2'}});
   assert.equal(r.status,409);assert.equal(r.body.code,'REBATE_TARGET_MISMATCH');assert.equal(calls.length,1);
+});
+test('redeem uses the configured treatment and verifies target before permitting a writer',async()=>{
+  process.env.REBATE_POOL_103_ENABLED='true';
+  const key='REBATE_TICKET_REDEMPTION_TREATMENT';
+  const saved=process.env[key];
+  process.env[key]='dbwins_worldfert9_uat_fz:ZERO';
+  calls=[];
+  const redeem=body=>app.call('POST','/api/rebate-pool/tickets/redeem',{user:{sub:1,role:'ADMIN'},body});
+  const request={bookingId:4,lineNo:1,requestedTonnage:'1.0000',expectedDatabase:'dbwins_worldfert9_uat_fz',
+    requestId:'d64a1c67-34a3-4b32-8aeb-737451068f51',startDate:'1900-01-01',verified:true};
+  try {
+    assert.equal((await redeem({...request,expectedDatabase:'dbwins_worldfert2'})).body.code,'REBATE_TARGET_MISMATCH');
+    assert.equal((await redeem({...request,treatment:'DISCOUNT'})).body.code,'TICKET_TREATMENT_MISMATCH');
+    assert.deepEqual(calls,[]);
+    const response=await redeem(request);
+    assert.equal(response.status,200);
+    assert.deepEqual(response.body,{id:10,replayed:false});
+    assert.deepEqual(calls[0].payload,{bookingId:4,lineNo:1,requestedTonnage:'1.0000',
+      requestId:request.requestId,treatment:'ZERO'});
+  } finally {
+    if(saved===undefined)delete process.env[key];else process.env[key]=saved;
+  }
 });

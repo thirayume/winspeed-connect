@@ -297,6 +297,34 @@ export type SOStatus =
 
 export type SOPrefix = 'I' | 'K' | 'AI';
 
+// ── Which WinSpeed documents a bill has reached (backend/services/document-stage.js) ──
+export type DocStageCode =
+  | 'DRAFT'
+  | 'BOOKING_WAITING_APPROVAL'
+  | 'BOOKING_APPROVED'
+  | 'BOOKING_ORDERED'
+  | 'ORDER_ISSUED'
+  | 'TICKET_ISSUED'
+  | 'TICKET_CLOSED_WITHOUT_CUT'
+  | 'CUT_PARTLY'
+  | 'CUT_WAITING_INVOICE'
+  | 'INVOICED_PARTLY'
+  | 'INVOICED'
+  | 'CANCELLED';
+
+export type DocStage = {
+  code: DocStageCode;
+  /** the document the bill has reached: 103, 104, 116 or 107; null for a draft */
+  docType: number | null;
+  /** tonnes on the fertilizer tickets of a 104, what is left on them, what was cut (116) and what was invoiced (107) */
+  ticketQty?: number;
+  ticketRemaining?: number;
+  cutQty?: number;
+  invoicedQty?: number;
+  /** J or N once a 107 exists */
+  invoiceBook?: string | null;
+};
+
 export type SalesOrderLine = {
   id?: number;
   /** client-side ordering used when composing a save payload */
@@ -330,6 +358,8 @@ export type SalesOrderLine = {
 
 export type SalesOrder = {
   awaitingAi?: boolean;
+  /** set by the bill list; null when the stage could not be read */
+  docStage?: DocStage | null;
   id?: string | number;
   wfRef?: string;
   soPrefix: SOPrefix;
@@ -927,6 +957,7 @@ export type Quotation = {
 // ── Paper Trail (Kanban) ──────────────────────────────────────
 export type PaperCard = {
   id: string | number;
+  docStage?: DocStage | null;
   wfRef: string;
   custName: string;
   status: SOStatus;
@@ -1033,6 +1064,7 @@ export type TruckHistoryItem = {
 
 // ── Dashboard ─────────────────────────────────────────────────
 export type AgingRow = {
+  docStage?: DocStage | null;
   CustName: string;
   GoodCode: string;
   GoodName?: string;

@@ -8,13 +8,14 @@ const result={settledCount:2,processedCoupons:1,
   settlements:[{reservationId:11,redemptionId:1,redemptionDocuNo:'OLD',matchedQty:1,carrierDocuNo:'SECRET'},
     {reservationId:12,redemptionId:2,redemptionDocuNo:'CURRENT',matchedQty:2,carrierDocuNo:'SECRET'}],
   ambiguous:[{redemptionId:3,redemptionDocuNo:'UNKNOWN',reason:'AMBIGUOUS'}],
-  unmatched:[{redemptionId:2,docuNo:'CURRENT',docuDate:'2026-01-01',goodQty:1,reason:'NO_CANDIDATE',
+  unmatched:[{redemptionId:2,couponId:42,couponNo:'D-TEST',docuNo:'CURRENT',docuDate:'2026-01-01',goodQty:1,reason:'NO_CANDIDATE',
     candidateReservations:[{id:12,carrierSoId:'10',carrierDocuNo:'OLD-SOURCE',confirmDate:'2025-01-01',plate:'secret',reservedQty:2,remainingReservedQty:1}]}]};
 test('settlement response hides old or undated cuts while preserving full accounting counts',async()=>{
   let query;
   const output=await presentSettlement(result,window,async(text,inputs)=>{query={text,inputs};return {recordset:[{RedemtionID:2}]};});
   assert.equal(output.settledCount,2);assert.equal(output.settlements.length,1);assert.equal(output.settlements[0].redemptionDocuNo,'CURRENT');
   assert.equal(output.ambiguous.length,0);assert.equal(output.unmatched.length,1);
+  assert.equal(output.unmatched[0].couponId,42);assert.equal(output.unmatched[0].couponNo,'D-TEST');
   assert.deepEqual(output.unmatched[0].candidateReservations,[{id:12,reservedQty:2,remainingReservedQty:1}]);
   assert.doesNotMatch(JSON.stringify(output),/OLD-SOURCE|SECRET|UNKNOWN/);
   assert.match(query.text,/DocuDate>=@start/);assert.equal(query.inputs.start.value,'2026-01-01');
@@ -23,4 +24,8 @@ test('SQL failure omits all document details but reports previously committed co
   const output=await presentSettlement(result,window,async()=>{throw Error('DB_DOWN');});
   assert.equal(output.settledCount,2);assert.deepEqual(output.settlements,[]);assert.deepEqual(output.unmatched,[]);assert.ok(output.note);
   assert.doesNotMatch(JSON.stringify(output),/CURRENT|OLD|SECRET|UNKNOWN/);
+});
+test('review queue exposes the current cut number and quantity expected by the screen',async()=>{
+  const output=await presentSettlement({ambiguous:[{redemptionId:4,redemptionDocuNo:'TEST',cutQty:0.3,reason:'CUT_EXCEEDS_RESERVATION'}]},window,async()=>({recordset:[{RedemtionID:4}]}));
+  assert.deepEqual(output.ambiguous,[{redemptionId:4,redemptionDocuNo:'TEST',cutQty:0.3,docuNo:'TEST',qty:0.3,reason:'CUT_EXCEEDS_RESERVATION'}]);
 });

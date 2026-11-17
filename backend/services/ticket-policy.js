@@ -42,8 +42,8 @@ async function resolveTicketPolicy(asOfDate = null) {
     ? Math.max(0, parseInt(snapJson.CONTROL_TICKET_ALERT_DAYS, 10))
     : 7;
 
-  // Expiry Strict Mode is independent from Pickup Strict Mode; defaults to false (OFF)
-  let strictMode = String(snapJson.CONTROL_TICKET_BLOCK_EXPIRED) === 'true';
+  // The owner requires explicit expiry to block regardless of legacy settings.
+  const strictMode = true;
 
   // If resolving for current live operations (asOfDate is null), incorporate authoritative live SystemSetting
   if (!asOfDate) {
@@ -51,13 +51,11 @@ async function resolveTicketPolicy(asOfDate = null) {
       const rows = await wfQuery(`
         SELECT SettingKey, SettingValue 
         FROM wf.SystemSetting 
-        WHERE SettingKey IN ('CONTROL_TICKET_BLOCK_EXPIRED', 'CONTROL_TICKET_ALERT_DAYS')
+        WHERE SettingKey = 'CONTROL_TICKET_ALERT_DAYS'
       `);
       const list = rows.recordset || rows || [];
       for (const r of list) {
-        if (r.SettingKey === 'CONTROL_TICKET_BLOCK_EXPIRED') {
-          strictMode = String(r.SettingValue).toLowerCase() === 'true';
-        } else if (r.SettingKey === 'CONTROL_TICKET_ALERT_DAYS' && !isNaN(Number(r.SettingValue))) {
+        if (r.SettingKey === 'CONTROL_TICKET_ALERT_DAYS' && !isNaN(Number(r.SettingValue))) {
           alertDays = Math.max(0, parseInt(r.SettingValue, 10));
         }
       }
@@ -77,7 +75,7 @@ async function resolveTicketPolicy(asOfDate = null) {
  * Evaluate ticket expiry status (SO-04).
  * Rules:
  * - If expiryDate is null/empty/invalid -> UNKNOWN (never guess or use ValidDays)
- * - If expiryDate < today -> EXPIRED (blocked only if strictMode=true, warning if false)
+ * - If expiryDate < today -> EXPIRED and blocked, regardless of legacy strict settings
  * - If today <= expiryDate <= today + alertDays -> NEAR_EXPIRY (warning, not blocked)
  * - If expiryDate > today + alertDays -> VALID
  */
@@ -101,16 +99,7 @@ function evaluateTicketExpiry(expiryDate, asOfDate = null, alertDays = 7, strict
   const daysRemaining = diffBangkokCalendarDays(normExpiry, todayStr);
 
   if (daysRemaining < 0) {
-    const isBlocked = Boolean(strictMode && !strictOverride);
-    let warning = null;
-    let error = null;
-    if (isBlocked) {
-      error = `บล็อกการใช้ตั๋วคุม: ตั๋วหมดอายุแล้วเมื่อ ${normExpiry} (Strict Mode เปิดใช้งาน)`;
-    } else if (strictOverride) {
-      warning = `ตั๋วคุมหมดอายุแล้วเมื่อ ${normExpiry} แต่ได้รับอนุมัติใช้งานพิเศษ (Strict Override)`;
-    } else {
-      warning = `ตั๋วคุมหมดอายุแล้วเมื่อ ${normExpiry} (ผ่านไป ${Math.abs(daysRemaining)} วัน)`;
-    }
+    const error = `บล็อกการใช้ตั๋วคุม: ตั๋วหมดอายุแล้วเมื่อ ${normExpiry}`;
 
     return {
       status: 'EXPIRED',
@@ -118,10 +107,10 @@ function evaluateTicketExpiry(expiryDate, asOfDate = null, alertDays = 7, strict
       daysRemaining,
       isExpired: true,
       isNearExpiry: false,
-      blocked: isBlocked,
+      blocked: true,
       strictOverride: Boolean(strictOverride),
       label: 'หมดอายุแล้ว',
-      warning,
+      warning: null,
       error,
       provenance: 'EXPLICIT_EXPIRED',
     };
@@ -276,26 +265,16 @@ function evaluateTicketEligibility({
 
   // 3. Expiry checks (avail > 0)
   const isExpired = expiryEval?.status === 'EXPIRED';
-  const isBlockedByStrict = Boolean(strictMode && !strictOverride);
-
   if (isExpired) {
-    if (isBlockedByStrict) {
       return {
         eligibility: 'BLOCKED',
         status: 'BLOCKED',
         isBlocked: true,
         isSpendable: false,
-        reasons: [`ตั๋วคุมหมดอายุแล้วเมื่อ ${expiryEval.expiryDate} (บล็อกตามนโยบาย Strict Mode)`],
+        reasons: [`ตั๋วคุมหมดอายุแล้วเมื่อ ${expiryEval.expiryDate}`],
         warnings: [],
-        error: `ตั๋วหมดอายุแล้วเมื่อ ${expiryEval.expiryDate} (Strict Mode)`
+        error: `ตั๋วหมดอายุแล้วเมื่อ ${expiryEval.expiryDate}`
       };
-    } else {
-      if (strictOverride) {
-        warnings.push(`ตั๋วคุมหมดอายุแล้วเมื่อ ${expiryEval.expiryDate} (ได้รับอนุมัติยกเว้นนโยบาย Strict Override)`);
-      } else {
-        warnings.push(`ตั๋วคุมหมดอายุแล้วเมื่อ ${expiryEval.expiryDate} (แจ้งเตือนเพื่อทราบ Soft Expiry)`);
-      }
-    }
   } else if (expiryEval?.status === 'NEAR_EXPIRY') {
     warnings.push(`ตั๋วคุมใกล้หมดอายุในอีก ${expiryEval.daysRemaining} วัน (${expiryEval.expiryDate})`);
   }
@@ -577,6 +556,7 @@ async function updateTicketExpiryOverlay({
   userId = 'SYSTEM',
   userRole = null,
   ipAddress = null,
+  authorizeInTransaction = null,
 }) {
   if (!docuNo && !exactId) throw new Error('กรุณาระบุเลขที่ตั๋วคุม (docuNo) หรือ exactId');
 
@@ -708,6 +688,7 @@ async function updateTicketExpiryOverlay({
   let beforeSnapshot = null;
 
   await wfTransaction(async (tx) => {
+    if (authorizeInTransaction) await authorizeInTransaction(tx, resolvedDocuId);
     // STRICT ISOLATION & CONCURRENCY LOCKING:
     // Query with UPDLOCK, HOLDLOCK on exact DocuId. Never match or mutate a legacy shared row!
     const existingRes = await tx.request()
@@ -789,10 +770,13 @@ async function updateTicketExpiryOverlay({
       userId: String(userId),
       ipAddress,
     });
-  });
+  }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
 
-  // 7. Reconcile alerts for this ticket
-  await reconcileTicketAlerts(targetDocuNo);
+  // The expiry and its audit have already committed. Report a failed alert
+  // refresh separately so clients do not retry a successful business update.
+  let alertsPending = false;
+  try { await reconcileTicketAlerts(targetDocuNo); }
+  catch { alertsPending = true; console.warn('[ticket-policy] ALERT_RECONCILE_FAILED'); }
 
   return {
     success: true,
@@ -803,6 +787,7 @@ async function updateTicketExpiryOverlay({
     expiryType,
     strictOverride,
     policySnapshotId: policy.snapshotId,
+    alertsPending,
   };
 }
 

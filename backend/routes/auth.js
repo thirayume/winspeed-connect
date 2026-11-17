@@ -573,7 +573,10 @@ router.get('/me', requireAuth, async (req, res) => {
 // GET the picker data: the session's active database, the system default, the list offered, and color theme metadata.
 router.get('/databases', requireAuth, async (req, res) => {
   try {
-    const canSwitch = hasPermission(req.user, 'database.switch');
+    const actor = req.user.isImpersonating
+      ? {role:req.user.actorRole,roles:req.user.actorRoles,permissions:req.user.actorPermissions}
+      : req.user;
+    const canSwitch = hasPermission(req.user, 'database.switch') && hasPermission(actor, 'database.switch');
     const canSetSystem = hasPermission(req.user, 'database.set-system');
     const [system, rawList, themes] = await Promise.all([
       activeDb.systemActiveDatabase(),
@@ -585,9 +588,6 @@ router.get('/databases', requireAuth, async (req, res) => {
     // system default as active: business requests fail closed in that case.
     const requested = String(req.tokenPayload?.db || '').trim();
     const active = requested || system || getDbName();
-    const actor = req.user.isImpersonating
-      ? {role:req.user.actorRole,roles:req.user.actorRoles,permissions:req.user.actorPermissions}
-      : req.user;
     const selectionBlocked = Boolean(requested) && (
       !canSwitch || !hasPermission(actor, 'database.switch') ||
       !require('../onprem-target').isSwitchableDb(requested) ||
@@ -600,7 +600,8 @@ router.get('/databases', requireAuth, async (req, res) => {
       const theme = activeDb.resolveTheme(dbName, themes);
       const restrictedRoles = Array.isArray(theme.restrictedRoles) ? theme.restrictedRoles : [];
       const isRestricted = restrictedRoles.length > 0;
-      const isAllowed = activeDb.canAccessDatabase(dbName, req.user, themes);
+      const isAllowed = canSwitch && activeDb.canAccessDatabase(dbName, req.user, themes)
+        && activeDb.canAccessDatabase(dbName, actor, themes);
       return {
         name: dbName,
         color: theme.color || 'blue',
@@ -635,12 +636,17 @@ router.get('/databases', requireAuth, async (req, res) => {
 // POST switch this session to another database (empty body resets to the system default).
 router.post('/switch-database', requireAuth, async (req, res) => {
   try {
-    if (!hasPermission(req.user, 'database.switch')) {
+    const actor = req.user.isImpersonating
+      ? {role:req.user.actorRole,roles:req.user.actorRoles,permissions:req.user.actorPermissions}
+      : req.user;
+    if (!hasPermission(req.user, 'database.switch') || !hasPermission(actor, 'database.switch')) {
       return res.status(403).json({ code: 'FORBIDDEN', message: 'บทบาทนี้ไม่มีสิทธิ์สลับฐานข้อมูล' });
     }
     const wanted = String(req.body?.database || '').trim();
     const system = await activeDb.systemActiveDatabase();
-    if (!activeDb.canAccessDatabase(wanted || system, req.user, await activeDb.getDatabaseThemes())) return res.status(403).json({ code: 'DB_RESTRICTED', message: 'ไม่มีสิทธิ์เข้าถึงฐานข้อมูลนี้' });
+    const accessThemes = await activeDb.getDatabaseThemes();
+    if (!activeDb.canAccessDatabase(wanted || system, req.user, accessThemes)
+        || !activeDb.canAccessDatabase(wanted || system, actor, accessThemes)) return res.status(403).json({ code: 'DB_RESTRICTED', message: 'ไม่มีสิทธิ์เข้าถึงฐานข้อมูลนี้' });
     if (!wanted || wanted.toLowerCase() === system.toLowerCase()) {
       // Reset to the system default: drop the claim.
       return res.json({ accessToken: reissueWithDatabase(req.tokenPayload, null), database: system, isDefault: true });

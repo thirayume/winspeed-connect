@@ -3,7 +3,7 @@
  *   แหล่งสต๊อกปฏิบัติการที่อนุมัติแล้ว (ไม่ assume dbo.ICStock)
  */
 const router = require('express').Router();
-const { sql, wfQuery } = require('../db');
+const { sql, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { legacyCutoffInput, legacyCutoffSql } = require('../services/legacy-cutoff');
 
@@ -308,11 +308,11 @@ router.get('/', async (req, res) => {
 
 // PUT /api/stock — upsert (WAREHOUSE/MANAGER/ADMIN)
 // POST /api/stock/sync-winspeed — read the balances from WinSpeed now; figures typed by the warehouse stay
-router.post('/sync-winspeed', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (_req, res) => {
+router.post('/sync-winspeed', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const { syncStockFromWinSpeed } = require('../services/stock-sync');
-    res.json({ affected: await syncStockFromWinSpeed() });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+    res.json({ affected: await syncStockFromWinSpeed(req.user, req.ip) });
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 router.put('/', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
@@ -334,23 +334,32 @@ router.put('/', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (
     );
     const master = good.recordset?.[0];
     if (!master) return res.status(400).json({ message: `ไม่พบรหัสสินค้า ${code}` });
-    await wfQuery(`
-      MERGE wf.OperationalStock AS t
+    const { stockIdentity, stockAudit } = require('../services/stock-audit');
+    const ids = await stockIdentity(req.user);
+    await wfTransaction(async tx => {
+      const params = {
+        g: { type: sql.NVarChar(20), value: master.GoodCode }, w: { type: sql.NVarChar(20), value: warehouseId || '-' },
+      };
+      const before = (await tx.request().input('g', params.g.type, params.g.value).input('w', params.w.type, params.w.value)
+        .query('SELECT GoodId, WarehouseId, QtyOnHand, Unit, Source FROM wf.OperationalStock WITH (UPDLOCK,HOLDLOCK) WHERE GoodId=@g AND WarehouseId=@w')).recordset?.[0] || null;
+      const inputs = {
+        ...params,
+        n: { type: sql.NVarChar(200), value: master.GoodName || null },
+        q: { type: sql.Decimal(18,2), value: qty }, u: { type: sql.NVarChar(20), value: STOCK_UNIT },
+        src: { type: sql.NVarChar(40), value: source || 'MANUAL' }, uid: { type: sql.Int, value: ids.effective },
+      };
+      const request=tx.request(); for (const [key, {type,value}] of Object.entries(inputs)) request.input(key,type,value);
+      await request.query(`
+      MERGE wf.OperationalStock WITH (HOLDLOCK) AS t
       USING (SELECT @g AS GoodId, @w AS WarehouseId) AS s ON t.GoodId=s.GoodId AND t.WarehouseId=s.WarehouseId
       WHEN MATCHED THEN UPDATE SET GoodName=COALESCE(@n,GoodName), QtyOnHand=@q, Unit=COALESCE(@u,Unit), Source=@src, AsOf=GETUTCDATE(), UpdatedBy=@uid
       WHEN NOT MATCHED THEN INSERT (GoodId, WarehouseId, GoodName, QtyOnHand, Unit, Source, UpdatedBy)
-        VALUES (@g, @w, @n, @q, @u, @src, @uid);`,
-      {
-        g:  { type: sql.NVarChar(20),  value: master.GoodCode },
-        w:  { type: sql.NVarChar(20),  value: warehouseId || '-' },
-        n:  { type: sql.NVarChar(200), value: master.GoodName || null },
-        q:  { type: sql.Decimal(18,2), value: qty },
-        u:  { type: sql.NVarChar(20),  value: STOCK_UNIT },
-        src:{ type: sql.NVarChar(40),  value: source || 'MANUAL' },
-        uid:{ type: sql.Int,           value: req.user.sub },
-      });
+        VALUES (@g, @w, @n, @q, @u, @src, @uid);`);
+      await stockAudit(tx, { entityId: `${params.g.value}:${params.w.value}`, action:'UPDATE', before,
+        after:{ goodId:params.g.value, warehouseId:params.w.value, qtyOnHand:qty, unit:STOCK_UNIT, source:inputs.src.value }, ids, ipAddress:req.ip });
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
     res.json({ ok: true });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 module.exports = router;

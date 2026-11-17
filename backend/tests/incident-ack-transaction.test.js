@@ -5,11 +5,14 @@ const { createIncidentAcknowledger } = require('../services/incident-ack');
 
 function setup({ failAudit = false, actorColumn = true, affected = 1 } = {}) {
   const state = { status: 'OPEN', events: [], calls: 0, inputs: {} };
-  const sql = { Int: 'int', DateTime2: 'date', NVarChar: n => `nvarchar(${n})` };
+  const sql = { Int: 'int', DateTime2: 'date', NVarChar: n => `nvarchar(${n})`, ISOLATION_LEVEL:{ SERIALIZABLE:'serializable' } };
   const tx = { request() { return { input(k, _type, value) { state.inputs[k] = value; return this; },
     async query(text) { assert.match(text, /Status = 'OPEN'.*OccurredAt >= @globalStartUtc/s);
+      assert.match(text, /@incidentEffectiveU0/); assert.match(text, /@incidentActorU0/);
       if (affected) state.status = 'ACK'; return { recordset: [{ Affected: affected }] }; } }; } };
-  const ack = createIncidentAcknowledger({ sql, wfQuery: async () => {}, hasColumn: async () => actorColumn,
+  const ack = createIncidentAcknowledger({ sql, wfQuery: async () => {}, hasColumn: async () => actorColumn, currentActorId:()=>19,
+    getVisibleScope:async u=>({all:false,userIds:[require('../services/business-identity').businessIds(u).effective],empIds:[]}),
+    scopeFilter:(scope,{prefix})=>({sql:`e.SalesUserId = @${prefix}U0`,inputs:{[`${prefix}U0`]:{type:sql.Int,value:scope.userIds[0]}}}),
     wfTransaction: async fn => { state.calls++; const old = structuredClone(state); try { return await fn(tx); }
       catch (error) { Object.assign(state, old); throw error; } },
     logChangeEvent: async (actualTx, event) => { assert.equal(actualTx, tx); if (failAudit) throw Error('audit failed'); state.events.push(event); },
@@ -25,6 +28,7 @@ test('incident ack and event commit together with the mapped effective identity'
   const { state, ack, args } = setup();
   assert.equal(await ack(args), true); assert.equal(state.status, 'ACK');
   assert.equal(state.inputs.by, 17); assert.equal(state.events[0].userId, '17');
+  assert.equal(state.inputs.incidentEffectiveU0,17); assert.equal(state.inputs.incidentActorU0,19);
   assert.equal(state.events[0].action, 'ACK'); assert.equal(state.events.length, 1);
 });
 

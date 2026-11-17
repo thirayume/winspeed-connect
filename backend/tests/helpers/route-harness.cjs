@@ -55,6 +55,26 @@ function installDbStub(handler, options = {}) {
   const run = async (kind, text, inputs = {}, proc = null) => {
     const call = { kind, text: String(text || ''), inputs: { ...inputs }, proc };
     calls.push(call);
+    // Legacy route fixtures model a database before native authorization 220.
+    // Tests that exercise the migrated schema supply an explicit override.
+    if (text.includes('NATIVE_HOLD_SCHEMA_V1')) return normalizeResult([
+      (typeof options.nativeHoldSchema==='function' ? options.nativeHoldSchema() : options.nativeHoldSchema) || {
+        NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:0,HeaderVisible:0,LineVisible:0,SchemaSelect:1,
+      },
+    ]);
+    if (text.includes('NATIVE_CUT_EVIDENCE_SCHEMA_V1')) return normalizeResult([
+      (typeof options.nativeEvidenceSchema==='function' ? options.nativeEvidenceSchema() : options.nativeEvidenceSchema) || {
+        EvidenceSchemaState:'NATIVE_CUT_EVIDENCE_SCHEMA_V1',Ledger223:0,EvidenceVisible:0,SchemaSelect:1,
+      },
+    ]);
+    if (text.includes('COUPON_RECOVERY_READINESS_V1')) return normalizeResult([
+      (typeof options.nativeRecoverySchema==='function' ? options.nativeRecoverySchema() : options.nativeRecoverySchema) || {
+        RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger232:0,EditHoldVisible:0,Ledger231:0,RecoveryVisible:0,SchemaSelect:1,
+      },
+    ]);
+    if (text.includes('COUPON_LEGACY_SETTLEMENT_SCHEMA_V1')) return normalizeResult([
+      {SchemaState:'COUPON_LEGACY_SETTLEMENT_SCHEMA_V1',SettlementTable:null,ConsumedLength:null,SchemaSelect:1},
+    ]);
     const out = await handler(call);
     const normalized = normalizeResult(out);
     // Legacy suites model the pre-profile schema. Profile suites return explicit recordset objects.

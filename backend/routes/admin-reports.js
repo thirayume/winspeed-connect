@@ -11,10 +11,23 @@ const router = require('express').Router();
 const { wfQuery, sql, wfTransaction } = require('../db');
 const { requireAuth, requireCapability } = require('../middleware/auth');
 const { logChangeEvent } = require('../services/policy-contract');
+const { businessIds } = require('../services/business-identity');
+const { currentActorId, hasColumn } = require('../services/request-context');
 
 // Enforce reports.manage capability across all admin-reports endpoints
 router.use(requireAuth);
 router.use(requireCapability('reports.manage'));
+router.use(async (req, res, next) => {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
+  try {
+    const ids = businessIds(req.user);
+    if (!ids.actor || !ids.effective) return res.status(401).json({ message: 'ไม่สามารถยืนยันตัวตนผู้บันทึกได้' });
+    if (ids.actor !== ids.effective && (currentActorId() !== ids.actor || !await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId')))
+      return res.status(503).json({ code: 'REPORT_ACTOR_AUDIT_UNAVAILABLE', message: 'ไม่สามารถบันทึกตัวตนผู้ทำรายการแทนได้' });
+    req.reportAuditIdentity = ids;
+    return next();
+  } catch (err) { return res.status(err.status || 500).json({ code: err.code || 'REPORT_AUDIT_IDENTITY_INVALID' }); }
+});
 
 // ── 1. Header Master Endpoints ──────────────────────────────────────────
 
@@ -156,7 +169,7 @@ router.post(['/headers', '/report-headers'], async (req, res) => {
         afterJson: record,
         reasonCode: 'HEADER_CREATE',
         reasonText: String(reason).trim(),
-        userId: String(actor),
+        userId: String(req.reportAuditIdentity.effective),
         ipAddress: req.ip
       });
 
@@ -293,7 +306,7 @@ router.put(['/headers/:id', '/report-headers/:id'], async (req, res) => {
         afterJson: updated,
         reasonCode: 'HEADER_UPDATE',
         reasonText: String(reason).trim(),
-        userId: String(actor),
+        userId: String(req.reportAuditIdentity.effective),
         ipAddress: req.ip
       });
 
@@ -464,7 +477,7 @@ router.post(['/templates', '/report-templates'], async (req, res) => {
         afterJson: record,
         reasonCode: 'TEMPLATE_CREATE',
         reasonText: String(reason).trim(),
-        userId: String(actor),
+        userId: String(req.reportAuditIdentity.effective),
         ipAddress: req.ip
       });
 
@@ -607,7 +620,7 @@ router.put(['/templates/:id', '/report-templates/:id'], async (req, res) => {
         afterJson: updated,
         reasonCode: 'TEMPLATE_UPDATE',
         reasonText: String(reason).trim(),
-        userId: String(actor),
+        userId: String(req.reportAuditIdentity.effective),
         ipAddress: req.ip
       });
 
@@ -648,6 +661,7 @@ router.get(['/assignments', '/report-assignments'], async (req, res) => {
 router.put(['/assignments/:reportKey', '/report-assignments/:reportKey'], async (req, res) => {
   try {
     const reportKey = String(req.params.reportKey || '').trim().toLowerCase();
+    if (!reportKey || reportKey.length > 50) return res.status(400).json({ message: 'รหัสรายงานไม่ถูกต้อง' });
     const { templateId, isActive, expectedVersion, reason } = req.body || {};
 
     if (!reason || !String(reason).trim()) {
@@ -662,9 +676,13 @@ router.put(['/assignments/:reportKey', '/report-assignments/:reportKey'], async 
 
     const afterRecord = await wfTransaction(async (tx) => {
       // 1. Transaction-scoped exclusive application lock to prevent create-if-absent and update race conditions
-      await tx.request().query(
-        `EXEC sp_getapplock @Resource = 'ReportAssignment_${reportKey.replace(/'/g, "''")}', @LockMode = 'Exclusive', @LockOwner = 'Transaction'`
-      );
+      const lock = (await tx.request().input('resource', sql.NVarChar(255), `ReportAssignment_${reportKey}`).query(
+        `DECLARE @lockResult int;
+         EXEC @lockResult=sp_getapplock @Resource=@resource, @LockMode='Exclusive', @LockOwner='Transaction', @LockTimeout=10000;
+         SELECT @lockResult AS LockResult;`
+      )).recordset?.[0];
+      if (lock?.LockResult == null || !Number.isInteger(Number(lock.LockResult)) || Number(lock.LockResult) < 0)
+        throw Object.assign(new Error('มีผู้ใช้อื่นกำลังแก้ไขแม่แบบรายงาน กรุณาลองใหม่'), { status: 409, code: 'REPORT_ASSIGNMENT_LOCK_BUSY' });
 
       // 2. Validate that target template exists and is active
       const tCheck = (await tx.request()
@@ -746,7 +764,7 @@ router.put(['/assignments/:reportKey', '/report-assignments/:reportKey'], async 
         afterJson: updated,
         reasonCode: 'ASSIGNMENT_UPDATE',
         reasonText: String(reason).trim(),
-        userId: String(actor),
+        userId: String(req.reportAuditIdentity.effective),
         ipAddress: req.ip
       });
 
@@ -770,10 +788,11 @@ router.get(['/audit', '/report-audit'], async (req, res) => {
   catch { return res.status(503).json({ code: 'DATA_WINDOW_UNAVAILABLE', message: 'ไม่สามารถตรวจวันเริ่มข้อมูลได้' }); }
   try {
     const limit = Math.min(Math.max(1, Math.trunc(Number(req.query.limit) || 100)), 500);
+    const actorColumn = await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId');
     const result = await wfQuery(`
       SELECT TOP (@limit)
         EventId, EntityType, EntityId, Action,
-        ReasonCode, ReasonText, UserId, IpAddress, CreatedAt,
+        ReasonCode, ReasonText, UserId, ${actorColumn ? 'ActorUserId' : 'CAST(NULL AS VARCHAR(50)) AS ActorUserId'}, IpAddress, CreatedAt,
         BeforeJson, AfterJson
       FROM wf.ChangeEvent WITH (NOLOCK)
       WHERE EntityType IN ('REPORT_HEADER', 'REPORT_TEMPLATE', 'REPORT_ASSIGNMENT')

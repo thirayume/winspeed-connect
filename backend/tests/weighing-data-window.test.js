@@ -2,7 +2,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
-const db = h.installDbStub(() => [], { activeUserIds: h.TEST_USERS });
+const db = h.installDbStub(({text,inputs}) => {
+  if (/WHERE h\.Id = @id/.test(text) && [6,7].includes(Number(inputs.id)))
+    return [{ Id:Number(inputs.id), SourceDocumentVisible:Number(inputs.id)===7 ? 1 : 0,
+      VerifiedSourceNumber:Number(inputs.id)===7 ? 'CURRENT-REF' : null }];
+  if (/WHERE d\.WGHDId = @id/.test(text))
+    return [{ GoodTon:1,GoodKasob:20,CouponNo:'OLD-TICKET',RefNo:inputs.sourceVisible && inputs.sourceNumber === 'CURRENT-REF' ? 'CURRENT-REF' : null }];
+  return [];
+}, { activeUserIds: h.TEST_USERS });
 let app;
 test.before(async () => { app = await h.startApp([['/api/weighing', '../../routes/weighing']]); });
 test.after(async () => { await app.close(); });
@@ -41,4 +48,28 @@ test('live, anomalies and coverage apply the same boundary, including detail cou
   for (const c of calls) assert.equal(c.inputs.globalStartDate, '2026-01-01');
   assert.match(calls.find(c => /AS DetailRows/.test(c.text)).text, /JOIN dbo\.WGHD h ON h\.Id=d\.WGHDId WHERE h\.DateReg >= @globalStartDate/);
   assert.match(calls.find(c => /AS Issue/.test(c.text)).text, /WHERE h\.DateReg >= @globalStartDate AND \(/);
+});
+
+test('weighing keeps current quantities while hiding unverified or old source references', async () => {
+  const before=db.calls.length;
+  for (const route of ['/live','/tickets?from=2026-01-01&to=2026-01-02','/by-so?from=2026-01-01&to=2026-01-02'])
+    assert.equal((await app.call('GET',`/api/weighing${route}`,{user})).status,200);
+  const hidden=await app.call('GET','/api/weighing/tickets/6',{user});
+  const visible=await app.call('GET','/api/weighing/tickets/7',{user});
+  assert.equal(hidden.status,200);assert.equal(hidden.body.items[0].RefNo,null);
+  assert.equal(hidden.body.items[0].CouponNo,'OLD-TICKET');assert.equal(hidden.body.totals.ton,1);
+  assert.equal(visible.body.items[0].RefNo,'CURRENT-REF');
+  assert.equal('VerifiedSourceNumber' in visible.body,false);
+  const calls=db.calls.slice(before);
+  const heads=calls.filter(c=>/WHERE h\.Id = @id/.test(c.text));
+  assert.ok(heads.every(c=>/RTRIM\(h\.DocuNo\)=RTRIM\(CASE WHEN h\.WGType='SO' THEN so\.DocuNo WHEN h\.WGType='PO' THEN po\.DocuNo ELSE NULL END\)/.test(c.text)));
+  const details=calls.filter(c=>/WHERE d\.WGHDId = @id/.test(c.text));
+  assert.deepEqual(details.map(c=>c.inputs.sourceVisible),[false,true]);
+  assert.deepEqual(details.map(c=>c.inputs.sourceNumber),[null,'CURRENT-REF']);
+  assert.ok(details.every(c=>/CASE WHEN @sourceVisible=1 AND RTRIM\(d\.RefNo\)=RTRIM\(@sourceNumber\)\s+THEN d\.RefNo END AS RefNo/.test(c.text)));
+  const sourceQueries=calls.filter(c=>/LEFT JOIN dbo\.POHD\s+po/.test(c.text));
+  assert.equal(sourceQueries.length,4);
+  assert.ok(sourceQueries.every(c=>/po\.DocuDate >= @globalStartDate/.test(c.text)));
+  const bySo=calls.find(c=>/delivery\.DeliveryNoteCount/.test(c.text));
+  assert.match(bySo.text,/CASE WHEN bk\.DocuDate >= @globalStartDate THEN bk\.SOID END AS SPID/);
 });

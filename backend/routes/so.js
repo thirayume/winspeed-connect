@@ -1042,6 +1042,13 @@ router.get('/', async (req, res) => {
       }
       for (const o of orders) o.lines = linesByso[o.id] || [];
     }
+    // Which WinSpeed documents each bill has reached (103, 104 and tickets, 116, 107). The list is still
+    // useful without it, so a failure here is logged and the page is returned without the stage.
+    try {
+      await require('../services/document-stage').attachDocumentStages(orders, { query: wfQuery, sql, dataWindow });
+    } catch (stageError) {
+      console.warn('[so-list] document stage unavailable:', stageError.code || '', stageError.message);
+    }
     res.json({ data: orders.map(o => redactSoForRole(req, o)), total, page: pageNumber, limit: pageSize });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -1146,13 +1153,21 @@ router.get('/unlock-reasons', async (req, res) => {
   try {
     const { type } = req.query;
     if (!type) return res.status(400).json({ message: 'Missing type' });
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const effective = await getVisibleScope(req.user);
+    const actor = actorPerspective(req.user);
+    const actorScope = actor === req.user ? effective : await getVisibleScope(actor);
+    const ownFilter = scopeFilter(effective, { userCol: 'r.RequesterId', prefix: 'reasonEffective' });
+    const actorFilter = scopeFilter(actorScope, { userCol: 'r.RequesterId', prefix: 'reasonActor' });
     const r = await wfQuery(`
-      SELECT DISTINCT TOP 20 Reason
-      FROM wf.UnlockRequest
-      WHERE ReqType = @type
-        AND Reason NOT IN ('🚚 เปลี่ยนรถ', '📦 สินค้าผิด/เปลี่ยนสินค้า', '📅 เลื่อนวันส่ง', '❌ ลูกค้ายกเลิก', '✍️ อื่นๆ')
-      ORDER BY Reason
-    `, { type: { type: sql.NVarChar(20), value: type } });
+      SELECT DISTINCT TOP 20 r.Reason
+      FROM wf.UnlockRequest r
+      WHERE r.ReqType = @type AND r.RequestedAt >= @globalStartUtc
+        AND ${ownFilter.sql} AND ${actorFilter.sql}
+        AND r.Reason NOT IN ('🚚 เปลี่ยนรถ', '📦 สินค้าผิด/เปลี่ยนสินค้า', '📅 เลื่อนวันส่ง', '❌ ลูกค้ายกเลิก', '✍️ อื่นๆ')
+      ORDER BY r.Reason
+    `, { type: { type: sql.NVarChar(20), value: type }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
+      ...ownFilter.inputs, ...actorFilter.inputs });
     res.json(r.recordset.map(row => row.Reason));
   } catch (e) {
     console.error(e);
@@ -1198,7 +1213,7 @@ router.post('/price-indicator', requireCapability('so.create'), async (req, res)
       const k = `${l.goodId}|${l.goodCode || ''}`;
       if (!cache.has(k)) {
         cache.set(k, await resolveAuthoritativePrice({ custId, goodId: l.goodId, goodCode: l.goodCode, asOfDate }).catch(e => {
-          if (req.user.identityMapping) throw e;
+          if (req.user.identityMapping || e.code === 'AMBIGUOUS_CUSTOMER_ID') throw e;
           return null;
         }));
       }
@@ -1214,6 +1229,9 @@ router.post('/price-indicator', requireCapability('so.create'), async (req, res)
     const violatedIdx = new Set((floorEval.violations || []).map(v => v.lineIndex));
     violatedIdx.forEach(idx => {
       if (out[idx]) out[idx].belowThreshold = true;
+    });
+    (floorEval.missingCost || []).forEach(({ lineIndex }) => {
+      if (out[lineIndex]) out[lineIndex].missingCost = true;
     });
     res.json({ lines: out, belowThreshold: Boolean(floorEval.blocked) });
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
@@ -1233,6 +1251,15 @@ router.get('/unlock-requests', requireRole('APPROVER', 'ADMIN', 'MANAGER', 'ACCO
       const f = scopeFilter(scope, { userCol: 'r.RequesterId', prefix: 'ur' });
       conds.push(f.sql);
       Object.assign(inputs, f.inputs);
+    }
+    const actor = actorPerspective(req.user);
+    if (actor !== req.user) {
+      const actorScope = await getVisibleScope(actor);
+      if (!actorScope.all) {
+        const f = scopeFilter(actorScope, { userCol: 'r.RequesterId', prefix: 'actorUr' });
+        conds.push(f.sql);
+        Object.assign(inputs, f.inputs);
+      }
     }
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     const r = await wfQuery(`
@@ -1382,8 +1409,18 @@ router.get('/:id', async (req, res) => {
       out: evaluatePickupTiming(so.ActualWeighOutAt, so.PickupDueDate),
     };
 
+    // Which WinSpeed documents this bill has reached; the bill is still shown when this read fails.
+    const stageCarrier = [{ id: so.Id, importedDocuNo: so.ImportedDocuNo, status: so.Status }];
+    try {
+      const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+      await require('../services/document-stage').attachDocumentStages(stageCarrier, { query: wfQuery, sql, dataWindow });
+    } catch (stageError) {
+      console.warn('[so-detail] document stage unavailable:', stageError.code || '', stageError.message);
+    }
+
     res.json(redactSoForRole(req, {
       ...camelizeRow(so),
+      docStage: stageCarrier[0].docStage || null,
       custCode: so.CustCode || party.CustCode || null,
       salesName: party.SalesName || null,
       custAddress,
@@ -1664,7 +1701,8 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
         const actor = {
           userId: req.user?.sub || req.user?.id,
           altUserIds: impersonatedId ? [Number(impersonatedId)] : [],
-          role: req.user?.role
+          role: req.user?.role,
+          principal: req.user
         };
         const validatedLineIndexes = await validateAndLockCouponReservations(tx, lines, custId, null, actor, soPrefix);
 
@@ -1887,6 +1925,7 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
                 derivedNetPrice = Number(auth.announcedPrice);
               }
             } catch (err) {
+              if (err.code === 'AMBIGUOUS_CUSTOMER_ID') throw err;
               console.warn('[deriveNetPrice:create] Failed to resolve authoritative price:', err.message);
             }
           }
@@ -2036,7 +2075,7 @@ async function checkUnlockedNativeEdit(tx, req, so, order, beforeLines) {
   const lines = order.lines;
   const sameCustomer = String(order.custId) === String(so.CustId);
   const prior = sameCustomer ? (beforeLines || []) : [];
-  const actor = { userId: req.user?.sub || req.user?.id, altUserIds: so.SalesUserId ? [Number(so.SalesUserId)] : [], role: req.user?.role };
+  const actor = { userId: req.user?.sub || req.user?.id, altUserIds: so.SalesUserId ? [Number(so.SalesUserId)] : [], role: req.user?.role, principal: req.user };
   const validated = await validateAndLockCouponReservations(tx, lines, order.custId, so.Id, actor, order.soPrefix || so.SoPrefix);
   // coupon draws already on this bill: the line keeps no reservation id, the reservation names the bill as carrier
   const held = sameCustomer ? ((await tx.request().input('so', sql.VarChar(50), String(so.Id)).query(
@@ -2302,7 +2341,8 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
       const editActor = {
         userId: req.user?.sub || req.user?.id,
         altUserIds: so.SalesUserId ? [Number(so.SalesUserId)] : [],
-        role: req.user?.role
+        role: req.user?.role,
+        principal: req.user
       };
       const validatedLineIndexes = await validateAndLockCouponReservations(tx, lines, order.custId, so.Id, editActor, order.soPrefix || so.SoPrefix);
 
@@ -2445,7 +2485,8 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
 
       const newCouponResIds = new Set(lines.map(l => l.couponReservationId ? Number(l.couponReservationId) : null).filter(Boolean));
       for (const prevResId of prevCouponLines) {
-        if (!newCouponResIds.has(prevResId)) {
+        if (!newCouponResIds.has(Number(prevResId))) {
+          await require('../services/coupon-authorization-hold').assertNoActiveAuthorization(tx,Number(prevResId));
           await tx.request()
             .input('resId', sql.Int, prevResId)
             .input('uid', sql.Int, req.user.sub)
@@ -2486,6 +2527,7 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
               derivedNetPrice = Number(auth.announcedPrice);
             }
           } catch (err) {
+            if (err.code === 'AMBIGUOUS_CUSTOMER_ID') throw err;
             console.warn('[deriveNetPrice:edit] Failed to resolve authoritative price:', err.message);
           }
         }
@@ -3562,6 +3604,7 @@ router.post('/bulk-cancel-delete', requireCapability('so.cancel'), async (req, r
     await require('../services/so-rebate-transaction').withSoRebateTransaction(async (tx) => {
       for (const { so, op } of loadedSos) {
         await require('../services/so-rebate-transaction').assertNoRedeemedTicketForBooking(tx,so);
+        await require('../services/coupon-authorization-hold').assertCarrierHasNoActiveAuthorization(tx,so.Id,so.WfRef);
         if (op === 'DELETE') {
           const isWebDraft = !so.ImportedDocuNo;
           if (isWebDraft) {
@@ -3602,7 +3645,7 @@ router.post('/bulk-cancel-delete', requireCapability('so.cancel'), async (req, r
                   CancelReason = @rsn,
                   CancelledBy = @uid,
                   UpdatedAt = GETUTCDATE()
-              WHERE (CarrierSoId = @soIdStr OR CarrierDocuNo = @wfRefStr)
+              WHERE (CarrierSoId = @soIdStr OR (NULLIF(@wfRefStr,'') IS NOT NULL AND CarrierDocuNo = @wfRefStr))
                 AND Status = 'RESERVED'
             `);
 
@@ -3657,7 +3700,7 @@ router.post('/bulk-cancel-delete', requireCapability('so.cancel'), async (req, r
                     CancelReason = @rsn,
                     CancelledBy = @uid,
                     UpdatedAt = GETUTCDATE()
-                WHERE (CarrierSoId = @soIdStr OR CarrierDocuNo = @wfRefStr)
+                WHERE (CarrierSoId = @soIdStr OR (NULLIF(@wfRefStr,'') IS NOT NULL AND CarrierDocuNo = @wfRefStr))
                   AND Status = 'RESERVED'
               `);
 
@@ -3751,6 +3794,7 @@ async function releaseRebateOnCancel(tx, so, isDraft) {
 /** One cancellation for the Cancel button and for an approved cancel request, so both leave WinSpeed the same. */
 async function cancelBillInTx(tx, so, { reasonCode, reasonText, user, ip }) {
   await require('../services/so-rebate-transaction').assertNoRedeemedTicketForBooking(tx,so);
+  await require('../services/coupon-authorization-hold').assertCarrierHasNoActiveAuthorization(tx,so.Id,so.WfRef);
   const { logChangeEvent } = require('../services/policy-contract');
   const cancelReason = reasonText;
   // an unlocked native bill also reads DRAFT; it has a WinSpeed document to cancel, so it is not a draft here —
@@ -3805,7 +3849,7 @@ async function cancelBillInTx(tx, so, { reasonCode, reasonText, user, ip }) {
           CancelReason = @rsn,
           CancelledBy = @uid,
           UpdatedAt = GETUTCDATE()
-      WHERE (CarrierSoId = @soIdStr OR CarrierDocuNo = @wfRefStr)
+      WHERE (CarrierSoId = @soIdStr OR (NULLIF(@wfRefStr,'') IS NOT NULL AND CarrierDocuNo = @wfRefStr))
         AND Status = 'RESERVED'
     `);
 
@@ -3884,6 +3928,7 @@ router.delete('/:id', requireCapability('so.cancel'), requireSoInScope, async (r
 
     await require('../services/so-rebate-transaction').withSoRebateTransaction(async (tx) => {
       await require('../services/so-rebate-transaction').assertNoRedeemedTicketForBooking(tx,so);
+      await require('../services/coupon-authorization-hold').assertCarrierHasNoActiveAuthorization(tx,so.Id,so.WfRef);
       const isWebDraft = !so.ImportedDocuNo;
       let deletedTripId = so.TripId ? Number(so.TripId) : null;
       if (isWebDraft) {
@@ -3934,7 +3979,7 @@ router.delete('/:id', requireCapability('so.cancel'), requireSoInScope, async (r
               CancelReason = @rsn,
               CancelledBy = @uid,
               UpdatedAt = GETUTCDATE()
-          WHERE (CarrierSoId = @soIdStr OR CarrierDocuNo = @wfRefStr)
+          WHERE (CarrierSoId = @soIdStr OR (NULLIF(@wfRefStr,'') IS NOT NULL AND CarrierDocuNo = @wfRefStr))
             AND Status = 'RESERVED'
         `);
 

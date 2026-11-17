@@ -32,6 +32,7 @@ function shouldAudit(req, res, auditPath) {
   // A reviewed cross-database read must be attributable to both identities,
   // even when it succeeds; it can expose data from a separate business DB.
   if (req.identityMappingAudit) return true;
+  if (req.auditVerificationRead) return true;
   return res.statusCode >= 400;
 }
 

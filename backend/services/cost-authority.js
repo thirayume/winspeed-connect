@@ -40,7 +40,8 @@ function isNonCommercialLine(line = {}) {
 
 /**
  * Resolves the authoritative CostPrice for a product as of targetDate.
- * Looks up active CostBook covering targetDate first, falling back to latest ACTIVE CostBook.
+ * Prefer an ACTIVE CostBook covering targetDate; otherwise use the latest
+ * ACTIVE CostBook that has already started. A future book is never a fallback.
  */
 async function resolveAuthoritativeCost({ goodId = null, goodCode = null, asOfDate = null, queryFn = wfQuery } = {}) {
   const targetDate = asOfDate ? String(asOfDate).slice(0, 10) : getBangkokDateString();
@@ -88,6 +89,7 @@ async function resolveAuthoritativeCost({ goodId = null, goodCode = null, asOfDa
       FROM wf.CostBookLine cbl WITH (NOLOCK)
       JOIN wf.CostBook cb WITH (NOLOCK) ON cb.Id = cbl.CostBookId
       WHERE cb.Status = 'ACTIVE'
+        AND COALESCE(cb.EffectiveFrom, CAST(cb.EffectiveMonth + '-01' AS DATE)) <= @targetDate
         AND cbl.CostPrice IS NOT NULL
         AND cbl.CostPrice > 0
         AND (
@@ -96,11 +98,10 @@ async function resolveAuthoritativeCost({ goodId = null, goodCode = null, asOfDa
         )
       ORDER BY
         CASE
-          WHEN (cb.EffectiveFrom IS NULL OR cb.EffectiveFrom <= @targetDate)
-           AND (cb.EffectiveTo IS NULL OR cb.EffectiveTo >= @targetDate) THEN 0
+          WHEN (cb.EffectiveTo IS NULL OR cb.EffectiveTo >= @targetDate) THEN 0
           ELSE 1
         END,
-        COALESCE(cb.EffectiveFrom, '1900-01-01') DESC,
+        COALESCE(cb.EffectiveFrom, CAST(cb.EffectiveMonth + '-01' AS DATE)) DESC,
         cb.Id DESC
     `, {
       goodId: { type: sql.NVarChar(20), value: canonicalGoodId },
@@ -150,7 +151,7 @@ async function evaluateSellingPriceFloor({
     .filter(({ line }) => !isNonCommercialLine(line));
 
   if (commercialLines.length === 0) {
-    return { blocked: false, violations: [], message: null };
+    return { blocked: false, violations: [], missingCost: [], message: null };
   }
 
   const totalCommercialTon = commercialLines.reduce((sum, { line }) => {
@@ -163,6 +164,7 @@ async function evaluateSellingPriceFloor({
 
   const costCache = new Map();
   const violations = [];
+  const missingCost = [];
 
   for (const { line, idx } of commercialLines) {
     const goodId = line.goodId ?? line.GoodId ?? null;
@@ -181,7 +183,10 @@ async function evaluateSellingPriceFloor({
       costCache.set(cacheKey, costInfo);
     }
 
-    if (!costInfo || !costInfo.hasCost || !(costInfo.costPrice > 0)) continue;
+    if (!costInfo || !costInfo.hasCost || !(costInfo.costPrice > 0)) {
+      missingCost.push({ lineIndex: idx, key: line.key ?? null });
+      continue;
+    }
 
     const effectiveNetUnitPrice = Number((unitPrice - rebatePerTon).toFixed(2));
     // Strict < comparison: selling equal to cost is borderline allowed or block < costPrice;
@@ -198,12 +203,13 @@ async function evaluateSellingPriceFloor({
   }
 
   if (violations.length === 0) {
-    return { blocked: false, violations: [], message: null };
+    return { blocked: false, violations: [], missingCost, message: null };
   }
 
   return {
     blocked: true,
     violations,
+    missingCost,
     message: buildNeutralThresholdMessage(violations),
   };
 }

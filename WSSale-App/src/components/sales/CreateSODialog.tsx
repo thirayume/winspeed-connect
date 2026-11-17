@@ -421,6 +421,7 @@ export function CreateSODialog({
   // price colour & neutral threshold indicator per line from the server (debounced while typing)
   const [priceLevels, setPriceLevels] = useState<Record<string, PriceLevel>>({});
   const [belowThresholdMap, setBelowThresholdMap] = useState<Record<string, boolean>>({});
+  const [missingCostMap, setMissingCostMap] = useState<Record<string, boolean>>({});
   const [billBelowThreshold, setBillBelowThreshold] = useState(false);
   const [priceCheckError, setPriceCheckError] = useState(false);
   const [priceCheckRetry, setPriceCheckRetry] = useState(0);
@@ -434,6 +435,7 @@ export function CreateSODialog({
     if (!currentBillCustId || lines.length === 0) {
       setPriceLevels({});
       setBelowThresholdMap({});
+      setMissingCostMap({});
       setBillBelowThreshold(false);
       setPriceCheckError(false);
       return;
@@ -460,6 +462,7 @@ export function CreateSODialog({
           setPriceCheckError(false);
           setPriceLevels(Object.fromEntries(r.lines.map(x => [x.key, x.level])));
           setBelowThresholdMap(Object.fromEntries(r.lines.map(x => [x.key, Boolean(x.belowThreshold)])));
+          setMissingCostMap(Object.fromEntries(r.lines.map(x => [x.key, Boolean(x.missingCost)])));
           setBillBelowThreshold(Boolean(r.belowThreshold));
         })
         .catch(() => {
@@ -467,6 +470,7 @@ export function CreateSODialog({
           setPriceCheckError(true);
           setPriceLevels({});
           setBelowThresholdMap({});
+          setMissingCostMap({});
           setBillBelowThreshold(false);
         });
     }, 400);
@@ -1961,6 +1965,11 @@ export function CreateSODialog({
                                   {priceBand.label}
                                 </div>
                               )}
+                              {!l.isControlTicketDrawn && !l.isCouponDrawn && !l.isGiveaway && missingCostMap[l.tempId] && (
+                                <div className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-amber-300 bg-amber-50 text-amber-800 text-right max-w-[190px]">
+                                  ยังตรวจเกณฑ์ราคาของรายการนี้ไม่ได้ สามารถดำเนินการต่อได้
+                                </div>
+                              )}
                             </div>
                           </div>
 
@@ -2094,6 +2103,11 @@ export function CreateSODialog({
               <div className="flex items-center gap-1.5 rounded-lg border border-red-400 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-700">
                 <AlertTriangle size={14} className="shrink-0" />
                 <span>ไม่อยู่ในเกณฑ์ที่บริษัทกำหนด กรุณาตรวจสอบและแก้ไขราคา</span>
+              </div>
+            )}
+            {Object.values(missingCostMap).some(Boolean) && (
+              <div role="status" className="rounded-lg border border-amber-400 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-900">
+                บางรายการยังตรวจเกณฑ์ราคาไม่ได้ สามารถดำเนินการต่อได้
               </div>
             )}
             {priceCheckError && <div role="alert" className="rounded-lg border border-amber-400 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-900">ตรวจเกณฑ์ราคายังไม่สำเร็จ <button type="button" className="underline" onClick={() => setPriceCheckRetry(v => v + 1)}>ลองตรวจอีกครั้ง</button></div>}

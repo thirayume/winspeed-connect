@@ -11,6 +11,7 @@ const { requireAuth, requireRole, requireCapability } = require('../middleware/a
 const { assertPricesAboveCost } = require('../services/cost-authority');
 const { getBangkokDateString } = require('../services/so-pickup-policy');
 const { broadcast } = require('../services/socket');
+const { businessIds } = require('../services/business-identity');
 const {
   parseDateOnly,
   parseSetIds,
@@ -47,7 +48,9 @@ function priceBookReadError(res, error) {
   return res.status(500).json({ message: error.message });
 }
 
-async function audit(queryFn, bookId, action, fromStatus, toStatus, userId, note) {
+async function audit(queryFn, bookId, action, fromStatus, toStatus, user, note, specialChange = null) {
+  const ids = businessIds(user);
+  if (!ids.effective || !ids.actor) throw new Error('PRICEBOOK_AUDIT_IDENTITY_REQUIRED');
   await queryFn(
     `INSERT INTO wf.PriceBookAudit (PriceBookId, Action, FromStatus, ToStatus, ByUser, Note)
      VALUES (@b, @a, @f, @t, @u, @n)`,
@@ -56,10 +59,27 @@ async function audit(queryFn, bookId, action, fromStatus, toStatus, userId, note
       a: { type: sql.VarChar(40), value: action },
       f: { type: sql.VarChar(20), value: fromStatus || null },
       t: { type: sql.VarChar(20), value: toStatus || null },
-      u: { type: sql.Int, value: userId || null },
+      u: { type: sql.Int, value: ids.effective },
       n: { type: sql.NVarChar(500), value: note || null },
     }
   );
+  await queryFn(`INSERT INTO wf.ChangeEvent
+    (EntityType, EntityId, Action, BeforeJson, AfterJson, UserId, ActorUserId)
+    VALUES ('PRICEBOOK', @entityId, @action, @before, @after, @user, @actor)`, {
+    entityId: { type: sql.VarChar(100), value: String(bookId) },
+    action: { type: sql.VarChar(30), value: String(action).slice(0, 30) },
+    before: { type: sql.NVarChar(sql.MAX), value: JSON.stringify({ status: fromStatus || null, ...(specialChange ? { special: specialChange.before } : {}) }) },
+    after: { type: sql.NVarChar(sql.MAX), value: JSON.stringify({ status: toStatus || null, ...(specialChange ? { special: specialChange.after } : {}) }) },
+    user: { type: sql.VarChar(50), value: String(ids.effective) },
+    actor: { type: sql.VarChar(50), value: String(ids.actor) },
+  });
+}
+
+async function specialPriceSnapshot(query, id) {
+  const rows = (await query(`SELECT Id, PriceBookId, CustId, GoodId, RequestedPrice, ApprovedPrice, RequestedBy, ApprovedBy, ApprovedAt
+    FROM wf.PriceBookSpecialPrice WHERE Id=@id`, { id: { type: sql.Int, value: id } })).recordset || [];
+  if (rows.length !== 1) throw new Error('SPECIAL_PRICE_SNAPSHOT_UNAVAILABLE');
+  return rows[0];
 }
 
 function txQuery(tx) {
@@ -161,10 +181,13 @@ router.post('/sync-from-winspeed', requirePricingManage, async (req, res) => {
     const { setPriceIds, name, status = 'DRAFT', effectiveFrom, effectiveTo, note } = req.body || {};
     const targetIds = Array.isArray(setPriceIds) ? setPriceIds.map(Number).filter(n => Number.isInteger(n) && n > 0) : [];
 
+    const result = await wfTransaction(async tx => {
+    const query = txQuery(tx);
+
     // 1. ค้นหา WinSpeed SetPriceHD
     let headersQuery = `
       SELECT hd.SetPriceID, hd.DocuNo, hd.BeginDate, hd.EndDate, hd.Remark1
-      FROM dbo.EMSetPriceHD hd WITH (NOLOCK)
+      FROM dbo.EMSetPriceHD hd
       WHERE hd.CustID IS NULL
     `;
     const inputs = {};
@@ -176,24 +199,24 @@ router.post('/sync-from-winspeed', requirePricingManage, async (req, res) => {
     }
     headersQuery += ` ORDER BY hd.BeginDate DESC, hd.SetPriceID ASC`;
 
-    const headers = (await wfQuery(headersQuery, inputs)).recordset || [];
+    const headers = (await query(headersQuery, inputs)).recordset || [];
     if (!headers.length) {
-      return res.status(404).json({ message: 'ไม่พบชุดราคาประกาศ WinSpeed ตามเงื่อนไขที่เลือก' });
+      throw Object.assign(new Error('ไม่พบชุดราคาประกาศ WinSpeed ตามเงื่อนไขที่เลือก'), { status: 404 });
     }
 
     // 2. ดึงรายการสินค้ารวมกัน (ถ้าหลายชุดเช่น สูตร + แม่ปุ๋ย ให้เรียงลำดับใหม่และเก็บ SetPriceID/ListNo ไว้ sync กลับ!)
     const foundIds = headers.map(h => h.SetPriceID);
     const idInputs = {};
     const idPh = foundIds.map((id, i) => { idInputs[`sid${i}`] = { type: sql.Int, value: id }; return `@sid${i}`; });
-    const linesRes = (await wfQuery(`
+    const linesRes = (await query(`
       SELECT dt.SetPriceID, dt.ListNo, CAST(dt.ListID AS NVARCHAR(20)) AS GoodId,
              g.GoodCode, g.GoodName1 AS GoodName, g.GoodGroupID AS GoodGroupId, gg.GoodGroupName,
              ISNULL(u.GoodUnitName, N'ตัน') AS Unit,
              dt.GoodPriceNet AS Price, dt.Remark
-      FROM dbo.EMSetPriceDT dt WITH (NOLOCK)
-      JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = dt.ListID
-      LEFT JOIN dbo.EMGoodGroup gg WITH (NOLOCK) ON gg.GoodGroupID = g.GoodGroupID
-      LEFT JOIN dbo.EMGoodUnit u WITH (NOLOCK) ON u.GoodUnitID = ISNULL(dt.GoodUnitID, g.MainGoodUnitID)
+      FROM dbo.EMSetPriceDT dt
+      JOIN dbo.EMGood g ON g.GoodID = dt.ListID
+      LEFT JOIN dbo.EMGoodGroup gg ON gg.GoodGroupID = g.GoodGroupID
+      LEFT JOIN dbo.EMGoodUnit u ON u.GoodUnitID = ISNULL(dt.GoodUnitID, g.MainGoodUnitID)
       WHERE dt.SetPriceID IN (${idPh.join(',')})
         AND ISNULL(g.Inactive, 'A') = 'A'
       ORDER BY dt.SetPriceID DESC, dt.ListNo ASC
@@ -205,7 +228,7 @@ router.post('/sync-from-winspeed', requirePricingManage, async (req, res) => {
     }
     const items = [...dedupMap.values()];
     if (!items.length) {
-      return res.status(400).json({ message: 'ชุดราคาที่เลือกไม่มีรายการสินค้าที่จำหน่าย' });
+      throw Object.assign(new Error('ชุดราคาที่เลือกไม่มีรายการสินค้าที่จำหน่าย'), { status: 400 });
     }
 
     // Check cost floor before activating directly
@@ -219,16 +242,24 @@ router.post('/sync-from-winspeed', requirePricingManage, async (req, res) => {
     const docNos = headers.map(h => h.DocuNo).join(', ');
     const bookName = name || `ตารางราคา WinSpeed (${docNos}) ${minBegin || effectiveMonth}`;
     const initialStatus = status === 'ACTIVE' ? 'ACTIVE' : 'DRAFT';
-    const syncReady = await hasSyncColumns();
+    const syncReady = await hasSyncColumns(query);
     await assertNoPriceOverlap({
       excludeSetIds: foundIds,
       effectiveFrom: minBegin,
       effectiveTo: maxEnd,
       goodIds: items.map(i => i.GoodId),
+      queryFn: query,
     });
 
+    if (initialStatus === 'ACTIVE') {
+      await assertPricesAboveCost({
+        lines: items.map(i => ({ goodId: i.GoodId, goodCode: i.GoodCode, goodName: i.GoodName, pricePerTon: i.Price })),
+        asOfDate: minBegin, queryFn: query,
+      });
+    }
+
     // 4. สร้าง PriceBook + Lines
-    const insertBook = await wfQuery(`
+    const insertBook = await query(`
       INSERT INTO wf.PriceBook (Name, EffectiveMonth, EffectiveFrom, EffectiveTo, Status, Note, CreatedBy, ApprovedBy, ApprovedAt, ActivatedBy, ActivatedAt${syncReady ? ', SourceSetPriceIds, WinSpeedSyncAt, LastSyncedBy' : ''})
       OUTPUT inserted.Id
       VALUES (@n, @m, @ef, @et, @st, @note, @u, @appBy, @appAt, @actBy, @actAt${syncReady ? ', @sids, SYSUTCDATETIME(), @u' : ''})
@@ -239,10 +270,10 @@ router.post('/sync-from-winspeed', requirePricingManage, async (req, res) => {
       et: { type: sql.Date, value: maxEnd },
       st: { type: sql.VarChar(20), value: initialStatus },
       note: { type: sql.NVarChar(500), value: note || `ซิงค์จาก WinSpeed: ${docNos}` },
-      u: { type: sql.Int, value: req.user.sub },
-      appBy: { type: sql.Int, value: initialStatus === 'ACTIVE' ? req.user.sub : null },
+      u: { type: sql.Int, value: businessIds(req.user).effective },
+      appBy: { type: sql.Int, value: initialStatus === 'ACTIVE' ? businessIds(req.user).effective : null },
       appAt: { type: sql.DateTime2, value: initialStatus === 'ACTIVE' ? new Date() : null },
-      actBy: { type: sql.Int, value: initialStatus === 'ACTIVE' ? req.user.sub : null },
+      actBy: { type: sql.Int, value: initialStatus === 'ACTIVE' ? businessIds(req.user).effective : null },
       actAt: { type: sql.DateTime2, value: initialStatus === 'ACTIVE' ? new Date() : null },
       ...(syncReady ? { sids: { type: sql.NVarChar(200), value: foundIds.join(',') } } : {}),
     });
@@ -251,7 +282,7 @@ router.post('/sync-from-winspeed', requirePricingManage, async (req, res) => {
     // 5. เพิ่ม wf.PriceBookLine พร้อมลิงก์ SetPriceID + ListNo ต้นทาง
     for (const item of items) {
       const hasStar = item.Remark && String(item.Remark).includes('***');
-      await wfQuery(`
+      await query(`
         INSERT INTO wf.PriceBookLine (
           PriceBookId, GoodId, GoodName, Unit, Price, LineStatus, Note
           ${syncReady ? ', GoodCode, GoodGroupId, GoodGroupName, WinSpeedSetPriceId, WinSpeedListNo' : ''}
@@ -278,9 +309,11 @@ router.post('/sync-from-winspeed', requirePricingManage, async (req, res) => {
       });
     }
 
-    await audit(wfQuery, bookId, 'SYNC_FROM_WINSPEED', null, initialStatus, req.user.sub, `${docNos} (${items.length} รายการ)`);
-    notifyPriceBookUpdated({ bookId, action: 'sync_from_winspeed' });
-    res.json({ ok: true, priceBookId: bookId, lineCount: items.length, status: initialStatus, name: bookName });
+    await audit(query, bookId, 'SYNC_FROM_WINSPEED', null, initialStatus, req.user, `${docNos} (${items.length} รายการ)`);
+    return { bookId, lineCount: items.length, status: initialStatus, name: bookName };
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+    notifyPriceBookUpdated({ bookId: result.bookId, action: 'sync_from_winspeed' });
+    res.json({ ok: true, priceBookId: result.bookId, lineCount: result.lineCount, status: result.status, name: result.name });
   } catch (e) { console.error('[pricebook/sync-from-winspeed]', e); res.status(e.status || 500).json({ message: e.message, code: e.code, details: e.details }); }
 });
 
@@ -411,10 +444,10 @@ router.post('/', requirePricingManage, async (req, res) => {
       et: { type: sql.Date, value: cleanTo },
       st: { type: sql.VarChar(20), value: initialStatus },
       note: { type: sql.NVarChar(500), value: note || null },
-      u: { type: sql.Int, value: req.user.sub },
-      appBy: { type: sql.Int, value: initialStatus === 'ACTIVE' ? req.user.sub : null },
+      u: { type: sql.Int, value: businessIds(req.user).effective },
+      appBy: { type: sql.Int, value: initialStatus === 'ACTIVE' ? businessIds(req.user).effective : null },
       appAt: { type: sql.DateTime2, value: initialStatus === 'ACTIVE' ? now : null },
-      actBy: { type: sql.Int, value: initialStatus === 'ACTIVE' ? req.user.sub : null },
+      actBy: { type: sql.Int, value: initialStatus === 'ACTIVE' ? businessIds(req.user).effective : null },
       actAt: { type: sql.DateTime2, value: initialStatus === 'ACTIVE' ? now : null },
     });
     const bookId = r.recordset[0].Id;
@@ -447,10 +480,10 @@ router.post('/', requirePricingManage, async (req, res) => {
 
     let syncResult = { synced: false };
     if (initialStatus === 'ACTIVE') {
-      syncResult = await syncBookToWinSpeed(bookId, req.user.sub, null, tx);
+      syncResult = await syncBookToWinSpeed(bookId, businessIds(req.user).effective, null, tx);
     }
 
-    await audit(query, bookId, 'CREATE', null, initialStatus, req.user.sub, `${note || name}${syncResult.docuNo ? ` · WinSpeed: ${syncResult.docuNo}` : ''}`);
+    await audit(query, bookId, 'CREATE', null, initialStatus, req.user, `${note || name}${syncResult.docuNo ? ` · WinSpeed: ${syncResult.docuNo}` : ''}`);
     return {
       id: bookId,
       status: initialStatus,
@@ -524,9 +557,9 @@ router.put('/:id', requirePricingManage, async (req, res) => {
 
     let syncResult = { synced: false };
     if (book.Status === 'ACTIVE') {
-      syncResult = await syncBookToWinSpeed(id, req.user.sub, null, tx);
+      syncResult = await syncBookToWinSpeed(id, businessIds(req.user).effective, null, tx);
     }
-    await audit(query, id, 'UPDATE_HEADER', book.Status, book.Status, req.user.sub, `${cleanName}${syncResult.synced ? ' (Auto-Synced WinSpeed)' : ''}`);
+    await audit(query, id, 'UPDATE_HEADER', book.Status, book.Status, req.user, `${cleanName}${syncResult.synced ? ' (Auto-Synced WinSpeed)' : ''}`);
     return { ok: true, winSpeedSynced: Boolean(syncResult.synced) };
     });
     notifyPriceBookUpdated({ bookId: id, action: 'update_header' });
@@ -643,10 +676,10 @@ router.post('/:id/lines', requirePricingManage, async (req, res) => {
 
     let syncResult = { synced: false };
     if (book.Status === 'ACTIVE') {
-      syncResult = await syncBookToWinSpeed(id, req.user.sub, null, tx);
+      syncResult = await syncBookToWinSpeed(id, businessIds(req.user).effective, null, tx);
     }
 
-    await audit(query, id, 'EDIT_LINES', book.Status, book.Status, req.user.sub, `${lines.length} รายการ${syncResult.synced ? ` · Auto-Sync WinSpeed (${syncResult.upserted} อัปเดต)` : ''}`);
+    await audit(query, id, 'EDIT_LINES', book.Status, book.Status, req.user, `${lines.length} รายการ${syncResult.synced ? ` · Auto-Sync WinSpeed (${syncResult.upserted} อัปเดต)` : ''}`);
     return { ok: true, count: lines.length, winSpeedSynced: Boolean(syncResult.synced), syncSummary: syncResult };
     });
     notifyPriceBookUpdated({ bookId: id, action: 'edit_lines' });
@@ -730,10 +763,10 @@ router.patch('/:id/lines/:lineId', requirePricingManage, async (req, res) => {
 
     let syncResult = { synced: false };
     if (syncToWinSpeed && book.Status === 'ACTIVE') {
-      syncResult = await syncBookToWinSpeed(id, req.user.sub, new Set([String(existingLine.GoodId)]), tx);
+      syncResult = await syncBookToWinSpeed(id, businessIds(req.user).effective, new Set([String(existingLine.GoodId)]), tx);
     }
 
-    await audit(query, id, 'EDIT_LINE', book.Status, book.Status, req.user.sub,
+    await audit(query, id, 'EDIT_LINE', book.Status, book.Status, req.user,
       `${existingLine.GoodName}: ${existingLine.Price ?? 'งดขาย'} -> ${nextStatus === 'SUSPENDED' ? 'งดขาย' : nextPrice}${syncResult.synced ? ' (Auto-Sync WinSpeed)' : ''}`);
     return { ok: true, lineId, price: nextPrice, lineStatus: nextStatus, winSpeedSynced: Boolean(syncResult.synced) };
     });
@@ -825,10 +858,10 @@ router.post('/:id/lines/item', requirePricingManage, async (req, res) => {
 
     let syncResult = { synced: false };
     if (book.Status === 'ACTIVE') {
-      syncResult = await syncBookToWinSpeed(id, req.user.sub, new Set([String(goodId)]), tx);
+      syncResult = await syncBookToWinSpeed(id, businessIds(req.user).effective, new Set([String(goodId)]), tx);
     }
 
-    await audit(query, id, existing ? 'EDIT_LINE' : 'ADD_LINE', book.Status, book.Status, req.user.sub,
+    await audit(query, id, existing ? 'EDIT_LINE' : 'ADD_LINE', book.Status, book.Status, req.user,
       `${goodName || goodId}: ${nextStatus === 'SUSPENDED' ? 'งดขาย' : nextPrice}${syncResult.synced ? ' (Auto-Sync WinSpeed)' : ''}`);
     return { response: { ok: true, winSpeedSynced: Boolean(syncResult.synced) }, action: existing ? 'edit_line' : 'add_line' };
     });
@@ -844,11 +877,12 @@ router.post('/:id/lines/item', requirePricingManage, async (req, res) => {
 router.post('/:id/sync-to-winspeed', requirePricingManage, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const result = await syncBookToWinSpeed(id, req.user.sub);
-    if (!result.synced) {
-      return res.status(400).json({ message: 'ไม่สามารถ Sync ไปยัง WinSpeed ได้ (โปรดตรวจ Migration 186)' });
-    }
-    // syncBookToWinSpeed commits its audit together with the native updates.
+    const result = await wfTransaction(async tx => {
+      const synced = await syncBookToWinSpeed(id, businessIds(req.user).effective, null, tx);
+      if (!synced.synced) throw Object.assign(new Error('ไม่สามารถ Sync ไปยัง WinSpeed ได้ (โปรดตรวจ Migration 186)'), { status: 400 });
+      await audit(txQuery(tx), id, 'SYNC_TO_WINSPEED', null, null, req.user, null);
+      return synced;
+    });
     res.json({ ok: true, ...result });
   } catch (e) {
     console.error('[pricebook/sync-to-winspeed]', e);
@@ -899,17 +933,17 @@ for (const [action, fromStatuses, toStatus, col] of [
       const setCol = col ? `, ${col}=@uid, ${col.replace('By','At')}=GETUTCDATE()` : '';
       const __r = await query(`UPDATE wf.PriceBook SET Status=@s ${setCol} WHERE Id=@id`, {
         s: { type: sql.VarChar(20), value: toStatus },
-        uid: { type: sql.Int, value: req.user.sub },
+        uid: { type: sql.Int, value: businessIds(req.user).effective },
         id: { type: sql.Int, value: id },
       });
       if (!__r.rowsAffected[0]) throw Object.assign(new Error('ไม่พบรายการที่ระบุ'), { status: 404 });
 
       let syncResult = { synced: false };
       if (toStatus === 'ACTIVE') {
-        syncResult = await syncBookToWinSpeed(id, req.user.sub, null, tx);
+        syncResult = await syncBookToWinSpeed(id, businessIds(req.user).effective, null, tx);
       }
 
-      await audit(query, id, action.toUpperCase(), book.Status, toStatus, req.user.sub, req.body?.note || (syncResult.synced ? 'Auto-Synced WinSpeed' : null));
+      await audit(query, id, action.toUpperCase(), book.Status, toStatus, req.user, req.body?.note || (syncResult.synced ? 'Auto-Synced WinSpeed' : null));
       return { ok: true, status: toStatus, winSpeedSynced: Boolean(syncResult.synced), docuNo: syncResult.docuNo || null };
       });
       notifyPriceBookUpdated({ bookId: id, action, status: toStatus });
@@ -927,14 +961,17 @@ for (const [action, fromStatuses, toStatus, col] of [
 router.get('/:id/special', async (req, res) => {
   try {
     const id = Number(req.params.id);
+    const visibility = await require('../services/secondary-customer-scope').customerPredicate(req.user);
     const rows = (await wfQuery(`
       SELECT sp.*, ru.DisplayName AS RequestedByName, au.DisplayName AS ApprovedByName
       FROM wf.PriceBookSpecialPrice sp
+      JOIN dbo.EMCust c ON CONVERT(NVARCHAR(20),c.CustID)=sp.CustId
+      LEFT JOIN wf.CustomerExt cx ON cx.CustId=c.CustID
       LEFT JOIN wf.AppUser ru ON ru.Id = sp.RequestedBy
       LEFT JOIN wf.AppUser au ON au.Id = sp.ApprovedBy
-      WHERE sp.PriceBookId = @id
+      WHERE sp.PriceBookId = @id AND ${visibility.sql}
       ORDER BY CASE WHEN sp.ApprovedPrice IS NULL THEN 0 ELSE 1 END, sp.Id DESC`,
-      { id: { type: sql.Int, value: id } })).recordset;
+      { id: { type: sql.Int, value: id }, ...visibility.inputs })).recordset;
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -945,21 +982,33 @@ router.post('/:id/special', async (req, res) => {
     const id = Number(req.params.id);
     const { custId, custName, goodId, goodName, requestedPrice, note } = req.body || {};
     if (!custId) return res.status(400).json({ message: 'ต้องระบุ custId (รหัสลูกค้า)' });
-    const book = (await wfQuery(`SELECT Id, CONVERT(VARCHAR(10), EffectiveFrom, 23) AS EffectiveFrom FROM wf.PriceBook WHERE Id=@id`, { id: { type: sql.Int, value: id } })).recordset[0];
-    if (!book) return res.status(404).json({ message: 'ไม่พบ Price Book' });
+    if (!/^\d+$/.test(String(custId)) || !Number.isSafeInteger(Number(custId)) || Number(custId) <= 0 || Number(custId) > 2147483647)
+      return res.status(404).json({ message: 'ไม่พบลูกค้า' });
+    if (requestedPrice != null && requestedPrice !== '' && goodId &&
+        (!Number.isFinite(Number(requestedPrice)) || Number(requestedPrice) <= 0)) {
+      return res.status(400).json({ message: 'ราคาขอพิเศษต้องมากกว่า 0' });
+    }
+    const visibility = await require('../services/secondary-customer-scope').customerPredicate(req.user);
+    const result = await wfTransaction(async tx => {
+    const query = txQuery(tx);
+    const customer = await query(`SELECT TOP 1 1 AS ok FROM dbo.EMCust c WITH (UPDLOCK,HOLDLOCK)
+      LEFT JOIN wf.CustomerExt cx WITH (UPDLOCK,HOLDLOCK) ON cx.CustId=c.CustID
+      WHERE c.CustID=@customerId AND ${visibility.sql}`,
+      { customerId: { type: sql.Int, value: Number(custId) }, ...visibility.inputs });
+    if (!customer.recordset?.length) throw Object.assign(new Error('ไม่พบลูกค้า'), { status: 404 });
+    const book = (await query(`SELECT Id, Status, CONVERT(VARCHAR(10), EffectiveFrom, 23) AS EffectiveFrom FROM wf.PriceBook WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id`, { id: { type: sql.Int, value: id } })).recordset[0];
+    if (!book) throw Object.assign(new Error('ไม่พบ Price Book'), { status: 404 });
 
     if (requestedPrice != null && requestedPrice !== '' && goodId) {
       const rp = Number(requestedPrice);
-      if (!Number.isFinite(rp) || rp <= 0) {
-        return res.status(400).json({ message: 'ราคาขอพิเศษต้องมากกว่า 0' });
-      }
       await assertPricesAboveCost({
         lines: [{ goodId, goodName, pricePerTon: rp }],
         asOfDate: book.EffectiveFrom || getBangkokDateString(),
+        queryFn: query,
       });
     }
 
-    const r = await wfQuery(`
+    const r = await query(`
       INSERT INTO wf.PriceBookSpecialPrice (PriceBookId, CustId, CustName, GoodId, GoodName, RequestedPrice, Note, RequestedBy)
       OUTPUT inserted.Id
       VALUES (@pb, @cid, @cnm, @gid, @gnm, @rp, @note, @uid)`, {
@@ -970,9 +1019,13 @@ router.post('/:id/special', async (req, res) => {
       gnm: { type: sql.NVarChar(200), value: goodName || null },
       rp: { type: sql.Decimal(12, 2), value: requestedPrice != null && requestedPrice !== '' ? Number(requestedPrice) : null },
       note: { type: sql.NVarChar(300), value: note || null },
-      uid: { type: sql.Int, value: req.user.sub },
+      uid: { type: sql.Int, value: businessIds(req.user).effective },
     });
-    res.json({ id: r.recordset[0].Id });
+    const after = await specialPriceSnapshot(query, Number(r.recordset[0].Id));
+    await audit(query, id, 'SPECIAL_REQUEST', book.Status, book.Status, req.user, `specialId=${r.recordset[0].Id}`, { before:null, after });
+    return { id: r.recordset[0].Id };
+    });
+    res.json(result);
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message, code: e.code, details: e.details }); }
 });
 
@@ -984,17 +1037,21 @@ router.patch('/special/:spId', requireRole(...SPECIAL_APPROVE_ROLES), async (req
     if (approvedPrice == null || !Number.isFinite(Number(approvedPrice)) || Number(approvedPrice) <= 0) {
       return res.status(400).json({ message: 'ต้องระบุราคาอนุมัติ (approvedPrice > 0)' });
     }
+    const visibility = await require('../services/secondary-customer-scope').customerPredicate(req.user);
     const result = await wfTransaction(async tx => {
       const query = txQuery(tx);
       const sp = (await query(`
-      SELECT sp.Id, sp.RequestedBy, sp.GoodId, sp.GoodName, sp.PriceBookId,
+      SELECT sp.Id, sp.CustId, sp.RequestedPrice, sp.ApprovedPrice, sp.ApprovedBy, sp.ApprovedAt,
+             sp.RequestedBy, sp.GoodId, sp.GoodName, sp.PriceBookId,
              pb.Status AS BookStatus, CONVERT(VARCHAR(10), pb.EffectiveFrom, 23) AS EffectiveFrom
       FROM wf.PriceBookSpecialPrice sp WITH (UPDLOCK,HOLDLOCK)
       JOIN wf.PriceBook pb WITH (UPDLOCK,HOLDLOCK) ON pb.Id = sp.PriceBookId
-      WHERE sp.Id=@id
-    `, { id: { type: sql.Int, value: spId } })).recordset[0];
+      JOIN dbo.EMCust c WITH (UPDLOCK,HOLDLOCK) ON CONVERT(NVARCHAR(20),c.CustID)=sp.CustId
+      LEFT JOIN wf.CustomerExt cx WITH (UPDLOCK,HOLDLOCK) ON cx.CustId=c.CustID
+      WHERE sp.Id=@id AND ${visibility.sql}
+    `, { id: { type: sql.Int, value: spId }, ...visibility.inputs })).recordset[0];
     if (!sp) throw Object.assign(new Error('ไม่พบคำขอราคาพิเศษ'), { status: 404 });
-    if ([Number(req.user.sub), Number(req.user.actorSub || req.user.sub)].includes(Number(sp.RequestedBy)) && req.user.role !== 'ADMIN') {
+    if ([businessIds(req.user).effective, businessIds(req.user).actor].includes(Number(sp.RequestedBy)) && req.user.role !== 'ADMIN') {
       throw Object.assign(new Error('ไม่อนุญาตให้อนุมัติคำขอของตัวเอง (ใช้บัญชีผู้อนุมัติคนอื่น)'), { status: 403 });
     }
 
@@ -1010,13 +1067,17 @@ router.patch('/special/:spId', requireRole(...SPECIAL_APPROVE_ROLES), async (req
       UPDATE wf.PriceBookSpecialPrice SET ApprovedPrice=@p, ApprovedBy=@uid, ApprovedAt=GETUTCDATE() WHERE Id=@id`, {
       id: { type: sql.Int, value: spId },
       p: { type: sql.Decimal(12, 2), value: Number(approvedPrice) },
-      uid: { type: sql.Int, value: req.user.sub },
+      uid: { type: sql.Int, value: businessIds(req.user).effective },
     });
     if (!__r.rowsAffected[0]) throw Object.assign(new Error('ไม่พบรายการที่ระบุ'), { status: 404 });
 
     const syncResult = sp.BookStatus === 'ACTIVE' ? await syncSpecialPriceToWinSpeed(spId, null, tx) : { synced: false };
     if (sp.BookStatus === 'ACTIVE' && !syncResult.synced) throw Object.assign(new Error('WinSpeed special price was not synced'), { status: 409, code: 'PRICE_SYNC_INCOMPLETE' });
-    await audit(query, sp.PriceBookId, 'SPECIAL_APPROVE', sp.BookStatus, sp.BookStatus, req.user.sub, `specialId=${spId}`);
+    const after = await specialPriceSnapshot(query, spId);
+    const before = { Id:sp.Id, PriceBookId:sp.PriceBookId, CustId:sp.CustId, GoodId:sp.GoodId,
+      RequestedPrice:sp.RequestedPrice, ApprovedPrice:sp.ApprovedPrice, RequestedBy:sp.RequestedBy,
+      ApprovedBy:sp.ApprovedBy, ApprovedAt:sp.ApprovedAt };
+    await audit(query, sp.PriceBookId, 'SPECIAL_APPROVE', sp.BookStatus, sp.BookStatus, req.user, `specialId=${spId}`, { before, after });
     return { id: spId, approvedPrice: Number(approvedPrice), winSpeedSynced: Boolean(syncResult.synced) };
     });
     res.json(result);
@@ -1028,20 +1089,19 @@ router.get('/:id/effective', async (req, res) => {
   try {
     const id = Number(req.params.id);
     const custId = req.query.custId ? String(req.query.custId) : null;
-    // Secondary database: special prices belong to a customer. Show them only for a
-    // customer both identities may see, and never the other customers' special rows.
+    // Customer-specific prices require the same actor/effective customer scope
+    // on either database. Without a customer, expose standard prices only.
     const onSecondary = Boolean(req.user?.identityMapping);
-    if (onSecondary && custId && !await require('../services/secondary-customer-scope').secondaryCustomerVisible(req.user, custId))
+    if (custId && !await require('../services/secondary-customer-scope').customerVisible(req.user, custId))
       return res.status(404).json({ message: 'ไม่พบลูกค้า' });
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: 'Invalid id' });
     const rows = await withPriceBookRead(id, async query => {
       if (onSecondary && custId) {
         await require('../services/secondary-pricebook-special').verifySecondarySpecialPrices(query, id, custId);
       }
-      if (onSecondary) {
-        // A JOIN in the legacy effective-price view can hide the standard line
-        // when another customer has a special price. Select this customer only.
-        return (await query(`SELECT l.GoodId, l.GoodName, l.Unit, l.LineStatus,
+      // The legacy view joins all customer specials, which could omit standard
+      // lines or expose someone else's special price when no customer is selected.
+      return (await query(`SELECT l.GoodId, l.GoodName, l.Unit, l.LineStatus,
             l.Price AS StandardPrice, sp.ApprovedPrice AS SpecialPrice,
             COALESCE(sp.ApprovedPrice,l.Price) AS EffectivePrice,
             CASE WHEN l.LineStatus='SUSPENDED' THEN 0 ELSE 1 END AS Sellable
@@ -1051,15 +1111,6 @@ router.get('/:id/effective', async (req, res) => {
           WHERE l.PriceBookId=@id ORDER BY l.GoodId`, {
           id: { type: sql.Int, value: id }, cust: { type: sql.NVarChar(20), value: custId },
         })).recordset;
-      }
-      return (await query(`
-      SELECT GoodId, GoodName, Unit, LineStatus, StandardPrice, SpecialPrice, EffectivePrice, Sellable
-      FROM wf.v_PriceBookEffective
-      WHERE PriceBookId = @id AND (${onSecondary ? '' : '@cust IS NULL OR '}CustId = @cust OR CustId IS NULL)
-      ORDER BY GoodId`, {
-      id: { type: sql.Int, value: id },
-      cust: { type: sql.NVarChar(20), value: custId },
-    })).recordset;
     });
     res.json(rows);
   } catch (e) { return priceBookReadError(res, e); }

@@ -17,14 +17,21 @@ require.cache[windowPath] = {id:windowPath,filename:windowPath,loaded:true,expor
 const copies = [];
 let multiRoleFixture = false;
 let copiesBeforeWindow = false;
+let boardStageFixture = false;
 const db = h.installDbStub(({ text, inputs }) => {
+  if (boardStageFixture && /WITH Orders AS/.test(text)) return [
+    {Id:'501',WfRef:'QA-501',ImportedDocuNo:'QA-501',Status:'CONFIRMED',CreatedAt:'2026-06-01',TotalQtyTon:1},
+    {Id:'502',WfRef:'DRAFT-QA',ImportedDocuNo:null,Status:'DRAFT',CreatedAt:'2026-06-01',TotalQtyTon:1},
+  ];
+  if (boardStageFixture && /FROM dbo\.SOHD h WITH \(NOLOCK\)/.test(text))
+    return [{SOID:501,DocuNo:'QA-501',DocuType:103,DocuStatus:'N',AppvFlag:'W',HasApproval:0}];
   if (multiRoleFixture && /AS PolicySchemaMissing/.test(text)) return [{ Role: 'SALES', RoleCode: 'SALES', AuthVersion: 0, IsActive: 1 }];
   if (multiRoleFixture && /FROM wf\.vUserRole u/.test(text)) return Number(inputs.id) === 64
     ? [{ Code: 'SALES', BaseRole: 'SALES', PermissionCode: 'access-as' }]
     : [{ Code: 'SALES', BaseRole: 'SALES', PermissionCode: null }, { Code: 'WAREHOUSE', BaseRole: 'WAREHOUSE', PermissionCode: null }];
   if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser WHERE Id = @id/.test(text)) return [{ Id: inputs.id, EmpId: String(7000 + inputs.id), PositionCode: null }];
-  if (/SELECT TOP 1 so\.SalesUserId, CAST\(h\.EmpID AS VARCHAR\(20\)\) AS EmpID/.test(text)) return inputs.id === '900' ? [{ SalesUserId: 43, EmpID: '7043' }] : [];
-  if (/SELECT TOP 1 WfRef FROM wf\.v_AllSalesOrders WHERE Id = @id/.test(text)) return [{ WfRef: 'I69-09000' }];
+  if (/SELECT TOP 2 so\.SalesUserId, CAST\(h\.EmpID AS VARCHAR\(20\)\) AS EmpID/.test(text)) return inputs.id === '900' ? [{ SalesUserId: 43, EmpID: '7043', InWindow: 1 }] : [];
+  if (/SELECT TOP 2 WfRef FROM wf\.v_AllSalesOrders WHERE Id = @id/.test(text)) return [{ WfRef: 'I69-09000' }];
   if (/SELECT CopyColor, CopyLabel, QrNonce, CASE WHEN PrintedAt/.test(text)) return copies.map(c => ({ CopyColor: c.color, CopyLabel: c.label, QrNonce: c.nonce, InWindow: copiesBeforeWindow ? 0 : 1 }));
   if (/INSERT INTO wf\.PaperCopy/.test(text)) { copies.push({ color: inputs.col, label: inputs.lbl, nonce: inputs.nonce }); return []; }
   return [];
@@ -58,7 +65,7 @@ test('old or missing bills cannot be opened or printed even by an administrator'
   assert.equal((await app.call('GET', '/api/papertrail/document/901', { user })).status, 404);
   assert.equal((await app.call('POST', '/api/papertrail/901/print', { body: {}, user })).status, 404);
   const calls = db.calls.slice(before);
-  const guard = calls.find(c => /SELECT TOP 1 so\.SalesUserId/.test(c.text));
+  const guard = calls.find(c => /SELECT TOP 2 so\.SalesUserId/.test(c.text));
   assert.match(guard.text, /so\.CreatedAt >= @globalStartUtc/);
   assert.match(guard.text, /h\.DocuDate >= @globalStartDate/);
   assert.equal(guard.inputs.globalStartUtc.toISOString(), '2025-12-31T17:00:00.000Z');
@@ -115,7 +122,7 @@ test('paper reissue accepts an assigned operational role even when SALES is prim
 test('SO-11: the counter keying a bill for a salesperson can draw the coupon it reserved', async () => {
   const { validateAndLockCouponReservations } = require('../services/coupon-service');
   const row = { Id: 1, CouponId: 9, CouponNo: 'C6906911', GoodId: 1156, GoodUnit: 'ตัน', ReservedQty: 1, Status: 'RESERVED', BeneficiaryCustId: '1158', OwnerCustId: '1158', CarrierSoId: null, ExpiresAt: null, CreatedBy: 64 };
-  const tx = { request: () => ({ input() { return this; }, query: async () => ({ recordset: [row] }) }) };
+  const tx = { request: () => ({ input() { return this; }, query: async text => require('./helpers/native-hold-legacy.cjs')(text) || ({ recordset: text.includes('FROM wf.CouponReservation WITH (UPDLOCK, ROWLOCK)') ? [row] : text.includes('AS NativeRemainingQty') ? [{NativeRemainingQty:1,ActiveRemainingQty:1,InvalidReservations:0}] : [] }) }) };
   const lines = [{ couponReservationId: 1, goodId: '1156', qtyTon: 1, goodUnit: 'ตัน' }];
   await validateAndLockCouponReservations(tx, lines, '1158', null, { userId: 64, altUserIds: [36], role: 'COUNTER_SALES' }, 'I');
   await assert.rejects(validateAndLockCouponReservations(tx, lines, '1158', null, { userId: 36, altUserIds: [], role: 'SALES' }, 'I'), /ถูกสร้างโดยผู้ใช้อื่น/);
@@ -138,6 +145,23 @@ test('board: WinSpeed-pending column and a drawn-tons scan limited to control ti
   assert.equal(boardCall.inputs.globalStartUtc.toISOString(),'2025-12-31T17:00:00.000Z');
   assert.match(sqlText, /WHEN hd\.AppvFlag = 'W' AND hd\.AppvDocuNo IS NULL THEN 'PENDING_APPROVAL'/);
   assert.match(sqlText, /CASE WHEN so\.ImportedDocuNo IS NOT NULL\s+AND \(so\.SoPrefix = 'AI' OR so\.TruckPlate = N'ตั๋วคุม' OR so\.NoTruckRequired = 1\) THEN \(/);
+});
+
+test('board attaches stages only after the existing scoped, cutoff-filtered board query',async()=>{
+  boardStageFixture=true;
+  try {
+    const before=db.calls.length;
+    const r=await app.call('GET','/api/papertrail/board',{user:{sub:12,role:'ACCOUNTING'}});
+    assert.equal(r.status,200);
+    assert.equal(r.body.board.CONFIRMED[0].docStage.code,'BOOKING_WAITING_APPROVAL');
+    assert.equal(r.body.board.DRAFT[0].docStage.code,'DRAFT');
+    const calls=db.calls.slice(before),board=calls.findIndex(c=>/WITH Orders AS/.test(c.text));
+    const stage=calls.findIndex(c=>/FROM dbo\.SOHD h WITH \(NOLOCK\)/.test(c.text));
+    assert.ok(board>=0&&stage>board);
+    assert.match(calls[board].text,/hd\.DocuDate >= @globalStartDate/);
+    assert.equal(calls[stage].inputs.dsId0,501);
+    assert.equal(calls[stage].inputs.stageStartDate,'2026-01-01');
+  } finally {boardStageFixture=false;}
 });
 
 // UAT batch 6 — two print previews opened together each found no set and each issued one (8 copies); the check and

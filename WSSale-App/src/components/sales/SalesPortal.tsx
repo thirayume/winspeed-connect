@@ -1,6 +1,7 @@
 import { useCan } from '../../utils/capabilities';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Plus, Search, RefreshCw, ChevronRight, Filter, ChevronLeft, Package, X, Truck, Download } from 'lucide-react';
+import { Plus, Search, RefreshCw, ChevronRight, Filter, ChevronLeft, Package, X, Truck, Download, BookOpen } from 'lucide-react';
+import { DocStageGuide } from './DocStageGuide';
 import { cn } from '../ui/Base';
 import { useExport } from '../../hooks/useExport';
 import { useErpStore } from '../../store/erp-store';
@@ -31,6 +32,7 @@ export const SalesPortal = () => {
   const [loading, setLoading]       = useState(true);
   const [loadError, setLoadError]   = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [showDocStageGuide, setShowDocStageGuide] = useState(false);
   const [editingSoId, setEditingSoId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [, setExternalSelectedSo] = useState<SalesOrder | null>(null);
@@ -395,6 +397,15 @@ export const SalesPortal = () => {
           <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">สั่งขายปุ๋ย · {companyInfo.compNameEng || 'WORLD FERT CO., LTD.'}</p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            data-testid="btn-doc-stage-guide"
+            onClick={() => setShowDocStageGuide(true)}
+            className="h-10 px-3 flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white text-xs font-semibold text-gray-600 hover:bg-gray-50"
+            title="อธิบายเอกสาร 103, 104, ตั๋วปุ๋ย, 202, 116, 107 และสถานะเอกสารของบิล"
+          >
+            <BookOpen size={15} /> อ่านสถานะเอกสาร
+          </button>
           <button onClick={loadData} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
             <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
           </button>
@@ -603,6 +614,8 @@ export const SalesPortal = () => {
           setIsCreating(true);
         }}
       />
+
+      <DocStageGuide isOpen={showDocStageGuide} onClose={() => setShowDocStageGuide(false)} />
     </div>
   );
 };

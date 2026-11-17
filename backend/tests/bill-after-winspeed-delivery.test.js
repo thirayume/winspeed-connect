@@ -9,22 +9,22 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
 
-const bill = { Id: '289030', Status: 'CONFIRMED', SalesUserId: 43, WfRef: 'I69-05286', CustId: '1086', ImportedDocuNo: 'I69-05286', AppvDocuNo: 'AI69-08940' };
+const bill = { Id: '900000901', Status: 'CONFIRMED', SalesUserId: 43, WfRef: 'I99-TEST01', CustId: '900001', ImportedDocuNo: 'I99-TEST01', AppvDocuNo: 'AI99-TEST01' };
 const unlocked = { ...bill, Status: 'DRAFT' };
-let issued = 'I69-04747';
+let issued = 'I99-TEST03';
 let current = bill;
 const requests = {
-  1: { Id: 1, SoId: '289030', RequesterId: 43, Status: 'PENDING', ReqType: 'CANCEL', Reason: 'customer cancelled' },
-  2: { Id: 2, SoId: '289030', RequesterId: 43, Status: 'PENDING', ReqType: 'EDIT', Reason: 'new date' },
+  1: { Id: 1, SoId: '900000901', RequesterId: 43, Status: 'PENDING', ReqType: 'CANCEL', Reason: 'customer cancelled' },
+  2: { Id: 2, SoId: '900000901', RequesterId: 43, Status: 'PENDING', ReqType: 'EDIT', Reason: 'new date' },
 };
 const db = h.installDbStub(({ text, inputs }) => {
   if (/FROM wf\.v_AllSalesOrders WHERE CAST\(Id AS INT\) = @id/.test(text)) return [current];
   if (/FROM wf\.EditReason/.test(text)) return [{ ReasonCode: 'X', ReasonText: 'customer cancelled', AppliesTo: 'SO_CANCEL,SO_DELETE', IsActive: 1 }];
   if (/JOIN dbo\.SOHD d WITH \(NOLOCK\) ON d\.DocuType = 104/.test(text)) return issued ? [{ DocuNo: issued }] : [];
   if (/SELECT \* FROM wf\.UnlockRequest WHERE Id=@id/.test(text)) return [requests[inputs.id]];
-  if (/FROM\s+dbo\.SOHD s\s/.test(text) && /s\.SOID = @soid AND s\.DocuType = 103/.test(text)) return [{ SOID: '289030', DocuNo: 'I69-05286', CustId: '1086', SalesUserId: 43 }];
+  if (/FROM\s+dbo\.SOHD s\s/.test(text) && /s\.SOID = @soid AND s\.DocuType = 103/.test(text)) return [{ SOID: '900000901', DocuNo: 'I99-TEST01', CustId: '900001', SalesUserId: 43 }];
   if (/SELECT 1 AS ok FROM wf\.EditRequest WHERE Id = @id AND RequestedAt >= @globalStartUtc/.test(text)) return [{ ok: 1 }];
-  if (/SELECT \* FROM wf\.EditRequest WHERE Id = @id/.test(text)) return [{ Id: 7, SOID: '289030', Status: 'PENDING', RequestedBy: 43 }];
+  if (/SELECT \* FROM wf\.EditRequest WHERE Id = @id/.test(text)) return [{ Id: 7, SOID: '900000901', Status: 'PENDING', RequestedBy: 43 }];
   return [];
 }, { activeUserIds: h.TEST_USERS });
 
@@ -37,7 +37,7 @@ const approver = { sub: 12, role: 'ACCOUNTING' };
 const admin = { sub: 1, role: 'ADMIN' };
 const refused = (r) => {
   assert.equal(r.status, 409, JSON.stringify(r.body));
-  assert.match(r.body.message, /I69-04747/);
+  assert.match(r.body.message, /I99-TEST03/);
 };
 const noWinSpeedWrite = (before) => {
   assert.ok(!db.calls.slice(before).some(c => /UPDATE dbo\.SOHD|DELETE FROM dbo\.SO|usp_ResetBookingApproval/.test(c.text + (c.proc || ''))));
@@ -45,13 +45,13 @@ const noWinSpeedWrite = (before) => {
 
 test('the Cancel button refuses a bill with a 104', async () => {
   const before = db.calls.length;
-  refused(await app.call('PATCH', '/api/so/289030/cancel', { body: { reasonCode: 'X', reason: 'customer cancelled' }, user: sales }));
+  refused(await app.call('PATCH', '/api/so/900000901/cancel', { body: { reasonCode: 'X', reason: 'customer cancelled' }, user: sales }));
   noWinSpeedWrite(before);
 });
 
 test('a request to edit or cancel is refused', async () => {
-  refused(await app.call('POST', '/api/so/289030/unlock-request', { body: { reason: 'customer cancelled', reqType: 'CANCEL' }, user: sales }));
-  refused(await app.call('POST', '/api/so/289030/unlock-request', { body: { reason: 'change the date', reqType: 'EDIT' }, user: sales }));
+  refused(await app.call('POST', '/api/so/900000901/unlock-request', { body: { reason: 'customer cancelled', reqType: 'CANCEL' }, user: sales }));
+  refused(await app.call('POST', '/api/so/900000901/unlock-request', { body: { reason: 'change the date', reqType: 'EDIT' }, user: sales }));
 });
 
 test('a request filed before the 104 cannot be approved after it', async () => {
@@ -65,8 +65,8 @@ test('saving a bill unlocked before the 104 is refused', async () => {
   current = unlocked;
   try {
     const before = db.calls.length;
-    refused(await app.call('PUT', '/api/so/289030', {
-      body: { custId: '1086', soPrefix: 'I', deliveryDate: '2026-11-03', truckPlate: 'UAT2-QA31', lines: [{ goodId: '1118', qtyTon: 1, pricePerTon: 18200 }] },
+    refused(await app.call('PUT', '/api/so/900000901', {
+      body: { custId: '900001', soPrefix: 'I', deliveryDate: '2026-11-03', truckPlate: 'TEST-TRUCK', lines: [{ goodId: '1118', qtyTon: 1, pricePerTon: 18200 }] },
       user: sales,
     }));
     noWinSpeedWrite(before);
@@ -74,15 +74,15 @@ test('saving a bill unlocked before the 104 is refused', async () => {
 });
 
 test('bulk cancel and delete refuse it', async () => {
-  refused(await app.call('POST', '/api/so/bulk-cancel-delete', { body: { soIds: ['289030'], action: 'CANCEL', reasonCode: 'X', reasonText: 'customer cancelled' }, user: sales }));
+  refused(await app.call('POST', '/api/so/bulk-cancel-delete', { body: { soIds: ['900000901'], action: 'CANCEL', reasonCode: 'X', reasonText: 'customer cancelled' }, user: sales }));
   current = unlocked;
   try {
-    refused(await app.call('DELETE', '/api/so/289030', { body: { reasonCode: 'X', reason: 'customer cancelled' }, user: sales }));
+    refused(await app.call('DELETE', '/api/so/900000901', { body: { reasonCode: 'X', reason: 'customer cancelled' }, user: sales }));
   } finally { current = bill; }
 });
 
 test('the edit request path refuses it at both ends', async () => {
-  refused(await app.call('POST', '/api/edit-requests', { body: { soid: '289030', reasonCode: 'OTHER', reasonDetail: 'change the date' }, user: sales }));
+  refused(await app.call('POST', '/api/edit-requests', { body: { soid: '900000901', reasonCode: 'OTHER', reasonDetail: 'change the date' }, user: sales }));
   refused(await app.call('PATCH', '/api/edit-requests/7/approve', { body: { note: 'ok' }, user: admin }));
 });
 
@@ -92,7 +92,7 @@ test('without a 104 the same cancel goes through', async () => {
     const r = await app.call('PATCH', '/api/so/unlock-requests/1/resolve', { body: { approve: true }, user: approver });
     assert.equal(r.status, 200, JSON.stringify(r.body));
     assert.ok(db.calls.some(c => /UPDATE dbo\.SOHD SET DocuStatus='C'/.test(c.text)));
-  } finally { issued = 'I69-04747'; }
+  } finally { issued = 'I99-TEST03'; }
 });
 
 test('cancelling an approved booking with no 104 takes it out of the WinSpeed lookup', () => {

@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { unsavedMessage } from '../../utils/unsaved-changes';
 import { FileText, RefreshCw, Plus, X, ArrowRightCircle, AlertTriangle, Package, Send, Clock, User, Printer, Sparkles } from 'lucide-react';
-import { fetchQuotations, createQuotation, updateQuotationStatus, extendQuotationValidity, fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, listUsers, fetchCustomerTopGoods, fetchCustomerCreditStatus, fetchSystemSettings, type CustomerTopGood } from '../../services/api';
+import { fetchQuotations, createQuotation, updateQuotationStatus, extendQuotationValidity, fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, listUsers, fetchCustomerTopGoods, fetchCustomerCreditStatus, fetchSystemSettings, fetchQuotationPriceCoverage, type CustomerTopGood } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import { useAppStore } from '../../store/app-store';
 import type { Quotation, QuoteStatus, EMCust, EMGood, CurrentPrice, AdminUser, CustomerCreditStatus } from '../../types';
@@ -120,7 +120,11 @@ export function QuotationPage() {
 
   async function extendValidUntil(q: Quotation, validDays: 7 | 15 | 20 | 30 | 45) {
     setBusyId(q.Id);
-    try { await extendQuotationValidity(q.Id, { validDays }); await load(); }
+    try {
+      const result = await extendQuotationValidity(q.Id, { validDays });
+      if (result.missingCost) setFeedbackBanner('ขยายอายุสำเร็จ แต่บางรายการยังตรวจเกณฑ์ราคาไม่ได้');
+      await load();
+    }
     catch (e: unknown) { void appAlert((e as Error).message, 'error'); }
     finally { setBusyId(null); }
   }
@@ -544,6 +548,8 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
   const [initialValidUntil] = useState(() => getLocalDateStr(7));
   const [validUntil, setValidUntil] = useState(initialValidUntil);
   const [lines, setLines]   = useState<DraftLine[]>([]);
+  const [missingCostLines, setMissingCostLines] = useState<Set<string>>(new Set());
+  const [coverageUnavailable, setCoverageUnavailable] = useState(false);
   const [busy, setBusy]     = useState(false);
   const [err, setErr]       = useState('');
   const [custSearch, setCustSearch] = useState('');
@@ -565,6 +571,26 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
   const dirty = Boolean(custId || lines.length || salesUserId || validUntil !== initialValidUntil);
   const releaseDraftGuard = useUnsavedChanges(dirty);
   const closeEditor = async () => { if (!busy && (!dirty || await appConfirm(unsavedMessage))) onClose(); };
+
+  const coverageSignature = JSON.stringify(lines.map(l => [l.tempId, l.goodId, l.goodCode, l.pricePerTon, !!l.isGiveaway]));
+  useEffect(() => {
+    if (!lines.length) { setMissingCostLines(new Set()); setCoverageUnavailable(false); return; }
+    let cancelled = false;
+    const current = lines;
+    setMissingCostLines(new Set());
+    const timer = setTimeout(() => {
+      fetchQuotationPriceCoverage(current.map(l => ({ goodId: String(l.goodId), goodCode: l.goodCode, pricePerTon: Number(l.pricePerTon) || 0, isGiveaway: !!l.isGiveaway })))
+        .then(result => {
+          if (cancelled) return;
+          setMissingCostLines(new Set(result.missingCostLineIndexes.map(i => current[i]?.tempId).filter((id): id is string => Boolean(id))));
+          setCoverageUnavailable(false);
+        })
+        .catch(() => { if (!cancelled) { setMissingCostLines(new Set()); setCoverageUnavailable(true); } });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+    // The signature captures every input used in the request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coverageSignature]);
 
   // Fetch top ordered goods for customer
   useEffect(() => {
@@ -754,7 +780,7 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
         salesUserId: salesUserId ? Number(salesUserId) : undefined
       });
       releaseDraftGuard();
-      await appAlert(`สร้างใบเสนอราคาสำเร็จ: ${r.quoteNo}`, 'success'); onDone();
+      await appAlert(`สร้างใบเสนอราคาสำเร็จ: ${r.quoteNo}${r.missingCost ? '\nบางรายการยังตรวจเกณฑ์ราคาไม่ได้' : ''}`, r.missingCost ? 'warning' : 'success'); onDone();
     } catch (e: unknown) { setErr((e as Error).message || 'เกิดข้อผิดพลาด'); }
     finally { setBusy(false); }
   }
@@ -1059,6 +1085,9 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
                               <AlertTriangle size={10} /> ต่ำกว่าราคากลาง ฿{l.netPricePerTon.toLocaleString()}
                             </div>
                           )}
+                          {missingCostLines.has(l.tempId) && (
+                            <div role="status" className="text-[10px] text-amber-800 font-bold mt-0.5">ยังตรวจเกณฑ์ราคาของรายการนี้ไม่ได้ สามารถดำเนินการต่อได้</div>
+                          )}
                         </div>
                         <div className="text-right shrink-0 px-2 min-w-[70px]">
                           {l.isGiveaway ? (
@@ -1095,6 +1124,7 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
               </div>
             )}
 
+              {coverageUnavailable && <div role="status" className="p-2 rounded-lg bg-amber-50 border border-amber-300 text-xs text-amber-900">ยังตรวจเกณฑ์ราคาไม่ได้ กรุณาตรวจสอบอีกครั้ง</div>}
               {/* Error */}
               {err && (
                 <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-100 text-xs text-red-600">

@@ -10,6 +10,7 @@ import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { appAlert } from '../ui/AppAlert';
 import { exportToExcel, type ExportColumn } from '../../utils/exportUtils';
 import type { AgingRow, RebateSummary, SalesOrder } from '../../types';
+import { DocStageChip } from '../sales/DocStageChip';
 import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
 
 
@@ -287,7 +288,7 @@ export function DashboardPage() {
                     <tbody className="divide-y divide-gray-50">
                       {searchRows.map(row => (
                         <tr key={String(row.id)} className="text-gray-700">
-                          <td className="py-2 pr-3 font-mono font-bold text-[#0C447C] whitespace-nowrap">{row.wfRef || row.importedDocuNo || row.id}</td>
+                          <td className="py-2 pr-3 font-mono font-bold text-[#0C447C] whitespace-nowrap">{row.wfRef || row.importedDocuNo || row.id}<DocStageChip stage={row.docStage} className="block mt-1" /></td>
                           <td className="py-2 px-3 max-w-[220px] truncate" title={row.custName}>{row.custName}</td>
                           <td className="py-2 px-3 font-mono whitespace-nowrap">{row.truckPlate || (row.noTruckRequired ? 'ไม่ต้องระบุรถ' : '-')}</td>
                           <td className="py-2 px-3 whitespace-nowrap">{row.requestedAt ? formatThaiDate(row.requestedAt, true) : '-'}</td>
@@ -371,7 +372,7 @@ export function DashboardPage() {
                       </div>
                       {g.wfRefs.length > 0 && (
                         <div className="mt-0.5 ml-4 text-[10px] text-gray-400 font-mono flex gap-1 flex-wrap">
-                          {g.wfRefs.map(ref => <span key={ref} className="bg-gray-100 px-1 rounded">{ref}</span>)}
+                          {g.wfRefs.map(ref => <span key={ref} className="inline-flex flex-col gap-1"><span className="bg-gray-100 px-1 rounded">{ref}</span><DocStageChip stage={aging.find(row => row.WfRef === ref)?.docStage} /></span>)}
                         </div>
                       )}
                       <div className="mt-1 ml-4 pl-3 border-l-2 border-gray-200/60 space-y-1">

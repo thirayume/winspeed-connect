@@ -2,6 +2,7 @@ import {useCallback,useEffect,useState} from 'react';
 import {req} from '../../services/api';
 import {useAuthStore} from '../../store/auth-store';
 import {useUnsavedChanges} from '../../hooks/useUnsavedChanges';
+import {useFeature} from '../../utils/capabilities';
 
 type ResetStatus={enabled:boolean;environment?:string;primaryDatabase?:string;manifestDigest?:string;
   databases?:{database:string;server:string}[];coordinatorPhase?:string|null;bootstrapPhase?:string|null;
@@ -9,6 +10,14 @@ type ResetStatus={enabled:boolean;environment?:string;primaryDatabase?:string;ma
 type ResetResult={requestId:string;complete:boolean;replayed:boolean;generation:number};
 
 export function ResetRebateSetting(){
+  const poolEnabled=useFeature()('rebate-pool-103');
+  if(!poolEnabled)return <section role="status" className="rounded-2xl border border-gray-200 bg-white p-5 text-sm text-gray-600">
+    Rebate Pool ยังไม่เปิดใช้งานในระบบนี้ จึงยังไม่สามารถเริ่มยอดใหม่ได้
+  </section>;
+  return <EnabledResetRebateSetting />;
+}
+
+function EnabledResetRebateSetting(){
   const user=useAuthStore(s=>s.user);
   const [status,setStatus]=useState<ResetStatus|null>(null),[confirmation,setConfirmation]=useState('');
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');

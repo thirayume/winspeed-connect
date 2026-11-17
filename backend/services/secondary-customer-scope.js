@@ -7,8 +7,7 @@ const { getVisibleScope, scopeFilter } = require('./visible-scope');
 const { actorPerspective } = require('./business-identity');
 const { readGlobalDataWindow } = require('./global-data-window-store');
 
-async function secondaryCustomerPredicate(user) {
-  if (!user?.identityMapping) return { sql: '1=1', inputs: {} };
+async function customerPredicate(user) {
   const actor = actorPerspective(user);
   const scopes = [await getVisibleScope(user), ...(actor === user ? [] : [await getVisibleScope(actor)])];
   const window = await readGlobalDataWindow();
@@ -18,7 +17,9 @@ async function secondaryCustomerPredicate(user) {
     if (scope.all) continue;
     const assigned = scopeFilter(scope, { userCol: 'cx.SalespersonUserId', empCol: 'c.BillEmp', prefix: `customerScope${index}` });
     const sold = scopeFilter(scope, { userCol: 'salesExt.SalesUserId', empCol: 'salesBooking.EmpID', prefix: `customerBooking${index}` });
-    conditions.push(`(${assigned.sql} OR EXISTS (SELECT 1 FROM dbo.SOHD salesBooking
+    // The owner confirmed that customers without an assigned salesperson must
+    // remain selectable. An invalid/inactive assigned owner is not unassigned.
+    conditions.push(`((ISNULL(c.BillEmp,0)=0 AND ISNULL(cx.SalespersonUserId,0)=0) OR ${assigned.sql} OR EXISTS (SELECT 1 FROM dbo.SOHD salesBooking
       LEFT JOIN wf.SalesOrderExt salesExt ON salesExt.SOID=CONVERT(VARCHAR(50),salesBooking.SOID)
       WHERE salesBooking.CustID=c.CustID AND salesBooking.DocuType=103
         AND salesBooking.DocuDate >= @customerStartDate AND ${sold.sql}))`);
@@ -27,11 +28,10 @@ async function secondaryCustomerPredicate(user) {
   return { sql: conditions.length ? conditions.map(c => `(${c})`).join(' AND ') : '1=1', inputs };
 }
 
-async function secondaryCustomerVisible(user, custId) {
-  if (!user?.identityMapping) return true;
+async function customerVisible(user, custId) {
   const id = Number(custId);
   if (!/^\d+$/.test(String(custId)) || !Number.isSafeInteger(id) || id <= 0 || id > 2147483647) return false;
-  const predicate = await secondaryCustomerPredicate(user);
+  const predicate = await customerPredicate(user);
   const result = await wfQuery(`SELECT TOP 1 1 AS ok FROM dbo.EMCust c
     LEFT JOIN wf.CustomerExt cx ON cx.CustId=c.CustID
     WHERE c.CustID=@visibilityCustId AND ${predicate.sql}`,
@@ -39,4 +39,13 @@ async function secondaryCustomerVisible(user, custId) {
   return Boolean(result.recordset?.length);
 }
 
-module.exports = { secondaryCustomerPredicate, secondaryCustomerVisible };
+// Legacy callers that explicitly use the secondary-only helper retain their
+// original primary-database behavior until individually migrated and tested.
+async function secondaryCustomerPredicate(user) {
+  return user?.identityMapping ? customerPredicate(user) : { sql: '1=1', inputs: {} };
+}
+async function secondaryCustomerVisible(user, custId) {
+  return user?.identityMapping ? customerVisible(user, custId) : true;
+}
+
+module.exports = { customerPredicate, customerVisible, secondaryCustomerPredicate, secondaryCustomerVisible };

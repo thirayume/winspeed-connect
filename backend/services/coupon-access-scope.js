@@ -35,7 +35,9 @@ async function beneficiaryCustomerVisible(user,id,window,queryFn=wfQuery) {
     const assigned=scopeFilter(scope,{userCol:'beneficiaryExt.SalespersonUserId',empCol:'beneficiary.BillEmp',prefix:`beneficiaryAssigned${i}`});
     const booked=scopeFilter(scope,{userCol:'beneficiarySalesExt.SalesUserId',empCol:'beneficiaryBooking.EmpID',prefix:`beneficiaryBooked${i}`});
     Object.assign(inputs,assigned.inputs,booked.inputs);
-    conditions.push(`(${assigned.sql} OR EXISTS (SELECT 1 FROM dbo.SOHD beneficiaryBooking
+    // The owner's customer policy permits unassigned customers to be selected.
+    // This is scope only: a valid product-specific beneficiary grant remains mandatory.
+    conditions.push(`((ISNULL(beneficiary.BillEmp,0)=0 AND ISNULL(beneficiaryExt.SalespersonUserId,0)=0) OR ${assigned.sql} OR EXISTS (SELECT 1 FROM dbo.SOHD beneficiaryBooking
       LEFT JOIN wf.SalesOrderExt beneficiarySalesExt ON beneficiarySalesExt.SOID=CONVERT(VARCHAR(50),beneficiaryBooking.SOID)
       WHERE beneficiaryBooking.CustID=beneficiary.CustID AND beneficiaryBooking.DocuType=103
         AND beneficiaryBooking.DocuDate>=@beneficiaryStartDate AND ${booked.sql}))`);

@@ -58,6 +58,9 @@ function createMockTx(reservationStore = {}) {
           return this;
         },
         async query(sqlText) {
+          const legacy=require('./helpers/native-hold-legacy.cjs')(sqlText);if(legacy)return legacy;
+          if (sqlText.includes('AS NativeRemainingQty')) return { recordset: [{ NativeRemainingQty:4, ActiveRemainingQty:4, InvalidReservations:0 }] };
+          if (sqlText.includes('SELECT TOP 1 1 AS LegacyConflict')) return { recordset: [] };
           if (sqlText.includes('FROM wf.CouponReservation')) {
             const resId = inputs.resId;
             const row = reservationStore[resId];

@@ -52,3 +52,20 @@ test('web has no activation endpoint and cannot probe an unapproved server',asyn
   assert.equal(tested.status,403);assert.equal(tested.body.code,'CONNECTION_TARGET_NOT_APPROVED');
   assert.equal(store.read(process.env).profiles[name].active,undefined);
 });
+
+test('connection history respects cutoff without changing stored audit and handles policy failure',async()=>{
+  await store.mutate(process.env,state=>{
+    state.audit.push({at:'2025-12-31T16:59:59.000Z',action:'SYNTHETIC_OLD',name,revision:1,actor:'test'});
+    state.audit.push({at:'2025-12-31T17:00:00.000Z',action:'SYNTHETIC_BOUNDARY',name,revision:1,actor:'test'});
+    state.audit.push({at:'not-a-date',action:'SYNTHETIC_UNKNOWN',name,revision:1,actor:'test'});
+    state.audit.push({at:'2026-01-02',action:'SYNTHETIC_DAY_ONLY',name,revision:1,actor:'test'});
+  });
+  const result=await app.call('GET',base,{user:admin});assert.equal(result.status,200);
+  assert.ok(result.body.audit.some(e=>e.action==='SYNTHETIC_BOUNDARY'));
+  assert.ok(!result.body.audit.some(e=>['SYNTHETIC_OLD','SYNTHETIC_UNKNOWN','SYNTHETIC_DAY_ONLY'].includes(e.action)));
+  assert.ok(store.read(process.env).audit.some(e=>e.action==='SYNTHETIC_OLD'));
+  const policy=require('../services/global-data-window-store'),old=policy.readGlobalDataWindow;
+  policy.readGlobalDataWindow=async()=>{throw Error('unavailable');};
+  try{const unavailable=await app.call('GET',base,{user:admin});assert.equal(unavailable.status,200);assert.deepEqual(unavailable.body.audit,[]);assert.equal(unavailable.body.auditUnavailable,true);assert.ok(unavailable.body.profiles.length>0);}
+  finally{policy.readGlobalDataWindow=old;}
+});
