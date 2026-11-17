@@ -14,6 +14,10 @@ PLACEHOLDERS = {"", "CHANGE_ME", "CHANGEME", "TODO"}
 TARGET_KEYS = ("ONPREM_DB_SERVER", "ONPREM_DB_PORT", "ONPREM_DB_INSTANCE", "ONPREM_DB_NAME", "ONPREM_TARGET_KIND",
                "ONPREM_EXPECTED_SERVERNAME", "ONPREM_PRODUCT_VERSION_PREFIX",
                "ONPREM_DB_ENCRYPT", "ONPREM_DB_LEGACY_TLS")
+REBATE_FLAGS = ("REBATE_POOL_103_ENABLED", "REBATE_CONVERSION_ENABLED", "REBATE_CONVERSION_APPROVAL_ENABLED",
+                "REBATE_RESET_ADMIN_ENABLED", "REBATE_RESET_FENCE_AUDIT_COMPLETE", "REBATE_EVIDENCE_DISCOVERY_ENABLED",
+                "REBATE_TICKET_PREVIEW_ENABLED")
+TICKET_TREATMENT = "REBATE_TICKET_REDEMPTION_TREATMENT"
 
 
 def stop(message):
@@ -69,7 +73,7 @@ def main():
     if frontend.get("image") != "worldfert-saleapp-%s-frontend:local" % stack:
         stop("frontend image is not the " + stack + " frontend image.")
 
-    # The API receives exactly the reviewed target; only secrets may come from config\.env.
+    # Connection and environment boundaries come from the reviewed target file.
     for key in TARGET_KEYS + ("ONPREM_DB_USER", "CORS_ORIGIN", "ONPREM_SWITCHABLE_DATABASES", "REBATE_RESET_DATABASES"):
         if str(app.get(key, "")) != target.get(key, ""):
             stop("API setting " + key + " does not match the target file.")
@@ -90,6 +94,18 @@ def main():
                        "TRUST_PROXY": "1"}.items():
         if str(app.get(key, "")).lower() != value:
             stop("required safety setting is not enforced: " + key)
+
+    for key in REBATE_FLAGS:
+        if app.get(key, "false") not in ("true", "false"):
+            stop("API setting " + key + " must be true or false.")
+    treatment = app.get(TICKET_TREATMENT, "")
+    if treatment:
+        configured = re.fullmatch(r"([a-zA-Z0-9_]+):(ZERO|DISCOUNT)", treatment)
+        reset_targets = target.get("REBATE_RESET_DATABASES", "").lower().split(",")
+        if not configured or configured[1].lower() not in reset_targets:
+            stop("Rebate ticket treatment must name a database in the reviewed environment.")
+    if (set(REBATE_FLAGS) | {TICKET_TREATMENT}) & set(migration):
+        stop("Rebate runtime settings must stay in the API service.")
 
     # Migrator: same target, its own login, and no application secret.
     if (migration.get("DB_MODE"), migration.get("DB_OPERATION"), migration.get("MIGRATION_PROFILE")) != ("onprem", "migration", "onprem"):
