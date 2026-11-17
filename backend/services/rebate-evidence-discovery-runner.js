@@ -9,6 +9,9 @@ function fail(code,status=409){throw Object.assign(Error(code),{code,status});}
 const valid=n=>Number.isSafeInteger(n)&&n>=0&&n<=2147483647;
 async function runEvidenceDiscoveryPage(overrides={}){
   const db=overrides.db||require('../db');
+  // Fail closed: without the data-window start the scan would cover all history.
+  const windowStart=(await (overrides.readWindow||require('./global-data-window-store').readGlobalDataWindow)())?.businessDate;
+  if(!require('./data-window').isValidStartDate(windowStart))fail('REBATE_DISCOVERY_WINDOW_UNAVAILABLE',503);
   const fence=overrides.runFence||((fn)=>withRebateOperationFence(fn));
   const runTx=overrides.runTx||(fn=>db.wfTransaction(tx=>fn(transactionQuery(tx,db.sql))));
   const participant=overrides.participantFence||acquireRebateParticipantFence;
@@ -30,7 +33,7 @@ async function runEvidenceDiscoveryPage(overrides={}){
     const cursor=rows[0],after={redemptionId:Number(cursor.LastRedemptionId),listNo:Number(cursor.LastListNo)};
     if(Number(cursor.Generation)!==epoch.generation||!valid(after.redemptionId)||!valid(after.listNo)||
        !valid(Number(cursor.Revision))||Number(cursor.Revision)<1)fail('REBATE_DISCOVERY_CURSOR_INVALID');
-    const page=await discover(query,{epoch,after,limit:overrides.limit||20});
+    const page=await discover(query,{epoch,after,limit:overrides.limit||20,windowStart});
     return {epoch,revision:Number(cursor.Revision),after,page};
   }));
   const result=await stage(snapshot.page,snapshot.epoch);

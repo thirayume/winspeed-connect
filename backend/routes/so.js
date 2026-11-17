@@ -1067,9 +1067,11 @@ router.get('/rebate-availability/:custId', requireCapability('so.create'), async
       const q=require('../services/rebate-sql').transactionQuery(tx,sql);await routeParticipantFence(q,epoch);
       if(!isShipmentEpoch(epoch))throw Object.assign(Error('reset required'),{code:'REBATE_RESET_NOT_COMPLETED',status:409});
       const cycleMonths=await require('../services/rebate-cycle-policy').readRebateCycleMonths(q,{lock:true});
-      return require('../services/rebate-shipment-queue').getShipmentCustomerQueue(q,{epoch,custId,scope,cutoff,cycleMonths,
+      return require('../services/rebate-empty-ledger').getShipmentCustomerQueueOrEmpty(q,{epoch,custId,scope,cutoff,cycleMonths,
         asOfDate:require('../services/so-pickup-policy').getBangkokDateString()});
     }));
+    // A customer with nothing in the new ledger yet has no Rebate, if the caller may see that customer.
+    await require('../services/rebate-empty-ledger').assertEmptyQueueVisible(req.user,queue);
     if(!Number.isFinite(queue.totalFifoEligibleBalance)||queue.totalFifoEligibleBalance<0)
       throw Object.assign(Error('unavailable'),{code:'REBATE_AVAILABILITY_UNAVAILABLE',status:503});
     return res.json({hasAvailableRebate:queue.totalFifoEligibleBalance>0});
@@ -1093,10 +1095,11 @@ router.get('/rebate-balance/:custId', requireRebateAmountAccess, async (req, res
         await routeParticipantFence(q, epoch);
         if (!isShipmentEpoch(epoch)) throw Object.assign(new Error('reset required'), { code: 'REBATE_RESET_NOT_COMPLETED', status: 409 });
         const months = await require('../services/rebate-cycle-policy').readRebateCycleMonths(q, { lock: true });
-        return require('../services/rebate-shipment-queue').getShipmentCustomerQueue(q, {
+        return require('../services/rebate-empty-ledger').getShipmentCustomerQueueOrEmpty(q, {
           epoch, custId, asOfDate: today, cutoff, scope, cycleMonths: months,
         });
       }));
+      await require('../services/rebate-empty-ledger').assertEmptyQueueVisible(req.user, queue);
       if (!Number.isFinite(queue.totalFifoEligibleBalance) || queue.totalFifoEligibleBalance < 0)
         throw Object.assign(new Error('invalid shipment balance'), { code: 'REBATE_BALANCE_UNAVAILABLE', status: 503 });
       return res.json({ availableRebate: queue.totalFifoEligibleBalance, source: 'shipment' });

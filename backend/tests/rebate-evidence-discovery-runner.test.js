@@ -15,9 +15,9 @@ function fixture(){
     }
     throw Error('unexpected query');
   };
-  const deps={runFence:async fn=>fn(epoch),runTx:async fn=>fn(query),participantFence:async()=>{},
-    discover:async(_q,{after})=>({scanned:1,candidates:[{redemptionId:after.redemptionId+1,listNo:1}],
-      next:{redemptionId:after.redemptionId+1,listNo:1},cycleComplete:false}),
+  const deps={readWindow:async()=>({businessDate:'2026-01-01'}),runFence:async fn=>fn(epoch),runTx:async fn=>fn(query),participantFence:async()=>{},
+    discover:async(_q,{after,windowStart})=>{state.windowStart=windowStart;return {scanned:1,candidates:[{redemptionId:after.redemptionId+1,listNo:1}],
+      next:{redemptionId:after.redemptionId+1,listNo:1},cycleComplete:false};},
     stagePage:async page=>{state.staged++;if(state.failStage)throw Error('stage failed');
       return {staged:page.candidates.length,next:page.next,cycleComplete:page.cycleComplete};}};
   return {state,deps};
@@ -42,4 +42,10 @@ test('completed sweep resets cursor so backdated keys are checked next cycle',as
   f.deps.discover=async()=>({scanned:0,candidates:[],next:{redemptionId:0,listNo:0},cycleComplete:true});
   const r=await runEvidenceDiscoveryPage(f.deps);
   assert.equal(r.cycleComplete,true);assert.equal(f.state.cursor.LastRedemptionId,0);
+});
+test('each page passes the data-window start, and no page runs without it',async()=>{
+  const f=fixture();await runEvidenceDiscoveryPage(f.deps);assert.equal(f.state.windowStart,'2026-01-01');
+  const g=fixture();g.deps.readWindow=async()=>({businessDate:null});
+  await assert.rejects(runEvidenceDiscoveryPage(g.deps),{code:'REBATE_DISCOVERY_WINDOW_UNAVAILABLE'});
+  assert.equal(g.state.cursor,null);assert.equal(g.state.staged,0);
 });

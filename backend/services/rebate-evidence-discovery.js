@@ -13,10 +13,22 @@ function bkkInstant(value){
   const n=Date.parse(s+'+07:00');if(!Number.isFinite(n))fail('REBATE_DISCOVERY_TIME_INVALID');
   return n;
 }
-async function discoverEvidencePage(query,{epoch,after={redemptionId:0,listNo:0},limit=50}={}){
+// Which lines can hold a shipment made after the reset (owner, 17 Nov 2026: the
+// queue must not fill with history from before the data-window start):
+//   - a line dated on or after the data-window start (windowStart, YYYY-MM-DD);
+//   - an older-dated line only when WinSpeed's create audit is after the reset,
+//     which is how a back-dated document shows itself.
+// A line whose create audit is at or before the reset already existed then, so
+// it is not a post-reset shipment even when no weigh-out was recorded. A line
+// with no create audit cannot prove its time and is held for review.
+// On the UAT copy this held 297,540 of 300,541 lines before the change.
+async function discoverEvidencePage(query,{epoch,after={redemptionId:0,listNo:0},limit=50,windowStart}={}){
   const reset=new Date(epoch?.lastResetAtUtc).getTime();
+  const {isValidStartDate}=require('./data-window');
   if(typeof query!=='function'||!epoch?.lastResetAtUtc||!Number.isFinite(reset)||!safe(after.redemptionId)||!safe(after.listNo)||
-      !Number.isSafeInteger(limit)||limit<1||limit>100)fail('REBATE_DISCOVERY_INPUT_INVALID',400);
+      !Number.isSafeInteger(limit)||limit<1||limit>100||!isValidStartDate(windowStart))fail('REBATE_DISCOVERY_INPUT_INVALID',400);
+  // WinSpeed keeps audit and weigh-out times in Bangkok local time.
+  const resetLocal=new Date(reset+7*3600000).toISOString().slice(0,23);
   // First page through source keys, then inspect evidence; never assume that
   // WinSpeed's non-identity numeric key represents creation time.
   const rows=(await query(`SELECT x.RedemtionID,x.Listno,
@@ -25,13 +37,18 @@ async function discoverEvidencePage(query,{epoch,after={redemptionId:0,listNo:0}
     FROM (SELECT TOP (@limit) h.RedemtionID,h.DocuNo,d.Listno
       FROM dbo.WFRedemtionHD h JOIN dbo.WFRedemtionDT d ON d.RedemtionID=h.RedemtionID
       WHERE h.DocuType=116 AND (h.RedemtionID>@afterId OR (h.RedemtionID=@afterId AND d.Listno>@afterLine))
+        AND (h.DocuDate>=@windowStart OR EXISTS (SELECT 1 FROM dbo.SMAudit r
+          WHERE r.audit_system=3 AND r.audit_screen=2098003052 AND r.audit_columnid=h.RedemtionID
+            AND r.audit_docuno=h.DocuNo AND r.brchid=1 AND UPPER(RTRIM(r.audit_action)) IN ('I','INSERT')
+            AND r.audit_datetime>@resetLocal))
       ORDER BY h.RedemtionID,d.Listno) x
     OUTER APPLY (SELECT MAX(s.audit_datetime) AS LatestAudit FROM dbo.SMAudit s
       WHERE s.audit_system=3 AND s.audit_screen=2098003052 AND s.audit_columnid=x.RedemtionID
         AND s.audit_docuno=x.DocuNo AND s.brchid=1 AND UPPER(RTRIM(s.audit_action)) IN ('I','INSERT')) a
     OUTER APPLY (SELECT MAX(t.DateOut) AS LatestWeighOut FROM dbo.WGHD t
       WHERE RTRIM(t.MoveBill)=RTRIM(x.DocuNo)) w
-    ORDER BY x.RedemtionID,x.Listno`,{limit,afterId:after.redemptionId,afterLine:after.listNo})).recordset||[];
+    ORDER BY x.RedemtionID,x.Listno`,{limit,afterId:after.redemptionId,afterLine:after.listNo,
+      windowStart:windowStart.replace(/-/g,''),resetLocal})).recordset||[];
   if(rows.length>limit)fail('REBATE_DISCOVERY_INVALID');
   let prev={...after};const candidates=[];
   for(const row of rows){
@@ -43,8 +60,9 @@ async function discoverEvidencePage(query,{epoch,after={redemptionId:0,listNo:0}
     const audit=bkkInstant(row.LatestAudit),scale=bkkInstant(row.LatestWeighOut);
     // Unknown evidence must be held. Even a clear-looking candidate still
     // needs source, tonnage and physical proof before any accrual.
-    if((audit!==null&&audit>reset)||(scale!==null&&scale>reset)||audit===null||scale===null)
-      candidates.push({redemptionId,listNo,reason:audit===null||scale===null?'TIME_EVIDENCE_INCOMPLETE':'POST_RESET_CANDIDATE'});
+    const postReset=(audit!==null&&audit>reset)||(scale!==null&&scale>reset);
+    if(postReset)candidates.push({redemptionId,listNo,reason:'POST_RESET_CANDIDATE'});
+    else if(audit===null)candidates.push({redemptionId,listNo,reason:'TIME_EVIDENCE_INCOMPLETE'});
   }
   return {scanned:rows.length,candidates,next:prev,cycleComplete:rows.length<limit};
 }

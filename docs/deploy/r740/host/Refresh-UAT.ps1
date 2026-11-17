@@ -38,6 +38,33 @@ try {
   }
   Log "UAT refresh started ($SqlServer / $Database)"
 
+  # 0. The restored copy carries Production's Rebate reset state (a 'production' coordinator and
+  #    participant), never one for 'uat'. With the UAT Rebate switches on, every fenced Rebate route
+  #    then answers 503 and a UAT bootstrap is refused (REBATE_BOOTSTRAP_PRIOR_HISTORY); bill
+  #    confirmation is not fenced. Switch them off in the UAT config so the deploy below starts the
+  #    backend without them (UAT run, 17 Nov 2026). Only REBATE_* keys are touched or logged; the
+  #    other lines hold secrets. Turning Rebate on for UAT again is a deliberate step after a reset.
+  try {
+    $cfg = 'D:\SaleApp\uat\config\.env'
+    if (Test-Path -LiteralPath $cfg) {
+      $raw = [IO.File]::ReadAllText($cfg)
+      $eol = if ($raw.Contains("`r`n")) { "`r`n" } else { "`n" }
+      $lines = $raw -split "`r?`n"
+      $switchKey = '^(REBATE_[A-Z0-9_]+_ENABLED|REBATE_RESET_FENCE_AUDIT_COMPLETE)=(.*)$'
+      $on = @($lines | Where-Object { $_ -match $switchKey -and $Matches[2].Trim() -ne 'false' })
+      if ($on.Count -gt 0) {
+        Copy-Item -LiteralPath $cfg -Destination ($cfg + '.bak-refresh-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+        $new = foreach ($line in $lines) {
+          if ($line -match $switchKey) { $Matches[1] + '=false' }
+          elseif ($line -match '^REBATE_TICKET_REDEMPTION_TREATMENT=') { 'REBATE_TICKET_REDEMPTION_TREATMENT=' }
+          else { $line }
+        }
+        [IO.File]::WriteAllText($cfg, ($new -join $eol), (New-Object System.Text.UTF8Encoding($false)))
+        Log ("Rebate switches turned off for the restored copy: " + (($on | ForEach-Object { ($_ -split '=')[0] }) -join ', '))
+      } else { Log "Rebate switches already off." }
+    }
+  } catch { Log ("Rebate switch step skipped: " + $_.Exception.Message) }
+
   # 1. Re-map the Sale-App principals in the freshly restored copy (needs SQL sysadmin).
   $sqlFile = Join-Path $AppDir 'docs\deploy\r740\sql\r740-uat-principals.sql'
   if (-not (Test-Path $sqlFile)) { $sqlFile = 'D:\SaleApp\tools\r740-uat-principals.sql' }

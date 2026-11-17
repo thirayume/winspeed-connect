@@ -175,9 +175,9 @@ router.get('/queue/:custId', requireRebateAmountAccess, async (req, res) => {
         const q=transactionQuery(tx,sql);await routeParticipantFence(q,epoch);
         if(!isShipmentEpoch(epoch))throw Object.assign(Error('reset required'),{code:'REBATE_RESET_NOT_COMPLETED',status:409});
         const months=await require('../services/rebate-cycle-policy').readRebateCycleMonths(q,{lock:true});
-        return require('../services/rebate-shipment-queue').getShipmentCustomerQueue(q,{epoch,custId,asOfDate,cutoff,scope,cycleMonths:months});
+        return require('../services/rebate-empty-ledger').getShipmentCustomerQueueOrEmpty(q,{epoch,custId,asOfDate,cutoff,scope,cycleMonths:months});
       }));
-      return res.json(queue);
+      return res.json(await require('../services/rebate-empty-ledger').assertEmptyQueueVisible(req.user,queue));
     }
     const cycleMonths = await require('../services/rebate-cycle-policy').readRebateCycleMonths(wfQuery);
     const queue = await require('../services/rebate-shared-queue').getSharedCustomerQueue(wfQuery, {
