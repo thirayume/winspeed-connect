@@ -204,6 +204,7 @@ test('L-2: confirmDraft copies ClaimDiscountAmt and AppliedRebateClaimId to wf.S
         input(k, t, v) { req.inputs[k] = { type: t, value: v }; return req; },
         output() { return req; },
         async query(sqlText) {
+          const legacy=require('./helpers/native-hold-legacy.cjs')(sqlText);if(legacy)return legacy;
           if (sqlText.includes('sp_getapplock')) return { recordset: [{ LockResult: 0 }] };
           if (sqlText.includes('FROM wf.SalesOrderLine')) {
             return { recordset: [{ LineNum: 1, QtyTon: 2, PricePerTon: 19500, IsGiveaway: false }] };

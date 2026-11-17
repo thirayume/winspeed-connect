@@ -6,6 +6,100 @@ const couponService = require('../services/coupon-service');
 
 router.use(requireAuth);
 
+router.post('/native-edits/:redemptionId/approval', requireCapability('coupon.settle'), async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const { operation, items, reason } = req.body || {};
+    const approved = await require('../services/coupon-native-edit-approval').approveNativeEdit({
+      actor: req.user, redemptionId: req.params.redemptionId, operation, items, reason, dataWindow,
+    });
+    res.status(201).json(approved);
+  } catch (err) {
+    res.status(err.status || 500).json({
+      code: err.code,
+      message: err.status ? err.message : 'ไม่สามารถอนุมัติการแก้ไขใบขนได้ กรุณาลองใหม่',
+    });
+  }
+});
+
+router.post('/native-edits/:editId/release', requireCapability('coupon.settle'), async (req,res)=>{
+  res.set('Cache-Control','no-store');
+  try {
+    const result=await require('../services/coupon-native-edit-release').releaseNativeEdit({
+      actor:req.user,editId:req.params.editId,reason:req.body?.reason,
+    });
+    res.json(result);
+  } catch(error) {
+    res.status(error.status||500).json({code:error.code,message:'ไม่สามารถตรวจและปล่อยยอดพักได้ กรุณาตรวจหลักฐานแล้วลองใหม่'});
+  }
+});
+
+router.post('/native-edits/:editId/resume', requireCapability('coupon.settle'), async (req,res)=>{
+  res.set('Cache-Control','no-store');
+  try {
+    const result=await require('../services/coupon-native-edit-release').resumeNativeEdit({
+      actor:req.user,editId:req.params.editId,reason:req.body?.reason,
+    });
+    res.json(result);
+  } catch(error) {
+    res.status(error.status||500).json({code:error.code,message:'กู้ใบขนตามแผนไม่ได้ กรุณาตรวจสถานะและหลักฐานอีกครั้ง'});
+  }
+});
+
+// Review only: never consumes or releases a reservation. The service limits
+// access to the primary database and audits both identities transactionally.
+router.get('/native-review', requireCapability('coupon.settle'), async (req,res) => {
+  try {
+    const window=await require('../services/global-data-window-store').readGlobalDataWindow();
+    const db=require('../db');
+    const database=`${db.getTarget()}:${db.getDbName() || process.env.ONPREM_DB_NAME || ''}`;
+    const {encodeCursor,decodeCursor}=require('../services/coupon-review-cursor');
+    // Validate availability before reading/auditing the queue.
+    encodeCursor(0,req.user,database,window.businessDate);
+    const afterId=req.query.cursor==null?0:decodeCursor(req.query.cursor,req.user,database,window.businessDate);
+    const limit=10;
+    const result=await require('../services/coupon-native-review-queue').listNativeCutReview({
+      actor:req.user,dataWindow:window,afterId,limit,
+    });
+    res.set('Cache-Control','no-store');
+    res.json({items:result.items,nextCursor:result.scannedCount===limit
+      ?encodeCursor(result.scannedThrough,req.user,database,window.businessDate):null});
+  } catch(err) {
+    res.set('Cache-Control','no-store');
+    res.status(err.status || 500).json({message:err.status ? err.message : 'ไม่สามารถตรวจคิวใบขนได้ กรุณาลองใหม่',code:err.code});
+  }
+});
+
+// Records a review decision only; the hold and all native balances remain.
+router.post('/native-review/:authorizationId/hold', requireCapability('coupon.settle'), async (req,res) => {
+  try {
+    const window=await require('../services/global-data-window-store').readGlobalDataWindow();
+    const result=await require('../services/coupon-native-review-queue').recordNativeReviewHold({
+      actor:req.user,dataWindow:window,authorizationId:req.params.authorizationId,
+      expectedCode:req.body?.expectedCode,note:req.body?.note,
+    });
+    res.set('Cache-Control','no-store');
+    res.json(result);
+  } catch(err) {
+    res.set('Cache-Control','no-store');
+    res.status(err.status || 500).json({message:err.status ? err.message : 'ไม่สามารถบันทึกผลตรวจได้ กรุณาลองใหม่',code:err.code});
+  }
+});
+
+// Read-only, permission- and scope-checked confirmation after a WinSpeed save.
+router.get('/verify-redemption', requireCapability('coupon.settle'), async (req, res) => {
+  try {
+    req.auditVerificationRead = true;
+    const result = await require('../services/coupon-redemption-verification').verifyRedemptionDocument(req.user, req.query.docNo,{
+      includeEdit:req.query.forEdit==='1',
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ message: err.status ? err.message : 'ไม่สามารถตรวจใบขนได้ กรุณาลองใหม่', code: err.code });
+  }
+});
+
 /**
  * GET /api/coupons
  * List eligible coupons for a customer (as owner or beneficiary)
@@ -404,6 +498,24 @@ router.post('/settle-cuts', requireCapability('coupon.settle'), async (req, res)
 });
 
 /**
+ * Link every coupon line of one committed 116 atomically after human review.
+ * This does not itself prevent an independent WinSpeed write.
+ */
+router.post('/manual-settle-document', requireCapability('coupon.settle'), async (req, res) => {
+  try {
+    const window=await require('../services/global-data-window-store').readGlobalDataWindow();
+    const { redemptionId, items, reason }=req.body || {};
+    const result=await require('../services/coupon-manual-document-settlement').manualSettleCouponDocument({
+      redemptionId, items, reason, actor:req.user, dataWindow:window,
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('[coupons/manual-settle-document]',err);
+    res.status(err.status || 500).json({message:err.status ? err.message : 'ไม่สามารถจับคู่ใบขนได้ กรุณาลองใหม่',code:err.code});
+  }
+});
+
+/**
  * POST /api/coupons/manual-settle
  * FR-1: Manual settlement of one native cut against one chosen reservation
  * Restricted to ADMIN, MANAGER, C_LEVEL, ACCOUNTING (O-3)
@@ -421,6 +533,7 @@ router.post('/manual-settle', requireCapability('coupon.settle'), async (req, re
       qty,
       beneficiaryCustId,
       overridePlate: overridePlate === true,
+      dataWindow: window,
       actor: req.user,
     });
     res.json(result);

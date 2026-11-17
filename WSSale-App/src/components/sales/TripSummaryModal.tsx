@@ -526,7 +526,7 @@ export function TripSummaryModal({
         .map(o => o.wfRef || (o as any).importedDocuNo || String(o.id || ''))
         .filter(ref => ref && ref !== 'undefined');
       const result = await createQuotationFromSoTrip({ soIds, sourceRefs, validDays: effectiveQuoteDays });
-      await appAlert(`สร้างใบเสนอราคา ${result.quoteNo} สำเร็จ\nSO ในทริปจะยังเป็นร่างจนกว่าใบเสนอราคาจะถูกยืนยัน`, 'success');
+      await appAlert(`สร้างใบเสนอราคา ${result.quoteNo} สำเร็จ\nSO ในทริปจะยังเป็นร่างจนกว่าใบเสนอราคาจะถูกยืนยัน${result.missingCost ? '\nบางรายการยังตรวจเกณฑ์ราคาไม่ได้' : ''}`, result.missingCost ? 'warning' : 'success');
     });
   };
 

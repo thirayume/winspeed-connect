@@ -7,7 +7,7 @@ const h = require('./helpers/route-harness.cjs');
 let state, failAudit;
 const db = h.installDbStub(({ kind, text, inputs }) => {
   if (/COL_LENGTH\('wf\.ChangeEvent'/.test(text)) return [{ HasCol: 1 }];
-  if (/UPDATE wf\.RuleIncident SET Status/.test(text)) {
+  if (/UPDATE i SET Status[\s\S]*FROM wf\.RuleIncident i/.test(text)) {
     assert.equal(kind, 'tx'); state.status = 'ACK'; state.by = inputs.by; return [{ Affected: 1 }];
   }
   if (/INSERT INTO wf\.ChangeEvent/.test(text)) {

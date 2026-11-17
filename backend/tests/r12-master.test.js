@@ -9,9 +9,25 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
 
-const state = { raise: null };
-const db = h.installDbStub(({ text, inputs }) => {
+const state = { raise: null, customerInactive: 'A' };
+const db = h.installDbStub(({ text, inputs, proc }) => {
+  if (/WHERE c\.CustID=@visibilityCustId/.test(text)) return [{ ok: 1 }];
+  if (/OBJECT_ID\('wf\.sp_MasterUpdateCustomer'/.test(text)&&/sp_MasterCustomerClassification/.test(text)) return [{ Ready: 1 }];
+  if (/SELECT c\.CustID,c\.CustName,c\.ContTel/.test(text)) return [{CustID:Number(inputs.id),CustName:'Synthetic'}];
   if (/OBJECT_ID\('wf\.sp_MasterCreatePrice'/.test(text)) return [{ HasProcs: 1 }];
+  if (/OBJECT_ID\('wf\.sp_MasterSetCustomerInactive'/.test(text)) return [{ Ready: 1 }];
+  if (/SELECT CustID, Inactive, InactiveDate/.test(text)) return [{ CustID: Number(inputs.id), Inactive: state.customerInactive, InactiveDate: null }];
+  if (proc === 'wf.sp_MasterSetCustomerInactive') { state.customerInactive = 'I'; return { output: { Affected: 1 } }; }
+  if (text.includes('FROM dbo.EMSetPriceHD hd') && text.includes('JOIN dbo.EMSetPriceDT dt')) {
+    return [{ SetPriceID: Number(inputs.id), ListNo: Number(inputs.listNo), GoodID: 1114, GoodPriceNet: 19000 }];
+  }
+  if (proc === 'wf.sp_MasterCreatePrice') {
+    if (state.raise) { const e = new Error(state.raise); e.class = 16; e.number = 50000; throw e; }
+    return { output: { NewSetPriceID: 2101, DocuNo: 'WEB-20261006-0001' } };
+  }
+  if (proc === 'wf.sp_MasterUpdatePrice') return { output: { Affected: 1 } };
+  if (proc === 'wf.sp_MasterUpdateCustomer') return { output: { Affected: 1 } };
+  if (/INSERT INTO wf\.ChangeEvent/.test(text)) return { rowsAffected: [1] };
   if (/EXEC wf\.sp_MasterCreatePrice/.test(text)) {
     if (state.raise) { const e = new Error(state.raise); e.class = 16; e.number = 50000; throw e; }
     return [{ NewSetPriceID: 2101, DocuNo: 'WEB-20261006-0001' }];
@@ -42,8 +58,9 @@ test('O-2: customer update and soft delete run through wf procedures (no dbo UPD
   const d = await app.call('DELETE', '/api/master/customers/1141', { user: admin });
   assert.equal(d.status, 200);
   const calls = db.calls.slice(before);
-  assert.ok(calls.some(c => /EXEC wf\.sp_MasterUpdateCustomer @CustID = @CustID/.test(c.text)));
-  assert.ok(calls.some(c => /EXEC wf\.sp_MasterSetCustomerInactive/.test(c.text)));
+  assert.ok(calls.some(c => c.proc === 'wf.sp_MasterUpdateCustomer'));
+  assert.ok(calls.some(c => c.proc === 'wf.sp_MasterSetCustomerInactive'));
+  assert.ok(calls.some(c => c.kind === 'tx' && /INSERT INTO wf\.ChangeEvent/.test(c.text)));
   assert.equal(calls.filter(c => /UPDATE dbo\.EMCust/.test(c.text)).length, 0);
 });
 
@@ -53,8 +70,9 @@ test('O-2: goods name and price update run through wf procedures', async () => {
   assert.equal((await app.call('PATCH', '/api/master/prices', { body: { SetPriceID: 2016, ListNo: 1, GoodPriceNet: 19000 }, user: admin })).status, 200);
   const calls = db.calls.slice(before);
   assert.ok(calls.some(c => /EXEC wf\.sp_MasterUpdateGoodName/.test(c.text)));
-  const price = calls.find(c => /EXEC wf\.sp_MasterUpdatePrice/.test(c.text));
+  const price = calls.find(c => c.proc === 'wf.sp_MasterUpdatePrice');
   assert.equal(Number(price.inputs.GoodPriceNet), 19000);
+  assert.ok(calls.some(c => c.kind === 'tx' && /INSERT INTO wf\.ChangeEvent/.test(c.text)));
   assert.equal(calls.filter(c => /UPDATE dbo\.EMGood|UPDATE dbo\.EMSetPrice/.test(c.text)).length, 0);
 });
 

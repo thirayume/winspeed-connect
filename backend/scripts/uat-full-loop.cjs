@@ -23,6 +23,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const {FZ8_DATABASE,fz8RuntimeEnabled,isInitialNativeUatTarget} = require('../services/initial-native-uat-target');
 
 const PHASES = ['prepare', 'I-booking', 'K-booking', 'I-104', 'K-104', 'I-116', 'K-116', 'I-107', 'K-107', 'audit', 'close'];
 const phase = process.env.UAT_LOOP_PHASE;
@@ -32,11 +33,15 @@ const CUST_ID = Number(process.env.UAT_LOOP_CUST_ID);
 const GOOD_ID = Number(process.env.UAT_LOOP_GOOD_ID);
 const NET_PRICE = Number(process.env.UAT_LOOP_NET_PRICE);
 const EMP_ID = Number(process.env.UAT_LOOP_EMP_ID);
+const FINANCIAL_FIXTURE = process.env.UAT_LOOP_FINANCIAL_FIXTURE || '';
 
 function config() {
   if (!PHASES.includes(phase)) throw Error('UAT_LOOP_PHASE_INVALID');
   if (!/^[A-Za-z0-9-]{8,30}$/.test(RUN)) throw Error('UAT_LOOP_RUN_INVALID');
-  if (!/_uat$/.test(EXPECT_DB)) throw Error('UAT_LOOP_DB_NOT_UAT');
+  if (EXPECT_DB === FZ8_DATABASE && !fz8RuntimeEnabled()) throw Error('UAT_LOOP_FZ8_ISOLATION_REQUIRED');
+  if (EXPECT_DB !== FZ8_DATABASE && !/_uat$/.test(EXPECT_DB)) throw Error('UAT_LOOP_DB_NOT_UAT');
+  if (FINANCIAL_FIXTURE && (EXPECT_DB !== FZ8_DATABASE || !['full-discount', 'vat-excluded'].includes(FINANCIAL_FIXTURE)))
+    throw Error('UAT_LOOP_FINANCIAL_FIXTURE_INVALID');
   if (![CUST_ID, GOOD_ID, NET_PRICE, EMP_ID].every(n => Number.isInteger(n) && n > 0)) throw Error('UAT_LOOP_FIXTURES_REQUIRED');
 }
 
@@ -81,8 +86,9 @@ const param = (type, value) => ({ type, value });
 const query = (text, inputs = {}) => db.wfQuery(text, inputs);
 
 async function target() {
-  const t = (await query('SELECT DB_NAME() AS DbName')).recordset[0];
+  const t = (await query("SELECT CONVERT(nvarchar(128),SERVERPROPERTY('ServerName')) AS ServerName, DB_NAME() AS DbName, DB_ID() AS DbId")).recordset[0];
   if (t.DbName !== EXPECT_DB) throw Error('TARGET_INVALID');
+  if (EXPECT_DB === FZ8_DATABASE && !isInitialNativeUatTarget(t)) throw Error('FZ8_SQL_IDENTITY_INVALID');
   if (String(process.env.ONPREM_TARGET_KIND || 'uat').toLowerCase() !== 'uat') throw Error('TARGET_KIND_NOT_UAT');
   const response = await fetch(API + '/dbinfo', { signal: AbortSignal.timeout(8000) });
   const info = await response.json();
@@ -306,7 +312,7 @@ async function delivery(book, c) {
   try {
     const p = await call('GET', route + '/preview', undefined, requester);
     check(p.status === 200, book + '_104_PREVIEW');
-    if (!c.delivery) {
+    if (!c.delivery && !c.deliveryApproval) {
       check(p.data.book === book && p.data.couponSeries === (book === 'I' ? 'C' : 'D') && p.data.packKg === '50.0000' && p.data.sackQty === '20.0000', book + '_104_PACKAGING_ACCOUNT');
       const payload = requestFrom(c, 'deliveryCommand', p.data);
       check((await call('POST', route + '/requests', payload, requester)).status === 200, book + '_104_REQUEST');
@@ -318,6 +324,8 @@ async function delivery(book, c) {
       }
       const r = await call('POST', approve, { ...payload, reason: RUN + ' controlled UAT credit test' }, 'account');
       check(r.status === 200 && r.data.selfApproval === (book === 'K'), book + '_ACCOUNT_CREDIT_ACTUAL_SELF_RULE');
+      c.deliveryApproval = r.data;
+      save();
     }
     await concurrency(route, c.deliveryCommand, requester, book + '_104', c, 'delivery', 'deliverySoid');
     check(c.delivery.deliveryNo.startsWith(book) && c.delivery.couponNo.startsWith(book === 'I' ? 'C' : 'D') && c.delivery.shipmentReady === false, book + '_104_CHAIN');
@@ -333,7 +341,7 @@ async function redemption(book, c) {
   const approver = book === 'I' ? creator : 'manager';
   const p = await call('GET', route + '/preview', undefined, creator);
   check(p.status === 200, book + '_116_PREVIEW');
-  if (!c.manual) {
+  if (!c.manual && !c.manualApproval) {
     const s = p.data.slip || {};
     check(book === 'I'
       ? s.source === 'SCALE' && s.exception === false && s.slipNo === slipFor(c) && s.plate === 'UAT2-R740-I' && Number(s.netKg) === NET_KG
@@ -377,7 +385,16 @@ async function invoice(book, c) {
   const p = await call('GET', route + '/preview', undefined, 'account');
   check(p.status === 200, book + '_107_PREVIEW');
   if (!c.invoice) {
-    check(p.data.series === (book === 'I' ? 'J' : 'N') && p.data.amount === PRICE_TEXT && p.data.qty === '1.0000' && p.data.couponNo === c.delivery.couponNo && p.data.redemptionNo === c.manual.redemptionNo, book + '_107_EXACT_CHAIN');
+    const waiting = await call('GET', '/so/' + c.soid, undefined, 'sales');
+    check(waiting.status === 200 && waiting.data.docStage?.code === 'CUT_WAITING_INVOICE', book + '_SALES_OPEN_BEFORE_107');
+    const expectedTotal = FINANCIAL_FIXTURE === 'full-discount' ? '0.0000' :
+      FINANCIAL_FIXTURE === 'vat-excluded' ? '18190.0000' : PRICE_TEXT;
+    check(p.data.series === (book === 'I' ? 'J' : 'N') && p.data.amount === expectedTotal && p.data.qty === '1.0000' && p.data.couponNo === c.delivery.couponNo && p.data.redemptionNo === c.manual.redemptionNo, book + '_107_EXACT_CHAIN');
+    if (FINANCIAL_FIXTURE) {
+      const [discount, base, tax] = FINANCIAL_FIXTURE === 'full-discount'
+        ? [PRICE_TEXT, '0.0000', '0.0000'] : ['1000.0000', '17000.0000', '1190.0000'];
+      check(p.data.discount === discount && p.data.taxBase === base && p.data.taxAmount === tax, 'K_107_FINANCIAL_FIXTURE_PROOF');
+    }
     const payload = requestFrom(c, 'invoiceCommand', p.data);
     payload.invoiceDate = p.data.invoiceDate;
     save();
@@ -388,6 +405,14 @@ async function invoice(book, c) {
   }
   await concurrency(route, c.invoiceCommand, 'account', book + '_107', c, 'invoice', 'invoiceId');
   check(c.invoice.invoiceNo.startsWith(book === 'I' ? 'J' : 'N') && c.invoice.evidenceMode === 'UAT_SIMULATION' && c.invoice.physicalShipmentVerified === false, book + '_107_ACCOUNT_AND_SIMULATION');
+  const closed = await call('GET', '/so/' + c.soid, undefined, 'sales');
+  const document = closed.data.docStage;
+  check(closed.status === 200 && document?.code === 'INVOICED' && document.cutQty === 1
+    && document.invoicedQty === 1 && document.invoiceBook === (book === 'I' ? 'J' : 'N'), book + '_SALES_CLOSED_AT_107');
+  const ledger = (await query('SELECT PostGL FROM dbo.SOInvHD WHERE SOInvID=@id AND DocuType=107', {
+    id: param(db.sql.Int, Number(c.invoice.invoiceId)),
+  })).recordset[0];
+  check(ledger?.PostGL === 'N', book + '_GL_HANDOFF_TO_WINSPEED');
   for (const [suffix, key] of [['native-invoice', 'account'], ['native-delivery', 'account'], ['native-redemption', book === 'I' ? 'account' : 'warehouse2']]) {
     const r = await call('GET', '/so/' + c.soid + '/' + suffix + '/preview', undefined, key);
     check(r.status === 200 && r.data.completed === true, book + '_AFTER107_' + suffix.toUpperCase());

@@ -13,31 +13,43 @@ const cuts=[
 ];
 const db=h.installDbStub(({text})=>{
   if(text.includes('COL_LENGTH'))return [{hasConsumedQty:1,hasTable:1}];
-  if(text.includes('FROM dbo.WFCoupon WITH'))return [{CouponID:42,CouponNo:'C-OPEN',NativeRemaQty:12}];
+  if(text.includes('FROM dbo.WFCoupon WHERE'))return [{CouponID:42,CouponNo:'C-OPEN',NativeRemaQty:12}];
   if(text.includes('FROM wf.CouponReservation cr'))return structuredClone(reservations);
   if(text.includes('FROM dbo.WFRedemtionDT rd'))return structuredClone(cuts);
   return [];
 });
 const service=require('../services/coupon-service');
-test('reconcile preserves all balance arithmetic but hides old or undated documents',async()=>{
+test('reconcile retains opening balances but holds unverified cuts and hides old or undated documents',async()=>{
   const result=await service.reconcileCoupon(42,{settle:false,settlementPolicy:{}});
   assert.equal(result.nativeRemaQty,12);assert.equal(result.activeReservedQty,9);
-  assert.equal(result.doubleCountedQty,9);assert.equal(result.adjustedAvailableQty,12);
-  assert.equal(result.doubleCountedReservations.length,3);
-  const byId=new Map(result.doubleCountedReservations.map(row=>[String(row.reservationId),row]));
-  const old=byId.get('1'),current=byId.get('2'),unknown=byId.get('3');
-  for(const row of [old,unknown]){assert.equal(row.carrierSoId,null);assert.equal(row.carrierDocuNo,null);assert.equal(row.matchingRedemptionId,null);assert.equal(row.matchingRedemptionDocuNo,null);assert.equal(row.carrierDocumentHidden,true);assert.equal(row.redemptionDocumentHidden,true);}
-  assert.equal(current.carrierDocuNo,'NEW-SO');assert.equal(current.matchingRedemptionDocuNo,'NEW-CUT');
+  assert.equal(result.doubleCountedQty,0);assert.equal(result.adjustedAvailableQty,3);
+  assert.equal(result.hasConflict,true);assert.equal(result.doubleCountedReservations.length,0);
+  assert.equal(result.ambiguousCuts.length,3);
+  assert.equal(result.ambiguousCuts.filter(row=>row.sourceDocumentHidden).length,2);
+  const current=result.ambiguousCuts.find(row=>row.redemptionDocuNo==='NEW-CUT');
+  assert.equal(current.reason,'AUTHORITATIVE_LINK_REQUIRED');
+  assert.deepEqual(current.candidateReservationIds,['2']);
   const reservationQuery=db.calls.find(c=>c.text.includes('AS CarrierWithinWindow'));
   const cutQuery=db.calls.find(c=>c.text.includes('AS CutWithinWindow'));
   assert.equal(reservationQuery.inputs.globalStartDate,'2026-01-01');
   assert.equal(reservationQuery.inputs.globalStartUtc.toISOString(),'2025-12-31T17:00:00.000Z');
   assert.equal(cutQuery.inputs.globalStartDate,'2026-01-01');
+  assert.match(cutQuery.text, /rh\.DocuType\s*=\s*116/);
 });
 test('unavailable authoritative cutoff fails before queries and before auto settlement',async()=>{
   const store=require('../services/global-data-window-store'),original=store.readGlobalDataWindow,before=db.calls.length;
   store.readGlobalDataWindow=async()=>{throw Error('WINDOW_UNAVAILABLE');};
   try{await assert.rejects(service.reconcileCoupon(42),/WINDOW_UNAVAILABLE/);assert.equal(db.calls.length,before);}finally{store.readGlobalDataWindow=original;}
+});
+test('reconcile remains read-only even when an old caller requests settlement',async()=>{
+  const before=db.calls.length;
+  const result=await service.reconcileCoupon(42,{settle:true,settlementPolicy:{}});
+  assert.equal(result.activeReservedQty,9);
+  const calls=db.calls.slice(before);
+  assert.equal(calls.filter(c=>c.text.includes('FROM wf.CouponReservation cr')).length,1);
+  assert.equal(calls.filter(c=>c.text.includes('FROM dbo.WFRedemtionDT rd')).length,1);
+  assert.equal(calls.some(c=>c.kind==='tx'),false);
+  assert.equal(calls.some(c=>/\b(?:INSERT|UPDATE|DELETE)\b/i.test(c.text)),false);
 });
 test('ambiguous old cuts hide identifying detail and current cuts omit old carrier candidates',async()=>{
   const savedReservations=reservations.splice(0),savedCuts=cuts.splice(0);

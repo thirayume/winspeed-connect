@@ -271,6 +271,14 @@ objects (no `dbo` writes at migration time), so WINSpeed keeps working. Restore 
 for real damage; a restore also discards WINSpeed entries made after it, so apply in a quiet
 window right after the backup.
 
+## Enable Rebate after deployment
+
+The R740 backend reads the `REBATE_*` switches and `REBATE_TICKET_REDEMPTION_TREATMENT` from that stack's `config/.env`. The switches default to `false`. The migration service does not receive them. `REBATE_RESET_DATABASES` remains pinned by the reviewed target file.
+
+Verify the schema and participant access in every configured reset database before activation. Prepare the generation-0 reset coordinator and participants before directing sales traffic to a backend with `REBATE_POOL_103_ENABLED=true`. An administrator initializes the coordinator with the exact environment and database through `POST /api/rebate-pool/reset/initialize`. Initialization preserves balances. The administrator's separate confirmation in App Settings starts balances at zero.
+
+For full discount on exempt bills, set `REBATE_TICKET_REDEMPTION_TREATMENT` to `dbwins_worldfert9_uat:DISCOUNT` in UAT or to the reviewed company database followed by `:DISCOUNT` in Production. A single database is selected per stack. Verify that only eligible VAT-0 transactions with the full line covered can use the ticket.
+
 ## Guards worth knowing
 
 - The env-file source guard is tested with Docker Compose 5.6.1 on R740 and in CI.

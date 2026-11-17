@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { X, Search, FileSpreadsheet, RefreshCw, Calendar, Truck, AlertTriangle, Clock } from 'lucide-react';
 import { searchAgingOrders } from '../../services/api';
 import type { AgingRow } from '../../types';
+import { DocStageChip } from '../sales/DocStageChip';
 import { exportToExcel, type ExportColumn } from '../../utils/exportUtils';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { appAlert } from '../ui/AppAlert';
@@ -302,6 +303,7 @@ export function AgingDetailModal({ isOpen, onClose }: Props) {
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap font-mono font-bold text-[#0C447C]">
                         {r.WfRef || '—'}
+                        <DocStageChip stage={r.docStage} className="block mt-1" />
                       </td>
                       <td className="px-4 py-2.5 font-semibold text-gray-800 max-w-xs truncate" title={r.CustName}>
                         {r.CustName}

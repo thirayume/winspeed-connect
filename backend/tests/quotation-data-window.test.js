@@ -5,6 +5,7 @@ const h = require('./helpers/route-harness.cjs');
 const db = h.installDbStub(({ text, inputs }) => {
   if (/AS Visible FROM wf\.Quotation/.test(text) && inputs.id === 43) return [{ Visible: 1 }];
   if (/SELECT Status, ValidUntil, QuoteNo FROM wf\.Quotation/.test(text) && inputs.id === 43) return [{ Status: 'DRAFT', ValidUntil: '2099-01-01', QuoteNo: 'fixture' }];
+  if (/SELECT Status FROM wf\.Quotation WITH \(UPDLOCK,HOLDLOCK\)/.test(text) && inputs.id === 43) return [{ Status: 'DRAFT' }];
   return [];
 }, { activeUserIds: h.TEST_USERS });
 let app;

@@ -3,7 +3,7 @@
 // ticket-only line shaped as ZERO or DISCOUNT. All figures here are synthetic.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { inspectTicketTreatmentShape, verifyTicketTreatmentShape } = require('../services/rebate-ticket-financial-verifier');
+const { inspectTicketTreatmentShape, verifyTicketTreatmentShape, verifyPostedTicketSale } = require('../services/rebate-ticket-financial-verifier');
 
 function source({ header = {}, lines, otherDiscountReceipts = 0 } = {}) {
   const calls = [];
@@ -80,4 +80,25 @@ test('bad input, a missing booking or unreadable figures fail closed', async () 
   assert.equal(await reason(source({ lines: [line({ GoodAmnt: null })] }), context(), 'ZERO'), 'LINES_UNREADABLE');
   assert.equal(await reason(source({ header: { NetAmnt: '-1.0000' }, lines: [line()] }), context(), 'ZERO'), 'AMOUNTS_UNREADABLE');
   await assert.rejects(() => verifyTicketTreatmentShape(async () => { throw new Error('sql down'); }, context(), 'ZERO'), /sql down/);
+});
+
+test('the debit requires one committed 104 and 202 chain with no taxable or remaining value', async () => {
+  const s = source({lines: [line()]});
+  const posted = context({good: 6, documentStatus: 'Y',
+    financial: {vatType: '3', net: '0.0000', price: '0.0000', nativeFields: {VATAmnt: '0.0000'}}});
+  let chain = [];
+  const query = (text, bindings) => {
+    if (!/SELECT TOP \(2\) s\.SOID/.test(text)) return s.query(text, bindings);
+    assert.match(text, /debt\.RefID=line\.SOID AND debt\.RefListNo=line\.ListNo/);
+    assert.match(text, /f\.VATAmnt=0 AND f\.NetAmnt=0 AND f\.RemaAmnt=0/i);
+    assert.deepEqual(bindings, {bookingId:5001, lineNo:1, good:6, quantity:'0.6000', price:'0.0000'});
+    return {recordset:chain};
+  };
+  assert.equal(await verifyPostedTicketSale(query, posted, 'ZERO'), false);
+  chain = [{SOID:100, SOInvID:200}];
+  assert.equal(await verifyPostedTicketSale(query, posted, 'ZERO'), true);
+  assert.equal(await verifyPostedTicketSale(query, {...posted, documentStatus:'N'}, 'ZERO'), false);
+  assert.equal(await verifyPostedTicketSale(query, {...posted, financial:{...posted.financial, net:'23.0000'}}, 'ZERO'), false);
+  chain.push({SOID:101, SOInvID:201});
+  assert.equal(await verifyPostedTicketSale(query, posted, 'ZERO'), false);
 });

@@ -26,6 +26,15 @@ test('checkCustomerCreditAndAging: returns clean empty structure on blank custId
   assert.equal(res.anomalies.length, 0);
 });
 
+test('invalid order amounts cannot reduce AR or bypass the credit limit', async () => {
+  for (const value of [-1, NaN, Infinity, '-1', 'not-a-number', '', [], {}]) {
+    let queried=false;
+    await assert.rejects(checkCustomerCreditAndAging('1',value,{wfQuery:async()=>{queried=true;throw Error('unexpected');}}),
+      {code:'CREDIT_AMOUNT_INVALID',status:400});
+    assert.equal(queried,false);
+  }
+});
+
 function makeSettingsReader(overrides = {}) {
   const map = {
     CREDIT_LIMIT_STRICT_MODE: false,

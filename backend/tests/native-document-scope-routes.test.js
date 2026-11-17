@@ -13,7 +13,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   return [];
 }, { activeUserIds: [11, 12, 34, 99] });
 function fixture(id) {
-  return { resolved: true, chain: { bookings: [{ soId: id, docuNo: 'TEST', custName: 'fixture customer' }],
+  return { resolved: true, chain: { bookings: [{ soId: id, docuNo: 'TEST', docuDate: '2026-11-15', custName: 'fixture customer' }],
     deliveries: [], coupons: [], redemptions: [], invoices: [] }, truncated: id === 777, isAmbiguous: id === 778 };
 }
 const resolverPath = require.resolve('../services/native-document-resolver');

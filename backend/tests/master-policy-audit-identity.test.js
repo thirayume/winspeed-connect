@@ -1,0 +1,12 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),h=require('./helpers/route-harness.cjs');
+const user={sub:8,actorSub:17,role:'ADMIN',actorRole:'ADMIN',isImpersonating:true,identityMapping:{primaryEffectiveUserId:8,primaryActorUserId:17,businessEffectiveUserId:28,businessActorUserId:37}};
+let context=true,column=true,updates=[];
+const auth=require.resolve('../middleware/auth');require.cache[auth]={id:auth,filename:auth,loaded:true,exports:{requireAuth:(req,_res,next)=>{req.user=user;if(context)require('../services/request-context').runWithUser(user,next);else next();},requireRole:()=>((_req,_res,next)=>next()),requireCapability:()=>((_req,_res,next)=>next())}};
+h.installDbStub(()=>[]);
+const cp=require.resolve('../services/request-context'),ctx=require('../services/request-context');require.cache[cp].exports={...ctx,hasColumn:async()=>column};
+const pp=require.resolve('../services/policy-contract'),policy=require('../services/policy-contract');require.cache[pp].exports={...policy,updatePolicySettings:async args=>{updates.push({userId:args.userId,actor:ctx.currentActorId()});return {changed:true};},getPolicySettings:async()=>({settings:{},raw:{},versions:[],snapshots:[],currentRevision:1}),clearSettingCache:()=>{}};
+let app;test.before(async()=>{app=await h.startApp([['/api/master','../../routes/master']]);});test.after(async()=>app.close());test.beforeEach(()=>{context=true;column=true;updates=[];user.identityMapping.primaryActorUserId=17;});
+test('policy update uses the business effective and actual actor identities',async()=>{const r=await app.call('PATCH','/api/master/system-settings',{body:{updates:{TEST:'x'},expectedRevision:1}});assert.equal(r.status,200);assert.deepEqual(updates,[{userId:28,actor:37}]);});
+test('policy update fails closed before mutation when actor audit cannot be recorded',async()=>{for(const mode of ['context','column']){context=mode!=='context';column=mode!=='column';const r=await app.call('PATCH','/api/master/system-settings',{body:{updates:{TEST:'x'}}});assert.equal(r.status,503);assert.equal(updates.length,0);}});
+test('invalid mapping fails closed before policy mutation',async()=>{user.identityMapping.primaryActorUserId=999;const r=await app.call('PATCH','/api/master/system-settings',{body:{updates:{TEST:'x'}}});assert.equal(r.status,409);assert.equal(updates.length,0);});

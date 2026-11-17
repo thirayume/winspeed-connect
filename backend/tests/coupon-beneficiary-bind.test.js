@@ -6,9 +6,14 @@ function setup({grant=true,sourceOwner='123',owner='123'}={}){
   const calls=[];
   const row={Id:12,CouponId:42,CouponNo:'C-TEST',GoodId:3,ReservedQty:1,Status:'RESERVED',BeneficiaryCustId:'456',OwnerCustId:owner,CreatedBy:8};
   const tx={request(){return {input(){return this;},async query(text){calls.push(text);
+    const legacy=require('./helpers/native-hold-legacy.cjs')(text);if(legacy)return legacy;
+    if(text.includes('AS NativeRemainingQty'))return {recordset:[{NativeRemainingQty:1,ActiveRemainingQty:1,InvalidReservations:0}]};
     if(text.includes('FROM wf.CouponReservation WITH'))return {recordset:[row]};
     if(text.includes('FROM dbo.WFCoupon c WITH (HOLDLOCK)'))return {recordset:[{OwnerCustId:sourceOwner,GoodID:3}]};
     if(text.includes('FROM wf.CouponBeneficiary WITH'))return {recordset:grant?[{Id:5}]:[]};
+    if(text.includes('FROM wf.ControlTicketOverlay WITH (UPDLOCK,HOLDLOCK)'))return {recordset:[]};
+    if(text.includes('SELECT TOP 1 1 AS LegacyConflict'))return {recordset:[]};
+    if(text.includes('SELECT TOP 1 1 AS SourceConflict'))return {recordset:[]};
     throw Error('UNEXPECTED_QUERY');
   }}}};
   return {tx,calls,line:{couponReservationId:12,goodId:3,qtyTon:1,pricePerTon:100}};

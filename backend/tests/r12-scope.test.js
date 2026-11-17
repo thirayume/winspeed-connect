@@ -163,7 +163,9 @@ test('price approvals list is limited to the requester / bill owner scope', asyn
   const before = db.calls.length;
   await app.call('GET', '/api/edit-requests/price-approvals', { user: { sub: 11, role: 'SALES' } });
   const q = db.calls.slice(before).find(c => /FROM wf\.PriceApproval pa/.test(c.text));
-  assert.match(q.text, /pa\.RequestedBy IN \(@prU0\) OR \(so\.SalesUserId IN \(@pbU0\)\)|\(pa\.RequestedBy IN \(@prU0\)\) OR \(so\.SalesUserId IN \(@pbU0\)\)/);
+  assert.match(q.text, /pa\.RequestedBy IN \(@pr_effectiveU0\).*OR.*so\.SalesUserId IN \(@pb_effectiveU0\)/);
+  assert.equal(q.inputs.pr_effectiveU0, 11);
+  assert.equal(q.inputs.pb_effectiveU0, 11);
 });
 
 test('under Access As the scope follows the impersonated user', async () => {

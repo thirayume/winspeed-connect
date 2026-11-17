@@ -5,6 +5,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const install = (name, exports) => { require.cache[require.resolve(path.join(root, name))] = { exports }; };
 let events, collision, failMembership, failAudit, failRoleAudit, wrongTarget, missingSchema, targetAllowed = true, auditInputs, accountAudits, roleAudits, failSource;
+let lockStatements = [], lockFailure = null;
 const operator = { actorPrimaryId: 11, effectivePrimaryId: 12 };
 class Transaction {
   constructor(pool) { this.source = pool === source; }
@@ -16,9 +17,10 @@ class Transaction {
     const inputs = {};
     return {
       input(name, _type, value) { inputs[name] = value; return this; },
-      async batch() { events.push('schema'); return {}; },
+      async batch(sqlText) { if (sqlText.startsWith('SET LOCK_TIMEOUT')) { lockStatements.push(`target:${sqlText}`); return {recordset:[]}; } events.push('schema'); return {}; },
       async query(sqlText) {
-        if (sqlText.includes('DB_NAME()')) { events.push('target-check'); return { recordset: [{ DatabaseName: wrongTarget ? 'other' : 'secondary', ServerName: 'TARGET' }] }; }
+        if (sqlText.startsWith('SET LOCK_TIMEOUT')) { lockStatements.push(`target:${sqlText}`); return { recordset: [] }; }
+        if (sqlText.includes('DB_NAME()')) { events.push('target-check'); if (lockFailure === 'target') throw Object.assign(Error('lock'), { number: 1222 }); return { recordset: [{ DatabaseName: wrongTarget ? 'other' : 'secondary', ServerName: 'TARGET' }] }; }
         if (sqlText.includes("OBJECT_ID('wf.RoleProfile'")) { events.push('schema-check'); return { recordset: [{ IsReady: missingSchema ? 0 : 1 }] }; }
         if (sqlText.includes('SELECT Code, Name, BaseRole, DisabledActions, Revision FROM wf.RoleProfile')) return { recordset: [{ Code: 'SALES', Name: 'Old Sales', BaseRole: 'SALES', DisabledActions: '["so.old"]', Revision: 1 }] };
         if (sqlText.includes('SELECT RoleCode, PermissionCode FROM wf.RolePermission')) return { recordset: [{ RoleCode: 'SALES', PermissionCode: 'so.old' }] };
@@ -38,7 +40,9 @@ class Transaction {
     };
   }
 }
-const source = { request: () => ({ query: async sqlText => {
+const source = { request: () => ({ batch: async sqlText => { lockStatements.push(`source:${sqlText}`); return {recordset:[]}; }, query: async sqlText => {
+  if (sqlText.startsWith('SET LOCK_TIMEOUT')) { lockStatements.push(`source:${sqlText}`); return { recordset: [] }; }
+  if (lockFailure === 'source' && sqlText.includes('FROM wf.RolePermission')) throw Object.assign(Error('deadlock'), { number: 1205 });
   if (failSource && sqlText.includes('FROM wf.RolePermission')) throw new Error('SIMULATED_SOURCE_FAILURE');
   if (sqlText.includes('DB_NAME()')) return { recordset: [{ DatabaseName: 'primary', ServerName: 'SOURCE' }] };
   if (sqlText.includes('FROM wf.RoleProfile')) return { recordset: [{ Code: 'SALES', Name: 'Sales', BaseRole: 'SALES', DisabledActions: '["so.cancel"]' }] };
@@ -133,4 +137,21 @@ test('unmigrated target is rejected before any target mutation', async () => {
   try { await assert.rejects(syncUsersToTarget('secondary', operator), { code: 'SYNC_SCHEMA_NOT_READY', status: 409 });
     assert.deepEqual(events, ['source-begin', 'source-commit', 'begin', 'target-check', 'schema-check', 'rollback']); }
   finally { missingSchema = false; }
+});
+test('both serializable transactions set and restore bounded lock waits on success', async () => {
+  events=[]; lockStatements=[]; collision=false; failMembership=false; accountAudits=[]; roleAudits=[];
+  await syncUsersToTarget('secondary', operator);
+  assert.deepEqual(lockStatements, ['source:SET LOCK_TIMEOUT 10000','source:SET LOCK_TIMEOUT -1','target:SET LOCK_TIMEOUT 10000','target:SET LOCK_TIMEOUT -1']);
+});
+test('lock conflict restores timeout and rolls back in source and target', async () => {
+  for (const where of ['source','target']) {
+    events=[]; lockStatements=[]; lockFailure=where; collision=false;
+    try {
+      await assert.rejects(syncUsersToTarget('secondary', operator), { status:409, code: where === 'source' ? 'DEADLOCK_RETRY' : 'LOCK_TIMEOUT' });
+      assert.equal(events.at(-1), where === 'source' ? 'source-rollback' : 'rollback');
+      assert.ok(lockStatements.includes(`${where}:SET LOCK_TIMEOUT 10000`));
+      assert.ok(lockStatements.includes(`${where}:SET LOCK_TIMEOUT -1`));
+      if (where === 'source') assert.ok(!events.includes('begin'));
+    } finally { lockFailure=null; }
+  }
 });

@@ -23,12 +23,16 @@ export interface CouponItem {
   beneficiaryExpiry?: string;
   sourceDocuDate?: string | null;
   expiryDate?: string | null;
+  controlExpiryDate?: string | null;
+  controlExpiryExpired?: boolean;
+  controlExpiryOverride?: boolean;
   daysLeft?: number | null;
   isExpired?: boolean;
   isExpiringSoon?: boolean;
   warningLeadDays?: number;
   consumedQty?: number;
   hasUnmatchedCuts?: boolean;
+  sourceConflict?: boolean;
   goodCode?: string;
 }
 
@@ -111,6 +115,7 @@ export const CouponPickerModal: React.FC<CouponPickerModalProps> = ({
 
   const handleReserve = async () => {
     if (!selectedCoupon) return;
+    if (selectedCoupon.controlExpiryExpired) { setError('ตั๋วหมดอายุแล้ว ไม่สามารถจองได้'); return; }
     const qty = Number(reserveAmount);
     if (isNaN(qty) || qty <= 0) {
       setError('กรุณาระบุจำนวนตันที่ต้องการจองให้ถูกต้อง');
@@ -241,7 +246,7 @@ export const CouponPickerModal: React.FC<CouponPickerModalProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredCoupons.map((c) => {
                 const isSelected = selectedCoupon?.couponId === c.couponId;
-                const isUsable = c.availableQty > 0;
+                const isUsable = c.availableQty > 0 && !c.controlExpiryExpired;
 
                 return (
                   <div
@@ -299,14 +304,22 @@ export const CouponPickerModal: React.FC<CouponPickerModalProps> = ({
                         </div>
                       )}
 
-                      {/* D1: Ticket Expiry & Days Left */}
+                      {c.controlExpiryDate && (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1.5">
+                          <span>วันหมดอายุตามตั๋ว:</span>
+                          <span className="font-semibold text-slate-700">{c.controlExpiryDate}</span>
+                          {c.controlExpiryExpired && <span className="font-bold text-red-700">หมดอายุแล้ว</span>}
+                          {c.controlExpiryOverride && <span className="text-amber-700">ข้อมูลผ่อนผันเดิมไม่มีผลต่อการบล็อก</span>}
+                        </div>
+                      )}
+                      {/* This date is a reminder, not the authoritative expiry. */}
                       {c.expiryDate && (
                         <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1.5">
-                          <span className="text-[11px] text-slate-400">หมดอายุ:</span>
+                          <span className="text-[11px] text-slate-400">วันเตือนติดตาม:</span>
                           <span className="font-semibold text-slate-700 text-[11px]">{c.expiryDate}</span>
                           {c.isExpired ? (
                             <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-800 border border-red-200">
-                              ⚠️ หมดอายุแล้ว
+                              ⚠️ ถึงกำหนดติดตามแล้ว
                             </span>
                           ) : c.isExpiringSoon ? (
                             <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
@@ -353,7 +366,7 @@ export const CouponPickerModal: React.FC<CouponPickerModalProps> = ({
                     {!isUsable && (
                       <div className="mt-2 flex items-center gap-1 text-xs text-red-600">
                         <Ban className="h-3.5 w-3.5" />
-                        <span>ยอดพร้อมใช้หมดแล้ว</span>
+                        <span>{c.sourceConflict ? 'พักตั๋วไว้ตรวจใบขนที่เปลี่ยนหรือไม่ครบ' : c.controlExpiryExpired ? 'ตั๋วหมดอายุแล้ว ไม่สามารถจองได้' : 'ยอดพร้อมใช้หมดแล้ว'}</span>
                       </div>
                     )}
                   </div>

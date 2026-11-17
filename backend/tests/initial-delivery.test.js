@@ -19,7 +19,8 @@ function fixture(overrides={}) {
   if(/SERVERPROPERTY/.test(text))return rows([{ServerName:'AMYOU-YOGA7\\V2008R2',DbName:state.dbName||'dbwins_worldfert9_uat2',DbId:10}]);
   if(/SELECT Id,Role,IsActive/.test(text))return rows(state.accounts);
   if(/sp_getapplock/.test(text))return rows([{LockResult:Object.hasOwn(state,'lockResult')?state.lockResult:0}]);
-  if(/SELECT h.SOID/.test(text))return rows([{SOID:501,DocuNo:state.sourceNo,AppvDocuNo:'TEST-AI',CustID:100,EmpID:state.owner===12?102:101,SalesUserId:state.owner??11}]);
+  if(/SELECT h.SOID/.test(text))return rows([{SOID:501,DocuNo:state.sourceNo,AppvDocuNo:'TEST-AI',CustID:100,EmpID:state.owner===12?102:101,SalesUserId:state.owner??11,HasPositiveVat:state.hasPositiveVat||false}]);
+  if(/JOIN dbo.EMVATGroup/.test(text))return rows(state.vatAccounts||[]);
   if(/SELECT DocuNo,DocuType FROM dbo.SOHD/.test(text))return rows(state.missingDelivery?[]:[{DocuNo:state.deliveryNo,DocuType:104}]);
   if(/SELECT c.CouponID AS CompleteCouponID/.test(text))return rows(state.incompleteNativeReceipt?[]:[{CompleteCouponID:701}]);
   if(/SELECT Id, EmpId, PositionCode/.test(text))return rows([{Id:11,EmpId:'101',PositionCode:null}]);
@@ -89,6 +90,27 @@ test('preview reconstructs original AI fingerprint, reads exact amount, and perf
  const f=fixture();const p=await f.call('preview');assert.equal(p.amount,'18200.0000');assert.equal(p.requiresCreditApproval,true);
  assert.match(p.fingerprint,/^[a-f0-9]{64}$/);assert.equal(p.request,null);assert.ok(f.calls.some(c=>/CAST\('W'/.test(c.text)));
  assert.ok(!f.calls.some(c=>/\b(?:UPDATE|INSERT|DELETE)\b/.test(c.text)));assert.equal(f.state.procCalls,0);
+});
+test('taxable 103 cannot create a 104/202 until the approved WinSpeed mapping matches',async t=>{
+ const setting='NATIVE_SALES_VAT_APPROVAL',saved=process.env[setting];
+ t.after(()=>{if(saved===undefined)delete process.env[setting];else process.env[setting]=saved;});
+ const f=fixture({sourceNo:'K69-00501',deliveryNo:'K69-00601',hasPositiveVat:true});
+ for(const value of ['', 'other_uat:31:VAT-OUT', 'dbwins_worldfert9_uat2:2147483648:VAT-OUT']){
+  process.env[setting]=value;
+  await assert.rejects(f.call('preview'),{code:'DO_VAT_APPROVAL_REQUIRED'});
+ }
+ assert.ok(!f.calls.some(c=>/JOIN dbo.EMVATGroup|EXEC wf.usp_CreateCompleteInitialDelivery/.test(c.text)));
+ process.env[setting]='dbwins_worldfert9_uat2:31:VAT-OUT';
+ await assert.rejects(f.call('preview'),{code:'DO_VAT_APPROVAL_REQUIRED'});
+ const lookup=f.calls.at(-1);
+ assert.deepEqual(Object.fromEntries(Object.entries(lookup.p).map(([k,v])=>[k,v.value])),
+  {soid:501,docuType:103,groupId:31,accountCode:'VAT-OUT'});
+ assert.match(lookup.text,/JOIN dbo.EMAcc a WITH\(HOLDLOCK\) ON a.AccID=v.AccID/);
+ f.state.vatAccounts=[{GroupId:31,AccountId:41,AccountCode:'VAT-OUT'}];
+ const prior=await approved(f);
+ f.state.vatAccounts[0].AccountId=42;
+ await assert.rejects(f.call('apply',prior),{code:'DO_PREVIEW_STALE'});
+ assert.equal(f.state.procCalls,0);
 });
 test('request UUID replay creates one request and one audit; request cannot itself create104',async()=>{
  const f=fixture();const command=await request(f);const before=f.calls.length;

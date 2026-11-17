@@ -11,9 +11,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
 
-const state = { remaining: 300, failAudit: false, rollbacks: 0 };
+const state = { remaining: 300, failAudit: false, ambiguousPrice: false, ambiguousDerive: false, rollbacks: 0 };
 let nextSoId = 4001;
 const db = h.installDbStub(({ kind, text }) => {
+  if (state.ambiguousPrice && /FROM dbo\.EMCust WITH/.test(text)) return [{CustID:1},{CustID:2}];
   if (/INSERT INTO wf\.SalesOrderAudit/.test(text)) {
     assert.equal(kind, 'tx');
     if (state.failAudit) throw new Error('TEST_SO_AUDIT_FAILURE');
@@ -31,6 +32,12 @@ const db = h.installDbStub(({ kind, text }) => {
 }, { activeUserIds: h.TEST_USERS });
 db.stub.wfTransaction=async fn=>{try{return await fn(db.tx);}catch(e){state.rollbacks++;throw e;}};
 
+const pricePath=require.resolve('../services/price-authority');
+const priceOriginal=require(pricePath);
+require.cache[pricePath].exports={...priceOriginal,
+  evaluateLinePrice:async (...args)=>state.ambiguousDerive?{requiresApproval:false}:priceOriginal.evaluateLinePrice(...args),
+  resolveAuthoritativePrice:async (...args)=>{if(state.ambiguousDerive)throw Object.assign(new Error('ambiguous'),{status:409,code:'AMBIGUOUS_CUSTOMER_ID'});return priceOriginal.resolveAuthoritativePrice(...args);},
+};
 let app;
 test.before(async () => { app = await h.startApp([['/api/so', '../../routes/so']]); });
 test.after(async () => { await app.close(); });
@@ -88,4 +95,14 @@ test('a bill creation audit failure aborts the transaction and does not return s
     assert.ok(db.calls.slice(before).some(c=>c.kind==='tx' && /INSERT INTO wf\.SalesOrderAudit/.test(c.text)));
     assert.equal(state.rollbacks,rollbacks+1);
   } finally {state.failAudit=false;}
+});
+
+test('ambiguous price customer aborts bill creation and rolls back', async () => {
+  state.ambiguousPrice=true;const rollbacks=state.rollbacks;const b={...order(1),lines:[{goodId:'3',goodCode:'P',goodName:'Synthetic',qtyTon:1,qtyBag:20,pricePerTon:100,isGiveaway:false}]};
+  try {const r=await app.call('POST','/api/so',{body:b,user:{sub:34,role:'SALES'}});assert.equal(r.status,409,JSON.stringify(r.body));assert.equal(r.body.code,'AMBIGUOUS_CUSTOMER_ID');assert.equal(state.rollbacks,rollbacks+1);} finally {state.ambiguousPrice=false;}
+});
+
+test('ambiguous customer during derived net-price lookup rolls back bill creation', async () => {
+ state.ambiguousDerive=true;const rollbacks=state.rollbacks;const b={...order(1),lines:[{goodId:'3',goodCode:'P',goodName:'Synthetic',qtyTon:1,qtyBag:20,pricePerTon:100,isGiveaway:false}]};
+ try {const r=await app.call('POST','/api/so',{body:b,user:{sub:34,role:'SALES'}});assert.equal(r.status,409,JSON.stringify(r.body));assert.equal(r.body.code,'AMBIGUOUS_CUSTOMER_ID');assert.equal(state.rollbacks,rollbacks+1);} finally {state.ambiguousDerive=false;}
 });

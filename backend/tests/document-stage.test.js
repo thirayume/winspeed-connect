@@ -6,9 +6,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { STAGE, deriveDocumentStage, loadDocumentStageFacts, attachDocumentStages, safeIds } = require('../services/document-stage');
+const { STAGE, deriveDocumentStage, loadDocumentStageFacts, attachDocumentStages, attachAgingDocumentStages, safeIds } = require('../services/document-stage');
 
-const sql = { Int: 'Int' };
+const sql = { Int: 'Int', Date: 'Date' };
+const dataWindow = { businessDate: '2026-01-01' };
 const order = extra => ({ DocuType: 104, DocuStatus: 'Y', TicketCount: 1, TicketQty: 11, TicketRemaining: 11, CutQty: 0, InvoicedQty: 0, InvoiceBook: null, ...extra });
 
 test('a booking is waiting, approved, or already taken into a sales order', () => {
@@ -62,6 +63,7 @@ function stubQuery(tables) {
   const query = async (text, inputs) => {
     calls.push({ text, inputs });
     const values = Object.values(inputs || {}).map(i => i.value);
+    if (/SELECT b\.SOID AS BookingId/.test(text)) return { recordset: (tables.deliveries || []).filter(d => values.includes(d.BookingId)) };
     if (/FROM dbo\.SOHD h/.test(text)) return { recordset: tables.heads.filter(h => values.includes(h.SOID)) };
     if (/FROM dbo\.WFCoupon c/.test(text)) return { recordset: tables.tickets.filter(t => values.includes(t.DocuID)) };
     if (/FROM dbo\.WFRedemtionDT rd/.test(text)) return { recordset: tables.cuts.filter(c => values.includes(c.CouponID)) };
@@ -82,13 +84,13 @@ const tables = {
     { CouponID: 9002, DocuID: 501, GoodQty: 6, RemaQty: 6 },
     { CouponID: 9003, DocuID: 503, GoodQty: 4, RemaQty: 4 },
   ],
-  cuts: [{ CouponID: 9001, CutQty: 5, InvoicedQty: 5 }],
-  books: [{ RefID: 501, InvoiceBook: 'J' }],
+  cuts: [{ CouponID: 9001, CutQty: 5, SOInvID: 889, SOListNo: 1, InvoiceQty: 5, InvoiceOrderId: 501, InvoiceBook: 'J' }],
+  books: [{ RefID: 501 }],
 };
 
 test('one page is read in four short steps and summed per sales order', async () => {
   const { query, calls } = stubQuery(tables);
-  const facts = await loadDocumentStageFacts(query, sql, ['501', '502', '503', 'not-a-number']);
+  const facts = await loadDocumentStageFacts(query, sql, ['501', '502', '503', 'not-a-number'], dataWindow);
   assert.equal(facts.size, 3);
   assert.deepEqual(deriveDocumentStage(facts.get(501)),
     { code: STAGE.INVOICED_PARTLY, docType: 107, ticketQty: 11, ticketRemaining: 6, cutQty: 5, invoicedQty: 5, invoiceBook: 'J' });
@@ -98,7 +100,8 @@ test('one page is read in four short steps and summed per sales order', async ()
   assert.equal(calls.length, 4);
   const [head, ...rest] = calls;
   assert.match(head.text, /h\.DocuType IN \(103, 104\)/);
-  assert.deepEqual(Object.values(head.inputs).map(i => i.value), [501, 502, 503]);
+  assert.deepEqual(Object.entries(head.inputs).filter(([key]) => key.startsWith('dsId')).map(([,i]) => i.value), [501, 502, 503]);
+  assert.equal(head.inputs.stageStartDate.value, '2026-01-01');
   // tickets, cuts and invoice books are asked only for the live sales order, never for the booking or the cancelled one
   const ticketCall = rest.find(c => /FROM dbo\.WFCoupon c/.test(c.text));
   assert.deepEqual(Object.values(ticketCall.inputs).map(i => i.value), [501]);
@@ -109,18 +112,43 @@ test('one page is read in four short steps and summed per sales order', async ()
   assert.equal(cutCall.inputs.cutHigh.value, 9002);
   const bookCall = rest.find(c => /FROM dbo\.SOInvDT i/.test(c.text));
   assert.match(bookCall.text, /i\.RefID IN \(/);
-  // every statement is a plain read with dirty-read hints, as the list itself is
+  // Completion evidence cannot come from an uncommitted invoice or cut.
+  assert.match(cutCall.text, /ih\.SOInvID = c\.SOInvID[\s\S]*i\.ListNo = c\.SOListNo/);
+  assert.match(cutCall.text, /ih\.DocuType = 107 AND ISNULL\(ih\.DocuStatus, ''\) <> 'C'/);
+  assert.doesNotMatch(cutCall.text, /NOLOCK/);
   for (const call of calls) {
     assert.doesNotMatch(call.text, /\b(INSERT|UPDATE|DELETE|MERGE|EXEC)\b/i);
-    assert.match(call.text, /WITH \(NOLOCK\)/);
-    for (const input of Object.values(call.inputs)) assert.equal(input.type, 'Int');
+    for (const [key,input] of Object.entries(call.inputs)) assert.equal(input.type, key === 'stageStartDate' ? 'Date' : 'Int');
   }
+});
+
+test('the original booking closes only when its active deliveries are fully covered by valid invoice lines', async () => {
+  const fixture = structuredClone(tables);
+  fixture.heads[1].DocuStatus = 'Y';
+  fixture.deliveries = [{ ...fixture.heads[0], BookingId: 502 }];
+  fixture.tickets[1].RemaQty = 0;
+  fixture.cuts[0].InvoiceQty = 11;
+  fixture.cuts.push({ ...fixture.cuts[0], CouponID: 9002, CutQty: 6 });
+  const stage = async () => deriveDocumentStage((await loadDocumentStageFacts(stubQuery(fixture).query, sql, [502], dataWindow)).get(502));
+  assert.equal((await stage()).code, STAGE.INVOICED);
+  fixture.heads[1].DocuStatus = 'P';
+  assert.equal((await stage()).code, STAGE.INVOICED_PARTLY);
+  fixture.heads[1].DocuStatus = 'Y';
+  for (const patch of [{ InvoiceQty: 10 }, { InvoiceBook: 'N' }, { InvoiceOrderId: 503 }, { InvoiceOrderId: null }]) {
+    fixture.cuts = fixture.cuts.map(cut => ({ ...cut, ...patch }));
+    assert.equal((await stage()).code, STAGE.CUT_WAITING_INVOICE);
+    fixture.cuts = fixture.cuts.map(cut => ({ ...cut, InvoiceQty: 11, InvoiceBook: 'J', InvoiceOrderId: 501 }));
+  }
+  fixture.cuts[0].InvoiceQty = 5;
+  fixture.cuts[1].SOInvID = null;
+  fixture.cuts[1].InvoiceOrderId = null;
+  assert.equal((await stage()).code, STAGE.INVOICED_PARTLY);
 });
 
 test('nothing is asked when the page has no native document', async () => {
   const { query, calls } = stubQuery(tables);
   const orders = [{ id: 'abc', importedDocuNo: null, status: 'DRAFT' }, { id: 77, importedDocuNo: null, status: 'CONFIRMED' }];
-  await attachDocumentStages(orders, { query, sql });
+  await attachDocumentStages(orders, { query, sql, dataWindow });
   assert.equal(calls.length, 0);
   assert.deepEqual(orders[0].docStage, { code: STAGE.DRAFT, docType: null });
   assert.equal(orders[1].docStage, null);
@@ -134,16 +162,49 @@ test('a row gets a stage only when both its id and its own document number match
     { id: '502', importedDocuNo: 'I00-99999', status: 'CONFIRMED' },
     { id: '502', importedDocuNo: 'K00-00002', status: 'CONFIRMED' },
   ];
-  await attachDocumentStages(orders, { query, sql });
+  await attachDocumentStages(orders, { query, sql, dataWindow });
   assert.equal(orders[0].docStage.code, STAGE.INVOICED_PARTLY);
   assert.equal(orders[1].docStage, null);
   assert.equal(orders[2].docStage.code, STAGE.BOOKING_WAITING_APPROVAL);
 });
 
+test('board batches more than 200 native bills without dropping or exposing unmatched rows', async () => {
+  const heads=Array.from({length:201},(_,i)=>({SOID:i+1,DocuNo:`QA-${i+1}`,DocuType:103,DocuStatus:'N',AppvFlag:'W',HasApproval:0}));
+  const {query,calls}=stubQuery({heads,tickets:[],cuts:[],books:[]});
+  const cards=heads.map(h=>({id:h.SOID,importedDocuNo:h.DocuNo,status:'CONFIRMED'}));
+  cards.push({id:201,importedDocuNo:'OTHER',status:'CONFIRMED'});
+  await attachDocumentStages(cards,{query,sql,dataWindow});
+  assert.equal(cards[200].docStage.code,STAGE.BOOKING_WAITING_APPROVAL);
+  assert.equal(cards[201].docStage,null);
+  assert.deepEqual(calls.map(c=>Object.keys(c.inputs).length),[201,2]);
+});
+
+test('aging stages use the scoped native ID and matching number across repeated item rows',async()=>{
+  const {query}=stubQuery(tables);
+  const rows=[{SoId:'501',WfRef:'I00-00001',Status:'CONFIRMED'},
+    {SoId:'501',WfRef:'I00-00001',Status:'CONFIRMED'}, {SoId:'501',WfRef:'DIFFERENT',Status:'CONFIRMED'}];
+  await attachAgingDocumentStages(rows,{query,sql,dataWindow});
+  assert.equal(rows[0].docStage.code,STAGE.INVOICED_PARTLY);
+  assert.deepEqual(rows[0].docStage,rows[1].docStage);
+  assert.equal(rows[2].docStage,null);
+});
+
+test('old or undated movements hide the document stage without changing ticket balances',async()=>{
+  for(const source of ['cuts','books']) {
+    const modified=structuredClone(tables);
+    modified[source][0].HasOutsideWindow=1;
+    const {query}=stubQuery(modified);
+    const rows=[{id:'501',importedDocuNo:'I00-00001',status:'IMPORTED'}];
+    await attachDocumentStages(rows,{query,sql,dataWindow});
+    assert.equal(rows[0].docStage,null,source);
+  }
+  await assert.rejects(attachDocumentStages([],{query:async()=>({recordset:[]}),sql}),{code:'DATA_WINDOW_UNAVAILABLE'});
+});
+
 test('the list and the single bill carry the stage, and keep working when it cannot be read', () => {
   const route = fs.readFileSync(path.join(__dirname, '../routes/so.js'), 'utf8');
   const list = route.slice(route.indexOf("for (const o of orders) o.lines = linesByso[o.id] || [];"), route.indexOf("router.get('/rebate-availability/:custId'"));
-  assert.match(list, /try \{\s*await require\('\.\.\/services\/document-stage'\)\.attachDocumentStages\(orders, \{ query: wfQuery, sql \}\);\s*\} catch \(stageError\) \{\s*console\.warn/);
+  assert.match(list, /try \{\s*await require\('\.\.\/services\/document-stage'\)\.attachDocumentStages\(orders, \{ query: wfQuery, sql, dataWindow \}\);\s*\} catch \(stageError\) \{\s*console\.warn/);
   assert.ok(list.indexOf('attachDocumentStages') < list.indexOf('res.json({ data: orders.map'));
   const detail = route.slice(route.indexOf('const stageCarrier ='), route.indexOf('lines: camelizeRows(lines),'));
   assert.match(detail, /importedDocuNo: so\.ImportedDocuNo, status: so\.Status/);

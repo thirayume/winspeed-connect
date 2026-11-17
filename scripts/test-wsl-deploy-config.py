@@ -381,10 +381,15 @@ class R740ComposeGuardTests(unittest.TestCase):
                               if line and not line.startswith("#"))
                 migrator.write_text("ONPREM_MIGRATOR_USER=" + target["SALEAPP_MIGRATOR_LOGIN"] +
                                     "\nONPREM_MIGRATOR_PASSWORD='dummy&separate$literal#value=1'\n", encoding="utf-8")
-                app_env.write_text("ONPREM_DB_PASSWORD='dummy&app$literal#value=2'\nJWT_SECRET=dummy-test-jwt\n", encoding="utf-8")
+                rebate = ({"REBATE_POOL_103_ENABLED": "true", "REBATE_CONVERSION_APPROVAL_ENABLED": "true",
+                           "REBATE_TICKET_REDEMPTION_TREATMENT": target["ONPREM_DB_NAME"] + ":DISCOUNT"}
+                          if environment == "uat" else {})
+                app_env.write_text("ONPREM_DB_PASSWORD='dummy&app$literal#value=2'\nJWT_SECRET=dummy-test-jwt\n" +
+                                   "".join(f"{key}={value}\n" for key, value in rebate.items()), encoding="utf-8")
                 dns_token = Path(tmp) / "duckdns-token"
                 dns_token.write_text("fixture-not-an-api-token", encoding="utf-8")
-                env = dict(os.environ, **target, SALEAPP_MIGRATOR_ENV_FILE=str(migrator),
+                env = dict({key: val for key, val in os.environ.items() if not key.startswith("REBATE_")},
+                           **target, SALEAPP_MIGRATOR_ENV_FILE=str(migrator),
                            SALEAPP_DUCKDNS_TOKEN_FILE=dns_token.as_posix())
                 args = [docker, "compose", "--project-directory", str(ROOT), "-p", "saleapp-" + environment,
                         "-f", str(ROOT / "docker-compose.yml")]
@@ -400,6 +405,20 @@ class R740ComposeGuardTests(unittest.TestCase):
                                          str(target_path), migrator.as_posix()], input=json.dumps(rendered),
                                         capture_output=True, text=True, timeout=10)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                services = rendered["resolved"]["services"]
+                app = services["backend"]["environment"]
+                self.assertEqual(app["REBATE_POOL_103_ENABLED"], rebate.get("REBATE_POOL_103_ENABLED", "false"))
+                self.assertEqual(app["REBATE_CONVERSION_APPROVAL_ENABLED"], rebate.get("REBATE_CONVERSION_APPROVAL_ENABLED", "false"))
+                self.assertEqual(app["REBATE_TICKET_REDEMPTION_TREATMENT"], rebate.get("REBATE_TICKET_REDEMPTION_TREATMENT", ""))
+                self.assertFalse(any(key.startswith("REBATE_") for key in services["migrate"]["environment"]))
+
+    def test_rebate_treatment_cannot_point_outside_the_environment(self):
+        models, target_path = self.fixture("uat")
+        app = models["resolved"]["services"]["backend"]["environment"]
+        app["REBATE_TICKET_REDEMPTION_TREATMENT"] = "dbwins_worldfert9:DISCOUNT"
+        result = self.validate(models, target_path)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must name a database in the reviewed environment", result.stdout)
 
     def test_secret_env_cannot_override_any_native_writer(self):
         for environment in ("uat", "prod"):

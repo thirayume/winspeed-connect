@@ -7,28 +7,30 @@ const h = require('./helpers/route-harness.cjs');
 const head116 = { RedemtionID: 501, DocuNo: '9900001', DocuDate: '2026-10-31', Receiver: 'UAT2 TEST', Plate: 'UAT2-TEST',
   SumGoodQty: 1, DocuStatus: 'N', IsCheckAll: 'Y', RecorderCode: 'EMP-T1', RecorderName: 'Test One', NativeApproverCode: null, NativeApproverName: null };
 const item116 = { Listno: 1, CouponNo: 'CP-T1', GoodCode: 'G-T1', GoodName: 'Test good', InveName: 'WH', LocaName: 'L1', GoodQty: 1, RemaQty: 0,
-  PostInv: 'N', DeliveryNo: 'D-T1', SalesEmpID: 7001, CustName: 'Test customer', CustCode: 'C-T1', InvoiceNo: null, BookingNo: 'B-T1', BookingSOID: 301 };
+  PostInv: 'N', DeliveryNo: 'D-T1', DeliveryDocuDate: '2026-10-31', SalesEmpID: 7001, CustName: 'Test customer', CustCode: 'C-T1', InvoiceNo: null, InvoiceDocuDate: null, BookingNo: 'B-T1', BookingSOID: 301, BookingDocuDate: '2026-10-31' };
 const head107 = { SOInvID: 601, DocuNo: 'T69-00001', DocuDate: '2026-10-31', CustCode: 'C-T1', CustName: 'Test customer', NetAmnt: 107, SalesEmpID: 7002 };
 const head104 = { SOID: 701, DocuNo: 'D-T1', DocuDate: '2026-10-31', CustCode: 'C-T1', CustName: 'Test customer', SalesEmpID: 7001,
-  CouponNo: 'CP-T1, CP-T2', CarLicense: 'UAT2-TEST', RefNo: 'Q-T1', BookingSOID: 301, SumGoodAmnt: 100, NetAmnt: 100 };
-const state = { heads104: [head104], heads116: [head116], heads107: [head107], scale: [], printed: [] };
+  CouponNo: 'CP-T1, CP-T2', CarLicense: 'UAT2-TEST', RefNo: 'Q-T1', RefDate: '2026-10-31', RefNoDocuDate: '2026-10-31', BookingSOID: 301, BookingDocuDate: '2026-10-31', SumGoodAmnt: 100, NetAmnt: 100 };
+const state = { heads104: [head104], heads116: [head116], heads107: [head107], items116: [item116], items107: [{ ListNo: 1, GoodCode: 'G-T1', GoodName: 'Test good', GoodQty2: 1, UnitName: 'TON', GoodPrice2: 100, GoodAmnt: 100, RefDocuNo: 'D-T1', RefDocuDate: '2026-10-31' }], refs107: [{ SlipNo: '9900001', CouponNo: 'CP-T1', Plate: 'UAT2-TEST', date: '2026-10-31' }, { SlipNo: '9900001', CouponNo: 'CP-T2', Plate: 'UAT2-TEST', date: '2026-10-31' }], scale: [], printed: [] };
+let printWindow = null, failPrintAudit = false;
 
 const db = h.installDbStub(call => {
   const t = call.text;
+  if (/FROM wf\.SystemSetting WITH \(UPDLOCK,HOLDLOCK\)/.test(t)) return printWindow == null ? [] : [{SettingValue:printWindow}];
   if (/FROM dbo\.SOHD h/.test(t) && /DocuType=104 AND h\.DocuNo=@no AND ISNULL\(h\.ClearSO,'N'\)<>'Y'/.test(t)) return state.heads104;
   if (/FROM dbo\.SODT d$/m.test(t)) return [{ ListNo: 1, GoodQty2: 1, UnitName: 'TON', GoodCode: 'G-T1', GoodName: 'Test good', GoodPrice2: 100, GoodAmnt: 100 }];
   if (/FROM dbo\.WFRedemtionHD h/.test(t) && /DocuType=116 AND h\.DocuNo=@no/.test(t)) return state.heads116;
-  if (/FROM dbo\.WFRedemtionDT d/.test(t)) return [item116];
+  if (/FROM dbo\.WFRedemtionDT d/.test(t)) return state.items116;
   if (/FROM dbo\.WGHD WHERE WGType='SO'/.test(t)) return state.scale;
   if (/FROM wf\.NativeDocumentApproval na/.test(t)) return [{ ApproverCode: 'EMP-T2', ApproverName: 'Test Two', SlipSource: 'SCALE', ExceptionRequired: false, SelfApproval: true }];
   if (/FROM dbo\.SOInvHD h/.test(t)) return state.heads107;
-  if (/FROM dbo\.SOInvDT d/.test(t)) return [{ ListNo: 1, GoodCode: 'G-T1', GoodName: 'Test good', GoodQty2: 1, UnitName: 'TON', GoodPrice2: 100, GoodAmnt: 100, RefDocuNo: 'D-T1' }];
+  if (/FROM dbo\.SOInvDT d/.test(t)) return state.items107;
   if (/SELECT DISTINCT RTRIM\(r\.DocuNo\) AS SlipNo, RTRIM\(rd\.CouponNo\) AS CouponNo, RTRIM\(r\.CarLicense\) AS Plate/.test(t))
-    return [{ SlipNo: '9900001', CouponNo: 'CP-T1', Plate: 'UAT2-TEST' }, { SlipNo: '9900001', CouponNo: 'CP-T2', Plate: 'UAT2-TEST' }];
+    return state.refs107.filter(r => r.date >= call.inputs.globalStartDate);
   if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser/.test(t)) return [{ Id: call.inputs.id, EmpId: '7001', PositionCode: 'TEAM-T' }];
   if (/WITH tree AS/.test(t)) return [{ Id: call.inputs.id, EmpId: '7001' }];
   if (/SELECT SalesUserId FROM wf\.SalesOrderExt/.test(t)) return [];
-  if (/^INSERT INTO wf\.NativePrintLog /.test(t.trim())) { state.printed.push(call.inputs); return []; }
+  if (/^INSERT INTO wf\.NativePrintLog /.test(t.trim())) { if(failPrintAudit) throw Error('TEST_AUDIT_FAILED'); state.printed.push(call.inputs); return []; }
   if (/FROM wf\.NativePrintLog WHERE DocType=@type AND DocId=@id/.test(t)) {
     const mine = state.printed.filter(p => p.type === call.inputs.type && p.id === call.inputs.id);
     return [{ count: mine.length, lastAt: mine.length ? '2026-11-01 09:30' : null }];
@@ -145,9 +147,9 @@ test('pressing print logs one wf row per press, like the SMAudit print row of Wi
   assert.equal(r.body.printLog.count, 2);
   assert.deepEqual(state.printed.map(p => [p.type, p.id, p.no, p.user]), [[104, 701, 'D-T1', 11], [104, 701, 'D-T1', 11]]);
   assert.equal((await app.call('GET', '/api/native-print/104/D-T1', as('ADMIN'))).body.printLog.count, 2);
-  const writes = db.calls.slice(before).filter(c => c.kind !== 'wfQuery' || /\b(INSERT|UPDATE|DELETE|MERGE)\b|\bEXEC\b(?! sp_executesql N\x27SELECT )/i.test(c.text));
+  const writes = db.calls.slice(before).filter(c => /\b(INSERT|UPDATE|DELETE|MERGE)\b|\bEXEC\b(?! sp_executesql N\x27SELECT )/i.test(c.text));
   assert.equal(writes.length, 2);
-  for (const w of writes) assert.match(w.text, /^\s*INSERT INTO wf\.NativePrintLog \(DocType, DocId, DocuNo, PrintedBy, ActorUserId\)/);
+  for (const w of writes) { assert.equal(w.kind, 'tx'); assert.match(w.text, /^\s*INSERT INTO wf\.NativePrintLog \(DocType, DocId, DocuNo, PrintedBy, ActorUserId\)/); }
 });
 
 test('the print log follows the same capability, scope and duplicate rules as opening', async () => {
@@ -162,4 +164,69 @@ test('the print log follows the same capability, scope and duplicate rules as op
   assert.equal(state.printed.length, count, 'nothing logged for refused requests');
   assert.equal((await app.call('POST', '/api/native-print/107/T69-00001/printed', as('ACCOUNTING'))).status, 200);
   assert.equal(state.printed.at(-1).id, 601);
+});
+
+test('print log holds the cutoff and source in one transaction and fails closed on change or audit failure',async()=>{
+  const count=state.printed.length;
+  try {
+    printWindow='2027-01-01';
+    let before=db.calls.length;
+    let r=await app.call('POST','/api/native-print/104/D-T1/printed',as('ADMIN'));
+    assert.equal(r.status,500);assert.equal(state.printed.length,count);
+    assert.ok(!db.calls.slice(before).some(c=>/INSERT INTO wf\.NativePrintLog/.test(c.text)));
+    printWindow='2026-01-01';failPrintAudit=true;before=db.calls.length;
+    r=await app.call('POST','/api/native-print/104/D-T1/printed',as('ADMIN'));
+    assert.equal(r.status,500);assert.equal(state.printed.length,count);
+    const calls=db.calls.slice(before);
+    assert.equal(calls.find(c=>/FROM wf\.SystemSetting WITH \(UPDLOCK,HOLDLOCK\)/.test(c.text)).kind,'tx');
+    assert.equal(calls.find(c=>/FROM dbo\.SOHD h/.test(c.text)).kind,'tx');
+    assert.equal(calls.find(c=>/INSERT INTO wf\.NativePrintLog/.test(c.text)).kind,'tx');
+  } finally {printWindow=null;failPrintAudit=false;}
+});
+
+test('print log refuses a selected non-default database before any write',async()=>{
+  const oldTarget=db.stub.getTarget, count=state.printed.length, before=db.calls.length;
+  try {
+    db.stub.getTarget=()=> 'remote_b';
+    const r=await app.call('POST','/api/native-print/104/D-T1/printed',as('ADMIN'));
+    assert.equal(r.status,500);assert.equal(state.printed.length,count);
+    assert.ok(!db.calls.slice(before).some(c=>/INSERT INTO wf\.NativePrintLog/.test(c.text)));
+  } finally {db.stub.getTarget=oldTarget;}
+});
+
+test('current documents hide old and undated source references but retain quantities and amounts', async () => {
+  const original={items116:state.items116,items107:state.items107,refs107:state.refs107,heads104:state.heads104,heads107:state.heads107};
+  try {
+    state.items116=[{...item116,DeliveryDocuDate:'2025-12-31',InvoiceNo:'OLD-INV',InvoiceDocuDate:null,BookingDocuDate:'2025-12-31'}];
+    let r=await app.call('GET','/api/native-print/116/9900001',as('ADMIN'));assert.equal(r.status,200);assert.equal(r.body.items[0].DeliveryNo,null);assert.equal(r.body.items[0].InvoiceNo,null);assert.equal(r.body.items[0].BookingNo,null);assert.equal(r.body.items[0].BookingSOID,null);assert.equal(r.body.items[0].GoodQty,1);
+    state.heads104=[{...head104,RefDate:'2026-10-31',RefNoDocuDate:'2025-12-31',BookingDocuDate:null}];r=await app.call('GET','/api/native-print/104/D-T1',as('ADMIN'));assert.equal(r.body.RefNo,null);assert.equal(r.body.BookingSOID,null);assert.equal(r.body.NetAmnt,100);
+    state.heads107=[{...head107,SONo:'OLD-SO',SONoDocuDate:'2025-12-31'}];state.items107=[{...original.items107[0],RefDocuNo:'OLD-REF',RefDocuDate:'2025-12-31'}];state.refs107=[{SlipNo:'OLD-SLIP',CouponNo:'OLD-C',Plate:'OLD-P',date:'2025-12-31'},{SlipNo:'NEW-SLIP',CouponNo:'NEW-C',Plate:'NEW-P',date:'2026-01-01'}];
+    r=await app.call('GET','/api/native-print/107/T69-00001',as('ADMIN'));assert.equal(r.body.SONo,null);assert.equal(r.body.items[0].RefDocuNo,null);assert.equal(r.body.items[0].GoodAmnt,100);assert.deepEqual(r.body.slips,['NEW-SLIP']);assert.deepEqual(r.body.coupons,['NEW-C']);
+    const refs=db.calls.findLast(c=>/FROM dbo\.WFRedemtionDT rd/.test(c.text));assert.match(refs.text,/r\.DocuDate>=@globalStartDate/);assert.equal(refs.inputs.globalStartDate,'2026-01-01');
+    const scales=db.calls.findLast(c=>/FROM dbo\.WGHD WHERE/.test(c.text));assert.match(scales.text,/COALESCE\(DateOut,DateIn\)>=@globalStartDate/);
+  } finally {Object.assign(state,original);}
+});
+
+test('116 projects reference dates and retains only sources in the configured window', async () => {
+  const before = state.items116;
+  try {
+    state.items116 = [{ ...item116, DeliveryDocuDate:'2026-01-01', InvoiceNo:'INV-CURRENT', InvoiceDocuDate:'2026-01-01', BookingDocuDate:'2026-01-01' }];
+    const r = await app.call('GET', '/api/native-print/116/9900001', as('ADMIN'));
+    assert.equal(r.status, 200);
+    assert.equal(r.body.items[0].DeliveryNo, 'D-T1');
+    assert.equal(r.body.items[0].InvoiceNo, 'INV-CURRENT');
+    assert.equal(r.body.items[0].BookingNo, 'B-T1');
+    assert.equal(r.body.items[0].BookingSOID, 301);
+    assert.equal('DeliveryDocuDate' in r.body.items[0], false);
+    const query = db.calls.findLast(c => /FROM dbo\.WFRedemtionDT d/.test(c.text));
+    for (const alias of ['DeliveryDocuDate', 'InvoiceDocuDate', 'BookingDocuDate']) assert.match(query.text, new RegExp(`AS ${alias}\\b`));
+  } finally { state.items116 = before; }
+});
+
+test('104 looks up vehicle plates only from 116 documents within the configured window', async () => {
+  const r = await app.call('GET', '/api/native-print/104/D-T1', as('ADMIN'));
+  assert.equal(r.status, 200);
+  const query = db.calls.findLast(c => /FROM dbo\.SOHD h/.test(c.text) && /DocuType=104/.test(c.text));
+  assert.match(query.text, /c\.DocuID=h\.SOID AND c\.DocuType=104 AND rh\.DocuType=116 AND rh\.DocuDate>=@globalStartDate/);
+  assert.equal(query.inputs.globalStartDate, '2026-01-01');
 });

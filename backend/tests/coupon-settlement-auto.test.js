@@ -34,6 +34,7 @@ class MockRequest {
   }
   async query(sqlText) {
     executedQueries.push({ text: sqlText, inputs: this.inputs });
+    const legacy=require('./helpers/native-hold-legacy.cjs')(sqlText);if(legacy)return legacy;
     return queryHandler(sqlText, this.inputs);
   }
 }
@@ -44,6 +45,7 @@ const stubDb = {
   sql,
   wfQuery: async (text, inputs = {}) => {
     executedQueries.push({ text, inputs });
+    const legacy=require('./helpers/native-hold-legacy.cjs')(text);if(legacy)return legacy;
     return queryHandler(text, inputs);
   },
   wfTransaction: async (callback) => {
@@ -118,6 +120,7 @@ test('2. PB-3 Negative Balance Clamping & Overcut Notice: Available qty clamped 
   executedQueries.length = 0;
 
   queryHandler = (text, inputs) => {
+    if (text.includes('COUPON_SOURCE_CONFLICTS_V1')) return { recordset: [] };
     if (text.includes('COL_LENGTH')) {
       return { recordset: [{ hasConsumedQty: 8, hasTable: 12345 }] };
     }

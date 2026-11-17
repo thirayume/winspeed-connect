@@ -128,7 +128,7 @@ export function IncidentsPage() {
                 <tr key={r.Id} data-testid={`incident-${r.Id}`} onClick={() => open(r.Id)} className="cursor-pointer hover:bg-blue-50/40">
                   <td className="px-3 py-2 whitespace-nowrap text-gray-600">{when(r.OccurredAt)}</td>
                   <td className="px-3 py-2 font-medium text-gray-800">{r.TypeLabel}</td>
-                  <td className="px-3 py-2 font-mono text-[#0C447C] whitespace-nowrap">{r.DocuNo || '-'}</td>
+                  <td className="px-3 py-2 text-[#0C447C] whitespace-nowrap">{r.SourceHidden ? 'ซ่อนข้อมูลต้นทาง' : (r.DocuNo || '-')}</td>
                   <td className="px-3 py-2 text-gray-700">{r.CustName || '-'}</td>
                   <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{r.SalesName || '-'}</td>
                   <td className="px-3 py-2 text-gray-600">{r.Detail || '-'}</td>
@@ -151,6 +151,7 @@ export function IncidentsPage() {
               <div>
                 <div className="font-bold text-gray-900">{detail.TypeLabel}</div>
                 <div className="text-sm text-gray-500 mt-0.5">{detail.DocuNo || '-'} · {when(detail.OccurredAt)}</div>
+                {detail.SourceHidden && <div className="text-sm text-gray-500 mt-1">ซ่อนข้อมูลต้นทางที่เก่ากว่าวันเริ่มข้อมูลหรือไม่ทราบวันที่</div>}
                 {detail.Detail && <div className="text-sm text-gray-700 mt-1">{detail.Detail}</div>}
               </div>
               <button onClick={() => setDetail(null)} aria-label="ปิด" className="p-1 text-gray-500 hover:bg-gray-100 rounded-lg"><X size={18} /></button>

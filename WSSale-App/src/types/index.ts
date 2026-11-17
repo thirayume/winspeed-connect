@@ -957,6 +957,7 @@ export type Quotation = {
 // ── Paper Trail (Kanban) ──────────────────────────────────────
 export type PaperCard = {
   id: string | number;
+  docStage?: DocStage | null;
   wfRef: string;
   custName: string;
   status: SOStatus;
@@ -1063,6 +1064,7 @@ export type TruckHistoryItem = {
 
 // ── Dashboard ─────────────────────────────────────────────────
 export type AgingRow = {
+  docStage?: DocStage | null;
   CustName: string;
   GoodCode: string;
   GoodName?: string;

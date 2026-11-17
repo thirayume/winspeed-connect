@@ -95,17 +95,19 @@ async function applyTicketRedemption(query,input={},options={}){
   }
   return {id:receiptId,replayed:false,allocations:plan.allocations};
 }
-// This wrapper binds the authoritative global date and both reset fences.
-// No route calls it until the native financial verifier exists and UAT passes.
+// Bind target verification, authoritative cutoff and both reset fences to the write.
 async function executeTicketRedemption(user,payload={},options={}){
   const db=options.db||require('../db');
   const readWindow=options.readWindow||require('./global-data-window-store').readGlobalDataWindow;
   const fence=options.runFence||require('./rebate-reset-fence').withRebateOperationFence;
   const runTx=options.runTx||(fn=>db.wfTransaction(tx=>fn(require('./rebate-sql').transactionQuery(tx,db.sql))));
   const window=await readWindow();
-  return fence(epoch=>runTx(query=>applyTicketRedemption(query,{
-    user,bookingId:Number(payload.bookingId),lineNo:Number(payload.lineNo),requestedTonnage:payload.requestedTonnage,
-    requestId:payload.requestId,treatment:payload.treatment,startDate:window.businessDate,
-  },{...options,epoch})));
+  return fence(epoch=>runTx(async query=>{
+    if(options.verifyTarget) await options.verifyTarget(query,epoch);
+    return applyTicketRedemption(query,{
+      user,bookingId:Number(payload.bookingId),lineNo:Number(payload.lineNo),requestedTonnage:payload.requestedTonnage,
+      requestId:payload.requestId,treatment:payload.treatment,startDate:window.businessDate,
+    },{...options,epoch});
+  }));
 }
 module.exports={applyTicketRedemption,executeTicketRedemption};

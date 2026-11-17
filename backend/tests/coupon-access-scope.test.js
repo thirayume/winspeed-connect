@@ -2,11 +2,13 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const h=require('./helpers/route-harness.cjs');
 let currentUser,visible=false,scopeFailure=false,creator=8,beneficiaryVisible=false,grant=false,crossFixture=false,reservationVisible=false,reconcileFixture=false;
+let replayOverrides={};
 const auth=require.resolve('../middleware/auth');
 require.cache[auth]={id:auth,filename:auth,loaded:true,exports:{
   requireAuth:(req,_res,next)=>{req.user=currentUser;next();},requireRole:()=>((_req,_res,next)=>next()),requireCapability:()=>((_req,_res,next)=>next()),
 }};
 const db=h.installDbStub(({text,inputs})=>{
+  if(text.includes('AS NativeRemainingQty'))return [{NativeRemainingQty:5,ActiveRemainingQty:1,InvalidReservations:0}];
   if(text.includes('SELECT Id, EmpId, PositionCode FROM wf.AppUser')){
     if(scopeFailure)throw Error('SCOPE_UNAVAILABLE');
     return [{Id:Number(inputs.id),EmpId:Number(inputs.id)+1000,PositionCode:null}];
@@ -16,7 +18,10 @@ const db=h.installDbStub(({text,inputs})=>{
   if(text.includes('FROM dbo.EMCust beneficiary'))return beneficiaryVisible?[{ok:1}]:[];
   if(text.includes('WHERE cr.Id IN ('))return reservationVisible?[{Id:12}]:[];
   if(text.includes('FROM wf.CouponBeneficiary WITH (UPDLOCK, ROWLOCK)'))return grant?[{Id:10,Scope:'3'}]:[];
-  if(text.includes('WHERE IdempotencyKey = @key') && crossFixture)return [{Id:77,CouponId:42,CouponNo:'C-TEST',ReservedQty:1,Status:'RESERVED',CreatedBy:8}];
+  if(text.includes('WHERE IdempotencyKey = @key') && crossFixture){
+    const hash=require('crypto').createHash('sha256').update(JSON.stringify({couponId:42,goodId:3,reservedQty:1,goodUnit:'ตัน',beneficiaryCustId:'456',carrierSoId:'',tripId:null,userId:8,expiresAt:null})).digest('hex');
+    return [{Id:77,CouponId:42,CouponNo:'C-TEST',GoodId:3,GoodUnit:'ตัน',BeneficiaryCustId:'456',ReservedQty:1,Status:'RESERVED',CreatedBy:8,PayloadHash:hash,...replayOverrides}];
+  }
   if(text.includes('AS sourceWithinWindow') && crossFixture)return [{couponId:42,couponNo:'C-TEST',sourceSoId:11,sourceDocuNo:'OTHER-SO',sourceDocuDate:new Date('2026-01-01T00:00:00Z'),sourceWithinWindow:1,ownerDocumentWithinScope:0,ownerCustId:'123',ownerCustName:'owner',goodId:3,rightType:'BENEFICIARY',nativeRemainingQty:5,reservedQty:1,availableQty:4}];
   if(text.includes('FROM dbo.WFCoupon WITH (NOLOCK) WHERE CouponID') && reconcileFixture)return [{CouponID:42,CouponNo:'C-TEST',NativeRemaQty:5}];
   if(text.includes('FROM wf.CouponReservation cr WITH (NOLOCK)') && reconcileFixture)return [{Id:12,CouponId:42,ReservedQty:1,RemainingReservedQty:1}];
@@ -30,13 +35,14 @@ let app;
 test.before(async()=>{app=await h.startApp([['/api/coupons','../../routes/coupons']]);});
 test.after(async()=>app.close());
 test.beforeEach(()=>{currentUser={sub:8,actorSub:17,role:'SALES',actorRole:'SALES',isImpersonating:true,
-  identityMapping:{primaryEffectiveUserId:8,primaryActorUserId:17,businessEffectiveUserId:34,businessActorUserId:47}};visible=false;scopeFailure=false;creator=8;beneficiaryVisible=false;grant=false;crossFixture=false;reservationVisible=false;reconcileFixture=false;db.calls.length=0;svc._resetMigration139Cache();});
+  identityMapping:{primaryEffectiveUserId:8,primaryActorUserId:17,businessEffectiveUserId:34,businessActorUserId:47}};visible=false;scopeFailure=false;creator=8;beneficiaryVisible=false;grant=false;crossFixture=false;reservationVisible=false;reconcileFixture=false;replayOverrides={};db.calls.length=0;svc._resetMigration139Cache();});
 
-test('list and pre-settlement each intersect effective and actor document scope',async()=>{
+test('read-only list intersects effective and actor scope without pre-settlement',async()=>{
   const result=await app.call('GET','/api/coupons?customerId=123');assert.equal(result.status,200);
-  const presettle=db.calls.find(c=>c.text.includes('SELECT DISTINCT c.CouponID'));
   const list=db.calls.find(c=>c.text.includes('AS sourceWithinWindow'));
-  for(const q of [presettle,list]){
+  assert.equal(db.calls.some(c=>c.text.includes('SELECT DISTINCT c.CouponID')),false);
+  assert.equal(db.calls.some(c=>c.kind==='tx'),false);
+  for(const q of [list]){
     assert.ok(q);assert.match(q.text,/couponOwnerExt\.SalesUserId IN \(@couponScope0U0\)/);
     assert.match(q.text,/couponOwnerExt\.SalesUserId IN \(@couponScope1U0\)/);
     assert.equal(q.inputs.couponScope0U0,34);assert.equal(q.inputs.couponScope1U0,47);
@@ -96,8 +102,9 @@ test('valid cross-sales beneficiary can list a ticket without seeing another sal
   assert.equal(row.sourceHiddenByAccess,true);assert.equal(row.sourceDocuNo,null);assert.equal(row.sourceSoId,null);assert.equal(row.ownerCustId,null);assert.deepEqual(row.beneficiaries,[]);
   const customerCheck=db.calls.find(c=>c.text.includes('FROM dbo.EMCust beneficiary'));
   assert.equal(customerCheck.inputs.beneficiaryAssigned0U0,34);assert.equal(customerCheck.inputs.beneficiaryAssigned1U0,47);
+  assert.match(customerCheck.text,/ISNULL\(beneficiary\.BillEmp,0\)=0 AND ISNULL\(beneficiaryExt\.SalespersonUserId,0\)=0/);
   assert.match(db.calls.find(c=>c.text.includes('AS sourceWithinWindow')).text,/b\.Id IS NOT NULL/);
-  assert.doesNotMatch(db.calls.find(c=>c.text.includes('SELECT DISTINCT c.CouponID')).text,/b\.Id IS NOT NULL/);
+  assert.equal(db.calls.some(c=>c.text.includes('SELECT DISTINCT c.CouponID')),false);
 });
 test('beneficiary reservation needs both customer scope and current product grant',async()=>{
   crossFixture=true;beneficiaryVisible=true;grant=true;
@@ -109,6 +116,27 @@ test('beneficiary reservation needs both customer scope and current product gran
   assert.equal(db.calls.some(c=>c.text.includes('WHERE IdempotencyKey = @key')),false);
   beneficiaryVisible=false;grant=true;db.calls.length=0;const outside=await app.call('POST','/api/coupons/reserve',request);assert.equal(outside.status,404);
   assert.equal(db.calls.some(c=>c.text.includes('FROM wf.CouponBeneficiary WITH (UPDLOCK, ROWLOCK)')),false);
+});
+test('replay refuses unverifiable, different and closed reservations without writing',async()=>{
+  crossFixture=true;beneficiaryVisible=true;grant=true;
+  const request={body:{couponId:42,beneficiaryCustId:'456',reservedQty:1,idempotencyKey:'test-beneficiary'}};
+  for(const [patch,status] of [[{PayloadHash:null},409],[{CreatedBy:null},409],[{CouponId:43},409],
+    [{ReservedQty:2},409],[{GoodId:4},409],[{GoodUnit:'kg'},409],[{BeneficiaryCustId:'999'},409],
+    [{CreatedBy:9},403],[{Status:'CANCELLED'},409],
+    [{Status:'CONSUMED'},409],[{ExpiresAt:'2020-01-01T00:00:00Z'},409]]) {
+    replayOverrides=patch;db.calls.length=0;
+    const result=await app.call('POST','/api/coupons/reserve',request);
+    assert.equal(result.status,status,JSON.stringify(patch));
+    assert.equal(db.calls.some(c=>/INSERT INTO wf\.CouponReservation|UPDATE wf\.CouponReservation/.test(c.text)),false);
+  }
+});
+test('replay checks a supplied carrier document even though older fingerprints omit it',async()=>{
+  crossFixture=true;beneficiaryVisible=true;grant=true;replayOverrides={CarrierDocuNo:'BILL-ORIGINAL'};
+  const body={couponId:42,beneficiaryCustId:'456',reservedQty:1,idempotencyKey:'test-beneficiary',carrierDocuNo:'BILL-ORIGINAL'};
+  assert.equal((await app.call('POST','/api/coupons/reserve',{body})).status,200);
+  const changed=await app.call('POST','/api/coupons/reserve',{body:{...body,carrierDocuNo:'BILL-OTHER'}});
+  assert.equal(changed.status,409);
+  assert.equal(db.calls.some(c=>/INSERT INTO wf\.CouponReservation|UPDATE wf\.CouponReservation/.test(c.text)),false);
 });
 test('beneficiary cancellation replay needs the same customer scope and current grant',async()=>{
   beneficiaryVisible=true;grant=true;

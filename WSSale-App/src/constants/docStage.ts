@@ -59,8 +59,8 @@ export const DOC_STAGE_META: Record<DocStageCode, { label: string; hint: string;
     badgeClass: 'bg-teal-50 text-teal-700 border-teal-200',
   },
   INVOICED: {
-    label: 'ใบส่งของ (107) · ออกครบแล้ว',
-    hint: 'ขนครบและออกใบส่งของ (107) ครบแล้ว เอกสารฝั่งขายจบสาย ส่วนการรับชำระดูที่ใบตั้งหนี้ (202)',
+    label: 'ใบส่งของ (107) · ออกครบแล้ว · ปิดงานขาย',
+    hint: 'ขนครบและออกใบส่งของ (107) ครบตามใบขน (116) แล้ว ฝ่ายบัญชีตรวจ VAT และลงบัญชี GL ต่อใน WinSpeed',
     badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   },
   CANCELLED: {

@@ -1,7 +1,7 @@
 'use strict';
 const {hasPermission}=require('./role-capabilities');
 const {businessIds}=require('./business-identity');
-// Restricted UAT simulation: full single-line whole-bag zero-tax104, numbered
+// Restricted UAT simulation: full single-line whole-bag 104, numbered
 // C/D and202 receivable, with explicit Account credit approval. No116/107/GL.
 const { createHash } = require('crypto');
 const { sql, wfTransaction } = require('../db');
@@ -10,6 +10,7 @@ const { getVisibleScope, inScope } = require('./visible-scope');
 const { rolesFor, roleRank, ACCESS_AS_ACTOR_ROLES } = require('./role-capabilities');
 const { bookOf, couponSeriesForBill } = require('./account-books');
 const { isInitialNativeUatTarget } = require('./initial-native-uat-target');
+const { readApprovedSalesVat } = require('./native-sales-vat-approval');
 const POLICY = 'O25-DO104-COMPLETE-UAT2-v2';
 const fail = (code, status = 409) => { throw Object.assign(new Error(code), { code, status }); };
 const hash = parts => createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('hex');
@@ -38,6 +39,7 @@ async function identity(q, user, approval = false) {
 async function target(q) {
  const r = (await q(`SELECT CONVERT(NVARCHAR(128),SERVERPROPERTY('ServerName')) AS ServerName,DB_NAME() AS DbName,DB_ID() AS DbId`)).recordset?.[0];
  if (!isInitialNativeUatTarget(r)) fail('DO_TARGET_NOT_SUPPORTED',403);
+ return r.DbName;
 }
 async function xml(q, statement, inputs) {
  const r = (await q(`SELECT COALESCE(CONVERT(NVARCHAR(MAX),(${statement} FOR XML RAW,BINARY BASE64,ELEMENTS XSINIL)),N'') AS Snapshot`,inputs)).recordset?.[0];
@@ -77,18 +79,21 @@ async function deliverySnapshot(q, soid) {
 }
 async function deliveryFingerprint(q,soid){return hash(await deliverySnapshot(q,soid));}
 async function context(q,soid,user) {
- const row=(await q(`SELECT h.SOID,h.DocuNo,h.EmpID,h.CustID,h.AppvDocuNo,e.SalesUserId
+ const row=(await q(`SELECT h.SOID,h.DocuNo,h.EmpID,h.CustID,h.AppvDocuNo,e.SalesUserId,
+  CONVERT(bit,CASE WHEN h.VatAmnt>0 THEN 1 ELSE 0 END) AS HasPositiveVat
   FROM dbo.SOHD h WITH(UPDLOCK,HOLDLOCK) LEFT JOIN wf.SalesOrderExt e WITH(UPDLOCK,HOLDLOCK) ON e.SOID=CONVERT(VARCHAR(50),h.SOID)
   WHERE h.SOID=@soid AND h.DocuType=103`,idInputs(soid))).recordset?.[0];
  if(!row || !inScope(await getVisibleScope(user,q),{userId:row.SalesUserId,empId:row.EmpID})) fail('DO_SOURCE_NOT_FOUND',404);
  if(!/^[IK]\d{2}-\d{5}$/.test(String(row.DocuNo||'')))fail('DO_ACCOUNT_MISMATCH');
  return row;
 }
-async function eligible(q,row,who) {
+async function eligible(q,row,who,dbName) {
  const soid=Number(row.SOID), p={...idInputs(soid),cust:input(sql.Int,Number(row.CustID))};
  const origin=(await q('SELECT Fingerprint,PolicyVersion FROM wf.NativeBookingOrigin WITH(UPDLOCK,HOLDLOCK) WHERE SOID=@soid',idInputs(soid))).recordset?.[0];
  if(!origin || origin.PolicyVersion!=='O11-AI-INITIAL-UAT2-v1') fail('DO_ORIGIN_REQUIRED');
  if(await confirmedFingerprint(q,soid)!==origin.Fingerprint) fail('DO_SOURCE_CHANGED');
+ const vatApproval=row.HasPositiveVat ? await readApprovedSalesVat(q,{dbName,soid,docuType:103}) : null;
+ if(row.HasPositiveVat && !vatApproval) fail('DO_VAT_APPROVAL_REQUIRED');
  const checks=await q(`EXEC wf.usp_CreateCompleteInitialDelivery @SOID=@soid,@Preview=1,@RequestId=NULL,@Fingerprint=NULL,@UserId=@user,@ActorId=@actor`,
   {...idInputs(soid),user:input(sql.Int,who.effective),actor:input(sql.Int,who.actor)});
  const amount=checks.recordset?.[0]?.Amount;
@@ -97,6 +102,7 @@ async function eligible(q,row,who) {
  if(detail.SourceBook!==bookOf(row.DocuNo)||detail.CouponSeries!==couponSeriesForBill(detail.SourceBook)
   || ![detail.PackKg,detail.SackQty].every(v=>typeof v==='string'&&/^\d+\.\d{4}$/.test(v)&&Number(v)>0))fail('DO_PREVIEW_UNAVAILABLE',503);
  const parts=[await nativeFingerprint(q,soid)];
+ if(vatApproval) parts.push(vatApproval);
  const statements=[
   'SELECT CustID,CreditState,CreditAmnt FROM dbo.EMCust WITH(UPDLOCK,HOLDLOCK) WHERE CustID=@cust',
   'SELECT BrchID,CreditTermSO FROM dbo.SOOption WITH(UPDLOCK,HOLDLOCK) WHERE BrchID=1',
@@ -151,7 +157,12 @@ async function verifyDeliveryAccount(q,sourceNo,r) {
    AND c.SONo=h.DocuNo AND c.GoodID=d.GoodID AND c.GoodUnitID=d.GoodUnitID2 AND c.GoodPrice=d.GoodPrice2
    AND c.GoodQty=d.GoodQty2 AND c.ContainQty=@pack AND c.SackQty=@bags AND c.SackQty*c.ContainQty=c.GoodQty*1000
    AND a.SOInvID=@finance AND a.PostID=@post AND v.VATID=@vat AND a.DocuNo=h.DocuNo AND a.BrchID=h.BrchID
-   AND f.GoodAmnt=h.NetAmnt AND a.NetAmnt=h.NetAmnt AND v.BaseAmnt=h.NetAmnt AND v.VatAmnt=0`,{
+   AND f.GoodAmnt=h.BillAftrDiscAmnt AND a.NetAmnt=h.NetAmnt AND a.SumGoodAmnt=h.SumGoodAmnt
+   AND ISNULL(a.BillDiscAmnt,0)=ISNULL(h.BillDiscAmnt,0) AND a.BillAftrDiscAmnt=h.BillAftrDiscAmnt
+   AND v.BaseAmnt=h.BillAftrDiscAmnt AND v.VatAmnt=ISNULL(h.VatAmnt,0)
+   AND CONVERT(decimal(8,4),ISNULL(a.VatRate,0))=CONVERT(decimal(8,4),ISNULL(h.VatRate,0))
+   AND CONVERT(decimal(8,4),ISNULL(v.VatRate,0))=CONVERT(decimal(8,4),ISNULL(h.VatRate,0))
+   AND (ISNULL(h.VatRate,0)=0 OR (a.VATGroupID=h.VATGroupID AND f.VATGroupID=h.VATGroupID AND v.VATGroupID=h.VATGroupID))`,{
    delivery:input(sql.Int,Number(r.DeliverySOID)),coupon:input(sql.Int,Number(r.CouponID)),couponNo:input(sql.VarChar(25),r.CouponNo),
    finance:input(sql.Int,Number(r.FinanceSOInvID)),post:input(sql.Int,Number(r.FinancePostID)),vat:input(sql.Int,Number(r.FinanceVATID)),
    pack:input(sql.Decimal(18,4),r.ContainQty),bags:input(sql.Decimal(18,4),r.SackQty),
@@ -166,7 +177,7 @@ async function initialDelivery({operation='preview',soid,user,requestId,fingerpr
  if(!['preview','list'].includes(operation) && (!uuid(requestId)||!/^[a-f0-9]{64}$/.test(String(fingerprint||'')))) fail('DO_REQUEST_INVALID',400);
  if(operation==='approve' && (typeof reason!=='string'||reason.trim().length<5||reason.trim().length>300)) fail('DO_REASON_REQUIRED',400);
  return (options.transaction||wfTransaction)(async tx=>{
-  const q=queryFor(tx);await target(q);const who=await identity(q,user,approval);
+  const q=queryFor(tx);const dbName=await target(q);const who=await identity(q,user,approval);
   const lock=(await q(`DECLARE @r INT; EXEC @r=sp_getapplock @Resource='WF_INITIAL_DELIVERY_104',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=5000; SELECT @r AS LockResult`)).recordset?.[0]?.LockResult;
   if(!Number.isInteger(lock)||lock<0) fail('DO_BUSY');
   if(operation==='list') {
@@ -183,7 +194,7 @@ async function initialDelivery({operation='preview',soid,user,requestId,fingerpr
    await verifyDeliveryAccount(q,row.DocuNo,old);
    await verifyReceipt(q,old);return {...receiptView(old,true),completed:true};
   }
-  const current=await eligible(q,row,who);
+  const current=await eligible(q,row,who,dbName);
   if(operation!=='preview' && current.fingerprint!==fingerprint) fail('DO_PREVIEW_STALE');
   if(operation==='preview') {
    const r=(await q(`SELECT TOP 1 * FROM wf.NativeDeliveryRequest WITH(UPDLOCK,HOLDLOCK)
@@ -239,7 +250,7 @@ async function initialDelivery({operation='preview',soid,user,requestId,fingerpr
 }
 function deliveryHttpError(e) {
  if(e.status && /^DO_[A-Z_]+$/.test(e.code||'')) return {status:e.status,code:e.code};
- const known=/\b(DO_(?:TARGET_NOT_SUPPORTED|SOURCE_UNAVAILABLE|CONTRACT_UNSUPPORTED|CREDIT_CONTRACT_UNSUPPORTED|COUNTER_UNSUPPORTED|COUPON_COUNTER_UNSUPPORTED|PACKAGING_UNSUPPORTED|PERIOD_UNSUPPORTED|NUMBER_EXHAUSTED|CREDIT_APPROVAL_REQUIRED|ACTOR_UNAVAILABLE|REQUEST_CONFLICT|ID_CONFLICT|ID_EXHAUSTED))\b/.exec(String(e.message||''));
+ const known=/\b(DO_(?:TARGET_NOT_SUPPORTED|SOURCE_UNAVAILABLE|CONTRACT_UNSUPPORTED|FINANCIAL_SOURCE_UNSUPPORTED|CREDIT_CONTRACT_UNSUPPORTED|COUNTER_UNSUPPORTED|COUPON_COUNTER_UNSUPPORTED|PACKAGING_UNSUPPORTED|PERIOD_UNSUPPORTED|NUMBER_EXHAUSTED|CREDIT_APPROVAL_REQUIRED|ACTOR_UNAVAILABLE|REQUEST_CONFLICT|ID_CONFLICT|ID_EXHAUSTED))\b/.exec(String(e.message||''));
  return known ? {status:409,code:known[1]} : {status:503,code:'DO_FAILED'};
 }
 module.exports={initialDelivery,deliveryHttpError,confirmedFingerprint,deliveryFingerprint,deliverySnapshot,verifyReceipt,verifyDeliveryAccount,POLICY};

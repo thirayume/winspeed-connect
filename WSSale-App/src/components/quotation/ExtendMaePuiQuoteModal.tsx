@@ -127,7 +127,7 @@ export function ExtendMaePuiQuoteModal({ quote, onClose, onDone }: Props) {
       const updatedMsg = res.updatedPriceCount
         ? `ขยายอายุ ${quote.QuoteNo} ถึง ${formatThaiShortDate(res.validUntil)} และทบทวน/ปรับราคา ${res.updatedPriceCount} รายการเรียบร้อย`
         : `ทบทวนราคาและขยายอายุ ${quote.QuoteNo} ถึง ${formatThaiShortDate(res.validUntil)} เรียบร้อย`;
-      onDone(updatedMsg);
+      onDone(`${updatedMsg}${res.missingCost ? ' · บางรายการยังตรวจเกณฑ์ราคาไม่ได้' : ''}`);
     } catch (e: any) {
       setErr(e?.message || 'ขอขยายเวลาไม่สำเร็จ');
     } finally {
@@ -280,6 +280,7 @@ export function ExtendMaePuiQuoteModal({ quote, onClose, onDone }: Props) {
                           <tr key={key} className="hover:bg-gray-50/70">
                             <td className="px-3 py-2.5">
                               <div className="font-bold text-gray-900">{l.GoodName}</div>
+                              {l.MissingCost && <div role="status" className="text-[10px] font-bold text-amber-800">ยังตรวจเกณฑ์ราคาของรายการนี้ไม่ได้ สามารถดำเนินการต่อได้</div>}
                               <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10px] text-gray-500">
                                 <span className="font-mono">{l.GoodCode}</span>
                                 {isLineMaePui(l) && (

@@ -9,6 +9,7 @@ let currentUser;
 let failScanInsert = false;
 let failAuditInsert = false;
 let simulatedStatus = 'SIGNED';
+let sourceCollision = false;
 const authPath = require.resolve('../middleware/auth');
 require.cache[authPath] = { id: authPath, filename: authPath, loaded: true, exports: {
   requireAuth: (req, _res, next) => { req.user = currentUser; next(); },
@@ -16,8 +17,8 @@ require.cache[authPath] = { id: authPath, filename: authPath, loaded: true, expo
 } };
 
 const db = h.installDbStub(({ text }) => {
-  if (/SELECT TOP 1 so\.SalesUserId/.test(text)) return [{ SalesUserId: 103, EmpID: '1' }];
-  if (/SELECT TOP 1 WfRef FROM wf\.v_AllSalesOrders/.test(text)) return [{ WfRef: 'TEST-900' }];
+  if (/SELECT TOP 2 so\.SalesUserId/.test(text)) return sourceCollision ? [{ SalesUserId: 103, EmpID: null, InWindow: 1 }, { SalesUserId: 999, EmpID: '9', InWindow: 0 }] : [{ SalesUserId: 103, EmpID: '1', InWindow: 1 }];
+  if (/SELECT TOP 2 WfRef FROM wf\.v_AllSalesOrders/.test(text)) return [{ WfRef: 'TEST-900' }];
   if (/SELECT CopyColor, CopyLabel, QrNonce, CASE WHEN PrintedAt/.test(text)) return [];
   if (/SELECT \* FROM wf\.PaperCopy WHERE QrNonce/.test(text))
     return [{ Id: 7, SoId: '900', Status: 'PRINTED', CopyColor: 'WHITE' }];
@@ -118,4 +119,9 @@ test('invalid binding fails closed before paper records are written', async () =
   assert.equal((await app.call('POST', '/api/papertrail/900/print', { body: {} })).status, 409);
   assert.equal((await app.call('POST', '/api/papertrail/scan', { body: { qrNonce: 'TEST', action: 'TRANSIT' } })).status, 409);
   assert.ok(!db.calls.slice(start).some(c => /INSERT INTO wf\.Paper|UPDATE wf\.Paper|DELETE FROM wf\.Paper/.test(c.text)));
+});
+
+test('same numeric ID across APP and WinSpeed fails closed even when one source predates cutoff', async () => {
+  currentUser={sub:43,id:43,actorSub:12,role:'ADMIN',actorRole:'ADMIN',isImpersonating:true,identityMapping:mapping()};sourceCollision=true;const before=db.calls.length;
+  try {assert.equal((await app.call('POST','/api/papertrail/900/print',{body:{}})).status,404);assert.equal((await app.call('GET','/api/papertrail/900/copies')).status,404);assert.equal((await app.call('POST','/api/papertrail/scan',{body:{qrNonce:'TEST',action:'TRANSIT'}})).status,404);const calls=db.calls.slice(before);const guard=calls.find(c=>/SELECT TOP 2 so\.SalesUserId/.test(c.text));assert.match(guard.text,/h\.DocuNo=so\.ImportedDocuNo/);assert.ok(!calls.some(c=>/INSERT INTO wf\.Paper|UPDATE wf\.Paper|DELETE FROM wf\.Paper/.test(c.text)));} finally {sourceCollision=false;}
 });

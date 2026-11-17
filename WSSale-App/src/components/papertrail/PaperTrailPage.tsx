@@ -21,6 +21,7 @@ import { NativeManualRedemptionButton } from './NativeManualRedemptionButton';
 import { NativeInvoiceButton } from './NativeInvoiceButton';
 import { NativeCreditRequests } from './NativeCreditRequests';
 import { NativeDocPrintLauncher } from '../reports/NativeDocPrint';
+import { DocStageChip } from '../sales/DocStageChip';
 
 import { UnlockReviewModal } from './UnlockReviewModal';
 import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
@@ -298,6 +299,7 @@ export function PaperTrailPage() {
                                   );
                                 })()}
                               </div>
+                              <DocStageChip stage={card.docStage} className="mb-1 ml-1" />
                               <div className="flex flex-wrap gap-1 text-[9px] text-gray-500 mb-2 pl-1">
                                 {card.drawnQtyTon && card.drawnQtyTon > 0 ? (
                                   <span className="bg-blue-50 text-[#0C447C] font-bold px-1 rounded border border-blue-100">

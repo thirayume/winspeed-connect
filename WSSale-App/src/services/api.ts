@@ -173,7 +173,7 @@ export type DatabaseConnectionItem = {
   name:string; revision:number; draft:DatabaseConnectionProfile; active:DatabaseConnectionProfile|null;
   activeRevision:number|null; testedAt:string|null;
 };
-export type DatabaseConnectionsInfo = {configured:boolean; profiles:DatabaseConnectionItem[]; audit:{at:string;action:string;name:string;revision:number;actor:string}[]};
+export type DatabaseConnectionsInfo = {configured:boolean; profiles:DatabaseConnectionItem[]; audit:{at:string;action:string;name:string;revision:number;actor:string}[]; auditUnavailable?:boolean};
 export const getDatabaseConnections=()=>req<DatabaseConnectionsInfo>('/database-connections',{silent:true});
 export const saveDatabaseConnection=(name:string,profile:DatabaseConnectionProfile & {password:string},revision:number)=>
   req<{revision:number}>(`/database-connections/${encodeURIComponent(name)}`,{method:'PUT',body:JSON.stringify({profile,revision}),silent:true});
@@ -469,7 +469,7 @@ export const updateControlTicketExpiry = (docuNo: string, params: {
   reasonCode: string;
   reasonText?: string;
 }) =>
-  req<{ success: boolean; docuNo: string; expiryDate: string | null; strictOverride: boolean }>(`/master/control-tickets/${encodeURIComponent(docuNo)}/expiry`, {
+  req<{ success: boolean; docuNo: string; expiryDate: string | null; strictOverride: boolean; alertsPending?: boolean }>(`/master/control-tickets/${encodeURIComponent(docuNo)}/expiry`, {
     method: 'PATCH',
     body: JSON.stringify(params),
   });
@@ -908,12 +908,14 @@ export interface CandidateReservation {
 
 export interface UnmatchedCut {
   redemptionId: string | number;
+  couponId?: number;
+  couponNo?: string;
   docuNo: string;
   docuDate: string;
   goodQty: number;
   receiver?: string;
   plate?: string;
-  reason: 'CUT_BEFORE_CONFIRM' | 'QTY_MISMATCH' | 'RECEIVER_MISMATCH' | 'NO_CANDIDATE';
+  reason: 'CUT_BEFORE_CONFIRM' | 'QTY_MISMATCH' | 'RECEIVER_MISMATCH' | 'NO_CANDIDATE' | 'AUTHORITATIVE_LINK_REQUIRED';
   candidateReservations: CandidateReservation[];
 }
 
@@ -938,6 +940,17 @@ export const settleCouponCuts = (couponId?: number) =>
     body: JSON.stringify(couponId ? { couponId } : {}),
   });
 
+export type NativeEditTarget = { redemptionId: number; lines: Array<{ couponId: number; qtyBefore: string }> };
+export const verifyRedemptionDocument = (docNo: string, forEdit = false) =>
+  req<{ status: 'PRESENT'; lineCount: number; editTarget?: NativeEditTarget } | { status: 'NOT_VERIFIED' }>(
+    `/coupons/verify-redemption?docNo=${encodeURIComponent(docNo)}${forEdit ? '&forEdit=1' : ''}`,
+  );
+export const approveNativeEdit = (id: number, request: {
+  operation: 'reduce' | 'cancel'; reason: string; items?: Array<{ couponId: number; qtyAfter: string }>;
+}) => req<{ editId: string; operation: 'reduce' | 'cancel'; lineCount: number }>(
+  `/coupons/native-edits/${id}/approval`, { method: 'POST', body: JSON.stringify(request) },
+);
+
 export const manualSettleCouponCut = (payload: {
   reservationId: string | number;
   redemptionId: string | number;
@@ -957,8 +970,39 @@ export const manualSettleCouponCut = (payload: {
     body: JSON.stringify(payload),
   });
 
+export const manualSettleCouponDocument = (payload: {
+  redemptionId: string | number;
+  reason: string;
+  items: Array<{ reservationId: string | number; couponId: number; qty: number; overridePlate?: boolean }>;
+}) => req<{ success: boolean; redemptionId: number; settlements: Array<{ reservationId: number; couponId: number; settledQty: number; status: string }> }>(
+  '/coupons/manual-settle-document', { method: 'POST', body: JSON.stringify(payload) },
+);
+
 export const fetchCouponReconcile = (couponId: number) =>
   req<any>(`/coupons/reconcile/${couponId}`);
+
+export type NativeCutReviewItem = {
+  authorizationId: number; code: string; docuNo: string | null; sourceHidden: boolean;
+  releaseId?: string;
+  resumeId?: string;
+  recovery?: { restoredQty: string; settledAfter: string; openingSourceRestored: string };
+};
+export const fetchNativeCutReview = (cursor?: string) =>
+  req<{ items: NativeCutReviewItem[]; nextCursor: string | null }>(
+    `/coupons/native-review${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, { silent: true },
+  );
+export const recordNativeCutHoldReview = (id: number, expectedCode: string, note: string) =>
+  req<{ authorizationId: number; code: string; hold: 'UNCHANGED' }>(`/coupons/native-review/${id}/hold`, {
+    method: 'POST', body: JSON.stringify({ expectedCode, note }), silent: true,
+  });
+export const releaseNativeEdit = (id: string, reason: string) =>
+  req<{ editId: string; released: boolean }>(`/coupons/native-edits/${encodeURIComponent(id)}/release`, {
+    method: 'POST', body: JSON.stringify({ reason }), silent: true,
+  });
+export const resumeNativeEdit = (id: string, reason: string) =>
+  req<{ editId: string; resumed: boolean }>(`/coupons/native-edits/${encodeURIComponent(id)}/resume`, {
+    method: 'POST', body: JSON.stringify({ reason }), silent: true,
+  });
 
 export const fetchCouponExpiry = (couponId: number) =>
   req<{
@@ -1199,6 +1243,9 @@ export const fetchQuotations = (status?: string) =>
 
 export const fetchQuotation = (id: number) => req<Quotation>(`/quotation/${id}`);
 
+export const fetchQuotationPriceCoverage = (lines: { goodId: string; goodCode?: string; pricePerTon: number; isGiveaway?: boolean }[]) =>
+  req<{ missingCostLineIndexes: number[] }>('/quotation/price-coverage', { method: 'POST', body: JSON.stringify({ lines }) });
+
 export const createQuotation = (payload: {
   custId: string; custName: string; validUntil?: string; validDays?: number; remark?: string;
   /** ADMIN-only: create the quotation on behalf of another sales user */
@@ -1207,6 +1254,7 @@ export const createQuotation = (payload: {
 }) => req<{
   id: number;
   quoteNo: string;
+  missingCost?: boolean;
   winspeedQuoteSoid?: number;
   winspeedQuoteNo?: string;
   winspeedEstimateId?: number;
@@ -1231,6 +1279,7 @@ export const createQuotationFromSoTrip = (payload: {
     sourceSoIds: number[];
     sourceWfRefs: string[];
     lineCount: number;
+    missingCost?: boolean;
     validUntil: string;
     winspeedQuoteSoid?: number;
     winspeedQuoteNo?: string;
@@ -1242,6 +1291,7 @@ export interface QuotationExtendPreviewLine extends QuotationLine {
   CurrentAnnouncedPrice?: number | null;
   PriceDiff?: number | null;
   PriceStatus?: string;
+  MissingCost?: boolean;
 }
 
 export interface QuotationExtendPreview {
@@ -1278,6 +1328,7 @@ export const extendQuotationValidity = (
     hasMaePui?: boolean;
     priceReviewed?: boolean;
     updatedPriceCount?: number;
+    missingCost?: boolean;
   }>(`/quotation/${id}/valid-until`, { method: 'PATCH', body: JSON.stringify(payload) });
 
 // ── TruckScale (MySQL) ถูกลบออกถาวรเมื่อ 04/09/2569 ───────────
@@ -1532,7 +1583,7 @@ export const approvePriceBookSpecial = (spId: number, approvedPrice: number) =>
 // price colour per bill line (owner 2026-10-09): RED / YELLOW below the announced price, GREEN above, no amounts
 export type PriceLevel = 'RED' | 'YELLOW' | 'GREEN' | 'EQUAL' | 'NONE' | 'SKIP';
 export const fetchPriceIndicator = (payload: { custId: string; deliveryDate?: string; rebateDiscountAmt?: number; lines: { key: string; goodId: string; goodCode?: string; pricePerTon: number; qtyTon?: number; isGiveaway?: boolean; isCouponDrawn?: boolean; isControlTicketDrawn?: boolean }[] }) =>
-  req<{ lines: { key: string; level: PriceLevel; belowThreshold?: boolean }[]; belowThreshold?: boolean }>('/so/price-indicator', { method: 'POST', body: JSON.stringify(payload) });
+  req<{ lines: { key: string; level: PriceLevel; belowThreshold?: boolean; missingCost?: boolean }[]; belowThreshold?: boolean }>('/so/price-indicator', { method: 'POST', body: JSON.stringify(payload) });
 export const fetchEffectivePrices = (priceBookId: number, custId?: string) =>
   req<EffectivePriceRow[]>(`/pricebook/${priceBookId}/effective${custId ? `?custId=${encodeURIComponent(custId)}` : ''}`);
 
@@ -2479,6 +2530,7 @@ export type IncidentRow = {
   Id: number; IncidentType: string; TypeLabel: string; Severity: string; SOID: number | null; DocuNo: string | null;
   WghdId: number | null; Detail: string | null; OccurredAt: string | null; Status: 'OPEN' | 'ACK';
   AckAt: string | null; AckNote: string | null; AckByName?: string | null; CustName?: string | null; SalesName?: string | null;
+  SourceHidden?: boolean;
 };
 export type IncidentStep = { at: string | null; step: string; who: string | null; doc: string | null; note: string | null };
 export type IncidentDetail = IncidentRow & {

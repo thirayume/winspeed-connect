@@ -97,4 +97,52 @@ async function verifyTicketTreatmentShape(query, context, treatment) {
   return (await inspectTicketTreatmentShape(query, context, treatment)).ok === true;
 }
 
-module.exports = { verifyTicketTreatmentShape, inspectTicketTreatmentShape, TREATMENTS };
+// The supported accounting contract is a fully covered, single-line sale
+// with an actual WinSpeed 202 at zero net and zero VAT. A draft 103 or a
+// 202 still carrying an undiscounted balance cannot consume a ticket.
+async function verifyPostedTicketSale(query, context, treatment) {
+  if (context.documentStatus !== 'Y' || context.financial.vatType !== '3'
+      || money(context.financial.nativeFields.VATAmnt) !== 0n
+      || money(context.financial.net) !== 0n
+      || !await verifyTicketTreatmentShape(query, context, treatment)) return false;
+
+  const rows = (await query(`
+    SELECT TOP (2) s.SOID, f.SOInvID
+    FROM dbo.SODT line WITH (UPDLOCK,HOLDLOCK)
+    JOIN dbo.SOHD s WITH (UPDLOCK,HOLDLOCK) ON s.SOID=line.SOID AND s.DocuType=104
+    JOIN dbo.SOHD b WITH (UPDLOCK,HOLDLOCK) ON b.SOID=line.RefSOID AND b.DocuType=103
+    JOIN dbo.SOInvDT debt WITH (UPDLOCK,HOLDLOCK)
+      ON debt.RefID=line.SOID AND debt.RefListNo=line.ListNo AND debt.DocuType=202
+    JOIN dbo.SOInvHD f WITH (UPDLOCK,HOLDLOCK) ON f.SOInvID=debt.SOInvID AND f.DocuType=202
+    WHERE line.DocuType=104 AND line.RefSOID=@bookingId AND line.RefListNo=@lineNo
+      AND s.DocuStatus IN ('N','P','Y') AND f.DocuStatus IN ('N','P','Y')
+      AND ISNULL(f.ReplaceFlag,'N')='N'
+      AND s.CustID=b.CustID AND f.CustID=s.CustID AND s.BrchID=b.BrchID AND f.BrchID=s.BrchID
+      AND line.GoodID=@good
+      AND CONVERT(decimal(19,4),line.GoodQty2)=CAST(@quantity AS decimal(19,4))
+      AND ((debt.GoodID=line.GoodID AND CONVERT(decimal(19,4),debt.GoodQty2)=CAST(@quantity AS decimal(19,4)))
+        OR (debt.GoodID IS NULL AND debt.GoodQty2 IS NULL AND debt.ExpnID>0
+          AND debt.GoodAmnt=0 AND debt.TotaExcludeAmnt=0))
+      AND CONVERT(decimal(19,4),line.GoodPrice2)=CAST(@price AS decimal(19,4))
+      AND s.VatType='3' AND s.VatAmnt=0 AND s.NetAmnt=0 AND s.BillDiscAmnt=b.BillDiscAmnt
+      AND f.VatType='3' AND f.VatAmnt=0 AND f.NetAmnt=0 AND f.RemaAmnt=0 AND f.StockEffc='N'
+      AND f.BillDiscAmnt=b.BillDiscAmnt
+      AND NOT EXISTS(SELECT 1 FROM dbo.SODT d WITH (UPDLOCK,HOLDLOCK)
+        WHERE d.SOID=b.SOID AND d.ListNo<>@lineNo)
+      AND NOT EXISTS(SELECT 1 FROM dbo.SODT d WITH (UPDLOCK,HOLDLOCK)
+        WHERE d.SOID=s.SOID AND d.ListNo<>line.ListNo)
+      AND NOT EXISTS(SELECT 1 FROM dbo.SOInvDT d WITH (UPDLOCK,HOLDLOCK)
+        WHERE d.SOInvID=f.SOInvID AND d.ListNo<>debt.ListNo)
+      AND NOT EXISTS(SELECT 1 FROM dbo.SODT d WITH (UPDLOCK,HOLDLOCK)
+        JOIN dbo.SOHD h WITH (UPDLOCK,HOLDLOCK) ON h.SOID=d.SOID AND h.DocuType=104
+        WHERE d.DocuType=104 AND d.RefSOID=b.SOID AND d.SOID<>s.SOID AND ISNULL(h.DocuStatus,'')<>'C')
+      AND NOT EXISTS(SELECT 1 FROM dbo.SOInvDT d WITH (UPDLOCK,HOLDLOCK)
+        JOIN dbo.SOInvHD h WITH (UPDLOCK,HOLDLOCK) ON h.SOInvID=d.SOInvID AND h.DocuType=202
+        WHERE d.DocuType=202 AND d.RefID=s.SOID AND d.SOInvID<>f.SOInvID AND ISNULL(h.DocuStatus,'')<>'C')`, {
+    bookingId: context.bookingId, lineNo: context.lineNo, good: context.good,
+    quantity: context.requestedTonnage, price: context.financial.price,
+  })).recordset || [];
+  return rows.length === 1;
+}
+
+module.exports = { verifyTicketTreatmentShape, inspectTicketTreatmentShape, verifyPostedTicketSale, TREATMENTS };

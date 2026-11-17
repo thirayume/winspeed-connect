@@ -14,6 +14,7 @@ const { requireAuth, requireCapability } = require('../middleware/auth');
 const { hasPermission } = require('../services/role-capabilities');
 const { getBangkokDateString } = require('../services/so-pickup-policy');
 const { businessIds } = require('../services/business-identity');
+const { randomUUID } = require('node:crypto');
 
 router.use(requireAuth);
 
@@ -34,7 +35,7 @@ function requireCostView(req, res, next) {
 
 const requireCostManage = requireCapability('cost.manage');
 
-async function logAudit(queryFn, costBookId, action, fromStatus, toStatus, user, note) {
+async function logAudit(queryFn, costBookId, action, fromStatus, toStatus, user, note, batchId = null) {
   const ids = businessIds(user);
   if (!ids.actor || !ids.effective) throw new Error('COSTBOOK_AUDIT_IDENTITY_REQUIRED');
   await queryFn(
@@ -58,9 +59,29 @@ async function logAudit(queryFn, costBookId, action, fromStatus, toStatus, user,
     entityId: { type: sql.VarChar(100), value: String(costBookId) },
     action: { type: sql.VarChar(30), value: String(action).slice(0, 30) },
     before: { type: sql.NVarChar(sql.MAX), value: JSON.stringify({ status: fromStatus || null }) },
-    after: { type: sql.NVarChar(sql.MAX), value: JSON.stringify({ status: toStatus || null }) },
+    after: { type: sql.NVarChar(sql.MAX), value: JSON.stringify({ status: toStatus || null, auditBatchId: batchId }) },
     user: { type: sql.VarChar(50), value: String(ids.effective) },
     actor: { type: sql.VarChar(50), value: String(ids.actor) },
+  });
+}
+
+// Cost values stay in CostBookAudit, which is only exposed through cost.view.
+// A batch ID joins both snapshots to the normal actor/effective ChangeEvent.
+async function snapshotPrices(queryFn, costBookId, user, batchId, phase, selector = {}) {
+  const ids = businessIds(user);
+  if (!ids.actor || !ids.effective) throw new Error('COSTBOOK_AUDIT_IDENTITY_REQUIRED');
+  await queryFn(`INSERT INTO wf.CostBookAudit (CostBookId, Action, ByUser, Note)
+    SELECT @book, @action, @user,
+      N'batch=' + @batch + N';line=' + CONVERT(NVARCHAR(20), Id) + N';good=' + GoodId +
+        N';price=' + COALESCE(CONVERT(NVARCHAR(40), CostPrice), N'NULL')
+    FROM wf.CostBookLine WHERE CostBookId=@book
+      AND (@line IS NULL OR Id=@line) AND (@good IS NULL OR GoodId=@good)`, {
+    book: { type: sql.Int, value: costBookId },
+    action: { type: sql.VarChar(40), value: phase === 'before' ? 'PRICE_BEFORE' : 'PRICE_AFTER' },
+    user: { type: sql.Int, value: ids.effective },
+    batch: { type: sql.NVarChar(36), value: batchId },
+    line: { type: sql.Int, value: selector.lineId || null },
+    good: { type: sql.NVarChar(20), value: selector.goodId || null },
   });
 }
 
@@ -100,13 +121,13 @@ router.get('/active-map', requireCostView, async (req, res) => {
              CONVERT(VARCHAR(10), EffectiveTo, 23) AS EffectiveTo
       FROM wf.CostBook WITH (NOLOCK)
       WHERE Status = 'ACTIVE'
+        AND COALESCE(EffectiveFrom, CAST(EffectiveMonth + '-01' AS DATE)) <= @d
       ORDER BY
         CASE
-          WHEN (EffectiveFrom IS NULL OR EffectiveFrom <= @d)
-           AND (EffectiveTo IS NULL OR EffectiveTo >= @d) THEN 0
+          WHEN (EffectiveTo IS NULL OR EffectiveTo >= @d) THEN 0
           ELSE 1
         END,
-        COALESCE(EffectiveFrom, '1900-01-01') DESC,
+        COALESCE(EffectiveFrom, CAST(EffectiveMonth + '-01' AS DATE)) DESC,
         Id DESC
     `, { d: { type: sql.Date, value: targetDate } });
 
@@ -348,6 +369,8 @@ router.post('/:id/lines', requireCostManage, async (req, res) => {
       if (!book) return { statusCode: 404, message: 'ไม่พบ Costlist' };
       if (book.Status === 'ARCHIVED') return { statusCode: 400, message: 'ไม่สามารถแก้ไข Costlist ที่เก็บเข้าคลังแล้ว' };
 
+      const batchId = randomUUID();
+      await snapshotPrices(tq, id, req.user, batchId, 'before');
       await tq(`DELETE FROM wf.CostBookLine WHERE CostBookId = @id`, { id: { type: sql.Int, value: id } });
 
       for (const l of lines) {
@@ -377,7 +400,8 @@ router.post('/:id/lines', requireCostManage, async (req, res) => {
       }
 
       await tq(`UPDATE wf.CostBook SET UpdatedAt = GETUTCDATE() WHERE Id = @id`, { id: { type: sql.Int, value: id } });
-      await logAudit(tq, id, 'EDIT_LINES', book.Status, book.Status, req.user, `${lines.length} รายการ`);
+      await snapshotPrices(tq, id, req.user, batchId, 'after');
+      await logAudit(tq, id, 'EDIT_LINES', book.Status, book.Status, req.user, `${lines.length} รายการ`, batchId);
       return {};
     });
     if (result.statusCode) return res.status(result.statusCode).json({ message: result.message });
@@ -410,6 +434,8 @@ router.patch('/:id/lines/:lineId', requireCostManage, async (req, res) => {
       const book = (await tq(`SELECT Id, Status FROM wf.CostBook WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id`, { id: { type: sql.Int, value: id } })).recordset[0];
       if (!book) return { statusCode: 404, message: 'ไม่พบ Costlist' };
       if (book.Status === 'ARCHIVED') return { statusCode: 400, message: 'ไม่สามารถแก้ไข Costlist ที่เก็บเข้าคลังแล้ว' };
+      const batchId = randomUUID();
+      await snapshotPrices(tq, id, req.user, batchId, 'before', { lineId });
       const r = await tq(`
       UPDATE wf.CostBookLine
       SET CostPrice = @cp,
@@ -423,7 +449,8 @@ router.patch('/:id/lines/:lineId', requireCostManage, async (req, res) => {
       cbId: { type: sql.Int, value: id },
     });
       if (!r.rowsAffected?.[0]) return { statusCode: 404, message: 'ไม่พบรายการสินค้านี้' };
-      await logAudit(tq, id, 'EDIT_LINE', book.Status, book.Status, req.user, `Line ${lineId} -> Cost ${cp ?? '-'}`);
+      await snapshotPrices(tq, id, req.user, batchId, 'after', { lineId });
+      await logAudit(tq, id, 'EDIT_LINE', book.Status, book.Status, req.user, `Line ${lineId} -> Cost ${cp ?? '-'}`, batchId);
       return {};
     });
     if (result.statusCode) return res.status(result.statusCode).json({ message: result.message });
@@ -455,6 +482,8 @@ router.post('/:id/lines/item', requireCostManage, async (req, res) => {
       const book = (await tq(`SELECT Id, Status FROM wf.CostBook WITH (UPDLOCK, HOLDLOCK) WHERE Id = @id`, { id: { type: sql.Int, value: id } })).recordset[0];
       if (!book) return { statusCode: 404, message: 'ไม่พบ Costlist' };
       if (book.Status === 'ARCHIVED') return { statusCode: 400, message: 'ไม่สามารถแก้ไข Costlist ที่เก็บเข้าคลังแล้ว' };
+      const batchId = randomUUID();
+      await snapshotPrices(tq, id, req.user, batchId, 'before', { goodId: String(goodId) });
       const existing = (await tq(`SELECT Id FROM wf.CostBookLine WITH (UPDLOCK, HOLDLOCK) WHERE CostBookId = @cbId AND GoodId = @gid`, {
       cbId: { type: sql.Int, value: id },
       gid: { type: sql.NVarChar(20), value: String(goodId) },
@@ -493,7 +522,8 @@ router.post('/:id/lines/item', requireCostManage, async (req, res) => {
       });
     }
 
-      await logAudit(tq, id, existing ? 'EDIT_LINE' : 'ADD_LINE', book.Status, book.Status, req.user, `${goodName || goodId}: ${cp ?? '-'}`);
+      await snapshotPrices(tq, id, req.user, batchId, 'after', { goodId: String(goodId) });
+      await logAudit(tq, id, existing ? 'EDIT_LINE' : 'ADD_LINE', book.Status, book.Status, req.user, `${goodName || goodId}: ${cp ?? '-'}`, batchId);
       return {};
     });
     if (result.statusCode) return res.status(result.statusCode).json({ message: result.message });

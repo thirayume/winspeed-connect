@@ -209,6 +209,7 @@ test('GET /api/quotation/:id/extend-preview returns current announced prices & M
   assert.equal(r.body.requiresPriceReview, true);
   assert.equal(r.body.lines[0].CurrentAnnouncedPrice, 15200);
   assert.equal(r.body.lines[0].PriceDiff, -700);
+  assert.equal(r.body.lines[0].MissingCost, true);
 });
 
 test('PATCH /api/quotation/:id/valid-until: enforces <=3 days, requires priceReviewed, and syncs reviewed prices', async () => {

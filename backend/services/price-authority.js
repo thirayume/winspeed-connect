@@ -37,13 +37,18 @@ async function resolveAuthoritativePrice({ custId, goodId, goodCode, asOfDate = 
   if (custId) {
     const isNumeric = /^\d+$/.test(String(custId).trim());
     const custRows = await query(`
-      SELECT TOP 1 CustID, CustCode, CustName
+      SELECT TOP 2 CustID, CustCode, CustName
       FROM dbo.EMCust WITH (NOLOCK)
       WHERE ${isNumeric ? 'CustID = @cid OR CustCode = @ccode' : 'CustCode = @ccode'}
     `, {
       cid: { type: sql.Int, value: isNumeric ? Number(custId) : 0 },
       ccode: { type: sql.VarChar(20), value: String(custId).trim() },
     });
+    if (custRows && custRows.length > 1 && String(custRows[0].CustID) !== String(custRows[1].CustID)) {
+      // A numeric customer code may equal another customer's numeric ID.
+      // An arbitrary TOP 1 would silently apply the wrong customer's special price.
+      throw Object.assign(new Error('รหัสลูกค้ากำกวม กรุณาตรวจสอบข้อมูลลูกค้าก่อนตรวจราคา'), { status: 409, statusCode: 409, code: 'AMBIGUOUS_CUSTOMER_ID' });
+    }
     if (custRows && custRows.length > 0) {
       canonicalCustId = custRows[0].CustID;
     }

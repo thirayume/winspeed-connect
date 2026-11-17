@@ -11,7 +11,10 @@ const { runTransaction, lockConflictNumber } = require('../services/transaction-
 function fakeTx({ failOn = null } = {}) {
   const log = [];
   return { log,
-    request: () => ({ query: async text => { log.push(text); if (failOn && failOn.test(text)) throw new Error('request refused'); return { recordset: [] }; } }),
+    request: () => ({
+      query: async text => { assert.doesNotMatch(text, /^SET LOCK_TIMEOUT/); log.push(text); return { recordset: [] }; },
+      batch: async text => { assert.match(text, /^SET LOCK_TIMEOUT/); log.push(text); if (failOn && failOn.test(text)) throw new Error('request refused'); return { recordset: [] }; }
+    }),
     commit: async () => { log.push('COMMIT'); }, rollback: async () => { log.push('ROLLBACK'); } };
 }
 const sqlError = number => Object.assign(new Error(`sql ${number}`), { number, code: 'EREQUEST' });
@@ -55,6 +58,26 @@ test('if the server already ended the transaction the rollback still runs and th
   await assert.rejects(() => runTransaction(tx, async () => { throw sqlError(1205); }, async () => { cleaned++; }, { lockTimeoutMs: 5000 }), e => e.status === 409);
   assert.deepEqual(tx.log, ['SET LOCK_TIMEOUT 5000', 'SET LOCK_TIMEOUT -1', 'ROLLBACK']);
   assert.equal(cleaned, 1);
+});
+
+test('a failed initial SET still attempts to restore the session and rolls back', async () => {
+  const tx = fakeTx({ failOn: /LOCK_TIMEOUT 10000/ });
+  await assert.rejects(() => runTransaction(tx, async () => { throw Error('must not run'); }, null, { lockTimeoutMs: 10000 }), /request refused/);
+  assert.deepEqual(tx.log, ['SET LOCK_TIMEOUT 10000', 'SET LOCK_TIMEOUT -1', 'ROLLBACK']);
+});
+
+test('driver auto-abort invalidates the pinned session before it can be reused', async () => {
+  const { EventEmitter } = require('node:events');
+  const tx = Object.assign(new EventEmitter(), fakeTx(), { _acquiredConnection: {} });
+  await assert.rejects(() => runTransaction(tx, async () => { tx.emit('rollback', true); throw sqlError(1205); }, null, { lockTimeoutMs: 10000 }), { code: 'DEADLOCK_RETRY' });
+  assert.equal(tx._acquiredConnection.hasError, true);
+  assert.equal(tx.listenerCount('rollback'), 0);
+});
+
+test('failure to restore the timeout invalidates the pinned session', async () => {
+  const tx = Object.assign(fakeTx({ failOn: /LOCK_TIMEOUT -1/ }), { _acquiredConnection: {} });
+  await assert.rejects(() => runTransaction(tx, async () => { throw sqlError(1222); }, null, { lockTimeoutMs: 10000 }), { code: 'LOCK_TIMEOUT' });
+  assert.equal(tx._acquiredConnection.hasError, true);
 });
 
 test('db.wfTransaction asks for the bounded wait only when an isolation level is given', () => {

@@ -2,7 +2,8 @@
 const {hasPermission}=require('./role-capabilities');
 const {businessIds}=require('./business-identity');
 const {isInitialNativeUatTarget}=require('./initial-native-uat-target');
-// Restricted UAT simulation: one full zero-tax coupon, ACCOUNTING only.
+const {readApprovedSalesVat}=require('./native-sales-vat-approval');
+// Restricted UAT simulation for one full single-line coupon.
 const {createHash}=require('crypto');
 const {sql,wfTransaction}=require('../db');
 const {getVisibleScope,inScope}=require('./visible-scope');
@@ -85,17 +86,24 @@ async function initialInvoice({operation='preview',soid,user,requestId,fingerpri
     ||receiptView(old,true).invoiceDate!==invoiceDate))fail('IP_REQUEST_CONFLICT');
    await verifyInvoiceReceipt(q,parent,manual,old);return receiptView(old,true);
   }
-  await (options.verifyMetadata||verifyInvoiceMetadata)(q);
+  await (options.verifyMetadata||verifyInvoiceMetadata)(q,target);
   const p={...sourceInputs(soid),user:input(sql.Int,who.effective),actor:input(sql.Int,who.actor),date:input(sql.VarChar(10),operation==='apply'?invoiceDate:null)};
   const details=(await q('EXEC wf.usp_PostInitialCouponInvoice @SOID=@source,@Preview=1,@RequestId=NULL,@Fingerprint=NULL,@UserId=@user,@ActorId=@actor,@InvoiceDate=@date',p)).recordset?.[0];
   if(!details||!['J','N'].includes(details.InvoiceSeries)||!/^\d{4}-\d{2}-\d{2}$/.test(details.InvoiceDate||'')
-   ||![details.Amount,details.Qty].every(v=>typeof v==='string'&&/^\d+\.\d{4}$/.test(v)&&Number(v)>0)
+   ||typeof details.Amount!=='string'||!/^\d+\.\d{4}$/.test(details.Amount)
+   ||(details.Discount!==undefined&&(typeof details.Discount!=='string'||!/^\d+\.\d{4}$/.test(details.Discount)))
+   ||[details.TaxBase,details.TaxAmount].some(value=>value!==undefined&&(typeof value!=='string'||!/^\d+\.\d{4}$/.test(value)))
+   ||typeof details.Qty!=='string'||!/^\d+\.\d{4}$/.test(details.Qty)||Number(details.Qty)<=0
    ||!Number.isSafeInteger(details.GoodID)||!Number.isSafeInteger(details.InveID))fail('IP_PREVIEW_UNAVAILABLE',503);
+  const hasPositiveVat=Number(details.TaxAmount)>0;
+  const vatApproval=hasPositiveVat ? await readApprovedSalesVat(q,{dbName:target.DbName,soid:parent.DeliverySOID,docuType:104}) : null;
+  if(hasPositiveVat&&!vatApproval)fail('IP_VAT_APPROVAL_REQUIRED');
   const info=(await q(`SELECT CONVERT(varchar(10),DATEADD(day,h.CreditDays,CONVERT(datetime,@date,120)),120) AS DueDate,h.CreditDays
    FROM dbo.SOHD h WITH(UPDLOCK,HOLDLOCK) WHERE h.SOID=@delivery AND h.DocuType=104`,{date:input(sql.VarChar(10),details.InvoiceDate),delivery:input(sql.Int,parent.DeliverySOID)})).recordset?.[0];
   if(!info||!/^\d{4}-\d{2}-\d{2}$/.test(info.DueDate||''))fail('IP_PREVIEW_UNAVAILABLE',503);
   const costs=await costSnapshot(q,details.GoodID,details.InvoiceDate);
   const parts=[POLICY,who.effective,who.actor,parent.DeliveryAfterHash,manual.RedemptionAfterHash,details,info,costs];
+  if(vatApproval)parts.push(vatApproval);
   for(const statement of [
    "SELECT * FROM dbo.EMRunBrch WITH(UPDLOCK,HOLDLOCK) WHERE RunCode='creditsale_docuno' AND BrchID=1 ORDER BY RunCode,BrchID",
    "SELECT * FROM dbo.EMRunChar WITH(UPDLOCK,HOLDLOCK) WHERE RunCode='creditsale_docuno' AND BrchID=1 ORDER BY ListNo",
@@ -106,7 +114,8 @@ async function initialInvoice({operation='preview',soid,user,requestId,fingerpri
   ])parts.push(await xml(q,statement,{date:input(sql.VarChar(10),details.InvoiceDate)}));
   const current=hash(parts);
   if(operation==='preview')return {soid,completed:false,fingerprint:current,invoiceDate:details.InvoiceDate,dueDate:info.DueDate,
-   series:details.InvoiceSeries,amount:details.Amount,qty:details.Qty,deliveryNo:parent.DeliveryNo,couponNo:parent.CouponNo,
+   series:details.InvoiceSeries,amount:details.Amount,discount:details.Discount??'0.0000',
+   taxBase:details.TaxBase??details.Amount,taxAmount:details.TaxAmount??'0.0000',qty:details.Qty,deliveryNo:parent.DeliveryNo,couponNo:parent.CouponNo,
    redemptionNo:manual.RedemptionNo,evidenceMode:'UAT_SIMULATION',physicalShipmentVerified:false};
   if(fingerprint!==current)fail('IP_PREVIEW_STALE');
   const beforeDelivery=await deliverySnapshot(q,parent.DeliverySOID),beforeCut=await redemptionSnapshot(q,manual.RedemptionID);
@@ -129,7 +138,7 @@ async function initialInvoice({operation='preview',soid,user,requestId,fingerpri
 }
 function invoiceHttpError(e){
  if(e.status&&/^IP_[A-Z0-9_]+$/.test(e.code||''))return {status:e.status,code:e.code};
- const code=/\b(IP_(?:TARGET_NOT_SUPPORTED|ACCOUNT_REQUIRED|SOURCE_UNAVAILABLE|DATE_OVERRIDE_UNVERIFIED|COST_SCOPE_UNSUPPORTED|PERIOD_UNSUPPORTED|COUNTER_UNSUPPORTED|NUMBER_EXHAUSTED|ID_CONFLICT|ID_EXHAUSTED|METADATA_UNSUPPORTED|SNAPSHOT_UNAVAILABLE))\b/.exec(String(e.message||''))?.[1];
+ const code=/\b(IP_(?:TARGET_NOT_SUPPORTED|ACCOUNT_REQUIRED|SOURCE_UNAVAILABLE|FINANCIAL_SOURCE_MISMATCH|DATE_OVERRIDE_UNVERIFIED|COST_SCOPE_UNSUPPORTED|PERIOD_UNSUPPORTED|COUNTER_UNSUPPORTED|NUMBER_EXHAUSTED|ID_CONFLICT|ID_EXHAUSTED|METADATA_UNSUPPORTED|SNAPSHOT_UNAVAILABLE))\b/.exec(String(e.message||''))?.[1];
  return {status:code?409:503,code:code||'IP_FAILED'};
 }
 module.exports={initialInvoice,invoiceHttpError,costSnapshot,verifyInvoiceReceipt,POLICY};

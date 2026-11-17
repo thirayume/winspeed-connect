@@ -6,7 +6,8 @@
  * Implements:
  * 1. Balance invariant math:
  *    Native balance = dbo.WFCoupon.RemaQty
- *    Active unposted reservations = SUM(ReservedQty) WHERE Status = 'RESERVED' AND (ExpiresAt IS NULL OR ExpiresAt > NOW)
+ *    Held unposted reservations = SUM(ReservedQty - ConsumedQty) where status is RESERVED and
+ *    expiry is in the future/unspecified or a native authorization remains ACTIVE.
  *    Available = Native balance - Active unposted reservations
  *    Invariant: 100 -> reserve 10 -> available 90 -> native post reduces native balance to 90 and settles reservation -> available remains 90.
  *
@@ -32,6 +33,7 @@ const crypto = require('crypto');
 const { sql, wfQuery, wfTransaction } = require('../db');
 const { logChangeEvent } = require('./policy-contract');
 const { enqueue } = require('./outbox');
+const { resolveHoldPolicy, heldReservationExpirySql } = require('./coupon-authorization-hold');
 
 async function requireCouponAuditActor(userId) {
   const effective = Number(userId);
@@ -40,6 +42,96 @@ async function requireCouponAuditActor(userId) {
   const actor = currentActorId() || effective;
   if (actor !== effective && !await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId'))
     throw Object.assign(new Error('COUPON_ACTOR_AUDIT_UNAVAILABLE'), { status: 503 });
+}
+
+// The explicit Control Ticket date is authoritative. The separately calculated
+// 180-day coupon date is only a reminder and must never block a transaction.
+// Hold the overlay lock through reservation/bill/posting so an expiry edit cannot
+// race the decision. No legacy Strict Mode or override bypasses an expired date.
+async function assertControlTicketUnexpired(tx, couponId) {
+  const id = Number(couponId);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647)
+    throw Object.assign(new Error('ไม่สามารถยืนยันรหัสตั๋วได้'), { code: 'COUPON_ID_INVALID', status: 400 });
+  const rows = (await tx.request().input('cid', sql.Int, id).query(`
+    SELECT ExpiryDate FROM wf.ControlTicketOverlay WITH (UPDLOCK,HOLDLOCK) WHERE DocuId=@cid
+  `)).recordset || [];
+  if (rows.length > 1) throw Object.assign(new Error('ข้อมูลวันหมดอายุตั๋วซ้ำ กรุณาติดต่อผู้ดูแล'), { code: 'COUPON_EXPIRY_AMBIGUOUS', status: 409 });
+  const raw = rows[0]?.ExpiryDate;
+  if (raw == null || raw === '') return;
+  const { normalizeDateString, isValidDateString, getBangkokDateString } = require('./so-pickup-policy');
+  const date = normalizeDateString(raw, { isWallClock: true });
+  if (!date || !isValidDateString(date))
+    throw Object.assign(new Error('ไม่สามารถตรวจวันหมดอายุของตั๋วได้'), { code: 'COUPON_EXPIRY_INVALID', status: 409 });
+  if (date < getBangkokDateString())
+    throw Object.assign(new Error(`ตั๋วหมดอายุแล้วเมื่อ ${date}`), { code: 'COUPON_EXPIRED', status: 400 });
+}
+
+// Old bill lines never held a CouponReservation. Native remaining quantity can
+// therefore overstate what is available until those lines are reviewed. Do not
+// infer whether a legacy reference was consumed: fence the affected ticket and
+// require reconciliation. Missing ticket numbers are ambiguous for every ticket.
+async function assertNoUnreservedLegacyReferences(tx, couponNo) {
+  const no = String(couponNo || '').trim();
+  if (!no) throw Object.assign(new Error('ไม่สามารถยืนยันเลขตั๋วได้'), { code:'COUPON_REFERENCE_INVALID', status:409 });
+  const result = await tx.request().input('couponNo',sql.NVarChar(50),no).query(`
+    SELECT TOP 1 1 AS LegacyConflict FROM (
+      SELECT l.Id FROM wf.SalesOrderLine l WITH (UPDLOCK,HOLDLOCK)
+      JOIN wf.SalesOrder s WITH (UPDLOCK,HOLDLOCK) ON s.Id=l.SoId
+      WHERE s.Status<>'CANCELLED'
+        AND (LTRIM(RTRIM(l.RefControlTicketNo))=@couponNo OR
+          (ISNULL(l.IsControlTicketDrawn,0)=1 AND NULLIF(LTRIM(RTRIM(l.RefControlTicketNo)),'') IS NULL))
+        AND NOT EXISTS (SELECT 1 FROM wf.CouponReservation cr WITH (UPDLOCK,HOLDLOCK)
+          WHERE cr.Id=l.CouponReservationId AND cr.Status='RESERVED'
+            AND (cr.ExpiresAt IS NULL OR cr.ExpiresAt>GETUTCDATE())
+            AND cr.CouponNo=@couponNo AND CONVERT(VARCHAR(50),s.Id)=cr.CarrierSoId
+            AND CONVERT(VARCHAR(50),l.GoodId)=CONVERT(VARCHAR(50),cr.GoodId)
+            AND CONVERT(VARCHAR(50),s.CustId)=cr.BeneficiaryCustId
+            AND cr.ReservedQty=l.QtyTon
+            AND NOT EXISTS (SELECT 1 FROM wf.SalesOrderLine other WITH (UPDLOCK,HOLDLOCK)
+              WHERE other.CouponReservationId=cr.Id AND other.Id<>l.Id))
+      UNION ALL
+      SELECT h.SOID FROM wf.SalesOrderLineExt x WITH (UPDLOCK,HOLDLOCK)
+      JOIN dbo.SOHD h WITH (UPDLOCK,HOLDLOCK) ON x.SOID=CONVERT(VARCHAR(50),h.SOID)
+      WHERE h.DocuType=103 AND ISNULL(h.DocuStatus,'')<>'C'
+        AND (LTRIM(RTRIM(x.RefControlTicketNo))=@couponNo OR
+          (ISNULL(x.IsControlTicketDrawn,0)=1 AND NULLIF(LTRIM(RTRIM(x.RefControlTicketNo)),'') IS NULL))
+    ) pending
+  `);
+  if (result.recordset?.length) throw Object.assign(new Error('พบรายการอ้างอิงตั๋วเดิมที่ยังไม่คืนดียอด กรุณาติดต่อผู้ดูแลก่อนใช้ตั๋ว'),
+    { code:'COUPON_LEGACY_RECONCILIATION_REQUIRED', status:409 });
+}
+
+// WinSpeed can cut a coupon without seeing an app reservation. Recheck under
+// transaction-held shared locks before an existing reservation can be used.
+// A conflict is a review hold, not an instruction to cancel or settle anyone's
+// reservation: a native cut may belong to a different bill or customer.
+async function assertCouponReservationCoverage(tx, couponId) {
+  const id=Number(couponId);
+  if (!Number.isSafeInteger(id) || id<=0 || id>2147483647)
+    throw Object.assign(new Error('ไม่สามารถยืนยันรหัสตั๋วได้'),{code:'COUPON_ID_INVALID',status:400});
+  await require('./coupon-settlement-source-fence').assertSettledSourcesUnchanged(tx,id);
+  const authHolds = await resolveHoldPolicy(text=>tx.request().query(text));
+  const row=(await tx.request().input('cid',sql.Int,id).query(`
+    SELECT c.RemaQty AS NativeRemainingQty,
+      COALESCE(a.ActiveRemainingQty,0) AS ActiveRemainingQty,
+      COALESCE(a.InvalidReservations,0) AS InvalidReservations
+    FROM dbo.WFCoupon c WITH (HOLDLOCK)
+    OUTER APPLY (
+      SELECT SUM(CASE WHEN cr.ReservedQty-ISNULL(cr.ConsumedQty,0)>=0
+                 THEN cr.ReservedQty-ISNULL(cr.ConsumedQty,0) ELSE 0 END) AS ActiveRemainingQty,
+             SUM(CASE WHEN cr.ReservedQty IS NULL OR cr.ReservedQty<0 OR
+                 ISNULL(cr.ConsumedQty,0)<0 OR ISNULL(cr.ConsumedQty,0)>cr.ReservedQty THEN 1 ELSE 0 END) AS InvalidReservations
+      FROM wf.CouponReservation cr WITH (HOLDLOCK)
+      WHERE cr.CouponId=c.CouponID AND cr.Status='RESERVED'
+        AND ${heldReservationExpirySql('cr',authHolds,true)}
+    ) a WHERE c.CouponID=@cid
+  `)).recordset?.[0];
+  const native=Number(row?.NativeRemainingQty),held=Number(row?.ActiveRemainingQty);
+  if (!row || row.NativeRemainingQty==null || !Number.isFinite(native) || native<0 ||
+      !Number.isFinite(held) || held<0 || Number(row.InvalidReservations)!==0)
+    throw Object.assign(new Error('ไม่สามารถตรวจยอดคงเหลือและยอดจองตั๋วได้ กรุณาติดต่อผู้ดูแล'),{code:'COUPON_COVERAGE_UNAVAILABLE',status:409});
+  if (Math.round(held*10000)>Math.round(native*10000))
+    throw Object.assign(new Error('ยอดจองตั๋วมากกว่ายอดคงเหลือใน WinSpeed กรุณาตรวจรายการตัดตั๋วและคืนดียอดก่อนใช้งาน'),{code:'COUPON_RESERVATION_OVERCOMMITTED',status:409});
 }
 
 function isNativePostingEnabled() {
@@ -74,8 +166,11 @@ async function getCouponsForCustomer(customerId, options = {}) {
   const dataWindow = await require('./global-data-window-store').readGlobalDataWindow();
   const ownerScope = options.actor ? await require('./coupon-access-scope').couponScope(options.actor) : {sql:'1=1',inputs:{}};
   const beneficiaryVisible = options.actor && await require('./coupon-access-scope').beneficiaryCustomerVisible(options.actor,custIdStr,dataWindow);
+  const settlementSource = await require('./coupon-recovery-readiness').assertRecoveryReadiness(wfQuery);
   const goodId = options.goodId ? Number(options.goodId) : null;
   const has139 = await checkMigration139();
+  if (!has139) await require('./coupon-settlement-read-hold').assertLegacySettlementSchema(wfQuery);
+  const authHolds = await resolveHoldPolicy(wfQuery);
 
   const querySql = `
     SELECT 
@@ -100,21 +195,29 @@ async function getCouponsForCustomer(customerId, options = {}) {
       b.Reason AS beneficiaryReason,
       b.EffectiveTo AS beneficiaryExpiry,
       s.DocuDate AS sourceDocuDate,
+      controlExpiry.ExpiryDate AS controlExpiryDate,
+      controlExpiry.StrictOverrideFlag AS controlExpiryOverride,
       CASE WHEN s.DocuDate >= @globalStartDate THEN 1 ELSE 0 END AS sourceWithinWindow,
       CASE WHEN ${ownerScope.sql} THEN 1 ELSE 0 END AS ownerDocumentWithinScope
-    FROM dbo.WFCoupon c WITH (NOLOCK)
+    FROM dbo.WFCoupon c
     JOIN dbo.SOHD s WITH (NOLOCK) ON s.SOID = c.DocuID
     LEFT JOIN wf.SalesOrderExt couponOwnerExt WITH (NOLOCK) ON couponOwnerExt.SOID = CONVERT(VARCHAR(50),s.SOID)
     LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = c.GoodID
+    OUTER APPLY (
+      SELECT TOP 1 ov.ExpiryDate, ov.StrictOverrideFlag
+      FROM wf.ControlTicketOverlay ov WITH (NOLOCK)
+      WHERE ov.DocuId = c.CouponID
+      ORDER BY ov.UpdatedAt DESC, ov.Id DESC
+    ) controlExpiry
     LEFT JOIN (
       SELECT 
-        CouponId,
-        SUM(ReservedQty - ${has139 ? 'ISNULL(ConsumedQty, 0)' : '0'}) AS TotalReserved
-      FROM wf.CouponReservation WITH (NOLOCK)
-      WHERE Status = 'RESERVED'
-        AND (ExpiresAt IS NULL OR ExpiresAt > GETUTCDATE())
-        ${has139 ? 'AND (ReservedQty - ISNULL(ConsumedQty, 0)) > 0' : ''}
-      GROUP BY CouponId
+        cr.CouponId,
+        SUM(cr.ReservedQty - ${has139 ? 'ISNULL(cr.ConsumedQty, 0)' : '0'}) AS TotalReserved
+      FROM wf.CouponReservation cr
+      WHERE cr.Status = 'RESERVED'
+        AND ${heldReservationExpirySql('cr',authHolds)}
+        ${has139 ? 'AND (cr.ReservedQty - ISNULL(cr.ConsumedQty, 0)) > 0' : ''}
+      GROUP BY cr.CouponId
     ) activeRes ON activeRes.CouponId = c.CouponID
     LEFT JOIN wf.CouponBeneficiary b WITH (NOLOCK) ON 
       b.OwnerCustId = CAST(s.CustID AS VARCHAR(50))
@@ -142,44 +245,12 @@ async function getCouponsForCustomer(customerId, options = {}) {
     params.goodId = { type: sql.Int, value: goodId };
   }
 
-  // R9-5: Pre-settle coupons with active reservations for this customer first so balances are fresh
-  if (has139 && options.settle !== false) {
-    try {
-      const activeResCoupons = await wfQuery(`
-        SELECT DISTINCT c.CouponID
-        FROM dbo.WFCoupon c WITH (NOLOCK)
-        JOIN dbo.SOHD s WITH (NOLOCK) ON s.SOID = c.DocuID
-        LEFT JOIN wf.SalesOrderExt couponOwnerExt WITH (NOLOCK) ON couponOwnerExt.SOID = CONVERT(VARCHAR(50),s.SOID)
-        JOIN wf.CouponReservation res WITH (NOLOCK) ON res.CouponId = c.CouponID
-        WHERE (
-          CAST(s.CustID AS VARCHAR(50)) = @custId
-          OR EXISTS (
-            SELECT 1 FROM wf.CouponBeneficiary b WITH (NOLOCK)
-            WHERE b.OwnerCustId = CAST(s.CustID AS VARCHAR(50))
-              AND b.BeneficiaryCustId = @custId
-              AND b.Status = 'ACTIVE'
-              AND (b.EffectiveFrom IS NULL OR b.EffectiveFrom <= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
-              AND (b.EffectiveTo IS NULL OR b.EffectiveTo >= CAST(DATEADD(hour, 7, GETUTCDATE()) AS DATE))
-              AND (b.Scope = 'ALL' OR b.Scope = CAST(c.GoodID AS VARCHAR(50)))
-          )
-        )
-        AND res.Status = 'RESERVED'
-        AND ${ownerScope.sql}
-        AND (res.ReservedQty - ISNULL(res.ConsumedQty, 0)) > 0
-      `, { custId: { type: sql.VarChar(50), value: custIdStr }, ...ownerScope.inputs });
-
-      for (const row of activeResCoupons.recordset || []) {
-        try {
-          await settleCouponReservations(row.CouponID, options.actor || null);
-        } catch { /* non-fatal */ }
-      }
-    } catch {
-      // Non-fatal if pre-settle query fails
-    }
-  }
+  // Listing is read-only. Settlement must use the explicitly authorized POST path;
+  // a GET must not change reservations, including on a secondary database.
 
   const res = await wfQuery(querySql, params);
   const rows = res.recordset || [];
+  const sourceConflicts = has139 ? await require('./coupon-settlement-read-hold').findSettlementSourceConflicts(wfQuery,rows.map(r=>r.couponId),settlementSource) : new Set();
 
   // Read system settings for expiry rules (R9-5)
   let defaultDays = 180;
@@ -254,9 +325,10 @@ async function getCouponsForCustomer(customerId, options = {}) {
         const unQ = await wfQuery(`
           SELECT DISTINCT rd.CouponID
           FROM dbo.WFRedemtionDT rd WITH (NOLOCK)
+          JOIN dbo.WFRedemtionHD rh WITH (NOLOCK) ON rh.RedemtionID=rd.RedemtionID AND rh.DocuType=116
           LEFT JOIN (
             SELECT NativeRedemptionId, CouponId, SUM(SettledQty) AS TotalSettled
-            FROM wf.CouponReservationSettlement WITH (NOLOCK)
+            FROM ${settlementSource} WITH (NOLOCK)
             GROUP BY NativeRedemptionId, CouponId
           ) st ON st.NativeRedemptionId = rd.RedemtionID AND st.CouponId = rd.CouponID
           WHERE rd.CouponID IN (${activeResCids.join(',')})
@@ -272,6 +344,7 @@ async function getCouponsForCustomer(customerId, options = {}) {
   }
 
   // D1 / PB-4 / R9-5: Expiry calculation + members + PB-3 negative clamp
+  const { evaluateTicketExpiry } = require('./ticket-policy');
   for (const r of rows) {
     const custom = customExpiries.get(r.couponId);
     let expiryDate = null;
@@ -291,6 +364,12 @@ async function getCouponsForCustomer(customerId, options = {}) {
     r.isExpired = daysLeft !== null ? daysLeft < 0 : false;
     r.isExpiringSoon = daysLeft !== null ? (daysLeft >= 0 && daysLeft <= warningLeadDays) : false;
     r.warningLeadDays = warningLeadDays;
+    // The calculated 180-day value above is a reminder only. The explicit
+    // Control Ticket date is the separate source for eligibility decisions.
+    const control = evaluateTicketExpiry(r.controlExpiryDate, null, warningLeadDays, false, false);
+    r.controlExpiryDate = control.expiryDate;
+    r.controlExpiryExpired = control.isExpired;
+    r.controlExpiryOverride = Boolean(r.controlExpiryOverride);
 
     // Attach active beneficiaries for the owner
     const allOwnerBenes = beneficiariesMap.get(String(r.ownerCustId || '')) || [];
@@ -299,8 +378,13 @@ async function getCouponsForCustomer(customerId, options = {}) {
     // PB-3: Clamp availableQty >= 0 and add overcutNotice if native < reserved
     const rawAvail = Number(r.availableQty || 0);
     r.availableQty = Math.max(0, rawAvail);
+    r.sourceConflict = sourceConflicts.has(Number(r.couponId));
+    if (r.sourceConflict) {
+      r.availableQty = 0;
+      r.overcutNotice = 'รอตรวจใบขนที่เปลี่ยนหรือไม่ครบ';
+    }
     if (Number(r.nativeRemainingQty || 0) < Number(r.reservedQty || 0)) {
-      r.overcutNotice = 'รอตรวจการตัดตั๋ว';
+      r.overcutNotice ||= 'รอตรวจการตัดตั๋ว';
     }
 
     // FR-1 picker hint
@@ -401,7 +485,7 @@ async function reserveCoupon({
 }) {
   const cId = Number(couponId);
   const qty = Number(reservedQty);
-  if (!cId || isNaN(qty) || qty <= 0) {
+  if (!Number.isSafeInteger(cId) || cId <= 0 || cId > 2147483647 || !Number.isFinite(qty) || qty <= 0) {
     throw Object.assign(new Error('พารามิเตอร์การจองตั๋วไม่ถูกต้อง (ต้องระบุ couponId และ reservedQty > 0)'), { status: 400 });
   }
 
@@ -418,7 +502,14 @@ async function reserveCoupon({
     }
   }
 
+  if (idempotencyKey != null && (typeof idempotencyKey !== 'string' ||
+      !idempotencyKey.trim() || idempotencyKey.length > 120 || /[\u0000-\u001f\u007f]/.test(idempotencyKey))) {
+    throw Object.assign(new Error('รหัสป้องกันรายการซ้ำไม่ถูกต้อง'), { status: 400, code: 'COUPON_IDEMPOTENCY_KEY_INVALID' });
+  }
   const key = idempotencyKey || `RES:${carrierSoId}:${couponId}:${qty}`;
+  if (key.length > 120 || /[\u0000-\u001f\u007f]/.test(key)) {
+    throw Object.assign(new Error('รหัสป้องกันรายการซ้ำไม่ถูกต้อง'), { status: 400, code: 'COUPON_IDEMPOTENCY_KEY_INVALID' });
+  }
   await requireCouponAuditActor(userId);
   const window = actor ? await require('./global-data-window-store').readGlobalDataWindow() : null;
 
@@ -471,6 +562,10 @@ async function reserveCoupon({
       throw Object.assign(new Error(couponBookMismatchMessage(couponRow.CouponNo, billPrefix)), { status: 400, code: 'COUPON_BOOK_MISMATCH' });
     }
 
+    await assertControlTicketUnexpired(tx, cId);
+    await assertNoUnreservedLegacyReferences(tx, couponRow.CouponNo);
+    await require('./coupon-settlement-source-fence').assertSettledSourcesUnchanged(tx,cId);
+
     const payloadHash = computePayloadHash({
       couponId: cId,
       goodId: couponRow.GoodID,
@@ -490,13 +585,33 @@ async function reserveCoupon({
     ).recordset?.[0];
 
     if (existing) {
-      // If CreatedBy does not match current actor, reject with 403 Forbidden
-      if (existing.CreatedBy && Number(existing.CreatedBy) !== Number(userId)) {
+      // A legacy row with no owner or fingerprint cannot establish that this
+      // is a retry of the same operation. Hold it for review rather than
+      // returning another reservation's balance to the caller.
+      if (!Number.isSafeInteger(Number(existing.CreatedBy)) || Number(existing.CreatedBy) <= 0 ||
+          typeof existing.PayloadHash !== 'string' || !/^[0-9a-f]{64}$/i.test(existing.PayloadHash)) {
+        throw Object.assign(new Error('ไม่สามารถยืนยันรายการจองเดิมได้ กรุณาตรวจสอบก่อนลองใหม่'),
+          { status: 409, code: 'COUPON_RESERVATION_REPLAY_UNVERIFIABLE' });
+      }
+      if (Number(existing.CreatedBy) !== Number(userId)) {
         throw Object.assign(new Error(`Idempotency conflict: กุญแจ '${key}' ถูกใช้งานโดยผู้ใช้อื่น`), { status: 403 });
       }
-      if (existing.PayloadHash && existing.PayloadHash !== payloadHash) {
+      // Fingerprints on older rows do not include the carrier document number.
+      // Verify the persisted fields as well so a changed or corrupted row
+      // cannot masquerade as a successful retry of the original request.
+      if (existing.PayloadHash !== payloadHash || Number(existing.CouponId) !== cId || Number(existing.ReservedQty) !== qty ||
+          Number(existing.GoodId) !== Number(couponRow.GoodID) ||
+          String(existing.BeneficiaryCustId ?? '').trim() !== String(beneficiaryCustId ?? '').trim() ||
+          String(existing.GoodUnit ?? '').trim() !== String(goodUnit ?? '').trim() ||
+          (carrierDocuNo != null && String(carrierDocuNo).trim() !== String(existing.CarrierDocuNo ?? '').trim())) {
         throw Object.assign(new Error(`Idempotency conflict: กุญแจ '${key}' เคยถูกใช้กับข้อมูลคำขออื่นไปแล้ว`), { status: 409 });
       }
+      if (existing.Status !== 'RESERVED' || (existing.ExpiresAt != null &&
+          (!Number.isFinite(new Date(existing.ExpiresAt).getTime()) || new Date(existing.ExpiresAt) <= new Date()))) {
+        throw Object.assign(new Error('รายการจองเดิมไม่สามารถใช้งานได้แล้ว กรุณาตรวจสอบก่อนจองใหม่'),
+          { status: 409, code: 'COUPON_RESERVATION_REPLAY_CLOSED' });
+      }
+      await assertCouponReservationCoverage(tx,cId);
       return {
         id: existing.Id,
         couponId: existing.CouponId,
@@ -507,21 +622,37 @@ async function reserveCoupon({
       };
     }
 
-    // 4. Calculate active unposted reservations with lock
-    const activeRes = (await tx.request()
+    // 4. Count expired reservations too while a native authorization is active.
+    // Use the same transaction as the native-coupon and reservation locks.
+    const authHolds = await resolveHoldPolicy(text=>tx.request().query(text));
+    const activeRow = (await tx.request()
       .input('cid', sql.Int, cId)
       .query(`
-        SELECT ISNULL(SUM(ReservedQty), 0) AS ActiveReserved
-        FROM wf.CouponReservation WITH (UPDLOCK, ROWLOCK)
-        WHERE CouponId = @cid
-          AND Status = 'RESERVED'
-          AND (ExpiresAt IS NULL OR ExpiresAt > GETUTCDATE())
+        SELECT ISNULL(SUM(CASE WHEN cr.ReservedQty >= ISNULL(cr.ConsumedQty,0)
+          THEN cr.ReservedQty - ISNULL(cr.ConsumedQty,0) ELSE 0 END), 0) AS ActiveReserved,
+          ISNULL(SUM(CASE WHEN cr.ReservedQty IS NULL OR cr.ReservedQty < 0 OR
+            ISNULL(cr.ConsumedQty,0) < 0 OR ISNULL(cr.ConsumedQty,0) > cr.ReservedQty
+            THEN 1 ELSE 0 END), 0) AS InvalidReservations
+        FROM wf.CouponReservation cr WITH (UPDLOCK, HOLDLOCK)
+        WHERE cr.CouponId = @cid
+          AND cr.Status = 'RESERVED'
+          AND ${heldReservationExpirySql('cr',authHolds,true)}
       `)
-    ).recordset?.[0]?.ActiveReserved || 0;
+    ).recordset?.[0];
+    if (!activeRow || activeRow.ActiveReserved == null || !Number.isFinite(Number(activeRow.ActiveReserved)) ||
+        Number(activeRow.ActiveReserved) < 0 || Number(activeRow.InvalidReservations ?? 0) !== 0 ||
+        couponRow.NativeRemaQty == null || !Number.isFinite(Number(couponRow.NativeRemaQty))) {
+      throw Object.assign(new Error('ไม่สามารถตรวจยอดคงเหลือและยอดจองตั๋วได้ กรุณาติดต่อผู้ดูแล'),
+        { code: 'COUPON_COVERAGE_UNAVAILABLE', status: 409 });
+    }
+    const activeRes = activeRow.ActiveReserved;
 
-    const available = Number(couponRow.NativeRemaQty) - Number(activeRes);
-    if (available < qty) {
-      throw Object.assign(new Error(`ยอดคงเหลือพร้อมใช้ไม่เพียงพอ (คงเหลือพร้อมใช้: ${available} ตัน, ขอจอง: ${qty} ตัน)`), { status: 400 });
+    // The SQL quantities use DECIMAL(12,4); compare integer ten-thousandths
+    // rather than binary floating point (0.3 - 0.2 can be less than 0.1).
+    const availableUnits = Math.round(Number(couponRow.NativeRemaQty) * 10000) - Math.round(Number(activeRes) * 10000);
+    const available = availableUnits / 10000;
+    if (availableUnits < Math.round(qty * 10000)) {
+      throw Object.assign(new Error(`ยอดคงเหลือพร้อมใช้ไม่เพียงพอ (คงเหลือพร้อมใช้: ${available} ตัน, ขอจอง: ${qty} ตัน) กรุณาออกใบสั่งจองและใบสั่งขายเพิ่มตามจำนวนที่ต้องการรับ`), { status: 400 });
     }
 
     // 5. Insert new reservation with PayloadHash and GoodUnit
@@ -568,7 +699,7 @@ async function reserveCoupon({
       goodId: couponRow.GoodID,
       goodName: couponRow.GoodName,
       reservedQty: qty,
-      availableAfter: available - qty,
+      availableAfter: (availableUnits - Math.round(qty * 10000)) / 10000,
       status: 'RESERVED',
       idempotent: false
     };
@@ -627,13 +758,26 @@ async function cancelReservation(reservationId, reason, userId = 1, userRole = n
       }
     }
 
+    await require('./coupon-authorization-hold').assertNoActiveAuthorization(tx,rId);
+
     if (res.Status === 'CANCELLED') {
       return { id: rId, status: 'CANCELLED', message: 'รายการจองนี้ถูกยกเลิกไปแล้ว (Idempotent)', idempotent: true };
     }
 
-    if (res.Status === 'POSTED') {
-      throw Object.assign(new Error('ไม่สามารถยกเลิกได้: รายการจองนี้ถูก Post ไปแล้ว'), { status: 400 });
+    if (res.Status === 'POSTED' || res.Status === 'CONSUMED') {
+      throw Object.assign(new Error('ไม่สามารถยกเลิกได้: รายการจองนี้ถูกใช้ครบหรือ Post ไปแล้ว'), { status: 400 });
     }
+    if (res.Status !== 'RESERVED') {
+      throw Object.assign(new Error('ไม่สามารถยกเลิกได้: สถานะการจองไม่พร้อมใช้งาน'),
+        { status: 409, code: 'COUPON_RESERVATION_STATUS_INVALID' });
+    }
+    const reserved = Number(res.ReservedQty), consumed = Number(res.ConsumedQty ?? 0);
+    if (res.ReservedQty == null || !Number.isFinite(reserved) || !Number.isFinite(consumed) ||
+        reserved <= 0 || consumed < 0 || Math.round(consumed * 10000) >= Math.round(reserved * 10000)) {
+      throw Object.assign(new Error('ไม่สามารถยกเลิกได้: ยอดจองหรือยอดที่ใช้ไปไม่ถูกต้อง กรุณาตรวจสอบ'),
+        { status: 409, code: 'COUPON_RESERVATION_QUANTITY_INVALID' });
+    }
+    const beforeCancel = { status: res.Status, reservedQty: res.ReservedQty ?? null, consumedQty: res.ConsumedQty ?? null };
 
     // Guard against cancelling reservations already attached to an active SalesOrderLine (draft or native)
     const attachedRows = (await tx.request()
@@ -698,7 +842,8 @@ async function cancelReservation(reservationId, reason, userId = 1, userRole = n
 
     await logChangeEvent(tx, {
       entityType: 'COUPON_RESERVATION', entityId: String(rId), action: 'CANCEL',
-      beforeJson: { status: res.Status }, afterJson: { status: 'CANCELLED' },
+      beforeJson: beforeCancel,
+      afterJson: { ...beforeCancel, status: 'CANCELLED' },
       reasonCode: 'COUPON_RESERVATION', reasonText: String(reason).trim().slice(0, 500), userId: String(userId),
     });
 
@@ -727,24 +872,22 @@ async function reconcileCoupon(couponId, options = {}) {
   // Resolve the authoritative primary setting before a read can settle or
   // disclose source documents, including when the session uses a secondary DB.
   const dataWindow = await require('./global-data-window-store').readGlobalDataWindow();
+  const settlementSource = await require('./coupon-recovery-readiness').assertRecoveryReadiness(wfQuery);
 
   const has139 = await checkMigration139();
+  if (!has139) await require('./coupon-settlement-read-hold').assertLegacySettlementSchema(wfQuery);
+  const authHolds = await resolveHoldPolicy(wfQuery);
 
-  // PB-3 / §0: If migration 139 is present and settle is not disabled, settle FIRST
-  if (has139 && options.settle !== false) {
-    try {
-      await settleCouponReservations(cId, options.actor || null);
-    } catch {
-      // Non-fatal if settlement fails during read
-    }
-  }
+  // Reconciliation reports the current state without mutating reservations.
+  // An explicit, capability-checked settlement request is required for writes.
 
   const coupon = (await wfQuery(`
     SELECT CouponID, CouponNo, CAST(RemaQty AS DECIMAL(12, 4)) AS NativeRemaQty
-    FROM dbo.WFCoupon WITH (NOLOCK) WHERE CouponID = @cid
+    FROM dbo.WFCoupon WHERE CouponID = @cid
   `, { cid: { type: sql.Int, value: cId } })).recordset?.[0];
 
   if (!coupon) return null;
+  const sourceConflict = has139 && (await require('./coupon-settlement-read-hold').findSettlementSourceConflicts(wfQuery,[cId],settlementSource)).has(cId);
 
   const res = (await wfQuery(`
     SELECT cr.Id, cr.CouponId, cr.CarrierSoId, cr.CarrierDocuNo, cr.TripId, cr.ReservedQty,
@@ -759,7 +902,7 @@ async function reconcileCoupon(couponId, options = {}) {
            COALESCE(soe.ConfirmedAt, soh.DocuDate, cr.CreatedAt) AS ConfirmDate,
            COALESCE(benCust.CustName, so.CustName, soh.CustName) AS BeneficiaryName,
            COALESCE(benCust.CustCode, cr.BeneficiaryCustId) AS BeneficiaryCode
-    FROM wf.CouponReservation cr WITH (NOLOCK)
+    FROM wf.CouponReservation cr
     LEFT JOIN wf.SalesTrip st WITH (NOLOCK) ON st.TripId = cr.TripId
     LEFT JOIN wf.SalesOrderExt soe WITH (NOLOCK) ON CAST(soe.SOID AS VARCHAR(50)) = CAST(cr.CarrierSoId AS VARCHAR(50))
     LEFT JOIN wf.SalesOrder so WITH (NOLOCK) ON CAST(so.Id AS VARCHAR(50)) = CAST(cr.CarrierSoId AS VARCHAR(50))
@@ -767,7 +910,7 @@ async function reconcileCoupon(couponId, options = {}) {
     LEFT JOIN dbo.EMCust benCust WITH (NOLOCK) ON benCust.CustID = CASE WHEN ISNUMERIC(cr.BeneficiaryCustId) = 1 THEN CAST(cr.BeneficiaryCustId AS INT) END
     WHERE cr.CouponId = @cid AND cr.Status = 'RESERVED' 
       ${has139 ? 'AND (cr.ReservedQty - ISNULL(cr.ConsumedQty, 0)) > 0' : ''}
-      AND (cr.ExpiresAt IS NULL OR cr.ExpiresAt > GETUTCDATE())
+      AND ${heldReservationExpirySql('cr',authHolds)}
   `, { cid: { type: sql.Int, value: cId }, globalStartDate:{type:sql.Date,value:dataWindow.businessDate}, globalStartUtc:{type:sql.DateTime,value:dataWindow.utcInstant} })).recordset || [];
 
   if (options.actor && !await require('./coupon-access-scope').reservationsVisible(options.actor,res.map(r=>r.Id))) return null;
@@ -782,10 +925,10 @@ async function reconcileCoupon(couponId, options = {}) {
         JOIN dbo.WFRedemtionHD rh WITH (NOLOCK) ON rh.RedemtionID = rd.RedemtionID
         LEFT JOIN (
           SELECT NativeRedemptionId, CouponId, SUM(SettledQty) AS TotalSettled
-          FROM wf.CouponReservationSettlement WITH (NOLOCK)
+          FROM ${settlementSource} WITH (NOLOCK)
           GROUP BY NativeRedemptionId, CouponId
         ) st ON st.NativeRedemptionId = rd.RedemtionID AND st.CouponId = rd.CouponID
-        WHERE rd.CouponID = @cid
+        WHERE rd.CouponID = @cid AND rh.DocuType = 116
           AND (rd.GoodQty - ISNULL(st.TotalSettled, 0)) > 0
       `, { cid: { type: sql.Int, value: cId }, globalStartDate:{type:sql.Date,value:dataWindow.businessDate} })).recordset || []
     : (await wfQuery(`
@@ -794,14 +937,18 @@ async function reconcileCoupon(couponId, options = {}) {
                CASE WHEN rh.DocuDate >= @globalStartDate THEN 1 ELSE 0 END AS CutWithinWindow
         FROM dbo.WFRedemtionDT rd WITH (NOLOCK)
         JOIN dbo.WFRedemtionHD rh WITH (NOLOCK) ON rh.RedemtionID = rd.RedemtionID
-        WHERE rd.CouponID = @cid
+        WHERE rd.CouponID = @cid AND rh.DocuType = 116
       `, { cid: { type: sql.Int, value: cId }, globalStartDate:{type:sql.Date,value:dataWindow.businessDate} })).recordset || [];
 
   const activeReserved = res.reduce((sum, r) => sum + Number(r.RemainingReservedQty != null ? r.RemainingReservedQty : (r.ReservedQty || 0)), 0);
   const nativeRema = Number(coupon.NativeRemaQty || 0);
 
-  // Strict matching via pure function
-  const matchResult = matchCutsToReservations(res, cuts, options.settlementPolicy || await getCouponSettlementPolicy());
+  // Plate/date are only hints. Never free a reservation or adjust availability
+  // until a trusted native-document link has been established.
+  const matchResult = matchCutsToReservations(res, cuts, {
+    ...(options.settlementPolicy || await getCouponSettlementPolicy()),
+    requireAuthoritativeLink: true,
+  });
 
   // The calculation needs the complete history. Only redact its presentation;
   // dates missing or not provable must never expose document identifiers.
@@ -832,7 +979,7 @@ async function reconcileCoupon(couponId, options = {}) {
 
   const hasShortfall = nativeRema < activeReserved;
   const hasDoubleCount = matchResult.doubleCountedQty > 0;
-  const conflict = hasShortfall || hasDoubleCount;
+  const conflict = sourceConflict || hasShortfall || hasDoubleCount || matchResult.ambiguous.length > 0;
 
   const rawAvailable = nativeRema - activeReserved;
   const rawAdjusted = nativeRema - (activeReserved - matchResult.doubleCountedQty);
@@ -842,7 +989,8 @@ async function reconcileCoupon(couponId, options = {}) {
     couponNo: coupon.CouponNo,
     nativeRemaQty: nativeRema,
     activeReservedQty: activeReserved,
-    availableQty: Math.max(0, Number(rawAvailable.toFixed(4))),
+    availableQty: sourceConflict ? 0 : Math.max(0, Number(rawAvailable.toFixed(4))),
+    sourceConflict: Boolean(sourceConflict),
     hasConflict: conflict,
     hasShortfall,
     shortfallQty: hasShortfall ? Number((activeReserved - nativeRema).toFixed(4)) : 0, // Strict shortfall only per R6 §1.4
@@ -850,16 +998,20 @@ async function reconcileCoupon(couponId, options = {}) {
     doubleCountedQty: matchResult.doubleCountedQty,
     doubleCountedReservations,
     ambiguousCuts,
-    adjustedAvailableQty: Math.max(0, Number(rawAdjusted.toFixed(4))),
-    overcutNotice: nativeRema < activeReserved ? 'รอตรวจการตัดตั๋ว' : null,
+    adjustedAvailableQty: sourceConflict ? 0 : Math.max(0, Number(rawAdjusted.toFixed(4))),
+    overcutNotice: sourceConflict ? 'รอตรวจใบขนที่เปลี่ยนหรือไม่ครบ' : conflict ? 'รอตรวจการตัดตั๋ว' : null,
   };
 
   return summary;
 }
 
-let _has139Cache = false;
+// Schema state can differ across switchable databases. A positive result from
+// one database must never enable settlement SQL against another database.
+const _has139Cache = new Set();
 async function checkMigration139(customQueryFn = null) {
-  if (_has139Cache) return true;
+  const db = require('../db');
+  const key = JSON.stringify([db.getTarget?.() || '', db.getDbName?.() || '']);
+  if (_has139Cache.has(key)) return true;
   const qFn = customQueryFn || wfQuery;
   try {
     const q = await qFn(`
@@ -869,7 +1021,7 @@ async function checkMigration139(customQueryFn = null) {
     `);
     const row = q.recordset?.[0];
     if (Boolean(row?.hasConsumedQty && row?.hasTable)) {
-      _has139Cache = true;
+      _has139Cache.add(key);
       return true;
     }
   } catch {
@@ -879,7 +1031,7 @@ async function checkMigration139(customQueryFn = null) {
 }
 
 function _resetMigration139Cache() {
-  _has139Cache = false;
+  _has139Cache.clear();
 }
 
 // Module-level settlement concurrency guard (PB-3)
@@ -974,18 +1126,21 @@ async function settleCouponReservations(couponId, actor = null, deps = {}) {
       throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'),{status:404});
 
     // 2. Fetch cuts — select only the UNSETTLED part of each cut
+    const settlementSource = await require('./coupon-recovery-readiness').assertRecoveryReadiness(effectiveWfQuery);
     const cutsSql = `
-      SELECT rd.RedemtionID, rd.CouponID, 
+      SELECT rd.RedemtionID, rd.CouponID, c.CouponNo,
              CAST(rd.GoodQty - ISNULL(st.TotalSettled, 0) AS DECIMAL(12, 4)) AS GoodQty,
              rh.DocuNo, rh.DocuNo AS RedemptionDocuNo, rh.DocuDate, rh.CarLicense, rh.IssueName
       FROM dbo.WFRedemtionDT rd WITH (NOLOCK)
       JOIN dbo.WFRedemtionHD rh WITH (NOLOCK) ON rh.RedemtionID = rd.RedemtionID
+      JOIN dbo.WFCoupon c WITH (NOLOCK) ON c.CouponID = rd.CouponID
       LEFT JOIN (
         SELECT NativeRedemptionId, CouponId, SUM(SettledQty) AS TotalSettled
-        FROM wf.CouponReservationSettlement WITH (NOLOCK)
+        FROM ${settlementSource} WITH (NOLOCK)
         GROUP BY NativeRedemptionId, CouponId
       ) st ON st.NativeRedemptionId = rd.RedemtionID AND st.CouponId = rd.CouponID
-      WHERE rd.CouponID = @cid
+      WHERE rd.CouponID = @cid AND rh.DocuType = 116
+        AND ISNULL(LTRIM(RTRIM(rh.DocuStatus)),'') IN ('N','Y')
         AND (rd.GoodQty - ISNULL(st.TotalSettled, 0)) > 0
     `;
     const cuts = (await effectiveWfQuery(cutsSql, couponInput)).recordset || [];
@@ -998,7 +1153,7 @@ async function settleCouponReservations(couponId, actor = null, deps = {}) {
 
     // 3. Match cuts using pure matcher
     const policy = deps.settlementPolicy || await getCouponSettlementPolicy(effectiveWfQuery, {strict:true});
-    const matchResult = matchCutsToReservations(res, cuts, policy);
+    const matchResult = matchCutsToReservations(res, cuts, { ...policy, requireAuthoritativeLink: true });
     if (matchResult.matches.length === 0) {
       return { settledCount: 0, settlements: [], ambiguous: matchResult.ambiguous, unmatched: matchResult.unmatched || [] };
     }
@@ -1025,6 +1180,7 @@ async function settleCouponReservations(couponId, actor = null, deps = {}) {
           throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'),{status:404});
       }
       for (const m of matchResult.matches) {
+        await require('./coupon-authorization-hold').assertNoActiveAuthorization(tx,Number(m.reservationId));
         // Check if already settled
         const existsCheck = await tx.request()
           .input('resId', sql.BigInt, Number(m.reservationId))
@@ -1137,7 +1293,7 @@ async function manualSettleCouponCut(params = {}, options = {}) {
     LEFT JOIN wf.SalesOrder so WITH (NOLOCK) ON CAST(so.Id AS VARCHAR(50)) = CAST(cr.CarrierSoId AS VARCHAR(50))
     LEFT JOIN dbo.SOHD soh WITH (NOLOCK) ON CAST(soh.SOID AS VARCHAR(50)) = CAST(cr.CarrierSoId AS VARCHAR(50))
     LEFT JOIN dbo.EMCust benCust WITH (NOLOCK) ON benCust.CustID = CASE WHEN ISNUMERIC(cr.BeneficiaryCustId) = 1 THEN CAST(cr.BeneficiaryCustId AS INT) END
-    WHERE cr.Id = @id
+    WHERE cr.Id = @id AND (cr.ExpiresAt IS NULL OR cr.ExpiresAt > GETUTCDATE())
   `;
   const reservationInput={ id: { type: sql.BigInt, value: resId } };
   const resRows = (await effectiveWfQuery(reservationSql, reservationInput)).recordset || [];
@@ -1161,6 +1317,7 @@ async function manualSettleCouponCut(params = {}, options = {}) {
 
   try {
     // 5. Fetch cut from WinSpeed
+    const settlementSource = await require('./coupon-recovery-readiness').assertRecoveryReadiness(effectiveWfQuery);
     const cutsSql = `
       SELECT rd.RedemtionID, rd.CouponID, 
              CAST(rd.GoodQty AS DECIMAL(12, 4)) AS OriginalGoodQty,
@@ -1170,10 +1327,11 @@ async function manualSettleCouponCut(params = {}, options = {}) {
       JOIN dbo.WFRedemtionHD rh WITH (NOLOCK) ON rh.RedemtionID = rd.RedemtionID
       LEFT JOIN (
         SELECT NativeRedemptionId, CouponId, SUM(SettledQty) AS TotalSettled
-        FROM wf.CouponReservationSettlement WITH (NOLOCK)
+        FROM ${settlementSource} WITH (NOLOCK)
         GROUP BY NativeRedemptionId, CouponId
       ) st ON st.NativeRedemptionId = rd.RedemtionID AND st.CouponId = rd.CouponID
-      WHERE rd.RedemtionID = @redemId AND rd.CouponID = @cid
+      WHERE rd.RedemtionID = @redemId AND rd.CouponID = @cid AND rh.DocuType = 116
+        AND ISNULL(LTRIM(RTRIM(rh.DocuStatus)),'') IN ('N','Y')
     `;
     const cutsInput={ redemId: { type: sql.BigInt, value: redemId }, cid: { type: sql.Int, value: cId } };
     const cutRows = (await effectiveWfQuery(cutsSql, cutsInput)).recordset || [];
@@ -1251,18 +1409,29 @@ async function manualSettleCouponCut(params = {}, options = {}) {
     }
 
     // Guard: quantity
+    const toUnits = value => {
+      if (value === null || value === undefined || value === '') return null;
+      const n = Number(value), scaled = n * 10000, units = Math.round(scaled);
+      return Number.isFinite(n) && n > 0 && Number.isSafeInteger(units) &&
+        units <= 999999999999 && units / 10000 === n ? units : null;
+    };
     const remReserved = Number(reservation.RemainingReservedQty);
     const availCut = Number(cut.GoodQty);
-    const settleQty = qty != null ? Number(qty) : Math.min(availCut, remReserved);
-    const settledQty = settleQty;
-
-    if (isNaN(settleQty) || settleQty <= 0) {
-      throw Object.assign(new Error('จำนวนตันที่ตัดไม่ถูกต้อง'), { status: 400 });
+    const reservedUnits = toUnits(reservation.RemainingReservedQty), availableUnits = toUnits(cut.GoodQty);
+    if (reservedUnits === null || availableUnits === null) {
+      throw Object.assign(new Error('ไม่สามารถยืนยันจำนวนตั๋วและยอดจองได้ กรุณาตรวจสอบ'),
+        { status: 409, code: 'COUPON_SETTLEMENT_QUANTITY_INVALID' });
     }
-    if (settleQty > remReserved) {
+    const settledUnits = qty != null ? toUnits(qty) : Math.min(reservedUnits, availableUnits);
+    if (settledUnits === null) {
+      throw Object.assign(new Error('จำนวนตันที่ตัดต้องมากกว่า 0 และมีทศนิยมไม่เกิน 4 ตำแหน่ง'), { status: 400 });
+    }
+    const settleQty = settledUnits / 10000;
+    const settledQty = settleQty;
+    if (settledUnits > reservedUnits) {
       throw Object.assign(new Error(`จำนวนตัดตั๋ว (${settleQty} ตัน) เกินกว่ายอดจองคงเหลือ (${remReserved} ตัน)`), { status: 400 });
     }
-    if (settleQty > availCut) {
+    if (settledUnits > availableUnits) {
       throw Object.assign(new Error(`จำนวนตัดตั๋ว (${settleQty} ตัน) เกินกว่ายอดตัดที่เหลือ (${availCut} ตัน)`), { status: 400 });
     }
 
@@ -1286,7 +1455,12 @@ async function manualSettleCouponCut(params = {}, options = {}) {
           throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'),{status:404});
         if (!await reservationScopeCheck(actor,[resId],queryInTx))
           throw Object.assign(new Error('ไม่พบรายการจองตั๋ว'),{status:404});
+        await (deps.validateManualSettlementWindow || require('./coupon-manual-window-fence').validateManualSettlementWindow)(tx, {
+          window:params.dataWindow, redemptionId:redemId, couponId:cId,
+        });
       }
+      await (deps.assertSettledSourcesUnchanged || require('./coupon-settlement-source-fence').assertSettledSourcesUnchanged)(tx,cId);
+      await require('./coupon-authorization-hold').assertNoActiveAuthorization(tx,resId);
       // Insert audit row in wf.CouponReservationSettlement with Note "MANUAL: <reason>"
       await tx.request()
         .input('resId', sql.BigInt, resId)
@@ -1311,7 +1485,9 @@ async function manualSettleCouponCut(params = {}, options = {}) {
               Status = CASE WHEN ISNULL(ConsumedQty, 0) + @qty >= ReservedQty THEN 'CONSUMED' ELSE Status END,
               UpdatedAt = GETUTCDATE()
           OUTPUT INSERTED.Status
-          WHERE Id = @resId AND Status = 'RESERVED' AND ISNULL(ConsumedQty, 0) + @qty <= ReservedQty
+          WHERE Id = @resId AND Status = 'RESERVED'
+            AND (ExpiresAt IS NULL OR ExpiresAt > GETUTCDATE())
+            AND ISNULL(ConsumedQty, 0) + @qty <= ReservedQty
         `);
 
       if (!updRes.rowsAffected?.[0] || !updRes.recordset?.length) {
@@ -1371,6 +1547,18 @@ async function validateAndLockCouponReservations(tx, lines, orderCustId, targetS
   if (!Array.isArray(lines)) return validatedIndexes;
   const seenResIds = new Set();
   const custStr = String(orderCustId).trim();
+
+  // A direct legacy reference only checked the native balance; it never held
+  // that balance after the bill transaction committed. Another bill could
+  // therefore spend it again. Require the existing picker/reservation flow
+  // until legacy lines can be reconciled and bound safely. Do not infer a
+  // reservation from client-provided document numbers or silently change an
+  // existing line's financial treatment.
+  if (lines.some(line => line && !line.couponReservationId &&
+      (line.isControlTicketDrawn || line.refControlTicketNo))) {
+    throw Object.assign(new Error('รายการอ้างอิงตั๋วเดิมยังไม่ได้จองยอด กรุณานำรายการนี้ออกและเลือกตั๋วผ่านตัวเลือกตั๋วเพื่อจองยอดก่อนบันทึก'),
+      { code: 'CONTROL_TICKET_RESERVATION_REQUIRED', status: 409 });
+  }
 
   // 1. Check duplicate reservation IDs in the order lines first
   for (let idx = 0; idx < lines.length; idx++) {
@@ -1480,6 +1668,11 @@ async function validateAndLockCouponReservations(tx, lines, orderCustId, targetS
           !(await checkBeneficiaryAuthorization(source.OwnerCustId,resCust,source.GoodID,tx)).authorized)
         throw Object.assign(new Error('สิทธิ์ใช้ตั๋วร่วมไม่พร้อมใช้งาน กรุณาตรวจสอบสิทธิ์ลูกค้า'),{status:409,code:'COUPON_BENEFICIARY_UNAVAILABLE'});
     }
+
+    await require('./coupon-authorization-hold').assertNoActiveAuthorization(tx,resId);
+    await assertControlTicketUnexpired(tx, Number(resRow.CouponId));
+    await assertNoUnreservedLegacyReferences(tx, resRow.CouponNo);
+    await assertCouponReservationCoverage(tx, Number(resRow.CouponId));
 
     // D1 / R5-2: Validated reservation line is forced to price ฿0 and marked validated
     validatedIndexes.add(idx);
@@ -1736,6 +1929,8 @@ async function revokeBeneficiary(id, reason, userId = 1) {
       return { id: gId, status: 'REVOKED', message: 'สิทธิ์นี้ถูกถอนไปแล้ว (Idempotent)', idempotent: true };
     }
 
+    await require('./coupon-authorization-hold').assertBeneficiaryHasNoActiveAuthorization(tx,grant.OwnerCustId,grant.BeneficiaryCustId);
+
     await tx.request()
       .input('id', sql.Int, gId)
       .input('reason', sql.NVarChar(255), rsn)
@@ -1771,13 +1966,14 @@ async function revokeBeneficiary(id, reason, userId = 1) {
           AND Status = 'RESERVED'
           AND NOT EXISTS (
             SELECT 1
-            FROM wf.SalesOrderLine sol WITH (NOLOCK)
-            LEFT JOIN wf.SalesOrder so WITH (NOLOCK) ON so.Id = sol.SoId
-            LEFT JOIN dbo.SOHD hd WITH (NOLOCK) ON hd.SOID = sol.SoId
+            FROM wf.SalesOrderLine sol WITH (UPDLOCK, HOLDLOCK)
+            LEFT JOIN wf.SalesOrder so WITH (UPDLOCK, HOLDLOCK) ON so.Id = sol.SoId
+            LEFT JOIN dbo.SOHD hd WITH (UPDLOCK, HOLDLOCK) ON hd.SOID = sol.SoId
             WHERE sol.CouponReservationId = wf.CouponReservation.Id
               AND (
-                (so.Id IS NOT NULL AND so.Status NOT IN ('CANCELLED', 'DELETED'))
-                OR (hd.SOID IS NOT NULL AND hd.DocuStatus NOT IN ('C', 'CANCELLED', 'REJECTED'))
+                (so.Id IS NOT NULL AND ISNULL(so.Status, '') NOT IN ('CANCELLED', 'DELETED'))
+                OR (hd.SOID IS NOT NULL AND ISNULL(hd.DocuStatus, '') NOT IN ('C', 'CANCELLED', 'REJECTED'))
+                OR (so.Id IS NULL AND hd.SOID IS NULL)
               )
           );
         SELECT Id FROM @cancelled;
@@ -1789,7 +1985,7 @@ async function revokeBeneficiary(id, reason, userId = 1) {
       reasonCode: 'COUPON_BENEFICIARY', reasonText: rsn.slice(0, 500), userId: String(userId) });
 
     return { id: gId, status: 'REVOKED', idempotent: false, cancelledUnattachedReservations: cancelledCount };
-  });
+  }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
 }
 
 /**
@@ -2264,6 +2460,8 @@ async function validateReservationBeforePosting({
     );
   }
 
+  await require('./coupon-authorization-hold').assertNoActiveAuthorization(tx,Number(r.Id));
+
   // 2. Reservation-level Expiry Check
   if (r.ExpiresAt && new Date(r.ExpiresAt).getTime() < Date.now()) {
     await tx.request()
@@ -2340,6 +2538,8 @@ async function validateReservationBeforePosting({
   if (!couponRecord) {
     throw Object.assign(new Error(`ไม่พบคูปอง ID ${r.CouponId} ในระบบ`), { code: 'COUPON_NOT_FOUND', status: 404 });
   }
+  await require('./coupon-settlement-source-fence').assertSettledSourcesUnchanged(tx, Number(couponRecord.CouponID));
+  await assertControlTicketUnexpired(tx, Number(couponRecord.CouponID));
   if (r.BeneficiaryCustId && r.OwnerCustId && String(r.BeneficiaryCustId).trim() !== String(r.OwnerCustId).trim() &&
       (String(couponRecord.ActualOwnerCustId || '')!==String(r.OwnerCustId) || Number(couponRecord.GoodID)!==Number(r.GoodId)))
     throw Object.assign(new Error('ไม่สามารถยืนยันเจ้าของหรือสินค้าของตั๋วร่วม'),{code:'COUPON_SOURCE_CHANGED',status:409});
@@ -2960,5 +3160,7 @@ module.exports = {
   settleCouponReservations,
   manualSettleCouponCut,
   validateAndLockCouponReservations,
+  assertControlTicketUnexpired,
+  assertCouponReservationCoverage,
 };
 

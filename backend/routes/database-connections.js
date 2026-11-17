@@ -23,7 +23,26 @@ const messages={
   CONNECTION_TEST_FAILED:'ทดสอบไม่ผ่าน: ตรวจปลายทาง รหัสผ่าน TLS สิทธิ์ SQL และ schema กับ IT (ระบบไม่แสดงข้อความที่อาจมีข้อมูลลับ)',
 };
 function error(res,e){const code=messages[e.code]?e.code:'CONNECTION_OPERATION_FAILED';return res.status(e.status||500).json({code,message:messages[code]||'ดำเนินการ connection ไม่สำเร็จ กรุณาติดต่อ IT'});}
-router.get('/',(req,res)=>{try{res.json(service.list());}catch(e){error(res,e);}});
+router.get('/',async(req,res)=>{
+  try {
+    const result=service.list();
+    try {
+      const window=await require('../services/global-data-window-store').readGlobalDataWindow();
+      const start=window.utcInstant.getTime();
+      if (!Number.isFinite(start)) throw new Error('INVALID_DATA_WINDOW');
+      result.audit=result.audit.filter(event=>{
+        if (typeof event.at !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(event.at)) return false;
+        const at=Date.parse(event.at);
+        return Number.isFinite(at) && new Date(at).toISOString()===event.at && at>=start;
+      });
+    } catch {
+      // Keep recovery settings available when the database is down, but do
+      // not expose historical events without a verified cutoff.
+      result.audit=[];result.auditUnavailable=true;
+    }
+    res.json(result);
+  } catch(e){error(res,e);}
+});
 router.put('/:name',async(req,res)=>{try{res.json(await service.save(req.params.name,req.body?.profile,req.body?.revision,req.user.actorSub||req.user.sub));}catch(e){error(res,e);}});
 const limit=rateLimit({windowMs:60000,limit:4,standardHeaders:true,legacyHeaders:false,message:{message:'ทดสอบได้ไม่เกิน 4 ครั้งต่อนาที กรุณารอสักครู่'}});
 let testing=false;

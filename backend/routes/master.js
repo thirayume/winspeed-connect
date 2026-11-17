@@ -18,10 +18,38 @@ const { getVisibleScope, scopeFilter } = require('../services/visible-scope');
 const { nativeChainInScope } = require('../services/native-document-scope');
 const { hasRole } = require('../services/role-capabilities');
 const { businessIds, actorPerspective } = require('../services/business-identity');
-const { secondaryCustomerPredicate, secondaryCustomerVisible } = require('../services/secondary-customer-scope');
-const { secondaryActorScope, withActorScope, chainVisibleToBoth, bothSeeAll } = require('../services/secondary-read-scope');
+const { customerPredicate, customerVisible } = require('../services/secondary-customer-scope');
+const { withActorScope } = require('../services/secondary-read-scope');
 const { currentActorId, hasColumn } = require('../services/request-context');
 const { logChangeEvent } = require('../services/policy-contract');
+
+async function masterReadScopes(user) {
+  const effective = await getVisibleScope(user);
+  const actor = actorPerspective(user);
+  return { effective, actor: actor === user ? effective : await getVisibleScope(actor) };
+}
+
+async function masterChainVisible(user, chain) {
+  const scopes = await masterReadScopes(user);
+  return await nativeChainInScope(scopes.effective, chain) && await nativeChainInScope(scopes.actor, chain);
+}
+
+async function visibleTicketTrace(res, result) {
+  let window;
+  try { window = await require('../services/global-data-window-store').readGlobalDataWindow(); }
+  catch { res.status(503).json({ code: 'DATA_WINDOW_UNAVAILABLE', message: 'ไม่สามารถตรวจวันเริ่มข้อมูลได้' }); return false; }
+  if (!require('../services/ticket-trace-window').traceWithinWindow(result, window.businessDate)) {
+    res.status(409).json({ code: 'TICKET_TRACE_BEFORE_DATA_START', message: 'ซ่อนรายละเอียดเอกสารต้นทางที่เก่ากว่าวันเริ่มข้อมูลหรือยังตรวจสอบวันที่ไม่ได้ ตั๋วที่ยังมียอดสามารถเลือกใช้ได้ตามเงื่อนไขเดิม' });
+    return false;
+  }
+  return true;
+}
+
+function intersectMasterScopes(scopes, empCol, prefix) {
+  const effective = scopeFilter(scopes.effective, { empCol, prefix: `${prefix}Effective` });
+  const actor = scopeFilter(scopes.actor, { empCol, prefix: `${prefix}Actor` });
+  return { sql: `(${effective.sql}) AND (${actor.sql})`, inputs: { ...effective.inputs, ...actor.inputs } };
+}
 
 async function customerRequestAuditIdentity(user) {
   const ids = businessIds(user);
@@ -32,10 +60,128 @@ async function customerRequestAuditIdentity(user) {
   return ids;
 }
 
+async function truckTypeAuditIdentity(user) {
+  const ids = businessIds(user);
+  if (!ids.actor || !ids.effective) throw Object.assign(new Error('ไม่สามารถยืนยันตัวตนได้'), { status: 401 });
+  if (ids.actor !== ids.effective && (currentActorId() !== ids.actor || !await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId'))) {
+    throw Object.assign(new Error('ไม่สามารถบันทึกตัวตนผู้ทำแทนได้'), { status: 503 });
+  }
+  return ids;
+}
+
+async function policyAuditIdentity(user) {
+  const ids = businessIds(user);
+  if (!ids.actor || !ids.effective) throw Object.assign(new Error('ไม่สามารถยืนยันตัวตนได้'), { status: 401 });
+  if (ids.actor !== ids.effective && (currentActorId() !== ids.actor || !await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId'))) {
+    throw Object.assign(new Error('ไม่สามารถบันทึกตัวตนผู้ทำแทนได้'), { status: 503 });
+  }
+  return ids;
+}
+
+async function readTruckType(tx, id) {
+  const r = await transactionQuery(tx, `SELECT Id, Name, MaxWeightMain, MaxWeightTrailer, IsActive
+    FROM wf.TruckType WITH (UPDLOCK, HOLDLOCK) WHERE Id=@id`, { id: { type: sql.VarChar(50), value: id } });
+  return r.recordset?.[0] || null;
+}
+
+async function auditTruckType(tx, req, identity, id, action, before, after) {
+  await logChangeEvent(tx, { entityType: 'TRUCK_TYPE', entityId: String(id), action,
+    beforeJson: before, afterJson: after, userId: identity.effective, ipAddress: req.ip });
+}
+
+async function requireCustomerGroupProcs() {
+  const r = await wfQuery(`SELECT CASE WHEN OBJECT_ID('wf.sp_CustomerGroupCreate','P') IS NOT NULL
+    AND OBJECT_ID('wf.sp_CustomerGroupUpdate','P') IS NOT NULL
+    AND OBJECT_ID('wf.sp_CustomerGroupDelete','P') IS NOT NULL THEN 1 ELSE 0 END AS Ready`);
+  if (Number(r.recordset?.[0]?.Ready) !== 1)
+    throw Object.assign(new Error('ฐานข้อมูลยังไม่พร้อมสำหรับการแก้ไขกลุ่มลูกค้า กรุณาติดต่อผู้ดูแลระบบ'), { status: 503 });
+}
+
+async function readCustomerGroup(tx, id) {
+  const r = await transactionQuery(tx, `SELECT CustGroupID, CustGroupCode, CustGroupName, CustGroupNameEng, Remark
+    FROM dbo.EMCustGroup WITH (UPDLOCK,HOLDLOCK) WHERE CustGroupID=@id`, { id: { type: sql.Int, value: id } });
+  return r.recordset?.[0] || null;
+}
+
+async function execMasterTxProc(tx, proc, inputs, outputs) {
+  const r = tx.request();
+  for (const [name, value] of Object.entries(inputs)) r.input(name, value.type, value.value);
+  for (const [name, type] of Object.entries(outputs)) r.output(name, type);
+  const result = await r.execute(proc);
+  return result.output || {};
+}
+
+async function auditCustomerGroup(tx, req, identity, id, action, before, after) {
+  await logChangeEvent(tx, { entityType: 'CUSTOMER_GROUP', entityId: String(id), action,
+    beforeJson: before, afterJson: after, userId: identity.effective, ipAddress: req.ip });
+}
+
 async function transactionQuery(tx, statement, inputs) {
   const request = tx.request();
   for (const [name, { type, value }] of Object.entries(inputs)) request.input(name, type, value);
   return request.query(statement);
+}
+
+async function requireCustomerMutationProcs() {
+  const r = await wfQuery(`SELECT CASE WHEN OBJECT_ID('wf.sp_MasterUpdateCustomer','P') IS NOT NULL
+    AND OBJECT_ID('wf.sp_MasterCustomerClassification','P') IS NOT NULL THEN 1 ELSE 0 END AS Ready`);
+  if (Number(r.recordset?.[0]?.Ready) !== 1)
+    throw Object.assign(new Error('ฐานข้อมูลยังไม่พร้อมสำหรับการแก้ไขลูกค้า กรุณาติดต่อผู้ดูแลระบบ'), { status: 503 });
+}
+
+async function customerMutationSnapshot(tx, id) {
+  const r = await transactionQuery(tx, `SELECT c.CustID,c.CustName,c.ContTel,c.ContTel1,c.SaleAreaID,c.CustGroupID,c.BillEmp,c.Inactive,
+    x.Remark,x.PrimaryPhone,x.SecondaryPhone,x.Email,x.LineId,x.CreditLimit AS ExtCreditLimit,x.AgingDays AS ExtAgingDays,
+    x.SalespersonUserId,x.SaleAreaId AS ExtSaleAreaId,x.RegionCode,x.CustGroupId AS ExtCustGroupId,
+    cm.CreditLimit,cm.AgingDays,cm.CreditHold
+    FROM dbo.EMCust c WITH (UPDLOCK,HOLDLOCK)
+    LEFT JOIN wf.CustomerExt x WITH (UPDLOCK,HOLDLOCK) ON x.CustId=c.CustID
+    LEFT JOIN wf.CreditMaster cm WITH (UPDLOCK,HOLDLOCK) ON cm.CustId=CONVERT(VARCHAR(20),c.CustID)
+    WHERE c.CustID=@id`, { id: { type: sql.VarChar(20), value: String(id) } });
+  if ((r.recordset || []).length > 1) throw Object.assign(new Error('ข้อมูลลูกค้าซ้ำ กรุณาติดต่อผู้ดูแลระบบ'), { status: 409 });
+  return r.recordset?.[0] || null;
+}
+
+async function customerMutationScope(tx, user, id, predicate) {
+  const r = await transactionQuery(tx, `SELECT TOP 1 1 AS ok FROM dbo.EMCust c WITH (UPDLOCK,HOLDLOCK)
+    LEFT JOIN wf.CustomerExt cx WITH (UPDLOCK,HOLDLOCK) ON cx.CustId=c.CustID
+    WHERE c.CustID=@visibilityCustId AND ${predicate.sql}`, {
+    ...predicate.inputs, visibilityCustId: { type: sql.Int, value: Number(id) },
+  });
+  if (!r.recordset?.length) throw Object.assign(new Error('ไม่พบรหัสลูกค้านี้'), { status: 404 });
+}
+
+async function masterPriceSnapshot(tx, id, listNo, lock = false) {
+  const hint = lock ? ' WITH (UPDLOCK,HOLDLOCK)' : '';
+  const result = await transactionQuery(tx, `SELECT hd.SetPriceID, hd.DocuNo, hd.CustID, hd.BeginDate, hd.EndDate,
+    dt.ListNo, dt.ListID AS GoodID, dt.GoodPriceNet, dt.startgoodqty, dt.endgoodqty
+    FROM dbo.EMSetPriceHD hd${hint} JOIN dbo.EMSetPriceDT dt${hint} ON dt.SetPriceID=hd.SetPriceID
+    WHERE hd.SetPriceID=@id AND dt.ListNo=@listNo`, {
+    id: { type: sql.Int, value: id }, listNo: { type: sql.Int, value: listNo },
+  });
+  if (result.recordset?.length > 1) throw new Error('PRICE_SNAPSHOT_AMBIGUOUS');
+  return result.recordset?.[0] || null;
+}
+
+async function createMasterPriceInTransaction(tx, req, identity, item) {
+  const values = {
+    GoodID: { type: sql.Int, value: Number(item.GoodID) },
+    CustID: { type: sql.VarChar(20), value: item.CustID || null },
+    GoodPriceNet: { type: sql.Decimal(18, 4), value: Number(item.GoodPriceNet) },
+    BeginDate: { type: sql.Date, value: String(item.BeginDate).slice(0, 10) },
+    EndDate: { type: sql.Date, value: String(item.EndDate).slice(0, 10) },
+    StartQty: { type: sql.Decimal(18, 4), value: item.startgoodqty || 1 },
+    EndQty: { type: sql.Decimal(18, 4), value: item.endgoodqty || 999999 },
+  };
+  const result = await execMasterTxProc(tx, 'wf.sp_MasterCreatePrice', values,
+    { NewSetPriceID: sql.Int, DocuNo: sql.VarChar(50) });
+  const id = Number(result.NewSetPriceID);
+  if (!Number.isSafeInteger(id) || id <= 0 || !result.DocuNo) throw new Error('PRICE_CREATE_OUTPUT_INVALID');
+  const after = await masterPriceSnapshot(tx, id, 1);
+  if (!after) throw new Error('PRICE_CREATE_SNAPSHOT_INVALID');
+  await logChangeEvent(tx, { entityType: 'MASTER_PRICE', entityId: String(id), action: 'CREATE', beforeJson: null,
+    afterJson: after, userId: identity.effective, ipAddress: req.ip });
+  return { id, docuNo: result.DocuNo };
 }
 
 router.use(requireAuth);
@@ -212,13 +358,11 @@ router.get('/customers', async (req, res) => {
       conditions.push(`ISNULL(c.Inactive, 'A') <> 'I'`);
     }
     const inputs = { limit: { type: sql.Int, value: limit } };
-    // Customer rows include contact and credit information. The secondary
-    // identity mapping must constrain both the effective user and real actor.
-    if (req.user.identityMapping) {
-      const predicate = await secondaryCustomerPredicate(req.user);
-      conditions.push(predicate.sql);
-      Object.assign(inputs, predicate.inputs);
-    }
+    // Customer rows include contact and credit information. Check both the
+    // effective and actual actor on every database, retaining unassigned customers.
+    const predicate = await customerPredicate(req.user);
+    conditions.push(predicate.sql);
+    Object.assign(inputs, predicate.inputs);
     if (q) {
       conditions.push(`(c.CustName LIKE N'%' + @q + '%' OR c.CustCode LIKE N'%' + @q + '%' OR CONVERT(NVARCHAR(50), c.CustID) LIKE N'%' + @q + '%')`);
       inputs.q = { type: sql.NVarChar(100), value: q };
@@ -303,25 +447,24 @@ router.post('/customer-groups', requireRole('ADMIN', 'MANAGER'), async (req, res
       return res.status(400).json({ message: 'กรุณาระบุชื่อกลุ่มลูกค้า' });
     }
     const nameVal = String(CustGroupName).trim();
-    // Auto-generate next CustGroupID and Code if not provided
-    const maxRes = await query(`SELECT ISNULL(MAX(CustGroupID), 2000) + 1 AS NextID, COUNT(*) AS Total FROM dbo.EMCustGroup`);
-    const nextId = Number(maxRes?.[0]?.NextID || 2001);
-    const codeVal = CustGroupCode && String(CustGroupCode).trim()
-      ? String(CustGroupCode).trim()
-      : String(nextId % 1000).padStart(3, '0');
-
-    await dboWrite(`
-      INSERT INTO dbo.EMCustGroup (CustGroupID, CustGroupCode, CustGroupName, CustGroupNameEng, Remark)
-      VALUES (@id, @code, @name, @nameEng, @remark)
-    `, {
-      id: { type: sql.Int, value: nextId },
-      code: { type: sql.VarChar(20), value: codeVal },
-      name: { type: sql.VarChar(100), value: nameVal },
-      nameEng: { type: sql.VarChar(100), value: CustGroupNameEng || '' },
-      remark: { type: sql.VarChar(255), value: Remark || null },
-    });
-    res.status(201).json({ ok: true, CustGroupID: nextId, CustGroupCode: codeVal, CustGroupName: nameVal });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+    const identity = await policyAuditIdentity(req.user);
+    await requireCustomerGroupProcs();
+    const created = await wfTransaction(async tx => {
+      const result = await execMasterTxProc(tx, 'wf.sp_CustomerGroupCreate', {
+        Code: { type: sql.VarChar(20), value: CustGroupCode ? String(CustGroupCode).trim() : null },
+        Name: { type: sql.VarChar(100), value: nameVal },
+        NameEng: { type: sql.VarChar(100), value: CustGroupNameEng || '' },
+        Remark: { type: sql.VarChar(255), value: Remark || null },
+      }, { NewId: sql.Int, NewCode: sql.VarChar(20) });
+      const nextId = Number(result.NewId);
+      if (!Number.isSafeInteger(nextId) || nextId <= 0) throw new Error('ไม่สามารถยืนยันกลุ่มลูกค้าใหม่');
+      const after = await readCustomerGroup(tx, nextId);
+      if (!after) throw new Error('ไม่สามารถตรวจผลการสร้างกลุ่มลูกค้า');
+      await auditCustomerGroup(tx, req, identity, nextId, 'CREATE', null, after);
+      return { id: nextId, code: result.NewCode };
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+    res.status(201).json({ ok: true, CustGroupID: created.id, CustGroupCode: created.code, CustGroupName: nameVal });
+  } catch (e) { console.error(e); res.status(e.status || (e.number === 2627 || e.number === 2601 ? 409 : 500)).json({ message: e.message }); }
 });
 
 // PUT /api/master/customer-groups/:id — แก้ไขกลุ่มลูกค้า
@@ -332,36 +475,50 @@ router.put('/customer-groups/:id', requireRole('ADMIN', 'MANAGER'), async (req, 
     if (!CustGroupName || !String(CustGroupName).trim()) {
       return res.status(400).json({ message: 'กรุณาระบุชื่อกลุ่มลูกค้า' });
     }
-    await dboWrite(`
-      UPDATE dbo.EMCustGroup
-      SET CustGroupName = @name,
-          CustGroupNameEng = COALESCE(@nameEng, CustGroupNameEng),
-          Remark = @remark
-      WHERE CustGroupID = @id
-    `, {
-      id: { type: sql.Int, value: id },
-      name: { type: sql.VarChar(100), value: String(CustGroupName).trim() },
-      nameEng: { type: sql.VarChar(100), value: CustGroupNameEng !== undefined ? CustGroupNameEng : null },
-      remark: { type: sql.VarChar(255), value: Remark || null },
-    });
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ message: 'รหัสกลุ่มลูกค้าไม่ถูกต้อง' });
+    const identity = await policyAuditIdentity(req.user);
+    await requireCustomerGroupProcs();
+    const changed = await wfTransaction(async tx => {
+      const before = await readCustomerGroup(tx, id);
+      if (!before) return false;
+      const result = await execMasterTxProc(tx, 'wf.sp_CustomerGroupUpdate', {
+        Id: { type: sql.Int, value: id },
+        Name: { type: sql.VarChar(100), value: String(CustGroupName).trim() },
+        NameEng: { type: sql.VarChar(100), value: CustGroupNameEng !== undefined ? CustGroupNameEng : null },
+        Remark: { type: sql.VarChar(255), value: Remark || null },
+      }, { Affected: sql.Int });
+      if (Number(result.Affected) !== 1) throw Object.assign(new Error('ข้อมูลกลุ่มลูกค้าเปลี่ยนแปลง กรุณาลองใหม่'), { status: 409 });
+      const after = await readCustomerGroup(tx, id);
+      if (!after) throw new Error('ไม่สามารถตรวจผลการแก้กลุ่มลูกค้า');
+      await auditCustomerGroup(tx, req, identity, id, 'UPDATE', before, after);
+      return true;
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+    if (!changed) return res.status(404).json({ message: 'ไม่พบกลุ่มลูกค้า' });
     res.json({ ok: true });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // DELETE /api/master/customer-groups/:id — ลบกลุ่มลูกค้า (มี Safeguard ตรวจสอบว่าไม่มีลูกค้าผูกอยู่)
 router.delete('/customer-groups/:id', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const countRes = await query(`
-      SELECT COUNT(*) AS Cnt FROM dbo.EMCust WHERE CustGroupID = @id AND ISNULL(Inactive, 'A') <> 'I'
-    `, { id: { type: sql.Int, value: id } });
-    const count = Number(countRes?.[0]?.Cnt || 0);
-    if (count > 0) {
-      return res.status(400).json({ message: `ไม่สามารถลบกลุ่มลูกค้านี้ได้ เนื่องจากมีลูกค้าผูกอยู่จำนวน ${count} ราย` });
-    }
-    await dboWrite(`DELETE FROM dbo.EMCustGroup WHERE CustGroupID = @id`, { id: { type: sql.Int, value: id } });
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ message: 'รหัสกลุ่มลูกค้าไม่ถูกต้อง' });
+    const identity = await policyAuditIdentity(req.user);
+    await requireCustomerGroupProcs();
+    const changed = await wfTransaction(async tx => {
+      const before = await readCustomerGroup(tx, id);
+      if (!before) return false;
+      const result = await execMasterTxProc(tx, 'wf.sp_CustomerGroupDelete', {
+        Id: { type: sql.Int, value: id },
+      }, { Affected: sql.Int, Blocked: sql.Int });
+      if (Number(result.Blocked) > 0) throw Object.assign(new Error('ไม่สามารถลบกลุ่มลูกค้าที่มีข้อมูลอ้างอิงอยู่'), { status: 400 });
+      if (Number(result.Affected) !== 1) throw Object.assign(new Error('ข้อมูลกลุ่มลูกค้าเปลี่ยนแปลง กรุณาลองใหม่'), { status: 409 });
+      await auditCustomerGroup(tx, req, identity, id, 'DELETE', before, null);
+      return true;
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+    if (!changed) return res.status(404).json({ message: 'ไม่พบกลุ่มลูกค้า' });
     res.json({ ok: true });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // GET /api/master/customer-requests
@@ -592,30 +749,33 @@ router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res)
     if (CustName !== undefined && CustName !== null && !String(CustName).trim()) {
       return res.status(400).json({ message: 'ชื่อลูกค้าต้องไม่ว่าง' });
     }
+    if (CreditHold !== undefined && typeof CreditHold !== 'boolean')
+      return res.status(400).json({ message: 'สถานะระงับเครดิตไม่ถูกต้อง' });
+    if (CreditLimit != null && (!Number.isFinite(Number(CreditLimit)) || Number(CreditLimit)<0))
+      return res.status(400).json({ message: 'วงเงินเครดิตไม่ถูกต้อง' });
+    if (AgingDays != null && String(AgingDays).trim()!=='' && (!Number.isInteger(Number(AgingDays)) || Number(AgingDays)<0))
+      return res.status(400).json({ message: 'จำนวนวันเครดิตไม่ถูกต้อง' });
 
     const primaryPhoneVal = PrimaryPhone !== undefined ? PrimaryPhone : Tel;
     const secondaryPhoneVal = SecondaryPhone !== undefined ? SecondaryPhone : Mobile;
 
+    const identity = await customerRequestAuditIdentity(req.user);
+    await requireCustomerMutationProcs();
+    const predicate = await customerPredicate(req.user);
+    await wfTransaction(async tx => {
+    const query = async (text, inputs) => (await transactionQuery(tx, text, inputs || {})).recordset || [];
+    await customerMutationScope(tx, req.user, id, predicate);
+    const before = await customerMutationSnapshot(tx, id);
+    if (!before) throw Object.assign(new Error('ไม่พบรหัสลูกค้านี้'), { status: 404 });
+
     // 1. Update ERP
-    const __rows = (await hasMasterProcs())
-      ? affectedOf(await execMasterProc('wf.sp_MasterUpdateCustomer', {
+    const __rows = affectedOf(await execMasterTxProc(tx, 'wf.sp_MasterUpdateCustomer', {
           CustID: { type: sql.VarChar(20), value: id },
           CustName: { type: sql.NVarChar(255), value: CustName ?? null },
           Tel: { type: sql.NVarChar(50), value: primaryPhoneVal ?? null },
           Mobile: { type: sql.NVarChar(50), value: secondaryPhoneVal ?? null },
-        }, AFFECTED_OUT))
-      : await dboWrite(`
-      UPDATE dbo.EMCust 
-      SET CustName = COALESCE(@name, CustName), 
-          ContTel = COALESCE(@tel, ContTel),
-          ContTel1 = COALESCE(@mob, ContTel1)
-      WHERE CustID = @id
-    `, {
-      name: { type: sql.NVarChar(255), value: CustName },
-      tel: { type: sql.NVarChar(50), value: primaryPhoneVal },
-      mob: { type: sql.NVarChar(50), value: secondaryPhoneVal },
-      id: { type: sql.VarChar(20), value: id }
-    });
+        }, { Affected: sql.Int }));
+    if (!affected(__rows)) throw Object.assign(new Error('ไม่พบรหัสลูกค้านี้'), { status: 404 });
 
     // Lookup area and region (supports both 2-character RegionCode and numeric SaleAreaID)
     let regionCodeVal = null;
@@ -636,40 +796,27 @@ router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res)
       }
     }
 
-    // 1b. Update optional ERP classifications if columns exist in dbo.EMCust
-    const updateClauses = [];
-    const updateInputs = { id: { type: sql.VarChar(20), value: id } };
-    if (areaId !== undefined) {
-      updateClauses.push('SaleAreaID = @areaId');
-      updateInputs.areaId = { type: sql.Int, value: resolvedAreaId };
-    }
-    if (groupId !== undefined) {
-      updateClauses.push('CustGroupID = @groupId');
-      updateInputs.groupId = { type: sql.Int, value: groupId ? Number(groupId) : null };
-    }
-    if (employeeId !== undefined || salespersonId !== undefined) {
-      const spIdVal = salespersonId !== undefined ? salespersonId : employeeId;
-      updateClauses.push('BillEmp = @billEmp');
-      updateInputs.billEmp = { type: sql.Int, value: spIdVal ? Number(spIdVal) : null };
-    }
-    if (updateClauses.length > 0) {
-      try {
-        await dboWrite(`
-          UPDATE dbo.EMCust 
-          SET ${updateClauses.join(', ')}
-          WHERE CustID = @id
-        `, updateInputs);
-      } catch (err) {
-        console.warn('[master/customers:update-ext-cols-warning]', err?.message);
-      }
-    }
-
     // Lookup salesperson user info if salespersonId provided
     const spId = salespersonId !== undefined ? salespersonId : employeeId;
     let spUser = null;
     if (spId) {
-      const uRes = await query(`SELECT Id, DisplayName FROM wf.AppUser WHERE Id = @uid`, { uid: { type: sql.Int, value: Number(spId) } });
+      const uRes = await query(`SELECT Id, DisplayName, EmpId FROM wf.AppUser WITH (UPDLOCK,HOLDLOCK) WHERE Id = @uid AND IsActive=1`, { uid: { type: sql.Int, value: Number(spId) } });
       spUser = uRes?.[0] || null;
+      if (!spUser || !Number.isSafeInteger(Number(spUser.EmpId)) || Number(spUser.EmpId)<=0)
+        throw Object.assign(new Error('ผู้ดูแลลูกค้ายังไม่มีรหัสพนักงาน WinSpeed ที่ใช้งานได้'), { status: 409 });
+    }
+    if (areaId && resolvedAreaId === null) throw Object.assign(new Error('ไม่พบเขตการขาย'), { status: 400 });
+    if (groupId && (!Number.isSafeInteger(Number(groupId)) || Number(groupId)<=0)) throw Object.assign(new Error('กลุ่มลูกค้าไม่ถูกต้อง'), { status: 400 });
+    if (areaId !== undefined || groupId !== undefined || salespersonId !== undefined || employeeId !== undefined) {
+      const changed = await execMasterTxProc(tx, 'wf.sp_MasterCustomerClassification', {
+        CustID: { type: sql.VarChar(20), value: id }, HasArea: { type: sql.Bit, value: areaId !== undefined },
+        AreaId: { type: sql.Int, value: resolvedAreaId }, HasGroup: { type: sql.Bit, value: groupId !== undefined },
+        GroupId: { type: sql.Int, value: groupId ? Number(groupId) : null },
+        HasBillEmp: { type: sql.Bit, value: salespersonId !== undefined || employeeId !== undefined },
+        BillEmp: { type: sql.Int, value: spUser ? Number(spUser.EmpId) : null },
+        HasInactive: { type: sql.Bit, value: false }, Inactive: { type: sql.Bit, value: null },
+      }, { Affected: sql.Int });
+      if (Number(changed.Affected)!==1) throw new Error('CUSTOMER_CLASSIFICATION_UPDATE_FAILED');
     }
     
     // 2. Update wf.CustomerExt with portal contacts, salesperson, area, and credit/aging
@@ -748,11 +895,14 @@ router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res)
         hasAgingDays: { type: sql.Bit, value: AgingDays !== undefined ? 1 : 0 },
         creditHold: { type: sql.Bit, value: CreditHold ? 1 : 0 },
         hasCreditHold: { type: sql.Bit, value: CreditHold !== undefined ? 1 : 0 },
-        uid: { type: sql.Int, value: req.user?.sub || null },
+        uid: { type: sql.Int, value: identity.effective },
       });
     }
-    
-    if (!affected(__rows)) return res.status(404).json({ message: 'ไม่พบรหัสลูกค้านี้' });
+    const after = await customerMutationSnapshot(tx, id);
+    if (!after) throw new Error('CUSTOMER_SNAPSHOT_UNAVAILABLE');
+    await logChangeEvent(tx, { entityType:'CUSTOMER', entityId:String(id), action:'UPDATE',
+      beforeJson:before, afterJson:after, userId:identity.effective, ipAddress:req.ip });
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
     res.json({ ok: true });
   } catch (e) { console.error(e); const m = masterWriteStatus(e); res.status(m.status).json({ message: m.message }); }
 });
@@ -762,12 +912,24 @@ router.delete('/customers/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res
   try {
     const id = req.params.id;
     if (!isMasterId(id)) return res.status(404).json({ message: 'ไม่พบรหัสลูกค้านี้' });
-    const __rows = (await hasMasterProcs())
-      ? affectedOf(await execMasterProc('wf.sp_MasterSetCustomerInactive', { CustID: { type: sql.VarChar(20), value: id } }, AFFECTED_OUT))
-      : await dboWrite(`UPDATE dbo.EMCust SET Inactive = 'I', InactiveDate = GETDATE() WHERE CustID = @id`, {
-        id: { type: sql.VarChar(20), value: id }
-      });
-    if (!affected(__rows)) return res.status(404).json({ message: 'ไม่พบรหัสลูกค้านี้' });
+    const identity = await customerRequestAuditIdentity(req.user);
+    const ready = await wfQuery("SELECT CASE WHEN OBJECT_ID('wf.sp_MasterSetCustomerInactive','P') IS NULL THEN 0 ELSE 1 END AS Ready");
+    if (Number(ready.recordset?.[0]?.Ready) !== 1)
+      return res.status(503).json({ message: 'ฐานข้อมูลยังไม่พร้อมสำหรับการปิดใช้งานลูกค้า กรุณาติดต่อผู้ดูแลระบบ' });
+    await wfTransaction(async tx => {
+      const params = { id: { type: sql.VarChar(20), value: id } };
+      const read = async () => (await transactionQuery(tx, `SELECT CustID, Inactive, InactiveDate
+        FROM dbo.EMCust WITH (UPDLOCK,HOLDLOCK) WHERE CustID=@id`, params)).recordset?.[0] || null;
+      const before = await read();
+      if (!before) throw Object.assign(new Error('ไม่พบรหัสลูกค้านี้'), { status: 404 });
+      const result = await execMasterTxProc(tx, 'wf.sp_MasterSetCustomerInactive',
+        { CustID: { type: sql.VarChar(20), value: id } }, { Affected: sql.Int });
+      if (Number(result.Affected) !== 1) throw new Error('CUSTOMER_INACTIVE_UPDATE_FAILED');
+      const after = await read();
+      if (!after || after.Inactive !== 'I') throw new Error('CUSTOMER_INACTIVE_SNAPSHOT_INVALID');
+      await logChangeEvent(tx, { entityType: 'CUSTOMER', entityId: String(id), action: 'DEACTIVATE',
+        beforeJson: before, afterJson: after, userId: identity.effective, ipAddress: req.ip });
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
     res.json({ ok: true });
   } catch (e) { console.error(e); const m = masterWriteStatus(e); res.status(m.status).json({ message: m.message }); }
 });
@@ -779,16 +941,30 @@ router.post('/customers/batch-edit', requireRole('ADMIN', 'MANAGER'), async (req
     if (!Array.isArray(custIds) || custIds.length === 0) {
       return res.status(400).json({ message: 'ต้องระบุรายการลูกค้า (custIds)' });
     }
-    const cleanCustIds = custIds.map(String).filter(isMasterId);
-    if (cleanCustIds.length === 0) {
+    if ([salespersonUserId,areaId,groupId,creditHold,inactive].every(value=>value===undefined))
+      return res.status(400).json({ message: 'กรุณาระบุข้อมูลที่ต้องการแก้ไข' });
+    if ((creditHold !== undefined && typeof creditHold !== 'boolean') || (inactive !== undefined && typeof inactive !== 'boolean'))
+      return res.status(400).json({ message: 'สถานะเครดิตหรือสถานะใช้งานไม่ถูกต้อง' });
+    const rawCustIds = custIds.map(String);
+    const validIds = rawCustIds.every(id => isMasterId(id) && Number.isSafeInteger(Number(id)) && Number(id)>0 && Number(id)<=2147483647);
+    const cleanCustIds = rawCustIds.map(id=>String(Number(id))).sort((a,b)=>Number(a)-Number(b));
+    if (!validIds || cleanCustIds.length > 1000 || new Set(cleanCustIds).size !== cleanCustIds.length) {
       return res.status(400).json({ message: 'ไม่พบรหัสลูกค้าที่ถูกต้อง' });
     }
+
+    const identity = await customerRequestAuditIdentity(req.user);
+    await requireCustomerMutationProcs();
+    const predicate = await customerPredicate(req.user);
+    await wfTransaction(async tx => {
+    const query = async (text, inputs) => (await transactionQuery(tx, text, inputs || {})).recordset || [];
 
     // Lookup salesperson if provided
     let spUser = null;
     if (salespersonUserId) {
-      const uRes = await query(`SELECT Id, DisplayName FROM wf.AppUser WHERE Id = @uid`, { uid: { type: sql.Int, value: Number(salespersonUserId) } });
+      const uRes = await query(`SELECT Id, DisplayName, EmpId FROM wf.AppUser WITH (UPDLOCK,HOLDLOCK) WHERE Id = @uid AND IsActive=1`, { uid: { type: sql.Int, value: Number(salespersonUserId) } });
       spUser = uRes?.[0] || null;
+      if (!spUser || !Number.isSafeInteger(Number(spUser.EmpId)) || Number(spUser.EmpId)<=0)
+        throw Object.assign(new Error('ผู้ดูแลลูกค้ายังไม่มีรหัสพนักงาน WinSpeed ที่ใช้งานได้'), { status: 409 });
     }
 
     // Lookup area and region if provided (supports both 2-char RegionCode and SaleAreaID)
@@ -816,35 +992,25 @@ router.post('/customers/batch-edit', requireRole('ADMIN', 'MANAGER'), async (req
     const hasCreditHold = creditHold !== undefined;
     const hasInactive = inactive !== undefined;
 
-    const uid = req.user?.sub || null;
+    if (areaId && resolvedAreaId === null) throw Object.assign(new Error('ไม่พบเขตการขาย'), { status: 400 });
+    if (groupId && (!Number.isSafeInteger(Number(groupId)) || Number(groupId)<=0)) throw Object.assign(new Error('กลุ่มลูกค้าไม่ถูกต้อง'), { status: 400 });
+    const uid = identity.effective;
 
     // Process all customers
     for (const custId of cleanCustIds) {
-      // 1. Update dbo.EMCust if area, group, billEmp, or inactive provided
-      const emCustSets = [];
-      const emCustInputs = { id: { type: sql.VarChar(20), value: custId } };
-      if (hasArea && resolvedAreaId !== null) {
-        emCustSets.push('SaleAreaID = @areaId');
-        emCustInputs.areaId = { type: sql.Int, value: resolvedAreaId };
-      }
-      if (hasGroup) {
-        emCustSets.push('CustGroupID = @groupId');
-        emCustInputs.groupId = { type: sql.Int, value: groupId ? Number(groupId) : null };
-      }
-      if (hasSp) {
-        emCustSets.push('BillEmp = @billEmp');
-        emCustInputs.billEmp = { type: sql.Int, value: spUser?.Id ? Number(spUser.Id) : (salespersonUserId ? Number(salespersonUserId) : null) };
-      }
-      if (hasInactive) {
-        emCustSets.push("Inactive = @inactive, InactiveDate = CASE WHEN @inactive = 'I' THEN GETDATE() ELSE NULL END");
-        emCustInputs.inactive = { type: sql.VarChar(1), value: inactive ? 'I' : 'A' };
-      }
-      if (emCustSets.length > 0) {
-        try {
-          await dboWrite(`UPDATE dbo.EMCust SET ${emCustSets.join(', ')} WHERE CustID = @id`, emCustInputs);
-        } catch (err) {
-          console.warn('[master/customers:batch-emcust-warning]', err?.message);
-        }
+      await customerMutationScope(tx, req.user, custId, predicate);
+      const before = await customerMutationSnapshot(tx, custId);
+      if (!before) throw Object.assign(new Error('ไม่พบรหัสลูกค้านี้'), { status: 404 });
+      // Native changes and app-side changes must succeed with the same audit.
+      if (hasArea || hasGroup || hasSp || hasInactive) {
+        const changed = await execMasterTxProc(tx, 'wf.sp_MasterCustomerClassification', {
+          CustID: { type: sql.VarChar(20), value: custId }, HasArea: { type: sql.Bit, value: hasArea },
+          AreaId: { type: sql.Int, value: resolvedAreaId }, HasGroup: { type: sql.Bit, value: hasGroup },
+          GroupId: { type: sql.Int, value: groupId ? Number(groupId) : null }, HasBillEmp: { type: sql.Bit, value: hasSp },
+          BillEmp: { type: sql.Int, value: spUser ? Number(spUser.EmpId) : null },
+          HasInactive: { type: sql.Bit, value: hasInactive }, Inactive: { type: sql.Bit, value: hasInactive ? Boolean(inactive) : null },
+        }, { Affected: sql.Int });
+        if (Number(changed.Affected)!==1) throw new Error('CUSTOMER_CLASSIFICATION_UPDATE_FAILED');
       }
 
       // 2. Update wf.CustomerExt
@@ -888,12 +1054,17 @@ router.post('/customers/batch-edit', requireRole('ADMIN', 'MANAGER'), async (req
           uid: { type: sql.Int, value: uid },
         });
       }
+      const after = await customerMutationSnapshot(tx, custId);
+      if (!after) throw new Error('CUSTOMER_SNAPSHOT_UNAVAILABLE');
+      await logChangeEvent(tx, { entityType:'CUSTOMER', entityId:String(custId), action:'BATCH_UPDATE',
+        beforeJson:before, afterJson:after, userId:identity.effective, ipAddress:req.ip });
     }
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
 
     res.json({ ok: true, count: cleanCustIds.length, message: `อัปเดตข้อมูลลูกค้า ${cleanCustIds.length} รายสำเร็จ` });
   } catch (e) {
     console.error('[master/customers:batch-edit]', e);
-    res.status(500).json({ message: 'บันทึกการแก้ไขแบบชุดไม่สำเร็จ: ' + (e?.message || '') });
+    const m = masterWriteStatus(e); res.status(m.status).json({ message: m.message });
   }
 });
 
@@ -1159,19 +1330,20 @@ router.get('/employees', async (req, res) => {
 router.get('/prices', async (req, res) => {
   try {
     const { custId, goodId, includeExpired, asOf } = req.query;
-    if (req.user.identityMapping && custId && !await secondaryCustomerVisible(req.user, custId))
+    if (custId && !await customerVisible(req.user, custId))
       return res.status(404).json({ message: 'ไม่พบลูกค้า' });
     if (req.user.identityMapping && includeExpired === 'true')
       return res.status(403).json({ message: 'ไม่สามารถดูประวัติราคาในฐานนี้' });
-    if (req.user.identityMapping && asOf) {
-      const window = await require('../services/global-data-window-store').readGlobalDataWindow();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(asOf)) || String(asOf) < window.businessDate)
-        return res.status(400).json({ message: 'วันที่ราคาต้องไม่ก่อนวันเริ่มข้อมูล' });
-    }
+    let window;
+    try { window = await require('../services/global-data-window-store').readGlobalDataWindow(); }
+    catch { return res.status(503).json({ message: 'ไม่สามารถอ่านวันเริ่มข้อมูลได้' }); }
+    if (asOf && (!require('../services/data-window').isValidStartDate(String(asOf)) || String(asOf) < window.businessDate))
+      return res.status(400).json({ message: 'วันที่ราคาต้องถูกต้องและไม่ก่อนวันเริ่มข้อมูล' });
     const targetDate = asOf ? String(asOf).slice(0, 10) : getBangkokDateString();
     const inputs = {
       custId: { type: sql.NVarChar(20), value: custId || null },
       targetDate: { type: sql.Date, value: targetDate },
+      globalStartDate: { type: sql.Date, value: window.businessDate },
     };
     let goodFilter = '';
     if (goodId) {
@@ -1197,6 +1369,7 @@ router.get('/prices', async (req, res) => {
         LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = dt.ListID
         WHERE dt.GoodPriceNet > 0
           AND (hd.CustID = @custId OR hd.CustID IS NULL)
+          AND (hd.EndDate IS NULL OR hd.EndDate >= @globalStartDate)
           ${dateFilter}
           ${goodFilter}
       )
@@ -1209,228 +1382,79 @@ router.get('/prices', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-// PATCH /api/master/prices — แก้ไขราคาและวันที่ (อัปเดตตรงเข้า ERP)
+// PATCH /api/master/prices — update price and record the before/after atomically.
 router.patch('/prices', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
-    const { SetPriceID, ListNo, GoodPriceNet, BeginDate, EndDate } = req.body;
-    if (!SetPriceID || !ListNo) return res.status(400).json({ message: 'Missing SetPriceID or ListNo' });
-    if (!(Number(GoodPriceNet) > 0)) return res.status(400).json({ message: 'ราคาต้องมากกว่า 0 (GoodPriceNet > 0)' });
-    if (BeginDate && EndDate && String(BeginDate).slice(0, 10) > String(EndDate).slice(0, 10)) {
+    const { SetPriceID, ListNo, GoodPriceNet, BeginDate, EndDate } = req.body || {};
+    if (!isMasterId(SetPriceID) || !isMasterId(ListNo) || Number(SetPriceID) <= 0 || Number(ListNo) <= 0 || Number(SetPriceID) > 2147483647 || Number(ListNo) > 2147483647)
+      return res.status(400).json({ message: 'Missing or invalid SetPriceID or ListNo' });
+    if (!Number.isFinite(Number(GoodPriceNet)) || !(Number(GoodPriceNet) > 0)) return res.status(400).json({ message: 'ราคาต้องมากกว่า 0 (GoodPriceNet > 0)' });
+    if (BeginDate && EndDate && String(BeginDate).slice(0, 10) > String(EndDate).slice(0, 10))
       return res.status(400).json({ message: 'BeginDate ต้องน้อยกว่าหรือเท่ากับ EndDate' });
-    }
-    if (await hasMasterProcs()) {
-      const r = await execMasterProc('wf.sp_MasterUpdatePrice', {
-        SetPriceID: { type: sql.Int, value: Number(SetPriceID) },
-        ListNo: { type: sql.Int, value: Number(ListNo) },
+    const identity = await policyAuditIdentity(req.user);
+    if (!await hasMasterProcs()) return res.status(503).json({ message: 'ฐานข้อมูลยังไม่พร้อมสำหรับบันทึกราคา กรุณาติดต่อผู้ดูแลระบบ' });
+    await wfTransaction(async tx => {
+      const id = Number(SetPriceID), listNo = Number(ListNo);
+      const before = await masterPriceSnapshot(tx, id, listNo, true);
+      if (!before) throw Object.assign(new Error('ไม่พบรายการราคาที่ระบุ (SetPriceID หรือ ListNo ไม่ถูกต้อง)'), { status: 404 });
+      const r = await execMasterTxProc(tx, 'wf.sp_MasterUpdatePrice', {
+        SetPriceID: { type: sql.Int, value: id }, ListNo: { type: sql.Int, value: listNo },
         GoodPriceNet: { type: sql.Decimal(18, 4), value: Number(GoodPriceNet) },
-        BeginDate: { type: sql.Date, value: BeginDate || null },
-        EndDate: { type: sql.Date, value: EndDate || null },
-      }, AFFECTED_OUT);
-      if (!Number(r.Affected || 0)) return res.status(404).json({ message: 'ไม่พบรายการราคาที่ระบุ (SetPriceID หรือ ListNo ไม่ถูกต้อง)' });
-      return res.json({ ok: true });
-    }
-
-    const dtRes = await dboWrite(`
-      UPDATE dbo.EMSetPriceDT 
-      SET GoodPriceNet = @price 
-      WHERE SetPriceID = @setId AND ListNo = @listNo
-    `, {
-      price: { type: sql.Decimal(18, 4), value: GoodPriceNet },
-      setId: { type: sql.Int, value: SetPriceID },
-      listNo: { type: sql.Int, value: ListNo }
-    });
-    if (!affected(dtRes)) return res.status(404).json({ message: 'ไม่พบรายการราคาที่ระบุ (SetPriceID หรือ ListNo ไม่ถูกต้อง)' });
-    
-    if (BeginDate || EndDate) {
-      const sets = [];
-      const hdInputs = { setId: { type: sql.Int, value: SetPriceID } };
-      
-      if (BeginDate) {
-        sets.push(`BeginDate = @beginDate`);
-        hdInputs.beginDate = { type: sql.Date, value: BeginDate };
-      }
-      if (EndDate) {
-        sets.push(`EndDate = @endDate`);
-        hdInputs.endDate = { type: sql.Date, value: EndDate };
-      }
-      
-      await dboWrite(`
-        UPDATE dbo.EMSetPriceHD
-        SET ${sets.join(', ')}
-        WHERE SetPriceID = @setId
-      `, hdInputs);
-    }
-
-    res.json({ ok: true });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+        BeginDate: { type: sql.Date, value: BeginDate || null }, EndDate: { type: sql.Date, value: EndDate || null },
+      }, { Affected: sql.Int });
+      if (Number(r.Affected) !== 1) throw new Error('PRICE_UPDATE_AFFECTED_INVALID');
+      const after = await masterPriceSnapshot(tx, id, listNo);
+      if (!after) throw new Error('PRICE_UPDATE_SNAPSHOT_INVALID');
+      await logChangeEvent(tx, { entityType: 'MASTER_PRICE', entityId: String(id), action: 'UPDATE',
+        beforeJson: before, afterJson: after, userId: identity.effective, ipAddress: req.ip });
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+    return res.json({ ok: true });
+  } catch (e) { console.error(e); const m=masterWriteStatus(e); res.status(m.status).json({ message:m.message }); }
 });
 
-// POST /api/master/prices — สร้างเอกสารราคาใหม่ (Extend Price)
+// POST /api/master/prices — create one WinSpeed price and audit in one transaction.
 router.post('/prices', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
-    const { GoodID, CustID, GoodPriceNet, BeginDate, EndDate, startgoodqty, endgoodqty } = req.body || {};
-    
-    // U-1 Validation: Validate GoodID, GoodPriceNet > 0, BeginDate <= EndDate BEFORE MAX or insert
-    if (!GoodID) {
+    const item = req.body || {};
+    if (!isMasterId(item.GoodID) || Number(item.GoodID) <= 0 || Number(item.GoodID) > 2147483647)
       return res.status(400).json({ message: 'กรุณาระบุรหัสสินค้า (GoodID)' });
-    }
-    const priceNum = Number(GoodPriceNet);
-    if (GoodPriceNet === undefined || GoodPriceNet === null || isNaN(priceNum) || priceNum <= 0) {
+    if (!Number.isFinite(Number(item.GoodPriceNet)) || !(Number(item.GoodPriceNet) > 0))
       return res.status(400).json({ message: 'ราคาต้องมากกว่า 0 (GoodPriceNet > 0)' });
-    }
-    if (!BeginDate || !EndDate) {
-      return res.status(400).json({ message: 'กรุณาระบุ BeginDate และ EndDate' });
-    }
-    const bStr = String(BeginDate).slice(0, 10);
-    const eStr = String(EndDate).slice(0, 10);
-    if (bStr > eStr) {
+    if (!item.BeginDate || !item.EndDate) return res.status(400).json({ message: 'กรุณาระบุ BeginDate และ EndDate' });
+    if (String(item.BeginDate).slice(0, 10) > String(item.EndDate).slice(0, 10))
       return res.status(400).json({ message: 'BeginDate ต้องน้อยกว่าหรือเท่ากับ EndDate' });
-    }
-
-    if (await hasMasterProcs()) {
-      const r = await execMasterProc('wf.sp_MasterCreatePrice', {
-        GoodID: { type: sql.Int, value: parseInt(GoodID, 10) },
-        CustID: { type: sql.VarChar(20), value: CustID || null },
-        GoodPriceNet: { type: sql.Decimal(18, 4), value: priceNum },
-        BeginDate: { type: sql.Date, value: bStr },
-        EndDate: { type: sql.Date, value: eStr },
-        StartQty: { type: sql.Decimal(18, 4), value: startgoodqty || 1 },
-        EndQty: { type: sql.Decimal(18, 4), value: endgoodqty || 999999 },
-      }, [{ name: 'NewSetPriceID', sqlType: 'INT' }, { name: 'DocuNo', sqlType: 'VARCHAR(50)' }]);
-      return res.json({ ok: true, SetPriceID: r.NewSetPriceID, DocuNo: r.DocuNo });
-    }
-
-    // 1. Get New SetPriceID
-    const maxIdRes = await query(`SELECT ISNULL(MAX(SetPriceID), 1000) AS MaxId FROM dbo.EMSetPriceHD`);
-    const newSetPriceId = maxIdRes[0].MaxId + 1;
-    
-    // 2. Generate DocuNo (WEB-YYYYMMDD-XXXX)
-    const dStr = new Date().toISOString().slice(0,10).replace(/-/g, '');
-    const countRes = await query(`SELECT COUNT(*) AS Cnt FROM dbo.EMSetPriceHD WHERE DocuNo LIKE 'WEB-' + @dStr + '-%'`, { dStr: { type: sql.VarChar, value: dStr }});
-    const seq = String(countRes[0].Cnt + 1).padStart(4, '0');
-    const docuNo = `WEB-${dStr}-${seq}`;
-    
-    // 3. Insert into EMSetPriceHD
-    await query(`
-      INSERT INTO dbo.EMSetPriceHD (
-        SetPriceID, DocuType, BrchID, DocuNo, DocuDate, BeginDate, EndDate, CustID,
-        SetPriceFlag, CustFlag, GoodFlag, DocuFlag, PromotionFlag, GoldenTimeFlag, ChangedDate
-      ) VALUES (
-        @setId, 133, 1, @docuNo, CAST(GETDATE() AS DATE), @beginDate, @endDate, @custId,
-        'Y', 'A', 'C', 'Y', 'N', 'N', GETDATE()
-      )
-    `, {
-      setId: { type: sql.Int, value: newSetPriceId },
-      docuNo: { type: sql.VarChar(50), value: docuNo },
-      beginDate: { type: sql.Date, value: BeginDate },
-      endDate: { type: sql.Date, value: EndDate },
-      custId: { type: sql.VarChar(20), value: CustID || null }
-    });
-    
-    // 4. Insert into EMSetPriceDT
-    await query(`
-      INSERT INTO dbo.EMSetPriceDT (
-        SetPriceID, ListNo, ListID, GoodPriceNet, startgoodqty, endgoodqty,
-        ListFlag, EditFlag
-      ) VALUES (
-        @setId, 1, @goodId, @price, @startqty, @endqty,
-        'A', 'N'
-      )
-    `, {
-      setId: { type: sql.Int, value: newSetPriceId },
-      goodId: { type: sql.Int, value: parseInt(GoodID) || GoodID }, // Handle both string IDs mapping to INT if needed
-      price: { type: sql.Decimal(18,4), value: GoodPriceNet },
-      startqty: { type: sql.Decimal(18,4), value: startgoodqty || 1 },
-      endqty: { type: sql.Decimal(18,4), value: endgoodqty || 999999 }
-    });
-    
-    res.json({ ok: true, SetPriceID: newSetPriceId });
-  } catch (e) {
-    console.error(e); const m = masterWriteStatus(e); res.status(m.status).json({ message: m.message });
-  }
+    const identity = await policyAuditIdentity(req.user);
+    if (!await hasMasterProcs()) return res.status(503).json({ message: 'ฐานข้อมูลยังไม่พร้อมสำหรับบันทึกราคา กรุณาติดต่อผู้ดูแลระบบ' });
+    const result = await wfTransaction(tx => createMasterPriceInTransaction(tx, req, identity, item),
+      { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+    return res.json({ ok:true, SetPriceID:result.id, DocuNo:result.docuNo });
+  } catch (e) { console.error(e); const m=masterWriteStatus(e); res.status(m.status).json({ message:m.message }); }
 });
 
-// POST /api/master/prices/bulk-extend — สร้างเอกสารราคาใหม่แบบกลุ่ม
+// POST /api/master/prices/bulk-extend — all price documents and their audit commit together.
 router.post('/prices/bulk-extend', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
-    const { items } = req.body;
+    const { items } = req.body || {};
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ message: 'Empty items array' });
     for (const [i, item] of items.entries()) {
-      if (!item.GoodID || !(Number(item.GoodPriceNet) > 0) || !item.BeginDate || !item.EndDate
-          || String(item.BeginDate).slice(0, 10) > String(item.EndDate).slice(0, 10)) {
+      if (!item || !isMasterId(item.GoodID) || Number(item.GoodID) <= 0 || Number(item.GoodID) > 2147483647 || !Number.isFinite(Number(item.GoodPriceNet)) || !(Number(item.GoodPriceNet) > 0)
+          || !item.BeginDate || !item.EndDate || String(item.BeginDate).slice(0, 10) > String(item.EndDate).slice(0, 10)) {
         return res.status(400).json({ message: `รายการที่ ${i + 1}: ต้องมีรหัสสินค้า ราคามากกว่า 0 และวันเริ่มไม่เกินวันสิ้นสุด` });
       }
     }
-    if (await hasMasterProcs()) {
-      const created = [];
+    const identity = await policyAuditIdentity(req.user);
+    if (!await hasMasterProcs()) {
+      return res.status(503).json({ message: 'ฐานข้อมูลยังไม่พร้อมสำหรับบันทึกราคา กรุณาติดต่อผู้ดูแลระบบ' });
+    }
+    const created = await wfTransaction(async tx => {
+      const ids = [];
       for (const item of items) {
-        const r = await execMasterProc('wf.sp_MasterCreatePrice', {
-          GoodID: { type: sql.Int, value: parseInt(item.GoodID, 10) },
-          CustID: { type: sql.VarChar(20), value: item.CustID || null },
-          GoodPriceNet: { type: sql.Decimal(18, 4), value: Number(item.GoodPriceNet) },
-          BeginDate: { type: sql.Date, value: String(item.BeginDate).slice(0, 10) },
-          EndDate: { type: sql.Date, value: String(item.EndDate).slice(0, 10) },
-          StartQty: { type: sql.Decimal(18, 4), value: item.startgoodqty || 1 },
-          EndQty: { type: sql.Decimal(18, 4), value: item.endgoodqty || 999999 },
-        }, [{ name: 'NewSetPriceID', sqlType: 'INT' }, { name: 'DocuNo', sqlType: 'VARCHAR(50)' }]);
-        created.push(r.NewSetPriceID);
+        const result = await createMasterPriceInTransaction(tx, req, identity, item);
+        ids.push(result.id);
       }
-      return res.json({ ok: true, createdCount: created.length, SetPriceIDs: created });
-    }
-    
-    // Get starting SetPriceID
-    const maxIdRes = await query(`SELECT ISNULL(MAX(SetPriceID), 1000) AS MaxId FROM dbo.EMSetPriceHD`);
-    let currentSetPriceId = maxIdRes[0].MaxId;
-    
-    // Get starting DocuNo Sequence
-    const dStr = new Date().toISOString().slice(0,10).replace(/-/g, '');
-    const countRes = await query(`SELECT COUNT(*) AS Cnt FROM dbo.EMSetPriceHD WHERE DocuNo LIKE 'WEB-' + @dStr + '-%'`, { dStr: { type: sql.VarChar, value: dStr }});
-    let currentSeq = countRes[0].Cnt;
-    
-    let createdIds = [];
-
-    for (const item of items) {
-      currentSetPriceId++;
-      currentSeq++;
-      
-      const docuNo = `WEB-${dStr}-${String(currentSeq).padStart(4, '0')}`;
-      
-      await query(`
-        INSERT INTO dbo.EMSetPriceHD (
-          SetPriceID, DocuType, BrchID, DocuNo, DocuDate, BeginDate, EndDate, CustID,
-          SetPriceFlag, CustFlag, GoodFlag, DocuFlag, PromotionFlag, GoldenTimeFlag, ChangedDate
-        ) VALUES (
-          @setId, 133, 1, @docuNo, CAST(GETDATE() AS DATE), @beginDate, @endDate, @custId,
-          'Y', 'A', 'C', 'Y', 'N', 'N', GETDATE()
-        )
-      `, {
-        setId: { type: sql.Int, value: currentSetPriceId },
-        docuNo: { type: sql.VarChar(50), value: docuNo },
-        beginDate: { type: sql.Date, value: item.BeginDate },
-        endDate: { type: sql.Date, value: item.EndDate },
-        custId: { type: sql.VarChar(20), value: item.CustID || null }
-      });
-      
-      await query(`
-        INSERT INTO dbo.EMSetPriceDT (
-          SetPriceID, ListNo, ListID, GoodPriceNet, startgoodqty, endgoodqty,
-          ListFlag, EditFlag
-        ) VALUES (
-          @setId, 1, @goodId, @price, @startqty, @endqty,
-          'A', 'N'
-        )
-      `, {
-        setId: { type: sql.Int, value: currentSetPriceId },
-        goodId: { type: sql.Int, value: parseInt(item.GoodID) || item.GoodID },
-        price: { type: sql.Decimal(18,4), value: item.GoodPriceNet },
-        startqty: { type: sql.Decimal(18,4), value: item.startgoodqty || 1 },
-        endqty: { type: sql.Decimal(18,4), value: item.endgoodqty || 999999 }
-      });
-      
-      createdIds.push(currentSetPriceId);
-    }
-    
-    res.json({ ok: true, createdCount: createdIds.length, SetPriceIDs: createdIds });
+      return ids;
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+    return res.json({ ok: true, createdCount: created.length, SetPriceIDs: created });
   } catch (e) {
     console.error(e); const m = masterWriteStatus(e); res.status(m.status).json({ message: m.message });
   }
@@ -1451,24 +1475,42 @@ router.get('/control-tickets', async (req, res) => {
     const inputs = {};
     if (custId) inputs.custId = { type: sql.NVarChar(50), value: String(custId).trim() };
     if (q) inputs.q = { type: sql.NVarChar(100), value: `%${String(q).trim()}%` };
-    // Secondary database: a customer filter is honoured only for a customer both
-    // identities may see; without one the real actor's scope is applied as well.
-    if (req.user.identityMapping && custId && !await secondaryCustomerVisible(req.user, custId))
+    // Customer-filtered ticket balances must use the same customer scope on both databases.
+    if (custId && !await customerVisible(req.user, custId))
       return res.status(404).json({ message: 'ไม่พบลูกค้า' });
     const ctVisible = custId ? { all: true } : await getVisibleScope(req.user);
-    const ctActor = custId ? null : await secondaryActorScope(req.user);
+    const ctActorUser = custId ? null : actorPerspective(req.user);
+    const ctActor = !ctActorUser || ctActorUser === req.user ? null : await getVisibleScope(ctActorUser);
     const ctScope = withActorScope(scopeFilter(ctVisible, { empCol: 'h104.EmpID', prefix: 'ct' }), ctActor, { empCol: 'h104.EmpID' }, 'cta');
     const ctPending = withActorScope(scopeFilter(ctVisible, { empCol: 'h.EmpID', prefix: 'cp' }), ctActor, { empCol: 'h.EmpID' }, 'cpa');
     const ctDraft = withActorScope(scopeFilter(ctVisible, { userCol: 'so.SalesUserId', prefix: 'cd' }), ctActor, { userCol: 'so.SalesUserId' }, 'cda');
     // Data start date: a ticket issued before it is history, unless it still carries a
     // balance. Like old unpaid invoices in credit, that balance is an opening balance and
-    // stays. Exhausted or cancelled older tickets are hidden. Open bookings and draft
-    // bills are not history and are not filtered.
+    // stays. Exhausted or cancelled older tickets are hidden. Pending bookings
+    // and drafts are source documents, so their details respect the data window;
+    // carried-forward outstanding quantities belong in balance reports.
     let ctWindow;
     try { ctWindow = await require('../services/global-data-window-store').readGlobalDataWindow(); }
     catch { return res.status(503).json({ code: 'DATA_WINDOW_UNAVAILABLE', message: 'ไม่สามารถตรวจวันเริ่มข้อมูลได้' }); }
     inputs.ctDataStart = { type: sql.Date, value: ctWindow.businessDate };
+    inputs.ctDataStartUtc = { type: sql.DateTime2, value: ctWindow.utcInstant };
     Object.assign(inputs, ctScope.inputs, ctPending.inputs, ctDraft.inputs);
+
+    const settlementSource=await require('../services/coupon-recovery-readiness').assertRecoveryReadiness(wfQuery);
+
+    // Migration 139 records partial settlement separately. The source coupon's
+    // native balance has already fallen, so only its still-unconsumed reservation
+    // belongs in the held balance. For a database without the column, keep the
+    // conservative legacy calculation rather than inventing settled quantities.
+    const reservationSchema = await wfQuery("SELECT COL_LENGTH('wf.CouponReservation','ConsumedQty') AS ConsumedQtyColumn, OBJECT_ID('wf.CouponReservationSettlement','U') AS SettlementTable");
+    const schemaRow = reservationSchema.recordset?.[0];
+    const hasSettlement = schemaRow?.ConsumedQtyColumn != null && schemaRow?.SettlementTable != null;
+    if (!hasSettlement) await require('../services/coupon-settlement-read-hold').assertLegacySettlementSchema(wfQuery);
+    const { resolveHoldPolicy, heldReservationExpirySql } = require('../services/coupon-authorization-hold');
+    const authHolds = await resolveHoldPolicy(wfQuery);
+    const remainingReservationSql = reservationSchema.recordset?.[0]?.ConsumedQtyColumn != null
+      ? 'CASE WHEN cr.ReservedQty >= ISNULL(cr.ConsumedQty,0) AND ISNULL(cr.ConsumedQty,0) >= 0 THEN cr.ReservedQty - ISNULL(cr.ConsumedQty,0) ELSE cr.ReservedQty END'
+      : 'cr.ReservedQty';
 
     // 1. Query Issued Coupons from WFCoupon linked to 104 and 103
     const couponQuery = `
@@ -1477,18 +1519,20 @@ router.get('/control-tickets', async (req, res) => {
         c.CouponNo,
         c.CouponNo AS DocuNo,
         c.CouponNo AS DisplayDocuNo,
-        h103.DocuNo AS BookingDocuNo,
-        h103.AppvDocuNo,
-        h104.DocuNo AS DeliveryDocuNo,
-        c.DocuID AS DeliverySOID,
-        ISNULL(h103.SOID, h104.SOID) AS SOID,
-        c.RefListno AS ListNo,
+        CASE WHEN h103.DocuDate >= @ctDataStart THEN h103.DocuNo END AS BookingDocuNo,
+        CASE WHEN h103.DocuDate >= @ctDataStart THEN h103.AppvDocuNo END AS AppvDocuNo,
+        CASE WHEN h104.DocuDate >= @ctDataStart THEN h104.DocuNo END AS DeliveryDocuNo,
+        CASE WHEN h104.DocuDate >= @ctDataStart THEN c.DocuID END AS DeliverySOID,
+        COALESCE(CASE WHEN h103.DocuDate >= @ctDataStart THEN h103.SOID END,
+                 CASE WHEN h104.DocuDate >= @ctDataStart THEN h104.SOID END) AS SOID,
+        CASE WHEN h104.DocuDate >= @ctDataStart THEN c.RefListno END AS ListNo,
         h104.CustID,
         h104.CustName,
-        ISNULL(h104.TransRegistration, h103.TransRegistration) AS TruckPlate,
-        h104.DocuDate,
-        h103.AppvFlag,
-        h103.AppvDate,
+        COALESCE(CASE WHEN h104.DocuDate >= @ctDataStart THEN h104.TransRegistration END,
+                 CASE WHEN h103.DocuDate >= @ctDataStart THEN h103.TransRegistration END) AS TruckPlate,
+        CASE WHEN h104.DocuDate >= @ctDataStart THEN h104.DocuDate END AS DocuDate,
+        CASE WHEN h103.DocuDate >= @ctDataStart THEN h103.AppvFlag END AS AppvFlag,
+        CASE WHEN h103.DocuDate >= @ctDataStart THEN h103.AppvDate END AS AppvDate,
         h104.DocuStatus,
         c.GoodID,
         g.GoodCode,
@@ -1517,17 +1561,17 @@ router.get('/control-tickets', async (req, res) => {
         ov.StrictOverrideFlag,
         ov.ReasonCode,
         ov.ReasonText
-      FROM dbo.WFCoupon c WITH (NOLOCK)
+      FROM dbo.WFCoupon c
       JOIN dbo.SOHD h104 WITH (NOLOCK) ON h104.SOID = c.DocuID AND h104.DocuType = 104
       LEFT JOIN dbo.SODT d104 WITH (NOLOCK) ON d104.SOID = c.DocuID AND d104.ListNo = c.RefListno
       LEFT JOIN dbo.SOHD h103 WITH (NOLOCK) ON h103.SOID = d104.RefSOID AND h103.DocuType = 103
       LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = c.GoodID
       LEFT JOIN dbo.EMGoodUnit u WITH (NOLOCK) ON u.GoodUnitID = c.GoodUnitID
       LEFT JOIN (
-        SELECT CouponId, SUM(ReservedQty) AS TotalReserved
-        FROM wf.CouponReservation WITH (NOLOCK)
-        WHERE Status = 'RESERVED' AND (ExpiresAt IS NULL OR ExpiresAt > GETUTCDATE())
-        GROUP BY CouponId
+        SELECT cr.CouponId, SUM(${remainingReservationSql}) AS TotalReserved
+        FROM wf.CouponReservation cr
+        WHERE cr.Status = 'RESERVED' AND ${heldReservationExpirySql('cr',authHolds)}
+        GROUP BY cr.CouponId
       ) res ON res.CouponId = c.CouponID
       OUTER APPLY (
         SELECT TOP 1
@@ -1552,11 +1596,10 @@ router.get('/control-tickets', async (req, res) => {
           ov.UpdatedAt DESC
       ) ov
       WHERE ${ctScope.sql}
-        AND (ISNULL(h104.DocuDate, h103.DocuDate) IS NULL
-          OR ISNULL(h104.DocuDate, h103.DocuDate) >= @ctDataStart
+        AND (ISNULL(h104.DocuDate, h103.DocuDate) >= @ctDataStart
           OR (c.RemaQty <> 0 AND ISNULL(h104.DocuStatus, '') <> 'C'))
         ${custId ? `AND (h104.CustID = @custId OR h103.CustID = @custId)` : ''}
-        ${q ? `AND (c.CouponNo LIKE @q OR h103.DocuNo LIKE @q OR h103.AppvDocuNo LIKE @q OR h104.DocuNo LIKE @q OR h104.CustName LIKE @q OR c.GoodName LIKE @q)` : ''}
+        ${q ? `AND (c.CouponNo LIKE @q OR (h103.DocuDate >= @ctDataStart AND (h103.DocuNo LIKE @q OR h103.AppvDocuNo LIKE @q)) OR (h104.DocuDate >= @ctDataStart AND h104.DocuNo LIKE @q) OR h104.CustName LIKE @q OR c.GoodName LIKE @q)` : ''}
     `;
 
     // 2. Query Pending Approved Booking (103 with AI but no 104 issued)
@@ -1619,7 +1662,7 @@ router.get('/control-tickets', async (req, res) => {
           END ASC,
           ov.UpdatedAt DESC
       ) ov
-      WHERE h.DocuType = 103 AND h.DocuStatus = 'Y' AND ${ctPending.sql}
+      WHERE h.DocuType = 103 AND h.DocuStatus = 'Y' AND h.DocuDate >= @ctDataStart AND ${ctPending.sql}
         AND (h.AppvDocuNo LIKE 'AI%' OR h.TransRegistration = N'ตั๋วคุม')
         AND NOT EXISTS (
           SELECT 1 FROM dbo.SODT d2 WITH (NOLOCK)
@@ -1671,7 +1714,7 @@ router.get('/control-tickets', async (req, res) => {
       FROM wf.SalesOrder so WITH (NOLOCK)
       JOIN wf.SalesOrderLine wfl WITH (NOLOCK) ON wfl.SoId = so.Id
       LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = wfl.GoodId
-      WHERE so.SoPrefix = 'AI' AND so.Status = 'DRAFT' AND ${ctDraft.sql}
+      WHERE so.SoPrefix = 'AI' AND so.Status = 'DRAFT' AND so.CreatedAt >= @ctDataStartUtc AND ${ctDraft.sql}
         ${custId ? `AND so.CustId = @custId` : ''}
         ${q ? `AND (so.WfRef LIKE @q OR so.CustName LIKE @q OR wfl.GoodName LIKE @q)` : ''}
     `;
@@ -1736,6 +1779,16 @@ router.get('/control-tickets', async (req, res) => {
     `;
 
     const rawRows = await query(fullUnionSql, inputs);
+    // A page containing a changed/missing settled 116 must not advertise its
+    // pre-recovery available balance. Keep tab and paging semantics intact by
+    // stopping this page, rather than silently moving an item between tabs.
+    // This is a read-side check, not an atomic reservation authorization.
+    if (hasSettlement) {
+      const ids = rawRows.filter(r => r.CouponID != null).map(r => r.CouponID);
+      const conflicts = await require('../services/coupon-settlement-read-hold').findSettlementSourceConflicts(wfQuery, ids, settlementSource);
+      if (conflicts.size) throw Object.assign(new Error('พบตั๋วที่ต้องตรวจใบขนก่อนแสดงยอด กรุณาติดต่อผู้ดูแล'),
+        { code: 'COUPON_SETTLEMENT_SOURCE_CHANGED', status: 409 });
+    }
     let totalCount = 0;
     if (rawRows && rawRows.length > 0) {
       totalCount = Number(rawRows[0].TotalFilteredCount || rawRows.length);
@@ -1835,7 +1888,7 @@ router.get('/control-tickets', async (req, res) => {
 
   } catch (e) {
     console.error('[master/control-tickets]', e);
-    res.status(500).json({ message: e.message });
+    res.status(e.status || 500).json({ code:e.code, message: e.message });
   }
 });
 
@@ -1843,9 +1896,10 @@ router.get('/control-tickets', async (req, res) => {
 router.get('/control-tickets/alerts', async (req, res) => {
   try {
     const { listTicketAlerts } = require('../services/ticket-policy');
-    // The alert list has no owner column. On a secondary database it is shown only
+    // The alert list has no owner column. It is shown only
     // when both identities see every record; otherwise it is empty, not an error.
-    if (req.user.identityMapping && !await bothSeeAll(req.user, await getVisibleScope(req.user))) return res.json([]);
+    const scopes = await masterReadScopes(req.user);
+    if (!scopes.effective.all || !scopes.actor.all) return res.json([]);
     const alerts = await listTicketAlerts();
     res.json(alerts);
   } catch (e) {
@@ -1874,9 +1928,10 @@ router.get('/control-tickets/:docuNo/trace', async (req, res) => {
     }
 
     const trace = await traceNativeTicketChain(req.params.docuNo, { exactId: cleanExactId, entityType });
-    if (!trace || !await chainVisibleToBoth(req.user, await getVisibleScope(req.user), trace)) {
+    if (!trace || !await masterChainVisible(req.user, trace)) {
       return res.status(404).json({ message: `ไม่พบข้อมูลตั๋วคุม ${req.params.docuNo}` });
     }
+    if (!await visibleTicketTrace(res, trace)) return;
     res.json(trace);
   } catch (e) {
     console.error('[master/control-tickets/trace]', e);
@@ -1890,9 +1945,9 @@ router.get('/control-tickets/:docuNo/trace', async (req, res) => {
 // could move another's ticket expiry).
 async function requireTicketInScope(req, res, next) {
   try {
-    const { getVisibleScope, inScope } = require('../services/visible-scope');
-    const scope = await getVisibleScope(req.user);
-    if (scope.all) return next();
+    const { inScope } = require('../services/visible-scope');
+    const scopes = await masterReadScopes(req.user);
+    if (scopes.effective.all && scopes.actor.all) return next();
     const exactId = req.body?.exactId || req.query?.exactId;
     const rows = (await query(`
       SELECT CAST(s.EmpID AS VARCHAR(20)) AS EmpID
@@ -1901,7 +1956,7 @@ async function requireTicketInScope(req, res, next) {
       cid: { type: sql.Int, value: Number(exactId) || 0 },
       no: { type: sql.VarChar(30), value: String(req.params.docuNo || '').trim() },
     })) || [];
-    if (!rows.length || !rows.every(r => inScope(scope, { empId: r.EmpID }))) {
+    if (!rows.length || !rows.every(r => inScope(scopes.effective, { empId: r.EmpID }) && inScope(scopes.actor, { empId: r.EmpID }))) {
       return res.status(404).json({ message: 'ไม่พบตั๋วคุมนี้' });
     }
     next();
@@ -1911,6 +1966,7 @@ async function requireTicketInScope(req, res, next) {
 router.patch('/control-tickets/:docuNo/expiry', requireRole('SALES', 'ADMIN', 'C_LEVEL', 'MANAGER'), requireTicketInScope, async (req, res) => {
   try {
     const { updateTicketExpiryOverlay } = require('../services/ticket-policy');
+    const identity = await customerRequestAuditIdentity(req.user);
     const { expiryDate, strictOverride, reasonCode, reasonText, exactId } = req.body || {};
     const exactCouponId = exactId || req.query?.exactId;
 
@@ -1921,15 +1977,26 @@ router.patch('/control-tickets/:docuNo/expiry', requireRole('SALES', 'ADMIN', 'C
       strictOverride: Boolean(strictOverride),
       reasonCode,
       reasonText,
-      userId: req.user?.sub || req.user?.username || 'SYSTEM',
+      userId: identity.effective,
       userRole: req.user?.role,
       ipAddress: req.ip,
+      authorizeInTransaction: async (tx, couponId) => {
+        // Keep both the coupon and its issuing owner stable until audit and
+        // overlay are committed; recheck both identities inside that lock.
+        const locked = await transactionQuery(tx, `SELECT c.CouponID FROM dbo.WFCoupon c WITH (UPDLOCK,HOLDLOCK)
+          JOIN dbo.SOHD h WITH (UPDLOCK,HOLDLOCK) ON h.SOID=c.DocuID WHERE c.CouponID=@cid`, {
+          cid: { type: sql.Int, value: couponId },
+        });
+        const inTx = (text, inputs) => transactionQuery(tx, text, inputs || {});
+        if (!locked.recordset?.length || !await require('../services/coupon-access-scope').couponVisible(req.user, couponId, inTx))
+          throw Object.assign(new Error('ไม่พบตั๋วคุมนี้'), { status: 404 });
+      },
     });
 
     res.json(result);
   } catch (e) {
     console.error('[master/control-tickets/expiry]', e);
-    res.status(400).json({ message: e.message });
+    res.status(e.status || 400).json({ message: e.message });
   }
 });
 
@@ -1942,12 +2009,13 @@ router.get('/control-tickets/typed/:entityType/:id', async (req, res) => {
       entityType: String(entityType).toUpperCase(),
       exactId: id
     });
-    if (!await chainVisibleToBoth(req.user, await getVisibleScope(req.user), result)) {
+    if (!await masterChainVisible(req.user, result)) {
       return res.status(404).json({ message: 'ไม่พบตั๋วคุมนี้' });
     }
     if (!result.resolved) {
       return res.status(404).json(result);
     }
+    if (!await visibleTicketTrace(res, result)) return;
     res.json(result);
   } catch (e) {
     console.error('[master/control-tickets/typed]', e);
@@ -1959,9 +2027,13 @@ router.get('/control-tickets/typed/:entityType/:id', async (req, res) => {
 router.get('/control-tickets/:docuNo/draws', async (req, res) => {
   try {
     const drawScope = await getVisibleScope(req.user);
-    const drawActor = await secondaryActorScope(req.user);
+    const actor = actorPerspective(req.user);
+    const drawActor = actor === req.user ? null : await getVisibleScope(actor);
     const couponDrawScope = withActorScope(scopeFilter(drawScope, { empCol: 'h104.EmpID', prefix: 'dcp' }), drawActor, { empCol: 'h104.EmpID' }, 'dcpa');
     const deliveryDrawScope = withActorScope(scopeFilter(drawScope, { empCol: 'h2.EmpID', prefix: 'ddv' }), drawActor, { empCol: 'h2.EmpID' }, 'ddva');
+    let dataWindow;
+    try { dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow(); }
+    catch { return res.status(503).json({ code: 'DATA_WINDOW_UNAVAILABLE', message: 'ไม่สามารถตรวจวันเริ่มข้อมูลได้' }); }
     const docuNo = String(req.params.docuNo).trim();
     const { exactId, entityType } = req.query;
     let parsedExactId = null;
@@ -1983,6 +2055,7 @@ router.get('/control-tickets/:docuNo/draws', async (req, res) => {
         ...couponDrawScope.inputs,
         docuNo: { type: sql.NVarChar(50), value: docuNo },
         exactId: { type: sql.Int, value: parsedExactId },
+        dataStart: { type: sql.Date, value: dataWindow.businessDate },
       };
       const redRows = await query(`
         SELECT 
@@ -1999,6 +2072,7 @@ router.get('/control-tickets/:docuNo/draws', async (req, res) => {
         WHERE ((@exactId IS NOT NULL AND c.CouponID = @exactId)
            OR (@exactId IS NULL AND (c.CouponNo = @docuNo OR rd.CouponNo = @docuNo)))
           AND ${couponDrawScope.sql}
+          AND rh.DocuDate >= @dataStart
         ORDER BY rh.DocuDate DESC
       `, redInputs);
 
@@ -2012,6 +2086,7 @@ router.get('/control-tickets/:docuNo/draws', async (req, res) => {
       ...deliveryDrawScope.inputs,
       docuNo: { type: sql.NVarChar(30), value: docuNo },
       exactId: { type: sql.Int, value: parsedExactId },
+      dataStart: { type: sql.Date, value: dataWindow.businessDate },
     };
     const rows = await query(`
       SELECT h2.SOID, h2.DocuNo,
@@ -2023,6 +2098,7 @@ router.get('/control-tickets/:docuNo/draws', async (req, res) => {
       JOIN dbo.SODT d2 WITH (NOLOCK) ON h2.SOID = d2.SOID
       LEFT JOIN wf.SalesOrderLine wfl WITH (NOLOCK) ON wfl.SoId = h2.SOID AND wfl.LineNum = d2.ListNo
       WHERE h2.DocuType = 104 AND h2.DocuStatus <> 'C'
+        AND h2.DocuDate >= @dataStart
         AND ${deliveryDrawScope.sql}
         AND (
           (@exactId IS NOT NULL AND d2.RefSOID = @exactId)
@@ -2039,36 +2115,62 @@ router.get('/control-tickets/:docuNo/draws', async (req, res) => {
 router.get('/control-tickets/:docuNo', async (req, res) => {
   try {
     const detailScope = await getVisibleScope(req.user);
-    const detailActor = await secondaryActorScope(req.user);
+    const actor = actorPerspective(req.user);
+    const detailActor = actor === req.user ? null : await getVisibleScope(actor);
     const couponDetailScope = withActorScope(scopeFilter(detailScope, { empCol: 'issuer.EmpID', prefix: 'lcp' }), detailActor, { empCol: 'issuer.EmpID' }, 'lcpa');
     const draftDetailScope = withActorScope(scopeFilter(detailScope, { userCol: 'h.SalesUserId', prefix: 'ldr' }), detailActor, { userCol: 'h.SalesUserId' }, 'ldra');
     const nativeDetailScope = withActorScope(scopeFilter(detailScope, { empCol: 'h.EmpID', prefix: 'lso' }), detailActor, { empCol: 'h.EmpID' }, 'lsoa');
     const docuNo = String(req.params.docuNo).trim();
     const { exactId, entityType } = req.query;
-    const parsedExactId = exactId ? parseInt(exactId, 10) : null;
+    let parsedExactId = null;
+    if (exactId !== undefined && exactId !== null) {
+      if (!/^\d+$/.test(String(exactId).trim()) || !Number.isSafeInteger(Number(exactId)) || Number(exactId) <= 0 || Number(exactId) > 2147483647)
+        return res.status(400).json({ message: 'INVALID_EXACT_ID' });
+      parsedExactId = Number(exactId);
+    }
+    let dataWindow;
+    try { dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow(); }
+    catch { return res.status(503).json({ code: 'DATA_WINDOW_UNAVAILABLE', message: 'ไม่สามารถตรวจวันเริ่มข้อมูลได้' }); }
+    const dataStart = { type: sql.Date, value: dataWindow.businessDate };
+    const dataStartUtc = { type: sql.DateTime2, value: dataWindow.utcInstant };
 
     // Check 1: Coupon (C or D prefix or entityType === 'COUPON')
     if (/^[CD]\d+/i.test(docuNo) || entityType === 'COUPON') {
       const cpRows = await query(`
         SELECT 
-          1 AS ListNo, c.GoodID, g.GoodCode, c.GoodName,
+          1 AS ListNo, c.CouponID AS _couponId, c.GoodID, g.GoodCode, c.GoodName,
           CAST(c.RemaQty AS DECIMAL(12, 3)) AS QtyTon,
           CAST(c.GoodPrice AS DECIMAL(12, 2)) AS PricePerTon,
           ISNULL(gx.BagPerTon, 20) AS BagPerTon
-        FROM dbo.WFCoupon c WITH (NOLOCK)
-        LEFT JOIN dbo.SOHD issuer ON issuer.SOID = c.DocuID
+        FROM dbo.WFCoupon c WITH (READCOMMITTEDLOCK)
+        JOIN dbo.SOHD issuer ON issuer.SOID = c.DocuID AND issuer.DocuType = 104
         LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = c.GoodID
         LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = c.GoodID
         WHERE ((@exactId IS NOT NULL AND c.CouponID = @exactId)
            OR (@exactId IS NULL AND c.CouponNo = @docuNo))
           AND ${couponDetailScope.sql}
+          AND (issuer.DocuDate >= @dataStart OR (c.RemaQty <> 0 AND ISNULL(issuer.DocuStatus, '') <> 'C'))
       `, {
         ...couponDetailScope.inputs,
         docuNo: { type: sql.NVarChar(50), value: docuNo },
         exactId: { type: sql.Int, value: parsedExactId },
+        dataStart,
       });
       if (cpRows.length > 0 || (parsedExactId && entityType === 'COUPON')) {
-        return res.json(cpRows);
+        if (cpRows.length) {
+          // Only inspect IDs returned by the actor/effective scope and window
+          // query. Do not present an unsupported or changed settlement as an
+          // apparently usable native quantity.
+          const settlementSource=await require('../services/coupon-recovery-readiness').assertRecoveryReadiness(wfQuery);
+          const schema = (await wfQuery("SELECT COL_LENGTH('wf.CouponReservation','ConsumedQty') AS ConsumedQtyColumn, OBJECT_ID('wf.CouponReservationSettlement','U') AS SettlementTable")).recordset?.[0];
+          const hasSettlement = schema?.ConsumedQtyColumn != null && schema?.SettlementTable != null;
+          const holds = require('../services/coupon-settlement-read-hold');
+          if (!hasSettlement) await holds.assertLegacySettlementSchema(wfQuery);
+          if (hasSettlement && (await holds.findSettlementSourceConflicts(wfQuery, cpRows.map(r => r._couponId),settlementSource)).size)
+            throw Object.assign(new Error('พบตั๋วที่ต้องตรวจใบขนก่อนแสดงยอด กรุณาติดต่อผู้ดูแล'),
+              { code: 'COUPON_SETTLEMENT_SOURCE_CHANGED', status: 409 });
+        }
+        return res.json(cpRows.map(({_couponId, ...row}) => row));
       }
     }
 
@@ -2084,13 +2186,15 @@ router.get('/control-tickets/:docuNo', async (req, res) => {
         JOIN dbo.EMGood g WITH (NOLOCK) ON d.GoodId = g.GoodID
         LEFT JOIN wf.GoodExtra gx WITH (NOLOCK) ON gx.GoodId = g.GoodID
         WHERE ((@exactId IS NOT NULL AND h.Id = @exactId)
-           OR (@exactId IS NULL AND h.WfRef = @docuNo AND h.Status = 'DRAFT'))
+           OR (@exactId IS NULL AND h.WfRef = @docuNo))
+          AND h.Status = 'DRAFT' AND h.CreatedAt >= @dataStartUtc
           AND ${draftDetailScope.sql}
         ORDER BY d.LineNum ASC
       `, {
         ...draftDetailScope.inputs,
         docuNo: { type: sql.NVarChar(30), value: docuNo },
         exactId: { type: sql.Int, value: parsedExactId },
+        dataStartUtc,
       });
 
       if (draftCheck.length > 0 || (parsedExactId && entityType === 'DRAFT')) {
@@ -2111,15 +2215,17 @@ router.get('/control-tickets/:docuNo', async (req, res) => {
         (@exactId IS NOT NULL AND h.SOID = @exactId)
         OR (@exactId IS NULL AND (RTRIM(h.AppvDocuNo) = RTRIM(@docuNo) OR RTRIM(h.DocuNo) = RTRIM(@docuNo)))
       ) AND h.DocuType = 103 AND h.DocuStatus = 'Y'
+        AND h.DocuDate >= @dataStart
         AND ${nativeDetailScope.sql}
       ORDER BY d.ListNo ASC
     `, {
       ...nativeDetailScope.inputs,
       docuNo: { type: sql.NVarChar(30), value: docuNo },
       exactId: { type: sql.Int, value: parsedExactId },
+      dataStart,
     });
     res.json(rows);
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ code: e.code, message: e.message }); }
 });
 
 // GET /api/master/customers/:id/top-goods — สินค้าที่ลูกค้ารายนี้เคยซื้อ เรียงจากซื้อมากสุด บ่อยสุด ไปน้อยสุด
@@ -2127,12 +2233,12 @@ router.get('/customers/:id/top-goods', async (req, res) => {
   try {
     const cleanId = String(req.params.id || '').trim();
     if (!/^\d+$/.test(cleanId)) return res.json([]);
-    if (req.user.identityMapping && !await secondaryCustomerVisible(req.user, cleanId))
+    if (!await customerVisible(req.user, cleanId))
       return res.status(404).json({ message: 'ไม่พบลูกค้า' });
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
     let ownerWhere = '';
     const ownerInputs = {};
-    if (req.user.identityMapping) {
+    {
       const actor = actorPerspective(req.user);
       const scopes = [await getVisibleScope(req.user), ...(actor === req.user ? [] : [await getVisibleScope(actor)])];
       for (const [index, scope] of scopes.entries()) {
@@ -2180,12 +2286,12 @@ router.get('/truck-plates', async (req, res) => {
   try {
     const { custId } = req.query;
     if (!custId) return res.json([]);
-    if (req.user.identityMapping && !await secondaryCustomerVisible(req.user, custId))
+    if (!await customerVisible(req.user, custId))
       return res.status(404).json({ message: 'ไม่พบลูกค้า' });
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
     let ownerWhere = '';
     const ownerInputs = {};
-    if (req.user.identityMapping) {
+    {
       const actor = actorPerspective(req.user);
       const scopes = [await getVisibleScope(req.user), ...(actor === req.user ? [] : [await getVisibleScope(actor)])];
       for (const [index, scope] of scopes.entries()) {
@@ -2297,7 +2403,7 @@ router.get('/invoices', async (req, res) => {
     if (custId) { conditions.push(`h.ARID = @custId`); inputs.custId = { type: sql.NVarChar(20), value: custId }; }
     if (dateFrom) { conditions.push(`h.DocuDate >= @dateFrom`); inputs.dateFrom = { type: sql.Date, value: dateFrom }; }
     if (dateTo) { conditions.push(`h.DocuDate <= @dateTo`); inputs.dateTo = { type: sql.Date, value: dateTo }; }
-    const invScope = scopeFilter(await getVisibleScope(req.user), { empCol: 'h.EmpID', prefix: 'iv' });
+    const invScope = intersectMasterScopes(await masterReadScopes(req.user), 'h.EmpID', 'iv');
     conditions.push(invScope.sql); Object.assign(inputs, invScope.inputs);
     const rows = await query(`
       SELECT TOP 500
@@ -2320,11 +2426,12 @@ const AGING_TTL = 5 * 60 * 1000;
 router.get('/aging', async (req, res) => {
   try {
     const bust = req.query.bust === '1';
-    const agingScope = await getVisibleScope(req.user);
-    const ag = scopeFilter(agingScope, { empCol: 'hd.EmpID', prefix: 'ag' });
+    const agingScopes = await masterReadScopes(req.user);
+    const ag = intersectMasterScopes(agingScopes, 'hd.EmpID', 'ag');
     const db = require('../db');
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
-    const cacheKey = JSON.stringify([scopedReadKey(db.getTarget(), db.getDbName(), agingScope), dataWindow.businessDate]);
+    const cacheKey = JSON.stringify([scopedReadKey(db.getTarget(), db.getDbName(), agingScopes.effective),
+      scopedReadKey(db.getTarget(), db.getDbName(), agingScopes.actor), dataWindow.businessDate]);
     const rows = await agingCache.get(cacheKey, async () => {
 
     const { wfQuery: wq } = require('../db');
@@ -2389,8 +2496,11 @@ router.get('/aging', async (req, res) => {
       ) line
       ORDER BY DaysOpen DESC
     `, { ...ag.inputs, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } });
-    return result.recordset || [];
-    }, { ttl: agingScope.all ? AGING_TTL : 30000, force: bust });
+    const agingRows = result.recordset || [];
+    try { await require('../services/document-stage').attachAgingDocumentStages(agingRows, {query:wq,sql,dataWindow}); }
+    catch (stageError) { console.warn('[aging] document stage unavailable:', stageError.code || '', stageError.message); }
+    return agingRows;
+    }, { ttl: agingScopes.effective.all && agingScopes.actor.all ? AGING_TTL : 30000, force: bust });
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -2432,7 +2542,7 @@ router.get('/aging/search', async (req, res) => {
       conditions.push(`DATEDIFF(DAY, CAST(hd.DocuDate AS DATETIME), GETDATE()) >= @minDays`);
       inputs.minDays = { type: sql.Int, value: minDays };
     }
-    const searchScope = scopeFilter(await getVisibleScope(req.user), { empCol: 'hd.EmpID', prefix: 'as' });
+    const searchScope = intersectMasterScopes(await masterReadScopes(req.user), 'hd.EmpID', 'as');
     conditions.push(searchScope.sql);
     Object.assign(inputs, searchScope.inputs);
     if (statuses.length) {
@@ -2528,7 +2638,13 @@ router.get('/aging/search', async (req, res) => {
       ORDER BY RowNum ASC
     `, { ...inputs, offset: { type: sql.Int, value: offset }, pageSize: { type: sql.Int, value: pageSize } });
 
-    res.json({ total, page, pageSize, data: dataResult.recordset || [] });
+    const agingRows = dataResult.recordset || [];
+    // Export may contain thousands of rows and does not display the chip.
+    if (!isExport) {
+      try { await require('../services/document-stage').attachAgingDocumentStages(agingRows, {query:wq,sql,dataWindow}); }
+      catch (stageError) { console.warn('[aging-search] document stage unavailable:', stageError.code || '', stageError.message); }
+    }
+    res.json({ total, page, pageSize, data: agingRows });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
@@ -2548,58 +2664,74 @@ router.get('/truck-types', async (req, res) => {
 // POST /api/master/truck-types — สร้างประเภทรถบรรทุกใหม่
 router.post('/truck-types', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
   try {
-    const { wfQuery: wq } = require('../db');
     const { Id, Name, MaxWeightMain, MaxWeightTrailer, IsActive } = req.body;
-    
-    await wq(`
-      INSERT INTO wf.TruckType (Id, Name, MaxWeightMain, MaxWeightTrailer, IsActive)
-      VALUES (@id, @name, @main, @trailer, @active)
-    `, {
+    const identity = await truckTypeAuditIdentity(req.user);
+    await wfTransaction(async tx => {
+      if (await readTruckType(tx, Id)) throw Object.assign(new Error('ประเภทรถนี้มีอยู่แล้ว'), { status: 409 });
+      await transactionQuery(tx, `INSERT INTO wf.TruckType (Id, Name, MaxWeightMain, MaxWeightTrailer, IsActive)
+        VALUES (@id, @name, @main, @trailer, @active)`, {
       id: { type: sql.VarChar(50), value: Id },
       name: { type: sql.NVarChar(100), value: Name },
       main: { type: sql.Decimal(10,2), value: MaxWeightMain },
       trailer: { type: sql.Decimal(10,2), value: MaxWeightTrailer ?? null },
       active: { type: sql.Bit, value: IsActive ?? 1 }
-    });
+      });
+      const after = await readTruckType(tx, Id);
+      if (!after) throw Object.assign(new Error('ไม่สามารถตรวจผลการสร้างประเภทรถ'), { status: 409 });
+      await auditTruckType(tx, req, identity, Id, 'CREATE', null, after);
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
     res.json({ ok: true, id: Id });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // PUT /api/master/truck-types/:id — อัปเดตประเภทรถบรรทุก
 router.put('/truck-types/:id', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
   try {
-    const { wfQuery: wq } = require('../db');
     const id = req.params.id;
     const { Name, MaxWeightMain, MaxWeightTrailer, IsActive } = req.body;
-    
-    const __rows = await dboWrite(`
-      UPDATE wf.TruckType
+    const identity = await truckTypeAuditIdentity(req.user);
+    const changed = await wfTransaction(async tx => {
+      const before = await readTruckType(tx, id);
+      if (!before) return false;
+      const result = await transactionQuery(tx, `UPDATE wf.TruckType
       SET Name = @name, MaxWeightMain = @main, MaxWeightTrailer = @trailer, 
           IsActive = @active, UpdatedAt = GETUTCDATE()
-      WHERE Id = @id
-    `, {
+      WHERE Id = @id`, {
       id: { type: sql.VarChar(50), value: id },
       name: { type: sql.NVarChar(100), value: Name },
       main: { type: sql.Decimal(10,2), value: MaxWeightMain },
       trailer: { type: sql.Decimal(10,2), value: MaxWeightTrailer ?? null },
       active: { type: sql.Bit, value: IsActive ?? 1 }
-    });
-    if (!affected(__rows)) return res.status(404).json({ message: 'ไม่พบประเภทรถนี้' });
+      });
+      if (!affected(result)) throw Object.assign(new Error('ข้อมูลประเภทรถเปลี่ยนแปลง กรุณาลองใหม่'), { status: 409 });
+      const after = await readTruckType(tx, id);
+      if (!after) throw Object.assign(new Error('ไม่สามารถตรวจผลการแก้ไขประเภทรถ'), { status: 409 });
+      await auditTruckType(tx, req, identity, id, 'UPDATE', before, after);
+      return true;
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+    if (!changed) return res.status(404).json({ message: 'ไม่พบประเภทรถนี้' });
     res.json({ ok: true });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // DELETE /api/master/truck-types/:id — ลบประเภทรถบรรทุก (ถ้าจำเป็น) หรือแค่ set inactive
 router.delete('/truck-types/:id', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
   try {
-    const { wfQuery: wq } = require('../db');
     const id = req.params.id;
-    const __rows = await dboWrite(`DELETE FROM wf.TruckType WHERE Id = @id`, {
-      id: { type: sql.VarChar(50), value: id }
-    });
-    if (!affected(__rows)) return res.status(404).json({ message: 'ไม่พบประเภทรถนี้' });
+    const identity = await truckTypeAuditIdentity(req.user);
+    const changed = await wfTransaction(async tx => {
+      const before = await readTruckType(tx, id);
+      if (!before) return false;
+      const result = await transactionQuery(tx, `DELETE FROM wf.TruckType WHERE Id = @id`, {
+        id: { type: sql.VarChar(50), value: id }
+      });
+      if (!affected(result)) throw Object.assign(new Error('ข้อมูลประเภทรถเปลี่ยนแปลง กรุณาลองใหม่'), { status: 409 });
+      await auditTruckType(tx, req, identity, id, 'DELETE', before, null);
+      return true;
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+    if (!changed) return res.status(404).json({ message: 'ไม่พบประเภทรถนี้' });
     res.json({ ok: true });
-  } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
 });
 
 // GET /api/master/system-settings — อ่านตั้งค่าระบบครบทุกนโยบาย พร้อมข้อมูล Version และคำอธิบาย
@@ -2673,7 +2805,7 @@ router.patch('/system-settings', requireCapability('settings.manage'), async (re
       }
     }
 
-    const userId = req.user?.sub || req.user?.username || req.user?.id || 'ADMIN';
+    const { effective: userId } = await policyAuditIdentity(req.user);
     const auditRes = await updatePolicySettings({
       updates,
       userId,

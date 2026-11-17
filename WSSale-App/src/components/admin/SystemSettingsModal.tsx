@@ -67,7 +67,6 @@ export function SystemSettingsModal({
   const [pickupLeadTimeDays, setPickupLeadTimeDays] = useState<string>('1');
 
   const [ticketAlertDays, setTicketAlertDays] = useState<string>('7');
-  const [ticketBlockExpired, setTicketBlockExpired] = useState<boolean>(false);
 
   const [customerRatio, setCustomerRatio] = useState<string>('100');
   const [companyRatio, setCompanyRatio] = useState<string>('0');
@@ -144,7 +143,6 @@ export function SystemSettingsModal({
             setPickupLeadTimeDays(String(raw.PICKUP_LEAD_TIME_DAYS ?? set.PICKUP_LEAD_TIME_DAYS ?? '1'));
 
             setTicketAlertDays(String(raw.CONTROL_TICKET_ALERT_DAYS ?? set.CONTROL_TICKET_ALERT_DAYS ?? '7'));
-            setTicketBlockExpired(String(raw.CONTROL_TICKET_BLOCK_EXPIRED ?? set.CONTROL_TICKET_BLOCK_EXPIRED) === 'true');
 
             setCustomerRatio(String(raw.CUSTOMER_RATIO ?? set.CUSTOMER_RATIO ?? '100'));
             setCompanyRatio(String(raw.COMPANY_RATIO ?? set.COMPANY_RATIO ?? '0'));
@@ -278,7 +276,6 @@ export function SystemSettingsModal({
         PICKUP_STRICT_MODE: pickupStrictMode ? 'true' : 'false',
         PICKUP_LEAD_TIME_DAYS: leadTime,
         CONTROL_TICKET_ALERT_DAYS: alertDays,
-        CONTROL_TICKET_BLOCK_EXPIRED: ticketBlockExpired ? 'true' : 'false',
         CUSTOMER_RATIO: cRatio,
         COMPANY_RATIO: wRatio,
         TRIP_CAPACITY_TON: parseStrictFloat(tripCapacityTon, 50),
@@ -600,24 +597,9 @@ export function SystemSettingsModal({
                     <p className="text-[11px] text-gray-500 mt-1">แสดงสถานะเตือนสีส้มเมื่อเหลืออายุตั๋วไม่เกินจำนวนวันที่กำหนด (ค่าเริ่มต้น 7 วัน)</p>
                   </div>
 
-                  <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-between">
-                    <div>
-                      <div className="font-bold text-gray-800">บล็อกการใช้ตั๋วคุมหมดอายุ (Block Expired Tickets)</div>
-                      <div className="text-[11px] text-gray-500">
-                        {ticketBlockExpired
-                          ? 'เปิดใช้งาน: ห้ามผูกตั๋วคุมที่หมดอายุกับใบสั่งขายเด็ดขาด'
-                          : 'ปิดใช้งาน (ค่าเริ่มต้น): อนุญาตพร้อมบันทึกประวัติการเบิกเกินอายุ'}
-                      </div>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={ticketBlockExpired}
-                        onChange={e => setTicketBlockExpired(e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0C447C]"></div>
-                    </label>
+                  <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl">
+                    <div className="font-bold text-gray-800">บล็อกตั๋วหลังวันหมดอายุที่กำหนด</div>
+                    <div className="text-[11px] text-gray-500">ใช้ตั๋วได้ถึงวันหมดอายุ และบล็อกตั้งแต่วันถัดไปเสมอ</div>
                   </div>
                 </div>
               )}

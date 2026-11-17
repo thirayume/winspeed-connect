@@ -6,14 +6,16 @@ const { EventEmitter } = require('node:events');
 const dbPath = require.resolve('../db');
 const activePath = require.resolve('../services/active-database');
 let mode = 'missing';
+let writes=[];
 const type = () => ({});
 require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: {
   sql: { Int: type, NVarChar: type },
   getTarget: () => 'onprem',
   getDbName: () => 'business',
   runWithTarget: (_target, fn) => fn(),
-  wfQuery: async text => {
+  wfQuery: async (text,inputs) => {
     if (text.includes('OBJECT_ID')) return { recordset: [{ ObjectId: mode === 'missing' ? null : 1 }] };
+    if (mode === 'record') { writes.push({text,inputs}); return {recordset:[]}; }
     throw new Error('SQL driver secret=customer-password');
   },
 } };
@@ -52,4 +54,18 @@ test('production reports missing audit table and write failures without sensitiv
     if (previousEnv === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = previousEnv;
   }
+});
+
+test('successful verification reads are audited without storing the document number',async()=>{
+  mode='record';writes=[];
+  const response=new EventEmitter();response.statusCode=200;
+  const req={user:{sub:8,actorSub:9},originalUrl:'/api/coupons/verify-redemption?docNo=PRIVATE-DOC',
+    method:'GET',ip:'127.0.0.1',get:()=> 'test-agent',auditVerificationRead:true};
+  audit(req,response,()=>{});response.emit('finish');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(writes.length,1);
+  assert.equal(writes[0].inputs.path.value,'/api/coupons/verify-redemption');
+  assert.equal(writes[0].inputs.actorUserId.value,9);
+  assert.equal(writes[0].inputs.effectiveUserId.value,8);
+  assert.doesNotMatch(JSON.stringify(writes),/PRIVATE-DOC/);
 });

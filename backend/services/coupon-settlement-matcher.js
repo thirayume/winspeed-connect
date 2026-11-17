@@ -97,6 +97,7 @@ function matchCutsToReservations(reservations = [], cuts = [], options = {}) {
     .map(c => ({
       redemptionId: String(c.redemptionId != null ? c.redemptionId : (c.RedemtionID != null ? c.RedemtionID : (c.RedemptionId != null ? c.RedemptionId : ''))),
       couponId: Number(c.couponId != null ? c.couponId : (c.CouponID != null ? c.CouponID : c.CouponId)),
+      couponNo: String(c.couponNo || c.CouponNo || ''),
       goodQty: Number(c.goodQty != null ? c.goodQty : (c.GoodQty != null ? c.GoodQty : 0)),
       docuNo: String(c.docuNo || c.DocuNo || c.redemptionDocuNo || c.RedemptionDocuNo || ''),
       docuDate: c.docuDate || c.DocuDate,
@@ -145,42 +146,44 @@ function matchCutsToReservations(reservations = [], cuts = [], options = {}) {
     }
 
     if (candidates.length > 1) {
-      // Multiple candidate reservations with same plate on same coupon
-      const exactQty = candidates.filter(r => Math.abs(r.remainingReservedQty - cut.goodQty) < 0.0001);
-      if (exactQty.length === 1) {
-        applyMatch(exactQty[0], cut);
-      } else if (exactQty.length > 1) {
-        // FIFO: Multiple candidates with exact qty tie, match earliest confirmDate / ID
-        exactQty.sort((a, b) => {
-          const tA = new Date(a.confirmDate || 0).getTime();
-          const tB = new Date(b.confirmDate || 0).getTime();
-          if (tA !== tB) return tA - tB;
-          return Number(a.id) - Number(b.id);
-        });
-        applyMatch(exactQty[0], cut);
-      } else {
-        // No exact qty match: Sort candidates by confirmDate (FIFO)
-        candidates.sort((a, b) => {
-          const tA = new Date(a.confirmDate || 0).getTime();
-          const tB = new Date(b.confirmDate || 0).getTime();
-          if (tA !== tB) return tA - tB;
-          return Number(a.id) - Number(b.id);
-        });
-        if (cut.goodQty <= candidates[0].remainingReservedQty) {
-          applyMatch(candidates[0], cut);
-        } else {
-          ambiguous.push({
-            redemptionId: cut.redemptionId,
-            redemptionDocuNo: cut.docuNo,
-            plate: cut.plate,
-            cutQty: cut.goodQty,
-            reason: 'MULTIPLE_CANDIDATE_RESERVATIONS',
-            candidateReservationIds: candidates.map(c => c.id),
-          });
-          continue;
-        }
-      }
+      // A reused truck and even an exact quantity do not identify the source
+      // bill. Do not choose a candidate by quantity or FIFO: keep the native
+      // cut and every reservation unchanged until a reviewer has evidence.
+      ambiguous.push({
+        redemptionId: cut.redemptionId,
+        redemptionDocuNo: cut.docuNo,
+        plate: cut.plate,
+        cutQty: cut.goodQty,
+        reason: 'MULTIPLE_CANDIDATE_RESERVATIONS',
+        candidateReservationIds: candidates.map(c => c.id),
+      });
+      continue;
     } else {
+      if (Math.round(cut.goodQty * 10000) > Math.round(candidates[0].remainingReservedQty * 10000)) {
+        ambiguous.push({
+          redemptionId: cut.redemptionId,
+          redemptionDocuNo: cut.docuNo,
+          plate: cut.plate,
+          cutQty: cut.goodQty,
+          reason: 'CUT_EXCEEDS_RESERVATION',
+          candidateReservationIds: [candidates[0].id],
+        });
+        continue;
+      }
+      // A single matching plate/date is still circumstantial: another bill can
+      // use the same truck and coupon. Business settlement must wait for a
+      // verified 116-to-reservation link, even when the quantity is identical.
+      if (options.requireAuthoritativeLink === true) {
+        ambiguous.push({
+          redemptionId: cut.redemptionId,
+          redemptionDocuNo: cut.docuNo,
+          plate: cut.plate,
+          cutQty: cut.goodQty,
+          reason: 'AUTHORITATIVE_LINK_REQUIRED',
+          candidateReservationIds: [candidates[0].id],
+        });
+        continue;
+      }
       applyMatch(candidates[0], cut);
     }
   }
@@ -250,7 +253,11 @@ function matchCutsToReservations(reservations = [], cuts = [], options = {}) {
       let reason = 'NO_CANDIDATE';
       let candidateReservations = couponCandidates;
 
-      if (couponCandidates.length === 0) {
+      const held = ambiguous.find(item => item.redemptionId === cut.redemptionId);
+      if (held && held.reason === 'AUTHORITATIVE_LINK_REQUIRED') {
+        reason = held.reason;
+        candidateReservations = couponCandidates.filter(r => held.candidateReservationIds.includes(r.id));
+      } else if (couponCandidates.length === 0) {
         reason = 'NO_CANDIDATE';
         candidateReservations = [];
       } else {
@@ -297,6 +304,8 @@ function matchCutsToReservations(reservations = [], cuts = [], options = {}) {
 
       return {
         redemptionId: cut.redemptionId,
+        couponId: cut.couponId,
+        couponNo: cut.couponNo,
         docuNo: cut.docuNo,
         docuDate: cut.docuDate,
         goodQty: cut.goodQty,

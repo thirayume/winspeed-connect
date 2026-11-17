@@ -323,6 +323,9 @@ async function verifyConversionTarget(query, expectedDatabase) {
   if (String(actual || '').trim().toLowerCase() !== expectedDatabase.toLowerCase())
     throw Object.assign(new Error('ฐานข้อมูลเปลี่ยนหรือไม่ตรงกับที่เลือก กรุณาตรวจสอบอีกครั้ง'), { code:'REBATE_TARGET_MISMATCH', status:409 });
 }
+function configuredTicketTreatment() {
+  return /^([a-zA-Z0-9_]+):(ZERO|DISCOUNT)$/.exec(process.env.REBATE_TICKET_REDEMPTION_TREATMENT?.trim() || '');
+}
 router.get('/conversion-requests', conversionApprovalsEnabled, async (req, res) => {
   try {
     const { authorizeConversionAction } = require('../services/rebate-conversion-approval-policy');
@@ -444,11 +447,15 @@ router.post('/tickets/redemption-preview', requireCapability('rebate.ticket-rede
       const proof=await require('../services/rebate-ticket-booking-proof').prepareTicketBookingProof(q,{
         user:req.user,bookingId:Number(req.body?.bookingId),lineNo:Number(req.body?.lineNo),
         requestedTonnage:req.body?.requestedTonnage,startDate:window.businessDate});
+      const approval=configuredTicketTreatment();
+      const readyForRedemption=Boolean(approval
+        && req.body.expectedDatabase.toLowerCase()===approval[1].toLowerCase()
+        && await require('../services/rebate-ticket-financial-verifier').verifyPostedTicketSale(q,proof,approval[2]));
       // Do not expose financial fields or customer data beyond the already
       // authorized booking. A preview does not reserve or consume anything.
       return {bookingId:proof.bookingId,lineNo:proof.lineNo,quantityTon:proof.plan.quantityTon,
         ticketCount:proof.plan.allocations.length,asOfDate:proof.plan.asOfDate,
-        readyForRedemption:false};
+        readyForRedemption};
     }));
     return res.json(result);
   } catch(e) {
@@ -458,9 +465,34 @@ router.post('/tickets/redemption-preview', requireCapability('rebate.ticket-rede
 });
 
 router.post('/tickets/redeem', requireCapability('rebate.ticket-redeem'), async (req, res) => {
-  // The order/customer/product link and caller scope must be verified before
-  // allowing a FIFO deduction. A submitted amount alone is not evidence.
-  return res.status(503).json({ code: 'TICKET_REDEMPTION_UNAVAILABLE', error: 'การใช้ตั๋วปุ๋ยยังไม่พร้อมใช้งาน' });
+  const approval = configuredTicketTreatment();
+  if (process.env.REBATE_POOL_103_ENABLED !== 'true' || !approval)
+    return res.status(503).json({ code: 'TICKET_REDEMPTION_UNAVAILABLE', error: 'การใช้ตั๋วปุ๋ยยังไม่พร้อมใช้งาน' });
+  try {
+    const payload = req.body || {};
+    if (payload.treatment != null && payload.treatment !== approval[2])
+      return res.status(409).json({ code: 'TICKET_TREATMENT_MISMATCH' });
+    const { isShipmentEpoch } = require('../services/rebate-route-fence');
+    const result = await require('../services/rebate-ticket-redemption-transaction').executeTicketRedemption(
+      req.user, {
+        bookingId: payload.bookingId, lineNo: payload.lineNo, requestedTonnage: payload.requestedTonnage,
+        requestId: payload.requestId, treatment: approval[2],
+      }, {
+        async verifyTarget(query, epoch) {
+          if (!isShipmentEpoch(epoch))
+            throw Object.assign(Error('reset required'), { code: 'REBATE_RESET_NOT_COMPLETED', status: 409 });
+          await verifyConversionTarget(query, payload.expectedDatabase);
+          if (payload.expectedDatabase.toLowerCase() !== approval[1].toLowerCase())
+            throw Object.assign(Error('treatment unavailable'), { code: 'TICKET_FINANCIAL_PROOF_UNAVAILABLE', status: 503 });
+        },
+        verifyFinancialTreatment: require('../services/rebate-ticket-financial-verifier').verifyPostedTicketSale,
+      });
+    return res.json({ id: result.id, replayed: result.replayed });
+  } catch (e) {
+    const status = Number.isInteger(e.status) && e.status >= 400 && e.status <= 599 ? e.status : 503;
+    return res.status(status).json({ code: e.code || 'TICKET_REDEMPTION_UNAVAILABLE',
+      message: 'ไม่สามารถใช้ตั๋ว Rebate ได้ กรุณาตรวจเอกสารและสถานะของตั๋ว' });
+  }
 });
 
 router.get('/tickets/:ticketId/history', requireRebateAmountAccess, async (req, res) => {

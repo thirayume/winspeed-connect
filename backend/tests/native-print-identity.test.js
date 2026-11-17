@@ -18,7 +18,7 @@ const db=h.installDbStub(({text,inputs})=>{
 let app;
 test.before(async()=>{app=await h.startApp([['/api/native-print','../../routes/native-print']]);});
 test.after(async()=>app.close());
-test.beforeEach(()=>{db.calls.length=0;user={sub:22,actorSub:17,role:'ADMIN',isImpersonating:true,identityMapping:{primaryEffectiveUserId:22,primaryActorUserId:17,businessEffectiveUserId:34,businessActorUserId:47}};});
+test.beforeEach(()=>{db.calls.length=0;user={sub:22,actorSub:17,role:'ADMIN',roles:['ADMIN'],actorRole:'ADMIN',actorRoles:['ADMIN'],isImpersonating:true,identityMapping:{primaryEffectiveUserId:22,primaryActorUserId:17,businessEffectiveUserId:34,businessActorUserId:47}};});
 test('print log stores mapped effective and actual actor IDs from the business database',async()=>{
  const result=await app.call('POST','/api/native-print/104/I69-00001/printed');
  assert.equal(result.status,200);

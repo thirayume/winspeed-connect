@@ -8,6 +8,7 @@ import { bangkokDate } from '../../utils/date';
 import { useAppStore } from '../../store/app-store';
 import { exportToExcel, type ExportColumn } from '../../utils/exportUtils';
 import type { AgingRow, SOStatus } from '../../types';
+import { DocStageChip } from '../sales/DocStageChip';
 import { SO_STATUS_META } from '../../constants/soStatus';
 
 const PAGE_SIZE = 50;
@@ -266,8 +267,8 @@ export const AgingPage = () => {
                     {g.wfRefs.length > 0 && (
                       <div className="mt-1 text-[10px] text-gray-400 font-mono flex gap-1 flex-wrap">
                         {g.wfRefs.map(({ ref, id }) => (
-                          <button 
-                            key={ref} 
+                          <span key={`${id}-${ref}`} className="inline-flex flex-col gap-1">
+                          <button
                             onClick={(e) => {
                               e.stopPropagation();
                               navigate('sales', { action: 'edit', soId: id });
@@ -277,6 +278,8 @@ export const AgingPage = () => {
                           >
                             {ref}
                           </button>
+                          <DocStageChip stage={data.find(row => String(row.SoId) === id && row.WfRef === ref)?.docStage} />
+                          </span>
                         ))}
                       </div>
                     )}

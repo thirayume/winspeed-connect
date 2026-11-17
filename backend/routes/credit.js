@@ -6,7 +6,7 @@ const router = require('express').Router();
 const { sql, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { businessIds } = require('../services/business-identity');
-const { secondaryCustomerVisible } = require('../services/secondary-customer-scope');
+const { customerPredicate, customerVisible } = require('../services/secondary-customer-scope');
 const { readGlobalDataWindow } = require('../services/global-data-window-store');
 const { checkCustomerCreditAndAging, parseNullableAgingInput, getCreditAgingPolicyBounds } = require('../services/credit-service');
 
@@ -16,9 +16,13 @@ router.use(requireAuth);
 router.get('/:custId/status', async (req, res) => {
   try {
     const custId = req.params.custId;
-    if (req.user.identityMapping && !await secondaryCustomerVisible(req.user, custId))
+    if (!await customerVisible(req.user, custId))
       return res.status(404).json({ message: 'ไม่พบลูกค้า' });
-    const amount = Number(req.query.amount) || 0;
+    const rawAmount = req.query.amount;
+    if (rawAmount !== undefined && (typeof rawAmount !== 'string' ||
+      !/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(rawAmount) || !Number.isFinite(Number(rawAmount))))
+      return res.status(400).json({code:'CREDIT_AMOUNT_INVALID',message:'ยอดคำสั่งซื้อต้องเป็นจำนวนไม่ติดลบ'});
+    const amount = rawAmount === undefined ? 0 : Number(rawAmount);
     const status = await checkCustomerCreditAndAging(custId, amount);
     res.json(status);
   } catch (e) {
@@ -30,10 +34,14 @@ router.get('/:custId/status', async (req, res) => {
 // GET /api/credit — รายการลูกค้าที่ตั้ง credit (โดยเฉพาะที่ hold)
 router.get('/', async (req, res) => {
   try {
+    const visibility = await customerPredicate(req.user);
     const r = await wfQuery(`
-      SELECT c.CustId, c.CustName, c.CreditLimit, c.CreditHold, c.AgingDays, c.Note, u.DisplayName AS UpdatedByName, c.UpdatedAt
-      FROM wf.CreditMaster c LEFT JOIN wf.AppUser u ON u.Id=c.UpdatedBy
-      ORDER BY c.CreditHold DESC, c.UpdatedAt DESC`);
+      SELECT cm.CustId, cm.CustName, cm.CreditLimit, cm.CreditHold, cm.AgingDays, cm.Note, u.DisplayName AS UpdatedByName, cm.UpdatedAt
+      FROM wf.CreditMaster cm JOIN dbo.EMCust c ON CONVERT(NVARCHAR(20),c.CustID)=cm.CustId
+      LEFT JOIN wf.CustomerExt cx ON cx.CustId=c.CustID
+      LEFT JOIN wf.AppUser u ON u.Id=cm.UpdatedBy
+      WHERE ${visibility.sql}
+      ORDER BY cm.CreditHold DESC, cm.UpdatedAt DESC`, visibility.inputs);
     res.json(r.recordset || []);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -44,6 +52,8 @@ router.get('/:custId/history', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN'), as
   try { dataWindow = await readGlobalDataWindow(); }
   catch { return res.status(503).json({ code:'DATA_WINDOW_UNAVAILABLE', message:'ไม่สามารถอ่านวันเริ่มข้อมูลได้' }); }
   try {
+    if (!await customerVisible(req.user, req.params.custId))
+      return res.status(404).json({ message: 'ไม่พบลูกค้า' });
     const r=await wfQuery(`SELECT TOP (100) Id, BeforeState, AfterState, ActorPrimaryId, EffectivePrimaryId,
       ActorBusinessId, EffectiveBusinessId, CreatedAt FROM wf.CreditMasterAudit
       WHERE CustId=@c AND CreatedAt>=@globalStartUtc ORDER BY Id DESC`, {
@@ -57,6 +67,8 @@ router.get('/:custId/history', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN'), as
 // GET /api/credit/:custId — ดูเครดิตลูกค้ารายเดียว
 router.get('/:custId', async (req, res) => {
   try {
+    if (!await customerVisible(req.user, req.params.custId))
+      return res.status(404).json({ message: 'ไม่พบลูกค้า' });
     const [r, bounds] = await Promise.all([
       wfQuery(`SELECT CustId, CustName, CreditLimit, CreditHold, AgingDays, Note FROM wf.CreditMaster WHERE CustId=@c`,
         { c: { type: sql.NVarChar(20), value: String(req.params.custId) } }),
@@ -84,14 +96,20 @@ router.put('/:custId', requireRole('ACCOUNTING', 'MANAGER', 'ADMIN'), async (req
     const effectivePrimary = Number(req.user.sub);
     if (![ids.actor, ids.effective, actorPrimary, effectivePrimary].every(v => Number.isSafeInteger(v) && v > 0))
       return res.status(401).json({ message: 'ไม่พบผู้ใช้' });
+    const customerId = String(req.params.custId || '').trim();
+    if (!/^\d+$/.test(customerId) || !Number.isSafeInteger(Number(customerId)) || Number(customerId) <= 0 || Number(customerId) > 2147483647)
+      return res.status(404).json({ message: 'ไม่พบลูกค้า' });
+    const visibility = await customerPredicate(req.user);
     const result = await wfTransaction(async tx => {
       const tq = async (text, inputs = {}) => {
         const request = tx.request();
         for (const [key, { type, value }] of Object.entries(inputs)) request.input(key, type, value);
         return request.query(text);
       };
-      const c = { type: sql.NVarChar(20), value: String(req.params.custId) };
-      const exists = await tq('SELECT TOP 1 1 AS ok FROM dbo.EMCust WHERE CustID = @c', { c });
+      const c = { type: sql.NVarChar(20), value: customerId };
+      const exists = await tq(`SELECT TOP 1 1 AS ok FROM dbo.EMCust c WITH (UPDLOCK,HOLDLOCK)
+        LEFT JOIN wf.CustomerExt cx WITH (UPDLOCK,HOLDLOCK) ON cx.CustId=c.CustID
+        WHERE c.CustID=@c AND ${visibility.sql}`, { c, ...visibility.inputs });
       if (!exists.recordset.length) return { notFound: true };
       const before = (await tq(`SELECT CustName, CreditLimit, CreditHold, AgingDays, Note FROM wf.CreditMaster WITH (UPDLOCK,HOLDLOCK) WHERE CustId=@c`, { c })).recordset[0] || null;
       await tq(`MERGE wf.CreditMaster WITH (HOLDLOCK) AS t USING (SELECT @c AS CustId) AS s ON t.CustId=s.CustId

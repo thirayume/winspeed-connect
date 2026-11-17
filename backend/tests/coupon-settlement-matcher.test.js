@@ -119,7 +119,7 @@ test('6. Partial cut: cut consumes only cut quantity, remaining stays reserved',
   assert.equal(res.unmatchedReservations[0].remainingReservedQty, 1.5);
 });
 
-test('7. Two reservations with one cut: cut is used exactly once, first candidate matches', () => {
+test('7. Two reservations with one cut: an exact quantity does not identify the correct bill', () => {
   const reservations = [
     { id: '1', couponId: 246000, reservedQty: 4.0, plate: 'กพ70-9203/9204', confirmDate: '2026-10-03' },
     { id: '2', couponId: 246000, reservedQty: 2.0, plate: 'กพ70-9203/9204', confirmDate: '2026-10-03' }
@@ -130,12 +130,12 @@ test('7. Two reservations with one cut: cut is used exactly once, first candidat
   ];
 
   const res = matchCutsToReservations(reservations, cuts);
-  assert.equal(res.matches.length, 1);
-  assert.equal(res.matches[0].reservationId, '1');
-  assert.equal(res.matches[0].matchedQty, 4.0);
-  assert.equal(res.doubleCountedQty, 4.0);
-  assert.equal(res.unmatchedReservations.length, 1);
-  assert.equal(res.unmatchedReservations[0].id, '2');
+  assert.equal(res.matches.length, 0);
+  assert.equal(res.doubleCountedQty, 0);
+  assert.equal(res.ambiguous.length, 1);
+  assert.equal(res.ambiguous[0].reason, 'MULTIPLE_CANDIDATE_RESERVATIONS');
+  assert.deepEqual(res.ambiguous[0].candidateReservationIds, ['1','2']);
+  assert.equal(res.unmatchedReservations.length, 2);
 });
 
 test('8. Same-day local-midnight Bangkok business date (R6-6): cut at local midnight matches same-day confirmation without UTC shift error', () => {
@@ -158,7 +158,7 @@ test('8. Same-day local-midnight Bangkok business date (R6-6): cut at local midn
   assert.equal(res.unmatchedReservations.length, 0);
 });
 
-test('9. Same truck twice on the same day (R7-2): Trip 1 (morning) and Trip 2 (afternoon) match Cut 1 and Cut 2 FIFO', () => {
+test('9. Same truck twice on the same day: both cuts require evidence instead of FIFO', () => {
   const reservations = [
     { id: '101', couponId: 246000, reservedQty: 10.0, plate: 'กพ70-9203/9204', confirmDate: '2026-10-04T08:00:00.000Z', carrierDocuNo: 'I69-04230' },
     { id: '102', couponId: 246000, reservedQty: 10.0, plate: 'กพ70-9203/9204', confirmDate: '2026-10-04T13:00:00.000Z', carrierDocuNo: 'I69-04231' }
@@ -170,16 +170,20 @@ test('9. Same truck twice on the same day (R7-2): Trip 1 (morning) and Trip 2 (a
   ];
 
   const res = matchCutsToReservations(reservations, cuts);
-  assert.equal(res.matches.length, 2, 'Both trips must match their corresponding cuts FIFO');
-  assert.equal(res.ambiguous.length, 0, 'No ambiguity should remain for chronological trips');
-  assert.equal(res.matches[0].reservationId, '101');
-  assert.equal(res.matches[0].redemptionId, '601');
-  assert.equal(res.matches[0].matchedQty, 10.0);
-  assert.equal(res.matches[1].reservationId, '102');
-  assert.equal(res.matches[1].redemptionId, '602');
-  assert.equal(res.matches[1].matchedQty, 10.0);
-  assert.equal(res.unmatchedCuts.length, 0);
-  assert.equal(res.unmatchedReservations.length, 0);
+  assert.equal(res.matches.length, 0);
+  assert.equal(res.ambiguous.length, 2);
+  assert.ok(res.ambiguous.every(a => a.reason === 'MULTIPLE_CANDIDATE_RESERVATIONS'));
+  assert.equal(res.unmatchedCuts.length, 2);
+  assert.equal(res.unmatchedReservations.length, 2);
+});
+
+test('a cut larger than its sole candidate is not silently truncated and settled', () => {
+  const res=matchCutsToReservations(
+    [{id:'1',couponId:2,reservedQty:0.2,plate:'UAT',confirmDate:'2026-11-15'}],
+    [{redemptionId:'3',couponId:2,goodQty:0.3,docuNo:'TEST',docuDate:'2026-11-15',carLicense:'UAT'}]);
+  assert.equal(res.matches.length,0);
+  assert.equal(res.ambiguous[0].reason,'CUT_EXCEEDS_RESERVATION');
+  assert.equal(res.unmatchedReservations[0].remainingReservedQty,0.2);
 });
 
 test('10. Partial cut followed by second cut on same reservation (R7-2): Cut 1 (6t) then Cut 2 (4t) fully consume 10t reservation', () => {
@@ -233,7 +237,7 @@ test('11. Cut number mapping (R8-2): cut with RedemptionDocuNo correctly populat
   assert.equal(res.doubleCountedReservations[0].matchingRedemptionDocuNo, '69100001', 'Double count reservation must preserve cut docuNo');
 });
 
-test('12. Stubbed settlement test (R8-2): cut number reaches inserted settlement row and NativeDocuNo', async () => {
+test('12. A coincidental plate/date/quantity is held, with the cut number available for review', async () => {
   const { settleCouponReservations } = require('../services/coupon-service');
   const insertedRows = [];
   const updatedReservations = [];
@@ -269,6 +273,7 @@ test('12. Stubbed settlement test (R8-2): cut number reaches inserted settlement
     reservationsVisible: async () => true,
     checkMigration139: async () => true,
     wfQuery: async (sqlText) => {
+      const legacy=require('./helpers/native-hold-legacy.cjs')(sqlText);if(legacy)return legacy;
       if (sqlText.includes('FROM wf.CouponReservation cr')) {
         return {
           recordset: [
@@ -312,14 +317,11 @@ test('12. Stubbed settlement test (R8-2): cut number reaches inserted settlement
 
   const result = await settleCouponReservations(246000, { userId: 43 }, stubDeps);
 
-  assert.equal(result.settledCount, 1);
-  assert.equal(result.settlements[0].redemptionDocuNo, '69100001');
-  assert.equal(insertedRows.length, 1);
-  assert.equal(insertedRows[0].docuNo, '69100001', 'Cut number 69100001 must reach inserted NativeDocuNo parameter');
-  assert.equal(insertedRows[0].redemId, 183000);
-  assert.equal(insertedRows[0].resId, 101);
-  assert.equal(insertedRows[0].qty, 4.0);
-  assert.equal(insertedRows[0].uid, 43);
+  assert.equal(result.settledCount, 0);
+  assert.equal(result.ambiguous[0].redemptionDocuNo, '69100001');
+  assert.equal(result.ambiguous[0].reason, 'AUTHORITATIVE_LINK_REQUIRED');
+  assert.equal(insertedRows.length, 0);
+  assert.equal(updatedReservations.length, 0);
 });
 
 test('13. Migration 139 cache (R8-1): checkMigration139 does not cache false indefinitely and caches true once positive', async () => {

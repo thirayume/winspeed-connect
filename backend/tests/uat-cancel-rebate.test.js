@@ -16,19 +16,31 @@ const bills = {
   278100: { Id: '278100', Status: 'PENDING_APPROVAL', SalesUserId: 34, ImportedDocuNo: 'I69-05000', WfRef: 'I69-05000', CustId: '1078' },
   278101: { Id: '278101', Status: 'DRAFT', SalesUserId: 34, ImportedDocuNo: 'I69-05001', WfRef: 'I69-05001', CustId: '1078' },
 };
+let nativeHoldSchema=null, nativeAuthorizationActive=false;
 const db = h.installDbStub(({ text, inputs }) => {
+  if (/SELECT Id FROM wf\.CouponReservation WITH \(UPDLOCK,HOLDLOCK\)/.test(text)) return nativeAuthorizationActive ? [{Id:12}] : [];
+  if (/AS ActiveNativeAuthorization/.test(text)) return nativeAuthorizationActive ? [{ActiveNativeAuthorization:1}] : [];
   if (/FROM wf\.v_AllSalesOrders WHERE CAST\(Id AS INT\) = @id/.test(text)) return bills[inputs.id] ? [bills[inputs.id]] : [];
   if (/FROM wf\.EditReason\s+WHERE ReasonCode = @code/.test(text)) {
     return inputs.code === 'SO_CANCELLED' ? [{ ReasonCode: 'SO_CANCELLED', ReasonText: 'ลูกค้ายกเลิก', AppliesTo: 'SO_CANCEL,SO_DELETE', IsActive: 1 }] : [];
   }
   return [];
-}, { activeUserIds: h.TEST_USERS });
+}, { activeUserIds: h.TEST_USERS, nativeHoldSchema:()=>nativeHoldSchema });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/so', '../../routes/so']]); });
 test.after(async () => { await app.close(); });
 const cancel = (id) => app.call('PATCH', `/api/so/${id}/cancel`, { body: { reasonCode: 'SO_CANCELLED', reason: 'UAT ยกเลิก' }, user: { sub: 34, role: 'SALES' } });
 const callsOf = async (id) => { const before = db.calls.length; const r = await cancel(id); assert.equal(r.status, 200, JSON.stringify(r.body)); return db.calls.slice(before); };
+test.afterEach(()=>{nativeHoldSchema=null;nativeAuthorizationActive=false;});
+
+test('cancel holds a bill with an active native authorization before any business writes', async()=>{
+  nativeHoldSchema={NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:1,HeaderVisible:1,LineVisible:1,HeaderSelect:1,LineSelect:1};
+  nativeAuthorizationActive=true;const before=db.calls.length;
+  const response=await cancel(900);assert.equal(response.status,409);
+  const writes=db.calls.slice(before).filter(c=>/\b(INSERT|UPDATE|DELETE|MERGE)\b/i.test(c.text));
+  assert.deepEqual(writes,[]);
+});
 
 test('a draft: the applied claim is released', async () => {
   const calls = await callsOf(900);

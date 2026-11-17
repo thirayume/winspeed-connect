@@ -32,6 +32,25 @@ const {
 } = require('../services/trip-multi-cust-approval');
 const { assertPricesAboveCost } = require('../services/cost-authority');
 const { approvalIdentity, bothHaveRole, isSubmitter } = require('../services/approval-identity');
+const { businessIds } = require('../services/business-identity');
+const { currentActorId, hasColumn } = require('../services/request-context');
+
+async function ensureScopedAuditIdentity(user) {
+  const ids = businessIds(user);
+  if (!ids.actor || !ids.effective) throw Object.assign(new Error('ไม่สามารถยืนยันตัวตนผู้บันทึกได้'), { status: 401 });
+  if (ids.actor !== ids.effective && (currentActorId() !== ids.actor || !await hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId')))
+    throw Object.assign(new Error('ไม่สามารถบันทึกตัวตนผู้ทำรายการแทนได้'), { status: 503 });
+  return ids;
+}
+async function auditScopedChange(tx, req, { entityType, id, action, before, after, note }) {
+  const ids = await ensureScopedAuditIdentity(req.user);
+  await require('../services/policy-contract').logChangeEvent(tx, { entityType, entityId: String(id), action,
+    beforeJson: before, afterJson: after, reasonText: note || null,
+    userId: ids.effective, ipAddress: req.ip });
+}
+async function auditApprovalDecision(tx, req, entityType, id, status, note) {
+  return auditScopedChange(tx, req, { entityType, id, action: status, before: { status: 'PENDING' }, after: { status }, note });
+}
 
 router.use(requireAuth);
 
@@ -79,12 +98,15 @@ async function requireEditRequestInScope(req, res, next) {
 async function requirePriceApprovalInScope(req, res, next) {
   try {
     const scope = await getVisibleScope(req.user);
-    if (scope.all) return next();
+    const actor = require('../services/business-identity').actorPerspective(req.user);
+    const actorScope = actor === req.user ? scope : await getVisibleScope(actor);
+    if (scope.all && actorScope.all) return next();
     const r = (await wfQuery(`
       SELECT pa.RequestedBy, so.SalesUserId
       FROM wf.PriceApproval pa LEFT JOIN wf.SalesOrder so ON so.Id = pa.SoId
       WHERE pa.Id = @id`, { id: { type: sql.Int, value: Number(req.params.id) } })).recordset?.[0];
-    if (!r || !inScope(scope, { userId: r.RequestedBy, extraUserIds: [r.SalesUserId] })) {
+    const owner = { userId: r?.RequestedBy, extraUserIds: [r?.SalesUserId] };
+    if (!r || !inScope(scope, owner) || !inScope(actorScope, owner)) {
       return res.status(404).json({ message: 'ไม่พบคำขออนุมัติราคานี้' });
     }
     next();
@@ -340,12 +362,13 @@ router.post('/', requireCapability('edit-request.create'), async (req, res) => {
 
     // เหตุผลเป็นตัวกำหนด Hold แต่ยังเป็นเพียงการแจ้งเตือนในแอป
     const hold = reason.RequiresHold && st.stage !== 'CONFIRMED' ? 1 : 0;
-    const { businessIds } = require('../services/business-identity');
-    const ids = businessIds(req.user);
-    if (!ids.effective || !ids.actor) throw Object.assign(new Error('EDIT_AUDIT_IDENTITY_REQUIRED'), { status: 403 });
-    if (req.user.isImpersonating && !await require('../services/request-context').hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId'))
-      throw Object.assign(new Error('EDIT_ACTOR_AUDIT_UNAVAILABLE'), { status: 503 });
+    const ids = await ensureScopedAuditIdentity(req.user);
     const id = await wfTransaction(async tx => {
+      const lockedReason = (await tx.request().input('code', sql.VarChar(30), reason.ReasonCode)
+        .query('SELECT ReasonCode,AppliesTo,RequiresHold,IsActive FROM wf.EditReason WITH (UPDLOCK,HOLDLOCK) WHERE ReasonCode=@code')).recordset?.[0];
+      if (!lockedReason || !lockedReason.IsActive || String(lockedReason.AppliesTo || '') !== String(reason.AppliesTo || '') ||
+          Boolean(lockedReason.RequiresHold) !== Boolean(reason.RequiresHold))
+        throw Object.assign(new Error('เหตุผลเปลี่ยนแปลงแล้ว กรุณาโหลดและเลือกใหม่'), { status: 409 });
       const dup = (await tx.request().input('soid', sql.VarChar(50), String(soid))
         .query("SELECT TOP 1 Id FROM wf.EditRequest WITH (UPDLOCK,HOLDLOCK) WHERE SOID=@soid AND Status='PENDING'")).recordset?.[0];
       if (dup) throw Object.assign(new Error('ใบนี้มีคำขอรออนุมัติอยู่แล้ว'), { status: 409 });
@@ -406,11 +429,7 @@ router.patch('/:id/approve', requireRole(...APPROVER_ROLES), requireCurrentEditR
     // approval preconditions under the same lock rather than trusting the read
     // made before entering the transaction.
     const result = await wfTransaction(async tx => {
-      const { businessIds } = require('../services/business-identity');
-      const ids = businessIds(req.user);
-      if (!ids.effective || !ids.actor) throw Object.assign(new Error('EDIT_AUDIT_IDENTITY_REQUIRED'), { status: 403 });
-      if (req.user.isImpersonating && !await require('../services/request-context').hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId'))
-        throw Object.assign(new Error('EDIT_ACTOR_AUDIT_UNAVAILABLE'), { status: 503 });
+      const ids = await ensureScopedAuditIdentity(req.user);
       const current = (await tx.request().input('id', sql.Int, Number(req.params.id)).input('start', sql.DateTime2, req.editRequestStartUtc)
         .query('SELECT * FROM wf.EditRequest WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id AND RequestedAt >= @start')).recordset?.[0];
       if (!current) throw Object.assign(new Error('ไม่พบคำขอนี้'), { status: 404 });
@@ -462,11 +481,7 @@ router.patch('/:id/approve', requireRole(...APPROVER_ROLES), requireCurrentEditR
 // Close requests and their transactional change-audit together. Hold release
 // is a separate optional integration and failures are reported after commit.
 async function closeEditRequest(req, status, note) {
-  const { businessIds } = require('../services/business-identity');
-  const ids = businessIds(req.user);
-  if (!ids.effective || !ids.actor) throw Object.assign(new Error('EDIT_AUDIT_IDENTITY_REQUIRED'), { status: 403 });
-  if (req.user.isImpersonating && !await require('../services/request-context').hasColumn(wfQuery, 'wf.ChangeEvent', 'ActorUserId'))
-    throw Object.assign(new Error('EDIT_ACTOR_AUDIT_UNAVAILABLE'), { status: 503 });
+  const ids = await ensureScopedAuditIdentity(req.user);
   return wfTransaction(async tx => {
     const current = (await tx.request().input('id', sql.Int, Number(req.params.id)).input('start', sql.DateTime2, req.editRequestStartUtc)
       .query('SELECT * FROM wf.EditRequest WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id AND RequestedAt >= @start')).recordset?.[0];
@@ -574,107 +589,70 @@ router.post('/admin/reasons', requireRole('ADMIN', 'C_LEVEL'), async (req, res) 
   try {
     const { reasonCode, reasonText, appliesTo, requiresHold, sortOrder, isActive } = req.body || {};
     const code = String(reasonCode || '').trim().toUpperCase();
-
-    if (!/^[A-Z][A-Z0-9_]{1,29}$/.test(code))
-      return res.status(400).json({ message: 'รหัสต้องเป็น A-Z 0-9 _ ขึ้นต้นด้วยตัวอักษร ยาว 2-30 ตัว' });
-    if (!String(reasonText || '').trim())
-      return res.status(400).json({ message: 'ต้องระบุข้อความเหตุผล' });
-
+    if (!/^[A-Z][A-Z0-9_]{1,29}$/.test(code)) return res.status(400).json({ message: 'รหัสต้องเป็น A-Z 0-9 _ ขึ้นต้นด้วยตัวอักษร ยาว 2-30 ตัว' });
+    if (!String(reasonText || '').trim()) return res.status(400).json({ message: 'ต้องระบุข้อความเหตุผล' });
     const stages = normalizeStages(appliesTo);
     if (stages.error) return res.status(400).json({ message: stages.error });
-
-    const dup = (await wfQuery(`SELECT 1 AS x FROM wf.EditReason WHERE ReasonCode = @c`,
-      { c: { type: sql.VarChar(30), value: code } })).recordset[0];
-    if (dup) return res.status(409).json({ message: `รหัส ${code} มีอยู่แล้ว` });
-
-    await wfQuery(`
-      INSERT INTO wf.EditReason (ReasonCode, ReasonText, AppliesTo, RequiresHold, SortOrder, IsActive)
-      VALUES (@c, @t, @a, @h, @s, @i)`, {
-        c: { type: sql.VarChar(30),   value: code },
-        t: { type: sql.NVarChar(400), value: String(reasonText).trim() },
-        a: { type: sql.VarChar(100),  value: stages.value },
-        h: { type: sql.Bit,           value: requiresHold ? 1 : 0 },
-        s: { type: sql.SmallInt,      value: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : 100 },
-        i: { type: sql.Bit,           value: isActive === false ? 0 : 1 },
-      });
-
+    const after = { reasonCode: code, reasonText: String(reasonText).trim(), appliesTo: stages.value,
+      requiresHold: !!requiresHold, sortOrder: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : 100, isActive: isActive !== false };
+    await wfTransaction(async tx => {
+      const dup = (await tx.request().input('c', sql.VarChar(30), code)
+        .query('SELECT ReasonCode FROM wf.EditReason WITH (UPDLOCK,HOLDLOCK) WHERE ReasonCode=@c')).recordset[0];
+      if (dup) throw Object.assign(new Error(`รหัส ${code} มีอยู่แล้ว`), { status: 409 });
+      await tx.request().input('c',sql.VarChar(30),code).input('t',sql.NVarChar(400),after.reasonText)
+        .input('a',sql.VarChar(100),after.appliesTo).input('h',sql.Bit,after.requiresHold?1:0)
+        .input('s',sql.SmallInt,after.sortOrder).input('i',sql.Bit,after.isActive?1:0)
+        .query('INSERT INTO wf.EditReason (ReasonCode,ReasonText,AppliesTo,RequiresHold,SortOrder,IsActive) VALUES (@c,@t,@a,@h,@s,@i)');
+      await auditScopedChange(tx,req,{entityType:'EDIT_REASON',id:code,action:'CREATE',before:null,after});
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
     res.json({ reasonCode: code, message: `เพิ่มเหตุผล ${code} แล้ว` });
-  } catch (e) {
-    console.error('[edit-requests/admin/reasons:create]', e);
-    res.status(500).json({ message: e.message });
-  }
+  } catch(e) { console.error('[edit-requests/admin/reasons:create]',e); res.status(e.status || 500).json({message:e.message}); }
 });
 
-// PUT /api/edit-requests/admin/reasons/:code
+// Update and removal keep the reason and pending-reference check in one transaction.
 router.put('/admin/reasons/:code', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
-    const code = String(req.params.code || '').trim().toUpperCase();
-    const { reasonText, appliesTo, requiresHold, sortOrder, isActive } = req.body || {};
-
-    const cur = (await wfQuery(`SELECT * FROM wf.EditReason WHERE ReasonCode = @c`,
-      { c: { type: sql.VarChar(30), value: code } })).recordset[0];
-    if (!cur) return res.status(404).json({ message: 'ไม่พบเหตุผลนี้' });
-
-    if (!String(reasonText || '').trim())
-      return res.status(400).json({ message: 'ต้องระบุข้อความเหตุผล' });
-
-    const stages = normalizeStages(appliesTo);
-    if (stages.error) return res.status(400).json({ message: stages.error });
-
-    // ปิดใช้งานเหตุผลที่ยังมีคำขอค้างอยู่ไม่ได้
-    // ไม่งั้นคำขอนั้นจะลอยอยู่โดยไม่มีนิยามที่ใช้งานอยู่รองรับ
-    // และผู้อนุมัติจะตัดสินใจโดยไม่รู้ว่ากติกาของเหตุผลนั้นยังใช้อยู่ไหม
-    if (isActive === false) {
-      const open = (await wfQuery(`
-        SELECT COUNT(*) AS n FROM wf.EditRequest WHERE ReasonCode = @c AND Status = 'PENDING'`,
-        { c: { type: sql.VarChar(30), value: code } })).recordset[0];
-      if (Number(open.n) > 0)
-        return res.status(409).json({
-          message: `ปิดใช้งานไม่ได้ — ยังมีคำขอที่ใช้เหตุผลนี้รออนุมัติอยู่ ${open.n} รายการ`,
-        });
-    }
-
-    await wfQuery(`
-      UPDATE wf.EditReason
-      SET ReasonText = @t, AppliesTo = @a, RequiresHold = @h, SortOrder = @s, IsActive = @i
-      WHERE ReasonCode = @c`, {
-        c: { type: sql.VarChar(30),   value: code },
-        t: { type: sql.NVarChar(400), value: String(reasonText).trim() },
-        a: { type: sql.VarChar(100),  value: stages.value },
-        h: { type: sql.Bit,           value: requiresHold ? 1 : 0 },
-        s: { type: sql.SmallInt,      value: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : cur.SortOrder },
-        i: { type: sql.Bit,           value: isActive === false ? 0 : 1 },
-      });
-
-    res.json({ reasonCode: code, message: 'บันทึกแล้ว' });
-  } catch (e) {
-    console.error('[edit-requests/admin/reasons:update]', e);
-    res.status(500).json({ message: e.message });
-  }
+    const code=String(req.params.code || '').trim().toUpperCase();
+    const { reasonText, appliesTo, requiresHold, sortOrder, isActive }=req.body || {};
+    if (!String(reasonText || '').trim()) return res.status(400).json({message:'ต้องระบุข้อความเหตุผล'});
+    const stages=normalizeStages(appliesTo);
+    if(stages.error) return res.status(400).json({message:stages.error});
+    await wfTransaction(async tx=>{
+      const cur=(await tx.request().input('c',sql.VarChar(30),code)
+        .query('SELECT * FROM wf.EditReason WITH (UPDLOCK,HOLDLOCK) WHERE ReasonCode=@c')).recordset[0];
+      if(!cur)throw Object.assign(new Error('ไม่พบเหตุผลนี้'),{status:404});
+      if(isActive===false){
+        const open=(await tx.request().input('c',sql.VarChar(30),code)
+          .query("SELECT COUNT(*) AS n FROM wf.EditRequest WITH (HOLDLOCK) WHERE ReasonCode=@c AND Status='PENDING'")).recordset[0];
+        if(Number(open.n)>0)throw Object.assign(new Error(`ปิดใช้งานไม่ได้ — ยังมีคำขอที่ใช้เหตุผลนี้รออนุมัติอยู่ ${open.n} รายการ`),{status:409});
+      }
+      const after={reasonCode:code,reasonText:String(reasonText).trim(),appliesTo:stages.value,requiresHold:!!requiresHold,
+        sortOrder:Number.isFinite(Number(sortOrder))?Number(sortOrder):cur.SortOrder,isActive:isActive!==false};
+      await tx.request().input('c',sql.VarChar(30),code).input('t',sql.NVarChar(400),after.reasonText)
+        .input('a',sql.VarChar(100),after.appliesTo).input('h',sql.Bit,after.requiresHold?1:0)
+        .input('s',sql.SmallInt,after.sortOrder).input('i',sql.Bit,after.isActive?1:0)
+        .query('UPDATE wf.EditReason SET ReasonText=@t,AppliesTo=@a,RequiresHold=@h,SortOrder=@s,IsActive=@i WHERE ReasonCode=@c');
+      await auditScopedChange(tx,req,{entityType:'EDIT_REASON',id:code,action:'UPDATE',before:cur,after});
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+    res.json({reasonCode:code,message:'บันทึกแล้ว'});
+  } catch(e) { console.error('[edit-requests/admin/reasons:update]',e); res.status(e.status || 500).json({message:e.message}); }
 });
 
-// DELETE /api/edit-requests/admin/reasons/:code — ลบได้เฉพาะตัวที่ไม่เคยถูกใช้
 router.delete('/admin/reasons/:code', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
-    const code = String(req.params.code || '').trim().toUpperCase();
-    const used = (await wfQuery(`SELECT COUNT(*) AS n FROM wf.EditRequest WHERE ReasonCode = @c`,
-      { c: { type: sql.VarChar(30), value: code } })).recordset[0];
-
-    if (Number(used.n) > 0)
-      return res.status(409).json({
-        message: `ลบไม่ได้ — เคยถูกใช้ไปแล้ว ${used.n} คำขอ ถ้าไม่ต้องการให้เลือกอีก ให้ปิดใช้งานแทน`,
-        usageCount: Number(used.n),
-      });
-
-    const del = await wfQuery(`DELETE FROM wf.EditReason WHERE ReasonCode = @c`,
-      { c: { type: sql.VarChar(30), value: code } });
-    if (!(del.rowsAffected[0] || 0)) return res.status(404).json({ message: 'ไม่พบเหตุผลนี้' });
-
-    res.json({ reasonCode: code, message: `ลบเหตุผล ${code} แล้ว` });
-  } catch (e) {
-    console.error('[edit-requests/admin/reasons:delete]', e);
-    res.status(500).json({ message: e.message });
-  }
+    const code=String(req.params.code || '').trim().toUpperCase();
+    await wfTransaction(async tx=>{
+      const cur=(await tx.request().input('c',sql.VarChar(30),code)
+        .query('SELECT * FROM wf.EditReason WITH (UPDLOCK,HOLDLOCK) WHERE ReasonCode=@c')).recordset[0];
+      if(!cur)throw Object.assign(new Error('ไม่พบเหตุผลนี้'),{status:404});
+      const used=(await tx.request().input('c',sql.VarChar(30),code)
+        .query('SELECT COUNT(*) AS n FROM wf.EditRequest WITH (HOLDLOCK) WHERE ReasonCode=@c')).recordset[0];
+      if(Number(used.n)>0)throw Object.assign(new Error(`ลบไม่ได้ — เคยถูกใช้ไปแล้ว ${used.n} คำขอ ถ้าไม่ต้องการให้เลือกอีก ให้ปิดใช้งานแทน`),{status:409,usageCount:Number(used.n)});
+      await tx.request().input('c',sql.VarChar(30),code).query('DELETE FROM wf.EditReason WHERE ReasonCode=@c');
+      await auditScopedChange(tx,req,{entityType:'EDIT_REASON',id:code,action:'DELETE',before:cur,after:null});
+    }, { isolationLevel: sql.ISOLATION_LEVEL.SERIALIZABLE });
+    res.json({reasonCode:code,message:`ลบเหตุผล ${code} แล้ว`});
+  } catch(e) { console.error('[edit-requests/admin/reasons:delete]',e); res.status(e.status || 500).json({message:e.message,...(e.usageCount?{usageCount:e.usageCount}:{})}); }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -687,16 +665,19 @@ router.get('/price-approvals', async (req, res) => {
     const { status, soId, custId, mine } = req.query;
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
     const inputs = { globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } };
-    let where = 'WHERE pa.CreatedAt >= @globalStartUtc';
+    let where = 'WHERE pa.CreatedAt >= @globalStartUtc AND so.CreatedAt >= @globalStartUtc';
     if (status) { where += ' AND pa.Status = @status'; inputs.status = { type: sql.VarChar(20), value: String(status).toUpperCase() }; }
     if (soId) { where += ' AND pa.SoId = @soId'; inputs.soId = { type: sql.Int, value: Number(soId) }; }
     if (custId) { where += ' AND pa.CustId = @custId'; inputs.custId = { type: sql.NVarChar(20), value: String(custId) }; }
-    if (String(mine) === '1') { where += ' AND pa.RequestedBy = @me'; inputs.me = { type: sql.Int, value: req.user.sub }; }
+    if (String(mine) === '1') { where += ' AND pa.RequestedBy = @me'; inputs.me = { type: sql.Int, value: businessIds(req.user).effective }; }
     // R12 O-4: approvals requested by the user's own + team, or on their bills
     const scope = await getVisibleScope(req.user);
-    if (!scope.all) {
-      const byReq = scopeFilter(scope, { userCol: 'pa.RequestedBy', prefix: 'pr' });
-      const byBill = scopeFilter(scope, { userCol: 'so.SalesUserId', prefix: 'pb' });
+    const actor = require('../services/business-identity').actorPerspective(req.user);
+    const actorScope = actor === req.user ? scope : await getVisibleScope(actor);
+    for (const [current, suffix] of [[scope, 'effective'], [actorScope, 'actor']]) {
+      if (current.all) continue;
+      const byReq = scopeFilter(current, { userCol: 'pa.RequestedBy', prefix: `pr_${suffix}` });
+      const byBill = scopeFilter(current, { userCol: 'so.SalesUserId', prefix: `pb_${suffix}` });
       where += ` AND (${byReq.sql} OR ${byBill.sql})`;
       Object.assign(inputs, byReq.inputs, byBill.inputs);
     }
@@ -727,7 +708,7 @@ router.patch('/price-approvals/:id/approve', requireRole(...APPROVER_ROLES), req
     const { note } = req.body || {};
     const approvalId = Number(req.params.id);
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
-    const target = (await wfQuery(`SELECT * FROM wf.PriceApproval WHERE Id = @id AND CreatedAt >= @globalStartUtc`, {
+    const target = (await wfQuery(`SELECT * FROM wf.PriceApproval WHERE Id = @id AND CreatedAt >= @globalStartUtc AND EXISTS (SELECT 1 FROM wf.SalesOrder so WHERE so.Id = wf.PriceApproval.SoId AND so.CreatedAt >= @globalStartUtc)`, {
       id: { type: sql.Int, value: approvalId }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
     })).recordset[0];
     if (!target) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติราคานี้' });
@@ -738,7 +719,7 @@ router.patch('/price-approvals/:id/approve', requireRole(...APPROVER_ROLES), req
       return res.status(403).json({ message: 'ไม่อนุญาตให้อนุมัติคำขอของตัวเอง' });
     }
 
-    await wfTransaction(async tx => {
+    const decision = await wfTransaction(async tx => {
       // Validate current DocumentRevision of the sales order
       const soRes = await tx.request()
         .input('soId', sql.Int, target.SoId)
@@ -746,8 +727,12 @@ router.patch('/price-approvals/:id/approve', requireRole(...APPROVER_ROLES), req
       const soRow = soRes.recordset[0];
       if (!soRow) throw new Error('ไม่พบใบสั่งขายที่ผูกกับคำขอนี้');
       if (Number(soRow.DocumentRevision) !== Number(target.DocumentRevision)) {
-        await tx.request().input('id', sql.Int, approvalId).query("UPDATE wf.PriceApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE Id = @id");
-        throw new Error(`คำขอนี้ถูกยกเลิกแล้ว (Superseded) เนื่องจากใบสั่งขายมีการแก้ไขเป็นฉบับใหม่ (Revision ${soRow.DocumentRevision} != ${target.DocumentRevision})`);
+        const changed = await tx.request().input('id', sql.Int, approvalId)
+          .input('globalStartUtc', sql.DateTime2, dataWindow.utcInstant)
+          .query("UPDATE wf.PriceApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE Id = @id AND Status = 'PENDING' AND CreatedAt >= @globalStartUtc");
+        if (!Number(changed?.rowsAffected?.[0] || 0)) throw Object.assign(new Error('สถานะคำขอเปลี่ยนแปลงไปแล้ว'), { status: 409 });
+        await auditApprovalDecision(tx, req, 'PRICE_APPROVAL', approvalId, 'SUPERSEDED', null);
+        return { superseded: true };
       }
 
       // Confidential safety guard: even price overrides cannot be approved below Costlist
@@ -782,7 +767,7 @@ router.patch('/price-approvals/:id/approve', requireRole(...APPROVER_ROLES), req
 
       const updateRes = await tx.request()
         .input('id', sql.Int, approvalId)
-        .input('by', sql.Int, req.user.sub)
+        .input('by', sql.Int, businessIds(req.user).effective)
         .input('note', sql.NVarChar(500), note || null)
         .input('globalStartUtc', sql.DateTime2, dataWindow.utcInstant)
         .query(`
@@ -813,7 +798,10 @@ router.patch('/price-approvals/:id/approve', requireRole(...APPROVER_ROLES), req
           .input('status', sql.VarChar(20), finalStatus)
           .query(`UPDATE wf.SalesOrder SET PriceApprovalStatus = @status WHERE Id = @soId`);
       }
+      await auditApprovalDecision(tx, req, 'PRICE_APPROVAL', approvalId, 'APPROVED', note);
     });
+
+    if (decision?.superseded) return res.status(409).json({ code: 'APPROVAL_SUPERSEDED', message: 'ใบสั่งขายเปลี่ยนแปลงแล้ว กรุณาส่งคำขออนุมัติราคาใหม่' });
 
     broadcast('price_approval', { id: approvalId, soId: target.SoId, action: 'approved' });
     res.json({ id: approvalId, status: 'APPROVED', message: 'อนุมัติราคาขายสำเร็จ' });
@@ -832,7 +820,7 @@ router.patch('/price-approvals/:id/reject', requireRole(...APPROVER_ROLES), requ
     }
     const approvalId = Number(req.params.id);
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
-    const target = (await wfQuery(`SELECT * FROM wf.PriceApproval WHERE Id = @id AND CreatedAt >= @globalStartUtc`, {
+    const target = (await wfQuery(`SELECT * FROM wf.PriceApproval WHERE Id = @id AND CreatedAt >= @globalStartUtc AND EXISTS (SELECT 1 FROM wf.SalesOrder so WHERE so.Id = wf.PriceApproval.SoId AND so.CreatedAt >= @globalStartUtc)`, {
       id: { type: sql.Int, value: approvalId }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
     })).recordset[0];
     if (!target) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติราคานี้' });
@@ -843,7 +831,7 @@ router.patch('/price-approvals/:id/reject', requireRole(...APPROVER_ROLES), requ
       return res.status(403).json({ message: 'ไม่อนุญาตให้ปฏิเสธคำขอของตัวเอง' });
     }
 
-    await wfTransaction(async tx => {
+    const decision = await wfTransaction(async tx => {
       // Validate current DocumentRevision of the sales order
       const soRes = await tx.request()
         .input('soId', sql.Int, target.SoId)
@@ -851,13 +839,17 @@ router.patch('/price-approvals/:id/reject', requireRole(...APPROVER_ROLES), requ
       const soRow = soRes.recordset[0];
       if (!soRow) throw new Error('ไม่พบใบสั่งขายที่ผูกกับคำขอนี้');
       if (Number(soRow.DocumentRevision) !== Number(target.DocumentRevision)) {
-        await tx.request().input('id', sql.Int, approvalId).query("UPDATE wf.PriceApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE Id = @id");
-        throw new Error(`คำขอนี้ถูกยกเลิกแล้ว (Superseded) เนื่องจากใบสั่งขายมีการแก้ไขเป็นฉบับใหม่ (Revision ${soRow.DocumentRevision} != ${target.DocumentRevision})`);
+        const changed = await tx.request().input('id', sql.Int, approvalId)
+          .input('globalStartUtc', sql.DateTime2, dataWindow.utcInstant)
+          .query("UPDATE wf.PriceApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE Id = @id AND Status = 'PENDING' AND CreatedAt >= @globalStartUtc");
+        if (!Number(changed?.rowsAffected?.[0] || 0)) throw Object.assign(new Error('สถานะคำขอเปลี่ยนแปลงไปแล้ว'), { status: 409 });
+        await auditApprovalDecision(tx, req, 'PRICE_APPROVAL', approvalId, 'SUPERSEDED', null);
+        return { superseded: true };
       }
 
       const updateRes = await tx.request()
         .input('id', sql.Int, approvalId)
-        .input('by', sql.Int, req.user.sub)
+        .input('by', sql.Int, businessIds(req.user).effective)
         .input('note', sql.NVarChar(500), String(note).trim())
         .input('globalStartUtc', sql.DateTime2, dataWindow.utcInstant)
         .query(`
@@ -873,7 +865,10 @@ router.patch('/price-approvals/:id/reject', requireRole(...APPROVER_ROLES), requ
       await tx.request()
         .input('soId', sql.Int, target.SoId)
         .query(`UPDATE wf.SalesOrder SET PriceApprovalStatus = 'REJECTED' WHERE Id = @soId`);
+      await auditApprovalDecision(tx, req, 'PRICE_APPROVAL', approvalId, 'REJECTED', note);
     });
+
+    if (decision?.superseded) return res.status(409).json({ code: 'APPROVAL_SUPERSEDED', message: 'ใบสั่งขายเปลี่ยนแปลงแล้ว กรุณาส่งคำขออนุมัติราคาใหม่' });
 
     broadcast('price_approval', { id: approvalId, soId: target.SoId, action: 'rejected' });
     res.json({ id: approvalId, status: 'REJECTED', message: 'ปฏิเสธราคาขายเรียบร้อย' });
@@ -890,7 +885,9 @@ router.patch('/price-approvals/:id/reject', requireRole(...APPROVER_ROLES), requ
 async function requireTripApprovalInScope(req, res, next) {
   try {
     const scope = await getVisibleScope(req.user);
-    if (scope.all) return next();
+    const actor = require('../services/business-identity').actorPerspective(req.user);
+    const actorScope = actor === req.user ? scope : await getVisibleScope(actor);
+    if (scope.all && actorScope.all) return next();
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติทริปนี้' });
 
@@ -902,18 +899,15 @@ async function requireTripApprovalInScope(req, res, next) {
     `, { id: { type: sql.Int, value: id } })).recordset?.[0];
     if (!r) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติทริปนี้' });
 
-    if (inScope(scope, { userId: r.RequestedBy, extraUserIds: [r.TripCreatedBy] })) {
-      return next();
+    for (const [current, suffix] of [[scope, 'effective'], [actorScope, 'actor']]) {
+      if (inScope(current, { userId: r.RequestedBy, extraUserIds: [r.TripCreatedBy] })) continue;
+      const memberFilter = scopeFilter(current, { userCol: 'm.SalesUserId', prefix: `tm_${suffix}` });
+      const memberHit = (await wfQuery(`
+        SELECT TOP 1 1 AS ok FROM wf.v_TripMember m
+        WHERE m.TripId = @tid AND ${memberFilter.sql}
+      `, { tid: { type: sql.Int, value: Number(r.TripId) }, ...memberFilter.inputs })).recordset?.[0];
+      if (!memberHit) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติทริปนี้' });
     }
-
-    const memberFilter = scopeFilter(scope, { userCol: 'm.SalesUserId', prefix: 'tm' });
-    const memberHit = (await wfQuery(`
-      SELECT TOP 1 1 AS ok
-      FROM wf.v_TripMember m
-      WHERE m.TripId = @tid AND ${memberFilter.sql}
-    `, { tid: { type: sql.Int, value: Number(r.TripId) }, ...memberFilter.inputs })).recordset?.[0];
-
-    if (!memberHit) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติทริปนี้' });
     next();
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -929,13 +923,16 @@ router.get('/trip-approvals', async (req, res) => {
     let where = 'WHERE a.CreatedAt >= @globalStartUtc';
     if (status) { where += ' AND a.Status = @status'; inputs.status = { type: sql.VarChar(20), value: String(status).toUpperCase() }; }
     if (tripId) { where += ' AND a.TripId = @tripId'; inputs.tripId = { type: sql.Int, value: Number(tripId) }; }
-    if (String(mine) === '1') { where += ' AND a.RequestedBy = @me'; inputs.me = { type: sql.Int, value: req.user.sub }; }
+    if (String(mine) === '1') { where += ' AND a.RequestedBy = @me'; inputs.me = { type: sql.Int, value: businessIds(req.user).effective }; }
 
     const scope = await getVisibleScope(req.user);
-    if (!scope.all) {
-      const byReq = scopeFilter(scope, { userCol: 'a.RequestedBy', prefix: 'tar' });
-      const byTripCreator = scopeFilter(scope, { userCol: 'st.CreatedBy', prefix: 'tac' });
-      const byMember = scopeFilter(scope, { userCol: 'm.SalesUserId', prefix: 'tam' });
+    const actor = require('../services/business-identity').actorPerspective(req.user);
+    const actorScope = actor === req.user ? scope : await getVisibleScope(actor);
+    for (const [current, suffix] of [[scope, 'effective'], [actorScope, 'actor']]) {
+      if (current.all) continue;
+      const byReq = scopeFilter(current, { userCol: 'a.RequestedBy', prefix: `tar_${suffix}` });
+      const byTripCreator = scopeFilter(current, { userCol: 'st.CreatedBy', prefix: `tac_${suffix}` });
+      const byMember = scopeFilter(current, { userCol: 'm.SalesUserId', prefix: `tam_${suffix}` });
       where += ` AND (${byReq.sql} OR ${byTripCreator.sql} OR EXISTS (SELECT 1 FROM wf.v_TripMember m WHERE m.TripId = a.TripId AND ${byMember.sql}))`;
       Object.assign(inputs, byReq.inputs, byTripCreator.inputs, byMember.inputs);
     }
@@ -1006,7 +1003,7 @@ router.patch('/trip-approvals/:id/approve', requireRole(...APPROVER_ROLES), requ
       return res.status(403).json({ message: 'ไม่อนุญาตให้อนุมัติคำขอของตัวเอง' });
     }
 
-    await wfTransaction(async tx => {
+    const decision = await wfTransaction(async tx => {
       const tripRes = await tx.request().input('tid', sql.Int, Number(target.TripId))
         .query(`SELECT TripId, Status, DocumentRevision FROM wf.SalesTrip WITH (UPDLOCK, HOLDLOCK) WHERE TripId = @tid`);
       const tripRow = tripRes.recordset?.[0];
@@ -1022,14 +1019,17 @@ router.patch('/trip-approvals/:id/approve', requireRole(...APPROVER_ROLES), requ
 
       const allRequestedPresent = targetCustomerIds.length > 0 && targetCustomerIds.every(cid => liveSnapshot.customerIds.includes(String(cid)));
       if (!allRequestedPresent) {
-        await tx.request().input('id', sql.Int, approvalId)
-          .query(`UPDATE wf.TripMultiCustomerApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE Id = @id AND Status = 'PENDING'`);
-        throw Object.assign(new Error('รายชื่อลูกค้าในทริปเปลี่ยนแปลงหลังจากส่งคำขอ กรุณาให้ผู้ขอส่งคำขอใหม่'), { status: 409 });
+        const changed = await tx.request().input('id', sql.Int, approvalId)
+          .input('globalStartUtc', sql.DateTime2, dataWindow.utcInstant)
+          .query(`UPDATE wf.TripMultiCustomerApproval SET Status = 'SUPERSEDED', UpdatedAt = SYSUTCDATETIME() WHERE Id = @id AND Status = 'PENDING' AND CreatedAt >= @globalStartUtc`);
+        if (!Number(changed?.rowsAffected?.[0] || 0)) throw Object.assign(new Error('สถานะคำขอเปลี่ยนแปลงไปแล้ว'), { status: 409 });
+        await auditApprovalDecision(tx, req, 'TRIP_APPROVAL', approvalId, 'SUPERSEDED', null);
+        return { superseded: true };
       }
 
       const updRes = await tx.request()
         .input('id', sql.Int, approvalId)
-        .input('by', sql.Int, Number(req.user.sub))
+        .input('by', sql.Int, businessIds(req.user).effective)
         .input('note', sql.NVarChar(500), note ? String(note).trim() : null)
         .input('globalStartUtc', sql.DateTime2, dataWindow.utcInstant)
         .query(`
@@ -1040,7 +1040,10 @@ router.patch('/trip-approvals/:id/approve', requireRole(...APPROVER_ROLES), requ
       if (Number(updRes?.rowsAffected?.[0] || 0) === 0) {
         throw Object.assign(new Error('ไม่สามารถอนุมัติได้เนื่องจากสถานะคำขอเปลี่ยนแปลงไปแล้ว'), { status: 409 });
       }
+      await auditApprovalDecision(tx, req, 'TRIP_APPROVAL', approvalId, 'APPROVED', note);
     });
+
+    if (decision?.superseded) return res.status(409).json({ code: 'APPROVAL_SUPERSEDED', message: 'รายชื่อลูกค้าในทริปเปลี่ยนแปลง กรุณาส่งคำขอใหม่' });
 
     broadcast('trip_multi_cust_approval', { id: approvalId, tripId: target.TripId, action: 'approved' });
     broadcast('trip_updated', { tripId: target.TripId, action: 'multi_cust_approval_approved' });
@@ -1080,19 +1083,19 @@ router.patch('/trip-approvals/:id/reject', requireRole(...APPROVER_ROLES), requi
       return res.status(403).json({ message: 'ไม่อนุญาตให้ปฏิเสธคำขอของตัวเอง' });
     }
 
-    const updRes = await wfQuery(`
-      UPDATE wf.TripMultiCustomerApproval
-      SET Status = 'REJECTED', ApprovedBy = @by, ApprovedAt = SYSUTCDATETIME(), ApprovalNote = @note, UpdatedAt = SYSUTCDATETIME()
-      WHERE Id = @id AND Status = 'PENDING' AND CreatedAt >= @globalStartUtc
-    `, {
-      id: { type: sql.Int, value: approvalId },
-      by: { type: sql.Int, value: Number(req.user.sub) },
-      note: { type: sql.NVarChar(500), value: String(note).trim() },
-      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
+    await wfTransaction(async tx => {
+      const updRes = await tx.request()
+        .input('id', sql.Int, approvalId)
+        .input('by', sql.Int, businessIds(req.user).effective)
+        .input('note', sql.NVarChar(500), String(note).trim())
+        .input('globalStartUtc', sql.DateTime2, dataWindow.utcInstant)
+        .query(`UPDATE wf.TripMultiCustomerApproval
+          SET Status = 'REJECTED', ApprovedBy = @by, ApprovedAt = SYSUTCDATETIME(), ApprovalNote = @note, UpdatedAt = SYSUTCDATETIME()
+          WHERE Id = @id AND Status = 'PENDING' AND CreatedAt >= @globalStartUtc`);
+      if (Number(updRes?.rowsAffected?.[0] || 0) === 0)
+        throw Object.assign(new Error('ไม่สามารถปฏิเสธได้เนื่องจากสถานะคำขอเปลี่ยนแปลงไปแล้ว'), { status: 409 });
+      await auditApprovalDecision(tx, req, 'TRIP_APPROVAL', approvalId, 'REJECTED', note);
     });
-    if (Number(updRes?.rowsAffected?.[0] || 0) === 0) {
-      return res.status(409).json({ message: 'ไม่สามารถปฏิเสธได้เนื่องจากสถานะคำขอเปลี่ยนแปลงไปแล้ว' });
-    }
 
     broadcast('trip_multi_cust_approval', { id: approvalId, tripId: target.TripId, action: 'rejected' });
     broadcast('trip_updated', { tripId: target.TripId, action: 'multi_cust_approval_rejected' });

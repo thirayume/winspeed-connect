@@ -1,14 +1,15 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),h=require('./helpers/route-harness.cjs');
-let current=true,serviceCalls=0;
+let current=true,serviceCalls=0,lastParams;
 const auth=require.resolve('../middleware/auth');
 require.cache[auth]={id:auth,filename:auth,loaded:true,exports:{requireAuth:(req,_res,next)=>{req.user={sub:8,role:'ADMIN'};next();},requireRole:()=>((_req,_res,next)=>next()),requireCapability:()=>((_req,_res,next)=>next())}};
 const db=h.installDbStub(({text})=>text.includes('SELECT DISTINCT cr.CouponId')?[{CouponId:42},{CouponId:43}]:text.includes('FROM dbo.WFRedemtionHD')&&current?[{RedemtionID:5}]:[]);
 const svc=require('../services/coupon-service'),original=svc.manualSettleCouponCut,originalAuto=svc.settleCouponReservations;
-svc.manualSettleCouponCut=async()=>{serviceCalls++;return {success:true,status:'CONSUMED'};};
+const docService=require('../services/coupon-manual-document-settlement'),originalDocument=docService.manualSettleCouponDocument;
+svc.manualSettleCouponCut=async params=>{serviceCalls++;lastParams=params;return {success:true,status:'CONSUMED'};};
 let app;
 test.before(async()=>{app=await h.startApp([['/api/coupons','../../routes/coupons']]);});
-test.after(async()=>{svc.manualSettleCouponCut=original;svc.settleCouponReservations=originalAuto;await app.close();});
+test.after(async()=>{svc.manualSettleCouponCut=original;svc.settleCouponReservations=originalAuto;docService.manualSettleCouponDocument=originalDocument;await app.close();});
 test('manual settlement rejects old or undated 116 before invoking business writer',async()=>{
   current=false;const response=await app.call('POST','/api/coupons/manual-settle',{body:{reservationId:10,redemptionId:5,reason:'valid reason'}});
   assert.equal(response.status,404);assert.equal(serviceCalls,0);
@@ -17,6 +18,15 @@ test('manual settlement rejects old or undated 116 before invoking business writ
 test('manual settlement continues for a 116 in the configured window',async()=>{
   current=true;const response=await app.call('POST','/api/coupons/manual-settle',{body:{reservationId:10,redemptionId:5,reason:'valid reason'}});
   assert.equal(response.status,200);assert.equal(serviceCalls,1);
+  assert.equal(lastParams.dataWindow.businessDate,'2026-01-01');
+  assert.match(db.calls.find(c=>c.text.includes('DocuDate>=@start')).text,/DocuType=116/);
+});
+test('document settlement forwards authenticated actor and authoritative data window',async()=>{
+ let received;docService.manualSettleCouponDocument=async p=>{received=p;return {success:true,settlements:[]};};
+ const body={redemptionId:5,items:[{couponId:42,reservationId:10,qty:0.1}],reason:'review complete document'};
+ const response=await app.call('POST','/api/coupons/manual-settle-document',{body});
+ assert.equal(response.status,200);assert.equal(received.actor.sub,8);assert.equal(received.dataWindow.businessDate,'2026-01-01');
+ assert.deepEqual(received.items,body.items);assert.equal(received.redemptionId,5);
 });
 test('batch reports previously committed settlements and failed coupons as partial',async()=>{
   current=true;svc.settleCouponReservations=async id=>{
