@@ -3,7 +3,8 @@
   "checksumPolicy": "immutable-after-apply",
   "excludedFiles": [
     "000_logins.sql",
-    "246_align_giveaway_budget_to_promotion_emgood.sql"
+    "246_align_giveaway_budget_to_promotion_emgood.sql",
+    "250_giveaway_budget_only_1005.sql"
   ],
   "excludedPatterns": [
     "^uat_",
