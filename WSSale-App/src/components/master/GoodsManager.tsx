@@ -27,7 +27,18 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodI
   // Pagination & Sorting
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 30;
-  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'TotalQtyTon', direction: 'desc' });
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'default', direction: 'asc' });
+
+  const pricedGoodIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of prices) {
+      const pr = Number(p.GoodPriceNet ?? (p as any).Price ?? 0);
+      if (pr > 0 && p.GoodID) {
+        set.add(String(p.GoodID));
+      }
+    }
+    return set;
+  }, [prices]);
 
   async function loadData() {
     setLoading(true);
@@ -91,7 +102,28 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodI
 
   const sortedGoods = useMemo(() => {
     const sortableItems = [...filteredGoods];
-    if (sortConfig.key) {
+    if (sortConfig.key === 'default') {
+      sortableItems.sort((a, b) => {
+        // 1. สินค้าที่มี Pricelist อยู่ก่อน
+        const aHasPrice = pricedGoodIds.has(String(a.GoodID)) ? 1 : 0;
+        const bHasPrice = pricedGoodIds.has(String(b.GoodID)) ? 1 : 0;
+        if (aHasPrice !== bHasPrice) {
+          return bHasPrice - aHasPrice; // มีราคา (1) ขึ้นก่อนไม่มีราคา (0)
+        }
+        // 2. เรียงตามกลุ่มสินค้า (GoodGroupName)
+        const aGroup = a.GoodGroupName || 'ไม่ระบุกลุ่ม';
+        const bGroup = b.GoodGroupName || 'ไม่ระบุกลุ่ม';
+        const aIsUnassigned = aGroup === 'ไม่ระบุกลุ่ม' || aGroup === '000';
+        const bIsUnassigned = bGroup === 'ไม่ระบุกลุ่ม' || bGroup === '000';
+        if (aIsUnassigned !== bIsUnassigned) {
+          return aIsUnassigned ? 1 : -1;
+        }
+        const groupCmp = aGroup.localeCompare(bGroup, 'th');
+        if (groupCmp !== 0) return groupCmp;
+        // 3. ตามด้วยรหัสสินค้า (GoodCode)
+        return (a.GoodCode || '').localeCompare(b.GoodCode || '');
+      });
+    } else if (sortConfig.key) {
       sortableItems.sort((a, b) => {
         let aVal: any = a[sortConfig.key as keyof EMGood];
         let bVal: any = b[sortConfig.key as keyof EMGood];
@@ -103,11 +135,16 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodI
 
         if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
         if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-        return 0;
+
+        // Tie-breaker: pricelist -> group -> code
+        const aHasPrice = pricedGoodIds.has(String(a.GoodID)) ? 1 : 0;
+        const bHasPrice = pricedGoodIds.has(String(b.GoodID)) ? 1 : 0;
+        if (aHasPrice !== bHasPrice) return bHasPrice - aHasPrice;
+        return (a.GoodCode || '').localeCompare(b.GoodCode || '');
       });
     }
     return sortableItems;
-  }, [filteredGoods, sortConfig]);
+  }, [filteredGoods, sortConfig, pricedGoodIds]);
 
   const totalPages = Math.ceil(sortedGoods.length / itemsPerPage);
   const paginatedGoods = useMemo(() => {

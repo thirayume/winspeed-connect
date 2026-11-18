@@ -7,7 +7,7 @@ import {
   Network, Search, RefreshCw, AlertTriangle, Check, Users, Download,
   ChevronDown, ChevronUp, UserPlus, UserMinus, Building2, UserCheck,
   AlertCircle, X, ZoomIn, ZoomOut, Maximize2, Layers, Filter,
-  Plus, Edit2, Trash2, FolderTree
+  Plus, Edit2, Trash2, FolderTree, Printer
 } from 'lucide-react';
 import {
   listOrgPositions, createOrgPosition, updateOrgPosition, deleteOrgPosition,
@@ -162,7 +162,8 @@ export function OrgHierarchyView() {
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      const [u, p, h] = await Promise.all([req<AdminUser[]>("/auth/org-users"), listOrgPositions(), fetchOrgHints()]);
+      // Editors may view full multi-role memberships; viewers without users.manage use the limited endpoint.
+      const [u, p, h] = await Promise.all([req<AdminUser[]>(canEdit ? "/auth/users" : "/auth/org-users"), listOrgPositions(), fetchOrgHints()]);
       setUsers(u);
       setPositions(p);
       setHints(new Map((h.data || []).map(x => [Number(x.id), x])));
@@ -175,7 +176,7 @@ export function OrgHierarchyView() {
       setErr(e?.message || 'โหลดข้อมูลผังองค์กรไม่สำเร็จ');
     }
     setLoading(false);
-  }, []);
+  }, [canEdit]);
 
   useEffect(() => {
     fetchCompanyInfo();
@@ -372,6 +373,16 @@ export function OrgHierarchyView() {
       }
     }
 
+    if (posModal.mode === 'edit') {
+      const previous = positions.find(p => p.PositionCode === posModal.code);
+      const affectsPolicy = previous && ((previous.ReportsTo || '') !== posModal.reportsTo || (previous.DefaultRole || '') !== posModal.defaultRole || Boolean(previous.CanApprove) !== posModal.canApprove || Boolean(previous.IsActive) !== posModal.isActive);
+      if (affectsPolicy) {
+        const oldManager = positions.find(p => p.PositionCode === previous.ReportsTo)?.PositionName || 'ไม่มี';
+        const newManager = positions.find(p => p.PositionCode === posModal.reportsTo)?.PositionName || 'ไม่มี';
+        const count = users.filter(u => u.PositionCode === previous.PositionCode).length;
+        if (!await appConfirm(`ตรวจสอบการเปลี่ยนตำแหน่ง ${previous.PositionName}\nหัวหน้า: ${oldManager} → ${newManager}\nRole แนะนำ: ${previous.DefaultRole || 'ไม่ได้กำหนด'} → ${posModal.defaultRole || 'ไม่ได้กำหนด'}\nตำแหน่งอนุมัติ: ${previous.CanApprove ? 'ใช่' : 'ไม่ใช่'} → ${posModal.canApprove ? 'ใช่' : 'ไม่ใช่'}\nผู้ครองตำแหน่ง ${count} คน (รวมผู้ปิดใช้งาน)\nการเปลี่ยนผังอาจกระทบขอบเขตข้อมูลหรือสายอนุมัติ ระบบจะไม่เปลี่ยน Role ของผู้ใช้อัตโนมัติ ยืนยันบันทึกหรือไม่?`)) return;
+      }
+    }
     setPosModal(s => ({ ...s, saving: true, err: null }));
     try {
       if (posModal.mode === 'create') {
@@ -487,6 +498,9 @@ export function OrgHierarchyView() {
     if (!canEdit) return;
     const targetCode = nextCode === UNASSIGNED ? null : nextCode;
     if ((user.PositionCode ?? null) === targetCode) return;
+    const target = positions.find(p => p.PositionCode === targetCode);
+    const currentRoles = (user.RoleCodes?.length ? user.RoleCodes : getUserBaseRoles(user)).join(', ') || 'ไม่มี';
+    if (!await appConfirm(`เปลี่ยนตำแหน่ง ${user.DisplayName} จาก ${user.PositionName || 'ยังไม่ผูกตำแหน่ง'} เป็น ${target?.PositionName || 'ไม่ผูกตำแหน่ง'}?\nRole ปัจจุบัน: ${currentRoles}\nRole แนะนำของตำแหน่งใหม่: ${target?.DefaultRole || 'ไม่ได้กำหนด'}\nการบันทึกเปลี่ยนเฉพาะตำแหน่งและขอบเขตข้อมูล ไม่เปลี่ยน Role อัตโนมัติ หากต้องการปรับ Role ให้ตรวจและบันทึกที่แท็บผู้ใช้งาน`)) return;
     setSavingId(user.Id);
     setErr(null);
     try {
@@ -494,7 +508,7 @@ export function OrgHierarchyView() {
         positionCode: targetCode,
         expectedPositionCode: user.PositionCode ?? null
       });
-      const freshUsers = await req<AdminUser[]>("/auth/org-users");
+      const freshUsers = await req<AdminUser[]>("/auth/users");
       setUsers(freshUsers);
       setPositions(await listOrgPositions());
       setSavedId(user.Id);
@@ -523,7 +537,7 @@ export function OrgHierarchyView() {
         positionCode: assignModal.position.PositionCode,
         expectedPositionCode: targetUser.PositionCode ?? null
       });
-      const freshUsers = await req<AdminUser[]>("/auth/org-users");
+      const freshUsers = await req<AdminUser[]>("/auth/users");
       setUsers(freshUsers);
       setPositions(await listOrgPositions());
       setAssignModal({ isOpen: false, position: null });
@@ -548,7 +562,7 @@ export function OrgHierarchyView() {
         positionCode: null,
         expectedPositionCode: targetUser.PositionCode ?? null
       });
-      const freshUsers = await req<AdminUser[]>("/auth/org-users");
+      const freshUsers = await req<AdminUser[]>("/auth/users");
       setUsers(freshUsers);
       setPositions(await listOrgPositions());
     } catch (e: any) {
@@ -588,6 +602,9 @@ export function OrgHierarchyView() {
   const handleZoomIn = () => setZoom(z => Math.min(1.6, Number((z + 0.1).toFixed(1))));
   const handleZoomOut = () => setZoom(z => Math.max(0.4, Number((z - 0.1).toFixed(1))));
   const handleResetZoom = () => setZoom(1);
+  const handlePrint = () => {
+    window.print();
+  };
 
   // ─────────────────────────────────────────────────────────────
   // INTERNATIONAL STANDARD ORG CHART NODE CARD
@@ -639,8 +656,8 @@ export function OrgHierarchyView() {
                 Tier {p.Tier}
               </span>
               {p.CanApprove && (
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200 flex items-center gap-0.5" title="มีสิทธิ์อนุมัติเอกสาร">
-                  <UserCheck size={11} /> อนุมัติ
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200 flex items-center gap-0.5" title="ตำแหน่งถูกกำหนดเป็นผู้อนุมัติในผัง สิทธิ์จริงขึ้นอยู่กับ Role และกติกาของแต่ละงาน">
+                  <UserCheck size={11} /> ตำแหน่งอนุมัติ
                 </span>
               )}
               {canEdit && (
@@ -670,13 +687,10 @@ export function OrgHierarchyView() {
             {p.PositionName}
           </h3>
 
-          <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1 font-mono">
-            <span className="bg-slate-100 px-1.5 py-0.5 rounded font-bold text-slate-700">
-              {p.PositionCode}
-            </span>
+          <div className="flex items-center justify-end text-[11px] text-slate-500 mt-1">
             {p.DefaultRole && (
-              <span className="text-slate-500 font-sans text-[10px]">
-                Role: <strong className="text-slate-800">{p.DefaultRole}</strong>
+              <span className="text-slate-500 font-sans text-[10px]" title="บทบาทแนะนำของตำแหน่ง ผู้ใช้อาจมีหลาย Role และต้องกำหนดสิทธิ์ผู้ใช้แยกต่างหาก">
+                Role แนะนำ: <strong className="text-slate-800">{p.DefaultRole}</strong>
               </span>
             )}
           </div>
@@ -724,11 +738,13 @@ export function OrgHierarchyView() {
                         <span className="text-[9px] text-slate-400 font-mono">@{u.Username}</span>
                       </div>
                     </div>
-                    {u.EmpCode && (
-                      <span className="text-[9px] font-mono px-1 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
-                        {u.EmpCode}
-                      </span>
-                    )}
+                    <div className="flex flex-wrap justify-end gap-1 max-w-[55%]" aria-label={`บทบาทของ ${u.DisplayName}`}>
+                      {(u.RoleCodes?.length ? u.RoleCodes : getUserBaseRoles(u)).map(role => (
+                        <span key={role} className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 font-semibold break-all" title={u.RoleCodes?.length ? 'Role ที่มอบหมาย' : 'Role หลัก (ข้อมูลแบบจำกัด)'}>
+                          {role}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 );
               })}
@@ -829,16 +845,33 @@ export function OrgHierarchyView() {
               )}
 
               {/* Child Subtrees */}
-              {children.map(child => (
-                <div
-                  key={child.position.PositionCode}
-                  className="flex flex-col items-center px-3 sm:px-4 relative shrink-0"
-                >
-                  {/* Vertical drop line from bus bar into child card */}
-                  <div className="absolute -top-8 w-0.5 h-8 bg-slate-300" />
-                  {renderDiagramSubtree(child)}
-                </div>
-              ))}
+              {children.map(child => {
+                const parentTier = Number(p.Tier) || 1;
+                const childTier = Number(child.position.Tier) || (parentTier + 1);
+                const tierDiff = Math.max(1, childTier - parentTier);
+                // Standard drop line when tierDiff === 1 is 32px (pt-8 / -top-8).
+                // If tierDiff > 1 (e.g. Tier 3 to Tier 5), add extra offset for each skipped tier row
+                const extraOffset = (tierDiff - 1) * 220;
+                const dropLineHeight = 32 + extraOffset;
+
+                return (
+                  <div
+                    key={child.position.PositionCode}
+                    className="flex flex-col items-center px-3 sm:px-4 relative shrink-0"
+                    style={extraOffset > 0 ? { marginTop: `${extraOffset}px` } : undefined}
+                  >
+                    {/* Vertical drop line from bus bar into child card */}
+                    <div
+                      className="absolute w-0.5 bg-slate-300"
+                      style={{
+                        top: `-${dropLineHeight}px`,
+                        height: `${dropLineHeight}px`,
+                      }}
+                    />
+                    {renderDiagramSubtree(child)}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -848,8 +881,16 @@ export function OrgHierarchyView() {
 
   return (
     <div className="h-full w-full flex flex-col overflow-hidden bg-[#F1EFE8]">
+      <style>{`
+        @media print {
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          header, nav, aside, .no-print, button, input, select { display: none !important; }
+          .diagram-canvas { overflow: visible !important; width: 100% !important; height: auto !important; position: static !important; border: none !important; box-shadow: none !important; }
+          @page { size: landscape; margin: 8mm; }
+        }
+      `}</style>
       {/* ── UNIFIED TOOLBAR & CONTROLS ───────────────────────── */}
-      <div className="bg-white border-b border-slate-200 px-4 py-3 sm:px-6 sm:py-3.5 shadow-xs shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      <div className="bg-white border-b border-slate-200 px-4 py-3 sm:px-6 sm:py-3.5 shadow-xs shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-3 no-print">
         {/* Left: View Mode Switcher & Summary Chips */}
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold">
@@ -987,6 +1028,15 @@ export function OrgHierarchyView() {
                 >
                   ยุบทั้งหมด
                 </button>
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  className="px-2.5 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 transition-colors"
+                  title="สั่งพิมพ์ผังองค์กร"
+                >
+                  <Printer size={13} />
+                  <span>พิมพ์</span>
+                </button>
               </div>
             </>
           ) : (
@@ -1042,10 +1092,10 @@ export function OrgHierarchyView() {
           /* ── DIAGRAM VIEW: INTERNATIONAL STANDARD ORG CHART ── */
           <div
             ref={canvasRef}
-            className="w-full flex-1 overflow-auto bg-[#F8F9FA] rounded-2xl border border-slate-200 p-6 sm:p-10 relative shadow-inner"
+            className="w-full flex-1 overflow-auto bg-[#F8F9FA] rounded-2xl border border-slate-200 p-6 sm:p-10 relative shadow-inner diagram-canvas"
           >
             {/* Filter Pills Float Bar */}
-            <div className="sticky top-0 left-0 z-30 mb-6 flex flex-wrap items-center gap-2 bg-white/90 backdrop-blur-xs p-2 rounded-xl border border-slate-200 shadow-xs max-w-fit">
+            <div className="sticky top-0 left-0 z-30 mb-6 flex flex-wrap items-center gap-2 bg-white/90 backdrop-blur-xs p-2 rounded-xl border border-slate-200 shadow-xs max-w-fit no-print">
               <span className="text-xs font-bold text-slate-600 flex items-center gap-1 pl-1">
                 <Filter size={13} /> สายงาน:
               </span>
@@ -1465,6 +1515,9 @@ export function OrgHierarchyView() {
                     <div className="text-[11px] space-y-1">
                       <div>ตำแหน่งเดิม: <strong>{targetUser.PositionName || 'ยังไม่ผูกตำแหน่ง'}</strong></div>
                       <div>ตำแหน่งใหม่: <strong className="text-[#0C447C] font-black">{assignModal.position?.PositionName}</strong></div>
+                      <div>Role ที่ได้รับปัจจุบัน: <strong>{(targetUser.RoleCodes?.length ? targetUser.RoleCodes : userRoles).join(', ') || 'ไม่มี'}</strong></div>
+                      <div>Role แนะนำของตำแหน่งใหม่: <strong>{assignModal.position?.DefaultRole || 'ไม่ได้กำหนด'}</strong></div>
+                      <div>บันทึกนี้ไม่เปลี่ยน Role หากต้องการปรับ ให้ตรวจและบันทึกในแท็บผู้ใช้งาน</div>
                     </div>
 
                     {hasDefaultMismatch && (

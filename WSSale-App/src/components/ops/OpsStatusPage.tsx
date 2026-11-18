@@ -181,10 +181,10 @@ export function OpsStatusPage() {
             <button
               onClick={doTest}
               disabled={testing || !status?.alertConfigured}
-              title={status?.alertConfigured ? 'ส่งการแจ้งเตือนทดสอบ' : 'ยังไม่ได้ตั้ง ALERT_WEBHOOK_URL'}
+              title={status?.alertConfigured ? 'ส่งการแจ้งเตือนทดสอบไปยัง LINE OA' : 'ยังไม่ได้ตั้ง ALERT_WEBHOOK_URL สำหรับ LINE OA'}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40"
             >
-              {status?.alertConfigured ? <Bell size={15} /> : <BellOff size={15} />} ทดสอบแจ้งเตือน
+              {status?.alertConfigured ? <Bell size={15} /> : <BellOff size={15} />} ทดสอบแจ้งเตือน LINE OA
             </button>
           )}
           <button
@@ -260,13 +260,13 @@ export function OpsStatusPage() {
               <div className="flex items-center justify-between py-1"><span className="text-sm text-gray-600">Error ล่าสุด</span><span className="text-sm text-gray-700">{status?.lastErrorAt ? formatThaiDate(status.lastErrorAt, true) : '–'}</span></div>
             </div>
             <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4">
-              <div className="text-xs text-gray-400 mb-2">การแจ้งเตือน</div>
+              <div className="text-xs text-gray-400 mb-2">การแจ้งเตือน LINE OA</div>
               <div className="flex items-center gap-2 py-1">
                 {status?.alertConfigured
-                  ? <><Bell size={16} className="text-green-600" /><span className="text-sm text-green-700 font-semibold">เปิดใช้งาน (webhook)</span></>
+                  ? <><Bell size={16} className="text-green-600" /><span className="text-sm text-green-700 font-semibold">เปิดใช้งาน (LINE OA Webhook)</span></>
                   : <><BellOff size={16} className="text-gray-400" /><span className="text-sm text-gray-500">ยังไม่ตั้งค่า ALERT_WEBHOOK_URL</span></>}
               </div>
-              <div className="text-xs text-gray-400 mt-1">รองรับ Slack / Discord / Teams / generic webhook</div>
+              <div className="text-xs text-gray-400 mt-1">เฉพาะ LINE Official Account (LINE OA) สำหรับแจ้งเตือนทีมงาน</div>
             </div>
           </div>
 
