@@ -420,7 +420,8 @@ export function GiveawayQuotaSettings({
             {lines.map(l => {
               const value = edits[l.Id] ?? String(Number(l.BudgetQty));
               const dirty = edits[l.Id] !== undefined && Number(edits[l.Id]) !== Number(l.BudgetQty);
-              const linkedMaster = l.GoodId ? masterByGoodId.get(String(l.GoodId)) : undefined;
+              const linkedMaster = (l.GoodId ? masterByGoodId.get(String(l.GoodId)) : undefined) ||
+                masterItems.find(m => (m.GoodName && m.GoodName === l.ItemName) || (m.ItemName && m.ItemName === l.ItemName) || (l.ItemName && m.GoodName && m.GoodName.includes(l.ItemName)));
               const displayGoodName = l.GoodName || linkedMaster?.GoodName || l.ItemName;
               const displayGoodCode = l.GoodCode || linkedMaster?.GoodCode;
               const remaining = Number(l.RemainingQty || 0);

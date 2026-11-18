@@ -160,18 +160,29 @@ async function evaluateLinePrice(line, custId, asOfDate = null, options = {}) {
   const deviationPerTon = auth.announcedPrice - requestedPrice;
   const isBelowAnnounced = deviationPerTon > 0;
 
+  let standardLimit = 200;
+  try {
+    const { getSettingValue } = require('./policy-contract');
+    const val = await getSettingValue('REBATE_STANDARD_LIMIT_PER_TON');
+    if (val !== undefined && val !== null) standardLimit = Number(val) || 200;
+  } catch (_) {}
+
+  const requiresApproval = isBelowAnnounced && deviationPerTon > standardLimit;
+
   return {
     isGiveaway: false,
     hasAnnouncedPrice: true,
-    requiresApproval: isBelowAnnounced,
+    requiresApproval,
     announcedPrice: auth.announcedPrice,
     requestedPrice,
     deviationPerTon: isBelowAnnounced ? deviationPerTon : 0,
     totalDeviation: isBelowAnnounced ? Number((deviationPerTon * qtyTon).toFixed(2)) : 0,
     priceSource: auth.priceSource,
-    reason: isBelowAnnounced
-      ? `ราคาขาย ฿${requestedPrice.toLocaleString()} ต่ำกว่าราคาประกาศ ฿${auth.announcedPrice.toLocaleString()} (ส่วนต่าง ฿${deviationPerTon.toLocaleString()}/ตัน)`
-      : null,
+    reason: requiresApproval
+      ? `ราคาขาย ฿${requestedPrice.toLocaleString()} ต่ำกว่าราคาประกาศ ฿${auth.announcedPrice.toLocaleString()} เกินเกณฑ์มาตรฐาน ฿${standardLimit} (ส่วนต่าง ฿${deviationPerTon.toLocaleString()}/ตัน ต้องขออนุมัติ)`
+      : isBelowAnnounced
+        ? `ราคาขาย ฿${requestedPrice.toLocaleString()} ต่ำกว่าราคาประกาศ ฿${auth.announcedPrice.toLocaleString()} ในเกณฑ์มาตรฐาน ฿${standardLimit}/ตัน (ไม่ต้องขออนุมัติ)`
+        : null,
   };
 }
 

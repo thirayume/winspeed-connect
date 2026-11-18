@@ -1027,33 +1027,277 @@ router.get('/rebate-balance/:custId', requireRebateAmountAccess, async (req, res
 });
 
 // ── GET /api/so/debug-sohd ──────────────────────────────────
-// ── GET /api/so/shipped-today — ออกของวันนี้ (สำหรับ Accounting)
-// returns dbo.SOHD records with DocuDate = today or clearflag set today
+// ── GET /api/so/shipped-today — ออกของวันนี้และช่วงวันที่ (สำหรับ Accounting & WinSpeed)
 router.get('/shipped-today', requireAuth, requireRole('ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'), async (req, res) => {
   try {
     const { getBangkokDateString } = require('../services/so-pickup-policy');
     const { isValidStartDate } = require('../services/data-window');
-    const dateStr = String(req.query.date || getBangkokDateString());
-    if (!isValidStartDate(dateStr)) return res.status(400).json({ message: 'วันที่ไม่ถูกต้อง' });
+    const hasRange = Boolean(req.query.startDate && req.query.endDate && req.query.startDate !== req.query.endDate);
+    const dateStr = String(req.query.date || req.query.startDate || getBangkokDateString());
+    const startDateStr = String(req.query.startDate || dateStr);
+    const endDateStr = String(req.query.endDate || dateStr);
+    if (!isValidStartDate(startDateStr) || !isValidStartDate(endDateStr)) {
+      return res.status(400).json({ message: 'วันที่ไม่ถูกต้อง' });
+    }
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+
+    const whereDateSql = hasRange
+      ? `CAST(hd.DocuDate AS DATE) >= @startD AND CAST(hd.DocuDate AS DATE) <= @endD`
+      : `CAST(hd.DocuDate AS DATE) = @d`;
+
+    const inputs = {
+      globalStartDate: { type: sql.Date, value: dataWindow.businessDate },
+      ...(hasRange ? {
+        startD: { type: sql.Date, value: new Date(startDateStr) },
+        endD: { type: sql.Date, value: new Date(endDateStr) },
+      } : {
+        d: { type: sql.Date, value: new Date(dateStr) },
+      }),
+    };
+
     const r = await wfQuery(`
-      SELECT TOP 200
-             hd.SOID AS Id, hd.DocuNo AS WfRef, hd.CustName,
+      SELECT hd.SOID AS Id,
+             hd.SOID,
+             hd.DocuNo AS WfRef,
+             RTRIM(cu.CustCode) AS CustCode,
+             RTRIM(hd.CustName) AS CustName,
              CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
              hd.DocuStatus,
              CAST(ISNULL(SUM(dt.GoodQty2), 0) AS DECIMAL(12,2)) AS TotalTon,
              COUNT(dt.ListNo) AS LineCount,
-             hd.TransRegistration AS TruckPlate
-      FROM dbo.SOHD hd
-      LEFT JOIN dbo.SODT dt ON dt.SOID = hd.SOID
-      WHERE CAST(hd.DocuDate AS DATE) = @d
+             RTRIM(hd.TransRegistration) AS TruckPlate,
+             -- Trip info
+             t.TripId,
+             RTRIM(t.TripCode) AS TripCode,
+             RTRIM(t.DriverName) AS DriverName,
+             RTRIM(t.TransRegistration) AS TripPlate,
+             CONVERT(VARCHAR(10), t.PickupDueDate, 120) AS TripDate,
+             t.Status AS TripStatus,
+             -- Scale / WGHD info (joined on SPID = hd.SOID)
+             wg.MoveBill,
+             wg.WeightIn,
+             wg.WeightOut,
+             wg.WeightNet,
+             wg.Status AS ScaleStatus,
+             CONVERT(VARCHAR(16), wg.DateOut, 120) AS ScaleDateOut,
+             -- 104 Delivery Order
+             RTRIM(so104.DocuNo) AS Delivery104No,
+             CONVERT(VARCHAR(10), so104.DocuDate, 120) AS Delivery104Date,
+             -- 116 Movement / Redemption
+             RTRIM(red116.DocuNo) AS Slip116No,
+             CONVERT(VARCHAR(10), red116.DocuDate, 120) AS Slip116Date,
+             -- 107 Tax Invoice (Book J / Book N)
+             RTRIM(inv107.DocuNo) AS Invoice107No,
+             CONVERT(VARCHAR(10), inv107.DocuDate, 120) AS Invoice107Date,
+             inv107.PostGL,
+             inv107.NetAmnt AS InvoiceNetAmnt,
+             -- Salesperson
+             RTRIM(emp.EmpCode) AS SalesEmpCode,
+             RTRIM(emp.EmpName) AS SalesEmpName,
+             u.DisplayName AS SalesUserName
+      FROM dbo.SOHD hd WITH (NOLOCK)
+      LEFT JOIN dbo.EMCust cu WITH (NOLOCK) ON cu.CustID = hd.CustID
+      LEFT JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
+      LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
+      LEFT JOIN wf.SalesTrip t WITH (NOLOCK) ON t.TripId = ext.TripId
+      LEFT JOIN dbo.EMEmp emp WITH (NOLOCK) ON emp.EmpID = hd.EmpID
+      LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.EmpId = hd.EmpID
+      -- WGHD Scale
+      OUTER APPLY (
+        SELECT TOP 1 w.MoveBill, w.WeightIn, w.WeightOut, w.WeightNet, RTRIM(w.Status) AS Status, w.DateOut
+        FROM dbo.WGHD w WITH (NOLOCK)
+        WHERE w.WGType = 'SO' AND w.SPID = hd.SOID
+        ORDER BY w.Id DESC
+      ) wg
+      -- 104 Delivery
+      OUTER APPLY (
+        SELECT TOP 1 so4.DocuNo, so4.DocuDate
+        FROM dbo.SODT sdt4 WITH (NOLOCK)
+        JOIN dbo.SOHD so4 WITH (NOLOCK) ON so4.SOID = sdt4.SOID AND so4.DocuType = 104
+        WHERE sdt4.RefSOID = hd.SOID
+        ORDER BY so4.SOID DESC
+      ) so104
+      -- 116 Slip
+      OUTER APPLY (
+        SELECT TOP 1 r16.DocuNo, r16.DocuDate
+        FROM dbo.WFRedemtionDT rdt16 WITH (NOLOCK)
+        JOIN dbo.WFRedemtionHD r16 WITH (NOLOCK) ON r16.RedemtionID = rdt16.RedemtionID AND r16.DocuType = 116
+        LEFT JOIN dbo.WFCoupon cp WITH (NOLOCK) ON cp.CouponID = rdt16.CouponID
+        WHERE cp.DocuID = hd.SOID
+        ORDER BY r16.RedemtionID DESC
+      ) red116
+      -- 107 Invoice (Book J / Book N)
+      OUTER APPLY (
+        SELECT TOP 1 i7.DocuNo, i7.DocuDate, i7.PostGL, i7.NetAmnt
+        FROM dbo.SOInvDT idt7 WITH (NOLOCK)
+        JOIN dbo.SOInvHD i7 WITH (NOLOCK) ON i7.SOInvID = idt7.SOInvID AND i7.DocuType IN (107, 202)
+        WHERE idt7.RefID = hd.SOID
+        ORDER BY i7.SOInvID DESC
+      ) inv107
+      WHERE ${whereDateSql}
         AND hd.DocuDate >= @globalStartDate
         AND hd.DocuType = 103
-      GROUP BY hd.SOID, hd.DocuNo, hd.CustName, hd.DocuDate, hd.DocuStatus, hd.TransRegistration
+      GROUP BY hd.SOID, hd.DocuNo, cu.CustCode, hd.CustName, hd.DocuDate, hd.DocuStatus, hd.TransRegistration,
+               t.TripId, t.TripCode, t.DriverName, t.TransRegistration, t.PickupDueDate, t.Status,
+               wg.MoveBill, wg.WeightIn, wg.WeightOut, wg.WeightNet, wg.Status, wg.DateOut,
+               so104.DocuNo, so104.DocuDate,
+               red116.DocuNo, red116.DocuDate,
+               inv107.DocuNo, inv107.DocuDate, inv107.PostGL, inv107.NetAmnt,
+               emp.EmpCode, emp.EmpName, u.DisplayName
       ORDER BY hd.DocuDate DESC, hd.SOID DESC
-    `, { d: { type: sql.Date, value: new Date(dateStr) }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } });
+    `, inputs);
     res.json(r.recordset || []);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
+});
+
+// GET /api/so/:id/accounting-detail — รายละเอียดบิลฉบับสมบูรณ์สำหรับงานบัญชีและการตรวจสอบ
+router.get('/:id/accounting-detail', requireAuth, async (req, res) => {
+  try {
+    const id = req.params.id;
+    // 1. Header info
+    const headRes = await wfQuery(`
+      SELECT hd.SOID,
+             hd.DocuNo AS BookingNo,
+             CONVERT(VARCHAR(10), hd.DocuDate, 120) AS BookingDate,
+             hd.DocuStatus,
+             hd.CustID,
+             RTRIM(cu.CustCode) AS CustCode,
+             RTRIM(hd.CustName) AS CustName,
+             RTRIM(hd.TransRegistration) AS TruckPlate,
+             RTRIM(hd.ContactName) AS ContactName,
+             RTRIM(hd.Remark) AS Remark,
+             -- Salesperson
+             hd.EmpID,
+             RTRIM(e.EmpCode) AS SalesEmpCode,
+             RTRIM(e.EmpName) AS SalesEmpName,
+             u.DisplayName AS SalesUserName,
+             -- Trip
+             t.TripId,
+             RTRIM(t.TripCode) AS TripCode,
+             RTRIM(t.TransRegistration) AS TripPlate,
+             RTRIM(t.DriverName) AS DriverName,
+             RTRIM(t.TripRemark) AS TripRemark,
+             CONVERT(VARCHAR(10), t.PickupDueDate, 120) AS TripDate,
+             t.Status AS TripStatus
+      FROM dbo.SOHD hd WITH (NOLOCK)
+      LEFT JOIN dbo.EMCust cu WITH (NOLOCK) ON cu.CustID = hd.CustID
+      LEFT JOIN dbo.EMEmp e WITH (NOLOCK) ON e.EmpID = hd.EmpID
+      LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.EmpId = hd.EmpID
+      LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
+      LEFT JOIN wf.SalesTrip t WITH (NOLOCK) ON t.TripId = ext.TripId
+      WHERE CAST(hd.SOID AS VARCHAR(50)) = @id OR hd.DocuNo = @id
+    `, { id: { type: sql.VarChar(50), value: String(id) } });
+
+    if (!headRes.recordset?.length) {
+      return res.status(404).json({ message: 'ไม่พบเอกสารนี้' });
+    }
+    const head = headRes.recordset[0];
+    const soid = head.SOID;
+
+    // 2. Product Items (SODT)
+    const itemsRes = await wfQuery(`
+      SELECT dt.ListNo,
+             dt.GoodID,
+             RTRIM(g.GoodCode) AS GoodCode,
+             RTRIM(g.GoodName1) AS GoodName,
+             dt.GoodQty AS BagQty,
+             dt.GoodQty2 AS TonQty,
+             dt.GoodPrice2 AS PricePerTon,
+             dt.GoodAmnt AS Amount,
+             dt.NetAmnt
+      FROM dbo.SODT dt WITH (NOLOCK)
+      LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON g.GoodID = dt.GoodID
+      WHERE dt.SOID = @soid
+      ORDER BY dt.ListNo ASC
+    `, { soid: { type: sql.Int, value: soid } });
+
+    // 3. Giveaway Items
+    const giveawaysRes = await wfQuery(`
+      SELECT w.Id,
+             COALESCE(w.GoodId, CAST(g.GoodID AS VARCHAR(50))) AS GoodId,
+             COALESCE(g.GoodCode, w.GoodCode) AS GoodCode,
+             COALESCE(g.GoodName1, w.GoodName, w.ItemName) AS GoodName,
+             w.Brand,
+             w.Qty,
+             ISNULL(u.GoodUnitName, N'ชิ้น') AS Unit
+      FROM wf.GiveawayWithdrawal w WITH (NOLOCK)
+      LEFT JOIN dbo.EMGood g WITH (NOLOCK) ON CAST(g.GoodID AS VARCHAR(50)) = CAST(w.GoodId AS VARCHAR(50))
+      LEFT JOIN dbo.EMGoodUnit u WITH (NOLOCK) ON u.GoodUnitID = g.MainGoodUnitID
+      WHERE w.DocuNo = @docNo OR w.Note LIKE N'%' + @docNo + N'%'
+      ORDER BY w.Id ASC
+    `, { docNo: { type: sql.VarChar(50), value: head.BookingNo } });
+
+    // 4. Scale Weighing (WGHD)
+    const scaleRes = await wfQuery(`
+      SELECT TOP 1
+             w.Id,
+             RTRIM(w.MoveBill) AS MoveBill,
+             RTRIM(w.ScaleNo) AS ScaleNo,
+             RTRIM(w.CarNo) AS TruckPlate,
+             w.WeightIn,
+             w.WeightOut,
+             w.WeightNet,
+             RTRIM(w.Status) AS Status,
+             CONVERT(VARCHAR(10), w.DateIn, 120) AS DateIn,
+             CONVERT(VARCHAR(8), w.TimeIn, 108) AS TimeIn,
+             CONVERT(VARCHAR(10), w.DateOut, 120) AS DateOut,
+             CONVERT(VARCHAR(8), w.TimeOut, 108) AS TimeOut,
+             CONVERT(VARCHAR(16), w.DateOut, 120) AS FullDateOut
+      FROM dbo.WGHD w WITH (NOLOCK)
+      WHERE w.WGType = 'SO' AND (w.SPID = @soid OR RTRIM(w.DocuNo) = @docNo)
+      ORDER BY w.Id DESC
+    `, { soid: { type: sql.Int, value: soid }, docNo: { type: sql.VarChar(50), value: head.BookingNo } });
+
+    // 5. Downstream / Trace documents (104, 116, 107)
+    const traceRes = await wfQuery(`
+      SELECT 
+        (SELECT TOP 1 RTRIM(so4.DocuNo) + ' (' + CONVERT(VARCHAR(10), so4.DocuDate, 120) + ')'
+         FROM dbo.SODT sdt4 WITH (NOLOCK)
+         JOIN dbo.SOHD so4 WITH (NOLOCK) ON so4.SOID = sdt4.SOID AND so4.DocuType = 104
+         WHERE sdt4.RefSOID = @soid ORDER BY so4.SOID DESC) AS Doc104,
+
+        (SELECT TOP 1 RTRIM(r16.DocuNo) + ' (' + CONVERT(VARCHAR(10), r16.DocuDate, 120) + ')'
+         FROM dbo.WFRedemtionDT rdt16 WITH (NOLOCK)
+         JOIN dbo.WFRedemtionHD r16 WITH (NOLOCK) ON r16.RedemtionID = rdt16.RedemtionID AND r16.DocuType = 116
+         LEFT JOIN dbo.WFCoupon cp WITH (NOLOCK) ON cp.CouponID = rdt16.CouponID
+         WHERE cp.DocuID = @soid ORDER BY r16.RedemtionID DESC) AS Doc116,
+
+        (SELECT TOP 1 RTRIM(i7.DocuNo) + ' (วันที่ ' + CONVERT(VARCHAR(10), i7.DocuDate, 120) + ' · ' +
+                     CASE WHEN i7.DocuNo LIKE 'J%' THEN N'เล่ม J' WHEN i7.DocuNo LIKE 'N%' THEN N'เล่ม N' ELSE N'ใบส่งของ' END + 
+                     ' · GL: ' + ISNULL(i7.PostGL, '-') + ')'
+         FROM dbo.SOInvDT idt7 WITH (NOLOCK)
+         JOIN dbo.SOInvHD i7 WITH (NOLOCK) ON i7.SOInvID = idt7.SOInvID AND i7.DocuType IN (107, 202)
+         WHERE idt7.RefID = @soid ORDER BY i7.SOInvID DESC) AS Doc107
+    `, { soid: { type: sql.Int, value: soid } });
+
+    // 6. Audit Trail
+    const auditRes = await wfQuery(`
+      SELECT a.Id,
+             a.Action,
+             a.Detail,
+             u.DisplayName AS ActorName,
+             CONVERT(VARCHAR(19), DATEADD(hour, 7, a.CreatedAt), 120) AS CreatedAt
+      FROM wf.AuditTrail a WITH (NOLOCK)
+      LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = a.UserId
+      WHERE a.TargetId = @targetId OR a.Detail LIKE N'%' + @docNo + N'%'
+      ORDER BY a.Id DESC
+    `, {
+      targetId: { type: sql.VarChar(50), value: String(soid) },
+      docNo: { type: sql.VarChar(50), value: head.BookingNo }
+    });
+
+    res.json({
+      header: head,
+      items: itemsRes.recordset || [],
+      giveaways: giveawaysRes.recordset || [],
+      scale: scaleRes.recordset?.[0] || null,
+      trace: traceRes.recordset?.[0] || {},
+      audit: auditRes.recordset || [],
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: e.message });
+  }
 });
 
 // ── Unlock Request flow (FR-006/007) ─────────────────────────

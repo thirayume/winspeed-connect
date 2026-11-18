@@ -5,7 +5,7 @@
  * JWT token attached to every authenticated request.
  */
 import type {
-  EMCust, EMGood, CurrentPrice, Employee,
+  EMCust, EMGood, EMGoodGroup, CurrentPrice, Employee,
   SalesOrder, SOStatus,
   RebatePool, RebateLedger, RebateClaim, RebateSummary,
   GiveawayRegion, GiveawayBudgetLine, GiveawayWithdrawal, GiveawayItem,
@@ -381,6 +381,47 @@ export const fetchGiveawayGoods = (salesUserId?: string, excludeSoId?: string) =
 export const updateGood = (id: string, patch: Partial<EMGood>) =>
   req<{ ok: boolean }>(`/master/goods/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
 
+export const fetchGoodGroups = () =>
+  req<EMGoodGroup[]>('/master/good-groups');
+
+export const createGoodGroup = (data: { GoodGroupCode?: string; GoodGroupName: string }) =>
+  req<{ ok: boolean; GoodGroupID: number; GoodGroupCode: string; GoodGroupName: string }>('/master/good-groups', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const updateGoodGroup = (id: number, data: { GoodGroupCode?: string; GoodGroupName: string }) =>
+  req<{ ok: boolean }>(`/master/good-groups/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+
+export const deleteGoodGroup = (id: number) =>
+  req<{ ok: boolean }>(`/master/good-groups/${id}`, { method: 'DELETE' });
+
+export const createGood = (data: {
+  GoodCode: string;
+  GoodName: string;
+  GoodGroupID?: number;
+  BagPerTon?: number;
+  WeightKgPerBag?: number;
+  ImageUrl?: string;
+}) =>
+  req<{ ok: boolean; GoodID: number; GoodCode: string; GoodName: string; GoodGroupID: number }>('/master/goods', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const createGiveaway = (data: {
+  GoodCode?: string;
+  GoodName: string;
+  Brand?: string;
+  BagPerTon?: number;
+  WeightKgPerBag?: number;
+  ImageUrl?: string;
+}) =>
+  req<{ ok: boolean; GoodID: number; GoodCode: string; GoodName: string; GoodGroupID: number; Brand: string }>('/master/giveaways', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
 export const fetchPrices = (params?: { custId?: string; goodId?: string; asOf?: string }) => {
   const qs = new URLSearchParams(
     Object.fromEntries(Object.entries(params || {}).filter(([, v]) => v !== undefined && v !== ''))
@@ -540,8 +581,22 @@ export const fetchSoStats = (bust = false) =>
 export const getRebateBalance = (custId: string) =>
   req<{ availableRebate: number }>(`/so/rebate-balance/${custId}`, { silent: true });
 
-export const fetchShippedToday = (date: string) =>
-  req<import('../types').ShippedRow[]>(`/so/shipped-today?date=${date}`);
+export const fetchShippedToday = (params: string | { startDate?: string; endDate?: string; date?: string }) => {
+  let qs = '';
+  if (typeof params === 'string') {
+    qs = `?date=${encodeURIComponent(params)}`;
+  } else if (params) {
+    const sp = new URLSearchParams();
+    if (params.startDate) sp.set('startDate', params.startDate);
+    if (params.endDate) sp.set('endDate', params.endDate);
+    if (params.date) sp.set('date', params.date);
+    qs = `?${sp.toString()}`;
+  }
+  return req<import('../types').ShippedRow[]>(`/so/shipped-today${qs}`);
+};
+
+export const fetchAccountingBillDetail = (id: number | string) =>
+  req<import('../types').AccountingBillDetail>(`/so/${id}/accounting-detail`);
 
 export const createSO = (payload: Record<string, unknown> | Record<string, unknown>[]) =>
   req<{ id?: number; ids?: number[]; wfRef?: string; wfRefs?: string[]; needsApproval: boolean }>('/so', {

@@ -1,18 +1,39 @@
 import { useEffect, useState, Fragment, useMemo } from 'react';
-import { Package, Search, Image as ImageIcon, Edit2, Save, X, RefreshCw, Upload, Tag, ArrowUpDown, Ban, RotateCcw } from 'lucide-react';
-import { fetchGoods, updateGood, toggleGoodStatus, fetchPrices } from '../../services/api';
+import { Package, Search, Image as ImageIcon, Edit2, Save, X, RefreshCw, Upload, Tag, ArrowUpDown, Ban, RotateCcw, Plus, Layers, Trash2 } from 'lucide-react';
+import { fetchGoods, updateGood, toggleGoodStatus, fetchPrices, fetchGoodGroups, createGoodGroup, updateGoodGroup, deleteGoodGroup, createGood } from '../../services/api';
 import '../../store/app-store';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
-import { appAlert } from '../ui/AppAlert';
-import type { EMGood, CurrentPrice } from '../../types';
+import { appAlert, appConfirm } from '../ui/AppAlert';
+import type { EMGood, EMGoodGroup, CurrentPrice } from '../../types';
 
 export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodId: string; goodCode?: string; goodName?: string }) => void }) => {
   const [goods, setGoods] = useState<EMGood[]>([]);
   const [prices, setPrices] = useState<CurrentPrice[]>([]);
+  const [goodGroups, setGoodGroups] = useState<EMGoodGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [showInactive, setShowInactive] = useState(false);
+  
+  // Modals
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showGroupsModal, setShowGroupsModal] = useState(false);
+  const [creatingGood, setCreatingGood] = useState(false);
+  const [newGoodForm, setNewGoodForm] = useState({
+    GoodCode: '',
+    GoodName: '',
+    GoodGroupID: 1003,
+    BagPerTon: 20,
+    WeightKgPerBag: 50,
+    ImageUrl: '',
+  });
+
+  // Groups management state
+  const [newGroupCode, setNewGroupCode] = useState('');
+  const [newGroupName, setNewGroupName] = useState('');
+  const [editingGroupId, setEditingGroupId] = useState<number | null>(null);
+  const [editingGroupName, setEditingGroupName] = useState('');
+  const [groupSaving, setGroupSaving] = useState(false);
   
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<EMGood>>({});
@@ -43,12 +64,14 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodI
   async function loadData() {
     setLoading(true);
     try {
-      const [goodsData, pricesData] = await Promise.all([
+      const [goodsData, pricesData, groupsData] = await Promise.all([
         fetchGoods({ includeInactive: showInactive }),
-        fetchPrices({ custId: '' })
+        fetchPrices({ custId: '' }),
+        fetchGoodGroups().catch(() => [] as EMGoodGroup[]),
       ]);
       setGoods(goodsData);
       setPrices(pricesData);
+      setGoodGroups(groupsData);
     } catch (err) {
       console.error(err);
     }
@@ -202,6 +225,105 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodI
     setStatusLoading(false);
   };
 
+  const handleCreateGood = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newGoodForm.GoodCode.trim() || !newGoodForm.GoodName.trim()) {
+      await appAlert('กรุณากรอกรหัสสินค้าและชื่อสินค้า', 'warning');
+      return;
+    }
+    setCreatingGood(true);
+    try {
+      await createGood({
+        GoodCode: newGoodForm.GoodCode.trim(),
+        GoodName: newGoodForm.GoodName.trim(),
+        GoodGroupID: Number(newGoodForm.GoodGroupID) || 1003,
+        BagPerTon: Number(newGoodForm.BagPerTon) || 20,
+        WeightKgPerBag: Number(newGoodForm.WeightKgPerBag) || 50,
+        ImageUrl: newGoodForm.ImageUrl.trim() || undefined,
+      });
+      await appAlert(`สร้างสินค้า [${newGoodForm.GoodCode.trim()}] เรียบร้อยแล้ว`, 'success');
+      setShowCreateModal(false);
+      setNewGoodForm({
+        GoodCode: '',
+        GoodName: '',
+        GoodGroupID: 1003,
+        BagPerTon: 20,
+        WeightKgPerBag: 50,
+        ImageUrl: '',
+      });
+      await loadData();
+    } catch (err: any) {
+      await appAlert('ไม่สามารถสร้างสินค้าได้: ' + (err?.message || 'ข้อผิดพลาดระบบ'), 'error');
+    } finally {
+      setCreatingGood(false);
+    }
+  };
+
+  const handleAddGroup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newGroupName.trim()) {
+      await appAlert('กรุณาระบุชื่อกลุ่มสินค้า', 'warning');
+      return;
+    }
+    setGroupSaving(true);
+    try {
+      await createGoodGroup({
+        GoodGroupCode: newGroupCode.trim() || undefined,
+        GoodGroupName: newGroupName.trim(),
+      });
+      setNewGroupCode('');
+      setNewGroupName('');
+      const updated = await fetchGoodGroups();
+      setGoodGroups(updated);
+      await loadData();
+    } catch (err: any) {
+      await appAlert('ไม่สามารถเพิ่มกลุ่มสินค้าได้: ' + (err?.message || 'ข้อผิดพลาดระบบ'), 'error');
+    } finally {
+      setGroupSaving(false);
+    }
+  };
+
+  const handleUpdateGroup = async (id: number) => {
+    if (!editingGroupName.trim()) return;
+    setGroupSaving(true);
+    try {
+      await updateGoodGroup(id, { GoodGroupName: editingGroupName.trim() });
+      setEditingGroupId(null);
+      setEditingGroupName('');
+      const updated = await fetchGoodGroups();
+      setGoodGroups(updated);
+      await loadData();
+    } catch (err: any) {
+      await appAlert('ไม่สามารถแก้ไขกลุ่มสินค้าได้: ' + (err?.message || 'ข้อผิดพลาดระบบ'), 'error');
+    } finally {
+      setGroupSaving(false);
+    }
+  };
+
+  const handleDeleteGroup = async (group: EMGoodGroup) => {
+    if ([1003, 1004, 1005].includes(group.GoodGroupID)) {
+      await appAlert('กลุ่มมาตรฐานของระบบไม่สามารถลบได้', 'warning');
+      return;
+    }
+    if ((group.GoodsCount || 0) > 0) {
+      await appAlert(`ไม่สามารถลบกลุ่ม "${group.GoodGroupName}" ได้ เนื่องจากมีสินค้าผูกอยู่ ${group.GoodsCount} รายการ`, 'warning');
+      return;
+    }
+    const confirmed = await appConfirm(`ต้องการลบกลุ่มสินค้า "${group.GoodGroupName}" (${group.GoodGroupCode}) หรือไม่?`);
+    if (!confirmed) return;
+    setGroupSaving(true);
+    try {
+      await deleteGoodGroup(group.GoodGroupID);
+      const updated = await fetchGoodGroups();
+      setGoodGroups(updated);
+      await loadData();
+    } catch (err: any) {
+      await appAlert('ไม่สามารถลบกลุ่มสินค้าได้: ' + (err?.message || 'ข้อผิดพลาดระบบ'), 'error');
+    } finally {
+      setGroupSaving(false);
+    }
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -306,6 +428,22 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodI
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(true)}
+              className="px-3 py-1.5 rounded-lg bg-[#0C447C] text-white text-xs font-semibold hover:bg-blue-900 transition flex items-center gap-1.5 shrink-0"
+              title="เพิ่มสินค้าใหม่"
+            >
+              <Plus size={14} /> <span>เพิ่มสินค้าใหม่</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowGroupsModal(true)}
+              className="px-3 py-1.5 rounded-lg bg-blue-50 text-[#0C447C] border border-blue-200 text-xs font-semibold hover:bg-blue-100 transition flex items-center gap-1.5 shrink-0"
+              title="จัดการกลุ่มสินค้า"
+            >
+              <Layers size={14} /> <span>กลุ่มสินค้า ({goodGroups.length})</span>
+            </button>
             <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition">
               <input
                 type="checkbox"
@@ -593,6 +731,296 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodI
               >
                 {statusLoading && <RefreshCw size={14} className="animate-spin" />}
                 {statusModal.targetStatus === 'I' ? 'งดจำหน่ายชั่วคราว' : 'เปิดจำหน่าย'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: เพิ่มสินค้าใหม่ */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#0C447C] flex items-center justify-center">
+                  <Package size={18} />
+                </div>
+                <h3 className="font-bold text-gray-900 text-lg">เพิ่มสินค้าใหม่</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateGood} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  รหัสสินค้า (GoodCode) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="เช่น 7-15151500BB, 1-46000000BB"
+                  value={newGoodForm.GoodCode}
+                  onChange={e => setNewGoodForm(p => ({ ...p, GoodCode: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  ชื่อสินค้า / สูตรปุ๋ย (GoodName) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="เช่น 15-15-15 เชิงผสม ตรารถเกษตร"
+                  value={newGoodForm.GoodName}
+                  onChange={e => setNewGoodForm(p => ({ ...p, GoodName: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  กลุ่มสินค้า <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={newGoodForm.GoodGroupID}
+                  onChange={e => setNewGoodForm(p => ({ ...p, GoodGroupID: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                >
+                  {goodGroups.map(g => (
+                    <option key={g.GoodGroupID} value={g.GoodGroupID}>
+                      {g.GoodGroupName} ({g.GoodGroupCode})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    กระสอบ / ตัน (BagPerTon)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={newGoodForm.BagPerTon}
+                    onChange={e => setNewGoodForm(p => ({ ...p, BagPerTon: Number(e.target.value) }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    น้ำหนัก กก. / กระสอบ
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={0.1}
+                    value={newGoodForm.WeightKgPerBag}
+                    onChange={e => setNewGoodForm(p => ({ ...p, WeightKgPerBag: Number(e.target.value) }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  ลิงก์รูปภาพ (ImageUrl)
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://... หรือ /images/..."
+                  value={newGoodForm.ImageUrl}
+                  onChange={e => setNewGoodForm(p => ({ ...p, ImageUrl: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  disabled={creatingGood}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingGood}
+                  className="px-4 py-2 text-sm font-semibold text-white bg-[#0C447C] hover:bg-blue-900 rounded-lg transition flex items-center gap-1.5"
+                >
+                  {creatingGood && <RefreshCw size={14} className="animate-spin" />}
+                  <span>สร้างสินค้า</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: จัดการกลุ่มสินค้า (Product Groups CRUD) */}
+      {showGroupsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-gray-100 animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 mb-4 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#0C447C] flex items-center justify-center">
+                  <Layers size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-lg">จัดการกลุ่มสินค้า (EMGoodGroup)</h3>
+                  <p className="text-xs text-gray-500">กำหนดและแก้ไขหมวดหมู่สินค้าในระบบ WinSpeed</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGroupsModal(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Add New Group Form */}
+            <form onSubmit={handleAddGroup} className="bg-gray-50 p-3 rounded-xl border border-gray-200 mb-4 shrink-0">
+              <div className="text-xs font-bold text-gray-700 mb-2">+ เพิ่มกลุ่มสินค้าใหม่</div>
+              <div className="flex flex-col sm:flex-row items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="รหัสกลุ่ม เช่น 1006"
+                  value={newGroupCode}
+                  onChange={e => setNewGroupCode(e.target.value)}
+                  className="w-full sm:w-32 px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                />
+                <input
+                  type="text"
+                  required
+                  placeholder="ชื่อกลุ่มสินค้า เช่น ปุ๋ยเกล็ด, ฮอร์โมน"
+                  value={newGroupName}
+                  onChange={e => setNewGroupName(e.target.value)}
+                  className="flex-1 w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                />
+                <button
+                  type="submit"
+                  disabled={groupSaving}
+                  className="w-full sm:w-auto px-4 py-1.5 bg-[#0C447C] text-white text-xs font-semibold rounded-lg hover:bg-blue-900 transition flex items-center justify-center gap-1 shrink-0"
+                >
+                  {groupSaving ? <RefreshCw size={12} className="animate-spin" /> : <Plus size={12} />}
+                  <span>เพิ่มกลุ่ม</span>
+                </button>
+              </div>
+            </form>
+
+            {/* Groups Table */}
+            <div className="flex-1 overflow-y-auto border border-gray-200 rounded-xl">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-gray-100 text-gray-600 font-semibold sticky top-0">
+                  <tr>
+                    <th className="py-2.5 px-3">รหัสกลุ่ม</th>
+                    <th className="py-2.5 px-3">ชื่อกลุ่มสินค้า</th>
+                    <th className="py-2.5 px-3 text-right">จำนวนสินค้า</th>
+                    <th className="py-2.5 px-3 text-right">จัดการ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {goodGroups.map(group => {
+                    const isEditing = editingGroupId === group.GoodGroupID;
+                    const isProtected = [1003, 1004, 1005].includes(group.GoodGroupID);
+                    return (
+                      <tr key={group.GoodGroupID} className="hover:bg-gray-50/60">
+                        <td className="py-2 px-3 font-mono font-semibold text-[#0C447C]">
+                          {group.GoodGroupCode || group.GoodGroupID}
+                        </td>
+                        <td className="py-2 px-3">
+                          {isEditing ? (
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={editingGroupName}
+                                onChange={e => setEditingGroupName(e.target.value)}
+                                className="px-2 py-1 border border-blue-300 rounded text-xs w-full"
+                              />
+                              <button
+                                type="button"
+                                disabled={groupSaving}
+                                onClick={() => handleUpdateGroup(group.GoodGroupID)}
+                                className="p-1 bg-[#0C447C] text-white rounded hover:bg-blue-900"
+                                title="บันทึก"
+                              >
+                                <Save size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingGroupId(null)}
+                                className="p-1 bg-gray-200 text-gray-600 rounded hover:bg-gray-300"
+                                title="ยกเลิก"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="font-semibold text-gray-800">{group.GoodGroupName}</span>
+                          )}
+                          {isProtected && (
+                            <span className="ml-1.5 text-[9px] px-1 py-0.2 bg-blue-50 text-[#0C447C] rounded font-normal">
+                              กลุ่มมาตรฐาน
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-right tabular-nums text-gray-600">
+                          {Number(group.GoodsCount || 0).toLocaleString()} รายการ
+                        </td>
+                        <td className="py-2 px-3 text-right whitespace-nowrap">
+                          {!isEditing && (
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingGroupId(group.GoodGroupID);
+                                  setEditingGroupName(group.GoodGroupName);
+                                }}
+                                className="p-1 text-gray-500 hover:text-[#0C447C] hover:bg-gray-100 rounded"
+                                title="แก้ไขชื่อกลุ่ม"
+                              >
+                                <Edit2 size={12} />
+                              </button>
+                              {!isProtected && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteGroup(group)}
+                                  disabled={Number(group.GoodsCount || 0) > 0 || groupSaving}
+                                  className="p-1 text-red-500 hover:bg-red-50 rounded disabled:opacity-20 cursor-pointer"
+                                  title={Number(group.GoodsCount || 0) > 0 ? 'มีสินค้าผูกอยู่ ไม่สามารถลบได้' : 'ลบกลุ่มนี้'}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-gray-100 mt-4 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowGroupsModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+              >
+                ปิด
               </button>
             </div>
           </div>

@@ -55,6 +55,25 @@ function resolveBrand(good = {}) {
  */
 function resolveItemName(good = {}) {
   const explicitItem = normalizeText(good.ItemName || good.itemName);
+  const name = normalizeText(good.GoodName || good.goodName || good.GoodName1);
+
+  // If item is merchandise (bags, shirts, banners, promotional materials), preserve the merchandise name!
+  const target = explicitItem || name;
+  const isMerchandise = target.includes('กระเป๋า') ||
+                        target.includes('เสื้อ') ||
+                        target.includes('แบนเนอร์') ||
+                        target.includes('โบว์ชัวส์') ||
+                        target.includes('โบรชัวร์') ||
+                        target.includes('เต็นท์') ||
+                        target.includes('PP board') ||
+                        target.includes('PP Board') ||
+                        target.includes('ผ้าใบ') ||
+                        target.includes('ป้าย');
+
+  if (isMerchandise) {
+    return explicitItem || name;
+  }
+
   // If explicitItem is a formula or valid merchandise name and not just a brand name
   if (explicitItem && !KNOWN_BRANDS.includes(explicitItem) && !isNumericString(explicitItem)) {
     // Check if it's already a formula
@@ -63,7 +82,6 @@ function resolveItemName(good = {}) {
     return explicitItem;
   }
 
-  const name = normalizeText(good.GoodName || good.goodName || good.GoodName1);
   if (!name) return explicitItem || '';
 
   // 1. Check for N-P-K chemical formula (e.g., 16-8-8, 15-3-3, 0-0-60)
