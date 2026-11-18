@@ -475,23 +475,34 @@ router.get('/lost', requireRole(...PAPER_ROLES), async (req, res) => {
   try {
     const dataWindow = await readGlobalDataWindow();
     const sf = paperScopeFilter(await paperScopes(req.user), { userCol: 'so.SalesUserId', empCol: 'h.EmpID' }, 'lost');
+    // 18 Nov 2026: the old form evaluated wf.v_AllSalesOrders (133k rows) twice per paper copy and timed out at
+    // 30 s on UAT. Read the few candidate copies first, then the view once for just their orders (under 1 s).
     const r = await wfQuery(`
-      SELECT pc.*, u.DisplayName AS HolderName,
-             DATEDIFF(day, pc.UpdatedAt, GETUTCDATE()) AS DaysStuck
-      FROM wf.PaperCopy pc LEFT JOIN wf.AppUser u ON u.Id = pc.HolderUserId
+      IF OBJECT_ID('tempdb..#lostCand') IS NOT NULL DROP TABLE #lostCand;
+      IF OBJECT_ID('tempdb..#lostSo') IS NOT NULL DROP TABLE #lostSo;
+      SELECT pc.Id AS PaperId, CAST(pc.SoId AS VARCHAR(50)) AS SoKey INTO #lostCand
+      FROM wf.PaperCopy pc
       WHERE pc.PrintedAt >= @globalStartUtc
         AND (pc.Status = 'LOST'
-         OR (pc.Status IN ('PRINTED','IN_TRANSIT') AND pc.UpdatedAt < DATEADD(day, -3, GETUTCDATE())))
-        AND (SELECT COUNT(1) FROM wf.v_AllSalesOrders sourceCheck WHERE sourceCheck.Id=pc.SoId)=1
+         OR (pc.Status IN ('PRINTED','IN_TRANSIT') AND pc.UpdatedAt < DATEADD(day, -3, GETUTCDATE())));
+      SELECT so.Id, so.ImportedDocuNo, so.CreatedAt, so.SalesUserId INTO #lostSo
+      FROM wf.v_AllSalesOrders so WHERE so.Id IN (SELECT SoKey FROM #lostCand);
+      SELECT pc.*, u.DisplayName AS HolderName,
+             DATEDIFF(day, pc.UpdatedAt, GETUTCDATE()) AS DaysStuck
+      FROM wf.PaperCopy pc
+      JOIN #lostCand c ON c.PaperId = pc.Id
+      LEFT JOIN wf.AppUser u ON u.Id = pc.HolderUserId
+      WHERE (SELECT COUNT(1) FROM #lostSo sourceCheck WHERE sourceCheck.Id = c.SoKey) = 1
         AND EXISTS (
-          SELECT 1 FROM wf.v_AllSalesOrders so
-          LEFT JOIN dbo.SOHD h WITH (NOLOCK) ON CAST(h.SOID AS VARCHAR(50)) = CAST(so.Id AS VARCHAR(50))
+          SELECT 1 FROM #lostSo so
+          LEFT JOIN dbo.SOHD h WITH (NOLOCK) ON CAST(h.SOID AS VARCHAR(50)) = so.Id
             AND NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NOT NULL AND h.DocuNo=so.ImportedDocuNo
-          WHERE so.Id = pc.SoId AND ${sf.sql}
+          WHERE so.Id = c.SoKey AND ${sf.sql}
             AND ((NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NULL AND so.CreatedAt >= @globalStartUtc)
               OR (NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NOT NULL AND h.DocuDate >= @globalStartDate))
         )
-      ORDER BY pc.UpdatedAt ASC`, {
+      ORDER BY pc.UpdatedAt ASC;
+      DROP TABLE #lostSo; DROP TABLE #lostCand;`, {
       ...sf.inputs,
       globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
       globalStartDate: { type: sql.Date, value: dataWindow.businessDate },

@@ -3,7 +3,7 @@ import {req} from '../../services/api';
 import {useUnsavedChanges} from '../../hooks/useUnsavedChanges';
 import {ThaiDatePicker} from '../ui/ThaiDatePicker';
 
-/** This setting is not ready for release until every relevant workflow is integrated and verified. */
+/** Accepted on UAT 18 Nov 2026; backend/tests/data-window-coverage.test.js keeps every dated GET route on it. */
 export function GlobalDataWindowSetting(){
   const [value,setValue]=useState('');
   const [saved,setSaved]=useState('');
@@ -25,7 +25,6 @@ export function GlobalDataWindowSetting(){
   }
   return <section className="rounded-2xl border border-blue-200 bg-white p-5 space-y-4">
     <h2 className="font-bold text-[#0C447C]">วันเริ่มข้อมูลของระบบ</h2>
-    <p className="text-sm text-amber-800">กำลังพัฒนา: ยังเชื่อมไม่ครบทุกหน้าหรือ API ห้ามนำชุดนี้ไป deploy จนกว่าจะตรวจรับครบ</p>
     <p className="text-sm text-gray-600">ค่ากลางสำหรับทุกฐานที่สลับใช้ในระบบนี้ เวลาเริ่มต้น 00:00 น. ตามเวลาประเทศไทย รายการก่อนวันเริ่มถูกซ่อน โดยคงข้อมูลตั้งต้นและยอดยกมาสำหรับการคำนวณ</p>
     <div className="max-w-xs">
       <label className="block text-sm font-semibold text-gray-700 mb-1">วันเริ่มข้อมูล (วัน/เดือน/ปี พ.ศ.)</label>

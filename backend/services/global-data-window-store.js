@@ -1,7 +1,7 @@
 'use strict';
 
 // The authoritative setting lives in the deployment's primary DB, never in
-// whichever database a session switched to. Rollout to workflows is partial.
+// whichever database a session switched to. Every dated GET route applies it (tests/data-window-coverage.test.js).
 const { DEFAULT_START_DATE, isValidStartDate, boundaries } = require('./data-window');
 const KEY = 'GLOBAL_DATA_START_DATE';
 

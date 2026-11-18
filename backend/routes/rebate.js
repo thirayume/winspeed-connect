@@ -2496,8 +2496,9 @@ router.get('/rb-reconciliation', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', '
 router.get('/wf-trail-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { year, empId } = req.query;
-    const conditions = [`hd.DocuType = 104`];
-    const inputs = {};
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const conditions = [`hd.DocuType = 104`, `hd.DocuDate >= @globalStartDate`];
+    const inputs = { globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
     if (year) {
       conditions.push(`YEAR(hd.DocuDate) = @year`);
       inputs.year = { type: sql.Int, value: Number(year) };
@@ -2536,8 +2537,9 @@ router.get('/wf-trail-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C
 router.get('/wf-trail-list', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { year, empId, custId, q } = req.query;
-    const conditions = [`hd.DocuType = 104`];
-    const inputs = {};
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const conditions = [`hd.DocuType = 104`, `hd.DocuDate >= @globalStartDate`];
+    const inputs = { globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
     if (year) {
       conditions.push(`YEAR(hd.DocuDate) = @year`);
       inputs.year = { type: sql.Int, value: Number(year) };
@@ -2596,13 +2598,14 @@ router.get('/wf-trail-detail/:soId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER
   try {
     const soId = Number(req.params.soId);
     if (!Number.isFinite(soId)) return res.status(400).json({ message: 'Invalid SOID' });
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
 
     const so = (await wfQuery(`
       SELECT h.*, emp.EmpName AS SalesName
       FROM dbo.SOHD h
       LEFT JOIN dbo.EMEmp emp ON emp.EmpID = h.EmpID
-      WHERE h.SOID = @soId
-    `, { soId: { type: sql.Int, value: soId } })).recordset?.[0];
+      WHERE h.SOID = @soId AND h.DocuDate >= @globalStartDate
+    `, { soId: { type: sql.Int, value: soId }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } })).recordset?.[0];
     if (!so) return res.status(404).json({ message: `ไม่พบข้อมูล SOID ${soId}` });
 
     const booking = (await wfQuery(`
@@ -2689,8 +2692,10 @@ router.get('/wf-trail-detail/:soId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER
 router.get('/cn-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { year, empId } = req.query;
-    let where = `WHERE cn.Docutype = 109 AND cn.CNRemarkTypeID IN (6001, 1001)`;
-    const inputs = {};
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    // Data start date (18 Nov 2026 UAT test): CNs dated before it are hidden.
+    let where = `WHERE cn.Docutype = 109 AND cn.CNRemarkTypeID IN (6001, 1001) AND cn.DocuDate >= @globalStartDate`;
+    const inputs = { globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
     if (year)  { where += ` AND YEAR(cn.DocuDate) = @year`;  inputs.year  = { type: sql.Int, value: Number(year) }; }
     if (empId) { where += ` AND cn.EmpID = @empId`;          inputs.empId = { type: sql.Int, value: Number(empId) }; }
 
@@ -2718,8 +2723,9 @@ router.get('/cn-summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL
 router.get('/cn-list', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
     const { year, empId, custId } = req.query;
-    let where = `WHERE cn.Docutype = 109 AND cn.CNRemarkTypeID IN (6001, 1001)`;
-    const inputs = {};
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    let where = `WHERE cn.Docutype = 109 AND cn.CNRemarkTypeID IN (6001, 1001) AND cn.DocuDate >= @globalStartDate`;
+    const inputs = { globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
     if (year)   { where += ` AND YEAR(cn.DocuDate) = @year`; inputs.year   = { type: sql.Int,          value: Number(year) }; }
     if (empId)  { where += ` AND cn.EmpID = @empId`;         inputs.empId  = { type: sql.Int,          value: Number(empId) }; }
     if (custId) { where += ` AND cn.CustID = @custId`;       inputs.custId = { type: sql.NVarChar(20), value: custId }; }
@@ -2755,6 +2761,7 @@ router.get('/cn-detail/:soInvId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 
   try {
     const soInvId = Number(req.params.soInvId);
     if (!Number.isFinite(soInvId)) return res.status(400).json({ message: 'Invalid SOInvID' });
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
 
     const r = await wfQuery(`
         SELECT
@@ -2767,9 +2774,9 @@ router.get('/cn-detail/:soInvId', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 
         FROM dbo.SOInvDT d
         LEFT JOIN dbo.SOInvHD cn    ON cn.SOInvID = d.SOInvID
         LEFT JOIN dbo.SOInvDT inv_d ON inv_d.SOInvID = cn.RefSOID AND inv_d.GoodID = d.GoodID
-        WHERE d.SOInvID = @id
+        WHERE d.SOInvID = @id AND cn.DocuDate >= @globalStartDate
         ORDER BY d.ListNo
-      `, { id: { type: sql.Int, value: soInvId } });
+      `, { id: { type: sql.Int, value: soInvId }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } });
     if (!r.recordset || r.recordset.length === 0) {
       return res.status(404).json({ message: `ไม่พบข้อมูลรายละเอียด CN ID ${soInvId}` });
     }
