@@ -15,12 +15,17 @@
 | ลำดับ | ไฟล์ | ทำเมื่อ | ผลกระทบ |
 |---|---|---|---|
 | 1 | `01-database-settings.sql` | ครั้งเดียว ทำได้ระหว่างใช้งาน | ปิด AUTO_CLOSE / AUTO_SHRINK, เปิด CHECKSUM, ขยายไฟล์ทีละ 128–256 MB |
-| 2 | `02-transaction-log.sql` | ครั้งเดียว หลังตกลงทางเลือก A หรือ B กับเจ้าของ | แก้ต้นเหตุ log โต แล้วลดไฟล์ log ครั้งเดียวเหลือ 2 GB (ไม่แตะไฟล์ข้อมูล) |
-| 3 | `03-log-backup.cmd` | ทุก 30 นาที (เฉพาะทางเลือก B) | สำรอง log ของ PROD เก็บ 3 วัน |
+| 2 | `02-transaction-log.sql` | ครั้งเดียว (เจ้าของเลือกทางเลือก A: SIMPLE เมื่อ 18 พ.ย. 2569) | แก้ต้นเหตุ log โต แล้วลดไฟล์ log ครั้งเดียวเหลือ 2 GB (ไม่แตะไฟล์ข้อมูล) |
+| 3 | `03-log-backup.cmd` | ไม่ต้องใช้ (ใช้เฉพาะทางเลือก B) | สำรอง log ของ PROD เก็บ 3 วัน |
 | 4 | `05-run-maintenance.cmd` → `04-nightly-maintenance.sql` | ทุกคืน 02:00 | จัดเรียง index ที่แตกกระจาย และปรับสถิติ (บน laptop ใช้ราว 100 วินาทีต่อฐาน) |
 | 5 | `06-proposed-winspeed-indexes.sql` | **รอเจ้าของอนุมัติก่อน** | เพิ่ม index 4 ตัวบนตาราง WinSpeed (ไม่แก้คอลัมน์) ถอดได้ด้วย `07-drop-proposed-winspeed-indexes.sql` |
 
 ตั้ง Task Scheduler: "Run whether user is logged on or not", บัญชี Windows ที่เป็น sysadmin ของ SQL Server, ไม่ชนกับงานสำรองเดิม 21:00 และการ refresh UAT
+
+## หมายเหตุทางเลือก A
+
+- จุดกู้ข้อมูลคือไฟล์สำรองเต็มทุกคืน 21:00 (งาน "AUTO Backup SQL2008") เท่ากับที่กู้ได้ในปัจจุบัน
+- UAT ถูก restore จากไฟล์สำรองของ PROD ทุกคืน จึงได้ค่า SIMPLE และค่าจาก `01` ตามไปเองหลัง IT ตั้งค่าที่ PROD
 
 ## ทดสอบแล้ว
 

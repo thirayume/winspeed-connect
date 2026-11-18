@@ -2,7 +2,7 @@
 --
 -- Both run in FULL recovery, but no log backup is ever taken, so the log never empties: on the UAT copy it is
 -- 18.3 GB with 135 MB in use, and PROD is the same. Only the nightly full backup (task "AUTO Backup SQL2008", 21:00)
--- exists. Choose ONE of the two options with the owner, then run this once in SSMS as a SQL Server administrator.
+-- exists. The owner chose option A on 18 Nov 2026. Run this once in SSMS as a SQL Server administrator.
 --
 --  Option A (simple, matches today's backups): SIMPLE recovery. The log empties itself; restore points stay the
 --           nightly full backups, which is already all that can be restored today.
@@ -16,7 +16,7 @@ SET NOCOUNT ON;
 IF IS_SRVROLEMEMBER(N'sysadmin') <> 1 BEGIN RAISERROR(N'STOP: run as a SQL Server administrator.', 16, 1); RETURN; END;
 IF @@SERVERNAME <> N'R740-SRV\SQL2008' BEGIN RAISERROR(N'STOP: this is not R740-SRV\SQL2008.', 16, 1); RETURN; END;
 
-DECLARE @option CHAR(1) = 'A';   -- <<< set to 'A' or 'B' as agreed
+DECLARE @option CHAR(1) = 'A';   -- owner chose A (SIMPLE) on 18 Nov 2026
 
 -- UAT is restored from PROD every night: SIMPLE always (Refresh-UAT.ps1 should set it after each restore).
 IF DB_ID(N'dbwins_worldfert9_uat') IS NOT NULL ALTER DATABASE [dbwins_worldfert9_uat] SET RECOVERY SIMPLE WITH NO_WAIT;
