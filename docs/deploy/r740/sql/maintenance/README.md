@@ -22,6 +22,13 @@
 
 ตั้ง Task Scheduler: "Run whether user is logged on or not", บัญชี Windows ที่เป็น sysadmin ของ SQL Server, ไม่ชนกับงานสำรองเดิม 21:00 และการ refresh UAT
 
+## สถานะบน R740 (18 พ.ย. 2569)
+
+- `01` รันแล้ว: ปิด AUTO_CLOSE / AUTO_SHRINK, เปิด CHECKSUM, ขยายไฟล์แบบคงที่ ทั้ง worldfert9, worldfert9_uat และ worldfert2
+- `02` รันแล้ว 21:41 (ทางเลือก A): PROD และ UAT เป็น SIMPLE, log ลดจาก 21,522 MB เหลือ 2,067 MB ต่อฐาน, ไฟล์ข้อมูลไม่ถูกแตะ
+- `05` ตั้งเป็นงาน `\SaleApp\SaleApp DB Maintenance` ทุกวัน 02:00 รันด้วย `NT AUTHORITY\SYSTEM` (เป็น sysadmin ของ SQL Server อยู่แล้ว ไม่ต้องเก็บรหัสผ่าน) จำกัดเวลา 2 ชั่วโมง, log อยู่ที่ `D:\SaleApp\maintenance-logs\maintenance-YYYYMMDD.log` เก็บ 30 วัน
+- `06` ยังไม่รัน รอเจ้าของอนุมัติ
+
 ## หมายเหตุทางเลือก A
 
 - จุดกู้ข้อมูลคือไฟล์สำรองเต็มทุกคืน 21:00 (งาน "AUTO Backup SQL2008") เท่ากับที่กู้ได้ในปัจจุบัน
