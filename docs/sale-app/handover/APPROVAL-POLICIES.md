@@ -27,17 +27,17 @@
 
 ## 3. รายละเอียดและผลการตรวจสอบทั้ง 8 นโยบาย (Detailed Verification)
 
-### 1) `REBATE_OVER_LIMIT` — ขอลดราคาเกิน Standard Limit (Rebate Pool)
-- **เกณฑ์ที่กำหนด**: ลดราคาต่ำกว่าราคาประกาศเกิน 200 บาท/ตัน แต่ไม่เกิน 300 บาท/ตัน
-- **สถานะการทำงานจริง**: **ใช้งานได้จริง (Active & Enforced)**
-- **โค้ดที่ควบคุม**:
-  - `backend/routes/so.js` (`priceLevel()`)
-  - `backend/services/rebate-calculator-service.js` (`calculateOrderPricingAndRebate()`)
-  - `WSSale-App/src/components/sales/CreateSODialog.tsx` (`getPriceBand()`)
-- **พฤติกรรมของระบบ**:
-  - ลดราคา $\le 200$ บาท/ตัน: ถือเป็นส่วนลด Rebate ตามเกณฑ์มาตรฐาน **ไม่ต้องขออนุมัติ** (ระบบให้ผ่านทันที และสะสม Rebate ตามปกติ)
-  - ลดราคา $200.01 - 300.00$ บาท/ตัน: แสดงแถบสีเหลือง `ต่ำกว่าราคาประกาศ (ต้องขออนุมัติ)` บังคับสถานะ `PENDING_MANAGER_APPROVAL` ให้ผู้จัดการอนุมัติก่อนยืนยันใบจอง
-  - ลดราคา $> 300.00$ บาท/ตัน: บล็อกทันทีด้วยรหัส `REBATE_EXCEEDS_MAX_LIMIT` (เว้นแต่เป็นการขายสดตัดราคาพิเศษ)
+### 1) ลดราคาต่ำกว่าราคาประกาศ และสเต็ปราคา (เจ้าของกำหนด 18 พ.ย. 2569)
+- **เกณฑ์**: ตั้งใน App Settings › ราคา & เอกสาร (`REBATE_STANDARD_LIMIT_PER_TON` = 200, `REBATE_MAX_LIMIT_PER_TON` = 300 บาท/ตัน) ใช้กับบิลทุกใบ ไม่ขึ้นกับสวิตช์ Rebate Pool
+- **พฤติกรรมของระบบ** (บังคับตอนบันทึกบิลที่ server):
+  - ลดไม่เกิน 200 บาท/ตัน: **ไม่ต้องขออนุมัติ** (สีฟ้า)
+  - ลดเกิน 200 แต่ไม่เกิน 300 บาท/ตัน: **ต้องขออนุมัติราคา** (สีเหลือง) สร้างคำขอใน `wf.PriceApproval`
+  - ลดเกิน 300 บาท/ตัน: **บันทึกไม่ได้** (สีแดง) รหัส `PRICE_DISCOUNT_OVER_MAX`
+  - ปรับราคาขึ้นหรือลงจากราคาประกาศได้ **ทีละ 100 บาท** ราคาที่ไม่ลงสเต็ปบันทึกไม่ได้ รหัส `PRICE_STEP_REQUIRED`
+  - ของแถม ตั๋วที่จองสิทธิ์ถูกต้อง ไม่ถูกตรวจ; สินค้าที่ไม่มีราคาประกาศยังต้องขออนุมัติ
+  - บิลที่บันทึกก่อนกฎนี้ ถ้าแก้โดยไม่เปลี่ยนราคา ไม่ถูกตรวจซ้ำ
+- **โค้ดที่ควบคุม**: `backend/services/price-authority.js` (`evaluateLinePrice`, `priceRuleError`), `backend/routes/so.js` (สร้าง/แก้บิล, `priceLevel`), `WSSale-App/src/components/sales/CreateSODialog.tsx` (สีราคา, ปุ่ม −100/+100)
+- **ทดสอบ**: `backend/tests/price-discount-rules.test.js`, `backend/tests/owner-decisions-20261009.test.js`
 - **สิทธิ์ผู้อนุมัติ**: `MANAGER`, `C_LEVEL`, `ADMIN`
 
 ---
@@ -138,7 +138,7 @@
 
 ทุกนโยบายมีชุดทดสอบอัตโนมัติ (Automated Unit & Integration Tests) ในโฟลเดอร์ `backend/tests/` ซึ่งผ่านการทดสอบ 100%:
 
-1. `backend/tests/owner-decisions-20261009.test.js`: ทดสอบ `REBATE_OVER_LIMIT` ทั้ง 5 เคส (Standard 200, Over 300, Cash Discount)
+1. `backend/tests/price-discount-rules.test.js` และ `backend/tests/owner-decisions-20261009.test.js`: ลดไม่เกิน 200 ไม่ต้องอนุมัติ, 200–300 ต้องอนุมัติ, เกิน 300 บันทึกไม่ได้, สเต็ป 100 บาท
 2. `backend/tests/trip-multi-cust-approval.test.js`: ทดสอบ `MULTI_CUST_TRIP` การบล็อกและปลดล็อกเที่ยวรถหลายลูกค้า
 3. `backend/tests/credit-service.test.js`: ทดสอบ `CREDIT_OVERRIDE` วงเงินและ Aging Policy
 4. `backend/tests/giveaway-crud-org.test.js`: ทดสอบ `GIVEAWAY_OVERRUN` การเบิกเกินโควตา

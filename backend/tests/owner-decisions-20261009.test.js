@@ -2,8 +2,9 @@
 
 /**
  * Owner decisions 2026-10-09:
- *  1. the bill editor shows the salesperson a colour for the price only (red / yellow below the announced price,
- *     green above); NET prices are redacted for roles that do not see rebate amounts;
+ *  1. the bill editor shows the salesperson a colour for the price only, never an amount (bands set 18 Nov 2026:
+ *     no approval up to 200 below, approval up to 300, beyond that the bill cannot be saved, steps of 100);
+ *     NET prices are redacted for roles that do not see rebate amounts;
  *  2. a change in goods, tons or price after an unlock voids the WinSpeed approval;
  *  3. rebate claims are cut year by year on the accounting year;
  *  4. WinSpeed bookings before LEGACY_DOC_CUTOFF_DATE are hidden (an open control ticket always shows).
@@ -15,7 +16,7 @@ const h = require('./helpers/route-harness.cjs');
 const windowPath = require.resolve('../services/global-data-window-store');
 require.cache[windowPath] = {id:windowPath,filename:windowPath,loaded:true,exports:{readGlobalDataWindow:async()=>({businessDate:'2026-01-01',utcInstant:new Date('2025-12-31T17:00:00Z')})}};
 
-const settings = { PRICE_WARN_BELOW_PER_TON: '500', REBATE_CLAIM_FISCAL_START_MONTH: '1', LEGACY_DOC_CUTOFF_DATE: '2022-01-01' };
+const settings = { REBATE_STANDARD_LIMIT_PER_TON: '200', REBATE_MAX_LIMIT_PER_TON: '300', REBATE_CLAIM_FISCAL_START_MONTH: '1', LEGACY_DOC_CUTOFF_DATE: '2022-01-01' };
 const db = h.installDbStub(({ text, inputs }) => {
   if (/FROM wf\.SystemSetting WHERE SettingKey = @k/.test(text)) return settings[inputs.k] ? [{ SettingValue: settings[inputs.k] }] : [];
   if (/FROM dbo\.EMCust/.test(text)) return [{ CustID: 1078 }];
@@ -31,12 +32,16 @@ let app;
 test.before(async () => { app = await h.startApp([['/api/so', '../../routes/so'], ['/api/papertrail', '../../routes/papertrail'], ['/api/reports', '../../routes/reports']]); });
 test.after(async () => { await app.close(); });
 
-test('1. price colour: red beyond the threshold, yellow within, green above, no amounts returned', async () => {
-  assert.equal(so.priceLevel(19500, 19000, 500), 'GREEN');
-  assert.equal(so.priceLevel(19000, 19000, 500), 'EQUAL');
-  assert.equal(so.priceLevel(18500, 19000, 500), 'YELLOW');
-  assert.equal(so.priceLevel(18499, 19000, 500), 'RED');
-  assert.equal(so.priceLevel(18000, 0, 500), 'NONE');
+test('1. price colour (owner 18 Nov 2026): no approval up to 200, approval up to 300, red beyond, steps of 100, no amounts returned', async () => {
+  const limits = { standard: 200, max: 300 };
+  assert.equal(so.priceLevel(19500, 19000, limits), 'GREEN');
+  assert.equal(so.priceLevel(19000, 19000, limits), 'EQUAL');
+  assert.equal(so.priceLevel(18800, 19000, limits), 'BELOW_STANDARD');
+  assert.equal(so.priceLevel(18700, 19000, limits), 'YELLOW');
+  assert.equal(so.priceLevel(18600, 19000, limits), 'RED');
+  assert.equal(so.priceLevel(18950, 19000, limits), 'OFF_STEP');
+  assert.equal(so.priceLevel(19050, 19000, limits), 'OFF_STEP');
+  assert.equal(so.priceLevel(18000, 0, limits), 'NONE');
   const r = await app.call('POST', '/api/so/price-indicator', { body: { custId: '1078', deliveryDate: '2026-12-15', lines: [
     { key: 'a', goodId: '1114', pricePerTon: 19500 }, { key: 'b', goodId: '1114', pricePerTon: 18000 }, { key: 'c', goodId: '1118', pricePerTon: 16000 },
     { key: 'd', goodId: '1114', pricePerTon: 0, isGiveaway: true },

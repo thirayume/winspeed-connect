@@ -1,5 +1,6 @@
 import {test,expect} from '@playwright/test';
 
+// 18 Nov 2026: the field became the Thai date picker (dd/mm/yyyy, Buddhist year); the API still carries ISO dates.
 test('date setting submits only after edit, retains stale changes, and saves with expected value',async({page})=>{
   let calls=0;
   await page.route('**/api/master/global-data-window',async route=>{
@@ -10,9 +11,9 @@ test('date setting submits only after edit, retains stale changes, and saves wit
   });
   await page.goto('/tests/global-data-window.html');
   const input=page.getByLabel('วันเริ่มข้อมูล',{exact:true}), save=page.getByRole('button',{name:'บันทึกวันเริ่มข้อมูล'});
-  await expect(input).toHaveValue('2026-01-01');await expect(save).toBeDisabled();
-  await input.fill('2026-02-01');await save.click();
-  await expect(page.getByRole('alert')).toBeVisible();await expect(input).toHaveValue('2026-02-01');
+  await expect(input).toHaveValue('01/01/2569');await expect(save).toBeDisabled();
+  await input.fill('01/02/2569');await save.click();
+  await expect(page.getByRole('alert')).toBeVisible();await expect(input).toHaveValue('01/02/2569');
   await save.click();await expect(page.getByRole('status')).toContainText('บันทึก');await expect(save).toBeDisabled();
   expect(calls).toBe(2);
 });

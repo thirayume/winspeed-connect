@@ -29,7 +29,7 @@ export function GlobalDataWindowSetting(){
     <p className="text-sm text-gray-600">ค่ากลางสำหรับทุกฐานที่สลับใช้ในระบบนี้ เวลาเริ่มต้น 00:00 น. ตามเวลาประเทศไทย รายการก่อนวันเริ่มถูกซ่อน โดยคงข้อมูลตั้งต้นและยอดยกมาสำหรับการคำนวณ</p>
     <div className="max-w-xs">
       <label className="block text-sm font-semibold text-gray-700 mb-1">วันเริ่มข้อมูล (วัน/เดือน/ปี พ.ศ.)</label>
-      <ThaiDatePicker value={value} disabled={!saved||busy} onChange={val=>{setValue(val);setMessage('');}} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]" />
+      <ThaiDatePicker ariaLabel="วันเริ่มข้อมูล" value={value} disabled={!saved||busy} onChange={val=>{setValue(val);setMessage('');}} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]" />
     </div>
     {error&&<p role="alert" className="text-sm text-red-700">{error}</p>}
     {message&&<p role="status" className="text-sm text-green-700">{message}</p>}

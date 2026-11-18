@@ -1596,7 +1596,7 @@ export const requestPriceBookSpecial = (id: number, data: { custId: string; cust
 export const approvePriceBookSpecial = (spId: number, approvedPrice: number) =>
   req<{ id: number; approvedPrice: number; winSpeedSynced?: boolean }>(`/pricebook/special/${spId}`, { method: 'PATCH', body: JSON.stringify({ approvedPrice }) });
 // price colour per bill line (owner 2026-10-09): RED / YELLOW below the announced price, GREEN above, no amounts
-export type PriceLevel = 'RED' | 'YELLOW' | 'GREEN' | 'EQUAL' | 'NONE' | 'SKIP';
+export type PriceLevel = 'RED' | 'YELLOW' | 'GREEN' | 'EQUAL' | 'NONE' | 'SKIP' | 'BELOW_STANDARD' | 'OFF_STEP';
 export const fetchPriceIndicator = (payload: { custId: string; deliveryDate?: string; rebateDiscountAmt?: number; lines: { key: string; goodId: string; goodCode?: string; pricePerTon: number; qtyTon?: number; isGiveaway?: boolean; isCouponDrawn?: boolean; isControlTicketDrawn?: boolean }[] }) =>
   req<{ lines: { key: string; level: PriceLevel; belowThreshold?: boolean; missingCost?: boolean }[]; belowThreshold?: boolean }>('/so/price-indicator', { method: 'POST', body: JSON.stringify(payload) });
 export const fetchEffectivePrices = (priceBookId: number, custId?: string) =>

@@ -20,7 +20,7 @@ const { generateImportFiles } = require('../services/winspeed-import.service');
 const { broadcast } = require('../services/socket');
 const { enqueue } = require('../services/outbox');
 const { writeAudit, auditUser, SCREEN } = require('../services/winspeed-audit');
-const { evaluateLinePrice, createPriceApprovalRequest, calculatePricingFingerprint, resolveAuthoritativePrice } = require('../services/price-authority');
+const { evaluateLinePrice, readDiscountLimits, priceRuleError, PRICE_STEP_PER_TON, createPriceApprovalRequest, calculatePricingFingerprint, resolveAuthoritativePrice } = require('../services/price-authority');
 const { normalizeRebatePricingMode } = require('../services/rebate-draft-mode');
 const { evaluateSellingPriceFloor, assertPricesAboveCost, assertPriceBookLinesSellable } = require('../services/cost-authority');
 const {initialBookingAi,aiHttpError,assertInitialAiShipmentReady}=require('../services/initial-booking-ai');
@@ -1179,19 +1179,23 @@ router.get('/unlock-reasons', async (req, res) => {
 });
 
 /**
- * Owner 2026-10-09: while keying a bill the salesperson sees only a colour for each price — red below the announced
- * price by more than PRICE_WARN_BELOW_PER_TON, yellow below it by up to that, green above it (the line accrues
- * rebate) — never an amount. The announced price is the one the server prices and approves against.
+ * The colour a salesperson sees for each price, never an amount (owner 2026-10-09), with the discount rule of
+ * 18 Nov 2026 that the bill save applies (services/price-authority.js):
+ *   GREEN above the announced price · EQUAL at it
+ *   BELOW_STANDARD up to the standard limit below it: no approval
+ *   YELLOW beyond the standard limit, up to the maximum: needs a manager's approval
+ *   RED beyond the maximum: the bill cannot be saved
+ *   OFF_STEP not a whole step of 100 baht from the announced price: the bill cannot be saved
  */
-// 18 Nov 2026: a 200/300 split ("no approval up to 200") was tried here, but the bill save still sends every price
-// below the announced one for approval (price-authority evaluateLinePrice), so the colour must keep saying so.
-// Changing who approves which discount is the owner's decision and belongs in the save path first.
-function priceLevel(price, announced, warnBelow) {
+function priceLevel(price, announced, limits) {
   if (!(announced > 0)) return 'NONE';
   const p = Number(price) || 0;
+  if (Math.round((announced - p) * 100) % (PRICE_STEP_PER_TON * 100) !== 0) return 'OFF_STEP';
   if (p > announced) return 'GREEN';
   if (p === announced) return 'EQUAL';
-  return announced - p > warnBelow ? 'RED' : 'YELLOW';
+  const below = announced - p;
+  if (below <= limits.standard) return 'BELOW_STANDARD';
+  return below <= limits.max ? 'YELLOW' : 'RED';
 }
 router.priceLevel = priceLevel;
 router.redactSoForRoleForTest = redactSoForRole;
@@ -1209,8 +1213,7 @@ router.post('/price-indicator', requireCapability('so.create'), async (req, res)
           return res.status(400).json({ message: 'วันที่ราคาต้องไม่ก่อนวันเริ่มข้อมูล' });
       }
     }
-    const { getSettingValue } = require('../services/policy-contract');
-    const warnBelow = await getSettingValue('PRICE_WARN_BELOW_PER_TON');
+    const discountLimits = await readDiscountLimits();
     const asOfDate = /^\d{4}-\d{2}-\d{2}/.test(String(deliveryDate || '')) ? String(deliveryDate).slice(0, 10) : null;
     const cache = new Map();
     const out = [];
@@ -1225,7 +1228,7 @@ router.post('/price-indicator', requireCapability('so.create'), async (req, res)
       }
       const auth = cache.get(k);
       const announced = auth?.hasAnnouncedPrice ? Number(auth.announcedPrice) : 0;
-      out.push({ key: l.key ?? null, level: priceLevel(l.pricePerTon, announced, warnBelow), belowThreshold: false });
+      out.push({ key: l.key ?? null, level: priceLevel(l.pricePerTon, announced, discountLimits), belowThreshold: false });
     }
     const floorEval = await evaluateSellingPriceFloor({
       lines,
@@ -1715,16 +1718,20 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
         // Evaluate line prices against authoritative server master (dbo.EMSetPriceDT / HD)
         let orderNeedsApproval = false;
         const lineEvaluations = [];
+        const discountLimits = await readDiscountLimits();
         for (let lIdx = 0; lIdx < lines.length; lIdx++) {
           const l = lines[lIdx];
           const isCouponValidated = validatedLineIndexes instanceof Set && validatedLineIndexes.has(lIdx);
-          const evalResult = await evaluateLinePrice(l, custId, deliveryDate || null, { isCouponValidated });
+          const evalResult = await evaluateLinePrice(l, custId, deliveryDate || null, { isCouponValidated, discountLimits });
           lineEvaluations.push(evalResult);
           if (evalResult.requiresApproval) {
             orderNeedsApproval = true;
             anyNeedsApproval = true;
           }
         }
+        // Owner, 18 Nov 2026: prices move in steps of 100 baht, and a discount beyond the maximum cannot be saved.
+        const priceRule = priceRuleError(lineEvaluations, discountLimits);
+        if (priceRule) throw priceRule;
 
         // Generate a native-compatible reference above all used suffixes.
         const effectiveCreateRebate = normalizeRebateDiscount(req, rebateDiscountAmt);
@@ -2056,7 +2063,7 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
     if (anyNeedsApproval) {
       warnings.push({
         type: 'PRICE_BELOW_ANNOUNCED',
-        message: 'มีรายการราคาต่ำกว่าราคาประกาศ ต้องได้รับการอนุมัติก่อนยืนยัน SO'
+        message: 'มีรายการลดราคาเกินเกณฑ์ที่ไม่ต้องขออนุมัติ ต้องได้รับการอนุมัติก่อนยืนยัน SO'
       });
     }
 
@@ -2111,7 +2118,7 @@ async function checkUnlockedNativeEdit(tx, req, so, order, beforeLines) {
       if (h) { h.LeftQty = Number(h.LeftQty) - Number(l.qtyTon); out.push({ net: 0 }); continue; }
     }
     const ev = await evaluateLinePrice(l, order.custId, order.deliveryDate || null, {});
-    if (ev.requiresApproval) {
+    if (ev.requiresApproval || ev.overMaxDiscount || ev.offPriceStep) {
       const keepsPrice = prior.some(p => !p.IsGiveaway && String(p.GoodId) === String(l.goodId) && Number(p.PricePerTon) > 0
         && Number(l.pricePerTon) >= Number(p.PricePerTon)
         && (!(Number(ev.deviationPerTon) > 0) || Number(l.qtyTon) <= Number(p.QtyTon)));
@@ -2355,10 +2362,11 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
       // Evaluate line prices against authoritative server master (dbo.EMSetPriceDT / HD)
       let orderNeedsApproval = false;
       const lineEvaluations = [];
+      const discountLimits = await readDiscountLimits();
       for (let lIdx = 0; lIdx < lines.length; lIdx++) {
         const l = lines[lIdx];
         const isCouponValidated = validatedLineIndexes instanceof Set && validatedLineIndexes.has(lIdx);
-        const evalResult = await evaluateLinePrice(l, custId, deliveryDate || null, { isCouponValidated });
+        const evalResult = await evaluateLinePrice(l, custId, deliveryDate || null, { isCouponValidated, discountLimits });
         lineEvaluations.push(evalResult);
         if (evalResult.requiresApproval) {
           orderNeedsApproval = true;
@@ -2447,6 +2455,9 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
       const currentRev = Number(existingRow.DocumentRevision) || 1;
       const pricingFingerprint = calculatePricingFingerprint(lines);
       const pricingChanged = pricingFingerprint !== existingRow.PricingFingerprint;
+      // A bill saved before the 18 Nov 2026 rules keeps its prices; only a new price is held to them.
+      const priceRule = pricingChanged ? priceRuleError(lineEvaluations, discountLimits) : null;
+      if (priceRule) throw priceRule;
       const newRev = currentRev + (pricingChanged ? 1 : 0);
       needsApproval = pricingChanged ? orderNeedsApproval : !!existingRow.RequiresPriceApproval && existingRow.PriceApprovalStatus !== 'APPROVED';
 

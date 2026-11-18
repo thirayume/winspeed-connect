@@ -108,10 +108,43 @@ async function resolveAuthoritativePrice({ custId, goodId, goodCode, asOfDate = 
 }
 
 /**
+ * How far below the announced price a bill may go (owner, 18 Nov 2026): up to the standard limit
+ * (REBATE_STANDARD_LIMIT_PER_TON, 200 baht/ton) needs no approval, up to the maximum (REBATE_MAX_LIMIT_PER_TON,
+ * 300) needs a manager's approval, and beyond the maximum the bill cannot be saved. Both are App Settings.
+ */
+async function readDiscountLimits() {
+  const { getSettingValue } = require('./policy-contract');
+  const standard = Math.max(0, Number(await getSettingValue('REBATE_STANDARD_LIMIT_PER_TON')) || 0);
+  const max = Math.max(standard, Number(await getSettingValue('REBATE_MAX_LIMIT_PER_TON')) || 0);
+  return { standard, max };
+}
+
+/** Prices move up or down from the announced price in steps of this many baht a ton (owner, 18 Nov 2026). */
+const PRICE_STEP_PER_TON = 100;
+
+/** One error for a bill whose prices break the step or go below the announced price by more than the maximum. */
+function priceRuleError(evaluations, limits) {
+  const names = list => list.map(e => e.goodLabel).filter(Boolean).join(', ');
+  const offStep = evaluations.filter(e => e && e.offPriceStep);
+  if (offStep.length) {
+    return Object.assign(new Error(
+      `ปรับราคาขึ้นหรือลงจากราคาประกาศได้ทีละ ${PRICE_STEP_PER_TON} บาท/ตัน${names(offStep) ? ` (${names(offStep)})` : ''} กรุณาแก้ราคา`),
+    { status: 400, code: 'PRICE_STEP_REQUIRED' });
+  }
+  const overMax = evaluations.filter(e => e && e.overMaxDiscount);
+  if (!overMax.length) return null;
+  return Object.assign(new Error(
+    `ลดราคาเกินเพดาน ${Number(limits?.max ?? overMax[0].maxDiscountPerTon).toLocaleString()} บาท/ตัน บันทึกไม่ได้${names(overMax) ? ` (${names(overMax)})` : ''} กรุณาปรับราคาให้อยู่ในเพดาน`),
+  { status: 400, code: 'PRICE_DISCOUNT_OVER_MAX' });
+}
+
+/**
  * Evaluates line price against authoritative announced price.
  * Rules:
  * - Giveaway lines are exempt from below-announced price approval.
- * - Selling Price < Announced Price -> requiresPriceApproval = true.
+ * - Below the announced price by no more than the standard limit -> no approval.
+ * - Below by more than the standard limit, up to the maximum -> requiresApproval = true.
+ * - Below by more than the maximum -> overMaxDiscount = true; the caller refuses to save it.
  * - Missing Announced Price -> requiresPriceApproval = true.
  */
 async function evaluateLinePrice(line, custId, asOfDate = null, options = {}) {
@@ -167,11 +200,18 @@ async function evaluateLinePrice(line, custId, asOfDate = null, options = {}) {
 
   const deviationPerTon = auth.announcedPrice - requestedPrice;
   const isBelowAnnounced = deviationPerTon > 0;
+  const limits = options.discountLimits || await readDiscountLimits();
+  const overMaxDiscount = isBelowAnnounced && deviationPerTon > limits.max;
+  const offPriceStep = Math.round(deviationPerTon * 100) % (PRICE_STEP_PER_TON * 100) !== 0;
 
   return {
     isGiveaway: false,
     hasAnnouncedPrice: true,
-    requiresApproval: isBelowAnnounced,
+    requiresApproval: isBelowAnnounced && deviationPerTon > limits.standard,
+    overMaxDiscount,
+    offPriceStep,
+    maxDiscountPerTon: limits.max,
+    goodLabel: line.goodName || line.goodCode || String(line.goodId || ''),
     announcedPrice: auth.announcedPrice,
     requestedPrice,
     deviationPerTon: isBelowAnnounced ? deviationPerTon : 0,
@@ -250,5 +290,8 @@ module.exports = {
   calculatePricingFingerprint,
   resolveAuthoritativePrice,
   evaluateLinePrice,
+  readDiscountLimits,
+  priceRuleError,
+  PRICE_STEP_PER_TON,
   createPriceApprovalRequest,
 };

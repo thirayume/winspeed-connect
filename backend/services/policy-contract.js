@@ -150,7 +150,7 @@ const POLICY_DEFINITIONS = Object.freeze(Object.assign(Object.create(null), {
     min: 0,
     max: 100000,
     default: 500,
-    description: 'ราคาขายต่ำกว่าราคาประกาศเกินกว่านี้ (บาท/ตัน) แสดงสีแดง · ต่ำกว่าไม่เกินนี้แสดงสีเหลือง · สูงกว่าราคาประกาศแสดงสีเขียว',
+    description: 'เลิกใช้ 18 พ.ย. 2569: สีราคาใช้ REBATE_STANDARD_LIMIT_PER_TON และ REBATE_MAX_LIMIT_PER_TON แทน',
   },
   // owner 2026-10-09: hide old WinSpeed bookings (2019–2021 never used WinSpeed approval)
   LEGACY_DOC_CUTOFF_DATE: {
@@ -225,7 +225,7 @@ const POLICY_DEFINITIONS = Object.freeze(Object.assign(Object.create(null), {
     min: 0,
     max: 1000,
     default: 200,
-    description: 'วงเงินส่วนลด/สะสม Rebate Pool มาตรฐานต่อตันที่ไม่ต้องขออนุมัติผู้จัดการ (บาท/ตัน)',
+    description: 'ลดราคาต่ำกว่าราคาประกาศได้ไม่เกินค่านี้โดยไม่ต้องขออนุมัติ (บาท/ตัน, ทุกบิล ตั้งแต่ 18 พ.ย. 2569)',
   },
   REBATE_MAX_LIMIT_PER_TON: {
     policyName: 'REBATE_POOL_POLICY',
@@ -233,7 +233,7 @@ const POLICY_DEFINITIONS = Object.freeze(Object.assign(Object.create(null), {
     min: 0,
     max: 1500,
     default: 300,
-    description: 'วงเงินส่วนลดจากราคากลางสูงสุดต่อตันเมื่อได้รับอนุมัติจากผู้จัดการ (บาท/ตัน)',
+    description: 'เพดานลดราคาต่ำกว่าราคาประกาศเมื่อผู้จัดการอนุมัติ เกินค่านี้บันทึกบิลไม่ได้ (บาท/ตัน, ทุกบิล ตั้งแต่ 18 พ.ย. 2569)',
   },
   REBATE_CYCLE_MONTHS: {
     policyName: 'REBATE_POOL_POLICY',

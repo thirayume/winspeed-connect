@@ -12,13 +12,15 @@ test.beforeEach(async({page})=>{
   await expect(page.getByLabel('เลือก fixture-1',{exact:true})).toBeVisible();
 });
 test('active-only default, current-page selection and filter changes clear batch selection',async({page})=>{
+  // 18 Nov 2026: the shared pagination bar; 25 rows a page keeps the second page in play for 32 active users.
+  await page.getByTestId('pagination-size').selectOption('25');
   await page.getByLabel('เลือกผู้ใช้หน้านี้ทั้งหมด').check();
-  await expect(page.getByRole('button',{name:'จัดการที่เลือก (30)',exact:true})).toBeEnabled();
-  await page.getByRole('button',{name:'ถัดไป',exact:true}).click();
+  await expect(page.getByRole('button',{name:'จัดการที่เลือก (25)',exact:true})).toBeEnabled();
+  await page.getByTestId('pagination-next').click();
   await expect(page.getByRole('button',{name:'จัดการที่เลือก (0)',exact:true})).toBeDisabled();
   await expect(page.getByLabel('เลือก fixture-33',{exact:true})).toHaveCount(0);
   await page.getByLabel('รวมผู้ปิดใช้งาน').check();
-  await page.getByRole('button',{name:'ถัดไป',exact:true}).click();
+  await page.getByTestId('pagination-next').click();
   await expect(page.getByLabel('เลือก fixture-33',{exact:true})).toBeVisible();
 });
 test('multi-role editor retains changes after a conflict and cancel is guarded',async({page})=>{

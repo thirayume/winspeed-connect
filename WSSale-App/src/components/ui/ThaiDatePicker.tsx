@@ -11,6 +11,8 @@ interface ThaiDatePickerProps {
   min?: string;
   max?: string;
   disabled?: boolean;
+  /** Accessible name when no <label> wraps the picker. */
+  ariaLabel?: string;
 }
 
 const THAI_MONTHS = [
@@ -27,7 +29,8 @@ export const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
   placeholder = "วว/ดด/ปปปป",
   min,
   max,
-  disabled = false
+  disabled = false,
+  ariaLabel,
 }) => {
   const [displayValue, setDisplayValue] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -213,6 +216,7 @@ export const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
           onBlur={handleBlur}
           placeholder={placeholder}
           disabled={disabled}
+          aria-label={ariaLabel}
           onClick={() => !disabled && setIsOpen(true)}
           className={`${className} pl-3 pr-8 w-full ${disabled ? 'opacity-60 cursor-not-allowed bg-gray-100' : ''}`}
           maxLength={10}

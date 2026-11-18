@@ -62,14 +62,18 @@ async function loadSaleGoods(salesUserId?: string, excludeSoId?: string) {
   };
 }
 
-// owner 2026-10-09: a colour only — red / yellow below the announced price, green above it (the line accrues
-// rebate). The level comes from the server, which prices and approves against the same announced price.
+// owner 2026-10-09: a colour only, never an amount. Owner 18 Nov 2026: a small discount needs no approval, a larger
+// one needs a manager, beyond the ceiling the bill cannot be saved, and prices move in steps of 100 baht. The level
+// comes from the server, which saves the bill under the same rules (services/price-authority.js).
+const PRICE_STEP = 100;
 function getPriceBand(level?: PriceLevel) {
   switch (level) {
     case 'GREEN': return { label: 'สูงกว่าราคาประกาศ', className: 'border-emerald-300 bg-emerald-50 text-emerald-700' };
     case 'EQUAL': return { label: 'เท่าราคาประกาศ', className: 'border-gray-300 bg-white text-gray-700' };
-    case 'YELLOW': return { label: 'ต่ำกว่าราคาประกาศ (ต้องขออนุมัติ)', className: 'border-yellow-300 bg-yellow-50 text-yellow-800' };
-    case 'RED': return { label: 'ต่ำกว่าราคาประกาศเกินเกณฑ์ (ต้องขออนุมัติ)', className: 'border-red-300 bg-red-50 text-red-700' };
+    case 'BELOW_STANDARD': return { label: 'ต่ำกว่าราคาประกาศ (ไม่ต้องขออนุมัติ)', className: 'border-sky-300 bg-sky-50 text-sky-800' };
+    case 'YELLOW': return { label: 'ต่ำกว่าราคาประกาศเกินเกณฑ์ (ต้องขออนุมัติ)', className: 'border-yellow-300 bg-yellow-50 text-yellow-800' };
+    case 'RED': return { label: 'ลดราคาเกินเพดาน (บันทึกไม่ได้)', className: 'border-red-300 bg-red-50 text-red-700' };
+    case 'OFF_STEP': return { label: `ปรับราคาได้ทีละ ${PRICE_STEP} บาท (บันทึกไม่ได้)`, className: 'border-red-300 bg-red-50 text-red-700' };
     case 'NONE': return { label: 'ไม่มีราคาประกาศ (ต้องขออนุมัติ)', className: 'border-gray-300 bg-gray-50 text-gray-600' };
     default: return { label: '', className: 'border-gray-200 bg-white text-gray-700' };
   }
@@ -1946,10 +1950,14 @@ export function CreateSODialog({
                               ) : (
                                   <div className="flex items-center gap-1">
                                     <span className="text-[10px] text-gray-500">฿/ตัน</span>
+                                    <button type="button" aria-label="ลดราคา 100 บาท" data-testid={`price-down-${l.tempId}`}
+                                      onClick={() => updateActiveLine(l.tempId, { pricePerTon: Math.max(0, (Number(l.pricePerTon) || 0) - PRICE_STEP) })}
+                                      className="h-6 w-6 shrink-0 rounded border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-50">−</button>
                                     <input
                                       type="number"
-                                      step="100"
+                                      step={PRICE_STEP}
                                       min="0"
+                                      aria-label="ราคาต่อตัน"
                                       value={l.pricePerTon || ''}
                                       onChange={e => updateActiveLine(l.tempId, { pricePerTon: Number(e.target.value) })}
                                       className={`w-20 text-right border rounded px-1.5 py-1 text-xs font-mono font-bold focus:outline-none focus:border-blue-400 ${
@@ -1958,6 +1966,9 @@ export function CreateSODialog({
                                           : priceBand.className
                                       }`}
                                     />
+                                    <button type="button" aria-label="เพิ่มราคา 100 บาท" data-testid={`price-up-${l.tempId}`}
+                                      onClick={() => updateActiveLine(l.tempId, { pricePerTon: (Number(l.pricePerTon) || 0) + PRICE_STEP })}
+                                      className="h-6 w-6 shrink-0 rounded border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-50">+</button>
                                   </div>
                               )}
                               {!l.isControlTicketDrawn && !l.isCouponDrawn && !l.isGiveaway && belowThresholdMap[l.tempId] ? (
