@@ -34,7 +34,13 @@
       "Bash(node -p \"require\\('./package.json'\\).version\")",
       "Bash(pandoc WorldFert_SRS_v5_0.docx -o /tmp/srs5.md)",
       "Read(//tmp/**)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(git -C \"C:/MyWork/WorldFert/winspeed-frontend\" status --short)",
+      "Bash(git -C \"C:/MyWork/WorldFert/winspeed-frontend\" log --oneline -5)",
+      "Bash(cd \"C:/MyWork/WorldFert/winspeed-frontend\" && echo \"== files modified in last 12h \\(excluding node_modules/.git/dist\\) ==\" && find . -path ./node_modules -prune -o -path ./.git -prune -o -path '*/node_modules' -prune -o -path '*/dist' -prune -o -path './.claude/worktrees' -prune -o -type f -mmin -720 -printf '%TY-%Tm-%Td %TH:%TM  %p\\\\n' 2>/dev/null | sort | tail -80)",
+      "Bash(sqlcmd -S \"AMYOU-YOGA7\\\\V2008R2\" -E -l 8 -W -h -1 -Q \"SET NOCOUNT ON; SELECT name FROM sys.databases WHERE name LIKE 'dbwins%' ORDER BY name\")",
+      "Bash(timeout 25 ssh -n -i ~/.ssh/wf-onprem-claude -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes Administrator@172.16.30.169 \"hostname\")",
+      "Bash(sqlcmd -S \"AMYOU-YOGA7\\\\V2008R2\" -E -l 8 -W -d dbwins_worldfert9_uat -Q \"SET NOCOUNT ON; SELECT c.name, t.name typ FROM sys.columns c JOIN sys.types t ON t.user_type_id=c.user_type_id WHERE c.object_id IN \\(OBJECT_ID\\('wf.RolePermission'\\), OBJECT_ID\\('wf.SystemSetting'\\)\\) ORDER BY c.object_id, c.column_id\")"
     ]
   }
 }

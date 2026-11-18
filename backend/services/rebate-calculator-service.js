@@ -18,10 +18,12 @@
  *       Company Extra Profit = MAX(0, Markup - 200)
  */
 
-const { wfQuery, wfTransaction, sql } = require('../db');
+const { wfTransaction, sql } = require('../db');
+const { defaultRebateQuery: wfQuery, transactionQuery } = require('./rebate-sql');
 const { getBangkokDateString } = require('./so-pickup-policy');
 const { assertPricesAboveCost } = require('./cost-authority');
 const { hasPermission, hasRole } = require('./role-capabilities');
+const { approvalIdentity, isSubmitter } = require('./approval-identity');
 const { getSettingValue, logChangeEvent } = require('./policy-contract');
 const {
   REBATE_CONSTANTS,
@@ -359,12 +361,10 @@ function assertManagerApprovalAuthority(actorUser) {
       code: 'UNAUTHENTICATED',
     });
   }
-  const allowed =
-    hasPermission(actorUser, 'rebate.approve-over-limit') ||
-    hasRole(actorUser, 'MANAGER') ||
-    hasRole(actorUser, 'C_LEVEL') ||
-    hasRole(actorUser, 'ADMIN');
-  if (!allowed) {
+  const identity = approvalIdentity(actorUser);
+  const qualifies = user => hasPermission(user, 'rebate.approve-over-limit');
+  const realActor = identity.impersonating ? { role: actorUser.actorRole, roles: actorUser.actorRoles, permissions: actorUser.actorPermissions } : actorUser;
+  if ((identity.impersonating && !identity.actorRoles.length) || !qualifies(actorUser) || !qualifies(realActor)) {
     throw createRebateError('เฉพาะผู้จัดการ (MANAGER / C_LEVEL / ADMIN) เท่านั้นที่สามารถอนุมัติส่วนลดเกิน 200 บาท/ตันได้', {
       status: 403,
       code: 'FORBIDDEN_APPROVAL_ROLE',
@@ -375,7 +375,7 @@ function assertManagerApprovalAuthority(actorUser) {
 /**
  * Manager approves an over-limit rebate ledger entry (200 < diff <= 300 THB/ton).
  */
-async function approveOverLimitRebate(queryFnOrUndefined, { ledgerId, actorUser, note = null, asOfDate = null } = {}) {
+async function approveOverLimitRebate(queryFnOrUndefined, { ledgerId, actorUser, note = null, asOfDate = null, dataStartDate = null } = {}) {
   assertManagerApprovalAuthority(actorUser);
   const runInTx = async (txQuery) => {
     const existing = await RebatePoolModels.findLedgerById(txQuery, ledgerId, { lock: true });
@@ -385,13 +385,16 @@ async function approveOverLimitRebate(queryFnOrUndefined, { ledgerId, actorUser,
         code: 'LEDGER_NOT_FOUND',
       });
     }
+    if (dataStartDate && (!existing.earnedDate || existing.earnedDate < dataStartDate)) {
+      throw createRebateError('ไม่พบรายการ Rebate ที่ต้องการอนุมัติ', { status: 404, code: 'LEDGER_NOT_FOUND' });
+    }
     if (existing.approvalStatus !== APPROVAL_STATUS.PENDING_MANAGER_APPROVAL) {
       throw createRebateError(`ไม่สามารถอนุมัติได้ เนื่องจากสถานะปัจจุบันคือ ${existing.approvalStatus}`, {
         status: 409,
         code: 'INVALID_APPROVAL_STATE',
       });
     }
-    if (existing.createdByUserId && actorUser.id && Number(existing.createdByUserId) === Number(actorUser.id)) {
+    if (existing.createdByUserId && isSubmitter(approvalIdentity(actorUser), existing.createdByUserId)) {
       throw createRebateError('ห้ามอนุมัติคำขอที่ตนเองเป็นผู้บันทึก (Anti-Self-Approval)', {
         status: 403,
         code: 'SELF_APPROVAL_FORBIDDEN',
@@ -441,13 +444,13 @@ async function approveOverLimitRebate(queryFnOrUndefined, { ledgerId, actorUser,
   if (typeof queryFnOrUndefined === 'function') {
     return runInTx(queryFnOrUndefined);
   }
-  return wfTransaction(async (tx) => runInTx(tx.query));
+  return wfTransaction(async (tx) => runInTx(transactionQuery(tx, sql)));
 }
 
 /**
  * Manager rejects an over-limit rebate ledger entry.
  */
-async function rejectOverLimitRebate(queryFnOrUndefined, { ledgerId, actorUser, note = null } = {}) {
+async function rejectOverLimitRebate(queryFnOrUndefined, { ledgerId, actorUser, note = null, dataStartDate = null } = {}) {
   assertManagerApprovalAuthority(actorUser);
   const rejectNote = String(note || '').trim();
   if (!rejectNote) {
@@ -464,6 +467,9 @@ async function rejectOverLimitRebate(queryFnOrUndefined, { ledgerId, actorUser, 
         status: 404,
         code: 'LEDGER_NOT_FOUND',
       });
+    }
+    if (dataStartDate && (!existing.earnedDate || existing.earnedDate < dataStartDate)) {
+      throw createRebateError('ไม่พบรายการ Rebate ที่ต้องการดำเนินการ', { status: 404, code: 'LEDGER_NOT_FOUND' });
     }
     if (existing.approvalStatus !== APPROVAL_STATUS.PENDING_MANAGER_APPROVAL) {
       throw createRebateError(`ไม่สามารถปฏิเสธได้ เนื่องจากสถานะปัจจุบันคือ ${existing.approvalStatus}`, {
@@ -510,7 +516,7 @@ async function rejectOverLimitRebate(queryFnOrUndefined, { ledgerId, actorUser, 
   if (typeof queryFnOrUndefined === 'function') {
     return runInTx(queryFnOrUndefined);
   }
-  return wfTransaction(async (tx) => runInTx(tx.query));
+  return wfTransaction(async (tx) => runInTx(transactionQuery(tx, sql)));
 }
 
 module.exports = {

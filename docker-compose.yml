@@ -33,6 +33,8 @@ services:
       # Databases a permitted role may switch their session to: a comma list, or "*" for every
       # dbwins_worldfert* database the login can open (owner 2026-10-25). Default: none (no switching).
       ONPREM_SWITCHABLE_DATABASES: ${ONPREM_SWITCHABLE_DATABASES:-}
+      # Explicitly reviewed reset targets, separate from session-switch targets.
+      REBATE_RESET_DATABASES: ${REBATE_RESET_DATABASES:-}
       # Optional encrypted profiles. IT initializes each stack's volumes before enabling.
       ONPREM_CONNECTION_STORE_FILE: ${ONPREM_CONNECTION_STORE_FILE:-}
       ONPREM_CONNECTION_KEY_FILE: ${ONPREM_CONNECTION_KEY_FILE:-}

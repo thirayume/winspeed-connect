@@ -8,6 +8,10 @@ const db=h.installDbStub(async({text})=>{
   return [];
 },{activeUserIds:[1]});
 db.stub.getDbName=()=>database;
+// These synthetic lanes exercise cache isolation without asserting that an
+// unverified secondary database is authorized for an on-prem session.
+const activeDatabase=require('../services/active-database');
+activeDatabase.onpremEnabled=()=>false;
 let app;
 test.before(async()=>{app=await h.startApp([['/api/so','../../routes/so'],['/api/master','../../routes/master']]);});
 test.after(async()=>{await app.close();});

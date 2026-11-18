@@ -19,6 +19,13 @@ const WEIGH_TOL_KG = 50; // ผลต่างน้ำหนักที่ย�
 
 const isNum = (s) => /^\d+$/.test(String(s));
 const quote = (s) => `'${String(s).replace(/'/g, "''")}'`;
+function inBusinessWindow(value, startDate) {
+  if (!value) return false;
+  const date = value instanceof Date
+    ? (Number.isFinite(value.getTime()) ? value.toISOString().slice(0, 10) : '')
+    : String(value).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && date >= startDate;
+}
 
 /**
  * หาใบกำกับของ SO แบบ batched
@@ -62,6 +69,7 @@ async function lookupInvoices(rows) {
 }
 
 async function buildCases(days) {
+  const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
   // 1) shipped SO — อ่าน dbo.SOHD ตรง ไม่ผ่าน wf.v_AllSalesOrders
   //    (view filter บน Status/CreatedAt ที่เป็น computed column -> full scan -> timeout)
   const rows = (await wfQuery(`
@@ -73,18 +81,25 @@ async function buildCases(days) {
     LEFT JOIN wf.SalesOrderExt ext ON ext.SOID = hd.SOID
     LEFT JOIN wf.WeighTicket wt ON wt.SoId = CAST(hd.SOID AS NVARCHAR(50))
     WHERE hd.DocuStatus = 'Y' AND hd.DocuDate >= DATEADD(day, -@d, GETDATE())
+      AND hd.DocuDate >= @globalStartDate
     ORDER BY hd.DocuDate DESC
-  `, { d: { type: sql.Int, value: Number(days) || 7 } })).recordset || [];
+  `, { d: { type: sql.Int, value: Number(days) || 7 }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } })).recordset || [];
 
   // 2) แนบข้อมูลใบกำกับ (batched)
   const invMap = await lookupInvoices(rows);
   for (const r of rows) {
     const i = invMap[String(r.SoId)];
-    r.WsInvoiceId   = i?.SOInvID  ?? null;
-    r.WsInvoiceNo   = i?.DocuNo   ?? null;
-    r.WsInvoiceDate = i?.DocuDate ?? null;
-    r.WsInvoiceType = i?.DocuType ?? null;
-    r.WsPostId      = i?.PostID   ?? null;
+    const visible = i && inBusinessWindow(i.DocuDate, dataWindow.businessDate);
+    // An older invoice still changes the state of the newer SO. Keep that
+    // evidence for calculation, but do not expose its historical identifiers.
+    r.HasInvoice    = Boolean(i?.DocuNo);
+    r.HasPost       = Boolean(i?.PostID);
+    r.InvoiceBeforeWindow = Boolean(i && !visible);
+    r.WsInvoiceId   = visible ? (i.SOInvID ?? null) : null;
+    r.WsInvoiceNo   = visible ? (i.DocuNo ?? null) : null;
+    r.WsInvoiceDate = visible ? (i.DocuDate ?? null) : null;
+    r.WsInvoiceType = visible ? (i.DocuType ?? null) : null;
+    r.WsPostId      = visible ? (i.PostID ?? null) : null;
   }
 
   // T6-03: จับคู่ด้วย MoveBill เป็นหลัก ถ้าไม่เจอค่อยถอยไปใช้ ทะเบียน + วันชั่งออก
@@ -167,8 +182,8 @@ async function buildCases(days) {
     else weigh = Math.abs(netApp - tsHit.net) <= WEIGH_TOL_KG ? 'MATCHED' : 'VARIANCE';
 
     // INVOICE check
-    const invoice = r.WsInvoiceNo ? 'MATCHED' : 'PENDING';
-    const postInvoiceStatus = r.WsInvoiceNo ? 'POSTED' : 'READY';
+    const invoice = r.HasInvoice ? 'MATCHED' : 'PENDING';
+    const postInvoiceStatus = r.HasInvoice ? 'POSTED' : 'READY';
 
     const wRes = resMap[`${r.SoId}|WEIGH`];
     const iRes = resMap[`${r.SoId}|INVOICE`];
@@ -183,6 +198,8 @@ async function buildCases(days) {
       wsInvoiceDate: r.WsInvoiceDate || null,
       wsInvoiceType: r.WsInvoiceType || null,
       wsPostId: r.WsPostId || null,
+      invoiceBeforeWindow: r.InvoiceBeforeWindow,
+      hasPostId: r.HasPost,
       postInvoiceStatus,
       readyForPostInvoice: postInvoiceStatus === 'READY',
       netApp,
@@ -210,6 +227,7 @@ const RECON_BOOK_ROLES = ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'];
 router.get('/account-mismatches', requireRole(...RECON_BOOK_ROLES), async (req, res) => {
   try {
     const days = Math.min(Math.max(Number(req.query.days) || 60, 1), 400);
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
     const rows = (await wfQuery(`
       SELECT h.RedemtionID, h.DocuNo AS CutNo, CONVERT(VARCHAR(10), h.DocuDate, 120) AS CutDate,
              c.CouponNo, c.SONo AS CouponSoNo,
@@ -219,10 +237,11 @@ router.get('/account-mismatches', requireRole(...RECON_BOOK_ROLES), async (req, 
       JOIN dbo.WFCoupon c WITH (NOLOCK) ON c.CouponID = d.CouponID
       JOIN dbo.SOInvHD i WITH (NOLOCK) ON i.SOInvID = d.SOInvID
       WHERE h.DocuDate >= DATEADD(DAY, -@days, GETDATE())
+        AND h.DocuDate >= @globalStartDate
         AND ((LEFT(c.CouponNo, 1) = 'D' AND LEFT(i.DocuNo, 1) <> 'N')
           OR (LEFT(c.CouponNo, 1) = 'C' AND LEFT(i.DocuNo, 1) <> 'J'))
       ORDER BY h.DocuDate DESC, h.RedemtionID DESC
-    `, { days: { type: sql.Int, value: days } })).recordset || [];
+    `, { days: { type: sql.Int, value: days }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } })).recordset || [];
     const data = rows.map(r => {
       const mm = invoiceMismatch({ billNo: r.CouponSoNo, couponNo: r.CouponNo, invoiceNo: r.InvoiceNo });
       return mm ? {
@@ -285,7 +304,7 @@ router.get('/summary', requireRole(...RECON_BOOK_ROLES), async (req, res) => {
       invoiceFound: cases.filter(c => c.postInvoiceStatus === 'POSTED' || Boolean(c.wsInvoiceNo)).length,
       partialInvoiced: 0,
       operationallyQualified: cases.filter(c => c.weigh === 'MATCHED' || c.weighResolution?.status === 'RESOLVED').length,
-      glVerified: cases.filter(c => Boolean(c.wsPostId) || c.invoiceResolution?.status === 'RESOLVED').length,
+      glVerified: cases.filter(c => c.hasPostId || c.invoiceResolution?.status === 'RESOLVED').length,
       tsAvailable: cases[0]?.tsAvailable ?? true,
     };
     res.json(summary);
@@ -306,6 +325,15 @@ router.post('/:soId/resolve', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_L
   try {
     const { checkType, action, note, wfRef } = req.body || {};
     if (!['WEIGH', 'INVOICE'].includes(checkType)) return res.status(400).json({ message: 'checkType ไม่ถูกต้อง' });
+    const soId = Number(req.params.soId);
+    if (!/^\d+$/.test(String(req.params.soId)) || !Number.isSafeInteger(soId) || soId < 1 || soId > 2147483647) {
+      return res.status(400).json({ message: 'รหัสใบสั่งขายไม่ถูกต้อง' });
+    }
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const target = await wfQuery('SELECT SOID FROM dbo.SOHD WHERE SOID = @soId AND DocuDate >= @globalStartDate', {
+      soId: { type: sql.Int, value: soId }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate },
+    });
+    if (!target.recordset?.[0]) return res.status(404).json({ message: 'ไม่พบใบสั่งขายนี้' });
     const status = action === 'IGNORE' ? 'IGNORED' : 'RESOLVED';
     await wfQuery(`
       MERGE wf.ReconResolution AS t

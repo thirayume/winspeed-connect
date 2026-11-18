@@ -76,6 +76,7 @@ const names: Record<string, string> = {
   "pricing.manage": "แก้ไขตารางราคาขายและ Sync WinSpeed",
   "cost.view": "ดูตารางราคาทุน (Costlist)",
   "cost.manage": "แก้ไขและเปิดใช้ราคาทุน (Costlist)",
+  "rebate.evidence.verify": "ตรวจหลักฐานเวลาขนส่งสำหรับยอด Rebate ที่พักไว้",
 };
 
 /** ลำดับบทบาทตามผังโครงสร้างองค์กร (ADMIN เป็น root ถัดมาคือผู้บริหาร C_LEVEL ไล่ลงมาถึงฝ่ายขาย) */

@@ -24,6 +24,7 @@ import { SOBookingDocModal } from './SOBookingDocModal';
 import { displayStatus, SO_STATUS_META, soStatusLabel } from '../../constants/soStatus';
 import { QuickShipModal } from './QuickShipModal';
 import { bangkokDate, formatThaiDate } from '../../utils/date';
+import { getCustomerGroupKey } from '../../utils/customer-identity';
 import { giveawayPieces } from '../../utils/giveaway';
 import { LoadSequencer, type SequencedLine } from './LoadSequencer';
 
@@ -71,6 +72,7 @@ export function TripSummaryModal({
   const [warehouseAckAt, setWarehouseAckAt] = useState<string | null>(null);
   const [loadPlanLines, setLoadPlanLines] = useState<any[]>([]);
   const [capacityInfo, setCapacityInfo] = useState<any>(null);
+  const [serverCustCodeByOrderId, setServerCustCodeByOrderId] = useState<Record<string, string>>({});
   const idempotencyKeyRef = useRef<string>('');
 
   const loadTripPlan = (tripId: number) => {
@@ -91,6 +93,7 @@ export function TripSummaryModal({
     let disposed = false;
     setTripLoaded(false);
     setMultiCustApproval(null);
+    setServerCustCodeByOrderId({});
     setShowMultiCustForm(false);
     setMultiCustApproveMode(null);
     if (trip?.orders) {
@@ -128,6 +131,13 @@ export function TripSummaryModal({
           setTripRevision(Number(res.documentRevision));
           if (res.pickupDueDate) setTripPickupDueDate(res.pickupDueDate.split('T')[0]);
           setMultiCustApproval(res.multiCustApproval || null);
+          const nextCodeMap: Record<string, string> = {};
+          for (const ord of (res.orders || [])) {
+            if (ord?.id != null && ord?.custCode) {
+              nextCodeMap[String(ord.id)] = String(ord.custCode);
+            }
+          }
+          setServerCustCodeByOrderId(nextCodeMap);
           if (res.multiCustApproval?.minCustomers) {
             setMinCustThreshold(res.multiCustApproval.minCustomers);
           }
@@ -228,7 +238,7 @@ export function TripSummaryModal({
     if (a.isGiveaway !== b.isGiveaway) return a.isGiveaway ? 1 : -1;
     return b.qtyTon - a.qtyTon;
   });
-  const linkedQuoteOrder = trip.orders.find(o => o.linkedQuoteId && ['DRAFT', 'SENT', 'EXPIRED'].includes(String(o.linkedQuoteStatus || '')));
+  const linkedQuoteOrder = trip.orders.find(o => o.quotationLockReason || (o.linkedQuoteId && ['DRAFT', 'SENT', 'EXPIRED'].includes(String(o.linkedQuoteStatus || ''))));
   const isQuoteLocked = !!linkedQuoteOrder;
   const openLinkedQuotation = () => {
     if (!linkedQuoteOrder?.linkedQuoteId) return;
@@ -269,7 +279,11 @@ export function TripSummaryModal({
   const selectedCustKeys = Array.from(
     new Set(
       activeOrdersForCheck
-        .map(o => String(o.custId || (o.custName ? `NAME:${o.custName}` : '')).trim())
+        .map(o => getCustomerGroupKey({
+          custId: o.custId,
+          custCode: o.custCode || serverCustCodeByOrderId[String(o.id ?? '')],
+          custName: o.custName,
+        }))
         .filter(Boolean)
     )
   ).sort();
@@ -502,7 +516,7 @@ export function TripSummaryModal({
   const handleCreateQuotation = async () => {
     const soIds = trip.orders.map(o => o.id).filter((id): id is string | number => !!id && String(id) !== 'undefined');
     if (!soIds.length) return void appAlert('ไม่พบ SO สำหรับสร้างใบเสนอราคา', 'warning');
-    if (isQuoteLocked) return void appAlert(`ทริปนี้ผูกกับใบเสนอราคา ${linkedQuoteOrder?.linkedQuoteNo || ''} ที่ยังรอการยืนยันอยู่`, 'warning');
+    if (isQuoteLocked) return void appAlert(linkedQuoteOrder?.quotationLockReason || `ทริปนี้ผูกกับใบเสนอราคา ${linkedQuoteOrder?.linkedQuoteNo || ''} ที่ยังรอการยืนยันอยู่`, 'warning');
     if (!allDraft) return void appAlert('สร้างใบเสนอราคาได้เฉพาะบิลร่างทั้งหมดในทริปเท่านั้น', 'warning');
     const ok = await appConfirm(`สร้างใบเสนอราคาจากทริปนี้ ${soIds.length} บิล?\nระบบจะรวมสินค้าเป็นใบเดียว และไม่รวมรายการของแถม`);
     if (!ok) return;
@@ -717,15 +731,15 @@ export function TripSummaryModal({
                   <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                     <div className="flex items-center justify-between gap-2">
                       <div className="font-bold flex items-center gap-2">
-                        <FileText size={16} /> รอใบเสนอราคา {linkedQuoteOrder?.linkedQuoteNo} ยืนยัน
+                        <FileText size={16} /> {linkedQuoteOrder?.linkedQuoteId ? `รอใบเสนอราคา ${linkedQuoteOrder.linkedQuoteNo || ''} ยืนยัน` : linkedQuoteOrder?.quotationLockReason}
                       </div>
-                      <button
+                      {linkedQuoteOrder?.linkedQuoteId && <button
                         type="button"
                         onClick={openLinkedQuotation}
                         className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-[#0C447C] border border-amber-200 hover:bg-amber-100"
                       >
                         เปิดใบเสนอราคา
-                      </button>
+                      </button>}
                     </div>
                     {linkedQuoteOrder?.linkedQuoteRemark && (
                       <div className="mt-2 text-xs text-amber-700 line-clamp-3">{linkedQuoteOrder.linkedQuoteRemark}</div>

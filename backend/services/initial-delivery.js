@@ -1,5 +1,6 @@
 'use strict';
 const {hasPermission}=require('./role-capabilities');
+const {businessIds}=require('./business-identity');
 // Restricted UAT simulation: full single-line whole-bag zero-tax104, numbered
 // C/D and202 receivable, with explicit Account credit approval. No116/107/GL.
 const { createHash } = require('crypto');
@@ -23,7 +24,7 @@ function queryFor(tx) {
  };
 }
 async function identity(q, user, approval = false) {
- const effective = Number(user?.sub), actor = Number(user?.actorSub || user?.sub);
+ const { effective, actor } = businessIds(user);
  if (![effective, actor].every(n => Number.isSafeInteger(n) && n > 0)) fail('DO_ACTOR_INVALID', 401);
  const rows = (await q(`SELECT Id,Role,IsActive,MustChangePassword FROM wf.AppUser WITH(UPDLOCK,HOLDLOCK)
   WHERE Id IN(@effective,@actor)`, { effective: input(sql.Int,effective), actor: input(sql.Int,actor) })).recordset || [];

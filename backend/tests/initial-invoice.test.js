@@ -83,6 +83,14 @@ test('only effective ACCOUNTING may post; live identity and Access As authority 
  const x=fixture();const user={...acct,actorSub:99,actorRole:'ADMIN'};const cmd=await command(x,user);await x.call('apply',cmd);assert.equal(x.state.receipt.ApplierActorId,99);
  const a=fixture();await assert.rejects(a.call('preview',{user:{...acct,actorSub:11,actorRole:'WAREHOUSE'}}),{code:'IP_ACCESS_AS_FORBIDDEN'});
 });
+test('mapped Access As invoice uses business IDs in native receipt',async()=>{
+ const f=fixture();const user={sub:122,role:'ACCOUNTING',actorSub:199,actorRole:'ADMIN',
+  identityMapping:{primaryEffectiveUserId:122,primaryActorUserId:199,businessEffectiveUserId:22,businessActorUserId:99}};
+ const cmd=await command(f,user);await f.call('apply',cmd);
+ assert.equal(f.state.receipt.AppliedById,22);assert.equal(f.state.receipt.ApplierActorId,99);
+ const lookup=f.calls.find(c=>/SELECT Id,Role,IsActive/.test(c.text));
+ assert.equal(lookup.p.user.value,22);assert.equal(lookup.p.actor.value,99);
+});
 test('preview binds actor, native settings and cut date; no native writes occur',async()=>{
  const f=fixture(),c=await command(f);assert.equal(f.state.applied,false);
  f.state.configDrift=true;await assert.rejects(f.call('apply',c),{code:'IP_PREVIEW_STALE'});

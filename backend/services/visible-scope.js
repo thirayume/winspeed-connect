@@ -27,12 +27,13 @@ const {hasRole} = require('./role-capabilities');
  * because req.user carries the effective identity.
  */
 const { sql, wfQuery } = require('../db');
+const { businessIds } = require('./business-identity');
 
 const ALL_ROLES = Object.freeze(['ADMIN', 'C_LEVEL', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'APPROVER']);
 
 async function getVisibleScope(user, queryFn = wfQuery) {
   const role = String(user?.role || '').toUpperCase();
-  const userId = Number(user?.sub ?? user?.id);
+  const userId = businessIds(user).effective;
   if (hasRole(user,...ALL_ROLES)) return { all: true, basis: 'ALL', userIds: [], empIds: [] };
   if (!userId) return { all: false, basis: 'NONE', userIds: [], empIds: [] };
 
@@ -106,7 +107,7 @@ const ENTER_FOR_OTHERS_ROLES = Object.freeze(['ADMIN', 'C_LEVEL', 'MANAGER', 'CO
  * Self always; roles that key bills for others; otherwise only users inside the scope.
  */
 async function canViewSalesUser(user, targetUserId, queryFn = wfQuery) {
-  const self = Number(user?.sub ?? user?.id);
+  const self = businessIds(user).effective;
   const target = Number(targetUserId);
   if (!target || target === self) return true;
   if (hasRole(user,...ENTER_FOR_OTHERS_ROLES)) return true;

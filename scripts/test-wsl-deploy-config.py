@@ -266,7 +266,7 @@ class R740ComposeGuardTests(unittest.TestCase):
                        "ONPREM_DB_ENCRYPT", "ONPREM_DB_LEGACY_TLS")
         for key in target_keys:
             app[key] = migration[key] = target[key]
-        for key in ("ONPREM_DB_USER", "CORS_ORIGIN", "ONPREM_SWITCHABLE_DATABASES", "NATIVE_BOOKING_AI_ENABLED",
+        for key in ("ONPREM_DB_USER", "CORS_ORIGIN", "ONPREM_SWITCHABLE_DATABASES", "REBATE_RESET_DATABASES", "NATIVE_BOOKING_AI_ENABLED",
                     "NATIVE_DELIVERY_104_ENABLED", "NATIVE_MANUAL_116_ENABLED", "NATIVE_INVOICE_107_ENABLED",
                     "DISABLE_BACKGROUND_WORKERS"):
             app[key] = target[key]
@@ -318,6 +318,15 @@ class R740ComposeGuardTests(unittest.TestCase):
         self.assertEqual(app["ONPREM_DB_USER"], "wf_r740_uat_app_v2")
         self.assertEqual(migration["ONPREM_MIGRATOR_USER"], "wf_r740_uat_migrator_v2")
         self.assertNotIn("dbwins_worldfert9-uat", target_path.read_text(encoding="utf-8"))
+
+    def test_rebate_reset_manifest_is_pinned_and_excludes_uat_from_production(self):
+        for environment, expected in (("uat", "dbwins_worldfert9_uat"),
+                                      ("prod", "dbwins_worldfert9,dbwins_worldfert2")):
+            models, target_path = self.fixture(environment)
+            app = models["resolved"]["services"]["backend"]["environment"]
+            self.assertEqual(app["REBATE_RESET_DATABASES"], expected)
+            app["REBATE_RESET_DATABASES"] = "dbwins_worldfert9_uat,dbwins_worldfert9"
+            self.assertNotEqual(self.validate(models, target_path).returncode, 0)
 
     def test_cross_stack_network_is_rejected_for_app_and_migrator(self):
         for environment in ("uat", "prod"):

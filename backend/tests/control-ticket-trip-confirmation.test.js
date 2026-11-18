@@ -123,6 +123,10 @@ require.cache[authPath] = {
 };
 
 // Clear routers and services from cache to ensure they pick up stubbed db & auth
+const windowPath = require.resolve('../services/global-data-window-store');
+require.cache[windowPath] = { id: windowPath, filename: windowPath, loaded: true, exports: {
+  readGlobalDataWindow: async () => require('../services/data-window').boundaries('2026-01-01'),
+} };
 delete require.cache[require.resolve('../routes/trips')];
 delete require.cache[require.resolve('../routes/so')];
 delete require.cache[require.resolve('../services/draft-confirmation')];
@@ -169,6 +173,9 @@ test.after(async () => {
 test('1. Real route PATCH /api/so/99901/confirm: Bill in active trip returns 409 BILL_IN_ACTIVE_TRIP', async () => {
   executedQueries.length = 0;
   queryHandler = (text, inputs) => {
+    if (text.includes('FROM wf.v_AllSalesOrders WHERE')) {
+      return { recordset: [{ Id: 99901, Status: 'DRAFT' }] };
+    }
     if (text.includes('FROM wf.SalesOrderExt WHERE SOID=@id')) {
       return {
         recordset: [{
@@ -417,6 +424,7 @@ test('5. Real route POST /api/so with exact CreateSODialog payload: stores NoTru
   };
 
   queryHandler = (text, inputs) => {
+    if (text.includes('AS TotalOutstanding')) return { recordset: [{ TotalOutstanding: 0 }] };
     if (text.includes('FROM wf.CreditMaster')) {
       return { recordset: [{ CreditHold: 0 }] };
     }

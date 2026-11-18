@@ -30,13 +30,12 @@ test('trip setup retains edits and rejects cancel/navigation after a parent refr
   await note.fill('UNSAVED-TRIP');
   await page.getByRole('button',{name:'Refresh trip setup',exact:true}).click();
   await expect(note).toHaveValue('UNSAVED-TRIP');
-  let confirmations=0;
-  page.on('dialog',async d=>{confirmations++;await d.dismiss();});
   await dialog.getByRole('button',{name:'ยกเลิก',exact:true}).click();
+  await page.getByText('ยืนยันการทำรายการ',{exact:true}).locator('..').getByRole('button',{name:'ยกเลิก',exact:true}).click();
   await expect(note).toHaveValue('UNSAVED-TRIP');
   await page.getByRole('button',{name:'Navigate',exact:true}).click();
+  await page.getByText('ยืนยันการทำรายการ',{exact:true}).locator('..').getByRole('button',{name:'ยกเลิก',exact:true}).click();
   expect(await page.evaluate(()=>(window as any).regression.useAppStore.getState().activePortal)).toBe('sales');
-  expect(confirmations).toBe(2);
 });
 
 test('trip save freezes its controls, keeps the opened revision, and retains values on conflict',async({page})=>{
@@ -66,23 +65,22 @@ test('discarding a trip clears its guard and a reopened editor uses the latest s
   const note=page.getByPlaceholder('แสดงใน Description ทุกบิลของเที่ยว');
   await note.fill('DISCARD-THIS-TEST-EDIT');
   await page.getByRole('button',{name:'Refresh trip setup',exact:true}).click();
-  let confirmations=0;
-  page.on('dialog',async d=>{confirmations++;await d.accept();});
   await page.getByRole('button',{name:'ปิดข้อมูลการจัดส่ง',exact:true}).click();
+  await page.getByText('ยืนยันการทำรายการ',{exact:true}).locator('..').getByRole('button',{name:'ตกลง',exact:true}).click();
   await expect(page.getByTestId('trip-setup-dialog')).toHaveCount(0);
   await page.getByRole('button',{name:'Trip setup',exact:true}).click();
   await expect(note).toHaveValue('SERVER REFRESH');
   await page.getByRole('button',{name:'ปิดข้อมูลการจัดส่ง',exact:true}).click();
   await page.getByRole('button',{name:'Navigate',exact:true}).click();
-  expect(confirmations).toBe(1);
 });
 test('declining close and navigation preserves the unsaved editor',async({page})=>{
   const input=page.getByPlaceholder('หมายเหตุบิลนี้...');
   await input.fill('DO-NOT-LOSE');
-  page.on('dialog',dialog=>dialog.dismiss());
   await page.getByTestId('btn-close-dialog').click();
+  await page.getByText('ยืนยันการทำรายการ',{exact:true}).locator('..').getByRole('button',{name:'ยกเลิก',exact:true}).click();
   await expect(input).toHaveValue('DO-NOT-LOSE');
   await page.getByRole('button',{name:'Navigate',exact:true}).click();
+  await page.getByText('ยืนยันการทำรายการ',{exact:true}).locator('..').getByRole('button',{name:'ยกเลิก',exact:true}).click();
   await expect(input).toHaveValue('DO-NOT-LOSE');
   expect(await page.evaluate(()=>(window as any).regression.useAppStore.getState().activePortal)).toBe('sales');
 });
@@ -191,10 +189,8 @@ test('hidden-page refreshes wait until resume and disposal cancels pending work'
 test('changing only the quotation expiry date still warns before closing',async({page})=>{
   await page.getByRole('button',{name:'Quotation',exact:true}).click();
   await page.getByRole('button',{name:'+7 วัน',exact:true}).click();
-  let warned=false;
-  page.on('dialog',async dialog=>{warned=true;await dialog.dismiss();});
   await page.getByRole('button',{name:'ปิดใบเสนอราคา',exact:true}).click();
-  expect(warned).toBe(true);
+  await page.getByText('ยืนยันการทำรายการ',{exact:true}).locator('..').getByRole('button',{name:'ยกเลิก',exact:true}).click();
   await expect(page.getByRole('button',{name:'+15 วัน',exact:true})).toBeVisible();
 });
 test('read sharing is scoped to token and timed-out writes are never retried',async({page})=>{

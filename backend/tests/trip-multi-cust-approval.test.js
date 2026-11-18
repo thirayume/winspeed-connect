@@ -112,7 +112,7 @@ const db = h.installDbStub(({ kind, text, inputs, proc }) => {
     return state.members.map(m => ({ ...m }));
   }
 
-  if (/SELECT Id, WfRef, SoPrefix, CustId, CustName, TruckPlate, Status/i.test(text) && /FROM wf\.SalesOrder/i.test(text)) {
+  if (/SELECT .*WfRef.*CustId.*CustName.*TruckPlate/i.test(text) && /FROM wf\.SalesOrder/i.test(text)) {
     return state.members
       .filter(m => m.MemberKind === 'DRAFT')
       .map(m => ({
@@ -120,6 +120,7 @@ const db = h.installDbStub(({ kind, text, inputs, proc }) => {
         WfRef: m.DocuNo,
         SoPrefix: m.SoPrefix,
         CustId: m.CustId,
+        CustCode: m.CustCode || null,
         CustName: m.CustName,
         TruckPlate: m.TruckPlate,
         Status: m.Status,
@@ -419,7 +420,51 @@ test('route: rejection requires note >= 5 chars and blocks confirm until re-requ
   assert.equal(listRes.body.data[0].status, 'REJECTED');
 });
 
-test('migration 185 defines TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS, MULTI_CUST_TRIP policy, and SQL 2008-compatible table', () => {
+test('unit: same CustCode prefix before "-" (e.g. 0462002 and 0462002-1) collapses into 1 customer', () => {
+  const { getBaseCustCode } = require('../services/trip-multi-cust-approval');
+  assert.equal(getBaseCustCode('0462002'), '0462002');
+  assert.equal(getBaseCustCode('0462002-1'), '0462002');
+  assert.equal(getBaseCustCode(' 0462002-02 '), '0462002');
+
+  const branchSameCustomer = computeTripCustomerSnapshot([
+    { CustId: '18006', CustCode: '0462002-1', CustName: 'กลุ่มชาวไร่น้ำจืด', DocuNo: 'I69-02', Status: 'DRAFT' },
+    { CustId: '18005', CustCode: '0462002', CustName: 'บริษัท ทวีชัยเคมีเกษตร จำกัด', DocuNo: 'I69-01', Status: 'DRAFT' },
+    { CustId: '18007', CustCode: '0462002-2', CustName: 'กลุ่มชาวไร่สาขา 2', DocuNo: 'I69-03', Status: 'DRAFT' },
+  ]);
+  assert.equal(branchSameCustomer.customerCount, 1);
+  assert.deepEqual(branchSameCustomer.customerIds, ['CODE:0462002']);
+  assert.equal(branchSameCustomer.customers[0].custName, 'บริษัท ทวีชัยเคมีเกษตร จำกัด');
+
+  const twoDistinctPrefixes = computeTripCustomerSnapshot([
+    { CustId: '18005', CustCode: '0462002', CustName: 'บริษัท ทวีชัยเคมีเกษตร จำกัด', DocuNo: 'I69-01', Status: 'DRAFT' },
+    { CustId: '18006', CustCode: '0462002-1', CustName: 'กลุ่มชาวไร่น้ำจืด', DocuNo: 'I69-02', Status: 'DRAFT' },
+    { CustId: '19001', CustCode: '0462003', CustName: 'ร้านเกษตรรุ่งเรือง', DocuNo: 'I69-03', Status: 'DRAFT' },
+  ]);
+  assert.equal(twoDistinctPrefixes.customerCount, 2);
+  assert.deepEqual(twoDistinctPrefixes.customerIds, ['CODE:0462002', 'CODE:0462003']);
+});
+
+test('route: confirming trip with 0462002 and 0462002-1 succeeds without multi-customer approval', async () => {
+  resetState();
+  clearSettingCache();
+  state.members = [
+    { TripId: 10, MemberKind: 'DRAFT', MemberId: 101, DocuNo: 'I69-0101', SoPrefix: 'I', CustId: '18005', CustCode: '0462002', CustName: 'บริษัท ทวีชัยเคมีเกษตร จำกัด', Status: 'DRAFT', SalesUserId: 43, SOID: null, NoTruckRequired: 0, TruckPlate: '70-1010' },
+    { TripId: 10, MemberKind: 'DRAFT', MemberId: 102, DocuNo: 'I69-0102', SoPrefix: 'I', CustId: '18006', CustCode: '0462002-1', CustName: 'กลุ่มชาวไร่น้ำจืด', Status: 'DRAFT', SalesUserId: 43, SOID: null, NoTruckRequired: 0, TruckPlate: '70-1010' },
+  ];
+
+  const detail = await app.call('GET', '/api/trips/10', { user: sales });
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.multiCustApproval.customerCount, 1);
+  assert.equal(detail.body.multiCustApproval.requiresApproval, false);
+
+  const confirmRes = await app.call('POST', '/api/trips/10/confirm', {
+    body: { confirmedOrderIds: [101, 102], transRegistration: '70-1010', pickupDueDate: '2099-12-31' },
+    user: sales,
+  });
+  assert.equal(confirmRes.status, 200, JSON.stringify(confirmRes.body));
+});
+
+test('migration 185 & 189 define TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS, MULTI_CUST_TRIP policy, and SQL 2008-compatible schema', () => {
   const sqlText = fs.readFileSync(
     path.join(__dirname, '..', 'migrations', '185_trip_multi_customer_approval.sql'),
     'utf8'
@@ -428,4 +473,12 @@ test('migration 185 defines TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS, MULTI_CUST_T
   assert.match(sqlText, /MULTI_CUST_TRIP/);
   assert.match(sqlText, /CREATE TABLE wf\.TripMultiCustomerApproval/);
   assert.doesNotMatch(sqlText, /\b(TRY_CAST|TRY_CONVERT|CREATE\s+OR\s+ALTER|THROW|CONCAT|STRING_AGG|OFFSET\s+.+FETCH\s+NEXT)\b/i);
+
+  const sql189 = fs.readFileSync(
+    path.join(__dirname, '..', 'migrations', '189_trip_member_cust_code.sql'),
+    'utf8'
+  );
+  assert.match(sql189, /ALTER VIEW wf\.v_TripMember/);
+  assert.match(sql189, /\bCustCode\b/);
+  assert.doesNotMatch(sql189, /\b(TRY_CAST|TRY_CONVERT|CREATE\s+OR\s+ALTER|THROW|CONCAT|STRING_AGG|OFFSET\s+.+FETCH\s+NEXT)\b/i);
 });

@@ -56,9 +56,11 @@ test('telemetry tracks concurrent requests once without values or SQL',async()=>
 });
 test('slow polling does not start another SQL round while a round is pending',async()=>{
   const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');const gate=deferred();let calls=0;
-  const sandbox={module:{exports:{}},console:{log(){},error(){}},setInterval,clearInterval,
+  const sandbox={module:{exports:{}},console:{log(){},warn(){},error(){}},setInterval,clearInterval,
     require(name){if(name==='../db')return {query:()=>{calls++;return gate.promise;},wfQuery:()=>{calls++;return gate.promise;}};
-      if(name==='./socket')return {broadcast(){}};throw Error(name);}};
+      if(name==='./socket')return {broadcast(){}};
+      if(name==='./pricebook-winspeed-sync')return {reconcileFromWinSpeed:async()=>({changed:false})};
+      throw Error(name);}};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../services/polling.js'),'utf8'),sandbox);
   const poll=sandbox.module.exports.pollOnce;
   const jobs=Array.from({length:20},()=>poll());assert.equal(calls,2);

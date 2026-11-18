@@ -104,7 +104,7 @@ export function SaleTripManager({
           <p className="text-sm text-gray-400">ลองปรับตัวกรองหรือสร้างบิลใหม่</p>
         </div>
       ) : groupedOrders.map((g, idx) => {
-        const linkedQuoteOrder = g.orders.find(o => o.linkedQuoteId && ['DRAFT', 'SENT', 'EXPIRED'].includes(String(o.linkedQuoteStatus || '')));
+        const linkedQuoteOrder = g.orders.find(o => o.quotationLockReason || (o.linkedQuoteId && ['DRAFT', 'SENT', 'EXPIRED'].includes(String(o.linkedQuoteStatus || ''))));
         const isQuoteLocked = !!linkedQuoteOrder;
         
         // Capacity logic
@@ -204,15 +204,15 @@ export function SaleTripManager({
               <div className="mx-3 mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-bold flex items-center gap-1.5">
-                    <FileText size={14} className="text-amber-600" /> รอเสนอราคา {linkedQuoteOrder?.linkedQuoteNo}
+                    <FileText size={14} className="text-amber-600" /> {linkedQuoteOrder?.linkedQuoteId ? `รอเสนอราคา ${linkedQuoteOrder.linkedQuoteNo || ''}` : linkedQuoteOrder?.quotationLockReason}
                   </span>
-                  <button
+                  {linkedQuoteOrder?.linkedQuoteId && <button
                     type="button"
                     onClick={() => onOpenQuote(Number(linkedQuoteOrder.linkedQuoteId), linkedQuoteOrder.linkedQuoteNo || undefined)}
                     className="shrink-0 rounded-lg bg-white px-2 py-1 font-bold text-[#0C447C] border border-amber-200 hover:bg-amber-100 shadow-sm transition-colors"
                   >
                     เปิดใบเสนอราคา
-                  </button>
+                  </button>}
                 </div>
               </div>
             )}

@@ -9,7 +9,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
 
-const db = h.installDbStub(({ text }) => {
+const db = h.installDbStub(({ text, inputs }) => {
+  if (/AS Visible FROM wf\.Quotation/.test(text)) return Number(inputs.id) === 3 ? [{ Visible: 1 }] : [];
   if (/SELECT \* FROM wf\.Quotation WHERE Id=@id/.test(text)) {
     return [{ Id: 3, QuoteNo: 'QU6910-00003', CustId: '1078', CustName: 'ลูกค้าทดสอบ', Status: 'ACCEPTED', SalesUserId: 43,
       ValidUntil: new Date(Date.now() + 5 * 86400000), WinspeedQuoteSOID: 278009 }];

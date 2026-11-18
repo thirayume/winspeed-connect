@@ -118,6 +118,10 @@ require.cache[authPath] = {
   exports: stubAuth
 };
 
+const windowPath = require.resolve('../services/global-data-window-store');
+require.cache[windowPath] = { id: windowPath, filename: windowPath, loaded: true, exports: {
+  readGlobalDataWindow: async () => require('../services/data-window').boundaries('2026-01-01'),
+} };
 delete require.cache[require.resolve('../routes/so')];
 delete require.cache[require.resolve('../routes/trips')];
 delete require.cache[require.resolve('../routes/rebate')];
@@ -306,6 +310,7 @@ test('R9-2a: Server-side derivation of NetPricePerTon ignores client payload and
   executedQueries.length = 0;
 
   queryHandler = (text, inputs) => {
+    if (text.includes('AS TotalOutstanding')) return { recordset: [{ TotalOutstanding: 0 }] };
     if (text.includes('dbo.EMGood') && text.includes('GoodID = @goodId')) {
       return { recordset: [{ GoodID: 'G-101', GoodCode: '18-4-5', GoodName: 'ปุ๋ย 18-4-5' }] };
     }

@@ -11,13 +11,21 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
+const windowPath = require.resolve('../services/global-data-window-store');
+require.cache[windowPath] = {id:windowPath,filename:windowPath,loaded:true,exports:{readGlobalDataWindow:async()=>({businessDate:'2026-01-01',utcInstant:new Date('2025-12-31T17:00:00Z')})}};
 
 const copies = [];
+let multiRoleFixture = false;
+let copiesBeforeWindow = false;
 const db = h.installDbStub(({ text, inputs }) => {
+  if (multiRoleFixture && /AS PolicySchemaMissing/.test(text)) return [{ Role: 'SALES', RoleCode: 'SALES', AuthVersion: 0, IsActive: 1 }];
+  if (multiRoleFixture && /FROM wf\.vUserRole u/.test(text)) return Number(inputs.id) === 64
+    ? [{ Code: 'SALES', BaseRole: 'SALES', PermissionCode: 'access-as' }]
+    : [{ Code: 'SALES', BaseRole: 'SALES', PermissionCode: null }, { Code: 'WAREHOUSE', BaseRole: 'WAREHOUSE', PermissionCode: null }];
   if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser WHERE Id = @id/.test(text)) return [{ Id: inputs.id, EmpId: String(7000 + inputs.id), PositionCode: null }];
   if (/SELECT TOP 1 so\.SalesUserId, CAST\(h\.EmpID AS VARCHAR\(20\)\) AS EmpID/.test(text)) return inputs.id === '900' ? [{ SalesUserId: 43, EmpID: '7043' }] : [];
   if (/SELECT TOP 1 WfRef FROM wf\.v_AllSalesOrders WHERE Id = @id/.test(text)) return [{ WfRef: 'I69-09000' }];
-  if (/SELECT CopyColor, CopyLabel, QrNonce FROM wf\.PaperCopy WHERE SoId=@id AND DocType=@dt/.test(text)) return copies.map(c => ({ CopyColor: c.color, CopyLabel: c.label, QrNonce: c.nonce }));
+  if (/SELECT CopyColor, CopyLabel, QrNonce, CASE WHEN PrintedAt/.test(text)) return copies.map(c => ({ CopyColor: c.color, CopyLabel: c.label, QrNonce: c.nonce, InWindow: copiesBeforeWindow ? 0 : 1 }));
   if (/INSERT INTO wf\.PaperCopy/.test(text)) { copies.push({ color: inputs.col, label: inputs.lbl, nonce: inputs.nonce }); return []; }
   return [];
 }, { activeUserIds: h.TEST_USERS });
@@ -44,9 +52,61 @@ test('SHP-04: another salesperson cannot open or print the set (404); SALES cann
   assert.equal((await app.call('POST', '/api/papertrail/scan', { body: { qrNonce: 'x', action: 'LOST' }, user: { sub: 43, role: 'SALES' } })).status, 403);
 });
 
+test('old or missing bills cannot be opened or printed even by an administrator', async () => {
+  const before = db.calls.length;
+  const user = { sub: 12, role: 'ADMIN' };
+  assert.equal((await app.call('GET', '/api/papertrail/document/901', { user })).status, 404);
+  assert.equal((await app.call('POST', '/api/papertrail/901/print', { body: {}, user })).status, 404);
+  const calls = db.calls.slice(before);
+  const guard = calls.find(c => /SELECT TOP 1 so\.SalesUserId/.test(c.text));
+  assert.match(guard.text, /so\.CreatedAt >= @globalStartUtc/);
+  assert.match(guard.text, /h\.DocuDate >= @globalStartDate/);
+  assert.equal(guard.inputs.globalStartUtc.toISOString(), '2025-12-31T17:00:00.000Z');
+  assert.equal(guard.inputs.globalStartDate, '2026-01-01');
+  assert.ok(!calls.some(c => /INSERT INTO wf\.PaperCopy|DELETE FROM wf\.Paper/i.test(c.text)));
+});
+
+test('paper copies and lost alerts apply the date window and scope', async () => {
+  const before = db.calls.length;
+  const user = { sub: 12, role: 'ADMIN' };
+  assert.equal((await app.call('GET', '/api/papertrail/900/copies', { user })).status, 200);
+  assert.equal((await app.call('GET', '/api/papertrail/lost', { user })).status, 200);
+  const calls = db.calls.slice(before);
+  const copiesQuery = calls.find(c => /FROM wf\.PaperCopy pc LEFT JOIN wf\.AppUser/.test(c.text) && /pc\.SoId = @id/.test(c.text));
+  assert.match(copiesQuery.text, /pc\.PrintedAt >= @globalStartUtc/);
+  const lostQuery = calls.find(c => /DATEDIFF\(day, pc\.UpdatedAt/.test(c.text));
+  assert.match(lostQuery.text, /pc\.PrintedAt >= @globalStartUtc/);
+  assert.match(lostQuery.text, /so\.CreatedAt >= @globalStartUtc/);
+  assert.match(lostQuery.text, /h\.DocuDate >= @globalStartDate/);
+});
+
+test('an old paper set is not exposed, deleted or recreated by print preview', async () => {
+  copiesBeforeWindow = true;
+  try {
+    const before = db.calls.length;
+    const response = await app.call('POST', '/api/papertrail/900/print', { body: { reissue: true }, user: { sub: 12, role: 'ADMIN' } });
+    assert.equal(response.status, 409, JSON.stringify(response.body));
+    assert.ok(!db.calls.slice(before).some(c => /DELETE FROM wf\.Paper|INSERT INTO wf\.PaperCopy/i.test(c.text)));
+  } finally { copiesBeforeWindow = false; }
+});
+
 test('SHP-04: a reissue by SALES is refused once a set exists', async () => {
   const r = await app.call('POST', '/api/papertrail/900/print', { body: { docType: 'ISSUE', reissue: true }, user: { sub: 43, role: 'SALES' } });
   assert.equal(r.status, 403);
+});
+
+test('paper reissue accepts an assigned operational role even when SALES is primary', async () => {
+  multiRoleFixture = true;
+  try {
+    const r = await app.call('POST', '/api/papertrail/900/print', {
+      body: { docType: 'ISSUE', reissue: true }, user: { sub: 43, role: 'SALES' },
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const acting = await app.call('POST', '/api/papertrail/900/print', {
+      body: { docType: 'ISSUE', reissue: true }, user: { sub: 43, role: 'SALES', actorSub: 64 },
+    });
+    assert.equal(acting.status, 403, JSON.stringify(acting.body));
+  } finally { multiRoleFixture = false; }
 });
 
 // UAT batch 5, SO-11 — a reservation made by the person saving, or by the bill's salesperson, may be drawn
@@ -69,6 +129,11 @@ test('board: WinSpeed-pending column and a drawn-tons scan limited to control ti
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.deepEqual(r.body.stages.slice(0, 3), ['DRAFT', 'PENDING_APPROVAL', 'CONFIRMED']);
   const sqlText = db.calls.slice(before).find(c => /WITH Orders AS/.test(c.text)).text;
+  const boardCall = db.calls.slice(before).find(c => /WITH Orders AS/.test(c.text));
+  assert.match(sqlText, /so\.CreatedAt >= @globalStartUtc/);
+  assert.match(sqlText, /hd\.DocuDate >= @globalStartDate/);
+  assert.equal(boardCall.inputs.globalStartDate,'2026-01-01');
+  assert.equal(boardCall.inputs.globalStartUtc.toISOString(),'2025-12-31T17:00:00.000Z');
   assert.match(sqlText, /WHEN hd\.AppvFlag = 'W' AND hd\.AppvDocuNo IS NULL THEN 'PENDING_APPROVAL'/);
   assert.match(sqlText, /CASE WHEN so\.ImportedDocuNo IS NOT NULL\s+AND \(so\.SoPrefix = 'AI' OR so\.TruckPlate = N'ตั๋วคุม' OR so\.NoTruckRequired = 1\) THEN \(/);
 });
@@ -82,7 +147,7 @@ test('print: the existing-set check runs under a per-bill lock inside the transa
   assert.equal(r.status, 200, JSON.stringify(r.body));
   const calls = db.calls.slice(before);
   const lock = calls.findIndex(c => /sp_getapplock/.test(c.text));
-  const check = calls.findIndex(c => /SELECT CopyColor, CopyLabel, QrNonce FROM wf\.PaperCopy/.test(c.text));
+  const check = calls.findIndex(c => /SELECT CopyColor, CopyLabel, QrNonce, CASE WHEN PrintedAt/.test(c.text));
   assert.ok(lock >= 0 && check > lock, 'lock first, then the check');
   assert.equal(calls[lock].kind, 'tx');
   assert.equal(calls[check].kind, 'tx');

@@ -11,8 +11,10 @@ const { sql, wfQuery, wfTransaction } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { getVisibleScope, scopeFilter, inScope } = require('../services/visible-scope');
 const { legacyCutoffInput, legacyCutoffSql } = require('../services/legacy-cutoff');
+const { readGlobalDataWindow } = require('../services/global-data-window-store');
 const { nativeDedupSql } = require('../services/native-status');
 const { broadcast } = require('../services/socket');
+const { approvalIdentity, bothHaveRole } = require('../services/approval-identity');
 
 router.use(requireAuth);
 
@@ -22,13 +24,20 @@ const PAPER_ROLES = ['COUNTER_SALES', 'WAREHOUSE', 'WEIGHBRIDGE', 'ACCOUNTING', 
 // R12 O-4 (UAT batch 5, SHP-04): the paper set of a bill is visible only inside the user's own + team scope
 async function paperInScope(user, soId) {
   const scope = await getVisibleScope(user);
-  if (scope.all) return true;
+  const dataWindow = await readGlobalDataWindow();
   const row = (await wfQuery(`
     SELECT TOP 1 so.SalesUserId, CAST(h.EmpID AS VARCHAR(20)) AS EmpID
     FROM wf.v_AllSalesOrders so
     LEFT JOIN dbo.SOHD h WITH (NOLOCK) ON CAST(h.SOID AS VARCHAR(50)) = CAST(so.Id AS VARCHAR(50))
-    WHERE so.Id = @id`, { id: { type: sql.VarChar(50), value: String(soId) } })).recordset[0];
-  return Boolean(row) && (inScope(scope, { userId: row.SalesUserId }) || inScope(scope, { empId: row.EmpID }));
+    WHERE so.Id = @id AND (
+      (NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NULL AND so.CreatedAt >= @globalStartUtc)
+      OR (NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NOT NULL AND h.DocuDate >= @globalStartDate)
+    )`, {
+    id: { type: sql.VarChar(50), value: String(soId) },
+    globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
+    globalStartDate: { type: sql.Date, value: dataWindow.businessDate },
+  })).recordset[0];
+  return Boolean(row) && (scope.all || inScope(scope, { userId: row.SalesUserId }) || inScope(scope, { empId: row.EmpID }));
 }
 async function requirePaperInScope(req, res, next) {
   try {
@@ -52,6 +61,7 @@ router.get('/board', async (req, res) => {
     // R12 O-4: SALES/MANAGER see their own + team bills; operational roles and ADMIN/C_LEVEL/ACCOUNTING see all
     const scope = await getVisibleScope(req.user);
     const sf = scopeFilter(scope, { userCol: 'SalesUserId', empCol: 'OwnerEmpId', prefix: 'pt' });
+    const dataWindow = await readGlobalDataWindow();
     const r = await wfQuery(`
       WITH Orders AS (
         SELECT
@@ -73,6 +83,7 @@ router.get('/board', async (req, res) => {
           CAST(NULL AS VARCHAR(20)) AS OwnerEmpId
         FROM wf.SalesOrder so WITH (NOLOCK)
         WHERE so.Status IN ('DRAFT', 'CONFIRMED', 'PICKING', 'LOADED', 'SHIPPED', 'IMPORTED')
+          AND so.CreatedAt >= @globalStartUtc
 
         UNION ALL
 
@@ -127,7 +138,7 @@ router.get('/board', async (req, res) => {
           FROM dbo.SOHD hd WITH (NOLOCK)
           LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
             ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
-          WHERE hd.DocuType IN (103, 104) AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')}
+          WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd')}
         ) w
         WHERE w.DedupRN = 1
           AND (w.Status IN ('DRAFT', 'PENDING_APPROVAL', 'CONFIRMED', 'PICKING', 'LOADED')
@@ -191,7 +202,9 @@ router.get('/board', async (req, res) => {
                so.ImportedDocuNo, so.CreatedAt, so.DeliveryDate, u.DisplayName, so.DocuType,
                so.TripId, so.SoPrefix, so.NoTruckRequired
       ORDER BY so.CreatedAt DESC
-    `, { ...sf.inputs, ...(await legacyCutoffInput()) });
+    `, { ...sf.inputs, ...(await legacyCutoffInput()),
+      globalStartDate:{type:sql.Date,value:dataWindow.businessDate},
+      globalStartUtc:{type:sql.DateTime2,value:dataWindow.utcInstant} });
     const board = {};
     for (const st of STAGES) board[st] = [];
     for (const row of r.recordset || []) {
@@ -271,11 +284,13 @@ router.get('/document/:soId', requirePaperInScope, async (req, res) => {
 // ── GET /api/papertrail/:soId/copies — สำเนากระดาษของ SO ──────
 router.get('/:soId/copies', requirePaperInScope, async (req, res) => {
   try {
+    const dataWindow = await readGlobalDataWindow();
     const r = await wfQuery(`
       SELECT pc.*, u.DisplayName AS HolderName
       FROM wf.PaperCopy pc LEFT JOIN wf.AppUser u ON u.Id = pc.HolderUserId
-      WHERE pc.SoId = @id ORDER BY pc.Id
-    `, { id: { type: sql.VarChar(50), value: String(req.params.soId) } });
+      WHERE pc.SoId = @id AND pc.PrintedAt >= @globalStartUtc ORDER BY pc.Id
+    `, { id: { type: sql.VarChar(50), value: String(req.params.soId) },
+      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } });
     res.json(r.recordset || []);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -295,16 +310,21 @@ router.post('/:soId/print', requirePaperInScope, async (req, res) => {
     // The check and the insert hold one lock per bill and document: two previews opened together each found no
     // set and each issued one — I69-04233 got 8 copies (UAT batch 6).
     const reissue = req.body?.reissue === true;
+    const dataWindow = await readGlobalDataWindow();
     const out = await wfTransaction(async (tx) => {
       const q = (text, inputs = {}) => { const r = tx.request(); for (const [k, v] of Object.entries(inputs)) r.input(k, v.type, v.value); return r.query(text); };
-      const key = { id: { type: sql.VarChar(50), value: soId }, dt: { type: sql.NVarChar(20), value: docType } };
+      const key = { id: { type: sql.VarChar(50), value: soId }, dt: { type: sql.NVarChar(20), value: docType },
+        globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } };
       await q(`DECLARE @r INT; EXEC @r = sp_getapplock @Resource = @res, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
                IF @r < 0 RAISERROR('paper set is being printed, try again', 16, 1);`, { res: { type: sql.NVarChar(255), value: `PaperSet_${soId}_${docType}` } });
-      const existing = (await q(`SELECT CopyColor, CopyLabel, QrNonce FROM wf.PaperCopy WHERE SoId=@id AND DocType=@dt ORDER BY Id`, key)).recordset || [];
+      const existing = (await q(`SELECT CopyColor, CopyLabel, QrNonce, CASE WHEN PrintedAt >= @globalStartUtc THEN 1 ELSE 0 END AS InWindow FROM wf.PaperCopy WHERE SoId=@id AND DocType=@dt ORDER BY Id`, key)).recordset || [];
+      if (existing.some(c => Number(c.InWindow) !== 1)) {
+        throw Object.assign(new Error('ชุดเอกสารเดิมอยู่ก่อนวันเริ่มข้อมูล กรุณาติดต่อผู้ดูแลเพื่อตรวจสอบ'), { status: 409 });
+      }
       if (existing.length && !reissue) {
         return { reused: true, copies: existing.map(c => ({ color: c.CopyColor, label: c.CopyLabel, qrNonce: c.QrNonce })) };
       }
-      if (existing.length && !PAPER_ROLES.includes(req.user.role)) {
+      if (existing.length && !bothHaveRole(approvalIdentity(req.user), PAPER_ROLES)) {
         throw Object.assign(new Error('ออกชุดเอกสารใหม่ได้เฉพาะฝ่ายที่ดูแลเอกสาร'), { status: 403 });
       }
       await q(`DELETE FROM wf.PaperScan WHERE PaperCopyId IN (SELECT Id FROM wf.PaperCopy WHERE SoId=@id AND DocType=@dt)`, key);
@@ -345,8 +365,9 @@ router.post('/scan', requireRole(...PAPER_ROLES), async (req, res) => {
     const toStatus = map[action];
     if (!toStatus) return res.status(400).json({ message: 'action ไม่ถูกต้อง' });
 
-    const copy = (await wfQuery(`SELECT * FROM wf.PaperCopy WHERE QrNonce = @n`,
-      { n: { type: sql.NVarChar(64), value: qrNonce } })).recordset[0];
+    const dataWindow = await readGlobalDataWindow();
+    const copy = (await wfQuery(`SELECT * FROM wf.PaperCopy WHERE QrNonce = @n AND PrintedAt >= @globalStartUtc`,
+      { n: { type: sql.NVarChar(64), value: qrNonce }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } })).recordset[0];
     if (!copy) return res.status(404).json({ message: 'ไม่พบสำเนา (QR ไม่ถูกต้อง)' });
     if (!(await paperInScope(req.user, copy.SoId))) return res.status(404).json({ message: 'ไม่พบสำเนา (QR ไม่ถูกต้อง)' });
 
@@ -372,14 +393,15 @@ router.post('/scan', requireRole(...PAPER_ROLES), async (req, res) => {
 // ── GET /api/papertrail/scan/:qrNonce — ดูประวัติสำเนา ────────
 router.get('/scan/:qrNonce', async (req, res) => {
   try {
-    const copy = (await wfQuery(`SELECT pc.*, u.DisplayName AS HolderName FROM wf.PaperCopy pc LEFT JOIN wf.AppUser u ON u.Id=pc.HolderUserId WHERE pc.QrNonce=@n`,
-      { n: { type: sql.NVarChar(64), value: req.params.qrNonce } })).recordset[0];
+    const dataWindow = await readGlobalDataWindow();
+    const copy = (await wfQuery(`SELECT pc.*, u.DisplayName AS HolderName FROM wf.PaperCopy pc LEFT JOIN wf.AppUser u ON u.Id=pc.HolderUserId WHERE pc.QrNonce=@n AND pc.PrintedAt >= @globalStartUtc`,
+      { n: { type: sql.NVarChar(64), value: req.params.qrNonce }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } })).recordset[0];
     if (!copy || !(await paperInScope(req.user, copy.SoId))) return res.status(404).json({ message: 'ไม่พบสำเนา' });
     const hist = (await wfQuery(`
       SELECT s.*, u.DisplayName AS ScannerName FROM wf.PaperScan s
       LEFT JOIN wf.AppUser u ON u.Id = s.ScannerUserId
-      WHERE s.PaperCopyId=@id ORDER BY s.ScannedAt DESC`,
-      { id: { type: sql.Int, value: copy.Id } })).recordset;
+      WHERE s.PaperCopyId=@id AND s.ScannedAt >= @globalStartUtc ORDER BY s.ScannedAt DESC`,
+      { id: { type: sql.Int, value: copy.Id }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } })).recordset;
     res.json({ copy, history: hist });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -387,13 +409,28 @@ router.get('/scan/:qrNonce', async (req, res) => {
 // ── GET /api/papertrail/lost — ใบที่หาย/ค้างนาน (alert >3 วัน) ──
 router.get('/lost', requireRole(...PAPER_ROLES), async (req, res) => {
   try {
+    const dataWindow = await readGlobalDataWindow();
+    const scope = await getVisibleScope(req.user);
+    const sf = scopeFilter(scope, { userCol: 'so.SalesUserId', empCol: 'h.EmpID', prefix: 'lost' });
     const r = await wfQuery(`
       SELECT pc.*, u.DisplayName AS HolderName,
              DATEDIFF(day, pc.UpdatedAt, GETUTCDATE()) AS DaysStuck
       FROM wf.PaperCopy pc LEFT JOIN wf.AppUser u ON u.Id = pc.HolderUserId
-      WHERE pc.Status = 'LOST'
-         OR (pc.Status IN ('PRINTED','IN_TRANSIT') AND pc.UpdatedAt < DATEADD(day, -3, GETUTCDATE()))
-      ORDER BY pc.UpdatedAt ASC`);
+      WHERE pc.PrintedAt >= @globalStartUtc
+        AND (pc.Status = 'LOST'
+         OR (pc.Status IN ('PRINTED','IN_TRANSIT') AND pc.UpdatedAt < DATEADD(day, -3, GETUTCDATE())))
+        AND EXISTS (
+          SELECT 1 FROM wf.v_AllSalesOrders so
+          LEFT JOIN dbo.SOHD h WITH (NOLOCK) ON CAST(h.SOID AS VARCHAR(50)) = CAST(so.Id AS VARCHAR(50))
+          WHERE so.Id = pc.SoId AND ${sf.sql}
+            AND ((NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NULL AND so.CreatedAt >= @globalStartUtc)
+              OR (NULLIF(LTRIM(RTRIM(so.ImportedDocuNo)), '') IS NOT NULL AND h.DocuDate >= @globalStartDate))
+        )
+      ORDER BY pc.UpdatedAt ASC`, {
+      ...sf.inputs,
+      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
+      globalStartDate: { type: sql.Date, value: dataWindow.businessDate },
+    });
     res.json(r.recordset || []);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });

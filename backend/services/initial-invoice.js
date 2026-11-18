@@ -1,5 +1,6 @@
 'use strict';
 const {hasPermission}=require('./role-capabilities');
+const {businessIds}=require('./business-identity');
 const {isInitialNativeUatTarget}=require('./initial-native-uat-target');
 // Restricted UAT simulation: one full zero-tax coupon, ACCOUNTING only.
 const {createHash}=require('crypto');
@@ -21,7 +22,7 @@ function queryFor(tx){return async(text,inputs={})=>{
  return r.query('SET ARITHABORT ON; SET ANSI_WARNINGS ON; '+text);
 };}
 async function identity(q,user){
- const effective=Number(user?.sub),actor=Number(user?.actorSub||user?.sub);
+ const {effective,actor}=businessIds(user);
  if(![effective,actor].every(v=>Number.isSafeInteger(v)&&v>0))fail('IP_ACTOR_INVALID',401);
  const rows=(await q('SELECT Id,Role,IsActive,MustChangePassword FROM wf.AppUser WITH(UPDLOCK,HOLDLOCK) WHERE Id IN(@user,@actor)',{
   user:input(sql.Int,effective),actor:input(sql.Int,actor)})).recordset||[];

@@ -78,6 +78,8 @@ async function checkCustomerCreditAndAging(custId, orderAmount = 0, deps = {}) {
       isOverAging: false,
       isOverPolicyMaxAging: false,
       overdueAmount: 0,
+      openingOverdueCount: 0,
+      openingOverdueAmount: 0,
       overdueInvoices: [],
       unpaidCount: 0,
       strictCreditMode: false,
@@ -146,50 +148,76 @@ async function checkCustomerCreditAndAging(custId, orderAmount = 0, deps = {}) {
   const isCashOnly = agingLimitDays === 0;
   const isConfiguredAgingOverPolicyMax = agingLimitDays > maxPolicyAgingDays;
 
-  // 3. Fetch Unpaid Invoices and Aging from WinSpeed dbo schema
+  // 3. Credit uses the same outstanding ledger as the AR aging report.
+  // Keep all dates: older unpaid items are opening balances, not history to hide.
+  const balanceRes = await queryFn(`
+    SELECT CAST(ISNULL(SUM(CASE i.Docutype WHEN 109 THEN -1 ELSE 1 END * i.RemaAmnt), 0) AS DECIMAL(18,2)) AS TotalOutstanding
+    FROM dbo.SOInvHD i WITH (NOLOCK)
+    WHERE i.ARID = @cid
+      AND i.Docutype IN (107, 109, 110, 115, 201, 202)
+      AND NOT (i.Docutype = 107 AND ISNULL(i.CouponFlag, 'N') = 'Y')
+      AND ISNULL(i.MultiCurrency, 'N') = 'N'
+      AND ISNULL(i.DocuStatus, 'N') <> 'C'
+      AND ISNULL(i.ReplaceFlag, 'N') <> 'Y'
+      AND ISNULL(i.RemaAmnt, 0) <> 0
+  `, { cid: { type: sql.NVarChar(20), value: cid } });
+  const balanceValue = balanceRes.recordset?.[0]?.TotalOutstanding;
+  if (balanceValue == null || !Number.isFinite(Number(balanceValue))) throw new Error('AR_BALANCE_UNAVAILABLE');
+  const totalOutstanding = Number(balanceValue);
+
+  // Aging remains an individual positive-document check. A credit note offsets
+  // the credit balance above, but is not itself an overdue invoice.
   const invRes = await queryFn(`
     SELECT 
       i.SOInvID,
       i.DocuNo,
       CONVERT(VARCHAR(10), i.DocuDate, 120) AS DocuDate,
-      CAST(i.NetAmnt AS DECIMAL(14,2)) AS NetAmnt,
-      CAST(ISNULL(r.Received, 0) AS DECIMAL(14,2)) AS ReceivedAmnt,
-      CAST((i.NetAmnt - ISNULL(r.Received, 0)) AS DECIMAL(14,2)) AS UnpaidAmnt,
+      CAST(i.RemaAmnt AS DECIMAL(18,2)) AS UnpaidAmnt,
       DATEDIFF(day, i.DocuDate, GETDATE()) AS AgeDays
     FROM dbo.SOInvHD i WITH (NOLOCK)
-    OUTER APPLY (
-      SELECT SUM(d.ReceAmnt) AS Received 
-      FROM dbo.ARReceDT d WITH (NOLOCK)
-      WHERE d.SOInvID = i.SOInvID
-    ) r
-    WHERE i.CustID = @cid
-      AND i.Docutype IN ('202', '107')
-      AND ISNULL(i.DocuStatus, '') <> 'C'
-      AND (i.NetAmnt - ISNULL(r.Received, 0)) > 0.01
+    WHERE i.ARID = @cid
+      AND i.Docutype IN (107, 110, 115, 201, 202)
+      -- A coupon invoice 107 accompanies the 202 that already raised the
+      -- receivable; counting both would double the customer's outstanding.
+      AND NOT (i.Docutype = 107 AND ISNULL(i.CouponFlag, 'N') = 'Y')
+      AND ISNULL(i.MultiCurrency, 'N') = 'N'
+      AND ISNULL(i.DocuStatus, 'N') <> 'C'
+      AND ISNULL(i.ReplaceFlag, 'N') <> 'Y'
+      AND ISNULL(i.RemaAmnt, 0) > 0.01
     ORDER BY i.DocuDate ASC
   `, { cid: { type: sql.NVarChar(20), value: cid } });
 
   const unpaidInvoices = invRes.recordset || [];
-  let totalOutstanding = 0;
+  const dataWindow = await (deps.readGlobalDataWindow || require('./global-data-window-store').readGlobalDataWindow)();
   let maxAgingDays = 0;
   const overdueInvoices = [];
   let overdueAmount = 0;
+  let overdueCount = 0;
+  let openingOverdueCount = 0;
+  let openingOverdueAmount = 0;
 
   for (const inv of unpaidInvoices) {
     const unpaid = Number(inv.UnpaidAmnt || 0);
     const age = Number(inv.AgeDays || 0);
-    totalOutstanding += unpaid;
     if (age > maxAgingDays) maxAgingDays = age;
     // Cash-only (agingLimitDays === 0): any unpaid invoice (age >= 0) is considered overdue
     if (age > agingLimitDays || (isCashOnly && age >= 0)) {
-      overdueInvoices.push({
-        docuNo: inv.DocuNo,
-        docuDate: inv.DocuDate,
-        unpaidAmnt: unpaid,
-        ageDays: age,
-        overdueDays: Math.max(0, age - agingLimitDays),
-      });
+      overdueCount++;
       overdueAmount += unpaid;
+      // Keep older debt in all credit decisions, but expose it only as an
+      // opening aggregate rather than returning its document identifiers.
+      if (typeof inv.DocuDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(inv.DocuDate) && inv.DocuDate >= dataWindow.businessDate) {
+        overdueInvoices.push({
+          docuNo: inv.DocuNo,
+          docuDate: inv.DocuDate,
+          unpaidAmnt: unpaid,
+          ageDays: age,
+          overdueDays: Math.max(0, age - agingLimitDays),
+        });
+      } else {
+        openingOverdueCount++;
+        openingOverdueAmount += unpaid;
+      }
     }
   }
 
@@ -197,7 +225,7 @@ async function checkCustomerCreditAndAging(custId, orderAmount = 0, deps = {}) {
   const totalWithOrder = totalOutstanding + amt;
   const isCreditLimitExceeded = creditLimit > 0 && totalWithOrder > creditLimit;
   const creditExcessAmount = isCreditLimitExceeded ? (totalWithOrder - creditLimit) : 0;
-  const isAgingExceeded = overdueInvoices.length > 0;
+  const isAgingExceeded = overdueCount > 0;
   const isOverPolicyMaxAging = unpaidInvoices.length > 0 && maxAgingDays > maxPolicyAgingDays;
 
   const warnings = [];
@@ -233,8 +261,9 @@ async function checkCustomerCreditAndAging(custId, orderAmount = 0, deps = {}) {
 
   if (isAgingExceeded) {
     const overdueDays = Math.max(0, maxAgingDays - agingLimitDays);
-    const invCount = overdueInvoices.length;
-    const topDocuNos = overdueInvoices.slice(0, 3).map(x => x.docuNo).join(', ');
+    const invCount = overdueCount;
+    const visibleRefs = overdueInvoices.slice(0, 3).map(x => x.docuNo).filter(Boolean);
+    const topDocuNos = [visibleRefs.join(', '), openingOverdueCount ? `ยอดยกมา ${openingOverdueCount} ใบ` : ''].filter(Boolean).join(' · ');
     const policySuffix = isOverPolicyMaxAging ? ` [เกินเพดานนโยบาย ${maxPolicyAgingDays} วัน!]` : '';
     const msg = isCashOnly
       ? `ลูกค้ากำหนดขายเงินสด (0 วัน) แต่มีหนี้ค้างชำระ (อายุหนี้สูงสุด ${maxAgingDays} วัน) จำนวน ${invCount} ใบ (${topDocuNos}${invCount > 3 ? '...' : ''}) ยอดค้างชำระ ${fmt(overdueAmount)} บาท${policySuffix}`
@@ -256,6 +285,8 @@ async function checkCustomerCreditAndAging(custId, orderAmount = 0, deps = {}) {
           maxAgingDays,
           overdueDays,
           overdueAmount,
+          openingOverdueCount,
+          openingOverdueAmount,
           overdueInvoices,
         },
       });
@@ -315,6 +346,8 @@ async function checkCustomerCreditAndAging(custId, orderAmount = 0, deps = {}) {
     isOverAging: isAgingExceeded,
     isOverPolicyMaxAging,
     overdueAmount,
+    openingOverdueCount,
+    openingOverdueAmount,
     overdueInvoices,
     unpaidCount: unpaidInvoices.length,
     strictCreditMode,

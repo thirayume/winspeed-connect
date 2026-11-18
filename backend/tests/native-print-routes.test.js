@@ -99,6 +99,28 @@ test('bad numbers, missing and duplicate documents are refused', async () => {
   state.heads107 = [head107];
 });
 
+test('documents before the configured date cannot be opened or logged as printed', async () => {
+  const before = state.printed.length;
+  const cases = [
+    [104, 'D-T1', 'heads104', head104],
+    [116, '9900001', 'heads116', head116],
+    [107, 'T69-00001', 'heads107', head107],
+  ];
+  try {
+    for (const [type, no, key, head] of cases) {
+      state[key] = [{ ...head, DocuDate: '2025-12-31' }];
+      const path = `/api/native-print/${type}/${no}`;
+      assert.equal((await app.call('GET', path, as('ADMIN'))).status, 404, path);
+      assert.equal((await app.call('POST', path + '/printed', as('ADMIN'))).status, 404, path);
+      state[key] = [{ ...head, DocuDate: '2026-01-01' }];
+      assert.equal((await app.call('GET', path, as('ADMIN'))).status, 200, path);
+    }
+    assert.equal(state.printed.length, before);
+  } finally {
+    state.heads104 = [head104]; state.heads116 = [head116]; state.heads107 = [head107];
+  }
+});
+
 test('a team-scoped manager sees only documents of their team', async () => {
   // MANAGER on the Organization Chart: team = own EmpID 7001 only
   assert.equal((await app.call('GET', '/api/native-print/116/9900001', as('MANAGER'))).status, 200);

@@ -8,6 +8,8 @@ const readQuery = (text, inputs) => retryOnDeadlock(() => wfQuery(text, inputs))
 const { requireAuth, requireRole, requireCapability, canViewAllRebateAmounts } = require('../middleware/auth');
 const { broadcast } = require('../services/socket');
 const {
+  getBaseCustCode,
+  getCustomerGroupKey,
   computeTripCustomerSnapshot,
   getMinCustomersThreshold,
   buildMultiCustTripSummary,
@@ -309,8 +311,22 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
         plannedTon  += bookingTon;
         giveawayTon += lines.filter(l => l.isGiveaway).reduce((s, l) => s + Number(l.qtyTon || 0), 0);
 
-        const ck = m.custId || '-';
-        if (!byCust.has(ck)) byCust.set(ck, { custId: m.custId, custName: m.custName, bookings: [] });
+        const ck = getCustomerGroupKey(m) || '-';
+        const baseCustCode = getBaseCustCode(m.custCode);
+        const rawCustCode = String(m.custCode || '').trim().toUpperCase();
+        const isPrimaryBranch = !!baseCustCode && rawCustCode === baseCustCode;
+        if (!byCust.has(ck)) {
+          byCust.set(ck, {
+            custId: baseCustCode || m.custId,
+            custCode: baseCustCode || m.custCode || null,
+            custName: m.custName,
+            _hasPrimaryName: isPrimaryBranch && !!m.custName,
+            bookings: [],
+          });
+        } else if (isPrimaryBranch && m.custName && !byCust.get(ck)._hasPrimaryName) {
+          byCust.get(ck).custName = m.custName;
+          byCust.get(ck)._hasPrimaryName = true;
+        }
         byCust.get(ck).bookings.push({
           memberKind: m.memberKind,
           memberId: m.memberId,
@@ -358,7 +374,7 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
         },
         multiCustApproval,
         orderCount: mem.length,
-        customers: Array.from(byCust.values())
+        customers: Array.from(byCust.values()).map(({ _hasPrimaryName, ...c }) => c)
       };
     });
 
@@ -379,13 +395,23 @@ router.get('/:id', requireCapability('trip.view'), async (req, res) => {
     if (!trip.recordset[0]) return res.status(404).json({ message: 'ไม่พบ Trip นี้' });
 
     const orders = await wfQuery(`
-      SELECT Id, WfRef, SoPrefix, CustId, CustName, TruckPlate, Status, CreatedAt, NoTruckRequired, PSling, DeliveryDate, TripId
-      FROM wf.SalesOrder
-      WHERE TripId = @id
+      SELECT o.Id, o.WfRef, o.SoPrefix, o.CustId, RTRIM(co.CustCode) AS CustCode, o.CustName, o.TruckPlate, o.Status, o.CreatedAt, o.NoTruckRequired, o.PSling, o.DeliveryDate, o.TripId
+      FROM wf.SalesOrder o
+      LEFT JOIN dbo.EMCust co WITH (NOLOCK)
+        ON co.CustID = CASE
+          WHEN o.CustId IS NOT NULL
+           AND LTRIM(RTRIM(o.CustId)) <> ''
+           AND LTRIM(RTRIM(o.CustId)) NOT LIKE '%[^0-9]%'
+           AND LEN(LTRIM(RTRIM(o.CustId))) <= 9
+          THEN CAST(LTRIM(RTRIM(o.CustId)) AS INT)
+          ELSE NULL
+        END
+      WHERE o.TripId = @id
       UNION ALL
-      SELECT soe.SOID AS Id, ISNULL(soe.WfRef, soh.DocuNo) AS WfRef, soe.SoPrefix, soh.CustID AS CustId, soh.CustName, soh.TransRegistration AS TruckPlate, 'CONFIRMED' AS Status, soh.DocuDate AS CreatedAt, soe.NoTruckRequired, soe.PSling, soe.DeliveryDate, soe.TripId
+      SELECT soe.SOID AS Id, ISNULL(soe.WfRef, soh.DocuNo) AS WfRef, soe.SoPrefix, soh.CustID AS CustId, RTRIM(c.CustCode) AS CustCode, soh.CustName, soh.TransRegistration AS TruckPlate, 'CONFIRMED' AS Status, soh.DocuDate AS CreatedAt, soe.NoTruckRequired, soe.PSling, soe.DeliveryDate, soe.TripId
       FROM wf.SalesOrderExt soe
       JOIN dbo.SOHD soh ON soh.SOID = soe.SOID
+      LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON c.CustID = soh.CustID
       WHERE soe.TripId = @id
     `, { id: { type: sql.Int, value: req.params.id } });
 
@@ -1238,7 +1264,7 @@ router.post('/:id/confirm', requireCapability('so.confirm'), requireTripInScope,
       const memReq = tx.request();
       memReq.input('tripId', sql.Int, tripId);
       const allMembers = (await memReq.query(`
-        SELECT TripId, MemberKind, MemberId, DocuNo, SoPrefix, CustId, CustName, Status, DeliveryDate, SalesUserId, SOID
+        SELECT TripId, MemberKind, MemberId, DocuNo, SoPrefix, CustId, CustCode, CustName, Status, DeliveryDate, SalesUserId, SOID
         FROM wf.v_TripMember
         WHERE TripId = @tripId
       `)).recordset || [];
@@ -1565,7 +1591,7 @@ router.get('/:id/multi-cust-approval', requireCapability('trip.view'), requireTr
       return res.status(400).json({ message: 'รหัส Trip ไม่ถูกต้อง' });
     }
     const membersRes = await wfQuery(
-      `SELECT MemberKind, MemberId, DocuNo, SoPrefix, CustId, CustName, Status, SOID
+      `SELECT MemberKind, MemberId, DocuNo, SoPrefix, CustId, CustCode, CustName, Status, SOID
        FROM wf.v_TripMember WHERE TripId = @tripId`,
       { tripId: { type: sql.Int, value: tripId } }
     );
@@ -1623,7 +1649,7 @@ router.post('/:id/multi-cust-approval', requireRole('SALES', 'COUNTER_SALES', 'A
       }
 
       const allMembers = (await tx.request().input('tripId', sql.Int, tripId).query(`
-        SELECT TripId, MemberKind, MemberId, DocuNo, SoPrefix, CustId, CustName, Status, SalesUserId, SOID
+        SELECT TripId, MemberKind, MemberId, DocuNo, SoPrefix, CustId, CustCode, CustName, Status, SalesUserId, SOID
         FROM wf.v_TripMember
         WHERE TripId = @tripId
       `)).recordset || [];

@@ -132,5 +132,7 @@ test('GET /api/master/customers/:id/top-goods queries SOHD/SODT/EMGood with inte
   assert.ok(/INNER JOIN dbo\.EMGood g WITH \(NOLOCK\) ON g\.GoodID = dt\.GoodID/i.test(topCall.text));
   assert.ok(/g\.GoodGroupID IN \(1003, 1004, 1005\)/.test(topCall.text));
   assert.ok(/hd\.DocuType = 104 OR \(hd\.DocuType = 103 AND ISNULL\(hd\.DocuStatus, ''\) <> 'Y'\)/.test(topCall.text));
+  assert.match(topCall.text, /hd\.DocuDate >= @globalStartDate/);
+  assert.equal(topCall.inputs.globalStartDate, '2026-01-01');
   assert.strictEqual(topCall.inputs.cid, 1092);
 });

@@ -1274,7 +1274,9 @@ router.get('/', async (req, res) => {
     // R12 O-4: own + team quotations only (ADMIN/C_LEVEL/ACCOUNTING and operational roles see all)
     const scope = await getVisibleScope(req.user);
     const conds = [];
-    const inputs = {};
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const inputs = { globalStartDate: { type: sql.Date, value: dataWindow.businessDate },
+      globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } };
     if (status) { conds.push('q.Status = @st'); inputs.st = { type: sql.NVarChar(20), value: status }; }
     if (!scope.all) {
       const f = scopeFilter(scope, { userCol: 'q.SalesUserId', empCol: 'q.OwnerEmpId', prefix: 'qs' });
@@ -1361,6 +1363,7 @@ router.get('/', async (req, res) => {
           WHERE q.WinspeedQuoteSOID IS NOT NULL
             AND CONVERT(VARCHAR(50), d.SOID) = CONVERT(VARCHAR(50), q.WinspeedQuoteSOID)
         ) nativeAgg
+        WHERE q.CreatedAt >= @globalStartUtc
 
         UNION ALL
 
@@ -1418,7 +1421,7 @@ router.get('/', async (req, res) => {
           FROM dbo.SODT d WITH (NOLOCK)
           WHERE CONVERT(VARCHAR(50), d.SOID) = CONVERT(VARCHAR(50), ISNULL(qc.SOID, qu.SOID))
         ) agg
-        WHERE qu.DocuType = '102'
+        WHERE qu.DocuType = '102' AND qu.DocuDate >= @globalStartDate
           AND ISNUMERIC(CONVERT(VARCHAR(50), qu.SOID)) = 1
           AND NOT EXISTS (
             SELECT 1
@@ -1440,10 +1443,26 @@ router.get('/', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
+// A direct ID or mutation must not bypass the list's data-start boundary.
+async function quotationInDataWindow(id) {
+  const value = Number(id);
+  if (!Number.isSafeInteger(value) || value === 0 || Math.abs(value) > 2147483647) return false;
+  const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+  const native = value < 0;
+  const result = await wfQuery(native
+    ? `SELECT TOP 1 1 AS Visible FROM dbo.SOHD WHERE SOID=@id AND DocuType=102 AND DocuDate>=@cut`
+    : `SELECT TOP 1 1 AS Visible FROM wf.Quotation WHERE Id=@id AND CreatedAt>=@cut`, {
+      id: { type: sql.Int, value: Math.abs(value) },
+      cut: { type: native ? sql.Date : sql.DateTime2, value: native ? dataWindow.businessDate : dataWindow.utcInstant },
+    });
+  return Boolean(result.recordset?.length);
+}
+
 // GET /api/quotation/:id
 // R12 O-4: status / validity / convert act only on quotations inside the user's scope
 async function requireQuotationInScope(req, res, next) {
   try {
+    if (!(await quotationInDataWindow(req.params.id))) return res.status(404).json({ message: 'ไม่พบใบเสนอราคา' });
     const scope = await getVisibleScope(req.user);
     if (scope.all) return next();
     const q = (await wfQuery(`SELECT SalesUserId FROM wf.Quotation WHERE Id=@id`,
@@ -1528,6 +1547,7 @@ router.get('/:id', async (req, res) => {
   try {
     const hasSource = await hasQuoteSourceTable();
     const id = Number(req.params.id);
+    if (!(await quotationInDataWindow(id))) return res.status(404).json({ message: 'ไม่พบใบเสนอราคา' });
     const scope = await getVisibleScope(req.user);
     const maePuiMaxValidDays = await getMaePuiMaxValidDays();
     if (Number.isInteger(id) && id < 0) {
@@ -1957,21 +1977,7 @@ router.patch('/:id/status', requireCapability('quotation.manage'), requireQuotat
         return await confirmNativeQuotation(tx, Number(req.params.id), req.user.sub);
       });
     } else {
-      const effectiveLinesToCheck = existingLines.map(l => {
-      const upd = priceUpdates.find(u => Number(u.lineNum) === Number(l.LineNum));
-      return {
-        goodId: l.GoodId,
-        goodCode: l.GoodCode,
-        goodName: l.GoodName,
-        qtyTon: Number(l.QtyTon || 0),
-        pricePerTon: upd ? upd.newPrice : Number(l.PricePerTon || 0),
-        isGiveaway: Boolean(l.IsGiveaway),
-      };
-    });
-    await assertPriceBookLinesSellable({ lines: effectiveLinesToCheck, asOfDate: today });
-    await assertPricesAboveCost({ lines: effectiveLinesToCheck, asOfDate: today });
-
-    const ready = await getNativeQuotationReadiness();
+      const ready = await getNativeQuotationReadiness();
       restoredSources = await wfTransaction(async tx => {
         await tx.request()
           .input('s', sql.NVarChar(20), status)

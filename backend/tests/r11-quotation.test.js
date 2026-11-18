@@ -13,6 +13,7 @@ const h = require('./helpers/route-harness.cjs');
 
 const db = h.installDbStub(({ kind, text, inputs, proc }) => {
   if (kind === 'proc') return { recordset: [], rowsAffected: [1] };
+  if (/AS Visible FROM wf\.Quotation/.test(text)) return Number(inputs.id) === 77 ? [{ Visible: 1 }] : [];
   if (/OBJECT_ID\('wf\.sp_AdvanceDocuCounter', 'P'\)/.test(text)) return [{ HasProc: 1 }];
   if (/EXEC wf\.sp_AdvanceDocuCounter/.test(text)) return [{ Updated: 1, Location: 'EMRunBrch' }];
   if (/HasNativeTables/.test(text)) return [{ HasNativeTables: 1, HasLinkColumns: 1, HasConfirmColumns: 1 }];
