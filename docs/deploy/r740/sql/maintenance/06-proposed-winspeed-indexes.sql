@@ -1,4 +1,4 @@
--- PROPOSAL — DO NOT RUN until the owner approves indexes on WinSpeed (dbo) tables (step 3 of the 18 Nov 2026 plan).
+-- Approved by the owner and applied to dbwins_worldfert9 and dbwins_worldfert9_uat on 18 Nov 2026 (idempotent).
 --
 -- These add non-clustered indexes only: no column, key, trigger or procedure of WinSpeed changes, WinSpeed screens
 -- keep working, and 07-drop-proposed-winspeed-indexes.sql removes them. Every name starts with IX_wf_ so they are
