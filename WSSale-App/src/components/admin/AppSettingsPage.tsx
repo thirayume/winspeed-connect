@@ -10,13 +10,16 @@ import {
   History,
   FileSpreadsheet,
   CreditCard,
+  RotateCcw,
 } from 'lucide-react';
 import { SystemSettingsModal, type TabKey } from './SystemSettingsModal';
 import { AdminReportTemplateModal } from './AdminReportTemplateModal';
 import { GlobalDataWindowSetting } from './GlobalDataWindowSetting';
+import { ResetRebateSetting } from './ResetRebateSetting';
+import { useFeature } from '../../utils/capabilities';
 import { confirmLeaveEditors } from '../../utils/unsaved-changes';
 
-export type SettingsTabKey = TabKey | 'reports' | 'data-window';
+export type SettingsTabKey = TabKey | 'reports' | 'data-window' | 'rebate-reset';
 
 const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
   { key: 'pickup', name: 'กำหนดรับสินค้า', Icon: Calendar },
@@ -27,6 +30,7 @@ const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
   { key: 'sales', name: 'ราคา & เอกสาร', Icon: Tag },
   { key: 'credit', name: 'เครดิต & Aging', Icon: CreditCard },
   { key: 'data-window', name: 'วันเริ่มข้อมูล', Icon: Calendar },
+  { key: 'rebate-reset', name: 'เริ่มยอด Rebate ใหม่', Icon: RotateCcw },
   { key: 'history', name: 'ประวัติ Version', Icon: History },
   { key: 'reports', name: 'แม่แบบ & หัวกระดาษรายงาน', Icon: FileSpreadsheet },
 ];
@@ -34,6 +38,11 @@ const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
 export function AppSettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTabKey>('pickup');
   const [revision, setRevision] = useState<number | undefined>(undefined);
+  // UAT feedback 18 Nov 2026 (picture 6): show "start Rebate again" only while the Rebate Pool switch is on.
+  // The tab stays in the code: the owner's Rebate reset on Production still needs it.
+  const rebatePoolOn = useFeature()('rebate-pool-103');
+  const tabs = TABS.filter(t => t.key !== 'rebate-reset' || rebatePoolOn);
+  const shownTab: SettingsTabKey = tabs.some(t => t.key === activeTab) ? activeTab : 'pickup';
 
   return (
     <div className="h-full flex flex-col bg-[#F1EFE8] overflow-hidden">
@@ -62,16 +71,16 @@ export function AppSettingsPage() {
         aria-label="หัวข้อการตั้งค่า"
         className="bg-white border-b border-gray-200 px-4 sm:px-6 flex gap-4 sm:gap-6 overflow-x-auto scrollbar-hide shrink-0"
       >
-        {TABS.map(({ key, name, Icon }) => (
+        {tabs.map(({ key, name, Icon }) => (
           <button
             key={key}
             role="tab"
-            aria-selected={activeTab === key}
+            aria-selected={shownTab === key}
             aria-controls={'tabpanel-' + key}
             id={'tab-' + key}
-            onClick={async () => { if (key === activeTab || await confirmLeaveEditors()) setActiveTab(key); }}
+            onClick={async () => { if (key === shownTab || await confirmLeaveEditors()) setActiveTab(key); }}
             className={`py-3 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap ${
-              activeTab === key
+              shownTab === key
                 ? 'border-[#0C447C] text-[#0C447C] font-bold'
                 : 'border-transparent text-gray-500 hover:text-gray-800'
             }`}
@@ -88,27 +97,28 @@ export function AppSettingsPage() {
         <div
           role="tabpanel"
           id="tabpanel-policy"
-          aria-labelledby={'tab-' + activeTab}
-          hidden={activeTab === 'reports' || activeTab === 'data-window'}
+          aria-labelledby={'tab-' + shownTab}
+          hidden={shownTab === 'reports' || shownTab === 'data-window' || shownTab === 'rebate-reset'}
           className="w-full"
         >
           <SystemSettingsModal
             isOpen={true}
             embedded={true}
-            activeTab={activeTab === 'reports' || activeTab === 'data-window' ? 'pickup' : (activeTab as TabKey)}
+            activeTab={shownTab === 'reports' || shownTab === 'data-window' || shownTab === 'rebate-reset' ? 'pickup' : (shownTab as TabKey)}
             onRevisionLoaded={setRevision}
             onClose={() => {}}
           />
         </div>
 
-        {activeTab === 'data-window' && <div role="tabpanel" id="tabpanel-data-window" aria-labelledby="tab-data-window"><GlobalDataWindowSetting /></div>}
+        {shownTab === 'data-window' && <div role="tabpanel" id="tabpanel-data-window" aria-labelledby="tab-data-window"><GlobalDataWindowSetting /></div>}
+        {shownTab === 'rebate-reset' && <div role="tabpanel" id="tabpanel-rebate-reset" aria-labelledby="tab-rebate-reset"><ResetRebateSetting /></div>}
 
         {/* Reports Template & Header Management Tab */}
         <div
           role="tabpanel"
           id="tabpanel-reports"
           aria-labelledby="tab-reports"
-          hidden={activeTab !== 'reports'}
+          hidden={shownTab !== 'reports'}
           className="w-full"
         >
           <AdminReportTemplateModal isOpen={true} embedded={true} onClose={() => {}} />

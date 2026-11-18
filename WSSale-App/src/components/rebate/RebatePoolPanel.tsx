@@ -1374,15 +1374,13 @@ function EnabledRebatePoolPanel() {
 
               <button
                 type="button"
-                disabled={!canConvert || convBusy}
+                // The one-step conversion API always answers 503 REBATE_CONVERSION_APPROVAL_REQUIRED: the owner requires
+                // a sales request and an approval first (routes/rebate-pool.js). Keep the button closed until then.
+                disabled
                 onClick={handleManualConvert}
                 className="w-full py-2.5 rounded-xl bg-[#0C447C] text-white text-xs font-bold hover:bg-[#09345f] disabled:opacity-50"
               >
-                {convBusy
-                  ? 'กำลังแปลงตั๋ว...'
-                  : canConvert
-                  ? 'ยืนยันแปลงเป็นตั๋วปุ๋ย (FIFO Manual)'
-                  : 'จำกัดสิทธิ์เฉพาะ ACCOUNTING / ADMIN'}
+                {convBusy ? 'กำลังแปลงตั๋ว...' : 'รอระบบยื่นและอนุมัติคำขอแปลง Rebate'}
               </button>
             </div>
           </div>
