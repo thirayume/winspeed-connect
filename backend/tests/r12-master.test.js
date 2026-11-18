@@ -12,6 +12,8 @@ const h = require('./helpers/route-harness.cjs');
 const state = { raise: null, customerInactive: 'A' };
 const db = h.installDbStub(({ text, inputs, proc }) => {
   if (/WHERE c\.CustID=@visibilityCustId/.test(text)) return [{ ok: 1 }];
+  if (/FROM dbo\.EMGood WITH \(NOLOCK\) WHERE GoodID = @id/.test(text)) return [{ GoodCode: 'G1114', GoodName: 'ชื่อเดิม', GoodGroupID: 1003 }];
+  if (proc === 'wf.sp_MasterUpdateGood') return { output: { Affected: 1 } };
   if (/OBJECT_ID\('wf\.sp_MasterUpdateCustomer'/.test(text)&&/sp_MasterCustomerClassification/.test(text)) return [{ Ready: 1 }];
   if (/SELECT c\.CustID,c\.CustName,c\.ContTel/.test(text)) return [{CustID:Number(inputs.id),CustName:'Synthetic'}];
   if (/OBJECT_ID\('wf\.sp_MasterCreatePrice'/.test(text)) return [{ HasProcs: 1 }];
@@ -69,7 +71,8 @@ test('O-2: goods name and price update run through wf procedures', async () => {
   assert.equal((await app.call('PATCH', '/api/master/goods/1114', { body: { GoodName: '15-15-15 เชิงผสม ตรารถเกษตร' }, user: admin })).status, 200);
   assert.equal((await app.call('PATCH', '/api/master/prices', { body: { SetPriceID: 2016, ListNo: 1, GoodPriceNet: 19000 }, user: admin })).status, 200);
   const calls = db.calls.slice(before);
-  assert.ok(calls.some(c => /EXEC wf\.sp_MasterUpdateGoodName/.test(c.text)));
+  // 18 Nov 2026: name, code and group go through wf.sp_MasterUpdateGood (duplicate checks, audit; migration 248)
+  assert.ok(calls.some(c => /EXEC wf\.sp_MasterUpdateGood$/.test(c.text) && c.inputs.GoodName === '15-15-15 เชิงผสม ตรารถเกษตร'));
   const price = calls.find(c => c.proc === 'wf.sp_MasterUpdatePrice');
   assert.equal(Number(price.inputs.GoodPriceNet), 19000);
   assert.ok(calls.some(c => c.kind === 'tx' && /INSERT INTO wf\.ChangeEvent/.test(c.text)));

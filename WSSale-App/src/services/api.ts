@@ -5,7 +5,7 @@
  * JWT token attached to every authenticated request.
  */
 import type {
-  EMCust, EMGood, CurrentPrice, Employee,
+  EMCust, EMGood, EMGoodGroup, CurrentPrice, Employee,
   SalesOrder, SOStatus,
   RebatePool, RebateLedger, RebateClaim, RebateSummary,
   GiveawayRegion, GiveawayBudgetLine, GiveawayWithdrawal, GiveawayItem,
@@ -396,6 +396,26 @@ export const fetchGiveawayGoods = (salesUserId?: string, excludeSoId?: string) =
 
 export const updateGood = (id: string, patch: Partial<EMGood>) =>
   req<{ ok: boolean }>(`/master/goods/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+
+// WinSpeed goods, goods groups and giveaway goods (owner 18 Nov 2026). The server writes through the wf
+// procedures of migration 248 only; see docs/sale-app/handover/WINSPEED-MASTER-DATA-RULES.md.
+export type GoodUnit = { GoodUnitID: number; GoodUnitCode: string; GoodUnitName: string };
+export const fetchGoodUnits = () => req<GoodUnit[]>('/master/good-units');
+export const fetchGoodGroups = () => req<EMGoodGroup[]>('/master/good-groups');
+export const createGoodGroup = (data: { GoodGroupCode?: string; GoodGroupName: string; GoodGroupNameEng?: string; Remark?: string }) =>
+  req<{ GoodGroupID: number; GoodGroupCode: string; GoodGroupName: string }>('/master/good-groups', { method: 'POST', body: JSON.stringify(data) });
+export const updateGoodGroup = (id: number, data: { GoodGroupCode?: string; GoodGroupName: string; GoodGroupNameEng?: string; Remark?: string }) =>
+  req<{ GoodGroupID: number }>(`/master/good-groups/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteGoodGroup = (id: number) => req<{ ok: boolean }>(`/master/good-groups/${id}`, { method: 'DELETE' });
+export type NewGoodInput = {
+  GoodCode?: string; GoodName: string; GoodGroupID?: number; MainGoodUnitID?: number; TemplateGoodID?: number;
+  GoodWeight?: number; BagPerTon?: number; WeightKgPerBag?: number; ImageUrl?: string;
+};
+export const createGood = (data: NewGoodInput & { GoodCode: string; GoodGroupID: number }) =>
+  req<{ GoodID: number; GoodCode: string; GoodName: string; GoodGroupID: number }>('/master/goods', { method: 'POST', body: JSON.stringify(data) });
+export const createGiveaway = (data: NewGoodInput & { Brand?: string }) =>
+  req<{ GoodID: number; GoodCode: string; GoodName: string; GoodGroupID: number }>('/master/giveaways', { method: 'POST', body: JSON.stringify(data) });
+export const deleteGoodPermanent = (id: string | number) => req<{ ok: boolean }>(`/master/goods/${id}/permanent`, { method: 'DELETE' });
 
 export const fetchPrices = (params?: { custId?: string; goodId?: string; asOf?: string }) => {
   const qs = new URLSearchParams(

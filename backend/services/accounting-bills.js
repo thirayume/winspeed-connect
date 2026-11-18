@@ -235,7 +235,10 @@ async function billDetail(query, sql, soid, businessDate) {
   };
 
   const audit = head.SourceDraftId == null ? [] : ((await query(`
-    SELECT a.Id, a.Action, CONCAT(ISNULL(a.FromStatus, '-'), N' → ', ISNULL(a.ToStatus, '-'), CASE WHEN a.Note IS NULL THEN N'' ELSE N' · ' + a.Note END) AS Detail,
+    SELECT a.Id, a.Action,
+           -- SQL Server 2008: no CONCAT
+           ISNULL(CONVERT(NVARCHAR(30), a.FromStatus), N'-') + N' → ' + ISNULL(CONVERT(NVARCHAR(30), a.ToStatus), N'-')
+             + CASE WHEN a.Note IS NULL THEN N'' ELSE N' · ' + CONVERT(NVARCHAR(500), a.Note) END AS Detail,
            u.DisplayName AS ActorName, CONVERT(VARCHAR(19), DATEADD(HOUR, 7, a.CreatedAt), 120) AS CreatedAt
     FROM wf.SalesOrderAudit a WITH (NOLOCK)
     LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = COALESCE(a.ActorUserId, a.UserId)

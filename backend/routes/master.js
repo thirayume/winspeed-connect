@@ -227,6 +227,14 @@ function masterWriteStatus(e) {
   }
   return { status: e?.status || 500, message: msg || 'Server error' };
 }
+const masterGoods = require('../services/master-goods');
+function sendMasterError(res, e) {
+  const err = masterGoods.toHttpError(e);
+  if (err.status && err.status < 500) return res.status(err.status).json({ message: err.message, code: err.code });
+  console.error(e);
+  const m = masterWriteStatus(e);
+  res.status(m.status).json({ message: m.message });
+}
 // CustID and GoodID are INT in WINSpeed; anything else cannot exist
 const isMasterId = v => /^\d{1,10}$/.test(String(v ?? ''));
 const AFFECTED_OUT = [{ name: 'Affected', sqlType: 'INT' }];
@@ -1148,57 +1156,18 @@ router.get('/transports', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-// PATCH /api/master/goods/:id
+// PATCH /api/master/goods/:id — code, name, group (WinSpeed, through wf.sp_MasterUpdateGood) and Sale-App extras
 router.patch('/goods/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const id = req.params.id;
-    const { GoodName, BagPerTon, WeightKgPerBag, ImageUrl } = req.body || {};
-    if (GoodName === undefined && BagPerTon === undefined && WeightKgPerBag === undefined && ImageUrl === undefined) {
-      return res.status(400).json({ message: 'ไม่มีข้อมูลที่ต้องแก้ไข' });
-    }
+    const body = req.body || {};
+    const keys = ['GoodCode', 'GoodName', 'GoodGroupID', 'BagPerTon', 'WeightKgPerBag', 'ImageUrl'];
+    if (!keys.some(k => body[k] !== undefined)) return res.status(400).json({ message: 'ไม่มีข้อมูลที่ต้องแก้ไข' });
     if (!isMasterId(id)) return res.status(404).json({ message: 'ไม่พบรหัสสินค้านี้' });
-    if (GoodName !== undefined && GoodName !== null && !String(GoodName).trim()) {
-      return res.status(400).json({ message: 'ชื่อสินค้าต้องไม่ว่าง' });
-    }
-
-    let __rows = null;
-    if (GoodName !== undefined) {
-      __rows = (await hasMasterProcs())
-        ? affectedOf(await execMasterProc('wf.sp_MasterUpdateGoodName', {
-            GoodID: { type: sql.VarChar(20), value: id },
-            GoodName: { type: sql.NVarChar(255), value: GoodName },
-          }, AFFECTED_OUT))
-        : await dboWrite(`UPDATE dbo.EMGood SET GoodName1 = @name WHERE GoodID = @id`, {
-          name: { type: sql.NVarChar(255), value: GoodName },
-          id: { type: sql.VarChar(20), value: id }
-        });
-      if (!affected(__rows)) return res.status(404).json({ message: 'ไม่พบรหัสสินค้านี้' });
-    }
-    
-    if (BagPerTon !== undefined || WeightKgPerBag !== undefined || ImageUrl !== undefined) {
-      if (!__rows) {
-        const check = await query(`SELECT 1 FROM dbo.EMGood WITH (NOLOCK) WHERE GoodID = @id`, { id: { type: sql.VarChar(20), value: id } });
-        if (!check || check.length === 0) return res.status(404).json({ message: 'ไม่พบรหัสสินค้านี้' });
-      }
-      await query(`
-        IF EXISTS (SELECT 1 FROM wf.GoodExtra WHERE GoodId = @id)
-          UPDATE wf.GoodExtra SET 
-            BagPerTon = COALESCE(@bpt, BagPerTon),
-            WeightKgPerBag = COALESCE(@kgb, WeightKgPerBag),
-            ImageUrl = COALESCE(@img, ImageUrl)
-          WHERE GoodId = @id
-        ELSE
-          INSERT INTO wf.GoodExtra (GoodId, BagPerTon, WeightKgPerBag, ImageUrl)
-          VALUES (@id, ISNULL(@bpt, 20), ISNULL(@kgb, 50.0), @img)
-      `, {
-        bpt: { type: sql.Int, value: BagPerTon },
-        kgb: { type: sql.Decimal(10,4), value: WeightKgPerBag },
-        img: { type: sql.NVarChar(1000), value: ImageUrl },
-        id: { type: sql.VarChar(20), value: id }
-      });
-    }
-    res.json({ ok: true });
-  } catch (e) { console.error(e); const m = masterWriteStatus(e); res.status(m.status).json({ message: m.message }); }
+    if (body.GoodName !== undefined && !String(body.GoodName ?? '').trim()) return res.status(400).json({ message: 'ชื่อสินค้าต้องไม่ว่าง' });
+    if (body.GoodCode !== undefined && !String(body.GoodCode ?? '').trim()) return res.status(400).json({ message: 'รหัสสินค้าต้องไม่ว่าง' });
+    res.json(await masterGoods.updateGood(req.user, id, body));
+  } catch (e) { sendMasterError(res, e); }
 });
 
 // DELETE /api/master/goods/:id (Soft Delete)
@@ -1216,27 +1185,60 @@ router.delete('/goods/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res) =>
   } catch (e) { console.error(e); const m = masterWriteStatus(e); res.status(m.status).json({ message: m.message }); }
 });
 
-// PATCH /api/master/goods/:id/status — เปิดจำหน่าย ('A') หรือ งดจำหน่ายชั่วคราว ('I')
+// PATCH /api/master/goods/:id/status — เปิดจำหน่าย ('A') หรือ งดจำหน่าย ('I') (wf.sp_MasterSetGoodStatus)
 router.patch('/goods/:id/status', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     const id = req.params.id;
-    const { inactive } = req.body || {};
-    const statusVal = String(inactive || 'I').toUpperCase() === 'A' ? 'A' : 'I';
     if (!isMasterId(id)) return res.status(404).json({ message: 'ไม่พบรหัสสินค้านี้' });
-    
-    const __rows = await dboWrite(
-      `UPDATE dbo.EMGood 
-       SET Inactive = @status, 
-           InactiveDate = CASE WHEN @status = 'I' THEN GETDATE() ELSE NULL END 
-       WHERE GoodID = @id`,
-      {
-        status: { type: sql.VarChar(1), value: statusVal },
-        id: { type: sql.VarChar(20), value: id }
-      }
-    );
-    if (!affected(__rows)) return res.status(404).json({ message: 'ไม่พบรหัสสินค้านี้' });
-    res.json({ ok: true, status: statusVal });
-  } catch (e) { console.error(e); const m = masterWriteStatus(e); res.status(m.status).json({ message: m.message }); }
+    const statusVal = String(req.body?.inactive || 'I').toUpperCase() === 'A' ? 'A' : 'I';
+    res.json(await masterGoods.setStatus(req.user, id, statusVal));
+  } catch (e) { sendMasterError(res, e); }
+});
+
+// ── WinSpeed goods, goods groups and giveaway goods: create / delete (owner 18 Nov 2026) ──
+// Rules: docs/sale-app/handover/WINSPEED-MASTER-DATA-RULES.md. Writes go through the wf procedures of
+// migration 248 only (services/master-goods.js); nothing here writes dbo directly.
+
+// DELETE /api/master/goods/:id/permanent — remove a good nothing uses (WinSpeed or Sale-App); else 409
+router.delete('/goods/:id/permanent', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  try {
+    if (!isMasterId(req.params.id)) return res.status(404).json({ message: 'ไม่พบรหัสสินค้านี้' });
+    res.json(await masterGoods.deleteGood(req.user, req.params.id));
+  } catch (e) { sendMasterError(res, e); }
+});
+
+// POST /api/master/goods — new good in any group, WinSpeed settings copied from a template good of that group
+router.post('/goods', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  try { res.status(201).json(await masterGoods.createGood(req.user, req.body || {})); }
+  catch (e) { sendMasterError(res, e); }
+});
+
+// POST /api/master/giveaways — new giveaway good (group 1005); code PMnnnnn when none is given
+router.post('/giveaways', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  try { res.status(201).json(await masterGoods.createGiveaway(req.user, req.body || {})); }
+  catch (e) { sendMasterError(res, e); }
+});
+
+router.get('/good-units', async (req, res) => {
+  try { res.json(await masterGoods.listUnits()); } catch (e) { sendMasterError(res, e); }
+});
+router.get('/good-groups', async (req, res) => {
+  try { res.json(await masterGoods.listGroups()); } catch (e) { sendMasterError(res, e); }
+});
+router.post('/good-groups', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  try { res.status(201).json(await masterGoods.saveGroup(req.user, null, req.body || {})); } catch (e) { sendMasterError(res, e); }
+});
+router.put('/good-groups/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  try {
+    if (!isMasterId(req.params.id)) return res.status(404).json({ message: 'ไม่พบกลุ่มสินค้านี้' });
+    res.json(await masterGoods.saveGroup(req.user, Number(req.params.id), req.body || {}));
+  } catch (e) { sendMasterError(res, e); }
+});
+router.delete('/good-groups/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res) => {
+  try {
+    if (!isMasterId(req.params.id)) return res.status(404).json({ message: 'ไม่พบกลุ่มสินค้านี้' });
+    res.json(await masterGoods.deleteGroup(req.user, Number(req.params.id)));
+  } catch (e) { sendMasterError(res, e); }
 });
 
 // GET /api/master/giveaway-goods — ของแถม (ดึงรายการที่ถูก Map หรือมี GoodGroupName='ของแถม' หรือรหัสของแถม)
@@ -1281,6 +1283,8 @@ router.get('/giveaway-goods', async (req, res) => {
       LEFT JOIN dbo.EMGoodUnit u WITH (NOLOCK) ON g.MainGoodUnitID = u.GoodUnitID
       WHERE (g.GoodGroupID = 1005 OR gg.GoodGroupName = N'ส่งเสริมการขาย' OR gg.GoodGroupName = N'ของแถม' OR m.Brand IS NOT NULL)
         AND ISNULL(g.Inactive, 'A') = 'A'
+        -- migration 249: an older giveaway good with a group-1005 twin is offered once, as the twin
+        AND NOT EXISTS (SELECT 1 FROM wf.GiveawayGoodAlias ga WITH (NOLOCK) WHERE ga.OldGoodId = CONVERT(VARCHAR(50), g.GoodID))
         AND g.GoodName1 NOT LIKE N'%ไม่ใช้%' AND g.GoodName1 NOT LIKE N'%ยกเลิก%'
       ORDER BY g.GoodCode ASC
     `);

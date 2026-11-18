@@ -59,16 +59,11 @@ test('documents follow WinSpeed links: 104 by the booking reference, 107 by SOIn
   assert.doesNotMatch(sqlText, /RefSOID|wf\.AuditTrail|ScaleNo/);
 });
 
-test('migration 246 never runs again; the master data screens do not write WinSpeed goods or groups', async () => {
+test('migration 246 never runs again; goods and groups are never written to dbo directly from routes', () => {
   const policy = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'migration-policy.json'), 'utf8'));
   assert.ok(policy.excludedFiles.includes('246_align_giveaway_budget_to_promotion_emgood.sql'));
   const master = fs.readFileSync(path.join(__dirname, '..', 'routes', 'master.js'), 'utf8');
-  assert.doesNotMatch(master, /INSERT INTO dbo\.EMGood|INSERT INTO dbo\.EMGoodGroup|DELETE FROM dbo\.EMGoodGroup/);
-  for (const [method, url] of [['POST', '/api/master/goods'], ['POST', '/api/master/giveaways'], ['POST', '/api/master/good-groups']]) {
-    const r = await app.call(method, url, { user: { sub: 1, role: 'ADMIN' }, body: { GoodCode: 'X', GoodName: 'X', GoodGroupName: 'X' } });
-    assert.equal(r.status, 404, `${method} ${url} is gone`);
-  }
-  assert.equal(db.calls.some(c => /dbo\.EMGood(Group)?\b[^]*VALUES/.test(c.text) && /INSERT/.test(c.text)), false);
+  assert.doesNotMatch(master, /INSERT INTO dbo\.EMGood|INSERT INTO dbo\.EMGoodGroup|DELETE FROM dbo\.EMGoodGroup|DELETE FROM dbo\.EMGood\b/);
 });
 
 test('rebate plan budget details are hidden with the other rebate money', () => {

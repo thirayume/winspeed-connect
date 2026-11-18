@@ -40,7 +40,8 @@
 
 ## 4. Development & Security Guidelines
 1. **Never commit credentials**: Production credentials and customer profiles are local-only and excluded from git.
-2. **Migration Safety**: Migrations must be idempotent, use transactions (`@transaction`), handle rollbacks in `backend/migrations/down/`, and never alter WinSpeed native tables without guardrails.
-3. **No Unneeded Worktrees**: Do not leave stale git worktrees in `scratch/` or `.claude/worktrees/`. If a worktree is merged, prune it cleanly.
-4. **Preserve Documentation Integrity**: Update canonical docs in `docs/sale-app/handover/` or `docs/` rather than creating redundant context packs.
+2. **Migration Safety**: Migrations must be idempotent, use transactions (`@transaction`), handle rollbacks in `backend/migrations/down/`, and never alter WinSpeed native tables without guardrails. A migration that changes data matches exactly (one-to-one, no `LIKE '%…%'`), never rewrites history, logs every changed row for the rollback, and is rehearsed in a rolled-back transaction first. An applied migration is never edited: exclude it in `migration-policy.json` and write a corrected one.
+3. **WinSpeed master data (owner, 18 Nov 2026)**: Sale-App may create, update and delete the WinSpeed master rows it works with (goods, goods groups, giveaway goods = group 1005, customers, prices) — **only through `wf` stored procedures**, inside one transaction, with WinSpeed's triggers on, ids taken under lock, no duplicates, and a `wf.ChangeEvent` per change. Routes never write `dbo` directly; no `dbo` schema changes. WinSpeed is the single source: Sale-App keeps no copy of master data (app-only attributes in `wf.GoodExtra`-style tables keyed by the WinSpeed id). Full rules: `docs/sale-app/handover/WINSPEED-MASTER-DATA-RULES.md`.
+4. **No Unneeded Worktrees**: Do not leave stale git worktrees in `scratch/` or `.claude/worktrees/`. If a worktree is merged, prune it cleanly.
+5. **Preserve Documentation Integrity**: Update canonical docs in `docs/sale-app/handover/` or `docs/` rather than creating redundant context packs.
 

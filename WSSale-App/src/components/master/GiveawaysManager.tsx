@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Gift, Search, RefreshCw, History, X, Calendar, MapPin, User, ArrowUpDown, Image as ImageIcon, Edit2, Save, Upload, Ban, RotateCcw } from 'lucide-react';
-import { fetchGiveawayItems, fetchGiveawayWithdrawals, fetchGiveawayRegions, updateGood, toggleGoodStatus } from '../../services/api';
+import { Gift, Search, RefreshCw, History, X, Calendar, MapPin, User, ArrowUpDown, Image as ImageIcon, Edit2, Save, Upload, Ban, RotateCcw, Plus } from 'lucide-react';
+import { fetchGiveawayItems, fetchGiveawayWithdrawals, fetchGiveawayRegions, updateGood, toggleGoodStatus, createGiveaway, fetchGoodUnits, type GoodUnit } from '../../services/api';
 import { formatThaiDate } from '../../utils/date';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { appAlert } from '../ui/AppAlert';
@@ -14,6 +14,20 @@ export const GiveawaysManager = () => {
   const [selectedBrand, setSelectedBrand] = useState<string>('ALL');
   const [showInactive, setShowInactive] = useState(false);
   
+  // Create Giveaway Modal
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [units, setUnits] = useState<GoodUnit[]>([]);
+  useEffect(() => { fetchGoodUnits().then(setUnits).catch(() => setUnits([])); }, []);
+  const [creatingGiveaway, setCreatingGiveaway] = useState(false);
+  const [newGiveawayForm, setNewGiveawayForm] = useState({
+    GoodCode: '',
+    GoodName: '',
+    MainGoodUnitID: '' as number | '',
+    BagPerTon: 20,
+    WeightKgPerBag: 50,
+    ImageUrl: '',
+  });
+
   // History Modal
   const [selectedItem, setSelectedItem] = useState<GiveawayItem | null>(null);
   const [withdrawals, setWithdrawals] = useState<GiveawayWithdrawal[]>([]);
@@ -149,6 +163,40 @@ export const GiveawaysManager = () => {
       await appAlert('ไม่สามารถเปลี่ยนสถานะได้: ' + (err?.message || 'ข้อผิดพลาดระบบ'), 'error');
     }
     setStatusLoading(false);
+  };
+
+  const handleCreateGiveaway = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newGiveawayForm.GoodName.trim()) {
+      await appAlert('กรุณากรอกชื่อของแถม', 'warning');
+      return;
+    }
+    setCreatingGiveaway(true);
+    try {
+      const res = await createGiveaway({
+        GoodCode: newGiveawayForm.GoodCode.trim() || undefined,
+        GoodName: newGiveawayForm.GoodName.trim(),
+        MainGoodUnitID: newGiveawayForm.MainGoodUnitID === '' ? undefined : Number(newGiveawayForm.MainGoodUnitID),
+        BagPerTon: Number(newGiveawayForm.BagPerTon) || 20,
+        WeightKgPerBag: Number(newGiveawayForm.WeightKgPerBag) || 50,
+        ImageUrl: newGiveawayForm.ImageUrl.trim() || undefined,
+      });
+      await appAlert(`สร้างของแถม [${res.GoodCode}] ${res.GoodName} เรียบร้อยแล้ว`, 'success');
+      setShowCreateModal(false);
+      setNewGiveawayForm({
+        GoodCode: '',
+        GoodName: '',
+        MainGoodUnitID: '' as number | '',
+        BagPerTon: 20,
+        WeightKgPerBag: 50,
+        ImageUrl: '',
+      });
+      await loadData();
+    } catch (err: any) {
+      await appAlert('ไม่สามารถสร้างของแถมได้: ' + (err?.message || 'ข้อผิดพลาดระบบ'), 'error');
+    } finally {
+      setCreatingGiveaway(false);
+    }
   };
 
   const brandCounts = useMemo(() => {
@@ -316,6 +364,14 @@ export const GiveawaysManager = () => {
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(true)}
+              className="px-3 py-1.5 rounded-lg bg-[#0C447C] text-white text-xs font-semibold hover:bg-blue-900 transition flex items-center gap-1.5 shrink-0"
+              title="เพิ่มของแถมใหม่"
+            >
+              <Plus size={14} /> <span>เพิ่มของแถมใหม่</span>
+            </button>
             <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition">
               <input
                 type="checkbox"
@@ -720,6 +776,135 @@ export const GiveawaysManager = () => {
                 {statusModal.targetStatus === 'I' ? 'งดจำหน่ายชั่วคราว' : 'เปิดใช้งาน'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: เพิ่มของแถมใหม่ */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#0C447C] flex items-center justify-center">
+                  <Gift size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-lg">เพิ่มของแถมใหม่</h3>
+                  <p className="text-xs text-gray-500">บันทึกเข้ากลุ่มส่งเสริมการขาย (GoodGroupID = 1005)</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateGiveaway} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  รหัสของแถม (GoodCode) <span className="text-gray-400 font-normal">(เว้นว่างเพื่อสร้างอัตโนมัติ เช่น BG00099)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="เว้นว่าง ระบบตั้งรหัส PM ถัดไปให้"
+                  value={newGiveawayForm.GoodCode}
+                  onChange={e => setNewGiveawayForm(p => ({ ...p, GoodCode: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  ชื่อของแถม / รายการ (GoodName) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="เช่น กระเป๋า สูตร 16-16-16 ตราเกษตร, หมวกแก๊ป"
+                  value={newGiveawayForm.GoodName}
+                  onChange={e => setNewGiveawayForm(p => ({ ...p, GoodName: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">หน่วยนับ</label>
+                <select
+                  aria-label="หน่วยนับของแถม"
+                  value={newGiveawayForm.MainGoodUnitID}
+                  onChange={e => setNewGiveawayForm(p => ({ ...p, MainGoodUnitID: e.target.value === '' ? '' : Number(e.target.value) }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                >
+                  <option value="">ตามของแถมล่าสุดในกลุ่มส่งเสริมการขาย</option>
+                  {units.map(u => <option key={u.GoodUnitID} value={u.GoodUnitID}>{u.GoodUnitName}</option>)}
+                </select>
+                <p className="text-[11px] text-gray-500 mt-1">บันทึกเป็นสินค้า WinSpeed กลุ่มส่งเสริมการขาย (1005) ตราดูจากชื่อของแถม</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    ชิ้น / ตัน (BagPerTon)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={newGiveawayForm.BagPerTon}
+                    onChange={e => setNewGiveawayForm(p => ({ ...p, BagPerTon: Number(e.target.value) }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    น้ำหนัก กก. / ชิ้น
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={0.01}
+                    value={newGiveawayForm.WeightKgPerBag}
+                    onChange={e => setNewGiveawayForm(p => ({ ...p, WeightKgPerBag: Number(e.target.value) }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  ลิงก์รูปภาพ (ImageUrl)
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://... หรือ /images/..."
+                  value={newGiveawayForm.ImageUrl}
+                  onChange={e => setNewGiveawayForm(p => ({ ...p, ImageUrl: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C]"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  disabled={creatingGiveaway}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingGiveaway}
+                  className="px-4 py-2 text-sm font-semibold text-white bg-[#0C447C] hover:bg-blue-900 rounded-lg transition flex items-center gap-1.5"
+                >
+                  {creatingGiveaway && <RefreshCw size={14} className="animate-spin" />}
+                  <span>สร้างของแถม</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
