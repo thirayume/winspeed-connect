@@ -21,7 +21,7 @@ BEGIN
     JOIN @Prototype p ON p.Id = cb.Id;
 
     INSERT INTO wf.CostBookAudit (CostBookId, Action, FromStatus, ToStatus, ByUser, Note)
-    SELECT p.Id, 'MIGRATION_245', 'ACTIVE', 'DRAFT', NULL,
+    SELECT p.Id, 'MIGRATION_247', 'ACTIVE', 'DRAFT', NULL,
            N'ต้นแบบ 70% ยังไม่ใช่ราคาทุนจริง: เป็นฉบับร่างจนกว่าบัญชีจะตรวจและเปิดใช้'
     FROM @Prototype p;
 END;

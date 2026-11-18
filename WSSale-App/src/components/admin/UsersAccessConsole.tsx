@@ -28,12 +28,23 @@ const auditActionLabels: Record<string, string> = {
   ROLE_DELETE: "ลบ Role",
   USER_ROLES: "แก้บทบาทรายบุคคล",
   USER_POSITION: "มอบหมาย/เปลี่ยนตำแหน่งองค์กร",
+  POSITION_CREATE: "สร้างตำแหน่งองค์กร",
+  POSITION_UPDATE: "แก้ไขตำแหน่งองค์กร",
+  POSITION_DELETE: "ลบตำแหน่งองค์กร",
   REGION_ASSIGN: "จัดตั้งผู้ดูแลภาค (Rebate)",
   REGION_REMOVE: "ถอดผู้ดูแลภาค (Rebate)",
   BATCH_role: "เปลี่ยน Role (Batch)",
   BATCH_status: "เปลี่ยนสถานะ (Batch)",
   "BATCH_reset-password": "รีเซ็ตรหัสผ่าน (Batch)",
   "BATCH_clear-line": "ล้างการผูก LINE (Batch)",
+};
+
+const renderDetailVal = (val: any, fallback: string = ""): string => {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === "object") {
+    return val.PositionName || val.name || val.PositionCode || val.code || fallback || JSON.stringify(val);
+  }
+  return String(val);
 };
 
 export function UsersAccessConsole({
@@ -420,7 +431,52 @@ export function UsersAccessConsole({
                             <td className="px-3.5 py-2 text-slate-700 font-sans text-xs">
                               {typeof detailObj === "object" && detailObj !== null ? (
                                 <div className="space-y-0.5 text-[11px]">
-                                  {detailObj.before !== undefined && detailObj.after !== undefined && (
+                                  {log.Action === "POSITION_CREATE" && (
+                                    <div>
+                                      สร้างตำแหน่งใหม่:{" "}
+                                      <span className="font-bold text-emerald-700">
+                                        {renderDetailVal(detailObj.name, log.Target)}
+                                      </span>
+                                      {detailObj.tier && (
+                                        <span className="text-slate-500 ml-1">
+                                          (Tier {detailObj.tier}, ฝ่าย: {renderDetailVal(detailObj.unit, "-")})
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                  {log.Action === "POSITION_UPDATE" && (
+                                    <div>
+                                      <div className="font-medium text-slate-800">
+                                        แก้ไขตำแหน่ง:{" "}
+                                        <span className="font-bold">
+                                          {renderDetailVal(detailObj.after?.name || detailObj.before?.PositionName, log.Target)}
+                                        </span>
+                                      </div>
+                                      <div className="text-slate-500 text-[10px]">
+                                        {detailObj.before?.PositionName !== detailObj.after?.name && (
+                                          <span>ชื่อ: {renderDetailVal(detailObj.before?.PositionName)} → {renderDetailVal(detailObj.after?.name)} | </span>
+                                        )}
+                                        {detailObj.before?.OrgUnit !== detailObj.after?.unit && (
+                                          <span>ฝ่าย: {renderDetailVal(detailObj.before?.OrgUnit, "-")} → {renderDetailVal(detailObj.after?.unit, "-")} | </span>
+                                        )}
+                                        {detailObj.before?.Tier !== detailObj.after?.tier && (
+                                          <span>ระดับ: Tier {renderDetailVal(detailObj.before?.Tier)} → Tier {renderDetailVal(detailObj.after?.tier)} | </span>
+                                        )}
+                                        {detailObj.before?.ReportsTo !== detailObj.after?.reportsTo && (
+                                          <span>ขึ้นตรงต่อ: {renderDetailVal(detailObj.before?.ReportsTo, "-")} → {renderDetailVal(detailObj.after?.reportsTo, "-")}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {log.Action === "POSITION_DELETE" && (
+                                    <div>
+                                      ลบตำแหน่ง:{" "}
+                                      <span className="font-bold text-rose-700">
+                                        {renderDetailVal(detailObj.PositionName, log.Target)}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {log.Action !== "POSITION_UPDATE" && detailObj.before !== undefined && detailObj.after !== undefined && (
                                     <div>
                                       {detailObj.username && (
                                         <span className="font-semibold text-slate-800 mr-1.5">
@@ -429,9 +485,9 @@ export function UsersAccessConsole({
                                       )}
                                       <span>ตำแหน่ง: </span>
                                       <span className="text-slate-500 line-through mr-1">
-                                        {detailObj.before || "ยังไม่ผูก"}
+                                        {renderDetailVal(detailObj.before, "ยังไม่ผูก")}
                                       </span>
-                                      → <span className="font-bold text-emerald-700">{detailObj.after || "ถอดตำแหน่ง"}</span>
+                                      → <span className="font-bold text-emerald-700">{renderDetailVal(detailObj.after, "ถอดตำแหน่ง")}</span>
                                     </div>
                                   )}
                                   {detailObj.beforeIsPrimary !== undefined && (
@@ -441,7 +497,7 @@ export function UsersAccessConsole({
                                           @{detailObj.username}:
                                         </span>
                                       )}
-                                      <span>ภาค: {detailObj.regionCode} </span>
+                                      <span>ภาค: {renderDetailVal(detailObj.regionCode)} </span>
                                       <span className="font-bold text-[#0C447C]">
                                         {detailObj.afterIsPrimary ? "ตั้งเป็นผู้ดูแลหลัก" : "ตั้งเป็นผู้ร่วมดูแล"}
                                       </span>
@@ -455,22 +511,27 @@ export function UsersAccessConsole({
                                         </span>
                                       )}
                                       <span className="text-rose-700 font-bold">
-                                        ถอดออกจากภาค {detailObj.regionCode}
+                                        ถอดออกจากภาค {renderDetailVal(detailObj.regionCode)}
                                       </span>
                                     </div>
                                   )}
                                   {detailObj.roleCodes && (
-                                    <div>Role Codes: {detailObj.roleCodes.join(", ")}</div>
+                                    <div>Role Codes: {Array.isArray(detailObj.roleCodes) ? detailObj.roleCodes.join(", ") : renderDetailVal(detailObj.roleCodes)}</div>
                                   )}
                                   {detailObj.afterRole && (
                                     <div>
-                                      บทบาท: {detailObj.beforeRole} →{" "}
-                                      <span className="font-bold">{detailObj.afterRole}</span>
+                                      บทบาท: {renderDetailVal(detailObj.beforeRole)} →{" "}
+                                      <span className="font-bold">{renderDetailVal(detailObj.afterRole)}</span>
                                     </div>
                                   )}
                                   {detailObj.count && <div>จำนวน: {detailObj.count} คน</div>}
                                   {detailObj.revision !== undefined && (
                                     <div className="text-slate-400 text-[10px]">Revision: {detailObj.revision}</div>
+                                  )}
+                                  {!detailObj.before && !detailObj.after && !detailObj.roleCodes && !detailObj.afterRole &&
+                                   !detailObj.beforeIsPrimary && !detailObj.wasPrimary && !detailObj.count &&
+                                   log.Action !== 'POSITION_CREATE' && log.Action !== 'POSITION_UPDATE' && log.Action !== 'POSITION_DELETE' && (
+                                    <div>{typeof detailObj === 'object' ? JSON.stringify(detailObj) : String(detailObj)}</div>
                                   )}
                                 </div>
                               ) : (

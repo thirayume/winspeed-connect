@@ -414,7 +414,8 @@ function redactRebateMoney(value) {
   if (Array.isArray(value)) return value.map(redactRebateMoney);
   if (!value || typeof value !== 'object' || value instanceof Date) return value;
   const out = {};
-  for (const [k, v] of Object.entries(value)) out[k] = REBATE_MONEY_KEY.test(k) ? null : redactRebateMoney(v);
+  // DetailsJson (rebate plan budget breakdown, 18 Nov 2026) is money held as text, out of reach of the key test.
+  for (const [k, v] of Object.entries(value)) out[k] = REBATE_MONEY_KEY.test(k) || k === 'DetailsJson' ? null : redactRebateMoney(v);
   return out;
 }
 

@@ -14,11 +14,27 @@ export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }
   const [truckHistory, setTruckHistory] = useState<TruckHistoryItem[]>([]);
   const [selectedTruck, setSelectedTruck] = useState<TruckStats | null>(null);
   const [searchQuery, setSearchQuery] = useState(initialSearch);
+  const [viewTab, setViewTab] = useState<'trucks' | 'control' | 'all'>('trucks');
 
   // Pagination & Sorting
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = usePageSize('master-trucks', 50);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'count', direction: 'desc' });
+
+  const isControlTicket = (plate?: string) => (plate ?? '').trim().startsWith('ตั๋วคุม');
+
+  const counts = useMemo(() => {
+    let trucks = 0;
+    let control = 0;
+    for (const s of stats) {
+      if (isControlTicket(s.truckPlate)) {
+        control++;
+      } else {
+        trucks++;
+      }
+    }
+    return { trucks, control, all: stats.length };
+  }, [stats]);
 
   async function loadData() {
     setLoading(true);
@@ -48,11 +64,16 @@ export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }
   };
 
   const filteredStats = useMemo(() => {
-    return stats.filter(s => 
-      (s.truckPlate ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.custName ?? '').toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [stats, searchQuery]);
+    return stats.filter(s => {
+      const isControl = isControlTicket(s.truckPlate);
+      if (viewTab === 'trucks' && isControl) return false;
+      if (viewTab === 'control' && !isControl) return false;
+      return (
+        (s.truckPlate ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.custName ?? '').toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    });
+  }, [stats, searchQuery, viewTab]);
 
   const sortedStats = useMemo(() => {
     const sortableItems = [...filteredStats];
@@ -128,26 +149,63 @@ export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }
       </div>
 
       <div className="flex-1 grid grid-rows-[auto_1fr_auto] bg-white rounded-none sm:rounded-2xl shadow-sm sm:shadow-sm shadow-none border-y sm:border border-gray-100 overflow-hidden relative min-h-0">
-        <div className="p-2 sm:p-4 border-b border-gray-100 flex flex-row items-center gap-2 bg-gray-50/50 overflow-x-auto scrollbar-hide w-full">
-          <div className="relative flex-1 min-w-[140px]">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-            <input
-              type="text"
-              placeholder="ค้นหาทะเบียนรถ หรือ ชื่อลูกค้า..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C] focus:border-transparent"
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                <X size={14} />
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button onClick={loadData} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
-              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+        <div className="p-2 sm:p-4 border-b border-gray-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-gray-50/50 w-full">
+          <div className="flex items-center gap-1.5 p-1 bg-gray-100 rounded-xl text-xs font-semibold shrink-0">
+            <button
+              type="button"
+              onClick={() => { setViewTab('trucks'); setCurrentPage(1); }}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                viewTab === 'trucks'
+                  ? 'bg-white text-[#0C447C] shadow-sm font-bold'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              รถบรรทุกทั่วไป ({counts.trucks})
             </button>
+            <button
+              type="button"
+              onClick={() => { setViewTab('control'); setCurrentPage(1); }}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                viewTab === 'control'
+                  ? 'bg-white text-[#0C447C] shadow-sm font-bold'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              ตั๋วคุม ({counts.control})
+            </button>
+            <button
+              type="button"
+              onClick={() => { setViewTab('all'); setCurrentPage(1); }}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                viewTab === 'all'
+                  ? 'bg-white text-[#0C447C] shadow-sm font-bold'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              ทั้งหมด ({counts.all})
+            </button>
+          </div>
+          <div className="flex items-center gap-2 flex-1 max-w-md">
+            <div className="relative flex-1 min-w-[140px]">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+              <input
+                type="text"
+                placeholder="ค้นหาทะเบียนรถ หรือ ชื่อลูกค้า..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C] focus:border-transparent bg-white"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button onClick={loadData} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200 bg-white shadow-sm">
+                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              </button>
+            </div>
           </div>
         </div>
 

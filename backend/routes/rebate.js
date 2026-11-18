@@ -1792,6 +1792,14 @@ async function hasRebatePlanRefDoc() {
   return rebatePlanRefDocColumn;
 }
 
+let rebatePlanBudgetCols = null;
+async function hasRebatePlanBudgetCols() {
+  if (rebatePlanBudgetCols !== null) return rebatePlanBudgetCols;
+  const r = await wfQuery(`SELECT CASE WHEN COL_LENGTH('wf.RebatePlan', 'PlanCategory') IS NOT NULL THEN 1 ELSE 0 END AS HasCols`);
+  rebatePlanBudgetCols = Number(r.recordset?.[0]?.HasCols || 0) === 1;
+  return rebatePlanBudgetCols;
+}
+
 // GET /api/rebate/plans?status= — รายการ Plan
 /**
  * สายอนุมัติของแบบขออนุมัติรายการส่งเสริมการขาย
@@ -2021,14 +2029,17 @@ function normalizeGoodPattern(p) {
 // POST /api/rebate/plans — สร้าง Plan (DRAFT)
 router.post('/plans', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'), async (req, res) => {
   try {
-    const { title, refDoc, goodCodePattern, region, returnType, netPrice, validFrom, validTo, allocatedAmount, priority, note } = req.body || {};
+    const { title, refDoc, goodCodePattern, region, returnType, netPrice, validFrom, validTo, allocatedAmount, priority, note, planCategory, objective, detailsJson } = req.body || {};
     const yy = (new Date().getFullYear() + 543) % 100;
     const cnt = (await wfQuery(`SELECT COUNT(*) c FROM wf.RebatePlan WHERE PlanNo LIKE @p`,
       { p: { type: sql.NVarChar(30), value: `RP${yy}-%` } })).recordset[0].c;
     const planNo = `RP${yy}-${String(cnt + 1).padStart(3, '0')}`;
     const hasRefDoc = await hasRebatePlanRefDoc();
+    const hasBudget = await hasRebatePlanBudgetCols();
     const refDocColumn = hasRefDoc ? ', RefDoc' : '';
     const refDocValue = hasRefDoc ? ', @refDoc' : '';
+    const budgetCols = hasBudget ? ', PlanCategory, Objective, DetailsJson' : '';
+    const budgetVals = hasBudget ? ', @pCat, @obj, @detJson' : '';
     const cleanPattern = normalizeGoodPattern(goodCodePattern);
     const cleanRegion = normalizePlanRegion(region);
     const inputs = {
@@ -2046,10 +2057,15 @@ router.post('/plans', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'), as
       uid:   { type: sql.Int,           value: req.user.sub },
     };
     if (hasRefDoc) inputs.refDoc = { type: sql.NVarChar(100), value: refDoc || null };
+    if (hasBudget) {
+      inputs.pCat = { type: sql.NVarChar(100), value: planCategory || null };
+      inputs.obj = { type: sql.NVarChar(1000), value: objective || null };
+      inputs.detJson = { type: sql.NVarChar(sql.MAX), value: typeof detailsJson === 'object' ? JSON.stringify(detailsJson) : (detailsJson || null) };
+    }
     const r = await wfQuery(`
-      INSERT INTO wf.RebatePlan (PlanNo, Title${refDocColumn}, GoodCodePattern, Region, ReturnType, NetPrice, ValidFrom, ValidTo, AllocatedAmount, Priority, Status, Note, CreatedBy)
+      INSERT INTO wf.RebatePlan (PlanNo, Title${refDocColumn}, GoodCodePattern, Region, ReturnType, NetPrice, ValidFrom, ValidTo, AllocatedAmount, Priority, Status, Note, CreatedBy${budgetCols})
       OUTPUT inserted.*
-      VALUES (@no, @title${refDocValue}, @gcp, @region, @rt, @net, @vf, @vt, @alloc, @prio, 'DRAFT', @note, @uid)`,
+      VALUES (@no, @title${refDocValue}, @gcp, @region, @rt, @net, @vf, @vt, @alloc, @prio, 'DRAFT', @note, @uid${budgetVals})`,
       inputs);
     res.json(r.recordset[0]);
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message }); }
@@ -2091,6 +2107,11 @@ router.patch('/plans/:id', requireRole('MANAGER', 'ADMIN', 'APPROVER', 'C_LEVEL'
     if (f.allocatedAmount !== undefined)add('AllocatedAmount','alloc',sql.Decimal(14,2), Number(f.allocatedAmount)||0);
     if (f.priority !== undefined)       add('Priority','prio',sql.Int, Number(f.priority)||100);
     if (f.note !== undefined)           add('Note','note',sql.NVarChar(300), f.note || null);
+    if (await hasRebatePlanBudgetCols()) {
+      if (f.planCategory !== undefined) add('PlanCategory','pCat',sql.NVarChar(100), f.planCategory || null);
+      if (f.objective !== undefined)    add('Objective','obj',sql.NVarChar(1000), f.objective || null);
+      if (f.detailsJson !== undefined)  add('DetailsJson','detJson',sql.NVarChar(sql.MAX), typeof f.detailsJson === 'object' ? JSON.stringify(f.detailsJson) : (f.detailsJson || null));
+    }
     if (f.status !== undefined && ['DRAFT','ACTIVE','CLOSED'].includes(f.status))
                                         add('Status','status',sql.NVarChar(20), f.status);
     if (!sets.length) return res.status(400).json({ message: 'ไม่มีข้อมูลแก้ไข' });

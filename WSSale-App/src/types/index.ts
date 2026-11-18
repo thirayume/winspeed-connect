@@ -269,6 +269,13 @@ export type EMGood = {
   GoodPrice1?: number;
 };
 
+export type EMGoodGroup = {
+  GoodGroupID: number;
+  GoodGroupCode: string;
+  GoodGroupName: string;
+  GoodsCount?: number;
+};
+
 export type CurrentPrice = {
   SetPriceID?: number;
   ListNo?: number;
@@ -508,8 +515,11 @@ export type RebatePlan = {
   ValidTo?: string | null;
   AllocatedAmount: number;
   Priority: number;
-  Status: 'DRAFT' | 'ACTIVE' | 'CLOSED';
+  Status: 'DRAFT' | 'ACTIVE' | 'CLOSED' | string;
   Note?: string | null;
+  PlanCategory?: string | null;
+  Objective?: string | null;
+  DetailsJson?: string | null;
   CreatedByName?: string | null;
   CreatedAt: string;
   LedgerCount?: number;
@@ -589,13 +599,114 @@ export type CouponCustomer = {
 // ── Accounting: ออกของวันนี้ (dbo.SOHD) ──────────────────────
 export type ShippedRow = {
   Id: number;
+  SOID?: number;
   WfRef: string;
+  CustCode?: string;
   CustName: string;
   DocuDate: string;
   DocuStatus: string;
   TotalTon: number;
   LineCount: number;
   TruckPlate: string;
+  // Trip info
+  TripId?: number | null;
+  TripCode?: string | null;
+  DriverName?: string | null;
+  TripPlate?: string | null;
+  TripDate?: string | null;
+  TripStatus?: string | null;
+  // Scale / WGHD info
+  MoveBill?: string | null;
+  WeightIn?: number | null;
+  WeightOut?: number | null;
+  WeightNet?: number | null;
+  ScaleStatus?: string | null;
+  ScaleDateOut?: string | null;
+  // Downstream documents
+  Delivery104No?: string | null;
+  Delivery104Date?: string | null;
+  Slip116No?: string | null;
+  Slip116Date?: string | null;
+  Invoice107No?: string | null;
+  Invoice107Date?: string | null;
+  PostGL?: string | null;
+  InvoiceNetAmnt?: number | null;
+  // Salesperson
+  SalesEmpCode?: string | null;
+  SalesEmpName?: string | null;
+  SalesUserName?: string | null;
+};
+
+export type AccountingBillDetail = {
+  header: {
+    SOID: number;
+    BookingNo: string;
+    BookingDate: string;
+    DocuStatus: string;
+    CustID: string | number;
+    CustCode?: string;
+    CustName: string;
+    TruckPlate: string;
+    ContactName?: string;
+    Remark?: string;
+    SalesEmpCode?: string;
+    SalesEmpName?: string;
+    SalesUserName?: string;
+    TripId?: number;
+    TripCode?: string;
+    TripPlate?: string;
+    DriverName?: string;
+    TripRemark?: string;
+    TripDate?: string;
+    TripStatus?: string;
+  };
+  items: Array<{
+    ListNo: number;
+    GoodID: number | string;
+    GoodCode: string;
+    GoodName: string;
+    BagQty: number;
+    TonQty: number;
+    PricePerTon: number;
+    Amount: number;
+    NetAmnt: number;
+  }>;
+  giveaways: Array<{
+    Id: number;
+    GoodId?: string;
+    GoodCode?: string;
+    GoodName?: string;
+    Brand?: string;
+    Qty: number;
+    Unit?: string;
+  }>;
+  scale: {
+    Id: number;
+    MoveBill: string;
+    ScaleNo?: string;
+    TruckPlate: string;
+    WeightIn: number;
+    WeightOut: number;
+    WeightNet: number;
+    Status: string;
+    DateIn?: string;
+    TimeIn?: string;
+    DateOut?: string;
+    TimeOut?: string;
+    FullDateOut?: string;
+  } | null;
+  trace: {
+    Doc104?: string;
+    Doc116?: string;
+    Doc107?: string;
+  };
+  audit: Array<{
+    Id: number;
+    Action: string;
+    Detail: string;
+    ActorName?: string;
+    CreatedAt: string;
+  }>;
 };
 
 // ── CN Rebate (dbo — single source of truth) ─────────────────

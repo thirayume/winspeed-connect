@@ -2,7 +2,8 @@
   "schemaVersion": 1,
   "checksumPolicy": "immutable-after-apply",
   "excludedFiles": [
-    "000_logins.sql"
+    "000_logins.sql",
+    "246_align_giveaway_budget_to_promotion_emgood.sql"
   ],
   "excludedPatterns": [
     "^uat_",

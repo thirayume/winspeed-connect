@@ -116,8 +116,10 @@ test('shipments default to the date in Thailand, not the UTC date that lags unti
   const { getBangkokDateString } = require('../services/so-pickup-policy');
   const before = db.calls.length;
   await app.call('GET', '/api/so/shipped-today', { user: { sub: 7, role: 'ACCOUNTING' } });
-  const q = db.calls.slice(before).find(c => /CAST\(hd\.DocuDate AS DATE\) = @d/.test(c.text));
-  assert.equal(new Date(q.inputs.d).toISOString().slice(0, 10), getBangkokDateString());
+  // 18 Nov 2026: the list takes a range (services/accounting-bills.js); with no dates it is today in Thailand.
+  const q = db.calls.slice(before).find(c => /hd\.DocuDate >= @acStart AND hd\.DocuDate < DATEADD\(DAY, 1, @acEnd\)/.test(c.text));
+  assert.equal(String(q.inputs.acStart).slice(0, 10), getBangkokDateString());
+  assert.equal(String(q.inputs.acEnd).slice(0, 10), getBangkokDateString());
 });
 
 test('the leftover SOHD column dump is gone', async () => {

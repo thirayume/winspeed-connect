@@ -869,6 +869,38 @@ const REPORTS = {
       offsets: params?.offsets,
     }),
   },
+  'rebate-promotion-plans': {
+    title: 'รายงานรวมแผนงบประมาณและการส่งเสริมการขาย (Annual Promotion & Budget Plans)',
+    category: 'rebate',
+    columns: [
+      { key: 'PlanNo', label: 'เลขที่แผน', type: 'identifier' },
+      { key: 'Title', label: 'ชื่อโครงการ/แผนงาน', type: 'text' },
+      { key: 'PlanCategory', label: 'ประเภทงบประมาณ', type: 'text' },
+      { key: 'Region', label: 'ภาค/เขตการขาย', type: 'text' },
+      { key: 'Objective', label: 'วัตถุประสงค์', type: 'text' },
+      { key: 'AllocatedAmount', label: 'งบประมาณจัดสรร (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
+      { key: 'ValidFrom', label: 'เริ่ม', type: 'date' },
+      { key: 'ValidTo', label: 'ถึง', type: 'date' },
+      { key: 'Status', label: 'สถานะ', type: 'text' },
+      { key: 'CreatedByName', label: 'ผู้จัดทำ', type: 'text' },
+      { key: 'CreatedAt', label: 'วันที่สร้าง', type: 'datetime' },
+    ],
+    sql: `SELECT p.PlanNo, p.Title,
+                 ISNULL(p.PlanCategory, N'ทั่วไป') AS PlanCategory,
+                 p.Region, p.Objective, p.AllocatedAmount,
+                 CONVERT(VARCHAR(10), p.ValidFrom, 120) AS ValidFrom,
+                 CONVERT(VARCHAR(10), p.ValidTo, 120) AS ValidTo,
+                 CASE p.Status
+                   WHEN 'DRAFT' THEN N'ร่าง'
+                   WHEN 'ACTIVE' THEN N'ใช้งาน/อนุมัติ'
+                   WHEN 'CLOSED' THEN N'ปิดโครงการ'
+                   ELSE p.Status END AS Status,
+                 u.DisplayName AS CreatedByName,
+                 CONVERT(VARCHAR(19), DATEADD(hour, 7, p.CreatedAt), 120) AS CreatedAt
+          FROM wf.RebatePlan p WITH (NOLOCK)
+          LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = p.CreatedBy
+          ORDER BY p.PlanId DESC`,
+  },
 };
 
 /**
@@ -910,6 +942,8 @@ const REPORT_ROLES = {
   'native-print-log': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'pricelist_sheet': (user) => hasPermission(user, 'pricing.view') || hasPermission(user, 'pricing.manage'),
   'costlist_sheet': (user) => hasPermission(user, 'cost.view') || hasPermission(user, 'cost.manage'),
+  // Budget amounts: owner D6 (9 Oct 2026) keeps rebate money away from salespeople, as for the claim detail.
+  'rebate-promotion-plans': (user) => canViewAllRebateAmounts(user) || ['ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'].includes(user?.role),
 };
 
 function parseDateParam(value, fallback) {

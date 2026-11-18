@@ -1120,32 +1120,33 @@ router.get('/rebate-balance/:custId', requireRebateAmountAccess, async (req, res
 });
 
 // ── GET /api/so/debug-sohd ──────────────────────────────────
-// ── GET /api/so/shipped-today — ออกของวันนี้ (สำหรับ Accounting)
-// returns dbo.SOHD records with DocuDate = today or clearflag set today
-router.get('/shipped-today', requireAuth, requireRole('ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'), async (req, res) => {
+// ── GET /api/so/shipped-today — bookings of a day or a range, with trip, scale and later documents (Accounting)
+// Rewritten in the review of 18 Nov 2026 (services/accounting-bills.js): correct document links, one query per step.
+const ACCOUNTING_ROLES = ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'];
+router.get('/shipped-today', requireAuth, requireRole(...ACCOUNTING_ROLES), async (req, res) => {
   try {
     const { getBangkokDateString } = require('../services/so-pickup-policy');
-    const { isValidStartDate } = require('../services/data-window');
-    const dateStr = String(req.query.date || getBangkokDateString());
-    if (!isValidStartDate(dateStr)) return res.status(400).json({ message: 'วันที่ไม่ถูกต้อง' });
+    const bills = require('../services/accounting-bills');
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
-    const r = await wfQuery(`
-      SELECT TOP 200
-             hd.SOID AS Id, hd.DocuNo AS WfRef, hd.CustName,
-             CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
-             hd.DocuStatus,
-             CAST(ISNULL(SUM(dt.GoodQty2), 0) AS DECIMAL(12,2)) AS TotalTon,
-             COUNT(dt.ListNo) AS LineCount,
-             hd.TransRegistration AS TruckPlate
-      FROM dbo.SOHD hd
-      LEFT JOIN dbo.SODT dt ON dt.SOID = hd.SOID
-      WHERE CAST(hd.DocuDate AS DATE) = @d
-        AND hd.DocuDate >= @globalStartDate
-        AND hd.DocuType = 103
-      GROUP BY hd.SOID, hd.DocuNo, hd.CustName, hd.DocuDate, hd.DocuStatus, hd.TransRegistration
-      ORDER BY hd.DocuDate DESC, hd.SOID DESC
-    `, { d: { type: sql.Date, value: new Date(dateStr) }, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } });
-    res.json(r.recordset || []);
+    const range = bills.readRange(req.query, getBangkokDateString(), dataWindow.businessDate);
+    const { rows, truncated } = await bills.listBills(wfQuery, sql, { ...range, businessDate: dataWindow.businessDate });
+    if (truncated) res.set('X-Result-Truncated', String(bills.MAX_ROWS));
+    res.json(rows);
+  } catch (e) {
+    if (e.status === 400) return res.status(400).json({ message: e.message });
+    console.error(e); res.status(500).json({ message: e.message });
+  }
+});
+
+// GET /api/so/:id/accounting-detail — one booking in full for accounting: lines, giveaways, scale, documents, history
+router.get('/:id/accounting-detail', requireAuth, requireRole(...ACCOUNTING_ROLES), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ message: 'เลขที่เอกสารไม่ถูกต้อง' });
+    const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+    const detail = await require('../services/accounting-bills').billDetail(wfQuery, sql, id, dataWindow.businessDate);
+    if (!detail) return res.status(404).json({ message: 'ไม่พบเอกสารนี้' });
+    res.json(detail);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 

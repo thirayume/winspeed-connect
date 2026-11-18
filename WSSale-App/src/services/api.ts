@@ -558,8 +558,22 @@ export const getRebateBalance = (custId: string) =>
 export const getRebateAvailability = (custId: string) =>
   req<{hasAvailableRebate:boolean}>(`/so/rebate-availability/${encodeURIComponent(custId)}`, {silent:true});
 
-export const fetchShippedToday = (date: string) =>
-  req<import('../types').ShippedRow[]>(`/so/shipped-today?date=${date}`);
+export const fetchShippedToday = (params: string | { startDate?: string; endDate?: string; date?: string }) => {
+  let qs = '';
+  if (typeof params === 'string') {
+    qs = `?date=${encodeURIComponent(params)}`;
+  } else if (params) {
+    const sp = new URLSearchParams();
+    if (params.startDate) sp.set('startDate', params.startDate);
+    if (params.endDate) sp.set('endDate', params.endDate);
+    if (params.date) sp.set('date', params.date);
+    qs = `?${sp.toString()}`;
+  }
+  return req<import('../types').ShippedRow[]>(`/so/shipped-today${qs}`);
+};
+
+export const fetchAccountingBillDetail = (id: number | string) =>
+  req<import('../types').AccountingBillDetail>(`/so/${id}/accounting-detail`);
 
 export const createSO = (payload: Record<string, unknown> | Record<string, unknown>[]) =>
   req<{ id?: number; ids?: number[]; wfRef?: string; wfRefs?: string[]; needsApproval: boolean }>('/so', {
