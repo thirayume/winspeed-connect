@@ -34,18 +34,19 @@ function nativeStatusSql(hd = 'hd', ext = 'ext') {
  * to a parameterised scope filter (a salesperson's dashboard), SQL Server picked a nested-loop plan over every
  * 103 × 104 pair and the query timed out at 15 s, even with RECOMPILE. The set form ran in about 0.5 s for every role.
  */
-function nativeDedupSql(hd = 'hd') {
+function nativeDedupSql(hd = 'hd', dateParam = '@globalStartDate') {
+  const dateFilter = dateParam ? ` AND b.DocuDate >= ${dateParam} AND s.DocuDate >= ${dateParam}` : '';
   return `${hd}.SOID NOT IN (
       SELECT b.SOID FROM dbo.SOHD b WITH (NOLOCK)
-      JOIN dbo.SOHD s WITH (NOLOCK) ON s.DocuType = 104 AND s.RefNo = ISNULL(b.AppvDocuNo, b.DocuNo)
-      WHERE b.DocuType = 103
+      JOIN dbo.SOHD s WITH (NOLOCK) ON s.DocuType = 104 AND s.RefNo = ISNULL(b.AppvDocuNo, b.DocuNo)${dateFilter}
+      WHERE b.DocuType = 103${dateFilter}
         AND NOT EXISTS (SELECT 1 FROM wf.SalesOrderExt bx WITH (NOLOCK) WHERE bx.SOID = CONVERT(VARCHAR(50), b.SOID))
       UNION ALL
       SELECT s.SOID FROM wf.SalesOrderExt x WITH (NOLOCK)
       JOIN dbo.SOHD b WITH (NOLOCK) ON b.SOID = CASE WHEN x.SOID NOT LIKE '%[^0-9]%' AND LEN(x.SOID) BETWEEN 1 AND 9
                                                      THEN CAST(x.SOID AS INT) END
-      JOIN dbo.SOHD s WITH (NOLOCK) ON s.DocuType = 104 AND s.RefNo = ISNULL(b.AppvDocuNo, b.DocuNo)
-      WHERE b.DocuType = 103)`;
+      JOIN dbo.SOHD s WITH (NOLOCK) ON s.DocuType = 104 AND s.RefNo = ISNULL(b.AppvDocuNo, b.DocuNo)${dateFilter}
+      WHERE b.DocuType = 103${dateFilter})`;
 }
 
 /**
