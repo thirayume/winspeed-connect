@@ -3,10 +3,21 @@
 function createReadCache(maxEntries = 128) {
   const entries = new Map();
   return {
-    async get(key, load, { ttl = 30000, force = false } = {}) {
+    // staleMs: after expiry, keep answering with the last value for up to this long while one background load
+    // refreshes it (18 Nov 2026: a dashboard waiting 30 s on a refresh looked locked). force always waits.
+    async get(key, load, { ttl = 30000, force = false, staleMs = 0 } = {}) {
       const current = entries.get(key);
-      if (current?.pending) return current.pending;
-      if (!force && current && current.expires > Date.now()) return current.value;
+      if (current?.pending && !current.hasValue) return current.pending;
+      const now = Date.now();
+      if (!force && current?.hasValue && current.expires > now) return current.value;
+      if (!force && staleMs > 0 && current?.hasValue && current.expires + staleMs > now) {
+        if (!current.refreshing) {
+          current.refreshing = Promise.resolve().then(load).then(value => {
+            if (entries.get(key) === current) { current.value = value; current.expires = Date.now() + ttl; }
+          }, () => { /* keep serving the last value; the next read retries */ }).then(() => { current.refreshing = null; });
+        }
+        return current.value;
+      }
       const entry = { expires: 0 };
       // Evict only completed entries; active loads must continue to coalesce.
       if (!entries.has(key) && entries.size >= maxEntries) {
@@ -16,7 +27,7 @@ function createReadCache(maxEntries = 128) {
       }
       entries.set(key, entry);
       entry.pending = Promise.resolve().then(load).then(value => {
-        if (entries.get(key) === entry) { entry.value = value; entry.expires = Date.now() + ttl; delete entry.pending; }
+        if (entries.get(key) === entry) { entry.value = value; entry.hasValue = true; entry.expires = Date.now() + ttl; delete entry.pending; }
         return value;
       }, error => {
         if (entries.get(key) === entry) entries.delete(key);

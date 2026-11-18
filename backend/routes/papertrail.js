@@ -229,6 +229,8 @@ router.get('/board', async (req, res) => {
                so.ImportedDocuNo, so.CreatedAt, so.DeliveryDate, u.DisplayName, so.DocuType,
                so.TripId, so.SoPrefix, so.NoTruckRequired
       ORDER BY so.CreatedAt DESC
+      -- 18 Nov 2026: plan for the actual dates and scope; a cached plan timed out at 30 s, this one runs in 0.3 s
+      OPTION (RECOMPILE)
     `, { ...sf.inputs, ...(await legacyCutoffInput()),
       globalStartDate:{type:sql.Date,value:dataWindow.businessDate},
       globalStartUtc:{type:sql.DateTime2,value:dataWindow.utcInstant} });

@@ -2537,7 +2537,7 @@ router.get('/aging', async (req, res) => {
     try { await require('../services/document-stage').attachAgingDocumentStages(agingRows, {query:wq,sql,dataWindow}); }
     catch (stageError) { console.warn('[aging] document stage unavailable:', stageError.code || '', stageError.message); }
     return agingRows;
-    }, { ttl: agingScopes.effective.all && agingScopes.actor.all ? AGING_TTL : 30000, force: bust });
+    }, { ttl: agingScopes.effective.all && agingScopes.actor.all ? AGING_TTL : 30000, force: bust, staleMs: 10 * 60 * 1000 });
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });

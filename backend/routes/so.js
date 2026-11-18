@@ -613,6 +613,8 @@ async function audit(tx, soId, userId, action, fromStatus, toStatus, note, ipAdd
 const { createReadCache, scopedReadKey } = require('../services/read-cache');
 const statsCache = createReadCache();
 const STATS_TTL = 5 * 60 * 1000;
+// After expiry the dashboard gets the last counts at once while one background read refreshes them.
+const DASHBOARD_STALE_MS = 10 * 60 * 1000;
 
 router.delete('/stats/cache', requireRole('ADMIN', 'C_LEVEL'), (req, res) => {
   statsCache.clear();
@@ -663,12 +665,14 @@ router.get('/stats', async (req, res) => {
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
         WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate AND ${legacyCutoffSql('hd')} AND ${nativeDedupSql('hd', {boundedByStartDate:true})} AND ISNULL(ext.IsDeleted, 0) = 0 ${nativeWhere}
       ) x
-      GROUP BY Status`, inputs);
+      GROUP BY Status
+      -- 18 Nov 2026: plan for the actual dates and scope; a cached plan timed out at 30 s, this one runs in 0.3 s
+      OPTION (RECOMPILE)`, inputs);
     const byStatus = {};
     for (const row of r.recordset || []) byStatus[row.Status] = Number(row.Cnt);
     const total = Object.values(byStatus).reduce((s, n) => s + n, 0);
     return { byStatus, total, cachedAt: new Date().toISOString(), ...(scope.all ? {} : { scope: scope.basis }) };
-    }, { ttl: scope.all && actorScope.all ? STATS_TTL : 30000, force: bust });
+    }, { ttl: scope.all && actorScope.all ? STATS_TTL : 30000, force: bust, staleMs: DASHBOARD_STALE_MS });
     res.json(out);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
@@ -780,6 +784,8 @@ router.get('/', async (req, res) => {
       SELECT COUNT_BIG(*) AS TotalCount
       FROM Orders q
       ${where}
+      -- 18 Nov 2026: plan for the actual dates and scope; a cached plan timed out at 30 s, this one runs in 0.3 s
+      OPTION (RECOMPILE)
     `, inputs);
 
       return Number(countResult.recordset?.[0]?.TotalCount || 0);
@@ -929,6 +935,8 @@ router.get('/', async (req, res) => {
         END
       WHERE fo.RowNum > ${offset} AND fo.RowNum <= (${offset} + ${pageSize})
       ORDER BY fo.RowNum ASC
+      -- 18 Nov 2026: plan for the actual dates and scope; a cached plan timed out at 30 s, this one runs in 0.3 s
+      OPTION (RECOMPILE)
     `, inputs);
     const { rows, total } = await require('../services/paged-orders').readPageTotal(
       r.recordset || [], offset, loadEmptyPageTotal);
