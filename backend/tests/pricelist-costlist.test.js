@@ -113,6 +113,8 @@ let mutableBookLines = [
   { Id: 14, PriceBookId: 3, GoodId: '2001', GoodCode: '1-46000000BB', GoodName: '46-0-0 ยูเรีย', GoodGroupId: 1004, GoodGroupName: 'แม่ปุ๋ย', Unit: 'ตัน', Price: 13500, LineStatus: 'DISCONTINUING', Note: 'ใกล้หมดสต็อก', WinSpeedSetPriceId: 503, WinSpeedListNo: 2 },
   { Id: 15, PriceBookId: 3, GoodId: '3001', GoodCode: '7-16080800BB', GoodName: '16-8-8 เชิงผสม', GoodGroupId: 1001, GoodGroupName: 'ปุ๋ยสูตร', Unit: 'ตัน', Price: null, LineStatus: 'SUSPENDED', Note: 'งดขายชั่วคราว', WinSpeedSetPriceId: 503, WinSpeedListNo: 3 },
   { Id: 16, PriceBookId: 4, GoodId: '1094', GoodCode: '7-12044000BB', GoodName: '12-4-40 เชิงผสม ตรารถเกษตร', GoodGroupId: 1001, GoodGroupName: 'ปุ๋ยสูตร', Unit: 'ตัน', Price: 17300, LineStatus: 'ACTIVE', Note: null, WinSpeedSetPriceId: 504, WinSpeedListNo: 1 },
+  { Id: 18, PriceBookId: 4, GoodId: '2001', GoodCode: '1-46000000BB', GoodName: '46-0-0 ยูเรีย', GoodGroupId: 1004, GoodGroupName: 'แม่ปุ๋ย', Unit: 'ตัน', Price: 13600, LineStatus: 'DISCONTINUING', Note: 'ใกล้หมดสต็อก', WinSpeedSetPriceId: 504, WinSpeedListNo: 2 },
+  { Id: 19, PriceBookId: 4, GoodId: '3001', GoodCode: '7-16080800BB', GoodName: '16-8-8 เชิงผสม', GoodGroupId: 1001, GoodGroupName: 'ปุ๋ยสูตร', Unit: 'ตัน', Price: null, LineStatus: 'SUSPENDED', Note: 'งดขายชั่วคราว', WinSpeedSetPriceId: 504, WinSpeedListNo: 3 },
   { Id: 17, PriceBookId: 5, GoodId: '1094', GoodCode: '7-12044000BB', GoodName: '12-4-40 เชิงผสม ตรารถเกษตร', GoodGroupId: 1001, GoodGroupName: 'ปุ๋ยสูตร', Unit: 'ตัน', Price: 17500, LineStatus: 'ACTIVE', Note: null, WinSpeedSetPriceId: 505, WinSpeedListNo: 1 },
 ];
 

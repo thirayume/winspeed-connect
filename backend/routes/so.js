@@ -1183,12 +1183,17 @@ router.get('/unlock-reasons', async (req, res) => {
  * price by more than PRICE_WARN_BELOW_PER_TON, yellow below it by up to that, green above it (the line accrues
  * rebate) — never an amount. The announced price is the one the server prices and approves against.
  */
-function priceLevel(price, announced, warnBelow) {
+function priceLevel(price, announced, standardOrWarn, maxLimit = 300) {
   if (!(announced > 0)) return 'NONE';
   const p = Number(price) || 0;
   if (p > announced) return 'GREEN';
   if (p === announced) return 'EQUAL';
-  return announced - p > warnBelow ? 'RED' : 'YELLOW';
+  const diff = announced - p;
+  const std = Number(standardOrWarn) || 200;
+  const max = Number(maxLimit) || 300;
+  if (diff <= std) return 'BELOW_STANDARD';
+  if (diff <= max) return 'REQUIRE_APPROVAL';
+  return 'RED';
 }
 router.priceLevel = priceLevel;
 router.redactSoForRoleForTest = redactSoForRole;
@@ -1207,7 +1212,9 @@ router.post('/price-indicator', requireCapability('so.create'), async (req, res)
       }
     }
     const { getSettingValue } = require('../services/policy-contract');
-    const warnBelow = await getSettingValue('PRICE_WARN_BELOW_PER_TON');
+    const stdLimit = await getSettingValue('REBATE_STANDARD_LIMIT_PER_TON').catch(() => 200) || 200;
+    const maxLimit = await getSettingValue('REBATE_MAX_LIMIT_PER_TON').catch(() => 300) || 300;
+    const warnBelow = await getSettingValue('PRICE_WARN_BELOW_PER_TON').catch(() => stdLimit) || stdLimit;
     const asOfDate = /^\d{4}-\d{2}-\d{2}/.test(String(deliveryDate || '')) ? String(deliveryDate).slice(0, 10) : null;
     const cache = new Map();
     const out = [];
@@ -1222,7 +1229,7 @@ router.post('/price-indicator', requireCapability('so.create'), async (req, res)
       }
       const auth = cache.get(k);
       const announced = auth?.hasAnnouncedPrice ? Number(auth.announcedPrice) : 0;
-      out.push({ key: l.key ?? null, level: priceLevel(l.pricePerTon, announced, warnBelow), belowThreshold: false });
+      out.push({ key: l.key ?? null, level: priceLevel(l.pricePerTon, announced, Number(warnBelow) || Number(stdLimit), Number(maxLimit)), belowThreshold: false });
     }
     const floorEval = await evaluateSellingPriceFloor({
       lines,

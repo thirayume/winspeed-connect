@@ -7,7 +7,7 @@ import {
   Network, Search, RefreshCw, AlertTriangle, Check, Users, Download,
   ChevronDown, ChevronUp, UserPlus, UserMinus, Building2, UserCheck,
   AlertCircle, X, ZoomIn, ZoomOut, Maximize2, Layers, Filter,
-  Plus, Edit2, Trash2, FolderTree
+  Plus, Edit2, Trash2, FolderTree, Printer
 } from 'lucide-react';
 import {
   listOrgPositions, createOrgPosition, updateOrgPosition, deleteOrgPosition,
@@ -602,6 +602,9 @@ export function OrgHierarchyView() {
   const handleZoomIn = () => setZoom(z => Math.min(1.6, Number((z + 0.1).toFixed(1))));
   const handleZoomOut = () => setZoom(z => Math.max(0.4, Number((z - 0.1).toFixed(1))));
   const handleResetZoom = () => setZoom(1);
+  const handlePrint = () => {
+    window.print();
+  };
 
   // ─────────────────────────────────────────────────────────────
   // INTERNATIONAL STANDARD ORG CHART NODE CARD
@@ -842,16 +845,33 @@ export function OrgHierarchyView() {
               )}
 
               {/* Child Subtrees */}
-              {children.map(child => (
-                <div
-                  key={child.position.PositionCode}
-                  className="flex flex-col items-center px-3 sm:px-4 relative shrink-0"
-                >
-                  {/* Vertical drop line from bus bar into child card */}
-                  <div className="absolute -top-8 w-0.5 h-8 bg-slate-300" />
-                  {renderDiagramSubtree(child)}
-                </div>
-              ))}
+              {children.map(child => {
+                const parentTier = Number(p.Tier) || 1;
+                const childTier = Number(child.position.Tier) || (parentTier + 1);
+                const tierDiff = Math.max(1, childTier - parentTier);
+                // Standard drop line when tierDiff === 1 is 32px (pt-8 / -top-8).
+                // If tierDiff > 1 (e.g. Tier 3 to Tier 5), add extra offset for each skipped tier row
+                const extraOffset = (tierDiff - 1) * 220;
+                const dropLineHeight = 32 + extraOffset;
+
+                return (
+                  <div
+                    key={child.position.PositionCode}
+                    className="flex flex-col items-center px-3 sm:px-4 relative shrink-0"
+                    style={extraOffset > 0 ? { marginTop: `${extraOffset}px` } : undefined}
+                  >
+                    {/* Vertical drop line from bus bar into child card */}
+                    <div
+                      className="absolute w-0.5 bg-slate-300"
+                      style={{
+                        top: `-${dropLineHeight}px`,
+                        height: `${dropLineHeight}px`,
+                      }}
+                    />
+                    {renderDiagramSubtree(child)}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -861,8 +881,16 @@ export function OrgHierarchyView() {
 
   return (
     <div className="h-full w-full flex flex-col overflow-hidden bg-[#F1EFE8]">
+      <style>{`
+        @media print {
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          header, nav, aside, .no-print, button, input, select { display: none !important; }
+          .diagram-canvas { overflow: visible !important; width: 100% !important; height: auto !important; position: static !important; border: none !important; box-shadow: none !important; }
+          @page { size: landscape; margin: 8mm; }
+        }
+      `}</style>
       {/* ── UNIFIED TOOLBAR & CONTROLS ───────────────────────── */}
-      <div className="bg-white border-b border-slate-200 px-4 py-3 sm:px-6 sm:py-3.5 shadow-xs shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      <div className="bg-white border-b border-slate-200 px-4 py-3 sm:px-6 sm:py-3.5 shadow-xs shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-3 no-print">
         {/* Left: View Mode Switcher & Summary Chips */}
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-bold">
@@ -1000,6 +1028,15 @@ export function OrgHierarchyView() {
                 >
                   ยุบทั้งหมด
                 </button>
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  className="px-2.5 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 transition-colors"
+                  title="สั่งพิมพ์ผังองค์กร"
+                >
+                  <Printer size={13} />
+                  <span>พิมพ์</span>
+                </button>
               </div>
             </>
           ) : (
@@ -1055,10 +1092,10 @@ export function OrgHierarchyView() {
           /* ── DIAGRAM VIEW: INTERNATIONAL STANDARD ORG CHART ── */
           <div
             ref={canvasRef}
-            className="w-full flex-1 overflow-auto bg-[#F8F9FA] rounded-2xl border border-slate-200 p-6 sm:p-10 relative shadow-inner"
+            className="w-full flex-1 overflow-auto bg-[#F8F9FA] rounded-2xl border border-slate-200 p-6 sm:p-10 relative shadow-inner diagram-canvas"
           >
             {/* Filter Pills Float Bar */}
-            <div className="sticky top-0 left-0 z-30 mb-6 flex flex-wrap items-center gap-2 bg-white/90 backdrop-blur-xs p-2 rounded-xl border border-slate-200 shadow-xs max-w-fit">
+            <div className="sticky top-0 left-0 z-30 mb-6 flex flex-wrap items-center gap-2 bg-white/90 backdrop-blur-xs p-2 rounded-xl border border-slate-200 shadow-xs max-w-fit no-print">
               <span className="text-xs font-bold text-slate-600 flex items-center gap-1 pl-1">
                 <Filter size={13} /> สายงาน:
               </span>

@@ -198,29 +198,7 @@ export const SalesPortal = () => {
     return loadData();
   });
 
-  // Handle Jump to SO
-  useEffect(() => {
-    if (navParams?.soId) {
-      if (navParams.action === 'edit') {
-        setEditingSoId(navParams.soId ? String(navParams.soId) : null);
-      } else {
-        setSelectedId(navParams.soId ? Number(navParams.soId) : null);
-        if (navParams.soId) {
-          fetchSalesOrder(Number(navParams.soId)).then(so => {
-            setExternalSelectedSo(so);
-          }).catch(console.error);
-        }
-      }
-      clearNavParams();
-    }
-  }, [navParams, clearNavParams]);
-
-  useEffect(() => {
-    if (!selectedId) setExternalSelectedSo(null);
-  }, [selectedId]);
-
   const totalPages = Math.ceil(totalOrders / limit) || 1;
-
 
   const groupedOrders = useMemo(() => {
     const map = new Map<string, { tripId?: number; tripCode?: string; dateDisplay: string; cust: string; custCount: number; truck: string; orders: SalesOrder[]; totalAmt: number; totalTon: number }>();
@@ -270,6 +248,45 @@ export const SalesPortal = () => {
     });
     return sorted;
   }, [orders, customersMap, custCodeMap]);
+  // Handle Jump to SO
+  useEffect(() => {
+    if (navParams?.soId) {
+      const targetSoId = String(navParams.soId);
+      if (navParams.action === 'edit') {
+        setEditingSoId(targetSoId);
+      } else {
+        setSelectedId(Number(targetSoId));
+        // Check if already in loaded grouped orders
+        const found = groupedOrders.find(g => g.orders.some(o => String(o.id) === targetSoId));
+        if (found) {
+          setViewingTrip(found);
+        } else {
+          fetchSalesOrder(Number(targetSoId)).then(so => {
+            if (!so) return;
+            const dateDisplay = so.deliveryDate ? formatThaiDate(so.deliveryDate) : 'ไม่ระบุวันรับ';
+            const totalAmt = (so.lines || []).reduce((s, l) => s + (Number(l.qtyTon || 0) * Number(l.pricePerTon || 0)), 0);
+            const totalTon = (so.lines || []).reduce((s, l) => s + (l.isGiveaway ? 0 : Number(l.qtyTon || 0)), 0);
+            setViewingTrip({
+              tripId: so.tripId,
+              tripCode: so.tripCode,
+              dateDisplay,
+              cust: so.custName || '',
+              custCount: 1,
+              truck: so.truckPlate || 'ไม่ระบุรถ',
+              orders: [so],
+              totalAmt,
+              totalTon,
+            });
+          }).catch(console.error);
+        }
+      }
+      clearNavParams();
+    }
+  }, [navParams, clearNavParams, groupedOrders]);
+
+  useEffect(() => {
+    if (!selectedId) setExternalSelectedSo(null);
+  }, [selectedId]);
 
   useEffect(() => {
     let disposed = false;

@@ -8,19 +8,15 @@ import {
   Ticket,
   Tag,
   History,
-  ClipboardCheck,
   FileSpreadsheet,
   CreditCard,
-  RotateCcw,
 } from 'lucide-react';
 import { SystemSettingsModal, type TabKey } from './SystemSettingsModal';
-import { ReadinessSignoffModal } from './ReadinessSignoffModal';
 import { AdminReportTemplateModal } from './AdminReportTemplateModal';
 import { GlobalDataWindowSetting } from './GlobalDataWindowSetting';
-import { ResetRebateSetting } from './ResetRebateSetting';
 import { confirmLeaveEditors } from '../../utils/unsaved-changes';
 
-export type SettingsTabKey = TabKey | 'readiness' | 'reports' | 'data-window' | 'rebate-reset';
+export type SettingsTabKey = TabKey | 'reports' | 'data-window';
 
 const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
   { key: 'pickup', name: 'กำหนดรับสินค้า', Icon: Calendar },
@@ -31,10 +27,8 @@ const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
   { key: 'sales', name: 'ราคา & เอกสาร', Icon: Tag },
   { key: 'credit', name: 'เครดิต & Aging', Icon: CreditCard },
   { key: 'data-window', name: 'วันเริ่มข้อมูล', Icon: Calendar },
-  { key: 'rebate-reset', name: 'เริ่มยอด Rebate ใหม่', Icon: RotateCcw },
   { key: 'history', name: 'ประวัติ Version', Icon: History },
   { key: 'reports', name: 'แม่แบบ & หัวกระดาษรายงาน', Icon: FileSpreadsheet },
-  { key: 'readiness', name: 'ผลตรวจรับงาน', Icon: ClipboardCheck },
 ];
 
 export function AppSettingsPage() {
@@ -90,25 +84,24 @@ export function AppSettingsPage() {
 
       {/* Main Content Area */}
       <main className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
-        {/* Policy Tabs (pickup, ticket, rebate, weight, settle, sales, history) */}
+        {/* Policy Tabs (pickup, ticket, rebate, weight, settle, sales, credit, history) */}
         <div
           role="tabpanel"
           id="tabpanel-policy"
           aria-labelledby={'tab-' + activeTab}
-          hidden={activeTab === 'readiness' || activeTab === 'reports' || activeTab === 'data-window' || activeTab === 'rebate-reset'}
+          hidden={activeTab === 'reports' || activeTab === 'data-window'}
           className="w-full"
         >
           <SystemSettingsModal
             isOpen={true}
             embedded={true}
-            activeTab={activeTab === 'readiness' || activeTab === 'reports' || activeTab === 'data-window' || activeTab === 'rebate-reset' ? 'pickup' : (activeTab as TabKey)}
+            activeTab={activeTab === 'reports' || activeTab === 'data-window' ? 'pickup' : (activeTab as TabKey)}
             onRevisionLoaded={setRevision}
             onClose={() => {}}
           />
         </div>
 
         {activeTab === 'data-window' && <div role="tabpanel" id="tabpanel-data-window" aria-labelledby="tab-data-window"><GlobalDataWindowSetting /></div>}
-        {activeTab === 'rebate-reset' && <div role="tabpanel" id="tabpanel-rebate-reset" aria-labelledby="tab-rebate-reset"><ResetRebateSetting /></div>}
 
         {/* Reports Template & Header Management Tab */}
         <div
@@ -119,17 +112,6 @@ export function AppSettingsPage() {
           className="w-full"
         >
           <AdminReportTemplateModal isOpen={true} embedded={true} onClose={() => {}} />
-        </div>
-
-        {/* Readiness Signoff Tab */}
-        <div
-          role="tabpanel"
-          id="tabpanel-readiness"
-          aria-labelledby="tab-readiness"
-          hidden={activeTab !== 'readiness'}
-          className="w-full"
-        >
-          <ReadinessSignoffModal onClose={() => {}} embedded={true} />
         </div>
       </main>
     </div>

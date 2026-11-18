@@ -1354,8 +1354,8 @@ function EnabledRebatePoolPanel() {
 
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">วันหมดอายุตั๋ว</label>
-                <input type="date" min={bangkokDate()} value={convExpiryDate} disabled={!canConvert}
-                  onChange={e => setConvExpiryDate(e.target.value)}
+                <ThaiDatePicker min={bangkokDate()} value={convExpiryDate} disabled={!canConvert}
+                  onChange={setConvExpiryDate}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50" />
                 <p className="text-[11px] text-gray-500 mt-1">เว้นว่างเพื่อใช้ค่าเริ่มต้นของระบบ (เริ่มต้น 90 วันนับจากวันแปลง)</p>
               </div>
@@ -1374,11 +1374,15 @@ function EnabledRebatePoolPanel() {
 
               <button
                 type="button"
-                disabled
+                disabled={!canConvert || convBusy}
                 onClick={handleManualConvert}
                 className="w-full py-2.5 rounded-xl bg-[#0C447C] text-white text-xs font-bold hover:bg-[#09345f] disabled:opacity-50"
               >
-                {convBusy ? 'กำลังแปลงตั๋ว...' : 'รอระบบยื่นและอนุมัติคำขอแปลง Rebate'}
+                {convBusy
+                  ? 'กำลังแปลงตั๋ว...'
+                  : canConvert
+                  ? 'ยืนยันแปลงเป็นตั๋วปุ๋ย (FIFO Manual)'
+                  : 'จำกัดสิทธิ์เฉพาะ ACCOUNTING / ADMIN'}
               </button>
             </div>
           </div>

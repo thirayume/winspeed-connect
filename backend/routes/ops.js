@@ -99,13 +99,13 @@ router.post('/sync-users', requireRole('ADMIN'), async (req, res) => {
   }
 });
 
-// POST /api/ops/test-alert — ทดสอบ webhook (ADMIN)
+// POST /api/ops/test-alert — ทดสอบ webhook LINE OA (ADMIN)
 router.post('/test-alert', requireRole('ADMIN'), async (req, res) => {
   if (!process.env.ALERT_WEBHOOK_URL)
-    return res.status(400).json({ ok: false, message: 'ยังไม่ได้ตั้ง ALERT_WEBHOOK_URL' });
+    return res.status(400).json({ ok: false, message: 'ยังไม่ได้ตั้ง ALERT_WEBHOOK_URL สำหรับ LINE OA' });
   // bypass rate-limit ด้วย key ไม่ซ้ำ
-  await obs.alert(`ทดสอบการแจ้งเตือนโดย ${req.user.displayName || req.user.username}`, `test:${Date.now()}`, 'info');
-  res.json({ ok: true, message: 'ส่งการแจ้งเตือนทดสอบแล้ว' });
+  await obs.alert(`ทดสอบการแจ้งเตือน LINE OA โดย ${req.user.displayName || req.user.username}`, `test:${Date.now()}`, 'info');
+  res.json({ ok: true, message: 'ส่งการแจ้งเตือนทดสอบไปยัง LINE OA แล้ว' });
 });
 
 module.exports = router;

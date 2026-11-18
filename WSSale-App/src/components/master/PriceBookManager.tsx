@@ -116,6 +116,7 @@ export function PriceBookManager({
   });
 
   const [lineSearch, setLineSearch] = useState('');
+  const [hideSuspended, setHideSuspended] = useState(false);
   const [addForm, setAddForm] = useState({
     goodId: '',
     price: '',
@@ -455,15 +456,28 @@ export function PriceBookManager({
   ), [goods]);
 
   const filteredLines = useMemo(() => {
+    let list = [...editableLines];
+    if (hideSuspended) {
+      list = list.filter(l => l.LineStatus !== 'SUSPENDED');
+    }
     const q = lineSearch.trim().toLowerCase();
-    if (!q) return editableLines;
-    return editableLines.filter(l =>
-      String(l.GoodName || '').toLowerCase().includes(q) ||
-      String(l.GoodCode || '').toLowerCase().includes(q) ||
-      String(l.GoodId || '').toLowerCase().includes(q) ||
-      String(l.GoodGroupName || '').toLowerCase().includes(q)
-    );
-  }, [editableLines, lineSearch]);
+    if (q) {
+      list = list.filter(l =>
+        String(l.GoodName || '').toLowerCase().includes(q) ||
+        String(l.GoodCode || '').toLowerCase().includes(q) ||
+        String(l.GoodId || '').toLowerCase().includes(q) ||
+        String(l.GoodGroupName || '').toLowerCase().includes(q)
+      );
+    }
+    // เรียงรายการงดขาย (SUSPENDED) ไว้ท้ายลิสต์เสมอ
+    list.sort((a, b) => {
+      const aSuspended = a.LineStatus === 'SUSPENDED' ? 1 : 0;
+      const bSuspended = b.LineStatus === 'SUSPENDED' ? 1 : 0;
+      if (aSuspended !== bSuspended) return aSuspended - bSuspended;
+      return String(a.GoodName || '').localeCompare(String(b.GoodName || ''), 'th');
+    });
+    return list;
+  }, [editableLines, lineSearch, hideSuspended]);
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -723,6 +737,15 @@ export function PriceBookManager({
                     <Tag size={16} /> รายการราคาขาย ({filteredLines.length}/{editableLines.length})
                   </div>
                   <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none px-2.5 py-1 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={hideSuspended}
+                        onChange={e => setHideSuspended(e.target.checked)}
+                        className="rounded text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+                      />
+                      <span>ซ่อนงดขาย</span>
+                    </label>
                     <div className="relative">
                       <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
                       <input

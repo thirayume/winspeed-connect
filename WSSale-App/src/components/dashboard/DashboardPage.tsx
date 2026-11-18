@@ -4,6 +4,7 @@ import { fetchSoStats, fetchAgingOrders, fetchRebateSummary, fetchSalesOrders } 
 import { AgingDetailModal } from './AgingDetailModal';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { useAuthStore } from '../../store/auth-store';
+import { useAppStore } from '../../store/app-store';
 import { canViewRebateSummary } from '../../utils/permissions';
 import { formatThaiDate } from '../../utils/date';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
@@ -21,6 +22,7 @@ function agingColor(days: number) {
 }
 
 export function DashboardPage() {
+  const navigate = useAppStore(s => s.navigate);
   const canSeeRebate = canViewRebateSummary(useAuthStore(s => s.user));
   const [stats, setStats]     = useState<{ byStatus: Record<string, number>; total: number }>({ byStatus: {}, total: 0 });
   const [aging, setAging]     = useState<AgingRow[]>([]);
@@ -288,7 +290,18 @@ export function DashboardPage() {
                     <tbody className="divide-y divide-gray-50">
                       {searchRows.map(row => (
                         <tr key={String(row.id)} className="text-gray-700">
-                          <td className="py-2 pr-3 font-mono font-bold text-[#0C447C] whitespace-nowrap">{row.wfRef || row.importedDocuNo || row.id}<DocStageChip stage={row.docStage} className="block mt-1" /></td>
+                          <td className="py-2 pr-3 font-mono font-bold whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => navigate('sales', { soId: row.id, action: 'view' })}
+                              className="text-[#0C447C] hover:text-blue-700 hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                              title={`ไปยังบิล ${row.wfRef || row.id} ใน Sale Trip`}
+                            >
+                              <span>{row.wfRef || row.importedDocuNo || row.id}</span>
+                              <ExternalLink size={12} className="opacity-50" />
+                            </button>
+                            {row.docStage && <DocStageChip stage={row.docStage} className="block mt-1" />}
+                          </td>
                           <td className="py-2 px-3 max-w-[220px] truncate" title={row.custName}>{row.custName}</td>
                           <td className="py-2 px-3 font-mono whitespace-nowrap">{row.truckPlate || (row.noTruckRequired ? 'ไม่ต้องระบุรถ' : '-')}</td>
                           <td className="py-2 px-3 whitespace-nowrap">{row.requestedAt ? formatThaiDate(row.requestedAt, true) : '-'}</td>

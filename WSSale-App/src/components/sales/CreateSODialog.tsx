@@ -67,7 +67,9 @@ function getPriceBand(level?: PriceLevel) {
   switch (level) {
     case 'GREEN': return { label: 'สูงกว่าราคาประกาศ', className: 'border-emerald-300 bg-emerald-50 text-emerald-700' };
     case 'EQUAL': return { label: 'เท่าราคาประกาศ', className: 'border-gray-300 bg-white text-gray-700' };
-    case 'YELLOW': return { label: 'ต่ำกว่าราคาประกาศ (ต้องขออนุมัติ)', className: 'border-yellow-300 bg-yellow-50 text-yellow-800' };
+    case 'BELOW_STANDARD': return { label: 'ต่ำกว่าราคาประกาศ (ไม่ต้องขออนุมัติ)', className: 'border-blue-300 bg-blue-50 text-blue-800' };
+    case 'REQUIRE_APPROVAL': return { label: 'ต่ำกว่าราคาประกาศ (ต้องขออนุมัติ)', className: 'border-yellow-300 bg-yellow-50 text-yellow-800' };
+    case 'YELLOW': return { label: 'ต่ำกว่าราคาประกาศ (ไม่ต้องขออนุมัติ)', className: 'border-blue-300 bg-blue-50 text-blue-800' };
     case 'RED': return { label: 'ต่ำกว่าราคาประกาศเกินเกณฑ์ (ต้องขออนุมัติ)', className: 'border-red-300 bg-red-50 text-red-700' };
     case 'NONE': return { label: 'ไม่มีราคาประกาศ (ต้องขออนุมัติ)', className: 'border-gray-300 bg-gray-50 text-gray-600' };
     default: return { label: '', className: 'border-gray-200 bg-white text-gray-700' };
@@ -1945,6 +1947,8 @@ export function CreateSODialog({
                                     <span className="text-[10px] text-gray-500">฿/ตัน</span>
                                     <input
                                       type="number"
+                                      step="100"
+                                      min="0"
                                       value={l.pricePerTon || ''}
                                       onChange={e => updateActiveLine(l.tempId, { pricePerTon: Number(e.target.value) })}
                                       className={`w-20 text-right border rounded px-1.5 py-1 text-xs font-mono font-bold focus:outline-none focus:border-blue-400 ${
