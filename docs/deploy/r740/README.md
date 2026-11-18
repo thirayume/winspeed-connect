@@ -6,7 +6,8 @@ Docker engine and Docker Desktop on that server are not used.
 
 > **Current status for all agents (Claude · Codex · Antigravity):**
 > [GO-LIVE-STATUS.md](GO-LIVE-STATUS.md) — what is live vs pending, and the constraints to respect
-> when working on deploy or the databases. Runbook refreshed 2026-11-03 (release 1.0.6; 164 migrations on UAT, PROD holds 162 until 1.0.6 is applied).
+> when working on deploy or the databases. Runbook refreshed 2026-11-18 (release 1.2.0, migrations through 251 on UAT,
+> PROD and `dbwins_worldfert2`; see [RELEASE-1.2.0.md](RELEASE-1.2.0.md)). Database care: [sql/maintenance](sql/maintenance/README.md).
 
 | | UAT | PROD |
 |---|---|---|
@@ -248,8 +249,12 @@ weighing/shipment are still business acceptance items, not certified by a deploy
 1. UAT passed on a commit (from the UAT deploy receipt).
 2. **2. Promote UAT to PROD** with `uat_commit` = that commit; check that the run appears and
    passes (see the practical notes above).
-3. Only if the plan has pending migrations: a verified copy-only backup with
-   [`sql/r740-prod-backup.sql`](sql/r740-prod-backup.sql) in SSMS (younger than 120 minutes).
+3. Only if the plan has pending migrations: verified copy-only backups with
+   [`sql/r740-prod-backup.sql`](sql/r740-prod-backup.sql) and
+   [`sql/r740-company-backup-dbwins_worldfert2.sql`](sql/r740-company-backup-dbwins_worldfert2.sql)
+   (SSMS or `sqlcmd -E`, younger than 120 minutes), then migrate the second company database first:
+   `migrate-company.sh dbwins_worldfert2 plan` and `apply` in WSL as root. The PROD deploy migrates only
+   `dbwins_worldfert9`. Check company-2 data before any data migration: it can differ from company 9.
 4. `docs\deploy\r740\deploy.bat prod`: `YES` for the commit, then the database name
    `dbwins_worldfert9` when migrations are pending, or `YES` to restart when none are.
 5. Verify, read-only: the `prod-apply-<commit>` receipt, `https://worldfert.duckdns.org/api/health`,

@@ -50,3 +50,9 @@ test('the dashboard counts, the bill list and the document board ask SQL Server 
   assert.equal((board.match(/OPTION \(RECOMPILE\)/g) || []).length, 1);
   assert.match(so, /force: bust, staleMs: DASHBOARD_STALE_MS/);
 });
+
+test('reconciliation looks invoices up by RefSOID and by SONo in two parts joined by UNION, not one OR', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'recon.js'), 'utf8');
+  assert.doesNotMatch(src, /RefSOID IN \(\$\{idL\}\) OR h\.SONo IN/, 'the OR form scanned SOInvHD for 8 s');
+  assert.match(src, /h\.RefSOID IN \(\$\{idL\}\)\s*UNION\s*SELECT[\s\S]*h\.SONo IN \(\$\{noL\}\)/);
+});

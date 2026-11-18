@@ -55,11 +55,16 @@ async function lookupInvoices(rows) {
     const lNos = [...new Set(left.map(r => r.WsDocuNo).filter(Boolean))];
     const idL = lIds.length ? lIds.join(',') : 'NULL';
     const noL = lNos.length ? lNos.map(quote).join(',') : `''`;
+    // Two lookups joined by UNION: the single "RefSOID IN (...) OR SONo IN (...)" form took 8.4 s on the
+    // UAT copy of PROD (18 Nov 2026), the UNION 0.4 s for the same 64 rows.
     const alt = (await wfQuery(`
       SELECT CAST(h.RefSOID AS VARCHAR(50)) AS BySoId, h.SONo, h.SOInvID, h.DocuNo, h.DocuDate, h.DocuType, h.PostID
       FROM dbo.SOInvHD h WITH (NOLOCK)
-      WHERE h.DocuType IN (107, 202)
-        AND (h.RefSOID IN (${idL}) OR h.SONo IN (${noL}))`)).recordset || [];
+      WHERE h.DocuType IN (107, 202) AND h.RefSOID IN (${idL})
+      UNION
+      SELECT CAST(h.RefSOID AS VARCHAR(50)) AS BySoId, h.SONo, h.SOInvID, h.DocuNo, h.DocuDate, h.DocuType, h.PostID
+      FROM dbo.SOInvHD h WITH (NOLOCK)
+      WHERE h.DocuType IN (107, 202) AND h.SONo IN (${noL})`)).recordset || [];
     for (const r of left) {
       const hit = alt.find(x => String(x.BySoId) === String(r.SoId) || (r.WsDocuNo && x.SONo === r.WsDocuNo));
       if (hit) map[String(r.SoId)] = hit;

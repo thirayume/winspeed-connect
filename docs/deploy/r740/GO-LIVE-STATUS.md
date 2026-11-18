@@ -1,13 +1,13 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **3 November 2026 16:20 (ICT)**. This page records observed results;
+Operational snapshot: **18 November 2026 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
-See [deployment guide](README.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
+See [deployment guide](README.md), [release 1.2.0](RELEASE-1.2.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
-**Running release: UAT 1.0.6 (164 migrations). Production 1.0.5 (`8333828`, 162 migrations) until the owner orders
-1.0.6. Staff get their accounts on 6 November 2026. Production runs in mixed mode (owner, 3 November 2026): quotations,
-bills, trips, 103, stock, reports and prints in Sale-App; AI, 104, 116 and 107 in WinSpeed. All native writers stay off.**
+**Running release: 1.2.0 on UAT and Production (migrations through 251 on `dbwins_worldfert9`, `dbwins_worldfert9_uat`
+and `dbwins_worldfert2`). Production runs in mixed mode: quotations, bills, trips, 103, stock, reports and prints in
+Sale-App; AI, 104, 116 and 107 in WinSpeed. All native writers stay off; Rebate reset admin is off.**
 Older paragraphs below are history.
 
 **Bill-to-invoice rehearsal on UAT, 3 November 2026.** Bills were made in Sale-App and carried through WinSpeed over
