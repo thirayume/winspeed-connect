@@ -16,6 +16,7 @@ import { appAlert, appPrompt, appConfirm } from '../ui/AppAlert';
 import { SearchableSelect } from '../ui/SearchableSelect';
 import type { CustomerRequest, EMCust, CustomerGroup } from '../../types';
 
+import { Pagination, usePageSize } from '../ui/Pagination';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 function CreditAgingSection({
@@ -245,7 +246,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
 
   // Pagination & Sorting
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 30;
+  const [itemsPerPage, setItemsPerPage] = usePageSize('master-customers', 50);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'CustID', direction: 'asc' });
 
   async function loadCustomers(nextFilters = filters) {
@@ -526,7 +527,7 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
   const paginatedCustomers = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return sortedCustomers.slice(start, start + itemsPerPage);
-  }, [sortedCustomers, currentPage]);
+  }, [sortedCustomers, currentPage, itemsPerPage]);
 
   const requestSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -1069,29 +1070,16 @@ export const CustomersManager = ({ onViewTrucks }: { onViewTrucks?: (custName: s
         </div>
 
         {/* Pagination Footer */}
-        {totalPages > 1 && (
-          <div className="p-3 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
-            <span className="text-sm text-gray-500">
-              แสดง {((currentPage - 1) * itemsPerPage) + 1} ถึง {Math.min(currentPage * itemsPerPage, filteredCustomers.length)} จาก {filteredCustomers.length}
-            </span>
-            <div className="flex gap-1">
-              <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-1 bg-white border border-gray-200 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                ก่อนหน้า
-              </button>
-              <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1 bg-white border border-gray-200 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                ถัดไป
-              </button>
-            </div>
-          </div>
-        )}
+        <div className="p-3 border-t border-gray-100 bg-gray-50/50">
+          <Pagination
+            page={currentPage}
+            total={filteredCustomers.length}
+            pageSize={itemsPerPage}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={n => { setItemsPerPage(n); setCurrentPage(1); }}
+            unit="ลูกค้า"
+          />
+        </div>
 
         {/* Sticky Batch Actions Toolbar */}
         {selectedCustIds.size > 0 && (

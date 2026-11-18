@@ -24,6 +24,10 @@ import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import type { SalesOrder, SOStatus } from '../../types';
 import { SO_STATUS_META, SO_STATUS_ORDER } from '../../constants/soStatus';
 
+import { Pagination, usePageSize } from '../ui/Pagination';
+
+// /api/so returns at most 100 bills per page.
+const SALES_PAGE_SIZES = [10, 20, 50, 100];
 export const SalesPortal = () => {
   const can = useCan();
   const companyInfo = useCompanyStore(s => s.companyInfo);
@@ -55,7 +59,7 @@ export const SalesPortal = () => {
   const [isTripSetupOpen, setIsTripSetupOpen] = useState(false);
 
   const [page, setPage]               = useState(1);
-  const [limit]                        = useState(20);
+  const [limit, setLimit]              = usePageSize('sales-orders', 20, SALES_PAGE_SIZES);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -562,24 +566,20 @@ export const SalesPortal = () => {
             </div>
 
           {/* Pagination */}
-          <div className="p-3 border-t border-gray-100 bg-white flex items-center justify-between">
-            <span className="text-xs text-gray-400">{loadError ? 'ยังไม่ทราบจำนวนรายการ' : `หน้า ${page} / ${totalPages} (${totalOrders} รายการ)`}</span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={Boolean(loadError) || page === 1}
-                className="h-8 w-8 flex items-center justify-center rounded-lg border border-gray-200 disabled:opacity-40"
-              >
-                <ChevronLeft size={14} />
-              </button>
-              <button
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={Boolean(loadError) || page >= totalPages}
-                className="h-8 w-8 flex items-center justify-center rounded-lg border border-gray-200 disabled:opacity-40"
-              >
-                <ChevronRight size={14} />
-              </button>
-            </div>
+          <div className="p-3 border-t border-gray-100 bg-white">
+            {loadError ? (
+              <span className="text-xs text-gray-400">ยังไม่ทราบจำนวนรายการ</span>
+            ) : (
+              <Pagination
+                page={page}
+                total={totalOrders}
+                pageSize={limit}
+                pageSizeOptions={SALES_PAGE_SIZES}
+                onPageChange={setPage}
+                onPageSizeChange={n => { setLimit(n); setPage(1); }}
+                unit="บิล"
+              />
+            )}
           </div>
         </div>
 

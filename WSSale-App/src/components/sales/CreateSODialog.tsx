@@ -2,7 +2,7 @@ import { bookingNoteError } from '../../utils/bookingNotes';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { unsavedMessage } from '../../utils/unsaved-changes';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { X, Plus, Minus, Truck, Package, Search, Calendar, FileText, CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket, AlertTriangle, Gift, Sparkles, Clock } from 'lucide-react';
+import { X, Plus, Minus, Truck, Package, Search, Calendar, FileText, CheckCircle2, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket, AlertTriangle, Gift, Sparkles, Clock } from 'lucide-react';
 import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, getRebateAvailability, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation, fetchPriceIndicator, fetchCustomerCreditStatus, fetchCustomerTopGoods, type CustomerTopGood, type PriceBook } from '../../services/api';
 import type { EffectivePriceRow, AtpStockRow, PriceLevel } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
@@ -18,6 +18,7 @@ import { appAlert, appConfirm } from '../ui/AppAlert';
 import { formatThaiDate, bangkokDate } from '../../utils/date';
 import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser, GiveawayQuota, CustomerCreditStatus } from '../../types';
 
+import { Pagination } from '../ui/Pagination';
 type DraftLine = SalesOrderLine & {
   tempId: string;
   refControlTicketNo?: string;
@@ -1646,12 +1647,14 @@ export function CreateSODialog({
 
                 {/* Pagination */}
                 {totalPages > 1 && (
-                  <div className="flex items-center justify-between mt-2 sm:mt-4 pt-2 sm:pt-3 border-t border-gray-100">
-                    <span className="text-xs text-gray-500 font-medium">หน้า {currentPage} จาก {totalPages} <span className="text-gray-400">({filteredGoods.length} รายการ)</span></span>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="h-7 w-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-30 hover:bg-gray-50 transition-colors"><ChevronLeft size={16}/></button>
-                      <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="h-7 w-7 flex items-center justify-center rounded border border-gray-200 disabled:opacity-30 hover:bg-gray-50 transition-colors"><ChevronRight size={16}/></button>
-                    </div>
+                  <div className="mt-2 sm:mt-4 pt-2 sm:pt-3 border-t border-gray-100">
+                    <Pagination
+                      compact
+                      page={currentPage}
+                      total={filteredGoods.length}
+                      pageSize={itemsPerPage}
+                      onPageChange={setCurrentPage}
+                    />
                   </div>
                 )}
               </div>

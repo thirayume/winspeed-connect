@@ -11,6 +11,7 @@ import { UserEditor } from './UserEditor';
 
 import { useAuthStore } from '../../store/auth-store';
 
+import { Pagination, usePageSize } from '../ui/Pagination';
 export const AdminUsersPage = ({
   initialRoleFilter = null,
   onNavigateToRoles,
@@ -46,7 +47,7 @@ export const AdminUsersPage = ({
   // Pagination, Searching & Sorting
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 30;
+  const [itemsPerPage, setItemsPerPage] = usePageSize('admin-users', 50);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'Id', direction: 'asc' });
 
   // Sync initialRoleFilter if it changes from parent console
@@ -126,7 +127,7 @@ export const AdminUsersPage = ({
   const myRole = sessionUser?.role || '';
   const canBatch = Boolean(sessionUser?.capabilities?.actions.includes('roles.manage')) && !sessionUser?.isImpersonating;
 
-  useEffect(() => { setSelected([]); }, [currentPage]);
+  useEffect(() => { setSelected([]); }, [currentPage, itemsPerPage]);
 
   // Rule: Clear selection on pagination, search, inactive toggle, or role filter change
   useEffect(() => {
@@ -564,26 +565,16 @@ export const AdminUsersPage = ({
           </div>
 
           {/* Pagination Footer */}
-          <div className="p-3 border-t border-gray-100 flex items-center justify-between bg-gray-50/50 text-xs sm:text-sm text-gray-500">
-            <span>
-              แสดง {filteredUsers.length > 0 ? ((currentPage - 1) * itemsPerPage) + 1 : 0} ถึง {Math.min(currentPage * itemsPerPage, filteredUsers.length)} จาก {filteredUsers.length} คน · หัวตารางเลือกเฉพาะหน้าปัจจุบัน (ล้าง selection อัตโนมัติเมื่อเปลี่ยนหน้า/ตัวกรอง)
-            </span>
-            <div className="flex gap-1">
-              <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-1 bg-white border border-gray-200 rounded-lg text-xs sm:text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                ก่อนหน้า
-              </button>
-              <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1 bg-white border border-gray-200 rounded-lg text-xs sm:text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                ถัดไป
-              </button>
-            </div>
+          <div className="p-3 border-t border-gray-100 bg-gray-50/50">
+            <Pagination
+              page={currentPage}
+              total={filteredUsers.length}
+              pageSize={itemsPerPage}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={n => { setItemsPerPage(n); setCurrentPage(1); }}
+              unit="คน"
+            />
+            <p className="mt-1 text-[11px] text-gray-400">ช่องเลือกหัวตารางเลือกเฉพาะหน้านี้ และจะล้างเมื่อเปลี่ยนหน้าหรือตัวกรอง</p>
           </div>
         </div>
       </div>

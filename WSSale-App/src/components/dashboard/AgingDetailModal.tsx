@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X, Search, FileSpreadsheet, RefreshCw, Calendar, Truck, AlertTriangle, Clock } from 'lucide-react';
 import { searchAgingOrders } from '../../services/api';
-import type { AgingRow } from '../../types';
+import type { AgingRow, SOStatus } from '../../types';
+import { SO_STATUS_META } from '../../constants/soStatus';
 import { DocStageChip } from '../sales/DocStageChip';
 import { exportToExcel, type ExportColumn } from '../../utils/exportUtils';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { appAlert } from '../ui/AppAlert';
 import { formatThaiDate } from '../../utils/date';
+import { Pagination, usePageSize } from '../ui/Pagination';
 
 interface Props {
   isOpen: boolean;
@@ -19,7 +21,8 @@ export function AgingDetailModal({ isOpen, onClose }: Props) {
   const [rows, setRows] = useState<AgingRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const pageSize = 50;
+  const [pageSize, setPageSize] = usePageSize('aging-detail', 50);
+  const [summary, setSummary] = useState({ bills: 0, tons: 0, maxDays: 0 });
 
   // Filters
   const [search, setSearch] = useState('');
@@ -42,13 +45,14 @@ export function AgingDetailModal({ isOpen, onClose }: Props) {
       });
       setRows(res.data || []);
       setTotal(res.total || 0);
+      setSummary({ bills: Number(res.bills || 0), tons: Number(res.tons || 0), maxDays: Number(res.maxDays || 0) });
       setPage(targetPage);
     } catch (err) {
       console.error('Failed to load aging details:', err);
     } finally {
       setLoading(false);
     }
-  }, [search, dateFrom, dateTo, minDays, allDates]);
+  }, [search, dateFrom, dateTo, minDays, allDates, pageSize]);
 
   useEffect(() => {
     if (isOpen) {
@@ -56,9 +60,6 @@ export function AgingDetailModal({ isOpen, onClose }: Props) {
     }
   }, [isOpen, loadData]);
 
-  const totalTons = rows.reduce((s, r) => s + Number(r.QtyTon || 0), 0);
-  const maxDays = rows.reduce((m, r) => Math.max(m, Number(r.DaysOpen || 0)), 0);
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const handleExportExcel = async (exportAll: boolean) => {
     setExporting(true);
@@ -90,7 +91,7 @@ export function AgingDetailModal({ isOpen, onClose }: Props) {
         { key: 'TruckPlate', label: 'ทะเบียนรถ' },
         { key: 'GoodCode', label: 'รหัสสินค้า' },
         { key: 'GoodName', label: 'ชื่อสินค้า' },
-        { key: 'QtyTon', label: 'จำนวน (ตัน)', formatter: (v: any) => Number(v || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+        { key: 'QtyTon', label: 'ค้างส่ง (ตัน)', formatter: (v: any) => Number(v || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
         { key: 'DaysOpen', label: 'จำนวนวันค้างส่ง (วัน)' },
         { key: 'Status', label: 'สถานะ' },
       ];
@@ -254,12 +255,9 @@ export function AgingDetailModal({ isOpen, onClose }: Props) {
         {/* KPI Summary Bar */}
         <div className="px-6 py-2.5 bg-blue-50/60 border-b border-blue-100 flex items-center justify-between text-xs text-blue-950 font-medium shrink-0">
           <div className="flex items-center gap-6">
-            <span>พบทั้งหมด: <strong className="text-[#0C447C] font-bold text-sm">{total.toLocaleString()}</strong> รายการ</span>
-            <span>ปริมาณหน้าปัจจุบัน: <strong className="text-[#0C447C] font-bold text-sm">{totalTons.toLocaleString('th-TH', { maximumFractionDigits: 2 })}</strong> ตัน</span>
-            <span>ค้างส่งนานสุด: <strong className="text-rose-600 font-bold text-sm">{maxDays}</strong> วัน</span>
-          </div>
-          <div className="text-gray-500 text-[11px]">
-            หน้า {page} จาก {totalPages}
+            <span>บิลค้างส่ง: <strong className="text-[#0C447C] font-bold text-sm">{summary.bills.toLocaleString()}</strong> บิล ({total.toLocaleString()} รายการสินค้า)</span>
+            <span>ปริมาณที่ยังไม่ส่ง: <strong className="text-[#0C447C] font-bold text-sm">{summary.tons.toLocaleString('th-TH', { maximumFractionDigits: 2 })}</strong> ตัน</span>
+            <span>ค้างส่งนานสุด: <strong className="text-rose-600 font-bold text-sm">{summary.maxDays}</strong> วัน</span>
           </div>
         </div>
 
@@ -273,7 +271,7 @@ export function AgingDetailModal({ isOpen, onClose }: Props) {
                 <th className="px-4 py-2.5">ลูกค้า</th>
                 <th className="px-4 py-2.5">ทะเบียนรถ</th>
                 <th className="px-4 py-2.5">สินค้า</th>
-                <th className="px-4 py-2.5 text-right">จำนวน (ตัน)</th>
+                <th className="px-4 py-2.5 text-right">ค้างส่ง (ตัน)</th>
                 <th className="px-4 py-2.5 text-center">ค้างส่ง (วัน)</th>
                 <th className="px-4 py-2.5 text-center">สถานะ</th>
               </tr>
@@ -334,7 +332,7 @@ export function AgingDetailModal({ isOpen, onClose }: Props) {
                       </td>
                       <td className="px-4 py-2.5 text-center whitespace-nowrap">
                         <span className="text-[11px] font-semibold text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
-                          {r.Status || 'CONFIRMED'}
+                          {SO_STATUS_META[(r.Status || 'CONFIRMED') as SOStatus]?.label || r.Status}
                         </span>
                       </td>
                     </tr>
@@ -346,29 +344,16 @@ export function AgingDetailModal({ isOpen, onClose }: Props) {
         </div>
 
         {/* Pagination Footer */}
-        <div className="px-6 py-3 bg-slate-50 border-t border-gray-200 flex items-center justify-between text-xs shrink-0">
-          <div className="text-gray-500">
-            แสดง {rows.length > 0 ? (page - 1) * pageSize + 1 : 0} ถึง {Math.min(page * pageSize, total)} จากทั้งหมด {total.toLocaleString()} รายการ
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => loadData(page - 1)}
-              disabled={page <= 1 || loading}
-              className="px-3 py-1 bg-white border border-gray-200 rounded-lg font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              ก่อนหน้า
-            </button>
-            <span className="font-bold text-[#0C447C] px-2">{page} / {totalPages}</span>
-            <button
-              type="button"
-              onClick={() => loadData(page + 1)}
-              disabled={page >= totalPages || loading}
-              className="px-3 py-1 bg-white border border-gray-200 rounded-lg font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              ถัดไป
-            </button>
-          </div>
+        <div className="px-6 py-3 bg-slate-50 border-t border-gray-200 shrink-0">
+          <Pagination
+            page={page}
+            total={total}
+            pageSize={pageSize}
+            onPageChange={p => { void loadData(p); }}
+            onPageSizeChange={setPageSize}
+            unit="รายการสินค้า"
+            disabled={loading}
+          />
         </div>
 
       </div>

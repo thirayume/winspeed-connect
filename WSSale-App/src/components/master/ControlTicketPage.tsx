@@ -12,6 +12,7 @@ import type { ControlTicketDraw } from '../../types';
 import { NativeTraceFinance } from './NativeTraceFinance';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 
+import { Pagination, usePageSize } from '../ui/Pagination';
 type Line = { ListNo: number; GoodCode: string; GoodName: string; QtyTon: number; PricePerTon: number };
 
 export function ControlTicketPage() {
@@ -23,7 +24,7 @@ export function ControlTicketPage() {
   const [q, setQ] = useState('');
   const [tab, setTab] = useState<'ACTIVE' | 'RESERVED_FULL' | 'HISTORY' | 'PENDING' | 'ALERTS' | 'UNKNOWN'>('ACTIVE');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = usePageSize('control-tickets', 25);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [sel, setSel] = useState<any | null>(null);
@@ -421,40 +422,16 @@ export function ControlTicketPage() {
             )}
 
             {/* Server-Side Pagination Controls */}
-            <div className="px-4 py-3 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500 bg-gray-50/50">
-              <div className="flex items-center gap-2">
-                <span>แสดงหน้า <strong>{page}</strong> จาก <strong>{totalPages}</strong> (ทั้งหมด {totalCount} รายการ)</span>
-                <span className="text-gray-300">|</span>
-                <div className="flex items-center gap-1">
-                  <span>แถวต่อหน้า:</span>
-                  <select
-                    value={pageSize}
-                    onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-                    className="border border-gray-200 rounded px-1.5 py-0.5 bg-white text-xs"
-                  >
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  disabled={page <= 1 || loading}
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 font-medium"
-                >
-                  <ChevronLeft size={14} /> ก่อนหน้า
-                </button>
-                <span className="px-2 font-mono font-bold text-gray-700">{page}</span>
-                <button
-                  disabled={page >= totalPages || loading}
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  className="px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 font-medium"
-                >
-                  ถัดไป <ChevronRight size={14} />
-                </button>
-              </div>
+            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50">
+              <Pagination
+                page={page}
+                total={totalCount}
+                pageSize={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={n => { setPageSize(n); setPage(1); }}
+                unit="ใบ"
+                disabled={loading}
+              />
             </div>
           </div>
         ) : (

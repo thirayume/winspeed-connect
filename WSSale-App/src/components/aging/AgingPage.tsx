@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Search, RefreshCw, X, Clock, Package, ChevronLeft, ChevronRight, Truck, FileSpreadsheet } from 'lucide-react';
+import { Search, RefreshCw, X, Clock, Package, Truck, FileSpreadsheet } from 'lucide-react';
 import { searchAgingOrders } from '../../services/api';
 import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
@@ -10,8 +10,7 @@ import { exportToExcel, type ExportColumn } from '../../utils/exportUtils';
 import type { AgingRow, SOStatus } from '../../types';
 import { DocStageChip } from '../sales/DocStageChip';
 import { SO_STATUS_META } from '../../constants/soStatus';
-
-const PAGE_SIZE = 50;
+import { Pagination, usePageSize } from '../ui/Pagination';
 
 const defaultDateFrom = () => bangkokDate(180);
 
@@ -19,6 +18,8 @@ export const AgingPage = () => {
   const [data, setData]       = useState<AgingRow[]>([]);
   const [total, setTotal]     = useState(0);
   const [page, setPage]       = useState(1);
+  const [pageSize, setPageSize] = usePageSize('aging-page', 50);
+  const [summary, setSummary] = useState({ bills: 0, tons: 0 });
   const [loading, setLoading] = useState(false);
   const navigate = useAppStore(s => s.navigate);
 
@@ -34,22 +35,22 @@ export const AgingPage = () => {
         q:        search || undefined,
         status:   statusFilter.length ? statusFilter.join(',') : undefined,
         page:     pg,
-        pageSize: PAGE_SIZE,
+        pageSize,
         dateFrom,
       });
       setData(res.data);
       setTotal(res.total);
+      setSummary({ bills: Number(res.bills || 0), tons: Number(res.tons || 0) });
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, dateFrom, page]);
+  }, [search, statusFilter, dateFrom, page, pageSize]);
 
-  useEffect(() => { load(1); setPage(1); }, [search, statusFilter, dateFrom]);
+  useEffect(() => { load(1); setPage(1); }, [search, statusFilter, dateFrom, pageSize]);
   useEffect(() => { load(page); }, [page]);
 
-  const totalPages = Math.ceil(total / PAGE_SIZE);
 
   const handleSearch = () => { setSearch(inputVal.trim()); setPage(1); };
   const clearSearch  = () => { setInputVal(''); setSearch(''); setPage(1); };
@@ -65,7 +66,7 @@ export const AgingPage = () => {
       { key: 'WfRef', label: 'เลขที่เอกสาร (WF Ref)' },
       { key: 'GoodCode', label: 'รหัสสินค้า' },
       { key: 'GoodName', label: 'ชื่อสินค้า' },
-      { key: 'QtyTon', label: 'จำนวน (ตัน)', formatter: (v) => Number(v || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+      { key: 'QtyTon', label: 'ค้างส่ง (ตัน)', formatter: (v) => Number(v || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
       { key: 'DaysOpen', label: 'จำนวนวันค้างส่ง (วัน)' },
       { key: 'DocStatus', label: 'สถานะเอกสาร', formatter: (v) => SO_STATUS_META[v as SOStatus]?.label || v || '-' }
     ];
@@ -140,7 +141,7 @@ export const AgingPage = () => {
       <div className="grid grid-cols-3 gap-2 sm:gap-4 shrink-0">
         <DataSummaryCard
           title="บิลค้างจัดส่งทั้งหมด"
-          value={total.toLocaleString()}
+          value={summary.bills.toLocaleString()}
           icon={<Clock size={24} />}
           colorClass="bg-red-100 text-red-500"
         />
@@ -151,8 +152,8 @@ export const AgingPage = () => {
           colorClass="bg-blue-100 text-blue-500"
         />
         <DataSummaryCard
-          title="รวมตัน (หน้านี้)"
-          value={data.reduce((s, r) => s + (Number(r.QtyTon) || 0), 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          title="ตันที่ยังไม่ส่ง (ทั้งหมด)"
+          value={summary.tons.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           icon={<Clock size={24} />}
           colorClass="bg-orange-100 text-orange-500"
         />
@@ -304,32 +305,17 @@ export const AgingPage = () => {
         </div>
 
         {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="p-3 border-t border-gray-100 flex items-center justify-between bg-white shrink-0">
-            <span className="text-sm text-gray-500">
-              {(page-1)*PAGE_SIZE+1}–{Math.min(page*PAGE_SIZE, total)} จาก {total.toLocaleString()} บิล
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPage(p => Math.max(1, p-1))}
-                disabled={page === 1}
-                className="p-1.5 border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-40"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <span className="px-3 py-1 text-sm text-gray-600">
-                {page} / {totalPages}
-              </span>
-              <button
-                onClick={() => setPage(p => Math.min(totalPages, p+1))}
-                disabled={page === totalPages}
-                className="p-1.5 border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-40"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-        )}
+        <div className="p-3 border-t border-gray-100 bg-white shrink-0">
+          <Pagination
+            page={page}
+            total={total}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            unit="รายการสินค้า"
+            disabled={loading}
+          />
+        </div>
       </div>
     </div>
   );

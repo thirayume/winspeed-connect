@@ -6,6 +6,7 @@ import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { appAlert } from '../ui/AppAlert';
 import type { TruckStats, TruckHistoryItem } from '../../types';
 
+import { Pagination, usePageSize } from '../ui/Pagination';
 export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }) => {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<TruckStats[]>([]);
@@ -16,7 +17,7 @@ export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }
 
   // Pagination & Sorting
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 30;
+  const [itemsPerPage, setItemsPerPage] = usePageSize('master-trucks', 50);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'count', direction: 'desc' });
 
   async function loadData() {
@@ -77,7 +78,7 @@ export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }
   const paginatedStats = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return sortedStats.slice(start, start + itemsPerPage);
-  }, [sortedStats, currentPage]);
+  }, [sortedStats, currentPage, itemsPerPage]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -214,29 +215,16 @@ export const TrucksManager = ({ initialSearch = '' }: { initialSearch?: string }
         </div>
 
         {/* Pagination Footer */}
-        {totalPages > 1 && (
-          <div className="p-3 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
-            <span className="text-sm text-gray-500">
-              แสดง {((currentPage - 1) * itemsPerPage) + 1} ถึง {Math.min(currentPage * itemsPerPage, filteredStats.length)} จาก {filteredStats.length}
-            </span>
-            <div className="flex gap-1">
-              <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-1 bg-white border border-gray-200 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                ก่อนหน้า
-              </button>
-              <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1 bg-white border border-gray-200 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                ถัดไป
-              </button>
-            </div>
-          </div>
-        )}
+        <div className="p-3 border-t border-gray-100 bg-gray-50/50">
+          <Pagination
+            page={currentPage}
+            total={filteredStats.length}
+            pageSize={itemsPerPage}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={n => { setItemsPerPage(n); setCurrentPage(1); }}
+            unit="คัน"
+          />
+        </div>
       </div>
 
       {/* Audit Trail Modal */}

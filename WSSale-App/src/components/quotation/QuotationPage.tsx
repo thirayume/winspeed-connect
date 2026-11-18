@@ -19,6 +19,7 @@ import { QuotationPrintModal } from './QuotationPrintModal';
 import { ExtendMaePuiQuoteModal } from './ExtendMaePuiQuoteModal';
 import { isMaePuiGood, getLocalDateStr, parseMaePuiMaxValidDays, formatThaiShortDate } from '../../utils/quotation-policy';
 
+import { Pagination, usePageSize } from '../ui/Pagination';
 const STATUS_STYLE: Record<QuoteStatus, string> = {
   DRAFT: 'bg-gray-100 text-gray-600', SENT: 'bg-blue-50 text-blue-700', ACCEPTED: 'bg-green-50 text-green-700',
   CONVERTED: 'bg-emerald-50 text-emerald-700', EXPIRED: 'bg-amber-50 text-amber-700', CANCELLED: 'bg-red-50 text-red-600',
@@ -62,7 +63,7 @@ export function QuotationPage() {
   const [dateTo, setDateTo] = useState('');
   const [workView, setWorkView] = useState<WorkView>('ACTIVE');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 30;
+  const [itemsPerPage, setItemsPerPage] = usePageSize('quotations', 50);
   const [sortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'Id', direction: 'desc' });
 
   const load = useCallback(async () => {
@@ -485,27 +486,16 @@ export function QuotationPage() {
 
 
         {/* Pagination Footer */}
-        <div className="p-3 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
-          <span className="text-sm text-gray-500">
-            แสดง {filteredQuotes.length > 0 ? ((currentPage - 1) * itemsPerPage) + 1 : 0} ถึง {Math.min(currentPage * itemsPerPage, filteredQuotes.length)} จาก {filteredQuotes.length}
-          </span>
-            <div className="flex gap-1">
-              <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-1 bg-white border border-gray-200 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                ก่อนหน้า
-              </button>
-              <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1 bg-white border border-gray-200 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                ถัดไป
-              </button>
-            </div>
-          </div>
+        <div className="p-3 border-t border-gray-100 bg-gray-50/50">
+          <Pagination
+            page={currentPage}
+            total={filteredQuotes.length}
+            pageSize={itemsPerPage}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={n => { setItemsPerPage(n); setCurrentPage(1); }}
+            unit="ใบเสนอราคา"
+          />
+        </div>
         </div>
       </div>
 
@@ -847,23 +837,14 @@ export function CreateQuoteDialog({ onClose, onDone }: { onClose: () => void; on
                 </div>
 
                 {totalPages > 1 && (
-                  <div className="flex items-center gap-1 shrink-0 pb-2">
-                    <span className="text-xs text-gray-400 mr-2 hidden sm:inline">หน้า {currentPage}/{totalPages}</span>
-                    <button 
-                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                      className="px-2.5 py-1.5 rounded bg-gray-100 text-gray-600 disabled:opacity-50 text-xs hover:bg-gray-200 transition-colors"
-                    >
-                      ก่อนหน้า
-                    </button>
-                    <button 
-                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                      disabled={currentPage === totalPages}
-                      className="px-2.5 py-1.5 rounded bg-gray-100 text-gray-600 disabled:opacity-50 text-xs hover:bg-gray-200 transition-colors"
-                    >
-                      ถัดไป
-                    </button>
-                  </div>
+                  <Pagination
+                    compact
+                    className="shrink-0 pb-2"
+                    page={currentPage}
+                    total={filteredGoods.length}
+                    pageSize={itemsPerPage}
+                    onPageChange={setCurrentPage}
+                  />
                 )}
               </div>
 

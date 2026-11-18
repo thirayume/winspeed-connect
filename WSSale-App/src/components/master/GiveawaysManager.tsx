@@ -6,6 +6,7 @@ import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { appAlert } from '../ui/AppAlert';
 import type { GiveawayItem, GiveawayWithdrawal } from '../../types';
 
+import { Pagination, usePageSize } from '../ui/Pagination';
 export const GiveawaysManager = () => {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<GiveawayItem[]>([]);
@@ -38,7 +39,7 @@ export const GiveawaysManager = () => {
 
   // Pagination & Sorting
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 30;
+  const [itemsPerPage, setItemsPerPage] = usePageSize('master-giveaways', 50);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'GoodCode', direction: 'asc' });
 
   async function loadData() {
@@ -200,7 +201,7 @@ export const GiveawaysManager = () => {
   const paginatedItems = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return sortedItems.slice(start, start + itemsPerPage);
-  }, [sortedItems, currentPage]);
+  }, [sortedItems, currentPage, itemsPerPage]);
 
   const requestSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -449,29 +450,16 @@ export const GiveawaysManager = () => {
         </div>
 
         {/* Pagination Footer */}
-        {totalPages > 1 && (
-          <div className="p-3 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
-            <span className="text-sm text-gray-500">
-              แสดง {((currentPage - 1) * itemsPerPage) + 1} ถึง {Math.min(currentPage * itemsPerPage, filteredItems.length)} จาก {filteredItems.length}
-            </span>
-            <div className="flex gap-1">
-              <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-1 bg-white border border-gray-200 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                ก่อนหน้า
-              </button>
-              <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1 bg-white border border-gray-200 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                ถัดไป
-              </button>
-            </div>
-          </div>
-        )}
+        <div className="p-3 border-t border-gray-100 bg-gray-50/50">
+          <Pagination
+            page={currentPage}
+            total={filteredItems.length}
+            pageSize={itemsPerPage}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={n => { setItemsPerPage(n); setCurrentPage(1); }}
+            unit="รายการ"
+          />
+        </div>
       </div>
 
       {/* Edit Specs & Image Modal */}

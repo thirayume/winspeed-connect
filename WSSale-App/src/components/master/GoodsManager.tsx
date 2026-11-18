@@ -6,6 +6,7 @@ import { DataSummaryCard } from '../ui/DataSummaryCard';
 import { appAlert } from '../ui/AppAlert';
 import type { EMGood, CurrentPrice } from '../../types';
 
+import { Pagination, usePageSize } from '../ui/Pagination';
 export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodId: string; goodCode?: string; goodName?: string }) => void }) => {
   const [goods, setGoods] = useState<EMGood[]>([]);
   const [prices, setPrices] = useState<CurrentPrice[]>([]);
@@ -26,7 +27,7 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodI
 
   // Pagination & Sorting
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 30;
+  const [itemsPerPage, setItemsPerPage] = usePageSize('master-goods', 50);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'default', direction: 'asc' });
 
   const pricedGoodIds = useMemo(() => {
@@ -150,7 +151,7 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodI
   const paginatedGoods = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return sortedGoods.slice(start, start + itemsPerPage);
-  }, [sortedGoods, currentPage]);
+  }, [sortedGoods, currentPage, itemsPerPage]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -528,29 +529,16 @@ export const GoodsManager = ({ onViewPrices }: { onViewPrices?: (target: { goodI
         </div>
 
         {/* Pagination Footer */}
-        {totalPages > 1 && (
-          <div className="p-3 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
-            <span className="text-sm text-gray-500">
-              แสดง {((currentPage - 1) * itemsPerPage) + 1} ถึง {Math.min(currentPage * itemsPerPage, filteredGoods.length)} จาก {filteredGoods.length}
-            </span>
-            <div className="flex gap-1">
-              <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-1 bg-white border border-gray-200 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                ก่อนหน้า
-              </button>
-              <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1 bg-white border border-gray-200 rounded text-sm hover:bg-gray-50 disabled:opacity-50"
-              >
-                ถัดไป
-              </button>
-            </div>
-          </div>
-        )}
+        <div className="p-3 border-t border-gray-100 bg-gray-50/50">
+          <Pagination
+            page={currentPage}
+            total={filteredGoods.length}
+            pageSize={itemsPerPage}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={n => { setItemsPerPage(n); setCurrentPage(1); }}
+            unit="สินค้า"
+          />
+        </div>
       </div>
 
       {statusModal && (
