@@ -534,7 +534,7 @@ export const searchAgingOrders = (params: {
   if (params.minDays)  qs.set('minDays',  String(params.minDays));
   if (params.all)      qs.set('all',      '1');
   if (params.export)   qs.set('export',   '1');
-  return req<PaginatedResult<AgingRow>>(`/master/aging/search?${qs}`);
+  return req<PaginatedResult<AgingRow> & { bills?: number; tons?: number; maxDays?: number }>(`/master/aging/search?${qs}`);
 };
 
 // ── Sales Orders ──────────────────────────────────────────────

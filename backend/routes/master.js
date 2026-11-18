@@ -2430,7 +2430,77 @@ router.get('/invoices', async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
-// GET /api/master/aging — dashboard SO คงค้าง (TOP 200, 2 ปีจาก Jan 1)
+// ── บิลค้างส่ง (aging) ────────────────────────────────────────────────────
+// A bill counts as waiting to ship only while WinSpeed itself says goods are still to leave (owner, 18 Nov 2026:
+// bills with a full 107 showed as 308 days outstanding). Before this, only a Sale-App weigh-out closed a bill, so
+// every sale hauled through WinSpeed stayed "outstanding" for ever. The rules, checked on UAT data the same day:
+//   103 booking   open while no sales order has taken it (DocuStatus Y means a 104 carries it: 7,762 of 7,762 had
+//                 one) and while the scale has not weighed its truck out (dbo.WGHD Status 3, as the stock view does).
+//                 The quantity is the booking's remaining quantity (SODT.RemaQty).
+//   104 order     open while any fertilizer ticket still has quantity left (WFCoupon.RemaQty); the quantity is what
+//                 the tickets still hold for that product. An order without tickets keeps its ordered quantity.
+// A missing truck plate is normal in WinSpeed and plays no part. Bills are no longer de-duplicated by document
+// number: the 103 and 104 counters overlap, and that hid about 360 open bookings behind unrelated orders.
+const AGING_OPEN_EPSILON = 0.00005;
+const agingTicketCtes = `
+  TicketLeft AS (
+    SELECT c.DocuID, c.GoodID, SUM(ISNULL(c.RemaQty, 0)) AS RemaQty
+    FROM dbo.WFCoupon c WITH (NOLOCK)
+    WHERE c.Docutype = 104
+    GROUP BY c.DocuID, c.GoodID
+  ),
+  TicketBill AS (
+    SELECT DocuID, SUM(RemaQty) AS RemaQty FROM TicketLeft GROUP BY DocuID
+  )`;
+const agingBaseConditions = [
+  `hd.DocuType IN (103, 104)`,
+  `ISNULL(hd.DocuStatus, '') <> 'C'`,
+  `ISNULL(hd.clearflag, 'N') <> 'Y'`,
+  `ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), '') <> N'ตั๋วคุม'`,
+  `NOT (hd.DocuType = 103 AND RTRIM(ISNULL(hd.DocuStatus, '')) = 'Y')`,
+  `NOT (hd.DocuType = 103 AND EXISTS (SELECT 1 FROM dbo.WGHD wg WITH (NOLOCK)
+     WHERE wg.SPID = hd.SOID AND wg.WGType = 'SO' AND RTRIM(wg.Status) = '3'))`,
+  `(hd.DocuType <> 104 OR tb.DocuID IS NULL OR tb.RemaQty > ${AGING_OPEN_EPSILON})`,
+];
+const agingStatusSql = `CASE
+    WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
+    WHEN ext.IsLoaded = 1 THEN 'LOADED'
+    WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
+    ELSE 'CONFIRMED'
+  END`;
+// One row per bill and product, with what is still to ship. `where` is ANDed with the rules above.
+const agingItemsCte = (where) => `
+  ${agingTicketCtes},
+  RawItems AS (
+    SELECT hd.CustName,
+           CAST(dt.GoodID AS VARCHAR(50)) AS GoodCode,
+           MAX(dt.GoodName) AS GoodName,
+           CAST(CASE
+             WHEN hd.DocuType = 104 AND tb.DocuID IS NOT NULL THEN ISNULL(MAX(tl.RemaQty), 0)
+             WHEN hd.DocuType = 103 THEN SUM(ISNULL(dt.RemaQty, 0))
+             ELSE SUM(ISNULL(dt.GoodQty2, 0))
+           END AS DECIMAL(12,3)) AS QtyTon,
+           DATEDIFF(DAY, CAST(hd.DocuDate AS DATETIME), GETDATE()) AS DaysOpen,
+           ${agingStatusSql} AS Status,
+           hd.DocuNo AS WfRef,
+           CAST(hd.SOID AS VARCHAR(50)) AS SoId,
+           CONVERT(VARCHAR(10), hd.DocuDate, 120) AS CreatedAt,
+           NULLIF(LTRIM(RTRIM(hd.TransRegistration)), '') AS TruckPlate
+    FROM dbo.SOHD hd WITH (NOLOCK)
+    JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
+    LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
+    -- HASH: WFCoupon has no index on DocuID; a nested loop scans it once per line (9 s on UAT, 0.5 s hashed).
+    LEFT HASH JOIN TicketBill tb ON tb.DocuID = hd.SOID
+    LEFT HASH JOIN TicketLeft tl ON tl.DocuID = hd.SOID AND tl.GoodID = dt.GoodID
+    WHERE ${[...agingBaseConditions, where].join(' AND ')}
+    GROUP BY hd.CustName, dt.GoodID, hd.DocuDate, hd.DocuType, hd.PkgStatus, ext.IsLoaded, ext.WeighOutWeight,
+             hd.DocuNo, hd.SOID, hd.TransRegistration, tb.DocuID
+  ),
+  OpenItems AS (
+    SELECT * FROM RawItems WHERE QtyTon > ${AGING_OPEN_EPSILON}
+  )`;
+
+// GET /api/master/aging — dashboard: the 200 oldest open lines from the last 180 days
 const { createReadCache, scopedReadKey } = require('../services/read-cache');
 const agingCache = createReadCache();
 const AGING_TTL = 5 * 60 * 1000;
@@ -2445,68 +2515,19 @@ router.get('/aging', async (req, res) => {
     const cacheKey = JSON.stringify([scopedReadKey(db.getTarget(), db.getDbName(), agingScopes.effective),
       scopedReadKey(db.getTarget(), db.getDbName(), agingScopes.actor), dataWindow.businessDate]);
     const rows = await agingCache.get(cacheKey, async () => {
-
     const { wfQuery: wq } = require('../db');
+    const where = [
+      `hd.DocuDate >= DATEADD(DAY, -180, GETDATE())`,
+      `hd.DocuDate >= @globalStartDate`,
+      `ext.WeighOutWeight IS NULL`,
+      ag.sql,
+    ].join(' AND ');
     const result = await wq(`
-      WITH BaseCandidateSo AS (
-        SELECT 
-          hd.SOID AS SoIdKey,
-          CAST(hd.SOID AS VARCHAR(50)) AS SoId,
-          hd.DocuNo AS WfRef,
-          hd.CustName,
-          ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), 'ไม่ระบุรถ') AS TruckPlate,
-          CAST(hd.DocuDate AS DATETIME2) AS CreatedAt,
-          CASE WHEN hd.PkgStatus = 'Y' THEN 'PICKING' ELSE 'CONFIRMED' END AS BaseStatus,
-          ROW_NUMBER() OVER(PARTITION BY hd.DocuNo ORDER BY hd.DocuType DESC, hd.SOID DESC) as rn
-        FROM dbo.SOHD hd WITH (NOLOCK)
-        WHERE hd.DocuType IN (103, 104)
-          AND ISNULL(hd.DocuStatus, '') <> 'C'
-          AND ISNULL(hd.clearflag, 'N') <> 'Y'
-          AND ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), '') <> N'ตั๋วคุม'
-          AND hd.DocuDate >= DATEADD(DAY, -180, GETDATE())
-          AND hd.DocuDate >= @globalStartDate
-          AND ${ag.sql}
-      ),
-      CandidateSo AS (
-        SELECT TOP 1000 * FROM BaseCandidateSo WHERE rn = 1
-        ORDER BY CreatedAt ASC, SoId ASC
-      ),
-      OpenSo AS (
-        SELECT TOP 200
-          c.SoIdKey,
-          c.SoId,
-          c.WfRef,
-          c.CustName,
-          c.TruckPlate,
-          c.CreatedAt,
-          CASE WHEN ext.IsLoaded = 1 THEN 'LOADED' ELSE c.BaseStatus END AS Status
-        FROM CandidateSo c
-        LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
-          ON ext.SOID = c.SoId
-        WHERE ext.WeighOutWeight IS NULL
-        ORDER BY c.CreatedAt ASC, c.SoId ASC
-      )
-      SELECT
-        o.CustName,
-        CAST(ISNULL(line.GoodID, '') AS VARCHAR(50)) AS GoodCode,
-        line.GoodName,
-        ISNULL(line.QtyTon, 0) AS QtyTon,
-        DATEDIFF(DAY, o.CreatedAt, GETUTCDATE()) AS DaysOpen,
-        o.Status,
-        o.WfRef,
-        o.SoId,
-        o.CreatedAt,
-        o.TruckPlate
-      FROM OpenSo o
-      OUTER APPLY (
-        SELECT 
-          dt.GoodID,
-          dt.GoodName,
-          CAST(ISNULL(dt.GoodQty2, 0) AS DECIMAL(12,3)) AS QtyTon
-        FROM dbo.SODT dt WITH (NOLOCK)
-        WHERE dt.SOID = o.SoIdKey
-      ) line
-      ORDER BY DaysOpen DESC
+      WITH ${agingItemsCte(where)}
+      SELECT TOP 200 CustName, GoodCode, GoodName, QtyTon, DaysOpen, Status, WfRef, SoId, CreatedAt,
+             ISNULL(TruckPlate, 'ไม่ระบุรถ') AS TruckPlate
+      FROM OpenItems
+      ORDER BY DaysOpen DESC, SoId ASC, GoodCode ASC
     `, { ...ag.inputs, globalStartDate: { type: sql.Date, value: dataWindow.businessDate } });
     const agingRows = result.recordset || [];
     try { await require('../services/document-stage').attachAgingDocumentStages(agingRows, {query:wq,sql,dataWindow}); }
@@ -2518,7 +2539,9 @@ router.get('/aging', async (req, res) => {
 });
 
 // GET /api/master/aging/search — full aging search with pagination
-// query params: q (search), status (comma-sep), page (default 1), pageSize (default 50), dateFrom (YYYY-MM-DD)
+// query params: q, status (comma-sep), page, pageSize (10–200), dateFrom/dateTo (YYYY-MM-DD), minDays, all, export
+// total counts lines (bill × product), the unit the pages are cut in; bills and tons summarise the whole result.
+const AGING_STATUSES = new Set(['CONFIRMED', 'LOADED', 'PICKING', 'SHIPPED']);
 router.get('/aging/search', async (req, res) => {
   try {
     const { wfQuery: wq } = require('../db');
@@ -2532,18 +2555,10 @@ router.get('/aging/search', async (req, res) => {
     const dateTo   = req.query.dateTo || null;
     const minDays  = parseInt(req.query.minDays) || 0;
     const statusRaw = (req.query.status || '').trim();
-    const statuses = statusRaw ? statusRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const statuses = statusRaw ? statusRaw.split(',').map(s => s.trim().toUpperCase()).filter(s => AGING_STATUSES.has(s)) : [];
     const offset   = isExport ? 0 : (page - 1) * pageSize;
 
-    // Build WHERE clauses
-    const conditions = [
-      `hd.DocuDate >= @dateFrom`,
-      `hd.DocuDate >= @globalStartDate`,
-      `hd.DocuType IN (103, 104)`,
-      `ISNULL(hd.DocuStatus, '') <> 'C'`,
-      `ISNULL(hd.clearflag, 'N') <> 'Y'`,
-      `ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), '') <> N'ตั๋วคุม'`,
-    ];
+    const conditions = [`hd.DocuDate >= @dateFrom`, `hd.DocuDate >= @globalStartDate`];
     const inputs = { dateFrom: { type: sql.Date, value: new Date(dateFrom) },
       globalStartDate: { type: sql.Date, value: dataWindow.businessDate } };
     if (dateTo) {
@@ -2557,14 +2572,9 @@ router.get('/aging/search', async (req, res) => {
     const searchScope = intersectMasterScopes(await masterReadScopes(req.user), 'hd.EmpID', 'as');
     conditions.push(searchScope.sql);
     Object.assign(inputs, searchScope.inputs);
-    if (statuses.length) {
-      conditions.push(`CASE
-        WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
-        WHEN ext.IsLoaded = 1 THEN 'LOADED'
-        WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-        ELSE 'CONFIRMED'
-      END IN (${statuses.map(s => `'${s.replace(/'/g,"''"  )}'`).join(',')})`);
-    }
+    // A truck weighed out in Sale-App has left; it shows only when the "shipped" filter asks for it.
+    if (statuses.length) conditions.push(`${agingStatusSql} IN (${statuses.map(s => `'${s}'`).join(',')})`);
+    else conditions.push(`ext.WeighOutWeight IS NULL`);
     if (q) {
       conditions.push(`(hd.CustName LIKE @q OR hd.DocuNo LIKE @q OR CONVERT(NVARCHAR(50), dt.GoodID) LIKE @q OR dt.GoodName LIKE @q)`);
       inputs.q = { type: sql.NVarChar(200), value: `%${q}%` };
@@ -2572,79 +2582,22 @@ router.get('/aging/search', async (req, res) => {
     const where = conditions.join(' AND ');
 
     const countResult = await wq(`
-      WITH BaseCandidateSo AS (
-        SELECT 
-          hd.SOID,
-          hd.DocuNo,
-          ROW_NUMBER() OVER(PARTITION BY hd.DocuNo ORDER BY hd.DocuType DESC, hd.SOID DESC) as rn
-        FROM dbo.SOHD hd WITH (NOLOCK)
-        WHERE hd.DocuDate >= @dateFrom
-          AND hd.DocuDate >= @globalStartDate
-          AND hd.DocuType IN (103, 104)
-          AND ISNULL(hd.DocuStatus, '') <> 'C'
-          AND ISNULL(hd.clearflag, 'N') <> 'Y'
-          AND ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), '') <> N'ตั๋วคุม'
-      ),
-      CandidateSo AS (
-        SELECT SOID FROM BaseCandidateSo WHERE rn = 1
-      )
-      SELECT COUNT(DISTINCT hd.SOID) AS Total
-      FROM dbo.SOHD hd WITH (NOLOCK)
-      JOIN CandidateSo c ON c.SOID = hd.SOID
-      JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
-      LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
-        ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
-      WHERE ${where}
+      WITH ${agingItemsCte(where)}
+      SELECT COUNT(*) AS Total, COUNT(DISTINCT SoId) AS Bills, CAST(ISNULL(SUM(QtyTon), 0) AS DECIMAL(18,3)) AS Tons,
+             ISNULL(MAX(DaysOpen), 0) AS MaxDays
+      FROM OpenItems
     `, inputs);
-    const total = countResult.recordset[0]?.Total || 0;
+    const summary = countResult.recordset[0] || {};
+    const total = Number(summary.Total || 0);
 
     const dataResult = await wq(`
-      WITH BaseCandidateSo AS (
-        SELECT 
-          hd.SOID,
-          hd.DocuNo,
-          ROW_NUMBER() OVER(PARTITION BY hd.DocuNo ORDER BY hd.DocuType DESC, hd.SOID DESC) as rn
-        FROM dbo.SOHD hd WITH (NOLOCK)
-        WHERE hd.DocuDate >= @dateFrom
-          AND hd.DocuDate >= @globalStartDate
-          AND hd.DocuType IN (103, 104)
-          AND ISNULL(hd.DocuStatus, '') <> 'C'
-          AND ISNULL(hd.clearflag, 'N') <> 'Y'
-          AND ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), '') <> N'ตั๋วคุม'
-      ),
-      CandidateSo AS (
-        SELECT SOID FROM BaseCandidateSo WHERE rn = 1
-      ),
-      RawItems AS (
-        SELECT hd.CustName,
-               CAST(dt.GoodID AS VARCHAR(50)) AS GoodCode,
-               dt.GoodName,
-               SUM(CAST(ISNULL(dt.GoodQty2, 0) AS DECIMAL(12,3))) AS QtyTon,
-               DATEDIFF(DAY, CAST(hd.DocuDate AS DATETIME), GETDATE()) AS DaysOpen,
-               CASE
-                 WHEN ext.WeighOutWeight IS NOT NULL THEN 'SHIPPED'
-                 WHEN ext.IsLoaded = 1 THEN 'LOADED'
-                 WHEN hd.PkgStatus = 'Y' THEN 'PICKING'
-                 ELSE 'CONFIRMED'
-               END AS Status,
-               hd.DocuNo AS WfRef,
-               CAST(hd.SOID AS VARCHAR(50)) AS SoId,
-               CONVERT(VARCHAR(10), hd.DocuDate, 120) AS CreatedAt,
-               ISNULL(NULLIF(LTRIM(RTRIM(hd.TransRegistration)), ''), 'ไม่ระบุรถ') AS TruckPlate
-        FROM dbo.SOHD hd WITH (NOLOCK)
-        JOIN CandidateSo c ON c.SOID = hd.SOID
-        JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
-        LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
-          ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
-        WHERE ${where}
-        GROUP BY hd.CustName, dt.GoodID, dt.GoodName, hd.DocuDate, hd.PkgStatus,
-                 ext.IsLoaded, ext.WeighOutWeight, hd.DocuNo, hd.SOID, hd.TransRegistration
-      ),
+      WITH ${agingItemsCte(where)},
       NumberedItems AS (
         SELECT *, ROW_NUMBER() OVER (ORDER BY DaysOpen DESC, SoId DESC, GoodCode DESC) AS RowNum
-        FROM RawItems
+        FROM OpenItems
       )
-      SELECT CustName, GoodCode, GoodName, QtyTon, DaysOpen, Status, WfRef, SoId, CreatedAt, TruckPlate
+      SELECT CustName, GoodCode, GoodName, QtyTon, DaysOpen, Status, WfRef, SoId, CreatedAt,
+             ISNULL(TruckPlate, 'ไม่ระบุรถ') AS TruckPlate
       FROM NumberedItems
       WHERE RowNum > @offset AND RowNum <= (@offset + @pageSize)
       ORDER BY RowNum ASC
@@ -2656,7 +2609,8 @@ router.get('/aging/search', async (req, res) => {
       try { await require('../services/document-stage').attachAgingDocumentStages(agingRows, {query:wq,sql,dataWindow}); }
       catch (stageError) { console.warn('[aging-search] document stage unavailable:', stageError.code || '', stageError.message); }
     }
-    res.json({ total, page, pageSize, data: agingRows });
+    res.json({ total, page, pageSize, bills: Number(summary.Bills || 0), tons: Number(summary.Tons || 0),
+      maxDays: Number(summary.MaxDays || 0), data: agingRows });
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 

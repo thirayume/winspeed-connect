@@ -4,7 +4,7 @@ const h=require('./helpers/route-harness.cjs');
 let database='uat',stats=0,aging=0;
 const db=h.installDbStub(async({text})=>{
   if(text.includes('SELECT Status, COUNT(*) AS Cnt')) {stats++;await new Promise(r=>setTimeout(r,50));return [{Status:'DRAFT',Cnt:database==='uat'?3:7}];}
-  if(text.includes('WITH BaseCandidateSo')) {aging++;await new Promise(r=>setTimeout(r,50));return [{WfRef:database==='uat'?'fixture-uat':'fixture-prod'}];}
+  if(text.includes('TicketLeft AS (')) {aging++;await new Promise(r=>setTimeout(r,50));return [{WfRef:database==='uat'?'fixture-uat':'fixture-prod'}];}
   return [];
 },{activeUserIds:[1]});
 db.stub.getDbName=()=>database;

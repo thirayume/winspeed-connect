@@ -46,7 +46,7 @@ test('aging searches and exports apply cutoff even when requesting all dates', a
     const before = db.calls.length;
     const response = await app.call('GET', url, { user });
     assert.equal(response.status, 200, JSON.stringify(response.body));
-    const statements = db.calls.slice(before).filter(call => /WITH BaseCandidateSo/.test(call.text));
+    const statements = db.calls.slice(before).filter(call => /TicketLeft AS \(/.test(call.text));
     assert.equal(statements.length, url.includes('search') ? 2 : 1);
     for (const call of statements) {
       assert.match(call.text, /hd\.DocuDate >= @globalStartDate/);
@@ -64,7 +64,30 @@ test('aging cache changes key when administrator changes the cutoff', async () =
     const before = db.calls.length;
     const response = await app.call('GET', '/api/master/aging', { user });
     assert.equal(response.status, 200, JSON.stringify(response.body));
-    const call = db.calls.slice(before).find(item => /WITH BaseCandidateSo/.test(item.text));
+    const call = db.calls.slice(before).find(item => /TicketLeft AS \(/.test(item.text));
     assert.ok(call); assert.equal(call.inputs.globalStartDate, '2026-06-01');
   } finally { store.readGlobalDataWindow = original; }
+});
+
+test('aging counts a bill only while WinSpeed still has goods to ship (owner, 18 Nov 2026)', async () => {
+  const user = { sub: 12, role: 'ADMIN' };
+  const before = db.calls.length;
+  const response = await app.call('GET', '/api/master/aging/search?all=1&page=3&pageSize=100', { user });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  const statements = db.calls.slice(before).filter(call => /TicketLeft AS \(/.test(call.text));
+  assert.equal(statements.length, 2);
+  for (const { text } of statements) {
+    // A booking taken by a sales order, or whose truck the scale weighed out, is no longer waiting.
+    assert.match(text, /NOT \(hd\.DocuType = 103 AND RTRIM\(ISNULL\(hd\.DocuStatus, ''\)\) = 'Y'\)/);
+    assert.match(text, /FROM dbo\.WGHD wg WITH \(NOLOCK\)\s+WHERE wg\.SPID = hd\.SOID AND wg\.WGType = 'SO' AND RTRIM\(wg\.Status\) = '3'/);
+    // A sales order whose tickets are all used (cut, invoiced by 107, or returned) is closed.
+    assert.match(text, /\(hd\.DocuType <> 104 OR tb\.DocuID IS NULL OR tb\.RemaQty > 0\.00005\)/);
+    assert.match(text, /LEFT HASH JOIN TicketBill tb/);
+    // The truck plate plays no part, and the 103/104 counters overlap, so no de-duplication by number.
+    assert.doesNotMatch(text, /PARTITION BY hd\.DocuNo/);
+    assert.doesNotMatch(text, /TransRegistration\)\), ''\), 'ไม่ระบุรถ'\) <>/);
+  }
+  // Pages are cut in lines, so the total counts lines from the same set.
+  assert.match(statements[0].text, /SELECT COUNT\(\*\) AS Total, COUNT\(DISTINCT SoId\) AS Bills/);
+  assert.equal(db.calls.slice(before).find(call => /RowNum > @offset/.test(call.text)).inputs.offset, 200);
 });
