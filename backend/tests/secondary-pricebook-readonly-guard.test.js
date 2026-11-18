@@ -1,0 +1,36 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),h=require('./helpers/route-harness.cjs');
+let user={sub:1,role:'ADMIN',identityMapping:{}};
+const auth=require.resolve('../middleware/auth');require.cache[auth]={id:auth,filename:auth,loaded:true,exports:{requireAuth:(req,_res,next)=>{req.user=user;next();},requireRole:()=> (_req,_res,next)=>next(),requireCapability:()=> (_req,_res,next)=>next()}};
+let target='onprem',database='secondary',drift=false,schema=true,missing=false,unlinked=false,special=false,matched=false;
+const db=h.installDbStub(({text,inputs})=>{
+ if (/COL_LENGTH/.test(text)) return schema?[{HasPb:1,HasLine:1,HasSp:1,HasSpProc:1}]:[];
+ if (/FROM wf\.PriceBook\s+ORDER BY Id ASC/i.test(text)) return [{Id:5,Name:'x',Status:'ACTIVE',SourceSetPriceIds:'42',EffectiveFrom:'2026-01-01',EffectiveTo:'2026-12-31'}];
+ if (/FROM dbo\.EMSetPriceHD\s+WHERE SetPriceID IN/i.test(text)) return missing?[]:[{SetPriceID:42,BeginDate:'2026-01-01',EndDate:'2026-12-31'}];
+ if (/FROM dbo\.EMSetPriceHD hd JOIN dbo\.EMSetPriceDT/i.test(text)) return matched?[{SetPriceID:43,CustID:1,ListID:1,GoodPriceNet:90,BeginDate:'2026-01-01',EndDate:'2026-12-31'}]:[];
+ if (/FROM dbo\.EMSetPriceHD hd/i.test(text)) return unlinked?[{SetPriceID:43,LineCount:1}]:[];
+ if (/FROM dbo\.EMSetPriceDT dt/i.test(text)&&/IN \(42\)/.test(text)) return [{SetPriceID:42,ListNo:1,GoodId:'1',Price:100,GoodName:'Test'}];
+ if (/FROM wf\.PriceBookLine\s+WHERE PriceBookId = @id/i.test(text)) return [{Id:7,GoodId:'1',Price:drift?99:100,LineStatus:'ACTIVE',WinSpeedSetPriceId:42,WinSpeedListNo:1}];
+ if (/SELECT Id, Status, EffectiveMonth/.test(text)) return [{Id:5,Status:'ACTIVE',EffectiveMonth:'2026-01',EffectiveFrom:'2026-01-01',EffectiveTo:'2026-12-31'}];
+ if (/FROM wf\.PriceBook b/i.test(text)||/FROM wf\.PriceBook WHERE Id=@id/i.test(text)) return [{Id:5,Name:'x'}];
+ if (/FROM wf\.PriceBookSpecialPrice/i.test(text)) return special?[{Id:3,CustId:'1',GoodId:'1',ApprovedPrice:90,WinSpeedSetPriceId:43}]:[];
+ if (/FROM wf\.PriceBookLine l/i.test(text)) {const specialForCustomer=matched&&inputs.cust==='1';return [{GoodId:'1',StandardPrice:100,SpecialPrice:specialForCustomer?90:null,EffectivePrice:specialForCustomer?90:100}];}
+ if (/FROM wf\.v_PriceBookEffective/i.test(text)) return [{GoodId:'1',EffectivePrice:100}];return [];
+});
+db.stub.getTarget=()=>target;db.stub.getDbName=()=>database;const active=require.resolve('../services/active-database');require.cache[active]={id:active,filename:active,loaded:true,exports:{primaryDatabase:()=> 'primary'}};
+const cust=require.resolve('../services/secondary-customer-scope');require.cache[cust]={id:cust,filename:cust,loaded:true,exports:{secondaryCustomerVisible:async()=>true,customerVisible:async()=>true}};
+const sync=require('../services/pricebook-winspeed-sync');let isolation;const originalTx=db.stub.wfTransaction;db.stub.wfTransaction=async(fn,opts)=>{isolation=opts?.isolationLevel;return originalTx(fn)};
+let app;test.before(async()=>{app=await h.startApp([['/api/pricebook','../../routes/pricebook']]);});test.after(async()=>app.close());test.beforeEach(()=>{user={sub:1,role:'ADMIN',identityMapping:{}};target='onprem';database='secondary';drift=false;schema=true;missing=false;unlinked=false;special=false;matched=false;isolation=null;db.calls.length=0;});
+test('secondary list, detail and effective read current prices in serializable transaction without writes',async()=>{for(const path of ['/api/pricebook/','/api/pricebook/5','/api/pricebook/5/effective']){db.calls.length=0;const r=await app.call('GET',path);assert.equal(r.status,200,JSON.stringify(r.body));assert.equal(isolation,db.stub.sql.ISOLATION_LEVEL.SERIALIZABLE);assert.ok(db.calls.length>0);assert.ok(db.calls.every(c=>c.kind==='tx'&&/^\s*SELECT\b/i.test(c.text)&&! /\bNOLOCK\b/i.test(c.text)));}});
+test('secondary detects changed native price before any update',async()=>{drift=true;for(const path of ['/api/pricebook/','/api/pricebook/5','/api/pricebook/5/effective']){db.calls.length=0;const r=await app.call('GET',path);assert.equal(r.status,503,path);assert.equal(r.body.code,'SECONDARY_PRICE_RECONCILE_UNAVAILABLE');assert.ok(db.calls.every(c=>/^\s*SELECT\b/i.test(c.text)));}});
+test('new unlinked native price set makes list unavailable without writing',async()=>{unlinked=true;const r=await app.call('GET','/api/pricebook/');assert.equal(r.status,503);assert.ok(db.calls.every(c=>/^\s*SELECT\b/i.test(c.text)));});
+test('missing schema or native headers fails closed',async()=>{schema=false;let r=await app.call('GET','/api/pricebook/5');assert.equal(r.status,503);schema=true;missing=true;r=await app.call('GET','/api/pricebook/5');assert.equal(r.status,503);});
+test('missing native special fails closed before effective read',async()=>{special=true;const r=await app.call('GET','/api/pricebook/5/effective?custId=1');assert.equal(r.status,503);assert.ok(!db.calls.some(c=>/FROM wf\.PriceBookLine l/i.test(c.text)));});
+test('matching customer special is exposed only after verification in same read-only transaction',async()=>{special=true;matched=true;const r=await app.call('GET','/api/pricebook/5/effective?custId=1');assert.equal(r.status,200);assert.equal(r.body[0].EffectivePrice,90);assert.ok(db.calls.every(c=>c.kind==='tx' && /^\s*SELECT\b/i.test(c.text)));});
+test('mutating reconciliation refuses secondary before SQL',async()=>{await assert.rejects(sync.reconcileFromWinSpeed({force:true}),{code:'SECONDARY_PRICE_RECONCILE_UNAVAILABLE'});assert.equal(db.calls.length,0);});
+test('primary and local reconciliation retain existing behavior',async()=>{schema=false;database='primary';await sync.reconcileFromWinSpeed({force:true});assert.ok(db.calls.some(c=>/COL_LENGTH/.test(c.text)));db.calls.length=0;target='LOCAL';database='secondary';await sync.reconcileFromWinSpeed({force:true});assert.ok(db.calls.some(c=>/COL_LENGTH/.test(c.text)));});
+test('primary effective price without customer shows standard, never another customer special',async()=>{user={sub:1,role:'ADMIN'};database='primary';schema=false;matched=true;
+ let r=await app.call('GET','/api/pricebook/5/effective');assert.equal(r.status,200);assert.equal(r.body[0].EffectivePrice,100);assert.equal(r.body[0].SpecialPrice,null);
+ r=await app.call('GET','/api/pricebook/5/effective?custId=1');assert.equal(r.status,200);assert.equal(r.body[0].EffectivePrice,90);
+ r=await app.call('GET','/api/pricebook/5/effective?custId=2');assert.equal(r.status,200);assert.equal(r.body[0].EffectivePrice,100);
+});
