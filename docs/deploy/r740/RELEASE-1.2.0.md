@@ -1,4 +1,4 @@
-# Release 1.2.0 (18 November 2026)
+# Release 1.2.0 (20 November 2026)
 
 Previous release: 1.1.0 (`1f7dbea`, 9 November 2026). Migrations: 170 → 251 (246 and 250 are excluded in
 `backend/migration-policy.json`; 251 replaces 250). WinSpeed native writers stay off in Production.
@@ -31,10 +31,31 @@ Previous release: 1.1.0 (`1f7dbea`, 9 November 2026). Migrations: 170 → 251 (2
 Measured on the UAT copy of Production, R740 (SQL Server 2008 R2 Express):
 - Dashboard counts: 30 s timeout → 0.3 s (fresh plans for the heavy reads, answers served from the last value while one
   background read refreshes).
-- Lost paper copies: 30 s timeout → 1 s. Reconciliation: 4.5 s → under 1 s (two lookups joined by UNION instead of OR).
+- Lost paper copies: 30 s timeout → 1 s. Reconciliation: the invoice fallback uses two lookups joined by UNION
+  instead of OR (8.4 s → 0.4 s in isolation) and the WinSpeed side of the cases is shared for 60 s; the refresh button
+  reads it fresh. Paper Trail board: identical requests share one read for 5 s.
 - Database: AUTO_CLOSE / AUTO_SHRINK off, CHECKSUM on, SIMPLE recovery with a 2 GB log, nightly index and statistics
   maintenance at 02:00 (`sql/maintenance/`), four approved non-clustered indexes on WinSpeed tables (`IX_wf_*`).
-- Load test results: see the UAT load section of the private release acceptance record.
+
+### Load test on UAT (20 November 2026)
+
+Read workload from one ADMIN session (all-record scope, the heaviest), 20 endpoints weighted like daily use
+(sales list, dashboard, aging, trips, accounting, Paper Trail, reconciliation, master data), each virtual user
+waiting 1–3 s between requests, HTTP/2 through the public UAT hostname. Run during business hours on the SQL Server
+instance that Production shares, so the no-think-time stress stage was not run; PROD health stayed 0.1–0.6 s.
+
+| Stage | Reads | Errors | P50 | P95 | Max |
+|---|---:|---:|---:|---:|---:|
+| 10 users, 2 min | 501 | 0 | 128 ms | 1.3 s | 6.3 s |
+| 20 users, 2 min | 844 | 0 | 138 ms | 2.1 s | 21.5 s |
+| 30 users, 3 min (before the reconciliation fix) | 1,776 | 0 | 167 ms | 2.4 s | 26.1 s |
+| 30 users, 3 min (final, `743c31c`) | 1,793 | 0 | 257 ms | 1.6 s | 5.2 s |
+
+Final run per endpoint (P95): lost paper copies 3.8 s, sales list 2.3 s, Paper Trail board 1.5 s (was 5.0 s),
+aging 1.4 s, reconciliation no longer among the slowest (was 24 s), everything else under 1 s.
+SQL Server during the 30-user stage: no blocked request, longest wait 2 ms, SQL process CPU at most 62 % of the
+host (average 36 %), memory 1.6 GB (the Express cap). What limits further growth is the Express edition shared by
+UAT, PROD and the second company: see `sql/maintenance/README.md` (separate instance or Standard edition).
 
 ## Deploying 1.2.0
 
