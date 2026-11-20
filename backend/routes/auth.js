@@ -563,6 +563,10 @@ router.get('/me', requireAuth, async (req, res) => {
     client.roleCode=req.user.roleCode||user.Role;
     client.roleCodes=req.user.roleCodes; client.roles=req.user.roles;
     client.capabilities=require('../services/role-profiles').filteredCapabilities({...req.user,positionCode:user.PositionCode});
+    // Menus an ADMIN switched off (routes/menu-switches.js) are hidden here; ADMIN keeps them, listed as disabledMenus.
+    try {
+      client.capabilities = await require('./menu-switches').switches.apply(client.capabilities, hasRole(req.user, 'ADMIN'));
+    } catch (e) { console.warn('[auth/me] menu switches unavailable:', e.message); }
     res.json(client);
   } catch (e) {
     res.status(500).json({ message: 'Server error' });

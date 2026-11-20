@@ -11,15 +11,20 @@ import {
   FileSpreadsheet,
   CreditCard,
   RotateCcw,
+  ToggleLeft,
+  ClipboardCheck,
 } from 'lucide-react';
 import { SystemSettingsModal, type TabKey } from './SystemSettingsModal';
 import { AdminReportTemplateModal } from './AdminReportTemplateModal';
 import { GlobalDataWindowSetting } from './GlobalDataWindowSetting';
 import { ResetRebateSetting } from './ResetRebateSetting';
 import { useFeature } from '../../utils/capabilities';
+import { MenuSwitchesSetting } from './MenuSwitchesSetting';
+import { ReadinessSignoffModal } from './ReadinessSignoffModal';
+import { useAuthStore } from '../../store/auth-store';
 import { confirmLeaveEditors } from '../../utils/unsaved-changes';
 
-export type SettingsTabKey = TabKey | 'reports' | 'data-window' | 'rebate-reset';
+export type SettingsTabKey = TabKey | 'reports' | 'data-window' | 'rebate-reset' | 'menus' | 'signoff';
 
 const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
   { key: 'pickup', name: 'กำหนดรับสินค้า', Icon: Calendar },
@@ -33,6 +38,8 @@ const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
   { key: 'rebate-reset', name: 'เริ่มยอด Rebate ใหม่', Icon: RotateCcw },
   { key: 'history', name: 'ประวัติ Version', Icon: History },
   { key: 'reports', name: 'แม่แบบ & หัวกระดาษรายงาน', Icon: FileSpreadsheet },
+  { key: 'menus', name: 'เปิด/ปิดเมนูและรายงาน', Icon: ToggleLeft },
+  { key: 'signoff', name: 'ผลตรวจรับงาน', Icon: ClipboardCheck },
 ];
 
 export function AppSettingsPage() {
@@ -41,7 +48,10 @@ export function AppSettingsPage() {
   // UAT feedback 18 Nov 2026 (picture 6): show "start Rebate again" only while the Rebate Pool switch is on.
   // The tab stays in the code: the owner's Rebate reset on Production still needs it.
   const rebatePoolOn = useFeature()('rebate-pool-103');
-  const tabs = TABS.filter(t => t.key !== 'rebate-reset' || rebatePoolOn);
+  // Owner, 20 Nov 2026: menu switches are ADMIN only; the acceptance record is back for the v2.0.0 hand-over.
+  const authUser = useAuthStore(s => s.user);
+  const isAdmin = authUser?.role === 'ADMIN' || Boolean(authUser?.roles?.includes('ADMIN'));
+  const tabs = TABS.filter(t => (t.key !== 'rebate-reset' || rebatePoolOn) && (t.key !== 'menus' || isAdmin));
   const shownTab: SettingsTabKey = tabs.some(t => t.key === activeTab) ? activeTab : 'pickup';
 
   return (
@@ -98,13 +108,13 @@ export function AppSettingsPage() {
           role="tabpanel"
           id="tabpanel-policy"
           aria-labelledby={'tab-' + shownTab}
-          hidden={shownTab === 'reports' || shownTab === 'data-window' || shownTab === 'rebate-reset'}
+          hidden={['reports', 'data-window', 'rebate-reset', 'menus', 'signoff'].includes(shownTab)}
           className="w-full"
         >
           <SystemSettingsModal
             isOpen={true}
             embedded={true}
-            activeTab={shownTab === 'reports' || shownTab === 'data-window' || shownTab === 'rebate-reset' ? 'pickup' : (shownTab as TabKey)}
+            activeTab={['reports', 'data-window', 'rebate-reset', 'menus', 'signoff'].includes(shownTab) ? 'pickup' : (shownTab as TabKey)}
             onRevisionLoaded={setRevision}
             onClose={() => {}}
           />
@@ -112,6 +122,8 @@ export function AppSettingsPage() {
 
         {shownTab === 'data-window' && <div role="tabpanel" id="tabpanel-data-window" aria-labelledby="tab-data-window"><GlobalDataWindowSetting /></div>}
         {shownTab === 'rebate-reset' && <div role="tabpanel" id="tabpanel-rebate-reset" aria-labelledby="tab-rebate-reset"><ResetRebateSetting /></div>}
+        {shownTab === 'menus' && <div role="tabpanel" id="tabpanel-menus" aria-labelledby="tab-menus"><MenuSwitchesSetting /></div>}
+        {shownTab === 'signoff' && <div role="tabpanel" id="tabpanel-signoff" aria-labelledby="tab-signoff"><ReadinessSignoffModal embedded onClose={() => {}} /></div>}
 
         {/* Reports Template & Header Management Tab */}
         <div

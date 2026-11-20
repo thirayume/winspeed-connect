@@ -341,6 +341,8 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
     if (n.key === 'master' && !hasMasterGeneral && hasPricingOrCost) {
       return { label: 'ต้นทุน & ราคาขาย', sub: 'Pricelist · Costlist · WinSpeed' };
     }
+    // ADMIN still sees a menu switched off in App Settings, marked so it is not mistaken for a live one
+    if (user?.capabilities?.disabledMenus?.includes(n.key)) return { label: n.label, sub: 'ปิดอยู่สำหรับผู้ใช้อื่น' };
     return { label: n.label, sub: n.sub };
   };
   const current = ALL_NAV.find(n => n.key === activePortal);
