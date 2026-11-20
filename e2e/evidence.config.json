@@ -19,7 +19,6 @@
     "db-init/e2e-seed.sql",
     "db-init/e2e-cleanup.sql",
     "docker-compose.yml",
-    "deploy.ps1",
     "DEPLOY.md",
     "backend/.env.coolify.example"
   ],

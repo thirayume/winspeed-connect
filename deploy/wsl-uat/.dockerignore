@@ -1,5 +1,0 @@
-*
-!Dockerfile.caddy
-!Dockerfile.caddy-edge
-!Caddyfile.uat
-!Caddyfile.r740-edge
