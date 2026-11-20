@@ -1,11 +1,11 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **18 November 2026 (ICT)**. This page records observed results;
+Operational snapshot: **21 November 2026 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
-See [deployment guide](README.md), [release 1.2.0](RELEASE-1.2.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
+See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
-**Running release: 1.2.0 on UAT and Production (migrations through 251 on `dbwins_worldfert9`, `dbwins_worldfert9_uat`
+**Running release: 2.0.0 on UAT and Production (migrations through 253 on `dbwins_worldfert9`, `dbwins_worldfert9_uat`
 and `dbwins_worldfert2`). Production runs in mixed mode: quotations, bills, trips, 103, stock, reports and prints in
 Sale-App; AI, 104, 116 and 107 in WinSpeed. All native writers stay off; Rebate reset admin is off.**
 Older paragraphs below are history.

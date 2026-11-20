@@ -6,8 +6,8 @@ Docker engine and Docker Desktop on that server are not used.
 
 > **Current status for all agents (Claude · Codex · Antigravity):**
 > [GO-LIVE-STATUS.md](GO-LIVE-STATUS.md) — what is live vs pending, and the constraints to respect
-> when working on deploy or the databases. Runbook refreshed 2026-11-18 (release 1.2.0, migrations through 251 on UAT,
-> PROD and `dbwins_worldfert2`; see [RELEASE-1.2.0.md](RELEASE-1.2.0.md)). Database care: [sql/maintenance](sql/maintenance/README.md).
+> when working on deploy or the databases. Runbook refreshed 2026-11-21 (release 2.0.0, migrations through 253 on UAT,
+> PROD and `dbwins_worldfert2`; see [RELEASE-2.0.0.md](RELEASE-2.0.0.md)). Database care: [sql/maintenance](sql/maintenance/README.md).
 
 | | UAT | PROD |
 |---|---|---|
