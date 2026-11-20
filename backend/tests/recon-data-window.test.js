@@ -19,7 +19,7 @@ test('reconciliation cases, summary and mismatches use the shared business-date 
   const user = { sub: 12, role: 'ACCOUNTING' };
   for (const [path, predicate] of [
     ['/api/recon/cases?days=400', /hd\.DocuDate >= @globalStartDate/],
-    ['/api/recon/summary?days=400', /hd\.DocuDate >= @globalStartDate/],
+    ['/api/recon/summary?days=400&fresh=1', /hd\.DocuDate >= @globalStartDate/],
     ['/api/recon/account-mismatches?days=400', /h\.DocuDate >= @globalStartDate/],
   ]) {
     const before = db.calls.length;
@@ -63,4 +63,18 @@ test('historical linked invoice is hidden while posted and GL states remain corr
     assert.equal(summary.body.postedInvoice, 1);
     assert.equal(summary.body.glVerified, 1);
   } finally { historicalInvoiceFixture = false; }
+});
+
+test('the WinSpeed side of the cases is shared for a minute; fresh=1 reads it again; resolutions stay live', async () => {
+  const user = { sub: 12, role: 'ACCOUNTING' };
+  const count = re => db.calls.filter(call => re.test(call.text)).length;
+  const so = /SELECT TOP 500 CAST\(hd\.SOID/, res = /FROM wf\.ReconResolution/;
+  await app.call('GET', '/api/recon/summary?days=31&fresh=1', { user });
+  const [so0, res0] = [count(so), count(res)];
+  await app.call('GET', '/api/recon/summary?days=31', { user });
+  await app.call('GET', '/api/recon/cases?days=31', { user });
+  assert.equal(count(so), so0, 'served from the shared minute');
+  assert.equal(count(res), res0 + 2, 'resolutions read on every request');
+  await app.call('GET', '/api/recon/cases?days=31&fresh=1', { user });
+  assert.equal(count(so), so0 + 1);
 });

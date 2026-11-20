@@ -73,8 +73,25 @@ async function lookupInvoices(rows) {
   return map;
 }
 
-async function buildCases(days) {
+// 20 Nov 2026 load test (30 users on UAT): every open of the Reconciliation screen rebuilt the case list, and the
+// invoice fallback scans dbo.SOInvHD (no index on SONo / RefSOID, about 3 s), so concurrent opens queued up to 26 s.
+// The WinSpeed side of the cases is now shared for 60 s (answered from the last value for up to 5 min while one
+// background read refreshes). Resolutions made in Sale-App are still read fresh on every request.
+const { createReadCache } = require('../services/read-cache');
+const reconCache = createReadCache(16);
+const RECON_CACHE_TTL_MS = 60 * 1000;
+const RECON_CACHE_STALE_MS = 5 * 60 * 1000;
+
+async function buildCases(days, { fresh = false } = {}) {
   const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
+  const db = require('../db');
+  const cacheKey = JSON.stringify([db.getTarget(), db.getDbName(), Number(days) || 7, dataWindow.businessDate]);
+  const { rows, tsMap, tsAvailable } = await reconCache.get(cacheKey, () => loadWinSpeedSide(days, dataWindow),
+    { ttl: RECON_CACHE_TTL_MS, staleMs: RECON_CACHE_STALE_MS, force: fresh });
+  return casesFrom(rows, tsMap, tsAvailable);
+}
+
+async function loadWinSpeedSide(days, dataWindow) {
   // 1) shipped SO — อ่าน dbo.SOHD ตรง ไม่ผ่าน wf.v_AllSalesOrders
   //    (view filter บน Status/CreatedAt ที่เป็น computed column -> full scan -> timeout)
   const rows = (await wfQuery(`
@@ -168,7 +185,11 @@ async function buildCases(days) {
     tsAvailable = false;
   }
 
-  // resolutions
+  return { rows, tsMap, tsAvailable };
+}
+
+async function casesFrom(rows, tsMap, tsAvailable) {
+  // resolutions (always fresh)
   const resRows = (await wfQuery(`SELECT SoId, CheckType, Status, Note FROM wf.ReconResolution`)).recordset || [];
   const resMap = {};
   for (const r of resRows) resMap[`${r.SoId}|${r.CheckType}`] = { status: r.Status, note: r.Note };
@@ -298,7 +319,7 @@ router.get('/active-books', requireRole(...RECON_BOOK_ROLES), async (req, res) =
 // that have the Reconciliation menu (owner rule O-4: everyone else sees their own records only).
 router.get('/summary', requireRole(...RECON_BOOK_ROLES), async (req, res) => {
   try {
-    const cases = await buildCases(req.query.days);
+    const cases = await buildCases(req.query.days, { fresh: req.query.fresh === '1' });
     const summary = {
       total: cases.length,
       ok: cases.filter(c => c.overall === 'OK').length,
@@ -319,7 +340,7 @@ router.get('/summary', requireRole(...RECON_BOOK_ROLES), async (req, res) => {
 // GET /api/recon/cases?days=&status=
 router.get('/cases', requireRole(...RECON_BOOK_ROLES), async (req, res) => {
   try {
-    let cases = await buildCases(req.query.days);
+    let cases = await buildCases(req.query.days, { fresh: req.query.fresh === '1' });
     if (req.query.status) cases = cases.filter(c => c.overall === req.query.status);
     res.json(cases);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }

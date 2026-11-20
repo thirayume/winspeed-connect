@@ -208,10 +208,10 @@ export function ReconciliationPage() {
     }
   }
 
-  const load = useCallback(async (d = days, f = filter) => {
+  const load = useCallback(async (d = days, f = filter, fresh = false) => {
     setLoading(true);
     try {
-      const [s, c] = await Promise.all([fetchReconSummary(d), fetchReconCases(d, f || undefined)]);
+      const [s, c] = await Promise.all([fetchReconSummary(d, fresh), fetchReconCases(d, f || undefined, fresh)]);
       setSummary(s);
       setCases(Array.isArray(c) ? c : []);
     } catch (e) { console.error(e); setCases([]); }
@@ -266,7 +266,7 @@ export function ReconciliationPage() {
             className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C447C] flex-1 sm:flex-none">
             <option value={7}>7 วันล่าสุด</option><option value={14}>14 วัน</option><option value={30}>30 วัน</option><option value={60}>60 วัน</option>
           </select>
-          <button onClick={() => load(days, filter)} className="h-10 w-10 shrink-0 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
+          <button onClick={() => load(days, filter, true)} title="อ่านข้อมูลล่าสุดจาก WinSpeed" className="h-10 w-10 shrink-0 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
             <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
           </button>
         </div>

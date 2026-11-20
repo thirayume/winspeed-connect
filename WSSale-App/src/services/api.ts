@@ -1473,10 +1473,11 @@ export interface ReconSummary {
   readyForPostInvoice: number;
   postedInvoice: number;
 }
-export const fetchReconSummary = (days = 7) =>
-  req<ReconSummary>(`/recon/summary?days=${days}`, { silent: true });
-export const fetchReconCases = (days = 7, status?: string) =>
-  req<ReconCase[]>(`/recon/cases?days=${days}${status ? `&status=${status}` : ''}`);
+// fresh: read WinSpeed again instead of the list shared for a minute (the refresh button).
+export const fetchReconSummary = (days = 7, fresh = false) =>
+  req<ReconSummary>(`/recon/summary?days=${days}${fresh ? '&fresh=1' : ''}`, { silent: true });
+export const fetchReconCases = (days = 7, status?: string, fresh = false) =>
+  req<ReconCase[]>(`/recon/cases?days=${days}${status ? `&status=${status}` : ''}${fresh ? '&fresh=1' : ''}`);
 export const resolveReconCase = (
   soId: string,
   body: { checkType: ReconCheck; action: 'RESOLVE' | 'IGNORE'; note?: string; wfRef?: string | null },
