@@ -17,7 +17,8 @@ let app;
 test.before(async () => { app = await h.startApp([['/api/so', '../../routes/so']]); });
 test.after(async () => { await app.close(); });
 test('native AI permits the approved roles and preserves actual/effective actor context', async () => {
-  for (const role of ['SALES','COUNTER_SALES','MANAGER','C_LEVEL','ADMIN']) {
+  // Owner, 20 Nov 2026: booking approval belongs to the desk, accounting and management, not to SALES.
+  for (const role of ['COUNTER_SALES','ACCOUNTING','MANAGER','C_LEVEL','ADMIN']) {
     const user = { sub: 11, role, actorSub: 99, actorRole: 'ADMIN' };
     assert.equal((await app.call('GET','/api/so/501/native-ai/preview',{user})).status,200);
     assert.equal(calls.at(-1).preview,true);
@@ -26,8 +27,8 @@ test('native AI permits the approved roles and preserves actual/effective actor 
     assert.equal(calls.at(-1).fingerprint,'test'); assert.equal(calls.at(-1).soid,'501');
   }
 });
-test('ACCOUNTING and operational roles gain no AI permission from the separate credit policy', async () => {
-  for (const role of ['ACCOUNTING','WAREHOUSE','WEIGHBRIDGE','APPROVER']) {
+test('SALES and operational roles gain no AI permission', async () => {
+  for (const role of ['SALES','WAREHOUSE','WEIGHBRIDGE','APPROVER']) {
     const before=calls.length;
     for (const method of ['GET','POST']) {
       const path='/api/so/501/native-ai'+(method==='GET'?'/preview':'');

@@ -18,6 +18,10 @@ const INCIDENT_TYPES = Object.freeze({
   INVOICE_BOOK_MISMATCH: { label: 'เล่มใบส่งของ (107) ไม่ตรงสายใบสั่งขาย (104)', severity: 'WARN' },
   // Owner, 17 November 2026: an expired fertilizer ticket may still be used, but each use is recorded here.
   TICKET_USED_EXPIRED: { label: 'ใช้ตั๋วปุ๋ยที่หมดอายุแล้ว', severity: 'WARN' },
+  // Owner, 20 Nov 2026: a cut after the 104's ShipDate is allowed but recorded (NATIVE_116_SHIPDATE_POLICY = 1).
+  TICKET_CUT_AFTER_SHIPDATE: { label: 'ตัดตั๋ว 116 หลังวันส่งของของใบสั่งขาย', severity: 'WARN' },
+  // Owner, 20 Nov 2026: accounting deletes a wrong 107 and posts it again; Sale-App follows and records it.
+  INVOICE_107_REPLACED: { label: 'ใบส่งของ (107) ถูกลบใน WinSpeed และออกใหม่', severity: 'INFO' },
 });
 
 const INSERT_INCIDENT_SQL = `

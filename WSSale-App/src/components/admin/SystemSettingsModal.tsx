@@ -67,6 +67,7 @@ export function SystemSettingsModal({
   const [pickupLeadTimeDays, setPickupLeadTimeDays] = useState<string>('1');
 
   const [ticketAlertDays, setTicketAlertDays] = useState<string>('7');
+  const [shipDatePolicy, setShipDatePolicy] = useState<string>('1');
 
   const [customerRatio, setCustomerRatio] = useState<string>('100');
   const [companyRatio, setCompanyRatio] = useState<string>('0');
@@ -144,6 +145,7 @@ export function SystemSettingsModal({
             setPickupLeadTimeDays(String(raw.PICKUP_LEAD_TIME_DAYS ?? set.PICKUP_LEAD_TIME_DAYS ?? '1'));
 
             setTicketAlertDays(String(raw.CONTROL_TICKET_ALERT_DAYS ?? set.CONTROL_TICKET_ALERT_DAYS ?? '7'));
+            setShipDatePolicy(String(raw.NATIVE_116_SHIPDATE_POLICY ?? set.NATIVE_116_SHIPDATE_POLICY ?? '1'));
 
             setCustomerRatio(String(raw.CUSTOMER_RATIO ?? set.CUSTOMER_RATIO ?? '100'));
             setCompanyRatio(String(raw.COMPANY_RATIO ?? set.COMPANY_RATIO ?? '0'));
@@ -283,6 +285,7 @@ export function SystemSettingsModal({
         PICKUP_STRICT_MODE: pickupStrictMode ? 'true' : 'false',
         PICKUP_LEAD_TIME_DAYS: leadTime,
         CONTROL_TICKET_ALERT_DAYS: alertDays,
+        NATIVE_116_SHIPDATE_POLICY: parseStrictInt(shipDatePolicy, 1),
         CUSTOMER_RATIO: cRatio,
         COMPANY_RATIO: wRatio,
         TRIP_CAPACITY_TON: parseStrictFloat(tripCapacityTon, 50),
@@ -608,6 +611,17 @@ export function SystemSettingsModal({
                   <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl">
                     <div className="font-bold text-gray-800">ตั๋วที่หมดอายุแล้ว</div>
                     <div className="text-[11px] text-gray-500">อายุมาตรฐาน 90 วันนับจากวันที่ใบสั่งขาย (ถ้าไม่กำหนดวันบนตั๋ว) · หมดอายุแล้วยังใช้ได้ แต่แจ้งเตือนและบันทึกเป็นเหตุการณ์ผิดปกติ (นโยบาย 17/11/2569)</div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="ship-date-policy" className="block font-bold text-gray-700 mb-1">ตัดตั๋ว 116 หลังวันส่งของ (ShipDate) ของใบสั่งขาย</label>
+                    <select id="ship-date-policy" value={shipDatePolicy} onChange={e => setShipDatePolicy(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none">
+                      <option value="0">ไม่ตรวจ</option>
+                      <option value="1">ให้ตัดได้ แต่เตือนและบันทึกเหตุการณ์ผิดกฎ (แนะนำ)</option>
+                      <option value="2">ไม่ให้ตัด</option>
+                    </select>
+                    <p className="text-[11px] text-gray-500 mt-1">ฝ่ายบัญชียืนยันว่าไม่มีกำหนดวันขน รถมารับหลังวันส่งของเป็นเรื่องปกติ (20/11/2569)</p>
                   </div>
                 </div>
               )}

@@ -70,7 +70,8 @@ const ACTIONS = Object.freeze({
   'so.verify': ['COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'so.confirm': ['SALES', 'COUNTER_SALES', 'C_LEVEL', 'ADMIN'],
   'so.control-ticket': ['COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
-  'so.approve-native': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  // Owner, 20 Nov 2026: booking approval moves from SALES to the desk, accounting and management roles.
+  'so.approve-native': ['COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'so.create-native-delivery': ['SALES', 'COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'credit.approve-native': ['ACCOUNTING'],
   'coupon.manual116': ['WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],

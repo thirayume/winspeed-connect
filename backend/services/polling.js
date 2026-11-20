@@ -7,6 +7,9 @@ let running = false;
 const INTERVAL_MS = 5000;
 const PRICEBOOK_SYNC_INTERVAL_MS = 15000;
 let lastPriceBookSyncAt = 0;
+// Owner, 20 Nov 2026: follow a 107 deleted and posted again in WinSpeed (services/invoice-107-followup.js), hourly.
+const INVOICE_FOLLOW_INTERVAL_MS = 60 * 60 * 1000;
+let lastInvoiceFollowAt = 0;
 
 // State to track last seen IDs or timestamps
 let state = {
@@ -96,10 +99,22 @@ async function checkPriceBookAutoSync() {
   }
 }
 
+async function checkInvoiceFollowup() {
+  const now = Date.now();
+  if (now - lastInvoiceFollowAt < INVOICE_FOLLOW_INTERVAL_MS) return;
+  lastInvoiceFollowAt = now;
+  try {
+    const res = await require('./invoice-107-followup').followInvoices();
+    if (res.changed.length) console.log(`[Polling] 107 follow-up: ${res.changed.length} ticket cut(s) now follow WinSpeed's invoice`);
+  } catch (err) {
+    console.warn('[poll] checkInvoiceFollowup failed:', err.message);
+  }
+}
+
 async function pollOnce() {
   if (running) return;
   running = true;
-  try { await Promise.all([checkControlTickets(), checkAgingOrders(), checkPriceBookAutoSync()]); }
+  try { await Promise.all([checkControlTickets(), checkAgingOrders(), checkPriceBookAutoSync(), checkInvoiceFollowup()]); }
   finally { running = false; }
 }
 

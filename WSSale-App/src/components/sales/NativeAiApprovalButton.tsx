@@ -11,6 +11,8 @@ const messages: Record<string, string> = {
   AI_PREVIEW_STALE: 'ข้อมูลเปลี่ยนระหว่างตรวจสอบ กรุณาปิดแล้วเปิดรายการใหม่',
   AI_APPROVER_EMPLOYEE_REQUIRED: 'บัญชีผู้อนุมัติต้องผูกกับพนักงาน WinSpeed ก่อน',
   AI_APPROVER_INVALID: 'ไม่พบพนักงานหรือสิทธิ์ผู้อนุมัติที่ใช้งานได้',
+  AI_APPROVER_NOT_LISTED: 'พนักงานของคุณยังไม่อยู่ในรายชื่อผู้อนุมัติเอกสาร WinSpeed กรุณาให้ ADMIN เปิดสิทธิ์ในข้อมูลหลัก',
+  AI_SELF_APPROVAL: 'อนุมัติบิลที่คุณเป็นผู้ขายเองไม่ได้ กรุณาให้ผู้อนุมัติคนอื่นอนุมัติ',
   AI_CONTRACT_UNSUPPORTED: 'ใบนี้มีเงื่อนไขที่ยังไม่รองรับการอนุมัติ AI ผ่านแอป',
   AI_BOOKING_UNAVAILABLE: 'สถานะหรืออายุ booking ไม่พร้อมให้อนุมัติ',
   AI_ALREADY_APPROVED: 'ใบนี้อนุมัติแล้ว กรุณาโหลดรายการใหม่',

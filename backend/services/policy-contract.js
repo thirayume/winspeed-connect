@@ -45,6 +45,14 @@ const POLICY_DEFINITIONS = Object.freeze(Object.assign(Object.create(null), {
     default: 1,
     description: 'จำนวนวันล่วงหน้าขั้นต่ำสำหรับการนัดหมายรถเข้ารับสินค้า (วัน)',
   },
+  NATIVE_116_SHIPDATE_POLICY: {
+    policyName: 'TICKET_EXPIRY_POLICY',
+    type: 'INT',
+    min: 0,
+    max: 2,
+    default: 1,
+    description: 'ตัดตั๋ว 116 หลังวันส่งของของใบสั่งขาย: 0 ไม่ตรวจ, 1 เตือนและบันทึกเหตุการณ์ผิดกฎ, 2 ไม่ให้ตัด (20 พ.ย. 2569)',
+  },
   CONTROL_TICKET_ALERT_DAYS: {
     policyName: 'TICKET_EXPIRY_POLICY',
     type: 'INT',

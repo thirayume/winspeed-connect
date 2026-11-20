@@ -89,6 +89,12 @@ async function initialBookingAi({ soid, user, fingerprint, requestId, preview = 
       WHERE h.SOID=@soid AND h.DocuType=103`, idInput(Number(soid)))).recordset?.[0];
     const scope = await getVisibleScope(user, query);
     if (!row || !inScope(scope, { userId: row.SalesUserId, empId: row.EmpID })) fail('AI_BOOKING_NOT_FOUND', 404);
+    // Owner, 20 Nov 2026: approving needs the role (so.approve-native), the WinSpeed approver list kept by ADMIN
+    // (wf.NativeApproverEmployee) and the org-chart scope checked above; nobody approves a bill they sell.
+    const listed = (await query('SELECT IsEnabled FROM wf.NativeApproverEmployee WHERE EmpID=@emp',
+      { emp: { type: sql.Int, value: who.empId } })).recordset?.[0];
+    if (!listed || !(listed.IsEnabled === true || listed.IsEnabled === 1)) fail('AI_APPROVER_NOT_LISTED', 403);
+    if (Number(row.EmpID) === who.empId || (row.SalesUserId != null && Number(row.SalesUserId) === who.effective)) fail('AI_SELF_APPROVAL', 403);
     const old = (await query('SELECT * FROM wf.NativeBookingApproval WITH (UPDLOCK,HOLDLOCK) WHERE SOID=@soid', idInput(Number(soid)))).recordset?.[0];
     if (old) {
       if (preview) fail('AI_ALREADY_APPROVED');

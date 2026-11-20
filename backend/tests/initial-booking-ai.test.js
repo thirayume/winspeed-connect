@@ -5,13 +5,14 @@ const h = require('./helpers/route-harness.cjs');
 h.installDbStub(() => []);
 const { initialBookingAi, nativeFingerprint, captureBookingOrigin, aiHttpError, POLICY, assertInitialAiShipmentReady } = require('../services/initial-booking-ai');
 const { capabilitiesFor } = require('../services/role-capabilities');
-const user = { sub: 11, role: 'SALES', actorSub: 99, actorRole: 'ADMIN' };
+// A team MANAGER (EmpID 202, position MGR-N) approves a bill sold by a team member (user 12, EmpID 101).
+const user = { sub: 11, role: 'MANAGER', actorSub: 99, actorRole: 'ADMIN' };
 const requestId = '11111111-2222-4333-8444-555555555555';
 function fixture(overrides = {}) {
   const calls = [], events = [];
   const state = { currentXml: '<source>exact-decimal=1.0000</source>', origin: true, receipt: null, procCalls: 0,
-    head: { SOID: 501, DocuNo: 'TEST', EmpID: 101, SalesUserId: 11, AppvFlag: 'W' },
-    accounts: [{ Id: 11, Role: 'SALES', IsActive: true, MustChangePassword: false, EmpId: '101' },
+    head: { SOID: 501, DocuNo: 'TEST', EmpID: 101, SalesUserId: 12, AppvFlag: 'W' }, approverListed: true,
+    accounts: [{ Id: 11, Role: 'MANAGER', IsActive: true, MustChangePassword: false, EmpId: '202' },
       { Id: 99, Role: 'ADMIN', IsActive: true, MustChangePassword: false, EmpId: null }], ...overrides };
   const query = async (text, inputs = {}) => {
     calls.push({ text, inputs });
@@ -20,7 +21,9 @@ function fixture(overrides = {}) {
     if (/SELECT Id,Role,IsActive/.test(text)) return rows(state.accounts);
     if (/sp_getapplock/.test(text)) return rows([{ LockResult: state.lockResult ?? 0 }]);
     if (/SELECT h.SOID/.test(text)) return rows(state.head ? [state.head] : []);
-    if (/SELECT Id, EmpId, PositionCode/.test(text)) return rows([{ Id: 11, EmpId: '101', PositionCode: null }]);
+    if (/SELECT Id, EmpId, PositionCode/.test(text)) return rows([{ Id: 11, EmpId: '202', PositionCode: 'MGR-N' }]);
+    if (/WITH tree AS/.test(text)) return rows([{ Id: 11, EmpId: '202' }, { Id: 12, EmpId: '101' }]);
+    if (/FROM wf.NativeApproverEmployee/.test(text)) return rows(state.approverListed ? [{ IsEnabled: 1 }] : []);
     if (/SELECT \* FROM wf.NativeBookingApproval/.test(text)) return rows(state.receipt ? [state.receipt] : []);
     if (/SELECT \* FROM wf.NativeBookingOrigin/.test(text)) return rows(state.origin ? [{ Fingerprint: state.originHash, PolicyVersion: POLICY, ConfirmedActorId: 99 }] : []);
     if (/FOR XML RAW/.test(text)) return rows([{ Snapshot: state.currentXml }]);
@@ -31,7 +34,7 @@ function fixture(overrides = {}) {
       if (state.procError) throw new Error(state.procError);
       if (inputs.preview.value) return rows([{ Eligible: 1 }]);
       state.receipt = { SOID: 501, RequestId: requestId, Fingerprint: state.originHash, ApprovalNo: 'AI69-00001',
-        ApproverId: 11, ApproverActorId: 99, ApproverEmpId: 101, SelfApproval: true, PolicyVersion: POLICY };
+        ApproverId: 11, ApproverActorId: 99, ApproverEmpId: 202, SelfApproval: true, PolicyVersion: POLICY };
       return rows([state.receipt]);
     }
     throw new Error('Unrecognized fixture query');
@@ -70,11 +73,11 @@ test('first approval and same-request replay produce only one native write', asy
   const command = { soid: 501, user, requestId, fingerprint: f.state.originHash };
   const first = await initialBookingAi(command, f.options);
   assert.equal(first.replayed, false); assert.equal(first.approvalNo, 'AI69-00001');
-  Object.assign(f.state.head, { AppvFlag: 'Y', AppvDocuNo: first.approvalNo, Appvid: 101 });
+  Object.assign(f.state.head, { AppvFlag: 'Y', AppvDocuNo: first.approvalNo, Appvid: 202 });
   assert.equal((await initialBookingAi(command, f.options)).replayed, true);
   assert.equal(f.state.procCalls, 1);
   for (const changed of [{ requestId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' }, { fingerprint: 'f'.repeat(64) },
-    { user: { ...user, actorSub: 11, actorRole: 'SALES' } }]) {
+    { user: { ...user, actorSub: 11, actorRole: 'MANAGER' } }]) {
     await assert.rejects(initialBookingAi({ ...command, ...changed }, f.options), { code: 'AI_REQUEST_CONFLICT' });
   }
   assert.equal(f.state.procCalls, 1);
@@ -87,7 +90,7 @@ test('a native edit after commit invalidates receipt replay rather than silently
   assert.equal(f.state.procCalls, 1);
 });
 test('foreign scoped booking is concealed even when the actual actor is ADMIN', async () => {
-  const f = fixture({ head: { SOID: 501, EmpID: 102, SalesUserId: 12 } }); await f.ready();
+  const f = fixture({ head: { SOID: 501, EmpID: 103, SalesUserId: 13 } }); await f.ready();
   await assert.rejects(initialBookingAi({ soid: 501, user, preview: true }, f.options), { code: 'AI_BOOKING_NOT_FOUND', status: 404 });
   assert.equal(f.state.procCalls, 0); assert.ok(!f.calls.some(c => /NativeBookingOrigin/.test(c.text)));
 });
@@ -171,4 +174,19 @@ test('unverifiable shipment readiness fails closed and suppresses the database d
   for (const query of [async()=>{throw new Error('private database diagnostic');},async()=>({recordset:[]})]) {
     await assert.rejects(assertInitialAiShipmentReady(501,query),{code:'AI_READINESS_UNAVAILABLE',status:503});
   }
+});
+
+test('the approver must be on the WinSpeed approver list and never the seller of the bill', async () => {
+  for (const [change, code] of [
+    [s => { s.approverListed = false; }, 'AI_APPROVER_NOT_LISTED'],
+    [s => { s.head.EmpID = 202; }, 'AI_SELF_APPROVAL'],
+    [s => { s.head.SalesUserId = 11; }, 'AI_SELF_APPROVAL'],
+  ]) {
+    const f = fixture(); await f.ready(); change(f.state);
+    await assert.rejects(initialBookingAi({ soid: 501, user, preview: true }, f.options), { code, status: 403 });
+    assert.equal(f.state.procCalls, 0);
+  }
+  const forbidden = fixture(); await forbidden.ready();
+  await assert.rejects(initialBookingAi({ soid: 501, user: { ...user, role: 'SALES' }, preview: true }, forbidden.options),
+    { code: 'AI_ROLE_CHANGED' });
 });
