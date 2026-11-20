@@ -7,13 +7,13 @@ test("user editor preserves multiple roles and saves the full selection with a s
   const row = page
     .getByText("@fixture-1", { exact: true })
     .locator("xpath=ancestor::tr");
-  await row.getByTitle("แก้ไข", { exact: true }).click();
+  await row.getByTitle("แก้ไขข้อมูลผู้ใช้", { exact: true }).click();
   const d = page.getByRole("dialog", { name: "แก้ไขผู้ใช้งาน" });
   await expect(
-    d.getByLabel("เปิดใช้งาน (Active)", { exact: false }),
+    d.getByLabel("เปิดใช้งานบัญชี (Active)", { exact: true }),
   ).toBeChecked();
   await expect(d.locator('input[name="password"]')).toHaveCount(0);
-  await d.getByLabel("ชื่อที่แสดง", { exact: true }).fill("ชื่อแก้ไข");
+  await d.getByLabel("ชื่อที่แสดง (Display Name)", { exact: true }).fill("ชื่อแก้ไข");
   await d.getByRole("tab", { name: "บทบาท (2)", exact: true }).click();
   await expect(
     d.getByRole("checkbox", { name: "SALES (SALES)", exact: true }),
@@ -30,7 +30,7 @@ test("user editor preserves multiple roles and saves the full selection with a s
   await d.getByRole("tab", { name: "ข้อมูลติดต่อ", exact: true }).click();
   await d.getByLabel("เบอร์โทร", { exact: true }).fill("0000000000");
   await d.getByRole("tab", { name: "บัญชีผู้ใช้", exact: true }).click();
-  await expect(d.getByLabel("ชื่อที่แสดง", { exact: true })).toHaveValue(
+  await expect(d.getByLabel("ชื่อที่แสดง (Display Name)", { exact: true })).toHaveValue(
     "ชื่อแก้ไข",
   );
   const request = page.waitForRequest(
@@ -49,14 +49,14 @@ test("user editor preserves multiple roles and saves the full selection with a s
 test("new user can select multiple roles and contact details before a single save on mobile", async ({
   page,
 }) => {
-  await page.getByTitle("เพิ่มผู้ใช้งาน", { exact: true }).click();
+  await page.getByRole("button", { name: "เพิ่มผู้ใช้", exact: true }).click();
   const d = page.getByRole("dialog", { name: "เพิ่มผู้ใช้งานใหม่" });
   await d
     .getByLabel("Username (ใช้ Login)", { exact: true })
     .fill("fixture-create");
-  await d.getByLabel("ชื่อที่แสดง", { exact: true }).fill("บัญชีทดสอบ");
+  await d.getByLabel("ชื่อที่แสดง (Display Name)", { exact: true }).fill("บัญชีทดสอบ");
   await d
-    .getByLabel("รหัสผ่านชั่วคราว", { exact: false })
+    .getByLabel("รหัสผ่านเริ่มต้น", { exact: false })
     .fill(randomBytes(24).toString("base64url"));
   await d.getByRole("tab", { name: "บทบาท (1)", exact: true }).click();
   await d
@@ -197,9 +197,9 @@ test("active default, inactive opt-in and five-user batch preserves exact select
   await expect(
     page.getByRole("button", { name: "ผลตรวจรับงาน", exact: true }),
   ).toHaveCount(0);
-  await page.getByLabel("แสดง Active + Inactive").check();
+  await page.getByLabel("รวมผู้ปิดใช้งาน", { exact: true }).check();
   await expect(page.getByText("@fixture-6", { exact: true })).toBeVisible();
-  await page.getByLabel("แสดง Active + Inactive").uncheck();
+  await page.getByLabel("รวมผู้ปิดใช้งาน", { exact: true }).uncheck();
   for (let i = 1; i <= 5; i++)
     await page.getByLabel(`เลือก fixture-${i}`, { exact: true }).check();
   await page
@@ -210,14 +210,14 @@ test("active default, inactive opt-in and five-user batch preserves exact select
   await expect(
     dialog.getByRole("button", { name: "ยืนยันดำเนินการ" }),
   ).toBeDisabled();
-  await dialog.getByLabel("ตรวจรายชื่อและยืนยันคำสั่งนี้แล้ว").check();
+  await dialog.getByLabel("ตรวจรายชื่อผู้ใช้ 5 คนและยืนยันคำสั่งนี้แล้ว", { exact: true }).check();
   const request = page.waitForRequest((r) => r.url().endsWith("/users/batch"));
   await dialog.getByRole("button", { name: "ยืนยันดำเนินการ" }).click();
   expect((await request).postDataJSON()).toMatchObject({
     ids: [2, 3, 4, 5, 6],
     action: "clear-line",
   });
-  await expect(dialog.getByRole("status")).toHaveText("สำเร็จ 5 คน");
+  await expect(dialog.getByRole("status")).toHaveText("✓ ดำเนินการสำเร็จ 5 คน");
   await dialog.getByRole("button", { name: "ปิดผลลัพธ์" }).click();
   await page.screenshot({
     path: "test-results/admin-management/users-desktop.png",
@@ -228,7 +228,7 @@ test("create ADMIN-based role with fully editable permissions", async ({
   page,
 }) => {
   await page.getByRole("button", { name: "roles", exact: true }).click();
-  await page.getByRole("button", { name: "เพิ่ม Role", exact: true }).click();
+  await page.getByRole("button", { name: "สร้างบทบาทใหม่", exact: true }).click();
   await page.getByLabel("รหัส Role", { exact: true }).fill("SALES");
   await expect(
     page.getByRole("button", { name: "บันทึก Role", exact: true }),
@@ -250,24 +250,24 @@ test("create ADMIN-based role with fully editable permissions", async ({
     permissions: ["so.create"],
   });
   await expect(page.getByRole("status")).toContainText("บันทึก Role แล้ว");
-  await page.getByRole("button", { name: "เพิ่ม Role", exact: true }).click();
+  await page.getByRole("button", { name: "สร้างบทบาทใหม่", exact: true }).click();
   await page.screenshot({
     path: "test-results/admin-management/roles-desktop.png",
   });
 });
 
-test("App Settings keeps readiness input on tab changes and fits mobile", async ({
+// The readiness sign-off tab left App Settings after UAT feedback (17 Nov 2026, picture 7).
+test("App Settings switches tabs without the retired readiness tab and fits mobile", async ({
   page,
 }) => {
   await page.getByRole("button", { name: "settings", exact: true }).click();
-  await page.getByRole("tab", { name: "ผลตรวจรับงาน", exact: true }).click();
-  const reviewer = page.getByLabel("ผู้รับรอง", { exact: true });
-  await reviewer.fill("ผู้ทดสอบ");
-  await page
-    .getByRole("tab", { name: "ตั้งค่านโยบายระบบ", exact: true })
-    .click();
-  await page.getByRole("tab", { name: "ผลตรวจรับงาน", exact: true }).click();
-  await expect(reviewer).toHaveValue("ผู้ทดสอบ");
+  const tabs = page.getByRole("tablist", { name: "หัวข้อการตั้งค่า" });
+  await expect(tabs.getByRole("tab", { name: "กำหนดรับสินค้า" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "ผลตรวจรับงาน" })).toHaveCount(0);
+  await tabs.getByRole("tab", { name: "ประวัติ Version" }).click();
+  await expect(tabs.getByRole("tab", { name: "ประวัติ Version" })).toHaveAttribute("aria-selected", "true");
+  await tabs.getByRole("tab", { name: "กำหนดรับสินค้า" }).click();
+  await expect(tabs.getByRole("tab", { name: "กำหนดรับสินค้า" })).toHaveAttribute("aria-selected", "true");
   await page.screenshot({
     path: "test-results/admin-management/settings-desktop.png",
   });
@@ -281,7 +281,7 @@ test("App Settings keeps readiness input on tab changes and fits mobile", async 
     ),
   ).toBe(true);
   await page.getByRole("button", { name: "users", exact: true }).click();
-  await expect(page.getByLabel("แสดง Active + Inactive")).toBeVisible();
+  await expect(page.getByLabel("รวมผู้ปิดใช้งาน", { exact: true })).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -304,7 +304,7 @@ test("five selected users can receive a union of roles without replacing existin
   await expect(d.getByLabel("รูปแบบเปลี่ยน Role")).toHaveValue("add");
   await d.getByRole("checkbox", { name: "ADMIN (ADMIN)", exact: true }).check();
   await d.getByRole("checkbox", { name: "SALES (SALES)", exact: true }).check();
-  await d.getByLabel("ตรวจรายชื่อและยืนยันคำสั่งนี้แล้ว").check();
+  await d.getByLabel("ตรวจรายชื่อผู้ใช้ 5 คนและยืนยันคำสั่งนี้แล้ว", { exact: true }).check();
   const request = page.waitForRequest((r) => r.url().endsWith("/users/batch"));
   await d.getByRole("button", { name: "ยืนยันดำเนินการ" }).click();
   expect((await request).postDataJSON()).toMatchObject({
@@ -346,7 +346,7 @@ test("new user can choose a role when the former SALES default was deleted", asy
   await page.route("**/api/admin-management/roles", (route) =>
     route.fulfill({ json: { roles: roles.filter((r) => r.Code !== "SALES") } }),
   );
-  await page.getByTitle("เพิ่มผู้ใช้งาน", { exact: true }).click();
+  await page.getByRole("button", { name: "เพิ่มผู้ใช้", exact: true }).click();
   const d = page.getByRole("dialog", { name: "เพิ่มผู้ใช้งานใหม่" });
   await d.getByRole("tab", { name: "บทบาท (0)", exact: true }).click();
   await expect(

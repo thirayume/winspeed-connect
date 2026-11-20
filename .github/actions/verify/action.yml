@@ -64,6 +64,14 @@ runs:
       shell: bash
       run: npx playwright test --config e2e/playwright.giveaway-date-review.config.ts
 
+    - name: Users, roles and App Settings browser regressions
+      shell: bash
+      run: npx playwright test --config e2e/playwright.admin-management.config.ts
+
+    - name: Trip setup browser regressions
+      shell: bash
+      run: npx playwright test --config e2e/playwright.trip-regression.config.ts
+
     - name: Batch files are ASCII only
       shell: bash
       run: |
