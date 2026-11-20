@@ -557,15 +557,12 @@ router.get('/databases', requireAuth, async (req, res) => {
     ]);
     const active = getDbName() || system;
 
-    const uRoles = userRoles(req.user);
-    const isAdmin = uRoles.includes('ADMIN');
-
     // Build rich metadata for all candidate databases
     const metaList = rawList.map(dbName => {
       const theme = activeDb.resolveTheme(dbName, themes);
       const restrictedRoles = Array.isArray(theme.restrictedRoles) ? theme.restrictedRoles : [];
       const isRestricted = restrictedRoles.length > 0;
-      const isAllowed = !isRestricted || isAdmin || uRoles.some(r => restrictedRoles.includes(r));
+      const isAllowed = activeDb.canAccessDatabase(dbName, req.user, themes);
       return {
         name: dbName,
         color: theme.color || 'blue',

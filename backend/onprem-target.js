@@ -23,6 +23,8 @@ const PRODUCTION_DB = 'dbwins_worldfert9';
 const TARGET_KINDS = ['uat', 'production'];
 // Only WINSpeed databases may ever be selected, by name shape, whatever the allowlist says.
 const SWITCHABLE_NAME = /^dbwins_worldfert[0-9A-Za-z._-]*$/;
+// Freeze runtime profiles at process start. Saving/testing drafts never changes a live pool.
+const connectionStore = require('./services/database-connection-store');
 
 /** the databases this environment may connect to: the primary plus ONPREM_SWITCHABLE_DATABASES
  *  (a comma list, or "*" for every dbwins_worldfert* database the login can open at runtime). */
@@ -98,7 +100,7 @@ function onpremTuple(env = process.env, operation = 'runtime', overrideDb = null
     if (!isSwitchableDb(wanted, env)) throw new Error(`SECURITY_ERROR: database "${wanted}" is not in this environment's switchable allowlist`);
     database = wanted;
   }
-  return {
+  const tuple = {
     targetKind,
     server: String(env.ONPREM_DB_SERVER).trim(),
     port,
@@ -112,6 +114,18 @@ function onpremTuple(env = process.env, operation = 'runtime', overrideDb = null
     legacyTls: String(env.ONPREM_DB_LEGACY_TLS || '').toLowerCase() === 'true',
     tdsVersion: String(env.ONPREM_DB_TDS_VERSION || '7_3_B').trim(),
   };
+  if (!migrator) {
+    const profiles = connectionStore.activeProfiles(env);
+    const entry = Object.entries(profiles).find(([key]) => key.toLowerCase() === database.toLowerCase())?.[1];
+    if (entry) {
+      const v = entry.value;
+      require('./services/database-connections').approved(database,v,env,{activation:true});
+      return { ...tuple, server:v.server,port:v.port,instance:null,database:v.database,
+        login:v.username,password:v.password,expectedServerName:v.expectedServerName,
+        versionPrefix:v.versionPrefix,encrypt:v.encrypt,legacyTls:v.legacyTls,tdsVersion:v.tdsVersion };
+    }
+  }
+  return tuple;
 }
 
 /** mssql pool config: tedious on Linux (Docker), ODBC Driver 17 on Windows (testing from a workstation over VPN) */

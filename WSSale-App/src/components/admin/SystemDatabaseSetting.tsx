@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { DatabaseConnectionsSetting } from './DatabaseConnectionsSetting';
 import { Database, Save, Palette, Lock, CheckCircle2, AlertCircle, ShieldAlert } from 'lucide-react';
 import {
   getDatabases,
@@ -153,6 +154,7 @@ export function SystemDatabaseSetting() {
 
   return (
     <div className="space-y-4">
+      <DatabaseConnectionsSetting />
       {/* Top Card: System Default Database */}
       <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4">
         <div className="flex items-center gap-2 mb-1 text-sm font-bold text-[#0C447C]">
@@ -267,10 +269,10 @@ export function SystemDatabaseSetting() {
                     </td>
 
                     <td className="py-3 px-3">
-                      {isRd ? (
+                      {(current.restrictedRoles?.length || 0) > 0 ? (
                         <div className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
                           <Lock size={12} className="text-amber-600" />
-                          <span>สงวนสิทธิ์เฉพาะทีม Accounting, C_Level, ADMIN</span>
+                          <span>สงวนสิทธิ์เฉพาะทีม {[...new Set([...(current.restrictedRoles || []), 'ADMIN'])].join(', ')}</span>
                         </div>
                       ) : (
                         <span className="text-[11px] text-gray-600">
@@ -322,12 +324,12 @@ export function SystemDatabaseSetting() {
                         style={{ borderStyle: 'solid' }}>
                         <span className={`inline-flex items-center gap-1.5 ${previewStyle.pill} px-2.5 py-1 rounded-lg border`}>
                           <Database size={13} className={previewStyle.text} />
-                          <span>{name}</span>
                           {current.badge && (
                             <span className={`rounded px-1.5 py-0.2 text-[9px] font-extrabold uppercase border ${previewStyle.badge}`}>
                               {current.badge}
                             </span>
                           )}
+                          <span>{name}</span>
                         </span>
                       </div>
                     </td>
@@ -351,14 +353,12 @@ export function SystemDatabaseSetting() {
             (สามารถมอบหมายหรือเพิกถอนสิทธิ์รายบทบาทได้ที่เมนู <em>ผู้ใช้งานและสิทธิ์ &gt; บทบาท</em>)
           </li>
           <li>
-            <strong>ผู้ใช้ทั่วไป (ไม่มีสิทธิ์):</strong> จะเห็นแถบชื่อฐานข้อมูลเป็นโหมดอ่านอย่างเดียว (Read-only พร้อมไอคอนล็อก)
-            เพื่อทราบสถานะสภาพแวดล้อมที่ตนกำลังปฏิบัติงานอยู่โดยไม่สามารถสลับได้
+            <strong>ผู้ใช้ที่ไม่มีสิทธิ์สลับฐาน:</strong> เห็นชื่อฐานและป้ายกำกับพร้อมไอคอนล็อก แต่สลับฐานไม่ได้
+            ไอคอนล็อกนี้ไม่ได้หมายความว่าข้อมูลธุรกิจอ่านได้อย่างเดียว สิทธิ์สร้าง/แก้ไขเอกสารตรวจตาม Role แยกกัน
           </li>
           <li>
-            <strong>การล็อกความปลอดภัยระดับ API:</strong> ฐานข้อมูล{' '}
-            <code className="bg-amber-100/80 px-1 py-0.2 rounded font-mono font-bold">dbwins_worldfert2</code> (PROD_DB_RD)
-            ถูกจำกัดการเข้าถึงอย่างเข้มงวด อนุญาตเฉพาะทีมบัญชี (Accounting), ผู้บริหาร (C_Level) และผู้ดูแลระบบ (ADMIN)
-            แม้บทบาทอื่นจะมีสิทธิ์สลับฐานทั่วไปก็จะไม่สามารถเลือกหรือสลับเข้าใช้งานฐานข้อมูลนี้ได้
+            <strong>สิทธิ์รายฐานเป็นอีกชั้น:</strong> ต้องมี database.switch และมี Role ที่ฐานนั้นอนุญาตตามตารางข้างต้น (ADMIN เข้าได้)
+            ระบบตรวจที่ API ทุกคำขอและตรวจทั้งผู้ใช้จริงกับผู้ที่ถูก Access As ส่วน database.set-system ใช้เปลี่ยนฐานเริ่มต้น ไม่ใช่การอนุญาตเข้าฐานทุกแห่ง
           </li>
         </ul>
       </div>

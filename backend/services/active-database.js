@@ -188,7 +188,9 @@ async function listSwitchableDatabases(env = process.env) {
   } catch {
     names = [];
   }
-  const allowed = names.filter(n => isSwitchableDb(n, env));
+  // Remote profiles cannot be discovered through sys.databases on the primary server.
+  names.push(...Object.keys(require('./database-connection-store').activeProfiles(env)));
+  const allowed = [...new Set(names)].filter(n => isSwitchableDb(n, env));
   if (!wildcard) {
     // Keep only the explicitly listed names, in the allowlist's order, that are reachable.
     const ordered = switchableDatabases(env).list.filter(n => allowed.some(a => a.toLowerCase() === n.toLowerCase()));
@@ -272,15 +274,21 @@ async function setDatabaseThemes(themes, env = process.env) {
   return getDatabaseThemes(env);
 }
 
-function canAccessDatabase(name, user, themes) {
+function canAccessDatabase(name, user, themes, env = process.env) {
   const { userRoles } = require('./role-capabilities');
   const roles = userRoles(user);
-  const restricted = resolveTheme(name, themes).restrictedRoles || [];
-  if (!restricted.length) return true;
-  const allowed = roles.includes('ADMIN') || roles.some(r => restricted.includes(r));
-  if (!allowed) return false;
-  if (user?.isImpersonating) return (user.actorRoles || []).some(r => r === 'ADMIN' || restricted.includes(r));
-  return true;
+  const profile = Object.entries(require('./database-connection-store').activeProfiles(env))
+    .find(([key]) => key.toLowerCase() === String(name).toLowerCase())?.[1];
+  // A logical alias cannot bypass restrictions on its physical database.
+  const names = [...new Set([name, profile?.value?.database].filter(Boolean))];
+  return names.every(database => {
+    const restricted = resolveTheme(database, themes).restrictedRoles || [];
+    if (!restricted.length) return true;
+    const allowed = roles.includes('ADMIN') || roles.some(r => restricted.includes(r));
+    if (!allowed) return false;
+    if (user?.isImpersonating) return (user.actorRoles || []).some(r => r === 'ADMIN' || restricted.includes(r));
+    return true;
+  });
 }
 
 function clearCache() {

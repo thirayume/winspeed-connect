@@ -187,3 +187,7 @@ docs/deploy/r740/host/*
 !docs/deploy/r740/host/Refresh-UAT.ps1
 !docs/deploy/r740/host/Initialize-R740UatIsolated.ps1
 !docs/deploy/onprem/sql/local-uat2-principals.sql
+
+# Host-local database connection secrets must never enter Git.
+*.connections.enc
+*.connection-key.bin

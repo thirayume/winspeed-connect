@@ -162,6 +162,20 @@ export type DatabaseInfo = {
   canSetSystem: boolean;
 };
 export const getDatabases = () => req<DatabaseInfo>('/auth/databases', { silent: true });
+export type DatabaseConnectionProfile = {
+  server:string; port:number; database:string; username:string; expectedServerName:string;
+  versionPrefix:string; encrypt:boolean; legacyTls:boolean; tdsVersion:string; passwordSet?:boolean;
+};
+export type DatabaseConnectionItem = {
+  name:string; revision:number; draft:DatabaseConnectionProfile; active:DatabaseConnectionProfile|null;
+  activeRevision:number|null; testedAt:string|null;
+};
+export type DatabaseConnectionsInfo = {configured:boolean; profiles:DatabaseConnectionItem[]; audit:{at:string;action:string;name:string;revision:number;actor:string}[]};
+export const getDatabaseConnections=()=>req<DatabaseConnectionsInfo>('/database-connections',{silent:true});
+export const saveDatabaseConnection=(name:string,profile:DatabaseConnectionProfile & {password:string},revision:number)=>
+  req<{revision:number}>(`/database-connections/${encodeURIComponent(name)}`,{method:'PUT',body:JSON.stringify({profile,revision}),silent:true});
+export const testDatabaseConnection=(name:string,revision:number)=>
+  req<{revision:number;testedAt:string}>(`/database-connections/${encodeURIComponent(name)}/test`,{method:'POST',body:JSON.stringify({revision}),silent:true,timeoutMs:25000});
 export const switchDatabase = (database: string) =>
   req<{ accessToken: string; database: string; isDefault: boolean }>('/auth/switch-database', {
     method: 'POST', body: JSON.stringify({ database }),
