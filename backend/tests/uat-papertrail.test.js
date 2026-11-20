@@ -151,7 +151,7 @@ test('board attaches stages only after the existing scoped, cutoff-filtered boar
   boardStageFixture=true;
   try {
     const before=db.calls.length;
-    const r=await app.call('GET','/api/papertrail/board',{user:{sub:12,role:'ACCOUNTING'}});
+    const r=await app.call('GET','/api/papertrail/board?fresh=1',{user:{sub:12,role:'ACCOUNTING'}});
     assert.equal(r.status,200);
     assert.equal(r.body.board.CONFIRMED[0].docStage.code,'BOOKING_WAITING_APPROVAL');
     assert.equal(r.body.board.DRAFT[0].docStage.code,'DRAFT');
@@ -178,4 +178,15 @@ test('print: the existing-set check runs under a per-bill lock inside the transa
   assert.equal(calls[lock].kind, 'tx');
   assert.equal(calls[check].kind, 'tx');
   assert.equal(calls[lock].inputs.res, 'PaperSet_900_ISSUE');
+});
+
+test('identical board requests share one read for a few seconds; fresh=1 reads again', async () => {
+  const user = { sub: 12, role: 'ACCOUNTING' };
+  const reads = () => db.calls.filter(c => /WITH Orders AS/.test(c.text)).length;
+  await app.call('GET', '/api/papertrail/board?fresh=1', { user });
+  const after = reads();
+  assert.equal((await app.call('GET', '/api/papertrail/board', { user })).status, 200);
+  assert.equal(reads(), after, 'second identical request is served from the shared read');
+  await app.call('GET', '/api/papertrail/board?fresh=1', { user });
+  assert.equal(reads(), after + 1);
 });

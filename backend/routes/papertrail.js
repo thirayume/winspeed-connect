@@ -14,6 +14,9 @@ const { legacyCutoffInput, legacyCutoffSql } = require('../services/legacy-cutof
 const { readGlobalDataWindow } = require('../services/global-data-window-store');
 const { nativeDedupSql } = require('../services/native-status');
 const { broadcast } = require('../services/socket');
+const { createReadCache } = require('../services/read-cache');
+const boardCache = createReadCache(64);
+const BOARD_SHARE_MS = 5000;
 const { approvalIdentity, bothHaveRole } = require('../services/approval-identity');
 const { businessIds, actorPerspective } = require('../services/business-identity');
 
@@ -89,6 +92,11 @@ router.get('/board', async (req, res) => {
     // R12 O-4: SALES/MANAGER see their own + team bills; operational roles and ADMIN/C_LEVEL/ACCOUNTING see all
     const sf = paperScopeFilter(await paperScopes(req.user), { userCol: 'SalesUserId', empCol: 'OwnerEmpId' }, 'pt');
     const dataWindow = await readGlobalDataWindow();
+    // 20 Nov 2026 load test: at 30 users the board's P95 was 5 s, and every open board reloads at once when a bill
+    // changes (socket event). Identical requests (same database, scope and start date) now share one read for 5 s.
+    const db = require('../db');
+    const boardKey = JSON.stringify([db.getTarget(), db.getDbName(), sf.sql, sf.inputs, dataWindow.businessDate]);
+    const payload = await boardCache.get(boardKey, async () => {
     const r = await wfQuery(`
       WITH Orders AS (
         SELECT
@@ -258,7 +266,9 @@ router.get('/board', async (req, res) => {
     const board = {};
     for (const st of STAGES) board[st] = [];
     for (const card of cards) (board[card.status] ||= []).push(card);
-    res.json({ stages: STAGES, board });
+    return { stages: STAGES, board };
+    }, { ttl: BOARD_SHARE_MS, force: req.query.fresh === '1' });
+    res.json(payload);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });
 
