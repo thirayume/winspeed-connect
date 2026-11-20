@@ -7,6 +7,18 @@ const os = require('os');
 const path = require('path');
 const { sha256, splitBatches, validateMigrationPolicy, classifyMigration, buildPlan } = require('./run_migrations');
 
+// The runner refuses a policy that excludes a file the folder does not have, so a temporary
+// migrations folder needs a placeholder for every file the real policy excludes (e.g. 246, 250).
+const writeExcludedPlaceholders = directory => {
+  const policy = JSON.parse(fs.readFileSync(path.join(__dirname, 'migration-policy.json'), 'utf8'));
+  const names = new Set(policy.excludedFiles);
+  for (const profile of Object.values(policy.targetProfiles || {})) for (const f of profile.excludedFiles || []) names.add(f);
+  for (const f of names) {
+    const file = path.join(directory, f);
+    if (!fs.existsSync(file)) fs.writeFileSync(file, '-- excluded by migration-policy.json\n', 'utf8');
+  }
+};
+
 const basePolicy = () => ({
   schemaVersion: 1,
   checksumPolicy: 'immutable-after-apply',
@@ -181,6 +193,7 @@ test('runner propagates WfRefSeq bootstrap failure, preserves committed migratio
     fs.writeFileSync(path.join(directory, '000_logins.sql'), '-- login exclusion\n', 'utf8');
     fs.writeFileSync(path.join(directory, '001_initial.sql'), 'SELECT 1;', 'utf8');
     fs.writeFileSync(path.join(directory, '074_fix_winspeed_legacy_raiserror.sql'), '-- raiserror exclusion\n', 'utf8');
+    writeExcludedPlaceholders(directory);
     const pool = createRunnerMockPool();
     const runnerOptions = {
       migrationsDir: directory,
@@ -218,6 +231,7 @@ test('runner propagates QuoteRefSeq bootstrap failure, preserves committed migra
     fs.writeFileSync(path.join(directory, '000_logins.sql'), '-- login exclusion\n', 'utf8');
     fs.writeFileSync(path.join(directory, '001_initial.sql'), 'SELECT 1;', 'utf8');
     fs.writeFileSync(path.join(directory, '074_fix_winspeed_legacy_raiserror.sql'), '-- raiserror exclusion\n', 'utf8');
+    writeExcludedPlaceholders(directory);
     const pool = createRunnerMockPool();
     const runnerOptions = {
       migrationsDir: directory,
@@ -254,6 +268,7 @@ test('runner --plan is strictly read-only: no transactions, no ledger writes, no
     fs.writeFileSync(path.join(directory, '000_logins.sql'), '-- login exclusion\n', 'utf8');
     fs.writeFileSync(path.join(directory, '001_initial.sql'), 'SELECT 1;', 'utf8');
     fs.writeFileSync(path.join(directory, '074_fix_winspeed_legacy_raiserror.sql'), '-- raiserror exclusion\n', 'utf8');
+    writeExcludedPlaceholders(directory);
     const pool = createRunnerMockPool();
     let bootstrapCalled = false;
     const runnerOptions = {

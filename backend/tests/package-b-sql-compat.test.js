@@ -113,7 +113,7 @@ test('Package B (Offline): Profile resolution parity — local_uat and local_reh
       const content = fs.readFileSync(path.join(migrationsDir, f), 'utf8');
       const res = resolveEffectiveMigration(f, content, profile, policy);
 
-      if (f === '000_logins.sql' || f === '074_fix_winspeed_legacy_raiserror.sql') {
+      if (policy.excludedFiles.includes(f) || f === '074_fix_winspeed_legacy_raiserror.sql') {
         assert.equal(res.status, 'EXCLUDED', `${f} must be excluded on ${profile}`);
         excludedCount++;
       } else if (policy.dialectOverrides[f] && (!policy.dialectOverrides[f].targetServerNames ||
@@ -127,7 +127,8 @@ test('Package B (Offline): Profile resolution parity — local_uat and local_reh
     }
 
     assert.equal(overrideCount, 47, `Profile ${profile} must have 47 overrides`);
-    assert.equal(excludedCount, 2, `Profile ${profile} must exclude exactly 2 files (000 and 074)`);
+    // 074 on SQL 2008 profiles, plus the files migration-policy.json retires everywhere (000, and applied ones replaced later).
+    assert.equal(excludedCount, policy.excludedFiles.length + 1, `Profile ${profile} must exclude 074 and the policy's excluded files`);
   }
 });
 
@@ -142,8 +143,8 @@ test('Package B (Offline): remote_b profile strictly executes standard migration
     const content = fs.readFileSync(path.join(migrationsDir, f), 'utf8');
     const res = resolveEffectiveMigration(f, content, 'remote_b', policy);
 
-    if (f === '000_logins.sql') {
-      assert.equal(res.status, 'EXCLUDED');
+    if (policy.excludedFiles.includes(f)) {
+      assert.equal(res.status, 'EXCLUDED', `${f} is excluded by migration-policy.json`);
     } else {
       assert.equal(res.status, 'STANDARD', `remote_b must use STANDARD migration for ${f}`);
       standardCount++;
@@ -152,7 +153,7 @@ test('Package B (Offline): remote_b profile strictly executes standard migration
   }
 
   assert.equal(overrideCount, 0, 'remote_b must never use dialect overrides');
-  assert.equal(standardCount, files.length - 1, 'remote_b must resolve all standard migrations without overrides');
+  assert.equal(standardCount, files.length - policy.excludedFiles.length, 'remote_b must resolve all standard migrations without overrides');
 });
 
 test('Package B (Offline): D3 dbo index blocks are omitted in 002, 013, 044 while wf objects are preserved', () => {
