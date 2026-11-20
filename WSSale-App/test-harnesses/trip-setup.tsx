@@ -4,6 +4,9 @@ import {useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {TripSummaryModal} from '../src/components/sales/TripSummaryModal';
 import {TripSetupModal} from '../src/components/sales/TripSetupModal';
+import {useAuthStore} from '../src/store/auth-store';
+// Development-only fixture entry: a signed-in sales user, since confirming a trip needs so.confirm.
+useAuthStore.setState({isAuthenticated:true,user:{id:2,username:'fixture-sales',displayName:'พนักงานทดสอบ',role:'SALES',isActive:true,capabilities:{menus:['sales'],actions:['so.create','so.edit','so.confirm','trip.view']}}} as any);
 function Harness(){
  const [open,setOpen]=useState(false),[tick,setTick]=useState(0),[result,setResult]=useState('');
  return <><button onClick={()=>setOpen(true)}>Open editor</button><button onClick={()=>setTick(tick+1)}>Parent rerender</button><output>{result}</output><span data-testid="tick">{tick}</span>

@@ -9,7 +9,7 @@ test('edit keeps state across parent renders, updates existing trip and resets o
   }
   throw Error('Unexpected API call: '+request.method()+' '+request.url());
  });
- await page.goto('http://localhost:5173/test-harnesses/trip-setup.html');
+ await page.goto('/test-harnesses/trip-setup.html');
  await page.getByText('Open editor',{exact:true}).click();
  const plate=page.getByPlaceholder('เช่น กจ70-4088 (เว้นว่างได้สำหรับ Draft Trip)');
  await expect(plate).toHaveValue('');await plate.fill('UAT-42');
@@ -30,11 +30,13 @@ test('summary uses independent load-plan revision and trip-owned metadata',async
  if(url.endsWith('/loading-plan'))return route.fulfill({json:{trip:{loadPlanRevision:3,loadPlanStatus:'DRAFT'},plan:[]}});
  if(url.endsWith('/trips/42')&&r.method()==='GET')return route.fulfill({json:{tripId:42,transRegistration:'SERVER-42',documentRevision:7,tripRemark:'TRIP-ONLY',preSlingRequired:true,pickupDueDate:'2026-10-08',orders:[]}});
  if(url.includes('/master/trucks-stats'))return route.fulfill({json:[]});
+ if(url.includes('/master/system-settings'))return route.fulfill({json:{raw:{},settings:{}}});
+ if(url.includes('/master/goods'))return route.fulfill({json:[]});
  if(r.method()==='PUT'&&url.endsWith('/load-plan')){writes.push(r.postDataJSON());return route.fulfill({json:{loadPlanRevision:4,loadPlanStatus:'SALE_CONFIRMED'}});}
  if(url.endsWith('/confirm')){writes.push(r.postDataJSON());return route.fulfill({json:{message:'confirmed',tripId:42}});}
  throw Error('Unexpected request '+r.method()+' '+url);
  });
- await page.goto('http://localhost:5173/test-harnesses/trip-setup.html?summary');
+ await page.goto('/test-harnesses/trip-setup.html?summary');
  await page.getByRole('button',{name:'แก้ไขข้อมูลเที่ยวรถ',exact:true}).click();
  await expect(page.getByPlaceholder('แสดงใน Description ทุกบิลของเที่ยว')).toHaveValue('TRIP-ONLY');
  await expect(page.getByLabel('ใช้ Pre-Sling')).toBeChecked();
@@ -51,7 +53,7 @@ test('trip note shows length/hint and blocks non-874 input before API',async({pa
   if(route.request().url().includes('/master/trucks-stats'))return route.fulfill({json:[]});
   writes.push(route.request().postDataJSON());return route.fulfill({json:{tripId:42,tripCode:'TEST-42',documentRevision:8}});
  });
- await page.goto('http://localhost:5173/test-harnesses/trip-setup.html');
+ await page.goto('/test-harnesses/trip-setup.html');
  await page.getByText('Open editor',{exact:true}).click();
  const note=page.locator('textarea');await expect(note).toHaveAttribute('maxlength','255');
  await note.fill('ทดสอบ😀');await page.getByRole('button',{name:'บันทึกการแก้ไขเที่ยวรถ'}).click();
@@ -69,7 +71,7 @@ test('flat API metadata survives unchanged save; intentional clear is allowed',a
   if(r.method()==='GET')return route.fulfill({json:{tripId:42,transRegistration:'SERVER-42',documentRevision:7,tripRemark:'KEEP-NOTE',preSlingRequired:true,pickupDueDate:'2026-10-12',orders:[]}});
   writes.push(r.postDataJSON());return route.fulfill({json:{tripId:42,tripCode:'TEST-42',documentRevision:8}});
  });
- await page.goto('http://localhost:5173/test-harnesses/trip-setup.html?summary');
+ await page.goto('/test-harnesses/trip-setup.html?summary');
  await page.getByRole('button',{name:'แก้ไขข้อมูลเที่ยวรถ',exact:true}).click();
  await expect(page.locator('textarea')).toHaveValue('KEEP-NOTE');
  await expect(page.getByLabel('ใช้ Pre-Sling')).toBeChecked();
@@ -84,11 +86,14 @@ test('flat API metadata survives unchanged save; intentional clear is allowed',a
 
 test('failed metadata read cannot open a clearing editor',async({page})=>{
  await page.route('**/api/**',r=>r.fulfill({status:503,json:{message:'offline'}}));
- await page.goto('http://localhost:5173/test-harnesses/trip-setup.html?summary');
+ await page.goto('/test-harnesses/trip-setup.html?summary');
  await expect(page.getByRole('button',{name:'แก้ไขข้อมูลเที่ยวรถ',exact:true})).toBeDisabled();
 });
 
-test('active banner keeps server members and plate when portal filter returns no orders',async({page})=>{
+// The active-trip banner left the portal in the 9 Nov 2026 cleanup (aa422d5). The trip must still keep
+// its server members and plate, so "สร้างบิล" reopens it instead of clearing it as an empty trip.
+test('active trip keeps server members and plate when portal filter returns no orders',async({page})=>{
+ const member=page.waitForResponse(r=>r.url().endsWith('/so/123'));
  await page.route('**/api/**',r=>{
   const u=r.request().url();
   if(u.endsWith('/trips/42'))return r.fulfill({json:{tripId:42,transRegistration:'SERVER-42',tripRemark:'KEEP',preSlingRequired:true,documentRevision:7,orders:[{id:123,status:'DRAFT'}]}});
@@ -97,10 +102,10 @@ test('active banner keeps server members and plate when portal filter returns no
   if(u.endsWith('/trips/board'))return r.fulfill({json:{data:[]}});
   return r.fulfill({json:[]});
  });
- await page.goto('http://localhost:5173/test-harnesses/trip-setup.html?portal');
- await expect(page.getByText('1 ลูกค้า (1 บิล)',{exact:true})).toBeVisible();
- await expect(page.getByText('SERVER-42',{exact:true})).toBeVisible();
+ await page.goto('/test-harnesses/trip-setup.html?portal');
+ await member;
  await page.getByPlaceholder('ค้นหา ลูกค้า / WfRef...').fill('NO-MATCH');
  await page.waitForTimeout(600);
- await expect(page.getByText('1 ลูกค้า (1 บิล)',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'สร้างบิล',exact:true}).click();
+ await expect(page.getByPlaceholder('เช่น กจ70-4088 (เว้นว่างได้สำหรับ Draft Trip)')).toHaveValue('SERVER-42');
 });
