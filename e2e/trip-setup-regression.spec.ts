@@ -76,11 +76,17 @@ test('flat API metadata survives unchanged save; intentional clear is allowed',a
  await expect(page.locator('textarea')).toHaveValue('KEEP-NOTE');
  await expect(page.getByLabel('ใช้ Pre-Sling')).toBeChecked();
  await expect(page.getByPlaceholder('เช่น กจ70-4088 (เว้นว่างได้สำหรับ Draft Trip)')).toHaveValue('SERVER-42');
- await page.getByRole('button',{name:'บันทึกการแก้ไขเที่ยวรถ'}).click();
+ const save=page.getByRole('button',{name:'บันทึกการแก้ไขเที่ยวรถ'}),editor=page.getByTestId('trip-setup-dialog');
+ await save.click();
+ await expect.poll(()=>writes.length).toBe(1);await expect(editor).toBeHidden();
  expect(writes[0]).toMatchObject({remark:'KEEP-NOTE',pSling:true,transRegistration:'SERVER-42',expectedRevision:7,deliveryDate:'2026-10-12'});
  await page.getByRole('button',{name:'แก้ไขข้อมูลเที่ยวรถ',exact:true}).click();
- await page.locator('textarea').fill('');await page.getByLabel('ใช้ Pre-Sling').uncheck();
- await page.getByRole('button',{name:'บันทึกการแก้ไขเที่ยวรถ'}).click();
+ // The reopened editor's first frame still holds the finished save (fields inert); type once it is ready.
+ await expect(save).toBeEnabled();
+ await page.locator('textarea').fill('');await expect(page.locator('textarea')).toHaveValue('');
+ await page.getByLabel('ใช้ Pre-Sling').uncheck();
+ await save.click();
+ await expect.poll(()=>writes.length).toBe(2);
  expect(writes[1]).toMatchObject({remark:'',pSling:false});
 });
 
