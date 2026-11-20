@@ -317,6 +317,12 @@ router.get('/active-books', requireRole(...RECON_BOOK_ROLES), async (req, res) =
 
 // The case list carries customer names and truck plates company-wide, so it stays with the roles
 // that have the Reconciliation menu (owner rule O-4: everyone else sees their own records only).
+// Owner, 21 Nov 2026: Sale-App giveaway and Rebate counts must agree with WinSpeed. Read-only, every company database.
+router.get('/winspeed-sync', requireRole(...RECON_BOOK_ROLES), async (req, res) => {
+  try { res.json(await require('../services/winspeed-sync-check').checkWinspeedSync()); }
+  catch (e) { console.error('[recon/winspeed-sync]', e.code || '', e.message); res.status(e.status || 500).json({ code: e.code, message: e.status ? e.message : 'ตรวจยอดกับ WinSpeed ไม่สำเร็จ' }); }
+});
+
 router.get('/summary', requireRole(...RECON_BOOK_ROLES), async (req, res) => {
   try {
     const cases = await buildCases(req.query.days, { fresh: req.query.fresh === '1' });

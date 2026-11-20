@@ -1,5 +1,6 @@
 import { canDo } from '../../utils/capabilities';
 import { AccountBooksPanel } from './AccountBooksPanel';
+import { WinspeedSyncPanel } from './WinspeedSyncPanel';
 import { NativeCutReviewQueue } from './NativeCutReviewQueue';
 import { NativeEditApprovalForm } from './NativeEditApprovalForm';
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -95,7 +96,7 @@ export function ReconciliationPage() {
   const [days, setDays]       = useState(7);
   const [filter, setFilter]   = useState<'' | 'EXCEPTION' | 'RESOLVED' | 'OK' | 'AMBIGUOUS'>('');
   const [busy, setBusy]       = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'SO_WEIGH' | 'COUPON_SETTLEMENT'>('SO_WEIGH');
+  const [activeTab, setActiveTab] = useState<'SO_WEIGH' | 'COUPON_SETTLEMENT' | 'WINSPEED_SYNC'>('SO_WEIGH');
   const [settleResult, setSettleResult] = useState<CouponSettlementResult | null>(null);
   const [settling, setSettling] = useState(false);
   const [verifyNumber, setVerifyNumber] = useState('');
@@ -294,10 +295,23 @@ export function ReconciliationPage() {
           <Ticket size={14} />
           กระทบยอดการตัดตั๋วปุ๋ย (Coupon Settlement & Audit)
         </button>
+        <button
+          onClick={() => setActiveTab('WINSPEED_SYNC')}
+          data-testid="tab-winspeed-sync"
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
+            activeTab === 'WINSPEED_SYNC'
+              ? 'bg-[#0C447C] text-white shadow-sm'
+              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
+          }`}
+        >
+          ของแถมและ Rebate ตรงกับ WinSpeed
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
-        {activeTab === 'COUPON_SETTLEMENT' ? (
+        {activeTab === 'WINSPEED_SYNC' ? (
+          <WinspeedSyncPanel />
+        ) : activeTab === 'COUPON_SETTLEMENT' ? (
           <div className="space-y-4 sm:space-y-6">
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>

@@ -3,6 +3,8 @@ import { req } from '../../services/api';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 
 type ZeroRow = { Id: number; ZeroAt: string; Note: string | null; ActorName: string | null };
+type TargetRow = { database: string; ready: boolean; budgetLines: number; withdrawnCounted: number; latestZeroAt: string | null };
+const newRequestId = () => (globalThis.crypto && 'randomUUID' in globalThis.crypto ? globalThis.crypto.randomUUID() : '');
 
 const thaiDateTime = (iso: string) =>
   new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'medium', timeStyle: 'short' });
@@ -15,9 +17,15 @@ export function GiveawaySetZeroSetting() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [targets, setTargets] = useState<TargetRow[] | null>(null);
+  // kept after a partial failure so the retry finishes the same Set Zero instead of starting another
+  const [requestId, setRequestId] = useState<string>(newRequestId);
   useUnsavedChanges(Boolean(note || confirm) || busy);
 
-  const load = () => req<ZeroRow[]>('/giveaway/zero-log', { silent: true }).then(setLog).catch(() => setError('อ่านประวัติ Set Zero ไม่สำเร็จ'));
+  const load = () => Promise.all([
+    req<ZeroRow[]>('/giveaway/zero-log', { silent: true }).then(setLog).catch(() => setError('อ่านประวัติ Set Zero ไม่สำเร็จ')),
+    req<{ databases: TargetRow[] }>('/giveaway/set-zero/targets', { silent: true }).then(r => setTargets(r.databases)).catch(() => setTargets(null)),
+  ]);
   useEffect(() => { load(); }, []);
 
   async function run() {
@@ -25,11 +33,11 @@ export function GiveawaySetZeroSetting() {
     setBusy(true); setError(''); setMessage('');
     try {
       const r = await req<{ message: string; before: { withdrawn: number } }>('/giveaway/set-zero', {
-        method: 'POST', body: JSON.stringify({ confirm, note: note.trim() || undefined }), silent: true,
+        method: 'POST', body: JSON.stringify({ confirm, note: note.trim() || undefined, requestId: requestId || undefined }), silent: true,
       });
       setMessage(`${r.message} (ยอดเบิกที่นับอยู่ก่อนหน้า ${Number(r.before?.withdrawn || 0).toLocaleString('th-TH')} ชิ้น)`);
-      setNote(''); setConfirm(''); await load();
-    } catch (e) { setError(e instanceof Error ? e.message : 'Set Zero ไม่สำเร็จ'); } finally { setBusy(false); }
+      setNote(''); setConfirm(''); setRequestId(newRequestId()); await load();
+    } catch (e) { setError((e instanceof Error ? e.message : 'Set Zero ไม่สำเร็จ') + ' (กดอีกครั้งเพื่อทำต่อในฐานที่ยังไม่เสร็จ)'); await load(); } finally { setBusy(false); }
   }
 
   return (
@@ -37,8 +45,25 @@ export function GiveawaySetZeroSetting() {
       <div>
         <h2 className="font-bold text-[#0C447C]">Set Zero ของแถม</h2>
         <p className="text-sm text-gray-600 mt-1">งบโควต้าคงเดิม ยอด "เบิกแล้ว" เริ่มนับใหม่ตั้งแต่ตอนที่กด ประวัติการเบิกเดิมยังอยู่และดูได้ตามปกติ
-          มีผลเฉพาะ Sale-App ไม่แตะ WinSpeed ทำซ้ำได้ (เช่น วันที่ 31/12/2569)</p>
+          มีผลเฉพาะ Sale-App ไม่แตะ WinSpeed ทำครั้งเดียวครบทุกฐานบริษัท ทำซ้ำได้ (เช่น วันที่ 31/12/2569)</p>
       </div>
+      {targets && (
+        <table className="w-full text-sm border border-gray-200 rounded-lg" aria-label="ฐานข้อมูลที่จะ Set Zero">
+          <thead className="bg-gray-50 text-left"><tr>
+            <th className="px-3 py-2">ฐานข้อมูล</th><th className="px-3 py-2 text-right">รายการงบ</th>
+            <th className="px-3 py-2 text-right">เบิกที่นับอยู่ (ชิ้น)</th><th className="px-3 py-2">Set Zero ล่าสุด</th></tr></thead>
+          <tbody>
+            {targets.map(t => (
+              <tr key={t.database} className="border-t border-gray-100">
+                <td className="px-3 py-2 font-mono">{t.database}{!t.ready && <span className="ml-2 text-red-700">ยังไม่พร้อม</span>}</td>
+                <td className="px-3 py-2 text-right">{t.budgetLines.toLocaleString('th-TH')}</td>
+                <td className="px-3 py-2 text-right">{t.withdrawnCounted.toLocaleString('th-TH')}</td>
+                <td className="px-3 py-2">{t.latestZeroAt ? thaiDateTime(t.latestZeroAt) : '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       <label className="block text-sm">
         <span className="font-semibold text-gray-700">หมายเหตุ (ไม่บังคับ)</span>
         <input value={note} onChange={e => setNote(e.target.value)} maxLength={500} disabled={busy}

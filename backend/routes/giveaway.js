@@ -1403,25 +1403,27 @@ router.get('/zero-log', requireRole('ADMIN', 'C_LEVEL', 'ACCOUNTING', 'MANAGER')
   } catch (e) { console.error(e); res.status(500).json({ message: 'อ่านประวัติ Set Zero ไม่สำเร็จ' }); }
 });
 
+// Owner, 21 Nov 2026: one Set Zero covers every company database of this environment (see
+// services/giveaway-set-zero.js). Read-only preview first; the write runs from the primary database only.
+router.get('/set-zero/targets', requireRole('ADMIN'), async (req, res) => {
+  try { res.json(await require('../services/giveaway-set-zero').previewSetZero()); }
+  catch (e) { console.error('[giveaway-set-zero-preview]', e.code || e.message); res.status(e.status || 500).json({ code: e.code, message: e.status ? e.message : 'อ่านรายชื่อฐานข้อมูลไม่สำเร็จ' }); }
+});
+
 router.post('/set-zero', requireRole('ADMIN'), async (req, res) => {
   try {
     if (req.user.isImpersonating) return res.status(403).json({ message: 'ทำ Set Zero ระหว่าง Access As ไม่ได้' });
     if (req.body?.confirm !== 'SET ZERO') return res.status(400).json({ message: 'พิมพ์ SET ZERO เพื่อยืนยัน' });
-    const note = req.body?.note ? String(req.body.note).trim().slice(0, 500) : null;
-    const actor = Number(req.user.actorSub || req.user.sub);
-    const result = await wfTransaction(async tx => {
-      const before = (await tx.request().query(`SELECT COUNT(*) AS Lines, ISNULL(SUM(WithdrawnQty),0) AS Withdrawn FROM wf.v_GiveawayBudgetStatus`)).recordset[0];
-      const row = (await tx.request().input('note', sql.NVarChar(500), note).input('actor', sql.Int, actor)
-        .query(`INSERT INTO wf.GiveawayZeroLog (ZeroAt, Note, ActorId) OUTPUT inserted.Id, inserted.ZeroAt VALUES (GETUTCDATE(), @note, @actor)`)).recordset[0];
-      await logChangeEvent(tx, {
-        entityType: 'GIVEAWAY_BUDGET', entityId: `ZERO:${row.Id}`, action: 'SET_ZERO',
-        beforeJson: { lines: before.Lines, withdrawn: Number(before.Withdrawn) }, afterJson: { zeroAt: row.ZeroAt, withdrawn: 0 },
-        reasonCode: 'GIVEAWAY_SET_ZERO', reasonText: note, userId: String(businessIds(req.user).effective), ipAddress: req.ip,
-      });
-      return { id: row.Id, zeroAt: row.ZeroAt, before: { lines: before.Lines, withdrawn: Number(before.Withdrawn) } };
-    });
-    res.json({ ...result, message: 'Set Zero ของแถมแล้ว ยอดเบิกเริ่มนับใหม่ตั้งแต่ตอนนี้' });
-  } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.status ? e.message : 'Set Zero ไม่สำเร็จ' }); }
+    if (req.user.identityMapping) return res.status(409).json({ code: 'GIVEAWAY_ZERO_PRIMARY_ONLY', message: 'ทำ Set Zero จากฐานหลัก ระบบจะทำครบทุกฐานให้เอง' });
+    const result = await require('../services/giveaway-set-zero').setZeroAllCompanies({ user: req.user, requestId: req.body?.requestId, note: req.body?.note });
+    const primary = result.databases[0] || {};
+    res.json({ ...result, before: primary.before || { lines: 0, withdrawn: 0 },
+      message: `Set Zero ของแถมแล้ว ${result.databases.length} ฐาน ยอดเบิกเริ่มนับใหม่ตั้งแต่ตอนนี้` });
+  } catch (e) {
+    console.error('[giveaway-set-zero]', e.code || '', e.message);
+    res.status(e.status || 500).json({ code: e.code, message: e.status ? e.message : 'Set Zero ไม่สำเร็จ',
+      ...(e.requestId ? { requestId: e.requestId, completed: e.completed || [] } : {}) });
+  }
 });
 
 module.exports = router;

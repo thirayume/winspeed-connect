@@ -7,6 +7,11 @@ const path = require('path');
 const h = require('./helpers/route-harness.cjs');
 
 const db = h.installDbStub(({ text }) => {
+  // services/giveaway-set-zero.js (21 Nov 2026): schema check, an earlier run of this request, and the moment
+  if (/AS HasLog/.test(text)) return [{ DatabaseName: 'test', ServerName: 'test', HasLog: 1, HasRequestId: 1, HasView: 1 }];
+  if (/WHERE RequestId = @rid/.test(text)) return [];
+  if (/GETUTCDATE\(\) AS Now/.test(text)) return [{ Now: new Date('2026-12-31T17:00:00Z') }];
+  if (/SELECT TOP 1 ZeroAt FROM wf\.GiveawayZeroLog ORDER BY/.test(text)) return [];
   if (/FROM wf\.v_GiveawayBudgetStatus/.test(text) && /COUNT\(\*\) AS Lines/.test(text)) return [{ Lines: 52, Withdrawn: 15998.5 }];
   if (/INSERT INTO wf\.GiveawayZeroLog/.test(text)) return [{ Id: 1, ZeroAt: new Date('2026-12-31T17:00:00Z') }];
   if (/FROM wf\.GiveawayZeroLog z/.test(text)) return [{ Id: 1, ZeroAt: '2026-12-31T17:00:00Z', Note: 'x', ActorId: 1, ActorName: 'admin' }];
@@ -44,4 +49,17 @@ test('migration 253 counts from the latest Set Zero, keeps history and rolls bac
   assert.doesNotMatch(up.replace(/^--.*$/gm, ''), /\bDELETE\b/i);
   assert.doesNotMatch(down, /GiveawayZeroLog z\)/);
   assert.match(down, /DROP TABLE wf\.GiveawayZeroLog/);
+});
+
+test('Set Zero is started from the primary database; it then covers every company database itself', async () => {
+  // identityMapping is set by the auth middleware for a session on the second company database
+  const route = fs.readFileSync(path.join(__dirname, '..', 'routes', 'giveaway.js'), 'utf8');
+  const post = route.slice(route.indexOf("router.post('/set-zero'"));
+  assert.ok(post.indexOf('if (req.user.identityMapping) return res.status(409)') > 0);
+  assert.ok(post.indexOf('if (req.user.identityMapping)') < post.indexOf('setZeroAllCompanies('), 'refused before anything is written');
+  assert.match(post, /GIVEAWAY_ZERO_PRIMARY_ONLY/);
+  const preview = await app.call('GET', '/api/giveaway/set-zero/targets', { user: { sub: 1, role: 'ADMIN' } });
+  assert.equal(preview.status, 200, JSON.stringify(preview.body));
+  assert.equal(preview.body.databases.length, 1);
+  assert.equal((await app.call('GET', '/api/giveaway/set-zero/targets', { user: { sub: 12, role: 'ACCOUNTING' } })).status, 403);
 });
