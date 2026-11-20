@@ -1,6 +1,6 @@
 -- ============================================================================
--- STATUS: prepared, NOT run. Running it bypasses worldfert2's identity-mapping guard, so it waits for the owner's
--- explicit go (or map the ADMIN account to worldfert2 and press App Settings > Set Zero there instead).
+-- STATUS: run on 20 Nov 2026 with the owner's explicit go ("อนุญาตรัน SQL"): withdrawn 15,998.5 -> 0. The app cannot do
+-- it: a secondary database only allows reviewed read-only routes, even with the ADMIN account binding (63 -> 47).
 -- One-off, 20 Nov 2026 — giveaway Set Zero on dbwins_worldfert2, the same moment's rule as company 9 (owner, 20 Nov 2026:
 -- "Set Zero ของแถม บน PROD และ UAT ตรงกัน ... เฉพาะ WF-SaleApp").
 -- Company 9 was zeroed from App Settings (ADMIN) at 19:44. The App Settings button cannot run on worldfert2 for the
