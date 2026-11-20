@@ -3,6 +3,10 @@
 -- dbwins_worldfert2_predeploy_20261120-201740.bak. Created PM00029, PM00030, PM00031 (GoodID 19001-19003, unit "ตัว"
 -- 1003, multi-unit flags Y/N/N as company 9); group 1005 now 92 goods (company 9: 98). Skipped PM00023-PM00027
 -- (unit "แผ่น") and PM00028 (unit "เล่ม"): worldfert2 has neither unit. WinSpeed fingerprint: only EMGood (438 -> 441).
+-- 20:23 the units were made in WinSpeed's own screen (Enterprise Manager > IC Setup > กำหนดรหัสหน่วยนับสินค้า, owner's
+-- go): 3000 "แผ่น", 3001 "เล่ม", bytes equal to company 9's 3001/3007. 20:25 second run, after backup
+-- dbwins_worldfert2_predeploy_20261120-202416.bak: created PM00023-PM00027 (19004-19008, unit 3000) and PM00028
+-- (19009, unit 3001). Group 1005 now 98 goods = company 9. EMGood 441 -> 447; SMAudit +3 from the WinSpeed unit screen.
 -- One-off, 20 Nov 2026 — company 2 (dbwins_worldfert2): create the giveaway goods company 9 has in group 1005 and
 -- worldfert2 does not (owner, 20 Nov 2026: "สร้างของแถม 9 รหัสที่ขาดใน worldfert2 ด้วย"). Needs group 1005
 -- (20261120-worldfert2-giveaway-group-1005.sql). WinSpeed master data, so only wf.sp_MasterCreateGood (migration 248):
