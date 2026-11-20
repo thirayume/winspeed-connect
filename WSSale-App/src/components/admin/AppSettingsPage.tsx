@@ -13,6 +13,7 @@ import {
   RotateCcw,
   ToggleLeft,
   ClipboardCheck,
+  Gift,
 } from 'lucide-react';
 import { SystemSettingsModal, type TabKey } from './SystemSettingsModal';
 import { AdminReportTemplateModal } from './AdminReportTemplateModal';
@@ -20,11 +21,12 @@ import { GlobalDataWindowSetting } from './GlobalDataWindowSetting';
 import { ResetRebateSetting } from './ResetRebateSetting';
 import { useFeature } from '../../utils/capabilities';
 import { MenuSwitchesSetting } from './MenuSwitchesSetting';
+import { GiveawaySetZeroSetting } from './GiveawaySetZeroSetting';
 import { ReadinessSignoffModal } from './ReadinessSignoffModal';
 import { useAuthStore } from '../../store/auth-store';
 import { confirmLeaveEditors } from '../../utils/unsaved-changes';
 
-export type SettingsTabKey = TabKey | 'reports' | 'data-window' | 'rebate-reset' | 'menus' | 'signoff';
+export type SettingsTabKey = TabKey | 'reports' | 'data-window' | 'rebate-reset' | 'menus' | 'signoff' | 'giveaway-zero';
 
 const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
   { key: 'pickup', name: 'กำหนดรับสินค้า', Icon: Calendar },
@@ -36,6 +38,7 @@ const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
   { key: 'credit', name: 'เครดิต & Aging', Icon: CreditCard },
   { key: 'data-window', name: 'วันเริ่มข้อมูล', Icon: Calendar },
   { key: 'rebate-reset', name: 'เริ่มยอด Rebate ใหม่', Icon: RotateCcw },
+  { key: 'giveaway-zero', name: 'Set Zero ของแถม', Icon: Gift },
   { key: 'history', name: 'ประวัติ Version', Icon: History },
   { key: 'reports', name: 'แม่แบบ & หัวกระดาษรายงาน', Icon: FileSpreadsheet },
   { key: 'menus', name: 'เปิด/ปิดเมนูและรายงาน', Icon: ToggleLeft },
@@ -51,7 +54,7 @@ export function AppSettingsPage() {
   // Owner, 20 Nov 2026: menu switches are ADMIN only; the acceptance record is back for the v2.0.0 hand-over.
   const authUser = useAuthStore(s => s.user);
   const isAdmin = authUser?.role === 'ADMIN' || Boolean(authUser?.roles?.includes('ADMIN'));
-  const tabs = TABS.filter(t => (t.key !== 'rebate-reset' || rebatePoolOn) && (t.key !== 'menus' || isAdmin));
+  const tabs = TABS.filter(t => (t.key !== 'rebate-reset' || rebatePoolOn) && (!['menus', 'giveaway-zero'].includes(t.key) || isAdmin));
   const shownTab: SettingsTabKey = tabs.some(t => t.key === activeTab) ? activeTab : 'pickup';
 
   return (
@@ -108,13 +111,13 @@ export function AppSettingsPage() {
           role="tabpanel"
           id="tabpanel-policy"
           aria-labelledby={'tab-' + shownTab}
-          hidden={['reports', 'data-window', 'rebate-reset', 'menus', 'signoff'].includes(shownTab)}
+          hidden={['reports', 'data-window', 'rebate-reset', 'menus', 'signoff', 'giveaway-zero'].includes(shownTab)}
           className="w-full"
         >
           <SystemSettingsModal
             isOpen={true}
             embedded={true}
-            activeTab={['reports', 'data-window', 'rebate-reset', 'menus', 'signoff'].includes(shownTab) ? 'pickup' : (shownTab as TabKey)}
+            activeTab={['reports', 'data-window', 'rebate-reset', 'menus', 'signoff', 'giveaway-zero'].includes(shownTab) ? 'pickup' : (shownTab as TabKey)}
             onRevisionLoaded={setRevision}
             onClose={() => {}}
           />
@@ -123,6 +126,7 @@ export function AppSettingsPage() {
         {shownTab === 'data-window' && <div role="tabpanel" id="tabpanel-data-window" aria-labelledby="tab-data-window"><GlobalDataWindowSetting /></div>}
         {shownTab === 'rebate-reset' && <div role="tabpanel" id="tabpanel-rebate-reset" aria-labelledby="tab-rebate-reset"><ResetRebateSetting /></div>}
         {shownTab === 'menus' && <div role="tabpanel" id="tabpanel-menus" aria-labelledby="tab-menus"><MenuSwitchesSetting /></div>}
+        {shownTab === 'giveaway-zero' && <div role="tabpanel" id="tabpanel-giveaway-zero" aria-labelledby="tab-giveaway-zero"><GiveawaySetZeroSetting /></div>}
         {shownTab === 'signoff' && <div role="tabpanel" id="tabpanel-signoff" aria-labelledby="tab-signoff"><ReadinessSignoffModal embedded onClose={() => {}} /></div>}
 
         {/* Reports Template & Header Management Tab */}
