@@ -266,11 +266,17 @@ test('shipment history enforces the system boundary and rejects invalid dates', 
   const before = db.calls.length;
   const result = await app.call('GET', '/api/so/shipped-today?date=2025-12-31', { user: admin });
   assert.equal(result.status, 200);
-  const query = db.calls.slice(before).find(c => /CAST\(hd\.DocuDate AS DATE\) = @d/.test(c.text));
-  assert.match(query.text, /hd\.DocuDate >= @globalStartDate/);
-  assert.equal(query.inputs.globalStartDate, '2026-01-01');
-  const invalid = await app.call('GET', '/api/so/shipped-today?date=2026-02-31', { user: admin });
-  assert.equal(invalid.status, 400);
+  // Since 87e79b1 the list comes from services/accounting-bills: a day before the data start date is moved up to it.
+  const query = db.calls.slice(before).find(c => /hd\.DocuType = 103 AND hd\.DocuDate >= @acStart/.test(c.text));
+  assert.match(query.text, /hd\.DocuDate >= @acWindow/);
+  assert.equal(query.inputs.acWindow, '2026-01-01');
+  assert.equal(query.inputs.acStart, '2026-01-01');
+  for (const bad of ['2026-02-31', '2026-04-31', '2025-02-29']) {
+    const invalid = await app.call('GET', '/api/so/shipped-today?date=' + bad, { user: admin });
+    assert.equal(invalid.status, 400, bad);
+  }
+  const leapDay = await app.call('GET', '/api/so/shipped-today?date=2028-02-29', { user: admin });
+  assert.equal(leapDay.status, 200);
 });
 
 test('unlock request list and resolve apply the UTC boundary before any mutation', async () => {

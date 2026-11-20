@@ -126,11 +126,12 @@ const stamp = v => {
 
 /** Validated date range for the list, or an error with status 400. */
 function readRange(q, today, businessDate) {
-  const iso = /^\d{4}-\d{2}-\d{2}$/;
   const start = String(q.startDate || q.date || today);
   const end = String(q.endDate || q.date || start);
   const bad = message => Object.assign(new Error(message), { status: 400 });
-  if (!iso.test(start) || !iso.test(end) || Number.isNaN(Date.parse(start)) || Number.isNaN(Date.parse(end))) throw bad('วันที่ไม่ถูกต้อง');
+  // Date.parse rolls an impossible day over (2026-02-31 becomes 3 March), so the day must read back unchanged.
+  const isRealDay = s => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s;
+  if (!isRealDay(start) || !isRealDay(end)) throw bad('วันที่ไม่ถูกต้อง');
   if (start > end) throw bad('วันเริ่มต้องไม่หลังวันสิ้นสุด');
   if ((Date.parse(end) - Date.parse(start)) / 86400000 > MAX_RANGE_DAYS) throw bad(`เลือกช่วงวันที่ได้ไม่เกิน ${MAX_RANGE_DAYS} วัน`);
   return { start: start < businessDate ? businessDate : start, end };
