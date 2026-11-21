@@ -31,7 +31,7 @@ const errors:Record<string,string>={
  MR_SCALE_CHANGED:'ข้อมูลตาชั่งเปลี่ยนหลังส่งคำขอ กรุณาตรวจใหม่และส่งคำขอใหม่',
  MR_SCALE_INCOMPLETE:'รถคันนี้ยังชั่งไม่เสร็จ (ยังไม่มีน้ำหนักชั่งออก) กรุณารอชั่งให้ครบก่อน',
  MR_SCALE_AMBIGUOUS:'พบบันทึกชั่งของใบจองนี้มากกว่าหนึ่งรายการ กรุณาให้ผู้ดูแลตรวจสอบ',
- MR_EXCEPTION_APPROVER_REQUIRED:'รายการนี้เป็นข้อยกเว้น ต้องให้ผู้จัดการ ผู้บริหาร หรือผู้ดูแลที่ไม่ใช่ผู้ขอเป็นผู้อนุมัติ',
+ MR_EXCEPTION_APPROVER_REQUIRED:'รายการนี้เป็นข้อยกเว้น ต้องให้ผู้จัดการหรือผู้บริหารที่ไม่ใช่ผู้ขอ หรือ ADMIN เป็นผู้อนุมัติ',
  MR_COUNTER_UNSUPPORTED:'เลขรันใบขนยังไม่พร้อม กรุณาให้ผู้ดูแลตรวจสอบ',
 };
 export function NativeManualRedemptionButton({soid,onCreated}:{soid:string|number;onCreated:()=>void}){
@@ -63,9 +63,9 @@ export function NativeManualRedemptionButton({soid,onCreated}:{soid:string|numbe
    <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">รอบจำลอง UAT2 เท่านั้น รายการนี้ไม่รับรองการส่งสินค้าจริง · เลขที่ใบตัดตั๋วปุ๋ย (116) คือเลขใบขน: ใช้ MoveBill จากตาชั่ง หรือกรอกเองเมื่อไม่มีบันทึกชั่ง (เป็นข้อยกเว้น)</p>
    {preview&&<div className="mt-3 space-y-3 text-sm">{preview.completed?<p>บันทึกใบขนแล้ว: <strong>{preview.redemptionNo}</strong>{preview.redemptionNo&&can('native.print-116')&&<button onClick={()=>setPrinting(true)} className="ml-3 rounded-lg border px-2 py-1 text-xs">พิมพ์ใบขน</button>}</p>:<>
     <p>ใบสั่งขาย (104) {preview.deliveryNo} · ตั๋ว {preview.couponNo} · เต็มจำนวน {Number(preview.qty).toLocaleString('th-TH')} ตัน</p>
-    {slip&&(manual?<p className="rounded-lg bg-orange-50 p-3 text-orange-900">ไม่พบบันทึกชั่งของใบจองนี้ · <strong>ข้อยกเว้น</strong>: กรอกเลขใบขน 7 หลักและทะเบียนรถ แล้วให้ผู้จัดการ ผู้บริหาร หรือผู้ดูแลที่ไม่ใช่ผู้ขออนุมัติ</p>
+    {slip&&(manual?<p className="rounded-lg bg-orange-50 p-3 text-orange-900">ไม่พบบันทึกชั่งของใบจองนี้ · <strong>ข้อยกเว้น</strong>: กรอกเลขใบขน 7 หลักและทะเบียนรถ แล้วให้ผู้จัดการหรือผู้บริหารที่ไม่ใช่ผู้ขอ หรือ ADMIN อนุมัติ</p>
      :<p className={`rounded-lg p-3 ${slip.exception?'bg-orange-50 text-orange-900':'bg-emerald-50 text-emerald-900'}`}>เลขใบขนจากตาชั่ง (MoveBill) <strong>{slip.slipNo}</strong> · ทะเบียน {slip.plate} · น้ำหนักสุทธิ {Number(slip.netKg).toLocaleString('th-TH')} กก. (ต่างจากตั๋ว {slip.diffPct}%)
-      {slip.exception&&<><br/><strong>เกิน ±{slip.tolerancePct}%</strong> เป็นข้อยกเว้น ต้องให้ผู้จัดการ ผู้บริหาร หรือผู้ดูแลที่ไม่ใช่ผู้ขออนุมัติ</>}</p>)}
+      {slip.exception&&<><br/><strong>เกิน ±{slip.tolerancePct}%</strong> เป็นข้อยกเว้น ต้องให้ผู้จัดการหรือผู้บริหารที่ไม่ใช่ผู้ขอ หรือ ADMIN อนุมัติ</>}</p>)}
     {r&&<div className="rounded-lg bg-slate-50 p-3"><p>สถานะ {expired?'อนุมัติหมดอายุ':r.status==='APPROVED'?'อนุมัติแล้ว':'รออนุมัติ'}</p><p>เหตุผล: {r.reason}</p><p>ผู้รับ: {r.receiver} · ทะเบียน: {r.plate}</p><p>ใบขน: {r.slipNo} ({r.slipSource==='SCALE'?'จากตาชั่ง':'กรอกเอง'}){r.exceptionRequired?' · ข้อยกเว้น':''}</p></div>}
     {preview.canCreate&&(!r||(r.isRequester&&expired))&&<>
      <label className="block">เหตุผลการจำลอง<textarea value={reason} onChange={e=>setReason(e.target.value)} maxLength={500} className="mt-1 w-full rounded-lg border p-2" /></label>
