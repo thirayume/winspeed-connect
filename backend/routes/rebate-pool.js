@@ -65,8 +65,8 @@ async function canAccessRebateCustomer(user, custId) {
 // The discount limits in force (App Settings), so the Rebate page states the rule the server applies.
 router.get('/limits', async (_req, res) => {
   try {
-    const { standard, max } = await require('../services/price-authority').readDiscountLimits();
-    return res.json({ standard: Number(standard), max: Number(max) });
+    const { standard, max, step } = await require('../services/price-authority').readDiscountLimits();
+    return res.json({ standard: Number(standard), max: Number(max), step: Number(step) });
   } catch (err) {
     return sendRebateError(res, err);
   }

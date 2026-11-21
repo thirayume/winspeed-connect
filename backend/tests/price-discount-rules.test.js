@@ -40,7 +40,7 @@ test('steps of 100 count from the announced price, also when it is not a whole h
 
 test('a bill with an off-step price or a discount beyond the ceiling is refused with a Thai message', async () => {
   const limits = await readDiscountLimits();
-  assert.deepEqual(limits, { standard: 200, max: 300 });
+  assert.deepEqual(limits, { standard: 200, max: 300, step: 100 });
   const ok = await Promise.all([line(1114, 18800), line(1114, 18700)].map(l => evaluateLinePrice(l, '1078', '2026-12-01')));
   assert.equal(priceRuleError(ok, limits), null);
   const over = await evaluateLinePrice(line(1114, 18600), '1078', '2026-12-01');
@@ -67,4 +67,23 @@ test('the save path applies the rule on create and on a priced edit, and keeps o
   const src = require('fs').readFileSync(require.resolve('../routes/so.js'), 'utf8');
   assert.match(src, /const priceRule = priceRuleError\(lineEvaluations, discountLimits\);\s+if \(priceRule\) throw priceRule;/);
   assert.match(src, /const priceRule = pricingChanged \? priceRuleError\(lineEvaluations, discountLimits\) : null;/);
+});
+// Owner, 21 Nov 2026: the step is App Setting PRICE_STEP_PER_TON; a discount that is not a whole step is refused.
+test('the price step follows App Settings: 130, 15, 180, 220, 175 and 275 are refused at a step of 100; at 50 only whole fifties pass', async () => {
+  const { evaluateLinePrice: evaluate, priceRuleError: ruleError } = require('../services/price-authority');
+  const check = async (discount, limits) => ruleError([await evaluate(line(1114, 19000 - discount), '1078', '2026-12-01', { discountLimits: limits })], limits);
+  const step100 = { standard: 200, max: 300, step: 100 };
+  for (const d of [130, 15, 180, 220, 175, 275]) {
+    const err = await check(d, step100);
+    assert.equal(err?.code, 'PRICE_STEP_REQUIRED', String(d)); assert.match(err.message, /ได้ทีละ 100 บาท\/ตัน/);
+  }
+  for (const d of [0, 100, 200, 300]) assert.equal(await check(d, step100), null, String(d));
+  const step50 = { standard: 200, max: 300, step: 50 };
+  assert.equal(await check(150, step50), null);
+  assert.match((await check(175, step50)).message, /ได้ทีละ 50 บาท\/ตัน/);
+  settings.PRICE_STEP_PER_TON = '50';
+  require('../services/policy-contract').clearSettingCache?.();
+  assert.equal((await readDiscountLimits()).step, 50);
+  delete settings.PRICE_STEP_PER_TON;
+  require('../services/policy-contract').clearSettingCache?.();
 });

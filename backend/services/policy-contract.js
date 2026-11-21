@@ -243,6 +243,16 @@ const POLICY_DEFINITIONS = Object.freeze(Object.assign(Object.create(null), {
     default: 300,
     description: 'เพดานลดราคาต่ำกว่าราคาประกาศเมื่อผู้จัดการอนุมัติ เกินค่านี้บันทึกบิลไม่ได้ (บาท/ตัน, ทุกบิล ตั้งแต่ 18 พ.ย. 2569)',
   },
+  // Owner, 21 Nov 2026: a price moves up or down from the announced price only in whole steps of this many baht a
+  // ton; the discount limits above must be whole steps too.
+  PRICE_STEP_PER_TON: {
+    policyName: 'REBATE_POOL_POLICY',
+    type: 'INT',
+    min: 1,
+    max: 1000,
+    default: 100,
+    description: 'ปรับราคาขึ้นหรือลงจากราคาประกาศได้ทีละกี่บาท/ตัน เกณฑ์ลดราคาทั้งสองค่าต้องเป็นจำนวนเท่าของค่านี้ (ค่าเริ่มต้น 100)',
+  },
   REBATE_CYCLE_MONTHS: {
     policyName: 'REBATE_POOL_POLICY',
     type: 'INT',
@@ -478,6 +488,22 @@ function validateSettingsPayload(updates, currentSettings = {}) {
 
   if (Math.abs((effectiveCustRatio + effectiveCompRatio) - 100) > 0.001) {
     errors.push(`สัดส่วนเงินรีเบทลูกค้า (${effectiveCustRatio}%) และบริษัท (${effectiveCompRatio}%) รวมกันต้องเท่ากับ 100%`);
+  }
+
+  // Cross-field validation (owner, 21 Nov 2026): the discount limits are whole price steps, standard <= maximum.
+  const effectiveInt = (key, fallback) => {
+    if (validated[key] !== undefined) return parseInt(validated[key].value, 10);
+    const n = parseInt(currentSettings[key], 10);
+    return Number.isFinite(n) ? n : fallback;
+  };
+  const effectiveStep = effectiveInt('PRICE_STEP_PER_TON', 100);
+  const effectiveStandard = effectiveInt('REBATE_STANDARD_LIMIT_PER_TON', 200);
+  const effectiveMax = effectiveInt('REBATE_MAX_LIMIT_PER_TON', 300);
+  if (effectiveStandard > effectiveMax) {
+    errors.push(`ลดได้โดยไม่ต้องขออนุมัติ (${effectiveStandard}) ต้องไม่มากกว่าเพดานลดราคา (${effectiveMax}) บาท/ตัน`);
+  }
+  if (effectiveStep > 0 && (effectiveStandard % effectiveStep !== 0 || effectiveMax % effectiveStep !== 0)) {
+    errors.push(`เกณฑ์ลดราคา (${effectiveStandard} และ ${effectiveMax}) ต้องเป็นจำนวนเท่าของ step ราคา ${effectiveStep} บาท/ตัน`);
   }
 
   // Cross-field validation: Weight tolerance min <= max

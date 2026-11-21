@@ -64,16 +64,17 @@ async function loadSaleGoods(salesUserId?: string, excludeSoId?: string) {
 
 // owner 2026-10-09: a colour only, never an amount. Owner 18 Nov 2026: a small discount needs no approval, a larger
 // one needs a manager, beyond the ceiling the bill cannot be saved, and prices move in steps of 100 baht. The level
-// comes from the server, which saves the bill under the same rules (services/price-authority.js).
-const PRICE_STEP = 100;
-function getPriceBand(level?: PriceLevel) {
+// comes from the server, which saves the bill under the same rules (services/price-authority.js). The step is App
+// Setting PRICE_STEP_PER_TON (owner, 21 Nov 2026); 100 until the server has told the form.
+const DEFAULT_PRICE_STEP = 100;
+function getPriceBand(level?: PriceLevel, priceStep: number = DEFAULT_PRICE_STEP) {
   switch (level) {
     case 'GREEN': return { label: 'สูงกว่าราคาประกาศ', className: 'border-emerald-300 bg-emerald-50 text-emerald-700' };
     case 'EQUAL': return { label: 'เท่าราคาประกาศ', className: 'border-gray-300 bg-white text-gray-700' };
     case 'BELOW_STANDARD': return { label: 'ต่ำกว่าราคาประกาศ (ไม่ต้องขออนุมัติ)', className: 'border-sky-300 bg-sky-50 text-sky-800' };
     case 'YELLOW': return { label: 'ต่ำกว่าราคาประกาศเกินเกณฑ์ (ต้องขออนุมัติ)', className: 'border-yellow-300 bg-yellow-50 text-yellow-800' };
     case 'RED': return { label: 'ลดราคาเกินเพดาน (บันทึกไม่ได้)', className: 'border-red-300 bg-red-50 text-red-700' };
-    case 'OFF_STEP': return { label: `ปรับราคาได้ทีละ ${PRICE_STEP} บาท (บันทึกไม่ได้)`, className: 'border-red-300 bg-red-50 text-red-700' };
+    case 'OFF_STEP': return { label: `ปรับราคาได้ทีละ ${priceStep.toLocaleString()} บาท (บันทึกไม่ได้)`, className: 'border-red-300 bg-red-50 text-red-700' };
     case 'NONE': return { label: 'ไม่มีราคาประกาศ (ต้องขออนุมัติ)', className: 'border-gray-300 bg-gray-50 text-gray-600' };
     default: return { label: '', className: 'border-gray-200 bg-white text-gray-700' };
   }
@@ -425,6 +426,7 @@ export function CreateSODialog({
 
   // price colour & neutral threshold indicator per line from the server (debounced while typing)
   const [priceLevels, setPriceLevels] = useState<Record<string, PriceLevel>>({});
+  const [priceStep, setPriceStep] = useState<number>(DEFAULT_PRICE_STEP);
   const [belowThresholdMap, setBelowThresholdMap] = useState<Record<string, boolean>>({});
   const [missingCostMap, setMissingCostMap] = useState<Record<string, boolean>>({});
   const [billBelowThreshold, setBillBelowThreshold] = useState(false);
@@ -466,6 +468,7 @@ export function CreateSODialog({
           if (cancelled) return;
           setPriceCheckError(false);
           setPriceLevels(Object.fromEntries(r.lines.map(x => [x.key, x.level])));
+          if (Number.isInteger(r.priceStep) && (r.priceStep as number) > 0) setPriceStep(r.priceStep as number);
           setBelowThresholdMap(Object.fromEntries(r.lines.map(x => [x.key, Boolean(x.belowThreshold)])));
           setMissingCostMap(Object.fromEntries(r.lines.map(x => [x.key, Boolean(x.missingCost)])));
           setBillBelowThreshold(Boolean(r.belowThreshold));
@@ -1865,7 +1868,7 @@ export function CreateSODialog({
                   <div className="flex-1 overflow-y-auto space-y-2 pr-1">
                     {activeBill?.lines.map(l => {
                       const good = goods.find(g => g.GoodID === l.goodId);
-                      const priceBand = getPriceBand(priceLevels[l.tempId]);
+                      const priceBand = getPriceBand(priceLevels[l.tempId], priceStep);
                       const shortfall = l.isGiveaway ? null : stockShortfall(good);
                       return (
                       <div key={l.tempId} data-testid={l.isCouponDrawn ? 'cart-coupon-line' : `cart-line-${l.goodId}`} className={`p-3 rounded-lg border ${l.isControlTicketDrawn ? 'border-amber-200 bg-amber-50' : l.isCouponDrawn ? 'border-blue-200 bg-blue-50/70' : 'border-gray-100 bg-white'}`}>
@@ -1950,12 +1953,12 @@ export function CreateSODialog({
                               ) : (
                                   <div className="flex items-center gap-1">
                                     <span className="text-[10px] text-gray-500">฿/ตัน</span>
-                                    <button type="button" aria-label="ลดราคา 100 บาท" data-testid={`price-down-${l.tempId}`}
-                                      onClick={() => updateActiveLine(l.tempId, { pricePerTon: Math.max(0, (Number(l.pricePerTon) || 0) - PRICE_STEP) })}
+                                    <button type="button" aria-label={`ลดราคา ${priceStep} บาท`} data-testid={`price-down-${l.tempId}`}
+                                      onClick={() => updateActiveLine(l.tempId, { pricePerTon: Math.max(0, (Number(l.pricePerTon) || 0) - priceStep) })}
                                       className="h-6 w-6 shrink-0 rounded border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-50">−</button>
                                     <input
                                       type="number"
-                                      step={PRICE_STEP}
+                                      step={priceStep}
                                       min="0"
                                       aria-label="ราคาต่อตัน"
                                       value={l.pricePerTon || ''}
@@ -1966,8 +1969,8 @@ export function CreateSODialog({
                                           : priceBand.className
                                       }`}
                                     />
-                                    <button type="button" aria-label="เพิ่มราคา 100 บาท" data-testid={`price-up-${l.tempId}`}
-                                      onClick={() => updateActiveLine(l.tempId, { pricePerTon: (Number(l.pricePerTon) || 0) + PRICE_STEP })}
+                                    <button type="button" aria-label={`เพิ่มราคา ${priceStep} บาท`} data-testid={`price-up-${l.tempId}`}
+                                      onClick={() => updateActiveLine(l.tempId, { pricePerTon: (Number(l.pricePerTon) || 0) + priceStep })}
                                       className="h-6 w-6 shrink-0 rounded border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-50">+</button>
                                   </div>
                               )}

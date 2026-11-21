@@ -86,6 +86,7 @@ export function SystemSettingsModal({
   // owner 2026-10-09: price colour threshold, legacy-document cut-off, rebate-claim accounting year
   const [discountStandard, setDiscountStandard] = useState<string>('200');
   const [discountMax, setDiscountMax] = useState<string>('300');
+  const [priceStep, setPriceStep] = useState<string>('100');
   const [legacyCutoff, setLegacyCutoff] = useState<string>('2022-01-01');
   const [maePuiMaxValidDays, setMaePuiMaxValidDays] = useState<string>('3');
 
@@ -163,6 +164,7 @@ export function SystemSettingsModal({
             setAllowNegativeGiveaway(String(raw.GIVEAWAY_ALLOW_NEGATIVE_QUOTA ?? set.GIVEAWAY_ALLOW_NEGATIVE_QUOTA ?? 'true') === 'true');
             setDiscountStandard(String(raw.REBATE_STANDARD_LIMIT_PER_TON ?? set.REBATE_STANDARD_LIMIT_PER_TON ?? '200'));
             setDiscountMax(String(raw.REBATE_MAX_LIMIT_PER_TON ?? set.REBATE_MAX_LIMIT_PER_TON ?? '300'));
+            setPriceStep(String(raw.PRICE_STEP_PER_TON ?? set.PRICE_STEP_PER_TON ?? '100'));
             setLegacyCutoff(String(raw.LEGACY_DOC_CUTOFF_DATE ?? set.LEGACY_DOC_CUTOFF_DATE ?? '2022-01-01'));
             setMaePuiMaxValidDays(String(raw.QUOTATION_MAE_PUI_MAX_VALID_DAYS ?? set.QUOTATION_MAE_PUI_MAX_VALID_DAYS ?? '3'));
 
@@ -246,11 +248,13 @@ export function SystemSettingsModal({
       if (borrowPct < 0 || borrowPct > 100) {
         throw new Error('เพดานการยืมของแถมต้องอยู่ระหว่าง 0 ถึง 100%');
       }
-      // Owner, 18 Nov 2026: prices move in steps of 100 baht, so the limits do too.
+      // Owner, 18 and 21 Nov 2026: prices move in whole steps (App Setting PRICE_STEP_PER_TON), so the limits do too.
       const stdDiscount = parseStrictInt(discountStandard, 200);
       const maxDiscount = parseStrictInt(discountMax, 300);
+      const step = parseStrictInt(priceStep, 100);
+      if (step < 1 || step > 1000) throw new Error('step ราคาต้องอยู่ระหว่าง 1 ถึง 1,000 บาท/ตัน');
       if (stdDiscount < 0 || maxDiscount < 0) throw new Error('เกณฑ์ลดราคาต้องไม่ติดลบ');
-      if (stdDiscount % 100 !== 0 || maxDiscount % 100 !== 0) throw new Error('เกณฑ์ลดราคาต้องเป็นหลักร้อย เช่น 100, 200, 300');
+      if (stdDiscount % step !== 0 || maxDiscount % step !== 0) throw new Error(`เกณฑ์ลดราคาต้องเป็นจำนวนเท่าของ step ราคา ${step} บาท/ตัน`);
       if (stdDiscount > maxDiscount) throw new Error('ลดได้โดยไม่ต้องขออนุมัติ ต้องไม่มากกว่าเพดานลดราคา');
       if (stdDiscount > 1000 || maxDiscount > 1500) throw new Error('ลดได้โดยไม่ต้องขออนุมัติไม่เกิน 1,000 และเพดานลดราคาไม่เกิน 1,500 บาท/ตัน');
       if (!/^\d{4}-\d{2}-\d{2}$/.test(legacyCutoff.trim())) throw new Error('วันตัดเอกสารเก่าต้องเป็นวันที่รูปแบบ YYYY-MM-DD');
@@ -299,6 +303,7 @@ export function SystemSettingsModal({
         GIVEAWAY_ALLOW_NEGATIVE_QUOTA: allowNegativeGiveaway ? 'true' : 'false',
         REBATE_STANDARD_LIMIT_PER_TON: stdDiscount,
         REBATE_MAX_LIMIT_PER_TON: maxDiscount,
+        PRICE_STEP_PER_TON: step,
         LEGACY_DOC_CUTOFF_DATE: legacyCutoff.trim(),
         QUOTATION_MAE_PUI_MAX_VALID_DAYS: maePuiDays,
         TRIP_MULTI_CUST_APPROVAL_MIN_CUSTOMERS: multiCustMin,
@@ -886,16 +891,22 @@ export function SystemSettingsModal({
                       พนักงานขายเห็นเพียงสีของราคา ไม่เห็นยอดรีเบท
                     </div>
                   </div>
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">step การเพิ่มหรือลดราคา (บาท/ตัน)</label>
+                    <input type="number" min="1" max="1000" step="1" value={priceStep} onChange={e => setPriceStep(e.target.value)}
+                      className="w-full sm:w-1/2 p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none" />
+                    <p className="text-[11px] text-gray-500 mt-1">ราคาขึ้นหรือลงจากราคาประกาศได้ทีละค่านี้ ราคาที่ไม่ลง step บันทึกบิลไม่ได้ · เกณฑ์ลดราคาสองค่าด้านล่างต้องเป็นจำนวนเท่าของค่านี้ · ค่าเริ่มต้น 100</p>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block font-bold text-gray-700 mb-1">ลดราคาได้โดยไม่ต้องขออนุมัติ (บาท/ตัน)</label>
-                      <input type="number" min="0" step="100" value={discountStandard} onChange={e => setDiscountStandard(e.target.value)}
+                      <input type="number" min="0" step={Math.max(1, Number(priceStep) || 100)} value={discountStandard} onChange={e => setDiscountStandard(e.target.value)}
                         className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none" />
                       <p className="text-[11px] text-gray-500 mt-1">ต่ำกว่าราคาประกาศไม่เกินค่านี้ บันทึกบิลได้ทันที (สีฟ้า) · ค่าเริ่มต้น 200</p>
                     </div>
                     <div>
                       <label className="block font-bold text-gray-700 mb-1">เพดานลดราคา เมื่อผู้จัดการอนุมัติ (บาท/ตัน)</label>
-                      <input type="number" min="0" step="100" value={discountMax} onChange={e => setDiscountMax(e.target.value)}
+                      <input type="number" min="0" step={Math.max(1, Number(priceStep) || 100)} value={discountMax} onChange={e => setDiscountMax(e.target.value)}
                         className="w-full p-2.5 rounded-xl border border-gray-300 font-bold text-gray-800 focus:border-[#0C447C] outline-none" />
                       <p className="text-[11px] text-gray-500 mt-1">เกินค่าแรกแต่ไม่เกินค่านี้ ต้องขออนุมัติ (สีเหลือง) · เกินค่านี้บันทึกบิลไม่ได้ (สีแดง) · ค่าเริ่มต้น 300</p>
                     </div>

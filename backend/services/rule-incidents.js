@@ -27,6 +27,8 @@ const INCIDENT_TYPES = Object.freeze({
   // The limits are App Settings (REBATE_STANDARD_LIMIT_PER_TON, REBATE_MAX_LIMIT_PER_TON); the detail names the values used.
   BOOKING_PRICE_NEEDS_APPROVAL: { label: 'ใบสั่งจองจาก WinSpeed ขายต่ำกว่าราคากลางเกินเกณฑ์ที่ลดได้เอง (ต้องมีผู้อนุมัติ)', severity: 'WARN' },
   BOOKING_PRICE_OVER_MAX: { label: 'ใบสั่งจองจาก WinSpeed ขายต่ำกว่าราคากลางเกินเพดาน', severity: 'HIGH' },
+  // Owner, 21 Nov 2026: Sale-App refuses a price that is not a whole step from the announced price.
+  BOOKING_PRICE_OFF_STEP: { label: 'ใบสั่งจองจาก WinSpeed ราคาไม่ลง step การเพิ่มหรือลดราคา', severity: 'HIGH' },
   BOOKING_CHANGED_IN_WINSPEED: { label: 'ใบสั่งจองจาก Sale-App ถูกแก้สินค้า ราคา หรือจำนวนใน WinSpeed', severity: 'HIGH' },
 });
 
@@ -176,8 +178,9 @@ const tons = n => Number(n).toLocaleString('en-US', { minimumFractionDigits: 3, 
 
 /**
  * 103 booking lines since the start date (bounded to the last 120 days), each with its origin and the
- * general price list effective on the booking date, chosen the way the Sale-App price authority chooses
- * it. A line whose list price ties on the same begin date is ambiguous and is not judged.
+ * announced price effective on the booking date, chosen the way the bill's price check chooses it
+ * (services/price-authority.js resolveAuthoritativePrice): the customer's own price list first, then the
+ * general one, latest begin date first. A line whose price ties on the same begin date is not judged.
  */
 const BOOKING_LINES_SQL = `
     SELECT h.SOID, RTRIM(h.DocuNo) AS DocuNo, h.DocuDate, d.ListNo, d.GoodID, RTRIM(ISNULL(h.AppvFlag, '')) AS AppvFlag,
@@ -187,63 +190,79 @@ const BOOKING_LINES_SQL = `
            CASE WHEN EXISTS (SELECT 1 FROM wf.SalesOrder so WITH (NOLOCK)
                              WHERE so.WfRef = h.DocuNo AND so.ConfirmedAt IS NOT NULL) THEN 1 ELSE 0 END AS AppBill,
            s.GoodId AS SnapGoodId, CAST(s.InvoicePrice AS decimal(18,2)) AS SnapPrice, CAST(s.QuantityTon AS decimal(18,3)) AS SnapQty,
-           bp.BasePrice, bp.Ties
+           bp.BasePrice, bp.CustomerPrice, bp.Ties
     FROM dbo.SOHD h WITH (NOLOCK)
     JOIN dbo.SODT d WITH (NOLOCK) ON d.SOID = h.SOID AND d.DocuType = 103
     LEFT JOIN wf.RebateBookingPriceSnapshot s WITH (NOLOCK) ON s.BookingSOID = h.SOID AND s.[LineNo] = d.ListNo
     OUTER APPLY (
       SELECT TOP 1 CAST(dt.GoodPriceNet AS decimal(18,2)) AS BasePrice,
+             CASE WHEN hd.CustID IS NULL THEN 0 ELSE 1 END AS CustomerPrice,
              (SELECT COUNT(*) FROM dbo.EMSetPriceHD h2 WITH (NOLOCK)
                 JOIN dbo.EMSetPriceDT d2 WITH (NOLOCK) ON d2.SetPriceID = h2.SetPriceID
-               WHERE h2.CustID IS NULL AND d2.ListID = d.GoodID AND d2.GoodPriceNet > 0 AND h2.BeginDate = hd.BeginDate
+               WHERE ((hd.CustID IS NULL AND h2.CustID IS NULL) OR h2.CustID = hd.CustID)
+                 AND d2.ListID = d.GoodID AND d2.GoodPriceNet > 0 AND h2.BeginDate = hd.BeginDate
                  AND (h2.EndDate IS NULL OR h2.EndDate >= h.DocuDate)) AS Ties
       FROM dbo.EMSetPriceHD hd WITH (NOLOCK)
       JOIN dbo.EMSetPriceDT dt WITH (NOLOCK) ON dt.SetPriceID = hd.SetPriceID
-      WHERE hd.CustID IS NULL AND dt.ListID = d.GoodID AND dt.GoodPriceNet > 0
+      WHERE (hd.CustID IS NULL OR hd.CustID = h.CustID) AND dt.ListID = d.GoodID AND dt.GoodPriceNet > 0
         AND hd.BeginDate <= h.DocuDate AND (hd.EndDate IS NULL OR hd.EndDate >= h.DocuDate)
-      ORDER BY hd.BeginDate DESC, dt.SetPriceID DESC, dt.ListNo ASC) bp
+      ORDER BY CASE WHEN hd.CustID = h.CustID THEN 0 ELSE 1 END, hd.BeginDate DESC, dt.SetPriceID DESC, dt.ListNo ASC) bp
     WHERE h.DocuType = 103 AND ISNULL(h.DocuStatus, '') <> 'C' AND h.DocuDate >= @start
       AND h.DocuDate >= DATEADD(day, -120, GETDATE())
     ORDER BY h.SOID, d.ListNo
     OPTION (RECOMPILE)`;
 
-/** Pure decision for one booking line; returns the incident to record, or null. */
-function bookingLineIncident(r, { standard = 200, max = 300 } = {}) {
+/** Pure decision for one booking line; returns every incident to record (none, one or two). */
+function bookingLineIncidents(r, { standard = 200, max = 300, step = 100 } = {}) {
   const base = { soid: r.SOID, docuNo: r.DocuNo, occurredAt: localToUtc(r.DocuDate) };
   const price = Number(r.Price), qty = Number(r.Qty);
   if (Number(r.AppSnapshot) === 1) {
     // Sale-App issued this booking: the line must still match what Sale-App priced and saved.
     if (r.SnapPrice == null) {
-      if (price > 0) return { ...base, key: `BOOKING_CHANGED_IN_WINSPEED:${r.SOID}:${r.ListNo}:ADDED:${price}:${qty}`,
-        type: 'BOOKING_CHANGED_IN_WINSPEED', detail: `บรรทัด ${r.ListNo} ถูกเพิ่มใน WinSpeed: ${baht(price)} บาท/ตัน ${tons(qty)} ตัน` };
-      return null;
+      if (price > 0) return [{ ...base, key: `BOOKING_CHANGED_IN_WINSPEED:${r.SOID}:${r.ListNo}:ADDED:${price}:${qty}`,
+        type: 'BOOKING_CHANGED_IN_WINSPEED', detail: `บรรทัด ${r.ListNo} ถูกเพิ่มใน WinSpeed: ${baht(price)} บาท/ตัน ${tons(qty)} ตัน` }];
+      return [];
     }
     const changed = Number(r.GoodID) !== Number(r.SnapGoodId) || price !== Number(r.SnapPrice) || qty !== Number(r.SnapQty);
-    if (!changed) return null;
-    return { ...base, key: `BOOKING_CHANGED_IN_WINSPEED:${r.SOID}:${r.ListNo}:${r.GoodID}:${price}:${qty}`,
+    if (!changed) return [];
+    return [{ ...base, key: `BOOKING_CHANGED_IN_WINSPEED:${r.SOID}:${r.ListNo}:${r.GoodID}:${price}:${qty}`,
       type: 'BOOKING_CHANGED_IN_WINSPEED',
-      detail: `บรรทัด ${r.ListNo}: Sale-App ${baht(r.SnapPrice)} บาท/ตัน ${tons(r.SnapQty)} ตัน · WinSpeed ${baht(price)} บาท/ตัน ${tons(qty)} ตัน` };
+      detail: `บรรทัด ${r.ListNo}: Sale-App ${baht(r.SnapPrice)} บาท/ตัน ${tons(r.SnapQty)} ตัน · WinSpeed ${baht(price)} บาท/ตัน ${tons(qty)} ตัน` }];
   }
   // A Sale-App bill confirmed before the price snapshot existed was checked when it was issued.
-  if (Number(r.AppBill) === 1) return null;
-  if (!(price > 0) || r.BasePrice == null || Number(r.Ties) !== 1) return null;
+  if (Number(r.AppBill) === 1) return [];
+  if (!(price > 0) || r.BasePrice == null || Number(r.Ties) !== 1) return [];
   const diff = Math.round((Number(r.BasePrice) - price) * 100) / 100;
-  if (diff <= standard) return null;
-  const type = diff > max ? 'BOOKING_PRICE_OVER_MAX' : 'BOOKING_PRICE_NEEDS_APPROVAL';
-  return { ...base, key: `${type}:${r.SOID}:${r.ListNo}`, type,
-    detail: `บรรทัด ${r.ListNo}: ราคากลาง ${baht(r.BasePrice)} ขาย ${baht(price)} บาท/ตัน ต่ำกว่า ${baht(diff)} บาท/ตัน ${tons(qty)} ตัน · `
-      + `เกณฑ์ ${standard}/${max} บาท/ตัน · ${r.AppvFlag === 'Y' ? 'อนุมัติใบสั่งจองใน WinSpeed แล้ว' : 'ยังไม่อนุมัติใบสั่งจองใน WinSpeed'} (ถ้าเป็นส่วนลดเงินสด ให้ฝ่ายขายยืนยัน)` };
+  const priceName = Number(r.CustomerPrice) === 1 ? 'ราคาประกาศของลูกค้า' : 'ราคากลาง';
+  const approval = r.AppvFlag === 'Y' ? 'อนุมัติใบสั่งจองใน WinSpeed แล้ว' : 'ยังไม่อนุมัติใบสั่งจองใน WinSpeed';
+  const out = [];
+  // Owner, 21 Nov 2026: a price moves from the announced price only in whole steps (App Setting PRICE_STEP_PER_TON).
+  if (Math.round(diff * 100) % (step * 100) !== 0) {
+    out.push({ ...base, key: `BOOKING_PRICE_OFF_STEP:${r.SOID}:${r.ListNo}`, type: 'BOOKING_PRICE_OFF_STEP',
+      detail: `บรรทัด ${r.ListNo}: ${priceName} ${baht(r.BasePrice)} ขาย ${baht(price)} บาท/ตัน ต่างกัน ${baht(Math.abs(diff))} บาท/ตัน `
+        + `ไม่ลง step ${step} บาท/ตัน · ${tons(qty)} ตัน · ${approval}` });
+  }
+  if (diff > standard) {
+    const type = diff > max ? 'BOOKING_PRICE_OVER_MAX' : 'BOOKING_PRICE_NEEDS_APPROVAL';
+    out.push({ ...base, key: `${type}:${r.SOID}:${r.ListNo}`, type,
+      detail: `บรรทัด ${r.ListNo}: ${priceName} ${baht(r.BasePrice)} ขาย ${baht(price)} บาท/ตัน ต่ำกว่า ${baht(diff)} บาท/ตัน ${tons(qty)} ตัน · `
+        + `เกณฑ์ ${standard}/${max} บาท/ตัน · ${approval} (ถ้าเป็นส่วนลดเงินสด ให้ฝ่ายขายยืนยัน)` });
+  }
+  return out;
 }
+/** The first incident of a line, or null (kept for callers that judge one breach at a time). */
+function bookingLineIncident(r, limits) { return bookingLineIncidents(r, limits)[0] || null; }
 
 async function detectBookingIncidents(start, { query = wfQuery, record = recordIncident,
   readLimits = () => require('./price-authority').readDiscountLimits() } = {}) {
-  // The same App Settings limits the bill's price check uses (REBATE_STANDARD_LIMIT_PER_TON, REBATE_MAX_LIMIT_PER_TON).
-  const { standard, max } = await readLimits();
+  // The same App Settings the bill's price check uses (REBATE_STANDARD_LIMIT_PER_TON, REBATE_MAX_LIMIT_PER_TON, PRICE_STEP_PER_TON).
+  const { standard, max, step } = await readLimits();
   const rows = (await query(BOOKING_LINES_SQL, { start: { type: sql.VarChar(10), value: start } })).recordset || [];
   let recorded = 0;
   for (const r of rows) {
-    const incident = bookingLineIncident(r, { standard, max });
-    if (incident) { await record(incident); recorded++; }
+    for (const incident of bookingLineIncidents(r, { standard, max, step: Math.max(1, Math.trunc(Number(step) || 100)) })) {
+      await record(incident); recorded++;
+    }
   }
   return { lines: rows.length, recorded };
 }
@@ -258,4 +277,4 @@ async function detectIncidents() {
 }
 
 module.exports = { INCIDENT_TYPES, APPROVAL_SCREEN, recordIncident, recordIncidentTx, detectIncidents, plateMatches, localToUtc,
-  BOOKING_LINES_SQL, bookingLineIncident, detectBookingIncidents };
+  BOOKING_LINES_SQL, bookingLineIncident, bookingLineIncidents, detectBookingIncidents };

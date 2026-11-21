@@ -1199,7 +1199,8 @@ router.get('/unlock-reasons', async (req, res) => {
 function priceLevel(price, announced, limits) {
   if (!(announced > 0)) return 'NONE';
   const p = Number(price) || 0;
-  if (Math.round((announced - p) * 100) % (PRICE_STEP_PER_TON * 100) !== 0) return 'OFF_STEP';
+  const step = Math.max(1, Math.trunc(Number(limits?.step) || PRICE_STEP_PER_TON));
+  if (Math.round((announced - p) * 100) % (step * 100) !== 0) return 'OFF_STEP';
   if (p > announced) return 'GREEN';
   if (p === announced) return 'EQUAL';
   const below = announced - p;
@@ -1251,7 +1252,7 @@ router.post('/price-indicator', requireCapability('so.create'), async (req, res)
     (floorEval.missingCost || []).forEach(({ lineIndex }) => {
       if (out[lineIndex]) out[lineIndex].missingCost = true;
     });
-    res.json({ lines: out, belowThreshold: Boolean(floorEval.blocked) });
+    res.json({ lines: out, belowThreshold: Boolean(floorEval.blocked), priceStep: discountLimits.step });
   } catch (e) { res.status(e.status || 500).json({ message: e.message }); }
 });
 

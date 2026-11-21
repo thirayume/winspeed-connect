@@ -116,11 +116,14 @@ async function readDiscountLimits() {
   const { getSettingValue } = require('./policy-contract');
   const standard = Math.max(0, Number(await getSettingValue('REBATE_STANDARD_LIMIT_PER_TON')) || 0);
   const max = Math.max(standard, Number(await getSettingValue('REBATE_MAX_LIMIT_PER_TON')) || 0);
-  return { standard, max };
+  // Owner, 21 Nov 2026: the price step is App Setting PRICE_STEP_PER_TON (default 100 baht/ton).
+  const step = Math.max(1, Math.trunc(Number(await getSettingValue('PRICE_STEP_PER_TON')) || PRICE_STEP_PER_TON));
+  return { standard, max, step };
 }
 
-/** Prices move up or down from the announced price in steps of this many baht a ton (owner, 18 Nov 2026). */
+/** Default price step (owner, 18 Nov 2026); the step in force is App Setting PRICE_STEP_PER_TON, read with the limits. */
 const PRICE_STEP_PER_TON = 100;
+const stepOf = limits => Math.max(1, Math.trunc(Number(limits?.step) || PRICE_STEP_PER_TON));
 
 /** One error for a bill whose prices break the step or go below the announced price by more than the maximum. */
 function priceRuleError(evaluations, limits) {
@@ -128,7 +131,7 @@ function priceRuleError(evaluations, limits) {
   const offStep = evaluations.filter(e => e && e.offPriceStep);
   if (offStep.length) {
     return Object.assign(new Error(
-      `ปรับราคาขึ้นหรือลงจากราคาประกาศได้ทีละ ${PRICE_STEP_PER_TON} บาท/ตัน${names(offStep) ? ` (${names(offStep)})` : ''} กรุณาแก้ราคา`),
+      `ปรับราคาขึ้นหรือลงจากราคาประกาศได้ทีละ ${stepOf(limits)} บาท/ตัน${names(offStep) ? ` (${names(offStep)})` : ''} กรุณาแก้ราคา`),
     { status: 400, code: 'PRICE_STEP_REQUIRED' });
   }
   const overMax = evaluations.filter(e => e && e.overMaxDiscount);
@@ -202,7 +205,7 @@ async function evaluateLinePrice(line, custId, asOfDate = null, options = {}) {
   const isBelowAnnounced = deviationPerTon > 0;
   const limits = options.discountLimits || await readDiscountLimits();
   const overMaxDiscount = isBelowAnnounced && deviationPerTon > limits.max;
-  const offPriceStep = Math.round(deviationPerTon * 100) % (PRICE_STEP_PER_TON * 100) !== 0;
+  const offPriceStep = Math.round(deviationPerTon * 100) % (stepOf(limits) * 100) !== 0;
 
   return {
     isGiveaway: false,
@@ -211,6 +214,7 @@ async function evaluateLinePrice(line, custId, asOfDate = null, options = {}) {
     overMaxDiscount,
     offPriceStep,
     maxDiscountPerTon: limits.max,
+    priceStepPerTon: stepOf(limits),
     goodLabel: line.goodName || line.goodCode || String(line.goodId || ''),
     announcedPrice: auth.announcedPrice,
     requestedPrice,
