@@ -5,7 +5,9 @@
   UAT-only users, schema changes and app accounts with the Production snapshot. Run this script
   as the LAST step of that job (Task Scheduler, as an account that is sysadmin on SQL2008). It:
     1. re-maps the wf_r740_uat_* users and grants in the restored database (sql/r740-uat-principals.sql);
-    2. re-applies pending migrations and restarts the UAT stack, unattended (deploy-r740.ps1 -Auto).
+    2. re-applies pending migrations and restarts the UAT stack, unattended (deploy-r740.ps1 -Auto);
+    3. relabels the copied PROD Rebate state as UAT's own (sql/r740-uat-rebate-adopt.sql), so Rebate and
+       every other function stay on in UAT (owner, 21 Nov 2026); if that fails, Rebate is switched off.
   It never touches production. All output is appended to D:\SaleApp\uat\deploy-logs\refresh-*.log.
 
   Once production (dbwins_worldfert9) itself carries the wf schema and migrations, the nightly copy
@@ -38,32 +40,47 @@ try {
   }
   Log "UAT refresh started ($SqlServer / $Database)"
 
-  # 0. The restored copy carries Production's Rebate reset state (a 'production' coordinator and
-  #    participant), never one for 'uat'. With the UAT Rebate switches on, every fenced Rebate route
-  #    then answers 503 and a UAT bootstrap is refused (REBATE_BOOTSTRAP_PRIOR_HISTORY); bill
-  #    confirmation is not fenced. Switch them off in the UAT config so the deploy below starts the
-  #    backend without them (UAT run, 17 Nov 2026). Only REBATE_* keys are touched or logged; the
-  #    other lines hold secrets. Turning Rebate on for UAT again is a deliberate step after a reset.
-  try {
-    $cfg = 'D:\SaleApp\uat\config\.env'
-    if (Test-Path -LiteralPath $cfg) {
-      $raw = [IO.File]::ReadAllText($cfg)
-      $eol = if ($raw.Contains("`r`n")) { "`r`n" } else { "`n" }
-      $lines = $raw -split "`r?`n"
-      $switchKey = '^(REBATE_[A-Z0-9_]+_ENABLED|REBATE_RESET_FENCE_AUDIT_COMPLETE)=(.*)$'
-      $on = @($lines | Where-Object { $_ -match $switchKey -and $Matches[2].Trim() -ne 'false' })
-      if ($on.Count -gt 0) {
-        Copy-Item -LiteralPath $cfg -Destination ($cfg + '.bak-refresh-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
-        $new = foreach ($line in $lines) {
-          if ($line -match $switchKey) { $Matches[1] + '=false' }
-          elseif ($line -match '^REBATE_TICKET_REDEMPTION_TREATMENT=') { 'REBATE_TICKET_REDEMPTION_TREATMENT=' }
-          else { $line }
-        }
-        [IO.File]::WriteAllText($cfg, ($new -join $eol), (New-Object System.Text.UTF8Encoding($false)))
-        Log ("Rebate switches turned off for the restored copy: " + (($on | ForEach-Object { ($_ -split '=')[0] }) -join ', '))
-      } else { Log "Rebate switches already off." }
+  # 0. Owner, 21 Nov 2026: Rebate and every other function stay on in UAT. The UAT Rebate switches
+  #    are set on here before every deploy (only REBATE_* keys are touched or logged; the other lines
+  #    hold secrets). The restored copy carries PROD's Rebate state; step 3 relabels it as UAT's own.
+  #    If that fails, step 3 turns the Rebate switches off again so bills and the rest keep working.
+  $cfg = 'D:\SaleApp\uat\config\.env'
+  function Set-UatRebateSwitches([bool]$On) {
+    if (-not (Test-Path -LiteralPath $cfg)) { Log "UAT config not found: $cfg"; return $false }
+    $raw = [IO.File]::ReadAllText($cfg)
+    $eol = if ($raw.Contains("`r`n")) { "`r`n" } else { "`n" }
+    $lines = @($raw -split "`r?`n")
+    $want = [ordered]@{
+      REBATE_POOL_103_ENABLED = $On; REBATE_CONVERSION_APPROVAL_ENABLED = $On; REBATE_CONVERSION_ENABLED = $On
+      REBATE_TICKET_PREVIEW_ENABLED = $On; REBATE_RESET_ADMIN_ENABLED = $On; REBATE_RESET_FENCE_AUDIT_COMPLETE = $On
+      REBATE_EVIDENCE_DISCOVERY_ENABLED = $On
     }
-  } catch { Log ("Rebate switch step skipped: " + $_.Exception.Message) }
+    $treatment = if ($On) { 'dbwins_worldfert9_uat:DISCOUNT' } else { '' }
+    $changed = @(); $seen = @{}
+    $new = foreach ($line in $lines) {
+      if ($line -match '^(REBATE_[A-Z0-9_]+)=(.*)$' -and $want.Contains($Matches[1])) {
+        $k = $Matches[1]; $seen[$k] = $true; $v = ([string]$want[$k]).ToLower()
+        if ($Matches[2].Trim() -ne $v) { $changed += $k }
+        "$k=$v"
+      } elseif ($line -match '^REBATE_TICKET_REDEMPTION_TREATMENT=(.*)$') {
+        $seen['REBATE_TICKET_REDEMPTION_TREATMENT'] = $true
+        if ($Matches[1].Trim() -ne $treatment) { $changed += 'REBATE_TICKET_REDEMPTION_TREATMENT' }
+        "REBATE_TICKET_REDEMPTION_TREATMENT=$treatment"
+      } else { $line }
+    }
+    $add = @()
+    foreach ($k in $want.Keys) { if (-not $seen[$k]) { $add += "$k=$(([string]$want[$k]).ToLower())"; $changed += $k } }
+    if (-not $seen['REBATE_TICKET_REDEMPTION_TREATMENT']) { $add += "REBATE_TICKET_REDEMPTION_TREATMENT=$treatment"; $changed += 'REBATE_TICKET_REDEMPTION_TREATMENT' }
+    if ($changed.Count -eq 0) { Log ("Rebate switches already " + $(if ($On) { 'on' } else { 'off' }) + "."); return $true }
+    Copy-Item -LiteralPath $cfg -Destination ($cfg + '.bak-refresh-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    $body = @($new)
+    while ($body.Count -gt 0 -and $body[-1] -eq '') { $body = @($body[0..($body.Count - 2)]) }
+    $text = (($body + $add) -join $eol) + $eol
+    [IO.File]::WriteAllText($cfg, $text, (New-Object System.Text.UTF8Encoding($false)))
+    Log ("Rebate switches set " + $(if ($On) { 'on' } else { 'off' }) + ": " + ($changed -join ', '))
+    return $true
+  }
+  try { [void](Set-UatRebateSwitches $true) } catch { Log ("Rebate switch step failed: " + $_.Exception.Message) }
 
   # 1. Re-map the Sale-App principals in the freshly restored copy (needs SQL sysadmin).
   $sqlFile = Join-Path $AppDir 'docs\deploy\r740\sql\r740-uat-principals.sql'
@@ -96,6 +113,38 @@ try {
   $deployExit = $LASTEXITCODE
   $ErrorActionPreference = $prev
   if ($deployExit -ne 0) { throw "unattended deploy failed (exit $deployExit); see $log" }
+
+  # 3. Relabel the copied PROD Rebate state as UAT's own (sql/r740-uat-rebate-adopt.sql). The digest of
+  #    UAT's reset manifest comes from the running UAT backend (names only, no secret).
+  $adopted = $false
+  try {
+    $adoptSql = Join-Path $AppDir 'docs\deploy\r740\sql\r740-uat-rebate-adopt.sql'
+    if (-not (Test-Path $adoptSql)) { throw "adopt SQL not found: $adoptSql" }
+    $digest = ($null | & wsl.exe -d $Distro -u root -- docker exec saleapp-uat-backend-1 node scripts/rebate-manifest-digest.js 2>&1 |
+      Select-Object -Last 1)
+    $digest = [string]$digest
+    if ($digest -notmatch '^[0-9a-f]{64}$') { throw "UAT manifest digest unavailable: $digest" }
+    $adoptArgs = @('-S', $SqlServer)
+    if ($SqlUser) { $adoptArgs += @('-U', $SqlUser, '-P', $SqlPassword) } else { $adoptArgs += '-E' }
+    $adoptArgs += @('-b', '-I', '-d', $Database, '-W', '-v', "UatDigest=$digest", '-i', $adoptSql)
+    Log "Relabelling the copied Rebate state for UAT ..."
+    $out = & $sqlcmd @adoptArgs 2>&1
+    $out | ForEach-Object { Add-Content -Path $log -Value "  adopt: $_" }
+    if ($LASTEXITCODE -ne 0) { throw "adopt SQL failed (exit $LASTEXITCODE)" }
+    $adopted = $true
+    Log "Rebate state relabelled for UAT; Rebate stays on."
+  } catch {
+    Log ("Rebate relabel FAILED: " + $_.Exception.Message + " - turning the UAT Rebate switches off and restarting")
+    if (Set-UatRebateSwitches $false) {
+      $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+      & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $driver -Environment uat -OnServer -Auto -Distro $Distro *>&1 |
+        ForEach-Object { Add-Content -Path $log -Value ("  deploy: " + $_); Write-Host $_ }
+      $restartExit = $LASTEXITCODE
+      $ErrorActionPreference = $prev
+      if ($restartExit -ne 0) { throw "restart without Rebate failed (exit $restartExit); see $log" }
+    }
+    throw "UAT runs without Rebate tonight; see $log"
+  }
 
   Log "UAT refresh complete."
   exit 0
