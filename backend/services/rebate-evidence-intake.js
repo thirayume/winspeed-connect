@@ -9,6 +9,7 @@ const { withRebateOperationFence } = require('./rebate-reset-fence');
 const { acquireRebateParticipantFence } = require('./rebate-participant-fence');
 const { lockShipmentSource } = require('./rebate-shipment-source');
 const { resolveVerifiedTon } = require('./rebate-evidence-review');
+const { isSaleAppBookingLine } = require('./rebate-booking-origin');
 
 function fail(code, status = 409) { throw Object.assign(new Error(code), { code, status }); }
 function positiveInt(value) { return Number.isSafeInteger(value) && value > 0 && value <= 2147483647; }
@@ -36,6 +37,10 @@ async function stageShipmentEvidence({ redemptionId, listNo } = {}, overrides = 
       // A caller that acts on behalf of a user must enforce their scope after
       // the source is locked, before exposing or modifying the queue row.
       if (overrides.authorizeSource) await overrides.authorizeSource(query, source);
+      // Hybrid rule (owner, 21 Nov 2026): a booking made in WinSpeed keeps WinSpeed's own
+      // Rebate process, so its shipment is never queued for Sale-App Rebate.
+      if (!(await (overrides.isSaleAppBooking || isSaleAppBookingLine)(query, source)))
+        fail('REBATE_BOOKING_NOT_FROM_SALE_APP');
       let quantityTon = null;
       let holdReason = 'MANUAL_SHIPMENT_PROOF_REQUIRED';
       if (source.issues.length) holdReason = 'SOURCE_INCOMPLETE';

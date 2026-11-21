@@ -9,9 +9,9 @@ test('scans keyset independently of event time; lines created before the reset a
   const q=async(sql,args)=>{
     assert.match(sql,/ORDER BY h.RedemtionID,d.Listno/);assert.equal(args.limit,4);
     return {recordset:[
-      {RedemtionID:1,Listno:1,LatestAudit:'2026-11-14 11:00:00.000',LatestWeighOut:'2026-11-14 11:30:00.000'},
-      {RedemtionID:1,Listno:2,LatestAudit:'2026-11-14 11:00:00.000',LatestWeighOut:null},
-      {RedemtionID:2,Listno:1,LatestAudit:'2026-11-14 13:00:00.000',LatestWeighOut:'2026-11-14 11:00:00.000'},
+      {RedemtionID:1,Listno:1,FromSaleApp:1,LatestAudit:'2026-11-14 11:00:00.000',LatestWeighOut:'2026-11-14 11:30:00.000'},
+      {RedemtionID:1,Listno:2,FromSaleApp:1,LatestAudit:'2026-11-14 11:00:00.000',LatestWeighOut:null},
+      {RedemtionID:2,Listno:1,FromSaleApp:1,LatestAudit:'2026-11-14 13:00:00.000',LatestWeighOut:'2026-11-14 11:00:00.000'},
     ]};
   };
   const page=await discoverEvidencePage(q,{epoch,limit:4,windowStart});
@@ -22,8 +22,8 @@ test('scans keyset independently of event time; lines created before the reset a
 test('only lines on or after the data-window start, or created after the reset, reach the page',async()=>{
   let seen;
   const q=async(sql,args)=>{seen={sql,args};return {recordset:[
-    {RedemtionID:7,Listno:1,LatestAudit:null,LatestWeighOut:'2026-11-14 10:00:00.000'},
-    {RedemtionID:8,Listno:1,LatestAudit:null,LatestWeighOut:null}]};};
+    {RedemtionID:7,Listno:1,FromSaleApp:1,LatestAudit:null,LatestWeighOut:'2026-11-14 10:00:00.000'},
+    {RedemtionID:8,Listno:1,FromSaleApp:1,LatestAudit:null,LatestWeighOut:null}]};};
   const page=await discoverEvidencePage(q,{epoch,limit:5,windowStart});
   assert.ok(seen.sql.includes('AND (h.DocuDate>=@windowStart OR EXISTS (SELECT 1 FROM dbo.SMAudit r'));
   assert.ok(seen.sql.includes('r.audit_datetime>@resetLocal'));
@@ -42,7 +42,7 @@ test('a page without the data-window start is refused before any query',async()=
   assert.equal(called,false);
 });
 test('a source arriving behind the cursor is found on the next scan cycle',async()=>{
-  const q=async(_sql,args)=>({recordset:args.afterId?[]:[{RedemtionID:1,Listno:1,LatestAudit:null,LatestWeighOut:null}]});
+  const q=async(_sql,args)=>({recordset:args.afterId?[]:[{RedemtionID:1,Listno:1,FromSaleApp:1,LatestAudit:null,LatestWeighOut:null}]});
   const end=await discoverEvidencePage(q,{epoch,after:{redemptionId:9,listNo:1},windowStart});
   assert.equal(end.cycleComplete,true);
   const restart=await discoverEvidencePage(q,{epoch,windowStart});
@@ -54,4 +54,27 @@ test('cursor advances only after all candidate stages succeed with expected epoc
   const ok=await stageEvidencePage(page,epoch,{stage:async(item,opts)=>{seen.push(item);assert.equal(opts.expectedEpoch,epoch);return {replayed:false};}});
   assert.equal(ok.staged,2);assert.equal(seen.length,2);
   await assert.rejects(stageEvidencePage(page,epoch,{stage:async item=>{if(item.redemptionId===2)throw Error('failed');}}),/failed/);
+});
+// Hybrid rule (owner, 21 Nov 2026): a booking made in WinSpeed keeps WinSpeed's Rebate process.
+test('a line whose booking was made in WinSpeed is scanned but never held',async()=>{
+  let seen;
+  const q=async(sql,args)=>{seen=sql;return {recordset:[
+    {RedemtionID:3,Listno:1,FromSaleApp:0,LatestAudit:'2026-11-14 13:00:00.000',LatestWeighOut:'2026-11-14 13:30:00.000'},
+    {RedemtionID:3,Listno:2,FromSaleApp:null,LatestAudit:null,LatestWeighOut:null},
+    {RedemtionID:4,Listno:1,FromSaleApp:1,LatestAudit:'2026-11-14 13:00:00.000',LatestWeighOut:null}]};};
+  const page=await discoverEvidencePage(q,{epoch,limit:3,windowStart});
+  assert.equal(page.scanned,3);assert.equal(page.notFromSaleApp,2);
+  assert.deepEqual(page.next,{redemptionId:4,listNo:1});assert.equal(page.cycleComplete,false);
+  assert.deepEqual(page.candidates.map(x=>[x.redemptionId,x.listNo]),[[4,1]]);
+  // the origin is the booking line that carries Sale-App's price snapshot, joined through the coupon and 104 line
+  assert.ok(seen.includes('JOIN wf.RebateBookingPriceSnapshot os ON os.BookingSOID=ob.SOID AND os.[LineNo]=osd.RefListNo'));
+  assert.ok(seen.includes('WHERE od.RedemtionID=x.RedemtionID AND od.Listno=x.Listno'));
+  assert.ok(!/\bref\./.test(seen));
+});
+test('a candidate refused by the intake as a WinSpeed booking is skipped, any other failure stops the page',async()=>{
+  const page={candidates:[{redemptionId:1,listNo:1},{redemptionId:2,listNo:1}],next:{redemptionId:2,listNo:1},cycleComplete:false};
+  const notApp=Object.assign(Error('x'),{code:'REBATE_BOOKING_NOT_FROM_SALE_APP'});
+  const r=await stageEvidencePage(page,epoch,{stage:async item=>{if(item.redemptionId===1)throw notApp;return {replayed:false};}});
+  assert.deepEqual([r.staged,r.skipped,r.next],[1,1,{redemptionId:2,listNo:1}]);
+  await assert.rejects(stageEvidencePage(page,epoch,{stage:async()=>{throw Object.assign(Error('y'),{code:'REBATE_EVIDENCE_SOURCE_CHANGED'});}}),{code:'REBATE_EVIDENCE_SOURCE_CHANGED'});
 });

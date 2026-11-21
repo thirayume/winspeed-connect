@@ -29,7 +29,7 @@ function system() {
     throw new Error('Unexpected SQL');
   };
   const overrides = { runFence: async fn => fn(epoch), runTx: async fn => fn(query), participantFence: async () => {},
-    readSource: async () => ({ ...source }), resolveQuantityTon: async () => source.quantity };
+    readSource: async () => ({ ...source }), isSaleAppBooking: async () => true, resolveQuantityTon: async () => source.quantity };
   return { source, overrides, get row() { return row; } };
 }
 test('source is held, retries are idempotent, then permitted review records identities exactly once', async () => {

@@ -20,6 +20,8 @@ function enabled(req,res,next) {
 function safeError(res,error) {
   const status=Number.isInteger(error?.status) && error.status>=400 && error.status<600 ? error.status : 500;
   const code=typeof error?.code==='string' && /^REBATE_[A-Z0-9_]+$/.test(error.code) ? error.code : 'REBATE_EVIDENCE_ERROR';
+  if(code==='REBATE_BOOKING_NOT_FROM_SALE_APP')
+    return res.status(status).json({code,message:'ใบสั่งจองของใบขนนี้ออกจาก WinSpeed Rebate จึงคิดตามขั้นตอนของ WinSpeed ไม่เข้าคิว Sale-App'});
   return res.status(status).json({code,message:'ไม่สามารถดำเนินการหลักฐาน Rebate ได้ กรุณาตรวจข้อมูลหรือแจ้งผู้ดูแล'});
 }
 router.use(requireCapability('rebate.evidence.verify'), enabled);

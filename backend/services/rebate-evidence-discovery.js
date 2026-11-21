@@ -25,6 +25,9 @@ function bkkInstant(value){
 // RECOMPILE (UAT copy, 21 Nov 2026): a plan cached for another reset time or cursor
 // position made the first page time out at 30 s every time, so the worker could never
 // move its cursor. Compiled per page, the slowest page took about 2 s.
+// Hybrid rule (owner, 21 Nov 2026): only a line whose booking (103) Sale-App issued is
+// held; a booking made in WinSpeed keeps WinSpeed's own Rebate process.
+const {SALE_APP_BOOKING_FOR_116_LINE}=require('./rebate-booking-origin');
 async function discoverEvidencePage(query,{epoch,after={redemptionId:0,listNo:0},limit=50,windowStart}={}){
   const reset=new Date(epoch?.lastResetAtUtc).getTime();
   const {isValidStartDate}=require('./data-window');
@@ -36,7 +39,8 @@ async function discoverEvidencePage(query,{epoch,after={redemptionId:0,listNo:0}
   // WinSpeed's non-identity numeric key represents creation time.
   const rows=(await query(`SELECT x.RedemtionID,x.Listno,
       CONVERT(varchar(23),a.LatestAudit,121) AS LatestAudit,
-      CONVERT(varchar(23),w.LatestWeighOut,121) AS LatestWeighOut
+      CONVERT(varchar(23),w.LatestWeighOut,121) AS LatestWeighOut,
+      CASE WHEN o.FromSaleApp=1 THEN 1 ELSE 0 END AS FromSaleApp
     FROM (SELECT TOP (@limit) h.RedemtionID,h.DocuNo,d.Listno
       FROM dbo.WFRedemtionHD h JOIN dbo.WFRedemtionDT d ON d.RedemtionID=h.RedemtionID
       WHERE h.DocuType=116 AND (h.RedemtionID>@afterId OR (h.RedemtionID=@afterId AND d.Listno>@afterLine))
@@ -50,17 +54,20 @@ async function discoverEvidencePage(query,{epoch,after={redemptionId:0,listNo:0}
         AND s.audit_docuno=x.DocuNo AND s.brchid=1 AND UPPER(RTRIM(s.audit_action)) IN ('I','INSERT')) a
     OUTER APPLY (SELECT MAX(t.DateOut) AS LatestWeighOut FROM dbo.WGHD t
       WHERE RTRIM(t.MoveBill)=RTRIM(x.DocuNo)) w
+    OUTER APPLY (${SALE_APP_BOOKING_FOR_116_LINE.replace(/\bref\./g,'x.')}) o
     ORDER BY x.RedemtionID,x.Listno
     OPTION (RECOMPILE)`,{limit,afterId:after.redemptionId,afterLine:after.listNo,
       windowStart:windowStart.replace(/-/g,''),resetLocal})).recordset||[];
   if(rows.length>limit)fail('REBATE_DISCOVERY_INVALID');
-  let prev={...after};const candidates=[];
+  let prev={...after},notFromSaleApp=0;const candidates=[];
   for(const row of rows){
     const redemptionId=Number(row.RedemtionID),listNo=Number(row.Listno);
     if(!safe(redemptionId)||redemptionId===0||!safe(listNo)||listNo===0||
        redemptionId<prev.redemptionId||(redemptionId===prev.redemptionId&&listNo<=prev.listNo))
       fail('REBATE_DISCOVERY_INVALID');
     prev={redemptionId,listNo};
+    // Hybrid rule: a shipment of a booking made in WinSpeed is not Sale-App's Rebate.
+    if(Number(row.FromSaleApp)!==1){notFromSaleApp++;continue;}
     const audit=bkkInstant(row.LatestAudit),scale=bkkInstant(row.LatestWeighOut);
     // Unknown evidence must be held. Even a clear-looking candidate still
     // needs source, tonnage and physical proof before any accrual.
@@ -68,14 +75,21 @@ async function discoverEvidencePage(query,{epoch,after={redemptionId:0,listNo:0}
     if(postReset)candidates.push({redemptionId,listNo,reason:'POST_RESET_CANDIDATE'});
     else if(audit===null)candidates.push({redemptionId,listNo,reason:'TIME_EVIDENCE_INCOMPLETE'});
   }
-  return {scanned:rows.length,candidates,next:prev,cycleComplete:rows.length<limit};
+  return {scanned:rows.length,candidates,notFromSaleApp,next:prev,cycleComplete:rows.length<limit};
 }
 // Stage under fresh per-record fences. A cursor must only advance after this
 // entire page succeeds; replays are safe and a reset change aborts the page.
 async function stageEvidencePage(page,epoch,{stage=require('./rebate-evidence-intake').stageShipmentEvidence}={}){
   if(!page||!Array.isArray(page.candidates)||page.candidates.length>100)fail('REBATE_DISCOVERY_INPUT_INVALID',400);
-  const results=[];
-  for(const c of page.candidates)results.push(await stage({redemptionId:c.redemptionId,listNo:c.listNo},{expectedEpoch:epoch}));
-  return {staged:results.length,next:page.next,cycleComplete:page.cycleComplete};
+  const results=[];let skipped=0;
+  for(const c of page.candidates){
+    try{results.push(await stage({redemptionId:c.redemptionId,listNo:c.listNo},{expectedEpoch:epoch}));}
+    catch(e){
+      // The page query already skips WinSpeed bookings; the intake re-checks under lock.
+      if(e?.code!=='REBATE_BOOKING_NOT_FROM_SALE_APP')throw e;
+      skipped++;
+    }
+  }
+  return {staged:results.length,skipped,next:page.next,cycleComplete:page.cycleComplete};
 }
 module.exports={discoverEvidencePage,stageEvidencePage,bkkInstant};

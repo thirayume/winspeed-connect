@@ -6,7 +6,7 @@ const resetId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', fingerprint = 'a'.repeat
 const epoch = { environment: 'uat', generation: 1, resetId, lastResetAtUtc: new Date('2026-11-13T12:00:00Z'), manifestDigest: 'a'.repeat(64) };
 const item = { redemptionId: 10, listNo: 2 };
 function fixture(options = {}) {
-  const calls = []; let insert;
+  const calls = [], originSeen = []; let insert;
   const source = { redemptionId: 10, redemptionListNo: 2, couponId: 3, sourceSOID: 4, sourceListNo: 5,
     goodId: 6, goodUnitId: 7, quantity: '1.000', fingerprint, issues: [], ...(options.source || {}) };
   const query = async (sql, inputs) => {
@@ -15,10 +15,11 @@ function fixture(options = {}) {
     if (/INSERT INTO wf.RebateShipmentEvidence/.test(sql)) { insert = inputs; return { recordset: [{ Id: 11, Status: 'HELD', Revision: 1 }] }; }
     throw new Error('Unexpected query');
   };
-  return { calls, get insert() { return insert; }, overrides: {
+  return { calls, originSeen, get insert() { return insert; }, overrides: {
     runFence: async fn => fn(options.epoch || epoch), runTx: async fn => fn(query),
     participantFence: async (_q, current) => { calls.push({ participant: current }); },
     readSource: async (_q, keys) => { calls.push({ source: keys }); return source; },
+    isSaleAppBooking: async (_q, s) => { originSeen.push([s.sourceSOID, s.sourceListNo]); return options.fromWinSpeed !== true; },
     resolveQuantityTon: async () => { if (options.unitError) throw Object.assign(new Error(options.unitError), { code: options.unitError }); return source.quantity; },
   } };
 }
@@ -69,4 +70,18 @@ test('a page discovered before a reset cannot be staged into the new epoch',asyn
   f.overrides.expectedEpoch={...epoch,generation:epoch.generation+1};
   await assert.rejects(stageShipmentEvidence(item,f.overrides),{code:'REBATE_RESET_EPOCH_CHANGED'});
   assert.equal(f.calls.length,0);
+});
+// Hybrid rule (owner, 21 Nov 2026): a booking made in WinSpeed keeps WinSpeed's own Rebate process.
+test('a shipment of a booking made in WinSpeed is refused before any queue row is read or written', async () => {
+  const f = fixture({ fromWinSpeed: true });
+  await assert.rejects(stageShipmentEvidence(item, f.overrides), { code: 'REBATE_BOOKING_NOT_FROM_SALE_APP', status: 409 });
+  assert.deepEqual(f.originSeen, [[4, 5]]);
+  assert.equal(f.insert, undefined);
+  assert.ok(!f.calls.some(c => typeof c.sql === 'string' && /RebateShipmentEvidence/.test(c.sql)));
+});
+test('the origin is checked after the scope check, so an out-of-scope source never reveals its origin', async () => {
+  const f = fixture({ fromWinSpeed: true });
+  f.overrides.authorizeSource = async () => { throw Object.assign(Error('denied'), { code: 'REBATE_EVIDENCE_NOT_FOUND' }); };
+  await assert.rejects(stageShipmentEvidence(item, f.overrides), { code: 'REBATE_EVIDENCE_NOT_FOUND' });
+  assert.deepEqual(f.originSeen, []);
 });
