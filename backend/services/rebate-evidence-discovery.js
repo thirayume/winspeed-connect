@@ -22,6 +22,9 @@ function bkkInstant(value){
 // it is not a post-reset shipment even when no weigh-out was recorded. A line
 // with no create audit cannot prove its time and is held for review.
 // On the UAT copy this held 297,540 of 300,541 lines before the change.
+// RECOMPILE (UAT copy, 21 Nov 2026): a plan cached for another reset time or cursor
+// position made the first page time out at 30 s every time, so the worker could never
+// move its cursor. Compiled per page, the slowest page took about 2 s.
 async function discoverEvidencePage(query,{epoch,after={redemptionId:0,listNo:0},limit=50,windowStart}={}){
   const reset=new Date(epoch?.lastResetAtUtc).getTime();
   const {isValidStartDate}=require('./data-window');
@@ -47,7 +50,8 @@ async function discoverEvidencePage(query,{epoch,after={redemptionId:0,listNo:0}
         AND s.audit_docuno=x.DocuNo AND s.brchid=1 AND UPPER(RTRIM(s.audit_action)) IN ('I','INSERT')) a
     OUTER APPLY (SELECT MAX(t.DateOut) AS LatestWeighOut FROM dbo.WGHD t
       WHERE RTRIM(t.MoveBill)=RTRIM(x.DocuNo)) w
-    ORDER BY x.RedemtionID,x.Listno`,{limit,afterId:after.redemptionId,afterLine:after.listNo,
+    ORDER BY x.RedemtionID,x.Listno
+    OPTION (RECOMPILE)`,{limit,afterId:after.redemptionId,afterLine:after.listNo,
       windowStart:windowStart.replace(/-/g,''),resetLocal})).recordset||[];
   if(rows.length>limit)fail('REBATE_DISCOVERY_INVALID');
   let prev={...after};const candidates=[];

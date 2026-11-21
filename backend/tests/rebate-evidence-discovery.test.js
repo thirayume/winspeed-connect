@@ -27,6 +27,8 @@ test('only lines on or after the data-window start, or created after the reset, 
   const page=await discoverEvidencePage(q,{epoch,limit:5,windowStart});
   assert.ok(seen.sql.includes('AND (h.DocuDate>=@windowStart OR EXISTS (SELECT 1 FROM dbo.SMAudit r'));
   assert.ok(seen.sql.includes('r.audit_datetime>@resetLocal'));
+  // A cached plan for another reset time or cursor timed out the first page on the UAT copy.
+  assert.match(seen.sql,/ORDER BY x\.RedemtionID,x\.Listno\s+OPTION \(RECOMPILE\)\s*$/);
   assert.equal(seen.args.windowStart,'20260101');
   // the reset at 05:00 UTC is 12:00 Bangkok time, the clock WinSpeed writes audit in
   assert.equal(seen.args.resetLocal,'2026-11-14T12:00:00.000');
