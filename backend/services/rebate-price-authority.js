@@ -1,9 +1,10 @@
 'use strict';
 
-// Rebate Pool base price comes from the general WinSpeed price list effective
-// on the authoritative sale date. Call only in the sale transaction; do not
-// use NOLOCK or accept a list price supplied by the browser. A same-date tie
-// is held for investigation rather than resolved using an arbitrary SQL row.
+// Rebate Pool base price is the announced price effective on the authoritative sale date, chosen the way the bill's
+// price check chooses it (owner, 21 Nov 2026: a customer's own announced price IS that customer's base price): the
+// customer's own WinSpeed price list first, then the general one, latest begin date first. Call only in the sale
+// transaction; do not use NOLOCK or accept a list price supplied by the browser. A same-date tie within the chosen
+// list kind is held for investigation rather than resolved using an arbitrary SQL row.
 const { isValidStartDate } = require('./data-window');
 const { shipmentUnits, shipmentMoney } = require('./rebate-shipment-accrual');
 const { calculateOrderPricingAndRebate } = require('./rebate-calculator-service');
@@ -57,30 +58,50 @@ function fingerprintRebateDecision(d) {
   } catch (_) { fail('REBATE_PRICE_INPUT_INVALID', 400); }
 }
 
-async function resolveRebateBasePrice(query, { goodId, saleDate } = {}) {
-  if (typeof query !== 'function' || !positiveId(goodId) || !isValidStartDate(saleDate)) {
+// The customer the bill's price check would use: a numeric key is a CustID or a CustCode, as in
+// services/price-authority.js; a key that names two different customers is refused, never guessed.
+async function resolveRebateCustomer(query, custKey) {
+  const key = custKey == null ? '' : String(custKey).trim();
+  if (!key) return null;
+  const numeric = /^\d+$/.test(key);
+  const rows = (await query(`SELECT TOP 2 CustID FROM dbo.EMCust WITH(UPDLOCK,HOLDLOCK)
+    WHERE ${numeric ? 'CustID=@cid OR CustCode=@code' : 'CustCode=@code'}`,
+  numeric ? { cid: Number(key), code: key } : { code: key })).recordset || [];
+  if (rows.length > 1 && String(rows[0].CustID) !== String(rows[1].CustID)) fail('REBATE_CUSTOMER_AMBIGUOUS');
+  const id = Number(rows[0]?.CustID);
+  return positiveId(id) ? id : null;
+}
+
+async function resolveRebateBasePrice(query, { goodId, saleDate, custId = null } = {}) {
+  if (typeof query !== 'function' || !positiveId(goodId) || !isValidStartDate(saleDate) ||
+      (custId != null && !positiveId(custId))) {
     fail('REBATE_PRICE_INPUT_INVALID', 400);
   }
   const rows = (await query(`SELECT TOP 2 dt.SetPriceID,dt.ListNo,dt.ListID AS GoodId,
+      CASE WHEN hd.CustID IS NULL THEN 0 ELSE 1 END AS CustomerPrice,
       CONVERT(varchar(10),hd.BeginDate,23) AS BeginDate,
       CONVERT(varchar(10),hd.EndDate,23) AS EndDate,
       CAST(dt.GoodPriceNet AS decimal(18,2)) AS BasePrice,
       DB_NAME() AS DatabaseName,CONVERT(nvarchar(128),SERVERPROPERTY('ServerName')) AS ServerName
     FROM dbo.EMSetPriceHD hd WITH(UPDLOCK,HOLDLOCK)
     JOIN dbo.EMSetPriceDT dt WITH(UPDLOCK,HOLDLOCK) ON dt.SetPriceID=hd.SetPriceID
-    WHERE hd.CustID IS NULL AND dt.ListID=@goodId AND dt.GoodPriceNet>0
+    WHERE (hd.CustID IS NULL OR (@custId IS NOT NULL AND hd.CustID=@custId)) AND dt.ListID=@goodId AND dt.GoodPriceNet>0
       AND hd.BeginDate<=CAST(@saleDate AS date) AND (hd.EndDate IS NULL OR hd.EndDate>=CAST(@saleDate AS date))
-    ORDER BY hd.BeginDate DESC,dt.SetPriceID DESC,dt.ListNo ASC`, { goodId, saleDate })).recordset || [];
+    ORDER BY CASE WHEN hd.CustID IS NOT NULL THEN 0 ELSE 1 END,hd.BeginDate DESC,dt.SetPriceID DESC,dt.ListNo ASC`,
+  { goodId, saleDate, custId })).recordset || [];
   if (!rows.length) fail('REBATE_BASE_PRICE_UNAVAILABLE');
   const valid = row => positiveId(Number(row.SetPriceID)) && positiveId(Number(row.ListNo)) &&
     Number(row.GoodId) === goodId && String(row.DatabaseName || '').trim() && String(row.ServerName || '').trim() &&
     isValidStartDate(row.BeginDate) && row.BeginDate <= saleDate &&
     (row.EndDate == null || isValidStartDate(row.EndDate) && row.EndDate >= saleDate);
   if (!rows.every(valid)) fail('REBATE_BASE_PRICE_INVALID');
-  if (rows.length > 1 && rows[0].BeginDate === rows[1].BeginDate) fail('REBATE_BASE_PRICE_AMBIGUOUS');
+  const kind = r => (Number(r.CustomerPrice) === 1 ? 1 : 0);
+  if (rows.length > 1 && kind(rows[0]) === kind(rows[1]) &&
+      rows[0].BeginDate === rows[1].BeginDate) fail('REBATE_BASE_PRICE_AMBIGUOUS');
   const cents = shipmentUnits(rows[0].BasePrice, 2);
   if (cents <= 0n) fail('REBATE_BASE_PRICE_INVALID');
   return { setPriceId: Number(rows[0].SetPriceID), listNo: Number(rows[0].ListNo), goodId,
+    customerPrice: kind(rows[0]) === 1,
     database: String(rows[0].DatabaseName).trim(), server: String(rows[0].ServerName).trim(),
     saleDate, beginDate: rows[0].BeginDate, endDate: rows[0].EndDate || null, basePrice: shipmentMoney(cents) };
 }
@@ -89,13 +110,13 @@ async function resolveRebateBasePrice(query, { goodId, saleDate } = {}) {
 // saved sale revision. It is NOT itself an approval or a persisted receipt.
 // Call only with server-validated sale fields inside the same transaction as
 // the eventual immutable decision; never take basePrice from the client.
-async function evaluateRebatePriceDecision(query, { draftId, lineNo, revision, goodId, saleDate, qtyTon, sellingPrice, isCashDiscount, limits } = {}) {
+async function evaluateRebatePriceDecision(query, { draftId, lineNo, revision, goodId, saleDate, qtyTon, sellingPrice, isCashDiscount, limits, custId = null } = {}) {
   if (![draftId, lineNo, revision].every(positiveId) || typeof isCashDiscount !== 'boolean') fail('REBATE_PRICE_INPUT_INVALID', 400);
   let qty, selling;
   try { qty = shipmentUnits(qtyTon, 3); selling = shipmentUnits(sellingPrice, 2); }
   catch (_) { fail('REBATE_PRICE_INPUT_INVALID', 400); }
   if (qty <= 0n || qty > 1000000000n || selling > 1000000000000n) fail('REBATE_PRICE_INPUT_INVALID', 400);
-  const source = await resolveRebateBasePrice(query, { goodId, saleDate });
+  const source = await resolveRebateBasePrice(query, { goodId, saleDate, custId });
   const quantity = `${qty / 1000n}.${String(qty % 1000n).padStart(3, '0')}`;
   const salePrice = shipmentMoney(selling);
   const used = limits || await readDecisionLimits();
@@ -105,4 +126,4 @@ async function evaluateRebatePriceDecision(query, { draftId, lineNo, revision, g
   return { ...result, fingerprint: fingerprintRebateDecision(result) };
 }
 
-module.exports = { resolveRebateBasePrice, evaluateRebatePriceDecision, fingerprintRebateDecision, readDecisionLimits, limitOptions, validLimits };
+module.exports = { resolveRebateBasePrice, resolveRebateCustomer, evaluateRebatePriceDecision, fingerprintRebateDecision, readDecisionLimits, limitOptions, validLimits };

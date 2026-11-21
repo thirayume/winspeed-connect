@@ -2,7 +2,7 @@
 
 // Internal preparation only: caller must hold draft/header/line locks and
 // provide the transaction-bound query. It neither approves nor issues 103.
-const { evaluateRebatePriceDecision, readDecisionLimits } = require('./rebate-price-authority');
+const { evaluateRebatePriceDecision, readDecisionLimits, resolveRebateCustomer } = require('./rebate-price-authority');
 const { isValidStartDate } = require('./data-window');
 
 function fail(code) { throw Object.assign(new Error(code), { code, status: 409 }); }
@@ -16,6 +16,8 @@ async function prepareRebateBookingDecisions(query, { draft, lines, saleDate, li
   const decisions = [];
   // One reading of the App Settings limits for the whole booking, so every line is judged alike.
   let used = limits || null;
+  // The booking's customer, whose own announced price is the base price when one exists (owner, 21 Nov 2026).
+  let custId;
   for (const line of lines) {
     const lineNo = Number(line.LineNum);
     const goodId = Number(line.GoodId);
@@ -34,10 +36,11 @@ async function prepareRebateBookingDecisions(query, { draft, lines, saleDate, li
       fail('REBATE_NONCOMMERCIAL_PROOF_UNAVAILABLE');
     if (!['POOL', 'CASH'].includes(line.RebatePricingMode)) fail('REBATE_PRICING_MODE_REQUIRED');
     if (!used) used = await readDecisionLimits();
+    if (custId === undefined) custId = await resolveRebateCustomer(query, draft.CustId);
     decisions.push(await evaluateRebatePriceDecision(query, {
       draftId: Number(draft.Id), lineNo, revision: Number(draft.DocumentRevision), goodId,
       saleDate, qtyTon: line.QtyTon, sellingPrice: line.PricePerTon,
-      isCashDiscount: line.RebatePricingMode === 'CASH', limits: used,
+      isCashDiscount: line.RebatePricingMode === 'CASH', limits: used, custId,
     }));
   }
   if (!decisions.length) fail('REBATE_DRAFT_INVALID');

@@ -127,3 +127,22 @@ test('migration 255 stores the limits with each booking price and lifts the fixe
   assert.match(down, /RebatePerTon<=300 AND \(\(RebatePerTon<=200 AND RequiresManagerApproval=0\)/);
   assert.match(down, /DROP COLUMN StandardLimitPerTon/);
 });
+// Owner, 21 Nov 2026: the booking's own customer price is its base price, found from the booking's customer.
+test('a booking prices its Rebate from the customer own announced price when there is one', async () => {
+  const seen = [];
+  const query = async (sql, inputs) => {
+    seen.push({ sql, inputs });
+    if (/FROM dbo\.EMCust/.test(sql)) return { recordset: [{ CustID: 1078 }] };
+    return { recordset: inputs.custId === 1078
+      ? [{ ...priceRow, SetPriceID: 30, BasePrice: 9800, CustomerPrice: 1 }]
+      : [priceRow] };
+  };
+  const line = { SoId: 9, LineNum: 1, GoodId: 12, QtyTon: 1, PricePerTon: 9700, RebatePricingMode: 'POOL' };
+  const [d] = await prepareRebateBookingDecisions(query, { draft: { Id: 9, DocumentRevision: 2, CustId: '1078' }, lines: [line], saleDate: '2026-11-13' });
+  assert.equal(d.source.setPriceId, 30); assert.equal(d.source.basePrice, '9800.00');
+  assert.equal(d.calculation.rebatePerTon, 100); assert.equal(d.calculation.requiresManagerApproval, false);
+  assert.equal(seen.filter(c => /FROM dbo\.EMCust/.test(c.sql)).length, 1);
+  // no customer key: the general list
+  const [g] = await prepareRebateBookingDecisions(query, { draft: { Id: 9, DocumentRevision: 2 }, lines: [line], saleDate: '2026-11-13' });
+  assert.equal(g.source.setPriceId, 8); assert.equal(g.calculation.rebatePerTon, 300); assert.equal(g.calculation.requiresManagerApproval, true);
+});

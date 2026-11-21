@@ -10,15 +10,16 @@ function fixture(rows) {
   const calls = [];
   return { calls, query: async (sql, inputs) => { calls.push({ sql, inputs }); return { recordset: rows }; } };
 }
-test('base price uses the general effective price list in a locked sale transaction', async () => {
+test('base price uses the effective announced price list in a locked sale transaction', async () => {
   const f = fixture([row, { ...row, SetPriceID: 8, BeginDate: '2025-01-01' }]);
   assert.deepEqual(await resolveRebateBasePrice(f.query, { goodId: 17, saleDate: '2026-04-02' }), {
-    setPriceId: 9, listNo: 1, goodId: 17, database: 'UAT', server: 'TEST\\SQL', saleDate: '2026-04-02', beginDate: '2026-01-01', endDate: '2026-12-31', basePrice: '18000.00',
+    setPriceId: 9, listNo: 1, goodId: 17, customerPrice: false, database: 'UAT', server: 'TEST\\SQL', saleDate: '2026-04-02', beginDate: '2026-01-01', endDate: '2026-12-31', basePrice: '18000.00',
   });
-  assert.match(f.calls[0].sql, /hd\.CustID IS NULL/);
+  assert.ok(f.calls[0].sql.includes('(hd.CustID IS NULL OR (@custId IS NOT NULL AND hd.CustID=@custId))'));
+  assert.ok(f.calls[0].sql.includes('ORDER BY CASE WHEN hd.CustID IS NOT NULL THEN 0 ELSE 1 END,hd.BeginDate DESC'));
   assert.match(f.calls[0].sql, /UPDLOCK,HOLDLOCK/);
   assert.doesNotMatch(f.calls[0].sql, /NOLOCK/);
-  assert.deepEqual(f.calls[0].inputs, { goodId: 17, saleDate: '2026-04-02' });
+  assert.deepEqual(f.calls[0].inputs, { goodId: 17, saleDate: '2026-04-02', custId: null });
 });
 
 test('decision derives every case from the server price and binds price, mode and quantity', async () => {
@@ -61,4 +62,31 @@ test('missing, same-day ambiguous, expired and mismatched prices fail closed', a
   for (const bad of [{ ...input, goodId: 0 }, { ...input, saleDate: '2026-02-30' }]) {
     await assert.rejects(resolveRebateBasePrice(fixture([row]).query, bad), { code: 'REBATE_PRICE_INPUT_INVALID' });
   }
+});
+// Owner, 21 Nov 2026: a customer's own announced price is that customer's base price, as on the bill.
+test('the customer own announced price is the base price; a tie is judged only within the same kind of list', async () => {
+  const { resolveRebateCustomer } = require('../services/rebate-price-authority');
+  const cust = { ...row, SetPriceID: 30, BasePrice: '17500.00', CustomerPrice: 1, BeginDate: '2026-02-01' };
+  const general = { ...row, CustomerPrice: 0, BeginDate: '2026-02-01' };
+  const f = fixture([cust, general]);
+  const r = await resolveRebateBasePrice(f.query, { goodId: 17, saleDate: '2026-04-02', custId: 1078 });
+  assert.equal(r.basePrice, '17500.00'); assert.equal(r.customerPrice, true); assert.equal(r.setPriceId, 30);
+  assert.equal(f.calls[0].inputs.custId, 1078);
+  await assert.rejects(resolveRebateBasePrice(fixture([cust, { ...cust, SetPriceID: 31 }]).query, { goodId: 17, saleDate: '2026-04-02', custId: 1078 }),
+    { code: 'REBATE_BASE_PRICE_AMBIGUOUS' });
+  await assert.rejects(resolveRebateBasePrice(fixture([row]).query, { goodId: 17, saleDate: '2026-04-02', custId: 0 }), { code: 'REBATE_PRICE_INPUT_INVALID' });
+  // the customer key is read like the bill: a number is a CustID or a CustCode; two different customers are refused
+  const seen = [];
+  const q = rows => async (sql, inputs) => { seen.push({ sql, inputs }); return { recordset: rows }; };
+  assert.equal(await resolveRebateCustomer(q([{ CustID: 1078 }]), '1078'), 1078);
+  assert.match(seen[0].sql, /CustID=@cid OR CustCode=@code/); assert.deepEqual(seen[0].inputs, { cid: 1078, code: '1078' });
+  assert.equal(await resolveRebateCustomer(q([{ CustID: 55 }]), 'C-0055'), 55);
+  assert.match(seen[1].sql, /WHERE CustCode=@code/);
+  assert.equal(await resolveRebateCustomer(q([]), 'none'), null);
+  assert.equal(await resolveRebateCustomer(q([]), ''), null);
+  await assert.rejects(resolveRebateCustomer(q([{ CustID: 1 }, { CustID: 2 }]), '2'), { code: 'REBATE_CUSTOMER_AMBIGUOUS' });
+  // the decision carries the customer price into its calculation
+  const d = await evaluateRebatePriceDecision(fixture([cust]).query, { draftId: 23, lineNo: 1, revision: 3, goodId: 17, saleDate: '2026-04-02',
+    qtyTon: '1.000', sellingPrice: '17300.00', isCashDiscount: false, custId: 1078 });
+  assert.equal(d.source.basePrice, '17500.00'); assert.equal(d.calculation.rebatePerTon, 200); assert.equal(d.calculation.requiresManagerApproval, false);
 });
