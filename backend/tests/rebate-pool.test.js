@@ -455,6 +455,12 @@ test('Manager Approval & Rejection workflow + anti-self-approval + FIFO exclusio
     (err) => err.code === 'SELF_APPROVAL_FORBIDDEN'
   );
 
+  // Owner, 21 Nov 2026: ADMIN may approve its own work; only ADMIN acting as itself (Access As shown below stays refused).
+  const { adminApprovesOwn, approvalIdentity } = require('../services/approval-identity');
+  assert.equal(adminApprovesOwn(approvalIdentity({ id: salesUser.id, role: 'ADMIN' })), true);
+  assert.equal(adminApprovesOwn(approvalIdentity({ id: 202, role: 'MANAGER', actorSub: 101, actorRole: 'ADMIN', actorRoles: ['ADMIN'] })), false);
+  assert.equal(adminApprovesOwn(approvalIdentity({ id: 202, role: 'C_LEVEL' })), false);
+
   // Access As must check the real actor as well as the effective manager.
   await assert.rejects(() => approveOverLimitRebate(db.query, { ledgerId: created.ledger.id,
     actorUser: { id: 202, role: 'MANAGER', actorSub: 101, actorRole: 'ADMIN', actorRoles: ['ADMIN'] } }),

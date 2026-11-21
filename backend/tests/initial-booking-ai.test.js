@@ -190,3 +190,17 @@ test('the approver must be on the WinSpeed approver list and never the seller of
   await assert.rejects(initialBookingAi({ soid: 501, user: { ...user, role: 'SALES' }, preview: true }, forbidden.options),
     { code: 'AI_ROLE_CHANGED' });
 });
+
+// Owner, 21 Nov 2026: ADMIN, the highest role, may approve its own bill; only when ADMIN acts as itself.
+test('ADMIN acting as itself may approve the bill it sells; Access As still may not', async () => {
+  const admin = { sub: 11, role: 'ADMIN' };
+  const accounts = [{ Id: 11, Role: 'ADMIN', IsActive: true, MustChangePassword: false, EmpId: '202' }];
+  for (const change of [s => { s.head.EmpID = 202; }, s => { s.head.SalesUserId = 11; }]) {
+    const f = fixture({ accounts }); await f.ready(); change(f.state);
+    const preview = await initialBookingAi({ soid: 501, user: admin, preview: true }, f.options);
+    assert.ok(preview && preview.fingerprint, 'preview is offered');
+  }
+  // a MANAGER shown through Access As by an ADMIN is still refused for their own bill (covered above with `user`)
+  const f = fixture(); await f.ready(); f.state.head.EmpID = 202;
+  await assert.rejects(initialBookingAi({ soid: 501, user, preview: true }, f.options), { code: 'AI_SELF_APPROVAL' });
+});

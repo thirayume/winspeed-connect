@@ -37,4 +37,8 @@ async function bothQualifyForRegion(identity, allowed, hasRegion) {
   return Boolean(await qualifies(identity.effectiveId, identity.effectiveRoles));
 }
 
-module.exports={approvalIdentity,bothHaveRole,isSubmitter,bothQualifyForRegion};
+// Owner, 21 Nov 2026: ADMIN, the highest role, may approve its own work. Both identities must be ADMIN, so a
+// person shown through Access As is never approved for by their own hand.
+function adminApprovesOwn(identity) { return bothHaveRole(identity, ['ADMIN']); }
+
+module.exports={approvalIdentity,bothHaveRole,isSubmitter,bothQualifyForRegion,adminApprovesOwn};

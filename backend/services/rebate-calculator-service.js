@@ -23,7 +23,7 @@ const { defaultRebateQuery: wfQuery, transactionQuery } = require('./rebate-sql'
 const { getBangkokDateString } = require('./so-pickup-policy');
 const { assertPricesAboveCost } = require('./cost-authority');
 const { hasPermission, hasRole } = require('./role-capabilities');
-const { approvalIdentity, isSubmitter } = require('./approval-identity');
+const { approvalIdentity, isSubmitter, adminApprovesOwn } = require('./approval-identity');
 const { getSettingValue, logChangeEvent } = require('./policy-contract');
 const {
   REBATE_CONSTANTS,
@@ -394,7 +394,7 @@ async function approveOverLimitRebate(queryFnOrUndefined, { ledgerId, actorUser,
         code: 'INVALID_APPROVAL_STATE',
       });
     }
-    if (existing.createdByUserId && isSubmitter(approvalIdentity(actorUser), existing.createdByUserId)) {
+    if (existing.createdByUserId && isSubmitter(approvalIdentity(actorUser), existing.createdByUserId) && !adminApprovesOwn(approvalIdentity(actorUser))) {
       throw createRebateError('ห้ามอนุมัติคำขอที่ตนเองเป็นผู้บันทึก (Anti-Self-Approval)', {
         status: 403,
         code: 'SELF_APPROVAL_FORBIDDEN',

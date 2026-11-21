@@ -31,7 +31,7 @@ const {
   canUserApproveMultiCustTrip,
 } = require('../services/trip-multi-cust-approval');
 const { assertPricesAboveCost } = require('../services/cost-authority');
-const { approvalIdentity, bothHaveRole, isSubmitter } = require('../services/approval-identity');
+const { approvalIdentity, bothHaveRole, isSubmitter, adminApprovesOwn } = require('../services/approval-identity');
 const { businessIds } = require('../services/business-identity');
 const { currentActorId, hasColumn } = require('../services/request-context');
 
@@ -420,7 +420,7 @@ router.patch('/:id/approve', requireRole(...APPROVER_ROLES), requireCurrentEditR
     //   driver คืนชนิดไม่สม่ำเสมอแม้ในตารางเดียวกัน (EditRequest.Id เป็นสตริง
     //   แต่ RequestedBy เป็นตัวเลข) และ sub ใน JWT ก็ขึ้นกับว่าใครสร้าง token
     //   ถ้าเทียบด้วย === ด่านนี้จะ "ไม่ฟ้องอะไรเลย" แล้วปล่อยให้อนุมัติงานตัวเองผ่าน
-    if (isSubmitter(approvalIdentity(req.user), r.RequestedBy))
+    if (isSubmitter(approvalIdentity(req.user), r.RequestedBy) && !adminApprovesOwn(approvalIdentity(req.user)))
       return res.status(403).json({ message: 'อนุมัติคำขอของตัวเองไม่ได้' });
     const issued = r.SOID ? await findIssuedDelivery(r.SOID) : null;
     if (issued) return res.status(409).json({ message: `บิลนี้ออกใบสั่งขาย ${issued} ใน WinSpeed แล้ว แก้ไขจาก Sale-App ไม่ได้ ต้องดำเนินการใน WinSpeed`, code: 'WINSPEED_DELIVERY_ISSUED' });
@@ -434,7 +434,7 @@ router.patch('/:id/approve', requireRole(...APPROVER_ROLES), requireCurrentEditR
         .query('SELECT * FROM wf.EditRequest WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id AND RequestedAt >= @start')).recordset?.[0];
       if (!current) throw Object.assign(new Error('ไม่พบคำขอนี้'), { status: 404 });
       if (current.Status !== 'PENDING') throw Object.assign(new Error('คำขอเปลี่ยนสถานะแล้ว กรุณาโหลดข้อมูลอีกครั้ง'), { status: 409 });
-      if (isSubmitter(approvalIdentity(req.user), current.RequestedBy)) throw Object.assign(new Error('อนุมัติคำขอของตัวเองไม่ได้'), { status: 403 });
+      if (isSubmitter(approvalIdentity(req.user), current.RequestedBy) && !adminApprovesOwn(approvalIdentity(req.user))) throw Object.assign(new Error('อนุมัติคำขอของตัวเองไม่ได้'), { status: 403 });
       // A different target or requester requires the scope/WinSpeed checks to be rerun.
       if (String(current.SOID || '') !== String(r.SOID || '') || Number(current.RequestedBy) !== Number(r.RequestedBy))
         throw Object.assign(new Error('ข้อมูลคำขอเปลี่ยนแล้ว กรุณาโหลดใหม่'), { status: 409 });
