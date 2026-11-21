@@ -122,6 +122,25 @@ test('only employees enabled in the approver list may approve',async()=>{
  }
  const f=fixture({unlistedEmp:'1044'});await approved(f,wh,wh);assert.equal(f.state.request.Status,'APPROVED');
 });
+// Owner, 21 Nov 2026: ADMIN approves even without a WinSpeed employee or a place on the approver list (migration 257).
+test('ADMIN approves without a WinSpeed employee or an approver-list entry; other roles still need both',async()=>{
+ const admin={sub:99,role:'ADMIN'};
+ const f=fixture();f.state.accounts.find(a=>a.Id===99).EmpId=null;const c=await request(f);
+ await f.call('approve',{...c,user:admin});assert.equal(f.state.request.Status,'APPROVED');
+ assert.equal(f.calls.filter(x=>/AS ApproverEnabled FROM dbo.EMEmp/.test(x.text)&&x.p.emp.value==='1099').length,0);
+ await f.call('apply',c);assert.equal(f.state.applied,true);
+ const proof=f.calls.find(x=>/SELECT d.RedemtionID/.test(x.text)).text;
+ assert.match(proof,/LEFT JOIN dbo\.EMEmp apv/);
+ assert.match(proof,/na\.ApproverEmpID IS NULL AND apv\.EmpID IS NULL AND au\.EmpId IS NULL/);
+ // a bound ADMIN need not be on the approver list
+ const g=fixture({unlistedEmp:'1099'});const d=await request(g);await g.call('approve',{...d,user:admin});assert.equal(g.state.request.Status,'APPROVED');
+ // a bound ADMIN whose employee is gone is still refused
+ const h=fixture({missingEmp:'1099'});const e=await request(h);
+ await assert.rejects(h.call('approve',{...e,user:admin}),{code:'MR_APPROVER_MAPPING_REQUIRED'});
+ // a manager without a listed employee is still refused
+ const m=fixture({unlistedEmp:'1044'});const r=await request(m);
+ await assert.rejects(m.call('approve',{...r,user:manager}),{code:'MR_APPROVER_NOT_LISTED'});
+});
 test('native proof requires the recorder in SaveEmpID, no AppvEmpID and the wf approval row',async()=>{
  const f=fixture();const c=await approved(f,wh,manager);await f.call('apply',c);
  const proof=f.calls.find(x=>/SELECT d.RedemtionID/.test(x.text)).text;

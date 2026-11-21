@@ -55,3 +55,29 @@ test('migration 256 gives ADMIN every database permission and lets ADMIN approve
     .replace("IF @Exception=1 AND((@Self<>0 AND wf.fn_UserHasRole(@ApproverId,'ADMIN')<>1) OR", 'IF @Exception=1 AND(@Self<>0 OR');
   assert.equal(changed, proc(m252));
 });
+
+test('migration 257 lets an ADMIN approver of a 116 have no employee; the rollback restores 256 and refuses while such a row exists', () => {
+  const dir = path.join(__dirname, '..', 'migrations');
+  const read = f => fs.readFileSync(path.join(dir, f), 'utf8').replace(/\r\n/g, '\n');
+  const up = read('257_admin_116_approver_without_employee.sql');
+  const down = read('down/257_admin_116_approver_without_employee.down.sql');
+  const m256 = read('256_admin_all_permissions.sql');
+  const proc = s => { const i = s.indexOf('ALTER PROCEDURE wf.usp_CreateInitialManualRedemption'); return s.slice(i, s.indexOf('\nGO', i)); };
+  assert.match(up, /^-- @transaction/);
+  assert.match(up, /ALTER TABLE wf\.NativeDocumentApproval ALTER COLUMN ApproverEmpID int NULL/);
+  assert.doesNotMatch(up, /ALTER\s+(TABLE|PROCEDURE|FUNCTION)\s+dbo\./i);
+  // no existing approval row is changed
+  assert.doesNotMatch(up, /\b(UPDATE|DELETE\s+FROM)\s+wf\.NativeDocumentApproval\b/);
+  // WinSpeed's 116 still gets the recorder only; the approver stays in wf
+  assert.match(proc(up), /INSERT INTO dbo\.WFRedemtionHD\(RedemtionID,DocuNo,DocuDate,DocuType,IssueName,CarLicense,SaveEmpID,/);
+  assert.doesNotMatch(proc(up), /AppvEmpID/);
+  const changed = proc(up)
+    .replace(' LEFT JOIN dbo.EMEmp emp WITH(UPDLOCK,HOLDLOCK) ON CONVERT(varchar(30),emp.EmpID)=u.EmpId', ' JOIN dbo.EMEmp emp WITH(UPDLOCK,HOLDLOCK) ON CONVERT(varchar(30),emp.EmpID)=u.EmpId')
+    .replace("  AND(emp.EmpID IS NOT NULL OR(u.EmpId IS NULL AND wf.fn_UserHasRole(u.Id,'ADMIN')=1))\n", '')
+    .replace("OR(@AppvEmp IS NULL AND wf.fn_UserHasRole(@ApproverId,'ADMIN')<>1) OR", 'OR @AppvEmp IS NULL OR')
+    .replace(" IF wf.fn_UserHasRole(@ApproverId,'ADMIN')<>1 AND NOT EXISTS(SELECT 1 FROM wf.NativeApproverEmployee", ' IF NOT EXISTS(SELECT 1 FROM wf.NativeApproverEmployee');
+  assert.equal(changed, proc(m256));
+  assert.equal(proc(down), proc(m256));
+  assert.match(down, /ROLLBACK_257_BLOCKED/);
+  assert.match(down, /ALTER COLUMN ApproverEmpID int NOT NULL/);
+});

@@ -186,8 +186,13 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
    const d=mayApprove(r,who);
    if(!d.allowed)fail('MR_APPROVAL_FORBIDDEN',403);
    if(d.exceptionBlocked)fail('MR_EXCEPTION_APPROVER_REQUIRED',403);
-   const approver=await employee(q,who.empId,'MR_APPROVER_MAPPING_REQUIRED');
-   if(!(approver.ApproverEnabled===true||approver.ApproverEnabled===1))fail('MR_APPROVER_NOT_LISTED',403);
+   // Owner, 21 Nov 2026: ADMIN approves itself even without a WinSpeed employee or a place on the approver list;
+   // WinSpeed's 116 keeps no approver, so only wf.NativeDocumentApproval holds it (migration 257).
+   const adminApprover=who.role.includes('ADMIN');
+   if(!(adminApprover&&!who.empId)){
+    const approver=await employee(q,who.empId,'MR_APPROVER_MAPPING_REQUIRED');
+    if(!adminApprover&&!(approver.ApproverEnabled===true||approver.ApproverEnabled===1))fail('MR_APPROVER_NOT_LISTED',403);
+   }
    if(r.Status==='APPROVED'&&Number(r.ApprovedById)===who.effective&&Number(r.ApproverActorId)===who.actor)return requestView(r,who);
    if(r.Status!=='PENDING')fail('MR_REQUEST_CONFLICT');
    await q(`UPDATE wf.NativeManualRedemptionRequest SET Status='APPROVED',ApprovedById=@user,ApproverActorId=@actor,ApprovedAt=GETUTCDATE(),ExpiresAt=DATEADD(minute,30,GETUTCDATE()),SelfApproval=@self,ApprovedDataHash=@datahash WHERE RequestId=@request AND Status='PENDING';
@@ -206,10 +211,11 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
    JOIN dbo.WFCoupon c ON c.CouponID=d.CouponID
    JOIN wf.NativeManualRedemptionRequest rr ON rr.RequestId=@request
    JOIN wf.AppUser ru ON ru.Id=rr.RequestedById JOIN dbo.EMEmp rec ON CONVERT(varchar(30),rec.EmpID)=ru.EmpId
-   JOIN wf.AppUser au ON au.Id=rr.ApprovedById JOIN dbo.EMEmp apv ON CONVERT(varchar(30),apv.EmpID)=au.EmpId
+   JOIN wf.AppUser au ON au.Id=rr.ApprovedById LEFT JOIN dbo.EMEmp apv ON CONVERT(varchar(30),apv.EmpID)=au.EmpId
    JOIN wf.NativeDocumentApproval na ON na.DocuType=116 AND na.NativeDocID=h.RedemtionID AND na.NativeDocNo=h.DocuNo AND na.RequestId=rr.RequestId
     AND na.RecorderUserId=rr.RequestedById AND na.RecorderActorId=rr.RequesterActorId AND na.RecorderEmpID=rec.EmpID
-    AND na.ApproverUserId=rr.ApprovedById AND na.ApproverActorId=rr.ApproverActorId AND na.ApproverEmpID=apv.EmpID
+    AND na.ApproverUserId=rr.ApprovedById AND na.ApproverActorId=rr.ApproverActorId
+    AND(na.ApproverEmpID=apv.EmpID OR(na.ApproverEmpID IS NULL AND apv.EmpID IS NULL AND au.EmpId IS NULL))
     AND na.SelfApproval=rr.SelfApproval AND na.ApprovedAt=rr.ApprovedAt
    JOIN dbo.SMAudit a ON a.audit_id=@audit AND a.audit_system=3 AND a.audit_screen=2098003052 AND a.audit_columnid=h.RedemtionID AND a.audit_docuno=h.DocuNo AND a.brchid=1
    JOIN dbo.SMEvent e ON e.eventid=@event AND e.systemid=3 AND e.objectid=2098003052 AND e.docuid=h.RedemtionID AND e.docuno=h.DocuNo AND e.brchid=1

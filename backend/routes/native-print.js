@@ -90,9 +90,13 @@ async function load116(no, dataWindow, query = wfQuery) {
       FROM dbo.WGHD WHERE WGType='SO' AND RTRIM(MoveBill)=@no
        AND COALESCE(DateOut,DateIn)>=@globalStartDate`, { ...noInput(no), globalStartDate: { type: sql.Date, value: dataWindow.businessDate } }));
   const approval = rows(await query(`
-    SELECT TOP 1 e.EmpCode AS ApproverCode, RTRIM(e.EmpName) AS ApproverName, r.SlipSource, r.ExceptionRequired, na.SelfApproval
+    SELECT TOP 1 COALESCE(RTRIM(e.EmpCode), CASE WHEN na.ApproverEmpID IS NULL THEN 'ADMIN' END) AS ApproverCode,
+           COALESCE(RTRIM(e.EmpName), CASE WHEN na.ApproverEmpID IS NULL THEN RTRIM(au.DisplayName) END) AS ApproverName,
+           r.SlipSource, r.ExceptionRequired, na.SelfApproval
       FROM wf.NativeDocumentApproval na
       LEFT JOIN dbo.EMEmp e ON e.EmpID=na.ApproverEmpID
+      -- an ADMIN approver without a WinSpeed employee (migration 257) prints as ADMIN and its Sale-App name
+      LEFT JOIN wf.AppUser au ON au.Id=na.ApproverUserId
       LEFT JOIN wf.NativeManualRedemptionRequest r ON r.RequestId=na.RequestId
      WHERE na.DocuType=116 AND na.NativeDocID=@id`, idInput(head.RedemtionID)))[0] || null;
   return { count: 1, doc: { ...head, items, scale: scales.length === 1 ? scales[0] : null, appApproval: approval } };
