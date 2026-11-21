@@ -12,6 +12,24 @@ const crypto = require('crypto');
 function fail(code, status = 409) { throw Object.assign(new Error(code), { code, status }); }
 function positiveId(value) { return Number.isSafeInteger(value) && value > 0 && value <= 2147483647; }
 
+// The discount limits come from App Settings (REBATE_STANDARD_LIMIT_PER_TON, REBATE_MAX_LIMIT_PER_TON), read the
+// same way as the bill's price check, so the bill and its Rebate decision never disagree. The limits used are part
+// of the decision and of its fingerprint, and are stored with the booking price, so a later change of the settings
+// never changes a booking already priced. The markup cap follows the standard limit, as in the Rebate calculator.
+function validLimits(l) {
+  return !!l && Number.isSafeInteger(l.standard) && Number.isSafeInteger(l.max) && l.standard >= 0 && l.max >= l.standard && l.max <= 1500;
+}
+function limitOptions(l) {
+  if (!validLimits(l)) fail('REBATE_LIMITS_INVALID', 503);
+  return { standardDiscountLimit: l.standard, maxDiscountLimit: l.max, standardMarkupCap: l.standard };
+}
+async function readDecisionLimits() {
+  const raw = await require('./price-authority').readDiscountLimits();
+  const limits = { standard: Number(raw?.standard), max: Number(raw?.max) };
+  if (!validLimits(limits)) fail('REBATE_LIMITS_INVALID', 503);
+  return limits;
+}
+
 function fingerprintRebateDecision(d) {
   try {
     if (![d.draftId,d.lineNo,d.revision,d.goodId].every(positiveId) || !isValidStartDate(d.saleDate) ||
@@ -22,12 +40,13 @@ function fingerprintRebateDecision(d) {
         (d.source.endDate != null && (!isValidStartDate(d.source.endDate) || d.source.endDate<d.saleDate))) fail('REBATE_PRICE_INPUT_INVALID', 400);
     const qty = shipmentUnits(d.quantity, 3), sale = shipmentUnits(d.sellingPrice, 2), base = shipmentUnits(d.source.basePrice, 2);
     if (qty<=0n || qty>1000000000n || sale>1000000000000n || base<=0n) fail('REBATE_PRICE_INPUT_INVALID', 400);
-    const expected=calculateOrderPricingAndRebate(d.source.basePrice,d.sellingPrice,d.quantity,d.isCashDiscount);
+    const expected=calculateOrderPricingAndRebate(d.source.basePrice,d.sellingPrice,d.quantity,d.isCashDiscount,limitOptions(d.limits));
     for(const field of ['invoiceUnitPrice','rebatePerTon','totalRebateEarned','companyExtraProfitPerTon',
       'totalCompanyExtraProfit','excessApprovalAmount','totalExcessApprovalAmount','requiresManagerApproval','approvalStatus','pricingMode']) {
       if(d.calculation[field]!==expected[field]) fail('REBATE_PRICE_INPUT_INVALID',400);
     }
-    return crypto.createHash('sha256').update(JSON.stringify({ version: 1,
+    return crypto.createHash('sha256').update(JSON.stringify({ version: 2,
+      standardLimitPerTon: d.limits.standard, maxLimitPerTon: d.limits.max,
       database: d.source.database.toLowerCase(), server: d.source.server.toLowerCase(),
       draftId: d.draftId, lineNo: d.lineNo, revision: d.revision, goodId: d.goodId, saleDate: d.saleDate,
       priceListId: d.source.setPriceId, priceListLine: d.source.listNo, priceListBegin: d.source.beginDate,
@@ -70,7 +89,7 @@ async function resolveRebateBasePrice(query, { goodId, saleDate } = {}) {
 // saved sale revision. It is NOT itself an approval or a persisted receipt.
 // Call only with server-validated sale fields inside the same transaction as
 // the eventual immutable decision; never take basePrice from the client.
-async function evaluateRebatePriceDecision(query, { draftId, lineNo, revision, goodId, saleDate, qtyTon, sellingPrice, isCashDiscount } = {}) {
+async function evaluateRebatePriceDecision(query, { draftId, lineNo, revision, goodId, saleDate, qtyTon, sellingPrice, isCashDiscount, limits } = {}) {
   if (![draftId, lineNo, revision].every(positiveId) || typeof isCashDiscount !== 'boolean') fail('REBATE_PRICE_INPUT_INVALID', 400);
   let qty, selling;
   try { qty = shipmentUnits(qtyTon, 3); selling = shipmentUnits(sellingPrice, 2); }
@@ -79,9 +98,11 @@ async function evaluateRebatePriceDecision(query, { draftId, lineNo, revision, g
   const source = await resolveRebateBasePrice(query, { goodId, saleDate });
   const quantity = `${qty / 1000n}.${String(qty % 1000n).padStart(3, '0')}`;
   const salePrice = shipmentMoney(selling);
-  const calculation = calculateOrderPricingAndRebate(source.basePrice, salePrice, quantity, isCashDiscount);
-  const result = { draftId, lineNo, revision, goodId, saleDate, source, quantity, sellingPrice: salePrice, isCashDiscount, calculation };
+  const used = limits || await readDecisionLimits();
+  const calculation = calculateOrderPricingAndRebate(source.basePrice, salePrice, quantity, isCashDiscount, limitOptions(used));
+  const result = { draftId, lineNo, revision, goodId, saleDate, source, quantity, sellingPrice: salePrice, isCashDiscount,
+    limits: { standard: used.standard, max: used.max }, calculation };
   return { ...result, fingerprint: fingerprintRebateDecision(result) };
 }
 
-module.exports = { resolveRebateBasePrice, evaluateRebatePriceDecision, fingerprintRebateDecision };
+module.exports = { resolveRebateBasePrice, evaluateRebatePriceDecision, fingerprintRebateDecision, readDecisionLimits, limitOptions, validLimits };

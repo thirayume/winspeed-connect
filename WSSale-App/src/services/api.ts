@@ -1155,6 +1155,9 @@ export const deleteGiveawayBudgetLine = (id: number, options: { expectedToken: s
 };
 
 // ── New Rebate Pool (FIFO Ledger + Manager Approval + Nov 1 Conversion) ──
+/** Discount limits in force (App Settings REBATE_STANDARD_LIMIT_PER_TON / REBATE_MAX_LIMIT_PER_TON). */
+export const fetchRebatePoolLimits = () => req<{ standard: number; max: number }>('/rebate-pool/limits');
+
 export const calculateRebatePoolOrder = (payload: {
   basePrice: number;
   sellingPrice: number;

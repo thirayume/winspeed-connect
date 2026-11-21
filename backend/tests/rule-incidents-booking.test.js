@@ -51,7 +51,7 @@ test('every booking incident type is labelled, and detection records only the li
     assert.ok(INCIDENT_TYPES[t]?.label && ['WARN', 'HIGH'].includes(INCIDENT_TYPES[t].severity), t);
   const recorded = []; let args;
   const r = await detectBookingIncidents('2026-11-01', { query: async (_s, a) => { args = a; return { recordset: [line(), line({ ListNo: 2, Price: 9000 })] }; },
-    record: async i => recorded.push(i) });
+    record: async i => recorded.push(i), readLimits: async () => ({ standard: 200, max: 300 }) });
   assert.equal(args.start.value, '2026-11-01');
   assert.deepEqual(r, { lines: 2, recorded: 1 }); assert.equal(recorded[0].type, 'BOOKING_PRICE_OVER_MAX');
 });

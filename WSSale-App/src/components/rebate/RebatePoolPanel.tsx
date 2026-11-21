@@ -16,6 +16,7 @@ import {
 import {
   calculateRebatePoolOrder,
   fetchRebatePoolLedger,
+  fetchRebatePoolLimits,
   createRebatePoolLedger,
   approveRebatePoolLedger,
   rejectRebatePoolLedger,
@@ -59,7 +60,7 @@ const PRICING_MODE_META: Record<RebatePricingMode, { label: string; badge: strin
   CASH_DISCOUNT: { label: 'ส่วนลดเงินสด (ไม่สะสม)', badge: 'bg-sky-50 text-sky-700 border-sky-200' },
   STANDARD_LIST: { label: 'ขายเท่าราคากลาง (ไม่สะสม)', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   REBATE_WITHIN_LIMIT: { label: 'ลดไม่เกิน 200 บ./ตัน', badge: 'bg-teal-50 text-teal-700 border-teal-200' },
-  REBATE_OVER_LIMIT: { label: 'ลดเกิน 200 ถึง 300 บ./ตัน (รอผู้จัดการอนุมัติ)', badge: 'bg-amber-50 text-amber-800 border-amber-200' },
+  REBATE_OVER_LIMIT: { label: 'ลดเกินเกณฑ์ ไม่เกินเพดาน (รอผู้จัดการอนุมัติ)', badge: 'bg-amber-50 text-amber-800 border-amber-200' },
   MARKUP_STANDARD: { label: 'ขายสูงกว่าราคากลาง (ส่วนเพิ่มเข้า Rebate)', badge: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
   MARKUP_EXTRA_PROFIT: { label: 'ขายสูงกว่าราคากลาง (ส่วนเกินเป็นกำไรบริษัท)', badge: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
   CASE_A_CASH_DISCOUNT: {
@@ -67,11 +68,11 @@ const PRICING_MODE_META: Record<RebatePricingMode, { label: string; badge: strin
     badge: 'bg-sky-50 text-sky-700 border-sky-200',
   },
   CASE_B_TIER1_AUTO: {
-    label: 'Case B: ลด ≤ 200 บ./ตัน (อนุมัติอัตโนมัติ)',
+    label: 'Case B: ลดไม่เกินเกณฑ์ (อนุมัติอัตโนมัติ)',
     badge: 'bg-teal-50 text-teal-700 border-teal-200',
   },
   CASE_B_TIER2_APPROVAL: {
-    label: 'Case B: ลดเกิน 200 ถึง 300 บ./ตัน (รออนุมัติ ผจก.)',
+    label: 'Case B: ลดเกินเกณฑ์ ไม่เกินเพดาน (รออนุมัติ ผจก.)',
     badge: 'bg-amber-50 text-amber-800 border-amber-200',
   },
   CASE_C_AT_BASE: {
@@ -86,7 +87,7 @@ const PRICING_MODE_META: Record<RebatePricingMode, { label: string; badge: strin
 
 const APPROVAL_META: Record<string, { label: string; cls: string }> = {
   NOT_REQUIRED: { label: 'อนุมัติอัตโนมัติ', cls: 'bg-gray-100 text-gray-600' },
-  PENDING_MANAGER_APPROVAL: { label: 'รออนุมัติส่วนลดเกิน 200 ถึง 300 บ./ตัน', cls: 'bg-amber-100 text-amber-800' },
+  PENDING_MANAGER_APPROVAL: { label: 'รออนุมัติส่วนลดเกินเกณฑ์', cls: 'bg-amber-100 text-amber-800' },
   APPROVED: { label: 'ผู้จัดการอนุมัติแล้ว', cls: 'bg-green-100 text-green-700' },
   REJECTED: { label: 'ไม่อนุมัติ', cls: 'bg-red-100 text-red-700' },
 };
@@ -125,6 +126,15 @@ function EnabledRebatePoolPanel() {
     canConvert || canApproveOverLimit;
 
   const [subTab, setSubTab] = useState<SubTab>('ledger');
+  // Discount limits from App Settings, as the server applies them; generic words until they load.
+  const [limits, setLimits] = useState<{ standard: number; max: number } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchRebatePoolLimits().then(l => { if (alive) setLimits(l); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const stdText = limits ? `${limits.standard.toLocaleString()} บ./ตัน` : 'เกณฑ์ที่ลดได้เอง';
+  const rangeText = limits ? `${limits.standard.toLocaleString()} ถึง ${limits.max.toLocaleString()} บ./ตัน` : 'เกณฑ์ ไม่เกินเพดาน';
   const [customers, setCustomers] = useState<EMCust[]>([]);
   const [goods, setGoods] = useState<EMGood[]>([]);
 
@@ -612,7 +622,7 @@ function EnabledRebatePoolPanel() {
 
         <div className="bg-white rounded-xl border border-amber-200 p-4 shadow-sm">
           <div className="text-xs text-amber-700 flex items-center gap-1.5 font-semibold">
-            <Clock size={14} /> รออนุมัติส่วนลดเกิน 200 ถึง 300 บ./ตัน
+            <Clock size={14} /> รออนุมัติส่วนลดเกิน {rangeText}
           </div>
           <div className="text-xl font-black text-amber-700 tabular-nums mt-1">
             {ledgerUnavailable ? 'ไม่พร้อมแสดง' : `${kpi.pendingApproval} รายการ`}
@@ -637,8 +647,9 @@ function EnabledRebatePoolPanel() {
         <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-col justify-between">
           <div className="text-xs text-gray-500 font-semibold">เกณฑ์นโยบายปัจจุบัน</div>
           <div className="text-[11px] text-gray-600 space-y-0.5 mt-1">
-            <div>· สะสมอัตโนมัติ: ส่วนลด ≤ 200 บ./ตัน</div>
-            <div>· ขออนุมัติ ผจก.: ส่วนลดเกิน 200 ถึง 300 บ./ตัน</div>
+            <div>· สะสมอัตโนมัติ: ส่วนลดไม่เกิน {stdText}</div>
+            <div>· ขออนุมัติ ผจก.: ส่วนลดเกิน {rangeText}</div>
+            <div>· เปลี่ยนเกณฑ์ได้ที่ App Settings</div>
             <div>· รอบตัด FIFO: 1 พ.ย. ใช้ราคา 31 ต.ค.</div>
           </div>
         </div>
@@ -654,7 +665,7 @@ function EnabledRebatePoolPanel() {
               subTab === 'ledger' ? 'bg-[#0C447C] text-white' : 'text-gray-600 hover:bg-gray-100'
             }`}
           >
-            <Clock size={14} /> Ledger &amp; อนุมัติ (-200..-300)
+            <Clock size={14} /> Ledger &amp; อนุมัติ ({limits ? `-${limits.standard}..-${limits.max}` : 'เกินเกณฑ์'})
             {kpi.pendingApproval > 0 && (
               <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-400 text-amber-950 font-black">
                 {kpi.pendingApproval}
@@ -711,7 +722,7 @@ function EnabledRebatePoolPanel() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">สถานะการอนุมัติส่วนลดเกิน 200 ถึง 300 บ./ตัน</label>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">สถานะการอนุมัติส่วนลดเกิน {rangeText}</label>
               <select
                 value={filterApproval}
                 onChange={e => setFilterApproval(e.target.value)}
@@ -1022,9 +1033,9 @@ function EnabledRebatePoolPanel() {
                     <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 flex items-start gap-2">
                       <AlertTriangle size={15} className="shrink-0 mt-0.5" />
                       <div>
-                        <div className="font-bold">ต้องขออนุมัติผู้จัดการ (ส่วนลดเกิน 200 ถึง 300 บ./ตัน)</div>
+                        <div className="font-bold">ต้องขออนุมัติผู้จัดการ (ส่วนลดเกิน {rangeText})</div>
                         <div>
-                          ส่วนเกินจากเกณฑ์ 200 บ./ตัน = {fmtMoney(calcResult.excessApprovalAmount)} บ./ตัน
+                          ส่วนเกินจากเกณฑ์ {stdText} = {fmtMoney(calcResult.excessApprovalAmount)} บ./ตัน
                           (รวม {fmtMoney(calcResult.totalExcessApprovalAmount)} บาท)
                         </div>
                       </div>
@@ -1070,9 +1081,9 @@ function EnabledRebatePoolPanel() {
 
             <div className="mt-4 pt-3 border-t border-gray-100 text-[11px] text-gray-500 space-y-1">
               <div>• Case A (ส่วนลดเงินสด): ออกบิลตามราคาเสนอขาย · สะสม = 0</div>
-              <div>• Case B (ลดไม่เกิน 200 บ./ตัน): ออกบิลที่ราคากลาง · สะสมเท่ากับส่วนต่างระหว่างราคากลางกับราคาขาย</div>
-              <div>• Case B2 (ลดเกิน 200 ถึง 300 บ./ตัน): ออกบิลที่ราคากลาง · สะสมเท่ากับส่วนต่าง · รอผู้จัดการอนุมัติ</div>
-              <div>• Case C (ขายตั้งแต่ราคากลาง): ออกบิลตามราคาขาย · สะสมส่วนเพิ่มไม่เกิน 200 บ./ตัน ส่วนที่เกินเป็นกำไรบริษัท</div>
+              <div>• Case B (ลดไม่เกิน {stdText}): ออกบิลที่ราคากลาง · สะสมเท่ากับส่วนต่างระหว่างราคากลางกับราคาขาย</div>
+              <div>• Case B2 (ลดเกิน {rangeText}): ออกบิลที่ราคากลาง · สะสมเท่ากับส่วนต่าง · รอผู้จัดการอนุมัติ</div>
+              <div>• Case C (ขายตั้งแต่ราคากลาง): ออกบิลตามราคาขาย · สะสมส่วนเพิ่มไม่เกิน {stdText} ส่วนที่เกินเป็นกำไรบริษัท</div>
             </div>
           </div>
         </div>

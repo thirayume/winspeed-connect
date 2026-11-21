@@ -1,4 +1,6 @@
 'use strict';
+// App Settings limits (REBATE_STANDARD_LIMIT_PER_TON / REBATE_MAX_LIMIT_PER_TON) as the bill's price check reads them.
+require('../services/price-authority').readDiscountLimits = async () => ({ standard: 200, max: 300 });
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {prepareRebateBookingDecisions}=require('../services/rebate-booking-decisions');
@@ -32,7 +34,7 @@ test('transaction primitives carry approved 103 pricing to one shared shipment b
         DatabaseName:'uat',ServerName:'server',DraftId:s.draftId,DocumentRevision:s.revision,GoodId:s.goodId,SaleDate:s.saleDate,SourceServer:s.server,SourceDatabase:s.database,
         SetPriceId:s.setPriceId,SetPriceListNo:s.priceListNo,PriceBegin:s.priceBegin,PriceEnd:s.priceEnd,BasePrice:s.base,SellingPrice:s.selling,InvoicePrice:s.invoice,
         QuantityTon:s.quantity,IsCashDiscount:s.isCash?1:0,RebatePerTon:s.rebate,TotalRebate:s.total,RequiresManagerApproval:s.needsApproval?1:0,
-        ApprovalEvidenceId:s.approvalId,DecisionFingerprint:s.fingerprint,ApprovalDecision:state.approval.Decision,ApprovalFingerprint:state.approval.DecisionFingerprint}]};
+        ApprovalEvidenceId:s.approvalId,DecisionFingerprint:s.fingerprint,StandardLimitPerTon:s.standardLimit,MaxLimitPerTon:s.maxLimit,ApprovalDecision:state.approval.Decision,ApprovalFingerprint:state.approval.DecisionFingerprint}]};
     }
     if(/SELECT \* FROM wf\.RebateShipmentAccrual/.test(text))return {recordset:state.ledger.filter(r=>!p.accrualId||r.Id===p.accrualId)};
     if(/AS DeliveryTon/.test(text))return {recordset:[{DeliveryTon:'0.000',BookingTon:'0.000'}]};

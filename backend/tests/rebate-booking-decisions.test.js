@@ -1,4 +1,6 @@
 'use strict';
+// App Settings limits (REBATE_STANDARD_LIMIT_PER_TON / REBATE_MAX_LIMIT_PER_TON) as the bill's price check reads them.
+require('../services/price-authority').readDiscountLimits = async () => ({ standard: 200, max: 300 });
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { prepareRebateBookingDecisions } = require('../services/rebate-booking-decisions');

@@ -5,7 +5,7 @@
 // transaction. This validates evidence only; it does not credit a balance.
 const { shipmentUnits, shipmentMoney }=require('./rebate-shipment-accrual');
 const { calculateOrderPricingAndRebate }=require('./rebate-calculator-service');
-const { fingerprintRebateDecision }=require('./rebate-price-authority');
+const { fingerprintRebateDecision, limitOptions }=require('./rebate-price-authority');
 function fail(code){throw Object.assign(new Error(code),{code,status:409});}
 const positive=n=>Number.isSafeInteger(n)&&n>0&&n<=2147483647;
 
@@ -21,7 +21,7 @@ async function lockShipmentBookingSnapshot(query,shipment) {
       s.DraftId,s.DocumentRevision,s.GoodId,CONVERT(varchar(10),s.SaleDate,23) AS SaleDate,s.SourceServer,s.SourceDatabase,s.SetPriceId,s.SetPriceListNo,
       CONVERT(varchar(10),s.PriceBegin,23) AS PriceBegin,CONVERT(varchar(10),s.PriceEnd,23) AS PriceEnd,
       s.BasePrice,s.SellingPrice,s.InvoicePrice,s.QuantityTon,s.IsCashDiscount,s.RebatePerTon,s.TotalRebate,
-      s.RequiresManagerApproval,s.ApprovalEvidenceId,s.DecisionFingerprint,a.Decision AS ApprovalDecision,
+      s.RequiresManagerApproval,s.ApprovalEvidenceId,s.DecisionFingerprint,s.StandardLimitPerTon,s.MaxLimitPerTon,a.Decision AS ApprovalDecision,
       a.DecisionFingerprint AS ApprovalFingerprint
     FROM dbo.SOHD h WITH(UPDLOCK,HOLDLOCK)
     JOIN dbo.SODT d WITH(UPDLOCK,HOLDLOCK) ON d.SOID=h.SOID AND d.DocuType=104 AND d.ListNo=@sourceListNo
@@ -42,12 +42,14 @@ async function lockShipmentBookingSnapshot(query,shipment) {
     const quantity=`${qty/1000n}.${String(qty%1000n).padStart(3,'0')}`;
     const basePrice=shipmentMoney(shipmentUnits(r.BasePrice,2));
     const sellingPrice=shipmentMoney(shipmentUnits(r.SellingPrice,2));
-    const calc=calculateOrderPricingAndRebate(basePrice,sellingPrice,quantity,cash);
+    // The limits stored with the booking price, never today's App Settings.
+    const limits={standard:Number(r.StandardLimitPerTon),max:Number(r.MaxLimitPerTon)};
+    const calc=calculateOrderPricingAndRebate(basePrice,sellingPrice,quantity,cash,limitOptions(limits));
     const decision={draftId:Number(r.DraftId),lineNo:Number(r.BookingLineNo),revision:Number(r.DocumentRevision),
       goodId:Number(r.GoodId),saleDate,source:{database:String(r.SourceDatabase||'').trim(),server:String(r.SourceServer||'').trim(),
         setPriceId:Number(r.SetPriceId),listNo:Number(r.SetPriceListNo),goodId:Number(r.GoodId),saleDate,
         beginDate:r.PriceBegin,endDate:r.PriceEnd||null,basePrice},quantity,
-      sellingPrice,isCashDiscount:cash,calculation:calc};
+      sellingPrice,isCashDiscount:cash,limits,calculation:calc};
     if(Number(r.DeliveryId)!==shipment.sourceSOID || Number(r.DeliveryLineNo)!==shipment.sourceListNo ||
        Number(r.DeliveryGoodId)!==shipment.goodId || Number(r.BookingGoodId)!==shipment.goodId || Number(r.GoodId)!==shipment.goodId ||
        !positive(Number(r.DeliveryCustId)) || Number(r.DeliveryCustId)!==Number(r.BookingCustId) ||

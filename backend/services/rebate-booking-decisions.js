@@ -2,18 +2,20 @@
 
 // Internal preparation only: caller must hold draft/header/line locks and
 // provide the transaction-bound query. It neither approves nor issues 103.
-const { evaluateRebatePriceDecision } = require('./rebate-price-authority');
+const { evaluateRebatePriceDecision, readDecisionLimits } = require('./rebate-price-authority');
 const { isValidStartDate } = require('./data-window');
 
 function fail(code) { throw Object.assign(new Error(code), { code, status: 409 }); }
 const positive = n => Number.isSafeInteger(n) && n > 0 && n <= 2147483647;
 
-async function prepareRebateBookingDecisions(query, { draft, lines, saleDate } = {}) {
+async function prepareRebateBookingDecisions(query, { draft, lines, saleDate, limits } = {}) {
   if (typeof query !== 'function' || !positive(Number(draft?.Id)) ||
       !positive(Number(draft?.DocumentRevision)) || !isValidStartDate(saleDate) ||
       !Array.isArray(lines) || !lines.length) fail('REBATE_DRAFT_INVALID');
   const seen = new Set();
   const decisions = [];
+  // One reading of the App Settings limits for the whole booking, so every line is judged alike.
+  let used = limits || null;
   for (const line of lines) {
     const lineNo = Number(line.LineNum);
     const goodId = Number(line.GoodId);
@@ -31,10 +33,11 @@ async function prepareRebateBookingDecisions(query, { draft, lines, saleDate } =
     if (line.IsCouponDrawn || line.IsControlTicketDrawn)
       fail('REBATE_NONCOMMERCIAL_PROOF_UNAVAILABLE');
     if (!['POOL', 'CASH'].includes(line.RebatePricingMode)) fail('REBATE_PRICING_MODE_REQUIRED');
+    if (!used) used = await readDecisionLimits();
     decisions.push(await evaluateRebatePriceDecision(query, {
       draftId: Number(draft.Id), lineNo, revision: Number(draft.DocumentRevision), goodId,
       saleDate, qtyTon: line.QtyTon, sellingPrice: line.PricePerTon,
-      isCashDiscount: line.RebatePricingMode === 'CASH',
+      isCashDiscount: line.RebatePricingMode === 'CASH', limits: used,
     }));
   }
   if (!decisions.length) fail('REBATE_DRAFT_INVALID');

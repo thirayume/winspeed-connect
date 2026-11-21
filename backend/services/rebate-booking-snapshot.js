@@ -35,7 +35,8 @@ async function saveBookingPriceSnapshots(query, { bookingId, decisions } = {}) {
     const existing = (await query(`SELECT DecisionFingerprint,ApprovalEvidenceId,DraftId,DocumentRevision,GoodId,
         CONVERT(varchar(10),SaleDate,23) AS SaleDate,SourceServer,SourceDatabase,SetPriceId,SetPriceListNo,
         CONVERT(varchar(10),PriceBegin,23) AS PriceBegin,CONVERT(varchar(10),PriceEnd,23) AS PriceEnd,
-        BasePrice,SellingPrice,InvoicePrice,QuantityTon,IsCashDiscount,RebatePerTon,TotalRebate,RequiresManagerApproval
+        BasePrice,SellingPrice,InvoicePrice,QuantityTon,IsCashDiscount,RebatePerTon,TotalRebate,RequiresManagerApproval,
+        StandardLimitPerTon,MaxLimitPerTon
       FROM wf.RebateBookingPriceSnapshot WITH(UPDLOCK,HOLDLOCK)
       WHERE BookingSOID=@bookingId AND [LineNo]=@lineNo`,params)).recordset || [];
     const qty=shipmentUnits(d.quantity,3), rate=shipmentUnits(d.calculation.rebatePerTon,2);
@@ -52,22 +53,26 @@ async function saveBookingPriceSnapshots(query, { bookingId, decisions } = {}) {
           shipmentUnits(e.BasePrice,2)!==shipmentUnits(d.source.basePrice,2) || shipmentUnits(e.SellingPrice,2)!==shipmentUnits(d.sellingPrice,2) ||
           shipmentUnits(e.InvoicePrice,2)!==shipmentUnits(d.calculation.invoiceUnitPrice,2) || shipmentUnits(e.QuantityTon,3)!==qty ||
           Number(e.IsCashDiscount)!==Number(d.isCashDiscount) || shipmentUnits(e.RebatePerTon,2)!==rate ||
-          shipmentUnits(e.TotalRebate,2)!==shipmentUnits(total,2) || Number(e.RequiresManagerApproval)!==Number(d.calculation.requiresManagerApproval)) fail('REBATE_BOOKING_SNAPSHOT_CONFLICT');
+          shipmentUnits(e.TotalRebate,2)!==shipmentUnits(total,2) || Number(e.RequiresManagerApproval)!==Number(d.calculation.requiresManagerApproval) ||
+          shipmentUnits(e.StandardLimitPerTon,2)!==shipmentUnits(d.limits.standard,2) || shipmentUnits(e.MaxLimitPerTon,2)!==shipmentUnits(d.limits.max,2)) fail('REBATE_BOOKING_SNAPSHOT_CONFLICT');
       saved.push({ lineNo:d.lineNo, replayed:true });
       continue;
     }
     const inserted=await query(`INSERT INTO wf.RebateBookingPriceSnapshot
       (BookingSOID,[LineNo],DraftId,DocumentRevision,GoodId,SaleDate,SourceServer,SourceDatabase,
        SetPriceId,SetPriceListNo,PriceBegin,PriceEnd,BasePrice,SellingPrice,InvoicePrice,QuantityTon,
-       IsCashDiscount,RebatePerTon,TotalRebate,RequiresManagerApproval,ApprovalEvidenceId,DecisionFingerprint)
+       IsCashDiscount,RebatePerTon,TotalRebate,RequiresManagerApproval,ApprovalEvidenceId,DecisionFingerprint,
+       StandardLimitPerTon,MaxLimitPerTon)
       VALUES(@bookingId,@lineNo,@draftId,@revision,@goodId,CAST(@saleDate AS date),@server,@database,
        @setPriceId,@priceListNo,CAST(@priceBegin AS date),CAST(@priceEnd AS date),CAST(@base AS decimal(18,2)),
        CAST(@selling AS decimal(18,2)),CAST(@invoice AS decimal(18,2)),CAST(@quantity AS decimal(18,3)),
-       @isCash,CAST(@rebate AS decimal(18,2)),CAST(@total AS decimal(18,2)),@needsApproval,@approvalId,@fingerprint)`, {
+       @isCash,CAST(@rebate AS decimal(18,2)),CAST(@total AS decimal(18,2)),@needsApproval,@approvalId,@fingerprint,
+       CAST(@standardLimit AS decimal(18,2)),CAST(@maxLimit AS decimal(18,2)))`, {
       ...params, goodId:d.goodId,saleDate:d.saleDate,server:d.source.server,database:d.source.database,
       setPriceId:d.source.setPriceId,priceListNo:d.source.listNo,priceBegin:d.source.beginDate,priceEnd:d.source.endDate,
       base:d.source.basePrice,selling:d.sellingPrice,invoice:String(d.calculation.invoiceUnitPrice),quantity:d.quantity,
       isCash:d.isCashDiscount,rebate:String(d.calculation.rebatePerTon),total,needsApproval:d.calculation.requiresManagerApproval,approvalId,
+      standardLimit:String(d.limits.standard),maxLimit:String(d.limits.max),
     });
     if (Number(inserted.rowsAffected?.[0])!==1) fail('REBATE_BOOKING_SNAPSHOT_CONFLICT');
     saved.push({ lineNo:d.lineNo,replayed:false });

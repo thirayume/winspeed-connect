@@ -1,4 +1,6 @@
 'use strict';
+// App Settings limits (REBATE_STANDARD_LIMIT_PER_TON / REBATE_MAX_LIMIT_PER_TON) as the bill's price check reads them.
+require('../services/price-authority').readDiscountLimits = async () => ({ standard: 200, max: 300 });
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const { evaluateRebatePriceDecision }=require('../services/rebate-price-authority');
@@ -24,7 +26,8 @@ async function fixture({selling='17750.00',cash=false}={}) {
       DraftId:s.draftId,DocumentRevision:s.revision,GoodId:s.goodId,SaleDate:s.saleDate,SourceServer:s.server,SourceDatabase:s.database,
       SetPriceId:s.setPriceId,SetPriceListNo:s.priceListNo,PriceBegin:s.priceBegin,PriceEnd:s.priceEnd,
       BasePrice:s.base,SellingPrice:s.selling,InvoicePrice:s.invoice,QuantityTon:s.quantity,IsCashDiscount:s.isCash,
-      RebatePerTon:s.rebate,TotalRebate:s.total,RequiresManagerApproval:s.needsApproval}))};
+      RebatePerTon:s.rebate,TotalRebate:s.total,RequiresManagerApproval:s.needsApproval,
+      StandardLimitPerTon:s.standardLimit,MaxLimitPerTon:s.maxLimit}))};
     if(/INSERT INTO wf\.RebateBookingPriceSnapshot/.test(text)){state.snapshots.push(p);return {rowsAffected:[1]};}
     throw Error('unexpected SQL');
   };

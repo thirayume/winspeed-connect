@@ -238,15 +238,15 @@ function calculateOrderPricingAndRebate(
 
 async function resolveConfiguredRebatePolicy() {
   try {
-    const [std, max, months] = await Promise.all([
-      getSettingValue('REBATE_STANDARD_LIMIT_PER_TON'),
-      getSettingValue('REBATE_MAX_LIMIT_PER_TON'),
+    // The same reader as the bill's price check and the booking decision (owner, 21 Nov 2026).
+    const [limits, months] = await Promise.all([
+      require('./price-authority').readDiscountLimits(),
       getSettingValue('REBATE_CYCLE_MONTHS'),
     ]);
     return {
-      standardDiscountLimit: Number(std || REBATE_CONSTANTS.STANDARD_DISCOUNT_LIMIT),
-      maxDiscountLimit: Number(max || REBATE_CONSTANTS.MAX_DISCOUNT_LIMIT),
-      standardMarkupCap: Number(std || REBATE_CONSTANTS.STANDARD_MARKUP_CAP),
+      standardDiscountLimit: Number(limits.standard),
+      maxDiscountLimit: Number(limits.max),
+      standardMarkupCap: Number(limits.standard),
       cycleMonths: Number(months || REBATE_CONSTANTS.CYCLE_MONTHS),
     };
   } catch {

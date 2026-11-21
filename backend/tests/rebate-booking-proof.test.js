@@ -1,11 +1,13 @@
 'use strict';
+// App Settings limits (REBATE_STANDARD_LIMIT_PER_TON / REBATE_MAX_LIMIT_PER_TON) as the bill's price check reads them.
+require('../services/price-authority').readDiscountLimits = async () => ({ standard: 200, max: 300 });
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { verifyBookingPricing } = require('../services/rebate-booking-proof');
 const { fingerprintRebateDecision } = require('../services/rebate-price-authority');
 const { calculateOrderPricingAndRebate } = require('../services/rebate-calculator-service');
 const decision = { draftId: 23, lineNo: 1, revision: 3, goodId: 17, saleDate: '2026-04-02', quantity: '1.000',
-  sellingPrice: '17750.00', isCashDiscount: false,
+  sellingPrice: '17750.00', isCashDiscount: false, limits: { standard: 200, max: 300 },
   source: { database: 'UAT', server: 'TEST\\SQL', setPriceId: 9, listNo: 1, goodId: 17, saleDate: '2026-04-02', beginDate: '2026-01-01', endDate: '2026-12-31', basePrice: '18000.00' },
   calculation: calculateOrderPricingAndRebate(18000,17750,1,false) };
 decision.fingerprint = fingerprintRebateDecision(decision);

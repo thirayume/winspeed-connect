@@ -24,8 +24,9 @@ const INCIDENT_TYPES = Object.freeze({
   INVOICE_107_REPLACED: { label: 'ใบส่งของ (107) ถูกลบใน WinSpeed และออกใหม่', severity: 'INFO' },
   // Hybrid rule (owner, 21 Nov 2026): a booking made in WinSpeed keeps WinSpeed's own process, but a
   // breach of Sale-App's price rule is still recorded, whichever system the document came from.
-  BOOKING_PRICE_NEEDS_APPROVAL: { label: 'ใบสั่งจองจาก WinSpeed ขายต่ำกว่าราคากลางเกิน 200 บาท/ตัน (ต้องมีผู้อนุมัติ)', severity: 'WARN' },
-  BOOKING_PRICE_OVER_MAX: { label: 'ใบสั่งจองจาก WinSpeed ขายต่ำกว่าราคากลางเกิน 300 บาท/ตัน (เกินเพดาน)', severity: 'HIGH' },
+  // The limits are App Settings (REBATE_STANDARD_LIMIT_PER_TON, REBATE_MAX_LIMIT_PER_TON); the detail names the values used.
+  BOOKING_PRICE_NEEDS_APPROVAL: { label: 'ใบสั่งจองจาก WinSpeed ขายต่ำกว่าราคากลางเกินเกณฑ์ที่ลดได้เอง (ต้องมีผู้อนุมัติ)', severity: 'WARN' },
+  BOOKING_PRICE_OVER_MAX: { label: 'ใบสั่งจองจาก WinSpeed ขายต่ำกว่าราคากลางเกินเพดาน', severity: 'HIGH' },
   BOOKING_CHANGED_IN_WINSPEED: { label: 'ใบสั่งจองจาก Sale-App ถูกแก้สินค้า ราคา หรือจำนวนใน WinSpeed', severity: 'HIGH' },
 });
 
@@ -231,15 +232,17 @@ function bookingLineIncident(r, { standard = 200, max = 300 } = {}) {
   const type = diff > max ? 'BOOKING_PRICE_OVER_MAX' : 'BOOKING_PRICE_NEEDS_APPROVAL';
   return { ...base, key: `${type}:${r.SOID}:${r.ListNo}`, type,
     detail: `บรรทัด ${r.ListNo}: ราคากลาง ${baht(r.BasePrice)} ขาย ${baht(price)} บาท/ตัน ต่ำกว่า ${baht(diff)} บาท/ตัน ${tons(qty)} ตัน · `
-      + `${r.AppvFlag === 'Y' ? 'อนุมัติใบสั่งจองใน WinSpeed แล้ว' : 'ยังไม่อนุมัติใบสั่งจองใน WinSpeed'} (ถ้าเป็นส่วนลดเงินสด ให้ฝ่ายขายยืนยัน)` };
+      + `เกณฑ์ ${standard}/${max} บาท/ตัน · ${r.AppvFlag === 'Y' ? 'อนุมัติใบสั่งจองใน WinSpeed แล้ว' : 'ยังไม่อนุมัติใบสั่งจองใน WinSpeed'} (ถ้าเป็นส่วนลดเงินสด ให้ฝ่ายขายยืนยัน)` };
 }
 
-async function detectBookingIncidents(start, { query = wfQuery, record = recordIncident } = {}) {
-  const { REBATE_CONSTANTS } = require('./rebate-pool-models');
+async function detectBookingIncidents(start, { query = wfQuery, record = recordIncident,
+  readLimits = () => require('./price-authority').readDiscountLimits() } = {}) {
+  // The same App Settings limits the bill's price check uses (REBATE_STANDARD_LIMIT_PER_TON, REBATE_MAX_LIMIT_PER_TON).
+  const { standard, max } = await readLimits();
   const rows = (await query(BOOKING_LINES_SQL, { start: { type: sql.VarChar(10), value: start } })).recordset || [];
   let recorded = 0;
   for (const r of rows) {
-    const incident = bookingLineIncident(r, { standard: REBATE_CONSTANTS.STANDARD_DISCOUNT_LIMIT, max: REBATE_CONSTANTS.MAX_DISCOUNT_LIMIT });
+    const incident = bookingLineIncident(r, { standard, max });
     if (incident) { await record(incident); recorded++; }
   }
   return { lines: rows.length, recorded };

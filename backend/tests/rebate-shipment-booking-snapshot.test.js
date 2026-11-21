@@ -1,4 +1,6 @@
 'use strict';
+// App Settings limits (REBATE_STANDARD_LIMIT_PER_TON / REBATE_MAX_LIMIT_PER_TON) as the bill's price check reads them.
+require('../services/price-authority').readDiscountLimits = async () => ({ standard: 200, max: 300 });
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {evaluateRebatePriceDecision}=require('../services/rebate-price-authority');
@@ -12,7 +14,7 @@ async function fixture(){
     BookingId:52,BookingCustId:8,BookingStatus:'Y',BookingDate:'2026-11-13',BookingLineNo:1,BookingGoodId:12,BookingQty:2,BookingPrice:10000,BookingUnitId:3,
     DatabaseName:'uat',ServerName:'server',DraftId:51,DocumentRevision:3,GoodId:12,SaleDate:'2026-11-13',SourceServer:'server',SourceDatabase:'uat',
     SetPriceId:8,SetPriceListNo:1,PriceBegin:'2026-01-01',PriceEnd:'2026-12-31',BasePrice:10000,SellingPrice:9750,InvoicePrice:10000,QuantityTon:2,
-    IsCashDiscount:0,RebatePerTon:250,TotalRebate:500,RequiresManagerApproval:1,ApprovalEvidenceId:7,DecisionFingerprint:d.fingerprint,
+    IsCashDiscount:0,RebatePerTon:250,TotalRebate:500,RequiresManagerApproval:1,ApprovalEvidenceId:7,DecisionFingerprint:d.fingerprint,StandardLimitPerTon:'200.00',MaxLimitPerTon:'300.00',
     ApprovalDecision:'APPROVED',ApprovalFingerprint:d.fingerprint};
   const shipment={sourceSOID:77,sourceListNo:1,goodId:12,quantityTon:'1.000'};
   let seen='';
