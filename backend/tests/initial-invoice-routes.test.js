@@ -4,8 +4,10 @@ const h=require('./helpers/route-harness.cjs');h.installDbStub(()=>[],{activeUse
 const service=require('../services/initial-invoice'),calls=[];
 service.initialInvoice=async cmd=>{calls.push(cmd);if(cmd.soid==='error')throw Error('private password');return {completed:false,operation:cmd.operation};};
 let app;test.before(async()=>{app=await h.startApp([['/api/so','../../routes/so']]);});test.after(async()=>{await app.close();});
-test('107 route excludes every role except ACCOUNTING including Admin and Manager',async()=>{
- for(const role of ['SALES','COUNTER_SALES','WAREHOUSE','APPROVER','WEIGHBRIDGE','MANAGER','C_LEVEL','ADMIN']){
+test('107 route excludes every role except ACCOUNTING and ADMIN, Manager included',async()=>{
+ // Owner, 21 Nov 2026: ADMIN is the highest role and holds every permission.
+ assert.equal((await app.call('GET','/api/so/501/native-invoice/preview',{user:{sub:22,role:'ADMIN'}})).status,200);
+ for(const role of ['SALES','COUNTER_SALES','WAREHOUSE','APPROVER','WEIGHBRIDGE','MANAGER','C_LEVEL']){
   const before=calls.length;
   for(const [method,path] of [['GET','/preview'],['POST','']])assert.equal((await app.call(method,'/api/so/501/native-invoice'+path,{user:{sub:22,role},...(method==='POST'?{body:{}}:{})})).status,403);
   assert.equal(calls.length,before);

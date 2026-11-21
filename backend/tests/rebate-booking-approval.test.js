@@ -58,7 +58,8 @@ test('Access As requires permission and scope for both identities, with distinct
   assert.equal(result.id,7);
   assert.deepEqual([f.state.inserted[0].actorPrimary,f.state.inserted[0].effectivePrimary,
     f.state.inserted[0].actorBusiness,f.state.inserted[0].effectiveBusiness],[2,1,22,11]);
-  const blocked={...user,actorPermissions:[]};
+  // an ADMIN actor holds every permission (owner, 21 Nov 2026); another actor without the permission is refused
+  const blocked={...user,actorRole:'C_LEVEL',actorRoles:['C_LEVEL'],actorPermissions:[]};
   await assert.rejects(reviewBookingPricing(f.query,{...payload(fp),user:blocked},{getVisibleScope:f.scope}),
     {code:'REBATE_APPROVAL_PERMISSION_REQUIRED'});
 });

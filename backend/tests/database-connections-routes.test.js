@@ -30,7 +30,10 @@ test('requires authentication and actual ADMIN with system permission; Access As
   }
   assert.equal((await app.call('GET',base,{user:admin})).status,200);
   const guard=require('../routes/database-connections').managementGuard;
-  let status;guard({user:{...admin,permissions:[]}}, {status(v){status=v;return this;},json(){}},()=>assert.fail('permission denied'));
+  // Owner, 21 Nov 2026: ADMIN holds every permission, even when Role Management lists none for it.
+  let passed=false;guard({user:{...admin,permissions:[]}}, {status(){return this;},set(){},json(){}},()=>{passed=true;});
+  assert.equal(passed,true);
+  let status;guard({user:{sub:12,role:'C_LEVEL',permissions:['database.set-system']}}, {status(v){status=v;return this;},json(){}},()=>assert.fail('only ADMIN'));
   assert.equal(status,403);
 });
 

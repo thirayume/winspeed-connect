@@ -4,8 +4,10 @@ const h=require('./helpers/route-harness.cjs');h.installDbStub(()=>[],{activeUse
 const calls=[];const service=require('../services/initial-delivery');
 service.initialDelivery=async command=>{calls.push(command);if(command.soid==='error')throw new Error('private password');return {operation:command.operation,shipmentReady:false};};
 let app;test.before(async()=>{app=await h.startApp([['/api/so','../../routes/so']]);});test.after(async()=>{await app.close();});
-test('credit list and approve routes admit only ACCOUNTING; AI permission gives no credit permission',async()=>{
- for(const role of ['SALES','COUNTER_SALES','MANAGER','C_LEVEL','ADMIN','WAREHOUSE','APPROVER']){
+test('credit list and approve routes admit ACCOUNTING and ADMIN; AI permission gives no credit permission',async()=>{
+ // Owner, 21 Nov 2026: ADMIN is the highest role and holds every permission.
+ assert.equal((await app.call('GET','/api/so/native-delivery/requests',{user:{sub:11,role:'ADMIN'}})).status,200);
+ for(const role of ['SALES','COUNTER_SALES','MANAGER','C_LEVEL','WAREHOUSE','APPROVER']){
   const before=calls.length,user={sub:11,role};
   assert.equal((await app.call('GET','/api/so/native-delivery/requests',{user})).status,403);
   assert.equal((await app.call('POST','/api/so/501/native-delivery/requests/key/approve',{user,body:{}})).status,403);assert.equal(calls.length,before);

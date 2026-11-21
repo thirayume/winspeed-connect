@@ -315,7 +315,7 @@ function requireAuth(req, res, next) {
           ));
           if (!hasPermission(actor, 'access-as')) throw Object.assign(new Error('ACCESS_AS_REVOKED'), { status: 403 });
           if (req.user.permissions && actor.permissions) {
-            req.user.permissions = req.user.permissions.filter(k => actor.permissions.includes(k) || mayDelegateAccounting(actor, k));
+            req.user.permissions = req.user.permissions.filter(k => hasPermission(actor, k) || mayDelegateAccounting(actor, k));
           }
           req.user.actorRoles = actor.roles;
           req.user.actorPermissions = actor.permissions;
@@ -355,8 +355,10 @@ function requireRole(...roles) {
     const user = req.user;
     const actor = user?.isImpersonating ? { role: user.actorRole, roles: user.actorRoles } : user;
     // Acting as another user must not grant either party a role they do not
-    // possess. Each may qualify through any one of their assigned roles.
-    if (!hasRole(user,...roles) || !hasRole(actor,...roles))
+    // possess. Each may qualify through any one of their assigned roles; ADMIN, the highest role, always qualifies
+    // (owner, 21 Nov 2026). Under Access As the person shown is still checked with their own roles.
+    const qualifies = u => hasRole(u,...roles) || hasRole(u,'ADMIN');
+    if (!qualifies(user) || !qualifies(actor))
       return res.status(403).json({ message: `ต้องการสิทธิ์: ${roles.join(' / ')}` });
     next();
   };

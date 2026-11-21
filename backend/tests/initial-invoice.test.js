@@ -102,8 +102,8 @@ test('taxable 107 N previews and applies only with the approved mapping intact',
  f.state.vatAccounts=[{GroupId:31,AccountId:41,AccountCode:'VAT-OUT'}];
  assert.equal((await f.call('apply',preview)).invoiceNo,'N69-02001');
 });
-test('only effective ACCOUNTING may post; live identity and Access As authority are rechecked',async()=>{
- for(const user of [{sub:11,role:'WAREHOUSE'},{sub:44,role:'MANAGER'},{sub:99,role:'ADMIN'}])await assert.rejects(fixture().call('preview',{user}),{code:'IP_ACCOUNT_REQUIRED'});
+test('only effective ACCOUNTING or ADMIN may post; live identity and Access As authority are rechecked',async()=>{
+ for(const user of [{sub:11,role:'WAREHOUSE'},{sub:44,role:'MANAGER'}])await assert.rejects(fixture().call('preview',{user}),{code:'IP_ACCOUNT_REQUIRED'});
  const f=fixture();const c=await command(f);f.state.accounts[1].IsActive=0;await assert.rejects(f.call('apply',c),{code:'IP_ACTOR_UNAVAILABLE'});
  const x=fixture();const user={...acct,actorSub:99,actorRole:'ADMIN'};const cmd=await command(x,user);await x.call('apply',cmd);assert.equal(x.state.receipt.ApplierActorId,99);
  const a=fixture();await assert.rejects(a.call('preview',{user:{...acct,actorSub:11,actorRole:'WAREHOUSE'}}),{code:'IP_ACCESS_AS_FORBIDDEN'});
@@ -152,9 +152,10 @@ test('public errors contain fixed codes and never SQL diagnostics',()=>{
 test('ACCOUNTING invoice capability is advertised only when the107 flag is enabled',()=>{
  const {capabilitiesFor,rolesFor}=require('../services/role-capabilities'),old=process.env.NATIVE_INVOICE_107_ENABLED;
  try{
-  assert.deepEqual(rolesFor('invoice.post-native'),['ACCOUNTING']);
+  assert.deepEqual(rolesFor('invoice.post-native'),['ACCOUNTING','ADMIN']);
   process.env.NATIVE_INVOICE_107_ENABLED='false';assert.equal(capabilitiesFor('ACCOUNTING').actions.includes('invoice.post-native'),false);
   process.env.NATIVE_INVOICE_107_ENABLED='true';assert.equal(capabilitiesFor('ACCOUNTING').actions.includes('invoice.post-native'),true);
-  for(const role of ['WAREHOUSE','MANAGER','C_LEVEL','ADMIN'])assert.equal(capabilitiesFor(role).actions.includes('invoice.post-native'),false);
+  for(const role of ['WAREHOUSE','MANAGER','C_LEVEL'])assert.equal(capabilitiesFor(role).actions.includes('invoice.post-native'),false);
+  assert.equal(capabilitiesFor('ADMIN').actions.includes('invoice.post-native'),true);
  }finally{if(old===undefined)delete process.env.NATIVE_INVOICE_107_ENABLED;else process.env.NATIVE_INVOICE_107_ENABLED=old;}
 });

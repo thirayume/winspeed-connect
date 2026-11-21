@@ -36,7 +36,8 @@ test('Access As capability requires the actor and effective user even without pr
   assert.equal(checkCapability(asAccounting, 'invoice.post-native').allowed, true);
   assert.equal(checkCapability(asAccounting, 'credit.approve-native').allowed, true);
   assert.equal(checkCapability({ ...asAccounting, actorRole: 'MANAGER', actorRoles: ['MANAGER'] }, 'invoice.post-native').status, 403);
-  assert.equal(checkCapability({ ...asAccounting, actorPermissions: [] }, 'invoice.post-native').status, 403);
+  // Owner, 21 Nov 2026: an ADMIN actor holds every permission, even when its profile lists none.
+  assert.equal(checkCapability({ ...asAccounting, actorPermissions: [] }, 'invoice.post-native').allowed, true);
   assert.equal(checkCapability({ ...asAccounting, actorRoles: ['ADMIN', 'ACCOUNTING'] }, 'invoice.post-native').allowed, true);
   assert.equal(checkCapability({ ...asAccounting, actorRoles: ['ACCOUNTING'], actorDisabledActions: ['invoice.post-native'] }, 'invoice.post-native').status, 403);
   assert.equal(checkCapability({ ...asAccounting, actorRoles: ['ACCOUNTING'], permissions: [] }, 'invoice.post-native').status, 403);

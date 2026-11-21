@@ -1,9 +1,14 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {mayCreate,decision}=require('../services/manual-redemption-policy');
-test('only Warehouse and Account create manual exceptions',()=>{
- for(const role of ['WAREHOUSE','ACCOUNTING'])assert.equal(mayCreate(role),true);
- for(const role of ['SALES','COUNTER_SALES','WEIGHBRIDGE','MANAGER','C_LEVEL','ADMIN',null])assert.equal(mayCreate(role),false);
+const {mayCreate,decision,mayApproveOwnException}=require('../services/manual-redemption-policy');
+test('only Warehouse, Account and Admin create manual exceptions',()=>{
+ for(const role of ['WAREHOUSE','ACCOUNTING','ADMIN',['ACCOUNTING','ADMIN']])assert.equal(mayCreate(role),true);
+ for(const role of ['SALES','COUNTER_SALES','WEIGHBRIDGE','MANAGER','C_LEVEL',null])assert.equal(mayCreate(role),false);
+});
+// Owner, 21 Nov 2026: ADMIN is the highest role and may approve its own exception; nobody else may.
+test('only ADMIN approves its own exception',()=>{
+ assert.equal(mayApproveOwnException('ADMIN'),true);assert.equal(mayApproveOwnException(['ACCOUNTING','ADMIN']),true);
+ for(const role of ['MANAGER','C_LEVEL','ACCOUNTING','WAREHOUSE',null,['MANAGER','C_LEVEL']])assert.equal(mayApproveOwnException(role),false);
 });
 test('Warehouse and Account self-approve only as the same actual person',()=>{
  for(const role of ['WAREHOUSE','ACCOUNTING']){

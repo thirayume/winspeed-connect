@@ -69,6 +69,9 @@ async function profiles() {
     if (row.PermissionCode)
       map.get(row.Code).permissions.push(row.PermissionCode);
   }
+  // Owner, 21 Nov 2026: ADMIN holds every permission (role-capabilities.hasPermission, wf.fn_UserHasPermission),
+  // so Role Management shows every permission for a profile based on ADMIN.
+  for (const p of map.values()) if (p.BaseRole === "ADMIN") p.permissions = [...EDITABLE];
   return [...map.values()];
 }
 async function resolveProfile(code) {

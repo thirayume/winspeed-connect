@@ -349,7 +349,8 @@ test('secondary sales list and customer read require both capabilities and rejec
   const headers={authorization:`Bearer ${token}`},base=`http://127.0.0.1:${server.address().port}`;
   for(const path of ['/api/so/','/api/so/stats','/api/master/customers']) {const r=await fetch(base+path,{headers});assert.equal(r.status,200,path);assert.equal((await r.json()).mapped,34);assert.equal(attemptedAudit.inputs.path,path);}
   for(const path of ['/api/master/customers?salesperson=8','/api/master/customers?employee=8','/api/master/stats'])assert.equal((await fetch(base+path,{headers})).status,409,path);
-  adminCanCreate=false;clearAccountStatusCache();try{assert.equal((await fetch(base+'/api/master/customers',{headers})).status,409);}finally{adminCanCreate=true;clearAccountStatusCache();}
+  // Owner, 21 Nov 2026: an ADMIN actor holds every permission, even one its role list leaves out.
+  adminCanCreate=false;clearAccountStatusCache();try{assert.equal((await fetch(base+'/api/master/customers',{headers})).status,200);}finally{adminCanCreate=true;clearAccountStatusCache();}
   rejectBinding=true;try{assert.equal((await fetch(base+'/api/so/',{headers})).status,409);}finally{rejectBinding=false;}
   failAttemptAudit=true;try{assert.equal((await fetch(base+'/api/master/customers',{headers})).status,503);}finally{failAttemptAudit=false;}
 });
@@ -363,7 +364,7 @@ test('secondary sales credit, sale goods and current prices require mapping and 
   const headers={authorization:`Bearer ${token}`},base=`http://127.0.0.1:${server.address().port}`;
   for(const path of ['/api/credit/123/status','/api/master/goods?forSale=true','/api/master/prices?custId=123']) {const r=await fetch(base+path,{headers});assert.equal(r.status,200,path);assert.equal((await r.json()).mapped,34);assert.equal(attemptedAudit.inputs.effective,8);}
   for(const path of ['/api/credit/foo/status','/api/master/goods','/api/master/goods?forSale=true&includeInactive=true','/api/master/prices?includeExpired=true'])assert.equal((await fetch(base+path,{headers})).status,409,path);
-  adminCanCreate=false;clearAccountStatusCache();try{assert.equal((await fetch(base+'/api/credit/123/status',{headers})).status,409);}finally{adminCanCreate=true;clearAccountStatusCache();}
+  adminCanCreate=false;clearAccountStatusCache();try{assert.equal((await fetch(base+'/api/credit/123/status',{headers})).status,200);}finally{adminCanCreate=true;clearAccountStatusCache();}
   rejectBinding=true;try{assert.equal((await fetch(base+'/api/master/goods?forSale=true',{headers})).status,409);}finally{rejectBinding=false;}
   failAttemptAudit=true;try{assert.equal((await fetch(base+'/api/master/prices',{headers})).status,503);}finally{failAttemptAudit=false;}
 });
@@ -528,10 +529,11 @@ test('secondary sales rebate availability is boolean-only and requires a reviewe
   assert.equal((await fetch(`${url}/rebate-availability/abc`,{headers})).status,409);
   assert.equal((await fetch(`${url}/rebate-balance/123`,{headers})).status,409);
   adminCanCreate=false;clearAccountStatusCache();
-  try{assert.equal((await fetch(`${url}/rebate-availability/123`,{headers})).status,409);}finally{adminCanCreate=true;clearAccountStatusCache();}
+  // Owner, 21 Nov 2026: an ADMIN actor holds every permission, even one its role list leaves out.
+  try{assert.equal((await fetch(`${url}/rebate-availability/123`,{headers})).status,200);}finally{adminCanCreate=true;clearAccountStatusCache();}
   rejectBinding=true;try{assert.equal((await fetch(`${url}/rebate-availability/123`,{headers})).status,409);}finally{rejectBinding=false;}
   failAttemptAudit=true;try{assert.equal((await fetch(`${url}/rebate-availability/123`,{headers})).status,503);}finally{failAttemptAudit=false;}
-  assert.equal(reached,1);
+  assert.equal(reached,2);
 });
 
 test('Access As switching from a simulated secondary database reads and audits only the primary identity database', async t => {

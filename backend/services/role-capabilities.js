@@ -73,9 +73,9 @@ const ACTIONS = Object.freeze({
   // Owner, 20 Nov 2026: booking approval moves from SALES to the desk, accounting and management roles.
   'so.approve-native': ['COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'so.create-native-delivery': ['SALES', 'COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
-  'credit.approve-native': ['ACCOUNTING'],
+  'credit.approve-native': ['ACCOUNTING', 'ADMIN'],
   'coupon.manual116': ['WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
-  'invoice.post-native': ['ACCOUNTING'],
+  'invoice.post-native': ['ACCOUNTING', 'ADMIN'],
   // W2: print WinSpeed documents (read-only) — 104 delivery order (pre-printed form), 116 slip and 107 delivery note
   'native.print-104': ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'native.print-116': ['WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
@@ -109,8 +109,8 @@ const ACTIONS = Object.freeze({
   'rebate.approve-over-limit': ['MANAGER', 'C_LEVEL', 'ADMIN'],
   // Conversion requests and decisions are separate from approving an order's
   // over-limit price and can be assigned independently in Role Management.
-  'rebate.conversion.request': ['SALES'],
-  'rebate.conversion.approve': ['MANAGER', 'C_LEVEL'],
+  'rebate.conversion.request': ['SALES', 'ADMIN'],
+  'rebate.conversion.approve': ['MANAGER', 'C_LEVEL', 'ADMIN'],
   'rebate.convert': ['ACCOUNTING', 'ADMIN'],
   // Explicitly assignable; evidence review is not implied by accounting or sales.
   'rebate.evidence.verify': ['ADMIN'],
@@ -145,8 +145,11 @@ function roleRank(role) {
 
 function userRoles(user) { return [...new Set(Array.isArray(user?.roles) ? user.roles : [user?.role].filter(Boolean))]; }
 function hasRole(user, ...roles) { return userRoles(user).some(r => roles.includes(r)); }
+// Owner, 21 Nov 2026: ADMIN is the highest role and holds every permission, whatever Role Management lists for it.
+// The database agrees (wf.fn_UserHasPermission, migration 256). A SEPARATION assignment still holds none.
 function hasPermission(user, action) {
   if (userRoles(user).includes('SEPARATION')) return false;
+  if (userRoles(user).includes('ADMIN') && Object.prototype.hasOwnProperty.call(ACTIONS, action)) return true;
   if (Array.isArray(user?.permissions)) return user.permissions.includes(action);
   return !(user?.disabledActions || []).includes(action) && userRoles(user).some(r => rolesFor(action).includes(r));
 }

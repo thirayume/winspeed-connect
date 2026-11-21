@@ -9,7 +9,7 @@ const {deliverySnapshot,verifyReceipt,verifyDeliveryAccount}=require('./initial-
 const {isInitialRedemptionTransition}=require('./redemption-transition');
 const {getVisibleScope,inScope}=require('./visible-scope');
 const {ACCESS_AS_ACTOR_ROLES,roleRank}=require('./role-capabilities');
-const {CREATORS,REVIEWERS,mayCreate,decision}=require('./manual-redemption-policy');
+const {CREATORS,REVIEWERS,mayCreate,decision,mayApproveOwnException}=require('./manual-redemption-policy');
 const POLICY='O25-116-MANUAL-UAT2-v1';
 const input=(type,value)=>({type,value});
 const hash=value=>createHash('sha256').update(JSON.stringify(value),'utf8').digest('hex');
@@ -94,7 +94,7 @@ function evidenceFor(parent,current,slip){return JSON.stringify({mode:'UAT_SIMUL
  basis:slip.source==='SCALE'?'scale record of the booking':'typed transport slip, no scale record',physicalShipmentVerified:false});}
 function mayApprove(r,who){
  const d=decision({role:who.role,actorId:who.actor,requesterActorId:Number(r.RequesterActorId)});
- return {...d,exceptionBlocked:Boolean(r.ExceptionRequired)&&(!who.role.some(r=>REVIEWERS.includes(r))||d.selfApproval)};
+ return {...d,exceptionBlocked:Boolean(r.ExceptionRequired)&&(!who.role.some(r=>REVIEWERS.includes(r))||(d.selfApproval&&!mayApproveOwnException(who.role)))};
 }
 function requestView(r,who){if(!r)return null;const d=mayApprove(r,who);return {requestId:r.RequestId,status:r.Status,reason:r.Reason,receiver:r.IssueName,plate:r.CarLicense,
  slipNo:r.SlipNo,slipSource:r.SlipSource,exceptionRequired:Boolean(r.ExceptionRequired),scaleNetKg:r.ScaleNetKg??null,

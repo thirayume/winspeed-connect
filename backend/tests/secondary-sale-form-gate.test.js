@@ -140,9 +140,10 @@ test('secondary gate blocks write methods across business router families', asyn
 test('both identities need the sale capability; an invalid binding or a failed audit closes the read', async t => {
   const call = await start(t); reset();
   const token = jwt.sign({ sub: 8, role: 'SALES', actorSub: 17, actorRole: 'ADMIN', impersonating: true }, SECRET);
+  // Owner, 21 Nov 2026: an ADMIN actor holds every permission, even one its role list leaves out.
   actorCanCreate = false; clearAccountStatusCache();
   for (const path of ['/api/stock/atp', '/api/pricebook/', '/api/master/system-settings', '/api/master/control-tickets'])
-    assert.equal((await call(path, token)).status, 409, path);
+    assert.equal((await call(path, token)).status, 200, path);
   reset();
   rejectBinding = true;
   assert.equal((await call('/api/pricebook/12/effective', token)).status, 409);
