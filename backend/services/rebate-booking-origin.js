@@ -15,6 +15,13 @@ const SALE_APP_BOOKING_FOR_116_LINE = `SELECT TOP 1 1 AS FromSaleApp
   JOIN wf.RebateBookingPriceSnapshot os ON os.BookingSOID=ob.SOID AND os.[LineNo]=osd.RefListNo
   WHERE od.RedemtionID=ref.RedemtionID AND od.Listno=ref.Listno`;
 
+// Correlated fragment for a queue row aliased as `e` (wf.RebateShipmentEvidence): its 104 line's
+// booking line carries the Sale-App price snapshot. A row without a traced 104 line never matches.
+const SALE_APP_BOOKING_FOR_EVIDENCE = `SELECT 1 FROM dbo.SODT esd
+  JOIN dbo.SOHD eb ON eb.SOID=esd.RefSOID AND eb.DocuType=103
+  JOIN wf.RebateBookingPriceSnapshot es ON es.BookingSOID=eb.SOID AND es.[LineNo]=esd.RefListNo
+  WHERE esd.SOID=e.SourceSOID AND esd.ListNo=e.SourceListNo AND esd.DocuType=104`;
+
 function fail(code, status = 409) { throw Object.assign(new Error(code), { code, status }); }
 const positive = n => Number.isSafeInteger(n) && n > 0 && n <= 2147483647;
 
@@ -31,4 +38,4 @@ async function isSaleAppBookingLine(query, { sourceSOID, sourceListNo } = {}) {
   return rows.length === 1;
 }
 
-module.exports = { SALE_APP_BOOKING_FOR_116_LINE, isSaleAppBookingLine };
+module.exports = { SALE_APP_BOOKING_FOR_116_LINE, SALE_APP_BOOKING_FOR_EVIDENCE, isSaleAppBookingLine };

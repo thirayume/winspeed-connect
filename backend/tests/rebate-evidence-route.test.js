@@ -8,6 +8,10 @@ const db=h.installDbStub(({text,inputs})=>{
     assert.match(text,/CASE WHEN h.DocuDate>=CAST\(@startDate AS date\) THEN h.DocuNo END/);
     assert.match(text,/AS IsOpeningSource/);
     assert.match(text,/SalesEmpId/);
+    // Hybrid rule (owner, 21 Nov 2026): only shipments of bookings Sale-App issued are listed.
+    assert.match(text,/e\.Status='HELD'\s+AND EXISTS \(SELECT 1 FROM dbo\.SODT esd/);
+    assert.ok(text.includes('JOIN wf.RebateBookingPriceSnapshot es ON es.BookingSOID=eb.SOID AND es.[LineNo]=esd.RefListNo'));
+    assert.ok(text.includes('WHERE esd.SOID=e.SourceSOID AND esd.ListNo=e.SourceListNo AND esd.DocuType=104'));
     return [{Id:5,RedemptionId:10,RedemptionListNo:2,Revision:1,DocuNo:'test',Status:'HELD'}];
   }
   return [];

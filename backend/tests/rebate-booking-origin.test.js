@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { isSaleAppBookingLine, SALE_APP_BOOKING_FOR_116_LINE } = require('../services/rebate-booking-origin');
+const { isSaleAppBookingLine, SALE_APP_BOOKING_FOR_116_LINE, SALE_APP_BOOKING_FOR_EVIDENCE } = require('../services/rebate-booking-origin');
 // Hybrid rule (owner, 21 Nov 2026): Sale-App accrues Rebate only on bookings it issued itself.
 test('a 104 line is from Sale-App only when its 103 line carries the Sale-App price snapshot', async () => {
   let seen;
@@ -26,4 +26,10 @@ test('the 116 fragment follows the same coupon, 104 and 103 path as the accrual'
     'JOIN dbo.SODT osd ON osd.SOID=oc.DocuID AND osd.ListNo=oc.RefListno AND osd.DocuType=104',
     'JOIN dbo.SOHD ob ON ob.SOID=osd.RefSOID AND ob.DocuType=103',
     'WHERE od.RedemtionID=ref.RedemtionID AND od.Listno=ref.Listno']) assert.ok(SALE_APP_BOOKING_FOR_116_LINE.includes(part), part);
+});
+test('the queue fragment follows the same 104 to 103 path from the stored source, so an untraced row never matches', () => {
+  for (const part of ['JOIN dbo.SOHD eb ON eb.SOID=esd.RefSOID AND eb.DocuType=103',
+    'JOIN wf.RebateBookingPriceSnapshot es ON es.BookingSOID=eb.SOID AND es.[LineNo]=esd.RefListNo',
+    'WHERE esd.SOID=e.SourceSOID AND esd.ListNo=e.SourceListNo AND esd.DocuType=104']) assert.ok(SALE_APP_BOOKING_FOR_EVIDENCE.includes(part), part);
+  assert.ok(!/(INSERT|UPDATE|DELETE)/.test(SALE_APP_BOOKING_FOR_EVIDENCE));
 });

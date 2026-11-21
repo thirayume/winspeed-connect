@@ -11,6 +11,9 @@ const { readGlobalDataWindow } = require('../services/global-data-window-store')
 const { assertEvidenceScope } = require('../services/rebate-evidence-scope');
 const { stageShipmentEvidence } = require('../services/rebate-evidence-intake');
 const { reviewShipmentEvidence } = require('../services/rebate-evidence-review');
+// Hybrid rule (owner, 21 Nov 2026): the queue shows only shipments of bookings Sale-App issued.
+// Rows held earlier for WinSpeed bookings stay in the table unchanged; they are only not listed.
+const { SALE_APP_BOOKING_FOR_EVIDENCE } = require('../services/rebate-booking-origin');
 
 function enabled(req,res,next) {
   if (process.env.REBATE_POOL_103_ENABLED !== 'true')
@@ -50,6 +53,7 @@ router.get('/',async (req,res)=>{
         JOIN dbo.WFRedemtionHD h ON h.RedemtionID=e.RedemptionId AND h.DocuType=116
         LEFT JOIN dbo.SOHD s ON s.SOID=e.SourceSOID AND s.DocuType=104
         WHERE e.EnvironmentKind=@environment AND e.ResetId=@resetId AND e.Status='HELD'
+          AND EXISTS (${SALE_APP_BOOKING_FOR_EVIDENCE})
       ) eligible WHERE ${scope.sql} ORDER BY Id DESC`,{
         environment:epoch.environment,resetId:epoch.resetId,startDate:window.businessDate,...scope.inputs});
       return result.recordset || [];
