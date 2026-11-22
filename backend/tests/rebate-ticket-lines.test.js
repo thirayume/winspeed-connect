@@ -208,3 +208,8 @@ test('migration 258 adds the ticket line flag and the receipt state table; the r
   assert.match(down, /ROLLBACK_258_BLOCKED: draft Rebate ticket lines exist/);
   assert.match(down, /ROLLBACK_258_BLOCKED: Rebate ticket receipt states exist/);
 });
+
+test('the WinSpeed sync check does not report a ticket given back when its 103 was cancelled', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'services', 'winspeed-sync-check.js'), 'utf8');
+  assert.match(src, /NOT EXISTS \(SELECT 1 FROM wf\.RebateTicketReceiptState st WITH \(NOLOCK\) WHERE st\.ReceiptId = r\.Id AND st\.Status = 'RELEASED'\)/);
+});

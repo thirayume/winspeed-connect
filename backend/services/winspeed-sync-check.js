@@ -75,7 +75,9 @@ SELECT 'useOnCancelledBooking', CONVERT(varchar(20), r.Id), RTRIM(h.DocuNo), CAS
 FROM wf.RebateTicketRedemptionReceipt r
 LEFT JOIN dbo.SOHD h WITH (NOLOCK) ON h.SOID = r.BookingSOID AND h.DocuType = 103
 LEFT JOIN dbo.SODT d WITH (NOLOCK) ON d.SOID = r.BookingSOID AND d.ListNo = r.BookingLineNo
-WHERE h.SOID IS NULL OR d.SOID IS NULL OR h.DocuStatus = 'C' OR d.GoodQty2 < r.QuantityTon`;
+-- Owner, 22 Nov 2026 (migration 258): a ticket given back when its 103 was cancelled (RELEASED) is not a mismatch.
+WHERE NOT EXISTS (SELECT 1 FROM wf.RebateTicketReceiptState st WITH (NOLOCK) WHERE st.ReceiptId = r.Id AND st.Status = 'RELEASED')
+  AND (h.SOID IS NULL OR d.SOID IS NULL OR h.DocuStatus = 'C' OR d.GoodQty2 < r.QuantityTon)`;
 
 const REBATE_TOTALS_SQL = `
 DECLARE @env varchar(16), @reset uniqueidentifier, @gen int;

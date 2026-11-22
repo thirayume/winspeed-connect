@@ -50,7 +50,9 @@ async function prepareRebateBookingDecisions(query, { draft, lines, saleDate, li
       isCashDiscount: line.RebatePricingMode === 'CASH', limits: used, custId,
     }));
   }
-  if (!decisions.length) fail('REBATE_DRAFT_INVALID');
+  // A bill of Rebate ticket lines only (migration 258) has no price decision; any other empty bill is invalid.
+  if (!decisions.length && !(lines.some(l => l.IsRebateTicket) && lines.every(l => l.IsRebateTicket || l.IsGiveaway)))
+    fail('REBATE_DRAFT_INVALID');
   return decisions;
 }
 

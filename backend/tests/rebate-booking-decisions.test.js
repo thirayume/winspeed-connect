@@ -47,3 +47,16 @@ test('changing the mode or sale date produces a different approval fingerprint',
   assert.notEqual(pool.fingerprint, later.fingerprint);
   assert.equal(cash.calculation.totalRebateEarned, 0);
 });
+
+// Owner, 22 Nov 2026: a Rebate ticket line (migration 258) is price 0 with no decision; a bill of ticket lines only is valid.
+test('Rebate ticket lines get no decision; a ticket-only bill is valid, a gift-only bill is not', async () => {
+  const ticket = { SoId: 51, LineNum: 2, GoodId: 12, QtyTon: 0.05, PricePerTon: 0, IsRebateTicket: 1, RebatePricingMode: null };
+  const mixed = await prepareRebateBookingDecisions(query, { draft, lines: [line, ticket], saleDate: '2026-11-13' });
+  assert.deepEqual(mixed.map(d => d.lineNo), [1]);
+  assert.deepEqual(await prepareRebateBookingDecisions(query, { draft, lines: [{ ...ticket, LineNum: 1 }], saleDate: '2026-11-13' }), []);
+  const gift = { SoId: 51, LineNum: 1, GoodId: 13, QtyTon: 0, PricePerTon: 0, IsGiveaway: 1, RebatePricingMode: null };
+  await assert.rejects(prepareRebateBookingDecisions(query, { draft, lines: [gift], saleDate: '2026-11-13' }), { code: 'REBATE_DRAFT_INVALID' });
+  for (const bad of [{ PricePerTon: 100 }, { RebatePricingMode: 'POOL' }, { IsCouponDrawn: 1 }])
+    await assert.rejects(prepareRebateBookingDecisions(query, { draft, lines: [line, { ...ticket, ...bad }], saleDate: '2026-11-13' }),
+      { code: 'REBATE_NONCOMMERCIAL_PROOF_UNAVAILABLE' });
+});
