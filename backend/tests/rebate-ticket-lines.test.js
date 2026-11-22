@@ -213,3 +213,24 @@ test('the WinSpeed sync check does not report a ticket given back when its 103 w
   const src = fs.readFileSync(path.join(__dirname, '..', 'services', 'winspeed-sync-check.js'), 'utf8');
   assert.match(src, /NOT EXISTS \(SELECT 1 FROM wf\.RebateTicketReceiptState st WITH \(NOLOCK\) WHERE st\.ReceiptId = r\.Id AND st\.Status = 'RELEASED'\)/);
 });
+
+test('migration 259 lets only a price-0 Rebate ticket line through the UAT 104 writer; the rollback restores 241', () => {
+  const dir = path.join(__dirname, '..', 'migrations');
+  const read = f => fs.readFileSync(path.join(dir, f), 'utf8').replace(/\r\n/g, '\n');
+  const up = read('259_uat_writer_rebate_ticket_zero_bill.sql');
+  const down = read('down/259_uat_writer_rebate_ticket_zero_bill.down.sql');
+  const m241 = read('241_native_coupon_sale_financials.sql');
+  const block = (s, start) => { const i = s.indexOf(start); return s.slice(i, s.indexOf('\nGO', i)); };
+  const fn = s => block(s, 'FUNCTION wf.fn_NativeCouponSaleFinancials');
+  const proc = s => block(s, 'ALTER PROCEDURE wf.usp_CreateCompleteInitialDelivery');
+  assert.match(up, /^-- @transaction/);
+  assert.equal(fn(down), fn(m241));
+  assert.equal(proc(down), proc(m241));
+  assert.match(fn(up), /amounts\.Gross>0 OR \(amounts\.Gross=0 AND CONVERT\(decimal\(18,4\),l\.GoodPrice2\)=0/);
+  assert.match(fn(up), /ts\.Status IN\('RESERVED','FINAL'\)[\s\S]*tr\.Treatment='ZERO'/);
+  assert.match(proc(up), /ISNULL\(GoodPrice2,0\)=0 AND NOT EXISTS\(SELECT 1 FROM wf\.RebateTicketRedemptionReceipt tr/);
+  assert.match(proc(up), /wf\.fn_IsInitialNativeUatTarget\(\)<>1/);
+  // apart from the marked change, the procedure is the 241 body
+  const restored = proc(up).replace(/ OR ISNULL\(GoodPrice2,0\)<0 OR \(ISNULL\(GoodPrice2,0\)=0 AND NOT EXISTS\([\s\S]*?tr\.Treatment='ZERO'\)\)/, ' OR ISNULL(GoodPrice2,0)<=0');
+  assert.equal(restored, proc(m241));
+});
