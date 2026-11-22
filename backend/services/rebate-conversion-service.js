@@ -281,38 +281,47 @@ async function snapshotOct31StandingPrices(
   const standingDate = `${year}-10-31`;
   let sourceEntries = Array.isArray(entries) ? entries : null;
 
+  // Owner, 22 Nov 2026: the 31 Oct standing price is WinSpeed's general announced price effective on 31 Oct, chosen
+  // exactly like the Rebate base price (rebate-price-authority.resolveRebateBasePrice): a price list with no customer,
+  // effective that day, latest begin date first. WinSpeed is the single source; Sale-App keeps no price copy. A goods
+  // whose latest lists begin on the same day is left out and reported, never guessed.
+  const skipped = [];
   if (!sourceEntries) {
-    const bookRes = await queryFn(
-      `SELECT pbl.GoodId, pbl.GoodCode, pbl.GoodName, pbl.Price AS ListPricePerTon, pb.Id AS PriceBookId, pb.Name AS PriceListCode
-       FROM wf.PriceBookLine pbl WITH (NOLOCK)
-       JOIN wf.PriceBook pb WITH (NOLOCK) ON pb.Id = pbl.PriceBookId
-       WHERE pb.Status = 'ACTIVE'
-         AND pbl.Price > 0
-         AND ISNULL(pbl.LineStatus, 'NORMAL') <> 'SUSPENDED'
-         AND (pb.EffectiveFrom IS NULL OR pb.EffectiveFrom <= @standingDate)
-         AND (pb.EffectiveTo IS NULL OR pb.EffectiveTo >= @standingDate)
-       ORDER BY pb.EffectiveFrom DESC, pb.Id DESC, pbl.GoodId ASC`,
+    const listRes = await queryFn(
+      `SELECT dt.ListID AS GoodId, RTRIM(g.GoodCode) AS GoodCode, RTRIM(g.GoodName1) AS GoodName,
+              CAST(dt.GoodPriceNet AS decimal(18,2)) AS ListPricePerTon, hd.SetPriceID, RTRIM(hd.DocuNo) AS PriceListCode,
+              CONVERT(varchar(10), hd.BeginDate, 23) AS BeginDate
+       FROM dbo.EMSetPriceHD hd
+       JOIN dbo.EMSetPriceDT dt ON dt.SetPriceID = hd.SetPriceID
+       LEFT JOIN dbo.EMGood g ON g.GoodID = dt.ListID
+       WHERE hd.CustID IS NULL AND dt.GoodPriceNet > 0
+         AND hd.BeginDate <= CAST(@standingDate AS date)
+         AND (hd.EndDate IS NULL OR hd.EndDate >= CAST(@standingDate AS date))
+       ORDER BY dt.ListID ASC, hd.BeginDate DESC, dt.SetPriceID DESC, dt.ListNo ASC`,
       { standingDate }
     );
-    const seenGoods = new Set();
-    sourceEntries = [];
-    for (const r of (bookRes.recordset || [])) {
+    const byGood = new Map();
+    for (const r of (listRes.recordset || [])) {
       const gid = Number(r.GoodId);
-      if (!gid) continue;
-      if (seenGoods.has(gid)) {
-        throw createRebateError('พบราคาสินค้าซ้ำใน Pricelist ณ วันที่ 31 ตุลาคม กรุณาตรวจสอบก่อน Snapshot', {
-          status: 409, code: 'OCT31_PRICE_AMBIGUOUS', details: { goodId: gid },
-        });
+      if (!Number.isInteger(gid) || gid <= 0) continue;
+      if (!byGood.has(gid)) byGood.set(gid, []);
+      byGood.get(gid).push(r);
+    }
+    sourceEntries = [];
+    for (const [gid, rows] of byGood) {
+      const [first, second] = rows;
+      if (second && second.BeginDate === first.BeginDate) {
+        skipped.push({ goodId: gid, goodCode: first.GoodCode || String(gid), reason: 'OCT31_PRICE_AMBIGUOUS' });
+        continue;
       }
-      seenGoods.add(gid);
       sourceEntries.push({
         goodId: gid,
-        goodCode: r.GoodCode,
-        goodName: r.GoodName,
-        basePrice: Number(r.ListPricePerTon),
+        goodCode: first.GoodCode || String(gid),
+        goodName: first.GoodName || first.GoodCode || String(gid),
+        basePrice: Number(first.ListPricePerTon),
         sourceType: 'WINSPEED_PRICELIST',
-        sourcePriceBookId: Number(r.PriceBookId),
-        priceListCode: r.PriceListCode,
+        sourcePriceBookId: Number(first.SetPriceID),
+        priceListCode: first.PriceListCode || null,
       });
     }
   }
@@ -368,6 +377,7 @@ async function snapshotOct31StandingPrices(
     standingDate,
     count: saved.length,
     items: saved,
+    skipped,
   };
 }
 

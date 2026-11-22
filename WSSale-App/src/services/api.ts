@@ -99,7 +99,10 @@ async function performRequest<T>(path: string, options: RequestInit, silent: boo
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText }));
       if (res.status === 401) notifyAuthExpired(requestToken);
-      throw Object.assign(new Error(err.message || 'Request failed'), { status: res.status, data: err });
+      // Some routes (e.g. the Rebate Pool) send their Thai message as `error`; show it rather than a bare "Request failed".
+      const text = typeof err?.message === 'string' && err.message ? err.message
+        : typeof err?.error === 'string' && err.error ? err.error : 'Request failed';
+      throw Object.assign(new Error(text), { status: res.status, data: err });
     }
     return await res.json();
   } catch (error) {
@@ -1252,7 +1255,8 @@ export const fetchOct31StandingPrices = (year?: number) =>
 export const snapshotOct31StandingPrices = (payload: {
   standingYear?: number;
   entries?: { goodId: number; goodCode?: string; goodName?: string; basePrice: number; note?: string }[];
-}) => req<{ standingYear: number; count: number; items: import('../types').Oct31StandingPriceItem[] }>(
+}) => req<{ standingYear: number; count: number; items: import('../types').Oct31StandingPriceItem[];
+  skipped?: { goodId: number; goodCode: string; reason: string }[] }>(
   '/rebate-pool/oct31-prices/snapshot',
   { method: 'POST', body: JSON.stringify(payload) }
 );

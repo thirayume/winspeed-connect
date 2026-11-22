@@ -552,7 +552,12 @@ function EnabledRebatePoolPanel() {
     try {
       if (autoFromPricelist) {
         const res = await snapshotOct31StandingPrices({ standingYear });
-        await appAlert(`Snapshot ราคา 31 ต.ค. ${standingYear + 543} จาก Pricelist สำเร็จ ${res.count} รายการ`, 'info');
+        // The price is WinSpeed's general announced price on 31 Oct; goods whose latest lists start the same day are left out.
+        const skipped = res.skipped || [];
+        await appAlert(`บันทึกราคายืน 31 ต.ค. ${standingYear + 543} จากราคาประกาศทั่วไปใน WinSpeed สำเร็จ ${res.count} รายการ`
+          + (skipped.length ? `
+ข้าม ${skipped.length} รายการ เพราะมีราคาประกาศเริ่มวันเดียวกันมากกว่า 1 ใบ: ${skipped.map(s => s.goodCode).join(', ')} กรุณาแก้ใน WinSpeed หรือบันทึกราคาเอง` : ''),
+          skipped.length ? 'warning' : 'info');
       } else {
         const entries = snapEntries
           .filter(r => r.goodId && Number(r.price) > 0)
@@ -1545,7 +1550,7 @@ function EnabledRebatePoolPanel() {
                   บันทึก / Snapshot ราคายืน ณ วันที่ 31 ตุลาคม {standingYear + 543}
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  เลือกคัดลอกราคาปัจจุบันจาก Pricelist หรือกำหนดรายสินค้าเอง
+                  ดึงราคาประกาศทั่วไปใน WinSpeed ที่มีผลวันที่ 31 ต.ค. หรือกำหนดรายสินค้าเอง
                 </p>
               </div>
               <button
@@ -1560,8 +1565,8 @@ function EnabledRebatePoolPanel() {
 
             <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs text-blue-900">
-                <div className="font-bold">Snapshot อัตโนมัติจาก Pricelist</div>
-                <div className="text-blue-700">ดึงราคากลางที่มีผลปัจจุบันของสินค้าปุ๋ยทุกตัวเข้าตารางราคา 31 ต.ค.</div>
+                <div className="font-bold">ดึงจากราคาประกาศใน WinSpeed</div>
+                <div className="text-blue-700">ราคาประกาศทั่วไป (ไม่ใช่ราคาเฉพาะลูกค้า) ที่มีผล ณ วันที่ 31 ต.ค. ของปีที่เลือก ทุกสินค้า</div>
               </div>
               <button
                 type="button"
@@ -1569,7 +1574,7 @@ function EnabledRebatePoolPanel() {
                 onClick={() => handleSaveSnapshot(true)}
                 className="px-3 py-2 rounded-lg bg-[#0C447C] text-white text-xs font-bold hover:bg-[#09345f] disabled:opacity-50"
               >
-                Snapshot จาก Pricelist ทันที
+                ดึงราคาจาก WinSpeed ทันที
               </button>
             </div>
 
