@@ -4,6 +4,7 @@
 const crypto=require('crypto');
 module.exports=function(ctx){
  const {call,query,check,save,state,fixtures,sql,CUST_ID,RUN,deliveryDate}=ctx;
+ const totalTon=ctx.totalTon||1,quantity=value=>String(Math.round(Number(value)*(ctx.lineTon||0.5)/0.5*10000)/10000);
  const route=(type,id,operation)=>`/native-documents/${type}/${id}/${operation}`;
  const post=(type,id,operation,body,key)=>call('POST',route(type,id,operation),body,key);
  async function concurrent(type,id,command,key,label){
@@ -77,12 +78,12 @@ module.exports=function(ctx){
   if(book==='I'&&!state.cases.K?.delivery)throw Error('V3_BOTH_DELIVERIES_REQUIRED_FOR_MIXED_DRAW');
   const own=c.delivery.lines;
   if(c.cuts.length<1){
-   const lines=own.map(l=>({couponId:l.CouponId,quantity:book==='I'?'0.2':'0.15'}));
-   if(book==='I')lines.push(...state.cases.K.delivery.lines.map(l=>({couponId:l.CouponId,quantity:'0.1'})));
+   const lines=own.map(l=>({couponId:l.CouponId,quantity:quantity(book==='I'?'0.2':'0.15')}));
+   if(book==='I')lines.push(...state.cases.K.delivery.lines.map(l=>({couponId:l.CouponId,quantity:quantity('0.1')})));
    c.cuts.push(await approvedCut(lines,book==='I'?1:3,c));save();
    if(book==='I')check(c.cuts[0].receipt.lines.length===4&&new Set(c.cuts[0].receipt.lines.map(l=>l.CouponNo[0])).size===2,'V3_MIXED_C_D_FOUR_LINES_ONE_116');
   }
-  if(c.cuts.length<2){c.cuts.push(await approvedCut(own.map(l=>({couponId:l.CouponId,quantity:book==='I'?'0.3':'0.25'})),book==='I'?2:4,c));save();}
+  if(c.cuts.length<2){c.cuts.push(await approvedCut(own.map(l=>({couponId:l.CouponId,quantity:quantity(book==='I'?'0.3':'0.25')})),book==='I'?2:4,c));save();}
   c.manual={redemptionId:c.cuts[0].receipt.nativeId,redemptionNo:c.cuts[0].receipt.nativeNo};save();
  }
  async function raceRedemption(book,c){
@@ -94,7 +95,7 @@ module.exports=function(ctx){
   }
   for(let i=0;i<2;i++){
    if(!race.commands[i]){
-    const lines=c.delivery.lines.map(l=>({couponId:l.CouponId,quantity:'0.3'}));
+    const lines=c.delivery.lines.map(l=>({couponId:l.CouponId,quantity:quantity('0.3')}));
     const data={docDate:deliveryDate,slipNo:String(state.slipBase+20+i),receiver:'QA competing real API requests',plate:'QA-RACE-'+i};
     const p=await post(116,CUST_ID,'preview',{lines,data},'sales');check(p.status===200,'V3_DIFFERENT_KEY_PREVIEW_'+i);
     race.commands[i]={requestId:crypto.randomUUID(),fingerprint:p.data.fingerprint,reason:RUN+' competing cut request',lines,data};save();
@@ -121,8 +122,8 @@ module.exports=function(ctx){
   const q=(await query('SELECT MIN(RemaQty) AS MinQty,MAX(RemaQty) AS MaxQty FROM dbo.WFCoupon WHERE DocuID=@id',
    {id:{type:sql.Int,value:c.delivery.nativeId}})).recordset[0];
   if(c.cuts.length===1){
-   check(Number(q.MinQty)===0.2&&Number(q.MaxQty)===0.2,'V3_DIFFERENT_KEYS_NO_OVERDRAW');
-   c.cuts.push(await approvedCut(c.delivery.lines.map(l=>({couponId:l.CouponId,quantity:'0.2'})),23,c));save();
+   check(Number(q.MinQty)===Number(quantity('0.2'))&&Number(q.MaxQty)===Number(quantity('0.2')),'V3_DIFFERENT_KEYS_NO_OVERDRAW');
+   c.cuts.push(await approvedCut(c.delivery.lines.map(l=>({couponId:l.CouponId,quantity:quantity('0.2')})),23,c));save();
   }
   c.manual={redemptionId:c.cuts[0].receipt.nativeId,redemptionNo:c.cuts[0].receipt.nativeNo};save();
  }
@@ -140,7 +141,7 @@ module.exports=function(ctx){
   }
   check(c.invoice.invoiceNo.startsWith(book==='I'?'J':'N'),book+'_V3_INVOICE_CORRECT_BOOK');
   const status=await call('GET','/so/'+c.soid,undefined,'sales');
-  check(status.status===200&&status.data.docStage?.code==='INVOICED'&&status.data.docStage.cutQty===1&&status.data.docStage.invoicedQty===1,book+'_V3_CLOSE_AT_COMPLETE_107');
+  check(status.status===200&&status.data.docStage?.code==='INVOICED'&&status.data.docStage.cutQty===totalTon&&status.data.docStage.invoicedQty===totalTon,book+'_V3_CLOSE_AT_COMPLETE_107');
   const gl=(await query('SELECT PostGL FROM dbo.SOInvHD WHERE SOInvID=@id AND Docutype=107',{id:{type:sql.Int,value:c.invoice.nativeId}})).recordset[0];
   check(gl?.PostGL==='N',book+'_V3_GL_HANDOFF_TO_ACCOUNTING');
  }
@@ -154,7 +155,7 @@ module.exports=function(ctx){
     (SELECT SUM(GoodQty2) FROM dbo.SOInvDT WHERE SOInvID=@i AND Docutype=107) AS InvoicedQty,
     (SELECT SUM(GoodStockQty) FROM dbo.ICStockDetail WHERE DocuID=@i AND DocuType=107 AND StockFlag=-1) AS StockQty`,{
     s:{type:sql.Int,value:c.soid},d:{type:sql.Int,value:c.delivery.nativeId},i:{type:sql.Int,value:c.invoice.nativeId}})).recordset[0];
-   check(native.Lines===2&&native.Coupons===2&&native.Receipts===1&&Number(native.Remaining)===0&&Number(native.InvoicedQty)===1&&Number(native.StockQty)===1,book+'_V3_SQL_QUANTITY_AND_RECEIPTS');
+   check(native.Lines===2&&native.Coupons===2&&native.Receipts===1&&Number(native.Remaining)===0&&Number(native.InvoicedQty)===totalTon&&Number(native.StockQty)===totalTon,book+'_V3_SQL_QUANTITY_AND_RECEIPTS');
    const products=(await query('SELECT COUNT(DISTINCT GoodID) AS N FROM dbo.SODT WHERE SOID=@d AND DocuType=104',
     {d:{type:sql.Int,value:c.delivery.nativeId}})).recordset[0];
    check(products.N===2,book+'_V3_DISTINCT_NATIVE_PRODUCTS');
@@ -194,5 +195,5 @@ module.exports=function(ctx){
    'V3_REPORT_XLSX_CONTAINS_BOTH_CHAINS');
   check((await call('GET','/reports/native-documents',undefined,'sales')).status===403,'V3_REPORT_SALES_DENIED');
  }
- return {ai,delivery,redemption,raceRedemption,invoice,audit};
+ return {ai,delivery,approvedCut,redemption,raceRedemption,invoice,audit};
 };

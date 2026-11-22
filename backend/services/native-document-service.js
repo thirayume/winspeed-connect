@@ -105,6 +105,17 @@ async function nativeProof(q,receipt){
  if(parts.some(s=>s===''))fail('ND_RECEIPT_DIVERGED');
  return hash(parts);
 }
+async function assertInvoiceCutProof(q,plan,proof=nativeProof){
+ // A non-null receipt hash is not proof that a WinSpeed user has not edited
+ // the transport since then. Verify the whole physical cut, including other
+ // lines in a mixed-order slip, under the invoice transaction's locks.
+ for(const nativeId of [...new Set(plan.lines.map(l=>id(l.redemptionId)))].sort((a,b)=>a-b)){
+  const rows=(await q('SELECT * FROM wf.NativeDocumentReceipt WITH(UPDLOCK,HOLDLOCK) WHERE DocuType=116 AND NativeId=@n',
+   {n:input(sql.Int,nativeId)})).recordset||[];
+  if(rows.length!==1||!rows[0].NativeAfterHash)fail('ND_CUT_PROOF_REQUIRED');
+  if(await proof(q,rows[0])!==rows[0].NativeAfterHash)fail('ND_CUT_DIVERGED');
+ }
+}
 async function nativeDocument(args,options={}){
  const {operation='preview',type,sourceId,user}=args,env=options.env||process.env;
  if(!target.enabled(env)||env[FLAGS[type]]!=='true')fail('ND_WRITER_DISABLED',503);
@@ -165,6 +176,7 @@ async function nativeDocument(args,options={}){
   if(type===107){
    const parent=(await q('SELECT * FROM wf.NativeDocumentReceipt WITH(UPDLOCK,HOLDLOCK) WHERE DocuType=104 AND NativeId=@n',{n:input(sql.Int,Number(sourceId))})).recordset?.[0];
    if(!parent||!parent.NativeAfterHash||await nativeProof(q,parent)!==parent.NativeAfterHash)fail('ND_DELIVERY_DIVERGED');
+   await assertInvoiceCutProof(q,current.plan);
   }
   if([104,107].includes(type)&&Number(current.row.tax)>0&&!await readApprovedSalesVat(q,{dbName:actualTarget.database,soid:Number(sourceId),docuType:type===104?103:104,setting:env.NATIVE_SALES_VAT_APPROVAL}))fail('ND_VAT_APPROVAL_REQUIRED');
   const xml=(await q('SELECT CONVERT(nvarchar(max),CONVERT(xml,@plan)) AS CanonicalPlan',{plan:input(sql.Xml,planXml(current.plan,Number(sourceId)))})).recordset?.[0]?.CanonicalPlan;
@@ -227,4 +239,4 @@ function httpError(e){
  const code=e.code&&/^ND_[A-Z0-9_]+$/.test(e.code)?e.code:/\b(ND_[A-Z0-9_]+)\b/.exec(String(e.message))?.[1];
  return {status:e.status||(code?409:503),code:code||'ND_OPERATION_FAILED'};
 }
-module.exports={nativeDocument,queryFor,liveUser,permission,requirePermission,approveAllowed,planXml,nativeProof,httpError};
+module.exports={nativeDocument,queryFor,liveUser,permission,requirePermission,approveAllowed,planXml,nativeProof,assertInvoiceCutProof,httpError};

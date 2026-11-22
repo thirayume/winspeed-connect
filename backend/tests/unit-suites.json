@@ -227,7 +227,8 @@
     "tests/native-document-service.test.js",
     "tests/native-document-migration-safety.test.js",
     "tests/native-document-report.test.js",
-    "tests/native-document-metadata.test.js"
+    "tests/native-document-metadata.test.js",
+    "tests/native-v3-qa-profile.test.js"
   ],
   "test:unit": [
     "tests/policy-contract.test.js",
@@ -357,6 +358,7 @@
     "tests/rebate-ticket-lifecycle.test.js",
     "tests/ticket-sales-policy.test.js",
     "tests/giveaway-quota-loans.test.js",
-    "tests/giveaway-quota-loan-routes.test.js"
+    "tests/giveaway-quota-loan-routes.test.js",
+    "tests/native-v3-qa-profile.test.js"
   ]
 }

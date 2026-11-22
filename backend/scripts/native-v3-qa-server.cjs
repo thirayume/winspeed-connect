@@ -1,12 +1,11 @@
 'use strict';
 // Local/LAN tunnel rehearsal only; never started by the deployment Compose kit.
 const fs=require('fs'),path=require('path'),http=require('http');
-const {QA}=require('../services/native-document-target');
-if(process.env.ONPREM_DB_NAME!==QA||process.env.ONPREM_SWITCHABLE_DATABASES!==QA||process.env.DISABLE_BACKGROUND_WORKERS!=='true'
- ||process.env.ONPREM_CONNECTION_PROFILES_DISABLE!=='true'||Object.entries(process.env).some(([k,v])=>k.startsWith('REBATE_')&&v==='true'))
- throw Error('QA_RUNTIME_ISOLATION_REQUIRED');
+const {assertQaProfile,assertQaAccess}=require('./native-v3-qa-profile.cjs');
+const profile=assertQaProfile();
 process.env.PORT='3000';
-require('../server');
+// Do not start listening or register workers before checking the actual login.
+const db=require('../db');
 const root='/review-ui',mime={'.html':'text/html; charset=utf-8','.js':'application/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.woff2':'font/woff2'};
 const front=http.createServer((req,res)=>{
  const url=new URL(req.url,'http://127.0.0.1');
@@ -39,4 +38,10 @@ front.on('upgrade',(req,socket,head)=>{
  });
  upstream.on('error',()=>socket.destroy());upstream.end();
 });
-front.listen(8080,'0.0.0.0',()=>console.log('NATIVE_QA_HTTP_READY_PRIVATE_TUNNEL_ONLY'));
+async function start(){
+ await db.pools().ready;
+ await assertQaAccess(db.wfQuery);
+ require('../server');
+ front.listen(8080,'0.0.0.0',()=>console.log('NATIVE_QA_HTTP_READY_PRIVATE_TUNNEL_ONLY REBATE='+profile.rebate));
+}
+start().catch(async error=>{console.error(error.message);await db.closeAll();process.exitCode=1;});

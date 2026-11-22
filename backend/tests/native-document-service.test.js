@@ -1,6 +1,17 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
 const {nativeDocument,planXml,httpError}=require('../services/native-document-service');
+test('invoice revalidates each entire physical cut once, with no acceptance of missing or altered evidence',async()=>{
+ const {assertInvoiceCutProof}=require('../services/native-document-service');
+ const plan={lines:[{redemptionId:4},{redemptionId:2},{redemptionId:4}]},seen=[];
+ const q=async(text,params)=>{assert.match(text,/UPDLOCK,HOLDLOCK/);seen.push(params.n.value);
+  return {recordset:[{DocuType:116,NativeId:params.n.value,NativeAfterHash:'original'}]};};
+ const proof=async(_q,r)=>{assert.equal(r.DocuType,116);return 'original';};
+ await assertInvoiceCutProof(q,plan,proof);assert.deepEqual(seen,[2,4]);
+ await assert.rejects(assertInvoiceCutProof(q,plan,async()=> 'changed'),{code:'ND_CUT_DIVERGED'});
+ for(const rows of [[],[{NativeAfterHash:null}],[{NativeAfterHash:'x'},{NativeAfterHash:'x'}]])
+  await assert.rejects(assertInvoiceCutProof(async()=>({recordset:rows}),plan,proof),{code:'ND_CUT_PROOF_REQUIRED'});
+});
 test('operational writes fail before opening a transaction when the writer or stage is disabled',async()=>{
  let opened=0;const options={env:{},transaction:async()=>{opened++;}};
  await assert.rejects(nativeDocument({operation:'apply',type:104,sourceId:1,user:{sub:1}},options),{code:'ND_WRITER_DISABLED'});

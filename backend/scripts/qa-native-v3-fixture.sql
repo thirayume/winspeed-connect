@@ -6,11 +6,30 @@ SET QUOTED_IDENTIFIER ON;
 GO
 IF OBJECT_ID('wf.usp_QaNativeV3Fixture','P') IS NOT NULL RAISERROR('QA_FIXTURE_ALREADY_EXISTS',16,1);
 GO
-CREATE PROCEDURE wf.usp_QaNativeV3Fixture @FullDiscount bit=0 WITH EXECUTE AS OWNER AS
+CREATE PROCEDURE wf.usp_QaNativeV3Fixture @FullDiscount bit=0,@ReservationFloor bit=0,@MutateRedemptionId int=NULL WITH EXECUTE AS OWNER AS
 BEGIN
  SET NOCOUNT ON;SET XACT_ABORT ON;
  IF @@TRANCOUNT=0 OR DB_NAME()<>'dbwins_worldfert9_uat_v3' OR CONVERT(nvarchar(128),SERVERPROPERTY('ServerName'))<>N'R740-SRV\SQL2008'
   BEGIN RAISERROR('QA_FIXTURE_TARGET_INVALID',16,1);RETURN;END;
+ IF @MutateRedemptionId IS NOT NULL
+ BEGIN
+  -- Only a receipt of this rollback fixture's non-login user may be changed.
+  IF NOT EXISTS(SELECT 1 FROM wf.NativeDocumentReceipt r JOIN wf.AppUser u ON u.Id=r.UserId
+   WHERE r.DocuType=116 AND r.NativeId=@MutateRedemptionId AND u.PasswordHash='!NO_LOGIN_ROLLBACK_FIXTURE!'
+    AND u.Username LIKE 'qa-native-%')
+   BEGIN RAISERROR('QA_MUTATION_FIXTURE_REQUIRED',16,1);RETURN;END;
+  UPDATE dbo.WFRedemtionHD SET IssueName='QA changed recipient proof' WHERE RedemtionID=@MutateRedemptionId AND DocuType=116;
+  IF @@ROWCOUNT<>1 BEGIN RAISERROR('QA_MUTATION_FIXTURE_REQUIRED',16,1);RETURN;END;
+  RETURN;
+ END;
+ -- QA-only test: this Sale-App hook is transactional DDL. Never disable a
+ -- WinSpeed native trigger; the caller must roll back the entire rehearsal.
+ IF @ReservationFloor=1
+ BEGIN
+  IF NOT EXISTS(SELECT 1 FROM sys.triggers WHERE object_id=OBJECT_ID('dbo.WF_CouponReservationGuard') AND is_disabled=1)
+   BEGIN RAISERROR('QA_RESERVATION_FLOOR_NOT_BASELINE',16,1);RETURN;END;
+  ENABLE TRIGGER dbo.WF_CouponReservationGuard ON dbo.WFCoupon;
+ END;
  DECLARE @Today datetime,@Base int,@BaseLine int,@New int,@User int,@Emp int,@Draft int,@Cust int,@No varchar(30),@Columns nvarchar(max),@Values nvarchar(max),@Statement nvarchar(max);
  SET @Today=CONVERT(datetime,CONVERT(varchar(10),DATEADD(hour,7,GETUTCDATE()),120),120);
  DECLARE @Discount decimal(18,4);SET @Discount=CASE WHEN @FullDiscount=1 THEN 18000 ELSE 123.45 END;

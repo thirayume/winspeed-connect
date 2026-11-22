@@ -33,7 +33,9 @@ async function run(){
  console.log('NATIVE_V3_REAL_SQL_MIGRATION_LEDGER=PASS');
  console.log('NATIVE_V3_REHEARSAL_STEP=FIXTURE');
  const fullDiscount=process.env.QA_NATIVE_FULL_DISCOUNT==='true';
- const f=(await q('EXEC wf.usp_QaNativeV3Fixture @FullDiscount=@full',{full:{type:sql.Bit,value:fullDiscount}})).recordset[0];
+ const floor=process.env.QA_NATIVE_RESERVATION_FLOOR==='true';
+ const f=(await q('EXEC wf.usp_QaNativeV3Fixture @FullDiscount=@full,@ReservationFloor=@floor',
+  {full:{type:sql.Bit,value:fullDiscount},floor:{type:sql.Bit,value:floor}})).recordset[0];
  console.log('NATIVE_V3_REHEARSAL_STEP=ORIGIN');
  assert(f.SOID>0&&f.UserId>0);
  // Capture an actual, immutable native origin, as confirmation does.
@@ -43,6 +45,18 @@ async function run(){
   u:{type:sql.Int,value:f.UserId},hash:{type:sql.VarChar(64),value:origin}});
  console.log('NATIVE_V3_REHEARSAL_STEP=AI_PREVIEW');
  const user={sub:f.UserId,role:'ADMIN'},options={transaction:async fn=>fn(tx)};
+ if(floor){
+  assert.equal((await q("SELECT COUNT(*) AS N FROM wf.SchemaMigration WHERE FileName='269_native_reservation_before_debit.sql'")).recordset[0].N,1);
+  options.verifyMetadata=async query=>{
+   // This explicit SQL test profile permits exactly one reviewed state change.
+   // No production verifier or definition hash is bypassed.
+   const reviewed=require('../services/native-document-metadata.json');
+   const tables=reviewed.tables.map(t=>"OBJECT_ID('dbo."+t+"')").join(',');
+   const rows=(await query('SELECT OBJECT_NAME(t.parent_id) AS TableName,t.name,t.is_disabled,m.definition FROM sys.triggers t LEFT JOIN sys.sql_modules m ON m.object_id=t.object_id WHERE t.parent_id IN('+tables+')')).recordset;
+   const expected=reviewed.triggers.map(r=>r[1]==='wf_couponreservationguard'?[r[0],r[1],0,r[3]]:r);
+   require('../services/initial-invoice-metadata').validateOperationalMetadataRows(rows,expected);
+  };
+ }
  const act=(type,sourceId,operation,rest={})=>nativeDocument({type,sourceId,operation,user,...rest},options);
  const requestId=()=>crypto.randomUUID();
  const ai=await act(119,f.SOID,'preview');
@@ -110,6 +124,11 @@ async function run(){
   return preview.plan;
  }
  const first=await cut('0.2',1);console.log('NATIVE_V3_REAL_SQL_MULTILINE_PARTIAL_116=PASS');
+ await q('SAVE TRANSACTION QA_MUTATED_CUT');
+ await q('EXEC wf.usp_QaNativeV3Fixture @MutateRedemptionId=@r',{r:{type:sql.Int,value:first.nativeId}});
+ await assert.rejects(invoice(first),{code:'ND_CUT_DIVERGED'});
+ await q('ROLLBACK TRANSACTION QA_MUTATED_CUT');
+ console.log('NATIVE_V3_REAL_SQL_EDITED_NATIVE_CUT_REJECTED_BEFORE_107=PASS');
  const firstInvoice=await invoice(first);console.log('NATIVE_V3_REAL_SQL_PARTIAL_107=PASS');
  const last=await cut('0.4',2),lastInvoice=await invoice(last);
  const {fixed}=require('../services/native-document-plan');
@@ -125,6 +144,7 @@ async function run(){
    AND Status='CONSUMED' AND ConsumedQty=ReservedQty`,{u:{type:sql.Int,value:f.UserId},s:{type:sql.Int,value:f.SOID}})).recordsets;
  assert.equal(settled[0][0].Settlements,4);assert.equal(settled[1][0].Complete,2);
  console.log('NATIVE_V3_REAL_SQL_RESERVATIONS_SETTLE_PARTIAL_AND_FINAL_ONCE=PASS');
+ if(floor)console.log('NATIVE_V3_REAL_SQL_SHARED_RESERVATION_FLOOR_WITH_OWN_PARTIAL_CUTS=PASS');
  const incidents=(await q(`SELECT COUNT(*) AS N FROM wf.RuleIncident WHERE IncidentType='TICKET_USED_EXPIRED' AND DocuNo=@no`,
   {no:{type:sql.NVarChar(30),value:delivery.lines[0].CouponNo}})).recordset[0].N;
  assert.equal(incidents,2,'Each expired cut records one incident, replays record none');

@@ -28,7 +28,7 @@ const {FZ8_DATABASE,fz8RuntimeEnabled,isInitialNativeUatTarget} = require('../se
 const nativeTarget=require('../services/native-document-target');
 const nativeV3=nativeTarget.enabled();
 
-const PHASES = ['prepare', 'I-booking', 'K-booking', 'I-104', 'K-104', 'I-116', 'K-116', 'I-race116', 'I-107', 'K-107', 'audit', 'giveaway-loans', 'close'];
+const PHASES = ['prepare', 'I-booking', 'K-booking', 'I-104', 'K-104', 'I-116', 'K-116', 'I-race116', 'I-107', 'K-107', 'audit', 'giveaway-loans', 'rebate-accrue', 'rebate-use', 'close'];
 const phase = process.env.UAT_LOOP_PHASE;
 const RUN = process.env.UAT_LOOP_RUN || '';
 const EXPECT_DB = process.env.UAT_LOOP_DB || '';
@@ -37,12 +37,18 @@ const GOOD_ID = Number(process.env.UAT_LOOP_GOOD_ID);
 const NET_PRICE = Number(process.env.UAT_LOOP_NET_PRICE);
 const SECOND_GOOD_ID=Number(process.env.UAT_LOOP_SECOND_GOOD_ID);
 const SECOND_NET_PRICE=Number(process.env.UAT_LOOP_SECOND_NET_PRICE);
-const BOOKING_TOTAL=nativeV3?(NET_PRICE+SECOND_NET_PRICE)/2:NET_PRICE;
+const rebateQa=process.env.UAT_LOOP_REBATE_QA==='true';
+const LINE_TON=rebateQa?3:0.5,TOTAL_TON=nativeV3?LINE_TON*2:1,PRICE_MARKUP=rebateQa?200:0;
+const BOOKING_TOTAL=nativeV3?(NET_PRICE+SECOND_NET_PRICE+2*PRICE_MARKUP)*LINE_TON:NET_PRICE;
 const EMP_ID = Number(process.env.UAT_LOOP_EMP_ID);
 const APPROVER_EMP_ID = Number(process.env.UAT_LOOP_APPROVER_EMP_ID);
 const FINANCIAL_FIXTURE = process.env.UAT_LOOP_FINANCIAL_FIXTURE || '';
 
 function config() {
+  if(rebateQa){
+    if(!nativeV3)throw Error('UAT_LOOP_REBATE_QA_REQUIRES_V3');
+    if(!require('./native-v3-qa-profile.cjs').assertQaProfile().rebate)throw Error('UAT_LOOP_REBATE_QA_PROFILE_REQUIRED');
+  }
   if (!PHASES.includes(phase)) throw Error('UAT_LOOP_PHASE_INVALID');
   if(phase==='I-race116'&&!nativeV3)throw Error('UAT_LOOP_V3_ISOLATION_REQUIRED');
   if (!/^[A-Za-z0-9-]{8,30}$/.test(RUN)) throw Error('UAT_LOOP_RUN_INVALID');
@@ -77,7 +83,7 @@ const API = 'http://127.0.0.1:' + (process.env.PORT || 3000) + '/api';
 const NET_KG = 1004; // weight on the simulated scale record, inside the 2% tolerance of a 1-ton coupon
 const PRICE_TEXT = NET_PRICE.toFixed(4);
 const deliveryDate = process.env.UAT_LOOP_DELIVERY_DATE || new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
-const v3=()=>require('./uat-native-v3-phases.cjs')({call,query,check,save,state,fixtures,sql:db.sql,CUST_ID,RUN,deliveryDate});
+const v3=()=>require('./uat-native-v3-phases.cjs')({call,query,check,save,state,fixtures,sql:db.sql,CUST_ID,RUN,deliveryDate,lineTon:LINE_TON,totalTon:TOTAL_TON});
 // The 116 number is the transport slip: I takes it from the scale record, K types it as an exception.
 const slipFor = c => '99' + String(Number(c.soid) % 100000).padStart(5, '0');
 
@@ -211,9 +217,11 @@ async function booking(book, c) {
     goodId: String(GOOD_ID), goodCode: good.GoodCode, goodName: good.GoodName, qtyTon: 1,
     pricePerTon: NET_PRICE, netPricePerTon: NET_PRICE, masterQty: 1, childQty: 0, isGiveaway: false,
   };
-  const bookingLines=nativeV3?[{...line,qtyTon:0.5,masterQty:0.5},
+  const bookingLines=nativeV3?[{...line,pricePerTon:NET_PRICE+PRICE_MARKUP,netPricePerTon:NET_PRICE+PRICE_MARKUP,
+    ...(rebateQa?{rebatePricingMode:'POOL'}:{}),qtyTon:LINE_TON,masterQty:LINE_TON},
     {...line,goodId:String(SECOND_GOOD_ID),goodCode:second.GoodCode,goodName:second.GoodName,
-      pricePerTon:SECOND_NET_PRICE,netPricePerTon:SECOND_NET_PRICE,qtyTon:0.5,masterQty:0.5}]:[line];
+      pricePerTon:SECOND_NET_PRICE+PRICE_MARKUP,netPricePerTon:SECOND_NET_PRICE+PRICE_MARKUP,
+      ...(rebateQa?{rebatePricingMode:'POOL'}:{}),qtyTon:LINE_TON,masterQty:LINE_TON}]:[line];
   const mark = RUN + '-' + book;
   if (!c.quoteId) {
     const r = await call('POST', '/quotation', { custId: String(CUST_ID), custName: customer.CustName, validUntil: deliveryDate, remark: mark, lines: bookingLines }, 'sales');
@@ -226,7 +234,7 @@ async function booking(book, c) {
     check(r.status === 200 && !!c.quoteId && !!c.nativeQuoteSoid, book + '_QUOTATION_CREATED');
   }
   const quote = await call('GET', '/quotation/' + c.quoteId, undefined, 'sales');
-  check(quote.status === 200 && Number(quote.data.TotalTon) === 1 && Number(quote.data.TotalAmount) === BOOKING_TOTAL, book + '_QUOTATION_READBACK');
+  check(quote.status === 200 && Number(quote.data.TotalTon) === TOTAL_TON && Number(quote.data.TotalAmount) === BOOKING_TOTAL, book + '_QUOTATION_READBACK');
   if (!['ACCEPTED', 'CONVERTED'].includes(quote.data.Status)) {
     check((await call('PATCH', '/quotation/' + c.quoteId + '/status', { status: 'SENT' }, 'sales')).status === 200, book + '_QUOTATION_SENT');
     check((await call('PATCH', '/quotation/' + c.quoteId + '/status', { status: 'ACCEPTED' }, 'sales')).status === 200, book + '_QUOTATION_ACCEPTED');
@@ -455,7 +463,7 @@ async function close() {
   const ids = Object.values(fixtures.users).map(u => Number(u.id));
   if (![5,6,7].includes(ids.length) || new Set(ids).size!==ids.length || ids.some(id => !Number.isSafeInteger(id) || id < 1)
     || Object.entries(fixtures.users).some(([key,u])=>u.username!==PREFIX+key)) throw Error('FIXTURE_IDS_INVALID');
-  const r = await query('UPDATE wf.AppUser SET IsActive=0 WHERE Username LIKE @prefix AND Id IN(' + ids.join(',') + '); SELECT @@ROWCOUNT AS N', {
+  const r = await query("UPDATE wf.AppUser SET IsActive=0,PasswordHash='!CLOSED_UAT_LOOP!' WHERE Username LIKE @prefix AND Id IN(" + ids.join(',') + '); SELECT @@ROWCOUNT AS N', {
     prefix: param(db.sql.NVarChar(60), PREFIX + '%'),
   });
   check(Number(r.recordset[0].N) === ids.length, 'OWNED_TEST_USERS_DISABLED');
@@ -620,6 +628,14 @@ async function main() {
   if (phase === 'prepare') return prepare();
   if (phase === 'close') return close();
   await loginAll();
+  if(phase==='rebate-accrue'){
+    if(!rebateQa)throw Error('QA_REBATE_PROFILE_REQUIRED');
+    return require('./uat-native-v3-rebate.cjs')({call,query,check,save,state,fixtures,sql:db.sql,CUST_ID,RUN,deliveryDate});
+  }
+  if(phase==='rebate-use'){
+    if(!rebateQa)throw Error('QA_REBATE_PROFILE_REQUIRED');
+    return require('./uat-native-v3-rebate-use.cjs')({call,query,check,save,state,fixtures,sql:db.sql,CUST_ID,RUN,deliveryDate});
+  }
   if (phase === 'giveaway-loans') return giveawayLoans();
   if (phase === 'audit') return nativeV3?v3().audit():audit();
   const [book, step] = phase.split('-');

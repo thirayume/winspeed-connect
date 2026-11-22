@@ -1,6 +1,6 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **22 November 2026 (ICT)**. This page records observed results;
+Operational snapshot: **23 November 2026 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
@@ -63,7 +63,8 @@ Rebate switch, reset or company-2 business write was performed. Migrations 260â€
 audit associations: a 116 customer ID and a 107 delivery ID must resolve to the affected original bookings.
 
 The QA app uses its own non-admin login, JWT and one-database allowlist. Actual access checks to PROD, company 2 and
-live UAT return zero. Background workers and every Rebate switch are off. Hashes and enabled states of all 49
+live UAT return zero. The original QA profile keeps workers and Rebate off; the separate Rebate-on rehearsal below
+explicitly opts in on this same isolated database. Hashes and enabled states of all 49
 triggers on the affected native tables match across PROD, UAT and QA; that is metadata evidence, not a concurrency
 or financial sign-off. Native triggers were neither changed nor disabled for these rehearsals.
 
@@ -80,10 +81,47 @@ authenticated run. The next release rehearsal must use the exact reviewed commit
 identifiers remain in the QA state directory and `scratch/codex-uat-review-20261122/`, never in reusable source.
 All four runs' seven synthetic accounts were disabled; copied staff accounts were not altered.
 
+**23 November QA checkpoint, not deployed:** migration 269 moves consumption of this request's own reservation,
+settlement and audit before the native coupon debit, inside the same transaction. The unchanged reservation floor
+can then validate the remaining holds. It does not enable native hooks. Up twice/down-history refusal/outer rollback
+passed before applying 269 through the QA runner; final plan: 265 unchanged, zero pending/drift. Applied migrations
+263â€“269 are immutable. Actual app-login SQL tests passed partial and full header discounts through 202/two partial
+107s with the shared floor enabled transactionally; rollback restored its disabled state. A changed recipient on a
+recorded 116 is now rejected before 107 by recomputing the whole cut's physical proof. All SQL fixture mutations
+were rolled back, including that source-change test.
+
+The isolated Rebate-on runtime validates the exact QA database/server, a one-database reset manifest, disabled
+connection profiles/background workers, and actual non-owner/non-sysadmin SQL access with zero access to the three
+live databases. The copied current coordinator/participant manifest was explicitly rebound to QA after a rollback
+rehearsal, with an audit; no balance reset, ticket change or historical reset-journal rewrite was performed by that
+preparation. The separate runtime uses only loopback ingress. This is not a live feature-switch change.
+
+Run `R740V3-20261123-06` passed **391/391 checks, 14 phases** on the latest cut-proof service: two products, both
+document books, quotation/Trip/103/AI/credit approval/104/202, mixed four-line C/D 116 and partial draws, 107 J/N,
+application closure, trace/print/report/Excel, Access As, role denials and individual giveaway loans/repayments.
+Ten reviewed simulated transport lines totaling 12 tonnes accrued exactly 2,400 baht from the 103 pricing
+snapshots. SALES requested conversion, Manager approved, and the resulting ticket was used on a bill alongside
+a paid product. Two simultaneous Trip confirmations deducted it once; subsequent partial 116s/107 completed it
+as FINAL with one allocation to that newly issued ticket. Background workers remained off; the actual settlement
+implementation was invoked explicitly for QA. These are simulated shipments, not real scale evidence.
+
+An earlier Rebate-on run passed the same workflow with 399 recorded successful checks after fixing a runner
+dispatch error; it is not the clean acceptance run. Its failed attempt is retained privately. Backend regression:
+1328/1328. The first sandboxed run could not reach local HTTP stubs; the localhost-only rerun passed.
+The real WinSpeed client opened the earlier mixed four-line receipt and displayed transport amounts matching SQL;
+no native Save/Delete was performed in that check. All six runs' 42 accounts are disabled, private run passwords
+removed, and their database password hashes replaced by a non-login sentinel with exact-fixture cleanup audit.
+The private reviewer and QA schema remain for unfinished bridge work. Live deployment/switches/secondary writes
+were untouched.
+
 **Release still blocked:** the ten existing WinSpeed reservation/evidence/edit hooks remain disabled. Direct
 WinSpeed 116 creation, edit and cancellation have not passed concurrent acceptance with this writer. Complete and
 rehearse that bridge/recovery contract before enabling it; do not enable the old hooks merely because they exist.
-The Rebate-on Full Loop has not been rerun on v3. Positive VAT still needs the reviewed accounting mapping, and
+The Rebate-on Sale-App workflow above has passed; direct WinSpeed concurrent create/edit/cancel is still open.
+The old native consumer still contains an expiry rejection inconsistent with the owner's warning-only rule.
+Its enabled-source/reservation-fence requirements also conflict with the current edit-approval bridge check.
+These hooks must be replaced as one reviewed protocol; enabling them separately is unsafe. Positive VAT still
+needs the reviewed accounting mapping, and
 existing cost/unsupported-shape guards remain. A v3 107 currently requires v3 delivery and cut receipts; arbitrary
 old native deliveries/cuts need reviewed adoption or completion in WinSpeed. Existing pilot receipts remain
 verifiable/replayable; new pilot writes are closed when v3 is selected, so pending pilot work must be resolved
