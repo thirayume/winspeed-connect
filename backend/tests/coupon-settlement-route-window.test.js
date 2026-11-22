@@ -43,3 +43,14 @@ test('busy coupon is reported as partial instead of a successful check',async()=
   const response=await app.call('POST','/api/coupons/settle-cuts',{body:{}});
   assert.equal(response.status,207);assert.equal(response.body.failedCoupons,1);assert.equal(response.body.failures[0].code,'SETTLEMENT_IN_PROGRESS');
 });
+
+test('reservation preserves the native review fence code for retry after explicit release',async()=>{
+  const originalReserve=svc.reserveCoupon;
+  svc.reserveCoupon=async()=>{throw Object.assign(Error('Native save requires review'),{status:409,code:'COUPON_BRIDGE_REVIEW_REQUIRED'});};
+  try {
+    const response=await app.call('POST','/api/coupons/reserve',{body:{couponId:42,reservedQty:0.1}});
+    assert.equal(response.status,409);
+    assert.equal(response.body.code,'COUPON_BRIDGE_REVIEW_REQUIRED');
+    assert.equal(response.body.message,'Native save requires review');
+  } finally {svc.reserveCoupon=originalReserve;}
+});

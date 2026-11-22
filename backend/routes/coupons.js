@@ -155,7 +155,7 @@ router.post('/reserve', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER'
     res.json(result);
   } catch (err) {
     console.error('[coupons/reserve]', err);
-    res.status(err.status || 500).json({ message: err.message });
+    res.status(err.status || 500).json({ message: err.message, code: err.code });
   }
 });
 
