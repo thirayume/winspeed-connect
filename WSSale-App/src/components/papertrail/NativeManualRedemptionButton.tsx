@@ -1,7 +1,8 @@
+import {NativeOperationalAction} from '../sales/NativeOperationalAction';
 import {useState} from 'react';
 import {createPortal} from 'react-dom';
 import {req} from '../../services/api';
-import {useCan} from '../../utils/capabilities';
+import {useCan,useFeature} from '../../utils/capabilities';
 import {NativeDocPrint} from '../reports/NativeDocPrint';
 
 type ManualRequest={requestId:string;status:string;reason:string;receiver:string;plate:string;
@@ -35,12 +36,13 @@ const errors:Record<string,string>={
  MR_COUNTER_UNSUPPORTED:'เลขรันใบขนยังไม่พร้อม กรุณาให้ผู้ดูแลตรวจสอบ',
 };
 export function NativeManualRedemptionButton({soid,onCreated}:{soid:string|number;onCreated:()=>void}){
- const can=useCan();
+ const can=useCan();const operational=useFeature();
  const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const [preview,setPreview]=useState<Preview|null>(null),[key,setKey]=useState({basis:'',id:''});
  const [printing,setPrinting]=useState(false);
  const [reason,setReason]=useState(''),[receiver,setReceiver]=useState('UAT2 TEST'),[plate,setPlate]=useState('UAT2-TEST'),[slipNo,setSlipNo]=useState('99');
  if(!can('coupon.request116')&&!can('coupon.manual116'))return null;
+ if(operational('native-documents-v3'))return <NativeOperationalAction soid={soid} stage={116} onCreated={onCreated}/>;
  function showError(e:unknown){const code=(e as {data?:{code?:string}}).data?.code||'';setError(errors[code]||'ดำเนินการไม่สำเร็จ กรุณาตรวจสถานะหรือติดต่อผู้ดูแล');}
  async function inspect(){setOpen(true);setBusy(true);setError('');try{
   const p=await req<Preview>(`/so/${soid}/native-redemption/preview`);setPreview(p);

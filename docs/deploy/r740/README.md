@@ -278,6 +278,22 @@ window right after the backup.
 
 ## Enable Rebate after deployment
 
+The operational native v3 writer is still a candidate; see [acceptance and remaining gates](GO-LIVE-STATUS.md).
+Both reviewed targets explicitly retain `NATIVE_DOCUMENT_WRITER_VERSION=legacy`. The version is pinned alongside
+the four native stage flags and validated in the resolved Compose model, so a secret env file cannot choose v3.
+The existing pilot writers keep their narrow target guard. In v3 mode their verified receipts remain replayable,
+but they cannot create new documents. Resolve pending pilot requests before a reviewed version transition.
+
+V3 activation additionally requires the exact server/database `wf.NativeWriterContract`, reviewed native metadata,
+and the actual runtime login's read-only definition visibility on the parent tables listed in
+`backend/services/native-document-metadata.json`. Migrations do not seed an enabled contract. The SQL predicate's
+reviewed base hash and the application's full 49-trigger check are both required; do not grant impersonation of an
+old environment's migrator to make metadata readable. The isolated QA contract is not a Production approval.
+
+Do not change the target version/flags or enable native hooks until the outstanding WinSpeed, Rebate-on, legacy
+document and financial-shape acceptance gates have passed on the reviewed release. No activation follows merely
+from deploying schema. Use only the normal R740 deploy kit for the eventual authorized promotion.
+
 The R740 backend reads the `REBATE_*` switches and `REBATE_TICKET_REDEMPTION_TREATMENT` from that stack's `config/.env`. The switches default to `false`. The migration service does not receive them. `REBATE_RESET_DATABASES` remains pinned by the reviewed target file.
 
 Verify the schema and participant access in every configured reset database before activation. Prepare the generation-0 reset coordinator and participants before directing sales traffic to a backend with `REBATE_POOL_103_ENABLED=true`. An administrator initializes the coordinator with the exact environment and database through `POST /api/rebate-pool/reset/initialize`. Initialization preserves balances. The administrator's separate confirmation in App Settings starts balances at zero.

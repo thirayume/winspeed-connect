@@ -173,6 +173,8 @@ export type CustomerCreditStatus = {
   isAgingExceeded?: boolean;
   isOverPolicyMaxAging?: boolean;
   overdueAmount?: number;
+  openingOverdueCount?: number;
+  openingOverdueAmount?: number;
   overdueInvoices?: CustomerCreditOverdueInvoice[];
   unpaidCount?: number;
   strictCredit: boolean;

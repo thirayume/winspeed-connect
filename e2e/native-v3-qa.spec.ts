@@ -1,0 +1,73 @@
+import {test,expect,type Page} from '@playwright/test';
+type User={username:string;password:string;role:string};
+const supplied=process.env.QA_NATIVE_BROWSER_FIXTURE;
+const fixture=supplied?JSON.parse(supplied):null;
+test.skip(!fixture,'Run only with the private isolated QA fixture; never use live credentials');
+async function enter(page:Page,key:string){
+ const info=await page.request.get('/api/dbinfo');
+ expect(info.status()).toBe(200);expect((await info.json()).database).toBe('dbwins_worldfert9_uat_v3');
+ const user:User=fixture.users[key];
+ expect(user.username.startsWith('uat-loop-r740v3-')).toBe(true);
+ await page.goto('/');
+ await page.locator('input[type="text"]').fill(user.username);
+ await page.locator('input[type="password"]').fill(user.password);
+ await page.getByRole('button',{name:'เข้าสู่ระบบ',exact:true}).click();
+ await expect(page.getByRole('button',{name:'ออกจากระบบ',exact:true})).toBeVisible();
+ const me=await page.evaluate(async()=>{const response=await fetch('/api/auth/me',{headers:{Authorization:'Bearer '+localStorage.getItem('wssale_token')}});
+  return {status:response.status,data:await response.json()};});
+ expect(me.status).toBe(200);
+ const features=me.data.capabilities?.features||me.data.user?.capabilities?.features||[];
+ expect(features.includes('native-documents-v3')).toBe(true);
+ const nav=page.getByRole('button',{name:/กระดานเอกสาร|Paper Trail/}).first();
+ await expect(nav).toBeVisible();await nav.click();
+ await page.getByPlaceholder('ค้นหาเลขบิล ลูกค้า, ทะเบียนรถ...').fill(fixture.bookingNo);
+ const card=page.getByTestId(`paper-card-${fixture.soid}`);await expect(card).toBeVisible();
+ return card;
+}
+test('Counter opens multi-line 104 review from the actual QA app',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.name));
+ const card=await enter(page,'counter');
+ await card.getByRole('button',{name:'ออกใบสั่งขาย (104)',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'ออกใบสั่งขาย (104)',exact:true});
+ await expect(dialog).toBeVisible();
+ await expect(dialog.getByText(/ตั้งยอดสุทธิใน 202/)).toBeVisible();
+ await expect(dialog.locator('p').filter({hasText:/0\.5000 ตัน/})).toHaveCount(2);
+ await expect(dialog.getByRole('alert')).toHaveCount(0);expect(errors).toHaveLength(0);
+});
+test('SALES can request a partial customer cut and cannot issue 104',async({page})=>{
+ const card=await enter(page,'sales');
+ await expect(card.getByRole('button',{name:'ออกใบสั่งขาย (104)',exact:true})).toHaveCount(0);
+ await card.getByRole('button',{name:'ขอตัดตั๋ว / บันทึกใบขน (116)',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'ขอตัดตั๋ว / บันทึกใบขน (116)',exact:true});
+ await expect(dialog.getByLabel('เลขใบขน',{exact:true})).toBeVisible();
+ await expect(dialog.getByText(/เลือกหลายตั๋ว C\/D/)).toBeVisible();
+ await expect(dialog.getByRole('button',{name:'ยืนยันบันทึก',exact:true})).toHaveCount(0);
+ await expect(dialog.getByRole('alert')).toHaveCount(0);
+ const tickets=dialog.locator('input[aria-label^="จำนวน "]');
+ expect(await tickets.count()).toBeGreaterThan(0);
+ const label=await tickets.first().getAttribute('aria-label'),number=label!.slice('จำนวน '.length);
+ await tickets.first().fill('0.0001');
+ await dialog.getByLabel('เลขตั๋วที่ต้องการค้นหา',{exact:true}).fill(number);
+ await dialog.getByRole('button',{name:'เพิ่มตั๋วจากการค้นหา',exact:true}).click();
+ await expect(dialog.getByLabel(`จำนวน ${number}`,{exact:true})).toHaveValue('0.0001');
+ await expect(dialog.getByRole('alert')).toHaveCount(0);
+});
+test('Warehouse opens the recorder flow without granting ticket sales',async({page})=>{
+ const card=await enter(page,'warehouse');
+ await expect(card.getByRole('button',{name:'ออกใบสั่งขาย (104)',exact:true})).toHaveCount(0);
+ await card.getByRole('button',{name:'ขอตัดตั๋ว / บันทึกใบขน (116)',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'ขอตัดตั๋ว / บันทึกใบขน (116)',exact:true});
+ await expect(dialog.getByLabel('ทะเบียนรถ',{exact:true})).toBeVisible();
+ await expect(dialog.getByRole('alert')).toHaveCount(0);
+});
+test('Accounting previews a multi-cut 107 with the transport date and GL handoff',async({page})=>{
+ const card=await enter(page,'account');
+ await card.getByRole('button',{name:'Post Invoice (107)',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'Post Invoice (107)',exact:true});
+ await expect(dialog.getByText(/ยอดลูกหนี้อยู่ใน 202 แล้ว/)).toBeVisible();
+ await dialog.getByLabel('ชุดใบขนสำหรับ Post Invoice',{exact:true}).selectOption({index:1});
+ await dialog.getByLabel('เหตุผลการทำรายการ / พิจารณา',{exact:true}).fill('QA browser review only; no apply');
+ await dialog.getByRole('button',{name:'ตรวจข้อมูลก่อนยืนยัน',exact:true}).click();
+ await expect(dialog.getByRole('button',{name:'ยืนยันบันทึกเอกสาร',exact:true})).toBeVisible();
+ await expect(dialog.getByRole('alert')).toHaveCount(0);
+});

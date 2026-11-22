@@ -202,6 +202,7 @@ async function initialDelivery({operation='preview',soid,user,requestId,fingerpr
    await verifyDeliveryAccount(q,row.DocuNo,old);
    await verifyReceipt(q,old);return {...receiptView(old,true),completed:true};
   }
+  if(require('./native-document-target').enabled(options.env||process.env))fail('DO_WRITER_VERSION_CHANGED');
   const current=await eligible(q,row,who,dbName);
   if(operation!=='preview' && current.fingerprint!==fingerprint) fail('DO_PREVIEW_STALE');
   if(operation==='preview') {

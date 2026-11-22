@@ -70,10 +70,17 @@ function fixture(overrides={}){
  };
  const tx={request:()=>{const p={};return {input(k,type,value){p[k]={type,value};return this;},query:text=>q(text,p)};}};
  const transaction=async fn=>{const before=structuredClone(state);events.push('begin');try{const r=await fn(tx);events.push('commit');return r;}catch(e){Object.assign(state,before);events.push('rollback');throw e;}};
- const call=(operation,extra={})=>service({operation,soid:501,user:acct,...extra},{enabled:true,transaction,verifyMetadata:async()=>{if(state.metadataChanged)throw Error('IP_METADATA_UNSUPPORTED');}});
+ const call=(operation,extra={})=>service({operation,soid:501,user:acct,...extra},{enabled:true,transaction,env:state.env,verifyMetadata:async()=>{if(state.metadataChanged)throw Error('IP_METADATA_UNSUPPORTED');}});
  return {state,calls,events,call,q};
 }
 async function command(f,user=acct){const p=await f.call('preview',{user});return {user,requestId:key,fingerprint:p.fingerprint,invoiceDate:p.invoiceDate};}
+test('v3 selection closes new pilot invoices while retaining immutable legacy replays',async()=>{
+ const blocked=fixture({env:{NATIVE_DOCUMENT_WRITER_VERSION:'v3'}});
+ await assert.rejects(blocked.call('preview'),{code:'IP_WRITER_VERSION_CHANGED'});
+ const old=fixture(),c=await command(old);await old.call('apply',c);
+ old.state.env={NATIVE_DOCUMENT_WRITER_VERSION:'v3'};
+ assert.equal((await old.call('apply',c)).replayed,true);
+});
 test('107 stays closed by default, pins UAT2 and requires a valid request',async()=>{
  await assert.rejects(service({soid:501},{enabled:false}),{code:'IP_NOT_ENABLED'});
  const f=fixture();await assert.rejects(f.call('preview',{soid:'1;DROP'}),{code:'IP_SOURCE_INVALID'});

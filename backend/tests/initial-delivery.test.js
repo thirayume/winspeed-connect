@@ -75,11 +75,19 @@ function fixture(overrides={}) {
  };
  const tx={request:()=>{const p={};return{input(k,type,value){p[k]={type,value};return this;},query:text=>q(text,p)};}};
  const transaction=async fn=>{const saved=structuredClone(state);events.push('begin');try{const r=await fn(tx);events.push('commit');return r;}catch(e){Object.assign(state,saved);events.push('rollback');throw e;}};
- const call=(operation,extra={})=>initialDelivery({operation,soid:501,user:sales,...extra},{enabled:true,transaction});
+ const call=(operation,extra={})=>initialDelivery({operation,soid:501,user:sales,...extra},{enabled:true,transaction,env:state.env});
  return{state,calls,events,call};
 }
 async function request(f,user=sales){const p=await f.call('preview',{user});await f.call('request',{user,requestId:key,fingerprint:p.fingerprint});return{user,requestId:key,fingerprint:p.fingerprint};}
 async function approved(f,user=sales){const p=await request(f,user);await f.call('approve',{...p,user:account,reason:'UAT approved credit'});return p;}
+test('v3 selection refuses new pilot 104s but preserves verified legacy receipt replay',async()=>{
+ const blocked=fixture({env:{NATIVE_DOCUMENT_WRITER_VERSION:'v3'}});
+ await assert.rejects(blocked.call('preview'),{code:'DO_WRITER_VERSION_CHANGED'});
+ assert.equal(blocked.state.procCalls,0);
+ const old=fixture(),command=await approved(old);await old.call('apply',command);
+ old.state.env={NATIVE_DOCUMENT_WRITER_VERSION:'v3'};
+ assert.equal((await old.call('apply',command)).replayed,true);assert.equal(old.state.procCalls,1);
+});
 
 test('delivery and credit capabilities remain hidden and service closed by default',async()=>{
  const saved=process.env.NATIVE_DELIVERY_104_ENABLED;delete process.env.NATIVE_DELIVERY_104_ENABLED;

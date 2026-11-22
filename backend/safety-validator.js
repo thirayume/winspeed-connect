@@ -116,6 +116,12 @@ function assertNoCrossDbWrite(sqlText) {
   if (typeof sqlText !== 'string') return;
   const cleanSql = stripComments(sqlText);
   if (PROD_DB_REF_RE.test(cleanSql) && WRITE_KEYWORDS_RE.test(cleanSql)) {
+    // Migration 263 defines a wf scalar predicate, not a cross-database write.
+    // Its exact reviewed body names the three targets and still requires an
+    // approved per-database metadata contract. Do not broadly ignore strings
+    // or allow arbitrary functions: any changed/appended SQL fails this hash.
+    if (/^ALTER FUNCTION wf\.fn_IsNativeDocumentTarget\(\) RETURNS bit AS\b/.test(cleanSql.trim()) &&
+        sha256(cleanSql.replace(/\r\n/g,'\n').trim()) === 'db70012b3772a8f4752e0a72b1693bf4a9266cec9a81104c54b4f8cb30170840') return;
     throw new Error('CRITICAL SAFETY VIOLATION: Cross-database write targeting production "dbwins_worldfert9" blocked!');
   }
 }

@@ -1,8 +1,9 @@
+import {NativeOperationalAction} from './NativeOperationalAction';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ShieldCheck } from 'lucide-react';
 import { req } from '../../services/api';
-import { useCan } from '../../utils/capabilities';
+import { useCan, useFeature } from '../../utils/capabilities';
 
 type Preview = { soid: number; docuNo: string; fingerprint: string; selfApproval: boolean };
 const messages: Record<string, string> = {
@@ -22,13 +23,14 @@ const messages: Record<string, string> = {
 };
 
 export function NativeAiApprovalButton({ soid, onApproved }: { soid: string | number; onApproved: () => void }) {
-  const can = useCan();
+  const can = useCan(); const operational=useFeature();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [requestId, setRequestId] = useState('');
   const [error, setError] = useState('');
   if (!can('so.approve-native')) return null;
+ if(operational('native-documents-v3'))return <NativeOperationalAction soid={soid} stage={119} onCreated={onApproved}/>;
   const describe = (e: unknown) => {
     const code = (e as { data?: { code?: string } }).data?.code;
     return messages[code || ''] || 'ดำเนินการไม่สำเร็จ กรุณาลองอีกครั้งหรือติดต่อผู้ดูแล';

@@ -67,4 +67,26 @@ async function verifyInvoiceMetadata(q, target){
  const nativeRows = withoutDisabledHooks(rows);
  validateMetadata(isFz8 ? removeReviewedFz8Triggers(nativeRows) : nativeRows);
 }
-module.exports={metadataFingerprint,validateMetadata,verifyInvoiceMetadata,EXPECTED};
+async function verifyOperationalMetadata(q){
+ // The operational principal reads only the reviewed trigger definitions. It
+ // does not impersonate the old environment's migration login.
+ const reviewed=require('./native-document-metadata.json');
+ const tables=reviewed.tables.map(name=>`OBJECT_ID('dbo.${name}')`).join(',');
+ const rows=(await q(`SELECT OBJECT_NAME(t.parent_id) AS TableName,t.name,t.is_disabled,m.definition
+  FROM sys.triggers t LEFT JOIN sys.sql_modules m ON m.object_id=t.object_id
+  WHERE t.parent_id IN(${tables})`)).recordset||[];
+ validateOperationalMetadataRows(rows,reviewed.triggers);
+}
+function validateOperationalMetadataRows(rows,expected){
+ if(!Array.isArray(rows)||rows.length!==expected.length)throw Error('IP_METADATA_UNSUPPORTED');
+ const remaining=new Map(expected.map(([table,name,disabled,digest])=>[table+'|'+name,[disabled,digest]]));
+ for(const row of rows){
+  const key=String(row.TableName).toLowerCase()+'|'+String(row.name).toLowerCase(),reviewed=remaining.get(key);
+  if(!reviewed||![0,1,false,true].includes(row.is_disabled)||Number(row.is_disabled)!==reviewed[0]
+   ||typeof row.definition!=='string'||!row.definition||hash(row.definition.replace(/\r\n/g,'\n'))!==reviewed[1])
+   throw Error('IP_METADATA_UNSUPPORTED');
+  remaining.delete(key);
+ }
+ if(remaining.size)throw Error('IP_METADATA_UNSUPPORTED');
+}
+module.exports={metadataFingerprint,validateMetadata,verifyInvoiceMetadata,verifyOperationalMetadata,validateOperationalMetadataRows,EXPECTED};

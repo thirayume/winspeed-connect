@@ -63,6 +63,16 @@ test('preview validates without reserving a number; actual and effective identit
   assert.equal(f.calls.find(c => /EXEC wf.usp_/.test(c.text)).inputs.preview.value, true);
   assert.deepEqual(f.events, ['begin', 'commit']);
 });
+test('v3 selection closes new pilot approvals but preserves existing immutable receipt replay',async()=>{
+ const blocked=fixture();await blocked.ready();blocked.options.env={NATIVE_DOCUMENT_WRITER_VERSION:'v3'};
+ await assert.rejects(initialBookingAi({soid:501,user,preview:true},blocked.options),{code:'AI_WRITER_VERSION_CHANGED'});
+ assert.equal(blocked.state.procCalls,0);
+ const f=fixture();await f.ready();const command={soid:501,user,requestId,fingerprint:f.state.originHash};
+ const first=await initialBookingAi(command,f.options);
+ Object.assign(f.state.head,{AppvFlag:'Y',AppvDocuNo:first.approvalNo,Appvid:202});
+ f.options.env={NATIVE_DOCUMENT_WRITER_VERSION:'v3'};
+ assert.equal((await initialBookingAi(command,f.options)).replayed,true);assert.equal(f.state.procCalls,1);
+});
 test('empty optional remark sets are valid fingerprint components; missing result sets fail closed', async () => {
   const empty = await nativeFingerprint(async () => ({ recordset: [{ Snapshot: '' }] }), 501);
   assert.match(empty, /^[a-f0-9]{64}$/);

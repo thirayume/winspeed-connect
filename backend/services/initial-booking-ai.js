@@ -37,7 +37,9 @@ async function nativeFingerprint(query, soid) {
 }
 async function captureBookingOrigin({ query, soid, sourceDraftId, salesUserId, user }) {
   if (process.env.NATIVE_BOOKING_AI_ENABLED !== 'true') return false;
-  await assertTarget(query);
+  const operational=require('./native-document-target').enabled();
+  if(operational)await require('./native-document-target').assertTarget(query);
+  else await assertTarget(query);
   const exists = (await query("SELECT OBJECT_ID('wf.NativeBookingOrigin','U') AS OriginTable")).recordset?.[0]?.OriginTable;
   if (!exists) fail('AI_ORIGIN_REQUIRED', 503);
   const fingerprint = await nativeFingerprint(query, Number(soid));
@@ -48,7 +50,7 @@ async function captureBookingOrigin({ query, soid, sourceDraftId, salesUserId, u
     sales: { type: sql.Int, value: Number(salesUserId) },
     effective: { type: sql.Int, value: businessIds(user).effective },
     actor: { type: sql.Int, value: businessIds(user).actor },
-    fingerprint: { type: sql.VarChar(64), value: fingerprint }, policy: { type: sql.VarChar(40), value: POLICY },
+    fingerprint: { type: sql.VarChar(64), value: fingerprint }, policy: { type: sql.VarChar(40), value: operational?'NATIVE-DOCUMENTS-v3':POLICY },
   });
   return true;
 }
@@ -105,6 +107,7 @@ async function initialBookingAi({ soid, user, fingerprint, requestId, preview = 
       if (row.AppvFlag !== 'Y' || row.AppvDocuNo !== old.ApprovalNo || Number(row.Appvid) !== Number(old.ApproverEmpId)) fail('AI_RECEIPT_DIVERGED');
       return publicReceipt(old, true);
     }
+    if(require('./native-document-target').enabled(options.env||process.env))fail('AI_WRITER_VERSION_CHANGED');
     const origin = (await query('SELECT * FROM wf.NativeBookingOrigin WITH (UPDLOCK,HOLDLOCK) WHERE SOID=@soid', idInput(Number(soid)))).recordset?.[0];
     if (!origin || origin.PolicyVersion !== POLICY) fail('AI_ORIGIN_REQUIRED');
     const current = await nativeFingerprint(query, Number(soid));
@@ -139,6 +142,11 @@ async function assertInitialAiShipmentReady(soid, query = wfQuery) {
     if (has !== 1) fail('AI_READINESS_UNAVAILABLE', 503);
     const receipt = (await query('SELECT SOID FROM wf.NativeBookingApproval WHERE SOID=@soid', idInput(Number(soid)))).recordset?.[0];
     if (receipt) fail('AI_DOWNSTREAM_NOT_READY', 409);
+    const operational=(await query("SELECT OBJECT_ID('wf.NativeDocumentReceipt','U') AS OperationalReceipts")).recordset?.[0]?.OperationalReceipts;
+    if(operational){
+      const created=(await query('SELECT NativeId FROM wf.NativeDocumentReceipt WHERE DocuType=119 AND NativeId=@soid',idInput(Number(soid)))).recordset?.[0];
+      if(created)fail('AI_DOWNSTREAM_NOT_READY',409);
+    }
   } catch (e) {
     if (e.code === 'AI_DOWNSTREAM_NOT_READY') throw e;
     fail('AI_READINESS_UNAVAILABLE', 503);

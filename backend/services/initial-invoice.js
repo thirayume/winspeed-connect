@@ -86,6 +86,7 @@ async function initialInvoice({operation='preview',soid,user,requestId,fingerpri
     ||receiptView(old,true).invoiceDate!==invoiceDate))fail('IP_REQUEST_CONFLICT');
    await verifyInvoiceReceipt(q,parent,manual,old);return receiptView(old,true);
   }
+  if(require('./native-document-target').enabled(options.env||process.env))fail('IP_WRITER_VERSION_CHANGED');
   await (options.verifyMetadata||verifyInvoiceMetadata)(q,target);
   const p={...sourceInputs(soid),user:input(sql.Int,who.effective),actor:input(sql.Int,who.actor),date:input(sql.VarChar(10),operation==='apply'?invoiceDate:null)};
   const details=(await q('EXEC wf.usp_PostInitialCouponInvoice @SOID=@source,@Preview=1,@RequestId=NULL,@Fingerprint=NULL,@UserId=@user,@ActorId=@actor,@InvoiceDate=@date',p)).recordset?.[0];

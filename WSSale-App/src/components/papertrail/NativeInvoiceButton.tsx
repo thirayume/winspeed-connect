@@ -1,7 +1,8 @@
+import {NativeOperationalAction} from '../sales/NativeOperationalAction';
 import {useState} from 'react';
 import {createPortal} from 'react-dom';
 import {req} from '../../services/api';
-import {useCan} from '../../utils/capabilities';
+import {useCan,useFeature} from '../../utils/capabilities';
 import {NativeDocPrint} from '../reports/NativeDocPrint';
 import {formatThaiDate} from '../../utils/date';
 
@@ -25,10 +26,11 @@ const errors:Record<string,string>={
 };
 const date=(v?:string)=>v?formatThaiDate(v):'—';
 export function NativeInvoiceButton({soid,onCreated}:{soid:string|number;onCreated:()=>void}){
- const can=useCan();
+ const can=useCan();const operational=useFeature();
  const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const [preview,setPreview]=useState<Preview|null>(null),[key,setKey]=useState({basis:'',id:''}),[printing,setPrinting]=useState(false);
  if(!can('invoice.post-native'))return null;
+ if(operational('native-documents-v3'))return <NativeOperationalAction soid={soid} stage={107} onCreated={onCreated}/>;
  function showError(e:unknown){const code=(e as {data?:{code?:string}}).data?.code||'';setError(errors[code]||'ดำเนินการไม่สำเร็จ กรุณาตรวจสถานะหรือติดต่อผู้ดูแล');}
  async function inspect(){setOpen(true);setBusy(true);setError('');setPreview(null);try{
   const p=await req<Preview>(`/so/${soid}/native-invoice/preview`);setPreview(p);

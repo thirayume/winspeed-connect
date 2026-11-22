@@ -268,7 +268,7 @@ class R740ComposeGuardTests(unittest.TestCase):
             app[key] = migration[key] = target[key]
         for key in ("ONPREM_DB_USER", "CORS_ORIGIN", "ONPREM_SWITCHABLE_DATABASES", "REBATE_RESET_DATABASES", "NATIVE_BOOKING_AI_ENABLED",
                     "NATIVE_DELIVERY_104_ENABLED", "NATIVE_MANUAL_116_ENABLED", "NATIVE_INVOICE_107_ENABLED",
-                    "DISABLE_BACKGROUND_WORKERS"):
+                    "DISABLE_BACKGROUND_WORKERS", "NATIVE_DOCUMENT_WRITER_VERSION"):
             app[key] = target[key]
         app["TRUST_PROXY"] = "1"
         migration["ONPREM_MIGRATOR_USER"] = target["SALEAPP_MIGRATOR_LOGIN"]
@@ -433,6 +433,18 @@ class R740ComposeGuardTests(unittest.TestCase):
                     self.assertIn(key + " does not match the target file", result.stdout)
                     self.assertNotIn("dummy-app-only", result.stdout + result.stderr)
                     self.assertNotIn("dummy&Migration", result.stdout + result.stderr)
+
+    def test_secret_env_cannot_select_an_unreviewed_native_writer_version(self):
+        for environment in ("uat", "prod"):
+            models, target_path = self.fixture(environment)
+            app = models["resolved"]["services"]["backend"]["environment"]
+            self.assertEqual(app["NATIVE_DOCUMENT_WRITER_VERSION"], "legacy")
+            app["NATIVE_DOCUMENT_WRITER_VERSION"] = "v3"
+            result = self.validate(models, target_path)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("native document writer version does not match", result.stdout)
+        launcher = (ROOT / "docs/deploy/r740/r740-deploy.sh").read_text(encoding="utf-8")
+        self.assertIn(" NATIVE_DOCUMENT_WRITER_VERSION ", launcher)
 
     def test_launcher_exports_all_reviewed_native_flags(self):
         launcher = (ROOT / "docs/deploy/r740/r740-deploy.sh").read_text(encoding="utf-8")

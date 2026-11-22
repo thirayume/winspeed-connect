@@ -63,8 +63,9 @@ async function couponVisible(user,id,queryFn=wfQuery) {
 // A ticket can have reservations made for other sales teams. Never infer
 // authority over every reservation merely from authority over its issuer.
 async function reservationsVisible(user,ids,queryFn=wfQuery) {
-  const numbers=[...new Set(ids.map(Number))];
-  if(numbers.some(n=>!Number.isSafeInteger(n)||n<=0))return false;
+  if(ids.some(n=>typeof n==='number'&&!Number.isSafeInteger(n)))return false;
+  const numbers=[...new Set(ids.map(String))];
+  if(numbers.some(n=>!/^[1-9]\d{0,18}$/.test(n)||BigInt(n)>9223372036854775807n))return false;
   if(!numbers.length)return true;
   const actor=actorPerspective(user);
   const scopes=[await getVisibleScope(user,queryFn),...(actor===user?[]:[await getVisibleScope(actor,queryFn)])];

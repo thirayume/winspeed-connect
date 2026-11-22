@@ -139,6 +139,7 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
    if(operation!=='preview'&&(operation!=='apply'||old.RequestId!==requestId||old.Fingerprint!==fingerprint||Number(old.AppliedById)!==who.effective||Number(old.ApplierActorId)!==who.actor))fail('MR_REQUEST_CONFLICT');
    await verifyCompleted(q,parent,old);return receiptView(old,true);
   }
+  if(require('./native-document-target').enabled(options.env||process.env))fail('MR_WRITER_VERSION_CHANGED');
   const current=await eligible(q,parent);
   if(operation!=='preview'&&fingerprint!==current.fingerprint)fail('MR_PREVIEW_STALE');
   if(operation==='preview'){

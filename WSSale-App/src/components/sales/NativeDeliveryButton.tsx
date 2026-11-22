@@ -1,7 +1,8 @@
+import {NativeOperationalAction} from './NativeOperationalAction';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { req } from '../../services/api';
-import { useCan } from '../../utils/capabilities';
+import { useCan, useFeature } from '../../utils/capabilities';
 import { NativeDocPrint } from '../reports/NativeDocPrint';
 
 type Request = { requestId: string; status: string; expiresAt: string | null; isRequester: boolean };
@@ -34,12 +35,13 @@ export function deliveryError(e: unknown) {
   return messages[code||''] || 'ดำเนินการไม่สำเร็จ กรุณาตรวจสถานะอีกครั้งหรือติดต่อผู้ดูแล';
 }
 export function NativeDeliveryButton({soid,onCreated}:{soid:string|number;onCreated:()=>void}) {
- const can=useCan();
+ const can=useCan();const operational=useFeature();
  const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const [preview,setPreview]=useState<Preview|null>(null);
  const [key,setKey]=useState({basis:'',id:''});
  const [printing,setPrinting]=useState(false);
  if(!can('so.create-native-delivery')) return null;
+ if(operational('native-documents-v3'))return <NativeOperationalAction soid={soid} stage={104} onCreated={onCreated}/>;
  async function inspect() {
   setOpen(true);setBusy(true);setError('');
   try {

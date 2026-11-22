@@ -22,6 +22,7 @@ function fake(rows = [chain]) {
   const queryFn = async (text, inputs) => {
     calls.push({ text, inputs });
     if (/FROM wf\.AppUser WHERE Id IN/.test(text)) return { recordset: users };
+    if (/AS Present/.test(text)) return { recordset: [{Present:0,Ledger263:0}] };
     return { recordset: rows };
   };
   return { calls, queryFn };
@@ -47,7 +48,7 @@ test('the report follows each app booking through AI, 104, 116 and 107 with real
   assert.match(main.text, /FROM wf\.NativeBookingOrigin o/);
   assert.match(main.text, /LEFT JOIN wf\.NativeDocumentApproval na ON na\.DocuType=116/);
   assert.doesNotMatch(main.text, /\b(INSERT|UPDATE|DELETE|MERGE|EXEC)\b/i);
-  assert.match(f.calls[1].text, /WHERE Id IN \(11,22,99\)\)?$/);
+  assert.match(f.calls.find(c=>/FROM wf\.AppUser WHERE Id IN/.test(c.text)).text, /WHERE Id IN \(11,22,99\)\)?$/);
 });
 
 test('stages, typed slips and unknown filters are reported safely', async () => {

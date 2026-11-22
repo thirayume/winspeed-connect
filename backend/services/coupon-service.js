@@ -3223,5 +3223,6 @@ module.exports = {
   readTicketUseExpiry,
   checkTicketUseExpiry,
   assertCouponReservationCoverage,
+  assertNoUnreservedLegacyReferences,
 };
 

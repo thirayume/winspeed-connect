@@ -60,11 +60,18 @@ function fixture(overrides={}){
  };
  const tx={request:()=>{const p={};return {input(k,type,value){p[k]={type,value};return this;},query:text=>q(text,p)};}};
  const transaction=async fn=>{const before=structuredClone(state);events.push('begin');try{const r=await fn(tx);events.push('commit');return r;}catch(e){Object.assign(state,before);events.push('rollback');throw e;}};
- const call=(operation,extra={})=>service({operation,soid:501,user:wh,...extra},{enabled:true,transaction});
+ const call=(operation,extra={})=>service({operation,soid:501,user:wh,...extra},{enabled:true,transaction,env:state.env});
  return {state,calls,events,call};
 }
 async function request(f,user=wh){const p=await f.call('preview',{user});const command={user,requestId:key,fingerprint:p.fingerprint,reason:'UAT simulation without a physical scale',receiver:'UAT2 TEST',plate:'UAT2-TEST',slipNo:'9900777'};await f.call('request',command);return command;}
 async function approved(f,user=wh,approver=wh){const c=await request(f,user);await f.call('approve',{...c,user:approver});return c;}
+test('v3 selection closes new pilot cuts while keeping verified old receipt replay',async()=>{
+ const blocked=fixture({env:{NATIVE_DOCUMENT_WRITER_VERSION:'v3'}});
+ await assert.rejects(blocked.call('preview'),{code:'MR_WRITER_VERSION_CHANGED'});
+ const old=fixture(),command=await approved(old);await old.call('apply',command);
+ old.state.env={NATIVE_DOCUMENT_WRITER_VERSION:'v3'};
+ assert.equal((await old.call('apply',command)).replayed,true);
+});
 
 test('SALES requests its own bill without a recorder mapping; management approves and Warehouse records the cut',async()=>{
  const f=fixture(),sales={sub:55,role:'SALES'};

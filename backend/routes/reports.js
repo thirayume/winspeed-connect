@@ -1970,7 +1970,7 @@ async function runNativeDocumentsReport(params = {}, options = {}) {
     book: { type: sql.VarChar(1), value: book },
     globalStartUtc: { type: sql.DateTime2, value: utcInstant },
   });
-  const raw = result.recordset || [];
+  const raw = await require('../services/native-document-report').attachOperationalReport(result.recordset || [], queryFn);
   const ids = [...new Set(raw.flatMap(r => [r.ConfirmedById, r.ConfirmedActorId, r.AiUserId, r.AiActorId, r.CreditUserId, r.CreditActorId,
     r.DeliveryUserId, r.DeliveryActorId, r.RedReqUserId, r.RedReqActorId, r.RedApprUserId, r.RedApprActorId, r.InvoiceUserId, r.InvoiceActorId])
     .map(Number).filter(n => Number.isSafeInteger(n) && n > 0))];

@@ -25,26 +25,37 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const {FZ8_DATABASE,fz8RuntimeEnabled,isInitialNativeUatTarget} = require('../services/initial-native-uat-target');
+const nativeTarget=require('../services/native-document-target');
+const nativeV3=nativeTarget.enabled();
 
-const PHASES = ['prepare', 'I-booking', 'K-booking', 'I-104', 'K-104', 'I-116', 'K-116', 'I-107', 'K-107', 'audit', 'giveaway-loans', 'close'];
+const PHASES = ['prepare', 'I-booking', 'K-booking', 'I-104', 'K-104', 'I-116', 'K-116', 'I-race116', 'I-107', 'K-107', 'audit', 'giveaway-loans', 'close'];
 const phase = process.env.UAT_LOOP_PHASE;
 const RUN = process.env.UAT_LOOP_RUN || '';
 const EXPECT_DB = process.env.UAT_LOOP_DB || '';
 const CUST_ID = Number(process.env.UAT_LOOP_CUST_ID);
 const GOOD_ID = Number(process.env.UAT_LOOP_GOOD_ID);
 const NET_PRICE = Number(process.env.UAT_LOOP_NET_PRICE);
+const SECOND_GOOD_ID=Number(process.env.UAT_LOOP_SECOND_GOOD_ID);
+const SECOND_NET_PRICE=Number(process.env.UAT_LOOP_SECOND_NET_PRICE);
+const BOOKING_TOTAL=nativeV3?(NET_PRICE+SECOND_NET_PRICE)/2:NET_PRICE;
 const EMP_ID = Number(process.env.UAT_LOOP_EMP_ID);
 const APPROVER_EMP_ID = Number(process.env.UAT_LOOP_APPROVER_EMP_ID);
 const FINANCIAL_FIXTURE = process.env.UAT_LOOP_FINANCIAL_FIXTURE || '';
 
 function config() {
   if (!PHASES.includes(phase)) throw Error('UAT_LOOP_PHASE_INVALID');
+  if(phase==='I-race116'&&!nativeV3)throw Error('UAT_LOOP_V3_ISOLATION_REQUIRED');
   if (!/^[A-Za-z0-9-]{8,30}$/.test(RUN)) throw Error('UAT_LOOP_RUN_INVALID');
   if (EXPECT_DB === FZ8_DATABASE && !fz8RuntimeEnabled()) throw Error('UAT_LOOP_FZ8_ISOLATION_REQUIRED');
-  if (EXPECT_DB !== FZ8_DATABASE && !/_uat$/.test(EXPECT_DB)) throw Error('UAT_LOOP_DB_NOT_UAT');
+  if(nativeV3){
+    if(EXPECT_DB!==nativeTarget.QA||process.env.ONPREM_DB_NAME!==nativeTarget.QA||process.env.ONPREM_SWITCHABLE_DATABASES!==nativeTarget.QA
+      ||process.env.ONPREM_CONNECTION_PROFILES_DISABLE!=='true'||process.env.DISABLE_BACKGROUND_WORKERS!=='true')throw Error('UAT_LOOP_V3_ISOLATION_REQUIRED');
+  }else if (EXPECT_DB !== FZ8_DATABASE && !/_uat$/.test(EXPECT_DB)) throw Error('UAT_LOOP_DB_NOT_UAT');
   if (FINANCIAL_FIXTURE && (EXPECT_DB !== FZ8_DATABASE || !['full-discount', 'vat-excluded'].includes(FINANCIAL_FIXTURE)))
     throw Error('UAT_LOOP_FINANCIAL_FIXTURE_INVALID');
   if (![CUST_ID, GOOD_ID, NET_PRICE, EMP_ID].every(n => Number.isInteger(n) && n > 0)) throw Error('UAT_LOOP_FIXTURES_REQUIRED');
+  if(nativeV3&&(![SECOND_GOOD_ID,SECOND_NET_PRICE].every(n=>Number.isInteger(n)&&n>0)||SECOND_GOOD_ID===GOOD_ID))
+    throw Error('UAT_LOOP_TWO_DISTINCT_PRODUCTS_REQUIRED');
   if (phase!=='close'&&(!Number.isSafeInteger(APPROVER_EMP_ID)||APPROVER_EMP_ID<=0||APPROVER_EMP_ID===EMP_ID))
     throw Error('UAT_LOOP_DISTINCT_APPROVER_EMPLOYEE_REQUIRED');
 }
@@ -61,11 +72,12 @@ const db = require('../db');
 const bcrypt = require('bcrypt');
 
 const PREFIX = 'uat-loop-' + RUN.toLowerCase() + '-';
-const DIR = '/tmp/saleapp-uat-loop-' + RUN.toLowerCase();
+const DIR = nativeV3 ? path.join('/review-state','loop-'+RUN.toLowerCase()) : '/tmp/saleapp-uat-loop-' + RUN.toLowerCase();
 const API = 'http://127.0.0.1:' + (process.env.PORT || 3000) + '/api';
 const NET_KG = 1004; // weight on the simulated scale record, inside the 2% tolerance of a 1-ton coupon
 const PRICE_TEXT = NET_PRICE.toFixed(4);
 const deliveryDate = process.env.UAT_LOOP_DELIVERY_DATE || new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
+const v3=()=>require('./uat-native-v3-phases.cjs')({call,query,check,save,state,fixtures,sql:db.sql,CUST_ID,RUN,deliveryDate});
 // The 116 number is the transport slip: I takes it from the scale record, K types it as an exception.
 const slipFor = c => '99' + String(Number(c.soid) % 100000).padStart(5, '0');
 
@@ -102,7 +114,7 @@ async function target() {
   for (const key of ['NATIVE_BOOKING_AI_ENABLED', 'NATIVE_DELIVERY_104_ENABLED', 'NATIVE_MANUAL_116_ENABLED', 'NATIVE_INVOICE_107_ENABLED']) {
     if (process.env[key] !== 'true') throw Error('NATIVE_FLAGS_NOT_READY');
   }
-  const allowed = (await query('SELECT wf.fn_IsInitialNativeUatTarget() AS Allowed')).recordset[0].Allowed;
+  const allowed = (await query(nativeV3?'SELECT wf.fn_IsNativeDocumentTarget() AS Allowed':'SELECT wf.fn_IsInitialNativeUatTarget() AS Allowed')).recordset[0].Allowed;
   if (Number(allowed) !== 1) throw Error('SQL_TARGET_NOT_READY');
 }
 
@@ -118,7 +130,8 @@ async function call(method, route, body, key) {
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(45000),
   });
-  const data = await response.json().catch(() => ({}));
+  const isWorkbook=response.headers.get('content-type')?.includes('spreadsheetml');
+  const data = isWorkbook?{workbook:Buffer.from(await response.arrayBuffer())}:await response.json().catch(() => ({}));
   const code = typeof data.code === 'string' && /^[A-Z_0-9]+$/.test(data.code) ? data.code : null;
   if (response.status >= 400) console.log('LOOP_HTTP=' + method + ' ' + route + ' ' + response.status + (code ? ' ' + code : ''));
   return { status: response.status, data };
@@ -150,7 +163,7 @@ async function prepare() {
     check(existing.length === Object.keys(roles).length && Object.keys(fixtures.users).length===Object.keys(roles).length && Object.entries(fixtures.users).every(([key, u]) =>
       existing.some(r => r.Username === u.username && r.Role === roles[key] && Number(r.Id) === Number(u.id))), 'EXISTING_FIXTURES_MATCH_OWN_RUN');
   } else {
-    const emp = await query("SELECT COUNT(*) AS N FROM dbo.EMEmp WHERE EmpID=@emp AND EmpType='G' AND EmpStatus='1'", { emp: param(db.sql.Int, EMP_ID) });
+    const emp = await query(nativeV3?"SELECT COUNT(*) AS N FROM dbo.EMEmp WHERE EmpID=@emp AND EmpType='S' AND EmpStatus='1'":"SELECT COUNT(*) AS N FROM dbo.EMEmp WHERE EmpID=@emp AND EmpType='G' AND EmpStatus='1'", { emp: param(db.sql.Int, EMP_ID) });
     check(Number(emp.recordset[0].N) === 1, 'EXISTING_NATIVE_EMPLOYEE');
     const approver=await query(`SELECT COUNT(*) AS N FROM dbo.EMEmp e JOIN wf.NativeApproverEmployee a ON a.EmpID=e.EmpID
       WHERE e.EmpID=@emp AND e.EmpStatus='1' AND a.IsEnabled=1`,{emp:param(db.sql.Int,APPROVER_EMP_ID)});
@@ -192,14 +205,18 @@ async function booking(book, c) {
   const customer = customers.data.find(r => Number(r.CustID) === CUST_ID);
   const goods = await call('GET', '/master/goods?limit=2000', undefined, 'sales');
   const good = goods.data.find(r => Number(r.GoodID) === GOOD_ID);
-  if (!customer || !good) throw Error('MASTER_FIXTURE_MISSING');
+  const second=goods.data.find(r=>Number(r.GoodID)===SECOND_GOOD_ID);
+  if (!customer || !good || (nativeV3&&!second)) throw Error('MASTER_FIXTURE_MISSING');
   const line = {
     goodId: String(GOOD_ID), goodCode: good.GoodCode, goodName: good.GoodName, qtyTon: 1,
     pricePerTon: NET_PRICE, netPricePerTon: NET_PRICE, masterQty: 1, childQty: 0, isGiveaway: false,
   };
+  const bookingLines=nativeV3?[{...line,qtyTon:0.5,masterQty:0.5},
+    {...line,goodId:String(SECOND_GOOD_ID),goodCode:second.GoodCode,goodName:second.GoodName,
+      pricePerTon:SECOND_NET_PRICE,netPricePerTon:SECOND_NET_PRICE,qtyTon:0.5,masterQty:0.5}]:[line];
   const mark = RUN + '-' + book;
   if (!c.quoteId) {
-    const r = await call('POST', '/quotation', { custId: String(CUST_ID), custName: customer.CustName, validUntil: deliveryDate, remark: mark, lines: [line] }, 'sales');
+    const r = await call('POST', '/quotation', { custId: String(CUST_ID), custName: customer.CustName, validUntil: deliveryDate, remark: mark, lines: bookingLines }, 'sales');
     if (r.status === 200 && r.data.id) {
       c.quoteId = r.data.id;
       c.quoteNo = r.data.quoteNo;
@@ -209,7 +226,7 @@ async function booking(book, c) {
     check(r.status === 200 && !!c.quoteId && !!c.nativeQuoteSoid, book + '_QUOTATION_CREATED');
   }
   const quote = await call('GET', '/quotation/' + c.quoteId, undefined, 'sales');
-  check(quote.status === 200 && Number(quote.data.TotalTon) === 1 && Number(quote.data.TotalAmount) === NET_PRICE, book + '_QUOTATION_READBACK');
+  check(quote.status === 200 && Number(quote.data.TotalTon) === 1 && Number(quote.data.TotalAmount) === BOOKING_TOTAL, book + '_QUOTATION_READBACK');
   if (!['ACCEPTED', 'CONVERTED'].includes(quote.data.Status)) {
     check((await call('PATCH', '/quotation/' + c.quoteId + '/status', { status: 'SENT' }, 'sales')).status === 200, book + '_QUOTATION_SENT');
     check((await call('PATCH', '/quotation/' + c.quoteId + '/status', { status: 'ACCEPTED' }, 'sales')).status === 200, book + '_QUOTATION_ACCEPTED');
@@ -218,7 +235,7 @@ async function booking(book, c) {
   const order = {
     soPrefix: book, custId: String(CUST_ID), custName: customer.CustName, deliveryDate, truckPlate: plate, remark: mark,
     truckRemark: mark + '-TRIP', billRemark: mark + '-BILL', creditDays: Number(customer.CreditDays || 0), isOwnTruck: false,
-    noTruckRequired: false, pSling: false, convertFromQuoteId: c.quoteId, lines: [line],
+    noTruckRequired: false, pSling: false, convertFromQuoteId: c.quoteId, lines: bookingLines,
   };
   if (!c.draftId) {
     const r = await call('POST', '/so', order, 'sales');
@@ -265,6 +282,7 @@ async function booking(book, c) {
   c.soid = Number(rows[0].SOID);
   c.bookingNo = rows[0].DocuNo;
   save();
+  if(nativeV3)return v3().ai(book,c);
   const route = '/so/' + c.soid + '/native-ai';
   check((await call('GET',route+'/preview',undefined,'sales')).status===403,book+'_SALES_CANNOT_APPROVE_AI');
   if (!c.ai) {
@@ -603,11 +621,13 @@ async function main() {
   if (phase === 'close') return close();
   await loginAll();
   if (phase === 'giveaway-loans') return giveawayLoans();
-  if (phase === 'audit') return audit();
+  if (phase === 'audit') return nativeV3?v3().audit():audit();
   const [book, step] = phase.split('-');
   const c = state.cases[book] || (state.cases[book] = { book });
   save();
-  await ({ booking, 104: delivery, 116: redemption, 107: invoice })[step](book, c);
+  const operational=nativeV3?v3():null;
+  await ({ booking, 104: operational?.delivery||delivery, 116: operational?.redemption||redemption,
+    race116:operational?.raceRedemption,107: operational?.invoice||invoice })[step](book, c);
   console.log('LOOP_CASE=' + JSON.stringify({ step, ...caseLine(c) }));
 }
 

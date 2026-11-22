@@ -55,11 +55,40 @@ recorder, concurrent replay checks and an additional individual-quota loan/repay
 accounts on an explicitly selected UAT target and disables its own accounts on close. Its new live phases have not
 yet been executed against the proposed release. The old UAT invoice result above cannot certify these changes.
 
-**Release still blocked:** general Production-native contracts, multi-line/mixed-ticket and partial-cut acceptance,
-fresh real-user Full Loop with the proposed schema, and WinSpeed/Sale-App concurrency acceptance remain open.
-Do not remove the simulation target/evidence guards or equate unit/browser/rollback checks with those acceptances.
-The reviewed UAT has no untouched native delivery fixture left; a new isolated run must create its own chain.
-Review company 2 before applying role/schema migrations. The owner requires a passing Full Loop before deployment.
+**Operational writer v3 candidate, isolated QA only:** the shared engine now has explicit primary PROD/UAT contracts,
+multi-line 104/202, partial mixed C/D 116 and cumulative partial 107 allocation. These are source capabilities, not
+live activation. `NATIVE_DOCUMENT_WRITER_VERSION=legacy` remains pinned in both release targets. No live deployment,
+Rebate switch, reset or company-2 business write was performed. Migrations 260–268 were applied only to the isolated
+`dbwins_worldfert9_uat_v3` copy through the runner; applied 263–267 were not edited. Migration 268 corrects future
+audit associations: a 116 customer ID and a 107 delivery ID must resolve to the affected original bookings.
+
+The QA app uses its own non-admin login, JWT and one-database allowlist. Actual access checks to PROD, company 2 and
+live UAT return zero. Background workers and every Rebate switch are off. Hashes and enabled states of all 49
+triggers on the affected native tables match across PROD, UAT and QA; that is metadata evidence, not a concurrency
+or financial sign-off. Native triggers were neither changed nor disabled for these rehearsals.
+
+| Candidate acceptance | Observed result | Limit |
+| --- | --- | --- |
+| Real authenticated Sale-App chain, both books | Run `R740V3-20261122-04`: 12 phases, 280/280 checks; two distinct products, quotation, Sale Trip, 103/AI, 104/202, four partial 116s including mixed C/D, 107 J/N, print/trace, report/Excel, role denials, Access As, individual quota loan/partial/full return, account cleanup | VAT 0; synthetic QA users; WinSpeed UI and Rebate workers were not participants |
+| Same-key and competing-key submissions | One native ID and at most one create per same-key pair; an additional real API run allowed one of two approved competing cuts, rejected the other and preserved the exact balance | Does not prove a direct WinSpeed save honors an app reservation |
+| SQL rollback integration | Actual QA app login: partial and full footer discount, two partial invoices, exact final amounts, reservation settlement/replay, changed-source/finance-hold rejection, expired-ticket warning plus one incident per cut, current cutoff replay rejection and booking-root audit | Outer rollback; fixture procedure is DBA-installed on QA only, not a real-user acceptance path |
+| Migration 268 | Up twice, history-protecting down refusal and definition restoration after outer rollback; applied through ledger afterwards | No historical audit rows rewritten |
+| Regression | Backend 1324, three CI groups 617, offline 98, frontend build; browser resilience 48, date-window 3, admin 9, trip 6; actual QA browser four roles plus exact ticket lookup | Local/mock suites are distinct from the authenticated QA run |
+
+The final parent-document fingerprint/report-schema hardening also passed focused SQL/unit checks after the
+authenticated run. The next release rehearsal must use the exact reviewed commit. Private run state and document
+identifiers remain in the QA state directory and `scratch/codex-uat-review-20261122/`, never in reusable source.
+All four runs' seven synthetic accounts were disabled; copied staff accounts were not altered.
+
+**Release still blocked:** the ten existing WinSpeed reservation/evidence/edit hooks remain disabled. Direct
+WinSpeed 116 creation, edit and cancellation have not passed concurrent acceptance with this writer. Complete and
+rehearse that bridge/recovery contract before enabling it; do not enable the old hooks merely because they exist.
+The Rebate-on Full Loop has not been rerun on v3. Positive VAT still needs the reviewed accounting mapping, and
+existing cost/unsupported-shape guards remain. A v3 107 currently requires v3 delivery and cut receipts; arbitrary
+old native deliveries/cuts need reviewed adoption or completion in WinSpeed. Existing pilot receipts remain
+verifiable/replayable; new pilot writes are closed when v3 is selected, so pending pilot work must be resolved
+before transition. Review company 2 before any role/schema migration there. The owner requires the remaining
+Full Loop and readiness review before deployment; these partial acceptances do not establish 100% live parity.
 See [current approval rules](../../sale-app/handover/APPROVAL-POLICIES.md).
 
 Older paragraphs below are history.

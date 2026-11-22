@@ -90,6 +90,11 @@ def main():
             stop("target file must set " + key + " to true or false.")
         if str(app.get(key, "")).lower() != target[key].lower():
             stop("API setting " + key + " does not match the target file.")
+    writer_version = target.get("NATIVE_DOCUMENT_WRITER_VERSION", "legacy")
+    if writer_version not in ("legacy", "v3"):
+        stop("target native document writer must be legacy or v3.")
+    if str(app.get("NATIVE_DOCUMENT_WRITER_VERSION", "legacy")) != writer_version:
+        stop("native document writer version does not match the reviewed target.")
     for key, value in {"COUPON_NATIVE_POSTING_ENABLED": "false", "ENFORCE_PASSWORD_CHANGE": "true",
                        "TRUST_PROXY": "1"}.items():
         if str(app.get(key, "")).lower() != value:
